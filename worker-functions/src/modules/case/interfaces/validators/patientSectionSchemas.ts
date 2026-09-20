@@ -1,11 +1,14 @@
 import { z } from 'zod';
 import { DOCUMENT_TYPES } from '../../domain/enums/DocumentType';
 import { SEXES } from '../../domain/enums/Sex';
+import { PATIENT_GENDERS } from '../../domain/enums/PatientGender';
+import { PATIENT_LANGUAGES } from '../../domain/enums/PatientLanguage';
 import { DEPENDENCY_LEVELS } from '../../domain/enums/DependencyLevel';
 import { PATIENT_STATUSES } from '../../domain/enums/PatientStatus';
 import { ON_HOLD_REASONS } from '../../domain/enums/OnHoldReason';
 import { RELATIONSHIPS } from '../../domain/enums/Relationship';
 import { PROFESSIONS } from '@modules/worker';
+import { isPlaceholderCoverageValue } from '../../domain/PatientCompleteness';
 
 /**
  * Section-scoped validators for PATCH /api/admin/patients/:id/:section.
@@ -45,6 +48,14 @@ export const generalSectionSchema = z
     contactEmail: z.string().trim().email().nullable().optional(),
     /** US-B9 (migration 317): data de início do serviço — nativa do painel, não deriva da vaga. */
     serviceStartDate: z.coerce.date().nullable().optional(),
+    /**
+     * Spec 018 PR-3 (Emenda 13/09, migration 425, `lex` #2a/#2b): enum fechado, SEMPRE
+     * facultativo (Ley 25.326 art. 7 inc. 1) — nunca `.min`/obrigatório. `null` limpa a coluna
+     * ("não perguntado"), distinto de `'PREFER_NOT_TO_SAY'` (resposta explícita).
+     */
+    gender: z.enum(PATIENT_GENDERS as unknown as [string, ...string[]]).nullable().optional(),
+    /** Lista fechada ISO pt/es/en — a mesma de `workers.languages` (lex: cresce só por migration + parecer). */
+    languages: z.array(z.enum(PATIENT_LANGUAGES as unknown as [string, ...string[]])).max(PATIENT_LANGUAGES.length).nullable().optional(),
   })
   .strict();
 
@@ -76,10 +87,29 @@ export const clinicalSectionSchema = z
  * section = 'coverage' (US-B3) → cobertura informada (texto), nº de afiliado e as coberturas
  * VERIFICADAS por código do catálogo (insurance_providers). IVA e tipo de contratação NÃO
  * entram aqui — são do contrato/pagador (lex C3.3), bloco C.
+ *
+ * `emergencyContacts` SAIU (spec 018, PR-1, ADR-1, SUP-37): a lista de contatos de emergência da
+ * cobertura passou a ser escrita por LINHA (`POST/PATCH/deactivate
+ * /patients/:id/coverage-emergency-contacts[/:cid]`, `patientContactRowSchemas.ts`) — mandar o
+ * campo aqui agora é 400 pelo `.strict()` abaixo (contracts/support-network.md).
+ *
+ * FR-122 (spec 018, PR-6): `healthInsuranceName` recusa PLACEHOLDER (só zeros, só pontuação, ou
+ * < 2 caracteres alfanuméricos) com 400 — o `.refine` usa a MESMA função
+ * (`isPlaceholderCoverageValue`) que o gate de `COVERAGE` em `PatientCompleteness.ts`, senão a
+ * escrita aceitaria um valor que o checklist já trataria como ausente. "Particular"/"Sin
+ * cobertura" (FR-121) PASSAM — são texto real, ≥ 2 caracteres alfanuméricos.
  */
 export const coverageSectionSchema = z
   .object({
-    healthInsuranceName: z.string().trim().min(1).nullable().optional(),
+    healthInsuranceName: z
+      .string()
+      .trim()
+      .min(1)
+      .nullable()
+      .optional()
+      .refine((v) => v == null || !isPlaceholderCoverageValue(v), {
+        message: 'healthInsuranceName: valor placeholder não é uma cobertura válida (use "Particular" ou "Sin cobertura" quando não houver obra social)',
+      }),
     affiliateId: z.string().trim().min(1).nullable().optional(),
     insuranceVerifiedCodes: z.array(catalogCode).optional(),
   })

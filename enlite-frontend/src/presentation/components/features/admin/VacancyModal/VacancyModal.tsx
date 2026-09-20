@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
-import { Button } from '@presentation/components/atoms/Button';
+import { ActionButton } from '@presentation/components/features/access';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { useVacancyModalFlow } from '@hooks/admin/useVacancyModalFlow';
 import { VacancyFormSection } from './VacancyFormSection';
@@ -102,7 +102,10 @@ export function VacancyModal({
           </span>
 
           <div className="flex items-center gap-4">
-            <Button
+            {/* POST /vacancies (mode create) ou PUT /vacancies/:id (mode edit) → vacancy:create|update (PR-8b, ADR-2). */}
+            <ActionButton
+              resource="vacancy"
+              action={mode === 'create' ? 'create' : 'update'}
               type="button"
               variant="primary"
               size="sm"
@@ -113,7 +116,7 @@ export function VacancyModal({
               data-testid="header-save-btn"
             >
               {saveLabel}
-            </Button>
+            </ActionButton>
 
             <button
               onClick={handleClose}

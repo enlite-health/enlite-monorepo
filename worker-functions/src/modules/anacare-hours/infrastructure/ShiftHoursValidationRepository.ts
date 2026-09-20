@@ -94,6 +94,32 @@ export class ShiftHoursValidationRepository {
   }
 
   /**
+   * F6.2 (D361, fase-6.md "A contagem de validados, que perde o join"): a contagem por paciente
+   * deixa de nascer do join 1:1 com o antigo retrato por turno por `source_shift_id`
+   * (turno não existe mais no nosso banco) e passa a vir direto daqui — `GROUP BY (paciente,
+   * status)` sobre o mês inteiro, 1 query para todos os pacientes (nunca 1 por paciente, mesmo
+   * padrão de `getByShiftIds`). `periodMonth` no formato `YYYY-MM-DD` (1º dia do mês), mesma
+   * convenção de `validate`/`contest`.
+   */
+  async getStatusCountsByMonth(periodMonth: string): Promise<Map<string, { validated: number; contested: number }>> {
+    const res = await this.pool.query<{ ana_care_patient_id: string; status: ValidationRow['status']; count: string }>(
+      `SELECT ana_care_patient_id, status, COUNT(*) AS count
+         FROM shift_hours_validation
+        WHERE source = $1 AND period_month = $2
+        GROUP BY 1, 2`,
+      [SOURCE, periodMonth],
+    );
+    const out = new Map<string, { validated: number; contested: number }>();
+    for (const row of res.rows) {
+      const entry = out.get(row.ana_care_patient_id) ?? { validated: 0, contested: 0 };
+      if (row.status === 'validado') entry.validated = Number(row.count);
+      else if (row.status === 'contestado') entry.contested = Number(row.count);
+      out.set(row.ana_care_patient_id, entry);
+    }
+    return out;
+  }
+
+  /**
    * Grava o OK: pendente/inexistente/contestado → validado. `validado → validado` (dupla
    * validação, inclusive dupla chamada da mesma pessoa) é recusado ANTES do UPDATE — o próprio
    * trigger de imutabilidade (437) bloquearia a mesma coisa, mas aqui vira erro de negócio

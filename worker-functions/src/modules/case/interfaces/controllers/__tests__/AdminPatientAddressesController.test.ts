@@ -11,11 +11,10 @@
  *   500 sem eco do corpo (ROLLBACK).
  *
  * Spec 019 muda o controller de `db.query()` direto para `db.connect()` (transação); a correção
- * de 019-enderecos-actor-context troca `this.db.connect()` cru por `withActorContext` (D95),
- * que abre a transação e carimba o ator (`app.current_uid`/`app.change_source`) para os
- * triggers de histórico — hoje é só isso, sem RLS de país (a policy da migration 411 ainda não
- * chegou a este ambiente; quando chegar, o mesmo helper passa a aplicar o país via `SET LOCAL`).
- * `withActorContext` RODA DE VERDADE aqui (não é mockado): sem ALS/sessão de request no
+ * de 019-enderecos-actor-context troca `this.db.connect()` cru por `withActorContext` (D95) —
+ * sem isso, a policy de país da migration 411 recusa com `rls_session_without_identity` (500
+ * medido na stage em 12/09; prova sob RLS real em `tests/e2e/abac-admin-routes.test.ts`, bloco
+ * (e2)). `withActorContext` RODA DE VERDADE aqui (não é mockado): sem ALS/sessão de request no
  * processo de teste ele reduz a "abrir client do pool, BEGIN, ..., COMMIT/ROLLBACK, release" —
  * a MESMA sequência que o `db.connect()` cru produzia, então os testes abaixo continuam
  * mockando só o client (`query`/`release`) que `this.db.connect()` devolve.

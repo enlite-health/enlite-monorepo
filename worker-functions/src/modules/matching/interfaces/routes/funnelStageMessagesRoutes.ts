@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
-import { AuthMiddleware } from '@modules/identity';
+import { AuthMiddleware, type PermissionMiddleware } from '@modules/identity';
+import { ADMIN_MESSAGING_FAMILY } from '@modules/identity/permissions';
 import { FunnelStageMessagesController } from '../controllers/FunnelStageMessagesController';
 
 /**
@@ -9,9 +10,12 @@ import { FunnelStageMessagesController } from '../controllers/FunnelStageMessage
 export function createFunnelStageMessagesRoutes(
   controller: FunnelStageMessagesController,
   authMiddleware: AuthMiddleware,
+  permissions: PermissionMiddleware,
 ): Router {
   const router = Router();
-  router.get('/funnel-stage-messages', authMiddleware.requireStaff(), (req: Request, res: Response) => controller.list(req, res));
-  router.put('/funnel-stage-messages/:stage', authMiddleware.requireAdmin(), (req: Request, res: Response) => controller.update(req, res));
+  // Célula declarada no sync main→stage (06/09/2026): sem ela o deny-when-undeclared do trem ABAC reprova o inventário.
+  const perm = permissions.family(ADMIN_MESSAGING_FAMILY);
+  router.get('/funnel-stage-messages', authMiddleware.requireStaff(), perm.require('messaging', 'read'), (req: Request, res: Response) => controller.list(req, res));
+  router.put('/funnel-stage-messages/:stage', authMiddleware.requireStaff(), perm.require('messaging', 'update', { untilEnforced: 'admin' }), (req: Request, res: Response) => controller.update(req, res));
   return router;
 }

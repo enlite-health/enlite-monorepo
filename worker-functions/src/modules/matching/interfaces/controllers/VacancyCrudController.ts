@@ -20,6 +20,7 @@ import { EnsureVacancyShortLinkUseCase } from '../../application/EnsureVacancySh
 import { PurgeVacancyShortLinksUseCase } from '../../application/PurgeVacancyShortLinksUseCase';
 import { ShortLinkService } from '../../infrastructure/shortlinks/ShortLinkService';
 import { reportError, loggingAls } from '@shared/logging';
+import { withSystemDbContext } from '@shared/database/requestDbSession';
 
 const PUBLIC_STATUSES = new Set([
   'ACTIVE', 'SEARCHING', 'SEARCHING_REPLACEMENT', 'RAPID_RESPONSE',
@@ -200,25 +201,24 @@ export class VacancyCrudController {
         }
       }
 
+      // Pós-commit fora da resposta. `withSystemDbContext` (MEDIUM 14/08): o
+      // setImmediate herda o ALS da request, que a esta altura pode já estar
+      // ENCERRADA — a query sairia pelo pool cru, sem contexto (zero linha sob
+      // RLS) e invisível ao modo relatório. Escopo de sistema próprio resolve.
       setImmediate(() => {
         const traceId = loggingAls.getStore()?.traceId ?? null;
-        this.db.query(
-          `INSERT INTO domain_events (event, payload, trace_id) VALUES ('vacancy.created', $1::jsonb, $2)`,
-          [JSON.stringify({ jobPostingId: newVacancy.id }), traceId],
-        ).catch((err: unknown) => {
-          const error = err instanceof Error ? err : new Error(String(err));
-          reportError(error, { source: 'VacancyCrudController:domainEvent', jobPostingId: newVacancy.id });
-        });
-
-        tryEnsureShortLink(
-          this.db,
-          newVacancy.id as string,
-          newVacancy.status as string | undefined,
-          newVacancy.is_test === true,
-        )
-          .catch((err: unknown) => {
-            reportError(err instanceof Error ? err : new Error(String(err)), { source: 'tryEnsureShortLink:create', vacancyId: newVacancy.id });
+        void withSystemDbContext('job:vacancy-postcreate', async () => {
+          await this.db.query(
+            `INSERT INTO domain_events (event, payload, trace_id) VALUES ('vacancy.created', $1::jsonb, $2)`,
+            [JSON.stringify({ jobPostingId: newVacancy.id }), traceId],
+          ).catch((err: unknown) => {
+            const error = err instanceof Error ? err : new Error(String(err));
+            reportError(error, { source: 'VacancyCrudController:domainEvent', jobPostingId: newVacancy.id });
           });
+
+          // try* nunca rejeita (auto-captura e reporta) — sem catch aqui.
+          await tryEnsureShortLink(this.db, newVacancy.id as string, newVacancy.status as string | undefined, newVacancy.is_test === true);
+        });
       });
 
       res.status(201).json({ success: true, data: newVacancy });
@@ -313,12 +313,14 @@ export class VacancyCrudController {
 
       if (updated) {
         setImmediate(() => {
-          if (INACTIVE_STATUSES.has(updated!.status as string)) {
-            void tryPurgeShortLinks(this.db, id);
-          } else {
-            tryEnsureShortLink(this.db, id, updated!.status as string, updated!.is_test === true).catch((err: unknown) =>
-              reportError(err instanceof Error ? err : new Error(String(err)), { source: 'tryEnsureShortLink:update', vacancyId: id }));
-          }
+          void withSystemDbContext('job:vacancy-postupdate', async () => {
+            if (INACTIVE_STATUSES.has(updated!.status as string)) {
+              await tryPurgeShortLinks(this.db, id);
+            } else {
+              // try* nunca rejeita (auto-captura e reporta) — sem catch aqui.
+              await tryEnsureShortLink(this.db, id, updated!.status as string, updated!.is_test === true);
+            }
+          });
         });
         res.status(200).json({ success: true, data: updated });
       }
@@ -374,7 +376,9 @@ export class VacancyCrudController {
       }
 
       // Free Short.io quota — the deleted vacancy's links will never be shared again.
-      setImmediate(() => { void tryPurgeShortLinks(this.db, id); });
+      setImmediate(() => {
+        void withSystemDbContext('job:vacancy-postdelete', () => tryPurgeShortLinks(this.db, id));
+      });
 
       res.status(200).json({ success: true, message: 'Vacancy deleted successfully' });
     } catch (error: unknown) {

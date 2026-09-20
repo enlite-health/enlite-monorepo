@@ -28,7 +28,7 @@ const mockGetClient = jest.fn().mockResolvedValue(mockClient);
 jest.mock('@shared/database/DatabaseConnection', () => ({
   DatabaseConnection: {
     getInstance: jest.fn(() => ({
-      getPool:   jest.fn(() => ({})),
+      getPool:   jest.fn(() => ({ connect: mockGetClient })),
       getClient: mockGetClient,
     })),
   },

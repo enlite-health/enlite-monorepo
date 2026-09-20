@@ -73,8 +73,8 @@ async function makePatient(tag: string): Promise<string> {
 
 async function makeAddress(patientId: string, state: string | null, city: string | null): Promise<string> {
   const { rows } = await pool.query<{ id: string }>(
-    `INSERT INTO patient_addresses (patient_id, address_type, state, city)
-     VALUES ($1, 'primary', $2, $3) RETURNING id`,
+    `INSERT INTO patient_addresses (patient_id, state, city)
+     VALUES ($1, $2, $3) RETURNING id`,
     [patientId, state, city],
   );
   PATIENT_ADDRESS_IDS.push(rows[0].id);

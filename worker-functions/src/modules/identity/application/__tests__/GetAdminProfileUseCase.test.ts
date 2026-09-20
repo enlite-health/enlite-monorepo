@@ -59,6 +59,12 @@ jest.mock('firebase-admin', () => ({
 import { GetAdminProfileUseCase } from '../GetAdminProfileUseCase';
 import { AdminRecord } from '../../infrastructure/AdminRepository';
 
+const mockReportError = jest.fn();
+jest.mock('@shared/logging', () => ({
+  reportError: (...args: unknown[]) => mockReportError(...args),
+  logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
+}));
+
 // ─── Dados de teste realistas ─────────────────────────────────────────────────
 
 const FIREBASE_UID = 'firebase-uid-abc123XYZ';
@@ -116,7 +122,10 @@ describe('GetAdminProfileUseCase', () => {
       const result = await useCase.execute(FIREBASE_UID);
 
       expect(result.isSuccess).toBe(true);
-      expect(result.getValue()).toEqual(mockAdminRecord);
+      // 07/09: `role` sai do contrato — o perfil que o painel recebe é o registro SEM o papel.
+      const { role: _role, ...semPapel } = mockAdminRecord;
+      expect(result.getValue()).toEqual(semPapel);
+      expect(result.getValue()).not.toHaveProperty('role');
     });
 
     it('deve chamar updateLastLogin com o firebaseUid correto', async () => {
@@ -170,7 +179,10 @@ describe('GetAdminProfileUseCase', () => {
       const result = await useCase.execute(FIREBASE_UID);
 
       expect(result.isSuccess).toBe(true);
-      expect(result.getValue()).toEqual(mockAdminRecord);
+      // 07/09: `role` sai do contrato — o perfil que o painel recebe é o registro SEM o papel.
+      const { role: _role, ...semPapel } = mockAdminRecord;
+      expect(result.getValue()).toEqual(semPapel);
+      expect(result.getValue()).not.toHaveProperty('role');
     });
 
     it('deve chamar setCustomUserClaims com { role: "recruiter" } (role padrão para novos @enlite.health)', async () => {
@@ -182,7 +194,22 @@ describe('GetAdminProfileUseCase', () => {
       const useCase = new GetAdminProfileUseCase();
       await useCase.execute(FIREBASE_UID);
 
-      expect(mockSetCustomUserClaims).toHaveBeenCalledWith(FIREBASE_UID, { role: 'recruiter' });
+      // D294 (lex C8): SÓ `account_type` entra junto do papel — nenhum outro campo.
+      expect(mockSetCustomUserClaims).toHaveBeenCalledWith(FIREBASE_UID, { role: 'recruiter', account_type: 'staff' });
+    });
+
+    it('auto-provision PRESERVA o claim country da ABAC (bug de QA 16/08: setCustomUserClaims apagava)', async () => {
+      mockFindByFirebaseUid
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(mockAdminRecord);
+      // O usuário de gate já tinha country=AR gravado pelo script da 3.2 e
+      // NENHUMA linha em `users` — exatamente o cenário que apagou o claim.
+      mockGetUser.mockResolvedValue({ ...makeFirebaseUser(), customClaims: { role: 'admin', country: 'AR' } });
+
+      const useCase = new GetAdminProfileUseCase();
+      await useCase.execute(FIREBASE_UID);
+
+      expect(mockSetCustomUserClaims).toHaveBeenCalledWith(FIREBASE_UID, { role: 'recruiter', account_type: 'staff', country: 'AR' });
     });
 
     it('deve executar create_user_with_role com os dados corretos do Firebase user', async () => {
@@ -427,7 +454,8 @@ describe('GetAdminProfileUseCase', () => {
         UID_GOOGLE
       );
       expect(result.isSuccess).toBe(true);
-      expect(result.getValue()).toEqual(reassignedRecord);
+      const { role: _role, ...semPapel } = reassignedRecord;
+      expect(result.getValue()).toEqual(semPapel);
     });
 
     it('não deve invocar create_user_with_role quando há reassign', async () => {
@@ -536,6 +564,58 @@ describe('GetAdminProfileUseCase', () => {
           JSON.stringify({ department: null }),
         ]
       );
+    });
+  });
+
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  describe('Ramos residuais (07/09 — o arquivo tocado fecha em 100%)', () => {
+    it('erro que não é Error no getProfile vira a mensagem genérica', async () => {
+      mockFindByFirebaseUid.mockRejectedValue('string crua');
+      const result = await new GetAdminProfileUseCase().execute(FIREBASE_UID);
+      expect(result.isFailure).toBe(true);
+      expect(result.error).toBe('Failed to get admin profile');
+    });
+
+    it('usuário Firebase sem e-mail e sem provedores é rejeitado sem tocar no banco', async () => {
+      mockFindByFirebaseUid.mockResolvedValue(null);
+      mockGetUser.mockResolvedValue({ ...makeFirebaseUser(), email: undefined, providerData: [] });
+      const result = await new GetAdminProfileUseCase().execute(FIREBASE_UID);
+      expect(result.isFailure).toBe(true);
+      expect(mockConnect).not.toHaveBeenCalled();
+    });
+
+    it('reassign de firebase_uid que não recarrega a linha devolve "not found" (nunca inventa perfil)', async () => {
+      mockFindByFirebaseUid.mockResolvedValue(null);
+      mockGetUser.mockResolvedValue(makeFirebaseUser());
+      mockFindByEmail.mockResolvedValue({ ...mockAdminRecord, firebaseUid: 'uid-antigo' });
+      const result = await new GetAdminProfileUseCase().execute(FIREBASE_UID);
+      expect(mockReassignFirebaseUid).toHaveBeenCalledWith('joao.silva@enlite.health', FIREBASE_UID);
+      expect(result.isFailure).toBe(true);
+      expect(result.error).toBe('Admin user not found');
+    });
+
+    it('ROLLBACK falhando (Error e não-Error) é reportado, e o erro ORIGINAL do provisioning é o devolvido', async () => {
+      mockFindByFirebaseUid.mockResolvedValue(null);
+      mockGetUser.mockResolvedValue(makeFirebaseUser());
+      mockQuery
+        .mockResolvedValueOnce({ rows: [] })            // BEGIN
+        .mockRejectedValueOnce('provision string')       // create_user_with_role (não-Error)
+        .mockRejectedValueOnce(new Error('rollback morreu')); // ROLLBACK
+      let result = await new GetAdminProfileUseCase().execute(FIREBASE_UID);
+      // não-Error relançado chega ao `catch` de cima como mensagem genérica
+      expect(result.error).toBe('Failed to get admin profile');
+      expect((mockReportError.mock.calls[0][0] as Error).message).toBe('rollback morreu');
+      expect(mockReportError.mock.calls[0][1]).toEqual({ source: 'GetAdminProfileUseCase:rollback' });
+
+      mockReportError.mockReset();
+      mockQuery
+        .mockResolvedValueOnce({ rows: [] })
+        .mockRejectedValueOnce(new Error('duplicate key'))
+        .mockRejectedValueOnce('rollback string');
+      result = await new GetAdminProfileUseCase().execute(FIREBASE_UID);
+      expect(result.error).toBe('duplicate key');
+      expect((mockReportError.mock.calls[0][0] as Error).message).toBe('rollback string');
     });
   });
 

@@ -14,6 +14,8 @@
 import { Router, Request, Response } from 'express';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { TransitCorridorController } from '../controllers/TransitCorridorController';
+import type { PermissionMiddleware } from '@modules/identity';
+import { ADMIN_PATIENTS_FAMILY } from '@modules/identity/permissions';
 
 /** 60/min por staff: ~1 clique por segundo sustentado, muito acima do uso humano. */
 export const corridorRateLimit = rateLimit({
@@ -35,10 +37,14 @@ export const corridorRateLimit = rateLimit({
 
 export function createTransitCorridorRoutes(
   staffOnly: (req: Request, res: Response, next: () => void) => void,
+  permissions: PermissionMiddleware,
 ): Router {
   const router = Router();
   const controller = new TransitCorridorController();
-  router.post('/map/corridor', staffOnly, corridorRateLimit, (req: Request, res: Response) =>
+  // Célula declarada no sync main→stage (06/09/2026): sem ela o deny-when-undeclared do trem ABAC reprova o inventário.
+  // O corredor parte do DOMICÍLIO do paciente (lat/lng): a MESMA célula do container de endereço (D286; lex C7).
+  const perm = permissions.family(ADMIN_PATIENTS_FAMILY);
+  router.post('/map/corridor', staffOnly, perm.require('patient_address', 'read'), corridorRateLimit, (req: Request, res: Response) =>
     controller.getCorridor(req, res));
   return router;
 }

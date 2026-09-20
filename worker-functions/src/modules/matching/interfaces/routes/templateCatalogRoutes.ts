@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
-import { AuthMiddleware } from '@modules/identity';
+import { AuthMiddleware, type PermissionMiddleware } from '@modules/identity';
+import { ADMIN_MESSAGING_FAMILY } from '@modules/identity/permissions';
 import { TemplateCatalogController } from '../controllers/TemplateCatalogController';
 
 /**
@@ -14,8 +15,11 @@ import { TemplateCatalogController } from '../controllers/TemplateCatalogControl
 export function createTemplateCatalogRoutes(
   controller: TemplateCatalogController,
   authMiddleware: AuthMiddleware,
+  permissions: PermissionMiddleware,
 ): Router {
   const router = Router();
-  router.get('/template-catalog', authMiddleware.requireStaff(), (req: Request, res: Response) => controller.list(req, res));
+  // Célula declarada no sync main→stage (06/09/2026): sem ela o deny-when-undeclared do trem ABAC reprova o inventário.
+  const perm = permissions.family(ADMIN_MESSAGING_FAMILY);
+  router.get('/template-catalog', authMiddleware.requireStaff(), perm.require('messaging', 'read'), (req: Request, res: Response) => controller.list(req, res));
   return router;
 }

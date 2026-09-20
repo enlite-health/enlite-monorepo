@@ -240,6 +240,25 @@ describe('AdminWorkersMapController.getMapPoints', () => {
     expect(JSON.stringify(body)).not.toMatch(/@|test\.local|phone|document_number|email/);
   });
 
+  it('D286 fase 2 / lex P1: sem worker_contact:read o pino diz NOME_REDIGIDO e o KMS não é chamado; com a célula, o nome', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [row(), row({ id: 'w2' })] });
+    mockDecrypt.mockClear();
+    const res = mockRes();
+    const semContato = { ...req(SCOPE), permissionCells: ['worker_address:read'] } as unknown as Request;
+    await controller.getMapPoints(semContato, res);
+    const body = res.body as { data: Array<{ name: string; lat: number | null }> };
+    expect(body.data.map((d) => d.name)).toEqual(['Contato restrito', 'Contato restrito']);
+    expect(body.data[0].lat).toBe(-34.6); // a coordenada é da célula da ROTA (worker_address)
+    expect(mockDecrypt).not.toHaveBeenCalled();
+
+    mockQuery.mockResolvedValueOnce({ rows: [row()] });
+    const res2 = mockRes();
+    const comContato = { ...req(SCOPE), permissionCells: ['worker_address:read', 'worker_contact:read'] } as unknown as Request;
+    await controller.getMapPoints(comContato, res2);
+    expect((res2.body as { data: Array<{ name: string }> }).data[0].name).toBe('foo bar');
+    expect(mockDecrypt).toHaveBeenCalled();
+  });
+
   it('trilha de leitura (lex C5/C6): allowlist FECHADA — escopo, catálogo e geohash-5, sem coordenada, nome ou UUID', async () => {
     mockQuery.mockResolvedValueOnce({ rows: [row({ distance_km: '2.25' })] });
     const res = mockRes();

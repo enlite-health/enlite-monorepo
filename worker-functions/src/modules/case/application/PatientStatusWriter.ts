@@ -1,5 +1,5 @@
 import * as functions from 'firebase-functions';
-import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { inPatientTransaction } from './patientTransaction';
 import { isPatientStatus, isClinicalPatientStatus, type PatientStatus } from '../domain/enums/PatientStatus';
 import type { OnHoldReason } from '../domain/enums/OnHoldReason';
 import { blockingCodesForStatusChange } from '../domain/PatientCompleteness';
@@ -95,11 +95,7 @@ export async function movePatientStatus(
     throw new OnHoldReasonRequiredError();
   }
 
-  const db     = DatabaseConnection.getInstance();
-  const client = await db.getClient();
-
-  try {
-    await client.query('BEGIN');
+  return inPatientTransaction(async (client) => {
     const current = await client.query<{ status: string | null }>(
       'SELECT status FROM patients WHERE id = $1 AND deleted_at IS NULL FOR UPDATE',
       [patientId],
@@ -160,17 +156,10 @@ export async function movePatientStatus(
       `UPDATE patients SET ${sets.join(', ')}, updated_at = NOW() WHERE id = $1`,
       values,
     );
-    await client.query('COMMIT');
-
     // Trilha SEM a nota: from/to/motivo/origem. O texto é clínico restrito (D211.2).
     functions.logger.info('patient_status.moved', {
       patientId, from, to: status, onHoldReason: goingOnHold ? opts.onHoldReason : null, changeSource: opts.changeSource,
     });
     return { id: patientId, status };
-  } catch (err) {
-    await client.query('ROLLBACK');
-    throw err;
-  } finally {
-    client.release();
-  }
+  });
 }

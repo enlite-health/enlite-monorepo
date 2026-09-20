@@ -238,11 +238,11 @@ describe('Serviço contratado — entidade própria (spec 013, bloco C) @integra
 
   it('13. addressId: do MESMO paciente grava e volta no GET; de OUTRO paciente → 422 ADDRESS_NOT_OF_PATIENT (o banco recusa, nada escrito); schedule round-trip, inválido → 400, null limpa', async () => {
     const own = (await pool.query<{ id: string }>(
-      `INSERT INTO patient_addresses (patient_id, address_type, address_formatted, display_order) VALUES ($1,'primary','Calle Propia 1',1) RETURNING id`,
+      `INSERT INTO patient_addresses (patient_id, address_formatted, display_order) VALUES ($1,'Calle Propia 1',1) RETURNING id`,
       [patientAR],
     )).rows[0].id;
     const foreign = (await pool.query<{ id: string }>(
-      `INSERT INTO patient_addresses (patient_id, address_type, address_formatted, display_order) VALUES ($1,'primary','Calle Ajena 1',1) RETURNING id`,
+      `INSERT INTO patient_addresses (patient_id, address_formatted, display_order) VALUES ($1,'Calle Ajena 1',1) RETURNING id`,
       [patientBR],
     )).rows[0].id;
     const schedule = [
@@ -307,7 +307,7 @@ describe('Serviço contratado — entidade própria (spec 013, bloco C) @integra
       [`${TASK_PREFIX}chk`],
     )).rows[0].id;
     const addr = (await pool.query<{ id: string }>(
-      `INSERT INTO patient_addresses (patient_id, address_type, address_formatted, display_order) VALUES ($1,'primary','Calle Chk 1',1) RETURNING id`,
+      `INSERT INTO patient_addresses (patient_id, address_formatted, display_order) VALUES ($1,'Calle Chk 1',1) RETURNING id`,
       [pid],
     )).rows[0].id;
     const svc = (await api.post(`/api/admin/patients/${pid}/contracted-services`, { serviceCode: 'AT' }, asAdmin)).data.data.id;
@@ -333,72 +333,9 @@ describe('Serviço contratado — entidade própria (spec 013, bloco C) @integra
     expect(c.blocking).toContain('SERVICE_ADDRESS');
   });
 
-  it('10. activate (migration 330): UMA vaga POR SERVIÇO no endereço do serviço — nunca serviços × endereços; horário e franja propagados; serviço sem endereço → 422 SERVICE_ADDRESS, NADA criado; sem serviço cai no fallback por endereço', async () => {
-    const withServices = (await pool.query<{ id: string }>(
-      `INSERT INTO patients (clickup_task_id, first_name, last_name, country, status, case_number)
-       VALUES ($1, 'Activate', 'ComServico', 'AR', 'SOLICITANTE', $2) RETURNING id`,
-      [`${TASK_PREFIX}act-with`, 900000 + RUN % 90000],
-    )).rows[0].id;
-    const { rows: addrs } = await pool.query<{ id: string }>(
-      `INSERT INTO patient_addresses (patient_id, address_type, address_formatted, display_order) VALUES ($1,'primary','Casa',1),($1,'secondary','Escuela',2) RETURNING id`,
-      [withServices],
-    );
-    const [casa, escuela] = addrs.map((a) => a.id);
-    const schedule1 = [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }];
-    // Decisão do Gabriel 07/09: TODO serviço ativo precisa de horário para o paciente ativar —
-    // até 05/09 o "AT" entrava sem horário e a vaga nascia com `schedule: null`. Cada serviço leva
-    // o SEU horário para a SUA vaga; a recusa por falta dele tem suíte própria
-    // (`patient-status-completeness.e2e.test.ts`).
-    const schedule2 = [{ dayOfWeek: 3, startTime: '14:00', endTime: '18:00' }];
-    // "Cuidador" na CASA, "AT" na ESCOLA — cada um com o seu horário e o seu endereço.
-    const s1 = await api.post(`/api/admin/patients/${withServices}/contracted-services`, { serviceCode: 'CAREGIVER', providersNeeded: 2, providerAgeBand: 'AGE_20_30', addressId: casa, schedule: schedule1 }, asAdmin);
-    const s2 = await api.post(`/api/admin/patients/${withServices}/contracted-services`, { serviceCode: 'AT', providersNeeded: 1, providerAgeBand: 'AGE_45_PLUS', addressId: escuela, schedule: schedule2 }, asAdmin);
-    // Um 3º serviço SEM endereço trava tudo — e nada nasce, nem a vaga dos dois "bons".
-    const s3 = await api.post(`/api/admin/patients/${withServices}/contracted-services`, { serviceCode: 'NURSE' }, asAdmin);
-    const blocked = await api.post(`/api/admin/patients/${withServices}/activate`, {}, asAdmin);
-    expect(blocked.status).toBe(422);
-    expect(blocked.data.details?.missing ?? blocked.data.missing).toContain('SERVICE_ADDRESS');
-    expect((await pool.query(`SELECT COUNT(*)::int AS n FROM job_postings WHERE patient_id = $1`, [withServices])).rows[0].n).toBe(0);
-    expect((await pool.query(`SELECT status FROM patients WHERE id = $1`, [withServices])).rows[0].status).toBe('SOLICITANTE');
-
-    // Baixa do órfão → destrava.
-    await api.patch(`/api/admin/patients/${withServices}/contracted-services/${s3.data.data.id}`, { active: false }, asAdmin);
-    const act = await api.post(`/api/admin/patients/${withServices}/activate`, {}, asAdmin);
-    expect(act.status).toBe(200);
-    expect(act.data.data.createdVacancyIds).toHaveLength(2); // 2 serviços → 2 vagas (antes: 2×2 = 4)
-
-    const { rows: vacancies } = await pool.query(
-      `SELECT contracted_service_id, patient_address_id, providers_needed::int AS providers_needed, schedule, worker_profile_sought, salary_text, age_range_min, age_range_max
-         FROM job_postings WHERE patient_id = $1`,
-      [withServices],
-    );
-    expect(vacancies).toHaveLength(2);
-    const byService = new Map(vacancies.map((v) => [v.contracted_service_id, v]));
-    const v1 = byService.get(s1.data.data.id);
-    const v2 = byService.get(s2.data.data.id);
-    // Cada vaga no endereço do SEU serviço — Cuidador em casa, AT na escola, nunca o cruzado.
-    expect(v1).toMatchObject({ patient_address_id: casa, providers_needed: 2, age_range_min: 20, age_range_max: 29, schedule: schedule1 });
-    expect(v2).toMatchObject({ patient_address_id: escuela, providers_needed: 1, age_range_min: 45, age_range_max: null, schedule: schedule2 });
-    for (const v of vacancies) {
-      expect(v.worker_profile_sought).toBeNull(); // lex C-b2: NUNCA vem do serviço
-      expect(v.salary_text).toBe('A convenir'); // lex C-c.3: NUNCA vem do serviço
-    }
-
-    // Paciente SEM nenhum serviço ativo: fallback ao comportamento anterior (1 vaga/endereço, sem contracted_service_id).
-    const withoutServices = (await pool.query<{ id: string }>(
-      `INSERT INTO patients (clickup_task_id, first_name, last_name, country, status, case_number)
-       VALUES ($1, 'Activate', 'SemServico', 'AR', 'SOLICITANTE', $2) RETURNING id`,
-      [`${TASK_PREFIX}act-without`, 900001 + RUN % 90000],
-    )).rows[0].id;
-    await pool.query(`INSERT INTO patient_addresses (patient_id, address_type, address_formatted, display_order) VALUES ($1,'primary','Calle 3',1)`, [withoutServices]);
-    const act2 = await api.post(`/api/admin/patients/${withoutServices}/activate`, {}, asAdmin);
-    expect(act2.status).toBe(200);
-    expect(act2.data.data.createdVacancyIds).toHaveLength(1);
-    const fallbackRow = (await pool.query(`SELECT contracted_service_id, age_range_min, age_range_max, schedule FROM job_postings WHERE patient_id = $1`, [withoutServices])).rows[0];
-    expect(fallbackRow.contracted_service_id).toBeNull();
-    // Spec 015 (FR-3): fallback intocado — nunca herda franja nem horário de serviço nenhum.
-    expect(fallbackRow.age_range_min).toBeNull();
-    expect(fallbackRow.age_range_max).toBeNull();
-    expect(fallbackRow.schedule).toBeNull();
-  });
+  // Teste 10 (batch de ativação multi-serviço + fallback por endereço) REMOVIDO — testava
+  // `ActivatePatientUseCase`/`POST /:id/activate`, os dois removidos no PR-6 (spec 018, ADR-5).
+  // Ativação agora é POR SERVIÇO (`POST /:id/contracted-services/:sid/activate-recruitment`,
+  // `activation.e2e.test.ts`) — não existe mais "ativar o paciente inteiro" nem fallback
+  // sem serviço (SUP-20: sem serviço não há `:sid` para chamar).
 });

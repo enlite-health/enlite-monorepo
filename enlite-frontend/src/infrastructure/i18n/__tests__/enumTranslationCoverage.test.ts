@@ -14,6 +14,10 @@ import ptBRJson from '@infrastructure/i18n/locales/pt-BR.json';
 import { WORKER_PROFESSIONS } from '@domain/entities/Worker';
 import {
   PATIENT_STATUSES, ON_HOLD_REASONS, ADMISSION_STATUSES, DEVICE_TYPE_CODES, RELATIONSHIP_CODES, INSURANCE_PROVIDER_CODES,
+  PATIENT_PROFESSIONAL_SPECIALTY_CODES,
+  EXTERNAL_CONTACT_RELATION_CODES,
+  PATIENT_GENDERS,
+  PATIENT_LANGUAGES,
 } from '@domain/entities/patientEnums';
 import {
   SERVICE_CODES,
@@ -94,7 +98,10 @@ const PATIENT_ENUM_GROUPS: Array<[string, readonly string[]]> = [
   ['admin.patients.kanban.columns', ADMISSION_STATUSES],
   ['admin.patients.deviceTypeOptions', DEVICE_TYPE_CODES],
   ['admin.patients.detail.relationshipOptions', RELATIONSHIP_CODES],
+  ['admin.patients.detail.treatingTeamCard.specialtyOptions', PATIENT_PROFESSIONAL_SPECIALTY_CODES],
   ['admin.patients.insuranceProviderOptions', INSURANCE_PROVIDER_CODES],
+  // Spec 018, PR-2 (`lex` #4): contatos externos sem vínculo familiar (migration 422, SUP-15).
+  ['admin.patients.detail.externalContactRelationOptions', EXTERNAL_CONTACT_RELATION_CODES],
   // QA 🟡4: o mapa tinha vocabulário PRÓPRIO (mapPageConfig.ts), desincronizado do estado v2 —
   // faltavam ON_HOLD/SEARCHING/REPLACEMENT e sobrava DISCONTINUED (saiu do vocabulário, migration
   // 314). A fonte viva é a mesma PATIENT_STATUSES do resto da ficha, não uma lista própria do mapa.
@@ -116,6 +123,34 @@ describe.each([
 
   it('estado, motivo, dispositivo e parentesco são traduções, não o enum ecoado', () => {
     for (const [group, values] of PATIENT_ENUM_GROUPS.slice(0, 5)) {
+      for (const value of values) {
+        expect(get(locale, `${group}.${value}`), `${group}.${value} echoes the raw enum`).not.toBe(value);
+      }
+    }
+  });
+});
+
+// ── Spec 018 PR-3 (Emenda 13/09, migration 425): gênero e idiomas do paciente ──────────────────
+const PR3_ENUM_GROUPS: Array<[string, readonly string[]]> = [
+  ['admin.patients.detail.generalInfoCard.genderOptions', PATIENT_GENDERS],
+  ['admin.patients.detail.generalInfoCard.languageOptions', PATIENT_LANGUAGES],
+];
+
+describe.each([
+  ['es', esJson as Locale],
+  ['pt-BR', ptBRJson as Locale],
+])('patient gender/languages enum translation coverage — spec 018 PR-3 (%s)', (_lng, locale) => {
+  it.each(PR3_ENUM_GROUPS)('%s cobre todos os valores do enum', (group, values) => {
+    expect(values.length).toBeGreaterThan(0);
+    for (const value of values) {
+      const label = get(locale, `${group}.${value}`);
+      expect(label, `missing ${group}.${value}`).toBeTypeOf('string');
+      expect(label).not.toBe('');
+    }
+  });
+
+  it('gênero/idiomas são traduções, não o enum ecoado', () => {
+    for (const [group, values] of PR3_ENUM_GROUPS) {
       for (const value of values) {
         expect(get(locale, `${group}.${value}`), `${group}.${value} echoes the raw enum`).not.toBe(value);
       }

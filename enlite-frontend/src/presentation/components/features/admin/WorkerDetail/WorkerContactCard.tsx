@@ -78,7 +78,7 @@ export function WorkerContactCard({
   const updated = new Date(updatedAt).toLocaleDateString('pt-BR');
 
   return (
-    <div className="bg-white rounded-card border-[1.5px] border-gray-700 p-6 sm:px-8 sm:py-10 flex flex-col gap-4">
+    <div data-testid="worker-contact-card" className="bg-white rounded-card border-[1.5px] border-gray-700 p-6 sm:px-8 sm:py-10 flex flex-col gap-4">
       <div className="flex items-center gap-4 mb-2">
         {profilePhotoUrl ? (
           <img

@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { z } from 'zod';
 import type { Pool } from 'pg';
 import { reportError, logger } from '@shared/logging';
+import { pgUniqueViolationConflict } from '@shared/http/pgUniqueViolationConflict';
 import { AuthMiddleware } from '@modules/identity';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { withActorContext } from '@shared/database/actorContext';
@@ -130,10 +131,10 @@ export class AdminPatientAddressesController {
     }
 
     try {
-      // `withActorContext` (D95), não `this.db.connect()` cru: abre a transação e carimba o
-      // ator (`app.current_uid`/`app.change_source`) para os triggers de histórico — hoje é só
-      // isso, sem RLS de país (a policy da migration 411 ainda não chegou a este ambiente).
-      // Quando ela chegar, este mesmo helper passa a aplicar o país via `SET LOCAL`.
+      // `withActorContext` (D95), não `this.db.connect()` cru: o client cru chega SEM
+      // `app.user_country` e a policy de país da 411 recusa com `rls_session_without_identity`
+      // — o 500 medido na stage em 12/09 (commit fbb3f765 trocou o `withActorContext` original
+      // por este connect cru). O helper reusa o client fixado da request ou aplica `SET LOCAL`;
       // BEGIN/COMMIT/ROLLBACK são dele.
       const rowMissing = await withActorContext(this.db, async (client) => {
         // Troca atômica (spec 019): desmarca o principal anterior NA MESMA transação, antes do
@@ -187,9 +188,9 @@ export class AdminPatientAddressesController {
       // Concorrência (spec 019): duas requisições de "marcar principal" ao mesmo tempo — o
       // índice único parcial (`patient_addresses_one_default_per_patient`) rejeita a que perde
       // a corrida; ela recebe 409 tratado, nunca 500.
-      const pgCode = (err as { code?: string } | null)?.code;
-      if (pgCode === '23505') {
-        res.status(409).json({ success: false, error: 'Concurrent update — try again' });
+      const conflict = pgUniqueViolationConflict(err, 'Concurrent update — try again');
+      if (conflict) {
+        res.status(409).json(conflict);
         return;
       }
       // C2.3: nada do corpo no reportError nem na resposta.

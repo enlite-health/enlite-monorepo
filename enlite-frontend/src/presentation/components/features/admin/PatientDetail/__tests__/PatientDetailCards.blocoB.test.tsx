@@ -26,6 +26,21 @@ vi.mock('@infrastructure/http/AdminApiService', () => ({ AdminApiService: {
   createPatientAddress: (...a: unknown[]) => api.createPatientAddress(...a),
   updatePatientAddressLogistics: (...a: unknown[]) => api.updatePatientAddressLogistics(...a),
 } }));
+// spec 018, PR-1, ADR-1: a rede de apoio (FamiliaresCard) e os contatos de emergência da
+// cobertura (dentro de CoberturaMedicaCard) gravam por LINHA — não passam mais por
+// `updatePatientSection`.
+const rows = {
+  createResponsible: vi.fn(), updateResponsible: vi.fn(), deactivateResponsible: vi.fn(),
+  createCoverageEmergencyContact: vi.fn(), updateCoverageEmergencyContact: vi.fn(), deactivateCoverageEmergencyContact: vi.fn(),
+};
+vi.mock('@infrastructure/http/AdminPatientContactRowsApiService', () => ({ AdminPatientContactRowsApiService: {
+  createResponsible: (...a: unknown[]) => rows.createResponsible(...a),
+  updateResponsible: (...a: unknown[]) => rows.updateResponsible(...a),
+  deactivateResponsible: (...a: unknown[]) => rows.deactivateResponsible(...a),
+  createCoverageEmergencyContact: (...a: unknown[]) => rows.createCoverageEmergencyContact(...a),
+  updateCoverageEmergencyContact: (...a: unknown[]) => rows.updateCoverageEmergencyContact(...a),
+  deactivateCoverageEmergencyContact: (...a: unknown[]) => rows.deactivateCoverageEmergencyContact(...a),
+} }));
 vi.mock('@presentation/components/molecules/ServiceAreaMap', () => ({ ServiceAreaMap: () => <div data-testid="map-stub" /> }));
 
 import { CoberturaMedicaCard } from '../CoberturaMedicaCard';
@@ -39,6 +54,12 @@ beforeEach(() => {
   api.listInsuranceProviders.mockReset().mockResolvedValue([]);
   api.createPatientAddress.mockReset().mockResolvedValue({ id: 'new' });
   api.updatePatientAddressLogistics.mockReset().mockResolvedValue({ id: 'addr1' });
+  rows.createResponsible.mockReset().mockResolvedValue({ id: 'novo' });
+  rows.updateResponsible.mockReset().mockResolvedValue({ id: 'r1' });
+  rows.deactivateResponsible.mockReset().mockResolvedValue({ id: 'r1', active: false });
+  rows.createCoverageEmergencyContact.mockReset().mockResolvedValue({ id: 'novo' });
+  rows.updateCoverageEmergencyContact.mockReset().mockResolvedValue({ id: 'c1' });
+  rows.deactivateCoverageEmergencyContact.mockReset().mockResolvedValue({ id: 'c1', active: false });
 });
 
 describe('CoberturaMedicaCard — drawer', () => {
@@ -53,6 +74,41 @@ describe('CoberturaMedicaCard — drawer', () => {
     fireEvent.change(screen.getByTestId('pcv-affiliate'), { target: { value: 'AF-9' } });
     fireEvent.click(screen.getByTestId('pcv-save'));
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
+  });
+});
+
+describe('CoberturaMedicaCard — contatos de emergência da cobertura (417, D301.3b)', () => {
+  it('lista tipo traduzido, nome e telefone com o BLOCO mascarado para o Clarity (lex C2.1); sem contatos ou sem célula (`null`) mostra "—"', () => {
+    const { unmount } = render(<CoberturaMedicaCard patient={{ ...patientDetailFixture, coverageEmergencyContacts: [
+      { id: 'c1', kind: 'PRIVATE_AMBULANCE', name: 'Ambulancia OSDE', phone: '0800-1', sortOrder: 0 },
+      { id: 'c2', kind: 'DIRECT_PROFESSIONAL', name: 'Dra. Pérez', phone: '11-5555', sortOrder: 1 },
+    ] }} />);
+    const row = screen.getByTestId('coverage-emergency-contacts');
+    expect(row).toHaveTextContent(`${t('admin.patients.detail.coverageCard.emergencyContactKinds.PRIVATE_AMBULANCE')}: Ambulancia OSDE · 0800-1`);
+    expect(row).toHaveTextContent(`${t('admin.patients.detail.coverageCard.emergencyContactKinds.DIRECT_PROFESSIONAL')}: Dra. Pérez · 11-5555`);
+    const bloco = row.querySelector('[data-clarity-mask="True"]') as HTMLElement;
+    expect(bloco).not.toBeNull();
+    expect(bloco.textContent).toContain('Dra. Pérez'); // o NOME também está dentro da máscara
+    expect(screen.queryByTestId('coverage-direct-professional-redacted')).toBeNull();
+    unmount();
+    render(<CoberturaMedicaCard patient={{ ...patientDetailFixture, coverageEmergencyContacts: null }} />);
+    expect(screen.getByTestId('coverage-emergency-contacts')).toHaveTextContent('—');
+  });
+
+  it('lex C3 / D167 — profissional retido: aviso junto da lista; leitura indisponível: aviso âmbar, nunca "—"', () => {
+    const { unmount } = render(<CoberturaMedicaCard patient={{ ...patientDetailFixture, coverageEmergencyContacts: [
+      { id: 'c1', kind: 'PRIVATE_AMBULANCE', name: 'Ambulancia OSDE', phone: '0800-1', sortOrder: 0 },
+    ], coverageDirectProfessionalRedacted: true }} />);
+    expect(screen.getByTestId('coverage-direct-professional-redacted')).toHaveTextContent(t('admin.patients.detail.coverageCard.directProfessionalRedacted'));
+    expect(screen.getByTestId('coverage-emergency-contacts')).toHaveTextContent('Ambulancia OSDE');
+    unmount();
+    render(<CoberturaMedicaCard patient={{ ...patientDetailFixture, coverageEmergencyContacts: [], coverageEmergencyContactsUnavailable: true }} />);
+    expect(screen.getByTestId('coverage-emergency-contacts-unavailable')).toHaveTextContent(t('admin.patients.detail.coverageCard.emergencyContactsUnavailable'));
+    expect(screen.getByTestId('coverage-emergency-contacts').querySelectorAll('li')).toHaveLength(0); // nem lista, nem o "—" de vazio
+    // LISTA A3: campo AUSENTE (backend anterior à 417) = "não li", como o PDF — nunca "—".
+    const { coverageEmergencyContacts: _c, ...semCampo } = patientDetailFixture as typeof patientDetailFixture & { coverageEmergencyContacts?: unknown };
+    render(<CoberturaMedicaCard patient={semCampo as typeof patientDetailFixture} />);
+    expect(screen.getAllByTestId('coverage-emergency-contacts-unavailable')).toHaveLength(2);
   });
 });
 
@@ -122,7 +178,11 @@ describe('FamiliaresCard — ramos', () => {
     render(<FamiliaresCard responsibles={patientDetailFixture.responsibles} patientId="p2" />);
     fireEvent.click(screen.getAllByTestId('edit-support-btn')[1]);
     fireEvent.click(screen.getAllByTestId('psn-save').slice(-1)[0] as HTMLElement);
-    await waitFor(() => expect(api.updatePatientSection).toHaveBeenCalledTimes(2));
+    // spec 018, PR-1, ADR-1: a rede de apoio grava por LINHA — cada responsável existente do
+    // fixture (`patientDetailFixture.responsibles`, 1 linha) vira um `updateResponsible` próprio;
+    // `updatePatientSection` NUNCA é chamado por este drawer.
+    await waitFor(() => expect(rows.updateResponsible).toHaveBeenCalledTimes(2));
+    expect(api.updatePatientSection).not.toHaveBeenCalled();
   });
 });
 

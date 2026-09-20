@@ -9,20 +9,29 @@ import { useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AnaCareHoursDetailContainer } from '@presentation/components/features/admin/AnaCareHours/AnaCareHoursDetailContainer';
 import { AnaCareHoursHttpService } from '@presentation/components/features/admin/AnaCareHours/AnaCareHoursHttpService';
-
-const CURRENT_MONTH = '2026-08';
+import { AxonicoComprobanteHttpService } from '@presentation/components/features/admin/AnaCareHours/AxonicoComprobanteHttpService';
+import { AnaCarePatientDocumentHttpService } from '@presentation/components/features/admin/AnaCareHours/AnaCarePatientDocumentHttpService';
+import { previousMonthIso } from '@presentation/components/features/admin/AnaCareHours/selectors';
 
 export default function AnaCareHoursPatientPage(): JSX.Element | null {
   const navigate = useNavigate();
   const { patientId } = useParams<{ patientId: string }>();
   const service = useMemo(() => new AnaCareHoursHttpService(), []);
+  // Envio ao Axonico (19/09) — serviço PRÓPRIO, rota/domínio diferentes de `AnaCareHoursHttpService` (ver `AxonicoComprobanteHttpService.ts`).
+  const axonicoService = useMemo(() => new AxonicoComprobanteHttpService(), []);
+  // Registro do documento do paciente (19/09) — serviço PRÓPRIO, domínio "integração com o Ana Care" (não Axonico, não `anacare-hours`).
+  const patientDocumentService = useMemo(() => new AnaCarePatientDocumentHttpService(), []);
+  // Mês padrão = MÊS ANTERIOR ao atual (decisão do Gabriel, 16/09) — nunca cravado em código.
+  const month = useMemo(() => previousMonthIso(), []);
 
   if (!patientId) return null;
 
   return (
     <AnaCareHoursDetailContainer
       service={service}
-      month={CURRENT_MONTH}
+      axonicoService={axonicoService}
+      patientDocumentService={patientDocumentService}
+      month={month}
       patientId={patientId}
       onBack={() => navigate('/admin/anacare/horas')}
     />

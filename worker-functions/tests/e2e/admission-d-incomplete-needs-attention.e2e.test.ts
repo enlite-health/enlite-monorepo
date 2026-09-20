@@ -71,8 +71,8 @@ describe('needsAttention deriva do checklist na lista/kanban (QA-caça rodada 1,
     let addressId: string | null = null;
     if (opts.withAddress) {
       addressId = (await pool.query<{ id: string }>(
-        `INSERT INTO patient_addresses (patient_id, address_type, address_formatted, display_order, country)
-         VALUES ($1, 'primary', 'Calle Falsa 123, CABA', 0, 'AR') RETURNING id`,
+        `INSERT INTO patient_addresses (patient_id, address_formatted, display_order, country)
+         VALUES ($1, 'Calle Falsa 123, CABA', 0, 'AR') RETURNING id`,
         [id],
       )).rows[0].id;
     }

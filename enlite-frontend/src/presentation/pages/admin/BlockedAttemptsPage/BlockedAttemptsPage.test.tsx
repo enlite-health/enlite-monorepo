@@ -42,10 +42,9 @@ vi.mock('@hooks/admin/useBlockedAttempts', () => ({
   useBlockedAttempts: (...args: unknown[]) => mockUseBlockedAttempts(...args),
 }));
 
-// Role guard: estes testes cobrem o conteúdo da página, então o perfil é admin
+// Estes testes cobrem o conteúdo da página; a guarda de célula está no .guard.test
 vi.mock('@presentation/hooks/useAdminAuth', () => ({
   useAdminAuth: () => ({
-    adminProfile: { role: 'admin' },
     isAuthenticated: true,
     isLoading: false,
   }),

@@ -1,11 +1,13 @@
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import type { CountryCode } from '@shared/domain/countryCodes';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { fetchPatientDetail } from './PatientDetailQueryHelper';
 import type { AdminPatientsListParams } from '../interfaces/validators/adminPatientsListSchema';
 import { derivePatientSla } from '../domain/PatientSla';
 import { isLeadPlaceholderName } from '../domain/LeadContact';
 import { attachLeadContact } from './PatientLeadContactAttacher';
+import { ALL_PATIENT_CONTAINERS_READABLE, type PatientContainerReads } from '../application/patientContainerAccess';
 import {
   computePatientCompleteness,
   ACTIVATABLE_STATUSES,
@@ -48,6 +50,8 @@ export class PatientQueryRepository {
 
   async list(
     filters: AdminPatientsListParams,
+    // D286 / lex P3: o desempate do lead (e-mail mascarado) só é descriptografado para quem lê identidade.
+    reads: PatientContainerReads = ALL_PATIENT_CONTAINERS_READABLE,
   ): Promise<{ rows: PatientListRow[]; total: number }> {
     const params: unknown[] = [];
     let i = 1;
@@ -86,7 +90,13 @@ export class PatientQueryRepository {
     params.push(filters.country ?? null);
     const countryIdx = i++;
 
-    // $8 limit, $9 offset
+    // lex 08/09 (gate da LISTA 017): o ramo da busca que casa o NOME DO RESPONSÁVEL é dado do container
+    // família — sem `patient_family:read` o ramo desliga (a busca por nome do paciente é guardada no controller
+    // pela célula de identidade; este é o segundo oráculo, na mesma cláusula).
+    params.push(reads.family);
+    const familyIdx = i++;
+
+    // $9 limit, $10 offset ($8 é reads.family, o ramo do responsável na busca)
     params.push(filters.limit);
     const limitIdx = i++;
     params.push(filters.offset);
@@ -137,8 +147,10 @@ export class PatientQueryRepository {
         p.has_consent           AS "hasConsent",
         COALESCE(p.insurance_informed, p.health_insurance_name)
                                AS "insuranceInformed",
+        -- AND pr.active (spec 018, PR-1, FR-004): responsável desativado não conta como
+        -- presente — mesma régua de MISSING_SQL.RESPONSIBLE (PatientCompleteness.ts).
         EXISTS (SELECT 1 FROM patient_responsibles pr
-                 WHERE pr.patient_id = p.id)
+                 WHERE pr.patient_id = p.id AND pr.active)
                                AS "hasActiveResponsible",
         EXISTS (SELECT 1 FROM patient_contracted_services pcs
                  WHERE pcs.patient_id = p.id AND pcs.active)
@@ -170,10 +182,15 @@ export class PatientQueryRepository {
         -- feita DEPOIS, e só nas linhas com placeholder (C2/C4).
         p.contact_email_encrypted
                                AS "contactEmailEnc",
+        -- AND r.active nas 2 subqueries abaixo (spec 018, PR-1, FR-004): um titular
+        -- DESATIVADO não é mais "o responsável primário" para a lista — sem o filtro, desativar
+        -- o titular não trocava quem a lista mostra (o índice de titular único já passou a
+        -- olhar só ativos na migration 420; a leitura tinha de acompanhar).
         (SELECT r.email_encrypted
            FROM patient_responsibles r
           WHERE r.patient_id = p.id
             AND r.is_primary
+            AND r.active
           ORDER BY r.display_order, r.created_at
           LIMIT 1)            AS "responsibleEmailEnc",
         -- Nome do responsável primário (D249). Texto claro, sem KMS: a coluna
@@ -183,6 +200,7 @@ export class PatientQueryRepository {
            FROM patient_responsibles r
           WHERE r.patient_id = p.id
             AND r.is_primary
+            AND r.active
           ORDER BY r.display_order, r.created_at
           LIMIT 1)            AS "responsibleName",
         COUNT(*) OVER()        AS total_count
@@ -195,11 +213,12 @@ export class PatientQueryRepository {
           -- D249: a lista mostra "Responsável: X" quando o paciente não tem
           -- nome. Sem isto, o operador lê um nome na tela, digita esse nome na
           -- busca e não acha nada — que é pior do que não mostrar.
-          OR EXISTS (
+          OR ($${familyIdx}::boolean AND EXISTS (
                SELECT 1 FROM patient_responsibles r
                 WHERE r.patient_id = p.id
+                  AND r.active
                   AND (r.first_name ILIKE '%' || $${searchIdx} || '%'
-                    OR r.last_name  ILIKE '%' || $${searchIdx} || '%')))
+                    OR r.last_name  ILIKE '%' || $${searchIdx} || '%'))))
         -- O filtro e o total leem a MESMA regra que o payload publica (PatientCompleteness.ts):
         -- ler a coluna guardada aqui fazia o paciente com badge SUMIR quando a operadora
         -- filtrava por ele, e INCOMPLETE_ADMISSION nunca casar com ninguém.
@@ -296,12 +315,17 @@ export class PatientQueryRepository {
       };
     });
 
-    await attachLeadContact(this.encryptionService, rows, result.rows);
+    if (reads.identity) await attachLeadContact(this.encryptionService, rows, result.rows);
 
     return { rows, total };
   }
 
-  async stats(country?: 'AR' | 'BR'): Promise<PatientStatsRow> {
+  /**
+   * @param countries escopo de país já resolvido (PR-9, `lex` #9) — nunca um
+   *   `undefined`/"sem filtro" solto: quem chama (`resolveCountryScope`) sempre
+   *   entrega um array não-vazio, interseção do pedido com o escopo do ator.
+   */
+  async stats(countries: CountryCode[]): Promise<PatientStatsRow> {
     const result = await this.pool.query<{
       total: string;
       complete: string;
@@ -324,8 +348,8 @@ export class PatientQueryRepository {
         COUNT(*) FILTER (WHERE p.created_at >= NOW() - INTERVAL '7 days')::int      AS created_last_7_days
       FROM patients p
       WHERE p.deleted_at IS NULL
-        AND ($1::text IS NULL OR p.country = $1)
-    `, [country ?? null]);
+        AND p.country = ANY($1::bpchar[])
+    `, [countries]);
 
     const row = result.rows[0];
     return {
@@ -339,7 +363,7 @@ export class PatientQueryRepository {
   }
 
   /** Full patient detail with decrypted PII. Delegates to PatientDetailQueryHelper. */
-  async findDetailById(id: string): Promise<PatientDetailRow | null> {
-    return fetchPatientDetail(this.pool, this.encryptionService, id);
+  async findDetailById(id: string, reads: PatientContainerReads = ALL_PATIENT_CONTAINERS_READABLE): Promise<PatientDetailRow | null> {
+    return fetchPatientDetail(this.pool, this.encryptionService, id, reads);
   }
 }

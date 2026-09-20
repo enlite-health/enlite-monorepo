@@ -12,6 +12,11 @@ import {
   type ActiveVacancy,
 } from '../application/AddressAvailabilityCalculator';
 import { mapContractedServices } from './ContractedServiceDetailMapper';
+import { PatientCoverageEmergencyContactRepository, type CoverageEmergencyContactRow } from './PatientCoverageEmergencyContactRepository';
+import { PatientExternalContactRepository } from './PatientExternalContactRepository';
+import type { EmergencyMarkTarget } from './PatientEmergencyMarkRepository';
+import { reportError } from '@shared/logging';
+import { ALL_PATIENT_CONTAINERS_READABLE, type PatientContainerReads } from '../application/patientContainerAccess';
 import { phoneMatchesResponsible } from '../domain/PhoneMatch';
 
 const PATIENT_DETAIL_SQL = `
@@ -30,6 +35,20 @@ const PATIENT_DETAIL_SQL = `
     -- SÓ no detalhe — a listagem não seleciona esta coluna. Descriptografado
     -- abaixo, uma chamada por carga de ficha.
     p.contact_email_encrypted AS "contactEmailEncrypted",
+    -- Spec 018, PR-3 (Emenda 13/09, migration 425): gênero/idiomas cifrados — descriptografados
+    -- abaixo, SÓ sob reads.identity (mesma régua do e-mail de contato, lex #3(e): zero KMS a
+    -- mais que o já previsto para montar o topo).
+    p.gender_encrypted       AS "genderEncrypted",
+    p.languages_encrypted    AS "languagesEncrypted",
+    -- Último DISCHARGED de patient_status_history (FR-203/204). Projeção nova sem coleta —
+    -- mesma célula de identity (lex CONDIÇÃO 6, ver PatientQueryRows.ts).
+    (SELECT h.created_at FROM patient_status_history h
+      WHERE h.patient_id = p.id AND h.new_value = 'DISCHARGED'
+      ORDER BY h.created_at DESC, h.id DESC LIMIT 1) AS "dischargedAt",
+    -- Spec 018, PR-4 (contracts/patient-header-and-photo.md): tem foto cadastrada. Mesma célula
+    -- de identity, mesmo padrão de dischargedAt -- redigido (null) por DETAIL_FIELDS.identity em
+    -- patientContainerAccess.ts, NUNCA false na redacao (nao pode vazar "tem foto").
+    EXISTS (SELECT 1 FROM patient_photos ph WHERE ph.patient_id = p.id) AS "hasPhoto",
     diagnosis,
     dependency_level         AS "dependencyLevel",
     clinical_specialty       AS "clinicalSpecialty",
@@ -111,21 +130,26 @@ const PATIENT_DETAIL_SQL = `
       (SELECT MAX(jp.case_number) FROM job_postings jp WHERE jp.patient_id = p.id AND jp.deleted_at IS NULL)
     )                        AS "lastCaseNumber",
     p.created_at               AS "createdAt",
-    p.updated_at               AS "updatedAt"
+    p.updated_at               AS "updatedAt",
+    -- Marca de emergência (migration 423, spec 018 PR-2, D-A): no máximo 1 das duas é NOT NULL.
+    p.emergency_responsible_id      AS "emergencyResponsibleId",
+    p.emergency_external_contact_id AS "emergencyExternalContactId"
   FROM patients p
   WHERE p.id = $1
     AND p.deleted_at IS NULL
 `;
 
-async function fetchRelated(pool: Pool, patientId: string) {
+async function fetchRelated(pool: Pool, patientId: string, enc: KMSEncryptionService) {
   return Promise.all([
     pool.query(
+      // `AND active` (spec 018, PR-1, FR-004): a ficha só mostra responsáveis vivos — quem foi
+      // desativado pelo painel some daqui, mas continua na tabela (nunca DELETE).
       `SELECT id, first_name, last_name, relationship,
               phone_encrypted, email_encrypted,
               document_number_encrypted, document_type,
               is_primary, display_order, source
          FROM patient_responsibles
-        WHERE patient_id = $1
+        WHERE patient_id = $1 AND active
         ORDER BY display_order ASC, is_primary DESC`,
       [patientId],
     ),
@@ -142,11 +166,23 @@ async function fetchRelated(pool: Pool, patientId: string) {
         ORDER BY display_order ASC`,
       [patientId],
     ),
+    // `AND active` (migration 420/427, spec 018 PR-5): a ficha só mostra linhas vivas — achado
+    // desta execução, a mesma classe do FR-004 que responsibles/coverage já cumprem; sem o filtro,
+    // desativar um profissional pelo painel não o tirava da tela.
     pool.query(
-      `SELECT id, name, phone_encrypted, email_encrypted, display_order, is_team
+      `SELECT id, name, phone_encrypted, email_encrypted, specialty, display_order, is_team
          FROM patient_professionals
-        WHERE patient_id = $1
+        WHERE patient_id = $1 AND active
         ORDER BY display_order ASC`,
+      [patientId],
+    ),
+    // Spec 018, PR-2: contatos externos sem vínculo familiar — `active` sempre filtrado (mesma
+    // régua dos responsáveis, FR-004).
+    pool.query(
+      `SELECT id, relation, name, phone_encrypted, sort_order
+         FROM patient_external_contacts
+        WHERE patient_id = $1 AND active
+        ORDER BY sort_order ASC, created_at ASC`,
       [patientId],
     ),
     // Active vacancies for addresses of this patient (for availability computation)
@@ -162,6 +198,16 @@ async function fetchRelated(pool: Pool, patientId: string) {
     // Serviços contratados (spec 013, bloco C) — contrato do detalhe. hourlyValue vem CRU aqui;
     // a redação por papel (lex C-c.4) acontece no controller (ponto único).
     pool.query(`SELECT * FROM patient_contracted_services WHERE patient_id = $1 ORDER BY active DESC, created_at ASC`, [patientId]),
+    // 417 (D301): só o ciphertext; decifra depois, e só sob `patient_coverage:read`. Bulkhead (molde dos
+    // diagnósticos, D263 C4): a 417 é migration MANUAL em prod e o merge deploya o código — se a tabela ainda
+    // não existir, a ficha NÃO cai; o campo sai "indisponível" (D167: não-li ≠ vazio), com erro reportado.
+    new PatientCoverageEmergencyContactRepository(pool, enc).fetchRows(patientId, pool).then(
+      (rows) => ({ rows, unavailable: false }),
+      (err: unknown) => {
+        reportError(err instanceof Error ? err : new Error(String(err)), { source: 'PatientDetailQueryHelper:coverageEmergencyContacts', patientId });
+        return { rows: [] as CoverageEmergencyContactRow[], unavailable: true };
+      },
+    ),
   ]);
 }
 
@@ -208,6 +254,7 @@ async function decryptProfessionals(
         name: pr.name,
         phone,
         email,
+        specialty: pr.specialty ?? null,
         displayOrder: pr.display_order,
         isTeam: pr.is_team ?? false,
       };
@@ -249,12 +296,18 @@ export async function fetchPatientDetail(
   pool: Pool,
   encryptionService: KMSEncryptionService,
   id: string,
+  /**
+   * D286 / `lex` P3: a célula decide ANTES de o KMS rodar. Container que o ator não lê não é
+   * descriptografado — o texto claro de familiar/equipe/e-mail nunca existe em memória para
+   * ele (mesma regra da C3 de prestador). Default = tudo (engine não decidiu → como antes).
+   */
+  reads: PatientContainerReads = ALL_PATIENT_CONTAINERS_READABLE,
 ): Promise<PatientDetailRow | null> {
   const patientResult = await pool.query(PATIENT_DETAIL_SQL, [id]);
   if (patientResult.rows.length === 0) return null;
 
   const p = patientResult.rows[0];
-  const [responsibleRows, addressRows, professionalRows, vacancyRows, contractedServiceRows] = await fetchRelated(pool, id);
+  const [responsibleRows, addressRows, professionalRows, externalContactRows, vacancyRows, contractedServiceRows, coverageContactRows] = await fetchRelated(pool, id, encryptionService);
 
   const vacancies: ActiveVacancy[] = vacancyRows.rows.map((v: any) => ({
     id: v.id,
@@ -263,16 +316,57 @@ export async function fetchPatientDetail(
     schedule: v.schedule,
   }));
 
-  const [responsibles, professionals, contactEmail, contractedServices] = await Promise.all([
-    decryptResponsibles(responsibleRows.rows, encryptionService),
-    decryptProfessionals(professionalRows.rows, encryptionService),
+  const [responsibles, professionals, externalContacts, contactEmail, gender, languagesJson, contractedServices, coverageEmergencyContacts] = await Promise.all([
+    reads.family ? decryptResponsibles(responsibleRows.rows, encryptionService) : Promise.resolve([]),
+    reads.careTeam ? decryptProfessionals(professionalRows.rows, encryptionService) : Promise.resolve([]),
+    // Spec 018, PR-2: mesma régua dos responsáveis — sem `patient_family:read` o KMS não roda.
+    reads.family
+      ? new PatientExternalContactRepository(pool, encryptionService).decryptRows(externalContactRows.rows)
+      : Promise.resolve([]),
     // Sem ciphertext não há decrypt: o passthrough de teste devolve '' para
     // entrada vazia, e '' na ficha seria "tem e-mail e está em branco".
-    p.contactEmailEncrypted ? encryptionService.decrypt(p.contactEmailEncrypted) : Promise.resolve(null),
-    mapContractedServices(contractedServiceRows.rows, pool, encryptionService),
+    reads.identity && p.contactEmailEncrypted ? encryptionService.decrypt(p.contactEmailEncrypted) : Promise.resolve(null),
+    // Spec 018, PR-3 (lex #3(e)): zero KMS a mais — só roda sob o MESMO `reads.identity` que já
+    // decifra o e-mail de contato acima.
+    reads.identity && p.genderEncrypted ? encryptionService.decrypt(p.genderEncrypted) : Promise.resolve(null),
+    reads.identity && p.languagesEncrypted ? encryptionService.decrypt(p.languagesEncrypted) : Promise.resolve(null),
+    reads.services ? mapContractedServices(contractedServiceRows.rows, pool, encryptionService) : Promise.resolve([]),
+    // 417 (D301): mesma régua dos responsáveis — sem a célula do container, o KMS não roda. lex C3: o
+    // profissional direto é o MESMO dado da equipe tratante (`patient_care_team`): só sai (e só decifra)
+    // quando o ator lê os DOIS containers — cobertura e equipe.
+    reads.coverage
+      ? new PatientCoverageEmergencyContactRepository(pool, encryptionService).decryptRows(
+          coverageContactRows.rows.filter((r) => r.kind !== 'DIRECT_PROFESSIONAL' || reads.careTeam),
+        )
+      : Promise.resolve([]),
   ]);
 
+  // Marca de emergência (spec 018, PR-2, D-A): não vaza QUAL contato é o marcado sem `patient_family:read`.
+  const emergencyContactRef: EmergencyMarkTarget = reads.family
+    ? p.emergencyResponsibleId
+      ? { kind: 'RESPONSIBLE', id: p.emergencyResponsibleId }
+      : p.emergencyExternalContactId
+        ? { kind: 'EXTERNAL', id: p.emergencyExternalContactId }
+        : null
+    : null;
+
   const addresses = mapAddresses(addressRows.rows, vacancies);
+
+  // languages_encrypted guarda um JSON array cifrado como UM ciphertext (mesmo molde de
+  // workers.languages_encrypted) — parse defensivo: um ciphertext corrompido/legado vira
+  // "não perguntado" (null), nunca um 500 na ficha inteira.
+  let languages: string[] | null = null;
+  if (typeof languagesJson === 'string' && languagesJson.length > 0) {
+    try {
+      const parsed: unknown = JSON.parse(languagesJson);
+      if (Array.isArray(parsed)) languages = parsed.filter((x): x is string => typeof x === 'string');
+    } catch {
+      // Regra dura PII: NUNCA repassar o erro original do JSON.parse — a mensagem de
+      // SyntaxError ecoa o texto decifrado (`Unexpected token … "<valor>" is not valid JSON`,
+      // medido no Node 24). O relatório carrega só a classe do problema, nunca a entrada.
+      reportError(new Error('languages_encrypted: JSON inválido'), { source: 'PatientDetailQueryHelper:languages', patientId: id });
+    }
+  }
 
   return {
     id: p.id,
@@ -286,6 +380,10 @@ export async function fetchPatientDetail(
     sex: p.sex,
     phoneWhatsapp: p.phoneWhatsapp,
     contactEmail,
+    gender,
+    languages,
+    dischargedAt: p.dischargedAt ?? null,
+    hasPhoto: p.hasPhoto ?? false,
     diagnosis: p.diagnosis,
     dependencyLevel: p.dependencyLevel,
     clinicalSpecialty: p.clinicalSpecialty,
@@ -325,6 +423,13 @@ export async function fetchPatientDetail(
     phoneMatchesResponsible: phoneMatchesResponsible(p.phoneWhatsapp, responsibles.map((r) => r.phone)),
     lastCaseNumber: p.lastCaseNumber != null ? Number(p.lastCaseNumber) : null,
     responsibles,
+    externalContacts,
+    emergencyContactRef,
+    coverageEmergencyContacts,
+    // Marcador CONSTANTE (não depende de haver linha): com cobertura mas sem equipe, o profissional direto
+    // foi retido — a tela e o PDF dizem isso em vez de mostrar a lista como se fosse completa.
+    coverageDirectProfessionalRedacted: reads.coverage && !reads.careTeam,
+    coverageEmergencyContactsUnavailable: coverageContactRows.unavailable,
     addresses,
     professionals,
     contractedServices,

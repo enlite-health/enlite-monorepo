@@ -70,6 +70,8 @@ describe('Convite à reunión de presentación (REQ-09) @integration', () => {
   afterAll(async () => {
     await pool.query(`UPDATE presentation_invite_settings SET template_slug = NULL, meet_link = NULL, schedule_label = NULL, enabled = false WHERE country = 'AR'`);
     await pool.query(`UPDATE messaging_channel_pause SET paused = false WHERE channel = 'whatsapp' AND paused_by = 'e2e-pi'`);
+    // Mesmo motivo do funnel-stage-messages: staff órfão no banco reprova a régua da stage.
+    await pool.query(`DELETE FROM users WHERE firebase_uid = ANY($1::text[])`, [[ADMIN_UID, RECRUITER_UID]]);
     await pool.end();
   });
 

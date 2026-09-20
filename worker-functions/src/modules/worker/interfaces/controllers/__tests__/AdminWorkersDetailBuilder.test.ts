@@ -1,301 +1,385 @@
 /**
- * AdminWorkersDetailBuilder.test.ts
+ * AdminWorkersDetailBuilder — a ficha do prestador PROJETADA por container (D286 fase 2).
  *
- * Teste NOVO, escrito para a branch de hotfix de PRD
- * (hotfix/worker-document-view-url-dono-prd), compatível com a `main` — sem
- * nada de ABAC/células/`redacted` (isso só existe na `stage`, D286 fase 2;
- * `buildWorkerDetailResponse` aqui tem 4 parâmetros, sem `cells`).
- *
- * `AdminWorkersController.test.ts` já cobre o arquivo quase inteiro via
- * integração com o controller (worker completo, documentos ausentes,
- * encuadres, service areas, eligibilidade, todos os 15 campos PII etc.) —
- * medido ANTES desta rodada em 84.44 stmt / 95.49 branch / 81.81 func /
- * 83.33 line (`npx jest AdminWorkersController.test.ts --coverage
- * --collectCoverageFrom=".../AdminWorkersDetailBuilder.ts"`, linhas não
- * cobertas: 25-27, 66-67, 230-238). Este arquivo NÃO reexercita esse
- * caminho (ZERO código repetido) — cobre só os 3 gaps, todos ligados ao
- * hotfix:
- *
- *   1. `toSignedUrl` — o catch (25-27): o hotfix (rodada 2, R4) proíbe logar
- *      `filePath` e `err.message` (podem carregar o caminho do objeto GCS
- *      rejeitado); só workerId + NOME DA CLASSE do erro. Nenhum teste
- *      existente força `generateViewSignedUrl` a rejeitar.
- *   2. `buildDocumentsWithSignedUrls` — o loop de `document_validations`
- *      (66-67): nenhum teste existente passa `document_validations` não-nulo.
- *   3. `buildWorkerDetailResponse` — mapeamento de `availability` e `tags`
- *      (230-238): a suíte do controller sempre usa `rows: []` para essas duas
- *      queries, então as duas funções passadas a `.map` nunca são invocadas
- *      (a causa dos 81.81% de function coverage). Aproveitado para também
- *      provar, com uma linha real, que os documentos do worker SOBREVIVENTE
- *      passam a lista de absorvidos (o comportamento central deste hotfix)
- *      para `generateViewSignedUrl`.
+ * A prova de cada container é o ESPIÃO no `decrypt` (C3 da F2): sem a célula, o campo cifrado
+ * daquele container nunca chega ao KMS — não é "chegou e foi apagado". Para documentos e
+ * encuadres a prova é a QUERY que não roda.
  */
+import { NOME_REDIGIDO } from '@modules/identity/permissions';
+import { buildWorkerDetailResponse } from '../AdminWorkersDetailBuilder';
 
-const mockQuery = jest.fn();
-
-jest.mock('@shared/logging', () => ({
-  logger: {
-    child: jest.fn().mockReturnValue({ info: jest.fn(), warn: jest.fn(), error: jest.fn() }),
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-  },
-  reportError: jest.fn(),
-  loggingAls: { run: jest.fn((_ctx: unknown, fn: () => unknown) => fn()) },
-}));
-
-// WorkerApplicationRepository e BlockedApplicationQueryRepository (instanciados
-// direto dentro de buildWorkerDetailResponse) pegam o pool por aqui.
-jest.mock('@shared/database/DatabaseConnection', () => ({
-  DatabaseConnection: {
-    getInstance: jest.fn().mockReturnValue({
-      getPool: jest.fn().mockReturnValue({ query: mockQuery }),
-    }),
-  },
-}));
-
-import type { Pool } from 'pg';
-import type { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
-import type { GCSStorageService } from '../../../infrastructure/GCSStorageService';
-import {
-  toSignedUrl,
-  buildDocumentsWithSignedUrls,
-  buildWorkerDetailResponse,
-} from '../AdminWorkersDetailBuilder';
-
-const WORKER_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
-
-function makeWorkerRow(overrides: Record<string, unknown> = {}) {
-  return {
-    id: WORKER_ID,
-    email: 'maria@example.com',
-    phone: '+5491188888888',
-    country: 'AR',
-    timezone: 'America/Argentina/Buenos_Aires',
-    status: 'REGISTERED',
-    data_sources: ['candidatos'],
-    created_at: '2025-01-01T00:00:00Z',
-    updated_at: '2025-06-01T00:00:00Z',
-    deleted_at: null,
-    document_type: 'DNI',
-    profession: 'CAREGIVER',
-    occupation: 'AT',
-    knowledge_level: 'UNIVERSITY',
-    title_certificate: 'Diploma AT',
-    experience_types: ['TEA'],
-    years_experience: '5_10',
-    preferred_types: ['TEA'],
-    preferred_age_range: ['children'],
-    hobbies: [],
-    diagnostic_preferences: [],
-    first_name_encrypted: 'enc_first',
-    last_name_encrypted: 'enc_last',
-    birth_date_encrypted: 'enc_birth',
-    sex_encrypted: 'enc_sex',
-    gender_encrypted: 'enc_gender',
-    document_number_encrypted: 'enc_doc',
-    profile_photo_url_encrypted: 'enc_photo',
-    languages_encrypted: 'enc_langs',
-    whatsapp_phone_encrypted: 'enc_whatsapp',
-    linkedin_url_encrypted: 'enc_linkedin',
-    sexual_orientation_encrypted: 'enc_orientation',
-    race_encrypted: 'enc_race',
-    religion_encrypted: 'enc_religion',
-    weight_kg_encrypted: 'enc_weight',
-    height_cm_encrypted: 'enc_height',
-    is_test: false,
-    ana_care_id: null,
-    ana_care_synced_at: null,
-    ...overrides,
-  };
-}
-
-function makeDecrypt() {
-  return jest.fn((v: string | null) => Promise.resolve(v ? String(v).replace('enc_', '') : null));
-}
-
-// ─── 1. toSignedUrl — catch (linhas 25-27) ─────────────────────────────────
-
-describe('toSignedUrl — catch de generateViewSignedUrl', () => {
-  let consoleErrorSpy: jest.SpyInstance;
-
-  beforeEach(() => {
-    consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
-  });
-
-  afterEach(() => {
-    consoleErrorSpy.mockRestore();
-  });
-
-  it('retorna null e loga workerId + CLASSE do erro — NUNCA filePath nem err.message', async () => {
-    const filePath = 'workers/absorvido-x/identity_document.pdf';
-    const boom = new Error(`objeto ${filePath} não encontrado no bucket`);
-    const gcs = { generateViewSignedUrl: jest.fn().mockRejectedValue(boom) } as unknown as GCSStorageService;
-
-    const result = await toSignedUrl(gcs, filePath, ['worker-vivo-1', 'absorvido-x']);
-
-    expect(result).toBeNull();
-    expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
-    const logged = consoleErrorSpy.mock.calls[0].map(String).join(' | ');
-    expect(logged).toContain('worker-vivo-1');
-    expect(logged).toContain('Error');
-    expect(logged).not.toContain(filePath);
-    expect(logged).not.toContain(boom.message);
-  });
-
-  it('rejeição sem ser instância de Error usa typeof (branch não-Error do ternário)', async () => {
-    const gcs = { generateViewSignedUrl: jest.fn().mockRejectedValue('boom-string-plano') } as unknown as GCSStorageService;
-
-    const result = await toSignedUrl(gcs, 'x.pdf', ['worker-vivo-1']);
-
-    expect(result).toBeNull();
-    const logged = consoleErrorSpy.mock.calls[0].map(String).join(' | ');
-    expect(logged).toContain('worker-vivo-1');
-    expect(logged).toContain('string');
-    expect(logged).not.toContain('boom-string-plano');
-  });
-
-  it('filePath null: devolve null sem chamar o GCS (guard já coberto, aqui só ancora o contrato)', async () => {
-    const gcs = { generateViewSignedUrl: jest.fn() } as unknown as GCSStorageService;
-    const result = await toSignedUrl(gcs, null, ['worker-vivo-1']);
-    expect(result).toBeNull();
-    expect(gcs.generateViewSignedUrl).not.toHaveBeenCalled();
-  });
-});
-
-// ─── 2. buildDocumentsWithSignedUrls — loop de document_validations (66-67) ─
-
-describe('buildDocumentsWithSignedUrls — document_validations', () => {
-  function makeGcs() {
-    return {
-      generateViewSignedUrl: jest.fn((p: string) => Promise.resolve(`signed:${p}`)),
-    } as unknown as GCSStorageService;
+const queries: string[] = [];
+// Mutável por teste: cobre o ramo de comparator do sort() de encuadres
+// (só é exercitado com 2+ linhas combinadas de WJA + bloqueadas).
+let extraJobApplicationRow: Record<string, unknown> | null = null;
+// Hotfix 14/09: `findAbsorbedWorkerIds` roda uma CTE própria (chain/survivor)
+// contra o mesmo `db.query` — mutável por teste, default [] (nenhum absorvido,
+// preserva o comportamento de todos os testes que já existiam).
+let absorbedWorkerIdsRows: Array<{ id: string }> = [];
+// Mutáveis por teste — cobrem os ramos "?? null" (nenhuma linha) e "sem
+// coordenada" que a fixture padrão (sempre com linha completa) nunca bate.
+let locationRowsOverride: Array<Record<string, unknown>> | null = null;
+let serviceAreaRowsOverride: Array<Record<string, unknown>> | null = null;
+let docsRowOverride: Record<string, unknown> | null = null;
+const mockQuery = jest.fn(async (sql: string) => {
+  queries.push(sql);
+  if (sql.includes('WITH RECURSIVE survivor')) {
+    return { rows: absorbedWorkerIdsRows };
   }
-
-  function baseDoc(overrides: Record<string, unknown> = {}) {
+  if (sql.includes('FROM worker_documents')) {
     return {
-      id: 'doc-1',
-      resume_cv_url: null,
-      identity_document_url: null,
-      identity_document_back_url: null,
-      criminal_record_url: null,
-      professional_registration_url: null,
-      liability_insurance_url: null,
-      monotributo_certificate_url: null,
-      at_certificate_url: null,
-      additional_certificates_urls: [],
-      documents_status: null,
-      document_validations: null,
-      review_notes: null,
-      reviewed_by: null,
-      reviewed_at: null,
-      submitted_at: null,
-      ...overrides,
+      rows: [docsRowOverride ?? {
+        id: 'doc-1', resume_cv_url: 'cv.pdf', identity_document_url: 'dni.jpg', documents_status: 'approved',
+        // additional_certificates_urls + document_validations não-vazios cobrem o
+        // ramo do .map() de adicionais e o loop de Object.entries(rawValidations).
+        additional_certificates_urls: ['extra-cert.pdf'],
+        document_validations: { identity_document: { validated_by: 'admin@enlite.health', validated_at: '2025-01-01T00:00:00Z' } },
+      }],
     };
   }
+  if (sql.includes('FROM worker_service_areas') && sql.includes('LIMIT 1')) {
+    return { rows: locationRowsOverride ?? [{ address: 'Calle Falsa 123', city: 'Buenos Aires', work_zone: 'Palermo', interest_zone: 'Belgrano' }] };
+  }
+  if (sql.includes('FROM worker_service_areas')) {
+    return { rows: serviceAreaRowsOverride ?? [{ id: 'sa-1', address_line: 'Calle Falsa 123', latitude: '-34.6', longitude: '-58.4', radius_km: 10, city: 'Buenos Aires' }] };
+  }
+  if (sql.includes('FROM worker_availability')) return { rows: [{ id: 'av-1', day_of_week: 1, start_time: '08:00', end_time: '12:00', timezone: 'America/Argentina/Buenos_Aires', crosses_midnight: false }] };
+  if (sql.includes('FROM worker_tags')) return { rows: [{ id: 'tag-1', name: 'VIP', color: '#000', description: null }] };
+  // Encuadres (WorkerApplicationRepository / BlockedApplicationQueryRepository)
+  if (sql.includes('FROM worker_blocked_applications')) return { rows: [] };
+  if (sql.includes('FROM worker_job_applications')) {
+    const base = {
+      id: 'enc-1', job_posting_id: 'jp-1', funnel_stage: 'SELECTED', source: 'talentum', case_number: 42, vacancy_number: 1,
+      vacancy_status: 'ACTIVE', patient_first_name: 'Juan', patient_last_name: 'Perez', resultado: null, interview_date: null,
+      interview_time: null, recruiter_name: null, coordinator_name: null, rejection_reason: null, rejection_reason_category: null,
+      attended: null, created_at: '2025-03-01T10:00:00Z',
+    };
+    return { rows: extraJobApplicationRow ? [base, extraJobApplicationRow] : [base] };
+  }
+  return { rows: [] };
+});
 
-  it('mapeia validated_by/validated_at (snake_case) para validatedBy/validatedAt (camelCase), uma entrada por chave', async () => {
-    const doc = baseDoc({
-      document_validations: {
-        resume_cv: { validated_by: 'admin-1', validated_at: '2026-09-01T00:00:00Z' },
-        identity_document: { validated_by: 'admin-2', validated_at: '2026-09-02T00:00:00Z' },
-      },
-    });
+jest.mock('@shared/database/DatabaseConnection', () => ({
+  DatabaseConnection: { getInstance: jest.fn().mockReturnValue({ getPool: jest.fn().mockReturnValue({ query: (...a: unknown[]) => mockQuery(a[0] as string) }) }) },
+}));
+jest.mock('@shared/logging', () => ({
+  logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn(), debug: jest.fn() },
+  reportError: jest.fn(),
+}));
 
-    const result = await buildDocumentsWithSignedUrls(makeGcs(), doc, ['w-1']);
+const decrypt = jest.fn(async (v: string | null) => (v ? v.replace('enc_', '') : null));
+const enc = { decrypt } as unknown as import('@shared/security/KMSEncryptionService').KMSEncryptionService;
+const gcs = { generateViewSignedUrl: jest.fn(async (p: string) => `signed:${p}`) } as unknown as import('../../../infrastructure/GCSStorageService').GCSStorageService;
+const db = { query: mockQuery } as unknown as import('pg').Pool;
 
-    expect(result.documentValidations).toEqual({
-      resume_cv: { validatedBy: 'admin-1', validatedAt: '2026-09-01T00:00:00Z' },
-      identity_document: { validatedBy: 'admin-2', validatedAt: '2026-09-02T00:00:00Z' },
-    });
+const ROW = {
+  id: 'w-1', email: 'maria@example.com', phone: '+5491100000000', country: 'AR', timezone: 'America/Argentina/Buenos_Aires',
+  status: 'REGISTERED', deleted_at: null, is_test: false, data_sources: ['candidatos'], document_type: 'DNI',
+  profession: 'enfermeria', occupation: 'cuidador', hobbies: ['x'], diagnostic_preferences: [],
+  first_name_encrypted: 'enc_Maria', last_name_encrypted: 'enc_Garcia', birth_date_encrypted: 'enc_1990-01-01',
+  sex_encrypted: 'enc_F', gender_encrypted: 'enc_F', document_number_encrypted: 'enc_12345678',
+  profile_photo_url_encrypted: 'enc_photo.jpg', languages_encrypted: 'enc_["es"]', whatsapp_phone_encrypted: 'enc_+549',
+  linkedin_url_encrypted: 'enc_li', sexual_orientation_encrypted: 'enc_so', race_encrypted: 'enc_r',
+  religion_encrypted: 'enc_rel', weight_kg_encrypted: 'enc_60', height_cm_encrypted: 'enc_170',
+};
+
+const CIFRADOS_DE_CONTATO = ['enc_Maria', 'enc_Garcia', 'enc_+549', 'enc_li'];
+const CIFRADOS_DE_DOSSIE = ['enc_1990-01-01', 'enc_F', 'enc_12345678', 'enc_photo.jpg', 'enc_so', 'enc_r', 'enc_rel', 'enc_60', 'enc_170'];
+
+function abertos(): string[] {
+  return decrypt.mock.calls.map((c) => c[0] as string);
+}
+
+beforeEach(() => {
+  queries.length = 0;
+  decrypt.mockClear();
+  mockQuery.mockClear();
+  extraJobApplicationRow = null;
+  absorbedWorkerIdsRows = [];
+  locationRowsOverride = null;
+  serviceAreaRowsOverride = null;
+  docsRowOverride = null;
+  (gcs.generateViewSignedUrl as jest.Mock).mockClear();
+  (gcs.generateViewSignedUrl as jest.Mock).mockImplementation(async (p: string) => `signed:${p}`);
+});
+
+describe('cells = null (engine não decidiu) — a ficha inteira, como antes (D113)', () => {
+  it('descriptografa tudo, roda todas as queries e NÃO emite marcador', async () => {
+    const data = await buildWorkerDetailResponse(db, enc, gcs, ROW, null);
+    expect(data.firstName).toBe('Maria');
+    expect(data.documentNumber).toBe('12345678');
+    expect(data.documents).toMatchObject({ resumeCvUrl: 'signed:cv.pdf' });
+    expect(data.encuadres).toHaveLength(1);
+    expect(data.encuadres[0].patientName).toBe('Juan Perez');
+    expect(data.location.address).toBe('Calle Falsa 123');
+    expect(data.redacted).toBeUndefined();
+    expect(abertos()).toEqual(expect.arrayContaining([...CIFRADOS_DE_CONTATO, ...CIFRADOS_DE_DOSSIE]));
   });
 
-  it('document_validations null vira objeto vazio, sem rodar o loop', async () => {
-    const result = await buildDocumentsWithSignedUrls(makeGcs(), baseDoc(), ['w-1']);
-    expect(result.documentValidations).toEqual({});
-    expect(result.documentsStatus).toBe('pending');
+  it('cells omitido é o mesmo que null', async () => {
+    const data = await buildWorkerDetailResponse(db, enc, gcs, ROW);
+    expect(data.redacted).toBeUndefined();
+    expect(data.firstName).toBe('Maria');
   });
 });
 
-// ─── 3. buildWorkerDetailResponse — availability/tags com linha real (230-238)
-//        + comportamento central do hotfix: doc do sobrevivente usa allowedWorkerIds
-//        vindo de findAbsorbedWorkerIds ─────────────────────────────────────
+describe('só worker:read — o operacional sai, o resto NÃO chega ao KMS', () => {
+  const CELLS = ['worker:read'];
 
-describe('buildWorkerDetailResponse — availability, tags e absorvidos', () => {
-  beforeEach(() => {
-    mockQuery.mockReset();
+  it('🔴 espião: nenhum cifrado de contato nem de dossiê é aberto; idiomas (profissional) sim', async () => {
+    await buildWorkerDetailResponse(db, enc, gcs, ROW, CELLS);
+    for (const c of [...CIFRADOS_DE_CONTATO, ...CIFRADOS_DE_DOSSIE]) expect(abertos()).not.toContain(c);
+    expect(abertos()).toContain('enc_["es"]');
   });
 
-  it('availability e tags vêm mapeados (camelCase) quando as queries trazem linha; documentos do sobrevivente assinam com [próprio, ...absorvidos]', async () => {
-    const enc = { decrypt: makeDecrypt() } as unknown as KMSEncryptionService;
-    const gcs = {
-      generateViewSignedUrl: jest.fn((p: string) => Promise.resolve(`signed:${p}`)),
-    } as unknown as GCSStorageService;
-
-    mockQuery
-      .mockResolvedValueOnce({
-        rows: [{
-          id: 'doc-1',
-          // Caminho gravado com o prefixo do worker ABSORVIDO — o cenário que o
-          // hotfix existe para resolver (merge reparenta a linha, não o objeto GCS).
-          resume_cv_url: 'workers/absorvido-1/cv.pdf',
-          identity_document_url: null, identity_document_back_url: null,
-          criminal_record_url: null, professional_registration_url: null,
-          liability_insurance_url: null, monotributo_certificate_url: null,
-          at_certificate_url: null, additional_certificates_urls: [],
-          documents_status: 'approved', document_validations: null,
-          review_notes: null, reviewed_by: null, reviewed_at: null, submitted_at: null,
-        }],
-      }) // docs
-      .mockResolvedValueOnce({ rows: [] }) // serviceAreas
-      .mockResolvedValueOnce({ rows: [] }) // location
-      .mockResolvedValueOnce({ rows: [] }) // WJA (listEngagementsByWorker)
-      .mockResolvedValueOnce({ rows: [] }) // blocked (listByWorker)
-      .mockResolvedValueOnce({
-        rows: [{
-          id: 'av-1', day_of_week: 1, start_time: '08:00', end_time: '12:00',
-          timezone: 'America/Argentina/Buenos_Aires', crosses_midnight: false,
-        }],
-      }) // availability
-      .mockResolvedValueOnce({
-        rows: [{ id: 'tag-1', name: 'VIP', color: '#000000', description: 'prioridade alta' }],
-      }) // tags
-      .mockResolvedValueOnce({ rows: [{ id: 'absorvido-1' }] }); // findAbsorbedWorkerIds
-
-    const db = { query: mockQuery } as unknown as Pool;
-    const result = await buildWorkerDetailResponse(db, enc, gcs, makeWorkerRow());
-
-    expect(result.availability).toEqual([{
-      id: 'av-1', dayOfWeek: 1, startTime: '08:00', endTime: '12:00',
-      timezone: 'America/Argentina/Buenos_Aires', crossesMidnight: false,
-    }]);
-    expect(result.tags).toEqual([{ id: 'tag-1', name: 'VIP', color: '#000000', description: 'prioridade alta' }]);
-
-    // O núcleo do hotfix: allowedWorkerIds = [próprio, ...absorvidos achados].
-    expect(gcs.generateViewSignedUrl).toHaveBeenCalledWith(
-      'workers/absorvido-1/cv.pdf',
-      [WORKER_ID, 'absorvido-1'],
-    );
+  it('nome vem como NOME_REDIGIDO (trava, não rótulo — D181); e-mail, telefone, whatsapp, linkedin nulos', async () => {
+    const data = await buildWorkerDetailResponse(db, enc, gcs, ROW, CELLS);
+    expect(data.firstName).toBe(NOME_REDIGIDO);
+    expect(data.lastName).toBeNull();
+    expect(data.email).toBeNull();
+    expect(data.phone).toBeNull();
+    expect(data.whatsappPhone).toBeNull();
+    expect(data.linkedinUrl).toBeNull();
   });
 
-  it('tags sem description vira undefined (branch `?? undefined`)', async () => {
-    const enc = { decrypt: makeDecrypt() } as unknown as KMSEncryptionService;
-    const gcs = { generateViewSignedUrl: jest.fn() } as unknown as GCSStorageService;
+  it('dossiê nulo: DNI (tipo E número), nascimento, sexo, foto, raça, religião, orientação, peso, altura, LINHA de endereço', async () => {
+    const data = await buildWorkerDetailResponse(db, enc, gcs, ROW, CELLS);
+    for (const f of ['documentType', 'documentNumber', 'birthDate', 'sex', 'gender', 'profilePhotoUrl', 'race', 'religion', 'sexualOrientation', 'weightKg', 'heightCm']) {
+      expect(data[f]).toBeNull();
+    }
+    // coordenada É endereço (lex P2), célula própria worker_address: o bloco de áreas sai null;
+    // cidade/zona (critério de matching) ficam
+    expect(data.location).toMatchObject({ address: null, city: 'Buenos Aires', workZone: 'Palermo' });
+    expect(data.serviceAreas).toBeNull();
+  });
 
-    mockQuery
-      .mockResolvedValueOnce({ rows: [] }) // docs (sem documento -> não chama findAbsorbedWorkerIds)
-      .mockResolvedValueOnce({ rows: [] }) // serviceAreas
-      .mockResolvedValueOnce({ rows: [] }) // location
-      .mockResolvedValueOnce({ rows: [] }) // WJA
-      .mockResolvedValueOnce({ rows: [] }) // blocked
-      .mockResolvedValueOnce({ rows: [] }) // availability
-      .mockResolvedValueOnce({ rows: [{ id: 'tag-2', name: 'Sem descrição', color: '#fff', description: null }] }); // tags
+  it('documentos: a query NEM RODA e nenhuma URL é assinada; encuadres: idem, e vem null (não [])', async () => {
+    const data = await buildWorkerDetailResponse(db, enc, gcs, ROW, CELLS);
+    expect(queries.some((q) => q.includes('FROM worker_documents'))).toBe(false);
+    expect((gcs.generateViewSignedUrl as jest.Mock).mock.calls).toHaveLength(0);
+    expect(data.documents).toBeNull();
+    expect(data.encuadres).toBeNull();
+    expect(queries.some((q) => q.includes('worker_job_applications') || q.includes('worker_blocked_applications'))).toBe(false);
+  });
 
-    const db = { query: mockQuery } as unknown as Pool;
-    const result = await buildWorkerDetailResponse(db, enc, gcs, makeWorkerRow());
+  it('o operacional continua inteiro: status, profissão, zonas, disponibilidade, etiquetas, conta de teste', async () => {
+    const data = await buildWorkerDetailResponse(db, enc, gcs, ROW, CELLS);
+    expect(data).toMatchObject({
+      id: 'w-1', status: 'REGISTERED', profession: 'enfermeria', occupation: 'cuidador', isTest: false, isMatchable: true,
+      languages: ['es'], country: 'AR',
+    });
+    expect(data.availability).toHaveLength(1);
+    expect(data.tags).toEqual([{ id: 'tag-1', name: 'VIP', color: '#000', description: undefined }]);
+  });
 
-    expect(result.tags).toEqual([{ id: 'tag-2', name: 'Sem descrição', color: '#fff', description: undefined }]);
-    expect(result.documents).toBeNull();
-    expect(gcs.generateViewSignedUrl).not.toHaveBeenCalled();
+  it('marcador CONSTANTE: os 5 containers redigidos, com ou sem conteúdo', async () => {
+    const data = await buildWorkerDetailResponse(db, enc, gcs, ROW, CELLS);
+    expect(data.redacted).toEqual({ contact: true, dossier: true, address: true, documents: true, encuadres: true });
+    const semNada = await buildWorkerDetailResponse(db, enc, gcs, { ...ROW, first_name_encrypted: null, document_number_encrypted: null }, CELLS);
+    expect(semNada.redacted).toEqual({ contact: true, dossier: true, address: true, documents: true, encuadres: true });
+  });
+});
+
+describe('um container de cada vez', () => {
+  it('worker_contact:read abre nome/e-mail/telefone e NADA do dossiê', async () => {
+    const data = await buildWorkerDetailResponse(db, enc, gcs, ROW, ['worker:read', 'worker_contact:read']);
+    expect(data).toMatchObject({ firstName: 'Maria', lastName: 'Garcia', email: 'maria@example.com', phone: '+5491100000000', whatsappPhone: '+549', linkedinUrl: 'li' });
+    expect(data.documentNumber).toBeNull();
+    for (const c of CIFRADOS_DE_DOSSIE) expect(abertos()).not.toContain(c);
+    expect(data.redacted).toEqual({ dossier: true, address: true, documents: true, encuadres: true });
+  });
+
+  it('worker_pii:read abre o dossiê mas NÃO o endereço (célula própria) nem o nome (contato é outra chave)', async () => {
+    const data = await buildWorkerDetailResponse(db, enc, gcs, ROW, ['worker:read', 'worker_pii:read']);
+    expect(data).toMatchObject({ documentType: 'DNI', documentNumber: '12345678', birthDate: '1990-01-01', race: 'r', heightCm: '170' });
+    expect(data.location.address).toBeNull();
+    expect(data.serviceAreas).toBeNull();
+    expect(data.firstName).toBe(NOME_REDIGIDO);
+    for (const c of CIFRADOS_DE_CONTATO) expect(abertos()).not.toContain(c);
+    expect(data.redacted).toEqual({ contact: true, address: true, documents: true, encuadres: true });
+  });
+
+  it('worker_address:read abre linha, coordenada e raio — e nada do dossiê (a mesma célula do mapa)', async () => {
+    const data = await buildWorkerDetailResponse(db, enc, gcs, ROW, ['worker:read', 'worker_address:read']);
+    expect(data.location.address).toBe('Calle Falsa 123');
+    expect(data.serviceAreas[0]).toMatchObject({ address: 'Calle Falsa 123', lat: -34.6, lng: -58.4, serviceRadiusKm: 10 });
+    expect(data.documentNumber).toBeNull();
+    for (const c of CIFRADOS_DE_DOSSIE) expect(abertos()).not.toContain(c);
+    expect(data.redacted).toEqual({ contact: true, dossier: true, documents: true, encuadres: true });
+  });
+
+  it('worker_document:read roda a query e assina as URLs', async () => {
+    const data = await buildWorkerDetailResponse(db, enc, gcs, ROW, ['worker:read', 'worker_document:read']);
+    expect(data.documents).toMatchObject({ resumeCvUrl: 'signed:cv.pdf', identityDocumentUrl: 'signed:dni.jpg', documentsStatus: 'approved' });
+    expect(data.redacted).toEqual({ contact: true, dossier: true, address: true, encuadres: true });
+  });
+
+  it('match:read devolve os encuadres — e o nome do PACIENTE segue patient_identity:read, não a célula do prestador', async () => {
+    const semIdentidade = await buildWorkerDetailResponse(db, enc, gcs, ROW, ['worker:read', 'match:read']);
+    expect(semIdentidade.encuadres).toHaveLength(1);
+    expect(semIdentidade.encuadres[0]).toMatchObject({ caseNumber: 42, patientName: NOME_REDIGIDO });
+    expect(semIdentidade.redacted).toEqual({ contact: true, dossier: true, address: true, documents: true });
+
+    const comIdentidade = await buildWorkerDetailResponse(db, enc, gcs, ROW, ['worker:read', 'match:read', 'patient_identity:read']);
+    expect(comIdentidade.encuadres[0].patientName).toBe('Juan Perez');
+  });
+
+  it('com as 5 células de container (sem null) a resposta é a mesma da ficha inteira', async () => {
+    const tudo = await buildWorkerDetailResponse(db, enc, gcs, ROW, null);
+    const porCelula = await buildWorkerDetailResponse(db, enc, gcs, ROW, [
+      'worker:read', 'worker_contact:read', 'worker_pii:read', 'worker_address:read', 'worker_document:read', 'match:read', 'patient_identity:read',
+    ]);
+    expect(porCelula).toEqual(tudo);
+  });
+});
+
+describe('hotfix 13/09 (extensão) — toSignedUrl agora exige workerId e nunca loga o filePath', () => {
+  it('passa [workerId do próprio worker] (w.id) para generateViewSignedUrl em cada documento', async () => {
+    await buildWorkerDetailResponse(db, enc, gcs, ROW, null);
+    const calledWith = (gcs.generateViewSignedUrl as jest.Mock).mock.calls;
+    expect(calledWith.length).toBeGreaterThan(0);
+    for (const [, allowedIdsArg] of calledWith) {
+      expect(allowedIdsArg).toEqual([ROW.id]);
+    }
+  });
+
+  // ── Hotfix 14/09 — documento de worker ABSORVIDO em merge ───────────
+  it('[absorvido] quando findAbsorbedWorkerIds devolve ids, generateViewSignedUrl recebe [w.id, ...absorvidos] para CADA documento', async () => {
+    absorbedWorkerIdsRows = [{ id: 'absorbed-1' }, { id: 'absorbed-2' }];
+    await buildWorkerDetailResponse(db, enc, gcs, ROW, null);
+    expect(queries.some((q) => q.includes('WITH RECURSIVE survivor'))).toBe(true);
+    const calledWith = (gcs.generateViewSignedUrl as jest.Mock).mock.calls;
+    expect(calledWith.length).toBeGreaterThan(0);
+    for (const [, allowedIdsArg] of calledWith) {
+      expect(allowedIdsArg).toEqual([ROW.id, 'absorbed-1', 'absorbed-2']);
+    }
+  });
+
+  it('sem célula "documents" (query nem roda): findAbsorbedWorkerIds NÃO é chamado — lazy, custo evitado', async () => {
+    await buildWorkerDetailResponse(db, enc, gcs, ROW, []); // cells=[] → nenhuma célula autorizada
+    expect(queries.some((q) => q.includes('WITH RECURSIVE survivor'))).toBe(false);
+  });
+
+  it('assina documentos adicionais (additionalCertificatesUrls) e propaga document_validations', async () => {
+    const data = await buildWorkerDetailResponse(db, enc, gcs, ROW, null);
+    expect(data.documents.additionalCertificatesUrls).toEqual(['signed:extra-cert.pdf']);
+    expect(data.documents.documentValidations).toEqual({
+      identity_document: { validatedBy: 'admin@enlite.health', validatedAt: '2025-01-01T00:00:00Z' },
+    });
+  });
+
+  it('quando generateViewSignedUrl falha para um documento (Error), esse campo vem null e o log NUNCA carrega filePath nem err.message — só workerId e o nome da classe do erro (R4, rodada 2)', async () => {
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    (gcs.generateViewSignedUrl as jest.Mock).mockImplementation(async (p: string) => {
+      if (p === 'cv.pdf') throw new Error('gcs down — object workers/w-1/resume_cv/leaked.pdf not found');
+      return `signed:${p}`;
+    });
+    const data = await buildWorkerDetailResponse(db, enc, gcs, ROW, null);
+    expect(data.documents.resumeCvUrl).toBeNull();
+    expect(data.documents.identityDocumentUrl).toBe('signed:dni.jpg');
+    const loggedArgs = errorSpy.mock.calls.map((c) => c.join(' ')).join('\n');
+    expect(loggedArgs).not.toContain('cv.pdf');
+    expect(loggedArgs).not.toContain('gcs down');
+    expect(loggedArgs).not.toContain('leaked.pdf');
+    expect(loggedArgs).toContain('w-1');
+    expect(loggedArgs).toContain('Error');
+    errorSpy.mockRestore();
+  });
+
+  it('quando o erro rejeitado NÃO é um Error, loga só o typeof — nunca o valor bruto (ramo "else" do ternário, R4)', async () => {
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    (gcs.generateViewSignedUrl as jest.Mock).mockImplementation(async (p: string) => {
+      if (p === 'cv.pdf') throw 'boom-nao-e-error-instance';
+      return `signed:${p}`;
+    });
+    const data = await buildWorkerDetailResponse(db, enc, gcs, ROW, null);
+    expect(data.documents.resumeCvUrl).toBeNull();
+    const loggedArgs = errorSpy.mock.calls.map((c) => c.join(' ')).join('\n');
+    expect(loggedArgs).not.toContain('boom-nao-e-error-instance');
+    expect(loggedArgs).toContain('string');
+    errorSpy.mockRestore();
+  });
+
+  it('doc sem additional_certificates_urls nem document_validations usa os fallbacks ([] e null)', async () => {
+    mockQuery.mockImplementationOnce(async () => ({
+      rows: [{ id: 'doc-2', resume_cv_url: 'cv.pdf', identity_document_url: 'dni.jpg', documents_status: 'approved' }],
+    }));
+    const data = await buildWorkerDetailResponse(db, enc, gcs, ROW, null);
+    expect(data.documents.additionalCertificatesUrls).toEqual([]);
+    expect(data.documents.documentValidations).toEqual({});
+  });
+
+  it('2+ encuadres (WJA + bloqueada) exercitam o comparator do sort() por createdAt desc', async () => {
+    extraJobApplicationRow = {
+      id: 'enc-2', job_posting_id: 'jp-2', funnel_stage: 'REJECTED', source: 'talentum', case_number: 43, vacancy_number: 2,
+      vacancy_status: 'CLOSED', patient_first_name: 'Ana', patient_last_name: 'Lopez', resultado: null, interview_date: null,
+      interview_time: null, recruiter_name: null, coordinator_name: null, rejection_reason: null, rejection_reason_category: null,
+      attended: null, created_at: '2025-01-01T10:00:00Z',
+    };
+    const data = await buildWorkerDetailResponse(db, enc, gcs, ROW, null);
+    expect(data.encuadres).toHaveLength(2);
+    // created_at mais recente (2025-03) primeiro — prova que o comparator RODOU, não só existiu.
+    expect(data.encuadres[0].caseNumber).toBe(42);
+    expect(data.encuadres[1].caseNumber).toBe(43);
+  });
+
+  it('languages_encrypted decripta para string que NÃO é JSON válido → catch usa [languages] como fallback', async () => {
+    const rowLinguagemQuebrada = { ...ROW, languages_encrypted: 'enc_pt-BR' }; // decrypt tira o "enc_" → "pt-BR", não é JSON
+    const data = await buildWorkerDetailResponse(db, enc, gcs, rowLinguagemQuebrada, null);
+    expect(data.languages).toEqual(['pt-BR']);
+  });
+
+  it('doc sem documents_status → cai no fallback "pending"', async () => {
+    docsRowOverride = { id: 'doc-3', resume_cv_url: null, identity_document_url: null };
+    const data = await buildWorkerDetailResponse(db, enc, gcs, ROW, null);
+    expect(data.documents.documentsStatus).toBe('pending');
+  });
+
+  it('locationResult sem linha (worker sem service_area) → location: null; serviceArea sem lat/lng → lat/lng null; campos opcionais ausentes de w caem nos fallbacks ([] / null / false)', async () => {
+    locationRowsOverride = [];
+    serviceAreaRowsOverride = [{ id: 'sa-2', address_line: 'Sem coordenada', latitude: null, longitude: null, radius_km: null, city: 'CABA' }];
+    const rowSemOpcionais = {
+      ...ROW,
+      phone: null,
+      data_sources: null,
+      hobbies: null,
+      diagnostic_preferences: null,
+      is_test: null,
+      experience_types: null,
+      preferred_types: null,
+      preferred_age_range: null,
+    };
+    const data = await buildWorkerDetailResponse(db, enc, gcs, rowSemOpcionais, null);
+    expect(data.location).toBeNull();
+    expect(data.serviceAreas).toEqual([{ id: 'sa-2', address: 'Sem coordenada', serviceRadiusKm: null, lat: null, lng: null }]);
+    expect(data.phone).toBeNull();
+    expect(data.dataSources).toEqual([]);
+    expect(data.hobbies).toEqual([]);
+    expect(data.diagnosticPreferences).toEqual([]);
+    expect(data.isTest).toBe(false);
+    expect(data.experienceTypes).toEqual([]);
+    expect(data.preferredTypes).toEqual([]);
+    expect(data.preferredAgeRange).toEqual([]);
+  });
+
+  it('demais campos opcionais (nome descriptografado vazio, profissão, ocupação, tipo de doc, endereço/cidade/zonas do location, address_line da service area) caem nos fallbacks "?? null" quando ausentes', async () => {
+    serviceAreaRowsOverride = [{ id: 'sa-3', address_line: null, latitude: null, longitude: null, radius_km: null, city: 'CABA' }];
+    locationRowsOverride = [{ address: null, city: null, work_zone: null, interest_zone: null }];
+    const rowSemNomeNemProfissao = {
+      ...ROW,
+      first_name_encrypted: null, // decrypt(null) → null → "firstName ?? null" cai no null
+      document_type: null,
+      profession: null,
+      occupation: null,
+      knowledge_level: null,
+    };
+    const data = await buildWorkerDetailResponse(db, enc, gcs, rowSemNomeNemProfissao, null);
+    expect(data.firstName).toBeNull();
+    expect(data.documentType).toBeNull();
+    expect(data.profession).toBeNull();
+    expect(data.occupation).toBeNull();
+    expect(data.knowledgeLevel).toBeNull();
+    expect(data.serviceAreas).toEqual([{ id: 'sa-3', address: null, serviceRadiusKm: null, lat: null, lng: null }]);
+    expect(data.location).toEqual({ address: null, city: null, workZone: null, interestZone: null });
   });
 });

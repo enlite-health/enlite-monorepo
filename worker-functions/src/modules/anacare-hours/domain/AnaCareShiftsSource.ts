@@ -10,22 +10,98 @@ export interface SourceShiftDTO {
   sourceShiftId: string;
   anaCarePatientId: string;
   anaCareNurseId: string;
+  /**
+   * Nome e sobrenome do paciente/prestador — vêm do PRÓPRIO payload do turno (não de cruzamento
+   * com `workers`/`patients`, decisão do Gabriel 17/09, item 1 da conferência de horas). Rótulo de
+   * exibição do retrato, cópia transitória do que o Ana Care mostra — não é o registro de
+   * identidade (esse mora em `patients`/`workers`). Opcional **de propósito**: só o caminho AO
+   * VIVO (`minimizeShiftDTO`, usado pelo DETALHE) os preenche. O antigo retrato por turno (lido
+   * pela LISTA antes da F6.2) não tinha coluna de nome e devolvia o DTO sem estes campos — a tela
+   * caía no fallback `Sin vínculo · ID X`. Guardar nome no retrato dependia da decisão de
+   * granularidade (D360 §"O que esta decisão NÃO fecha") — resolvida pelo retrato AGREGADO
+   * (`anacare_patient_month`), que tem coluna de nome.
+   */
+  patientFirstName?: string | null;
+  patientLastName?: string | null;
+  nurseFirstName?: string | null;
+  nurseLastName?: string | null;
+  /**
+   * Documento de identidade do paciente (categoria/valor, ex. "DNI"/"30111222") — mesmo desenho de
+   * `patientFirstName`/`patientLastName`: vem do PRÓPRIO payload do turno, só o caminho AO VIVO
+   * (`minimizeShiftDTO`, usado pelo DETALHE) os preenche; a LISTA (retrato agregado) nunca teve e
+   * não ganha esta coluna. PII — quem decide se sai no payload HTTP é o gate `patient_identity:
+   * read` (`AnaCareHoursController.canReadPatientDocument`, mesmo padrão de `worker_contact:read`
+   * para o nome do prestador); este DTO só carrega o valor, não decide permissão.
+   */
+  patientDocumentType?: string | null;
+  patientDocumentNumber?: string | null;
   /** ISO 8601 (UTC), YYYY-MM-DD para o dia do turno. */
   date: string;
-  scheduledStart: string;
-  scheduledEnd: string;
+  /**
+   * `null` = retrato sem o previsto gravado ainda (`planned_start`/`planned_end` NULL no banco,
+   * migration 437) — item 7 da revisão de PR: o repositório NÃO substitui mais por `''` aqui (isso
+   * escondia o "não sei" como se fosse um horário válido e produzia `NaN` no cálculo de horas
+   * previstas). Quem decide o fallback de exibição é o mapper (`AnaCareHoursMapper`), na fronteira
+   * com o contrato de wire do front.
+   */
+  scheduledStart: string | null;
+  scheduledEnd: string | null;
   actualStart: string | null;
   actualEnd: string | null;
   /** 'app' | 'web_admin' | null — null = sem check-in. */
   checkinSource: 'app' | 'web_admin' | null;
-  /** Horas decimais da fonte (duration_hours) — null quando não há check-in. */
-  durationHours: number | null;
+  /**
+   * Afirmação da fonte de que o turno fechou. NÃO existe campo de horas trabalhadas na porta —
+   * medido 17/09 contra a API real: o único campo de horas do Ana Care (`duration`) é o PREVISTO
+   * (`scheduledEnd - scheduledStart`), preenchido mesmo sem check-in e mesmo turno não finalizado.
+   * Hora trabalhada se deriva SEMPRE de `actualStart`/`actualEnd` (ver `AnaCareHoursMapper`), nunca
+   * de um campo da fonte.
+   */
+  isFinalized: boolean;
+  /**
+   * 'app' | 'web_admin' | null — origem do CHECKOUT (campo `checkout_source` no cru, existe desde
+   * sempre mas não tinha campo no DTO — medido 17/09 contra a API real: gravado NULO no antigo
+   * retrato por turno (migration 437) por omissão, não por ausência na fonte). Opcional: quem monta
+   * o DTO fora de `minimizeShiftDTO` (ex. round-trip de leitura do retrato) não é obrigado a tê-lo.
+   */
+  checkoutSource?: 'app' | 'web_admin' | null;
+  /**
+   * Atraso do check-in em minutos, afirmação da fonte (campo `checkin_delay` no cru — mesmo caso
+   * de `checkoutSource`: existe na fonte, coluna existe desde a migration 437, gravado NULO por
+   * omissão no DTO). Opcional pelo mesmo motivo.
+   */
+  checkinDelay?: number | null;
+  /**
+   * `YYYY-MM` afirmado pela PRÓPRIA fonte (campo `month` no cru) — usado só para VALIDAR contra o
+   * mês pedido no upsert (`AnaCareShiftRepository.upsertMany` falha alto se divergir, em vez de
+   * gravar calado num mês errado). Opcional: não é parte do contrato de leitura do retrato já
+   * gravado (`listByMonth`), só do caminho fonte→upsert.
+   */
+  sourceMonth?: string;
 }
 
 export interface ListShiftsParams {
   /** Mês no formato YYYY-MM. */
   month: string;
   patientId?: string;
+  /** Restringe a uma reserva/conta específica do Ana Care (mesmo número que a conta — F17). */
+  reservationId?: string;
+}
+
+/**
+ * Turno cru sem paciente/prestador não é gravável (colunas NOT NULL, migration 437) e é
+ * DESCARTADO na borda — nunca em silêncio (conserto 17/09, 500 medido: `raw.nurse === null` em
+ * 15/3.421 turnos, 0,4%). `listShifts` devolve a contagem no MESMO objeto do resultado para que
+ * seja impossível esquecer de contar (ver `ListShiftsResult`).
+ */
+export interface SkippedShiftCounts {
+  noProvider: number;
+  noPatient: number;
+}
+
+export interface ListShiftsResult {
+  shifts: SourceShiftDTO[];
+  skipped: SkippedShiftCounts;
 }
 
 /** Estado do retrato — alimenta `AnaCareMonthSnapshot.stale`/`circuitBreakerOpen` e a recusa de escrita (spec "retrato desatualizado bloqueia a validação no serviço e na tela"). */
@@ -36,10 +112,13 @@ export interface AnaCareRetratoSourceStatus {
 
 /**
  * Porta enxuta (minimização na borda, spec §Minimização): nenhum campo de telefone, endereço,
- * geolocalização, pagamento, observação ou documento de identidade passa por aqui.
+ * geolocalização, pagamento ou observação passa por aqui. Documento de identidade do paciente É
+ * carregado (`patientDocumentType`/`patientDocumentNumber`, 18/09/2026) — é PII e sai do backend
+ * só atrás do gate `patient_identity:read` (ver `SourceShiftDTO.patientDocumentType`); a porta
+ * transporta o valor, o controller decide quem recebe.
  */
 export interface AnaCareShiftsSource {
-  listShifts(params: ListShiftsParams): Promise<SourceShiftDTO[]>;
+  listShifts(params: ListShiftsParams): Promise<ListShiftsResult>;
   /** Um turno por `sourceShiftId`, sem precisar do mês (validar/contestar não recebem mês no corpo). */
   getShift(sourceShiftId: string): Promise<SourceShiftDTO | null>;
   /**

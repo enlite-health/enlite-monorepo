@@ -1,14 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useForm, useFieldArray, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useTranslation } from 'react-i18next';
 import { X, Plus, Trash2 } from 'lucide-react';
-import { AdminApiService } from '@infrastructure/http/AdminApiService';
-import type {
-  PatientResponsibleDetail,
-  PatientSupportNetworkSectionPayload,
-} from '@domain/entities/PatientDetail';
+import { AdminPatientContactRowsApiService } from '@infrastructure/http/AdminPatientContactRowsApiService';
+import type { PatientResponsibleDetail } from '@domain/entities/PatientDetail';
 import { Button } from '@presentation/components/atoms/Button';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
@@ -16,6 +13,8 @@ import { FormField } from '@presentation/components/molecules/FormField';
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon';
 import { SelectField, type SelectOption } from '@presentation/components/molecules/SelectField';
 import { RELATIONSHIP_CODES } from '@domain/entities/patientEnums';
+import { ActionButton } from '@presentation/components/features/access';
+import { useActionGate } from '@presentation/hooks/useCellAccess';
 import { useConfirmDiscardClose } from '@hooks/admin/useConfirmDiscardClose';
 import { DiscardChangesConfirm } from './DiscardChangesConfirm';
 
@@ -29,17 +28,16 @@ interface Props {
 const CLOSE_MS = 300;
 /** Mesmas opções do drawer geral (tipos de documento do paciente). */
 const DOCUMENT_TYPES = ['DNI', 'PASSPORT', 'CEDULA', 'LE_LC', 'CPF'] as const;
-/** Procedência de um familiar criado AQUI. Existente reenvia a sua (lex C1.2). */
-const PANEL_SOURCE = 'admin_manual';
 
-// Campo opcional nasce como '' (defaultValues/append) e `source` SEMPRE vem — do
-// detalhe ou de PANEL_SOURCE no append; o tipo é `string` e o submit não carrega
-// fallback para um `undefined` que nunca chega.
+// Campo opcional nasce como '' (defaultValues/append); o tipo é `string` e o submit não carrega
+// fallback para um `undefined` que nunca chega. `id` é OCULTO (não registrado como input visível):
+// vazio = linha nova (POST); preenchido = linha existente (PATCH por linha, spec 018 PR-1).
 // Spec 014 (US-D4): a mensagem é a CHAVE i18n (mesmo padrão de workerRegistrationSchemas.ts/
 // LoginPage.tsx) — o zod não sabe de locale, então guarda a chave e o render traduz (`terr`
 // abaixo). Sem isso o zodResolver caía no default em inglês do zod ("String must contain at
 // least 1 character(s)"), visível na UI em espanhol.
 const rowSchema = z.object({
+  id: z.string(),
   firstName: z.string().trim().min(1, 'admin.patients.editDrawer.requiredField'),
   lastName: z.string().trim().min(1, 'admin.patients.editDrawer.requiredField'),
   relationship: z.string().trim(),
@@ -47,21 +45,18 @@ const rowSchema = z.object({
   email: z.union([z.literal(''), z.string().trim().email()]),
   documentType: z.string(),
   documentNumber: z.string().trim(),
-  source: z.string(),
   isPrimary: z.boolean(),
 });
 const schema = z.object({ responsibles: z.array(rowSchema) });
 type FormValues = z.infer<typeof schema>;
 
 /**
- * Edit drawer for the `support-network` section. This section is a REPLACE:
- * PATCH /api/admin/patients/:id/support-network overwrites the whole
- * responsibles set. firstName + lastName are required per row (backend schema);
- * exactly one row can be the primary contact. displayOrder is the row index.
- *
- * REPLACE significa: o que este drawer não reenvia, o banco perde (spec 011 A1).
- * Por isso cada linha carrega e devolve TODOS os campos da tabela — documento
- * (tipo + número, lex C1.1) e procedência (`source`, lex C1.2) inclusive.
+ * Edit drawer for the responsáveis da rede de apoio — escrita POR LINHA (spec 018, PR-1, ADR-1;
+ * SUP-37). `PATCH /patients/:id/support-network` (a lista inteira) virou 410: cada linha do
+ * formulário nasce (`POST .../responsibles`), muda (`PATCH .../responsibles/:rid`) ou desaparece
+ * (`POST .../responsibles/:rid/deactivate`, nunca DELETE) por conta própria — editar uma NÃO toca
+ * no id das outras. `firstName`/`lastName` são obrigatórios por linha (zod); só um pode ser o
+ * contato titular.
  */
 export function PatientSupportNetworkEditDrawer({ patientId, responsibles, onClose, onSaved }: Props): JSX.Element {
   const { t } = useTranslation();
@@ -72,11 +67,19 @@ export function PatientSupportNetworkEditDrawer({ patientId, responsibles, onClo
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  /** Ids de linhas EXISTENTES removidas nesta sessão do drawer — desativadas no submit. */
+  const toDeactivateRef = useRef<string[]>([]);
+  // Conserto rodada B (Gabriel 15/09): o botão "Nuevo" do card abre para quem tem `create` OU
+  // `update` — dentro do drawer, adicionar linha exige `create` e editar linha EXISTENTE exige
+  // `update`. Quem tem as duas mantém o comportamento de sempre.
+  const { allowed: canCreateRow } = useActionGate('patient_family', 'create');
+  const { allowed: canUpdateRow } = useActionGate('patient_family', 'update');
 
   const { register, handleSubmit, control, watch, setValue, formState: { errors, isDirty } } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
       responsibles: (responsibles ?? []).map((r) => ({
+        id: r.id,
         firstName: r.firstName ?? '',
         lastName: r.lastName ?? '',
         relationship: r.relationship ?? '',
@@ -84,7 +87,6 @@ export function PatientSupportNetworkEditDrawer({ patientId, responsibles, onClo
         email: r.email ?? '',
         documentType: r.documentType ?? '',
         documentNumber: r.documentNumber ?? '',
-        source: r.source,
         isPrimary: r.isPrimary,
       })),
     },
@@ -127,34 +129,75 @@ export function PatientSupportNetworkEditDrawer({ patientId, responsibles, onClo
     fields.forEach((_, i) => setValue(`responsibles.${i}.isPrimary`, i === index));
   };
 
+  /** Remover: linha NOVA (sem id) some sem chamar a API; linha EXISTENTE é desativada no submit. */
+  const removeRow = (index: number): void => {
+    const id = watch(`responsibles.${index}.id`);
+    if (id) toDeactivateRef.current.push(id);
+    remove(index);
+  };
+
+  const nz = (v: string): string | null => { const s = v.trim(); return s ? s : null; };
+
   const onSubmit = async (values: FormValues): Promise<void> => {
     setSubmitError(null);
-    const nz = (v: string): string | null => { const s = v.trim(); return s ? s : null; };
-    const payload: PatientSupportNetworkSectionPayload = {
-      responsibles: values.responsibles.map((r, index) => ({
-        firstName: r.firstName.trim(),
-        lastName: r.lastName.trim(),
-        relationship: nz(r.relationship),
-        phone: nz(r.phone),
-        email: nz(r.email),
-        documentType: nz(r.documentType),
-        documentNumber: nz(r.documentNumber),
-        source: r.source,
-        isPrimary: r.isPrimary,
-        displayOrder: index,
-      })),
-    };
+    let rows = values.responsibles;
     // If nobody is primary but there is at least one row, make the first primary.
-    if (payload.responsibles.length > 0 && !payload.responsibles.some((r) => r.isPrimary)) {
-      payload.responsibles[0].isPrimary = true;
+    if (rows.length > 0 && !rows.some((r) => r.isPrimary)) {
+      rows = rows.map((r, i) => (i === 0 ? { ...r, isPrimary: true } : r));
     }
 
     setBusy(true);
     try {
-      await AdminApiService.updatePatientSection(patientId, 'support-network', payload);
+      // 1. Desativar as removidas PRIMEIRO — libera o índice de titular único antes de
+      //    promover outra linha (a mesma ordem vale para o passo 2/3 abaixo).
+      // CR-1 (achado do gate revisao-pr): cada id sai do ref assim que a SUA chamada tem
+      // sucesso — não só depois do laço inteiro. Sem isto, se a 2ª de 3 desativações falhasse,
+      // a 1ª (já desativada no servidor) continuava no ref, e todo reenvio tentava desativá-la
+      // de novo → 409 (already_inactive) → catch → o drawer nunca mais salvava sem fechar e
+      // reabrir (o ref só é reconstruído no próximo mount, via `removeRow`).
+      while (toDeactivateRef.current.length > 0) {
+        const id = toDeactivateRef.current[0];
+        await AdminPatientContactRowsApiService.deactivateResponsible(patientId, id);
+        toDeactivateRef.current = toDeactivateRef.current.slice(1);
+      }
+
+      // 2. Todas as linhas NÃO-titulares primeiro (nunca colidem com o índice único).
+      // 3. A linha titular (no máximo uma) por ÚLTIMO — o titular anterior já foi
+      //    desmarcado/desativado nos passos 1-2, então promovê-la agora não colide.
+      // `i` é o índice no ARRAY DO FORM (`fields`/`rows`), preservado através do reordenamento —
+      // é ele que aponta de volta pro `setValue` abaixo.
+      const indexadas = rows.map((r, i) => ({ r, i }));
+      const ordenadas = [...indexadas.filter(({ r }) => !r.isPrimary), ...indexadas.filter(({ r }) => r.isPrimary)];
+      for (const { r, i } of ordenadas) {
+        const payload = {
+          firstName: r.firstName.trim(),
+          lastName: r.lastName.trim(),
+          relationship: nz(r.relationship),
+          phone: nz(r.phone),
+          email: nz(r.email),
+          documentType: nz(r.documentType),
+          documentNumber: nz(r.documentNumber),
+          isPrimary: r.isPrimary,
+        };
+        if (r.id) {
+          await AdminPatientContactRowsApiService.updateResponsible(patientId, r.id, payload);
+        } else {
+          // ACHADO 2 (018/PR-1): a linha nasce sem id (POST). Sem gravar o id REAL devolvido
+          // de volta no form, um retry após a falha de OUTRA linha reenviava esta como POST de
+          // novo — cada tentativa duplicava as linhas que já tinham sido criadas com sucesso.
+          const created = await AdminPatientContactRowsApiService.createResponsible(patientId, payload);
+          setValue(`responsibles.${i}.id`, created.id);
+        }
+      }
+      // `onSaved()` sempre relê a lista do servidor — a tela nunca mostra o snapshot de ANTES do
+      // submit, que mentiria sobre o que já foi salvo (achado do gate `revisao-pr`).
       onSaved();
       handleClose();
     } catch {
+      // Falha em qualquer chamada (desativação do passo 1 ou criação/atualização do passo 2/3)
+      // aborta o laço aqui — próximo Guardar reenvia a partir de onde parou (o id já gravado
+      // no form evita duplicar a linha que já tinha sido criada com sucesso).
+      onSaved();
       // lex C1.3: a mensagem NUNCA ecoa o payload — uma resposta da API que cite
       // o número do documento não pode virar texto na tela. Genérica de propósito.
       setSubmitError(te('saveError'));
@@ -197,39 +240,46 @@ export function PatientSupportNetworkEditDrawer({ patientId, responsibles, onClo
             <Text size="sm" color="muted" data-testid="psn-empty">{t('admin.patients.detail.noData')}</Text>
           )}
 
-          {fields.map((f, index) => (
+          {fields.map((f, index) => {
+            // Linha EXISTENTE (tem id) exige `update`; linha NOVA (recém-adicionada, sem id)
+            // exige `create` — a mesma célula que autorizou o `append` abaixo.
+            const isExistingRow = !!watched?.[index]?.id;
+            const rowEditable = isExistingRow ? canUpdateRow : canCreateRow;
+            return (
             <div key={f.id} data-testid={`psn-row-${index}`} className="flex flex-col gap-3 p-4 rounded-xl border border-slate-200">
               <div className="flex items-center justify-between">
                 <Text size="sm" weight="semibold" color="secondary">{te('responsible')} {index + 1}</Text>
-                <button type="button" onClick={() => remove(index)} aria-label={te('removeResponsible')} data-testid={`psn-remove-${index}`} className="text-red-400 hover:text-red-600 transition-colors p-1 rounded">
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                {rowEditable && (
+                  <button type="button" onClick={() => removeRow(index)} aria-label={te('removeResponsible')} data-testid={`psn-remove-${index}`} className="text-red-400 hover:text-red-600 transition-colors p-1 rounded">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <FormField label={te('firstName')} htmlFor={`psn-firstName-${index}`} required error={terr(errors.responsibles?.[index]?.firstName?.message)}>
-                  <InputWithIcon id={`psn-firstName-${index}`} inputSize="compact" data-testid={`psn-firstName-${index}`} {...register(`responsibles.${index}.firstName` as const)} />
+                  <InputWithIcon id={`psn-firstName-${index}`} inputSize="compact" disabled={!rowEditable} data-testid={`psn-firstName-${index}`} {...register(`responsibles.${index}.firstName` as const)} />
                 </FormField>
                 <FormField label={te('lastName')} htmlFor={`psn-lastName-${index}`} required error={terr(errors.responsibles?.[index]?.lastName?.message)}>
-                  <InputWithIcon id={`psn-lastName-${index}`} inputSize="compact" data-testid={`psn-lastName-${index}`} {...register(`responsibles.${index}.lastName` as const)} />
+                  <InputWithIcon id={`psn-lastName-${index}`} inputSize="compact" disabled={!rowEditable} data-testid={`psn-lastName-${index}`} {...register(`responsibles.${index}.lastName` as const)} />
                 </FormField>
                 <FormField label={te('relationship')} htmlFor={`psn-rel-${index}`} optional>
                   <Controller control={control} name={`responsibles.${index}.relationship` as const} render={({ field }) => (
-                    <SelectField id={`psn-rel-${index}`} inputSize="compact" options={relationshipOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid={`psn-rel-${index}`} />
+                    <SelectField id={`psn-rel-${index}`} inputSize="compact" disabled={!rowEditable} options={relationshipOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid={`psn-rel-${index}`} />
                   )} />
                 </FormField>
                 <FormField label={te('phone')} htmlFor={`psn-phone-${index}`} optional>
-                  <InputWithIcon id={`psn-phone-${index}`} inputSize="compact" data-testid={`psn-phone-${index}`} {...register(`responsibles.${index}.phone` as const)} />
+                  <InputWithIcon id={`psn-phone-${index}`} inputSize="compact" disabled={!rowEditable} data-testid={`psn-phone-${index}`} {...register(`responsibles.${index}.phone` as const)} />
                 </FormField>
                 <FormField label={te('email')} htmlFor={`psn-email-${index}`} optional error={errors.responsibles?.[index]?.email?.message}>
-                  <InputWithIcon id={`psn-email-${index}`} type="email" inputSize="compact" data-testid={`psn-email-${index}`} {...register(`responsibles.${index}.email` as const)} />
+                  <InputWithIcon id={`psn-email-${index}`} type="email" inputSize="compact" disabled={!rowEditable} data-testid={`psn-email-${index}`} {...register(`responsibles.${index}.email` as const)} />
                 </FormField>
                 <FormField label={te('documentType')} htmlFor={`psn-documentType-${index}`} optional>
                   <Controller control={control} name={`responsibles.${index}.documentType` as const} render={({ field }) => (
-                    <SelectField id={`psn-documentType-${index}`} inputSize="compact" options={documentTypeOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid={`psn-documentType-${index}`} />
+                    <SelectField id={`psn-documentType-${index}`} inputSize="compact" disabled={!rowEditable} options={documentTypeOptions} placeholder={te('selectPlaceholder')} value={field.value} onChange={field.onChange} data-testid={`psn-documentType-${index}`} />
                   )} />
                 </FormField>
                 <FormField label={te('documentNumber')} htmlFor={`psn-documentNumber-${index}`} optional>
-                  <InputWithIcon id={`psn-documentNumber-${index}`} inputSize="compact" data-testid={`psn-documentNumber-${index}`} {...register(`responsibles.${index}.documentNumber` as const)} />
+                  <InputWithIcon id={`psn-documentNumber-${index}`} inputSize="compact" disabled={!rowEditable} data-testid={`psn-documentNumber-${index}`} {...register(`responsibles.${index}.documentNumber` as const)} />
                 </FormField>
               </div>
               <label className="flex items-center gap-2 cursor-pointer">
@@ -238,25 +288,31 @@ export function PatientSupportNetworkEditDrawer({ patientId, responsibles, onClo
                   name="psn-primary"
                   checked={!!watched?.[index]?.isPrimary}
                   onChange={() => selectPrimary(index)}
+                  disabled={!rowEditable}
                   data-testid={`psn-primary-${index}`}
                   className="accent-primary w-4 h-4"
                 />
                 <Text as="span" size="sm" color="secondary">{te('isPrimary')}</Text>
               </label>
             </div>
-          ))}
+            );
+          })}
 
-          <Button
+          {/* D269: adicionar linha nova é POST → patient_family:create — quem só tem `update`
+              não vê o botão (edita as linhas existentes, mas não cria linha). */}
+          <ActionButton
+            resource="patient_family"
+            action="create"
             type="button"
             variant="outline"
             size="sm"
-            onClick={() => append({ firstName: '', lastName: '', relationship: '', phone: '', email: '', documentType: '', documentNumber: '', source: PANEL_SOURCE, isPrimary: fields.length === 0 })}
+            onClick={() => append({ id: '', firstName: '', lastName: '', relationship: '', phone: '', email: '', documentType: '', documentNumber: '', isPrimary: fields.length === 0 })}
             className="flex items-center gap-1 w-fit"
             data-testid="psn-add"
           >
             <Plus className="w-4 h-4" />
             {te('addResponsible')}
-          </Button>
+          </ActionButton>
 
           {submitError && <Text size="sm" className="text-red-600" data-testid="psn-error">{submitError}</Text>}
         </form>

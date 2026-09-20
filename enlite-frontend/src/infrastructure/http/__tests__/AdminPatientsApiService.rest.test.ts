@@ -59,45 +59,42 @@ describe('AdminPatientsApiService — resto', () => {
 
   it('createPatient: 201 → id; não-JSON → erro de conexão; success:false → mensagem do backend (e fallback HTTP)', async () => {
     fetchMock.mockResolvedValueOnce(json({ success: true, data: { id: 'n1' } }, 201));
-    await expect(AdminPatientsApiService.createPatient({ firstName: 'A', birthDate: '2015-06-20' })).resolves.toEqual({ id: 'n1' });
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ firstName: 'A', birthDate: '2015-06-20' });
+    await expect(AdminPatientsApiService.createPatient({ firstName: 'A', birthDate: '2015-06-20', country: 'AR' })).resolves.toEqual({ id: 'n1' });
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ firstName: 'A', birthDate: '2015-06-20', country: 'AR' });
     fetchMock.mockResolvedValueOnce(json('', 502, 'text/plain'));
-    await expect(AdminPatientsApiService.createPatient({ firstName: 'A' })).rejects.toThrow('HTTP 502');
+    await expect(AdminPatientsApiService.createPatient({ firstName: 'A', country: 'AR' })).rejects.toThrow('HTTP 502');
     fetchMock.mockResolvedValueOnce(json({ success: false, error: 'Validação de contato' }, 400));
-    await expect(AdminPatientsApiService.createPatient({ firstName: 'A' })).rejects.toThrow('Validação de contato');
+    await expect(AdminPatientsApiService.createPatient({ firstName: 'A', country: 'AR' })).rejects.toThrow('Validação de contato');
     fetchMock.mockResolvedValueOnce(json({ success: false }, 400));
-    await expect(AdminPatientsApiService.createPatient({ firstName: 'A' })).rejects.toThrow('HTTP 400');
+    await expect(AdminPatientsApiService.createPatient({ firstName: 'A', country: 'AR' })).rejects.toThrow('HTTP 400');
   });
 
-  it('writeJson: updatePatientSection, activatePatient, chat groups/candidates/ids, papéis de chat; não-JSON e success:false sem mensagem', async () => {
+  it('writeJson: updatePatientSection, chat groups/candidates/ids, papéis de chat; não-JSON e success:false sem mensagem', async () => {
     fetchMock.mockResolvedValue(json({ success: true, data: { id: 'p' } }));
     await AdminPatientsApiService.updatePatientSection('p', 'coverage', { affiliateId: 'x' });
     expect(fetchMock.mock.calls[0][1].method).toBe('PATCH');
-    await AdminPatientsApiService.activatePatient('p');
-    expect(fetchMock.mock.calls[1][0]).toMatch(/\/patients\/p\/activate$/);
-    expect(fetchMock.mock.calls[1][1].body).toBeUndefined();
     await AdminPatientsApiService.getPatientChatCandidates('p', 5);
-    expect(fetchMock.mock.calls[2][0]).toMatch(/chat-candidates\?limit=5$/);
+    expect(fetchMock.mock.calls[1][0]).toMatch(/chat-candidates\?limit=5$/);
     await AdminPatientsApiService.getPatientChatCandidates('p');
-    expect(fetchMock.mock.calls[3][0]).toMatch(/chat-candidates$/);
+    expect(fetchMock.mock.calls[2][0]).toMatch(/chat-candidates$/);
     await AdminPatientsApiService.updatePatientChatIds('p', { chatIds: { FAMILY: null } });
-    expect(fetchMock.mock.calls[4][1].method).toBe('PUT');
+    expect(fetchMock.mock.calls[3][1].method).toBe('PUT');
     await AdminPatientsApiService.listChatGroups({ search: 'flia', limit: 10, offset: 20 });
-    expect(fetchMock.mock.calls[5][0]).toMatch(/chat-groups\?search=flia&limit=10&offset=20$/);
+    expect(fetchMock.mock.calls[4][0]).toMatch(/chat-groups\?search=flia&limit=10&offset=20$/);
     await AdminPatientsApiService.listChatGroups();
-    expect(fetchMock.mock.calls[6][0]).toMatch(/chat-groups$/);
+    expect(fetchMock.mock.calls[5][0]).toMatch(/chat-groups$/);
     await AdminPatientsApiService.listPatientChatRoles(true);
-    expect(fetchMock.mock.calls[7][0]).toMatch(/patient-chat-roles\?includeInactive=true$/);
+    expect(fetchMock.mock.calls[6][0]).toMatch(/patient-chat-roles\?includeInactive=true$/);
     await AdminPatientsApiService.listPatientChatRoles();
-    expect(fetchMock.mock.calls[8][0]).toMatch(/patient-chat-roles$/);
+    expect(fetchMock.mock.calls[7][0]).toMatch(/patient-chat-roles$/);
     await AdminPatientsApiService.createPatientChatRole({ code: 'X', labelEs: 'x', labelPtBr: 'x', isExclusive: true, displayOrder: 1, matchKeywords: [] });
-    expect(fetchMock.mock.calls[9][1].method).toBe('POST');
+    expect(fetchMock.mock.calls[8][1].method).toBe('POST');
     await AdminPatientsApiService.updatePatientChatRole('X Y', { isActive: false });
-    expect(fetchMock.mock.calls[10][0]).toMatch(/patient-chat-roles\/X%20Y$/);
+    expect(fetchMock.mock.calls[9][0]).toMatch(/patient-chat-roles\/X%20Y$/);
     fetchMock.mockResolvedValueOnce(json('', 503, 'text/html'));
-    await expect(AdminPatientsApiService.activatePatient('p')).rejects.toBeInstanceOf(PatientApiError);
+    await expect(AdminPatientsApiService.updatePatientSection('p', 'coverage', {})).rejects.toBeInstanceOf(PatientApiError);
     fetchMock.mockResolvedValueOnce(json({ success: false }, 500));
-    await expect(AdminPatientsApiService.activatePatient('p')).rejects.toThrow('HTTP 500');
+    await expect(AdminPatientsApiService.updatePatientSection('p', 'coverage', {})).rejects.toThrow('HTTP 500');
   });
 
   it('deletePatientChatRole: 204 sem corpo; erro JSON com code; erro não-JSON', async () => {
@@ -116,9 +113,9 @@ describe('AdminPatientsApiService — resto', () => {
     fetchMock.mockResolvedValueOnce(semTipo());
     await expect(AdminPatientsApiService.listPatients()).rejects.toThrow('HTTP 500');
     fetchMock.mockResolvedValueOnce(semTipo());
-    await expect(AdminPatientsApiService.createPatient({ firstName: 'A' })).rejects.toThrow('HTTP 500');
+    await expect(AdminPatientsApiService.createPatient({ firstName: 'A', country: 'AR' })).rejects.toThrow('HTTP 500');
     fetchMock.mockResolvedValueOnce(semTipo());
-    await expect(AdminPatientsApiService.activatePatient('p')).rejects.toBeInstanceOf(PatientApiError);
+    await expect(AdminPatientsApiService.updatePatientSection('p', 'coverage', {})).rejects.toBeInstanceOf(PatientApiError);
     fetchMock.mockResolvedValueOnce(semTipo());
     await expect(AdminPatientsApiService.deletePatientChatRole('X')).rejects.toBeInstanceOf(PatientApiError);
   });

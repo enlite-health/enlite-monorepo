@@ -270,10 +270,10 @@ export function insertMinimalVacancy(
 
   runSQL(`
     INSERT INTO patient_addresses (
-      patient_id, address_type, address_formatted, address_raw,
+      patient_id, address_formatted, address_raw,
       lat, lng, display_order, source, created_at, updated_at
     ) VALUES (
-      '${patientId}', 'primary', 'Av. Test 1234, CABA', 'Av. Test 1234, CABA',
+      '${patientId}', 'Av. Test 1234, CABA', 'Av. Test 1234, CABA',
       -34.6037, -58.3816, 1, 'manual', NOW(), NOW()
     )
   `);

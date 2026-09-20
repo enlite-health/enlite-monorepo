@@ -1,5 +1,6 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
+import { mergeCustomClaims } from '@modules/identity/infrastructure/mergeCustomClaims';
 import { v4 as uuidv4 } from 'uuid';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { loggingAls, logger, reportError } from '@shared/logging';
@@ -44,7 +45,8 @@ export const onUserCreate = functions.auth.user().onCreate(async (user) => {
         user.emailVerified
       ]);
 
-      await admin.auth().setCustomUserClaims(user.uid, { role: defaultRole });
+      // D294: o tipo da conta viaja junto (`worker`); a coluna `users.account_type` é derivada pelo trigger da 414.
+      await mergeCustomClaims(user.uid, { role: defaultRole, account_type: 'worker' });
 
       await client.query('COMMIT');
 

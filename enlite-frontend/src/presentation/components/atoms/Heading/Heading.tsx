@@ -1,4 +1,4 @@
-import { ReactNode } from 'react';
+import { HTMLAttributes, ReactNode } from 'react';
 
 type HeadingLevel = 1 | 2 | 3 | 4;
 /**
@@ -15,7 +15,11 @@ type HeadingSize = HeadingLevel | 'compact';
 type HeadingWeight = 'medium' | 'semibold' | 'bold';
 type HeadingColor = 'primary' | 'secondary' | 'tertiary' | 'white' | 'inherit';
 
-interface HeadingProps {
+/**
+ * Repassa os atributos de `<hN>` (`data-testid`, `aria-*`, `title`, `onClick`…) — molde do `Text`. Até
+ * 08/09 um `<Heading data-testid="x">` era descartado em silêncio e o e2e não achava o título (LISTA da spec 017).
+ */
+interface HeadingProps extends Omit<HTMLAttributes<HTMLHeadingElement>, 'color' | 'className' | 'children' | 'id'> {
   level?: HeadingLevel;
   size?: HeadingSize;
   weight?: HeadingWeight;
@@ -57,6 +61,7 @@ export function Heading({
   className = '',
   as,
   id,
+  ...rest
 }: HeadingProps): JSX.Element {
   const Component = (as || (`h${level}` as const)) as 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6';
   const classes = [
@@ -70,7 +75,7 @@ export function Heading({
     .join(' ');
 
   return (
-    <Component className={classes} id={id}>
+    <Component className={classes} id={id} {...rest}>
       {children}
     </Component>
   );

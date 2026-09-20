@@ -27,6 +27,10 @@ const mockPatient: PatientDetailRow = {
   sex: 'MALE',
   phoneWhatsapp: '+5491100000000',
   contactEmail: null,
+  hasPhoto: false,
+  gender: null,
+  languages: null,
+  dischargedAt: null,
   diagnosis: 'ASD',
   dependencyLevel: 'MODERATE',
   clinicalSpecialty: 'ASD',
@@ -66,6 +70,9 @@ const mockPatient: PatientDetailRow = {
   attentionReasons: [],
   phoneMatchesResponsible: false,
   lastCaseNumber: null,
+  coverageEmergencyContacts: [],
+  coverageDirectProfessionalRedacted: false,
+  coverageEmergencyContactsUnavailable: false,
   responsibles: [
     {
       id: 'r1',
@@ -81,6 +88,8 @@ const mockPatient: PatientDetailRow = {
       source: 'clickup',
     },
   ],
+  externalContacts: [],
+  emergencyContactRef: null,
   addresses: [
     {
       id: 'a1',
@@ -113,6 +122,7 @@ const mockPatient: PatientDetailRow = {
       name: 'Dr. García',
       phone: '+5491122222222',
       email: 'garcia@clinic.com',
+      specialty: null,
       displayOrder: 1,
       isTeam: false,
     },
@@ -195,7 +205,8 @@ describe('GetPatientByIdUseCase', () => {
       await useCase.execute(PATIENT_ID);
 
       expect(findDetailById).toHaveBeenCalledTimes(1);
-      expect(findDetailById).toHaveBeenCalledWith(PATIENT_ID);
+      // D286: o 2º argumento é o mapa de containers legíveis (sem células → todos).
+      expect(findDetailById).toHaveBeenCalledWith(PATIENT_ID, expect.objectContaining({ family: true, clinical: true }));
     });
   });
 });

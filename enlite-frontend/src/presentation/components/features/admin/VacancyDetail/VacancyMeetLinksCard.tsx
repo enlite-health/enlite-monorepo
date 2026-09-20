@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { CheckCircle2, AlertCircle, Circle, Loader2, ExternalLink, Repeat } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
-import { Button } from '@presentation/components/atoms/Button';
+import { ActionButton } from '@presentation/components/features/access';
 import { Select } from '@presentation/components/atoms/Select';
 import { AdminApiService, type RecurringMeetSlot } from '@infrastructure/http/AdminApiService';
 import { toInputTime } from './meetRecurringUtils';
@@ -280,7 +280,10 @@ export function VacancyMeetLinksCard({
       )}
 
       <div className="flex justify-end">
-        <Button
+        {/* PUT /vacancies/:id/meet-links → updateVacancyMeetLinks → vacancy:write. */}
+        <ActionButton
+          resource="vacancy"
+          action="update"
           variant="primary"
           size="sm"
           onClick={handleSave}
@@ -290,7 +293,7 @@ export function VacancyMeetLinksCard({
         >
           {isSaving && <Loader2 className="w-4 h-4 animate-spin" />}
           {isSaving ? t('admin.vacancyDetail.meetLinksCard.saving') : t('admin.vacancyDetail.meetLinksCard.saveLinks')}
-        </Button>
+        </ActionButton>
       </div>
     </div>
   );

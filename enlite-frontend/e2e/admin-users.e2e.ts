@@ -1,17 +1,20 @@
 /**
- * admin-users.spec.ts
+ * admin-users.e2e.ts
  *
  * Playwright E2E — /admin/users (Admin Users management)
  *
  * Cenários cobertos:
- *   1. Listagem: tabela visível com colunas Rol, Último login
- *   2. Criar usuário: modal abre, preenche, cria → fallback modal com link
- *   3. Trocar role: select inline muda role → badge atualiza
- *   4. Gating: recruiter não vê botão "Nuevo" nem o select de role
+ *   1. Listagem: tabela visível com Nombre/Email/Último login — SEM coluna de papel
+ *      (o papel deixou de ser atributo do admin: quem pode o quê é a célula)
+ *   2. Criar usuário: modal abre (só e-mail + nome), cria → fallback modal com link
+ *   3. Gating por célula: com `enforcement: 'on'` e SEM `user_management:*`,
+ *      Crear/Reset/Eliminar somem do DOM
+ *   4. Gating por célula: com as células concedidas, os três aparecem
  *   5. Reset password: clica em Reset → InvitationFallbackModal abre com link
  *
  * Auth: Firebase Emulator + profile API mock (mesmo padrão dos outros testes E2E).
- * APIs de users são totalmente mockadas para determinismo.
+ * O contrato `/v1/me/authz` é mockado via `page.route`, como em `admin-access.e2e.ts`:
+ * o que se prova aqui é a TELA obedecendo ao contrato, não o backend.
  */
 
 import { test, expect, Page } from '@playwright/test';
@@ -20,13 +23,15 @@ import { execSync } from 'child_process';
 const FIREBASE_EMULATOR = 'http://127.0.0.1:9099';
 const FIREBASE_API_KEY  = 'test-api-key';
 
+/** Todas as células que a tela consome hoje. */
+const CELULAS_USUARIOS = ['user_management:read', 'user_management:write', 'user_management:delete'];
+
 // ── Mock data ──────────────────────────────────────────────────────────────
 
 const MOCK_ADMIN_USER = {
   firebaseUid: 'uid-admin-001',
   email: 'admin@enlite.health',
   displayName: 'Admin E2E',
-  role: 'admin',
   department: null,
   lastLoginAt: '2026-04-01T10:00:00Z',
   loginCount: 5,
@@ -37,7 +42,6 @@ const MOCK_RECRUITER_USER = {
   firebaseUid: 'uid-recruiter-001',
   email: 'recruiter@enlite.health',
   displayName: 'Recruiter E2E',
-  role: 'recruiter',
   department: null,
   lastLoginAt: null,
   loginCount: 0,
@@ -50,10 +54,12 @@ function usersListBody(users = [MOCK_ADMIN_USER, MOCK_RECRUITER_USER]) {
 
 // ── Auth helper ────────────────────────────────────────────────────────────
 
-async function seedAdminAndLogin(
-  page: Page,
-  profileRole: 'admin' | 'recruiter' = 'admin',
-): Promise<void> {
+/**
+ * `permissions === null` = contrato ausente: o engine fica desligado e a tela
+ * aparece como sempre apareceu (régua de rollout D268). Um array liga o
+ * `enforcement: 'on'` e a célula passa a ser o único freio.
+ */
+async function seedAdminAndLogin(page: Page, permissions: string[] | null = null): Promise<void> {
   const email    = `e2e.users.${Date.now()}@test.com`;
   const password = 'TestAdmin123!';
 
@@ -68,10 +74,11 @@ async function seedAdminAndLogin(
   );
   const { localId: uid } = (await signUpRes.json()) as { localId: string };
 
-  // 2. Seed Postgres (best-effort — profile mock is the safety net)
+  // 2. Seed Postgres (best-effort — profile mock is the safety net). `role` fica no INSERT:
+  //    a coluna é NOT NULL e ainda marca staff × prestador; só deixou de ser nível de acesso.
   const sql = `
     INSERT INTO users (firebase_uid, email, display_name, role, created_at, updated_at)
-      VALUES ('${uid}', '${email}', 'Admin E2E', '${profileRole}', NOW(), NOW())
+      VALUES ('${uid}', '${email}', 'Admin E2E', 'admin', NOW(), NOW())
       ON CONFLICT DO NOTHING;
   `.replace(/\n/g, ' ').trim();
 
@@ -81,7 +88,7 @@ async function seedAdminAndLogin(
     });
   } catch { /* ignore — profile mock covers this */ }
 
-  // 3. Mock profile endpoint
+  // 3. Mock profile endpoint — o perfil não carrega mais papel.
   await page.route('**/api/admin/auth/profile', async (route) => {
     await route.fulfill({
       status:      200,
@@ -93,7 +100,6 @@ async function seedAdminAndLogin(
           firebaseUid: uid,
           email,
           displayName:       'Admin E2E',
-          role:              profileRole,
           department:        'Tech',
           lastLoginAt:       new Date().toISOString(),
           loginCount:        1,
@@ -103,7 +109,18 @@ async function seedAdminAndLogin(
     });
   });
 
-  // 4. Login
+  // 4. Contrato ABAC — só quando o teste quer o engine ligado.
+  if (permissions !== null) {
+    await page.route('**/v1/me/authz', (route) => route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({
+        uid, tenantId: 't', status: 'ACTIVE', permissions,
+        countries: ['AR'], groups: [], features: {}, enforcement: 'on',
+      }),
+    }));
+  }
+
+  // 5. Login
   await page.goto('/admin/login');
   await page.locator('input[type="email"]').fill(email);
   await page.locator('input[type="password"]').fill(password);
@@ -137,14 +154,16 @@ async function navigateToUsers(page: Page) {
 // ── Cenário 1 — Listagem ───────────────────────────────────────────────────
 
 test.describe('Admin Users — Cenário 1: Listagem', () => {
-  test('tabela aparece com colunas Rol, Último login', async ({ page }) => {
+  test('tabela aparece com Último login e SEM coluna de papel', async ({ page }) => {
     await mockUsersApi(page);
     await seedAdminAndLogin(page);
     await navigateToUsers(page);
 
-    // Colunas obrigatórias
-    await expect(page.getByRole('columnheader', { name: /Rol|Papel/i })).toBeVisible();
+    // Coluna obrigatória
     await expect(page.getByRole('columnheader', { name: /login/i })).toBeVisible();
+    // A coluna de papel saiu com o ABAC — e o <select> inline junto.
+    await expect(page.getByRole('columnheader', { name: /^(Rol|Papel)$/i })).toHaveCount(0);
+    await expect(page.getByRole('combobox')).toHaveCount(0);
 
     // Linhas com dados mockados
     await expect(page.getByText('Admin E2E')).toBeVisible();
@@ -164,7 +183,6 @@ test.describe('Admin Users — Cenário 2: Criar usuário', () => {
       firebaseUid: 'uid-new-001',
       email:       'new.recruiter@enlite.health',
       displayName: 'New Recruiter',
-      role:        'recruiter',
       resetLink:   'https://enlite.health/reset?oobCode=test-code-123',
     };
 
@@ -190,10 +208,10 @@ test.describe('Admin Users — Cenário 2: Criar usuário', () => {
     await page.getByRole('button', { name: /Nuevo Usuario|Novo Usuário/i }).click();
     await expect(page.getByRole('heading', { name: /Nuevo Usuario|Novo Usuário/i })).toBeVisible();
 
-    // Preencher campos
+    // Preencher campos — o convite não pede papel nenhum.
     await page.getByLabel(/Email/i).fill('new.recruiter@enlite.health');
     await page.getByLabel(/Nombre|Nome/i).fill('New Recruiter');
-    await page.getByLabel(/Rol|Papel/i).selectOption('recruiter');
+    await expect(page.locator('.fixed.inset-0').getByRole('combobox')).toHaveCount(0);
 
     // Screenshot do modal preenchido
     await expect(page.locator('.fixed.inset-0')).toHaveScreenshot('admin-users-create-modal.png', {
@@ -217,67 +235,41 @@ test.describe('Admin Users — Cenário 2: Criar usuário', () => {
   });
 });
 
-// ── Cenário 3 — Trocar role ────────────────────────────────────────────────
+// ── Cenário 3 — Gating por CÉLULA, engine ligado ───────────────────────────
 
-test.describe('Admin Users — Cenário 3: Trocar role', () => {
-  test('select inline muda role e lista recarrega', async ({ page }) => {
-    const updatedUser = { ...MOCK_ADMIN_USER, role: 'recruiter' };
-
+test.describe('Admin Users — Cenário 3: sem célula, sem botão', () => {
+  test('enforcement "on" e nenhuma célula de user_management: Crear/Reset/Eliminar somem', async ({ page }) => {
     await mockUsersApi(page);
-
-    // Mock PATCH /api/admin/users/:id/role
-    await page.route('**/api/admin/users/*/role', async (route) => {
-      await route.fulfill({
-        status:      200,
-        contentType: 'application/json',
-        body:        JSON.stringify({ success: true, data: updatedUser }),
-      });
-    });
-
-    await seedAdminAndLogin(page);
+    await seedAdminAndLogin(page, []);
     await navigateToUsers(page);
 
-    // Aguarda tabela carregar
     await expect(page.getByText('Admin E2E')).toBeVisible();
 
-    // Screenshot antes
-    await expect(page).toHaveScreenshot('admin-users-role-before.png', { maxDiffPixelRatio: 0.05 });
+    // "Esconder, não desabilitar" (D269): os três saem do DOM.
+    await expect(page.getByRole('button', { name: /Nuevo Usuario|Novo Usuário/i })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /^Reset$/i })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /Eliminar|Excluir/i })).toHaveCount(0);
 
-    // Mudar role do primeiro usuário (Admin E2E) de admin → recruiter
-    const selects = page.getByRole('combobox');
-    await selects.first().selectOption('recruiter');
-
-    // Aguarda reload (GET users chamado novamente)
-    await page.waitForResponse((resp) =>
-      resp.url().includes('/api/admin/users') && resp.request().method() === 'GET',
-    );
-
-    // Screenshot depois
-    await expect(page).toHaveScreenshot('admin-users-role-after.png', { maxDiffPixelRatio: 0.05 });
+    // Screenshot do gating
+    await expect(page).toHaveScreenshot('admin-users-sem-celula.png', { maxDiffPixelRatio: 0.05 });
   });
 });
 
-// ── Cenário 4 — Gating (recruiter) ────────────────────────────────────────
+// ── Cenário 4 — Com as células, os botões voltam ───────────────────────────
 
-test.describe('Admin Users — Cenário 4: Gating para recruiter', () => {
-  test('recruiter não vê botão Nuevo nem selects de role', async ({ page }) => {
+test.describe('Admin Users — Cenário 4: com as células, os botões existem', () => {
+  test('enforcement "on" com user_management:write/delete: Crear/Reset/Eliminar aparecem', async ({ page }) => {
     await mockUsersApi(page);
-    await seedAdminAndLogin(page, 'recruiter');
+    await seedAdminAndLogin(page, CELULAS_USUARIOS);
     await navigateToUsers(page);
 
     await expect(page.getByText('Admin E2E')).toBeVisible();
 
-    // Botão "Nuevo" NÃO deve existir
-    await expect(
-      page.getByRole('button', { name: /Nuevo Usuario|Novo Usuário/i }),
-    ).not.toBeVisible();
+    await expect(page.getByRole('button', { name: /Nuevo Usuario|Novo Usuário/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /^Reset$/i }).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: /Eliminar|Excluir/i }).first()).toBeVisible();
 
-    // Selects de role NÃO devem existir
-    const selects = page.getByRole('combobox');
-    await expect(selects).toHaveCount(0);
-
-    // Screenshot do gating
-    await expect(page).toHaveScreenshot('admin-users-recruiter-view.png', { maxDiffPixelRatio: 0.05 });
+    await expect(page).toHaveScreenshot('admin-users-com-celula.png', { maxDiffPixelRatio: 0.05 });
   });
 });
 

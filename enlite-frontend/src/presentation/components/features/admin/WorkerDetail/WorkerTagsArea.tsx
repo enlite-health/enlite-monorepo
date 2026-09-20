@@ -4,6 +4,11 @@
  * Exibe chips de tags atribuídas ao worker e permite adicionar/remover tags.
  * Gerencia estado local de tags com atualização otimista.
  * Add/remove é liberado pra qualquer staff (sem gate por admin).
+ *
+ * POST/DELETE /admin/workers/:id/tags/:tagId → worker:write (mesma célula
+ * pras duas ações — não existe `worker:delete` na rota de tag). D269 — nem
+ * o "X" de remover nem o dropdown de adicionar são `<Button>`, então usam
+ * `useActionGate` direto: sem a célula, os dois SOMEM.
  */
 import { useEffect, useRef, useState } from 'react';
 import { X, ChevronDown } from 'lucide-react';
@@ -12,6 +17,7 @@ import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import type { WorkerTagSummary } from '@domain/entities/WorkerTag';
 import type { WorkerTag } from '@domain/entities/WorkerTag';
 import { Text } from '@presentation/components/atoms/Text';
+import { useActionGate } from '@presentation/hooks/useCellAccess';
 
 /** Calcula luminância relativa para decidir cor de texto (claro/escuro). */
 function getTextColor(hex: string): string {
@@ -30,6 +36,7 @@ interface WorkerTagsAreaProps {
 
 export function WorkerTagsArea({ workerId, initialTags }: WorkerTagsAreaProps): JSX.Element {
   const { t } = useTranslation();
+  const workerWriteGate = useActionGate('worker', 'update');
   const [tags, setTags] = useState<WorkerTagSummary[]>(initialTags);
   const [catalog, setCatalog] = useState<WorkerTag[]>([]);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -127,20 +134,24 @@ export function WorkerTagsArea({ workerId, initialTags }: WorkerTagsAreaProps): 
               style={{ backgroundColor: tag.color, color: textColor }}
             >
               {tag.name}
-              <button
-                type="button"
-                aria-label={t('admin.workerDetail.tags.removeTag')}
-                onClick={() => handleRemove(tag.id)}
-                className="ml-0.5 hover:opacity-70 transition-opacity cursor-pointer"
-                style={{ color: textColor }}
-              >
-                <X className="w-3 h-3" />
-              </button>
+              {/* D269 — sem worker:write, o "X" de remover SOME. */}
+              {!workerWriteGate.denied && (
+                <button
+                  type="button"
+                  aria-label={t('admin.workerDetail.tags.removeTag')}
+                  onClick={() => handleRemove(tag.id)}
+                  className="ml-0.5 hover:opacity-70 transition-opacity cursor-pointer"
+                  style={{ color: textColor }}
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
             </span>
           );
         })}
 
-        {/* Dropdown for adding a tag */}
+        {/* Dropdown for adding a tag — D269: sem worker:write, SOME inteiro. */}
+        {!workerWriteGate.denied && (
         <div className="relative" ref={dropdownRef}>
           <button
             type="button"
@@ -189,6 +200,7 @@ export function WorkerTagsArea({ workerId, initialTags }: WorkerTagsAreaProps): 
             </div>
           )}
         </div>
+        )}
       </div>
 
       {error && (

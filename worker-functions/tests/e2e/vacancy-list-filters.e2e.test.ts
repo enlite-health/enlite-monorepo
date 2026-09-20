@@ -79,8 +79,8 @@ async function insertAddress(
 ): Promise<void> {
   await p.query(
     `INSERT INTO patient_addresses
-       (id, patient_id, address_type, address_formatted, address_raw, source, state, city)
-     VALUES ($1, $2, 'primary', $3, $3, 'e2e-vlf', $4, $5)
+       (id, patient_id, address_formatted, address_raw, source, state, city)
+     VALUES ($1, $2, $3, $3, 'e2e-vlf', $4, $5)
      ON CONFLICT (id) DO NOTHING`,
     [id, patientId, `${state} / ${city}`, state, city],
   );

@@ -1,3 +1,8 @@
+// Achado da revisão do PR-4 (item 3): `purge` agora dispara um retry oportunista da fila de
+// órfãos no fim — fire-and-forget, não deve poluir/instabilizar ESTES testes (que não são sobre
+// o retry; esse tem suíte própria em PatientPhotoOrphanRetryService.test.ts).
+jest.mock('../scheduleOpportunisticOrphanRetry', () => ({ scheduleOpportunisticOrphanRetry: jest.fn() }));
+
 // O default do construtor (`db = DatabaseConnection.getInstance().getPool()`) só
 // é alcançável se a conexão não for real — o controller sempre passa o pool dele.
 const mockGetPool = jest.fn();
@@ -5,7 +10,18 @@ jest.mock('@shared/database/DatabaseConnection', () => ({
   DatabaseConnection: { getInstance: () => ({ getPool: mockGetPool }) },
 }));
 
+// spec 018, PR-4 (task 4.8): só para o teste "constrói pela fábrica default" — prova que o
+// default `() => new PatientPhotoStorage()` do construtor (produção real) é de fato invocável,
+// sem sair para a rede/GCS de verdade.
+const mockGcsDelete = jest.fn(async () => undefined);
+jest.mock('@google-cloud/storage', () => ({
+  Storage: jest.fn().mockImplementation(() => ({
+    bucket: () => ({ file: () => ({ delete: mockGcsDelete }) }),
+  })),
+}));
+
 import * as functions from 'firebase-functions';
+import * as actorContextModule from '@shared/database/actorContext';
 import {
   PatientTestFixtureService,
   NotATestPatientError,
@@ -136,6 +152,9 @@ describe('PatientTestFixtureService.purge — limpeza de paciente sintético', (
       calendarEventsFailed: 0,
       vacanciesDeleted: 2,
       cascaded: {},
+      // spec 018, PR-4 (task 4.8): sem foto na fixture — 0 em todos.
+      photoObjectsDeleted: 0,
+      photoObjectsFailed: 0,
     });
     expect(calendar.deleteEvent).toHaveBeenCalledWith(
       'admission-ar@enlite.health',
@@ -398,6 +417,129 @@ describe('PatientTestFixtureService — construção como a produção faz', () 
 
     await expect(svc.purge(PATIENT_ID)).resolves.toMatchObject({ patientId: PATIENT_ID });
     expect(clientCalls.some((c) => /DELETE FROM patients/i.test(c.sql))).toBe(true);
+  });
+});
+
+describe('PatientTestFixtureService.purge — apaga objeto GCS (spec 018, PR-4, task 4.8)', () => {
+  const photoRow = (sql: string) =>
+    sql.includes('FROM patient_photos WHERE patient_id') ? { rows: [{ object_path_encrypted: 'enc(photo.jpg)' }], rowCount: 1 } : undefined;
+
+  function fakeEnc() {
+    return { decrypt: jest.fn(async (v: string) => `plain(${v})`), encrypt: jest.fn(async (v: string) => v) };
+  }
+
+  it('objeto de foto apagado com sucesso — conta em photoObjectsDeleted, sem órfão', async () => {
+    const { db } = makeDb([selectIsTest(true), noAppointments, photoRow]);
+    const deleteFn = jest.fn(async () => undefined);
+    const orphanRepo = { record: jest.fn() };
+    const svc = new PatientTestFixtureService(
+      db as never,
+      calendarSpy() as never,
+      undefined,
+      () => ({ delete: deleteFn }) as never,
+      orphanRepo as never,
+      fakeEnc() as never,
+    );
+
+    const result = await svc.purge(PATIENT_ID);
+
+    expect(result?.photoObjectsDeleted).toBe(1);
+    expect(result?.photoObjectsFailed).toBe(0);
+    expect(deleteFn).toHaveBeenCalledWith('plain(enc(photo.jpg))');
+    expect(orphanRepo.record).not.toHaveBeenCalled();
+  });
+
+  it('objeto de foto falha ao apagar — vira órfão (reason PURGE), conta em photoObjectsFailed', async () => {
+    const { db } = makeDb([selectIsTest(true), noAppointments, photoRow]);
+    const deleteFn = jest.fn(async () => { throw new Error('gcs down'); });
+    const orphanRepo = { record: jest.fn(async () => ({ id: 'orphan-1' })) };
+    const svc = new PatientTestFixtureService(
+      db as never,
+      calendarSpy() as never,
+      undefined,
+      () => ({ delete: deleteFn }) as never,
+      orphanRepo as never,
+      fakeEnc() as never,
+    );
+
+    const result = await svc.purge(PATIENT_ID);
+
+    expect(result?.photoObjectsDeleted).toBe(0);
+    expect(result?.photoObjectsFailed).toBe(1);
+    expect(orphanRepo.record).toHaveBeenCalledWith('enc(photo.jpg)', 'PHOTOS', 'PURGE');
+  });
+
+  it('falha não-Error (ex.: string lançada) no delete E no registro do órfão — ainda assim conta e não lança', async () => {
+    const { db } = makeDb([selectIsTest(true), noAppointments, photoRow]);
+    // eslint-disable-next-line @typescript-eslint/no-throw-literal -- prova deliberada do branch `String(err)` (não-Error).
+    const orphanRepo = { record: jest.fn(async () => { throw 'orphan record string error'; }) };
+    const svc = new PatientTestFixtureService(
+      db as never,
+      calendarSpy() as never,
+      undefined,
+      // eslint-disable-next-line @typescript-eslint/no-throw-literal
+      () => ({ delete: jest.fn(async () => { throw 'gcs string error'; }) }) as never,
+      orphanRepo as never,
+      fakeEnc() as never,
+    );
+
+    const result = await svc.purge(PATIENT_ID);
+
+    expect(result?.photoObjectsFailed).toBe(1);
+    expect(orphanRepo.record).toHaveBeenCalledWith('enc(photo.jpg)', 'PHOTOS', 'PURGE');
+  });
+
+  it('constrói pela FÁBRICA DEFAULT do construtor (caminho de produção) — env setada, GCS mockado no módulo', async () => {
+    process.env.GCS_PATIENT_PHOTOS_BUCKET = 'enlite-patient-photos-test';
+    try {
+      const { db } = makeDb([selectIsTest(true), noAppointments, photoRow]);
+      // Só (db, calendar): calendário explícito para não bater na rede do Google Calendar; os
+      // 3 parâmetros seguintes (photoStorageFactory, orphanRepo, enc) ficam no DEFAULT do
+      // construtor — é o que este teste prova coberto.
+      const svc = new PatientTestFixtureService(db as never, calendarSpy() as never);
+
+      const result = await svc.purge(PATIENT_ID);
+
+      expect(result?.photoObjectsDeleted).toBe(1);
+      expect(mockGcsDelete).toHaveBeenCalled();
+    } finally {
+      delete process.env.GCS_PATIENT_PHOTOS_BUCKET;
+    }
+  });
+});
+
+describe('PatientTestFixtureService.purge — a transação carrega identidade (RLS)', () => {
+  /**
+   * Regressão do 500 medido na stage (18/09): `purge()` abria a transação com
+   * `this.db.connect()` cru, então a sessão não carregava `app.user_uid`/
+   * `app.user_country` e a policy de país de `patients` recusava com
+   * `rls_session_without_identity` dentro de `countCascadeChildren`.
+   *
+   * Este teste morre se o `connect()` cru voltar: `withActorContext` é o ÚNICO
+   * ponto do módulo `case` que carimba a identidade na transação (mesmo padrão
+   * de `inPatientTransaction`), e `purge()` precisa passar por ele — não pode
+   * pedir client direto ao pool.
+   */
+  it('abre a transação por withActorContext(this.db, fn), não por this.db.connect() direto', async () => {
+    const withActorContextSpy = jest.spyOn(actorContextModule, 'withActorContext');
+    try {
+      const { db, client } = makeDb([selectIsTest(true), noAppointments]);
+      const svc = new PatientTestFixtureService(db as never, calendarSpy() as never);
+
+      const result = await svc.purge(PATIENT_ID);
+
+      expect(result).toMatchObject({ patientId: PATIENT_ID });
+      // A prova: quem chamou o wrapper foi o purge(), com o MESMO pool que ele recebeu —
+      // e não um `this.db.connect()` cru por fora dele.
+      expect(withActorContextSpy).toHaveBeenCalledTimes(1);
+      expect(withActorContextSpy).toHaveBeenCalledWith(db, expect.any(Function));
+      // O client da transação (BEGIN/DELETE.../COMMIT) segue vindo do connect() — só que
+      // agora é o WRAPPER quem pede, não o purge() diretamente.
+      expect(client.query).toHaveBeenCalledWith('BEGIN');
+      expect(client.query).toHaveBeenCalledWith('COMMIT');
+    } finally {
+      withActorContextSpy.mockRestore();
+    }
   });
 });
 

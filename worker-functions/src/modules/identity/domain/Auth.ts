@@ -17,7 +17,32 @@ export interface Principal {
   id: string;
   type: PrincipalType;
   roles?: string[];
+  /**
+   * O que a conta É (`staff` | `worker`; obra social e paciente virão) — custom
+   * claim `account_type` / coluna `users.account_type` (D294). É a fronteira
+   * staff × prestador; o que a conta PODE é a célula do grupo. Ausente = a
+   * ponte deriva de `roles` (`isStaffAccount`), até o backfill do claim.
+   */
+  accountType?: string | null;
   tenantId?: string;
+  /**
+   * Jurisdição do operador (`AR`|`BR`), vinda do custom claim `country` do
+   * Identity Platform — a fonte do `app.user_country` que a RLS de país lê
+   * (ABAC Fase 1). Ausente é ausente: NUNCA preencher com default (lex C3).
+   */
+  country?: string;
+  /**
+   * Permissões efetivas (`recurso:ação`) e países concedidos pelos grupos —
+   * resolvidos por request pelo `AuthMiddleware` quando
+   * `PERMISSION_ENGINE_ENABLED=true` (change `painel-grupos-permissao`).
+   *
+   * Existem no principal, e não só no request, porque é daqui que o
+   * `CerbosAuthorizationAdapter` os manda como `principal.attr` — o buraco que o
+   * ADR-006 apontava (o adapter enviava só `roles`, e toda policy que olhasse
+   * permissão negava). Ausentes = engine desligado ou principal não-staff.
+   */
+  permissions?: string[];
+  countries?: string[];
 }
 
 export enum PrincipalType {

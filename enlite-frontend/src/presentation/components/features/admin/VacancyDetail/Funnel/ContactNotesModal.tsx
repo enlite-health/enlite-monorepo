@@ -3,7 +3,7 @@ import { X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
-import { Button } from '@presentation/components/atoms/Button';
+import { ActionButton } from '@presentation/components/features/access';
 import { Textarea } from '@presentation/components/atoms/Textarea';
 import { useContactNotes } from '@hooks/admin/useContactNotes';
 import { ContactNoteItem } from './ContactNoteItem';
@@ -134,7 +134,10 @@ export function ContactNotesModal({
                 count: noteText.length,
               })}
             </Text>
-            <Button
+            {/* POST .../contact-notes → funnel:write (D269). */}
+            <ActionButton
+              resource="funnel"
+              action="create"
               variant="primary"
               size="sm"
               onClick={handleSubmit}
@@ -148,7 +151,7 @@ export function ContactNotesModal({
                 : t(
                     'admin.vacancyDetail.funnelTable.contactNotes.registerButton',
                   )}
-            </Button>
+            </ActionButton>
           </div>
         </div>
       </div>

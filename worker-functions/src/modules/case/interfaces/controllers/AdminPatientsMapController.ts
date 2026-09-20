@@ -37,6 +37,8 @@ import {
 } from '@shared/http/mapQueryCommon';
 import { LIVE_JOB_POSTING_SQL } from '@modules/matching/domain/openJobStatuses';
 import { PATIENT_STATUSES } from '../../domain/enums/PatientStatus';
+import { NOME_REDIGIDO, cellsOfRequest } from '@modules/identity/permissions';
+import { canReadPatientContainer } from '../../application/patientContainerAccess';
 import { escapeIlikeWildcards, hasSearchableContent } from '@shared/utils/ilikeEscape';
 import { foldAccents, sqlFoldAccents } from '@shared/utils/accentFold';
 
@@ -237,6 +239,17 @@ export class AdminPatientsMapController {
     const body = parseMapBody(PatientsMapBodySchema, req, res);
     if (!body) return;
 
+    // A busca por NOME é leitura de identidade: filtrar pelo nome em claro e devolver o pino
+    // (coordenada do domicílio) com `NOME_REDIGIDO` seria um oráculo — "existe alguém chamado X, e
+    // mora aqui". Achado do gate do sync main→stage (08/09/2026): a redação (stage, D286 fase 2) e a
+    // busca (main, 07/09) nunca tinham se encontrado. Sem `patient_identity:read`, `search` é 403
+    // nomeando o campo (molde do `hourlyValue` no serviço contratado), nunca ignorado em silêncio.
+    const identidade = canReadPatientContainer(cellsOfRequest(req), 'identity');
+    if (body.search && !identidade) {
+      res.status(403).json({ success: false, error: 'Forbidden', details: { field: 'search' } });
+      return;
+    }
+
     try {
       const { sql, params } = buildPatientsMapQuery(body);
       const result = await this.db.query<PatientMapRow>(sql, params);
@@ -248,7 +261,9 @@ export class AdminPatientsMapController {
         return {
           id: row.id,
           addressId: row.address_id ?? null,
-          name: [row.first_name, row.last_name].filter(Boolean).join(' ') || '—',
+          // D286 fase 2: o nome do pino é IDENTIDADE do paciente (`patient_identity:read`); a rota é
+          // endereço. Sem a célula, `NOME_REDIGIDO` (texto claro no banco — a prova é a fronteira).
+          name: identidade ? [row.first_name, row.last_name].filter(Boolean).join(' ') || '—' : NOME_REDIGIDO,
           lat: hasCoords ? lat : null,
           lng: hasCoords ? lng : null,
           status: row.status,

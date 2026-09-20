@@ -177,12 +177,49 @@ BEGIN
   -- FORA desta lista — raw_label das duas é rótulo cru do ClickUp (ex.: "Tipo de Patología"),
   -- mesma classe de patient_insurance_verified/patient_device_types. Consertar só uma seria
   -- deixar metade consertada, que é o próprio defeito (mesmo espírito do "achado #1" do QA-caça).
+  -- spec 017 (lex 08/09 C1/C18): patient_therapeutic_projects NÃO TEM coluna segura (pathology_types
+  -- sozinho já revela saúde mental; clinical_context é texto clínico) — tabela inteira revogada no
+  -- MESMO commit da migration 416. Os 3 catálogos (415) são globais e sem PHI por desenho, mas o
+  -- rótulo é texto livre do operador: ficam FORA até a guarda `containsLikelyPersonalData` ser provada.
+  -- 417 (D301): patient_coverage_emergency_contacts tem nome+telefone de terceiro (profissional direto) —
+  -- sem coluna segura, revogada inteira.
+  -- 427 (spec 018, PR-5; lex 12/09 C5/C1): patient_professionals ganha `specialty` — o vínculo
+  -- "profissional X de especialidade Y atende o paciente Z" é dado de SAÚDE do paciente, e `name`
+  -- já era plaintext (só phone/email viraram `*_encrypted` na 071). Tabela inteira revogada no
+  -- MESMO commit da migration 427 (achado do gate: `GRANT SELECT ON ALL TABLES IN SCHEMA public`
+  -- do topo deste script cobria `patient_professionals` por omissão até aqui).
+  -- 422 (spec 018, PR-2, Emenda 12/09-B): patient_external_contacts tem nome+telefone de terceiro
+  -- sem vínculo familiar (professor, escola, vizinho, empregador, gestor de caso, referente
+  -- comunitário) — sem coluna segura, revogada inteira no MESMO commit que a cria.
+  -- 429 (spec 018, PR-7; `checklists/lex-pr7.md` C1): patient_therapeutic_project_contacts é a
+  -- ligação versão→contato — só ids, mas a linha revela QUAL contato (família/cobertura/equipe) o
+  -- projeto terapêutico referencia, mesma classe de dado sensível-saúde por associação de 416.
+  -- Sem coluna segura, revogada inteira no MESMO commit que a cria.
+  -- 430 (spec 018, PR-7, SUP-28): therapeutic_segments é global e sem PHI por desenho, mas o
+  -- rótulo é texto livre do operador — fica fora até a guarda `containsLikelyPersonalData` ter
+  -- teste que prova (mesma régua dos outros 2 catálogos da 415).
+  -- 426 (spec 018, PR-4; lex-pr4-foto.md #11, lex-pr4-documentos.md #11 TRAVA): foto e documento
+  -- (prova de consentimento) do paciente. patient_documents guarda PDF/JPEG de prova (sem coluna
+  -- segura), patient_image_consents e patient_photos referenciam o consentimento/objeto — as 3
+  -- revogadas inteiras no MESMO commit da migration 426. patient_photo_orphans é fila operacional
+  -- sem patient_id (só caminho cifrado) — revogada por cautela, mesmo padrão.
   FOR alvo IN SELECT unnest(ARRAY[
     'patient_insurance_verified',
     'patient_device_types',
     'patient_diagnoses',
     'patient_source_labels',
-    'patient_source_label_rejections'
+    'patient_source_label_rejections',
+    'patient_therapeutic_projects',
+    'patient_coverage_emergency_contacts',
+    'patient_professionals',
+    'patient_external_contacts',
+    'therapeutic_specific_objectives',
+    'therapeutic_activities',
+    'pathology_types',
+    'patient_therapeutic_project_contacts',
+    'therapeutic_segments',
+    'patient_photos',
+    'patient_photo_orphans'
   ]) AS tabela LOOP
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=alvo.tabela) THEN
       EXECUTE format('REVOKE SELECT ON public.%I FROM enlite_mcp_ro', alvo.tabela);
@@ -197,7 +234,12 @@ BEGIN
   FOR alvo IN SELECT unnest(ARRAY['patients','job_postings','job_postings_clickup_sync','job_posting_comments',
                                   'publications','worker_placement_audits','worker_job_applications','interview_slots',
                                   'patient_addresses','patient_contracted_services','contracted_service_providers',
-                                  'contracted_service_devices','service_types']) AS tabela LOOP
+                                  'contracted_service_devices','service_types',
+                                  'patient_therapeutic_projects','patient_coverage_emergency_contacts',
+                                  'patient_professionals','patient_external_contacts',
+                                  'therapeutic_specific_objectives','therapeutic_activities','pathology_types',
+                                  'patient_therapeutic_project_contacts','therapeutic_segments',
+                                  'patient_photos','patient_photo_orphans']) AS tabela LOOP
     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=alvo.tabela)
        AND has_table_privilege('enlite_mcp_ro', format('public.%I', alvo.tabela), 'SELECT') THEN
       RAISE EXCEPTION 'B2: enlite_mcp_ro ainda tem SELECT de TABELA em % — abortando a transação', alvo.tabela;

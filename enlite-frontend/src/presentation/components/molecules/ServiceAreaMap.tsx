@@ -135,8 +135,7 @@ export function ServiceAreaMap({
   if (!valid) {
     return (
       <div
-        className={`flex flex-col items-center justify-center gap-2 w-full rounded-[10px] bg-gray-100 border border-dashed border-gray-400 ${className}`}
-        style={{ height: 300 }}
+        className={`flex flex-col items-center justify-center gap-2 w-full h-[300px] rounded-[10px] bg-gray-100 border border-dashed border-gray-400 ${className}`}
         data-testid="service-area-map-placeholder"
       >
         <MapPin size={32} className="text-gray-700" />
@@ -150,8 +149,7 @@ export function ServiceAreaMap({
   return (
     <div
       ref={mapDivRef}
-      className={`w-full rounded-[10px] overflow-hidden ${className}`}
-      style={{ height: 300 }}
+      className={`w-full h-[300px] rounded-[10px] overflow-hidden ${className}`}
       data-testid="service-area-map"
     />
   );

@@ -51,6 +51,12 @@ jobs:
           project_id: ${{ secrets.GCP_PROJECT_ID }}
           # Reusa exatamente o mesmo image buildado pelo backend-prd.yml no mesmo SHA
           image: "${{ env.REGISTRY_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.REPOSITORY }}/worker-functions:${{ github.event.workflow_run.head_sha }}"
+          # ⚠️ SEM `env_vars_update_strategy: overwrite` aqui DE PROPÓSITO (16/08): o YAML de
+          # prd NÃO é o conjunto completo — a revisão viva tem envs/secrets aplicados por
+          # gcloud fora do YAML (medido no gate do PR #222: 11 envs + 7 secrets a mais no
+          # worker-functions; 4 + 1 no MCP). Com overwrite, o 1º deploy os APAGARIA. Antes
+          # de ligar overwrite em prd: reconciliar YAML × `gcloud run services describe`
+          # (e migrar os plaintext p/ secrets) em PR próprio. Listas de env: usar ';'.
           # ⚠️ NADA DE COMENTÁRIO DENTRO DO BLOCO `env_vars` ABAIXO: a action lê CADA linha
           #   como KEY=VALUE, então uma linha `#` vira env var de nome absurdo no serviço.
           #   Medido em 30/08: 10 linhas de comentário viraram 15 env vars em produção (PR #265).
@@ -65,6 +71,14 @@ jobs:
           # Ver `docs/FOLLOWUPS.md` → "MCP: env var com vírgula é partida no deploy".
           # `e2e-prod`: principal de UMA capability (worker.interview.slots.list) do monitor
           # e2e-prod, que prova o fuso do slot recorrente (D213 · Spec 009 · 3.2b).
+          # ── Promoção stage→main (openspec/changes/promocao-stage-para-main, Fase B):
+          # `ABAC_MAIN_POOL_ROLE=app_system` + `COUNTRY_RLS_ENABLED=false` só DECLARAM o
+          # papel que este serviço vai assumir quando a RLS ligar — `assertDbRoleMembership`
+          # não roda com a flag desligada (custo zero). `DB_USER` continua `enlite_app`
+          # nesta fase (a troca para `enlite_system` é decisão de quando a RLS ligar de
+          # verdade para o MCP, fora do escopo desta fase). `CHATWOOT_URL`/`PERISKOPE_PHONE`
+          # e o secret `PERISKOPE_API_KEY` só tornam EXPLÍCITO o que já está vivo no serviço
+          # (`stage-to-prod/inventario-env-vars-prd.md`) — nenhum valor muda.
           env_vars: |
             NODE_ENV=production
             MCP_ENABLED=true
@@ -72,6 +86,8 @@ jobs:
             DB_HOST=/cloudsql/${{ secrets.GCP_PROJECT_ID }}:southamerica-west1:enlite-ar-db
             DB_NAME=enlite_ar
             DB_USER=enlite_app
+            ABAC_MAIN_POOL_ROLE=app_system
+            COUNTRY_RLS_ENABLED=false
             MCP_PRINCIPAL_NAMES=triage-service\,claude-code\,e2e-prod
             MCP_DB_RO_USER=enlite_mcp_ro
             MCP_OAUTH_ENABLED=true
@@ -83,11 +99,14 @@ jobs:
             HANDOVER_NOTIFY_ENABLED=true
             PERISKOPE_GROUP_RECRUITMENT_ID=120363334377379340@g.us
             PERISKOPE_NOTE_AUTHOR=enlite@enlite.health
+            CHATWOOT_URL=https://chatwoot-production-0e81.up.railway.app
+            PERISKOPE_PHONE=5491176360496
           secrets: |
             DB_PASSWORD=enlite-ar-db-password:latest
             INTERNAL_TOKEN_SECRET=internal-token-secret:latest
             MCP_OAUTH_SIGNING_KEY=mcp-oauth-signing-key:latest
             MCP_DB_RO_PASSWORD=enlite-mcp-ro-db-password:latest
+            PERISKOPE_API_KEY=periskope-api-key:latest
           flags: >-
             --ingress=all
             --allow-unauthenticated
@@ -100,7 +119,7 @@ jobs:
             --min-instances=0
             --max-instances=5
 
-      - name: Verify deploy (health check via gcloud — ingress=internal, sem curl direto)
+      - name: Verify deploy (health check via gcloud; ingress=all + auth app-level desde 039b44d4)
         run: |
           STATUS=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
             --region=${{ env.REGION }} \

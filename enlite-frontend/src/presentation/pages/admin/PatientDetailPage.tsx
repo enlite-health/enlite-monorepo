@@ -17,16 +17,21 @@ import { EquipeTratanteCard } from '@presentation/components/features/admin/Pati
 import { SupervisaoCard } from '@presentation/components/features/admin/PatientDetail/SupervisaoCard';
 import { RelatoriosAtendimentosCard } from '@presentation/components/features/admin/PatientDetail/RelatoriosAtendimentosCard';
 import { FamiliaresCard } from '@presentation/components/features/admin/PatientDetail/FamiliaresCard';
+import { ExternalContactsCard } from '@presentation/components/features/admin/PatientDetail/ExternalContactsCard';
 import { CoberturaMedicaCard } from '@presentation/components/features/admin/PatientDetail/CoberturaMedicaCard';
 import { LocalizacoesCard } from '@presentation/components/features/admin/PatientDetail/LocalizacoesCard';
 import { ServicosContratadosCard } from '@presentation/components/features/admin/PatientDetail/ServicosContratadosCard';
 import { PatientVacanciesCard } from '@presentation/components/features/admin/PatientDetail/PatientVacanciesCard';
-import { ActivatePatientButton } from '@presentation/components/features/admin/PatientDetail/ActivatePatientButton';
 import { PatientChatIdsCard } from '@presentation/components/features/admin/PatientDetail/PatientChatIdsCard';
 import { PatientStatusControl } from '@presentation/components/features/admin/PatientDetail/PatientStatusControl';
 import { PatientStatusHistoryCard } from '@presentation/components/features/admin/PatientDetail/PatientStatusHistoryCard';
 import { CompletenessChecklist } from '@presentation/components/features/admin/PatientDetail/CompletenessChecklist';
 import type { DrawerFocusRequest } from '@hooks/admin/useAutoOpenDrawer';
+import { ContainerGate } from '@presentation/components/features/access';
+import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
+import { tabsVisibleFor } from '@presentation/hooks/useCellAccess';
+import { screenById } from '@presentation/config/screenRegistry';
+import { PATIENT_TABS } from '@presentation/components/features/admin/PatientDetail/patientTabs';
 import type { PatientCompletenessCode } from '@domain/entities/PatientDetail';
 import { ACTIVATABLE_STATUSES } from '@domain/entities/PatientCompleteness';
 
@@ -56,6 +61,13 @@ export default function PatientDetailPage() {
   const { patient, isLoading, error, refetch } = usePatientDetail(id);
   const { vacancies, isLoading: vacanciesLoading, error: vacanciesError, refetch: refetchVacancies } = usePatientVacancies(id);
   const [activeTab, setActiveTab] = useState<PatientTab>('clinicalData');
+  // D286: uma aba só existe se ALGUM container dela for legível (registro de telas + contrato de
+  // authz). A ativa é a primeira visível quando a atual sumiu; sem enforcement, todas existem.
+  const permissions = useAdminAuthStore((s) => s.authz?.permissions);
+  const enforcement = useAdminAuthStore((s) => s.authz?.enforcement);
+  const screen = screenById('patients.detail');
+  const visibleTabs = tabsVisibleFor(screen, PATIENT_TABS, permissions, enforcement);
+  const shownTab: PatientTab | null = visibleTabs.includes(activeTab) ? activeTab : (visibleTabs[0] ?? null);
   // Spec 014 US-D1: pedido de foco do checklist — muda de aba E pede ao card certo (via
   // `useAutoOpenDrawer`) que abra seu próprio drawer, sem o pai conhecer o estado interno dele.
   const [focusRequest, setFocusRequest] = useState<DrawerFocusRequest | null>(null);
@@ -106,8 +118,8 @@ export default function PatientDetailPage() {
           só aparecia dentro do primeiro cartão. Agora o NOME é o título, e "Ficha del Paciente"
           desce para o rastro de navegação, onde rótulo de página pertence.
 
-          🔒 O que NÃO mudou, de propósito: o `PatientStatusControl` e o `ActivatePatientButton`
-          continuam intactos (regra de negócio, spec 012 US-B7), e o badge de estado continua
+          🔒 O que NÃO mudou, de propósito: o `PatientStatusControl` continua intacto (regra de
+          negócio, spec 012 US-B7), e o badge de estado continua
           DENTRO do `PatientIdentityCard` — trazê-lo para cá tiraria dado de dentro de um container
           de permissão, que é justamente o que a D286 não admite. O país vira chip ao lado do
           título para liberar a direita, que estava com quatro elementos soltos disputando espaço. */}
@@ -175,71 +187,108 @@ export default function PatientDetailPage() {
             <LayoutGrid className="w-3.5 h-3.5" />
             {t('admin.patients.detail.viewInKanban')}
           </Button>
-          {/* Spec 012 US-B7: estado clínico v2 (só depois da admissão); antes, o botão Activar. */}
+          {/* Spec 012 US-B7: estado clínico v2 (só depois da admissão). O botão "Activar paciente"
+              SAIU do cabeçalho (spec 018, PR-6, ADR-5) — ativar virou uma ação POR SERVIÇO, no
+              ícone "Activar reclutamiento" de cada linha do `ServicosContratadosCard`. */}
           <PatientStatusControl patient={patient} onSaved={refetch} />
-          <ActivatePatientButton
-            patientId={patient.id}
-            status={patient.status}
-            onActivated={() => { refetch(); refetchVacancies(); }}
-          />
         </div>
       </div>
 
       {/* Checklist de completude (spec 014 US-D1) — bloco fixo no topo, SÓ em status
           ACTIVATABLE (QA-caça rodada 1, item 3): fora dali (ex.: ACTIVE, já aprovado) é ruído
-          permanente sem ação possível — a mesma constante que ActivatePatientButton usa. */}
+          permanente sem ação possível. */}
       {patient.status != null &&
         (ACTIVATABLE_STATUSES as readonly string[]).includes(patient.status) && (
           <CompletenessChecklist completeness={patient.completeness} onFocusItem={focusChecklistItem} />
         )}
 
       {/* Row 1: Identity + General Info (2 columns) */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        <PatientIdentityCard patient={patient} onSaved={refetch} />
-        <PatientGeneralInfoCard patient={patient} onSaved={refetch} />
-      </div>
+      <ContainerGate resource="patient_identity">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+          <PatientIdentityCard patient={patient} onSaved={refetch} />
+          <PatientGeneralInfoCard patient={patient} onSaved={refetch} />
+        </div>
+      </ContainerGate>
 
       {/* Tab Navigation */}
-      <div className="mb-6">
-        <PatientProfileTabs activeTab={activeTab} onTabChange={changeTab} />
-      </div>
+      {shownTab !== null && (
+        <div className="mb-6">
+          <PatientProfileTabs activeTab={shownTab} onTabChange={changeTab} visibleTabs={visibleTabs} />
+        </div>
+      )}
 
-      {/* Tab Content */}
+      {/* Tab Content — cada card atrás do gate do SEU container (D286). A resposta já veio
+          projetada pelo back; o gate só evita mostrar um card vazio onde a pessoa não pode agir. */}
       <div className="mb-6 flex flex-col gap-6">
-        {activeTab === 'clinicalData' && (
+        {shownTab === 'clinicalData' && (
           <>
-            <DiagnosticoCard patient={patient} onSaved={refetch} focusRequest={focusRequest} />
-            <ProjetoTerapeuticoCard />
-            <EquipeTratanteCard professionals={patient.professionals} />
+            <ContainerGate resource="patient_clinical">
+              <DiagnosticoCard patient={patient} onSaved={refetch} focusRequest={focusRequest} />
+            </ContainerGate>
+            {/* Spec 017: o projeto terapêutico virou container (D286) — célula própria, rota própria. */}
+            <ContainerGate resource="patient_therapeutic_project">
+              <ProjetoTerapeuticoCard patient={patient} />
+            </ContainerGate>
+            <ContainerGate resource="patient_care_team">
+              <EquipeTratanteCard professionals={patient.professionals} patientId={patient.id} onSaved={refetch} />
+            </ContainerGate>
             <SupervisaoCard />
             <RelatoriosAtendimentosCard />
           </>
         )}
-        {activeTab === 'supportNetwork' && (
+        {shownTab === 'supportNetwork' && (
           <>
-            <FamiliaresCard responsibles={patient.responsibles} patientId={patient.id} onSaved={refetch} focusRequest={focusRequest} />
+            <ContainerGate resource="patient_family">
+              <FamiliaresCard
+                responsibles={patient.responsibles}
+                emergencyContactRef={patient.emergencyContactRef}
+                patientId={patient.id}
+                onSaved={refetch}
+                focusRequest={focusRequest}
+              />
+              <ExternalContactsCard
+                externalContacts={patient.externalContacts ?? []}
+                emergencyContactRef={patient.emergencyContactRef}
+                patientId={patient.id}
+                onSaved={refetch}
+              />
+            </ContainerGate>
             {/* Chat IDs dos grupos do Periskope — a chave de join da auditoria
                 de informes (Candela). Fica na rede de apoio porque é onde a
                 família e a equipe de prestadores já são tratadas. */}
-            <PatientChatIdsCard patient={patient} onSaved={refetch} />
+            <ContainerGate resource="patient_chat">
+              <PatientChatIdsCard patient={patient} onSaved={refetch} />
+            </ContainerGate>
           </>
         )}
-        {activeTab === 'contractedService' && (
+        {shownTab === 'contractedService' && (
           <>
-            <CoberturaMedicaCard patient={patient} onSaved={refetch} focusRequest={focusRequest} />
-            <LocalizacoesCard addresses={patient.addresses} patientId={patient.id} onSaved={refetch} focusRequest={focusRequest} />
-            <ServicosContratadosCard patient={patient} onSaved={refetch} focusRequest={focusRequest} />
+            <ContainerGate resource="patient_coverage">
+              <CoberturaMedicaCard patient={patient} onSaved={refetch} focusRequest={focusRequest} />
+            </ContainerGate>
+            <ContainerGate resource="patient_address">
+              <LocalizacoesCard addresses={patient.addresses} patientId={patient.id} onSaved={refetch} focusRequest={focusRequest} />
+            </ContainerGate>
+            <ContainerGate resource="patient_services">
+              <ServicosContratadosCard
+                patient={patient}
+                onSaved={() => { refetch(); refetchVacancies(); }}
+                focusRequest={focusRequest}
+              />
+            </ContainerGate>
           </>
         )}
-        {activeTab === 'vacancies' && (
-          <PatientVacanciesCard
-            patientId={patient.id}
-            vacancies={vacancies}
-            isLoading={vacanciesLoading}
-            error={vacanciesError}
-          />
+        {shownTab === 'vacancies' && (
+          <ContainerGate resource="vacancy">
+            <PatientVacanciesCard
+              patientId={patient.id}
+              vacancies={vacancies}
+              isLoading={vacanciesLoading}
+              error={vacanciesError}
+            />
+          </ContainerGate>
         )}
-        {activeTab === 'history' && (
+        {shownTab === 'history' && (
           <PatientStatusHistoryCard patientId={patient.id} />
         )}
       </div>

@@ -19,7 +19,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { DedupCenterPage } from './DedupCenterPage';
-import { EnliteRole } from '@domain/entities/EnliteRole';
 import type { AdminUser } from '@domain/entities/AdminUser';
 import type { ImportedDedupGroup } from '@domain/entities/DedupGroup';
 
@@ -197,7 +196,6 @@ const ADMIN_PROFILE: AdminUser = {
   firebaseUid: 'uid-admin',
   email: 'admin@enlite.health',
   displayName: 'Admin',
-  role: EnliteRole.ADMIN,
   department: null,
   lastLoginAt: null,
   loginCount: 1,

@@ -43,6 +43,7 @@ const SERVICE: PatientContractedServiceDetail = {
   contractType: null, taxCondition: null, supervisionFrequency: null, guardShift: null,
   providerAgeBand: null,
   addressId: null,
+  liveVacancyId: null,
   schedule: null,
   active: true, endedAt: null, country: 'AR', deviceTypes: [], providers: [],
   createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z',
@@ -80,6 +81,24 @@ describe('PatientContractedServicesEditDrawer — UM serviço por vez (Gabriel, 
     montar({ kind: 'edit', serviceId: 'sumiu' });
     await waitFor(() => expect(mockList).toHaveBeenCalled());
     expect(await screen.findByTestId('contracted-service-missing')).toBeTruthy();
+  });
+
+  // D113 — sem `patient_address:read`, `patient.addresses` chega `null` por redação (container
+  // diferente de `patient_services`, D286), nunca `[]`. O form NÃO pode quebrar; mostra o mesmo
+  // aviso "sem endereço" que já existe para o `[]` de verdade (`ContractedServiceFormRow`).
+  it('🔴 D113 modo NOVO: `patient.addresses` null não quebra o form — mostra o aviso de endereço ausente', async () => {
+    mockList.mockResolvedValue([]);
+    montar({ kind: 'new' }, { patient: { ...patientDetailFixture, addresses: null as unknown as typeof patientDetailFixture.addresses } });
+    await waitFor(() => expect(mockList).toHaveBeenCalled());
+    expect(screen.getByTestId('contracted-service-new')).toBeTruthy();
+    expect(screen.getByTestId('svc-address-none-1')).toBeTruthy();
+  });
+
+  it('🔴 D113 modo EDIÇÃO: `patient.addresses` null não quebra o form do serviço existente', async () => {
+    mockList.mockResolvedValue([SERVICE]);
+    montar({ kind: 'edit', serviceId: 's1' }, { patient: { ...patientDetailFixture, addresses: null as unknown as typeof patientDetailFixture.addresses } });
+    expect(await screen.findByTestId('contracted-service-form-s1')).toBeTruthy();
+    expect(screen.getByTestId('svc-address-none-1')).toBeTruthy();
   });
 
   it('erro ao buscar a lista mostra mensagem, sem quebrar o drawer', async () => {

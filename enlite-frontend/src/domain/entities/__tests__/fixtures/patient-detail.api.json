@@ -166,6 +166,7 @@
       "name": "Dra. Fixture Tratante",
       "phone": "",
       "email": "",
+      "specialty": null,
       "displayOrder": 1,
       "isTeam": false
     }
@@ -187,6 +188,7 @@
       "supervisionFrequency": "DAYS_30",
       "guardShift": "MORNING",
       "providerAgeBand": "AGE_30_45",
+      "liveVacancyId": null,
       "active": true,
       "endedAt": null,
       "country": "AR",

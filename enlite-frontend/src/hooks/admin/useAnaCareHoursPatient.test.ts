@@ -3,12 +3,13 @@ import { renderHook, waitFor, act } from '@testing-library/react';
 import { useAnaCareHoursPatient } from './useAnaCareHoursPatient';
 import { AnaCareHoursServiceError, FakeAnaCareHoursService } from '@presentation/components/features/admin/AnaCareHours/AnaCareHoursService';
 import type { AnaCareHoursService } from '@presentation/components/features/admin/AnaCareHours/AnaCareHoursService';
-import type { AnaCareMonthSnapshot } from '@presentation/components/features/admin/AnaCareHours/types';
+import type { AnaCareHoursPatientSnapshot } from '@presentation/components/features/admin/AnaCareHours/types';
 
-const SNAPSHOT: AnaCareMonthSnapshot = {
+const SNAPSHOT: AnaCareHoursPatientSnapshot = {
   month: '2026-08',
   updatedAt: '2026-09-15T08:00:00-03:00',
   stale: false,
+  snapshotState: 'fresco',
   circuitBreakerOpen: false,
   patients: [{ anaCareId: '90000', linked: true, name: 'Lucía Fernández QA', providers: [] }],
 };
@@ -21,6 +22,25 @@ describe('useAnaCareHoursPatient', () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     expect(result.current.patient?.anaCareId).toBe('90000');
     expect(result.current.snapshot?.patients).toEqual([result.current.patient]);
+  });
+
+  /**
+   * Item 3 (conserto, 17/09): antes, o hook aproximava `snapshotState` por `stale ? 'velho' :
+   * 'fresco'` — colapsando "nunca construído" em "velho". Agora `AnaCareRetratoStatus` carrega
+   * `snapshotState` de verdade, e o hook só repassa. Este teste MORRE se a aproximação voltar.
+   */
+  it('POSITIVO — propaga snapshotState "nao_construido" do retrato sem aproximar por `stale`', async () => {
+    const service: AnaCareHoursService = {
+      getMonthSnapshot: vitestVi.fn(),
+      getPatientMonth: vitestVi.fn().mockResolvedValue(SNAPSHOT.patients[0]),
+      getRetratoStatus: vitestVi.fn().mockResolvedValue({ updatedAt: '', stale: true, snapshotState: 'nao_construido', circuitBreakerOpen: false }),
+      validateShift: vitestVi.fn(),
+      validateBatch: vitestVi.fn(),
+      contestShift: vitestVi.fn(),
+    };
+    const { result } = renderHook(() => useAnaCareHoursPatient(service, '2026-08', '90000'));
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.snapshot?.snapshotState).toBe('nao_construido');
   });
 
   it('NEGATIVO — paciente inexistente: snapshot existe (retrato carregou) mas patients é []', async () => {

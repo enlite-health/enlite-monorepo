@@ -7,6 +7,9 @@
 #   Firebase Emulator (prod-like):
 #     docker compose -f docker-compose.yml -f docker-compose.test.yml -f docker-compose.firebase.yml up -d postgres firebase-emulator api
 #
+#   Com fake-gcs (spec 018 PR-4 — foto/documento do paciente):
+#     docker compose -f docker-compose.yml -f docker-compose.test.yml up -d postgres api fake-gcs
+#
 # NÃO usar em produção.
 
 services:
@@ -14,6 +17,23 @@ services:
     image: postgis/postgis:16-3.4
     ports:
       - "5433:5432"
+
+  # fake-gcs-server para `patient-photo-and-documents.e2e.test.ts` (achado 7 da revisão) e para
+  # o job `_frontend-integration.yml` (Playwright do PR-4) — conserto #1/#2 da 2ª revisão do PR-4:
+  # antes disto o fake-gcs só existia em `docker-compose.018pr4-ports.yml`, usado só localmente
+  # (projeto/porta próprios); o CI nunca subia storage nenhum e a suíte nova nunca rodava lá.
+  fake-gcs:
+    image: fsouza/fake-gcs-server:1.52.2
+    command: ["-scheme", "http", "-public-host", "localhost:54443", "-external-url", "http://fake-gcs:4443"]
+    ports:
+      - "54443:4443"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:4443/storage/v1/b"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    networks:
+      - enlite-network
 
   firebase-emulator:
     image: node:20-alpine
@@ -47,15 +67,33 @@ services:
 
   api:
     command: >
-      sh -c "node scripts/run-migrations-docker.js && npm start"
+      sh -c "node scripts/generate-fake-gcs-sa.js && node scripts/run-migrations-docker.js && npm start"
     volumes:
       - ./migrations:/app/migrations
       - ./scripts/run-migrations-docker.js:/app/scripts/run-migrations-docker.js
+      - ./scripts/generate-fake-gcs-sa.js:/app/scripts/generate-fake-gcs-sa.js
     environment:
       NODE_ENV: test
       USE_MOCK_AUTH: "true"
+      # Canal de e-mail DECLARADAMENTE ausente. O guard do EmailService já
+      # recusa envio em NODE_ENV=test; isto é a segunda camada, para o dia em
+      # que alguém rodar a stack com outro NODE_ENV. Antes a proteção era só a
+      # ausência da chave — e o e2e chegou a bater em api.sendgrid.com de
+      # verdade (401), medido em revisão.
+      SENDGRID_API_KEY: ""
       USE_CERBOS: "false"
       INTERNAL_TOKEN_SECRET: test-secret-for-e2e-only
+      # Spec 018 PR-4 (foto do paciente) — conserto #1/#2 da 2ª revisão: a API dockerizada (usada
+      # pelo job de integração do FRONTEND, `_frontend-integration.yml`, contra o dev server do
+      # Vite) precisa destas envs para a rota de foto não devolver 503
+      # (`PatientPhotoBucketNotConfiguredError`). Documento/consentimento de imagem foram REMOVIDOS
+      # por completo (fix/018-remover-documentos-consentimento) — sem `GCS_PATIENT_DOCUMENTS_BUCKET`.
+      # NÃO `STORAGE_EMULATOR_HOST` — ver cabeçalho de `PatientObjectStorageBase.ts` (405 no delete).
+      # Bucket criado pelo workflow via `POST /storage/v1/b` antes de bater na API (fake-gcs-server
+      # não cria bucket sozinho no primeiro upload).
+      GCS_EMULATOR_HOST: "http://fake-gcs:4443"
+      GCS_PATIENT_PHOTOS_BUCKET: "enlite-patient-photos-ci"
+      GOOGLE_APPLICATION_CREDENTIALS: "/tmp/fake-sa.json"
       # Libera /api/docs sem requerer staff (somente em test)
       OPENAPI_PUBLIC: "true"
       # Chat IDs do paciente (migration 260): busca de grupos no Periskope.
@@ -83,6 +121,18 @@ services:
       # O comportamento do cache é provado por unit (TTL, forceRefresh,
       # clearCache, truncada-não-cacheia). Aqui queremos determinismo.
       PERISKOPE_CHATS_CACHE_TTL_MS: ${PERISKOPE_CHATS_CACHE_TTL_MS:-0}
+      # Integração Axonico (change integracao-axonico, F1) — mesmo precedente do stub do
+      # Periskope acima: AXONICO_BASE_URL aponta para um STUB local, nunca para
+      # api.apiws.axonico.ar/api.his.axonico.ar. Não existe sandbox do Axonico — todo PUT real
+      # gera faturamento (D368/regra dura da change), então o e2e (F4) nunca pode "esquecer" e
+      # cair no default de produção do cliente. Porta 9912, medida livre em 18/09/2026
+      # (`grep -n '991[0-9]' docker-compose.test.yml` só achava 9911, do Periskope).
+      AXONICO_BASE_URL: ${AXONICO_BASE_URL:-http://host.docker.internal:9912}
+      # Credenciais FALSAS — existem só para `AxonicoApiClient.fromEnv()` construir o client dentro
+      # do container (mesmo precedente de PERISKOPE_API_KEY/PERISKOPE_PHONE acima). O stub em
+      # AXONICO_BASE_URL aceita qualquer login/senha em POST /api/login — nunca sai daqui.
+      AXIONICO_USERNAME: ${AXIONICO_USERNAME:-stub-user-e2e-only}
+      AXIONICO_PASSWORD: ${AXIONICO_PASSWORD:-stub-key-e2e-only}
       # Roster de atendentes de admissão (change agenda-admissao-atendentes).
       #
       # LIGADO aqui, que é arquivo só de teste, pelo mesmo motivo do bloco

@@ -167,15 +167,25 @@ describe('fluxo completo: lookup → start → confirm → conflitos → finaliz
   });
 
   it('funil de eventos registrado (telemetria durável) + email skip best-effort', async () => {
-    const events = await pool.query<{ event: string }>(
-      `SELECT event FROM account_link_events WHERE worker_id = $1::uuid ORDER BY id`, [NEW_ID],
+    const events = await pool.query<{ event: string; detail: { reason?: string } | null }>(
+      `SELECT event, detail FROM account_link_events WHERE worker_id = $1::uuid ORDER BY id`, [NEW_ID],
     );
     const names = events.rows.map(r => r.event);
     for (const expected of ['lookup', 'started', 'confirmed', 'conflicts_shown', 'merged']) {
       expect(names).toContain(expected);
     }
-    // Sem SENDGRID_API_KEY no e2e → aviso não sai, mas o skip fica REGISTRADO
+    // O aviso não sai: o `EmailService` recusa enviar em `NODE_ENV=test` (guard
+    // de 17/08) e a stack ainda declara `SENDGRID_API_KEY: ""`. Antes o
+    // comentário aqui dizia "sem chave → não sai", o que era FALSO na forma
+    // medida: o SDK disparava a requisição para api.sendgrid.com assim mesmo e
+    // só levava 401.
     expect(names).toContain('notice_email_skipped');
+
+    // E o MOTIVO na linha real do banco: `no_email_channel` (não havia canal) é
+    // coisa diferente de `send_failed` (o SendGrid recusou). Os dois caíam na
+    // mesma linha antes, e quem lesse a trilha não sabia qual tinha acontecido.
+    const skip = events.rows.find(r => r.event === 'notice_email_skipped');
+    expect(skip?.detail?.reason).toBe('no_email_channel');
   });
 
   it('undo por token assinado devolve o estado (email "no fui yo")', async () => {

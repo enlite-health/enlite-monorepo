@@ -1,5 +1,9 @@
 /**
- * onUserCreate.test.ts
+ * onUserCreate — o trigger do Firebase que registra a conta nova em `users`.
+ *
+ * O que importa desde a D294: o claim gravado é `{ role: 'worker', account_type: 'worker' }`
+ * — o tipo viaja junto (a coluna `users.account_type` é derivada pelo trigger da 414
+ * a partir do `role` do INSERT). O handler é capturado do `functions.auth.user().onCreate`.
  *
  * PII guard — achado do gate 12/09: `log.info({ email: user.email, ... })`
  * publicava o e-mail CRU do usuário recém-criado. O trigger já loga
@@ -7,82 +11,98 @@
  * sem precisar do e-mail em claro) — o e-mail no payload deve sair mascarado
  * via `maskEmailForLog`.
  */
-
+let handler: ((user: Record<string, unknown>) => Promise<void>) | undefined;
 jest.mock('firebase-functions', () => ({
-  auth: {
-    user: () => ({
-      // Testabilidade: em vez de registrar o trigger no runtime do Firebase,
-      // devolve o handler cru — o teste chama `onUserCreate(fakeUser)` direto.
-      onCreate: (handler: (user: unknown) => Promise<unknown>) => handler,
-    }),
-  },
+  auth: { user: () => ({ onCreate: (h: typeof handler) => { handler = h; return h; } }) },
 }));
-
-const mockSetCustomUserClaims = jest.fn().mockResolvedValue(undefined);
-jest.mock('firebase-admin', () => ({
-  auth: () => ({ setCustomUserClaims: mockSetCustomUserClaims }),
+const mockMerge = jest.fn();
+jest.mock('@modules/identity/infrastructure/mergeCustomClaims', () => ({ mergeCustomClaims: (...a: unknown[]) => mockMerge(...a) }));
+const mockQuery = jest.fn();
+const mockRelease = jest.fn();
+jest.mock('@shared/database/DatabaseConnection', () => ({
+  DatabaseConnection: { getInstance: () => ({ getPool: () => ({ connect: async () => ({ query: mockQuery, release: mockRelease }) }) }) },
 }));
-
-jest.mock('@shared/database/DatabaseConnection');
-
+const mockReportError = jest.fn();
+const logChild = { info: jest.fn(), error: jest.fn() };
 jest.mock('@shared/logging', () => ({
-  logger: { child: jest.fn().mockReturnValue({ info: jest.fn(), error: jest.fn(), warn: jest.fn() }) },
-  reportError: jest.fn(),
-  // loggingAls.run precisa EXECUTAR o callback (não é um logger de verdade) —
-  // senão o corpo do trigger inteiro nunca roda.
-  loggingAls: { run: jest.fn((_ctx: unknown, fn: () => Promise<unknown>) => fn()) },
+  loggingAls: { run: (_ctx: unknown, fn: () => unknown) => fn() },
+  logger: { child: jest.fn(() => logChild) },
+  reportError: (...a: unknown[]) => mockReportError(...a),
 }));
 
-import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { logger } from '@shared/logging';
 import { maskEmailForLog } from '@shared/utils/emailMask';
-import { onUserCreate } from '../onUserCreate';
+import '../onUserCreate';
 
-type FakeUserRecord = {
-  uid: string;
-  email?: string;
-  displayName?: string;
-  photoURL?: string;
-  emailVerified: boolean;
-};
+const user = { uid: 'uid-w', email: 'w@example.com', displayName: 'W', photoURL: null, emailVerified: false };
 
-function makeUser(overrides: Partial<FakeUserRecord> = {}): FakeUserRecord {
-  return {
-    uid: 'firebase-uid-123',
-    email: 'candidata.sensivel@example.com',
-    displayName: 'Candidata Sensível',
-    emailVerified: true,
-    ...overrides,
-  };
-}
-
-describe('onUserCreate — PII guard', () => {
-  let mockQuery: jest.Mock;
-  let mockClient: { query: jest.Mock; release: jest.Mock };
-
+describe('onUserCreate', () => {
   beforeEach(() => {
-    jest.clearAllMocks();
-    mockQuery = jest.fn().mockResolvedValue({ rows: [] });
-    mockClient = { query: mockQuery, release: jest.fn() };
-    (DatabaseConnection.getInstance as jest.Mock).mockReturnValue({
-      getPool: () => ({ connect: jest.fn().mockResolvedValue(mockClient) }),
+    mockQuery.mockReset().mockResolvedValue({ rows: [] });
+    mockMerge.mockReset().mockResolvedValue(undefined);
+    mockRelease.mockReset();
+    mockReportError.mockReset();
+    (logger.child as jest.Mock).mockClear();
+    logChild.info.mockReset();
+    logChild.error.mockReset();
+  });
+
+  it('está registrado como trigger', () => {
+    expect(typeof handler).toBe('function');
+  });
+
+  it('insere em users com role=worker e grava o claim { role: worker, account_type: worker } (D294, lex C8: nada além)', async () => {
+    await handler!(user);
+    const insert = mockQuery.mock.calls.find((c) => String(c[0]).includes('INSERT INTO users'));
+    expect(insert?.[1]).toEqual(['uid-w', 'w@example.com', 'W', null, 'worker', false]);
+    expect(mockMerge).toHaveBeenCalledWith('uid-w', { role: 'worker', account_type: 'worker' });
+    expect(mockQuery.mock.calls.map((c) => c[0])).toEqual(expect.arrayContaining(['BEGIN', 'COMMIT']));
+    expect(mockRelease).toHaveBeenCalled();
+  });
+
+  it('displayName e photoURL ausentes viram null (não string vazia)', async () => {
+    await handler!({ uid: 'u2', email: 'x@example.com', emailVerified: true });
+    const insert = mockQuery.mock.calls.find((c) => String(c[0]).includes('INSERT INTO users'));
+    expect(insert?.[1]).toEqual(['u2', 'x@example.com', null, null, 'worker', true]);
+  });
+
+  it('falha no meio → ROLLBACK, reportError e relança (nunca conta pela metade)', async () => {
+    mockQuery.mockImplementation((sql: string) => (String(sql).includes('INSERT') ? Promise.reject(new Error('db fora')) : Promise.resolve({ rows: [] })));
+    await expect(handler!(user)).rejects.toThrow('db fora');
+    expect(mockQuery).toHaveBeenCalledWith('ROLLBACK');
+    expect(mockMerge).not.toHaveBeenCalled();
+    expect(mockReportError.mock.calls.map((c) => c[1].source)).toEqual(['onUserCreate']);
+    expect(mockRelease).toHaveBeenCalled();
+  });
+
+  it('ROLLBACK que também falha (não-Error) é reportado com a própria origem, e o erro original (não-Error) vira Error', async () => {
+    mockQuery.mockImplementation((sql: string) => {
+      if (String(sql).includes('INSERT')) return Promise.reject('string crua');
+      if (sql === 'ROLLBACK') return Promise.reject('rollback string');
+      return Promise.resolve({ rows: [] });
     });
-    mockSetCustomUserClaims.mockResolvedValue(undefined);
+    await expect(handler!(user)).rejects.toThrow('string crua');
+    expect(mockReportError.mock.calls.map((c) => c[1].source)).toEqual(['onUserCreate:rollback', 'onUserCreate']);
+    expect(mockReportError.mock.calls[0][0]).toBeInstanceOf(Error);
+  });
+  it('ROLLBACK que falha com Error é reportado como está', async () => {
+    mockQuery.mockImplementation((sql: string) => {
+      if (String(sql).includes('INSERT')) return Promise.reject(new Error('db'));
+      if (sql === 'ROLLBACK') return Promise.reject(new Error('rollback morreu'));
+      return Promise.resolve({ rows: [] });
+    });
+    await expect(handler!(user)).rejects.toThrow('db');
+    expect((mockReportError.mock.calls[0][0] as Error).message).toBe('rollback morreu');
   });
 
   it('mascara o e-mail no log.info, nunca o valor cru (firebaseUid já identifica via child)', async () => {
     const RAW_EMAIL = 'candidata.sensivel@example.com';
-    const user = makeUser({ email: RAW_EMAIL });
-
-    await (onUserCreate as unknown as (u: FakeUserRecord) => Promise<void>)(user);
+    await handler!({ uid: 'firebase-uid-123', email: RAW_EMAIL, displayName: 'Candidata Sensível', emailVerified: true });
 
     // O child já carrega firebaseUid — confirma que a identificação não depende do e-mail.
-    expect((logger.child as jest.Mock)).toHaveBeenCalledWith(
-      expect.objectContaining({ firebaseUid: user.uid }),
-    );
+    expect(logger.child).toHaveBeenCalledWith(expect.objectContaining({ firebaseUid: 'firebase-uid-123' }));
 
-    const mockChildLogger = (logger.child as jest.Mock).mock.results[0].value;
-    const infoArgs = JSON.stringify((mockChildLogger.info as jest.Mock).mock.calls);
+    const infoArgs = JSON.stringify(logChild.info.mock.calls);
     expect(infoArgs).not.toContain(RAW_EMAIL);
     expect(infoArgs).not.toContain('candidata.sensivel'); // local part não sobrevive nem truncado
     expect(infoArgs).toContain(maskEmailForLog(RAW_EMAIL));
@@ -92,9 +112,7 @@ describe('onUserCreate — PII guard', () => {
   // de cadastro, não de log; só o LOG precisa mascarar.
   it('o e-mail cru continua indo pro INSERT/UPDATE em `users` (não é isso que muda)', async () => {
     const RAW_EMAIL = 'outra.candidata@example.com';
-    const user = makeUser({ email: RAW_EMAIL });
-
-    await (onUserCreate as unknown as (u: FakeUserRecord) => Promise<void>)(user);
+    await handler!({ uid: 'u3', email: RAW_EMAIL, displayName: 'Outra', emailVerified: true });
 
     const insertCall = mockQuery.mock.calls.find((c) => String(c[0]).includes('INSERT INTO users'));
     expect(insertCall).toBeDefined();

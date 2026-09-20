@@ -11,6 +11,7 @@ import { createConsentRoutes, type StaffLookup } from '../interfaces/oauth/conse
 import type { OAuthAccessTokenVerifier } from '../interfaces/middleware/requireServicePrincipal';
 import type { McpAuditEvent } from '../domain/McpAuditEvent';
 import { MCP_OAUTH_SCOPE } from '../domain/OAuthScopes';
+import { publicContextMiddleware } from '@shared/database/systemContextMiddleware';
 
 interface AuditEmitter {
   emit(event: McpAuditEvent): void;
@@ -63,7 +64,13 @@ export function mountOAuthRoutes(
       ),
   });
 
+  // Contexto de banco declarado (ABAC 3.3, MEDIUM do review 14/08): o fluxo
+  // OAuth roda ANTES de existir principal autenticado — é borda pública por
+  // definição (well-known, /authorize, /token, consentimento). O consent faz
+  // lookup de staff no banco; sem classificação, sob RLS a query sairia crua
+  // (zero linhas) e o aviso de não-classificado poluiria o modo relatório.
   app.use(
+    publicContextMiddleware('public:mcp-oauth'),
     mcpAuthRouter({
       provider,
       issuerUrl,
@@ -77,6 +84,7 @@ export function mountOAuthRoutes(
 
   app.use(
     '/oauth',
+    publicContextMiddleware('public:mcp-oauth'),
     createConsentRoutes({
       tokens,
       staffLookup: deps.staffLookup,

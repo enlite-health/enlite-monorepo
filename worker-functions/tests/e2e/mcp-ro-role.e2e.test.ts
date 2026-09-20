@@ -43,12 +43,25 @@ describe('Role enlite_mcp_ro — SELECT por coluna em patients (D216) @integrati
   let ro: Pool;
   let patientId = '';
   let rlsLigada = false;
+  /**
+   * Com a RLS de país LIGADA (stage; policy da 411 + satélites da 271/413), a role `enlite_mcp_ro` é
+   * recusada antes de qualquer GRANT por coluna decidir (`rls_role_without_session_identity`): o
+   * conector do CEO não lê paciente nem satélite — a decisão A/B da D216×RLS continua aberta. Os
+   * testes por COLUNA abaixo medem a matriz de GRANTs (`has_column_privilege`, que não passa por
+   * RLS) nos dois modos, e só exercitam a leitura de verdade com a RLS desligada (main/prod hoje).
+   */
+  const NEGADO_POR_COLUNA_OU_RLS = /permission denied|rls_role_without_session_identity/;
 
-  /** Colunas permitidas: passam pelo grant; sob RLS, quem barra é a política (user_groups), não patients. */
+  /**
+   * Colunas permitidas: passam pelo grant; sob RLS, quem barra é a política, não patients.
+   * Antes da 411 a política tropeçava em `iam.user_groups` (sem GRANT para a role); depois dela a
+   * função `iam.session_may_see_country` recusa a role por não carregar identidade de sessão
+   * (`rls_role_without_session_identity`) — fail-closed nos dois casos, o teste aceita os dois.
+   */
   async function expectAllowedColumns(run: (sql: string, params: unknown[]) => Promise<{ rows: unknown[] }>): Promise<void> {
     const q = run('SELECT id, status FROM patients WHERE id = $1', [patientId]);
     if (rlsLigada) {
-      await expect(q).rejects.toThrow(/permission denied for table user_groups/);
+      await expect(q).rejects.toThrow(/permission denied for table user_groups|rls_role_without_session_identity/);
       await expect(q).rejects.not.toThrow(/for table patients/);
       return;
     }
@@ -130,19 +143,21 @@ describe('Role enlite_mcp_ro — SELECT por coluna em patients (D216) @integrati
 
   it('spec 012 lex C2.1: patient_addresses.access_notes é negado à role (colunas irmãs passam); C3.1: provider_code não reabre patient_insurance_verified', async () => {
     const { rows: [a] } = await admin.query<{ id: string }>(
-      `INSERT INTO patient_addresses (patient_id, address_type, address_formatted, access_notes) VALUES ($1, 'primary', 'Calle Falsa 123', $2) RETURNING id`,
+      `INSERT INTO patient_addresses (patient_id, address_type, address_type_other, address_formatted, access_notes) VALUES ($1, 'otro', 'Casa de la abuela', 'Calle Falsa 123', $2) RETURNING id`,
       [patientId, CLINICAL_TEXT],
     );
     try {
-      await expect(ro.query('SELECT access_notes FROM patient_addresses WHERE id = $1', [a.id])).rejects.toThrow(/permission denied for table patient_addresses/);
-      await expect(ro.query('SELECT * FROM patient_addresses WHERE id = $1', [a.id])).rejects.toThrow(/permission denied for table patient_addresses/);
-      // colunas não sensíveis seguem legíveis (item 1: contagem/rótulo sempre)
-      const ok = await ro.query('SELECT id, country, neighborhood, logistics_corridor FROM patient_addresses WHERE id = $1', [a.id]);
-      expect(ok.rows).toEqual([{ id: a.id, country: 'AR', neighborhood: null, logistics_corridor: null }]);
-      // spec 019 (D320/B2, tasks 7.1.e): address_type e address_type_other saem da lista positiva
-      // (linha 148 do script) — a role tem de ser NEGADA nessas duas colunas, mesma classe do access_notes.
-      await expect(ro.query('SELECT address_type FROM patient_addresses WHERE id = $1', [a.id])).rejects.toThrow(/permission denied for table patient_addresses/);
-      await expect(ro.query('SELECT address_type_other FROM patient_addresses WHERE id = $1', [a.id])).rejects.toThrow(/permission denied for table patient_addresses/);
+      await expect(ro.query('SELECT access_notes FROM patient_addresses WHERE id = $1', [a.id])).rejects.toThrow(NEGADO_POR_COLUNA_OU_RLS);
+      await expect(ro.query('SELECT * FROM patient_addresses WHERE id = $1', [a.id])).rejects.toThrow(NEGADO_POR_COLUNA_OU_RLS);
+      // spec 019 (D320/B2, tasks 7.1.e): address_type/address_type_other saem junto com access_notes —
+      // mesma classe de risco (texto livre do "Otro", vínculo familiar sensível no valor fechado).
+      await expect(ro.query('SELECT address_type FROM patient_addresses WHERE id = $1', [a.id])).rejects.toThrow(NEGADO_POR_COLUNA_OU_RLS);
+      await expect(ro.query('SELECT address_type_other FROM patient_addresses WHERE id = $1', [a.id])).rejects.toThrow(NEGADO_POR_COLUNA_OU_RLS);
+      // colunas não sensíveis seguem legíveis (item 1: contagem/rótulo sempre) — só sem RLS (ver nota acima)
+      if (!rlsLigada) {
+        const ok = await ro.query('SELECT id, country, neighborhood, logistics_corridor FROM patient_addresses WHERE id = $1', [a.id]);
+        expect(ok.rows).toEqual([{ id: a.id, country: 'AR', neighborhood: null, logistics_corridor: null }]);
+      }
       const priv = await admin.query<{ t: boolean; c: boolean; n: boolean; at: boolean; ato: boolean }>(
         `SELECT has_table_privilege('enlite_mcp_ro', 'public.patient_addresses', 'SELECT') AS t,
                 has_column_privilege('enlite_mcp_ro', 'public.patient_addresses', 'access_notes', 'SELECT') AS c,
@@ -154,7 +169,11 @@ describe('Role enlite_mcp_ro — SELECT por coluna em patients (D216) @integrati
       // CONTROLE POSITIVO (D157): GRANT reabre; REVOKE fecha
       await admin.query('GRANT SELECT (access_notes) ON public.patient_addresses TO enlite_mcp_ro');
       try {
-        expect((await ro.query<{ access_notes: string }>('SELECT access_notes FROM patient_addresses WHERE id = $1', [a.id])).rows[0].access_notes).toBe(CLINICAL_TEXT);
+        if (!rlsLigada) {
+          expect((await ro.query<{ access_notes: string }>('SELECT access_notes FROM patient_addresses WHERE id = $1', [a.id])).rows[0].access_notes).toBe(CLINICAL_TEXT);
+        } else {
+          expect((await admin.query<{ c: boolean }>(`SELECT has_column_privilege('enlite_mcp_ro', 'public.patient_addresses', 'access_notes', 'SELECT') AS c`)).rows[0].c).toBe(true);
+        }
       } finally {
         await admin.query('REVOKE SELECT (access_notes) ON public.patient_addresses FROM enlite_mcp_ro');
       }
@@ -163,11 +182,27 @@ describe('Role enlite_mcp_ro — SELECT por coluna em patients (D216) @integrati
       await admin.query('DELETE FROM patient_addresses WHERE id = $1', [a.id]);
     }
     // C3.1: a coluna nova (312) herda a revogação da tabela inteira
-    await expect(ro.query('SELECT provider_code FROM patient_insurance_verified LIMIT 1')).rejects.toThrow(/permission denied for table patient_insurance_verified/);
+    await expect(ro.query('SELECT provider_code FROM patient_insurance_verified LIMIT 1')).rejects.toThrow(NEGADO_POR_COLUNA_OU_RLS);
     // patients: as colunas novas do bloco B NÃO entraram na lista positiva (lex C7.1-d / B9)
     for (const col of ['on_hold_note', 'on_hold_reason', 'service_start_date', 'admission_status']) {
-      await expect(ro.query(`SELECT ${col} FROM patients WHERE id = $1`, [patientId])).rejects.toThrow(/permission denied for table patients/);
+      await expect(ro.query(`SELECT ${col} FROM patients WHERE id = $1`, [patientId])).rejects.toThrow(NEGADO_POR_COLUNA_OU_RLS);
     }
+  });
+
+  it('spec 018 PR-3 (migration 425, lex CONDIÇÃO 3): gender_encrypted/languages_encrypted negados; CONTROLE POSITIVO numa coluna permitida (D157)', async () => {
+    await expect(ro.query('SELECT gender_encrypted FROM patients WHERE id = $1', [patientId])).rejects.toThrow(NEGADO_POR_COLUNA_OU_RLS);
+    await expect(ro.query('SELECT languages_encrypted FROM patients WHERE id = $1', [patientId])).rejects.toThrow(NEGADO_POR_COLUNA_OU_RLS);
+    const priv = await admin.query<{ g: boolean; l: boolean }>(
+      `SELECT has_column_privilege('enlite_mcp_ro', 'public.patients', 'gender_encrypted', 'SELECT') AS g,
+              has_column_privilege('enlite_mcp_ro', 'public.patients', 'languages_encrypted', 'SELECT') AS l`,
+    );
+    expect(priv.rows[0]).toEqual({ g: false, l: false });
+    // CONTROLE POSITIVO (D157): a mesma checagem numa coluna que ESTÁ na lista positiva confirma
+    // que o instrumento (has_column_privilege) sabe distinguir permitido de negado. INCONDICIONAL
+    // — `expectAllowedColumns` já sabe a diferença entre RLS ligada/desligada (é o MESMO helper
+    // usado no resto do arquivo) e faz a asserção certa nos dois casos; um `if (!rlsLigada)` aqui
+    // só descartava a prova quando ela mais faltava (stage, com RLS ligada).
+    await expectAllowedColumns((sql, params) => ro.query(sql, params));
   });
 
   it('spec 013 bloco C (achado QA-caça #1): patient_contracted_services.professional_profile/hourly_value negados; colunas irmãs, contracted_service_providers, contracted_service_devices e service_types passam', async () => {
@@ -186,10 +221,11 @@ describe('Role enlite_mcp_ro — SELECT por coluna em patients (D216) @integrati
     await admin.query(`INSERT INTO contracted_service_devices (service_id, device_type) SELECT $1, code FROM device_types LIMIT 1`, [svc.id]);
     try {
       // negadas: texto livre e valor do contrato (D216/D218, mesma classe)
-      await expect(ro.query('SELECT professional_profile FROM patient_contracted_services WHERE id = $1', [svc.id])).rejects.toThrow(/permission denied for table patient_contracted_services/);
-      await expect(ro.query('SELECT hourly_value FROM patient_contracted_services WHERE id = $1', [svc.id])).rejects.toThrow(/permission denied for table patient_contracted_services/);
-      await expect(ro.query('SELECT * FROM patient_contracted_services WHERE id = $1', [svc.id])).rejects.toThrow(/permission denied for table patient_contracted_services/);
-      // colunas irmãs (sem texto livre/valor) e count(*) passam — item 1 da Regra
+      await expect(ro.query('SELECT professional_profile FROM patient_contracted_services WHERE id = $1', [svc.id])).rejects.toThrow(NEGADO_POR_COLUNA_OU_RLS);
+      await expect(ro.query('SELECT hourly_value FROM patient_contracted_services WHERE id = $1', [svc.id])).rejects.toThrow(NEGADO_POR_COLUNA_OU_RLS);
+      await expect(ro.query('SELECT * FROM patient_contracted_services WHERE id = $1', [svc.id])).rejects.toThrow(NEGADO_POR_COLUNA_OU_RLS);
+      // colunas irmãs (sem texto livre/valor) e count(*) passam — item 1 da Regra — só sem RLS (nota acima)
+      if (!rlsLigada) {
       const ok = await ro.query(
         'SELECT id, service_code, providers_needed, care_location, active FROM patient_contracted_services WHERE id = $1',
         [svc.id],
@@ -205,6 +241,7 @@ describe('Role enlite_mcp_ro — SELECT por coluna em patients (D216) @integrati
       expect(devOk.rows).toHaveLength(1);
       const typesOk = await ro.query(`SELECT code FROM service_types WHERE code = 'AT'`);
       expect(typesOk.rows).toEqual([{ code: 'AT' }]);
+      }
       const priv = await admin.query<{ t: boolean; profile: boolean; value: boolean }>(
         `SELECT has_table_privilege('enlite_mcp_ro', 'public.patient_contracted_services', 'SELECT') AS t,
                 has_column_privilege('enlite_mcp_ro', 'public.patient_contracted_services', 'professional_profile', 'SELECT') AS profile,
@@ -214,7 +251,11 @@ describe('Role enlite_mcp_ro — SELECT por coluna em patients (D216) @integrati
       // CONTROLE POSITIVO (D157): GRANT reabre; REVOKE fecha
       await admin.query('GRANT SELECT (professional_profile) ON public.patient_contracted_services TO enlite_mcp_ro');
       try {
-        expect((await ro.query<{ professional_profile: string }>('SELECT professional_profile FROM patient_contracted_services WHERE id = $1', [svc.id])).rows[0].professional_profile).toBe(CLINICAL_TEXT);
+        if (!rlsLigada) {
+          expect((await ro.query<{ professional_profile: string }>('SELECT professional_profile FROM patient_contracted_services WHERE id = $1', [svc.id])).rows[0].professional_profile).toBe(CLINICAL_TEXT);
+        } else {
+          expect((await admin.query<{ c: boolean }>(`SELECT has_column_privilege('enlite_mcp_ro', 'public.patient_contracted_services', 'professional_profile', 'SELECT') AS c`)).rows[0].c).toBe(true);
+        }
       } finally {
         await admin.query('REVOKE SELECT (professional_profile) ON public.patient_contracted_services FROM enlite_mcp_ro');
       }
@@ -283,7 +324,7 @@ describe('Role enlite_mcp_ro — SELECT por coluna em patients (D216) @integrati
     // tabelas fora desta fase, ex. patient_chat_ids/patient_responsibles, que ficam de fora
     // desta prova de propósito e vão para a LISTA do relatório, não para este teste).
     const columnScoped = ['patients', 'patient_addresses', 'patient_contracted_services'];
-    const fullyRevoked = ['patient_insurance_verified', 'patient_device_types', 'patient_diagnoses', 'patient_source_labels', 'patient_source_label_rejections'];
+    const fullyRevoked = ['patient_insurance_verified', 'patient_device_types', 'patient_diagnoses', 'patient_source_labels', 'patient_source_label_rejections', 'patient_therapeutic_projects', 'patient_coverage_emergency_contacts', 'therapeutic_specific_objectives', 'therapeutic_activities', 'pathology_types'];
     for (const tabela of [...columnScoped, ...fullyRevoked]) {
       const priv = await admin.query<{ t: boolean }>(
         `SELECT has_table_privilege('enlite_mcp_ro', $1, 'SELECT') AS t`,
@@ -297,7 +338,7 @@ describe('Role enlite_mcp_ro — SELECT por coluna em patients (D216) @integrati
     await admin.query('GRANT SELECT (diagnosis) ON public.patients TO enlite_mcp_ro');
     try {
       const q = ro.query<{ diagnosis: string }>('SELECT diagnosis FROM patients WHERE id = $1', [patientId]);
-      if (rlsLigada) await expect(q).rejects.toThrow(/permission denied for table user_groups/); // passou por patients
+      if (rlsLigada) await expect(q).rejects.toThrow(/permission denied for table user_groups|rls_role_without_session_identity/); // passou por patients
       else expect((await q).rows[0].diagnosis).toBe(CLINICAL_TEXT);
     } finally {
       await admin.query('REVOKE SELECT (diagnosis) ON public.patients FROM enlite_mcp_ro');

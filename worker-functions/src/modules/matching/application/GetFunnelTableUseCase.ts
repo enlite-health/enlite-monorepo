@@ -7,6 +7,7 @@ import {
   FunnelBucket,
   WhatsAppStatus,
 } from '../domain/FunnelTableRow';
+import { cellsOfRequest, projectWorkerFields } from '@modules/identity/permissions';
 import {
   POSTULATED_STAGES_SET,
   PRE_SELECTED_STAGES_SET,
@@ -73,15 +74,22 @@ export class GetFunnelTableUseCase {
     this.encryption = new KMSEncryptionService();
   }
 
+  /**
+   * @param cells células do ator (F2/C3), vindas de `cellsOfRequest(req)`.
+   *   `null` = o engine não decidiu nesta request → a projeção devolve o que
+   *   esta rota já devolvia (D113). **Nunca `[]` por omissão** — `[]` é ator
+   *   conhecido e sem célula, e redige o nome de todo mundo.
+   */
   async execute(
     jobPostingId: string,
     bucket: FunnelBucket = 'ALL',
+    cells: string[] | null = null,
   ): Promise<FunnelTableResult> {
     const rawRows = await this.repo.fetchRawRows(jobPostingId);
 
-    // Decrypt PII in parallel
+    // F2/C3: a projeção decide ANTES do KMS — ver projectWorkerFields.
     const rows = await Promise.all(
-      rawRows.map(r => this.mapRow(r)),
+      rawRows.map(r => this.mapRow(r, cells)),
     );
 
     // Build counts from ALL rows (regardless of bucket filter)
@@ -96,17 +104,22 @@ export class GetFunnelTableUseCase {
     return { rows: filteredRows, counts };
   }
 
-  private async mapRow(raw: FunnelTableRawRow): Promise<FunnelTableRow> {
-    const [firstName, lastName, avatarUrl] = await Promise.all([
-      this.encryption.decrypt(raw.first_name_encrypted ?? null),
-      this.encryption.decrypt(raw.last_name_encrypted ?? null),
-      this.encryption.decrypt(raw.profile_photo_url_encrypted ?? null),
-    ]);
+  private async mapRow(raw: FunnelTableRawRow, cells: string[] | null): Promise<FunnelTableRow> {
+    // ⚠️ `worker_raw_name` entra como `rawName` NA PROJEÇÃO, e não como
+    // fallback aqui fora: é texto claro, e um `|| raw.worker_raw_name` depois
+    // da projeção devolveria o nome de todo card legado sem tocar o KMS — sem o
+    // espião ver nada.
+    // ⚠️ A FOTO é dossiê (D168), não contato: sai só com `worker_pii:read`.
+    const visivel = await projectWorkerFields(cells, {
+      firstNameEncrypted: raw.first_name_encrypted ?? null,
+      lastNameEncrypted: raw.last_name_encrypted ?? null,
+      rawName: raw.worker_raw_name ?? null,
+      email: raw.email ?? null,
+      phone: raw.phone ?? null,
+      profilePhotoUrlEncrypted: raw.profile_photo_url_encrypted ?? null,
+    }, this.encryption);
 
-    const workerName =
-      firstName || lastName
-        ? [firstName, lastName].filter(Boolean).join(' ')
-        : raw.worker_raw_name ?? null;
+    const workerName = visivel.name ?? null;
 
     const ir = raw.interview_response ?? null;
     const accepted =
@@ -118,9 +131,9 @@ export class GetFunnelTableUseCase {
       id: raw.id,
       workerId: raw.worker_id,
       workerName,
-      workerEmail: raw.email ?? null,
-      workerPhone: raw.phone ?? null,
-      workerAvatarUrl: avatarUrl ?? null,
+      workerEmail: visivel.email ?? null,
+      workerPhone: visivel.phone ?? null,
+      workerAvatarUrl: visivel.profilePhotoUrl ?? null,
       invitedAt: raw.invited_at,
       funnelStage: raw.funnel_stage ?? null,
       whatsappStatus: deriveWhatsAppStatus(raw),

@@ -18,8 +18,10 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@
 import { AlertBanner } from '@presentation/components/organisms/Alert/AlertBanner';
 import { OriginLegend } from './OriginLegend';
 import { ProviderFilterCombobox } from './ProviderFilterCombobox';
-import type { AnaCareMonthSnapshot, AnaCarePatient } from './types';
-import { allShiftsOf, originCounts, patientDisplayName, providerDisplayName, totalHours, validationProgress, type SinCheckinHoursMode } from './selectors';
+import { AnaCareHoursSyncButton } from './AnaCareHoursSyncButton';
+import type { AnaCareListPatient, AnaCareMonthSnapshot } from './types';
+import { patientDisplayName, providerDisplayName, type SinCheckinHoursMode } from './selectors';
+import type { UseAnaCareHoursSyncResult } from '@hooks/admin/useAnaCareHoursSync';
 
 const MONTH_VALUES = ['2026-08', '2026-09'] as const;
 
@@ -31,6 +33,8 @@ interface AnaCareHoursListPageProps {
   initialSearch?: string;
   /** Decisão AINDA ABERTA do harness (task 6) — nunca hardcoded aqui. */
   sinCheckinHoursMode?: SinCheckinHoursMode;
+  /** Botão "Sincronizar" (F6.4) — ausente quando o serviço injetado não implementa `triggerSync` (o botão some, nunca fica morto). */
+  sync?: UseAnaCareHoursSyncResult;
 }
 
 export function AnaCareHoursListPage({
@@ -40,6 +44,7 @@ export function AnaCareHoursListPage({
   initialProviderFilterId = '',
   initialSearch = '',
   sinCheckinHoursMode = 'zero',
+  sync,
 }: AnaCareHoursListPageProps): JSX.Element {
   const { t } = useTranslation();
   const [search, setSearch] = useState(initialSearch);
@@ -87,25 +92,45 @@ export function AnaCareHoursListPage({
               {t('admin.anacareHours.updatedAt', { datetime: formatDateTime(snapshot.updatedAt) })}
             </Text>
           </div>
-          <div className="w-48">
-            <Select
-              inputSize="compact"
-              options={monthOptions}
-              value={snapshot.month}
-              onValueChange={(v) => onMonthChange?.(v)}
-              aria-label={t('admin.anacareHours.monthAriaLabel')}
-            />
+          <div className="flex items-end gap-3">
+            <div className="w-48">
+              <Select
+                inputSize="compact"
+                options={monthOptions}
+                value={snapshot.month}
+                onValueChange={(v) => onMonthChange?.(v)}
+                aria-label={t('admin.anacareHours.monthAriaLabel')}
+              />
+            </div>
+            {sync && (
+              <AnaCareHoursSyncButton
+                status={sync.status}
+                round={sync.round}
+                reservationsProcessed={sync.reservationsProcessed}
+                error={sync.error}
+                resumableCursor={sync.resumableCursor}
+                onStart={sync.start}
+              />
+            )}
           </div>
         </div>
 
         {retratoDesactualizado && (
           <AlertBanner
             variant="warning"
-            title={t('admin.anacareHours.stale.title')}
+            title={
+              // Item 3 (revisão de PR): "nunca construído" NÃO é "mais de 24 horas" — mensagem
+              // própria, para não afirmar uma sincronização que nunca aconteceu.
+              snapshot.snapshotState === 'nao_construido'
+                ? t('admin.anacareHours.stale.titleNaoConstruido')
+                : t('admin.anacareHours.stale.title')
+            }
             message={
-              snapshot.circuitBreakerOpen
-                ? t('admin.anacareHours.stale.messageCircuitBreaker')
-                : t('admin.anacareHours.stale.messageSimple')
+              snapshot.snapshotState === 'nao_construido'
+                ? t('admin.anacareHours.stale.messageNaoConstruido')
+                : snapshot.circuitBreakerOpen
+                  ? t('admin.anacareHours.stale.messageCircuitBreaker')
+                  : t('admin.anacareHours.stale.messageSimple')
             }
           />
         )}
@@ -180,40 +205,43 @@ function PatientRow({
   onOpen,
   sinCheckinHoursMode = 'zero',
 }: {
-  patient: AnaCarePatient;
+  patient: AnaCareListPatient;
   onOpen: (id: string) => void;
   sinCheckinHoursMode?: SinCheckinHoursMode;
 }): JSX.Element {
   const { t } = useTranslation();
-  const shifts = allShiftsOf(patient);
-  const progress = validationProgress(shifts);
-  const origins = originCounts(shifts);
-  const hours = totalHours(shifts, sinCheckinHoursMode);
+  // F6.3: os agregados vêm PRONTOS do backend (`anacare_patient_month`) — nunca mais recalculados
+  // percorrendo `patient.providers[].shifts[]` (o array de turnos nem existe mais aqui). Modo
+  // `'zero'` = `hoursActualSum` sozinho; modo `'scheduled'` soma `hoursScheduledSumMissingActual`
+  // (nunca isolado, nunca somado duas vezes — ver `types.ts` `AnaCareListPatient`).
+  const hours = sinCheckinHoursMode === 'scheduled' ? patient.hoursActualSum + patient.hoursScheduledSumMissingActual : patient.hoursActualSum;
+  const total = patient.shiftsCount;
+  const percentage = total === 0 ? 0 : Math.round((patient.validated / total) * 100);
 
   return (
     <TableRow onClick={() => onOpen(patient.anaCareId)} data-testid={`anacare-hours-patient-row-${patient.anaCareId}`}>
       <TableCell weight="medium">{patientDisplayName(patient)}</TableCell>
-      <TableCell align="center">{patient.providers.length}</TableCell>
-      <TableCell align="center">{shifts.length}</TableCell>
+      <TableCell align="center">{patient.providersCount}</TableCell>
+      <TableCell align="center">{patient.shiftsCount}</TableCell>
       <TableCell align="right">{hours.toFixed(1)} h</TableCell>
       <TableCell unwrapped>
         <div className="flex flex-col gap-1 min-w-[140px]">
-          <ProgressBar percentage={progress.percentage} height="sm" className="w-24" />
+          <ProgressBar percentage={percentage} height="sm" className="w-24" />
           <Text as="span" size="xs" color="muted" className="whitespace-nowrap">
-            {t('admin.anacareHours.list.validationSummary', { count: progress.validated, total: progress.total })}
-            {progress.contested > 0 ? t('admin.anacareHours.list.validationSummaryContestedSuffix', { count: progress.contested }) : ''}
+            {t('admin.anacareHours.list.validationSummary', { count: patient.validated, total })}
+            {patient.contested > 0 ? t('admin.anacareHours.list.validationSummaryContestedSuffix', { count: patient.contested }) : ''}
           </Text>
         </div>
       </TableCell>
       <TableCell unwrapped>
         <div className="flex flex-wrap items-center gap-1.5">
-          {origins.sinCheckin > 0 && (
-            <MiniOriginCount label={t('admin.anacareHours.origin.sinCheckin')} count={origins.sinCheckin} origin="sin_checkin" />
+          {patient.originSinCheckin > 0 && (
+            <MiniOriginCount label={t('admin.anacareHours.origin.sinCheckin')} count={patient.originSinCheckin} origin="sin_checkin" />
           )}
-          {origins.webAdmin > 0 && (
-            <MiniOriginCount label={t('admin.anacareHours.origin.webAdmin')} count={origins.webAdmin} origin="web_admin" />
+          {patient.originWebAdmin > 0 && (
+            <MiniOriginCount label={t('admin.anacareHours.origin.webAdmin')} count={patient.originWebAdmin} origin="web_admin" />
           )}
-          {origins.app > 0 && <MiniOriginCount label={t('admin.anacareHours.origin.app')} count={origins.app} origin="app" />}
+          {patient.originApp > 0 && <MiniOriginCount label={t('admin.anacareHours.origin.app')} count={patient.originApp} origin="app" />}
         </div>
       </TableCell>
     </TableRow>

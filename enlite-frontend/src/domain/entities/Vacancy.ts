@@ -66,7 +66,12 @@ export interface AdminVacancyDetail {
   patient_id: string | null;
   patient_first_name: string | null;
   patient_last_name: string | null;
-  patient_diagnosis: string | null;
+  /**
+   * ⚠️ REMOVIDO da API (C1 do `lex`): `GET /api/admin/vacancies/:id` não devolve
+   * mais `patient_diagnosis`. Texto clínico livre não sai sob `vacancy:read`.
+   * O campo da tela mostra `—`; se um dia voltar, volta como agrupador
+   * não-identificante (CID-11, D163/D164), não como texto livre.
+   */
   patient_zone: string | null;
   patient_city: string | null;
   patient_neighborhood: string | null;

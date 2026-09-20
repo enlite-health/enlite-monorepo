@@ -1,5 +1,6 @@
 import { Pool, PoolClient } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { withClientOrActorContext } from '@shared/database/actorContext';
 import { tetoDoCampo, PatientSourceLabelCeilingError } from './PatientSourceLabelCeiling';
 import { classify, firstFreeOrdinal } from './PatientSourceLabelClassifier';
 import { lockField } from './PatientSourceLabelLock';
@@ -348,26 +349,15 @@ export class PatientSourceLabelRepository {
 
   /**
    * Roda `fn` numa transação. Com `client`, é a transação DO CHAMADOR (entrar em outra aqui
-   * quebraria o rollback dele); sem `client`, abre uma própria. Em qualquer caso existe UMA
+   * quebraria o rollback dele); sem `client`, abre uma própria — por `withActorContext`, nunca
+   * `pool.connect()` cru: o client cru chega SEM `app.user_country` e a policy de país (411) recusa
+   * (LISTA da spec 017, mesma classe do 500 da stage em 07/09). Em qualquer caso existe UMA
    * transação — é o que dá sentido ao `pg_advisory_xact_lock`, que se solta no fim dela.
    */
-  private async inTransaction<T>(
+  private inTransaction<T>(
     client: PoolClient | undefined,
     fn: (executor: PoolClient) => Promise<T>,
   ): Promise<T> {
-    if (client) return fn(client);
-
-    const own = await this.pool.connect();
-    try {
-      await own.query('BEGIN');
-      const out = await fn(own);
-      await own.query('COMMIT');
-      return out;
-    } catch (err) {
-      await own.query('ROLLBACK').catch(() => { /* a conexão já pode ter morrido */ });
-      throw err;
-    } finally {
-      own.release();
-    }
+    return withClientOrActorContext(this.pool, client, fn);
   }
 }

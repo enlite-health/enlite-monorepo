@@ -1,5 +1,4 @@
 import * as functions from 'firebase-functions';
-import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import {
   PatientIdentityRepository,
@@ -8,7 +7,7 @@ import {
 import { validateContactChannel } from '../domain/PatientResponsible';
 import { AttentionReason } from '../domain/enums/AttentionReason';
 import { upsertPatientRelated, type PatientRelatedUpsertDeps } from './PatientRelatedUpsert';
-import { isCaseNumberConflict } from './patientCaseNumberConflict';
+import { inPatientTransaction, CaseNumberConflictRetry, rethrowAsCaseNumberRetry } from './patientTransaction';
 import type {
   CreateNativePatientInput,
   CreateNativePatientOptions,
@@ -99,39 +98,28 @@ async function runNativeCreateTransaction(
   nativeInput: PatientIdentityNativeInsertInput,
   related: PatientRelatedInput,
 ): Promise<{ id: string; created: true }> {
-  const db     = DatabaseConnection.getInstance();
-  const client = await db.getClient();
-
   try {
-    await client.query('BEGIN');
-
-    let patientId: string;
-    try {
-      ({ id: patientId } = await deps.identityRepo.insertNative(nativeInput, client));
-    } catch (err) {
-      if (isCaseNumberConflict(err)) {
-        // Same conflict handling as the ClickUp path: rollback and retry
-        // without case_number, flagging the row for operational review.
-        await client.query('ROLLBACK');
-        client.release();
-        functions.logger.warn('patient_service.native_case_number_conflict_retry', {
-          origin:             nativeInput.origin,
-          rejectedCaseNumber: nativeInput.caseNumber ?? null,
-        });
-        return retryNativeWithoutCaseNumber(deps, nativeInput, related);
+    return await inPatientTransaction(async (client) => {
+      let patientId: string;
+      try {
+        ({ id: patientId } = await deps.identityRepo.insertNative(nativeInput, client));
+      } catch (err) {
+        // Same conflict handling as the ClickUp path: abort and retry without
+        // case_number, flagging the row for operational review.
+        rethrowAsCaseNumberRetry(err);
       }
-      throw err;
-    }
-
-    await upsertPatientRelated(deps.related, patientId, related, client);
-
-    await client.query('COMMIT');
-    return { id: patientId, created: true };
+      await upsertPatientRelated(deps.related, patientId, related, client);
+      return { id: patientId, created: true as const };
+    });
   } catch (err) {
-    await client.query('ROLLBACK');
+    if (err instanceof CaseNumberConflictRetry) {
+      functions.logger.warn('patient_service.native_case_number_conflict_retry', {
+        origin:             nativeInput.origin,
+        rejectedCaseNumber: nativeInput.caseNumber ?? null,
+      });
+      return retryNativeWithoutCaseNumber(deps, nativeInput, related);
+    }
     throw err;
-  } finally {
-    try { client.release(); } catch { /* already released on conflict path */ }
   }
 }
 
@@ -150,19 +138,9 @@ async function retryNativeWithoutCaseNumber(
     attentionReasons: Array.from(attentionReasons),
   };
 
-  const db     = DatabaseConnection.getInstance();
-  const client = await db.getClient();
-
-  try {
-    await client.query('BEGIN');
+  return inPatientTransaction(async (client) => {
     const { id: patientId } = await deps.identityRepo.insertNative(safeInput, client);
     await upsertPatientRelated(deps.related, patientId, related, client);
-    await client.query('COMMIT');
-    return { id: patientId, created: true };
-  } catch (err) {
-    await client.query('ROLLBACK');
-    throw err;
-  } finally {
-    client.release();
-  }
+    return { id: patientId, created: true as const };
+  });
 }

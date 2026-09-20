@@ -11,6 +11,9 @@
  * O repositório continua sendo a porta pública: ele re-exporta tudo daqui (`export type`, que
  * o TypeScript apaga na compilação), então nenhum chamador precisou mudar de import.
  */
+import type { PatientCoverageEmergencyContactDetail } from '../domain/PatientCoverageEmergencyContact';
+import type { PatientExternalContactDetail } from '../domain/PatientExternalContact';
+import type { EmergencyMarkTarget } from './PatientEmergencyMarkRepository';
 
 // ── Detail types ──────────────────────────────────────────────────────────────
 
@@ -71,6 +74,8 @@ export interface PatientProfessionalDetail {
   phone: string | null;
   /** Decrypted email or null. */
   email: string | null;
+  /** Especialidade (enum fechado, migration 427). NULL = legado ou equipe multidisciplinar (`isTeam`). */
+  specialty: import('../domain/PatientProfessional').PatientProfessionalSpecialty | null;
   displayOrder: number;
   isTeam: boolean;
 }
@@ -89,6 +94,22 @@ export interface PatientDetailRow {
   phoneWhatsapp: string | null;
   /** E-mail do paciente, descriptografado (KMS) SÓ no detalhe — spec 011 A4. null = não informado. */
   contactEmail: string | null;
+  /**
+   * Gênero declarado, descriptografado (KMS) SÓ no detalhe (spec 018 PR-3, migration 425).
+   * `null` = não perguntado, distinto de `'PREFER_NOT_TO_SAY'` (resposta explícita).
+   */
+  gender: string | null;
+  /** Idiomas do paciente, descriptografado e desserializado do JSON (migration 425). `null` = não perguntado; `[]` nunca é usado para "não perguntado" (D167). */
+  languages: string[] | null;
+  /**
+   * Último `DISCHARGED` de `patient_status_history` (spec 018 PR-3, FR-203/FR-204). Projeção
+   * NOVA sem coleta — mesma célula de `identity` (lex CONDIÇÃO 6: a rota do Historial exige só
+   * `patient:read`, base de QUALQUER leitura da ficha; `identity` é estritamente mais restrita,
+   * então isto NÃO amplia exposição). `null` quando o status atual nunca foi DISCHARGED.
+   */
+  dischargedAt: Date | null;
+  /** Spec 018, PR-4: tem foto de perfil cadastrada (`EXISTS` contra `patient_photos`). */
+  hasPhoto: boolean;
   // Clinical
   diagnosis: string | null;
   dependencyLevel: string | null;
@@ -150,6 +171,16 @@ export interface PatientDetailRow {
   phoneMatchesResponsible: boolean;
   // Related
   responsibles: PatientResponsibleDetail[];
+  /** Spec 018, PR-2 (`lex` #4): contatos externos sem vínculo familiar — `[]` sem `patient_family:read`. */
+  externalContacts: PatientExternalContactDetail[];
+  /** Spec 018, PR-2 (D-A): a marca de emergência do paciente — `null` sem definição OU sem `patient_family:read`. */
+  emergencyContactRef: EmergencyMarkTarget;
+  /** 417 (D301): contatos de emergência da COBERTURA — `[]` sem `patient_coverage:read` (container). */
+  coverageEmergencyContacts: PatientCoverageEmergencyContactDetail[];
+  /** 417 / lex C3: `true` = o ator lê a cobertura mas NÃO a equipe — o profissional direto foi retido da lista. */
+  coverageDirectProfessionalRedacted: boolean;
+  /** Bulkhead (D167): `true` = a leitura dos contatos FALHOU (ex.: 417 ainda não aplicada) — não é lista vazia. */
+  coverageEmergencyContactsUnavailable: boolean;
   addresses: PatientAddressDetail[];
   professionals: PatientProfessionalDetail[];
   /**

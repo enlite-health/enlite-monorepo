@@ -132,12 +132,12 @@ test.describe('Spec 015 (US-A6) — franja etária solicitada do prestador @inte
     await page.waitForTimeout(400);
     await expect(page.getByTestId('contracted-service-detail-drawer')).not.toBeVisible();
 
-    // ── Ativar: sincroniza pela RESPOSTA do POST /activate (molde do bloco C, D-lição do brief) ──
-    await forceClick(page.getByTestId('activate-patient-btn'));
-    const activated = page.waitForResponse((r) => r.request().method() === 'POST' && /\/activate$/.test(r.url()), { timeout: 30_000 });
-    await forceClick(page.getByTestId('activate-confirm'));
-    expect((await activated).status()).toBe(200);
-    await expect(page.getByTestId('activate-patient-btn')).not.toBeVisible({ timeout: 15_000 });
+    // ── Ativar recrutamento DO SERVIÇO (spec 018, PR-6, ADR-5): sincroniza pela RESPOSTA do
+    //    POST /activate-recruitment (molde do bloco C, D-lição do brief) ──
+    const activated = page.waitForResponse((r) => r.request().method() === 'POST' && /\/activate-recruitment$/.test(r.url()), { timeout: 30_000 });
+    await forceClick(page.getByTestId(`contracted-service-activate-recruitment-${serviceId}`));
+    expect((await activated).status()).toBe(201);
+    await expect(page.getByTestId(`contracted-service-view-vacancy-${serviceId}`)).toBeVisible({ timeout: 15_000 });
 
     // ── Prova no Postgres: só a vaga NASCIDA DO SERVIÇO herda a franja ──
     expect(readProviderAgeBand(serviceId)).toBe('AGE_30_45');

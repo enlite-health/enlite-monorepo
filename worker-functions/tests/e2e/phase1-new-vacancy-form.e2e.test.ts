@@ -51,17 +51,16 @@ describe('Phase1 — New Vacancy Form', () => {
     return id;
   }
 
-  async function seedPatientAddress(patientId: string, addressType = 'primary'): Promise<string> {
+  async function seedPatientAddress(patientId: string, isDefault = true): Promise<string> {
     // Spec 019 (B4/migration 433): quem manda no principal é `is_default`, não
     // `address_type='primary'` — a leitura (`PatientDetailQueryHelper.isPrimary`) já usa a
-    // coluna nova. Sem isto o seed marcava `address_type` mas nascia `is_default=false`, e
-    // `1.2 › addresses have isPrimary field` recebia `false` (achado F2 do run 34731108498).
-    const isDefault = addressType === 'primary';
+    // coluna nova. `address_type` nasce NULL (migration 434 não aceita mais o vocabulário
+    // antigo em linha ativa); `1.2 › addresses have isPrimary field` mede só `is_default`.
     const result = await pool.query<{ id: string }>(
-      `INSERT INTO patient_addresses (patient_id, address_formatted, address_type, is_default, source)
-       VALUES ($1, $2, $3, $4, 'admin_manual')
+      `INSERT INTO patient_addresses (patient_id, address_formatted, is_default, source)
+       VALUES ($1, $2, $3, 'admin_manual')
        RETURNING id`,
-      [patientId, `Av. Test ${randomUUID().slice(0, 8)}, CABA`, addressType, isDefault],
+      [patientId, `Av. Test ${randomUUID().slice(0, 8)}, CABA`, isDefault],
     );
     return result.rows[0]!.id;
   }
@@ -134,8 +133,8 @@ describe('Phase1 — New Vacancy Form', () => {
       patientWithAddresses = await seedPatient({ firstName: 'WithAddr', lastName: 'Phase1' });
       patientNoAddresses = await seedPatient({ firstName: 'NoAddr', lastName: 'Phase1' });
       // Add 2 addresses to patientWithAddresses
-      await seedPatientAddress(patientWithAddresses, 'primary');
-      await seedPatientAddress(patientWithAddresses, 'secondary');
+      await seedPatientAddress(patientWithAddresses, true);
+      await seedPatientAddress(patientWithAddresses, false);
     });
 
     it('patient with 2 addresses returns addressesCount = 2', async () => {
@@ -181,8 +180,8 @@ describe('Phase1 — New Vacancy Form', () => {
 
     beforeAll(async () => {
       patientId = await seedPatient({ firstName: 'DetailTest', lastName: 'Phase1' });
-      primaryAddressId = await seedPatientAddress(patientId, 'primary');
-      secondaryAddressId = await seedPatientAddress(patientId, 'secondary');
+      primaryAddressId = await seedPatientAddress(patientId, true);
+      secondaryAddressId = await seedPatientAddress(patientId, false);
     });
 
     it('returns lastCaseNumber = null when patient has no vacancies', async () => {
@@ -279,7 +278,7 @@ describe('Phase1 — New Vacancy Form', () => {
     beforeAll(async () => {
       patientA = await seedPatient({ firstName: 'PatientA', lastName: 'Phase1' });
       patientB = await seedPatient({ firstName: 'PatientB', lastName: 'Phase1' });
-      addressOfB = await seedPatientAddress(patientB, 'primary');
+      addressOfB = await seedPatientAddress(patientB, true);
     });
 
     it('returns 400 when patient_address_id belongs to a different patient', async () => {
@@ -299,7 +298,7 @@ describe('Phase1 — New Vacancy Form', () => {
     });
 
     it('succeeds when patient_address_id belongs to the correct patient', async () => {
-      const addressOfA = await seedPatientAddress(patientA, 'primary');
+      const addressOfA = await seedPatientAddress(patientA, true);
 
       const res = await api.post(
         '/api/admin/vacancies',

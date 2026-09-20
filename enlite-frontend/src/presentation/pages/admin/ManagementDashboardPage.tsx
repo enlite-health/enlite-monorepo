@@ -9,8 +9,10 @@
 import { useTranslation } from 'react-i18next';
 import { LayoutDashboard, AlertTriangle } from 'lucide-react';
 import { PageContainer, Heading, Text } from '@presentation/components/atoms';
+import { Select } from '@presentation/components/atoms/Select';
 import { DashboardSkeleton } from '@presentation/components/ui/skeletons';
 import { useManagementDashboard } from '@hooks/admin/useManagementDashboard';
+import { getScopedCountryOptions } from '@presentation/pages/admin/patientsData';
 import {
   BigNumbersSection,
   EquipoArmadaSection,
@@ -20,19 +22,48 @@ import {
   PacientesSection,
   ZoneAnalyticsSection,
 } from '@presentation/components/features/admin/ManagementDashboard';
+import { ContainerGate } from '@presentation/components/features/access';
+import { useContainerAccess } from '@presentation/hooks/useCellAccess';
 
 export function ManagementDashboardPage(): JSX.Element {
   const { t } = useTranslation();
-  const { data, isLoading, error, refetch, funnelPeriod, setFunnelPeriod } =
+  const { data, isLoading, error, refetch, funnelPeriod, setFunnelPeriod, country, setCountry } =
     useManagementDashboard();
+  // PR-9 (`lex` #9, FR-734): lista SÓ os países do escopo do ator — nunca a lista fixa do
+  // sistema. Vazio até a primeira resposta (o seletor não aparece sem `scope`).
+  const countryOptions = getScopedCountryOptions(t, data?.scope?.countries ?? []);
+  // D286: um `useContainerAccess` por bloco da tela (Pacientes fica no `ContainerGate` abaixo).
+  const bloco = {
+    numbers: useContainerAccess('dashboard_numbers').visible,
+    team: useContainerAccess('dashboard_team').visible,
+    priorities: useContainerAccess('dashboard_priorities').visible,
+    registrations: useContainerAccess('dashboard_registrations').visible,
+    funnel: useContainerAccess('dashboard_funnel').visible,
+    zones: useContainerAccess('dashboard_zones').visible,
+  };
 
   return (
     <PageContainer>
-      <div className="mb-8 flex items-center gap-3">
-        <LayoutDashboard className="h-8 w-8 text-primary" />
-        <Heading level={1} weight="semibold" color="primary">
-          {t('admin.managementDashboard.title')}
-        </Heading>
+      <div className="mb-8 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <LayoutDashboard className="h-8 w-8 text-primary" />
+          <Heading level={1} weight="semibold" color="primary">
+            {t('admin.managementDashboard.title')}
+          </Heading>
+        </div>
+        {/* PR-9 (`lex` #9, US-22): seletor de país da PÁGINA INTEIRA — a seção de
+            Pacientes segue este filtro, não tem mais um próprio (D286 + FR-730). */}
+        {countryOptions.length > 0 && (
+          <div className="w-[210px]" data-testid="mgmt-country-filter">
+            <Select
+              inputSize="compact"
+              options={countryOptions}
+              value={country}
+              onValueChange={(value) => setCountry(value as 'AR' | 'BR' | '')}
+              placeholder={t('admin.patients.countryOptions.all')}
+            />
+          </div>
+        )}
       </div>
 
       {isLoading && (
@@ -63,26 +94,33 @@ export function ManagementDashboardPage(): JSX.Element {
         </div>
       )}
 
+      {/* D286: cada bloco tem célula própria e a API já veio projetada — o bloco sem célula vem
+          `null` no payload, por isso a leitura das props fica DENTRO do ramo visível (o JSX de um
+          filho é avaliado antes de qualquer gate decidir). */}
       {!isLoading && !error && data && (
         <div data-testid="mgmt-content" className="space-y-10">
-          <BigNumbersSection
-            data={data.bigNumbers}
-            pacientes={data.pacientes}
-            horas={data.horas}
-            pctRespostaRapida={data.equipoArmada.pctRespostaRapidaArmado}
-            pctCapacidade={data.encuadres.pctCapacidadeSemana}
-          />
-          <EquipoArmadaSection equipoArmada={data.equipoArmada} horas={data.horas} />
-          <PrioridadesSection data={data.prioridades} />
+          {bloco.numbers && (
+            <BigNumbersSection
+              data={data.bigNumbers}
+              pacientes={data.pacientes}
+              horas={data.horas}
+              pctRespostaRapida={data.equipoArmada.pctRespostaRapidaArmado}
+              pctCapacidade={data.encuadres.pctCapacidadeSemana}
+            />
+          )}
+          {bloco.team && <EquipoArmadaSection equipoArmada={data.equipoArmada} horas={data.horas} />}
+          {bloco.priorities && <PrioridadesSection data={data.prioridades} />}
           {/* Registros ANTES da Totalización — acordo da call 22/07 (02:21, D7). */}
-          <CadastrosSection data={data.cadastros} />
-          <FunnelTotalsSection
-            funnelPorPrestador={data.funnelPorPrestador}
-            encuadres={data.encuadres}
-            period={funnelPeriod}
-            onPeriodChange={setFunnelPeriod}
-          />
-          <ZoneAnalyticsSection />
+          {bloco.registrations && <CadastrosSection data={data.cadastros} />}
+          {bloco.funnel && (
+            <FunnelTotalsSection
+              funnelPorPrestador={data.funnelPorPrestador}
+              encuadres={data.encuadres}
+              period={funnelPeriod}
+              onPeriodChange={setFunnelPeriod}
+            />
+          )}
+          {bloco.zones && <ZoneAnalyticsSection />}
         </div>
       )}
 
@@ -91,9 +129,13 @@ export function ManagementDashboardPage(): JSX.Element {
         fica FORA do bloco acima: se a agregação de recrutamento falhar, estes
         números continuam aparecendo.
       */}
-      <div className="mt-10">
-        <PacientesSection />
-      </div>
+      {/* D286: a seção de pacientes lê /patients/stats + /patients/funnel (patient:read) — sem a
+          célula o container some; os números de recrutamento acima ficam. */}
+      <ContainerGate resource="patient">
+        <div className="mt-10">
+          <PacientesSection country={country} />
+        </div>
+      </ContainerGate>
     </PageContainer>
   );
 }

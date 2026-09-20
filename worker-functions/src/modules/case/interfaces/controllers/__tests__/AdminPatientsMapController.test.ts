@@ -156,6 +156,51 @@ describe('buildPatientsMapQuery', () => {
   });
 });
 
+describe('AdminPatientsMapController.getMapPoints — nome do pino por patient_identity:read (D286 fase 2)', () => {
+  it('sem a célula de identidade o pino diz NOME_REDIGIDO e mantém a coordenada; com ela, o nome', async () => {
+    const controller = new AdminPatientsMapController();
+    mockQuery.mockResolvedValueOnce({ rows: [row({ id: 'p1' })] });
+    const res = mockRes();
+    await controller.getMapPoints({ ...req(SCOPE), permissionCells: ['patient_address:read'] } as unknown as Request, res);
+    const semIdentidade = (res.body as { data: Array<{ name: string; lat: number | null }> }).data[0];
+    expect(semIdentidade.name).toBe('Contato restrito');
+    expect(semIdentidade.lat).not.toBeNull();
+
+    mockQuery.mockResolvedValueOnce({ rows: [row({ id: 'p1' })] });
+    const res2 = mockRes();
+    await controller.getMapPoints({ ...req(SCOPE), permissionCells: ['patient_address:read', 'patient_identity:read'] } as unknown as Request, res2);
+    expect((res2.body as { data: Array<{ name: string }> }).data[0].name).not.toBe('Contato restrito');
+  });
+
+  // Gate do sync main→stage (08/09): busca (main) × redação (stage) — sem a célula de identidade,
+  // filtrar por nome seria um oráculo ("existe alguém chamado X, e mora aqui").
+  it('🔴 `search` SEM patient_identity:read → 403 nomeando o campo, e o banco NÃO é consultado', async () => {
+    jest.clearAllMocks();
+    const controller = new AdminPatientsMapController();
+    const res = mockRes();
+    await controller.getMapPoints(
+      { ...req({ country: 'AR', search: 'reyna' }), permissionCells: ['patient_address:read'] } as unknown as Request,
+      res,
+    );
+    expect(res.statusCode).toBe(403);
+    expect(res.body).toEqual({ success: false, error: 'Forbidden', details: { field: 'search' } });
+    expect(mockQuery).not.toHaveBeenCalled();
+    expect(mockLogInfo).not.toHaveBeenCalled();
+  });
+
+  it('`search` COM patient_identity:read → 200 e o nome sai em claro', async () => {
+    const controller = new AdminPatientsMapController();
+    mockQuery.mockResolvedValueOnce({ rows: [row({ id: 'p1' })] });
+    const res = mockRes();
+    await controller.getMapPoints(
+      { ...req({ country: 'AR', search: 'reyna' }), permissionCells: ['patient_address:read', 'patient_identity:read'] } as unknown as Request,
+      res,
+    );
+    expect(res.statusCode).toBe(200);
+    expect((res.body as { data: Array<{ name: string }> }).data[0].name).not.toBe('Contato restrito');
+  });
+});
+
 describe('AdminPatientsMapController.getMapPoints', () => {
   let controller: AdminPatientsMapController;
   beforeEach(() => { jest.clearAllMocks(); controller = new AdminPatientsMapController(); });

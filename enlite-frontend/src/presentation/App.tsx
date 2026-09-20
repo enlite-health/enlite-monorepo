@@ -7,6 +7,7 @@ import { RegisterPage } from './pages/RegisterPage';
 import { CompleteWhatsappPage } from './pages/CompleteWhatsappPage';
 import { WorkerProfilePage } from './pages/WorkerProfilePage';
 import { AdminErrorBoundary } from './components/features/admin/AdminErrorBoundary';
+import { FeatureRouteGate } from './components/features/access';
 import { RouteErrorBoundary } from './components/RouteErrorBoundary';
 import { CrashNow } from './components/RouteErrorBoundary/__CrashNow';
 import { lazyWithRetry } from './utils/lazyWithRetry';
@@ -16,6 +17,7 @@ import { AdminLayout } from './components/templates/AdminLayout/AdminLayout';
 import { AdminLoginPage } from './pages/admin/AdminLoginPage';
 import { AuthActionPage } from './pages/auth/AuthActionPage';
 import { AdminUsersPage } from './pages/admin/AdminUsersPage';
+import { AccessPage, GroupDetailPage, CountryFeaturesPage, AuditPage } from './pages/admin/access';
 import { AdminVacanciesPage } from './pages/admin/AdminVacanciesPage';
 import { AdminRecruitmentPage } from './pages/admin/AdminRecruitmentPage';
 import { ManagementDashboardPage } from './pages/admin/ManagementDashboardPage';
@@ -39,6 +41,7 @@ import { TemplateCatalogPage } from './pages/admin/TemplateCatalogPage';
 import { TemplateCatalogDetailPage } from './pages/admin/TemplateCatalogDetailPage';
 import { TemplateDraftsPage } from './pages/admin/TemplateDraftsPage';
 import PatientChatRolesPage from './pages/admin/PatientChatRolesPage';
+import TherapeuticCatalogPage from './pages/admin/TherapeuticCatalogPage/TherapeuticCatalogPage';
 import PresentationInvitePage from './pages/admin/PresentationInvitePage';
 import { DedupCenterPage } from './pages/admin/DedupCenterPage/DedupCenterPage';
 import { NewVersionBanner } from './components/molecules/NewVersionBanner/NewVersionBanner';
@@ -195,24 +198,28 @@ export function App() {
           }
         >
           <Route index element={<AdminUsersPage />} />
-          <Route path="vacancies" element={<AdminVacanciesPage />} />
-          <Route path="vacancies/new" element={<CreateVacancyPage />} />
-          <Route path="vacancies/pending-address-review" element={<PendingAddressReviewPage />} />
-          <Route path="vacancies/:id/edit" element={<CreateVacancyPage />} />
-          <Route path="vacancies/:id/talentum" element={<TalentumConfigPage />} />
-          <Route path="vacancies/:id" element={<VacancyDetailPage />} />
-          <Route path="dashboard" element={<ManagementDashboardPage />} />
-          <Route path="recruitment" element={<AdminRecruitmentPage />} />
-          <Route path="recruitment/health" element={<RecruitmentHealthPage />} />
-          <Route path="recruitment/blocked-attempts" element={<BlockedAttemptsPage />} />
-          <Route path="workers" element={<AdminWorkersPage />} />
-          <Route path="workers/:id" element={<WorkerDetailPage />} />
-          <Route path="patients" element={<AdminPatientsPage />} />
-          {/* Ana Care Horas — fase 1, allowlist de e-mail no lugar do ABAC (main não tem o engine, ver D345) */}
-          <Route path="anacare/horas" element={<AnaCareHoursPage />} />
-          <Route path="anacare/horas/:patientId" element={<AnaCareHoursPatientPage />} />
-          <Route path="patients/kanban" element={<PatientKanbanPage />} />
-          <Route path="patients/:id" element={<PatientDetailPage />} />
+          {/* B2 (D268) — cada rota de tela `screen:*` envolvida por `FeatureRouteGate`:
+              desligada no país do ator → redireciona a `/admin` (mesma postura que
+              `AccessGate` já usa para `hidden`). `tags`/`patient-chat-roles`/`dedup`/
+              `api-docs` não têm chave `screen:*` no manifest — ficam de fora. */}
+          <Route path="vacancies" element={<FeatureRouteGate feature="screen:vacancies"><AdminVacanciesPage /></FeatureRouteGate>} />
+          <Route path="vacancies/new" element={<FeatureRouteGate feature="screen:vacancies"><CreateVacancyPage /></FeatureRouteGate>} />
+          <Route path="vacancies/pending-address-review" element={<FeatureRouteGate feature="screen:vacancies"><PendingAddressReviewPage /></FeatureRouteGate>} />
+          <Route path="vacancies/:id/edit" element={<FeatureRouteGate feature="screen:vacancies"><CreateVacancyPage /></FeatureRouteGate>} />
+          <Route path="vacancies/:id/talentum" element={<FeatureRouteGate feature="screen:talentum"><TalentumConfigPage /></FeatureRouteGate>} />
+          <Route path="vacancies/:id" element={<FeatureRouteGate feature="screen:vacancies"><VacancyDetailPage /></FeatureRouteGate>} />
+          <Route path="dashboard" element={<FeatureRouteGate feature="screen:management-dashboard"><ManagementDashboardPage /></FeatureRouteGate>} />
+          <Route path="recruitment" element={<FeatureRouteGate feature="screen:funnel"><AdminRecruitmentPage /></FeatureRouteGate>} />
+          <Route path="recruitment/health" element={<FeatureRouteGate feature="screen:funnel"><RecruitmentHealthPage /></FeatureRouteGate>} />
+          <Route path="recruitment/blocked-attempts" element={<FeatureRouteGate feature="screen:funnel"><BlockedAttemptsPage /></FeatureRouteGate>} />
+          <Route path="workers" element={<FeatureRouteGate feature="screen:workers"><AdminWorkersPage /></FeatureRouteGate>} />
+          <Route path="workers/:id" element={<FeatureRouteGate feature="screen:workers"><WorkerDetailPage /></FeatureRouteGate>} />
+          <Route path="patients" element={<FeatureRouteGate feature="screen:patients"><AdminPatientsPage /></FeatureRouteGate>} />
+          <Route path="patients/kanban" element={<FeatureRouteGate feature="screen:patients"><PatientKanbanPage /></FeatureRouteGate>} />
+          <Route path="patients/:id" element={<FeatureRouteGate feature="screen:patients"><PatientDetailPage /></FeatureRouteGate>} />
+          <Route path="anacare/horas" element={<FeatureRouteGate feature="screen:ana-care"><AnaCareHoursPage /></FeatureRouteGate>} />
+          <Route path="anacare/horas/:patientId" element={<FeatureRouteGate feature="screen:ana-care"><AnaCareHoursPatientPage /></FeatureRouteGate>} />
+          {/* `/admin/mapa` (main, 05/09) não tem chave `screen:*` no manifest — fica sem FeatureRouteGate, como tags/dedup. */}
           <Route path="mapa" element={<AdminMapPage />} />
           <Route path="tags" element={<TagCatalogPage />} />
           <Route path="mensajes-por-etapa" element={<FunnelStageMessagesPage />} />
@@ -221,8 +228,16 @@ export function App() {
           {/* Depois de "registrar", senão o literal seria capturado pelo :slug. */}
           <Route path="plantillas/:slug" element={<TemplateCatalogDetailPage />} />
           <Route path="patient-chat-roles" element={<PatientChatRolesPage />} />
+          {/* Spec 017: uma TELA por catálogo do projeto terapêutico (célula própria cada); sem `screen:*` no manifest, como patient-chat-roles. */}
+          <Route path="catalogos/objetivos-especificos" element={<TherapeuticCatalogPage kind="specific-objectives" />} />
+          <Route path="catalogos/actividades" element={<TherapeuticCatalogPage kind="activities" />} />
           <Route path="invitacion-presentacion" element={<PresentationInvitePage />} />
           <Route path="dedup" element={<DedupCenterPage />} />
+          {/* Painel de acessos — cada página se fecha sozinha em `permission_management:read` (AccessGate). */}
+          <Route path="access" element={<FeatureRouteGate feature="screen:access-permissions"><AccessPage /></FeatureRouteGate>} />
+          <Route path="access/groups/:id" element={<FeatureRouteGate feature="screen:access-permissions"><GroupDetailPage /></FeatureRouteGate>} />
+          <Route path="access/features" element={<FeatureRouteGate feature="screen:access-permissions"><CountryFeaturesPage /></FeatureRouteGate>} />
+          <Route path="access/audit" element={<FeatureRouteGate feature="screen:access-permissions"><AuditPage /></FeatureRouteGate>} />
           <Route
             path="api-docs"
             element={

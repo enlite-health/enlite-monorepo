@@ -251,3 +251,85 @@ describe('PatientGeneralEditDrawer — data de nascimento', () => {
     });
   });
 });
+
+// ── Spec 018 PR-3 (Emenda 13/09, migration 425): gênero e idiomas — coleta SEMPRE facultativa ──
+
+describe('PatientGeneralEditDrawer — gender/languages (spec 018 PR-3)', () => {
+  beforeEach(() => { updatePatientSection.mockReset().mockResolvedValue({ id: patient.id }); });
+
+  it('carrega gender/languages atuais do detalhe (fixture: MALE, pt+es)', () => {
+    render(<PatientGeneralEditDrawer patient={patient} onClose={vi.fn()} onSaved={vi.fn()} />);
+    expect(screen.getByTestId('pge-gender')).toHaveValue('MALE');
+  });
+
+  it('trocar o gênero envia SÓ gender (não perturba languages inalterado)', async () => {
+    render(<PatientGeneralEditDrawer patient={patient} onClose={vi.fn()} onSaved={vi.fn()} />);
+    fireEvent.change(screen.getByTestId('pge-gender'), { target: { value: 'NON_BINARY' } });
+    fireEvent.click(screen.getByTestId('pge-save'));
+    await waitFor(() => expect(updatePatientSection).toHaveBeenCalledTimes(1));
+    expect(updatePatientSection).toHaveBeenCalledWith(patient.id, 'general', { gender: 'NON_BINARY' });
+  });
+
+  it('limpar o gênero (voltar para "") envia null — "não perguntado", sem obrigatoriedade nenhuma', async () => {
+    render(<PatientGeneralEditDrawer patient={patient} onClose={vi.fn()} onSaved={vi.fn()} />);
+    fireEvent.change(screen.getByTestId('pge-gender'), { target: { value: '' } });
+    fireEvent.click(screen.getByTestId('pge-save'));
+    await waitFor(() => expect(updatePatientSection).toHaveBeenCalledTimes(1));
+    expect(updatePatientSection).toHaveBeenCalledWith(patient.id, 'general', { gender: null });
+  });
+
+  it('paciente sem gender/languages (mas com nome válido): salvar sem mexer não chama a API — nunca obrigatório', async () => {
+    const onClose = vi.fn();
+    // `patientDetailMinimal` tem `firstName: null` → zod .min(1) barraria o submit por um motivo
+    // TOTALMENTE alheio a gender/languages; usamos `patient` (nome válido) só sem os dois campos.
+    render(<PatientGeneralEditDrawer patient={{ ...patient, gender: null, languages: null }} onClose={onClose} onSaved={vi.fn()} />);
+    expect(screen.getByTestId('pge-gender')).toHaveValue('');
+    fireEvent.click(screen.getByTestId('pge-save'));
+    await waitFor(() => expect(onClose).toHaveBeenCalled(), { timeout: 2000 });
+    expect(updatePatientSection).not.toHaveBeenCalled();
+  });
+
+  // O toggle de cada opção do MultiSelect é um <button> DENTRO do <li role="option">, não o
+  // próprio li — clicar no li (role owner) não dispara o handler (click não desce a árvore).
+  function clickLanguageOption(container: HTMLElement, label: string): void {
+    const option = screen.getByRole('option', { name: label });
+    const button = option.querySelector('button');
+    if (!button) throw new Error(`option "${label}" sem <button> interno`);
+    fireEvent.click(button);
+    void container;
+  }
+
+  it('adicionar um idioma (fixture já tem pt+es) envia languages com os 3', async () => {
+    const { container } = render(<PatientGeneralEditDrawer patient={patient} onClose={vi.fn()} onSaved={vi.fn()} />);
+    const multiSelectButton = container.querySelector('#pge-languages button') as HTMLElement;
+    fireEvent.click(multiSelectButton); // abre o dropdown
+    clickLanguageOption(container, 'Inglês');
+    fireEvent.click(screen.getByTestId('pge-save'));
+    await waitFor(() => expect(updatePatientSection).toHaveBeenCalledTimes(1));
+    expect(updatePatientSection).toHaveBeenCalledWith(patient.id, 'general', { languages: expect.arrayContaining(['pt', 'es', 'en']) });
+  });
+
+  it('trocar um idioma por outro (MESMA quantidade, conteúdo diferente) ainda é detectado como mudança', async () => {
+    // Cobre o ramo do `.some()` em `languagesChanged`: comprimento igual ao original, mas o
+    // CONJUNTO mudou — só o length não bastaria para acusar essa troca.
+    const { container } = render(<PatientGeneralEditDrawer patient={patient} onClose={vi.fn()} onSaved={vi.fn()} />);
+    const multiSelectButton = container.querySelector('#pge-languages button') as HTMLElement;
+    fireEvent.click(multiSelectButton);
+    clickLanguageOption(container, 'Português'); // remove pt → fica ['es']
+    clickLanguageOption(container, 'Inglês'); // adiciona en → fica ['es','en'], mesmo tamanho de ['pt','es']
+    fireEvent.click(screen.getByTestId('pge-save'));
+    await waitFor(() => expect(updatePatientSection).toHaveBeenCalledTimes(1));
+    expect(updatePatientSection).toHaveBeenCalledWith(patient.id, 'general', { languages: expect.arrayContaining(['es', 'en']) });
+  });
+
+  it('remover todos os idiomas envia languages: null (limpa a coluna, não [])', async () => {
+    const { container } = render(<PatientGeneralEditDrawer patient={patient} onClose={vi.fn()} onSaved={vi.fn()} />);
+    const multiSelectButton = container.querySelector('#pge-languages button') as HTMLElement;
+    fireEvent.click(multiSelectButton); // abre — o dropdown fica ABERTO entre seleções (sem auto-close)
+    clickLanguageOption(container, 'Português'); // remove pt
+    clickLanguageOption(container, 'Espanhol'); // remove es → fica []
+    fireEvent.click(screen.getByTestId('pge-save'));
+    await waitFor(() => expect(updatePatientSection).toHaveBeenCalledTimes(1));
+    expect(updatePatientSection).toHaveBeenCalledWith(patient.id, 'general', { languages: null });
+  });
+});

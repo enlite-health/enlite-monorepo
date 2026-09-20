@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { EnliteRole } from '@domain/entities/EnliteRole';
 import { Heading, Label } from '@presentation/components/atoms';
 import { Button } from '@presentation/components/atoms/Button';
 
+// ABAC — sem papel: o convite só cria a conta; o acesso vem das células do
+// grupo em que o painel de Acessos filia a pessoa depois.
 export interface CreateAdminUserForm {
   email: string;
   displayName: string;
-  role: EnliteRole;
 }
 
 interface Props {
@@ -19,7 +19,6 @@ interface Props {
 const DEFAULT_FORM: CreateAdminUserForm = {
   email: '',
   displayName: '',
-  role: EnliteRole.ADMIN,
 };
 
 export function CreateAdminUserModal({ isLoading, onSubmit, onClose }: Props): JSX.Element {
@@ -33,12 +32,6 @@ export function CreateAdminUserModal({ isLoading, onSubmit, onClose }: Props): J
     if (!form.email || !form.displayName) return;
     await onSubmit(form);
   };
-
-  const roleOptions: { value: EnliteRole; label: string }[] = [
-    { value: EnliteRole.ADMIN,             label: t('admin.users.roleAdmin') },
-    { value: EnliteRole.RECRUITER,         label: t('admin.users.roleRecruiter') },
-    { value: EnliteRole.COMMUNITY_MANAGER, label: t('admin.users.roleCommunityManager') },
-  ];
 
   const inputClass =
     'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:border-primary';
@@ -71,22 +64,6 @@ export function CreateAdminUserModal({ isLoading, onSubmit, onClose }: Props): J
               value={form.displayName}
               onChange={(e) => set('displayName', e.target.value)}
             />
-          </div>
-
-          <div>
-            <Label htmlFor="cu-role">{t('admin.users.role')}</Label>
-            <select
-              id="cu-role"
-              className={inputClass}
-              value={form.role}
-              onChange={(e) => set('role', e.target.value)}
-            >
-              {roleOptions.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
           </div>
         </div>
 

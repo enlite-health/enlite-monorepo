@@ -1,10 +1,17 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Heading } from '@presentation/components/atoms/Heading';
-import { Button } from '@presentation/components/atoms/Button';
+import { ActionButton } from '@presentation/components/features/access';
 import type { PatientDetail } from '@domain/entities/PatientDetail';
 import { PatientGeneralEditDrawer } from './edit/PatientGeneralEditDrawer';
 import { FieldPair, FieldPairGrid } from './FieldPairs';
+
+/** Spec 018 PR-3 — a mesma lista fechada ISO de `workers.languages` (pt/es/en). */
+const LANGUAGE_LABEL_KEYS: Record<string, string> = {
+  pt: 'admin.patients.detail.generalInfoCard.languageOptions.pt',
+  es: 'admin.patients.detail.generalInfoCard.languageOptions.es',
+  en: 'admin.patients.detail.generalInfoCard.languageOptions.en',
+};
 
 interface PatientGeneralInfoCardProps {
   patient: PatientDetail;
@@ -53,16 +60,29 @@ export function PatientGeneralInfoCard({ patient, onSaved }: PatientGeneralInfoC
   const sexLabel = patient.sex ? t(`admin.patients.detail.sex.${patient.sex}`) : null;
 
   const ageDisplay = age !== null ? t('admin.patients.detail.generalInfoCard.ageYears', { count: age }) : null;
+  // Spec 018 PR-3 (Emenda 13/09, migration 425): `null` = não perguntado, distinto de
+  // `'PREFER_NOT_TO_SAY'` (resposta explícita) — os DOIS caem em `resolve(...) ?? null` do `t()`
+  // abaixo por caminhos diferentes: null nunca chega ao `t`, PREFER_NOT_TO_SAY chega e resolve
+  // para o rótulo "Prefiero no decir".
+  const genderLabel = patient.gender ? t(`admin.patients.detail.generalInfoCard.genderOptions.${patient.gender}`, { defaultValue: patient.gender }) : null;
+  const languagesLabel = patient.languages && patient.languages.length > 0
+    ? patient.languages.map((l) => t(LANGUAGE_LABEL_KEYS[l] ?? '', { defaultValue: l })).join(', ')
+    : null;
 
   return (
-    <div className="bg-white rounded-card border-[1.5px] border-gray-700 p-6 sm:px-8 sm:py-10 flex flex-col gap-4">
+    // FR-211 (lex #3(c)/#1(g)): `data-clarity-mask` no card INTEIRO — nascimento, idade, faixa
+    // etária, sexo, gênero e idiomas são dado sensível do titular; o mesmo racional dos outros
+    // blocos desta ficha (o modo do dashboard do Clarity é configuração remota que ninguém aqui
+    // controla).
+    <div data-testid="patient-general-info-card" data-clarity-mask="True" className="bg-white rounded-card border-[1.5px] border-gray-700 p-6 sm:px-8 sm:py-10 flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <Heading level={1} as="h3" weight="semibold" color="primary">
           {t('admin.patients.detail.generalInfoCard.title')}
         </Heading>
-        <Button variant="outline" size="sm" onClick={() => setEditing(true)} className="w-28" data-testid="edit-general-btn">
+        {/* D269 — abre o drawer que faz PATCH /patients/:id/general → patient_identity:update (PR-8b). */}
+        <ActionButton resource="patient_identity" action="update" variant="outline" size="sm" onClick={() => setEditing(true)} className="w-28" data-testid="edit-general-btn">
           {t('admin.patients.detail.edit')}
-        </Button>
+        </ActionButton>
       </div>
 
       {editing && (
@@ -77,13 +97,21 @@ export function PatientGeneralInfoCard({ patient, onSaved }: PatientGeneralInfoC
         <FieldPair label={t('admin.patients.detail.generalInfoCard.birthDate')} value={formatBirthDate(patient.birthDate)} />
         <FieldPair label={t('admin.patients.detail.generalInfoCard.age')} value={ageDisplay} />
         <FieldPair label={t('admin.patients.detail.generalInfoCard.ageBracket')} value={ageBracket} />
-        <FieldPair label={t('admin.patients.detail.generalInfoCard.sex')} value={sexLabel} />
+        <FieldPair label={t('admin.patients.detail.generalInfoCard.sex')} value={sexLabel} testId="patient-sex" />
         {/* US-B9 (spec 012): data de início do serviço — nativa do painel, não deriva da vaga. */}
         <FieldPair label={t('admin.patients.detail.generalInfoCard.serviceStartDate')} value={formatBirthDate(patient.serviceStartDate)} />
-        {/* Spec 014 US-D2 (decisão Gabriel 03/09, item 9): Género/Orientación Sexual/Origen
-            racial/Religión/Idiomas REMOVIDOS — eram `value={null}` fixo, sem coluna em `patients`
-            (só existem em `workers`; ver lex D2 e migrations/008,023,002). Manter o rótulo sem o
-            dado não é só promessa vazia: é convite a coletar dado sensível sem base legal. */}
+        {/*
+         * Spec 018 PR-3 (Emenda 13/09, migration 425): Gênero e Idiomas VOLTAM — a spec 014 US-D2
+         * (03/09) os removeu porque `patients` não tinha coluna própria (só `workers` tinha,
+         * migrations 008/023/002). A migration 425 cria `gender_encrypted`/`languages_encrypted`
+         * cifrados com KMS, coleta SEMPRE facultativa, sob `patient_identity:read` — a razão que
+         * bloqueava (dado sem base legal/sem coluna) não existe mais.
+         *
+         * Orientação sexual, origem racial e religião CONTINUAM fora (lex #2a, PARE) — nenhuma
+         * das duas ganhou coluna nesta migration nem em nenhuma outra.
+         */}
+        <FieldPair label={t('admin.patients.detail.generalInfoCard.gender')} value={genderLabel} testId="patient-gender" />
+        <FieldPair label={t('admin.patients.detail.generalInfoCard.languages')} value={languagesLabel} testId="patient-languages" />
       </FieldPairGrid>
     </div>
   );

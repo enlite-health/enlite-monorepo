@@ -10,10 +10,20 @@ interface AdditionalDocumentsSectionProps {
   onDelete: (id: string) => Promise<void>;
   onView: (filePath: string) => Promise<void>;
   isLoading?: boolean;
+  /**
+   * D269 (admin `worker_document:write`) — quando `false`, o botão "Agregar"
+   * (e o form que ele abre) SOME. Este componente é COMPARTILHADO com o
+   * autoatendimento do worker (`DocumentsTab`), que não gateia por célula —
+   * por isso o default é `true` (comportamento inalterado sem a prop).
+   */
+  canUpload?: boolean;
+  /** D269 (admin `worker_document:delete`) — quando `false`, o ícone de excluir SOME. Default `true`. */
+  canDelete?: boolean;
 }
 
 export function AdditionalDocumentsSection({
   documents, onUpload, onDelete, onView, isLoading,
+  canUpload = true, canDelete = true,
 }: AdditionalDocumentsSectionProps): JSX.Element {
   const { t } = useTranslation();
   const [showForm, setShowForm] = useState(false);
@@ -54,19 +64,22 @@ export function AdditionalDocumentsSection({
         <Heading level={2} weight="semibold" color="secondary">
           {t('documents.additionalTitle', 'Otros Documentos')}
         </Heading>
-        <button
-          type="button"
-          onClick={() => setShowForm(!showForm)}
-          data-testid="additional-doc-add"
-          className="flex shrink-0 items-center gap-1.5 px-3 py-1.5 rounded-lg border-2 border-primary text-primary text-sm font-medium hover:bg-primary/5 transition-colors"
-        >
-          <Plus size={16} />
-          {t('documents.addDocument', 'Agregar')}
-        </button>
+        {/* D269 — sem worker_document:write, o botão "Agregar" SOME. */}
+        {canUpload && (
+          <button
+            type="button"
+            onClick={() => setShowForm(!showForm)}
+            data-testid="additional-doc-add"
+            className="flex shrink-0 items-center gap-1.5 px-3 py-1.5 rounded-lg border-2 border-primary text-primary text-sm font-medium hover:bg-primary/5 transition-colors"
+          >
+            <Plus size={16} />
+            {t('documents.addDocument', 'Agregar')}
+          </button>
+        )}
       </div>
 
       {/* Add form */}
-      {showForm && (
+      {showForm && canUpload && (
         <div className="flex flex-col gap-3 p-4 rounded-card border-2 border-dashed border-gray-400 bg-gray-50">
           <input
             type="text"
@@ -138,17 +151,20 @@ export function AdditionalDocumentsSection({
                 >
                   <Eye size={16} className="text-gray-600" />
                 </button>
-                <button
-                  type="button"
-                  onClick={() => handleDelete(doc.id)}
-                  disabled={deletingId === doc.id}
-                  className="p-1.5 rounded hover:bg-red-50 transition-colors"
-                  title={t('documents.delete', 'Eliminar')}
-                >
-                  {deletingId === doc.id
-                    ? <Loader2 size={16} className="animate-spin text-gray-400" />
-                    : <Trash2 size={16} className="text-red-500" />}
-                </button>
+                {/* D269 — sem worker_document:delete, o ícone de excluir SOME. */}
+                {canDelete && (
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(doc.id)}
+                    disabled={deletingId === doc.id}
+                    className="p-1.5 rounded hover:bg-red-50 transition-colors"
+                    title={t('documents.delete', 'Eliminar')}
+                  >
+                    {deletingId === doc.id
+                      ? <Loader2 size={16} className="animate-spin text-gray-400" />
+                      : <Trash2 size={16} className="text-red-500" />}
+                  </button>
+                )}
               </div>
             </div>
           ))}

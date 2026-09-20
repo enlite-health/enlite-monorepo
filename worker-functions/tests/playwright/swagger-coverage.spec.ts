@@ -20,12 +20,6 @@ const PUBLIC_PATHS = new Set<string>([
   'POST /api/workers/init',
   'GET /api/vacancies/{id}',
   'POST /api/admin/setup',
-  'GET /api/test/recruitment/clickup-cases',
-  'GET /api/test/recruitment/talentum-workers',
-  'GET /api/test/recruitment/progreso',
-  'GET /api/test/recruitment/publications',
-  'GET /api/test/recruitment/encuadres',
-  'GET /api/test/recruitment/global-metrics',
 ]);
 
 interface ExpressRouteInfo {
@@ -161,8 +155,6 @@ test('operações não-públicas têm security scheme definido', () => {
       const id = `${method.toUpperCase()} ${path}`;
 
       if (PUBLIC_PATHS.has(id)) continue;
-      // recruitment-test endpoints são públicos por enquanto
-      if (path.startsWith('/api/test/recruitment')) continue;
 
       const sec = op.security;
       const hasSecurity = Array.isArray(sec) && sec.length > 0 && Object.keys(sec[0]).length > 0;

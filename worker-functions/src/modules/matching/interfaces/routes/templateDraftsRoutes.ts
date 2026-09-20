@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
-import { AuthMiddleware } from '@modules/identity';
+import { AuthMiddleware, type PermissionMiddleware } from '@modules/identity';
+import { ADMIN_MESSAGING_FAMILY } from '@modules/identity/permissions';
 import { TemplateDraftsController } from '../controllers/TemplateDraftsController';
 
 /**
@@ -24,10 +25,13 @@ import { TemplateDraftsController } from '../controllers/TemplateDraftsControlle
 export function createTemplateDraftsRoutes(
   controller: TemplateDraftsController,
   authMiddleware: AuthMiddleware,
+  permissions: PermissionMiddleware,
 ): Router {
   const router = Router();
-  router.get('/template-drafts', authMiddleware.requireAdmin(), (req: Request, res: Response) => controller.list(req, res));
-  router.post('/template-drafts', authMiddleware.requireAdmin(), (req: Request, res: Response) => controller.create(req, res));
+  // Célula declarada no sync main→stage (06/09/2026): sem ela o deny-when-undeclared do trem ABAC reprova o inventário.
+  const perm = permissions.family(ADMIN_MESSAGING_FAMILY);
+  router.get('/template-drafts', authMiddleware.requireStaff(), perm.require('messaging', 'read', { untilEnforced: 'admin' }), (req: Request, res: Response) => controller.list(req, res));
+  router.post('/template-drafts', authMiddleware.requireStaff(), perm.require('messaging', 'create', { untilEnforced: 'admin' }), (req: Request, res: Response) => controller.create(req, res));
   /*
    * 🔒 `/validar` NÃO GRAVA NADA, e existe por uma razão de arquitetura, não de
    * conveniência. O desenho da Tela 2 pede uma lista de verificação AO VIVO —
@@ -43,10 +47,10 @@ export function createTemplateDraftsRoutes(
    * verdade só. Se as regras mudarem, mudam nos três lugares de uma vez porque
    * são o mesmo lugar.
    */
-  router.post('/template-drafts/validar', authMiddleware.requireAdmin(), (req: Request, res: Response) => controller.validar(req, res));
-  router.put('/template-drafts/:id', authMiddleware.requireAdmin(), (req: Request, res: Response) => controller.update(req, res));
-  router.delete('/template-drafts/:id', authMiddleware.requireAdmin(), (req: Request, res: Response) => controller.archive(req, res));
-  router.post('/template-drafts/:id/submit', authMiddleware.requireAdmin(), (req: Request, res: Response) => controller.submit(req, res));
-  router.post('/template-drafts/:id/duplicate', authMiddleware.requireAdmin(), (req: Request, res: Response) => controller.duplicate(req, res));
+  router.post('/template-drafts/validar', authMiddleware.requireStaff(), perm.require('messaging', 'create', { untilEnforced: 'admin' }), perm.require('messaging', 'update', { untilEnforced: 'admin' }), (req: Request, res: Response) => controller.validar(req, res));
+  router.put('/template-drafts/:id', authMiddleware.requireStaff(), perm.require('messaging', 'update', { untilEnforced: 'admin' }), (req: Request, res: Response) => controller.update(req, res));
+  router.delete('/template-drafts/:id', authMiddleware.requireStaff(), perm.require('messaging', 'update', { untilEnforced: 'admin' }), (req: Request, res: Response) => controller.archive(req, res));
+  router.post('/template-drafts/:id/submit', authMiddleware.requireStaff(), perm.require('messaging', 'update', { untilEnforced: 'admin' }), (req: Request, res: Response) => controller.submit(req, res));
+  router.post('/template-drafts/:id/duplicate', authMiddleware.requireStaff(), perm.require('messaging', 'create', { untilEnforced: 'admin' }), (req: Request, res: Response) => controller.duplicate(req, res));
   return router;
 }

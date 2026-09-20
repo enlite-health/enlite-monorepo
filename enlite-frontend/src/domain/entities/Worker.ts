@@ -202,11 +202,18 @@ export interface WorkerDetail {
   isTest: boolean;
 
   documents: WorkerDocument | null;
-  serviceAreas: WorkerServiceArea[];
+  /** D286: `null` quando o ator não tem `worker_pii:read` (coordenada é endereço). */
+  serviceAreas: WorkerServiceArea[] | null;
   location: WorkerLocation | null;
-  encuadres: WorkerEncuadre[];
+  /** D286: `null` (não `[]`) quando o ator não tem `match:read`. */
+  encuadres: WorkerEncuadre[] | null;
   availability?: WorkerAvailabilitySlot[];
   tags?: import('./WorkerTag').WorkerTagSummary[];
+  /**
+   * D286 — marcador CONSTANTE de redação por container, emitido pela API quando falta a célula
+   * (contato, dossiê, documentos, encuadres). O card some pelo `ContainerGate`; isto é só sinal.
+   */
+  redacted?: Partial<Record<'contact' | 'dossier' | 'documents' | 'encuadres', true>>;
 }
 
 export interface WorkerAvailabilitySlot {

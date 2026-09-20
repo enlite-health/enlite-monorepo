@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { COUNTRY_CODES } from '@shared/domain/countryCodes';
 
 /**
  * Contrato de saída do endpoint GET /analytics/dashboard/management
@@ -30,6 +31,17 @@ const funnelColumnCountsSchema = z.object({
 });
 
 export const managementDashboardSchema = z.object({
+  /**
+   * País resolvido NO SERVIDOR (PR-9, `lex` #9, FR-730/734). `countries` é o
+   * escopo que a agregação de fato aplicou (nunca vazio); `requested` é o que
+   * a request pediu, já normalizado. O seletor do front lista `countries`
+   * — nunca a lista fixa de jurisdições do sistema — e nunca mais que os
+   * dois códigos de país (sem Portugal, sem string livre).
+   */
+  scope: z.object({
+    countries: z.array(z.enum(COUNTRY_CODES)).min(1),
+    requested: z.union([z.enum(COUNTRY_CODES), z.literal('ALL')]),
+  }),
   /** Big numbers operacionais. */
   bigNumbers: z.object({
     /** Casos ARMADOS (titulares + substitutos suficientes) — GetArmedCasesUseCase. */

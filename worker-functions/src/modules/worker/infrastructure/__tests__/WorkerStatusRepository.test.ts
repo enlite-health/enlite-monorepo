@@ -200,4 +200,52 @@ describe('recalculateWorkerStatus', () => {
     expect(result).toBeNull();
     expect(pubsub.publish).not.toHaveBeenCalled();
   });
+
+  // ── C7 — a baixa NÃO é recalculável ───────────────────────────────────────
+
+  describe('C7 — worker em DISABLED não é ressuscitado por recálculo', () => {
+    it('worker DISABLED: nem consulta o recálculo, nem escreve', async () => {
+      // ⚠️ Este caminho é chamado por UPLOAD e por REVISÃO DE DOCUMENTO, não só
+      // por decisão de staff. Sem a guarda, subir um documento de quem pediu
+      // baixa RESSUSCITA a conta — sem ninguém decidir, sem motivo escrito e
+      // sem passar por célula nenhuma. É o mais silencioso dos dois furos.
+      const pool = makePool();
+      pool.query.mockResolvedValueOnce({ rows: [{ status: 'DISABLED' }] });
+      setupRecalculate('REGISTERED');
+
+      const out = await recalculateWorkerStatus(pool as never, 'w-baixado', makePubsub() as never);
+
+      expect(out).toBeNull();
+      expect(mockedRecalculate).not.toHaveBeenCalled();
+      expect(pool.connect).not.toHaveBeenCalled();
+      // A ÚNICA query permitida é a leitura do status atual.
+      expect(pool.query).toHaveBeenCalledTimes(1);
+      expect(String(pool.query.mock.calls[0][0])).toContain('SELECT status FROM workers');
+    });
+
+    it('worker ATIVO segue recalculando normalmente — a guarda não é ruído', async () => {
+      // Transição que NÃO é REGISTERED, para o teste medir a guarda e não a
+      // maquinaria de domain_events (que tem testes próprios acima).
+      const pool = makePool();
+      pool.query.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
+      setupRecalculate('INCOMPLETE_REGISTER');
+
+      const out = await recalculateWorkerStatus(pool as never, 'w-ativo', makePubsub() as never);
+
+      expect(out).toBe('INCOMPLETE_REGISTER');
+      expect(mockedRecalculate).toHaveBeenCalled();
+    });
+
+    it('worker inexistente não trava o recálculo — status ausente não é baixa', async () => {
+      // Erra para o lado de operar: linha sumida é dado faltando, não vontade
+      // do titular. Tratar ausência como baixa travaria import legítimo.
+      const pool = makePool();
+      pool.query.mockResolvedValueOnce({ rows: [] });
+      setupRecalculateNoChange();
+
+      await recalculateWorkerStatus(pool as never, 'w-fantasma', makePubsub() as never);
+
+      expect(mockedRecalculate).toHaveBeenCalled();
+    });
+  });
 });

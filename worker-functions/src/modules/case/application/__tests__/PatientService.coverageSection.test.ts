@@ -7,8 +7,9 @@
  */
 let queryImpl: (sql: string, params?: unknown[]) => Promise<unknown> = async () => ({ rows: [], rowCount: 0 });
 const mockClient = { query: jest.fn(async (sql: string, params?: unknown[]) => queryImpl(sql, params)), release: jest.fn() };
+const mockGetClient = jest.fn().mockResolvedValue(mockClient);
 jest.mock('@shared/database/DatabaseConnection', () => ({
-  DatabaseConnection: { getInstance: jest.fn(() => ({ getPool: jest.fn(() => ({})), getClient: jest.fn().mockResolvedValue(mockClient) })) },
+  DatabaseConnection: { getInstance: jest.fn(() => ({ getPool: jest.fn(() => ({ connect: mockGetClient })), getClient: mockGetClient })) },
 }));
 jest.mock('@shared/security/KMSEncryptionService', () => ({ KMSEncryptionService: jest.fn().mockImplementation(() => ({ encrypt: jest.fn(async (v: string | null) => v), decrypt: jest.fn() })) }));
 jest.mock('../../infrastructure/PatientIdentityRepository', () => ({ PatientIdentityRepository: jest.fn().mockImplementation(() => ({})) }));
@@ -49,6 +50,15 @@ describe('PatientService.updatePatientSection — bloco B', () => {
     await service.updatePatientSection(PID, 'coverage', { insuranceVerifiedCodes: [] });
     expect(sqls().some((s) => /^UPDATE patients/.test(s))).toBe(false);
     expect(mockReplaceCodes).toHaveBeenCalledWith(PID, [], mockClient);
+  });
+
+  it('coverage: emergencyContacts SAIU da seção (spec 018, PR-1, ADR-1, SUP-37) — a chave não é mais reconhecida pelo tipo/whitelist; a escrita agora é por linha (AdminPatientContactRowsController)', async () => {
+    // Não há mais repositório de cobertura para dublar aqui: PatientCoverageSectionData não tem
+    // `emergencyContacts`, e PatientSectionWriter não conhece mais PatientCoverageEmergencyContactRepository
+    // — a prova de tipo é o próprio `tsc` (o campo nem compila); em runtime, uma chave estranha
+    // já é 400 na CAMADA de zod (patientSectionSchemas.b.test.ts), antes de chegar aqui.
+    await service.updatePatientSection(PID, 'coverage', { affiliateId: 'AF-2' });
+    expect(sqls().some((s) => /^UPDATE patients SET affiliate_id/.test(s))).toBe(true);
   });
 
   it('clinical: deviceTypes vai ao repositório de dispositivo (só quando a chave veio); o upsert clínico NÃO recebe deviceType', async () => {

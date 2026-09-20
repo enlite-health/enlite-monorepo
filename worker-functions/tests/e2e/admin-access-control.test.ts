@@ -120,7 +120,9 @@ describe('Admin Access Control E2E', () => {
       expect(response.status).toBe(403);
       expect(response.data).toEqual({
         success: false,
-        error: 'Admin access required',
+        // 07/09: o papel deixou de ser nível; a fronteira staff × prestador (`requireStaff`)
+        // é o que barra um worker, e ela roda antes da célula.
+        error: 'Staff access required',
       });
     });
 
@@ -134,7 +136,9 @@ describe('Admin Access Control E2E', () => {
       expect(response.status).toBe(403);
       expect(response.data).toEqual({
         success: false,
-        error: 'Admin access required',
+        // 07/09: o papel deixou de ser nível; a fronteira staff × prestador (`requireStaff`)
+        // é o que barra um worker, e ela roda antes da célula.
+        error: 'Staff access required',
       });
     });
 
@@ -151,7 +155,9 @@ describe('Admin Access Control E2E', () => {
       expect(response.status).toBe(403);
       expect(response.data).toEqual({
         success: false,
-        error: 'Admin access required',
+        // 07/09: o papel deixou de ser nível; a fronteira staff × prestador (`requireStaff`)
+        // é o que barra um worker, e ela roda antes da célula.
+        error: 'Staff access required',
       });
     });
 

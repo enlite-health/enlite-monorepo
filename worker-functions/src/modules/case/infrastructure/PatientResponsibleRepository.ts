@@ -1,7 +1,23 @@
 import { Pool, PoolClient } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
-import { PatientResponsibleInput } from '../domain/PatientResponsible';
+import { PatientResponsibleInput, PatientResponsiblePatch } from '../domain/PatientResponsible';
+import { deactivateRow, type DeactivateOutcome } from './deactivateRowByRow';
+import { EmergencyContactRequiresPhoneError, isEmergencyMarkCheckViolation } from './EmergencyContactRequiresPhoneError';
+
+/**
+ * 409 — já existe titular ATIVO para este paciente (índice `idx_patient_responsibles_one_primary`,
+ * migration 420: o índice passou a olhar só linhas `active`).
+ */
+export class ResponsiblePrimaryAlreadySetError extends Error {
+  readonly code = 'PRIMARY_ALREADY_SET';
+  constructor() { super('Já existe um responsável titular ativo para este paciente'); }
+}
+
+const PRIMARY_UNIQUE_VIOLATION = '23505';
+const PRIMARY_INDEX_NAME = 'idx_patient_responsibles_one_primary';
+
+export type { DeactivateOutcome };
 
 /**
  * PatientResponsibleRepository — CRUD on patient_responsibles.
@@ -115,6 +131,161 @@ export class PatientResponsibleRepository {
        VALUES ${placeholders.join(', ')}`,
       values,
     );
+  }
+
+  /**
+   * `POST /patients/:id/responsibles` (spec 018, PR-1, ADR-1) — escrita por LINHA: id novo,
+   * nunca mexe nos outros. `client` é obrigatório (a rota sempre roda sob `withActorContext` —
+   * RLS de país da stage; `inPatientTransaction`).
+   *
+   * `display_order` NÃO vem do chamador (achado do gate `revisao-pr`): é `MAX(display_order)+1`
+   * dentre as linhas do paciente, no MOLDE de `PatientAddressRepository.insertOne` (o repositório
+   * irmão que já resolvia "nova linha entra no FIM"). Antes, o controller mandava `0` fixo — com
+   * dois não-titulares (`display_order` empatado), a ordem da ficha virava indeterminada (heap).
+   */
+  async insertOne(
+    patientId: string,
+    input: Omit<PatientResponsibleInput, 'displayOrder'>,
+    actorUid: string,
+    client: PoolClient,
+  ): Promise<{ id: string }> {
+    const [phoneEnc, emailEnc, documentNumberEnc] = await Promise.all([
+      this.encryptionService.encrypt(input.phone ?? null),
+      this.encryptionService.encrypt(input.email ?? null),
+      this.encryptionService.encrypt(input.documentNumber ?? null),
+    ]);
+    try {
+      const { rows } = await client.query<{ id: string }>(
+        `INSERT INTO patient_responsibles
+          (patient_id, first_name, last_name, relationship,
+           phone_encrypted, email_encrypted, document_number_encrypted,
+           document_type, is_primary, display_order, source, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9,
+           (SELECT COALESCE(MAX(display_order), 0) + 1 FROM patient_responsibles WHERE patient_id = $1),
+           $10, $11)
+         RETURNING id`,
+        [
+          patientId,
+          input.firstName.trim(),
+          input.lastName.trim(),
+          input.relationship ?? null,
+          phoneEnc,
+          emailEnc,
+          documentNumberEnc,
+          input.documentType ?? null,
+          input.isPrimary,
+          input.source ?? 'admin_manual',
+          actorUid,
+        ],
+      );
+      return { id: rows[0].id };
+    } catch (err: unknown) {
+      throw this.mapPrimaryConflict(err);
+    }
+  }
+
+  /**
+   * `PATCH /patients/:id/responsibles/:rid` — UPDATE parcial de UMA linha (RFC 7396): chave
+   * ausente do `patch` não toca a coluna; `null` explícito apaga o campo. `WHERE id = $1 AND
+   * patient_id = $2`: id de outro paciente não é encontrado (404 no controller — lição
+   * `lista-filtrada-mais-replace-all-apaga` não se aplica aqui porque não há mais lista).
+   * Devolve `null` quando a linha não existe (id errado ou de outro paciente).
+   */
+  async updateOne(
+    patientId: string,
+    id: string,
+    patch: PatientResponsiblePatch,
+    client: PoolClient,
+  ): Promise<{ id: string } | null> {
+    const sets: string[] = [];
+    const values: unknown[] = [patientId, id];
+
+    const setColumn = (column: string, value: unknown): void => {
+      values.push(value);
+      sets.push(`${column} = $${values.length}`);
+    };
+
+    if (Object.prototype.hasOwnProperty.call(patch, 'firstName') && patch.firstName !== undefined) {
+      setColumn('first_name', patch.firstName.trim());
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'lastName') && patch.lastName !== undefined) {
+      setColumn('last_name', patch.lastName.trim());
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'relationship')) {
+      setColumn('relationship', patch.relationship ?? null);
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'documentType')) {
+      setColumn('document_type', patch.documentType ?? null);
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'isPrimary') && patch.isPrimary !== undefined) {
+      setColumn('is_primary', patch.isPrimary);
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'phone')) {
+      setColumn('phone_encrypted', await this.encryptionService.encrypt(patch.phone ?? null));
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'email')) {
+      setColumn('email_encrypted', await this.encryptionService.encrypt(patch.email ?? null));
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'documentNumber')) {
+      setColumn('document_number_encrypted', await this.encryptionService.encrypt(patch.documentNumber ?? null));
+    }
+
+    if (sets.length === 0) {
+      // PATCH vazio é no-op — MAS não é sucesso cego (achado do gate `revisao-pr`: um PATCH {}
+      // no id de OUTRO paciente, ou numa linha já desativada, respondia 200 sem checar nada).
+      // Mesma régua do UPDATE abaixo: só existe/pertence/está ativa → { id }; senão, null (404).
+      const { rows } = await client.query<{ id: string }>(
+        `SELECT id FROM patient_responsibles WHERE id = $2 AND patient_id = $1 AND active`,
+        [patientId, id],
+      );
+      return rows[0] ? { id: rows[0].id } : null;
+    }
+    sets.push('updated_at = NOW()');
+
+    try {
+      // `AND active` (task 1.10, alt 2): editar uma linha que outra aba já desativou não é mais
+      // "editar" — a linha está removida do painel. 0 linhas ⇒ null ⇒ o controller devolve 404,
+      // indistinguível de "nunca existiu" (a mesma régua do id de outro paciente).
+      const { rows } = await client.query<{ id: string }>(
+        `UPDATE patient_responsibles SET ${sets.join(', ')}
+          WHERE id = $2 AND patient_id = $1 AND active
+          RETURNING id`,
+        values,
+      );
+      return rows[0] ? { id: rows[0].id } : null;
+    } catch (err: unknown) {
+      throw this.mapPrimaryConflict(err);
+    }
+  }
+
+  /**
+   * `POST /patients/:id/responsibles/:rid/deactivate` — nunca DELETE (FR-002). `SELECT … FOR
+   * UPDATE` antes do `UPDATE` para o controller distinguir 404 (linha não existe/é de outro
+   * paciente) de 409 (já está inativa) — os dois são erros diferentes para quem chama duas vezes.
+   */
+  async deactivate(
+    patientId: string,
+    id: string,
+    actorUid: string,
+    client: PoolClient,
+  ): Promise<DeactivateOutcome> {
+    return deactivateRow(client, 'patient_responsibles', patientId, id, actorUid);
+  }
+
+  /**
+   * 23505 no índice de titular único → 409 legível; 23514 do trigger da migration 423 (apagar
+   * telefone de responsável marcado de emergência, D-A #4/SUP-40) → 422 legível; qualquer outro
+   * erro passa intocado.
+   */
+  private mapPrimaryConflict(err: unknown): unknown {
+    const pgErr = err as { code?: string; constraint?: string } | null;
+    if (pgErr?.code === PRIMARY_UNIQUE_VIOLATION && pgErr.constraint === PRIMARY_INDEX_NAME) {
+      return new ResponsiblePrimaryAlreadySetError();
+    }
+    if (isEmergencyMarkCheckViolation(err)) {
+      return new EmergencyContactRequiresPhoneError();
+    }
+    return err;
   }
 
   /**

@@ -1,12 +1,30 @@
 -- 437 — Conferência de horas do Ana Care (spec `anacare-conferencia-de-horas`, fase 1, D342-D345).
 --
--- PORTADA da `stage` para o `main` (feature `feat/anacare-horas-prd-allowlist`) com UMA adaptação:
--- a versão original concede `GRANT ... TO app_runtime, app_system` (roles do modelo de privilégio
--- separado que só existe na `stage`). O `main` usa role única (`enlite_app`, ver
--- `.github/workflows/backend-prd.yml` DB_USER) que também roda as migrations — como criador/dono
--- da tabela, `enlite_app` já tem privilégio total por padrão do Postgres, então os GRANTs
--- explícitos foram removidos aqui (não são necessários; adicioná-los para uma role inexistente
--- faria a migration falhar). Resto do arquivo é idêntico ao da stage.
+-- Divergência `main`×`stage` resolvida em favor da `stage` (19/09/2026, sync `main`→`stage`):
+-- o `main` portou este arquivo removendo os GRANT explícitos (rodava só com a role única
+-- `enlite_app`, dona por criação). A `stage` mantém os GRANT para `app_runtime`/`app_system`
+-- porque, após a promoção desta migration para o `main`/prod, esses roles vão existir lá também
+-- (modelo de privilégio separado já em curso) — manter os GRANT aqui evita reabrir esta migration
+-- depois. Ver `## (A2)` do relatório de renumeração de 19/09 para a ação pendente em prd (aplicar
+-- os GRANT à parte quando os roles existirem, já que esta migration, na versão do `main`, já rodou
+-- em produção sem eles).
+--
+-- Colisão de PREFIXO com o `main` mantida DE PROPÓSITO (D. Gabriel/Marcel, 19/09/2026): o `main`
+-- já tem, aplicadas em produção, `438_patient_source_snapshots.sql`, `439_patient_identity_links.sql`,
+-- `441_patient_field_provenance.sql` e `442_patients_ana_care_id.sql` — números que a `stage`
+-- também usa, para arquivos DIFERENTES. NÃO foram renumerados: o runner (`run-migrations-docker.js`,
+-- rodado a cada boot em stage e prd — `worker-functions/Dockerfile:31`) chaveia migrations
+-- aplicadas pelo NOME COMPLETO do arquivo (`schema_migrations.filename TEXT PRIMARY KEY`,
+-- `worker-functions/scripts/run-migrations-docker.js:105-106`), não pelo prefixo numérico — dois
+-- arquivos com o mesmo número e nomes diferentes não colidem de chave. A ORDEM de aplicação usa o
+-- prefixo (`run-migrations-docker.js:23-28`) e, em empate de número, desempata por comparação crua
+-- de string do nome completo — determinística, sem `localeCompare`. Medido: nenhum script/CI deste
+-- repo resolve migration por número isolado (só por caminho completo), e o conteúdo das 4 migrations
+-- do `main` (`patient_source_snapshots`/`patient_identity_links`/`patient_field_provenance`/
+-- `patients_ana_care_id`) não tem FK nem dependência com as tabelas `anacare_*` da `stage` — os dois
+-- conjuntos são independentes. Renumerar custaria mexer em 28+ arquivos (as migrations 443-446, mais
+-- referenciadas por módulos posteriores) e reexecutar as migrations já aplicadas na stage, para
+-- comprar só estética de numeração. Não renumerado.
 --
 -- Duas tabelas com DONOS diferentes (revisão do type-design-analyzer, 15/09,
 -- `docs/funcionalidades/ana-care/proposta-schema-validacao-horas.md`):
@@ -50,12 +68,6 @@
 -- país) ficam para quando os dados REAIS entrarem (fase 2/4, sob PARE do lex) — D345 moveu os 16
 -- cenários de "Condições do parecer do lex" (inclusive RLS) para backlog; não são critério de
 -- pronto da fase 1. Nenhum dado real é gravado nesta fase (só sintético).
---
--- No `main`, o acesso à tela não passa por célula ABAC (o engine não existe aqui) — passa por
--- allowlist estática de e-mail (`ANACARE_HOURS_ALLOWED_EMAILS`), aplicada no middleware das rotas.
--- A leitura da nota de contestação (`note_encrypted`) fica hardcoded como NUNCA decifrada no `main`
--- (`canReadNote = false` sempre) — sem o conceito de célula aqui, não existe forma seletiva de
--- liberar, então o padrão seguro é nunca expor.
 --
 -- Rollback (par desta migration, convenção do repo):
 --   DROP TRIGGER IF EXISTS trg_shift_hours_validation_immutable ON shift_hours_validation;
@@ -149,8 +161,7 @@ COMMENT ON TABLE shift_hours_validation IS
   '(`reason`) é lista fechada, visível a quem tem leitura da tela.';
 COMMENT ON COLUMN shift_hours_validation.note_encrypted IS
   'Ciphertext KMS (base64) da nota opcional de contestação. NUNCA decifrar em log/erro (D344; '
-  'regra dura CLAUDE.md: texto clínico nunca sai do perímetro). No `main`, nunca decifrada (sem '
-  'ABAC, `canReadNote` é sempre false).';
+  'regra dura CLAUDE.md: texto clínico nunca sai do perímetro).';
 
 -- Imutabilidade do congelado (CHECK não alcança "o valor anterior" — precisa de TRIGGER).
 -- `validado` não permite alterar `status` nem nenhum `approved_*`; libera só `note_encrypted`
@@ -186,9 +197,10 @@ CREATE TRIGGER trg_shift_hours_validation_immutable
   FOR EACH ROW
   EXECUTE FUNCTION anacare_shift_hours_validation_immutable();
 
--- Sem GRANT explícito: `enlite_app` (único role de runtime/migration no `main`, ver
--- `.github/workflows/backend-prd.yml`) é quem cria estas tabelas e já tem privilégio total como
--- dono — diferente da stage, que tem `app_runtime`/`app_system` como roles separadas do
--- migrador. Ver nota no topo do arquivo.
+-- GRANT explícito por tabela (convenção do repo — sem ALTER DEFAULT PRIVILEGES, molde 430/436).
+GRANT SELECT, INSERT, UPDATE ON anacare_shift TO app_runtime, app_system;
+GRANT SELECT, INSERT, UPDATE ON shift_hours_validation TO app_runtime, app_system;
+GRANT USAGE, SELECT ON SEQUENCE anacare_shift_id_seq TO app_runtime, app_system;
+GRANT USAGE, SELECT ON SEQUENCE shift_hours_validation_id_seq TO app_runtime, app_system;
 
 COMMIT;

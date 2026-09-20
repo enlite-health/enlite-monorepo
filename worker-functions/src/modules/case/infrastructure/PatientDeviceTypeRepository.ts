@@ -24,6 +24,7 @@
 
 import type { Pool, PoolClient } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { withClientOrActorContext } from '@shared/database/actorContext';
 import type { PatientSourceLabelsRead } from './PatientSourceLabelRepository';
 
 export interface PatientDeviceTypeWriteInput {
@@ -153,21 +154,17 @@ export class PatientDeviceTypeRepository {
       return { outcome: 'skipped-unreadable', received: 0, accepted: [], rejected: [], quarantined: 0 };
     }
 
-    const proprio = !client;
-    const cli = client ?? await this.pool.connect();
-    let accepted: string[] = [];
-    let rejected: Array<{ reason: 'blank' | 'duplicate' | 'unmapped' }> = [];
-    let quarantined = 0;
-    try {
-      if (proprio) await cli.query('BEGIN');
+    const labels = input.read.labels; // o narrowing do `readable` não entra no closure
+    const { accepted, rejected, quarantined } = await withClientOrActorContext(this.pool, client, async (cli) => {
+      let quarantined = 0;
       // Lock consultivo pelo paciente: dois syncs simultâneos do mesmo paciente não intercalam
       // DELETE e INSERT, que é como nasce conjunto pela metade — e aqui isso dispararia o
       // trigger sobre um estado intermediário.
       await cli.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`device_type:${input.patientId}`]);
 
-      const c = await this.classificar(input.read.labels, cli);
-      accepted = c.accepted;
-      rejected = c.rejected;
+      const c = await this.classificar(labels, cli);
+      const accepted = c.accepted;
+      const rejected = c.rejected;
 
       // Apaga SÓ as linhas desta origem: o que o painel gravou (source='admin_manual') sobrevive
       // ao próximo webhook — mesma lição do QA 🔴1 do bloco A (replaceBySource dos responsáveis)
@@ -199,14 +196,9 @@ export class PatientDeviceTypeRepository {
           [input.patientId, i + 1, c.unmappedLabels[i], `${source}-quarentena`]);
         quarantined++;
       }
+      return { accepted, rejected, quarantined };
+    });
 
-      if (proprio) await cli.query('COMMIT');
-    } catch (err) {
-      if (proprio) await cli.query('ROLLBACK');
-      throw err;
-    } finally {
-      if (proprio) cli.release();
-    }
 
     if (rejected.length > 0) {
       // C1: contagem por motivo. O rótulo recusado NÃO sai no log.
@@ -214,12 +206,12 @@ export class PatientDeviceTypeRepository {
         a[r.reason] = (a[r.reason] ?? 0) + 1; return a;
       }, {});
       console.warn('[PatientDeviceTypeRepository] tipo(s) de dispositivo recusado(s):', {
-        field: 'Tipo de Dispositivo', received: input.read.labels.length,
+        field: 'Tipo de Dispositivo', received: labels.length,
         accepted: accepted.length, byReason: porMotivo, quarantined,
       });
     }
 
-    return { outcome: 'written', received: input.read.labels.length, accepted, rejected, quarantined };
+    return { outcome: 'written', received: labels.length, accepted, rejected, quarantined };
   }
 
   /**
@@ -237,10 +229,7 @@ export class PatientDeviceTypeRepository {
     client?: PoolClient,
   ): Promise<{ changed: boolean; codes: string[] }> {
     const wanted = Array.from(new Set(codes));
-    const proprio = !client;
-    const cli = client ?? await this.pool.connect();
-    try {
-      if (proprio) await cli.query('BEGIN');
+    return withClientOrActorContext(this.pool, client, async (cli) => {
       const catalogo = await cli.query<{ code: string }>('SELECT code FROM device_types WHERE active');
       const ativos = new Set(catalogo.rows.map(r => r.code));
       const desconhecidos = wanted.filter(c => !ativos.has(c));
@@ -251,10 +240,7 @@ export class PatientDeviceTypeRepository {
         'SELECT device_type FROM patient_device_types WHERE patient_id = $1', [patientId]);
       const existentes = new Set(atual.rows.map(r => r.device_type));
       const igual = existentes.size === wanted.length && wanted.every(c => existentes.has(c));
-      if (igual) {
-        if (proprio) await cli.query('COMMIT');
-        return { changed: false, codes: wanted };
-      }
+      if (igual) return { changed: false, codes: wanted };
 
       // Apaga SÓ as linhas do PAINEL: o que o webhook do ClickUp gravou (source='clickup')
       // sobrevive a este PATCH — mesma regra do lado webhook, acima.
@@ -265,14 +251,8 @@ export class PatientDeviceTypeRepository {
            ON CONFLICT (patient_id, device_type) DO UPDATE SET source = EXCLUDED.source`,
           [patientId, code, 'admin_manual']);
       }
-      if (proprio) await cli.query('COMMIT');
       return { changed: true, codes: wanted };
-    } catch (err) {
-      if (proprio) await cli.query('ROLLBACK');
-      throw err;
-    } finally {
-      if (proprio) cli.release();
-    }
+    });
   }
 
   /** Leitura interna. */

@@ -14,10 +14,20 @@ function getBaseURL(): string {
  * demais dashboards de analytics no worker-functions.
  */
 export const ManagementDashboardApiService = {
-  /** @param funnelPeriodDays filtro por ENTRADA no funil por prestador (7/30/90; null = tudo). */
-  async getManagementDashboard(funnelPeriodDays: 7 | 30 | 90 | null = null): Promise<ManagementDashboardData> {
+  /**
+   * @param funnelPeriodDays filtro por ENTRADA no funil por prestador (7/30/90; null = tudo).
+   * @param country PR-9 (`lex` #9): 'AR'|'BR'|'ALL'. Ausente/null = ALL (resolvido no
+   *   servidor como a união dos países do ator — nunca "todos os países do sistema").
+   */
+  async getManagementDashboard(
+    funnelPeriodDays: 7 | 30 | 90 | null = null,
+    country: string | null = null,
+  ): Promise<ManagementDashboardData> {
     const token = await authService.getIdToken();
-    const query = funnelPeriodDays != null ? `?funnelPeriodDays=${funnelPeriodDays}` : '';
+    const params = new URLSearchParams();
+    if (funnelPeriodDays != null) params.set('funnelPeriodDays', String(funnelPeriodDays));
+    if (country) params.set('country', country);
+    const query = params.toString() ? `?${params.toString()}` : '';
     const resp = await fetch(`${getBaseURL()}/analytics/dashboard/management${query}`, {
       method: 'GET',
       headers: {
@@ -29,9 +39,11 @@ export const ManagementDashboardApiService = {
       success: boolean;
       data?: ManagementDashboardData;
       error?: string;
+      /** PR-9: 403 COUNTRY_SCOPE_REQUIRED / 400 INVALID_COUNTRY vêm com detalhe legível. */
+      detail?: string;
     };
     if (!json.success || !json.data) {
-      throw new Error(json.error ?? `HTTP ${resp.status}`);
+      throw new Error(json.detail ?? json.error ?? `HTTP ${resp.status}`);
     }
     return json.data;
   },

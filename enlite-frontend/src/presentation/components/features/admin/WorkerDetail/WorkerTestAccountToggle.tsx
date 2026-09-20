@@ -1,9 +1,8 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { EnliteRole } from '@domain/entities/EnliteRole';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { Text } from '@presentation/components/atoms/Text';
-import { useAdminAuth } from '@presentation/hooks/useAdminAuth';
+import { useActionGate } from '@presentation/hooks/useCellAccess';
 
 interface WorkerTestAccountToggleProps {
   workerId: string;
@@ -11,22 +10,22 @@ interface WorkerTestAccountToggleProps {
 }
 
 /**
- * Admin-only checkbox to mark a worker as a test account.
+ * Checkbox para marcar um prestador como conta de teste.
  *
- * Visibility is gated by EnliteRole.ADMIN (same pattern as AdminUsersPage —
- * NOT Cerbos). Non-admins render nothing. The toggle calls the admin-only
- * PATCH /api/admin/workers/:id/test-flag endpoint.
+ * A visibilidade é da CÉLULA, não de papel: o toggle chama
+ * PATCH /api/admin/workers/:id/test-flag → worker:write. D269 — o checkbox não
+ * é `<Button>`, então usa `useActionGate` direto: sem a célula (com enforcement
+ * `on`) o componente inteiro deixa de montar; com o engine desligado, aparece.
  */
 export function WorkerTestAccountToggle({ workerId, initialIsTest }: WorkerTestAccountToggleProps): JSX.Element | null {
   const { t } = useTranslation();
-  const { adminProfile } = useAdminAuth();
-  const isAdmin = adminProfile?.role === EnliteRole.ADMIN;
+  const workerWriteGate = useActionGate('worker', 'update');
 
   const [isTest, setIsTest] = useState(initialIsTest);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  if (!isAdmin) return null;
+  if (workerWriteGate.denied) return null;
 
   const handleChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const next = e.target.checked;

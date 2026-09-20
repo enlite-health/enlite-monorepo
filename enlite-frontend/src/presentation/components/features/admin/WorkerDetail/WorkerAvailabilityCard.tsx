@@ -44,7 +44,7 @@ export function WorkerAvailabilityCard({ availability }: WorkerAvailabilityCardP
 
   if (availability.length === 0) {
     return (
-      <div className="bg-white rounded-card border-2 border-gray-600 p-6 sm:px-8 sm:py-10 flex flex-col gap-4">
+      <div data-testid="worker-availability-card" className="bg-white rounded-card border-2 border-gray-600 p-6 sm:px-8 sm:py-10 flex flex-col gap-4">
         <Heading level={1} as="h3" color="secondary">
           {t('admin.workerDetail.tabs.availability')}
         </Heading>

@@ -7,13 +7,45 @@
 
 import { Router, Request, Response } from 'express';
 import { AnaCareBackfillController } from '../controllers/AnaCareBackfillController';
-import type { AuthMiddleware } from '@modules/identity';
+import { LancarPrestacaoAxonicoController } from '../controllers/LancarPrestacaoAxonicoController';
+import { LancarPrestacaoAxonicoUseCase } from '../../application/LancarPrestacaoAxonicoUseCase';
+import { AxonicoApiClient } from '../../infrastructure/AxonicoApiClient';
+import { AxonicoLancamentoRepository } from '../../infrastructure/AxonicoLancamentoRepository';
+import { RegistrarDocumentoPacienteAnaCareController } from '../controllers/RegistrarDocumentoPacienteAnaCareController';
+import { RegistrarDocumentoPacienteAnaCareUseCase } from '../../application/RegistrarDocumentoPacienteAnaCareUseCase';
+import { AnaCarePatientDocumentRepository } from '../../infrastructure/AnaCarePatientDocumentRepository';
+import type { AuthMiddleware, PermissionMiddleware } from '@modules/identity';
+
+/**
+ * ── Família `admin.integrations` (task 3.5-A4) ──────────────────────────────
+ * Uma rota, uma célula: **`integration:execute`** (D116). É célula NOVA, fora do
+ * seed da 206 — nasce quando o A7 ligar `PERMISSION_CATALOG_SYNC_ENABLED`.
+ * `execute` e não `write`: o backfill não grava aqui, ele DISPARA sincronização
+ * contra um sistema de terceiro (Ana Care), e `execute` é ação sensível (D-P4),
+ * então o ALLOW também vai para a trilha.
+ */
+import { ADMIN_INTEGRATIONS_FAMILY } from '@modules/identity/permissions';
+export { ADMIN_INTEGRATIONS_FAMILY };
 
 export function createAdminIntegrationsRoutes(
   authMiddleware: AuthMiddleware,
+  permissions: PermissionMiddleware,
 ): Router {
   const router = Router();
   const backfillController = new AnaCareBackfillController();
+  const perm = permissions.family(ADMIN_INTEGRATIONS_FAMILY);
+
+  // ── Lançamento de prestação no Axonico (F4, `integracao-axonico`) ─────────
+  // `AxonicoApiClient.create()` é MEMOIZADO (não recriado por request): a mesma instância cacheia
+  // a sessão/token internamente, evitando um `POST /api/login` a cada chamada. `IAxonicoApiClient`
+  // é `AxonicoApiClient.create()` — env quando presente (test/local), Secret Manager em produção
+  // (mesmo padrão de `AnaCareClient.create()`).
+  let axonicoClientPromise: ReturnType<typeof AxonicoApiClient.create> | null = null;
+  const lancarPrestacaoController = new LancarPrestacaoAxonicoController(async () => {
+    axonicoClientPromise ??= AxonicoApiClient.create();
+    const axonicoApiClient = await axonicoClientPromise;
+    return new LancarPrestacaoAxonicoUseCase(axonicoApiClient, new AxonicoLancamentoRepository());
+  });
 
   /**
    * POST /api/admin/integrations/anacare/backfill
@@ -28,8 +60,68 @@ export function createAdminIntegrationsRoutes(
    */
   router.post(
     '/integrations/anacare/backfill',
-    authMiddleware.requireAdmin(),
+    authMiddleware.requireStaff(),
+    perm.require('integration', 'execute', { untilEnforced: 'admin' }),
     (req: Request, res: Response) => backfillController.handle(req, res),
+  );
+
+  /**
+   * POST /api/admin/integrations/axonico/comprobante
+   *
+   * Corpo JSON: { documentNumber, documentType?, serviceType, serviceDate: 'YYYY-MM-DD', hours }
+   *
+   * `documentNumber` (19/09/2026) substitui `patientId` — o lançamento é feito pelo documento que
+   * já vem pronto do Ana Care, sem consultar `patients` (a tela ainda não vincula os pacientes
+   * dele aos nossos).
+   *
+   * Lança UMA prestação de AT no Axonico (`PUT /api/comprobante`, via `IAxonicoApiClient`). Cada
+   * chamada bem-sucedida GERA FATURAMENTO real no Axonico — não existe sandbox. Mesma célula
+   * `integration:execute` do backfill acima (D116): ação sensível, sempre trilhada.
+   */
+  router.post(
+    '/integrations/axonico/comprobante',
+    authMiddleware.requireStaff(),
+    perm.require('integration', 'execute', { untilEnforced: 'admin' }),
+    (req: Request, res: Response) => lancarPrestacaoController.handle(req, res),
+  );
+
+  /**
+   * POST /api/admin/integrations/axonico/comprobante/lote
+   *
+   * Corpo JSON: { itens: [{ documentNumber, serviceType, serviceDate, hours }, ...] } (1 a 500 itens)
+   *
+   * Lança um LOTE — chama o caminho unitário em laço, item a item, com try/catch por item: falha
+   * de um item NÃO aborta os seguintes (mesmo desenho de `BackfillWorkerMirrorUseCase.execute`).
+   */
+  router.post(
+    '/integrations/axonico/comprobante/lote',
+    authMiddleware.requireStaff(),
+    perm.require('integration', 'execute', { untilEnforced: 'admin' }),
+    (req: Request, res: Response) => lancarPrestacaoController.handleLote(req, res),
+  );
+
+  /**
+   * POST /api/admin/integrations/anacare/patient-document
+   *
+   * Corpo JSON: { anaCarePatientId, documentNumber, documentType? }
+   *
+   * Guarda o DNI de um paciente do Ana Care que não tem documento na fonte (migration 446), para
+   * não perguntar de novo — fallback consumido pelo módulo `anacare-hours`
+   * (`AnaCareHoursService.buildPatients`). Célula `patient_identity:create` — mesma célula do
+   * container "Identidade" da ficha, escrita como o enforcement exige (`patient_identity` está em
+   * `SPLIT_RESOURCES`, `PermissionCell.ts:345` — `'write'` literal é reprovado por
+   * `no-split-resource-write.test.ts`); mesmo padrão do POST da foto (`adminPatientPhotoRoutes.ts`).
+   * Ação é honestamente `create`: nunca sobrescreve documento já registrado com número diferente
+   * (409); mesmo número já normalizado é idempotente (200).
+   */
+  const patientDocumentController = new RegistrarDocumentoPacienteAnaCareController(
+    () => new RegistrarDocumentoPacienteAnaCareUseCase(new AnaCarePatientDocumentRepository()),
+  );
+  router.post(
+    '/integrations/anacare/patient-document',
+    authMiddleware.requireStaff(),
+    perm.require('patient_identity', 'create'),
+    (req: Request, res: Response) => patientDocumentController.handle(req, res),
   );
 
   return router;

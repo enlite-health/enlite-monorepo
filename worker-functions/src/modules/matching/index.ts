@@ -84,6 +84,6 @@ export type { PublicJobDto, PublicJobRow } from './domain/PublicJobDto';
 export { createAdminVacanciesRoutes } from './interfaces/routes/adminVacanciesRoutes';
 export { createWorkerEncuadreRoutes } from './interfaces/routes/workerEncuadreRoutes';
 export { default as talentumRoutes } from './interfaces/routes/talentumRoutes';
-export { createAnalyticsRoutes } from './interfaces/routes/analyticsRoutes';
-export { createRecruitmentRoutes } from './interfaces/routes/recruitmentRoutes';
+export { createAnalyticsRoutes, ADMIN_ANALYTICS_FAMILY } from './interfaces/routes/analyticsRoutes';
+export { createRecruitmentRoutes, ADMIN_RECRUITMENT_FAMILY } from './interfaces/routes/recruitmentRoutes';
 export { createWorkerApplicationsRoutes } from './interfaces/routes/workerApplicationsRoutes';

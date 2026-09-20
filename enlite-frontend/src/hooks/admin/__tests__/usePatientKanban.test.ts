@@ -1,8 +1,11 @@
 /**
  * usePatientKanban — spec 012, US-B7: o board passa a ler `admissionStatus` (funil de admissão,
  * migration 313), não `status` (estado clínico v2). Colunas: SOLICITANTE / ADMISSION /
- * PENDING_ADMISSION / DONE ("Activo"). Soltar em DONE manda `ACTIVE` (a saída do funil que o
- * seed da 315 permite), sempre com `changeSource: 'kanban'` — é a coluna "origem" do Historial.
+ * PENDING_ADMISSION / DONE ("Activo"). Mover DENTRO do funil chama `PUT /status` com
+ * `changeSource: 'kanban'` — é a coluna "origem" do Historial. Soltar em DONE MUDOU (spec 018,
+ * PR-6, ADR-5): a migration 428 tira funil→ACTIVE do catálogo, então o hook NÃO chama mais a
+ * API — devolve `KANBAN_ACTIVATION_MOVED_TO_SERVICE` na hora, sem tocar o agrupamento. Ativar
+ * virou uma ação por SERVIÇO (`ServicosContratadosCard`, "Activar reclutamiento").
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
@@ -19,6 +22,7 @@ vi.mock('@infrastructure/http/AdminApiService', () => ({
 import {
   usePatientKanban,
   PATIENT_KANBAN_STATUSES,
+  KANBAN_ACTIVATION_MOVED_TO_SERVICE,
   type PatientKanbanMoveError,
 } from '../usePatientKanban';
 
@@ -48,29 +52,37 @@ describe('usePatientKanban — admission_status', () => {
     expect(result.current.groups.ADMISSION).toEqual([]);
   });
 
-  it('mover para DONE envia ACTIVE com changeSource kanban; mover dentro do funil envia o próprio alvo', async () => {
+  // Spec 018, PR-6, ADR-5: a migration 428 tira funil→ACTIVE do catálogo. Soltar em DONE não
+  // chama mais `PUT /status` — o hook recusa ANTES da rede, sem tocar o agrupamento (o card fica
+  // onde estava; não há otimismo a desfazer). Mover DENTRO do funil continua livre e chama a API
+  // com o próprio alvo (sem tradução para ACTIVE).
+  it('mover para DONE NÃO chama a API — devolve KANBAN_ACTIVATION_MOVED_TO_SERVICE sem mexer no agrupamento; mover dentro do funil chama updatePatientStatus normalmente', async () => {
     const { result } = renderHook(() => usePatientKanban());
     await waitFor(() => expect(result.current.isLoading).toBe(false));
-    await act(async () => { expect(await result.current.moveStatus('d', 'DONE')).toBeNull(); });
-    expect(updatePatientStatus).toHaveBeenLastCalledWith('d', { status: 'ACTIVE', changeSource: 'kanban' });
-    expect(result.current.groups.DONE.map((p) => p.id)).toEqual(['d', 'b', 'c']);
-    expect(result.current.groups.DONE[0].admissionStatus).toBe('DONE');
+    await act(async () => {
+      expect(await result.current.moveStatus('d', 'DONE')).toEqual({ code: KANBAN_ACTIVATION_MOVED_TO_SERVICE });
+    });
+    expect(updatePatientStatus).not.toHaveBeenCalled();
+    // 'd' continua em PENDING_ADMISSION — não mudou de coluna nenhuma.
+    expect(result.current.groups.PENDING_ADMISSION.map((p) => p.id)).toEqual(['d']);
+    expect(result.current.groups.DONE.map((p) => p.id)).toEqual(['b', 'c']);
+
     await act(async () => { await result.current.moveStatus('a', 'ADMISSION'); });
     expect(updatePatientStatus).toHaveBeenLastCalledWith('a', { status: 'ADMISSION', changeSource: 'kanban' });
   });
 
-  it('falha no PUT restaura o agrupamento anterior e devolve a mensagem; card desconhecido não muda nada', async () => {
+  it('falha no PUT (dentro do funil) restaura o agrupamento anterior e devolve a mensagem; card desconhecido não muda nada', async () => {
     updatePatientStatus.mockRejectedValueOnce(new Error('422 transição'));
     const { result } = renderHook(() => usePatientKanban());
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     let err: PatientKanbanMoveError | null = null;
-    await act(async () => { err = await result.current.moveStatus('a', 'DONE'); });
+    await act(async () => { err = await result.current.moveStatus('a', 'ADMISSION'); });
     expect(err).toEqual({ code: '422 transição', missing: undefined });
     expect(result.current.groups.SOLICITANTE.map((p) => p.id)).toEqual(['a']);
-    await act(async () => { err = await result.current.moveStatus('nao-existe', 'DONE'); });
+    await act(async () => { err = await result.current.moveStatus('nao-existe', 'ADMISSION'); });
     expect(result.current.groups.SOLICITANTE.map((p) => p.id)).toEqual(['a']);
     updatePatientStatus.mockRejectedValueOnce('string-error');
-    await act(async () => { err = await result.current.moveStatus('a', 'DONE'); });
+    await act(async () => { err = await result.current.moveStatus('a', 'ADMISSION'); });
     expect(err).toEqual({ code: 'Failed to move patient' });
   });
 
@@ -91,7 +103,7 @@ describe('usePatientKanban — admission_status', () => {
     const { result } = renderHook(() => usePatientKanban());
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     let err: PatientKanbanMoveError | null = null;
-    await act(async () => { err = await result.current.moveStatus('a', 'DONE'); });
+    await act(async () => { err = await result.current.moveStatus('a', 'ADMISSION'); });
     expect(err).toMatchObject({ code: 'PATIENT_STATUS_TRANSITION_NOT_ALLOWED' });
     // nunca o texto com o nome do paciente — nem em `code`, nem em `missing`
     expect(JSON.stringify(err)).not.toContain('Juan Pérez');
@@ -119,7 +131,7 @@ describe('usePatientKanban — admission_status', () => {
     const { result } = renderHook(() => usePatientKanban());
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     let err: PatientKanbanMoveError | null = null;
-    await act(async () => { err = await result.current.moveStatus('a', 'DONE'); });
+    await act(async () => { err = await result.current.moveStatus('a', 'ADMISSION'); });
 
     expect(err).toEqual({
       code: 'PATIENT_STATUS_NOT_READY',
@@ -139,7 +151,7 @@ describe('usePatientKanban — admission_status', () => {
     const { result } = renderHook(() => usePatientKanban());
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     let err: PatientKanbanMoveError | null = null;
-    await act(async () => { err = await result.current.moveStatus('a', 'DONE'); });
+    await act(async () => { err = await result.current.moveStatus('a', 'ADMISSION'); });
 
     expect(err).toEqual({ code: 'PATIENT_STATUS_NOT_READY', missing: undefined });
     expect(JSON.stringify(err)).not.toContain('Juan Pérez');

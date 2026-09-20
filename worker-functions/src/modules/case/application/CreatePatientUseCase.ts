@@ -1,14 +1,17 @@
 import { PatientService, type CreateNativePatientInput } from './PatientService';
 import type { DocumentType } from '../domain/enums/DocumentType';
 import type { Profession } from '../../worker/domain/enums/Profession';
+import type { AdmissionCountry } from '../../matching/domain/admissionCountries';
 
 /**
  * Input for manual admin creation of a native patient (Fase 1 Task 2).
- * Mirrors the validated request body (createPatientSchema). Only firstName is
- * required; the admission team completes the rest later.
+ * Mirrors the validated request body (createPatientSchema). Only firstName and
+ * country are required; the admission team completes the rest later.
  */
 export interface CreatePatientInput {
   firstName: string;
+  /** Required, no default — see createPatientSchema.country (abac-pais-fase1 5.1). */
+  country: AdmissionCountry;
   lastName?: string;
   /** US-B6 (spec 012). */
   birthDate?: Date;
@@ -62,11 +65,11 @@ export class CreatePatientUseCase {
       firstName: input.firstName,
       lastName: input.lastName,
       birthDate: input.birthDate ?? null,
-      // Deliberate edge default: the create modal has no country selector yet
-      // (task 86ajy085e) even though the panel FILTERS by AR|BR — a BR patient
-      // created here lands as AR and vanishes from BR-filtered views. When the
-      // selector ships, this must become a required field. See publicLeadSchema (D108).
-      country: 'AR',
+      // No edge default: the country comes from the create modal's selector
+      // (task 86ajy085e, shipped) and is validated by createPatientSchema. The
+      // old hardcoded 'AR' made BR patients vanish from BR-filtered views and
+      // silently misclassified their legal regime. See publicLeadSchema (D108).
+      country: input.country,
       phoneWhatsapp: input.phoneWhatsapp ?? null,
       documentType: input.documentType ?? null,
       documentNumber: input.documentNumber ?? null,

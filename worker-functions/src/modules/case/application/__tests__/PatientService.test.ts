@@ -27,10 +27,13 @@ const mockClient = {
 
 const mockGetClient = jest.fn().mockResolvedValue(mockClient);
 
+// As escritas de paciente rodam em `withActorContext(getPool(), ...)` (BLOCKER-5:
+// `getClient()` furava o roteamento por identidade e o contexto de país), então o
+// pool mockado precisa saber `connect()` — é de lá que sai o client da transação.
 jest.mock('@shared/database/DatabaseConnection', () => ({
   DatabaseConnection: {
     getInstance: jest.fn(() => ({
-      getPool:    jest.fn(() => ({})),
+      getPool:    jest.fn(() => ({ connect: mockGetClient })),
       getClient:  mockGetClient,
     })),
   },

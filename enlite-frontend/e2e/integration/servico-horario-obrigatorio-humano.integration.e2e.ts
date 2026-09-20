@@ -15,41 +15,13 @@
  *
  * API e Postgres reais (stack docker), login real pelo emulador do Firebase.
  */
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect } from '@playwright/test';
 import { seedActivatablePatient, cleanupPatientDeep, runSQL } from '../helpers/patient-detail-c-helper';
+import { loginComoHumano } from '../helpers/login-humano';
 
-const EMULATOR = process.env.E2E_FIREBASE_EMULATOR || 'http://127.0.0.1:9099';
-const EMULATOR_PROJECT = 'demo-no-project';
 const STAFF_EMAIL = `e2e.horario.${Date.now()}@enlite.health`;
-const STAFF_PASSWORD = 'TestAdmin123!';
 
 /** Login como um humano: clica no campo, digita, clica no botão. Sem `fill`. */
-async function loginComoHumano(page: Page): Promise<void> {
-  const signUp = await fetch(`${EMULATOR}/identitytoolkit.googleapis.com/v1/accounts:signUp?key=any`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: STAFF_EMAIL, password: STAFF_PASSWORD, returnSecureToken: true }),
-  });
-  const auth = signUp.ok ? signUp : await fetch(`${EMULATOR}/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=any`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: STAFF_EMAIL, password: STAFF_PASSWORD, returnSecureToken: true }),
-  });
-  expect(auth.ok).toBe(true);
-  const { localId } = (await auth.json()) as { localId: string };
-  const claims = await fetch(`${EMULATOR}/identitytoolkit.googleapis.com/v1/projects/${EMULATOR_PROJECT}/accounts:update`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer owner' },
-    body: JSON.stringify({ localId, customAttributes: JSON.stringify({ role: 'admin' }) }),
-  });
-  expect(claims.ok).toBe(true);
-  runSQL(`INSERT INTO users (firebase_uid, email, display_name, role, is_active, email_verified) VALUES ('${localId}', '${STAFF_EMAIL}', 'E2E Horario', 'admin', true, true) ON CONFLICT (firebase_uid) DO NOTHING`);
-  await page.addInitScript(() => localStorage.setItem('i18nextLng', 'es'));
-  await page.goto('/admin/login');
-  await page.locator('input[type="email"]').click();
-  await page.keyboard.type(STAFF_EMAIL);
-  await page.locator('input[type="password"]').click();
-  await page.keyboard.type(STAFF_PASSWORD);
-  await page.getByRole('button', { name: /Iniciar sesi/i }).click();
-  await expect(page).not.toHaveURL(/login/, { timeout: 30_000 });
-}
 
 test.use({ viewport: { width: 1600, height: 1000 }, video: 'on' });
 
@@ -64,7 +36,7 @@ test.describe('Horário obrigatório para mudar de status — o operador é avis
   test.afterAll(() => { cleanupPatientDeep(seed.patientId); });
 
   test('salvar sem horário avisa em âmbar, a ativação é recusada nomeando o que falta, e preencher o horário destrava', async ({ page }) => {
-    await loginComoHumano(page);
+    await loginComoHumano(page, STAFF_EMAIL, 'E2E Humano');
     await page.goto(`/admin/patients/${seed.patientId}`);
 
     // ── 1. O formulário: o aviso aparece ANTES de salvar, com o horário vazio ──
@@ -89,7 +61,10 @@ test.describe('Horário obrigatório para mudar de status — o operador é avis
     // ── 2. Salvar SEM horário continua funcionando (a decisão de 05/09 não foi revogada) ──
     await page.getByTestId('svc-code-1').selectOption('AT');
     await page.getByTestId('svc-addressId-1').selectOption(seed.addressId);
+    const createService = page.waitForResponse((r) => r.request().method() === 'POST' && /\/contracted-services$/.test(r.url()));
     await page.getByTestId('contracted-service-new-save').click();
+    const svcBody = (await (await createService).json()) as { data: { id: string } };
+    const serviceId = svcBody.data.id;
     // 06/09: salvar NÃO fecha — o drawer troca para a EDIÇÃO do recém-criado. O aviso âmbar
     // continua ali, porque o serviço segue sem horário.
     await expect(page.getByRole('dialog', { name: 'Editar servicio contratado' })).toBeVisible({ timeout: 15_000 });
@@ -144,43 +119,57 @@ test.describe('Horário obrigatório para mudar de status — o operador é avis
     await expect(page.getByTestId('completeness-item').filter({ hasText: 'Horario del servicio' })).toHaveCount(0);
     await expect(page.locator('[data-testid^="contracted-service-schedule-missing-"]')).toHaveCount(0);
 
-    // ── 7. Com horário, "Activar paciente" ativa ──
+    // ── 7. Com horário, "Activar reclutamiento" (ícone do serviço, spec 018 PR-6 ADR-5) ativa ──
     // Recarrega como o operador faria: o pedido de foco do checklist sobrevive ao refetch do card
     // (o `useRef` do `useAutoOpenDrawer` zera na remontagem) e reabre o drawer no fallback
     // "+ Nuevo". É o comportamento que o SERVICE_ADDRESS já tinha desde 06/09 — anotado como
     // achado à parte, não consertado aqui.
     await page.reload();
     await expect(page.getByTestId('patient-contracted-services-edit-drawer')).toHaveCount(0);
-    await page.getByTestId('activate-patient-btn').click();
-    await page.getByTestId('activate-confirm').click();
-    // ativado: o botão some (o checklist/botão só aparecem em ADMISSION/PENDING_ADMISSION)
-    await expect(page.getByTestId('activate-patient-btn')).toHaveCount(0, { timeout: 20_000 });
+    // O reload volta pra aba PADRÃO (Datos Clínicos) — o ícone é POR SERVIÇO, mora dentro de
+    // "Servicio Contratado", e não sobrevive à remontagem como o botão do cabeçalho antigo sobrevivia.
+    await page.getByTestId('patient-profile-tabs').getByRole('button', { name: 'Servicio Contratado' }).click();
+    await expect(page.getByTestId('servicos-contratados-card')).toBeVisible();
+    const activated = page.waitForResponse((r) => r.request().method() === 'POST' && /\/activate-recruitment$/.test(r.url()));
+    await page.getByTestId(`contracted-service-activate-recruitment-${serviceId}`).click();
+    expect((await activated).status()).toBe(201);
+    // ativado: o ícone vira "Ver vacante" (o serviço agora tem vaga viva)
+    await expect(page.getByTestId(`contracted-service-view-vacancy-${serviceId}`)).toBeVisible({ timeout: 20_000 });
   });
 
-  test('sem horário, "Activar paciente" é RECUSADO e a tela NOMEIA o que falta', async ({ page }) => {
+  test('sem horário, "Activar reclutamiento" fica DESABILITADO e o tooltip NOMEIA o que falta (spec 018, PR-6, ADR-5)', async ({ page }) => {
     // paciente próprio: o do teste anterior já foi ativado
     const s2 = seedActivatablePatient(710000);
     try {
       // serviço com endereço e SEM horário, direto no banco (o caminho que o operador teria feito)
-      runSQL(
+      // `runSQL` (psql -tAc) devolve a linha do id SEGUIDA da tag de status ("INSERT 0 1") — -t não
+      // suprime essa segunda linha para INSERT/RETURNING (só para SELECT). Primeira linha é o id.
+      const svcId = runSQL(
         `INSERT INTO patient_contracted_services (patient_id, service_code, active, country, created_by, updated_by, address_id, schedule)
-         VALUES ('${s2.patientId}', 'AT', true, 'AR', 'e2e-horario', 'e2e-horario', '${s2.addressId}', NULL)`,
-      );
+         VALUES ('${s2.patientId}', 'AT', true, 'AR', 'e2e-horario', 'e2e-horario', '${s2.addressId}', NULL) RETURNING id`,
+      ).split('\n')[0].trim();
 
-      await loginComoHumano(page);
+      await loginComoHumano(page, STAFF_EMAIL, 'E2E Humano');
       await page.goto(`/admin/patients/${s2.patientId}`);
+      // O ícone é POR SERVIÇO, mora dentro de "Servicio Contratado" — diferente do botão antigo
+      // no cabeçalho, que era visível em qualquer aba.
+      await page.getByTestId('patient-profile-tabs').getByRole('button', { name: 'Servicio Contratado' }).click();
+      await expect(page.getByTestId('servicos-contratados-card')).toBeVisible();
 
-      await page.getByTestId('activate-patient-btn').click();
-      await page.getByTestId('activate-confirm').click();
+      // Diferença de UX do PR-6: a régua real continua sendo o backend (422 PATIENT_NOT_READY),
+      // mas o ícone antecipa na tela — DESABILITADO, sem sequer disparar o request — e o `title`
+      // (tooltip nativo) nomeia o item com a MESMA palavra do checklist. Não há mais um clique
+      // seguido de erro: o clique nem sai do componente quando falta código do gate.
+      const icone = page.getByTestId(`contracted-service-activate-recruitment-${svcId}`);
+      await expect(icone).toBeVisible({ timeout: 15_000 });
+      await expect(icone).toBeDisabled();
+      await expect(icone).toHaveAttribute('title', /Horario del servicio/);
 
-      // a mensagem de erro nomeia o item com a MESMA palavra do checklist
-      const erro = page.getByTestId('activate-error');
-      await expect(erro).toBeVisible({ timeout: 20_000 });
-      await expect(erro).toContainText('Horario del servicio');
-
-      // e o paciente NÃO foi ativado
+      // e o paciente NÃO foi ativado — nenhum request chegou a sair
       const status = runSQL(`SELECT status FROM patients WHERE id = '${s2.patientId}'`).trim();
       expect(status).toBe('PENDING_ADMISSION');
+      const vagas = runSQL(`SELECT count(*) FROM job_postings WHERE patient_id = '${s2.patientId}'`).trim();
+      expect(vagas).toBe('0');
     } finally {
       cleanupPatientDeep(s2.patientId);
     }
@@ -188,15 +177,22 @@ test.describe('Horário obrigatório para mudar de status — o operador é avis
 
   // ── Os dois caminhos que o Gabriel pediu para ver EM TELA, e que só tinham unit + e2e de API ──
 
-  test('arrastar o card para "Activo" no Kanban é RECUSADO e o toast NOMEIA o que falta', async ({ page }) => {
+  // Spec 018, PR-6, ADR-5 (migration 428 + `usePatientKanban.ts`): soltar em "Activo" não é
+  // mais um alvo de drop, SEJA QUAL FOR o motivo (antes desta rodada de mudanças, faltar
+  // horário fazia o backend recusar com 422 e o toast nomeava o horário; a 428 tirou
+  // funil→ACTIVE do catálogo por completo, então o Kanban intercepta ANTES de qualquer request
+  // — `usePatientKanban.ts` devolve `KANBAN_ACTIVATION_MOVED_TO_SERVICE` sem chamar
+  // `PUT /status`). Esta prova também cobre a task 6.9 (Kanban não manda ACTIVE direto): o
+  // teste de rede abaixo mostra que NENHUM `PUT /status` sai do navegador.
+  test('arrastar o card para "Activo" no Kanban NÃO ativa mais — o toast aponta o caminho novo, sem chamar a API', async ({ page }) => {
     const s3 = seedActivatablePatient(720000);
     try {
-      // serviço com endereço e SEM horário — o único bloqueio é o horário
+      // serviço com endereço e SEM horário — irrelevante agora: o drop nem chega a testar isso.
       runSQL(
         `INSERT INTO patient_contracted_services (patient_id, service_code, active, country, created_by, updated_by, address_id, schedule)
          VALUES ('${s3.patientId}', 'AT', true, 'AR', 'e2e-horario', 'e2e-horario', '${s3.addressId}', NULL)`,
       );
-      await loginComoHumano(page);
+      await loginComoHumano(page, STAFF_EMAIL, 'E2E Humano');
       await page.goto('/admin/patients/kanban');
 
       const card = page.locator(`[data-testid="kanban-draggable-${s3.patientId}"]`);
@@ -208,6 +204,13 @@ test.describe('Horário obrigatório para mudar de status — o operador é avis
       const destinoBB = await destino.boundingBox();
       if (!cardBB || !destinoBB) throw new Error('bounding boxes nulas para o drag');
 
+      // Nenhum PUT /status pode sair do navegador — a prova de que o Kanban intercepta ANTES
+      // de qualquer chamada de rede, não que a API recusou.
+      let putStatusChamado = false;
+      page.on('request', (req) => {
+        if (req.method() === 'PUT' && /\/status$/.test(req.url())) putStatusChamado = true;
+      });
+
       // Arraste de MOUSE de verdade (dnd-kit: o PointerSensor tem constraint de 8px)
       const x = cardBB.x + cardBB.width / 2;
       const y = cardBB.y + cardBB.height / 2;
@@ -218,13 +221,15 @@ test.describe('Horário obrigatório para mudar de status — o operador é avis
       await page.mouse.move(destinoBB.x + 50, destinoBB.y + destinoBB.height / 2, { steps: 30 });
       await page.mouse.up();
 
-      // O toast NOMEIA a pendência, com o mesmo rótulo do checklist da ficha
-      const toast = page.getByRole('status').filter({ hasText: 'Horario del servicio' });
+      // O toast aponta o caminho novo — "Activar reclutamiento" no serviço contratado da ficha.
+      const toast = page.getByRole('status').filter({ hasText: 'Activar reclutamiento' });
       await expect(toast).toBeVisible({ timeout: 20_000 });
-      await expect(toast).toContainText('No se puede mover');
+      await expect(toast).toContainText('servicio contratado');
       await expect(toast).toHaveScreenshot('toast-kanban-recusado.png');
 
-      // E o banco NÃO mudou — o rollback otimista devolveu o card
+      expect(putStatusChamado).toBe(false);
+
+      // E o banco NÃO mudou — o card nunca saiu do funil
       const status = runSQL(`SELECT status FROM patients WHERE id = '${s3.patientId}'`).trim();
       expect(status).toBe('PENDING_ADMISSION');
     } finally {
@@ -241,7 +246,7 @@ test.describe('Horário obrigatório para mudar de status — o operador é avis
         `INSERT INTO patient_contracted_services (patient_id, service_code, active, country, created_by, updated_by, address_id, schedule)
          VALUES ('${s4.patientId}', 'AT', true, 'AR', 'e2e-horario', 'e2e-horario', '${s4.addressId}', NULL)`,
       );
-      await loginComoHumano(page);
+      await loginComoHumano(page, STAFF_EMAIL, 'E2E Humano');
       await page.goto(`/admin/patients/${s4.patientId}`);
 
       const select = page.getByTestId('patient-status-select');

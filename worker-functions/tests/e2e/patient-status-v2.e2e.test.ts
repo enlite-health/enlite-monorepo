@@ -9,7 +9,13 @@
  *   3. ON_HOLD sem motivo → 422 ON_HOLD_REASON_REQUIRED;
  *   4. GET /status-history: quando / de→para / origem, SEM ator e SEM on_hold_note (lex C7.2/C7.3);
  *   5. sair de ON_HOLD limpa motivo e nota (nenhuma segunda cópia);
- *   6. Kanban: SOLICITANTE → ADMISSION grava e admission_status acompanha; → ACTIVE vira DONE;
+ *   6. Migration 428 (spec 018 PR-6, ADR-5): funil→ACTIVE direto (SOLICITANTE, ADMISSION,
+ *      PENDING_ADMISSION) passa a ser 422 PATIENT_STATUS_TRANSITION_NOT_ALLOWED — a ativação
+ *      agora é por serviço (`POST .../activate-recruitment`, spec própria em
+ *      `activation.e2e.test.ts`), nunca mais um pulo direto do Kanban. Movimento DENTRO do funil
+ *      continua livre (SOLICITANTE → ADMISSION → PENDING_ADMISSION grava e admission_status
+ *      acompanha). Chegar a ACTIVE de verdade passa por SEARCHING (activate-recruitment) e só
+ *      depois `PUT /status` SEARCHING → ACTIVE, que o catálogo 315 nunca removeu;
  *   7. DISCHARGED/SUSPENDED não apagam linha nenhuma (lex C7.4): contagem antes/depois;
  *   8. a ficha (GET /:id) devolve admissionStatus/onHoldReason/onHoldNote; a nota nunca vai ao log
  *      do banco (patient_status_history não a tem).
@@ -28,17 +34,27 @@ describe('Estado do paciente v2 — transições, motivo, Historial (spec 012 US
   let pool: Pool;
   let active = '';
   let lead = '';
+  let lead2 = '';
+  let leadServiceId = '';
 
   beforeAll(async () => {
     await waitForBackend(api);
     asAdmin = await staffAuth(UID, 'admin');
     pool = new Pool({ connectionString: DATABASE_URL });
+    await pool.query(
+      `DELETE FROM job_postings WHERE patient_id IN (SELECT id FROM patients WHERE clickup_task_id LIKE 'ps-v2-e2e-%')`,
+    );
     await pool.query(`DELETE FROM patients WHERE clickup_task_id LIKE 'ps-v2-e2e-%'`);
     active = (await pool.query<{ id: string }>(
       `INSERT INTO patients (clickup_task_id, first_name, last_name, country, status) VALUES ('ps-v2-e2e-1', 'Estado', 'Activo', 'AR', 'ACTIVE') RETURNING id`,
     )).rows[0].id;
     lead = (await pool.query<{ id: string }>(
       `INSERT INTO patients (clickup_task_id, first_name, last_name, country, status) VALUES ('ps-v2-e2e-2', 'Estado', 'Lead', 'AR', 'SOLICITANTE') RETURNING id`,
+    )).rows[0].id;
+    // Paciente extra só para o teste 6 (SOLICITANTE → ACTIVE direto, bloqueado pela 428) — não
+    // precisa de endereço/serviço porque a checagem de transição roda ANTES da de completude.
+    lead2 = (await pool.query<{ id: string }>(
+      `INSERT INTO patients (clickup_task_id, first_name, last_name, country, status) VALUES ('ps-v2-e2e-3', 'Estado', 'Lead2', 'AR', 'SOLICITANTE') RETURNING id`,
     )).rows[0].id;
 
     // Decisão do Gabriel 07/09: a entrada em ACTIVE pelo `PUT /status` passou a exigir o
@@ -48,21 +64,25 @@ describe('Estado do paciente v2 — transições, motivo, Historial (spec 012 US
     // A recusa por ficha incompleta tem suíte própria (`patient-status-completeness.e2e.test.ts`).
     for (const id of [active, lead]) {
       const addr = (await pool.query<{ id: string }>(
-        `INSERT INTO patient_addresses (patient_id, address_type, address_formatted, display_order)
-         VALUES ($1,'primary','Calle Estado 1',1) RETURNING id`,
+        `INSERT INTO patient_addresses (patient_id, address_formatted, display_order)
+         VALUES ($1,'Calle Estado 1',1) RETURNING id`,
         [id],
       )).rows[0].id;
-      await pool.query(
+      const svc = (await pool.query<{ id: string }>(
         `INSERT INTO patient_contracted_services
            (patient_id, service_code, active, country, created_by, updated_by, address_id, schedule)
          VALUES ($1,'AT',true,'AR','ps-v2-e2e','ps-v2-e2e',$2,
-                 '[{"dayOfWeek":1,"startTime":"08:00","endTime":"12:00"}]'::jsonb)`,
+                 '[{"dayOfWeek":1,"startTime":"08:00","endTime":"12:00"}]'::jsonb) RETURNING id`,
         [id, addr],
-      );
+      )).rows[0].id;
+      if (id === lead) leadServiceId = svc;
     }
   });
 
   afterAll(async () => {
+    await pool.query(
+      `DELETE FROM job_postings WHERE patient_id IN (SELECT id FROM patients WHERE clickup_task_id LIKE 'ps-v2-e2e-%')`,
+    );
     await pool.query(`DELETE FROM patients WHERE clickup_task_id LIKE 'ps-v2-e2e-%'`);
     await pool.end();
   });
@@ -116,15 +136,64 @@ describe('Estado do paciente v2 — transições, motivo, Historial (spec 012 US
     expect(g.data.data).toMatchObject({ status: 'ACTIVE', admissionStatus: 'DONE', onHoldReason: null, onHoldNote: null, serviceStartDate: null });
   });
 
-  it('6. Kanban: SOLICITANTE → ADMISSION (livre) e ADMISSION → ACTIVE (seed 315) — admission_status acompanha', async () => {
+  it('6. Migration 428: funil→ACTIVE direto é 422 nas TRÊS origens; dentro do funil continua livre; ACTIVE de verdade só via SEARCHING (activate-recruitment)', async () => {
+    // 6a. SOLICITANTE → ACTIVE direto (lead2, nunca tocado por outro teste) — bloqueado.
+    let r = await api.put(`/api/admin/patients/${lead2}/status`, { status: 'ACTIVE', changeSource: 'kanban' }, asAdmin);
+    expect(r.status).toBe(422);
+    expect(r.data).toMatchObject({
+      success: false,
+      code: 'PATIENT_STATUS_TRANSITION_NOT_ALLOWED',
+      details: { from: 'SOLICITANTE', to: 'ACTIVE' },
+    });
+    expect((await pool.query(`SELECT status FROM patients WHERE id = $1`, [lead2])).rows[0].status).toBe('SOLICITANTE');
+
+    // 6b. lead: SOLICITANTE → ADMISSION continua livre (movimento DENTRO do funil).
     expect((await api.put(`/api/admin/patients/${lead}/status`, { status: 'ADMISSION', changeSource: 'kanban' }, asAdmin)).status).toBe(200);
     let row = (await pool.query(`SELECT status, admission_status FROM patients WHERE id = $1`, [lead])).rows[0];
     expect(row).toEqual({ status: 'ADMISSION', admission_status: 'ADMISSION' });
+
+    // 6c. ADMISSION → ACTIVE direto — bloqueado (era a linha removida pela 428).
+    r = await api.put(`/api/admin/patients/${lead}/status`, { status: 'ACTIVE', changeSource: 'kanban' }, asAdmin);
+    expect(r.status).toBe(422);
+    expect(r.data).toMatchObject({
+      success: false,
+      code: 'PATIENT_STATUS_TRANSITION_NOT_ALLOWED',
+      details: { from: 'ADMISSION', to: 'ACTIVE' },
+    });
+    row = (await pool.query(`SELECT status, admission_status FROM patients WHERE id = $1`, [lead])).rows[0];
+    expect(row).toEqual({ status: 'ADMISSION', admission_status: 'ADMISSION' });
+
+    // 6d. ADMISSION → PENDING_ADMISSION continua livre (ainda dentro do funil).
+    expect((await api.put(`/api/admin/patients/${lead}/status`, { status: 'PENDING_ADMISSION', changeSource: 'kanban' }, asAdmin)).status).toBe(200);
+    row = (await pool.query(`SELECT status, admission_status FROM patients WHERE id = $1`, [lead])).rows[0];
+    expect(row).toEqual({ status: 'PENDING_ADMISSION', admission_status: 'PENDING_ADMISSION' });
+
+    // 6e. PENDING_ADMISSION → ACTIVE direto — bloqueado (a 3ª linha que a 428 removeu).
+    r = await api.put(`/api/admin/patients/${lead}/status`, { status: 'ACTIVE', changeSource: 'kanban' }, asAdmin);
+    expect(r.status).toBe(422);
+    expect(r.data).toMatchObject({
+      success: false,
+      code: 'PATIENT_STATUS_TRANSITION_NOT_ALLOWED',
+      details: { from: 'PENDING_ADMISSION', to: 'ACTIVE' },
+    });
+    row = (await pool.query(`SELECT status, admission_status FROM patients WHERE id = $1`, [lead])).rows[0];
+    expect(row).toEqual({ status: 'PENDING_ADMISSION', admission_status: 'PENDING_ADMISSION' });
+
+    // 6f. Caminho real: COVERAGE informada (endereço/horário do serviço já vêm do beforeAll) →
+    // activate-recruitment move para SEARCHING → PUT /status ACTIVE (SEARCHING → ACTIVE
+    // continua no catálogo 315, a 428 nunca tocou essa linha).
+    await pool.query(`UPDATE patients SET health_insurance_name = 'Particular' WHERE id = $1`, [lead]);
+    const activated = await api.post(`/api/admin/patients/${lead}/contracted-services/${leadServiceId}/activate-recruitment`, {}, asAdmin);
+    expect(activated.status).toBe(201);
+    expect(activated.data.data.patientStatus).toBe('SEARCHING');
+    row = (await pool.query(`SELECT status, admission_status FROM patients WHERE id = $1`, [lead])).rows[0];
+    expect(row).toEqual({ status: 'SEARCHING', admission_status: 'DONE' });
+
     expect((await api.put(`/api/admin/patients/${lead}/status`, { status: 'ACTIVE', changeSource: 'kanban' }, asAdmin)).status).toBe(200);
     row = (await pool.query(`SELECT status, admission_status FROM patients WHERE id = $1`, [lead])).rows[0];
     expect(row).toEqual({ status: 'ACTIVE', admission_status: 'DONE' });
     const hist = (await api.get(`/api/admin/patients/${lead}/status-history`, asAdmin)).data.data.history as Array<Record<string, unknown>>;
-    expect(hist[0]).toMatchObject({ from: 'ADMISSION', to: 'ACTIVE', source: 'kanban' });
+    expect(hist[0]).toMatchObject({ from: 'SEARCHING', to: 'ACTIVE', source: 'kanban' });
   });
 
   it('7. DISCHARGED e SUSPENDED não apagam linha nenhuma (lex C7.4)', async () => {

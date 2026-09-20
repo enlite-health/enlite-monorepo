@@ -2,11 +2,26 @@ name: Frontend Quality Gate (reusable)
 
 on:
   workflow_call:
+    inputs:
+      timeout_minutes:
+        description: >-
+          Teto de tempo do job. O PADRÃO 15 é o valor histórico e é o que PRD e STG continuam usando
+          — quem chama precisa pedir explicitamente para mudar. MEDIDO 17/09/2026: o job levava
+          13,4 min (29dbc668) e 13,5 min (98c0bccc) nas últimas runs VERDES da stage, contra o teto
+          de 15 — margem de ~1,5 min. Treze testes novos num PR levaram a 15m16s e o job foi
+          CANCELADO pelo teto, com "The operation was canceled" — erro que não parece cobertura nem
+          teste vermelho, parece falha inexplicada. Por isso o gate de PR passa um teto maior: para
+          a régua medir o que ela mede (lint + suíte + piso de cobertura) em vez de medir o relógio.
+          Nenhuma verificação é enfraquecida por este parâmetro. Se o job voltar a encostar no teto,
+          o conserto é a suíte (paralelismo/shard), não o número.
+        required: false
+        type: number
+        default: 15
 
 jobs:
   quality-gate:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: ${{ inputs.timeout_minutes }}
     defaults:
       run:
         working-directory: enlite-frontend

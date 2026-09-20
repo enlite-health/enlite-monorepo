@@ -1,5 +1,10 @@
 import { projectPatientClinicalForActor } from '../application/patientClinicalAccess';
-import { projectContractedServiceForActor } from '../application/contractedServiceHourlyValueAccess';
+import { projectContractedServiceForActor, type HourlyValueActor } from '../application/contractedServiceHourlyValueAccess';
+import {
+  projectCompletenessByContainers,
+  projectPatientDetailByContainers,
+  projectPatientListItemByContainers,
+} from '../application/patientContainerAccess';
 import { computePatientCompleteness, type PatientCompletenessResult } from '../domain/PatientCompleteness';
 import type { PatientListRow } from '../infrastructure/PatientQueryRows';
 
@@ -17,8 +22,18 @@ import type { PatientListRow } from '../infrastructure/PatientQueryRows';
  * `patient_lead_contact.read`), que dependem do `req` e continuam no controller.
  */
 
-/** Uma linha da listagem/Kanban. `missing[]` NUNCA sai por aqui (lex D1.1). */
-export function toAdminPatientListItem(row: PatientListRow) {
+/**
+ * Uma linha da listagem/Kanban. `missing[]` NUNCA sai por aqui (lex D1.1).
+ *
+ * D286 (`lex` P1): a lista É o export de fato — sem `cells`, publica clínico e documento sob
+ * `patient:read`, e a célula de container viraria fachada. Por isso a projeção por container é
+ * aplicada AQUI, na única saída da lista, e não em cada chamador.
+ */
+export function toAdminPatientListItem(row: PatientListRow, cells?: readonly string[] | null) {
+  return projectPatientListItemByContainers(toAdminPatientListItemRaw(row), cells);
+}
+
+function toAdminPatientListItemRaw(row: PatientListRow) {
   return {
     id: row.id,
     clickupTaskId: row.clickupTaskId,
@@ -57,23 +72,28 @@ export function toAdminPatientListItem(row: PatientListRow) {
 }
 
 /**
- * A ficha, com as duas redações aplicadas na MESMA passada:
+ * A ficha, com as TRÊS redações aplicadas na MESMA passada (`lex` C1: projeção única):
  *   - texto clínico restrito → ponto único (D211.2), por célula;
- *   - `hourlyValue` de cada serviço contratado → por papel (lex C-c.4), campo por campo.
+ *   - `hourlyValue` de cada serviço contratado → célula `patient_contract_value:read` (lex C-c.4;
+ *     papel `admin` só enquanto o engine não decide), campo por campo — mantém portão PRÓPRIO,
+ *     nunca embutido em `patient_services:read` (`lex` C6);
+ *   - cada CONTAINER (identidade, clínica, familiares, chat, cobertura, endereço, serviços,
+ *     equipe) → por célula própria (D286), com marcador constante `redacted.<container>`.
  */
 export function projectAdminPatientDetail(
   patient: Record<string, unknown>,
   cells: readonly string[] | null | undefined,
-  roles: readonly string[] | null | undefined,
+  actor: HourlyValueActor,
 ): Record<string, unknown> {
   const clinicalProjected = projectPatientClinicalForActor(patient, cells);
   const rawServices = (clinicalProjected as { contractedServices?: unknown[] }).contractedServices;
-  return Array.isArray(rawServices)
+  const withServices = Array.isArray(rawServices)
     ? {
         ...clinicalProjected,
-        contractedServices: rawServices.map((s) => projectContractedServiceForActor(s as { hourlyValue: number | null }, roles)),
+        contractedServices: rawServices.map((s) => projectContractedServiceForActor(s as { hourlyValue: number | null }, actor)),
       }
     : clinicalProjected;
+  return projectPatientDetailByContainers(withServices, cells);
 }
 
 /**
@@ -82,7 +102,11 @@ export function projectAdminPatientDetail(
  * (`computePatientCompleteness`) que decide o gate de `POST /activate` — nunca uma cópia da
  * regra (`ActivatePatientUseCase`).
  */
-export function patientDetailCompleteness(patient: unknown): PatientCompletenessResult {
+export function patientDetailCompleteness(patient: unknown, cells?: readonly string[] | null): PatientCompletenessResult {
+  return projectCompletenessByContainers(patientDetailCompletenessRaw(patient), cells);
+}
+
+function patientDetailCompletenessRaw(patient: unknown): PatientCompletenessResult {
   const detail = patient as {
     birthDate: string | Date | null;
     hasConsent: boolean | null;

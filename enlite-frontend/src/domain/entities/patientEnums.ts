@@ -36,9 +36,26 @@ export type AdmissionStatus = (typeof ADMISSION_STATUSES)[number];
 export const DEVICE_TYPE_CODES = ['HOME', 'SCHOOL', 'INSTITUTIONAL', 'INPATIENT', 'TRANSPORT'] as const;
 export type DeviceTypeCode = (typeof DEVICE_TYPE_CODES)[number];
 
-/** `patient_responsibles.relationship` (CHECK da migration 139). */
-export const RELATIONSHIP_CODES = ['CHILD', 'PARENT', 'SIBLING', 'NEPHEW', 'GRANDCHILD', 'GUARDIAN', 'FRIEND', 'PARTNER', 'OTHER'] as const;
+/** `patient_responsibles.relationship` (CHECK da migration 139, ampliado na 421 — spec 018 PR-2, SUP-16). */
+export const RELATIONSHIP_CODES = [
+  'CHILD', 'PARENT', 'SIBLING', 'NEPHEW', 'GRANDCHILD', 'GUARDIAN', 'FRIEND', 'PARTNER', 'OTHER',
+  'GRANDPARENT', 'UNCLE_AUNT', 'COUSIN', 'IN_LAW', 'STEP_RELATIVE', 'RESPONSIBLE_PERSON',
+] as const;
 export type RelationshipCode = (typeof RELATIONSHIP_CODES)[number];
+
+/** `patient_professionals.specialty` (CHECK `pp_specialty_check`, migration 427; spec 018 PR-5, SUP-38). */
+export const PATIENT_PROFESSIONAL_SPECIALTY_CODES = [
+  'PHYSICIAN', 'PSYCHIATRIST', 'NEUROLOGIST', 'PEDIATRICIAN', 'PSYCHOLOGIST', 'PHYSIOTHERAPIST',
+  'OCCUPATIONAL_THERAPIST', 'SPEECH_THERAPIST', 'NUTRITIONIST', 'NURSE', 'SOCIAL_WORKER', 'OTHER',
+] as const;
+export type PatientProfessionalSpecialtyCode = (typeof PATIENT_PROFESSIONAL_SPECIALTY_CODES)[number];
+
+/** `patient_external_contacts.relation` (CHECK da migration 422 — spec 018 PR-2, SUP-15). SEM categoria de saúde (lex #4). */
+export const EXTERNAL_CONTACT_RELATION_CODES = [
+  'TEACHER', 'SCHOOL_DIRECTOR', 'SCHOOL_STAFF', 'NEIGHBOR', 'EMPLOYER',
+  'INSURANCE_CASE_MANAGER', 'COMMUNITY_REFERENT', 'OTHER',
+] as const;
+export type ExternalContactRelationCode = (typeof EXTERNAL_CONTACT_RELATION_CODES)[number];
 
 /** Seed de `insurance_providers` (migration 311) — os 33 do contrato 001 §Enums canônicos. */
 export const INSURANCE_PROVIDER_CODES = [
@@ -48,3 +65,11 @@ export const INSURANCE_PROVIDER_CODES = [
   'SWISS_MEDICAL', 'UP', 'OSPICHA', 'USUOMRA', 'PREVENCION_SALUD', 'IOSCOR',
 ] as const;
 export type InsuranceProviderCode = (typeof INSURANCE_PROVIDER_CODES)[number];
+
+/** Spec 018 PR-3 (Emenda 13/09, migration 425). Enum fechado, DISTINTO de `sex` (Sex.ts do backend). */
+export const PATIENT_GENDERS = ['FEMALE', 'MALE', 'NON_BINARY', 'OTHER', 'PREFER_NOT_TO_SAY'] as const;
+export type PatientGenderCode = (typeof PATIENT_GENDERS)[number];
+
+/** Spec 018 PR-3 — a mesma lista fechada ISO de `workers.languages` (WORKER_LANGUAGES). */
+export const PATIENT_LANGUAGES = ['pt', 'es', 'en'] as const;
+export type PatientLanguageCode = (typeof PATIENT_LANGUAGES)[number];

@@ -50,6 +50,44 @@ export const ACTIVATION_BLOCKING_CODES = [
  */
 export const ACTIVATABLE_STATUSES = ['ADMISSION', 'PENDING_ADMISSION'] as const;
 
+/**
+ * Gate de "Activar reclutamiento" (spec 018, PR-6, `contracts/activation.md`) — espelha
+ * `RECRUITMENT_BLOCKING_CODES` do backend (`PatientCompleteness.ts`). Avaliado POR SERVIÇO
+ * (`SERVICE_ADDRESS`/`SERVICE_SCHEDULE` do serviço em questão, nunca "algum serviço do
+ * paciente") + `COVERAGE` do paciente. Só decide o ESTADO do botão na tela — quem decide de
+ * verdade é sempre o backend (422 `PATIENT_NOT_READY`).
+ */
+export const RECRUITMENT_BLOCKING_CODES = ['SERVICE_ADDRESS', 'SERVICE_SCHEDULE', 'COVERAGE'] as const;
+
+/**
+ * FR-121/122 — mesma régua de `isPlaceholderCoverageValue` do backend: "sin cobertura /
+ * particular" É uma resposta válida; placeholder (< 2 alfanuméricos, ou só zeros) não é.
+ */
+export function isPlaceholderCoverageValue(value: string | null | undefined): boolean {
+  const trimmed = (value ?? '').trim();
+  if (trimmed.length === 0) return true;
+  const alphanumeric = trimmed.replace(/[^a-zA-Z0-9À-ÿ]/g, '');
+  if (alphanumeric.length < 2) return true;
+  return /^0+$/.test(alphanumeric);
+}
+
+export interface RecruitmentReadinessInput {
+  serviceHasAddress: boolean;
+  serviceHasSchedule: boolean;
+  insuranceInformed: string | null;
+}
+
+/** Códigos que faltam para ESTE serviço poder ativar recrutamento — vazio = pronto. */
+export function recruitmentMissingCodes(
+  input: RecruitmentReadinessInput,
+): Array<(typeof RECRUITMENT_BLOCKING_CODES)[number]> {
+  const missing: Array<(typeof RECRUITMENT_BLOCKING_CODES)[number]> = [];
+  if (!input.serviceHasAddress) missing.push('SERVICE_ADDRESS');
+  if (!input.serviceHasSchedule) missing.push('SERVICE_SCHEDULE');
+  if (isPlaceholderCoverageValue(input.insuranceInformed)) missing.push('COVERAGE');
+  return missing;
+}
+
 export interface PatientCompleteness {
   missing: PatientCompletenessCode[];
   /** missing ∩ ACTIVATION_BLOCKING_CODES (D255) — os códigos que REALMENTE bloqueiam o activate. */

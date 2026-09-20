@@ -19,7 +19,11 @@ export function mockAuthMiddleware(req: Request, res: Response, next: NextFuncti
   // Rotas públicas que não precisam de auth (incluindo webhooks com autenticação própria)
   // /api/admin/setup é público também em prod (bootstrap): o que barra lá é o
   // gate ADMIN_SETUP_ENABLED + countAdmins(), e o e2e afirma exatamente isso.
-  const publicPaths = ['/health', '/api/test/auth/token', '/api/jobs', '/api/workers/init', '/api/workers/lookup', '/api/vacancies/', '/api/webhooks/', '/api/webhooks-test/', '/api/internal/', '/api/public/', '/api/docs', '/api/admin/setup'];
+  // `/.well-known` entra aqui pelo MESMO motivo de `/api/internal/`: são rotas
+  // de serviço com guard próprio (`X-Internal-Secret`/OIDC). Sem isso o mock
+  // devolveria 401 antes do guard real rodar — e o e2e não conseguiria ler o
+  // catálogo nem o inventário de rotas do app de pé.
+  const publicPaths = ['/health', '/api/test/auth/token', '/api/jobs', '/api/workers/init', '/api/workers/lookup', '/api/vacancies/', '/api/webhooks/', '/api/webhooks-test/', '/api/internal/', '/api/public/', '/api/docs', '/api/admin/setup', '/.well-known'];
   if (publicPaths.some(path => req.path === path || req.path.startsWith(path))) {
     return next();
   }
@@ -62,6 +66,11 @@ export function mockAuthMiddleware(req: Request, res: Response, next: NextFuncti
       uid: userData.uid,
       email: userData.email,
       role: userData.role || 'worker',
+      // Tipo de conta (D294) — o token mock pode trazê-lo explícito; sem ele, a ponte por `role`.
+      account_type: userData.account_type ?? null,
+      // Jurisdição do staff no e2e — espelha o custom claim `country` do
+      // Identity Platform. Ausente segue ausente (fail-closed, sem default).
+      country: userData.country,
     };
 
     next();

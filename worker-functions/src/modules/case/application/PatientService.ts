@@ -1,6 +1,5 @@
 import * as functions from 'firebase-functions';
 import { safeErrorFields } from '@shared/logging';
-import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import {
   PatientIdentityRepository,
@@ -12,7 +11,7 @@ import { GeocodingService } from '../../../infrastructure/services/GeocodingServ
 import { validateContactChannel } from '../domain/PatientResponsible';
 import { upsertPatientRelated, type PatientRelatedUpsertDeps } from './PatientRelatedUpsert';
 import { createNativePatient } from './PatientNativeCreator';
-import { isCaseNumberConflict } from './patientCaseNumberConflict';
+import { inPatientTransaction, CaseNumberConflictRetry, rethrowAsCaseNumberRetry } from './patientTransaction';
 import type { AttentionReason } from '../domain/enums/AttentionReason';
 import type { PatientStatus } from '../domain/enums/PatientStatus';
 import {
@@ -194,43 +193,28 @@ export class PatientService {
     flagged: boolean,
     cid: string | undefined,
   ): Promise<{ id: string; created: boolean; flagged: boolean; conflict?: 'CASE_NUMBER_CONFLICT' }> {
-    const db     = DatabaseConnection.getInstance();
-    const client = await db.getClient();
-
     try {
-      await client.query('BEGIN');
-
-      let patientId: string;
-      let created: boolean;
-      let conflict: 'CASE_NUMBER_CONFLICT' | undefined;
-
-      try {
-        ({ id: patientId, created } = await this.identityRepo.upsert(identityInput, client));
-      } catch (err) {
-        if (isCaseNumberConflict(err)) {
-          // Constraint blocks the write — rollback this attempt and retry without case_number.
-          await client.query('ROLLBACK');
-          client.release();
-          functions.logger.warn('patient_service.case_number_conflict_retry', {
-            clickupTaskId:       input.clickupTaskId,
-            rejectedCaseNumber:  input.caseNumber ?? null,
-            correlationId:       cid,
-          });
-          return this.retryWithoutCaseNumber(identityInput, input);
+      return await inPatientTransaction(async (client) => {
+        let patientId: string;
+        let created: boolean;
+        try {
+          ({ id: patientId, created } = await this.identityRepo.upsert(identityInput, client));
+        } catch (err) {
+          rethrowAsCaseNumberRetry(err);
         }
-        throw err;
-      }
-
-      await upsertPatientRelated(this.relatedDeps(), patientId, input, client);
-
-      await client.query('COMMIT');
-      return { id: patientId, created, flagged, conflict };
+        await upsertPatientRelated(this.relatedDeps(), patientId, input, client);
+        return { id: patientId, created, flagged };
+      });
     } catch (err) {
-      await client.query('ROLLBACK');
+      if (err instanceof CaseNumberConflictRetry) {
+        functions.logger.warn('patient_service.case_number_conflict_retry', {
+          clickupTaskId:       input.clickupTaskId,
+          rejectedCaseNumber:  input.caseNumber ?? null,
+          correlationId:       cid,
+        });
+        return this.retryWithoutCaseNumber(identityInput, input);
+      }
       throw err;
-    } finally {
-      // Only release if client hasn't been released already (conflict path releases early).
-      try { client.release(); } catch { /* already released */ }
     }
   }
 
@@ -249,21 +233,11 @@ export class PatientService {
       attentionReasons: Array.from(attentionReasons),
     };
 
-    const db     = DatabaseConnection.getInstance();
-    const client = await db.getClient();
-
-    try {
-      await client.query('BEGIN');
+    return inPatientTransaction(async (client) => {
       const { id: patientId, created } = await this.identityRepo.upsert(safeIdentityInput, client);
       await upsertPatientRelated(this.relatedDeps(), patientId, input, client);
-      await client.query('COMMIT');
-      return { id: patientId, created, flagged: true, conflict: 'CASE_NUMBER_CONFLICT' };
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
-    }
+      return { id: patientId, created, flagged: true, conflict: 'CASE_NUMBER_CONFLICT' as const };
+    });
   }
 
   /**
@@ -295,8 +269,8 @@ export class PatientService {
     patientId: string,
     section: PatientSection,
     data: PatientGeneralSectionData | PatientClinicalSectionData | PatientCoverageSectionData | PatientRelatedInput,
-    /** Quem está editando (uid do staff) — hoje só a seção clínica usa (autoria de additional_comments). */
-    actor?: { uid: string },
+    /** Quem está editando: uid do staff (autoria da seção clínica). */
+    actor?: { uid: string; cells?: readonly string[] | null },
   ): Promise<{ id: string; updated: true }> {
     return writePatientSection(
       {

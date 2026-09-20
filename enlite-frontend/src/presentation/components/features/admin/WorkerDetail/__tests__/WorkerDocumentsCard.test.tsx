@@ -1,12 +1,23 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { WorkerDocumentsCard } from '../WorkerDocumentsCard';
 import type { WorkerDocument, DocumentValidations } from '@domain/entities/Worker';
 import type { AdminDocumentType } from '@hooks/admin/useAdminWorkerDocuments';
+import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
+import type { AuthzContract } from '@domain/entities/Authz';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
+
+function comEnforcement(permissions: string[], enforcement: AuthzContract['enforcement']) {
+  useAdminAuthStore.setState({
+    authzStatus: 'ready',
+    authz: {
+      uid: 'u', tenantId: 't', status: 'ACTIVE', permissions, countries: [], groups: [], features: {}, enforcement,
+    } as AuthzContract,
+  });
+}
 
 const noopUpload = vi.fn().mockResolvedValue(undefined);
 const noopDelete = vi.fn().mockResolvedValue(undefined);
@@ -45,6 +56,10 @@ const fullDoc: WorkerDocument = {
 };
 
 describe('WorkerDocumentsCard', () => {
+  beforeEach(() => {
+    useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' });
+  });
+
   // ── i18n labels ────────────────────────────────────────────────────────────
 
   it('renders card title using i18n key admin.workerDetail.documents', () => {
@@ -318,5 +333,64 @@ describe('WorkerDocumentsCard', () => {
     );
     const btn = screen.getByTestId('validate-btn-resume_cv');
     expect(btn).toBeDisabled();
+  });
+
+  // ── Interações de upload/excluir/ver (repassadas ao DocumentUploadCard) ────
+
+  it('mostra a mensagem de erro do slot quando errors[docType] está preenchido', () => {
+    render(<WorkerDocumentsCard documents={fullDoc} {...defaultHandlers} errors={{ resume_cv: 'falhou o upload' }} />);
+    expect(screen.getByText('falhou o upload')).toBeInTheDocument();
+  });
+
+  it('seleciona um arquivo num slot vazio: chama onUpload com o docType e o arquivo', () => {
+    const onUpload = vi.fn().mockResolvedValue(undefined);
+    render(<WorkerDocumentsCard documents={fullDoc} {...defaultHandlers} onUpload={onUpload} />);
+    const slot = document.querySelector('[data-testid="doc-slot-identity_document_back"]')!;
+    const input = slot.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(['x'], 'dni-back.pdf', { type: 'application/pdf' });
+    fireEvent.change(input, { target: { files: [file] } });
+    expect(onUpload).toHaveBeenCalledWith('identity_document_back', file);
+  });
+
+  it('clica no ícone de excluir de um doc enviado: chama onDelete com o docType', () => {
+    const onDelete = vi.fn().mockResolvedValue(undefined);
+    render(<WorkerDocumentsCard documents={fullDoc} {...defaultHandlers} onDelete={onDelete} />);
+    const slot = document.querySelector('[data-testid="doc-slot-resume_cv"]')!;
+    fireEvent.click(slot.querySelector('button[aria-label="Remover documento"]')!);
+    expect(onDelete).toHaveBeenCalledWith('resume_cv');
+  });
+
+  it('clica no ícone de visualizar: chama onView com a URL do documento', () => {
+    const onView = vi.fn().mockResolvedValue(undefined);
+    render(<WorkerDocumentsCard documents={fullDoc} {...defaultHandlers} onView={onView} />);
+    const slot = document.querySelector('[data-testid="doc-slot-resume_cv"]')!;
+    fireEvent.click(slot.querySelector('button[aria-label="Visualizar documento"]')!);
+    expect(onView).toHaveBeenCalledWith(fullDoc.resumeCvUrl);
+  });
+
+  // ── D269 — worker_document:write/delete gateiam upload e exclusão ─────────
+
+  it('D269 — enforcement=on sem worker_document:write: slot vazio não tem input de arquivo', () => {
+    comEnforcement([], 'on');
+    render(<WorkerDocumentsCard documents={fullDoc} {...defaultHandlers} />);
+    const slot = document.querySelector('[data-testid="doc-slot-identity_document_back"]')!;
+    expect(slot.querySelector('input[type="file"]')).toBeNull();
+  });
+
+  it('D269 — enforcement=on sem worker_document:delete: ícone de excluir SOME (visualizar continua)', () => {
+    comEnforcement([], 'on');
+    render(<WorkerDocumentsCard documents={fullDoc} {...defaultHandlers} />);
+    const slot = document.querySelector('[data-testid="doc-slot-resume_cv"]')!;
+    expect(slot.querySelector('button[aria-label="Remover documento"]')).toBeNull();
+    expect(slot.querySelector('button[aria-label="Visualizar documento"]')).not.toBeNull();
+  });
+
+  it('D269 — enforcement=on com worker_document:write e :delete: input e ícone de excluir existem', () => {
+    comEnforcement(['worker_document:create', 'worker_document:delete'], 'on');
+    render(<WorkerDocumentsCard documents={fullDoc} {...defaultHandlers} />);
+    const emptySlot = document.querySelector('[data-testid="doc-slot-identity_document_back"]')!;
+    expect(emptySlot.querySelector('input[type="file"]')).not.toBeNull();
+    const uploadedSlot = document.querySelector('[data-testid="doc-slot-resume_cv"]')!;
+    expect(uploadedSlot.querySelector('button[aria-label="Remover documento"]')).not.toBeNull();
   });
 });

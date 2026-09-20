@@ -33,6 +33,10 @@ vi.mock('react-i18next', () => ({
 // teste que quebra quando alguém troca um ícone. Aqui o módulo real é barato.
 
 const PROD_PAYLOAD: ManagementDashboardData = {
+  // PR-9 (`lex` #9): payload de 30/07/2026 é ANTERIOR ao filtro de país — não
+  // dá pra "capturar" um scope real de época. AR+ALL é o caso trivial (ator
+  // de 1 país só), consistente com o snapshot datado do resto do payload.
+  scope: { countries: ['AR'], requested: 'ALL' },
   bigNumbers: {
     equiposArmados: 0,
     equiposPorArmar: 84,

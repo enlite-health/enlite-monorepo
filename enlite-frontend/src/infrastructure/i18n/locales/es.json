@@ -673,6 +673,199 @@
     "noAdditional": "No hay documentos adicionales"
   },
   "admin": {
+    "anacareHours": {
+      "title": "Horas Ana Care",
+      "updatedAt": "Retrato actualizado: {{datetime}}",
+      "monthAriaLabel": "Mes",
+      "months": {
+        "2026-08": "Agosto 2026",
+        "2026-09": "Septiembre 2026"
+      },
+      "stale": {
+        "title": "Retrato desactualizado",
+        "titleNaoConstruido": "Retrato aún no construido",
+        "messageCircuitBreaker": "La sincronización con Ana Care está fallando y la protección de carga fue activada (disjuntor). El último retrato tiene más de 24 horas.",
+        "messageSimple": "El último retrato tiene más de 24 horas. La sincronización con Ana Care no se completó.",
+        "messageNaoConstruido": "Todavía no se ejecutó ninguna sincronización con Ana Care para este mes — el retrato nunca fue construido.",
+        "reasonLargo": "Retrato con más de 24 horas — validación deshabilitada hasta actualizar.",
+        "reasonLargoCircuitBreaker": "Sincronización con Ana Care fallando — protección de carga activada (disjuntor). Validación deshabilitada hasta el próximo retrato.",
+        "reasonCorto": "retrato desactualizado",
+        "blockedPrefix": "Validación bloqueada: {{reason}}"
+      },
+      "list": {
+        "searchPlaceholder": "Buscar paciente…",
+        "searchAriaLabel": "Buscar paciente",
+        "providerFilterPlaceholder": "Todos los prestadores",
+        "providerFilterAriaLabel": "Filtrar por prestador",
+        "table": {
+          "patient": "Paciente",
+          "providers": "Prestadores",
+          "shifts": "Turnos",
+          "totalHours": "Horas totales",
+          "validation": "Validación",
+          "originCheckin": "Origen check-in"
+        },
+        "emptyNoShifts": "No hay turnos registrados para este mes.",
+        "emptyNoMatch": "Ningún paciente coincide con los filtros aplicados.",
+        "contestedSuffix": "· {{count}} contest.",
+        "loading": "Cargando…",
+        "validationSummary_one": "{{count}}/{{total}} validado",
+        "validationSummary_other": "{{count}}/{{total}} validados",
+        "validationSummaryContestedSuffix_one": " · {{count}} contestado",
+        "validationSummaryContestedSuffix_other": " · {{count}} contestados",
+        "providerFilterNoMatch": "Ningún prestador coincide con la búsqueda.",
+        "providerFilterAllOption": "Todos los prestadores"
+      },
+      "detail": {
+        "back": "Volver",
+        "patientNotFound": "Paciente no encontrado en el retrato de {{month}}.",
+        "totalHoursLabel": "Horas totales del mes",
+        "validationLabel": "Validación — {{validated}}/{{total}}",
+        "validationContestedSuffix_one": " · {{count}} contestado",
+        "validationContestedSuffix_other": " · {{count}} contestados",
+        "loading": "Cargando…",
+        "refreshAction": "Actualizar",
+        "weekLabel": "Semana del {{start}} al {{end}}",
+        "weekPrev": "Semana anterior",
+        "weekNext": "Próxima semana",
+        "weekEmpty": "Sin turnos registrados esta semana.",
+        "weekPickerAriaLabel": "Ir a la semana de una fecha"
+      },
+      "dayGroup": {
+        "selectAllPendingAriaLabel": "Seleccionar todos los turnos pendientes del {{date}}",
+        "totalsSummary": "{{total}} h · {{validated}} h validadas",
+        "sendAction": "Enviar",
+        "axonico": {
+          "reasons": {
+            "notValidated": "Validá todos los turnos del día para enviar",
+            "missingCheckInOut": "Falta check-in o check-out en algún turno del día",
+            "fractionalHours": "El total del día no es una hora completa",
+            "missingDocument": "Falta el documento del paciente"
+          },
+          "sentLabel": "Enviado — comprobante {{numero}}",
+          "duplicatedLabel": "Ya estaba facturado — comprobante {{numero}}",
+          "duplicatedNoComprobanteLabel": "Ya fue facturado — número de comprobante no disponible",
+          "documentModal": {
+            "title": "Documento del paciente",
+            "description": "Este paciente todavía no tiene un documento registrado. Ingresá el número una vez — no se va a volver a preguntar.",
+            "inputLabel": "Número de documento",
+            "inputPlaceholder": "Ej.: 30111222",
+            "cancel": "Cancelar",
+            "confirm": "Registrar y enviar",
+            "errorConflict": "Ya hay un documento distinto registrado para este paciente. Verificá el número con el equipo antes de reintentar.",
+            "errorInvalid": "No se pudo registrar el documento. Verificá el número ingresado."
+          }
+        },
+        "table": {
+          "provider": "Prestador",
+          "checkin": "Check-in",
+          "checkout": "Check-out"
+        }
+      },
+      "error": {
+        "generic": "Ocurrió un error inesperado.",
+        "loadMonth": "No se pudo cargar el mes.",
+        "loadPatient": "No se pudo cargar el paciente.",
+        "validateShift": "No se pudo validar el turno.",
+        "validateBatch": "No se pudo validar el lote.",
+        "contestShift": "No se pudo contestar el turno.",
+        "sourceNotConfigured": "La fuente de datos de Ana Care no está configurada. Contacte al equipo técnico.",
+        "noValidateCell": "No tiene permiso para validar o contestar turnos.",
+        "byCode": {
+          "RETRATO_DESATUALIZADO": "El retrato está desactualizado — la validación está deshabilitada hasta el próximo retrato.",
+          "JA_VALIDADO": "Este turno ya fue validado — no puede reabrirse.",
+          "MOTIVO_INVALIDO": "El motivo de la contestación no es válido.",
+          "NOTA_MUITO_LONGA": "La nota supera el límite de caracteres permitido.",
+          "FONTE_NAO_CONFIGURADA": "La fuente de datos de Ana Care no está configurada. Contacte al equipo técnico.",
+          "TURNO_NAO_ENCONTRADO": "No se encontró el turno.",
+          "DESCONHECIDO": "Ocurrió un error inesperado."
+        }
+      },
+      "origin": {
+        "sinCheckin": "Sin check-in",
+        "webAdmin": "Web admin",
+        "app": "App",
+        "scheduledNoActivity": "Programado, sin actuación",
+        "descriptionApp": "El prestador registró el ingreso desde la app, en el momento del turno.",
+        "descriptionWebAdmin": "Horario cargado a mano por alguien del equipo en el panel web de Ana Care. No comprueba la presencia.",
+        "descriptionSinCheckin": "No hay registro de ingreso: el prestador estaba programado pero no actuó."
+      },
+      "status": {
+        "pendiente": "Pendiente",
+        "validado": "Validado",
+        "contestado": "Contestado"
+      },
+      "providerGroup": {
+        "shiftsAndHours_one": "{{count}} turno · {{hours}} h",
+        "shiftsAndHours_other": "{{count}} turnos · {{hours}} h",
+        "validateN": "Validar ({{count}})",
+        "allValidated": "Todo validado",
+        "noPendingContested": "Sin turnos pendientes (quedan contestados por resolver)",
+        "table": {
+          "date": "Fecha",
+          "scheduled": "Previsto",
+          "actual": "Real",
+          "hours": "Horas",
+          "origin": "Origen",
+          "status": "Estado",
+          "actions": "Acciones",
+          "select": "Seleccionar"
+        },
+        "validatedBy": "Validado por {{name}} · {{date}}",
+        "validateAction": "Validar",
+        "contestAction": "Contestar",
+        "note": "Nota: {{note}}",
+        "noteRestricted": "Nota restringida",
+        "reason": "Motivo: {{reason}}",
+        "selectAllPendingAriaLabel": "Seleccionar todos los turnos pendientes de {{provider}}",
+        "shiftCheckboxAriaLabel": "Seleccionar turno del {{date}}"
+      },
+      "batchModal": {
+        "title_one": "Validar {{count}} turno pendiente de {{provider}} — {{hours}} h",
+        "title_other": "Validar {{count}} turnos pendientes de {{provider}} — {{hours}} h",
+        "description": "De estos turnos, {{sinCheckin}} son sin check-in y {{webAdmin}} fueron cargados desde web admin. Una vez validados, no pueden reabrirse.",
+        "cancel": "Cancelar",
+        "confirm": "Validar pendientes",
+        "titleSelection_one": "Validar {{count}} turno seleccionado — {{hours}} h",
+        "titleSelection_other": "Validar {{count}} turnos seleccionados — {{hours}} h"
+      },
+      "contestModal": {
+        "title": "Contestar turno del {{date}}",
+        "reasonLabel": "Motivo",
+        "reasonPlaceholder": "Seleccione un motivo…",
+        "reasons": {
+          "no_asistio": "No asistió",
+          "horario_distinto": "Horario distinto al registrado",
+          "horas_mal_cargadas": "Horas mal cargadas",
+          "otro": "Otro"
+        },
+        "noteLabel": "Nota (opcional)",
+        "notePlaceholder": "Describa el motivo de la contestación…",
+        "noteCount": "{{count}}/{{max}} caracteres",
+        "clinicalWarning": "No incluya información clínica del paciente",
+        "cancel": "Cancelar",
+        "confirm": "Confirmar contestación"
+      },
+      "selectionBar": {
+        "summary_one": "{{count}} turno seleccionado · {{hours}} h · {{sinCheckin}} sin check-in",
+        "summary_other": "{{count}} turnos seleccionados · {{hours}} h · {{sinCheckin}} sin check-in",
+        "validate": "Validar",
+        "clear": "Limpiar selección"
+      },
+      "legend": {
+        "title": "Origen del check-in",
+        "openAriaLabel": "Ver leyenda de origen del check-in",
+        "closeAriaLabel": "Cerrar leyenda"
+      },
+      "sync": {
+        "button": "Sincronizar",
+        "resumeButton": "Retomar sincronización",
+        "resumeHint": "Hay una sincronización interrumpida — se retomará desde donde quedó.",
+        "progress": "Ronda {{round}} · {{count}} reservas procesadas",
+        "done": "Sincronización completa.",
+        "deduped": "Ya hay una sincronización en curso — no se inició otra."
+      }
+    },
     "managementDashboard": {
       "help": {
         "ariaLabel": "¿Qué es este número?",
@@ -1111,12 +1304,15 @@
       "dedup": "Duplicados",
       "adminSection": "Administración",
       "patientChatRoles": "Roles de grupos",
+      "access": "Accesos y permisos",
       "funnelStageMessages": "Mensajes por etapa",
       "presentationInvite": "Invitación a presentación",
       "map": "Mapa",
+      "anacareHours": "Horas Ana Care",
       "templateCatalog": "Plantillas",
       "templateDrafts": "Registrar mensaje",
-      "anacareHours": "Horas Ana Care"
+      "catalogObjectives": "Objetivos específicos",
+      "catalogActivities": "Rutina y actividades"
     },
     "dedup": {
       "title": "Centro de Duplicados",
@@ -1371,10 +1567,6 @@
       "cancel": "Cancelar",
       "name": "Nombre",
       "email": "Email",
-      "role": "Rol",
-      "roleAdmin": "Administrador",
-      "roleRecruiter": "Reclutador",
-      "roleCommunityManager": "Community Manager",
       "department": "Departamento",
       "lastLogin": "Último login",
       "actions": "Acciones",
@@ -1393,8 +1585,7 @@
       "linkCopied": "Link copiado al portapapeles",
       "invitationFallbackTitle": "Usuario creado",
       "invitationFallbackDesc": "Ya enviamos un email con el link para definir la contraseña. Si no llega, podés copiarlo abajo y enviarlo manualmente.",
-      "done": "Listo",
-      "errorUpdateRole": "Error al actualizar el rol"
+      "done": "Listo"
     },
     "recruitment": {
       "title": "Dashboard de Reclutamiento",
@@ -1863,6 +2054,7 @@
       "loading": "Cargando vacantes...",
       "errorLoading": "Error al cargar vacantes",
       "searchPlaceholder": "Buscar por nombre del paciente",
+      "searchPlaceholderSemNome": "Buscar por caso, vacante o título",
       "statusLabel": "Estado",
       "priorityLabel": "Prioridad",
       "noVacancies": "No se encontraron vacantes",
@@ -2850,17 +3042,6 @@
     "patients": {
       "title": "Pacientes",
       "listTitle": "Lista de Pacientes",
-      "activate": {
-        "button": "Activar paciente",
-        "confirmTitle": "Activar paciente",
-        "confirmBody": "Se generará una vacante borrador por cada localización activa y el paciente pasará a Activo. ¿Confirmás?",
-        "confirm": "Activar",
-        "cancel": "Cancelar",
-        "successToast": "Paciente activado — {{count}} vacantes borrador creadas",
-        "noAddress": "Agregá al menos una localización antes de activar.",
-        "error": "No se pudo activar el paciente",
-        "notReady": "No se puede activar: falta {{items}}."
-      },
       "editDrawer": {
         "generalTitle": "Editar información general",
         "clinicalTitle": "Editar diagnóstico",
@@ -2919,6 +3100,16 @@
         "email": "E-mail",
         "documentType": "Tipo de documento",
         "documentNumber": "Número de documento",
+        "externalContactsTitle": "Editar red de contactos",
+        "externalContact": "Contacto",
+        "addExternalContact": "Agregar contacto",
+        "removeExternalContact": "Quitar",
+        "relation": "Relación",
+        "name": "Nombre",
+        "externalContactsNotice": "El contacto de esta persona queda registrado en la ficha y puede figurar en documentos entregados a la familia o al financiador.",
+        "markEmergencyContact": "Marcar como contacto de emergencia",
+        "unmarkEmergencyContact": "Contacto de emergencia (quitar)",
+        "markEmergencyContactError": "No se pudo actualizar el contacto de emergencia. Probá de nuevo.",
         "coverageTitle": "Editar cobertura médica",
         "coverageFromClickup": "(del ClickUp)",
         "contractedServicesTitle": "Editar servicios contratados",
@@ -2977,7 +3168,14 @@
         "editServiceTitle": "Editar servicio contratado",
         "serviceNotFound": "Este servicio ya no existe en la ficha.",
         "decimalCommaWarning": "Para decimales usá punto (.), no coma.",
-        "listReloadError": "El cambio se guardó, pero no pudimos recargar la lista. Cerrá y volvé a abrir."
+        "listReloadError": "El cambio se guardó, pero no pudimos recargar la lista. Cerrá y volvé a abrir.",
+        "coverageContactAdd": "Agregar contacto",
+        "coverageContactName": "Nombre / institución",
+        "coverageContactPhone": "Teléfono",
+        "coverageContactRemove": "Quitar contacto",
+        "coverageContactEmpty": "Sin contactos de emergencia de la cobertura.",
+        "coverageContactNotice": "Estos datos quedan registrados en la ficha del paciente y se imprimen en el Proyecto Terapéutico que se entrega a la familia y a la cobertura. Si cargás a un profesional, informale que su contacto figura acá.",
+        "coverageContactsRedacted": "No podés ver los contactos de emergencia de la cobertura, por eso no se editan acá."
       },
       "kanban": {
         "title": "Pacientes — Kanban",
@@ -2999,7 +3197,8 @@
         "moveErrorCodes": {
           "PATIENT_STATUS_TRANSITION_NOT_ALLOWED": "Ese cambio de estado no está permitido.",
           "ON_HOLD_REASON_REQUIRED": "Para poner en espera hace falta indicar el motivo.",
-          "PATIENT_STATUS_NOT_READY": "No se puede mover: faltan datos obligatorios en la ficha."
+          "PATIENT_STATUS_NOT_READY": "No se puede mover: faltan datos obligatorios en la ficha.",
+          "KANBAN_ACTIVATION_MOVED_TO_SERVICE": "Para activar, usá \"Activar reclutamiento\" en el servicio contratado de la ficha del paciente."
         },
         "moveNotReady": "No se puede mover: falta {{items}}."
       },
@@ -3041,6 +3240,9 @@
         "unset": "—",
         "firstName": "Nombre",
         "lastName": "Apellido",
+        "country": "País",
+        "countryPlaceholder": "Seleccionar país",
+        "countryRequired": "Seleccioná el país del paciente",
         "phoneWhatsapp": "WhatsApp",
         "contactEmail": "Email de contacto",
         "documentType": "Tipo de documento",
@@ -3179,9 +3381,28 @@
           "movePhoneConfirmBody": "Se va a borrar el WhatsApp del paciente (el del responsable no se toca). ¿Confirmás?",
           "movePhoneError": "No se pudo mover el número. Probá de nuevo.",
           "movePhoneSuccess": "Número movido — el WhatsApp del paciente quedó vacío.",
-          "primaryResponsibleContact": "Contacto del responsable principal",
-          "responsibleContact": "Contacto del responsable",
-          "relationship": "Parentesco"
+          "relationship": "Parentesco",
+          "emergencyContactTitle": "Contacto de Emergencia:",
+          "emergencyContactRedacted": "No tenés permiso para ver el contacto de emergencia.",
+          "emergencyContactNotSet": "No definido",
+          "emergencyContactNameExternal": "Nombre del contacto",
+          "emergencyContactPhoneExternal": "Teléfono del contacto",
+          "emergencyContactDocumentNumber": "Número del documento",
+          "photo": {
+            "altText": "Foto del paciente",
+            "uploadButton": "Subir foto",
+            "changeButton": "Cambiar foto",
+            "removeButton": "Quitar foto",
+            "errorInvalidType": "Formato inválido — solo JPEG o PNG.",
+            "errorTooLarge": "El archivo supera el límite de 5 MB.",
+            "errorUploadGeneric": "No se pudo subir la foto. Probá de nuevo.",
+            "errorRemoveGeneric": "No se pudo quitar la foto. Probá de nuevo.",
+            "removeConfirmTitle": "Quitar la foto de perfil",
+            "removeConfirmBody": "Esta acción borra la foto del paciente. ¿Confirmás?",
+            "removeConfirmCancel": "Cancelar",
+            "removeConfirmYes": "Quitar foto",
+            "removeConfirmBusy": "Quitando…"
+          }
         },
         "documentTypes": {
           "CPF": "CPF",
@@ -3203,12 +3424,21 @@
           "ageBracket": "Franja etaria",
           "sex": "Sexo",
           "gender": "Género",
-          "sexualOrientation": "Orientación Sexual",
-          "racialOrigin": "Origen racial",
-          "religion": "Religión",
           "languages": "Idiomas",
           "ageYears": "{{count}} años",
-          "serviceStartDate": "Inicio del servicio"
+          "serviceStartDate": "Inicio del servicio",
+          "genderOptions": {
+            "FEMALE": "Femenino",
+            "MALE": "Masculino",
+            "NON_BINARY": "No binario",
+            "OTHER": "Otro",
+            "PREFER_NOT_TO_SAY": "Prefiero no decir"
+          },
+          "languageOptions": {
+            "pt": "Portugués",
+            "es": "Español",
+            "en": "Inglés"
+          }
         },
         "diagnosisCard": {
           "title": "Diagnóstico",
@@ -3250,19 +3480,60 @@
           "symptoms": "Síntomas",
           "observations": "Observaciones",
           "deadlines": "Plazos",
-          "pathologyTypes": "Tipos de patologías - ICHOM",
           "tableVersion": "Versión",
           "tableAuthor": "Autor",
           "tableStartDate": "Fecha de Inicio",
-          "tableEndDate": "Fecha de Término"
+          "tableEndDate": "Fecha de Término",
+          "service": "Servicio contratado",
+          "serviceUnknown": "Servicio no encontrado",
+          "redacted": "Sin permiso para ver este dato",
+          "annulled": "Anulada",
+          "newButton": "Nuevo",
+          "empty": "Este paciente todavía no tiene proyecto terapéutico.",
+          "needsService": "Para crear un proyecto terapéutico, el paciente necesita un servicio contratado activo.",
+          "tableView": "Ver",
+          "viewVersion": "Ver versión {{version}}",
+          "modality": "Modalidad",
+          "modalityOptions": {
+            "IN_PERSON": "Presencial",
+            "ONLINE": "On-line",
+            "HYBRID": "Híbrida"
+          },
+          "contacts": "Contactos",
+          "contactInactive": "Contacto dado de baja"
         },
         "treatingTeamCard": {
           "title": "Equipo Tratante",
           "tableFullName": "Nombre Completo",
           "tablePhoneNumber": "Número de Teléfono",
+          "tableSpecialty": "Especialidad",
           "tableProfile": "Perfil",
           "isTeam": "Equipo tratante",
-          "professional": "Profesional"
+          "professional": "Profesional",
+          "newTitle": "Nuevo profesional",
+          "editTitle": "Editar profesional",
+          "editProfessional": "Editar profesional",
+          "deactivateProfessional": "Desactivar profesional",
+          "notice": "El contacto de este profesional (nombre, teléfono, e-mail) queda registrado en el legajo del paciente y puede salir impreso en el proyecto terapéutico entregado a la familia o al financiador.",
+          "deactivateConfirmTitle": "Desactivar profesional",
+          "deactivateConfirmBody": "El profesional deja de aparecer en la ficha del paciente. No se borra el historial.",
+          "deactivateConfirmCancel": "Cancelar",
+          "deactivateConfirmYes": "Desactivar",
+          "deactivateConfirmBusy": "Desactivando…",
+          "specialtyOptions": {
+            "PHYSICIAN": "Médico/a clínico",
+            "PSYCHIATRIST": "Psiquiatra",
+            "NEUROLOGIST": "Neurólogo/a",
+            "PEDIATRICIAN": "Pediatra",
+            "PSYCHOLOGIST": "Psicólogo/a",
+            "PHYSIOTHERAPIST": "Kinesiólogo/a",
+            "OCCUPATIONAL_THERAPIST": "Terapeuta ocupacional",
+            "SPEECH_THERAPIST": "Fonoaudiólogo/a",
+            "NUTRITIONIST": "Nutricionista",
+            "NURSE": "Enfermero/a",
+            "SOCIAL_WORKER": "Trabajador/a social",
+            "OTHER": "Otra especialidad"
+          }
         },
         "supervisionCard": {
           "title": "Supervisión",
@@ -3287,13 +3558,29 @@
           "tableName": "Nombre",
           "tablePhone": "Teléfono"
         },
+        "externalContactsCard": {
+          "title": "Red de contactos",
+          "tableRelation": "Relación",
+          "tableName": "Nombre",
+          "tablePhone": "Teléfono",
+          "tableEmergency": "Emergencia"
+        },
         "coverageCard": {
           "title": "Cobertura Médica",
           "providerName": "Nombre de la Cobertura",
           "plan": "Plan del Paciente",
           "emergencyNumbers": "Números de Emergencia",
           "credential": "Credencial",
-          "verified": "Cobertura verificada"
+          "verified": "Cobertura verificada",
+          "emergencyContacts": "Emergencia de la cobertura médica",
+          "emergencyContactKinds": {
+            "DIRECT_PROFESSIONAL": "Profesional directo",
+            "PUBLIC_EMERGENCY_SERVICE": "Emergencias públicas (SAME 107)",
+            "PRIVATE_AMBULANCE": "Ambulancia privada",
+            "INSURANCE_EMERGENCY": "Emergencias de la cobertura/plan"
+          },
+          "emergencyContactsUnavailable": "No disponible ahora — recargá la ficha o avisá a soporte.",
+          "directProfessionalRedacted": "Profesional directo: no visible con tu permiso (hace falta la celda del equipo tratante)."
         },
         "locationsCard": {
           "title": "Localizaciones",
@@ -3381,7 +3668,14 @@
           "newButton": "Nuevo servicio",
           "editRowAria": "Editar el servicio {{service}}",
           "tableActions": "Acciones",
-          "detailEdit": "Editar"
+          "detailEdit": "Editar",
+          "activateRecruitmentAria": "Activar reclutamiento para {{service}}",
+          "activateRecruitmentTooltip": "Falta: {{items}}",
+          "viewVacancyAria": "Ver vacante de {{service}}",
+          "viewVacancy": "Ver vacante",
+          "activateRecruitmentToast": "Vacante en borrador creada",
+          "activateRecruitmentError": "No se pudo activar el reclutamiento",
+          "activateRecruitmentAlreadyRecruiting": "Este servicio ya tiene una vacante en curso"
         },
         "matchingCard": {
           "title": "Encuadre Terapéutico",
@@ -3432,11 +3726,27 @@
           "GUARDIAN": "Tutor/a",
           "FRIEND": "Amigo/a",
           "PARTNER": "Pareja",
+          "OTHER": "Otro",
+          "GRANDPARENT": "Abuelo/a",
+          "UNCLE_AUNT": "Tío/a",
+          "COUSIN": "Primo/a",
+          "IN_LAW": "Familiar político",
+          "STEP_RELATIVE": "Familiar por afinidad",
+          "RESPONSIBLE_PERSON": "Persona responsable"
+        },
+        "externalContactRelationOptions": {
+          "TEACHER": "Docente",
+          "SCHOOL_DIRECTOR": "Director/a de escuela",
+          "SCHOOL_STAFF": "Personal de la escuela",
+          "NEIGHBOR": "Vecino/a",
+          "EMPLOYER": "Empleador/a",
+          "INSURANCE_CASE_MANAGER": "Gestor/a de caso de la obra social",
+          "COMMUNITY_REFERENT": "Referente comunitario",
           "OTHER": "Otro"
         },
         "addressDrawer": {
           "createTitle": "Nueva localización",
-          "editTitle": "Editar logística",
+          "editTitle": "Editar localización",
           "address": "Dirección",
           "addressRequired": "Ingresá la dirección",
           "addressNotPicked": "Elegí una dirección de la lista de sugerencias",
@@ -3456,8 +3766,7 @@
           "typeOtherHint": "Sin nombres ni datos de salud",
           "markPrimary": "Marcar como principal",
           "neighborhood": "Zona / Barrio",
-          "corridor": "Corredor logístico",
-          "accessNotes": "Logística y acceso"
+          "typeSaveWarning": "La dirección se creó, pero no pudimos guardar el tipo — editala después desde la ficha."
         },
         "completeness": {
           "title": "Para activar falta:",
@@ -3477,7 +3786,47 @@
             "CONSENT": "Consentimiento"
           }
         },
-        "viewInKanban": "Ver en Kanban"
+        "viewInKanban": "Ver en Kanban",
+        "therapeuticProjectForm": {
+          "newTitle": "Nuevo proyecto terapéutico",
+          "newSubtitle": "Nueva versión — se numera al guardar",
+          "versionSubtitle": "{{version}} - Creado por: {{author}}",
+          "service": "Servicio contratado",
+          "servicePlaceholder": "Elegí el servicio",
+          "noActiveService": "El paciente no tiene servicio contratado activo.",
+          "removeDiagnosis": "Quitar {{title}}",
+          "selectPlaceholder": "Elegí una o más opciones",
+          "startDate": "Fecha de inicio",
+          "endDate": "Fecha de término",
+          "endBeforeStart": "La fecha de término no puede ser anterior a la de inicio.",
+          "save": "Guardar",
+          "saving": "Guardando…",
+          "exportPdf": "Exportar PDF",
+          "exporting": "Generando…",
+          "loadingCatalogs": "Cargando catálogos…",
+          "discardConfirm": "¿Descartar los cambios sin guardar?",
+          "redactedCannotEdit": "No tenés permiso para ver el texto clínico de esta versión; no se puede crear una nueva versión a partir de ella.",
+          "contactRemovedInactive": "Contacto dado de baja — no se incluye en la nueva versión: {{kinds}}.",
+          "errors": {
+            "forbidden": "No tenés permiso para escribir el proyecto terapéutico (hace falta también la celda clínica).",
+            "catalogItemsUnknown": "Alguna opción elegida ya no está activa en el catálogo. Volvé a elegir.",
+            "serviceNotOfPatient": "El servicio elegido no es de este paciente.",
+            "sourceNotFound": "La versión de origen ya no existe o fue anulada.",
+            "diagnosisUnknown": "El diagnóstico elegido ya no existe en el catálogo CIE-11. Volvé a buscarlo y elegilo de nuevo.",
+            "terminologyUnavailable": "El catálogo CIE-11 no está disponible en este momento. Intentá de nuevo en unos minutos.",
+            "ptpMacroLocked": "Los campos {{fields}} no se pueden cambiar editando la versión vigente. Creá un proyecto nuevo si necesitás cambiarlos.",
+            "ptpNotCurrent": "Esta versión dejó de ser la vigente mientras editabas. Cerrá y volvé a abrir el proyecto terapéutico.",
+            "ptpContactInactive": "Uno de los contactos elegidos ya no está activo. Volvé a elegir."
+          },
+          "modalityPlaceholder": "Elegí la modalidad",
+          "segmentFilter": "Filtrar por segmento",
+          "segmentFilterPlaceholder": "Todos los segmentos",
+          "segmentFilterAll": "Todos los segmentos",
+          "responsibles": "Responsables",
+          "externalContacts": "Contactos externos",
+          "coverageContacts": "Contactos de la cobertura",
+          "careTeam": "Equipo tratante"
+        }
       },
       "statusOptions": {
         "SOLICITANTE": "Solicitante",
@@ -3758,6 +4107,596 @@
         "CHAT_ROLE_NOT_FOUND": "Ese rol no existe (¿alguien lo eliminó mientras tanto?)."
       }
     },
+    "welcomeNoGroup": {
+      "title": "¡Bienvenido/a a Enlite!",
+      "message": "Tu cuenta todavía no tiene un grupo de acceso asignado. Hablá con el gestor de accesos de tu equipo para que te agregue a uno.",
+      "inactiveTitle": "Cuenta inactiva",
+      "inactiveMessage": "Tu cuenta está inactiva. Hablá con el gestor de accesos de tu equipo.",
+      "logout": "Cerrar sesión"
+    },
+    "access": {
+      "title": "Accesos y permisos",
+      "subtitle": "Grupos, células, países y disponibilidad por país. Lo que no ves acá, no existe para vos.",
+      "tabs": {
+        "groups": "Grupos",
+        "features": "Funciones por país",
+        "audit": "Auditoría"
+      },
+      "loading": "Cargando tu contrato de autorización…",
+      "authzError": "No se pudo cargar tu contrato de autorización. Recargá la página; si persiste, avisá a Tecnología.",
+      "readOnlyNotice": "Solo lectura: tenés permiso para ver, no para modificar.",
+      "groups": {
+        "title": "Grupos",
+        "new": "Nuevo grupo",
+        "includeArchived": "Incluir archivados",
+        "name": "Nombre",
+        "description": "Descripción",
+        "cells": "Células",
+        "countries": "Países",
+        "members": "Miembros",
+        "system": "Sistema",
+        "archived": "Archivado",
+        "empty": "No hay grupos.",
+        "create": "Crear",
+        "cancel": "Cancelar",
+        "open": "Abrir",
+        "loadError": "No se pudieron cargar los grupos."
+      },
+      "group": {
+        "back": "Volver a grupos",
+        "save": "Guardar",
+        "saved": "Guardado.",
+        "archive": "Archivar grupo",
+        "archiveConfirm": "¿Archivar este grupo? Sus miembros pierden estas células. Confirmá.",
+        "archiveYes": "Sí, archivar",
+        "archiveNo": "No",
+        "archived": "Grupo archivado.",
+        "cellsTitle": "¿Qué puede hacer este grupo?",
+        "cellsSave": "Guardar células",
+        "reasonPlaceholder": "Por qué cambia (queda en la trilla)",
+        "countriesTitle": "Países",
+        "membersTitle": "Miembros",
+        "addMember": "Agregar miembro",
+        "remove": "Quitar",
+        "pickUser": "Elegí una persona",
+        "email": "E-mail",
+        "role": "Rol",
+        "status": "Estado",
+        "since": "Desde",
+        "noMembers": "Sin miembros.",
+        "noCountries": "Sin países.",
+        "notFound": "Grupo no encontrado.",
+        "lastManager": "No se puede: dejaría al equipo sin nadie con permission_management:write.",
+        "systemGroup": "Los grupos de sistema no se renombran ni se archivan.",
+        "duplicateName": "Ya existe un grupo con ese nombre.",
+        "error": "No se pudo completar la acción.",
+        "reasonRequired": "Escribí el motivo: queda en la trilla de auditoría.",
+        "transfer": {
+          "grants_one": "Este grupo da {{count}} célula en {{countries}}. Quien entra, recibe eso.",
+          "grants_other": "Este grupo da {{count}} células en {{countries}}. Quien entra, recibe eso.",
+          "rest": "Resto del equipo",
+          "filter": "Filtrar el equipo…",
+          "toMembers": "Agregar a los miembros",
+          "toRest": "Quitar de los miembros",
+          "unsaved": "Cambios sin guardar",
+          "locked": "Último gestor del equipo: no se puede quitar.",
+          "allInside": "Todo el equipo ya es miembro."
+        },
+        "cells": {
+          "about": "Sobre qué",
+          "na": "no existe",
+          "changed": "cambiado, sin guardar",
+          "empty": "El catálogo todavía no fue sincronizado.",
+          "searchLabel": "Buscar permisos",
+          "searchPlaceholder": "Buscar por pantalla, sección o clave técnica (ej.: patient_family:read)",
+          "noSearchResults": "Ningún permiso coincide con la búsqueda.",
+          "clean": "Sin cambios",
+          "selected": "Seleccionadas: {{total}}",
+          "lockedBy": "Requerida por {{acoes}} — no se puede quitar sin quitar eso primero",
+          "pending": "+{{added}} célula(s) · −{{removed}} célula(s) · afecta a {{people}} persona(s)",
+          "action": {
+            "read": "Ver",
+            "create": "Crear",
+            "update": "Editar",
+            "delete": "Elim.",
+            "export": "Expor.",
+            "validate": "Valid.",
+            "execute": "Ejecutar",
+            "send": "Enviar",
+            "disable": "Dar de baja"
+          },
+          "category": {
+            "Trabalhadores": "Trabajadores",
+            "Vagas e Funil": "Vacantes y embudo",
+            "Pacientes": "Pacientes",
+            "Recrutamento": "Reclutamiento",
+            "Analytics": "Analítica",
+            "Operações": "Operaciones",
+            "Comunicação": "Comunicación",
+            "Importação": "Importación",
+            "Administração": "Administración",
+            "Não categorizado": "Sin categoría"
+          },
+          "resource": {
+            "worker": "Prestador en operación",
+            "worker_contact": "Contacto: nombre, teléfono",
+            "worker_pii": "Dossier: DNI, nacimiento, datos sensibles",
+            "worker_address": "Dirección del prestador: línea, coordenada, radio",
+            "worker_document": "Documentos",
+            "vacancy": "Vacantes",
+            "funnel": "Embudo",
+            "interview": "Entrevistas",
+            "match": "Matching",
+            "patient": "Paciente en operación (estado, embudo, caso)",
+            "recruitment": "Reclutamiento",
+            "talentum": "Talentum",
+            "prescreening": "Preselección",
+            "analytics": "Analítica",
+            "dedup": "Duplicados",
+            "dashboard": "Gestión a la Vista (abrir la pantalla)",
+            "dashboard_numbers": "Números clave",
+            "dashboard_team": "Equipo armado y horas",
+            "dashboard_priorities": "Prioridades de contacto",
+            "dashboard_registrations": "Registros",
+            "dashboard_funnel": "Totalización del embudo",
+            "dashboard_zones": "Zonas",
+            "integration": "Integraciones",
+            "test_fixtures": "Datos de prueba",
+            "api_docs": "Documentación de la API",
+            "messaging": "Mensajería",
+            "upload": "Importación de archivos",
+            "user_management": "Usuarios del panel",
+            "permission_management": "Accesos y permisos",
+            "patient_identity": "Identidad: nombre, documento, teléfono",
+            "patient_clinical": "Cuadro clínico: patologías, dependencia, textos restringidos",
+            "patient_care_team": "Equipo tratante",
+            "patient_family": "Familiares y responsables",
+            "patient_chat": "Grupos de WhatsApp del caso",
+            "patient_coverage": "Cobertura médica",
+            "patient_address": "Direcciones y localidad",
+            "patient_services": "Servicios contratados"
+          },
+          "help": {
+            "open": "Qué hace este permiso",
+            "close": "Cerrar",
+            "actions": "Qué hace cada casilla de esta fila",
+            "missing": "Todavía no escribimos la explicación de este permiso. Mientras tanto, la clave técnica de arriba es lo único confiable.",
+            "resource": {
+              "analytics": {
+                "body": "Son los números del funnel y de la operación: cuánto entra, cuánto avanza, dónde se traba. Agregado, no persona por persona.",
+                "action": {
+                  "export": "Bajar los números a un archivo que sale del sistema.",
+                  "read": "Ver los tableros y las métricas."
+                }
+              },
+              "dashboard": {
+                "body": "Es abrir la pantalla Gestión a la Vista. Cada bloque de la pantalla (Números clave, Equipo armado, Prioridades, Registros, Totalización, Zonas, Pacientes) tiene su propio permiso: con este solo, la persona entra y ve la pantalla vacía.",
+                "action": {
+                  "read": "Abrir la pantalla Gestión a la Vista."
+                }
+              },
+              "dedup": {
+                "body": "Es la detección de duplicados: la misma persona cargada dos veces. Ver los grupos sospechosos y fusionarlos son dos permisos distintos — fusionar es irreversible en la práctica.",
+                "action": {
+                  "execute": "Correr la detección y fusionar los duplicados.",
+                  "read": "Ver los grupos de registros sospechados de estar duplicados."
+                }
+              },
+              "funnel": {
+                "body": "Es el recorrido del candidato dentro de una vacante: en qué etapa está cada uno y cuántos hay en cada una. Mueve personas entre etapas, no crea vacantes.",
+                "action": {
+                  "read": "Ver el tablero del embudo y en qué etapa está cada candidato.",
+                  "create": "Agregar una nota de contacto a un candidato.",
+                  "update": "Mover candidatos de etapa, y rechazar o restaurar postulaciones bloqueadas."
+                }
+              },
+              "integration": {
+                "body": "Son las integraciones con sistemas de afuera. Ojo: hoy este recurso sólo tiene «Ejecutar» — no existe un «Ver» para darle. Quien recibe esto puede disparar la integración sin tener ningún permiso de lectura, y eso es un hueco del catálogo, no de esta pantalla.",
+                "action": {
+                  "execute": "Disparar una integración con un sistema externo."
+                }
+              },
+              "interview": {
+                "body": "Son los encuadres: la agenda, quién atiende, el enlace de la reunión y lo que quedó registrado después. Es donde la coordinación decide si el prestador sigue.",
+                "action": {
+                  "delete": "Cancelar un encuadre y sacarlo de la agenda.",
+                  "read": "Ver los encuadres agendados y lo que quedó registrado de cada uno.",
+                  "create": "Agendar un turno de entrevista nuevo.",
+                  "update": "Reagendar o cargar el resultado de una entrevista ya agendada."
+                }
+              },
+              "match": {
+                "body": "Es el cruce entre prestador y paciente: quién encaja con qué caso por zona, disponibilidad y perfil. No decide nada solo — propone, y alguien confirma.",
+                "action": {
+                  "execute": "Correr el cálculo de matching y generar las sugerencias.",
+                  "read": "Ver las sugerencias de matching de una vacante."
+                }
+              },
+              "messaging": {
+                "body": "Es la mensajería con el prestador. Ver la conversación y MANDAR un mensaje son dos cosas distintas a propósito: escribir en nombre de la Enlite es un poder aparte, y por eso «Enviar» no viene con «Crear y editar».",
+                "action": {
+                  "read": "Leer las conversaciones y el historial de mensajes.",
+                  "send": "Mandar un mensaje de verdad al prestador, en nombre de la Enlite.",
+                  "create": "Crear una plantilla o un borrador nuevo, sin mandar nada.",
+                  "update": "Editar una plantilla o un borrador existente, sin mandar nada."
+                }
+              },
+              "patient": {
+                "body": "Es el paciente en OPERACIÓN: estado de admisión, número de caso, activación e historial de estados. Es el tronco del que sale todo lo demás — sin paciente no hay vacante ni grupo. NO abre nombre, diagnóstico, familiares, cobertura ni dirección: cada uno de esos es un permiso propio de la ficha.",
+                "action": {
+                  "read": "Ver la lista y el kanban de pacientes, abrir la ficha con el bloque de estado e historial.",
+                  "create": "Crear un paciente.",
+                  "update": "Cambiar el estado del paciente y activarlo.",
+                  "delete": "Purgar un paciente de PRUEBA (solo is_test) — herramienta del monitoreo sintético, sin botón en el panel."
+                }
+              },
+              "permission_management": {
+                "body": "Es esta pantalla. Quien la tiene decide qué puede hacer todo el resto del equipo, y en qué países — incluido darse más poder a sí mismo. Es el permiso que hay que dar con menos manos.",
+                "action": {
+                  "read": "Ver los grupos, sus células y quiénes son miembros, sin poder cambiar nada.",
+                  "write": "Crear grupos, cambiar células, conceder países y mover gente adentro y afuera."
+                }
+              },
+              "prescreening": {
+                "body": "Es el filtro de entrada: el cuestionario que el candidato responde antes de que alguien lo mire. Ahorra el trabajo de descartar a mano.",
+                "action": {
+                  "read": "Ver las respuestas de preselección de cada candidato.",
+                  "create": "Configurar por primera vez las preguntas y los criterios del filtro de una vacante.",
+                  "update": "Editar las preguntas y los criterios del filtro."
+                }
+              },
+              "recruitment": {
+                "body": "Es la captación: los leads que llegaron, por qué canal, y en qué estado está cada conversación antes de convertirse en prestador.",
+                "action": {
+                  "read": "Ver los leads captados y el estado de cada uno.",
+                  "create": "Registrar un lead nuevo.",
+                  "update": "Editar un lead existente y hacerlo avanzar."
+                }
+              },
+              "talentum": {
+                "body": "Es la integración con Talentum, el portal donde se publican las búsquedas. Lo que se toca acá sale hacia afuera de la Enlite, a un portal público.",
+                "action": {
+                  "read": "Ver qué se publicó en Talentum y con qué estado.",
+                  "create": "Publicar una búsqueda en Talentum.",
+                  "update": "Actualizar o dar de baja una búsqueda ya publicada en Talentum."
+                }
+              },
+              "test_fixtures": {
+                "body": "Son los datos de prueba del sistema. Mismo caso que integraciones: sólo existe «Ejecutar», no hay un «Ver» para acompañar.",
+                "action": {
+                  "execute": "Crear o limpiar datos de prueba."
+                }
+              },
+              "upload": {
+                "body": "Es la carga de archivos en lote — planillas que entran de una vez, en vez de registro por registro.",
+                "action": {
+                  "read": "Ver el historial de importaciones y cómo terminó cada una.",
+                  "create": "Subir un archivo y correr la importación.",
+                  "update": "Volver a correr una importación con datos corregidos."
+                }
+              },
+              "user_management": {
+                "body": "Son las cuentas del panel: quién puede entrar, con qué correo, activo o no. Es el «quién es del equipo», distinto de «qué puede hacer», que se decide en Accesos y permisos.",
+                "action": {
+                  "delete": "Sacar a alguien del panel.",
+                  "read": "Ver la lista de usuarios del panel.",
+                  "create": "Invitar a alguien nuevo al panel.",
+                  "update": "Editar la cuenta de alguien y resetear su contraseña."
+                }
+              },
+              "vacancy": {
+                "body": "Es el pedido de trabajo: qué caso, dónde, en qué horario y con qué requisitos. Todo el embudo cuelga de acá — sin vacante no hay postulación, ni matching, ni encuadre.",
+                "action": {
+                  "delete": "Eliminar una vacante del sistema.",
+                  "read": "Ver la lista de vacantes y abrir el detalle de cada una.",
+                  "create": "Crear una vacante.",
+                  "update": "Editar las condiciones de una vacante existente."
+                }
+              },
+              "worker": {
+                "body": "Es la puerta de entrada al prestador en operación: la lista, la ficha profesional, el estado en el que está y por qué vacantes pasó. Lo que NO aparece acá son los datos de identidad ni el contacto — esos viven en dos permisos aparte, justamente para que se puedan dar por separado. Abrir una ficha queda registrado.",
+                "action": {
+                  "delete": "Hoy no hace nada. Ninguna ruta del sistema exige este permiso, así que darlo o no darlo no cambia lo que la persona puede hacer. Está acá porque el catálogo lo declara.",
+                  "disable": "Dar de baja al prestador: deja de aparecer para matching y para las vacantes.",
+                  "export": "Genera un archivo que SALE del sistema y deja de estar bajo el control de este panel. Es masivo: baja el filtro entero, no un registro. Por sí solo no entrega el dossier — documento, fecha de nacimiento y domicilio sólo salen si la persona también tiene «Dossier: Ver»; sin eso, esas columnas se caen del archivo y el pedido vuelve avisando cuáles faltaron. Lo que sí sale, sale en claro: en la base está cifrado, y el archivo lo descifra.",
+                  "read": "Ver la lista y abrir la ficha profesional de cualquier prestador del país que el grupo alcanza.",
+                  "create": "Crear una etiqueta nueva para prestadores.",
+                  "update": "Editar esa ficha: datos profesionales, disponibilidad, zona, notas de operación; y asignar o dar de baja etiquetas."
+                }
+              },
+              "worker_contact": {
+                "body": "Es el nombre y el teléfono, nada más — el mínimo para poder llamar a alguien. Se separó del resto justamente para que coordinación pueda contactar sin abrir el dossier entero. Cada lectura de contacto queda registrada.",
+                "action": {
+                  "read": "Ver nombre y teléfono del prestador."
+                }
+              },
+              "worker_document": {
+                "body": "Son los archivos en sí, no campos de una ficha: identidad, antecedentes, certificados. Quien tiene esto se lleva un enlace de descarga del documento original. Es una categoría distinta del dossier — se puede dar una sin la otra.",
+                "action": {
+                  "delete": "Sacar un documento del legajo.",
+                  "read": "Abrir y descargar los documentos cargados del prestador.",
+                  "validate": "Aprobar o rechazar un documento — y también retirar una aprobación ya dada.",
+                  "create": "Subir un documento nuevo.",
+                  "update": "Reemplazar un documento existente o actualizar su fecha de vencimiento."
+                }
+              },
+              "worker_pii": {
+                "body": "Es el dossier de identidad, y es el permiso más pesado de esta pantalla. Abre documento de identidad (DNI/CUIL), fecha de nacimiento, sexo y género, fotos, peso y altura — y los datos que la ley protege de forma especial. La dirección NO viene acá: es su propio permiso, compartido con el mapa. Sin este permiso la persona sigue viendo la ficha profesional. Abrir una ficha queda registrado.",
+                "action": {
+                  "read": "Ver el dossier completo de identidad: documento, nacimiento, sexo, género, fotos, peso, altura y los datos que la ley protege de forma especial."
+                }
+              },
+              "worker_address": {
+                "body": "Es la dirección del prestador: línea de domicilio, coordenada y radio de atención. Vale en la ficha (card de dirección) y en la pestaña Prestadores del mapa — es la misma célula. Ciudad y zona de trabajo no la necesitan.",
+                "action": {
+                  "read": "Ver la dirección del prestador en la ficha y en el mapa (línea, coordenada, radio)."
+                }
+              },
+              "patient_identity": {
+                "body": "Es quién es el paciente: nombre, documento, fecha de nacimiento, sexo, teléfono y e-mail de contacto. También es el nombre que aparece en la lista, en el kanban, en la vacante y en el mapa. Sin este permiso el nombre sale como «Contato restrito» en todas esas pantallas.",
+                "action": {
+                  "read": "Ver el bloque de identidad y datos generales de la ficha, y el nombre del paciente donde aparezca.",
+                  "create": "Subir la foto del paciente.",
+                  "update": "Editar identidad y datos generales; cambiar o quitar la foto."
+                }
+              },
+              "patient_clinical": {
+                "body": "Es el cuadro clínico: diagnóstico (libre y CID-11), nivel de dependencia, especialidad, dispositivos, observaciones, CUD, protección judicial, consentimiento e instrucciones de emergencia. Es dato de SALUD: la ley lo protege de forma especial y cada apertura queda registrada.",
+                "action": {
+                  "read": "Ver el bloque de diagnóstico y cuadro clínico de la ficha (y el nivel de dependencia en la vacante).",
+                  "create": "Agregar un diagnóstico nuevo.",
+                  "update": "Editar el diagnóstico y el cuadro clínico."
+                }
+              },
+              "patient_care_team": {
+                "body": "Es el equipo tratante: los profesionales externos que atienden al paciente (nombre, teléfono, e-mail). Son datos de terceros, por eso van aparte del resto de la ficha.",
+                "action": {
+                  "read": "Ver el bloque de equipo tratante en la pestaña de datos clínicos."
+                }
+              },
+              "patient_family": {
+                "body": "Son los familiares y responsables del paciente: nombre, vínculo, teléfono. Son datos de OTRA persona, con base legal propia — por eso no vienen con el resto de la ficha y nunca están en un grupo por defecto.",
+                "action": {
+                  "read": "Ver el bloque de familiares en la pestaña de red de apoyo.",
+                  "create": "Agregar un familiar, responsable o contacto externo nuevo.",
+                  "update": "Editar o dar de baja un familiar, responsable o contacto externo; marcar o cambiar el contacto de emergencia."
+                }
+              },
+              "patient_chat": {
+                "body": "Son los IDs de los grupos de WhatsApp del caso (familia y prestadores). Un ID es la llave para entrar a una conversación con contexto clínico: por eso es permiso aparte, y quedará registrado quién lo recibió.",
+                "action": {
+                  "read": "Ver los IDs de chat del caso.",
+                  "create": "Vincular por primera vez los grupos de chat del caso.",
+                  "update": "Cambiar los grupos de chat ya vinculados."
+                }
+              },
+              "patient_coverage": {
+                "body": "Es la cobertura médica: obra social o prepaga, número de afiliado y la verificación de cobertura.",
+                "action": {
+                  "read": "Ver el bloque de cobertura médica en la pestaña de servicio contratado.",
+                  "create": "Agregar un contacto de emergencia de la cobertura.",
+                  "update": "Editar la cobertura, el número de afiliado, y los contactos de emergencia de la cobertura."
+                }
+              },
+              "patient_address": {
+                "body": "Son las direcciones del paciente: domicilio, localidad, barrio y coordenada. Es el MISMO permiso que abre la pestaña Pacientes del mapa y la zona del paciente en la vacante — la dirección es una sola, esté donde esté.",
+                "action": {
+                  "read": "Ver las localizaciones de la ficha, la zona del paciente en la vacante y la pestaña Pacientes del mapa.",
+                  "create": "Agregar una dirección nueva del paciente.",
+                  "update": "Editar una dirección existente del paciente."
+                }
+              },
+              "patient_services": {
+                "body": "Son los servicios contratados: tipo de servicio, profesión requerida, horarios, fecha de inicio y los prestadores asignados. Aparece en la pestaña de servicio contratado y también en la de matching. El valor por hora NO viene con este permiso: tiene su propia guarda.",
+                "action": {
+                  "read": "Ver los servicios contratados en las pestañas de servicio y de matching.",
+                  "create": "Crear un servicio contratado nuevo.",
+                  "update": "Editar un servicio contratado existente, sus prestadores, y activar el reclutamiento."
+                }
+              },
+              "dashboard_numbers": {
+                "body": "Es el bloque NÚMEROS CLAVE de Gestión a la Vista: pacientes activos, horas, porcentaje de respuesta rápida y de capacidad, qué está RODANDO y qué está CHEGANDO. Son contadores, sin datos personales.",
+                "action": {
+                  "read": "Ver el bloque Números clave."
+                }
+              },
+              "dashboard_team": {
+                "body": "Es el bloque EQUIPO ARMADO Y HORAS: cómo están clasificados los casos por equipo armado y las horas cubiertas por semana.",
+                "action": {
+                  "read": "Ver el bloque Equipo armado y horas."
+                }
+              },
+              "dashboard_priorities": {
+                "body": "Es el bloque PRIORIDADES DE CONTACTO: a quién la operación tiene que contactar primero, por urgencia.",
+                "action": {
+                  "read": "Ver el bloque Prioridades de contacto."
+                }
+              },
+              "dashboard_registrations": {
+                "body": "Es el bloque REGISTROS: cuántos prestadores y pacientes se registraron en el período.",
+                "action": {
+                  "read": "Ver el bloque Registros."
+                }
+              },
+              "dashboard_funnel": {
+                "body": "Es el bloque TOTALIZACIÓN DEL EMBUDO: postulaciones por etapa y por prestador, con el filtro de período, y los encuadres de la semana.",
+                "action": {
+                  "read": "Ver el bloque Totalización del embudo."
+                }
+              },
+              "dashboard_zones": {
+                "body": "Es el bloque ZONAS: pacientes y prestadores por zona y sexo, demanda contra disponibilidad, con filtro por profesión. Son contadores por zona, sin datos personales.",
+                "action": {
+                  "read": "Ver el bloque Zonas."
+                }
+              },
+              "api_docs": {
+                "body": "Es la documentación interactiva de la API (Swagger). Desde ahí se puede PROBAR cualquier ruta: cada llamada de prueba se rige por el permiso de esa ruta, no por este.",
+                "action": {
+                  "read": "Abrir la pantalla API Docs."
+                }
+              }
+            },
+            "imageAlt": "Así se ve «{{rotulo}}» en la pantalla",
+            "imageCaption": "Así se ve en la pantalla (datos de ejemplo)"
+          },
+          "alsoIn": "también en: {{telas}}",
+          "otherCells": "Otras células (sin pantalla)"
+        },
+        "editField": "Editar {{campo}}"
+      },
+      "features": {
+        "title": "Funciones por país",
+        "country": "País",
+        "feature": "Función",
+        "enabled": "Habilitada",
+        "source": "Origen",
+        "reason": "Motivo",
+        "updatedAt": "Actualizada",
+        "enable": "Habilitar",
+        "disable": "Deshabilitar",
+        "empty": "No hay funciones registradas.",
+        "default": "manifest",
+        "override": "panel",
+        "loadError": "No se pudieron cargar las funciones."
+      },
+      "audit": {
+        "title": "Auditoría de decisiones",
+        "userId": "Usuario (uid)",
+        "resource": "Recurso",
+        "limit": "Límite",
+        "search": "Buscar",
+        "when": "Cuándo",
+        "action": "Acción",
+        "decision": "Decisión",
+        "resourceId": "Id del recurso",
+        "country": "País",
+        "empty": "Sin registros para ese filtro.",
+        "loadError": "No se pudo leer la auditoría.",
+        "note": "La auditoría muestra identificadores y metadatos; nunca contenido."
+      },
+      "screens": {
+        "dashboard": {
+          "label": "Gestión a la Vista",
+          "containers": {
+            "numbers": "Números clave",
+            "team": "Equipo armado y horas",
+            "priorities": "Prioridades de contacto",
+            "registrations": "Registros",
+            "funnel": "Totalización del embudo",
+            "zones": "Zonas",
+            "patients": "Pacientes (estado y embudo)"
+          }
+        },
+        "users": {
+          "label": "Usuarios"
+        },
+        "patients.list": {
+          "label": "Pacientes: Lista"
+        },
+        "patients.kanban": {
+          "label": "Pacientes: Kanban"
+        },
+        "patients.detail": {
+          "label": "Pacientes: Detalles",
+          "containers": {
+            "identity": "Identidad y datos generales",
+            "clinical": "Diagnóstico y cuadro clínico",
+            "careTeam": "Equipo tratante",
+            "family": "Familiares",
+            "chat": "Grupos de chat (IDs)",
+            "coverage": "Cobertura médica",
+            "address": "Localizaciones",
+            "services": "Servicio contratado",
+            "contractValue": "Valor hora del servicio contratado",
+            "vacancies": "Vacantes del paciente",
+            "operational": "Estado, activación e historial",
+            "therapeuticProject": "Proyecto terapéutico"
+          }
+        },
+        "patients.chatRoles": {
+          "label": "Pacientes: Roles de grupos"
+        },
+        "map": {
+          "label": "Mapa",
+          "containers": {
+            "workers": "Prestadores (dirección y coordenada)",
+            "patients": "Pacientes (dirección y coordenada)"
+          }
+        },
+        "workers.list": {
+          "label": "Prestadores: Lista"
+        },
+        "workers.detail": {
+          "label": "Prestadores: Detalles",
+          "containers": {
+            "profile": "Perfil profesional, etiquetas y disponibilidad",
+            "contact": "Contacto (nombre, teléfono, e-mail)",
+            "dossier": "Dossier (DNI, nacimiento, datos sensibles)",
+            "documents": "Documentos",
+            "encuadres": "Encuadres",
+            "address": "Dirección (línea, coordenada, radio)"
+          }
+        },
+        "tags": {
+          "label": "Etiquetas"
+        },
+        "vacancies.list": {
+          "label": "Vacantes: Lista"
+        },
+        "vacancies.create": {
+          "label": "Vacantes: Crear y editar"
+        },
+        "vacancies.addressReview": {
+          "label": "Vacantes: Revisión de dirección"
+        },
+        "vacancies.talentum": {
+          "label": "Vacantes: Talentum (paso 2)"
+        },
+        "vacancies.detail": {
+          "label": "Vacantes: Detalles",
+          "containers": {
+            "case": "Caso (perfil requerido, links)",
+            "funnel": "Embudo (encuadres)",
+            "match": "Matching",
+            "invites": "Invitaciones por WhatsApp",
+            "prescreening": "Preselección",
+            "talentum": "Publicación en Talentum",
+            "patient": "Paciente (nombre)"
+          }
+        },
+        "recruitment": {
+          "label": "Reclutamiento"
+        },
+        "recruitment.health": {
+          "label": "Reclutamiento: Salud"
+        },
+        "recruitment.blocked": {
+          "label": "Postulaciones bloqueadas"
+        },
+        "messaging.stageMessages": {
+          "label": "Mensajes por etapa"
+        },
+        "messaging.templates": {
+          "label": "Plantillas"
+        },
+        "messaging.presentationInvite": {
+          "label": "Invitación a presentación"
+        },
+        "dedup": {
+          "label": "Duplicados"
+        },
+        "access": {
+          "label": "Accesos y permisos"
+        },
+        "patients.catalogObjectives": {
+          "label": "Pacientes: Catálogo de objetivos específicos"
+        },
+        "patients.catalogActivities": {
+          "label": "Pacientes: Catálogo de rutina y actividades"
+        }
+      }
+    },
     "funnelStageMessages": {
       "title": "Mensajes por etapa",
       "subtitle": "Cuando una tarjeta entra en una etapa del Kanban, sale el template elegido (WhatsApp, Twilio). Todo nace apagado: prendé una etapa, medí, después extendé.",
@@ -3772,7 +4711,7 @@
       "saved": "Guardado",
       "error": "No se pudo guardar",
       "never": "Nunca",
-      "adminOnly": "Solo un administrador puede cambiar esta configuración.",
+      "noWriteAccess": "No tenés permiso para modificar esta configuración.",
       "ineligible": {
         "CATEGORY": "no es UTILITY (Meta)",
         "DENY_LIST": "recordatorio/cobranza: bloqueado por etapa",
@@ -3823,7 +4762,7 @@
       "save": "Guardar",
       "saved": "Guardado",
       "error": "No se pudo guardar",
-      "adminOnly": "Solo un administrador puede modificar esta configuración.",
+      "noWriteAccess": "No tenés permiso para modificar esta configuración.",
       "templateHint": "Solo templates aprobados por Meta como UTILITY, con las variables que el sistema completa (nombre como token, link, horario). El template de esta invitación todavía no fue aprobado: mientras esté inactivo nada sale.",
       "ineligible": {
         "INACTIVE": "inactivo (todavía no aprobado)",
@@ -4316,150 +5255,41 @@
       "clausulaDeBaja": "\n\nRespondé BAJA si no querés recibir más mensajes.",
       "copiarParaTraduzir": "copiar el español para traducir"
     },
-    "anacareHours": {
-      "title": "Horas Ana Care",
-      "updatedAt": "Retrato actualizado: {{datetime}}",
-      "monthAriaLabel": "Mes",
-      "months": {
-        "2026-08": "Agosto 2026",
-        "2026-09": "Septiembre 2026"
-      },
-      "stale": {
-        "title": "Retrato desactualizado",
-        "messageCircuitBreaker": "La sincronización con Ana Care está fallando y la protección de carga fue activada (disjuntor). El último retrato tiene más de 24 horas.",
-        "messageSimple": "El último retrato tiene más de 24 horas. La sincronización con Ana Care no se completó.",
-        "reasonLargo": "Retrato con más de 24 horas — validación deshabilitada hasta actualizar.",
-        "reasonLargoCircuitBreaker": "Sincronización con Ana Care fallando — protección de carga activada (disjuntor). Validación deshabilitada hasta el próximo retrato.",
-        "reasonCorto": "retrato desactualizado",
-        "blockedPrefix": "Validación bloqueada: {{reason}}"
-      },
-      "list": {
-        "searchPlaceholder": "Buscar paciente…",
-        "searchAriaLabel": "Buscar paciente",
-        "providerFilterPlaceholder": "Todos los prestadores",
-        "providerFilterAriaLabel": "Filtrar por prestador",
-        "table": {
-          "patient": "Paciente",
-          "providers": "Prestadores",
-          "shifts": "Turnos",
-          "totalHours": "Horas totales",
-          "validation": "Validación",
-          "originCheckin": "Origen check-in"
+    "therapeuticCatalog": {
+      "kinds": {
+        "specificObjectives": {
+          "title": "Objetivos específicos del proyecto terapéutico",
+          "subtitle": "Las opciones que el equipo elige en el proyecto terapéutico (sección \"Objetivos Específicos\" del documento). Se editan acá, sin deploy. Desactivar no borra: las versiones antiguas del proyecto guardan el texto que tenían."
         },
-        "emptyNoShifts": "No hay turnos registrados para este mes.",
-        "emptyNoMatch": "Ningún paciente coincide con los filtros aplicados.",
-        "contestedSuffix": "· {{count}} contest.",
-        "loading": "Cargando…",
-        "validationSummary_one": "{{count}}/{{total}} validado",
-        "validationSummary_other": "{{count}}/{{total}} validados",
-        "validationSummaryContestedSuffix_one": " · {{count}} contestado",
-        "validationSummaryContestedSuffix_other": " · {{count}} contestados",
-        "providerFilterNoMatch": "Ningún prestador coincide con la búsqueda.",
-        "providerFilterAllOption": "Todos los prestadores"
-      },
-      "detail": {
-        "back": "Volver",
-        "patientNotFound": "Paciente no encontrado en el retrato de {{month}}.",
-        "totalHoursLabel": "Horas totales",
-        "validationLabel": "Validación — {{validated}}/{{total}}",
-        "validationContestedSuffix_one": " · {{count}} contestado",
-        "validationContestedSuffix_other": " · {{count}} contestados",
-        "loading": "Cargando…"
-      },
-      "error": {
-        "generic": "Ocurrió un error inesperado.",
-        "loadMonth": "No se pudo cargar el mes.",
-        "loadPatient": "No se pudo cargar el paciente.",
-        "validateShift": "No se pudo validar el turno.",
-        "validateBatch": "No se pudo validar el lote.",
-        "contestShift": "No se pudo contestar el turno.",
-        "sourceNotConfigured": "La fuente de datos de Ana Care no está configurada. Contacte al equipo técnico.",
-        "noValidateCell": "No tiene permiso para validar o contestar turnos.",
-        "byCode": {
-          "RETRATO_DESATUALIZADO": "El retrato está desactualizado — la validación está deshabilitada hasta el próximo retrato.",
-          "JA_VALIDADO": "Este turno ya fue validado — no puede reabrirse.",
-          "MOTIVO_INVALIDO": "El motivo de la contestación no es válido.",
-          "NOTA_MUITO_LONGA": "La nota supera el límite de caracteres permitido.",
-          "FONTE_NAO_CONFIGURADA": "La fuente de datos de Ana Care no está configurada. Contacte al equipo técnico.",
-          "TURNO_NAO_ENCONTRADO": "No se encontró el turno.",
-          "DESCONHECIDO": "Ocurrió un error inesperado."
+        "activities": {
+          "title": "Rutina y actividades del proyecto terapéutico",
+          "subtitle": "Las opciones de \"Rutina y Actividades\" del proyecto terapéutico. Se editan acá, sin deploy. Desactivar no borra: las versiones antiguas guardan el texto que tenían."
         }
       },
-      "origin": {
-        "sinCheckin": "Sin check-in",
-        "webAdmin": "Web admin",
-        "app": "App",
-        "scheduledNoActivity": "Programado, sin actuación",
-        "descriptionApp": "El prestador registró el ingreso desde la app, en el momento del turno.",
-        "descriptionWebAdmin": "Horario cargado a mano por alguien del equipo en el panel web de Ana Care. No comprueba la presencia.",
-        "descriptionSinCheckin": "No hay registro de ingreso: el prestador estaba programado pero no actuó."
+      "newItem": "Nueva opción",
+      "editItem": "Editar opción",
+      "noItems": "Todavía no hay opciones en este catálogo.",
+      "active": "Activa",
+      "inactive": "Inactiva",
+      "activate": "Activar",
+      "deactivate": "Desactivar",
+      "table": {
+        "order": "Orden",
+        "label": "Texto",
+        "status": "Estado",
+        "actions": "Acciones"
       },
-      "status": {
-        "pendiente": "Pendiente",
-        "validado": "Validado",
-        "contestado": "Contestado"
+      "form": {
+        "label": "Texto de la opción",
+        "labelHelp": "En español, como va a salir en el PDF. Sin datos de ninguna persona.",
+        "sortOrder": "Orden",
+        "sortOrderHelp": "Posición en la lista (menor primero). Vacío = al final.",
+        "save": "Guardar",
+        "saving": "Guardando…"
       },
-      "providerGroup": {
-        "shiftsAndHours_one": "{{count}} turno · {{hours}} h",
-        "shiftsAndHours_other": "{{count}} turnos · {{hours}} h",
-        "validateN": "Validar ({{count}})",
-        "allValidated": "Todo validado",
-        "noPendingContested": "Sin turnos pendientes (quedan contestados por resolver)",
-        "table": {
-          "date": "Fecha",
-          "scheduled": "Previsto",
-          "actual": "Real",
-          "hours": "Horas",
-          "origin": "Origen",
-          "status": "Estado",
-          "actions": "Acciones",
-          "select": "Seleccionar"
-        },
-        "validatedBy": "Validado por {{name}} · {{date}}",
-        "validateAction": "Validar",
-        "contestAction": "Contestar",
-        "note": "Nota: {{note}}",
-        "noteRestricted": "Nota restringida",
-        "reason": "Motivo: {{reason}}",
-        "selectAllPendingAriaLabel": "Seleccionar todos los turnos pendientes de {{provider}}",
-        "shiftCheckboxAriaLabel": "Seleccionar turno del {{date}}"
-      },
-      "batchModal": {
-        "title_one": "Validar {{count}} turno pendiente de {{provider}} — {{hours}} h",
-        "title_other": "Validar {{count}} turnos pendientes de {{provider}} — {{hours}} h",
-        "description": "De estos turnos, {{sinCheckin}} son sin check-in y {{webAdmin}} fueron cargados desde web admin. Una vez validados, no pueden reabrirse.",
-        "cancel": "Cancelar",
-        "confirm": "Validar pendientes",
-        "titleSelection_one": "Validar {{count}} turno seleccionado — {{hours}} h",
-        "titleSelection_other": "Validar {{count}} turnos seleccionados — {{hours}} h"
-      },
-      "contestModal": {
-        "title": "Contestar turno del {{date}}",
-        "reasonLabel": "Motivo",
-        "reasonPlaceholder": "Seleccione un motivo…",
-        "reasons": {
-          "no_asistio": "No asistió",
-          "horario_distinto": "Horario distinto al registrado",
-          "horas_mal_cargadas": "Horas mal cargadas",
-          "otro": "Otro"
-        },
-        "noteLabel": "Nota (opcional)",
-        "notePlaceholder": "Describa el motivo de la contestación…",
-        "noteCount": "{{count}}/{{max}} caracteres",
-        "clinicalWarning": "No incluya información clínica del paciente",
-        "cancel": "Cancelar",
-        "confirm": "Confirmar contestación"
-      },
-      "selectionBar": {
-        "summary_one": "{{count}} turno seleccionado · {{hours}} h · {{sinCheckin}} sin check-in",
-        "summary_other": "{{count}} turnos seleccionados · {{hours}} h · {{sinCheckin}} sin check-in",
-        "validate": "Validar",
-        "clear": "Limpiar selección"
-      },
-      "legend": {
-        "title": "Origen del check-in",
-        "openAriaLabel": "Ver leyenda de origen del check-in",
-        "closeAriaLabel": "Cerrar leyenda"
+      "errors": {
+        "duplicate": "Ya existe una opción activa con ese texto.",
+        "invalidLabel": "El texto no puede tener datos de una persona (e-mail, documento, teléfono) ni superar 200 caracteres."
       }
     }
   },
@@ -4593,5 +5423,8 @@
       "reload": "Recargar",
       "home": "Ir al inicio"
     }
+  },
+  "access": {
+    "actionDenied": "No tenés permiso para esta acción"
   }
 }

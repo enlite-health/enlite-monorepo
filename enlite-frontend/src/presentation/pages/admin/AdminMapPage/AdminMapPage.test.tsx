@@ -6,10 +6,12 @@
  * O portão é o eixo do arquivo: sem âncora escolhida, NADA busca e os passos 2
  * e 3 não existem. Por isso quase todo teste começa por `escolherAncora()`.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { AdminMapPage } from './AdminMapPage';
+import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
+import type { AuthzContract } from '@domain/entities/Authz';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -546,6 +548,38 @@ describe('AdminMapPage', () => {
     expect(ultimaLista().className).not.toContain('opacity-40');
   });
 
+
+  // ── D286 fase 2: cada aba do mapa é um container com a célula de endereço do titular ────────
+  describe('abas por célula (D286 fase 2)', () => {
+    const comEnforcement = (permissions: string[], enforcement: 'on' | 'off') => {
+      useAdminAuthStore.setState({
+        authzStatus: 'ready',
+        authz: { uid: 'u', tenantId: 't', status: 'ACTIVE', permissions, countries: [], groups: [], features: {}, enforcement } as AuthzContract,
+      });
+    };
+    afterEach(() => useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' }));
+
+    it('só patient_address:read: a aba Prestadores some e Pacientes vira a ativa', () => {
+      comEnforcement(['patient_address:read'], 'on');
+      setup();
+      expect(screen.queryByTestId('map-tab-workers')).not.toBeInTheDocument();
+      expect(screen.getByTestId('map-tab-patients')).toHaveAttribute('aria-selected', 'true');
+    });
+
+    it('só worker_address:read (a mesma célula do card de endereço da ficha): só Prestadores', () => {
+      comEnforcement(['worker_address:read'], 'on');
+      setup();
+      expect(screen.getByTestId('map-tab-workers')).toHaveAttribute('aria-selected', 'true');
+      expect(screen.queryByTestId('map-tab-patients')).not.toBeInTheDocument();
+    });
+
+    it('enforcement=off: as duas, como antes', () => {
+      comEnforcement([], 'off');
+      setup();
+      expect(screen.getByTestId('map-tab-workers')).toBeInTheDocument();
+      expect(screen.getByTestId('map-tab-patients')).toBeInTheDocument();
+    });
+  });
 });
 
 /**
@@ -592,6 +626,43 @@ describe('AdminMapPage — busca de âncora por nome', () => {
       expect(filtros).not.toHaveProperty('center');
       expect(filtros).not.toHaveProperty('radius_km');
     } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  // Gate do sync main→stage (08/09): sem `patient_identity:read` a rota responde 403 ao `search`
+  // (oráculo de nome). O hook nem manda: o escopo segue geográfico. Com o engine OFF, busca como sempre.
+  it('🔒 enforcement=on SEM patient_identity:read: digitar o nome NÃO troca o escopo (nunca chega a `search`)', () => {
+    vi.useFakeTimers();
+    try {
+      useAdminAuthStore.setState({
+        authzStatus: 'ready',
+        authz: { uid: 'u', tenantId: 't', status: 'ACTIVE', permissions: ['worker_address:read', 'patient_address:read'], countries: [], groups: [], features: {}, enforcement: 'on' } as AuthzContract,
+      });
+      setup();
+      fireEvent.focusIn(screen.getByTestId('map-center-patient'));
+      digitar('Reyna');
+      expect(pickerCall(mockPatients)[0]).toEqual(ancoraAR);
+      expect(pickerCall(mockPatients)[0]).not.toHaveProperty('search');
+    } finally {
+      useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' });
+      vi.useRealTimers();
+    }
+  });
+
+  it('enforcement=on COM patient_identity:read: `search` entra', () => {
+    vi.useFakeTimers();
+    try {
+      useAdminAuthStore.setState({
+        authzStatus: 'ready',
+        authz: { uid: 'u', tenantId: 't', status: 'ACTIVE', permissions: ['worker_address:read', 'patient_address:read', 'patient_identity:read'], countries: [], groups: [], features: {}, enforcement: 'on' } as AuthzContract,
+      });
+      setup();
+      fireEvent.focusIn(screen.getByTestId('map-center-patient'));
+      digitar('Reyna');
+      expect(pickerCall(mockPatients)[0]).toEqual({ country: 'AR', search: 'Reyna' });
+    } finally {
+      useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' });
       vi.useRealTimers();
     }
   });

@@ -11,7 +11,7 @@
 
 import type { Pool } from 'pg';
 import { logger, reportError } from '@shared/logging';
-import { EmailService } from '../identity/infrastructure/EmailService';
+import { EmailChannelUnavailableError, EmailService } from '../identity/infrastructure/EmailService';
 import { signLinkToken, UNDO_TOKEN_TTL_MS } from './linkToken';
 import { recordAccountLinkEvent } from './accountLinkEvents';
 
@@ -53,11 +53,16 @@ export async function sendLinkedNoticeEmail(
     });
   } catch (err) {
     const e = err instanceof Error ? err : new Error(String(err));
-    reportError(e, { source: 'accountLinkNotice', mergeAuditId });
+    // "Não havia canal" (teste, ou serviço sem SENDGRID_API_KEY) NÃO é erro: não
+    // vai para o Error Reporting e a trilha registra o motivo pelo que ele é.
+    // Antes os dois casos viravam a mesma linha `send_failed`, e quem lesse a
+    // trilha não sabia se o SendGrid recusou ou se nem existia canal.
+    const semCanal = e instanceof EmailChannelUnavailableError;
+    if (!semCanal) reportError(e, { source: 'accountLinkNotice', mergeAuditId });
     log().error({ msg: 'account_link_notice_failed', mergeAuditId, reason: e.message });
     await recordAccountLinkEvent(pool, {
       event: 'notice_email_skipped', workerId: survivorId, otherWorkerId: absorbedId,
-      mergeAuditId, detail: { reason: 'send_failed' },
+      mergeAuditId, detail: { reason: semCanal ? 'no_email_channel' : 'send_failed' },
     });
   }
 }

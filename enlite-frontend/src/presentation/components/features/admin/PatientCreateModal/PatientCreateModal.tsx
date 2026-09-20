@@ -13,6 +13,7 @@ import { FormField } from '@presentation/components/molecules/FormField';
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon';
 import { SelectField, type SelectOption } from '@presentation/components/molecules/SelectField';
 import { MultiSelect } from '@presentation/components/atoms/MultiSelect';
+import { getCountryOptions } from '@presentation/pages/admin/patientsData';
 
 interface PatientCreateModalProps {
   onClose: () => void;
@@ -30,6 +31,10 @@ const CLOSE_MS = 300;
 // fallbacks para um `undefined` que nunca chega (mesmo padrão dos drawers, spec 011/012).
 const createSchema = z.object({
   firstName: z.string().trim().min(1),
+  // `country` sem default de propósito — decide o regime legal (Ley 25.326 vs LGPD) e o
+  // filtro de país do painel; o operador escolhe (abac-pais-fase1 5.1). Placeholder vazio
+  // falha o enum e mostra o erro inline em vez de mandar um corpo que o backend recusaria.
+  country: z.enum(['AR', 'BR']),
   lastName: z.string().trim(),
   /** US-B6 (spec 012): yyyy-MM-dd. */
   birthDate: z.string(),
@@ -68,6 +73,9 @@ export function PatientCreateModal({ onClose, onCreated }: PatientCreateModalPro
     resolver: zodResolver(createSchema),
     defaultValues: {
       firstName: '',
+      // No preselected country on purpose — the operator must pick one, so a BR
+      // patient is never filed as AR by inertia (abac-pais-fase1 5.1).
+      country: undefined,
       lastName: '',
       birthDate: '',
       phoneWhatsapp: '',
@@ -105,6 +113,9 @@ export function PatientCreateModal({ onClose, onCreated }: PatientCreateModalPro
     value: s,
     label: t(`admin.patients.detail.contractedServicesCard.serviceTypes.${s}`, { defaultValue: s }),
   }));
+  // Same AR|BR source the panel's country FILTER uses, so the values a patient
+  // can be created with always match the values it can be filtered by.
+  const countryOptions: SelectOption[] = getCountryOptions(t);
 
   const onSubmit = async (values: CreateFormValues): Promise<void> => {
     setSubmitError(null);
@@ -116,6 +127,7 @@ export function PatientCreateModal({ onClose, onCreated }: PatientCreateModalPro
     };
     const payload: CreatePatientPayload = {
       firstName: values.firstName.trim(),
+      country: values.country,
       lastName: clean(values.lastName),
       birthDate: clean(values.birthDate),
       phoneWhatsapp: clean(values.phoneWhatsapp),
@@ -193,6 +205,28 @@ export function PatientCreateModal({ onClose, onCreated }: PatientCreateModalPro
             </FormField>
             <FormField label={tc('lastName')} htmlFor="pc-lastName" optional>
               <InputWithIcon id="pc-lastName" inputSize="compact" data-testid="pc-lastName" {...register('lastName')} />
+            </FormField>
+            {/* Required, no preselection — drives the legal regime (Ley 25.326 vs
+                LGPD) and the panel's country filter (abac-pais-fase1 5.1). */}
+            {/* The message is rendered by SelectField (which also reddens the
+                border); passing it to FormField too would print it twice. */}
+            <FormField label={tc('country')} htmlFor="pc-country" required>
+              <Controller
+                control={control}
+                name="country"
+                render={({ field }) => (
+                  <SelectField
+                    id="pc-country"
+                    inputSize="compact"
+                    options={countryOptions}
+                    placeholder={tc('countryPlaceholder')}
+                    value={field.value ?? ''}
+                    onChange={field.onChange}
+                    error={errors.country ? tc('countryRequired') : undefined}
+                    data-testid="pc-country"
+                  />
+                )}
+              />
             </FormField>
             <FormField label={tc('birthDate')} htmlFor="pc-birthDate" optional>
               <InputWithIcon id="pc-birthDate" type="date" inputSize="compact" data-testid="pc-birthDate" {...register('birthDate')} />

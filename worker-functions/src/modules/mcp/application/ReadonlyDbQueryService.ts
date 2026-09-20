@@ -59,7 +59,7 @@ export class ReadonlyDbQueryService {
  *   em log — 0 hits medidos, ver spec.md "Segurança e perímetro").
  * O controle que vale é a role (create-mcp-ro-role.sql); isto é defesa em profundidade.
  */
-export const RESTRICTED_CLINICAL_COLUMNS = /emergency_instructions|on_hold_note|access_notes|address_type_other/i;
+export const RESTRICTED_CLINICAL_COLUMNS = /emergency_instructions|on_hold_note|access_notes|clinical_context|general_objective|address_type_other/i;
 
 /**
  * Tabelas com texto clínico livre (`patients`, `patient_*`). A view `patients_ro` (D216) fica

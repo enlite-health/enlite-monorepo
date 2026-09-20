@@ -20,7 +20,20 @@ export type FunnelColumnId = (typeof FUNNEL_COLUMN_ORDER)[number];
 
 export type FunnelColumnCounts = Record<FunnelColumnId, number>;
 
+/** Jurisdições suportadas — mesma fonte que `worker-functions/src/shared/domain/countryCodes.ts` (D108). */
+export type ManagementCountryCode = 'AR' | 'BR';
+
 export interface ManagementDashboardData {
+  /**
+   * País resolvido NO SERVIDOR (PR-9, `lex` #9, FR-730/734). `countries` é o
+   * escopo que a agregação de fato aplicou (nunca vazio); `requested` é o que
+   * foi pedido, já normalizado. O seletor da página lista `countries` — nunca
+   * uma lista fixa de jurisdições do sistema.
+   */
+  scope: {
+    countries: ManagementCountryCode[];
+    requested: ManagementCountryCode | 'ALL';
+  };
   bigNumbers: {
     equiposArmados: number;
     equiposPorArmar: number;

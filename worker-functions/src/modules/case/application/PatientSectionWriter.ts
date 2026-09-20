@@ -1,4 +1,4 @@
-import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { inPatientTransaction } from './patientTransaction';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { PatientClinicalRepository } from '../infrastructure/PatientClinicalRepository';
 import { PatientResponsibleRepository } from '../infrastructure/PatientResponsibleRepository';
@@ -61,6 +61,10 @@ export interface PatientGeneralSectionData {
   contactEmail?: string | null;
   /** US-B9 (spec 012): data de início do serviço — nativa, não deriva da vaga. */
   serviceStartDate?: Date | null;
+  /** Spec 018 PR-3 (Emenda 13/09). Plaintext; encrypted with KMS before storage. `null` = não perguntado. */
+  gender?: string | null;
+  /** Spec 018 PR-3. Plaintext array; serializado a JSON e encriptado com KMS antes de gravar. */
+  languages?: string[] | null;
 }
 
 /**
@@ -78,14 +82,9 @@ export async function writePatientSection(
   section: PatientSection,
   data: PatientGeneralSectionData | PatientClinicalSectionData | PatientCoverageSectionData | PatientRelatedInput,
   /** Quem está editando (uid do staff) — hoje só a seção clínica usa (autoria de additional_comments). */
-  actor?: { uid: string },
+  actor?: { uid: string; cells?: readonly string[] | null },
 ): Promise<{ id: string; updated: true }> {
-  const db     = DatabaseConnection.getInstance();
-  const client = await db.getClient();
-
-  try {
-    await client.query('BEGIN');
-
+  return inPatientTransaction(async (client) => {
     switch (section) {
       case 'general':
         await updateGeneralSection(deps, patientId, data as PatientGeneralSectionData, client);
@@ -126,6 +125,10 @@ export async function writePatientSection(
         if (cov.insuranceVerifiedCodes !== undefined) {
           await deps.insuranceRepo().replaceCodesForPatient(patientId, cov.insuranceVerifiedCodes, client);
         }
+        // Os contatos de emergência da cobertura SAÍRAM desta seção (spec 018, PR-1, ADR-1,
+        // SUP-37): a escrita é por LINHA, em rotas próprias
+        // (`AdminPatientContactRowsController`), não mais aqui. `emergencyContacts` nem chega —
+        // o schema `.strict()` de `coverage` já recusa o campo com 400.
         break;
       }
       case 'support-network': {
@@ -161,14 +164,8 @@ export async function writePatientSection(
       }
     }
 
-    await client.query('COMMIT');
-    return { id: patientId, updated: true };
-  } catch (err) {
-    await client.query('ROLLBACK');
-    throw err;
-  } finally {
-    client.release();
-  }
+    return { id: patientId, updated: true as const };
+  });
 }
 
 async function updateGeneralSection(
@@ -207,6 +204,21 @@ async function updateGeneralSection(
     const enc = await deps.encryptionService.encrypt(data.contactEmail ?? null);
     values.push(enc);
     sets.push(`contact_email_encrypted = $${values.length}`);
+  }
+
+  // Spec 018 PR-3 (Emenda 13/09, migration 425): gênero e idiomas cifrados com KMS antes de
+  // gravar — mesmo molde do e-mail de contato acima. `null` grava `null` (limpa a coluna,
+  // "não perguntado"); o Zod já garante o enum/lista fechada ANTES de chegar aqui.
+  if (Object.prototype.hasOwnProperty.call(data, 'gender')) {
+    const enc = await deps.encryptionService.encrypt(data.gender ?? null);
+    values.push(enc);
+    sets.push(`gender_encrypted = $${values.length}`);
+  }
+  if (Object.prototype.hasOwnProperty.call(data, 'languages')) {
+    const json = data.languages ? JSON.stringify(data.languages) : null;
+    const enc = await deps.encryptionService.encrypt(json);
+    values.push(enc);
+    sets.push(`languages_encrypted = $${values.length}`);
   }
 
   if (sets.length === 0) return; // nothing to update

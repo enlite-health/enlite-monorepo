@@ -5,6 +5,7 @@ import { SearchableSelect } from '@presentation/components/molecules/SearchableS
 import { Select, SelectOption } from '@presentation/components/atoms/Select';
 import { MultiSelect } from '@presentation/components/atoms/MultiSelect';
 import { TimeRangeFilter } from './TimeRangeFilter';
+import { useContainerAccess } from '@presentation/hooks/useCellAccess';
 
 export interface VacancyAdvancedFilters {
   workerType: string;
@@ -47,6 +48,7 @@ export function VacancyFilters({
   cityOptions,
 }: VacancyFiltersProps): JSX.Element {
   const { t } = useTranslation();
+  const podeBuscarPorNome = useContainerAccess('patient_identity').visible;
 
   const typeOptions: SelectOption[] = [
     { value: 'AT', label: t('admin.vacancies.filters.type.at') },
@@ -104,7 +106,9 @@ export function VacancyFilters({
         <SearchInput
           value={searchQuery}
           onChange={onSearchChange}
-          placeholder={t('admin.vacancies.searchPlaceholder')}
+          // D286 fase 2 / lex P5: sem patient_identity:read a busca não casa nome de paciente — o
+          // placeholder diz o que ela faz de verdade.
+          placeholder={t(podeBuscarPorNome ? 'admin.vacancies.searchPlaceholder' : 'admin.vacancies.searchPlaceholderSemNome')}
           className="w-full sm:w-[400px]"
         />
         <div className="flex items-end gap-4 flex-wrap ml-auto">

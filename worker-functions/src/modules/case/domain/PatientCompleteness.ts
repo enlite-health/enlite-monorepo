@@ -100,6 +100,62 @@ export function blockingCodesForStatusChange(
  */
 export const ACTIVATABLE_STATUSES = ['ADMISSION', 'PENDING_ADMISSION'] as const;
 
+/**
+ * Gate de `POST /patients/:id/contracted-services/:sid/activate-recruitment` (spec 018, PR-6,
+ * `contracts/activation.md`). Ativar recrutamento é uma decisão POR SERVIÇO — os dois primeiros
+ * códigos são avaliados SÓ contra `:sid` (não contra "existe algum serviço sem endereço no
+ * paciente inteiro", que é o que `ACTIVATION_BLOCKING_CODES` faz); `COVERAGE` continua do
+ * paciente, porque cobertura é um dado do paciente, não do serviço.
+ */
+export const RECRUITMENT_BLOCKING_CODES = ['SERVICE_ADDRESS', 'SERVICE_SCHEDULE', 'COVERAGE'] as const;
+
+/**
+ * FR-121/122 (spec 018, PR-6): "sin cobertura / particular" é uma resposta EXPLÍCITA válida —
+ * satisfaz `COVERAGE` como qualquer outro texto real. O que não satisfaz é um PLACEHOLDER: só
+ * zeros, só pontuação, ou menos de 2 caracteres alfanuméricos (ex.: '0', '-', '.', 'x', ''). Um
+ * valor assim conta como AUSENTE tanto no JS (`isPlaceholderCoverageValue`) quanto no SQL
+ * (`MISSING_SQL.COVERAGE`) — as duas leituras têm de concordar, ou o checklist e o gate divergem.
+ */
+export function isPlaceholderCoverageValue(value: string | null | undefined): boolean {
+  const trimmed = (value ?? '').trim();
+  if (trimmed.length === 0) return true;
+  const alphanumeric = trimmed.replace(/[^a-zA-Z0-9À-ÿ]/g, '');
+  if (alphanumeric.length < 2) return true;
+  // só zeros ("0", "00", "000000") — dígito real, mas sem informação nenhuma.
+  if (/^0+$/.test(alphanumeric)) return true;
+  return false;
+}
+
+/**
+ * Input do gate por SERVIÇO (`RECRUITMENT_BLOCKING_CODES`) — deliberadamente menor que
+ * `PatientCompletenessInput`: os dois primeiros campos vêm de UM `patient_contracted_services`
+ * (o `:sid` da rota), nunca de uma contagem do paciente inteiro.
+ */
+export interface RecruitmentReadinessInput {
+  /** O serviço `:sid` tem endereço vivo vinculado (não-NULL, não-arquivado). */
+  serviceHasAddress: boolean;
+  /** O serviço `:sid` tem `schedule` não-vazio (array com ≥1 item). */
+  serviceHasSchedule: boolean;
+  /** `insurance_informed`/`health_insurance_name` do PACIENTE — mesma fonte do checklist geral. */
+  insuranceInformed: string | null;
+}
+
+export interface RecruitmentReadinessResult {
+  missing: Array<(typeof RECRUITMENT_BLOCKING_CODES)[number]>;
+  ready: boolean;
+}
+
+/** Mesma função-fonte que o `GET /:id` usa para `byMoment.recruitment` (conceito derivado, um dono). */
+export function computeRecruitmentReadiness(
+  input: RecruitmentReadinessInput,
+): RecruitmentReadinessResult {
+  const missing: Array<(typeof RECRUITMENT_BLOCKING_CODES)[number]> = [];
+  if (!input.serviceHasAddress) missing.push('SERVICE_ADDRESS');
+  if (!input.serviceHasSchedule) missing.push('SERVICE_SCHEDULE');
+  if (isPlaceholderCoverageValue(input.insuranceInformed)) missing.push('COVERAGE');
+  return { missing, ready: missing.length === 0 };
+}
+
 export interface PatientCompletenessInput {
   /** Data de nascimento do paciente (ISO ou Date) — usada só para decidir se RESPONSIBLE é exigido. */
   birthDate: string | Date | null;
@@ -174,7 +230,7 @@ export function computePatientCompleteness(
   if (isMinor(input.birthDate, input.now) && input.activeResponsibleCount < 1) {
     missing.push('RESPONSIBLE');
   }
-  if (!input.insuranceInformed || input.insuranceInformed.trim().length === 0) {
+  if (isPlaceholderCoverageValue(input.insuranceInformed)) {
     missing.push('COVERAGE');
   }
   if (input.activeContractedServiceCount < 1) {
@@ -221,11 +277,17 @@ const MISSING_SQL: Record<PatientCompletenessCode, (p: string) => string> = {
   ADDRESS: (p) => `NOT EXISTS (SELECT 1 FROM patient_addresses pa WHERE pa.patient_id = ${p}.id AND pa.archived_at IS NULL)`,
   // isMinor(birthDate) && activeResponsibleCount < 1 — "menos de 18 anos HOJE, em UTC", igual ao
   // `isMinor` acima: quem nasceu exatamente na data de corte já fez 18 e NÃO é menor (`>` estrito).
+  // `AND pr.active` (spec 018, PR-1, FR-004): responsável desativado (nunca DELETE) não conta
+  // como presente — mesma régua de `activeResponsibleCount` (PatientCompletenessLoader.ts).
   RESPONSIBLE: (p) => `(${p}.birth_date IS NOT NULL
         AND ${p}.birth_date > (((NOW() AT TIME ZONE 'UTC')::date - INTERVAL '${MINOR_AGE_YEARS} years')::date)
-        AND NOT EXISTS (SELECT 1 FROM patient_responsibles pr WHERE pr.patient_id = ${p}.id))`,
-  // !insuranceInformed || trim() === '' — mesmo COALESCE que a listagem projeta.
-  COVERAGE: (p) => `BTRIM(COALESCE(${p}.insurance_informed, ${p}.health_insurance_name, '')) = ''`,
+        AND NOT EXISTS (SELECT 1 FROM patient_responsibles pr WHERE pr.patient_id = ${p}.id AND pr.active))`,
+  // FR-122: mesmo critério de `isPlaceholderCoverageValue` — < 2 caracteres alfanuméricos, ou só
+  // zeros, depois de tirar pontuação/espaço. Mesmo COALESCE que a listagem projeta.
+  COVERAGE: (p) => `(
+        LENGTH(REGEXP_REPLACE(COALESCE(${p}.insurance_informed, ${p}.health_insurance_name, ''), '[^a-zA-Z0-9À-ÿ]', '', 'g')) < 2
+        OR REGEXP_REPLACE(COALESCE(${p}.insurance_informed, ${p}.health_insurance_name, ''), '[^a-zA-Z0-9À-ÿ]', '', 'g') ~ '^0+$'
+      )`,
   // activeContractedServiceCount < 1
   CONTRACTED_SERVICE: (p) => `NOT EXISTS (SELECT 1 FROM patient_contracted_services pcs WHERE pcs.patient_id = ${p}.id AND pcs.active)`,
   // activeContractedServicesWithoutAddressCount > 0 — serviço ativo cujo address_id é NULL ou

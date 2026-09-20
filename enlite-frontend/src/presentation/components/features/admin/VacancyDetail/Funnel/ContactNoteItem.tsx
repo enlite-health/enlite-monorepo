@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Text } from '@presentation/components/atoms/Text';
+import { useActionGate } from '@presentation/hooks/useCellAccess';
 import type { ContactNote } from '@domain/entities/ContactNote';
 
 interface ContactNoteItemProps {
@@ -30,6 +31,11 @@ export function ContactNoteItem({
 }: ContactNoteItemProps): JSX.Element {
   const { t } = useTranslation();
   const [confirming, setConfirming] = useState(false);
+  // DELETE .../contact-notes/:noteId → funnel:write (D269). Botão raw
+  // `<button>` (não `<Button>`): useActionGate direto, combinado com a
+  // regra de negócio existente (autor + janela de 2h).
+  const { allowed: canWriteFunnel } = useActionGate('funnel', 'update');
+  const canDeleteThisNote = canDelete && canWriteFunnel;
 
   const author = note.createdByAdminName ?? note.createdByAdminEmail;
 
@@ -43,7 +49,7 @@ export function ContactNoteItem({
           {note.noteText}
         </Text>
 
-        {canDelete && !confirming && (
+        {canDeleteThisNote && !confirming && (
           <button
             type="button"
             onClick={() => setConfirming(true)}
@@ -57,7 +63,7 @@ export function ContactNoteItem({
         )}
       </div>
 
-      {canDelete && confirming ? (
+      {canDeleteThisNote && confirming ? (
         <div className="flex items-center gap-3 pt-1">
           <Text as="span" size="xs" color="muted">
             {t('admin.vacancyDetail.funnelTable.contactNotes.deleteConfirm')}

@@ -111,8 +111,8 @@ async function insertActiveAddress(
   displayOrder = 1,
 ): Promise<string> {
   const { rows } = await pool.query<{ id: string }>(
-    `INSERT INTO patient_addresses (patient_id, display_order, address_formatted, address_type, source)
-     VALUES ($1, $2, $3, 'primary', 'admin_manual')
+    `INSERT INTO patient_addresses (patient_id, display_order, address_formatted, source)
+     VALUES ($1, $2, $3, 'admin_manual')
      RETURNING id`,
     [patientId, displayOrder, formatted],
   );

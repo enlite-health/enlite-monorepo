@@ -61,7 +61,13 @@ dois lados, a saída de incidente é para a FRENTE.
 
 | Arquivo | Depende de | O que faz |
 |---|---|---|
+| `ROLLBACK_axonico_comprobante_lancamento.sql` | decisão manual de reverter a migration `445` | Derruba `axonico_comprobante_lancamento` — par de rollback da 445, não roda sozinho (ver motivo no cabeçalho do arquivo) |
 | `CONTRACT_drop_blocked_attempt_old_columns.sql` | migration `332` deployada e confirmada em produção (revisão ÚNICA no Cloud Run) | Fecha a janela (backfill: a `332` deliberadamente não o faz), derruba `blocked_reason` e `missing_fields` — substituídas por `*_at_attempt` — e o índice `idx_wba_blocked_reason`, que convidava à consulta errada |
+
+> `CONTRACT_drop_patients_chat_id_columns.sql` saiu desta lista (sync `main`→`stage`,
+> 19/09/2026): já foi liberada e aplicada como `266_contract_drop_patients_chat_id_columns.sql`
+> (ver `chore(migrations): libera CONTRACT do expand/contract dos chat IDs (261→266)`) — a linha
+> na tabela estava desatualizada, a migration não está mais pendente.
 
 ## ⚠️ Migration liberada daqui PRECISA ser re-executável
 

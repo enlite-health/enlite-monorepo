@@ -15,6 +15,13 @@ import { AnaCareHoursHttpService } from './AnaCareHoursHttpService';
 import { AnaCareHoursServiceError } from './AnaCareHoursService';
 import type { AnaCareMonthSnapshot, AnaCarePatient } from './types';
 
+/**
+ * F6.3: a rota da LISTA (`AnaCareMonthSnapshot.patients`) parou de mandar turnos — vira
+ * `AnaCareListPatient` (agregado). `PATIENT`, abaixo, é o DETALHE (`AnaCarePatient`, com turnos),
+ * usado só pelos testes de `getPatientMonth` — os dois tipos são DIFERENTES agora, não mais o
+ * mesmo objeto reaproveitado (era o caso antes desta fase).
+ */
+
 let originalFetch: typeof globalThis.fetch;
 
 function jsonResponse(status: number, body: unknown): Response {
@@ -33,19 +40,48 @@ const SNAPSHOT: AnaCareMonthSnapshot = {
   month: '2026-08',
   updatedAt: '2026-09-15T08:00:00-03:00',
   stale: false,
+  snapshotState: 'fresco',
   circuitBreakerOpen: false,
   patients: [
     {
       anaCareId: '90000',
-      linked: true,
+      linked: false,
       name: 'Lucía Fernández QA',
-      providers: [{ anaCareId: '90200', linked: true, name: 'Rocío García QA', shifts: [] }],
+      providers: [{ anaCareId: '90200', linked: true, name: 'Rocío García QA' }],
+      providersCount: 1,
+      shiftsCount: 1,
+      hoursActualSum: 8,
+      hoursScheduledSumMissingActual: 0,
+      validated: 0,
+      contested: 0,
+      originSinCheckin: 0,
+      originWebAdmin: 0,
+      originApp: 1,
     },
-    { anaCareId: '90447', linked: false, providers: [] },
+    {
+      anaCareId: '90447',
+      linked: false,
+      providers: [],
+      providersCount: 0,
+      shiftsCount: 0,
+      hoursActualSum: 0,
+      hoursScheduledSumMissingActual: 0,
+      validated: 0,
+      contested: 0,
+      originSinCheckin: 0,
+      originWebAdmin: 0,
+      originApp: 0,
+    },
   ],
 };
 
-const PATIENT: AnaCarePatient = SNAPSHOT.patients[0];
+/** DETALHE (`getPatientMonth`) — tipo diferente do agregado da lista (`SNAPSHOT.patients`), com turnos. */
+const PATIENT: AnaCarePatient = {
+  anaCareId: '90000',
+  linked: true,
+  name: 'Lucía Fernández QA',
+  providers: [{ anaCareId: '90200', linked: true, name: 'Rocío García QA', shifts: [] }],
+};
 
 beforeEach(() => {
   originalFetch = globalThis.fetch;
@@ -176,11 +212,18 @@ describe('getRetratoStatus', () => {
     expect(status.stale).toBe(true);
   });
 
-  it('NEGATIVO — 404 (mês sem retrato ainda) devolve status "em dia", nunca lança', async () => {
+  it('NEGATIVO — 404 (mês sem retrato ainda) devolve snapshotState "nao_construido", nunca lança', async () => {
     globalThis.fetch = vi.fn().mockResolvedValue({ status: 404, headers: { get: () => null }, json: async () => ({}) } as unknown as Response);
     const service = new AnaCareHoursHttpService();
     const status = await service.getRetratoStatus('2099-01');
-    expect(status).toEqual({ updatedAt: expect.any(String), stale: false, circuitBreakerOpen: false });
+    expect(status).toEqual({ updatedAt: expect.any(String), stale: false, snapshotState: 'nao_construido', circuitBreakerOpen: false });
+  });
+
+  it('POSITIVO — propaga snapshotState do snapshot completo (item 3: não aproxima mais por `stale`)', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(200, { success: true, data: { ...SNAPSHOT, stale: true, snapshotState: 'nao_construido' } }));
+    const service = new AnaCareHoursHttpService();
+    const status = await service.getRetratoStatus('2026-08');
+    expect(status.snapshotState).toBe('nao_construido');
   });
 });
 
@@ -335,5 +378,70 @@ describe('contestShift', () => {
     globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(409, { success: false, error: '', code: 'JA_VALIDADO' }));
     const service = new AnaCareHoursHttpService();
     await expect(service.contestShift({ shiftId: 'shift-1', reason: 'otro' })).rejects.toMatchObject({ message: 'HTTP 409' });
+  });
+});
+
+// D8 (cobertura, 18/09): `postSyncJson`/`triggerSync` (linhas 159-180) nunca tiveram teste — F6.4
+// (botão de Sync) chegou sem cobertura desta ponta HTTP. Formato PRÓPRIO (200 com campos soltos no
+// envelope, nunca `data`, nunca 204) — não reusa os helpers de `postJson`/`postBatchJson`.
+describe('triggerSync', () => {
+  it('POSITIVO — 200 com o envelope solto (sem `data`) resolve com o TriggerSyncResult inteiro', async () => {
+    const body = {
+      success: true,
+      deduped: false,
+      shiftsRead: 10,
+      reservationsProcessed: 4,
+      shiftsWritten: 10,
+      nextCursor: 50,
+      runStartedAt: '2026-09-18T10:00:00-03:00',
+      shiftsSkippedNoProvider: 0,
+      shiftsSkippedNoPatient: 0,
+    };
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, body));
+    globalThis.fetch = fetchMock;
+    const service = new AnaCareHoursHttpService();
+    await expect(service.triggerSync?.({ month: '2026-08', cursor: undefined, budgetMs: 100_000 })).resolves.toEqual(body);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toContain('/anacare-hours/sync');
+    expect(JSON.parse(init.body)).toEqual({ month: '2026-08', cursor: undefined, budgetMs: 100_000 });
+  });
+
+  it('NEGATIVO — 503 (fonte não configurada) vira FONTE_NAO_CONFIGURADA', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(503, { success: false, error: 'ANACARE_SOURCE_NOT_CONFIGURED', code: 'ANACARE_SOURCE_NOT_CONFIGURED' }));
+    const service = new AnaCareHoursHttpService();
+    await expect(service.triggerSync?.({ month: '2026-08' })).rejects.toMatchObject({ code: 'FONTE_NAO_CONFIGURADA' });
+  });
+
+  it('NEGATIVO — 503 cujo corpo JSON não tem `error` cai no fallback padrão da mensagem (ramo direito do `??`)', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(503, {}));
+    const service = new AnaCareHoursHttpService();
+    await expect(service.triggerSync?.({ month: '2026-08' })).rejects.toMatchObject({
+      code: 'FONTE_NAO_CONFIGURADA',
+      message: 'ANACARE_SOURCE_NOT_CONFIGURED',
+    });
+  });
+
+  it('NEGATIVO — resposta sem content-type JSON vira erro GENÉRICO, nunca `.json()` quebrado', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({ status: 502, headers: { get: () => 'text/html' }, json: async () => ({}) } as unknown as Response);
+    const service = new AnaCareHoursHttpService();
+    await expect(service.triggerSync?.({ month: '2026-08' })).rejects.toMatchObject({ code: 'DESCONHECIDO' });
+  });
+
+  it('NEGATIVO — content-type ausente (header.get devolve null, ramo direito do `??` da linha 166) vira erro GENÉRICO', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({ status: 500, headers: { get: () => null }, json: async () => ({}) } as unknown as Response);
+    const service = new AnaCareHoursHttpService();
+    await expect(service.triggerSync?.({ month: '2026-08' })).rejects.toMatchObject({ code: 'DESCONHECIDO' });
+  });
+
+  it('NEGATIVO — `success:false` no corpo (200 com item que falhou) vira erro mapeado pelo code', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(200, { success: false, error: 'sync falhou no meio', code: 'DESCONHECIDO' }));
+    const service = new AnaCareHoursHttpService();
+    await expect(service.triggerSync?.({ month: '2026-08' })).rejects.toMatchObject({ message: 'sync falhou no meio' });
+  });
+
+  it('NEGATIVO — `success:false` sem `error` cai no fallback "HTTP <status>" (ramo direito do `||` da linha 173)', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(400, { success: false, error: '', code: 'DESCONHECIDO' }));
+    const service = new AnaCareHoursHttpService();
+    await expect(service.triggerSync?.({ month: '2026-08' })).rejects.toMatchObject({ message: 'HTTP 400' });
   });
 });

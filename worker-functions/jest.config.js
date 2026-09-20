@@ -89,6 +89,71 @@ module.exports = {
    * `worker/index.ts`, que MEDIU 100 nos quatro eixos e por isso entra.
    */
   coverageThreshold: {
+    // D286: o ponto único de decisão por CONTAINER da ficha (identidade, clínica, familiares,
+    // chat, cobertura, endereço, serviços, equipe) — mesma classe do `patientClinicalAccess`.
+    'src/modules/case/application/patientContainerAccess.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    // Spec 018, PR-2 (`lex` #4, D-A): contatos externos sem vínculo familiar e marca de
+    // emergência. Arquivos novos nesta release, medidos em 100 nos quatro eixos com os próprios
+    // testes (unit) — anti-regressão desde o nascimento, não meta a alcançar depois.
+    'src/modules/case/domain/PatientExternalContact.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/case/infrastructure/EmergencyContactRequiresPhoneError.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/case/infrastructure/PatientEmergencyMarkRepository.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/case/infrastructure/PatientExternalContactRepository.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/case/interfaces/controllers/AdminPatientEmergencyContactController.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/case/interfaces/controllers/AdminPatientExternalContactsController.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/worker/application/workerContainerAccess.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/matching/application/patientInVacancyProjection.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/matching/application/dashboardContainerAccess.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
     // Paciente como fonte da verdade: leitura clínica, repositórios e o guarda
     // de acesso ao texto clínico. `patientClinicalAccess` é o que decide quem
     // vê texto clínico — regra dura do CLAUDE.md, não pode regredir calado.
@@ -148,7 +213,23 @@ module.exports = {
       functions: 100,
       lines: 100,
     },
-    'src/modules/case/application/ActivatePatientUseCase.ts': {
+    // Spec 018, PR-6: `liveVacancyId` (JOIN batched com `job_postings`) e `activateRecruitment`
+    // TOCARAM os dois arquivos abaixo — medidos a 100 antes de entrar no piso.
+    'src/modules/case/infrastructure/ContractedServiceDetailMapper.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/case/interfaces/controllers/AdminPatientContractedServicesController.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    // `ActivatePatientUseCase.ts` foi REMOVIDO (spec 018, PR-6, ADR-5) — sucedido por
+    // `ActivateRecruitmentUseCase.ts` (ativação por SERVIÇO, não mais por paciente inteiro).
+    'src/modules/case/application/ActivateRecruitmentUseCase.ts': {
       statements: 100,
       branches: 100,
       functions: 100,
@@ -295,6 +376,47 @@ module.exports = {
       functions: 100,
       lines: 100,
     },
+    // Equipe tratante por linha (spec 018, PR-5, US-11) — medidos 100/100/100/100 nesta
+    // execução (`AdminPatientContactRowsController.test.ts`, `PatientProfessionalRepository.
+    // test.ts`, `adminPatientsRoutes.test.ts`, `PatientDetailQueryHelper.test.ts`,
+    // `PatientRelatedWriter.test.ts`). Entram no piso pela MESMA régua acima: anti-regressão,
+    // não meta — arquivo tocado por esta release, medido antes de entrar.
+    'src/modules/case/domain/PatientProfessional.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/case/infrastructure/PatientProfessionalRepository.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/case/infrastructure/deactivateRowByRow.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/case/interfaces/validators/patientContactRowSchemas.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/case/interfaces/controllers/AdminPatientContactRowsController.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/case/infrastructure/PatientDetailQueryHelper.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
     // Funil e vagas públicas: emissor de evento de etapa, resolução de slot de
     // entrevista e o filtro/mapper do que sai para o portal público. O mapper e
     // o query builder são a fronteira do que vira PII no ar.
@@ -433,6 +555,12 @@ module.exports = {
       lines: 100,
     },
     'src/shared/http/mapQueryCommon.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/shared/http/pgUniqueViolationConflict.ts': {
       statements: 100,
       branches: 100,
       functions: 100,
@@ -624,6 +752,190 @@ module.exports = {
     // cobrem o arquivo (300 testes). 🔒 Piso de 100 % sobre ramo morto é régua que não mede nada:
     // o número só vale depois de o ramo inalcançável sair.
     'src/modules/integration/infrastructure/clickup/ClickUpPatientMapper.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    // ── Entradas vindas da `stage` (trem ABAC), unidas no sync main→stage 06/09/2026 ──
+    // Módulo extraível de permissões (D115) — 100% desde o grupo 2.
+    'src/modules/identity/permissions/**/!(index).ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    // Peças do enforcement (grupo 3) — 100% nos quatro eixos, medido.
+    'src/modules/identity/interfaces/middleware/{PermissionMiddleware,denyUndeclaredRoutes,undeclaredRouteLists,countryScopeGuard}.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    // Peças da F2 (células de prestador). Entram aqui no mesmo PR que as cria —
+    // o gate `revisao-pr` pegou as quatro nascendo FORA do piso, que é
+    // exatamente o que a nota acima avisa. Medidas em 100/100/100/100.
+    'src/modules/worker/application/export/workerExportCells.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/worker/domain/transicaoDeBaixa.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/shared/audit/{contactAccessLog,contactAccessFromRequest}.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/identity/interfaces/routes/permissionRoutesInventoryRoute.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    // ROUTERS DE FAMÍLIA já virados para decisão por célula (task 3.5), em um
+    // bloco só e em ordem de virada. Família nova entra AQUI no mesmo PR em que
+    // declara — senão a trava do piso não alcança o arquivo e a família nasce
+    // fora da rede. Moram em módulos diferentes, daí a lista explícita.
+    'src/modules/identity/interfaces/routes/adminUsersRoutes.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    // `admin.permissions` (F3) — a leitura do painel. Entra junto com a
+    // declaração de `permission_management:read`, como a nota acima manda.
+    // F4 — a escrita do painel. Entra junto com o arquivo, como a nota acima
+    // manda: arquivo novo nesta pasta nasce FORA do piso.
+    'src/modules/identity/interfaces/routes/permissionPanelWriteRoutes.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/identity/interfaces/routes/permissionPanelRoutes.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    // A4: as famílias de mensageria, integração e fixtures. `messagingRoutes.ts`
+    // entrou aqui em 20/08, quando a `createPublicBulkDispatchRoute` — fábrica
+    // de rota "pública temporária" que disparava WhatsApp em massa SEM auth e
+    // que nunca era chamada — foi apagada. Enquanto ela existia, o arquivo
+    // ficava em 82% e a saída honesta era ficar de fora, não testar código
+    // morto para inflar o número.
+    'src/modules/notification/interfaces/routes/messagingRoutes.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/integration/interfaces/routes/adminIntegrationsRoutes.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/interfaces/routes/{testFixturesRoutes,dedupRoutes}.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    // `admin.workers` (3ª) é a primeira família ESPALHADA: 31 rotas em quatro
+    // arquivos, dois deles fora do módulo `worker`. Os quatro entram, senão a
+    // família fica coberta pela metade — que é o mesmo que não estar coberta.
+    'src/modules/worker/interfaces/routes/{adminWorkerRoutes,adminWorkerDocumentsRoutes,workerDocumentsRoutes}.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/matching/interfaces/routes/{workerContextRoutes,adminVacanciesRoutes,analyticsRoutes,recruitmentRoutes,workerEncuadreRoutes}.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/identity/infrastructure/{GroupPermissionEngine,CerbosAuthorizationAdapter}.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    // Boot: caminho crítico do processo INTEIRO, não só do painel.
+    'src/bootstrap/{wirePermissionsModule,startServer}.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    // Peças pequenas e muito reusadas, cada uma nascida de um bug que chegou
+    // em produção: `parseEnvList` (#222, vírgula em env de PRD),
+    // `mergeCustomClaims` (#220, `role` apagava `country`), `EmailService`
+    // (guard de envio, 17/08). São exatamente as que não podem regredir calado.
+    'src/shared/utils/{envFlag,envList}.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    // O aviso do vínculo de contas: o que ele DEIXA REGISTRADO quando não
+    // consegue avisar é a única pista de que alguém não foi avisado.
+    'src/modules/account-link/accountLinkNotice.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/identity/infrastructure/{mergeCustomClaims,EmailService}.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    // D293/D294 (07/09/2026): a fronteira staff × prestador e o que sobrou do papel.
+    // `AccountType` é o ponto único da fronteira; `FirebaseAuthStrategy` é de onde o
+    // tipo sai (claim → coluna → ponte); os use cases de usuário admin deixaram de
+    // expor `role`. Todos medidos 100 no PR — o piso existe para não voltar atrás.
+    'src/modules/identity/domain/AccountType.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/identity/infrastructure/FirebaseAuthStrategy.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/identity/application/{CreateAdminUserUseCase,GetAdminProfileUseCase,ListAdminUsersUseCase,adminUserDto}.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/identity/interfaces/controllers/AdminController.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/case/interfaces/AdminPatientView.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/infrastructure/triggers/onUserCreate.ts': {
       statements: 100,
       branches: 100,
       functions: 100,

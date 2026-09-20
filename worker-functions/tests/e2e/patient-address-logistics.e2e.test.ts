@@ -7,8 +7,8 @@
  *      teto 2000 → 400 (lex C2.6);
  *   2. PATCH /patients/:id/addresses/:addressId edita os 3 campos; endereço de outro paciente → 404;
  *   3. a ficha devolve neighborhood/logisticsCorridor/accessNotes/country por endereço;
- *   4. POST /activate sem sair da ficha: vaga borrador por endereço, ACTIVE, admission_status DONE,
- *      e `service_start_date` NÃO muda ao abrir vaga (US-B9);
+ *   4. POST /:id/activate → 410 (spec 018, PR-6, ADR-5: removido; ativação virou por serviço) —
+ *      service_start_date e status ficam intactos;
  *   5. drawer clínico: deviceTypes HOME+SCHOOL → patient_device_types + escalar derivado pela 310;
  *      re-salvar o MESMO conjunto não altera linhas (created_at igual); código estranho → 422;
  *      `deviceType` (texto livre) → 400 — era 23503 (LISTA B0 #1);
@@ -82,14 +82,14 @@ describe('Domicílio na ficha, dispositivo por catálogo, início do serviço (s
     expect(g.data.data.serviceStartDate).toMatch(/^2026-08-15/);
   });
 
-  it('4. ativar sem sair da ficha: vaga borrador por endereço, ACTIVE/DONE, service_start_date intacta (US-B9)', async () => {
-    const before = (await pool.query(`SELECT service_start_date::text AS d FROM patients WHERE id = $1`, [patientId])).rows[0].d;
+  it('4. `POST /:id/activate` (removido, spec 018 PR-6, ADR-5) → 410 ACTIVATION_SPLIT; service_start_date e status intactos', async () => {
+    const before = (await pool.query(`SELECT service_start_date::text AS d, status FROM patients WHERE id = $1`, [patientId])).rows[0];
     const r = await api.post(`/api/admin/patients/${patientId}/activate`, {}, asAdmin);
-    expect(r.status).toBe(200);
-    expect(r.data.data.createdVacancyIds).toHaveLength(1);
-    const { rows: [row] } = await pool.query(`SELECT status, admission_status, service_start_date::text AS d FROM patients WHERE id = $1`, [patientId]);
-    expect(row).toEqual({ status: 'ACTIVE', admission_status: 'DONE', d: before });
-    expect(before).toBe('2026-08-15');
+    expect(r.status).toBe(410);
+    expect(r.data.code).toBe('ACTIVATION_SPLIT');
+    const { rows: [row] } = await pool.query(`SELECT status, service_start_date::text AS d FROM patients WHERE id = $1`, [patientId]);
+    expect(row).toEqual({ status: before.status, d: before.d });
+    expect(before.d).toBe('2026-08-15');
   });
 
   it('5. dispositivo por catálogo: HOME+SCHOOL, escalar derivado, re-salvar não altera, código estranho 422, texto livre 400', async () => {
@@ -116,12 +116,16 @@ describe('Domicílio na ficha, dispositivo por catálogo, início do serviço (s
   it('6. serviceStartDate no drawer geral grava; relationship fora do enum → 400 (US-B5/B9)', async () => {
     expect((await api.patch(`/api/admin/patients/${patientId}/general`, { serviceStartDate: '2026-09-10' }, asAdmin)).status).toBe(200);
     expect((await pool.query(`SELECT service_start_date::text AS d FROM patients WHERE id = $1`, [patientId])).rows[0].d).toBe('2026-09-10');
-    const bad = await api.patch(`/api/admin/patients/${patientId}/support-network`,
-      { responsibles: [{ firstName: 'Ana', lastName: 'Diaz', relationship: 'Madre', isPrimary: true, displayOrder: 0, phone: '+5491100000001' }] }, asAdmin);
+    // `PATCH /support-network` saiu (spec 018, PR-1, ADR-1, SUP-37) — a escrita de responsáveis
+    // agora é por LINHA (`POST/PATCH .../responsibles`); a rota antiga fica 410 incondicional.
+    const gone = await api.patch(`/api/admin/patients/${patientId}/support-network`, {}, asAdmin);
+    expect(gone.status).toBe(410);
+    const bad = await api.post(`/api/admin/patients/${patientId}/responsibles`,
+      { firstName: 'Ana', lastName: 'Diaz', relationship: 'Madre', isPrimary: true, phone: '+5491100000001' }, asAdmin);
     expect(bad.status).toBe(400);
-    const ok = await api.patch(`/api/admin/patients/${patientId}/support-network`,
-      { responsibles: [{ firstName: 'Ana', lastName: 'Diaz', relationship: 'PARENT', isPrimary: true, displayOrder: 0, phone: '+5491100000001', source: 'admin_manual' }] }, asAdmin);
-    expect(ok.status).toBe(200);
+    const ok = await api.post(`/api/admin/patients/${patientId}/responsibles`,
+      { firstName: 'Ana', lastName: 'Diaz', relationship: 'PARENT', isPrimary: true, phone: '+5491100000001' }, asAdmin);
+    expect(ok.status).toBe(201);
     expect((await pool.query(`SELECT relationship FROM patient_responsibles WHERE patient_id = $1`, [patientId])).rows[0].relationship).toBe('PARENT');
   });
 });

@@ -1,0 +1,29 @@
+# Stack REAL para a suíte `test:e2e:real-auth` — API sem mock de auth, validando o
+# token contra o emulador do Firebase. Roda como um SEGUNDO projeto do compose
+# (`-p realauth`), lado a lado com o stack mock da suíte principal, por isso as
+# portas do host mudam (o emulador fica nas dele: a suíte principal não o sobe).
+#
+#   docker compose -p realauth -f docker-compose.yml -f docker-compose.test.yml \
+#     -f docker-compose.firebase.yml -f docker-compose.real-auth-ports.yml \
+#     up -d postgres firebase-emulator
+#   …esperar http://localhost:9099 responder…
+#   docker compose -p realauth <os mesmos -f> up -d --no-deps api
+#   API_REAL_URL=http://localhost:8081 \
+#   DATABASE_URL=postgresql://enlite_admin:enlite_password@localhost:5440/enlite_e2e \
+#   FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099 npm run test:e2e:real-auth
+# ⚠️ `container_name` é GLOBAL no daemon, não por projeto: sem os nomes próprios
+# abaixo, o `-p realauth` colide com `enlite-postgres`/`enlite-api` do stack mock
+# que já está de pé no mesmo job (achado do gate, 07/09).
+services:
+  postgres:
+    container_name: enlite-realauth-postgres
+    ports: !override
+      - "5440:5432"
+  firebase-emulator:
+    container_name: enlite-realauth-emulator
+  redis:
+    container_name: enlite-realauth-redis
+  api:
+    container_name: enlite-realauth-api
+    ports: !override
+      - "8081:8080"

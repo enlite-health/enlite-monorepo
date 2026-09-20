@@ -1,12 +1,16 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { User, TriangleAlert } from 'lucide-react';
+import { TriangleAlert } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
+import { ActionButton } from '@presentation/components/features/access';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
-import type { PatientDetail, PatientResponsibleDetail } from '@domain/entities/PatientDetail';
+import type { PatientDetail } from '@domain/entities/PatientDetail';
 import { FieldPair, FieldPairGrid, FieldGroupTitle } from './FieldPairs';
+import { maskDocumentNumber } from '@presentation/utils/maskDocumentNumber';
+import { PatientPhotoSlot } from './PatientPhotoSlot';
+import { ENV } from '@infrastructure/config/env';
 
 interface PatientIdentityCardProps {
   patient: PatientDetail;
@@ -22,9 +26,7 @@ interface PatientIdentityCardProps {
 function findMatchingResponsibleName(patient: PatientDetail): string | null {
   const patientLast8 = (patient.phoneWhatsapp ?? '').replace(/\D/g, '').slice(-8);
   if (patientLast8.length < 8) return null;
-  const match = patient.responsibles.find(
-    (r) => (r.phone ?? '').replace(/\D/g, '').slice(-8) === patientLast8,
-  );
+  const match = patient.responsibles.find((r) => (r.phone ?? '').replace(/\D/g, '').slice(-8) === patientLast8);
   if (!match) return null;
   return [match.firstName, match.lastName].filter(Boolean).join(' ') || null;
 }
@@ -66,60 +68,67 @@ function buildAddress(patient: PatientDetail): string | null {
 }
 
 /**
- * O bloco do responsável (Gabriel, 06/09: "pode ser Contacto del responsable principal, pois o
- * paciente pode ter vários responsáveis porém sempre vai ter um principal").
+ * Spec 018 PR-3 (FR-208/209/210/224, US-8, D-A): o cabeçalho mostra o contato de EMERGÊNCIA
+ * MARCADO (`emergencyContactRef` — spec 018 PR-2), nunca mais o `find(isPrimary) ??
+ * responsibles[0]` que a `ResponsibleSection` antiga usava (esse fallback SAIU daqui — FR-224
+ * proíbe reproduzi-lo: "sem fallback" é justamente não inventar um "principal" que ninguém
+ * marcou). A duplicata com a `FamiliaresCard` (que mostra TODOS os responsáveis, número
+ * completo) também sai — FR-210 nomeia essa remoção.
  *
- * 🔒 `isPrimary` decide o TÍTULO, não só a ordem. O card escolhe o responsável com
- * `find(isPrimary) ?? responsibles[0]` — e nesse fallback ninguém elegeu ninguém. Chamar de
- * "principal" quem só é o primeiro da lista é a tela AFIRMAR o que o dado não diz; então o
- * fallback fica com o título neutro. O dado mostrado é o mesmo nos dois casos: nada some.
+ * TRÊS estados, sem fallback entre eles (FR-224):
+ *   1. `redacted`    — `externalContacts === null` (D113: sem `patient_family:read`, o backend
+ *                      nula os 4 campos do container `family` juntos) → marcador de redação.
+ *   2. `notSet`      — tem a célula, mas `emergencyContactRef` é `null` → "não definido".
+ *   3. `contact`     — tem a célula e a marca aponta para um responsável ou contato externo.
  */
-// `t` vem do hook aqui dentro, não por prop: o `TFunction` do i18next tem sobrecargas (o 2º
-// argumento é opções OU defaultValue) que nenhuma assinatura manual reproduz — tipá-la à mão
-// fazia o tsc reprovar o fallback do parentesco. Mesmo padrão do FamiliaresCard.
-function ResponsibleSection({ responsible, isPrimary }: { responsible: PatientResponsibleDetail; isPrimary: boolean }) {
-  const { t } = useTranslation();
-  const name = [responsible.firstName, responsible.lastName].filter(Boolean).join(' ') || '—';
-  const docParts = [
-    responsible.documentType ? t(`admin.patients.detail.documentTypes.${responsible.documentType}`) : null,
-    responsible.documentNumber,
-  ].filter(Boolean);
-  const doc = docParts.length > 0 ? docParts.join(' ') : null;
-  // 🔒 O 2º argumento é o FALLBACK para o valor cru, como em FamiliaresCard:88. Sem ele, um
-  // parentesco fora do catálogo (o enum do banco tem 9 valores; a base pode ter outros) imprime a
-  // CHAVE i18n inteira na tela — `admin.patients.detail.relationshipOptions.XPTO`. Pego no print,
-  // não nos testes: `expectNoRawEnumLeaks` procura ALL_CAPS solto, e a chave inteira não casa com
-  // esse padrão — ou seja, a versão SEM fallback escapa justamente do guard que existe para isso.
-  const relationship = responsible.relationship
-    ? t(`admin.patients.detail.relationshipOptions.${responsible.relationship}`, responsible.relationship)
-    : null;
+type EmergencyContactBlockState =
+  | { kind: 'redacted' }
+  | { kind: 'notSet' }
+  | {
+      kind: 'contact';
+      isExternal: boolean;
+      name: string;
+      phone: string | null;
+      documentTypeLabelKey: string | null;
+      documentNumberMasked: string | null;
+      email: string | null;
+    };
 
-  return (
-    /**
-     * 🔒 `data-clarity-mask` no bloco INTEIRO (parecer do `lex`, 06/09, condição C2). Telefone,
-     * documento e e-mail aqui são contato de TERCEIRO, e o e-mail do paciente logo acima, na mesma
-     * grade, já era mascarado — a mesma razão escrita naquele wrapper vale aqui: o modo do
-     * dashboard do Clarity é configuração remota que ninguém neste repositório controla, e no modo
-     * Balanced texto corrido sobe em claro. A ausência era anterior a esta branch; entra agora
-     * porque a grade nova pôs os dois lado a lado e a inconsistência ficou explícita.
-     */
-    <div className="mt-1" data-clarity-mask="True" data-testid="patient-responsible-section">
-      <FieldGroupTitle>
-        {t(isPrimary
-          ? 'admin.patients.detail.identityCard.primaryResponsibleContact'
-          : 'admin.patients.detail.identityCard.responsibleContact')}
-      </FieldGroupTitle>
-      <FieldPairGrid>
-        <FieldPair label={t('admin.patients.detail.identityCard.responsibleName')} value={name} />
-        <FieldPair label={t('admin.patients.detail.identityCard.relationship')} value={relationship} />
-        <FieldPair label={t('admin.patients.detail.identityCard.responsiblePhone')} value={responsible.phone} />
-        <FieldPair label={t('admin.patients.detail.identityCard.documentType')} value={doc} />
-        {responsible.email && (
-          <FieldPair label={t('admin.patients.detail.identityCard.email')} value={responsible.email} full />
-        )}
-      </FieldPairGrid>
-    </div>
-  );
+function resolveEmergencyContactBlock(patient: PatientDetail): EmergencyContactBlockState {
+  // D113: os 4 campos do container `family` (responsibles/externalContacts/phoneMatchesResponsible/
+  // emergencyContactRef) saem juntos como `null` quando falta `patient_family:read` — checar
+  // QUALQUER um deles delataria o mesmo tanto; `externalContacts` é o já documentado no domínio.
+  if (patient.externalContacts === null || patient.externalContacts === undefined) {
+    return { kind: 'redacted' };
+  }
+  const ref = patient.emergencyContactRef;
+  if (!ref) return { kind: 'notSet' };
+
+  if (ref.kind === 'RESPONSIBLE') {
+    const r = patient.responsibles.find((x) => x.id === ref.id);
+    if (!r) return { kind: 'notSet' }; // marca órfã (não deveria acontecer; nunca quebra a tela)
+    return {
+      kind: 'contact',
+      isExternal: false,
+      name: [r.firstName, r.lastName].filter(Boolean).join(' ') || '—',
+      phone: r.phone,
+      documentTypeLabelKey: r.documentType ? `admin.patients.detail.documentTypes.${r.documentType}` : null,
+      documentNumberMasked: maskDocumentNumber(r.documentNumber),
+      email: r.email,
+    };
+  }
+  // D-A #6: contato externo não tem coluna de documento — rótulo "do contato", sem documento.
+  const c = patient.externalContacts.find((x) => x.id === ref.id);
+  if (!c) return { kind: 'notSet' };
+  return {
+    kind: 'contact',
+    isExternal: true,
+    name: c.name || '—',
+    phone: c.phone,
+    documentTypeLabelKey: null,
+    documentNumberMasked: null,
+    email: null,
+  };
 }
 
 export function PatientIdentityCard({ patient, onSaved }: PatientIdentityCardProps) {
@@ -163,8 +172,13 @@ export function PatientIdentityCard({ patient, onSaved }: PatientIdentityCardPro
     ? t(`admin.patients.onHoldReasonOptions.${patient.onHoldReason}`, patient.onHoldReason)
     : null;
   const address = buildAddress(patient);
-  const markedPrimary = patient.responsibles?.find((r) => r.isPrimary) ?? null;
-  const primaryResponsible = markedPrimary ?? patient.responsibles?.[0] ?? null;
+  // FR-204: chip/linha de alta SÓ com status ATUAL DISCHARGED (não "já foi DISCHARGED alguma
+  // vez" — REGRA-17, um nome só, SUP-1). dischargedAt vem do backend já filtrado pela mesma
+  // condição (último DISCHARGED em patient_status_history), mas o status atual é quem decide a
+  // EXIBIÇÃO — reabrir um paciente (ex.: ACTIVE de novo) não deve reexibir a alta antiga.
+  const isDischarged = statusKey === 'DISCHARGED';
+  const dischargedAtLabel = isDischarged ? formatDate(patient.dischargedAt ?? null) : null;
+  const emergencyBlock = resolveEmergencyContactBlock(patient);
 
   return (
     <div
@@ -172,14 +186,14 @@ export function PatientIdentityCard({ patient, onSaved }: PatientIdentityCardPro
       data-testid="patient-identity-card"
     >
       <div className="flex items-center gap-4 mb-2">
-        <div className="w-14 h-14 rounded-full bg-gray-200 flex items-center justify-center text-gray-600 shrink-0">
-          <User className="w-8 h-8" />
-        </div>
+        {/* Spec 018, PR-4 (task 4.10): flag `VITE_PATIENT_PHOTO_ENABLED` — ligada na stage, ausente
+            (portanto false) em PRD. Achado da revisão do PR-4 (item 6): antes desta rodada não
+            havia gate nenhum aqui. */}
+        {ENV.PATIENT_PHOTO_ENABLED && (
+          <PatientPhotoSlot patientId={patient.id} hasPhoto={patient.hasPhoto} onChanged={onSaved} />
+        )}
         <div className="min-w-0">
-          {/* 06/09: o NOME saiu daqui — subiu para o `h1` da página, a 100px acima. Repetir os dois
-              não era só redundância visual: `getByText(nome)` passou a resolver DOIS elementos e
-              três e2e quebraram em strict mode. O cartão mantém o que é dele — avatar, estado,
-              motivo da espera, número do caso e os campos de contato. */}
+          {/* 06/09: o NOME saiu daqui (subiu pro `h1` da página) — repetir dava strict-mode em e2e. */}
           <div className="flex flex-wrap items-center gap-2">
             <span className={`inline-flex px-2.5 py-0.5 rounded-full ${statusColor}`} data-testid="patient-status-badge">
               <Text as="span" size="xs" weight="medium" color="inherit">
@@ -200,6 +214,15 @@ export function PatientIdentityCard({ patient, onSaved }: PatientIdentityCardPro
                 </Text>
               </span>
             )}
+            {/* FR-204 (REGRA-17, SUP-1): mesmo rótulo do status ATUAL, chip pílula salmão/branco,
+                SÓ quando status === DISCHARGED — o texto NÃO é um segundo nome para o mesmo estado. */}
+            {isDischarged && (
+              <span className="inline-flex px-2.5 py-0.5 rounded-full bg-rose-300" data-testid="patient-discharge-chip">
+                <Text as="span" size="xs" weight="medium" color="inherit" className="!text-white">
+                  {statusLabel}
+                </Text>
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -217,8 +240,17 @@ export function PatientIdentityCard({ patient, onSaved }: PatientIdentityCardPro
           </div>
           <FieldPair label={t('admin.patients.detail.identityCard.admission')} value={formatDate(patient.createdAt)} />
           <FieldPair label={t('admin.patients.detail.identityCard.lastUpdate')} value={formatDate(patient.updatedAt)} />
-          {/* Spec 014 US-D2: "Desligamiento" REMOVIDO — era `value={null}` fixo, sem coluna no
-              banco (a fonte real é `patient_status_history`, aba Historial). */}
+          {/*
+           * Spec 014 US-D2 removeu "Desligamiento" porque não havia coluna (era `value={null}`
+           * fixo). Spec 018 PR-3 (FR-203) TRAZ DE VOLTA com fonte real: o último DISCHARGED em
+           * `patient_status_history` (a mesma tabela da aba Historial — lex CONDIÇÃO 6: nenhuma
+           * célula nova, mesmo `patient:read` que a aba já exige). SÓ aparece com status atual
+           * DISCHARGED (FR-204).
+           */}
+          {/* Reusa a chave `discharge` já existente (i18n legado da spec 014 US-D2 — nunca consumida). */}
+          {isDischarged && (
+            <FieldPair label={t('admin.patients.detail.identityCard.discharge')} value={dischargedAtLabel} testId="patient-discharged-at" />
+          )}
           {/* Rua + número é texto: o Clarity (Balanced) não mascara sozinho (lex C2.1; QA 🔴2). */}
           {address && (
             <div data-clarity-mask="True" className="flex flex-col min-w-0 sm:col-span-2">
@@ -240,14 +272,17 @@ export function PatientIdentityCard({ patient, onSaved }: PatientIdentityCardPro
               </Text>
             </div>
             <div className="flex items-center gap-2">
-              <Button
+              {/* D286 — grava PATCH /patients/:id/general (telefone) → patient_identity:update (PR-8b). */}
+              <ActionButton
+                resource="patient_identity"
+                action="update"
                 variant="outline"
                 size="sm"
                 onClick={() => setConfirmingMove(true)}
                 data-testid="move-phone-to-responsible-btn"
               >
                 {t('admin.patients.detail.identityCard.movePhoneToResponsible')}
-              </Button>
+              </ActionButton>
               <Button
                 variant="outline"
                 size="sm"
@@ -310,11 +345,60 @@ export function PatientIdentityCard({ patient, onSaved }: PatientIdentityCardPro
         </>
       )}
 
-      {primaryResponsible && (
-        <div className="border-t border-gray-200 pt-4">
-          <ResponsibleSection responsible={primaryResponsible} isPrimary={markedPrimary !== null} />
-        </div>
-      )}
+      {/*
+       * FR-208/209/210/211/224 (US-8, D-A): o contato de emergência é o MARCADO — nunca mais o
+       * `find(isPrimary) ?? responsibles[0]`. Lê SÓ do container `family` (o próprio dado já vem
+       * `null` do backend sem `patient_family:read` — D286); documento SEMPRE mascarado ANTES do
+       * render (`maskDocumentNumber`, FR-210); `data-clarity-mask` no bloco inteiro (FR-211).
+       */}
+      <div className="border-t border-gray-200 pt-4" data-clarity-mask="True" data-testid="patient-emergency-contact-section">
+        <FieldGroupTitle>{t('admin.patients.detail.identityCard.emergencyContactTitle')}</FieldGroupTitle>
+        {emergencyBlock.kind === 'redacted' && (
+          <Text size="sm" color="secondary" data-testid="emergency-contact-redacted">
+            {t('admin.patients.detail.identityCard.emergencyContactRedacted')}
+          </Text>
+        )}
+        {emergencyBlock.kind === 'notSet' && (
+          <Text size="sm" color="secondary" data-testid="emergency-contact-not-set">
+            {t('admin.patients.detail.identityCard.emergencyContactNotSet')}
+          </Text>
+        )}
+        {emergencyBlock.kind === 'contact' && (
+          <FieldPairGrid>
+            <FieldPair
+              label={t(emergencyBlock.isExternal
+                ? 'admin.patients.detail.identityCard.emergencyContactNameExternal'
+                : 'admin.patients.detail.identityCard.responsibleName')}
+              value={emergencyBlock.name}
+              testId="emergency-contact-name"
+            />
+            <FieldPair
+              label={t(emergencyBlock.isExternal
+                ? 'admin.patients.detail.identityCard.emergencyContactPhoneExternal'
+                : 'admin.patients.detail.identityCard.responsiblePhone')}
+              value={emergencyBlock.phone}
+              testId="emergency-contact-phone"
+            />
+            {/* D-A #6: contato externo não tem coluna de documento — o par some, não "—" fixo. */}
+            {!emergencyBlock.isExternal && (
+              <>
+                <FieldPair
+                  label={t('admin.patients.detail.identityCard.documentType')}
+                  value={emergencyBlock.documentTypeLabelKey ? t(emergencyBlock.documentTypeLabelKey) : null}
+                />
+                <FieldPair
+                  label={t('admin.patients.detail.identityCard.emergencyContactDocumentNumber')}
+                  value={emergencyBlock.documentNumberMasked}
+                  testId="emergency-contact-document-number"
+                />
+              </>
+            )}
+            {emergencyBlock.email && (
+              <FieldPair label={t('admin.patients.detail.identityCard.email')} value={emergencyBlock.email} full />
+            )}
+          </FieldPairGrid>
+        )}
+      </div>
     </div>
   );
 }

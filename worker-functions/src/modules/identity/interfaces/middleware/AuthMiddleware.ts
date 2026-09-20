@@ -2,10 +2,12 @@ import { Request, Response, NextFunction } from 'express';
 import { IAuthenticationService } from '../../ports/IAuthenticationService';
 import { IAuthorizationEngine } from '../../ports/IAuthorizationEngine';
 import { AuthContext, Credentials, CredentialType, PrincipalType, RequestMetadata } from '../../domain/Auth';
-import { isStaffRole } from '../../domain/EnliteRole';
+import { accountTypeForRole, isStaffAccount, type AccountTyped } from '../../domain/AccountType';
 import { MultiAuthService } from '../../infrastructure/MultiAuthService';
-import { loggingAls } from '@shared/logging';
+import { loggingAls, logger } from '@shared/logging';
 import { staffActor, workerSelfActor } from '@shared/audit/actorSource';
+import { isCountryCode, isCountryRlsEnabled, setDbContext } from '@shared/database/requestDbSession';
+import { ENLITE_TENANT_ID, type PermissionClient } from '@modules/identity/permissions';
 
 /**
  * Guarda quem autenticou no contexto da request (ALS), para que as escritas
@@ -16,20 +18,55 @@ import { staffActor, workerSelfActor } from '@shared/audit/actorSource';
  * aqui só somamos o ator. Sem store (job fora de request) é no-op.
  *
  * ⚠️ `requireAuth` protege TANTO o painel QUANTO as rotas do próprio prestador
- * (`/api/workers/me/*`). Sem o recorte por papel, uma edição que o candidato faz
- * no app entraria na medição como trabalho do time — por isso o ator sai de
- * `isStaffRole`, não do simples fato de estar autenticado.
+ * (`/api/workers/me/*`). Sem o recorte por tipo de conta, uma edição que o
+ * candidato faz no app entraria na medição como trabalho do time — por isso o
+ * ator sai de `isStaffAccount` (D294), não do simples fato de estar autenticado.
  */
 function rememberActorInAls(
-  uid?: string | null,
-  email?: string | null,
-  roles?: readonly string[] | null,
+  uid: string | null | undefined,
+  email: string | null | undefined,
+  principal: AccountTyped,
+  country?: unknown,
 ): void {
-  const store = loggingAls.getStore();
+  // `?.` de propósito (mesmo padrão de withActorContext): em teste com
+  // `@shared/logging` mockado o ALS pode nem existir, e auditoria/contexto nunca
+  // pode derrubar a autenticação.
+  const store = loggingAls?.getStore?.();
   if (!store) return;
-  const isStaff = (roles ?? []).some((role) => isStaffRole(role as never));
+  const isStaff = isStaffAccount(principal);
   const actor = isStaff ? staffActor(uid, email) : workerSelfActor(uid);
   if (actor) store.actor = actor;
+  declareDbContext(isStaff, uid, country);
+}
+
+/**
+ * Declara a jurisdição da request para a RLS de país (ABAC Fase 1, task 3.1).
+ *
+ * ⚠️ [lex C3] Claim `country` ausente NÃO vira 'AR'. Um default aqui seria pior
+ * do que não ter isolamento: daria a qualquer operador sem claim a jurisdição
+ * argentina inteira, calado. Sem claim, o contexto vai sem país — a policy não
+ * casa nada e a consulta devolve ZERO linha (fail-closed, spec country-isolation)
+ * — e o erro sai no log com o uid para o runbook de atribuição (task 3.2).
+ */
+function declareDbContext(isStaff: boolean, uid?: string | null, country?: unknown): void {
+  if (!isStaff) {
+    setDbContext({ kind: 'worker_self', uid: uid ?? undefined });
+    return;
+  }
+
+  if (!isCountryCode(country)) {
+    // Severidade acompanha o estrago real: antes da virada é só um staff a
+    // instrumentar (warn); com a RLS valendo, é gente sem enxergar nada (error).
+    const line = { uid, claimCountry: typeof country === 'string' ? country : null };
+    const message =
+      '[abac] staff sem claim de país válido — consultas protegidas retornam zero linhas (sem fallback)';
+    if (isCountryRlsEnabled()) logger.error(line, message);
+    else logger.warn(line, message);
+    setDbContext({ kind: 'staff', uid: uid ?? undefined });
+    return;
+  }
+
+  setDbContext({ kind: 'staff', uid: uid ?? undefined, country });
 }
 
 /**
@@ -62,10 +99,44 @@ export class AuthMiddleware {
 
   constructor(
     private readonly authService: IAuthenticationService,
-    private readonly authzEngine: IAuthorizationEngine
+    private readonly authzEngine: IAuthorizationEngine,
+    /**
+     * Resolvedor de permissões efetivas (change `painel-grupos-permissao`,
+     * task 3.1). Opcional: sem ele o middleware se comporta exatamente como
+     * antes — é assim que os testes antigos seguem válidos e que um consumidor
+     * fora do painel não paga por um módulo que não usa.
+     */
+    private readonly permissions?: PermissionClient,
   ) {
     // Guarda referência tipada se o serviço for MultiAuthService
     this.multiAuthService = authService instanceof MultiAuthService ? authService : null;
+  }
+
+  /**
+   * Anexa `{permissions, countries}` ao principal quando o engine está ligado e
+   * quem chega é staff.
+   *
+   * NÃO nega aqui, de propósito. Conta em admissão / sem grupo tem que
+   * conseguir autenticar para cair na tela de boas-vindas e no
+   * `/api/admin/auth/profile` (auto-provisionamento do 1º login) — quem nega é
+   * o `PermissionMiddleware`, na rota que exige célula. Negar já na
+   * autenticação trancaria fora justamente quem o gestor precisa enxergar para
+   * dar o grupo.
+   *
+   * Falha de resolução não derruba a autenticação: o principal segue sem as
+   * listas, e o guard da rota resolve de novo e NEGA (fail-closed lá, onde a
+   * decisão é tomada).
+   */
+  private async attachEffectiveAuthz(principal: { id: string } & AccountTyped): Promise<void> {
+    if (!this.permissions || process.env.PERMISSION_ENGINE_ENABLED !== 'true') return;
+    if (!isStaffAccount(principal)) return;
+    try {
+      const resolved = await this.permissions.resolve(principal.id, ENLITE_TENANT_ID);
+      (principal as { permissions?: string[]; countries?: string[] }).permissions = resolved.permissions;
+      (principal as { permissions?: string[]; countries?: string[] }).countries = resolved.countries;
+    } catch (err) {
+      logger.error({ err, uid: principal.id }, '[perm] falha ao resolver permissões na autenticação');
+    }
   }
 
   /**
@@ -79,11 +150,14 @@ export class AuthMiddleware {
         const mockUser = (req as any).user;
         if (process.env.USE_MOCK_AUTH === 'true' && mockUser?.uid) {
           const roles: string[] = mockUser.role ? [mockUser.role] : [];
+          // O mock só conhece `role`; o tipo vem pela ponte (D294), como o token real sem claim.
+          const accountType = mockUser.account_type ?? accountTypeForRole(mockUser.role);
           const authContext: AuthContext = {
             principal: {
               id: mockUser.uid,
               type: PrincipalType.USER,
               roles,
+              ...(accountType ? { accountType } : {}),
             },
             credentials: {
               type: CredentialType.GOOGLE_ID_TOKEN,
@@ -100,8 +174,9 @@ export class AuthMiddleware {
             },
           };
           (req as any).authContext = authContext;
-          (req as any).user = { uid: mockUser.uid, email: mockUser.email, role: mockUser.role, roles };
-          rememberActorInAls(mockUser.uid, mockUser.email, roles);
+          (req as any).user = { uid: mockUser.uid, email: mockUser.email, role: mockUser.role, roles, accountType };
+          rememberActorInAls(mockUser.uid, mockUser.email, authContext.principal, mockUser.country);
+          await this.attachEffectiveAuthz(authContext.principal);
           return next();
         }
 
@@ -142,9 +217,17 @@ export class AuthMiddleware {
           uid: authContext.principal.id,
           type: authContext.principal.type,
           roles: authContext.principal.roles,
+          accountType: authContext.principal.accountType,
         };
 
-        rememberActorInAls(authContext.principal.id, null, authContext.principal.roles);
+        rememberActorInAls(
+          authContext.principal.id,
+          null,
+          authContext.principal,
+          authContext.principal.country,
+        );
+
+        await this.attachEffectiveAuthz(authContext.principal);
 
         // Log successful authentication (without PII)
         this.logAuthAttempt(authContext, metadata, true);
@@ -244,33 +327,15 @@ export class AuthMiddleware {
   }
 
   /**
-   * Require staff access (admin | recruiter | community_manager).
-   * Use this for endpoints that any Enlite internal user can access.
+   * Fronteira staff × prestador (D294): conta de tipo `staff`. É a única coisa
+   * que este guard decide — o que o staff PODE é a célula (`PermissionMiddleware`).
    */
   requireStaff() {
     return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
       await this.requireAuth()(req, res, () => {
         const user = (req as any).user;
-        const staffRoles = ['admin', 'recruiter', 'community_manager'];
-        if (!user?.roles?.some((r: string) => staffRoles.includes(r))) {
+        if (!user || !isStaffAccount(user)) {
           res.status(403).json({ success: false, error: 'Staff access required' });
-          return;
-        }
-        next();
-      });
-    };
-  }
-
-  /**
-   * Require admin role — chains requireAuth() then checks roles
-   */
-  requireAdmin() {
-    return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-      // First authenticate
-      await this.requireAuth()(req, res, () => {
-        const user = (req as any).user;
-        if (!user || !user.roles || !user.roles.includes('admin')) {
-          res.status(403).json({ success: false, error: 'Admin access required' });
           return;
         }
         next();
@@ -284,7 +349,7 @@ export class AuthMiddleware {
    * Firebase só é chamado se a API key falhar.
    *
    * Em USE_MOCK_AUTH=true (E2E): usa req.user do MockAuthMiddleware
-   * e verifica role staff.
+   * e verifica o tipo de conta (staff).
    */
   requireStaffOrApiKey() {
     return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
@@ -295,11 +360,15 @@ export class AuthMiddleware {
           res.status(401).end();
           return;
         }
-        const staffRoles = ['admin', 'recruiter', 'community_manager'];
-        if (!staffRoles.includes(mockUser.role ?? '')) {
+        const mockPrincipal: AccountTyped = {
+          accountType: mockUser.account_type ?? null,
+          roles: mockUser.role ? [mockUser.role] : [],
+        };
+        if (!isStaffAccount(mockPrincipal)) {
           res.status(401).end();
           return;
         }
+        rememberActorInAls(mockUser.uid, mockUser.email, mockPrincipal, mockUser.country);
         return next();
       }
 
@@ -315,6 +384,9 @@ export class AuthMiddleware {
         const apiKeyContext = this.multiAuthService.tryAuthenticateAsApiKey(token);
         if (apiKeyContext) {
           req.authContext = apiKeyContext;
+          // Chave de API é serviço (`service:<nome>`), não pessoa: contexto de
+          // SISTEMA declarado (design, decisão 2) — não herda país de ninguém.
+          setDbContext({ kind: 'system', systemContext: `api-key:${apiKeyContext.principal.id}` });
           return next();
         }
       }
@@ -332,12 +404,19 @@ export class AuthMiddleware {
           });
           if (firebaseContext) {
             const roles = firebaseContext.principal.roles ?? [];
-            if (roles.some(r => isStaffRole(r))) {
+            if (isStaffAccount(firebaseContext.principal)) {
               req.authContext = firebaseContext;
               req.user = {
                 uid: firebaseContext.principal.id,
                 roles,
+                accountType: firebaseContext.principal.accountType,
               };
+              rememberActorInAls(
+                firebaseContext.principal.id,
+                null,
+                firebaseContext.principal,
+                firebaseContext.principal.country,
+              );
               return next();
             }
           }
@@ -352,6 +431,13 @@ export class AuthMiddleware {
 
   /**
    * Require API Key authentication (for service-to-service)
+   *
+   * A classificação de banco é de SISTEMA, igual à do `requireStaffOrApiKey`
+   * (design, decisão 2): chave de API é serviço, não pessoa — não tem
+   * jurisdição própria e não pode herdar a de ninguém. Sem este carimbo o
+   * `requireAuth` abaixo classificaria a request como `worker_self` (o principal
+   * de serviço não tem papel de staff), que sob RLS é fail-closed: o parceiro
+   * passaria a ler zero linha sem nenhum erro visível.
    */
   requireApiKey() {
     return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
@@ -365,8 +451,13 @@ export class AuthMiddleware {
         return;
       }
 
-      // Continue with normal auth flow
-      return this.requireAuth()(req, res, next);
+      // Continue with normal auth flow — o contexto é reescrito DEPOIS que a
+      // autenticação passa (o requireAuth carimba worker_self/staff no caminho).
+      return this.requireAuth()(req, res, () => {
+        const principalId = (req as Request).authContext?.principal?.id ?? 'unknown';
+        setDbContext({ kind: 'system', systemContext: `api-key:${principalId}` });
+        next();
+      });
     };
   }
 

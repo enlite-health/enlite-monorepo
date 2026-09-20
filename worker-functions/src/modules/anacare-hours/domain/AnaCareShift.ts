@@ -7,12 +7,11 @@
  * spec §Contrato de dados exige que o backend real cumpra a mesma interface sem mudar hooks,
  * containers ou páginas do front.
  *
- * `id`/`anaCareShiftId` são o MESMO valor nesta fase (`source_shift_id`): o retrato `anacare_shift`
- * nasce vazio na migration 437 (job real é fase 2/4, sob PARE do lex/D344) — não existe `bigserial`
- * técnico a expor ainda. Documentado em DIVERGÊNCIAS no fecho da fase.
+ * `id`/`anaCareShiftId` são o MESMO valor nesta fase (`source_shift_id`) — não existe `bigserial`
+ * técnico a expor. Documentado em DIVERGÊNCIAS no fecho da fase.
  */
 
-/** ↔ `shift_hours_validation.approved_checkin_source` / `anacare_shift.checkin_source`. */
+/** ↔ `shift_hours_validation.approved_checkin_source` / origem do check-in do turno na fonte. */
 export type CheckInOrigin = 'sin_checkin' | 'web_admin' | 'app';
 
 /** ↔ `shift_hours_validation.status` (CHECK 'pendente'|'validado'|'contestado'). */
@@ -38,7 +37,7 @@ export interface Validator {
 export interface AnaCareShift {
   /** Nesta fase = `anaCareShiftId` (ver cabeçalho do arquivo). */
   id: string;
-  /** YYYY-MM-DD — ↔ `anacare_shift.period_month` truncado ao dia. */
+  /** YYYY-MM-DD — dia do turno, dentro do `period_month` do retrato agregado. */
   date: string;
   scheduledStart: string;
   scheduledEnd: string;
@@ -66,11 +65,54 @@ export interface AnaCareProvider {
   shifts: AnaCareShift[];
 }
 
+/** Usado só pelo DETALHE (`getPatientMonth`, ao vivo na fonte) — por turno. Ver `AnaCareListPatient` para a LISTA (F6.2, agregado). */
 export interface AnaCarePatient {
   anaCareId: string;
   linked: boolean;
   name?: string;
+  /**
+   * Documento de identidade do paciente (categoria/valor, ex. "DNI"/"30111222") — vem do payload
+   * do turno na fonte, mesmo desenho do `name` (item 1). PII: ausente (não vazio, não redigido) a
+   * menos que o ator tenha `patient_identity:read` — mesmo gate do container "Identidade" da ficha
+   * do paciente (`patientContainerAccess.ts`), aplicado em `AnaCareHoursController.
+   * canReadPatientDocument`. Só o DETALHE carrega — a LISTA (`AnaCareListPatient`) nunca ganha
+   * este campo.
+   */
+  documentType?: string;
+  documentNumber?: string;
   providers: AnaCareProvider[];
+}
+
+/**
+ * Contrato da LISTA (F6.2, D361 Adendo 17/09) — sem NENHUM turno individual, lido do agregado
+ * (`anacare_patient_month` + `anacare_patient_month_provider`, migrations 441/442). `providers`
+ * continua array (não só um número) para o filtro "Todos los prestadores" do front seguir
+ * funcionando sem reescrita — só `provider.shifts` some.
+ */
+export interface AnaCareListProvider {
+  anaCareId: string;
+  linked: boolean;
+  name?: string;
+}
+
+export interface AnaCareListPatient {
+  anaCareId: string;
+  name?: string;
+  /** D349 item 2 — paciente permanece SEMPRE sem vínculo, bloqueado. */
+  linked: false;
+  providers: AnaCareListProvider[];
+  providersCount: number;
+  shiftsCount: number;
+  /** Modo `zero` de `totalHours` (front) — soma sozinha. */
+  hoursActualSum: number;
+  /** Somado a `hoursActualSum` cobre o modo previsto — nunca isolado, nunca somado ao modo `zero`. */
+  hoursScheduledSumMissingActual: number;
+  /** `COUNT` por status em `shift_hours_validation` (GROUP BY) — nunca mais o join 1:1 por turno. */
+  validated: number;
+  contested: number;
+  originSinCheckin: number;
+  originWebAdmin: number;
+  originApp: number;
 }
 
 export interface AnaCareOriginCounts {
@@ -79,13 +121,25 @@ export interface AnaCareOriginCounts {
   app: number;
 }
 
+/**
+ * Item 3 (revisão de PR): distingue as 3 razões por trás de `stale=true` até a TELA — antes,
+ * `nao_construido` (retrato NUNCA sincronizado, `freshness.shifts===0`) e `velho` (sync rodou, mas
+ * `getRetratoStatus().stale` da fonte voltou true, ex.: > 24h) colapsavam no mesmo booleano, e a
+ * tela sempre mostrava "há mais de 24 horas" mesmo quando o sync nunca tinha rodado — mensagem
+ * falsa. `stale` continua existindo (compat: `nao_construido || velho`).
+ */
+export type AnaCareSnapshotState = 'nao_construido' | 'velho' | 'fresco';
+
 export interface AnaCareMonthSnapshot {
   /** YYYY-MM */
   month: string;
   updatedAt: string;
   stale: boolean;
+  /** Ver `AnaCareSnapshotState` — distinção que `stale` sozinho não carrega (item 3). */
+  snapshotState: AnaCareSnapshotState;
   circuitBreakerOpen: boolean;
-  patients: AnaCarePatient[];
+  /** F6.2: pacientes AGREGADOS (sem turno individual) — ver `AnaCareListPatient`. */
+  patients: AnaCareListPatient[];
 }
 
 export interface AnaCareRetratoStatus {

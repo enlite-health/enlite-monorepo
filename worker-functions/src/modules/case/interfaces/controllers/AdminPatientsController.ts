@@ -2,14 +2,17 @@ import { Request, Response } from 'express';
 import { z } from 'zod';
 import { Pool } from 'pg';
 import { reportError, logger } from '@shared/logging';
-import { AuthMiddleware } from '@modules/identity';
+import { pgUniqueViolationConflict } from '@shared/http/pgUniqueViolationConflict';
+import { AuthMiddleware, resolveCountryScope, CountryScopeError } from '@modules/identity';
+import { currentDbContext } from '@shared/database/requestDbSession';
 import { adminPatientsListSchema } from '../validators/adminPatientsListSchema';
 import { adminPatientParamsSchema } from '../validators/adminPatientParamsSchema';
 import { createPatientSchema } from '../validators/createPatientSchema';
 import { PatientQueryRepository } from '../../infrastructure/PatientQueryRepository';
 import { GetPatientByIdUseCase } from '../../application/GetPatientByIdUseCase';
 import { clinicalCellsOf, canReadPatientClinical, PATIENT_CLINICAL_READ_CELL } from '../../application/patientClinicalAccess';
-import { actorRolesOf } from '../../application/contractedServiceHourlyValueAccess';
+import { patientContainerReadsOf, canReadPatientContainer, patientContainerCell } from '../../application/patientContainerAccess';
+import { hourlyValueActorOf } from '../../application/contractedServiceHourlyValueAccess';
 import {
   toAdminPatientListItem,
   projectAdminPatientDetail,
@@ -22,11 +25,6 @@ import {
   PatientContactValidationError,
   type CreatePatientInput,
 } from '../../application/CreatePatientUseCase';
-import {
-  ActivatePatientUseCase,
-  PatientNotFoundError,
-  PatientNotReadyError,
-} from '../../application/ActivatePatientUseCase';
 import {
   PatientService,
   type PatientGeneralSectionData,
@@ -96,7 +94,6 @@ export class AdminPatientsController {
   private readonly getPatientByIdUseCase: GetPatientByIdUseCase;
   private readonly getPatientFunnelUseCase: GetPatientFunnelUseCase;
   private readonly createPatientUseCase: CreatePatientUseCase;
-  private readonly activatePatientUseCase: ActivatePatientUseCase;
   private readonly patientService: PatientService;
   private readonly testFixtures: PatientTestFixtureService;
   private readonly db: Pool;
@@ -120,7 +117,6 @@ export class AdminPatientsController {
     geocoder?: GeocodingService,
     createPatientUseCase?: CreatePatientUseCase,
     patientService?: PatientService,
-    activatePatientUseCase?: ActivatePatientUseCase,
     diagnosisService?: PatientDiagnosisService,
   ) {
     this.repo = new PatientQueryRepository();
@@ -129,7 +125,6 @@ export class AdminPatientsController {
     this.getPatientFunnelUseCase = new GetPatientFunnelUseCase(this.db);
     this.createPatientUseCase = createPatientUseCase ?? new CreatePatientUseCase();
     this.patientService = patientService ?? new PatientService();
-    this.activatePatientUseCase = activatePatientUseCase ?? new ActivatePatientUseCase();
     this.geocoder = geocoder ?? new GeocodingService();
     this.testFixtures = new PatientTestFixtureService(this.db);
     this.diagnosisServiceOverride = diagnosisService;
@@ -233,7 +228,8 @@ export class AdminPatientsController {
 
   /**
    * PATCH /api/admin/patients/:id/:section
-   *   section ∈ general | clinical | support-network | service
+   *   section ∈ general | clinical | coverage | service
+   *   (`support-network` saiu — spec 018 PR-1, SUP-37: vira 410 na rota, a escrita é por linha)
    *
    * Section-scoped partial update. The section decides the whitelist (a
    * per-section zod schema); an unknown section or an unknown field is a 400.
@@ -271,6 +267,22 @@ export class AdminPatientsController {
     if ('affiliateId' in (bodyResult.data as Record<string, unknown>)) {
       logger.info({ msg: 'patient_affiliate_id.write', uid: AuthMiddleware.getAuthContext(req)?.principal.id ?? null, patientId: id, section });
     }
+    // Spec 018 PR-3 (lex #2b-8/#2c, molde do trecho acima): trilha de escrita de gênero/idiomas
+    // SEM VALOR — só os NOMES dos campos escritos (M1-1: uid não aparece na tela, mas fica na
+    // trilha, como affiliateId).
+    {
+      const bodyKeys = bodyResult.data as Record<string, unknown>;
+      const genderOrLanguageFields = (['gender', 'languages'] as const).filter((f) => f in bodyKeys);
+      if (genderOrLanguageFields.length > 0) {
+        logger.info({
+          msg: 'patient_identity.write',
+          uid: AuthMiddleware.getAuthContext(req)?.principal.id ?? null,
+          patientId: id,
+          section,
+          fields: genderOrLanguageFields,
+        });
+      }
+    }
 
     try {
       const exists = await this.db.query('SELECT id FROM patients WHERE id = $1 AND deleted_at IS NULL', [id]);
@@ -285,7 +297,7 @@ export class AdminPatientsController {
         id,
         section,
         bodyResult.data as PatientGeneralSectionData | PatientRelatedInput,
-        actorUid ? { uid: actorUid } : undefined,
+        actorUid ? { uid: actorUid, cells: clinicalCellsOf(req) } : undefined,
       );
       res.status(200).json({ success: true, data: { id } });
     } catch (err: unknown) {
@@ -414,63 +426,6 @@ export class AdminPatientsController {
   }
 
   /**
-   * POST /api/admin/patients/:id/activate
-   *
-   * Approves the patient and opens recruitment: creates ONE draft vacancy per
-   * active location (decisão D5) and moves the patient to ACTIVE. Idempotent —
-   * an already-ACTIVE patient returns 200 with createdVacancyIds:[] (no dup).
-   *   - 404 when the patient does not exist.
-   *   - 422 when the patient has no active address (cannot activate without a
-   *     location — nothing to create).
-   */
-  async activatePatient(req: Request, res: Response): Promise<void> {
-    const parsed = adminPatientParamsSchema.safeParse(req.params);
-    if (!parsed.success) {
-      res.status(400).json({
-        success: false,
-        error: 'Invalid params',
-        details: parsed.error.flatten(),
-      });
-      return;
-    }
-
-    try {
-      const result = await this.activatePatientUseCase.execute(parsed.data.id);
-      res.status(200).json({
-        success: true,
-        data: {
-          patientId: result.patientId,
-          status: result.status,
-          createdVacancyIds: result.createdVacancyIds,
-        },
-      });
-    } catch (err: unknown) {
-      if (err instanceof PatientNotFoundError) {
-        res.status(404).json({ success: false, error: 'Patient not found' });
-        return;
-      }
-      if (err instanceof PatientNotReadyError) {
-        // Spec 014 US-D1: mesmos códigos do checklist (`completeness.missing`), para o front
-        // traduzir com o MESMO i18n em vez de repetir a frase crua do backend.
-        res.status(422).json({
-          success: false,
-          error: err.message,
-          code: 'PATIENT_NOT_READY',
-          details: { missing: err.missing },
-        });
-        return;
-      }
-      const e = err instanceof Error ? err : new Error(String(err));
-      reportError(e, { source: 'AdminPatientsController:activatePatient' });
-      res.status(500).json({
-        success: false,
-        error: 'Failed to activate patient',
-        details: e.message,
-      });
-    }
-  }
-
-  /**
    * POST /api/admin/patients — manual creation of a native patient by the
    * admission team (Fase 1 Task 2). Born origin='admin_manual', status
    * ADMISSION. The contact-channel invariant is enforced by the use-case and
@@ -517,10 +472,27 @@ export class AdminPatientsController {
       return;
     }
 
-    try {
-      const { rows, total } = await this.repo.list(parsed.data);
+    // lex 08/09 (mesma classe do oráculo do mapa, #322): `search` casa nome/documento/responsável e os
+    // filtros clínicos casam atributos de saúde — filtrar por um dado que o ator não pode LER é um oráculo
+    // ("existe alguém chamado X"; "quantos têm demência"). Sem a célula do container, 403 nomeando o campo,
+    // nunca ignorado em silêncio. A tela esconde o controle para quem não tem a célula.
+    const cellsDaLista = clinicalCellsOf(req);
+    if (parsed.data.search?.trim() && !canReadPatientContainer(cellsDaLista, 'identity')) {
+      res.status(403).json({ success: false, error: 'Forbidden', details: { field: 'search', cell: patientContainerCell('identity', 'read') } });
+      return;
+    }
+    const filtroClinico = (['clinical_specialty', 'dependency_level'] as const).find((f) => parsed.data[f] !== undefined);
+    if (filtroClinico && !canReadPatientContainer(cellsDaLista, 'clinical')) {
+      res.status(403).json({ success: false, error: 'Forbidden', details: { field: filtroClinico, cell: patientContainerCell('clinical', 'read') } });
+      return;
+    }
 
-      const data = rows.map((row) => toAdminPatientListItem(row));
+    try {
+      // D286: as células do ator decidem o que a lista carrega — e o que o KMS descriptografa.
+      const cells = cellsDaLista;
+      const { rows, total } = await this.repo.list(parsed.data, patientContainerReadsOf(cells));
+
+      const data = rows.map((row) => toAdminPatientListItem(row, cells));
 
       // Trilha de LEITURA de contato (lex 30/08 C5, molde OP-08/OP-11-D225):
       // quem leu, de que país, quantos e QUAIS pacientes. Nunca o e-mail — nem
@@ -561,7 +533,9 @@ export class AdminPatientsController {
     }
 
     try {
-      const result = await this.getPatientByIdUseCase.execute(parsed.data.id);
+      // D286 / lex P3: a célula decide ANTES do KMS — o use case só descriptografa o que o ator lê.
+      const cells = clinicalCellsOf(req);
+      const result = await this.getPatientByIdUseCase.execute(parsed.data.id, patientContainerReadsOf(cells));
 
       if (!result.found) {
         res.status(404).json({ success: false, error: 'Patient not found' });
@@ -570,16 +544,18 @@ export class AdminPatientsController {
 
       // Ponto ÚNICO de leitura do texto clínico restrito (D211.2) e do `hourlyValue` (lex
       // C-c.4): as duas redações vivem em `AdminPatientView.projectAdminPatientDetail`.
-      const cells = clinicalCellsOf(req);
-      const roles = actorRolesOf(req);
-      const projected = projectAdminPatientDetail(result.patient as unknown as Record<string, unknown>, cells, roles);
+      const projected = projectAdminPatientDetail(result.patient as unknown as Record<string, unknown>, cells, hourlyValueActorOf(req));
       // Trilha de LEITURA sem valor (lex 29/08 C3, molde OP-08): uid, paciente, país, decisão, quando.
       // Nunca o texto, nunca o nome. Request redigida não gera linha (minimização).
       if (canReadPatientClinical(cells)) {
         logger.info({ msg: 'patient_clinical.read', uid: AuthMiddleware.getAuthContext(req)?.principal.id ?? null, patientId: parsed.data.id, country: (result.patient as { country?: string | null }).country ?? null, decision: 'allowed' });
       }
+      // D286 / lex D-C8: UMA linha por abertura de ficha com o CONJUNTO de containers servidos —
+      // é a linha em `resource_access_log` que o `logResourceAccess('patient', …)` da rota grava
+      // (`action = read_detail:identity+clinical+…`), em tabela auditada. Não vai para o Cloud
+      // Logging: uid×paciente em log publica o vínculo que a trilha existe para guardar (`lex` P7).
 
-      const completeness = patientDetailCompleteness(result.patient);
+      const completeness = patientDetailCompleteness(result.patient, cells);
 
       // Spec 016 F2 (D263): diagnóstico estruturado embutido na MESMA projeção — REQ-21, sem
       // concept_code/concept_group/catalog_release (toDiagnosisPublicView é o único ponto que
@@ -594,11 +570,17 @@ export class AdminPatientsController {
       // `diagnosesUnavailable` diz qual dos dois `[]` é. A falha continua reportada
       // (reportError), nunca silenciosa de verdade — `diagnosesUnavailable` é o que a TORNA
       // visível também para quem lê a tela, não só para quem lê o Cloud Logging.
-      let diagnoses: ReturnType<typeof toDiagnosisPublicView>[] = [];
+      let diagnoses: ReturnType<typeof toDiagnosisPublicView>[] | null = [];
       let diagnosesUnavailable = false;
       try {
-        const diagnosesResult = await this.getDiagnosisService().listForPatient(parsed.data.id);
-        diagnoses = diagnosesResult.found ? diagnosesResult.diagnoses.map(toDiagnosisPublicView) : [];
+        // D286: diagnóstico CID-11 é container clínico — sem `patient_clinical:read` não se busca
+        // (nem se devolve `[]`, que diria "sem diagnóstico"): sai `null`, com `redacted.clinical`.
+        if (!patientContainerReadsOf(cells).clinical) {
+          diagnoses = null;
+        } else {
+          const diagnosesResult = await this.getDiagnosisService().listForPatient(parsed.data.id);
+          diagnoses = diagnosesResult.found ? diagnosesResult.diagnoses.map(toDiagnosisPublicView) : [];
+        }
       } catch (diagErr: unknown) {
         const de = diagErr instanceof Error ? diagErr : new Error(String(diagErr));
         reportError(de, { source: 'AdminPatientsController:getPatientById:diagnoses', patientId: parsed.data.id });
@@ -669,9 +651,9 @@ export class AdminPatientsController {
       // podem calcular `isDefault=true` (nenhum viu o principal do outro ainda) e o índice único
       // parcial (`patient_addresses_one_default_per_patient`) recusa o segundo INSERT. Mesmo
       // tratamento do PATCH (`AdminPatientAddressesController`): 409 tratado, nunca 500.
-      const pgCode = (err as { code?: string } | null)?.code;
-      if (pgCode === '23505') {
-        res.status(409).json({ success: false, error: 'Concurrent update — try again' });
+      const conflict = pgUniqueViolationConflict(err, 'Concurrent update — try again');
+      if (conflict) {
+        res.status(409).json(conflict);
         return;
       }
       const e = err instanceof Error ? err : new Error(String(err));
@@ -712,13 +694,30 @@ export class AdminPatientsController {
     }
   }
 
-  /** GET /api/admin/patients/stats?country=AR|BR */
+  /**
+   * GET /api/admin/patients/stats?country=AR|BR|ALL
+   *
+   * País resolvido NO SERVIDOR (PR-9, `lex` #9, FR-730/731): `resolveCountryScope`
+   * decide, nunca o valor cru da query — pedido fora do escopo do ator (grupo,
+   * `iam.effective_countries`) vira 403, nunca uma contagem cross-país silenciosa.
+   */
   async getPatientStats(req: Request, res: Response): Promise<void> {
+    let scope;
     try {
-      const country = req.query.country === 'AR' || req.query.country === 'BR'
-        ? req.query.country
-        : undefined;
-      const stats = await this.repo.stats(country);
+      scope = await resolveCountryScope(this.db, currentDbContext()?.uid, req.query.country);
+    } catch (err) {
+      if (err instanceof CountryScopeError) {
+        res.status(err.status).json({ success: false, error: err.code, detail: err.message });
+        return;
+      }
+      const e = err instanceof Error ? err : new Error(String(err));
+      reportError(e, { source: 'AdminPatientsController:getPatientStats:scope' });
+      res.status(500).json({ success: false, error: 'Failed to resolve country scope' });
+      return;
+    }
+
+    try {
+      const stats = await this.repo.stats(scope.countries);
       res.status(200).json({ success: true, data: stats });
     } catch (err: unknown) {
       const e = err instanceof Error ? err : new Error(String(err));
@@ -732,10 +731,11 @@ export class AdminPatientsController {
   }
 
   /**
-   * GET /api/admin/patients/funnel?country=AR|BR&from=ISO&to=ISO
+   * GET /api/admin/patients/funnel?country=AR|BR|ALL&from=ISO&to=ISO
    *
    * Conversão do funil de pacientes por país e período (Fase 4). Sem from/to,
-   * usa os últimos 30 dias. Controller fino — delega ao GetPatientFunnelUseCase.
+   * usa os últimos 30 dias. País pelo MESMO resolvedor de `getPatientStats`
+   * (PR-9, `lex` #9) — controller fino, delega a agregação ao GetPatientFunnelUseCase.
    */
   async getPatientFunnel(req: Request, res: Response): Promise<void> {
     const parsed = patientFunnelQuerySchema.safeParse(req.query);
@@ -748,8 +748,22 @@ export class AdminPatientsController {
       return;
     }
 
+    let scope;
     try {
-      const data = await this.getPatientFunnelUseCase.execute(parsed.data);
+      scope = await resolveCountryScope(this.db, currentDbContext()?.uid, req.query.country);
+    } catch (err) {
+      if (err instanceof CountryScopeError) {
+        res.status(err.status).json({ success: false, error: err.code, detail: err.message });
+        return;
+      }
+      const e = err instanceof Error ? err : new Error(String(err));
+      reportError(e, { source: 'AdminPatientsController:getPatientFunnel:scope' });
+      res.status(500).json({ success: false, error: 'Failed to resolve country scope' });
+      return;
+    }
+
+    try {
+      const data = await this.getPatientFunnelUseCase.execute({ ...parsed.data, countries: scope.countries });
       res.status(200).json({ success: true, data });
     } catch (err: unknown) {
       const e = err instanceof Error ? err : new Error(String(err));

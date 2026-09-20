@@ -16,7 +16,7 @@ import { logger, reportError } from '@shared/logging';
  * self-service do worker — incluindo recálculo de status — para manter paridade
  * com o fluxo de cadastro (Google Places + lat/lng + cidade/CEP/bairro).
  *
- * Rota (src/index.ts via createAdminWorkerRoutes, adminOnly):
+ * Rota (src/index.ts via createAdminWorkerRoutes, `worker:write`; papel `admin` só até a família virar):
  *   PUT /api/admin/workers/:id/service-area
  */
 

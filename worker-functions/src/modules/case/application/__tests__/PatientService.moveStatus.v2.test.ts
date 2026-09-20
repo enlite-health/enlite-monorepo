@@ -14,8 +14,10 @@ const mockClient = {
   query: jest.fn(async (sql: string, params?: unknown[]) => queryImpl(sql, params)),
   release: jest.fn(),
 };
+const mockGetClient = jest.fn().mockResolvedValue(mockClient);
+// A transação sai de `withActorContext(getPool(), …)`: o pool mockado precisa saber `connect()`.
 jest.mock('@shared/database/DatabaseConnection', () => ({
-  DatabaseConnection: { getInstance: jest.fn(() => ({ getPool: jest.fn(() => ({})), getClient: jest.fn().mockResolvedValue(mockClient) })) },
+  DatabaseConnection: { getInstance: jest.fn(() => ({ getPool: jest.fn(() => ({ connect: mockGetClient })), getClient: mockGetClient })) },
 }));
 jest.mock('@shared/security/KMSEncryptionService', () => ({ KMSEncryptionService: jest.fn().mockImplementation(() => ({ encrypt: jest.fn(), decrypt: jest.fn() })) }));
 jest.mock('../../infrastructure/PatientIdentityRepository', () => ({ PatientIdentityRepository: jest.fn().mockImplementation(() => ({})) }));

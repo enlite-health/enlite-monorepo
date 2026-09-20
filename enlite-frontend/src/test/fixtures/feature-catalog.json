@@ -1,0 +1,19 @@
+{
+  "source": "country-features.manifest.ts",
+  "keys": [
+    "component:account-link",
+    "component:kanban.encuadre",
+    "component:worker.talentum-sync",
+    "options:coverage-type",
+    "options:document-types",
+    "options:regions",
+    "screen:access-permissions",
+    "screen:ana-care",
+    "screen:funnel",
+    "screen:management-dashboard",
+    "screen:patients",
+    "screen:talentum",
+    "screen:vacancies",
+    "screen:workers"
+  ]
+}

@@ -1,7 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { ContactNotesModal } from './ContactNotesModal';
 import type { ContactNote } from '@domain/entities/ContactNote';
+import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
+import type { AuthzContract } from '@domain/entities/Authz';
 
 // ── i18n mock ──────────────────────────────────────────────────────────────
 vi.mock('react-i18next', () => ({
@@ -212,5 +214,96 @@ describe('ContactNotesModal', () => {
     render(<ContactNotesModal {...defaultProps} onClose={onClose} />);
     fireEvent.click(screen.getByLabelText('common.close'));
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the loading spinner while isLoading is true and there are no notes yet', () => {
+    mockNotesState.isLoading = true;
+    const { container } = render(<ContactNotesModal {...defaultProps} />);
+    expect(container.querySelector('.animate-spin')).not.toBeNull();
+  });
+
+  it('shows the load error text when the hook reports an error', () => {
+    mockNotesState.error = 'algo deu errado';
+    render(<ContactNotesModal {...defaultProps} />);
+    expect(
+      screen.getByText('admin.vacancyDetail.funnelTable.contactNotes.loadError'),
+    ).toBeInTheDocument();
+  });
+
+  // NÃO testado: `isCreating ? t('...registering') : t('...registerButton')`
+  // no ramo `true` é morto em produção — `ActionButton` delega a `Button`
+  // (atoms/Button/Button.tsx), que substitui `children` por
+  // `t('common.loading')` sempre que `isLoading` (aqui, `isCreating`) é
+  // `true`. Pré-existente (a mesma troca já valia com o `<Button>` cru antes
+  // da D269) — fora do escopo desta tarefa; ver ACHADOS no relatório final.
+
+  it('shows the "deleting" label on the note item while it is being deleted', () => {
+    mockNotesState.notes = [{ ...sampleNotes[0], id: 'note-deleting', canDelete: true }];
+    const { rerender } = render(<ContactNotesModal {...defaultProps} />);
+    // 1º clique entra em "confirmando" (o botão de lixeira NÃO está
+    // desabilitado ainda — `isDeleting` só vira true depois, quando o pai
+    // efetivamente chama `deleteNote`).
+    fireEvent.click(screen.getByTestId('contact-note-delete'));
+    // Simula o pai marcando esta nota como "em exclusão" (mesmo objeto
+    // mutável que o mock de `useContactNotes` devolve).
+    mockNotesState.deletingId = 'note-deleting';
+    rerender(<ContactNotesModal {...defaultProps} />);
+    expect(
+      screen.getByText('admin.vacancyDetail.funnelTable.contactNotes.deleting'),
+    ).toBeInTheDocument();
+  });
+});
+
+// ── D269 — POST/DELETE .../contact-notes → funnel:write ─────────────────────
+
+const contrato = (permissions: string[], enforcement: AuthzContract['enforcement']): AuthzContract => ({
+  uid: 'u',
+  tenantId: 't',
+  status: 'ACTIVE',
+  permissions,
+  countries: [],
+  groups: [],
+  features: {},
+  enforcement,
+});
+
+describe('ContactNotesModal — D269 célula funnel:write', () => {
+  afterEach(() => useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' }));
+
+  it('enforcement "on" SEM funnel:write → botão de registrar nota some do DOM (não fica desabilitado)', () => {
+    useAdminAuthStore.setState({ authzStatus: 'ready', authz: contrato([], 'on') });
+    render(<ContactNotesModal {...defaultProps} />);
+    expect(
+      screen.queryByText('admin.vacancyDetail.funnelTable.contactNotes.registerButton'),
+    ).not.toBeInTheDocument();
+  });
+
+  it('enforcement "on" COM funnel:write → botão de registrar nota aparece', () => {
+    useAdminAuthStore.setState({ authzStatus: 'ready', authz: contrato(['funnel:create'], 'on') });
+    render(<ContactNotesModal {...defaultProps} />);
+    expect(
+      screen.getByText('admin.vacancyDetail.funnelTable.contactNotes.registerButton'),
+    ).toBeInTheDocument();
+  });
+
+  it('enforcement "off" (sem contrato) → botão de registrar nota continua visível, como antes da D269', () => {
+    render(<ContactNotesModal {...defaultProps} />);
+    expect(
+      screen.getByText('admin.vacancyDetail.funnelTable.contactNotes.registerButton'),
+    ).toBeInTheDocument();
+  });
+
+  it('enforcement "on" SEM funnel:write → delete some mesmo com canDelete=true do backend (as duas regras precisam valer)', () => {
+    useAdminAuthStore.setState({ authzStatus: 'ready', authz: contrato([], 'on') });
+    mockNotesState.notes = [{ ...sampleNotes[0], canDelete: true }];
+    render(<ContactNotesModal {...defaultProps} />);
+    expect(screen.queryByTestId('contact-note-delete')).not.toBeInTheDocument();
+  });
+
+  it('enforcement "on" COM funnel:update E canDelete=true → delete aparece', () => {
+    useAdminAuthStore.setState({ authzStatus: 'ready', authz: contrato(['funnel:update'], 'on') });
+    mockNotesState.notes = [{ ...sampleNotes[0], canDelete: true }];
+    render(<ContactNotesModal {...defaultProps} />);
+    expect(screen.getByTestId('contact-note-delete')).toBeInTheDocument();
   });
 });

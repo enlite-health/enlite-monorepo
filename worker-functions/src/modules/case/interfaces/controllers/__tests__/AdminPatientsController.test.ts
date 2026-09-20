@@ -192,7 +192,11 @@ describe('AdminPatientsController.getPatientById', () => {
       await controller.getPatientById(req2, res2);
       const data = (res2 as any).json.mock.calls[0][0].data;
       expect(data).toMatchObject({ emergencyInstructions: null, emergencyInstructionsUpdatedAt: null, emergencyInstructionsUpdatedBy: null, emergencyInstructionsRedacted: true });
-      expect(data.diagnosis).toBe(patient.diagnosis);
+      // D286: sem `patient_clinical:read` o container clínico INTEIRO sai redigido (não só o texto restrito),
+      // com marcador constante — e `patient:read` sozinho não carrega mais o diagnóstico (lex P1).
+      expect(data.diagnosis).toBeNull();
+      expect(data.redacted).toMatchObject({ clinical: true, identity: true, family: true });
+      expect(data.diagnoses).toBeNull();
     });
 
     it('C3: leitura permitida gera trilha SEM valor (uid, paciente, país, decisão); redigida não gera', async () => {
@@ -241,8 +245,7 @@ describe('AdminPatientsController.getPatientById', () => {
         undefined,
         undefined,
         undefined,
-        undefined,
-        fakeDiagnosisService as unknown as ConstructorParameters<typeof AdminPatientsController>[4],
+        fakeDiagnosisService as unknown as ConstructorParameters<typeof AdminPatientsController>[3],
       );
       const [req, res] = mockReqRes({ id: PATIENT_ID });
       await withDiagnosis.getPatientById(req, res);
@@ -256,8 +259,8 @@ describe('AdminPatientsController.getPatientById', () => {
       mockFindDetailById.mockResolvedValue(makePatientDetail());
       const fakeDiagnosisService = { listForPatient: jest.fn().mockResolvedValue({ found: false }) };
       const withDiagnosis = new AdminPatientsController(
-        undefined, undefined, undefined, undefined,
-        fakeDiagnosisService as unknown as ConstructorParameters<typeof AdminPatientsController>[4],
+        undefined, undefined, undefined,
+        fakeDiagnosisService as unknown as ConstructorParameters<typeof AdminPatientsController>[3],
       );
       const [req, res] = mockReqRes({ id: PATIENT_ID });
       await withDiagnosis.getPatientById(req, res);
@@ -269,8 +272,8 @@ describe('AdminPatientsController.getPatientById', () => {
       mockFindDetailById.mockResolvedValue(makePatientDetail());
       const fakeDiagnosisService = { listForPatient: jest.fn().mockRejectedValue('rejeição crua') };
       const withDiagnosis = new AdminPatientsController(
-        undefined, undefined, undefined, undefined,
-        fakeDiagnosisService as unknown as ConstructorParameters<typeof AdminPatientsController>[4],
+        undefined, undefined, undefined,
+        fakeDiagnosisService as unknown as ConstructorParameters<typeof AdminPatientsController>[3],
       );
       const [req, res] = mockReqRes({ id: PATIENT_ID });
       await withDiagnosis.getPatientById(req, res);
@@ -740,6 +743,7 @@ describe('AdminPatientsController.listPatients — caseNumber', () => {
       expect(res.status).toHaveBeenCalledWith(200);
       expect(mockList).toHaveBeenCalledWith(
         expect.objectContaining({ case_number: '766' }),
+        expect.anything(),
       );
     });
   });

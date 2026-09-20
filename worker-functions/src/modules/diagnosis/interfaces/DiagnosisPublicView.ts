@@ -7,6 +7,14 @@
  *
  * Único lugar que decide o formato de resposta pública do diagnóstico — controller e o embutido
  * em `GET /patients/:id` chamam ESTA função, nunca serializam a Entity direto.
+ *
+ * ⚠️ EXCEÇÃO DECLARADA (D303, lex C4 — 08/09/2026): o Projeto Terapêutico (spec 017) devolve, em
+ * `pathologyTypes[]`, o CAPÍTULO CID-11 derivado dos diagnósticos da versão — `{ id: "06", label:
+ * título }` —, e `id` é o mesmo valor de `concept_group`. Sai SÓ com `patient_clinical:read`, no
+ * mesmo payload dos `diagnoses` de que deriva (não revela mais do que eles), e o `id` é o
+ * identificador estável para a máscara do Ana Care (`2026-08-26a#DEC-09`). Não é rota de
+ * diagnóstico: `case/application/therapeuticProjectAccess.ts` é quem o projeta. A ficha do
+ * paciente e as rotas de diagnóstico continuam sob o absoluto acima.
  */
 import type { PatientDiagnosis } from '../domain/PatientDiagnosis';
 

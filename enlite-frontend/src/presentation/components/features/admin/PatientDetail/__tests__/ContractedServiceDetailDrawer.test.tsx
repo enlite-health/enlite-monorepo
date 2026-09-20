@@ -27,7 +27,7 @@ const BASE: PatientContractedServiceDetail = {
   providersNeeded: null, authorizedHours: null, weeklyHours: null, careLocation: null,
   hourlyValue: null, hourlyValueRedacted: false, startDate: null,
   contractType: null, taxCondition: null, supervisionFrequency: null, guardShift: null,
-  providerAgeBand: null, addressId: null, schedule: null,
+  providerAgeBand: null, addressId: null, schedule: null, liveVacancyId: null,
   active: true, endedAt: null, country: 'AR', deviceTypes: [], providers: [],
   createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z',
 };

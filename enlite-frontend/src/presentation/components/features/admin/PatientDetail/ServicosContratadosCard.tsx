@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, type MouseEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Pencil, Plus } from 'lucide-react';
+import { Pencil, Plus, Rocket, ExternalLink } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import {
@@ -11,9 +11,13 @@ import {
   TableHead,
   TableCell,
 } from '@presentation/components/atoms/Table';
-import { Button } from '@presentation/components/atoms/Button';
+import { ActionButton } from '@presentation/components/features/access';
+import { useActionGate } from '@presentation/hooks/useCellAccess';
+import { useToast } from '@presentation/hooks/useToast';
 import type { PatientAddressDetail, PatientDetail, PatientContractedServiceDetail } from '@domain/entities/PatientDetail';
 import { patientAddressLabel } from '@domain/entities/PatientContractedService';
+import { recruitmentMissingCodes } from '@domain/entities/PatientCompleteness';
+import { runActivateRecruitmentClick } from './activateRecruitmentClick';
 import { PatientContractedServicesEditDrawer, type ContractedServiceTarget } from './edit/PatientContractedServicesEditDrawer';
 import { ContractedServiceDetailDrawer } from './ContractedServiceDetailDrawer';
 import { contractedServiceScheduleText } from './contractedServiceScheduleText';
@@ -29,23 +33,95 @@ interface ServicosContratadosCardProps {
 
 const EMPTY = '—';
 
-/**
- * UMA linha da tabela — as 5 colunas do Figma (decisão do Gabriel 05/09; "Sexo" ficou de fora a
- * pedido dele). Dispositivo ≠ Local ≠ Endereço: três coisas distintas. O endereço é resolvido
- * pelo PONTEIRO `service.addressId` contra `patient.addresses` — nada de endereço é copiado no
- * serviço (migration 330). Clique na linha abre o detalhe completo (`ContractedServiceDetailDrawer`).
- */
-function ServiceRow({
+
+function ActivateRecruitmentAction({
+  patientId,
   service,
-  addresses,
-  onOpen,
-  onEdit,
+  missing,
+  onActivated,
   t,
 }: {
+  patientId: string;
+  service: PatientContractedServiceDetail;
+  missing: string[];
+  onActivated: () => void;
+  t: (k: string, o?: any) => string;
+}) {
+  const showToast = useToast();
+  const [busy, setBusy] = useState(false);
+  const tc = (k: string, o?: Record<string, unknown>) => t(`admin.patients.detail.contractedServicesCard.${k}`, o);
+  const serviceLabel = t(`admin.patients.detail.contractedServicesCard.serviceTypes.${service.serviceCode}`, service.serviceCode);
+
+  // Hooks incondicionais (regra do React) — o GATE em si só se aplica depois do ramo
+  // "Ver vacante" abaixo, que não muda em relação à `stage`.
+  const { allowed: podeEscreverServico } = useActionGate('patient_services', 'update');
+  const { allowed: podeEscreverVaga } = useActionGate('vacancy', 'update');
+
+  if (service.liveVacancyId) {
+    return (
+      <a
+        href={`/admin/vacancies/${service.liveVacancyId}`}
+        onClick={(e) => e.stopPropagation()}
+        aria-label={tc('viewVacancyAria', { service: serviceLabel })}
+        data-testid={`contracted-service-view-vacancy-${service.id}`}
+        className="text-primary hover:text-primary/70 transition-colors p-1 rounded focus:outline-none focus:ring-2 focus:ring-primary inline-flex items-center gap-1"
+      >
+        <ExternalLink className="w-4 h-4" strokeWidth={2} />
+      </a>
+    );
+  }
+
+  // Regra do Gabriel (12/09, PR-8b 15/09): a rota de ativação (POST .../activate-recruitment) exige
+  // patient_services:update E vacancy:update JUNTAS (contracts/permissions-split.md — "ação sobre
+  // recurso existente") — quem não tem as duas células não vê o BOTÃO de ativar. Só este ramo
+  // (o "Ver vacante" acima já retornou e não passa por aqui).
+  if (!podeEscreverServico || !podeEscreverVaga) return null;
+
+  const handleClick = async (e: MouseEvent): Promise<void> => {
+    e.stopPropagation();
+    await runActivateRecruitmentClick({
+      patientId, serviceId: service.id, missing, busy, setBusy, onActivated, tc, t, showToast,
+    });
+  };
+
+  return (
+    <ActionButton
+      resource="patient_services"
+      action="update"
+      variant="ghost"
+      size="sm"
+      onClick={handleClick}
+      disabled={missing.length > 0 || busy}
+      title={missing.length > 0 ? tc('activateRecruitmentTooltip', { items: missing.map((code) => t(`admin.patients.detail.completeness.items.${code}`, code)).join(', ') }) : undefined}
+      aria-label={tc('activateRecruitmentAria', { service: serviceLabel })}
+      data-testid={`contracted-service-activate-recruitment-${service.id}`}
+      className="text-primary hover:text-primary/70 transition-colors p-1 rounded focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-40 disabled:cursor-not-allowed"
+    >
+      <Rocket className="w-4 h-4" strokeWidth={2} />
+    </ActionButton>
+  );
+}
+
+function ServiceRow({
+  patientId,
+  service,
+  addresses,
+  insuranceInformed,
+  onOpen,
+  onEdit,
+  onActivated,
+  podeEditar,
+  t,
+}: {
+  patientId: string;
   service: PatientContractedServiceDetail;
   addresses: PatientAddressDetail[];
+  insuranceInformed: string | null;
   onOpen: (service: PatientContractedServiceDetail) => void;
   onEdit: (service: PatientContractedServiceDetail) => void;
+  onActivated: () => void;
+  /** A MESMA régua do "+ Nuevo" e do "Editar" do detalhe, lida uma vez no card. */
+  podeEditar: boolean;
   t: (k: string, o?: any) => string;
 }) {
   const tc = (k: string, o?: Record<string, unknown>) => t(`admin.patients.detail.contractedServicesCard.${k}`, o);
@@ -127,15 +203,36 @@ function ServiceRow({
       {/* Lápis na linha (Gabriel, 06/09): a tabela É a lista — editar abre SÓ este serviço, sem
           passar por um drawer-lista. `stopPropagation` para o clique não abrir o detalhe junto. */}
       <TableCell unwrapped align="right">
-        <button
-          type="button"
-          onClick={(e) => { e.stopPropagation(); onEdit(service); }}
-          aria-label={tc('editRowAria', { service: t(`admin.patients.detail.contractedServicesCard.serviceTypes.${service.serviceCode}`, service.serviceCode) })}
-          data-testid={`contracted-service-edit-${service.id}`}
-          className="text-primary hover:text-primary/70 transition-colors p-1 rounded focus:outline-none focus:ring-2 focus:ring-primary"
-        >
-          <Pencil className="w-4 h-4" strokeWidth={2} />
-        </button>
+        <div className="flex items-center justify-end gap-1">
+          {/* Spec 018, PR-6: ativar recrutamento é POR SERVIÇO ATIVO — a baixa (não `service.active`)
+              não mostra o ícone, é ativação de nada. As 2 células que alimentam o gate (endereço
+              vivo + horário) já estão nesta MESMA linha, mais a cobertura do paciente. */}
+          {service.active && (
+            <ActivateRecruitmentAction
+              patientId={patientId}
+              service={service}
+              missing={recruitmentMissingCodes({
+                serviceHasAddress: addresses.some((a) => a.id === service.addressId),
+                serviceHasSchedule: Array.isArray(service.schedule) && service.schedule.length > 0,
+                insuranceInformed,
+              })}
+              onActivated={onActivated}
+              t={t}
+            />
+          )}
+          {/* D269/D286: o lápis faz PATCH → mesma régua do "Nuevo" (`useActionGate`, só com enforcement on). */}
+          {podeEditar && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onEdit(service); }}
+              aria-label={tc('editRowAria', { service: t(`admin.patients.detail.contractedServicesCard.serviceTypes.${service.serviceCode}`, service.serviceCode) })}
+              data-testid={`contracted-service-edit-${service.id}`}
+              className="text-primary hover:text-primary/70 transition-colors p-1 rounded focus:outline-none focus:ring-2 focus:ring-primary"
+            >
+              <Pencil className="w-4 h-4" strokeWidth={2} />
+            </button>
+          )}
+        </div>
       </TableCell>
     </TableRow>
   );
@@ -145,13 +242,19 @@ export function ServicosContratadosCard({ patient, onSaved, focusRequest }: Serv
   const { t } = useTranslation();
   const [editing, setEditing] = useState<ContractedServiceTarget | null>(null);
   const [selected, setSelected] = useState<PatientContractedServiceDetail | null>(null);
+  // D269/D286: as TRÊS portas para o PATCH (+ Nuevo, lápis da linha, "Editar" do detalhe) seguem a
+  // mesma célula — o gate do sync main→stage (08/09) achou a terceira aberta.
+  const { allowed: podeEditar } = useActionGate('patient_services', 'update');
   const services = patient.contractedServices;
   // Checklist "falta serviço" → formulário de um serviço NOVO.
   useAutoOpenDrawer(focusRequest, 'CONTRACTED_SERVICE', () => setEditing({ kind: 'new' }));
   // Migration 330: "falta endereço no serviço" → abre o PRIMEIRO serviço ativo sem endereço vivo
   // (é dele que o checklist reclama); sem candidato, abre um novo.
   useAutoOpenDrawer(focusRequest, 'SERVICE_ADDRESS', () => {
-    const vivos = new Set(patient.addresses.map((a) => a.id));
+    // Este card é gated por `patient_services`, não por `patient_address`: sem a célula de
+    // endereço, `patient.addresses` chega `null` por redação (D113), não `[]` — `?? []` só evita
+    // o crash da leitura cruzada, sem fingir que o paciente não tem endereço.
+    const vivos = new Set((patient.addresses ?? []).map((a) => a.id));
     const orfao = services.find((s) => s.active && (s.addressId == null || !vivos.has(s.addressId)));
     setEditing(orfao ? { kind: 'edit', serviceId: orfao.id } : { kind: 'new' });
   });
@@ -174,11 +277,12 @@ export function ServicosContratadosCard({ patient, onSaved, focusRequest }: Serv
           {t('admin.patients.detail.contractedServicesCard.title')}
         </Heading>
         {/* "+ Nuevo servicio" no lugar de "Editar servicios" (Gabriel, 06/09): a tabela já é a
-            lista; editar um existente é pelo lápis da linha ou pelo botão do detalhe. */}
-        <Button variant="outline" size="sm" onClick={() => setEditing({ kind: 'new' })} className="flex items-center gap-1" data-testid="new-service-btn">
+            lista; editar um existente é pelo lápis da linha ou pelo botão do detalhe.
+            D269/D286 — o POST do drawer exige `patient_services:write`: sem a célula o botão não existe. */}
+        <ActionButton resource="patient_services" action="create" variant="outline" size="sm" onClick={() => setEditing({ kind: 'new' })} className="flex items-center gap-1" data-testid="new-service-btn">
           <Plus className="w-4 h-4" />
           {t('admin.patients.detail.contractedServicesCard.newButton')}
-        </Button>
+        </ActionButton>
       </div>
 
       {editing && (
@@ -196,9 +300,9 @@ export function ServicosContratadosCard({ patient, onSaved, focusRequest }: Serv
         <ContractedServiceDetailDrawer
           key={selected.id}
           service={selected}
-          addresses={patient.addresses}
+          addresses={patient.addresses ?? []}
           onClose={() => setSelected(null)}
-          onEdit={() => { const id = selected.id; setSelected(null); setEditing({ kind: 'edit', serviceId: id }); }}
+          onEdit={podeEditar ? () => { const id = selected.id; setSelected(null); setEditing({ kind: 'edit', serviceId: id }); } : undefined}
         />
       )}
 
@@ -222,7 +326,18 @@ export function ServicosContratadosCard({ patient, onSaved, focusRequest }: Serv
             </TableRow>
           ) : (
             services.map((svc) => (
-              <ServiceRow key={svc.id} service={svc} addresses={patient.addresses} onOpen={setSelected} onEdit={(s) => setEditing({ kind: 'edit', serviceId: s.id })} t={t} />
+              <ServiceRow
+                key={svc.id}
+                patientId={patient.id}
+                service={svc}
+                addresses={patient.addresses ?? []}
+                insuranceInformed={patient.insuranceInformed}
+                onOpen={setSelected}
+                onEdit={(s) => setEditing({ kind: 'edit', serviceId: s.id })}
+                onActivated={() => onSaved?.()}
+                podeEditar={podeEditar}
+                t={t}
+              />
             ))
           )}
         </TableBody>

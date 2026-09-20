@@ -9,6 +9,7 @@
  * Molde: funnelStageMessagesRoutes.test.ts.
  */
 import express from 'express';
+import { permissionsDouble } from '@modules/identity/interfaces/middleware/__tests__/permissionFamilyDoubles';
 import request from 'supertest';
 import { createTemplateCatalogRoutes } from '../templateCatalogRoutes';
 import type { TemplateCatalogController } from '../../controllers/TemplateCatalogController';
@@ -18,22 +19,26 @@ const respond = (name: string): jest.Mock =>
   jest.fn((_req: express.Request, res: express.Response) => { res.status(200).json({ handler: name }); });
 
 const seen: string[] = [];
-const guard = (label: string) => (req: express.Request, _res: express.Response, next: express.NextFunction) => { seen.push(`${label} ${req.method} ${req.path}`); next(); };
-const authMiddleware = {
-  requireStaff: () => guard('staff'),
-  requireAdmin: () => guard('admin'),
-} as unknown as AuthMiddleware;
+// O dublê pendura o papel que o `requireStaff` real penduraria: é o que o
+// `untilEnforced: 'admin'` do PermissionMiddleware lê com o engine desligado.
+let papelDoAtor = 'admin';
+const guard = (label: string) => (req: express.Request, _res: express.Response, next: express.NextFunction) => {
+  seen.push(`${label} ${req.method} ${req.path}`);
+  req.authContext = { principal: { id: 'ator', roles: [papelDoAtor] } } as never;
+  next();
+};
+const authMiddleware = { requireStaff: () => guard('staff') } as unknown as AuthMiddleware;
 
 function makeApp(): { app: express.Express; calls: Record<string, jest.Mock> } {
   const calls = { list: respond('list') };
   const app = express();
   app.use(express.json());
-  app.use('/api/admin', createTemplateCatalogRoutes(calls as unknown as TemplateCatalogController, authMiddleware));
+  app.use('/api/admin', createTemplateCatalogRoutes(calls as unknown as TemplateCatalogController, authMiddleware, permissionsDouble()));
   return { app, calls };
 }
 
 describe('createTemplateCatalogRoutes', () => {
-  beforeEach(() => { seen.length = 0; });
+  beforeEach(() => { seen.length = 0; papelDoAtor = 'admin'; });
 
   it('GET /template-catalog chama o list', async () => {
     const { app, calls } = makeApp();

@@ -122,16 +122,20 @@ export type { GetPatientByIdOutput } from './application/GetPatientByIdUseCase';
 export { CreatePatientUseCase, PatientContactValidationError } from './application/CreatePatientUseCase';
 export type { CreatePatientInput } from './application/CreatePatientUseCase';
 export {
-  ActivatePatientUseCase,
-  PatientNotFoundError,
-  PatientNotReadyError,
-  NoActiveAddressError,
-} from './application/ActivatePatientUseCase';
-export type { ActivatePatientResult } from './application/ActivatePatientUseCase';
+  ActivateRecruitmentUseCase,
+  PatientNotFoundForRecruitmentError,
+  ServiceNotFoundForRecruitmentError,
+  ServiceAlreadyRecruitingError,
+  RecruitmentNotReadyError,
+} from './application/ActivateRecruitmentUseCase';
+export type { ActivateRecruitmentResult } from './application/ActivateRecruitmentUseCase';
 export {
   computePatientCompleteness,
+  computeRecruitmentReadiness,
   isMinor,
+  isPlaceholderCoverageValue,
   PATIENT_COMPLETENESS_CODES,
+  RECRUITMENT_BLOCKING_CODES,
 } from './domain/PatientCompleteness';
 export type {
   PatientCompletenessCode,
@@ -219,6 +223,9 @@ export {
 } from './interfaces/controllers/AdminPatientAddressesController';
 export { AdminInsuranceProvidersController } from './interfaces/controllers/AdminInsuranceProvidersController';
 export { AdminPatientsMapController } from './interfaces/controllers/AdminPatientsMapController';
+export { AdminPatientContractedServicesController } from './interfaces/controllers/AdminPatientContractedServicesController';
+export { AdminTherapeuticProjectsController } from './interfaces/controllers/AdminTherapeuticProjectsController';
+export { createAdminTherapeuticProjectsRoutes } from './interfaces/routes/adminTherapeuticProjectsRoutes';
 export { AdminPatientChatIdsController } from './interfaces/controllers/AdminPatientChatIdsController';
 export { AdminPatientChatRolesController } from './interfaces/controllers/AdminPatientChatRolesController';
 export { patientChatIdsSchema, patientChatMapQuerySchema, chatGroupsQuerySchema } from './interfaces/validators/patientChatIdsSchema';
@@ -228,8 +235,13 @@ export {
   patientChatRoleParamsSchema,
   listPatientChatRolesQuerySchema,
 } from './interfaces/validators/patientChatRolesSchema';
-export { createAdminPatientsRoutes } from './interfaces/routes/adminPatientsRoutes';
+export { createAdminPatientsRoutes, ADMIN_PATIENTS_FAMILY } from './interfaces/routes/adminPatientsRoutes';
 export { PublicLeadsController } from './interfaces/controllers/PublicLeadsController';
+
+// spec 018, PR-4 (foto do paciente) — documento/prova e consentimento de imagem foram REMOVIDOS
+// por completo (fix/018-remover-documentos-consentimento).
+export { createAdminPatientPhotoRoutes } from './interfaces/routes/adminPatientPhotoRoutes';
+export { AdminPatientPhotoController } from './interfaces/controllers/AdminPatientPhotoController';
 
 // Application — public intake (Task 1)
 export { CreateLeadUseCase } from './application/CreateLeadUseCase';

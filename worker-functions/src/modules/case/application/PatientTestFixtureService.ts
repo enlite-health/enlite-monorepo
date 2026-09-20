@@ -1,6 +1,7 @@
 import type { Pool, PoolClient } from 'pg';
 import * as functions from 'firebase-functions';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { withActorContext } from '@shared/database/actorContext';
 import {
   AdmissionCalendarService,
   admissionCalendarService,
@@ -9,6 +10,11 @@ import {
   getAdmissionCountryConfig,
   type AdmissionCountry,
 } from '../../matching/domain/admissionCountries';
+import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
+import { PatientPhotoStorage } from '../infrastructure/PatientPhotoStorage';
+import { PatientPhotoOrphanRepository } from '../infrastructure/PatientPhotoOrphanRepository';
+import { safeStorageErrorFields } from '../infrastructure/safeStorageErrorFields';
+import { scheduleOpportunisticOrphanRetry } from './scheduleOpportunisticOrphanRetry';
 
 /** Tentativa de purgar um paciente que NÃO está marcado como teste. */
 export class NotATestPatientError extends Error {
@@ -49,6 +55,10 @@ export interface PurgeResult {
    *  evidência que resta; contagem sem PII). Aditivo — o e2e-prod lê só os
    *  campos acima. */
   cascaded: Record<string, number>;
+  /** spec 018, PR-4 (task 4.8): objetos GCS apagados/falhos — a LINHA some por
+   *  CASCADE, mas o objeto do bucket só some se ALGUÉM chamar o storage. */
+  photoObjectsDeleted: number;
+  photoObjectsFailed: number;
 }
 
 /** Filhas de `patients` em ON DELETE CASCADE — contadas ANTES do DELETE, porque
@@ -66,6 +76,20 @@ const CASCADE_CHILDREN = [
   // por isso não têm patient_id próprio para esta contagem; saem juntas mesmo assim (2 níveis
   // de FK ON DELETE CASCADE), só não aparecem no resultado por tabela.
   'patient_contracted_services',
+  // Spec 017 (lex C4): as versões do projeto terapêutico são filhas diretas de patients (ON DELETE
+  // CASCADE na 416) — o trigger de imutabilidade só deixa a linha sumir quando o pai já não existe,
+  // que é exatamente o que o purge faz.
+  'patient_therapeutic_projects',
+  // 417 (D301): contatos de emergência da cobertura — filha direta, ON DELETE CASCADE.
+  'patient_coverage_emergency_contacts',
+  // 422 (spec 018, PR-2): contatos externos sem vínculo familiar — filha direta, ON DELETE CASCADE.
+  'patient_external_contacts',
+  // 426 (spec 018, PR-4): foto — filha direta, ON DELETE CASCADE. A LINHA some por CASCADE aqui;
+  // o objeto do GCS é apagado à parte, DEPOIS do commit, por `deleteOrphanCandidate` (task 4.8) —
+  // ver `photoRows` lidos ANTES do DELETE e o loop logo abaixo do `COMMIT` em `purge()`.
+  // `patient_documents`/`patient_image_consents` foram DROPADOS por completo
+  // (fix/018-remover-documentos-consentimento) — saíram desta lista junto com a tabela.
+  'patient_photos',
 ] as const;
 
 interface AppointmentRow {
@@ -108,6 +132,14 @@ export class PatientTestFixtureService {
     private readonly calendar: AdmissionCalendarService = admissionCalendarService,
     private readonly impersonateEmail: string = process.env.ADMISSION_IMPERSONATE_EMAIL ||
       'enlite@enlite.health',
+    // spec 018, PR-4 (task 4.8): FÁBRICA, não instância — `PatientPhotoStorage` lança no `new` sem
+    // `GCS_PATIENT_PHOTOS_BUCKET` (fail-closed). Um default `= new PatientPhotoStorage()` aqui
+    // quebraria TODOS os testes que constroem este serviço passando só `db`/`calendar` (21 testes
+    // existentes, sem env de bucket) — a fábrica só roda quando existe de fato uma foto para apagar
+    // (ver `purge`).
+    private readonly photoStorageFactory: () => PatientPhotoStorage = () => new PatientPhotoStorage(),
+    private readonly orphanRepo: PatientPhotoOrphanRepository = new PatientPhotoOrphanRepository(),
+    private readonly enc: KMSEncryptionService = new KMSEncryptionService(),
   ) {}
 
   /**
@@ -152,6 +184,13 @@ export class PatientTestFixtureService {
       [patientId],
     );
 
+    // spec 018, PR-4 (task 4.8): caminhos LIDOS antes do CASCADE apagar as linhas — depois do
+    // DELETE não há mais de onde ler `object_path_encrypted`.
+    const { rows: photoRows } = await this.db.query<{ object_path_encrypted: string }>(
+      `SELECT object_path_encrypted FROM patient_photos WHERE patient_id = $1`,
+      [patientId],
+    );
+
     let calendarEventsDeleted = 0;
     let calendarEventsFailed = 0;
     for (const appt of appointments) {
@@ -171,57 +210,71 @@ export class PatientTestFixtureService {
       }
     }
 
-    const client = await this.db.connect();
-    let appointmentsCancelled = 0;
-    let vacanciesDeleted = 0;
-    let cascaded: Record<string, number> = {};
-    try {
-      await client.query('BEGIN');
+    // `withActorContext` abre a transação carimbando `app.user_uid`/`app.user_country`
+    // (identidade do ator) — client cru (`this.db.connect()`) rodava sem isso e a
+    // policy de país de `patients` recusava com `rls_session_without_identity` em
+    // `countCascadeChildren` (500 medido na stage, 18/09). Mesmo padrão de
+    // `inPatientTransaction` (patientTransaction.ts): BEGIN/COMMIT/ROLLBACK ficam
+    // por conta do wrapper, e o client não é mais liberado à mão aqui.
+    const { appointmentsCancelled, vacanciesDeleted, cascaded } = await withActorContext(
+      this.db,
+      async (client) => {
+        let appointmentsCancelled = 0;
+        let vacanciesDeleted = 0;
+        let cascaded: Record<string, number> = {};
 
-      const appt = await client.query(
-        `DELETE FROM admission_appointments WHERE patient_id = $1`,
-        [patientId],
-      );
-      appointmentsCancelled = appt.rowCount ?? 0;
-
-      // C3 — a vaga sintética pode ter recebido candidatura de prestador REAL, e
-      // `worker_job_applications` sai por CASCADE. Contar ANTES e abortar: perder
-      // a candidatura de alguém para limpar fixture é o inverso do objetivo.
-      const { rows: appRows } = await client.query<{ n: number }>(
-        `SELECT count(*)::int AS n
-           FROM worker_job_applications
-          WHERE job_posting_id IN (SELECT id FROM job_postings WHERE patient_id = $1)`,
-        [patientId],
-      );
-      // Fail-CLOSED: sem contagem não se apaga. `?? 0` aqui significaria "não
-      // consegui contar, então pode ir" — a regra da casa é o contrário
-      // (contagem zero é falha, nunca sucesso). `count(*)` sempre devolve linha;
-      // se um dia não devolver, a limpeza para em vez de arriscar.
-      const realApplications = appRows[0]?.n;
-      if (realApplications == null) {
-        throw new Error(
-          `Could not count applications for patient ${patientId} vacancies — refusing to purge`,
+        const appt = await client.query(
+          `DELETE FROM admission_appointments WHERE patient_id = $1`,
+          [patientId],
         );
-      }
-      if (realApplications > 0) throw new TestVacancyHasApplicationsError(patientId, realApplications);
+        appointmentsCancelled = appt.rowCount ?? 0;
 
-      // FK NO ACTION: a vaga precisa sair antes do paciente, ou o DELETE aborta.
-      const vac = await client.query(
-        `DELETE FROM job_postings WHERE patient_id = $1`,
-        [patientId],
-      );
-      vacanciesDeleted = vac.rowCount ?? 0;
+        // C3 — a vaga sintética pode ter recebido candidatura de prestador REAL, e
+        // `worker_job_applications` sai por CASCADE. Contar ANTES e abortar: perder
+        // a candidatura de alguém para limpar fixture é o inverso do objetivo.
+        const { rows: appRows } = await client.query<{ n: number }>(
+          `SELECT count(*)::int AS n
+             FROM worker_job_applications
+            WHERE job_posting_id IN (SELECT id FROM job_postings WHERE patient_id = $1)`,
+          [patientId],
+        );
+        // Fail-CLOSED: sem contagem não se apaga. `?? 0` aqui significaria "não
+        // consegui contar, então pode ir" — a regra da casa é o contrário
+        // (contagem zero é falha, nunca sucesso). `count(*)` sempre devolve linha;
+        // se um dia não devolver, a limpeza para em vez de arriscar.
+        const realApplications = appRows[0]?.n;
+        if (realApplications == null) {
+          throw new Error(
+            `Could not count applications for patient ${patientId} vacancies — refusing to purge`,
+          );
+        }
+        if (realApplications > 0) throw new TestVacancyHasApplicationsError(patientId, realApplications);
 
-      cascaded = await this.countCascadeChildren(client, patientId);
+        // FK NO ACTION: a vaga precisa sair antes do paciente, ou o DELETE aborta.
+        const vac = await client.query(
+          `DELETE FROM job_postings WHERE patient_id = $1`,
+          [patientId],
+        );
+        vacanciesDeleted = vac.rowCount ?? 0;
 
-      await client.query(`DELETE FROM patients WHERE id = $1`, [patientId]);
+        cascaded = await this.countCascadeChildren(client, patientId);
 
-      await client.query('COMMIT');
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
+        await client.query(`DELETE FROM patients WHERE id = $1`, [patientId]);
+
+        return { appointmentsCancelled, vacanciesDeleted, cascaded };
+      },
+    );
+
+    // spec 018, PR-4 (task 4.8): AGORA que a transação comitou (as linhas já saíram por CASCADE),
+    // apaga cada objeto do GCS. Best-effort por objeto, mesmo critério dos eventos de Calendar
+    // acima — uma falha vira órfão (`patient_photo_orphans`, retry via
+    // `PatientPhotoOrphanRetryService`) e é CONTADA, nunca aborta nem lança.
+    let photoObjectsDeleted = 0;
+    let photoObjectsFailed = 0;
+    for (const row of photoRows) {
+      // eslint-disable-next-line no-await-in-loop -- purga de paciente é operação rara e manual/e2e-prod; sequencial de propósito.
+      const ok = await this.deleteOrphanCandidate(row.object_path_encrypted, 'PHOTOS');
+      if (ok) photoObjectsDeleted += 1; else photoObjectsFailed += 1;
     }
 
     const result: PurgeResult = {
@@ -231,11 +284,15 @@ export class PatientTestFixtureService {
       calendarEventsFailed,
       vacanciesDeleted,
       cascaded,
+      photoObjectsDeleted,
+      photoObjectsFailed,
     };
     // C2 — com o registro fora da tabela, este log é a ÚNICA evidência de que a
     // eliminação aconteceu; sem o ator ele não responde "quem". UUID e contagens
     // apenas: nada de e-mail, telefone ou texto clínico.
     functions.logger.info('patient.test_purge.done', { ...result, actorUid });
+    // Achado da revisão do PR-4 (item 3): fila de órfãos sem consumidor — tentativa oportunista.
+    scheduleOpportunisticOrphanRetry();
     return result;
   }
 
@@ -249,6 +306,35 @@ export class PatientTestFixtureService {
     ).join(' UNION ALL ');
     const { rows } = await client.query<{ tabela: string; n: number }>(sql, [patientId]);
     return Object.fromEntries(rows.map((r) => [r.tabela, r.n]));
+  }
+
+  /**
+   * Apaga UM objeto de foto do bucket; em falha, grava em `patient_photo_orphans`
+   * (`reason='PURGE'`) para o retry pegar depois. Nunca lança — a purga do paciente não pode
+   * travar por um objeto individual de storage.
+   *
+   * `bucket` continua tipado como `OrphanBucket` (`'PHOTOS' | 'DOCUMENTS'`, de
+   * `PatientPhotoOrphanRepository`) mesmo só chamando com `'PHOTOS'` aqui — a tabela
+   * `patient_photo_orphans` não foi tocada por esta remoção (fix/018-remover-documentos-consentimento
+   * só dropou `patient_documents`/`patient_image_consents`; `DOCUMENTS` fica como valor morto no
+   * enum/check dessa tabela, ver comentário da migration).
+   */
+  private async deleteOrphanCandidate(objectPathEncrypted: string, bucket: 'PHOTOS'): Promise<boolean> {
+    try {
+      const objectPath = await this.enc.decrypt(objectPathEncrypted);
+      await this.photoStorageFactory().delete(objectPath);
+      return true;
+    } catch (err) {
+      // Achado da 3ª revisão do PR-4 (item 3): `err.message` do `@google-cloud/storage` costuma
+      // trazer o NOME DO OBJETO — trocado pelo helper que só extrai code/status/name.
+      functions.logger.warn('patient.test_purge.object_delete_failed', { bucket, ...safeStorageErrorFields(err) });
+      try {
+        await this.orphanRepo.record(objectPathEncrypted, bucket, 'PURGE');
+      } catch (orphanErr) {
+        functions.logger.error('patient.test_purge.object_orphan_record_failed', { bucket, ...safeStorageErrorFields(orphanErr) });
+      }
+      return false;
+    }
   }
 
   /** Mesma resolução por env do AdmissionSchedulingService (calendário por país). */

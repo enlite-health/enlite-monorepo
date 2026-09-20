@@ -14,6 +14,7 @@
  */
 import { z } from 'zod';
 import { PATIENT_COMPLETENESS_CODES } from './PatientCompleteness';
+import { PATIENT_PROFESSIONAL_SPECIALTY_CODES } from './patientEnums';
 import type { PatientDetail } from './PatientDetail';
 
 const isoDate = z.string();
@@ -97,6 +98,9 @@ const professionalSchema = z
     name: z.string().nullable(),
     phone: z.string().nullable(),
     email: z.string().nullable(),
+    // Enum fechado (migration 427, spec 018 PR-5) — z.string() aceitaria qualquer coisa; o
+    // contrato usa o mesmo vocabulário fechado do domínio (patientEnums.ts).
+    specialty: z.enum(PATIENT_PROFESSIONAL_SPECIALTY_CODES).nullable(),
     displayOrder: z.number(),
     isTeam: z.boolean(),
   })
@@ -143,6 +147,8 @@ const contractedServiceSchema = z
     schedule: z
       .array(z.object({ dayOfWeek: z.number(), startTime: z.string(), endTime: z.string() }))
       .nullable(),
+    // Spec 018, PR-6: vaga viva deste serviço (null = pode ativar recrutamento; "Ver vacante" senão).
+    liveVacancyId: z.string().nullable(),
     active: z.boolean(),
     endedAt: isoDate.nullable(),
     country: z.string(),

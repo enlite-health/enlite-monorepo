@@ -6,14 +6,27 @@
  * (`AnaCareShift`/`AnaCarePatient`/`AnaCareMonthSnapshot`) que o front consome — mesma
  * interface do protótipo (spec §Contrato de dados).
  *
- * Nome/vínculo (`linked`/`name`) SEMPRE `false`/`undefined` nesta fase: a reconciliação
- * paciente/prestador (spec 003) é PRÉ-REQUISITO adiado — fase 1 só entrega turnos, horas,
- * origem e status (documentado em DIVERGÊNCIAS no fecho da fase).
+ * Vínculo de PRESTADOR (D349, item 1): `groupIntoPatients` recebe `linkedNurseIds` — só decide
+ * `linked` (presença do `anaCareNurseId` no cruzamento com `workers.ana_care_id`, lookup em LOTE
+ * feito por `AnaCareHoursService`/`WorkerLinkRepository`, D195/`MirrorWorkerService`).
+ *
+ * NOME (item 1 da conferência de horas, decisão do Gabriel 17/09): "o nome vem junto na requisição
+ * do Ana Care e é de lá que você precisa pegar" — `patientName`/`nurseName` chegam já resolvidos
+ * em cada entrada de `shifts` (montados por `AnaCareHoursService.buildPatients` a partir de
+ * `SourceShiftDTO.patientFirstName/patientLastName/nurseFirstName/nurseLastName`), e são
+ * INDEPENDENTES de `linked` — nome vem da FONTE, vínculo vem do cruzamento com nosso banco. O
+ * gate `worker_contact:read` (`canReadProviderName`) continua aplicado ANTES de chegar aqui (quem
+ * não tem a célula manda `nurseName: undefined`, mesmo que a fonte tenha mandado o nome) — este
+ * módulo não decide permissão, só agrupa.
+ *
+ * Vínculo de PACIENTE continua SEMPRE `false` — bloqueado por decisão (D349 item 2): não existe
+ * hoje ID nosso do lado do paciente no Ana Care, nem API de leitura de paciente. O NOME do
+ * paciente, porém, não depende desse vínculo — vem sempre da fonte quando presente.
  */
 
 import type { AnaCareRetratoSourceStatus, SourceShiftDTO } from '../domain/AnaCareShiftsSource';
 import type { ValidationRow } from '../infrastructure/ShiftHoursValidationRepository';
-import type { AnaCareMonthSnapshot, AnaCarePatient, AnaCareProvider, AnaCareShift, ValidationStatus } from '../domain/AnaCareShift';
+import type { AnaCareListPatient, AnaCareMonthSnapshot, AnaCarePatient, AnaCareProvider, AnaCareShift, AnaCareSnapshotState, ValidationStatus } from '../domain/AnaCareShift';
 
 const STATUS_MAP: Record<ValidationRow['status'], ValidationStatus> = {
   pendente: 'pendiente',
@@ -21,8 +34,42 @@ const STATUS_MAP: Record<ValidationRow['status'], ValidationStatus> = {
   contestado: 'contestado',
 };
 
+/**
+ * Junta nome+sobrenome vindos da FONTE (item 1) — `undefined` quando nenhum dos dois veio (a
+ * fonte pode não mandar nome para um turno específico; `Sin vínculo · ID X` continua o fallback
+ * honesto na tela, `selectors.ts` `providerDisplayName`/`patientDisplayName`).
+ */
+export function joinSourceName(firstName: string | null | undefined, lastName: string | null | undefined): string | undefined {
+  const joined = [firstName, lastName].filter((part): part is string => Boolean(part && part.trim())).join(' ');
+  return joined.trim() || undefined;
+}
+
 function hoursBetween(startIso: string, endIso: string): number {
   return Math.round(((new Date(endIso).getTime() - new Date(startIso).getTime()) / (1000 * 60 * 60)) * 100) / 100;
+}
+
+/**
+ * Horas PREVISTAS — SEMPRE um número real no contrato (`AnaCareShift.hoursScheduled: number`,
+ * nunca `null`/`NaN`). Item 7 (revisão de PR): antes, `AnaCareShiftRepository.toDTO` mascarava
+ * `planned_start`/`planned_end` ausentes como `''`, e `hoursBetween('', '')` devolvia `NaN` — que o
+ * JSON serializa como `null`, mentindo silenciosamente sobre um campo tipado `number`. Agora a
+ * fonte propaga `null` explícito (nunca `''`) até aqui, e SEM o previsto conhecido o valor seguro é
+ * `0` (mesmo padrão de "ausência de dado nunca produz um número inválido" de `computeActualHours`).
+ */
+export function hoursScheduledOf(scheduledStart: string | null, scheduledEnd: string | null): number {
+  if (!scheduledStart || !scheduledEnd) return 0;
+  return hoursBetween(scheduledStart, scheduledEnd);
+}
+
+/**
+ * Horas REALMENTE trabalhadas — SEMPRE de `actualStart`/`actualEnd` (check-in/checkout), nunca do
+ * previsto. `null` quando falta qualquer um dos dois (turno sem check-in, ou em andamento sem
+ * checkout ainda) — medido 17/09: a fonte não tem campo de hora trabalhada, só previsto
+ * (`duration`), inclusive em turno não finalizado (`is_finalized=false`).
+ */
+export function computeActualHours(source: Pick<SourceShiftDTO, 'actualStart' | 'actualEnd'>): number | null {
+  if (!source.actualStart || !source.actualEnd) return null;
+  return hoursBetween(source.actualStart, source.actualEnd);
 }
 
 /**
@@ -31,18 +78,21 @@ function hoursBetween(startIso: string, endIso: string): number {
  */
 export function mapShift(source: SourceShiftDTO, validation: ValidationRow | undefined, canReadNote: boolean, decryptedNote: string | null): AnaCareShift {
   const status = STATUS_MAP[validation?.status ?? 'pendente'];
-  const hoursActual = status === 'validado' ? validation!.approvedHours : source.durationHours;
+  const hoursActual = status === 'validado' ? validation!.approvedHours : computeActualHours(source);
   const origin = source.checkinSource === null ? 'sin_checkin' : source.checkinSource;
 
   const shift: AnaCareShift = {
     id: source.sourceShiftId,
     date: source.date,
-    scheduledStart: source.scheduledStart,
-    scheduledEnd: source.scheduledEnd,
+    // Contrato de wire (`AnaCareShift.scheduledStart/scheduledEnd: string`) não muda — o `''` de
+    // fallback fica só AQUI, na fronteira de exibição, nunca escondido dentro do cálculo de horas
+    // (ver `hoursScheduledOf`, que usa o `null` original antes desse fallback).
+    scheduledStart: source.scheduledStart ?? '',
+    scheduledEnd: source.scheduledEnd ?? '',
     actualStart: source.actualStart,
     actualEnd: source.actualEnd,
     hoursActual,
-    hoursScheduled: hoursBetween(source.scheduledStart, source.scheduledEnd),
+    hoursScheduled: hoursScheduledOf(source.scheduledStart, source.scheduledEnd),
     origin,
     status,
     anaCareShiftId: source.sourceShiftId,
@@ -59,28 +109,80 @@ export function mapShift(source: SourceShiftDTO, validation: ValidationRow | und
   return shift;
 }
 
-/** Agrupa turnos JÁ MAPEADOS por paciente → prestador (id da fonte, sem vínculo em F1). */
-export function groupIntoPatients(shifts: ReadonlyArray<{ shift: AnaCareShift; anaCarePatientId: string; anaCareNurseId: string }>): AnaCarePatient[] {
-  const byPatient = new Map<string, Map<string, AnaCareShift[]>>();
-  for (const { shift, anaCarePatientId, anaCareNurseId } of shifts) {
+/**
+ * Agrupa turnos JÁ MAPEADOS por paciente → prestador.
+ *
+ * `providerLinks`: chave = `anaCareNurseId`. Presença da chave = `linked: true`; o valor é o
+ * nome já decidido pelo chamador (`undefined` quando o ator não tem `worker_contact:read`, mesmo
+ * que o vínculo exista — D349/D344). Ausência da chave = `linked: false` (sem vínculo em `workers`).
+ * Paciente permanece sempre sem vínculo (item 2 da D349, bloqueado).
+ */
+export function groupIntoPatients(
+  shifts: ReadonlyArray<{
+    shift: AnaCareShift;
+    anaCarePatientId: string;
+    anaCareNurseId: string;
+    /** Nome do paciente resolvido pela FONTE (já combinado first+last name) — ver cabeçalho do arquivo. */
+    patientName?: string;
+    /** Nome do prestador resolvido pela FONTE — já `undefined` quando o chamador não tem `worker_contact:read`. */
+    nurseName?: string;
+    /**
+     * Documento do paciente resolvido pela FONTE — já `undefined` quando o chamador não tem
+     * `patient_identity:read` (mesmo desenho de `nurseName`/`worker_contact:read`), mesmo que o
+     * par tenha documento. Este módulo não decide permissão, só agrupa (ver cabeçalho).
+     */
+    patientDocumentType?: string;
+    patientDocumentNumber?: string;
+  }>,
+  linkedNurseIds: ReadonlySet<string> = new Set(),
+): AnaCarePatient[] {
+  const byPatient = new Map<string, Map<string, { shifts: AnaCareShift[]; name?: string }>>();
+  const patientNames = new Map<string, string>();
+  const patientDocuments = new Map<string, { documentType?: string; documentNumber?: string }>();
+  for (const { shift, anaCarePatientId, anaCareNurseId, patientName, nurseName, patientDocumentType, patientDocumentNumber } of shifts) {
     if (!byPatient.has(anaCarePatientId)) byPatient.set(anaCarePatientId, new Map());
     const byProvider = byPatient.get(anaCarePatientId)!;
-    if (!byProvider.has(anaCareNurseId)) byProvider.set(anaCareNurseId, []);
-    byProvider.get(anaCareNurseId)!.push(shift);
+    if (!byProvider.has(anaCareNurseId)) byProvider.set(anaCareNurseId, { shifts: [] });
+    const entry = byProvider.get(anaCareNurseId)!;
+    entry.shifts.push(shift);
+    if (nurseName && !entry.name) entry.name = nurseName;
+    if (patientName && !patientNames.has(anaCarePatientId)) patientNames.set(anaCarePatientId, patientName);
+    if ((patientDocumentType || patientDocumentNumber) && !patientDocuments.has(anaCarePatientId)) {
+      patientDocuments.set(anaCarePatientId, { documentType: patientDocumentType, documentNumber: patientDocumentNumber });
+    }
   }
 
   const patients: AnaCarePatient[] = [];
   for (const [anaCareId, byProvider] of byPatient) {
     const providers: AnaCareProvider[] = [];
-    for (const [providerAnaCareId, providerShifts] of byProvider) {
-      providers.push({ anaCareId: providerAnaCareId, linked: false, shifts: providerShifts });
+    for (const [providerAnaCareId, entry] of byProvider) {
+      const linked = linkedNurseIds.has(providerAnaCareId);
+      providers.push({ anaCareId: providerAnaCareId, linked, name: entry.name, shifts: entry.shifts });
     }
-    patients.push({ anaCareId, linked: false, providers });
+    const document = patientDocuments.get(anaCareId);
+    patients.push({
+      anaCareId,
+      linked: false,
+      name: patientNames.get(anaCareId),
+      documentType: document?.documentType,
+      documentNumber: document?.documentNumber,
+      providers,
+    });
   }
   return patients;
 }
 
-export function buildSnapshot(month: string, patients: AnaCarePatient[], retrato: AnaCareRetratoSourceStatus): AnaCareMonthSnapshot {
+/** F6.2: `patients` já vem AGREGADO (`AnaCareListPatient[]`, montado por `AnaCareHoursService.getMonthSnapshot`) — esta função só decide `snapshotState`/`stale`, não agrupa turno. */
+export function buildSnapshot(
+  month: string,
+  patients: AnaCareListPatient[],
+  retrato: AnaCareRetratoSourceStatus & {
+    /** Item 3: `freshness.shifts === 0` — o retrato NUNCA foi sincronizado para este mês (distinto de "sincronizou, mas ficou velho"). Default `false` por compat com chamadores antigos. */
+    naoConstruido?: boolean;
+  },
+): AnaCareMonthSnapshot {
+  const naoConstruido = retrato.naoConstruido ?? false;
+  const snapshotState: AnaCareSnapshotState = naoConstruido ? 'nao_construido' : retrato.stale ? 'velho' : 'fresco';
   return {
     month,
     updatedAt: new Date().toISOString(),
@@ -89,6 +191,7 @@ export function buildSnapshot(month: string, patients: AnaCarePatient[], retrato
     // (sob PARE do lex). O bloqueio de escrita (`AnaCareHoursService.assertRetratoOk`) lê a MESMA
     // fonte, não este snapshot — as duas camadas convergem porque comem do mesmo `getRetratoStatus`.
     stale: retrato.stale,
+    snapshotState,
     circuitBreakerOpen: retrato.circuitBreakerOpen,
     patients,
   };

@@ -1,13 +1,16 @@
 import { useTranslation } from 'react-i18next';
 
-export type VacancyTab = 'encuadres' | 'talentum' | 'links';
+import { VACANCY_TABS, type VacancyTab } from './vacancyTabs';
+
+export type { VacancyTab } from './vacancyTabs';
 
 interface VacancyDetailTabsProps {
   activeTab: VacancyTab;
   onTabChange: (tab: VacancyTab) => void;
+  /** D286: só as abas com algum container legível. Sem a prop, todas. */
+  visibleTabs?: readonly VacancyTab[];
 }
 
-const TABS: VacancyTab[] = ['encuadres', 'talentum', 'links'];
 
 const TAB_I18N_KEYS: Record<VacancyTab, string> = {
   encuadres: 'admin.vacancyDetail.tabs.encuadres',
@@ -24,12 +27,13 @@ const tabInactive =
   'font-poppins font-semibold text-base whitespace-nowrap ' +
   'transition-colors flex items-center';
 
-export function VacancyDetailTabs({ activeTab, onTabChange }: VacancyDetailTabsProps) {
+export function VacancyDetailTabs({ activeTab, onTabChange, visibleTabs }: VacancyDetailTabsProps) {
   const { t } = useTranslation();
+  const tabs = visibleTabs ? VACANCY_TABS.filter((tab) => visibleTabs.includes(tab)) : VACANCY_TABS;
 
   return (
     <div className="flex items-center gap-8 flex-wrap">
-      {TABS.map((tab) => (
+      {tabs.map((tab) => (
         <button
           key={tab}
           onClick={() => onTabChange(tab)}

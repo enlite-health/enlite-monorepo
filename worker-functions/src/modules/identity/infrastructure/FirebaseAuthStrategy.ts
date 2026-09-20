@@ -1,6 +1,7 @@
 import * as admin from 'firebase-admin';
 import { Pool } from 'pg';
 import { logger } from '@shared/logging';
+import { accountTypeForRole, isAccountType, type AccountType } from '../domain/AccountType';
 import { AuthContext, Credentials, CredentialType, Principal, PrincipalType, RequestMetadata } from '../domain/Auth';
 
 /**
@@ -40,14 +41,19 @@ export class FirebaseAuthStrategy {
           user_id?: string;
           sub?: string;
           role?: string;
+          account_type?: string;
+          country?: string;
         };
         logger.info({ userId: payload.user_id ?? payload.sub }, '[AUTH] Emulator JWT decoded');
 
         const roles: string[] = payload.role ? [payload.role] : [];
+        const accountType = accountTypeOf(payload.account_type, payload.role);
         const principal: Principal = {
           id: payload.user_id ?? payload.sub ?? 'emulator-user',
           type: PrincipalType.USER,
           roles,
+          ...(accountType ? { accountType } : {}),
+          ...(payload.country ? { country: payload.country } : {}),
         };
         return this.buildContext(principal, credentials, metadata);
       } catch (decodeError) {
@@ -64,11 +70,23 @@ export class FirebaseAuthStrategy {
   private async authenticateProduction(credentials: Credentials, metadata: RequestMetadata): Promise<AuthContext | null> {
     const decodedToken = await admin.auth().verifyIdToken(credentials.token);
     const claimRole = decodedToken.role as string | undefined;
-    const role = claimRole ?? await this.getRoleFromDB(decodedToken.uid, decodedToken.email);
+    const claimAccountType = decodedToken.account_type as string | undefined;
+    // Claim que falta (conta anterior ao backfill, ou prestador sem claim) vem do banco —
+    // e `users` só tem staff (D294): quem não está lá não é staff.
+    const fromDb = claimRole && claimAccountType ? null : await this.getIdentityFromDB(decodedToken.uid, decodedToken.email);
+    const role = claimRole ?? fromDb?.role ?? null;
+    const accountType = accountTypeOf(claimAccountType ?? fromDb?.account_type, role);
+    // `country` é claim-only, sem fallback de banco (design, decisão 4): o claim
+    // muda raro e tolera a propagação de 1h; grant de grupo é que precisa de
+    // revogação imediata, e esse a policy resolve por query. Claim ausente
+    // segue ausente — quem trata é o AuthMiddleware, fail-closed (lex C3).
+    const claimCountry = decodedToken.country as string | undefined;
     const principal: Principal = {
       id: decodedToken.uid,
       type: PrincipalType.USER,
       roles: role ? [role] : [],
+      ...(accountType ? { accountType } : {}),
+      ...(claimCountry ? { country: claimCountry } : {}),
     };
     return this.buildContext(principal, credentials, metadata);
   }
@@ -85,16 +103,25 @@ export class FirebaseAuthStrategy {
     };
   }
 
-  private async getRoleFromDB(uid: string, email?: string): Promise<string | null> {
+  private async getIdentityFromDB(uid: string, email?: string): Promise<{ role: string | null; account_type: string | null } | null> {
     if (!this.db) return null;
     try {
-      const result = await this.db.query<{ role: string }>(
-        'SELECT role FROM users WHERE (firebase_uid = $1 OR email = $2) AND is_active = true LIMIT 1',
+      const result = await this.db.query<{ role: string | null; account_type: string | null }>(
+        'SELECT role, account_type FROM users WHERE (firebase_uid = $1 OR email = $2) AND is_active = true LIMIT 1',
         [uid, email ?? ''],
       );
-      return result.rows[0]?.role ?? null;
+      return result.rows[0] ?? null;
     } catch {
       return null;
     }
   }
+}
+
+/**
+ * O tipo declarado vence; sem ele, a ponte pelo papel (D294). Valor desconhecido no
+ * claim é IGNORADO (fail-closed: não vira staff nem worker por acidente).
+ */
+function accountTypeOf(declared: string | null | undefined, role: string | null | undefined): AccountType | null {
+  if (isAccountType(declared)) return declared;
+  return accountTypeForRole(role);
 }

@@ -84,14 +84,61 @@ jobs:
           region: ${{ env.REGION }}
           project_id: ${{ secrets.GCP_PROJECT_ID }}
           image: "${{ env.REGISTRY_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.SERVICE_NAME }}:${{ github.sha }}"
+          # ── ABAC país (4.1): DB_USER=enlite_runtime é a VIRADA (enlite_app é owner
+          # e ignora as policies). ⚠️ MIGRATIONS precisam do OWNER: o runner do boot
+          # usa DB_MIGRATION_USER/PASSWORD (=enlite_app) — sem isso a 1ª migration
+          # com DDL de owner (274+) quebra o boot (achado 16/08, PR #223). Pools por MEDIÇÃO: max_connections=25 no stg
+          # (db-f1-micro), menos superuser_reserved(3) = 22 úteis. Pior caso:
+          # main 3x(3+1)=12 + MCP 3x2=6 + MCP-RO 3x1=3 = 21 <= 22. NÃO copiar pra
+          # prd sem medir lá (runbook F4). NUNCA comentar DENTRO de env_vars: o
+          # parseKVString do deploy-cloudrun não suporta '#' (linha com '=' vira
+          # env de nome inválido e o deploy falha).
+          # ── A7 (task 3.5 fechada): PERMISSION_CATALOG_SYNC_ENABLED liga o sync do
+          # catálogo DERIVADO (D115) — o boot varre as rotas e faz upsert das células
+          # declaradas em iam.permissions, descontinuando as que nenhuma rota declara.
+          # Só pôde ligar com PENDING_DECLARATIONS em ZERO (PR #243): com a lista
+          # cheia, o sync descontinuaria tudo que ainda não tinha sido declarado.
+          # ── F13 (D285): PERMISSION_ENGINE_ENABLED liga a decisão por célula; o boot
+          # exige iam.rollout_state.permission_groups_migrated=done (gravado pelo
+          # iam-config-import em 05/09). PERMISSION_ENFORCED_ROUTES lista as famílias
+          # viradas, separadas por ';' (parseEnvList) — as 12 de ALL_PERMISSION_FAMILIES,
+          # provadas juntas pelo e2e permission-enforcement-all-families (D267).
+          # Rollback = remover as duas linhas e reimplantar; sem elas a rota volta a
+          # passar por papel, como antes.
+          #
+          # 🚨 A FLAG VAI EM UM SERVIÇO SÓ, E ESTE É O SERVIÇO. NÃO copiar para
+          # backend-mcp-stg.yml: os dois deploys usam a MESMA imagem, mas o MCP roda
+          # com MCP_ENABLED=true e monta rotas que este não monta. Dois serviços
+          # sincronizando = duas varreduras DIFERENTES do mesmo catálogo, e cada boot
+          # descontinuaria as células que o outro declara. Hoje nenhuma rota /mcp/v1
+          # declara célula, então o estrago seria zero — mas a primeira que declarar
+          # ligaria um flip-flop silencioso entre as duas revisões.
+          #
+          # Declarativo: o YAML é o conjunto COMPLETO de env/secrets. Sem isto o
+          # deploy-cloudrun faz MERGE e chave removida PERSISTE da revisão anterior —
+          # foi exatamente assim que o ensaio de rollback 1.R falhou em 14/08 (revert
+          # tirou a flag do YAML, a revisão nasceu com enlite_app + flag herdada e o
+          # assert de boot recusou). Rollback só funciona com overwrite.
+          env_vars_update_strategy: overwrite
+          secrets_update_strategy: overwrite
           env_vars: |
             NODE_ENV=production
             GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}
             GCS_BUCKET_NAME=enlite-worker-documents-stg
+            GCS_PATIENT_PHOTOS_BUCKET=enlite-patient-photos-stg
             CORS_ALLOWED_ORIGINS=https://qas.enlite.health
             DB_HOST=/cloudsql/${{ secrets.GCP_PROJECT_ID }}:southamerica-west1:enlite-ar-db
             DB_NAME=enlite_ar
-            DB_USER=enlite_app
+            DB_USER=enlite_runtime
+            DB_SYSTEM_USER=enlite_system
+            DB_MIGRATION_USER=enlite_app
+            COUNTRY_RLS_ENABLED=true
+            PERMISSION_CATALOG_SYNC_ENABLED=true
+            PERMISSION_ENGINE_ENABLED=true
+            PERMISSION_ENFORCED_ROUTES=admin.analytics;admin.dedup;admin.encuadre;admin.integrations;admin.messaging;admin.patients;admin.permissions;admin.recruitment;admin.test_fixtures;admin.users;admin.vacancies;admin.workers
+            DB_POOL_MAX=3
+            DB_SYSTEM_POOL_MAX=1
+            USE_KMS_ENCRYPTION=false
             TWILIO_ACCOUNT_SID=${{ secrets.TWILIO_ACCOUNT_SID }}
             TWILIO_WHATSAPP_NUMBER=${{ secrets.TWILIO_WHATSAPP_NUMBER }}
             TWILIO_STATUS_CALLBACK_URL=https://worker-functions-vtf37eainq-tl.a.run.app/api/webhooks/twilio/status
@@ -109,12 +156,18 @@ jobs:
             PROMPT_DOC_ID_AT=1plk1zmW1kUI5kxudci5y1GcwMP5VI9exLe3avH0REGk
             PROMPT_DOC_ID_CUIDADOR=1VSjf02LXjoxsNSNQSl-yDBIwiiu88w6aHW2DnKaUqgA
             ENCUADRE_WEEKLY_CAPACITY=30
+            ANACARE_HOURS_SOURCE=real
+            ANACARE_DIRECTORY_MIN_ABSOLUTE=226
           secrets: |
-            DB_PASSWORD=enlite-ar-db-password:latest
+            DB_PASSWORD=enlite-runtime-db-password:latest
+            DB_SYSTEM_PASSWORD=enlite-system-db-password:latest
+            DB_MIGRATION_PASSWORD=enlite-ar-db-password:latest
             GROQ_API_KEY=groq-api-key:latest
             TWILIO_AUTH_TOKEN=twilio-auth-token:latest
             INTERNAL_TOKEN_SECRET=internal-token-secret:latest
             SENDGRID_API_KEY=sendgrid-api-key:latest
+            ANACARE_USERNAME=anacare-username:latest
+            ANACARE_PASS=anacare-pass:latest
           flags: >-
             --allow-unauthenticated
             --service-account=enlite-functions-sa@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com

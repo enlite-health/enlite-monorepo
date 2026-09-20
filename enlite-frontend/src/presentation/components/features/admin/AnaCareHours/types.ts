@@ -88,9 +88,18 @@ export interface AnaCareShift {
 export interface AnaCareProvider {
   /** ↔ `anacare_shift.ana_care_nurse_id` (identidade na fonte, ex.: "90231"). */
   anaCareId: string;
-  /** ↔ `anacare_shift.worker_id IS NOT NULL` (FK resolvida). */
+  /** ↔ `anacare_shift.worker_id IS NOT NULL` (FK resolvida) — INDEPENDENTE do nome (ver `name`). */
   linked: boolean;
-  /** Vem do vínculo (`workers`), nunca do retrato — sem `nurse_name_cache` (decisão do Gabriel, 15/09). Só existe se `linked === true` E o ator tem `worker_contact:read`. */
+  /**
+   * Item 1 (decisão do Gabriel, 17/09, revoga a nota de 15/09 abaixo): vem do PAYLOAD do turno na
+   * fonte, não do cruzamento com `workers` — `linked` não gate o nome. Ausente quando o ator não
+   * tem `worker_contact:read` (gate mantido) ou quando a fonte não mandou nome para o turno.
+   *
+   * ⚠️ Hoje isso só se materializa no **DETALHE**, que vai à fonte ao vivo. A **LISTA** lê do
+   * retrato (`anacare_shift`), que NÃO tem coluna de nome — decisão da granularidade do retrato
+   * ainda aberta (D360 §"O que esta decisão NÃO fecha"). Na lista o valor vem `undefined` e a
+   * tela cai no fallback honesto `Sin vínculo · ID X`.
+   */
   name?: string;
   shifts: AnaCareShift[];
 }
@@ -98,11 +107,59 @@ export interface AnaCareProvider {
 export interface AnaCarePatient {
   /** ↔ `anacare_shift.ana_care_patient_id`. */
   anaCareId: string;
-  /** ↔ `anacare_shift.patient_id IS NOT NULL`. */
+  /** ↔ `anacare_shift.patient_id IS NOT NULL` — SEMPRE `false` hoje (D349 item 2, bloqueado: sem ID nosso do lado do paciente no Ana Care). */
   linked: boolean;
-  /** Vem do vínculo (`patients`), nunca do retrato. Só existe se `linked === true` E o ator tem `patient_identity:read`. */
+  /**
+   * Item 1 (decisão do Gabriel, 17/09): vem do PAYLOAD do turno na fonte — INDEPENDENTE de
+   * `linked` (que continua sempre `false`, D349 item 2). Ausente quando a fonte não mandou nome
+   * para o turno, e ausente na LISTA enquanto o retrato não guardar nome (ver `AnaCareProvider.name`).
+   */
   name?: string;
+  /**
+   * Documento de identidade do paciente (categoria/valor, ex. "DNI"/"30111222") — mesmo desenho de
+   * `name`: vem do backend só quando o ator tem a célula `patient_identity:read` (gate de PII,
+   * item 4 da conferência de horas, 18/09). Ausente (não vazio) sem a permissão — nunca redigido.
+   */
+  documentType?: string;
+  documentNumber?: string;
   providers: AnaCareProvider[];
+}
+
+/**
+ * Contrato da LISTA (F6.2/F6.3, D361 Adendo 17/09) — agregado, SEM NENHUM turno individual.
+ * Espelha `AnaCareListProvider`/`AnaCareListPatient` de `worker-functions/.../domain/
+ * AnaCareShift.ts` (backend real desta branch). `providers` continua array (não só um número)
+ * para o filtro "Todos los prestadores" e o dropdown do front seguirem funcionando sem reescrita
+ * — só `provider.shifts` some.
+ *
+ * ⚠️ NÃO confundir com `AnaCarePatient`/`AnaCareProvider` (acima): aqueles são o DETALHE (por
+ * turno, ao vivo em `getPatientMonth`); estes são a LISTA (agregado, `getMonthSnapshot`). Antes
+ * desta fase eram o MESMO tipo — a separação é a F6.3 (ver `selectors.ts` cabeçalho).
+ */
+export interface AnaCareListProvider {
+  anaCareId: string;
+  linked: boolean;
+  name?: string;
+}
+
+export interface AnaCareListPatient {
+  anaCareId: string;
+  name?: string;
+  /** D349 item 2 — paciente permanece SEMPRE sem vínculo, bloqueado. */
+  linked: false;
+  providers: AnaCareListProvider[];
+  providersCount: number;
+  shiftsCount: number;
+  /** Modo `zero` de `totalHours` (front) — soma sozinha, já pronta (backend agrega). */
+  hoursActualSum: number;
+  /** Somado a `hoursActualSum` cobre o modo `'scheduled'` — nunca isolado, nunca somado ao modo `zero`. */
+  hoursScheduledSumMissingActual: number;
+  /** `COUNT` por status em `shift_hours_validation` (GROUP BY) — nunca mais o join 1:1 por turno. */
+  validated: number;
+  contested: number;
+  originSinCheckin: number;
+  originWebAdmin: number;
+  originApp: number;
 }
 
 /** Forma do agregado "contagem por origem" — calculado em `selectors.ts`, nunca guardado à mão. */
@@ -112,6 +169,18 @@ export interface AnaCareOriginCounts {
   app: number;
 }
 
+/**
+ * Item 3 (revisão de PR): distingue "retrato NUNCA sincronizado" de "sincronizou, mas ficou
+ * velho" — `stale` sozinho colapsava os dois e a tela mostrava sempre "há mais de 24 horas",
+ * falso quando o sync nunca rodou.
+ */
+export type AnaCareSnapshotState = 'nao_construido' | 'velho' | 'fresco';
+
+/**
+ * Contrato da rota `GET /months/:month` — a LISTA. `patients` é o agregado (`AnaCareListPatient`,
+ * F6.2/F6.3), nunca o array de turnos. Ver `AnaCareHoursPatientSnapshot` para o wrapper "de 1
+ * paciente só" que o DETALHE monta (mesmo formato de campos de topo, `patients` com turnos).
+ */
 export interface AnaCareMonthSnapshot {
   /** ↔ `anacare_shift.period_month` (1º dia do mês) — aqui YYYY-MM. */
   month: string;
@@ -119,7 +188,27 @@ export interface AnaCareMonthSnapshot {
   updatedAt: string;
   /** true = retrato com mais de 24h (derivado de `fetched_at`), ações de validar ficam desabilitadas. */
   stale: boolean;
+  /** Ver `AnaCareSnapshotState` — granularidade que `stale` sozinho não carrega. */
+  snapshotState: AnaCareSnapshotState;
   /** "disjuntor" — sincronização falhando repetidamente, proteção de carga ativa (estado do job noturno, não é coluna). */
+  circuitBreakerOpen: boolean;
+  /** F6.3: pacientes AGREGADOS (sem turno individual) — ver `AnaCareListPatient`. */
+  patients: AnaCareListPatient[];
+}
+
+/**
+ * O "`AnaCareMonthSnapshot` de 1 paciente só" que `useAnaCareHoursPatient` monta para reusar
+ * `AnaCareHoursDetailPage` (que agrupa por dia via `selectors.ts`, precisa dos turnos). MESMOS
+ * campos de topo do snapshot da lista, mas `patients` é `AnaCarePatient[]` (DETALHE, com turnos) —
+ * nunca `AnaCareListPatient[]`. Extraído desta fase (F6.3): antes, os dois usavam o MESMO tipo
+ * `AnaCareMonthSnapshot`, e a separação de contrato da lista (sem turnos) teria quebrado o
+ * detalhe se continuassem compartilhando o tipo.
+ */
+export interface AnaCareHoursPatientSnapshot {
+  month: string;
+  updatedAt: string;
+  stale: boolean;
+  snapshotState: AnaCareSnapshotState;
   circuitBreakerOpen: boolean;
   patients: AnaCarePatient[];
 }
@@ -149,9 +238,46 @@ export interface ContestShiftCommand {
   note?: string;
 }
 
-/** Estado do retrato — espelha `AnaCareMonthSnapshot.updatedAt/stale/circuitBreakerOpen` como consulta isolada (útil pro banner sem carregar o mês inteiro). */
+/**
+ * Estado do retrato — espelha `AnaCareMonthSnapshot.updatedAt/stale/snapshotState/circuitBreakerOpen`
+ * como consulta isolada (útil pro banner sem carregar o mês inteiro). `snapshotState` carrega a
+ * MESMA granularidade do snapshot completo (item 3) — antes deste campo, `useAnaCareHoursPatient`
+ * tinha de APROXIMAR `stale ? 'velho' : 'fresco'`, colapsando "nunca construído" em "velho" e
+ * mostrando ao operador uma mensagem falsa ("mais de 24 horas" quando o sync nunca rodou).
+ */
 export interface AnaCareRetratoStatus {
   updatedAt: string;
   stale: boolean;
+  snapshotState: AnaCareSnapshotState;
   circuitBreakerOpen: boolean;
+}
+
+/**
+ * Comando: dispara UMA RODADA do sync manual (F6.4, botão "Sincronizar" da lista). ↔
+ * `POST /api/admin/anacare-hours/sync`, corpo `{month?, cursor?, budgetMs?}` — NUNCA
+ * `runStartedAt` (D364: o carimbo da corrida é resolvido pelo SERVIDOR, não entra na rota). O laço
+ * de várias rodadas até `nextCursor === null` é do CLIENTE (`useAnaCareHoursSync.ts`), nunca deste
+ * comando isolado.
+ */
+export interface TriggerSyncCommand {
+  month: string;
+  cursor?: number | null;
+  budgetMs?: number;
+}
+
+/**
+ * Resposta de UMA rodada do sync — espelha o outcome de `AnaCareHoursSyncRunner` (backend).
+ * `nextCursor === null` significa que a rodada TERMINOU o mês inteiro; qualquer número significa
+ * CONTINUAR o laço reenviando esse valor como `cursor` na próxima chamada.
+ */
+export interface TriggerSyncResult {
+  success: boolean;
+  deduped: boolean;
+  shiftsRead: number;
+  reservationsProcessed: number;
+  shiftsWritten: number;
+  nextCursor: number | null;
+  runStartedAt: string;
+  shiftsSkippedNoProvider: number;
+  shiftsSkippedNoPatient: number;
 }

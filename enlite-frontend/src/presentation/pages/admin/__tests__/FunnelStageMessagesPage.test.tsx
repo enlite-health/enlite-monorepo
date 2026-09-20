@@ -1,12 +1,14 @@
 /**
  * FunnelStageMessagesPage.test.tsx — a página de "mensagens por etapa" (DEC-12).
  * O que se afirma: as 9 etapas, a célula de UMA LINHA com o texto da mensagem,
- * QUALIFIED built-in, a modal de escolha (admin salva, recruiter só lê), erro
- * que fica na modal, recarga depois do PUT.
+ * QUALIFIED built-in, a modal de escolha (com `messaging:write` salva, sem ela
+ * só lê), erro que fica na modal, recarga depois do PUT.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { FunnelStageMessagesPage } from '../FunnelStageMessagesPage';
+import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
+import type { AuthzContract } from '@domain/entities/Authz';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string, fallback?: string | Record<string, unknown>) => (typeof fallback === 'string' ? fallback : key) }),
@@ -16,8 +18,12 @@ const mockPut = vi.fn();
 vi.mock('@infrastructure/http/AdminFunnelStageMessagesApiService', () => ({
   AdminFunnelStageMessagesApiService: { getFunnelStageMessages: (...a: unknown[]) => mockGet(...a), updateFunnelStageMessage: (...a: unknown[]) => mockPut(...a) },
 }));
-let role = 'admin';
-vi.mock('@presentation/hooks/useAdminAuth', () => ({ useAdminAuth: () => ({ adminProfile: { role }, isAuthenticated: true, isLoading: false }) }));
+
+const contrato = (permissions: string[], enforcement: AuthzContract['enforcement']): AuthzContract => ({
+  uid: 'u', tenantId: 't', status: 'ACTIVE', permissions, countries: [], groups: [], features: {}, enforcement,
+});
+/** Engine ligado e SEM `messaging:write` — o único jeito de negar a escrita agora. */
+const semEscrita = () => useAdminAuthStore.setState({ authzStatus: 'ready', authz: contrato(['messaging:read'], 'on') });
 
 const STAGES = ['INVITED', 'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED', 'QUALIFIED', 'IN_DOUBT', 'CONFIRMED', 'SELECTED', 'REJECTED'];
 const config = () => ({
@@ -33,7 +39,14 @@ const config = () => ({
 });
 
 describe('FunnelStageMessagesPage', () => {
-  beforeEach(() => { vi.clearAllMocks(); role = 'admin'; mockGet.mockResolvedValue(config()); mockPut.mockResolvedValue({}); });
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // Sem contrato = engine desligado: escreve, como sempre escreveu.
+    useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' });
+    mockGet.mockResolvedValue(config());
+    mockPut.mockResolvedValue({});
+  });
+  afterEach(() => useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' }));
 
   it('lista as 9 etapas; QUALIFIED é built-in; a célula mostra o TEXTO da mensagem (não o slug) e o estado; última edição', async () => {
     render(<FunnelStageMessagesPage />);
@@ -51,7 +64,7 @@ describe('FunnelStageMessagesPage', () => {
     expect(screen.getByTestId('fsm-row-COMPLETED')).toHaveTextContent(/2026/);
     expect(screen.getByTestId('fsm-row-SELECTED')).toHaveTextContent('—');
     expect(screen.getByTestId('fsm-row-INVITED')).toHaveTextContent('admin.funnelStageMessages.never');
-    expect(screen.queryByTestId('fsm-admin-only')).toBeNull();
+    expect(screen.queryByTestId('fsm-no-write-access')).toBeNull();
     // Sem template escolhido não há o que espiar.
     expect(screen.queryByTestId('fsm-peek-INVITED')).toBeNull();
   });
@@ -158,11 +171,11 @@ describe('FunnelStageMessagesPage', () => {
     expect(mockPut).not.toHaveBeenCalled();
   });
 
-  it('recruiter: lê a mensagem pelo "Ver", mas não escolhe nem grava', async () => {
-    role = 'recruiter';
+  it('sem messaging:write (engine ON): lê a mensagem pelo "Ver", mas não escolhe nem grava', async () => {
+    semEscrita();
     render(<FunnelStageMessagesPage />);
     await waitFor(() => expect(screen.getByTestId('fsm-table')).toBeInTheDocument());
-    expect(screen.getByTestId('fsm-admin-only')).toBeInTheDocument();
+    expect(screen.getByTestId('fsm-no-write-access')).toBeInTheDocument();
     expect(screen.queryByTestId('fsm-open-INVITED')).toBeNull();
 
     fireEvent.click(screen.getByTestId('fsm-peek-COMPLETED'));

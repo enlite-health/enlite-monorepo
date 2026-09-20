@@ -1,6 +1,7 @@
 import * as dns from 'dns';
 import pino from 'pino';
 import { logger, reportError } from '@shared/logging';
+import { parseEnvList } from '@shared/utils/envList';
 import {
   HostBlockedError,
   FileTooLargeError,
@@ -31,11 +32,7 @@ export class ExternalMediaDownloader {
   private readonly allowedHosts: string[];
 
   constructor() {
-    const raw = process.env.ALLOWED_MEDIA_HOSTS ?? '';
-    this.allowedHosts = raw
-      .split(',')
-      .map(h => h.trim())
-      .filter(h => h.length > 0);
+    this.allowedHosts = parseEnvList(process.env.ALLOWED_MEDIA_HOSTS);
   }
 
   async download(url: string): Promise<DownloadResult> {

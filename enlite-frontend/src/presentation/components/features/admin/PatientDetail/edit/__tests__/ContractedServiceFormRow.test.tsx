@@ -40,6 +40,7 @@ const SERVICE: PatientContractedServiceDetail = {
   contractType: 'OBRA_SOCIAL', taxCondition: 'IVA_EXEMPT', supervisionFrequency: 'DAYS_30', guardShift: 'MORNING',
   providerAgeBand: 'AGE_30_45',
   addressId: null,
+  liveVacancyId: null,
   schedule: null,
   active: true, endedAt: null, country: 'AR', deviceTypes: ['HOME'], providers: [],
   createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z',

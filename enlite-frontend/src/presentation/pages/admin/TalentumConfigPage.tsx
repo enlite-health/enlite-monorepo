@@ -10,12 +10,14 @@
  */
 
 import { useEffect, useMemo } from 'react';
-import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Loader2 } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
+import { ActionButton } from '@presentation/components/features/access';
+import { useActionGate } from '@presentation/hooks/useCellAccess';
 import { useTalentumConfig } from '@hooks/admin/useTalentumConfig';
 import { Stepper } from '@presentation/components/molecules/Stepper';
 import { VacancySummaryCard } from '@presentation/components/features/admin/TalentumConfig/VacancySummaryCard';
@@ -24,6 +26,8 @@ import { PrescreeningStep } from '@presentation/components/features/admin/Talent
 import { VacancySocialLinksCard } from '@presentation/components/features/admin/VacancyDetail/VacancySocialLinksCard';
 
 export default function TalentumConfigPage(): JSX.Element {
+  // D269: alcançável por URL; sem talentum:write, a porta fecha.
+  const talentumWriteGate = useActionGate('talentum', 'update');
   const { id: vacancyId = '' } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const location = useLocation();
@@ -109,6 +113,8 @@ export default function TalentumConfigPage(): JSX.Element {
     );
   }
 
+  if (talentumWriteGate.denied) return <Navigate to={`/admin/vacancies/${vacancyId}`} replace />;
+
   return (
     <div className="w-full min-h-screen bg-[#FFF9FC] py-10 px-6">
       <div className="max-w-[1296px] mx-auto flex flex-col gap-6">
@@ -140,7 +146,9 @@ export default function TalentumConfigPage(): JSX.Element {
               >
                 {tc('backButton')}
               </Button>
-              <Button
+              <ActionButton
+                resource="talentum"
+                action="update"
                 variant="primary"
                 size="sm"
                 onClick={handlePublish}
@@ -149,7 +157,7 @@ export default function TalentumConfigPage(): JSX.Element {
               >
                 {isPublishing && <Loader2 className="w-4 h-4 animate-spin" />}
                 {isPublishing ? tc('publishing') : tc('publishButton')}
-              </Button>
+              </ActionButton>
             </div>
           </div>
         </div>

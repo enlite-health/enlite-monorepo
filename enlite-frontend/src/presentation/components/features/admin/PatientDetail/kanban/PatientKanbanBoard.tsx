@@ -3,6 +3,7 @@ import {
   KanbanBoardShell,
   type KanbanDropEvent,
 } from '@presentation/components/features/admin/Kanban/KanbanBoardShell';
+import { useActionGate } from '@presentation/hooks/useCellAccess';
 import { PatientKanbanCard } from './PatientKanbanCard';
 import {
   PATIENT_KANBAN_STATUSES,
@@ -36,6 +37,11 @@ const COLUMN_COLOR: Record<PatientKanbanStatus, string> = {
  */
 export function PatientKanbanBoard({ groups, onMove }: Props): JSX.Element {
   const { t } = useTranslation();
+  // D269 — soltar no board chama PUT /patients/:id/status → patient:write. O
+  // card não é `<Button>`, então usa `useActionGate` (mesma leitura do
+  // `ActionButton`): sem a célula, o ARRASTO fica desabilitado (o card
+  // continua clicável para abrir a ficha — só o drag some).
+  const patientWriteGate = useActionGate('patient', 'update');
 
   const columns = PATIENT_KANBAN_STATUSES.map((status) => ({
     id: status,
@@ -56,6 +62,7 @@ export function PatientKanbanBoard({ groups, onMove }: Props): JSX.Element {
       columns={columns}
       itemsOf={(columnId) => groups[columnId as PatientKanbanStatus] ?? []}
       getItemId={(p) => p.id}
+      isDragDisabled={() => patientWriteGate.denied}
       onDrop={handleDrop}
       collapseStorageKey="kanban-collapsed-patients"
       // 4 colunas: a 280px somavam 1156px em 1096px úteis e a 4ª ("Activo")

@@ -48,8 +48,8 @@ describe('C2 — versionar endereço preserva access_notes e logistics_corridor 
        VALUES ('C1B-address-logistics-1', 'C1B', 'Logistica QA', 'AR', 'ACTIVE') RETURNING id`,
     )).rows[0].id;
     addressId = (await pool.query<{ id: string }>(
-      `INSERT INTO patient_addresses (patient_id, address_type, address_formatted, display_order, state, city, neighborhood, logistics_corridor, access_notes)
-       VALUES ($1, 'primary', 'Av. Maipú 1234, Vicente López', 1, 'Buenos Aires', 'Vicente López', 'Florida', $2, $3) RETURNING id`,
+      `INSERT INTO patient_addresses (patient_id, address_formatted, display_order, state, city, neighborhood, logistics_corridor, access_notes)
+       VALUES ($1, 'Av. Maipú 1234, Vicente López', 1, 'Buenos Aires', 'Vicente López', 'Florida', $2, $3) RETURNING id`,
       [patientId, CORRIDOR, ACCESS],
     )).rows[0].id;
   });

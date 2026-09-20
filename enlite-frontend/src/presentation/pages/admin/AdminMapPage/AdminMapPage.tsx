@@ -44,13 +44,15 @@ import {
   DEFAULT_CENTER, DEFAULT_CENTER_BY_COUNTRY, DEFAULT_COUNTRY, DEFAULT_RADIUS_KM,
   anchorTextsFor, buildResultRows, corridorLabelsFor, filterOptionsFor, legendEntries, sameCenter,
 } from './mapPageConfig';
+import { useMapTabs, type MapKind } from './useMapTabs';
 
-type Kind = 'workers' | 'patients';
+type Kind = MapKind;
 type Docs = 'all' | 'complete' | 'incomplete';
 
 export function AdminMapPage(): JSX.Element {
   const { t } = useTranslation();
-  const [kind, setKind] = useState<Kind>('workers');
+  // D286 fase 2: cada aba é um container com célula própria (`useMapTabs`).
+  const { visibleTabs, kind, setKind } = useMapTabs();
   const [country, setCountry] = useState<MapCountry>(DEFAULT_COUNTRY);
   const [center, setCenter] = useState(DEFAULT_CENTER);
   const [radiusKm, setRadiusKm] = useState<number>(DEFAULT_RADIUS_KM);
@@ -221,12 +223,11 @@ export function AdminMapPage(): JSX.Element {
       </div>
 
       <div className="flex gap-1 border-b border-gray-200 mb-4" role="tablist">
-        <button type="button" role="tab" aria-selected={kind === 'workers'} className={tabClass('workers')} data-testid="map-tab-workers" onClick={() => onSwitchTab('workers')}>
-          <Text as="span" size="sm" weight="semibold" color="inherit">{t('admin.map.tabs.workers', 'Prestadores')}</Text>
-        </button>
-        <button type="button" role="tab" aria-selected={kind === 'patients'} className={tabClass('patients')} data-testid="map-tab-patients" onClick={() => onSwitchTab('patients')}>
-          <Text as="span" size="sm" weight="semibold" color="inherit">{t('admin.map.tabs.patients', 'Pacientes')}</Text>
-        </button>
+        {visibleTabs.map((k) => (
+          <button key={k} type="button" role="tab" aria-selected={kind === k} className={tabClass(k)} data-testid={`map-tab-${k}`} onClick={() => onSwitchTab(k)}>
+            <Text as="span" size="sm" weight="semibold" color="inherit">{t(`admin.map.tabs.${k}`, k === 'workers' ? 'Prestadores' : 'Pacientes')}</Text>
+          </button>
+        ))}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[360px_1fr] gap-4">

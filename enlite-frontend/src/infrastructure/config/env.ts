@@ -1,6 +1,5 @@
 export const ENV = {
   GOOGLE_CLIENT_ID: import.meta.env.VITE_GOOGLE_CLIENT_ID || '',
-  CERBOS_URL: import.meta.env.VITE_CERBOS_URL || 'http://localhost:3592',
   API_WORKER_FUNCTIONS_URL: import.meta.env.VITE_API_WORKER_FUNCTIONS_URL || 'http://localhost:3000',
   FIREBASE_API_KEY: import.meta.env.VITE_FIREBASE_API_KEY || '',
   FIREBASE_AUTH_DOMAIN: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || '',
@@ -17,6 +16,13 @@ export const ENV = {
   // URL of the Google Appointment Schedule for the "consulta de admisión".
   // Empty → GoogleAppointmentEmbed renders a configure-URL warning.
   ADMISSION_BOOKING_URL: import.meta.env.VITE_ADMISSION_BOOKING_URL || '',
+  // Spec 018, PR-4 (task 4.10): slot de foto + card de documentos do paciente — LIGADA só no
+  // build da stage; AUSENTE (portanto desligada) em PRD, sem tocar em workflow de PRD. Achado da
+  // revisão do PR-4 (item 6): a flag nunca tinha sido implementada — a feature aparecia sem gate
+  // nenhum, em qualquer build. Ver `.github/workflows/frontend-stg.yml` para onde a env do build
+  // da stage é setada (conserto #6 da 2ª revisão: este comentário apontava para
+  // `deploy-stage-frontend.yml`, arquivo que não existe neste monorepo).
+  PATIENT_PHOTO_ENABLED: import.meta.env.VITE_PATIENT_PHOTO_ENABLED === 'true',
   IS_PRODUCTION: import.meta.env.PROD,
   IS_DEVELOPMENT: import.meta.env.DEV,
 } as const;
@@ -27,8 +33,5 @@ export function validateEnv(): void {
   }
   if (!ENV.FIREBASE_PROJECT_ID) {
     throw new Error('VITE_FIREBASE_PROJECT_ID is required');
-  }
-  if (!ENV.CERBOS_URL) {
-    throw new Error('VITE_CERBOS_URL is required');
   }
 }

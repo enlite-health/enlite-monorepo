@@ -72,6 +72,30 @@ describe('AnaCareHoursController', () => {
       await controller.getMonthSnapshot(mockReq({ params: { month: '2026-09' } }), res);
       expect(res.status).toHaveBeenCalledWith(200);
     });
+
+    /**
+     * Item 1 (revisão de PR): antes, o 5º parâmetro do `AnaCareHoursService` caía no default
+     * (`AnaCareShiftRepository` real/Postgres) mesmo com `ANACARE_HOURS_SOURCE=fake` — a lista
+     * lia de um repositório que o sync falso nunca escrevia e nascia vazia. Este teste MORRE se
+     * alguém voltar a fiar o repositório real no modo fake: sem `createAnaCareSyncDependencies`,
+     * `mockPoolQuery` (Postgres mockado) devolveria `{ rows: [] }` pro RETRATO e `data.patients`
+     * ficaria vazio (validações/vínculo de prestador continuam passando pelo pool mockado — só o
+     * retrato de turnos não pode mais vir do Postgres real em modo fake).
+     */
+    it('com ANACARE_HOURS_SOURCE=fake, a lista devolve pacientes SEM o sync ter rodado (lê o repositório fake, não o Postgres real)', async () => {
+      process.env.ANACARE_HOURS_SOURCE = 'fake';
+      const controller = new AnaCareHoursController();
+      const res = mockRes();
+      await controller.getMonthSnapshot(mockReq({ params: { month: '2026-09' } }), res);
+      expect(res.status).toHaveBeenCalledWith(200);
+      // Conserto 17/09 (passo 2): o antigo repositório do retrato POR TURNO foi apagado por
+      // completo (nenhum caller de produção restava) — a classe nem existe mais, então uma query
+      // contra a tabela dele voltar a acontecer é hoje estruturalmente impossível (não dá nem para
+      // instanciar a classe apagada), não só ausente na prática (era o que esta asserção provava
+      // antes). A prova que sobra e ainda vale: a lista devolve pacientes sem o sync ter rodado.
+      const body = (res.json as jest.Mock).mock.calls[0][0];
+      expect(body.data.patients.length).toBeGreaterThan(0);
+    });
   });
 
   describe('sem ANACARE_HOURS_SOURCE configurada (serviceFactory devolve null)', () => {
@@ -127,16 +151,30 @@ describe('AnaCareHoursController', () => {
       expect(res.status).toHaveBeenCalledWith(400);
     });
 
-    it('200 com o snapshot; canReadNote é SEMPRE false no main (sem ABAC/célula, hardcoded — nunca decifra a nota)', async () => {
+    it('200 com o snapshot; canReadNote deriva de permissionCells', async () => {
       const service = mockService({ getMonthSnapshot: jest.fn().mockResolvedValue({ month: '2026-09', patients: [] }) });
       const controller = new AnaCareHoursController(() => service);
       const res = mockRes();
-      // mesmo com `permissionCells` de célula clínica no request (campo que não existe/não é lido
-      // no main), o controller NUNCA deve repassar `true` — prova que o hardcode não é decorativo.
-      await controller.getMonthSnapshot(mockReq({ params: { month: '2026-09' }, permissionCells: ['patient_clinical:read'] } as never), res);
-      expect(service.getMonthSnapshot).toHaveBeenCalledWith('2026-09', false);
+      await controller.getMonthSnapshot(mockReq({ params: { month: '2026-09' }, permissionCells: ['patient_clinical:read'] }), res);
+      expect(service.getMonthSnapshot).toHaveBeenCalledWith('2026-09', true, false);
       expect(res.status).toHaveBeenCalledWith(200);
       expect(res.json).toHaveBeenCalledWith({ success: true, data: { month: '2026-09', patients: [] } });
+    });
+
+    it('D349/D344: canReadProviderName deriva de permissionCells (worker_contact:read)', async () => {
+      const service = mockService({ getMonthSnapshot: jest.fn().mockResolvedValue({ month: '2026-09', patients: [] }) });
+      const controller = new AnaCareHoursController(() => service);
+      const res = mockRes();
+      await controller.getMonthSnapshot(mockReq({ params: { month: '2026-09' }, permissionCells: ['worker_contact:read'] }), res);
+      expect(service.getMonthSnapshot).toHaveBeenCalledWith('2026-09', false, true);
+    });
+
+    it('sem worker_contact:read (nem patient_clinical:read), os dois booleans vêm false', async () => {
+      const service = mockService({ getMonthSnapshot: jest.fn().mockResolvedValue({ month: '2026-09', patients: [] }) });
+      const controller = new AnaCareHoursController(() => service);
+      const res = mockRes();
+      await controller.getMonthSnapshot(mockReq({ params: { month: '2026-09' }, permissionCells: [] }), res);
+      expect(service.getMonthSnapshot).toHaveBeenCalledWith('2026-09', false, false);
     });
 
     it('500 e reportError em erro inesperado (não é AnaCareHoursServiceError)', async () => {
@@ -188,6 +226,30 @@ describe('AnaCareHoursController', () => {
       const res = mockRes();
       await controller.getPatientMonth(mockReq({ params: { month: '2026-09', patientId: 'AC-PAT-0' } }), res);
       expect(res.status).toHaveBeenCalledWith(200);
+    });
+
+    it('D349/D344: repassa canReadNote e canReadProviderName de permissionCells', async () => {
+      const service = mockService({ getPatientMonth: jest.fn().mockResolvedValue({ anaCareId: 'AC-PAT-0' }) });
+      const controller = new AnaCareHoursController(() => service);
+      const res = mockRes();
+      await controller.getPatientMonth(
+        mockReq({ params: { month: '2026-09', patientId: 'AC-PAT-0' }, permissionCells: ['worker_contact:read', 'patient_clinical:read'] }),
+        res,
+      );
+      // 5º parâmetro (canReadPatientDocument) — SEM `patient_identity:read` no cells acima, vem `false`.
+      expect(service.getPatientMonth).toHaveBeenCalledWith('2026-09', 'AC-PAT-0', true, true, false);
+    });
+
+    /** Item 4 (18/09), gate de PII: `patient_identity:read` em `permissionCells` vira `true` no 5º parâmetro. */
+    it('item 4: repassa canReadPatientDocument=true quando permissionCells tem patient_identity:read', async () => {
+      const service = mockService({ getPatientMonth: jest.fn().mockResolvedValue({ anaCareId: 'AC-PAT-0' }) });
+      const controller = new AnaCareHoursController(() => service);
+      const res = mockRes();
+      await controller.getPatientMonth(
+        mockReq({ params: { month: '2026-09', patientId: 'AC-PAT-0' }, permissionCells: ['patient_identity:read'] }),
+        res,
+      );
+      expect(service.getPatientMonth).toHaveBeenCalledWith('2026-09', 'AC-PAT-0', false, false, true);
     });
 
     it('500 em erro inesperado', async () => {

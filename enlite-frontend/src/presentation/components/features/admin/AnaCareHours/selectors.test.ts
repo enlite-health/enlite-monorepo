@@ -1,17 +1,19 @@
 import { describe, it, expect } from 'vitest';
 import {
   allShiftsOf,
+  axonicoDayEligibility,
   blockReason,
   filterPatients,
+  formatSourceRange,
+  formatSourceTime,
   isShiftSelectable,
   originCounts,
   patientDisplayName,
   pendingOriginBreakdown,
-  pendingShiftsOf,
   providerDisplayName,
-  providerPendingSelectionState,
   selectionSummary,
   shiftHours,
+  startOfWeekMonday,
   totalHours,
   validationProgress,
 } from './selectors';
@@ -141,6 +143,17 @@ describe('patientDisplayName', () => {
     const patient = makePatient({ linked: false, name: undefined, anaCareId: '90447' });
     expect(patientDisplayName(patient)).toBe('Sin vínculo · ID 90447');
   });
+
+  /**
+   * Item 1 (17/09): o nome do paciente vem do PAYLOAD do turno, não do cruzamento com `patients`
+   * — `linked` continua SEMPRE `false` (D349 item 2, bloqueado), mas o nome tem de aparecer mesmo
+   * assim. Antes desta mudança, `patientDisplayName` exigia `linked && name` e nunca mostrava o
+   * nome (linked nunca é true) — este teste MORRE se essa exigência voltar.
+   */
+  it('POSITIVO — paciente com nome da FONTE mostra o nome mesmo com linked=false (D349 item 2)', () => {
+    const patient = makePatient({ linked: false, name: 'Lucía Fernández QA', anaCareId: '90447' });
+    expect(patientDisplayName(patient)).toBe('Lucía Fernández QA');
+  });
 });
 
 describe('allShiftsOf', () => {
@@ -156,20 +169,6 @@ describe('allShiftsOf', () => {
 
   it('NEGATIVO — paciente sem prestadores dá lista vazia', () => {
     expect(allShiftsOf(makePatient({ providers: [] }))).toEqual([]);
-  });
-});
-
-describe('pendingShiftsOf', () => {
-  it('POSITIVO — filtra só os turnos pendentes do prestador', () => {
-    const provider = makeProvider({
-      shifts: [makeShift({ id: 's1', status: 'pendiente' }), makeShift({ id: 's2', status: 'validado' })],
-    });
-    expect(pendingShiftsOf(provider).map((s) => s.id)).toEqual(['s1']);
-  });
-
-  it('NEGATIVO — prestador 100% validado dá lista vazia de pendentes', () => {
-    const provider = makeProvider({ shifts: [makeShift({ id: 's1', status: 'validado' })] });
-    expect(pendingShiftsOf(provider)).toEqual([]);
   });
 });
 
@@ -210,40 +209,6 @@ describe('selectionSummary', () => {
 
   it('NEGATIVO — seleção vazia dá tudo zero (nunca ausente)', () => {
     expect(selectionSummary([])).toEqual({ count: 0, hours: 0, sinCheckinCount: 0 });
-  });
-});
-
-describe('providerPendingSelectionState', () => {
-  it('NEGATIVO — nenhum pendente selecionado dá "none"', () => {
-    const provider = makeProvider({ shifts: [makeShift({ id: 's1', status: 'pendiente' })] });
-    expect(providerPendingSelectionState(provider, new Set())).toBe('none');
-  });
-
-  it('POSITIVO — todos os pendentes selecionados dá "all"', () => {
-    const provider = makeProvider({
-      shifts: [makeShift({ id: 's1', status: 'pendiente' }), makeShift({ id: 's2', status: 'pendiente' })],
-    });
-    expect(providerPendingSelectionState(provider, new Set(['s1', 's2']))).toBe('all');
-  });
-
-  it('POSITIVO — parte dos pendentes selecionados dá "partial"', () => {
-    const provider = makeProvider({
-      shifts: [makeShift({ id: 's1', status: 'pendiente' }), makeShift({ id: 's2', status: 'pendiente' })],
-    });
-    expect(providerPendingSelectionState(provider, new Set(['s1']))).toBe('partial');
-  });
-
-  it('NEGATIVO — prestador sem pendentes (só validado) dá "none" mesmo se o ID estiver no set (contestado não conta)', () => {
-    const provider = makeProvider({
-      shifts: [makeShift({ id: 's1', status: 'contestado', contestNote: 'nota' })],
-    });
-    // s1 é contestado — nunca entra na conta do checkbox de cabeçalho, mesmo selecionado à mão.
-    expect(providerPendingSelectionState(provider, new Set(['s1']))).toBe('none');
-  });
-
-  it('NEGATIVO — prestador 100% validado (sem pendentes) dá "none"', () => {
-    const provider = makeProvider({ shifts: [makeShift({ id: 's1', status: 'validado' })] });
-    expect(providerPendingSelectionState(provider, new Set(['s1']))).toBe('none');
   });
 });
 
@@ -294,5 +259,124 @@ describe('filterPatients', () => {
 
   it('NEGATIVO — providerId inexistente devolve lista vazia', () => {
     expect(filterPatients([linked, unlinked], { providerId: 'no-existe' })).toEqual([]);
+  });
+});
+
+describe('startOfWeekMonday', () => {
+  it('POSITIVO — segunda-feira devolve ela mesma', () => {
+    expect(startOfWeekMonday('2026-08-10')).toBe('2026-08-10');
+  });
+
+  it('POSITIVO — sexta-feira devolve a segunda da mesma semana', () => {
+    expect(startOfWeekMonday('2026-08-14')).toBe('2026-08-10');
+  });
+
+  /**
+   * Cobertura (17/09): domingo é o único dia em que `Date.getUTCDay()` devolve `0` — o código
+   * mapeia isso pra `7` (ISO) antes de subtrair. Sem este caso, o ramo do domingo nunca roda, e um
+   * paciente com turno marcado num domingo abriria o detalhe na semana ERRADA (a seguinte, não a
+   * que contém o turno).
+   */
+  it('POSITIVO — domingo (getUTCDay()===0) devolve a segunda da MESMA semana, não da seguinte', () => {
+    expect(startOfWeekMonday('2026-08-16')).toBe('2026-08-10');
+  });
+});
+
+/**
+ * Item 2 (17/09): fixtures medidas de verdade contra a API real — turno noturno
+ * `2026-08-01T20:00:00-06:00` → `2026-08-02T08:00:00-06:00` (cruza a meia-noite, 46% dos turnos
+ * de agosto). `formatSourceTime`/`formatSourceRange` têm de devolver o relógio de parede da FONTE
+ * (offset `-06:00`), nunca convertido pro fuso do navegador.
+ */
+describe('formatSourceTime', () => {
+  it('POSITIVO — HH:MM no fuso fixo -06:00 da fonte, não no fuso do navegador', () => {
+    expect(formatSourceTime('2026-08-01T20:00:00-06:00')).toBe('20:00');
+    expect(formatSourceTime('2026-08-02T08:00:00-06:00')).toBe('08:00');
+  });
+
+  it('POSITIVO — mesmo instante gravado como Z (round-trip por timestamptz) devolve a MESMA hora de parede -06:00', () => {
+    // 2026-08-01T20:00:00-06:00 === 2026-08-02T02:00:00Z (mesmo instante).
+    expect(formatSourceTime('2026-08-02T02:00:00.000Z')).toBe('20:00');
+  });
+
+  it('NEGATIVO — null/undefined/vazio/inválido devolvem undefined, nunca lançam', () => {
+    expect(formatSourceTime(null)).toBeUndefined();
+    expect(formatSourceTime(undefined)).toBeUndefined();
+    expect(formatSourceTime('')).toBeUndefined();
+    expect(formatSourceTime('nao-e-data')).toBeUndefined();
+  });
+});
+
+describe('formatSourceRange', () => {
+  it('POSITIVO — turno no MESMO dia mostra HH:MM–HH:MM sem marca', () => {
+    expect(formatSourceRange('2026-08-14T08:00:00-06:00', '2026-08-14T16:00:00-06:00')).toBe('08:00–16:00');
+  });
+
+  it('POSITIVO — turno NOTURNO cruzando a meia-noite mostra a marca do dia seguinte (+1)', () => {
+    expect(formatSourceRange('2026-08-01T20:00:00-06:00', '2026-08-02T08:00:00-06:00')).toBe('20:00–08:00 (+1)');
+  });
+
+  it('NEGATIVO — falta início ou fim (retrato sem previsto gravado) mostra "—", nunca horário inventado', () => {
+    expect(formatSourceRange(null, '2026-08-14T16:00:00-06:00')).toBe('—');
+    expect(formatSourceRange('2026-08-14T08:00:00-06:00', null)).toBe('—');
+    expect(formatSourceRange('', '')).toBe('—');
+  });
+});
+
+describe('axonicoDayEligibility', () => {
+  const validado = (overrides: Partial<AnaCareShift> = {}): AnaCareShift =>
+    makeShift({ status: 'validado', hoursActual: 8, ...overrides });
+
+  it('POSITIVO — elegível com as 4 condições satisfeitas (validado, com par, hora cheia, documento presente)', () => {
+    const result = axonicoDayEligibility([validado({ id: 's1' })], '30111222');
+    expect(result).toEqual({ eligible: true, reasons: [] });
+  });
+
+  it('NEGATIVO — motivo notValidated quando algum turno do dia não está validado', () => {
+    const result = axonicoDayEligibility([validado({ id: 's1' }), makeShift({ id: 's2', status: 'pendiente', hoursActual: 8 })], '30111222');
+    expect(result.eligible).toBe(false);
+    expect(result.reasons).toEqual(['notValidated']);
+  });
+
+  it('NEGATIVO — motivo notValidated quando o dia não tem NENHUM turno (lista vazia)', () => {
+    const result = axonicoDayEligibility([], '30111222');
+    expect(result.eligible).toBe(false);
+    expect(result.reasons).toContain('notValidated');
+  });
+
+  it('NEGATIVO — motivo missingCheckInOut quando algum turno validado não tem par completo (hoursActual null)', () => {
+    // D363/D344: turno sem check-in pode estar "validado" (contestação resolvida) mas hoursActual continua null.
+    const result = axonicoDayEligibility([validado({ id: 's1', hoursActual: null, actualStart: null, actualEnd: null })], '30111222');
+    expect(result.eligible).toBe(false);
+    expect(result.reasons).toEqual(['missingCheckInOut']);
+  });
+
+  it('NEGATIVO — motivo fractionalHours quando o total do dia não é hora cheia (nunca arredonda)', () => {
+    const result = axonicoDayEligibility([validado({ id: 's1', hoursActual: 8.5 })], '30111222');
+    expect(result.eligible).toBe(false);
+    expect(result.reasons).toEqual(['fractionalHours']);
+  });
+
+  it('POSITIVO — soma de decimais que fecha em hora cheia dentro da tolerância de ponto flutuante é aceita (8.1+7.9=16)', () => {
+    const result = axonicoDayEligibility([validado({ id: 's1', hoursActual: 8.1 }), validado({ id: 's2', hoursActual: 7.9 })], '30111222');
+    expect(result.eligible).toBe(true);
+  });
+
+  it('NEGATIVO — motivo missingDocument quando documentNumber está ausente', () => {
+    const result = axonicoDayEligibility([validado({ id: 's1' })], undefined);
+    expect(result.eligible).toBe(false);
+    expect(result.reasons).toEqual(['missingDocument']);
+  });
+
+  it('NEGATIVO — motivo missingDocument quando documentNumber é string vazia', () => {
+    const result = axonicoDayEligibility([validado({ id: 's1' })], '');
+    expect(result.reasons).toEqual(['missingDocument']);
+  });
+
+  it('NEGATIVO — mais de um motivo pode estar presente ao mesmo tempo (nunca só o primeiro)', () => {
+    const result = axonicoDayEligibility([makeShift({ id: 's1', status: 'pendiente', hoursActual: null, actualStart: null, actualEnd: null })], undefined);
+    expect(result.eligible).toBe(false);
+    expect(result.reasons).toEqual(expect.arrayContaining(['notValidated', 'missingCheckInOut', 'missingDocument']));
+    expect(result.reasons).toHaveLength(3);
   });
 });

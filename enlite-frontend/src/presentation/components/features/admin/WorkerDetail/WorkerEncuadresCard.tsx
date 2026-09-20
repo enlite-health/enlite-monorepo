@@ -37,7 +37,7 @@ export function WorkerEncuadresCard({ encuadres }: WorkerEncuadresCardProps) {
   const navigate = useNavigate();
 
   return (
-    <div className="bg-white rounded-card border-2 border-gray-600 p-6 sm:px-8 sm:py-10 flex flex-col gap-4">
+    <div data-testid="worker-encuadres-card" className="bg-white rounded-card border-2 border-gray-600 p-6 sm:px-8 sm:py-10 flex flex-col gap-4">
       <Heading level={3} as="h3" weight="semibold" color="secondary">
         {t('admin.workerDetail.encuadres')} ({encuadres.length})
       </Heading>

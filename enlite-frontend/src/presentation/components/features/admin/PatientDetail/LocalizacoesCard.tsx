@@ -12,7 +12,8 @@ import {
   TableHead,
   TableCell,
 } from '@presentation/components/atoms/Table';
-import { Button } from '@presentation/components/atoms/Button';
+import { ActionButton } from '@presentation/components/features/access';
+import { useActionGate } from '@presentation/hooks/useCellAccess';
 import { addressLines } from '@presentation/utils/summarizeAddress';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { PatientApiError } from '@infrastructure/http/AdminPatientsApiService';
@@ -78,6 +79,9 @@ function typeLabel(t: TFunction, addressType: string | null): string {
 
 export function LocalizacoesCard({ addresses, patientId, onSaved, focusRequest }: LocalizacoesCardProps) {
   const { t } = useTranslation();
+  // D286: o lápis de cada endereço, e a ação "Marcar como principal", somem para quem não tem a
+  // escrita do container (PATCH .../addresses/:id) — mesma célula, mesmo botão de escrita.
+  const addressWriteGate = useActionGate('patient_address', 'update');
   const list = addresses ?? [];
   // Principal primeiro, depois a ordem recebida (sort é estável — ordem relativa preservada).
   // `isPrimary` vem de `is_default` (PatientDetailQueryHelper.ts) — spec 019 já não deriva de `address_type`.
@@ -138,10 +142,11 @@ export function LocalizacoesCard({ addresses, patientId, onSaved, focusRequest }
         <Heading level={1} as="h3" weight="semibold" color="primary">
           {t('admin.patients.detail.locationsCard.title')}
         </Heading>
-        <Button variant="outline" size="sm" disabled={!patientId} onClick={() => setDrawer(undefined)} className="flex items-center gap-1" data-testid="new-address-btn">
+        {/* D286 — POST /patients/:id/addresses → patient_address:write. */}
+        <ActionButton resource="patient_address" action="create" variant="outline" size="sm" disabled={!patientId} onClick={() => setDrawer(undefined)} className="flex items-center gap-1" data-testid="new-address-btn">
           <Plus className="w-4 h-4" />
           {t('admin.patients.detail.new')}
-        </Button>
+        </ActionButton>
       </div>
 
       {hasNoPrincipal && (
@@ -216,7 +221,8 @@ export function LocalizacoesCard({ addresses, patientId, onSaved, focusRequest }
                           {typeLabel(t, addr.addressType)}
                         </Text>
                       </div>
-                      {patientId && !addr.isPrimary && (
+                      {/* D286: mesma célula do lápis — quem não tem patient_address:write não vê a ação. */}
+                      {patientId && !addr.isPrimary && addressWriteGate.allowed && (
                         <button
                           type="button"
                           onClick={() => onMarkPrimary(addr.id)}
@@ -247,9 +253,12 @@ export function LocalizacoesCard({ addresses, patientId, onSaved, focusRequest }
                   </TableCell>
                   {patientId && (
                     <TableCell unwrapped>
-                      <button type="button" onClick={() => setDrawer(addr)} aria-label={t('admin.patients.detail.locationsCard.editAddress')} className="text-slate-400 hover:text-primary transition-colors p-1 rounded" data-testid={`edit-address-${addr.id}`}>
-                        <Pencil className="w-4 h-4" />
-                      </button>
+                      {/* D286: PATCH /patients/:id/addresses/:addressId → patient_address:write. */}
+                      {addressWriteGate.allowed && (
+                        <button type="button" onClick={() => setDrawer(addr)} aria-label={t('admin.patients.detail.locationsCard.editAddress')} className="text-slate-400 hover:text-primary transition-colors p-1 rounded" data-testid={`edit-address-${addr.id}`}>
+                          <Pencil className="w-4 h-4" />
+                        </button>
+                      )}
                     </TableCell>
                   )}
                 </TableRow>

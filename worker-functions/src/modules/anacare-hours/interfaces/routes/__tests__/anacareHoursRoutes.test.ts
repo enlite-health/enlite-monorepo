@@ -1,18 +1,12 @@
 /**
- * Rotas da conferência de horas do Ana Care no `main` (sem ABAC — allowlist de e-mail no lugar
- * das células da stage, ver `requireAnaCareHoursAllowlist`). Confirma: as 5 rotas existem, todas
- * exigem staff + allowlist (403 fora dela), e cada handler é chamado corretamente quando passa.
+ * Rotas da conferência de horas do Ana Care — mesmo molde de
+ * `adminTherapeuticProjectsRoutes.test.ts`: varre o router de VERDADE com `scanExpressRouter`
+ * (o mesmo que alimenta o catálogo de células) e confere o mapa rota→célula à mão.
  */
-const mockPoolQuery = jest.fn();
-jest.mock('@shared/database/DatabaseConnection', () => ({
-  DatabaseConnection: {
-    getInstance: jest.fn().mockReturnValue({ getPool: jest.fn().mockReturnValue({ query: mockPoolQuery }) }),
-  },
-}));
-
 import express from 'express';
 import request from 'supertest';
-import type { AuthMiddleware } from '@modules/identity';
+import { PermissionMiddleware, type AuthMiddleware } from '@modules/identity';
+import { scanExpressRouter, cellKey, undeclaredRoutes, type ScannedRoute } from '@modules/identity/permissions';
 import { createAnaCareHoursRoutes } from '../anacareHoursRoutes';
 import type { AnaCareHoursController } from '../../controllers/AnaCareHoursController';
 
@@ -21,16 +15,40 @@ jest.mock('@shared/logging', () => ({
   loggingAls: { getStore: () => undefined },
 }));
 
-const ALLOWED_EMAIL = 'marcel@enlite.health';
-
+/**
+ * Dublês locais (mesmo contrato de `permissionFamilyDoubles.ts`, que este módulo não pode importar
+ * — não está na lista de módulos com boundary registrado, e importar o caminho não-barrel de
+ * `identity` violaria a regra de import do ESLint). `authDouble` deixa passar como admin;
+ * `permissionsDouble` é o `PermissionMiddleware` REAL com client/trilha falsos e `env: {}` — sem
+ * `PERMISSION_ENGINE_ENABLED`, todo guard cai no `next()`, e o que este teste mede é a DECLARAÇÃO
+ * da célula (`scanExpressRouter`), não a decisão do engine.
+ */
 function authDouble(): AuthMiddleware {
   const passa = () => (req: express.Request, _res: unknown, next: express.NextFunction) => {
-    (req as any).user = { uid: 'uid-fixo', roles: ['admin'] };
-    (req as any).authContext = { principal: { id: 'uid-fixo', roles: ['admin'] } };
+    req.authContext ??= { principal: { id: 'dublê-admin', roles: ['admin'] } } as never;
     next();
   };
   return { requireStaff: passa, requireStaffOrApiKey: passa, requireAuth: passa } as unknown as AuthMiddleware;
 }
+
+function permissionsDouble(): PermissionMiddleware {
+  return new PermissionMiddleware({
+    client: { resolve: jest.fn(), can: jest.fn(), isFeatureAvailable: jest.fn(), featureConfig: jest.fn(), invalidate: jest.fn() },
+    audit: { record: jest.fn() },
+    env: {},
+  });
+}
+
+const READ = 'anacare_hours:read';
+const VALIDATE = 'anacare_hours:validate';
+
+const ESPERADO: Record<string, string> = {
+  'GET /anacare-hours/months/:month': READ,
+  'GET /anacare-hours/months/:month/patients/:patientId': READ,
+  'POST /anacare-hours/shifts/validate-batch': VALIDATE,
+  'POST /anacare-hours/shifts/:shiftId/validate': VALIDATE,
+  'POST /anacare-hours/shifts/:shiftId/contest': VALIDATE,
+};
 
 function controllerDuble(): AnaCareHoursController {
   const responde = (nome: string) => (req: express.Request, res: express.Response) =>
@@ -44,23 +62,37 @@ function controllerDuble(): AnaCareHoursController {
   } as unknown as AnaCareHoursController;
 }
 
+const build = () => createAnaCareHoursRoutes(controllerDuble(), authDouble(), permissionsDouble());
+
 function app() {
   const a = express();
   a.use(express.json());
-  a.use('/api/admin', createAnaCareHoursRoutes(controllerDuble(), authDouble()));
+  a.use('/api/admin', build());
   return a;
 }
 
-describe('createAnaCareHoursRoutes (main, allowlist)', () => {
-  const ORIGINAL_ENV = process.env.ANACARE_HOURS_ALLOWED_EMAILS;
-
-  beforeEach(() => {
-    process.env.ANACARE_HOURS_ALLOWED_EMAILS = ALLOWED_EMAIL;
+describe('createAnaCareHoursRoutes', () => {
+  it('TODA rota do router declara célula — nenhuma passa sem declaração', () => {
+    expect(undeclaredRoutes(scanExpressRouter(build()), () => true)).toEqual([]);
   });
 
-  afterEach(() => {
-    jest.clearAllMocks();
-    process.env.ANACARE_HOURS_ALLOWED_EMAILS = ORIGINAL_ENV;
+  it('cada uma das 5 rotas declara a célula esperada', () => {
+    const declarado = Object.fromEntries(
+      scanExpressRouter(build()).map((route: ScannedRoute) => [
+        `${route.method} ${route.path}`,
+        route.cell ? cellKey(route.cell.resource, route.cell.action) : null,
+      ]),
+    );
+    expect(declarado).toEqual(ESPERADO);
+  });
+
+  it('são exatamente 5 rotas', () => {
+    expect(scanExpressRouter(build())).toHaveLength(5);
+  });
+
+  it('nenhuma rota é DELETE/PUT/PATCH — só GET e POST', () => {
+    const metodos = new Set(scanExpressRouter(build()).map((r: ScannedRoute) => r.method));
+    expect([...metodos].sort()).toEqual(['GET', 'POST']);
   });
 
   it.each([
@@ -69,23 +101,9 @@ describe('createAnaCareHoursRoutes (main, allowlist)', () => {
     ['post', '/api/admin/anacare-hours/shifts/validate-batch', 'validateBatch'],
     ['post', '/api/admin/anacare-hours/shifts/s1/validate', 'validateShift'],
     ['post', '/api/admin/anacare-hours/shifts/s1/contest', 'contestShift'],
-  ])('%s %s — e-mail NA allowlist chama o handler %s (200)', async (method, path, esperado) => {
-    mockPoolQuery.mockResolvedValueOnce({ rows: [{ email: ALLOWED_EMAIL }] });
+  ])('%s %s chama o handler %s', async (method, path, esperado) => {
     const res = await (request(app()) as never as Record<string, (p: string) => request.Test>)[method](path);
     expect(res.status).toBe(200);
     expect(res.body.m).toBe(esperado);
-  });
-
-  it.each([
-    ['get', '/api/admin/anacare-hours/months/2026-09'],
-    ['get', '/api/admin/anacare-hours/months/2026-09/patients/AC-PAT-0'],
-    ['post', '/api/admin/anacare-hours/shifts/validate-batch'],
-    ['post', '/api/admin/anacare-hours/shifts/s1/validate'],
-    ['post', '/api/admin/anacare-hours/shifts/s1/contest'],
-  ])('%s %s — staff FORA da allowlist recebe 403, handler NUNCA é chamado', async (method, path) => {
-    mockPoolQuery.mockResolvedValueOnce({ rows: [{ email: 'nao.autorizado@enlite.health' }] });
-    const res = await (request(app()) as never as Record<string, (p: string) => request.Test>)[method](path);
-    expect(res.status).toBe(403);
-    expect(res.body.m).toBeUndefined();
   });
 });

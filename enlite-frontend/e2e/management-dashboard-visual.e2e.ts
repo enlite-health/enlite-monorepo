@@ -138,6 +138,48 @@ function mockZoneAnalytics(page: Page, mode: 'ok' | 'empty' = 'ok'): void {
   });
 }
 
+// PR-9 (`lex` #9, US-22): `PacientesSection` deixou de ler de `/analytics/dashboard/management`
+// e passou a buscar direto em `/patients/stats` + `/patients/funnel` (segue o seletor de país da
+// PÁGINA — D286/FR-730). Sem mock destas duas rotas, a chamada vai para o backend REAL
+// (localhost:8080), toma 401 (token falso deste spec) e o hook nunca sai do `isLoading`: a
+// seção fica presa, sem erro visível, e o navegador acumula centenas de respostas 401 (medido:
+// 2129 numa run de ~20s) — o resto da página funciona, mas o `PacientesSection` nunca resolve.
+const MOCK_PATIENT_STATS = {
+  total: 42,
+  complete: 30,
+  needsAttention: 6,
+  createdToday: 2,
+  createdYesterday: 1,
+  createdLast7Days: 9,
+};
+
+const MOCK_PATIENT_FUNNEL = {
+  period: { from: '2026-08-13T00:00:00.000Z', to: '2026-09-12T00:00:00.000Z' },
+  country: null,
+  solicitantes: 18,
+  admision: 11,
+  agendadas: 5,
+  vacantes: 3,
+  byStatus: { ACTIVE: 9, SUSPENDED: 2 },
+};
+
+function mockPacientesSection(page: Page): void {
+  page.route('**/api/admin/patients/stats*', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ success: true, data: MOCK_PATIENT_STATS }),
+    }),
+  );
+  page.route('**/api/admin/patients/funnel*', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ success: true, data: MOCK_PATIENT_FUNNEL }),
+    }),
+  );
+}
+
 async function installFakeFirebaseAuth(page: Page): Promise<void> {
   await page.route('**/identitytoolkit.googleapis.com/**', async (route: Route) => {
     const url = route.request().url();
@@ -210,6 +252,28 @@ async function installFakeFirebaseAuth(page: Page): Promise<void> {
       }),
     }),
   );
+
+  // Achado (não-PR-9): sem este mock, `AdminProtectedRoute`/`AdminLayout` (contrato ABAC,
+  // GET /v1/me/authz — nem tocado por esta feature) vai pro backend REAL, toma 401 e entra
+  // num ciclo de remount da página inteira (medido: ~150 refetches de /v1/me/authz e de
+  // /analytics/dashboard/management num único teste). `enforcement: 'off'` = todo container
+  // aparece, igual ao padrão usado em admin-sidebar-visual.e2e.ts.
+  await page.route('**/v1/me/authz', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        uid: MOCK_ADMIN.uid,
+        tenantId: 'mgmt-vis-tenant',
+        status: 'ACTIVE',
+        permissions: [],
+        countries: ['AR'],
+        groups: [],
+        features: {},
+        enforcement: 'off',
+      }),
+    }),
+  );
 }
 
 async function loginAsAdmin(page: Page): Promise<void> {
@@ -258,6 +322,7 @@ test.describe('ManagementDashboardPage — visual proof', () => {
     await loginAsAdmin(page);
     mockDashboard(page, 'ok');
     mockZoneAnalytics(page, 'ok');
+    mockPacientesSection(page);
 
     await page.goto('/admin/dashboard');
     await expect(page.getByTestId('mgmt-content')).toBeVisible({ timeout: 20000 });
@@ -296,6 +361,7 @@ test.describe('ManagementDashboardPage — visual proof', () => {
     await loginAsAdmin(page);
     mockDashboard(page, 'ok');
     mockZoneAnalytics(page, 'ok');
+    mockPacientesSection(page);
 
     await page.goto('/admin/dashboard');
     await expect(page.getByTestId('mgmt-zone-analytics')).toBeVisible({ timeout: 20000 });
@@ -339,6 +405,7 @@ test.describe('ManagementDashboardPage — visual proof', () => {
     await loginAsAdmin(page);
     mockDashboard(page, 'pendente');
     mockZoneAnalytics(page, 'ok');
+    mockPacientesSection(page);
 
     await page.goto('/admin/dashboard');
     await expect(page.getByTestId('mgmt-equipo-armada')).toBeVisible({ timeout: 20000 });
@@ -354,6 +421,7 @@ test.describe('ManagementDashboardPage — visual proof', () => {
   test('ERRO: alerta com mensagem e botão de reintentar', async ({ page }) => {
     await loginAsAdmin(page);
     mockDashboard(page, 'error');
+    mockPacientesSection(page);
 
     await page.goto('/admin/dashboard');
     await expect(page.getByTestId('mgmt-error')).toBeVisible({ timeout: 20000 });

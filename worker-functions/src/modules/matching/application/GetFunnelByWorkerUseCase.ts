@@ -8,6 +8,8 @@ import {
 } from '../domain/kanbanColumn';
 import { LIVE_JOB_POSTING_SQL } from '../domain/openJobStatuses';
 import { excludeDisabledWorkersSql } from '@shared/database/activeWorkerFilter';
+import { countryPredicateSql } from '@shared/database/countryScopeSql';
+import { COUNTRY_CODES, type CountryCode } from '@shared/domain/countryCodes';
 
 /** Contagem por coluna do Kanban — as MESMAS colunas que o operador vê no board. */
 export type FunnelColumnCounts = Record<Exclude<KanbanColumn, 'BLOQUEADO'>, number>;
@@ -67,10 +69,17 @@ export class GetFunnelByWorkerUseCase {
    *   resolver boa parte da discussão"). É data de CRIAÇÃO da candidatura, não de
    *   movimentação (não existe timestamp de transição por etapa — limitação
    *   documentada em docs/gestao-a-vista/13). Ausente = tudo, comportamento de sempre.
+   * @param countries países que a agregação deve enxergar (PR-9, FR-732).
+   *   Default = os dois países — o predicado continua na query mesmo assim.
    */
-  async execute(periodDays?: number): Promise<FunnelByWorkerResult> {
+  async execute(
+    periodDays?: number,
+    countries: CountryCode[] = [...COUNTRY_CODES],
+  ): Promise<FunnelByWorkerResult> {
+    const countryParamIndex = periodDays != null ? 2 : 1;
     const periodSql =
       periodDays != null ? 'AND wja.created_at >= NOW() - make_interval(days => $1)' : '';
+    const params = periodDays != null ? [periodDays, countries] : [countries];
     const { rows } = await this.db.query<FunnelRow>(
       `SELECT wja.worker_id,
               wja.application_funnel_stage AS stage,
@@ -82,8 +91,9 @@ export class GetFunnelByWorkerUseCase {
         WHERE ${LIVE_JOB_POSTING_SQL}
           AND w.merged_into_id IS NULL
           AND ${excludeDisabledWorkersSql('w')}
+          AND ${countryPredicateSql('w', countryParamIndex)}
           ${periodSql}`,
-      periodDays != null ? [periodDays] : [],
+      params,
     );
 
     // Sets de worker_id (não contadores): o mesmo prestador em N vagas da MESMA

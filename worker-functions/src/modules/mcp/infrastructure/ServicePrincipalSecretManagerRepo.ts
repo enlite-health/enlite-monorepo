@@ -1,5 +1,6 @@
 import { SecretManagerServiceClient } from '@google-cloud/secret-manager';
 import { createHash } from 'node:crypto';
+import { parseEnvList } from '@shared/utils/envList';
 import { ServicePrincipal } from '../domain/ServicePrincipal';
 import { McpPrincipalNotFoundError } from '../domain/McpErrors';
 import { logger } from '../../../shared/logging/Logger';
@@ -54,10 +55,7 @@ export class ServicePrincipalSecretManagerRepo {
 
     // Se cache miss, recarrega todos os principals conhecidos
     // TD futuro: descobrir principals dinamicamente via prefix do Secret Manager
-    const knownPrincipals = (process.env.MCP_PRINCIPAL_NAMES ?? 'triage-service')
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
+    const knownPrincipals = parseEnvList(process.env.MCP_PRINCIPAL_NAMES ?? 'triage-service');
 
     for (const name of knownPrincipals) {
       try {

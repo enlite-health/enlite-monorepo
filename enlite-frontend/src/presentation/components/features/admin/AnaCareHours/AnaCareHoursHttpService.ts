@@ -10,6 +10,10 @@
  *  - `POST /api/admin/anacare-hours/shifts/:shiftId/validate`      body `{}`                → 204 | 409 `{code}`
  *  - `POST /api/admin/anacare-hours/shifts/validate-batch`         body `{shiftIds}`         → 204 | 409 `{code}`
  *  - `POST /api/admin/anacare-hours/shifts/:shiftId/contest`       body `{reason, note?}`     → 204 | 400/409 `{code}`
+ *  - `POST /api/admin/anacare-hours/sync`  body `{month?, cursor?, budgetMs?}` (NUNCA `runStartedAt`,
+ *    D364)  → 200 `{success, deduped, shiftsRead, reservationsProcessed, shiftsWritten, nextCursor,
+ *    runStartedAt, shiftsSkippedNoProvider, shiftsSkippedNoPatient}` — UMA rodada; laço no cliente
+ *    (`useAnaCareHoursSync.ts`) até `nextCursor === null`.
  *  - Qualquer GET pode devolver 503 `{code:'ANACARE_SOURCE_NOT_CONFIGURED'}` — vira
  *    `AnaCareHoursServiceError('FONTE_NAO_CONFIGURADA', ...)`, nunca tela branca (contrato do brief).
  *
@@ -29,6 +33,8 @@ import type {
   AnaCarePatient,
   AnaCareRetratoStatus,
   ContestShiftCommand,
+  TriggerSyncCommand,
+  TriggerSyncResult,
   ValidateBatchCommand,
   ValidateShiftCommand,
 } from './types';
@@ -142,6 +148,37 @@ export class AnaCareHoursHttpService implements AnaCareHoursService {
     return json.data.results;
   }
 
+  /**
+   * POST específico do sync (F6.4): `POST /anacare-hours/sync` responde **200**
+   * `{success:true, deduped, shiftsRead, reservationsProcessed, shiftsWritten, nextCursor,
+   * runStartedAt, shiftsSkippedNoProvider, shiftsSkippedNoPatient}` — campos soltos no envelope,
+   * não dentro de `data` (`AnaCareHoursSyncController.ts` backend, `trigger`), e nunca 204 como os
+   * POSTs de item único. Reusar `postJson` (que só aceita 204) fazia o 200 de sucesso cair no ramo
+   * de erro; reusar `postBatchJson` (que espera `data.results`) não bate com este formato.
+   */
+  private async postSyncJson(path: string, body: unknown): Promise<TriggerSyncResult> {
+    const headers = await this.getAuthHeaders();
+    const response = await fetch(`${this.baseURL}${path}`, { method: 'POST', headers, body: JSON.stringify(body) });
+    if (response.status === 503) {
+      const errBody = await this.safeJson<ApiErrorResponse>(response);
+      throw new AnaCareHoursServiceError('FONTE_NAO_CONFIGURADA', errBody?.error ?? 'ANACARE_SOURCE_NOT_CONFIGURED');
+    }
+    const contentType = response.headers.get('content-type') ?? '';
+    if (!contentType.includes('application/json')) {
+      throw new AnaCareHoursServiceError('DESCONHECIDO', `Erro ao conectar ao servidor (HTTP ${response.status}).`);
+    }
+    const json = (await response.json()) as TriggerSyncResult | ApiErrorResponse;
+    if (!json.success) {
+      const err = json as ApiErrorResponse;
+      throw mapErrorCode(err.code, err.error || `HTTP ${response.status}`);
+    }
+    return json;
+  }
+
+  async triggerSync(command: TriggerSyncCommand): Promise<TriggerSyncResult> {
+    return this.postSyncJson(`${this.basePath}/sync`, command);
+  }
+
   private async safeJson<T>(response: Response): Promise<T | null> {
     try {
       return (await response.json()) as T;
@@ -153,7 +190,7 @@ export class AnaCareHoursHttpService implements AnaCareHoursService {
   async getMonthSnapshot(month: string, filters?: AnaCareHoursMonthFilters): Promise<AnaCareMonthSnapshot> {
     const snapshot = await this.getJson<AnaCareMonthSnapshot>(`${this.basePath}/months/${encodeURIComponent(month)}`);
     if (!snapshot) {
-      return { month, updatedAt: new Date().toISOString(), stale: false, circuitBreakerOpen: false, patients: [] };
+      return { month, updatedAt: new Date().toISOString(), stale: false, snapshotState: 'nao_construido', circuitBreakerOpen: false, patients: [] };
     }
     return { ...snapshot, patients: filterPatients(snapshot.patients, filters) };
   }
@@ -164,8 +201,8 @@ export class AnaCareHoursHttpService implements AnaCareHoursService {
 
   async getRetratoStatus(month: string): Promise<AnaCareRetratoStatus> {
     const snapshot = await this.getJson<AnaCareMonthSnapshot>(`${this.basePath}/months/${encodeURIComponent(month)}`);
-    if (!snapshot) return { updatedAt: new Date().toISOString(), stale: false, circuitBreakerOpen: false };
-    return { updatedAt: snapshot.updatedAt, stale: snapshot.stale, circuitBreakerOpen: snapshot.circuitBreakerOpen };
+    if (!snapshot) return { updatedAt: new Date().toISOString(), stale: false, snapshotState: 'nao_construido', circuitBreakerOpen: false };
+    return { updatedAt: snapshot.updatedAt, stale: snapshot.stale, snapshotState: snapshot.snapshotState, circuitBreakerOpen: snapshot.circuitBreakerOpen };
   }
 
   async validateShift({ shiftId }: ValidateShiftCommand): Promise<void> {

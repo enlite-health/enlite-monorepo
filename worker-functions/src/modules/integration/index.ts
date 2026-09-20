@@ -9,6 +9,7 @@ export type { ITalentumApiClient, TalentumQuestion, TalentumFaq, TalentumProject
 export type { WorkerMirrorRecord, WorkerMirrorAddress } from './domain/WorkerMirrorRecord';
 export type { WorkerMirrorProvider, WorkerMirrorUpsertResult } from './domain/WorkerMirrorProvider';
 export type { IAnaCareApiClient, AnaCareNursePayload, AnaCareNurse, AnaCareNurseType, AnaCareHiringType, AnaCarePagedResponse, AnaCareNurseBulkItem, AnaCareNurseBulkPayload } from './domain/IAnaCareApiClient';
+export type { IAnaCarePatientDocumentRepository, AnaCarePatientDocumentRecord, InsertAnaCarePatientDocumentParams } from './domain/IAnaCarePatientDocumentRepository';
 
 // Ports
 export type { IWebhookPartnerRepository } from './ports/IWebhookPartnerRepository';
@@ -49,6 +50,12 @@ export type { AnaCareMirrorProviderDeps, AnaCareLinkBlockedReason } from './infr
 export { AnaCareTypeResolver } from './infrastructure/anacare/anaCareTypeResolver';
 export type { ResolvedTypes } from './infrastructure/anacare/anaCareTypeResolver';
 export { mapWorkerToAnaCarePayload, mapSexToAnaCareGenero, formatDateYMD } from './infrastructure/anacare/anaCareMapper';
+export { AnaCareSessionClient, ANACARE_ENLITE_AGENCY_ID } from './infrastructure/anacare/AnaCareSessionClient';
+export type { AnaCareSessionClientOptions } from './infrastructure/anacare/AnaCareSessionClient';
+export { AnaCareShiftsSourceReal } from './infrastructure/anacare/AnaCareShiftsSourceReal';
+export { AnaCareEnliteDirectory, AnaCareEnliteDirectoryError } from './infrastructure/anacare/AnaCareEnliteDirectory';
+export type { EnliteDirectoryEntry, EnliteDirectory } from './infrastructure/anacare/AnaCareEnliteDirectory';
+export { AnaCarePatientDocumentRepository } from './infrastructure/AnaCarePatientDocumentRepository';
 
 // Application — use cases
 export { PublishVacancyToTalentumUseCase, PublishError } from './application/PublishVacancyToTalentumUseCase';

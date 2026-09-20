@@ -39,6 +39,14 @@ describe('patientSectionSchemas — bloco B', () => {
     expect(patientSectionParamSchema.safeParse({ id: ID, section: 'coverage' }).success).toBe(true);
   });
 
+  it('coverage: emergencyContacts SAIU (spec 018, PR-1, ADR-1, SUP-37) — o campo é 400 pelo .strict(), a escrita virou rota por linha (patientContactRowSchemas.ts)', () => {
+    const comCampo = coverageSectionSchema.safeParse({ emergencyContacts: [{ kind: 'AMBULANCE', name: 'Ambulancia', phone: '0800' }] });
+    expect(comCampo.success).toBe(false);
+    if (!comCampo.success) expect(comCampo.error.issues[0].code).toBe('unrecognized_keys');
+    // ausente continua ok — o resto da seção não mudou.
+    expect(coverageSectionSchema.safeParse({ affiliateId: 'A' }).success).toBe(true);
+  });
+
   it('support-network: relationship só aceita os códigos da 139 (CHILD…OTHER) ou null', () => {
     const row = { firstName: 'Ana', lastName: 'Diaz', isPrimary: true, displayOrder: 0 };
     expect(supportNetworkSectionSchema.safeParse({ responsibles: [{ ...row, relationship: 'PARENT' }] }).success).toBe(true);

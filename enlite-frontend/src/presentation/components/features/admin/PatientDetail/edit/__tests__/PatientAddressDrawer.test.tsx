@@ -1,8 +1,8 @@
 /**
  * PatientAddressDrawer — spec 012, US-B2: domicílio nasce NA FICHA (mesmo POST /patients/:id/addresses
- * do wizard de vaga), com mapa (ServiceAreaMap) e logística por endereço; edição dos 3 campos
- * (zona = neighborhood, corredor, acesso) por PATCH. `access_notes` é texto livre sobre a casa:
- * `data-clarity-mask` no wrapper e teto 2000 (lex C2.4/C2.6).
+ * do wizard de vaga), com mapa (ServiceAreaMap) e edição de zona (neighborhood) por PATCH.
+ * D347 (15/09) removeu deste drawer os campos "Corredor logístico" e "Logística y acceso"
+ * (não faziam sentido na tela) — revoga a parte da D310 que os mantinha aqui.
  *
  * Autocomplete (PEND-06 da ata de 09/09/2026, parecer do `lex` de 10/09):
  * o endereço só nasce de uma ESCOLHA na lista do Google — texto digitado à mão não grava
@@ -36,6 +36,8 @@ vi.mock('@infrastructure/http/AdminApiService', () => ({
     updatePatientAddressLogistics: (...a: unknown[]) => updatePatientAddressLogistics(...a),
   },
 }));
+const showToast = vi.fn();
+vi.mock('@presentation/hooks/useToast', () => ({ useToast: () => showToast }));
 const mapSpy = vi.fn();
 vi.mock('@presentation/components/molecules/ServiceAreaMap', () => ({
   ServiceAreaMap: (props: Record<string, unknown>) => { mapSpy(props); return <div data-testid="map-stub" />; },
@@ -123,7 +125,7 @@ describe('PatientAddressDrawer — criar', () => {
 
   afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.restoreAllMocks(); });
 
-  it('escolher da lista preenche o campo, leva a COORDENADA ao mapa e salva com os 3 campos de logística', async () => {
+  it('escolher da lista preenche o campo, leva a COORDENADA ao mapa e salva com a zona', async () => {
     const onSaved = vi.fn();
     render(<PatientAddressDrawer patientId="p1" onClose={vi.fn()} onSaved={onSaved} />);
     await assentar();
@@ -144,19 +146,14 @@ describe('PatientAddressDrawer — criar', () => {
     expect(mapSpy).toHaveBeenLastCalledWith(expect.objectContaining({ lat: -34.6037, lng: -58.3816, address: null }));
 
     fireEvent.change(screen.getByTestId('pad-neighborhood'), { target: { value: 'San Nicolás' } });
-    fireEvent.change(screen.getByTestId('pad-corridor'), { target: { value: 'Norte' } });
-    const access = screen.getByTestId('pad-access');
-    expect(access.tagName).toBe('TEXTAREA');
-    expect(access).toHaveAttribute('maxlength', '2000');
-    expect(access.parentElement).toHaveAttribute('data-clarity-mask', 'True');
-    fireEvent.change(access, { target: { value: 'Portero de 8 a 12' } });
 
     fireEvent.click(screen.getByTestId('pad-save'));
     // lex C5: as chaves são EXATAMENTE estas — `place_id` não entra. Spec 019 (B4): `address_type`
-    // sai da criação — não entra mais nesse payload.
+    // sai da criação — não entra mais nesse payload. D347: `logistics_corridor`/`access_notes`
+    // não existem mais neste form — não têm como sair no payload.
     await waitFor(() => expect(createPatientAddress).toHaveBeenCalledWith('p1', {
       address_formatted: ESCOLHIDO.formatted_address,
-      neighborhood: 'San Nicolás', logistics_corridor: 'Norte', access_notes: 'Portero de 8 a 12',
+      neighborhood: 'San Nicolás',
     }));
     const enviado = createPatientAddress.mock.calls[0][1] as Record<string, unknown>;
     expect(Object.keys(enviado)).not.toContain('place_id');
@@ -275,7 +272,7 @@ describe('PatientAddressDrawer — criar', () => {
     await assentar();
     fireEvent.change(screen.getByTestId('pad-address'), { target: { value: 'Av. Corrientes 1234' } });
     await escolherDaLista();
-    fireEvent.change(screen.getByTestId('pad-access'), { target: { value: 'Portero de 8 a 12' } });
+    fireEvent.change(screen.getByTestId('pad-neighborhood'), { target: { value: 'Portero de 8 a 12' } });
     fireEvent.click(screen.getByTestId('pad-save'));
     await waitFor(() => expect(createPatientAddress).toHaveBeenCalled());
 
@@ -397,18 +394,21 @@ describe('PatientAddressDrawer — criar', () => {
 describe('PatientAddressDrawer — editar logística', () => {
   beforeEach(() => { createPatientAddress.mockReset(); updatePatientAddressLogistics.mockReset().mockResolvedValue({ id: 'addr1' }); mapSpy.mockReset(); });
 
-  it('mostra o endereço (só leitura) e o mapa com lat/lng; salva SÓ os campos alterados; limpar → null', async () => {
+  it('mostra o endereço (só leitura) e o mapa com lat/lng; salva SÓ os campos alterados', async () => {
     const onSaved = vi.fn();
     render(<PatientAddressDrawer patientId="p1" address={existing} onClose={vi.fn()} onSaved={onSaved} />);
+    expect(screen.getByRole('heading', { name: 'Editar localização' })).toBeInTheDocument();
     expect(screen.queryByTestId('pad-address')).not.toBeInTheDocument();
     expect(screen.getByTestId('pad-address-readonly')).toHaveTextContent('Rua A 1');
     expect(mapSpy).toHaveBeenLastCalledWith(expect.objectContaining({ lat: -23.5, lng: -46.6 }));
     expect(screen.getByTestId('pad-neighborhood')).toHaveValue('Centro');
-    expect(screen.getByTestId('pad-access')).toHaveValue('Timbre 3B');
-    fireEvent.change(screen.getByTestId('pad-corridor'), { target: { value: 'Sul' } });
-    fireEvent.change(screen.getByTestId('pad-access'), { target: { value: '' } });
+    // D347: "Corredor logístico" e "Logística y acceso" saíram do drawer — não é mais possível
+    // digitar neles.
+    expect(screen.queryByTestId('pad-corridor')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('pad-access')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByTestId('pad-neighborhood'), { target: { value: 'Sul' } });
     fireEvent.click(screen.getByTestId('pad-save'));
-    await waitFor(() => expect(updatePatientAddressLogistics).toHaveBeenCalledWith('p1', 'addr1', { logistics_corridor: 'Sul', access_notes: null }));
+    await waitFor(() => expect(updatePatientAddressLogistics).toHaveBeenCalledWith('p1', 'addr1', { neighborhood: 'Sul' }));
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
   });
 
@@ -457,20 +457,20 @@ describe('PatientAddressDrawer — editar logística', () => {
       await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
     });
 
-    it('COM mudança (corredor) → Escape abre confirmação; "Seguir editando" mantém o valor', () => {
+    it('COM mudança (zona) → Escape abre confirmação; "Seguir editando" mantém o valor', () => {
       render(<PatientAddressDrawer patientId="p1" address={existing} onClose={vi.fn()} onSaved={vi.fn()} />);
-      fireEvent.change(screen.getByTestId('pad-corridor'), { target: { value: 'Sul' } });
+      fireEvent.change(screen.getByTestId('pad-neighborhood'), { target: { value: 'Sul' } });
       fireEvent.keyDown(document, { key: 'Escape' });
       expect(screen.getByTestId('discard-changes-confirm')).toBeVisible();
       fireEvent.click(screen.getByTestId('discard-changes-keep-editing'));
       expect(screen.queryByTestId('discard-changes-confirm')).not.toBeInTheDocument();
-      expect(screen.getByTestId('pad-corridor')).toHaveValue('Sul');
+      expect(screen.getByTestId('pad-neighborhood')).toHaveValue('Sul');
     });
 
     it('"Descartar cambios" fecha de verdade', async () => {
       const onClose = vi.fn();
       render(<PatientAddressDrawer patientId="p1" address={existing} onClose={onClose} onSaved={vi.fn()} />);
-      fireEvent.change(screen.getByTestId('pad-corridor'), { target: { value: 'Sul' } });
+      fireEvent.change(screen.getByTestId('pad-neighborhood'), { target: { value: 'Sul' } });
       fireEvent.keyDown(document, { key: 'Escape' });
       fireEvent.click(screen.getByTestId('discard-changes-discard'));
       await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1), { timeout: 1000 });
@@ -486,7 +486,7 @@ describe('PatientAddressDrawer — editar logística', () => {
     it('SALVAR nunca pergunta, mesmo com mudança pendente', async () => {
       const onSaved = vi.fn();
       render(<PatientAddressDrawer patientId="p1" address={existing} onClose={vi.fn()} onSaved={onSaved} />);
-      fireEvent.change(screen.getByTestId('pad-corridor'), { target: { value: 'Sul' } });
+      fireEvent.change(screen.getByTestId('pad-neighborhood'), { target: { value: 'Sul' } });
       fireEvent.click(screen.getByTestId('pad-save'));
       await waitFor(() => expect(onSaved).toHaveBeenCalled());
       expect(screen.queryByTestId('discard-changes-confirm')).not.toBeInTheDocument();
@@ -497,16 +497,18 @@ describe('PatientAddressDrawer — editar logística', () => {
 /**
  * Conserto #3 — o drawer não remonta ao trocar de modo (criar ↔ editar) DENTRO do mesmo
  * `LocalizacoesCard`, porque `drawer` (null | undefined | objeto) ocupa o MESMO slot de JSX
- * e os `useState(address?.campo ?? '')` de logística só rodam na PRIMEIRA montagem. Isto é
- * DIFERENTE dos testes acima, que sempre montam `PatientAddressDrawer` isolado (um `render`
- * por caso) — lá o bug é invisível porque cada `render` já É uma montagem nova. Só reproduz
- * pelo pai real: `LocalizacoesCard`, com DOIS cliques sem fechar o drawer entre eles.
+ * e os `useState(address?.campo ?? '')` só rodam na PRIMEIRA montagem. Isto é DIFERENTE dos
+ * testes acima, que sempre montam `PatientAddressDrawer` isolado (um `render` por caso) — lá
+ * o bug é invisível porque cada `render` já É uma montagem nova. Só reproduz pelo pai real:
+ * `LocalizacoesCard`, com DOIS cliques sem fechar o drawer entre eles. D347 removeu corredor/
+ * acesso do drawer — a prova de remonte agora usa só a Zona (`neighborhood`), o único campo
+ * de logística que sobrou.
  */
 describe('LocalizacoesCard — troca de modo do drawer sem fechar (regressão do remonte)', () => {
   const enderecoCompleto = {
     id: 'addr-completo', addressType: 'primary', addressTypeOther: null, addressFormatted: 'Rua B 2', addressRaw: null,
     complement: null, displayOrder: 1, lat: -23.5, lng: -46.6, isPrimary: true,
-    neighborhood: 'Palermo', logisticsCorridor: 'Este', accessNotes: 'Portero 24h', country: 'AR',
+    neighborhood: 'Palermo', logisticsCorridor: null, accessNotes: null, country: 'AR',
   };
 
   beforeEach(() => {
@@ -525,7 +527,7 @@ describe('LocalizacoesCard — troca de modo do drawer sem fechar (regressão do
   it('CRIAR → EDITAR: o form de edição chega com os valores do endereço, não com os campos vazios do criar anterior — e sem tocar em nada não sai PATCH nenhum', async () => {
     render(<LocalizacoesCard addresses={[enderecoCompleto]} patientId="p1" onSaved={vi.fn()} />);
 
-    // Abre CRIAR primeiro — os 3 campos de logística nascem ''.
+    // Abre CRIAR primeiro — a Zona nasce ''.
     fireEvent.click(screen.getByTestId('new-address-btn'));
     await assentar();
     expect(screen.getByTestId('pad-address')).toBeInTheDocument();
@@ -534,47 +536,41 @@ describe('LocalizacoesCard — troca de modo do drawer sem fechar (regressão do
     fireEvent.click(screen.getByTestId('edit-address-addr-completo'));
     await assentar();
 
-    // Se remontou de verdade, os 3 campos vêm HIDRATADOS com o endereço — não com o ''
+    // Se remontou de verdade, a Zona vem HIDRATADA com o endereço — não com o ''
     // herdado do form de criação que estava montado antes.
     expect(screen.getByTestId('pad-neighborhood')).toHaveValue('Palermo');
-    expect(screen.getByTestId('pad-corridor')).toHaveValue('Este');
-    expect(screen.getByTestId('pad-access')).toHaveValue('Portero 24h');
 
     // Nada mudou de verdade: salvar não pode gerar PATCH nenhum, e MUITO menos um que
-    // apague os 3 campos com null — o defeito medido em produção.
+    // apague o campo com null — o defeito medido em produção.
     fireEvent.click(screen.getByTestId('pad-save'));
     await waitFor(() => expect(screen.queryByTestId('pad-neighborhood')).not.toBeInTheDocument());
     expect(updatePatientAddressLogistics).not.toHaveBeenCalled();
   });
 
-  it('EDITAR → CRIAR: o form de criação não herda o access_notes (nem zona/corredor) do endereço que estava em edição', async () => {
+  it('EDITAR → CRIAR: o form de criação não herda a Zona do endereço que estava em edição', async () => {
     render(<LocalizacoesCard addresses={[enderecoCompleto]} patientId="p1" onSaved={vi.fn()} />);
 
-    // Abre EDITAR primeiro — os 3 campos vêm preenchidos do endereço.
+    // Abre EDITAR primeiro — a Zona vem preenchida do endereço.
     fireEvent.click(screen.getByTestId('edit-address-addr-completo'));
     await assentar();
-    expect(screen.getByTestId('pad-access')).toHaveValue('Portero 24h');
+    expect(screen.getByTestId('pad-neighborhood')).toHaveValue('Palermo');
 
     // Sem fechar, troca para CRIAR — MESMO slot de JSX.
     fireEvent.click(screen.getByTestId('new-address-btn'));
     await assentar();
     expect(screen.getByTestId('pad-address')).toBeInTheDocument();
 
-    // Se remontou de verdade, o form de criação nasce limpo — não com o access_notes (nem
-    // zona/corredor) do endereço que estava sendo editado um instante atrás.
+    // Se remontou de verdade, o form de criação nasce limpo — não com a Zona do endereço
+    // que estava sendo editado um instante atrás.
     expect(screen.getByTestId('pad-neighborhood')).toHaveValue('');
-    expect(screen.getByTestId('pad-corridor')).toHaveValue('');
-    expect(screen.getByTestId('pad-access')).toHaveValue('');
 
-    // Prova pela ponta que importa: o POST de um endereço NOVO não pode levar o dado de
-    // acesso à casa do endereço ANTERIOR.
+    // Prova pela ponta que importa: o POST de um endereço NOVO não pode levar o dado do
+    // endereço ANTERIOR.
     await escolherDaLista();
     fireEvent.click(screen.getByTestId('pad-save'));
     await waitFor(() => expect(createPatientAddress).toHaveBeenCalled());
     const enviado = createPatientAddress.mock.calls[0][1] as Record<string, unknown>;
-    expect(enviado.access_notes).toBeUndefined();
     expect(enviado.neighborhood).toBeUndefined();
-    expect(enviado.logistics_corridor).toBeUndefined();
   });
 });
 
@@ -583,6 +579,7 @@ describe('PatientAddressDrawer — spec 019: address_type/address_type_other/is_
   beforeEach(() => {
     createPatientAddress.mockReset().mockResolvedValue({ id: 'new' });
     updatePatientAddressLogistics.mockReset().mockResolvedValue({ id: 'addr1' });
+    showToast.mockReset();
     mapSpy.mockReset();
     placeChanged = [];
     placeDevolvido = undefined;
@@ -650,10 +647,10 @@ describe('PatientAddressDrawer — spec 019: address_type/address_type_other/is_
   it('editar: marcar o checkbox "Marcar como principal" envia is_default:true junto de outra mudança', async () => {
     render(<PatientAddressDrawer patientId="p1" address={{ ...existing, isPrimary: false }} onClose={vi.fn()} onSaved={vi.fn()} />);
     fireEvent.click(screen.getByTestId('pad-mark-primary'));
-    fireEvent.change(screen.getByTestId('pad-corridor'), { target: { value: 'Norte' } });
+    fireEvent.change(screen.getByTestId('pad-neighborhood'), { target: { value: 'Norte' } });
     fireEvent.click(screen.getByTestId('pad-save'));
     await waitFor(() => expect(updatePatientAddressLogistics).toHaveBeenCalledWith('p1', 'addr1', {
-      logistics_corridor: 'Norte', is_default: true,
+      neighborhood: 'Norte', is_default: true,
     }));
   });
 
@@ -662,10 +659,10 @@ describe('PatientAddressDrawer — spec 019: address_type/address_type_other/is_
     // em toda linha ATIVA no backend, mas o front não pode confiar nisso sem checar.
     render(<PatientAddressDrawer patientId="p1" address={existing} onClose={vi.fn()} onSaved={vi.fn()} />);
     expect(screen.getByTestId('pad-type')).toHaveValue('');
-    fireEvent.change(screen.getByTestId('pad-corridor'), { target: { value: 'Norte' } });
+    fireEvent.change(screen.getByTestId('pad-neighborhood'), { target: { value: 'Norte' } });
     fireEvent.click(screen.getByTestId('pad-save'));
     // Não muda o tipo (segue "sin especificar" pros dois lados) — PATCH não inclui address_type.
-    await waitFor(() => expect(updatePatientAddressLogistics).toHaveBeenCalledWith('p1', 'addr1', { logistics_corridor: 'Norte' }));
+    await waitFor(() => expect(updatePatientAddressLogistics).toHaveBeenCalledWith('p1', 'addr1', { neighborhood: 'Norte' }));
   });
 
   it('criar: checkbox "Marcar como principal" opt-in — marcado, o POST leva is_default:true', async () => {
@@ -689,5 +686,131 @@ describe('PatientAddressDrawer — spec 019: address_type/address_type_other/is_
     }));
     const enviado = createPatientAddress.mock.calls[0][1] as Record<string, unknown>;
     expect(enviado.is_default).toBeUndefined();
+  });
+});
+
+// ── D348 (15/09): campo Tipo também ao CRIAR — POST continua sem `address_type` (B4); um
+// PATCH imediato grava o tipo escolhido contra o id que o POST devolveu. ─────────────────────
+describe('PatientAddressDrawer — D348: Tipo ao criar (POST + PATCH encadeado)', () => {
+  beforeEach(() => {
+    createPatientAddress.mockReset().mockResolvedValue({ id: 'addr-novo' });
+    updatePatientAddressLogistics.mockReset().mockResolvedValue({ id: 'addr-novo' });
+    showToast.mockReset();
+    mapSpy.mockReset();
+    placeChanged = [];
+    placeDevolvido = undefined;
+    widgetsCriados = 0;
+    stubGoogle();
+    vi.stubEnv('VITE_GOOGLE_MAPS_API_KEY', 'chave-de-teste');
+  });
+  afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); vi.restoreAllMocks(); });
+
+  it('o SELECT de Tipo aparece no modo criar (não só no editar)', async () => {
+    render(<PatientAddressDrawer patientId="p1" onClose={vi.fn()} onSaved={vi.fn()} />);
+    await assentar();
+    expect(screen.getByTestId('pad-type')).toBeInTheDocument();
+    expect(screen.getByTestId('pad-type')).toHaveValue('');
+  });
+
+  it('escolher um tipo diferente do default: POST sem address_type, seguido de PATCH com o tipo — NESSA ORDEM', async () => {
+    const chamadas: string[] = [];
+    createPatientAddress.mockImplementationOnce(async () => { chamadas.push('POST'); return { id: 'addr-novo' }; });
+    updatePatientAddressLogistics.mockImplementationOnce(async () => { chamadas.push('PATCH'); return { id: 'addr-novo' }; });
+
+    const onSaved = vi.fn();
+    render(<PatientAddressDrawer patientId="p1" onClose={vi.fn()} onSaved={onSaved} />);
+    await assentar();
+    await escolherDaLista();
+    fireEvent.change(screen.getByTestId('pad-type'), { target: { value: 'escuela' } });
+    fireEvent.click(screen.getByTestId('pad-save'));
+
+    await waitFor(() => expect(createPatientAddress).toHaveBeenCalledWith('p1', {
+      address_formatted: ESCOLHIDO.formatted_address,
+    }));
+    // B4 intacto: o POST não leva address_type mesmo com um tipo escolhido no form.
+    const postEnviado = createPatientAddress.mock.calls[0][1] as Record<string, unknown>;
+    expect(postEnviado).not.toHaveProperty('address_type');
+
+    await waitFor(() => expect(updatePatientAddressLogistics).toHaveBeenCalledWith('p1', 'addr-novo', {
+      address_type: 'escuela',
+    }));
+    expect(chamadas).toEqual(['POST', 'PATCH']);
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
+  it('tipo "Otro" ao criar: PATCH leva address_type + address_type_other juntos', async () => {
+    render(<PatientAddressDrawer patientId="p1" onClose={vi.fn()} onSaved={vi.fn()} />);
+    await assentar();
+    await escolherDaLista();
+    fireEvent.change(screen.getByTestId('pad-type'), { target: { value: 'otro' } });
+    fireEvent.change(screen.getByTestId('pad-type-other'), { target: { value: 'Casa de la tía' } });
+    fireEvent.click(screen.getByTestId('pad-save'));
+
+    await waitFor(() => expect(updatePatientAddressLogistics).toHaveBeenCalledWith('p1', 'addr-novo', {
+      address_type: 'otro', address_type_other: 'Casa de la tía',
+    }));
+  });
+
+  it('"Otro" com mais de 40 caracteres barra o submit antes do POST — nem POST nem PATCH saem', async () => {
+    render(<PatientAddressDrawer patientId="p1" onClose={vi.fn()} onSaved={vi.fn()} />);
+    await assentar();
+    await escolherDaLista();
+    fireEvent.change(screen.getByTestId('pad-type'), { target: { value: 'otro' } });
+    fireEvent.change(screen.getByTestId('pad-type-other'), { target: { value: 'x'.repeat(41) } });
+    fireEvent.click(screen.getByTestId('pad-save'));
+
+    expect(await screen.findByText(t('admin.patients.editDrawer.typeOtherTooLong'))).toBeInTheDocument();
+    expect(createPatientAddress).not.toHaveBeenCalled();
+    expect(updatePatientAddressLogistics).not.toHaveBeenCalled();
+  });
+
+  it('tipo default ("Sin especificar"): NENHUM PATCH extra é disparado — comportamento inalterado', async () => {
+    const onSaved = vi.fn();
+    render(<PatientAddressDrawer patientId="p1" onClose={vi.fn()} onSaved={onSaved} />);
+    await assentar();
+    await escolherDaLista();
+    // Não mexe no <select> — fica no default ('').
+    fireEvent.click(screen.getByTestId('pad-save'));
+
+    await waitFor(() => expect(createPatientAddress).toHaveBeenCalledWith('p1', {
+      address_formatted: ESCOLHIDO.formatted_address,
+    }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(updatePatientAddressLogistics).not.toHaveBeenCalled();
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
+  it('PATCH pós-POST falha: endereço já foi criado (onSaved/handleClose seguem), erro vira TOAST — nunca o submitError genérico', async () => {
+    updatePatientAddressLogistics.mockRejectedValueOnce(new Error('PATCH caiu'));
+    const onSaved = vi.fn();
+    const onClose = vi.fn();
+    render(<PatientAddressDrawer patientId="p1" onClose={onClose} onSaved={onSaved} />);
+    await assentar();
+    await escolherDaLista();
+    fireEvent.change(screen.getByTestId('pad-type'), { target: { value: 'escuela' } });
+    fireEvent.click(screen.getByTestId('pad-save'));
+
+    await waitFor(() => expect(updatePatientAddressLogistics).toHaveBeenCalled());
+    // A criação NÃO é tratada como falha: onSaved dispara e o drawer fecha.
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(screen.queryByTestId('pad-error')).not.toBeInTheDocument();
+    // O aviso é o toast dedicado, com a mensagem específica — não o texto genérico de erro.
+    await waitFor(() => expect(showToast).toHaveBeenCalledWith(
+      t('admin.patients.detail.addressDrawer.typeSaveWarning'), 'error', 'address-type-save-warning',
+    ));
+  });
+
+  it('POST falha: nem chega a tentar o PATCH, e o erro é o genérico de sempre', async () => {
+    createPatientAddress.mockRejectedValueOnce(new Error('POST caiu'));
+    render(<PatientAddressDrawer patientId="p1" onClose={vi.fn()} onSaved={vi.fn()} />);
+    await assentar();
+    await escolherDaLista();
+    fireEvent.change(screen.getByTestId('pad-type'), { target: { value: 'escuela' } });
+    fireEvent.click(screen.getByTestId('pad-save'));
+
+    expect(await screen.findByTestId('pad-error')).toHaveTextContent('Erro ao salvar');
+    expect(updatePatientAddressLogistics).not.toHaveBeenCalled();
+    expect(showToast).not.toHaveBeenCalled();
   });
 });

@@ -176,6 +176,9 @@ describe('GetManagementDashboardUseCase', () => {
     const result = await useCase.execute();
 
     expect(result).toEqual({
+      // PR-9 (`lex` #9): sem `options.countries`/`options.requested`, o default
+      // é os dois países e 'ALL' — o predicado é explícito na query mesmo assim.
+      scope: { countries: ['AR', 'BR'], requested: 'ALL' },
       bigNumbers: {
         equiposArmados: 1,
         equiposPorArmar: 1,
@@ -347,7 +350,9 @@ describe('GetManagementDashboardUseCase', () => {
     expect(estadosSql).toContain("status IN ('ADMISSION', 'PENDING_ADMISSION')");
     expect(estadosSql).toContain('NOT em_busca_vaga'); // precedência exclusiva
     expect(estadosSql).toContain('$1::uuid[]'); // ids ARMADA do classificador de domínio
-    expect(estadosParams).toEqual([[]]);
+    // PR-9: país default (sem `options.countries`) são os dois — o predicado
+    // continua explícito na query mesmo assim (L9-3, nunca depende da RLS).
+    expect(estadosParams).toEqual([[], ['AR', 'BR']]);
 
     const [ubicacionesSql] = db.query.mock.calls[CALL.ubicaciones];
     expect(ubicacionesSql).toContain('DISTINCT'); // dedup — 566 linhas cruas viram 339 reais
@@ -384,7 +389,7 @@ describe('GetManagementDashboardUseCase', () => {
     expect(result.funnelPorPrestador.periodoDias).toBe(7);
     const [funnelSql, funnelParams] = db.query.mock.calls[CALL.funnelPorPrestador];
     expect(funnelSql).toContain('make_interval(days => $1)'); // filtra por ENTRADA no funil
-    expect(funnelParams).toEqual([7]);
+    expect(funnelParams).toEqual([7, ['AR', 'BR']]); // PR-9: país default = os dois
   });
 
   it('sem período: query do funil não tem predicado de data e periodoDias é null', async () => {
@@ -394,7 +399,7 @@ describe('GetManagementDashboardUseCase', () => {
     expect(result.funnelPorPrestador.periodoDias).toBeNull();
     const [funnelSql, funnelParams] = db.query.mock.calls[CALL.funnelPorPrestador];
     expect(funnelSql).not.toContain('make_interval');
-    expect(funnelParams).toEqual([]);
+    expect(funnelParams).toEqual([['AR', 'BR']]); // PR-9: país default = os dois
   });
 
   it('conta entrevistas da semana no fuso da OPERAÇÃO e expõe quantos estão sem data', async () => {
@@ -433,5 +438,72 @@ describe('GetManagementDashboardUseCase', () => {
     );
     const useCase = new GetManagementDashboardUseCase(db as never);
     await expect(useCase.execute()).rejects.toThrow();
+  });
+
+  /**
+   * PR-9 (`lex` #9, FR-732/L9-3): CADA consulta que toca `patients`,
+   * `job_postings` ou `workers` carrega o predicado explícito de país — a
+   * trava aqui é a FORMA da query (não depende de banco real; a prova com
+   * dado real é o e2e `management-dashboard-country.e2e.test.ts`, L9-2/L9-3).
+   * Sabotagem que derruba este teste: remover `countryPredicateSql(...)` de
+   * qualquer uma das queries abaixo.
+   */
+  it('país explícito (["AR"]) vira predicado em TODA consulta que toca patients/job_postings/workers', async () => {
+    const db = mockDb([], [], { activos: 0 }, { leads: 0, completos: 0, incompletos: 0, nuevos: 0 }, [], { activos: 0, cubriendoGuardias: 0 }, 0, 0);
+    const result = await new GetManagementDashboardUseCase(db as never).execute({
+      countries: ['AR'],
+      requested: 'AR',
+    });
+
+    expect(result.scope).toEqual({ countries: ['AR'], requested: 'AR' });
+
+    const [jobsSql, jobsParams] = db.query.mock.calls[CALL.jobs];
+    expect(jobsSql).toContain('job_postings.country = ANY($1::bpchar[])');
+    expect(jobsParams).toEqual([['AR']]);
+
+    const [patientsSql, patientsParams] = db.query.mock.calls[CALL.patients];
+    expect(patientsSql).toContain('patients.country = ANY($1::bpchar[])');
+    expect(patientsParams).toEqual([['AR']]);
+
+    const [estadosSql, estadosParams] = db.query.mock.calls[CALL.estados];
+    expect(estadosSql).toContain('p.country = ANY($2::bpchar[])');
+    expect(estadosSql).toContain('jp.country = ANY($2::bpchar[])');
+    expect(estadosParams).toEqual([[], ['AR']]);
+
+    const [ubicacionesSql, ubicacionesParams] = db.query.mock.calls[CALL.ubicaciones];
+    expect(ubicacionesSql).toContain('p.country = ANY($1::bpchar[])');
+    expect(ubicacionesParams).toEqual([['AR']]);
+
+    const [horasSql, horasParams] = db.query.mock.calls[CALL.horasAtivas];
+    expect(horasSql).toContain('jp.country = ANY($1::bpchar[])');
+    expect(horasParams).toEqual([['AR']]);
+
+    const [workersSql, workersParams] = db.query.mock.calls[CALL.workers];
+    expect(workersSql).toContain('w.country = ANY($1::bpchar[])');
+    expect(workersParams).toEqual([['AR']]);
+
+    const [funnelLegadoSql, funnelLegadoParams] = db.query.mock.calls[CALL.funnelLegado];
+    expect(funnelLegadoSql).toContain('w_country_chk.country = ANY($1::bpchar[])');
+    expect(funnelLegadoParams).toEqual([['AR']]);
+
+    const [esperandoSql, esperandoParams] = db.query.mock.calls[CALL.esperando];
+    expect(esperandoSql).toContain('w.country = ANY($1::bpchar[])');
+    expect(esperandoParams).toEqual([['AR']]);
+
+    const [alocadosSql, alocadosParams] = db.query.mock.calls[CALL.alocados];
+    expect(alocadosSql).toContain('workers.country = ANY($1::bpchar[])');
+    expect(alocadosParams).toEqual([['AR']]);
+
+    const [blockedSql, blockedParams] = db.query.mock.calls[CALL.blocked];
+    expect(blockedSql).toContain('w_country_chk.country = ANY($1::bpchar[])');
+    expect(blockedParams).toEqual([['AR']]);
+
+    const [encuadresSql, encuadresParams] = db.query.mock.calls[CALL.encuadres];
+    expect(encuadresSql).toContain('w_country_chk.country = ANY($1::bpchar[])');
+    expect(encuadresParams).toEqual([['AR']]);
+
+    const [funnelPorPrestadorSql, funnelPorPrestadorParams] = db.query.mock.calls[CALL.funnelPorPrestador];
+    expect(funnelPorPrestadorSql).toContain('w.country = ANY($1::bpchar[])');
+    expect(funnelPorPrestadorParams).toEqual([['AR']]);
   });
 });

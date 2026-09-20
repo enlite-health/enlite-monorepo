@@ -2,8 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Lock } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { AdminFunnelStageMessagesApiService, type FunnelStageMessagesConfig, type FunnelStageMessageRow } from '@infrastructure/http/AdminFunnelStageMessagesApiService';
-import { useAdminAuth } from '@presentation/hooks/useAdminAuth';
-import { EnliteRole } from '@domain/entities/EnliteRole';
+import { useActionGate } from '@presentation/hooks/useCellAccess';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
@@ -15,7 +14,7 @@ import { summaryOf } from './stageMessagePreview';
 /**
  * /admin/mensajes-por-etapa — DEC-12 / PEND-14 (planning 26/08).
  * Uma linha por etapa do Kanban: mensagem escolhida, ligado/desligado,
- * quem editou. Leitura para o staff; escrita só para ADMIN (lex 29/08 C7).
+ * quem editou. Leitura por `messaging:read`; escrita por `messaging:write`.
  * QUALIFIED é built-in (convite de entrevista) e não se edita aqui.
  *
  * A escolha da mensagem mora numa modal (StageMessagePickerModal), não num
@@ -34,8 +33,9 @@ function formatWhen(iso: string): string {
 
 export function FunnelStageMessagesPage(): JSX.Element {
   const { t } = useTranslation();
-  const { adminProfile } = useAdminAuth();
-  const isAdmin = adminProfile?.role === EnliteRole.ADMIN;
+  // PUT /funnel-stage-messages/:stage → messaging:write. Sem papel: a célula é
+  // o freio, e com o engine desligado o gate deixa passar (D268).
+  const { allowed: canWrite, denied: writeDenied } = useActionGate('messaging', 'update');
   const [config, setConfig] = useState<FunnelStageMessagesConfig | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [rows, setRows] = useState<Record<string, RowState>>({});
@@ -86,14 +86,14 @@ export function FunnelStageMessagesPage(): JSX.Element {
         {/* Este aviso muda o que a pessoa PODE FAZER; o subtítulo e a dica acima
             não. Renderizados iguais (3 linhas cinzas de 12px), o único que
             importa some no meio dos outros dois. */}
-        {!isAdmin && (
+        {writeDenied && (
           <div
             className="mt-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2"
-            data-testid="fsm-admin-only"
+            data-testid="fsm-no-write-access"
             role="status"
           >
             <Lock className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" aria-hidden />
-            <Text size="sm" color="inherit" className="text-amber-900">{t('admin.funnelStageMessages.adminOnly')}</Text>
+            <Text size="sm" color="inherit" className="text-amber-900">{t('admin.funnelStageMessages.noWriteAccess')}</Text>
           </div>
         )}
       </div>
@@ -158,7 +158,7 @@ export function FunnelStageMessagesPage(): JSX.Element {
                     <Text size="xs" color="secondary">{s.updatedAt ? `${s.updatedBy ?? '—'} · ${formatWhen(s.updatedAt)}` : t('admin.funnelStageMessages.never')}</Text>
                   </TableCell>
                   <TableCell unwrapped align="right">
-                    {!builtin && isAdmin && (
+                    {!builtin && canWrite && (
                       <span className="inline-flex items-center gap-2">
                         <Button variant="outline" size="sm" className="whitespace-nowrap" data-testid={`fsm-open-${s.stage}`} onClick={() => setPicking(s.stage)}>
                           {t(r.templateSlug ? 'admin.funnelStageMessages.change' : 'admin.funnelStageMessages.choose')}
@@ -184,7 +184,7 @@ export function FunnelStageMessagesPage(): JSX.Element {
           initialSlug={rows[picking].templateSlug}
           initialEnabled={rows[picking].enabled}
           saving={rows[picking].status === 'saving'}
-          canSave={isAdmin}
+          canSave={canWrite}
           error={rows[picking].status === 'error' ? rows[picking].error : undefined}
           onCancel={() => setPicking(null)}
           onConfirm={(slug, enabled) => void save(picking, slug, enabled)}

@@ -11,7 +11,6 @@ export interface BlockedApplicationUpsertParams {
   acquisitionChannel: string | null;
 }
 
-
 /**
  * BlockedApplicationRepository (write side)
  *

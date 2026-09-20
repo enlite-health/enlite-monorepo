@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Button } from '@presentation/components/atoms/Button';
+import { ActionButton } from '@presentation/components/features/access';
 import type { FunnelBucket } from '@domain/entities/Funnel';
 import { useVacancyFunnelTable } from '@hooks/admin/useVacancyFunnelTable';
 import { useInvitedPendingCandidates } from '@hooks/admin/useInvitedPendingCandidates';
@@ -114,21 +114,27 @@ export function VacancyFunnelView({
   }, [isListView]);
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex flex-col gap-4">
+    <div data-testid="vacancy-funnel-view" className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex flex-col gap-4">
       {/* Linha 1: toggle (esquerda) + ações (direita, só em modo lista) */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <VacancyFunnelToggle view={view} onChange={handleViewChange} />
         {isListView && (
           <div className="flex items-center gap-3 flex-shrink-0">
-            <Button
+            {/* POST /vacancies/:id/match → match:execute · POST /messaging/whatsapp/vacancy-match →
+                messaging:send (D286 fase 2 — a rota já decidia; sem a célula o botão SOME). */}
+            <ActionButton
+              resource="match"
+              action="execute"
               variant="outline"
               size="md"
               onClick={() => setShowMatchModal(true)}
             >
               <Sparkles size={16} aria-hidden="true" />
               Hacer match
-            </Button>
-            <Button
+            </ActionButton>
+            <ActionButton
+              resource="messaging"
+              action="send"
               variant="primary"
               size="md"
               onClick={handleDispatchInvites}
@@ -137,7 +143,7 @@ export function VacancyFunnelView({
               {t('admin.vacancyDetail.funnelView.dispatchInvitesButtonCount', {
                 count: pendingCount,
               })}
-            </Button>
+            </ActionButton>
           </div>
         )}
       </div>

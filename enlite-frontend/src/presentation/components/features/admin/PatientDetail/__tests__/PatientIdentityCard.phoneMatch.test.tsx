@@ -36,16 +36,17 @@ beforeEach(() => {
 });
 
 describe('PatientIdentityCard — rótulo D3.1', () => {
-  it('o campo do telefone do PACIENTE mostra "WhatsApp del paciente" (o rótulo antigo continua existindo, mas SÓ na seção do responsável, para o telefone DELE)', () => {
+  it('o campo do telefone do PACIENTE mostra "WhatsApp del paciente" (o rótulo antigo continua existindo, mas SÓ na seção de emergência, para o telefone do contato MARCADO)', () => {
     const { container } = render(
       <PatientIdentityCard patient={{ ...patientDetailFixture, phoneMatchesResponsible: false }} />,
     );
     expect(screen.getByText(/WhatsApp del paciente/)).toBeInTheDocument();
-    // "Teléfono del Responsable" segue existindo (rótulo correto para o telefone do RESPONSÁVEL,
-    // na seção de contato de emergência) — o bug era usar esse rótulo para o dado do PACIENTE.
-    // Prova de que não sobrou duplicado: só 1 ocorrência, dentro da seção de emergência.
-    const responsibleSection = screen.getByText(/Contacto del responsable principal/).closest('div');
-    expect(responsibleSection?.textContent).toContain('Teléfono del Responsable');
+    // "Teléfono del Responsable" segue existindo (rótulo correto para o telefone do RESPONSÁVEL
+    // MARCADO como contato de emergência, spec 018 PR-3) — o bug do D3.1 era usar esse rótulo
+    // para o dado do PACIENTE. Prova de que não sobrou duplicado: só 1 ocorrência, dentro da
+    // seção de emergência (a antiga "seção do responsável principal" SAIU, FR-210).
+    const emergencySection = screen.getByText('Contacto de Emergencia:').closest('div');
+    expect(emergencySection?.textContent).toContain('Teléfono del Responsable');
     expectNoRawEnumLeaks(container);
   });
 
@@ -54,7 +55,9 @@ describe('PatientIdentityCard — rótulo D3.1', () => {
     expect(screen.queryByRole('button', { name: /Editar/i })).not.toBeInTheDocument();
   });
 
-  it('"Desligamiento" (rótulo fantasma, sem coluna no banco) não aparece mais', () => {
+  // Spec 018 PR-3 (FR-203/204): "Desligamiento" VOLTA, mas só com status ATUAL DISCHARGED — a
+  // fixture usada aqui está em PENDING_ADMISSION, então continua ausente (não "nunca mais").
+  it('"Desligamiento" não aparece fora do status DISCHARGED', () => {
     render(<PatientIdentityCard patient={{ ...patientDetailFixture, phoneMatchesResponsible: false }} />);
     expect(screen.queryByText(/Desligamiento/i)).not.toBeInTheDocument();
   });

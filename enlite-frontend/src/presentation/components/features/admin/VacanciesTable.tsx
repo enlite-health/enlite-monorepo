@@ -9,6 +9,7 @@ import {
   TableHead,
   TableCell,
 } from '@presentation/components/atoms/Table';
+import { useActionGate } from '@presentation/hooks/useCellAccess';
 
 export type VacancyPriority = 'URGENT' | 'HIGH' | 'NORMAL' | 'LOW';
 
@@ -69,6 +70,9 @@ function PriorityCell({ priority }: { priority: VacancyPriority | null }): JSX.E
 export function VacanciesTable({ vacancies, onRowClick, onEditClick }: VacanciesTableProps): JSX.Element {
   const { t } = useTranslation();
   const safeVacancies = vacancies ?? [];
+  // PUT /vacancies/:id (edit) / VacancyModal → vacancy:update (PR-8b, ADR-2). O lápis não tinha
+  // gate e aparecia para quem só tem vacancy:create (achado na prova do PR-8b, #391).
+  const { allowed: podeEditarVacancy } = useActionGate('vacancy', 'update');
 
   return (
     <div className="w-full rounded-xl overflow-hidden border border-gray-400">
@@ -100,7 +104,7 @@ export function VacanciesTable({ vacancies, onRowClick, onEditClick }: Vacancies
                 <TableCell unwrapped className="w-10">
                   <div className="flex items-center gap-1.5">
                     <Eye className="w-4 h-4 text-gray-800" aria-label={t('admin.vacancies.table.view')} />
-                    {onEditClick && (
+                    {onEditClick && podeEditarVacancy && (
                       <button
                         type="button"
                         onClick={(e) => { e.stopPropagation(); onEditClick(row.id, row.isDraft); }}

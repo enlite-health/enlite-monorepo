@@ -29,7 +29,12 @@ import type { EditableVacancyStatus } from '@presentation/components/features/ad
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { VacancyPrescreeningConfig } from '@presentation/components/features/admin/VacancyDetail/VacancyPrescreeningConfig';
 import { VacancyTalentumCard } from '@presentation/components/features/admin/VacancyDetail/VacancyTalentumCard';
-import { VacancyDetailTabs, type VacancyTab } from '@presentation/components/features/admin/VacancyDetail/VacancyDetailTabs';
+import { VacancyDetailTabs } from '@presentation/components/features/admin/VacancyDetail/VacancyDetailTabs';
+import { VACANCY_TABS, type VacancyTab } from '@presentation/components/features/admin/VacancyDetail/vacancyTabs';
+import { ContainerGate } from '@presentation/components/features/access';
+import { tabsVisibleFor } from '@presentation/hooks/useCellAccess';
+import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
+import { screenById } from '@presentation/config/screenRegistry';
 
 export default function VacancyDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -43,6 +48,12 @@ export default function VacancyDetailPage() {
   const [statusError, setStatusError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<VacancyTab>('encuadres');
   const [showPublishedRedirectBanner, setShowPublishedRedirectBanner] = useState(false);
+  // D286: uma aba existe se algum container dela for legível (Encuadres = funil/match/convites,
+  // Talentum = prescreening/talentum, Links = a vaga). O card Paciente é célula do PACIENTE.
+  const permissions = useAdminAuthStore((s) => s.authz?.permissions);
+  const enforcement = useAdminAuthStore((s) => s.authz?.enforcement);
+  const visibleTabs = tabsVisibleFor(screenById('vacancies.detail'), VACANCY_TABS, permissions, enforcement);
+  const shownTab: VacancyTab | null = visibleTabs.includes(activeTab) ? activeTab : (visibleTabs[0] ?? null);
 
   // Operador foi redirecionado pra cá pelo VacancyFormSection após receber 403 do PUT
   // (vaga já publicada). Mostra banner amigável + limpa o state pra não persistir num refresh.
@@ -177,13 +188,14 @@ export default function VacancyDetailPage() {
               </Text>
             </div>
           )}
-          <VacancyPatientCard
-            firstName={vacancy.patient_first_name ?? null}
-            lastName={vacancy.patient_last_name ?? null}
-            diagnosis={vacancy.patient_diagnosis ?? null}
-            zone={vacancy.patient_zone ?? null}
-            insuranceVerified={vacancy.insurance_verified ?? null}
-          />
+          <ContainerGate resource="patient_identity">
+            <VacancyPatientCard
+              firstName={vacancy.patient_first_name ?? null}
+              lastName={vacancy.patient_last_name ?? null}
+              zone={vacancy.patient_zone ?? null}
+              insuranceVerified={vacancy.insurance_verified ?? null}
+            />
+          </ContainerGate>
         </div>
 
         <VacancyProfessionCard
@@ -193,7 +205,10 @@ export default function VacancyDetailPage() {
               : null
           }
           requiredSex={vacancy.required_sex ?? null}
-          diagnosis={vacancy.patient_diagnosis ?? null}
+          // C1 do `lex`: a API não devolve mais o diagnóstico. O campo fica na
+          // tela mostrando `—` de propósito — sumir a linha esconderia que existe
+          // um dado ali que esta tela deixou de poder ver.
+          diagnosis={null}
           talentumDescription={vacancy.talentum_description ?? null}
           ageRangeMin={vacancy.age_range_min ?? null}
           ageRangeMax={vacancy.age_range_max ?? null}
@@ -222,25 +237,30 @@ export default function VacancyDetailPage() {
       {/* TODO TD-XXX: Estado de Busca (candidatos summary) — próximo PR */}
 
       {/* Tabs */}
-      <div className="mb-6">
-        <VacancyDetailTabs activeTab={activeTab} onTabChange={setActiveTab} />
-      </div>
+      {shownTab !== null && (
+        <div className="mb-6">
+          <VacancyDetailTabs activeTab={shownTab} onTabChange={setActiveTab} visibleTabs={visibleTabs} />
+        </div>
+      )}
 
       {/* Tab content */}
-      {activeTab === 'encuadres' && (
+      {shownTab === 'encuadres' && (
         <div className="mb-6">
           <VacancyFunnelView vacancyId={id!} vacancy={vacancy} />
         </div>
       )}
 
-      {activeTab === 'talentum' && (
+      {shownTab === 'talentum' && (
         <>
-          <div className="mb-6">
-            <VacancyPrescreeningConfig
-              vacancyId={id!}
-              isPublished={!!vacancy.talentum_project_id}
-            />
-          </div>
+          <ContainerGate resource="prescreening">
+            <div className="mb-6">
+              <VacancyPrescreeningConfig
+                vacancyId={id!}
+                isPublished={!!vacancy.talentum_project_id}
+              />
+            </div>
+          </ContainerGate>
+          <ContainerGate resource="talentum">
           <div className="mb-6">
             <VacancyTalentumCard
               vacancyId={id!}
@@ -252,6 +272,7 @@ export default function VacancyDetailPage() {
               onRefresh={refetch}
             />
           </div>
+          </ContainerGate>
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex flex-col gap-4">
             <Heading level={3} weight="semibold" color="secondary">
               {t('admin.vacancyDetail.publications.title')}
@@ -286,7 +307,7 @@ export default function VacancyDetailPage() {
         </>
       )}
 
-      {activeTab === 'links' && (
+      {shownTab === 'links' && (
         <>
           <div className="mb-6">
             <VacancySocialLinksCard

@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
-import { Button } from '@presentation/components/atoms/Button';
+import { ActionButton } from '@presentation/components/features/access';
 import type { PatientDetail } from '@domain/entities/PatientDetail';
 import { sortDiagnosesForCard } from '@domain/entities/diagnosisDisplay';
 import { PatientClinicalEditDrawer } from './edit/PatientClinicalEditDrawer';
@@ -79,14 +79,15 @@ export function DiagnosticoCard({ patient, onSaved, focusRequest }: DiagnosticoC
   const patologias = sortDiagnosesForCard(patient.diagnoses);
 
   return (
-    <div className="bg-white rounded-card border-[1.5px] border-gray-700 p-6 sm:px-8 sm:py-10 flex flex-col gap-4">
+    <div data-testid="diagnostico-card" className="bg-white rounded-card border-[1.5px] border-gray-700 p-6 sm:px-8 sm:py-10 flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <Heading level={1} as="h3" weight="semibold" color="primary">
           {t('admin.patients.detail.diagnosisCard.title')}
         </Heading>
-        <Button variant="outline" size="sm" onClick={() => setEditing(true)} className="w-28" data-testid="edit-clinical-btn">
+        {/* D269 — abre o drawer que faz PATCH /patients/:id/clinical → patient:write. */}
+        <ActionButton resource="patient_clinical" action="update" variant="outline" size="sm" onClick={() => setEditing(true)} className="w-28" data-testid="edit-clinical-btn">
           {t('admin.patients.detail.edit')}
-        </Button>
+        </ActionButton>
       </div>
 
       {editing && (

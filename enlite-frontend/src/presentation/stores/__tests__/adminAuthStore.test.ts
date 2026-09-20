@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act } from '@testing-library/react';
 import { User } from '@domain/entities/User';
 import { AdminUser } from '@domain/entities/AdminUser';
-import { EnliteRole } from '@domain/entities/EnliteRole';
 
 // ---------------------------------------------------------------------------
 // Mocks — devem vir antes de qualquer importação que dependa deles
@@ -29,6 +28,13 @@ vi.mock('@infrastructure/http/AdminApiService', () => {
     },
   };
 });
+
+// O store passou a carregar o contrato de authz depois do perfil. Sem este mock o
+// serviço real instanciaria um FirebaseAuthService ANTES do store — e o
+// `mock.results[0]` que os testes abaixo usam apontaria para a instância errada.
+vi.mock('@infrastructure/http/AdminAuthzApiService', () => ({
+  AdminAuthzApiService: { getMyAuthz: vi.fn().mockRejectedValue(new Error('sem backend no unit')) },
+}));
 
 vi.mock('@infrastructure/http/WorkerApiService', () => {
   return {
@@ -63,7 +69,6 @@ const createMockAdminUser = (overrides?: Partial<AdminUser>): AdminUser => ({
   firebaseUid: 'firebase-uid-abc123',
   email: 'admin@enlite.health',
   displayName: 'Admin Enlite',
-  role: EnliteRole.ADMIN,
   department: 'Tecnologia',
   lastLoginAt: '2024-06-01T10:00:00Z',
   loginCount: 5,

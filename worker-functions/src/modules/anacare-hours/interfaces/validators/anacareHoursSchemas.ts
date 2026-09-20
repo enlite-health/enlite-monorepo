@@ -20,3 +20,26 @@ export const contestShiftBodySchema = z.object({
   reason: z.enum(CONTEST_REASONS),
   note: z.string().trim().max(CONTEST_NOTE_MAX_LENGTH).optional(),
 });
+
+/**
+ * Corpo opcional do disparo de sync (F4 continuação) — `month`/`cursor`/`budgetMs` retomam uma
+ * rodada parcial.
+ *
+ * Gate `revisao-pr` (fecho 17/09): `runStartedAt` SAI deste schema de ENTRADA — o carimbo da
+ * corrida (`anacare_sync_run`, migration 443) agora é resolvido pelo SERVIDOR
+ * (`AnaCareHoursSyncRunner.resolveRunStartedAt`), nunca recebido do cliente. Três buracos medidos
+ * no desenho anterior: (1) o Cloud Scheduler posta corpo fixo e nunca lia a resposta para reenviar
+ * o campo — a detecção de colisão cross-invocação ficava DESLIGADA em produção; (2)
+ * `z.string().datetime()` aceitava qualquer data, inclusive no futuro (desliga o detector) ou no
+ * passado remoto (colide com tudo); (3) comparar `fetched_at` (NOW() do Postgres) contra um `Date`
+ * calculado no Node sofria deriva de relógio entre processos. `runStartedAt` continua saindo na
+ * RESPOSTA (`AnaCareHoursSyncOutcome.runStartedAt`) só para observabilidade.
+ */
+export const syncTriggerBodySchema = z.object({
+  month: z
+    .string()
+    .regex(/^\d{4}-(0[1-9]|1[0-2])$/)
+    .optional(),
+  cursor: z.number().int().min(0).nullable().optional(),
+  budgetMs: z.number().int().positive().optional(),
+});

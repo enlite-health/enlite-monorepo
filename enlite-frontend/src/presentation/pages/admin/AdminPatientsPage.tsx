@@ -6,6 +6,7 @@ import { Typography } from '@presentation/components/atoms/Typography';
 import { PageContainer } from '@presentation/components/atoms/PageContainer';
 import { Select } from '@presentation/components/atoms/Select';
 import { Button } from '@presentation/components/atoms/Button';
+import { ActionButton } from '@presentation/components/features/access';
 import { PatientCreateModal } from '@presentation/components/features/admin/PatientCreateModal';
 import { PatientFilters } from '@presentation/components/features/admin/PatientFilters';
 import { PatientsTable } from '@presentation/components/features/admin/PatientsTable';
@@ -161,7 +162,11 @@ export function AdminPatientsPage(): JSX.Element {
                 {t('admin.patients.kanban.toggleKanban')}
               </Typography>
             </Button>
-            <Button
+            {/* D269 — criação chama POST /patients → patient:create (PR-8b); sem a
+                célula, o botão SOME (mode='hide', default do ActionButton). */}
+            <ActionButton
+              resource="patient"
+              action="create"
               variant="outline"
               size="md"
               className="h-10 px-5 border-primary text-primary flex items-center justify-center gap-2"
@@ -174,7 +179,7 @@ export function AdminPatientsPage(): JSX.Element {
                 {t('admin.patients.create.new')}
               </Typography>
               <Plus className="w-3.5 h-3.5 text-primary" />
-            </Button>
+            </ActionButton>
           </div>
         </div>
 

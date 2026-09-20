@@ -38,8 +38,8 @@ describe('authTrace', () => {
 
   it('registra etapas de sucesso com dados anexados', () => {
     const trace = startAuthTrace('password');
-    trace.step('backend-profile:ok', { role: 'admin' });
-    expect(last()).toMatchObject({ step: 'backend-profile:ok', level: 'info', data: { role: 'admin' } });
+    trace.step('backend-profile:ok', { uid: 'u1' });
+    expect(last()).toMatchObject({ step: 'backend-profile:ok', level: 'info', data: { uid: 'u1' } });
   });
 
   it('captura o HTTP status ao falhar com ApiError (404 = não-admin)', () => {

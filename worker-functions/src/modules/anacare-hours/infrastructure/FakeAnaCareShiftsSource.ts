@@ -14,7 +14,9 @@
  * Ana Care real é lido ou referenciado.
  */
 
-import type { AnaCareRetratoSourceStatus, AnaCareShiftsSource, ListShiftsParams, SourceShiftDTO } from '../domain/AnaCareShiftsSource';
+import type { AnaCareRetratoSourceStatus, AnaCareShiftsSource, ListShiftsParams, ListShiftsResult, SourceShiftDTO } from '../domain/AnaCareShiftsSource';
+import { AnaCareSessionClient, AnaCareShiftsSourceReal } from '@modules/integration';
+import { reportError } from '@shared/logging';
 
 const PATIENTS_PER_MONTH = 10;
 const PROVIDERS_PER_PATIENT = 2;
@@ -58,17 +60,12 @@ function daysInMonth(year: number, month1to12: number): number {
   return new Date(Date.UTC(year, month1to12, 0)).getUTCDate();
 }
 
-/** Deriva horas decimais entre dois ISO — sempre >= 0. */
-function hoursBetween(startIso: string, endIso: string): number {
-  const ms = new Date(endIso).getTime() - new Date(startIso).getTime();
-  return Math.round((ms / (1000 * 60 * 60)) * 100) / 100;
-}
-
 export class FakeAnaCareShiftsSource implements AnaCareShiftsSource {
-  async listShifts(params: ListShiftsParams): Promise<SourceShiftDTO[]> {
-    const shifts = FakeAnaCareShiftsSource.generateMonth(params.month);
-    if (!params.patientId) return shifts;
-    return shifts.filter((s) => s.anaCarePatientId === params.patientId);
+  async listShifts(params: ListShiftsParams): Promise<ListShiftsResult> {
+    const all = FakeAnaCareShiftsSource.generateMonth(params.month);
+    // Massa 100% sintética — nunca gera turno sem paciente/prestador, então o descarte é sempre 0.
+    const shifts = params.patientId ? all.filter((s) => s.anaCarePatientId === params.patientId) : all;
+    return { shifts, skipped: { noProvider: 0, noPatient: 0 } };
   }
 
   /**
@@ -111,14 +108,31 @@ export class FakeAnaCareShiftsSource implements AnaCareShiftsSource {
 
           let actualStart: string | null = null;
           let actualEnd: string | null = null;
-          let durationHours: number | null = null;
+          // Medido 17/09 contra a API real (paciente 9660, 88 turnos): existe turno NÃO
+          // finalizado sem check-in nenhum (a maioria, 23/30) e turno NÃO finalizado com
+          // check-in mas sem checkout ainda (7/30, "em andamento"). A massa falsa tem de ter as
+          // duas formas — só o caso "sem check-in nenhum" era o que existia antes, e por isso a
+          // suíte nunca cobriu o segundo.
+          let isFinalized = false;
           if (origin !== 'sin_checkin') {
-            // Atraso determinístico 0/5/10/15 min, ciclando por índice — cobre o destaque de
-            // diferença (>=15min) sem depender de aleatoriedade.
+            // Atraso de check-in determinístico 0/5/10/15 min, ciclando por índice — cobre o
+            // destaque de diferença (>=15min) sem depender de aleatoriedade.
             const delayMin = (shiftIndex % 4) * 5;
             actualStart = new Date(new Date(scheduledStart).getTime() + delayMin * 60_000).toISOString();
-            actualEnd = new Date(new Date(scheduledEnd).getTime() + delayMin * 60_000).toISOString();
-            durationHours = hoursBetween(actualStart, actualEnd);
+
+            // 1 em cada 9 turnos com check-in fica "em andamento": tem `actualStart`, mas ainda
+            // não fez checkout (`actualEnd` null, `is_finalized=false`) — modela o achado 3 do
+            // defeito medido (30 turnos não finalizados, 7 com check-in).
+            const emAndamento = shiftIndex % 9 === 0;
+            if (!emAndamento) {
+              // Checkout adiantado 0/3/6/9/12 min, ciclando por índice — cobre o achado 2 do
+              // defeito medido: turno finalizado cuja hora REAL é MENOR que a PREVISTA
+              // (ex. previsto 12,0 / real 11,8). Quando `earlyMin===0` o real bate com o
+              // previsto (o caso que a suíte antiga só conhecia) — os outros 4/5 divergem.
+              const earlyMin = (shiftIndex % 5) * 3;
+              actualEnd = new Date(new Date(scheduledEnd).getTime() + (delayMin - earlyMin) * 60_000).toISOString();
+              isFinalized = true;
+            }
           }
 
           out.push({
@@ -131,7 +145,7 @@ export class FakeAnaCareShiftsSource implements AnaCareShiftsSource {
             actualStart,
             actualEnd,
             checkinSource: origin === 'sin_checkin' ? null : origin,
-            durationHours,
+            isFinalized,
           });
           shiftIndex += 1;
         }
@@ -141,15 +155,31 @@ export class FakeAnaCareShiftsSource implements AnaCareShiftsSource {
   }
 }
 
-/** Nome do env que seleciona o adapter. Fase 1: só `'fake'` é aceito. */
+/** Nome do env que seleciona o adapter. Valores aceitos: `'fake'` | `'real'` (F2 em diante). */
 export const ANACARE_HOURS_SOURCE_ENV = 'ANACARE_HOURS_SOURCE';
 
 /**
  * Seleciona o adapter pela env — fail-closed: SEM a env (ou valor desconhecido), devolve `null` e
  * quem chama responde 503 `ANACARE_SOURCE_NOT_CONFIGURED` (spec F1: produção nunca serve dado
- * falso por omissão). Nenhum adapter REAL existe nesta fase.
+ * falso por omissão).
+ *
+ * `'real'` liga o cliente de sessão da F2 (`AnaCareSessionClient`/`AnaCareShiftsSourceReal`), que
+ * precisa de `ANACARE_USERNAME`/`ANACARE_PASS` (D350: credencial de pessoa já em uso, sem usuário
+ * de integração dedicado). SEM credencial, o construtor do cliente lança — aqui isso é
+ * capturado, reportado (`reportError`, nunca silencioso) e vira `null` (mesmo 503 fail-closed),
+ * nunca uma queda silenciosa para o adapter falso.
  */
 export function createAnaCareShiftsSource(env: NodeJS.ProcessEnv = process.env): AnaCareShiftsSource | null {
-  if (env[ANACARE_HOURS_SOURCE_ENV] === 'fake') return new FakeAnaCareShiftsSource();
+  const selected = env[ANACARE_HOURS_SOURCE_ENV];
+  if (selected === 'fake') return new FakeAnaCareShiftsSource();
+  if (selected === 'real') {
+    try {
+      return new AnaCareShiftsSourceReal(new AnaCareSessionClient());
+    } catch (err) {
+      const e = err instanceof Error ? err : new Error(String(err));
+      reportError(e, { source: 'createAnaCareShiftsSource:real' });
+      return null;
+    }
+  }
   return null;
 }

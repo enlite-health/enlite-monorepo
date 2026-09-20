@@ -3,12 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Tag, Edit2, Trash2, Plus } from 'lucide-react';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
-import { useAdminAuth } from '@presentation/hooks/useAdminAuth';
-import { EnliteRole } from '@domain/entities/EnliteRole';
+import { ActionButton } from '@presentation/components/features/access';
+import { useActionGate, useContainerAccess } from '@presentation/hooks/useCellAccess';
 import type { WorkerTag } from '@domain/entities/WorkerTag';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
-import { Button } from '@presentation/components/atoms/Button';
 import { PageContainer } from '@presentation/components/atoms/PageContainer';
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
@@ -28,16 +27,17 @@ function getTextColor(hex: string): string {
 }
 
 export default function TagCatalogPage() {
+  // D269: criar/editar/excluir etiqueta chamam POST/PATCH/DELETE /worker-tags → worker:write.
+  const tagWriteGate = useActionGate('worker', 'update');
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { adminProfile } = useAdminAuth();
-
-  // Route guard: redirect non-admins
+  // Trava de rota pela CÉLULA da leitura que a tela faz (GET /worker-tags →
+  // worker:read), não por papel. `useContainerAccess` só nega com o engine
+  // ligado — com ele desligado a tela abre como sempre abriu (D268/D286).
+  const { visible } = useContainerAccess('worker');
   useEffect(() => {
-    if (adminProfile && adminProfile.role !== EnliteRole.ADMIN) {
-      navigate('/admin', { replace: true });
-    }
-  }, [adminProfile, navigate]);
+    if (!visible) navigate('/admin', { replace: true });
+  }, [visible, navigate]);
 
   const [tags, setTags] = useState<WorkerTag[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -101,10 +101,10 @@ export default function TagCatalogPage() {
             {t('admin.tags.title')}
           </Heading>
         </div>
-        <Button variant="primary" size="md" onClick={handleNewTag}>
+        <ActionButton resource="worker" action="create" variant="primary" size="md" onClick={handleNewTag}>
           <Plus className="w-4 h-4" />
           {t('admin.tags.newTag')}
-        </Button>
+        </ActionButton>
       </div>
 
       {/* Content */}
@@ -151,6 +151,7 @@ export default function TagCatalogPage() {
                     </TableCell>
                     <TableCell>{tag.description ?? '—'}</TableCell>
                     <TableCell align="right" unwrapped>
+                      {!tagWriteGate.denied && (
                       <div className="flex items-center justify-end gap-2">
                         <button
                           type="button"
@@ -169,6 +170,7 @@ export default function TagCatalogPage() {
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
+                      )}
                     </TableCell>
                   </TableRow>
                 );

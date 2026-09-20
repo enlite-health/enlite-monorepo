@@ -17,7 +17,8 @@
 import { Request, Response } from 'express';
 import { reportError } from '@shared/logging';
 import { AuthMiddleware } from '@modules/identity';
-import { createAnaCareShiftsSource } from '../../infrastructure/FakeAnaCareShiftsSource';
+import { cellsOfRequest, cellKey, CELL_WORKER_CONTACT_READ } from '@modules/identity/permissions';
+import { createAnaCareSyncDependencies } from '../../infrastructure/AnaCareSyncDependenciesFactory';
 import { AnaCareHoursService } from '../../application/AnaCareHoursService';
 import { AnaCareHoursServiceError } from '../../domain/AnaCareShift';
 import {
@@ -29,6 +30,16 @@ import {
   contestShiftBodySchema,
 } from '../validators/anacareHoursSchemas';
 
+const CLINICAL_READ_CELL = cellKey('patient_clinical', 'read');
+/**
+ * Item 4 (18/09, PII do documento do paciente): mesma célula do container "Identidade" da ficha
+ * do paciente (`patientContainerAccess.ts` — `patient_identity` carrega "nome, documento,
+ * nascimento, sexo, telefone, e-mail de contato"). Documento é dado de identidade, não clínico —
+ * `patient_clinical:read` seria a célula errada. Nenhuma célula nova: reaproveita a que já existe
+ * e já é coerente para este dado.
+ */
+const PATIENT_IDENTITY_READ_CELL = cellKey('patient_identity', 'read');
+
 const ERROR_STATUS: Record<string, number> = {
   RETRATO_DESATUALIZADO: 409,
   JA_VALIDADO: 409,
@@ -39,23 +50,34 @@ const ERROR_STATUS: Record<string, number> = {
 export class AnaCareHoursController {
   constructor(private readonly serviceFactory: () => AnaCareHoursService | null = () => AnaCareHoursController.defaultServiceFactory()) {}
 
+  /**
+   * Item 1 (revisão de PR): `createAnaCareSyncDependencies` monta fonte + diretório + repositórios
+   * JUNTOS e coerentes pela MESMA env — em modo `fake` devolve `FakeAnaCarePatientMonthRepository`,
+   * o MESMO repositório em que o sync (falso) escreve. Antes, o 5º parâmetro do serviço caía no
+   * default (repositório do retrato real/Postgres) mesmo com `ANACARE_HOURS_SOURCE=fake`, e a
+   * lista nascia vazia porque lia de um repositório que o sync fake nunca escrevia.
+   */
   private static defaultServiceFactory(): AnaCareHoursService | null {
-    const source = createAnaCareShiftsSource();
-    return source ? new AnaCareHoursService(source) : null;
+    const deps = createAnaCareSyncDependencies();
+    return deps ? new AnaCareHoursService(deps.source, undefined, undefined, undefined, deps.patientMonthRepository) : null;
   }
 
   private actorUid(req: Request): string {
     return AuthMiddleware.getAuthContext(req)?.principal.id ?? 'unknown';
   }
 
-  /**
-   * No `main` não existe engine ABAC/célula (`patient_clinical:read`) — sem forma seletiva de
-   * liberar a nota de contestação, o padrão seguro é NUNCA decifrar, para ninguém, allowlist ou
-   * não (regra dura CLAUDE.md: texto clínico nunca sai do perímetro). Hardcoded, não parametrizável
-   * por env nem por request — só volta a ser dinâmico quando o ABAC chegar ao `main`.
-   */
-  private canReadNote(_req: Request): boolean {
-    return false;
+  private canReadNote(req: Request): boolean {
+    return (cellsOfRequest(req) ?? []).includes(CLINICAL_READ_CELL);
+  }
+
+  /** D349 item 1 / D344: nome de prestador só sai para quem tem `worker_contact:read`. */
+  private canReadProviderName(req: Request): boolean {
+    return (cellsOfRequest(req) ?? []).includes(CELL_WORKER_CONTACT_READ);
+  }
+
+  /** Item 4 (18/09): documento do paciente só sai para quem tem `patient_identity:read`. */
+  private canReadPatientDocument(req: Request): boolean {
+    return (cellsOfRequest(req) ?? []).includes(PATIENT_IDENTITY_READ_CELL);
   }
 
   private requireService(res: Response): AnaCareHoursService | null {
@@ -94,7 +116,7 @@ export class AnaCareHoursController {
     const service = this.requireService(res);
     if (!service) return;
     try {
-      const snapshot = await service.getMonthSnapshot(params.data.month, this.canReadNote(req));
+      const snapshot = await service.getMonthSnapshot(params.data.month, this.canReadNote(req), this.canReadProviderName(req));
       res.status(200).json({ success: true, data: snapshot });
     } catch (err) {
       this.handleError(res, err, 'AnaCareHoursController:getMonthSnapshot');
@@ -110,7 +132,13 @@ export class AnaCareHoursController {
     const service = this.requireService(res);
     if (!service) return;
     try {
-      const patient = await service.getPatientMonth(params.data.month, params.data.patientId, this.canReadNote(req));
+      const patient = await service.getPatientMonth(
+        params.data.month,
+        params.data.patientId,
+        this.canReadNote(req),
+        this.canReadProviderName(req),
+        this.canReadPatientDocument(req),
+      );
       if (!patient) {
         res.status(404).json({ success: false, error: 'Patient not found in month' });
         return;

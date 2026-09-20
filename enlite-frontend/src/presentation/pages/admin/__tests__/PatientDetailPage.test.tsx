@@ -6,6 +6,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
 import { patientDetailFixture } from '@presentation/components/features/admin/PatientDetail/__tests__/patientDetailFixture';
+import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
+import type { AuthzContract } from '@domain/entities/Authz';
 
 const translations = ptBR as Record<string, any>;
 function t(key: string, opts?: any): string {
@@ -27,7 +29,12 @@ vi.mock('@presentation/components/ui/skeletons', () => ({ DetailSkeleton: () => 
 vi.mock('@presentation/components/features/admin/PatientDetail/PatientChatIdsCard', () => ({ PatientChatIdsCard: () => <div data-testid="chat-ids-stub" /> }));
 vi.mock('@presentation/components/features/admin/PatientDetail/PatientStatusHistoryCard', () => ({ PatientStatusHistoryCard: (p: { patientId: string }) => <div data-testid="history-stub">{p.patientId}</div> }));
 vi.mock('@presentation/components/features/admin/PatientDetail/PatientVacanciesCard', () => ({ PatientVacanciesCard: () => <div data-testid="vacancies-stub" /> }));
-vi.mock('@presentation/components/features/admin/PatientDetail/ActivatePatientButton', () => ({ ActivatePatientButton: (p: { onActivated: () => void }) => <button data-testid="activate-stub" onClick={p.onActivated}>activate</button> }));
+// Spec 017: o card do projeto terapêutico tem client HTTP e i18n real por trás (drawer + PDF) — testado no próprio arquivo.
+vi.mock('@presentation/components/features/admin/PatientDetail/ProjetoTerapeuticoCard', () => ({ ProjetoTerapeuticoCard: (p: { patient: { id: string } }) => <div data-testid="projeto-terapeutico-stub">{p.patient.id}</div> }));
+// `ActivatePatientButton` SAIU do cabeçalho (spec 018, PR-6, ADR-5) — ativar agora é por
+// serviço, dentro do `ServicosContratadosCard`. O stub aqui cobre o mesmo contrato que o botão
+// cobria: `onSaved` refetcha ficha E vagas (a vaga nasce da ativação).
+vi.mock('@presentation/components/features/admin/PatientDetail/ServicosContratadosCard', () => ({ ServicosContratadosCard: (p: { onSaved?: () => void }) => <button data-testid="services-saved-stub" onClick={() => p.onSaved?.()}>services</button> }));
 vi.mock('@presentation/components/features/admin/PatientDetail/PatientStatusControl', () => ({ PatientStatusControl: (p: { onSaved: () => void }) => <button data-testid="status-stub" onClick={p.onSaved}>status</button> }));
 vi.mock('@infrastructure/http/AdminApiService', () => ({ AdminApiService: { updatePatientSection: vi.fn(), listInsuranceProviders: vi.fn().mockResolvedValue([]) } }));
 
@@ -56,12 +63,16 @@ describe('PatientDetailPage', () => {
     expect(screen.getByText("Erro ao carregar paciente")).toBeInTheDocument();
   });
 
-  it('ficha: estado v2 no cabeçalho (onSaved → refetch), ativar → refetch dos dois; país sem bandeira cai em AR', () => {
+  it('ficha: estado v2 no cabeçalho (onSaved → refetch), ativar recrutamento no serviço → refetch dos dois; país sem bandeira cai em AR', () => {
     detail.patient = { ...(detail.patient as object), country: 'XX' };
     render(<PatientDetailPage />);
     fireEvent.click(screen.getByTestId('status-stub'));
     expect(detail.refetch).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByTestId('activate-stub'));
+    // Spec 018, PR-6: ativar é por SERVIÇO agora (`ServicosContratadosCard`), não um botão do
+    // cabeçalho — o `onSaved` do card refetcha os dois (ficha + vagas), porque a ativação cria vaga.
+    // O card mora na aba "Serviço Contratado", não na inicial ("Dados Clínicos").
+    fireEvent.click(screen.getByText('Serviço Contratado'));
+    fireEvent.click(screen.getByTestId('services-saved-stub'));
     expect(detail.refetch).toHaveBeenCalledTimes(2);
     expect(vac.refetch).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('img', { name: 'XX' })).toHaveTextContent('🇦🇷');
@@ -187,11 +198,78 @@ describe('PatientDetailPage', () => {
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Santiago Claiman');
   });
 
+  // gate `revisao-pr` (frontend-quality, branches 100%): a fixture passou a fixar
+  // `externalContacts: []` explícito (spec 018 PR-3, D113 — `[]` ≠ `null`/ausência de célula),
+  // e nenhum teste aqui restava exercitando `patient.externalContacts ?? []` com o valor
+  // AUSENTE na resposta (backend antigo / payload sem o campo). Sem isto, o ramo `??` da
+  // linha fica descoberto.
+  it('sem `externalContacts` na resposta (undefined), a Rede de Apoio ainda renderiza (fallback `?? []`)', () => {
+    detail.patient = { ...(detail.patient as object), externalContacts: undefined };
+    render(<PatientDetailPage />);
+    fireEvent.click(screen.getByText('Rede de Apoio'));
+    expect(screen.getByTestId('external-contacts-card')).toBeInTheDocument();
+  });
+
   // lex 06/09 (C1): o nome virou nó de PÁGINA, fora do cartão. A máscara não pode depender de
   // regra do dashboard do Clarity — que é remota e muda sem PR. Trava no DOM.
   it('o h1 com o nome do paciente está dentro de data-clarity-mask="True"', () => {
     render(<PatientDetailPage />);
     const h1 = screen.getByRole('heading', { level: 1 });
     expect(h1.closest('[data-clarity-mask="True"]')).not.toBeNull();
+  });
+});
+
+
+// ── D286 — permissão por CONTAINER: card e ABA somem sem a célula ────────────────────────────
+describe('PatientDetailPage — D286: abas e cards por container', () => {
+  const comCelulas = (permissions: string[], enforcement: AuthzContract['enforcement']) =>
+    useAdminAuthStore.setState({
+      authzStatus: 'ready',
+      authz: { uid: 'u', tenantId: 't', status: 'ACTIVE', permissions, countries: ['AR'], groups: [], features: {}, enforcement } as AuthzContract,
+    });
+  const abasNaTela = () =>
+    Array.from(screen.getByTestId('patient-profile-tabs').querySelectorAll('button')).map((b) => b.textContent);
+
+  beforeEach(() => useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' }));
+
+  it('🔴 só familiares: as abas são Rede de Apoio (o container) e Histórico (operacional, patient:read); o card de familiares está lá, o de chat e a identidade NÃO', () => {
+    comCelulas(['patient:read', 'patient_family:read'], 'on');
+    render(<PatientDetailPage />);
+    expect(abasNaTela()).toEqual(['Rede de Apoio', 'Histórico']);
+    expect(screen.getByTestId('familiares-card')).toBeInTheDocument();
+    expect(screen.queryByTestId('chat-ids-stub')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('edit-general-btn')).not.toBeInTheDocument();
+  });
+
+  it('serviços contratados: com ela, Serviço Contratado existe (Enquadre saiu em 05/09); Dados Clínicos não', () => {
+    comCelulas(['patient:read', 'patient_services:read'], 'on');
+    render(<PatientDetailPage />);
+    expect(abasNaTela()).toEqual(['Serviço Contratado', 'Histórico']);
+    expect(screen.queryByTestId('edit-coverage-btn')).not.toBeInTheDocument();
+  });
+
+  it('🔴 só o operacional (patient:read): a única aba é Histórico; nenhum card de container, nem a identidade', () => {
+    comCelulas(['patient:read'], 'on');
+    render(<PatientDetailPage />);
+    expect(abasNaTela()).toEqual(['Histórico']);
+    expect(screen.getByTestId('history-stub')).toBeInTheDocument();
+    expect(screen.queryByTestId('familiares-card')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('edit-general-btn')).not.toBeInTheDocument();
+    expect(screen.getByTestId('status-stub')).toBeInTheDocument();
+  });
+
+  it('🔴 sem nem patient:read (ator sem célula nenhuma com enforcement on): nenhuma aba e nenhum card', () => {
+    comCelulas([], 'on');
+    render(<PatientDetailPage />);
+    expect(screen.queryByTestId('patient-profile-tabs')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('familiares-card')).not.toBeInTheDocument();
+  });
+
+  it('enforcement OFF: tudo como antes, mesmo sem célula nenhuma (as células novas nascem sem grupo)', () => {
+    comCelulas([], 'off');
+    render(<PatientDetailPage />);
+    expect(abasNaTela()).toHaveLength(5);
+    fireEvent.click(screen.getByText('Rede de Apoio'));
+    expect(screen.getByTestId('familiares-card')).toBeInTheDocument();
   });
 });

@@ -1,15 +1,15 @@
 /**
  * PresentationInvitePage — /admin/invitacion-presentacion (REQ-09 / REQ-20, planning 26/08).
  * Config da reunião recorrente ("eterna", um a um): link + horário + template + ligado.
- * Admin edita (auditado no backend); staff só lê. Contadores dos últimos 30 dias.
+ * Quem tem `messaging:write` edita (auditado no backend); os demais só leem.
+ * Contadores dos últimos 30 dias.
  */
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   AdminPresentationInviteApiService, type PresentationInviteSettings, type PresentationInviteStats,
 } from '@infrastructure/http/AdminPresentationInviteApiService';
-import { useAdminAuth } from '@presentation/hooks/useAdminAuth';
-import { EnliteRole } from '@domain/entities/EnliteRole';
+import { useActionGate } from '@presentation/hooks/useCellAccess';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
@@ -19,8 +19,9 @@ type SaveState = { status: 'idle' | 'saving' | 'saved' | 'error'; error?: string
 
 export function PresentationInvitePage() {
   const { t } = useTranslation();
-  const { adminProfile } = useAdminAuth();
-  const isAdmin = adminProfile?.role === EnliteRole.ADMIN;
+  // PUT /presentation-invite/settings → messaging:write. Sem papel: a célula é
+  // o freio, e com o engine desligado o gate deixa passar (D268).
+  const { allowed: canWrite, denied: writeDenied } = useActionGate('messaging', 'update');
   const [settings, setSettings] = useState<PresentationInviteSettings | null>(null);
   const [stats, setStats] = useState<PresentationInviteStats | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -62,26 +63,26 @@ export function PresentationInvitePage() {
     <div className="p-6 max-w-4xl" data-testid="presentation-invite-page">
       <Heading level={1}>{t('admin.presentationInvite.title')}</Heading>
       <Text size="sm" color="secondary" className="mt-1">{t('admin.presentationInvite.subtitle')}</Text>
-      {!isAdmin && <div className="mt-1" data-testid="pi-admin-only"><Text size="xs" color="secondary">{t('admin.presentationInvite.adminOnly')}</Text></div>}
+      {writeDenied && <div className="mt-1" data-testid="pi-no-write-access"><Text size="xs" color="secondary">{t('admin.presentationInvite.noWriteAccess')}</Text></div>}
       {loadError && <div className="mt-4" data-testid="pi-load-error"><Text size="sm" color="inherit" className="text-red-600">{loadError}</Text></div>}
 
       {settings && (
         <div className="mt-6 grid gap-4 rounded-xl border border-gray-200 bg-white p-5" data-testid="pi-form">
           <div>
             <Label htmlFor="pi-meet-link">{t('admin.presentationInvite.meetLink')}</Label>
-            <input id="pi-meet-link" data-testid="pi-meet-link" type="url" disabled={!isAdmin} value={form.meetLink}
+            <input id="pi-meet-link" data-testid="pi-meet-link" type="url" disabled={!canWrite} value={form.meetLink}
               onChange={(e) => { setForm((f) => ({ ...f, meetLink: e.target.value })); setSave({ status: 'idle' }); }}
               className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-50" placeholder="https://meet.google.com/…" />
           </div>
           <div>
             <Label htmlFor="pi-schedule">{t('admin.presentationInvite.scheduleLabel')}</Label>
-            <input id="pi-schedule" data-testid="pi-schedule-label" type="text" maxLength={200} disabled={!isAdmin} value={form.scheduleLabel}
+            <input id="pi-schedule" data-testid="pi-schedule-label" type="text" maxLength={200} disabled={!canWrite} value={form.scheduleLabel}
               onChange={(e) => { setForm((f) => ({ ...f, scheduleLabel: e.target.value })); setSave({ status: 'idle' }); }}
               className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-50" placeholder={t('admin.presentationInvite.scheduleLabelHint')} />
           </div>
           <div>
             <Label htmlFor="pi-template">{t('admin.presentationInvite.template')}</Label>
-            <select id="pi-template" data-testid="pi-template" disabled={!isAdmin} value={form.templateSlug}
+            <select id="pi-template" data-testid="pi-template" disabled={!canWrite} value={form.templateSlug}
               onChange={(e) => { setForm((f) => ({ ...f, templateSlug: e.target.value, enabled: f.enabled && !!e.target.value })); setSave({ status: 'idle' }); }}
               className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-50">
               <option value="">—</option>
@@ -94,12 +95,12 @@ export function PresentationInvitePage() {
             <Text size="xs" color="secondary" className="mt-1">{t('admin.presentationInvite.templateHint')}</Text>
           </div>
           <label className="flex items-center gap-2">
-            <input type="checkbox" data-testid="pi-enabled" disabled={!isAdmin || !canEnable} checked={form.enabled && canEnable}
+            <input type="checkbox" data-testid="pi-enabled" disabled={!canWrite || !canEnable} checked={form.enabled && canEnable}
               onChange={(e) => { setForm((f) => ({ ...f, enabled: e.target.checked })); setSave({ status: 'idle' }); }} />
             <Text as="span" size="sm">{t('admin.presentationInvite.enabled')}</Text>
           </label>
           <div className="flex items-center gap-3">
-            {isAdmin && <Button size="sm" data-testid="pi-save" disabled={save.status === 'saving'} onClick={onSave}>{t('admin.presentationInvite.save')}</Button>}
+            {canWrite && <Button size="sm" data-testid="pi-save" disabled={save.status === 'saving'} onClick={onSave}>{t('admin.presentationInvite.save')}</Button>}
             {save.status === 'saved' && <span className="text-green-700" data-testid="pi-saved"><Text as="span" size="xs" color="inherit">{t('admin.presentationInvite.saved')}</Text></span>}
             {save.status === 'error' && <span className="text-red-600" data-testid="pi-error"><Text as="span" size="xs" color="inherit">{save.error}</Text></span>}
             <span data-testid="pi-last-edit"><Text as="span" size="xs" color="secondary">

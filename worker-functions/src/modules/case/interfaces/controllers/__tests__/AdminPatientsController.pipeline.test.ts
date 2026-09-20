@@ -6,7 +6,9 @@
  *      right (id, section, data); unknown section / bad body / missing patient
  *      are 400/400/404.
  *   b. PUT /:id/status — validates status (400 on unknown) and moves it (200).
- *   c. POST /:id/activate — 200 happy path, 422 no-address, 404 not-found.
+ *
+ * `activatePatient` (POST /:id/activate) saiu — spec 018 PR-6: a rota é 410
+ * (`AdminPatientsRoutes.test.ts`), sem controller nenhum por trás.
  */
 
 // ── Mocks (before importing the module under test) ────────────────────────────
@@ -41,22 +43,10 @@ jest.mock('../../../infrastructure/PatientQueryRepository', () => ({
   })),
 }));
 
-// Keep the real matching barrel out of the controller test (ActivatePatientUseCase
-// imports it at module load; we inject a stub use case so it never runs).
-jest.mock('@modules/matching', () => ({
-  buildInsertQuery: jest.fn(),
-  buildInsertParams: jest.fn(),
-}));
-
 import { reportError } from '@shared/logging';
 import { AdminPatientsController } from '../AdminPatientsController';
-import {
-  PatientNotFoundError,
-  NoActiveAddressError,
-} from '../../../application/ActivatePatientUseCase';
 import type { CreatePatientUseCase } from '../../../application/CreatePatientUseCase';
 import type { PatientService } from '../../../application/PatientService';
-import type { ActivatePatientUseCase } from '../../../application/ActivatePatientUseCase';
 import { Request, Response } from 'express';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -77,15 +67,13 @@ const VALID_ID = '11111111-1111-4111-8111-111111111111';
 function makeController(opts: {
   updatePatientSection?: jest.Mock;
   moveStatus?: jest.Mock;
-  activate?: jest.Mock;
 }): AdminPatientsController {
   const patientService = {
     updatePatientSection: opts.updatePatientSection ?? jest.fn(),
     moveStatus: opts.moveStatus ?? jest.fn(),
   } as unknown as PatientService;
-  const activateUseCase = { execute: opts.activate ?? jest.fn() } as unknown as ActivatePatientUseCase;
   const createUseCase = { execute: jest.fn() } as unknown as CreatePatientUseCase;
-  return new AdminPatientsController(undefined, createUseCase, patientService, activateUseCase);
+  return new AdminPatientsController(undefined, createUseCase, patientService);
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────
@@ -113,6 +101,17 @@ describe('AdminPatientsController — pipeline (Fase 2 Task 3)', () => {
       (req2 as unknown as { permissionCells: string[] }).permissionCells = ['patient:write'];
       await controller.updatePatientSection(req2, res2);
       expect(res2.status).not.toHaveBeenCalledWith(403);
+    });
+
+    it('spec 018, PR-1, ADR-1 (SUP-37): emergencyContacts SAIU da seção coverage — 400 pelo .strict(), o service NUNCA é chamado (a escrita virou rota por linha)', async () => {
+      const updatePatientSection = jest.fn().mockResolvedValue({ id: VALID_ID, updated: true });
+      const controller = makeController({ updatePatientSection });
+      const ambulancia = { emergencyContacts: [{ kind: 'AMBULANCE', name: 'A', phone: '1' }] };
+      const [req, res] = mockReqRes({ id: VALID_ID, section: 'coverage' }, ambulancia);
+      (req as unknown as { permissionCells: string[] }).permissionCells = ['patient_coverage:read', 'patient_coverage:write', 'patient_care_team:read'];
+      await controller.updatePatientSection(req, res);
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(updatePatientSection).not.toHaveBeenCalled();
     });
 
     it.each([
@@ -182,7 +181,7 @@ describe('AdminPatientsController — pipeline (Fase 2 Task 3)', () => {
 
       await controller.updatePatientSection(req, res);
 
-      expect(updatePatientSection).toHaveBeenCalledWith(VALID_ID, 'clinical', expect.objectContaining({ additionalComments: CLINICAL_TEXT }), { uid: 'uid-staff-1' });
+      expect(updatePatientSection).toHaveBeenCalledWith(VALID_ID, 'clinical', expect.objectContaining({ additionalComments: CLINICAL_TEXT }), { uid: 'uid-staff-1', cells: null }); // 417: as células vão junto (engine não decidiu → null)
     });
 
     it('sem contexto de auth, actor é undefined (o repositório não grava autoria)', async () => {
@@ -260,58 +259,4 @@ describe('AdminPatientsController — pipeline (Fase 2 Task 3)', () => {
     });
   });
 
-  // ── c. POST /:id/activate ───────────────────────────────────────────────────
-
-  describe('c. activatePatient', () => {
-    it('deve retornar 200 com { patientId, status, createdVacancyIds }', async () => {
-      const activate = jest.fn().mockResolvedValue({
-        patientId: VALID_ID,
-        status: 'ACTIVE',
-        createdVacancyIds: ['v1', 'v2'],
-        alreadyActive: false,
-      });
-      const controller = makeController({ activate });
-
-      const [req, res] = mockReqRes({ id: VALID_ID });
-      await controller.activatePatient(req, res);
-
-      expect(res.status).toHaveBeenCalledWith(200);
-      expect((res as any).json).toHaveBeenCalledWith({
-        success: true,
-        data: { patientId: VALID_ID, status: 'ACTIVE', createdVacancyIds: ['v1', 'v2'] },
-      });
-    });
-
-    it('deve retornar 422 quando o paciente não tem endereço ativo', async () => {
-      const activate = jest.fn().mockRejectedValue(new NoActiveAddressError(VALID_ID));
-      const controller = makeController({ activate });
-
-      const [req, res] = mockReqRes({ id: VALID_ID });
-      await controller.activatePatient(req, res);
-
-      expect(res.status).toHaveBeenCalledWith(422);
-      expect((res as any).json.mock.calls[0][0]).toMatchObject({ success: false });
-    });
-
-    it('deve retornar 404 quando o paciente não existe', async () => {
-      const activate = jest.fn().mockRejectedValue(new PatientNotFoundError(VALID_ID));
-      const controller = makeController({ activate });
-
-      const [req, res] = mockReqRes({ id: VALID_ID });
-      await controller.activatePatient(req, res);
-
-      expect(res.status).toHaveBeenCalledWith(404);
-    });
-
-    it('deve retornar 400 para id inválido', async () => {
-      const activate = jest.fn();
-      const controller = makeController({ activate });
-
-      const [req, res] = mockReqRes({ id: 'not-a-uuid' });
-      await controller.activatePatient(req, res);
-
-      expect(res.status).toHaveBeenCalledWith(400);
-      expect(activate).not.toHaveBeenCalled();
-    });
-  });
 });

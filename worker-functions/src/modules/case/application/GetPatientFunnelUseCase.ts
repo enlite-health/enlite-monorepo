@@ -4,6 +4,7 @@ import {
   type PatientFunnelData,
   type PatientFunnelQuery,
 } from './patientFunnelSchema';
+import type { CountryCode } from '@shared/domain/countryCodes';
 
 interface CountRow {
   k: string;
@@ -32,13 +33,18 @@ const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 export class GetPatientFunnelUseCase {
   constructor(private readonly db: Pool) {}
 
-  async execute(query: PatientFunnelQuery): Promise<PatientFunnelData> {
-    const country = query.country ?? null;
+  /**
+   * @param query.countries escopo de país já resolvido (PR-9, `lex` #9,
+   *   `resolveCountryScope`) — nunca vazio; substitui o antigo `country`
+   *   escalar (undefined = "sem filtro", o vazamento cross-país medido).
+   */
+  async execute(query: PatientFunnelQuery & { countries: CountryCode[] }): Promise<PatientFunnelData> {
+    const { countries } = query;
     const to = query.to ? new Date(query.to) : new Date();
     const from = query.from ? new Date(query.from) : new Date(to.getTime() - THIRTY_DAYS_MS);
 
-    // Params posicionais compartilhados: $1 from, $2 to, $3 country (null = todos).
-    const p = [from.toISOString(), to.toISOString(), country];
+    // Params posicionais compartilhados: $1 from, $2 to, $3 países (array — nunca "todos").
+    const p = [from.toISOString(), to.toISOString(), countries];
 
     const [solRow, admRow, ageRow, vacRow, statusRows] = await Promise.all([
       // solicitantes — pacientes criados no período (todos os origins).
@@ -47,7 +53,7 @@ export class GetPatientFunnelUseCase {
            FROM patients p
           WHERE p.deleted_at IS NULL
             AND p.created_at >= $1 AND p.created_at < $2
-            AND ($3::text IS NULL OR p.country = $3)`,
+            AND p.country = ANY($3::bpchar[])`,
         p,
       ),
       // admision — distintos criados no período que chegaram a ADMISSION+.
@@ -56,7 +62,7 @@ export class GetPatientFunnelUseCase {
            FROM patients p
           WHERE p.deleted_at IS NULL
             AND p.created_at >= $1 AND p.created_at < $2
-            AND ($3::text IS NULL OR p.country = $3)
+            AND p.country = ANY($3::bpchar[])
             AND (
               p.status IN ('ADMISSION', 'PENDING_ADMISSION', 'ACTIVE')
               OR EXISTS (
@@ -73,7 +79,7 @@ export class GetPatientFunnelUseCase {
            FROM admission_appointments aa
           WHERE aa.patient_id IS NOT NULL
             AND aa.created_at >= $1 AND aa.created_at < $2
-            AND ($3::text IS NULL OR aa.country = $3)`,
+            AND aa.country = ANY($3::bpchar[])`,
         p,
       ),
       // vacantes — distintos patient_id com vaga (não-draft/não-deletada) de
@@ -87,7 +93,7 @@ export class GetPatientFunnelUseCase {
             AND jp.patient_id IS NOT NULL
             AND p.deleted_at IS NULL
             AND p.created_at >= $1 AND p.created_at < $2
-            AND ($3::text IS NULL OR p.country = $3)`,
+            AND p.country = ANY($3::bpchar[])`,
         p,
       ),
       // byStatus — snapshot atual por status (para as colunas do kanban),
@@ -97,9 +103,9 @@ export class GetPatientFunnelUseCase {
            FROM patients
           WHERE deleted_at IS NULL
             AND status IS NOT NULL
-            AND ($1::text IS NULL OR country = $1)
+            AND country = ANY($1::bpchar[])
           GROUP BY status`,
-        [country],
+        [countries],
       ),
     ]);
 
@@ -110,7 +116,10 @@ export class GetPatientFunnelUseCase {
 
     const data: PatientFunnelData = {
       period: { from: from.toISOString(), to: to.toISOString() },
-      country,
+      // Mantém a forma escalar do contrato de saída (não tocado, per escopo do
+      // pedido): um país só ecoa ele; escopo multi-país (ALL) ecoa null — o
+      // mesmo "não sei dizer um só" que o campo já usava para "sem filtro".
+      country: countries.length === 1 ? countries[0] : null,
       solicitantes: solRow.rows[0]?.n ?? 0,
       admision: admRow.rows[0]?.n ?? 0,
       agendadas: ageRow.rows[0]?.n ?? 0,
