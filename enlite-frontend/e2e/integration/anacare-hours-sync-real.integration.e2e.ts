@@ -165,6 +165,30 @@ function holdSyncRequest(page: Page): { captured: Promise<void>; release: () => 
   return { captured, release: releaseFn };
 }
 
+/**
+ * Mesma técnica de `holdSyncRequest` (segura no PORTÃO DE REDE, nunca no servidor, nunca troca a
+ * resposta), aplicada ao GET `/anacare-hours/months/{month}` do mês recém-selecionado — força
+ * DETERMINISTICAMENTE a janela "fetch do mês novo em voo" que o bug do mês divergente exigia (ver
+ * commit `fix(anacare-horas): o seletor de mes e o sync passam a falar do MESMO mes`), em vez de
+ * torcer para o teste vencer uma corrida contra um backend fake rápido demais.
+ */
+function holdMonthFetch(page: Page, month: string): { captured: Promise<void>; release: () => void } {
+  let releaseFn!: () => void;
+  let capturedFn!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    releaseFn = resolve;
+  });
+  const captured = new Promise<void>((resolve) => {
+    capturedFn = resolve;
+  });
+  void page.route(`**/anacare-hours/months/${encodeURIComponent(month)}`, async (route: Route) => {
+    capturedFn();
+    await gate;
+    await route.fallback();
+  });
+  return { captured, release: releaseFn };
+}
+
 async function abrirPeloMenu(page: Page): Promise<void> {
   await page.getByRole('link', { name: 'Horas Ana Care' }).click();
   await expect(page).toHaveURL(/\/admin\/anacare\/horas$/);
@@ -285,6 +309,76 @@ test.describe('Botão "Sincronizar" — Horas Ana Care — E2E real @integration
       await contextA.close();
       await contextB.close();
     }
+  });
+
+  // Regressão do defeito medido em produção (commit `fix(anacare-horas): o seletor de mes e o
+  // sync passam a falar do MESMO mes`, 20/09): antes do conserto, o `<Select>` exibia
+  // `snapshot.month` (o mês do DADO já carregado) enquanto o botão "Sincronizar" enviava o
+  // `month` do `useState` do container (o mês SELECIONADO) — enquanto o fetch do mês novo
+  // estava em voo, os dois discordavam. Este teste troca o mês, segura o fetch do mês novo no
+  // portão de rede (nunca no servidor — `holdMonthFetch`, mesma técnica de `holdSyncRequest`
+  // acima) para forçar essa janela de propósito, e prova que o corpo do POST de sync leva o
+  // MESMO mês que o seletor mostra NAQUELE INSTANTE — nunca uma constante cravada no teste.
+  test('ALTERNATIVO 3 — troca de mês com o fetch em voo: o POST de sync leva o mês EXIBIDO, nunca o anterior', async ({ page }) => {
+    // Mesmo motivo do FELIZ acima — precisa do container com `ANACARE_DIRECTORY_MIN_ABSOLUTE`
+    // configurada (aqui já há histórico do teste FELIZ, que roda antes na mesma corrida serial,
+    // mas mantém a mesma guarda por clareza e para não depender da ORDEM dentro do arquivo).
+    test.skip(
+      process.env.ANACARE_SYNC_E2E_ERROR_SCENARIO === '1',
+      'precisa do container FELIZ (ANACARE_DIRECTORY_MIN_ABSOLUTE configurada) — não roda junto com o cenário de erro',
+    );
+
+    await loginAs(page, OPERADOR);
+    await abrirPeloMenu(page);
+
+    const seletorMes = page.getByLabel('Mes', { exact: true });
+    await expect(seletorMes).toBeVisible({ timeout: 15_000 });
+    const mesInicial = await seletorMes.inputValue();
+
+    // Nunca cravar o mês-alvo: lê as opções REAIS do seletor na tela e escolhe qualquer uma
+    // diferente da atual — o defeito de hoje era justamente seletor e sync discordarem de mês,
+    // então fixar o valor no teste esconderia o próprio bug que ele existe para pegar.
+    const valoresDisponiveis = await seletorMes.locator('option').evaluateAll((opts) => opts.map((o) => (o as HTMLOptionElement).value));
+    const mesAlvo = valoresDisponiveis.find((v) => v !== mesInicial);
+    if (!mesAlvo) throw new Error(`Seletor de mês só tem uma opção (${mesInicial}) — não dá para provar a troca de mês`);
+
+    // Observa o corpo do POST de sync NO PORTÃO DE REDE (nunca no servidor, nunca troca a
+    // requisição) — registrado ANTES da troca de mês, `route.fallback()` devolve pro `swap` do
+    // `loginAs` (troca o header de auth) e daí pro servidor de verdade, igual a `holdSyncRequest`.
+    let corpoSyncCapturado: { month?: string } | null = null;
+    await page.route('**/anacare-hours/sync', async (route: Route) => {
+      corpoSyncCapturado = route.request().postDataJSON() as { month?: string };
+      await route.fallback();
+    });
+
+    const holdMes = holdMonthFetch(page, mesAlvo);
+
+    // Interação HUMANA: `<select>` nativo (`atoms/Select`) — `selectOption` é o equivalente real
+    // de escolher a opção (dispara o mesmo evento `change` que o usuário dispara), mesmo padrão
+    // já usado em outras specs `@integration` deste repo para `<select>` nativo.
+    await seletorMes.selectOption(mesAlvo);
+    await holdMes.captured; // GET de `/anacare-hours/months/{mesAlvo}` capturado e SEGURO — em voo, de propósito.
+
+    // Lê o valor NA TELA, agora, com o fetch do mês novo ainda em voo — é este valor, nunca uma
+    // constante, que a asserção final compara contra o corpo do POST.
+    const mesExibidoComFetchEmVoo = await seletorMes.inputValue();
+
+    const botao = page.getByTestId('anacare-hours-sync-button');
+    await expect(botao).toBeVisible({ timeout: 15_000 });
+    await botao.click(); // clique acontece DELIBERADAMENTE enquanto o fetch do mês novo ainda está em voo.
+
+    await expect.poll(() => corpoSyncCapturado, { timeout: 15_000 }).not.toBeNull();
+    holdMes.release(); // solta o fetch do mês só DEPOIS do clique — a corrida já foi decidida.
+
+    // A prova direta do conserto: o mês que SAIU no POST é o mesmo que a TELA mostrava no
+    // instante do clique — nunca uma constante, e nunca o mês anterior à troca.
+    expect(corpoSyncCapturado?.month).toBe(mesExibidoComFetchEmVoo);
+    expect(corpoSyncCapturado?.month).toBe(mesAlvo);
+    expect(corpoSyncCapturado?.month).not.toBe(mesInicial);
+
+    await expect(page.getByTestId('anacare-hours-list-loading-month')).toHaveCount(0, { timeout: 15_000 });
+    await expect(page.getByTestId('anacare-hours-sync-done')).toBeVisible({ timeout: 20_000 });
+    await expect(page).toHaveScreenshot('anacare-hours-sync-troca-de-mes-done.png', { mask: [page.getByText(/Retrato actualizado/)] });
   });
 
   test('ALTERNATIVO 2 — erro no meio da corrida (falha real do fail-closed do diretório) deixa erro visível, nunca "completo"', async ({ page }) => {
