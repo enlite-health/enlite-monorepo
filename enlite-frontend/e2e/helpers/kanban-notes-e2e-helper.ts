@@ -255,6 +255,22 @@ export async function loginAsStaffOffline(page: Page, role: string = AUTH_FALSA.
 
   await page.route('**/api/admin/**', (route: Route) => route.fulfill(ok(null)));
 
+  // `/v1/me/authz` vive FORA de `/api/admin/`, então o catch-all acima não o
+  // cobre — sem este mock, a chamada escapa para o backend REAL (:8080), que
+  // rejeita o token forjado (`alg:none`) com 401 "Invalid credentials". O
+  // catch resultante em `fetchAuthz` (adminAuthStore.ts) não quebra a tela,
+  // mas cada rodada de `onAuthStateChanged` volta a chamar `fetchAuthz`, e a
+  // authz nunca "assenta" — medido: ~150-200 refetches/seg da vaga por trás
+  // disso, o suficiente pra qualquer `toBeVisible` pegar a página no meio do
+  // ciclo (D300, achado da 2ª rodada).
+  await page.route('**/v1/me/authz', (route: Route) =>
+    route.fulfill(json({
+      uid: AUTH_FALSA.uid, tenantId: 'e2e', status: 'ACTIVE', permissions: [],
+      countries: ['Argentina'], groups: [{ id: 'e2e-group', name: 'E2E' }],
+      features: {}, enforcement: 'off',
+    })),
+  );
+
   await page.route('**/api/admin/auth/profile', (route: Route) =>
     route.fulfill(ok({
       id: AUTH_FALSA.uid, email: AUTH_FALSA.email, role,
