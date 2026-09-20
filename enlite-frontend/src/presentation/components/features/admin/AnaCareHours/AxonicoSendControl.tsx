@@ -18,8 +18,8 @@
  */
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Button } from '@presentation/components/atoms/Button';
 import { Text } from '@presentation/components/atoms/Text';
+import { ActionButton } from '@presentation/components/features/access';
 import { useSendComprobanteToAxonico } from '@hooks/admin/useSendComprobanteToAxonico';
 import { useRegisterAnaCarePatientDocument } from '@hooks/admin/useRegisterAnaCarePatientDocument';
 import { AxonicoDocumentModal } from './AxonicoDocumentModal';
@@ -119,7 +119,13 @@ export function AxonicoSendControl({
   return (
     <div className="flex flex-col items-end gap-1">
       <div className="flex items-center gap-2">
-        <Button
+        {/* Célula `integration:execute` (D116) — a rota POST /integrations/axonico/comprobante que
+            este clique dispara é a mesma da `integration:execute` do screenRegistry
+            (`anacareHours.detail`); sem ela o botão SOME (`ActionButton` mode='hide' default,
+            D269), em vez de deixar o usuário levar um 403 cru do backend. */}
+        <ActionButton
+          resource="integration"
+          action="execute"
           size="sm"
           variant="outline"
           disabled={isDisabled}
@@ -128,7 +134,7 @@ export function AxonicoSendControl({
           data-testid={`anacare-hours-send-day-${date}`}
         >
           {t('admin.anacareHours.dayGroup.sendAction')}
-        </Button>
+        </ActionButton>
       </div>
       {!disableActions &&
         !eligibility.eligible &&
