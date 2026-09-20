@@ -167,6 +167,37 @@ describe('GroupDetailPage — a regra por componente', () => {
     expect(screen.queryByRole('button', { name: 'admin.access.group.save' })).not.toBeInTheDocument();
   });
 
+  it('🔒 dois portões, não um (spec 021, bloco 2): grupo isSystem trava renomear/descrição mas país/células/membros ficam habilitados', async () => {
+    // `is_system` é regra do BANCO só para nome/descrição (`iam.update_group`
+    // levanta 23514 se mudar o nome de um grupo de sistema) — a tela não pode
+    // prometer o que o banco recusa. País, células e membros o banco NÃO trava
+    // por `is_system`; um `editable` único deixava a tela MAIS restritiva que o
+    // banco e travava o Gabriel num grupo como o Acesso Master.
+    postura('write');
+    api.getGroup.mockResolvedValue({ ...GRUPO, isSystem: true });
+    api.grantCountry.mockResolvedValue({ scopeId: 's' });
+    renderRota(<GroupDetailPage />, ROTA, PATTERN);
+    await screen.findByTestId('g-name-readonly');
+
+    // identidade (editableIdentity): SEM lápis — nem o botão de editar existe
+    expect(screen.queryByTestId('g-name-editar')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('g-desc-editar')).not.toBeInTheDocument();
+
+    // país (editableContent): o botão existe, responde ao clique — não é texto
+    const br = screen.getByRole('button', { name: /^countries\.BR/ });
+    expect(br).toBeEnabled();
+    await userEvent.click(br);
+    await waitFor(() => expect(api.grantCountry).toHaveBeenCalledWith(GRUPO.id, 'BR'));
+
+    // células (editableContent): checkbox existe (não é lista de texto) e o botão de salvar existe
+    expect(screen.getAllByRole('checkbox', { name: /^worker:read/ })[0]).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'admin.access.group.cellsSave' })).toBeInTheDocument();
+
+    // membros (editableContent): o transfer completo existe, não a lista somente-leitura
+    expect(screen.getByTestId('member-transfer')).toBeInTheDocument();
+    expect(screen.queryByTestId('members-readonly')).not.toBeInTheDocument();
+  });
+
   it('404: diz que não achou e oferece voltar', async () => {
     postura('read');
     api.getGroup.mockRejectedValue(new ApiError({ success: false, error: 'Not found' }, 404));

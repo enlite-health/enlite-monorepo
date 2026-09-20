@@ -1,12 +1,25 @@
 import { resolveCountryScope, CountryScopeError } from '../resolveCountryScope';
 
-function mockDb(effectiveCountries: string[], documented = false): { query: jest.Mock } {
+/** Campos de UM grant de `iam.group_country_scopes`, para o mock avaliar o predicado real (T304). */
+type GrantFields = { grantedBy: string | null; reason: string | null };
+
+function mockDb(effectiveCountries: string[], documented: boolean | GrantFields = false): { query: jest.Mock } {
   const query = jest.fn().mockImplementation((sql: string) => {
     if (sql.includes('iam.effective_countries')) {
       return Promise.resolve({ rows: [{ countries: effectiveCountries }] });
     }
     if (sql.includes('documented')) {
-      return Promise.resolve({ rows: [{ documented }] });
+      if (typeof documented === 'boolean') {
+        return Promise.resolve({ rows: [{ documented }] });
+      }
+      // Deriva "documented" do PREDICADO REAL emitido pela query (não de um
+      // valor chutado pelo teste) — se o código reimpuser a exigência de
+      // `reason`, este mock passa a reprovar um grant com reason NULL, e o
+      // teste que espera "sem 403" MORRE (é a régua de sabotagem do T304).
+      const requiresReason = /reason/i.test(sql);
+      const grantedByOk = documented.grantedBy !== null;
+      const reasonOk = !requiresReason || (documented.reason !== null && documented.reason.trim() !== '');
+      return Promise.resolve({ rows: [{ documented: grantedByOk && reasonOk }] });
     }
     throw new Error(`SQL inesperado no mock: ${sql}`);
   });
@@ -68,6 +81,21 @@ describe('resolveCountryScope', () => {
 
   it('ALL com 2 países SEM grant documentado (granted_by/reason) → 403 (D113, L9-5)', async () => {
     const db = mockDb(['AR', 'BR'], false);
+    await expect(resolveCountryScope(db as never, 'u1', 'ALL')).rejects.toMatchObject({
+      status: 403,
+      code: 'COUNTRY_SCOPE_REQUIRED',
+    });
+  });
+
+  it('ALL com 2 países E grant com granted_by preenchido mas reason NULL → união dos dois, SEM 403 (T302: migration 412 tornou reason opcional; decisão de 20/09)', async () => {
+    const db = mockDb(['AR', 'BR'], { grantedBy: 'uid-admin', reason: null });
+    const result = await resolveCountryScope(db as never, 'u1', 'ALL');
+    expect(result.countries.sort()).toEqual(['AR', 'BR']);
+    expect(result.requested).toBe('ALL');
+  });
+
+  it('ALL com 2 países E grant com granted_by NULL (mesmo com reason preenchido) → continua indocumentado, 403 (D113: granted_by é o piso que não caiu)', async () => {
+    const db = mockDb(['AR', 'BR'], { grantedBy: null, reason: 'motivo qualquer, preenchido' });
     await expect(resolveCountryScope(db as never, 'u1', 'ALL')).rejects.toMatchObject({
       status: 403,
       code: 'COUNTRY_SCOPE_REQUIRED',

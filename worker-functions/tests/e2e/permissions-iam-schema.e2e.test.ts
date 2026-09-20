@@ -368,7 +368,7 @@ describe('S2 — users.tenant_id e users.status; trigger is_active em sync', () 
 
 // ─── S3: Seeds ────────────────────────────────────────────────────────────────
 
-describe('S3 — Seeds: tenant Enlite, 43 permissions, 5 grupos (2 de sistema + 3 customizáveis pela mig 432)', () => {
+describe('S3 — Seeds: tenant Enlite, 43 permissions, 5 grupos (1 de sistema + 4 customizáveis — mig 432 e mig 454)', () => {
 
   it('tenant Enlite existe com UUID 00000000-...-0001 e region=SA', async () => {
     const row = await pool.query<{ id: string; name: string; region: string; status: string }>(`
@@ -433,13 +433,14 @@ describe('S3 — Seeds: tenant Enlite, 43 permissions, 5 grupos (2 de sistema + 
     expect(set.has('worker:update')).toBe(true);
   });
 
-  it('5 grupos do seed existem: Acesso Master e Super Admin de SISTEMA; Recrutador, Community Manager e Financeiro CUSTOMIZÁVEIS (mig 432, D285/FR-701)', async () => {
+  it('5 grupos do seed existem: só o Acesso Master é de SISTEMA; Super Admin, Recrutador, Community Manager e Financeiro são CUSTOMIZÁVEIS (mig 432 + mig 454, D285/FR-701)', async () => {
     // A F11 caiu (D285, 05/09): não é mais "grupos validados por migration" —
     // só as 4 contas do Acesso Master ficam fixas. A mig 432 (PR-8a) tirou
-    // `is_system` de Recrutador/Community Manager/Financeiro; Acesso Master
-    // e Super Admin continuam travados (não renomeiam nem arquivam — mesma
-    // regra de sempre, só mudou QUAIS grupos a carregam). Este teste é o
-    // guardião do seed: se alguém reverter a 432 por acidente, ele morre.
+    // `is_system` de Recrutador/Community Manager/Financeiro, e a mig 454
+    // (20/09) tirou do Super Admin — só o Acesso Master continua travado (não
+    // renomeia nem arquiva). A regra é a de sempre; mudou QUAIS grupos a
+    // carregam. Este teste é o guardião do seed: se alguém reverter a 432 ou a
+    // 454 por acidente, ele morre.
     const groups = await pool.query<{ id: string; name: string; is_system: boolean }>(`
       SELECT id::text, name, is_system FROM permission_groups
       WHERE tenant_id = $1
@@ -450,11 +451,12 @@ describe('S3 — Seeds: tenant Enlite, 43 permissions, 5 grupos (2 de sistema + 
 
     const byId = new Map(groups.rows.map(r => [r.id, r]));
 
-    // metade 1: continuam de SISTEMA — não renomeiam, não arquivam
+    // o ÚNICO de SISTEMA — não renomeia, não arquiva (mig 454, decisão do Gabriel 20/09/2026)
     expect(byId.get(GROUP_MASTER)).toMatchObject({ name: 'Acesso Master', is_system: true });
-    expect(byId.get(GROUP_SUPER)).toMatchObject({ name: 'Super Admin', is_system: true });
 
-    // metade 2: a mig 432 tirou a flag — agora CUSTOMIZÁVEIS pelo painel
+    // CUSTOMIZÁVEIS pelo painel: a mig 432 tirou a flag dos 3 abaixo; a mig 454 tirou do Super Admin,
+    // retomando o "assinar ou apagar" que a D124 deixou aberto em 19/08.
+    expect(byId.get(GROUP_SUPER)).toMatchObject({ name: 'Super Admin', is_system: false });
     expect(byId.get(GROUP_REC)).toMatchObject({ name: 'Recrutador', is_system: false });
     expect(byId.get(GROUP_CM)).toMatchObject({ name: 'Community Manager', is_system: false });
     expect(byId.get(GROUP_FIN)).toMatchObject({ name: 'Financeiro', is_system: false });
