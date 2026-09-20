@@ -69,6 +69,11 @@ export function AnaCareHoursListContainer({
       snapshot={snapshot}
       onOpenPatient={onOpenPatient}
       onMonthChange={setMonth}
+      // `month` (este `useState`, não `snapshot.month`) é a fonte da verdade do mês — o MESMO que
+      // alimenta `useAnaCareHoursSync` linha acima. Enquanto `snapshot` ainda é do mês anterior
+      // (fetch em voo), `isLoadingSelectedMonth` avisa a página para não misturar os dois.
+      selectedMonth={month}
+      isLoadingSelectedMonth={snapshot.month !== month}
       sinCheckinHoursMode={sinCheckinHoursMode}
       sync={service.triggerSync ? sync : undefined}
     />

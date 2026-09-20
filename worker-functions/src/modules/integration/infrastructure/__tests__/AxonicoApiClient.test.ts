@@ -34,6 +34,18 @@ jest.mock('@google-cloud/secret-manager', () => ({
   })),
 }));
 
+// Mock do logger — mesmo padrão de LancarPrestacaoAxonicoUseCase.test.ts. Usado pela suíte de
+// observabilidade (auditoria D384, 20/09/2026) para provar que CADA log novo de nível `error` é
+// emitido no caminho de falha correspondente — sem isto, o log é uma alegação sem prova.
+jest.mock('@shared/logging', () => ({
+  logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
+}));
+
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const { logger: mockLogger } = require('@shared/logging') as {
+  logger: { info: jest.Mock; warn: jest.Mock; error: jest.Mock };
+};
+
 import { AxonicoApiClient } from '../AxonicoApiClient';
 import { resolveServiceMapping, AxonicoUnmappedServiceTypeError } from '../AxonicoServiceMapping';
 import {
@@ -118,13 +130,19 @@ describe('AxonicoApiClient — login e cache de token', () => {
     expect(mockFetch).toHaveBeenCalledTimes(3); // 1 login + 2 findPatientByDni
   });
 
-  it('login sem medico.matricula falha explicitamente (nunca cai em constante)', async () => {
+  it('login sem medico.matricula falha explicitamente (nunca cai em constante) — e loga error com durationMs, nunca a matricula', async () => {
     const client = makeClient();
     // Corpo SEM o bloco `medico` de propósito (não usar o helper `loginResponse`, cujo `??`
     // trataria `undefined` como "usar o default" — o que mascararia este caso).
     mockFetch.mockResolvedValueOnce(jsonResponse({ data: { accessToken: '1|mock-token-abc' } }));
 
     await expect(client.findPatientByDni('30712345')).rejects.toThrow(/medico\.matricula/);
+
+    // Teste que morre (item 5): prova que o log de erro do guard de matricula é EMITIDO no
+    // caminho de falha — não só que a exceção foi lançada.
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ msg: expect.stringMatching(/medico\.matricula ausente/i), durationMs: expect.any(Number) }),
+    );
   });
 
   it('login com medico.matricula vazio (string em branco) falha explicitamente', async () => {
@@ -234,6 +252,68 @@ describe('AxonicoApiClient — re-login em 401', () => {
     // 1a tentativa (401) + retry pós-relogin (401 de novo) = 2 chamadas à rota, nunca uma 3a.
     expect(findCount).toBe(2);
     expect(loginCount).toBe(2);
+
+    // Teste que morre (item 5): o 401 persistente é um "erro do terceiro" que exige ação — tem
+    // que aparecer como `error`, carregando method+path+durationMs, nunca só a exceção lançada.
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        msg: expect.stringMatching(/401 persistente/i),
+        method: 'POST',
+        path: '/api/paciente/filter',
+        durationMs: expect.any(Number),
+      }),
+    );
+  });
+});
+
+describe('AxonicoApiClient — withReauth: falha de rede (sem resposta HTTP)', () => {
+  it('fetch rejeita na 1ª tentativa (timeout/DNS) → relança o erro original e loga error com method+path+durationMs+errorMessage', async () => {
+    const networkError = new Error('ETIMEDOUT — request timed out');
+    mockFetch.mockResolvedValueOnce(loginResponse());
+    mockFetch.mockRejectedValueOnce(networkError);
+
+    const client = makeClient();
+    await expect(client.findPatientByDni('30712345')).rejects.toBe(networkError);
+
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        msg: expect.stringMatching(/falha de rede/i),
+        method: 'POST',
+        path: '/api/paciente/filter',
+        durationMs: expect.any(Number),
+        errorMessage: 'ETIMEDOUT — request timed out',
+      }),
+    );
+  });
+
+  it('fetch dá 401 (dispara re-login) e a 2ª tentativa (pós-relogin) rejeita por falha de rede → relança o erro original e loga a variante "após re-login"', async () => {
+    const networkError = new Error('ECONNRESET — connection reset');
+    let findCount = 0;
+    mockFetch.mockImplementation(async (input: unknown) => {
+      const url = String(input);
+      if (url.endsWith('/api/login')) {
+        return loginResponse();
+      }
+      if (url.endsWith('/api/paciente/filter')) {
+        findCount += 1;
+        if (findCount === 1) return jsonResponse({ message: 'Unauthenticated' }, 401);
+        throw networkError;
+      }
+      throw new Error(`unexpected call: ${url}`);
+    });
+
+    const client = makeClient();
+    await expect(client.findPatientByDni('30712345')).rejects.toBe(networkError);
+
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        msg: expect.stringMatching(/falha de rede.*após re-login/i),
+        method: 'POST',
+        path: '/api/paciente/filter',
+        durationMs: expect.any(Number),
+        errorMessage: 'ECONNRESET — connection reset',
+      }),
+    );
   });
 });
 
@@ -281,6 +361,17 @@ describe('AxonicoApiClient — 401 em escrita (PUT /api/comprobante) NÃO replay
 
     const putCalls = httpCalls.filter((c) => c.method === 'PUT' && c.url.endsWith('/api/comprobante'));
     expect(putCalls).toHaveLength(1); // exatamente 1 PUT — nunca um replay automático.
+
+    // Teste que morre (item 5): estado INDETERMINADO (pode ter faturado sem confirmação) tem que
+    // ficar em `error` — é o caso que mais exige atenção humana no fluxo inteiro.
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        msg: expect.stringMatching(/estado INDETERMINADO/i),
+        method: 'PUT',
+        path: '/api/comprobante',
+        durationMs: expect.any(Number),
+      }),
+    );
   });
 
   it('401 no PUT invalida a sessão (próxima chamada, de qualquer método, relogará) mas não repete ESTA escrita', async () => {
@@ -582,6 +673,19 @@ describe('AxonicoApiClient — erros tipados', () => {
 
     expect(caught).toBeInstanceOf(AxonicoValidationError);
     expect((caught as AxonicoValidationError).fieldErrors).toEqual({ cantidad: ['debe ser un entero'] });
+
+    // Teste que morre (item 5) + item 2 do contrato (status + "por quê"): loga error com status
+    // 422, method/path do PUT, e as CHAVES dos campos inválidos — nunca os valores submetidos.
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        msg: expect.stringMatching(/erro do terceiro.*422/i),
+        method: 'PUT',
+        path: '/api/comprobante',
+        status: 422,
+        durationMs: expect.any(Number),
+        fieldErrorKeys: ['cantidad'],
+      }),
+    );
   });
 
   it('422 sem data.errors no corpo → AxonicoValidationError com fieldErrors vazio (fallback)', async () => {
@@ -648,6 +752,19 @@ describe('AxonicoApiClient — erros tipados', () => {
 
     expect(caught).toBeInstanceOf(AxonicoBusinessError);
     expect((caught as AxonicoBusinessError).status).toBe(status);
+
+    // Teste que morre (item 5): erro de negócio/servidor loga error com status HTTP real e a
+    // mensagem que o Axonico devolveu (`axonicoMessage`) — o "por quê" exigido pelo item 2.
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        msg: expect.stringMatching(/erro do terceiro.*negócio\/servidor/i),
+        method: 'PUT',
+        path: '/api/comprobante',
+        status,
+        durationMs: expect.any(Number),
+        axonicoMessage: 'erro de negócio',
+      }),
+    );
   });
 });
 
@@ -670,18 +787,56 @@ describe('AxonicoApiClient — vocabulário', () => {
 // ── login: falhas ───────────────────────────────────────────────────
 
 describe('AxonicoApiClient — login: falhas', () => {
-  it('login com HTTP não-ok lança erro explícito', async () => {
+  it('login com HTTP não-ok lança erro explícito — e loga error com status+durationMs (item 2 do contrato: onde+por quê)', async () => {
     mockFetch.mockResolvedValueOnce(jsonResponse({}, 500));
 
     const client = makeClient();
     await expect(client.findPatientByDni('30712345')).rejects.toThrow(/login failed — HTTP 500/);
+
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ msg: expect.stringMatching(/login.*HTTP não-2xx/i), status: 500, durationMs: expect.any(Number) }),
+    );
   });
 
-  it('login sem data.accessToken lança erro explícito', async () => {
+  it('login sem data.accessToken lança erro explícito — e loga error com durationMs', async () => {
     mockFetch.mockResolvedValueOnce(jsonResponse({ data: {}, medico: { matricula: '352722' } }));
 
     const client = makeClient();
     await expect(client.findPatientByDni('30712345')).rejects.toThrow(/data\.accessToken/);
+
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ msg: expect.stringMatching(/accessToken ausente/i), durationMs: expect.any(Number) }),
+    );
+  });
+
+  it('login com falha de rede (fetch rejeita, sem resposta HTTP — ex.: timeout/DNS) relança o erro original e loga error com durationMs+errorMessage', async () => {
+    const networkError = new Error('ECONNREFUSED — connect failed');
+    mockFetch.mockRejectedValueOnce(networkError);
+
+    const client = makeClient();
+    await expect(client.findPatientByDni('30712345')).rejects.toBe(networkError);
+
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        msg: expect.stringMatching(/login.*falha de rede/i),
+        durationMs: expect.any(Number),
+        errorMessage: 'ECONNREFUSED — connect failed',
+      }),
+    );
+  });
+
+  it('login OK loga info com durationMs — sucesso também loga (nunca username/password/accessToken/matricula no log)', async () => {
+    mockFetch.mockResolvedValueOnce(loginResponse());
+    mockFetch.mockResolvedValueOnce(pacienteFilterResponse([]));
+
+    const client = makeClient();
+    await client.findPatientByDni('30712345');
+
+    expect(mockLogger.info).toHaveBeenCalledWith(
+      expect.objectContaining({ msg: expect.stringMatching(/login.*OK/i), durationMs: expect.any(Number) }),
+    );
+    const loginLogCall = mockLogger.info.mock.calls.find(([arg]) => /login.*OK/i.test(String(arg.msg)));
+    expect(JSON.stringify(loginLogCall)).not.toMatch(/RIATSRL|senha-fake-de-teste|mock-token-abc|352722/);
   });
 });
 

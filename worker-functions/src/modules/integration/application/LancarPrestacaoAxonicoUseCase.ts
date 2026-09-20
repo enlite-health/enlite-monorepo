@@ -239,6 +239,14 @@ export class LancarPrestacaoAxonicoUseCase {
     //    o documento já vem pronto do Ana Care, no corpo da requisição. ──────────────────
     const dniValidation = normalizeAndValidateDocumentNumber(input.documentNumber);
     if (!dniValidation.valid) {
+      // Nunca logar input.documentNumber (PII), nem validado nem lixo — só a razão da recusa.
+      logger.warn({
+        msg: `${TAG} guard 0 — documentNumber ausente ou inválido, recusado`,
+        reason: dniValidation.reason,
+        serviceType,
+        serviceDate: serviceDateStr,
+        hours,
+      });
       throw new PacienteSemDniError(dniValidation.reason === 'ausente' ? 'no_document' : 'invalid_document');
     }
     const documentNumber = dniValidation.normalized;
@@ -248,6 +256,7 @@ export class LancarPrestacaoAxonicoUseCase {
 
     // ── Guard 1 — hora cheia (D366) ──────────────────────────────
     if (!Number.isInteger(hours) || hours <= 0) {
+      logger.warn({ msg: `${TAG} guard 1 — hours não é inteiro positivo, recusado`, hours, serviceType, serviceDate: serviceDateStr });
       throw new HoraQuebradaError(hours);
     }
 
@@ -256,10 +265,7 @@ export class LancarPrestacaoAxonicoUseCase {
     //    dois patientId com o mesmo DNI passavam este guard cada um por si). ──────────────────
     const existingLocal = await this.lancamentoRepository.findExisting(documentNumber, serviceType, serviceDateStr);
     if (existingLocal) {
-      // Nunca logar documentNumber (DNI) — PII clínica. Sem patientId (19/09/2026) — correlaciona
-      // só por serviceType/serviceDate.
-      logger.info({ msg: `${TAG} dedupe local — já enviado`, serviceType, serviceDate: serviceDateStr });
-      await this.lancamentoRepository.insert({
+      const insertedDuplicadoLocal = await this.lancamentoRepository.insert({
         patientId,
         documentNumber,
         serviceType,
@@ -269,6 +275,14 @@ export class LancarPrestacaoAxonicoUseCase {
         codAutorizacion: null,
         status: 'duplicado',
         errorMessage: null,
+      });
+      // Nunca logar documentNumber (DNI) — PII clínica. Sem patientId (19/09/2026) — correlaciona
+      // por serviceType/serviceDate e por insertedId (a linha gravada — id interno, nunca o DNI).
+      logger.info({
+        msg: `${TAG} dedupe local — já enviado`,
+        insertedId: insertedDuplicadoLocal.id,
+        serviceType,
+        serviceDate: serviceDateStr,
       });
       return {
         status: 'duplicado',
@@ -285,18 +299,49 @@ export class LancarPrestacaoAxonicoUseCase {
       cantidadMaxPrestacoes = await this.axonicoApiClient.getCantidadMaxPrestaciones();
     } catch (err) {
       const cause = err instanceof Error ? err.message : String(err);
+      logger.warn({
+        msg: `${TAG} guard 3 — leitura de cantidad_max_prestaciones falhou, lançamento recusado (D371)`,
+        cause,
+        hours,
+        serviceType,
+        serviceDate: serviceDateStr,
+      });
       throw new AxonicoTetoIndisponivelError(hours, cause);
     }
     if (cantidadMaxPrestacoes === null) {
+      logger.warn({
+        msg: `${TAG} guard 3 — cantidad_max_prestaciones ausente na resposta, lançamento recusado (D371)`,
+        hours,
+        serviceType,
+        serviceDate: serviceDateStr,
+      });
       throw new AxonicoTetoIndisponivelError(hours, 'cantidad_max_prestaciones ausente na resposta');
     }
     if (hours > cantidadMaxPrestacoes) {
+      logger.warn({
+        msg: `${TAG} guard 3 — hours excede cantidad_max_prestaciones, lançamento recusado`,
+        hours,
+        cantidadMaxPrestacoes,
+        serviceType,
+        serviceDate: serviceDateStr,
+      });
       throw new AxonicoTetoExcedidoError(hours, cantidadMaxPrestacoes);
     }
 
     // ── Guard 4a — mapeamento de tipo (lança ANTES de tocar rede; CAREGIVER e outros fora do
     //    mapa nunca chegam a `findPatientByDni`) ──────────────────
-    const serviceCodes = resolveServiceMapping(serviceType);
+    let serviceCodes: ReturnType<typeof resolveServiceMapping>;
+    try {
+      serviceCodes = resolveServiceMapping(serviceType);
+    } catch (err) {
+      logger.warn({
+        msg: `${TAG} guard 4a — tipo de serviço sem mapeamento no Axonico, lançamento recusado (D372)`,
+        serviceType,
+        serviceDate: serviceDateStr,
+        hours,
+      });
+      throw err;
+    }
 
     // ── 4a (continuação) — dedupe remoto: findPatientByDni + checkExistingComprobante ──
     let patientMatch: Awaited<ReturnType<IAxonicoApiClient['findPatientByDni']>>;
@@ -318,9 +363,6 @@ export class LancarPrestacaoAxonicoUseCase {
     }
 
     if (hasExistingRemote) {
-      // Nunca logar documentNumber (DNI) — PII clínica. Sem patientId (19/09/2026) — correlaciona
-      // só por serviceType/serviceDate.
-      logger.info({ msg: `${TAG} dedupe remoto — comprobante já existe no Axonico`, serviceType, serviceDate: serviceDateStr });
       const insertedDuplicado = await this.lancamentoRepository.insert({
         patientId,
         documentNumber,
@@ -331,6 +373,14 @@ export class LancarPrestacaoAxonicoUseCase {
         codAutorizacion: null,
         status: 'duplicado',
         errorMessage: null,
+      });
+      // Nunca logar documentNumber (DNI) — PII clínica. Sem patientId (19/09/2026) — correlaciona
+      // por serviceType/serviceDate e por insertedId (a linha gravada — id interno, nunca o DNI).
+      logger.info({
+        msg: `${TAG} dedupe remoto — comprobante já existe no Axonico`,
+        insertedId: insertedDuplicado.id,
+        serviceType,
+        serviceDate: serviceDateStr,
       });
       return {
         status: 'duplicado',
@@ -356,8 +406,9 @@ export class LancarPrestacaoAxonicoUseCase {
       throw err;
     }
 
+    let insertedEnviado: AxonicoLancamentoRecord;
     try {
-      await this.lancamentoRepository.insert({
+      insertedEnviado = await this.lancamentoRepository.insert({
         patientId,
         documentNumber,
         serviceType,
@@ -416,6 +467,19 @@ export class LancarPrestacaoAxonicoUseCase {
       throw err;
     }
 
+    // Sucesso também loga (requisito duro: "sempre saber se o fluxo está correndo bem" não só
+    // quando dá erro). insertedId é a linha gravada — o id interno que permite achar a linha no
+    // banco depois; nunca o DNI. Nível info: caminho feliz.
+    logger.info({
+      msg: `${TAG} sucesso — comprovante lançado no Axonico`,
+      insertedId: insertedEnviado.id,
+      numeroComprobante: submitResult.numeroComprobante,
+      codAutorizacion: submitResult.codAutorizacion,
+      serviceType,
+      serviceDate: serviceDateStr,
+      hours,
+    });
+
     return {
       status: 'enviado',
       numeroComprobante: submitResult.numeroComprobante,
@@ -433,10 +497,7 @@ export class LancarPrestacaoAxonicoUseCase {
     err: unknown,
   ): Promise<void> {
     const errorMessage = err instanceof Error ? err.message : String(err);
-    // Nunca logar documentNumber (DNI) — PII clínica. Não há mais patientId (19/09/2026) — o log
-    // correlaciona só por serviceType/serviceDate.
-    logger.warn({ msg: `${TAG} tentativa falhou — gravando status=erro`, serviceType, serviceDate: serviceDateStr, errorMessage });
-    await this.lancamentoRepository.insert({
+    const inserted = await this.lancamentoRepository.insert({
       patientId: null,
       documentNumber,
       serviceType,
@@ -445,6 +506,15 @@ export class LancarPrestacaoAxonicoUseCase {
       numeroComprobante: null,
       codAutorizacion: null,
       status: 'erro',
+      errorMessage,
+    });
+    // Nunca logar documentNumber (DNI) — PII clínica. Não há mais patientId (19/09/2026) — o log
+    // correlaciona por serviceType/serviceDate e por insertedId (a linha gravada).
+    logger.warn({
+      msg: `${TAG} tentativa falhou — gravando status=erro`,
+      insertedId: inserted.id,
+      serviceType,
+      serviceDate: serviceDateStr,
       errorMessage,
     });
   }
