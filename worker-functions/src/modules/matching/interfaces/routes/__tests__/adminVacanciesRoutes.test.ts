@@ -318,6 +318,12 @@ describe('família admin.vacancies — 46 rotas declaram célula', () => {
       ['put', '/api/admin/encuadres/v1/move', 'funnel.moveEncuadre'],
       ['post', '/api/admin/vacancies/blocked-applications/b1/reject', 'funnel.rejectBlockedApplication'],
       ['post', '/api/admin/vacancies/blocked-applications/b1/restore', 'funnel.undismissBlockedApplication'],
+      // `promoteBlockedController` é construído INTERNAMENTE (mesma dívida de
+      // injeção do AUX, achado #300/merge 19/09) — `b1` não é UUID válido, então
+      // o controller REAL responde 400 sem tocar banco. O que este teste prova é
+      // o DESPACHO (chegou no handler certo, não caiu em `/vacancies/:id`), não
+      // o corpo da resposta — por isso 'AUX', igual às outras rotas não-injetáveis.
+      ['post', '/api/admin/vacancies/blocked-applications/b1/promote', 'AUX'],
       ['get', '/api/admin/vacancies/v1/funnel-table', 'table.getEncuadreFunnelTable'],
       ['get', '/api/admin/dashboard/coordinator-capacity', 'dash.getCoordinatorCapacity'],
       ['get', '/api/admin/dashboard/alerts', 'dash.getAlerts'],
