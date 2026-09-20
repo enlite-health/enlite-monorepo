@@ -71,11 +71,11 @@
  * de `SCREEN_REGISTRY` (`patients.detail`, container `chat`) + `ContainerGate resource="patient_chat"`
  * (`PatientDetailPage.tsx`), e `prescreening:create` no `c('prescreening', 'prescreening', [...])`
  * de `SCREEN_REGISTRY` (`vacancies.detail`) e no `cells: [...]` literal de `vacancies.talentum`.
- * Só `api_docs:read` segue SEM consumidor em nenhuma das duas camadas — PRÉ-EXISTENTE (não
- * introduzida por esta Fase, não faz parte das 12 da Fase 1), e a feature `api_docs` está em
- * remoção (branches `chore/remover-api-docs`; já não existe no catálogo de prd). Fica como
- * ACHADO para decisão humana (remover de `CELL_DESCRIPTION` ou declarar o consumidor que falta),
- * nunca como allow-list — então este teste permanece VERMELHO até essa decisão.
+ * `api_docs:read` seguia SEM consumidor em nenhuma das duas camadas — PRÉ-EXISTENTE (não
+ * introduzida por esta Fase, não fazia parte das 12 da Fase 1), e a feature `api_docs` está em
+ * remoção (branches `chore/remover-api-docs`; já não existe no catálogo de prd). Decisão tomada
+ * (commit `8991d670`, fatos-medidos F-catalogo-sem-orfao 20/09): removida de `CELL_DESCRIPTION` —
+ * a régua fecha VERDE.
  */
 
 /**
