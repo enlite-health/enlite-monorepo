@@ -17,6 +17,7 @@ import {
   selectionSummary,
   shiftHours,
   startOfWeekMonday,
+  todayIsoLocal,
   totalHours,
   validationProgress,
 } from './selectors';
@@ -385,16 +386,61 @@ describe('axonicoDayEligibility', () => {
 });
 
 describe('currentMonthIso', () => {
-  it('POSITIVO — data injetada no meio do mês devolve o YYYY-MM daquele mês, em UTC', () => {
+  it('POSITIVO — data injetada no meio do mês devolve o YYYY-MM daquele mês', () => {
     expect(currentMonthIso(new Date('2026-09-20T12:00:00Z'))).toBe('2026-09');
   });
 
-  it('POSITIVO — data injetada no primeiro dia do mês (meia-noite UTC) ainda cai nesse mês', () => {
-    expect(currentMonthIso(new Date('2026-10-01T00:00:00Z'))).toBe('2026-10');
+  // Meio-dia (não meia-noite) de propósito: instante SEGURO em qualquer fuso — nenhum fuso real
+  // desloca ±12h a ponto de mudar o dia/mês. O caso de fuso que MUDA de dia/mês é o teste de
+  // controle negativo abaixo, com TZ pinado (a antiga versão desta linha usava meia-noite UTC,
+  // que é exatamente o instante que muda de mês num fuso negativo — teste ficava frágil ao fuso
+  // do runner sem ninguém perceber).
+  it('POSITIVO — primeiro dia do mês, instante seguro em qualquer fuso, ainda cai nesse mês', () => {
+    expect(currentMonthIso(new Date('2026-10-01T12:00:00Z'))).toBe('2026-10');
   });
 
   it('POSITIVO — mês de um dígito vem com zero à esquerda', () => {
     expect(currentMonthIso(new Date('2026-01-15T12:00:00Z'))).toBe('2026-01');
+  });
+
+  /**
+   * CONTROLE NEGATIVO (decisão do Gabriel, 20/09): a régua é o relógio do OPERADOR LOGADO (fuso
+   * local do navegador), NUNCA UTC. TZ pinado explicitamente (`America/Argentina/Buenos_Aires`,
+   * UTC-3) porque o runner (CI `ubuntu-latest`) roda em UTC por padrão — sem pinar, este teste
+   * NÃO discriminaria a implementação antiga (local == UTC quando o runner É UTC). O instante
+   * `2026-10-01T02:30:00Z` é `2026-09-30 23:30` em Buenos Aires: pro operador ainda é setembro,
+   * mas em UTC já é outubro — a implementação ANTIGA (`getUTCFullYear`/`getUTCMonth`) devolvia
+   * `'2026-10'` aqui; a fórmula LOCAL tem de devolver `'2026-09'`.
+   */
+  it('NEGATIVO — 30/09 23:30 em Buenos Aires (UTC-3) é 01/10 de madrugada em UTC: o mês tem de ser o de setembro (do operador), não outubro (UTC)', () => {
+    const originalTz = process.env.TZ;
+    process.env.TZ = 'America/Argentina/Buenos_Aires';
+    try {
+      expect(currentMonthIso(new Date('2026-10-01T02:30:00Z'))).toBe('2026-09');
+    } finally {
+      process.env.TZ = originalTz;
+    }
+  });
+});
+
+describe('todayIsoLocal', () => {
+  it('POSITIVO — instante ao meio-dia UTC devolve o mesmo dia em YYYY-MM-DD, com zero à esquerda', () => {
+    expect(todayIsoLocal(new Date('2026-09-05T12:00:00Z'))).toBe('2026-09-05');
+  });
+
+  /**
+   * CONTROLE NEGATIVO — mesma lógica do teste acima de `currentMonthIso` (mesmo instante, mesma
+   * régua: relógio do operador). A implementação ANTIGA usava `toISOString().slice(0, 10)`
+   * (sempre UTC) e devolveria `'2026-10-01'` aqui; a fórmula LOCAL tem de devolver `'2026-09-30'`.
+   */
+  it('NEGATIVO — 30/09 23:30 em Buenos Aires (UTC-3) é 01/10 de madrugada em UTC: o dia tem de ser 2026-09-30 (do operador), não 2026-10-01 (UTC)', () => {
+    const originalTz = process.env.TZ;
+    process.env.TZ = 'America/Argentina/Buenos_Aires';
+    try {
+      expect(todayIsoLocal(new Date('2026-10-01T02:30:00Z'))).toBe('2026-09-30');
+    } finally {
+      process.env.TZ = originalTz;
+    }
   });
 });
 

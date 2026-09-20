@@ -80,9 +80,14 @@ function pad2(n: number): string {
 function daysInMonth(year: number, month1to12: number): number {
   return new Date(Date.UTC(year, month1to12, 0)).getUTCDate();
 }
+/**
+ * Mesma régua de `currentMonthIso` (`selectors.ts`, decisão do Gabriel, 20/09): relógio do
+ * OPERADOR LOGADO (fuso local), `getFullYear`/`getMonth` — NUNCA `getUTC*`. Réplica local, não
+ * import — este arquivo é intencionalmente autocontido (ver nota da massa acima).
+ */
 function currentMonthIsoForE2E(): string {
   const now = new Date();
-  return `${now.getUTCFullYear()}-${pad2(now.getUTCMonth() + 1)}`;
+  return `${now.getFullYear()}-${pad2(now.getMonth() + 1)}`;
 }
 const MONTH = currentMonthIsoForE2E();
 const [MONTH_YEAR, MONTH_NUM] = MONTH.split('-').map(Number);
@@ -129,10 +134,13 @@ function weeksBetweenMondays(fromMondayIso: string, toMondayIso: string): number
   const to = Date.parse(`${toMondayIso}T00:00:00Z`);
   return Math.round((to - from) / (7 * 24 * 60 * 60 * 1000));
 }
+/** Mesma régua de `todayIsoLocal` (`selectors.ts`, decisão do Gabriel, 20/09) — fuso LOCAL, nunca `toISOString()` (UTC). Réplica local, não import (arquivo autocontido). */
+function todayIsoLocalForE2E(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
+}
 const DEFAULT_WEEK_START = startOfWeekMonday(
-  MONTH === new Date().toISOString().slice(0, 10).slice(0, 7)
-    ? new Date().toISOString().slice(0, 10)
-    : `${MONTH}-01`,
+  MONTH === todayIsoLocalForE2E().slice(0, 7) ? todayIsoLocalForE2E() : `${MONTH}-01`,
 );
 
 /**
