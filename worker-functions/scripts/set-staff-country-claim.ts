@@ -26,6 +26,7 @@
 import { Pool } from 'pg';
 import { mergeCustomClaims } from '@modules/identity/infrastructure/mergeCustomClaims';
 import { argValue } from './lib/cliArgs';
+import { maskEmail } from './lib/maskEmail';
 
 const COUNTRIES = ['AR', 'BR'] as const;
 type Country = (typeof COUNTRIES)[number];
@@ -94,19 +95,19 @@ async function main(): Promise<void> {
       } catch {
         // uid de banco sem conta no IdP (import antigo) — não inventar conta.
         missingAccount += 1;
-        console.log(`  [sem conta no IdP] ${row.email ?? row.firebase_uid}`);
+        console.log(`  [sem conta no IdP] ${row.email ? maskEmail(row.email) : row.firebase_uid}`);
         continue;
       }
 
       const current = (user.customClaims ?? {}).country as string | undefined;
       if (current === country) {
         already += 1;
-        if (showAll) console.log(`  [já tem ${current}] ${row.email ?? row.firebase_uid}`);
+        if (showAll) console.log(`  [já tem ${current}] ${row.email ? maskEmail(row.email) : row.firebase_uid}`);
         continue;
       }
 
       const action = current ? `${current} → ${country}` : `— → ${country}`;
-      console.log(`  [${isDryRun ? 'DRY' : 'SET'}] ${row.email ?? row.firebase_uid} (${row.role}): ${action}`);
+      console.log(`  [${isDryRun ? 'DRY' : 'SET'}] ${row.email ? maskEmail(row.email) : row.firebase_uid} (${row.role}): ${action}`);
 
       if (!isDryRun) {
         // Mesmo helper que o backend usa para escrever `role` — preserva os
