@@ -332,7 +332,7 @@ describe('IAM — use cases do painel de grupos (banco real, role app_runtime)',
   });
 
   // ── Grupos fixos da mig 432 (PR-8a, US-19, FR-701/FR-702) ───────────────────
-  describe('grupos fixos: só Acesso Master e Super Admin continuam is_system (mig 432)', () => {
+  describe('grupos fixos: a 432 liberou 3, a 454 liberou o Super Admin — só o Acesso Master continua is_system', () => {
     it('Recrutador, Community Manager e Financeiro NÃO são mais de sistema — a migration 432 tirou a flag', async () => {
       const rows = await admin.query<{ name: string; is_system: boolean }>(
         `SELECT name, is_system FROM iam.permission_groups
@@ -347,7 +347,7 @@ describe('IAM — use cases do painel de grupos (banco real, role app_runtime)',
       ]);
     });
 
-    it('Acesso Master e Super Admin CONTINUAM de sistema (FR-701 — só os 3 nomeados mudaram)', async () => {
+    it('Acesso Master é o ÚNICO de sistema (spec 021 B2b / mig 454, 20/09/2026 — supera o FR-701 quanto ao Super Admin)', async () => {
       const rows = await admin.query<{ name: string; is_system: boolean }>(
         `SELECT name, is_system FROM iam.permission_groups
           WHERE tenant_id = $1 AND name IN ('Acesso Master', 'Super Admin')
@@ -356,7 +356,7 @@ describe('IAM — use cases do painel de grupos (banco real, role app_runtime)',
       );
       expect(rows.rows).toEqual([
         { name: 'Acesso Master', is_system: true },
-        { name: 'Super Admin', is_system: true },
+        { name: 'Super Admin', is_system: false },
       ]);
     });
 
@@ -387,19 +387,37 @@ describe('IAM — use cases do painel de grupos (banco real, role app_runtime)',
       expect(restaurado.rows[0].name).toBe(nomeOriginal);
     });
 
-    it('Super Admin (ainda de sistema) recusa rename E archive — a mesma regra que já valia para Acesso Master', async () => {
+    it('Super Admin (não é mais de sistema, mig 454) ACEITA rename e archive — a regra de recusa continua só para o Acesso Master', async () => {
       const superAdmin = await admin.query<{ id: string }>(
         `SELECT id FROM iam.permission_groups WHERE tenant_id = $1 AND name = 'Super Admin'`,
         [ENLITE_TENANT_ID],
       );
       const id = superAdmin.rows[0].id;
-      await expect(
-        asStaff(U.gestor, () => permissions.groups.update.execute({ tenantId: ENLITE_TENANT_ID, groupId: id, name: 'Outro nome' })),
-      ).rejects.toMatchObject({ code: 'system_group' });
-      await expect(
-        asStaff(U.gestor, () => permissions.groups.archive.execute({ tenantId: ENLITE_TENANT_ID, groupId: id })),
-      ).rejects.toMatchObject({ code: 'system_group' });
-      // e nada mudou: nem nome, nem arquivamento
+      // `try/finally`: Super Admin é o grupo REAL do seed, compartilhado com
+      // outros PRs no mesmo banco (mesmo padrão do Recrutador acima) — o `finally`
+      // restaura nome e desarquiva por UPDATE direto, senão o `it` que busca o
+      // Super Admin pelo nome mais abaixo neste arquivo deixa de achar o grupo.
+      try {
+        await asStaff(U.gestor, () =>
+          permissions.groups.update.execute({ tenantId: ENLITE_TENANT_ID, groupId: id, name: 'Outro nome' }),
+        );
+        const renomeado = await admin.query(`SELECT name FROM iam.permission_groups WHERE id = $1`, [id]);
+        expect(renomeado.rows[0].name).toBe('Outro nome');
+
+        await asStaff(U.gestor, () =>
+          permissions.groups.archive.execute({ tenantId: ENLITE_TENANT_ID, groupId: id }),
+        );
+        const arquivado = await admin.query(`SELECT archived_at FROM iam.permission_groups WHERE id = $1`, [id]);
+        expect(arquivado.rows[0].archived_at).not.toBeNull();
+      } finally {
+        // restaura — sabotagem/estado de teste, nunca `git checkout`: aqui é
+        // UPDATE de volta (mesmo padrão da prova por sabotagem da migration 432).
+        await admin.query(
+          `UPDATE iam.permission_groups SET name = 'Super Admin', archived_at = NULL, archived_by = NULL WHERE id = $1`,
+          [id],
+        );
+      }
+      // e o grupo real do seed volta ao estado de sempre
       const depois = await admin.query(`SELECT name, archived_at FROM iam.permission_groups WHERE id = $1`, [id]);
       expect(depois.rows[0]).toEqual({ name: 'Super Admin', archived_at: null });
     });
