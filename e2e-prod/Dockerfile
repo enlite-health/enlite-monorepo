@@ -32,9 +32,14 @@ COPY . .
 ENV CI=true \
     ENFORCE_COVERAGE=smoke
 
-# Job diário: RODA TODOS OS PROJETOS (sem filtro --project). Sem filtro = smoke + admin +
-# regression (jornadas reais) + coverage-gate, e um teste novo em QUALQUER projeto roda
-# sozinho no schedule (e entra no email pelo reporter, que lista toda a run). Um projeto
-# NOVO só precisa ser registrado no playwright.config.ts — o guard `monitor-completeness`
-# falha o build se este CMD voltar a filtrar projetos. Exit != 0 → o Job falha → alerta.
+# Este CMD roda SEM filtro --project DE PROPÓSITO — não é "o job diário roda tudo". O guard
+# `monitor-completeness.spec.ts` exige exatamente isto (CMD sem --project) e é o que o disparo
+# MANUAL do Job usa (`gcloud run jobs execute` sem overrides). Mas quem decide o que roda TODO
+# DIA não é mais este CMD: o Cloud Scheduler `e2e-prod-smoke-daily` sobrescreve os `args` via
+# `overrides.containerOverrides[]` (RunJobRequest) pra rodar só smoke+admin+coverage-gate+unit
+# (read-only); `regression` (writes reais) tem agendamento PRÓPRIO, semanal, no Scheduler
+# `e2e-prod-regression-weekly` (domingo 4h AR) — ver `scripts/deploy-monitor.sh`. Projeto NOVO
+# precisa ser registrado no playwright.config.ts E incluído em UM dos dois blocos de `args` de
+# `scripts/deploy-monitor.sh` — senão ele roda só no disparo manual (`--project` deste CMD) e
+# fica ÓRFÃO de qualquer schedule automático. Exit != 0 do CMD → o Job falha → alerta.
 CMD ["npx", "playwright", "test"]

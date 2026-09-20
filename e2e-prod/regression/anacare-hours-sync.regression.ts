@@ -34,6 +34,20 @@
  * íntegro (a alternativa, interromper, é o bug que este teste existe pra provar que não acontece
  * mais).
  *
+ * ── Caminho de FALHA — o que fazer se este teste estourar o timeout ────────────────────────
+ * O parágrafo acima cobre o caminho feliz. Mas se a corrida terminar em ERRO (`anacare-hours-
+ * sync-error` aparecer) ou vier `deduped` (`anacare-hours-sync-deduped`, corrida concorrente
+ * detectada), o indicador `anacare-hours-sync-done` NUNCA aparece — este teste estoura
+ * `LOOP_TIMEOUT_MS` e falha por timeout, não por asserção. Nesse caso o MÊS FICA PELA METADE:
+ * exatamente o incidente que este teste existe pra pegar, só que acontecendo dentro do próprio
+ * monitor, sem teardown que resolva (não há "desfazer" um sync parcial — só terminá-lo). Quem
+ * for triar essa falha (ex.: domingo 4h AR, sem ninguém olhando) precisa RETOMAR o sync até o
+ * fim — pela tela (`/admin/anacare/horas`, botão "Sincronizar" de novo: o cursor de retomada
+ * garante que ele CONTINUA, não recomeça do zero) ou pela API (`POST /api/admin/anacare-hours/
+ * sync` com o `month` e o `cursor` da última rodada observada nos logs) — antes de considerar o
+ * alarme resolvido. Reportar a falha e seguir em frente SEM retomar deixa o retrato real
+ * incompleto em produção.
+ *
  * REGRAS DA SUÍTE (e2e-prod/CLAUDE.md): zero `page.route()`/mock; web-first assertions; NUNCA
  * `waitForTimeout` cru; `page.waitForRequest` é OBSERVAÇÃO (não interceptação), permitida nos
  * projetos read-real. Texto clínico/PII de paciente NUNCA é lido nem impresso — as asserções
