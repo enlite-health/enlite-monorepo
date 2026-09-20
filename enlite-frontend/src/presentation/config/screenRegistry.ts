@@ -93,7 +93,11 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
       c('clinical', 'patient_clinical', ['read', 'create', 'update'], 'clinicalData'),
       c('careTeam', 'patient_care_team', ['read', 'create', 'update'], 'clinicalData'),
       // Spec 017: o projeto terapêutico deixa de ser placeholder — container próprio, na aba clínica.
-      c('therapeuticProject', 'patient_therapeutic_project', ['read', 'create', 'update'], 'clinicalData'),
+      // `export` entra: o botão de exportar (`TherapeuticProjectDrawer.tsx:188`,
+      // `<ActionButton resource="patient_therapeutic_project" action="export">`) passa por
+      // `useActionGate` (`ActionButton.tsx:58`) — célula com consumidor e gate reais, só faltava
+      // ser declarada.
+      c('therapeuticProject', 'patient_therapeutic_project', ['read', 'create', 'update', 'export'], 'clinicalData'),
       c('family', 'patient_family', ['read', 'create', 'update'], 'supportNetwork'),
       c('chat', 'patient_chat', ['read', 'create', 'update'], 'supportNetwork'),
       c('coverage', 'patient_coverage', ['read', 'create', 'update'], 'contractedService'),
@@ -194,7 +198,22 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
   // continua cumulativo às células já existentes (`patient_identity:read`/`worker_contact:read`),
   // não repetido aqui — são dados de OUTRO titular, não desta tela.
   { id: 'anacareHours.list', route: '/admin/anacare/horas', cells: ['anacare_hours:read'] },
-  { id: 'anacareHours.detail', route: '/admin/anacare/horas/:patientId', cells: ['anacare_hours:read', 'anacare_hours:validate'] },
+  {
+    id: 'anacareHours.detail',
+    route: '/admin/anacare/horas/:patientId',
+    cells: ['anacare_hours:read', 'anacare_hours:validate'],
+    containers: [
+      // Lançar comprobante no Axonico (`AxonicoComprobanteHttpService.enviarComprobante` →
+      // POST /api/admin/integrations/axonico/comprobante, `adminIntegrationsRoutes.ts:84`) e
+      // registrar o documento do paciente no Ana Care (`AnaCarePatientDocumentHttpService.
+      // registerDocument` → POST /api/admin/integrations/anacare/patient-document, célula
+      // `patient_identity:create`, já coberta noutro container) — os dois instanciados em
+      // `AnaCareHoursPatientPage.tsx:21,23`. Só `execute` entra: é a única ação de `integration`
+      // que o front consome (backfill e o lote do Axonico, mesma célula, não têm consumidor —
+      // `interview:*` ao lado segue o mesmo motivo e por isso não ganhou container).
+      c('integration', 'integration', ['execute']),
+    ],
+  },
 
   // ── Administração ──────────────────────────────────────────────────────────────────────────
   { id: 'dedup', route: '/admin/dedup', cells: ['dedup:read', 'dedup:execute'] },
