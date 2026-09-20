@@ -217,9 +217,9 @@ const SHIFT_DUPLICADO = `FAKE-${MONTH}-${TARGET_DUPLICADO.p}-${TARGET_DUPLICADO.
 const SHIFT_DNI = `FAKE-${MONTH}-${TARGET_DNI.p}-${TARGET_DNI.pr}-${TARGET_DNI.s}`;
 const SHIFT_IDS_TOCADOS = [SHIFT_FELIZ, SHIFT_DUPLICADO, SHIFT_DNI];
 
-// ── Navegador de semana COM ESTADO — mesmo padrão do arquivo-modelo (`criarNavegadorDeSemana`),
-// mas o `DEFAULT_WEEK_START` é calculado POR PACIENTE (a tela abre na semana do turno MAIS
-// ANTIGO daquele paciente especificamente, entre os 10 dele).
+// ── Navegador de semana COM ESTADO — mesmo padrão do arquivo-modelo (`criarNavegadorDeSemana`).
+// `defaultWeekStart()` abaixo usa a MESMA fórmula genérica do app — não é por paciente nem pelo
+// turno mais antigo de ninguém (ver comentário da função).
 function startOfWeekMonday(dateIso: string): string {
   const [y, m, d] = dateIso.split('-').map(Number);
   const date = new Date(Date.UTC(y, m - 1, d));
