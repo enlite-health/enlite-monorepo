@@ -4683,6 +4683,15 @@
         "messaging.presentationInvite": {
           "label": "Invitación a presentación"
         },
+        "anacareHours.list": {
+          "label": "Horas Ana Care: Lista"
+        },
+        "anacareHours.detail": {
+          "label": "Horas Ana Care: Detalles",
+          "containers": {
+            "integration": "Integraciones: Ana Care y Axónico"
+          }
+        },
         "dedup": {
           "label": "Duplicados"
         },
