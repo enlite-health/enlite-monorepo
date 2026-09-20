@@ -108,10 +108,15 @@ const DATE_VALIDAR_INDIVIDUAL = shiftDateForIndexS(2);
 const DATE_LOTE_A = shiftDateForIndexS(3);
 const DATE_LOTE_B = shiftDateForIndexS(4);
 
-// ── Eixo por DIA (16/09) — o detalhe abre na semana do turno MAIS ANTIGO do paciente e navega
-// semana a semana; os testes precisam saber QUANTAS vezes clicar em "Semana siguiente" pra
-// alcançar a semana de cada turno. Cálculo replica `startOfWeekMonday`/`groupShiftsByDayInWeek`
-// (`selectors.ts`) — nunca um número cravado, senão quebra quando o mês/ano mudar.
+// ── Eixo por DIA (16/09, revisto 20/09) — `DEFAULT_WEEK_START` ESPELHA a fórmula de
+// `AnaCareHoursDetailPage.tsx:110-111`: se o mês exibido (`MONTH`) contém HOJE, abre na semana de
+// hoje; senão, na semana do dia 1º do mês. A premissa antiga (semana do turno MAIS ANTIGO do
+// paciente) só batia com o app por acidente: enquanto o mês padrão era o ANTERIOR, só o segundo
+// ramo do app era alcançável e os dois valores coincidiam. Esta branch trocou o padrão pro mês
+// CORRENTE — os ramos divergem (medido: 2 semanas) — por isso o cálculo aqui tem de replicar o
+// app, não o turno mais antigo. Cálculo de navegação replica `startOfWeekMonday`/
+// `groupShiftsByDayInWeek` (`selectors.ts`) — nunca um número cravado, senão quebra quando o
+// mês/ano mudar.
 function startOfWeekMonday(dateIso: string): string {
   const [y, m, d] = dateIso.split('-').map(Number);
   const date = new Date(Date.UTC(y, m - 1, d));
@@ -124,15 +129,11 @@ function weeksBetweenMondays(fromMondayIso: string, toMondayIso: string): number
   const to = Date.parse(`${toMondayIso}T00:00:00Z`);
   return Math.round((to - from) / (7 * 24 * 60 * 60 * 1000));
 }
-// Paciente AC-PAT-6 tem 10 turnos (2 prestadores × 5) — pr=1 embute os índices 65..69, mas só
-// os de pr=0 (60..64, acima) têm const própria; a semana padrão é a do turno mais antigo entre OS
-// 10, então soma os 5 de pr=1 aqui só pra achar o mínimo (não usados em nenhuma asserção).
-function shiftDateForIndex(shiftIndex: number): string {
-  const day = (shiftIndex % DIM) + 1;
-  return `${MONTH}-${pad2(day)}`;
-}
-const TODAS_AS_DATAS_DO_PACIENTE = [60, 61, 62, 63, 64, 65, 66, 67, 68, 69].map(shiftDateForIndex);
-const DEFAULT_WEEK_START = startOfWeekMonday(TODAS_AS_DATAS_DO_PACIENTE.slice().sort()[0]);
+const DEFAULT_WEEK_START = startOfWeekMonday(
+  MONTH === new Date().toISOString().slice(0, 10).slice(0, 7)
+    ? new Date().toISOString().slice(0, 10)
+    : `${MONTH}-01`,
+);
 
 /**
  * Navegador de semana COM ESTADO — a página só sabe "próxima"/"anterior" (relativo ao que está
