@@ -89,12 +89,32 @@ jobs:
           # worker-functions; 4 + 1 no MCP). Com overwrite, o 1º deploy os APAGARIA. Antes
           # de ligar overwrite em prd: reconciliar YAML × `gcloud run services describe`
           # (e migrar os plaintext p/ secrets) em PR próprio. Listas de env: usar ';'.
+          # ── Promoção stage→main (openspec/changes/promocao-stage-para-main, Fase B):
+          # camada ABAC entra DECLARADA e DESLIGADA — `PERMISSION_ENGINE_ENABLED=false` +
+          # `COUNTRY_RLS_ENABLED=false` fazem `assertDbRoleMembership`/`rlsAwarePool` ficarem
+          # inertes por construção (custo ZERO: nem query nem conexão no pool de sistema —
+          # ver `assertDbRoleMembership.ts`). `DB_USER` continua `enlite_app`: só vira
+          # `enlite_runtime` na Fase E. `DB_POOL_MAX`/`DB_SYSTEM_POOL_MAX` são valor
+          # PROVISÓRIO (max_connections=100 medido em prd 20/09, `SHOW max_connections`) —
+          # não copiar o 3/1 do stg (db-f1-micro, não comparável) nem dar como definitivo:
+          # o MCP roda hoje SEM estas duas envs (default de código 20+5) e sozinho, em
+          # max-instances=5, já se aproxima do teto — a conta completa (wf + MCP) é
+          # passo 0 da Fase E, não desta fase.
           env_vars: |
             NODE_ENV=production
             GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}
             DB_HOST=/cloudsql/${{ secrets.GCP_PROJECT_ID }}:southamerica-west1:enlite-ar-db
             DB_NAME=enlite_ar
             DB_USER=enlite_app
+            DB_SYSTEM_USER=enlite_system
+            DB_MIGRATION_USER=enlite_app
+            PERMISSION_ENGINE_ENABLED=false
+            PERMISSION_CATALOG_SYNC_ENABLED=false
+            COUNTRY_RLS_ENABLED=false
+            USE_KMS_ENCRYPTION=false
+            PERMISSION_ENFORCED_ROUTES=admin.analytics;admin.dedup;admin.encuadre;admin.integrations;admin.messaging;admin.patients;admin.permissions;admin.recruitment;admin.test_fixtures;admin.users;admin.vacancies;admin.workers
+            DB_POOL_MAX=5
+            DB_SYSTEM_POOL_MAX=2
             TWILIO_ACCOUNT_SID=${{ secrets.TWILIO_ACCOUNT_SID }}
             TWILIO_WHATSAPP_NUMBER=${{ secrets.TWILIO_WHATSAPP_NUMBER }}
             TWILIO_STATUS_CALLBACK_URL=https://api.enlite.health/api/webhooks/twilio/status
@@ -127,9 +147,17 @@ jobs:
             TWILIO_TEMPLATE_ADMISSION_REMINDER_PT=HX48369d7544b03ed3759a3306b3432d35
             WABA_ID=4410859772526279
             ANACARE_HOURS_SOURCE=fake
-            ANACARE_HOURS_ALLOWED_EMAILS=marcel@enlite.health;gabriel.g.stein@gmail.com;sonez.elizabeth@enlite.health
+            CHATWOOT_ACCOUNT_ID=1
+            CHATWOOT_MIRROR_ENABLED=true
+            CHATWOOT_TWILIO_INBOX_ID=1
+            CHATWOOT_URL=https://chatwoot-production-0e81.up.railway.app
+            PERISKOPE_PHONE=5491176360496
+            PERISKOPE_WEBHOOK_ENABLED=true
+            TEMPLATE_SUBMISSION_ENABLED=true
           secrets: |
             DB_PASSWORD=enlite-ar-db-password:latest
+            DB_SYSTEM_PASSWORD=enlite-system-db-password:latest
+            DB_MIGRATION_PASSWORD=enlite-ar-db-password:latest
             GROQ_API_KEY=groq-api-key:latest
             TWILIO_AUTH_TOKEN=twilio-auth-token:latest
             INTERNAL_TOKEN_SECRET=internal-token-secret:latest
@@ -137,6 +165,12 @@ jobs:
             ACCOUNT_LINK_TOKEN_SECRET=account-link-token-secret:latest
             WABA_TOKEN=waba-token:latest
             GOOGLE_DIRECTIONS_API_KEY=google-directions-api-key:latest
+            CLICKUP_API_TOKEN=clickup-api-token:latest
+            PERISKOPE_API_KEY=periskope-api-key:latest
+            PERISKOPE_WEBHOOK_SECRET=periskope-webhook-secret:latest
+            SHORT_IO_API_KEY=short-io-api-key:latest
+            SHORT_IO_DOMAIN=short-io-domain:latest
+            TWILIO_VERIFY_SERVICE_SID=twilio-verify-service-sid:latest
           flags: >-
             --allow-unauthenticated
             --service-account=enlite-functions-sa@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com
