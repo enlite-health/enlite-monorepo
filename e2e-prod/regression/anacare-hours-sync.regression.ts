@@ -11,12 +11,20 @@
  * lido do DOM do seletor, no mesmo instante do clique.
  *
  * ── Decisão do Gabriel (20/09) que rege o desenho ───────────────────────────────────────────
- * O teste deixa o LAÇO INTEIRO terminar (nunca interrompe no meio) e roda SEMANALMENTE, não
- * diariamente (ver `e2e-prod/scripts/deploy-monitor.sh`, agendamento `e2e-prod-regression-weekly`).
- * Motivo: a gravação de cada rodada SUBSTITUI o retrato do mês por uma corrida NOVA de dados; um
- * teste que clica "Sincronizar" e vai embora no meio deixa o mês PELA METADE — foi exatamente
- * assim que agosto ficou travado em 40% por semanas em produção (histórico do brief, `useAnaCare-
- * HoursSync.ts`). Interromper o laço no meio É o incidente automatizado que este teste evita.
+ * O teste deixa o LAÇO INTEIRO terminar (nunca interrompe no meio). Motivo: a gravação de cada
+ * rodada SUBSTITUI o retrato do mês por uma corrida NOVA de dados; um teste que clica
+ * "Sincronizar" e vai embora no meio deixa o mês PELA METADE — foi exatamente assim que agosto
+ * ficou travado em 40% por semanas em produção (histórico do brief, `useAnaCareHoursSync.ts`).
+ * Interromper o laço no meio É o incidente automatizado que este teste evita.
+ *
+ * ── Consequência aceita: rodar DIARIAMENTE faz deste teste a rotina de sync automática ──────
+ * Este spec roda no MESMO agendamento diário (3h AR) de toda a suíte — não há Scheduler separado
+ * e semanal só para `regression`. O Gabriel decidiu (20/09) não dividir: "o teste é diário então
+ * vamos sincronizar 3h da manhã sempre. isso pode ser bom ou ruim." Na prática, isso faz deste
+ * teste, de fato, a ROTINA DE SINCRONIZAÇÃO AUTOMÁTICA do mês corrente do Ana Care — não só uma
+ * verificação. A decisão de 20/09 registrada como D388 havia adiado o sync automático; rodar
+ * este monitor todo dia o reintroduz por via indireta. Quem desabilitar, renomear ou alterar
+ * este teste está mexendo na sincronização de dados da operação, não só numa checagem.
  *
  * ── O que este teste ALTERA em produção ─────────────────────────────────────────────────────
  * Ele reescreve o RETRATO (`anacare_patient_month` e as tabelas de turno que o backend deriva
@@ -41,7 +49,7 @@
  * `LOOP_TIMEOUT_MS` e falha por timeout, não por asserção. Nesse caso o MÊS FICA PELA METADE:
  * exatamente o incidente que este teste existe pra pegar, só que acontecendo dentro do próprio
  * monitor, sem teardown que resolva (não há "desfazer" um sync parcial — só terminá-lo). Quem
- * for triar essa falha (ex.: domingo 4h AR, sem ninguém olhando) precisa RETOMAR o sync até o
+ * for triar essa falha (ex.: 3h AR, sem ninguém olhando) precisa RETOMAR o sync até o
  * fim — pela tela (`/admin/anacare/horas`, botão "Sincronizar" de novo: o cursor de retomada
  * garante que ele CONTINUA, não recomeça do zero) ou pela API (`POST /api/admin/anacare-hours/
  * sync` com o `month` e o `cursor` da última rodada observada nos logs) — antes de considerar o
