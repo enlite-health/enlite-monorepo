@@ -418,10 +418,13 @@ test.describe('Envio ao Axonico — E2E real @integration', () => {
           VALUES ('${TENANT}', '${GRUPO}', 'e2e axonico-envio — nao mexer manual') RETURNING id`);
     // anacare_hours: read/validate (mesma célula da tela) + patient_identity:read (o gate que
     // decide se `patientDocumentNumber` sai no payload — sem ela `axonicoDayEligibility` acusaria
-    // `missingDocument` SEMPRE, mesmo com o documento pré-semeado no banco).
+    // `missingDocument` SEMPRE, mesmo com o documento pré-semeado no banco) + integration:execute
+    // (célula do botão de envio ao Axonico — com PERMISSION_ENGINE_ENABLED=true e o gate novo em
+    // modo 'hide', sem ela o ActionButton some e o Playwright falha com "element(s) not found").
     psql(`INSERT INTO iam.group_permissions (group_id, permission_id)
           SELECT '${grupoId}', id FROM iam.permissions WHERE (resource='anacare_hours' AND action IN ('read','validate'))
-             OR (resource='patient_identity' AND action IN ('read','create'))`);
+             OR (resource='patient_identity' AND action IN ('read','create'))
+             OR (resource='integration' AND action='execute')`);
     psql(`INSERT INTO iam.group_country_scopes (group_id, country, granted_by, reason) VALUES ('${grupoId}', 'AR', '${STAFF_UID}', 'e2e setup')`);
     psql(`INSERT INTO iam.user_groups (user_id, group_id, tenant_id) VALUES ('${STAFF_UID}', '${grupoId}', '${TENANT}')`);
 
