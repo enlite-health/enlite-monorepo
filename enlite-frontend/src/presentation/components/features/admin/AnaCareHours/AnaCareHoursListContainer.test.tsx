@@ -107,10 +107,12 @@ describe('AnaCareHoursListContainer', () => {
   // Decisão do Gabriel, 20/09/2026: o mês padrão da tela virou o mês CORRENTE (antes era o mês
   // ANTERIOR). Este teste MORRE se alguém reintroduzir `previousMonthIso`/mês fixo como default —
   // o esperado é calculado em runtime (nunca `'2026-09'` cravado), senão o teste apodrece sozinho
-  // assim que rodar num mês diferente.
+  // assim que rodar num mês diferente. Régua tem de ser a MESMA do código sob teste: relógio LOCAL
+  // (`getFullYear`/`getMonth`, como `currentMonthIso` em `selectors.ts`), NUNCA `getUTC*` — com
+  // UTC o teste passa sempre num runner UTC (CI) e falha em UTC-3 na virada do mês.
   it('POSITIVO — sem initialMonth, pede ao service o mês CORRENTE (calculado em runtime)', async () => {
     const now = new Date();
-    const expectedMonth = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+    const expectedMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     const service: AnaCareHoursService = {
       getMonthSnapshot: vi.fn().mockResolvedValue({
         month: expectedMonth,
