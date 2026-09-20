@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '@presentation/components/atoms/Button';
 import { Text } from '@presentation/components/atoms/Text';
 import type { AnaCareHoursSyncStatus } from '@hooks/admin/useAnaCareHoursSync';
+import { formatMonthLabel } from './selectors';
 
 interface AnaCareHoursSyncButtonProps {
   status: AnaCareHoursSyncStatus;
@@ -13,6 +14,8 @@ interface AnaCareHoursSyncButtonProps {
   reservationsProcessed: number;
   error: string | null;
   resumableCursor: number | null;
+  /** Mês de uma corrida cancelada por troca de mês com rodada em voo (ver `useAnaCareHoursSync`) — linha própria, nunca silêncio. */
+  interruptedMonth?: string | null;
   onStart: () => void;
 }
 
@@ -22,9 +25,10 @@ export function AnaCareHoursSyncButton({
   reservationsProcessed,
   error,
   resumableCursor,
+  interruptedMonth = null,
   onStart,
 }: AnaCareHoursSyncButtonProps): JSX.Element {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const isRunning = status === 'running';
   const label = resumableCursor !== null && !isRunning ? t('admin.anacareHours.sync.resumeButton') : t('admin.anacareHours.sync.button');
 
@@ -56,6 +60,11 @@ export function AnaCareHoursSyncButton({
       {status === 'deduped' && (
         <Text as="span" size="xs" color="muted" data-testid="anacare-hours-sync-deduped">
           {t('admin.anacareHours.sync.deduped')}
+        </Text>
+      )}
+      {interruptedMonth && (
+        <Text as="span" size="xs" color="muted" data-testid="anacare-hours-sync-interrupted">
+          {t('admin.anacareHours.sync.interrupted', { month: formatMonthLabel(interruptedMonth, i18n.language) })}
         </Text>
       )}
     </div>

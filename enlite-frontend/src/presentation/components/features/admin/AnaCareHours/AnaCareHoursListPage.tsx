@@ -27,6 +27,20 @@ interface AnaCareHoursListPageProps {
   snapshot: AnaCareMonthSnapshot;
   onOpenPatient: (patientId: string) => void;
   onMonthChange?: (month: string) => void;
+  /**
+   * Mês que o seletor EXIBE — fonte da verdade é o container (`month` do `useState`, o MESMO que
+   * alimenta `useAnaCareHoursSync`), nunca `snapshot.month`: enquanto o fetch do mês novo está em
+   * voo, `snapshot` ainda é do mês ANTERIOR, e exibir `snapshot.month` no seletor é o que fazia o
+   * seletor mentir sobre qual mês o botão "Sincronizar" ia enviar. Sem esta prop (uso isolado,
+   * ex.: testes/harness), cai para `snapshot.month` — comportamento antigo preservado.
+   */
+  selectedMonth?: string;
+  /**
+   * `true` quando `snapshot` ainda é de um mês DIFERENTE do `selectedMonth` (fetch do mês novo em
+   * voo) — a tabela não mostra as linhas do mês antigo sob o rótulo do mês novo (mentira visual);
+   * mostra um estado de carregamento no lugar até o snapshot do mês selecionado chegar.
+   */
+  isLoadingSelectedMonth?: boolean;
   initialProviderFilterId?: string;
   initialSearch?: string;
   /** Decisão AINDA ABERTA do harness (task 6) — nunca hardcoded aqui. */
@@ -39,6 +53,8 @@ export function AnaCareHoursListPage({
   snapshot,
   onOpenPatient,
   onMonthChange,
+  selectedMonth,
+  isLoadingSelectedMonth = false,
   initialProviderFilterId = '',
   initialSearch = '',
   sinCheckinHoursMode = 'zero',
@@ -47,6 +63,7 @@ export function AnaCareHoursListPage({
   const { t, i18n } = useTranslation();
   const [search, setSearch] = useState(initialSearch);
   const [providerFilterId, setProviderFilterId] = useState(initialProviderFilterId);
+  const displayedMonth = selectedMonth ?? snapshot.month;
   const monthOptions = useMemo(
     () => monthOptionsUntilNow().map((value) => ({ value, label: formatMonthLabel(value, i18n.language) })),
     [i18n.language],
@@ -95,7 +112,7 @@ export function AnaCareHoursListPage({
               <Select
                 inputSize="compact"
                 options={monthOptions}
-                value={snapshot.month}
+                value={displayedMonth}
                 onValueChange={(v) => onMonthChange?.(v)}
                 aria-label={t('admin.anacareHours.monthAriaLabel')}
               />
@@ -107,6 +124,7 @@ export function AnaCareHoursListPage({
                 reservationsProcessed={sync.reservationsProcessed}
                 error={sync.error}
                 resumableCursor={sync.resumableCursor}
+                interruptedMonth={sync.interruptedMonth}
                 onStart={sync.start}
               />
             )}
@@ -174,7 +192,18 @@ export function AnaCareHoursListPage({
             </TableHead>
           </TableHeader>
           <TableBody>
-            {filteredPatients.length === 0 ? (
+            {isLoadingSelectedMonth ? (
+              // `snapshot` ainda é do mês ANTERIOR (fetch do `displayedMonth` em voo) — mostrar
+              // essas linhas aqui seria dado de agosto sob rótulo de setembro. Zera em vez de
+              // mentir (ver comentário de `selectedMonth`/`isLoadingSelectedMonth` acima).
+              <TableRow clickable={false} data-testid="anacare-hours-list-loading-month">
+                <TableCell unwrapped colSpan={6}>
+                  <div className="py-10 text-center">
+                    <Text color="muted">{t('admin.anacareHours.list.loading')}</Text>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : filteredPatients.length === 0 ? (
               <TableRow clickable={false}>
                 <TableCell unwrapped colSpan={6}>
                   <div className="py-10 text-center">

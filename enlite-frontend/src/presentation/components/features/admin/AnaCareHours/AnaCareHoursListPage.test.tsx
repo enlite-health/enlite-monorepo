@@ -262,6 +262,7 @@ describe('AnaCareHoursListPage', () => {
       reservationsProcessed: 74,
       error: null,
       resumableCursor: 50,
+      interruptedMonth: null,
       start: vi.fn(),
     };
     render(<AnaCareHoursListPage snapshot={snapshot()} onOpenPatient={vi.fn()} sync={sync} />);

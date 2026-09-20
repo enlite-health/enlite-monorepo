@@ -1,8 +1,9 @@
-import { describe, it, expect, vi } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import { AnaCareHoursListContainer } from './AnaCareHoursListContainer';
 import { AnaCareHoursServiceError, FakeAnaCareHoursService } from './AnaCareHoursService';
 import type { AnaCareHoursService } from './AnaCareHoursService';
+import type { AnaCareMonthSnapshot, TriggerSyncResult } from './types';
 
 // `i18n.language` (não só `t`): `AnaCareHoursListPage` (renderizada por baixo) usa `i18n.language`
 // pra formatar o rótulo do mês (`formatMonthLabel`) desde a troca do seletor de mês fixo pra
@@ -130,5 +131,128 @@ describe('AnaCareHoursListContainer', () => {
     };
     render(<AnaCareHoursListContainer service={service} onOpenPatient={vi.fn()} />);
     await waitFor(() => expect(service.getMonthSnapshot).toHaveBeenCalledWith(expectedMonth, undefined));
+  });
+});
+
+// Composição container + page + hooks — a camada que faltava (ver fix/anacare-horas-mes-exibido-x-enviado):
+// nenhum teste unitário isolado (page/hook) compõe "trocar o seletor → clicar em sincronizar", que
+// é onde o mês EXIBIDO e o mês ENVIADO podiam divergir (medido em produção: 1 POST em 30 dias, com
+// agosto gravado enquanto o seletor já mostrava setembro).
+describe('AnaCareHoursListContainer — mês EXIBIDO no seletor × mês ENVIADO ao sync', () => {
+  const AGO = '2026-08';
+  const SEP = '2026-09';
+
+  function snap(month: string): AnaCareMonthSnapshot {
+    return { month, updatedAt: '2026-09-20T04:00:00-03:00', stale: false, snapshotState: 'fresco', circuitBreakerOpen: false, patients: [] };
+  }
+
+  function syncResult(overrides: Partial<TriggerSyncResult> = {}): TriggerSyncResult {
+    return {
+      success: true,
+      deduped: false,
+      shiftsRead: 10,
+      reservationsProcessed: 10,
+      shiftsWritten: 10,
+      nextCursor: null,
+      runStartedAt: '2026-09-20T07:16:27.981Z',
+      shiftsSkippedNoProvider: 0,
+      shiftsSkippedNoPatient: 0,
+      ...overrides,
+    };
+  }
+
+  /** Rig com `getMonthSnapshot`/`triggerSync` controláveis à mão (nenhum resolve sozinho) — mesmo padrão do artefato de caça que encontrou o bug, adaptado ao contrato real do `AnaCareHoursService`. */
+  function makeControllableService() {
+    const monthWaiters: Record<string, (s: AnaCareMonthSnapshot) => void> = {};
+    const syncCalls: Array<{ month: string; cursor?: number | null }> = [];
+    let syncResolve: ((r: TriggerSyncResult) => void) | null = null;
+    const service: AnaCareHoursService = {
+      getMonthSnapshot: vi.fn(
+        (month: string) =>
+          new Promise<AnaCareMonthSnapshot>((res) => {
+            monthWaiters[month] = res;
+          }),
+      ),
+      getPatientMonth: vi.fn(),
+      getRetratoStatus: vi.fn(),
+      validateShift: vi.fn(),
+      validateBatch: vi.fn(),
+      contestShift: vi.fn(),
+      triggerSync: vi.fn((cmd) => {
+        syncCalls.push({ month: cmd.month, cursor: cmd.cursor });
+        return new Promise<TriggerSyncResult>((res) => {
+          syncResolve = res;
+        });
+      }),
+    };
+    return {
+      service,
+      syncCalls,
+      resolveMonth: (month: string) => monthWaiters[month]?.(snap(month)),
+      resolveSync: (r: TriggerSyncResult) => syncResolve?.(r),
+    };
+  }
+
+  const select = () => screen.getByLabelText('admin.anacareHours.monthAriaLabel') as HTMLSelectElement;
+  const syncButton = () => screen.getByTestId('anacare-hours-sync-button');
+
+  beforeEach(() => {
+    sessionStorage.clear();
+  });
+
+  it('COMPOSIÇÃO — troca para o mês seguinte com o fetch em voo: o sync recebe o MESMO mês que o seletor exibe', async () => {
+    const r = makeControllableService();
+    render(<AnaCareHoursListContainer service={r.service} onOpenPatient={vi.fn()} initialMonth={AGO} />);
+    await act(async () => r.resolveMonth(AGO));
+    await waitFor(() => expect(select()).toBeInTheDocument());
+
+    fireEvent.change(select(), { target: { value: SEP } });
+    // NÃO resolve o snapshot de SEP — a janela de carregamento em que o bug vivia.
+    expect(select().value).toBe(SEP);
+    fireEvent.click(syncButton());
+
+    expect(r.syncCalls.map((c) => c.month)).toEqual([SEP]);
+  });
+
+  it('COMPOSIÇÃO — sentido inverso: volta para o mês anterior com o fetch em voo, sync ainda recebe o mês exibido', async () => {
+    const r = makeControllableService();
+    render(<AnaCareHoursListContainer service={r.service} onOpenPatient={vi.fn()} initialMonth={AGO} />);
+    await act(async () => r.resolveMonth(AGO));
+    await waitFor(() => expect(select()).toBeInTheDocument());
+
+    fireEvent.change(select(), { target: { value: SEP } });
+    await act(async () => r.resolveMonth(SEP));
+    await waitFor(() => expect(select().value).toBe(SEP));
+
+    // Volta para AGO — o fetch de agosto fica em voo (refetch real leva centenas de ms).
+    fireEvent.change(select(), { target: { value: AGO } });
+    expect(select().value).toBe(AGO);
+    fireEvent.click(syncButton());
+
+    expect(r.syncCalls.map((c) => c.month)).toEqual([AGO]);
+  });
+
+  it('COMPOSIÇÃO — sincronizar e trocar de mês no meio da corrida: a tela avisa a interrupção e o cursor fica retomável', async () => {
+    const r = makeControllableService();
+    render(<AnaCareHoursListContainer service={r.service} onOpenPatient={vi.fn()} initialMonth={AGO} />);
+    await act(async () => r.resolveMonth(AGO));
+    await waitFor(() => expect(select()).toBeInTheDocument());
+
+    fireEvent.click(syncButton());
+    expect(r.syncCalls.map((c) => c.month)).toEqual([AGO]);
+    expect(screen.getByTestId('anacare-hours-sync-progress')).toBeInTheDocument();
+
+    // Troca de mês no MEIO da corrida de agosto (rodada 1 ainda em voo).
+    fireEvent.change(select(), { target: { value: SEP } });
+
+    await act(async () => r.resolveSync(syncResult({ nextCursor: 5, reservationsProcessed: 10 })));
+    await act(async () => r.resolveMonth(SEP));
+
+    // Nunca uma 2ª rodada de AGO disparada sozinha (a corrida velha não pode ficar viva).
+    expect(r.syncCalls.map((c) => c.month)).toEqual([AGO]);
+    // Sem silêncio: a tela sinaliza a interrupção.
+    await waitFor(() => expect(screen.getByTestId('anacare-hours-sync-interrupted')).toBeInTheDocument());
+    // E o cursor da rodada em voo foi persistido — retomável (mecanismo já existente em sessionStorage).
+    expect(sessionStorage.getItem('anacare-hours-sync:2026-08')).toBe(JSON.stringify({ cursor: 5 }));
   });
 });
