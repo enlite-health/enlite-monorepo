@@ -183,10 +183,13 @@ test.describe('Sino de notificações — deep-link até a conversa (Spec 022, B
       await expect(pageB.getByTestId('notification-bell-badge')).not.toBeVisible({ timeout: 10_000 });
       // "marcar todas como lidas" NÃO some com nenhuma notificação da lista (elas continuam
       // existindo, só com `readAt` preenchido) — a prova é o CONTADOR zerado (já verificado
-      // acima) e as MESMAS 3 linhas ainda visíveis, agora TODAS esmaecidas (`opacity-60`).
+      // acima) e as MESMAS 3 linhas ainda visíveis, agora TODAS marcadas como lidas.
+      // 🔒 Contraste (ajustes de UI B5, achado "opacity-60 esmaecia o TEXTO junto" — ~2.3:1,
+      // abaixo do piso AA): a distinção lido/não-lido virou FUNDO (`bg-gray-200`), nunca opacidade
+      // do texto (texto sempre 100% opaco, sempre legível).
       await expect(itemsBefore).toHaveCount(3);
       for (const item of await itemsBefore.all()) {
-        await expect(item).toHaveClass(/opacity-60/);
+        await expect(item).toHaveClass(/bg-gray-200/);
       }
     } finally {
       await contextA.close();

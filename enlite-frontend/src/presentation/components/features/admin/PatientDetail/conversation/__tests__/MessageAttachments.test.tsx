@@ -97,6 +97,36 @@ describe('MessageAttachments', () => {
       expect(openSpy).toHaveBeenCalledWith('', '_blank');
       openSpy.mockRestore();
     });
+
+    it('🔒 achado do gate visual (ajustes de UI B5, rodada 2): o chip é COMPACTO — nunca uma caixa alta de miniatura. Sem a estrutura de imagem (sem `relative group`, sem `h-24`/`max-h-40`) e mora numa lista PRÓPRIA (`message-attachments-files`), nunca no mesmo flex-row de uma miniatura (senão o flexbox estica o botão pra altura da imagem — a causa raiz medida)', () => {
+      render(<MessageAttachments patientId="p1" attachments={[pdfAttachment]} />);
+      const chip = screen.getByTestId('message-attachment-file-pdf');
+      // nunca contém a marcação de moldura de miniatura (achado: h-24/max-h-40 são exclusivos de ImageAttachment)
+      expect(chip.innerHTML).not.toContain('h-24');
+      expect(chip.innerHTML).not.toContain('max-h-40');
+      expect(chip.querySelector('img')).not.toBeInTheDocument();
+      // vive na lista de arquivos, NUNCA na grade de imagens (containers separados — a causa raiz do "caixa alta e vazia" era os dois no MESMO flex-wrap, que estica o item curto pra altura do mais alto)
+      const filesList = screen.getByTestId('message-attachments-files');
+      expect(filesList).toContainElement(chip);
+      expect(screen.queryByTestId('message-attachments-images')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('imagens e arquivos em containers SEPARADOS (achado do gate visual, rodada 2)', () => {
+    it('mensagem com imagem + PDF: grade de imagens e lista de arquivos são elementos DIFERENTES (nunca o mesmo flex-wrap)', () => {
+      render(<MessageAttachments patientId="p1" attachments={[imageAttachment, pdfAttachment]} />);
+      const imagesGrid = screen.getByTestId('message-attachments-images');
+      const filesList = screen.getByTestId('message-attachments-files');
+      expect(imagesGrid).not.toBe(filesList);
+      expect(imagesGrid).toContainElement(screen.getByTestId('message-attachment-file-img'));
+      expect(filesList).toContainElement(screen.getByTestId('message-attachment-file-pdf'));
+    });
+
+    it('só imagem: não renderiza a lista de arquivos (nenhum container vazio à toa)', () => {
+      render(<MessageAttachments patientId="p1" attachments={[imageAttachment]} />);
+      expect(screen.getByTestId('message-attachments-images')).toBeInTheDocument();
+      expect(screen.queryByTestId('message-attachments-files')).not.toBeInTheDocument();
+    });
   });
 
   describe('IMAGEM — miniatura lazy (IntersectionObserver + fetch→blob→objectURL)', () => {

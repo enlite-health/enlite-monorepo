@@ -191,7 +191,7 @@ export function AttachmentPicker({
           {tc('attach')}
         </button>
         {atMax && (
-          <Text size="xs" className="text-gray-400" data-testid="attachment-picker-max">
+          <Text size="xs" className="text-gray-800" data-testid="attachment-picker-max">
             {tc('attachments.max')}
           </Text>
         )}
@@ -203,7 +203,7 @@ export function AttachmentPicker({
             <li
               key={item.localId}
               data-testid={`attachment-chip-${item.localId}`}
-              className="flex items-center gap-2 text-xs text-gray-600"
+              className="flex items-center gap-2 text-xs text-gray-800"
             >
               {(() => {
                 const Icon = iconComponentForContentType(item.file.type);
@@ -211,7 +211,7 @@ export function AttachmentPicker({
               })()}
               <span data-testid="attachment-chip-name">{item.file.name}</span>
               {item.status === 'uploading' && (
-                <Text size="xs" className="text-gray-400" data-testid="attachment-chip-uploading">
+                <Text size="xs" className="text-gray-800" data-testid="attachment-chip-uploading">
                   {tc('attachments.uploading')}
                 </Text>
               )}
@@ -225,7 +225,7 @@ export function AttachmentPicker({
                 data-testid={`attachment-chip-remove-${item.localId}`}
                 aria-label={tc('attachments.remove')}
                 onClick={() => handleRemove(item.localId)}
-                className="text-gray-400 hover:text-gray-700"
+                className="text-gray-800 hover:text-primary"
               >
                 ×
               </button>

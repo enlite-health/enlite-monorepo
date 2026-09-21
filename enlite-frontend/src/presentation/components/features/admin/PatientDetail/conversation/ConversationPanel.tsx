@@ -5,7 +5,9 @@ import { ApiError } from '@infrastructure/http/ApiError';
 import { usePolling } from '@hooks/usePolling';
 import { useActionGate } from '@presentation/hooks/useCellAccess';
 import { Text } from '@presentation/components/atoms/Text';
+import { InlineLoadingState } from '@presentation/components/molecules/InlineLoadingState/InlineLoadingState';
 import { MessageContent, ThreadView } from './ThreadView';
+import { ReplyThreadBadge } from './ReplyThreadBadge';
 import type { MessageComposerHandle } from './MessageComposer';
 
 const POLL_MS = 5000;
@@ -53,34 +55,20 @@ interface MessageItemProps {
 
 /**
  * Item de mensagem de TOPO: `MessageContent` (CARD — avatar/nome/hora/corpo/anexo, compartilhado
- * com a `ThreadView`) com o RODAPÉ do card (ajustes de UI B5, molde ClickUp): "Responder" sempre
- * visível à direita (abre a thread — mesma ação que já existia); "N respuestas" à esquerda SÓ
- * quando `replyCount >= 1` (achado "0 respuestas": antes o rótulo aparecia sempre, inclusive
- * "0 respuestas"/"0 respostas", que não comunica nada de útil e ocupa espaço à toa). Os dois
- * abrem a MESMA thread — `onOpenThread` não muda por quem clicou.
+ * com a `ThreadView`) com o RODAPÉ do card (ajustes de UI B5, molde ClickUp — rodada 2, achado
+ * "0 respuestas" + pedido do selo): "Responder" sempre visível; o SELO (`ReplyThreadBadge`) só
+ * quando `replyCount >= 1` — os dois AGRUPADOS à direita (`justify-end` no wrapper de
+ * `ThreadView.MessageContent`), selo ANTES do botão. Ambos abrem a MESMA thread —
+ * `onOpenThread` não muda por quem clicou.
  */
 function MessageItem({ message, patientId, onOpenThread }: MessageItemProps): JSX.Element {
   const { t } = useTranslation();
   const th = (key: string, optsOrDefault?: Record<string, unknown> | string): string =>
     t(`admin.patients.detail.conversation.thread.${key}`, optsOrDefault as string);
-  const hasReplies = message.replyCount >= 1;
-  const repliesLabel = th('replies', { count: message.replyCount });
 
   const footer = (
     <>
-      {hasReplies ? (
-        <button
-          type="button"
-          onClick={onOpenThread}
-          aria-label={repliesLabel}
-          data-testid="conversation-message-replies"
-          className="text-xs text-primary hover:underline"
-        >
-          {repliesLabel}
-        </button>
-      ) : (
-        <span aria-hidden="true" />
-      )}
+      <ReplyThreadBadge count={message.replyCount} onOpenThread={onOpenThread} />
       <button
         type="button"
         onClick={onOpenThread}
@@ -218,8 +206,11 @@ export function ConversationPanel({
 
   return (
     <div className="flex flex-col h-full">
-      <div className="p-4 border-b font-medium" data-testid="conversation-panel-header">{tp('title')}</div>
-      <div className="flex-1 overflow-y-auto">
+      {/* `flex-shrink-0`: sem isto, o flexbox pode espremer header/rodapé quando a lista do meio
+       * é alta demais — o `flex-1 overflow-y-auto` é o ÚNICO que deve ceder (rolar), nunca o
+       * cabeçalho nem o compositor (achado "Enviar cortado embaixo", ajustes de UI B5). */}
+      <div className="p-4 border-b font-medium flex-shrink-0" data-testid="conversation-panel-header">{tp('title')}</div>
+      <div className="flex-1 overflow-y-auto min-h-0">
         {openThreadMessage ? (
           <ThreadView
             patientId={patientId}
@@ -238,7 +229,7 @@ export function ConversationPanel({
                   />
                 </Suspense>
               ) : (
-                <p data-testid="conversation-panel-read-only" className="p-3 text-xs text-gray-500 border-t">
+                <p data-testid="conversation-panel-read-only" className="p-3 text-xs text-gray-800 border-t flex-shrink-0">
                   {tp('readOnly')}
                 </p>
               )
@@ -246,16 +237,29 @@ export function ConversationPanel({
           />
         ) : (
           <>
+            {status === 'loading' && (
+              <InlineLoadingState label={tp('loading')} data-testid="conversation-panel-loading" />
+            )}
             {status === 'forbidden' && (
-              <p data-testid="conversation-panel-no-access" className="p-4 text-gray-500">{tp('noAccess')}</p>
+              <p data-testid="conversation-panel-no-access" className="p-4 text-gray-800">{tp('noAccess')}</p>
             )}
             {status === 'error' && (
-              <Text size="xs" role="alert" className="text-red-600 p-4" data-testid="conversation-panel-error">
-                {tp('loadError')}
-              </Text>
+              <div className="flex flex-col items-center gap-2 p-4">
+                <Text size="xs" role="alert" className="text-red-600" data-testid="conversation-panel-error">
+                  {tp('loadError')}
+                </Text>
+                <button
+                  type="button"
+                  data-testid="conversation-panel-retry"
+                  onClick={() => void fetchPage()}
+                  className="text-xs text-primary hover:underline"
+                >
+                  {tp('retry')}
+                </button>
+              </div>
             )}
             {status === 'ready' && messages.length === 0 && (
-              <p data-testid="conversation-panel-empty" className="p-4 text-gray-500">{tp('empty')}</p>
+              <p data-testid="conversation-panel-empty" className="p-4 text-gray-800">{tp('empty')}</p>
             )}
             {status === 'ready' && messages.length > 0 && (
               <ul data-testid="conversation-panel-list">
@@ -280,7 +284,7 @@ export function ConversationPanel({
             />
           </Suspense>
         ) : (
-          <p data-testid="conversation-panel-read-only" className="p-3 text-xs text-gray-500 border-t">
+          <p data-testid="conversation-panel-read-only" className="p-3 text-xs text-gray-800 border-t flex-shrink-0">
             {tp('readOnly')}
           </p>
         )

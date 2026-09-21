@@ -147,5 +147,20 @@ test.describe('Chat interno — card redesenhado (ajustes de UI B5) @integration
     await page.keyboard.type('resposta na thread');
     await page.getByTestId('composer-send-btn').click();
     await expect(page.getByTestId('thread-replies-list')).toContainText('resposta na thread', { timeout: 10_000 });
+
+    // ── SELO de contagem (pedido do Gabriel, rodada 2): volta pra lista e o card mostra N+1 ──
+    await page.getByTestId('thread-back-btn').click();
+    await expect(page.getByTestId('conversation-panel-list')).toBeVisible();
+    const badge = item.getByTestId('conversation-message-replies');
+    await expect(badge).toBeVisible();
+    await expect(badge).toHaveText('1');
+    // texto visível (aria-label/title) NUNCA usa "thread"/"hilo" — só "N respuesta(s)".
+    await expect(badge).toHaveAttribute('aria-label', '1 respuesta');
+    await expect(badge).toHaveAttribute('title', '1 respuesta');
+
+    // selo INTEIRO é clicável e abre a MESMA thread de novo
+    await badge.click();
+    await expect(page.getByTestId('thread-view')).toBeVisible();
+    await expect(page.getByTestId('thread-replies-list')).toContainText('resposta na thread');
   });
 });

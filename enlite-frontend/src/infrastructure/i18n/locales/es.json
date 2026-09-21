@@ -3847,20 +3847,26 @@
           },
           "panel": {
             "title": "Mensajes",
+            "loading": "Cargando mensajes…",
             "empty": "Aún no hay mensajes",
             "noAccess": "Sin acceso a este paciente",
             "close": "Cerrar panel de mensajes",
             "loadError": "No pudimos cargar los mensajes. Probá de nuevo.",
+            "retry": "Reintentar",
             "readOnly": "Solo podés ver esta conversación"
           },
           "thread": {
             "replies_one": "1 respuesta",
             "replies_other": "{{count}} respuestas",
             "reply": "Responder",
+            "repliesBadge_one": "{{count}} respuesta",
+            "repliesBadge_other": "{{count}} respuestas",
             "dateConnector": "a las",
             "back": "Volver",
             "deleted": "Mensaje eliminado",
+            "loading": "Cargando respuestas…",
             "loadError": "No se pudieron cargar las respuestas",
+            "retry": "Reintentar",
             "attachments": {
               "download": "Descargar adjunto",
               "downloadError": "No pudimos descargar el archivo. Probá de nuevo.",
@@ -5376,9 +5382,11 @@
       "bellLabel": "Notificaciones",
       "unread": "{{count}} notificaciones sin leer",
       "panelTitle": "Notificaciones",
+      "loading": "Cargando notificaciones…",
       "empty": "No tenés notificaciones",
       "close": "Cerrar notificaciones",
       "loadError": "No pudimos cargar tus notificaciones. Probá de nuevo.",
+      "retry": "Reintentar",
       "markAllReadError": "No pudimos marcar todas como leídas. Probá de nuevo."
     }
   },

@@ -9,10 +9,11 @@
  * Notificação sem `patientId` (defesa — hoje o backend sempre associa um paciente, mas o schema
  * permite `NULL`, D-08): marca como lida, mas NÃO navega — não há para onde ir.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Text } from '@presentation/components/atoms/Text';
+import { InlineLoadingState } from '@presentation/components/molecules/InlineLoadingState/InlineLoadingState';
 import { AdminNotificationApiService, type AdminNotification } from '@infrastructure/http/AdminNotificationApiService';
 import { buildNotificationText } from './notificationText';
 
@@ -31,13 +32,18 @@ export function NotificationPanel({ isOpen, onClose, onNotificationsChanged }: N
   const [isLoading, setIsLoading] = useState(false);
   const [loadError, setLoadError] = useState(false);
   const [markAllError, setMarkAllError] = useState(false);
+  /** `true` a partir da 1ª resposta boa desta abertura — mesma régua de `ConversationPanel`
+   * (`hasLoadedOnceRef`). O spinner só aparece na carga INICIAL; um refetch depois de "marcar
+   * todas como lidas" (`handleMarkAllRead`) não pisca a lista — ela já está boa na tela. */
+  const hasLoadedOnceRef = useRef(false);
 
   const fetchList = useCallback(async () => {
-    setIsLoading(true);
+    if (!hasLoadedOnceRef.current) setIsLoading(true);
     try {
       const list = await AdminNotificationApiService.listNotifications({ limit: 20 });
       setNotifications(list);
       setLoadError(false);
+      hasLoadedOnceRef.current = true;
     } catch {
       // 🔒 Achado do gate revisao-pr (B4): um 403 (sem `own_notifications:read`) ou 500 caía aqui
       // e o estado ficava indistinguível de "0 notificações de verdade" — a operadora via
@@ -86,7 +92,7 @@ export function NotificationPanel({ isOpen, onClose, onNotificationsChanged }: N
 
   return (
     <div className="flex flex-col h-full" data-testid="notification-panel-content">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 flex-shrink-0">
         <Text as="span" size="base" weight="semibold">
           {t('admin.notifications.panelTitle')}
         </Text>
@@ -110,12 +116,23 @@ export function NotificationPanel({ isOpen, onClose, onNotificationsChanged }: N
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        {isLoading && !loadError && (
+          <InlineLoadingState label={t('admin.notifications.loading')} data-testid="notification-loading" />
+        )}
         {loadError && (
-          <div data-testid="notification-load-error" className="px-4 py-8 text-center">
+          <div data-testid="notification-load-error" className="px-4 py-8 text-center flex flex-col items-center gap-2">
             <Text as="span" size="sm" role="alert" className="text-red-600">
               {t('admin.notifications.loadError')}
             </Text>
+            <button
+              type="button"
+              data-testid="notification-retry"
+              onClick={() => void fetchList()}
+              className="text-xs text-primary hover:underline"
+            >
+              {t('admin.notifications.retry')}
+            </button>
           </div>
         )}
         {!loadError && !isLoading && notifications.length === 0 && (
@@ -131,8 +148,12 @@ export function NotificationPanel({ isOpen, onClose, onNotificationsChanged }: N
             type="button"
             data-testid={`notification-item-${n.id}`}
             onClick={() => void handleClick(n)}
+            // 🔒 Contraste (ajustes de UI B5, rodada de contraste): `opacity-60` no item LIDO
+            // esmaecia o TEXTO junto com o resto — `gray-800` (4.74:1) sob 60% de opacidade cai a
+            // ~2.3:1 (medido nesta sessão), abaixo do piso AA. A distinção lido/não-lido agora é
+            // só de FUNDO (`bg-gray-200`), nunca do texto — texto sempre 100% opaco.
             className={`w-full text-left px-4 py-3 border-b border-gray-100 hover:bg-gray-50 transition-colors ${
-              n.readAt ? 'opacity-60' : ''
+              n.readAt ? 'bg-gray-200' : ''
             }`}
           >
             <Text as="span" size="sm">

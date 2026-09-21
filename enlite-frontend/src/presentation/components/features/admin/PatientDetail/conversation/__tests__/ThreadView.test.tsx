@@ -141,6 +141,31 @@ describe('ThreadView', () => {
     expect(screen.getByTestId('thread-view-error').textContent?.length).toBeGreaterThan(0);
   });
 
+  it('🔒 ajustes de UI B5 (item 6): carga INICIAL mostra spinner (role=status) ANTES da resposta chegar', async () => {
+    let resolveReplies: (v: ConversationMessage[]) => void = () => {};
+    getConversationReplies.mockImplementation(() => new Promise((resolve) => { resolveReplies = resolve; }));
+    render(<ThreadView patientId="p1" rootMessage={msg({ id: 'root-1' })} onBack={vi.fn()} />);
+
+    const loading = await screen.findByTestId('thread-view-loading');
+    expect(loading).toHaveAttribute('role', 'status');
+
+    resolveReplies([]);
+    await waitFor(() => expect(screen.getByTestId('thread-replies-list')).toBeInTheDocument());
+    expect(screen.queryByTestId('thread-view-loading')).not.toBeInTheDocument();
+  });
+
+  it('🔒 ajustes de UI B5 (item 6): erro mostra botão de retry que rebusca as replies', async () => {
+    getConversationReplies.mockRejectedValueOnce(new Error('network down'));
+    getConversationReplies.mockResolvedValueOnce([]);
+    render(<ThreadView patientId="p1" rootMessage={msg({ id: 'root-1' })} onBack={vi.fn()} />);
+
+    const retryBtn = await screen.findByTestId('thread-view-retry');
+    fireEvent.click(retryBtn);
+
+    await waitFor(() => expect(screen.getByTestId('thread-replies-list')).toBeInTheDocument());
+    expect(screen.queryByTestId('thread-view-error')).not.toBeInTheDocument();
+  });
+
   it('token <@uid> fora da lista de mentions confirmadas cai pro texto cru (não quebra)', async () => {
     getConversationReplies.mockResolvedValue([
       // `mentions` é a lista de uids CONFIRMADOS pelo servidor (`ConversationRepository`) — só

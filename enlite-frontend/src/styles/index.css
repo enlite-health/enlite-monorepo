@@ -119,3 +119,20 @@ h1, h2, h3, h4, h5, h6 {
   overflow: visible !important;
   max-height: none !important;
 }
+
+/*
+ * 🔒 Placeholder do compositor de mensagens (spec 022, ajustes de UI B5, rodada de contraste).
+ * Achado: `@tiptap/extension-placeholder` NUNCA injeta CSS sozinho — ele só marca o nó vazio com
+ * `class="is-empty is-editor-empty"` + `data-placeholder="<texto>"` (ver
+ * `@tiptap/extensions/dist/index.js`, `createPlaceholderDecoration`). Sem esta regra, o
+ * placeholder do `MessageComposer` (`Escribí un mensaje…`/`Digite uma mensagem…`) nunca
+ * RENDERIZAVA — não era "contraste baixo", era ausência total (medido nesta sessão). A cor usa o
+ * mesmo `#737373` (`gray-800`, 4.74:1 sobre branco) do resto do painel — nunca um tom mais claro.
+ */
+[data-placeholder].is-editor-empty::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+  color: #737373;
+}

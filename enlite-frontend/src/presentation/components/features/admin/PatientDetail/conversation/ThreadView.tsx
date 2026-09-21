@@ -6,6 +6,7 @@ import {
 } from '@infrastructure/http/AdminConversationApiService';
 import { useStaffDisplayName } from '@presentation/stores/staffNameCache';
 import { Text } from '@presentation/components/atoms/Text';
+import { InlineLoadingState } from '@presentation/components/molecules/InlineLoadingState/InlineLoadingState';
 import { MessageAvatar } from './MessageAvatar';
 import { MessageAttachments } from './MessageAttachments';
 import { formatMessageDateTime } from './messageDateFormat';
@@ -105,7 +106,12 @@ export function MessageContent({ message, patientId, footer }: MessageContentPro
     <div data-testid={`message-card-${message.id}`} className="flex flex-col gap-2 rounded-xl border border-gray-300 bg-white p-3 min-w-0">
       <div className="flex items-center gap-2 min-w-0">
         <MessageAvatar uid={message.authorUid} name={authorName} />
-        <Text as="span" size="sm" weight="medium" className="truncate" data-testid="message-author">
+        {/* `min-w-0`: gotcha clássico de flexbox — sem isto, um item flex com `truncate` NUNCA
+         * encolhe abaixo do seu conteúdo (default `min-width: auto`), e um nome de autor comprido
+         * empurra a linha inteira pra fora do card (achado do e2e de viewport, ajustes de UI B5,
+         * item 7 — o mesmo defeito, na dimensão HORIZONTAL, do `min-h-0` já corrigido na lista
+         * vertical). O `min-w-0` do container-pai (linha acima) sozinho não bastava. */}
+        <Text as="span" size="sm" weight="medium" className="truncate min-w-0" data-testid="message-author">
           {authorName}
         </Text>
         <Text as="span" size="xs" className="ml-auto flex-shrink-0 whitespace-nowrap" data-testid="message-time">
@@ -120,7 +126,9 @@ export function MessageContent({ message, patientId, footer }: MessageContentPro
       {/* Mensagem apagada nunca mostra anexo (corpo cifrado já foi zerado — D-04/soft delete). */}
       {!message.deletedAt && <MessageAttachments patientId={patientId} attachments={message.attachments} />}
       {footer && (
-        <div className="flex items-center justify-between pt-2 mt-1 border-t border-gray-200">
+        // `justify-end` (não `justify-between`): selo + "Responder" ficam AGRUPADOS à direita
+        // (pedido do Gabriel, rodada 2) — sem elemento nenhum do lado esquerdo do rodapé.
+        <div className="flex items-center justify-end gap-2 pt-2 mt-1 border-t border-gray-200">
           {footer}
         </div>
       )}
@@ -201,21 +209,38 @@ export function ThreadView({
 
   return (
     <div data-testid="thread-view" className="flex flex-col h-full">
-      <div className="flex items-center gap-2 p-3 border-b min-w-0">
-        <button type="button" aria-label={tk('back')} onClick={onBack} data-testid="thread-back-btn">
+      {/* `flex-shrink-0` + `overflow-y-auto` + `max-h-[45%]`: o card ROOT pode ser alto (várias
+       * imagens/anexos, achado "Enviar cortado embaixo", ajustes de UI B5) — sem um teto, ele
+       * consumia o espaço da lista de replies E do compositor. Rola por dentro dele mesmo em vez
+       * de estourar o painel; o compositor (rodapé) nunca é espremido. */}
+      <div className="flex items-start gap-2 p-3 border-b min-w-0 flex-shrink-0 max-h-[45%] overflow-y-auto">
+        <button type="button" aria-label={tk('back')} onClick={onBack} data-testid="thread-back-btn" className="mt-1">
           ←
         </button>
         <div data-testid="thread-root-message" className="flex-1 min-w-0">
           <MessageContent message={rootMessage} patientId={patientId} />
         </div>
       </div>
+      {status === 'loading' && (
+        <InlineLoadingState label={tk('loading')} data-testid="thread-view-loading" />
+      )}
       {status === 'error' && (
-        <p data-testid="thread-view-error">
-          {t('admin.patients.detail.conversation.thread.loadError', 'Não foi possível carregar as respostas')}
-        </p>
+        <div className="flex flex-col items-center gap-2 p-4">
+          <p data-testid="thread-view-error" className="text-red-600 text-xs" role="alert">
+            {t('admin.patients.detail.conversation.thread.loadError', 'Não foi possível carregar as respostas')}
+          </p>
+          <button
+            type="button"
+            data-testid="thread-view-retry"
+            onClick={() => void fetchReplies()}
+            className="text-xs text-primary hover:underline"
+          >
+            {tk('retry')}
+          </button>
+        </div>
       )}
       {status === 'ready' && (
-        <ul data-testid="thread-replies-list" className="flex-1 overflow-y-auto flex flex-col gap-2 p-2">
+        <ul data-testid="thread-replies-list" className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-2 p-2">
           {replies.map((reply) => (
             <li key={reply.id} data-testid={`thread-reply-${reply.id}`} className="min-w-0">
               <MessageContent message={reply} patientId={patientId} />

@@ -138,7 +138,7 @@ function ImageAttachment({ patientId, attachment, onDownload }: ImageAttachmentP
         )}
         {!objectUrl && (
           <div className="w-full h-24 flex items-center justify-center">
-            <Text size="xs" className="text-gray-600">
+            <Text size="xs" className="text-gray-800">
               {loadError ? t('admin.patients.detail.conversation.thread.attachments.downloadError', 'Não conseguimos baixar o arquivo. Tente de novo.') : '…'}
             </Text>
           </div>
@@ -155,53 +155,82 @@ function ImageAttachment({ patientId, attachment, onDownload }: ImageAttachmentP
           </button>
         )}
       </div>
-      <span className="text-xs text-gray-700 truncate" title={name}>{name}</span>
+      <span className="text-xs text-gray-800 truncate" title={name}>{name}</span>
     </div>
+  );
+}
+
+interface FileChipProps {
+  attachment: ConversationMessageAttachment;
+  onDownload: (fileId: string) => void;
+}
+
+/**
+ * 🔒 Chip de PDF/DOCX — COMPACTO, UMA linha (achado do gate visual, ajustes de UI B5, rodada 2):
+ * antes, este `<button>` vivia no MESMO `flex flex-wrap` que `ImageAttachment` — flexbox estica
+ * (`align-items: stretch`, default) todo item de uma LINHA para a altura do maior irmão da linha;
+ * ao lado de uma miniatura de imagem (até 160px), o chip virava uma caixa ALTA e vazia com o
+ * conteúdo flutuando no meio (`ui-ajustes-00-antes-depois.png`, lado direito, "sample.pdf 369 B").
+ * Conserto: PDF/DOCX vive na PRÓPRIA lista (`flex flex-col`), nunca mais um irmão de flex-row de
+ * uma miniatura — sem isso, qualquer `max-h`/`items-center` no botão não teria efeito nenhum
+ * sobre o esticamento imposto pelo PAI.
+ */
+function FileChip({ attachment, onDownload }: FileChipProps): JSX.Element {
+  const { t } = useTranslation();
+  const td = (key: string, fallback: string): string => t(`admin.patients.detail.conversation.thread.${key}`, fallback);
+  const Icon = iconComponentForContentType(attachment.contentType);
+  const name = attachment.originalName || extensionForContentType(attachment.contentType);
+
+  return (
+    <button
+      type="button"
+      data-testid={`message-attachment-${attachment.fileId}`}
+      aria-label={td('attachments.download', 'Baixar anexo')}
+      title={name}
+      onClick={() => onDownload(attachment.fileId)}
+      className="flex items-center gap-1.5 text-xs text-primary hover:underline hover:bg-gray-100 max-w-[280px] min-w-0 border border-gray-300 rounded-md px-2 py-1 self-start"
+    >
+      <Icon size={14} aria-hidden="true" className="flex-shrink-0" />
+      <span className="truncate">{name}</span>
+      <span className="text-gray-800 flex-shrink-0">{formatFileSize(attachment.sizeBytes)}</span>
+    </button>
   );
 }
 
 export function MessageAttachments({
   patientId, attachments,
 }: { patientId: string; attachments: ConversationMessageAttachment[] }): JSX.Element | null {
-  const { t } = useTranslation();
-  const td = (key: string, fallback: string): string => t(`admin.patients.detail.conversation.thread.${key}`, fallback);
   const { downloadError, handleDownload } = useAttachmentDownload(patientId);
 
   if (attachments.length === 0) return null;
 
+  const images = attachments.filter((a) => isImageContentType(a.contentType));
+  const files = attachments.filter((a) => !isImageContentType(a.contentType));
+  const onDownload = (fileId: string): void => { void handleDownload(fileId); };
+
   return (
     <div data-testid="message-attachments" className="flex flex-col gap-2 mt-1">
-      <div className="flex flex-wrap gap-2">
-        {attachments.map((attachment) => {
-          if (isImageContentType(attachment.contentType)) {
-            return (
-              <ImageAttachment
-                key={attachment.fileId}
-                patientId={patientId}
-                attachment={attachment}
-                onDownload={(fileId) => { void handleDownload(fileId); }}
-              />
-            );
-          }
-          const Icon = iconComponentForContentType(attachment.contentType);
-          const name = attachment.originalName || extensionForContentType(attachment.contentType);
-          return (
-            <button
+      {/* Miniaturas de imagem — grade própria, nunca misturada com os chips (ver FileChip acima). */}
+      {images.length > 0 && (
+        <div data-testid="message-attachments-images" className="flex flex-wrap gap-2">
+          {images.map((attachment) => (
+            <ImageAttachment
               key={attachment.fileId}
-              type="button"
-              data-testid={`message-attachment-${attachment.fileId}`}
-              aria-label={td('attachments.download', 'Baixar anexo')}
-              title={name}
-              onClick={() => { void handleDownload(attachment.fileId); }}
-              className="flex items-center gap-1.5 text-xs text-primary hover:underline max-w-[220px] min-w-0 border border-gray-300 rounded-md px-2 py-1"
-            >
-              <Icon size={14} aria-hidden="true" className="flex-shrink-0" />
-              <span className="truncate">{name}</span>
-              <span className="text-gray-500 flex-shrink-0">{formatFileSize(attachment.sizeBytes)}</span>
-            </button>
-          );
-        })}
-      </div>
+              patientId={patientId}
+              attachment={attachment}
+              onDownload={onDownload}
+            />
+          ))}
+        </div>
+      )}
+      {/* PDF/DOCX — lista compacta de UMA linha por item, abaixo das miniaturas. */}
+      {files.length > 0 && (
+        <div data-testid="message-attachments-files" className="flex flex-col gap-1">
+          {files.map((attachment) => (
+            <FileChip key={attachment.fileId} attachment={attachment} onDownload={onDownload} />
+          ))}
+        </div>
+      )}
       {downloadError && (
         <Text size="xs" role="alert" className="text-red-600" data-testid="message-attachments-error">
           {downloadError}

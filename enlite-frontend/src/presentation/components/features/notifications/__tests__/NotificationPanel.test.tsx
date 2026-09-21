@@ -168,6 +168,59 @@ describe('NotificationPanel (spec 022, T412/T413)', () => {
     expect(screen.getByTestId('notification-item-n1')).toBeInTheDocument();
   });
 
+  it('🔒 ajustes de UI B5 (item 6): carga INICIAL mostra spinner (role=status) ANTES da resposta chegar — nunca painel branco', async () => {
+    let resolveList: (v: AdminNotification[]) => void = () => {};
+    vi.mocked(AdminNotificationApiService.listNotifications).mockImplementation(
+      () => new Promise((resolve) => { resolveList = resolve; }),
+    );
+    render(<NotificationPanel isOpen onClose={vi.fn()} />);
+
+    const loading = await screen.findByTestId('notification-loading');
+    expect(loading).toHaveAttribute('role', 'status');
+    expect(loading).toHaveTextContent('Cargando notificaciones…');
+
+    resolveList([notif({ id: 'n1' })]);
+    await screen.findByTestId('notification-item-n1');
+    expect(screen.queryByTestId('notification-loading')).not.toBeInTheDocument();
+  });
+
+  it('🔒 ajustes de UI B5 (item 6): refetch depois de "marcar todas como lidas" NÃO mostra spinner de novo (sem piscar — a lista já está boa na tela)', async () => {
+    // Não depender do estado deste mock deixado por outro teste do arquivo (ex.: o teste de
+    // "marcar todas que falha" muda a implementação BASE, não só uma vez — `afterEach` só limpa
+    // `mock.calls`, nunca a implementação) — reafirma o caminho feliz explicitamente aqui.
+    vi.mocked(AdminNotificationApiService.markAllNotificationsRead).mockResolvedValue(0);
+    vi.mocked(AdminNotificationApiService.listNotifications)
+      .mockResolvedValueOnce([notif({ id: 'n1' })])
+      .mockResolvedValueOnce([]);
+    render(<NotificationPanel isOpen onClose={vi.fn()} />);
+
+    await screen.findByTestId('notification-item-n1');
+    fireEvent.click(screen.getByTestId('notification-mark-all-read'));
+
+    await waitFor(() => expect(screen.queryByTestId('notification-item-n1')).not.toBeInTheDocument());
+    // a régua é o CÓDIGO (`hasLoadedOnceRef` já true na 2ª chamada nunca liga `isLoading`) — o
+    // spinner nunca aparece nesta janela, mesmo checando depois do refetch resolver.
+    expect(screen.queryByTestId('notification-loading')).not.toBeInTheDocument();
+  });
+
+  it('🔒 ajustes de UI B5 (item 6): erro de carga mostra botão "Reintentar" que rebusca a lista', async () => {
+    // `mockReset` explícito (não só `clearAllMocks` do `afterEach`) — elimina qualquer fila de
+    // `Once` que sobrou de um teste anterior antes de montar os 2 valores exatos que ESTE teste
+    // precisa (1 rejeição + 1 sucesso), sem depender de quantas chamadas os testes vizinhos fizeram.
+    vi.mocked(AdminNotificationApiService.listNotifications).mockReset();
+    vi.mocked(AdminNotificationApiService.listNotifications)
+      .mockRejectedValueOnce(new Error('forbidden'))
+      .mockResolvedValueOnce([notif({ id: 'n1' })]);
+    render(<NotificationPanel isOpen onClose={vi.fn()} />);
+
+    const retryBtn = await screen.findByTestId('notification-retry');
+    expect(retryBtn).toHaveTextContent('Reintentar');
+    fireEvent.click(retryBtn);
+
+    await screen.findByTestId('notification-item-n1');
+    expect(screen.queryByTestId('notification-load-error')).not.toBeInTheDocument();
+  });
+
   it('erro de carga some numa busca seguinte bem-sucedida (reabrir o painel, por exemplo)', async () => {
     vi.mocked(AdminNotificationApiService.listNotifications)
       .mockRejectedValueOnce(new Error('forbidden'))
