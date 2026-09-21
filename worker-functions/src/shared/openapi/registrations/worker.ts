@@ -17,7 +17,7 @@ const WorkerStepBody = z.object({
 const WorkerGeneralInfoBody = z.object({
   firstName: z.string().optional().openapi({ description: 'Primeiro nome.', example: 'João' }),
   lastName: z.string().optional().openapi({ description: 'Sobrenome.', example: 'Silva' }),
-  birthDate: z.string().optional().openapi({ description: 'Data de nascimento ISO.', example: '1990-05-15' }),
+  birthDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().openapi({ description: 'Data de nascimento ISO (YYYY-MM-DD), real e não-futura — validada em runtime por isValidIsoBirthDate.', example: '1990-05-15' }),
   sex: z.string().optional().openapi({ description: 'Sexo biológico canonical UPPERCASE.', example: 'MALE' }),
   documentNumber: z.string().optional().openapi({ description: 'Número de documento (DNI/CPF).', example: '12345678' }),
 });

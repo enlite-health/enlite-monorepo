@@ -85,6 +85,40 @@ export function parseDateToISO(value: string): string {
 }
 
 /**
+ * Valida se uma data no formato DD/MM/AAAA é uma data real, completa e não
+ * futura — o gate que `generalInfoSchema.birthDate` usa antes do submit.
+ *
+ * Defeito 1 (21/09/2026): `maskDate` + `parseDateToISO` sozinhos não bastam —
+ * entrada incompleta (ex.: usuário digita "25/3/1985", só 7 dígitos úteis)
+ * faz `maskDate` agrupar errado ("25/31/985"), e sem este gate esse lixo
+ * seguia até o backend como string.
+ */
+export function isValidBirthDateBr(value: string): boolean {
+  const match = value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!match) return false;
+
+  const day = Number(match[1]);
+  const month = Number(match[2]);
+  const year = Number(match[3]);
+
+  if (month < 1 || month > 12) return false;
+  if (day < 1 || day > 31) return false;
+  if (year < 1900) return false;
+
+  // Round-trip pelo Date: pega mês/dia que "transbordam" (ex.: 31/04 vira 01/05).
+  const date = new Date(year, month - 1, day);
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
+    return false;
+  }
+
+  const today = new Date();
+  today.setHours(23, 59, 59, 999);
+  if (date > today) return false;
+
+  return true;
+}
+
+/**
  * Converte data AAAA-MM-DD para DD/MM/AAAA
  */
 export function formatDateFromISO(value: string): string {
