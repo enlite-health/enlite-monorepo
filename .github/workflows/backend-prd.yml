@@ -106,6 +106,10 @@ jobs:
             GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}
             GCS_BUCKET_NAME=enlite-worker-documents
             GCS_PATIENT_PHOTOS_BUCKET=enlite-patient-photos
+            # spec 022, Bloco 3 (T316, D-15/D-26): só prd, sem par de stg. Bucket criado por
+            # terraform/environments/prd/storage.tf (T301-T304) — a env só entra de fato no
+            # serviço vivo no deploy do PR final de B5.1 (`flip-de-flag-nao-deploya-sozinho`).
+            PATIENT_DOCUMENTS_BUCKET=enlite-patient-documents
             DB_HOST=/cloudsql/${{ secrets.GCP_PROJECT_ID }}:southamerica-west1:enlite-ar-db
             DB_NAME=enlite_ar
             DB_USER=enlite_app

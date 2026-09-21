@@ -172,6 +172,52 @@ describe('AdminConversationApiService', () => {
     await expect(AdminConversationApiService.markConversationRead('p1')).rejects.toMatchObject({ status: 403, code: 'FORBIDDEN' });
   });
 
+  // ========== 6b. uploadConversationAttachment (POST .../conversation/files) — Bloco 3, T206 ==========
+
+  it('uploadConversationAttachment: manda multipart (sem Content-Type manual), devolve fileId', async () => {
+    fetchMock.mockResolvedValue(json({ success: true, data: { fileId: 'file-1' } }));
+    const file = new File(['%PDF-1.4'], 'doc.pdf', { type: 'application/pdf' });
+
+    await expect(AdminConversationApiService.uploadConversationAttachment('p1', file)).resolves.toEqual({ fileId: 'file-1' });
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('http://localhost:8080/api/admin/patients/p1/conversation/files');
+    expect(init.method).toBe('POST');
+    expect(init.headers.Authorization).toBe('Bearer tok');
+    expect(init.headers['Content-Type']).toBeUndefined();
+    expect(init.body).toBeInstanceOf(FormData);
+  });
+
+  it('uploadConversationAttachment: 413 FILE_TOO_LARGE propaga code/status (D-14)', async () => {
+    fetchMock.mockResolvedValue(json({ success: false, error: 'File too large', code: 'FILE_TOO_LARGE' }, 413));
+    const file = new File(['x'], 'grande.pdf', { type: 'application/pdf' });
+    await expect(AdminConversationApiService.uploadConversationAttachment('p1', file)).rejects.toMatchObject({ status: 413, code: 'FILE_TOO_LARGE' });
+  });
+
+  it('uploadConversationAttachment: 415 LEGACY_DOC_NOT_ALLOWED propaga code/status', async () => {
+    fetchMock.mockResolvedValue(json({ success: false, error: 'Legacy doc', code: 'LEGACY_DOC_NOT_ALLOWED' }, 415));
+    const file = new File(['x'], 'legado.doc', { type: 'application/msword' });
+    await expect(AdminConversationApiService.uploadConversationAttachment('p1', file)).rejects.toMatchObject({ status: 415, code: 'LEGACY_DOC_NOT_ALLOWED' });
+  });
+
+  // ========== 6c. getConversationAttachmentUrl (GET .../files/:fileId/url) — Bloco 3, T315 ==========
+
+  it('getConversationAttachmentUrl: GET devolve { url, expiresInSeconds }', async () => {
+    fetchMock.mockResolvedValue(json({ success: true, data: { url: 'https://signed.example/x', expiresInSeconds: 300 } }));
+
+    const result = await AdminConversationApiService.getConversationAttachmentUrl('p1', 'file-1');
+
+    expect(result).toEqual({ url: 'https://signed.example/x', expiresInSeconds: 300 });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('http://localhost:8080/api/admin/patients/p1/conversation/files/file-1/url');
+    expect(init.method).toBe('GET');
+  });
+
+  it('getConversationAttachmentUrl: 404 quando o fileId não pertence à conversa deste paciente', async () => {
+    fetchMock.mockResolvedValue(json({ success: false, error: 'Not found' }, 404));
+    await expect(AdminConversationApiService.getConversationAttachmentUrl('p1', 'file-de-outro')).rejects.toMatchObject({ status: 404 });
+  });
+
   // ========== 7. searchStaffDirectory (GET /api/admin/staff-directory?q=) ==========
 
   it('searchStaffDirectory: GET com q codificado, devolve [{uid, displayName}] (nunca email/role)', async () => {

@@ -15,8 +15,10 @@
  * `suggestion` do TipTap já impede a chamada antes disso — sem essa trava, cada tecla depois do
  * `@` bateria no backend e devolveria erro.
  *
- * 🔒 ANEXO É SÓ CAMPO + PREVIEW LOCAL (D-14, Bloco 3 faz upload/validação de conteúdo — T319/T320).
- * Nenhum `fileId` sai daqui: o `body` do POST não inclui `fileIds` nesta task, de propósito.
+ * 🔒 ANEXO É UPLOAD REAL (D-14, Bloco 3, T320) — `AttachmentPicker` (T318/T319) faz o upload e a
+ * validação de conteúdo/tamanho; este componente só acumula os `fileId`s que ele confirma
+ * (`onUploaded`/`onRemoved`) e os inclui no `fileIds` do POST de mensagem. Nunca conhece o
+ * `<input type=file>` por dentro — delega inteiro ao picker (fix-once, zero duplicação).
  *
  * 🔒 DESCARTE (`useConfirmDiscardClose`, hook já existente — não duplicado). Este componente NÃO
  * conhece o `SlideOverPanel` que o embrulha (isso é outro agente); expõe `requestClose` via
@@ -24,7 +26,7 @@
  * rascunho está vazio; com rascunho, abre a confirmação AQUI DENTRO (nunca fecha silenciosamente).
  */
 import {
-  forwardRef, useCallback, useImperativeHandle, useRef, useState, type JSX,
+  forwardRef, useCallback, useImperativeHandle, useState, type JSX,
 } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useEditor, EditorContent, ReactRenderer } from '@tiptap/react';
@@ -44,9 +46,8 @@ import { useConfirmDiscardClose } from '@hooks/admin/useConfirmDiscardClose';
 import { useStaffNameCache } from '@presentation/stores/staffNameCache';
 import { Button } from '@presentation/components/atoms/Button';
 import { Text } from '@presentation/components/atoms/Text';
+import { AttachmentPicker } from './AttachmentPicker';
 
-/** D-14: extensões aceitas no CAMPO — a validação de conteúdo (magic bytes, tamanho) é do Bloco 3. */
-const ACCEPTED_ATTACHMENT_TYPES = '.pdf,.png,.jpg,.jpeg,.docx';
 /** `contracts/openapi-staff-directory.md`: `q` é `min(2)` no backend, `LIMIT 20`. */
 const MENTION_MIN_QUERY_LENGTH = 2;
 const MENTION_MAX_RESULTS = 20;
@@ -68,10 +69,6 @@ export interface MessageComposerProps {
   onSent?: (result: CreateConversationMessageResult) => void;
   /** Chamado quando o rascunho pode ser perdido de verdade (vazio, ou descarte confirmado). */
   onClose?: () => void;
-}
-
-interface AttachmentDraft {
-  file: File;
 }
 
 interface MentionListProps {
@@ -108,9 +105,17 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
     const te = (key: string): string => t(`admin.patients.detail.conversation.errors.${key}`);
 
     const [isEmpty, setIsEmpty] = useState(true);
-    const [attachment, setAttachment] = useState<AttachmentDraft | null>(null);
+    const [fileIds, setFileIds] = useState<string[]>([]);
+    /** Muda a cada `clearDraft()` — força o `AttachmentPicker` a REMONTAR (perde os chips e o
+     * contador interno de "5 no máximo"), já que ele é quem dono do estado visual dos anexos
+     * (T319: "não conhece o MessageComposer por dentro"). Sem isto, um envio bem-sucedido limpava
+     * `fileIds` aqui mas os chips ficavam na tela — a operadora reenviaria o mesmo anexo sem saber. */
+    const [attachmentPickerResetKey, setAttachmentPickerResetKey] = useState(0);
     const [sendError, setSendError] = useState<string | null>(null);
-    const fileInputRef = useRef<HTMLInputElement>(null);
+    /** 🔒 Achado do gate revisao-pr (B3): enviar DURANTE um upload em andamento perdia o `fileId`
+     * de um upload que terminava DEPOIS de `clearDraft()` já ter remontado o `AttachmentPicker` —
+     * ver `AttachmentPicker.onUploadingChange`. */
+    const [isUploading, setIsUploading] = useState(false);
 
     const editor = useEditor({
       extensions: [
@@ -197,8 +202,8 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
     const clearDraft = useCallback((): void => {
       editor?.commands.clearContent(true);
       setIsEmpty(true);
-      setAttachment(null);
-      if (fileInputRef.current) fileInputRef.current.value = '';
+      setFileIds([]);
+      setAttachmentPickerResetKey((n) => n + 1);
     }, [editor]);
 
     const handleConfirmedClose = useCallback((): void => {
@@ -206,7 +211,7 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
       onClose?.();
     }, [clearDraft, onClose]);
 
-    const isDirty = !isEmpty || attachment !== null;
+    const isDirty = !isEmpty || fileIds.length > 0;
 
     const { confirmingClose, requestClose, keepEditing, confirmDiscard } = useConfirmDiscardClose({
       isDirty,
@@ -230,6 +235,7 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
         const result = await AdminConversationApiService.postConversationMessage(patientId, {
           body,
           rootMessageId,
+          fileIds: fileIds.length > 0 ? fileIds : undefined,
         });
         clearDraft();
         onSent?.(result);
@@ -242,12 +248,19 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
           err instanceof ApiError && err.status === 403 ? te('sendForbidden') : te('sendFailed'),
         );
       }
-    }, [editor, patientId, rootMessageId, clearDraft, onSent, te]);
+    }, [editor, patientId, rootMessageId, fileIds, clearDraft, onSent, te]);
 
-    const handleAttachmentChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
-      const file = e.target.files?.[0];
-      setAttachment(file ? { file } : null);
-    };
+    const handleAttachmentUploaded = useCallback((fileId: string): void => {
+      setFileIds((prev) => [...prev, fileId]);
+    }, []);
+
+    const handleAttachmentRemoved = useCallback((fileId: string): void => {
+      setFileIds((prev) => prev.filter((id) => id !== fileId));
+    }, []);
+
+    const handleUploadingChange = useCallback((uploading: boolean): void => {
+      setIsUploading(uploading);
+    }, []);
 
     return (
       <div data-testid="message-composer" className="border-t bg-white p-2 flex flex-col gap-2">
@@ -292,47 +305,21 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
           </Text>
         )}
 
-        {attachment && (
-          <div data-testid="composer-attachment-preview" className="flex items-center gap-2 text-xs text-gray-600">
-            <span>{attachment.file.name}</span>
-            <button
-              type="button"
-              data-testid="composer-attachment-remove"
-              aria-label={tc('discard')}
-              onClick={() => setAttachment(null)}
-              className="text-gray-400 hover:text-gray-700"
-            >
-              ×
-            </button>
-          </div>
-        )}
+        <AttachmentPicker
+          key={attachmentPickerResetKey}
+          patientId={patientId}
+          onUploaded={handleAttachmentUploaded}
+          onRemoved={handleAttachmentRemoved}
+          onUploadingChange={handleUploadingChange}
+        />
 
-        <div className="flex items-center justify-between gap-2">
-          <div>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept={ACCEPTED_ATTACHMENT_TYPES}
-              data-testid="composer-attach-input"
-              onChange={handleAttachmentChange}
-              className="hidden"
-            />
-            <button
-              type="button"
-              data-testid="composer-attach-btn"
-              aria-label={tc('attach')}
-              onClick={() => fileInputRef.current?.click()}
-              className="text-sm text-gray-500 hover:text-primary"
-            >
-              {tc('attach')}
-            </button>
-          </div>
+        <div className="flex items-center justify-end gap-2">
           <Button
             type="button"
             variant="primary"
             size="sm"
             data-testid="composer-send-btn"
-            disabled={isEmpty}
+            disabled={isEmpty || isUploading}
             onClick={handleSend}
           >
             {tc('send')}

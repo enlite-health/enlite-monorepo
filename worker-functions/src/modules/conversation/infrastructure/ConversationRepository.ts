@@ -40,6 +40,14 @@ export interface TopMessageRow {
   replyCount: number;
   lastReplyAt: Date | null;
   mentions: string[];
+  attachments: AttachmentRow[];
+}
+
+/** Anexo de uma mensagem, forma do contrato (`contracts/openapi-conversation.md`): sem `originalName` — o nome decifrado só sai no download (`GET .../files/:fileId/url`), nunca na listagem. */
+export interface AttachmentRow {
+  fileId: string;
+  contentType: string;
+  sizeBytes: number;
 }
 
 /**
@@ -62,6 +70,7 @@ export interface ReplyMessageRow {
   editedAt: Date | null;
   deletedAt: Date | null;
   mentions: string[];
+  attachments: AttachmentRow[];
 }
 
 export interface InsertMessageInput {
@@ -109,6 +118,13 @@ interface RawReplyRow {
 interface RawMentionRow {
   messageId: string;
   mentionedUid: string;
+}
+
+interface RawAttachmentRow {
+  messageId: string;
+  fileId: string;
+  contentType: string;
+  sizeBytes: number;
 }
 
 export class ConversationRepository {
@@ -175,6 +191,7 @@ export class ConversationRepository {
       this.encryptionService.decrypt(row.bodyEncrypted),
     );
     const mentionsByMessageId = await this.fetchMentionsByMessageIds(rows.map((row) => row.id), executor);
+    const attachmentsByMessageId = await this.fetchAttachmentsByMessageIds(rows.map((row) => row.id), executor);
 
     return rows.map((row, i) => ({
       id: row.id,
@@ -187,6 +204,7 @@ export class ConversationRepository {
       replyCount: row.replyCount,
       lastReplyAt: row.lastReplyAt,
       mentions: mentionsByMessageId.get(row.id) ?? [],
+      attachments: attachmentsByMessageId.get(row.id) ?? [],
     }));
   }
 
@@ -221,6 +239,55 @@ export class ConversationRepository {
     return mentionsByMessageId;
   }
 
+  /**
+   * Anexos de todas as mensagens dadas, EM UMA query com `JOIN` + `WHERE ... = ANY($1)` — mesma
+   * disciplina anti-N+1 de `fetchMentionsByMessageIds`. Achado do Bloco 3 (`evidencias/b3-backend-anexo.md`):
+   * `toMessageDto`/`toReplyDto` devolviam `attachments: []` sempre, mesmo para mensagem com anexo
+   * real gravado por `PostMessageUseCase.attachFiles`. Forma da linha = contrato
+   * (`contracts/openapi-conversation.md`): `{ fileId, contentType, sizeBytes }`, sem `originalName`
+   * — o nome decifrado só sai no download (`GetConversationAttachmentUrlUseCase`), nunca aqui.
+   *
+   * RLS: mesma proteção de `conversation_message_mentions`/`conversation_messages` — as policies
+   * de `stored_files`/`conversation_message_attachments` (migration 461) seguem `conversations`
+   * via `EXISTS`, que por sua vez já filtra por país sob `app_runtime`; esta query não abre
+   * exceção nenhuma (nenhum `WHERE` adicional necessário além do `JOIN`, o RLS já filtra as
+   * linhas visíveis à sessão).
+   *
+   * 🔒 `JOIN conversation_messages cm ... AND cm.deleted_at IS NULL` (achado MÉDIO do gate
+   * revisao-pr, B3): sem este filtro, o anexo de uma mensagem APAGADA (soft delete zera só
+   * `body_encrypted`, D-04) continuava saindo na listagem — o front (`ThreadView.MessageContent`)
+   * já esconde visualmente (`!message.deletedAt && <MessageAttachments .../>`), mas o dado
+   * chegava ao cliente mesmo assim; defesa em profundidade no SERVIDOR, nunca só na UI.
+   */
+  private async fetchAttachmentsByMessageIds(
+    messageIds: string[],
+    executor: Pool | PoolClient,
+  ): Promise<Map<string, AttachmentRow[]>> {
+    const attachmentsByMessageId = new Map<string, AttachmentRow[]>();
+    if (messageIds.length === 0) return attachmentsByMessageId;
+
+    const { rows } = await executor.query<RawAttachmentRow>(
+      `SELECT cma.message_id AS "messageId",
+              sf.id AS "fileId",
+              sf.content_type AS "contentType",
+              sf.size_bytes AS "sizeBytes"
+         FROM conversation_message_attachments cma
+         JOIN stored_files sf ON sf.id = cma.file_id
+         JOIN conversation_messages cm ON cm.id = cma.message_id AND cm.deleted_at IS NULL
+        WHERE cma.message_id = ANY($1::uuid[])
+        ORDER BY cma.message_id, sf.created_at`,
+      [messageIds],
+    );
+
+    for (const row of rows) {
+      const entry: AttachmentRow = { fileId: row.fileId, contentType: row.contentType, sizeBytes: row.sizeBytes };
+      const existing = attachmentsByMessageId.get(row.messageId);
+      if (existing) existing.push(entry);
+      else attachmentsByMessageId.set(row.messageId, [entry]);
+    }
+    return attachmentsByMessageId;
+  }
+
   /** Todas as replies de uma thread de 1 nível, em ordem cronológica. */
   async listReplies(
     rootMessageId: string,
@@ -246,6 +313,7 @@ export class ConversationRepository {
       this.encryptionService.decrypt(row.bodyEncrypted),
     );
     const mentionsByMessageId = await this.fetchMentionsByMessageIds(rows.map((row) => row.id), executor);
+    const attachmentsByMessageId = await this.fetchAttachmentsByMessageIds(rows.map((row) => row.id), executor);
 
     return rows.map((row, i) => ({
       id: row.id,
@@ -257,6 +325,7 @@ export class ConversationRepository {
       editedAt: row.editedAt,
       deletedAt: row.deletedAt,
       mentions: mentionsByMessageId.get(row.id) ?? [],
+      attachments: attachmentsByMessageId.get(row.id) ?? [],
     }));
   }
 

@@ -47,18 +47,20 @@ function mergeById(prev: ConversationMessage[], incoming: ConversationMessage[])
 
 interface MessageItemProps {
   message: ConversationMessage;
+  patientId: string;
   onOpenThread: () => void;
 }
 
-/** Item de mensagem de TOPO: `MessageContent` (autor/hora/corpo, compartilhado com a `ThreadView`)
- * + o botão "N respostas" que abre a thread — só existe aqui, nunca numa reply (1 nível). */
-function MessageItem({ message, onOpenThread }: MessageItemProps): JSX.Element {
+/** Item de mensagem de TOPO: `MessageContent` (autor/hora/corpo/anexo, compartilhado com a
+ * `ThreadView`) + o botão "N respostas" que abre a thread — só existe aqui, nunca numa reply
+ * (1 nível). */
+function MessageItem({ message, patientId, onOpenThread }: MessageItemProps): JSX.Element {
   const { t } = useTranslation();
   const repliesLabel = t('admin.patients.detail.conversation.thread.replies', { count: message.replyCount });
 
   return (
     <div data-testid={`conversation-message-${message.id}`} className="flex flex-col gap-1 p-3 border-b">
-      <MessageContent message={message} />
+      <MessageContent message={message} patientId={patientId} />
       <button
         type="button"
         onClick={onOpenThread}
@@ -233,7 +235,7 @@ export function ConversationPanel({
               <ul data-testid="conversation-panel-list">
                 {messages.map((m) => (
                   <li key={m.id}>
-                    <MessageItem message={m} onOpenThread={() => setOpenThreadId(m.id)} />
+                    <MessageItem message={m} patientId={patientId} onOpenThread={() => setOpenThreadId(m.id)} />
                   </li>
                 ))}
               </ul>

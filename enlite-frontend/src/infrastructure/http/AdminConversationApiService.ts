@@ -75,6 +75,16 @@ export interface StaffDirectoryEntry {
   displayName: string;
 }
 
+export interface UploadConversationAttachmentResult {
+  fileId: string;
+}
+
+/** `GET .../conversation/files/:fileId/url` — mesma forma de `SignedUrlResult` da foto (`AdminPatientPhotoApiService`). */
+export interface ConversationAttachmentSignedUrlResult {
+  url: string;
+  expiresInSeconds: number;
+}
+
 export class AdminConversationApiServiceClass {
   private readonly authService = new FirebaseAuthService();
   private readonly baseURL: string;
@@ -96,6 +106,15 @@ export class AdminConversationApiServiceClass {
       headers: { 'Content-Type': 'application/json', ...headers },
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
+    const json: ApiResponse<T> = await response.json();
+    if (!json.success) throw new ApiError(json as ApiErrorResponse, response.status);
+    return (json as ApiSuccessResponse<T>).data;
+  }
+
+  /** Multipart nunca leva `Content-Type` manual — o browser fecha o boundary (molde: `AdminPatientPhotoApiService`). */
+  private async requestMultipart<T>(method: string, path: string, form: FormData): Promise<T> {
+    const headers = await this.getAuthHeaders();
+    const response = await fetch(`${this.baseURL}${path}`, { method, headers, body: form });
     const json: ApiResponse<T> = await response.json();
     if (!json.success) throw new ApiError(json as ApiErrorResponse, response.status);
     return (json as ApiSuccessResponse<T>).data;
@@ -147,6 +166,28 @@ export class AdminConversationApiServiceClass {
 
   async markConversationRead(patientId: string): Promise<void> {
     await this.requestJson<unknown>('PUT', `/api/admin/patients/${patientId}/conversation/read-mark`);
+  }
+
+  // ========== Anexo (Bloco 3, T206/T312/T315) ==========
+
+  /** `campo file`, multipart (contrato, `POST .../conversation/files`) — devolve o `fileId` que o
+   * POST de mensagem espera em `fileIds[]` (upload é sempre um passo ANTES de enviar a mensagem). */
+  async uploadConversationAttachment(patientId: string, file: File): Promise<UploadConversationAttachmentResult> {
+    const form = new FormData();
+    form.append('file', file);
+    return this.requestMultipart<UploadConversationAttachmentResult>(
+      'POST',
+      `/api/admin/patients/${patientId}/conversation/files`,
+      form,
+    );
+  }
+
+  /** Signed URL v4, 300s (contrato, `GET .../files/:fileId/url`) — quem chama abre a `url` direto. */
+  async getConversationAttachmentUrl(patientId: string, fileId: string): Promise<ConversationAttachmentSignedUrlResult> {
+    return this.requestJson<ConversationAttachmentSignedUrlResult>(
+      'GET',
+      `/api/admin/patients/${patientId}/conversation/files/${fileId}/url`,
+    );
   }
 
   // ========== Diretório de staff (autocomplete de menção) ==========

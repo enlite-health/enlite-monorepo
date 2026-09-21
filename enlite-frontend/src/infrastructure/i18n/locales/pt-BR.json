@@ -3753,7 +3753,8 @@
             "maliciousContent": "O arquivo foi rejeitado por conter código ativo ou macros",
             "mentionInvalid": "O usuário mencionado não existe",
             "sendFailed": "Não conseguimos enviar a mensagem. Tente de novo.",
-            "sendForbidden": "Você não tem permissão para enviar mensagens nesta conversa."
+            "sendForbidden": "Você não tem permissão para enviar mensagens nesta conversa.",
+            "uploadFailed": "Não conseguimos enviar o arquivo. Tente de novo."
           },
           "handle": {
             "label": "Mensagens",
@@ -3772,7 +3773,12 @@
             "replies_other": "{{count}} respostas",
             "back": "Voltar",
             "deleted": "Mensagem apagada",
-            "loadError": "Não foi possível carregar as respostas"
+            "loadError": "Não foi possível carregar as respostas",
+            "attachments": {
+              "download": "Baixar anexo",
+              "downloadError": "Não conseguimos baixar o arquivo. Tente de novo.",
+              "popupBlocked": "Seu navegador bloqueou a janela pop-up. Habilite pop-ups para baixar o arquivo."
+            }
           },
           "composer": {
             "placeholder": "Digite uma mensagem…",
@@ -3780,7 +3786,12 @@
             "attach": "Anexar",
             "discardConfirm": "Descartar mensagem não enviada?",
             "discard": "Descartar",
-            "cancel": "Cancelar"
+            "cancel": "Cancelar",
+            "attachments": {
+              "remove": "Remover anexo",
+              "uploading": "Enviando…",
+              "max": "Máximo de 5 anexos"
+            }
           }
         }
       },

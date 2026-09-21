@@ -1,7 +1,12 @@
 import { Router, Request, Response } from 'express';
+import multer from 'multer';
 import { AuthMiddleware, type PermissionMiddleware } from '@modules/identity';
 import { ADMIN_PATIENTS_FAMILY } from '@modules/identity/permissions';
+import { logResourceAccess } from '@shared/audit/resourceAccessLog';
+import { withMulterErrorAsJson } from '@shared/http/withMulterErrorAsJson';
 import { AdminConversationController } from '../controllers/AdminConversationController';
+import { AdminConversationAttachmentController } from '../controllers/AdminConversationAttachmentController';
+import { MAX_ATTACHMENT_BYTES } from '../../infrastructure/ConversationAttachmentPolicy';
 
 /**
  * Rotas de conversa do paciente (spec 022, Bloco 1, T119; `contracts/openapi-conversation.md`).
@@ -19,13 +24,18 @@ import { AdminConversationController } from '../controllers/AdminConversationCon
  * `PermissionMiddleware` (achado já visto: com a ordem trocada `denyUndeclaredRoutes` barraria a
  * rota mesmo com a célula declarada).
  *
- * As rotas de anexo (`.../files`, `.../files/:fileId/url`) do mesmo contrato NÃO entram aqui —
- * anexo é Bloco 3 (fora do escopo do fecho do B1); ficam para a task que as backear.
+ * Rotas de anexo (`.../files`, `.../files/:fileId/url` — spec 022, Bloco 3, T311/T312/T314/T315)
+ * ENTRAM aqui, mesmo prefixo/família — controller PRÓPRIO (`AdminConversationAttachmentController`),
+ * só a montagem do `Router` é compartilhada (mesmo padrão de `adminPatientPhotoRoutes.ts`, que
+ * também vive fora do controller principal de paciente).
  */
+const uploadAttachment = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_ATTACHMENT_BYTES } });
+
 export function createAdminConversationRoutes(
   authMiddleware: AuthMiddleware,
   permissions: PermissionMiddleware,
   controller: AdminConversationController = new AdminConversationController(),
+  attachmentController: AdminConversationAttachmentController = new AdminConversationAttachmentController(),
 ): Router {
   const router = Router();
   const staffOnly = authMiddleware.requireStaff();
@@ -71,6 +81,23 @@ export function createAdminConversationRoutes(
     staffOnly,
     perm.require('patient_conversation', 'read'),
     (req: Request, res: Response) => controller.markRead(req, res),
+  );
+
+  // ── Anexo (spec 022, Bloco 3, T311/T312/T314/T315) ───────────────────────────────────────────
+  router.post(
+    '/patients/:id/conversation/files',
+    staffOnly,
+    perm.require('patient_conversation', 'create'),
+    withMulterErrorAsJson(uploadAttachment)('file'),
+    (req: Request, res: Response) => attachmentController.upload(req, res),
+  );
+
+  router.get(
+    '/patients/:id/conversation/files/:fileId/url',
+    staffOnly,
+    perm.require('patient_conversation', 'read'),
+    logResourceAccess('patient', 'read_conversation_attachment'),
+    (req: Request, res: Response) => attachmentController.getUrl(req, res),
   );
 
   return router;
