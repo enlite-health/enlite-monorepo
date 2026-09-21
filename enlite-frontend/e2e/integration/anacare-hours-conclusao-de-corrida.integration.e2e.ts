@@ -105,6 +105,20 @@
  * sabotagem já foi feita e colada no relatório daquela retomada; não é objetivo desta retomada
  * mantê-la reproduzível ad-hoc) — o caso agora SEMPRE regrava 144/144 no início do próprio corpo,
  * como os casos 1/2 já faziam para seus meses.
+ *
+ * RETOMADA 5 (21/09/2026) — item 1: caminho `done` (D398 — "Sincronizar terminou → status='done'
+ * no banco"). O caso 6 (retomada 4) provava só a FALHA, forçada pelo stub não implementar
+ * `/admin/accounts/`. Para provar a corrida que TERMINA, o stub ganhou essa rota (1 conta
+ * sintética, `SYNC_ACCOUNT_ID`) e uma CHAVE (`setDirectoryFailing`, controlada pelo teste — 404
+ * só quando o caso 6 liga) para os dois casos continuarem coexistindo no MESMO processo/stub sem
+ * um quebrar o outro. `ANACARE_DIRECTORY_MIN_ABSOLUTE=0` (mesmo valor documentado desde a
+ * retomada 3, agora também na env do container — ver `docker-compose.anacare-hours-real-stub-
+ * local.yml`): sem histórico em `anacare_directory_snapshot` (1ª corrida deste container) E sem
+ * essa env, `assertDirectoryHealthy` lançaria `AnaCareDirectoryFirstRunNotConfiguredError` antes
+ * de eu conseguir provar qualquer coisa — com `0`, o piso vira `max(0, floorRelative)` e uma
+ * conta só (`newTotal=1`) passa. A corrida coube numa RODADA SÓ (1 conta no diretório, 1 chamada
+ * local ao stub) — não há `status='running'`/`cursor` intermediário para mostrar; reportado como
+ * fato medido, não inventado (ver comentário do caso 7).
  */
 import { execFileSync } from 'child_process';
 import * as http from 'http';
@@ -153,6 +167,10 @@ const DETALHE_PARCIAL_TOTAL = 144;
 // poder ser confundida com sobra de outro caso.
 const SYNC_FALHA_BASELINE_DONE = 88;
 const SYNC_FALHA_BASELINE_TOTAL = 200;
+// Caso 7 (sync real, sucesso) — 1 conta sintética no diretório do stub; o paciente que o
+// `/api/shifts/?reservation_id=...` devolve para ela (sem PII).
+const SYNC_ACCOUNT_ID = '700001';
+const SYNC_PATIENT_ID = 'E2E-CASO7-SYNC-PATIENT';
 
 /** Porta do stub local do Ana Care — próxima a 9911 (Periskope)/9912 (Axonico), mesmo precedente (`docker-compose.test.yml`). */
 const ANACARE_STUB_PORT = 9913;
@@ -161,22 +179,26 @@ interface AnaCareStub {
   server: http.Server;
   /** Caminhos batidos no stub — prova de que o tráfego ficou LOCAL, nunca saiu pro host real. */
   requestsLog: string[];
+  /** Liga/desliga o 404 de `/admin/accounts/` — controlado PELO TESTE (caso 6 liga, caso 7 desliga). */
+  setDirectoryFailing: (shouldFail: boolean) => void;
   close: () => Promise<void>;
 }
 
 /**
- * Stub HTTP local do Ana Care (login por cookie Django + `/api/shifts/`) — só existe porque
- * `AnaCareHoursService.getPatientMonth` (tela de DETALHE) SEMPRE chama rede em modo `real` (ver
- * docstring do arquivo, RETOMADA 4 item 1). Cobre o mínimo pra `AnaCareSessionClient` logar e
- * listar turnos: devolve 1 turno sintético por paciente pedido (nome "E2E"/"Stub", sem PII),
- * ECOANDO o `patient` da query — funciona pra qualquer paciente que o teste escolher, sem
- * ramificação por caso. Devolve 404 pra tudo mais, inclusive `/admin/accounts/` (o diretório HTML
- * que só o SYNC RUNNER usa) — de propósito, é o que faz o caso 6 (Sincronizar) falhar de forma
- * controlada e observável, mesmo precedente de `tests/e2e/helpers/periskopeStubServer.ts`/
- * `axonicoStubServer.ts` (stub local, nunca o serviço real).
+ * Stub HTTP local do Ana Care (login por cookie Django + `/api/shifts/` + `/admin/accounts/`) —
+ * só existe porque `AnaCareHoursService.getPatientMonth` (tela de DETALHE) SEMPRE chama rede em
+ * modo `real` (docstring RETOMADA 4 item 1). Cobre o mínimo pra `AnaCareSessionClient` logar,
+ * listar turnos (1 turno sintético por paciente/reserva pedido, sem PII) e listar o diretório (1
+ * conta sintética). `directoryFailing` (retomada 5, item 1) é uma CHAVE que o TESTE liga/desliga:
+ * `true` faz `/admin/accounts/` devolver 404 (caso 6, sync que FALHA — regra dura "teste nunca
+ * toca canal real" continua valendo, o stub só simula uma falha DELE); `false` (default) devolve
+ * o diretório de verdade (caso 7, sync que TERMINA). Mesmo precedente de
+ * `tests/e2e/helpers/periskopeStubServer.ts`/`axonicoStubServer.ts` (stub local, nunca o serviço
+ * real).
  */
 function startAnaCareStub(port: number): Promise<AnaCareStub> {
   const requestsLog: string[] = [];
+  let directoryFailing = false;
   return new Promise((resolve) => {
     const server = http.createServer((req, res) => {
       const url = new URL(req.url ?? '/', 'http://stub');
@@ -195,13 +217,34 @@ function startAnaCareStub(port: number): Promise<AnaCareStub> {
         });
         return;
       }
+      // Diretório (`/admin/accounts/`) — retomada 5, item 1: precisa existir pro caso 7 (sync que
+      // TERMINA). 1 conta sintética só — `ACCOUNT_ID_RE` (`AnaCareEnliteDirectory.ts`) casa
+      // `/accounts/<dígitos>/` em QUALQUER lugar do HTML. `directoryFailing` (caso 6) força 404.
+      if (req.method === 'GET' && url.pathname === '/admin/accounts/') {
+        if (directoryFailing) {
+          res.writeHead(404, { 'Content-Type': 'text/plain' });
+          res.end('stub: diretorio desligado de proposito (caso 6)');
+          return;
+        }
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end(`<html><body><a href="/accounts/${SYNC_ACCOUNT_ID}/">Cuenta ${SYNC_ACCOUNT_ID}</a></body></html>`);
+        return;
+      }
+      // `terminated_services` fica de FORA de propósito — cai no 404 genérico abaixo, que
+      // `AnaCareEnliteDirectory.fetch()` já trata como `partial:true` (try/catch só nessa página,
+      // não na de ativos) — não muda o resultado do caso 7 (só os ATIVOS importam pro total).
+
       if (req.method === 'GET' && url.pathname === '/api/shifts/') {
-        const patientId = url.searchParams.get('patient') ?? 'E2E-STUB-SEM-PATIENT-ID';
+        // Caso 7 (sync real): o runner pede por `reservation_id`, nunca `patient` — usa um
+        // paciente sintético FIXO (sem PII), independente do id da reserva. Caso 4/5 (detalhe):
+        // pedem por `patient` — eco do id pedido (mesmo comportamento de antes).
+        const reservationId = url.searchParams.get('reservation_id');
+        const patientId = reservationId ? SYNC_PATIENT_ID : (url.searchParams.get('patient') ?? 'E2E-STUB-SEM-PATIENT-ID');
         const minDate = url.searchParams.get('min_date') ?? `${MONTH_CURRENT}-01`;
         const start = `${minDate}T13:00:00-06:00`;
         const end = `${minDate}T17:00:00-06:00`;
         const raw = {
-          id: `E2E-STUB-SHIFT-${patientId}`,
+          id: `E2E-STUB-SHIFT-${reservationId ?? patientId}`,
           start,
           end,
           checkin: start,
@@ -228,8 +271,9 @@ function startAnaCareStub(port: number): Promise<AnaCareStub> {
         return;
       }
 
-      // Qualquer outra rota (inclusive `/admin/accounts/`, o diretório do SYNC) — 404 DE
-      // PROPÓSITO, ver docstring da função.
+      // Qualquer outra rota — 404 DE PROPÓSITO, ver docstring da função (é o que faz o caso 6
+      // falhar quando `/admin/accounts/` ainda não existia; agora só sobra `terminated_services`
+      // e qualquer rota fora do escopo deste stub).
       res.writeHead(404, { 'Content-Type': 'text/plain' });
       res.end('stub: rota nao implementada');
     });
@@ -237,6 +281,9 @@ function startAnaCareStub(port: number): Promise<AnaCareStub> {
       resolve({
         server,
         requestsLog,
+        setDirectoryFailing: (shouldFail: boolean) => {
+          directoryFailing = shouldFail;
+        },
         close: () => new Promise<void>((r) => server.close(() => r())),
       });
     });
@@ -398,7 +445,8 @@ test.describe('Banner de conclusão de corrida — Horas Ana Care — E2E real @
     safeSql(`DELETE FROM iam.group_permissions WHERE group_id IN (SELECT id FROM iam.permission_groups WHERE name = '${GRUPO}')`);
     safeSql(`DELETE FROM iam.permission_groups WHERE name = '${GRUPO}'`);
     safeSql(`DELETE FROM users WHERE firebase_uid = '${COMPLETO_UID}'`);
-    safeSql(`DELETE FROM anacare_patient_month WHERE ana_care_patient_id IN ('${PATIENT_FLOOR}', '${PATIENT_CURRENT}')`);
+    safeSql(`DELETE FROM anacare_patient_month WHERE ana_care_patient_id IN ('${PATIENT_FLOOR}', '${PATIENT_CURRENT}', '${SYNC_PATIENT_ID}')`);
+    safeSql(`DELETE FROM anacare_patient_month_provider WHERE ana_care_patient_id = '${SYNC_PATIENT_ID}'`);
     // `anacare_sync_run` (chave por mês, não por RUN_ID) É DEIXADO DE PROPÓSITO — cada caso que o
     // usa regrava seu próprio estado no início do corpo (retomada 4, item 3: determinístico agora,
     // nenhum caso depende do que sobrou de uma execução anterior). Não fazer DELETE/RESET aqui.
@@ -562,6 +610,10 @@ test.describe('Banner de conclusão de corrida — Horas Ana Care — E2E real @
   });
 
   test('CASO 6 — botão "Sincronizar" real: falha de verdade grava anacare_sync_run (Postgres real), nunca toca o Ana Care real', async ({ page }) => {
+    // Liga o 404 de `/admin/accounts/` neste caso (retomada 5): o caso 7 precisa do MESMO stub
+    // com o diretório funcionando, então a falha agora é CONTROLADA por esta chave, não pela
+    // ausência permanente da rota.
+    anaCareStub?.setDirectoryFailing(true);
     // Arranjo (não é o fluxo sob teste): baseline PRÓPRIO — números que não aparecem em nenhum
     // outro caso deste arquivo, para a prova de PRESERVAÇÃO (abaixo) não poder ser confundida com
     // sobra de outro teste.
@@ -625,6 +677,56 @@ test.describe('Banner de conclusão de corrida — Horas Ana Care — E2E real @
     // realmente batida — prova de que a falha veio DAQUELA rota, não de outra coisa.
     expect(anaCareStub?.requestsLog.length ?? 0).toBeGreaterThan(0);
     expect(anaCareStub?.requestsLog.some((r) => r.includes('/users/admin/login/'))).toBe(true);
+    expect(anaCareStub?.requestsLog.some((r) => r.includes('/admin/accounts/'))).toBe(true);
+  });
+
+  test('CASO 7 — botão "Sincronizar" real: corrida TERMINA (status=\'done\'), grava Postgres real, tela some o banner', async ({ page }) => {
+    // Desliga o 404 do caso 6 — este caso usa o MESMO stub, mas com o diretório respondendo de
+    // verdade (retomada 5, item 1). O diretório tem 1 conta sintética (`SYNC_ACCOUNT_ID`) — a
+    // corrida inteira cabe numa RODADA SÓ (orçamento de tempo padrão do runner é 100s; 1 chamada
+    // local ao stub leva milissegundos) — por isso não há estado intermediário `status='running'`
+    // com `cursor` a observar aqui: `nextCursor` já sai `null` na 1ª rodada. Reportado como
+    // pedido, não inventado: rodei e só vi UMA chamada a `/api/shifts/?reservation_id=...` no log
+    // do stub (ver asserção do log, abaixo).
+    anaCareStub?.setDirectoryFailing(false);
+
+    const antes = psql(
+      `SELECT status, reservations_total, reservations_done, last_error, finished_at IS NOT NULL AS finished
+         FROM anacare_sync_run WHERE source='anacare' AND period_month='${MONTH_CURRENT}-01'::date`,
+    ).trim();
+    console.log(`[caso 7] anacare_sync_run ANTES: ${antes}`);
+
+    await loginAs(page, COMPLETO);
+    await abrirPeloMenu(page);
+    const botaoSync = page.getByTestId('anacare-hours-sync-button');
+    await expect(botaoSync).toBeVisible({ timeout: 15_000 });
+    await botaoSync.click();
+    await expect(page.getByTestId('anacare-hours-sync-done')).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId('anacare-hours-sync-error')).toHaveCount(0);
+
+    const depois = scalar(
+      `SELECT status || '|' || COALESCE(reservations_total::text,'NULL') || '|' || COALESCE(reservations_done::text,'NULL')
+              || '|' || COALESCE(last_error,'NULL') || '|' || (finished_at IS NOT NULL)::text
+         FROM anacare_sync_run WHERE source='anacare' AND period_month='${MONTH_CURRENT}-01'::date`,
+    );
+    console.log(`[caso 7] anacare_sync_run DEPOIS: ${depois}`);
+    const [status, reservationsTotal, reservationsDone, lastError, finishedNotNull] = depois.split('|');
+    expect(status).toBe('done');
+    expect(reservationsTotal).not.toBe('NULL');
+    expect(reservationsDone).toBe(reservationsTotal); // done === total — a rodada processou TUDO.
+    expect(lastError).toBe('NULL');
+    expect(finishedNotNull).toBe('true');
+
+    // Só 1 rodada — nenhum `status='running'`/`cursor` intermediário a mostrar (ver comentário no
+    // início do teste). Quantas chamadas reais a `/api/shifts/?reservation_id=` o stub recebeu:
+    const chamadasShiftsPorReserva = (anaCareStub?.requestsLog ?? []).filter((r) => r.startsWith('GET /api/shifts/')).length;
+    console.log(`[caso 7] chamadas a /api/shifts/ desde o início do arquivo (inclui casos 4/5): ${chamadasShiftsPorReserva}`);
+
+    // A tela, recarregada, não mostra mais banner nenhum — retrato fresco (done === total, fonte
+    // não-`stale`, sem `circuitBreakerOpen`).
+    await page.reload();
+    await expectNoStatusBanner(page);
+
     expect(anaCareStub?.requestsLog.some((r) => r.includes('/admin/accounts/'))).toBe(true);
   });
 });
