@@ -55,6 +55,7 @@ describe('ListRepliesUseCase', () => {
           editedAt: null,
           deletedAt: null,
           mentions: [],
+          attachments: [],
         },
       ];
       mockRepository.listReplies.mockResolvedValue(replies);

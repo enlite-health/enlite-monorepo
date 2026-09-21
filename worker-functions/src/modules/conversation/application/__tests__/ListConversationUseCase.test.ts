@@ -88,6 +88,7 @@ describe('ListConversationUseCase', () => {
           replyCount: 0,
           lastReplyAt: null,
           mentions: [],
+          attachments: [],
         },
         {
           id: 'msg-2',
@@ -100,6 +101,7 @@ describe('ListConversationUseCase', () => {
           replyCount: 0,
           lastReplyAt: null,
           mentions: [],
+          attachments: [],
         },
       ];
       mockRepository.listTopMessages.mockResolvedValue(messages);
@@ -123,6 +125,7 @@ describe('ListConversationUseCase', () => {
         replyCount: 0,
         lastReplyAt: null,
         mentions: [] as string[],
+        attachments: [],
       }));
       mockRepository.listTopMessages.mockResolvedValue(messages);
 
@@ -152,6 +155,7 @@ describe('ListConversationUseCase', () => {
           replyCount: 0,
           lastReplyAt: null,
           mentions: [],
+          attachments: [],
         },
       ];
       mockRepository.listTopMessages.mockResolvedValue(messages);
@@ -194,6 +198,7 @@ describe('ListConversationUseCase', () => {
           replyCount: 2,
           lastReplyAt: new Date('2026-01-01T12:00:00Z'),
           mentions: [],
+          attachments: [],
         },
         {
           id: 'msg-2',
@@ -206,6 +211,7 @@ describe('ListConversationUseCase', () => {
           replyCount: 0,
           lastReplyAt: null,
           mentions: [],
+          attachments: [],
         },
         {
           id: 'msg-3',
@@ -218,6 +224,7 @@ describe('ListConversationUseCase', () => {
           replyCount: 1,
           lastReplyAt: new Date('2026-01-01T12:30:00Z'),
           mentions: [],
+          attachments: [],
         },
       ];
       mockRepository.listTopMessages.mockResolvedValue(messages);
@@ -250,7 +257,9 @@ describe('ListConversationUseCase', () => {
         })
         // 2ª chamada do pool padrão: a agregação de mentions (UMA query com ANY, LACUNA 2).
         .mockResolvedValueOnce({ rows: [] })
-        // 3ª chamada do pool padrão: `getReadState` (D-11) — sem marca prévia, unreadCount 0 aqui
+        // 3ª chamada do pool padrão: a agregação de anexos (UMA query com JOIN+ANY, Bloco 3).
+        .mockResolvedValueOnce({ rows: [] })
+        // 4ª chamada do pool padrão: `getReadState` (D-11) — sem marca prévia, unreadCount 0 aqui
         // só prova que o ramo "sem argumento" chegou até o repositório default; o comportamento de
         // contagem em si é coberto por `ConversationRepository.test.ts`.
         .mockResolvedValueOnce({ rows: [{ lastReadAt: null, unreadCount: 0 }] });
@@ -262,10 +271,11 @@ describe('ListConversationUseCase', () => {
       // Prova que o ramo "sem argumento" rodou: a query do POOL PADRÃO (não do
       // mockRepository dos outros testes) foi chamada, e o corpo decifrado pelo
       // KMS padrão chegou até o resultado.
-      expect(mockDefaultRepoPoolQuery).toHaveBeenCalledTimes(3);
+      expect(mockDefaultRepoPoolQuery).toHaveBeenCalledTimes(4);
       expect(result.messages).toHaveLength(1);
       expect(result.messages[0].body).toBe('mensagem decifrada via repositorio default');
       expect(result.messages[0].mentions).toEqual([]);
+      expect(result.messages[0].attachments).toEqual([]);
       expect(result.lastReadAt).toBeNull();
       expect(result.unreadCount).toBe(0);
       expect(result.nextCursor).toBeUndefined();

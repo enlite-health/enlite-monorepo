@@ -237,13 +237,15 @@ describe('ConversationRepository', () => {
             { messageId: 'm1', mentionedUid: 'staff:3' },
             { messageId: 'm2', mentionedUid: 'staff:4' },
           ],
-        });
+        })
+        .mockResolvedValueOnce({ rows: [] });
       const repo = new ConversationRepository(poolWith(query));
 
       const out = await repo.listTopMessages(CONVERSATION_ID, null, 50);
 
-      // exatamente 2 chamadas ao pool: 1 para as mensagens, 1 para TODAS as mentions — nunca 1+N.
-      expect(query).toHaveBeenCalledTimes(2);
+      // exatamente 3 chamadas ao pool: 1 para as mensagens, 1 para TODAS as mentions, 1 para
+      // TODOS os anexos — nunca 1+N (mesma disciplina das duas agregações).
+      expect(query).toHaveBeenCalledTimes(3);
       const [mentionsSql, mentionsParams] = query.mock.calls[1];
       expect(mentionsSql).toContain('WHERE message_id = ANY($1::uuid[])');
       expect(mentionsParams).toEqual([['m1', 'm2']]);
@@ -256,6 +258,7 @@ describe('ConversationRepository', () => {
       const query = jest
         .fn()
         .mockResolvedValueOnce({ rows: [topRow({ id: 'm1' })] })
+        .mockResolvedValueOnce({ rows: [] })
         .mockResolvedValueOnce({ rows: [] });
       const repo = new ConversationRepository(poolWith(query));
 
@@ -279,16 +282,92 @@ describe('ConversationRepository', () => {
         .mockResolvedValueOnce({ rows: [replyRow({ id: 'r1' }), replyRow({ id: 'r2' })] })
         .mockResolvedValueOnce({
           rows: [{ messageId: 'r1', mentionedUid: 'staff:9' }],
+        })
+        .mockResolvedValueOnce({ rows: [] });
+      const repo = new ConversationRepository(poolWith(query));
+
+      const out = await repo.listReplies('m1');
+
+      expect(query).toHaveBeenCalledTimes(3);
+      const [, mentionsParams] = query.mock.calls[1];
+      expect(mentionsParams).toEqual([['r1', 'r2']]);
+      expect(out.find((r) => r.id === 'r1')?.mentions).toEqual(['staff:9']);
+      expect(out.find((r) => r.id === 'r2')?.mentions).toEqual([]);
+    });
+  });
+
+  describe('attachments — agregação por mensagem (achado fechado no Bloco 3, evidencias/b3-backend-anexo.md)', () => {
+    it('listTopMessages: UMA query com JOIN+ANY para anexos de VÁRIAS mensagens — nunca uma por mensagem (evita N+1)', async () => {
+      const query = jest
+        .fn()
+        .mockResolvedValueOnce({ rows: [topRow({ id: 'm1' }), topRow({ id: 'm2' })] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({
+          rows: [
+            { messageId: 'm1', fileId: 'f1', contentType: 'application/pdf', sizeBytes: 1024 },
+            { messageId: 'm1', fileId: 'f2', contentType: 'image/png', sizeBytes: 2048 },
+          ],
+        });
+      const repo = new ConversationRepository(poolWith(query));
+
+      const out = await repo.listTopMessages(CONVERSATION_ID, null, 50);
+
+      expect(query).toHaveBeenCalledTimes(3);
+      const [attachmentsSql, attachmentsParams] = query.mock.calls[2];
+      expect(attachmentsSql).toContain('FROM conversation_message_attachments cma');
+      expect(attachmentsSql).toContain('JOIN stored_files sf ON sf.id = cma.file_id');
+      expect(attachmentsSql).toContain('WHERE cma.message_id = ANY($1::uuid[])');
+      expect(attachmentsParams).toEqual([['m1', 'm2']]);
+
+      expect(out.find((m) => m.id === 'm1')?.attachments).toEqual([
+        { fileId: 'f1', contentType: 'application/pdf', sizeBytes: 1024 },
+        { fileId: 'f2', contentType: 'image/png', sizeBytes: 2048 },
+      ]);
+      expect(out.find((m) => m.id === 'm2')?.attachments).toEqual([]);
+    });
+
+    it('listTopMessages: mensagem sem nenhum anexo devolve attachments: [] (nunca undefined)', async () => {
+      const query = jest
+        .fn()
+        .mockResolvedValueOnce({ rows: [topRow({ id: 'm1' })] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] });
+      const repo = new ConversationRepository(poolWith(query));
+
+      const [out] = await repo.listTopMessages(CONVERSATION_ID, null, 50);
+
+      expect(out.attachments).toEqual([]);
+    });
+
+    it('listTopMessages: página vazia NUNCA dispara a query de anexos (0 ids, nada para buscar)', async () => {
+      const query = jest.fn().mockResolvedValueOnce({ rows: [] });
+      const repo = new ConversationRepository(poolWith(query));
+
+      await repo.listTopMessages(CONVERSATION_ID, null, 50);
+
+      // 1 chamada só: nem mentions nem anexos disparam query com 0 ids.
+      expect(query).toHaveBeenCalledTimes(1);
+    });
+
+    it('listReplies: mesma agregação (UMA query com JOIN+ANY), sem forma de originalName (contrato só devolve fileId/contentType/sizeBytes)', async () => {
+      const query = jest
+        .fn()
+        .mockResolvedValueOnce({ rows: [replyRow({ id: 'r1' }), replyRow({ id: 'r2' })] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({
+          rows: [{ messageId: 'r1', fileId: 'f9', contentType: 'application/pdf', sizeBytes: 512 }],
         });
       const repo = new ConversationRepository(poolWith(query));
 
       const out = await repo.listReplies('m1');
 
-      expect(query).toHaveBeenCalledTimes(2);
-      const [, mentionsParams] = query.mock.calls[1];
-      expect(mentionsParams).toEqual([['r1', 'r2']]);
-      expect(out.find((r) => r.id === 'r1')?.mentions).toEqual(['staff:9']);
-      expect(out.find((r) => r.id === 'r2')?.mentions).toEqual([]);
+      expect(query).toHaveBeenCalledTimes(3);
+      const [, attachmentsParams] = query.mock.calls[2];
+      expect(attachmentsParams).toEqual([['r1', 'r2']]);
+      const r1 = out.find((r) => r.id === 'r1');
+      expect(r1?.attachments).toEqual([{ fileId: 'f9', contentType: 'application/pdf', sizeBytes: 512 }]);
+      expect(Object.keys(r1?.attachments[0] ?? {})).toEqual(['fileId', 'contentType', 'sizeBytes']);
+      expect(out.find((r) => r.id === 'r2')?.attachments).toEqual([]);
     });
   });
 

@@ -68,9 +68,9 @@ function parseCursor(raw: string): ConversationMessageCursor {
 
 /**
  * `mentions` vem de `ConversationRepository.listTopMessages` (agregação por `IN`/`GROUP BY`,
- * fecho do B1 — nunca uma query por mensagem). `attachments` continua SEMPRE vazio: anexo é
- * Bloco 3, nenhuma leitura de `conversation_message_attachments` existe ainda — retorno parcial e
- * HONESTO (array vazio real, não dado inventado), registrado em `evidencias/achados.md`.
+ * fecho do B1 — nunca uma query por mensagem). `attachments` vem da MESMA disciplina
+ * (`fetchAttachmentsByMessageIds`, Bloco 3) — achado fechado nesta sessão: até aqui o array saía
+ * sempre vazio mesmo para mensagem com anexo real (`evidencias/b3-backend-anexo.md` §Achados).
  */
 function toMessageDto(row: TopMessageRow) {
   return {
@@ -83,14 +83,15 @@ function toMessageDto(row: TopMessageRow) {
     mentions: row.mentions,
     replyCount: row.replyCount,
     lastReplyAt: row.lastReplyAt ? row.lastReplyAt.toISOString() : null,
-    attachments: [] as Array<{ fileId: string; contentType: string; sizeBytes: number }>,
+    attachments: row.attachments,
   };
 }
 
 /**
  * DTO de uma REPLY — "mesma forma de `messages[]`" do contrato (thread de 1 nível, D-03): uma
  * reply nunca tem replies próprias, então `replyCount`/`lastReplyAt` são constantes (0/null),
- * nunca uma leitura própria. `mentions` vem da MESMA agregação de `ConversationRepository.listReplies`.
+ * nunca uma leitura própria. `mentions`/`attachments` vêm da MESMA agregação de
+ * `ConversationRepository.listReplies`.
  */
 function toReplyDto(row: ReplyMessageRow) {
   return {
@@ -103,7 +104,7 @@ function toReplyDto(row: ReplyMessageRow) {
     mentions: row.mentions,
     replyCount: 0,
     lastReplyAt: null as string | null,
-    attachments: [] as Array<{ fileId: string; contentType: string; sizeBytes: number }>,
+    attachments: row.attachments,
   };
 }
 
