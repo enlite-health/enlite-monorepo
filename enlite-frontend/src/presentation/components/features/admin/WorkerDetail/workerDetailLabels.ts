@@ -16,8 +16,11 @@ const DOCUMENT_TYPE_KEYS: Record<string, string> = {
  *   ES variantes reais em prod (mujer, Mujer, hombre, Hombre, Varón, varón,
  *   Femenino, femenino, Masculino, masculino, Otro, otro)
  *
- * O lookup sempre recebe o valor já `.toLowerCase()` (ver renderFieldValue),
- * portanto só precisamos de entradas minúsculas aqui.
+ * `getSexLabel`/`getGenderLabel` normalizam para minúsculas ANTES do lookup, via
+ * `resolveCaseInsensitive()` (defeito 3, 21/09/2026: `WorkerPersonalInfoCard`
+ * chama `getSexLabel(t, sex)` com o valor cru do backend, que grava MAIÚSCULO —
+ * sem a normalização, "MALE" caía no fallback e aparecia cru na tela). Por isso
+ * as entradas do mapa abaixo só precisam ser minúsculas.
  */
 const SEX_GENDER_KEYS: Record<string, string> = {
   // EN canonical (backfill/futuro)
@@ -92,9 +95,23 @@ function resolve(t: TFunction, map: Record<string, string>, raw: string | null):
   return key ? t(key) : raw;
 }
 
+// Defeito 3 (21/09/2026): só SEX_GENDER_KEYS tem chaves case-insensitive por
+// natureza (valores ES/EN mistos vindos de fontes diferentes — ver comentário
+// do mapa acima). Os outros mapas (documento, profissão, nível de estudos,
+// tipo de experiência) são enums CANÔNICOS maiúsculos por contrato — normalizar
+// caixa ali quebraria o lookup exato (ex.: 'MASTERS' via toLowerCase() não bate
+// a chave 'MASTERS' do mapa). Por isso a normalização fica só aqui, não em
+// `resolve()` — e o fallback devolve o valor ORIGINAL (sem lowercase), não o
+// normalizado, para não mascarar um valor realmente desconhecido.
+function resolveCaseInsensitive(t: TFunction, map: Record<string, string>, raw: string | null): string | null {
+  if (!raw) return null;
+  const key = map[raw.toLowerCase()];
+  return key ? t(key) : raw;
+}
+
 export const getDocumentTypeLabel = (t: TFunction, v: string | null) => resolve(t, DOCUMENT_TYPE_KEYS, v);
-export const getSexLabel = (t: TFunction, v: string | null) => resolve(t, SEX_GENDER_KEYS, v);
-export const getGenderLabel = (t: TFunction, v: string | null) => resolve(t, SEX_GENDER_KEYS, v);
+export const getSexLabel = (t: TFunction, v: string | null) => resolveCaseInsensitive(t, SEX_GENDER_KEYS, v);
+export const getGenderLabel = (t: TFunction, v: string | null) => resolveCaseInsensitive(t, SEX_GENDER_KEYS, v);
 export const getLanguageLabel = (t: TFunction, v: string) => resolve(t, LANGUAGE_KEYS, v) ?? v;
 export const getProfessionLabel = (t: TFunction, v: string | null) => resolve(t, PROFESSION_KEYS, v);
 export const getKnowledgeLevelLabel = (t: TFunction, v: string | null) => resolve(t, KNOWLEDGE_LEVEL_KEYS, v);

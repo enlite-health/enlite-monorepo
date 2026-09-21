@@ -141,6 +141,50 @@ describe('AnaCareHoursListPage', () => {
     expect(screen.getByText('admin.anacareHours.stale.messageCircuitBreaker')).toBeInTheDocument();
   });
 
+  // F2 (change `anacare-horas-conclusao-de-corrida`, migration 457) — 2 estados novos.
+  /**
+   * `desconhecido` NÃO seta `stale=true` (compat: `nao_construido || velho`, ver `types.ts`) — a
+   * PROVA de que o banner tem de nascer de `snapshotState`, não só de `stale`: com `stale: false`
+   * aqui, o banner antigo (que só olhava `stale || circuitBreakerOpen`) NUNCA apareceria.
+   */
+  it('POSITIVO — snapshotState=desconhecido (stale=false) mostra o banner com mensagem própria, NUNCA "mais de 24 horas"', () => {
+    render(<AnaCareHoursListPage snapshot={snapshot({ stale: false, snapshotState: 'desconhecido' })} onOpenPatient={vi.fn()} />);
+    expect(screen.getByText(/^admin\.anacareHours\.stale\.titleDesconhecido/)).toBeInTheDocument();
+    expect(screen.getByText('admin.anacareHours.stale.messageDesconhecido')).toBeInTheDocument();
+    expect(screen.queryByText('admin.anacareHours.stale.messageSimple')).not.toBeInTheDocument();
+    expect(screen.queryByText('admin.anacareHours.stale.messageNaoConstruido')).not.toBeInTheDocument();
+  });
+
+  it('POSITIVO — snapshotState=parcial SEM contagens (stale=false) mostra o banner com a mensagem curta (sem números)', () => {
+    render(<AnaCareHoursListPage snapshot={snapshot({ stale: false, snapshotState: 'parcial' })} onOpenPatient={vi.fn()} />);
+    expect(screen.getByText(/^admin\.anacareHours\.stale\.titleParcial/)).toBeInTheDocument();
+    expect(screen.getByText('admin.anacareHours.stale.messageParcial')).toBeInTheDocument();
+  });
+
+  /**
+   * CONTROLE POSITIVO (Decisão 9/design.md §F2) na CAMADA DE TELA: com `reservationsDone=49` de
+   * `reservationsTotal=144` e `snapshotState=parcial`, a tela tem de mostrar os 2 números
+   * interpolados — nunca a mensagem curta, nunca "fresco" (nenhum banner é o outro extremo do
+   * mesmo bug: sabotar pra 49/144 e a tela continuar muda).
+   */
+  it('CONTROLE POSITIVO — snapshotState=parcial COM contagens (49/144) mostra "processadas 49 de 144" interpolado', () => {
+    render(
+      <AnaCareHoursListPage
+        snapshot={snapshot({ stale: false, snapshotState: 'parcial', reservationsTotal: 144, reservationsDone: 49 })}
+        onOpenPatient={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('admin.anacareHours.stale.messageParcialComContagem|{"done":49,"total":144}')).toBeInTheDocument();
+    expect(screen.queryByText('admin.anacareHours.stale.messageParcial')).not.toBeInTheDocument();
+  });
+
+  it('NEGATIVO — snapshotState=fresco (stale=false, sem contagens) NÃO mostra banner nenhum', () => {
+    render(<AnaCareHoursListPage snapshot={snapshot({ stale: false, snapshotState: 'fresco' })} onOpenPatient={vi.fn()} />);
+    expect(screen.queryByText('admin.anacareHours.stale.titleParcial')).not.toBeInTheDocument();
+    expect(screen.queryByText('admin.anacareHours.stale.titleDesconhecido')).not.toBeInTheDocument();
+    expect(screen.queryByText('admin.anacareHours.stale.title')).not.toBeInTheDocument();
+  });
+
   it('POSITIVO — troca de mês chama onMonthChange', () => {
     const onMonthChange = vi.fn();
     render(<AnaCareHoursListPage snapshot={snapshot()} onOpenPatient={vi.fn()} onMonthChange={onMonthChange} />);

@@ -511,6 +511,82 @@ describe('AnaCareHoursSyncRunner — sync por reserva (diretório Enlite), não 
     expect(second.nextCursor).toBeNull();
   });
 
+  /**
+   * F1 (migration 457, change `anacare-horas-conclusao-de-corrida`) — `reservationIds.length` e o
+   * `i` absoluto (linhas 182/192-216 medidas na proposta) existiam em memória e eram jogados fora
+   * no retorno de `runOnce`. Prova exata pedida pela fase: 144 reservas, corte de orçamento no
+   * item 49 → `reservationsTotal=144`, `reservationsDone=49`, `nextCursor=49`. `Date.now()`
+   * mockado com um relógio determinístico (avança 1 "tick" por chamada a `listShifts`) — nunca
+   * timer real, para não introduzir flakiness por latência de máquina.
+   */
+  it('F1 (457): 144 reservas, corte de orçamento no item 49 → reservationsTotal=144, reservationsDone=49, nextCursor=49', async () => {
+    const ids = Array.from({ length: 144 }, (_, i) => String(i).padStart(3, '0'));
+    const directory = new StubDirectory(ids);
+    const snapshotRepository = new StubDirectorySnapshotRepository();
+    const patientMonthRepository = new StubPatientMonthRepository();
+    const innerSource = new PerReservationShiftsSource();
+
+    let clock = 0;
+    const dateNowSpy = jest.spyOn(Date, 'now').mockImplementation(() => clock);
+    const tickingSource: AnaCareShiftsSource = {
+      listShifts: async (params) => {
+        const result = await innerSource.listShifts(params);
+        clock += 1; // relógio determinístico — 1 tick por reserva processada, nunca setTimeout real
+        return result;
+      },
+      getShift: () => innerSource.getShift(),
+      getRetratoStatus: () => innerSource.getRetratoStatus(),
+    };
+
+    try {
+      const runner = new AnaCareHoursSyncRunner(
+        tickingSource,
+        new AnaCareHoursSyncGuard(),
+        () => {},
+        () => '2026-09',
+        directory,
+        snapshotRepository,
+        { ANACARE_DIRECTORY_MIN_ABSOLUTE: '1' },
+        patientMonthRepository,
+      );
+
+      // deadline = Date.now() (0, congelado até a 1ª chamada) + budgetMs (49) = 49. Cada chamada a
+      // listShifts avança o relógio em 1 — os itens 0..48 (49 chamadas) veem `Date.now() < 49` e
+      // processam; o item 49 vê `49 >= 49` e corta ANTES de chamar a fonte.
+      const outcome = await runner.run({ origin: 'manual', userId: 'staff-1', budgetMs: 49 });
+
+      expect(outcome.reservationsTotal).toBe(144);
+      expect(outcome.reservationsDone).toBe(49);
+      expect(outcome.nextCursor).toBe(49);
+      expect(outcome.reservationsProcessed).toBe(49);
+    } finally {
+      dateNowSpy.mockRestore();
+    }
+  });
+
+  it('F1 (457): 3 reservas, sem corte de orçamento → reservationsTotal=3, reservationsDone=3, nextCursor=null', async () => {
+    const source = new PerReservationShiftsSource();
+    const directory = new StubDirectory(['100', '200', '300']);
+    const snapshotRepository = new StubDirectorySnapshotRepository();
+    const patientMonthRepository = new StubPatientMonthRepository();
+    const runner = new AnaCareHoursSyncRunner(
+      source,
+      new AnaCareHoursSyncGuard(),
+      () => {},
+      () => '2026-09',
+      directory,
+      snapshotRepository,
+      { ANACARE_DIRECTORY_MIN_ABSOLUTE: '1' },
+      patientMonthRepository,
+    );
+
+    const outcome = await runner.run({ origin: 'manual', userId: 'staff-1' });
+
+    expect(outcome.reservationsTotal).toBe(3);
+    expect(outcome.reservationsDone).toBe(3);
+    expect(outcome.nextCursor).toBeNull();
+  });
+
   it('segunda chamada com cursor no MEIO da lista não reprocessa as reservas já feitas', async () => {
     const source = new PerReservationShiftsSource();
     const directory = new StubDirectory(['100', '200', '300']);

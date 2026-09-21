@@ -70,15 +70,14 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ADMIN_AUTH_FILE = path.join(__dirname, '..', '.auth', 'admin.json');
 
 /**
- * `SYNC_ROUND_BUDGET_MS = 100_000` (100s por rodada) — mesma constante de
- * `enlite-frontend/src/hooks/admin/useAnaCareHoursSync.ts:10`, comentada aqui pra quem lê o
- * teste não precisar abrir outro arquivo. Medido na STAGE em 18/09
- * (`bin/anacare-medicoes/stg-anacare-sync.mjs`): ~283 reservas do mês, 1 rodada cobre ~74
- * (74/283) → ~4 rodadas → ~7 min no total (rate limit de 1 chamada ao Ana Care por reserva, com
- * mínimo 1s entre elas — `AnaCareRateLimiter`).
- *
- * PRODUÇÃO tende a ter MAIS reservas que a massa sintética da stage, e soma cold start do Cloud
- * Run — por isso o timeout abaixo é ~40% maior que o medido, de propósito (não é arredondamento).
+ * `SYNC_ROUND_BUDGET_MS = 30_000` (30s por rodada, baixado de 100s em 21/09) — mesma constante de
+ * `enlite-frontend/src/hooks/admin/useAnaCareHoursSync.ts:16`, comentada aqui pra quem lê o
+ * teste não precisar abrir outro arquivo. 100s estourava o corte de 60s que o Firebase Hosting
+ * aplica em `api.enlite.health` (prd) — ver comentário na constante do hook. A medição de
+ * cobertura/tempo total abaixo (~283 reservas, ~74/rodada, ~7 min) foi feita na STAGE em 18/09
+ * com o budget ANTIGO de 100s (`bin/anacare-medicoes/stg-anacare-sync.mjs`) — não refeita para
+ * 30s nesta mudança (fora de escopo); serve só de referência de ordem de grandeza para o timeout
+ * abaixo, que já tem folga generosa.
  */
 const MEASURED_STAGE_DURATION_MS = 7 * 60_000; // ~7 min, medido na stage (18/09)
 const LOOP_TIMEOUT_MS = 10 * 60_000; // 10 min — margem generosa sobre o medido, pra prod real
@@ -158,7 +157,7 @@ test.describe.serial('AnaCare Horas — o sync real sincroniza o MÊS que a tela
     // Primeira rodada de uma corrida NOVA (contexto de navegador recém-criado no passo 1, sem
     // `sessionStorage` de uma corrida anterior): sem cursor de retomada.
     expect(body.cursor ?? null, 'primeira rodada não deveria carregar cursor de retomada').toBeNull();
-    expect(body.budgetMs, 'orçamento da rodada deveria ser o SYNC_ROUND_BUDGET_MS do hook').toBe(100_000);
+    expect(body.budgetMs, 'orçamento da rodada deveria ser o SYNC_ROUND_BUDGET_MS do hook').toBe(30_000);
 
     test.info().annotations.push({
       type: 'evidência',

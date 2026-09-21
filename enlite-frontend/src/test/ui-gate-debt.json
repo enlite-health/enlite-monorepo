@@ -106,7 +106,7 @@
     },
     {
       "cell": "worker:write",
-      "motivo": "PR-8b (ADR-2, SUP-30/31, migration 435) — WorkerPersonalInfoCard/WorkerEditModal/WorkerTagsArea/WorkerTestAccountToggle/TagCatalogPage/screenRegistry usam `worker:create`/`worker:update`."
+      "motivo": "PR-8b (ADR-2, SUP-30/31, migration 435) — WorkerPersonalInfoCard/WorkerEditModal/WorkerTagsArea/WorkerTestAccountToggle/screenRegistry usam `worker:update`. `worker:create` SAIU em 21/09 (spec 024, D401): era só a tag (TagCatalogPage), que migrou pra célula própria `tag:create` — não conta mais pra este `worker:write`."
     },
     {
       "cell": "worker_document:write",

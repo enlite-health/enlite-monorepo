@@ -25,6 +25,7 @@
  */
 
 import type { AnaCareRetratoSourceStatus, SourceShiftDTO } from '../domain/AnaCareShiftsSource';
+import type { SyncRunConclusion } from '../domain/AnaCareHoursSyncPorts';
 import type { ValidationRow } from '../infrastructure/ShiftHoursValidationRepository';
 import type { AnaCareListPatient, AnaCareMonthSnapshot, AnaCarePatient, AnaCareProvider, AnaCareShift, AnaCareSnapshotState, ValidationStatus } from '../domain/AnaCareShift';
 
@@ -172,6 +173,55 @@ export function groupIntoPatients(
   return patients;
 }
 
+/** Sem corrida gravada para o mês (nem linha em `anacare_sync_run`, nem rodada gravada) — o MESMO "não sei" que `status IS NULL`. */
+export const NO_SYNC_RUN_CONCLUSION: SyncRunConclusion = { status: null, reservationsTotal: null, reservationsDone: null };
+
+export interface SnapshotStateInput {
+  /** Item 3: `freshness.shifts === 0` — o retrato NUNCA foi sincronizado para este mês. Tem PRECEDÊNCIA sobre tudo abaixo. */
+  naoConstruido: boolean;
+  /** Retrato sincronizou, mas ficou velho (>24h) — só é avaliado depois de `desconhecido`/`parcial` descartados. */
+  stale: boolean;
+  /** `anacare_sync_run.status` do mês — `null` cobre "sem linha" E "linha com status IS NULL" (ver `SyncRunConclusion`). */
+  syncStatus: SyncRunConclusion['status'];
+  reservationsTotal: SyncRunConclusion['reservationsTotal'];
+  reservationsDone: SyncRunConclusion['reservationsDone'];
+}
+
+/**
+ * F2 (change `anacare-horas-conclusao-de-corrida`, proposal.md §Decisão fechada) — precedência
+ * FECHADA, cada passo só avaliado depois que os anteriores foram descartados:
+ *
+ *   1. `nao_construido` — sem linha nenhuma para o mês (retrato AGREGADO nunca sincronizado).
+ *   2. `desconhecido`   — `syncStatus === null`. 🔴 Regra dura: as linhas de agosto/setembro
+ *      pré-existentes (status IS NULL após a migration 457) caem AQUI e NUNCA em `parcial` — dizer
+ *      "parcial" sobre elas seria afirmar algo que o sistema não tem base para saber (não têm
+ *      cursor/contagem registrados, só ausência de dado). Ver teste-régua em
+ *      `AnaCareHoursMapper.test.ts` ("morre se status IS NULL virar parcial").
+ *   3. `parcial`        — `syncStatus` é `running`/`failed`, OU `done` com
+ *      `reservationsDone < reservationsTotal` (as duas contagens PRECISAM existir para essa
+ *      comparação — `done` sem contagens gravadas não vira `parcial` por falta de base, cai para
+ *      o passo seguinte).
+ *   4. `velho`          — `stale` (regra já existente, inalterada).
+ *   5. `fresco`         — só sobra quando nada acima capturou o estado.
+ *
+ * Extraída de `buildSnapshot` para ser testável isoladamente (um teste por ramo) sem montar
+ * `AnaCareListPatient[]`/`AnaCareRetratoSourceStatus` inteiros.
+ */
+export function computeSnapshotState(input: SnapshotStateInput): AnaCareSnapshotState {
+  if (input.naoConstruido) return 'nao_construido';
+  if (input.syncStatus === null) return 'desconhecido';
+  const incompleta =
+    input.syncStatus === 'running' ||
+    input.syncStatus === 'failed' ||
+    (input.syncStatus === 'done' &&
+      input.reservationsTotal !== null &&
+      input.reservationsDone !== null &&
+      input.reservationsDone < input.reservationsTotal);
+  if (incompleta) return 'parcial';
+  if (input.stale) return 'velho';
+  return 'fresco';
+}
+
 /** F6.2: `patients` já vem AGREGADO (`AnaCareListPatient[]`, montado por `AnaCareHoursService.getMonthSnapshot`) — esta função só decide `snapshotState`/`stale`, não agrupa turno. */
 export function buildSnapshot(
   month: string,
@@ -180,10 +230,18 @@ export function buildSnapshot(
     /** Item 3: `freshness.shifts === 0` — o retrato NUNCA foi sincronizado para este mês (distinto de "sincronizou, mas ficou velho"). Default `false` por compat com chamadores antigos. */
     naoConstruido?: boolean;
   },
+  /** F2 (migration 457) — conclusão da corrida para este mês; ausente = `NO_SYNC_RUN_CONCLUSION` (equivalente a `desconhecido`, compat com chamadores antigos/testes que não passam este argumento). */
+  conclusion: SyncRunConclusion = NO_SYNC_RUN_CONCLUSION,
 ): AnaCareMonthSnapshot {
   const naoConstruido = retrato.naoConstruido ?? false;
-  const snapshotState: AnaCareSnapshotState = naoConstruido ? 'nao_construido' : retrato.stale ? 'velho' : 'fresco';
-  return {
+  const snapshotState = computeSnapshotState({
+    naoConstruido,
+    stale: retrato.stale,
+    syncStatus: conclusion.status,
+    reservationsTotal: conclusion.reservationsTotal,
+    reservationsDone: conclusion.reservationsDone,
+  });
+  const snapshot: AnaCareMonthSnapshot = {
     month,
     updatedAt: new Date().toISOString(),
     // Vem da FONTE agora (`AnaCareShiftsSource.getRetratoStatus`) — fase 1 (adapter falso) sempre
@@ -195,4 +253,11 @@ export function buildSnapshot(
     circuitBreakerOpen: retrato.circuitBreakerOpen,
     patients,
   };
+  // Só sai no wire quando `parcial` E o sync já gravou as duas contagens — nunca um `0` fingido
+  // para "sem dado" (ver comentário de `AnaCareMonthSnapshot.reservationsTotal/reservationsDone`).
+  if (snapshotState === 'parcial' && conclusion.reservationsTotal !== null && conclusion.reservationsDone !== null) {
+    snapshot.reservationsTotal = conclusion.reservationsTotal;
+    snapshot.reservationsDone = conclusion.reservationsDone;
+  }
+  return snapshot;
 }

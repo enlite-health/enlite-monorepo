@@ -47,11 +47,51 @@ export interface DirectorySnapshotRepository {
 }
 
 /**
+ * F1 (migration 457, change `anacare-horas-conclusao-de-corrida`, 20/09/2026) — progresso da
+ * rodada, gravado pelo CONTROLLER (`AnaCareHoursSyncController.trigger`), nunca pelo runner (que
+ * não tem acesso a banco hoje). `cursor`/`reservationsTotal`/`reservationsDone` são escritos por
+ * `COALESCE` na implementação real (`AnaCareSyncRunRepository.recordProgress`): passar `null`
+ * nesses três campos PRESERVA o valor já gravado, nunca o apaga — é assim que uma falha no meio de
+ * uma corrida (`status: 'failed'`) mantém o último cursor/contagem conhecidos em vez de zerá-los
+ * (design.md §F1: "cursor/contagens ficam com o último valor conhecido antes da falha"). Já
+ * `finishedAt`/`lastError` são sempre escritos EXPLICITAMENTE (o chamador sempre sabe o valor
+ * certo — `null` limpa, um valor grava; nunca há "preservar" para esses dois).
+ */
+export interface SyncRunProgress {
+  status: 'running' | 'done' | 'failed';
+  /** `null` = preserva o `cursor` já gravado (COALESCE) — nunca interpretar como "limpar para NULL". */
+  cursor: number | null;
+  /** `null` = preserva o valor já gravado (COALESCE). */
+  reservationsTotal: number | null;
+  /** `null` = preserva o valor já gravado (COALESCE). */
+  reservationsDone: number | null;
+  /** Sempre explícito: `null` enquanto `running`, `NOW()` do banco quando `done`/`failed`. */
+  finishedAt: Date | null;
+  /** Código ESTÁVEL (`toStableErrorCode`) — nunca a mensagem crua da exceção. Sempre explícito. */
+  lastError: string | null;
+}
+
+/**
  * Porta do carimbo da CORRIDA de sync (`anacare_sync_run`, migration 443, gate `revisao-pr` fecho
  * 17/09) — `run_started_at` passa a ser gravado com `NOW()` DO BANCO, nunca calculado no Node nem
  * recebido do cliente HTTP (ver cabeçalho da migration 443 para os 3 buracos medidos do desenho
  * anterior). Uma linha por `(source, periodMonth)`.
  */
+/**
+ * F2 (change `anacare-horas-conclusao-de-corrida`) — leitura da CONCLUSÃO da corrida para
+ * `(source, periodMonth)`, o dado que `AnaCareHoursMapper.computeSnapshotState` usa para decidir
+ * `desconhecido`/`parcial`. `status: null` cobre OS DOIS casos que não têm base para virar
+ * `parcial` — nenhuma linha em `anacare_sync_run` para este mês, OU a linha existe com
+ * `status IS NULL` (agosto/setembro pré-existentes) — os dois são "não sei", nunca "sei que está
+ * incompleto". `reservationsTotal`/`reservationsDone` só vêm não-nulos quando o controller já
+ * gravou uma rodada (nunca um `0` inventado para "sem dado").
+ */
+export interface SyncRunConclusion {
+  status: 'running' | 'done' | 'failed' | null;
+  reservationsTotal: number | null;
+  reservationsDone: number | null;
+}
+
 export interface SyncRunRepository {
   /**
    * Corrida NOVA (sem cursor de retomada): grava/substitui `run_started_at = NOW()` do banco para
@@ -68,6 +108,18 @@ export interface SyncRunRepository {
    * decisão, nunca finge silenciosamente que existia uma corrida anterior.
    */
   getRunStartedAt(source: string, periodMonth: string): Promise<Date | null>;
+  /**
+   * F1 (migration 457): grava o progresso da rodada — `UPDATE` na linha já existente para
+   * `(source, periodMonth)` (a linha nasce em `startNewRun`, nunca aqui; este método não faz
+   * `INSERT`). Chamado pelo controller a cada rodada, sucesso ou falha.
+   */
+  recordProgress(source: string, periodMonth: string, progress: SyncRunProgress): Promise<void>;
+  /**
+   * F2: lê `status`/`reservations_total`/`reservations_done` da linha de `(source, periodMonth)` —
+   * único ponto de leitura da conclusão da corrida, para não duplicar o `SELECT` em cada chamador
+   * (`AnaCareHoursService.getMonthSnapshot`). Ver `SyncRunConclusion` para a semântica de `null`.
+   */
+  getConclusion(source: string, periodMonth: string): Promise<SyncRunConclusion>;
 }
 
 /**

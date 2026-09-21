@@ -144,7 +144,9 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
       // O operacional numa linha só: perfil profissional, etiquetas, conta de teste, edição e a
       // aba de disponibilidade. `worker:disable` fica fora: a baixa é decidida no back pela
       // transição de status e não tem botão próprio no front (cai em "Outras células").
-      c('profile', 'worker', ['read', 'create', 'update'], 'availability'),
+      // `create` REMOVIDO em 21/09 (spec 024, D401): não existia botão nenhum que criasse
+      // "worker" por aqui — era só a tag (agora `tag:create`, tela própria `/admin/tags`).
+      c('profile', 'worker', ['read', 'update'], 'availability'),
       c('contact', 'worker_contact', ['read']),
       // Dossiê = nascimento, sexo, DNI, raça, religião… (célula da C3/F2). Endereço é célula própria
       // (linha, coordenada, raio) — a MESMA que vale na aba Prestadores do mapa.
@@ -154,8 +156,6 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
       c('encuadres', 'match', ['read'], 'encuadres'),
     ],
   },
-  { id: 'tags', route: '/admin/tags', cells: ['worker:read', 'worker:create', 'worker:update'] },
-
   // ── Vagas ──────────────────────────────────────────────────────────────────────────────────
   { id: 'vacancies.list', route: '/admin/vacancies', cells: ['vacancy:read', 'vacancy:create', 'vacancy:update', 'talentum:create', 'talentum:update'] },
   { id: 'vacancies.create', route: '/admin/vacancies/new', cells: ['vacancy:read', 'vacancy:create', 'vacancy:update'] },
@@ -187,10 +187,19 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
   // ── Recrutamento e mensageria ──────────────────────────────────────────────────────────────
   { id: 'recruitment', route: '/admin/recruitment', cells: ['recruitment:read', 'match:read', 'talentum:read'] },
   { id: 'recruitment.health', route: '/admin/recruitment/health', cells: ['messaging:read'] },
-  { id: 'recruitment.blocked', route: '/admin/recruitment/blocked-attempts', cells: ['recruitment:read'] },
   { id: 'messaging.stageMessages', route: '/admin/mensajes-por-etapa', cells: ['messaging:read', 'messaging:create', 'messaging:update'] },
   { id: 'messaging.templates', route: '/admin/plantillas', cells: ['messaging:read', 'messaging:create', 'messaging:update'] },
   { id: 'messaging.presentationInvite', route: '/admin/invitacion-presentacion', cells: ['messaging:read', 'messaging:create', 'messaging:update', 'messaging:send'] },
+
+  // ── Postulações bloqueadas (spec 024 D2/D401) ─────────────────────────────────────────────
+  // LOG administrativo, dado diferente do funil de recrutamento — título e célula PRÓPRIOS,
+  // fora das seções de Pacientes/Vagas/Prestadores/Recrutamento. Rota e item de menu não mudam.
+  { id: 'recruitment.blocked', route: '/admin/recruitment/blocked-attempts', cells: ['recruitment_blocked:read'] },
+
+  // ── Configuração (spec 024 D1/D401) ───────────────────────────────────────────────────────
+  // Catálogo de Etiquetas de prestador: DADO diferente do perfil do prestador — tópico próprio,
+  // com as quatro células Ver/Criar/Editar/Deletar.
+  { id: 'tags', route: '/admin/tags', cells: ['tag:read', 'tag:create', 'tag:update', 'tag:delete'] },
 
   // ── Ana Care ───────────────────────────────────────────────────────────────────────────────
   // Fase 1 da conferência de horas (D344, 15/09/2026) — duas células PRÓPRIAS, fora de qualquer

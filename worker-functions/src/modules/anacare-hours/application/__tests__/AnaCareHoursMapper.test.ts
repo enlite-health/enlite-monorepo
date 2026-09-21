@@ -1,6 +1,10 @@
-import { mapShift, groupIntoPatients, buildSnapshot, computeActualHours, joinSourceName } from '../AnaCareHoursMapper';
+import { mapShift, groupIntoPatients, buildSnapshot, computeActualHours, computeSnapshotState, joinSourceName, NO_SYNC_RUN_CONCLUSION } from '../AnaCareHoursMapper';
 import type { SourceShiftDTO } from '../../domain/AnaCareShiftsSource';
+import type { SyncRunConclusion } from '../../domain/AnaCareHoursSyncPorts';
 import type { ValidationRow } from '../../infrastructure/ShiftHoursValidationRepository';
+
+/** Conclusão "sync terminou tudo" — usada nos testes de `buildSnapshot` que não são sobre a conclusão em si (fresco/velho), pra não cair em `desconhecido` por omissão. */
+const CONCLUSAO_COMPLETA: SyncRunConclusion = { status: 'done', reservationsTotal: 1, reservationsDone: 1 };
 
 // Previsto (`scheduledStart`→`scheduledEnd`) = 12h. Real (`actualStart`→`actualEnd`) = 11,8h —
 // mesmo padrão medido 17/09 contra a API real (paciente 9660: previsto 12,0 / real 11,8). O
@@ -228,8 +232,12 @@ describe('joinSourceName', () => {
 });
 
 describe('buildSnapshot', () => {
-  it('monta o snapshot do mês fresco quando a fonte devolve retrato fresco (fase 1: adapter falso)', () => {
-    const snapshot = buildSnapshot('2026-09', [], { stale: false, circuitBreakerOpen: false });
+  // F2 (migration 457): sem o 4º argumento (conclusão), o sync nunca gravou nada para este mês —
+  // isso é `desconhecido`, não mais `fresco` por omissão (mesma régua de `computeSnapshotState`).
+  // Por isso estes 2 testes de fresco/velho passam `CONCLUSAO_COMPLETA` explicitamente: o que eles
+  // provam é a interação de `stale`/`naoConstruido`, não a conclusão em si (coberta abaixo).
+  it('monta o snapshot do mês fresco quando a fonte devolve retrato fresco E a corrida terminou completa', () => {
+    const snapshot = buildSnapshot('2026-09', [], { stale: false, circuitBreakerOpen: false }, CONCLUSAO_COMPLETA);
     expect(snapshot.month).toBe('2026-09');
     expect(snapshot.stale).toBe(false);
     expect(snapshot.circuitBreakerOpen).toBe(false);
@@ -238,7 +246,7 @@ describe('buildSnapshot', () => {
   });
 
   it('repassa stale/circuitBreakerOpen da fonte tal qual — não hardcoda mais false (conserto de conformidade, 15/09)', () => {
-    const snapshot = buildSnapshot('2026-09', [], { stale: true, circuitBreakerOpen: true });
+    const snapshot = buildSnapshot('2026-09', [], { stale: true, circuitBreakerOpen: true }, CONCLUSAO_COMPLETA);
     expect(snapshot.stale).toBe(true);
     expect(snapshot.circuitBreakerOpen).toBe(true);
   });
@@ -253,8 +261,125 @@ describe('buildSnapshot', () => {
     expect(snapshot.snapshotState).toBe('nao_construido');
   });
 
-  it('retrato sincronizado mas velho (stale=true, naoConstruido=false): snapshotState é `velho`, distinto de `nao_construido`', () => {
-    const snapshot = buildSnapshot('2026-09', [], { stale: true, circuitBreakerOpen: false, naoConstruido: false });
+  // `naoConstruido` tem PRECEDÊNCIA sobre a conclusão — mesmo com uma corrida `running` gravada
+  // (o mês foi zerado/recomeçado depois da corrida), `nao_construido` ainda vence.
+  it('naoConstruido=true vence mesmo com uma corrida `running` gravada para o mês (precedência)', () => {
+    const snapshot = buildSnapshot(
+      '2026-09',
+      [],
+      { stale: false, circuitBreakerOpen: false, naoConstruido: true },
+      { status: 'running', reservationsTotal: 144, reservationsDone: 49 },
+    );
+    expect(snapshot.snapshotState).toBe('nao_construido');
+  });
+
+  it('retrato sincronizado mas velho (stale=true, naoConstruido=false, corrida completa): snapshotState é `velho`, distinto de `nao_construido`', () => {
+    const snapshot = buildSnapshot('2026-09', [], { stale: true, circuitBreakerOpen: false, naoConstruido: false }, CONCLUSAO_COMPLETA);
     expect(snapshot.snapshotState).toBe('velho');
+  });
+
+  // F2: sem NENHUMA conclusão gravada (`NO_SYNC_RUN_CONCLUSION`, default do 4º argumento) — é
+  // `desconhecido`, mesmo com o retrato "fresco" do ponto de vista da fonte (stale=false). Este é
+  // o caso das linhas de agosto/setembro que EXISTIAM antes da migration 457.
+  it('sem conclusão gravada (default do 4º argumento) ⇒ desconhecido, nunca fresco por omissão', () => {
+    const snapshot = buildSnapshot('2026-09', [], { stale: false, circuitBreakerOpen: false });
+    expect(snapshot.snapshotState).toBe('desconhecido');
+  });
+
+  it('conclusão `running` ⇒ parcial, e o wire carrega reservationsTotal/reservationsDone', () => {
+    const snapshot = buildSnapshot(
+      '2026-09',
+      [],
+      { stale: false, circuitBreakerOpen: false },
+      { status: 'running', reservationsTotal: 144, reservationsDone: 49 },
+    );
+    expect(snapshot.snapshotState).toBe('parcial');
+    expect(snapshot.reservationsTotal).toBe(144);
+    expect(snapshot.reservationsDone).toBe(49);
+  });
+
+  it('parcial sem contagens gravadas ainda (running, sem total/done) NÃO expõe os campos no wire (nunca 0 fingido)', () => {
+    const snapshot = buildSnapshot(
+      '2026-09',
+      [],
+      { stale: false, circuitBreakerOpen: false },
+      { status: 'running', reservationsTotal: null, reservationsDone: null },
+    );
+    expect(snapshot.snapshotState).toBe('parcial');
+    expect(snapshot.reservationsTotal).toBeUndefined();
+    expect(snapshot.reservationsDone).toBeUndefined();
+  });
+
+  it('fresco/velho NÃO carregam reservationsTotal/reservationsDone no wire (só `parcial` expõe)', () => {
+    const fresco = buildSnapshot('2026-09', [], { stale: false, circuitBreakerOpen: false }, CONCLUSAO_COMPLETA);
+    expect(fresco.reservationsTotal).toBeUndefined();
+    expect(fresco.reservationsDone).toBeUndefined();
+  });
+});
+
+describe('computeSnapshotState — precedência fechada (proposal.md §Decisão fechada)', () => {
+  const BASE = { naoConstruido: false, stale: false, syncStatus: null as SyncRunConclusion['status'], reservationsTotal: null, reservationsDone: null };
+
+  it('1. nao_construido — vence mesmo com stale=true e syncStatus=done completo', () => {
+    expect(computeSnapshotState({ ...BASE, naoConstruido: true, stale: true, syncStatus: 'done', reservationsTotal: 1, reservationsDone: 1 })).toBe(
+      'nao_construido',
+    );
+  });
+
+  it('2. desconhecido — syncStatus IS NULL (naoConstruido=false)', () => {
+    expect(computeSnapshotState({ ...BASE, syncStatus: null })).toBe('desconhecido');
+  });
+
+  /**
+   * 🔴 TESTE-RÉGUA (regra dura da task, proposal.md Decisão 3): as linhas de agosto/setembro que
+   * JÁ EXISTEM (status IS NULL) são `desconhecido` e NUNCA `parcial` — mesmo com `stale=true`
+   * (elas também não têm base pra afirmar "velho": não sabem se terminaram). Este teste MORRE se
+   * alguém trocar `if (input.syncStatus === null) return 'desconhecido'` por qualquer coisa que
+   * deixe `status IS NULL` cair em `parcial`.
+   */
+  it('🔴 RÉGUA — status IS NULL nunca vira parcial, mesmo com stale=true (linhas pré-existentes de ago/set)', () => {
+    const estado = computeSnapshotState({ ...BASE, stale: true, syncStatus: null });
+    expect(estado).toBe('desconhecido');
+    expect(estado).not.toBe('parcial');
+  });
+
+  it('3a. parcial — syncStatus=running', () => {
+    expect(computeSnapshotState({ ...BASE, syncStatus: 'running', reservationsTotal: 144, reservationsDone: 49 })).toBe('parcial');
+  });
+
+  it('3b. parcial — syncStatus=failed', () => {
+    expect(computeSnapshotState({ ...BASE, syncStatus: 'failed', reservationsTotal: 144, reservationsDone: 49 })).toBe('parcial');
+  });
+
+  /**
+   * CONTROLE POSITIVO OBRIGATÓRIO (Decisão 9 da proposta / design.md §F2): sabota o estado para
+   * 49 de 144 reservas (`status='done'`, `reservations_done=49`, `reservations_total=144`) — a
+   * régua tem que DEIXAR de dizer `fresco`. Sem este teste passando, nada prova que `parcial`
+   * detecta uma corrida `done` incompleta.
+   */
+  it('3c. CONTROLE POSITIVO — done com 49/144 reservas (sabotado) ⇒ parcial, NUNCA fresco', () => {
+    const estado = computeSnapshotState({ ...BASE, syncStatus: 'done', reservationsTotal: 144, reservationsDone: 49 });
+    expect(estado).toBe('parcial');
+    expect(estado).not.toBe('fresco');
+  });
+
+  it('3d. done com reservationsDone === reservationsTotal (144/144) NÃO é parcial — segue para velho/fresco', () => {
+    expect(computeSnapshotState({ ...BASE, syncStatus: 'done', reservationsTotal: 144, reservationsDone: 144 })).toBe('fresco');
+  });
+
+  it('3e. done sem contagens gravadas (total/done null) não tem base pra dizer parcial — segue para velho/fresco', () => {
+    expect(computeSnapshotState({ ...BASE, syncStatus: 'done', reservationsTotal: null, reservationsDone: null })).toBe('fresco');
+  });
+
+  it('4. velho — done completo mas stale=true (regra de stale continua tendo prioridade sobre fresco)', () => {
+    expect(computeSnapshotState({ ...BASE, stale: true, syncStatus: 'done', reservationsTotal: 144, reservationsDone: 144 })).toBe('velho');
+  });
+
+  it('5. fresco — done completo e não-stale (só sobra quando nada acima capturou o estado)', () => {
+    expect(computeSnapshotState({ ...BASE, stale: false, syncStatus: 'done', reservationsTotal: 144, reservationsDone: 144 })).toBe('fresco');
+  });
+
+  it('NO_SYNC_RUN_CONCLUSION exportado é o "desconhecido" canônico (status/contagens null)', () => {
+    expect(NO_SYNC_RUN_CONCLUSION).toEqual({ status: null, reservationsTotal: null, reservationsDone: null });
   });
 });

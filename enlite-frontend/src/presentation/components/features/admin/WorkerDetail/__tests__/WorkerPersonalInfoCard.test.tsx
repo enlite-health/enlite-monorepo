@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { WorkerPersonalInfoCard } from '../WorkerPersonalInfoCard';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
@@ -79,5 +79,54 @@ describe('WorkerPersonalInfoCard', () => {
   it('sem birthDate/languages: mostra "—"', () => {
     render(<WorkerPersonalInfoCard {...baseProps} birthDate={null} languages={[]} weightKg={null} heightCm={null} />);
     expect(screen.getAllByText('—').length).toBeGreaterThan(0);
+  });
+
+  // Defeito 2 (21/09/2026): `new Date(birthDate).toLocaleDateString('pt-BR')` decodifica
+  // "1985-03-25" como meia-noite UTC e formata no fuso LOCAL — em fusos negativos
+  // (Argentina, UTC-3) isso exibe "24/03/1985", um dia a menos. O conserto formata a
+  // string ISO por split, sem passar por Date/fuso nenhum.
+  describe('Defeito 2 — data de nascimento não perde 1 dia por fuso', () => {
+    const originalTZ = process.env.TZ;
+
+    afterEach(() => {
+      process.env.TZ = originalTZ;
+    });
+
+    it('com TZ=America/Argentina/Buenos_Aires (UTC-3): 1985-03-25 exibe 25/03/1985, não 24/03/1985', () => {
+      process.env.TZ = 'America/Argentina/Buenos_Aires';
+      render(<WorkerPersonalInfoCard {...baseProps} birthDate="1985-03-25" />);
+      expect(screen.getByText('25/03/1985')).toBeInTheDocument();
+      expect(screen.queryByText('24/03/1985')).not.toBeInTheDocument();
+    });
+
+    it('valor legado não-ISO ("25/31/985") é exibido cru, nunca "Invalid Date"', () => {
+      render(<WorkerPersonalInfoCard {...baseProps} birthDate="25/31/985" />);
+      expect(screen.getByText('25/31/985')).toBeInTheDocument();
+      expect(screen.queryByText(/Invalid Date/i)).not.toBeInTheDocument();
+    });
+  });
+
+  // Defeito 4 (21/09/2026): KMSEncryptionService.decrypt devolve '' (não null) para
+  // coluna nula, e AdminWorkersDetailBuilder faz `?? null` — que não pega string vazia.
+  // Conserto no FRONT: o Field trata string vazia/só-espaço como ausente.
+  describe('Defeito 4 — campo PII vazio (string) mostra "—", não branco', () => {
+    it('sexualOrientation/race/religion como string vazia → "—"', () => {
+      render(
+        <WorkerPersonalInfoCard
+          {...baseProps}
+          sexualOrientation=""
+          race=""
+          religion=""
+        />,
+      );
+      // 3 campos vazios + possíveis outros "—" já cobertos noutro teste — aqui
+      // garantimos que NENHUM dos três aparece como texto vazio/só-espaço.
+      expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(3);
+    });
+
+    it('sexualOrientation só com espaços → "—"', () => {
+      render(<WorkerPersonalInfoCard {...baseProps} sexualOrientation="   " />);
+      expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(1);
+    });
   });
 });

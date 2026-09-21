@@ -51,6 +51,19 @@ export interface AnaCareHoursSyncOutcome {
   shiftsWritten: number;
   /** `null` = terminou a lista inteira de reservas nesta rodada. */
   nextCursor: number | null;
+  /**
+   * F1 (migration 457, change `anacare-horas-conclusao-de-corrida`) — `reservationIds.length`
+   * desta rodada. Não é medição nova: já existia em memória dentro de `runOnce` e era jogado fora
+   * no retorno; esta mudança só para de perdê-lo na borda do método.
+   */
+  reservationsTotal: number;
+  /**
+   * F1 (migration 457): índice absoluto `i` no momento em que `runOnce` retornou — seja por fim da
+   * lista, seja por corte de orçamento de tempo. Quanto da lista já foi percorrido ao todo,
+   * somando rodadas anteriores retomadas por cursor (não confundir com `reservationsProcessed`,
+   * que conta só o que ESTA rodada processou).
+   */
+  reservationsDone: number;
   directoryCounts: { activo: number; terminado: number; total: number };
   /**
    * Turnos descartados na minimização por faltar prestador — nunca em silêncio (conserto 17/09:
@@ -224,6 +237,10 @@ export class AnaCareHoursSyncRunner {
       reservationsProcessed,
       shiftsWritten,
       nextCursor,
+      // F1 (migration 457): sobreviventes de `reservationIds.length` e do `i` absoluto — ver
+      // comentários dos dois campos em `AnaCareHoursSyncOutcome`.
+      reservationsTotal: reservationIds.length,
+      reservationsDone: i,
       directoryCounts: directorySnapshot.counts,
       shiftsSkippedNoProvider,
       shiftsSkippedNoPatient,
@@ -276,7 +293,10 @@ export class AnaCareHoursSyncRunner {
     // um `NOW()` posterior — a corrida em voo seguia com t1, o banco passava a guardar t2 > t1, e
     // uma retomada por cursor que lesse t2 deixaria de detectar colisões das linhas escritas entre
     // t1 e t2.
-    const { result, deduped } = await this.guard.run(async () => {
+    // Chave do dedup: o MÊS (D398/gate revisao-pr) — dois disparos concorrentes só compartilham a
+    // rodada quando pedem o MESMO mês; meses diferentes rodam cada um a sua própria rodada real,
+    // nunca herdam status/cursor um do outro (ver cabeçalho de `AnaCareHoursSyncGuard`).
+    const { result, deduped } = await this.guard.run(month, async () => {
       const runStartedAt = await this.resolveRunStartedAt('anacare', month, cursor);
       return this.runOnce(month, cursor, budgetMs, runStartedAt);
     });

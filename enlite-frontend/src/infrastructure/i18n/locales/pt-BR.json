@@ -308,6 +308,7 @@
     "phoneInvalid": "Telefone inválido",
     "emailInvalid": "E-mail inválido",
     "birthDateRequired": "Data de nascimento é obrigatória",
+    "birthDateInvalid": "Informe uma data de nascimento válida (DD/MM/AAAA)",
     "selectSex": "Por favor, selecione o sexo",
     "selectGender": "Por favor, selecione o gênero",
     "licenseRequired": "Registro profissional é obrigatório",
@@ -680,9 +681,14 @@
       "stale": {
         "title": "Retrato desatualizado",
         "titleNaoConstruido": "Retrato ainda não construído",
+        "titleDesconhecido": "Estado da sincronização desconhecido",
+        "titleParcial": "Sincronização incompleta",
         "messageCircuitBreaker": "A sincronização com o Ana Care está falhando e a proteção de carga foi ativada (disjuntor). O último retrato tem mais de 24 horas.",
         "messageSimple": "O último retrato tem mais de 24 horas. A sincronização com o Ana Care não foi concluída.",
         "messageNaoConstruido": "Ainda não rodou nenhuma sincronização com o Ana Care para este mês — o retrato nunca foi construído.",
+        "messageDesconhecido": "Este mês foi sincronizado antes de o sistema registrar se a sincronização tinha terminado — não é possível afirmar se o retrato está completo ou incompleto.",
+        "messageParcial": "A sincronização deste mês não terminou — pode haver turnos sem atualizar.",
+        "messageParcialComContagem": "A sincronização deste mês não terminou — foram processadas {{done}} de {{total}} reservas. Pode haver turnos sem atualizar.",
         "reasonLargo": "Retrato com mais de 24 horas — validação desabilitada até atualizar.",
         "reasonLargoCircuitBreaker": "Sincronização com o Ana Care falhando — proteção de carga ativada (disjuntor). Validação desabilitada até o próximo retrato.",
         "reasonCorto": "retrato desatualizado",
@@ -4170,7 +4176,8 @@
             "validate": "Validar",
             "execute": "Executar",
             "send": "Enviar",
-            "disable": "Dar baixa"
+            "disable": "Dar baixa",
+            "write": "Criar e editar"
           },
           "category": {
             "Trabalhadores": "Trabalhadores",
@@ -4190,12 +4197,14 @@
             "worker_pii": "Dossiê: DNI, nascimento, dados sensíveis",
             "worker_address": "Endereço do prestador: linha, coordenada, raio",
             "worker_document": "Documentos do prestador",
+            "tag": "Catálogo de etiquetas",
             "vacancy": "Vagas",
             "funnel": "Funil",
             "interview": "Entrevistas",
             "match": "Matching",
             "patient": "Paciente em operação (status, funil, caso)",
             "recruitment": "Recrutamento",
+            "recruitment_blocked": "Postulações bloqueadas",
             "talentum": "Talentum",
             "prescreening": "Pré-seleção",
             "analytics": "Analytics",
@@ -4221,7 +4230,13 @@
             "patient_chat": "Grupos de WhatsApp do caso",
             "patient_coverage": "Cobertura médica",
             "patient_address": "Endereços e localidade",
-            "patient_services": "Serviços contratados"
+            "patient_services": "Serviços contratados",
+            "patient_contract_value": "Valor hora do serviço contratado",
+            "patient_therapeutic_project": "Projeto terapêutico: versões, objetivos e atividades",
+            "catalog_therapeutic_objectives": "Catálogo de objetivos específicos (projeto terapêutico)",
+            "catalog_therapeutic_activities": "Catálogo de rotina e atividades (projeto terapêutico)",
+            "catalog_therapeutic_segments": "Catálogo de segmentos (Ana Care)",
+            "anacare_hours": "Conferência de horas do Ana Care"
           },
           "help": {
             "open": "O que esta permissão faz",
@@ -4633,13 +4648,13 @@
           }
         },
         "recruitment": {
-          "label": "Recrutamento"
-        },
-        "recruitment.health": {
-          "label": "Recrutamento: Saúde"
-        },
-        "recruitment.blocked": {
-          "label": "Candidaturas bloqueadas"
+          "label": "Recrutamento",
+          "health": {
+            "label": "Recrutamento: Saúde"
+          },
+          "blocked": {
+            "label": "Candidaturas bloqueadas"
+          }
         },
         "messaging.stageMessages": {
           "label": "Mensagens por etapa"

@@ -12,6 +12,7 @@ import { redactProfileValue } from './profileChangeRedaction';
 import { logProfileEdit } from '../domain/profileEditSource';
 import { captureWorkerBefore } from './workerAuditDiff';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
+import { isValidIsoBirthDate } from '@shared/utils/isValidIsoBirthDate';
 
 const TAG = '[SavePersonalInfoUseCase]';
 const MIRROR_EVENT = 'worker.mirror_requested';
@@ -57,6 +58,14 @@ export class SavePersonalInfoUseCase {
     const worker = workerResult.getValue();
     if (!worker) {
       return Result.fail<Worker>('Worker not found');
+    }
+
+    // Defeito 1 (21/09/2026): `birthDate` chegava sem validação nenhuma — qualquer
+    // string ia direto pro encrypt (ver openapi WorkerGeneralInfoBody, só documentação,
+    // e o controller `saveGeneralInfo` que espalha `req.body` cru). Vazio/ausente
+    // continua permitido (é "mantém o valor atual" via COALESCE no repositório).
+    if (data.birthDate && !isValidIsoBirthDate(data.birthDate)) {
+      return Result.fail<Worker>('Invalid birth date. Expected YYYY-MM-DD with a real, non-future date.');
     }
 
     // Resolve o telefone a persistir.

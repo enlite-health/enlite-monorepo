@@ -172,12 +172,15 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'PUT /api/admin/patients/:id/emergency-contact → patient_family:update',
         'PUT /api/admin/patients/:id/status → patient:update',
         // ── admin.workers (31) — a 3ª, espalhada em 4 arquivos
-        'DELETE /api/admin/worker-tags/:id → worker:update',
+        // Spec 024 (D1/D401, 21/09): as 4 rotas de catálogo (`/worker-tags`) migram para `tag:*` —
+        // dado diferente do perfil do prestador. `:tags/:tagId` (atribuir/remover DE UM prestador)
+        // continua em `worker:update`.
+        'DELETE /api/admin/worker-tags/:id → tag:delete',
         'DELETE /api/admin/workers/:id/additional-documents/:docId → worker_document:delete',
         'DELETE /api/admin/workers/:id/documents/:type → worker_document:delete',
         'DELETE /api/admin/workers/:id/documents/:type/validate → worker_document:validate',
         'DELETE /api/admin/workers/:id/tags/:tagId → worker:update',
-        'GET /api/admin/worker-tags → worker:read',
+        'GET /api/admin/worker-tags → tag:read',
         'GET /api/admin/workers → worker:read',
         'GET /api/admin/workers/:id → worker:read',
         'GET /api/admin/workers/:id/additional-documents → worker_document:read',
@@ -189,10 +192,10 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'GET /api/admin/workers/export → worker:export',
         'GET /api/admin/workers/filter-options → worker:read',
         'GET /api/admin/workers/stats → worker:read',
-        'PATCH /api/admin/worker-tags/:id → worker:update',
+        'PATCH /api/admin/worker-tags/:id → tag:update',
         'PATCH /api/admin/workers/:id/profile → worker:update',
         'PATCH /api/admin/workers/:id/test-flag → worker:update',
-        'POST /api/admin/worker-tags → worker:create',
+        'POST /api/admin/worker-tags → tag:create',
         'POST /api/admin/workers/:id/additional-documents → worker_document:create',
         'POST /api/admin/workers/:id/additional-documents/upload-url → worker_document:create',
         'POST /api/admin/workers/:id/documents/:type/validate → worker_document:validate',
@@ -267,7 +270,8 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'GET /analytics/workers → analytics:read',
         'GET /analytics/workers/:workerId/vacancies → analytics:read',
         'GET /analytics/workers/missing-documents → analytics:read',
-        'GET /api/admin/recruitment/blocked-attempts → recruitment:read',
+        // Spec 024 (D2/D401, 21/09): LOG administrativo, dado diferente do funil — célula própria.
+        'GET /api/admin/recruitment/blocked-attempts → recruitment_blocked:read',
         'GET /api/admin/recruitment/case/:caseNumber → recruitment:read',
         'GET /api/admin/recruitment/clickup-cases → recruitment:read',
         'GET /api/admin/recruitment/encuadres → match:read',
