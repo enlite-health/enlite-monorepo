@@ -322,6 +322,26 @@ describe('ThreadView', () => {
     expect(screen.queryByTestId('message-attachments')).not.toBeInTheDocument();
   });
 
+  it('🔒 achado do gate revisao-pr (B3, resposta 3): abre a aba SEM noopener/noreferrer, mas zera popup.opener explicitamente logo em seguida (sem depender do parâmetro do window.open)', async () => {
+    const fakePopup: { location: { href: string }; closed: boolean; close: ReturnType<typeof vi.fn>; opener: unknown } = {
+      location: { href: '' }, closed: false, close: vi.fn(), opener: window, // simula o valor DEFAULT sem noopener
+    };
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue(fakePopup as unknown as Window);
+    getConversationAttachmentUrl.mockResolvedValue({ url: 'https://signed.example/opener-test', expiresInSeconds: 300 });
+    getConversationReplies.mockResolvedValue([
+      msg({ id: 'r1', attachments: [{ fileId: 'file-1', contentType: 'application/pdf', sizeBytes: 1024 }] }),
+    ]);
+    render(<ThreadView patientId="p1" rootMessage={msg({ id: 'root-1' })} onBack={vi.fn()} />);
+
+    await waitFor(() => expect(screen.getByTestId('message-attachment-file-1')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('message-attachment-file-1'));
+
+    // O zeramento acontece SÍNCRONO, no mesmo tick do clique — não espera a URL chegar.
+    expect(fakePopup.opener).toBeNull();
+
+    openSpy.mockRestore();
+  });
+
   it('mensagem APAGADA nunca mostra anexo, mesmo que o array venha preenchido (soft delete zera o corpo, não o array)', async () => {
     getConversationReplies.mockResolvedValue([
       msg({

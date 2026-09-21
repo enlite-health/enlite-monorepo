@@ -113,6 +113,12 @@ export function MessageAttachments({
   const handleDownload = async (fileId: string): Promise<void> => {
     setDownloadError(null);
     const popup = window.open('', '_blank');
+    // 🔒 Achado do gate revisao-pr (B3, resposta 3): sem `noopener`/`noreferrer` (de propósito —
+    // ver comentário acima), `popup.opener` aponta de volta para ESTA janela por padrão. A signed
+    // URL é do NOSSO bucket (nunca link de terceiro), então o risco de reverse tabnabbing é baixo
+    // — mas zerar o `opener` explicitamente, aqui, custa 1 linha e fecha o item sem depender de
+    // "o destino é sempre confiável" continuar verdadeiro para sempre.
+    if (popup) popup.opener = null;
     try {
       const { url } = await AdminConversationApiService.getConversationAttachmentUrl(patientId, fileId);
       if (popup) {
