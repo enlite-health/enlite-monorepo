@@ -205,9 +205,20 @@ export class PostMessageUseCase {
 
   private async attachFiles(client: PoolClient, messageId: string, fileIds: string[]): Promise<void> {
     const values = fileIds.map((_, i) => `($1, $${i + 2})`).join(', ');
-    await client.query(
-      `INSERT INTO conversation_message_attachments (message_id, file_id) VALUES ${values}`,
-      [messageId, ...fileIds],
-    );
+    try {
+      await client.query(
+        `INSERT INTO conversation_message_attachments (message_id, file_id) VALUES ${values}`,
+        [messageId, ...fileIds],
+      );
+    } catch (err: unknown) {
+      // Corrida entre 2 POSTs concorrentes que passaram os DOIS pelo SELECT de
+      // `assertFilesOwnedByAuthor` (sem lock) antes de qualquer um inserir — a UNIQUE (file_id)
+      // da migration 461 fecha a janela no banco; aqui só traduz a violação (23505) para o MESMO
+      // 400 anti-enumeração que a checagem de posse já usa (nunca 500 pra este caso).
+      if ((err as { code?: string } | null)?.code === '23505') {
+        throw new AttachedFileNotFoundError(fileIds[0]);
+      }
+      throw err;
+    }
   }
 }

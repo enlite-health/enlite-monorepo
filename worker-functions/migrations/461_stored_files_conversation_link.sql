@@ -7,14 +7,18 @@ BEGIN;
 -- nenhum). `conversation_id` fecha isso: todo arquivo pertence a UMA conversa (= paciente, D-07),
 -- preenchido no upload (T312, único gravador de `stored_files` desde sempre — NOT NULL seguro,
 -- sem linha legada).
+-- `IF NOT EXISTS` (achado do gate revisao-pr, B3): sem ele, era a ÚNICA `ADD COLUMN` sem essa
+-- guarda em `migrations/4[0-6]*.sql` — não re-rodável. Com `IF NOT EXISTS`, a 2ª execução PULA a
+-- cláusula inteira (inclusive `NOT NULL`/`REFERENCES`) quando a coluna já existe — Postgres não
+-- tenta reaplicar NOT NULL numa coluna que já é NOT NULL, então não há linha legada a violar.
 ALTER TABLE stored_files
-  ADD COLUMN conversation_id uuid NOT NULL REFERENCES conversations(id) ON DELETE CASCADE;
+  ADD COLUMN IF NOT EXISTS conversation_id uuid NOT NULL REFERENCES conversations(id) ON DELETE CASCADE;
 
 COMMENT ON COLUMN stored_files.conversation_id IS
   'Vínculo de posse (spec 022, Bloco 3, D-14): preenchido pela rota de upload a partir do :id da '
-  'rota (paciente). PostMessageUseCase.assertFilesExist cruza este valor com o conversationId da '
-  'mensagem antes de aceitar um fileId no body — sem isso, um arquivo de outro paciente era um '
-  'anexo válido para quem soubesse o uuid.';
+  'rota (paciente). PostMessageUseCase.assertFilesOwnedByAuthor cruza este valor com o '
+  'conversationId da mensagem antes de aceitar um fileId no body — sem isso, um arquivo de outro '
+  'paciente era um anexo válido para quem soubesse o uuid.';
 
 CREATE INDEX IF NOT EXISTS idx_stored_files_conversation ON stored_files (conversation_id);
 
@@ -48,5 +52,14 @@ CREATE POLICY conversation_message_attachments_follow_message ON conversation_me
   )
   OR EXISTS (SELECT 1 FROM conversation_messages m WHERE m.id = conversation_message_attachments.message_id)
 );
+
+-- Achado do gate revisao-pr (B3): a PK é `(message_id, file_id)` — não impede o MESMO `file_id`
+-- de ser anexado a 2 mensagens diferentes (mesmo autor/conversa). `PostMessageUseCase.assertFilesOwnedByAuthor`
+-- já recusa isso por SELECT (`NOT EXISTS conversation_message_attachments`), mas SEM LOCK: 2 POSTs
+-- concorrentes que leem o SELECT antes de qualquer um inserir passam os dois. Um arquivo, uma
+-- mensagem — UNIQUE índice fecha a corrida no banco; `PostMessageUseCase.attachFiles` traduz a
+-- violação (`23505`) para o MESMO 400 (`AttachedFileNotFoundError`) que a checagem de posse já usa.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_conversation_message_attachments_file_id_unique
+  ON conversation_message_attachments (file_id);
 
 COMMIT;
