@@ -6,8 +6,14 @@ import { AnaCareHoursServiceError, type AnaCareHoursService } from '@presentatio
  * stage em 18/09: uma rodada de 100s cobriu 74 das 283 reservas do mês (~4 rodadas, ~7 min no
  * total, ver `bin/anacare-medicoes/stg-anacare-sync.mjs`). O laço de várias rodadas é DESTE hook —
  * cada `service.triggerSync` é UMA chamada de rede, nunca o sync inteiro.
+ *
+ * 30s (não 100s): o Firebase Hosting na frente de `api.enlite.health` (prd) CORTA requisições
+ * repassadas ao Cloud Run em 60s — medido em 21/09, POST /sync real levava 103-116s de rodada
+ * (overhead de até ~16s sobre o budget), o navegador via "blocked by CORS"/ERR_FAILED aos ~60s
+ * sem nunca receber `nextCursor`, e a corrida ficava "running" pra sempre. Rodada real = budget +
+ * overhead (~16s) — 30s de budget fica em ~46s, abaixo do corte.
  */
-const SYNC_ROUND_BUDGET_MS = 100_000;
+const SYNC_ROUND_BUDGET_MS = 30_000;
 
 function storageKey(month: string): string {
   return `anacare-hours-sync:${month}`;
