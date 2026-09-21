@@ -293,7 +293,10 @@ export class AnaCareHoursSyncRunner {
     // um `NOW()` posterior — a corrida em voo seguia com t1, o banco passava a guardar t2 > t1, e
     // uma retomada por cursor que lesse t2 deixaria de detectar colisões das linhas escritas entre
     // t1 e t2.
-    const { result, deduped } = await this.guard.run(async () => {
+    // Chave do dedup: o MÊS (D398/gate revisao-pr) — dois disparos concorrentes só compartilham a
+    // rodada quando pedem o MESMO mês; meses diferentes rodam cada um a sua própria rodada real,
+    // nunca herdam status/cursor um do outro (ver cabeçalho de `AnaCareHoursSyncGuard`).
+    const { result, deduped } = await this.guard.run(month, async () => {
       const runStartedAt = await this.resolveRunStartedAt('anacare', month, cursor);
       return this.runOnce(month, cursor, budgetMs, runStartedAt);
     });
