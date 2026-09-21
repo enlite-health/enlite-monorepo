@@ -349,6 +349,14 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       'patient:create', 'patient:update',
       'patient_address:create', 'patient_address:update',
       'patient_chat:create', 'patient_chat:update',
+      // Spec 022 (chat interno por paciente, 20/09): as 5 células novas — 4 de
+      // `patient_conversation` (família `admin.patients`) e `staff_directory:read`
+      // (família `admin.users`). Ambas as rotas reais existem (`adminConversationRoutes.ts`,
+      // `adminStaffDirectoryRoutes.ts`), mas o fixture de 2 rotas deste teste não as declara,
+      // por isso aparecem aqui como as demais células de rota real.
+      'patient_conversation:read', 'patient_conversation:create',
+      'patient_conversation:update', 'patient_conversation:delete',
+      'staff_directory:read',
       'patient_identity:create', 'patient_identity:update',
       'patient_clinical:create', 'patient_clinical:update',
       'patient_care_team:create', 'patient_care_team:update',

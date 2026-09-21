@@ -3823,6 +3823,15 @@
           "externalContacts": "Contactos externos",
           "coverageContacts": "Contactos de la cobertura",
           "careTeam": "Equipo tratante"
+        },
+        "conversation": {
+          "errors": {
+            "legacyDoc": "Formato .doc no es aceptado; guardá como .docx",
+            "fileTooLarge": "El archivo supera los 10 MB",
+            "unsupportedType": "Tipo de archivo no aceptado",
+            "maliciousContent": "El archivo fue rechazado por contener código activo o macros",
+            "mentionInvalid": "El usuario mencionado no existe"
+          }
         }
       },
       "statusOptions": {

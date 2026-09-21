@@ -94,6 +94,8 @@ export type {
 } from './application/resolveCountryScope';
 export { createAuthTelemetryRoutes } from './interfaces/routes/authTelemetryRoutes';
 export { createAdminUsersRoutes } from './interfaces/routes/adminUsersRoutes';
+export { createAdminStaffDirectoryRoutes } from './interfaces/routes/adminStaffDirectoryRoutes';
+export { AdminStaffDirectoryController } from './interfaces/controllers/AdminStaffDirectoryController';
 export { createPermissionPanelRoutes, ADMIN_PERMISSIONS_FAMILY } from './interfaces/routes/permissionPanelRoutes';
 export { createPermissionPanelWriteRoutes } from './interfaces/routes/permissionPanelWriteRoutes';
 export type { PanelWriter, PermissionPanelWriteDeps } from './interfaces/routes/permissionPanelWriteRoutes';

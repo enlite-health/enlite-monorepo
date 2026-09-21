@@ -74,6 +74,7 @@ describe('SCREEN_REGISTRY — paridade com o catálogo do back', () => {
       'recruitment:create',
       'recruitment:update',
       'recruitment:write',
+      'staff_directory:read',
       'talentum:write',
       'test_fixtures:execute',
       'upload:read',
