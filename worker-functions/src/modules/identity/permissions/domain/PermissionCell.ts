@@ -324,6 +324,23 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
   'anacare_hours:validate':
     'Validar um turno, validar em lote e contestar (com motivo e nota opcional) na conferência '
     + 'de horas do Ana Care. Exige também anacare_hours:read para ver o que está validando.',
+
+  // ── Spec 024 (D1/D401, 21/09) — o catálogo de Etiquetas é DADO diferente do perfil do
+  //    prestador: `tag:*` sai de `worker:*`. Atribuir/remover etiqueta DE UM prestador
+  //    continua em `worker:update` — ali o dado é o prestador, não o catálogo.
+  'tag:read': 'Ver o catálogo de ETIQUETAS de prestador (lista global de etiquetas, não o prestador em si).',
+  'tag:create': 'Criar uma etiqueta nova no catálogo de etiquetas de prestador.',
+  'tag:update':
+    'Editar uma etiqueta já existente no catálogo (nome/cor). Atribuir/remover uma etiqueta DE UM '
+    + 'prestador continua sob `worker:update` — é dado do prestador, não do catálogo.',
+  'tag:delete': 'Excluir uma etiqueta do catálogo de etiquetas de prestador.',
+
+  // ── Spec 024 (D2/D401, 21/09) — Postulações bloqueadas é LOG administrativo, dado diferente
+  //    do funil de recrutamento: célula própria, fora de `recruitment:*`.
+  'recruitment_blocked:read':
+    'Ver o log de POSTULAÇÕES BLOQUEADAS: tentativas de um prestador se postular a uma vaga e '
+    + 'serem bloqueadas antes de completar a aplicação (cadastro incompleto, prestador '
+    + 'desativado ou não encontrado). Tela só leitura — sem ação.',
 };
 
 /**

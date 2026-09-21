@@ -116,10 +116,13 @@ export function createAdminWorkerRoutes(
   router.get('/workers', staffOnly, perm.require('worker', 'read'), (req: Request, res: Response) => c.workers.listWorkers(req, res));
 
   // ── Worker Tags ──
-  router.get('/worker-tags', staffOnly, perm.require('worker', 'read'), (req: Request, res: Response) => c.tags.list(req, res));
-  router.post('/worker-tags', staffOnly, perm.require('worker', 'create', { untilEnforced: 'admin' }), (req: Request, res: Response) => c.tags.create(req, res));
-  router.patch('/worker-tags/:id', staffOnly, perm.require('worker', 'update', { untilEnforced: 'admin' }), (req: Request, res: Response) => c.tags.update(req, res));
-  router.delete('/worker-tags/:id', staffOnly, perm.require('worker', 'update', { untilEnforced: 'admin' }), (req: Request, res: Response) => c.tags.delete(req, res));
+  // Spec 024 D1/D401: catálogo de tags é DADO diferente do perfil de prestador — célula própria
+  // `tag:*`, separada de `worker:*`. As rotas de tag DE UM prestador (:123-124 abaixo) continuam
+  // em `worker`, porque ali o dado é o perfil do prestador, não o catálogo.
+  router.get('/worker-tags', staffOnly, perm.require('tag', 'read'), (req: Request, res: Response) => c.tags.list(req, res));
+  router.post('/worker-tags', staffOnly, perm.require('tag', 'create', { untilEnforced: 'admin' }), (req: Request, res: Response) => c.tags.create(req, res));
+  router.patch('/worker-tags/:id', staffOnly, perm.require('tag', 'update', { untilEnforced: 'admin' }), (req: Request, res: Response) => c.tags.update(req, res));
+  router.delete('/worker-tags/:id', staffOnly, perm.require('tag', 'delete', { untilEnforced: 'admin' }), (req: Request, res: Response) => c.tags.delete(req, res));
   router.post('/workers/:id/tags/:tagId', staffOnly, perm.require('worker', 'update'), (req: Request, res: Response) => c.tags.assign(req, res));
   router.delete('/workers/:id/tags/:tagId', staffOnly, perm.require('worker', 'update'), (req: Request, res: Response) => c.tags.remove(req, res));
 

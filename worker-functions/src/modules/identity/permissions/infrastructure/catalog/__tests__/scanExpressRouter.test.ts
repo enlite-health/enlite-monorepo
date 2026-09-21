@@ -374,6 +374,12 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       // fixture de 2 rotas deste teste não as declara, por isso aparecem aqui como as demais
       // células de rota real acima (mesmo padrão de `patient_therapeutic_project:*` etc.).
       'anacare_hours:read', 'anacare_hours:validate',
+      // Spec 024 (D1/D2/D401, 21/09): DECLARADAS por rota real em `adminWorkerRoutes.ts`
+      // (`tag:*`) e `recruitmentRoutes.ts` (`recruitment_blocked:read`) — o fixture de 2 rotas
+      // deste teste não as declara, por isso aparecem aqui como as demais células de rota real
+      // acima (mesmo padrão de `anacare_hours:*`).
+      'tag:read', 'tag:create', 'tag:update', 'tag:delete',
+      'recruitment_blocked:read',
     ]);
   });
 
