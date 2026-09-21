@@ -132,6 +132,16 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
   'worker_pii:read':
     'Ver o DOSSIÊ do prestador: documento (DNI), data de nascimento, fotos e os dados sensíveis de '
     + 'raça, religião e orientação sexual. Acesso de auditoria e RH, não de operação.',
+  // Spec 025 (Fase 6, D402 item 4, 21/09): editar o dossiê pelo painel. Hoje só `birthDate`
+  // (PATCH /api/admin/workers/:id/profile) — célula cumulativa a `worker:update`, checada em
+  // código de aplicação (não em `perm.require` de rota), porque o campo sensível viaja dentro do
+  // PATCH de OUTRO recurso (mesmo mecanismo de `patient_clinical:write`, ver
+  // `worker/application/workerContainerAccess.ts`). NÃO é `worker_pii:update` — `worker_pii` não
+  // está em `SPLIT_RESOURCES`, não tem CRUD própria.
+  'worker_pii:write':
+    'Editar o DOSSIÊ do prestador: hoje só a data de nascimento (birthDate) do PATCH '
+    + '/api/admin/workers/:id/profile. Célula cumulativa a `worker:update`; sem ela o campo é '
+    + 'rejeitado com 403, nunca gravado.',
   // D286 fase 2 (06/09): o endereço sai do dossiê e vira célula própria, espelho de `patient_address` —
   // a MESMA célula vale no card de endereço da ficha e na aba Prestadores do mapa (coordenada é
   // endereço, `lex` P2; abrir o mapa não pode exigir raça e religião).

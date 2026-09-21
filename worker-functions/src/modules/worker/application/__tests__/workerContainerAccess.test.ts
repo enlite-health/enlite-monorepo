@@ -1,6 +1,7 @@
 import { NOME_REDIGIDO } from '@modules/identity/permissions';
 import {
-  ALL_WORKER_CONTAINERS_READABLE, WORKER_CONTAINERS, canReadWorkerContainer, projectPatientNameInEngagement,
+  ALL_WORKER_CONTAINERS_READABLE, WORKER_CONTAINERS, WORKER_PII_WRITE_CELL, canReadWorkerContainer,
+  canWriteWorkerPii, projectPatientNameInEngagement,
   servedWorkerContainers, workerContainerCell, workerContainerReadsOf, workerDetailTrailAction, workerDetailTrailOf, workerRedactionMarker,
 } from '../workerContainerAccess';
 
@@ -48,5 +49,26 @@ describe('workerContainerAccess — a célula de cada container da ficha do pres
     expect(projectPatientNameInEngagement(null, workerContainerReadsOf(['match:read']))).toBe(NOME_REDIGIDO);
     expect(projectPatientNameInEngagement('Juan Perez', workerContainerReadsOf(['match:read', 'patient_identity:read']))).toBe('Juan Perez');
     expect(projectPatientNameInEngagement(null, workerContainerReadsOf(null))).toBeNull();
+  });
+
+  // Spec 025 (Fase 6, D402 item 4) — escrita do dossiê (`birthDate` pelo admin).
+  describe('canWriteWorkerPii — célula cumulativa `worker_pii:write`, mesmo padrão de canWriteTherapeuticClinical', () => {
+    it('chave canônica é `worker_pii:write`, não `worker_pii:update` (worker_pii não é SPLIT_RESOURCES)', () => {
+      expect(WORKER_PII_WRITE_CELL).toBe('worker_pii:write');
+    });
+
+    it('cells = null / undefined → passa (D113, engine não decidiu)', () => {
+      expect(canWriteWorkerPii(null)).toBe(true);
+      expect(canWriteWorkerPii(undefined)).toBe(true);
+    });
+
+    it('[] (ator sem célula nenhuma) → nega', () => {
+      expect(canWriteWorkerPii([])).toBe(false);
+    });
+
+    it('com a célula → passa; com outras células mas sem ela → nega', () => {
+      expect(canWriteWorkerPii(['worker_pii:write'])).toBe(true);
+      expect(canWriteWorkerPii(['worker:update', 'worker_pii:read'])).toBe(false);
+    });
   });
 });

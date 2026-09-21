@@ -127,6 +127,7 @@
     "worker_document:update",
     "worker_document:validate",
     "worker_document:write",
-    "worker_pii:read"
+    "worker_pii:read",
+    "worker_pii:write"
   ]
 }

@@ -1965,6 +1965,7 @@
         "documentType": "Tipo de documento",
         "documentNumber": "Número do documento",
         "professionalSection": "Dados profissionais",
+        "dossierSection": "Dossiê",
         "addressSection": "Endereço",
         "unset": "—",
         "save": "Salvar",
