@@ -308,6 +308,7 @@
     "phoneInvalid": "Teléfono inválido",
     "emailInvalid": "Correo electrónico inválido",
     "birthDateRequired": "La fecha de nacimiento es obligatoria",
+    "birthDateInvalid": "Ingrese una fecha de nacimiento válida (DD/MM/AAAA)",
     "selectSex": "Por favor, seleccione el sexo",
     "selectGender": "Por favor, seleccione el género",
     "licenseRequired": "El registro profesional es obligatorio",

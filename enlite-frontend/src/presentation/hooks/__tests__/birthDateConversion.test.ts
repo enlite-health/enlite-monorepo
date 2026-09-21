@@ -1,5 +1,55 @@
 import { describe, it, expect } from 'vitest';
-import { maskDate, parseDateToISO, formatDateFromISO } from '@presentation/hooks/useMask';
+import { maskDate, parseDateToISO, formatDateFromISO, isValidBirthDateBr } from '@presentation/hooks/useMask';
+
+// Defeito 1 (21/09/2026): digitar "25/3/1985" (7 dígitos) faz o maskDate agrupar
+// errado ("25/31/985") e o parseDateToISO devolver esse lixo como-está (< 8 dígitos).
+// isValidBirthDateBr é o gate que o schema usa para barrar isso ANTES do submit.
+describe('isValidBirthDateBr - Defeito 1 (validação de data completa/real)', () => {
+  it('rejeita o agrupamento quebrado produzido por 7 dígitos (bug reproduzido em prod)', () => {
+    const digits = '25' + '3' + '1985'; // usuário digitou "25/3/1985" → só 7 dígitos úteis
+    expect(digits).toBe('2531985');
+    const masked = maskDate(digits);
+    expect(masked).toBe('25/31/985'); // confirma a reprodução do bug
+    expect(isValidBirthDateBr(masked)).toBe(false);
+  });
+
+  it('rejeita data incompleta (menos de 10 caracteres)', () => {
+    expect(isValidBirthDateBr('18/03/90')).toBe(false);
+    expect(isValidBirthDateBr('18/03')).toBe(false);
+    expect(isValidBirthDateBr('')).toBe(false);
+  });
+
+  it('rejeita mês inexistente (13)', () => {
+    expect(isValidBirthDateBr('18/13/1990')).toBe(false);
+  });
+
+  it('rejeita dia inexistente no mês (31/04)', () => {
+    expect(isValidBirthDateBr('31/04/1990')).toBe(false);
+  });
+
+  it('rejeita 29/02 em ano não-bissexto', () => {
+    expect(isValidBirthDateBr('29/02/2021')).toBe(false);
+  });
+
+  it('aceita 29/02 em ano bissexto', () => {
+    expect(isValidBirthDateBr('29/02/2020')).toBe(true);
+  });
+
+  it('rejeita data futura', () => {
+    const futureYear = new Date().getFullYear() + 1;
+    expect(isValidBirthDateBr(`01/01/${futureYear}`)).toBe(false);
+  });
+
+  it('rejeita ano implausível (antes de 1900)', () => {
+    expect(isValidBirthDateBr('01/01/1899')).toBe(false);
+  });
+
+  it('aceita data real, completa e passada', () => {
+    expect(isValidBirthDateBr('18/03/1990')).toBe(true);
+    expect(isValidBirthDateBr('25/07/1985')).toBe(true);
+    expect(isValidBirthDateBr('01/01/2000')).toBe(true);
+  });
+});
 
 // Testes unitários das funções de conversão de data
 describe('Conversão de Data de Nascimento - useMask', () => {

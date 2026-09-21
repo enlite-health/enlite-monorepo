@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import i18n from '../../infrastructure/i18n/config';
+import { isValidBirthDateBr } from '../hooks/useMask';
 
 const t = i18n.t.bind(i18n);
 
@@ -25,7 +26,11 @@ export const createGeneralInfoSchema = () => z.object({
   cpf: z.string({ required_error: t('validation.documentInvalid'), invalid_type_error: t('validation.documentInvalid') }).min(11, t('validation.documentInvalid')).max(14, t('validation.documentInvalid')),
   phone: z.string({ required_error: t('validation.phoneInvalid'), invalid_type_error: t('validation.phoneInvalid') }).min(10, t('validation.phoneInvalid')).max(15, t('validation.phoneInvalid')),
   email: z.string({ required_error: t('validation.emailInvalid'), invalid_type_error: t('validation.emailInvalid') }).email(t('validation.emailInvalid')),
-  birthDate: z.string({ required_error: t('validation.birthDateRequired'), invalid_type_error: t('validation.birthDateRequired') }).min(1, t('validation.birthDateRequired')),
+  birthDate: z.string({ required_error: t('validation.birthDateRequired'), invalid_type_error: t('validation.birthDateRequired') })
+    .min(1, t('validation.birthDateRequired'))
+    // Vazio já é pego pelo `.min(1)` acima — aqui só reprova formato/calendário
+    // quando HÁ conteúdo, senão as duas mensagens colidiriam no mesmo campo.
+    .refine((val) => val === '' || isValidBirthDateBr(val), { message: t('validation.birthDateInvalid') }),
   sex: z.string({ invalid_type_error: t('validation.selectSex') })
     .transform((val) => val === '' ? undefined : val)
     .refine((val): val is 'male' | 'female' => val !== undefined && (SEX_VALUES as readonly string[]).includes(val), { message: t('validation.selectSex') }),
