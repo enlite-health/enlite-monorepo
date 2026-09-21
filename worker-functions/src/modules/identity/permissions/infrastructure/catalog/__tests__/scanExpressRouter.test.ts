@@ -289,6 +289,10 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
 
     expect(cellsForaDeRota(deRota).map((c) => `${c.resource}:${c.action}`)).toEqual([
       'worker_contact:read',
+      // Spec 025 (Fase 6, D402 item 4, 21/09) — decisão CONSCIENTE: `birthDate` viaja dentro do
+      // PATCH /api/admin/workers/:id/profile (rota é `worker:update`), então a célula do dossiê
+      // não tem `perm.require` própria — mesmo mecanismo de `patient_clinical:write` abaixo.
+      'worker_pii:write',
       // D286 (06/09) — os blocos da Gestión a la Vista: projetados dentro de /dashboard/management
       // (sem rota própria); `dashboard_zones` TEM rota, mas o fixture deste teste não a declara.
       'dashboard_numbers:read',
