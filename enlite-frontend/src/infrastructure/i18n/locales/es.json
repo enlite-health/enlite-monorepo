@@ -5345,6 +5345,17 @@
         "duplicate": "Ya existe una opción activa con ese texto.",
         "invalidLabel": "El texto no puede tener datos de una persona (e-mail, documento, teléfono) ni superar 200 caracteres."
       }
+    },
+    "notifications": {
+      "mentioned": "{{actor}} mencionó a vos en {{patient}}",
+      "replied": "{{actor}} respondió en la conversación de {{patient}}",
+      "markAllRead": "Marcar todas como leídas",
+      "unknownPatient": "un paciente",
+      "bellLabel": "Notificaciones",
+      "unread": "{{count}} notificaciones sin leer",
+      "panelTitle": "Notificaciones",
+      "empty": "No tenés notificaciones",
+      "close": "Cerrar notificaciones"
     }
   },
   "publicVacancy": {
