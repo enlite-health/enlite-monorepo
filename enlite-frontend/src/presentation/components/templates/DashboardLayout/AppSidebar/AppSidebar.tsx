@@ -4,6 +4,7 @@ import { NavItem } from '@presentation/components/shared/NavItem';
 import { NavSection, type NavSectionItem } from '@presentation/components/shared/NavSection';
 import { SidebarFooter } from '@presentation/components/shared/SidebarFooter';
 import { Text } from '@presentation/components/atoms/Text';
+import { NotificationBell } from '@presentation/components/features/notifications/NotificationBell';
 
 export interface AppSidebarNavItem {
   icon: ReactNode;
@@ -117,6 +118,13 @@ export const AppSidebar = ({
             </div>
           ))}
       </nav>
+
+      {/* Sino de notificações (spec 022, Bloco 4, T411) — IMEDIATAMENTE ACIMA do bloco do
+          usuário, separado dos menus por `border-t` (D-13). Nunca dentro de `navItems`: é
+          global de staff (`own_notifications:*` nasce concedida a TODO staff, D-07), não uma
+          rota de navegação. Só no modo expandido — mesmo tratamento do `SidebarFooter` logo
+          abaixo (colapsado mostra só o avatar). */}
+      {!isCollapsed && <NotificationBell />}
 
       {/* Footer */}
       {!isCollapsed && (

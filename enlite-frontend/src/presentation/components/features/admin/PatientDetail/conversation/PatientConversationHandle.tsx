@@ -3,6 +3,7 @@ import { MessageCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Text } from '@presentation/components/atoms/Text';
 import { usePolling } from '@hooks/usePolling';
+import { useAutoOpenDrawer, type DrawerFocusRequest } from '@hooks/admin/useAutoOpenDrawer';
 import { AdminConversationApiService } from '@infrastructure/http/AdminConversationApiService';
 import { SlideOverPanel } from '@presentation/components/molecules/SlideOverPanel/SlideOverPanel';
 import { ConversationPanel } from './ConversationPanel';
@@ -12,6 +13,13 @@ const POLL_MS = 5000;
 
 interface PatientConversationHandleProps {
   patientId: string;
+  /**
+   * Deep-link do sino de notificações (Spec 022, Bloco 4, T413): `NotificationPanel` navega para
+   * `patients/:patientId` com `{ code: 'conversation', token }` no `location.state` — este
+   * componente escuta pelo MESMO mecanismo do checklist (`useAutoOpenDrawer`) e abre o painel
+   * sozinho, sem o pai (`PatientDetailPage`) saber nada sobre conversa/notificação.
+   */
+  focusRequest?: DrawerFocusRequest | null;
 }
 
 /**
@@ -48,7 +56,7 @@ interface PatientConversationHandleProps {
  * saber que este ator leu — sem isso, o próximo poll devolveria o MESMO `unreadCount` de antes de
  * abrir, e o badge nunca zeraria de verdade.
  */
-export function PatientConversationHandle({ patientId }: PatientConversationHandleProps): JSX.Element {
+export function PatientConversationHandle({ patientId, focusRequest }: PatientConversationHandleProps): JSX.Element {
   const { t } = useTranslation();
   const tc = (key: string, opts?: Record<string, unknown>): string =>
     t(`admin.patients.detail.conversation.handle.${key}`, opts);
@@ -77,6 +85,10 @@ export function PatientConversationHandle({ patientId }: PatientConversationHand
     // outras falhas deste componente: best-effort, badge não é canal de alerta.
     void AdminConversationApiService.markConversationRead(patientId).catch(() => {});
   };
+
+  // Deep-link do sino (T413): mesmo mecanismo do checklist (US-D1) — abre o painel sozinho
+  // quando `focusRequest.code === 'conversation'`, nunca duas vezes pelo MESMO token.
+  useAutoOpenDrawer(focusRequest, 'conversation', handleOpen);
 
   /** Fechamento incondicional — chamado pelo composer (via `onComposerClose`) só quando é seguro
    * (rascunho vazio, ou descarte confirmado), e usado como fallback quando não há composer

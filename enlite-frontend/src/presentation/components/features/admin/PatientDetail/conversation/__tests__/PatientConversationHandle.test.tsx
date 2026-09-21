@@ -268,6 +268,29 @@ describe('PatientConversationHandle (spec 022, T208/T209)', () => {
     expect(screen.getByTestId('patient-conversation-handle-btn')).toBeInTheDocument();
   });
 
+  it('T413 (deep-link do sino): focusRequest com code="conversation" abre o painel sozinho, sem clique', () => {
+    useAdminAuthStore.setState({ authz: contrato(['patient_conversation:read']), authzStatus: 'ready' });
+    const { rerender } = render(
+      <PatientConversationHandle patientId="p1" focusRequest={null} />,
+    );
+
+    const panel = screen.getByTestId('patient-conversation-panel');
+    expect(panel.className).toContain('translate-x-full');
+
+    rerender(<PatientConversationHandle patientId="p1" focusRequest={{ code: 'conversation', token: 1 }} />);
+
+    expect(panel.className).toContain('translate-x-0');
+    expect(AdminConversationApiService.markConversationRead).toHaveBeenCalledWith('p1');
+  });
+
+  it('T413: focusRequest de OUTRO code (ex.: checklist) nunca abre o painel de conversa', () => {
+    useAdminAuthStore.setState({ authz: contrato(['patient_conversation:read']), authzStatus: 'ready' });
+    render(<PatientConversationHandle patientId="p1" focusRequest={{ code: 'coberturaMedica', token: 1 }} />);
+
+    const panel = screen.getByTestId('patient-conversation-panel');
+    expect(panel.className).toContain('translate-x-full');
+  });
+
   it('falha silenciosa no poll: badge não quebra, mantém o valor anterior', async () => {
     useAdminAuthStore.setState({ authz: contrato(['patient_conversation:read']), authzStatus: 'ready' });
     vi.mocked(AdminConversationApiService.getConversation).mockRejectedValue(new Error('network'));
