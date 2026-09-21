@@ -102,7 +102,9 @@ test.describe('Chat interno por paciente — caminho feliz (US1+US2) @integratio
     const topItem = page.getByTestId(`conversation-message-${topMessageId}`);
     await expect(topItem).toBeVisible();
     await expect(topItem.getByTestId('message-body')).toContainText('msg-1 hola');
-    await expect(topItem.getByTestId('mention-chip')).toHaveText(`@${MENCIONADO_UID}`);
+    // Conserto DEFEITO 5 (gate b2-fix): o chip mostra o NOME de exibição (cache alimentado pela
+    // própria busca do autocomplete, `useStaffNameCache`), não mais o uid cru.
+    await expect(topItem.getByTestId('mention-chip')).toHaveText('@QA Staff Dois');
 
     // ── abrir a thread e responder (US2) ──
     await topItem.getByRole('button').click(); // "N respostas"

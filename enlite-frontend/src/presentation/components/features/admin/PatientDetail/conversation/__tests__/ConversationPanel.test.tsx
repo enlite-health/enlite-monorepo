@@ -23,6 +23,8 @@ import userEvent from '@testing-library/user-event';
 import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
 import { ApiError } from '@infrastructure/http/ApiError';
 import { AdminConversationApiService, type ConversationMessage } from '@infrastructure/http/AdminConversationApiService';
+import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
+import type { AuthzContract } from '@domain/entities/Authz';
 import { ConversationPanel } from '../ConversationPanel';
 
 vi.mock('@infrastructure/http/AdminConversationApiService', () => ({
@@ -89,6 +91,7 @@ describe('ConversationPanel', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' });
   });
 
   it('lista mensagens de topo: autor, hora e corpo', async () => {
@@ -382,5 +385,86 @@ describe('ConversationPanel', () => {
     // a THREAD recarrega sozinha (refreshToken) — sem precisar voltar e reabrir.
     await waitFor(() => expect(screen.getByTestId('thread-reply-r1')).toBeInTheDocument());
     expect(screen.getByTestId('thread-view')).toBeInTheDocument(); // segue na mesma thread
+  });
+
+  // ---- DEFEITO 4 (conserto, gate b2-fix): erro não-403 na carga inicial nunca fica em branco ---
+
+  it('DEFEITO 4 (conserto): erro NÃO-403 na carga inicial mostra panel.loadError — nunca fica em branco', async () => {
+    getConversation.mockRejectedValue(new Error('network down'));
+    render(<ConversationPanel patientId="p1" isOpen />);
+
+    await waitFor(() => expect(screen.getByTestId('conversation-panel-error')).toBeInTheDocument());
+    expect(screen.getByTestId('conversation-panel-error')).toHaveTextContent(PT.panel.loadError);
+    expect(screen.queryByTestId('conversation-panel-empty')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('conversation-panel-list')).not.toBeInTheDocument();
+  });
+
+  it('DEFEITO 4: erro NÃO-403 num POLL depois de já ter carregado (status \'ready\') NÃO troca de estado'
+    + ' — mantém a última lista boa (comportamento antigo preservado)', async () => {
+    vi.useFakeTimers();
+    getConversation.mockResolvedValueOnce({
+      conversationId: 'conv-1',
+      messages: [msg({ id: 'm1' })],
+      nextCursor: null,
+    });
+    render(<ConversationPanel patientId="p1" isOpen />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(screen.getByTestId('conversation-message-m1')).toBeInTheDocument();
+
+    getConversation.mockRejectedValueOnce(new Error('network blip'));
+    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+
+    // continua mostrando a última lista boa — nunca vira 'error' depois de já ter carregado.
+    expect(screen.getByTestId('conversation-message-m1')).toBeInTheDocument();
+    expect(screen.queryByTestId('conversation-panel-error')).not.toBeInTheDocument();
+  });
+
+  // ---- DEFEITO 1 (conserto, gate b2-fix): sem `patient_conversation:create`, compositor vira aviso ---
+
+  it('DEFEITO 1 (conserto): sem a célula de create, o compositor de TOPO vira aviso — nunca o campo', async () => {
+    useAdminAuthStore.setState({
+      authz: {
+        uid: 'u1', tenantId: 't1', status: 'ACTIVE', permissions: ['patient_conversation:read'],
+        countries: ['AR'], groups: [], features: {}, enforcement: 'on',
+      } satisfies AuthzContract,
+      authzStatus: 'ready',
+    });
+    getConversation.mockResolvedValue({ conversationId: 'conv-1', messages: [], nextCursor: null });
+    render(<ConversationPanel patientId="p1" isOpen />);
+
+    await waitFor(() => expect(screen.getByTestId('conversation-panel-read-only')).toBeInTheDocument());
+    expect(screen.getByTestId('conversation-panel-read-only')).toHaveTextContent(PT.panel.readOnly);
+    expect(screen.queryByTestId('composer-editor')).not.toBeInTheDocument();
+  });
+
+  it('DEFEITO 1 (conserto): sem a célula de create, o compositor de REPLY também vira aviso', async () => {
+    useAdminAuthStore.setState({
+      authz: {
+        uid: 'u1', tenantId: 't1', status: 'ACTIVE', permissions: ['patient_conversation:read'],
+        countries: ['AR'], groups: [], features: {}, enforcement: 'on',
+      } satisfies AuthzContract,
+      authzStatus: 'ready',
+    });
+    getConversation.mockResolvedValue({
+      conversationId: 'conv-1',
+      messages: [msg({ id: 'm1', replyCount: 1 })],
+      nextCursor: null,
+    });
+    render(<ConversationPanel patientId="p1" isOpen />);
+
+    await waitFor(() => expect(screen.getByTestId('conversation-message-m1')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: '1 resposta' }));
+
+    await waitFor(() => expect(screen.getByTestId('conversation-panel-read-only')).toBeInTheDocument());
+    expect(screen.queryByTestId('composer-editor')).not.toBeInTheDocument();
+  });
+
+  it('com a célula de create (default sem authz mockado — enforcement off), o compositor aparece normalmente', async () => {
+    getConversation.mockResolvedValue({ conversationId: 'conv-1', messages: [], nextCursor: null });
+    render(<ConversationPanel patientId="p1" isOpen />);
+
+    await waitFor(() => expect(screen.getByTestId('conversation-panel-empty')).toBeInTheDocument());
+    expect(await screen.findByTestId('composer-editor')).toBeInTheDocument();
+    expect(screen.queryByTestId('conversation-panel-read-only')).not.toBeInTheDocument();
   });
 });

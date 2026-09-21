@@ -1,8 +1,25 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AdminConversationApiService, type ConversationMessage } from '@infrastructure/http/AdminConversationApiService';
+import { useStaffDisplayName } from '@presentation/stores/staffNameCache';
 
 const MENTION_PATTERN = /<@([^>]+)>/g;
+
+/** Chip de UMA menção confirmada — nome de exibição quando resolvível (`useStaffDisplayName`,
+ * achado baixo do gate do B2: mostrava uid cru), com fallback pro próprio uid. Componente
+ * separado (não só `<span>`) porque a resolução de nome usa um hook — `renderMessageBody` abaixo
+ * é uma função pura, não pode chamar hook direto. */
+function MentionChip({ uid }: { uid: string }): JSX.Element {
+  const displayName = useStaffDisplayName(uid);
+  return (
+    <span
+      data-testid="mention-chip"
+      className="inline-block px-1.5 py-0.5 mx-0.5 rounded bg-primary/10 text-primary text-sm"
+    >
+      @{displayName}
+    </span>
+  );
+}
 
 /**
  * Corpo da mensagem com `<@uid>` renderizado como CHIP. `mentions` chega do backend como a lista
@@ -29,15 +46,7 @@ export function renderMessageBody(body: string, mentions: readonly string[]): Re
     if (match.index > lastIndex) parts.push(body.slice(lastIndex, match.index));
     const uid = match[1];
     if (confirmedUids.has(uid)) {
-      parts.push(
-        <span
-          key={`mention-${match.index}`}
-          data-testid="mention-chip"
-          className="inline-block px-1.5 py-0.5 mx-0.5 rounded bg-primary/10 text-primary text-sm"
-        >
-          @{uid}
-        </span>,
-      );
+      parts.push(<MentionChip key={`mention-${match.index}`} uid={uid} />);
     } else {
       parts.push(body.slice(match.index, match.index + match[0].length));
     }
@@ -65,11 +74,15 @@ export function MessageContent({ message }: { message: ConversationMessage }): J
   const { t } = useTranslation();
   const td = (key: string, optsOrDefault?: Record<string, unknown> | string): string =>
     t(`admin.patients.detail.conversation.thread.${key}`, optsOrDefault as string);
+  // Achado baixo do gate do B2: mostrava uid cru. `useStaffDisplayName` resolve pelo próprio
+  // perfil (autor === ator logado) ou pelo cache de busca do diretório (`MessageComposer`) —
+  // fallback pro uid quando nenhuma das duas resolve (nunca inventa nome, nunca quebra).
+  const authorName = useStaffDisplayName(message.authorUid);
 
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-center gap-2 text-xs text-gray-500">
-        <span data-testid="message-author">{message.authorUid}</span>
+        <span data-testid="message-author">{authorName}</span>
         <span data-testid="message-time">{formatTime(message.createdAt)}</span>
       </div>
       <div data-testid="message-body">
