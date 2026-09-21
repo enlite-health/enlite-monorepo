@@ -220,9 +220,10 @@ export function BlockedAttemptsPage(): JSX.Element | null {
   const navigate = useNavigate();
 
   // ── Gate de container (mesmo padrão do DedupCenterPage) ─────────────────────
-  // A célula da leitura que a tela faz: GET /recruitment/blocked-attempts →
-  // recruitment:read. Só nega com o engine ligado (D268/D286).
-  const { visible } = useContainerAccess('recruitment');
+  // Spec 024 (D2/D401, 21/09/2026): a célula da leitura que a tela faz é
+  // `recruitment_blocked:read` — dado diferente do funil de recrutamento, célula
+  // própria (era `recruitment:read`). Só nega com o engine ligado (D268/D286).
+  const { visible } = useContainerAccess('recruitment_blocked');
 
   useEffect(() => {
     if (!visible) navigate('/admin', { replace: true });
