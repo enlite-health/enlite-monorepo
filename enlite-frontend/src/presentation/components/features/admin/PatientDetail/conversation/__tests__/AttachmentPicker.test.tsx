@@ -14,6 +14,7 @@
  * `AdminConversationApiService` mockado — só a interface pública é exercitada.
  * Sem PII/texto clínico: nomes de arquivo são sintéticos (regra dura do brief).
  */
+import { StrictMode } from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
@@ -194,6 +195,24 @@ describe('AttachmentPicker', () => {
     expect(onRemoved).toHaveBeenCalledWith('file-doc-1.pdf');
     expect(screen.queryByText('doc-1.pdf')).not.toBeInTheDocument();
     await waitFor(() => expect(screen.getByTestId('composer-attach-btn')).not.toBeDisabled());
+  });
+
+  it('🔒 achado de limpeza do gate revisao-pr (B3): em StrictMode (React invoca o updater do setItems 2× de propósito em dev), remover um anexo chama onRemoved EXATAMENTE 1 vez — o efeito colateral não pode morar dentro do updater', async () => {
+    uploadConversationAttachment.mockResolvedValue({ fileId: 'file-1' });
+    const onRemoved = vi.fn();
+    render(
+      <StrictMode>
+        <AttachmentPicker patientId="p1" onUploaded={vi.fn()} onRemoved={onRemoved} />
+      </StrictMode>,
+    );
+
+    fireEvent.change(screen.getByTestId('composer-attach-input'), { target: { files: [pdf()] } });
+    await waitFor(() => expect(screen.getByText('doc.pdf')).toBeInTheDocument());
+
+    fireEvent.click(screen.getByLabelText('Remover anexo'));
+
+    expect(onRemoved).toHaveBeenCalledTimes(1);
+    expect(onRemoved).toHaveBeenCalledWith('file-1');
   });
 
   it('reporta onUploadingChange(true) enquanto o upload está pendente e (false) quando termina', async () => {

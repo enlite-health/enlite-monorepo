@@ -146,14 +146,19 @@ export function AttachmentPicker({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [atMax, uploadOne]);
 
+  /**
+   * 🔒 Achado de limpeza do gate revisao-pr (B3): `onRemoved` (efeito colateral — chama callback
+   * do pai) morava DENTRO do updater passado a `setItems`. Updater de `setState` tem de ser puro
+   * (contrato do React); em `StrictMode`, o React invoca o updater 2× de propósito em dev para
+   * caçar exatamente esse tipo de impureza — o efeito colateral rodaria 2× por clique. `target` é
+   * lido do `items` do CLOSURE (fora do updater), e `onRemoved` roda uma vez só, ANTES do
+   * `setItems`; o updater em si volta a ser só `filter`, puro.
+   */
   const handleRemove = useCallback((localId: string): void => {
-    setItems((prev) => {
-      const target = prev.find((it) => it.localId === localId);
-      if (target?.status === 'done' && target.fileId) onRemoved?.(target.fileId);
-      return prev.filter((it) => it.localId !== localId);
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onRemoved]);
+    const target = items.find((it) => it.localId === localId);
+    if (target?.status === 'done' && target.fileId) onRemoved?.(target.fileId);
+    setItems((prev) => prev.filter((it) => it.localId !== localId));
+  }, [items, onRemoved]);
 
   return (
     <div data-testid="attachment-picker" className="flex flex-col gap-1.5">
