@@ -4126,7 +4126,8 @@
             "validate": "Validar",
             "execute": "Executar",
             "send": "Enviar",
-            "disable": "Dar baixa"
+            "disable": "Dar baixa",
+            "write": "Criar e editar"
           },
           "category": {
             "Trabalhadores": "Trabalhadores",
@@ -4179,7 +4180,13 @@
             "patient_chat": "Grupos de WhatsApp do caso",
             "patient_coverage": "Cobertura médica",
             "patient_address": "Endereços e localidade",
-            "patient_services": "Serviços contratados"
+            "patient_services": "Serviços contratados",
+            "patient_contract_value": "Valor hora do serviço contratado",
+            "patient_therapeutic_project": "Projeto terapêutico: versões, objetivos e atividades",
+            "catalog_therapeutic_objectives": "Catálogo de objetivos específicos (projeto terapêutico)",
+            "catalog_therapeutic_activities": "Catálogo de rotina e atividades (projeto terapêutico)",
+            "catalog_therapeutic_segments": "Catálogo de segmentos (Ana Care)",
+            "anacare_hours": "Conferência de horas do Ana Care"
           },
           "help": {
             "open": "O que esta permissão faz",
@@ -4591,13 +4598,13 @@
           }
         },
         "recruitment": {
-          "label": "Recrutamento"
-        },
-        "recruitment.health": {
-          "label": "Recrutamento: Saúde"
-        },
-        "recruitment.blocked": {
-          "label": "Candidaturas bloqueadas"
+          "label": "Recrutamento",
+          "health": {
+            "label": "Recrutamento: Saúde"
+          },
+          "blocked": {
+            "label": "Candidaturas bloqueadas"
+          }
         },
         "messaging.stageMessages": {
           "label": "Mensagens por etapa"
