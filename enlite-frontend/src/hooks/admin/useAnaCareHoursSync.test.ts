@@ -244,6 +244,24 @@ describe('useAnaCareHoursSync', () => {
     }
   });
 
+  it('PRD (D_ como o Firebase Hosting corta em 60s) — budgetMs enviado por rodada deve caber dentro da janela: budget + overhead medido (~16s) tem que ficar abaixo do corte de 60s do Firebase Hosting em api.enlite.health, senão a resposta nunca chega ao navegador e a corrida fica "running" para sempre', async () => {
+    const trigger = vi.fn().mockResolvedValueOnce(result({ nextCursor: null }));
+    const service = baseService(trigger);
+
+    const { result: hook } = renderHook(() => useAnaCareHoursSync(service, MONTH));
+    act(() => hook.current.start());
+
+    await waitFor(() => expect(hook.current.status).toBe('done'));
+
+    const FIREBASE_HOSTING_CUTOFF_MS = 60_000;
+    const MEASURED_OVERHEAD_MS = 16_000; // overhead medido em prd (Cloud Run + rede) até a resposta chegar ao navegador
+    const budgetMs = trigger.mock.calls[0][0].budgetMs as number;
+    expect(
+      budgetMs,
+      `budgetMs=${budgetMs}ms + overhead medido de até ${MEASURED_OVERHEAD_MS}ms tem que ficar abaixo do corte de ${FIREBASE_HOSTING_CUTOFF_MS}ms que o Firebase Hosting aplica em api.enlite.health — senão o navegador nunca recebe a resposta (CORS/ERR_FAILED) e a corrida trava em "running" para sempre em prd`,
+    ).toBeLessThan(FIREBASE_HOSTING_CUTOFF_MS - MEASURED_OVERHEAD_MS);
+  });
+
   it('DEDUPED (B) — resposta com deduped=true PARA o laço, não avança cursor nem chama onComplete', async () => {
     const trigger = vi.fn().mockResolvedValueOnce(result({ deduped: true, reservationsProcessed: 99, nextCursor: 50 }));
     const service = baseService(trigger);
