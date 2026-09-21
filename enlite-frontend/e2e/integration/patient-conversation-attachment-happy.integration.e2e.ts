@@ -109,26 +109,36 @@ test.describe('Chat interno por paciente — anexo válido (upload + download) @
     await expect(attachmentBtn).toBeVisible();
     await expect(attachmentBtn).toContainText('.pdf');
 
-    // ── clicar dispara o download real: aba em branco SÍNCRONA (achado do conserto desta sessão —
-    // window.open depois de um await perde o user-activation e o Chrome bloqueia em silêncio SEM
-    // erro nenhum) + GET .../files/:fileId/url. A prova automatizada aqui é a REQUEST real (mesmo
-    // fileId, `expiresInSeconds: 300`) e a aba auxiliar sendo criada — não a navegação final da
-    // aba: medido nesta sessão que, dentro da árvore React completa do app (mas não em 2 repros
-    // isolados idênticos — mesma origem, mesmo fetch cross-origin, mesmo alvo `fake-gcs`), a
-    // atribuição `popup.location.href = url` não commitava a navegação de forma observável pelo
-    // Playwright dentro do orçamento de tempo desta sessão; registrado em
-    // `evidencias/b3-frontend-anexo.md` como achado para investigação futura — não bloqueia o
-    // valor do conserto de produção (`noopener`/`noreferrer` removido, ver `ThreadView.tsx`), que
-    // tem prova unitária dedicada (`ThreadView.test.tsx`). ──
+    // ── clicar dispara o download REAL: aba em branco SÍNCRONA (window.open('', '_blank') dentro
+    // do próprio clique, preserva o user-activation) + GET .../files/:fileId/url + navegação da
+    // aba pra signed URL. Causa raiz investigada nesta sessão (systematic-debugging, CDP
+    // instrumentado — ver `evidencias/b3-frontend-anexo.md` §Conserto do download): a aba NUNCA
+    // muda de `about:blank` e a navegação sempre reporta `net::ERR_ABORTED`, MAS isso é o
+    // comportamento CORRETO do Chrome — `GetConversationAttachmentUrlUseCase` sempre devolve a
+    // signed URL com `response-content-disposition=attachment`, então toda navegação a ela vira
+    // download forçado (o browser aborta a navegação de documento e entrega ao gerenciador de
+    // downloads antes de qualquer página carregar). Por isso a prova certa NÃO é `popup.url()`
+    // (nunca muda, por design) — é o evento `download` do Playwright na própria aba, com a MESMA
+    // URL/host que o backend assinou e que respondeu 200 no fake-gcs. ──
     const urlResponse = page.waitForResponse((r) => r.request().method() === 'GET' && /\/files\/.+\/url$/.test(r.url()));
     const [popup] = await Promise.all([
       context.waitForEvent('page'),
       attachmentBtn.click(),
     ]);
+    const download = await popup.waitForEvent('download', { timeout: 10_000 });
     const urlBody = (await (await urlResponse).json()) as { data: { url: string; expiresInSeconds: number } };
     expect(urlBody.data.expiresInSeconds).toBe(300);
     expect(urlBody.data.url.startsWith('http')).toBe(true);
-    await popup.close().catch(() => undefined);
+    // ── mesma URL assinada que o backend devolveu — prova que é ESTE arquivo sendo baixado, não
+    // um download qualquer que por acaso disparou no popup ──
+    expect(download.url()).toBe(urlBody.data.url);
+
+    // ── conserto desta sessão: a aba auxiliar, que nunca mostra conteúdo (todo anexo força
+    // download, ver comentário acima), fecha sozinha depois de um tempo fixo
+    // (`ThreadView.tsx#handleDownload`) — sem isso ela ficava em branco pra sempre, pendurada na
+    // sessão do usuário a cada download. Prova pelo avesso em
+    // `evidencias/b3-frontend-anexo.md` §Conserto do download. ──
+    await expect.poll(() => popup.isClosed(), { timeout: 5_000, message: 'aba do download deveria fechar sozinha' }).toBe(true);
 
     // ── prova de "mesmo arquivo": o metadado gravado no upload bate com o PDF de fixture (nunca
     // comparamos bytes baixados — `content_type`/`size_bytes` gravados em `stored_files` no

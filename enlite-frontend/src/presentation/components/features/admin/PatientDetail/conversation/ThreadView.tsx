@@ -93,14 +93,36 @@ export function MessageAttachments({
    * `about:blank`) e o `else` (2ª chamada, com a URL final) abria uma SEGUNDA aba órfã que o teste
    * nunca via. Sem esses parâmetros aqui é a nossa própria signed URL do bucket, não link de
    * terceiro — a referência de volta (`window.opener`) não é risco real.
+   *
+   * 🔒 A ABA FICA `about:blank` PARA SEMPRE MESMO NO CAMINHO FELIZ (achado desta sessão, causa
+   * raiz investigada com CDP/Playwright instrumentado): `GetConversationAttachmentUrlUseCase`
+   * sempre devolve a signed URL com `response-content-disposition=attachment` — TODO anexo, sem
+   * exceção, vira download forçado, nunca navegação renderizável. Pelo design do Chrome, uma
+   * navegação que o servidor marca como `Content-Disposition: attachment` é abortada
+   * internamente (`net::ERR_ABORTED`) e entregue ao gerenciador de downloads ANTES de qualquer
+   * documento carregar — por isso `popup.url()`/`framenavigated` nunca mudam, sem erro nenhum:
+   * não é bug de navegação, é o comportamento correto do browser para um download. O problema
+   * real é só a aba auxiliar (criada só pra manter a referência síncrona, ver achado acima) ficar
+   * pendurada em branco pro resto da sessão do usuário. Como a resposta é SEMPRE `attachment`
+   * (contrato do use case, não depende de contentType), nunca existe cenário em que a aba mostra
+   * conteúdo de verdade ao usuário — fechar depois de um tempo fixo é seguro. Não dá pra ouvir
+   * "o download terminou": depois que a signed URL é cross-origin, o JS desta página não pode
+   * mais ler `popup.location` (Same-Origin Policy) nem existe evento de download no DOM — por
+   * isso o delay é um valor fixo generoso (2s), não um sinal de conclusão real.
    */
   const handleDownload = async (fileId: string): Promise<void> => {
     setDownloadError(null);
     const popup = window.open('', '_blank');
     try {
       const { url } = await AdminConversationApiService.getConversationAttachmentUrl(patientId, fileId);
-      if (popup) popup.location.href = url;
-      else window.open(url, '_blank'); // bloqueador de pop-up ativo — melhor esforço
+      if (popup) {
+        popup.location.href = url;
+        window.setTimeout(() => {
+          if (!popup.closed) popup.close();
+        }, 2000);
+      } else {
+        window.open(url, '_blank'); // bloqueador de pop-up ativo — melhor esforço
+      }
     } catch {
       // Nunca falha silenciosa (mesma regra do `sendError` do composer): sem isto, um 403/404 no
       // download parecia clique sem efeito nenhum.

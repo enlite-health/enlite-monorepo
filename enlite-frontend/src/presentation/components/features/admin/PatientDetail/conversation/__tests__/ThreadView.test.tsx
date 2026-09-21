@@ -12,7 +12,7 @@
  *   - erro ao buscar replies não falha silenciosamente — mostra um aviso, não tela em branco.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
 import { AdminConversationApiService, type ConversationMessage } from '@infrastructure/http/AdminConversationApiService';
 import { ThreadView } from '../ThreadView';
@@ -203,7 +203,7 @@ describe('ThreadView', () => {
   // ---- anexo (Bloco 3, T321/T322) — MessageContent → MessageAttachments -------------------
 
   it('reply com anexo mostra o chip de download; clicar abre a aba SÍNCRONO e só depois redireciona (achado do e2e: window.open após await é bloqueado pelo Chrome)', async () => {
-    const fakePopup = { location: { href: '' }, close: vi.fn() };
+    const fakePopup = { location: { href: '' }, closed: false, close: vi.fn() };
     const openSpy = vi.spyOn(window, 'open').mockReturnValue(fakePopup as unknown as Window);
     getConversationAttachmentUrl.mockResolvedValue({ url: 'https://signed.example/x', expiresInSeconds: 300 });
     getConversationReplies.mockResolvedValue([
@@ -219,6 +219,64 @@ describe('ThreadView', () => {
 
     await waitFor(() => expect(getConversationAttachmentUrl).toHaveBeenCalledWith('p1', 'file-1'));
     await waitFor(() => expect(fakePopup.location.href).toBe('https://signed.example/x'));
+    openSpy.mockRestore();
+  });
+
+  it('🔒 causa raiz investigada nesta sessão (systematic-debugging + CDP): `response-content-disposition=attachment` faz TODO download virar navegação abortada pelo Chrome — `popup.url()` nunca muda, sem erro nenhum, e isso é o comportamento CORRETO do browser, não um bug. A aba auxiliar nunca mostra conteúdo (todo anexo força download); sem fechar sozinha ela ficava pendurada em about:blank pra sempre a cada download — aqui provamos que ela fecha depois de um tempo fixo (não dá pra ouvir "download terminou": location cross-origin não é legível por Same-Origin Policy)', async () => {
+    const fakePopup = { location: { href: '' }, closed: false, close: vi.fn() };
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue(fakePopup as unknown as Window);
+    getConversationAttachmentUrl.mockResolvedValue({ url: 'https://signed.example/close-me', expiresInSeconds: 300 });
+    getConversationReplies.mockResolvedValue([
+      msg({ id: 'r1', attachments: [{ fileId: 'file-1', contentType: 'application/pdf', sizeBytes: 1024 }] }),
+    ]);
+    render(<ThreadView patientId="p1" rootMessage={msg({ id: 'root-1' })} onBack={vi.fn()} />);
+
+    // render/fetch das replies usa timer REAL (o `waitFor` do testing-library depende disso pra
+    // poder poll) — só ligamos o fake timer DEPOIS, focado só no setTimeout(2000) do download.
+    await waitFor(() => expect(screen.getByTestId('message-attachment-file-1')).toBeInTheDocument());
+
+    vi.useFakeTimers();
+    try {
+      fireEvent.click(screen.getByTestId('message-attachment-file-1'));
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+      expect(fakePopup.location.href).toBe('https://signed.example/close-me');
+      expect(fakePopup.close).not.toHaveBeenCalled();
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+
+      expect(fakePopup.close).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+    openSpy.mockRestore();
+  });
+
+  it('aba fechada pelo usuário ANTES do timeout: não chama `close()` de novo em cima de uma aba já fechada', async () => {
+    const fakePopup = { location: { href: '' }, closed: false, close: vi.fn() };
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue(fakePopup as unknown as Window);
+    getConversationAttachmentUrl.mockResolvedValue({ url: 'https://signed.example/user-closed', expiresInSeconds: 300 });
+    getConversationReplies.mockResolvedValue([
+      msg({ id: 'r1', attachments: [{ fileId: 'file-1', contentType: 'application/pdf', sizeBytes: 1024 }] }),
+    ]);
+    render(<ThreadView patientId="p1" rootMessage={msg({ id: 'root-1' })} onBack={vi.fn()} />);
+
+    await waitFor(() => expect(screen.getByTestId('message-attachment-file-1')).toBeInTheDocument());
+
+    vi.useFakeTimers();
+    try {
+      fireEvent.click(screen.getByTestId('message-attachment-file-1'));
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+      expect(fakePopup.location.href).toBe('https://signed.example/user-closed');
+
+      // usuário fecha a aba manualmente antes do timeout de 2s
+      fakePopup.closed = true;
+      await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+
+      expect(fakePopup.close).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
     openSpy.mockRestore();
   });
 
