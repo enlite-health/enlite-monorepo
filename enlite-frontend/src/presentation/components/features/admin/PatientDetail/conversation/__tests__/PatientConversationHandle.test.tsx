@@ -4,10 +4,15 @@
  * Cobre:
  *   - sem a célula `patient_conversation:read`, o handle NÃO existe no DOM (ausência, não
  *     desabilitado) — a régua é do `ContainerGate` (D286), aqui só provamos a composição;
- *   - com a célula, o handle aparece e o badge mostra a contagem de não lidas (topo + replies);
- *   - mensagem cujo `authorUid` é o do próprio ator logado NUNCA entra na contagem;
- *   - clique no handle abre o `SlideOverPanel` (via `usePolling`, avançando fake timers para
- *     provar que o badge atualiza entre polls).
+ *   - com a célula, o handle aparece e o badge mostra o `unreadCount` que o SERVIDOR devolve
+ *     (conserto do achado médio do gate do B2 — `evidencias/b2-gate-pr.md` — este componente
+ *     nunca mais recalcula localmente);
+ *   - conserto do achado médio "polling desperdiçado" (mesmo gate): o badge NUNCA chama
+ *     `getConversationReplies` — antes eram `1 + N` chamadas por tick, uma por thread com
+ *     atividade recente, pra sempre; agora é sempre 1 (só `getConversation`);
+ *   - abrir o painel chama `markConversationRead` (persiste no servidor — sem isso o badge
+ *     voltaria a contar o que a operadora já viu) e zera o badge na tela;
+ *   - Esc/rascunho (T216/T220) continuam intactos.
  *
  * `AdminConversationApiService` é mockado — é o service de outro agente (T206/T207), aqui só
  * consumido pela interface pública dos 7 métodos do contrato.
@@ -18,7 +23,11 @@ import userEvent from '@testing-library/user-event';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import { ContainerGate } from '@presentation/components/features/access';
 import type { AuthzContract } from '@domain/entities/Authz';
-import { AdminConversationApiService, type ConversationMessage } from '@infrastructure/http/AdminConversationApiService';
+import {
+  AdminConversationApiService,
+  type ConversationListResult,
+  type ConversationMessage,
+} from '@infrastructure/http/AdminConversationApiService';
 import { PatientConversationHandle } from '../PatientConversationHandle';
 
 vi.mock('@infrastructure/http/AdminConversationApiService', () => ({
@@ -30,6 +39,8 @@ vi.mock('@infrastructure/http/AdminConversationApiService', () => ({
     // o painel abre, que consome estes 2 métodos mesmo sem nenhum teste aqui digitar/enviar.
     searchStaffDirectory: vi.fn().mockResolvedValue([]),
     postConversationMessage: vi.fn().mockResolvedValue({ id: 'msg-x', createdAt: '2026-09-21T00:00:00.000Z' }),
+    // Conserto do achado médio (badge server-driven): `handleOpen` agora persiste a leitura.
+    markConversationRead: vi.fn().mockResolvedValue(undefined),
   },
 }));
 
@@ -64,6 +75,19 @@ function msg(overrides: Partial<ConversationMessage>): ConversationMessage {
   };
 }
 
+/** Forma completa de `GET .../conversation` (Bloco 2 acrescentou `lastReadAt`/`unreadCount`,
+ * contrato `openapi-conversation.md` linha 33/34) — default "zero não lidas". */
+function conversationResult(overrides: Partial<ConversationListResult> = {}): ConversationListResult {
+  return {
+    conversationId: 'c1',
+    messages: [],
+    nextCursor: null,
+    lastReadAt: null,
+    unreadCount: 0,
+    ...overrides,
+  };
+}
+
 function renderHandle(): ReturnType<typeof render> {
   return render(
     <ContainerGate resource="patient_conversation">
@@ -76,12 +100,9 @@ describe('PatientConversationHandle (spec 022, T208/T209)', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' });
-    vi.mocked(AdminConversationApiService.getConversation).mockResolvedValue({
-      conversationId: 'c1',
-      messages: [],
-      nextCursor: null,
-    });
+    vi.mocked(AdminConversationApiService.getConversation).mockResolvedValue(conversationResult());
     vi.mocked(AdminConversationApiService.getConversationReplies).mockResolvedValue([]);
+    vi.mocked(AdminConversationApiService.markConversationRead).mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -101,16 +122,11 @@ describe('PatientConversationHandle (spec 022, T208/T209)', () => {
     expect(screen.getByTestId('patient-conversation-handle-btn')).toBeInTheDocument();
   });
 
-  it('badge mostra a contagem de mensagens de topo não lidas, de outro autor', async () => {
+  it('badge mostra o unreadCount devolvido pelo servidor — nunca recalcula (conserto DEFEITO 2)', async () => {
     useAdminAuthStore.setState({ authz: contrato(['patient_conversation:read']), authzStatus: 'ready' });
-    vi.mocked(AdminConversationApiService.getConversation).mockResolvedValue({
-      conversationId: 'c1',
-      messages: [
-        msg({ id: 'm1', authorUid: OTHER_UID, createdAt: '2026-09-21T10:00:00.000Z' }),
-        msg({ id: 'm2', authorUid: OTHER_UID, createdAt: '2026-09-21T10:00:01.000Z' }),
-      ],
-      nextCursor: null,
-    });
+    vi.mocked(AdminConversationApiService.getConversation).mockResolvedValue(
+      conversationResult({ unreadCount: 2, messages: [msg({ id: 'm1' }), msg({ id: 'm2' })] }),
+    );
     renderHandle();
 
     expect(screen.queryByTestId('patient-conversation-handle-badge')).not.toBeInTheDocument();
@@ -119,64 +135,45 @@ describe('PatientConversationHandle (spec 022, T208/T209)', () => {
       await vi.advanceTimersByTimeAsync(POLL_MS);
     });
 
+    // O valor vem PRONTO do servidor (`unreadCount`, `getReadState` — já exclui a própria
+    // mensagem do ator e já soma topo+replies numa query só, D-10/D-11): o componente só exibe.
     expect(screen.getByTestId('patient-conversation-handle-badge')).toHaveTextContent('2');
   });
 
-  it('mensagem do PRÓPRIO ator logado nunca entra na contagem do badge', async () => {
+  it('DEFEITO 3 (conserto): o badge NUNCA busca replies — 1 chamada por tick, mesmo com N threads'
+    + ' com atividade recente (antes: 1+N por tick, pra sempre; agora: sempre 1)', async () => {
     useAdminAuthStore.setState({ authz: contrato(['patient_conversation:read']), authzStatus: 'ready' });
-    vi.mocked(AdminConversationApiService.getConversation).mockResolvedValue({
-      conversationId: 'c1',
-      messages: [
-        msg({ id: 'm1', authorUid: MY_UID, createdAt: '2026-09-21T10:00:00.000Z' }), // minha — não conta
-        msg({ id: 'm2', authorUid: OTHER_UID, createdAt: '2026-09-21T10:00:01.000Z' }), // conta
-      ],
-      nextCursor: null,
-    });
+    // 3 threads de TOPO, todas com reply recentíssima — no código ANTIGO (baseline local
+    // `new Date(0)`), cada uma satisfazia `lastReplyAt > baseline` e disparava 1 GET de replies
+    // PRÓPRIO a cada tick, pra sempre (1 + 3 = 4 chamadas de rede por tick).
+    vi.mocked(AdminConversationApiService.getConversation).mockResolvedValue(
+      conversationResult({
+        unreadCount: 5,
+        messages: [
+          msg({ id: 'root1', replyCount: 2, lastReplyAt: '2026-09-21T10:05:00.000Z' }),
+          msg({ id: 'root2', replyCount: 1, lastReplyAt: '2026-09-21T10:06:00.000Z' }),
+          msg({ id: 'root3', replyCount: 3, lastReplyAt: '2026-09-21T10:07:00.000Z' }),
+        ],
+      }),
+    );
     renderHandle();
 
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(POLL_MS);
-    });
+    // 3 ticks de poll — ANTES: 3 * (1 + 3) = 12 chamadas de rede no total (4 por tick). DEPOIS:
+    // 3 * 1 = 3 (só `getConversation`, nunca `getConversationReplies`).
+    await act(async () => { await vi.advanceTimersByTimeAsync(POLL_MS); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(POLL_MS); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(POLL_MS); });
 
-    expect(screen.getByTestId('patient-conversation-handle-badge')).toHaveTextContent('1');
+    expect(AdminConversationApiService.getConversationReplies).not.toHaveBeenCalled();
+    expect(AdminConversationApiService.getConversation).toHaveBeenCalledTimes(3);
+    expect(screen.getByTestId('patient-conversation-handle-badge')).toHaveTextContent('5');
   });
 
-  it('conta também replies não lidas de outro autor (topo + replies, D-10)', async () => {
+  it('clique no handle abre o painel (SlideOverPanel translate-x-0), zera o badge e persiste a leitura', async () => {
     useAdminAuthStore.setState({ authz: contrato(['patient_conversation:read']), authzStatus: 'ready' });
-    vi.mocked(AdminConversationApiService.getConversation).mockResolvedValue({
-      conversationId: 'c1',
-      messages: [
-        msg({
-          id: 'root1',
-          authorUid: MY_UID,
-          createdAt: '2026-09-21T09:00:00.000Z',
-          replyCount: 2,
-          lastReplyAt: '2026-09-21T10:05:00.000Z',
-        }),
-      ],
-      nextCursor: null,
-    });
-    vi.mocked(AdminConversationApiService.getConversationReplies).mockResolvedValue([
-      msg({ id: 'r1', authorUid: OTHER_UID, createdAt: '2026-09-21T10:05:00.000Z' }), // conta
-      msg({ id: 'r2', authorUid: MY_UID, createdAt: '2026-09-21T10:04:00.000Z' }), // minha — não conta
-    ]);
-    renderHandle();
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(POLL_MS);
-    });
-
-    expect(screen.getByTestId('patient-conversation-handle-badge')).toHaveTextContent('1');
-    expect(AdminConversationApiService.getConversationReplies).toHaveBeenCalledWith('p1', 'root1');
-  });
-
-  it('clique no handle abre o painel (SlideOverPanel translate-x-0) e zera o badge', async () => {
-    useAdminAuthStore.setState({ authz: contrato(['patient_conversation:read']), authzStatus: 'ready' });
-    vi.mocked(AdminConversationApiService.getConversation).mockResolvedValue({
-      conversationId: 'c1',
-      messages: [msg({ id: 'm1', authorUid: OTHER_UID, createdAt: '2026-09-21T10:00:00.000Z' })],
-      nextCursor: null,
-    });
+    vi.mocked(AdminConversationApiService.getConversation).mockResolvedValue(
+      conversationResult({ unreadCount: 1, messages: [msg({ id: 'm1', authorUid: OTHER_UID })] }),
+    );
     renderHandle();
 
     await act(async () => {
@@ -191,6 +188,8 @@ describe('PatientConversationHandle (spec 022, T208/T209)', () => {
 
     expect(panel.className).toContain('translate-x-0');
     expect(screen.queryByTestId('patient-conversation-handle-badge')).not.toBeInTheDocument();
+    // Conserto: sem isto, o próximo GET devolveria o MESMO unreadCount de antes de abrir.
+    expect(AdminConversationApiService.markConversationRead).toHaveBeenCalledWith('p1');
 
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(panel.className).toContain('translate-x-full');
@@ -200,7 +199,12 @@ describe('PatientConversationHandle (spec 022, T208/T209)', () => {
     // Timers reais nesta prova: `userEvent.type` no editor TipTap (contenteditable) não convive
     // bem com fake timers, e o polling do badge não é o que este teste mede.
     vi.useRealTimers();
-    useAdminAuthStore.setState({ authz: contrato(['patient_conversation:read']), authzStatus: 'ready' });
+    // `:create` além de `:read` — este teste escreve no compositor (conserto DEFEITO 1 gateia
+    // por `useActionGate('patient_conversation', 'create')`; só `:read` esconderia o campo).
+    useAdminAuthStore.setState({
+      authz: contrato(['patient_conversation:read', 'patient_conversation:create']),
+      authzStatus: 'ready',
+    });
     renderHandle();
 
     fireEvent.click(screen.getByTestId('patient-conversation-handle-btn'));
@@ -235,7 +239,10 @@ describe('PatientConversationHandle (spec 022, T208/T209)', () => {
 
   it('T220: botão X do painel passa pelo MESMO gate de descarte que o Esc', async () => {
     vi.useRealTimers();
-    useAdminAuthStore.setState({ authz: contrato(['patient_conversation:read']), authzStatus: 'ready' });
+    useAdminAuthStore.setState({
+      authz: contrato(['patient_conversation:read', 'patient_conversation:create']),
+      authzStatus: 'ready',
+    });
     renderHandle();
 
     fireEvent.click(screen.getByTestId('patient-conversation-handle-btn'));
@@ -255,7 +262,7 @@ describe('PatientConversationHandle (spec 022, T208/T209)', () => {
     expect(editor).toHaveTextContent('rascunho via X');
   });
 
-  it('sem authz carregado, não quebra (uid cai no fallback vazio)', () => {
+  it('sem authz carregado, não quebra (componente não depende de authz — só o badge do servidor)', () => {
     useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' });
     render(<PatientConversationHandle patientId="p1" />);
     expect(screen.getByTestId('patient-conversation-handle-btn')).toBeInTheDocument();

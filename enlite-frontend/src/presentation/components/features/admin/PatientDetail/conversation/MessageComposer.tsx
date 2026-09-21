@@ -39,8 +39,11 @@ import {
   type CreateConversationMessageResult,
   type StaffDirectoryEntry,
 } from '@infrastructure/http/AdminConversationApiService';
+import { ApiError } from '@infrastructure/http/ApiError';
 import { useConfirmDiscardClose } from '@hooks/admin/useConfirmDiscardClose';
+import { useStaffNameCache } from '@presentation/stores/staffNameCache';
 import { Button } from '@presentation/components/atoms/Button';
+import { Text } from '@presentation/components/atoms/Text';
 
 /** D-14: extensões aceitas no CAMPO — a validação de conteúdo (magic bytes, tamanho) é do Bloco 3. */
 const ACCEPTED_ATTACHMENT_TYPES = '.pdf,.png,.jpg,.jpeg,.docx';
@@ -102,9 +105,11 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
   function MessageComposer({ patientId, rootMessageId, onSent, onClose }, ref): JSX.Element {
     const { t } = useTranslation();
     const tc = (key: string): string => t(`admin.patients.detail.conversation.composer.${key}`);
+    const te = (key: string): string => t(`admin.patients.detail.conversation.errors.${key}`);
 
     const [isEmpty, setIsEmpty] = useState(true);
     const [attachment, setAttachment] = useState<AttachmentDraft | null>(null);
+    const [sendError, setSendError] = useState<string | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const editor = useEditor({
@@ -135,6 +140,11 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
               // por este caminho).
               try {
                 const results = await AdminConversationApiService.searchStaffDirectory(query);
+                // Achado baixo do gate do B2 (`ThreadView` mostrava uid cru): esta é a ÚNICA fonte
+                // real de nome que o front tem hoje (contrato não resolve uid → nome) — todo staff
+                // que aparece aqui fica disponível pro `useStaffDisplayName` de qualquer mensagem
+                // dele nesta conversa, não só para o item escolhido.
+                useStaffNameCache.getState().remember(results);
                 return results.slice(0, MENTION_MAX_RESULTS);
               } catch {
                 return []; // autocomplete não é canal de alerta — falha vira lista vazia, não crash
@@ -177,7 +187,10 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
           class: 'min-h-[44px] max-h-[160px] overflow-y-auto px-3 py-2 text-sm outline-none',
         },
       },
-      onUpdate: ({ editor: current }) => setIsEmpty(current.getText().trim().length === 0),
+      onUpdate: ({ editor: current }) => {
+        setIsEmpty(current.getText().trim().length === 0);
+        setSendError(null); // corrigir o rascunho depois de um erro esconde o aviso antigo
+      },
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
@@ -212,13 +225,24 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
       // É `editor.getText().trim().length === 0` — duplicar a checagem criaria um branch morto
       // (nunca alcançável por este handler, só por chamada direta que não existe).
       const body = editor.getText().trim();
-      const result = await AdminConversationApiService.postConversationMessage(patientId, {
-        body,
-        rootMessageId,
-      });
-      clearDraft();
-      onSent?.(result);
-    }, [editor, patientId, rootMessageId, clearDraft, onSent]);
+      setSendError(null);
+      try {
+        const result = await AdminConversationApiService.postConversationMessage(patientId, {
+          body,
+          rootMessageId,
+        });
+        clearDraft();
+        onSent?.(result);
+      } catch (err) {
+        // 🔒 DEFEITO ALTO do gate do B2 (`b2-gate-pr.md`, achado nº 1): sem este `catch`, um 403
+        // (quem só tem `patient_conversation:read`) rejeitava a promise em silêncio — nada
+        // aparecia na tela e a operadora achava que enviou. O rascunho NUNCA é perdido aqui: só
+        // `clearDraft()` (acima, no caminho de sucesso) o apaga.
+        setSendError(
+          err instanceof ApiError && err.status === 403 ? te('sendForbidden') : te('sendFailed'),
+        );
+      }
+    }, [editor, patientId, rootMessageId, clearDraft, onSent, te]);
 
     const handleAttachmentChange = (e: React.ChangeEvent<HTMLInputElement>): void => {
       const file = e.target.files?.[0];
@@ -261,6 +285,12 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
         <div className="rounded-md border">
           <EditorContent editor={editor} />
         </div>
+
+        {sendError && (
+          <Text size="xs" role="alert" className="text-red-600" data-testid="composer-send-error">
+            {sendError}
+          </Text>
+        )}
 
         {attachment && (
           <div data-testid="composer-attachment-preview" className="flex items-center gap-2 text-xs text-gray-600">

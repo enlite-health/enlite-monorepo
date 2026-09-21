@@ -40,6 +40,12 @@ export interface ConversationListResult {
   conversationId: string;
   messages: ConversationMessage[];
   nextCursor: string | null;
+  /** Marca de leitura do PRÓPRIO ator (`conversation_read_marks.last_read_at`), `null` se nunca
+   * chamou `PUT .../read-mark` nesta conversa (contrato, linha 33). Bloco 2. */
+  lastReadAt: string | null;
+  /** Contagem já calculada pelo servidor (topo + reply, autor != ator, `created_at > lastReadAt`
+   * — contrato, linha 34/D-11). Consumir isto no badge, nunca recalcular no cliente. Bloco 2. */
+  unreadCount: number;
 }
 
 interface ConversationRepliesResponse {

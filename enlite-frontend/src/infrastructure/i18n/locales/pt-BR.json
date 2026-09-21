@@ -3751,7 +3751,9 @@
             "fileTooLarge": "O arquivo ultrapassa 10 MB",
             "unsupportedType": "Tipo de arquivo não aceito",
             "maliciousContent": "O arquivo foi rejeitado por conter código ativo ou macros",
-            "mentionInvalid": "O usuário mencionado não existe"
+            "mentionInvalid": "O usuário mencionado não existe",
+            "sendFailed": "Não conseguimos enviar a mensagem. Tente de novo.",
+            "sendForbidden": "Você não tem permissão para enviar mensagens nesta conversa."
           },
           "handle": {
             "label": "Mensagens",
@@ -3761,7 +3763,9 @@
             "title": "Mensagens",
             "empty": "Ainda não há mensagens",
             "noAccess": "Sem acesso a este paciente",
-            "close": "Fechar painel de mensagens"
+            "close": "Fechar painel de mensagens",
+            "loadError": "Não conseguimos carregar as mensagens. Tente de novo.",
+            "readOnly": "Você só pode ver esta conversa"
           },
           "thread": {
             "replies_one": "1 resposta",

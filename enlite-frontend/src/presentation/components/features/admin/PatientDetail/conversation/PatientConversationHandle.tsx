@@ -2,9 +2,8 @@ import { useCallback, useRef, useState } from 'react';
 import { MessageCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Text } from '@presentation/components/atoms/Text';
-import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import { usePolling } from '@hooks/usePolling';
-import { AdminConversationApiService, type ConversationMessage } from '@infrastructure/http/AdminConversationApiService';
+import { AdminConversationApiService } from '@infrastructure/http/AdminConversationApiService';
 import { SlideOverPanel } from '@presentation/components/molecules/SlideOverPanel/SlideOverPanel';
 import { ConversationPanel } from './ConversationPanel';
 import type { MessageComposerHandle } from './MessageComposer';
@@ -17,9 +16,9 @@ interface PatientConversationHandleProps {
 
 /**
  * Botão fixo na lateral direita da ficha do paciente (spec 022, Bloco 2, T209) — abre o painel
- * do chat interno. O badge conta mensagens (topo + replies) com `createdAt > lastReadAt` e autor
- * diferente do ator logado — a própria mensagem NUNCA conta como não lida (regra fechada da
- * spec, D-10).
+ * do chat interno. O badge mostra `unreadCount` do SERVIDOR (topo + replies, autor diferente do
+ * ator, `createdAt > lastReadAt` — regra fechada da spec, D-10, calculada em `getReadState`) —
+ * este componente nunca recalcula, só exibe.
  *
  * Vive SEMPRE por fora de `<ContainerGate resource="patient_conversation">` — quem monta (T210,
  * `PatientDetailPage.tsx`) é responsável pelo gate; este componente não se auto-protege.
@@ -38,48 +37,32 @@ interface PatientConversationHandleProps {
  * continua sendo o fechamento incondicional — sem composer montado (painel vazio/`forbidden`/
  * ainda carregando), não há nada a perder, então fecha direto.
  *
- * `lastReadAtRef` é local ao componente: o contrato de `contracts/openapi-conversation.md` só
- * EXPÕE escrita do read-mark (`PUT .../read-mark`), nunca leitura do `last_read_at` persistido em
- * `conversation_read_marks` — não há hoje uma rota que devolva esse valor ao frontend. Por isso o
- * baseline aqui é "desde que este componente montou nesta aba": abrir o painel marca como lido
- * (zera o badge) só para esta sessão de navegador. Gap de persistência entre reloads registrado
- * em `specs/022-chat-interno-por-paciente/evidencias/achados.md` — fora do escopo de T208-T210.
+ * 🔒 CONSERTO (achado médio do gate do B2, `evidencias/b2-gate-pr.md`): até este conserto, o
+ * badge era calculado aqui no cliente com um baseline LOCAL (`new Date(0)`) — nunca persistido —
+ * e, pior, buscava as replies de TODA thread com atividade recente (`1 + N` chamadas por tick,
+ * pra sempre, até o painel abrir). O `GET .../conversation` deste MESMO bloco passou a devolver
+ * `unreadCount` já calculado em UMA query no servidor (`contracts/openapi-conversation.md` linha
+ * 34, D-11) — o docstring antigo ("o contrato só EXPÕE escrita do read-mark, nunca leitura")
+ * ficou falso a partir do B2; agora o componente só CONSOME o valor do servidor, nunca recalcula.
+ * `handleOpen` chama `markConversationRead` (antes sem nenhum caller de produção) para o servidor
+ * saber que este ator leu — sem isso, o próximo poll devolveria o MESMO `unreadCount` de antes de
+ * abrir, e o badge nunca zeraria de verdade.
  */
 export function PatientConversationHandle({ patientId }: PatientConversationHandleProps): JSX.Element {
   const { t } = useTranslation();
   const tc = (key: string, opts?: Record<string, unknown>): string =>
     t(`admin.patients.detail.conversation.handle.${key}`, opts);
   const tp = (key: string): string => t(`admin.patients.detail.conversation.panel.${key}`);
-  const myUid = useAdminAuthStore((s) => s.authz?.uid) ?? '';
 
   const [isPanelOpen, setIsPanelOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
-  const lastReadAtRef = useRef<string>(new Date(0).toISOString());
   /** `MessageComposer` ATIVO (topo ou reply) — ver docstring do componente. */
   const composerRef = useRef<MessageComposerHandle>(null);
 
-  const isUnreadFromOther = (message: ConversationMessage): boolean =>
-    message.authorUid !== myUid && message.createdAt > lastReadAtRef.current;
-
   usePolling(async () => {
     try {
-      const { messages } = await AdminConversationApiService.getConversation(patientId);
-      const topUnread = messages.filter(isUnreadFromOther).length;
-
-      // Réplicas (D-10, "topo + replies"): só busca as threads com atividade NOVA desde o
-      // baseline — evita N chamadas por poll quando nada mudou na thread.
-      const threadsWithNewActivity = messages.filter(
-        (m) => m.lastReplyAt !== null && m.lastReplyAt > lastReadAtRef.current,
-      );
-      const replyBatches = await Promise.all(
-        threadsWithNewActivity.map((m) => AdminConversationApiService.getConversationReplies(patientId, m.id)),
-      );
-      const repliesUnread = replyBatches.reduce(
-        (acc, replies) => acc + replies.filter(isUnreadFromOther).length,
-        0,
-      );
-
-      setUnreadCount(topUnread + repliesUnread);
+      const { unreadCount: serverUnreadCount } = await AdminConversationApiService.getConversation(patientId);
+      setUnreadCount(serverUnreadCount);
     } catch {
       // Silencioso de propósito: o badge é um indicador secundário — falha de poll não é canal
       // de alerta (a regra "aviso operacional só por canal oficial" não se aplica a isto).
@@ -87,9 +70,12 @@ export function PatientConversationHandle({ patientId }: PatientConversationHand
   }, POLL_MS, { pauseWhenHidden: true });
 
   const handleOpen = (): void => {
-    lastReadAtRef.current = new Date().toISOString();
     setUnreadCount(0);
     setIsPanelOpen(true);
+    // Persiste a marca de leitura no servidor — sem isto, o badge zera aqui só na TELA, mas o
+    // próximo GET (poll ou reload) devolveria o `unreadCount` de ANTES de abrir. Mesmo freio das
+    // outras falhas deste componente: best-effort, badge não é canal de alerta.
+    void AdminConversationApiService.markConversationRead(patientId).catch(() => {});
   };
 
   /** Fechamento incondicional — chamado pelo composer (via `onComposerClose`) só quando é seguro

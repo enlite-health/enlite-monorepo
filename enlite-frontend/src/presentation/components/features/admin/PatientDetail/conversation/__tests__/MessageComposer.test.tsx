@@ -21,6 +21,7 @@ import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event';
 import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
 import { AdminConversationApiService } from '@infrastructure/http/AdminConversationApiService';
+import { ApiError } from '@infrastructure/http/ApiError';
 import { MessageComposer, type MessageComposerHandle } from '../MessageComposer';
 
 vi.mock('@infrastructure/http/AdminConversationApiService', () => ({
@@ -42,6 +43,7 @@ function t(key: string, fallback?: string): string {
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t, i18n: { language: 'pt-BR' } }) }));
 
 const PT = ptBR.admin.patients.detail.conversation.composer;
+const ERR = ptBR.admin.patients.detail.conversation.errors;
 
 const searchStaffDirectory = AdminConversationApiService.searchStaffDirectory as unknown as ReturnType<typeof vi.fn>;
 const postConversationMessage = AdminConversationApiService.postConversationMessage as unknown as ReturnType<typeof vi.fn>;
@@ -244,5 +246,60 @@ describe('MessageComposer', () => {
     expect(sendBtn).toBeDisabled();
     fireEvent.click(sendBtn);
     expect(postConversationMessage).not.toHaveBeenCalled();
+  });
+
+  // ---- DEFEITO 1 (conserto, gate b2-fix): POST que falha nunca mais falha em silêncio --------
+
+  it('🔴🟢 POST que dá 403 mostra erro específico e NÃO perde o rascunho', async () => {
+    postConversationMessage.mockRejectedValue(
+      new ApiError({ success: false, error: 'Sem acesso', code: 'FORBIDDEN' }, 403),
+    );
+    render(<MessageComposer patientId="p1" />);
+
+    const editor = screen.getByTestId('composer-editor');
+    const user = userEvent.setup();
+    await user.click(editor);
+    await user.type(editor, 'msg-1');
+
+    fireEvent.click(screen.getByTestId('composer-send-btn'));
+
+    await waitFor(() => expect(screen.getByTestId('composer-send-error')).toHaveTextContent(
+      ERR.sendForbidden,
+    ));
+    // o rascunho NÃO se perde — a operadora não perde o que escreveu por causa do erro.
+    expect(editor).toHaveTextContent('msg-1');
+    expect(screen.getByTestId('composer-send-btn')).not.toBeDisabled();
+  });
+
+  it('🔴🟢 POST que dá erro genérico (não-403) mostra aviso genérico, sem perder o rascunho', async () => {
+    postConversationMessage.mockRejectedValue(new Error('network down'));
+    render(<MessageComposer patientId="p1" />);
+
+    const editor = screen.getByTestId('composer-editor');
+    const user = userEvent.setup();
+    await user.click(editor);
+    await user.type(editor, 'msg-1');
+
+    fireEvent.click(screen.getByTestId('composer-send-btn'));
+
+    await waitFor(() => expect(screen.getByTestId('composer-send-error')).toHaveTextContent(
+      ERR.sendFailed,
+    ));
+    expect(editor).toHaveTextContent('msg-1');
+  });
+
+  it('corrigir o rascunho depois de um erro de envio esconde o aviso antigo', async () => {
+    postConversationMessage.mockRejectedValueOnce(new Error('network down'));
+    render(<MessageComposer patientId="p1" />);
+
+    const editor = screen.getByTestId('composer-editor');
+    const user = userEvent.setup();
+    await user.click(editor);
+    await user.type(editor, 'msg-1');
+    fireEvent.click(screen.getByTestId('composer-send-btn'));
+    await waitFor(() => expect(screen.getByTestId('composer-send-error')).toBeInTheDocument());
+
+    await user.type(editor, ' mais texto');
+    expect(screen.queryByTestId('composer-send-error')).not.toBeInTheDocument();
   });
 });

@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next';
 import { AdminConversationApiService, type ConversationMessage } from '@infrastructure/http/AdminConversationApiService';
 import { ApiError } from '@infrastructure/http/ApiError';
 import { usePolling } from '@hooks/usePolling';
+import { useActionGate } from '@presentation/hooks/useCellAccess';
+import { Text } from '@presentation/components/atoms/Text';
 import { MessageContent, ThreadView } from './ThreadView';
 import type { MessageComposerHandle } from './MessageComposer';
 
@@ -34,7 +36,7 @@ interface ConversationPanelProps {
   onComposerClose?: () => void;
 }
 
-type PanelStatus = 'loading' | 'forbidden' | 'ready';
+type PanelStatus = 'loading' | 'forbidden' | 'ready' | 'error';
 
 function mergeById(prev: ConversationMessage[], incoming: ConversationMessage[]): ConversationMessage[] {
   if (incoming.length === 0) return prev;
@@ -78,6 +80,17 @@ function MessageItem({ message, onOpenThread }: MessageItemProps): JSX.Element {
  * 403 é estado PRÓPRIO (`panel.noAccess`), nunca lista vazia: distinguir "não há mensagem" de
  * "você não pode ver" é o ponto — lista vazia num 403 faria a tela mentir.
  *
+ * 🔒 CONSERTO (achado médio do gate do B2, `evidencias/b2-gate-pr.md`): erro não-403 na carga
+ * INICIAL (nunca carregou uma lista boa) prendia `status` em `'loading'` pra sempre — painel em
+ * branco, sem aviso. Agora vira `'error'` (molde igual ao `ThreadView`, vizinho). Erro num POLL
+ * depois de já ter carregado uma vez continua silencioso de propósito (mantém a última lista boa
+ * na tela) — só a carga inicial (`hasLoadedOnceRef.current === false`) tem `status` visível.
+ *
+ * 🔒 CONSERTO (achado alto do gate do B2): o compositor (topo e reply) só é oferecido a quem tem
+ * `patient_conversation:create` (`useActionGate`, mesmo freio de enforcement do `ActionButton`/
+ * D268/D269) — quem só tem `:read` vê um aviso (`panel.readOnly`), nunca um campo que daria 403
+ * em silêncio no clique.
+ *
  * ⚠️ Decisão de integração (colisão registrada em `evidencias/achados.md`, resolvida na sessão de
  * integração do B2): `PatientConversationHandle` é o ÚNICO dono do `SlideOverPanel` — ele abre/
  * fecha e passa `isOpen` pra baixo. Este componente é só o CONTEÚDO de dentro do painel (não
@@ -97,12 +110,20 @@ export function ConversationPanel({
   const { t } = useTranslation();
   const tp = (key: string): string => t(`admin.patients.detail.conversation.panel.${key}`);
 
+  /** `patient_conversation:create` — quem só tem `:read` não vê o compositor (achado alto do
+   * gate do B2): antes disto, o campo aparecia pra todo mundo e o clique dava 403 em silêncio. */
+  const { allowed: canCompose } = useActionGate('patient_conversation', 'create');
+
   const [status, setStatus] = useState<PanelStatus>('loading');
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [openThreadId, setOpenThreadId] = useState<string | null>(null);
   const [replyRefreshToken, setReplyRefreshToken] = useState<number | undefined>(undefined);
   const cursorRef = useRef<string | null>(null);
   const isMountedRef = useRef(true);
+  /** `true` a partir da 1ª resposta boa desta abertura — separa "carga inicial falhou" (mostra
+   * `'error'`, painel nunca carregou nada) de "poll depois de já ter carregado" (silencioso,
+   * mantém a última lista boa — comportamento antigo, preservado). */
+  const hasLoadedOnceRef = useRef(false);
 
   const fetchPage = useCallback(async (after?: string): Promise<void> => {
     try {
@@ -111,14 +132,22 @@ export function ConversationPanel({
       setMessages((prev) => mergeById(after ? prev : [], result.messages));
       cursorRef.current = result.nextCursor;
       setStatus('ready');
+      hasLoadedOnceRef.current = true;
     } catch (err) {
       if (!isMountedRef.current) return;
       if (err instanceof ApiError && err.status === 403) {
         setStatus('forbidden');
+        return;
       }
-      // Erro transitório de poll (rede) não troca o estado — mantém a última lista boa na tela.
-      // Silencioso de propósito, mesma decisão de `PatientConversationHandle` (badge): não é
-      // canal de alerta.
+      if (!hasLoadedOnceRef.current) {
+        // Carga INICIAL falhou (nunca teve uma lista boa) — painel em branco pra sempre seria
+        // falha silenciosa (achado médio do gate do B2). Molde igual ao `ThreadView` vizinho.
+        setStatus('error');
+        return;
+      }
+      // Erro transitório de POLL (rede), depois de já ter carregado uma vez: mantém o estado e a
+      // última lista boa na tela. Silencioso de propósito, mesma decisão de
+      // `PatientConversationHandle` (badge): não é canal de alerta.
     }
   }, [patientId]);
 
@@ -130,6 +159,7 @@ export function ConversationPanel({
   useEffect(() => {
     if (!isOpen) return;
     cursorRef.current = null;
+    hasLoadedOnceRef.current = false;
     setOpenThreadId(null);
     setStatus('loading');
     setMessages([]);
@@ -169,21 +199,32 @@ export function ConversationPanel({
             onBack={() => setOpenThreadId(null)}
             refreshToken={replyRefreshToken}
             composer={isOpen ? (
-              <Suspense fallback={null}>
-                <LazyMessageComposer
-                  ref={composerRef}
-                  patientId={patientId}
-                  rootMessageId={openThreadMessage.id}
-                  onSent={handleReplySent}
-                  onClose={onComposerClose}
-                />
-              </Suspense>
+              canCompose ? (
+                <Suspense fallback={null}>
+                  <LazyMessageComposer
+                    ref={composerRef}
+                    patientId={patientId}
+                    rootMessageId={openThreadMessage.id}
+                    onSent={handleReplySent}
+                    onClose={onComposerClose}
+                  />
+                </Suspense>
+              ) : (
+                <p data-testid="conversation-panel-read-only" className="p-3 text-xs text-gray-500 border-t">
+                  {tp('readOnly')}
+                </p>
+              )
             ) : undefined}
           />
         ) : (
           <>
             {status === 'forbidden' && (
               <p data-testid="conversation-panel-no-access" className="p-4 text-gray-500">{tp('noAccess')}</p>
+            )}
+            {status === 'error' && (
+              <Text size="xs" role="alert" className="text-red-600 p-4" data-testid="conversation-panel-error">
+                {tp('loadError')}
+              </Text>
             )}
             {status === 'ready' && messages.length === 0 && (
               <p data-testid="conversation-panel-empty" className="p-4 text-gray-500">{tp('empty')}</p>
@@ -201,14 +242,20 @@ export function ConversationPanel({
         )}
       </div>
       {!openThreadMessage && status === 'ready' && isOpen && (
-        <Suspense fallback={null}>
-          <LazyMessageComposer
-            ref={composerRef}
-            patientId={patientId}
-            onSent={handleTopMessageSent}
-            onClose={onComposerClose}
-          />
-        </Suspense>
+        canCompose ? (
+          <Suspense fallback={null}>
+            <LazyMessageComposer
+              ref={composerRef}
+              patientId={patientId}
+              onSent={handleTopMessageSent}
+              onClose={onComposerClose}
+            />
+          </Suspense>
+        ) : (
+          <p data-testid="conversation-panel-read-only" className="p-3 text-xs text-gray-500 border-t">
+            {tp('readOnly')}
+          </p>
+        )
       )}
     </div>
   );
