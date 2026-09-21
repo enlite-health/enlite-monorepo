@@ -369,6 +369,20 @@ describe('ConversationRepository', () => {
       expect(Object.keys(r1?.attachments[0] ?? {})).toEqual(['fileId', 'contentType', 'sizeBytes']);
       expect(out.find((r) => r.id === 'r2')?.attachments).toEqual([]);
     });
+
+    it('🔒 achado do gate revisao-pr (B3): a query de anexos JOIN conversation_messages ... AND deleted_at IS NULL — mensagem apagada nunca serve anexo (soft delete zera só o body, D-04, mas o filtro é defesa em profundidade no servidor)', async () => {
+      const query = jest
+        .fn()
+        .mockResolvedValueOnce({ rows: [topRow({ id: 'm1' })] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] });
+      const repo = new ConversationRepository(poolWith(query));
+
+      await repo.listTopMessages(CONVERSATION_ID, null, 50);
+
+      const [attachmentsSql] = query.mock.calls[2];
+      expect(attachmentsSql).toContain('JOIN conversation_messages cm ON cm.id = cma.message_id AND cm.deleted_at IS NULL');
+    });
   });
 
   describe('findMessageThreadInfo — id/root_message_id de uma mensagem (base da normalização D-03)', () => {

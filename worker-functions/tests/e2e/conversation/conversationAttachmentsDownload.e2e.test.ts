@@ -93,4 +93,20 @@ describe('GET /api/admin/patients/:id/conversation/files/:fileId/url — downloa
     const res = await chamar(fixture.app, 'GET', `/api/admin/patients/00000000-0000-0000-0000-000000000000/conversation/files/00000000-0000-0000-0000-000000000000/url`, fixture.uidCompleta);
     expect(res.status).toBe(404);
   });
+
+  it('7. 🔒 achado do gate revisao-pr (B3): mensagem cuja ÚNICA anexação foi apagada (soft delete) — 404, mesmo o arquivo tendo sido baixável ANTES do delete (controle positivo)', async () => {
+    const up = await upload(fixture.app, `/api/admin/patients/${fixture.patient}/conversation/files`, fixture.uidCompleta, Buffer.from('%PDF-1.4\n%%EOF'), 'sera-apagada.pdf', 'application/pdf');
+    const fileId = up.body.data.fileId;
+    const post = await postMessageWithFile(fixture, fixture.uidCompleta, fileId);
+    const messageId = post.body.data.id;
+
+    const antes = await chamar(fixture.app, 'GET', `/api/admin/patients/${fixture.patient}/conversation/files/${fileId}/url`, fixture.uidCompleta);
+    expect(antes.status).toBe(200); // controle positivo: baixável ANTES do delete
+
+    const del = await chamar(fixture.app, 'DELETE', `/api/admin/patients/${fixture.patient}/conversation/messages/${messageId}`, fixture.uidCompleta);
+    expect(del.status).toBe(200);
+
+    const depois = await chamar(fixture.app, 'GET', `/api/admin/patients/${fixture.patient}/conversation/files/${fileId}/url`, fixture.uidCompleta);
+    expect(depois.status).toBe(404);
+  });
 });

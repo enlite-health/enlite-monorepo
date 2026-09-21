@@ -252,6 +252,12 @@ export class ConversationRepository {
    * via `EXISTS`, que por sua vez já filtra por país sob `app_runtime`; esta query não abre
    * exceção nenhuma (nenhum `WHERE` adicional necessário além do `JOIN`, o RLS já filtra as
    * linhas visíveis à sessão).
+   *
+   * 🔒 `JOIN conversation_messages cm ... AND cm.deleted_at IS NULL` (achado MÉDIO do gate
+   * revisao-pr, B3): sem este filtro, o anexo de uma mensagem APAGADA (soft delete zera só
+   * `body_encrypted`, D-04) continuava saindo na listagem — o front (`ThreadView.MessageContent`)
+   * já esconde visualmente (`!message.deletedAt && <MessageAttachments .../>`), mas o dado
+   * chegava ao cliente mesmo assim; defesa em profundidade no SERVIDOR, nunca só na UI.
    */
   private async fetchAttachmentsByMessageIds(
     messageIds: string[],
@@ -267,6 +273,7 @@ export class ConversationRepository {
               sf.size_bytes AS "sizeBytes"
          FROM conversation_message_attachments cma
          JOIN stored_files sf ON sf.id = cma.file_id
+         JOIN conversation_messages cm ON cm.id = cma.message_id AND cm.deleted_at IS NULL
         WHERE cma.message_id = ANY($1::uuid[])
         ORDER BY cma.message_id, sf.created_at`,
       [messageIds],
