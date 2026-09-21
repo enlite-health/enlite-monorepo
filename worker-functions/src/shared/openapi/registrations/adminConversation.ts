@@ -2,15 +2,15 @@ import { registry, z } from '../registry';
 import { ErrorResponseSchema, OkMessage, successResponseSchema, UuidParam } from '../schemas/common';
 
 /**
- * `src/modules/conversation/interfaces/routes/adminConversationRoutes.ts` (spec 022, T123).
- * Molde: `adminUsers.ts`. Documenta as 6 rotas que EXISTEM hoje em
- * `AdminConversationController.ts` — a 7ª e 8ª do contrato (`.../files`, `.../files/:fileId/url`)
- * são Bloco 3, ainda não implementadas, e por isso não entram aqui.
+ * `src/modules/conversation/interfaces/routes/adminConversationRoutes.ts` (spec 022, T123/T313).
+ * Molde: `adminUsers.ts`. Documenta as 8 rotas do contrato — as 2 de anexo (`.../files`,
+ * `.../files/:fileId/url`, Bloco 3, T311/T312/T314/T315) entraram nesta task.
  *
  * Célula sempre `patient_conversation:read|create|update|delete`, família `admin.patients`.
  */
 const PatientIdParams = z.object({ id: UuidParam });
 const MessageIdParams = z.object({ id: UuidParam, mid: UuidParam });
+const FileIdParams = z.object({ id: UuidParam, fileId: UuidParam });
 
 const AttachmentDto = z.object({
   fileId: z.string().uuid(),
@@ -213,6 +213,79 @@ registry.registerPath({
     401: noSession,
     403: noCell,
     404: patientNotFound,
+    500: serverError,
+  },
+});
+
+// ── Anexo (spec 022, Bloco 3, T311/T312/T314/T315; D-14) ───────────────────────────────────────
+
+const UploadAttachmentBody = z.object({
+  file: z.string().openapi({ format: 'binary', description: 'PDF, PNG, JPEG ou .docx — máx. 10 MB (MAX_ATTACHMENT_BYTES).' }),
+});
+
+const UploadAttachmentResponse = successResponseSchema('UploadAttachmentResponse', z.object({ fileId: z.string().uuid() }));
+
+const AttachmentUrlResponse = successResponseSchema(
+  'AttachmentUrlResponse',
+  z.object({
+    url: z.string().url(),
+    expiresInSeconds: z.number().int().openapi({ description: 'Sempre 300 (READ_URL_TTL_SECONDS).' }),
+  }),
+);
+
+const attachmentRejected415 = {
+  description:
+    'Rejeitado pelo pipeline de validação (D-14): `UNSUPPORTED_MEDIA_TYPE` (magic byte fora da allowlist), '
+    + '`MALICIOUS_CONTENT_DETECTED` (PDF com `/JavaScript`/ação, ou `.docx` com macro/`vbaProject.bin`), ou '
+    + '`LEGACY_DOC_NOT_ALLOWED` (`.doc` legado — mensagem ES+PT pedindo `.docx`).',
+  content: { 'application/json': { schema: ErrorResponseSchema } },
+};
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/admin/patients/{id}/conversation/files',
+  tags: ['Admin · Conversation'],
+  summary: 'Sobe um anexo (upload separado do POST de mensagem)',
+  description:
+    'Célula `patient_conversation:create`. Pipeline D-14, nesta ordem: magic bytes (`file-type`) → allowlist → '
+    + 'imagem: `sharp` re-encode (strip EXIF) → PDF: recusa `/JavaScript`/`/JS`/`/OpenAction`/`/Launch`/'
+    + '`/EmbeddedFile` → `.docx`: abre zip (`yauzl`), recusa `word/vbaProject.bin`/`macroEnabled` → `.doc`: '
+    + 'recusa direta. `fileId` devolvido aqui entra no `fileIds` do `POST .../conversation/messages` para '
+    + 'virar anexo de uma mensagem — upload sozinho NÃO aparece em `conversation`/`replies` até ser anexado.',
+  security: [{ firebaseAuth: [] }],
+  request: {
+    params: PatientIdParams,
+    body: { content: { 'multipart/form-data': { schema: UploadAttachmentBody } } },
+  },
+  responses: {
+    201: { description: 'Arquivo armazenado.', content: { 'application/json': { schema: UploadAttachmentResponse } } },
+    401: noSession,
+    403: noCell,
+    404: patientNotFound,
+    413: { description: '`FILE_TOO_LARGE` — acima de 10 MB.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    415: attachmentRejected415,
+    500: serverError,
+  },
+});
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/admin/patients/{id}/conversation/files/{fileId}/url',
+  tags: ['Admin · Conversation'],
+  summary: 'URL assinada de download do anexo',
+  description:
+    'Célula `patient_conversation:read`. Signed URL v4, 300 s, `responseDisposition: attachment` com o nome '
+    + 'ORIGINAL decifrado. Posse: `fileId` precisa estar ANEXADO a uma mensagem da conversa do paciente `:id` '
+    + '(join `stored_files` → `conversation_message_attachments` → `conversation_messages` → `conversations`) '
+    + '— arquivo de outro paciente, ou ainda não anexado a mensagem nenhuma, devolve 404 (nunca vaza qual das '
+    + 'duas causas). `logResourceAccess` grava a trilha de leitura, só em acesso bem-sucedido.',
+  security: [{ firebaseAuth: [] }],
+  request: { params: FileIdParams },
+  responses: {
+    200: { description: 'URL assinada.', content: { 'application/json': { schema: AttachmentUrlResponse } } },
+    401: noSession,
+    403: noCell,
+    404: { description: 'Paciente inexistente, OU arquivo inexistente/não pertence a este paciente.', content: { 'application/json': { schema: ErrorResponseSchema } } },
     500: serverError,
   },
 });
