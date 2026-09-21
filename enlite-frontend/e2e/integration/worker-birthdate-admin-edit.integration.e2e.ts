@@ -3,13 +3,37 @@
  *
  * T6.4 (spec 025, Fase 6, D402 item 4) — prova, contra o backend e o banco REAIS (stack isolado
  * `spec025`, engine ABAC LIGADO), que a edição de `birthDate` pelo admin está atrás da célula
- * `worker_pii:write`:
+ * `worker_pii:write`, na TELA e no SERVIDOR:
  *
- *   1. staff COM `worker_pii:write` (+ `worker:update` + `worker_pii:read`) edita o campo via
- *      TECLADO (click + keyboard.type, não `fill()` — `e2e-humano-nao-e-fill`), salva, RECARREGA
- *      a página e lê o valor de volta da TELA (não do estado local nem da resposta da API).
- *   2. staff SEM `worker_pii:write` (mas COM `worker:update` + `worker_pii:read` — o botão
- *      "Editar" existe) abre o mesmo drawer e o campo `we-birthDate` NÃO existe no DOM.
+ *   1. (feliz) staff COM `worker_pii:write` (+ `worker:update` + `worker_pii:read`) clica no
+ *      campo (`toBeFocused()` prova o foco real), preenche a data nova, salva, RECARREGA a
+ *      página e lê o valor de volta da TELA (não do estado local nem da resposta da API) — e a
+ *      trilha `worker_admin_audit_log` é conferida direto no Postgres: `field_name='birthDate'`
+ *      existe, mas `changes` NÃO contém a data em claro (achado #6, redigida).
+ *   2. (alternativo — UI) staff SEM `worker_pii:write` (mas COM `worker:update` +
+ *      `worker_pii:read` — o botão "Editar" existe) abre o mesmo drawer e o campo `we-birthDate`
+ *      NÃO existe no DOM.
+ *   3. (alternativo — servidor) o MESMO staff sem a célula tenta um PATCH `birthDate` DIRETO
+ *      contra a API real (bypassando a UI, que nem oferece o campo) → 403, e o valor no banco
+ *      continua inalterado.
+ *   4. (alternativo — servidor) staff COM a célula tenta um PATCH `birthDate` DIRETO com uma data
+ *      de calendário inválida (`2001-02-31`, dia que não existe) → 400, sem mudança no banco.
+ *
+ * ⚠️ **Correção sobre o cabeçalho anterior desta mesma sessão**: eu tinha escrito aqui "edita via
+ * TECLADO (click + keyboard.type, não fill() — e2e-humano-nao-e-fill)" — isso está TROCADO em
+ * relação ao código: o passo 1 usa `campo.fill(DATA_NOVA)`, não `keyboard.type()` dos dígitos.
+ * Medido nesta sessão: tentei `click()` + `Control+A` + `Backspace` + `keyboard.type()` dos 3
+ * segmentos do `<input type="date">` (inclusive forçando o locale do contexto para `en-CA`, que
+ * EXIBE `yyyy-mm-dd`, tentando alinhar a ordem dos segmentos aos dígitos digitados) e o resultado
+ * real foi `.value` = `"0515-12-09"` — os dígitos caíram no segmento errado (o input nativo é
+ * SEGMENTADO — dia/mês/ano como três campos internos — e a ordem visual depende do motor de
+ * renderização do navegador, não é texto plano digitável em sequência). Troquei para `.fill()`,
+ * o MESMO padrão que os outros 2 `<input type="date">` do repo já usam (`pc-birthDate`,
+ * `pge-serviceStartDate`, em `admission-b-campos.integration.e2e.ts`) — é o jeito documentado do
+ * Playwright para date/time/color (dispara o evento real do controle nativo do navegador, não
+ * `evaluate()`/injeção de `.value`). O clique real (com `toBeFocused()` provando o foco), o
+ * clique no botão salvar, e a leitura pós-`reload()` da TELA continuam sendo a prova humana do
+ * fluxo — só o preenchimento do VALOR do input segmentado não é por `keyboard.type()`.
  *
  * Mesmo padrão de auth/seed de `admin-access-buttons-workers.integration.e2e.ts` (JWT fake no
  * Identity Toolkit, `/api/**` trocado por `mock_*`, KMS em modo teste — `enc()` só faz
@@ -17,14 +41,16 @@
  * cabeçalho desse arquivo para subir): Postgres 5540, API 8290, front 5195 — nunca 8089/5439/5173,
  * que outra sessão pode estar usando.
  *
- * ⚠️ Nenhum valor de data de nascimento REAL — as duas datas usadas (`1958-06-12` inicial,
- * `1990-05-15` a nova) são sintéticas, escolhidas só por serem plausíveis (idade 18-100).
+ * ⚠️ Nenhum valor de data de nascimento REAL — todas as datas usadas (`1958-06-12` inicial,
+ * `1990-05-15` a nova, `2001-02-31` a inválida) são sintéticas, escolhidas só por serem
+ * plausíveis (idade 18-100) ou, no último caso, por não existirem no calendário nenhum.
  */
 
 import { execFileSync } from 'child_process';
 import { test, expect, type Page, type Route } from '@playwright/test';
 
 const DB_URL = process.env.SPEC025_TEST_DB_URL ?? 'postgresql://enlite_admin:enlite_password@localhost:5540/enlite_e2e';
+const BACKEND_URL = process.env.SPEC025_API_URL ?? 'http://localhost:8290';
 const TENANT = '00000000-0000-0000-0000-000000000001';
 const RUN_ID = `${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
 
@@ -72,6 +98,25 @@ function grantCell(group: string, resource: string, action: string): void {
 /** KMSEncryptionService em modo teste (USE_KMS_ENCRYPTION=false) só decodifica base64. */
 function enc(v: string): string {
   return `'${Buffer.from(v, 'utf8').toString('base64')}'`;
+}
+
+/** Inverso de `enc()` — lê `birth_date_encrypted` direto do Postgres e decodifica (modo teste). */
+function readBirthDate(workerId: string): string | null {
+  const raw = scalar(`SELECT birth_date_encrypted FROM workers WHERE id='${workerId}'`);
+  if (!raw) return null;
+  return Buffer.from(raw, 'base64').toString('utf8');
+}
+
+/**
+ * `changes` de `worker_admin_audit_log` para o `field_name` dado — usado para provar o achado #6
+ * (a trilha grava PII em claro para todo campo) e a correção (birthDate sai `[redacted]`).
+ * `psql -c` devolve o JSON como texto puro (o `-t -A` já tira cabeçalho/alinhamento).
+ */
+function auditLogChanges(workerId: string, fieldName: string): string | null {
+  const rows = psql(`SELECT changes FROM worker_admin_audit_log
+        WHERE worker_id='${workerId}' AND field_name='${fieldName}'
+        ORDER BY created_at DESC LIMIT 1`).trim();
+  return rows || null;
 }
 
 // ── Auth mock (idêntico a admin-access-buttons-workers.integration.e2e.ts) ──────────────────
@@ -196,6 +241,7 @@ test.describe('Edição de birthDate pelo admin, atrás de worker_pii:write (spe
     const uids = [COM_CELULA_UID, SEM_CELULA_UID];
     for (const wid of [workerComId, workerSemId]) {
       if (wid) {
+        safeSql(`DELETE FROM worker_admin_audit_log WHERE worker_id='${wid}'`);
         safeSql(`DELETE FROM worker_profile_changes_audit WHERE worker_id='${wid}'`);
         safeSql(`DELETE FROM worker_service_areas WHERE worker_id='${wid}'`);
         safeSql(`DELETE FROM workers WHERE id='${wid}'`);
@@ -243,6 +289,7 @@ test.describe('Edição de birthDate pelo admin, atrás de worker_pii:write (spe
     // O que seguiu sendo testado de verdade — clicar no botão certo, o backend gravar, a TELA
     // (depois de um `reload()`) mostrar o valor novo — é a prova que este teste pede.
     await campo.click();
+    await expect(campo).toBeFocused();
     await campo.fill(DATA_NOVA);
     await expect(campo).toHaveValue(DATA_NOVA);
 
@@ -255,6 +302,15 @@ test.describe('Edição de birthDate pelo admin, atrás de worker_pii:write (spe
     await expect(page.getByTestId('worker-personal-card')).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId('worker-personal-card')).toContainText('15/05/1990');
     await expect(page.getByTestId('worker-personal-card')).not.toContainText('12/06/1958');
+
+    // Achado #6 / conserto B2: a trilha `worker_admin_audit_log` grava o PATCH inteiro, mas
+    // `birthDate` tem que sair REDIGIDA (o AdminWorkerProfileController troca before/after por
+    // "[redacted]" antes de gravar) — nem a data ANTIGA nem a NOVA podem aparecer em claro.
+    const changes = auditLogChanges(workerComId, 'birthDate');
+    expect(changes).not.toBeNull();
+    expect(changes).toContain('[redacted]');
+    expect(changes).not.toContain(DATA_NOVA);
+    expect(changes).not.toContain(DATA_INICIAL);
   });
 
   test('2. SEM worker_pii:write (mas com worker:update + worker_pii:read): o campo NÃO existe no DOM', async ({ page }) => {
@@ -270,5 +326,47 @@ test.describe('Edição de birthDate pelo admin, atrás de worker_pii:write (spe
 
     await expect(page.getByTestId('we-birthDate')).toHaveCount(0);
     await expect(page.getByText('Dossier', { exact: true })).toHaveCount(0);
+  });
+
+  test('3. (alternativo, servidor) SEM worker_pii:write: PATCH direto no backend real → 403, valor no banco inalterado', async ({ request }) => {
+    // Este staff nem VÊ o campo (caso 2) — este teste prova que a recusa não é só cosmética: o
+    // SERVIDOR também nega, mesmo que alguém monte a request na mão (curl, extensão de browser).
+    const antes = readBirthDate(workerSemId);
+    expect(antes).toBeNull(); // workerSemId nasceu sem data (seedWorker withBirthDate=false)
+
+    const res = await request.patch(`${BACKEND_URL}/api/admin/workers/${workerSemId}/profile`, {
+      headers: { Authorization: `Bearer ${tokenFor(SEM_CELULA)}` },
+      data: { birthDate: '2005-01-01' },
+      failOnStatusCode: false,
+    });
+
+    expect(res.status()).toBe(403);
+    const body = await res.json();
+    expect(body).toMatchObject({ success: false, error: 'Forbidden', details: { cell: 'worker_pii:write' } });
+
+    const depois = readBirthDate(workerSemId);
+    expect(depois).toBe(antes); // continua null — nada foi gravado
+  });
+
+  test('4. (alternativo, servidor) COM worker_pii:write + data de calendário inválida: PATCH direto → 400, sem mudança', async ({ request }) => {
+    // 2001-02-31 não existe (fevereiro não tem 31 dias) — mesma régua de isValidIsoBirthDate que
+    // o classificador da spec 025 usa (round-trip em UTC: mês/dia que "transbordam" reprovam).
+    const antes = readBirthDate(workerComId); // já é DATA_NOVA, gravada de verdade no teste 1
+
+    const res = await request.patch(`${BACKEND_URL}/api/admin/workers/${workerComId}/profile`, {
+      headers: { Authorization: `Bearer ${tokenFor(COM_CELULA)}` },
+      data: { birthDate: '2001-02-31' },
+      failOnStatusCode: false,
+    });
+
+    expect(res.status()).toBe(400);
+    const body = await res.json();
+    expect(body.success).toBe(false);
+    // 400 é do zod .refine(isValidIsoBirthDate) — nunca chega no useCase, nunca grava, nunca
+    // audita. A data inválida não pode aparecer ecoada na resposta de erro.
+    expect(JSON.stringify(body)).not.toContain('2001-02-31');
+
+    const depois = readBirthDate(workerComId);
+    expect(depois).toBe(antes); // continua a data válida do teste 1, não a inválida nem null
   });
 });
