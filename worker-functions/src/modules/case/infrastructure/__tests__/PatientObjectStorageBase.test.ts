@@ -9,7 +9,9 @@ const mockWarn = jest.fn();
 jest.mock('@shared/logging', () => ({ logger: { warn: mockWarn, error: jest.fn(), info: jest.fn() } }));
 
 const fileDelete = jest.fn();
-const fileGetSignedUrl = jest.fn(async (_opts: { version: string; action: string; expires: number }) => ['https://signed.example/x']);
+const fileGetSignedUrl = jest.fn(async (_opts: { version: string; action: string; expires: number; responseDisposition?: string }) => [
+  'https://signed.example/x',
+]);
 const fileFn = jest.fn(() => ({ delete: fileDelete, getSignedUrl: fileGetSignedUrl }));
 const bucketFn = jest.fn(() => ({ file: fileFn }));
 const StorageCtor = jest.fn().mockImplementation(() => ({ bucket: bucketFn }));
@@ -79,6 +81,24 @@ describe('PatientObjectStorageBase — delete/log (conserto #5 da 2ª revisão d
     expect(fileGetSignedUrl).toHaveBeenCalledWith(expect.objectContaining({ version: 'v4', action: 'read' }));
     const opts = fileGetSignedUrl.mock.calls[0][0];
     expect(opts.expires).toBeGreaterThanOrEqual(before + READ_URL_TTL_SECONDS * 1000);
+  });
+
+  it('getReadSignedUrl com responseDisposition (spec 022, T315) — passa a opção adiante ao client', async () => {
+    const storage = new TestStorage({ bucket: bucketFn });
+
+    await storage.getReadSignedUrl('obj.pdf', { responseDisposition: 'attachment; filename="nome.pdf"' });
+
+    const opts = fileGetSignedUrl.mock.calls[0][0];
+    expect(opts.responseDisposition).toBe('attachment; filename="nome.pdf"');
+  });
+
+  it('getReadSignedUrl SEM options (chamada antiga, ex. PatientPhotoStorage) — não manda responseDisposition nenhum', async () => {
+    const storage = new TestStorage({ bucket: bucketFn });
+
+    await storage.getReadSignedUrl('obj.jpg');
+
+    const opts = fileGetSignedUrl.mock.calls[0][0];
+    expect(opts).not.toHaveProperty('responseDisposition');
   });
 
   it('sem a env do bucket: lança o erro fabricado por `notConfigured`', () => {

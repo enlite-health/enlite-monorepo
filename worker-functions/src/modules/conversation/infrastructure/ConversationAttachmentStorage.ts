@@ -10,7 +10,7 @@
  */
 import type { Storage } from '@google-cloud/storage';
 import { v4 as uuidv4 } from 'uuid';
-import { PatientObjectStorageBase } from '@modules/case/infrastructure/PatientObjectStorageBase';
+import { PatientObjectStorageBase } from '@modules/case';
 import type { AllowedAttachmentContentType } from './ConversationAttachmentPolicy';
 
 export class ConversationAttachmentBucketNotConfiguredError extends Error {
@@ -35,6 +35,12 @@ const EXTENSION_BY_CONTENT_TYPE: Record<AllowedAttachmentContentType, string> = 
 export class ConversationAttachmentStorage extends PatientObjectStorageBase {
   constructor(client?: Storage) {
     super('PATIENT_DOCUMENTS_BUCKET', () => new ConversationAttachmentBucketNotConfiguredError(), client);
+  }
+
+  /** `stored_files.bucket` grava o nome do bucket junto da linha (migration 459) — acesso público
+   *  ao `protected bucketName` da base, só para essa coluna informativa (nunca para lógica). */
+  getBucketName(): string {
+    return this.bucketName;
   }
 
   /** Nome UUID (sem nome original, sem patient_id no caminho — mesma regra de `PatientPhotoStorage`). */
