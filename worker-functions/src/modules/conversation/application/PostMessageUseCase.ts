@@ -47,11 +47,11 @@ export interface PostMessageParams {
  *
  * Histórico: achado do gate revisao-pr (Bloco 1, Tarefa 3) fechou só a existência — sem ela, um id
  * arbitrário virava FK violation → 500, e o `ON DELETE RESTRICT` de `conversation_message_attachments`
- * (migration 459) deixava quem tivesse a célula `patient_conversation:create` anexar um id
+ * (migration 460) deixava quem tivesse a célula `patient_conversation:create` anexar um id
  * QUALQUER de `stored_files` — inclusive de outro registro — tornando aquele arquivo indeletável.
  * O cruzamento de posse (arquivo pertence a ESTE paciente/conversa/autor, e não está reutilizado)
  * ficou registrado como requisito de entrada do Bloco 3 (`evidencias/achados.md`) — fechado aqui
- * com `stored_files.conversation_id` (migration 461, T305-T317).
+ * com `stored_files.conversation_id` (migration 462, T305-T317).
  */
 export class AttachedFileNotFoundError extends Error {
   readonly code = 'ATTACHED_FILE_NOT_FOUND';
@@ -195,7 +195,7 @@ export class PostMessageUseCase {
    *  2. existe, mas `conversation_id` é de OUTRO paciente/conversa (não o da rota);
    *  3. existe nesta conversa, mas foi enviado por OUTRO uid (`uploaded_by_uid !== authorUid`);
    *  4. já está anexado a outra mensagem (`conversation_message_attachments`, mesmo `ON DELETE
-   *     RESTRICT` da migration 459 — reusar o mesmo arquivo em 2 mensagens duplicaria posse).
+   *     RESTRICT` da migration 460 — reusar o mesmo arquivo em 2 mensagens duplicaria posse).
    */
   private async assertFilesOwnedByAuthor(
     client: PoolClient,
@@ -232,7 +232,7 @@ export class PostMessageUseCase {
     } catch (err: unknown) {
       // Corrida entre 2 POSTs concorrentes que passaram os DOIS pelo SELECT de
       // `assertFilesOwnedByAuthor` (sem lock) antes de qualquer um inserir — a UNIQUE (file_id)
-      // da migration 461 fecha a janela no banco; aqui só traduz a violação (23505) para o MESMO
+      // da migration 462 fecha a janela no banco; aqui só traduz a violação (23505) para o MESMO
       // 400 anti-enumeração que a checagem de posse já usa (nunca 500 pra este caso).
       // 🔒 Achado do gate revisao-pr (B3-r2, item 3): a constraint não diz QUAL fileId colidiu —
       // `fileIds[0]` era um chute arbitrário que podia apontar um arquivo que não teve nada a ver

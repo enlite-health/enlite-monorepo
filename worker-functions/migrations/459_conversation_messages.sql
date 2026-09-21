@@ -77,7 +77,7 @@ CREATE POLICY conversation_messages_follow_patient ON conversation_messages FOR 
 -- RLS: `conversation_message_mentions` e `conversation_read_marks` também não têm FK direta para
 -- `patients` (mentions → messages, read_marks → conversations) — fecho da classe apontada em
 -- `achados.md` (gate revisao-pr, Bloco 1): eram as ÚNICAS satélites do módulo sem RLS além de
--- `notifications` (460). Mesmo molde "follow the immediate parent" já usado acima em
+-- `notifications` (461). Mesmo molde "follow the immediate parent" já usado acima em
 -- `conversation_messages_follow_patient` — o EXISTS aponta para a tabela-PAI imediata (não para
 -- `patients` direto), e a visibilidade do país é decidida pela RLS DESSA tabela-pai (que por sua vez
 -- já segue `conversations`/`patients`). Sem isso, `SELECT * FROM conversation_message_mentions`

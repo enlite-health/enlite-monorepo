@@ -1,6 +1,6 @@
 BEGIN;
 
--- Vínculo de posse (spec 022, Bloco 3): `stored_files` (migration 459) nasceu SEM ligação a
+-- Vínculo de posse (spec 022, Bloco 3): `stored_files` (migration 460) nasceu SEM ligação a
 -- paciente/conversa — achado do gate revisao-pr do B1 (evidencias/achados.md): um staff com
 -- `patient_conversation:create` podia anexar (POST messages, `fileIds`) o uuid de um arquivo
 -- de OUTRO paciente, contanto que soubesse o id (não enumerável pela API, mas sem cruzamento
@@ -23,8 +23,8 @@ COMMENT ON COLUMN stored_files.conversation_id IS
 CREATE INDEX IF NOT EXISTS idx_stored_files_conversation ON stored_files (conversation_id);
 
 -- RLS: `stored_files` não tem FK direta para `patients` (só para `conversations`, que já segue
--- `patients` — migration 457) — mesmo molde "follow the immediate parent" de
--- `conversation_messages_follow_patient` (migration 458). Sem esta policy, `SELECT * FROM
+-- `patients` — migration 458) — mesmo molde "follow the immediate parent" de
+-- `conversation_messages_follow_patient` (migration 459). Sem esta policy, `SELECT * FROM
 -- stored_files` direto (sem JOIN) vazaria METADADO (bucket/content_type/tamanho — nome do
 -- arquivo já vem cifrado, mas o metadado sozinho ainda identifica atividade) cross-país para
 -- `app_runtime`.
@@ -38,7 +38,7 @@ CREATE POLICY stored_files_follow_conversation ON stored_files FOR ALL USING (
   OR EXISTS (SELECT 1 FROM conversations c WHERE c.id = stored_files.conversation_id)
 );
 
--- `conversation_message_attachments` (migration 459) também nasceu sem RLS — mesma classe de
+-- `conversation_message_attachments` (migration 460) também nasceu sem RLS — mesma classe de
 -- achado. Sem FK direta para `patients` (message_id → conversation_messages, file_id →
 -- stored_files); segue `conversation_messages`, que por sua vez já segue `conversations` →
 -- `patients`. Sem isso, `SELECT * FROM conversation_message_attachments` vazaria METADADO de

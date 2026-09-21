@@ -2,7 +2,7 @@
  * resolveConversationForPatient — glue T119/T120 precisam para ir de `:id` (patientId) na URL
  * até o `conversationId` que `PostMessageUseCase`/`ListConversationUseCase`/
  * `MarkConversationReadUseCase` (T110/T112/T117) recebem. Nenhuma task anterior do Bloco 1
- * criou esse lookup — `conversations` (mig 457) é 1:1 com `patients` (`UNIQUE(patient_id)`), e o
+ * criou esse lookup — `conversations` (mig 458) é 1:1 com `patients` (`UNIQUE(patient_id)`), e o
  * "canal" nasce sob demanda na PRIMEIRA mensagem/leitura, não numa migration de seed.
  *
  * Molde: `patientExistsCheck.ts` (`case/interfaces/controllers/`) — mesmo padrão (`Pool` direto,
@@ -11,13 +11,13 @@
  * módulo) e a cópia byte-a-byte criaria a MESMA duplicação que aquele arquivo documenta ter
  * evitado dentro do próprio `case`.
  *
- * `conversations` só tem GRANT `SELECT, INSERT` (mig 457, de propósito — nunca UPDATE) — por
+ * `conversations` só tem GRANT `SELECT, INSERT` (mig 458, de propósito — nunca UPDATE) — por
  * isso o get-or-create é SELECT → INSERT ... ON CONFLICT (patient_id) DO NOTHING → SELECT de
  * novo se perdeu a corrida (nunca `ON CONFLICT DO UPDATE`, que exigiria privilégio de UPDATE).
  *
  * ⚠️ Achado do gate revisao-pr (Bloco 1, Tarefa 2): o INSERT (e o SELECT de corrida que o segue)
  * rodam dentro de `withActorContext` (`@shared/database/actorContext`) — nunca em `db.query` cru.
- * A policy de RLS de `conversations` (mig 457, `FOR ALL`) vale como `WITH CHECK` do INSERT: sem o
+ * A policy de RLS de `conversations` (mig 458, `FOR ALL`) vale como `WITH CHECK` do INSERT: sem o
  * contexto do ator carimbado na transação, a política cai no caminho fail-closed e o INSERT
  * derruba com erro de RLS (500 mudo). O primeiro SELECT (get) segue em `db.query` direto — esse
  * já é roteado pela sessão da request (`rlsAwarePool`/`requestDbSession`, GUCs de sessão) e é só

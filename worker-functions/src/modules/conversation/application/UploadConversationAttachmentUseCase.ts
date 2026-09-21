@@ -4,7 +4,7 @@
  * (`ConversationAttachmentStorage`, fora de transação — chamada de rede não deve segurar conexão
  * de banco) → cifra `objectPath`/nome original (`KMSEncryptionService`) → grava `stored_files`
  * numa transação com o contexto do ator (`withActorContext` — a RLS de `stored_files`, migration
- * 461, exige `app.user_uid`/`app.user_country` carimbados, senão cai no fail-closed).
+ * 462, exige `app.user_uid`/`app.user_country` carimbados, senão cai no fail-closed).
  *
  * Falha da transação DEPOIS do upload: o objeto novo fica órfão — best-effort apaga (loga se
  * também falhar; nenhuma fila de retry própria nesta spec, ao contrário de `patient_photo_orphans`

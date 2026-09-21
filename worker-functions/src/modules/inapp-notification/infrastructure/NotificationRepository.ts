@@ -7,7 +7,7 @@
  * `payload` (`notification_events.payload`) nunca recebe texto livre aqui — D-09/D-08 são
  * explícitos ("SÓ com ids — PROIBIDO texto"); os IDs relevantes já são colunas próprias
  * (`actor_uid`, `patient_id`, `conversation_id`, `message_id`), então `insertEvent` grava
- * `payload = '{}'::jsonb` (o `DEFAULT` da migration 460) e nunca escreve nele.
+ * `payload = '{}'::jsonb` (o `DEFAULT` da migration 461) e nunca escreve nele.
  */
 import type { Pool, PoolClient } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';

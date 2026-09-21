@@ -8,7 +8,7 @@ const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enli
  *
  * O PROBLEMA que este arquivo existe pra fechar: as 6 tabelas novas desta spec (`conversations`,
  * `conversation_messages`, `conversation_message_mentions`, `conversation_read_marks`,
- * `notification_events`, `notifications`) ligaram RLS (migrations 457/458/460), mas todo e2e do
+ * `notification_events`, `notifications`) ligaram RLS (migrations 458/459/461), mas todo e2e do
  * módulo até aqui (`adminConversation.e2e.test.ts`, `conversationAbacMatrix.e2e.test.ts`) conecta
  * como `enlite_admin` — o DONO das tabelas. Dono bypassa RLS SEMPRE quando a tabela não tem FORCE
  * (nenhuma tem, `country-rls-policies.test.ts` prova a invariante "NENHUMA tabela da leva tem

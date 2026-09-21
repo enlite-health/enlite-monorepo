@@ -212,7 +212,7 @@ export class ConversationRepository {
    * `mentioned_uid` de todas as mensagens dadas, EM UMA query com `WHERE ... = ANY($1)` — nunca
    * uma query por mensagem (evita N+1; mesma disciplina do `replyCount` em `listTopMessages`).
    * Ordem alfabética do uid dentro de cada mensagem (a tabela `conversation_message_mentions`,
-   * mig 458, não guarda a ordem de aparição no corpo — só existência do par
+   * mig 459, não guarda a ordem de aparição no corpo — só existência do par
    * `(message_id, mentioned_uid)`; a ordem de leitura do corpo, se algum dia importar para a UI,
    * é responsabilidade de quem grava, não desta leitura).
    */
@@ -248,7 +248,7 @@ export class ConversationRepository {
    * — o nome decifrado só sai no download (`GetConversationAttachmentUrlUseCase`), nunca aqui.
    *
    * RLS: mesma proteção de `conversation_message_mentions`/`conversation_messages` — as policies
-   * de `stored_files`/`conversation_message_attachments` (migration 461) seguem `conversations`
+   * de `stored_files`/`conversation_message_attachments` (migration 462) seguem `conversations`
    * via `EXISTS`, que por sua vez já filtra por país sob `app_runtime`; esta query não abre
    * exceção nenhuma (nenhum `WHERE` adicional necessário além do `JOIN`, o RLS já filtra as
    * linhas visíveis à sessão).
@@ -332,7 +332,7 @@ export class ConversationRepository {
   /**
    * `patient_id` da conversa (Spec 022, Bloco 4, T403) — `PostMessageUseCase` consulta isto
    * DEPOIS de inserir a mensagem, para preencher `notification_events.patient_id` (fan-out).
-   * `conversations.patient_id` é `UNIQUE NOT NULL` (migration 457) — `null` só pode acontecer se
+   * `conversations.patient_id` é `UNIQUE NOT NULL` (migration 458) — `null` só pode acontecer se
    * `conversationId` não existir (não deveria, já que `resolveConversationForPatient` validou
    * antes de chamar `PostMessageUseCase`; defesa em profundidade, não caminho esperado).
    */

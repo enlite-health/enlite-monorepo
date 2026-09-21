@@ -7,11 +7,11 @@ const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enli
  * entrada #2 do contrato: "RLS sob `app_runtime` no caminho de ESCRITA (upload grava
  * `stored_files`)").
  *
- * `stored_files`/`conversation_message_attachments` (migration 459) nasceram no Bloco 1 SEM RLS
+ * `stored_files`/`conversation_message_attachments` (migration 460) nasceram no Bloco 1 SEM RLS
  * nenhuma — `country-rls-policies.test.ts` não pegou porque seu invariante só varre FK DIRETA
  * para `patients`, e nenhuma das duas tem (uma aponta para `conversations`, a outra para
- * `conversation_messages`/`stored_files`). A migration 461 fechou isso seguindo o MESMO molde
- * "follow the immediate parent" de `conversation_messages_follow_patient` (458) — este arquivo é
+ * `conversation_messages`/`stored_files`). A migration 462 fechou isso seguindo o MESMO molde
+ * "follow the immediate parent" de `conversation_messages_follow_patient` (459) — este arquivo é
  * a prova sob o papel REAL de runtime (`app_runtime`, nunca o dono `enlite_admin`, que bypassa RLS
  * sempre), molde direto de `conversationRlsAppRuntime.e2e.test.ts` (B1).
  *
