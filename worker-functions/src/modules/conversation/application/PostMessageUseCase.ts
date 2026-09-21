@@ -37,13 +37,19 @@ export interface PostMessageParams {
 }
 
 /**
- * `fileIds` com uuid que não existe em `stored_files` — recusa (o controller converte em 400).
- * Achado do gate revisao-pr (Bloco 1, Tarefa 3): sem esta checagem, um id arbitrário virava FK
- * violation → 500 (não 400), e o `ON DELETE RESTRICT` de `conversation_message_attachments`
+ * `fileIds` com uuid que não existe em `stored_files`, OU que existe mas não passa no cruzamento
+ * de posse (T305-T317, Bloco 3) — recusa (o controller converte em 400), SEMPRE com a mesma
+ * mensagem/código para as 4 causas (anti-enumeração, mesmo padrão de `MessageNotFoundError` em
+ * `resolveRoot`): não existe, pertence a OUTRA conversa/paciente, não foi enviado por este autor,
+ * ou já está anexado a outra mensagem.
+ *
+ * Histórico: achado do gate revisao-pr (Bloco 1, Tarefa 3) fechou só a existência — sem ela, um id
+ * arbitrário virava FK violation → 500, e o `ON DELETE RESTRICT` de `conversation_message_attachments`
  * (migration 459) deixava quem tivesse a célula `patient_conversation:create` anexar um id
- * QUALQUER de `stored_files` — inclusive de outro registro — tornando aquele arquivo
- * indeletável. O cruzamento completo (arquivo pertence a este paciente/conversa) fica fora de
- * escopo: exige o schema de anexos do Bloco 3.
+ * QUALQUER de `stored_files` — inclusive de outro registro — tornando aquele arquivo indeletável.
+ * O cruzamento de posse (arquivo pertence a ESTE paciente/conversa/autor, e não está reutilizado)
+ * ficou registrado como requisito de entrada do Bloco 3 (`evidencias/achados.md`) — fechado aqui
+ * com `stored_files.conversation_id` (migration 461, T305-T317).
  */
 export class AttachedFileNotFoundError extends Error {
   readonly code = 'ATTACHED_FILE_NOT_FOUND';
@@ -88,7 +94,7 @@ export class PostMessageUseCase {
       const resolvedRootId = await this.resolveRoot(client, conversationId, rootMessageId);
       const mentionedUids = extractMentionedUids(body);
       await this.assertMentionsExist(client, mentionedUids);
-      await this.assertFilesExist(client, fileIds);
+      await this.assertFilesOwnedByAuthor(client, conversationId, authorUid, fileIds);
 
       const inserted = await this.repository.insertMessage(
         { conversationId, rootMessageId: resolvedRootId, authorUid, body },
@@ -162,16 +168,39 @@ export class PostMessageUseCase {
     );
   }
 
-  /** `fileIds` que não existem em `stored_files` — recusa ANTES de gravar mensagem/anexo (400). */
-  private async assertFilesExist(client: PoolClient, fileIds: string[]): Promise<void> {
+  /**
+   * Cruzamento de posse completo (T305-T317, Bloco 3) — recusa ANTES de gravar mensagem/anexo
+   * (400), com a MESMA `AttachedFileNotFoundError` para as 4 causas (nunca distingue qual, mesmo
+   * padrão anti-enumeração de `resolveRoot`/`MessageNotFoundError`):
+   *  1. `fileId` não existe em `stored_files`;
+   *  2. existe, mas `conversation_id` é de OUTRO paciente/conversa (não o da rota);
+   *  3. existe nesta conversa, mas foi enviado por OUTRO uid (`uploaded_by_uid !== authorUid`);
+   *  4. já está anexado a outra mensagem (`conversation_message_attachments`, mesmo `ON DELETE
+   *     RESTRICT` da migration 459 — reusar o mesmo arquivo em 2 mensagens duplicaria posse).
+   */
+  private async assertFilesOwnedByAuthor(
+    client: PoolClient,
+    conversationId: string,
+    authorUid: string,
+    fileIds: string[],
+  ): Promise<void> {
     if (fileIds.length === 0) return;
-    const { rows } = await client.query<{ id: string }>(
-      `SELECT id FROM stored_files WHERE id = ANY($1::uuid[])`,
-      [fileIds],
+    const { rows } = await client.query<{ id: string; owned: boolean }>(
+      `SELECT sf.id,
+              (
+                sf.conversation_id = $2
+                AND sf.uploaded_by_uid = $3
+                AND NOT EXISTS (
+                  SELECT 1 FROM conversation_message_attachments cma WHERE cma.file_id = sf.id
+                )
+              ) AS owned
+         FROM stored_files sf
+        WHERE sf.id = ANY($1::uuid[])`,
+      [fileIds, conversationId, authorUid],
     );
-    const found = new Set(rows.map((r) => r.id));
-    const missing = fileIds.find((id) => !found.has(id));
-    if (missing) throw new AttachedFileNotFoundError(missing);
+    const ownedById = new Map(rows.map((r) => [r.id, r.owned]));
+    const rejected = fileIds.find((id) => !ownedById.get(id));
+    if (rejected) throw new AttachedFileNotFoundError(rejected);
   }
 
   private async attachFiles(client: PoolClient, messageId: string, fileIds: string[]): Promise<void> {

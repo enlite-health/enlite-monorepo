@@ -56,9 +56,20 @@ function insertMessageHandler(id = 'm-new', createdAt = new Date('2026-09-20T10:
   return (sql) => (sql.includes('INSERT INTO conversation_messages') ? { rows: [{ id, createdAt }] } : undefined);
 }
 
-/** Handler: responde ao SELECT de existência de `stored_files` (Tarefa 3, achado do gate revisao-pr) — os `ids` dados existem. */
-function filesExistHandler(ids: string[]): Handler {
-  return (sql) => (sql.includes('FROM stored_files') ? { rows: ids.map((id) => ({ id })) } : undefined);
+/**
+ * Handler do cruzamento de posse (T305-T317, Bloco 3): cada id em `ownedIds` "existe, é desta
+ * conversa, deste autor e ainda não está anexado" (owned=true); qualquer outro id pedido pelo
+ * teste mas fora desta lista simplesmente não aparece nas rows (mesmo efeito de "não existe" —
+ * `assertFilesOwnedByAuthor` trata ausência e `owned:false` da MESMA forma).
+ */
+function filesOwnedHandler(ownedIds: string[]): Handler {
+  return (sql) =>
+    sql.includes('FROM stored_files sf') ? { rows: ownedIds.map((id) => ({ id, owned: true }))} : undefined;
+}
+
+/** Variante: id existe mas reprova em UM dos 3 critérios (conversa/autor/já-anexado) — owned:false. */
+function fileRejectedHandler(id: string): Handler {
+  return (sql) => (sql.includes('FROM stored_files sf') ? { rows: [{ id, owned: false }] } : undefined);
 }
 
 const POOL = {} as unknown as Pool;
@@ -241,7 +252,7 @@ describe('PostMessageUseCase', () => {
 
   describe('anexos — grava conversation_message_attachments quando há fileIds', () => {
     it('com fileIds: insere um par (message_id, file_id) por arquivo', async () => {
-      const { client, calls } = clientWith([insertMessageHandler(), filesExistHandler(['f1', 'f2'])]);
+      const { client, calls } = clientWith([insertMessageHandler(), filesOwnedHandler(['f1', 'f2'])]);
       runOn(client);
       const useCase = new PostMessageUseCase(new ConversationRepository(POOL));
 
@@ -254,10 +265,15 @@ describe('PostMessageUseCase', () => {
 
       const attachCall = calls.find((c) => c.sql.includes('INSERT INTO conversation_message_attachments'));
       expect(attachCall?.params).toEqual(['m-new', 'f1', 'f2']);
+
+      // Cruzamento de posse (T305-T317): o SELECT carrega conversationId + authorUid do REQUEST,
+      // não confia em nada que venha do cliente além do fileId.
+      const ownershipCall = calls.find((c) => c.sql.includes('FROM stored_files sf'));
+      expect(ownershipCall?.params).toEqual([['f1', 'f2'], 'c1', 'staff:1']);
     });
 
     it('fileId INEXISTENTE em stored_files: recusa com AttachedFileNotFoundError (400), NUNCA insere a mensagem — achado do gate revisao-pr (Tarefa 3): sem esta checagem, id arbitrário virava FK violation (500) e o ON DELETE RESTRICT tornava o arquivo indeletável', async () => {
-      const { client, calls } = clientWith([insertMessageHandler(), filesExistHandler(['f1'])]); // só f1 existe; f2 não
+      const { client, calls } = clientWith([insertMessageHandler(), filesOwnedHandler(['f1'])]); // só f1 existe; f2 não aparece nas rows
       runOn(client);
       const useCase = new PostMessageUseCase(new ConversationRepository(POOL));
 
@@ -272,6 +288,53 @@ describe('PostMessageUseCase', () => {
 
       expect(calls.some((c) => c.sql.includes('INSERT INTO conversation_messages'))).toBe(false);
       expect(calls.some((c) => c.sql.includes('INSERT INTO conversation_message_attachments'))).toBe(false);
+    });
+
+    it('fileId de OUTRA conversa/paciente (existe, mas owned:false) — MESMO erro/código que "não existe" (anti-enumeração, T305-T317)', async () => {
+      const { client, calls } = clientWith([insertMessageHandler(), fileRejectedHandler('f-de-outro-paciente')]);
+      runOn(client);
+      const useCase = new PostMessageUseCase(new ConversationRepository(POOL));
+
+      await expect(
+        useCase.execute(POOL, {
+          conversationId: 'c1',
+          authorUid: 'staff:1',
+          body: 'msg-1',
+          fileIds: ['f-de-outro-paciente'],
+        }),
+      ).rejects.toMatchObject({ code: 'ATTACHED_FILE_NOT_FOUND', status: 400 });
+
+      expect(calls.some((c) => c.sql.includes('INSERT INTO conversation_messages'))).toBe(false);
+    });
+
+    it('fileId enviado por OUTRO autor (owned:false) — recusa com o MESMO código, nunca 403 (não confirma que o arquivo existe para outro uid)', async () => {
+      const { client } = clientWith([insertMessageHandler(), fileRejectedHandler('f-de-outro-autor')]);
+      runOn(client);
+      const useCase = new PostMessageUseCase(new ConversationRepository(POOL));
+
+      await expect(
+        useCase.execute(POOL, {
+          conversationId: 'c1',
+          authorUid: 'staff:intruso',
+          body: 'msg-1',
+          fileIds: ['f-de-outro-autor'],
+        }),
+      ).rejects.toMatchObject({ code: 'ATTACHED_FILE_NOT_FOUND', status: 400 });
+    });
+
+    it('fileId JÁ ANEXADO a outra mensagem (owned:false) — recusa, nunca reusa o mesmo arquivo em 2 mensagens', async () => {
+      const { client } = clientWith([insertMessageHandler(), fileRejectedHandler('f-ja-anexado')]);
+      runOn(client);
+      const useCase = new PostMessageUseCase(new ConversationRepository(POOL));
+
+      await expect(
+        useCase.execute(POOL, {
+          conversationId: 'c1',
+          authorUid: 'staff:1',
+          body: 'msg-1',
+          fileIds: ['f-ja-anexado'],
+        }),
+      ).rejects.toMatchObject({ code: 'ATTACHED_FILE_NOT_FOUND', status: 400 });
     });
 
     it('sem fileIds: não toca conversation_message_attachments', async () => {
