@@ -4,6 +4,7 @@
 
 import './health';
 import './adminAuth';
+import './adminConversation';
 import './adminDashboard';
 import './adminEncuadres';
 import './adminFunnel';
@@ -15,6 +16,7 @@ import './adminRecruitment';
 import './adminSetup';
 import './adminSocialLinks';
 import './adminMeetLinks';
+import './adminStaffDirectory';
 import './adminTalentum';
 import './adminUsers';
 import './permissionsPanel';

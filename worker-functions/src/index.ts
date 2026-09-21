@@ -35,10 +35,11 @@ import {
   PublicLeadsController,
   createAdminPatientPhotoRoutes,
 } from '@modules/case';
+import { createAdminConversationRoutes } from '@modules/conversation/interfaces/routes/adminConversationRoutes';
 import { AdminPatientDiagnosesController } from '@modules/diagnosis/interfaces/controllers/AdminPatientDiagnosesController';
 import { AdminTerminologySearchController } from '@modules/terminology/interfaces/controllers/AdminTerminologySearchController';
 import { UserController } from '@modules/identity';
-import { AdminController, createAuthTelemetryRoutes, createAdminUsersRoutes, createPermissionPanelRoutes, createPermissionPanelWriteRoutes, principalUid } from '@modules/identity';
+import { AdminController, createAuthTelemetryRoutes, createAdminUsersRoutes, createAdminStaffDirectoryRoutes, createPermissionPanelRoutes, createPermissionPanelWriteRoutes, principalUid } from '@modules/identity';
 import { createMeAuthzRouter } from '@modules/identity/permissions';
 import {
   AuthMiddleware,
@@ -439,6 +440,9 @@ app.post('/api/admin/setup', systemContextMiddleware('bootstrap:admin-setup'), (
 // Família `admin.users` — extraída para router próprio na task 3.5 (primeira a
 // declarar célula). Ver modules/identity/interfaces/routes/adminUsersRoutes.ts.
 app.use('/api/admin', createAdminUsersRoutes(adminController, authMiddleware, permissionMiddleware));
+// `GET /api/admin/staff-directory` (spec 022, T128) — mesma família `admin.users`, célula nova
+// `staff_directory:read`. Alimenta o autocomplete de menção do chat interno de paciente.
+app.use('/api/admin', createAdminStaffDirectoryRoutes(authMiddleware, permissionMiddleware));
 // Família `admin.permissions` — a leitura do painel de acessos (F3). É a rota
 // que DECLARA `permission_management:read`; sem ela o sync do catálogo
 // descontinua a célula e `iam.query_audit` responde 42501 para todo mundo.
@@ -513,6 +517,9 @@ app.use(
 
 // ========== Admin Patient Photo/Documents/Image Consent (spec 018, PR-4) ==========
 app.use('/api/admin', createAdminPatientPhotoRoutes(authMiddleware, permissionMiddleware));
+
+// ========== Admin Patient Conversation (spec 022, Bloco 1) ==========
+app.use('/api/admin', createAdminConversationRoutes(authMiddleware, permissionMiddleware));
 
 // ========== Admin Therapeutic Projects (spec 017) ==========
 app.use(

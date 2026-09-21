@@ -3744,6 +3744,15 @@
           "externalContacts": "Contatos externos",
           "coverageContacts": "Contatos da cobertura",
           "careTeam": "Equipe tratante"
+        },
+        "conversation": {
+          "errors": {
+            "legacyDoc": "Formato .doc não é aceito; salve como .docx",
+            "fileTooLarge": "O arquivo ultrapassa 10 MB",
+            "unsupportedType": "Tipo de arquivo não aceito",
+            "maliciousContent": "O arquivo foi rejeitado por conter código ativo ou macros",
+            "mentionInvalid": "O usuário mencionado não existe"
+          }
         }
       },
       "statusOptions": {
