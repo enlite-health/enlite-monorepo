@@ -1,5 +1,6 @@
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { escapeIlikeWildcards } from '@shared/utils/ilikeEscape';
 
 export interface AdminRecord {
   firebaseUid: string;
@@ -10,6 +11,16 @@ export interface AdminRecord {
   lastLoginAt: string | null;
   loginCount: number;
   createdAt: string;
+}
+
+/**
+ * Linha do diretório de staff (spec 022, `contracts/openapi-staff-directory.md`).
+ * De propósito, SÓ `uid`/`displayName` — nunca `email` nem `role` (D-06: o
+ * autocomplete de menção não precisa e o payload vaza menos).
+ */
+export interface StaffDirectoryEntry {
+  uid: string;
+  displayName: string | null;
 }
 
 export class AdminRepository {
@@ -70,6 +81,38 @@ export class AdminRepository {
     );
 
     return { admins: result.rows, total: parseInt(countResult.rows[0].total) };
+  }
+
+  /**
+   * Diretório de staff para o autocomplete de menção (`<@uid>`) do chat interno
+   * (spec 022, T128). MESMO `WHERE` de "staff ativo" de `listAdmins` acima —
+   * `account_type = 'staff' AND is_active = true` — para que inativo/prestador
+   * nunca apareça na lista de menção. `ILIKE` em `display_name`/`email` (o
+   * e-mail entra só como CRITÉRIO de busca — nunca sai na resposta), `LIMIT 20`.
+   *
+   * Achado do gate revisao-pr (Bloco 1): `%`/`_` são wildcards do ILIKE — sem escape,
+   * `q='%'` (ou `q='%%'`) casava QUALQUER nome/e-mail e listava todo o staff. `escapeIlikeWildcards`
+   * (molde: `IcdCatalogTerminology.buscar` / `AdminPatientsMapController`) neutraliza `\`, `%` e `_`
+   * no VALOR; a cláusula fecha com `ESCAPE '\\'` — sem ela a barra que a função insere é lida como
+   * caractere comum e o curinga volta a valer.
+   * `ORDER BY u.display_name, u.firebase_uid` desempata nome repetido — sem isso, `LIMIT 20` corta
+   * o mesmo conjunto de linhas empatadas em ordem instável entre chamadas (paginação/teste flaky).
+   */
+  async searchStaffDirectory(q: string, limit = 20): Promise<StaffDirectoryEntry[]> {
+    const escaped = escapeIlikeWildcards(q);
+    const result = await this.pool.query(
+      `SELECT
+        u.firebase_uid AS uid,
+        u.display_name AS "displayName"
+      FROM users u
+      WHERE u.account_type = 'staff' AND u.is_active = true
+        AND (u.display_name ILIKE '%' || $1 || '%' ESCAPE '\\'
+          OR u.email ILIKE '%' || $1 || '%' ESCAPE '\\')
+      ORDER BY u.display_name, u.firebase_uid
+      LIMIT $2`,
+      [escaped, limit]
+    );
+    return result.rows;
   }
 
   async countAdmins(): Promise<number> {

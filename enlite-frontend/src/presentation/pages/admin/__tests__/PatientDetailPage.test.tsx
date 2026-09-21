@@ -20,7 +20,15 @@ function t(key: string, opts?: any): string {
 }
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t, i18n: { language: 'pt-BR' } }) }));
 const navigate = vi.fn();
-vi.mock('react-router-dom', () => ({ useParams: () => ({ id: 'p1' }), useNavigate: () => navigate }));
+// `useLocation` (Spec 022, Bloco 4, T413): seed opcional de `focusRequest` vindo do deep-link do
+// sino — default sem `state` nenhum (comportamento de sempre); testes do deep-link sobrescrevem
+// com `locationState.mockReturnValue`.
+const locationState = vi.fn(() => ({ state: null as { focusRequest?: { code: string; token: number } } | null }));
+vi.mock('react-router-dom', () => ({
+  useParams: () => ({ id: 'p1' }),
+  useNavigate: () => navigate,
+  useLocation: () => locationState(),
+}));
 const detail = { patient: null as unknown, isLoading: false, error: null as string | null, refetch: vi.fn() };
 const vac = { vacancies: [], isLoading: false, error: null, refetch: vi.fn() };
 vi.mock('@hooks/admin/usePatientDetail', () => ({ usePatientDetail: () => detail }));

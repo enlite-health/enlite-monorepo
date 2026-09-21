@@ -3750,6 +3750,55 @@
           "externalContacts": "Contatos externos",
           "coverageContacts": "Contatos da cobertura",
           "careTeam": "Equipe tratante"
+        },
+        "conversation": {
+          "errors": {
+            "legacyDoc": "Formato .doc não é aceito; salve como .docx",
+            "fileTooLarge": "O arquivo ultrapassa 10 MB",
+            "unsupportedType": "Tipo de arquivo não aceito",
+            "maliciousContent": "O arquivo foi rejeitado por conter código ativo ou macros",
+            "mentionInvalid": "O usuário mencionado não existe",
+            "sendFailed": "Não conseguimos enviar a mensagem. Tente de novo.",
+            "sendForbidden": "Você não tem permissão para enviar mensagens nesta conversa.",
+            "uploadFailed": "Não conseguimos enviar o arquivo. Tente de novo."
+          },
+          "handle": {
+            "label": "Mensagens",
+            "unread": "{{count}} não lidas"
+          },
+          "panel": {
+            "title": "Mensagens",
+            "empty": "Ainda não há mensagens",
+            "noAccess": "Sem acesso a este paciente",
+            "close": "Fechar painel de mensagens",
+            "loadError": "Não conseguimos carregar as mensagens. Tente de novo.",
+            "readOnly": "Você só pode ver esta conversa"
+          },
+          "thread": {
+            "replies_one": "1 resposta",
+            "replies_other": "{{count}} respostas",
+            "back": "Voltar",
+            "deleted": "Mensagem apagada",
+            "loadError": "Não foi possível carregar as respostas",
+            "attachments": {
+              "download": "Baixar anexo",
+              "downloadError": "Não conseguimos baixar o arquivo. Tente de novo.",
+              "popupBlocked": "Seu navegador bloqueou a janela pop-up. Habilite pop-ups para baixar o arquivo."
+            }
+          },
+          "composer": {
+            "placeholder": "Digite uma mensagem…",
+            "send": "Enviar",
+            "attach": "Anexar",
+            "discardConfirm": "Descartar mensagem não enviada?",
+            "discard": "Descartar",
+            "cancel": "Cancelar",
+            "attachments": {
+              "remove": "Remover anexo",
+              "uploading": "Enviando…",
+              "max": "Máximo de 5 anexos"
+            }
+          }
         }
       },
       "statusOptions": {
@@ -4187,7 +4236,10 @@
             "catalog_therapeutic_objectives": "Catálogo de objetivos específicos (projeto terapêutico)",
             "catalog_therapeutic_activities": "Catálogo de rotina e atividades (projeto terapêutico)",
             "catalog_therapeutic_segments": "Catálogo de segmentos (Ana Care)",
-            "anacare_hours": "Conferência de horas do Ana Care"
+            "anacare_hours": "Conferência de horas do Ana Care",
+            "patient_conversation": "Conversa do paciente",
+            "own_notifications": "Minhas notificações",
+            "staff_directory": "Diretório da equipe"
           },
           "help": {
             "open": "O que esta permissão faz",
@@ -4544,7 +4596,8 @@
             "contractValue": "Valor-hora do serviço contratado",
             "vacancies": "Vagas do paciente",
             "operational": "Status, ativação e histórico",
-            "therapeuticProject": "Projeto terapêutico"
+            "therapeuticProject": "Projeto terapêutico",
+            "conversation": "Conversa"
           }
         },
         "patients.chatRoles": {
@@ -5233,6 +5286,19 @@
         "duplicate": "Já existe uma opção ativa com esse texto.",
         "invalidLabel": "O texto não pode ter dados de uma pessoa (e-mail, documento, telefone) nem passar de 200 caracteres."
       }
+    },
+    "notifications": {
+      "mentioned": "{{actor}} mencionou você em {{patient}}",
+      "replied": "{{actor}} respondeu na conversa de {{patient}}",
+      "markAllRead": "Marcar todas como lidas",
+      "unknownPatient": "um paciente",
+      "bellLabel": "Notificações",
+      "unread": "{{count}} notificações não lidas",
+      "panelTitle": "Notificações",
+      "empty": "Você não tem notificações",
+      "close": "Fechar notificações",
+      "loadError": "Não conseguimos carregar suas notificações. Tente de novo.",
+      "markAllReadError": "Não conseguimos marcar todas como lidas. Tente de novo."
     }
   },
   "publicVacancy": {

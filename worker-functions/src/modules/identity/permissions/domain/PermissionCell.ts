@@ -58,6 +58,7 @@ export const RESOURCE_CATEGORY: Readonly<Record<string, PermissionCategory>> = {
   patient_care_team: 'Pacientes',
   patient_family: 'Pacientes',
   patient_chat: 'Pacientes',
+  patient_conversation: 'Pacientes',
   patient_coverage: 'Pacientes',
   patient_address: 'Pacientes',
   patient_services: 'Pacientes',
@@ -95,6 +96,8 @@ export const RESOURCE_CATEGORY: Readonly<Record<string, PermissionCategory>> = {
   upload: 'Importação',
   user_management: 'Administração',
   permission_management: 'Administração',
+  staff_directory: 'Administração',
+  own_notifications: 'Administração',
 };
 
 /**
@@ -264,6 +267,24 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
   'patient_address:update': 'Editar um endereço existente do paciente.',
   'patient_chat:create': 'Vincular um novo grupo de WhatsApp do caso ao paciente.',
   'patient_chat:update': 'Trocar os IDs dos grupos de WhatsApp já vinculados ao caso.',
+  'patient_conversation:read':
+    'Ver o chat INTERNO da equipe SOBRE o paciente: histórico de mensagens, autores e timestamps. '
+    + 'O paciente NÃO participa nem vê essa conversa. Dado de saúde — base legal própria (Ley 25.326 art. 2).',
+  'patient_conversation:create':
+    'Postar mensagem (de topo ou resposta) no chat interno da equipe sobre o paciente (não é conversa COM o paciente).',
+  'patient_conversation:update':
+    'Editar a própria mensagem já enviada no chat interno da equipe sobre o paciente (retração, correção).',
+  'patient_conversation:delete':
+    'Apagar a própria mensagem do chat interno da equipe sobre o paciente (soft delete; nunca cascateia para a thread).',
+  'staff_directory:read':
+    'Buscar staff ativo por nome ou e-mail para o autocomplete de menção do chat interno do paciente. '
+    + 'Devolve apenas UID e nome de exibição — nunca e-mail, telefone ou papel (D-06).',
+  'own_notifications:read':
+    'Ver as PRÓPRIAS notificações do sino (menção/resposta no chat interno de paciente) e a contagem '
+    + 'de não lidas. Nasce concedida a TODO staff ativo (D-07) — nunca vê notificação de outro uid.',
+  'own_notifications:update':
+    'Marcar a(s) PRÓPRIA(s) notificação(ões) do sino como lida(s). Nasce concedida a TODO staff ativo '
+    + '(D-07) — nunca marca notificação de outro uid (isolamento entre destinatários, D-24).',
   'patient_identity:create':
     'Cadastrar a identidade do paciente (nome, documento, nascimento, sexo, telefone, e-mail de '
     + 'contato) e subir a primeira foto/consentimento de imagem.',

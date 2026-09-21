@@ -68,12 +68,19 @@ describe('SCREEN_REGISTRY — paridade com o catálogo do back', () => {
       'interview:read',
       'interview:update',
       'interview:write',
+      // Spec 022, Bloco 4 (D-22, citação literal): `own_notifications:*` não tem tela própria
+      // no registry (o sino não é uma rota de `App.tsx`, e o teste do registry exige `route`
+      // existente) — fica SEM entrada dedicada por desenho do próprio mecanismo, mesmo
+      // tratamento já dado a `staff_directory:read` logo abaixo.
+      'own_notifications:read',
+      'own_notifications:update',
       'patient:write',
       'patient_clinical:write',
       'prescreening:write',
       'recruitment:create',
       'recruitment:update',
       'recruitment:write',
+      'staff_directory:read',
       'talentum:write',
       'test_fixtures:execute',
       'upload:read',

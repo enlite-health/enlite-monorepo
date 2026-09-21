@@ -204,7 +204,14 @@ describe('C1 — engine ligado com as 12 famílias de uma vez (HTTP real, banco 
       createWorkerEncuadreRoutes,
     } = await import('@modules/matching');
     const { createAdminPatientsRoutes } = await import('@modules/case');
-    const { createAdminUsersRoutes, createPermissionPanelRoutes, principalUid } = await import('@modules/identity');
+    const { createAdminConversationRoutes } = await import(
+      '../../src/modules/conversation/interfaces/routes/adminConversationRoutes'
+    );
+    const { createAdminNotificationRoutes } = await import(
+      '../../src/modules/inapp-notification/interfaces/routes/adminNotificationRoutes'
+    );
+    const { createAdminUsersRoutes, createAdminStaffDirectoryRoutes, createPermissionPanelRoutes, principalUid } =
+      await import('@modules/identity');
     const { createMeAuthzRouter } = await import('@modules/identity/permissions');
     const { createAdminIntegrationsRoutes } = await import('@modules/integration');
     const { createMessagingRoutes } = await import('@modules/notification/interfaces/routes/messagingRoutes');
@@ -223,7 +230,10 @@ describe('C1 — engine ligado com as 12 famílias de uma vez (HTTP real, banco 
       createAdminVacanciesRoutes,
       createWorkerEncuadreRoutes,
       createAdminPatientsRoutes,
+      createAdminConversationRoutes,
+      createAdminNotificationRoutes,
       createAdminUsersRoutes,
+      createAdminStaffDirectoryRoutes,
       createPermissionPanelRoutes,
       principalUid,
       createMeAuthzRouter,
@@ -270,7 +280,10 @@ describe('C1 — engine ligado com as 12 famílias de uma vez (HTTP real, banco 
       createAdminVacanciesRoutes,
       createWorkerEncuadreRoutes,
       createAdminPatientsRoutes,
+      createAdminConversationRoutes,
+      createAdminNotificationRoutes,
       createAdminUsersRoutes,
+      createAdminStaffDirectoryRoutes,
       createPermissionPanelRoutes,
       principalUid,
       createMeAuthzRouter,
@@ -372,6 +385,16 @@ describe('C1 — engine ligado com as 12 famílias de uma vez (HTTP real, banco 
         controllerStub('terminologySearch') as never,
       ),
     );
+    // Spec 022 (20/09): `patient_conversation:*` (`adminConversationRoutes.ts`) — mesma
+    // família `admin.patients`, mesmo prefixo `/api/admin`, igual ao `src/index.ts` real
+    // (linha 522). Sem este mount as 6 rotas de conversa nunca aparecem na varredura viva
+    // desta família — falso verde (T133/achados, 20/09): controller REAL (mesmo molde de
+    // `admin.integrations`/`admin.users` acima; sem rede, só banco isolado do e2e).
+    montarFamilia(
+      'admin.patients',
+      '/api/admin',
+      createAdminConversationRoutes(auth, permissions),
+    );
 
     // ── admin.permissions (use case REAL — leitura/escrita no banco isolado) ─
     montarFamilia(
@@ -418,6 +441,23 @@ describe('C1 — engine ligado com as 12 famílias de uma vez (HTTP real, banco 
       'admin.users',
       '/api/admin',
       createAdminUsersRoutes(controllerStub('users') as never, auth, permissions),
+    );
+    // Spec 022 (20/09): `staff_directory:read` (`adminStaffDirectoryRoutes.ts`) — mesma
+    // família `admin.users`, mesmo prefixo `/api/admin`, igual ao `src/index.ts` real
+    // (linhas 442/445). Sem este mount ela nunca aparece na varredura viva desta família.
+    montarFamilia(
+      'admin.users',
+      '/api/admin',
+      createAdminStaffDirectoryRoutes(auth, permissions),
+    );
+    // Spec 022, Bloco 4 (21/09): `own_notifications:read|update` (`adminNotificationRoutes.ts`)
+    // — MESMA família `admin.users`. Repete a lição da Tarefa 1 de `b1-matriz-abac.md`: sem este
+    // mount, as 4 rotas do sino escapam da varredura viva desta suíte (nunca é pego pelo teste de
+    // "nenhuma rota escapou das famílias" nem pelo de "não-colisão entre famílias").
+    montarFamilia(
+      'admin.users',
+      '/api/admin',
+      createAdminNotificationRoutes(auth, permissions),
     );
 
     // ── admin.vacancies ──────────────────────────────────────────────────

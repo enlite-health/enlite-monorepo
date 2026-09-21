@@ -100,6 +100,7 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
       c('therapeuticProject', 'patient_therapeutic_project', ['read', 'create', 'update', 'export'], 'clinicalData'),
       c('family', 'patient_family', ['read', 'create', 'update'], 'supportNetwork'),
       c('chat', 'patient_chat', ['read', 'create', 'update'], 'supportNetwork'),
+      c('conversation', 'patient_conversation', ['read', 'create', 'update', 'delete']),
       c('coverage', 'patient_coverage', ['read', 'create', 'update'], 'contractedService'),
       c('address', 'patient_address', ['read', 'create', 'update'], 'contractedService'),
       // A aba Matching saiu (decisão do Gabriel 05/09, na main): o encuadre É o serviço contratado

@@ -50,6 +50,23 @@ export type {
   SignedUrlResult,
 };
 import {
+  AdminConversationApiService,
+  type ConversationMessage,
+  type ConversationListResult,
+  type ConversationListParams,
+  type CreateConversationMessageInput,
+  type CreateConversationMessageResult,
+  type StaffDirectoryEntry,
+} from './AdminConversationApiService';
+export type {
+  ConversationMessage,
+  ConversationListResult,
+  ConversationListParams,
+  CreateConversationMessageInput,
+  CreateConversationMessageResult,
+  StaffDirectoryEntry,
+};
+import {
   AdminWorkerListApiService,
   type WorkerListFilters,
   type WorkerFilterOptions,
@@ -470,5 +487,14 @@ class AdminApiServiceClass {
   uploadPatientPhoto(patientId: string, file: File) { return AdminPatientPhotoApiService.uploadPatientPhoto(patientId, file); }
   deletePatientPhoto(patientId: string) { return AdminPatientPhotoApiService.deletePatientPhoto(patientId); }
   getPatientPhotoUrl(patientId: string) { return AdminPatientPhotoApiService.getPatientPhotoUrl(patientId); }
+
+  // ========== Conversa interna do paciente — delegated to AdminConversationApiService (spec 022, B2) ==========
+  getConversation(patientId: string, params?: ConversationListParams) { return AdminConversationApiService.getConversation(patientId, params); }
+  getConversationReplies(patientId: string, messageId: string) { return AdminConversationApiService.getConversationReplies(patientId, messageId); }
+  postConversationMessage(patientId: string, input: CreateConversationMessageInput) { return AdminConversationApiService.postConversationMessage(patientId, input); }
+  updateConversationMessage(patientId: string, messageId: string, body: string) { return AdminConversationApiService.updateConversationMessage(patientId, messageId, body); }
+  deleteConversationMessage(patientId: string, messageId: string) { return AdminConversationApiService.deleteConversationMessage(patientId, messageId); }
+  markConversationRead(patientId: string) { return AdminConversationApiService.markConversationRead(patientId); }
+  searchStaffDirectory(q: string) { return AdminConversationApiService.searchStaffDirectory(q); }
 }
 export const AdminApiService = new AdminApiServiceClass();
