@@ -28,6 +28,7 @@ vi.mock('@infrastructure/http/AdminConversationApiService', () => ({
   AdminConversationApiService: {
     searchStaffDirectory: vi.fn(),
     postConversationMessage: vi.fn(),
+    uploadConversationAttachment: vi.fn(),
   },
 }));
 
@@ -47,11 +48,13 @@ const ERR = ptBR.admin.patients.detail.conversation.errors;
 
 const searchStaffDirectory = AdminConversationApiService.searchStaffDirectory as unknown as ReturnType<typeof vi.fn>;
 const postConversationMessage = AdminConversationApiService.postConversationMessage as unknown as ReturnType<typeof vi.fn>;
+const uploadConversationAttachment = AdminConversationApiService.uploadConversationAttachment as unknown as ReturnType<typeof vi.fn>;
 
 describe('MessageComposer', () => {
   beforeEach(() => {
     searchStaffDirectory.mockReset();
     postConversationMessage.mockReset();
+    uploadConversationAttachment.mockReset();
   });
 
   it('digitar @ + 2 caracteres dispara a busca no diretório de staff e mostra a lista', async () => {
@@ -135,22 +138,58 @@ describe('MessageComposer', () => {
     expect(screen.queryByTestId('composer-mention-chip')).not.toBeInTheDocument();
   });
 
-  it('anexar arquivo mostra o preview local (sem upload — Bloco 3)', async () => {
+  it('anexar arquivo dispara upload REAL (Bloco 3, T320) e mostra o chip após sucesso', async () => {
+    uploadConversationAttachment.mockResolvedValue({ fileId: 'file-1' });
     render(<MessageComposer patientId="p1" />);
 
     const file = new File(['conteudo'], 'laudo.pdf', { type: 'application/pdf' });
     const input = screen.getByTestId('composer-attach-input');
     fireEvent.change(input, { target: { files: [file] } });
 
-    await waitFor(() => expect(screen.getByTestId('composer-attachment-preview')).toHaveTextContent('laudo.pdf'));
-    expect(postConversationMessage).not.toHaveBeenCalled(); // preview local, nenhuma chamada de rede
+    expect(uploadConversationAttachment).toHaveBeenCalledWith('p1', file);
+    await waitFor(() => expect(screen.getByText('laudo.pdf')).toBeInTheDocument());
+    expect(postConversationMessage).not.toHaveBeenCalled(); // upload não é envio de mensagem
   });
 
-  it('seletor de arquivo sem arquivo escolhido (cancelou o diálogo) não mostra preview', () => {
+  it('seletor de arquivo sem arquivo escolhido (cancelou o diálogo) não mostra nada nem sobe', () => {
     render(<MessageComposer patientId="p1" />);
 
     fireEvent.change(screen.getByTestId('composer-attach-input'), { target: { files: [] } });
-    expect(screen.queryByTestId('composer-attachment-preview')).not.toBeInTheDocument();
+    expect(uploadConversationAttachment).not.toHaveBeenCalled();
+  });
+
+  it('enviar mensagem com anexo já enviado inclui fileIds no POST (T320)', async () => {
+    uploadConversationAttachment.mockResolvedValue({ fileId: 'file-1' });
+    postConversationMessage.mockResolvedValue({ id: 'msg-x', createdAt: '2026-09-21T00:00:00.000Z' });
+    render(<MessageComposer patientId="p1" />);
+
+    const file = new File(['conteudo'], 'laudo.pdf', { type: 'application/pdf' });
+    fireEvent.change(screen.getByTestId('composer-attach-input'), { target: { files: [file] } });
+    await waitFor(() => expect(screen.getByText('laudo.pdf')).toBeInTheDocument());
+
+    const editor = screen.getByTestId('composer-editor');
+    const user = userEvent.setup();
+    await user.click(editor);
+    await user.type(editor, 'msg-1');
+    fireEvent.click(screen.getByTestId('composer-send-btn'));
+
+    await waitFor(() => expect(postConversationMessage).toHaveBeenCalledWith('p1', {
+      body: 'msg-1',
+      rootMessageId: undefined,
+      fileIds: ['file-1'],
+    }));
+  });
+
+  it('handle.isDirty() é true com um anexo enviado, mesmo com o texto vazio', async () => {
+    uploadConversationAttachment.mockResolvedValue({ fileId: 'file-1' });
+    const ref = createRef<MessageComposerHandle>();
+    render(<MessageComposer ref={ref} patientId="p1" />);
+
+    expect(ref.current?.isDirty()).toBe(false);
+    const file = new File(['conteudo'], 'laudo.pdf', { type: 'application/pdf' });
+    fireEvent.change(screen.getByTestId('composer-attach-input'), { target: { files: [file] } });
+
+    await waitFor(() => expect(ref.current?.isDirty()).toBe(true));
   });
 
   it('após enviar com sucesso, chama onSent com o resultado do POST', async () => {
@@ -178,15 +217,29 @@ describe('MessageComposer', () => {
     expect(clickSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('remover o anexo tira o preview e zera o rascunho de anexo', async () => {
+  it('remover um anexo já enviado tira o chip e o exclui do próximo POST (rascunho volta a vazio)', async () => {
+    uploadConversationAttachment.mockResolvedValue({ fileId: 'file-1' });
+    postConversationMessage.mockResolvedValue({ id: 'msg-x', createdAt: '2026-09-21T00:00:00.000Z' });
     render(<MessageComposer patientId="p1" />);
 
     const file = new File(['conteudo'], 'laudo.pdf', { type: 'application/pdf' });
     fireEvent.change(screen.getByTestId('composer-attach-input'), { target: { files: [file] } });
-    await waitFor(() => expect(screen.getByTestId('composer-attachment-preview')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('laudo.pdf')).toBeInTheDocument());
 
-    fireEvent.click(screen.getByTestId('composer-attachment-remove'));
-    expect(screen.queryByTestId('composer-attachment-preview')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText(PT.attachments.remove));
+    expect(screen.queryByText('laudo.pdf')).not.toBeInTheDocument();
+
+    const editor = screen.getByTestId('composer-editor');
+    const user = userEvent.setup();
+    await user.click(editor);
+    await user.type(editor, 'msg-1');
+    fireEvent.click(screen.getByTestId('composer-send-btn'));
+
+    await waitFor(() => expect(postConversationMessage).toHaveBeenCalledWith('p1', {
+      body: 'msg-1',
+      rootMessageId: undefined,
+      fileIds: undefined,
+    }));
   });
 
   it('handle.isDirty() reflete o rascunho de texto', async () => {
