@@ -650,4 +650,53 @@ describe('ConversationRepository', () => {
       expect(sql).toContain('SET last_read_at = EXCLUDED.last_read_at');
     });
   });
+
+  describe('findPatientIdByConversationId — Bloco 4 (T403), fan-out precisa do patient_id da conversa', () => {
+    it('conversa existe: devolve o patient_id da linha', async () => {
+      const query = jest.fn().mockResolvedValue({ rows: [{ patientId: 'p1' }] });
+      const repo = new ConversationRepository(poolWith(jest.fn()));
+
+      const patientId = await repo.findPatientIdByConversationId(CONVERSATION_ID, clientWith(query));
+
+      expect(patientId).toBe('p1');
+      const [sql, params] = query.mock.calls[0];
+      expect(sql).toContain('FROM conversations WHERE id = $1');
+      expect(params).toEqual([CONVERSATION_ID]);
+    });
+
+    it('conversa não existe (defesa em profundidade): devolve null, nunca lança', async () => {
+      const query = jest.fn().mockResolvedValue({ rows: [] });
+      const repo = new ConversationRepository(poolWith(jest.fn()));
+
+      const patientId = await repo.findPatientIdByConversationId('inexistente', clientWith(query));
+
+      expect(patientId).toBeNull();
+    });
+  });
+
+  describe('listThreadAuthorUids — Bloco 4 (T402), quem participou da thread (ROOT + replies)', () => {
+    it('devolve os uids distintos de author_uid da thread inteira (root OU root_message_id = rootId)', async () => {
+      const query = jest.fn().mockResolvedValue({
+        rows: [{ authorUid: 'root-author' }, { authorUid: 'reply-author-2' }],
+      });
+      const repo = new ConversationRepository(poolWith(jest.fn()));
+
+      const uids = await repo.listThreadAuthorUids('m1', clientWith(query));
+
+      expect(uids).toEqual(['root-author', 'reply-author-2']);
+      const [sql, params] = query.mock.calls[0];
+      expect(sql).toContain('WHERE id = $1 OR root_message_id = $1');
+      expect(sql).toContain('DISTINCT author_uid');
+      expect(params).toEqual(['m1']);
+    });
+
+    it('thread sem nenhuma linha (root apagado/inexistente): devolve array vazio, nunca lança', async () => {
+      const query = jest.fn().mockResolvedValue({ rows: [] });
+      const repo = new ConversationRepository(poolWith(jest.fn()));
+
+      const uids = await repo.listThreadAuthorUids('inexistente', clientWith(query));
+
+      expect(uids).toEqual([]);
+    });
+  });
 });

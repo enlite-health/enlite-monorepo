@@ -330,6 +330,47 @@ export class ConversationRepository {
   }
 
   /**
+   * `patient_id` da conversa (Spec 022, Bloco 4, T403) — `PostMessageUseCase` consulta isto
+   * DEPOIS de inserir a mensagem, para preencher `notification_events.patient_id` (fan-out).
+   * `conversations.patient_id` é `UNIQUE NOT NULL` (migration 457) — `null` só pode acontecer se
+   * `conversationId` não existir (não deveria, já que `resolveConversationForPatient` validou
+   * antes de chamar `PostMessageUseCase`; defesa em profundidade, não caminho esperado).
+   */
+  async findPatientIdByConversationId(
+    conversationId: string,
+    executor: Pool | PoolClient = this.pool,
+  ): Promise<string | null> {
+    const { rows } = await executor.query<{ patientId: string }>(
+      `SELECT patient_id AS "patientId" FROM conversations WHERE id = $1`,
+      [conversationId],
+    );
+    return rows[0]?.patientId ?? null;
+  }
+
+  /**
+   * uids distintos de quem já escreveu na thread (o ROOT + toda reply) — o que
+   * `FanOutNotificationUseCase` (Spec 022, Bloco 4, T402) usa para notificar "quem participa da
+   * thread respondida" (D-09). `rootMessageId` é sempre o id do ROOT (já normalizado por
+   * `PostMessageUseCase.resolveRoot` antes de chamar o fan-out) — nunca o id de uma reply. Roda
+   * na MESMA transação/`client` do INSERT da nova mensagem (T110/T403), então a mensagem recém
+   * gravada já aparece nesta lista (o autor dela é removido depois, no próprio
+   * `FanOutNotificationUseCase`, nunca aqui — este método só lê "quem participou", sem opinião
+   * sobre quem deve ser notificado).
+   */
+  async listThreadAuthorUids(
+    rootMessageId: string,
+    executor: Pool | PoolClient = this.pool,
+  ): Promise<string[]> {
+    const { rows } = await executor.query<{ authorUid: string }>(
+      `SELECT DISTINCT author_uid AS "authorUid"
+         FROM conversation_messages
+        WHERE id = $1 OR root_message_id = $1`,
+      [rootMessageId],
+    );
+    return rows.map((row) => row.authorUid);
+  }
+
+  /**
    * `id`/`root_message_id` de uma mensagem — o que `PostMessageUseCase` (T110) consulta ANTES
    * de inserir uma reply, para normalizar `rootMessageId` para o ROOT DO ROOT (D-03: responder
    * a uma reply não cria 2º nível). `rootMessageId: null` na resposta significa que a própria

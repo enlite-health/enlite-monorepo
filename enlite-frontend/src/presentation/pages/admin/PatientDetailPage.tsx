@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft, ChevronRight, LayoutGrid } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { DetailSkeleton } from '@presentation/components/ui/skeletons';
@@ -58,6 +58,7 @@ const COUNTRY_FLAG: Record<string, string> = {
 export default function PatientDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const { t } = useTranslation();
   const { patient, isLoading, error, refetch } = usePatientDetail(id);
   const { vacancies, isLoading: vacanciesLoading, error: vacanciesError, refetch: refetchVacancies } = usePatientVacancies(id);
@@ -71,7 +72,16 @@ export default function PatientDetailPage() {
   const shownTab: PatientTab | null = visibleTabs.includes(activeTab) ? activeTab : (visibleTabs[0] ?? null);
   // Spec 014 US-D1: pedido de foco do checklist — muda de aba E pede ao card certo (via
   // `useAutoOpenDrawer`) que abra seu próprio drawer, sem o pai conhecer o estado interno dele.
-  const [focusRequest, setFocusRequest] = useState<DrawerFocusRequest | null>(null);
+  //
+  // Spec 022, Bloco 4 (T413): o sino de notificações navega de OUTRA página (deep-link do
+  // `NotificationPanel`) — não pode chamar `setFocusRequest` direto (o estado nasce de novo a
+  // cada montagem desta página). O pedido viaja em `navigate(path, { state: { focusRequest } })`
+  // e é lido AQUI, na inicialização — só uma vez (lazy initializer do `useState`), nunca a cada
+  // re-render, senão reabriria o painel de conversa sozinho toda vez que o usuário trocasse de
+  // aba (mesma classe de bug documentada abaixo em `changeTab`, F3).
+  const [focusRequest, setFocusRequest] = useState<DrawerFocusRequest | null>(
+    () => (location.state as { focusRequest?: DrawerFocusRequest } | null)?.focusRequest ?? null,
+  );
   const focusChecklistItem = (code: PatientCompletenessCode) => {
     setActiveTab(COMPLETENESS_TAB[code]);
     setFocusRequest({ code, token: Date.now() });
@@ -216,7 +226,7 @@ export default function PatientDetailPage() {
           fechada). `resource="patient_conversation"` — NÃO é o `patient_chat` (grupos de
           WhatsApp/Periskope), célula diferente. */}
       <ContainerGate resource="patient_conversation">
-        <PatientConversationHandle patientId={patient.id} />
+        <PatientConversationHandle patientId={patient.id} focusRequest={focusRequest} />
       </ContainerGate>
 
       {/* Tab Navigation */}
