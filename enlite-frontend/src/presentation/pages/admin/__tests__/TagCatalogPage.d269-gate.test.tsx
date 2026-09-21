@@ -1,11 +1,13 @@
 /**
  * TagCatalogPage.d269-gate.test.tsx
  *
- * D269 (rodada 6 do gate): `/admin/tags` — POST/PATCH/DELETE
- * `/api/admin/worker-tags` → `worker:write`. "Nueva etiqueta" virou
- * `ActionButton`; editar/excluir por linha só monta quando a célula não
- * está negada (`!tagWriteGate.denied`). Mesmo padrão de mock de store de
- * `AdminUsersPage.test.tsx`.
+ * Spec 024 (D1/D401, 21/09/2026): `/admin/tags` — GET→`tag:read`, POST→`tag:create`,
+ * PATCH→`tag:update`, DELETE→`tag:delete`. Célula PRÓPRIA do catálogo de etiquetas,
+ * separada de `worker:*` (era D269: POST/PATCH/DELETE `/api/admin/worker-tags` →
+ * `worker:write`, com editar e excluir sob o MESMO gate). "Nueva etiqueta" é
+ * `ActionButton`; editar e excluir por linha agora são gates DISTINTOS
+ * (`!tagUpdateGate.denied` / `!tagDeleteGate.denied`). Mesmo padrão de mock de
+ * store de `AdminUsersPage.test.tsx`.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
@@ -71,7 +73,7 @@ const contrato = (permissions: string[], enforcement: AuthzContract['enforcement
   enforcement,
 });
 
-describe('TagCatalogPage — D269 gate de escrita (worker:write)', () => {
+describe('TagCatalogPage — gates de escrita por célula (tag:create/update/delete)', () => {
   beforeEach(() => {
     mockNavigate.mockReset();
     mockListWorkerTags.mockReset();
@@ -79,8 +81,8 @@ describe('TagCatalogPage — D269 gate de escrita (worker:write)', () => {
   });
   afterEach(() => useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' }));
 
-  it('enforcement "on" SEM worker:write → "Nueva etiqueta" some, e a linha não tem editar/excluir', async () => {
-    useAdminAuthStore.setState({ authzStatus: 'ready', authz: contrato(['worker:read'], 'on') });
+  it('enforcement "on" só com tag:read → "Nueva etiqueta" some, e a linha não tem editar/excluir', async () => {
+    useAdminAuthStore.setState({ authzStatus: 'ready', authz: contrato(['tag:read'], 'on') });
     montar();
 
     expect(await screen.findByText('Bilingüe')).toBeInTheDocument();
@@ -89,8 +91,26 @@ describe('TagCatalogPage — D269 gate de escrita (worker:write)', () => {
     expect(screen.queryByLabelText('admin.tags.deleteTag')).not.toBeInTheDocument();
   });
 
-  it('enforcement "on" COM worker:write → "Nueva etiqueta" aparece, e a linha tem editar/excluir', async () => {
-    useAdminAuthStore.setState({ authzStatus: 'ready', authz: contrato(['worker:read', 'worker:create', 'worker:update'], 'on') });
+  it('enforcement "on" com tag:update (sem tag:delete) → edita mas NÃO vê excluir', async () => {
+    useAdminAuthStore.setState({ authzStatus: 'ready', authz: contrato(['tag:read', 'tag:update'], 'on') });
+    montar();
+
+    expect(await screen.findByText('Bilingüe')).toBeInTheDocument();
+    expect(screen.getByLabelText('admin.tags.editTag')).toBeInTheDocument();
+    expect(screen.queryByLabelText('admin.tags.deleteTag')).not.toBeInTheDocument();
+  });
+
+  it('enforcement "on" com tag:delete (sem tag:update) → exclui mas NÃO vê editar', async () => {
+    useAdminAuthStore.setState({ authzStatus: 'ready', authz: contrato(['tag:read', 'tag:delete'], 'on') });
+    montar();
+
+    expect(await screen.findByText('Bilingüe')).toBeInTheDocument();
+    expect(screen.queryByLabelText('admin.tags.editTag')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('admin.tags.deleteTag')).toBeInTheDocument();
+  });
+
+  it('enforcement "on" com tag:create/update/delete → "Nueva etiqueta" aparece, e a linha tem editar/excluir', async () => {
+    useAdminAuthStore.setState({ authzStatus: 'ready', authz: contrato(['tag:read', 'tag:create', 'tag:update', 'tag:delete'], 'on') });
     montar();
 
     expect(await screen.findByText('Bilingüe')).toBeInTheDocument();
@@ -109,8 +129,8 @@ describe('TagCatalogPage — D269 gate de escrita (worker:write)', () => {
   });
 });
 
-// ── Guarda de rota: a célula de LEITURA (`worker:read`), não mais o papel ──────
-describe('TagCatalogPage — guarda de rota por célula (worker:read)', () => {
+// ── Guarda de rota: a célula de LEITURA (`tag:read`), não mais o papel ──────
+describe('TagCatalogPage — guarda de rota por célula (tag:read)', () => {
   beforeEach(() => {
     mockNavigate.mockReset();
     mockListWorkerTags.mockReset();
@@ -118,14 +138,14 @@ describe('TagCatalogPage — guarda de rota por célula (worker:read)', () => {
   });
   afterEach(() => useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' }));
 
-  it('enforcement "on" SEM worker:read → redireciona para /admin', () => {
+  it('enforcement "on" SEM tag:read → redireciona para /admin', () => {
     useAdminAuthStore.setState({ authzStatus: 'ready', authz: contrato([], 'on') });
     montar();
     expect(mockNavigate).toHaveBeenCalledWith('/admin', { replace: true });
   });
 
-  it('enforcement "on" COM worker:read → não redireciona', () => {
-    useAdminAuthStore.setState({ authzStatus: 'ready', authz: contrato(['worker:read'], 'on') });
+  it('enforcement "on" COM tag:read → não redireciona', () => {
+    useAdminAuthStore.setState({ authzStatus: 'ready', authz: contrato(['tag:read'], 'on') });
     montar();
     expect(mockNavigate).not.toHaveBeenCalled();
   });

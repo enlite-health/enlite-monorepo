@@ -2,9 +2,11 @@
  * AdminRecruitmentPage.blockedLink.test.tsx
  *
  * O link "Postulaciones bloqueadas" no header do dashboard de reclutamiento
- * depende da célula `recruitment:read` (a página destino tem a MESMA guarda;
- * o link não deve aparecer pra quem seria redirecionado). Com o engine
- * desligado ele aparece, como sempre apareceu (D268).
+ * depende da célula `recruitment_blocked:read` (spec 024 D2/D401, 21/09/2026 —
+ * era `recruitment:read`; a página destino tem a MESMA guarda, célula própria
+ * porque o dado é diferente do funil de recrutamento — o link não deve
+ * aparecer pra quem seria redirecionado). Com o engine desligado ele aparece,
+ * como sempre apareceu (D268).
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -88,9 +90,9 @@ afterEach(() => useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' })
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
-describe('AdminRecruitmentPage — link Postulaciones bloqueadas por recruitment:read', () => {
-  it('COM recruitment:read (engine ON) o link aparece', () => {
-    useAdminAuthStore.setState({ authzStatus: 'ready', authz: contrato(['recruitment:read'], 'on') });
+describe('AdminRecruitmentPage — link Postulaciones bloqueadas por recruitment_blocked:read', () => {
+  it('COM recruitment_blocked:read (engine ON) o link aparece', () => {
+    useAdminAuthStore.setState({ authzStatus: 'ready', authz: contrato(['recruitment_blocked:read'], 'on') });
 
     renderPage();
     const link = screen.getByTestId('blocked-attempts-link');
@@ -98,7 +100,7 @@ describe('AdminRecruitmentPage — link Postulaciones bloqueadas por recruitment
     expect(link).toHaveAttribute('href', '/admin/recruitment/blocked-attempts');
   });
 
-  it('SEM recruitment:read (engine ON) o link some', () => {
+  it('SEM recruitment_blocked:read (engine ON) o link some', () => {
     useAdminAuthStore.setState({ authzStatus: 'ready', authz: contrato([], 'on') });
 
     renderPage();

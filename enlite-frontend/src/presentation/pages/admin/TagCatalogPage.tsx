@@ -27,14 +27,18 @@ function getTextColor(hex: string): string {
 }
 
 export default function TagCatalogPage() {
-  // D269: criar/editar/excluir etiqueta chamam POST/PATCH/DELETE /worker-tags → worker:write.
-  const tagWriteGate = useActionGate('worker', 'update');
+  // Spec 024 (D1/D401, 21/09): catálogo de Etiquetas é DADO diferente do perfil de prestador —
+  // célula própria `tag:*`. Editar e excluir viram gates DISTINTOS (antes compartilhavam
+  // `useActionGate('worker','update')`): GET→tag:read, POST→tag:create, PATCH→tag:update,
+  // DELETE→tag:delete.
+  const tagUpdateGate = useActionGate('tag', 'update');
+  const tagDeleteGate = useActionGate('tag', 'delete');
   const { t } = useTranslation();
   const navigate = useNavigate();
-  // Trava de rota pela CÉLULA da leitura que a tela faz (GET /worker-tags →
-  // worker:read), não por papel. `useContainerAccess` só nega com o engine
-  // ligado — com ele desligado a tela abre como sempre abriu (D268/D286).
-  const { visible } = useContainerAccess('worker');
+  // Trava de rota pela CÉLULA da leitura que a tela faz (GET /worker-tags → tag:read), não por
+  // papel. `useContainerAccess` só nega com o engine ligado — com ele desligado a tela abre como
+  // sempre abriu (D268/D286).
+  const { visible } = useContainerAccess('tag');
   useEffect(() => {
     if (!visible) navigate('/admin', { replace: true });
   }, [visible, navigate]);
@@ -101,7 +105,7 @@ export default function TagCatalogPage() {
             {t('admin.tags.title')}
           </Heading>
         </div>
-        <ActionButton resource="worker" action="create" variant="primary" size="md" onClick={handleNewTag}>
+        <ActionButton resource="tag" action="create" variant="primary" size="md" onClick={handleNewTag}>
           <Plus className="w-4 h-4" />
           {t('admin.tags.newTag')}
         </ActionButton>
@@ -151,8 +155,9 @@ export default function TagCatalogPage() {
                     </TableCell>
                     <TableCell>{tag.description ?? '—'}</TableCell>
                     <TableCell align="right" unwrapped>
-                      {!tagWriteGate.denied && (
+                      {(!tagUpdateGate.denied || !tagDeleteGate.denied) && (
                       <div className="flex items-center justify-end gap-2">
+                        {!tagUpdateGate.denied && (
                         <button
                           type="button"
                           onClick={() => handleEditTag(tag)}
@@ -161,6 +166,8 @@ export default function TagCatalogPage() {
                         >
                           <Edit2 className="w-4 h-4" />
                         </button>
+                        )}
+                        {!tagDeleteGate.denied && (
                         <button
                           type="button"
                           onClick={() => handleDeleteTag(tag)}
@@ -169,6 +176,7 @@ export default function TagCatalogPage() {
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
+                        )}
                       </div>
                       )}
                     </TableCell>

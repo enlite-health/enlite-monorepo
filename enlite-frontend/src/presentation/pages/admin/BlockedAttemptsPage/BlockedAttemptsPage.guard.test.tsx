@@ -2,7 +2,9 @@
  * BlockedAttemptsPage.guard.test.tsx
  *
  * Guarda de container (espelha o padrão do DedupCenterPage): a célula da
- * leitura que a tela faz — GET /recruitment/blocked-attempts → recruitment:read.
+ * leitura que a tela faz — GET /recruitment/blocked-attempts →
+ * `recruitment_blocked:read` (spec 024 D2/D401, 21/09/2026 — era `recruitment:read`;
+ * dado diferente do funil de recrutamento, célula própria).
  * - engine ON sem a célula → navigate('/admin') chamado, conteúdo NÃO renderizado
  * - engine ON com a célula → sem redirect, conteúdo renderizado
  * - engine OFF / contrato ainda não carregado → sem navigate (régua de rollout D268)
@@ -86,7 +88,7 @@ afterEach(() => useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' })
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
-describe('BlockedAttemptsPage — guarda por célula: engine ON sem recruitment:read', () => {
+describe('BlockedAttemptsPage — guarda por célula: engine ON sem recruitment_blocked:read', () => {
   beforeEach(() => {
     useAdminAuthStore.setState({ authzStatus: 'ready', authz: contrato([], 'on') });
   });
@@ -104,9 +106,9 @@ describe('BlockedAttemptsPage — guarda por célula: engine ON sem recruitment:
   });
 });
 
-describe('BlockedAttemptsPage — guarda por célula: engine ON com recruitment:read', () => {
+describe('BlockedAttemptsPage — guarda por célula: engine ON com recruitment_blocked:read', () => {
   beforeEach(() => {
-    useAdminAuthStore.setState({ authzStatus: 'ready', authz: contrato(['recruitment:read'], 'on') });
+    useAdminAuthStore.setState({ authzStatus: 'ready', authz: contrato(['recruitment_blocked:read'], 'on') });
   });
 
   it('NÃO redireciona', async () => {
