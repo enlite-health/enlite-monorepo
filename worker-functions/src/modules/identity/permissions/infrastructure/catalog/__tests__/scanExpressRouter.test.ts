@@ -302,52 +302,46 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       'worker:disable',
       // D116 — ferramentas sem botão no painel (purga de teste, monitor sintético, docs); declaradas
       // em CELL_DESCRIPTION no sync main→stage de 06/09 para o painel não as mostrar sem texto.
+      // `messaging:write` e `api_docs:read` REMOVIDAS (change `catalogo-de-permissoes-derivado-do-
+      // codigo`, fase 1/Fase 2): órfãs, sem consumidor — ver `PermissionCell.ts`.
       'patient:delete',
-      'messaging:write',
       'integration:execute',
       'test_fixtures:execute',
-      'api_docs:read',
       // D286 — os containers da ficha do paciente. A maioria É declarada por rota no app real
       // (endereços, serviços, diagnósticos, seções); aqui o fixture de rota não declara nenhuma,
       // então TODAS saem como complemento — e é isso que garante que nenhuma some do catálogo.
+      // Os `:write` de container (identity/care_team/family/chat/coverage/address/services)
+      // REMOVIDOS de `CELL_DESCRIPTION` (change `catalogo-de-permissoes-derivado-do-codigo`, fase 1,
+      // F8/F9): órfãos — cobertos pelos `:create`/`:update` explícitos abaixo.
       'patient_identity:read',
-      'patient_identity:write',
       'patient_clinical:read',
       'patient_clinical:write',
       'patient_care_team:read',
-      // spec 018, PR-5 (US-11): DECLARADA por rota real no app (`POST/PATCH/POST .../deactivate
-      // /patients/:id/professionals`) — o fixture de 2 rotas deste teste não a declara, por isso
-      // aparece aqui como as demais células de container acima.
-      'patient_care_team:write',
       'patient_family:read',
-      'patient_family:write',
       'patient_chat:read',
-      'patient_chat:write',
       'patient_coverage:read',
-      'patient_coverage:write',
       'patient_address:read',
-      'patient_address:write',
       'patient_services:read',
-      'patient_services:write',
       // 07/09 — o preço do serviço contratado deixou de ser "papel admin" e virou célula de DADO;
       // não é portão de rota (a rota abre com `patient_services:*`), então SÓ existe por aqui.
       'patient_contract_value:read',
       // Spec 017 (08/09) — projeto terapêutico e os 2 catálogos: declaradas por rota no app real
       // (`adminTherapeuticProjectsRoutes.ts`); o fixture deste teste não as declara.
+      // `patient_therapeutic_project:write` REMOVIDA (mesma change, F8/F9): órfã — coberta por
+      // `patient_therapeutic_project:create`/`update` explícitos abaixo.
       'patient_therapeutic_project:read',
-      'patient_therapeutic_project:write',
       // spec 018, PR-7 (13/09): `exportGate` chama `perm.require(...)` dentro de closure
       // condicional (`?purpose=export`) — o scanner NUNCA vê essa chamada (não é layer do
       // `route.stack`), então esta célula só existe no catálogo por `cellsForaDeRota`. Sem
       // esta linha em `CELL_DESCRIPTION`, o export nasce `deprecated_at` a cada sync/boot.
       'patient_therapeutic_project:export',
+      // Os `:write` dos catálogos terapêuticos (objectives/activities/segments) REMOVIDOS de
+      // `CELL_DESCRIPTION` (mesma change, F8/F9): órfãos — cobertos pelos `:create`/`:update`
+      // explícitos abaixo.
       'catalog_therapeutic_objectives:read',
-      'catalog_therapeutic_objectives:write',
       'catalog_therapeutic_activities:read',
-      'catalog_therapeutic_activities:write',
       // US-17 (spec 018, PR-7, migration 430) — catálogo dos segmentos da Ana Care, mesmo molde.
       'catalog_therapeutic_segments:read',
-      'catalog_therapeutic_segments:write',
       // spec 018, PR-8b (ADR-2/SUP-30): split write→create+update dos 23 recursos. Nesta rodada
       // (A1) NENHUMA rota declara `create`/`update` ainda (routes só mudam no 8b.4) — por isso as
       // 46 células novas só existem no catálogo por `cellsForaDeRota`, igual às demais linhas
