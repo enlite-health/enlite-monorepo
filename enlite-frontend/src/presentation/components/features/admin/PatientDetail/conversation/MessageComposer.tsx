@@ -102,7 +102,10 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
   function MessageComposer({ patientId, rootMessageId, onSent, onClose }, ref): JSX.Element {
     const { t } = useTranslation();
     const tc = (key: string): string => t(`admin.patients.detail.conversation.composer.${key}`);
-    const te = (key: string): string => t(`admin.patients.detail.conversation.errors.${key}`);
+    const te = useCallback(
+      (key: string): string => t(`admin.patients.detail.conversation.errors.${key}`),
+      [t],
+    );
 
     const [isEmpty, setIsEmpty] = useState(true);
     const [fileIds, setFileIds] = useState<string[]>([]);
@@ -196,7 +199,6 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
         setIsEmpty(current.getText().trim().length === 0);
         setSendError(null); // corrigir o rascunho depois de um erro esconde o aviso antigo
       },
-      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const clearDraft = useCallback((): void => {

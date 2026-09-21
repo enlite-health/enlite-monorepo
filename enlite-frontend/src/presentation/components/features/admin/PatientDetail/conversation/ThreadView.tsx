@@ -39,10 +39,11 @@ function MentionChip({ uid }: { uid: string }): JSX.Element {
  * conjunto cai pro texto cru, sem chip (nunca quebra a tela, mas também nunca finge confirmação
  * que o servidor não deu).
  *
- * Exportada porque `ConversationPanel.tsx` reaproveita — MESMA regra de renderização nos dois
- * lugares (mensagem de topo e reply), sem duplicar a lógica de parsing.
+ * Reaproveitada pelo `MessageContent` abaixo — MESMA regra de renderização nos dois lugares
+ * (mensagem de topo e reply) que `ConversationPanel.tsx` usa, sem duplicar a lógica de parsing.
+ * Não exportada: nada fora deste arquivo importa a função diretamente (só via `MessageContent`).
  */
-export function renderMessageBody(body: string, mentions: readonly string[]): ReactNode[] {
+function renderMessageBody(body: string, mentions: readonly string[]): ReactNode[] {
   const confirmedUids = new Set(mentions);
   const parts: ReactNode[] = [];
   let lastIndex = 0;
