@@ -23,6 +23,8 @@ jest.mock('@shared/security/KMSEncryptionService', () => ({
 import { ListConversationUseCase } from '../ListConversationUseCase';
 import { ConversationRepository, CONVERSATION_PAGE_SIZE } from '../../infrastructure/ConversationRepository';
 
+const ACTOR_UID = 'staff:actor';
+
 describe('ListConversationUseCase', () => {
   let useCase: ListConversationUseCase;
   let mockRepository: jest.Mocked<ConversationRepository>;
@@ -30,6 +32,7 @@ describe('ListConversationUseCase', () => {
   beforeEach(() => {
     mockRepository = {
       listTopMessages: jest.fn(),
+      getReadState: jest.fn().mockResolvedValue({ lastReadAt: null, unreadCount: 0 }),
     } as any;
 
     useCase = new ListConversationUseCase(mockRepository);
@@ -40,11 +43,35 @@ describe('ListConversationUseCase', () => {
       const conversationId = 'conv-123';
       mockRepository.listTopMessages.mockResolvedValue([]);
 
-      const result = await useCase.execute({ conversationId });
+      const result = await useCase.execute({ conversationId, actorUid: ACTOR_UID });
 
       expect(result.messages).toEqual([]);
       expect(result.nextCursor).toBeUndefined();
       expect(mockRepository.listTopMessages).toHaveBeenCalledWith(conversationId, null, CONVERSATION_PAGE_SIZE);
+    });
+
+    it('should fetch and expose lastReadAt/unreadCount from repository.getReadState (D-11)', async () => {
+      const conversationId = 'conv-123';
+      const lastReadAt = new Date('2026-09-20T10:00:00Z');
+      mockRepository.listTopMessages.mockResolvedValue([]);
+      mockRepository.getReadState.mockResolvedValue({ lastReadAt, unreadCount: 3 });
+
+      const result = await useCase.execute({ conversationId, actorUid: ACTOR_UID });
+
+      expect(mockRepository.getReadState).toHaveBeenCalledWith(conversationId, ACTOR_UID);
+      expect(result.lastReadAt).toEqual(lastReadAt);
+      expect(result.unreadCount).toBe(3);
+    });
+
+    it('should expose lastReadAt: null and unreadCount: 0 when actor never read (no mark)', async () => {
+      const conversationId = 'conv-123';
+      mockRepository.listTopMessages.mockResolvedValue([]);
+      mockRepository.getReadState.mockResolvedValue({ lastReadAt: null, unreadCount: 0 });
+
+      const result = await useCase.execute({ conversationId, actorUid: ACTOR_UID });
+
+      expect(result.lastReadAt).toBeNull();
+      expect(result.unreadCount).toBe(0);
     });
 
     it('should return messages and no nextCursor when page has fewer items than limit', async () => {
@@ -77,7 +104,7 @@ describe('ListConversationUseCase', () => {
       ];
       mockRepository.listTopMessages.mockResolvedValue(messages);
 
-      const result = await useCase.execute({ conversationId });
+      const result = await useCase.execute({ conversationId, actorUid: ACTOR_UID });
 
       expect(result.messages).toEqual(messages);
       expect(result.nextCursor).toBeUndefined();
@@ -99,7 +126,7 @@ describe('ListConversationUseCase', () => {
       }));
       mockRepository.listTopMessages.mockResolvedValue(messages);
 
-      const result = await useCase.execute({ conversationId });
+      const result = await useCase.execute({ conversationId, actorUid: ACTOR_UID });
 
       expect(result.messages).toEqual(messages);
       expect(result.nextCursor).toBeDefined();
@@ -129,7 +156,7 @@ describe('ListConversationUseCase', () => {
       ];
       mockRepository.listTopMessages.mockResolvedValue(messages);
 
-      const result = await useCase.execute({ conversationId, after: afterCursor });
+      const result = await useCase.execute({ conversationId, actorUid: ACTOR_UID, after: afterCursor });
 
       expect(result.messages).toEqual(messages);
       expect(mockRepository.listTopMessages).toHaveBeenCalledWith(
@@ -144,7 +171,7 @@ describe('ListConversationUseCase', () => {
       const limit = 10;
       mockRepository.listTopMessages.mockResolvedValue([]);
 
-      await useCase.execute({ conversationId, limit });
+      await useCase.execute({ conversationId, actorUid: ACTOR_UID, limit });
 
       expect(mockRepository.listTopMessages).toHaveBeenCalledWith(
         conversationId,
@@ -195,7 +222,7 @@ describe('ListConversationUseCase', () => {
       ];
       mockRepository.listTopMessages.mockResolvedValue(messages);
 
-      const result = await useCase.execute({ conversationId });
+      const result = await useCase.execute({ conversationId, actorUid: ACTOR_UID });
 
       expect(result.messages).toEqual(messages);
       expect(result.messages[0].id).toBe('msg-1');
@@ -222,19 +249,25 @@ describe('ListConversationUseCase', () => {
           ],
         })
         // 2ª chamada do pool padrão: a agregação de mentions (UMA query com ANY, LACUNA 2).
-        .mockResolvedValueOnce({ rows: [] });
+        .mockResolvedValueOnce({ rows: [] })
+        // 3ª chamada do pool padrão: `getReadState` (D-11) — sem marca prévia, unreadCount 0 aqui
+        // só prova que o ramo "sem argumento" chegou até o repositório default; o comportamento de
+        // contagem em si é coberto por `ConversationRepository.test.ts`.
+        .mockResolvedValueOnce({ rows: [{ lastReadAt: null, unreadCount: 0 }] });
       mockDefaultRepoDecrypt.mockResolvedValueOnce('mensagem decifrada via repositorio default');
 
       const useCaseWithDefaultRepository = new ListConversationUseCase();
-      const result = await useCaseWithDefaultRepository.execute({ conversationId });
+      const result = await useCaseWithDefaultRepository.execute({ conversationId, actorUid: ACTOR_UID });
 
       // Prova que o ramo "sem argumento" rodou: a query do POOL PADRÃO (não do
       // mockRepository dos outros testes) foi chamada, e o corpo decifrado pelo
       // KMS padrão chegou até o resultado.
-      expect(mockDefaultRepoPoolQuery).toHaveBeenCalledTimes(2);
+      expect(mockDefaultRepoPoolQuery).toHaveBeenCalledTimes(3);
       expect(result.messages).toHaveLength(1);
       expect(result.messages[0].body).toBe('mensagem decifrada via repositorio default');
       expect(result.messages[0].mentions).toEqual([]);
+      expect(result.lastReadAt).toBeNull();
+      expect(result.unreadCount).toBe(0);
       expect(result.nextCursor).toBeUndefined();
     });
   });

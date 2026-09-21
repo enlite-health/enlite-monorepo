@@ -3752,6 +3752,31 @@
             "unsupportedType": "Tipo de arquivo não aceito",
             "maliciousContent": "O arquivo foi rejeitado por conter código ativo ou macros",
             "mentionInvalid": "O usuário mencionado não existe"
+          },
+          "handle": {
+            "label": "Mensagens",
+            "unread": "{{count}} não lidas"
+          },
+          "panel": {
+            "title": "Mensagens",
+            "empty": "Ainda não há mensagens",
+            "noAccess": "Sem acesso a este paciente",
+            "close": "Fechar painel de mensagens"
+          },
+          "thread": {
+            "replies_one": "1 resposta",
+            "replies_other": "{{count}} respostas",
+            "back": "Voltar",
+            "deleted": "Mensagem apagada",
+            "loadError": "Não foi possível carregar as respostas"
+          },
+          "composer": {
+            "placeholder": "Digite uma mensagem…",
+            "send": "Enviar",
+            "attach": "Anexar",
+            "discardConfirm": "Descartar mensagem não enviada?",
+            "discard": "Descartar",
+            "cancel": "Cancelar"
           }
         }
       },

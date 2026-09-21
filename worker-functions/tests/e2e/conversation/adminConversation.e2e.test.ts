@@ -414,4 +414,53 @@ describe('Conversa do paciente (spec 022, Bloco 1) — HTTP real, Postgres real,
     const depois = await pool.query(`SELECT COUNT(*)::int AS n FROM conversation_messages WHERE conversation_id IS NOT NULL`);
     expect(depois.rows[0].n).toBe(antes.rows[0].n);
   });
+
+  it('16. GET conversa — unreadCount conta mensagem de OUTRO autor (TOPO e REPLY), nunca a própria, quando o ator nunca leu (D-11, Bloco 2)', async () => {
+    // Baseline por DELTA (nunca contagem absoluta): os testes 1-15 já postaram várias mensagens
+    // como U.autor nesta mesma conversa (nenhuma delas de U.outro) — a régua é "quanto o
+    // unreadCount SUBIU", não um número fixo (contagem zero é 'não medi', nunca 'sucesso').
+    const antes = await chamar('GET', `/api/admin/patients/${PATIENT}/conversation`, U.autor);
+    expect(antes.status).toBe(200);
+    expect(antes.body.data.lastReadAt).toBeNull(); // nenhum teste anterior chamou PUT read-mark
+
+    // Mensagem PRÓPRIA (U.autor) — nunca deve contar, mesmo sendo a mais recente.
+    const propria = await chamar('POST', `/api/admin/patients/${PATIENT}/conversation/messages`, U.autor, { body: 'msg-16-propria' });
+    expect(propria.status).toBe(201);
+
+    // Mensagem de TOPO de OUTRO autor — conta.
+    const topoOutro = await chamar('POST', `/api/admin/patients/${PATIENT}/conversation/messages`, U.outro, { body: 'msg-16-outro-topo' });
+    expect(topoOutro.status).toBe(201);
+
+    // REPLY de OUTRO autor na thread acima — TAMBÉM conta (D-11: "topo + reply", o caso que mais escapa).
+    const replyOutro = await chamar('POST', `/api/admin/patients/${PATIENT}/conversation/messages`, U.outro, {
+      body: 'msg-16-outro-reply',
+      rootMessageId: topoOutro.body.data.id,
+    });
+    expect(replyOutro.status).toBe(201);
+
+    const depois = await chamar('GET', `/api/admin/patients/${PATIENT}/conversation`, U.autor);
+    expect(depois.status).toBe(200);
+    // +2: o topo e a reply de U.outro — a própria mensagem de U.autor não move o contador.
+    expect(depois.body.data.unreadCount).toBe(antes.body.data.unreadCount + 2);
+    expect(depois.body.data.lastReadAt).toBeNull();
+  });
+
+  it('17. PUT read-mark — zera unreadCount; mensagem POSTERIOR à marca volta a contar (D-11, Bloco 2)', async () => {
+    const marcar = await chamar('PUT', `/api/admin/patients/${PATIENT}/conversation/read-mark`, U.autor);
+    expect(marcar.status).toBe(200);
+    expect(marcar.body.success).toBe(true);
+
+    const logoDepoisDaMarca = await chamar('GET', `/api/admin/patients/${PATIENT}/conversation`, U.autor);
+    expect(logoDepoisDaMarca.status).toBe(200);
+    expect(logoDepoisDaMarca.body.data.unreadCount).toBe(0); // caiu para 0 — inclui o que o teste 16 deixou pendente
+    expect(logoDepoisDaMarca.body.data.lastReadAt).not.toBeNull();
+
+    // Mensagem de OUTRO autor gravada DEPOIS da marca — created_at > last_read_at, volta a contar.
+    const posMarca = await chamar('POST', `/api/admin/patients/${PATIENT}/conversation/messages`, U.outro, { body: 'msg-17-pos-marca' });
+    expect(posMarca.status).toBe(201);
+
+    const final = await chamar('GET', `/api/admin/patients/${PATIENT}/conversation`, U.autor);
+    expect(final.status).toBe(200);
+    expect(final.body.data.unreadCount).toBe(1);
+  });
 });

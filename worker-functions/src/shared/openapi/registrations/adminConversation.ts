@@ -62,6 +62,17 @@ const ConversationListResponse = successResponseSchema(
     conversationId: z.string().uuid(),
     messages: z.array(ConversationMessageDto),
     nextCursor: z.string().nullable(),
+    lastReadAt: z.string().datetime().nullable().openapi({
+      description:
+        'Marca de leitura do ATOR atual (`conversation_read_marks.last_read_at`). `null` quando o '
+        + 'ator nunca chamou `PUT .../read-mark` nesta conversa (Bloco 2, D-11).',
+    }),
+    unreadCount: z.number().int().nonnegative().openapi({
+      description:
+        'Mensagens (TOPO e REPLY) com `created_at > lastReadAt` e `authorUid` diferente do ator '
+        + '(D-11). Sem `lastReadAt`, conta tudo que não é do próprio ator. Calculado em UMA query, '
+        + 'nunca por mensagem.',
+    }),
   }),
 );
 
@@ -86,7 +97,9 @@ registry.registerPath({
   path: '/api/admin/patients/{id}/conversation',
   tags: ['Admin · Conversation'],
   summary: 'Lista a conversa do paciente',
-  description: 'Célula `patient_conversation:read`. Paginação por cursor (`after`/`nextCursor`).',
+  description:
+    'Célula `patient_conversation:read`. Paginação por cursor (`after`/`nextCursor`). Resposta traz '
+    + '`lastReadAt`/`unreadCount` do ATOR atual (Bloco 2, D-11) — a base do badge do handle.',
   security: [{ firebaseAuth: [] }],
   request: { params: PatientIdParams, query: ConversationListQuery },
   responses: {
