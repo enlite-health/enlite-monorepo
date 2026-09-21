@@ -2,11 +2,11 @@ import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import { z } from 'zod';
 import { reportError } from '@shared/logging';
-import { AuthMiddleware } from '@modules/identity';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { UploadConversationAttachmentUseCase, AttachmentRejectedError } from '../../application/UploadConversationAttachmentUseCase';
 import { GetConversationAttachmentUrlUseCase } from '../../application/GetConversationAttachmentUrlUseCase';
 import { resolveConversationForPatient } from './resolveConversationForPatient';
+import { MissingActorError, actorUid } from './ConversationActor';
 
 /**
  * AdminConversationAttachmentController — spec 022, Bloco 3 (T311/T312, T314/T315). Arquivo
@@ -20,28 +20,12 @@ import { resolveConversationForPatient } from './resolveConversationForPatient';
 const patientIdParamsSchema = z.object({ id: z.string().uuid() });
 const fileIdParamsSchema = z.object({ id: z.string().uuid(), fileId: z.string().uuid() });
 
-class MissingActorError extends Error {
-  readonly code = 'MISSING_ACTOR';
-  readonly status = 401;
-
-  constructor() {
-    super('escrita exige ator identificado (lex C6)');
-    this.name = 'MissingActorError';
-  }
-}
-
 export class AdminConversationAttachmentController {
   constructor(
     private readonly uploadUseCase: UploadConversationAttachmentUseCase = new UploadConversationAttachmentUseCase(),
     private readonly getUrlUseCase: GetConversationAttachmentUrlUseCase = new GetConversationAttachmentUrlUseCase(),
     private readonly db: Pool = DatabaseConnection.getInstance().getPool(),
   ) {}
-
-  private actorUid(req: Request): string {
-    const uid = AuthMiddleware.getAuthContext(req)?.principal.id;
-    if (!uid) throw new MissingActorError();
-    return uid;
-  }
 
   /** POST /api/admin/patients/:id/conversation/files — multipart `file`, célula `patient_conversation:create`. */
   async upload(req: Request, res: Response): Promise<void> {
@@ -56,7 +40,7 @@ export class AdminConversationAttachmentController {
 
       const result = await this.uploadUseCase.execute(this.db, {
         conversationId: lookup.conversationId,
-        actorUid: this.actorUid(req),
+        actorUid: actorUid(req),
         buffer: file.buffer,
         originalFilename: file.originalname,
       });

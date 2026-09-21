@@ -2,7 +2,6 @@ import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import { z } from 'zod';
 import { reportError } from '@shared/logging';
-import { AuthMiddleware } from '@modules/identity';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { PostMessageUseCase, AttachedFileNotFoundError } from '../../application/PostMessageUseCase';
 import { ListConversationUseCase } from '../../application/ListConversationUseCase';
@@ -25,6 +24,7 @@ import {
   conversationMessagesQuerySchema,
 } from '../validators/conversationSchemas';
 import { resolveConversationForPatient } from './resolveConversationForPatient';
+import { MissingActorError, actorUid } from './ConversationActor';
 
 /**
  * AdminConversationController — spec 022, Bloco 1 (T120). Um método por rota (T119), fino:
@@ -44,22 +44,6 @@ import { resolveConversationForPatient } from './resolveConversationForPatient';
  */
 const patientIdParamsSchema = z.object({ id: z.string().uuid() });
 const messageIdParamsSchema = z.object({ id: z.string().uuid(), mid: z.string().uuid() });
-
-/**
- * Ator ausente (`AuthMiddleware` não resolveu identidade) — recusa (o controller converte em 401).
- * Achado do gate revisao-pr (Bloco 1): antes disto, `actorUid` lançava `Error` genérico, que
- * `handleUnexpected` sempre converte em 500 — sessão sem identidade é 401 (não autenticado), nunca
- * erro interno.
- */
-class MissingActorError extends Error {
-  readonly code = 'MISSING_ACTOR';
-  readonly status = 401;
-
-  constructor() {
-    super('escrita exige ator identificado (lex C6)');
-    this.name = 'MissingActorError';
-  }
-}
 
 function parseCursor(raw: string): ConversationMessageCursor {
   const [createdAt, id] = raw.split(',');
@@ -120,12 +104,6 @@ export class AdminConversationController {
     private readonly repository: ConversationRepository = new ConversationRepository(),
   ) {}
 
-  private actorUid(req: Request): string {
-    const uid = AuthMiddleware.getAuthContext(req)?.principal.id;
-    if (!uid) throw new MissingActorError();
-    return uid;
-  }
-
   /**
    * `:mid` pertence à conversa de `:id` (o paciente da rota)? Achado do gate revisao-pr (Bloco 1):
    * `editMessage`/`deleteMessage` resolviam `:mid` sozinho, sem cruzar com `:id` — mensagem de
@@ -157,7 +135,7 @@ export class AdminConversationController {
 
       const result = await this.listConversationUseCase.execute({
         conversationId: lookup.conversationId,
-        actorUid: this.actorUid(req),
+        actorUid: actorUid(req),
         after: query.data.after ? parseCursor(query.data.after) : null,
         limit: query.data.limit,
       });
@@ -219,7 +197,7 @@ export class AdminConversationController {
 
       const result = await this.postMessageUseCase.execute(this.db, {
         conversationId: lookup.conversationId,
-        authorUid: this.actorUid(req),
+        authorUid: actorUid(req),
         body: body.data.body,
         rootMessageId: body.data.rootMessageId ?? null,
         fileIds: body.data.fileIds,
@@ -263,7 +241,7 @@ export class AdminConversationController {
 
       await this.editMessageUseCase.execute(this.db, {
         messageId: params.data.mid,
-        requesterUid: this.actorUid(req),
+        requesterUid: actorUid(req),
         body: body.data.body,
       });
       res.status(200).json({ success: true });
@@ -290,7 +268,7 @@ export class AdminConversationController {
 
       await this.deleteMessageUseCase.execute(this.db, {
         messageId: params.data.mid,
-        requesterUid: this.actorUid(req),
+        requesterUid: actorUid(req),
       });
       res.status(200).json({ success: true });
     } catch (err: unknown) {
@@ -311,7 +289,7 @@ export class AdminConversationController {
 
       await this.markReadUseCase.execute(this.db, {
         conversationId: lookup.conversationId,
-        userUid: this.actorUid(req),
+        userUid: actorUid(req),
       });
       res.status(200).json({ success: true });
     } catch (err: unknown) {
