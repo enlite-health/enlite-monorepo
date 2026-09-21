@@ -167,7 +167,6 @@ describe('AttachmentPicker', () => {
     const input = screen.getByTestId('composer-attach-input');
     for (let i = 1; i <= 5; i += 1) {
       fireEvent.change(input, { target: { files: [pdf(`doc-${i}.pdf`)] } });
-      // eslint-disable-next-line no-await-in-loop
       await waitFor(() => expect(screen.getByText(`doc-${i}.pdf`)).toBeInTheDocument());
     }
 
@@ -184,7 +183,6 @@ describe('AttachmentPicker', () => {
     const input = screen.getByTestId('composer-attach-input');
     for (let i = 1; i <= 5; i += 1) {
       fireEvent.change(input, { target: { files: [pdf(`doc-${i}.pdf`)] } });
-      // eslint-disable-next-line no-await-in-loop
       await waitFor(() => expect(screen.getByText(`doc-${i}.pdf`)).toBeInTheDocument());
     }
     expect(screen.getByTestId('composer-attach-btn')).toBeDisabled();
