@@ -8,6 +8,9 @@ import {
 import { logger, reportError } from '@shared/logging';
 import { WorkerAuditRepository, extractWorkerAuditActor } from '../../infrastructure/WorkerAuditRepository';
 import { PubSubClient } from '@shared/events/PubSubClient';
+import { cellsOfRequest } from '@modules/identity/permissions';
+import { WORKER_PII_WRITE_CELL, canWriteWorkerPii } from '../../application/workerContainerAccess';
+import { isValidIsoBirthDate } from '@shared/utils/isValidIsoBirthDate';
 
 /**
  * AdminWorkerProfileController
@@ -46,6 +49,13 @@ const UpdateProfileBodySchema = z
     preferredAgeRange: z.array(z.string().trim().max(40)).max(10).optional(),
     languages: z.array(z.string().trim().max(10)).max(10).optional(),
     linkedinUrl: z.string().trim().max(255).optional(),
+    // Spec 025 (Fase 6, D402 item 4): dossiê — gated por `worker_pii:write`, conferido abaixo
+    // (célula cumulativa a `worker:update`, não faz parte do body schema em si). Calendário real
+    // (mesma validação de `SavePersonalInfoUseCase`), não só regex — achado F3 do
+    // `WorkerProfileUpdateCapability` é exatamente regex sem validação de calendário.
+    birthDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(isValidIsoBirthDate, {
+      message: 'Invalid birth date',
+    }).optional(),
   })
   .strict()
   .refine(
@@ -76,6 +86,18 @@ export class AdminWorkerProfileController {
     if (!parsed.success) {
       res.status(400).json({ success: false, error: 'Invalid body', details: parsed.error.flatten() });
       return;
+    }
+
+    // Spec 025 (Fase 6): `birthDate` é dossiê — célula CUMULATIVA a `worker:update` (mesmo
+    // mecanismo de `patient_clinical:write` em AdminTherapeuticProjectsController), conferida
+    // aqui porque o campo sensível viaja dentro do PATCH de outro recurso. Sem a célula, 403 com
+    // a célula NOMEADA e o valor nunca ecoado (nem no corpo nem em log).
+    if (parsed.data.birthDate !== undefined) {
+      const cells = cellsOfRequest(req);
+      if (!canWriteWorkerPii(cells)) {
+        res.status(403).json({ success: false, error: 'Forbidden', details: { cell: WORKER_PII_WRITE_CELL } });
+        return;
+      }
     }
 
     const patch: WorkerProfilePatch = { workerId: id, ...parsed.data };
