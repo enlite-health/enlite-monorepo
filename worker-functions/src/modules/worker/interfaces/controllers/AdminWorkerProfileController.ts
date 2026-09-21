@@ -11,6 +11,24 @@ import { PubSubClient } from '@shared/events/PubSubClient';
 import { cellsOfRequest } from '@modules/identity/permissions';
 import { WORKER_PII_WRITE_CELL, canWriteWorkerPii } from '../../application/workerContainerAccess';
 import { isValidIsoBirthDate } from '@shared/utils/isValidIsoBirthDate';
+import type { EntityFieldDiff } from '@shared/audit/types';
+
+const AUDIT_REDACTED = '[redacted]';
+
+/**
+ * `worker_admin_audit_log.changes` (gravado por `WorkerAuditRepository.recordFieldChanges`, logo
+ * abaixo) NÃO redige nada hoje — grava `{before, after}` em CLARO para todo campo do PATCH (achado
+ * #6, `evidencias/achados.md`). Conserto MÍNIMO e só para `birthDate` (o único campo desta task):
+ * troca o par por um marcador sem conteúdo, mantendo `field_name`/autor/hora intactos — a trilha
+ * de AUTORIA (quem editou, quando) não muda, só o VALOR some. Os outros 14 campos do PATCH
+ * continuam sem redação — é achado de lista, não desta correção (mesma classe, instância
+ * diferente; `consertar-a-instancia-nao-conserta-a-classe.md`).
+ */
+function redactBirthDateForAuditLog(changes: EntityFieldDiff[]): EntityFieldDiff[] {
+  return changes.map((c) =>
+    c.field === 'birthDate' ? { ...c, before: AUDIT_REDACTED, after: AUDIT_REDACTED } : c,
+  );
+}
 
 /**
  * AdminWorkerProfileController
@@ -108,10 +126,12 @@ export class AdminWorkerProfileController {
         actorUid: uid,
       });
       logger.info({ msg: 'worker profile updated by admin', workerId: id, uid, fieldsUpdated: result.fieldsUpdated });
-      // Trilho de auditoria detalhado (quem/o-quê/quando/de-onde) — best-effort.
+      // Trilho de auditoria detalhado (quem/o-quê/quando/de-onde) — best-effort. `birthDate`
+      // entra REDIGIDO (achado #6) — os demais campos seguem crus (achado de lista, não desta
+      // correção).
       await this.auditRepo.recordFieldChanges({
         workerId: id,
-        fields: result.changes,
+        fields: redactBirthDateForAuditLog(result.changes),
         actor: extractWorkerAuditActor(req),
       });
       res.status(200).json({ success: true, data: { workerId: result.workerId, fieldsUpdated: result.fieldsUpdated } });
