@@ -62,6 +62,15 @@ describe('GetConversationAttachmentUrlUseCase', () => {
     expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('cm.deleted_at IS NULL'), ['f1', 'p1']);
   });
 
+  it('🔒 achado B5 do gate fecho: a query filtra sf.deleted_at IS NULL — arquivo apagado (stored_files.deleted_at) nunca é servido, mesmo anexado a mensagem viva', async () => {
+    const pool = fakePool([]);
+    const useCase = new GetConversationAttachmentUrlUseCase(() => fakeStorage());
+
+    await useCase.execute(pool, { patientId: 'p1', fileId: 'f1' });
+
+    expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('sf.deleted_at IS NULL'), ['f1', 'p1']);
+  });
+
   it('nome original com aspas/quebra de linha — sanitiza antes de ir para o header (nunca confiar em nome de arquivo enviado por usuário)', async () => {
     const pool = fakePool([{ objectPathEncrypted: 'enc:uuid-1.pdf', originalNameEncrypted: 'enc:nome "malicioso"\r\n.pdf' }]);
     const storage = fakeStorage();

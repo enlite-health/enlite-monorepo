@@ -12,9 +12,9 @@ import { AdminStaffDirectoryController } from '../controllers/AdminStaffDirector
  * `adminUsersRoutes.ts`, decidida por ser agrupamento TEMÁTICO de rotas
  * (`user_management`), não 1:1 com recurso.
  *
- * Célula `staff_directory:read` — NOVA, concedida a TODO grupo de staff
- * (D-06 do contrato). LITERAL aqui, nunca por variável/loop/closure
- * (`celula-em-closure-nao-entra-no-catalogo`).
+ * Célula `staff_directory:read` — NOVA, concedida explicitamente só ao grupo Master (D-07;
+ * migration `463_grant_conversation_cells_master.sql`) — não é grant automático a TODO grupo.
+ * LITERAL aqui, nunca por variável/loop/closure (`celula-em-closure-nao-entra-no-catalogo`).
  *
  * `staffOnly` SEMPRE antes de `perm.require` — mesma ordem que
  * `adminConversationRoutes.ts` documenta como parte do contrato do

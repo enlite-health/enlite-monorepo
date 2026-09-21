@@ -258,6 +258,10 @@ export class ConversationRepository {
    * `body_encrypted`, D-04) continuava saindo na listagem — o front (`ThreadView.MessageContent`)
    * já esconde visualmente (`!message.deletedAt && <MessageAttachments .../>`), mas o dado
    * chegava ao cliente mesmo assim; defesa em profundidade no SERVIDOR, nunca só na UI.
+   *
+   * 🔒 `sf.deleted_at IS NULL` (achado B5 do gate fecho, 21/09): mesma defesa para o próprio
+   * arquivo (`stored_files.deleted_at`, migration 460) — nenhum fluxo hoje marca essa coluna,
+   * mas sem o filtro um arquivo apagado no futuro continuaria aparecendo na listagem.
    */
   private async fetchAttachmentsByMessageIds(
     messageIds: string[],
@@ -272,7 +276,7 @@ export class ConversationRepository {
               sf.content_type AS "contentType",
               sf.size_bytes AS "sizeBytes"
          FROM conversation_message_attachments cma
-         JOIN stored_files sf ON sf.id = cma.file_id
+         JOIN stored_files sf ON sf.id = cma.file_id AND sf.deleted_at IS NULL
          JOIN conversation_messages cm ON cm.id = cma.message_id AND cm.deleted_at IS NULL
         WHERE cma.message_id = ANY($1::uuid[])
         ORDER BY cma.message_id, sf.created_at`,

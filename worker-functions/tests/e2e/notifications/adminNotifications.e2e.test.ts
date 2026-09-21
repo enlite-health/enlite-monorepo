@@ -50,9 +50,26 @@ describe('Notificações in-app — CRUD, isolamento (D-24) e matriz ABAC (Spec 
   const GRUPO_OUTRO = 'E022 B4 Outro E';
   const GRUPO_LEITURA = 'E022 B4 ABAC — só read';
   const GRUPO_COMPLETO = 'E022 B4 ABAC — read+update';
-  const TODOS_GRUPOS = [GRUPO_MENCIONADOR, GRUPO_D, GRUPO_OUTRO, GRUPO_LEITURA, GRUPO_COMPLETO];
 
-  const TODOS_UIDS = [U_MENCIONADOR, U_D, U_OUTRO, M.semCelula, M.soLeitura, M.completo];
+  // D-13 revisado no gate fecho B5 (21/09): patientDisplayName sob a célula do DESTINATÁRIO, não
+  // mais do ator. O ator (U_MENCIONADOR2) TEM patient_conversation:read — sob o D-13 antigo, o
+  // nome do paciente vazaria para QUALQUER destinatário mencionado por ele, célula ou não.
+  const U_MENCIONADOR2 = 'e022-b5-mencionador2';
+  const U_SEM_CELULA_PACIENTE = 'e022-b5-sem-celula-paciente';
+  const U_COM_CELULA_PACIENTE = 'e022-b5-com-celula-paciente';
+  const GRUPO_MENCIONADOR2 = 'E022 B5 Mencionador (com patient_conversation:read)';
+  const GRUPO_SEM_CELULA_PACIENTE = 'E022 B5 Destinatário SEM célula de paciente';
+  const GRUPO_COM_CELULA_PACIENTE = 'E022 B5 Destinatário COM célula de paciente';
+
+  const TODOS_GRUPOS = [
+    GRUPO_MENCIONADOR, GRUPO_D, GRUPO_OUTRO, GRUPO_LEITURA, GRUPO_COMPLETO,
+    GRUPO_MENCIONADOR2, GRUPO_SEM_CELULA_PACIENTE, GRUPO_COM_CELULA_PACIENTE,
+  ];
+
+  const TODOS_UIDS = [
+    U_MENCIONADOR, U_D, U_OUTRO, M.semCelula, M.soLeitura, M.completo,
+    U_MENCIONADOR2, U_SEM_CELULA_PACIENTE, U_COM_CELULA_PACIENTE,
+  ];
   const celulasCriadas: Array<[string, string]> = [];
 
   const envAnterior: Record<string, string | undefined> = {};
@@ -104,13 +121,19 @@ describe('Notificações in-app — CRUD, isolamento (D-24) e matriz ABAC (Spec 
 
     await pool.query(
       `INSERT INTO users (firebase_uid, email, display_name, role, status, is_active, tenant_id) VALUES
-         ($1, 'e022-b4-mencionador@e2e.local', 'Mencionador', 'admin', 'ACTIVE', true, $7),
-         ($2, 'e022-b4-d@e2e.local', 'Destinataria D', 'admin', 'ACTIVE', true, $7),
-         ($3, 'e022-b4-outro@e2e.local', 'Outro E', 'admin', 'ACTIVE', true, $7),
-         ($4, 'e022-b4-abac-sem@e2e.local', 'ABAC Sem Célula', 'admin', 'ACTIVE', true, $7),
-         ($5, 'e022-b4-abac-leitura@e2e.local', 'ABAC Só Leitura', 'admin', 'ACTIVE', true, $7),
-         ($6, 'e022-b4-abac-completo@e2e.local', 'ABAC Completo', 'admin', 'ACTIVE', true, $7)`,
-      [U_MENCIONADOR, U_D, U_OUTRO, M.semCelula, M.soLeitura, M.completo, TENANT_E2E],
+         ($1, 'e022-b4-mencionador@e2e.local', 'Mencionador', 'admin', 'ACTIVE', true, $10),
+         ($2, 'e022-b4-d@e2e.local', 'Destinataria D', 'admin', 'ACTIVE', true, $10),
+         ($3, 'e022-b4-outro@e2e.local', 'Outro E', 'admin', 'ACTIVE', true, $10),
+         ($4, 'e022-b4-abac-sem@e2e.local', 'ABAC Sem Célula', 'admin', 'ACTIVE', true, $10),
+         ($5, 'e022-b4-abac-leitura@e2e.local', 'ABAC Só Leitura', 'admin', 'ACTIVE', true, $10),
+         ($6, 'e022-b4-abac-completo@e2e.local', 'ABAC Completo', 'admin', 'ACTIVE', true, $10),
+         ($7, 'e022-b5-mencionador2@e2e.local', 'Mencionador B5', 'admin', 'ACTIVE', true, $10),
+         ($8, 'e022-b5-sem-celula@e2e.local', 'Destinatario Sem Celula', 'admin', 'ACTIVE', true, $10),
+         ($9, 'e022-b5-com-celula@e2e.local', 'Destinatario Com Celula', 'admin', 'ACTIVE', true, $10)`,
+      [
+        U_MENCIONADOR, U_D, U_OUTRO, M.semCelula, M.soLeitura, M.completo,
+        U_MENCIONADOR2, U_SEM_CELULA_PACIENTE, U_COM_CELULA_PACIENTE, TENANT_E2E,
+      ],
     );
 
     const { criada: c1 } = await garantirCelula(pool, { resource: 'patient_conversation', action: 'create', category: 'Pacientes' });
@@ -119,6 +142,8 @@ describe('Notificações in-app — CRUD, isolamento (D-24) e matriz ABAC (Spec 
     if (c2) celulasCriadas.push(['own_notifications', 'read']);
     const { criada: c3 } = await garantirCelula(pool, { resource: 'own_notifications', action: 'update', category: 'Administração' });
     if (c3) celulasCriadas.push(['own_notifications', 'update']);
+    const { criada: c4 } = await garantirCelula(pool, { resource: 'patient_conversation', action: 'read', category: 'Pacientes' });
+    if (c4) celulasCriadas.push(['patient_conversation', 'read']);
 
     // Mencionador precisa de `patient_conversation:create` para gerar a notificação real via
     // fluxo HTTP (fan-out roda dentro do POST — nunca inserção direta em SQL nesta suíte).
@@ -130,6 +155,26 @@ describe('Notificações in-app — CRUD, isolamento (D-24) e matriz ABAC (Spec 
     // Matriz ABAC: semCelula fica FORA de qualquer grupo (0 células) — cenário `no_group`.
     await grupoComCelulas(pool, { nome: GRUPO_LEITURA, uid: M.soLeitura, celulas: [['own_notifications', 'read']] });
     await grupoComCelulas(pool, { nome: GRUPO_COMPLETO, uid: M.completo, celulas: [['own_notifications', 'read'], ['own_notifications', 'update']] });
+
+    // D-13 revisado (gate fecho B5): o ATOR (U_MENCIONADOR2) TEM patient_conversation:read —
+    // sob o D-13 antigo isso bastaria para o nome do paciente vazar a QUALQUER destinatário.
+    await grupoComCelulas(pool, {
+      nome: GRUPO_MENCIONADOR2,
+      uid: U_MENCIONADOR2,
+      celulas: [['patient_conversation', 'create'], ['patient_conversation', 'read']],
+    });
+    // Destinatário SEM patient_conversation:read (só o sino) — patientDisplayName tem de sair null.
+    await grupoComCelulas(pool, {
+      nome: GRUPO_SEM_CELULA_PACIENTE,
+      uid: U_SEM_CELULA_PACIENTE,
+      celulas: [['own_notifications', 'read'], ['own_notifications', 'update']],
+    });
+    // Destinatário COM patient_conversation:read — patientDisplayName tem de sair com o nome real.
+    await grupoComCelulas(pool, {
+      nome: GRUPO_COM_CELULA_PACIENTE,
+      uid: U_COM_CELULA_PACIENTE,
+      celulas: [['own_notifications', 'read'], ['own_notifications', 'update'], ['patient_conversation', 'read']],
+    });
 
     await pool.query(
       `INSERT INTO patients (id, clickup_task_id, first_name, last_name, country, is_test) VALUES
@@ -297,6 +342,42 @@ describe('Notificações in-app — CRUD, isolamento (D-24) e matriz ABAC (Spec 
       const completo = await chamar('POST', '/api/admin/notifications/read-all', M.completo);
       expect(completo.status).toBe(200);
       expect(completo.body.data.updated).toBe(0);
+    });
+  });
+
+  describe('patientDisplayName sob a célula do DESTINATÁRIO (D-13 revisado, gate fecho B5)', () => {
+    it('destinatário SEM patient_conversation:read recebe patientDisplayName null, MESMO o ator tendo a célula', async () => {
+      const post = await chamar(
+        'POST',
+        `/api/admin/patients/${PATIENT}/conversation/messages`,
+        U_MENCIONADOR2,
+        { body: `oi <@${U_SEM_CELULA_PACIENTE}>` },
+      );
+      expect(post.status).toBe(201);
+
+      const lista = await chamar('GET', '/api/admin/notifications', U_SEM_CELULA_PACIENTE);
+      expect(lista.status).toBe(200);
+      const notif = lista.body.data.find((n: any) => n.actorUid === U_MENCIONADOR2);
+      expect(notif).toBeDefined();
+      expect(notif.patientId).toBe(PATIENT);
+      expect(notif.patientDisplayName).toBeNull();
+    });
+
+    it('destinatário COM patient_conversation:read recebe o nome real do paciente', async () => {
+      const post = await chamar(
+        'POST',
+        `/api/admin/patients/${PATIENT}/conversation/messages`,
+        U_MENCIONADOR2,
+        { body: `oi <@${U_COM_CELULA_PACIENTE}>` },
+      );
+      expect(post.status).toBe(201);
+
+      const lista = await chamar('GET', '/api/admin/notifications', U_COM_CELULA_PACIENTE);
+      expect(lista.status).toBe(200);
+      const notif = lista.body.data.find((n: any) => n.actorUid === U_MENCIONADOR2);
+      expect(notif).toBeDefined();
+      expect(notif.patientId).toBe(PATIENT);
+      expect(notif.patientDisplayName).toBe('Paciente B4');
     });
   });
 });

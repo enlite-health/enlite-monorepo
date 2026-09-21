@@ -383,6 +383,20 @@ describe('ConversationRepository', () => {
       const [attachmentsSql] = query.mock.calls[2];
       expect(attachmentsSql).toContain('JOIN conversation_messages cm ON cm.id = cma.message_id AND cm.deleted_at IS NULL');
     });
+
+    it('🔒 achado B5 do gate fecho: a query de anexos filtra sf.deleted_at IS NULL — arquivo apagado (stored_files.deleted_at) nunca sai na listagem, mesmo anexado a mensagem viva', async () => {
+      const query = jest
+        .fn()
+        .mockResolvedValueOnce({ rows: [topRow({ id: 'm1' })] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] });
+      const repo = new ConversationRepository(poolWith(query));
+
+      await repo.listTopMessages(CONVERSATION_ID, null, 50);
+
+      const [attachmentsSql] = query.mock.calls[2];
+      expect(attachmentsSql).toContain('sf.deleted_at IS NULL');
+    });
   });
 
   describe('findMessageThreadInfo — id/root_message_id de uma mensagem (base da normalização D-03)', () => {
