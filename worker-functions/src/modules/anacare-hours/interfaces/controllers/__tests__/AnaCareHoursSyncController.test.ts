@@ -131,4 +131,146 @@ describe('AnaCareHoursSyncController', () => {
     expect(runner.run).toHaveBeenCalledWith({ origin: 'cron', userId: null });
     expect(response.status).toHaveBeenCalledWith(200);
   });
+
+  // ── F1 (migration 457, change `anacare-horas-conclusao-de-corrida`) — progresso gravado a cada rodada ──
+
+  /** Mock mínimo de `SyncRunRepository` — só o método que o controller chama nesta fase. */
+  function makeSyncRunRepository() {
+    return { recordProgress: jest.fn().mockResolvedValue(undefined) };
+  }
+
+  function fullOutcome(overrides: Record<string, unknown>) {
+    return {
+      requests: 1,
+      retries: 0,
+      shiftsRead: 0,
+      deduped: false,
+      reservationsProcessed: 0,
+      shiftsWritten: 0,
+      directoryCounts: { activo: 0, terminado: 0, total: 0 },
+      shiftsSkippedNoProvider: 0,
+      shiftsSkippedNoPatient: 0,
+      runStartedAt: '2026-09-20T00:00:00.000Z',
+      ...overrides,
+    };
+  }
+
+  it('F1 (457): rodada que corta por orçamento (nextCursor≠null) grava status=running com cursor/contagens, finishedAt/lastError limpos', async () => {
+    const runner = {
+      run: jest.fn().mockResolvedValue(fullOutcome({ nextCursor: 49, reservationsTotal: 144, reservationsDone: 49 })),
+    } as unknown as AnaCareHoursSyncRunner;
+    const syncRunRepository = makeSyncRunRepository();
+    const controller = new AnaCareHoursSyncController(() => runner, () => syncRunRepository as never);
+    const response = res();
+
+    await controller.triggerManual({ headers: {} } as never, response as never);
+
+    const expectedMonth = AnaCareHoursSyncRunner.currentMonth();
+    expect(syncRunRepository.recordProgress).toHaveBeenCalledWith('anacare', expectedMonth, {
+      status: 'running',
+      cursor: 49,
+      reservationsTotal: 144,
+      reservationsDone: 49,
+      finishedAt: null,
+      lastError: null,
+    });
+    expect(response.status).toHaveBeenCalledWith(200);
+    expect(response.body).toMatchObject({ reservationsTotal: 144, reservationsDone: 49 });
+  });
+
+  it('F1 (457): rodada que termina a lista (nextCursor=null) grava status=done com finishedAt preenchido', async () => {
+    const runner = {
+      run: jest.fn().mockResolvedValue(fullOutcome({ nextCursor: null, reservationsTotal: 3, reservationsDone: 3 })),
+    } as unknown as AnaCareHoursSyncRunner;
+    const syncRunRepository = makeSyncRunRepository();
+    const controller = new AnaCareHoursSyncController(() => runner, () => syncRunRepository as never);
+    const response = res();
+
+    await controller.triggerCron({ headers: {} } as never, response as never);
+
+    expect(syncRunRepository.recordProgress).toHaveBeenCalledTimes(1);
+    const [source, month, progress] = syncRunRepository.recordProgress.mock.calls[0];
+    expect(source).toBe('anacare');
+    expect(month).toBe(AnaCareHoursSyncRunner.currentMonth());
+    expect(progress).toMatchObject({ status: 'done', cursor: null, reservationsTotal: 3, reservationsDone: 3, lastError: null });
+    expect(progress.finishedAt).toBeInstanceOf(Date);
+    expect(response.status).toHaveBeenCalledWith(200);
+  });
+
+  it('F1 (457): runner lança erro CONHECIDO → grava status=failed com o código ESTÁVEL (nunca .message), cursor/contagens null', async () => {
+    const runner = {
+      run: jest.fn().mockRejectedValue(new AnaCarePatientMonthCollisionError(['AC-PAT-0'], '2026-09')),
+    } as unknown as AnaCareHoursSyncRunner;
+    const syncRunRepository = makeSyncRunRepository();
+    const controller = new AnaCareHoursSyncController(() => runner, () => syncRunRepository as never);
+    const response = res();
+
+    await controller.triggerManual({ headers: {} } as never, response as never);
+
+    expect(syncRunRepository.recordProgress).toHaveBeenCalledTimes(1);
+    const [, , progress] = syncRunRepository.recordProgress.mock.calls[0];
+    expect(progress).toMatchObject({
+      status: 'failed',
+      cursor: null,
+      reservationsTotal: null,
+      reservationsDone: null,
+      lastError: 'AnaCarePatientMonthCollisionError:409',
+    });
+    expect(progress.finishedAt).toBeInstanceOf(Date);
+    expect(response.status).toHaveBeenCalledWith(409); // comportamento HTTP pré-existente, inalterado por esta fase
+  });
+
+  /**
+   * PROVA OBRIGATÓRIA (item 4 do prompt): erro cujo `.message` carrega PII simulada (nome
+   * fictício) — `last_error` gravado NÃO pode conter essa substring, nem em nenhuma chamada de
+   * `reportError` capturada pelo teste (mesma checagem que a suíte de `toStableErrorCode` já faz
+   * isoladamente; aqui provamos que o CONTROLLER usa `toStableErrorCode`, não `e.message` direto).
+   */
+  it('F1 (457): mensagem de erro com PII simulada nunca chega ao last_error gravado', async () => {
+    const NOME_FICTICIO = 'Ramona Quimey Villalba';
+    const runner = {
+      run: jest.fn().mockRejectedValue(new Error(`timeout ao sincronizar turno de ${NOME_FICTICIO}`)),
+    } as unknown as AnaCareHoursSyncRunner;
+    const syncRunRepository = makeSyncRunRepository();
+    const controller = new AnaCareHoursSyncController(() => runner, () => syncRunRepository as never);
+    const response = res();
+
+    await controller.triggerManual({ headers: {} } as never, response as never);
+
+    const [, , progress] = syncRunRepository.recordProgress.mock.calls[0];
+    expect(progress.lastError).toBe('UnknownError:Error');
+    expect(progress.lastError).not.toContain(NOME_FICTICIO);
+    expect(response.status).toHaveBeenCalledWith(500);
+  });
+
+  /**
+   * PROVA OBRIGATÓRIA (item e do prompt): uma falha ao GRAVAR o progresso (repositório indisponível
+   * no meio da escrita) não pode derrubar o sync — a missão é sincronizar, o registro é
+   * observabilidade. MORRE se `recordProgress` deixar de estar isolado em try/catch no controller.
+   */
+  it('F1 (457): falha ao GRAVAR o progresso não derruba o sync — ainda responde 200 e reporta a falha de escrita separadamente', async () => {
+    const runner = {
+      run: jest.fn().mockResolvedValue(fullOutcome({ nextCursor: null, reservationsTotal: 1, reservationsDone: 1 })),
+    } as unknown as AnaCareHoursSyncRunner;
+    const syncRunRepository = { recordProgress: jest.fn().mockRejectedValue(new Error('ECONNREFUSED')) };
+    const controller = new AnaCareHoursSyncController(() => runner, () => syncRunRepository as never);
+    const response = res();
+
+    await controller.triggerManual({ headers: {} } as never, response as never);
+
+    expect(response.status).toHaveBeenCalledWith(200);
+    expect(reportError).toHaveBeenCalledWith(expect.any(Error), { source: 'AnaCareHoursSyncController.recordProgress.manual' });
+  });
+
+  it('F1 (457): sem SyncRunRepository configurado (factory devolve null), o sync ainda responde 200 — recordProgress é no-op', async () => {
+    const runner = {
+      run: jest.fn().mockResolvedValue(fullOutcome({ nextCursor: null, reservationsTotal: 1, reservationsDone: 1 })),
+    } as unknown as AnaCareHoursSyncRunner;
+    const controller = new AnaCareHoursSyncController(() => runner, () => null);
+    const response = res();
+
+    await controller.triggerManual({ headers: {} } as never, response as never);
+
+    expect(response.status).toHaveBeenCalledWith(200);
+  });
 });

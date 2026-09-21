@@ -10,7 +10,7 @@
  */
 import type { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
-import type { SyncRunRepository } from '../domain/AnaCareHoursSyncPorts';
+import type { SyncRunProgress, SyncRunRepository } from '../domain/AnaCareHoursSyncPorts';
 
 /** `period_month` da tabela é sempre o 1º dia do mês (CHECK, migration 443) — mesmo molde de `AnaCarePatientMonthRepository`. */
 function periodMonthDate(month: string): string {
@@ -46,5 +46,38 @@ export class AnaCareSyncRunRepository implements SyncRunRepository {
       [source, periodMonthDate(periodMonth)],
     );
     return res.rows[0] ? new Date(res.rows[0].run_started_at) : null;
+  }
+
+  /**
+   * F1 (migration 457): grava o progresso da rodada. `"cursor"`/`reservations_total`/
+   * `reservations_done` usam `COALESCE` — passar `null` nesses três PRESERVA o valor já gravado
+   * (nunca sobrescreve para `NULL`); é assim que uma falha grava `status='failed'` sem apagar o
+   * último cursor/contagem conhecidos (ver `SyncRunProgress`, `AnaCareHoursSyncPorts.ts`).
+   * `finished_at`/`last_error` são SEMPRE explícitos: o chamador sempre sabe o valor certo (`null`
+   * limpa, um valor grava), então nunca passam por `COALESCE`. `"cursor"` é palavra RESERVADA em
+   * SQL — sempre entre aspas duplas.
+   */
+  async recordProgress(source: string, periodMonth: string, progress: SyncRunProgress): Promise<void> {
+    await this.pool.query(
+      `UPDATE anacare_sync_run
+          SET status              = $1,
+              "cursor"            = COALESCE($2, "cursor"),
+              reservations_total  = COALESCE($3, reservations_total),
+              reservations_done   = COALESCE($4, reservations_done),
+              finished_at         = $5,
+              last_error          = $6,
+              updated_at          = NOW()
+        WHERE source = $7 AND period_month = $8::date`,
+      [
+        progress.status,
+        progress.cursor,
+        progress.reservationsTotal,
+        progress.reservationsDone,
+        progress.finishedAt,
+        progress.lastError,
+        source,
+        periodMonthDate(periodMonth),
+      ],
+    );
   }
 }
