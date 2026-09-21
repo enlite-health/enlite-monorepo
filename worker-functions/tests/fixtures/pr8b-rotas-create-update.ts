@@ -132,7 +132,11 @@ export const PR8B_ROTAS_CREATE_UPDATE: readonly RotaCreateUpdate[] = [
   { method: 'PUT', path: '/api/admin/workers/:id/service-area', actions: ['update'], source: 'adminWorkerRoutes.ts:115' },
   { method: 'POST', path: '/api/admin/worker-tags', actions: ['create'], source: 'adminWorkerRoutes.ts:120' },
   { method: 'PATCH', path: '/api/admin/worker-tags/:id', actions: ['update'], source: 'adminWorkerRoutes.ts:121' },
-  { method: 'DELETE', path: '/api/admin/worker-tags/:id', actions: ['update'], source: 'adminWorkerRoutes.ts:122' },
+  // DELETE /api/admin/worker-tags/:id SAIU desta fixture (spec 024, D1/D401, 21/09): deixou de ser
+  // um "delete guardado por update" (o padrão universal do PR-8b que esta fixture modela) e virou
+  // DELETE genuíno na célula própria `tag:delete` — fora do escopo create/update deste arquivo.
+  // Continua coberta, exaustivamente, por `permission-route-inventory.test.ts`
+  // ('DELETE /api/admin/worker-tags/:id → tag:delete').
   { method: 'POST', path: '/api/admin/workers/:id/tags/:tagId', actions: ['update'], source: 'adminWorkerRoutes.ts:123' },
   { method: 'DELETE', path: '/api/admin/workers/:id/tags/:tagId', actions: ['update'], source: 'adminWorkerRoutes.ts:124' },
   { method: 'POST', path: '/api/admin/workers/:id/additional-documents/upload-url', actions: ['create'], source: 'workerDocumentsRoutes.ts:59' },
