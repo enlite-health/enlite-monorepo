@@ -359,6 +359,7 @@
       "other": "Otro",
       "birthDate": "Fecha de nacimiento",
       "birthDatePlaceholder": "18/03/1960",
+      "birthDateInvalidWarning": "Tu fecha de nacimiento no es válida. Cargala de nuevo.",
       "documentType": "Tipo de documento",
       "cuilCuit": "CUIL/CUIT",
       "cpf": "CPF",

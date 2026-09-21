@@ -157,4 +157,54 @@ describe('hidratação: precedência servidor × local', () => {
       expect(merged.complement).toBe('');
     });
   });
+
+  describe('birthDate × birthDateStatus (spec 025, opção A, 21/09)', () => {
+    // T2.3: o localStorage guardava o MESMO texto inválido que o servidor
+    // acabou de rejeitar, e a precedência "local vence quando servidor vazio"
+    // (regra acima, para proteger edição não-salva) reaproveitava esse lixo
+    // pra sempre — o campo ficava travado mostrando a data ruim. Diferente do
+    // caso `phone`/`professionalLicense`: aqui o servidor não está "vazio",
+    // ele está DIZENDO que o dado é inválido — não é o mesmo silêncio que a
+    // regra de proteção de edição foi desenhada para cobrir.
+    it('status invalid → força vazio mesmo com local preenchido (carregamento de tela)', () => {
+      const merged = mergeGeneralInfo(
+        server({ birthDate: undefined, birthDateStatus: 'invalid' }),
+        { ...local(), birthDate: '25/31/985' },
+      );
+      expect(merged.birthDate).toBe('');
+    });
+
+    it('status invalid → força vazio também no caminho autoritativo (pós-escrita)', () => {
+      const merged = mergeGeneralInfo(
+        server({ birthDate: undefined, birthDateStatus: 'invalid' }),
+        { ...local(), birthDate: '25/31/985' },
+        { authoritative: true },
+      );
+      expect(merged.birthDate).toBe('');
+    });
+
+    it('status missing (nunca cadastrou) → comportamento INALTERADO: local vence no carregamento', () => {
+      const merged = mergeGeneralInfo(
+        server({ birthDate: undefined, birthDateStatus: 'missing' }),
+        { ...local(), birthDate: '1990-01-01' },
+      );
+      expect(merged.birthDate).toBe('1990-01-01');
+    });
+
+    it('status ok → valor do servidor é usado normalmente', () => {
+      const merged = mergeGeneralInfo(
+        server({ birthDate: '1985-06-20', birthDateStatus: 'ok' }),
+        { ...local(), birthDate: '1990-01-01' },
+      );
+      expect(merged.birthDate).toBe('1985-06-20');
+    });
+
+    it('sem birthDateStatus no payload (compat) → cai na regra antiga (local vence se servidor vazio)', () => {
+      const merged = mergeGeneralInfo(server({ birthDate: undefined }), {
+        ...local(),
+        birthDate: '1990-01-01',
+      });
+      expect(merged.birthDate).toBe('1990-01-01');
+    });
+  });
 });

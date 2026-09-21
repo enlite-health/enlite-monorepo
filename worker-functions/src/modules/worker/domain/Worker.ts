@@ -11,6 +11,20 @@ export interface Worker {
   sex?: string;
   gender?: string;
   birthDate?: Date;
+  /**
+   * Sinal explícito de estado da data de nascimento, calculado no repositório
+   * sobre o valor DECIFRADO (`isValidIsoBirthDate`). Existe porque `birthDate`
+   * sozinho é AMBÍGUO: uma string inválida vira `Invalid Date`, que o
+   * `JSON.stringify` serializa como `null` — o mesmo `null` de "nunca
+   * cadastrou". Sem este campo o front não consegue distinguir os dois casos
+   * (spec 025, decisão do Gabriel 21/09, opção A). O valor inválido em si
+   * NUNCA é devolvido — só o veredito.
+   *
+   * `ok` = ISO válida · `missing` = nunca gravou · `invalid` = gravou algo que
+   * não é uma data ISO real (ex.: dado herdado do Defeito 1, quando o PUT não
+   * validava em runtime).
+   */
+  birthDateStatus?: 'ok' | 'missing' | 'invalid';
   documentType?: string;
   documentNumber?: string;
   profilePhotoUrl?: string;

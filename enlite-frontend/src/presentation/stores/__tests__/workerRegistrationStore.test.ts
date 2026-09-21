@@ -502,6 +502,71 @@ describe('workerRegistrationStore', () => {
     });
   });
 
+  describe('birthDateInvalid — spec 025 (opção A, 21/09)', () => {
+    const baseServerData: WorkerProgressResponse = {
+      id: 'worker-123',
+      authUid: 'auth-123',
+      email: 'worker@example.com',
+      country: 'AR',
+      timezone: 'America/Argentina/Buenos_Aires',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    it('birthDateStatus invalid → liga o aviso', () => {
+      const { hydrateFromServer } = useWorkerRegistrationStore.getState();
+      expect(useWorkerRegistrationStore.getState().birthDateInvalid).toBe(false);
+
+      hydrateFromServer({ ...baseServerData, birthDateStatus: 'invalid' });
+
+      expect(useWorkerRegistrationStore.getState().birthDateInvalid).toBe(true);
+    });
+
+    it('birthDateStatus ok — depois de salvar uma data válida — desliga o aviso', () => {
+      const { hydrateFromServer } = useWorkerRegistrationStore.getState();
+      hydrateFromServer({ ...baseServerData, birthDateStatus: 'invalid' });
+      expect(useWorkerRegistrationStore.getState().birthDateInvalid).toBe(true);
+
+      // Reidratação AUTORITATIVA depois de um PUT bem-sucedido com data válida
+      // — é exatamente o `hydrateFromServer(saved, { authoritative: true })`
+      // que o GeneralInfoTab chama no autosave confirmado.
+      hydrateFromServer(
+        { ...baseServerData, birthDate: '1990-05-15', birthDateStatus: 'ok' },
+        { authoritative: true },
+      );
+
+      expect(useWorkerRegistrationStore.getState().birthDateInvalid).toBe(false);
+    });
+
+    it('birthDateStatus missing (nunca cadastrou) → aviso continua desligado', () => {
+      const { hydrateFromServer } = useWorkerRegistrationStore.getState();
+      hydrateFromServer({ ...baseServerData, birthDateStatus: 'missing' });
+      expect(useWorkerRegistrationStore.getState().birthDateInvalid).toBe(false);
+    });
+
+    it('reset() volta o aviso para false', () => {
+      const { hydrateFromServer, reset } = useWorkerRegistrationStore.getState();
+      hydrateFromServer({ ...baseServerData, birthDateStatus: 'invalid' });
+      expect(useWorkerRegistrationStore.getState().birthDateInvalid).toBe(true);
+
+      reset();
+
+      expect(useWorkerRegistrationStore.getState().birthDateInvalid).toBe(false);
+    });
+
+    it('birthDateInvalid NÃO é persistido — fora do partialize, sempre recalculado do servidor', () => {
+      const { hydrateFromServer } = useWorkerRegistrationStore.getState();
+      hydrateFromServer({ ...baseServerData, birthDateStatus: 'invalid' });
+
+      // A `name` do persist é estática no store ('worker-registration-anonymous')
+      // — quem escopa por usuário é a página, via `persist.setOptions`, fora
+      // do escopo deste teste. O que importa aqui é que a CHAVE que o store
+      // usa não carrega `birthDateInvalid`, esteja ela escopada ou não.
+      const persisted = JSON.parse(localStorage.getItem('worker-registration-anonymous') || '{}');
+      expect(persisted.state?.birthDateInvalid).toBeUndefined();
+    });
+  });
+
   describe('Reset', () => {
     it('should reset to initial state', () => {
       const { updateGeneralInfo, markStepCompleted, setWorkerId, setMode, reset } = useWorkerRegistrationStore.getState();

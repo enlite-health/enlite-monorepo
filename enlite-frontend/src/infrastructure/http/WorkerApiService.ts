@@ -27,6 +27,14 @@ export interface WorkerProgressResponse {
   firstName?: string;
   lastName?: string;
   birthDate?: string;
+  /**
+   * Veredito do backend sobre a data de nascimento gravada (spec 025, opção
+   * A, 21/09). `birthDate` sozinho é ambíguo: tanto "nunca cadastrou" quanto
+   * "gravou algo que não é uma data ISO real" chegam como `undefined`/`null`.
+   * `ok` = ISO válida (mesmo estado de `birthDate` populado) · `missing` =
+   * nunca cadastrou · `invalid` = precisa recadastrar — o app mostra o aviso.
+   */
+  birthDateStatus?: 'ok' | 'missing' | 'invalid';
   sex?: string;
   gender?: string;
   documentType?: string;

@@ -359,6 +359,7 @@
       "other": "Outro",
       "birthDate": "Data de nascimento",
       "birthDatePlaceholder": "18/03/1960",
+      "birthDateInvalidWarning": "Sua data de nascimento não é válida. Cadastre novamente.",
       "documentType": "Tipo do documento",
       "cuilCuit": "CUIL/CUIT",
       "cpf": "CPF",
