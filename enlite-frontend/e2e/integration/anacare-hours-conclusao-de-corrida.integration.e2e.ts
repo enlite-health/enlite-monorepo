@@ -28,38 +28,36 @@
  * de sabotagem (ver relatório da task) fazer sentido — se o teste sempre regravasse 144/144 antes
  * de checar, a sabotagem no banco nunca teria efeito.
  *
- * ⚠️ ACHADO (21/09/2026, bloqueia CASO 2 e CASO 3 — `test.fixme`, não é flakiness, é
- * inalcançável POR DESENHO no wiring atual): com `ANACARE_HOURS_SOURCE=fake` (a env deste
- * override, `docker-compose.anacare-hours.yml` — a MESMA que todo dev local e o CI usam pra essa
- * feature), `AnaCareHoursController.defaultServiceFactory()`
+ * ⚠️ ACHADO HISTÓRICO (21/09/2026, RESOLVIDO por troca de override — ver abaixo, não por código):
+ * com `ANACARE_HOURS_SOURCE=fake` (o valor do override `docker-compose.anacare-hours.yml`),
+ * `AnaCareHoursController.defaultServiceFactory()`
  * (`worker-functions/src/modules/anacare-hours/interfaces/controllers/AnaCareHoursController.ts:56-64`)
- * chama `createAnaCareSyncDependencies()` **de novo, sem cache, dentro do handler de CADA
- * request** (`requireService` → `serviceFactory()`, linha ~99, chamado por `getMonthSnapshot`
- * linha ~127) — isso cria um `FakeAnaCareSyncRunRepository`/`FakeAnaCarePatientMonthRepository`
- * (`FakeAnaCareSyncDependencies.ts`) NOVO a cada GET, cujos Maps internos nascem sempre vazios.
- * O `AnaCareHoursSyncController` (quem ESCREVE o progresso) faz o oposto — memoiza em
- * `sharedDeps`/`sharedRunner` (`AnaCareHoursSyncController.ts:47-62`) — logo escreve numa
- * instância que o LADO DA LEITURA nunca vê. Resultado medido (3 provas independentes, 21/09):
- *   1. UPDATE direto em `anacare_sync_run` (Postgres real) para `status='done'`,
- *      `reservations_total=120`, `reservations_done=45` — GET seguinte devolve
- *      `snapshotState:"desconhecido"` (Postgres nem é lido: em modo `fake` o serviço usa os
- *      repositórios EM MEMÓRIA acima, nunca `AnaCareSyncRunRepository`/`AnaCarePatientMonthRepository`
- *      reais).
- *   2. `POST /api/admin/anacare-hours/sync` de verdade (com `ANACARE_DIRECTORY_MIN_ABSOLUTE=0`)
- *      retornou `{reservationsTotal:1, reservationsDone:1, nextCursor:null}` (sucesso real) — o
- *      GET IMEDIATAMENTE seguinte para o MESMO mês ainda devolve `"desconhecido"`.
- *   3. `anacare_sync_run` no Postgres real permanece com 0 linhas para o mês sincronizado no
- *      passo 2 — a escrita do controller de sync foi para o repositório FALSO em memória, e o de
- *      LEITURA criou outro, também vazio.
- * Conclusão: `snapshotState` no GET só pode valer `'nao_construido'` (mês sem turno falso) ou
- * `'desconhecido'` (todo o resto) neste ambiente — `'parcial'`/`'fresco'` são ESTRUTURALMENTE
- * inalcançáveis via UI/API real enquanto essa memoização não existir no lado da leitura. Não é
- * algo que este arquivo de teste deveria consertar (fora do escopo pedido: "escreva e RODE o
- * e2e", não "corrija o backend") — reportado como achado, não corrigido aqui.
+ * chama `createAnaCareSyncDependencies()` sem cache dentro do handler de CADA request, criando um
+ * `FakeAnaCareSyncRunRepository`/`FakeAnaCarePatientMonthRepository` (`FakeAnaCareSyncDependencies.ts`)
+ * NOVO a cada GET — os Maps nascem sempre vazios, então nem uma escrita direta em `anacare_sync_run`
+ * (Postgres real) nem um `POST /anacare-hours/sync` de verdade (sucesso real, medido) mudam o que
+ * o GET devolve: `snapshotState` fica travado em `'desconhecido'`. Isso é exclusivo do modo `fake`
+ * (`FakeAnaCareSyncRunRepository`/`FakeAnaCarePatientMonthRepository` guardam estado em memória por
+ * INSTÂNCIA; recriar a instância a cada request descarta esse estado). Segue como achado de
+ * produto (ver "Achados fora do escopo" no relatório da task) — não corrigido aqui.
  *
- * CASO 1 continua como `test()` de verdade — é o único estado alcançável — mas com poder de
- * discriminação FRACO: ele passaria mesmo se a F2 inteira fosse revertida, porque
- * `'desconhecido'` é o que este wiring devolve incondicionalmente. Documentado no próprio teste.
+ * SOLUÇÃO DE TESTE (decisão do orquestrador, 21/09): trocar `ANACARE_HOURS_SOURCE=real` só para
+ * este e2e, via `worker-functions/docker-compose.anacare-hours-real-sem-rede.yml`. Em modo `real`,
+ * `patientMonthRepository`/`syncRunRepository` são `AnaCarePatientMonthRepository`/
+ * `AnaCareSyncRunRepository` — wrappers SEM ESTADO PRÓPRIO em volta do pool do Postgres
+ * (`DatabaseConnection.getInstance().getPool()`, singleton) — recriar o wrapper a cada request é
+ * inócuo, porque o dado mora no banco, não no objeto. `source`/`AnaCareShiftsSourceReal` também
+ * fica real, mas o GET da LISTA nunca chama rede por ele: `getMonthSnapshot` só usa
+ * `this.source.getRetratoStatus()`, que em `AnaCareShiftsSourceReal.getRetratoStatus()`
+ * (`AnaCareShiftsSourceReal.ts:37-41`) é `{ stale: false, circuitBreakerOpen: this.client.
+ * circuitBreakerOpen }` — um GETTER local (`AnaCareSessionClient.ts:325-327`, `this.rateLimiter.
+ * isOpen`), nenhum `fetch`. Prova (colada no relatório da task): `AnaCareSessionClient` construído
+ * com `ANACARE_BASE_URL=https://anacare-e2e-nunca-resolve.invalid` (domínio RFC 2606, nunca
+ * resolve) + credenciais dummy não-vazias; `GET /anacare-hours/months/2026-08` com um
+ * `anacare_sync_run` real semeado `done=49/total=144` respondeu em 0.076s com
+ * `snapshotState:"parcial", reservationsTotal:144, reservationsDone:49` — nem hang de DNS nem
+ * timeout, e os números vieram exatamente do que a SQL gravou. `ANACARE_ENFORCED`/diretório
+ * (`AnaCareEnliteDirectory`) só é usado pelo SYNC RUNNER (POST), que este arquivo nunca chama.
  */
 import { execFileSync } from 'child_process';
 import { test, expect, type Page, type Route } from '@playwright/test';
@@ -251,11 +249,6 @@ test.describe('Banner de conclusão de corrida — Horas Ana Care — E2E real @
     // do Playwright. Não fazer DELETE/RESET aqui.
   });
 
-  // ⚠️ Discriminação FRACA (ver ACHADO no cabeçalho do arquivo): neste wiring, `snapshotState`
-  // do GET só pode ser 'nao_construido' ou 'desconhecido' — este teste passaria mesmo sem a F2.
-  // O arranjo SQL abaixo é mantido (documenta a INTENÇÃO/contrato correto — o que o teste
-  // precisaria fazer se a leitura enxergasse a conclusão da corrida), mas não é ele quem decide
-  // o resultado observado hoje.
   test('CASO 1 — status IS NULL → banner "desconhecido", texto não afirma completo nem incompleto', async ({ page }) => {
     // Arranjo por SQL direto (aceitável — não é o fluxo sob teste): linha legada, status NUNCA
     // escrito (migration 457) — é o estado real das linhas de agosto/setembro pré-existentes.
@@ -284,13 +277,7 @@ test.describe('Banner de conclusão de corrida — Horas Ana Care — E2E real @
     await expect(mensagem).toBeVisible();
   });
 
-  // `test.fixme` (não `skip`): o código deste teste está CORRETO — é o que a tela precisaria
-  // fazer se `snapshotState` chegasse como 'parcial'. Não passa hoje porque o valor NUNCA chega
-  // como 'parcial' neste wiring (ver ACHADO no cabeçalho do arquivo — medido 21/09, 2 técnicas
-  // diferentes de arranjo, 0 sucessos, causa identificada e citada por arquivo:linha). Não é
-  // flakiness — é caminho morto por desenho até o `AnaCareHoursController` memoizar suas
-  // dependências como o `AnaCareHoursSyncController` já faz.
-  test.fixme('CASO 2 — status=\'done\', reservations_done < reservations_total → banner "parcial" com "X de Y" interpolado', async ({ page }) => {
+  test('CASO 2 — status=\'done\', reservations_done < reservations_total → banner "parcial" com "X de Y" interpolado', async ({ page }) => {
     psql(
       `INSERT INTO anacare_sync_run (source, period_month, run_started_at, updated_at, status, "cursor", reservations_total, reservations_done, finished_at, last_error)
        VALUES ('anacare', '${MONTH_FLOOR}-01'::date, NOW(), NOW(), 'done', 45, ${PARCIAL_TOTAL}, ${PARCIAL_DONE}, NOW(), NULL)
@@ -324,11 +311,7 @@ test.describe('Banner de conclusão de corrida — Horas Ana Care — E2E real @
     expect(textoLido).toContain(`se procesaron ${PARCIAL_DONE} de ${PARCIAL_TOTAL} reservas`);
   });
 
-  // `test.fixme` pelo MESMO motivo do CASO 2 (ver ACHADO no cabeçalho): 'fresco' também nunca
-  // chega no GET deste wiring — o banner "desconhecido" aparece incondicionalmente. Medido
-  // (21/09): rodei ESTE teste isolado (`--grep "CASO 3"`) e a falha literal foi
-  // `getByText('Estado de la sincronización desconocido') — Received: 1` (esperado 0).
-  test.fixme('CASO 3 — status=\'done\', done === total, fonte fresca → SEM banner', async ({ page }) => {
+  test('CASO 3 — status=\'done\', done === total, fonte fresca → SEM banner', async ({ page }) => {
     // `INSERT ... ON CONFLICT DO NOTHING`, de PROPÓSITO (ver docstring do arquivo): este mês
     // (MONTH_CURRENT) é o único usado pela prova de sabotagem (relatório da task, critério B) —
     // se este teste sempre regravasse 144/144 antes de checar, a sabotagem no banco nunca teria
