@@ -57,6 +57,15 @@ export const WorkerProfileSchema = registry.register(
       example: ['phone', 'title_certificate'],
       description: '[] = nada falta · null = não foi possível apurar (NÃO significa completo)',
     }),
+    /**
+     * Spec 025 (opção A, 21/09): veredito sobre a data de nascimento gravada,
+     * calculado no backend com `isValidIsoBirthDate`. O valor inválido em si
+     * NUNCA é devolvido — `birthDate` só vem preenchido quando `ok`.
+     */
+    birthDateStatus: z.enum(['ok', 'missing', 'invalid']).optional().openapi({
+      example: 'ok',
+      description: 'ok = data ISO válida · missing = nunca cadastrou · invalid = gravado mas não é uma data ISO real (recadastrar).',
+    }),
   }).openapi({ description: 'Dados do worker autenticado, com o veredito de completude.' }),
 );
 
