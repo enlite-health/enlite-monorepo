@@ -15,6 +15,10 @@
  * D-04) some da tela (`ThreadView` não renderiza `MessageAttachments` para ela), mas sem este
  * filtro o arquivo continuava BAIXÁVEL por quem soubesse o `fileId` — o mesmo `null`/404 anti-
  * enumeração das outras causas cobre esta também.
+ *
+ * 🔒 `sf.deleted_at IS NULL` (achado B5 do gate fecho, 21/09): mesma defesa em profundidade para
+ * o próprio arquivo (`stored_files.deleted_at`, migration 460) — hoje nenhum fluxo ainda marca
+ * essa coluna, mas sem o filtro um arquivo apagado no futuro continuaria baixável.
  */
 import type { Pool } from 'pg';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
@@ -78,7 +82,7 @@ export class GetConversationAttachmentUrlUseCase {
          JOIN conversation_message_attachments cma ON cma.file_id = sf.id
          JOIN conversation_messages cm ON cm.id = cma.message_id
          JOIN conversations c ON c.id = cm.conversation_id
-        WHERE sf.id = $1 AND c.patient_id = $2 AND cm.deleted_at IS NULL
+        WHERE sf.id = $1 AND c.patient_id = $2 AND cm.deleted_at IS NULL AND sf.deleted_at IS NULL
         LIMIT 1`,
       [params.fileId, params.patientId],
     );
