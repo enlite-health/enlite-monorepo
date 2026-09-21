@@ -2,10 +2,20 @@
  * NotificationBell — sino de notificações (Spec 022, Bloco 4, T409/T410/D-13).
  *
  * Montado em `AppSidebar` (T411), IMEDIATAMENTE ACIMA do bloco do usuário. Badge de
- * `unread-count` via `usePolling` (45s, pausa em aba oculta — D-10), MESMO molde de
- * `PatientConversationHandle` (poll só dispara pelo `setInterval`, nunca no mount — por isso as
- * suítes de `AdminLayout`/`AppSidebar`, que rodam com timers REAIS e terminam em milissegundos,
- * nunca disparam uma chamada de rede de verdade).
+ * `unread-count` via `usePolling` (45s, pausa em aba oculta — D-10).
+ *
+ * 🔒 Achado do gate revisao-pr (B4, T409): `usePolling` recebe `immediate: true` — sem isto, o
+ * badge ficava em 0 pelos primeiros 45s de CADA carga de página (`setInterval` nunca chama a
+ * função de imediato), fazendo qualquer staff logado numa janela recente de menção/resposta achar
+ * que não tinha notificação nenhuma. `immediate` é opt-in no hook (default `false`) — os OUTROS
+ * 2 callers de `usePolling` (`ConversationPanel.tsx`/`PatientConversationHandle.tsx`) continuam
+ * exatamente como antes.
+ *
+ * Ripple deste opt-in: as suítes de `AdminLayout`/`AppSidebar` (`AppSidebar.test.tsx`,
+ * `AdminLayout*.test.tsx`), que montam este componente com timers REAIS e SEM mockar
+ * `AdminNotificationApiService`, agora disparam 1 fetch real no mount — inofensivo (rejeita rápido,
+ * capturado pelo `catch` best-effort de `refreshCount` abaixo, sem asserção nova quebrada;
+ * confirmado rodando as 4 suítes depois deste conserto).
  *
  * Dono do `SlideOverPanel`/`NotificationPanel` — mesma decisão de integração de
  * `PatientConversationHandle` (T1 do B2): quem tem o handle visual é quem abre/fecha o painel.
@@ -38,7 +48,7 @@ export function NotificationBell(): JSX.Element {
     }
   }, []);
 
-  usePolling(() => void refreshCount(), POLL_MS, { pauseWhenHidden: true });
+  usePolling(() => void refreshCount(), POLL_MS, { pauseWhenHidden: true, immediate: true });
 
   const handleOpen = (): void => setIsPanelOpen(true);
   const handleClose = (): void => setIsPanelOpen(false);

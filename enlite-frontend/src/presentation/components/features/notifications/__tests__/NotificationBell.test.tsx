@@ -50,6 +50,19 @@ describe('NotificationBell (spec 022, T409/T410)', () => {
     expect(screen.getByTestId('notification-bell-badge')).toHaveTextContent('3');
   });
 
+  it('🔒 achado do gate revisao-pr (B4, T409): badge mostra o unread-count JÁ NO MONTE — sem esperar os 45s do 1º poll (usePolling immediate:true)', async () => {
+    vi.mocked(AdminNotificationApiService.getUnreadCount).mockResolvedValue(2);
+    render(<MemoryRouter><NotificationBell /></MemoryRouter>);
+
+    // Só libera as microtasks da chamada JÁ EM VOO desde o monte — nenhum timer avançado.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(AdminNotificationApiService.getUnreadCount).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('notification-bell-badge')).toHaveTextContent('2');
+  });
+
   it('poll pausa com a aba oculta (D-10) — mesmo mecanismo de usePolling', async () => {
     vi.mocked(AdminNotificationApiService.getUnreadCount).mockResolvedValue(1);
     render(<MemoryRouter><NotificationBell /></MemoryRouter>);
@@ -60,8 +73,8 @@ describe('NotificationBell (spec 022, T409/T410)', () => {
       await vi.advanceTimersByTimeAsync(POLL_MS * 2);
     });
 
-    // Pausado: nenhuma chamada aconteceu além da que talvez já estivesse em voo.
-    expect(AdminNotificationApiService.getUnreadCount).not.toHaveBeenCalled();
+    // Só a chamada IMEDIATA do monte conta — pausado, o intervalo nunca disparou de novo.
+    expect(AdminNotificationApiService.getUnreadCount).toHaveBeenCalledTimes(1);
     Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true });
   });
 

@@ -10,6 +10,16 @@ interface UsePollingOptions {
    * chat polla a cada 5s, o sino a cada 45s).
    */
   pauseWhenHidden?: boolean;
+  /**
+   * 🔒 Achado do gate revisao-pr (B4, T409): `setInterval` NUNCA chama `fn` de imediato — quem usa
+   * este hook como ÚNICA fonte do fetch inicial (sem outro `useEffect` fazendo um fetch por fora,
+   * como `NotificationBell.tsx` faz) mostra o estado zerado pelo intervalo INTEIRO (45s em
+   * produção) antes da 1ª chamada. Default `false` — NÃO muda o comportamento dos callers
+   * existentes (`ConversationPanel.tsx`/`PatientConversationHandle.tsx` já fazem seu próprio fetch
+   * inicial por fora, ou dependem desse atraso por desenho; mudar o default sem grep dos 3 callers
+   * seria "conserto que vira ripple" — CLAUDE.md). Opt-in explícito por quem precisa.
+   */
+  immediate?: boolean;
 }
 
 /**
@@ -19,7 +29,7 @@ interface UsePollingOptions {
  * re-renders/desmontagens é o defeito clássico deste tipo de hook.
  */
 export function usePolling(fn: () => void, ms: number, opts?: UsePollingOptions): void {
-  const { pauseWhenHidden = false } = opts ?? {};
+  const { pauseWhenHidden = false, immediate = false } = opts ?? {};
   const fnRef = useRef(fn);
   fnRef.current = fn;
 
@@ -38,6 +48,9 @@ export function usePolling(fn: () => void, ms: number, opts?: UsePollingOptions)
 
     const startedHidden = pauseWhenHidden && document.visibilityState === 'hidden';
     if (!startedHidden) {
+      // Só no MONTE inicial (nunca de novo ao retomar de hidden→visible — isso é o `start()` do
+      // listener de visibilidade abaixo, que não passa por aqui).
+      if (immediate) fnRef.current();
       start();
     }
 
@@ -59,5 +72,5 @@ export function usePolling(fn: () => void, ms: number, opts?: UsePollingOptions)
         document.removeEventListener('visibilitychange', onVisibilityChange);
       }
     };
-  }, [ms, pauseWhenHidden]);
+  }, [ms, pauseWhenHidden, immediate]);
 }

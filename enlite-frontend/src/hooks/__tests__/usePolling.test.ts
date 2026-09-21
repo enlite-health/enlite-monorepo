@@ -112,6 +112,44 @@ describe('usePolling', () => {
     expect(fn).toHaveBeenCalledTimes(1);
   });
 
+  it('🔒 achado do gate revisao-pr (B4, T409): immediate=true chama fn NO MONTE, antes de qualquer avanço de timer', () => {
+    const fn = vi.fn();
+    renderHook(() => usePolling(fn, 1000, { immediate: true }));
+
+    expect(fn).toHaveBeenCalledTimes(1); // sem avançar timer nenhum
+    vi.advanceTimersByTime(1000);
+    expect(fn).toHaveBeenCalledTimes(2); // depois, o intervalo normal continua
+  });
+
+  it('default (sem immediate) preserva o comportamento dos callers existentes: NÃO chama fn no monte', () => {
+    const fn = vi.fn();
+    renderHook(() => usePolling(fn, 1000));
+
+    expect(fn).not.toHaveBeenCalled();
+  });
+
+  it('immediate=true com pauseWhenHidden e montado OCULTO: não chama fn (nem imediato, nem por timer) até ficar visível', () => {
+    setVisibility('hidden');
+    const fn = vi.fn();
+    renderHook(() => usePolling(fn, 1000, { immediate: true, pauseWhenHidden: true }));
+
+    expect(fn).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(5000);
+    expect(fn).not.toHaveBeenCalled();
+  });
+
+  it('immediate=true: voltar de hidden→visible NÃO dispara uma 2ª chamada imediata (só o próximo timer)', () => {
+    const fn = vi.fn();
+    renderHook(() => usePolling(fn, 1000, { immediate: true, pauseWhenHidden: true }));
+    expect(fn).toHaveBeenCalledTimes(1); // só a do monte
+
+    setVisibility('hidden');
+    setVisibility('visible');
+    expect(fn).toHaveBeenCalledTimes(1); // retomar não é "montar" — sem chamada extra
+    vi.advanceTimersByTime(1000);
+    expect(fn).toHaveBeenCalledTimes(2);
+  });
+
   it('cleanup remove o listener de visibilitychange no unmount', () => {
     const fn = vi.fn();
     const { unmount } = renderHook(() => usePolling(fn, 1000, { pauseWhenHidden: true }));
