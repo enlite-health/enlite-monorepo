@@ -78,8 +78,10 @@ test.describe('Chat interno por paciente — anexo removido ANTES de enviar @int
     await expect(page.getByTestId('attachment-chip-name')).toHaveText('sample.pdf');
 
     // ── remover ANTES de enviar — clique humano no "×" pelo aria-label (mesmo texto i18n que o
-    // atom usa, `composer.attachments.remove`), nunca por seletor interno de implementação ──
-    await page.getByRole('button', { name: 'Remover anexo' }).click();
+    // atom usa, `composer.attachments.remove`; a tela roda em espanhol argentino por padrão,
+    // D-24/CLAUDE.md — "Quitar adjunto" é o texto de `es.json`, não o de `pt-BR.json`), nunca por
+    // seletor interno de implementação ──
+    await page.getByRole('button', { name: 'Quitar adjunto' }).click();
     await expect(page.getByTestId('attachment-picker-list')).toHaveCount(0);
     await expect(page.getByText('sample.pdf')).toHaveCount(0);
 
