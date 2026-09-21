@@ -147,4 +147,77 @@ describe('AdminWorkerProfileController.updateProfile — birthDate atrás de wor
     expect(res.status).toHaveBeenCalledWith(400);
     expect(executeMock).not.toHaveBeenCalled();
   });
+
+  // Achado #6 (evidencias/achados.md) — `worker_admin_audit_log.changes` gravava o par
+  // before/after em CLARO para todo campo. Conserto MÍNIMO só para `birthDate`.
+  describe('trilha worker_admin_audit_log: birthDate REDIGIDO, os demais campos crus (achado #6, escopo nomeado)', () => {
+    const DATA_ANTIGA = '1958-06-12'; // sintética
+
+    it('a data NUNCA aparece em claro na trilha — before/after viram "[redacted]"', async () => {
+      executeMock.mockResolvedValue({
+        workerId: WORKER_ID,
+        fieldsUpdated: ['birthDate'],
+        changes: [{ field: 'birthDate', before: DATA_ANTIGA, after: VALID_ISO }],
+      });
+      const ctrl = new AdminWorkerProfileController();
+      const res = mockRes();
+      const req = mockReq({ body: { birthDate: VALID_ISO }, permissionCells: ['worker:update', 'worker_pii:write'] });
+
+      await ctrl.updateProfile(req, res);
+
+      expect(recordFieldChangesMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          fields: [{ field: 'birthDate', before: '[redacted]', after: '[redacted]' }],
+        }),
+      );
+      // Trava dura: nenhuma das duas datas (nem a antiga nem a nova) pode aparecer em NENHUM
+      // argumento passado a recordFieldChanges — morre se alguém desfizer a redação.
+      const auditCallAsString = JSON.stringify(recordFieldChangesMock.mock.calls);
+      expect(auditCallAsString).not.toContain(DATA_ANTIGA);
+      expect(auditCallAsString).not.toContain(VALID_ISO);
+    });
+
+    it('field_name/autor continuam na trilha — só o VALOR foi redigido, não a autoria', async () => {
+      executeMock.mockResolvedValue({
+        workerId: WORKER_ID,
+        fieldsUpdated: ['birthDate'],
+        changes: [{ field: 'birthDate', before: DATA_ANTIGA, after: VALID_ISO }],
+      });
+      const ctrl = new AdminWorkerProfileController();
+      const res = mockRes();
+      const req = mockReq({ body: { birthDate: VALID_ISO }, permissionCells: ['worker:update', 'worker_pii:write'] });
+
+      await ctrl.updateProfile(req, res);
+
+      const call = recordFieldChangesMock.mock.calls[0][0];
+      expect(call.workerId).toBe(WORKER_ID);
+      expect(call.fields[0].field).toBe('birthDate');
+      expect(call.actor).toEqual({ userId: 'admin-1' }); // extractWorkerAuditActor mockado
+    });
+
+    it('outro campo do MESMO patch (firstName) NÃO é redigido — escopo é só birthDate (achado #6)', async () => {
+      executeMock.mockResolvedValue({
+        workerId: WORKER_ID,
+        fieldsUpdated: ['firstName', 'birthDate'],
+        changes: [
+          { field: 'firstName', before: 'Ana', after: 'Ana Maria' },
+          { field: 'birthDate', before: DATA_ANTIGA, after: VALID_ISO },
+        ],
+      });
+      const ctrl = new AdminWorkerProfileController();
+      const res = mockRes();
+      const req = mockReq({
+        body: { firstName: 'Ana Maria', birthDate: VALID_ISO },
+        permissionCells: ['worker:update', 'worker_pii:write'],
+      });
+
+      await ctrl.updateProfile(req, res);
+
+      const call = recordFieldChangesMock.mock.calls[0][0];
+      expect(call.fields).toEqual([
+        { field: 'firstName', before: 'Ana', after: 'Ana Maria' }, // cru — achado, não corrigido aqui
+        { field: 'birthDate', before: '[redacted]', after: '[redacted]' },
+      ]);
+    });
+  });
 });
