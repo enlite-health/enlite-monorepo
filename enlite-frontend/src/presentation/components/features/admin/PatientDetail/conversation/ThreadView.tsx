@@ -1,7 +1,13 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode, type JSX } from 'react';
 import { useTranslation } from 'react-i18next';
-import { AdminConversationApiService, type ConversationMessage } from '@infrastructure/http/AdminConversationApiService';
+import {
+  AdminConversationApiService,
+  type ConversationMessage,
+  type ConversationMessageAttachment,
+} from '@infrastructure/http/AdminConversationApiService';
 import { useStaffDisplayName } from '@presentation/stores/staffNameCache';
+import { Text } from '@presentation/components/atoms/Text';
+import { iconComponentForContentType, extensionForContentType } from './attachmentIcon';
 
 const MENTION_PATTERN = /<@([^>]+)>/g;
 
@@ -57,6 +63,79 @@ export function renderMessageBody(body: string, mentions: readonly string[]): Re
   return parts;
 }
 
+/**
+ * Chips de anexo de UMA mensagem já enviada (Bloco 3, T321) — cada um chama
+ * `GET .../files/:fileId/url` (signed URL v4, 300 s) e abre em nova aba (o browser decide entre
+ * exibir/baixar pelo `Content-Disposition: attachment` que o backend já manda). Sem nome de
+ * arquivo aqui: `GET .../conversation`/`.../replies` NUNCA devolvem `originalName` (D-02 — só
+ * decifra no download); o rótulo é a extensão derivada do `contentType`, forma exata do contrato.
+ */
+export function MessageAttachments({
+  patientId, attachments,
+}: { patientId: string; attachments: ConversationMessageAttachment[] }): JSX.Element | null {
+  const { t } = useTranslation();
+  const td = (key: string, fallback: string): string => t(`admin.patients.detail.conversation.thread.${key}`, fallback);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
+
+  if (attachments.length === 0) return null;
+
+  /**
+   * 🔒 A ABA TEM DE ABRIR NO MESMO TICK DO CLIQUE (achado medido no e2e Playwright desta sessão,
+   * T321): `window.open` chamado DEPOIS de um `await` (aqui, o `GET .../files/:fileId/url`) perde
+   * o "user activation" do clique — o Chrome bloqueia SILENCIOSAMENTE como pop-up, sem erro
+   * nenhum no console. Corrigido abrindo a aba em branco SÍNCRONO (dentro do clique) e só
+   * redirecionando (`popup.location.href`) quando a signed URL chega.
+   *
+   * 🔒 SEM `noopener`/`noreferrer` NO PRIMEIRO `window.open` (2º achado do mesmo e2e): a spec do
+   * WHATWG faz `noreferrer` implicar `noopener` — com qualquer um dos dois, `window.open` sempre
+   * devolve `null` (a aba abre de verdade no browser, mas o JS nunca recebe a referência pra
+   * redirecionar depois). O popup ficava mudo pra sempre (medido: `popup.url()` nunca saía de
+   * `about:blank`) e o `else` (2ª chamada, com a URL final) abria uma SEGUNDA aba órfã que o teste
+   * nunca via. Sem esses parâmetros aqui é a nossa própria signed URL do bucket, não link de
+   * terceiro — a referência de volta (`window.opener`) não é risco real.
+   */
+  const handleDownload = async (fileId: string): Promise<void> => {
+    setDownloadError(null);
+    const popup = window.open('', '_blank');
+    try {
+      const { url } = await AdminConversationApiService.getConversationAttachmentUrl(patientId, fileId);
+      if (popup) popup.location.href = url;
+      else window.open(url, '_blank'); // bloqueador de pop-up ativo — melhor esforço
+    } catch {
+      // Nunca falha silenciosa (mesma regra do `sendError` do composer): sem isto, um 403/404 no
+      // download parecia clique sem efeito nenhum.
+      popup?.close();
+      setDownloadError(td('attachments.downloadError', 'Não conseguimos baixar o arquivo. Tente de novo.'));
+    }
+  };
+
+  return (
+    <div data-testid="message-attachments" className="flex flex-col gap-1 mt-1">
+      {attachments.map((attachment) => {
+        const Icon = iconComponentForContentType(attachment.contentType);
+        return (
+          <button
+            key={attachment.fileId}
+            type="button"
+            data-testid={`message-attachment-${attachment.fileId}`}
+            aria-label={td('attachments.download', 'Baixar anexo')}
+            onClick={() => { void handleDownload(attachment.fileId); }}
+            className="flex items-center gap-1.5 text-xs text-primary hover:underline self-start"
+          >
+            <Icon size={14} aria-hidden="true" />
+            <span>{extensionForContentType(attachment.contentType)}</span>
+          </button>
+        );
+      })}
+      {downloadError && (
+        <Text size="xs" role="alert" className="text-red-600" data-testid="message-attachments-error">
+          {downloadError}
+        </Text>
+      )}
+    </div>
+  );
+}
+
 function formatTime(iso: string): string {
   try {
     return new Date(iso).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' });
@@ -70,7 +149,7 @@ function formatTime(iso: string): string {
  * existe no item de TOPO (`ConversationPanel.MessageItem`, thread é de 1 nível). Compartilhada
  * pelas duas telas para a regra de "apagada" e o parsing de menção nunca divergirem.
  */
-export function MessageContent({ message }: { message: ConversationMessage }): JSX.Element {
+export function MessageContent({ message, patientId }: { message: ConversationMessage; patientId: string }): JSX.Element {
   const { t } = useTranslation();
   const td = (key: string, optsOrDefault?: Record<string, unknown> | string): string =>
     t(`admin.patients.detail.conversation.thread.${key}`, optsOrDefault as string);
@@ -90,6 +169,8 @@ export function MessageContent({ message }: { message: ConversationMessage }): J
           ? <em>{td('deleted', 'Mensagem apagada')}</em>
           : renderMessageBody(message.body, message.mentions)}
       </div>
+      {/* Mensagem apagada nunca mostra anexo (corpo cifrado já foi zerado — D-04/soft delete). */}
+      {!message.deletedAt && <MessageAttachments patientId={patientId} attachments={message.attachments} />}
     </div>
   );
 }
@@ -172,7 +253,7 @@ export function ThreadView({
           ←
         </button>
         <div data-testid="thread-root-message" className="flex-1 min-w-0">
-          <MessageContent message={rootMessage} />
+          <MessageContent message={rootMessage} patientId={patientId} />
         </div>
       </div>
       {status === 'error' && (
@@ -184,7 +265,7 @@ export function ThreadView({
         <ul data-testid="thread-replies-list" className="flex-1 overflow-y-auto">
           {replies.map((reply) => (
             <li key={reply.id} data-testid={`thread-reply-${reply.id}`} className="p-3 border-b">
-              <MessageContent message={reply} />
+              <MessageContent message={reply} patientId={patientId} />
             </li>
           ))}
         </ul>

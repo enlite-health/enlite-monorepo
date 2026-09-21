@@ -21,6 +21,7 @@ vi.mock('@infrastructure/http/AdminConversationApiService', () => ({
   AdminConversationApiService: {
     getConversation: vi.fn(),
     getConversationReplies: vi.fn(),
+    getConversationAttachmentUrl: vi.fn(),
   },
 }));
 
@@ -59,10 +60,12 @@ const msg = (overrides: Partial<ConversationMessage> = {}): ConversationMessage 
 });
 
 const getConversationReplies = AdminConversationApiService.getConversationReplies as unknown as ReturnType<typeof vi.fn>;
+const getConversationAttachmentUrl = AdminConversationApiService.getConversationAttachmentUrl as unknown as ReturnType<typeof vi.fn>;
 
 describe('ThreadView', () => {
   beforeEach(() => {
     getConversationReplies.mockReset();
+    getConversationAttachmentUrl.mockReset();
   });
 
   it('lista as replies na ordem recebida do backend (cronológica)', async () => {
@@ -195,5 +198,83 @@ describe('ThreadView', () => {
     await Promise.resolve();
     await Promise.resolve();
     // Chegar até aqui sem o React logar "not wrapped in act"/"unmounted component" já é a prova.
+  });
+
+  // ---- anexo (Bloco 3, T321/T322) — MessageContent → MessageAttachments -------------------
+
+  it('reply com anexo mostra o chip de download; clicar abre a aba SÍNCRONO e só depois redireciona (achado do e2e: window.open após await é bloqueado pelo Chrome)', async () => {
+    const fakePopup = { location: { href: '' }, close: vi.fn() };
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue(fakePopup as unknown as Window);
+    getConversationAttachmentUrl.mockResolvedValue({ url: 'https://signed.example/x', expiresInSeconds: 300 });
+    getConversationReplies.mockResolvedValue([
+      msg({ id: 'r1', attachments: [{ fileId: 'file-1', contentType: 'application/pdf', sizeBytes: 1024 }] }),
+    ]);
+    render(<ThreadView patientId="p1" rootMessage={msg({ id: 'root-1' })} onBack={vi.fn()} />);
+
+    await waitFor(() => expect(screen.getByTestId('message-attachment-file-1')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('message-attachment-file-1'));
+
+    // aba em branco aberta NO CLIQUE, antes de qualquer await — preserva o "user activation".
+    expect(openSpy).toHaveBeenCalledWith('', '_blank');
+
+    await waitFor(() => expect(getConversationAttachmentUrl).toHaveBeenCalledWith('p1', 'file-1'));
+    await waitFor(() => expect(fakePopup.location.href).toBe('https://signed.example/x'));
+    openSpy.mockRestore();
+  });
+
+  it('download com o pop-up BLOQUEADO (window.open devolve null): tenta de novo com a URL final (melhor esforço), nunca lança', async () => {
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue(null);
+    getConversationAttachmentUrl.mockResolvedValue({ url: 'https://signed.example/y', expiresInSeconds: 300 });
+    getConversationReplies.mockResolvedValue([
+      msg({ id: 'r1', attachments: [{ fileId: 'file-1', contentType: 'application/pdf', sizeBytes: 1024 }] }),
+    ]);
+    render(<ThreadView patientId="p1" rootMessage={msg({ id: 'root-1' })} onBack={vi.fn()} />);
+
+    await waitFor(() => expect(screen.getByTestId('message-attachment-file-1')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('message-attachment-file-1'));
+
+    await waitFor(() => expect(openSpy).toHaveBeenCalledWith('https://signed.example/y', '_blank'));
+    expect(screen.queryByTestId('message-attachments-error')).not.toBeInTheDocument();
+    openSpy.mockRestore();
+  });
+
+  it('download que falha (403/404) mostra aviso e fecha a aba em branco — nunca clique sem efeito nenhum', async () => {
+    const fakePopup = { location: { href: '' }, close: vi.fn() };
+    const openSpy = vi.spyOn(window, 'open').mockReturnValue(fakePopup as unknown as Window);
+    getConversationAttachmentUrl.mockRejectedValue(new Error('forbidden'));
+    getConversationReplies.mockResolvedValue([
+      msg({ id: 'r1', attachments: [{ fileId: 'file-1', contentType: 'application/pdf', sizeBytes: 1024 }] }),
+    ]);
+    render(<ThreadView patientId="p1" rootMessage={msg({ id: 'root-1' })} onBack={vi.fn()} />);
+
+    await waitFor(() => expect(screen.getByTestId('message-attachment-file-1')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('message-attachment-file-1'));
+
+    await waitFor(() => expect(screen.getByTestId('message-attachments-error')).toBeInTheDocument());
+    // a aba em branco aberta no clique nunca fica órfã — fecha quando o download falha.
+    expect(fakePopup.close).toHaveBeenCalledTimes(1);
+    openSpy.mockRestore();
+  });
+
+  it('mensagem SEM anexo não renderiza `message-attachments`', async () => {
+    getConversationReplies.mockResolvedValue([msg({ id: 'r1', attachments: [] })]);
+    render(<ThreadView patientId="p1" rootMessage={msg({ id: 'root-1' })} onBack={vi.fn()} />);
+
+    await waitFor(() => expect(screen.getByTestId('thread-reply-r1')).toBeInTheDocument());
+    expect(screen.queryByTestId('message-attachments')).not.toBeInTheDocument();
+  });
+
+  it('mensagem APAGADA nunca mostra anexo, mesmo que o array venha preenchido (soft delete zera o corpo, não o array)', async () => {
+    getConversationReplies.mockResolvedValue([
+      msg({
+        id: 'r1',
+        deletedAt: '2026-09-21T00:00:00.000Z',
+        attachments: [{ fileId: 'file-1', contentType: 'application/pdf', sizeBytes: 1024 }],
+      }),
+    ]);
+    render(<ThreadView patientId="p1" rootMessage={msg({ id: 'root-1' })} onBack={vi.fn()} />);
+
+    await waitFor(() => expect(screen.getByTestId('thread-reply-r1')).toBeInTheDocument());
+    expect(screen.queryByTestId('message-attachments')).not.toBeInTheDocument();
   });
 });
