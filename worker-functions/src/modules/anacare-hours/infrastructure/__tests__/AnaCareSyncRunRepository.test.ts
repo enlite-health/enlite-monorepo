@@ -108,4 +108,53 @@ describe('AnaCareSyncRunRepository', () => {
       expect(params[7]).toBe('2026-01-01');
     });
   });
+
+  /**
+   * F2 (change `anacare-horas-conclusao-de-corrida`) — `getConclusion` lê a mesma tabela.
+   * `status IS NULL`/nenhuma linha são os DOIS casos "não sei" (`SyncRunConclusion`,
+   * `desconhecido` no mapper) — nenhum dos dois inventa `0`/`false` para as contagens.
+   */
+  describe('getConclusion', () => {
+    it('linha com status/contagens gravados: devolve os 3 campos tal qual vieram do banco', async () => {
+      mockPoolQuery.mockResolvedValueOnce({ rows: [{ status: 'running', reservations_total: 144, reservations_done: 49 }] });
+      const repo = new AnaCareSyncRunRepository();
+
+      const conclusion = await repo.getConclusion('anacare', '2026-09');
+
+      expect(mockPoolQuery).toHaveBeenCalledTimes(1);
+      const [sql, params] = mockPoolQuery.mock.calls[0];
+      expect(sql).toMatch(/SELECT status, reservations_total, reservations_done/);
+      expect(sql).toMatch(/FROM anacare_sync_run/);
+      expect(sql).toMatch(/WHERE source = \$1 AND period_month = \$2::date/);
+      expect(params).toEqual(['anacare', '2026-09-01']);
+      expect(conclusion).toEqual({ status: 'running', reservationsTotal: 144, reservationsDone: 49 });
+    });
+
+    it('linha existe com status IS NULL (agosto/setembro pré-existentes): devolve status:null e as 2 contagens null — NUNCA 0', async () => {
+      mockPoolQuery.mockResolvedValueOnce({ rows: [{ status: null, reservations_total: null, reservations_done: null }] });
+      const repo = new AnaCareSyncRunRepository();
+
+      const conclusion = await repo.getConclusion('anacare', '2026-08');
+
+      expect(conclusion).toEqual({ status: null, reservationsTotal: null, reservationsDone: null });
+    });
+
+    it('nenhuma linha para o mês (rows vazio): devolve os 3 campos null — MESMO resultado de status IS NULL (o mapper trata os dois como "não sei")', async () => {
+      mockPoolQuery.mockResolvedValueOnce({ rows: [] });
+      const repo = new AnaCareSyncRunRepository();
+
+      const conclusion = await repo.getConclusion('anacare', '2026-07');
+
+      expect(conclusion).toEqual({ status: null, reservationsTotal: null, reservationsDone: null });
+    });
+
+    it('linha done completa: devolve status=done e as 2 contagens iguais', async () => {
+      mockPoolQuery.mockResolvedValueOnce({ rows: [{ status: 'done', reservations_total: 144, reservations_done: 144 }] });
+      const repo = new AnaCareSyncRunRepository();
+
+      const conclusion = await repo.getConclusion('anacare', '2026-09');
+
+      expect(conclusion).toEqual({ status: 'done', reservationsTotal: 144, reservationsDone: 144 });
+    });
+  });
 });

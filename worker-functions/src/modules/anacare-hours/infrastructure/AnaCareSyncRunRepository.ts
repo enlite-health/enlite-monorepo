@@ -10,7 +10,7 @@
  */
 import type { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
-import type { SyncRunProgress, SyncRunRepository } from '../domain/AnaCareHoursSyncPorts';
+import type { SyncRunConclusion, SyncRunProgress, SyncRunRepository } from '../domain/AnaCareHoursSyncPorts';
 
 /** `period_month` da tabela é sempre o 1º dia do mês (CHECK, migration 443) — mesmo molde de `AnaCarePatientMonthRepository`. */
 function periodMonthDate(month: string): string {
@@ -79,5 +79,30 @@ export class AnaCareSyncRunRepository implements SyncRunRepository {
         periodMonthDate(periodMonth),
       ],
     );
+  }
+
+  /**
+   * F2 (change `anacare-horas-conclusao-de-corrida`): lê a conclusão gravada para `(source,
+   * periodMonth)`. Sem linha nenhuma para o mês (`rows[0]` ausente) OU `status` gravado como
+   * `NULL` — os dois casos que `computeSnapshotState` trata como `desconhecido` (nunca `parcial`,
+   * ver `SyncRunConclusion`) — devolvem os 3 campos `null`, nunca um `0` inventado.
+   */
+  async getConclusion(source: string, periodMonth: string): Promise<SyncRunConclusion> {
+    const res = await this.pool.query<{
+      status: 'running' | 'done' | 'failed' | null;
+      reservations_total: number | null;
+      reservations_done: number | null;
+    }>(
+      `SELECT status, reservations_total, reservations_done
+         FROM anacare_sync_run
+        WHERE source = $1 AND period_month = $2::date`,
+      [source, periodMonthDate(periodMonth)],
+    );
+    const row = res.rows[0];
+    return {
+      status: row?.status ?? null,
+      reservationsTotal: row?.reservations_total ?? null,
+      reservationsDone: row?.reservations_done ?? null,
+    };
   }
 }
