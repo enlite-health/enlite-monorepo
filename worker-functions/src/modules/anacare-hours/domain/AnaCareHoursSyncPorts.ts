@@ -77,6 +77,21 @@ export interface SyncRunProgress {
  * recebido do cliente HTTP (ver cabeçalho da migration 443 para os 3 buracos medidos do desenho
  * anterior). Uma linha por `(source, periodMonth)`.
  */
+/**
+ * F2 (change `anacare-horas-conclusao-de-corrida`) — leitura da CONCLUSÃO da corrida para
+ * `(source, periodMonth)`, o dado que `AnaCareHoursMapper.computeSnapshotState` usa para decidir
+ * `desconhecido`/`parcial`. `status: null` cobre OS DOIS casos que não têm base para virar
+ * `parcial` — nenhuma linha em `anacare_sync_run` para este mês, OU a linha existe com
+ * `status IS NULL` (agosto/setembro pré-existentes) — os dois são "não sei", nunca "sei que está
+ * incompleto". `reservationsTotal`/`reservationsDone` só vêm não-nulos quando o controller já
+ * gravou uma rodada (nunca um `0` inventado para "sem dado").
+ */
+export interface SyncRunConclusion {
+  status: 'running' | 'done' | 'failed' | null;
+  reservationsTotal: number | null;
+  reservationsDone: number | null;
+}
+
 export interface SyncRunRepository {
   /**
    * Corrida NOVA (sem cursor de retomada): grava/substitui `run_started_at = NOW()` do banco para
@@ -99,6 +114,12 @@ export interface SyncRunRepository {
    * `INSERT`). Chamado pelo controller a cada rodada, sucesso ou falha.
    */
   recordProgress(source: string, periodMonth: string, progress: SyncRunProgress): Promise<void>;
+  /**
+   * F2: lê `status`/`reservations_total`/`reservations_done` da linha de `(source, periodMonth)` —
+   * único ponto de leitura da conclusão da corrida, para não duplicar o `SELECT` em cada chamador
+   * (`AnaCareHoursService.getMonthSnapshot`). Ver `SyncRunConclusion` para a semântica de `null`.
+   */
+  getConclusion(source: string, periodMonth: string): Promise<SyncRunConclusion>;
 }
 
 /**

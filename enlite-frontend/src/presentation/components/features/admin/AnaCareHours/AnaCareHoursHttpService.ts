@@ -202,7 +202,17 @@ export class AnaCareHoursHttpService implements AnaCareHoursService {
   async getRetratoStatus(month: string): Promise<AnaCareRetratoStatus> {
     const snapshot = await this.getJson<AnaCareMonthSnapshot>(`${this.basePath}/months/${encodeURIComponent(month)}`);
     if (!snapshot) return { updatedAt: new Date().toISOString(), stale: false, snapshotState: 'nao_construido', circuitBreakerOpen: false };
-    return { updatedAt: snapshot.updatedAt, stale: snapshot.stale, snapshotState: snapshot.snapshotState, circuitBreakerOpen: snapshot.circuitBreakerOpen };
+    return {
+      updatedAt: snapshot.updatedAt,
+      stale: snapshot.stale,
+      snapshotState: snapshot.snapshotState,
+      circuitBreakerOpen: snapshot.circuitBreakerOpen,
+      // F2 (migration 457) — só existem no wire quando `snapshotState==='parcial'` (ver
+      // `AnaCareMonthSnapshot.reservationsTotal/reservationsDone`); repassados tal qual, nunca
+      // fingidos quando ausentes (o spread implícito de `undefined` não aparece no objeto).
+      reservationsTotal: snapshot.reservationsTotal,
+      reservationsDone: snapshot.reservationsDone,
+    };
   }
 
   async validateShift({ shiftId }: ValidateShiftCommand): Promise<void> {

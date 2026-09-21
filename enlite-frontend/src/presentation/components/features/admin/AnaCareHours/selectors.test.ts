@@ -16,7 +16,9 @@ import {
   providerDisplayName,
   selectionSummary,
   shiftHours,
+  shouldShowStatusBanner,
   startOfWeekMonday,
+  statusBannerKind,
   todayIsoLocal,
   totalHours,
   validationProgress,
@@ -234,6 +236,57 @@ describe('blockReason', () => {
   it("POSITIVO — modo 'corto' dá sempre o mesmo texto fixo, com ou sem disjuntor", () => {
     expect(blockReason({ stale: true, circuitBreakerOpen: false }, 'corto')).toBe('retrato desactualizado');
     expect(blockReason({ stale: true, circuitBreakerOpen: true }, 'corto')).toBe('retrato desactualizado');
+  });
+});
+
+// F2 (change `anacare-horas-conclusao-de-corrida`, migration 457) — único dono da decisão de
+// banner que `AnaCareHoursListPage`/`AnaCareHoursDetailPage` consomem.
+describe('shouldShowStatusBanner', () => {
+  it('NEGATIVO — fresco (nada stale, sem disjuntor) não mostra banner', () => {
+    expect(shouldShowStatusBanner({ stale: false, circuitBreakerOpen: false, snapshotState: 'fresco' })).toBe(false);
+  });
+
+  it('POSITIVO — stale=true mostra banner (comportamento antigo preservado)', () => {
+    expect(shouldShowStatusBanner({ stale: true, circuitBreakerOpen: false, snapshotState: 'velho' })).toBe(true);
+  });
+
+  it('POSITIVO — circuitBreakerOpen=true mostra banner mesmo com stale=false (comportamento antigo preservado)', () => {
+    expect(shouldShowStatusBanner({ stale: false, circuitBreakerOpen: true, snapshotState: 'fresco' })).toBe(true);
+  });
+
+  /** 🔴 Sem este caso, o banner de `desconhecido`/`parcial` nunca apareceria (nenhum dos dois seta `stale`). */
+  it('POSITIVO — snapshotState=desconhecido mostra banner MESMO com stale=false e circuitBreakerOpen=false', () => {
+    expect(shouldShowStatusBanner({ stale: false, circuitBreakerOpen: false, snapshotState: 'desconhecido' })).toBe(true);
+  });
+
+  it('POSITIVO — snapshotState=parcial mostra banner MESMO com stale=false e circuitBreakerOpen=false', () => {
+    expect(shouldShowStatusBanner({ stale: false, circuitBreakerOpen: false, snapshotState: 'parcial' })).toBe(true);
+  });
+});
+
+describe('statusBannerKind', () => {
+  it('nao_construido tem PRECEDÊNCIA sobre circuitBreakerOpen', () => {
+    expect(statusBannerKind({ snapshotState: 'nao_construido', circuitBreakerOpen: true })).toBe('naoConstruido');
+  });
+
+  it('desconhecido tem precedência sobre circuitBreakerOpen', () => {
+    expect(statusBannerKind({ snapshotState: 'desconhecido', circuitBreakerOpen: true })).toBe('desconhecido');
+  });
+
+  it('parcial tem precedência sobre circuitBreakerOpen', () => {
+    expect(statusBannerKind({ snapshotState: 'parcial', circuitBreakerOpen: true })).toBe('parcial');
+  });
+
+  it('velho + circuitBreakerOpen=true vira circuitBreaker (nenhum dos 3 novos estados presente)', () => {
+    expect(statusBannerKind({ snapshotState: 'velho', circuitBreakerOpen: true })).toBe('circuitBreaker');
+  });
+
+  it('velho + circuitBreakerOpen=false vira simple', () => {
+    expect(statusBannerKind({ snapshotState: 'velho', circuitBreakerOpen: false })).toBe('simple');
+  });
+
+  it('fresco vira simple (nunca escolhido pra render — shouldShowStatusBanner já barrou antes)', () => {
+    expect(statusBannerKind({ snapshotState: 'fresco', circuitBreakerOpen: false })).toBe('simple');
   });
 });
 

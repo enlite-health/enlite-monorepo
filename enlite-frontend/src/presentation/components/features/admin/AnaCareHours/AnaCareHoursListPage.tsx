@@ -20,7 +20,7 @@ import { OriginLegend } from './OriginLegend';
 import { ProviderFilterCombobox } from './ProviderFilterCombobox';
 import { AnaCareHoursSyncButton } from './AnaCareHoursSyncButton';
 import type { AnaCareListPatient, AnaCareMonthSnapshot } from './types';
-import { formatMonthLabel, monthOptionsUntilNow, patientDisplayName, providerDisplayName, type SinCheckinHoursMode } from './selectors';
+import { formatMonthLabel, monthOptionsUntilNow, patientDisplayName, providerDisplayName, shouldShowStatusBanner, statusBannerKind, type SinCheckinHoursMode } from './selectors';
 import type { UseAnaCareHoursSyncResult } from '@hooks/admin/useAnaCareHoursSync';
 
 interface AnaCareHoursListPageProps {
@@ -95,7 +95,13 @@ export function AnaCareHoursListPage({
     });
   }, [snapshot.patients, providerFilterId, search]);
 
-  const retratoDesactualizado = snapshot.stale || snapshot.circuitBreakerOpen;
+  // F2 (migration 457): 2 estados novos (`parcial`/`desconhecido`) somam ao banner — nenhum dos
+  // dois altera `stale` (mantido compat: `nao_construido || velho`, ver `types.ts`), então o
+  // gatilho de EXIBIÇÃO precisa checar `snapshotState` além de `stale`/`circuitBreakerOpen`
+  // (`shouldShowStatusBanner`, único dono da decisão — `selectors.ts`).
+  const showStatusBanner = shouldShowStatusBanner(snapshot);
+  const bannerKind = statusBannerKind(snapshot);
+  const temContagemDaCorrida = snapshot.reservationsTotal != null && snapshot.reservationsDone != null;
 
   return (
     <PageContainer>
@@ -131,22 +137,36 @@ export function AnaCareHoursListPage({
           </div>
         </div>
 
-        {retratoDesactualizado && (
+        {showStatusBanner && (
           <AlertBanner
             variant="warning"
             title={
-              // Item 3 (revisão de PR): "nunca construído" NÃO é "mais de 24 horas" — mensagem
-              // própria, para não afirmar uma sincronização que nunca aconteceu.
-              snapshot.snapshotState === 'nao_construido'
+              // Item 3 (revisão de PR) + F2: cada estado tem título PRÓPRIO — nunca afirmar uma
+              // sincronização que nunca aconteceu (`nao_construido`), nem "sabemos que está
+              // incompleto" quando na verdade não sabemos nada (`desconhecido`).
+              bannerKind === 'naoConstruido'
                 ? t('admin.anacareHours.stale.titleNaoConstruido')
-                : t('admin.anacareHours.stale.title')
+                : bannerKind === 'desconhecido'
+                  ? t('admin.anacareHours.stale.titleDesconhecido')
+                  : bannerKind === 'parcial'
+                    ? t('admin.anacareHours.stale.titleParcial')
+                    : t('admin.anacareHours.stale.title')
             }
             message={
-              snapshot.snapshotState === 'nao_construido'
+              bannerKind === 'naoConstruido'
                 ? t('admin.anacareHours.stale.messageNaoConstruido')
-                : snapshot.circuitBreakerOpen
-                  ? t('admin.anacareHours.stale.messageCircuitBreaker')
-                  : t('admin.anacareHours.stale.messageSimple')
+                : bannerKind === 'desconhecido'
+                  ? t('admin.anacareHours.stale.messageDesconhecido')
+                  : bannerKind === 'parcial'
+                    ? temContagemDaCorrida
+                      ? t('admin.anacareHours.stale.messageParcialComContagem', {
+                          done: snapshot.reservationsDone,
+                          total: snapshot.reservationsTotal,
+                        })
+                      : t('admin.anacareHours.stale.messageParcial')
+                    : bannerKind === 'circuitBreaker'
+                      ? t('admin.anacareHours.stale.messageCircuitBreaker')
+                      : t('admin.anacareHours.stale.messageSimple')
             }
           />
         )}
