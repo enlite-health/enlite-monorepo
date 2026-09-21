@@ -19,6 +19,13 @@ interface Props {
   isFieldReadonly: (field: string) => boolean;
   triggerSave: () => void;
   profilePhotoElement: React.ReactNode;
+  /**
+   * Spec 025 (opção A, 21/09): o backend sinalizou que a data de nascimento
+   * gravada não é válida (`birthDateStatus === 'invalid'`) — destaca o campo
+   * e mostra o aviso de recadastro. `undefined`/`false` = comportamento igual
+   * a antes.
+   */
+  birthDateInvalid?: boolean;
 }
 
 const PROFESSION_OPTIONS = [
@@ -53,7 +60,7 @@ const TRASTORNO_OPTIONS = [
   { value: 'trastorno_psiquiatrico', label: 'Trastorno Psiquiátrico' },
 ];
 
-export function GeneralInfoFormFields({ form, isFieldReadonly, triggerSave, profilePhotoElement }: Props) {
+export function GeneralInfoFormFields({ form, isFieldReadonly, triggerSave, profilePhotoElement, birthDateInvalid = false }: Props) {
   const { t } = useTranslation();
   const { register, control, setValue, formState: { errors } } = form;
 
@@ -141,10 +148,15 @@ export function GeneralInfoFormFields({ form, isFieldReadonly, triggerSave, prof
           />
         </FormField>
 
-        {/* Birth Date */}
-        <FormField label={t('workerRegistration.generalInfo.birthDate')} htmlFor="birthDate" error={errors.birthDate?.message}>
+        {/* Birth Date — spec 025 (opção A): erro de validação do formulário tem
+            prioridade sobre o aviso do backend; os dois nunca aparecem juntos
+            porque o campo forçado vazio (ver mergeGeneralInfo) ainda não foi
+            tocado, então `errors.birthDate` normalmente está limpo aqui. */}
+        <FormField label={t('workerRegistration.generalInfo.birthDate')} htmlFor="birthDate">
           <InputWithIcon inputSize="compact" id="birthDate" type="text" {...register('birthDate')}
             placeholder={t('workerRegistration.generalInfo.birthDatePlaceholder')} maxLength={10}
+            error={errors.birthDate?.message || (birthDateInvalid ? t('workerRegistration.generalInfo.birthDateInvalidWarning') : undefined)}
+            data-testid="birthDate-input"
             onChange={(e) => { setValue('birthDate', maskDate(e.target.value)); }}
           />
         </FormField>
