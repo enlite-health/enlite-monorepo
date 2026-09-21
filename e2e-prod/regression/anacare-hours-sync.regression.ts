@@ -1,66 +1,26 @@
 /**
- * anacare-hours-sync.regression.ts — a tela `/admin/anacare/horas` REALMENTE sincroniza o mês
- * que ela EXIBE, contra PRODUÇÃO (enlite-prd).
+ * anacare-hours-sync.regression.ts — prova que o botão "Sincronizar" (F6.4) da tela
+ * `/admin/anacare/horas` dispara `POST /api/admin/anacare-hours/sync` com o MESMO mês que o
+ * seletor exibe, contra produção real (enlite-prd) — sem disparar o sync de verdade.
  *
- * ── O defeito que este teste existe para pegar ──────────────────────────────────────────────
- * O sync manual (botão "Sincronizar", F6.4) dispara `POST /api/admin/anacare-hours/sync` com o
- * `month` que o HOOK tem em memória (`useAnaCareHoursSync`, parâmetro `month`) — que precisa ser
- * o MESMO mês que o SELETOR mostra na tela. Se um dia os dois desalinharem (ex.: o container
- * passar o mês errado pro hook), o operador vê "Setembro" no seletor e sincroniza Agosto sem
- * saber — silencioso. A asserção central (teste 2) compara o `month` do CORPO do POST com o mês
- * lido do DOM do seletor, no mesmo instante do clique.
+ * ── Por que o sync real NÃO roda aqui (mudou em 21/09/2026) ──────────────────────────────────
+ * `e2e-prod` é só para testar — nunca o mecanismo que sincroniza dado de negócio em produção (ver
+ * `../../CLAUDE.md`); e D388 mantém o sync automático ADIADO. A versão anterior deste teste
+ * deixava o laço de sync real rodar até 10 min, o que reintroduzia por via indireta o sync
+ * automático que a D388 adiou; hoje isso estourou o timeout do job `e2e-prod-smoke` e derrubou a
+ * suíte inteira. Agora o teste INTERCEPTA o POST (`page.route`) e responde com um corpo
+ * fabricado de corrida concluída — nada chega ao backend real. Isso é uma exceção pontual e
+ * autorizada à regra "zero mock" desta suíte (`../CLAUDE.md` §1): aqui o risco maior era o
+ * próprio teste SER a operação de produção, não deixar de pegar um erro real dela.
  *
- * ── Decisão do Gabriel (20/09) que rege o desenho ───────────────────────────────────────────
- * O teste deixa o LAÇO INTEIRO terminar (nunca interrompe no meio). Motivo: a gravação de cada
- * rodada SUBSTITUI o retrato do mês por uma corrida NOVA de dados; um teste que clica
- * "Sincronizar" e vai embora no meio deixa o mês PELA METADE — foi exatamente assim que agosto
- * ficou travado em 40% por semanas em produção (histórico do brief, `useAnaCareHoursSync.ts`).
- * Interromper o laço no meio É o incidente automatizado que este teste evita.
+ * Ainda prova: `month` do corpo do POST é o mesmo que o seletor exibe (asserção central),
+ * `budgetMs === 30_000`, e que a tela sabe renderizar o estado "concluído" a partir da resposta.
+ * Deixou de provar que o backend termina uma sincronização real em produção — ver
+ * `openspec/changes/e2e-prod-sem-sync-anacare-horas` (repo `ebrain`) para o design completo.
  *
- * ── Consequência aceita: rodar DIARIAMENTE faz deste teste a rotina de sync automática ──────
- * Este spec roda no MESMO agendamento diário (3h AR) de toda a suíte — não há Scheduler separado
- * e semanal só para `regression`. O Gabriel decidiu (20/09) não dividir: "o teste é diário então
- * vamos sincronizar 3h da manhã sempre. isso pode ser bom ou ruim." Na prática, isso faz deste
- * teste, de fato, a ROTINA DE SINCRONIZAÇÃO AUTOMÁTICA do mês corrente do Ana Care — não só uma
- * verificação. A decisão de 20/09 registrada como D388 havia adiado o sync automático; rodar
- * este monitor todo dia o reintroduz por via indireta. Quem desabilitar, renomear ou alterar
- * este teste está mexendo na sincronização de dados da operação, não só numa checagem.
- *
- * ── O que este teste ALTERA em produção ─────────────────────────────────────────────────────
- * Ele reescreve o RETRATO (`anacare_patient_month` e as tabelas de turno que o backend deriva
- * dele) do mês sincronizado — a MESMA operação que um operador humano faria clicando
- * "Sincronizar" na tela. Não cria e não apaga nenhuma entidade sintética (paciente/worker/vaga)
- * marcável com `is_test` — o alvo é o mês real, com dado real.
- *
- * ── Por que NÃO HÁ teardown/"desfazer" ───────────────────────────────────────────────────────
- * Sincronizar de novo (rodar este teste outra vez, ou o operador clicar o botão de novo) é
- * IDEMPOTENTE pelo próprio desenho do sync (upsert por turno, cursor até `nextCursor === null`)
- * — não existe um "estado anterior" que faça sentido restaurar, porque o retrato correto É o
- * resultado de uma corrida completa contra o Ana Care real. Um "desfazer" aqui significaria
- * voltar a um retrato DESATUALIZADO de propósito, o que é pior, não neutro. Por isso: nenhum
- * `afterAll` de limpeza abaixo — deixar o laço terminar é o próprio ato que mantém o estado
- * íntegro (a alternativa, interromper, é o bug que este teste existe pra provar que não acontece
- * mais).
- *
- * ── Caminho de FALHA — o que fazer se este teste estourar o timeout ────────────────────────
- * O parágrafo acima cobre o caminho feliz. Mas se a corrida terminar em ERRO (`anacare-hours-
- * sync-error` aparecer) ou vier `deduped` (`anacare-hours-sync-deduped`, corrida concorrente
- * detectada), o indicador `anacare-hours-sync-done` NUNCA aparece — este teste estoura
- * `LOOP_TIMEOUT_MS` e falha por timeout, não por asserção. Nesse caso o MÊS FICA PELA METADE:
- * exatamente o incidente que este teste existe pra pegar, só que acontecendo dentro do próprio
- * monitor, sem teardown que resolva (não há "desfazer" um sync parcial — só terminá-lo). Quem
- * for triar essa falha (ex.: 3h AR, sem ninguém olhando) precisa RETOMAR o sync até o
- * fim — pela tela (`/admin/anacare/horas`, botão "Sincronizar" de novo: o cursor de retomada
- * garante que ele CONTINUA, não recomeça do zero) ou pela API (`POST /api/admin/anacare-hours/
- * sync` com o `month` e o `cursor` da última rodada observada nos logs) — antes de considerar o
- * alarme resolvido. Reportar a falha e seguir em frente SEM retomar deixa o retrato real
- * incompleto em produção.
- *
- * REGRAS DA SUÍTE (e2e-prod/CLAUDE.md): zero `page.route()`/mock; web-first assertions; NUNCA
- * `waitForTimeout` cru; `page.waitForRequest` é OBSERVAÇÃO (não interceptação), permitida nos
- * projetos read-real. Texto clínico/PII de paciente NUNCA é lido nem impresso — as asserções
- * abaixo só tocam contagem, `data-testid` (identificador operacional, `anaCareId`) e o corpo JSON
- * do POST (`month`/`cursor`/`budgetMs`, nenhum campo clínico).
+ * Texto clínico/PII de paciente NUNCA é lido nem impresso — as asserções abaixo só tocam
+ * contagem, `data-testid` (identificador operacional, `anaCareId`) e o corpo JSON do
+ * POST/resposta fake (`month`/`cursor`/`budgetMs`, nenhum campo clínico).
  */
 import { test, expect, type BrowserContext, type Page } from '@playwright/test';
 import * as path from 'path';
@@ -70,28 +30,49 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ADMIN_AUTH_FILE = path.join(__dirname, '..', '.auth', 'admin.json');
 
 /**
- * `SYNC_ROUND_BUDGET_MS = 30_000` (30s por rodada, baixado de 100s em 21/09) — mesma constante de
- * `enlite-frontend/src/hooks/admin/useAnaCareHoursSync.ts:16`, comentada aqui pra quem lê o
- * teste não precisar abrir outro arquivo. 100s estourava o corte de 60s que o Firebase Hosting
- * aplica em `api.enlite.health` (prd) — ver comentário na constante do hook. A medição de
- * cobertura/tempo total abaixo (~283 reservas, ~74/rodada, ~7 min) foi feita na STAGE em 18/09
- * com o budget ANTIGO de 100s (`bin/anacare-medicoes/stg-anacare-sync.mjs`) — não refeita para
- * 30s nesta mudança (fora de escopo); serve só de referência de ordem de grandeza para o timeout
- * abaixo, que já tem folga generosa.
+ * `SYNC_ROUND_BUDGET_MS = 30_000` — mesma constante de
+ * `enlite-frontend/src/hooks/admin/useAnaCareHoursSync.ts:16`, comentada aqui pra quem lê o teste
+ * não precisar abrir outro arquivo. É o valor que a asserção central (teste 2) espera encontrar
+ * no corpo do POST — não controla mais nenhum timeout deste teste, porque o sync agora é
+ * interceptado, nunca real.
  */
-const MEASURED_STAGE_DURATION_MS = 7 * 60_000; // ~7 min, medido na stage (18/09)
-const LOOP_TIMEOUT_MS = 10 * 60_000; // 10 min — margem generosa sobre o medido, pra prod real
-const TEST_TIMEOUT_MS = LOOP_TIMEOUT_MS + 60_000; // +1 min pra abrir a tela e ler a tabela no fim
+const SYNC_ROUND_BUDGET_MS = 30_000;
+
+/**
+ * Corpo fabricado de UMA corrida concluída (`nextCursor: null` já na 1ª rodada), no formato de
+ * `TriggerSyncResult` (`enlite-frontend/.../AnaCareHours/types.ts:294`) e do payload real
+ * devolvido por `AnaCareHoursSyncController.trigger`
+ * (`worker-functions/src/modules/anacare-hours/interfaces/controllers/AnaCareHoursSyncController.ts`).
+ * `nextCursor: null` é o que faz `useAnaCareHoursSync` marcar `status: 'done'` e chamar
+ * `onComplete` — o mesmo caminho de código de uma corrida real bem-sucedida. Contagens pequenas e
+ * óbvias (1), nunca plausíveis de produção — deixa claro, pra quem ler o teste ou os logs, que é
+ * dado fabricado de teste.
+ */
+function fakeSyncDoneBody() {
+  return {
+    success: true,
+    deduped: false,
+    shiftsRead: 1,
+    reservationsProcessed: 1,
+    shiftsWritten: 1,
+    nextCursor: null,
+    reservationsTotal: 1,
+    reservationsDone: 1,
+    runStartedAt: new Date().toISOString(),
+    shiftsSkippedNoProvider: 0,
+    shiftsSkippedNoPatient: 0,
+  };
+}
 
 /** Estado que atravessa os 3 passos (describe.serial) — MESMA `page`/`context`, de propósito: o
- * laço do sync vive em estado React DENTRO da aba (não em endpoint de status no backend), então
- * "esperar o laço fechar" só faz sentido continuando na MESMA sessão de navegador que clicou
- * "Sincronizar" — reabrir a tela perderia o estado em memória do hook. */
+ * hook de sync vive em estado React DENTRO da aba, então "ver o estado concluído" só faz sentido
+ * continuando na MESMA sessão de navegador que clicou "Sincronizar" — reabrir a tela perderia o
+ * estado em memória do hook. */
 const journey: { targetMonth?: string; ctx?: BrowserContext; page?: Page } = {};
 
-test.describe.serial('AnaCare Horas — o sync real sincroniza o MÊS que a tela exibe (prod)', () => {
+test.describe.serial('AnaCare Horas — o clique em Sincronizar leva o MÊS que a tela exibe (prod, sync interceptado)', () => {
   test.afterAll(async () => {
-    // Ver cabeçalho "Por que NÃO HÁ teardown": nada a desfazer, só fechar o navegador.
+    // Nada a desfazer: a requisição de sync nunca chegou ao backend real, só fechar o navegador.
     await journey.ctx?.close().catch(() => undefined);
   });
 
@@ -135,21 +116,42 @@ test.describe.serial('AnaCare Horas — o sync real sincroniza o MÊS que a tela
     });
   });
 
-  test('2. dispara "Sincronizar" e prova que o POST leva o MÊS LIDO DA TELA (asserção central)', async () => {
+  test('2. dispara "Sincronizar", INTERCEPTA o POST antes que ele saia do navegador e prova que o corpo leva o MÊS LIDO DA TELA (asserção central)', async () => {
     const page = journey.page!;
     const syncButton = page.getByTestId('anacare-hours-sync-button');
     await expect(syncButton).toBeVisible({ timeout: 30_000 });
 
-    const primeiraRodada = page.waitForRequest(
-      (r) => r.method() === 'POST' && r.url().includes('/api/admin/anacare-hours/sync'),
-    );
+    let capturedBody: { month?: string; cursor?: number | null; budgetMs?: number } | undefined;
+
+    // INTERCEPTA — ver cabeçalho do arquivo para o porquê. Captura o corpo ANTES de responder,
+    // preservando a mesma ordem de prova que o teste já fazia (captura → asserção do request →
+    // asserção do estado final da tela, no teste 3), só que a resposta agora é fabricada, nunca
+    // vinda do backend real.
+    await page.route('**/api/admin/anacare-hours/sync', async (route) => {
+      capturedBody = route.request().postDataJSON() as {
+        month?: string;
+        cursor?: number | null;
+        budgetMs?: number;
+      };
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(fakeSyncDoneBody()),
+      });
+    });
+
     await syncButton.click();
-    const req = await primeiraRodada;
+    await expect
+      .poll(() => capturedBody !== undefined, {
+        message: 'o POST /anacare-hours/sync interceptado não chegou a ser capturado a tempo',
+        timeout: 10_000,
+      })
+      .toBe(true);
 
     // ── ASSERÇÃO CENTRAL ──────────────────────────────────────────────────────────────────────
-    // O corpo da PRIMEIRA rodada tem que levar o MESMO mês que acabamos de ler e selecionar no
-    // DOM (passo 1) — a mesma fonte que o operador está olhando na tela NESTE instante.
-    const body = req.postDataJSON() as { month?: string; cursor?: number | null; budgetMs?: number };
+    // O corpo interceptado tem que levar o MESMO mês que acabamos de ler e selecionar no DOM
+    // (passo 1) — a mesma fonte que o operador estaria olhando na tela neste instante.
+    const body = capturedBody!;
     expect(
       body.month,
       'o corpo do POST /anacare-hours/sync tem que levar o mês exibido no seletor, não outro',
@@ -157,47 +159,48 @@ test.describe.serial('AnaCare Horas — o sync real sincroniza o MÊS que a tela
     // Primeira rodada de uma corrida NOVA (contexto de navegador recém-criado no passo 1, sem
     // `sessionStorage` de uma corrida anterior): sem cursor de retomada.
     expect(body.cursor ?? null, 'primeira rodada não deveria carregar cursor de retomada').toBeNull();
-    expect(body.budgetMs, 'orçamento da rodada deveria ser o SYNC_ROUND_BUDGET_MS do hook').toBe(30_000);
+    expect(body.budgetMs, 'orçamento da rodada deveria ser o SYNC_ROUND_BUDGET_MS do hook').toBe(
+      SYNC_ROUND_BUDGET_MS,
+    );
 
     test.info().annotations.push({
       type: 'evidência',
-      description: `1ª rodada do POST: month=${body.month} cursor=${body.cursor ?? 'null'} budgetMs=${body.budgetMs}`,
+      description: `POST interceptado (nunca chegou ao backend real): month=${body.month} cursor=${body.cursor ?? 'null'} budgetMs=${body.budgetMs}`,
     });
   });
 
-  test('3. espera o laço FECHAR até o fim (decisão do Gabriel, 20/09: nunca interromper) e confirma dado do mês sincronizado na tela', async () => {
-    // Bump do timeout de 60s (default de `playwright.config.ts`) pra caber o laço inteiro — ver
-    // comentário de LOOP_TIMEOUT_MS/TEST_TIMEOUT_MS no topo do arquivo.
-    test.setTimeout(TEST_TIMEOUT_MS);
+  test('3. a tela mostra o estado CONCLUÍDO a partir da resposta simulada, em segundos (sem laço real)', async () => {
     const page = journey.page!;
 
     // Web-first, PROIBIDO waitForTimeout cru: espera o INDICADOR DE CONCLUÍDO
-    // (`anacare-hours-sync-done`, só existe quando `status === 'done'` —
-    // AnaCareHoursSyncButton.tsx) aparecer. O laço pode levar de ~4 a muitas rodadas dependendo
-    // de quantas reservas o mês tem HOJE — nunca um número fixo de segundos, sempre o ESTADO real
-    // da tela decide quando o teste segue.
-    await expect(page.getByTestId('anacare-hours-sync-done')).toBeVisible({ timeout: LOOP_TIMEOUT_MS });
+    // (`anacare-hours-sync-done`, só existe quando `status === 'done'` — AnaCareHoursSyncButton.tsx)
+    // aparecer. Como a resposta interceptada já volta com `nextCursor: null` na 1ª rodada, isto
+    // resolve em segundos — não há mais laço de várias rodadas para esperar.
+    await expect(page.getByTestId('anacare-hours-sync-done')).toBeVisible({ timeout: 15_000 });
 
-    // Caminho feliz: nenhum erro nem dedupe deveria ter interrompido a corrida no meio.
+    // Caminho feliz: a resposta fabricada é sempre sucesso, então nenhum erro nem dedupe deveria
+    // ter aparecido.
     await expect(page.getByTestId('anacare-hours-sync-error')).toHaveCount(0);
     await expect(page.getByTestId('anacare-hours-sync-deduped')).toHaveCount(0);
 
     // `onComplete=refetch` (useAnaCareHoursSync → AnaCareHoursListContainer) recarrega o
-    // snapshot do MESMO mês assim que o laço termina — a tabela deve mostrar linhas de paciente
-    // do mês sincronizado. Só CONTAGEM + o identificador operacional (`anaCareId` no
-    // `data-testid`, um ID de sistema — não nome, não texto clínico) — regra dura do CLAUDE.md da
-    // raiz: texto clínico NUNCA entra em prompt/log; status/contagem/ID sempre podem.
+    // snapshot do MESMO mês assim que o hook marca `done`. Como o sync foi interceptado, essas
+    // linhas vêm do snapshot JÁ EXISTENTE no banco (de sincronizações reais anteriores) — isto
+    // prova que a tela sabe renderizar o caminho "pós-sync", não que este clique atualizou dado
+    // nenhum. Só CONTAGEM + o identificador operacional (`anaCareId` no `data-testid`, um ID de
+    // sistema — não nome, não texto clínico) — regra dura do CLAUDE.md da raiz: texto clínico
+    // NUNCA entra em prompt/log; status/contagem/ID sempre podem.
     const patientRows = page.locator('[data-testid^="anacare-hours-patient-row-"]');
     await expect(patientRows.first()).toBeVisible({ timeout: 30_000 });
     const rowCount = await patientRows.count();
     expect(
       rowCount,
-      `mês ${journey.targetMonth} sincronizado (status=done) mas a tela não mostra nenhum paciente`,
+      `tela em estado "concluído" para o mês ${journey.targetMonth} mas sem nenhum paciente visível`,
     ).toBeGreaterThan(0);
 
     test.info().annotations.push({
       type: 'evidência',
-      description: `Laço fechado (status=done) para o mês ${journey.targetMonth}; ${rowCount} pacientes na tela. Medido na stage: ~${Math.round(MEASURED_STAGE_DURATION_MS / 60_000)} min; timeout usado aqui: ${Math.round(LOOP_TIMEOUT_MS / 60_000)} min.`,
+      description: `Estado "concluído" (a partir da resposta interceptada) para o mês ${journey.targetMonth}; ${rowCount} pacientes na tela (snapshot pré-existente, não deste clique).`,
     });
   });
 });
