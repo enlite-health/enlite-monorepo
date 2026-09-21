@@ -56,10 +56,58 @@
  * resolve) + credenciais dummy não-vazias; `GET /anacare-hours/months/2026-08` com um
  * `anacare_sync_run` real semeado `done=49/total=144` respondeu em 0.076s com
  * `snapshotState:"parcial", reservationsTotal:144, reservationsDone:49` — nem hang de DNS nem
- * timeout, e os números vieram exatamente do que a SQL gravou. `ANACARE_ENFORCED`/diretório
- * (`AnaCareEnliteDirectory`) só é usado pelo SYNC RUNNER (POST), que este arquivo nunca chama.
+ * timeout, e os números vieram exatamente do que a SQL gravou.
+ *
+ * RETOMADA 4 (21/09/2026) — 2 lacunas que o gate `revisao-pr` (modo fecho) apontou:
+ *
+ * (1) TELA DE DETALHE (casos 4/5) — `AnaCareHoursDetailPage`/`useAnaCareHoursPatient` mostram o
+ * MESMO banner (via `getRetratoStatus`, que é o MESMO GET `/months/:month` da lista — só extrai o
+ * retrato, ignora `patients`) — mas o DETALHE também chama `service.getPatientMonth(month,
+ * patientId)` em paralelo (`Promise.all`), e ESTE, ao contrário do retrato, SEMPRE bate rede em
+ * modo `real` (`AnaCareHoursService.getPatientMonth:262-274` → `source.listShifts` →
+ * `AnaCareShiftsSourceReal.listShifts` → `AnaCareSessionClient.listShifts`, sem try/catch em volta
+ * — uma rede indisponível faz `Promise.all` rejeitar, e a tela cai no estado de ERRO genérico,
+ * nunca no banner). Com o host `.invalid` do override anterior, a tela de detalhe NUNCA carrega —
+ * por isso troquei `docker-compose.anacare-hours-real-sem-rede.yml` (host inalcançável) por
+ * `docker-compose.anacare-hours-real-stub-local.yml` (host ALCANÇÁVEL, um stub HTTP local — ver
+ * `startAnaCareStub` abaixo, mesmo precedente de `tests/e2e/helpers/periskopeStubServer.ts`/
+ * `axonicoStubServer.ts`, porta 9913). O stub cobre login + `/api/shifts/` (1 turno sintético,
+ * sem PII) — o bastante pra `getPatientMonth` resolver — e devolve 404 pra tudo mais, inclusive
+ * `/admin/accounts/` (o diretório HTML que só o SYNC RUNNER usa).
+ *
+ * (2) CAMINHO DE ESCRITA REAL (caso 6) — até aqui nenhum teste disparava
+ * `AnaCareSyncRunRepository.recordProgress` (`AnaCareSyncRunRepository.ts:60-61`) contra Postgres
+ * de verdade; só escrevíamos via SQL direto. O caso 6 clica em "Sincronizar" de verdade — como o
+ * stub NÃO implementa `/admin/accounts/`, `AnaCareEnliteDirectory.fetch()` recebe 404 →
+ * `AnaCareHttpError` → propaga até `AnaCareHoursSyncRunner.run()` → `AnaCareHoursSyncController.
+ * trigger` (`:152-160,199-206`) captura e grava `status:'failed'` + `lastError:
+ * toStableErrorCode(e)`. Conferido contra `AnaCareSyncErrorCode.ts`: `AnaCareHttpError` não está
+ * na lista de classes conhecidas (só `AnaCarePatientMonthCollisionError`), então cai no fallback
+ * — o código gravado é `UnknownError:AnaCareHttpError` (nome da CLASSE, nunca `.message`, regra
+ * dura da 457). `reservationsTotal`/`reservationsDone` NÃO viram `NULL` — medido, contra a minha
+ * própria suposição inicial errada: `AnaCareSyncRunRepository.recordProgress` usa `COALESCE($3,
+ * reservations_total)`/`COALESCE($4, reservations_done)` (`AnaCareSyncRunRepository.ts:60-79`) —
+ * passar `null` nesses dois campos PRESERVA o último valor conhecido, nunca apaga (comentário do
+ * próprio arquivo: "é assim que uma falha grava status='failed' sem apagar o último cursor/
+ * contagem conhecidos"). Por isso o caso 6 semeia um baseline PRÓPRIO (200/88, números que não
+ * coincidem com nenhum outro caso deste arquivo, de propósito) ANTES de sincronizar, e depois da
+ * falha confere que 200/88 SOBREVIVEM intactos — é essa preservação, não um apagamento, que o
+ * teste prova. `finished_at` é preenchido (`new Date()`, gravado pelo controller no `catch`). A
+ * tela, recarregada, mostra `status==='failed'` → `computeSnapshotState` (precedência) →
+ * `'parcial'` (mesmo ramo do caso 2) — e COM contagem preservada (`temContagemDaCorrida` é
+ * verdadeiro), o texto é o INTERPOLADO ("se procesaron 88 de 200 reservas"), não o genérico.
+ *
+ * (3) CASO 3 (estabilidade) — trocado de `ON CONFLICT DO NOTHING` para `DO UPDATE`: o gate
+ * apontou que "depender do que já está no banco" é não-determinístico (uma execução após
+ * sabotagem manual — ou uma execução num Postgres reaproveitado com lixo de sessão anterior —
+ * herdaria estado errado sem avisar). Trade-off explícito: isso DESFAZ a propriedade de
+ * "sobrevive à sabotagem entre execuções isoladas" que o caso 3 tinha na retomada 3 (a prova de
+ * sabotagem já foi feita e colada no relatório daquela retomada; não é objetivo desta retomada
+ * mantê-la reproduzível ad-hoc) — o caso agora SEMPRE regrava 144/144 no início do próprio corpo,
+ * como os casos 1/2 já faziam para seus meses.
  */
 import { execFileSync } from 'child_process';
+import * as http from 'http';
 import { test, expect, type Page, type Route } from '@playwright/test';
 
 const DB_URL = process.env.ANACARE_TEST_DB_URL ?? 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
@@ -96,6 +144,106 @@ const PARCIAL_DONE = 45;
 const PARCIAL_TOTAL = 120;
 const FRESCO_DONE = 144;
 const FRESCO_TOTAL = 144;
+// Caso 5 (detalhe, parcial) — mesma dupla de números usada na prova de sabotagem da retomada 3
+// (done=49/total=144), por continuidade — não há relação funcional obrigatória, só familiaridade.
+const DETALHE_PARCIAL_DONE = 49;
+const DETALHE_PARCIAL_TOTAL = 144;
+// Caso 6 (sync real, falha) — baseline PRÓPRIO, deliberadamente distinto de qualquer outro par
+// deste arquivo, para a asserção de que `recordProgress` PRESERVA (COALESCE) e não apaga não
+// poder ser confundida com sobra de outro caso.
+const SYNC_FALHA_BASELINE_DONE = 88;
+const SYNC_FALHA_BASELINE_TOTAL = 200;
+
+/** Porta do stub local do Ana Care — próxima a 9911 (Periskope)/9912 (Axonico), mesmo precedente (`docker-compose.test.yml`). */
+const ANACARE_STUB_PORT = 9913;
+
+interface AnaCareStub {
+  server: http.Server;
+  /** Caminhos batidos no stub — prova de que o tráfego ficou LOCAL, nunca saiu pro host real. */
+  requestsLog: string[];
+  close: () => Promise<void>;
+}
+
+/**
+ * Stub HTTP local do Ana Care (login por cookie Django + `/api/shifts/`) — só existe porque
+ * `AnaCareHoursService.getPatientMonth` (tela de DETALHE) SEMPRE chama rede em modo `real` (ver
+ * docstring do arquivo, RETOMADA 4 item 1). Cobre o mínimo pra `AnaCareSessionClient` logar e
+ * listar turnos: devolve 1 turno sintético por paciente pedido (nome "E2E"/"Stub", sem PII),
+ * ECOANDO o `patient` da query — funciona pra qualquer paciente que o teste escolher, sem
+ * ramificação por caso. Devolve 404 pra tudo mais, inclusive `/admin/accounts/` (o diretório HTML
+ * que só o SYNC RUNNER usa) — de propósito, é o que faz o caso 6 (Sincronizar) falhar de forma
+ * controlada e observável, mesmo precedente de `tests/e2e/helpers/periskopeStubServer.ts`/
+ * `axonicoStubServer.ts` (stub local, nunca o serviço real).
+ */
+function startAnaCareStub(port: number): Promise<AnaCareStub> {
+  const requestsLog: string[] = [];
+  return new Promise((resolve) => {
+    const server = http.createServer((req, res) => {
+      const url = new URL(req.url ?? '/', 'http://stub');
+      requestsLog.push(`${req.method} ${url.pathname}`);
+
+      if (req.method === 'GET' && url.pathname === '/users/admin/login/') {
+        res.writeHead(200, { 'Content-Type': 'text/html', 'Set-Cookie': 'csrftoken=e2e-stub-csrf' });
+        res.end('<html></html>');
+        return;
+      }
+      if (req.method === 'POST' && url.pathname === '/users/admin/login/') {
+        req.resume(); // drena o corpo (form urlencoded) — não usamos o conteúdo, só precisamos consumir o stream.
+        req.on('end', () => {
+          res.writeHead(302, { 'Set-Cookie': 'sessionid=e2e-stub-session', Location: '/admin/' });
+          res.end();
+        });
+        return;
+      }
+      if (req.method === 'GET' && url.pathname === '/api/shifts/') {
+        const patientId = url.searchParams.get('patient') ?? 'E2E-STUB-SEM-PATIENT-ID';
+        const minDate = url.searchParams.get('min_date') ?? `${MONTH_CURRENT}-01`;
+        const start = `${minDate}T13:00:00-06:00`;
+        const end = `${minDate}T17:00:00-06:00`;
+        const raw = {
+          id: `E2E-STUB-SHIFT-${patientId}`,
+          start,
+          end,
+          checkin: start,
+          checkout: end,
+          checkin_source: 'web_admin',
+          checkout_source: 'web_admin',
+          checkin_delay: null,
+          duration: 4,
+          is_finalized: true,
+          month: minDate.slice(0, 7),
+          patient: {
+            id: patientId,
+            agency: 116,
+            identification_type: null,
+            identification_number: null,
+            first_name: 'E2E',
+            last_name: 'Stub',
+            surname: 'Stub',
+          },
+          nurse: { id: 'E2E-STUB-NURSE-1', agency: 116, first_name: 'Enfermera', last_name: 'Stub', surname: 'Stub' },
+        };
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ count: 1, next: null, previous: null, results: [raw] }));
+        return;
+      }
+
+      // Qualquer outra rota (inclusive `/admin/accounts/`, o diretório do SYNC) — 404 DE
+      // PROPÓSITO, ver docstring da função.
+      res.writeHead(404, { 'Content-Type': 'text/plain' });
+      res.end('stub: rota nao implementada');
+    });
+    server.listen(port, '0.0.0.0', () => {
+      resolve({
+        server,
+        requestsLog,
+        close: () => new Promise<void>((r) => server.close(() => r())),
+      });
+    });
+  });
+}
+
+let anaCareStub: AnaCareStub | null = null;
 
 function psql(sql: string): string {
   try {
@@ -220,7 +368,7 @@ test.describe('Banner de conclusão de corrida — Horas Ana Care — E2E real @
   test.setTimeout(60_000);
   test.use({ viewport: { width: 1440, height: 900 } });
 
-  test.beforeAll(() => {
+  test.beforeAll(async () => {
     psql(`INSERT INTO users (firebase_uid, email, display_name, role, is_active, status, tenant_id)
           VALUES ('${COMPLETO_UID}', '${COMPLETO_EMAIL}', 'E2E Conclusao AnaCare', 'admin', true, 'ACTIVE', '${TENANT}')`);
 
@@ -231,12 +379,19 @@ test.describe('Banner de conclusão de corrida — Horas Ana Care — E2E real @
     psql(`INSERT INTO iam.group_country_scopes (group_id, country, granted_by, reason) VALUES ('${grupoId}', 'AR', '${COMPLETO_UID}', 'e2e setup')`);
     psql(`INSERT INTO iam.user_groups (user_id, group_id, tenant_id) VALUES ('${COMPLETO_UID}', '${grupoId}', '${TENANT}')`);
 
-    // >=1 linha agregada nos 2 meses usados pelos 3 casos — sem isto `naoConstruido` mascararia tudo.
+    // >=1 linha agregada nos 2 meses usados pelos casos — sem isto `naoConstruido` mascararia tudo.
     ensurePatientMonthRow(PATIENT_FLOOR, MONTH_FLOOR);
     ensurePatientMonthRow(PATIENT_CURRENT, MONTH_CURRENT);
+
+    // Stub do Ana Care (retomada 4, item 1) — precisa estar de pé ANTES dos casos 4/5 (detalhe) e
+    // 6 (sync). A API (container Docker) já tem que ter sido recriada com
+    // `docker-compose.anacare-hours-real-stub-local.yml` (ANACARE_BASE_URL apontando pra esta
+    // porta) ANTES de rodar `npx playwright test` — isto aqui só sobe o SERVIDOR, não muda env do
+    // container (feito manualmente pelo orquestrador, ver relatório da task).
+    anaCareStub = await startAnaCareStub(ANACARE_STUB_PORT);
   });
 
-  test.afterAll(() => {
+  test.afterAll(async () => {
     safeSql(`DELETE FROM iam.permission_audit_log WHERE user_id = '${COMPLETO_UID}'`);
     safeSql(`DELETE FROM iam.user_groups WHERE user_id = '${COMPLETO_UID}'`);
     safeSql(`DELETE FROM iam.group_country_scopes WHERE group_id IN (SELECT id FROM iam.permission_groups WHERE name = '${GRUPO}')`);
@@ -244,9 +399,14 @@ test.describe('Banner de conclusão de corrida — Horas Ana Care — E2E real @
     safeSql(`DELETE FROM iam.permission_groups WHERE name = '${GRUPO}'`);
     safeSql(`DELETE FROM users WHERE firebase_uid = '${COMPLETO_UID}'`);
     safeSql(`DELETE FROM anacare_patient_month WHERE ana_care_patient_id IN ('${PATIENT_FLOOR}', '${PATIENT_CURRENT}')`);
-    // `anacare_sync_run` (chave por mês, não por RUN_ID) É DEIXADO DE PROPÓSITO — é o estado que a
-    // prova de sabotagem (caso 3, relatório da task) precisa sobreviver entre execuções isoladas
-    // do Playwright. Não fazer DELETE/RESET aqui.
+    // `anacare_sync_run` (chave por mês, não por RUN_ID) É DEIXADO DE PROPÓSITO — cada caso que o
+    // usa regrava seu próprio estado no início do corpo (retomada 4, item 3: determinístico agora,
+    // nenhum caso depende do que sobrou de uma execução anterior). Não fazer DELETE/RESET aqui.
+    if (anaCareStub) {
+      console.log(`[anacare-stub] rotas batidas nesta corrida: ${JSON.stringify(anaCareStub.requestsLog)}`);
+      await anaCareStub.close();
+      anaCareStub = null;
+    }
   });
 
   test('CASO 1 — status IS NULL → banner "desconhecido", texto não afirma completo nem incompleto', async ({ page }) => {
@@ -264,6 +424,12 @@ test.describe('Banner de conclusão de corrida — Horas Ana Care — E2E real @
 
     // mês padrão é o CORRENTE — navega pelo seletor até o piso (MONTH_FLOOR), como um humano faria.
     await page.getByLabel('Mes', { exact: true }).selectOption(MONTH_FLOOR);
+    // Espera o fetch do mês novo terminar (`isLoadingSelectedMonth`, `AnaCareHoursListPage.tsx`)
+    // — sem isto o banner pode ainda estar mostrando o snapshot do mês ANTERIOR (o corrente,
+    // default) no instante da leitura (achado desta retomada, medido no caso 2 — mesma classe de
+    // corrida, aqui inofensiva porque os 2 meses concordam em "desconhecido", mas o padrão vale
+    // pros dois casos).
+    await expect(page.getByTestId('anacare-hours-list-loading-month')).toHaveCount(0, { timeout: 15_000 });
 
     const titulo = page.getByText('Estado de la sincronización desconocido');
     await expect(titulo).toBeVisible({ timeout: 15_000 });
@@ -294,33 +460,35 @@ test.describe('Banner de conclusão de corrida — Horas Ana Care — E2E real @
     await loginAs(page, COMPLETO);
     await abrirPeloMenu(page);
     await page.getByLabel('Mes', { exact: true }).selectOption(MONTH_FLOOR);
+    // Espera o fetch do mês novo terminar ANTES de ler o banner — achado desta retomada: sem
+    // isto, o teste podia ler o banner do mês CORRENTE (default, ainda em memória por um
+    // instante) em vez do MONTH_FLOOR recém-selecionado. Medido: `Received: 49` (número do mês
+    // corrente) onde se esperava `45` (MONTH_FLOOR) — corrida real, não flakiness de rede.
+    await expect(page.getByTestId('anacare-hours-list-loading-month')).toHaveCount(0, { timeout: 15_000 });
 
     const titulo = page.getByText('Sincronización incompleta');
     await expect(titulo).toBeVisible({ timeout: 15_000 });
 
-    const mensagem = page.getByText(/se procesaron \d+ de \d+ reservas/);
-    await expect(mensagem).toBeVisible();
+    // `getByText` com os números ESPERADOS (lidos do banco ACIMA, nunca uma constante cravada) —
+    // o `toBeVisible` do Playwright faz polling até o DOM mostrar ESSE texto exato, o que também
+    // fecha a corrida de vez (não aceita um valor antigo só porque "tem número ali").
+    const mensagem = page.getByText(`se procesaron ${dbDone} de ${dbTotal} reservas`, { exact: false });
+    await expect(mensagem).toBeVisible({ timeout: 15_000 });
     const textoLido = (await mensagem.textContent()) ?? '';
-    const match = textoLido.match(/se procesaron (\d+) de (\d+) reservas/);
-    if (!match) throw new Error(`Não achei "X de Y" no texto lido da tela: "${textoLido}"`);
-    const [, doneNaTela, totalNaTela] = match;
-    // Números LIDOS DA TELA, comparados contra os valores que ACABAMOS de gravar no banco —
-    // prova a interpolação dinâmica, nunca uma string cravada.
-    expect(Number(doneNaTela)).toBe(dbDone);
-    expect(Number(totalNaTela)).toBe(dbTotal);
     expect(textoLido).toContain(`se procesaron ${PARCIAL_DONE} de ${PARCIAL_TOTAL} reservas`);
   });
 
   test('CASO 3 — status=\'done\', done === total, fonte fresca → SEM banner', async ({ page }) => {
-    // `INSERT ... ON CONFLICT DO NOTHING`, de PROPÓSITO (ver docstring do arquivo): este mês
-    // (MONTH_CURRENT) é o único usado pela prova de sabotagem (relatório da task, critério B) —
-    // se este teste sempre regravasse 144/144 antes de checar, a sabotagem no banco nunca teria
-    // efeito nenhum. Só a 1ª execução grava; execuções seguintes leem o que já está lá, seja o
-    // valor limpo original, seja um valor sabotado de propósito por fora do teste.
+    // Retomada 4, item 3: `DO UPDATE` — determinístico, sempre regrava 144/144 no início do
+    // corpo (mesmo padrão dos casos 1/2 para seus meses). Ver docstring do arquivo (trade-off:
+    // isto derruba a sobrevivência a sabotagem entre execuções isoladas que este caso tinha antes
+    // — a prova de sabotagem já foi feita e colada no relatório da retomada 3).
     psql(
       `INSERT INTO anacare_sync_run (source, period_month, run_started_at, updated_at, status, "cursor", reservations_total, reservations_done, finished_at, last_error)
        VALUES ('anacare', '${MONTH_CURRENT}-01'::date, NOW(), NOW(), 'done', ${FRESCO_TOTAL}, ${FRESCO_TOTAL}, ${FRESCO_DONE}, NOW(), NULL)
-       ON CONFLICT (source, period_month) DO NOTHING`,
+       ON CONFLICT (source, period_month) DO UPDATE SET
+         status = 'done', "cursor" = ${FRESCO_TOTAL}, reservations_total = ${FRESCO_TOTAL}, reservations_done = ${FRESCO_DONE},
+         finished_at = NOW(), last_error = NULL, updated_at = NOW()`,
     );
 
     await loginAs(page, COMPLETO);
@@ -328,5 +496,135 @@ test.describe('Banner de conclusão de corrida — Horas Ana Care — E2E real @
     // mês padrão já É o corrente (MONTH_CURRENT) — nenhuma interação com o seletor necessária.
 
     await expectNoStatusBanner(page);
+  });
+
+  test('CASO 4 — DETALHE do paciente, status IS NULL → banner "desconhecido" (mesmo texto da lista)', async ({ page }) => {
+    // Mesmo mês do caso 3 (MONTH_CURRENT) — o detalhe SEMPRE abre no mês corrente
+    // (`AnaCareHoursPatientPage.tsx`, `currentMonthIso()`, nunca o mês selecionado na lista).
+    psql(
+      `INSERT INTO anacare_sync_run (source, period_month, run_started_at, updated_at, status, "cursor", reservations_total, reservations_done, finished_at, last_error)
+       VALUES ('anacare', '${MONTH_CURRENT}-01'::date, NOW(), NOW(), NULL, NULL, NULL, NULL, NULL, NULL)
+       ON CONFLICT (source, period_month) DO UPDATE SET
+         status = NULL, "cursor" = NULL, reservations_total = NULL, reservations_done = NULL, finished_at = NULL, last_error = NULL, updated_at = NOW()`,
+    );
+
+    await loginAs(page, COMPLETO);
+    await abrirPeloMenu(page);
+    // mês padrão da LISTA já é o corrente — clica no paciente sintético (o mesmo que o caso 3 usa
+    // para a lista) para abrir o DETALHE, como um humano faria.
+    const linha = page.getByTestId(`anacare-hours-patient-row-${PATIENT_CURRENT}`);
+    await expect(linha).toBeVisible({ timeout: 15_000 });
+    await linha.click();
+    await expect(page).toHaveURL(new RegExp(`/admin/anacare/horas/${PATIENT_CURRENT}$`));
+
+    const titulo = page.getByText('Estado de la sincronización desconocido');
+    await expect(titulo).toBeVisible({ timeout: 15_000 });
+    const mensagem = page.getByText(
+      'Este mes fue sincronizado antes de que el sistema registrara si la sincronización había terminado — no es posible afirmar si el retrato está completo o incompleto.',
+    );
+    await expect(mensagem).toBeVisible();
+  });
+
+  test('CASO 5 — DETALHE do paciente, status=\'done\' done=49/total=144 → banner "parcial" com "49 de 144"', async ({ page }) => {
+    psql(
+      `INSERT INTO anacare_sync_run (source, period_month, run_started_at, updated_at, status, "cursor", reservations_total, reservations_done, finished_at, last_error)
+       VALUES ('anacare', '${MONTH_CURRENT}-01'::date, NOW(), NOW(), 'done', ${DETALHE_PARCIAL_DONE}, ${DETALHE_PARCIAL_TOTAL}, ${DETALHE_PARCIAL_DONE}, NOW(), NULL)
+       ON CONFLICT (source, period_month) DO UPDATE SET
+         status = 'done', "cursor" = ${DETALHE_PARCIAL_DONE}, reservations_total = ${DETALHE_PARCIAL_TOTAL}, reservations_done = ${DETALHE_PARCIAL_DONE},
+         finished_at = NOW(), last_error = NULL, updated_at = NOW()`,
+    );
+    const [dbDone, dbTotal] = scalar(
+      `SELECT reservations_done || ',' || reservations_total FROM anacare_sync_run WHERE source='anacare' AND period_month='${MONTH_CURRENT}-01'::date`,
+    )
+      .split(',')
+      .map(Number);
+    expect(dbDone).toBe(DETALHE_PARCIAL_DONE);
+    expect(dbTotal).toBe(DETALHE_PARCIAL_TOTAL);
+
+    await loginAs(page, COMPLETO);
+    await abrirPeloMenu(page);
+    const linha = page.getByTestId(`anacare-hours-patient-row-${PATIENT_CURRENT}`);
+    await expect(linha).toBeVisible({ timeout: 15_000 });
+    await linha.click();
+    await expect(page).toHaveURL(new RegExp(`/admin/anacare/horas/${PATIENT_CURRENT}$`));
+
+    const titulo = page.getByText('Sincronización incompleta');
+    await expect(titulo).toBeVisible({ timeout: 15_000 });
+    const mensagem = page.getByText(/se procesaron \d+ de \d+ reservas/);
+    await expect(mensagem).toBeVisible();
+    const textoLido = (await mensagem.textContent()) ?? '';
+    const match = textoLido.match(/se procesaron (\d+) de (\d+) reservas/);
+    if (!match) throw new Error(`Não achei "X de Y" no texto lido da tela: "${textoLido}"`);
+    const [, doneNaTela, totalNaTela] = match;
+    expect(Number(doneNaTela)).toBe(dbDone);
+    expect(Number(totalNaTela)).toBe(dbTotal);
+    expect(textoLido).toContain(`se procesaron ${DETALHE_PARCIAL_DONE} de ${DETALHE_PARCIAL_TOTAL} reservas`);
+  });
+
+  test('CASO 6 — botão "Sincronizar" real: falha de verdade grava anacare_sync_run (Postgres real), nunca toca o Ana Care real', async ({ page }) => {
+    // Arranjo (não é o fluxo sob teste): baseline PRÓPRIO — números que não aparecem em nenhum
+    // outro caso deste arquivo, para a prova de PRESERVAÇÃO (abaixo) não poder ser confundida com
+    // sobra de outro teste.
+    psql(
+      `INSERT INTO anacare_sync_run (source, period_month, run_started_at, updated_at, status, "cursor", reservations_total, reservations_done, finished_at, last_error)
+       VALUES ('anacare', '${MONTH_CURRENT}-01'::date, NOW(), NOW(), 'done', ${SYNC_FALHA_BASELINE_DONE}, ${SYNC_FALHA_BASELINE_TOTAL}, ${SYNC_FALHA_BASELINE_DONE}, NOW(), NULL)
+       ON CONFLICT (source, period_month) DO UPDATE SET
+         status = 'done', "cursor" = ${SYNC_FALHA_BASELINE_DONE}, reservations_total = ${SYNC_FALHA_BASELINE_TOTAL}, reservations_done = ${SYNC_FALHA_BASELINE_DONE},
+         finished_at = NOW(), last_error = NULL, updated_at = NOW()`,
+    );
+    const antes = psql(
+      `SELECT status, reservations_total, reservations_done, last_error, finished_at IS NOT NULL AS finished
+         FROM anacare_sync_run WHERE source='anacare' AND period_month='${MONTH_CURRENT}-01'::date`,
+    ).trim();
+    console.log(`[caso 6] anacare_sync_run ANTES: ${antes}`);
+
+    await loginAs(page, COMPLETO);
+    await abrirPeloMenu(page);
+    // mês padrão já é o corrente — clica em "Sincronizar" como um operador faria. O stub não tem
+    // `/admin/accounts/` (404 de propósito) — a corrida falha ANTES de qualquer contagem NOVA.
+    const botaoSync = page.getByTestId('anacare-hours-sync-button');
+    await expect(botaoSync).toBeVisible({ timeout: 15_000 });
+    await botaoSync.click();
+    await expect(page.getByTestId('anacare-hours-sync-error')).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId('anacare-hours-sync-done')).toHaveCount(0);
+
+    // DEPOIS — a linha real em Postgres, escrita pelo controller de sync (nunca por SQL deste
+    // teste) — é a prova de que `recordProgress` rodou contra o banco de verdade.
+    const depois = scalar(
+      `SELECT status || '|' || COALESCE(reservations_total::text,'NULL') || '|' || COALESCE(reservations_done::text,'NULL')
+              || '|' || COALESCE(last_error,'NULL') || '|' || (finished_at IS NOT NULL)::text
+         FROM anacare_sync_run WHERE source='anacare' AND period_month='${MONTH_CURRENT}-01'::date`,
+    );
+    console.log(`[caso 6] anacare_sync_run DEPOIS: ${depois}`);
+    const [status, reservationsTotal, reservationsDone, lastError, finishedNotNull] = depois.split('|');
+    expect(status).toBe('failed');
+    // PRESERVADOS (COALESCE no repositório), não apagados — o baseline que semeamos sobrevive à
+    // falha intacto. Ver docstring do arquivo (item 2 da retomada 4).
+    expect(reservationsTotal).toBe(String(SYNC_FALHA_BASELINE_TOTAL));
+    expect(reservationsDone).toBe(String(SYNC_FALHA_BASELINE_DONE));
+    // Código ESTÁVEL (nome da CLASSE do erro, nunca `.message` — regra dura da migration 457,
+    // `AnaCareSyncErrorCode.ts`) — `AnaCareHttpError` não está entre as classes conhecidas de
+    // `toStableErrorCode`, então cai no fallback `UnknownError:<Classe>`.
+    expect(lastError).toBe('UnknownError:AnaCareHttpError');
+    expect(finishedNotNull).toBe('true');
+
+    // A tela, recarregada, reflete o que acabou de ser escrito — 'failed' entra no mesmo ramo
+    // `incompleta` de 'parcial' (`computeSnapshotState`) — e COM contagem preservada, o texto é o
+    // INTERPOLADO (não o genérico): os números batem com o baseline que sobreviveu à falha.
+    await page.reload();
+    const titulo = page.getByText('Sincronización incompleta');
+    await expect(titulo).toBeVisible({ timeout: 15_000 });
+    const mensagem = page.getByText(
+      `se procesaron ${SYNC_FALHA_BASELINE_DONE} de ${SYNC_FALHA_BASELINE_TOTAL} reservas`,
+      { exact: false },
+    );
+    await expect(mensagem).toBeVisible();
+
+    // Nenhuma requisição saiu para o Ana Care real — só para o stub local (mesmo processo desta
+    // corrida, porta ANACARE_STUB_PORT). E a rota do diretório (a que 404a de propósito) foi
+    // realmente batida — prova de que a falha veio DAQUELA rota, não de outra coisa.
+    expect(anaCareStub?.requestsLog.length ?? 0).toBeGreaterThan(0);
+    expect(anaCareStub?.requestsLog.some((r) => r.includes('/users/admin/login/'))).toBe(true);
+    expect(anaCareStub?.requestsLog.some((r) => r.includes('/admin/accounts/'))).toBe(true);
   });
 });
