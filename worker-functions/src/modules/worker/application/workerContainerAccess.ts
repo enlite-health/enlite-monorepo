@@ -66,6 +66,26 @@ export function canReadWorkerContainer(cells: readonly string[] | null | undefin
   return cells.includes(workerContainerCell(container));
 }
 
+/**
+ * Escrita do dossiê (spec 025, Fase 6, D402 item 4) — mesmo padrão de
+ * `canWriteTherapeuticClinical` (`case/application/therapeuticProjectAccess.ts`): célula
+ * CUMULATIVA à do PATCH que carrega o campo (`worker:update`), conferida no controller, não na
+ * rota — o campo sensível (`birthDate`) viaja dentro do PATCH de outro recurso (`worker`), sem
+ * CRUD própria. `worker_pii` não está em `SPLIT_RESOURCES`: a célula é `write`, não `update`.
+ *
+ * Recurso escrito por literal (`'worker_pii'`, não `WORKER_CONTAINER_RESOURCE.dossier`) de
+ * propósito: o resolvedor de `catalogo-sem-orfao.test.ts` (Fase 2, D115) avalia `cellKey(...)`
+ * por valor literal dos argumentos — acesso por `.` (dot) a um Record não é uma das formas que
+ * ele resolve (só bracket `obj['key']`), e uma chave "sem consumidor" reprova o gate. Mesmo
+ * padrão de `PATIENT_CLINICAL_WRITE_CELL = patientContainerCell('clinical', 'write')`.
+ */
+export const WORKER_PII_WRITE_CELL = cellKey('worker_pii', 'write');
+
+export function canWriteWorkerPii(cells: readonly string[] | null | undefined): boolean {
+  if (cells === null || cells === undefined) return true;
+  return cells.includes(WORKER_PII_WRITE_CELL);
+}
+
 export function workerContainerReadsOf(cells: readonly string[] | null | undefined): WorkerContainerReads {
   const out = {} as Record<WorkerContainer, boolean> & { patientIdentity: boolean };
   for (const c of WORKER_CONTAINERS) out[c] = canReadWorkerContainer(cells, c);
