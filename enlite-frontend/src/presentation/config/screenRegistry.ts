@@ -143,7 +143,9 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
       // O operacional numa linha só: perfil profissional, etiquetas, conta de teste, edição e a
       // aba de disponibilidade. `worker:disable` fica fora: a baixa é decidida no back pela
       // transição de status e não tem botão próprio no front (cai em "Outras células").
-      c('profile', 'worker', ['read', 'create', 'update'], 'availability'),
+      // `create` REMOVIDO em 21/09 (spec 024, D401): não existia botão nenhum que criasse
+      // "worker" por aqui — era só a tag (agora `tag:create`, tela própria `/admin/tags`).
+      c('profile', 'worker', ['read', 'update'], 'availability'),
       c('contact', 'worker_contact', ['read']),
       // Dossiê = nascimento, sexo, DNI, raça, religião… (célula da C3/F2). Endereço é célula própria
       // (linha, coordenada, raio) — a MESMA que vale na aba Prestadores do mapa.

@@ -106,7 +106,6 @@
     "vacancy:read",
     "vacancy:update",
     "vacancy:write",
-    "worker:create",
     "worker:delete",
     "worker:disable",
     "worker:export",

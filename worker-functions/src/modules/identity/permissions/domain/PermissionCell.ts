@@ -310,7 +310,6 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
     + 'o convite à apresentação.',
   'recruitment:create': 'Disparar cálculo novo de reemplazos.',
   'recruitment:update': 'Editar/repetir o cálculo de reemplazos.',
-  'worker:create': 'Criar uma tag de prestador nova.',
   'worker:update': 'Editar status, ocupação, área de serviço, perfil e tags de um prestador já cadastrado.',
   'worker_document:create': 'Subir um documento novo do prestador (ou o link de ingestão a partir de URL).',
   'worker_document:update': 'Editar o prazo de validade de um documento já cadastrado do prestador.',
@@ -327,7 +326,10 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
 
   // ── Spec 024 (D1/D401, 21/09) — o catálogo de Etiquetas é DADO diferente do perfil do
   //    prestador: `tag:*` sai de `worker:*`. Atribuir/remover etiqueta DE UM prestador
-  //    continua em `worker:update` — ali o dado é o prestador, não o catálogo.
+  //    continua em `worker:update` — ali o dado é o prestador, não o catálogo. `worker:create`
+  //    REMOVIDO daqui (era só "criar uma tag" — texto acima, linha do `worker:update`): órfão,
+  //    coberto por `tag:create`. `worker` também SAIU de `SPLIT_RESOURCES` (nunca teve rota de
+  //    criação própria — quem criava era a tag).
   'tag:read': 'Ver o catálogo de ETIQUETAS de prestador (lista global de etiquetas, não o prestador em si).',
   'tag:create': 'Criar uma etiqueta nova no catálogo de etiquetas de prestador.',
   'tag:update':
@@ -348,7 +350,7 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
  * (spec 018, PR-8b, ADR-2/SUP-30). `permission_management` fica de fora de propósito —
  * é a ÚNICA rota que continua sob `write` (contracts/permissions-split.md linha 11).
  *
- * Os 19 primeiros são os recursos com `perm.require('<recurso>', 'write', …)` LITERAL
+ * Os 18 primeiros são os recursos com `perm.require('<recurso>', 'write', …)` LITERAL
  * (`git grep -n "perm\.require([^)]*'write'" -- worker-functions/src | grep -v test` menos
  * `permission_management`, 93 hits medidos em 15/09 (excluindo por CAMINHO `__tests__`, não por
  * substring da linha — correção do coordenador: o filtro por substring "test" cortava
@@ -356,6 +358,12 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
  * mapa nominal —
  * loops/middleware expandem). Os 4 últimos declaram a célula por VARIÁVEL (o mapa nominal,
  * `pr8b-mapa-rotas.tsv`, linhas 36-43) e por isso o grep literal não os alcança.
+ *
+ * `worker` SAIU deste set em 21/09 (spec 024, D401): nunca teve rota `perm.require('worker',
+ * 'create', …)` própria — quem usava `worker:create` era a tag (`POST /worker-tags`, texto
+ * "Criar uma tag de prestador nova"), migrada pra célula própria `tag:create`. `worker` mantém
+ * `:update` (perfil/status/tags do prestador) fora do split — não é mais recurso com par
+ * create+update, então `expandWriteCells('worker:write', …)` não expande mais.
  */
 export const SPLIT_RESOURCES: ReadonlySet<string> = new Set([
   'patient',
@@ -375,7 +383,6 @@ export const SPLIT_RESOURCES: ReadonlySet<string> = new Set([
   'interview',
   'messaging',
   'recruitment',
-  'worker',
   'worker_document',
   'patient_therapeutic_project',
   'catalog_therapeutic_objectives',
