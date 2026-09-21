@@ -359,6 +359,10 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       'patient_conversation:read', 'patient_conversation:create',
       'patient_conversation:update', 'patient_conversation:delete',
       'staff_directory:read',
+      // Spec 022, Bloco 4 (fecho, 21/09): notificações in-app — `own_notifications:read|update`
+      // (família `admin.users`). Mesma situação das 5 células acima: rota real existe
+      // (`adminNotificationRoutes.ts`), mas o fixture de 2 rotas deste teste não a declara.
+      'own_notifications:read', 'own_notifications:update',
       'patient_identity:create', 'patient_identity:update',
       'patient_clinical:create', 'patient_clinical:update',
       'patient_care_team:create', 'patient_care_team:update',
