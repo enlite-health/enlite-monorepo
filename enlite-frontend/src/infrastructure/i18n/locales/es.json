@@ -4315,7 +4315,10 @@
             "catalog_therapeutic_objectives": "Catálogo de objetivos específicos (proyecto terapéutico)",
             "catalog_therapeutic_activities": "Catálogo de rutina y actividades (proyecto terapéutico)",
             "catalog_therapeutic_segments": "Catálogo de segmentos (Ana Care)",
-            "anacare_hours": "Conferencia de horas del Ana Care"
+            "anacare_hours": "Conferencia de horas del Ana Care",
+            "patient_conversation": "Conversación del paciente",
+            "own_notifications": "Mis notificaciones",
+            "staff_directory": "Directorio del equipo"
           },
           "help": {
             "open": "Qué hace este permiso",
@@ -4672,7 +4675,8 @@
             "contractValue": "Valor hora del servicio contratado",
             "vacancies": "Vacantes del paciente",
             "operational": "Estado, activación e historial",
-            "therapeuticProject": "Proyecto terapéutico"
+            "therapeuticProject": "Proyecto terapéutico",
+            "conversation": "Conversación"
           }
         },
         "patients.chatRoles": {
