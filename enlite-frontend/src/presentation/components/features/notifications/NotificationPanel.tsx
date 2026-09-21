@@ -29,14 +29,21 @@ export function NotificationPanel({ isOpen, onClose, onNotificationsChanged }: N
   const navigate = useNavigate();
   const [notifications, setNotifications] = useState<AdminNotification[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [loadError, setLoadError] = useState(false);
+  const [markAllError, setMarkAllError] = useState(false);
 
   const fetchList = useCallback(async () => {
     setIsLoading(true);
     try {
       const list = await AdminNotificationApiService.listNotifications({ limit: 20 });
       setNotifications(list);
+      setLoadError(false);
     } catch {
-      // Best-effort — badge/lista não são canal de alerta (mesmo padrão de PatientConversationHandle).
+      // 🔒 Achado do gate revisao-pr (B4): um 403 (sem `own_notifications:read`) ou 500 caía aqui
+      // e o estado ficava indistinguível de "0 notificações de verdade" — a operadora via
+      // `notification-empty` nos dois casos, sem nunca saber que o painel estava QUEBRADO. Erro
+      // agora tem estado PRÓPRIO, visível (i18n ES/PT) — nunca vira silêncio nem "vazio" falso.
+      setLoadError(true);
     } finally {
       setIsLoading(false);
     }
@@ -66,10 +73,14 @@ export function NotificationPanel({ isOpen, onClose, onNotificationsChanged }: N
   const handleMarkAllRead = async (): Promise<void> => {
     try {
       await AdminNotificationApiService.markAllNotificationsRead();
+      setMarkAllError(false);
       onNotificationsChanged?.();
       await fetchList();
     } catch {
-      // Best-effort — mesmo padrão dos demais handlers deste componente.
+      // 🔒 Achado do gate revisao-pr (B4): falha aqui (403/500) era engolida em silêncio — a
+      // operadora clicava "marcar todas como lidas", nada acontecia na tela, e nada dizia por
+      // quê. Erro visível (i18n ES/PT), mesma régua do `loadError` acima.
+      setMarkAllError(true);
     }
   };
 
@@ -91,15 +102,30 @@ export function NotificationPanel({ isOpen, onClose, onNotificationsChanged }: N
         </button>
       </div>
 
+      {markAllError && (
+        <div data-testid="notification-mark-all-error" className="px-4 py-2 border-b border-gray-100">
+          <Text as="span" size="xs" role="alert" className="text-red-600">
+            {t('admin.notifications.markAllReadError')}
+          </Text>
+        </div>
+      )}
+
       <div className="flex-1 overflow-y-auto">
-        {!isLoading && notifications.length === 0 && (
+        {loadError && (
+          <div data-testid="notification-load-error" className="px-4 py-8 text-center">
+            <Text as="span" size="sm" role="alert" className="text-red-600">
+              {t('admin.notifications.loadError')}
+            </Text>
+          </div>
+        )}
+        {!loadError && !isLoading && notifications.length === 0 && (
           <div data-testid="notification-empty" className="px-4 py-8 text-center">
             <Text as="span" size="sm" color="secondary">
               {t('admin.notifications.empty')}
             </Text>
           </div>
         )}
-        {notifications.map((n) => (
+        {!loadError && notifications.map((n) => (
           <button
             key={n.id}
             type="button"

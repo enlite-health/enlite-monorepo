@@ -142,4 +142,44 @@ describe('NotificationPanel (spec 022, T412/T413)', () => {
     render(<NotificationPanel isOpen={false} onClose={vi.fn()} />);
     expect(AdminNotificationApiService.listNotifications).not.toHaveBeenCalled();
   });
+
+  it('🔒 achado do gate revisao-pr (B4): erro ao buscar a lista (403/500) mostra estado de erro VISÍVEL — nunca vira "sem notificações" (nem o testid nem o texto de vazio aparecem)', async () => {
+    vi.mocked(AdminNotificationApiService.listNotifications).mockRejectedValue(new Error('forbidden'));
+    render(<NotificationPanel isOpen onClose={vi.fn()} />);
+
+    const error = await screen.findByTestId('notification-load-error');
+    expect(error).toHaveTextContent('No pudimos cargar tus notificaciones. Probá de nuevo.');
+    expect(screen.getByRole('alert')).toBe(error.querySelector('[role="alert"]'));
+    expect(screen.queryByTestId('notification-empty')).not.toBeInTheDocument();
+    expect(screen.queryByText('No tenés notificaciones')).not.toBeInTheDocument();
+  });
+
+  it('🔒 achado do gate revisao-pr (B4): "marcar todas como lidas" que falha (403/500) mostra erro VISÍVEL, nunca silêncio', async () => {
+    vi.mocked(AdminNotificationApiService.listNotifications).mockResolvedValue([notif({ id: 'n1' })]);
+    vi.mocked(AdminNotificationApiService.markAllNotificationsRead).mockRejectedValue(new Error('forbidden'));
+    render(<NotificationPanel isOpen onClose={vi.fn()} />);
+
+    await screen.findByTestId('notification-item-n1');
+    fireEvent.click(screen.getByTestId('notification-mark-all-read'));
+
+    const error = await screen.findByTestId('notification-mark-all-error');
+    expect(error).toHaveTextContent('No pudimos marcar todas como leídas. Probá de nuevo.');
+    // a lista NÃO some por causa do erro — só o marcar-lida falhou, a leitura continua válida.
+    expect(screen.getByTestId('notification-item-n1')).toBeInTheDocument();
+  });
+
+  it('erro de carga some numa busca seguinte bem-sucedida (reabrir o painel, por exemplo)', async () => {
+    vi.mocked(AdminNotificationApiService.listNotifications)
+      .mockRejectedValueOnce(new Error('forbidden'))
+      .mockResolvedValueOnce([notif({ id: 'n1' })]);
+    const { rerender } = render(<NotificationPanel isOpen={false} onClose={vi.fn()} />);
+    rerender(<NotificationPanel isOpen onClose={vi.fn()} />);
+    await screen.findByTestId('notification-load-error');
+
+    rerender(<NotificationPanel isOpen={false} onClose={vi.fn()} />);
+    rerender(<NotificationPanel isOpen onClose={vi.fn()} />);
+
+    await screen.findByTestId('notification-item-n1');
+    expect(screen.queryByTestId('notification-load-error')).not.toBeInTheDocument();
+  });
 });

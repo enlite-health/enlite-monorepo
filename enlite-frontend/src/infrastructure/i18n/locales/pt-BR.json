@@ -5277,7 +5277,9 @@
       "unread": "{{count}} notificações não lidas",
       "panelTitle": "Notificações",
       "empty": "Você não tem notificações",
-      "close": "Fechar notificações"
+      "close": "Fechar notificações",
+      "loadError": "Não conseguimos carregar suas notificações. Tente de novo.",
+      "markAllReadError": "Não conseguimos marcar todas como lidas. Tente de novo."
     }
   },
   "publicVacancy": {

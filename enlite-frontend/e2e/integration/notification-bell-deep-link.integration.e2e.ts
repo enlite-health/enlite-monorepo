@@ -194,7 +194,7 @@ test.describe('Sino de notificações — deep-link até a conversa (Spec 022, B
     }
   });
 
-  test('ALTERNATIVO 2 — B sem own_notifications:read: sino nunca mostra contador, painel mostra vazio (nunca quebra)', async ({ browser }) => {
+  test('ALTERNATIVO 2 — B sem own_notifications:read: sino nunca mostra contador; painel mostra ERRO VISÍVEL, nunca "sem notificações" (conserto do gate revisao-pr B4)', async ({ browser }) => {
     revokeCell(groupIdB, 'own_notifications', 'read');
     const context = await browser.newContext();
     const page = await context.newPage();
@@ -202,16 +202,21 @@ test.describe('Sino de notificações — deep-link até a conversa (Spec 022, B
       await loginAs(page, B);
       const bellBtn = page.getByTestId('notification-bell-btn');
       await expect(bellBtn).toBeVisible({ timeout: 15_000 });
-      // 403 silencioso no poll de unread-count — o badge nunca aparece, mesmo com notificações
-      // reais pendentes no banco (as 2 do teste anterior, nunca marcadas como lidas para OUTRO
-      // motivo que não fosse o "marcar todas" — aqui a checagem é: célula revogada, nunca vê).
+      // O badge do sino continua discreto sem a célula (indicador secundário, achado BAIXO —
+      // aceito por desenho) — mesmo com notificações reais pendentes no banco (as 2 do teste
+      // anterior, nunca marcadas como lidas por outro motivo que não fosse o "marcar todas").
       await page.waitForTimeout(1_500);
       await expect(page.getByTestId('notification-bell-badge')).not.toBeVisible();
 
+      // 🔒 achado do gate revisao-pr (B4): antes, o 403 de `own_notifications:read` no painel
+      // virava "sem notificações" (`notification-empty`) — indistinguível de 0 notificações de
+      // verdade. Agora o painel mostra um erro VISÍVEL (role="alert", i18n) e NUNCA o vazio.
       await bellBtn.click();
       const panel = page.getByTestId('notification-panel');
       await expect(panel).toHaveClass(/translate-x-0/);
-      await expect(page.getByTestId('notification-empty')).toBeVisible({ timeout: 10_000 });
+      await expect(page.getByRole('alert')).toBeVisible({ timeout: 10_000 });
+      await expect(page.getByTestId('notification-load-error')).toBeVisible();
+      await expect(page.getByTestId('notification-empty')).not.toBeVisible();
     } finally {
       grantCell(groupIdB, 'own_notifications', 'read'); // devolve pro afterAll limpar sem surpresa
       await context.close();
