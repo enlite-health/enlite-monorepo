@@ -523,8 +523,9 @@ app.use('/api/admin', createAdminPatientPhotoRoutes(authMiddleware, permissionMi
 app.use('/api/admin', createAdminConversationRoutes(authMiddleware, permissionMiddleware));
 
 // ========== Admin Notifications / sino (spec 022, Bloco 4) ==========
-// `permissionsBoundary.permissions.client` — leitura CRUA do ABAC (D-13: resolve
-// `patientDisplayName` sob a célula do ATOR do evento, independente do gate de rota).
+// `permissionsBoundary.permissions.client` — leitura CRUA do ABAC (D-13, revisado no fecho B5:
+// resolve `patientDisplayName` sob a célula do DESTINATÁRIO da requisição, independente do gate
+// de rota).
 app.use(
   '/api/admin',
   createAdminNotificationRoutes(authMiddleware, permissionMiddleware, permissionsBoundary.permissions.client),

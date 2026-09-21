@@ -1,12 +1,14 @@
 /**
  * GetNotificationsUseCase — `GET /api/admin/notifications` (Spec 022, Bloco 4, T406).
  *
- * `patientDisplayName` (D-13): resolvido SOB A CÉLULA DO ATOR do evento — nunca do destinatário
- * (quem está pedindo a lista pode não ter célula nenhuma de paciente e ainda assim ver "Fulano
- * mencionou você em Ciclano", contanto que FULANO, o ator, ainda tenha a célula hoje). Cache por
- * `actorUid` DENTRO de uma chamada (`Map`) — evita 1 checagem de permissão por notificação
- * quando várias vêm do MESMO ator (thread ativa), sem cache entre requests (decisão em tempo
- * real, nunca памятная).
+ * `patientDisplayName`: resolvido SOB A CÉLULA DO DESTINATÁRIO da notificação (quem faz a
+ * requisição) — revisão de D-13 no gate fecho B5 (21/09). A versão original resolvia pela célula
+ * do ATOR do evento; achado do gate: quem posta sempre tem a célula, então o nome do paciente
+ * vazava para QUALQUER destinatário mencionado, mesmo sem célula nenhuma — o efeito de
+ * privacidade era o inverso do fallback "um paciente" pretendido. Sem célula de leitura do
+ * paciente, `patientDisplayName = null`. Cache de UMA checagem por chamada (`recipientUid` é
+ * sempre o mesmo dentro de uma resposta — não é mais por ator), sem cache entre requests
+ * (decisão em tempo real).
  */
 import { NotificationRepository, type NotificationTypeCode } from '../infrastructure/NotificationRepository';
 import type { ActorPatientConversationAccessChecker } from './ports';
@@ -42,19 +44,17 @@ export class GetNotificationsUseCase {
       limit: params.limit,
     });
 
-    const accessByActor = new Map<string, boolean>();
+    let recipientAllowed: boolean | undefined;
     const results: NotificationDto[] = [];
 
     for (const row of rows) {
       let patientDisplayName: string | null = null;
 
       if (row.patientId && this.accessChecker) {
-        let allowed = accessByActor.get(row.actorUid);
-        if (allowed === undefined) {
-          allowed = await this.accessChecker.canReadPatientConversation(row.actorUid);
-          accessByActor.set(row.actorUid, allowed);
+        if (recipientAllowed === undefined) {
+          recipientAllowed = await this.accessChecker.canReadPatientConversation(params.recipientUid);
         }
-        if (allowed) {
+        if (recipientAllowed) {
           patientDisplayName = await this.repository.findPatientDisplayName(row.patientId);
         }
       }

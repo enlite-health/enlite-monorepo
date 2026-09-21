@@ -20,9 +20,10 @@ import { PermissionClientActorAccessChecker } from '../../infrastructure/Permiss
  * `staffOnly` SEMPRE antes de `perm.require` — mesmo contrato de `adminConversationRoutes.ts`.
  *
  * `permissionClient` (opcional): quando fornecido, injeta `PermissionClientActorAccessChecker`
- * real no `GetNotificationsUseCase` (D-13, resolve `patientDisplayName` sob a célula do ATOR do
- * evento). `src/index.ts` passa `permissionsBoundary.permissions.client`; sem ele (ex.: testes
- * que não precisam do nome do paciente), `patientDisplayName` sai sempre `null` — nunca quebra.
+ * real no `GetNotificationsUseCase` (D-13, revisado no fecho B5: resolve `patientDisplayName`
+ * sob a célula do DESTINATÁRIO da requisição, não do ator do evento). `src/index.ts` passa
+ * `permissionsBoundary.permissions.client`; sem ele (ex.: testes que não precisam do nome do
+ * paciente), `patientDisplayName` sai sempre `null` — nunca quebra.
  */
 export function createAdminNotificationRoutes(
   authMiddleware: AuthMiddleware,

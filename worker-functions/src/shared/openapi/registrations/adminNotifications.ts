@@ -16,7 +16,7 @@ const NotificationItem = z.object({
   actorDisplayName: z.string().nullable(),
   patientId: z.string().uuid().nullable(),
   patientDisplayName: z.string().nullable().openapi({
-    description: 'null se o ATOR do evento perdeu `patient_conversation:read` depois de gerar a notificação (D-13).',
+    description: 'null se o DESTINATÁRIO (quem chama esta rota) não tem `patient_conversation:read` (D-13, revisado no fecho B5).',
   }),
   conversationId: z.string().uuid().nullable(),
   messageId: z.string().uuid().nullable(),

@@ -89,8 +89,9 @@ export class NotificationRepository {
   /**
    * Notificações do `recipientUid`, mais recente primeiro (T405/T406). `actorDisplayName` vem de
    * `users.display_name` (mesmo JOIN de `AdminRepository.searchStaffDirectory`) — sempre exibido
-   * (D-13 não condiciona o NOME de quem mencionou/respondeu à célula de ninguém, só o nome do
-   * PACIENTE é que depende da célula do ator, resolvido à parte pelo use case).
+   * (D-13, revisado no fecho B5, não condiciona o NOME de quem mencionou/respondeu à célula de
+   * ninguém, só o nome do PACIENTE é que depende da célula do DESTINATÁRIO, resolvido à parte
+   * pelo use case).
    */
   async listForRecipient(
     recipientUid: string,
@@ -160,9 +161,10 @@ export class NotificationRepository {
   }
 
   /**
-   * Nome de exibição do paciente (Bloco 4, D-13) — SÓ chamado pelo use case DEPOIS de confirmar
-   * que o ATOR do evento ainda tem `patient_conversation:read` (checagem de permissão vive no use
-   * case, nunca aqui — este repositório não decide ABAC, só lê dado).
+   * Nome de exibição do paciente (Bloco 4, D-13, revisado no fecho B5) — SÓ chamado pelo use case
+   * DEPOIS de confirmar que o DESTINATÁRIO da requisição tem `patient_conversation:read`
+   * (checagem de permissão vive no use case, nunca aqui — este repositório não decide ABAC, só lê
+   * dado).
    */
   async findPatientDisplayName(patientId: string, executor: Pool | PoolClient = this.pool): Promise<string | null> {
     const { rows } = await executor.query<{ firstName: string | null; lastName: string | null }>(
