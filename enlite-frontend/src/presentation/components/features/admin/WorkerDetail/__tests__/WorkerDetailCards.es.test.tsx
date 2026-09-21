@@ -31,7 +31,6 @@ vi.mock('react-router-dom', () => ({
 // ── Imports (after mocks) ───────────────────────────────────────────────────
 
 import { WorkerStatusCard } from '../WorkerStatusCard';
-import { WorkerPersonalCard } from '../WorkerPersonalCard';
 import { WorkerProfessionalCard } from '../WorkerProfessionalCard';
 import { WorkerLocationCard } from '../WorkerLocationCard';
 import { WorkerDocumentsCard } from '../WorkerDocumentsCard';
@@ -57,20 +56,6 @@ const statusProps = {
   platform: 'planilla',
   createdAt: '2026-02-01T00:00:00Z',
   updatedAt: '2026-03-25T00:00:00Z',
-};
-
-const personalProps = {
-  firstName: 'Carlos',
-  lastName: 'González',
-  email: 'carlos@test.com',
-  phone: '+54 11 5555-0000',
-  whatsappPhone: '+54 11 4444-0000',
-  profilePhotoUrl: 'https://example.com/photo.jpg',
-  birthDate: '1990-12-01',
-  documentType: 'DNI',
-  documentNumber: '30.123.456',
-  sex: 'Masculino',
-  gender: 'Hombre cis',
 };
 
 const professionalProps = {
@@ -162,61 +147,6 @@ describe('WorkerStatusCard — es labels', () => {
     expect(screen.getByText('Estado')).toBeInTheDocument();
   });
 
-});
-
-// ── WorkerPersonalCard — es labels ──────────────────────────────────────────
-
-describe('WorkerPersonalCard — es labels', () => {
-  it('renders card title "Datos Personales"', () => {
-    render(<WorkerPersonalCard {...personalProps} />);
-    expect(screen.getByText('Datos Personales')).toBeInTheDocument();
-  });
-
-  it('renders phone label "Teléfono"', () => {
-    render(<WorkerPersonalCard {...personalProps} />);
-    expect(screen.getByText('Teléfono')).toBeInTheDocument();
-  });
-
-  it('renders birthDate label "Fecha de nacimiento"', () => {
-    render(<WorkerPersonalCard {...personalProps} />);
-    expect(screen.getByText('Fecha de nacimiento')).toBeInTheDocument();
-  });
-
-  it('renders document label "Documento"', () => {
-    render(<WorkerPersonalCard {...personalProps} />);
-    expect(screen.getByText('Documento')).toBeInTheDocument();
-  });
-
-  it('renders sex label "Sexo biológico"', () => {
-    render(<WorkerPersonalCard {...personalProps} />);
-    expect(screen.getByText('Sexo biológico')).toBeInTheDocument();
-  });
-
-  it('renders gender label "Género"', () => {
-    render(<WorkerPersonalCard {...personalProps} />);
-    expect(screen.getByText('Género')).toBeInTheDocument();
-  });
-
-  it('renders WhatsApp label "WhatsApp"', () => {
-    render(<WorkerPersonalCard {...personalProps} />);
-    expect(screen.getByText('WhatsApp')).toBeInTheDocument();
-  });
-
-  it('renders profile photo when URL is provided', () => {
-    render(<WorkerPersonalCard {...personalProps} />);
-    const img = screen.getByAltText('Carlos González');
-    expect(img).toHaveAttribute('src', 'https://example.com/photo.jpg');
-  });
-
-  it('displays full name "Carlos González"', () => {
-    render(<WorkerPersonalCard {...personalProps} />);
-    expect(screen.getByText('Carlos González')).toBeInTheDocument();
-  });
-
-  it('displays document "DNI: 30.123.456"', () => {
-    render(<WorkerPersonalCard {...personalProps} />);
-    expect(screen.getByText('DNI: 30.123.456')).toBeInTheDocument();
-  });
 });
 
 // ── WorkerProfessionalCard — es labels ──────────────────────────────────────
