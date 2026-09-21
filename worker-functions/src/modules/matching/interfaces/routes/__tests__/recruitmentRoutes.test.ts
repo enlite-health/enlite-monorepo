@@ -43,7 +43,9 @@ const ESPERADO: Record<string, string> = {
   // array (scanExpressRouter.ts, cellOfRoute); o 2º é provado por
   // pr8b-ambiguous-routes.test.ts.
   'POST /admin/recruitment/calculate-reemplazos': 'recruitment:create',
-  'GET /admin/recruitment/blocked-attempts': 'recruitment:read',
+  // Spec 024 (D2/D401, 21/09): LOG administrativo, dado diferente do funil — célula própria
+  // (era `recruitment:read`).
+  'GET /admin/recruitment/blocked-attempts': 'recruitment_blocked:read',
 };
 
 const responde = (nome: string) => (req: express.Request, res: express.Response) =>
