@@ -77,4 +77,29 @@ describe('POST /api/admin/patients/:id/conversation/files — upload (spec 022, 
     const res = await chamar(fixture.app, 'POST', `/api/admin/patients/${fixture.patient}/conversation/files`, fixture.uidCompleta);
     expect(res.status).toBe(400);
   });
+
+  it('8. cruzamento de posse REAL contra Postgres: fileId uploadado para OUTRO paciente, usado no POST message deste paciente — 400 ATTACHED_FILE_NOT_FOUND, NENHUMA mensagem gravada (fecha o achado do gate revisao-pr do B1, requisito de entrada do B3)', async () => {
+    const uploadOutro = await upload(fixture.app, `/api/admin/patients/${fixture.patientOutro}/conversation/files`, fixture.uidCompleta, Buffer.from('%PDF-1.4\n%%EOF'), 'de-outro-paciente.pdf', 'application/pdf');
+    expect(uploadOutro.status).toBe(201);
+    const fileIdDeOutroPaciente = uploadOutro.body.data.fileId;
+
+    const { tokenMock } = await import('../helpers/permissionFamilyHarness');
+    const postRes = await fetch(`${fixture.app.url}/api/admin/patients/${fixture.patient}/conversation/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: tokenMock(fixture.uidCompleta, 'admin', 'AR') },
+      body: JSON.stringify({ body: 'tentando anexar arquivo alheio', fileIds: [fileIdDeOutroPaciente] }),
+    });
+    const postBody = (await postRes.json().catch(() => ({}))) as { code?: string };
+
+    expect(postRes.status).toBe(400);
+    expect(postBody.code).toBe('ATTACHED_FILE_NOT_FOUND');
+
+    const { rows } = await fixture.pool.query<{ n: string }>(
+      `SELECT COUNT(*)::int AS n FROM conversation_messages cm
+         JOIN conversations c ON c.id = cm.conversation_id
+        WHERE c.patient_id = $1 AND cm.body_encrypted IS NOT NULL`,
+      [fixture.patient],
+    );
+    expect(Number(rows[0].n)).toBe(0); // nenhuma mensagem gravada — a recusa aconteceu ANTES do INSERT
+  });
 });
