@@ -173,8 +173,17 @@ export interface AnaCareOriginCounts {
  * Item 3 (revisão de PR): distingue "retrato NUNCA sincronizado" de "sincronizou, mas ficou
  * velho" — `stale` sozinho colapsava os dois e a tela mostrava sempre "há mais de 24 horas",
  * falso quando o sync nunca rodou.
+ *
+ * F2 (change `anacare-horas-conclusao-de-corrida`, migration 457) — 2 estados NOVOS, calculados
+ * SÓ no backend (`AnaCareHoursMapper.computeSnapshotState`, worker-functions) a partir da
+ * conclusão da corrida (`anacare_sync_run.status`/contagens) — este arquivo só espelha o tipo,
+ * NUNCA recalcula:
+ *   - `desconhecido` — o sync gravou esse mês antes de o sistema registrar conclusão (linhas de
+ *     agosto/setembro pré-existentes). Não afirma completo nem incompleto.
+ *   - `parcial` — a corrida NÃO terminou (aba fechada no meio, ou falhou) — mês pode ter reservas
+ *     não visitadas.
  */
-export type AnaCareSnapshotState = 'nao_construido' | 'velho' | 'fresco';
+export type AnaCareSnapshotState = 'nao_construido' | 'desconhecido' | 'parcial' | 'velho' | 'fresco';
 
 /**
  * Contrato da rota `GET /months/:month` — a LISTA. `patients` é o agregado (`AnaCareListPatient`,
@@ -194,6 +203,12 @@ export interface AnaCareMonthSnapshot {
   circuitBreakerOpen: boolean;
   /** F6.3: pacientes AGREGADOS (sem turno individual) — ver `AnaCareListPatient`. */
   patients: AnaCareListPatient[];
+  /**
+   * F2 (migration 457) — só presentes quando `snapshotState==='parcial'` E o sync já gravou as
+   * duas contagens (nunca `0` fingido para "sem dado"). Ausentes em qualquer outro estado.
+   */
+  reservationsTotal?: number;
+  reservationsDone?: number;
 }
 
 /**
@@ -211,6 +226,9 @@ export interface AnaCareHoursPatientSnapshot {
   snapshotState: AnaCareSnapshotState;
   circuitBreakerOpen: boolean;
   patients: AnaCarePatient[];
+  /** F2 (migration 457) — mesmo campo/mesma regra de `AnaCareMonthSnapshot`, ver ali. */
+  reservationsTotal?: number;
+  reservationsDone?: number;
 }
 
 // ── Comandos (payload de escrita) ───────────────────────────────────────────
@@ -250,6 +268,9 @@ export interface AnaCareRetratoStatus {
   stale: boolean;
   snapshotState: AnaCareSnapshotState;
   circuitBreakerOpen: boolean;
+  /** F2 (migration 457) — mesmo campo/mesma regra de `AnaCareMonthSnapshot`, ver ali. */
+  reservationsTotal?: number;
+  reservationsDone?: number;
 }
 
 /**

@@ -158,6 +158,9 @@ export class FakeAnaCareHoursService implements AnaCareHoursService {
       stale: snapshot.stale,
       snapshotState: snapshot.snapshotState,
       circuitBreakerOpen: snapshot.circuitBreakerOpen,
+      // F2 (migration 457) — repassa tal qual o fixture montou (mesmo padrão dos outros campos).
+      reservationsTotal: snapshot.reservationsTotal,
+      reservationsDone: snapshot.reservationsDone,
     });
   }
 

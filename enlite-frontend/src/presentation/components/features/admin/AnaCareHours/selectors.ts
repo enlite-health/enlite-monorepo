@@ -255,6 +255,32 @@ export function blockReason(
     : 'Retrato con más de 24 horas — validación deshabilitada hasta actualizar.';
 }
 
+/**
+ * F2 (change `anacare-horas-conclusao-de-corrida`, migration 457) — único dono da decisão de
+ * "mostrar o banner de status do topo?" e "qual variante mostrar?", para `AnaCareHoursListPage` e
+ * `AnaCareHoursDetailPage` pararem de repetir a MESMA árvore de ternários cada uma à sua moda
+ * (mesmo racional do cabeçalho deste arquivo: "não recalcular à mão em componente"). NENHUMA
+ * decisão de BLOQUEIO de ação nasce aqui — `parcial`/`desconhecido` são estados informativos
+ * (proposal.md §Não-objetivos: "não decide a semântica de o que fazer quando um parcial é
+ * detectado"); quem decide `disableActions`/`dayBlockReason` continua sendo `stale`/
+ * `circuitBreakerOpen` (`blockReason`), intocado.
+ */
+export type StatusBannerKind = 'naoConstruido' | 'desconhecido' | 'parcial' | 'circuitBreaker' | 'simple';
+
+/** `true` quando o banner de status do topo tem de aparecer — os 3 motivos de sempre (`stale`/`circuitBreakerOpen`) MAIS os 2 estados novos, que não mexem em `stale`. */
+export function shouldShowStatusBanner(snapshot: Pick<AnaCareMonthSnapshot, 'stale' | 'circuitBreakerOpen' | 'snapshotState'>): boolean {
+  return snapshot.stale || snapshot.circuitBreakerOpen || snapshot.snapshotState === 'parcial' || snapshot.snapshotState === 'desconhecido';
+}
+
+/** Qual variante de texto o banner mostra — precedência igual à de `computeSnapshotState` no backend (nao_construido > desconhecido > parcial > circuitBreaker > simple). */
+export function statusBannerKind(snapshot: Pick<AnaCareMonthSnapshot, 'snapshotState' | 'circuitBreakerOpen'>): StatusBannerKind {
+  if (snapshot.snapshotState === 'nao_construido') return 'naoConstruido';
+  if (snapshot.snapshotState === 'desconhecido') return 'desconhecido';
+  if (snapshot.snapshotState === 'parcial') return 'parcial';
+  if (snapshot.circuitBreakerOpen) return 'circuitBreaker';
+  return 'simple';
+}
+
 /** Filtros do V1 — paciente (texto livre) e prestador (id exato) — sempre aplicados NO CLIENTE, nunca mandados ao backend como query de nome (PII em URL/log). */
 export interface AnaCareHoursClientFilters {
   patientSearch?: string;

@@ -1,0 +1,39 @@
+# Override SÓ PARA E2E (nunca produção) — ANACARE_HOURS_SOURCE=real apontando para um STUB LOCAL
+# (porta 9913, próximo passo de 9911/Periskope e 9912/Axonico — mesmo precedente:
+# `docker-compose.test.yml` PERISKOPE_BASE_URL/AXONICO_BASE_URL), nunca para admin.ana.care.
+#
+# POR QUÊ ESTE ARQUIVO SUBSTITUI `docker-compose.anacare-hours-real-sem-rede.yml` (host `.invalid`)
+# NESTA RETOMADA: o achado desta rodada é que `AnaCareHoursService.getPatientMonth` (usado pela
+# tela de DETALHE, `getPatientMonth → source.listShifts`) SEMPRE chama rede em modo `real` — ao
+# contrário do GET da LISTA (`getMonthSnapshot`, que só lê `source.getRetratoStatus()`, um getter
+# local). Com o host `.invalid`, a tela de detalhe nunca carregaria (a chamada falha antes de
+# `Promise.all` resolver, e a tela cai no estado de erro genérico, nunca no banner). Um host
+# INALCANÇÁVEL resolve a LISTA mas quebra o DETALHE — os dois precisam do MESMO container ao
+# longo de UM `npx playwright test` (critério "rode a suíte inteira"), então a saída é um host
+# ALCANÇÁVEL que a gente controla: o stub abaixo.
+#
+# O stub implementa login por cookie + `/api/shifts/` (paginado, 1 turno sintético, sem PII —
+# nome "E2E"/"Stub") + `/admin/accounts/` (retomada 5: 1 conta sintética, pro caminho `done`
+# terminar de verdade) — o suficiente para `AnaCareSessionClient`/`AnaCareShiftsSourceReal`
+# completarem `getPatientMonth` E uma corrida de sync inteira. O diretório tem uma CHAVE
+# (`setDirectoryFailing`, controlada pelo próprio spec) que o caso 6 liga pra forçar 404 —
+# 404 → `AnaCareHttpError` → `AnaCareEnliteDirectory.fetch()` propaga → `AnaCareHoursSyncController.
+# trigger` grava `status='failed'` + `last_error` = `UnknownError:AnaCareHttpError` (código
+# ESTÁVEL, nunca a mensagem crua) — prova o caminho de escrita real
+# (`AnaCareSyncRunRepository.recordProgress`) tanto na FALHA (caso 6) quanto no SUCESSO (caso 7,
+# `status='done'`), sem nunca tocar o Ana Care de verdade. Ver
+# `enlite-frontend/e2e/integration/anacare-hours-conclusao-de-corrida.integration.e2e.ts` (stub
+# embutido no próprio spec, `startAnaCareStub`) e o relatório da task.
+#
+# `ANACARE_DIRECTORY_MIN_ABSOLUTE=0` (retomada 5): sem histórico em `anacare_directory_snapshot`
+# (1ª corrida deste container) E sem esta env, `AnaCareHoursSyncRunner.assertDirectoryHealthy`
+# lança `AnaCareDirectoryFirstRunNotConfiguredError` antes de processar qualquer conta — com `0`
+# o piso absoluto vira `0`, e a única conta sintética do stub (`newTotal=1`) passa.
+services:
+  api:
+    environment:
+      ANACARE_HOURS_SOURCE: "real"
+      ANACARE_BASE_URL: "http://host.docker.internal:9913"
+      ANACARE_USERNAME: "e2e-dummy-nao-usar"
+      ANACARE_PASS: "e2e-dummy-nao-usar"
+      ANACARE_DIRECTORY_MIN_ABSOLUTE: "0"

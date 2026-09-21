@@ -123,6 +123,81 @@ describe('AnaCareHoursDetailPage', () => {
     expect(screen.queryByText(/deshabilitada hasta actualizar/)).not.toBeInTheDocument();
   });
 
+  // F2 (change `anacare-horas-conclusao-de-corrida`, migration 457) — 2 estados novos.
+  /**
+   * `desconhecido` NÃO seta `stale=true` (compat: `nao_construido || velho`) nem
+   * `circuitBreakerOpen` — a PROVA de que o banner do detalhe (antes gated só por `staleDisable`)
+   * tem de nascer de `snapshotState` também: com `stale: false` aqui, o banner ANTIGO nunca
+   * apareceria.
+   */
+  it('POSITIVO — snapshotState=desconhecido (stale=false) mostra o banner com mensagem própria, NUNCA "mais de 24 horas"', () => {
+    render(
+      <AnaCareHoursDetailPage
+        axonicoService={AXONICO_SERVICE}
+        patientDocumentService={PATIENT_DOCUMENT_SERVICE}
+        snapshot={snapshot({ stale: false, snapshotState: 'desconhecido' })}
+        patientId="90000"
+        onBack={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/^admin\.anacareHours\.stale\.titleDesconhecido/)).toBeInTheDocument();
+    expect(screen.getByText('admin.anacareHours.stale.messageDesconhecido')).toBeInTheDocument();
+    expect(screen.queryByText(/deshabilitada hasta actualizar/)).not.toBeInTheDocument();
+  });
+
+  // 🔴 Não-objetivo (proposal.md): `parcial`/`desconhecido` são informativos — NÃO desabilitam ações.
+  it('desconhecido NÃO desabilita as ações (não-objetivo: esta change não decide a reação)', () => {
+    render(
+      <AnaCareHoursDetailPage
+        axonicoService={AXONICO_SERVICE}
+        patientDocumentService={PATIENT_DOCUMENT_SERVICE}
+        snapshot={snapshot({ stale: false, snapshotState: 'desconhecido' })}
+        patientId="90000"
+        onBack={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId('anacare-hours-validate-shift-s1')).not.toBeDisabled();
+  });
+
+  it('POSITIVO — snapshotState=parcial SEM contagens mostra a mensagem curta (sem números)', () => {
+    render(
+      <AnaCareHoursDetailPage
+        axonicoService={AXONICO_SERVICE}
+        patientDocumentService={PATIENT_DOCUMENT_SERVICE}
+        snapshot={snapshot({ stale: false, snapshotState: 'parcial' })}
+        patientId="90000"
+        onBack={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/^admin\.anacareHours\.stale\.titleParcial/)).toBeInTheDocument();
+    expect(screen.getByText('admin.anacareHours.stale.messageParcial')).toBeInTheDocument();
+  });
+
+  /**
+   * CONTROLE POSITIVO (Decisão 9/design.md §F2) na tela de DETALHE: 49 de 144 reservas processadas
+   * tem de aparecer interpolado — sabotar o estado e a tela deixar de estar muda é a prova.
+   */
+  it('CONTROLE POSITIVO — snapshotState=parcial COM contagens (49/144) mostra "processadas 49 de 144" interpolado', () => {
+    render(
+      <AnaCareHoursDetailPage
+        axonicoService={AXONICO_SERVICE}
+        patientDocumentService={PATIENT_DOCUMENT_SERVICE}
+        snapshot={snapshot({ stale: false, snapshotState: 'parcial', reservationsTotal: 144, reservationsDone: 49 })}
+        patientId="90000"
+        onBack={vi.fn()}
+      />,
+    );
+    expect(screen.getByText('admin.anacareHours.stale.messageParcialComContagem|{"done":49,"total":144}')).toBeInTheDocument();
+    expect(screen.queryByText('admin.anacareHours.stale.messageParcial')).not.toBeInTheDocument();
+  });
+
+  it('NEGATIVO — snapshotState=fresco (stale=false, sem contagens) NÃO mostra banner nenhum', () => {
+    render(<AnaCareHoursDetailPage axonicoService={AXONICO_SERVICE} patientDocumentService={PATIENT_DOCUMENT_SERVICE} snapshot={snapshot()} patientId="90000" onBack={vi.fn()} />);
+    expect(screen.queryByText('admin.anacareHours.stale.titleParcial')).not.toBeInTheDocument();
+    expect(screen.queryByText('admin.anacareHours.stale.titleDesconhecido')).not.toBeInTheDocument();
+    expect(screen.queryByText('admin.anacareHours.stale.title')).not.toBeInTheDocument();
+  });
+
   it('POSITIVO — disableActionsReason (célula ausente) desabilita ações mesmo com retrato em dia, SEM mostrar o AlertBanner de retrato', () => {
     render(<AnaCareHoursDetailPage axonicoService={AXONICO_SERVICE} patientDocumentService={PATIENT_DOCUMENT_SERVICE} snapshot={snapshot()} patientId="90000" onBack={vi.fn()} disableActionsReason="Sem permissão" />);
     expect(screen.getByTestId('anacare-hours-validate-shift-s1')).toBeDisabled();

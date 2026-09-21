@@ -18,6 +18,8 @@ import type {
   EnliteDirectorySource,
   PatientMonthSyncRepository,
   ShiftSyncFreshness,
+  SyncRunConclusion,
+  SyncRunProgress,
   SyncRunRepository,
 } from '../domain/AnaCareHoursSyncPorts';
 import type { AnaCarePatientMonthAggregate, AnaCarePatientMonthProviderAggregate } from '../domain/AnaCarePatientMonth';
@@ -65,6 +67,8 @@ export class FakeAnaCareDirectorySnapshotRepository implements DirectorySnapshot
  */
 export class FakeAnaCareSyncRunRepository implements SyncRunRepository {
   private readonly runs = new Map<string, Date>();
+  /** F1 (migration 457) — espelha a semântica COALESCE do repositório real (ver `recordProgress`). */
+  private readonly progress = new Map<string, SyncRunProgress>();
 
   private key(source: string, periodMonth: string): string {
     return `${source}::${periodMonth}`;
@@ -78,6 +82,44 @@ export class FakeAnaCareSyncRunRepository implements SyncRunRepository {
 
   async getRunStartedAt(source: string, periodMonth: string): Promise<Date | null> {
     return this.runs.get(this.key(source, periodMonth)) ?? null;
+  }
+
+  /**
+   * Mesma semântica COALESCE de `AnaCareSyncRunRepository.recordProgress`: `cursor`/
+   * `reservationsTotal`/`reservationsDone` como `null` preservam o valor já gravado em memória;
+   * `finishedAt`/`lastError` são sempre sobrescritos pelo valor recebido.
+   */
+  async recordProgress(source: string, periodMonth: string, progress: SyncRunProgress): Promise<void> {
+    const key = this.key(source, periodMonth);
+    const prev = this.progress.get(key);
+    this.progress.set(key, {
+      status: progress.status,
+      cursor: progress.cursor ?? prev?.cursor ?? null,
+      reservationsTotal: progress.reservationsTotal ?? prev?.reservationsTotal ?? null,
+      reservationsDone: progress.reservationsDone ?? prev?.reservationsDone ?? null,
+      finishedAt: progress.finishedAt,
+      lastError: progress.lastError,
+    });
+  }
+
+  /** Só para teste/dev em modo fake — espelha o que o real leria de volta do banco. */
+  getProgress(source: string, periodMonth: string): SyncRunProgress | null {
+    return this.progress.get(this.key(source, periodMonth)) ?? null;
+  }
+
+  /**
+   * F2 — espelha `AnaCareSyncRunRepository.getConclusion`: nenhuma rodada gravada em memória para
+   * `(source, periodMonth)` (nem `startNewRun` nem `recordProgress` foram chamados) é o MESMO
+   * "não sei" que uma linha real com `status IS NULL` — os 3 campos vêm `null`, nunca um `0`
+   * inventado (mesma régua do repositório real).
+   */
+  async getConclusion(source: string, periodMonth: string): Promise<SyncRunConclusion> {
+    const progress = this.progress.get(this.key(source, periodMonth));
+    return {
+      status: progress?.status ?? null,
+      reservationsTotal: progress?.reservationsTotal ?? null,
+      reservationsDone: progress?.reservationsDone ?? null,
+    };
   }
 }
 

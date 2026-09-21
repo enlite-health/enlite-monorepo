@@ -127,8 +127,21 @@ export interface AnaCareOriginCounts {
  * `getRetratoStatus().stale` da fonte voltou true, ex.: > 24h) colapsavam no mesmo booleano, e a
  * tela sempre mostrava "há mais de 24 horas" mesmo quando o sync nunca tinha rodado — mensagem
  * falsa. `stale` continua existindo (compat: `nao_construido || velho`).
+ *
+ * F2 (change `anacare-horas-conclusao-de-corrida`, migration 457) — 2 estados NOVOS, derivados da
+ * CONCLUSÃO da corrida de sync (`anacare_sync_run.status`/`reservations_total`/`reservations_done`),
+ * nunca calculados no frontend (ver `AnaCareHoursMapper.computeSnapshotState`):
+ *   - `desconhecido` — `status IS NULL`. É o estado das linhas de agosto/setembro pré-existentes
+ *     (sync rodou antes desta change existir, nunca gravou conclusão) — dizer `parcial` sobre elas
+ *     seria uma afirmação que o sistema não tem base para fazer (não tem cursor/contagem
+ *     registrados, só ausência de dado). NUNCA confundir com `parcial`.
+ *   - `parcial` — `status IN ('running','failed')`, ou `status='done'` com
+ *     `reservations_done < reservations_total`: a corrida NÃO terminou (aba fechada no meio, ou o
+ *     runner falhou) e o mês pode ter reservas não visitadas.
+ * Precedência fechada (proposal.md §Decisão fechada): `nao_construido → desconhecido → parcial →
+ * velho → fresco`, cada um só avaliado depois que os anteriores foram descartados.
  */
-export type AnaCareSnapshotState = 'nao_construido' | 'velho' | 'fresco';
+export type AnaCareSnapshotState = 'nao_construido' | 'desconhecido' | 'parcial' | 'velho' | 'fresco';
 
 export interface AnaCareMonthSnapshot {
   /** YYYY-MM */
@@ -140,6 +153,17 @@ export interface AnaCareMonthSnapshot {
   circuitBreakerOpen: boolean;
   /** F6.2: pacientes AGREGADOS (sem turno individual) — ver `AnaCareListPatient`. */
   patients: AnaCareListPatient[];
+  /**
+   * F2 (migration 457) — só presentes quando `snapshotState==='parcial'` E o sync gravou as
+   * contagens (nunca fingidas em `0`): "quanto foi percorrido" para a mensagem do banner. Ausentes
+   * (`undefined`) em qualquer outro estado, ou quando `parcial` nasceu de `running`/`failed` sem
+   * contagem gravada ainda — DIVERGÊNCIA do design.md (que deixava a decisão de expor esses 2
+   * campos na resposta HTTP "fora desta mudança de contrato, avaliar ao implementar"): o prompt
+   * desta fase pede explicitamente o texto "processadas X de Y" na tela, e isso exige os números
+   * no wire — reportado no fecho da task.
+   */
+  reservationsTotal?: number;
+  reservationsDone?: number;
 }
 
 export interface AnaCareRetratoStatus {
