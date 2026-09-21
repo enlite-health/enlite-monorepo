@@ -119,6 +119,11 @@ export interface WorkerProfileUpdatePayload {
   preferredAgeRange?: string[];
   languages?: string[];
   linkedinUrl?: string;
+  /**
+   * ISO `yyyy-MM-dd`. Spec 025 (Fase 6, D402 item 4): campo do dossiê, gated por
+   * `worker_pii:write` — sem a célula, o backend rejeita com 403 (nunca ecoa o valor enviado).
+   */
+  birthDate?: string;
 }
 
 /** Canonical option value lists for worker professional fields (mirror of registration). */
