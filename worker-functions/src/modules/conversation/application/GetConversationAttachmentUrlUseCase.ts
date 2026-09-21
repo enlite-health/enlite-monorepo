@@ -32,6 +32,34 @@ function sanitizeFilenameForHeader(name: string): string {
   return name.replace(/["\r\n]/g, '');
 }
 
+/**
+ * Percent-encode conforme RFC 5987 (`ext-value`, usado no `filename*` do RFC 6266) — `attr-char`
+ * exclui `'`, `(`, `)` e `*`, que `encodeURIComponent` sozinho NÃO escapa (ele deixa
+ * `A-Za-z0-9-_.!~*'()` intactos). Sobre-escapar é sempre seguro (o RFC só proíbe escapar DE MENOS);
+ * por isso só cobrimos os 4 caracteres que `encodeURIComponent` deixaria passar fora do conjunto.
+ */
+function encodeRFC5987ValueChars(value: string): string {
+  return encodeURIComponent(value).replace(
+    /['()*]/g,
+    (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+}
+
+/**
+ * Achado BAIXO do gate revisao-pr (B3): `sanitizeFilenameForHeader` só tirava aspas/CR/LF — um
+ * nome com acento/ñ ia CRU dentro de `filename="..."`, sem `filename*=UTF-8''<percent-encoded>`
+ * (RFC 6266/5987). Sem a variante `filename*`, o nome chegava mutilado (ou o header inteiro
+ * quebrava, a depender do cliente) para qualquer paciente com acento no nome do arquivo — comum em
+ * espanhol/português. Agora manda os DOIS: `filename` ASCII de fallback (não-ASCII vira `_`, nunca
+ * quebra clientes antigos que só leem esse parâmetro) + `filename*` com o nome real, percent-encoded.
+ */
+function buildAttachmentContentDisposition(originalName: string): string {
+  const sanitized = sanitizeFilenameForHeader(originalName);
+  const asciiFallback = sanitized.replace(/[^\x20-\x7E]/g, '_');
+  const encoded = encodeRFC5987ValueChars(sanitized);
+  return `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encoded}`;
+}
+
 export class GetConversationAttachmentUrlUseCase {
   constructor(
     private readonly storageFactory: () => ConversationAttachmentStorage = () => new ConversationAttachmentStorage(),
@@ -58,7 +86,7 @@ export class GetConversationAttachmentUrlUseCase {
     ]);
 
     const url = await storage.getReadSignedUrl(objectPath, {
-      responseDisposition: `attachment; filename="${sanitizeFilenameForHeader(originalName)}"`,
+      responseDisposition: buildAttachmentContentDisposition(originalName),
     });
     return { url, expiresInSeconds: READ_URL_TTL_SECONDS };
   }

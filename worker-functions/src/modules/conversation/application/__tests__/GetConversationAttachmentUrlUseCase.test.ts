@@ -31,7 +31,7 @@ describe('GetConversationAttachmentUrlUseCase', () => {
 
     expect(result).toEqual({ url: 'https://signed.example/obj', expiresInSeconds: READ_URL_TTL_SECONDS });
     expect(storage.getReadSignedUrl).toHaveBeenCalledWith('uuid-1.pdf', {
-      responseDisposition: 'attachment; filename="contrato-2026.pdf"',
+      responseDisposition: 'attachment; filename="contrato-2026.pdf"; filename*=UTF-8\'\'contrato-2026.pdf',
     });
   });
 
@@ -63,7 +63,37 @@ describe('GetConversationAttachmentUrlUseCase', () => {
     const [, options] = (storage.getReadSignedUrl as jest.Mock).mock.calls[0];
     // A única aspa dupla aceitável é o PAR que delimita o valor do header (`filename="..."`) —
     // sem sanitização, a aspa/quebra de linha do nome de arquivo quebraria essa delimitação.
-    expect(options.responseDisposition).toBe('attachment; filename="nome malicioso.pdf"');
+    expect(options.responseDisposition).toBe(
+      'attachment; filename="nome malicioso.pdf"; filename*=UTF-8\'\'nome%20malicioso.pdf',
+    );
+  });
+
+  // ---- conserto do gate revisao-pr (B3, achado BAIXO): filename* RFC 6266/5987 para acento/ñ ----
+
+  it('🔒 nome com acento/ñ — filename ASCII de fallback substitui não-ASCII por "_", e filename*=UTF-8\'\' leva o nome REAL percent-encoded (RFC 6266/5987)', async () => {
+    const pool = fakePool([{ objectPathEncrypted: 'enc:uuid-1.pdf', originalNameEncrypted: 'enc:informe-médico-señor-Muñoz.pdf' }]);
+    const storage = fakeStorage();
+    const useCase = new GetConversationAttachmentUrlUseCase(() => storage);
+
+    await useCase.execute(pool, { patientId: 'p1', fileId: 'f1' });
+
+    const [, options] = (storage.getReadSignedUrl as jest.Mock).mock.calls[0];
+    expect(options.responseDisposition).toBe(
+      'attachment; filename="informe-m_dico-se_or-Mu_oz.pdf"; '
+      + "filename*=UTF-8''informe-m%C3%A9dico-se%C3%B1or-Mu%C3%B1oz.pdf",
+    );
+  });
+
+  it('🔒 nome com aspas simples/parênteses/asterisco — filename* escapa os 4 caracteres que encodeURIComponent sozinho deixaria passar (fora do attr-char do RFC 5987)', async () => {
+    const pool = fakePool([{ objectPathEncrypted: 'enc:uuid-1.pdf', originalNameEncrypted: "enc:nome (versão)*'final.pdf" }]);
+    const storage = fakeStorage();
+    const useCase = new GetConversationAttachmentUrlUseCase(() => storage);
+
+    await useCase.execute(pool, { patientId: 'p1', fileId: 'f1' });
+
+    const [, options] = (storage.getReadSignedUrl as jest.Mock).mock.calls[0];
+    expect(options.responseDisposition).toContain("filename*=UTF-8''nome%20%28vers%C3%A3o%29%2A%27final.pdf");
+    expect(options.responseDisposition).not.toMatch(/filename\*=UTF-8''[^;]*[()'*]/); // nenhum dos 4 cru
   });
 
   it('construção sem dependências explícitas (produção real) não lança', () => {
