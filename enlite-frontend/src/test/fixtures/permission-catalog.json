@@ -39,6 +39,8 @@
     "messaging:read",
     "messaging:send",
     "messaging:update",
+    "own_notifications:read",
+    "own_notifications:update",
     "patient:create",
     "patient:delete",
     "patient:read",
