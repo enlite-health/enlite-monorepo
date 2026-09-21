@@ -3776,7 +3776,8 @@
             "loadError": "Não foi possível carregar as respostas",
             "attachments": {
               "download": "Baixar anexo",
-              "downloadError": "Não conseguimos baixar o arquivo. Tente de novo."
+              "downloadError": "Não conseguimos baixar o arquivo. Tente de novo.",
+              "popupBlocked": "Seu navegador bloqueou a janela pop-up. Habilite pop-ups para baixar o arquivo."
             }
           },
           "composer": {

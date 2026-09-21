@@ -3855,7 +3855,8 @@
             "loadError": "No se pudieron cargar las respuestas",
             "attachments": {
               "download": "Descargar adjunto",
-              "downloadError": "No pudimos descargar el archivo. Probá de nuevo."
+              "downloadError": "No pudimos descargar el archivo. Probá de nuevo.",
+              "popupBlocked": "Tu navegador bloqueó la ventana emergente. Habilitá los pop-ups para descargar el archivo."
             }
           },
           "composer": {
