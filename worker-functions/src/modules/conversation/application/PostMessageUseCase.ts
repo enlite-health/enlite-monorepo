@@ -57,8 +57,16 @@ export class AttachedFileNotFoundError extends Error {
   readonly code = 'ATTACHED_FILE_NOT_FOUND';
   readonly status = 400;
 
-  constructor(readonly fileId: string) {
-    super(`attached file ${fileId} not found`);
+  /**
+   * `fileId: null` — achado do gate revisao-pr (B3-r2, item 3): a corrida de INSERT (23505, ver
+   * `attachFiles`) não sabe QUAL dos `fileIds` do payload colidiu (a constraint UNIQUE não devolve
+   * a linha) — atribuir um arbitrariamente (`fileIds[0]`) apontava um id que podia não ser o que
+   * colidiu de verdade. Sem impacto de segurança (o cliente já conhece os ids que enviou), mas é
+   * mensagem enganosa. Aqui a mensagem fica genérica, sem citar nenhum id, para as 2 causas que não
+   * têm como apontar 1 arquivo específico.
+   */
+  constructor(readonly fileId: string | null) {
+    super(fileId ? `attached file ${fileId} not found` : 'one or more attached files could not be attached');
     this.name = 'AttachedFileNotFoundError';
   }
 }
@@ -226,8 +234,11 @@ export class PostMessageUseCase {
       // `assertFilesOwnedByAuthor` (sem lock) antes de qualquer um inserir — a UNIQUE (file_id)
       // da migration 461 fecha a janela no banco; aqui só traduz a violação (23505) para o MESMO
       // 400 anti-enumeração que a checagem de posse já usa (nunca 500 pra este caso).
+      // 🔒 Achado do gate revisao-pr (B3-r2, item 3): a constraint não diz QUAL fileId colidiu —
+      // `fileIds[0]` era um chute arbitrário que podia apontar um arquivo que não teve nada a ver
+      // com a corrida. `null` gera a mensagem genérica (ver `AttachedFileNotFoundError`).
       if ((err as { code?: string } | null)?.code === '23505') {
-        throw new AttachedFileNotFoundError(fileIds[0]);
+        throw new AttachedFileNotFoundError(null);
       }
       throw err;
     }

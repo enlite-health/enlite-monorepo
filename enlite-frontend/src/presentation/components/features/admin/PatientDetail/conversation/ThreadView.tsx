@@ -113,26 +113,34 @@ export function MessageAttachments({
   const handleDownload = async (fileId: string): Promise<void> => {
     setDownloadError(null);
     const popup = window.open('', '_blank');
+    if (!popup) {
+      // 🔒 Achado do gate revisao-pr (B3-r2, item 13): antes, uma 2ª chamada `window.open(url,
+      // '_blank')` era tentada "de melhor esforço" DEPOIS do await — mas se o bloqueador já
+      // impediu a abertura SÍNCRONA (dentro do clique, com "user activation"), a 2ª chamada,
+      // sem mais activation nenhuma, é bloqueada da MESMA forma, e o clique ficava sem efeito
+      // nenhum e sem aviso. Aqui avisamos JÁ, no mesmo tick do clique, e nem chamamos a API —
+      // não adianta buscar a signed URL para uma aba que nunca vai existir.
+      setDownloadError(
+        td('attachments.popupBlocked', 'Tu navegador bloqueó la ventana emergente. Habilitá los pop-ups para descargar el archivo.'),
+      );
+      return;
+    }
     // 🔒 Achado do gate revisao-pr (B3, resposta 3): sem `noopener`/`noreferrer` (de propósito —
     // ver comentário acima), `popup.opener` aponta de volta para ESTA janela por padrão. A signed
     // URL é do NOSSO bucket (nunca link de terceiro), então o risco de reverse tabnabbing é baixo
     // — mas zerar o `opener` explicitamente, aqui, custa 1 linha e fecha o item sem depender de
     // "o destino é sempre confiável" continuar verdadeiro para sempre.
-    if (popup) popup.opener = null;
+    popup.opener = null;
     try {
       const { url } = await AdminConversationApiService.getConversationAttachmentUrl(patientId, fileId);
-      if (popup) {
-        popup.location.href = url;
-        window.setTimeout(() => {
-          if (!popup.closed) popup.close();
-        }, 2000);
-      } else {
-        window.open(url, '_blank'); // bloqueador de pop-up ativo — melhor esforço
-      }
+      popup.location.href = url;
+      window.setTimeout(() => {
+        if (!popup.closed) popup.close();
+      }, 2000);
     } catch {
       // Nunca falha silenciosa (mesma regra do `sendError` do composer): sem isto, um 403/404 no
       // download parecia clique sem efeito nenhum.
-      popup?.close();
+      popup.close();
       setDownloadError(td('attachments.downloadError', 'Não conseguimos baixar o arquivo. Tente de novo.'));
     }
   };

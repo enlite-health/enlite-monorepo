@@ -369,6 +369,31 @@ describe('PostMessageUseCase', () => {
       expect(calls.some((c) => c.sql.includes('INSERT INTO conversation_message_attachments'))).toBe(true);
     });
 
+    it('🔒 achado do gate revisao-pr (B3-r2, item 3): a corrida 23505 NUNCA atribui a colisão a um fileId específico — a UNIQUE não diz qual colidiu, e apontar `fileIds[0]` arbitrariamente é mensagem enganosa; a resposta é genérica, sem nenhum id do payload', async () => {
+      const conflictErr = Object.assign(new Error('duplicate key value violates unique constraint'), { code: '23505' });
+      const { client } = clientWith([
+        insertMessageHandler(),
+        filesOwnedHandler(['f1', 'f2']),
+        (sql) => {
+          if (!sql.includes('INSERT INTO conversation_message_attachments')) return undefined;
+          throw conflictErr;
+        },
+      ]);
+      runOn(client);
+      const useCase = new PostMessageUseCase(new ConversationRepository(POOL));
+
+      // nenhuma das duas (`f1`/`f2`) aparece na mensagem — não há como saber qual colidiu de
+      // verdade, então nenhuma é citada (mensagem genérica, `fileId: null`).
+      await expect(
+        useCase.execute(POOL, { conversationId: 'c1', authorUid: 'staff:1', body: 'msg-1', fileIds: ['f1', 'f2'] }),
+      ).rejects.toMatchObject({
+        code: 'ATTACHED_FILE_NOT_FOUND',
+        status: 400,
+        fileId: null,
+        message: 'one or more attached files could not be attached',
+      });
+    });
+
     it('erro de banco SEM code 23505 no INSERT de anexo propaga cru (nunca mascarado como posse)', async () => {
       const genericErr = new Error('connection reset');
       const { client } = clientWith([

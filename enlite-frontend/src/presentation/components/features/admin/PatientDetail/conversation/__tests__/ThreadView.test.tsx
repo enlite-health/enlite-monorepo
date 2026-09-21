@@ -280,9 +280,8 @@ describe('ThreadView', () => {
     openSpy.mockRestore();
   });
 
-  it('download com o pop-up BLOQUEADO (window.open devolve null): tenta de novo com a URL final (melhor esforço), nunca lança', async () => {
+  it('🔒 achado do gate revisao-pr (B3-r2, item 13): pop-up BLOQUEADO (window.open devolve null) avisa o usuário visivelmente — nunca falha muda, e não tenta buscar a URL para uma aba que não existe', async () => {
     const openSpy = vi.spyOn(window, 'open').mockReturnValue(null);
-    getConversationAttachmentUrl.mockResolvedValue({ url: 'https://signed.example/y', expiresInSeconds: 300 });
     getConversationReplies.mockResolvedValue([
       msg({ id: 'r1', attachments: [{ fileId: 'file-1', contentType: 'application/pdf', sizeBytes: 1024 }] }),
     ]);
@@ -291,8 +290,14 @@ describe('ThreadView', () => {
     await waitFor(() => expect(screen.getByTestId('message-attachment-file-1')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('message-attachment-file-1'));
 
-    await waitFor(() => expect(openSpy).toHaveBeenCalledWith('https://signed.example/y', '_blank'));
-    expect(screen.queryByTestId('message-attachments-error')).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId('message-attachments-error')).toBeInTheDocument());
+    expect(screen.getByTestId('message-attachments-error')).toHaveTextContent(
+      PT.thread.attachments.popupBlocked,
+    );
+    // não adianta buscar a signed URL: sem a aba (bloqueada no clique, sem user activation
+    // restante), uma 2ª tentativa depois do await seria bloqueada da mesma forma e silenciosa.
+    expect(getConversationAttachmentUrl).not.toHaveBeenCalled();
+    expect(openSpy).toHaveBeenCalledTimes(1);
     openSpy.mockRestore();
   });
 
