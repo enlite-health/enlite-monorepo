@@ -42,6 +42,16 @@ export interface TopMessageRow {
   mentions: string[];
 }
 
+/**
+ * Marca de leitura do ATOR + contagem de não lidas (D-11 da spec 022: `created_at > last_read_at`
+ * E `author_uid` diferente do ator, contando mensagem de TOPO e REPLY — nunca só topo). Sem marca
+ * de leitura (`lastReadAt: null`), conta TUDO que não é do próprio ator (baseline `-infinity`).
+ */
+export interface ConversationReadState {
+  lastReadAt: Date | null;
+  unreadCount: number;
+}
+
 export interface ReplyMessageRow {
   id: string;
   conversationId: string;
@@ -316,6 +326,41 @@ export class ConversationRepository {
       `UPDATE conversation_messages SET deleted_at = now(), body_encrypted = NULL WHERE id = $1`,
       [messageId],
     );
+  }
+
+  /**
+   * `lastReadAt` do ator + `unreadCount` (D-11) — UMA query (CTE `mark` + duas subqueries
+   * agregadas no SELECT), nunca uma query de contagem por mensagem. `unreadCount` conta
+   * `conversation_messages` da conversa (topo E reply — sem filtro de `root_message_id`) com
+   * `author_uid <> actorUid` e `created_at > COALESCE(lastReadAt, '-infinity')`: sem marca prévia,
+   * "tudo que não é meu" conta como não lido — é o comportamento correto de primeira visita,
+   * não um bug (o front decide se mostra o badge sem histórico).
+   */
+  async getReadState(
+    conversationId: string,
+    actorUid: string,
+    executor: Pool | PoolClient = this.pool,
+  ): Promise<ConversationReadState> {
+    const { rows } = await executor.query<{ lastReadAt: Date | null; unreadCount: number }>(
+      `WITH mark AS (
+         SELECT last_read_at FROM conversation_read_marks
+          WHERE conversation_id = $1 AND user_uid = $2
+       )
+       SELECT
+         (SELECT last_read_at FROM mark) AS "lastReadAt",
+         (
+           SELECT COUNT(*)::int FROM conversation_messages m
+            WHERE m.conversation_id = $1
+              AND m.author_uid <> $2
+              AND m.created_at > COALESCE((SELECT last_read_at FROM mark), '-infinity'::timestamptz)
+         ) AS "unreadCount"`,
+      [conversationId, actorUid],
+    );
+    const row = rows[0];
+    return {
+      lastReadAt: row?.lastReadAt ?? null,
+      unreadCount: row?.unreadCount ?? 0,
+    };
   }
 
   /**

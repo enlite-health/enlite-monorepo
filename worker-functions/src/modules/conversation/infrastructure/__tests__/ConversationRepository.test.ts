@@ -469,6 +469,65 @@ describe('ConversationRepository', () => {
     });
   });
 
+  describe('getReadState — lastReadAt + unreadCount do ATOR (D-11), UMA query', () => {
+    const ACTOR = 'staff:actor';
+
+    it('faz exatamente UMA chamada ao pool — CTE + subqueries, nunca uma query de contagem por mensagem', async () => {
+      const query = jest.fn().mockResolvedValue({ rows: [{ lastReadAt: null, unreadCount: 0 }] });
+      const repo = new ConversationRepository(poolWith(query));
+
+      await repo.getReadState(CONVERSATION_ID, ACTOR);
+
+      expect(query).toHaveBeenCalledTimes(1);
+      const [sql, params] = query.mock.calls[0];
+      expect(sql).toContain('WITH mark AS');
+      expect(sql).toContain('author_uid <>');
+      expect(sql).toContain("COALESCE((SELECT last_read_at FROM mark), '-infinity'::timestamptz)");
+      expect(params).toEqual([CONVERSATION_ID, ACTOR]);
+    });
+
+    it('sem marca de leitura: lastReadAt null (linha do CTE devolve null)', async () => {
+      const query = jest.fn().mockResolvedValue({ rows: [{ lastReadAt: null, unreadCount: 4 }] });
+      const repo = new ConversationRepository(poolWith(query));
+
+      const state = await repo.getReadState(CONVERSATION_ID, ACTOR);
+
+      expect(state.lastReadAt).toBeNull();
+      expect(state.unreadCount).toBe(4);
+    });
+
+    it('com marca de leitura: devolve o lastReadAt da linha e o unreadCount pós-corte', async () => {
+      const lastReadAt = new Date('2026-09-20T12:00:00.000Z');
+      const query = jest.fn().mockResolvedValue({ rows: [{ lastReadAt, unreadCount: 1 }] });
+      const repo = new ConversationRepository(poolWith(query));
+
+      const state = await repo.getReadState(CONVERSATION_ID, ACTOR);
+
+      expect(state.lastReadAt).toEqual(lastReadAt);
+      expect(state.unreadCount).toBe(1);
+    });
+
+    it('executor explícito (client de transação) é usado no lugar do pool do construtor', async () => {
+      const poolQuery = jest.fn();
+      const clientQuery = jest.fn().mockResolvedValue({ rows: [{ lastReadAt: null, unreadCount: 0 }] });
+      const repo = new ConversationRepository(poolWith(poolQuery));
+
+      await repo.getReadState(CONVERSATION_ID, ACTOR, clientWith(clientQuery));
+
+      expect(poolQuery).not.toHaveBeenCalled();
+      expect(clientQuery).toHaveBeenCalledTimes(1);
+    });
+
+    it('sem linha nenhuma no resultado (defensivo): devolve lastReadAt null e unreadCount 0', async () => {
+      const query = jest.fn().mockResolvedValue({ rows: [] });
+      const repo = new ConversationRepository(poolWith(query));
+
+      const state = await repo.getReadState(CONVERSATION_ID, ACTOR);
+
+      expect(state).toEqual({ lastReadAt: null, unreadCount: 0 });
+    });
+  });
+
   describe('upsertReadMark — ON CONFLICT DO UPDATE, nunca INSERT que duplica', () => {
     it('o SQL contém ON CONFLICT (conversation_id, user_uid) DO UPDATE', async () => {
       const query = jest.fn().mockResolvedValue({ rows: [] });

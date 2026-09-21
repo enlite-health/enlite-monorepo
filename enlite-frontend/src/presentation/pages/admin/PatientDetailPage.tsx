@@ -23,6 +23,7 @@ import { LocalizacoesCard } from '@presentation/components/features/admin/Patien
 import { ServicosContratadosCard } from '@presentation/components/features/admin/PatientDetail/ServicosContratadosCard';
 import { PatientVacanciesCard } from '@presentation/components/features/admin/PatientDetail/PatientVacanciesCard';
 import { PatientChatIdsCard } from '@presentation/components/features/admin/PatientDetail/PatientChatIdsCard';
+import { PatientConversationHandle } from '@presentation/components/features/admin/PatientDetail/conversation/PatientConversationHandle';
 import { PatientStatusControl } from '@presentation/components/features/admin/PatientDetail/PatientStatusControl';
 import { PatientStatusHistoryCard } from '@presentation/components/features/admin/PatientDetail/PatientStatusHistoryCard';
 import { CompletenessChecklist } from '@presentation/components/features/admin/PatientDetail/CompletenessChecklist';
@@ -208,6 +209,14 @@ export default function PatientDetailPage() {
           <PatientIdentityCard patient={patient} onSaved={refetch} />
           <PatientGeneralInfoCard patient={patient} onSaved={refetch} />
         </div>
+      </ContainerGate>
+
+      {/* Handle do chat interno por paciente (spec 022, T210) — fixo na lateral, em TODA a
+          ficha (não é por aba: o registry não declara `tabs` para este container, decisão
+          fechada). `resource="patient_conversation"` — NÃO é o `patient_chat` (grupos de
+          WhatsApp/Periskope), célula diferente. */}
+      <ContainerGate resource="patient_conversation">
+        <PatientConversationHandle patientId={patient.id} />
       </ContainerGate>
 
       {/* Tab Navigation */}

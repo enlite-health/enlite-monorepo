@@ -139,7 +139,12 @@ export class AdminConversationController {
     return messageBelongsToConversation(info, conversationId);
   }
 
-  /** GET /api/admin/patients/:id/conversation — célula `patient_conversation:read` na rota. */
+  /**
+   * GET /api/admin/patients/:id/conversation — célula `patient_conversation:read` na rota.
+   * `lastReadAt`/`unreadCount` (Bloco 2, D-11) vêm de `ListConversationUseCase.execute` — o campo
+   * que faltava para o badge do handle não zerar a cada F5 (achado da spec 022, `estado.md`): o
+   * backend gravava a marca de leitura desde o Bloco 1, mas nunca a devolvia.
+   */
   async list(req: Request, res: Response): Promise<void> {
     const params = patientIdParamsSchema.safeParse(req.params);
     if (!params.success) { res.status(400).json({ success: false, error: 'Invalid params' }); return; }
@@ -151,6 +156,7 @@ export class AdminConversationController {
 
       const result = await this.listConversationUseCase.execute({
         conversationId: lookup.conversationId,
+        actorUid: this.actorUid(req),
         after: query.data.after ? parseCursor(query.data.after) : null,
         limit: query.data.limit,
       });
@@ -161,9 +167,12 @@ export class AdminConversationController {
           conversationId: lookup.conversationId,
           messages: result.messages.map(toMessageDto),
           nextCursor: result.nextCursor ? `${result.nextCursor.createdAt.toISOString()},${result.nextCursor.id}` : null,
+          lastReadAt: result.lastReadAt ? result.lastReadAt.toISOString() : null,
+          unreadCount: result.unreadCount,
         },
       });
     } catch (err: unknown) {
+      if (err instanceof MissingActorError) { res.status(401).json({ success: false, error: err.message, code: err.code }); return; }
       this.handleUnexpected(err, res, 'list', params.data.id);
     }
   }
