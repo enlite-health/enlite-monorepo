@@ -20,14 +20,25 @@ interface PatientGeneralInfoCardProps {
   onSaved?: () => void;
 }
 
+// Fix 21/09/2026 (Gabriel, PR #469): `new Date(birthDateIso)` decodifica a string ISO SEM hora
+// como meia-noite UTC e lia a idade com getters LOCAIS — em fuso negativo (Argentina, UTC-3) a
+// meia-noite UTC de "1950-03-25" já é 24/03 no relógio local, um dia a menos. `birthDate` é
+// `DATE` no Postgres (sem hora, sem fuso — migrations 037/317 do worker-functions), então os
+// componentes ano/mês/dia vêm do split da própria string ISO (mesmo padrão de
+// `AnaCareHours/selectors.ts`), nunca de getters locais sobre um `Date` construído a partir dela.
+// "Hoje" É local de verdade (não vem do backend), por isso usa `new Date()` com getters locais.
 function calculateAge(birthDateIso: string | null): number | null {
   if (!birthDateIso) return null;
-  // `new Date(...)` e os getters nunca lançam: um try/catch aqui era ramo morto (spec 012, DoD 100%).
-  const birth = new Date(birthDateIso);
+  const match = birthDateIso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return null;
+  const birthYear = Number(match[1]);
+  const birthMonth = Number(match[2]) - 1;
+  const birthDay = Number(match[3]);
+
   const today = new Date();
-  let age = today.getFullYear() - birth.getFullYear();
-  const m = today.getMonth() - birth.getMonth();
-  if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) {
+  let age = today.getFullYear() - birthYear;
+  const m = today.getMonth() - birthMonth;
+  if (m < 0 || (m === 0 && today.getDate() < birthDay)) {
     age -= 1;
   }
   return age;
