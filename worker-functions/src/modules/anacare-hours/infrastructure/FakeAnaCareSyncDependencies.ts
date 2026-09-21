@@ -18,6 +18,7 @@ import type {
   EnliteDirectorySource,
   PatientMonthSyncRepository,
   ShiftSyncFreshness,
+  SyncRunConclusion,
   SyncRunProgress,
   SyncRunRepository,
 } from '../domain/AnaCareHoursSyncPorts';
@@ -104,6 +105,21 @@ export class FakeAnaCareSyncRunRepository implements SyncRunRepository {
   /** Só para teste/dev em modo fake — espelha o que o real leria de volta do banco. */
   getProgress(source: string, periodMonth: string): SyncRunProgress | null {
     return this.progress.get(this.key(source, periodMonth)) ?? null;
+  }
+
+  /**
+   * F2 — espelha `AnaCareSyncRunRepository.getConclusion`: nenhuma rodada gravada em memória para
+   * `(source, periodMonth)` (nem `startNewRun` nem `recordProgress` foram chamados) é o MESMO
+   * "não sei" que uma linha real com `status IS NULL` — os 3 campos vêm `null`, nunca um `0`
+   * inventado (mesma régua do repositório real).
+   */
+  async getConclusion(source: string, periodMonth: string): Promise<SyncRunConclusion> {
+    const progress = this.progress.get(this.key(source, periodMonth));
+    return {
+      status: progress?.status ?? null,
+      reservationsTotal: progress?.reservationsTotal ?? null,
+      reservationsDone: progress?.reservationsDone ?? null,
+    };
   }
 }
 

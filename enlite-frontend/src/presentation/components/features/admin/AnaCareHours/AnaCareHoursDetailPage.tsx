@@ -43,7 +43,9 @@ import {
   patientDisplayName,
   pendingSelectionStateOf,
   selectionSummary,
+  shouldShowStatusBanner,
   startOfWeekMonday,
+  statusBannerKind,
   todayIsoLocal,
   totalHours,
   validationProgress,
@@ -147,13 +149,33 @@ export function AnaCareHoursDetailPage({
   const disableActions = staleDisable || Boolean(disableActionsReason);
   // O banner grande (AlertBanner) mantém sempre o texto LARGO — comportamento aprovado (D342),
   // não afetado por `blockReasonMode`. Só o motivo curto dentro de cada `DayGroup` obedece.
-  // Item 3 (conserto, 17/09): "nunca construído" tem título e mensagem PRÓPRIOS — antes,
-  // `blockReason` colapsava em "retrato com mais de 24 horas", falso quando o sync nunca rodou.
-  // Reaproveita as MESMAS chaves i18n já criadas para `AnaCareHoursListPage` (mesmo texto, mesmo
-  // conceito) — nenhuma chave nova.
-  const naoConstruido = snapshot.snapshotState === 'nao_construido';
-  const alertTitle = naoConstruido ? t('admin.anacareHours.stale.titleNaoConstruido') : t('admin.anacareHours.stale.title');
-  const alertMessage = naoConstruido ? t('admin.anacareHours.stale.messageNaoConstruido') : blockReason(snapshot, 'largo');
+  // Item 3 (conserto, 17/09) + F2 (migration 457): cada estado (`nao_construido`/`desconhecido`/
+  // `parcial`) tem título e mensagem PRÓPRIOS — antes, `blockReason` colapsava em "retrato com
+  // mais de 24 horas", falso quando o sync nunca rodou. `statusBannerKind`/`shouldShowStatusBanner`
+  // (`selectors.ts`) são o MESMO dono que `AnaCareHoursListPage` usa — nenhuma lógica duplicada.
+  // 🔴 `parcial`/`desconhecido` são SÓ informativos (proposal.md §Não-objetivos) — NÃO entram em
+  // `staleDisable`/`disableActions`/`dayBlockReason` abaixo, que continuam intocados.
+  const showStatusBanner = shouldShowStatusBanner(snapshot);
+  const bannerKind = statusBannerKind(snapshot);
+  const temContagemDaCorrida = snapshot.reservationsTotal != null && snapshot.reservationsDone != null;
+  const alertTitle =
+    bannerKind === 'naoConstruido'
+      ? t('admin.anacareHours.stale.titleNaoConstruido')
+      : bannerKind === 'desconhecido'
+        ? t('admin.anacareHours.stale.titleDesconhecido')
+        : bannerKind === 'parcial'
+          ? t('admin.anacareHours.stale.titleParcial')
+          : t('admin.anacareHours.stale.title');
+  const alertMessage =
+    bannerKind === 'naoConstruido'
+      ? t('admin.anacareHours.stale.messageNaoConstruido')
+      : bannerKind === 'desconhecido'
+        ? t('admin.anacareHours.stale.messageDesconhecido')
+        : bannerKind === 'parcial'
+          ? temContagemDaCorrida
+            ? t('admin.anacareHours.stale.messageParcialComContagem', { done: snapshot.reservationsDone, total: snapshot.reservationsTotal })
+            : t('admin.anacareHours.stale.messageParcial')
+          : blockReason(snapshot, 'largo');
   // Retrato desatualizado tem prioridade de mensagem sobre a célula ausente — os dois desabilitam,
   // mas o motivo mostrado no `DayGroup` é sempre um só por vez.
   const dayBlockReason = staleDisable ? blockReason(snapshot, blockReasonMode) : disableActionsReason;
@@ -257,11 +279,12 @@ export function AnaCareHoursDetailPage({
           </div>
         </div>
 
-        {/* D5 (cobertura, 15/09): `alertMessage` NUNCA é undefined aqui — `blockReason` só devolve
-            undefined quando `!stale && !circuitBreakerOpen`, e `staleDisable` já garante o contrário
-            pra este ramo renderizar. O `?? ''` de antes era branch morto (nunca exercitável por
-            nenhum snapshot real) — removido em vez de marcado como ignorado. */}
-        {staleDisable && <AlertBanner variant="warning" title={alertTitle} message={alertMessage as string} />}
+        {/* D5 (cobertura, 15/09) + F2: `alertMessage` NUNCA é undefined aqui — os 3 ramos novos
+            (`naoConstruido`/`desconhecido`/`parcial`) sempre traduzem uma chave própria, e o ramo
+            que ainda cai em `blockReason` só é alcançado quando `showStatusBanner` já garantiu
+            `stale || circuitBreakerOpen`. O `?? ''` de antes era branch morto — removido em vez de
+            marcado como ignorado. */}
+        {showStatusBanner && <AlertBanner variant="warning" title={alertTitle} message={alertMessage as string} />}
 
         <div className="border border-gray-600 rounded-xl p-5 flex flex-wrap items-center justify-between gap-6">
           <div>
