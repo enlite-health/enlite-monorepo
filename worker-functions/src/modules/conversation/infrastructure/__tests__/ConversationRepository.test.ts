@@ -182,7 +182,8 @@ describe('ConversationRepository', () => {
 
       await repo.listTopMessages(CONVERSATION_ID, null, 50);
 
-      expect(mapWithConcurrency).toHaveBeenCalledTimes(1);
+      // 2 chamadas: corpo da mensagem + nome do anexo (achado T-nome-anexo) — mesmo limite (10) nas duas.
+      expect(mapWithConcurrency).toHaveBeenCalledTimes(2);
       expect(mapWithConcurrency).toHaveBeenCalledWith(rows, 10, expect.any(Function));
     });
 
@@ -304,8 +305,8 @@ describe('ConversationRepository', () => {
         .mockResolvedValueOnce({ rows: [] })
         .mockResolvedValueOnce({
           rows: [
-            { messageId: 'm1', fileId: 'f1', contentType: 'application/pdf', sizeBytes: 1024 },
-            { messageId: 'm1', fileId: 'f2', contentType: 'image/png', sizeBytes: 2048 },
+            { messageId: 'm1', fileId: 'f1', contentType: 'application/pdf', sizeBytes: 1024, originalNameEncrypted: 'enc:doc-um.pdf' },
+            { messageId: 'm1', fileId: 'f2', contentType: 'image/png', sizeBytes: 2048, originalNameEncrypted: 'enc:foto-dois.png' },
           ],
         });
       const repo = new ConversationRepository(poolWith(query));
@@ -317,13 +318,34 @@ describe('ConversationRepository', () => {
       expect(attachmentsSql).toContain('FROM conversation_message_attachments cma');
       expect(attachmentsSql).toContain('JOIN stored_files sf ON sf.id = cma.file_id');
       expect(attachmentsSql).toContain('WHERE cma.message_id = ANY($1::uuid[])');
+      expect(attachmentsSql).toContain('sf.original_name_encrypted AS "originalNameEncrypted"');
       expect(attachmentsParams).toEqual([['m1', 'm2']]);
 
       expect(out.find((m) => m.id === 'm1')?.attachments).toEqual([
-        { fileId: 'f1', contentType: 'application/pdf', sizeBytes: 1024 },
-        { fileId: 'f2', contentType: 'image/png', sizeBytes: 2048 },
+        { fileId: 'f1', contentType: 'application/pdf', sizeBytes: 1024, originalName: 'plain:enc:doc-um.pdf' },
+        { fileId: 'f2', contentType: 'image/png', sizeBytes: 2048, originalName: 'plain:enc:foto-dois.png' },
       ]);
       expect(out.find((m) => m.id === 'm2')?.attachments).toEqual([]);
+    });
+
+    it('🔒 achado (T-nome-anexo): decifra `originalName` em LOTE (mapWithConcurrency, mesmo limite 10 do body) — nunca uma chamada KMS por anexo sem limite', async () => {
+      const query = jest
+        .fn()
+        .mockResolvedValueOnce({ rows: [topRow({ id: 'm1' })] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({
+          rows: [{ messageId: 'm1', fileId: 'f1', contentType: 'application/pdf', sizeBytes: 1024, originalNameEncrypted: 'enc:x.pdf' }],
+        });
+      const repo = new ConversationRepository(poolWith(query));
+
+      await repo.listTopMessages(CONVERSATION_ID, null, 50);
+
+      // mapWithConcurrency é chamado para o corpo E para os nomes de anexo — mesmo limite (10).
+      const namesCall = (mapWithConcurrency as jest.Mock).mock.calls.find(
+        ([items]) => Array.isArray(items) && items.length === 1 && (items[0] as { fileId: string }).fileId === 'f1',
+      );
+      expect(namesCall).toBeDefined();
+      expect(namesCall![1]).toBe(10);
     });
 
     it('listTopMessages: mensagem sem nenhum anexo devolve attachments: [] (nunca undefined)', async () => {
@@ -349,13 +371,13 @@ describe('ConversationRepository', () => {
       expect(query).toHaveBeenCalledTimes(1);
     });
 
-    it('listReplies: mesma agregação (UMA query com JOIN+ANY), sem forma de originalName (contrato só devolve fileId/contentType/sizeBytes)', async () => {
+    it('listReplies: mesma agregação (UMA query com JOIN+ANY), com originalName decifrado (achado T-nome-anexo — a listagem agora devolve o nome)', async () => {
       const query = jest
         .fn()
         .mockResolvedValueOnce({ rows: [replyRow({ id: 'r1' }), replyRow({ id: 'r2' })] })
         .mockResolvedValueOnce({ rows: [] })
         .mockResolvedValueOnce({
-          rows: [{ messageId: 'r1', fileId: 'f9', contentType: 'application/pdf', sizeBytes: 512 }],
+          rows: [{ messageId: 'r1', fileId: 'f9', contentType: 'application/pdf', sizeBytes: 512, originalNameEncrypted: 'enc:laudo.pdf' }],
         });
       const repo = new ConversationRepository(poolWith(query));
 
@@ -365,8 +387,8 @@ describe('ConversationRepository', () => {
       const [, attachmentsParams] = query.mock.calls[2];
       expect(attachmentsParams).toEqual([['r1', 'r2']]);
       const r1 = out.find((r) => r.id === 'r1');
-      expect(r1?.attachments).toEqual([{ fileId: 'f9', contentType: 'application/pdf', sizeBytes: 512 }]);
-      expect(Object.keys(r1?.attachments[0] ?? {})).toEqual(['fileId', 'contentType', 'sizeBytes']);
+      expect(r1?.attachments).toEqual([{ fileId: 'f9', contentType: 'application/pdf', sizeBytes: 512, originalName: 'plain:enc:laudo.pdf' }]);
+      expect(Object.keys(r1?.attachments[0] ?? {}).sort()).toEqual(['contentType', 'fileId', 'originalName', 'sizeBytes']);
       expect(out.find((r) => r.id === 'r2')?.attachments).toEqual([]);
     });
 
@@ -460,7 +482,8 @@ describe('ConversationRepository', () => {
 
       const out = await repo.listReplies('m1');
 
-      expect(mapWithConcurrency).toHaveBeenCalledTimes(1);
+      // 2 chamadas: corpo da mensagem + nome do anexo (achado T-nome-anexo) — mesmo limite (10) nas duas.
+      expect(mapWithConcurrency).toHaveBeenCalledTimes(2);
       expect(mapWithConcurrency).toHaveBeenCalledWith(rows, 10, expect.any(Function));
       expect(out.map((r) => r.body)).toEqual(['plain:enc:msg-1', 'plain:enc:msg-1']);
       expect(mockDecrypt).toHaveBeenCalledWith('enc:msg-1');

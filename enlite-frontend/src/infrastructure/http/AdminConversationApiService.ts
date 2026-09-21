@@ -21,6 +21,9 @@ export interface ConversationMessageAttachment {
   fileId: string;
   contentType: string;
   sizeBytes: number;
+  /** Nome original DECIFRADO (ajuste de UI B5, achado T-nome-anexo) — a listagem hoje já devolve
+   * isto (mesma célula `patient_conversation:read`, ver `contracts/openapi-conversation.md`). */
+  originalName: string;
 }
 
 export interface ConversationMessage {

@@ -3856,6 +3856,8 @@
           "thread": {
             "replies_one": "1 respuesta",
             "replies_other": "{{count}} respuestas",
+            "reply": "Responder",
+            "dateConnector": "a las",
             "back": "Volver",
             "deleted": "Mensaje eliminado",
             "loadError": "No se pudieron cargar las respuestas",

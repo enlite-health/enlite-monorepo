@@ -467,4 +467,52 @@ describe('ConversationPanel', () => {
     expect(await screen.findByTestId('composer-editor')).toBeInTheDocument();
     expect(screen.queryByTestId('conversation-panel-read-only')).not.toBeInTheDocument();
   });
+
+  // ---- rodapé do card: "Responder" sempre, "N respuestas" só quando N >= 1 (ajustes de UI B5) --
+
+  describe('rodapé do card (achado "0 respuestas")', () => {
+    it('replyCount 0: NÃO mostra "0 respostas" nenhuma — só o botão "Responder"', async () => {
+      getConversation.mockResolvedValue({
+        conversationId: 'conv-1',
+        messages: [msg({ id: 'm1', replyCount: 0 })],
+        nextCursor: null,
+      });
+      render(<ConversationPanel patientId="p1" isOpen />);
+
+      await waitFor(() => expect(screen.getByTestId('conversation-message-m1')).toBeInTheDocument());
+      expect(screen.queryByTestId('conversation-message-replies')).not.toBeInTheDocument();
+      expect(screen.queryByText(/0 resposta/i)).not.toBeInTheDocument();
+      expect(screen.getByTestId('conversation-message-reply-btn')).toBeInTheDocument();
+    });
+
+    it('replyCount >= 1: mostra "N respuestas" (clicável) E "Responder" — os dois abrem a MESMA thread', async () => {
+      getConversationReplies.mockResolvedValue([]);
+      getConversation.mockResolvedValue({
+        conversationId: 'conv-1',
+        messages: [msg({ id: 'm1', replyCount: 2 })],
+        nextCursor: null,
+      });
+      render(<ConversationPanel patientId="p1" isOpen />);
+
+      await waitFor(() => expect(screen.getByTestId('conversation-message-m1')).toBeInTheDocument());
+      expect(screen.getByTestId('conversation-message-replies')).toHaveTextContent('2 respostas');
+
+      fireEvent.click(screen.getByTestId('conversation-message-reply-btn'));
+      await waitFor(() => expect(screen.getByTestId('thread-view')).toBeInTheDocument());
+    });
+
+    it('"N respuestas" também abre a thread (não é só decorativo)', async () => {
+      getConversationReplies.mockResolvedValue([]);
+      getConversation.mockResolvedValue({
+        conversationId: 'conv-1',
+        messages: [msg({ id: 'm1', replyCount: 1 })],
+        nextCursor: null,
+      });
+      render(<ConversationPanel patientId="p1" isOpen />);
+
+      await waitFor(() => expect(screen.getByTestId('conversation-message-m1')).toBeInTheDocument());
+      fireEvent.click(screen.getByTestId('conversation-message-replies'));
+      await waitFor(() => expect(screen.getByTestId('thread-view')).toBeInTheDocument());
+    });
+  });
 });

@@ -51,24 +51,50 @@ interface MessageItemProps {
   onOpenThread: () => void;
 }
 
-/** Item de mensagem de TOPO: `MessageContent` (autor/hora/corpo/anexo, compartilhado com a
- * `ThreadView`) + o botão "N respostas" que abre a thread — só existe aqui, nunca numa reply
- * (1 nível). */
+/**
+ * Item de mensagem de TOPO: `MessageContent` (CARD — avatar/nome/hora/corpo/anexo, compartilhado
+ * com a `ThreadView`) com o RODAPÉ do card (ajustes de UI B5, molde ClickUp): "Responder" sempre
+ * visível à direita (abre a thread — mesma ação que já existia); "N respuestas" à esquerda SÓ
+ * quando `replyCount >= 1` (achado "0 respuestas": antes o rótulo aparecia sempre, inclusive
+ * "0 respuestas"/"0 respostas", que não comunica nada de útil e ocupa espaço à toa). Os dois
+ * abrem a MESMA thread — `onOpenThread` não muda por quem clicou.
+ */
 function MessageItem({ message, patientId, onOpenThread }: MessageItemProps): JSX.Element {
   const { t } = useTranslation();
-  const repliesLabel = t('admin.patients.detail.conversation.thread.replies', { count: message.replyCount });
+  const th = (key: string, optsOrDefault?: Record<string, unknown> | string): string =>
+    t(`admin.patients.detail.conversation.thread.${key}`, optsOrDefault as string);
+  const hasReplies = message.replyCount >= 1;
+  const repliesLabel = th('replies', { count: message.replyCount });
 
-  return (
-    <div data-testid={`conversation-message-${message.id}`} className="flex flex-col gap-1 p-3 border-b">
-      <MessageContent message={message} patientId={patientId} />
+  const footer = (
+    <>
+      {hasReplies ? (
+        <button
+          type="button"
+          onClick={onOpenThread}
+          aria-label={repliesLabel}
+          data-testid="conversation-message-replies"
+          className="text-xs text-primary hover:underline"
+        >
+          {repliesLabel}
+        </button>
+      ) : (
+        <span aria-hidden="true" />
+      )}
       <button
         type="button"
         onClick={onOpenThread}
-        aria-label={repliesLabel}
-        className="self-start text-xs text-primary hover:underline"
+        aria-label={th('reply', 'Responder')}
+        data-testid="conversation-message-reply-btn"
       >
-        {repliesLabel}
+        <Text as="span" size="xs" weight="medium" color="primary">{th('reply', 'Responder')}</Text>
       </button>
+    </>
+  );
+
+  return (
+    <div data-testid={`conversation-message-${message.id}`} className="px-3 py-2">
+      <MessageContent message={message} patientId={patientId} footer={footer} />
     </div>
   );
 }
