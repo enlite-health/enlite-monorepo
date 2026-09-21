@@ -292,6 +292,63 @@ describe('MessageComposer', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it('🔒 achado do gate revisao-pr (B3): enviar fica DESABILITADO enquanto há upload em andamento, mesmo com texto preenchido — e volta a habilitar quando o upload termina', async () => {
+    let resolveUpload: (v: { fileId: string }) => void = () => {};
+    uploadConversationAttachment.mockImplementation(() => new Promise((resolve) => { resolveUpload = resolve; }));
+    render(<MessageComposer patientId="p1" />);
+
+    const editor = screen.getByTestId('composer-editor');
+    const user = userEvent.setup();
+    await user.click(editor);
+    await user.type(editor, 'msg-1');
+    expect(screen.getByTestId('composer-send-btn')).not.toBeDisabled();
+
+    const file = new File(['conteudo'], 'laudo.pdf', { type: 'application/pdf' });
+    fireEvent.change(screen.getByTestId('composer-attach-input'), { target: { files: [file] } });
+
+    await waitFor(() => expect(screen.getByTestId('composer-send-btn')).toBeDisabled());
+
+    await act(async () => { resolveUpload({ fileId: 'file-1' }); await Promise.resolve(); });
+    await waitFor(() => expect(screen.getByTestId('composer-send-btn')).not.toBeDisabled());
+  });
+
+  it('🔒 achado do gate revisao-pr (B3): descartar o rascunho com upload PENDENTE remonta o picker; quando o upload órfão termina depois, o fileId NÃO vaza para a PRÓXIMA mensagem', async () => {
+    let resolveUpload: (v: { fileId: string }) => void = () => {};
+    uploadConversationAttachment.mockImplementation(() => new Promise((resolve) => { resolveUpload = resolve; }));
+    postConversationMessage.mockResolvedValue({ id: 'msg-x', createdAt: '2026-09-21T00:00:00.000Z' });
+    const ref = createRef<MessageComposerHandle>();
+    render(<MessageComposer ref={ref} patientId="p1" />);
+
+    // Digita texto (torna o rascunho "dirty") + anexa um arquivo cujo upload fica PENDENTE.
+    const editor = screen.getByTestId('composer-editor');
+    const user = userEvent.setup();
+    await user.click(editor);
+    await user.type(editor, 'rascunho descartado');
+    const file = new File(['conteudo'], 'laudo.pdf', { type: 'application/pdf' });
+    fireEvent.change(screen.getByTestId('composer-attach-input'), { target: { files: [file] } });
+    await waitFor(() => expect(screen.getByTestId('composer-send-btn')).toBeDisabled());
+
+    // Descarta (NÃO passa pelo botão de enviar — `requestClose` + confirmar): dispara `clearDraft`,
+    // que troca a `key` do `AttachmentPicker` e o REMONTA enquanto o upload ainda está em voo.
+    act(() => { ref.current?.requestClose(); });
+    fireEvent.click(screen.getByTestId('composer-discard-confirm-btn'));
+
+    // O upload "órfão" (da instância antiga, já desmontada) resolve só agora.
+    resolveUpload({ fileId: 'file-tardio' });
+    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
+
+    // Uma mensagem nova, sem anexo, é digitada e enviada — o fileId tardio não pode aparecer aqui.
+    await user.click(editor);
+    await user.type(editor, 'proxima-mensagem');
+    fireEvent.click(screen.getByTestId('composer-send-btn'));
+
+    await waitFor(() => expect(postConversationMessage).toHaveBeenCalledWith('p1', {
+      body: 'proxima-mensagem',
+      rootMessageId: undefined,
+      fileIds: undefined,
+    }));
+  });
+
   it('enviar mensagem vazia é bloqueado', () => {
     render(<MessageComposer patientId="p1" />);
 

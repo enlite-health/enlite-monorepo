@@ -14,7 +14,7 @@
  * `AdminConversationApiService` mockado — só a interface pública é exercitada.
  * Sem PII/texto clínico: nomes de arquivo são sintéticos (regra dura do brief).
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
 import { AdminConversationApiService } from '@infrastructure/http/AdminConversationApiService';
@@ -51,6 +51,11 @@ function pdf(name = 'doc.pdf', sizeBytes?: number): File {
 describe('AttachmentPicker', () => {
   beforeEach(() => {
     uploadConversationAttachment.mockReset();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it('input aceita só as extensões de D-14', () => {
@@ -189,5 +194,44 @@ describe('AttachmentPicker', () => {
     expect(onRemoved).toHaveBeenCalledWith('file-doc-1.pdf');
     expect(screen.queryByText('doc-1.pdf')).not.toBeInTheDocument();
     await waitFor(() => expect(screen.getByTestId('composer-attach-btn')).not.toBeDisabled());
+  });
+
+  it('reporta onUploadingChange(true) enquanto o upload está pendente e (false) quando termina', async () => {
+    let resolveUpload: (v: { fileId: string }) => void = () => {};
+    uploadConversationAttachment.mockImplementation(() => new Promise((resolve) => { resolveUpload = resolve; }));
+    const onUploadingChange = vi.fn();
+    render(<AttachmentPicker patientId="p1" onUploaded={vi.fn()} onUploadingChange={onUploadingChange} />);
+
+    expect(onUploadingChange).toHaveBeenCalledWith(false); // estado inicial: sem itens
+
+    fireEvent.change(screen.getByTestId('composer-attach-input'), { target: { files: [pdf()] } });
+    await waitFor(() => expect(onUploadingChange).toHaveBeenLastCalledWith(true));
+
+    resolveUpload({ fileId: 'file-1' });
+    await waitFor(() => expect(onUploadingChange).toHaveBeenLastCalledWith(false));
+  });
+
+  it('🔒 achado do gate revisao-pr (B3): desmontar (troca de `key`, ex.: `clearDraft` do MessageComposer) ANTES de um upload pendente resolver — o upload órfão NÃO chama onUploaded/onUploadingChange depois, nem loga aviso de "state update on unmounted component"', async () => {
+    let resolveUpload: (v: { fileId: string }) => void = () => {};
+    uploadConversationAttachment.mockImplementation(() => new Promise((resolve) => { resolveUpload = resolve; }));
+    const onUploaded = vi.fn();
+    const onUploadingChange = vi.fn();
+    const { unmount } = render(
+      <AttachmentPicker patientId="p1" onUploaded={onUploaded} onUploadingChange={onUploadingChange} />,
+    );
+
+    fireEvent.change(screen.getByTestId('composer-attach-input'), { target: { files: [pdf()] } });
+    await waitFor(() => expect(uploadConversationAttachment).toHaveBeenCalledTimes(1));
+
+    unmount(); // equivalente a trocar a `key` no pai — instância antiga desmontada com upload em voo
+    onUploaded.mockClear();
+    onUploadingChange.mockClear();
+
+    resolveUpload({ fileId: 'file-orfao' });
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(onUploaded).not.toHaveBeenCalled();
+    expect(onUploadingChange).not.toHaveBeenCalled();
+    expect(console.error).not.toHaveBeenCalledWith(expect.stringContaining('unmounted component'));
   });
 });

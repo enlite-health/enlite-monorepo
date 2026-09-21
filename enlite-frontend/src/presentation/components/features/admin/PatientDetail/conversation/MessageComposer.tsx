@@ -112,6 +112,10 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
      * `fileIds` aqui mas os chips ficavam na tela — a operadora reenviaria o mesmo anexo sem saber. */
     const [attachmentPickerResetKey, setAttachmentPickerResetKey] = useState(0);
     const [sendError, setSendError] = useState<string | null>(null);
+    /** 🔒 Achado do gate revisao-pr (B3): enviar DURANTE um upload em andamento perdia o `fileId`
+     * de um upload que terminava DEPOIS de `clearDraft()` já ter remontado o `AttachmentPicker` —
+     * ver `AttachmentPicker.onUploadingChange`. */
+    const [isUploading, setIsUploading] = useState(false);
 
     const editor = useEditor({
       extensions: [
@@ -254,6 +258,10 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
       setFileIds((prev) => prev.filter((id) => id !== fileId));
     }, []);
 
+    const handleUploadingChange = useCallback((uploading: boolean): void => {
+      setIsUploading(uploading);
+    }, []);
+
     return (
       <div data-testid="message-composer" className="border-t bg-white p-2 flex flex-col gap-2">
         {confirmingClose && (
@@ -302,6 +310,7 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
           patientId={patientId}
           onUploaded={handleAttachmentUploaded}
           onRemoved={handleAttachmentRemoved}
+          onUploadingChange={handleUploadingChange}
         />
 
         <div className="flex items-center justify-end gap-2">
@@ -310,7 +319,7 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
             variant="primary"
             size="sm"
             data-testid="composer-send-btn"
-            disabled={isEmpty}
+            disabled={isEmpty || isUploading}
             onClick={handleSend}
           >
             {tc('send')}

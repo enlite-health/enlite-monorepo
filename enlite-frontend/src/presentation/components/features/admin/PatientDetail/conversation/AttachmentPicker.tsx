@@ -20,7 +20,7 @@
  * `sendFailed`) — nunca um `catch` mudo (regra do brief, mesmo achado que already fechou
  * `MessageComposer.handleSend`).
  */
-import { useCallback, useRef, useState, type JSX } from 'react';
+import { useCallback, useEffect, useRef, useState, type JSX } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AdminConversationApiService } from '@infrastructure/http/AdminConversationApiService';
 import { ApiError } from '@infrastructure/http/ApiError';
@@ -52,6 +52,15 @@ export interface AttachmentPickerProps {
   /** Chamado quando um anexo JÁ ENVIADO é removido ANTES do envio da mensagem — opcional (quem não
    * remove nada nunca precisa dele). */
   onRemoved?: (fileId: string) => void;
+  /**
+   * 🔒 Achado do gate revisao-pr (B3, defeito MÉDIO): dispara `true`/`false` a cada mudança de
+   * "há algum item `status==='uploading'`" — quem embrulha (`MessageComposer`) usa para desabilitar
+   * o botão de enviar ENQUANTO houver upload em andamento. Sem isto, um envio no meio de um upload
+   * pendente disparava `clearDraft()` (remonta este componente via `key`) e o `onUploaded` do
+   * upload órfão, quando resolvia depois, ainda rodava — o `fileId` entrava no rascunho NOVO,
+   * invisível, e era anexado à PRÓXIMA mensagem sem o operador ver.
+   */
+  onUploadingChange?: (isUploading: boolean) => void;
   disabled?: boolean;
 }
 
@@ -75,23 +84,45 @@ function errorKeyFor(err: unknown): string {
   return 'uploadFailed';
 }
 
-export function AttachmentPicker({ patientId, onUploaded, onRemoved, disabled }: AttachmentPickerProps): JSX.Element {
+export function AttachmentPicker({
+  patientId, onUploaded, onRemoved, onUploadingChange, disabled,
+}: AttachmentPickerProps): JSX.Element {
   const { t } = useTranslation();
   const tc = (key: string): string => t(`admin.patients.detail.conversation.composer.${key}`);
   const te = (key: string): string => t(`admin.patients.detail.conversation.errors.${key}`);
 
   const [items, setItems] = useState<AttachmentItem[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
+  /**
+   * 🔒 Guarda de desmontagem (achado do gate revisao-pr, B3): `MessageComposer.clearDraft()`
+   * troca a `key` deste componente para forçar uma REMONTAGEM (perder os chips) — mas a promise
+   * de um `uploadOne` em voo na instância ANTIGA continua rodando no event loop; sem esta guarda,
+   * ela chamaria `onUploaded`/`setItems` numa instância já desmontada quando resolvesse (o
+   * `fileId` vazaria para o rascunho da PRÓXIMA mensagem, silenciosamente, e o React acusaria
+   * "state update on an unmounted component").
+   */
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => { isMountedRef.current = false; };
+  }, []);
 
   const activeCount = items.filter((it) => it.status !== 'error').length;
   const atMax = activeCount >= MAX_ATTACHMENTS;
 
+  useEffect(() => {
+    onUploadingChange?.(items.some((it) => it.status === 'uploading'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items]);
+
   const uploadOne = useCallback(async (localId: string, file: File): Promise<void> => {
     try {
       const result = await AdminConversationApiService.uploadConversationAttachment(patientId, file);
+      if (!isMountedRef.current) return; // instância antiga (remontada por key) — upload órfão, não vaza
       setItems((prev) => prev.map((it) => (it.localId === localId ? { ...it, status: 'done', fileId: result.fileId } : it)));
       onUploaded(result.fileId);
     } catch (err) {
+      if (!isMountedRef.current) return;
       setItems((prev) => prev.map((it) => (
         it.localId === localId ? { ...it, status: 'error', errorMessage: te(errorKeyFor(err)) } : it
       )));
