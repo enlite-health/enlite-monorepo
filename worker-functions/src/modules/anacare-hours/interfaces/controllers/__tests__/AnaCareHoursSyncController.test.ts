@@ -5,7 +5,15 @@
  */
 import { AnaCareHoursSyncController } from '../AnaCareHoursSyncController';
 import { AnaCareHoursSyncRunner } from '../../../application/AnaCareHoursSyncRunner';
+import { AnaCareHoursSyncGuard } from '../../../application/AnaCareHoursSyncGuard';
 import { AnaCarePatientMonthCollisionError } from '../../../infrastructure/AnaCarePatientMonthRepository';
+import {
+  FakeAnaCareSyncRunRepository,
+  FakeEnliteDirectory,
+  FakeAnaCareDirectorySnapshotRepository,
+  FakeAnaCarePatientMonthRepository,
+} from '../../../infrastructure/FakeAnaCareSyncDependencies';
+import type { AnaCareShiftsSource, ListShiftsParams, SourceShiftDTO } from '../../../domain/AnaCareShiftsSource';
 
 jest.mock('@shared/logging', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
@@ -272,5 +280,73 @@ describe('AnaCareHoursSyncController', () => {
     await controller.triggerManual({ headers: {} } as never, response as never);
 
     expect(response.status).toHaveBeenCalledWith(200);
+  });
+
+  // ── Achado do gate `revisao-pr` (D398, change `anacare-horas-conclusao-de-corrida`): o dedup do
+  // guard não é por mês — dois disparos concorrentes para MESES DIFERENTES fazem o mês que chega
+  // durante a corrida do outro herdar o status/cursor/contagens dele, gravados no `anacare_sync_run`
+  // do mês ERRADO. Reproduz com o GUARD e o RUNNER reais (só a fonte/diretório/repositório são
+  // fakes em memória) — é o caminho de produção completo, não um mock do runner inteiro.
+  describe('dedup cross-mês (achado do gate revisao-pr, D398)', () => {
+    class CallTrackingShiftsSource implements AnaCareShiftsSource {
+      callsByMonth: Record<string, number> = {};
+
+      constructor(private readonly delayMs = 30) {}
+
+      async listShifts(params: ListShiftsParams): Promise<{ shifts: SourceShiftDTO[]; skipped: { noProvider: number; noPatient: number } }> {
+        this.callsByMonth[params.month] = (this.callsByMonth[params.month] ?? 0) + 1;
+        await new Promise((resolve) => setTimeout(resolve, this.delayMs));
+        return { shifts: [], skipped: { noProvider: 0, noPatient: 0 } };
+      }
+
+      async getShift(): Promise<SourceShiftDTO | null> {
+        return null;
+      }
+
+      async getRetratoStatus() {
+        return { stale: false, circuitBreakerOpen: false };
+      }
+    }
+
+    it('mês B disparado enquanto o mês A está em voo: a corrida de A NUNCA pode gravar status/cursor no anacare_sync_run do mês B', async () => {
+      const source = new CallTrackingShiftsSource(30);
+      const syncRunRepository = new FakeAnaCareSyncRunRepository();
+      const runner = new AnaCareHoursSyncRunner(
+        source,
+        new AnaCareHoursSyncGuard(),
+        () => {},
+        undefined,
+        new FakeEnliteDirectory(),
+        new FakeAnaCareDirectorySnapshotRepository(),
+        { ANACARE_DIRECTORY_MIN_ABSOLUTE: '1' },
+        new FakeAnaCarePatientMonthRepository(),
+        syncRunRepository,
+      );
+      const controller = new AnaCareHoursSyncController(() => runner, () => syncRunRepository as never);
+
+      const resA = res();
+      const resB = res();
+      await Promise.all([
+        controller.triggerManual({ headers: {}, body: { month: '2026-01' } } as never, resA as never),
+        controller.triggerCron({ headers: {}, body: { month: '2026-02' } } as never, resB as never),
+      ]);
+
+      // Invariante (brief): nunca gravar em `anacare_sync_run` de um mês um resultado que não veio
+      // de uma corrida DAQUELE mês. Prova direta: a fonte tem de ter sido consultada 1× PARA CADA
+      // mês — se o mês B foi deduped pela corrida de A, `callsByMonth['2026-02']` fica 0/undefined
+      // (a "corrida de B" nunca aconteceu, mas o controller grava como se tivesse).
+      expect(source.callsByMonth['2026-01']).toBe(1);
+      expect(source.callsByMonth['2026-02']).toBe(1);
+
+      // A resposta HTTP a quem chegou durante a corrida do OUTRO mês não pode fingir que o mês dele
+      // foi sincronizado: `deduped` só pode ser `true` quando a rodada compartilhada é do MESMO mês.
+      expect(resA.body).toMatchObject({ success: true, deduped: false });
+      expect(resB.body).toMatchObject({ success: true, deduped: false });
+
+      const progressA = syncRunRepository.getProgress('anacare', '2026-01');
+      const progressB = syncRunRepository.getProgress('anacare', '2026-02');
+      expect(progressA).not.toBeNull();
+      expect(progressB).not.toBeNull();
+    });
   });
 });
