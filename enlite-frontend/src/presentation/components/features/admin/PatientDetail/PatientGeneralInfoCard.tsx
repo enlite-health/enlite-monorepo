@@ -5,6 +5,7 @@ import { ActionButton } from '@presentation/components/features/access';
 import type { PatientDetail } from '@domain/entities/PatientDetail';
 import { PatientGeneralEditDrawer } from './edit/PatientGeneralEditDrawer';
 import { FieldPair, FieldPairGrid } from './FieldPairs';
+import { formatDateFromISO } from '@presentation/hooks/useMask';
 
 /** Spec 018 PR-3 — a mesma lista fechada ISO de `workers.languages` (pt/es/en). */
 const LANGUAGE_LABEL_KEYS: Record<string, string> = {
@@ -42,13 +43,16 @@ function getAgeBracket(age: number | null): string | null {
   return '60+';
 }
 
+// Fix 21/09/2026 (Gabriel): `new Date(iso).toLocaleDateString('es-AR')` decodifica a string ISO
+// como meia-noite UTC e formata no fuso LOCAL — em fusos negativos (Argentina, UTC-3) isso perde
+// 1 dia ("1950-03-25" virava "24/03/1950"). `birthDate` e `serviceStartDate` (as duas chamadoras
+// desta função) são `DATE` no Postgres — sem hora, sem fuso (migrations 037 e 317 do
+// worker-functions) — então o valor correto é o split de string do `formatDateFromISO`
+// (`@presentation/hooks/useMask`, já usado no card do worker para o mesmo defeito), que nunca
+// lança e devolve o valor cru quando não é ISO (nunca "Invalid Date").
 function formatBirthDate(iso: string | null): string | null {
   if (!iso) return null;
-  try {
-    return new Date(iso).toLocaleDateString('es-AR');
-  } catch {
-    return iso;
-  }
+  return formatDateFromISO(iso);
 }
 
 export function PatientGeneralInfoCard({ patient, onSaved }: PatientGeneralInfoCardProps) {
