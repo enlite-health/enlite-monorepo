@@ -253,4 +253,25 @@ describe('AttachmentPicker', () => {
     expect(onUploadingChange).not.toHaveBeenCalled();
     expect(console.error).not.toHaveBeenCalledWith(expect.stringContaining('unmounted component'));
   });
+
+  it('🔒 mesma guarda de desmontagem, agora no caminho de ERRO: upload órfão que REJEITA depois de desmontado não seta estado nem loga aviso', async () => {
+    let rejectUpload: (err: unknown) => void = () => {};
+    uploadConversationAttachment.mockImplementation(() => new Promise((_resolve, reject) => { rejectUpload = reject; }));
+    const onUploadingChange = vi.fn();
+    const { unmount } = render(
+      <AttachmentPicker patientId="p1" onUploaded={vi.fn()} onUploadingChange={onUploadingChange} />,
+    );
+
+    fireEvent.change(screen.getByTestId('composer-attach-input'), { target: { files: [pdf()] } });
+    await waitFor(() => expect(uploadConversationAttachment).toHaveBeenCalledTimes(1));
+
+    unmount();
+    onUploadingChange.mockClear();
+
+    rejectUpload(new Error('network down'));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(onUploadingChange).not.toHaveBeenCalled();
+    expect(console.error).not.toHaveBeenCalledWith(expect.stringContaining('unmounted component'));
+  });
 });
