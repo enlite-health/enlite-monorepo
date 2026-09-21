@@ -29,9 +29,9 @@ type TabType = 'global' | 'caso' | 'zona';
 
 export function AdminRecruitmentPage(): JSX.Element {
   const { t } = useTranslation();
-  // O link leva à tela de postulações bloqueadas, que lê
-  // GET /recruitment/blocked-attempts → recruitment:read (D268/D286).
-  const { visible: canSeeBlockedAttempts } = useContainerAccess('recruitment');
+  // O link leva à tela de postulações bloqueadas, que lê GET /recruitment/blocked-attempts →
+  // `recruitment_blocked:read` (spec 024 D2/D401, 21/09/2026 — era `recruitment:read`; D268/D286).
+  const { visible: canSeeBlockedAttempts } = useContainerAccess('recruitment_blocked');
   const [activeTab, setActiveTab] = useState<TabType>('global');
   const [dateFilter, setDateFilter] = useState<DateFilterType>('1m');
   const [customStartDate, setCustomStartDate] = useState('');
