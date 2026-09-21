@@ -1,0 +1,22 @@
+# Stack ISOLADO (projeto docker `spec025`) com o engine ABAC LIGADO, para o e2e de T6.4 (spec
+# 025, Fase 6 — birthDate do prestador pelo admin) sem disputar porta/banco com o stack de outra
+# worktree nem com o stack fixo 8089/5439 dos specs `admin-access-*`. Molde:
+# `docker-compose.018pr2-fix-abac.yml` / comentário de `admin-access-cells-visual.integration.e2e.ts`.
+#
+# Subir:
+#   docker compose -p spec025 -f docker-compose.yml -f docker-compose.test.yml \
+#     -f docker-compose.spec025.yml up -d postgres api
+services:
+  postgres:
+    container_name: spec025-postgres
+    ports: !override
+      - "5540:5432"
+  api:
+    container_name: spec025-api
+    ports: !override
+      - "8290:8080"
+    environment:
+      CORS_ALLOWED_ORIGINS: "http://localhost:5195"
+      PERMISSION_ENGINE_ENABLED: "true"
+      PERMISSION_ENFORCED_ROUTES: "admin.analytics,admin.dedup,admin.encuadre,admin.integrations,admin.messaging,admin.patients,admin.permissions,admin.recruitment,admin.test_fixtures,admin.users,admin.vacancies,admin.workers"
+      PERMISSION_CATALOG_SYNC_ENABLED: "true"
