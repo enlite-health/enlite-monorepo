@@ -294,4 +294,62 @@ test.describe('Spec 024 — célula por dado (tag:* / recruitment_blocked:read) 
     // compartilhada com nenhuma outra tela (D2/D401).
     await expect(linhaBloqueadas.getByText(/también en/i)).toHaveCount(0);
   });
+
+  // ── c2. Fecho de 3 provas pedidas na retomada (21/09): título traduzido do bloco
+  // "Postulaciones bloqueadas" (o achado registrado em c1 era do TÍTULO DO BLOCO, corrigido
+  // por b64888f7 — aqui fecha o achado), ausência da caixa worker:create em Prestadores
+  // (removida por a0b18c69), e uma varredura de rótulo cru na árvore inteira que se PROVA
+  // capaz de pegar antes de confiar no "zero achados". ────────────────────────────────────
+
+  test('c2. título de "Postulaciones bloqueadas" traduzido; sem caixa worker:create; varredura sem rótulo cru', async ({ page }) => {
+    // Autoteste da varredura ANTES de usá-la contra a tela: "contagem zero é falha, nunca
+    // sucesso" — sem isto, "nada achado" pode significar "tudo traduzido" OU "a regex não
+    // pega nada". Avaliada contra o MESMO rótulo cru que a varredura de b64888f7 achou de
+    // verdade (`catalog_therapeutic_objectives`, resource snake_case sem tradução).
+    const ROTULO_CRU = /\b[a-z]+_[a-z_]+\b|\b[a-z]+:[a-z]+\b/;
+    const autoteste = ROTULO_CRU.test('catalog_therapeutic_objectives');
+    console.log(`[c2] autoteste da varredura contra 'catalog_therapeutic_objectives': ${autoteste}`);
+    expect(autoteste).toBe(true);
+
+    await loginAs(page, GESTORA);
+    await page.goto(`/admin/access/groups/${grupoParaArvoreId}`);
+    const secao = page.locator('section[aria-labelledby="sec-cells"]');
+    await expect(secao.getByTestId('screen-tree')).toBeVisible({ timeout: 15_000 });
+
+    // (a) O TÍTULO do bloco "Postulaciones bloqueadas" (o `<h4>` do `ScreenTree`/`CellMatrix`,
+    // `bloco.rotulo` = `t('admin.access.screens.recruitment.blocked.label', 'recruitment.blocked')`)
+    // aparece TRADUZIDO — não mais o id cru `recruitment.blocked` que a mesma chave produzia
+    // antes de b64888f7 aninhar `blocked`/`health` como filhos reais de `recruitment` no JSON.
+    const tituloBloqueadas = secao.getByRole('heading', { name: 'Postulaciones bloqueadas', exact: true });
+    await expect(tituloBloqueadas).toBeVisible({ timeout: 10_000 });
+    await expect(secao.getByText('recruitment.blocked', { exact: true })).toHaveCount(0);
+
+    // (b) Nenhuma caixa `worker:create` na árvore inteira — a0b18c69 tirou `create` do
+    // container `profile` de Prestadores (era só a tag, agora `tag:create`, tela própria).
+    // Checa pela CAIXA (aria-label da célula), não pelo texto "Crear" — a coluna "Crear"
+    // continua existindo no bloco de Prestadores por causa de `worker_document:create`
+    // (aba Documentos, célula diferente), então ausência de "Crear" no bloco inteiro seria
+    // falso positivo.
+    await expect(secao.getByRole('checkbox', { name: /^worker:create\b/ })).toHaveCount(0);
+
+    // (c) Varredura do texto visível da árvore EXPANDIDA (todos os blocos, sem filtro):
+    // título de cada bloco (`h4`), cabeçalho de cada coluna de ação (`thead th`) e o
+    // RÓTULO primário de cada linha (1ª linha do `th[scope=row]` — a 2ª linha, sempre em
+    // `font-mono`, é o `resource` cru mostrado DE PROPÓSITO como dica técnica em
+    // `CellMatrix.tsx`, não um rótulo sem tradução; entra na varredura ela contaria como
+    // achado em toda linha da árvore, o que não é o defeito procurado). Nenhum deve casar
+    // com token `recurso_com_underscore` ou `recurso:acao` crus.
+    const titulosDeBloco = await secao.locator('h4').allTextContents();
+    const cabecalhosDeColuna = await secao.locator('thead th').allTextContents();
+    const linhasTh = await secao.locator('tbody tr th[scope="row"]').all();
+    const rotulosDeLinha: string[] = [];
+    for (const th of linhasTh) {
+      const texto = await th.innerText();
+      rotulosDeLinha.push((texto.split('\n')[0] ?? '').trim());
+    }
+    const candidatos = [...titulosDeBloco, ...cabecalhosDeColuna, ...rotulosDeLinha];
+    const achados = candidatos.filter((texto) => ROTULO_CRU.test(texto));
+    console.log(`[c2] varredura: ${candidatos.length} rótulos primários checados, achados=${JSON.stringify(achados)}`);
+    expect(achados, `rótulo(s) cru(s) na árvore de Acessos: ${JSON.stringify(achados)}`).toEqual([]);
+  });
 });
