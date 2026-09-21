@@ -244,7 +244,7 @@ describe('useAnaCareHoursSync', () => {
     }
   });
 
-  it('PRD (D_ como o Firebase Hosting corta em 60s) — budgetMs enviado por rodada deve caber dentro da janela: budget + overhead medido (~16s) tem que ficar abaixo do corte de 60s do Firebase Hosting em api.enlite.health, senão a resposta nunca chega ao navegador e a corrida fica "running" para sempre', async () => {
+  it('POSITIVO — budgetMs enviado por rodada cabe no corte de 60s do Firebase Hosting em api.enlite.health: budget + overhead medido (~16s) fica abaixo de 60s, senão a resposta nunca chega ao navegador e a corrida fica "running" para sempre', async () => {
     const trigger = vi.fn().mockResolvedValueOnce(result({ nextCursor: null }));
     const service = baseService(trigger);
 
