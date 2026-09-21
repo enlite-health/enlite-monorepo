@@ -68,6 +68,27 @@ const PDF_MALICIOUS_TOKENS = ['/JavaScript', '/JS', '/OpenAction', '/Launch', '/
 
 const LEGACY_DOC_MESSAGE = 'Formato .doc no es aceptado; guardá como .docx / Formato .doc não é aceito; salve como .docx';
 
+/**
+ * Teto de `[Content_Types].xml` DECLARADO no header do zip (achado MÉDIO do gate revisao-pr, B3):
+ * `readZipEntries` lia essa entrada INTEIRA em memória (`chunks.push`) sem checar
+ * `entry.uncompressedSize` antes — um `.docx` de até `MAX_ATTACHMENT_BYTES` (10 MB, já checado
+ * ANTES desta função) pode ainda assim declarar essa entrada com um `uncompressedSize` gigante no
+ * header (yauzl lê o valor do DIRETÓRIO CENTRAL, sem decodificar nada) — DoS de memória da API
+ * antes de qualquer detecção de macro rodar. 1 MB é generoso: um `[Content_Types].xml` real de
+ * `.docx` tem algumas centenas de bytes.
+ */
+const MAX_CONTENT_TYPES_XML_BYTES = 1 * 1024 * 1024;
+/** Teto AGREGADO (soma de `uncompressedSize` de TODAS as entradas) — mesma defesa contra zip bomb
+ * clássico (poucos bytes comprimidos que declaram uma expansão enorme), mesmo quando nenhuma
+ * entrada isolada excede o teto acima. */
+const MAX_ZIP_TOTAL_UNCOMPRESSED_BYTES = 100 * 1024 * 1024;
+
+/** Erro interno de `readZipEntries` — o header do zip (`entry.uncompressedSize`, lido do
+ *  diretório central, nunca decodificado) declara um tamanho acima do teto ANTES de qualquer
+ *  `openReadStream`. `validateDocx` traduz para `MALICIOUS_CONTENT_DETECTED` (não
+ *  `UNSUPPORTED_MEDIA_TYPE` — um zip malformado de verdade cai no catch genérico). */
+class ZipEntryTooLargeError extends Error {}
+
 export class ConversationAttachmentValidator {
   async validate(buffer: Buffer): Promise<AttachmentValidationResult> {
     if (buffer.byteLength > MAX_ATTACHMENT_BYTES) {
@@ -137,7 +158,10 @@ export class ConversationAttachmentValidator {
     let contentTypesXml: string | null;
     try {
       ({ entries, contentTypesXml } = await this.readZipEntries(buffer));
-    } catch {
+    } catch (err) {
+      if (err instanceof ZipEntryTooLargeError) {
+        return { ok: false, code: 'MALICIOUS_CONTENT_DETECTED', message: '.docx com entrada de tamanho suspeito (possível zip bomb)' };
+      }
       return { ok: false, code: 'UNSUPPORTED_MEDIA_TYPE', message: '.docx inválido ou corrompido' };
     }
 
@@ -157,7 +181,14 @@ export class ConversationAttachmentValidator {
 
   /** `yauzl` promisificado — lê o DIRETÓRIO CENTRAL (nomes de todas as entradas) e o conteúdo de
    *  `[Content_Types].xml` quando presente. `try/finally` fecha o `zipfile` sempre (arquivo
-   *  corrompido não pode vazar file handle). */
+   *  corrompido não pode vazar file handle).
+   *
+   *  🔒 Achado do gate revisao-pr (B3): `entry.uncompressedSize` vem do DIRETÓRIO CENTRAL (metadado
+   *  do header, `yauzl` não decodifica nada pra obter esse número) — checar ANTES de
+   *  `openReadStream` rejeita um zip bomb (entrada com tamanho declarado gigante) SEM gastar
+   *  memória nenhuma decodificando. Duas checagens: por entrada (`[Content_Types].xml`, a única
+   *  que este código efetivamente LÊ) e agregada (soma de todas — mesma defesa mesmo se o ataque
+   *  mirar outra entrada qualquer do zip). */
   private readZipEntries(buffer: Buffer): Promise<{ entries: string[]; contentTypesXml: string | null }> {
     return new Promise((resolve, reject) => {
       yauzl.fromBuffer(buffer, { lazyEntries: true }, (err, zipfile) => {
@@ -165,6 +196,7 @@ export class ConversationAttachmentValidator {
 
         const entries: string[] = [];
         let contentTypesXml: string | null = null;
+        let totalUncompressedBytes = 0;
         let settled = false;
 
         const finish = (error?: Error): void => {
@@ -180,8 +212,19 @@ export class ConversationAttachmentValidator {
 
         zipfile.on('entry', (entry: yauzl.Entry) => {
           entries.push(entry.fileName);
+
+          totalUncompressedBytes += entry.uncompressedSize;
+          if (totalUncompressedBytes > MAX_ZIP_TOTAL_UNCOMPRESSED_BYTES) {
+            finish(new ZipEntryTooLargeError('soma de uncompressedSize do zip acima do teto (possível zip bomb)'));
+            return;
+          }
+
           if (entry.fileName !== '[Content_Types].xml' || /\/$/.test(entry.fileName)) {
             zipfile.readEntry();
+            return;
+          }
+          if (entry.uncompressedSize > MAX_CONTENT_TYPES_XML_BYTES) {
+            finish(new ZipEntryTooLargeError('[Content_Types].xml declara tamanho acima do teto (possível zip bomb)'));
             return;
           }
           zipfile.openReadStream(entry, (streamErr, stream) => {

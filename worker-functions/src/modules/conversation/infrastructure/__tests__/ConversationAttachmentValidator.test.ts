@@ -11,7 +11,12 @@
  */
 import sharp from 'sharp';
 import * as CFB from 'cfb';
-import { buildMinimalDocx } from './__fixtures__/buildZip';
+import {
+  buildMinimalDocx,
+  buildDocxWithLyingContentTypesSize,
+  buildDocxWithContentTypesXmlOfSize,
+  buildStoredZip,
+} from './__fixtures__/buildZip';
 import { MAX_ATTACHMENT_BYTES } from '../ConversationAttachmentPolicy';
 import { ConversationAttachmentValidator } from '../ConversationAttachmentValidator';
 
@@ -114,5 +119,46 @@ describe('ConversationAttachmentValidator — pipeline D-14 (spec 022, Bloco 3)'
   it('10. buffer minúsculo/truncado não derruba o validador com exceção não tratada (fail-closed, nunca 500)', async () => {
     const result = await validator.validate(Buffer.from([0x89, 0x50, 0x4e, 0x47]));
     expect(result.ok).toBe(false);
+  });
+
+  // ---- conserto do gate revisao-pr (B3): zip bomb via header mentiroso de uncompressedSize ----
+
+  it('11. .docx cujo header MENTE que [Content_Types].xml tem 5 MB (conteúdo real minúsculo, method=deflate) — recusa MALICIOUS_CONTENT_DETECTED, NUNCA chega a abrir o stream da entrada (checagem é sobre o METADADO do header, não sobre bytes lidos)', async () => {
+    const bomb = buildDocxWithLyingContentTypesSize(5 * 1024 * 1024);
+    const result = await validator.validate(bomb);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe('MALICIOUS_CONTENT_DETECTED');
+  });
+
+  it('12. .docx com [Content_Types].xml GENUÍNO (sem mentira) de EXATAMENTE 1 MB — ainda aceita (o teto é ACIMA, não igual)', async () => {
+    const noBomb = buildDocxWithContentTypesXmlOfSize(1 * 1024 * 1024);
+    const result = await validator.validate(noBomb);
+    expect(result.ok).toBe(true);
+  });
+
+  it('13. .docx cujo header MENTE que [Content_Types].xml tem 1 MB + 1 byte (1 acima do teto) — recusa MALICIOUS_CONTENT_DETECTED', async () => {
+    const justOver = buildDocxWithLyingContentTypesSize(1 * 1024 * 1024 + 1);
+    const result = await validator.validate(justOver);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe('MALICIOUS_CONTENT_DETECTED');
+  });
+
+  it('14. .docx sem nenhuma entrada isolada acima do teto, mas a SOMA de uncompressedSize declarado ultrapassa o teto agregado (100 MB) — recusa MALICIOUS_CONTENT_DETECTED (defesa contra zip bomb distribuído em várias entradas)', async () => {
+    // As 3 entradas padrão (REAIS, sem mentira) garantem que `file-type` reconheça docx (a
+    // detecção olha só as 3 primeiras, via `word/document.xml`) — as 3 "bloat" a seguir mentem
+    // 40 MB cada (nenhuma isolada estoura o teto de 1 MB do Content_Types, mas a SOMA de todas
+    // estoura o teto agregado de 100 MB); nenhuma se chama `[Content_Types].xml`, então só o teto
+    // AGREGADO (não o por-entrada) pega este caso.
+    const bomb = buildStoredZip([
+      { name: '[Content_Types].xml', content: Buffer.from('<?xml version="1.0"?><Types xmlns="ct"/>', 'utf8') },
+      { name: '_rels/.rels', content: Buffer.from('<?xml version="1.0"?><Relationships xmlns="r"/>', 'utf8') },
+      { name: 'word/document.xml', content: Buffer.from('<?xml version="1.0"?><w:document xmlns:w="w"><w:body/></w:document>', 'utf8') },
+      { name: 'word/media/a.bin', content: Buffer.from('a'), declaredUncompressedSize: 40 * 1024 * 1024, method: 'deflate' },
+      { name: 'word/media/b.bin', content: Buffer.from('b'), declaredUncompressedSize: 40 * 1024 * 1024, method: 'deflate' },
+      { name: 'word/media/c.bin', content: Buffer.from('c'), declaredUncompressedSize: 40 * 1024 * 1024, method: 'deflate' },
+    ]);
+    const result = await validator.validate(bomb);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.code).toBe('MALICIOUS_CONTENT_DETECTED');
   });
 });
