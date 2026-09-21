@@ -203,15 +203,42 @@ describe('PatientGeneralInfoCard — idade, faixas, início do serviço, drawer'
     expect(screen.getByText(bracket)).toBeInTheDocument();
   });
 
-  it('início do serviço formatado (US-B9); sem data → —; formatação que lança cai no ISO', () => {
+  it('início do serviço formatado (US-B9); sem data → —; valor não-ISO cai no cru (nunca Invalid Date)', () => {
     render(<PatientGeneralInfoCard patient={{ ...patientDetailFixture, serviceStartDate: '2026-09-01T00:00:00Z' }} />);
     expect(screen.getByText(/Início do serviço/)).toBeInTheDocument();
     expect(screen.getAllByText(/2026|1\/9\/2026|01\/09\/2026/).length).toBeGreaterThan(0);
-    const spy = vi.spyOn(Date.prototype, 'toLocaleDateString').mockImplementation(() => { throw new RangeError('locale'); });
-    try {
-      render(<PatientGeneralInfoCard patient={{ ...patientDetailMinimal, birthDate: '1999-05-05T00:00:00Z' }} />);
-      expect(screen.getByText('1999-05-05T00:00:00Z')).toBeInTheDocument();
-    } finally { spy.mockRestore(); }
+    // Fix 21/09/2026 — `formatBirthDate` trocou `new Date(iso).toLocaleDateString()` (que podia
+    // lançar em locale exótico, daí o try/catch antigo) por `formatDateFromISO` (split de string,
+    // nunca lança); o defensivo que sobra é o valor NÃO-ISO, mostrado cru.
+    render(<PatientGeneralInfoCard patient={{ ...patientDetailMinimal, birthDate: 'lixo-nao-iso' }} />);
+    expect(screen.getByText('lixo-nao-iso')).toBeInTheDocument();
+    expect(screen.queryByText(/Invalid Date/i)).not.toBeInTheDocument();
+  });
+
+  // Fix 21/09/2026 (Gabriel): `formatBirthDate` decodificava a data-sem-hora (`AAAA-MM-DD`) como
+  // meia-noite UTC via `new Date(iso).toLocaleDateString('es-AR')` e formatava no fuso LOCAL — em
+  // fusos negativos (Argentina, UTC-3) isso perde 1 dia. `birthDate` e `serviceStartDate` são
+  // ambos `DATE` no Postgres (migrations 037 e 317 do worker-functions — sem hora, sem fuso), e
+  // os DOIS passam pela MESMA função `formatBirthDate` — o conserto na função corrige os dois.
+  describe('PatientGeneralInfoCard — nascimento e início do serviço não perdem 1 dia por fuso', () => {
+    const originalTZ = process.env.TZ;
+    afterEach(() => { process.env.TZ = originalTZ; });
+
+    it('TZ=America/Argentina/Buenos_Aires (UTC-3): birthDate "1950-03-25" exibe 25/03/1950, não 24/03/1950', () => {
+      process.env.TZ = 'America/Argentina/Buenos_Aires';
+      render(<PatientGeneralInfoCard patient={{ ...patientDetailFixture, birthDate: '1950-03-25' }} />);
+      expect(screen.getByText('25/03/1950')).toBeInTheDocument();
+      expect(screen.queryByText('24/03/1950')).not.toBeInTheDocument();
+      expect(screen.queryByText('24/3/1950')).not.toBeInTheDocument();
+    });
+
+    it('mesmo fuso, mesma função: serviceStartDate (DATE) "2026-09-01" exibe 01/09/2026, não 31/08/2026', () => {
+      process.env.TZ = 'America/Argentina/Buenos_Aires';
+      render(<PatientGeneralInfoCard patient={{ ...patientDetailFixture, serviceStartDate: '2026-09-01' }} />);
+      expect(screen.getByText('01/09/2026')).toBeInTheDocument();
+      expect(screen.queryByText('31/08/2026')).not.toBeInTheDocument();
+      expect(screen.queryByText('31/8/2026')).not.toBeInTheDocument();
+    });
   });
 
   it('drawer geral: Escape fecha (onClose); salvar com mudança → onSaved; sem onSaved não quebra', async () => {

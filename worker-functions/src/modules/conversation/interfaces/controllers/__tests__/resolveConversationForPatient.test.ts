@@ -6,7 +6,7 @@
  * na fronteira, sem banco real (a colisão de concorrência é PROVADA pela sequência de chamadas
  * que o código faz, não por dois processos reais competindo — isso é o que o unit pode provar;
  * o comportamento real sob concorrência de verdade é papel do Postgres (`UNIQUE(patient_id)`,
- * migration 457) mais o e2e).
+ * migration 458) mais o e2e).
  *
  * `withActorContext` mockado inteiro (molde `PostMessageUseCase.test.ts`/
  * `EditDeleteMessageUseCase.test.ts`): o SELECT de leitura (get) roda em `db.query` direto — já

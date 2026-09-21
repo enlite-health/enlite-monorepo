@@ -115,6 +115,63 @@ describe('SavePersonalInfoUseCase', () => {
     });
   });
 
+  // Defeito 1 (21/09/2026, autorizado pelo Gabriel): a rota PUT /api/workers/me/general-info
+  // (saveGeneralInfo → este use case) não validava `birthDate` — qualquer string era
+  // encriptada e gravada. Front mandava lixo tipo "25/31/985" quando a máscara via menos
+  // de 8 dígitos (defeito espelhado no frontend, useMask.ts). Este bloco prova o 400 no
+  // mesmo padrão de erro já usado pela API (Result.fail → sendPersonalInfoFailure → 400).
+  describe('birthDate inválido (defeito 1)', () => {
+    it.each([
+      ['25/31/985', 'agrupamento quebrado (não-ISO)'],
+      ['1985-13-10', 'mês inexistente'],
+      ['1985-02-30', 'dia inexistente no mês'],
+      ['1899-01-01', 'ano implausível (< 1900)'],
+      ['not-a-date', 'lixo arbitrário'],
+      ['1990/01/01', 'separador errado'],
+    ])('rejeita "%s" (%s) com Result.fail, sem chamar updatePersonalInfo', async (badBirthDate) => {
+      const repo = makeRepository();
+      const useCase = new SavePersonalInfoUseCase(repo as any);
+
+      const result = await useCase.execute({ ...personalInfoPayload, birthDate: badBirthDate });
+
+      expect(result.isFailure).toBe(true);
+      expect(repo.updatePersonalInfo).not.toHaveBeenCalled();
+    });
+
+    it('rejeita data futura', async () => {
+      const repo = makeRepository();
+      const useCase = new SavePersonalInfoUseCase(repo as any);
+      const futureYear = new Date().getUTCFullYear() + 1;
+
+      const result = await useCase.execute({ ...personalInfoPayload, birthDate: `${futureYear}-01-01` });
+
+      expect(result.isFailure).toBe(true);
+      expect(repo.updatePersonalInfo).not.toHaveBeenCalled();
+    });
+
+    it('aceita ISO YYYY-MM-DD real e passada', async () => {
+      const repo = makeRepository();
+      const useCase = new SavePersonalInfoUseCase(repo as any);
+
+      const result = await useCase.execute({ ...personalInfoPayload, birthDate: '1990-04-18' });
+
+      expect(result.isFailure).toBe(false);
+      expect(repo.updatePersonalInfo).toHaveBeenCalledWith(
+        expect.objectContaining({ birthDate: '1990-04-18' }),
+      );
+    });
+
+    it('birthDate vazio/ausente não é validado (preserva a semântica de "mantém o atual" via COALESCE)', async () => {
+      const repo = makeRepository();
+      const useCase = new SavePersonalInfoUseCase(repo as any);
+
+      const result = await useCase.execute({ ...personalInfoPayload, birthDate: '' });
+
+      expect(result.isFailure).toBe(false);
+      expect(repo.updatePersonalInfo).toHaveBeenCalled();
+    });
+  });
+
   describe('worker não encontrado', () => {
     it('deve falhar se worker não existe', async () => {
       const repo = makeRepository({

@@ -59,7 +59,12 @@ export class AnaCareHoursController {
    */
   private static defaultServiceFactory(): AnaCareHoursService | null {
     const deps = createAnaCareSyncDependencies();
-    return deps ? new AnaCareHoursService(deps.source, undefined, undefined, undefined, deps.patientMonthRepository) : null;
+    // F2 (migration 457): `deps.syncRunRepository` é a MESMA instância que o sync (controller de
+    // sync) usa para gravar progresso — a leitura da conclusão (`getMonthSnapshot`) tem de vir da
+    // MESMA env/fonte (`fake`/`real`), nunca do default real por omissão.
+    return deps
+      ? new AnaCareHoursService(deps.source, undefined, undefined, undefined, deps.patientMonthRepository, undefined, deps.syncRunRepository)
+      : null;
   }
 
   private actorUid(req: Request): string {

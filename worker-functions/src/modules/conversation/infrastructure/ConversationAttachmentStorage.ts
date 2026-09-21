@@ -37,7 +37,7 @@ export class ConversationAttachmentStorage extends PatientObjectStorageBase {
     super('PATIENT_DOCUMENTS_BUCKET', () => new ConversationAttachmentBucketNotConfiguredError(), client);
   }
 
-  /** `stored_files.bucket` grava o nome do bucket junto da linha (migration 459) — acesso público
+  /** `stored_files.bucket` grava o nome do bucket junto da linha (migration 460) — acesso público
    *  ao `protected bucketName` da base, só para essa coluna informativa (nunca para lógica). */
   getBucketName(): string {
     return this.bucketName;

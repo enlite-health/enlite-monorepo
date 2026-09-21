@@ -12,11 +12,12 @@
 
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import type { AnaCareShiftsSource, SourceShiftDTO } from '../domain/AnaCareShiftsSource';
-import type { PatientMonthSyncRepository } from '../domain/AnaCareHoursSyncPorts';
+import type { PatientMonthSyncRepository, SyncRunRepository } from '../domain/AnaCareHoursSyncPorts';
 import { AnaCarePatientDocumentRepository, type IAnaCarePatientDocumentRepository } from '@modules/integration';
 import { ShiftHoursValidationRepository, ShiftAlreadyValidatedError } from '../infrastructure/ShiftHoursValidationRepository';
 import { WorkerLinkRepository } from '../infrastructure/WorkerLinkRepository';
 import { AnaCarePatientMonthRepository } from '../infrastructure/AnaCarePatientMonthRepository';
+import { AnaCareSyncRunRepository } from '../infrastructure/AnaCareSyncRunRepository';
 import { mapShift, groupIntoPatients, buildSnapshot, computeActualHours, joinSourceName } from './AnaCareHoursMapper';
 import {
   AnaCareHoursServiceError,
@@ -70,6 +71,14 @@ export class AnaCareHoursService {
      * não relaxa.
      */
     private readonly patientDocuments: IAnaCarePatientDocumentRepository = new AnaCarePatientDocumentRepository(),
+    /**
+     * F2 (change `anacare-horas-conclusao-de-corrida`, migration 457): conclusão da corrida de
+     * sync (`status`/`reservations_total`/`reservations_done`) — só usada por `getMonthSnapshot`,
+     * pra decidir `parcial`/`desconhecido` (`AnaCareHoursMapper.computeSnapshotState`). Parâmetro
+     * NOVO no fim da lista (nunca no meio) — nenhum chamador existente que já passa até
+     * `patientDocuments` precisa mudar.
+     */
+    private readonly syncRunRepository: SyncRunRepository = new AnaCareSyncRunRepository(),
   ) {}
 
   /**
@@ -188,12 +197,16 @@ export class AnaCareHoursService {
    * é SEMPRE reportado como desatualizado (`stale: true`), igual a uma queda do circuit breaker.
    */
   async getMonthSnapshot(month: string, _canReadNote: boolean, canReadProviderName = false): Promise<AnaCareMonthSnapshot> {
-    const [aggregates, providerRows, validationCounts, freshness, sourceRetrato] = await Promise.all([
+    const [aggregates, providerRows, validationCounts, freshness, sourceRetrato, syncConclusion] = await Promise.all([
       this.patientMonthRepository.listByMonth(PATIENT_MONTH_SOURCE, month),
       this.patientMonthRepository.listProvidersByMonth(PATIENT_MONTH_SOURCE, month),
       this.validations.getStatusCountsByMonth(periodMonthDate(month)),
       this.patientMonthRepository.getSnapshotFreshness(PATIENT_MONTH_SOURCE, month),
       this.source.getRetratoStatus(),
+      // F2 (migration 457): conclusão da corrida deste mês — alimenta `parcial`/`desconhecido`
+      // em `buildSnapshot` (ver `computeSnapshotState`). Mesma fonte (`PATIENT_MONTH_SOURCE`)
+      // usada por todo o resto do método.
+      this.syncRunRepository.getConclusion(PATIENT_MONTH_SOURCE, month),
     ]);
 
     // Vínculo de prestador (D349 item 1) — mesmo lookup em LOTE que o DETALHE usa, agora sobre os
@@ -232,11 +245,16 @@ export class AnaCareHoursService {
     });
 
     const naoConstruido = freshness.shifts === 0;
-    const snapshot = buildSnapshot(month, patients, {
-      stale: naoConstruido || sourceRetrato.stale,
-      circuitBreakerOpen: sourceRetrato.circuitBreakerOpen,
-      naoConstruido,
-    });
+    const snapshot = buildSnapshot(
+      month,
+      patients,
+      {
+        stale: naoConstruido || sourceRetrato.stale,
+        circuitBreakerOpen: sourceRetrato.circuitBreakerOpen,
+        naoConstruido,
+      },
+      syncConclusion,
+    );
     return freshness.lastFetchedAt ? { ...snapshot, updatedAt: freshness.lastFetchedAt } : snapshot;
   }
 

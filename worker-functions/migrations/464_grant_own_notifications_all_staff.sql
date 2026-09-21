@@ -1,10 +1,10 @@
--- 463 — `own_notifications:read|update` concedida a TODO grupo de staff ativo (D-07, T408)
+-- 464 — `own_notifications:read|update` concedida a TODO grupo de staff ativo (D-07, T408)
 --
 -- POR QUÊ: D-07 é explícito que `own_notifications:*` nasce DIFERENTE de
 -- `patient_conversation:*`/`staff_directory:read` (que nascem com 0 grupos, D285/D329): "nasce
 -- concedida a todo staff" — o sino só faz sentido se QUALQUER staff vê a própria notificação, não
 -- só quem está no Acesso Master. Esta migration é ADITIVA ao mecanismo de D-07 (não substitui a
--- 462/T132, que cobre o Master explicitamente por D-23 — 463 cobre a distribuição mais ampla).
+-- 463/T132, que cobre o Master explicitamente por D-23 — 464 cobre a distribuição mais ampla).
 --
 -- Sem função `iam.grant_*` reaproveitável para "todo grupo" além de
 -- `grant_active_permissions_to_master()` (Master-only, não serve aqui) — não existe outra função
@@ -22,7 +22,7 @@
 -- `wirePermissionsModule.ts`) — num banco NOVO (CI, stage/prd no primeiro deploy desta spec),
 -- `own_notifications` ainda não existe em `iam.permissions` neste ponto: o `CROSS JOIN` acima
 -- casava 0 linhas, a migration ficava registrada em `schema_migrations` (D-16, roda UMA vez) e
--- NUNCA voltava a rodar sozinha — diferente do Master (462), que tem uma rede de segurança
+-- NUNCA voltava a rodar sozinha — diferente do Master (463), que tem uma rede de segurança
 -- automática (`iam.grant_active_permissions_to_master()`, todo boot com sync ligado), os OUTROS
 -- grupos não têm NENHUM catch-up — ficariam com o sino quebrado (403 em `own_notifications`) até
 -- alguém rodar esta migration de novo à mão. Conserto no molde da 435
@@ -49,10 +49,10 @@ BEGIN
     INSERT INTO iam.permissions (resource, action, description, category, owner_service, deprecated_at)
     VALUES
       ('own_notifications', 'read',
-       '[463 placeholder — sincronizado no boot] Ver as próprias notificações do sino e a contagem de não lidas.',
+       '[464 placeholder — sincronizado no boot] Ver as próprias notificações do sino e a contagem de não lidas.',
        'Administração', 'worker-functions', NULL),
       ('own_notifications', 'update',
-       '[463 placeholder — sincronizado no boot] Marcar a(s) própria(s) notificação(ões) do sino como lida(s).',
+       '[464 placeholder — sincronizado no boot] Marcar a(s) própria(s) notificação(ões) do sino como lida(s).',
        'Administração', 'worker-functions', NULL)
     ON CONFLICT (resource, action) DO NOTHING;
   END IF;
@@ -67,7 +67,7 @@ BEGIN
        AND p.deprecated_at IS NULL
     ON CONFLICT DO NOTHING;
     GET DIAGNOSTICS v_n = ROW_COUNT;
-    RAISE NOTICE '[463] own_notifications concedida a todo grupo ativo: % linhas novas (spec 022, D-07)', v_n;
+    RAISE NOTICE '[464] own_notifications concedida a todo grupo ativo: % linhas novas (spec 022, D-07)', v_n;
   END IF;
 END
 $$;

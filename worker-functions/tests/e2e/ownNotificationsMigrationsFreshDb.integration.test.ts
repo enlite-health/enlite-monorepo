@@ -1,6 +1,6 @@
 /**
  * ownNotificationsMigrationsFreshDb.integration.test.ts — régua obrigatória do conserto do gate
- * revisao-pr (B4, achado ALTO): migrations 462/463 (`own_notifications:read|update`) num BANCO
+ * revisao-pr (B4, achado ALTO): migrations 463/464 (`own_notifications:read|update`) num BANCO
  * NOVO, SEM a API subir (sem sync de catálogo).
  *
  * POR QUÊ UM BANCO SÓ DELE
@@ -17,14 +17,14 @@
  *   1. `iam.permissions` tem `own_notifications:read` e `own_notifications:update` DEPOIS das
  *      migrations (nasceram da PRÓPRIA migration, não de sync nenhum — a run não sobe a API).
  *   2. `iam.group_permissions` concede as 2 células ao Acesso Master (migration 206 semeia o grupo
- *      com id fixo `a0000000-0000-0000-0000-000000000001` — 462/D-23) — contagem > 0.
+ *      com id fixo `a0000000-0000-0000-0000-000000000001` — 463/D-23) — contagem > 0.
  *   3. `iam.group_permissions` concede as 2 células a um grupo de staff NÃO-Master já existente no
- *      banco (migration 206 também semeia "Recrutador"/"Community Manager" — 463/D-07, "nasce
+ *      banco (migration 206 também semeia "Recrutador"/"Community Manager" — 464/D-07, "nasce
  *      concedida a TODO staff") — contagem > 0. Usa "Recrutador" (não fabricado por este teste —
  *      é o mesmo grupo que qualquer deploy novo já tem).
  *
  * GUARDA PELO AVESSO (evidência da sessão, não deste arquivo): rodado à MÃO, uma vez, com as
- * versões ANTIGAS (sem o seed) de 462/463 restauradas por `cp` a partir de `git show` — RED
+ * versões ANTIGAS (sem o seed) de 463/464 restauradas por `cp` a partir de `git show` — RED
  * (contagem 0 para as 2 células nos 2 grupos); depois `cp` de volta o conteúdo atual — GREEN.
  * Documentado em `specs/022-chat-interno-por-paciente/evidencias/b4-conserto-gates.md`. Este
  * arquivo, uma vez commitado, só precisa manter o estado GREEN como regressão permanente — reverter
@@ -88,7 +88,7 @@ async function groupIdByName(pool: Pool, name: string): Promise<string> {
   return r.rows[0].id;
 }
 
-describe('migrations 462/463 — own_notifications num banco NOVO, sem API/sync (gate revisao-pr B4, achado ALTO)', () => {
+describe('migrations 463/464 — own_notifications num banco NOVO, sem API/sync (gate revisao-pr B4, achado ALTO)', () => {
   jest.setTimeout(180_000);
 
   let db: { url: string; pool: Pool; destruir: () => Promise<void> };
@@ -111,12 +111,12 @@ describe('migrations 462/463 — own_notifications num banco NOVO, sem API/sync 
     ]);
   });
 
-  it('Acesso Master (462, D-23): grant > 0 para read E update', async () => {
+  it('Acesso Master (463, D-23): grant > 0 para read E update', async () => {
     expect(await grantCount(db.pool, MASTER_GROUP_ID, 'read')).toBeGreaterThan(0);
     expect(await grantCount(db.pool, MASTER_GROUP_ID, 'update')).toBeGreaterThan(0);
   });
 
-  it('grupo de staff NÃO-Master já existente no seed (463, D-07 — "nasce concedida a TODO staff"): grant > 0 para read E update', async () => {
+  it('grupo de staff NÃO-Master já existente no seed (464, D-07 — "nasce concedida a TODO staff"): grant > 0 para read E update', async () => {
     const recrutadorId = await groupIdByName(db.pool, 'Recrutador');
     expect(await grantCount(db.pool, recrutadorId, 'read')).toBeGreaterThan(0);
     expect(await grantCount(db.pool, recrutadorId, 'update')).toBeGreaterThan(0);
@@ -127,7 +127,7 @@ describe('migrations 462/463 — own_notifications num banco NOVO, sem API/sync 
     expect(await grantCount(db.pool, cmId, 'update')).toBeGreaterThan(0);
   });
 
-  it('reaplicar 462+463 (idempotência): rodar o runner de novo não muda a contagem de grants', async () => {
+  it('reaplicar 463+464 (idempotência): rodar o runner de novo não muda a contagem de grants', async () => {
     const antes = (await db.pool.query<{ n: string }>(`SELECT COUNT(*)::text AS n FROM iam.group_permissions`)).rows[0].n;
     execFileSync('node', [RUNNER], { env: { ...process.env, DATABASE_URL: db.url }, stdio: 'pipe' });
     const depois = (await db.pool.query<{ n: string }>(`SELECT COUNT(*)::text AS n FROM iam.group_permissions`)).rows[0].n;

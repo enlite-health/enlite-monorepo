@@ -31,7 +31,6 @@ vi.mock('react-router-dom', () => ({
 // ── Imports (after mocks) ───────────────────────────────────────────────────
 
 import { WorkerStatusCard } from '../WorkerStatusCard';
-import { WorkerPersonalCard } from '../WorkerPersonalCard';
 import { WorkerProfessionalCard } from '../WorkerProfessionalCard';
 import { WorkerLocationCard } from '../WorkerLocationCard';
 import { WorkerDocumentsCard } from '../WorkerDocumentsCard';
@@ -57,20 +56,6 @@ const statusProps = {
   platform: 'talentum',
   createdAt: '2026-01-10T00:00:00Z',
   updatedAt: '2026-03-20T00:00:00Z',
-};
-
-const personalProps = {
-  firstName: 'Ana',
-  lastName: 'Silva',
-  email: 'ana.silva@test.com',
-  phone: '+55 11 99999-0000',
-  whatsappPhone: '+55 11 88888-0000',
-  profilePhotoUrl: null as string | null,
-  birthDate: '1995-06-15',
-  documentType: 'CPF',
-  documentNumber: '123.456.789-00',
-  sex: 'Feminino',
-  gender: 'Mulher cis',
 };
 
 const professionalProps = {
@@ -160,71 +145,6 @@ describe('WorkerStatusCard — pt-BR labels', () => {
   it('renders status field label "Status"', () => {
     render(<WorkerStatusCard {...statusProps} />);
     expect(screen.getByText('Status')).toBeInTheDocument();
-  });
-});
-
-// ── WorkerPersonalCard — pt-BR labels ───────────────────────────────────────
-
-describe('WorkerPersonalCard — pt-BR labels', () => {
-  it('renders card title "Dados Pessoais"', () => {
-    render(<WorkerPersonalCard {...personalProps} />);
-    expect(screen.getByText('Dados Pessoais')).toBeInTheDocument();
-  });
-
-  it('renders phone label "Telefone"', () => {
-    render(<WorkerPersonalCard {...personalProps} />);
-    expect(screen.getByText('Telefone')).toBeInTheDocument();
-  });
-
-  it('renders birthDate label "Data de nascimento"', () => {
-    render(<WorkerPersonalCard {...personalProps} />);
-    expect(screen.getByText('Data de nascimento')).toBeInTheDocument();
-  });
-
-  it('renders document label "Documento"', () => {
-    render(<WorkerPersonalCard {...personalProps} />);
-    expect(screen.getByText('Documento')).toBeInTheDocument();
-  });
-
-  it('renders sex label "Sexo biológico"', () => {
-    render(<WorkerPersonalCard {...personalProps} />);
-    expect(screen.getByText('Sexo biológico')).toBeInTheDocument();
-  });
-
-  it('renders gender label "Gênero"', () => {
-    render(<WorkerPersonalCard {...personalProps} />);
-    expect(screen.getByText('Gênero')).toBeInTheDocument();
-  });
-
-  it('displays full name "Ana Silva"', () => {
-    render(<WorkerPersonalCard {...personalProps} />);
-    expect(screen.getByText('Ana Silva')).toBeInTheDocument();
-  });
-
-  it('displays email below name', () => {
-    render(<WorkerPersonalCard {...personalProps} />);
-    expect(screen.getByText('ana.silva@test.com')).toBeInTheDocument();
-  });
-
-  it('renders WhatsApp label "WhatsApp"', () => {
-    render(<WorkerPersonalCard {...personalProps} />);
-    expect(screen.getByText('WhatsApp')).toBeInTheDocument();
-  });
-
-  it('displays phone and whatsapp values', () => {
-    render(<WorkerPersonalCard {...personalProps} />);
-    expect(screen.getByText('+55 11 99999-0000')).toBeInTheDocument();
-    expect(screen.getByText('+55 11 88888-0000')).toBeInTheDocument();
-  });
-
-  it('displays formatted birth date', () => {
-    render(<WorkerPersonalCard {...personalProps} />);
-    expect(screen.getByText(/\/06\/1995/)).toBeInTheDocument();
-  });
-
-  it('displays document "CPF: 123.456.789-00"', () => {
-    render(<WorkerPersonalCard {...personalProps} />);
-    expect(screen.getByText('CPF: 123.456.789-00')).toBeInTheDocument();
   });
 });
 

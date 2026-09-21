@@ -64,8 +64,9 @@ export function createRecruitmentRoutes(
   router.post('/admin/recruitment/calculate-reemplazos', authMiddleware.requireStaff(), perm.require('recruitment', 'create'), perm.require('recruitment', 'update'), (req: Request, res: Response) =>
     analyticsController.calculateReemplazos(req, res),
   );
-  // Postulaciones bloqueadas: `recruitment:read` decide; até a família virar, papel `admin`.
-  router.get('/admin/recruitment/blocked-attempts', authMiddleware.requireStaff(), perm.require('recruitment', 'read', { untilEnforced: 'admin' }), (req: Request, res: Response) =>
+  // Postulaciones bloqueadas: spec 024 D2/D401 — LOG administrativo, dado diferente do funil de
+  // recrutamento; célula própria `recruitment_blocked:read` decide; até a família virar, papel `admin`.
+  router.get('/admin/recruitment/blocked-attempts', authMiddleware.requireStaff(), perm.require('recruitment_blocked', 'read', { untilEnforced: 'admin' }), (req: Request, res: Response) =>
     blockedController.listBlockedAttempts(req, res),
   );
 

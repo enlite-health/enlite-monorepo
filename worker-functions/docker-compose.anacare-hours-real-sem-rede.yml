@@ -1,0 +1,29 @@
+# Override SÓ PARA E2E (nunca produção) — liga `ANACARE_HOURS_SOURCE=real` para que o GET
+# `/anacare-hours/months/:month` leia `anacare_sync_run`/`anacare_patient_month` REAIS via
+# `AnaCarePatientMonthRepository`/`AnaCareSyncRunRepository` (Postgres, `DatabaseConnection`
+# singleton) — em vez dos repositórios EM MEMÓRIA de `ANACARE_HOURS_SOURCE=fake`, que se recriam
+# vazios em cada request e por isso nunca refletem o que foi escrito em `anacare_sync_run`
+# (achado documentado no cabeçalho de
+# `anacare-hours-conclusao-de-corrida.integration.e2e.ts`).
+#
+# TESTE NUNCA TOCA CANAL REAL (regra dura do CLAUDE.md do ebrain): `ANACARE_BASE_URL` aponta para
+# um domínio RESERVADO PARA TESTE que nunca resolve (RFC 2606, `.invalid`) e
+# `ANACARE_USERNAME`/`ANACARE_PASS` são strings falsas, óbvias, não-vazias (o construtor de
+# `AnaCareSessionClient` lança se vierem vazias — D350). Isolamento por CONSTRUÇÃO: o GET da
+# LISTA (`AnaCareHoursController.getMonthSnapshot` → `AnaCareHoursService.getMonthSnapshot`)
+# nunca chama `AnaCareSessionClient.login()`/`listShifts()` — só lê `this.source.getRetratoStatus()`,
+# que devolve `{ stale: false, circuitBreakerOpen: this.client.circuitBreakerOpen }` (getter local,
+# nenhum `fetch`) — provado por leitura de código, ver o e2e/relatório da task (git grep colado lá).
+# Mesmo assim, host+credenciais abaixo garantem que QUALQUER caminho que algum dia chame rede
+# falharia rápido e óbvio (DNS never-resolves), nunca bateria em admin.ana.care de verdade.
+#
+# `docker-compose.anacare-hours.yml` continua sendo aplicado ANTES deste (mantém
+# PERMISSION_ENGINE_ENABLED etc.) — este arquivo só troca ANACARE_HOURS_SOURCE de "fake" para
+# "real" e acrescenta as 3 envs que `AnaCareSessionClient` lê.
+services:
+  api:
+    environment:
+      ANACARE_HOURS_SOURCE: "real"
+      ANACARE_BASE_URL: "https://anacare-e2e-nunca-resolve.invalid"
+      ANACARE_USERNAME: "e2e-dummy-nao-usar"
+      ANACARE_PASS: "e2e-dummy-nao-usar"

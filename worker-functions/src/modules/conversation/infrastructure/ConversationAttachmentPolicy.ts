@@ -5,7 +5,7 @@
  * qualquer código de aplicação rodar) E pelo `ConversationAttachmentValidator` (defesa em
  * profundidade — o validador não confia em nunca ser chamado fora de um multer configurado) —
  * NUNCA duplicada. `ALLOWED_ATTACHMENT_CONTENT_TYPES` é a MESMA lista do
- * `CHECK (content_type IN (...))` de `stored_files` (migration 459) — mudar uma sem a outra quebra
+ * `CHECK (content_type IN (...))` de `stored_files` (migration 460) — mudar uma sem a outra quebra
  * o INSERT ou aceita silenciosamente um tipo que o banco recusaria.
  */
 export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024; // 10 MB (D-14)

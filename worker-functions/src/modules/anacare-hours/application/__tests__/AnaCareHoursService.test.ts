@@ -9,7 +9,7 @@ import { WorkerLinkRepository, type WorkerLinkRow } from '../../infrastructure/W
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { AnaCareHoursServiceError, VALIDATE_BATCH_MAX_SHIFTS } from '../../domain/AnaCareShift';
 import type { AnaCareRetratoSourceStatus, AnaCareShiftsSource, SourceShiftDTO } from '../../domain/AnaCareShiftsSource';
-import type { PatientMonthSyncRepository } from '../../domain/AnaCareHoursSyncPorts';
+import type { PatientMonthSyncRepository, SyncRunConclusion, SyncRunRepository } from '../../domain/AnaCareHoursSyncPorts';
 import type { AnaCarePatientMonthAggregate, AnaCarePatientMonthProviderAggregate } from '../../domain/AnaCarePatientMonth';
 import type { AnaCarePatientDocumentRecord, IAnaCarePatientDocumentRepository } from '@modules/integration';
 
@@ -20,6 +20,21 @@ jest.mock('../../infrastructure/ShiftHoursValidationRepository', () => {
     ShiftHoursValidationRepository: jest.fn(),
   };
 });
+
+// F2 (migration 457): sem este mock, o novo parâmetro default (`new AnaCareSyncRunRepository()`)
+// tentaria abrir o Pool de verdade em TODO teste de `getMonthSnapshot` que não injeta
+// `syncRunRepository` — mesmo racional do mock de `WorkerLinkRepository` abaixo (D349). Default
+// devolve `status:'done'` com `reservationsTotal===reservationsDone===0` (0 não é < 0) — préserva
+// o comportamento ANTERIOR a esta fase para os testes que não são sobre a conclusão em si (a
+// precedência cai direto em stale/fresco, exatamente como antes de existir `syncRunRepository`).
+jest.mock('../../infrastructure/AnaCareSyncRunRepository', () => ({
+  AnaCareSyncRunRepository: jest.fn().mockImplementation(() => ({
+    getConclusion: jest.fn().mockResolvedValue({ status: 'done', reservationsTotal: 0, reservationsDone: 0 }),
+    startNewRun: jest.fn(),
+    getRunStartedAt: jest.fn(),
+    recordProgress: jest.fn(),
+  })),
+}));
 
 // D349: sem este mock, o 4º parâmetro default (`new WorkerLinkRepository()`) tentaria abrir o
 // Pool de verdade (`DatabaseConnection.getInstance()`) em todo teste que não injeta workerLinks —
@@ -146,6 +161,20 @@ const PROVIDER_PAT_0_NURSE_0: AnaCarePatientMonthProviderAggregate = {
   nurseFirstName: 'Rocío',
   nurseLastName: 'García QA',
 };
+
+/**
+ * F2 (migration 457): STUB de `SyncRunRepository` só com `getConclusion` fixo — os outros 3
+ * métodos da porta (`startNewRun`/`getRunStartedAt`/`recordProgress`) nunca são chamados por
+ * `getMonthSnapshot` (são do lado do controller de SYNC, fora do escopo desta leitura).
+ */
+function stubSyncRunRepo(conclusion: SyncRunConclusion): SyncRunRepository {
+  return {
+    getConclusion: jest.fn().mockResolvedValue(conclusion),
+    startNewRun: jest.fn(),
+    getRunStartedAt: jest.fn(),
+    recordProgress: jest.fn(),
+  };
+}
 
 describe('isValidMonth / periodMonthDate', () => {
   it('aceita YYYY-MM válido', () => {
@@ -375,6 +404,72 @@ describe('AnaCareHoursService', () => {
 
       const snapshot = await service.getMonthSnapshot('2026-09', false, false);
       expect(snapshot.patients[0].name).toBeUndefined();
+    });
+
+    /**
+     * F2 (change `anacare-horas-conclusao-de-corrida`, migration 457) — prova de PONTA A PONTA
+     * (repositório STUB → serviço → `buildSnapshot`) de que `getMonthSnapshot` lê a conclusão da
+     * corrida e a repassa. As 5 ramificações de precedência em si (unitárias, sem passar pelo
+     * serviço inteiro) estão em `AnaCareHoursMapper.test.ts` — aqui só provamos a FIAÇÃO.
+     */
+    describe('F2 — conclusão da corrida (parcial/desconhecido)', () => {
+      it('conclusão status=null (linha antiga, sem coluna preenchida) ⇒ snapshotState=desconhecido, NUNCA parcial', async () => {
+        const patientMonthRepo = new StubPatientMonthRepository([AGGREGATE_PAT_0]);
+        const syncRunRepo = stubSyncRunRepo({ status: null, reservationsTotal: null, reservationsDone: null });
+        const service = new AnaCareHoursService(new StubSource(), mockRepo(), new KMSEncryptionService(), undefined, patientMonthRepo, undefined, syncRunRepo);
+
+        const snapshot = await service.getMonthSnapshot('2026-09', false);
+        expect(snapshot.snapshotState).toBe('desconhecido');
+        expect(snapshot.snapshotState).not.toBe('parcial');
+      });
+
+      it('conclusão status=running com contagens ⇒ snapshotState=parcial e o snapshot carrega reservationsTotal/reservationsDone', async () => {
+        const patientMonthRepo = new StubPatientMonthRepository([AGGREGATE_PAT_0]);
+        const syncRunRepo = stubSyncRunRepo({ status: 'running', reservationsTotal: 144, reservationsDone: 49 });
+        const service = new AnaCareHoursService(new StubSource(), mockRepo(), new KMSEncryptionService(), undefined, patientMonthRepo, undefined, syncRunRepo);
+
+        const snapshot = await service.getMonthSnapshot('2026-09', false);
+        expect(snapshot.snapshotState).toBe('parcial');
+        expect(snapshot.reservationsTotal).toBe(144);
+        expect(snapshot.reservationsDone).toBe(49);
+      });
+
+      /**
+       * CONTROLE POSITIVO OBRIGATÓRIO (Decisão 9/design.md §F2), agora de PONTA A PONTA pelo
+       * serviço: sabota o estado para 49 de 144 reservas (`status='done'`) — a régua tem que
+       * DEIXAR de dizer `fresco`.
+       */
+      it('CONTROLE POSITIVO — done com 49/144 reservas (sabotado) ⇒ parcial, NUNCA fresco', async () => {
+        const patientMonthRepo = new StubPatientMonthRepository([AGGREGATE_PAT_0]);
+        const syncRunRepo = stubSyncRunRepo({ status: 'done', reservationsTotal: 144, reservationsDone: 49 });
+        const service = new AnaCareHoursService(new StubSource(), mockRepo(), new KMSEncryptionService(), undefined, patientMonthRepo, undefined, syncRunRepo);
+
+        const snapshot = await service.getMonthSnapshot('2026-09', false);
+        expect(snapshot.snapshotState).toBe('parcial');
+        expect(snapshot.snapshotState).not.toBe('fresco');
+        expect(snapshot.reservationsTotal).toBe(144);
+        expect(snapshot.reservationsDone).toBe(49);
+      });
+
+      it('conclusão status=done com reservationsDone===reservationsTotal ⇒ snapshotState=fresco (corrida terminou completa)', async () => {
+        const patientMonthRepo = new StubPatientMonthRepository([AGGREGATE_PAT_0]);
+        const syncRunRepo = stubSyncRunRepo({ status: 'done', reservationsTotal: 144, reservationsDone: 144 });
+        const service = new AnaCareHoursService(new StubSource(), mockRepo(), new KMSEncryptionService(), undefined, patientMonthRepo, undefined, syncRunRepo);
+
+        const snapshot = await service.getMonthSnapshot('2026-09', false);
+        expect(snapshot.snapshotState).toBe('fresco');
+        expect(snapshot.reservationsTotal).toBeUndefined();
+        expect(snapshot.reservationsDone).toBeUndefined();
+      });
+
+      it('chama getConclusion com a fonte e o mês certos (PATIENT_MONTH_SOURCE, mesmo mês pedido)', async () => {
+        const patientMonthRepo = new StubPatientMonthRepository([AGGREGATE_PAT_0]);
+        const syncRunRepo = stubSyncRunRepo({ status: 'done', reservationsTotal: 1, reservationsDone: 1 });
+        const service = new AnaCareHoursService(new StubSource(), mockRepo(), new KMSEncryptionService(), undefined, patientMonthRepo, undefined, syncRunRepo);
+
+        await service.getMonthSnapshot('2026-09', false);
+        expect(syncRunRepo.getConclusion).toHaveBeenCalledWith('anacare', '2026-09');
+      });
     });
   });
 

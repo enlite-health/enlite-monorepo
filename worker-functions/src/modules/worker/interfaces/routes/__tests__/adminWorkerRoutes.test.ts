@@ -59,10 +59,12 @@ const ESPERADO_WORKERS: Record<string, string> = {
   'PATCH /workers/:id/profile': 'worker:update',
   'PUT /workers/:id/service-area': 'worker:update',
   'GET /workers': 'worker:read',
-  'GET /worker-tags': 'worker:read',
-  'POST /worker-tags': 'worker:create',
-  'PATCH /worker-tags/:id': 'worker:update',
-  'DELETE /worker-tags/:id': 'worker:update',
+  // Spec 024 (D1/D401, 21/09): catálogo de tags é DADO diferente do perfil do prestador —
+  // célula própria `tag:*`. Atribuir/remover tag DE UM prestador continua em `worker:update`.
+  'GET /worker-tags': 'tag:read',
+  'POST /worker-tags': 'tag:create',
+  'PATCH /worker-tags/:id': 'tag:update',
+  'DELETE /worker-tags/:id': 'tag:delete',
   'POST /workers/:id/tags/:tagId': 'worker:update',
   'DELETE /workers/:id/tags/:tagId': 'worker:update',
 };

@@ -30,7 +30,7 @@ describe('NotificationRepository', () => {
       expect(id).toBe('evt-1');
       const [sql, params] = query.mock.calls[0];
       expect(sql).toContain('INSERT INTO notification_events');
-      expect(sql).not.toMatch(/payload/i); // nunca escreve em payload — usa o DEFAULT '{}'::jsonb da migration 460
+      expect(sql).not.toMatch(/payload/i); // nunca escreve em payload — usa o DEFAULT '{}'::jsonb da migration 461
       expect(params).toEqual(['CONVERSATION_MENTIONED', 'a1', 'p1', 'c1', 'm1']);
     });
   });

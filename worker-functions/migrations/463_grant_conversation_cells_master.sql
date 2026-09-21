@@ -1,4 +1,4 @@
--- 462 — Grant explícito ao Acesso Master das 7 células da spec 022 (D-23, T132)
+-- 463 — Grant explícito ao Acesso Master das 7 células da spec 022 (D-23, T132)
 --
 -- POR QUÊ: Gabriel pediu por escrito (citação em tasks.md D-22/D-23): "essa funcionalidade
 -- precisa entrar no ABAC ... inserir a autorização direto no grupo MASTER". O catch-up
@@ -18,7 +18,7 @@
 --
 -- O QUE NÃO FAZ: não mexe em nenhum outro grupo (D285 intacta para eles); nunca remove grant.
 --
--- 🔒 Achado do gate revisao-pr (B4, conserto do B3-r2, item 4 — MESMO motivo da migration 463):
+-- 🔒 Achado do gate revisao-pr (B4, conserto do B3-r2, item 4 — MESMO motivo da migration 464):
 -- "as 2 restantes só passam a existir no catálogo quando o boot sincroniza" (parágrafo acima)
 -- descreve exatamente a falha — em um banco NOVO (CI, ambiente recém-criado), esta migration roda
 -- ANTES do sync de boot (`Dockerfile` roda migrations e só DEPOIS `npm start`), então
@@ -29,7 +29,7 @@
 -- automático de todo boot com `PERMISSION_CATALOG_SYNC_ENABLED=true`
 -- (`iam.grant_active_permissions_to_master()`, migration 436) reconcede ao Master qualquer célula
 -- nova sempre que o catálogo sincroniza — mas essa rede de segurança não existe para os OUTROS
--- grupos (ver migration 463). Mesmo assim, para o Master também não fazer sentido esperar por um
+-- grupos (ver migration 464). Mesmo assim, para o Master também não fazer sentido esperar por um
 -- boot seguinte quando esta migration TEM como conceder de uma vez: molde da 435
 -- (`435_split_write_grants_create_update.sql:83-94`) — insere as 2 células placeholder em
 -- `iam.permissions` (idempotente, `ON CONFLICT (resource, action) DO NOTHING`, mesma forma que o
@@ -57,10 +57,10 @@ BEGIN
     INSERT INTO iam.permissions (resource, action, description, category, owner_service, deprecated_at)
     VALUES
       ('own_notifications', 'read',
-       '[462 placeholder — sincronizado no boot] Ver as próprias notificações do sino e a contagem de não lidas.',
+       '[463 placeholder — sincronizado no boot] Ver as próprias notificações do sino e a contagem de não lidas.',
        'Administração', 'worker-functions', NULL),
       ('own_notifications', 'update',
-       '[462 placeholder — sincronizado no boot] Marcar a(s) própria(s) notificação(ões) do sino como lida(s).',
+       '[463 placeholder — sincronizado no boot] Marcar a(s) própria(s) notificação(ões) do sino como lida(s).',
        'Administração', 'worker-functions', NULL)
     ON CONFLICT (resource, action) DO NOTHING;
   END IF;
@@ -73,7 +73,7 @@ BEGIN
        AND p.deprecated_at IS NULL
     ON CONFLICT DO NOTHING;
     GET DIAGNOSTICS v_n = ROW_COUNT;
-    RAISE NOTICE '[462] grant explícito ao Acesso Master: % células novas (spec 022, D-23)', v_n;
+    RAISE NOTICE '[463] grant explícito ao Acesso Master: % células novas (spec 022, D-23)', v_n;
   END IF;
 END
 $$;

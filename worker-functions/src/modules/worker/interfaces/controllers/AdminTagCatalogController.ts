@@ -4,12 +4,16 @@
  * Gerencia o catálogo de tags de workers e a associação worker ↔ tag.
  *
  * Rotas (registradas em src/index.ts):
- *   GET    /api/admin/worker-tags              staffOnly  → list
- *   POST   /api/admin/worker-tags              worker:write → create
- *   PATCH  /api/admin/worker-tags/:id          worker:write → update
- *   DELETE /api/admin/worker-tags/:id          worker:write → delete (soft)
- *   POST   /api/admin/workers/:id/tags/:tagId  staffOnly  → assign
- *   DELETE /api/admin/workers/:id/tags/:tagId  staffOnly  → remove
+ *   GET    /api/admin/worker-tags              tag:read   → list
+ *   POST   /api/admin/worker-tags              tag:create → create
+ *   PATCH  /api/admin/worker-tags/:id          tag:update → update
+ *   DELETE /api/admin/worker-tags/:id          tag:delete → delete (soft)
+ *   POST   /api/admin/workers/:id/tags/:tagId  worker:update → assign (dado do prestador)
+ *   DELETE /api/admin/workers/:id/tags/:tagId  worker:update → remove (dado do prestador)
+ *
+ * Spec 024 (D1/D401, 21/09/2026): o catálogo (as 4 primeiras rotas) migrou de `worker:*` para
+ * `tag:*` — é DADO diferente do perfil do prestador. Atribuir/remover tag DE UM prestador
+ * continua em `worker:update`.
  */
 
 import { Request, Response } from 'express';

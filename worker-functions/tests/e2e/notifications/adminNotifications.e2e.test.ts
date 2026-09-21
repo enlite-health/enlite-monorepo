@@ -64,7 +64,7 @@ describe('Notificações in-app — CRUD, isolamento (D-24) e matriz ABAC (Spec 
   async function limpar(): Promise<void> {
     await limparIamFixtures(pool, { uids: TODOS_UIDS, grupos: TODOS_GRUPOS });
     // `notification_events.patient_id`/`.conversation_id` são `ON DELETE SET NULL` (migration
-    // 460), NUNCA CASCADE — deletar o paciente NÃO limpa notificação nenhuma (achado desta
+    // 461), NUNCA CASCADE — deletar o paciente NÃO limpa notificação nenhuma (achado desta
     // sessão: 1ª tentativa de reexecução vazou contagem entre runs). Limpeza explícita por uid.
     await pool.query(
       `DELETE FROM notifications WHERE recipient_uid = ANY($1) OR event_id IN (SELECT id FROM notification_events WHERE actor_uid = ANY($1))`,

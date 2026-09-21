@@ -5,6 +5,7 @@ import { ActionButton } from '@presentation/components/features/access';
 import type { PatientDetail } from '@domain/entities/PatientDetail';
 import { PatientGeneralEditDrawer } from './edit/PatientGeneralEditDrawer';
 import { FieldPair, FieldPairGrid } from './FieldPairs';
+import { formatDateFromISO } from '@presentation/hooks/useMask';
 
 /** Spec 018 PR-3 — a mesma lista fechada ISO de `workers.languages` (pt/es/en). */
 const LANGUAGE_LABEL_KEYS: Record<string, string> = {
@@ -19,14 +20,25 @@ interface PatientGeneralInfoCardProps {
   onSaved?: () => void;
 }
 
+// Fix 21/09/2026 (Gabriel, PR #469): `new Date(birthDateIso)` decodifica a string ISO SEM hora
+// como meia-noite UTC e lia a idade com getters LOCAIS — em fuso negativo (Argentina, UTC-3) a
+// meia-noite UTC de "1950-03-25" já é 24/03 no relógio local, um dia a menos. `birthDate` é
+// `DATE` no Postgres (sem hora, sem fuso — migrations 037/317 do worker-functions), então os
+// componentes ano/mês/dia vêm do split da própria string ISO (mesmo padrão de
+// `AnaCareHours/selectors.ts`), nunca de getters locais sobre um `Date` construído a partir dela.
+// "Hoje" É local de verdade (não vem do backend), por isso usa `new Date()` com getters locais.
 function calculateAge(birthDateIso: string | null): number | null {
   if (!birthDateIso) return null;
-  // `new Date(...)` e os getters nunca lançam: um try/catch aqui era ramo morto (spec 012, DoD 100%).
-  const birth = new Date(birthDateIso);
+  const match = birthDateIso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return null;
+  const birthYear = Number(match[1]);
+  const birthMonth = Number(match[2]) - 1;
+  const birthDay = Number(match[3]);
+
   const today = new Date();
-  let age = today.getFullYear() - birth.getFullYear();
-  const m = today.getMonth() - birth.getMonth();
-  if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) {
+  let age = today.getFullYear() - birthYear;
+  const m = today.getMonth() - birthMonth;
+  if (m < 0 || (m === 0 && today.getDate() < birthDay)) {
     age -= 1;
   }
   return age;
@@ -42,13 +54,16 @@ function getAgeBracket(age: number | null): string | null {
   return '60+';
 }
 
+// Fix 21/09/2026 (Gabriel): `new Date(iso).toLocaleDateString('es-AR')` decodifica a string ISO
+// como meia-noite UTC e formata no fuso LOCAL — em fusos negativos (Argentina, UTC-3) isso perde
+// 1 dia ("1950-03-25" virava "24/03/1950"). `birthDate` e `serviceStartDate` (as duas chamadoras
+// desta função) são `DATE` no Postgres — sem hora, sem fuso (migrations 037 e 317 do
+// worker-functions) — então o valor correto é o split de string do `formatDateFromISO`
+// (`@presentation/hooks/useMask`, já usado no card do worker para o mesmo defeito), que nunca
+// lança e devolve o valor cru quando não é ISO (nunca "Invalid Date").
 function formatBirthDate(iso: string | null): string | null {
   if (!iso) return null;
-  try {
-    return new Date(iso).toLocaleDateString('es-AR');
-  } catch {
-    return iso;
-  }
+  return formatDateFromISO(iso);
 }
 
 export function PatientGeneralInfoCard({ patient, onSaved }: PatientGeneralInfoCardProps) {

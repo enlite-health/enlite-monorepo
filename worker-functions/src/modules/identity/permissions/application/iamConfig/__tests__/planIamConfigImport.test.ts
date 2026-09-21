@@ -14,10 +14,14 @@ const base = (over: Partial<IamConfigSnapshot> = {}): IamConfigSnapshot => ({
 });
 const target = (current: IamConfigSnapshot, over: Partial<IamTargetState> = {}): IamTargetState => ({
   current,
-  // `worker` é recurso splitado (spec 018, PR-8b, ADR-2/SUP-30) — o catálogo do alvo já
-  // conhece `create`/`update`; `worker:write` continua listado aqui só para o teste que
-  // prova a expansão na importação de um arquivo ANTIGO (linha ~48 abaixo).
-  catalog: new Set(['permission_management:write', 'worker:read', 'worker:write', 'worker:create', 'worker:update', 'vacancy:read']),
+  // `vacancy` é recurso splitado (spec 018, PR-8b, ADR-2/SUP-30) — o catálogo do alvo já
+  // conhece `create`/`update`; o teste que prova a expansão na importação de um arquivo
+  // ANTIGO (linha ~65 abaixo) usa `vacancy:write` como exemplar (não precisa estar aqui —
+  // expande ANTES do diff contra o catálogo, só o `create`/`update` final precisa).
+  // `worker` SAIU de SPLIT_RESOURCES em 21/09 (spec 024, D401): `worker:create` só existia
+  // pra tag (célula própria agora, `tag:create`) — `worker` mantém só `:read`/`:update` daqui
+  // pra frente, sem expansão de `write`.
+  catalog: new Set(['permission_management:write', 'worker:read', 'worker:update', 'vacancy:read', 'vacancy:create', 'vacancy:update']),
   knownEmails: new Set(['gestor@e.com', 'ana@e.com', 'bob@e.com']),
   // (M1) Por default, igual a `knownEmails` — os testes que precisam de um
   // e-mail removível mas NÃO staff (admin rebaixado) sobrescrevem via `over`.
@@ -48,12 +52,12 @@ describe('planIamConfigImport', () => {
 
   it('célula a mais, membro a menos, feature desligada → exatamente essas três operações', () => {
     const desired = base();
-    desired.groups[1].cells = ['worker:read', 'worker:create'];
+    desired.groups[1].cells = ['worker:read', 'worker:update'];
     desired.groups[1].members = [];
     desired.countryFeatures[0].enabled = false;
     const plan = planIamConfigImport(desired, target(base()));
     expect(plan.ops).toEqual([
-      { kind: 'set_permissions', group: 'Recrutador', cells: ['worker:create', 'worker:read'] },
+      { kind: 'set_permissions', group: 'Recrutador', cells: ['worker:read', 'worker:update'] },
       { kind: 'remove_member', group: 'Recrutador', email: 'ana@e.com' },
       { kind: 'set_country_feature', country: 'AR', featureKey: 'screen:talentum', enabled: false, config: null },
     ]);
@@ -62,13 +66,14 @@ describe('planIamConfigImport', () => {
   // ── ADR-2/SUP-30 (contracts/permissions-split.md): import de um `iam-config.json`
   // EXPORTADO ANTES do split (só `write`) expande para create+update ANTES do diff —
   // o plano nunca tenta `set_permissions` com uma célula `write` de recurso splitado.
+  // Exemplar `vacancy` (não `worker` — `worker` saiu de SPLIT_RESOURCES em 21/09, spec 024).
   it('import de export ANTIGO (write puro) expande para create+update antes do diff', () => {
     const desired = base();
-    desired.groups[1].cells = ['worker:write']; // arquivo de antes do split
+    desired.groups[1].cells = ['vacancy:write']; // arquivo de antes do split
     const plan = planIamConfigImport(desired, target(base())); // alvo: Recrutador só tem worker:read
     expect(plan.errors).toEqual([]);
     expect(plan.ops).toEqual([
-      { kind: 'set_permissions', group: 'Recrutador', cells: ['worker:create', 'worker:update'] },
+      { kind: 'set_permissions', group: 'Recrutador', cells: ['vacancy:create', 'vacancy:update'] },
     ]);
   });
 

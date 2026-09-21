@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { ActionButton } from '@presentation/components/features/access';
+import { formatDateFromISO } from '@presentation/hooks/useMask';
 import { getSexLabel, getGenderLabel, getLanguageLabel } from './workerDetailLabels';
 import { WorkerTagsArea } from './WorkerTagsArea';
 import type { WorkerTagSummary } from '@domain/entities/WorkerTag';
@@ -30,10 +31,15 @@ interface WorkerPersonalInfoCardProps {
 }
 
 function Field({ label, value }: { label: string; value: string | null }) {
+  // Defeito 4 (21/09/2026): KMSEncryptionService.decrypt devolve '' (não null) para
+  // coluna nula, e AdminWorkersDetailBuilder faz `?? null` — que não pega string
+  // vazia. String vazia/só-espaço é tratada como ausente aqui (front, sem mexer no
+  // KMSEncryptionService compartilhado).
+  const display = value != null && value.trim() !== '' ? value : null;
   return (
     <p className="leading-snug">
       <Text as="span" size="sm" weight="medium" color="secondary">{label} </Text>
-      <Text as="span" size="sm" color="muted">{value ?? '—'}</Text>
+      <Text as="span" size="sm" color="muted">{display ?? '—'}</Text>
     </p>
   );
 }
@@ -55,9 +61,12 @@ export function WorkerPersonalInfoCard({
 }: WorkerPersonalInfoCardProps) {
   const { t } = useTranslation();
 
-  const formattedBirth = birthDate
-    ? new Date(birthDate).toLocaleDateString('pt-BR')
-    : null;
+  // Defeito 2 (21/09/2026): `new Date(birthDate).toLocaleDateString('pt-BR')`
+  // decodifica a string ISO como meia-noite UTC e formata no fuso LOCAL — em
+  // fusos negativos (ex.: Argentina, UTC-3) isso perde 1 dia ("1985-03-25" vira
+  // "24/03/1985"). `formatDateFromISO` faz split de string, sem Date/fuso, e
+  // devolve o valor cru quando não é ISO (nunca "Invalid Date").
+  const formattedBirth = birthDate ? formatDateFromISO(birthDate) : null;
 
   return (
     <div data-testid="worker-personal-card" className="bg-white rounded-card border-[1.5px] border-gray-700 p-6 sm:px-8 sm:py-10 flex flex-col gap-4">

@@ -349,7 +349,7 @@ describe('PostMessageUseCase', () => {
       ).rejects.toMatchObject({ code: 'ATTACHED_FILE_NOT_FOUND', status: 400 });
     });
 
-    it('🔒 corrida: 2 POSTs concorrentes passam os DOIS no SELECT de posse (owned:true) mas o INSERT estoura 23505 (UNIQUE file_id, migration 461) — recusa com AttachedFileNotFoundError (400), NUNCA 500', async () => {
+    it('🔒 corrida: 2 POSTs concorrentes passam os DOIS no SELECT de posse (owned:true) mas o INSERT estoura 23505 (UNIQUE file_id, migration 462) — recusa com AttachedFileNotFoundError (400), NUNCA 500', async () => {
       const conflictErr = Object.assign(new Error('duplicate key value violates unique constraint'), { code: '23505' });
       const { client, calls } = clientWith([
         insertMessageHandler(),

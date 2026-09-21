@@ -60,6 +60,9 @@ export function useAnaCareHoursPatient(service: AnaCareHoursService, month: stri
         snapshotState: retrato.snapshotState,
         circuitBreakerOpen: retrato.circuitBreakerOpen,
         patients: patient ? [patient] : [],
+        // F2 (migration 457) — mesmo repasse de `snapshotState`: só existem quando `parcial`.
+        reservationsTotal: retrato.reservationsTotal,
+        reservationsDone: retrato.reservationsDone,
       }
     : null;
 

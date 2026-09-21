@@ -342,10 +342,12 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       'catalog_therapeutic_activities:read',
       // US-17 (spec 018, PR-7, migration 430) — catálogo dos segmentos da Ana Care, mesmo molde.
       'catalog_therapeutic_segments:read',
-      // spec 018, PR-8b (ADR-2/SUP-30): split write→create+update dos 23 recursos. Nesta rodada
+      // spec 018, PR-8b (ADR-2/SUP-30): split write→create+update dos recursos. Nesta rodada
       // (A1) NENHUMA rota declara `create`/`update` ainda (routes só mudam no 8b.4) — por isso as
-      // 46 células novas só existem no catálogo por `cellsForaDeRota`, igual às demais linhas
-      // acima. Ordem = ordem de inserção em `CELL_DESCRIPTION`.
+      // células novas só existem no catálogo por `cellsForaDeRota`, igual às demais linhas
+      // acima. Ordem = ordem de inserção em `CELL_DESCRIPTION`. `worker:create` REMOVIDO em 21/09
+      // (spec 024, D401): era só "criar tag" — órfão, coberto por `tag:create` abaixo; `worker`
+      // mantém só `:update`.
       'patient:create', 'patient:update',
       'patient_address:create', 'patient_address:update',
       'patient_chat:create', 'patient_chat:update',
@@ -375,13 +377,19 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       'interview:create', 'interview:update',
       'messaging:create', 'messaging:update',
       'recruitment:create', 'recruitment:update',
-      'worker:create', 'worker:update',
+      'worker:update',
       'worker_document:create', 'worker_document:update',
       // Spec `anacare-conferencia-de-horas`, fase 1 (D344/D345, 15/09): DECLARADAS por rota real
       // em `anacareHoursRoutes.ts` (`perm.require('anacare_hours', 'read'|'validate')`) — o
       // fixture de 2 rotas deste teste não as declara, por isso aparecem aqui como as demais
       // células de rota real acima (mesmo padrão de `patient_therapeutic_project:*` etc.).
       'anacare_hours:read', 'anacare_hours:validate',
+      // Spec 024 (D1/D2/D401, 21/09): DECLARADAS por rota real em `adminWorkerRoutes.ts`
+      // (`tag:*`) e `recruitmentRoutes.ts` (`recruitment_blocked:read`) — o fixture de 2 rotas
+      // deste teste não as declara, por isso aparecem aqui como as demais células de rota real
+      // acima (mesmo padrão de `anacare_hours:*`).
+      'tag:read', 'tag:create', 'tag:update', 'tag:delete',
+      'recruitment_blocked:read',
     ]);
   });
 

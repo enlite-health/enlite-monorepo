@@ -48,7 +48,7 @@ describe('Fan-out de thread respondida — D-09 (Spec 022, Bloco 4, T415)', () =
   async function limpar(): Promise<void> {
     await limparIamFixtures(pool, { uids: TODOS_UIDS, grupos: [GRUPO, `${GRUPO} P2`, `${GRUPO} P3`] });
     // `notification_events.patient_id`/`.conversation_id` são `ON DELETE SET NULL` (migration
-    // 460), NUNCA CASCADE — deletar o paciente NÃO limpa notificação nenhuma. Limpeza explícita.
+    // 461), NUNCA CASCADE — deletar o paciente NÃO limpa notificação nenhuma. Limpeza explícita.
     await pool.query(
       `DELETE FROM notifications WHERE recipient_uid = ANY($1) OR event_id IN (SELECT id FROM notification_events WHERE actor_uid = ANY($1))`,
       [TODOS_UIDS],

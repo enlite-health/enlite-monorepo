@@ -40,7 +40,7 @@ describe('Matriz ABAC — 3 atores × conversa + staff-directory (spec 022, T133
   const PATIENT = 'ee422000-c4a7-0002-0002-000000000002';
   const COUNTRY = 'AR';
   // Autor sintético da mensagem "alheia" — NUNCA existe em `users` (author_uid não tem FK,
-  // ver migration 458): não precisa ser conta real para provar D-04 (só o autor edita/apaga).
+  // ver migration 459): não precisa ser conta real para provar D-04 (só o autor edita/apaga).
   const OUTRO_AUTOR_UID = 'e022-abac-matriz-outro-autor';
 
   const U = { a: 'e022-abac-matriz-a', b: 'e022-abac-matriz-b', c: 'e022-abac-matriz-c' };
