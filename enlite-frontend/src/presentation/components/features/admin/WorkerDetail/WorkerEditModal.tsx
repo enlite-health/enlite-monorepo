@@ -18,6 +18,7 @@ import { SelectField, type SelectOption } from '@presentation/components/molecul
 import { GooglePlacesAutocomplete } from '@presentation/components/molecules/GooglePlacesAutocomplete';
 import { extractAddressComponents } from '@application/use-cases/extractAddressComponents';
 import { WorkerEditProfessionalFields } from './WorkerEditProfessionalFields';
+import { WorkerEditDossierFields } from './WorkerEditDossierFields';
 
 interface WorkerEditModalProps {
   worker: WorkerDetail;
@@ -43,6 +44,9 @@ export interface WorkerEditFormValues {
   preferredAgeRange: string[];
   languages: string[];
   linkedinUrl: string;
+  // dossiê (spec 025, Fase 6, D402 item 4) — yyyy-MM-dd de <input type="date">, gated por
+  // worker_pii:write; campo só existe no DOM quando WorkerEditDossierFields decide renderizar.
+  birthDate: string;
   // address
   address: string;
   addressComplement: string;
@@ -52,6 +56,12 @@ export interface WorkerEditFormValues {
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const RADIUS_OPTIONS = [5, 10, 20, 50];
 const CLOSE_MS = 300;
+
+/** yyyy-MM-dd for <input type="date"> (worker.birthDate is an ISO string or null). */
+function toDateInput(iso: string | null): string {
+  if (!iso) return '';
+  return iso.slice(0, 10);
+}
 
 /**
  * Admin-only worker edit — side drawer (slides in from the right, mirroring the
@@ -102,6 +112,7 @@ export function WorkerEditModal({ worker, onClose, onSaved }: WorkerEditModalPro
       preferredAgeRange: worker.preferredAgeRange ?? [],
       languages: worker.languages ?? [],
       linkedinUrl: worker.linkedinUrl ?? '',
+      birthDate: toDateInput(worker.birthDate),
       address: initialAddress,
       addressComplement: '',
       serviceRadiusKm: initialRadius,
@@ -169,6 +180,10 @@ export function WorkerEditModal({ worker, onClose, onSaved }: WorkerEditModalPro
     if (arrChanged(values.preferredTypes, worker.preferredTypes ?? [])) patch.preferredTypes = values.preferredTypes;
     if (arrChanged(values.preferredAgeRange, worker.preferredAgeRange ?? [])) patch.preferredAgeRange = values.preferredAgeRange;
     if (arrChanged(values.languages, worker.languages ?? [])) patch.languages = values.languages;
+    // Dossiê: só envia se PREENCHIDA e MUDOU — o schema do backend não aceita `null` para
+    // limpar (achado fora de escopo desta spec; T6.3 só cobre gravar uma data válida).
+    const birthDate = values.birthDate.trim();
+    if (birthDate && birthDate !== toDateInput(worker.birthDate)) patch.birthDate = birthDate;
     return patch;
   };
 
@@ -323,6 +338,9 @@ export function WorkerEditModal({ worker, onClose, onSaved }: WorkerEditModalPro
 
           {/* Dados profissionais */}
           <WorkerEditProfessionalFields control={control} register={register} />
+
+          {/* Dossiê (spec 025, Fase 6) — só existe no DOM com worker_pii:write */}
+          <WorkerEditDossierFields register={register} />
 
           {/* Endereço (Google Places) */}
           <div className="flex flex-col gap-4 pt-2 border-t border-slate-100">
