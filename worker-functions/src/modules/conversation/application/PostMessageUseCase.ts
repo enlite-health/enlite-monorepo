@@ -11,8 +11,9 @@
  *     de `ConversationRepository.insertMessage` (já teste em `ConversationRepository.test.ts`,
  *     T108) — este use case NUNCA monta um INSERT próprio com o corpo em claro.
  *
- * Fan-out (D-09): roda dentro da MESMA transação, recebendo o client dela — aqui é STUB
- * (`PostMessageFanOutHook`, no-op por padrão); a implementação real fica para o Bloco 4.
+ * Fan-out (D-09): roda dentro da MESMA transação, recebendo o client dela — desde o Bloco 4
+ * (T403), o default de produção é `FanOutNotificationUseCase` REAL (`@modules/inapp-notification`);
+ * o Bloco 1 usava um stub no-op, hoje removido.
  *
  * ⚠️ Nunca `pool.connect()` cru: a operação inteira roda dentro de `withActorContext(pool, fn)`
  * (`@shared/database/actorContext`), que carimba `app.current_uid`/`app.user_country` no client —
@@ -23,6 +24,7 @@
  */
 import type { Pool, PoolClient } from 'pg';
 import { withActorContext } from '@shared/database/actorContext';
+import { FanOutNotificationUseCase } from '@modules/inapp-notification/application/FanOutNotificationUseCase';
 import { ConversationRepository } from '../infrastructure/ConversationRepository';
 import { extractMentionedUids, MentionedUserNotFoundError } from '../domain/ConversationMention';
 import { messageBelongsToConversation } from '../domain/MessageThreadOwnership';
@@ -64,27 +66,31 @@ export class AttachedFileNotFoundError extends Error {
 export interface PostMessageResult {
   id: string;
   conversationId: string;
+  /** Bloco 4 (T403): paciente-dono da conversa — `FanOutNotificationUseCase` grava em
+   * `notification_events.patient_id`. `null` só se a conversa não existir mais (defesa em
+   * profundidade; `resolveConversationForPatient` já validou antes de chegar aqui). */
+  patientId: string | null;
   rootMessageId: string | null;
   authorUid: string;
   createdAt: Date;
   mentionedUids: string[];
 }
 
-/** Hook de fan-out — STUB nesta task; o Bloco 4 substitui pela notificação real. */
+/**
+ * Hook de fan-out (D-09) — no Bloco 1 era STUB (`NoopFanOutHook`, no-op); Bloco 4 (T403)
+ * substitui o DEFAULT por `FanOutNotificationUseCase` real (`@modules/inapp-notification`),
+ * chamado dentro da MESMA transação do POST message (mesmo `client`, nunca uma conexão à parte).
+ * A interface continua existindo para permitir injetar um mock em teste (`PostMessageUseCase.test.ts`
+ * já fazia isso ANTES do B4 — nenhuma mudança de contrato aqui, só do default de produção).
+ */
 export interface PostMessageFanOutHook {
   execute(client: PoolClient, message: PostMessageResult): Promise<void>;
-}
-
-class NoopFanOutHook implements PostMessageFanOutHook {
-  async execute(): Promise<void> {
-    /* stub — Bloco 4 implementa a notificação real */
-  }
 }
 
 export class PostMessageUseCase {
   constructor(
     private readonly repository: ConversationRepository = new ConversationRepository(),
-    private readonly fanOutHook: PostMessageFanOutHook = new NoopFanOutHook(),
+    private readonly fanOutHook: PostMessageFanOutHook = new FanOutNotificationUseCase(),
   ) {}
 
   async execute(pool: Pool, params: PostMessageParams): Promise<PostMessageResult> {
@@ -108,9 +114,14 @@ export class PostMessageUseCase {
         await this.attachFiles(client, inserted.id, fileIds);
       }
 
+      // Bloco 4 (T403): `patientId` só é preciso para o fan-out (notification_events.patient_id)
+      // — leitura extra, MESMA transação/client, nunca abre conexão própria.
+      const patientId = await this.repository.findPatientIdByConversationId(conversationId, client);
+
       const result: PostMessageResult = {
         id: inserted.id,
         conversationId,
+        patientId,
         rootMessageId: resolvedRootId,
         authorUid,
         createdAt: inserted.createdAt,

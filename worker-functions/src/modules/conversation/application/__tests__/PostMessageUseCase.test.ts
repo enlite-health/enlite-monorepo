@@ -57,6 +57,17 @@ function insertMessageHandler(id = 'm-new', createdAt = new Date('2026-09-20T10:
 }
 
 /**
+ * Handler do fan-out REAL (Bloco 4, T403): quando o corpo tem `<@uid>`, o default de produção
+ * (`FanOutNotificationUseCase`) grava `notification_events` de verdade — testes desta suíte que
+ * NÃO são sobre notificação (são sobre menção/thread/anexo) precisam desta linha só para não
+ * quebrar no `rows[0].id` do fan-out; o comportamento do fan-out em si é coberto pela suíte
+ * própria (`FanOutNotificationUseCase.test.ts`), nunca duplicado aqui.
+ */
+function notificationEventInsertHandler(id = 'evt-fanout'): Handler {
+  return (sql) => (sql.includes('INSERT INTO notification_events') ? { rows: [{ id }] } : undefined);
+}
+
+/**
  * Handler do cruzamento de posse (T305-T317, Bloco 3): cada id em `ownedIds` "existe, é desta
  * conversa, deste autor e ainda não está anexado" (owned=true); qualquer outro id pedido pelo
  * teste mas fora desta lista simplesmente não aparece nas rows (mesmo efeito de "não existe" —
@@ -207,6 +218,7 @@ describe('PostMessageUseCase', () => {
         (sql) =>
           sql.includes('FROM users WHERE firebase_uid') ? { rows: [{ firebaseUid: 'staff:2' }] } : undefined,
         insertMessageHandler(),
+        notificationEventInsertHandler(),
       ]);
       runOn(client);
       const useCase = new PostMessageUseCase(new ConversationRepository(POOL));
@@ -386,7 +398,7 @@ describe('PostMessageUseCase', () => {
     });
   });
 
-  describe('fan-out na MESMA transação (D-09) — stub por ora, Bloco 4 substitui', () => {
+  describe('fan-out na MESMA transação (D-09) — Bloco 4 (T403): default real, mock injetável', () => {
     it('o hook de fan-out é chamado com o CLIENT da transação (não um novo/segundo)', async () => {
       const { client } = clientWith([insertMessageHandler()]);
       runOn(client);
@@ -399,14 +411,19 @@ describe('PostMessageUseCase', () => {
       expect(fanOutHook.execute).toHaveBeenCalledWith(client, expect.objectContaining({ id: result.id }));
     });
 
-    it('sem hook explícito, usa o STUB no-op default — não quebra nem chama nada externo', async () => {
-      const { client } = clientWith([insertMessageHandler()]);
+    it('sem hook explícito, usa o `FanOutNotificationUseCase` REAL default (Bloco 4) — mensagem sem menção/reply não insere nada e não quebra', async () => {
+      const { client, calls } = clientWith([insertMessageHandler()]);
       runOn(client);
       const useCase = new PostMessageUseCase(new ConversationRepository(POOL));
 
       await expect(
         useCase.execute(POOL, { conversationId: 'c1', authorUid: 'staff:1', body: 'msg-1' }),
       ).resolves.toMatchObject({ id: 'm-new' });
+      // Sem `<@uid>` no corpo e sem `rootMessageId` (mensagem de topo): o fan-out real não insere
+      // NADA em `notification_events`/`notifications` — prova que o default de produção rodou de
+      // verdade (não é mais o no-op silencioso do B1) sem quebrar o caminho feliz sem notificação.
+      expect(calls.some((c) => c.sql.includes('INSERT INTO notification_events'))).toBe(false);
+      expect(calls.some((c) => c.sql.includes('INSERT INTO notifications'))).toBe(false);
     });
   });
 
