@@ -97,6 +97,7 @@ export const RESOURCE_CATEGORY: Readonly<Record<string, PermissionCategory>> = {
   user_management: 'Administração',
   permission_management: 'Administração',
   staff_directory: 'Administração',
+  own_notifications: 'Administração',
 };
 
 /**
@@ -278,6 +279,12 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
   'staff_directory:read':
     'Buscar staff ativo por nome ou e-mail para o autocomplete de menção do chat interno do paciente. '
     + 'Devolve apenas UID e nome de exibição — nunca e-mail, telefone ou papel (D-06).',
+  'own_notifications:read':
+    'Ver as PRÓPRIAS notificações do sino (menção/resposta no chat interno de paciente) e a contagem '
+    + 'de não lidas. Nasce concedida a TODO staff ativo (D-07) — nunca vê notificação de outro uid.',
+  'own_notifications:update':
+    'Marcar a(s) PRÓPRIA(s) notificação(ões) do sino como lida(s). Nasce concedida a TODO staff ativo '
+    + '(D-07) — nunca marca notificação de outro uid (isolamento entre destinatários, D-24).',
   'patient_identity:create':
     'Cadastrar a identidade do paciente (nome, documento, nascimento, sexo, telefone, e-mail de '
     + 'contato) e subir a primeira foto/consentimento de imagem.',

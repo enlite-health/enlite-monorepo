@@ -11,6 +11,7 @@ import './adminFunnel';
 import './adminInterviewSlots';
 import './adminMatching';
 import './adminMessaging';
+import './adminNotifications';
 import './adminPatients';
 import './adminRecruitment';
 import './adminSetup';

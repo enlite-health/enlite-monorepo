@@ -207,6 +207,9 @@ describe('C1 — engine ligado com as 12 famílias de uma vez (HTTP real, banco 
     const { createAdminConversationRoutes } = await import(
       '../../src/modules/conversation/interfaces/routes/adminConversationRoutes'
     );
+    const { createAdminNotificationRoutes } = await import(
+      '../../src/modules/inapp-notification/interfaces/routes/adminNotificationRoutes'
+    );
     const { createAdminUsersRoutes, createAdminStaffDirectoryRoutes, createPermissionPanelRoutes, principalUid } =
       await import('@modules/identity');
     const { createMeAuthzRouter } = await import('@modules/identity/permissions');
@@ -228,6 +231,7 @@ describe('C1 — engine ligado com as 12 famílias de uma vez (HTTP real, banco 
       createWorkerEncuadreRoutes,
       createAdminPatientsRoutes,
       createAdminConversationRoutes,
+      createAdminNotificationRoutes,
       createAdminUsersRoutes,
       createAdminStaffDirectoryRoutes,
       createPermissionPanelRoutes,
@@ -277,6 +281,7 @@ describe('C1 — engine ligado com as 12 famílias de uma vez (HTTP real, banco 
       createWorkerEncuadreRoutes,
       createAdminPatientsRoutes,
       createAdminConversationRoutes,
+      createAdminNotificationRoutes,
       createAdminUsersRoutes,
       createAdminStaffDirectoryRoutes,
       createPermissionPanelRoutes,
@@ -444,6 +449,15 @@ describe('C1 — engine ligado com as 12 famílias de uma vez (HTTP real, banco 
       'admin.users',
       '/api/admin',
       createAdminStaffDirectoryRoutes(auth, permissions),
+    );
+    // Spec 022, Bloco 4 (21/09): `own_notifications:read|update` (`adminNotificationRoutes.ts`)
+    // — MESMA família `admin.users`. Repete a lição da Tarefa 1 de `b1-matriz-abac.md`: sem este
+    // mount, as 4 rotas do sino escapam da varredura viva desta suíte (nunca é pego pelo teste de
+    // "nenhuma rota escapou das famílias" nem pelo de "não-colisão entre famílias").
+    montarFamilia(
+      'admin.users',
+      '/api/admin',
+      createAdminNotificationRoutes(auth, permissions),
     );
 
     // ── admin.vacancies ──────────────────────────────────────────────────

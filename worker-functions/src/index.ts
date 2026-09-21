@@ -36,6 +36,7 @@ import {
   createAdminPatientPhotoRoutes,
 } from '@modules/case';
 import { createAdminConversationRoutes } from '@modules/conversation/interfaces/routes/adminConversationRoutes';
+import { createAdminNotificationRoutes } from '@modules/inapp-notification/interfaces/routes/adminNotificationRoutes';
 import { AdminPatientDiagnosesController } from '@modules/diagnosis/interfaces/controllers/AdminPatientDiagnosesController';
 import { AdminTerminologySearchController } from '@modules/terminology/interfaces/controllers/AdminTerminologySearchController';
 import { UserController } from '@modules/identity';
@@ -520,6 +521,14 @@ app.use('/api/admin', createAdminPatientPhotoRoutes(authMiddleware, permissionMi
 
 // ========== Admin Patient Conversation (spec 022, Bloco 1) ==========
 app.use('/api/admin', createAdminConversationRoutes(authMiddleware, permissionMiddleware));
+
+// ========== Admin Notifications / sino (spec 022, Bloco 4) ==========
+// `permissionsBoundary.permissions.client` — leitura CRUA do ABAC (D-13: resolve
+// `patientDisplayName` sob a célula do ATOR do evento, independente do gate de rota).
+app.use(
+  '/api/admin',
+  createAdminNotificationRoutes(authMiddleware, permissionMiddleware, permissionsBoundary.permissions.client),
+);
 
 // ========== Admin Therapeutic Projects (spec 017) ==========
 app.use(
