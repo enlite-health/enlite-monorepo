@@ -4,10 +4,10 @@
  * D269 + D268: os itens da seção Administración (Tags/Dedup/Roles de grupos/
  * Postulaciones bloqueadas/Mensajería) derivam da CÉLULA DE LEITURA da rota
  * que cada tela chama:
- *   Tags        → worker:read
+ *   Tags        → tag:read (spec 024 D1/D401, 21/09 — era worker:read)
  *   Dedup       → dedup:read
  *   Roles grupo → patient:read
- *   Bloqueados  → recruitment:read
+ *   Bloqueados  → recruitment_blocked:read (spec 024 D2/D401, 21/09 — era recruitment:read)
  *   Mensajería  → messaging:read
  *
  * ... com o MESMO freio de rollout do resto da B1 (`enforcement === 'on'`):
@@ -30,7 +30,7 @@ const HREFS = {
   funnelStageMessages: '/admin/mensajes-por-etapa',
 };
 
-const TODAS = ['worker:read', 'dedup:read', 'patient:read', 'recruitment:read', 'messaging:read'];
+const TODAS = ['tag:read', 'dedup:read', 'patient:read', 'recruitment_blocked:read', 'messaging:read'];
 
 const contrato = (permissions: string[], enforcement: AuthzContract['enforcement']): AuthzContract => ({
   uid: 'u',

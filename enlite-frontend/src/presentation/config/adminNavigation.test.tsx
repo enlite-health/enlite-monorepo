@@ -19,8 +19,12 @@ import type { AuthzContract } from '@domain/entities/Authz';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/** As células de leitura de TODOS os itens da seção Administración. */
-const TODAS_AS_CELULAS = ['worker:read', 'dedup:read', 'patient:read', 'recruitment:read', 'messaging:read'];
+/**
+ * As células de leitura de TODOS os itens da seção Administración.
+ * Spec 024 (D1/D2/D401, 21/09): `tag:read` abre Etiquetas (era `worker:read`) e
+ * `recruitment_blocked:read` abre Postulaciones bloqueadas (era `recruitment:read`).
+ */
+const TODAS_AS_CELULAS = ['tag:read', 'dedup:read', 'patient:read', 'recruitment:read', 'recruitment_blocked:read', 'messaging:read'];
 
 const contrato = (
   permissions: string[],
@@ -82,10 +86,10 @@ describe('useAdminNavItems — sectionStart nos adminItems', () => {
   });
 });
 
-describe('useAdminNavItems — Postulaciones bloqueadas depende de recruitment:read', () => {
+describe('useAdminNavItems — Postulaciones bloqueadas depende de recruitment_blocked:read (spec 024 D2/D401)', () => {
   const BLOCKED_HREF = '/admin/recruitment/blocked-attempts';
 
-  it('COM recruitment:read (engine ON) o item aparece dentro da seção Administración', () => {
+  it('COM recruitment_blocked:read (engine ON) o item aparece dentro da seção Administración', () => {
     comContrato(TODAS_AS_CELULAS, 'on');
     const items = itens();
 
@@ -97,8 +101,8 @@ describe('useAdminNavItems — Postulaciones bloqueadas depende de recruitment:r
     expect(blockedIdx).toBeGreaterThanOrEqual(sectionIdx);
   });
 
-  it('SEM recruitment:read (engine ON) o item some — as outras células não o trazem de volta', () => {
-    comContrato(['worker:read', 'dedup:read', 'patient:read', 'messaging:read'], 'on');
+  it('SEM recruitment_blocked:read (engine ON) o item some — nem `recruitment:read` nem as outras células o trazem de volta', () => {
+    comContrato(['tag:read', 'dedup:read', 'patient:read', 'recruitment:read', 'messaging:read'], 'on');
 
     expect(itens().some((item) => item.href === BLOCKED_HREF)).toBe(false);
   });
