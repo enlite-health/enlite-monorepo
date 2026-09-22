@@ -48,11 +48,11 @@ export interface ManagementDashboardOptions {
  * o percentual é OMITIDO do payload (nunca divisão por zero, nunca 0% falso).
  *
  * ⚠️ ARMADILHA DO DEFAULT ESPELHADO — ler antes de trocar este número.
- * O `30` abaixo é só o fallback de dev/test. Em prd/stg a env
+ * O `36` abaixo é só o fallback de dev/test. Em prd/stg a env
  * `ENCUADRE_WEEKLY_CAPACITY` vem dos workflows e VENCE o default: mudar aqui não
  * muda produção. E o erro não é silencioso de cara — é pior. Trocar só este literal
  * deixa VERMELHO o teste do default (`__tests__/GetManagementDashboardUseCase.test.ts`,
- * valor esperado na :252 — `{agendados: 8, capacidade: 30, pct: 26.7}` — afirmado com a
+ * valor esperado na :252 — `{agendados: 8, capacidade: 36, pct: 22.2}` — afirmado com a
  * env apagada). A armadilha é o passo SEGUINTE: "consertar" o teste para o valor novo
  * devolve a suíte ao verde e dá a sensação de mudança feita, enquanto prd/stg seguem
  * no valor antigo, porque a env continua a mesma.
@@ -66,7 +66,7 @@ export interface ManagementDashboardOptions {
  * workflows, nunca no lugar deles.
  */
 function readEncuadreWeeklyCapacity(): number | null {
-  const raw = process.env.ENCUADRE_WEEKLY_CAPACITY ?? '30';
+  const raw = process.env.ENCUADRE_WEEKLY_CAPACITY ?? '36';
   const parsed = Number.parseInt(raw, 10);
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
