@@ -395,7 +395,9 @@ describe('Notificações in-app — CRUD, isolamento (D-24) e matriz ABAC (Spec 
       const lista = await chamar('GET', '/api/admin/notifications', U_COM_CELULA_PACIENTE);
       const notif = lista.body.data.find((n: any) => n.messageId === topoId);
       expect(notif).toBeDefined();
-      expect(notif.messageExcerpt).toBe(`mencao-excerpt-topo <@${U_COM_CELULA_PACIENTE}>`);
+      // Desde 97cb687d o servidor troca `<@uid>` por `@<display_name>` no trecho — o usuário
+      // semeado na linha ~132 com esse uid tem display_name "Destinatario Com Celula".
+      expect(notif.messageExcerpt).toBe('mencao-excerpt-topo @Destinatario Com Celula');
       expect(notif.messageExcerpt.length).toBeLessThanOrEqual(140);
       expect(notif.rootMessageId).toBeNull();
     });
