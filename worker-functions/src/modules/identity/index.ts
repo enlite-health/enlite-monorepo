@@ -96,6 +96,10 @@ export { createAuthTelemetryRoutes } from './interfaces/routes/authTelemetryRout
 export { createAdminUsersRoutes } from './interfaces/routes/adminUsersRoutes';
 export { createAdminStaffDirectoryRoutes } from './interfaces/routes/adminStaffDirectoryRoutes';
 export { AdminStaffDirectoryController } from './interfaces/controllers/AdminStaffDirectoryController';
+// Change 022-ux-mencao-e-notificacao, Rodada 2/R2-B — heartbeat de presença.
+export { createAdminPresenceRoutes } from './interfaces/routes/adminPresenceRoutes';
+export { AdminPresenceController } from './interfaces/controllers/AdminPresenceController';
+export { UpdatePresenceUseCase } from './application/UpdatePresenceUseCase';
 export { createPermissionPanelRoutes, ADMIN_PERMISSIONS_FAMILY } from './interfaces/routes/permissionPanelRoutes';
 export { createPermissionPanelWriteRoutes } from './interfaces/routes/permissionPanelWriteRoutes';
 export type { PanelWriter, PermissionPanelWriteDeps } from './interfaces/routes/permissionPanelWriteRoutes';

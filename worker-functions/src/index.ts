@@ -40,7 +40,7 @@ import { createAdminNotificationRoutes } from '@modules/inapp-notification/inter
 import { AdminPatientDiagnosesController } from '@modules/diagnosis/interfaces/controllers/AdminPatientDiagnosesController';
 import { AdminTerminologySearchController } from '@modules/terminology/interfaces/controllers/AdminTerminologySearchController';
 import { UserController } from '@modules/identity';
-import { AdminController, createAuthTelemetryRoutes, createAdminUsersRoutes, createAdminStaffDirectoryRoutes, createPermissionPanelRoutes, createPermissionPanelWriteRoutes, principalUid } from '@modules/identity';
+import { AdminController, createAuthTelemetryRoutes, createAdminUsersRoutes, createAdminStaffDirectoryRoutes, createAdminPresenceRoutes, createPermissionPanelRoutes, createPermissionPanelWriteRoutes, principalUid } from '@modules/identity';
 import { createMeAuthzRouter } from '@modules/identity/permissions';
 import {
   AuthMiddleware,
@@ -444,6 +444,10 @@ app.use('/api/admin', createAdminUsersRoutes(adminController, authMiddleware, pe
 // `GET /api/admin/staff-directory` (spec 022, T128) — mesma família `admin.users`, célula nova
 // `staff_directory:read`. Alimenta o autocomplete de menção do chat interno de paciente.
 app.use('/api/admin', createAdminStaffDirectoryRoutes(authMiddleware, permissionMiddleware));
+// `POST /api/admin/me/presence` (change 022-ux-mencao-e-notificacao, Rodada 2/R2-B) — heartbeat
+// de presença do painel admin aberto. Mesma família `admin.users`, célula `own_presence:update`
+// (nasce concedida a todo staff, mesma regra de `own_notifications`, D-07).
+app.use('/api/admin', createAdminPresenceRoutes(authMiddleware, permissionMiddleware));
 // Família `admin.permissions` — a leitura do painel de acessos (F3). É a rota
 // que DECLARA `permission_management:read`; sem ela o sync do catálogo
 // descontinua a célula e `iam.query_audit` responde 42501 para todo mundo.
