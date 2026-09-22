@@ -41,6 +41,7 @@
     "messaging:update",
     "own_notifications:read",
     "own_notifications:update",
+    "own_presence:update",
     "patient:create",
     "patient:delete",
     "patient:read",
