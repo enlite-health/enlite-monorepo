@@ -17,6 +17,7 @@ import type { Pool, PoolClient } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { mapWithConcurrency } from '@shared/async/mapWithConcurrency';
+import { reportError } from '@shared/logging';
 
 /** Página padrão da listagem de mensagens de topo (spec 022, Bloco 1). */
 export const CONVERSATION_PAGE_SIZE = 50;
@@ -58,7 +59,9 @@ export interface AttachmentRow {
   fileId: string;
   contentType: string;
   sizeBytes: number;
-  originalName: string;
+  /** `null` (achado A5 do gate 21/09): falha ISOLADA de KMS ao decifrar ESTE nome — nunca derruba
+   *  a listagem inteira (ver `fetchAttachmentsByMessageIds`). A UI cai num rótulo genérico. */
+  originalName: string | null;
 }
 
 /**
@@ -301,9 +304,27 @@ export class ConversationRepository {
     // (`DECRYPT_CONCURRENCY_LIMIT=10`) é o teto real disponível: bounded concurrency, não batch
     // de API. Custo: 1 chamada KMS por anexo da página (até 5 por mensagem × 50 mensagens/página
     // no pior caso), nunca serial e nunca sem limite.
-    const originalNames = await mapWithConcurrency(rows, DECRYPT_CONCURRENCY_LIMIT, (row) =>
-      this.encryptionService.decrypt(row.originalNameEncrypted),
-    );
+    //
+    // 🔒 Achado A5 do gate (21/09): `mapWithConcurrency`/`Promise.all` rejeita o LOTE INTEIRO se
+    // UMA promessa rejeitar — antes desta sessão, um KMS instável num único anexo (500 do lado do
+    // Google, ciphertext corrompido, etc.) derrubava a listagem inteira da conversa (uma
+    // REGRESSÃO de disponibilidade que não existia quando só o corpo passava por aqui: o corpo
+    // não isolava por linha, mas também não tinha comportamento a piorar). Try/catch POR ITEM:
+    // uma falha vira `null` (a UI cai num rótulo genérico + extensão) e é reportada — SEM o nome,
+    // que é exatamente o dado que nunca chegou a decifrar (nada de PII no log).
+    const originalNames = await mapWithConcurrency(rows, DECRYPT_CONCURRENCY_LIMIT, async (row) => {
+      try {
+        return await this.encryptionService.decrypt(row.originalNameEncrypted);
+      } catch (error) {
+        const err = error instanceof Error ? error : new Error(String(error));
+        reportError(err, {
+          source: 'ConversationRepository:fetchAttachmentsByMessageIds',
+          fileId: row.fileId,
+          messageId: row.messageId,
+        });
+        return null;
+      }
+    });
 
     rows.forEach((row, i) => {
       const entry: AttachmentRow = {

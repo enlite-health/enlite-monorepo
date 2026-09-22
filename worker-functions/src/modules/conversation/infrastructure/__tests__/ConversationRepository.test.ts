@@ -27,6 +27,15 @@ jest.mock('@shared/security/KMSEncryptionService', () => ({
   })),
 }));
 
+/** Achado A5 do gate 21/09: uma falha ISOLADA de KMS ao decifrar `originalName` de UM anexo não
+ *  pode derrubar a listagem inteira — espiado aqui pra provar que `reportError` é chamado sem o
+ *  nome (o nome é justamente o que falhou em decifrar; nunca temos o plaintext pra vazar). */
+const mockReportError = jest.fn();
+jest.mock('@shared/logging', () => ({
+  reportError: mockReportError,
+  logger: { child: jest.fn().mockReturnValue({ info: jest.fn(), warn: jest.fn(), error: jest.fn() }), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
+}));
+
 jest.mock('@shared/async/mapWithConcurrency', () => ({
   mapWithConcurrency: jest.fn((items: unknown[], _limit: number, fn: (item: unknown) => Promise<unknown>) =>
     Promise.all(items.map(fn)),
@@ -346,6 +355,42 @@ describe('ConversationRepository', () => {
       );
       expect(namesCall).toBeDefined();
       expect(namesCall![1]).toBe(10);
+    });
+
+    it('🔒 achado A5 do gate (21/09): falha de KMS ao decifrar UM `originalName` isola SÓ aquele anexo (originalName: null) — não derruba a listagem inteira', async () => {
+      const query = jest
+        .fn()
+        .mockResolvedValueOnce({ rows: [topRow({ id: 'm1' })] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({
+          rows: [
+            { messageId: 'm1', fileId: 'f1', contentType: 'application/pdf', sizeBytes: 1024, originalNameEncrypted: 'enc:doc-ok.pdf' },
+            { messageId: 'm1', fileId: 'f2', contentType: 'image/png', sizeBytes: 2048, originalNameEncrypted: 'enc:falha.png' },
+          ],
+        });
+      // 3 decrypts nesta ordem: 1º o BODY da mensagem (`mapWithConcurrency` do corpo roda antes de
+      // `fetchAttachmentsByMessageIds`), depois f1 (sucesso), depois f2 (a falha isolada de KMS).
+      mockDecrypt
+        .mockImplementationOnce(async (v: string | null) => (v ? `plain:${v}` : ''))
+        .mockImplementationOnce(async (v: string | null) => (v ? `plain:${v}` : ''))
+        .mockImplementationOnce(async () => { throw new Error('Failed to decrypt data'); });
+      const repo = new ConversationRepository(poolWith(query));
+
+      const out = await repo.listTopMessages(CONVERSATION_ID, null, 50);
+
+      // a listagem NÃO rejeita (não derruba a request inteira) — o anexo que falhou vira originalName: null.
+      expect(out.find((m) => m.id === 'm1')?.attachments).toEqual([
+        { fileId: 'f1', contentType: 'application/pdf', sizeBytes: 1024, originalName: 'plain:enc:doc-ok.pdf' },
+        { fileId: 'f2', contentType: 'image/png', sizeBytes: 2048, originalName: null },
+      ]);
+
+      // a falha É reportada — mas SEM o nome (o nome é exatamente o que não temos: nunca decifrou).
+      expect(mockReportError).toHaveBeenCalledTimes(1);
+      const [reportedErr, reportedContext] = mockReportError.mock.calls[0];
+      expect(reportedErr).toBeInstanceOf(Error);
+      expect(reportedContext).toMatchObject({ fileId: 'f2' });
+      expect(JSON.stringify(reportedContext)).not.toContain('falha.png');
+      expect(JSON.stringify(reportedContext)).not.toMatch(/originalName|plain:/);
     });
 
     it('listTopMessages: mensagem sem nenhum anexo devolve attachments: [] (nunca undefined)', async () => {

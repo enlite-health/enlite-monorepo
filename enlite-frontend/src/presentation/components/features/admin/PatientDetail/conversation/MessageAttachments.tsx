@@ -71,6 +71,18 @@ interface ImageAttachmentProps {
 }
 
 /**
+ * Nome exibido do anexo — `originalName` quando decifrou; rótulo genérico + extensão quando NÃO
+ * (achado A5 do gate 21/09: uma falha isolada de KMS ao decifrar ESTE nome não pode virar um
+ * "undefined"/".pdf" sem contexto na tela — o backend já isola a falha por anexo, ver
+ * `ConversationRepository.fetchAttachmentsByMessageIds`). Usado por `ImageAttachment` e `FileChip`.
+ */
+function attachmentDisplayName(attachment: ConversationMessageAttachment, t: (key: string, fallback: string) => string): string {
+  if (attachment.originalName) return attachment.originalName;
+  const generic = t('admin.patients.detail.conversation.thread.attachments.genericName', 'Archivo');
+  return `${generic}${extensionForContentType(attachment.contentType)}`;
+}
+
+/**
  * Miniatura de imagem — carrega a signed URL (mesmo endpoint de download, `GET .../files/:fileId/url`)
  * só quando o card FICA VISÍVEL (`IntersectionObserver`) e usa `<img src={signedUrl}>` DIRETO
  * (achado A1 do gate — ver comentário de topo do arquivo: `fetch→blob` quebra em prd por CORS,
@@ -90,7 +102,7 @@ function ImageAttachment({ patientId, attachment, onDownload }: ImageAttachmentP
   const [src, setSrc] = useState<string | null>(null);
   const [loadError, setLoadError] = useState(false);
   const retriedRef = useRef(false);
-  const name = attachment.originalName || extensionForContentType(attachment.contentType);
+  const name = attachmentDisplayName(attachment, t);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -194,7 +206,7 @@ function FileChip({ attachment, onDownload }: FileChipProps): JSX.Element {
   const { t } = useTranslation();
   const td = (key: string, fallback: string): string => t(`admin.patients.detail.conversation.thread.${key}`, fallback);
   const Icon = iconComponentForContentType(attachment.contentType);
-  const name = attachment.originalName || extensionForContentType(attachment.contentType);
+  const name = attachmentDisplayName(attachment, t);
 
   return (
     <button

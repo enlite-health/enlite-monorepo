@@ -3872,6 +3872,7 @@
             "attachments": {
               "download": "Descargar adjunto",
               "downloadError": "No pudimos descargar el archivo. Probá de nuevo.",
+              "genericName": "Archivo",
               "popupBlocked": "Tu navegador bloqueó la ventana emergente. Habilitá los pop-ups para descargar el archivo."
             }
           },

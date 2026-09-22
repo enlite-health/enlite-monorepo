@@ -8,7 +8,9 @@
  *     produção `enlite-patient-documents` não tem CORS configurado de propósito — `fetch(url)`
  *     cross-origin quebra em prd, mas um `<img>` como subresource NÃO exige CORS);
  *   - erro de rede/expiração no `<img>` (evento `onError`) faz UMA tentativa de renovar a signed
- *     URL antes de desistir e mostrar o estado de erro.
+ *     URL antes de desistir e mostrar o estado de erro;
+ *   - nome do arquivo com `originalName: null` (achado A5 do gate — falha de KMS isolada) cai no
+ *     rótulo genérico "Arquivo" + extensão.
  *
  * `IntersectionObserver` não existe em jsdom — mock mínimo neste arquivo, controlado pelo teste
  * (dispara `isIntersecting` manualmente), documentado aqui em vez de no setup global (raio de
@@ -160,6 +162,17 @@ describe('MessageAttachments', () => {
 
       await waitFor(() => expect(screen.getByTestId('message-attachment-image-file-img')).toBeInTheDocument());
       expect(screen.getByTestId('message-attachment-file-img')).toHaveTextContent('foto-ferida.png');
+    });
+
+    it('originalName null (achado A5 — falha isolada de KMS no backend) cai no rótulo genérico "Arquivo" + extensão', async () => {
+      getConversationAttachmentUrl.mockResolvedValue({ url: 'https://signed.example/img', expiresInSeconds: 300 });
+      const semNome: ConversationMessageAttachment = { ...imageAttachment, originalName: null };
+
+      render(<MessageAttachments patientId="p1" attachments={[semNome]} />);
+      triggerIntersect(true);
+
+      await waitFor(() => expect(screen.getByTestId('message-attachment-image-file-img')).toBeInTheDocument());
+      expect(screen.getByTestId('message-attachment-file-img')).toHaveTextContent('Arquivo.png');
     });
 
     it('erro ao buscar a signed URL (API) não quebra a tela — mostra estado de erro', async () => {
