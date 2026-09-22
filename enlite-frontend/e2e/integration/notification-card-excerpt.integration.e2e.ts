@@ -100,6 +100,41 @@ test.describe('Card de notificação — avatar, paciente, data, trecho (item 2)
     });
   });
 
+  // D1 (achado da revisão visual da Fase 2, 22/09): o painel transbordava a viewport à direita em
+  // 1280×720 — título/data/trecho cortados pela borda física da janela (não por ellipsis CSS).
+  test('D1 — painel do sino cabe inteiro na viewport em 1280×720 e 1024px (nunca transborda)', async ({ page, request }) => {
+    await postAndMention(request, 'msg-d1 trecho de geometria com texto propositalmente longo pra forcar overflow se existir');
+
+    await loginAs(page, B);
+    await page.getByTestId('notification-bell-btn').click();
+    const panel = page.getByTestId('notification-panel');
+    await expect(panel).toHaveClass(/translate-x-0/);
+    await expect(panel.locator('[data-testid^="notification-item-"]').first()).toBeVisible({ timeout: 10_000 });
+
+    for (const width of [1280, 1024]) {
+      await page.setViewportSize({ width, height: 720 });
+      await page.waitForTimeout(200); // deixa o layout refluir após o resize
+
+      const overflow = await page.evaluate(() => {
+        const vw = window.innerWidth;
+        const panelEl = document.querySelector('[data-testid="notification-panel"]');
+        const offenders: Array<{ selector: string; right: number; vw: number }> = [];
+        const check = (el: Element | null, selector: string): void => {
+          if (!el) return;
+          const rect = el.getBoundingClientRect();
+          if (rect.right > vw + 0.5) offenders.push({ selector, right: rect.right, vw });
+        };
+        check(panelEl, 'panel');
+        check(panelEl?.querySelector('[data-testid="notification-mark-all-read"]') ?? null, 'mark-all-read');
+        check(panelEl?.querySelector('[data-testid^="notification-item-"]') ?? null, 'item');
+        check(panelEl?.querySelector('[data-testid^="notification-excerpt-"]') ?? null, 'excerpt');
+        return offenders;
+      });
+
+      expect(overflow, `overflow em ${width}px: ${JSON.stringify(overflow)}`).toEqual([]);
+    }
+  });
+
   test('alternativo 1 — destinatário SEM patient_conversation:read: card sem trecho, sem crash', async ({ page, request }) => {
     revokeCell(groupIdB, 'patient_conversation', 'read');
     try {
