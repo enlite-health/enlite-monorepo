@@ -106,6 +106,27 @@ const COLLISION_PATIENT_ID = `E2E-COLLISION-${RUN_ID}`;
  */
 const ANACARE_STUB_PORT = 9913;
 
+/**
+ * Religa a API (`docker start`) e espera `/health` responder OK, com deadline de 30s.
+ * Extraída para fora do `try/finally` do teste (era `throw` dentro do `finally` — ESLint
+ * `no-unsafe-finally`, essa exceção podia mascarar a que já estava em voo no `try`). Mesma
+ * semântica: religa sempre, e falha ruidosa (`throw`) se a API não voltar saudável a tempo.
+ */
+async function restartApiAndWaitHealthy(): Promise<void> {
+  execFileSync('docker', ['start', 'enlite-api']);
+  const deadline = Date.now() + 30_000;
+  for (;;) {
+    try {
+      const res = await fetch('http://localhost:8080/health');
+      if (res.ok) break;
+    } catch {
+      // ainda subindo — tenta de novo até o deadline.
+    }
+    if (Date.now() > deadline) throw new Error('API não voltou a /health saudável a tempo depois do docker start');
+    await new Promise((r) => setTimeout(r, 300));
+  }
+}
+
 /** Estado mutável do stub — cada teste ajusta ANTES de agir, mesmo precedente de `setDirectoryFailing` no molde `anacare-hours-conclusao-de-corrida`. */
 interface StubScenario {
   /** Contas/reservas que `/admin/accounts/` devolve (a raspagem do diretório real do runner). */
@@ -533,18 +554,7 @@ test.describe('Feedback visual do sync — Horas Ana Care — E2E real @integrat
       // Religa a API — medido nesta sessão: `docker start` + poll de `/health` fica pronto em
       // ~1,5s (migrations são idempotentes, o boot não repete trabalho). Este é o ÚLTIMO teste do
       // arquivo, mas religar deixa o ambiente limpo para o `afterAll`/uma nova rodada da suíte.
-      execFileSync('docker', ['start', 'enlite-api']);
-      const deadline = Date.now() + 30_000;
-      for (;;) {
-        try {
-          const res = await fetch('http://localhost:8080/health');
-          if (res.ok) break;
-        } catch {
-          // ainda subindo — tenta de novo até o deadline.
-        }
-        if (Date.now() > deadline) throw new Error('API não voltou a /health saudável a tempo depois do docker start');
-        await new Promise((r) => setTimeout(r, 300));
-      }
+      await restartApiAndWaitHealthy();
     }
   });
 });
