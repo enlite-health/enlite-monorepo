@@ -59,8 +59,8 @@ describe('MentionPopupList (estilo ClickUp, Rodada 2/R2-F)', () => {
     render(<MentionPopupList items={ITEMS} error={false} command={vi.fn()} />);
     const online = screen.getByTestId('composer-mention-item-u-1').querySelector('[data-testid="presence-dot"]');
     const offline = screen.getByTestId('composer-mention-item-u-2').querySelector('[data-testid="presence-dot"]');
-    expect(online?.className).toMatch(/bg-green-500/);
-    expect(offline?.className).toMatch(/bg-gray-400/);
+    expect(online?.className).toMatch(/bg-green-600/);
+    expect(offline?.className).toMatch(/bg-gray-800/);
   });
 
   it('chama command com {id,label} ao clicar numa linha', () => {

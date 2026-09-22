@@ -157,10 +157,19 @@ export const MentionPopupList = forwardRef<MentionPopupListHandle, MentionPopupL
               data-testid={`composer-mention-item-${item.uid}`}
               onClick={() => selectItem(idx)}
               onMouseEnter={() => setActiveIndex(idx)}
-              className={`w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-gray-100 ${idx === activeIndex ? 'bg-gray-100' : ''}`}
+              // P3 (achado do gate): `bg-gray-100` (#FFF9FC, paleta CUSTOM) sobre o `bg-white` do
+              // popup é quase o MESMO branco — o destaque do item ativo/hover não se enxergava.
+              // `bg-gray-600` (#D9D9D9) é o cinza mais claro desta escala que ainda se distingue
+              // a olho nu contra branco (memória "escala de cinza não é Tailwind": só 600 e 800
+              // são visíveis; 100-500 somem).
+              className={`w-full flex items-center gap-2 text-left px-3 py-1.5 hover:bg-gray-600 ${idx === activeIndex ? 'bg-gray-600' : ''}`}
             >
               <PersonAvatar uid={item.uid} name={item.displayName} size={24} presence={item.isOnline ? 'online' : 'offline'} />
-              <Text as="span" size="sm" className="truncate">{item.displayName}</Text>
+              {/* P3: nome em `color="primary"` (text-primary, #180149, 18.43:1) — antes usava o
+                  default do `Text` (`secondary` → `text-gray-800`, 4.74:1: passa o piso AA por
+                  pouca margem e lê como "apagado" para um NOME, que é a informação principal da
+                  linha). */}
+              <Text as="span" size="sm" color="primary" className="truncate">{item.displayName}</Text>
             </button>
           </li>
         ))}
@@ -175,7 +184,9 @@ export const MentionPopupList = forwardRef<MentionPopupListHandle, MentionPopupL
               onClick={handleShowAll}
               onMouseEnter={() => setActiveIndex(showAllIndex)}
               disabled={allLoading}
-              className={`w-full text-left px-3 py-1.5 hover:bg-gray-100 ${activeIndex === showAllIndex ? 'bg-gray-100' : ''}`}
+              // Mesmo destaque de P3 acima — evita a MESMA linha (idx ativo) ter highlight visível
+              // e esta (showAllIndex ativo) ficar com o bg-gray-100 quase invisível de antes.
+              className={`w-full text-left px-3 py-1.5 hover:bg-gray-600 ${activeIndex === showAllIndex ? 'bg-gray-600' : ''}`}
             >
               <Text as="span" size="sm" weight="medium" color="primary">
                 {allLoading ? t('common.loading') : t('admin.patients.detail.conversation.composer.mentionShowAll')}

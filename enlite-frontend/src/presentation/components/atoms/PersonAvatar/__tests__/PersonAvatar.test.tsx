@@ -26,13 +26,13 @@ describe('PersonAvatar (spec 022, Rodada 2/R2-F — núcleo extraído de Message
   it('presence="online": mostra a bolinha verde', () => {
     render(<PersonAvatar uid="u-1" name="X" presence="online" />);
     const dot = screen.getByTestId('presence-dot');
-    expect(dot.className).toMatch(/bg-green-500/);
+    expect(dot.className).toMatch(/bg-green-600/);
   });
 
   it('presence="offline": mostra a bolinha cinza', () => {
     render(<PersonAvatar uid="u-1" name="X" presence="offline" />);
     const dot = screen.getByTestId('presence-dot');
-    expect(dot.className).toMatch(/bg-gray-400/);
+    expect(dot.className).toMatch(/bg-gray-800/);
   });
 
   it('data-testid customizável (MessageAvatar reusa com "message-avatar")', () => {

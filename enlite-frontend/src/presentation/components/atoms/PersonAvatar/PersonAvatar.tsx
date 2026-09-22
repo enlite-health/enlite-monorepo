@@ -23,6 +23,19 @@ function hashToIndex(input: string, modulo: number): number {
   return hash % modulo;
 }
 
+/**
+ * Fonte das iniciais PROPORCIONAL ao círculo (P1, achado do gate: 2 letras transbordavam no
+ * popup de menção — `size={24}` herdava o `text-xs` (12px) fixo de `size={32}`, a mesma fonte
+ * num círculo 25% menor). 32px é o tamanho histórico (`ThreadView`, via `MessageAvatar` sem
+ * `size`) e SEMPRE resultou em 12px — a razão 0.375 preserva esse valor BIT-A-BIT só em 32px, a
+ * régua "não muda o que já funcionava". `NotificationCard` (28px) e o popup (24px) ganham fonte
+ * proporcionalmente menor (10.5px/9px) — nunca 12px fixo num círculo menor. Arredondado ao meio
+ * pixel mais próximo.
+ */
+function initialsFontSize(size: number): number {
+  return Math.round(size * 0.375 * 2) / 2;
+}
+
 export interface PersonAvatarProps {
   /** Chave do hash de cor — estável por pessoa (nunca o nome, que pode mudar/ficar "?" antes de resolver). */
   uid: string;
@@ -44,8 +57,8 @@ export function PersonAvatar({
     <div
       data-testid={testId}
       aria-hidden="true"
-      style={{ width: size, height: size, minWidth: size }}
-      className={`rounded-full ${bgClass} text-white flex items-center justify-center flex-shrink-0 font-lexend font-semibold text-xs ${className}`}
+      style={{ width: size, height: size, minWidth: size, fontSize: initialsFontSize(size) }}
+      className={`rounded-full ${bgClass} text-white flex items-center justify-center flex-shrink-0 font-lexend font-semibold leading-none ${className}`}
     >
       {getInitials(name)}
     </div>

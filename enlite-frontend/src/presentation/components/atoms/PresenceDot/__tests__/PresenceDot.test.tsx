@@ -6,7 +6,7 @@ describe('PresenceDot (spec 022, Rodada 2/R2-F)', () => {
   it('online: verde + aria-label distinto', () => {
     render(<PresenceDot presence="online" />);
     const dot = screen.getByTestId('presence-dot');
-    expect(dot.className).toMatch(/bg-green-500/);
+    expect(dot.className).toMatch(/bg-green-600/);
     expect(dot).toHaveAttribute('role', 'img');
     expect(dot.getAttribute('aria-label')).toBeTruthy();
   });
@@ -17,7 +17,7 @@ describe('PresenceDot (spec 022, Rodada 2/R2-F)', () => {
     unmount();
     render(<PresenceDot presence="offline" />);
     const dot = screen.getByTestId('presence-dot');
-    expect(dot.className).toMatch(/bg-gray-400/);
+    expect(dot.className).toMatch(/bg-gray-800/);
     expect(dot.getAttribute('aria-label')).not.toBe(onlineLabel);
   });
 });
