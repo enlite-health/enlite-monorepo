@@ -134,8 +134,8 @@ describe('AppSidebar — sino de notificações (item 4, change 022-ux-mencao-e-
     const bell = screen.getByTestId('notification-bell-btn');
     const navItem = screen.getByText('Base Item');
     // `compareDocumentPosition` bit 4 (DOCUMENT_POSITION_FOLLOWING) = navItem vem DEPOIS do sino.
-    // eslint-disable-next-line no-bitwise
-    expect(bell.compareDocumentPosition(navItem) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const position = bell.compareDocumentPosition(navItem);
+    expect(Boolean(position & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
   });
 
   it('recolhida: o sino continua visível (ícone + botão), mesmo sem nenhum navItem visível como texto', () => {
