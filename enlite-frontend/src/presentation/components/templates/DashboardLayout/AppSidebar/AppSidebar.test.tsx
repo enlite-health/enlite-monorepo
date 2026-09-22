@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { AppSidebar, type AppSidebarNavItem } from './AppSidebar';
 
@@ -124,5 +124,48 @@ describe('AppSidebar — sectionStart', () => {
 
       expect(screen.queryByRole('separator')).not.toBeInTheDocument();
     });
+  });
+});
+
+describe('AppSidebar — sino de notificações (item 4, change 022-ux-mencao-e-notificacao)', () => {
+  it('expandida: o sino aparece ANTES de qualquer item de navItems', () => {
+    renderSidebar([ITEM_BASE]);
+
+    const bell = screen.getByTestId('notification-bell-btn');
+    const navItem = screen.getByText('Base Item');
+    // `compareDocumentPosition` bit 4 (DOCUMENT_POSITION_FOLLOWING) = navItem vem DEPOIS do sino.
+    // eslint-disable-next-line no-bitwise
+    expect(bell.compareDocumentPosition(navItem) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it('recolhida: o sino continua visível (ícone + botão), mesmo sem nenhum navItem visível como texto', () => {
+    renderSidebar([ITEM_BASE], { defaultCollapsed: true });
+
+    expect(screen.getByTestId('notification-bell-btn')).toBeInTheDocument();
+  });
+
+  it('recolhida: o sino NUNCA desmonta — antes o poll parava ao recolher (F17); aqui o botão nunca some entre os dois modos', () => {
+    const { rerender } = renderSidebar([ITEM_BASE], { defaultCollapsed: false });
+    expect(screen.getByTestId('notification-bell-btn')).toBeInTheDocument();
+
+    rerender(
+      <MemoryRouter>
+        <AppSidebar navItems={[ITEM_BASE]} userName="Test User" defaultCollapsed />
+      </MemoryRouter>,
+    );
+    // `defaultCollapsed` só afeta o estado INICIAL (o componente tem seu próprio `isCollapsed`
+    // interno) — o que este teste prova é que o mesmo `<button>` (mesmo testid) segue montado,
+    // não que o toggle interno reage a prop; a prova de toggle real é o botão de expandir/recolher.
+    expect(screen.getByTestId('notification-bell-btn')).toBeInTheDocument();
+  });
+
+  it('clicar no toggle de recolher NÃO desmonta o sino (prova real do F17, via o próprio toggle da sidebar)', () => {
+    renderSidebar([ITEM_BASE]);
+    const bellBefore = screen.getByTestId('notification-bell-btn');
+    expect(bellBefore).toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText('Recolher menu'));
+
+    expect(screen.getByTestId('notification-bell-btn')).toBeInTheDocument();
   });
 });

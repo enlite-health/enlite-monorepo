@@ -1,8 +1,13 @@
 /**
  * NotificationBell — sino de notificações (Spec 022, Bloco 4, T409/T410/D-13).
  *
- * Montado em `AppSidebar` (T411), IMEDIATAMENTE ACIMA do bloco do usuário. Badge de
- * `unread-count` via `usePolling` (45s, pausa em aba oculta — D-10).
+ * Item 4 (change 022-ux-mencao-e-notificacao, F17/F18): movido para o 1º item da `AppSidebar`
+ * (antes: imediatamente acima do bloco do usuário) — SEMPRE montado, expandido ou recolhido.
+ * `isCollapsed` troca só a APARÊNCIA (ícone+badge sem rótulo vs. ícone+rótulo+badge); o polling
+ * (`usePolling` abaixo) nunca depende disso — antes, `!isCollapsed && <NotificationBell />` em
+ * `AppSidebar` desmontava o componente inteiro (e o poll junto) ao recolher; agora o componente
+ * nunca desmonta por causa do collapse, só o `AppSidebar` decide QUANDO passar `isCollapsed`.
+ * Badge de `unread-count` via `usePolling` (45s, pausa em aba oculta — D-10).
  *
  * 🔒 Achado do gate revisao-pr (B4, T409): `usePolling` recebe `immediate: true` — sem isto, o
  * badge ficava em 0 pelos primeiros 45s de CADA carga de página (`setInterval` nunca chama a
@@ -26,6 +31,7 @@ import { useTranslation } from 'react-i18next';
 import { usePolling } from '@hooks/usePolling';
 import { AdminNotificationApiService } from '@infrastructure/http/AdminNotificationApiService';
 import { SlideOverPanel } from '@presentation/components/molecules/SlideOverPanel/SlideOverPanel';
+import { Text } from '@presentation/components/atoms/Text';
 import { NotificationPanel } from './NotificationPanel';
 
 /**
@@ -34,10 +40,18 @@ import { NotificationPanel } from './NotificationPanel';
  */
 const POLL_MS = Number((import.meta as any).env?.VITE_NOTIFICATION_POLL_MS) || 45000;
 
-export function NotificationBell(): JSX.Element {
+export interface NotificationBellProps {
+  /** Item 4: `true` = sidebar recolhida — variante compacta (ícone + badge, sem o rótulo de
+   * texto), mas com `title` (tooltip nativo) mostrando o mesmo rótulo. Default `false`
+   * (variante expandida: ícone + rótulo + badge, como qualquer item da sidebar). */
+  isCollapsed?: boolean;
+}
+
+export function NotificationBell({ isCollapsed = false }: NotificationBellProps): JSX.Element {
   const { t } = useTranslation();
   const [unreadCount, setUnreadCount] = useState(0);
   const [isPanelOpen, setIsPanelOpen] = useState(false);
+  const label = t('admin.notifications.bellLabel');
 
   const refreshCount = useCallback(async () => {
     try {
@@ -54,23 +68,35 @@ export function NotificationBell(): JSX.Element {
   const handleClose = (): void => setIsPanelOpen(false);
 
   return (
-    <div className="border-t border-gray-200 px-3 py-2">
+    <div className="border-b border-gray-100">
       <button
         type="button"
         data-testid="notification-bell-btn"
-        aria-label={t('admin.notifications.bellLabel')}
+        aria-label={label}
+        title={isCollapsed ? label : undefined}
         onClick={handleOpen}
-        className="relative flex items-center gap-2 w-full px-2 py-2 rounded-md hover:bg-gray-100 transition-colors"
+        className={
+          isCollapsed
+            ? 'relative flex w-full items-center justify-center py-3 hover:bg-gray-50 transition-colors'
+            : 'relative flex w-full items-center gap-3 px-4 py-2.5 hover:bg-gray-50 transition-colors'
+        }
       >
-        <Bell className="w-5 h-5 text-gray-600" />
-        {unreadCount > 0 && (
-          <span
-            data-testid="notification-bell-badge"
-            aria-label={t('admin.notifications.unread', { count: unreadCount })}
-            className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 absolute top-1 left-6"
-          >
-            <span className="text-white text-[10px] font-semibold leading-none">{unreadCount}</span>
-          </span>
+        <span className="relative inline-flex w-5 h-5 flex-shrink-0">
+          <Bell className="w-5 h-5 text-gray-600" />
+          {unreadCount > 0 && (
+            <span
+              data-testid="notification-bell-badge"
+              aria-label={t('admin.notifications.unread', { count: unreadCount })}
+              className="inline-flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-red-600 absolute -top-1.5 -right-1.5"
+            >
+              <span className="text-white text-[10px] font-semibold leading-none">{unreadCount}</span>
+            </span>
+          )}
+        </span>
+        {!isCollapsed && (
+          <Text as="span" size="sm" weight="medium" className="flex-1 text-left" color="inherit">
+            {label}
+          </Text>
         )}
       </button>
       <SlideOverPanel

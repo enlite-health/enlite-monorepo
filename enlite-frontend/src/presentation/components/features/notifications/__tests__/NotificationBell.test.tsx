@@ -88,6 +88,32 @@ describe('NotificationBell (spec 022, T409/T410)', () => {
     expect(panel.className).toContain('translate-x-0');
   });
 
+  describe('item 4 (change 022-ux-mencao-e-notificacao) — variante collapsed', () => {
+    const LABEL_KEY = 'admin.notifications.bellLabel'; // t() cru neste arquivo (sem i18n real)
+
+    it('expandida (default): mostra o rótulo de texto ao lado do ícone', () => {
+      render(<MemoryRouter><NotificationBell /></MemoryRouter>);
+      expect(screen.getByText(LABEL_KEY)).toBeInTheDocument();
+    });
+
+    it('collapsed: NÃO mostra o rótulo de texto, mas o botão (ícone) continua acessível com title/aria-label', () => {
+      render(<MemoryRouter><NotificationBell isCollapsed /></MemoryRouter>);
+      expect(screen.queryByText(LABEL_KEY)).not.toBeInTheDocument();
+      const btn = screen.getByTestId('notification-bell-btn');
+      expect(btn).toHaveAttribute('aria-label', LABEL_KEY);
+      expect(btn).toHaveAttribute('title', LABEL_KEY);
+    });
+
+    it('collapsed: badge de contagem continua funcionando (poll não depende do modo visual)', async () => {
+      vi.mocked(AdminNotificationApiService.getUnreadCount).mockResolvedValue(5);
+      render(<MemoryRouter><NotificationBell isCollapsed /></MemoryRouter>);
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+
+      expect(screen.getByTestId('notification-bell-badge')).toHaveTextContent('5');
+    });
+  });
+
   it('falha silenciosa no poll: não quebra, badge continua ausente', async () => {
     vi.mocked(AdminNotificationApiService.getUnreadCount).mockRejectedValue(new Error('network'));
     render(<MemoryRouter><NotificationBell /></MemoryRouter>);
