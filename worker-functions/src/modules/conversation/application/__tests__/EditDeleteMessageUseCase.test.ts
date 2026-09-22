@@ -69,10 +69,15 @@ function deletedMessageHandler(messageId: string, authorUid: string): Handler {
       : undefined;
 }
 
-/** Handler comum: responde às replies existentes de um root — usado para provar "sem cascata". */
+/**
+ * Handler comum: responde às replies existentes de um root — usado para provar "sem cascata".
+ * `WHERE conversation_messages.root_message_id = $1` (item 5a, achado 42702): o `LEFT JOIN users`
+ * tornou `created_at`/`root_message_id` sem prefixo ambíguos contra a coluna homônima de `users`
+ * — a query qualificou a tabela, então o substring do teste também precisa.
+ */
 function repliesHandler(rootMessageId: string, replyIds: string[]): Handler {
   return (sql, params) =>
-    sql.includes('FROM conversation_messages') && sql.includes('WHERE root_message_id = $1') && params[0] === rootMessageId
+    sql.includes('FROM conversation_messages') && sql.includes('WHERE conversation_messages.root_message_id = $1') && params[0] === rootMessageId
       ? { rows: replyIds.map((id) => ({ id, bodyEncrypted: `enc:${id}-body` })) }
       : undefined;
 }
