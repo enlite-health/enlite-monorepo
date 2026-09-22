@@ -299,6 +299,18 @@ export interface TriggerSyncResult {
   shiftsWritten: number;
   nextCursor: number | null;
   runStartedAt: string;
+  /**
+   * change `anacare-horas-feedback-visual-sync` (F2) — `AnaCareHoursSyncController.trigger` já
+   * devolve estes dois campos no corpo do `POST /sync` (`AnaCareHoursSyncController.ts:156,170`,
+   * comentário "expostos para o navegador poder mostrar progresso"); até aqui o cliente não os
+   * tipava nem os lia. `reservationsTotal`/`reservationsDone` são o TOTAL/ACUMULADO da CORRIDA
+   * inteira (não o delta desta rodada, que é `reservationsProcessed`) — cada rodada devolve o
+   * índice absoluto já percorrido, somando rodadas anteriores retomadas por cursor
+   * (`AnaCareHoursSyncRunner.reservationsDone`, ver comentário lá). `useAnaCareHoursSync.ts`
+   * SOBRESCREVE (nunca soma) esses dois valores a cada rodada.
+   */
+  reservationsTotal: number;
+  reservationsDone: number;
   shiftsSkippedNoProvider: number;
   shiftsSkippedNoPatient: number;
 }

@@ -781,7 +781,8 @@
           "NOTA_MUITO_LONGA": "A nota ultrapassa o limite de caracteres permitido.",
           "FONTE_NAO_CONFIGURADA": "A fonte de dados do Ana Care não está configurada. Contate o time técnico.",
           "TURNO_NAO_ENCONTRADO": "O turno não foi encontrado.",
-          "DESCONHECIDO": "Ocorreu um erro inesperado."
+          "DESCONHECIDO": "Ocorreu um erro inesperado.",
+          "NETWORK_ERROR": "Não foi possível conectar ao servidor. Tente sincronizar novamente em alguns segundos."
         }
       },
       "origin": {
@@ -864,7 +865,9 @@
         "button": "Sincronizar",
         "resumeButton": "Retomar sincronização",
         "resumeHint": "Há uma sincronização interrompida — será retomada de onde parou.",
+        "runningLabel": "Sincronizando…",
         "progress": "Rodada {{round}} · {{count}} reservas processadas",
+        "progressCount": "{{done}} de {{total}} reservas",
         "done": "Sincronização completa.",
         "deduped": "Já existe uma sincronização em andamento — não iniciamos outra.",
         "interrupted": "A sincronização de {{month}} foi interrompida ao trocar de mês — pode ser retomada."

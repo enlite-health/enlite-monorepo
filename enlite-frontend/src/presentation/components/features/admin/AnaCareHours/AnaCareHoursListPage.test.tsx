@@ -304,6 +304,8 @@ describe('AnaCareHoursListPage', () => {
       status: 'running',
       round: 2,
       reservationsProcessed: 74,
+      reservationsTotal: null,
+      reservationsDone: null,
       error: null,
       resumableCursor: 50,
       interruptedMonth: null,
