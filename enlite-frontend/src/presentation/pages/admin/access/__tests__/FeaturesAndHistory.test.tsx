@@ -126,7 +126,7 @@ describe('PermissionHistoryPage', () => {
     await screen.findAllByText('Ana Gestora');
     const cabecalhos = screen.getAllByRole('columnheader').map((th) => th.textContent);
     expect(cabecalhos).toEqual([
-      'admin.access.history.type',
+      'admin.access.history.typeCol',
       'admin.access.history.when',
       'admin.access.history.who',
       'admin.access.history.groupCol',
