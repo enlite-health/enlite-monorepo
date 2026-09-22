@@ -11,29 +11,48 @@
  *      cru nem identificador de paciente
  *   4. "Actualizar" do detalhe mostra spinner + disabled mesmo com snapshot já carregado
  *
- * Molde/stack: `anacare-hours-conclusao-de-corrida.integration.e2e.ts` (login humano, helpers de
- * Postgres, stub local do Ana Care). MESMO stack local:
+ * RODADA 2 (gate `revisao-pr`, achado do skill): `grep -n "page.route" e2e/integration/` tem de
+ * voltar VAZIO — mock de DADO dentro de e2e bloqueia em qualquer modo. A retomada 1 usava
+ * `page.route` pra fabricar o corpo/erro do `POST /sync` e pra atrasar o GET do detalhe. Esta
+ * versão substitui os 4 casos por caminho REAL — NENHUMA exceção nomeada foi necessária:
  *
- *   API      http://localhost:8080  (ANACARE_HOURS_SOURCE=real, ANACARE_BASE_URL apontando pro
- *            stub local desta porta — ver `docker-compose.anacare-hours-real-stub-local.yml`)
- *   Postgres postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e
- *   Vite     http://localhost:5173
+ *   - Requisitos 1+2 (contagem + rótulo): corrida REAL contra o `AnaCareHoursSyncRunner` de
+ *     verdade, com o stub local do Ana Care (porta 9913) respondendo `/admin/accounts/` com 4
+ *     contas e atrasando cada `/api/shifts/?reservation_id=...` em 12s — o orçamento de 30s da
+ *     rodada (`SYNC_ROUND_BUDGET_MS`, `useAnaCareHoursSync.ts`, produção, INTOCADO) corta
+ *     sozinho depois da 3ª conta, gerando um `nextCursor` real e uma 2ª rodada real. Nenhum byte
+ *     da resposta do `POST /sync` é fabricado — `reservationsTotal`/`reservationsDone` vêm do
+ *     runner de verdade.
+ *   - Requisito 3b (409 sem vazar id): provoca a colisão REAL
+ *     (`AnaCarePatientMonthCollisionError`, `AnaCarePatientMonthRepository.ts:259`) — 2 contas no
+ *     diretório do stub cujos turnos apontam para o MESMO `patient.id`; a 2ª reserva processada
+ *     na MESMA corrida encontra a linha que a 1ª acabou de gravar (`fetched_at >= runStartedAt`)
+ *     e o repositório reCUSA com 409 de verdade (`AnaCareHoursSyncController.ts:206-210`).
+ *   - Requisito 4 (spinner do "Actualizar"): o atraso mora DENTRO do stub do Ana Care (porta
+ *     9913, `scenario.detailDelayMs`, só a partir da 2ª chamada) — o request do browser é 100%
+ *     real (`fetch` de verdade pro backend, que chama o stub de verdade), só a RESPOSTA do stub
+ *     demora. Nenhum `page.route` no caminho.
+ *   - Requisito 3a (erro de rede): medido nesta sessão que `docker stop enlite-api` derruba a
+ *     porta 8080 de verdade em ~0,5s (o `fetch` do browser bate em `ECONNREFUSED` real, produzindo
+ *     `TypeError: Failed to fetch` de verdade — não simulado) e `docker start` + poll de `/health`
+ *     volta em ~1,5s (migrations idempotentes, boot não repete trabalho) — religado no `finally`
+ *     do próprio teste. Nenhuma exceção nomeada precisou ser pedida: o caminho real existia e é
+ *     barato.
  *
- * Comando de stack usado nesta sessão (worker-functions/):
+ * `page.route` continua usado SÓ dentro de `loginAs` (linhas ~279-298) — o MESMO padrão de MOCK
+ * DE IDENTIDADE (Firebase/authz) que todo `@integration` spec deste diretório usa, inclusive o
+ * molde `anacare-hours-conclusao-de-corrida...ts` (controle: `grep -c "page.route"` nos dois
+ * arquivos dá 4 em ambos) — não é mock de DADO da aplicação, é o mecanismo de login humano local.
+ *
+ * Stack local (mesmo comando desde a retomada 1, projeto `-p anacare-feedback`):
  *   docker compose -p anacare-feedback -f docker-compose.yml -f docker-compose.test.yml \
  *     -f docker-compose.anacare-hours.yml -f docker-compose.anacare-hours-min-absolute.yml \
  *     -f docker-compose.anacare-hours-real-stub-local.yml up -d --build postgres api
- *   (+ seed de iam.rollout_state.permission_groups_migrated='done' e restart do container `api`
- *   — PERMISSION_ENGINE_ENABLED=true exige a migração de dados de grupos marcada.)
+ *   (+ seed de iam.rollout_state.permission_groups_migrated='done' e restart do container `api`)
  *
- * DIFERENÇA DELIBERADA do molde: os requisitos 1/2/3 não dependem de uma corrida REAL de várias
- * rodadas (o orçamento por rodada do hook é 30s — forçar um corte de orçamento de verdade tornaria
- * o teste lento/frágil). Em vez disso, uso `page.route` para interceptar SÓ o `POST .../sync` e
- * controlar o CONTEÚDO e a LATÊNCIA da resposta — autorizado explicitamente pelo brief da task
- * ("page.route é permitido para simular erro de rede/409 e para atrasar respostas"). O resto do
- * fluxo (app real, Vite real, DOM real, clique real) não é mockado. O requisito 4 usa o backend
- * REAL (sem interceptar o corpo) e só ATRASA a resposta via `route.continue()` depois de um
- * `setTimeout` — a latência é controlada, o dado é real.
+ *   API      http://localhost:8080  (ANACARE_HOURS_SOURCE=real, ANACARE_BASE_URL → stub :9913)
+ *   Postgres postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e
+ *   Vite     http://localhost:5173
  */
 import { execFileSync } from 'child_process';
 import * as http from 'http';
@@ -60,24 +79,97 @@ const MONTH_CURRENT = currentMonthIsoForE2E();
 
 const PATIENT_ID = `E2E-FEEDBACK-PATIENT-${RUN_ID}`;
 
-/** Porta do stub local do Ana Care — MESMA porta que o container `api` desta sessão tem configurada
- * em `ANACARE_BASE_URL` (`docker-compose.anacare-hours-real-stub-local.yml`, fixo em 9913, mesmo
- * precedente de 9911/Periskope e 9912/Axonico). Só o suficiente para `getPatientMonth` (requisito
- * 4) resolver: login por cookie + `/api/shifts/`. Nenhuma rota de diretório — esta spec nunca
- * clica em "Sincronizar" contra o backend de verdade (requisitos 1/2/3 interceptam o POST /sync
- * via `page.route`, nunca chegam ao runner real).
+// `AnaCareEnliteDirectory.ACCOUNT_ID_RE` (`/\/accounts\/(\d+)\//g`) só casa DÍGITOS — o `RUN_ID`
+// completo (usado no resto do arquivo pra unicidade humana/DB) tem letras (base36), então as
+// contas/reservas precisam de uma tag NUMÉRICA própria (medido: com letras, a raspagem lê "zero
+// contas" e o backend responde erro em 36ms — a tela ficava presa em "Ronda 0 · 0" porque o teste
+// esperava por um estado de progresso que nunca ia existir, não porque o request travou).
+const RUN_ID_NUMERIC = String(Date.now()).slice(-7);
+
+// Requisitos 1+2: 4 contas/reservas distintas, cada uma com paciente PRÓPRIO (sem colisão) — o
+// orçamento de 30s do hook (produção, intocado) corta depois de ~3 contas com 12s de atraso cada.
+const SYNC_RESERVATIONS = ['1', '2', '3', '4'].map((n) => `9${RUN_ID_NUMERIC}${n}`);
+const SYNC_RESERVATION_DELAY_MS = 12_000;
+function syncPatientFor(reservationId: string): string {
+  return `E2E-SYNC-${RUN_ID}-${reservationId}`;
+}
+
+// Requisito 3b: 2 contas/reservas DISTINTAS que apontam para o MESMO paciente — a 2ª escrita
+// nesta MESMA corrida colide de verdade com a 1ª (`fetched_at >= runStartedAt`).
+const COLLISION_RESERVATIONS = ['1', '2'].map((n) => `8${RUN_ID_NUMERIC}${n}`);
+const COLLISION_PATIENT_ID = `E2E-COLLISION-${RUN_ID}`;
+
+/**
+ * Porta do stub local do Ana Care — MESMA porta que o container `api` desta sessão tem
+ * configurada em `ANACARE_BASE_URL` (`docker-compose.anacare-hours-real-stub-local.yml`, fixo em
+ * 9913, mesmo precedente de 9911/Periskope e 9912/Axonico).
  */
 const ANACARE_STUB_PORT = 9913;
 
+/** Estado mutável do stub — cada teste ajusta ANTES de agir, mesmo precedente de `setDirectoryFailing` no molde `anacare-hours-conclusao-de-corrida`. */
+interface StubScenario {
+  /** Contas/reservas que `/admin/accounts/` devolve (a raspagem do diretório real do runner). */
+  accounts: string[];
+  /** Atraso (ms) de CADA resposta a `/api/shifts/?reservation_id=...` — é isto que força o corte de orçamento real (requisito 1+2). */
+  reservationDelayMs: number;
+  /** `patient.id` que o turno devolve para cada `reservation_id` — 2 reservas podem apontar pro MESMO paciente (requisito 3b, colisão real). */
+  patientIdByReservation: Map<string, string>;
+  /** Atraso (ms) da 2ª chamada em diante a `/api/shifts/?patient=...` (caminho do DETALHE, requisito 4) — a 1ª carga nunca é atrasada. */
+  detailDelayMs: number;
+}
+const scenario: StubScenario = {
+  accounts: [],
+  reservationDelayMs: 0,
+  patientIdByReservation: new Map(),
+  detailDelayMs: 0,
+};
+let detailCallCount = 0;
+
 interface AnaCareStub {
   server: http.Server;
+  requestsLog: string[];
   close: () => Promise<void>;
 }
 
+function delay(ms: number): Promise<void> {
+  return ms > 0 ? new Promise((r) => setTimeout(r, ms)) : Promise.resolve();
+}
+
+function shiftPayload(shiftId: string, patientId: string): unknown {
+  const start = `${MONTH_CURRENT}-01T13:00:00-06:00`;
+  const end = `${MONTH_CURRENT}-01T17:00:00-06:00`;
+  return {
+    id: shiftId,
+    start,
+    end,
+    checkin: start,
+    checkout: end,
+    checkin_source: 'web_admin',
+    checkout_source: 'web_admin',
+    checkin_delay: null,
+    duration: 4,
+    is_finalized: true,
+    month: MONTH_CURRENT,
+    patient: { id: patientId, agency: 116, identification_type: null, identification_number: null, first_name: 'E2E', last_name: 'Feedback', surname: 'Feedback' },
+    nurse: { id: 'E2E-STUB-NURSE-1', agency: 116, first_name: 'Enfermera', last_name: 'Stub', surname: 'Stub' },
+  };
+}
+
+/**
+ * Stub HTTP local do Ana Care (login por cookie Django + `/admin/accounts/` + `/api/shifts/`) —
+ * MESMO precedente de `startAnaCareStub` no molde `anacare-hours-conclusao-de-corrida...ts`
+ * (login + diretório + turnos), reduzido ao que os 3 casos reais desta spec precisam. Todo
+ * conteúdo (contas, atraso, mapeamento paciente) vem de `scenario` — cada teste ajusta ANTES de
+ * agir; nada aqui fabrica um número que a TELA lê (os números lidos vêm do runner de verdade,
+ * processando o que este stub devolve).
+ */
 function startAnaCareStub(port: number): Promise<AnaCareStub> {
+  const requestsLog: string[] = [];
   return new Promise((resolve) => {
     const server = http.createServer((req, res) => {
       const url = new URL(req.url ?? '/', 'http://stub');
+      requestsLog.push(`${req.method} ${url.pathname}${url.search}`);
+
       if (req.method === 'GET' && url.pathname === '/users/admin/login/') {
         res.writeHead(200, { 'Content-Type': 'text/html', 'Set-Cookie': 'csrftoken=e2e-stub-csrf' });
         res.end('<html></html>');
@@ -91,34 +183,48 @@ function startAnaCareStub(port: number): Promise<AnaCareStub> {
         });
         return;
       }
-      if (req.method === 'GET' && url.pathname === '/api/shifts/') {
-        const patientId = url.searchParams.get('patient') ?? 'E2E-STUB-SEM-PATIENT-ID';
-        const minDate = url.searchParams.get('min_date') ?? `${MONTH_CURRENT}-01`;
-        const start = `${minDate}T13:00:00-06:00`;
-        const end = `${minDate}T17:00:00-06:00`;
-        const raw = {
-          id: `E2E-STUB-SHIFT-${patientId}`,
-          start,
-          end,
-          checkin: start,
-          checkout: end,
-          checkin_source: 'web_admin',
-          checkout_source: 'web_admin',
-          checkin_delay: null,
-          duration: 4,
-          is_finalized: true,
-          month: minDate.slice(0, 7),
-          patient: { id: patientId, agency: 116, identification_type: null, identification_number: null, first_name: 'E2E', last_name: 'Feedback', surname: 'Feedback' },
-          nurse: { id: 'E2E-STUB-NURSE-1', agency: 116, first_name: 'Enfermera', last_name: 'Stub', surname: 'Stub' },
-        };
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ count: 1, next: null, previous: null, results: [raw] }));
+      if (req.method === 'GET' && url.pathname === '/admin/accounts/') {
+        const links = scenario.accounts.map((id) => `<a href="/accounts/${id}/">Cuenta ${id}</a>`).join('');
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end(`<html><body>${links}</body></html>`);
         return;
       }
+      if (req.method === 'GET' && url.pathname === '/admin/accounts/terminated_services') {
+        // 404 de propósito — `AnaCareEnliteDirectory.fetch()` trata isso como `partial:true` e
+        // segue só com os ATIVOS (mesmo comportamento do molde `conclusao-de-corrida`).
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('stub: terminados nao implementado');
+        return;
+      }
+      if (req.method === 'GET' && url.pathname === '/api/shifts/') {
+        const reservationId = url.searchParams.get('reservation_id');
+        const patientParam = url.searchParams.get('patient');
+
+        if (reservationId) {
+          const patientId = scenario.patientIdByReservation.get(reservationId) ?? `E2E-PATIENT-${reservationId}`;
+          delay(scenario.reservationDelayMs).then(() => {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ count: 1, next: null, previous: null, results: [shiftPayload(`E2E-STUB-SHIFT-${reservationId}`, patientId)] }));
+          });
+          return;
+        }
+
+        // Caminho do DETALHE (requisito 4) — `patient=<id>`, sem `reservation_id`. Atraso só a
+        // partir da 2ª chamada (o refetch do "Actualizar"); a 1ª carga nunca espera.
+        detailCallCount += 1;
+        const thisDelay = detailCallCount > 1 ? scenario.detailDelayMs : 0;
+        const pid = patientParam ?? 'E2E-STUB-SEM-PATIENT-ID';
+        delay(thisDelay).then(() => {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ count: 1, next: null, previous: null, results: [shiftPayload(`E2E-STUB-SHIFT-${pid}`, pid)] }));
+        });
+        return;
+      }
+
       res.writeHead(404, { 'Content-Type': 'text/plain' });
       res.end('stub: rota nao implementada');
     });
-    server.listen(port, '0.0.0.0', () => resolve({ server, close: () => new Promise<void>((r) => server.close(() => r())) }));
+    server.listen(port, '0.0.0.0', () => resolve({ server, requestsLog, close: () => new Promise<void>((r) => server.close(() => r())) }));
   });
 }
 
@@ -227,23 +333,6 @@ async function abrirPeloMenu(page: Page): Promise<void> {
   await expect(page.getByRole('heading', { name: 'Horas Ana Care' })).toBeVisible({ timeout: 15_000 });
 }
 
-function syncResultBody(overrides: Record<string, unknown> = {}): Record<string, unknown> {
-  return {
-    success: true,
-    deduped: false,
-    shiftsRead: 0,
-    reservationsProcessed: 0,
-    shiftsWritten: 0,
-    nextCursor: null,
-    runStartedAt: new Date().toISOString(),
-    reservationsTotal: 0,
-    reservationsDone: 0,
-    shiftsSkippedNoProvider: 0,
-    shiftsSkippedNoPatient: 0,
-    ...overrides,
-  };
-}
-
 test.describe('Feedback visual do sync — Horas Ana Care — E2E real @integration', () => {
   test.describe.configure({ mode: 'serial' });
   test.setTimeout(60_000);
@@ -263,6 +352,13 @@ test.describe('Feedback visual do sync — Horas Ana Care — E2E real @integrat
 
     ensurePatientMonthRow(PATIENT_ID, MONTH_CURRENT);
 
+    // Reset da linha-base do alarme de queda do diretório (`anacare_directory_snapshot`, migration
+    // 439) — esta spec roda VÁRIAS corridas reais com contagens DIFERENTES (4 contas depois 2),
+    // e o piso relativo (80% da última contagem conhecida) rejeitaria a 2ª se não resetasse.
+    // Container/Postgres desta worktree são ISOLADOS (projeto docker `-p anacare-feedback`) —
+    // este DELETE não afeta nenhum outro stack.
+    safeSql('DELETE FROM anacare_directory_snapshot');
+
     anaCareStub = await startAnaCareStub(ANACARE_STUB_PORT);
   });
 
@@ -274,72 +370,73 @@ test.describe('Feedback visual do sync — Horas Ana Care — E2E real @integrat
     safeSql(`DELETE FROM iam.permission_groups WHERE name = '${GRUPO}'`);
     safeSql(`DELETE FROM users WHERE firebase_uid = '${UID}'`);
     safeSql(`DELETE FROM anacare_patient_month WHERE ana_care_patient_id = '${PATIENT_ID}'`);
+    for (const r of SYNC_RESERVATIONS) safeSql(`DELETE FROM anacare_patient_month WHERE ana_care_patient_id = '${syncPatientFor(r)}'`);
+    safeSql(`DELETE FROM anacare_patient_month WHERE ana_care_patient_id = '${COLLISION_PATIENT_ID}'`);
+    safeSql(`DELETE FROM anacare_patient_month_provider WHERE ana_care_patient_id IN ('${PATIENT_ID}', '${COLLISION_PATIENT_ID}')`);
+    for (const r of SYNC_RESERVATIONS) safeSql(`DELETE FROM anacare_patient_month_provider WHERE ana_care_patient_id = '${syncPatientFor(r)}'`);
+    // `anacare_sync_run`/`anacare_directory_snapshot` deixados de propósito (mesmo motivo do
+    // molde `conclusao-de-corrida`: são estado de infraestrutura, não dado de teste por RUN_ID).
     if (anaCareStub) {
+      console.log(`[anacare-stub] rotas batidas nesta corrida: ${JSON.stringify(anaCareStub.requestsLog)}`);
       await anaCareStub.close();
       anaCareStub = null;
     }
   });
 
-  test('REQUISITOS 1+2 — durante a corrida a tela mostra "X de Y reservas" crescente, e o botão nunca vira só "Cargando…"', async ({ page }) => {
+  test('REQUISITOS 1+2 — corrida REAL de várias rodadas: a tela mostra "X de Y reservas" (real) crescente, e o botão nunca vira só "Cargando…"', async ({ page }) => {
+    test.setTimeout(120_000);
+    scenario.accounts = SYNC_RESERVATIONS;
+    scenario.reservationDelayMs = SYNC_RESERVATION_DELAY_MS;
+    scenario.patientIdByReservation = new Map(SYNC_RESERVATIONS.map((r) => [r, syncPatientFor(r)]));
+
     await loginAs(page, USER);
-
-    // Registrado DEPOIS de `loginAs` de propósito: `loginAs` já registra `page.route('**/api/**',
-    // swap)`, que faz `route.continue()` (vai DIRETO pra rede, nunca cai num handler registrado
-    // ANTES dele — regra do Playwright: quando duas rotas casam a MESMA request, quem foi
-    // registrado por ÚLTIMO roda primeiro; `continue()` segue pra rede, só `fallback()` passaria
-    // pro handler anterior). Registrar esta rota ESPECÍFICA depois garante que ELA é a que roda
-    // primeiro para o POST de sync — medido: sem este reordenamento, o clique batia direto no
-    // backend real e o progresso nunca saía de "Ronda 0 · 0 reservas procesadas".
-    let syncCall = 0;
-    await page.route('**/anacare-hours/sync', async (route) => {
-      syncCall += 1;
-      const body =
-        syncCall === 1
-          ? syncResultBody({ reservationsProcessed: 120, nextCursor: 120, reservationsTotal: 285, reservationsDone: 120 })
-          : syncResultBody({ reservationsProcessed: 165, nextCursor: null, reservationsTotal: 285, reservationsDone: 285 });
-      // Latência CONTROLADA (autorizada pelo brief) — dá tempo de ler o DOM em cada estado
-      // intermediário, sem depender de um corte de orçamento real (30s) do runner de verdade.
-      await new Promise((r) => setTimeout(r, 600));
-      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
-    });
-
     await abrirPeloMenu(page);
 
     const botaoSync = page.getByTestId('anacare-hours-sync-button');
     await expect(botaoSync).toBeVisible({ timeout: 15_000 });
     await botaoSync.click();
 
-    // Requisito 2 — enquanto a rodada 1 está em voo, o botão já está desabilitado e o texto
-    // renderizado NUNCA é só o genérico de loading (`common.loading` = "Cargando..."). Lido do DOM,
-    // não do código.
+    // Requisito 2 — enquanto a rodada 1 está em voo (real, ~36s: 3 contas × 12s até o orçamento de
+    // 30s cortar), o botão já está desabilitado e o texto renderizado NUNCA é só o genérico de
+    // loading (`common.loading` = "Cargando..."). Lido do DOM, não do código.
     await expect(botaoSync).toBeDisabled();
     const textoEmVoo = (await botaoSync.textContent())?.trim() ?? '';
     expect(textoEmVoo).not.toBe('Cargando...');
     expect(textoEmVoo.toLowerCase()).not.toContain('cargando');
     expect(textoEmVoo).toBe('Sincronizando…');
 
-    // Requisito 1 — rodada 1 resolveu: contagem "120 de 285 reservas" no DOM (não "Ronda N · X
-    // reservas procesadas", que é o texto ANTIGO sem o total).
+    // Requisito 1 — rodada 1 REAL corta por orçamento de tempo (30s, produção, intocado) depois de
+    // processar 3 das 4 contas (12s cada) — `reservationsDone=3`/`reservationsTotal=4` vêm do
+    // `AnaCareHoursSyncRunner` de verdade, não fabricados. Timeout generoso (a rodada em si já
+    // consome ~36s reais).
     const progresso = page.getByTestId('anacare-hours-sync-progress');
-    await expect(progresso).toHaveText(/120 de 285 reservas/, { timeout: 5_000 });
+    await expect(progresso).toHaveText(/3 de 4 reservas/, { timeout: 55_000 });
 
-    // Requisito 1 (cresce, nunca diminui) — rodada 2 resolveu: "285 de 285", depois status done.
-    await expect(page.getByTestId('anacare-hours-sync-done')).toBeVisible({ timeout: 5_000 });
-    expect(syncCall).toBe(2);
+    // Rodada 2 REAL processa a 4ª conta restante (mais ~12s) e termina a corrida.
+    await expect(page.getByTestId('anacare-hours-sync-done')).toBeVisible({ timeout: 25_000 });
+
+    // Prova adicional, direto do Postgres (o que o CONTROLLER real gravou, não o que o teste supôs):
+    const [status, total, done] = psql(
+      `SELECT status || '|' || reservations_total || '|' || reservations_done
+         FROM anacare_sync_run WHERE source='anacare' AND period_month='${MONTH_CURRENT}-01'::date`,
+    )
+      .trim()
+      .split('|');
+    expect(status).toBe('done');
+    expect(total).toBe('4');
+    expect(done).toBe('4');
   });
 
-  test('REQUISITO 3a — erro de REDE real (fetch falhando) mostra mensagem em espanhol legível, NUNCA "Failed to fetch"/stack técnico', async ({ page }) => {
+  test('REQUISITO 3b — 409 de colisão REAL (AnaCarePatientMonthCollisionError) não vaza identificador de paciente para a tela', async ({ page }) => {
+    // Reset do piso do diretório: a corrida anterior deixou lastKnown=4; esta usa só 2 contas — sem
+    // resetar, o piso relativo (80% de 4 = 3) rejeitaria por "queda", mascarando a colisão que
+    // queremos provar.
+    safeSql('DELETE FROM anacare_directory_snapshot');
+    scenario.accounts = COLLISION_RESERVATIONS;
+    scenario.reservationDelayMs = 0; // rápido — as 2 reservas cabem na mesma rodada, é isso que faz a colisão acontecer NESTA corrida.
+    scenario.patientIdByReservation = new Map(COLLISION_RESERVATIONS.map((r) => [r, COLLISION_PATIENT_ID])); // MESMO paciente nas 2 reservas — a 2ª escrita colide de verdade com a 1ª.
+
     await loginAs(page, USER);
-
-    // Registrado DEPOIS de `loginAs` — mesmo motivo do teste anterior (precedência do Playwright).
-    await page.route('**/anacare-hours/sync', async (route) => {
-      // `route.abort()` faz o `fetch()` do browser REJEITAR de verdade com
-      // `TypeError: Failed to fetch` — não é um mock de resposta, é uma falha de REDE real do
-      // ponto de vista do código da aplicação (autorizado pelo brief: "page.route é permitido
-      // para simular erro de rede").
-      await route.abort('failed');
-    });
-
     await abrirPeloMenu(page);
 
     const botaoSync = page.getByTestId('anacare-hours-sync-button');
@@ -347,75 +444,31 @@ test.describe('Feedback visual do sync — Horas Ana Care — E2E real @integrat
     await botaoSync.click();
 
     const erro = page.getByTestId('anacare-hours-sync-error');
-    await expect(erro).toBeVisible({ timeout: 15_000 });
+    await expect(erro).toBeVisible({ timeout: 20_000 });
     const textoErro = (await erro.textContent()) ?? '';
-    expect(textoErro).not.toContain('Failed to fetch');
-    expect(textoErro).not.toMatch(/^TypeError/);
-    expect(textoErro).not.toMatch(/^Error:/);
-    // Mensagem REAL do es.json (`admin.anacareHours.error.byCode.NETWORK_ERROR`) — prova que a
-    // tela mostra texto compreensível, não só a ausência do texto técnico.
-    expect(textoErro).toContain('No se pudo conectar con el servidor');
-  });
-
-  test('REQUISITO 3b — 409 de colisão de paciente (AnaCarePatientMonthCollisionError) não vaza identificador de paciente para a tela', async ({ page }) => {
-    await loginAs(page, USER);
-
-    const idVazado = 'E2E-LEAK-PATIENT-ID-999';
-    // Registrado DEPOIS de `loginAs` — mesmo motivo dos dois testes anteriores.
-    await page.route('**/anacare-hours/sync', async (route) => {
-      // MESMO formato que `AnaCareHoursSyncController.ts:209` devolve de verdade no 409: `error`
-      // carrega a mensagem CRUA de `AnaCarePatientMonthCollisionError` (com `anaCarePatientIds`),
-      // `code: 'ANACARE_PATIENT_MONTH_COLLISION'` (fora de `KNOWN_ERROR_CODES`, mapeado para
-      // `DESCONHECIDO` pelo `AnaCareHoursHttpService.mapErrorCode`).
-      await route.fulfill({
-        status: 409,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          success: false,
-          error: `No se puede sincronizar: ya existe una escritura en curso para anaCarePatientIds=["${idVazado}"]`,
-          code: 'ANACARE_PATIENT_MONTH_COLLISION',
-        }),
-      });
-    });
-
-    await abrirPeloMenu(page);
-
-    const botaoSync = page.getByTestId('anacare-hours-sync-button');
-    await expect(botaoSync).toBeVisible({ timeout: 15_000 });
-    await botaoSync.click();
-
-    const erro = page.getByTestId('anacare-hours-sync-error');
-    await expect(erro).toBeVisible({ timeout: 15_000 });
-    const textoErro = (await erro.textContent()) ?? '';
-    expect(textoErro).not.toContain(idVazado);
+    expect(textoErro).not.toContain(COLLISION_PATIENT_ID);
     expect(textoErro).not.toContain('anaCarePatientIds');
     // Tradução por CÓDIGO (fallback genérico de `DESCONHECIDO`, es.json) — nunca o `error` cru do
-    // corpo HTTP.
+    // corpo HTTP (que o backend REAL mandou com o id do paciente embutido — prova abaixo, via DB).
     expect(textoErro).toContain('Ocurrió un error inesperado');
+
+    // Prova de que a colisão foi REAL (não fabricada): `last_error` gravado pelo CONTROLLER real é
+    // o código ESTÁVEL da classe do erro (nunca a mensagem, regra dura da migration 457).
+    const lastError = psql(
+      `SELECT last_error FROM anacare_sync_run WHERE source='anacare' AND period_month='${MONTH_CURRENT}-01'::date`,
+    ).trim();
+    expect(lastError).toContain('AnaCarePatientMonthCollisionError');
+    // E o paciente REALMENTE colidiu (só 1 linha gravada para ele, a da 1ª reserva) — a 2ª nunca
+    // sobrescreveu porque a transação deu ROLLBACK antes do INSERT.
+    const linhas = psql(`SELECT count(*) FROM anacare_patient_month WHERE ana_care_patient_id = '${COLLISION_PATIENT_ID}'`).trim();
+    expect(linhas).toBe('1');
   });
 
-  test('REQUISITO 4 — "Actualizar" do detalhe mostra spinner + fica desabilitado mesmo com snapshot já carregado, sem regredir a 1ª carga', async ({ page }) => {
+  test('REQUISITO 4 — "Actualizar" do detalhe mostra spinner + fica desabilitado mesmo com snapshot já carregado (atraso REAL no stub, sem page.route), sem regredir a 1ª carga', async ({ page }) => {
+    detailCallCount = 0;
+    scenario.detailDelayMs = 1_200;
+
     await loginAs(page, USER);
-
-    // Registrado DEPOIS de `loginAs` (mesmo motivo dos testes 1+2/3a/3b: precedência do
-    // Playwright vai pro handler registrado por ÚLTIMO) — MAS como esta rota TAMBÉM `continue()`
-    // (não fulfill), ela precisa REFAZER o mesmo swap de header que o `swap` de `loginAs` faria
-    // (`authorization: Bearer <mock token>`) — senão o request segue com o token REAL do Firebase
-    // (que `USE_MOCK_AUTH` no backend rejeita como "Invalid credentials"), porque esta rota
-    // (registrada por último) intercepta ANTES do `swap` conseguir rodar.
-    const mockToken = tokenFor(USER);
-    let patientCalls = 0;
-    await page.route('**/anacare-hours/months/*/patients/*', async (route) => {
-      patientCalls += 1;
-      if (patientCalls > 1) {
-        // Latência CONTROLADA só na 2ª chamada em diante (o refetch do "Actualizar") — a 1ª carga
-        // (que já tem seu PRÓPRIO teste de regressão abaixo) não é afetada. O request segue REAL
-        // (`route.continue()`), só atrasado — dado real do backend/stub, timing controlado.
-        await new Promise((r) => setTimeout(r, 1_200));
-      }
-      await route.continue({ headers: { ...route.request().headers(), authorization: `Bearer ${mockToken}` } });
-    });
-
     await abrirPeloMenu(page);
 
     const linha = page.getByTestId(`anacare-hours-patient-row-${PATIENT_ID}`);
@@ -424,7 +477,7 @@ test.describe('Feedback visual do sync — Horas Ana Care — E2E real @integrat
     await expect(page).toHaveURL(new RegExp(`/admin/anacare/horas/${PATIENT_ID}$`));
 
     // Regressão (task 6.2) — 1ª carga (sem snapshot ainda) continua mostrando a tela de loading de
-    // página inteira como antes; ela já se foi por aqui (patientCalls===1, sem delay).
+    // página inteira como antes; ela já se foi por aqui (detailCallCount===1, sem atraso — ver stub).
     await expect(page.getByTestId('anacare-hours-detail-loading')).toHaveCount(0, { timeout: 15_000 });
 
     const botaoActualizar = page.getByTestId('anacare-hours-refresh');
@@ -433,9 +486,10 @@ test.describe('Feedback visual do sync — Horas Ana Care — E2E real @integrat
 
     await botaoActualizar.click();
 
-    // Requisito 4 — EM VOO (delay de 1.2s): spinner + disabled, com o snapshot ANTERIOR ainda na
-    // tela (nunca a tela de loading de página inteira — essa condição continua sendo só
-    // `isLoading && !snapshot`, e aqui `snapshot` já existe).
+    // Requisito 4 — EM VOO (atraso REAL de 1.2s dentro do stub — `route.continue()`/`page.route`
+    // nenhum: o request sai de verdade, o backend chama de verdade, só a RESPOSTA DO STUB demora):
+    // spinner + disabled, com o snapshot ANTERIOR ainda na tela (nunca a tela de loading de página
+    // inteira — essa condição continua sendo só `isLoading && !snapshot`, e aqui `snapshot` já existe).
     await expect(botaoActualizar).toBeDisabled();
     const spinner = page.getByTestId('anacare-hours-refresh-spinner');
     await expect(spinner).toHaveAttribute('data-spinning', 'true');
@@ -444,9 +498,53 @@ test.describe('Feedback visual do sync — Horas Ana Care — E2E real @integrat
     // botão de sync, decisão de design #2/#4: `isLoading={false}` no `Button.tsx`).
     await expect(botaoActualizar).toContainText('Actualizar');
 
-    // Depois que a resposta (atrasada) chega: volta ao normal.
+    // Depois que a resposta (atrasada, mas real) chega: volta ao normal.
     await expect(botaoActualizar).not.toBeDisabled({ timeout: 5_000 });
     await expect(spinner).toHaveAttribute('data-spinning', 'false');
-    expect(patientCalls).toBeGreaterThanOrEqual(2);
+    expect(detailCallCount).toBeGreaterThanOrEqual(2);
+  });
+
+  test('REQUISITO 3a — erro de REDE real (API fora do ar via `docker stop`) mostra mensagem em espanhol legível, NUNCA "Failed to fetch"/stack técnico', async ({ page }) => {
+    // SEM page.route — login e navegação com a API de pé (senão nem o login/authz resolveriam).
+    await loginAs(page, USER);
+    await abrirPeloMenu(page);
+
+    const botaoSync = page.getByTestId('anacare-hours-sync-button');
+    await expect(botaoSync).toBeVisible({ timeout: 15_000 });
+
+    // Derruba a API DE VERDADE — o `fetch` do browser para `http://localhost:8080/...` bate em
+    // ECONNREFUSED real (medido nesta sessão: `docker stop` leva ~0,5s, e a porta já responde
+    // "Connection refused" no `curl` no instante seguinte — sem hang, sem timeout artificial).
+    // É o próprio mecanismo do browser que produz `TypeError: Failed to fetch`, não uma simulação.
+    execFileSync('docker', ['stop', 'enlite-api']);
+    try {
+      await botaoSync.click();
+
+      const erro = page.getByTestId('anacare-hours-sync-error');
+      await expect(erro).toBeVisible({ timeout: 15_000 });
+      const textoErro = (await erro.textContent()) ?? '';
+      expect(textoErro).not.toContain('Failed to fetch');
+      expect(textoErro).not.toMatch(/^TypeError/);
+      expect(textoErro).not.toMatch(/^Error:/);
+      // Mensagem REAL do es.json (`admin.anacareHours.error.byCode.NETWORK_ERROR`) — prova que a
+      // tela mostra texto compreensível, não só a ausência do texto técnico.
+      expect(textoErro).toContain('No se pudo conectar con el servidor');
+    } finally {
+      // Religa a API — medido nesta sessão: `docker start` + poll de `/health` fica pronto em
+      // ~1,5s (migrations são idempotentes, o boot não repete trabalho). Este é o ÚLTIMO teste do
+      // arquivo, mas religar deixa o ambiente limpo para o `afterAll`/uma nova rodada da suíte.
+      execFileSync('docker', ['start', 'enlite-api']);
+      const deadline = Date.now() + 30_000;
+      for (;;) {
+        try {
+          const res = await fetch('http://localhost:8080/health');
+          if (res.ok) break;
+        } catch {
+          // ainda subindo — tenta de novo até o deadline.
+        }
+        if (Date.now() > deadline) throw new Error('API não voltou a /health saudável a tempo depois do docker start');
+        await new Promise((r) => setTimeout(r, 300));
+      }
+    }
   });
 });
