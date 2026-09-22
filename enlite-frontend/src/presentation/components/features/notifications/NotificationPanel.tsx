@@ -152,11 +152,25 @@ export function NotificationPanel({ isOpen, onClose, onNotificationsChanged }: N
             // esmaecia o TEXTO junto com o resto — `gray-800` (4.74:1) sob 60% de opacidade cai a
             // ~2.3:1 (medido nesta sessão), abaixo do piso AA. A distinção lido/não-lido agora é
             // só de FUNDO (`bg-gray-200`), nunca do texto — texto sempre 100% opaco.
-            className={`w-full text-left px-4 py-3 border-b border-gray-100 hover:bg-gray-50 transition-colors ${
+            //
+            // 🔒 Achado A9 do gate (21/09): a distinção acima é sutil demais (fundo quase idêntico
+            // ao branco) para servir de affordance sozinha. Não lida ganha um marcador PRÓPRIO —
+            // ponto na cor de destaque (`bg-primary`, 18.43:1, decorativo — não carrega texto) +
+            // peso de fonte maior (`semibold`) — nunca reduz o contraste do texto, que continua
+            // `gray-800` (4.74:1) nos dois estados.
+            className={`w-full flex items-start gap-2 text-left px-4 py-3 border-b border-gray-100 hover:bg-gray-50 transition-colors ${
               n.readAt ? 'bg-gray-200' : ''
             }`}
           >
-            <Text as="span" size="sm">
+            {!n.readAt && (
+              <span
+                data-testid={`notification-unread-dot-${n.id}`}
+                role="img"
+                aria-label={t('admin.notifications.unreadItem')}
+                className="mt-1.5 w-2 h-2 rounded-full bg-primary flex-shrink-0"
+              />
+            )}
+            <Text as="span" size="sm" weight={n.readAt ? 'normal' : 'semibold'}>
               {buildNotificationText(n, t)}
             </Text>
           </button>

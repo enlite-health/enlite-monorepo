@@ -221,6 +221,25 @@ describe('NotificationPanel (spec 022, T412/T413)', () => {
     expect(screen.queryByTestId('notification-load-error')).not.toBeInTheDocument();
   });
 
+  it('🔒 achado do gate (A9): notificação NÃO LIDA tem marcador visível — ponto de destaque com aria-label "No leída" + peso de fonte maior; lida não tem nem um nem outro', async () => {
+    vi.mocked(AdminNotificationApiService.listNotifications).mockResolvedValue([
+      notif({ id: 'n1', readAt: null }),
+      notif({ id: 'n2', readAt: '2026-09-21T11:00:00.000Z' }),
+    ]);
+    render(<NotificationPanel isOpen onClose={vi.fn()} />);
+
+    const unreadItem = await screen.findByTestId('notification-item-n1');
+    const readItem = await screen.findByTestId('notification-item-n2');
+
+    const unreadDot = screen.getByTestId('notification-unread-dot-n1');
+    expect(unreadDot).toHaveAttribute('aria-label', 'No leída');
+    const unreadText = unreadItem.querySelector('[data-testid]')?.nextElementSibling;
+    expect(unreadText?.className).toMatch(/font-semibold/);
+
+    expect(screen.queryByTestId('notification-unread-dot-n2')).not.toBeInTheDocument();
+    expect(readItem.querySelector('p, span')?.className).not.toMatch(/font-semibold/);
+  });
+
   it('erro de carga some numa busca seguinte bem-sucedida (reabrir o painel, por exemplo)', async () => {
     vi.mocked(AdminNotificationApiService.listNotifications)
       .mockRejectedValueOnce(new Error('forbidden'))

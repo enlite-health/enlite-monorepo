@@ -5305,6 +5305,7 @@
       "unknownPatient": "um paciente",
       "bellLabel": "Notificações",
       "unread": "{{count}} notificações não lidas",
+      "unreadItem": "Não lida",
       "panelTitle": "Notificações",
       "loading": "Carregando notificações…",
       "empty": "Você não tem notificações",
