@@ -33,7 +33,7 @@
  * rascunho está vazio; com rascunho, abre a confirmação AQUI DENTRO (nunca fecha silenciosamente).
  */
 import {
-  forwardRef, useCallback, useImperativeHandle, useState, type JSX,
+  forwardRef, useCallback, useImperativeHandle, useRef, useState, type JSX,
 } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useEditor, EditorContent } from '@tiptap/react';
@@ -106,6 +106,15 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
      * ver `AttachmentPicker.onUploadingChange`. */
     const [isUploading, setIsUploading] = useState(false);
 
+    // 🔒 `useEditor` monta com deps `[]` (a extensão do TipTap não pode ser recriada a cada
+    // render — perderia o estado do documento). `patientId` é lido dentro do `suggestion` do
+    // `Mention`, que é fechado UMA VEZ nesse mount — sem o ref, um `MessageComposer` que
+    // trocasse de paciente sem desmontar (ex.: painel reaproveitado entre fichas) ficaria preso
+    // no `patientId` da 1ª renderização (bug silencioso: filtraria pela conversa ERRADA, nunca a
+    // atual). O ref sempre reflete a prop mais recente sem re-configurar o editor inteiro.
+    const patientIdRef = useRef(patientId);
+    patientIdRef.current = patientId;
+
     const editor = useEditor({
       extensions: [
         Document,
@@ -120,9 +129,14 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
           // o `staffNameCache` por dentro (fix-once: antes esse `remember` vivia aqui via
           // `onResults`; virou duplicação em potencial no dia em que "Mostrar todos" (`loadAll`)
           // passou a ser uma 2ª fonte de resultados fora do `items()` do TipTap).
+          // Rodada 3/R3-F: `patientId` (já uma prop deste componente — vem de
+          // `PatientConversationHandle`/`ConversationPanel`, sem nenhuma árvore nova) é repassado
+          // ao `staffDirectoryStore` — é ele quem decide se manda ao backend (contrato novo R3-1).
+          // O módulo `createMentionSuggestion` continua genérico: nunca conhece `patientId`, só
+          // recebe as closures já fechadas sobre ele (quem injeta a fonte é o chamador).
           suggestion: configureMentionSuggestion({
-            fetchCandidates: (query) => useStaffDirectoryStore.getState().search(query),
-            loadAll: () => useStaffDirectoryStore.getState().loadAll(),
+            fetchCandidates: (query) => useStaffDirectoryStore.getState().search(query, patientIdRef.current),
+            loadAll: () => useStaffDirectoryStore.getState().loadAll(patientIdRef.current),
             minQueryLength: MENTION_MIN_QUERY_LENGTH,
             maxResults: MENTION_MAX_RESULTS,
           }),

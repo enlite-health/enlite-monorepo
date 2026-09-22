@@ -23,6 +23,22 @@
  * ArrowUp/ArrowDown (índice virtual = depois do último item) — Enter nela dispara `onShowAll` em
  * vez de `command`. O handle é exposto por `ref` (`useImperativeHandle`), o padrão oficial do
  * TipTap para popups deste tipo.
+ *
+ * 🔒 HOVER SÓ EM `onMouseMove`, NUNCA `onMouseEnter` (D2, achado do e2e
+ * `mention-popup-clickup.integration.e2e.ts` alt 1 — investigado com instrumentação real, não
+ * presumido): clicar em "Mostrar todos" troca a visão de topo (5 itens + linha) pela lista
+ * inteira (11 itens, scroll) — a linha que a "Mostrar todos" ocupava antes de sumir passa a ser
+ * ocupada por OUTRO item, na MESMA posição de tela. Com o mouse parado exatamente ali (ele acabou
+ * de clicar "Mostrar todos", nunca se moveu), o Chromium recalcula o hit-test sob o cursor
+ * ESTACIONÁRIO e dispara `mouseenter`/`mouseover` PARA O ITEM NOVO — sem o usuário ter movido o
+ * mouse um pixel. Medido: log do próprio `onMouseEnter` mostrava exatamente 1 disparo, ANTES até
+ * do `editor.click()` seguinte no teste (ou seja, é a REFLOW da lista, não o clique) — e ele
+ * pisava o `activeIndex` que o ArrowUp usa em seguida, fazendo o wrap-around aterrissar num item
+ * errado. `mousemove` (ao contrário de `mouseenter`/`mouseover`) só existe quando o dispositivo
+ * apontador FISICAMENTE se move — o padrão de combobox (WAI-ARIA APG) de "teclado manda, hover só
+ * conta depois que o mouse mexer de novo" cai de graça usando este evento em vez do outro; não
+ * precisa de nenhum estado extra (`lastMousePos` etc.) porque o próprio browser já garante que
+ * `mousemove` não refira por causa de DOM mudando embaixo do cursor parado.
  */
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -40,6 +56,15 @@ export interface MentionPopupListProps {
    * Ausente = sem essa linha, o popup só mostra `items`. Injetado (nunca importa um client HTTP
    * direto) — mesma régua de `createMentionSuggestion`/`fetchCandidates`. */
   onShowAll?: () => Promise<StaffDirectoryEntry[]>;
+  /**
+   * Rodada 3/R3-F (item 2): `true` só quando o CHAMADOR já verificou que a busca voltou vazia SEM
+   * filtro nenhum (`query === ''`) — ou seja, ninguém pode ser mencionado de verdade (ex.:
+   * `patientId` filtra e nenhum outro staff tem acesso à conversa), nunca "esta busca específica
+   * não bateu com ninguém". Distinto de `error` (F5, item 1): aqui a chamada teve SUCESSO, só que
+   * o resultado é genuinamente vazio. Ausente/`false` preserva o comportamento antigo (0 itens
+   * sem filtro nenhum de erro nem de vazio-honesto = não renderiza nada, ex.: busca com texto que
+   * não bate com ninguém). */
+  emptyState?: boolean;
 }
 
 export interface MentionPopupListHandle {
@@ -49,7 +74,7 @@ export interface MentionPopupListHandle {
 }
 
 export const MentionPopupList = forwardRef<MentionPopupListHandle, MentionPopupListProps>(
-  function MentionPopupList({ items, error, command, onShowAll }, ref) {
+  function MentionPopupList({ items, error, command, onShowAll, emptyState = false }, ref) {
     const { t } = useTranslation();
     const [activeIndex, setActiveIndex] = useState(0);
     /** `null` = visão de topo (`items`); array = "Mostrar todos" já carregado — substitui `items`
@@ -67,7 +92,12 @@ export const MentionPopupList = forwardRef<MentionPopupListHandle, MentionPopupL
     }, [items]);
 
     const visibleItems = allItems ?? items;
-    const showAllRowVisible = allItems === null && !!onShowAll;
+    // Rodada 3/R3-F (item 2): sem NENHUM candidato na visão de topo, "Mostrar todos" não tem o
+    // que buscar de novo (a mesma busca sem filtro voltaria vazia de novo) — mostrá-lo ali seria
+    // prometer mais gente pra quem já é a lista completa (vazia). `visibleItems.length > 0` é a
+    // guarda; sem ela, o estado vazio (abaixo) nunca aparecia — a linha "Mostrar todos" sozinha
+    // já deixava `optionCount` em 1, nunca 0.
+    const showAllRowVisible = allItems === null && !!onShowAll && visibleItems.length > 0;
     /** Índice VIRTUAL da linha "Mostrar todos" — sempre o último slot do ciclo de teclado. */
     const showAllIndex = visibleItems.length;
     const optionCount = visibleItems.length + (showAllRowVisible ? 1 : 0);
@@ -127,7 +157,25 @@ export const MentionPopupList = forwardRef<MentionPopupListHandle, MentionPopupL
         </div>
       );
     }
-    if (optionCount === 0) return null;
+    if (optionCount === 0) {
+      // Rodada 3/R3-F (item 2): honesto ("ninguém pode ser mencionado") em vez de silencioso —
+      // só quando o CHAMADOR sinalizou `emptyState` (busca sem filtro, resultado vazio, sem
+      // erro). Sem o flag, preserva o comportamento antigo (nada renderizado).
+      if (emptyState) {
+        return (
+          <div
+            data-testid="composer-mention-empty"
+            role="status"
+            className="rounded-md border bg-white shadow-md px-3 py-2"
+          >
+            <Text as="span" size="xs" color="secondary">
+              {t('admin.patients.detail.conversation.composer.mentionNoEligibleRecipients')}
+            </Text>
+          </div>
+        );
+      }
+      return null;
+    }
 
     const activeId = activeIndex === showAllIndex && showAllRowVisible
       ? 'composer-mention-showall'
@@ -156,7 +204,7 @@ export const MentionPopupList = forwardRef<MentionPopupListHandle, MentionPopupL
               aria-selected={idx === activeIndex}
               data-testid={`composer-mention-item-${item.uid}`}
               onClick={() => selectItem(idx)}
-              onMouseEnter={() => setActiveIndex(idx)}
+              onMouseMove={() => setActiveIndex(idx)}
               // P3 (achado do gate): `bg-gray-100` (#FFF9FC, paleta CUSTOM) sobre o `bg-white` do
               // popup é quase o MESMO branco — o destaque do item ativo/hover não se enxergava.
               // `bg-gray-600` (#D9D9D9) é o cinza mais claro desta escala que ainda se distingue
@@ -182,7 +230,7 @@ export const MentionPopupList = forwardRef<MentionPopupListHandle, MentionPopupL
               aria-selected={activeIndex === showAllIndex}
               data-testid="composer-mention-show-all"
               onClick={handleShowAll}
-              onMouseEnter={() => setActiveIndex(showAllIndex)}
+              onMouseMove={() => setActiveIndex(showAllIndex)}
               disabled={allLoading}
               // Mesmo destaque de P3 acima — evita a MESMA linha (idx ativo) ter highlight visível
               // e esta (showAllIndex ativo) ficar com o bg-gray-100 quase invisível de antes.

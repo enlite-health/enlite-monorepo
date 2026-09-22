@@ -27,7 +27,7 @@
  */
 import { test, expect } from '@playwright/test';
 import {
-  seedPatientQA, cleanupPatientQA, seedPlainStaff, cleanupPlainStaff,
+  seedPatientQA, cleanupPatientQA, seedMentionableStaff,
   seedStaffInGroup, cleanupStaffAndGroup, grantCell, loginAs,
   type MockUser,
 } from '../helpers/patient-conversation-helper';
@@ -42,6 +42,11 @@ const GRUPO = `E2E UX Mention ${RUN_ID}`;
 
 let patientId = '';
 let groupId = '';
+// 🔒 Rodada 3/R3-F: o MENCIONADO precisa de `patient_conversation:read` (mesmo país do paciente,
+// AR) pra continuar aparecendo no popup — o `patientId` que o compositor manda desde esta rodada
+// exclui quem não tem a célula, mesmo que ainda apareça no diretório cru (`seedMentionableStaff`,
+// ver docstring do helper).
+let groupIdMencionado = '';
 
 const AUTORA: MockUser = { uid: AUTORA_UID, email: AUTORA_EMAIL, role: 'recruiter', country: 'AR' };
 
@@ -66,12 +71,12 @@ test.describe('Autocomplete de @ — min 0, popup ancorado, erro do diretório (
     grantCell(groupId, 'patient_conversation', 'read');
     grantCell(groupId, 'patient_conversation', 'create');
     grantCell(groupId, 'staff_directory', 'read');
-    seedPlainStaff(MENCIONADO_UID, MENCIONADO_EMAIL, 'QA Staff Dois');
+    groupIdMencionado = seedMentionableStaff(MENCIONADO_UID, MENCIONADO_EMAIL, 'QA Staff Dois').groupId;
   });
 
   test.afterAll(() => {
     cleanupStaffAndGroup(AUTORA_UID, groupId);
-    cleanupPlainStaff(MENCIONADO_UID);
+    cleanupStaffAndGroup(MENCIONADO_UID, groupIdMencionado);
     cleanupPatientQA(patientId);
   });
 
@@ -144,7 +149,9 @@ test.describe('Autocomplete de @ — min 0, popup ancorado, erro do diretório (
       email: `${AUTORA_UID}-longa-${i}@e2e.test`,
       name: `QA Staff Longa ${i}`,
     }));
-    for (const s of muitosStaff) seedPlainStaff(s.uid, s.email, s.name);
+    // Rodada 3/R3-F: precisam de acesso à conversa (mesmo motivo do MENCIONADO acima) — senão o
+    // popup mostraria o estado VAZIO (item 2), nunca a lista longa que este caso testa.
+    const gruposMuitosStaff = muitosStaff.map((s) => seedMentionableStaff(s.uid, s.email, s.name).groupId);
     try {
       await loginAs(page, AUTORA);
       await openComposer(page);
@@ -167,7 +174,7 @@ test.describe('Autocomplete de @ — min 0, popup ancorado, erro do diretório (
       expect(box!.y).toBeGreaterThanOrEqual(0);
       expect(box!.y + box!.height).toBeLessThanOrEqual(viewport!.height + 1);
     } finally {
-      for (const s of muitosStaff) cleanupPlainStaff(s.uid);
+      muitosStaff.forEach((s, i) => cleanupStaffAndGroup(s.uid, gruposMuitosStaff[i]));
     }
   });
 });

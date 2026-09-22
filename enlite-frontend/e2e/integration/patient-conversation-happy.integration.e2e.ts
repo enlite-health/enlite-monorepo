@@ -24,7 +24,7 @@
  */
 import { test, expect } from '@playwright/test';
 import {
-  seedPatientQA, cleanupPatientQA, seedPlainStaff, cleanupPlainStaff,
+  seedPatientQA, cleanupPatientQA, seedMentionableStaff,
   seedStaffInGroup, cleanupStaffAndGroup, grantCell, loginAs, safeSql,
   type MockUser,
 } from '../helpers/patient-conversation-helper';
@@ -38,6 +38,10 @@ const GRUPO = `E2E Conv Happy ${RUN_ID}`;
 
 let patientId = '';
 let groupId = '';
+// Rodada 3/R3-F: MENCIONADO precisa de `patient_conversation:read` (país AR) pra continuar
+// aparecendo no popup — o `patientId` que o compositor manda desde esta rodada exclui quem não
+// tem a célula (`seedMentionableStaff`, ver docstring do helper).
+let groupIdMencionado = '';
 
 const AUTORA: MockUser = { uid: AUTORA_UID, email: AUTORA_EMAIL, role: 'recruiter', country: 'AR' };
 
@@ -57,12 +61,12 @@ test.describe('Chat interno por paciente — caminho feliz (US1+US2) @integratio
     grantCell(groupId, 'patient_conversation', 'update');
     grantCell(groupId, 'patient_conversation', 'delete');
     grantCell(groupId, 'staff_directory', 'read');
-    seedPlainStaff(MENCIONADO_UID, MENCIONADO_EMAIL, 'QA Staff Dois');
+    groupIdMencionado = seedMentionableStaff(MENCIONADO_UID, MENCIONADO_EMAIL, 'QA Staff Dois').groupId;
   });
 
   test.afterAll(() => {
     cleanupStaffAndGroup(AUTORA_UID, groupId);
-    cleanupPlainStaff(MENCIONADO_UID);
+    cleanupStaffAndGroup(MENCIONADO_UID, groupIdMencionado);
     cleanupPatientQA(patientId);
     safeSql(`DELETE FROM conversation_read_marks WHERE conversation_id IN (SELECT id FROM conversations WHERE patient_id = '${patientId}')`);
   });

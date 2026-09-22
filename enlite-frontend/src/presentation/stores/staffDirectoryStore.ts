@@ -26,9 +26,11 @@ interface StaffDirectoryState {
    * verdade" (mesma régua de F5, item 1). */
   error: boolean;
   /** Devolve as entries (além de atualizar o estado) — é a forma que o popup de menção consome
-   * como `fetchCandidates` injetado em `configureMentionSuggestion`. */
-  search: (q: string) => Promise<StaffDirectoryEntry[]>;
-  loadAll: () => Promise<StaffDirectoryEntry[]>;
+   * como `fetchCandidates` injetado em `configureMentionSuggestion`. `patientId` (Rodada 3/R3-F):
+   * opcional — presente, filtra a quem pode abrir a conversa DAQUELE paciente (contrato novo do
+   * backend R3-1); ausente, comportamento de antes (sem filtro nenhum). */
+  search: (q: string, patientId?: string) => Promise<StaffDirectoryEntry[]>;
+  loadAll: (patientId?: string) => Promise<StaffDirectoryEntry[]>;
 }
 
 /**
@@ -56,10 +58,21 @@ async function fetchAndRemember(
   }
 }
 
+// Rodada 3/R3-F: `patientId` só é REPASSADO ao client quando presente — chamar sempre com os 3
+// argumentos (o 3º `undefined` quando não há paciente) mudaria a assinatura observável de quem já
+// testava `search('qa')`/`loadAll()` sem paciente (arity do mock importa em `toHaveBeenCalledWith`).
 export const useStaffDirectoryStore = create<StaffDirectoryState>((set) => ({
   entries: [],
   loading: false,
   error: false,
-  search: (q) => fetchAndRemember(set, () => AdminConversationApiService.searchStaffDirectory(q)),
-  loadAll: () => fetchAndRemember(set, () => AdminConversationApiService.searchStaffDirectory('', SHOW_ALL_LIMIT)),
+  search: (q, patientId) => fetchAndRemember(set, () => (
+    patientId !== undefined
+      ? AdminConversationApiService.searchStaffDirectory(q, undefined, patientId)
+      : AdminConversationApiService.searchStaffDirectory(q)
+  )),
+  loadAll: (patientId) => fetchAndRemember(set, () => (
+    patientId !== undefined
+      ? AdminConversationApiService.searchStaffDirectory('', SHOW_ALL_LIMIT, patientId)
+      : AdminConversationApiService.searchStaffDirectory('', SHOW_ALL_LIMIT)
+  )),
 }));

@@ -1,6 +1,7 @@
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { escapeIlikeWildcards } from '@shared/utils/ilikeEscape';
+import { ENLITE_TENANT_ID } from '@modules/identity/permissions';
 
 export interface AdminRecord {
   firebaseUid: string;
@@ -116,15 +117,62 @@ export class AdminRepository {
    * nunca mandou heartbeat não tem linha lá (ausência de linha, não `NULL` numa coluna de
    * `users`), por isso `isOnline` cai em `false` por ausência de match. Este módulo (identity) só
    * faz o JOIN de leitura; a ESCRITA do heartbeat vive em `@modules/presence` (módulo próprio).
+   *
+   * `patientId` (R3-1, change 022-ux-mencao-e-notificacao, Rodada 3, pedido do Gabriel 22/09): o
+   * `@` do chat só deve listar quem PODE, de fato, abrir a conversa DAQUELE paciente — não todo
+   * staff com `staff_directory:read`. `undefined`/`null` (default) = comportamento atual, sem
+   * recorte (o controller só passa um valor aqui quando a família `admin.patients` está
+   * enforced — engine desligado não filtra ninguém, D-Gabriel). Com valor: um `EXISTS`
+   * correlacionado usa `iam.effective_permissions` (mig 276) — a MESMA fonte que
+   * `PermissionService.resolve` consulta para decidir `patient_conversation:read` na rota REAL
+   * da conversa (`adminConversationRoutes.ts`). Tudo em UMA query (`STABLE`, chamada por linha
+   * dentro do mesmo `SELECT`), não em loop no Node por candidato (sem N+1 de round-trip).
+   * Paciente inexistente → o `EXISTS` nunca casa (`SELECT 1 FROM patients WHERE id = ...` vazio)
+   * → lista vazia, fail-closed: não há como provar acesso a uma conversa que não existe.
+   *
+   * `enforceCountry` (gate 🔴 do revisao-pr, 22/09): o recorte de PAÍS (`pt.country = ANY
+   * (iam.effective_countries(...))`) só entra na `EXISTS` quando a alavanca que o torna REAL
+   * está ligada — `COUNTRY_RLS_ENABLED` (lida pelo controller via `isEnvFlagOn`, o mesmo padrão
+   * do eixo de CÉLULA, gateado por `isPermissionFamilyEnforced(admin.patients)`). Em prd,
+   * `COUNTRY_RLS_ENABLED=false` (medido 22/09): a rota REAL da conversa
+   * (`PermissionMiddleware`/`PermissionClientActorAccessChecker`) NUNCA filtra por país — só por
+   * célula. Sem este gate, o `@` seria MAIS restritivo que o acesso real: quem tem a célula mas
+   * nenhum `group_country_scopes` cadastrado (D113: ausência é `[]`, nunca "libera geral") já
+   * pode abrir a conversa de verdade em prd, mas sumiria do autocomplete — exatamente o inverso
+   * do achado F24 que criou `isPermissionFamilyEnforced`. Default `false` (comportamento de prd:
+   * sem a flag, sem recorte de país) — nunca `true` por omissão, para não reintroduzir o mesmo
+   * bug por um call site que esqueça de passar o valor.
+   *
+   * Achado 🟡 do gate revisao-pr: o MESMO predicado "quem pode abrir a conversa" também existe em
+   * `PermissionClientActorAccessChecker.canReadPatientConversation` (módulo `inapp-notification`,
+   * decide se um staff é notificado de mensagem nova). Os dois SÃO coerentes hoje — ambos usam
+   * `iam.effective_permissions`/`client.can` como FONTE da célula, e nenhum dos dois filtra por
+   * país enquanto `COUNTRY_RLS_ENABLED=false` (o checker nunca chegou a checar país; este
+   * repositório passou a checar, mas só quando a flag liga). Por que aqui é uma query EM LOTE e
+   * lá é uma checagem de UM ATOR por vez: este método monta a lista de candidatos ao popup de
+   * `@` (N candidatos por request, resolvido em UMA query com `EXISTS` correlacionado, mig 276);
+   * o checker recebe UM `actorUid` já conhecido (o destinatário da notificação) e só precisa
+   * responder sim/não pra ele — não há lista pra montar, então não há lote pra fazer. Se
+   * `COUNTRY_RLS_ENABLED` virar `true` em prd, o checker PRECISARÁ ganhar o mesmo recorte de país
+   * (hoje não tem, nem gateado) para os dois não divergirem — fica registrado aqui como o
+   * próximo passo, não implementado nesta mudança (fora do escopo aprovado: o achado nomeado foi
+   * o 🔴 de país no `@`, não uma reescrita do checker de notificação).
    */
   async searchStaffDirectory(
     q: string | undefined,
     limit = 20,
     excludeUid?: string | null,
+    patientId?: string | null,
+    enforceCountry = false,
   ): Promise<StaffDirectoryEntry[]> {
     const trimmed = q?.trim();
     const exclude = excludeUid ?? null;
+
     if (!trimmed) {
+      const params: unknown[] = [limit, exclude];
+      const patientClause = patientId
+        ? this.patientConversationAccessClause(params, patientId, '$3', '$4', enforceCountry)
+        : '';
       const result = await this.pool.query(
         `SELECT
           u.firebase_uid AS uid,
@@ -134,14 +182,19 @@ export class AdminRepository {
         LEFT JOIN staff_presence sp ON sp.firebase_uid = u.firebase_uid
         WHERE u.account_type = 'staff' AND u.is_active = true
           AND ($2::text IS NULL OR u.firebase_uid <> $2)
+          ${patientClause}
         ORDER BY u.display_name, u.firebase_uid
         LIMIT $1`,
-        [limit, exclude]
+        params
       );
       return result.rows;
     }
 
     const escaped = escapeIlikeWildcards(trimmed);
+    const params: unknown[] = [escaped, limit, exclude];
+    const patientClause = patientId
+      ? this.patientConversationAccessClause(params, patientId, '$4', '$5', enforceCountry)
+      : '';
     const result = await this.pool.query(
       `SELECT
         u.firebase_uid AS uid,
@@ -153,11 +206,42 @@ export class AdminRepository {
         AND (u.display_name ILIKE '%' || $1 || '%' ESCAPE '\\'
           OR u.email ILIKE '%' || $1 || '%' ESCAPE '\\')
         AND ($3::text IS NULL OR u.firebase_uid <> $3)
+        ${patientClause}
       ORDER BY u.display_name, u.firebase_uid
       LIMIT $2`,
-      [escaped, limit, exclude]
+      params
     );
     return result.rows;
+  }
+
+  /**
+   * Monta o `EXISTS` de acesso à conversa do paciente (R3-1) e empilha os parâmetros que ele
+   * consome (`patientId`, `ENLITE_TENANT_ID`) no array `params` do chamador — os placeholders
+   * `$patientParam`/`$tenantParam` são passados pelo chamador porque a posição varia conforme o
+   * ramo (`q` ausente vs presente) já ter 2 ou 3 parâmetros antes deste.
+   *
+   * Célula (`patient_conversation:read` via `iam.effective_permissions`) SEMPRE entra — é a
+   * MESMA decisão que `PermissionClientActorAccessChecker.canReadPatientConversation` usa depois
+   * de confirmar que a família está enforced (F23: grant real decide, como sempre). O recorte de
+   * PAÍS é que é condicional — ver `enforceCountry` no docblock de `searchStaffDirectory`.
+   */
+  private patientConversationAccessClause(
+    params: unknown[],
+    patientId: string,
+    patientParam: string,
+    tenantParam: string,
+    enforceCountry: boolean,
+  ): string {
+    params.push(patientId, ENLITE_TENANT_ID);
+    const countryClause = enforceCountry
+      ? `AND pt.country = ANY(iam.effective_countries(u.firebase_uid, ${tenantParam}::uuid))`
+      : '';
+    return `AND EXISTS (
+            SELECT 1 FROM patients pt
+            WHERE pt.id = ${patientParam}::uuid
+              AND 'patient_conversation:read' = ANY(iam.effective_permissions(u.firebase_uid, ${tenantParam}::uuid))
+              ${countryClause}
+          )`;
   }
 
   async countAdmins(): Promise<number> {

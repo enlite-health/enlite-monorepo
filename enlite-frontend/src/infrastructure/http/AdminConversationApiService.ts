@@ -210,11 +210,16 @@ export class AdminConversationApiServiceClass {
   /** `limit` (Rodada 2/R2-B, "Mostrar todos" do popup estilo ClickUp): opcional — omitido, o
    * controller decide o default (20); até o teto do backend (200) quando informado.
    *
+   * `patientId` (Rodada 3/R3-F, contrato novo do backend `R3-1`): opcional — presente, filtra a
+   * lista a quem tem acesso à conversa DAQUELE paciente (célula + país, `AdminRepository`
+   * `EXISTS` correlacionado); ausente, comportamento de antes (nenhum filtro por paciente).
+   *
    * `encodeURIComponent` direto (não `URLSearchParams`): preserva `%20` em vez de `+` — mantém a
    * forma de querystring que o teste/contrato já fixava antes do `limit` existir. */
-  async searchStaffDirectory(q: string, limit?: number): Promise<StaffDirectoryEntry[]> {
+  async searchStaffDirectory(q: string, limit?: number, patientId?: string): Promise<StaffDirectoryEntry[]> {
     const params = [`q=${encodeURIComponent(q)}`];
     if (limit !== undefined) params.push(`limit=${limit}`);
+    if (patientId !== undefined) params.push(`patientId=${encodeURIComponent(patientId)}`);
     return this.requestJson<StaffDirectoryEntry[]>('GET', `/api/admin/staff-directory?${params.join('&')}`);
   }
 }

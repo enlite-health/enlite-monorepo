@@ -3818,6 +3818,7 @@
               "max": "Máximo de 5 anexos"
             },
             "mentionDirectoryError": "Não foi possível buscar. Tente digitar de novo.",
+            "mentionNoEligibleRecipients": "Ninguém mais tem acesso a esta conversa",
             "mentionListLabel": "Mencionar alguém",
             "mentionShowAll": "Mostrar todos"
           }

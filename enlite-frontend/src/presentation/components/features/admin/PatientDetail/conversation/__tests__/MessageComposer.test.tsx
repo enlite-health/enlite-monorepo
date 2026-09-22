@@ -66,7 +66,7 @@ describe('MessageComposer', () => {
     await user.click(editor);
     await user.type(editor, '@qa');
 
-    await waitFor(() => expect(searchStaffDirectory).toHaveBeenCalledWith('qa'));
+    await waitFor(() => expect(searchStaffDirectory).toHaveBeenCalledWith('qa', undefined, 'p1'));
     await waitFor(() => expect(screen.getByTestId('composer-mention-list')).toBeInTheDocument());
     expect(screen.getByTestId('composer-mention-item-u-1')).toHaveTextContent('QA Staff Um');
   });
@@ -80,8 +80,35 @@ describe('MessageComposer', () => {
     await user.click(editor);
     await user.type(editor, '@');
 
-    await waitFor(() => expect(searchStaffDirectory).toHaveBeenCalledWith(''));
+    await waitFor(() => expect(searchStaffDirectory).toHaveBeenCalledWith('', undefined, 'p1'));
     await waitFor(() => expect(screen.getByTestId('composer-mention-list')).toBeInTheDocument());
+  });
+
+  it('🔒 Rodada 3/R3-F: a busca do @ manda o patientId DA CONVERSA aberta (sabotagem morre sem ele)', async () => {
+    searchStaffDirectory.mockResolvedValue([{ uid: 'u-1', displayName: 'QA Staff Um' }]);
+    render(<MessageComposer patientId="patient-xyz" />);
+
+    const editor = screen.getByTestId('composer-editor');
+    const user = userEvent.setup();
+    await user.click(editor);
+    await user.type(editor, '@qa');
+
+    await waitFor(() => expect(searchStaffDirectory).toHaveBeenCalledWith('qa', undefined, 'patient-xyz'));
+  });
+
+  it('🔒 Rodada 3/R3-F, item 2: ninguém mencionável (busca vazia sem filtro) mostra a linha de estado vazio, não a lista', async () => {
+    searchStaffDirectory.mockResolvedValue([]);
+    render(<MessageComposer patientId="patient-sem-acesso" />);
+
+    const editor = screen.getByTestId('composer-editor');
+    const user = userEvent.setup();
+    await user.click(editor);
+    await user.type(editor, '@');
+
+    await waitFor(() => expect(screen.getByTestId('composer-mention-empty')).toBeInTheDocument());
+    expect(screen.getByTestId('composer-mention-empty')).toHaveTextContent(PT.mentionNoEligibleRecipients);
+    expect(screen.queryByTestId('composer-mention-list')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('composer-mention-error')).not.toBeInTheDocument();
   });
 
   it('"Mostrar todos" (Rodada 2, popup estilo ClickUp): busca com limit=200 e substitui a lista de topo', async () => {
@@ -100,7 +127,7 @@ describe('MessageComposer', () => {
 
     fireEvent.click(screen.getByTestId('composer-mention-show-all'));
 
-    await waitFor(() => expect(searchStaffDirectory).toHaveBeenLastCalledWith('', 200));
+    await waitFor(() => expect(searchStaffDirectory).toHaveBeenLastCalledWith('', 200, 'p1'));
     await waitFor(() => expect(screen.getByTestId('composer-mention-item-u-2')).toBeInTheDocument());
     expect(screen.queryByTestId('composer-mention-show-all')).not.toBeInTheDocument();
   });
@@ -116,7 +143,7 @@ describe('MessageComposer', () => {
     await waitFor(() => expect(screen.getByTestId('composer-mention-show-all')).toBeInTheDocument());
 
     await user.type(editor, 'qa');
-    await waitFor(() => expect(searchStaffDirectory).toHaveBeenLastCalledWith('qa'));
+    await waitFor(() => expect(searchStaffDirectory).toHaveBeenLastCalledWith('qa', undefined, 'p1'));
     // "Mostrar todos" não pode aparecer ao lado de um resultado FILTRADO — quem conta os <li>
     // da lista (e2e `mention-autocomplete-min-zero`, "digitar filtra para 1 resultado só") não
     // pode ver um item a mais que não é candidato nenhum.
@@ -132,7 +159,7 @@ describe('MessageComposer', () => {
     await user.click(editor);
     await user.type(editor, '@q');
 
-    await waitFor(() => expect(searchStaffDirectory).toHaveBeenCalledWith('q'));
+    await waitFor(() => expect(searchStaffDirectory).toHaveBeenCalledWith('q', undefined, 'p1'));
   });
 
   it('falha do diretório mostra estado de erro discreto, distinto de "sem resultado" (F5, item 1)', async () => {
@@ -197,7 +224,7 @@ describe('MessageComposer', () => {
     await user.click(editor);
     await user.type(editor, '@qa');
 
-    await waitFor(() => expect(searchStaffDirectory).toHaveBeenCalledWith('qa'));
+    await waitFor(() => expect(searchStaffDirectory).toHaveBeenCalledWith('qa', undefined, 'p1'));
     expect(screen.queryByTestId('composer-mention-list')).not.toBeInTheDocument();
     expect(screen.getByTestId('message-composer')).toBeInTheDocument(); // não quebrou o componente
   });
@@ -216,6 +243,104 @@ describe('MessageComposer', () => {
 
     await waitFor(() => expect(screen.queryByTestId('composer-mention-list')).not.toBeInTheDocument());
     expect(screen.queryByTestId('composer-mention-chip')).not.toBeInTheDocument();
+  });
+
+  // D1 (achado do Gabriel, 22/09): o `Suggestion` plugin do TipTap fecha o popup no Escape via
+  // `preventDefault()`, mas NUNCA chama `stopPropagation()` — o evento nativo continua subindo
+  // até `document`. `SlideOverPanel` (o drawer que embrulha este composer em produção,
+  // `PatientConversationHandle.tsx`) escuta Escape em `document` e chama `requestClose()` — que,
+  // com rascunho não vazio (@ já digitado), abre a confirmação de DESCARTE por cima do popup em
+  // vez de só fechar o autocomplete. Reproduz o mecanismo (bubbling), não o `SlideOverPanel`
+  // inteiro — mesma causa raiz, sem puxar `ConversationPanel`/`SlideOverPanel` pro teste.
+  it('D1: Escape NÃO borbulha pro document — não aciona um listener de Esc do painel/drawer que embrulha o composer', async () => {
+    searchStaffDirectory.mockResolvedValue([{ uid: 'u-1', displayName: 'QA Staff Um' }]);
+    // Filtra só Escape — o listener do document (como o do `SlideOverPanel`) vê TODO keydown que
+    // borbulha; sem o filtro, os 3 keydowns de `@qa` (digitação normal, que sempre borbulha)
+    // contariam como "chamado" e mascarariam o que este teste mede de verdade.
+    const outerEscapeListener = vi.fn();
+    const onDocumentKeyDown = (e: KeyboardEvent): void => { if (e.key === 'Escape') outerEscapeListener(e); };
+    document.addEventListener('keydown', onDocumentKeyDown);
+    try {
+      render(<MessageComposer patientId="p1" />);
+      const editor = screen.getByTestId('composer-editor');
+      const user = userEvent.setup();
+      await user.click(editor);
+      await user.type(editor, '@qa');
+      await waitFor(() => expect(screen.getByTestId('composer-mention-list')).toBeInTheDocument());
+
+      fireEvent.keyDown(editor, { key: 'Escape', bubbles: true, cancelable: true });
+
+      await waitFor(() => expect(screen.queryByTestId('composer-mention-list')).not.toBeInTheDocument());
+      expect(outerEscapeListener).not.toHaveBeenCalled();
+      // Texto digitado permanece — Esc só fecha o popup, nunca apaga o rascunho.
+      expect(editor).toHaveTextContent('@qa');
+    } finally {
+      document.removeEventListener('keydown', onDocumentKeyDown);
+    }
+  });
+
+  // D1: depois de fechado por Esc, digitar mais uma letra na MESMA posição não deve reabrir a
+  // mesma sugestão (comportamento nativo do `dismissedRange` do `Suggestion` plugin) — mas um
+  // `@` NOVO (nova posição) deve abrir de novo.
+  it('D1: depois do Esc, mais uma letra não reabre a mesma sugestão; um @ novo abre de novo', async () => {
+    searchStaffDirectory.mockResolvedValue([{ uid: 'u-1', displayName: 'QA Staff Um' }]);
+    render(<MessageComposer patientId="p1" />);
+    const editor = screen.getByTestId('composer-editor');
+    const user = userEvent.setup();
+    await user.click(editor);
+    await user.type(editor, '@qa');
+    await waitFor(() => expect(screen.getByTestId('composer-mention-list')).toBeInTheDocument());
+
+    fireEvent.keyDown(editor, { key: 'Escape', bubbles: true, cancelable: true });
+    await waitFor(() => expect(screen.queryByTestId('composer-mention-list')).not.toBeInTheDocument());
+
+    await user.type(editor, 'x'); // mesma sugestão ("@qax") — NÃO deve reabrir
+    expect(screen.queryByTestId('composer-mention-list')).not.toBeInTheDocument();
+
+    await user.type(editor, ' @qa'); // "@" NOVO — deve abrir de novo
+    await waitFor(() => expect(screen.getByTestId('composer-mention-list')).toBeInTheDocument());
+  });
+
+  // D1: clicar fora (em qualquer ponto fora da caixa do popup, inclusive fora do editor) fecha o
+  // popup. Antes deste conserto, `render()` (createMentionSuggestion.ts) nunca chamava
+  // `props.mount()` — o `dismissOnOutsideClick` (default `true` da lib) fica inerte sem ele.
+  it('D1: clicar fora do popup e do editor fecha o popup (sem apagar o rascunho)', async () => {
+    searchStaffDirectory.mockResolvedValue([{ uid: 'u-1', displayName: 'QA Staff Um' }]);
+    const { container } = render(
+      <div>
+        <div data-testid="corpo-da-conversa">corpo da conversa</div>
+        <MessageComposer patientId="p1" />
+      </div>,
+    );
+    const editor = screen.getByTestId('composer-editor');
+    const user = userEvent.setup();
+    await user.click(editor);
+    await user.type(editor, '@qa');
+    await waitFor(() => expect(screen.getByTestId('composer-mention-list')).toBeInTheDocument());
+
+    fireEvent.pointerDown(screen.getByTestId('corpo-da-conversa'));
+
+    await waitFor(() => expect(screen.queryByTestId('composer-mention-list')).not.toBeInTheDocument());
+    expect(editor).toHaveTextContent('@qa');
+    void container;
+  });
+
+  // D1: clicar DENTRO do popup (num item) continua selecionando — o outside-click novo não pode
+  // regredir o clique normal de seleção (já coberto acima em "escolher um item..."), nem fechar
+  // o popup ANTES do clique no item completar.
+  it('D1: clicar num item do popup continua selecionando (outside-click novo não quebra o clique de seleção)', async () => {
+    searchStaffDirectory.mockResolvedValue([{ uid: 'u-1', displayName: 'QA Staff Um' }]);
+    render(<MessageComposer patientId="p1" />);
+    const editor = screen.getByTestId('composer-editor');
+    const user = userEvent.setup();
+    await user.click(editor);
+    await user.type(editor, '@qa');
+    await waitFor(() => expect(screen.getByTestId('composer-mention-item-u-1')).toBeInTheDocument());
+
+    fireEvent.pointerDown(screen.getByTestId('composer-mention-item-u-1'));
+    fireEvent.click(screen.getByTestId('composer-mention-item-u-1'));
+
+    await waitFor(() => expect(screen.getByTestId('composer-mention-chip')).toHaveTextContent('QA Staff Um'));
   });
 
   it('anexar arquivo dispara upload REAL (Bloco 3, T320) e mostra o chip após sucesso', async () => {
