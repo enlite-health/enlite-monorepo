@@ -69,7 +69,12 @@ function PermissionHistory(): JSX.Element {
   }, []);
 
   useEffect(() => {
-    AdminPermissionsApiService.listGroups().then(setGrupos).catch(() => setGrupos([]));
+    // Erro VISÍVEL (mesmo padrão de `AccessPage.load`) — engolir em silêncio
+    // deixaria o filtro "Grupo" com só "Todos os grupos", indistinguível de
+    // "não há grupos".
+    AdminPermissionsApiService.listGroups()
+      .then(setGrupos)
+      .catch(() => setError('admin.access.history.groupsLoadError'));
     void load(filtros);
     // Carrega uma vez; depois só pelo botão — a lista não é reativa por tecla.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -128,7 +133,7 @@ function PermissionHistory(): JSX.Element {
           {/* lex C1: nome/e-mail de pessoa não pode ir à gravação de sessão do Clarity. */}
           <Table data-clarity-mask="True">
             <TableHeader>
-              <TableHead>{t('admin.access.history.type')}</TableHead>
+              <TableHead>{t('admin.access.history.typeCol')}</TableHead>
               <TableHead>{t('admin.access.history.when')}</TableHead>
               <TableHead>{t('admin.access.history.who')}</TableHead>
               <TableHead>{t('admin.access.history.groupCol')}</TableHead>

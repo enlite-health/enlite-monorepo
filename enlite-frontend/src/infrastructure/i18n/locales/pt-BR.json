@@ -4504,6 +4504,7 @@
         "group": "Grupo",
         "allGroups": "Todos os grupos",
         "typeLabel": "Tipo",
+        "typeCol": "Tipo",
         "type": {
           "all": "Todos",
           "permission": "Permissão",
@@ -4521,7 +4522,8 @@
           "remove": "Removeu"
         },
         "empty": "Sem registros para esse filtro.",
-        "loadError": "Não foi possível ler o histórico."
+        "loadError": "Não foi possível ler o histórico.",
+        "groupsLoadError": "Não foi possível carregar os grupos."
       },
       "screens": {
         "dashboard": {
