@@ -89,12 +89,19 @@ export function configureMentionSuggestion(options: ConfigureMentionSuggestionOp
         requestAnimationFrame(() => applyPosition(rect));
       };
 
+      // "Mostrar todos" só faz sentido na visão de TOPO (query vazia, "os primeiros 5" do
+      // diretório inteiro) — com um filtro digitado, a operadora já está buscando algo
+      // específico, e "mostrar todos" ficaria ao lado de um resultado sem relação com ele (e
+      // quebraria a contagem de itens de quem testa "digitar filtra para 1 resultado só").
+      const showAllFor = (query: string): (() => Promise<StaffDirectoryEntry[]>) | undefined =>
+        (loadAll && query.length === 0) ? loadAll : undefined;
+
       return {
         onStart: (props) => {
           // `ReactRenderer.element` é `HTMLElement` sempre (tipo da própria lib) — sem
           // `instanceof` redundante.
           component = new ReactRenderer(MentionPopupList, {
-            props: { items: props.items, error: lastDirectoryError, command: props.command, onShowAll: loadAll },
+            props: { items: props.items, error: lastDirectoryError, command: props.command, onShowAll: showAllFor(props.query) },
             editor: props.editor,
           });
           component.element.style.position = 'fixed';
@@ -103,7 +110,7 @@ export function configureMentionSuggestion(options: ConfigureMentionSuggestionOp
           reposition(props.clientRect);
         },
         onUpdate: (props) => {
-          component?.updateProps({ items: props.items, error: lastDirectoryError, command: props.command, onShowAll: loadAll });
+          component?.updateProps({ items: props.items, error: lastDirectoryError, command: props.command, onShowAll: showAllFor(props.query) });
           reposition(props.clientRect);
         },
         // Escape já é tratado pelo próprio `Suggestion` plugin (sempre fecha, `dispatchExit`)

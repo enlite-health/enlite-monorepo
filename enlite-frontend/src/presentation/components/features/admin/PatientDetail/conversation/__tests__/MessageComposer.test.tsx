@@ -105,6 +105,24 @@ describe('MessageComposer', () => {
     expect(screen.queryByTestId('composer-mention-show-all')).not.toBeInTheDocument();
   });
 
+  it('🔒 achado do e2e (mention-autocomplete-min-zero): "Mostrar todos" SOME ao digitar um filtro — só existe na visão de topo (query vazia)', async () => {
+    searchStaffDirectory.mockResolvedValue([{ uid: 'u-1', displayName: 'QA Staff Um', isOnline: true }]);
+    render(<MessageComposer patientId="p1" />);
+
+    const editor = screen.getByTestId('composer-editor');
+    const user = userEvent.setup();
+    await user.click(editor);
+    await user.type(editor, '@');
+    await waitFor(() => expect(screen.getByTestId('composer-mention-show-all')).toBeInTheDocument());
+
+    await user.type(editor, 'qa');
+    await waitFor(() => expect(searchStaffDirectory).toHaveBeenLastCalledWith('qa'));
+    // "Mostrar todos" não pode aparecer ao lado de um resultado FILTRADO — quem conta os <li>
+    // da lista (e2e `mention-autocomplete-min-zero`, "digitar filtra para 1 resultado só") não
+    // pode ver um item a mais que não é candidato nenhum.
+    expect(screen.queryByTestId('composer-mention-show-all')).not.toBeInTheDocument();
+  });
+
   it('com 1 caractere já busca (item 1, revoga D-06 — antes exigia 2+)', async () => {
     searchStaffDirectory.mockResolvedValue([]);
     render(<MessageComposer patientId="p1" />);
