@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft, ChevronRight, LayoutGrid } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -82,6 +82,31 @@ export default function PatientDetailPage() {
   const [focusRequest, setFocusRequest] = useState<DrawerFocusRequest | null>(
     () => (location.state as { focusRequest?: DrawerFocusRequest } | null)?.focusRequest ?? null,
   );
+  /**
+   * 🔒 DEFEITO 1 (Rodada 2, medido em prd 21-22/09) — o `useState` acima só lê `location.state`
+   * na INICIALIZAÇÃO (lazy initializer, de propósito — ver comentário logo abaixo). Isso quebra o
+   * deep-link do sino quando a operadora JÁ ESTÁ na ficha do mesmo paciente e clica em OUTRA
+   * notificação (ou na mesma de novo): o React Router não desmonta esta página (mesma rota, só
+   * `location.state` muda) — o `useState` nunca vê o novo valor, e o painel nem abre nem realça a
+   * mensagem nova.
+   *
+   * Conserto: reage a um TOKEN NOVO em `location.state.focusRequest` mesmo com a página já
+   * montada — comparando por `token` (não por identidade do objeto, que `useLocation` também
+   * recria a cada navegação para o mesmo path). `lastLocationTokenRef` começa igual ao token que
+   * o lazy initializer já consumiu — o efeito não repete o MESMO pedido no primeiro render.
+   *
+   * NÃO reabre em troca MANUAL de aba (regra antiga F3, preservada): `changeTab` não mexe em
+   * `location`/`navigate`, então `location.state.focusRequest.token` continua o mesmo de antes —
+   * o efeito só dispara quando o SINO manda um token novo de verdade.
+   */
+  const locationFocusRequest = (location.state as { focusRequest?: DrawerFocusRequest } | null)?.focusRequest ?? null;
+  const lastLocationTokenRef = useRef<number | null>(locationFocusRequest?.token ?? null);
+  useEffect(() => {
+    if (!locationFocusRequest) return;
+    if (lastLocationTokenRef.current === locationFocusRequest.token) return;
+    lastLocationTokenRef.current = locationFocusRequest.token;
+    setFocusRequest(locationFocusRequest);
+  }, [locationFocusRequest]);
   const focusChecklistItem = (code: PatientCompletenessCode) => {
     setActiveTab(COMPLETENESS_TAB[code]);
     setFocusRequest({ code, token: Date.now() });
