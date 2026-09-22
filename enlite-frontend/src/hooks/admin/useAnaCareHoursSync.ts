@@ -1,5 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { AnaCareHoursServiceError, type AnaCareHoursService } from '@presentation/components/features/admin/AnaCareHours/AnaCareHoursService';
+
+/**
+ * change `anacare-horas-feedback-visual-sync` (Requisito 3) — tradução por CÓDIGO, nunca
+ * `err.message`/texto técnico do `fetch`. Mesmo padrão de `AnaCareHoursDetailContainer.ts:60-63`
+ * (`describeError`), reaproveitando o MESMO namespace `admin.anacareHours.error.byCode.<CODE>` —
+ * `AnaCareHoursServiceError` já cai em `DESCONHECIDO` para qualquer código não mapeado (inclusive
+ * o 409 `ANACARE_PATIENT_MONTH_COLLISION`, cujo `err.message` embute `anaCarePatientIds` — nunca
+ * lido aqui). Um erro de REDE (fetch rejeitando antes de qualquer resposta HTTP, ex.: `TypeError:
+ * Failed to fetch`) não é `AnaCareHoursServiceError` — não tem `.code` nenhum — por isso ganha o
+ * código sintético `NETWORK_ERROR` (chave nova, mesmo namespace).
+ */
+function syncErrorCode(err: unknown): string {
+  return err instanceof AnaCareHoursServiceError ? err.code : 'NETWORK_ERROR';
+}
 
 /**
  * Orçamento de tempo por RODADA do sync manual (F6.4, botão "Sincronizar" da lista) — medido na
@@ -60,6 +75,15 @@ export interface UseAnaCareHoursSyncResult {
   round: number;
   /** Soma de `reservationsProcessed` de todas as rodadas já concluídas nesta corrida. */
   reservationsProcessed: number;
+  /**
+   * change `anacare-horas-feedback-visual-sync` (Requisito 1) — TOTAL/ACUMULADO da corrida
+   * (`TriggerSyncResult.reservationsTotal/reservationsDone`, já a soma de todas as rodadas
+   * retomadas por cursor — ver comentário do tipo). `null` antes da 1ª rodada responder, ou se uma
+   * resposta antiga/em cache não trouxer os campos (nunca "undefined de undefined" — risco nomeado
+   * em design.md).
+   */
+  reservationsTotal: number | null;
+  reservationsDone: number | null;
   error: string | null;
   /** Cursor de uma corrida anterior interrompida (refresh no meio) — presente só quando `status !== 'running'`. */
   resumableCursor: number | null;
@@ -84,9 +108,12 @@ export interface UseAnaCareHoursSyncResult {
  * Erro no meio PARA o laço, preserva o último cursor persistido e NUNCA marca `status: 'done'`.
  */
 export function useAnaCareHoursSync(service: AnaCareHoursService, month: string, onComplete?: () => void): UseAnaCareHoursSyncResult {
+  const { t } = useTranslation();
   const [status, setStatus] = useState<AnaCareHoursSyncStatus>('idle');
   const [round, setRound] = useState(0);
   const [reservationsProcessed, setReservationsProcessed] = useState(0);
+  const [reservationsTotal, setReservationsTotal] = useState<number | null>(null);
+  const [reservationsDone, setReservationsDone] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [resumableCursor, setResumableCursor] = useState<number | null>(() => readResumableCursor(month));
   const [interruptedMonth, setInterruptedMonth] = useState<string | null>(null);
@@ -119,6 +146,8 @@ export function useAnaCareHoursSync(service: AnaCareHoursService, month: string,
     setError(null);
     setRound(0);
     setReservationsProcessed(0);
+    setReservationsTotal(null);
+    setReservationsDone(null);
     setResumableCursor(readResumableCursor(month));
     // Voltar para o mês que ficou com uma interrupção pendente: o `resumeHint` deste mesmo mês
     // (linha acima, via `resumableCursor`) já avisa que há corrida retomável — não duplicar aviso.
@@ -139,6 +168,8 @@ export function useAnaCareHoursSync(service: AnaCareHoursService, month: string,
     setError(null);
     setRound(0);
     setReservationsProcessed(0);
+    setReservationsTotal(null);
+    setReservationsDone(null);
     // Esta corrida (deste mês ou de outro) supera qualquer interrupção que ainda estivesse
     // esperando aviso — evita duas mensagens conflitantes na tela ao mesmo tempo.
     setInterruptedMonth(null);
@@ -165,9 +196,14 @@ export function useAnaCareHoursSync(service: AnaCareHoursService, month: string,
           result = await trigger({ month: runMonth, cursor, budgetMs: SYNC_ROUND_BUDGET_MS });
         } catch (err) {
           if (token.cancelled) return;
-          const message = err instanceof AnaCareHoursServiceError || err instanceof Error ? err.message : 'No se pudo sincronizar.';
+          // Requisito 3: NUNCA `err.message`/texto técnico do `fetch` — só tradução por CÓDIGO
+          // (ver `syncErrorCode`). Cobre tanto erro de rede real (`TypeError: Failed to fetch`,
+          // que chega aqui como `Error` comum, sem `.code`) quanto qualquer `AnaCareHoursServiceError`
+          // (inclusive o 409 de colisão, mapeado para `DESCONHECIDO` — `err.message` daquele caso
+          // embute `anaCarePatientIds` e nunca é lido).
+          const code = syncErrorCode(err);
           setStatus('error');
-          setError(message);
+          setError(t(`admin.anacareHours.error.byCode.${code}`, t('admin.anacareHours.error.byCode.DESCONHECIDO')));
           return;
         }
         if (token.cancelled) {
@@ -211,6 +247,12 @@ export function useAnaCareHoursSync(service: AnaCareHoursService, month: string,
         processedTotal += result.reservationsProcessed;
         setRound(roundsRun);
         setReservationsProcessed(processedTotal);
+        // Requisito 1: SOBRESCREVE (nunca soma) — o backend já devolve o ACUMULADO da corrida
+        // inteira a cada rodada (ver comentário de `TriggerSyncResult.reservationsTotal/
+        // reservationsDone`). Runtime-safe mesmo com o tipo não-opcional: resposta antiga/em cache
+        // sem os campos vira "sem contagem" (`null`), nunca `NaN`/"undefined de undefined".
+        setReservationsTotal(typeof result.reservationsTotal === 'number' ? result.reservationsTotal : null);
+        setReservationsDone(typeof result.reservationsDone === 'number' ? result.reservationsDone : null);
 
         if (result.nextCursor === null) {
           clearCursor(runMonth);
@@ -227,7 +269,7 @@ export function useAnaCareHoursSync(service: AnaCareHoursService, month: string,
     }
 
     void loop();
-  }, [service, month, resumableCursor]);
+  }, [service, month, resumableCursor, t]);
 
-  return { status, round, reservationsProcessed, error, resumableCursor, interruptedMonth, start };
+  return { status, round, reservationsProcessed, reservationsTotal, reservationsDone, error, resumableCursor, interruptedMonth, start };
 }

@@ -155,6 +155,8 @@ describe('AnaCareHoursListContainer — mês EXIBIDO no seletor × mês ENVIADO 
       shiftsWritten: 10,
       nextCursor: null,
       runStartedAt: '2026-09-20T07:16:27.981Z',
+      reservationsTotal: 0,
+      reservationsDone: 0,
       shiftsSkippedNoProvider: 0,
       shiftsSkippedNoPatient: 0,
       ...overrides,
