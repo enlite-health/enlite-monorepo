@@ -4,18 +4,26 @@
  *
  * `?patientId=` filtra a lista do `@` para SÓ quem PODE, de fato, abrir a conversa DAQUELE
  * paciente — usando o MESMO mecanismo de decisão do servidor
- * (`iam.effective_permissions`/`iam.effective_countries`, a fonte que `PermissionService.resolve`
- * consulta, a mesma que `PermissionClientActorAccessChecker` usa via `client.can`, e a mesma que
- * `iam.session_may_see_country`/RLS consultam para decidir se a linha do paciente aparece de
- * verdade): célula `patient_conversation:read` E o país do paciente dentro do escopo de país do
- * grupo do candidato. Nunca uma regra paralela.
+ * (`iam.effective_permissions`, a fonte que `PermissionService.resolve` consulta, a mesma que
+ * `PermissionClientActorAccessChecker` usa via `client.can`): célula `patient_conversation:read`.
+ * O recorte por PAÍS (`iam.effective_countries`) é CONDICIONAL a `COUNTRY_RLS_ENABLED` (gate 🔴
+ * do revisao-pr, 22/09) — este `describe` roda com a flag `true` (país É um eixo real de
+ * decisão aqui, testável), exceto no caso 4b, que prova o valor de prd (`false`, medido 22/09):
+ * sem a flag, o repositório não filtra por país — só por célula, igual a como
+ * `PermissionMiddleware`/`PermissionClientActorAccessChecker` decidem o acesso REAL à conversa
+ * hoje. Nunca uma regra paralela.
  *
  * Casos cobertos:
  *  1. Ator SEM `patient_conversation:read` — não aparece, mesmo tendo `staff_directory:read`.
- *  2. Ator COM a célula mas com escopo de país FORA do país do paciente — não aparece.
- *  3. Ator COM a célula e COM o país do paciente no escopo — aparece (controle positivo).
- *  4. Ator COM a célula mas SEM NENHUM escopo de país (grupo sem `group_country_scopes`) — não
- *     aparece (D113: grupo sem escopo é `[]`, nunca "libera geral").
+ *  2. Ator COM a célula mas com escopo de país FORA do país do paciente (COUNTRY_RLS_ENABLED=true)
+ *     — não aparece.
+ *  3. Ator COM a célula e COM o país do paciente no escopo (COUNTRY_RLS_ENABLED=true) — aparece
+ *     (controle positivo).
+ *  4a. Ator COM a célula mas SEM NENHUM escopo de país (grupo sem `group_country_scopes`),
+ *      COUNTRY_RLS_ENABLED=true — não aparece (D113: grupo sem escopo é `[]`, nunca "libera
+ *      geral").
+ *  4b. MESMO ator do 4a, mas COUNTRY_RLS_ENABLED=false (valor medido em prd, 22/09) — APARECE: a
+ *      rota real da conversa não filtra por país hoje, então o `@` também não pode (gate 🔴).
  *  5. O requester nunca aparece na própria lista, mesmo quando ele mesmo qualificaria.
  *  6. `patientId` de paciente INEXISTENTE — lista vazia (fail-closed).
  *  7. SEM `patientId` — comportamento atual (lista geral, ninguém filtrado por conversa).
@@ -168,6 +176,10 @@ describe('Diretório de staff × patientId (R3-1, spec 022) — HTTP real, Postg
     setEnv('PERMISSION_ENFORCED_ROUTES', 'admin.patients;admin.users');
     setEnv('PERMISSION_CACHE_TTL_MS', '0');
     setEnv('DATABASE_URL', DATABASE_URL);
+    // Gate 🔴 do revisao-pr (22/09): o recorte de país só entra com esta flag ligada — este
+    // describe testa o eixo de país, então liga por default; o caso 4b desliga TEMPORARIAMENTE
+    // (só o request dele) pra provar o valor real de prd.
+    setEnv('COUNTRY_RLS_ENABLED', 'true');
 
     const { createAdminStaffDirectoryRoutes } = await import(
       '../../../src/modules/identity/interfaces/routes/adminStaffDirectoryRoutes'
@@ -215,11 +227,31 @@ describe('Diretório de staff × patientId (R3-1, spec 022) — HTTP real, Postg
     expect(uids).toContain(U.comCelulaEPais);
   });
 
-  it('4. ator COM a célula mas SEM nenhum escopo de país — não aparece (D113: [] nunca libera geral)', async () => {
+  it('4a. ator COM a célula mas SEM nenhum escopo de país, COUNTRY_RLS_ENABLED=true — não aparece (D113: [] nunca libera geral)', async () => {
     const res = await chamar(`/api/admin/staff-directory?patientId=${PATIENT_ID}`, U.requester);
     expect(res.status).toBe(200);
     const uids = res.body.data.map((e: { uid: string }) => e.uid);
     expect(uids).not.toContain(U.comCelulaSemPais);
+  });
+
+  // Gate 🔴 do revisao-pr (22/09): sem COUNTRY_RLS_ENABLED (valor medido em prd), a rota REAL da
+  // conversa (PermissionMiddleware/PermissionClientActorAccessChecker) não filtra por país — só
+  // por célula. O `@` tem de refletir o MESMO acesso: quem tem a célula mas nenhum escopo de
+  // país cadastrado já PODE abrir a conversa de verdade hoje, então precisa aparecer aqui
+  // também. Desliga a flag só para este request (não para o describe inteiro — os outros casos
+  // deste bloco testam o eixo de país com a flag ligada).
+  it('4b. MESMO ator do 4a, mas COUNTRY_RLS_ENABLED=false (valor de prd, medido 22/09) — APARECE', async () => {
+    const anterior = process.env.COUNTRY_RLS_ENABLED;
+    process.env.COUNTRY_RLS_ENABLED = 'false';
+    try {
+      const res = await chamar(`/api/admin/staff-directory?patientId=${PATIENT_ID}`, U.requester);
+      expect(res.status).toBe(200);
+      const uids = res.body.data.map((e: { uid: string }) => e.uid);
+      expect(uids).toContain(U.comCelulaSemPais);
+    } finally {
+      if (anterior === undefined) delete process.env.COUNTRY_RLS_ENABLED;
+      else process.env.COUNTRY_RLS_ENABLED = anterior;
+    }
   });
 
   it('5. o requester NUNCA aparece na própria lista, mesmo qualificando (célula + país corretos)', async () => {

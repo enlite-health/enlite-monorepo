@@ -31,8 +31,10 @@
  *    já é `true` quando ele roda — o `mount()` não re-anexa nem tenta remover sozinho (seguimos
  *    donos do DOM node, como sempre).
  *
- * 2. ESCAPE fechava o popup (o próprio `Suggestion` plugin já despacha o `exit` ANTES de chamar
- *    este `onKeyDown`), mas o evento nativo `keydown` nunca tinha `stopPropagation()` — só
+ * 2. ESCAPE fechava o popup (o próprio `Suggestion` plugin chama este `onKeyDown` ANTES de
+ *    despachar o `exit` — `handleKeyDown` em `@tiptap/suggestion/dist/index.js`: no `case`
+ *    Escape, primeiro roda `renderer.onKeyDown`, só depois `dispatchExit(view)`), mas o evento
+ *    nativo `keydown` nunca tinha `stopPropagation()` — só
  *    `preventDefault()` (feito pelo ProseMirror). Ele continuava borbulhando até `document`, onde
  *    o `SlideOverPanel` que embrulha este composer em produção (`PatientConversationHandle.tsx`)
  *    tem seu PRÓPRIO listener de Escape (`onKeyDown` no painel/drawer) — com o rascunho não vazio
@@ -165,10 +167,10 @@ export function configureMentionSuggestion(options: ConfigureMentionSuggestionOp
           });
           reposition(props.clientRect);
         },
-        // Escape já é tratado pelo próprio `Suggestion` plugin (sempre fecha, `dispatchExit`)
-        // ANTES de chamar este `onKeyDown` — só ArrowUp/ArrowDown/Enter chegam aqui de fato
-        // (commit 3, teclado + ARIA), FORA do Escape. Delegado ao `ref` do popup: o foco nunca
-        // sai do editor.
+        // Escape TAMBÉM chega aqui (o `Suggestion` plugin chama este `onKeyDown` ANTES de
+        // despachar o `exit` — ver docblock do arquivo) — por isso o `if` abaixo intercepta
+        // Escape explicitamente. ArrowUp/ArrowDown/Enter (commit 3, teclado + ARIA) caem no
+        // `return` de baixo, delegado ao `ref` do popup: o foco nunca sai do editor.
         //
         // D1: Escape ainda precisa de `stopPropagation()` aqui — sem isto, o `keydown` nativo
         // segue borbulhando até `document` e aciona o listener de Esc do drawer que embrulha o
