@@ -14,13 +14,15 @@ export interface AdminRecord {
 }
 
 /**
- * Linha do diretório de staff (spec 022, `contracts/openapi-staff-directory.md`).
- * De propósito, SÓ `uid`/`displayName` — nunca `email` nem `role` (D-06: o
+ * Linha do diretório de staff (spec 022, `contracts/openapi-staff-directory.md`;
+ * `isOnline` — change 022-ux-mencao-e-notificacao, Rodada 2/R2-B).
+ * De propósito, SÓ `uid`/`displayName`/`isOnline` — nunca `email` nem `role` (D-06: o
  * autocomplete de menção não precisa e o payload vaza menos).
  */
 export interface StaffDirectoryEntry {
   uid: string;
   displayName: string | null;
+  isOnline: boolean;
 }
 
 export class AdminRepository {
@@ -104,18 +106,34 @@ export class AdminRepository {
    * `display_name` se algum existir). Sem filtro nenhum, é só `ORDER BY ... LIMIT`, "os primeiros
    * N do diretório".
    */
-  async searchStaffDirectory(q: string | undefined, limit = 20): Promise<StaffDirectoryEntry[]> {
+  /**
+   * `excludeUid` (R2-B, popup estilo ClickUp): o próprio requester nunca aparece na própria lista
+   * de mencionáveis — `undefined`/`null` não exclui ninguém (uso interno/teste que não tem um
+   * requester para excluir).
+   *
+   * `isOnline` (R2-B): calculado AQUI, no SQL, na leitura — nunca persistido
+   * (`migrations/465_users_last_seen_at.sql`). Presença "simples": só o `last_seen_at` mais
+   * recente importa, sem histórico.
+   */
+  async searchStaffDirectory(
+    q: string | undefined,
+    limit = 20,
+    excludeUid?: string | null,
+  ): Promise<StaffDirectoryEntry[]> {
     const trimmed = q?.trim();
+    const exclude = excludeUid ?? null;
     if (!trimmed) {
       const result = await this.pool.query(
         `SELECT
           u.firebase_uid AS uid,
-          u.display_name AS "displayName"
+          u.display_name AS "displayName",
+          (u.last_seen_at IS NOT NULL AND u.last_seen_at > now() - interval '5 minutes') AS "isOnline"
         FROM users u
         WHERE u.account_type = 'staff' AND u.is_active = true
+          AND ($2::text IS NULL OR u.firebase_uid <> $2)
         ORDER BY u.display_name, u.firebase_uid
         LIMIT $1`,
-        [limit]
+        [limit, exclude]
       );
       return result.rows;
     }
@@ -124,16 +142,41 @@ export class AdminRepository {
     const result = await this.pool.query(
       `SELECT
         u.firebase_uid AS uid,
-        u.display_name AS "displayName"
+        u.display_name AS "displayName",
+        (u.last_seen_at IS NOT NULL AND u.last_seen_at > now() - interval '5 minutes') AS "isOnline"
       FROM users u
       WHERE u.account_type = 'staff' AND u.is_active = true
         AND (u.display_name ILIKE '%' || $1 || '%' ESCAPE '\\'
           OR u.email ILIKE '%' || $1 || '%' ESCAPE '\\')
+        AND ($3::text IS NULL OR u.firebase_uid <> $3)
       ORDER BY u.display_name, u.firebase_uid
       LIMIT $2`,
-      [escaped, limit]
+      [escaped, limit, exclude]
     );
     return result.rows;
+  }
+
+  /**
+   * Heartbeat de presença (R2-B, `POST /api/admin/me/presence`) — molde `updateLastLogin` (mesma
+   * tabela, mesma forma: `UPDATE users SET <coluna> WHERE firebase_uid = $1`, sem
+   * `withActorContext`/transação própria, porque não é ato auditável (sem histórico por decisão
+   * do Gabriel, 22/09) nem depende de trigger que exija `app.current_uid`.
+   *
+   * Throttle NO SQL (WHERE), não na aplicação: `now() - interval '30 seconds'` na própria cláusula
+   * torna a checagem e a escrita atômicas (sem round-trip de leitura antes) e barata — heartbeat
+   * chamado a cada ~60s do cliente já não bateria o throttle na maioria das chamadas; a proteção
+   * é para chamada em rajada (retry, múltiplas abas). Devolve se REGRAVOU (para teste/observabilidade
+   * — o endpoint HTTP sempre responde 204 de qualquer forma, throttle é transparente ao cliente).
+   */
+  async touchPresence(firebaseUid: string): Promise<boolean> {
+    const result = await this.pool.query(
+      `UPDATE users
+         SET last_seen_at = now()
+       WHERE firebase_uid = $1
+         AND (last_seen_at IS NULL OR last_seen_at < now() - interval '30 seconds')`,
+      [firebaseUid]
+    );
+    return (result.rowCount ?? 0) > 0;
   }
 
   async countAdmins(): Promise<number> {
