@@ -7,9 +7,12 @@
  * (achado de prd, F19/F20 de `fatos-medidos.md`) — `staffNameCache` vira só fallback.
  *
  * Feliz: autor e menção aparecem com NOME, nunca uid cru, para quem os leu normalmente.
- * Alternativo: um SEGUNDO leitor, numa aba/contexto que NUNCA abriu o autocomplete de menção
+ * Alternativo 1: um SEGUNDO leitor, numa aba/contexto que NUNCA abriu o autocomplete de menção
  *   nesta sessão (cache de navegador vazio), ainda vê o nome correto — vindo do servidor, não do
  *   cache local.
+ * Alternativo 2 (G4/G5, gate desta change): autor e menção SEM `display_name` (coluna nullable de
+ *   `users` — conta real sem nome definido). Servidor devolve `null`; sem fallback de cache, a UI
+ *   cai no PRÓPRIO uid — nunca em "undefined"/branco.
  *
  * Stack: mesma família de `patient-conversation-happy.integration.e2e.ts`.
  * Sem PII/texto clínico: paciente "Paciente QA", staff "QA Staff Autora"/"QA Staff Mencionado".
@@ -108,5 +111,33 @@ test.describe('Nomes de autor/menção vêm do SERVIDOR — sem depender do cach
     } finally {
       await context.close();
     }
+  });
+
+  // G5 (gate da change 022-ux-mencao-e-notificacao): 2º alternativo — autor SEM display_name
+  // (conta sem nome definido — mesma coluna nullable de `users`, cenário real de staff que nunca
+  // preencheu o perfil ou teve o nome apagado) e menção a um uid TAMBÉM sem display_name. O
+  // servidor devolve `authorDisplayName`/`mentionDisplayNames[uid]` como `null` nos dois casos —
+  // sem fallback nenhum de nome no cache do navegador (a leitora nunca abriu o autocomplete), a UI
+  // tem de cair no PRÓPRIO uid (`useStaffDisplayName`), nunca em "undefined"/branco.
+  test('alternativo 2 — autor e menção SEM display_name: cai no uid como fallback, nunca "undefined"', async ({ page, request }) => {
+    psql(`UPDATE users SET display_name = NULL WHERE firebase_uid = '${AUTORA_UID}'`);
+    psql(`UPDATE users SET display_name = NULL WHERE firebase_uid = '${MENCIONADO_UID}'`);
+
+    const res = await request.post(`${ABAC_API_URL}/api/admin/patients/${patientId}/conversation/messages`, {
+      headers: { Authorization: `Bearer ${tokenFor(AUTORA)}` },
+      data: { body: `msg-2 sem-nome <@${MENCIONADO_UID}>` },
+    });
+    expect(res.ok()).toBe(true);
+
+    await loginAs(page, LEITORA);
+    await page.goto(`/admin/patients/${patientId}`);
+    await page.getByTestId('patient-conversation-handle-btn').click();
+
+    const messageCard = page.locator('[data-testid^="conversation-message-"]').filter({ hasText: 'sem-nome' }).first();
+    await expect(messageCard).toBeVisible({ timeout: 10_000 });
+    // Fallback = o PRÓPRIO uid (contrato de `useStaffDisplayName`) — nunca "undefined"/vazio.
+    await expect(messageCard.getByTestId('message-author')).toHaveText(AUTORA_UID);
+    await expect(messageCard.getByTestId('mention-chip')).toHaveText(`@${MENCIONADO_UID}`);
+    await expect(messageCard).not.toContainText('undefined');
   });
 });
