@@ -68,6 +68,14 @@ interface AnaCareHoursDetailPageProps {
   onContestShift?: (shiftId: string, reason: ContestReason, note: string) => void | Promise<void>;
   /** "Actualizar" — refaz a ÚNICA chamada do mês (D-16/09: refresh por paciente). Ausente = botão some (harness/print estático). */
   onRefresh?: () => void;
+  /**
+   * change `anacare-horas-feedback-visual-sync` (Requisito 4) — `true` enquanto a busca disparada
+   * por `onRefresh` (ou qualquer outra que reuse o MESMO `isLoading` do hook) está em voo, mesmo
+   * já havendo `snapshot` na tela. Controla SÓ o spinner/disabled deste botão — nunca a tela de
+   * loading de página inteira da 1ª carga (`AnaCareHoursDetailContainer.tsx`, condição
+   * `isLoading && !snapshot`, intocada). Default `false` (harness/print estático sem o container).
+   */
+  isRefreshing?: boolean;
   sinCheckinHoursMode?: SinCheckinHoursMode;
   /** 1.5a (D344): o motivo de bloqueio POR DIA nasce curto — o banner do topo é sempre longo, intocado por esta prop. */
   blockReasonMode?: BlockReasonMode;
@@ -86,6 +94,7 @@ export function AnaCareHoursDetailPage({
   onValidateBatch,
   onContestShift,
   onRefresh,
+  isRefreshing = false,
   sinCheckinHoursMode = 'zero',
   blockReasonMode = 'corto',
   disableActionsReason,
@@ -238,9 +247,24 @@ export function AnaCareHoursDetailPage({
             <Heading level={1}>{patientDisplayName(patient)}</Heading>
           </div>
           {onRefresh && (
-            <Button variant="outline" size="sm" onClick={onRefresh} data-testid="anacare-hours-refresh">
+            // Requisito 4: `isLoading={false}` de propósito (mesmo padrão do botão de sync,
+            // decisão de design #2/#4) — `disabled={isRefreshing}` já bloqueia o clique durante a
+            // busca, sem deixar `Button.tsx` trocar o `children` inteiro por "Cargando…" (o rótulo
+            // "Actualizar" continua visível; só o ícone gira).
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onRefresh}
+              isLoading={false}
+              disabled={isRefreshing}
+              data-testid="anacare-hours-refresh"
+            >
               <span className="inline-flex items-center gap-1.5">
-                <RefreshCw className="w-4 h-4" />
+                <RefreshCw
+                  data-testid="anacare-hours-refresh-spinner"
+                  data-spinning={isRefreshing}
+                  className={isRefreshing ? 'w-4 h-4 animate-spin' : 'w-4 h-4'}
+                />
                 {t('admin.anacareHours.detail.refreshAction')}
               </span>
             </Button>

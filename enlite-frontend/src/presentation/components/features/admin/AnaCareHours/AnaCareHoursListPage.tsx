@@ -128,6 +128,8 @@ export function AnaCareHoursListPage({
                 status={sync.status}
                 round={sync.round}
                 reservationsProcessed={sync.reservationsProcessed}
+                reservationsTotal={sync.reservationsTotal}
+                reservationsDone={sync.reservationsDone}
                 error={sync.error}
                 resumableCursor={sync.resumableCursor}
                 interruptedMonth={sync.interruptedMonth}
