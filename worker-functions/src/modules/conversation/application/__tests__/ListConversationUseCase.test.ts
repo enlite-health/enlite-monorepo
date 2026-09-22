@@ -14,6 +14,7 @@ jest.mock('@shared/database/DatabaseConnection', () => ({
 }));
 
 jest.mock('@shared/security/KMSEncryptionService', () => ({
+  ...jest.requireActual('@shared/security/KMSEncryptionService'),
   KMSEncryptionService: jest.fn().mockImplementation(() => ({
     decrypt: mockDefaultRepoDecrypt,
     encrypt: jest.fn().mockResolvedValue(null),
