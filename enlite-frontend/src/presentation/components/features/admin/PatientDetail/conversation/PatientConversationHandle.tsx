@@ -67,8 +67,10 @@ export function PatientConversationHandle({ patientId, focusRequest }: PatientCo
   /** `MessageComposer` ATIVO (topo ou reply) — ver docstring do componente. */
   const composerRef = useRef<MessageComposerHandle>(null);
   /** Deep-link (item 3, change 022-ux-mencao-e-notificacao): alvo repassado ao `ConversationPanel`
-   * quando a notificação clicada tinha `messageId`. `null` = abertura normal (clique no botão). */
-  const [focusTarget, setFocusTarget] = useState<{ messageId: string; rootMessageId: string | null } | null>(null);
+   * quando a notificação clicada tinha `messageId`. `null` = abertura normal (clique no botão).
+   * `token` (G7): o do próprio `DrawerFocusRequest` — identifica O CLIQUE, não a mensagem, para o
+   * `ConversationPanel` saber reprocessar mesmo quando é a MESMA notificação clicada de novo. */
+  const [focusTarget, setFocusTarget] = useState<{ messageId: string; rootMessageId: string | null; token: number } | null>(null);
 
   usePolling(async () => {
     try {
@@ -86,7 +88,11 @@ export function PatientConversationHandle({ patientId, focusRequest }: PatientCo
     // Item 3 (deep-link): quando a abertura veio de uma notificação COM messageId, guarda o alvo
     // pro `ConversationPanel` processar (rolar/destacar). Clique direto no botão (sem `request`,
     // ou notificação sem `messageId` — D-08) mantém o comportamento antigo: abertura normal.
-    setFocusTarget(request?.messageId ? { messageId: request.messageId, rootMessageId: request.rootMessageId ?? null } : null);
+    setFocusTarget(
+      request?.messageId
+        ? { messageId: request.messageId, rootMessageId: request.rootMessageId ?? null, token: request.token }
+        : null,
+    );
     // Persiste a marca de leitura no servidor — sem isto, o badge zera aqui só na TELA, mas o
     // próximo GET (poll ou reload) devolveria o `unreadCount` de ANTES de abrir. Mesmo freio das
     // outras falhas deste componente: best-effort, badge não é canal de alerta.

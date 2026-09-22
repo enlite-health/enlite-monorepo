@@ -610,5 +610,47 @@ describe('ConversationPanel', () => {
       expect(screen.getByTestId('message-card-m1')).not.toHaveAttribute('data-highlighted');
       expect(screen.queryByTestId('conversation-message-not-found')).not.toBeInTheDocument();
     });
+
+    // G7 (achado do gate desta change): clicar de novo na MESMA notificação (2º clique, `token`
+    // novo) com o painel já aberto tem de reprocessar — antes, `processedFocusIdRef` só zerava ao
+    // abrir o painel/trocar de paciente, então o 2º clique caía numa guarda presa para sempre
+    // (nem destacava, nem chamava `onFocusHandled` — o `focusTarget` ficava preso no pai).
+    it('G7: 2º clique na MESMA notificação (token novo) com o painel já aberto — reprocessa (onFocusHandled de novo)', async () => {
+      const onFocusHandled = vi.fn();
+      getConversation.mockResolvedValue({
+        conversationId: 'conv-1',
+        messages: [msg({ id: 'm1' }), msg({ id: 'm2' })],
+        nextCursor: null,
+      });
+      const { rerender } = render(
+        <ConversationPanel
+          patientId="p1"
+          isOpen
+          focusTarget={{ messageId: 'm1', rootMessageId: null, token: 1 }}
+          onFocusHandled={onFocusHandled}
+        />,
+      );
+
+      await waitFor(() => expect(screen.getByTestId('message-card-m1')).toHaveAttribute('data-highlighted', 'true'));
+      expect(onFocusHandled).toHaveBeenCalledTimes(1);
+
+      // O pai real zera `focusTarget` depois de `onFocusHandled` (mesmo protocolo do
+      // `PatientConversationHandle`) — simula aqui.
+      rerender(
+        <ConversationPanel patientId="p1" isOpen focusTarget={null} onFocusHandled={onFocusHandled} />,
+      );
+
+      // 2º clique NA MESMA notificação: mesmo `messageId`, `token` NOVO.
+      rerender(
+        <ConversationPanel
+          patientId="p1"
+          isOpen
+          focusTarget={{ messageId: 'm1', rootMessageId: null, token: 2 }}
+          onFocusHandled={onFocusHandled}
+        />,
+      );
+
+      await waitFor(() => expect(onFocusHandled).toHaveBeenCalledTimes(2));
+    });
   });
 });

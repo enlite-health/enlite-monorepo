@@ -40,8 +40,13 @@ interface ConversationPanelProps {
    * Deep-link (item 3, change 022-ux-mencao-e-notificacao): alvo a rolar/destacar ao abrir —
    * vem da notificação clicada (`NotificationPanel` → `PatientConversationHandle`). `null`/ausente
    * = abertura normal, sem alvo nenhum.
+   *
+   * `token` (G7, achado do gate desta change): identifica O CLIQUE, não a mensagem — o mesmo
+   * `messageId` pode chegar de novo (usuária clica na MESMA notificação de novo com o painel já
+   * aberto). Opcional só para não quebrar quem ainda não tem um clique pra identificar (a guarda
+   * de reprocessamento cai para o `messageId` quando ausente — ver `processedFocusKeyRef`).
    */
-  focusTarget?: { messageId: string; rootMessageId: string | null } | null;
+  focusTarget?: { messageId: string; rootMessageId: string | null; token?: number } | null;
   /** Chamado depois que o alvo foi PROCESSADO (achado ou esgotado as páginas) — quem embrulha usa
    * isto para não reprocessar o mesmo alvo numa próxima renderização. */
   onFocusHandled?: () => void;
@@ -160,9 +165,19 @@ export function ConversationPanel({
   /** `messageId` do alvo que ESGOTOU as páginas sem ser achado — mostra o aviso "não encontrada"
    * sem travar o resto do painel (design.md §3, cenário "mensagem fora da 1ª página"). */
   const [notFoundTargetId, setNotFoundTargetId] = useState<string | null>(null);
-  /** `focusTarget.messageId` já processado nesta abertura — evita reprocessar o MESMO alvo a cada
-   * re-render (o pai pode manter a mesma referência de objeto entre renders). */
-  const processedFocusIdRef = useRef<string | null>(null);
+  /**
+   * Chave do `focusTarget` já processado nesta abertura — evita reprocessar o MESMO alvo a cada
+   * re-render (o pai pode manter a mesma referência de objeto entre renders).
+   *
+   * G7 (achado do gate desta change): a chave é o `token` do clique quando ele vem (não só o
+   * `messageId`) — antes, a guarda comparava só `messageId`, e como ela NUNCA era resetada fora
+   * de abrir o painel/trocar de paciente, clicar de nova na MESMA notificação com o painel JÁ
+   * aberto (2º clique, `token` novo, mesmo `messageId`) caía nesta guarda e nunca era processado —
+   * nem o destaque acontecia, nem `onFocusHandled` era chamado (o `focusTarget` ficava preso no
+   * pai para sempre). Sem `token` (chamador antigo/teste que não o passa), cai no `messageId`
+   * puro — comportamento inalterado.
+   */
+  const processedFocusKeyRef = useRef<string | null>(null);
   /** `true` a partir da 1ª resposta boa desta abertura — separa "carga inicial falhou" (mostra
    * `'error'`, painel nunca carregou nada) de "poll depois de já ter carregado" (silencioso,
    * mantém a última lista boa — comportamento antigo, preservado). */
@@ -208,7 +223,7 @@ export function ConversationPanel({
     setMessages([]);
     setHighlightMessageId(null);
     setNotFoundTargetId(null);
-    processedFocusIdRef.current = null;
+    processedFocusKeyRef.current = null;
     void fetchPage();
   }, [isOpen, patientId, fetchPage]);
 
@@ -224,7 +239,10 @@ export function ConversationPanel({
   // então o loop para frente sempre alcança, sem precisar de "carregar anterior".
   useEffect(() => {
     if (!isOpen || !focusTarget || status !== 'ready') return;
-    if (processedFocusIdRef.current === focusTarget.messageId) return;
+    // G7: chave por TOKEN quando o clique traz um — cada clique novo (mesmo `messageId` de antes)
+    // tem `token` diferente e por isso é reprocessado. Sem `token`, cai no `messageId` puro.
+    const focusKey = focusTarget.token !== undefined ? `token:${focusTarget.token}` : `msg:${focusTarget.messageId}`;
+    if (processedFocusKeyRef.current === focusKey) return;
     const target = focusTarget;
     let cancelled = false;
 
@@ -249,7 +267,7 @@ export function ConversationPanel({
         found = page.messages.find((m) => m.id === searchId) ?? null;
       }
       if (cancelled || !isMountedRef.current) return;
-      processedFocusIdRef.current = target.messageId;
+      processedFocusKeyRef.current = focusKey;
       if (!found) {
         setNotFoundTargetId(target.messageId);
         onFocusHandled?.();
