@@ -15,6 +15,7 @@ import { useTranslation } from 'react-i18next';
 import { Text } from '@presentation/components/atoms/Text';
 import { InlineLoadingState } from '@presentation/components/molecules/InlineLoadingState/InlineLoadingState';
 import { AdminNotificationApiService, type AdminNotification } from '@infrastructure/http/AdminNotificationApiService';
+import { getNotificationTypeHandler } from './notificationTypeRegistry';
 import { NotificationCard } from './NotificationCard';
 
 interface NotificationPanelProps {
@@ -68,21 +69,12 @@ export function NotificationPanel({ isOpen, onClose, onNotificationsChanged }: N
       // Best-effort: mesmo se o marcar-lida falhar, a navegação (se houver paciente) segue —
       // a operadora não pode ficar presa por um POST que falhou.
     }
-    if (notification.patientId) {
-      // Item 3 (deep-link, change 022-ux-mencao-e-notificacao, F10/F11/F12): antes só disparava
-      // `token: Date.now()` pra reabrir o painel — sem alvo nenhum. Agora propaga o `messageId`/
-      // `rootMessageId` REAIS da mensagem de origem; `ConversationPanel` (via
-      // `PatientConversationHandle`) usa isto pra rolar/destacar a mensagem certa.
-      navigate(`/admin/patients/${notification.patientId}`, {
-        state: {
-          focusRequest: {
-            code: 'conversation',
-            token: Date.now(),
-            messageId: notification.messageId ?? undefined,
-            rootMessageId: notification.rootMessageId,
-          },
-        },
-      });
+    // Item 3 (deep-link) + Rodada 2/R2-F: o alvo (path + focusRequest) vem do
+    // `notificationTypeRegistry` — fonte ÚNICA junto com o texto (`buildNotificationText`), nunca
+    // mais um `if (typeCode === ...)` inline aqui. `null` (D-08, sem `patientId`) = sem navegação.
+    const deepLink = getNotificationTypeHandler(notification.typeCode).getDeepLink(notification);
+    if (deepLink) {
+      navigate(deepLink.path, { state: { focusRequest: deepLink.focusRequest } });
       onClose();
     }
   };
