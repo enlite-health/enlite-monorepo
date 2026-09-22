@@ -99,6 +99,56 @@ test.describe('Sino na sidebar RECOLHIDA — ícone + badge, poll vivo (item 4) 
     });
   });
 
+  // D4 (achado da revisão visual da Fase 2, 22/09): o ícone do sino usava `text-gray-600`, que
+  // NESTE projeto (escala de cinza custom, `tailwind.config` — memória
+  // `escala-de-cinza-do-frontend-nao-e-tailwind`) resolve pra `#D9D9D9`, quase branco — bem mais
+  // claro que os demais ícones da sidebar, que não sobrescrevem cor nenhuma (herdam o padrão).
+  test('D4 — ícone do sino usa o MESMO token de cor dos demais itens do menu (nunca cinza-claro isolado)', async ({ page, request }) => {
+    await mentionB(request, 'msg-d4 cor do icone');
+
+    await loginAs(page, B);
+    await expect(page.getByTestId('notification-bell-btn')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('notification-bell-badge')).toBeVisible({ timeout: 10_000 });
+
+    const colors = await page.evaluate(() => {
+      const bellSvg = document.querySelector('[data-testid="notification-bell-btn"] svg');
+      const siblingSvg = document.querySelector('aside nav svg');
+      return {
+        bell: bellSvg ? getComputedStyle(bellSvg).color : null,
+        sibling: siblingSvg ? getComputedStyle(siblingSvg).color : null,
+      };
+    });
+
+    expect(colors.bell, 'ícone do sino não encontrado').not.toBeNull();
+    expect(colors.sibling, 'ícone irmão (nav) não encontrado').not.toBeNull();
+    // MESMO token — nunca um valor hardcoded: o que importa é bater com o irmão, seja qual for a
+    // cor herdada do tema.
+    expect(colors.bell).toBe(colors.sibling);
+
+    // O conserto de cor do ÍCONE nunca pode arrastar o badge (contraste alto: vermelho + branco).
+    const badgeColors = await page.evaluate(() => {
+      const badge = document.querySelector('[data-testid="notification-bell-badge"]');
+      const text = badge?.querySelector('span');
+      return {
+        bg: badge ? getComputedStyle(badge).backgroundColor : null,
+        fg: text ? getComputedStyle(text).color : null,
+      };
+    });
+    expect(badgeColors.bg).toBe('rgb(220, 38, 38)'); // bg-red-600
+    expect(badgeColors.fg).toBe('rgb(255, 255, 255)'); // text-white
+
+    // Boa vizinhança com o `mode: 'serial'`: a notificação seedada aqui não pode vazar pro
+    // contador dos testes seguintes ("alternativo 2" espera um número exato) — marca SÓ a
+    // NOTIFICAÇÃO PRÓPRIA como lida (clique no card, nunca "marcar todas", que apagaria também a
+    // notificação ainda-não-lida do teste "feliz" anterior).
+    await page.getByTestId('notification-bell-btn').click();
+    const panel = page.getByTestId('notification-panel');
+    await expect(panel).toHaveClass(/translate-x-0/);
+    const ownItem = panel.locator('[data-testid^="notification-item-"]').filter({ hasText: 'msg-d4' });
+    await expect(ownItem).toHaveCount(1, { timeout: 10_000 });
+    await ownItem.click();
+  });
+
   test('alternativo 1 — clique no sino COLAPSADO abre a gaveta normalmente', async ({ page }) => {
     await loginAs(page, B);
     await collapseSidebar(page);

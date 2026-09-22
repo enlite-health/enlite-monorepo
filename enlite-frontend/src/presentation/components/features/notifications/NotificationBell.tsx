@@ -82,7 +82,12 @@ export function NotificationBell({ isCollapsed = false }: NotificationBellProps)
         }
       >
         <span className="relative inline-flex w-5 h-5 flex-shrink-0">
-          <Bell className="w-5 h-5 text-gray-600" />
+          {/* D4 (achado da revisão visual da Fase 2, 22/09): `text-gray-600` resolvia pra `#D9D9D9`
+              (escala de cinza CUSTOM deste projeto, `tailwind.config` — memória
+              `escala-de-cinza-do-frontend-nao-e-tailwind`), bem mais claro que os demais ícones da
+              sidebar, que não sobrescrevem cor nenhuma (herdam o padrão do texto). Sem classe de
+              cor própria, o ícone volta a herdar o MESMO token dos irmãos (`NavItem`). */}
+          <Bell className="w-5 h-5" />
           {unreadCount > 0 && (
             <span
               data-testid="notification-bell-badge"
