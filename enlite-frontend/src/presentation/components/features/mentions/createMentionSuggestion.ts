@@ -15,6 +15,33 @@
  * `ReactRenderer` do TipTap só faz o commit real do conteúdo de forma assíncrona — sem isto,
  * `getBoundingClientRect()` devolve `{width:0,height:0}` no primeiro frame e o clamp vertical
  * nunca detecta que faltaria espaço abaixo.
+ *
+ * 🔒 FECHAR (D1, achado do Gabriel 22/09) — dois defeitos medidos, dois consertos independentes:
+ *
+ * 1. CLICAR FORA não fechava: `render()` nunca chamava `props.mount()` — o próprio elemento era
+ *    só `document.body.appendChild` + posição manual (`applyPosition`). O `dismissOnOutsideClick`
+ *    (default `true` da lib) só existe DENTRO do `mount()` (ver `@tiptap/suggestion` `createMount`,
+ *    "Only applies when using managed mounting via SuggestionProps.mount"). Conserto: chamar
+ *    `props.mount(component.element, { onPosition: () => {} })` (o "escape hatch" documentado no
+ *    próprio `.d.ts`) e guardar o `unmount` pra chamar em `onExit`. O `onPosition` no-op é o que
+ *    faz o `mount()` ficar só responsável pelo listener de outside-click — ele PULA de escrever
+ *    `style.left/top` sozinho quando `onPosition` está presente (ver source), então a posição
+ *    continua 100% da nossa aritmética (`clampMentionPopupPosition`), sem duplicar/brigar com o
+ *    Floating UI. Como já fazemos `appendChild` ANTES de chamar `mount()`, `element.isConnected`
+ *    já é `true` quando ele roda — o `mount()` não re-anexa nem tenta remover sozinho (seguimos
+ *    donos do DOM node, como sempre).
+ *
+ * 2. ESCAPE fechava o popup (o próprio `Suggestion` plugin já despacha o `exit` ANTES de chamar
+ *    este `onKeyDown`), mas o evento nativo `keydown` nunca tinha `stopPropagation()` — só
+ *    `preventDefault()` (feito pelo ProseMirror). Ele continuava borbulhando até `document`, onde
+ *    o `SlideOverPanel` que embrulha este composer em produção (`PatientConversationHandle.tsx`)
+ *    tem seu PRÓPRIO listener de Escape (`onKeyDown` no painel/drawer) — com o rascunho não vazio
+ *    (o `@` já digitado conta), isso abria a confirmação de DESCARTE por cima do popup, em vez de
+ *    só fechar o autocomplete. Conserto: `event.stopPropagation()` no `onKeyDown` deste módulo,
+ *    ANTES de delegar ao `ref` do popup — contido aqui (é uma questão de propagação de DOM do
+ *    `render()`, não do componente `MentionPopupList`, que continua testável isolado sem saber
+ *    de Escape). Não precisa reabrir/impedir reabertura: o `dismissedRange` do próprio `Suggestion`
+ *    plugin já resolve isso de graça (mesma posição não reabre; um `@` novo, posição nova, abre).
  */
 import { ReactRenderer } from '@tiptap/react';
 import type { SuggestionOptions } from '@tiptap/suggestion';
@@ -68,6 +95,9 @@ export function configureMentionSuggestion(options: ConfigureMentionSuggestionOp
     },
     render: () => {
       let component: ReactRenderer<MentionPopupListHandle, MentionPopupListProps> | null = null;
+      // D1: cleanup do `props.mount()` (outside-click) — chamado em `onExit`, junto do resto do
+      // teardown. `null` fora do ciclo ativo (antes de `onStart`, ou já limpo por `onExit`).
+      let unmountOutsideClick: (() => void) | null = null;
 
       const applyPosition = (rect: DOMRect): void => {
         if (!component) return;
@@ -121,6 +151,9 @@ export function configureMentionSuggestion(options: ConfigureMentionSuggestionOp
           component.element.style.zIndex = '50';
           document.body.appendChild(component.element);
           reposition(props.clientRect);
+          // D1: `onPosition` no-op — `mount()` só assume o listener de outside-click; a posição
+          // continua 100% de `reposition`/`clampMentionPopupPosition` (ver docblock do arquivo).
+          unmountOutsideClick = props.mount(component.element, { onPosition: () => {} });
         },
         onUpdate: (props) => {
           component?.updateProps({
@@ -134,9 +167,25 @@ export function configureMentionSuggestion(options: ConfigureMentionSuggestionOp
         },
         // Escape já é tratado pelo próprio `Suggestion` plugin (sempre fecha, `dispatchExit`)
         // ANTES de chamar este `onKeyDown` — só ArrowUp/ArrowDown/Enter chegam aqui de fato
-        // (commit 3, teclado + ARIA). Delegado ao `ref` do popup: o foco nunca sai do editor.
-        onKeyDown: ({ event }) => component?.ref?.onKeyDown({ event }) ?? false,
+        // (commit 3, teclado + ARIA), FORA do Escape. Delegado ao `ref` do popup: o foco nunca
+        // sai do editor.
+        //
+        // D1: Escape ainda precisa de `stopPropagation()` aqui — sem isto, o `keydown` nativo
+        // segue borbulhando até `document` e aciona o listener de Esc do drawer que embrulha o
+        // composer em produção (`SlideOverPanel`), abrindo a confirmação de descarte por cima do
+        // popup em vez de só fechá-lo (ver docblock do arquivo). `preventDefault()` (feito pelo
+        // ProseMirror ao ver o `true` do `handleKeyDown`) NUNCA impede propagação — são coisas
+        // diferentes.
+        onKeyDown: ({ event }) => {
+          if (event.key === 'Escape') {
+            event.stopPropagation();
+            return true;
+          }
+          return component?.ref?.onKeyDown({ event }) ?? false;
+        },
         onExit: () => {
+          unmountOutsideClick?.();
+          unmountOutsideClick = null;
           component?.element.remove();
           component?.destroy();
           component = null;

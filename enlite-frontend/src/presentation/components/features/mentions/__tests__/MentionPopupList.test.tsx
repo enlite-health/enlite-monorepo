@@ -173,6 +173,27 @@ describe('MentionPopupList (estilo ClickUp, Rodada 2/R2-F)', () => {
     expect(screen.getByTestId('composer-mention-item-u-3')).toHaveAttribute('aria-selected', 'true');
   });
 
+  // D2 (achado do e2e `mention-popup-clickup.integration.e2e.ts` alt 1, investigado com
+  // instrumentação real): depois de "Mostrar todos" trocar a lista, a posição de tela que a
+  // linha "Mostrar todos" ocupava passa a ter outro item — com o mouse PARADO ali (não moveu um
+  // pixel), o Chromium ainda dispara `mouseenter`/`mouseover` pro item novo (hit-test recalculado
+  // sob DOM que mudou embaixo do cursor estacionário). `mousemove` não tem esse problema: só
+  // existe quando o dispositivo apontador se move de verdade. Por isso o hover deste popup ouve
+  // `onMouseMove`, nunca `onMouseEnter` — o teste abaixo prova a diferença: um `mouseEnter puro
+  // (sem `mouseMove` antes) NÃO deve mudar o item ativo (é exatamente o padrão do hover fantasma:
+  // o elemento aparece sob o cursor sem ele se mexer), mas um `mouseMove` de verdade muda.
+  it('D2: hover fantasma (mouseenter sem mousemove) NÃO muda o item ativo — só mousemove real muda', () => {
+    render(<MentionPopupList items={ITEMS} error={false} command={vi.fn()} />);
+    const itemButton = screen.getByTestId('composer-mention-item-u-3');
+
+    fireEvent.mouseEnter(itemButton);
+    expect(screen.getByTestId('composer-mention-item-u-1')).toHaveAttribute('aria-selected', 'true');
+    expect(itemButton).toHaveAttribute('aria-selected', 'false');
+
+    fireEvent.mouseMove(itemButton);
+    expect(itemButton).toHaveAttribute('aria-selected', 'true');
+  });
+
   it('"Mostrar todos" é alcançável por teclado — ArrowDown depois do último item chega nela, Enter ativa', async () => {
     const onShowAll = vi.fn().mockResolvedValue(ITEMS);
     const ref = createRef<MentionPopupListHandle>();
