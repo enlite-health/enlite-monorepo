@@ -8,9 +8,14 @@
  * jsdom não faz layout, então aqui se afirma a CLASSE; a medição real (html.scrollHeight ===
  * clientHeight) vive no e2e `patient-detail-scroll-unico.integration.e2e.ts`.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { AdminPresenceApiService } from '@infrastructure/http/AdminPresenceApiService';
+
+vi.mock('@infrastructure/http/AdminPresenceApiService', () => ({
+  AdminPresenceApiService: { heartbeat: vi.fn() },
+}));
 
 const logout = vi.fn().mockResolvedValue(undefined);
 const PERFIL_PADRAO = { displayName: 'Ana', email: 'ana@enlite.test' };
@@ -78,5 +83,23 @@ describe('AdminLayout', () => {
     adminProfile = null;
     renderLayout();
     expect(screen.getByTestId('sidebar-user')).toHaveTextContent('Admin');
+  });
+
+  describe('presença (spec 022, Rodada 2/R2-F)', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.mocked(AdminPresenceApiService.heartbeat).mockResolvedValue(undefined);
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+      vi.clearAllMocks();
+    });
+
+    it('manda heartbeat a cada ~60s enquanto o painel admin está montado (UMA vez, aqui — não por página)', async () => {
+      renderLayout();
+      expect(AdminPresenceApiService.heartbeat).not.toHaveBeenCalled();
+      await act(async () => { await vi.advanceTimersByTimeAsync(60000); });
+      expect(AdminPresenceApiService.heartbeat).toHaveBeenCalledTimes(1);
+    });
   });
 });
