@@ -13,6 +13,12 @@
  *   (`SlideOverPanel` é `fixed top-0 right-0`, o compositor fica no rodapé do painel — ou seja, o
  *   cursor já está perto do canto inferior direito da tela por DESIGN, sem precisar forçar um
  *   viewport artificial).
+ * Alternativo 3 (item 1, conserto vertical): com 1 único resultado o popup cabe abaixo do cursor
+ *   por acaso mesmo com o defeito antigo — o teste acima nunca teria acusado a regressão. Este
+ *   caso semeia 15 staff sintéticos (popup real de ~500px+ de altura, sem cap nenhum de query) e
+ *   afirma que o popup continua DENTRO do viewport — RED sem a 2ª passada em `requestAnimationFrame`
+ *   de `MessageComposer.tsx` (`reposition`/`applyPosition`), GREEN com ela. Prova feita por `cp`
+ *   (backup/restauração do arquivo), nunca `stash`/`checkout` — ver `docs/diario` do item 1.
  *
  * Stack: mesma família de `patient-conversation-happy.integration.e2e.ts` (ver o docblock dele
  * para portas/env desta sessão).
@@ -130,5 +136,38 @@ test.describe('Autocomplete de @ — min 0, popup ancorado, erro do diretório (
     expect(box!.y).toBeGreaterThanOrEqual(0);
     expect(box!.x + box!.width).toBeLessThanOrEqual(viewport!.width + 1);
     expect(box!.y + box!.height).toBeLessThanOrEqual(viewport!.height + 1);
+  });
+
+  test('alternativo 3 — popup com lista longa (15 resultados) continua DENTRO do viewport (flip vertical, item 1)', async ({ page }) => {
+    const muitosStaff = Array.from({ length: 15 }, (_, i) => ({
+      uid: `${AUTORA_UID}-longa-${i}`,
+      email: `${AUTORA_UID}-longa-${i}@e2e.test`,
+      name: `QA Staff Longa ${i}`,
+    }));
+    for (const s of muitosStaff) seedPlainStaff(s.uid, s.email, s.name);
+    try {
+      await loginAs(page, AUTORA);
+      await openComposer(page);
+
+      const editor = page.getByTestId('composer-editor');
+      await editor.click();
+      await page.keyboard.type('@');
+
+      const list = page.getByTestId('composer-mention-list');
+      await expect(list).toBeVisible({ timeout: 10_000 });
+      // dá tempo da 2ª passada (`requestAnimationFrame`) de `reposition`/`applyPosition`
+      // corrigir a posição com a altura REAL do popup — é exatamente essa correção que este
+      // caso prova (sem ela, o popup nasce como se tivesse altura 0 e nunca flipa).
+      await page.waitForTimeout(300);
+
+      const box = await list.boundingBox();
+      const viewport = page.viewportSize();
+      expect(box).not.toBeNull();
+      expect(viewport).not.toBeNull();
+      expect(box!.y).toBeGreaterThanOrEqual(0);
+      expect(box!.y + box!.height).toBeLessThanOrEqual(viewport!.height + 1);
+    } finally {
+      for (const s of muitosStaff) cleanupPlainStaff(s.uid);
+    }
   });
 });
