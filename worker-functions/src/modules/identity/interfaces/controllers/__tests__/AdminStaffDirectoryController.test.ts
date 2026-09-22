@@ -39,7 +39,7 @@ describe('AdminStaffDirectoryController.search', () => {
 
     await controller.search(fakeReq({}, 'uid-1'), fakeRes());
 
-    expect(searchStaffDirectory).toHaveBeenCalledWith(undefined, MAX_STAFF_DIRECTORY_RESULTS, 'uid-1');
+    expect(searchStaffDirectory).toHaveBeenCalledWith(undefined, MAX_STAFF_DIRECTORY_RESULTS, 'uid-1', undefined);
   });
 
   it('limit=200 ("Mostrar todos"): propagado ao repositório', async () => {
@@ -48,7 +48,7 @@ describe('AdminStaffDirectoryController.search', () => {
 
     await controller.search(fakeReq({ limit: '200' }, 'uid-1'), fakeRes());
 
-    expect(searchStaffDirectory).toHaveBeenCalledWith(undefined, 200, 'uid-1');
+    expect(searchStaffDirectory).toHaveBeenCalledWith(undefined, 200, 'uid-1', undefined);
   });
 
   it('resposta inclui isOnline e nunca email/role — forma explícita mesmo com row "sujo"', async () => {
@@ -73,5 +73,84 @@ describe('AdminStaffDirectoryController.search', () => {
 
     expect(res.status).toHaveBeenCalledWith(400);
     expect(searchStaffDirectory).not.toHaveBeenCalled();
+  });
+
+  // ── R3-1 (change 022-ux-mencao-e-notificacao, Rodada 3): patientId só chega ao repositório
+  // quando a família `admin.patients` está ENFORCED (`isPermissionFamilyEnforced`, MESMO
+  // predicado de `PermissionClientActorAccessChecker`) — "engine desligado → não filtra
+  // ninguém indevidamente" (pedido do Gabriel 22/09).
+  describe('patientId (R3-1)', () => {
+    const PATIENT_ID = 'ee422000-c4a7-0002-0002-000000000002';
+    const envAnterior: Record<string, string | undefined> = {};
+
+    const setEnv = (k: string, v: string | undefined): void => {
+      envAnterior[k] = process.env[k];
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    };
+
+    afterEach(() => {
+      for (const [k, v] of Object.entries(envAnterior)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    });
+
+    it('família admin.patients ENFORCED: patientId da query é propagado ao repositório', async () => {
+      setEnv('PERMISSION_ENGINE_ENABLED', 'true');
+      setEnv('PERMISSION_ENFORCED_ROUTES', 'admin.patients;admin.users');
+      const searchStaffDirectory = jest.fn().mockResolvedValue([]);
+      const controller = new AdminStaffDirectoryController({ searchStaffDirectory } as unknown as AdminRepository);
+
+      await controller.search(fakeReq({ patientId: PATIENT_ID }, 'uid-1'), fakeRes());
+
+      expect(searchStaffDirectory).toHaveBeenCalledWith(undefined, MAX_STAFF_DIRECTORY_RESULTS, 'uid-1', PATIENT_ID);
+    });
+
+    it('engine LIGADO mas admin.patients FORA da lista enforced: patientId NUNCA chega ao repositório', async () => {
+      setEnv('PERMISSION_ENGINE_ENABLED', 'true');
+      setEnv('PERMISSION_ENFORCED_ROUTES', 'admin.users');
+      const searchStaffDirectory = jest.fn().mockResolvedValue([]);
+      const controller = new AdminStaffDirectoryController({ searchStaffDirectory } as unknown as AdminRepository);
+
+      await controller.search(fakeReq({ patientId: PATIENT_ID }, 'uid-1'), fakeRes());
+
+      expect(searchStaffDirectory).toHaveBeenCalledWith(undefined, MAX_STAFF_DIRECTORY_RESULTS, 'uid-1', undefined);
+    });
+
+    it('engine DESLIGADO: patientId NUNCA chega ao repositório, mesmo com admin.patients na lista', async () => {
+      setEnv('PERMISSION_ENGINE_ENABLED', 'false');
+      setEnv('PERMISSION_ENFORCED_ROUTES', 'admin.patients;admin.users');
+      const searchStaffDirectory = jest.fn().mockResolvedValue([]);
+      const controller = new AdminStaffDirectoryController({ searchStaffDirectory } as unknown as AdminRepository);
+
+      await controller.search(fakeReq({ patientId: PATIENT_ID }, 'uid-1'), fakeRes());
+
+      expect(searchStaffDirectory).toHaveBeenCalledWith(undefined, MAX_STAFF_DIRECTORY_RESULTS, 'uid-1', undefined);
+    });
+
+    it('patientId ausente da query: repositório recebe undefined mesmo com a família enforced', async () => {
+      setEnv('PERMISSION_ENGINE_ENABLED', 'true');
+      setEnv('PERMISSION_ENFORCED_ROUTES', 'admin.patients;admin.users');
+      const searchStaffDirectory = jest.fn().mockResolvedValue([]);
+      const controller = new AdminStaffDirectoryController({ searchStaffDirectory } as unknown as AdminRepository);
+
+      await controller.search(fakeReq({}, 'uid-1'), fakeRes());
+
+      expect(searchStaffDirectory).toHaveBeenCalledWith(undefined, MAX_STAFF_DIRECTORY_RESULTS, 'uid-1', undefined);
+    });
+
+    it('patientId que não é UUID — 400 do schema, nunca chama o repositório', async () => {
+      setEnv('PERMISSION_ENGINE_ENABLED', 'true');
+      setEnv('PERMISSION_ENFORCED_ROUTES', 'admin.patients;admin.users');
+      const searchStaffDirectory = jest.fn();
+      const controller = new AdminStaffDirectoryController({ searchStaffDirectory } as unknown as AdminRepository);
+      const res = fakeRes();
+
+      await controller.search(fakeReq({ patientId: 'não-é-uuid' }, 'uid-1'), res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(searchStaffDirectory).not.toHaveBeenCalled();
+    });
   });
 });

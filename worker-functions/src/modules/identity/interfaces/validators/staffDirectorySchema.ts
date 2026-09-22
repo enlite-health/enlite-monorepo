@@ -18,6 +18,14 @@
  * `MAX_STAFF_DIRECTORY_LIMIT` (200, decisão desta execução: alto o bastante para "listar TODOS os
  * mencionáveis" de qualquer time real hoje, baixo o bastante para nunca virar dump do diretório
  * inteiro sem paginação).
+ *
+ * `patientId` (R3-1, change 022-ux-mencao-e-notificacao, Rodada 3, D-Gabriel 22/09): opcional,
+ * UUID do paciente cuja conversa o `@` está mencionando dentro de. AUSENTE → comportamento
+ * atual (lista geral, sem recorte por paciente) — nunca quebra quem já chama a rota sem esse
+ * contexto. PRESENTE mas fora do formato UUID → RECUSADO (400) — nunca vira string arbitrária
+ * interpolada em SQL no `AdminRepository`. `?patientId=` (vazio) também é RECUSADO — ao contrário
+ * de `q`, aqui não existe "vazio = sem filtro"; o parâmetro simplesmente não deveria ter sido
+ * mandado nesse caso (o controller decide, com `isPermissionFamilyEnforced`, se de fato filtra).
  */
 import { z } from 'zod';
 
@@ -34,5 +42,6 @@ export const staffDirectoryQuerySchema = z.object({
       message: `q must have at least ${MIN_STAFF_DIRECTORY_QUERY_LENGTH} characters`,
     }),
   limit: z.coerce.number().int().min(1).max(MAX_STAFF_DIRECTORY_LIMIT).optional(),
+  patientId: z.string().uuid().optional(),
 });
 export type StaffDirectoryQuery = z.infer<typeof staffDirectoryQuerySchema>;

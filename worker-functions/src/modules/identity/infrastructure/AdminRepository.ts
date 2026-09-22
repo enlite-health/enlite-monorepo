@@ -1,6 +1,7 @@
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { escapeIlikeWildcards } from '@shared/utils/ilikeEscape';
+import { ENLITE_TENANT_ID } from '@modules/identity/permissions';
 
 export interface AdminRecord {
   firebaseUid: string;
@@ -116,15 +117,35 @@ export class AdminRepository {
    * nunca mandou heartbeat não tem linha lá (ausência de linha, não `NULL` numa coluna de
    * `users`), por isso `isOnline` cai em `false` por ausência de match. Este módulo (identity) só
    * faz o JOIN de leitura; a ESCRITA do heartbeat vive em `@modules/presence` (módulo próprio).
+   *
+   * `patientId` (R3-1, change 022-ux-mencao-e-notificacao, Rodada 3, pedido do Gabriel 22/09): o
+   * `@` do chat só deve listar quem PODE, de fato, abrir a conversa DAQUELE paciente — não todo
+   * staff com `staff_directory:read`. `undefined`/`null` (default) = comportamento atual, sem
+   * recorte (o controller só passa um valor aqui quando a família `admin.patients` está
+   * enforced — engine desligado não filtra ninguém, D-Gabriel). Com valor: um `EXISTS`
+   * correlacionado usa `iam.effective_permissions`/`iam.effective_countries` (mig 276) — a MESMA
+   * fonte que `PermissionService.resolve` consulta para decidir `patient_conversation:read` na
+   * rota REAL da conversa (`adminConversationRoutes.ts`) e que a RLS de país (`patients_country_isolation`,
+   * mig 411) consulta para decidir se a linha do paciente aparece — nunca uma regra paralela.
+   * Tudo em UMA query (as duas funções são `STABLE`, chamadas por linha dentro do mesmo
+   * `SELECT`), não em loop no Node por candidato (sem N+1 de round-trip). Paciente inexistente →
+   * o `EXISTS` nunca casa (`SELECT 1 FROM patients WHERE id = ...` vazio) → lista vazia,
+   * fail-closed: não há como provar acesso a uma conversa que não existe.
    */
   async searchStaffDirectory(
     q: string | undefined,
     limit = 20,
     excludeUid?: string | null,
+    patientId?: string | null,
   ): Promise<StaffDirectoryEntry[]> {
     const trimmed = q?.trim();
     const exclude = excludeUid ?? null;
+
     if (!trimmed) {
+      const params: unknown[] = [limit, exclude];
+      const patientClause = patientId
+        ? this.patientConversationAccessClause(params, patientId, '$3', '$4')
+        : '';
       const result = await this.pool.query(
         `SELECT
           u.firebase_uid AS uid,
@@ -134,14 +155,19 @@ export class AdminRepository {
         LEFT JOIN staff_presence sp ON sp.firebase_uid = u.firebase_uid
         WHERE u.account_type = 'staff' AND u.is_active = true
           AND ($2::text IS NULL OR u.firebase_uid <> $2)
+          ${patientClause}
         ORDER BY u.display_name, u.firebase_uid
         LIMIT $1`,
-        [limit, exclude]
+        params
       );
       return result.rows;
     }
 
     const escaped = escapeIlikeWildcards(trimmed);
+    const params: unknown[] = [escaped, limit, exclude];
+    const patientClause = patientId
+      ? this.patientConversationAccessClause(params, patientId, '$4', '$5')
+      : '';
     const result = await this.pool.query(
       `SELECT
         u.firebase_uid AS uid,
@@ -153,11 +179,33 @@ export class AdminRepository {
         AND (u.display_name ILIKE '%' || $1 || '%' ESCAPE '\\'
           OR u.email ILIKE '%' || $1 || '%' ESCAPE '\\')
         AND ($3::text IS NULL OR u.firebase_uid <> $3)
+        ${patientClause}
       ORDER BY u.display_name, u.firebase_uid
       LIMIT $2`,
-      [escaped, limit, exclude]
+      params
     );
     return result.rows;
+  }
+
+  /**
+   * Monta o `EXISTS` de acesso à conversa do paciente (R3-1) e empilha os 2 parâmetros que ele
+   * consome (`patientId`, `ENLITE_TENANT_ID`) no array `params` do chamador — os placeholders
+   * `$patientParam`/`$tenantParam` são passados pelo chamador porque a posição varia conforme o
+   * ramo (`q` ausente vs presente) já ter 2 ou 3 parâmetros antes deste.
+   */
+  private patientConversationAccessClause(
+    params: unknown[],
+    patientId: string,
+    patientParam: string,
+    tenantParam: string,
+  ): string {
+    params.push(patientId, ENLITE_TENANT_ID);
+    return `AND EXISTS (
+            SELECT 1 FROM patients pt
+            WHERE pt.id = ${patientParam}::uuid
+              AND 'patient_conversation:read' = ANY(iam.effective_permissions(u.firebase_uid, ${tenantParam}::uuid))
+              AND pt.country = ANY(iam.effective_countries(u.firebase_uid, ${tenantParam}::uuid))
+          )`;
   }
 
   async countAdmins(): Promise<number> {

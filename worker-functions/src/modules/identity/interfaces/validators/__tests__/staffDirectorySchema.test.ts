@@ -10,6 +10,8 @@
  */
 import { staffDirectoryQuerySchema, MAX_STAFF_DIRECTORY_LIMIT } from '../staffDirectorySchema';
 
+const UUID_VALIDO = 'ee422000-c4a7-0002-0002-000000000002';
+
 describe('staffDirectoryQuerySchema (item 1: q ausente/vazio vira "listar primeiros N")', () => {
   it('q ausente: válido, q sai undefined', () => {
     const result = staffDirectoryQuerySchema.safeParse({});
@@ -71,5 +73,29 @@ describe('staffDirectoryQuerySchema — limit (R2-B, "Mostrar todos")', () => {
 
   it('MAX_STAFF_DIRECTORY_LIMIT é 200 (documenta o teto no próprio teste)', () => {
     expect(MAX_STAFF_DIRECTORY_LIMIT).toBe(200);
+  });
+});
+
+describe('staffDirectoryQuerySchema — patientId (R3-1, contexto do paciente para filtrar por quem PODE abrir aquela conversa)', () => {
+  it('patientId ausente: válido, sai undefined (comportamento atual — lista geral)', () => {
+    const result = staffDirectoryQuerySchema.safeParse({});
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.patientId).toBeUndefined();
+  });
+
+  it('patientId como UUID válido: aceito', () => {
+    const result = staffDirectoryQuerySchema.safeParse({ patientId: UUID_VALIDO });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.patientId).toBe(UUID_VALIDO);
+  });
+
+  it('patientId que não é UUID: RECUSADO (nunca vira string arbitrária no SQL)', () => {
+    const result = staffDirectoryQuerySchema.safeParse({ patientId: 'não-é-uuid' });
+    expect(result.success).toBe(false);
+  });
+
+  it('patientId vazio (?patientId=): RECUSADO — não é "sem filtro", é valor inválido', () => {
+    const result = staffDirectoryQuerySchema.safeParse({ patientId: '' });
+    expect(result.success).toBe(false);
   });
 });

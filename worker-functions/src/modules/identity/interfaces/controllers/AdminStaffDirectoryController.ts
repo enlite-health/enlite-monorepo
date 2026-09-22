@@ -17,6 +17,14 @@
  * então importar dali PARA DENTRO de `identity` fecharia um ciclo de módulo). `staffOnly` já
  * garantiu que o principal existe antes deste controller rodar — `null` aqui é defesa em
  * profundidade, nunca esperado na prática.
+ *
+ * `patientId` (R3-1, change 022-ux-mencao-e-notificacao, Rodada 3, pedido do Gabriel 22/09): só
+ * chega ao repositório quando a família `admin.patients` está ENFORCED —
+ * `isPermissionFamilyEnforced`, o MESMO predicado que `PermissionClientActorAccessChecker` usa
+ * para decidir se o acesso à conversa é uma decisão real do ABAC ou "todo staff pode" (engine
+ * desligado/família fora do rollout). Sem isso, filtrar candidatos por uma célula que a rota REAL
+ * da conversa nem está checando deixaria o `@` MAIS restritivo que o acesso de verdade —
+ * exatamente o inverso do achado F24 que criou `isPermissionFamilyEnforced`.
  */
 import { Request, Response } from 'express';
 import { reportError } from '@shared/logging';
@@ -27,6 +35,7 @@ import {
   MAX_STAFF_DIRECTORY_RESULTS,
 } from '../validators/staffDirectorySchema';
 import { principalUid } from '../middleware/PermissionMiddleware';
+import { ADMIN_PATIENTS_FAMILY, isPermissionFamilyEnforced } from '@modules/identity/permissions';
 
 export class AdminStaffDirectoryController {
   constructor(private readonly adminRepo: AdminRepository = new AdminRepository()) {}
@@ -51,7 +60,10 @@ export class AdminStaffDirectoryController {
 
     try {
       const limit = query.data.limit ?? MAX_STAFF_DIRECTORY_RESULTS;
-      const entries = await this.adminRepo.searchStaffDirectory(query.data.q, limit, uid);
+      const patientId = isPermissionFamilyEnforced(ADMIN_PATIENTS_FAMILY, process.env)
+        ? query.data.patientId
+        : undefined;
+      const entries = await this.adminRepo.searchStaffDirectory(query.data.q, limit, uid, patientId);
       // Forma explícita — mesmo que o repositório devolva mais campos amanhã, a resposta NUNCA
       // reflete o row inteiro por conta própria (defesa contra um SELECT * futuro).
       res.status(200).json({
