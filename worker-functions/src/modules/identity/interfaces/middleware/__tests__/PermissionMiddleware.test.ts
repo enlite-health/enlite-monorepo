@@ -131,6 +131,21 @@ describe('PermissionMiddleware.family().require()', () => {
     expect(client.resolve).not.toHaveBeenCalled();
   });
 
+  // G3 (gate da change 022-ux-mencao-e-notificacao): o log de "família pendente" só faz sentido
+  // quando o engine JÁ está ligado (senão a família nem chegou a ser avaliada de verdade — é só
+  // o ambiente inteiro que está neutro, caso já coberto acima). Sem o `if (isEnvFlagOn(...))` em
+  // PermissionMiddleware.ts:166, todo boot com engine desligado logaria "não enforced" para toda
+  // família fora da lista — ruído em todo ambiente local/CI que roda com o engine apagado.
+  it('com o engine DESLIGADO, NÃO loga "família pendente" (o log só existe quando o engine já decide)', async () => {
+    const client = clientStub();
+    const { app } = harness({ PERMISSION_ENFORCED_ROUTES: 'admin.patients' }, client);
+    const { logger } = jest.requireMock('@shared/logging') as { logger: { info: jest.Mock } };
+
+    await request(app).get('/api/admin/users/1').expect(200);
+
+    expect(logger.info.mock.calls.filter((c) => String(c[1]).includes('não enforced'))).toHaveLength(0);
+  });
+
   it('avisa UMA vez por família que a rota não está enforced (log de boot, não por request)', async () => {
     const client = clientStub();
     const { app } = harness(
