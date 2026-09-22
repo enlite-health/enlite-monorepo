@@ -49,7 +49,7 @@ import {
 } from '@infrastructure/http/AdminConversationApiService';
 import { ApiError } from '@infrastructure/http/ApiError';
 import { useConfirmDiscardClose } from '@hooks/admin/useConfirmDiscardClose';
-import { useStaffNameCache } from '@presentation/stores/staffNameCache';
+import { useStaffDirectoryStore } from '@presentation/stores/staffDirectoryStore';
 import { Button } from '@presentation/components/atoms/Button';
 import { Text } from '@presentation/components/atoms/Text';
 import { configureMentionSuggestion } from '@presentation/components/features/mentions/createMentionSuggestion';
@@ -59,7 +59,11 @@ import { AttachmentPicker } from './AttachmentPicker';
 /** `q` ausente/vazio agora é aceito pelo backend (item 1, revoga D-06) — `0` deixa o TipTap
  * chamar `items()` a partir do próprio `@`, sem exigir nenhum caractere depois. */
 const MENTION_MIN_QUERY_LENGTH = 0;
-const MENTION_MAX_RESULTS = 20;
+/** Popup estilo ClickUp (Rodada 2, decisão do Gabriel 22/09): "os primeiros ~5 + Mostrar todos" —
+ * não é mais o teto de exibição do diretório inteiro (`MAX_STAFF_DIRECTORY_RESULTS`, backend),
+ * é o corte da VISÃO DE TOPO; "Mostrar todos" (via `staffDirectoryStore.loadAll`) é quem busca a
+ * lista inteira, até o teto do backend (200). */
+const MENTION_MAX_RESULTS = 5;
 
 export interface MessageComposerHandle {
   /** true se há rascunho (texto OU anexo) não vazio — quem embrulha usa para decidir se pergunta
@@ -112,15 +116,15 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
         Mention.configure({
           renderText: mentionChipRenderText,
           renderHTML: mentionChipRenderHTML,
+          // `staffDirectoryStore` (Rodada 2) é a fonte injetada — `search`/`loadAll` já alimentam
+          // o `staffNameCache` por dentro (fix-once: antes esse `remember` vivia aqui via
+          // `onResults`; virou duplicação em potencial no dia em que "Mostrar todos" (`loadAll`)
+          // passou a ser uma 2ª fonte de resultados fora do `items()` do TipTap).
           suggestion: configureMentionSuggestion({
-            fetchCandidates: (query) => AdminConversationApiService.searchStaffDirectory(query),
+            fetchCandidates: (query) => useStaffDirectoryStore.getState().search(query),
+            loadAll: () => useStaffDirectoryStore.getState().loadAll(),
             minQueryLength: MENTION_MIN_QUERY_LENGTH,
             maxResults: MENTION_MAX_RESULTS,
-            // Achado baixo do gate do B2 (`ThreadView` mostrava uid cru): esta é a ÚNICA fonte
-            // real de nome que o front tem hoje (contrato não resolve uid → nome) — todo staff
-            // que aparece aqui fica disponível pro `useStaffDisplayName` de qualquer mensagem
-            // dele nesta conversa, não só para o item escolhido.
-            onResults: (results) => useStaffNameCache.getState().remember(results),
           }),
         }),
       ],

@@ -8,7 +8,7 @@ import { configureMentionSuggestion } from '../createMentionSuggestion';
 
 describe('configureMentionSuggestion (extraído do MessageComposer, Rodada 2/R2-F)', () => {
   it('items() devolve os candidatos e chama onResults com o resultado bruto', async () => {
-    const entries = [{ uid: 'u-1', displayName: 'QA Staff Um' }];
+    const entries = [{ uid: 'u-1', displayName: 'QA Staff Um', isOnline: false }];
     const fetchCandidates = vi.fn().mockResolvedValue(entries);
     const onResults = vi.fn();
     const suggestion = configureMentionSuggestion({ fetchCandidates, onResults });
@@ -22,9 +22,9 @@ describe('configureMentionSuggestion (extraído do MessageComposer, Rodada 2/R2-
 
   it('items() respeita maxResults (corta o excedente, nunca chama onResults com o corte)', async () => {
     const entries = [
-      { uid: 'u-1', displayName: 'A' },
-      { uid: 'u-2', displayName: 'B' },
-      { uid: 'u-3', displayName: 'C' },
+      { uid: 'u-1', displayName: 'A', isOnline: false },
+      { uid: 'u-2', displayName: 'B', isOnline: false },
+      { uid: 'u-3', displayName: 'C', isOnline: false },
     ];
     const fetchCandidates = vi.fn().mockResolvedValue(entries);
     const onResults = vi.fn();

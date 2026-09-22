@@ -44,7 +44,7 @@ export interface ConfigureMentionSuggestionOptions {
 type MentionSuggestion = Omit<SuggestionOptions<StaffDirectoryEntry, MentionNodeAttrs>, 'editor'>;
 
 export function configureMentionSuggestion(options: ConfigureMentionSuggestionOptions): MentionSuggestion {
-  const { fetchCandidates, minQueryLength = 0, maxResults = 20, onResults } = options;
+  const { fetchCandidates, loadAll, minQueryLength = 0, maxResults = 20, onResults } = options;
 
   // Closure compartilhada entre `items()` e `render()` (item 1, F5) — falha de rede vira `[]`
   // (autocomplete não é canal de alerta), mas o popup MOSTRA que falhou em vez de mentir "nenhum
@@ -94,7 +94,7 @@ export function configureMentionSuggestion(options: ConfigureMentionSuggestionOp
           // `ReactRenderer.element` é `HTMLElement` sempre (tipo da própria lib) — sem
           // `instanceof` redundante.
           component = new ReactRenderer(MentionPopupList, {
-            props: { items: props.items, error: lastDirectoryError, command: props.command },
+            props: { items: props.items, error: lastDirectoryError, command: props.command, onShowAll: loadAll },
             editor: props.editor,
           });
           component.element.style.position = 'fixed';
@@ -103,7 +103,7 @@ export function configureMentionSuggestion(options: ConfigureMentionSuggestionOp
           reposition(props.clientRect);
         },
         onUpdate: (props) => {
-          component?.updateProps({ items: props.items, error: lastDirectoryError, command: props.command });
+          component?.updateProps({ items: props.items, error: lastDirectoryError, command: props.command, onShowAll: loadAll });
           reposition(props.clientRect);
         },
         // Escape já é tratado pelo próprio `Suggestion` plugin (sempre fecha, `dispatchExit`)
