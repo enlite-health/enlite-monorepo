@@ -12,3 +12,4 @@ export { CellHelpDrawer } from './CellHelpDrawer';
 export { cellDiff, cellKey, contaSelecionadas, alternaCelula } from './cellMatrixModel';
 export { ContainerGate } from './ContainerGate';
 export { ScreenTree } from './ScreenTree';
+export { permissionCellLabel } from './permissionCellLabel';

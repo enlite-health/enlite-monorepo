@@ -20,6 +20,7 @@ import { GetMyAuthzUseCase } from './application/GetMyAuthzUseCase';
 import { GrantGroupCountryUseCase, RevokeGroupCountryUseCase } from './application/GrantGroupCountryUseCase';
 import { ListPermissionCatalogUseCase } from './application/ListPermissionCatalogUseCase';
 import { QueryPermissionAuditUseCase } from './application/QueryPermissionAuditUseCase';
+import { QueryPermissionHistoryUseCase } from './application/QueryPermissionHistoryUseCase';
 import { SetCountryFeatureUseCase } from './application/SetCountryFeatureUseCase';
 import { SetGroupPermissionsUseCase } from './application/SetGroupPermissionsUseCase';
 import { SyncCountryFeaturesUseCase } from './application/SyncCountryFeaturesUseCase';
@@ -29,6 +30,7 @@ import { DomainEventPermissionPublisher } from './infrastructure/DomainEventPerm
 import { PgCountryFeatureRepository } from './infrastructure/PgCountryFeatureRepository';
 import { PgEffectiveAuthzRepository } from './infrastructure/PgEffectiveAuthzRepository';
 import { PgPermissionAuditRepository } from './infrastructure/PgPermissionAuditRepository';
+import { PgPermissionHistoryRepository } from './infrastructure/PgPermissionHistoryRepository';
 import { PgPermissionCatalogRepository } from './infrastructure/PgPermissionCatalogRepository';
 import { PgPermissionGroupRepository } from './infrastructure/PgPermissionGroupRepository';
 import { PgRolloutStateRepository } from './infrastructure/PgRolloutStateRepository';
@@ -64,6 +66,7 @@ export interface PermissionsModule {
   catalog: { list: ListPermissionCatalogUseCase; sync: SyncPermissionCatalogUseCase };
   features: { set: SetCountryFeatureUseCase; sync: SyncCountryFeaturesUseCase };
   audit: QueryPermissionAuditUseCase;
+  history: QueryPermissionHistoryUseCase;
   authz: GetMyAuthzUseCase;
   assertStaffHasGroup: AssertNoActiveStaffWithoutGroupUseCase;
   /** Repositórios expostos só para leitura da API do painel (grupo 4). */
@@ -73,6 +76,7 @@ export interface PermissionsModule {
     features: PgCountryFeatureRepository;
     authz: PgEffectiveAuthzRepository;
     audit: PgPermissionAuditRepository;
+    history: PgPermissionHistoryRepository;
   };
 }
 
@@ -82,6 +86,7 @@ export function createPermissionsModule(deps: PermissionsModuleDeps): Permission
   const featuresRepo = new PgCountryFeatureRepository(deps.pool, deps.systemPool);
   const authzRepo = new PgEffectiveAuthzRepository(deps.pool);
   const auditRepo = new PgPermissionAuditRepository(deps.pool);
+  const historyRepo = new PgPermissionHistoryRepository(deps.pool);
   const rolloutRepo = new PgRolloutStateRepository(deps.pool);
   const events = new DomainEventPermissionPublisher(deps.pool);
 
@@ -110,6 +115,7 @@ export function createPermissionsModule(deps: PermissionsModuleDeps): Permission
       sync: new SyncCountryFeaturesUseCase(featuresRepo),
     },
     audit: new QueryPermissionAuditUseCase(auditRepo),
+    history: new QueryPermissionHistoryUseCase(historyRepo),
     authz: new GetMyAuthzUseCase(client, deps.engineEnabled ?? false),
     assertStaffHasGroup: new AssertNoActiveStaffWithoutGroupUseCase(authzRepo, rolloutRepo),
     repositories: {
@@ -118,6 +124,7 @@ export function createPermissionsModule(deps: PermissionsModuleDeps): Permission
       features: featuresRepo,
       authz: authzRepo,
       audit: auditRepo,
+      history: historyRepo,
     },
   };
 }

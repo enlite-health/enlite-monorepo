@@ -27,6 +27,7 @@ export type {
   GroupMemberView,
   PermissionAuditFilters,
   PermissionAuditRow,
+  PermissionHistoryFilters,
   PermissionClient,
   PermissionDecision,
   ResolvedAuthz,
@@ -61,6 +62,11 @@ export {
 } from './domain/CountryFeature';
 export type { CountryFeature, FeatureType } from './domain/CountryFeature';
 export type { CountryGrant, GroupMembership } from './domain/GroupMembership';
+export type {
+  PermissionHistoryEvent,
+  PermissionHistoryEventType,
+  PermissionHistoryOp,
+} from './domain/PermissionHistory';
 export { ENLITE_TENANT_ID } from './domain/tenant';
 export {
   ACTOR_CLASSES,
@@ -129,6 +135,7 @@ export { AssertNoActiveStaffWithoutGroupUseCase, ROLLOUT_MARKER_KEY, ROLLOUT_MAR
 export { GetMyAuthzUseCase } from './application/GetMyAuthzUseCase';
 export { ListPermissionCatalogUseCase } from './application/ListPermissionCatalogUseCase';
 export { QueryPermissionAuditUseCase } from './application/QueryPermissionAuditUseCase';
+export { QueryPermissionHistoryUseCase } from './application/QueryPermissionHistoryUseCase';
 export { SyncCountryFeaturesUseCase } from './application/SyncCountryFeaturesUseCase';
 export { SyncPermissionCatalogUseCase } from './application/SyncPermissionCatalogUseCase';
 export { projectWorkerFields, ProjecaoSemDecryptorError, NOME_REDIGIDO, CELL_WORKER_READ, CELL_WORKER_CONTACT_READ, CELL_WORKER_PII_READ, CELL_WORKER_DISABLE } from './application/projectWorkerFields';

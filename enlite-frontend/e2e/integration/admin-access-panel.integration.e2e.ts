@@ -447,30 +447,70 @@ test.describe('Painel de acessos ABAC — integração real @integration', () =>
     expect(after.status).toBe(403);
   });
 
-  test('6. auditoria filtra pelo uid da comum sem o uid ir na URL', async ({ page }) => {
+  // ── Histórico de mudanças de permissão (substitui a Auditoría ALLOW/DENY) ──
+  //
+  // A tela antiga ("Auditoría de decisiones", teste 6 de antes) SAIU da
+  // interface — a rota `/admin/access/audit` agora monta `PermissionHistoryPage`.
+  // Os três casos abaixo não fabricam mudança nova: eles leem o EFEITO das
+  // mudanças que os testes 2 (célula), 4 (membro entrou) e 5 (membro saiu) já
+  // fizeram PELA TELA, na mesma corrida serial — é a prova mais forte possível
+  // (o histórico reflete o que a própria suíte gravou, não um fixture solto).
+
+  test('6. histórico: a mudança de permissão (teste 2) e a de membro (testes 4/5) aparecem com autor e grupo RESOLVIDOS — nunca uid', async ({ page }) => {
     await loginAs(page, GESTORA);
     await page.goto('/admin/access/audit');
-    await expect(page.getByRole('heading', { name: 'Auditoría de decisiones' })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('heading', { name: 'Historial de cambios de permisos' })).toBeVisible({ timeout: 15_000 });
 
-    let auditRequestUrl = '';
-    page.on('request', (req) => {
-      if (req.url().includes('/permission-audit/query')) auditRequestUrl = req.url();
-    });
-
-    await page.locator('#au-user').fill(COMUM_UID);
-     
+    // Select REAL (não fill/forceFill) — filtra pelo grupo criado no teste 1.
+    await page.getByLabel('Grupo').selectOption({ label: NOVO_GROUP_NAME });
     await page.getByRole('button', { name: 'Buscar' }).click();
-     
-    await expect(page.getByText('DENY').first()).toBeVisible({ timeout: 15_000 });
 
-    expect(auditRequestUrl).toContain('/permission-audit/query');
-    expect(auditRequestUrl).not.toContain(COMUM_UID);
-     
-    console.log(`[prova] URL do request de auditoria (sem uid): ${auditRequestUrl}`);
+    // Evento de PERMISSÃO: `vacancy:read` agregado ao grupo no teste 2.
+    const filaPermissao = page.getByTestId('history-row-permission').filter({ hasText: NOVO_GROUP_NAME });
+    await expect(filaPermissao.first()).toBeVisible({ timeout: 15_000 });
+    await expect(filaPermissao.first()).toContainText('E2E Gestora');
+    await expect(filaPermissao.first()).not.toContainText(GESTORA_UID);
 
-    const denyCount = scalar(`SELECT COUNT(*) FROM iam.permission_audit_log
-        WHERE user_id='${COMUM_UID}' AND decision='DENY' AND resource='vacancy' AND action='read'`);
-    expect(Number(denyCount)).toBeGreaterThan(0);
+    // Evento de MEMBRO: a comum foi removida no teste 5 — a linha mostra o
+    // E-MAIL dela (fallback de `display_name`), nunca o uid.
+    const filaMembro = page.getByTestId('history-row-member').filter({ hasText: COMUM_EMAIL });
+    await expect(filaMembro.first()).toBeVisible({ timeout: 15_000 });
+    await expect(filaMembro.first()).toContainText('E2E Gestora');
+    await expect(filaMembro.first()).not.toContainText(COMUM_UID);
+  });
+
+  test('6b. histórico: filtro por grupo mostra só os eventos DAQUELE grupo', async ({ page }) => {
+    await loginAs(page, GESTORA);
+    await page.goto('/admin/access/audit');
+    await expect(page.getByRole('heading', { name: 'Historial de cambios de permisos' })).toBeVisible({ timeout: 15_000 });
+
+    await page.getByLabel('Grupo').selectOption({ label: OWN_GROUP_NAME });
+    await page.getByRole('button', { name: 'Buscar' }).click();
+
+    // O grupo PRÓPRIO da gestora (`beforeAll`) tem um evento de membro (ela
+    // mesma) — não-vazio primeiro: `every` de lista vazia seria `true` e
+    // aprovaria o filtro quebrado.
+    const linhas = page.locator('[data-testid^="history-row-"]');
+    await expect(linhas.first()).toBeVisible({ timeout: 15_000 });
+    const textos = await linhas.allTextContents();
+    expect(textos.length).toBeGreaterThan(0);
+    expect(textos.every((txt) => txt.includes(OWN_GROUP_NAME))).toBe(true);
+    expect(textos.some((txt) => txt.includes(NOVO_GROUP_NAME))).toBe(false);
+  });
+
+  test('6c. histórico: filtro grupo+tipo sem correspondência mostra lista vazia (o grupo próprio nunca teve mudança de CÉLULA pela função gravada)', async ({ page }) => {
+    await loginAs(page, GESTORA);
+    await page.goto('/admin/access/audit');
+    await expect(page.getByRole('heading', { name: 'Historial de cambios de permisos' })).toBeVisible({ timeout: 15_000 });
+
+    // O grupo próprio ganhou as células no `beforeAll` por INSERT direto (não
+    // por `iam.set_group_permissions`) — não existe linha em
+    // `permission_group_changes` para ele, então `type=Permiso` dá vazio.
+    await page.getByLabel('Grupo').selectOption({ label: OWN_GROUP_NAME });
+    await page.getByLabel('Tipo').selectOption({ label: 'Permiso' });
+    await page.getByRole('button', { name: 'Buscar' }).click();
+
+    await expect(page.getByText('Sin registros para ese filtro.')).toBeVisible({ timeout: 15_000 });
   });
 
   // ── V3 — telas para quem não tem célula ──────────────────────────────────
