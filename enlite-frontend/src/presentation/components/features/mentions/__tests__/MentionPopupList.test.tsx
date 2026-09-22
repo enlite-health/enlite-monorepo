@@ -32,9 +32,9 @@ vi.mock('react-i18next', () => ({
 }));
 
 const ITEMS = [
-  { uid: 'u-1', displayName: 'QA Staff Um' },
-  { uid: 'u-2', displayName: 'QA Staff Dois' },
-  { uid: 'u-3', displayName: 'QA Staff Três' },
+  { uid: 'u-1', displayName: 'QA Staff Um', isOnline: false },
+  { uid: 'u-2', displayName: 'QA Staff Dois', isOnline: false },
+  { uid: 'u-3', displayName: 'QA Staff Três', isOnline: false },
 ];
 
 function press(key: string): KeyboardEvent {
