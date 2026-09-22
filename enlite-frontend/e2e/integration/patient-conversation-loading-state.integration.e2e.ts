@@ -15,7 +15,7 @@
  */
 import { test, expect } from '@playwright/test';
 import {
-  seedPatientQA, cleanupPatientQA, seedStaffInGroup, cleanupStaffAndGroup, grantCell, loginAs,
+  seedPatientQA, cleanupPatientQA, seedStaffInGroup, cleanupStaffAndGroup, grantCell, loginAs, tokenFor,
   type MockUser,
 } from '../helpers/patient-conversation-helper';
 
@@ -55,6 +55,23 @@ test.describe('Chat interno — estado de carregamento sobrevive com resposta re
   test('spinner + "Cargando mensajes…" aparecem ANTES da resposta real da listagem; conteúdo (vazio) aparece DEPOIS', async ({ page }) => {
     let interceptedAtLeastOnce = false;
 
+    // 🔒 achado desta sessão: `loginAs`/`installAuthInterceptors` registra `page.route('**/api/**',
+    // swapToken)` — e o Playwright resolve rotas sobrepostas em ordem LIFO (a registrada por
+    // ÚLTIMO ganha, e ela resolve com `route.continue()`, que vai direto pra rede sem passar pelas
+    // rotas mais antigas). Registrar este route ANTES do `loginAs` fazia o `swapToken` interceptar
+    // a GET de `.../conversation` primeiro — `interceptedAtLeastOnce` ficava `false` mesmo com o
+    // spinner/estado vazio passando (o timing real, sem delay artificial, já bastava pras
+    // asserções de UI, escondendo que o atraso nunca era aplicado).
+    //
+    // Registrar DEPOIS do `loginAs` resolve a ordem, mas cria um 2º problema: agora ESTE handler
+    // (mais recente) intercepta primeiro e, ao chamar `route.fetch()` sem repassar pelo
+    // `swapToken`, manda a requisição com o header `Authorization` ORIGINAL do browser (o id token
+    // fake do Firebase) — não o `mock_<base64>` que a API em `USE_MOCK_AUTH=true` espera. Resultado
+    // era 401 mudo (o `empty` nunca aparecia, sem nenhuma mensagem de erro clara). Este handler
+    // repete a MESMA troca de header que `swapToken` faria, com o MESMO `tokenFor` — não há como
+    // encadear os dois `page.route` sem reimplementar isso aqui.
+    await loginAs(page, AUTORA);
+
     // Atrasa a resposta REAL (não um mock de UI solto) — `route.fetch()` busca a resposta de
     // verdade do backend e só a entrega ao browser depois do delay: os BYTES continuam reais,
     // só o TIMING muda, exatamente como uma rede lenta faria.
@@ -64,12 +81,13 @@ test.describe('Chat interno — estado de carregamento sobrevive com resposta re
         return;
       }
       interceptedAtLeastOnce = true;
-      const response = await route.fetch();
+      const response = await route.fetch({
+        headers: { ...route.request().headers(), authorization: `Bearer ${tokenFor(AUTORA)}` },
+      });
       await new Promise((resolve) => setTimeout(resolve, 800));
       await route.fulfill({ response });
     });
 
-    await loginAs(page, AUTORA);
     await page.goto(`/admin/patients/${patientId}`);
 
     const handleBtn = page.getByTestId('patient-conversation-handle-btn');
