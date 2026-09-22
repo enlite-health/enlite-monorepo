@@ -115,8 +115,9 @@ jobs:
             DB_USER=enlite_app
             DB_SYSTEM_USER=enlite_system
             DB_MIGRATION_USER=enlite_app
-            PERMISSION_ENGINE_ENABLED=false
-            PERMISSION_CATALOG_SYNC_ENABLED=false
+            # PERMISSION_ENGINE_ENABLED e PERMISSION_CATALOG_SYNC_ENABLED: ligado em prd em 22/09/2026 via gcloud; YAML alinhado.
+            PERMISSION_ENGINE_ENABLED=true
+            PERMISSION_CATALOG_SYNC_ENABLED=true
             COUNTRY_RLS_ENABLED=false
             # ⚠️ NÃO troque para `false`. Não é interruptor de criptografia: é saída de emergência
             # de teste. `KMSEncryptionService.ts` e `BlindIndexService.ts` fazem
