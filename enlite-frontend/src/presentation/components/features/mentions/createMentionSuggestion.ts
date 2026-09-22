@@ -21,7 +21,7 @@ import type { SuggestionOptions } from '@tiptap/suggestion';
 import type { MentionNodeAttrs } from '@tiptap/extension-mention';
 import type { StaffDirectoryEntry } from '@infrastructure/http/AdminConversationApiService';
 import { clampMentionPopupPosition } from './mentionPopupPosition';
-import { MentionPopupList, type MentionPopupListProps } from './MentionPopupList';
+import { MentionPopupList, type MentionPopupListHandle, type MentionPopupListProps } from './MentionPopupList';
 
 export interface ConfigureMentionSuggestionOptions {
   /** Busca candidatos por texto (`query` vazia = sem filtro, primeiros N do diretório — item 1). */
@@ -67,7 +67,7 @@ export function configureMentionSuggestion(options: ConfigureMentionSuggestionOp
       }
     },
     render: () => {
-      let component: ReactRenderer<unknown, MentionPopupListProps> | null = null;
+      let component: ReactRenderer<MentionPopupListHandle, MentionPopupListProps> | null = null;
 
       const applyPosition = (rect: DOMRect): void => {
         if (!component) return;
@@ -106,7 +106,10 @@ export function configureMentionSuggestion(options: ConfigureMentionSuggestionOp
           component?.updateProps({ items: props.items, error: lastDirectoryError, command: props.command });
           reposition(props.clientRect);
         },
-        onKeyDown: ({ event }) => event.key === 'Escape',
+        // Escape já é tratado pelo próprio `Suggestion` plugin (sempre fecha, `dispatchExit`)
+        // ANTES de chamar este `onKeyDown` — só ArrowUp/ArrowDown/Enter chegam aqui de fato
+        // (commit 3, teclado + ARIA). Delegado ao `ref` do popup: o foco nunca sai do editor.
+        onKeyDown: ({ event }) => component?.ref?.onKeyDown({ event }) ?? false,
         onExit: () => {
           component?.element.remove();
           component?.destroy();

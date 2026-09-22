@@ -3889,7 +3889,9 @@
               "uploading": "Subiendo…",
               "max": "Máximo 5 archivos adjuntos"
             },
-            "mentionDirectoryError": "No se pudo buscar. Probá escribir de nuevo."
+            "mentionDirectoryError": "No se pudo buscar. Probá escribir de nuevo.",
+            "mentionListLabel": "Mencionar a alguien",
+            "mentionShowAll": "Mostrar todos"
           }
         }
       },
