@@ -179,6 +179,9 @@ test.describe('Notificação — deep-link na mesma página + card em 3 linhas +
       expect(patientBox!.y).toBeGreaterThanOrEqual(cardBox!.y - 1);
       expect(patientBox!.y + patientBox!.height).toBeLessThanOrEqual(cardBox!.y + cardBox!.height + 1);
       await expect(patientLine).toContainText('Paciente QA');
+      await pageB.screenshot({
+        path: '/Users/gabrielstein-dev/projects/enlite/ebrain/openspec/changes/022-ux-mencao-e-notificacao/evidencias/r2-card-3-linhas.png',
+      });
     } finally {
       await contextA.close();
       await contextB.close();
@@ -208,6 +211,9 @@ test.describe('Notificação — deep-link na mesma página + card em 3 linhas +
       const markAllBox = (await markAll.boundingBox())!;
       const closeBox = (await closeBtn.boundingBox())!;
       expect(rectsIntersect(markAllBox, closeBox)).toBe(false);
+      await pageB.screenshot({
+        path: '/Users/gabrielstein-dev/projects/enlite/ebrain/openspec/changes/022-ux-mencao-e-notificacao/evidencias/r2-painel-header.png',
+      });
     } finally {
       await contextA.close();
       await contextB.close();
