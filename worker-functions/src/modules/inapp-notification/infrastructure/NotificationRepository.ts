@@ -11,13 +11,14 @@
  */
 import type { Pool, PoolClient } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
-import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
+import { KMSEncryptionService, KMS_DECRYPT_CONCURRENCY_LIMIT } from '@shared/security/KMSEncryptionService';
 import { mapWithConcurrency } from '@shared/async/mapWithConcurrency';
 import { reportError } from '@shared/logging';
 import { MENTION_PATTERN } from '@modules/conversation/domain/ConversationMention';
+import { queryMentionDisplayNames } from '@modules/conversation/infrastructure/MentionDisplayNamesQuery';
 
-/** Limite de decifra KMS em paralelo — mesmo valor de `ConversationRepository` (D-01). */
-const DECRYPT_CONCURRENCY_LIMIT = 10;
+/** Limite de decifra KMS em paralelo — mesmo valor de `ConversationRepository` (G4: compartilhado, D-01). */
+const DECRYPT_CONCURRENCY_LIMIT = KMS_DECRYPT_CONCURRENCY_LIMIT;
 
 /** Trecho da notificação (item 2, design.md §2) — mesmo teto citado no contrato/spec. */
 const MESSAGE_EXCERPT_MAX_LENGTH = 140;
@@ -294,17 +295,7 @@ export class NotificationRepository {
     executor: Pool | PoolClient,
   ): Promise<Map<string, Record<string, string | null>>> {
     const byMessageId = new Map<string, Record<string, string | null>>();
-    const { rows } = await executor.query<{
-      messageId: string;
-      mentionedUid: string;
-      mentionedDisplayName: string | null;
-    }>(
-      `SELECT message_id AS "messageId", mentioned_uid AS "mentionedUid", u.display_name AS "mentionedDisplayName"
-         FROM conversation_message_mentions
-         LEFT JOIN users u ON u.firebase_uid = conversation_message_mentions.mentioned_uid
-        WHERE message_id = ANY($1::uuid[])`,
-      [messageIds],
-    );
+    const rows = await queryMentionDisplayNames(executor, messageIds);
     for (const row of rows) {
       const existing = byMessageId.get(row.messageId) ?? {};
       existing[row.mentionedUid] = row.mentionedDisplayName;

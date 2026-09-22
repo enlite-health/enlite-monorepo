@@ -13,6 +13,9 @@ jest.mock('@shared/database/DatabaseConnection', () => ({
 const mockDecrypt = jest.fn(async (v: string | null) => (v ? `plain:${v}` : ''));
 jest.mock('@shared/security/KMSEncryptionService', () => ({
   KMSEncryptionService: jest.fn().mockImplementation(() => ({ decrypt: mockDecrypt })),
+  // G4: constante compartilhada com ConversationRepository — o mock precisa expor o MESMO valor
+  // real, senão `DECRYPT_CONCURRENCY_LIMIT` chega `undefined` no módulo sob teste.
+  KMS_DECRYPT_CONCURRENCY_LIMIT: 10,
 }));
 
 const mockReportError = jest.fn();

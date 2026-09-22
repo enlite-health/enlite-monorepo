@@ -25,6 +25,9 @@ jest.mock('@shared/security/KMSEncryptionService', () => ({
     encrypt: mockEncrypt,
     decrypt: mockDecrypt,
   })),
+  // G4: constante compartilhada com NotificationRepository — o mock precisa expor o MESMO valor
+  // real, senão `DECRYPT_CONCURRENCY_LIMIT` chega `undefined` no módulo sob teste.
+  KMS_DECRYPT_CONCURRENCY_LIMIT: 10,
 }));
 
 /** Achado A5 do gate 21/09: uma falha ISOLADA de KMS ao decifrar `originalName` de UM anexo não

@@ -15,15 +15,16 @@
  */
 import type { Pool, PoolClient } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
-import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
+import { KMSEncryptionService, KMS_DECRYPT_CONCURRENCY_LIMIT } from '@shared/security/KMSEncryptionService';
 import { mapWithConcurrency } from '@shared/async/mapWithConcurrency';
 import { reportError } from '@shared/logging';
+import { queryMentionDisplayNames } from './MentionDisplayNamesQuery';
 
 /** Página padrão da listagem de mensagens de topo (spec 022, Bloco 1). */
 export const CONVERSATION_PAGE_SIZE = 50;
 
-/** Limite de decifra KMS em paralelo — D-01: acima disso estoura cota da API. */
-const DECRYPT_CONCURRENCY_LIMIT = 10;
+/** Limite de decifra KMS em paralelo — D-01: acima disso estoura cota da API (G4: agora compartilhado). */
+const DECRYPT_CONCURRENCY_LIMIT = KMS_DECRYPT_CONCURRENCY_LIMIT;
 
 export interface ConversationMessageCursor {
   createdAt: Date;
@@ -140,12 +141,6 @@ interface RawReplyRow {
   createdAt: Date;
   editedAt: Date | null;
   deletedAt: Date | null;
-}
-
-interface RawMentionRow {
-  messageId: string;
-  mentionedUid: string;
-  mentionedDisplayName: string | null;
 }
 
 /** Agregação por mensagem: uids (ordem alfabética, forma inalterada) + nome de cada um. */
@@ -269,14 +264,7 @@ export class ConversationRepository {
     const mentionsByMessageId = new Map<string, MentionAggregate>();
     if (messageIds.length === 0) return mentionsByMessageId;
 
-    const { rows } = await executor.query<RawMentionRow>(
-      `SELECT message_id AS "messageId", mentioned_uid AS "mentionedUid", u.display_name AS "mentionedDisplayName"
-         FROM conversation_message_mentions
-         LEFT JOIN users u ON u.firebase_uid = conversation_message_mentions.mentioned_uid
-        WHERE message_id = ANY($1::uuid[])
-        ORDER BY message_id, mentioned_uid`,
-      [messageIds],
-    );
+    const rows = await queryMentionDisplayNames(executor, messageIds);
 
     for (const row of rows) {
       const existing = mentionsByMessageId.get(row.messageId);
