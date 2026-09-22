@@ -331,4 +331,27 @@ describe('PatientDetailPage — deep-link do sino reage a location.state NOVO (D
     rerender(<PatientDetailPage />);
     expect(screen.getByTestId('conversation-handle-stub')).toHaveTextContent('none');
   });
+
+  it('🔒 GUARDA (gate revisao-pr, critério 8): mesma location RE-RENDERIZADA com objeto NOVO (mesmo token) não reabre o painel', () => {
+    // Diferença desta prova para a de cima: ali `locationState.mockReturnValue` devolve o MESMO
+    // objeto em toda chamada (mock simples), então o array de deps `[locationFocusRequest]` do
+    // `useEffect` nem muda de referência — o teste de cima passa mesmo SEM o guard de
+    // `lastLocationTokenRef`, porque o efeito não teria motivo pra rodar de novo. Na aplicação
+    // real, `useLocation()` do React Router RECRIA o objeto de location a cada render (mesmo
+    // path, mesmo state em VALOR) — é exatamente o caso que o guard existe para cobrir. Aqui se
+    // força esse caso: um objeto `focusRequest` NOVO (referência diferente), mas com o MESMO
+    // `token`, para provar que é o valor do token — não a referência do objeto — que decide.
+    locationState.mockReturnValue({ state: { focusRequest: { code: 'conversation', token: 111 } } });
+    const { rerender } = render(<PatientDetailPage />);
+    expect(screen.getByTestId('conversation-handle-stub')).toHaveTextContent('conversation:111');
+
+    fireEvent.click(screen.getByText('Rede de Apoio'));
+    expect(screen.getByTestId('conversation-handle-stub')).toHaveTextContent('none');
+
+    // Objeto NOVO (nova referência de `state` E de `focusRequest`), token IDÊNTICO (111) — simula
+    // o React Router recriando `location` numa re-renderização sem navegação nova de verdade.
+    locationState.mockReturnValue({ state: { focusRequest: { code: 'conversation', token: 111 } } });
+    rerender(<PatientDetailPage />);
+    expect(screen.getByTestId('conversation-handle-stub')).toHaveTextContent('none');
+  });
 });
