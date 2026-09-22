@@ -27,6 +27,15 @@ jest.mock('@shared/security/KMSEncryptionService', () => ({
   })),
 }));
 
+/** Achado A5 do gate 21/09: uma falha ISOLADA de KMS ao decifrar `originalName` de UM anexo não
+ *  pode derrubar a listagem inteira — espiado aqui pra provar que `reportError` é chamado sem o
+ *  nome (o nome é justamente o que falhou em decifrar; nunca temos o plaintext pra vazar). */
+const mockReportError = jest.fn();
+jest.mock('@shared/logging', () => ({
+  reportError: mockReportError,
+  logger: { child: jest.fn().mockReturnValue({ info: jest.fn(), warn: jest.fn(), error: jest.fn() }), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
+}));
+
 jest.mock('@shared/async/mapWithConcurrency', () => ({
   mapWithConcurrency: jest.fn((items: unknown[], _limit: number, fn: (item: unknown) => Promise<unknown>) =>
     Promise.all(items.map(fn)),
@@ -182,7 +191,8 @@ describe('ConversationRepository', () => {
 
       await repo.listTopMessages(CONVERSATION_ID, null, 50);
 
-      expect(mapWithConcurrency).toHaveBeenCalledTimes(1);
+      // 2 chamadas: corpo da mensagem + nome do anexo (achado T-nome-anexo) — mesmo limite (10) nas duas.
+      expect(mapWithConcurrency).toHaveBeenCalledTimes(2);
       expect(mapWithConcurrency).toHaveBeenCalledWith(rows, 10, expect.any(Function));
     });
 
@@ -304,8 +314,8 @@ describe('ConversationRepository', () => {
         .mockResolvedValueOnce({ rows: [] })
         .mockResolvedValueOnce({
           rows: [
-            { messageId: 'm1', fileId: 'f1', contentType: 'application/pdf', sizeBytes: 1024 },
-            { messageId: 'm1', fileId: 'f2', contentType: 'image/png', sizeBytes: 2048 },
+            { messageId: 'm1', fileId: 'f1', contentType: 'application/pdf', sizeBytes: 1024, originalNameEncrypted: 'enc:doc-um.pdf' },
+            { messageId: 'm1', fileId: 'f2', contentType: 'image/png', sizeBytes: 2048, originalNameEncrypted: 'enc:foto-dois.png' },
           ],
         });
       const repo = new ConversationRepository(poolWith(query));
@@ -317,13 +327,70 @@ describe('ConversationRepository', () => {
       expect(attachmentsSql).toContain('FROM conversation_message_attachments cma');
       expect(attachmentsSql).toContain('JOIN stored_files sf ON sf.id = cma.file_id');
       expect(attachmentsSql).toContain('WHERE cma.message_id = ANY($1::uuid[])');
+      expect(attachmentsSql).toContain('sf.original_name_encrypted AS "originalNameEncrypted"');
       expect(attachmentsParams).toEqual([['m1', 'm2']]);
 
       expect(out.find((m) => m.id === 'm1')?.attachments).toEqual([
-        { fileId: 'f1', contentType: 'application/pdf', sizeBytes: 1024 },
-        { fileId: 'f2', contentType: 'image/png', sizeBytes: 2048 },
+        { fileId: 'f1', contentType: 'application/pdf', sizeBytes: 1024, originalName: 'plain:enc:doc-um.pdf' },
+        { fileId: 'f2', contentType: 'image/png', sizeBytes: 2048, originalName: 'plain:enc:foto-dois.png' },
       ]);
       expect(out.find((m) => m.id === 'm2')?.attachments).toEqual([]);
+    });
+
+    it('🔒 achado (T-nome-anexo): decifra `originalName` em LOTE (mapWithConcurrency, mesmo limite 10 do body) — nunca uma chamada KMS por anexo sem limite', async () => {
+      const query = jest
+        .fn()
+        .mockResolvedValueOnce({ rows: [topRow({ id: 'm1' })] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({
+          rows: [{ messageId: 'm1', fileId: 'f1', contentType: 'application/pdf', sizeBytes: 1024, originalNameEncrypted: 'enc:x.pdf' }],
+        });
+      const repo = new ConversationRepository(poolWith(query));
+
+      await repo.listTopMessages(CONVERSATION_ID, null, 50);
+
+      // mapWithConcurrency é chamado para o corpo E para os nomes de anexo — mesmo limite (10).
+      const namesCall = (mapWithConcurrency as jest.Mock).mock.calls.find(
+        ([items]) => Array.isArray(items) && items.length === 1 && (items[0] as { fileId: string }).fileId === 'f1',
+      );
+      expect(namesCall).toBeDefined();
+      expect(namesCall![1]).toBe(10);
+    });
+
+    it('🔒 achado A5 do gate (21/09): falha de KMS ao decifrar UM `originalName` isola SÓ aquele anexo (originalName: null) — não derruba a listagem inteira', async () => {
+      const query = jest
+        .fn()
+        .mockResolvedValueOnce({ rows: [topRow({ id: 'm1' })] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({
+          rows: [
+            { messageId: 'm1', fileId: 'f1', contentType: 'application/pdf', sizeBytes: 1024, originalNameEncrypted: 'enc:doc-ok.pdf' },
+            { messageId: 'm1', fileId: 'f2', contentType: 'image/png', sizeBytes: 2048, originalNameEncrypted: 'enc:falha.png' },
+          ],
+        });
+      // 3 decrypts nesta ordem: 1º o BODY da mensagem (`mapWithConcurrency` do corpo roda antes de
+      // `fetchAttachmentsByMessageIds`), depois f1 (sucesso), depois f2 (a falha isolada de KMS).
+      mockDecrypt
+        .mockImplementationOnce(async (v: string | null) => (v ? `plain:${v}` : ''))
+        .mockImplementationOnce(async (v: string | null) => (v ? `plain:${v}` : ''))
+        .mockImplementationOnce(async () => { throw new Error('Failed to decrypt data'); });
+      const repo = new ConversationRepository(poolWith(query));
+
+      const out = await repo.listTopMessages(CONVERSATION_ID, null, 50);
+
+      // a listagem NÃO rejeita (não derruba a request inteira) — o anexo que falhou vira originalName: null.
+      expect(out.find((m) => m.id === 'm1')?.attachments).toEqual([
+        { fileId: 'f1', contentType: 'application/pdf', sizeBytes: 1024, originalName: 'plain:enc:doc-ok.pdf' },
+        { fileId: 'f2', contentType: 'image/png', sizeBytes: 2048, originalName: null },
+      ]);
+
+      // a falha É reportada — mas SEM o nome (o nome é exatamente o que não temos: nunca decifrou).
+      expect(mockReportError).toHaveBeenCalledTimes(1);
+      const [reportedErr, reportedContext] = mockReportError.mock.calls[0];
+      expect(reportedErr).toBeInstanceOf(Error);
+      expect(reportedContext).toMatchObject({ fileId: 'f2' });
+      expect(JSON.stringify(reportedContext)).not.toContain('falha.png');
+      expect(JSON.stringify(reportedContext)).not.toMatch(/originalName|plain:/);
     });
 
     it('listTopMessages: mensagem sem nenhum anexo devolve attachments: [] (nunca undefined)', async () => {
@@ -349,13 +416,13 @@ describe('ConversationRepository', () => {
       expect(query).toHaveBeenCalledTimes(1);
     });
 
-    it('listReplies: mesma agregação (UMA query com JOIN+ANY), sem forma de originalName (contrato só devolve fileId/contentType/sizeBytes)', async () => {
+    it('listReplies: mesma agregação (UMA query com JOIN+ANY), com originalName decifrado (achado T-nome-anexo — a listagem agora devolve o nome)', async () => {
       const query = jest
         .fn()
         .mockResolvedValueOnce({ rows: [replyRow({ id: 'r1' }), replyRow({ id: 'r2' })] })
         .mockResolvedValueOnce({ rows: [] })
         .mockResolvedValueOnce({
-          rows: [{ messageId: 'r1', fileId: 'f9', contentType: 'application/pdf', sizeBytes: 512 }],
+          rows: [{ messageId: 'r1', fileId: 'f9', contentType: 'application/pdf', sizeBytes: 512, originalNameEncrypted: 'enc:laudo.pdf' }],
         });
       const repo = new ConversationRepository(poolWith(query));
 
@@ -365,8 +432,8 @@ describe('ConversationRepository', () => {
       const [, attachmentsParams] = query.mock.calls[2];
       expect(attachmentsParams).toEqual([['r1', 'r2']]);
       const r1 = out.find((r) => r.id === 'r1');
-      expect(r1?.attachments).toEqual([{ fileId: 'f9', contentType: 'application/pdf', sizeBytes: 512 }]);
-      expect(Object.keys(r1?.attachments[0] ?? {})).toEqual(['fileId', 'contentType', 'sizeBytes']);
+      expect(r1?.attachments).toEqual([{ fileId: 'f9', contentType: 'application/pdf', sizeBytes: 512, originalName: 'plain:enc:laudo.pdf' }]);
+      expect(Object.keys(r1?.attachments[0] ?? {}).sort()).toEqual(['contentType', 'fileId', 'originalName', 'sizeBytes']);
       expect(out.find((r) => r.id === 'r2')?.attachments).toEqual([]);
     });
 
@@ -460,7 +527,8 @@ describe('ConversationRepository', () => {
 
       const out = await repo.listReplies('m1');
 
-      expect(mapWithConcurrency).toHaveBeenCalledTimes(1);
+      // 2 chamadas: corpo da mensagem + nome do anexo (achado T-nome-anexo) — mesmo limite (10) nas duas.
+      expect(mapWithConcurrency).toHaveBeenCalledTimes(2);
       expect(mapWithConcurrency).toHaveBeenCalledWith(rows, 10, expect.any(Function));
       expect(out.map((r) => r.body)).toEqual(['plain:enc:msg-1', 'plain:enc:msg-1']);
       expect(mockDecrypt).toHaveBeenCalledWith('enc:msg-1');

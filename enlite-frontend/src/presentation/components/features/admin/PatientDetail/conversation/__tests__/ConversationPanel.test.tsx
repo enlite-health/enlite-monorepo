@@ -399,6 +399,33 @@ describe('ConversationPanel', () => {
     expect(screen.queryByTestId('conversation-panel-list')).not.toBeInTheDocument();
   });
 
+  it('🔒 ajustes de UI B5 (item 6): carga INICIAL mostra spinner (role=status) ANTES da 1ª resposta — nunca painel branco', async () => {
+    let resolveConversation: (v: { conversationId: string; messages: ConversationMessage[]; nextCursor: null }) => void = () => {};
+    getConversation.mockImplementation(() => new Promise((resolve) => { resolveConversation = resolve; }));
+    render(<ConversationPanel patientId="p1" isOpen />);
+
+    const loading = await screen.findByTestId('conversation-panel-loading');
+    expect(loading).toHaveAttribute('role', 'status');
+    expect(loading).toHaveTextContent(PT.panel.loading);
+
+    resolveConversation({ conversationId: 'conv-1', messages: [], nextCursor: null });
+    await waitFor(() => expect(screen.getByTestId('conversation-panel-empty')).toBeInTheDocument());
+    expect(screen.queryByTestId('conversation-panel-loading')).not.toBeInTheDocument();
+  });
+
+  it('🔒 ajustes de UI B5 (item 6): erro na carga inicial mostra botão "Reintentar" que rebusca', async () => {
+    getConversation.mockRejectedValueOnce(new Error('network down'));
+    getConversation.mockResolvedValueOnce({ conversationId: 'conv-1', messages: [], nextCursor: null });
+    render(<ConversationPanel patientId="p1" isOpen />);
+
+    const retryBtn = await screen.findByTestId('conversation-panel-retry');
+    expect(retryBtn).toHaveTextContent(PT.panel.retry);
+    fireEvent.click(retryBtn);
+
+    await waitFor(() => expect(screen.getByTestId('conversation-panel-empty')).toBeInTheDocument());
+    expect(screen.queryByTestId('conversation-panel-error')).not.toBeInTheDocument();
+  });
+
   it('DEFEITO 4: erro NÃO-403 num POLL depois de já ter carregado (status \'ready\') NÃO troca de estado'
     + ' — mantém a última lista boa (comportamento antigo preservado)', async () => {
     vi.useFakeTimers();
@@ -466,5 +493,55 @@ describe('ConversationPanel', () => {
     await waitFor(() => expect(screen.getByTestId('conversation-panel-empty')).toBeInTheDocument());
     expect(await screen.findByTestId('composer-editor')).toBeInTheDocument();
     expect(screen.queryByTestId('conversation-panel-read-only')).not.toBeInTheDocument();
+  });
+
+  // ---- rodapé do card: "Responder" sempre, "N respuestas" só quando N >= 1 (ajustes de UI B5) --
+
+  describe('rodapé do card (achado "0 respuestas")', () => {
+    it('replyCount 0: NÃO mostra "0 respostas" nenhuma — só o botão "Responder"', async () => {
+      getConversation.mockResolvedValue({
+        conversationId: 'conv-1',
+        messages: [msg({ id: 'm1', replyCount: 0 })],
+        nextCursor: null,
+      });
+      render(<ConversationPanel patientId="p1" isOpen />);
+
+      await waitFor(() => expect(screen.getByTestId('conversation-message-m1')).toBeInTheDocument());
+      expect(screen.queryByTestId('conversation-message-replies')).not.toBeInTheDocument();
+      expect(screen.queryByText(/0 resposta/i)).not.toBeInTheDocument();
+      expect(screen.getByTestId('conversation-message-reply-btn')).toBeInTheDocument();
+    });
+
+    it('replyCount >= 1: mostra o SELO (contagem + aria-label) E "Responder" — os dois abrem a MESMA thread', async () => {
+      getConversationReplies.mockResolvedValue([]);
+      getConversation.mockResolvedValue({
+        conversationId: 'conv-1',
+        messages: [msg({ id: 'm1', replyCount: 2 })],
+        nextCursor: null,
+      });
+      render(<ConversationPanel patientId="p1" isOpen />);
+
+      await waitFor(() => expect(screen.getByTestId('conversation-message-m1')).toBeInTheDocument());
+      const badge = screen.getByTestId('conversation-message-replies');
+      expect(badge).toHaveTextContent('2');
+      expect(badge).toHaveAttribute('aria-label', '2 respostas');
+
+      fireEvent.click(screen.getByTestId('conversation-message-reply-btn'));
+      await waitFor(() => expect(screen.getByTestId('thread-view')).toBeInTheDocument());
+    });
+
+    it('o SELO também abre a thread (não é só decorativo)', async () => {
+      getConversationReplies.mockResolvedValue([]);
+      getConversation.mockResolvedValue({
+        conversationId: 'conv-1',
+        messages: [msg({ id: 'm1', replyCount: 1 })],
+        nextCursor: null,
+      });
+      render(<ConversationPanel patientId="p1" isOpen />);
+
+      await waitFor(() => expect(screen.getByTestId('conversation-message-m1')).toBeInTheDocument());
+      fireEvent.click(screen.getByTestId('conversation-message-replies'));
+      await waitFor(() => expect(screen.getByTestId('thread-view')).toBeInTheDocument());
+    });
   });
 });

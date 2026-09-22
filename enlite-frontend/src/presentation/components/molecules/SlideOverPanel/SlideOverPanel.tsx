@@ -82,7 +82,13 @@ export function SlideOverPanel({
         role="dialog"
         aria-modal={modal}
         aria-label={ariaLabel}
-        className={`fixed top-0 right-0 h-screen z-50 w-full ${widthClassName} bg-white shadow-2xl rounded-tl-[32px] rounded-bl-[32px] flex flex-col transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}
+        // 🔒 `h-dvh` (não `h-screen`/`100vh`) — ajustes de UI B5, achado "Enviar cortado embaixo":
+        // `100vh` no mobile conta a altura da JANELA inteira, incluindo a área que a barra de
+        // endereço do browser ainda pode cobrir — o painel ficava MAIOR que o espaço realmente
+        // visível, empurrando o rodapé (compositor) pra fora da tela. `100dvh` (dynamic viewport
+        // height, Tailwind >= 3.4, suportado por browsers modernos — admin interno, nunca cliente
+        // externo) sempre bate com o que está DE FATO visível.
+        className={`fixed top-0 right-0 h-dvh z-50 w-full ${widthClassName} bg-white shadow-2xl rounded-tl-[32px] rounded-bl-[32px] flex flex-col transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}
         data-testid={testId}
       >
         {closeAriaLabel && (

@@ -21,6 +21,11 @@ export interface ConversationMessageAttachment {
   fileId: string;
   contentType: string;
   sizeBytes: number;
+  /** Nome original DECIFRADO (ajuste de UI B5, achado T-nome-anexo) — a listagem hoje já devolve
+   * isto (mesma célula `patient_conversation:read`, ver `contracts/openapi-conversation.md`).
+   * `null` (gate 21/09, achado A5): uma falha ISOLADA de KMS ao decifrar ESTE anexo — o backend
+   * não derruba a listagem inteira por causa de um nome; a UI cai no rótulo genérico + extensão. */
+  originalName: string | null;
 }
 
 export interface ConversationMessage {

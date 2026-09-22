@@ -141,6 +141,31 @@ describe('ThreadView', () => {
     expect(screen.getByTestId('thread-view-error').textContent?.length).toBeGreaterThan(0);
   });
 
+  it('🔒 ajustes de UI B5 (item 6): carga INICIAL mostra spinner (role=status) ANTES da resposta chegar', async () => {
+    let resolveReplies: (v: ConversationMessage[]) => void = () => {};
+    getConversationReplies.mockImplementation(() => new Promise((resolve) => { resolveReplies = resolve; }));
+    render(<ThreadView patientId="p1" rootMessage={msg({ id: 'root-1' })} onBack={vi.fn()} />);
+
+    const loading = await screen.findByTestId('thread-view-loading');
+    expect(loading).toHaveAttribute('role', 'status');
+
+    resolveReplies([]);
+    await waitFor(() => expect(screen.getByTestId('thread-replies-list')).toBeInTheDocument());
+    expect(screen.queryByTestId('thread-view-loading')).not.toBeInTheDocument();
+  });
+
+  it('🔒 ajustes de UI B5 (item 6): erro mostra botão de retry que rebusca as replies', async () => {
+    getConversationReplies.mockRejectedValueOnce(new Error('network down'));
+    getConversationReplies.mockResolvedValueOnce([]);
+    render(<ThreadView patientId="p1" rootMessage={msg({ id: 'root-1' })} onBack={vi.fn()} />);
+
+    const retryBtn = await screen.findByTestId('thread-view-retry');
+    fireEvent.click(retryBtn);
+
+    await waitFor(() => expect(screen.getByTestId('thread-replies-list')).toBeInTheDocument());
+    expect(screen.queryByTestId('thread-view-error')).not.toBeInTheDocument();
+  });
+
   it('token <@uid> fora da lista de mentions confirmadas cai pro texto cru (não quebra)', async () => {
     getConversationReplies.mockResolvedValue([
       // `mentions` é a lista de uids CONFIRMADOS pelo servidor (`ConversationRepository`) — só
@@ -207,7 +232,7 @@ describe('ThreadView', () => {
     const openSpy = vi.spyOn(window, 'open').mockReturnValue(fakePopup as unknown as Window);
     getConversationAttachmentUrl.mockResolvedValue({ url: 'https://signed.example/x', expiresInSeconds: 300 });
     getConversationReplies.mockResolvedValue([
-      msg({ id: 'r1', attachments: [{ fileId: 'file-1', contentType: 'application/pdf', sizeBytes: 1024 }] }),
+      msg({ id: 'r1', attachments: [{ fileId: 'file-1', contentType: 'application/pdf', sizeBytes: 1024, originalName: 'laudo.pdf' }] }),
     ]);
     render(<ThreadView patientId="p1" rootMessage={msg({ id: 'root-1' })} onBack={vi.fn()} />);
 
@@ -227,7 +252,7 @@ describe('ThreadView', () => {
     const openSpy = vi.spyOn(window, 'open').mockReturnValue(fakePopup as unknown as Window);
     getConversationAttachmentUrl.mockResolvedValue({ url: 'https://signed.example/close-me', expiresInSeconds: 300 });
     getConversationReplies.mockResolvedValue([
-      msg({ id: 'r1', attachments: [{ fileId: 'file-1', contentType: 'application/pdf', sizeBytes: 1024 }] }),
+      msg({ id: 'r1', attachments: [{ fileId: 'file-1', contentType: 'application/pdf', sizeBytes: 1024, originalName: 'laudo.pdf' }] }),
     ]);
     render(<ThreadView patientId="p1" rootMessage={msg({ id: 'root-1' })} onBack={vi.fn()} />);
 
@@ -257,7 +282,7 @@ describe('ThreadView', () => {
     const openSpy = vi.spyOn(window, 'open').mockReturnValue(fakePopup as unknown as Window);
     getConversationAttachmentUrl.mockResolvedValue({ url: 'https://signed.example/user-closed', expiresInSeconds: 300 });
     getConversationReplies.mockResolvedValue([
-      msg({ id: 'r1', attachments: [{ fileId: 'file-1', contentType: 'application/pdf', sizeBytes: 1024 }] }),
+      msg({ id: 'r1', attachments: [{ fileId: 'file-1', contentType: 'application/pdf', sizeBytes: 1024, originalName: 'laudo.pdf' }] }),
     ]);
     render(<ThreadView patientId="p1" rootMessage={msg({ id: 'root-1' })} onBack={vi.fn()} />);
 
@@ -283,7 +308,7 @@ describe('ThreadView', () => {
   it('🔒 achado do gate revisao-pr (B3-r2, item 13): pop-up BLOQUEADO (window.open devolve null) avisa o usuário visivelmente — nunca falha muda, e não tenta buscar a URL para uma aba que não existe', async () => {
     const openSpy = vi.spyOn(window, 'open').mockReturnValue(null);
     getConversationReplies.mockResolvedValue([
-      msg({ id: 'r1', attachments: [{ fileId: 'file-1', contentType: 'application/pdf', sizeBytes: 1024 }] }),
+      msg({ id: 'r1', attachments: [{ fileId: 'file-1', contentType: 'application/pdf', sizeBytes: 1024, originalName: 'laudo.pdf' }] }),
     ]);
     render(<ThreadView patientId="p1" rootMessage={msg({ id: 'root-1' })} onBack={vi.fn()} />);
 
@@ -306,7 +331,7 @@ describe('ThreadView', () => {
     const openSpy = vi.spyOn(window, 'open').mockReturnValue(fakePopup as unknown as Window);
     getConversationAttachmentUrl.mockRejectedValue(new Error('forbidden'));
     getConversationReplies.mockResolvedValue([
-      msg({ id: 'r1', attachments: [{ fileId: 'file-1', contentType: 'application/pdf', sizeBytes: 1024 }] }),
+      msg({ id: 'r1', attachments: [{ fileId: 'file-1', contentType: 'application/pdf', sizeBytes: 1024, originalName: 'laudo.pdf' }] }),
     ]);
     render(<ThreadView patientId="p1" rootMessage={msg({ id: 'root-1' })} onBack={vi.fn()} />);
 
@@ -334,7 +359,7 @@ describe('ThreadView', () => {
     const openSpy = vi.spyOn(window, 'open').mockReturnValue(fakePopup as unknown as Window);
     getConversationAttachmentUrl.mockResolvedValue({ url: 'https://signed.example/opener-test', expiresInSeconds: 300 });
     getConversationReplies.mockResolvedValue([
-      msg({ id: 'r1', attachments: [{ fileId: 'file-1', contentType: 'application/pdf', sizeBytes: 1024 }] }),
+      msg({ id: 'r1', attachments: [{ fileId: 'file-1', contentType: 'application/pdf', sizeBytes: 1024, originalName: 'laudo.pdf' }] }),
     ]);
     render(<ThreadView patientId="p1" rootMessage={msg({ id: 'root-1' })} onBack={vi.fn()} />);
 
@@ -347,12 +372,63 @@ describe('ThreadView', () => {
     openSpy.mockRestore();
   });
 
+  // ---- CARD (ajustes de UI B5, molde ClickUp) ------------------------------------------------
+
+  describe('card da mensagem (ajustes de UI B5)', () => {
+    it('mostra avatar (iniciais) no cabeçalho do card', async () => {
+      getConversationReplies.mockResolvedValue([msg({ id: 'r1', authorUid: 'staff-um' })]);
+      render(<ThreadView patientId="p1" rootMessage={msg({ id: 'root-1' })} onBack={vi.fn()} />);
+
+      await waitFor(() => expect(screen.getByTestId('thread-reply-r1')).toBeInTheDocument());
+      const card = screen.getByTestId('thread-reply-r1');
+      expect(card.querySelector('[data-testid="message-avatar"]')).toBeInTheDocument();
+    });
+
+    it('quebras de linha do corpo são preservadas visualmente (whitespace-pre-wrap) — achado: o \\n já chegava intacto do TipTap/backend, só faltava a CSS', async () => {
+      getConversationReplies.mockResolvedValue([msg({ id: 'r1', body: 'linha 1\nlinha 2' })]);
+      render(<ThreadView patientId="p1" rootMessage={msg({ id: 'root-1' })} onBack={vi.fn()} />);
+
+      await waitFor(() => expect(screen.getByTestId('thread-reply-r1')).toBeInTheDocument());
+      const body = screen.getByTestId('thread-reply-r1').querySelector('[data-testid="message-body"]');
+      expect(body).toHaveClass('whitespace-pre-wrap');
+      expect(body?.textContent).toBe('linha 1\nlinha 2');
+    });
+
+    describe('contraste WCAG AA (achado "autor/hora quase invisíveis")', () => {
+      // `text-gray-500` (`rgba(217,217,217,0.5)`) mede ~1.2:1 sobre branco; `Text color="secondary"`
+      // (default do atom) resolve para `text-gray-800` (`#737373`), 4.74:1 — medido nesta sessão
+      // (luminância relativa W3C). Cálculo numérico via getComputedStyle é papel do e2e; aqui só
+      // travamos a CLASSE (regressão barata), mesmo molde de `AntecedentesHelpExpandable.test.tsx`.
+      it('autor e hora usam text-gray-800, nunca text-gray-500', async () => {
+        getConversationReplies.mockResolvedValue([msg({ id: 'r1' })]);
+        render(<ThreadView patientId="p1" rootMessage={msg({ id: 'root-1' })} onBack={vi.fn()} />);
+
+        await waitFor(() => expect(screen.getByTestId('thread-reply-r1')).toBeInTheDocument());
+        const card = screen.getByTestId('thread-reply-r1');
+        const author = card.querySelector('[data-testid="message-author"]');
+        const time = card.querySelector('[data-testid="message-time"]');
+        expect(author).toHaveClass('text-gray-800');
+        expect(time).toHaveClass('text-gray-800');
+        expect(author?.className).not.toContain('text-gray-500');
+        expect(time?.className).not.toContain('text-gray-500');
+      });
+    });
+
+    it('reply NUNCA recebe footer (thread é de 1 nível — sem "Responder"/"N respuestas" numa reply)', async () => {
+      getConversationReplies.mockResolvedValue([msg({ id: 'r1', replyCount: 0 })]);
+      render(<ThreadView patientId="p1" rootMessage={msg({ id: 'root-1' })} onBack={vi.fn()} />);
+
+      await waitFor(() => expect(screen.getByTestId('thread-reply-r1')).toBeInTheDocument());
+      expect(screen.queryByTestId('conversation-message-reply-btn')).not.toBeInTheDocument();
+    });
+  });
+
   it('mensagem APAGADA nunca mostra anexo, mesmo que o array venha preenchido (soft delete zera o corpo, não o array)', async () => {
     getConversationReplies.mockResolvedValue([
       msg({
         id: 'r1',
         deletedAt: '2026-09-21T00:00:00.000Z',
-        attachments: [{ fileId: 'file-1', contentType: 'application/pdf', sizeBytes: 1024 }],
+        attachments: [{ fileId: 'file-1', contentType: 'application/pdf', sizeBytes: 1024, originalName: 'laudo.pdf' }],
       }),
     ]);
     render(<ThreadView patientId="p1" rootMessage={msg({ id: 'root-1' })} onBack={vi.fn()} />);

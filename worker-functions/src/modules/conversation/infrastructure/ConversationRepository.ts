@@ -17,6 +17,7 @@ import type { Pool, PoolClient } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { mapWithConcurrency } from '@shared/async/mapWithConcurrency';
+import { reportError } from '@shared/logging';
 
 /** Página padrão da listagem de mensagens de topo (spec 022, Bloco 1). */
 export const CONVERSATION_PAGE_SIZE = 50;
@@ -43,11 +44,24 @@ export interface TopMessageRow {
   attachments: AttachmentRow[];
 }
 
-/** Anexo de uma mensagem, forma do contrato (`contracts/openapi-conversation.md`): sem `originalName` — o nome decifrado só sai no download (`GET .../files/:fileId/url`), nunca na listagem. */
+/**
+ * Anexo de uma mensagem, forma do contrato (`contracts/openapi-conversation.md`).
+ *
+ * 🔒 `originalName` (achado T-nome-anexo, ajustes de UI B5): até esta sessão a listagem SÓ
+ * devolvia `fileId`/`contentType`/`sizeBytes` — a extensão derivada do `contentType`
+ * (`attachmentIcon.extensionForContentType`) era o único rótulo possível no chip, então o front
+ * mostrava só `.pdf`. Mesma autorização de leitura de quem já vê a conversa (`patient_conversation:read`
+ * — a listagem inteira já é gated por essa célula, nada de novo se abre aqui); a decifra do nome
+ * já existia no caminho de DOWNLOAD (`GetConversationAttachmentUrlUseCase`) — aqui é o MESMO
+ * `KMSEncryptionService.decrypt`, reusado, nunca duplicado.
+ */
 export interface AttachmentRow {
   fileId: string;
   contentType: string;
   sizeBytes: number;
+  /** `null` (achado A5 do gate 21/09): falha ISOLADA de KMS ao decifrar ESTE nome — nunca derruba
+   *  a listagem inteira (ver `fetchAttachmentsByMessageIds`). A UI cai num rótulo genérico. */
+  originalName: string | null;
 }
 
 /**
@@ -125,6 +139,7 @@ interface RawAttachmentRow {
   fileId: string;
   contentType: string;
   sizeBytes: number;
+  originalNameEncrypted: string | null;
 }
 
 export class ConversationRepository {
@@ -274,7 +289,8 @@ export class ConversationRepository {
       `SELECT cma.message_id AS "messageId",
               sf.id AS "fileId",
               sf.content_type AS "contentType",
-              sf.size_bytes AS "sizeBytes"
+              sf.size_bytes AS "sizeBytes",
+              sf.original_name_encrypted AS "originalNameEncrypted"
          FROM conversation_message_attachments cma
          JOIN stored_files sf ON sf.id = cma.file_id AND sf.deleted_at IS NULL
          JOIN conversation_messages cm ON cm.id = cma.message_id AND cm.deleted_at IS NULL
@@ -283,12 +299,44 @@ export class ConversationRepository {
       [messageIds],
     );
 
-    for (const row of rows) {
-      const entry: AttachmentRow = { fileId: row.fileId, contentType: row.contentType, sizeBytes: row.sizeBytes };
+    // 🔒 KMS não tem endpoint de decifra em LOTE de verdade (`KMSEncryptionService.decrypt` é
+    // sempre 1 chamada por ciphertext) — `mapWithConcurrency` com o MESMO limite do body
+    // (`DECRYPT_CONCURRENCY_LIMIT=10`) é o teto real disponível: bounded concurrency, não batch
+    // de API. Custo: 1 chamada KMS por anexo da página (até 5 por mensagem × 50 mensagens/página
+    // no pior caso), nunca serial e nunca sem limite.
+    //
+    // 🔒 Achado A5 do gate (21/09): `mapWithConcurrency`/`Promise.all` rejeita o LOTE INTEIRO se
+    // UMA promessa rejeitar — antes desta sessão, um KMS instável num único anexo (500 do lado do
+    // Google, ciphertext corrompido, etc.) derrubava a listagem inteira da conversa (uma
+    // REGRESSÃO de disponibilidade que não existia quando só o corpo passava por aqui: o corpo
+    // não isolava por linha, mas também não tinha comportamento a piorar). Try/catch POR ITEM:
+    // uma falha vira `null` (a UI cai num rótulo genérico + extensão) e é reportada — SEM o nome,
+    // que é exatamente o dado que nunca chegou a decifrar (nada de PII no log).
+    const originalNames = await mapWithConcurrency(rows, DECRYPT_CONCURRENCY_LIMIT, async (row) => {
+      try {
+        return await this.encryptionService.decrypt(row.originalNameEncrypted);
+      } catch (error) {
+        const err = error instanceof Error ? error : new Error(String(error));
+        reportError(err, {
+          source: 'ConversationRepository:fetchAttachmentsByMessageIds',
+          fileId: row.fileId,
+          messageId: row.messageId,
+        });
+        return null;
+      }
+    });
+
+    rows.forEach((row, i) => {
+      const entry: AttachmentRow = {
+        fileId: row.fileId,
+        contentType: row.contentType,
+        sizeBytes: row.sizeBytes,
+        originalName: originalNames[i],
+      };
       const existing = attachmentsByMessageId.get(row.messageId);
       if (existing) existing.push(entry);
       else attachmentsByMessageId.set(row.messageId, [entry]);
-    }
+    });
     return attachmentsByMessageId;
   }
 

@@ -272,4 +272,24 @@ describe('AttachmentPicker', () => {
     expect(onUploadingChange).not.toHaveBeenCalled();
     expect(console.error).not.toHaveBeenCalledWith(expect.stringContaining('unmounted component'));
   });
+
+  describe('contraste WCAG AA (ajuste de UI B5, achado "Adjuntar quase invisível/parece desabilitado")', () => {
+    // `text-gray-500` desta paleta (`rgba(217, 217, 217, 0.5)`) dá ~1.2:1 sobre fundo branco —
+    // muito abaixo do mínimo AA (4.5:1). `text-gray-800` (`#737373`) mede 4.74:1 (medido nesta
+    // sessão, luminância relativa W3C) — o cálculo numérico é papel do e2e (`getComputedStyle`);
+    // este teste só trava a CLASSE, barato, pra ninguém reintroduzir o `gray-500` num refactor.
+    it('usa text-gray-800, NUNCA text-gray-500', () => {
+      render(<AttachmentPicker patientId="p1" onUploaded={vi.fn()} />);
+      const btn = screen.getByTestId('composer-attach-btn');
+      expect(btn).toHaveClass('text-gray-800');
+      expect(btn.className).not.toContain('text-gray-500');
+    });
+
+    it('parece AÇÃO habilitada: tem moldura de botão (border) e ícone de clipe, não só texto solto', () => {
+      render(<AttachmentPicker patientId="p1" onUploaded={vi.fn()} />);
+      const btn = screen.getByTestId('composer-attach-btn');
+      expect(btn.className).toContain('border');
+      expect(btn.querySelector('svg')).toBeInTheDocument();
+    });
+  });
 });

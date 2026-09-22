@@ -22,6 +22,7 @@
  */
 import { useCallback, useEffect, useRef, useState, type JSX } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Paperclip } from 'lucide-react';
 import { AdminConversationApiService } from '@infrastructure/http/AdminConversationApiService';
 import { ApiError } from '@infrastructure/http/ApiError';
 import { Text } from '@presentation/components/atoms/Text';
@@ -177,12 +178,20 @@ export function AttachmentPicker({
           aria-label={tc('attach')}
           disabled={disabled || atMax}
           onClick={() => inputRef.current?.click()}
-          className="text-sm text-gray-500 hover:text-primary disabled:opacity-50 disabled:hover:text-gray-500"
+          /**
+           * 🔒 Contraste (ajuste de UI B5, achado "Adjuntar quase invisível/parece texto
+           * desabilitado"): trocado `text-gray-500` (`rgba(217,217,217,0.5)` — ~1.2:1 sobre
+           * branco, medido nesta sessão) por `text-gray-800` (`#737373` — 4.74:1, ≥ WCAG AA) +
+           * ícone de clipe + moldura de botão (`border`/`rounded`/`px`/`py`), para parecer AÇÃO
+           * HABILITADA, não rótulo apagado.
+           */
+          className="inline-flex items-center gap-1.5 rounded-md border border-gray-300 px-2 py-1 text-sm text-gray-800 hover:bg-gray-100 hover:text-primary disabled:opacity-50 disabled:hover:bg-transparent disabled:hover:text-gray-800"
         >
+          <Paperclip size={14} aria-hidden="true" />
           {tc('attach')}
         </button>
         {atMax && (
-          <Text size="xs" className="text-gray-400" data-testid="attachment-picker-max">
+          <Text size="xs" className="text-gray-800" data-testid="attachment-picker-max">
             {tc('attachments.max')}
           </Text>
         )}
@@ -194,7 +203,7 @@ export function AttachmentPicker({
             <li
               key={item.localId}
               data-testid={`attachment-chip-${item.localId}`}
-              className="flex items-center gap-2 text-xs text-gray-600"
+              className="flex items-center gap-2 text-xs text-gray-800"
             >
               {(() => {
                 const Icon = iconComponentForContentType(item.file.type);
@@ -202,7 +211,7 @@ export function AttachmentPicker({
               })()}
               <span data-testid="attachment-chip-name">{item.file.name}</span>
               {item.status === 'uploading' && (
-                <Text size="xs" className="text-gray-400" data-testid="attachment-chip-uploading">
+                <Text size="xs" className="text-gray-800" data-testid="attachment-chip-uploading">
                   {tc('attachments.uploading')}
                 </Text>
               )}
@@ -216,7 +225,7 @@ export function AttachmentPicker({
                 data-testid={`attachment-chip-remove-${item.localId}`}
                 aria-label={tc('attachments.remove')}
                 onClick={() => handleRemove(item.localId)}
-                className="text-gray-400 hover:text-gray-700"
+                className="text-gray-800 hover:text-primary"
               >
                 ×
               </button>

@@ -264,8 +264,13 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
       setIsUploading(uploading);
     }, []);
 
+    // `flex-shrink-0`: quando montado dentro do `flex flex-col` do painel (`ConversationPanel`/
+    // `ThreadView`), o compositor NUNCA pode ser espremido pelo item do meio — achado "Enviar
+    // cortado embaixo" (ajustes de UI B5): o culpado real era `min-h-0` faltando na lista rolável
+    // (flex item sem isso não encolhe, e o excesso ia pro rodapé, cortado pela altura fixa do
+    // painel); este `flex-shrink-0` é defesa em profundidade, não o conserto principal.
     return (
-      <div data-testid="message-composer" className="border-t bg-white p-2 flex flex-col gap-2">
+      <div data-testid="message-composer" className="border-t bg-white p-2 flex flex-col gap-2 flex-shrink-0">
         {confirmingClose && (
           <div
             data-testid="composer-discard-confirm"

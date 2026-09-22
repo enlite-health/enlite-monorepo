@@ -82,3 +82,91 @@ export async function readTextContrastRatio(locator: Locator): Promise<number> {
   });
   return contrastRatioFromCss(fg, bg);
 }
+
+export interface ContrastViolation {
+  selector: string;
+  text: string;
+  color: string;
+  backgroundColor: string;
+  ratio: number;
+}
+
+/**
+ * Varre TODO elemento visível com texto DIRETO (não herdado de um filho) dentro de `container` e
+ * devolve os que ficam ABAIXO de `minRatio` (default 4.5, AA para texto pequeno) — ajustes de UI
+ * B5 (achado "Aún no hay mensajes"/"Adjuntar" quase invisíveis, pedido de varredura completa do
+ * Gabriel). Roda inteiro DENTRO do browser (`locator.evaluate`) — mesma matemática de
+ * `contrastRatioFromCss`/`relativeLuminance` acima, mas inline (uma função passada a `evaluate`
+ * não pode fechar sobre as de fora: o Playwright serializa só o código, não o escopo léxico).
+ *
+ * "Régua que morre se clarear de novo": qualquer classe futura que deixe um texto abaixo de
+ * 4.5:1 aparece aqui — não depende de saber o nome/testid do elemento de antemão.
+ */
+export async function scanContrastViolations(container: Locator, minRatio = 4.5): Promise<ContrastViolation[]> {
+  return container.evaluate((root: Element, minRatioArg: number) => {
+    function channelLuminance(c: number): number {
+      const s = c / 255;
+      return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+    }
+    function relLum(c: { r: number; g: number; b: number }): number {
+      return 0.2126 * channelLuminance(c.r) + 0.7152 * channelLuminance(c.g) + 0.0722 * channelLuminance(c.b);
+    }
+    function parseColor(css: string): { r: number; g: number; b: number; a: number } | null {
+      const m = css.match(/rgba?\(([^)]+)\)/);
+      if (!m) return null;
+      const parts = m[1].split(',').map((s) => parseFloat(s.trim()));
+      return { r: parts[0], g: parts[1], b: parts[2], a: parts[3] === undefined ? 1 : parts[3] };
+    }
+    function compositeOver(
+      fg: { r: number; g: number; b: number; a: number },
+      bg: { r: number; g: number; b: number },
+    ): { r: number; g: number; b: number } {
+      return { r: fg.r * fg.a + bg.r * (1 - fg.a), g: fg.g * fg.a + bg.g * (1 - fg.a), b: fg.b * fg.a + bg.b * (1 - fg.a) };
+    }
+    function effectiveBg(el: Element): { r: number; g: number; b: number } {
+      let node: Element | null = el;
+      while (node) {
+        const parsed = parseColor(getComputedStyle(node).backgroundColor);
+        if (parsed && parsed.a > 0) return compositeOver(parsed, { r: 255, g: 255, b: 255 });
+        node = node.parentElement;
+      }
+      return { r: 255, g: 255, b: 255 };
+    }
+    function hasDirectText(el: Element): boolean {
+      return Array.from(el.childNodes).some((n) => n.nodeType === Node.TEXT_NODE && (n.textContent ?? '').trim().length > 0);
+    }
+    function isVisible(el: Element): boolean {
+      const style = getComputedStyle(el);
+      if (style.display === 'none' || style.visibility === 'hidden' || parseFloat(style.opacity) === 0) return false;
+      const rect = el.getBoundingClientRect();
+      return rect.width > 0 && rect.height > 0;
+    }
+
+    const violations: Array<{ selector: string; text: string; color: string; backgroundColor: string; ratio: number }> = [];
+    root.querySelectorAll('*').forEach((el) => {
+      if (!hasDirectText(el) || !isVisible(el)) return;
+      const style = getComputedStyle(el);
+      const fg = parseColor(style.color);
+      if (!fg) return;
+      const bg = effectiveBg(el);
+      const composited = compositeOver(fg, bg);
+      const l1 = relLum(composited);
+      const l2 = relLum(bg);
+      const lighter = Math.max(l1, l2);
+      const darker = Math.min(l1, l2);
+      const ratio = (lighter + 0.05) / (darker + 0.05);
+      if (ratio < minRatioArg) {
+        const testid = el.getAttribute('data-testid');
+        const selector = testid ? `[data-testid="${testid}"]` : el.tagName.toLowerCase();
+        violations.push({
+          selector,
+          text: (el.textContent ?? '').trim().slice(0, 60),
+          color: style.color,
+          backgroundColor: `rgb(${Math.round(bg.r)}, ${Math.round(bg.g)}, ${Math.round(bg.b)})`,
+          ratio: Math.round(ratio * 100) / 100,
+        });
+      }
+    });
+    return violations;
+  }, minRatio);
+}

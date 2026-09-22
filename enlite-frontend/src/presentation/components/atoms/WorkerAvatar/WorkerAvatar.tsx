@@ -1,18 +1,10 @@
+import { getInitials } from '@presentation/utils/getInitials';
+
 interface WorkerAvatarProps {
   name: string | null;
   avatarUrl: string | null;
   size?: number;
   className?: string;
-}
-
-function getInitials(name: string | null): string {
-  if (!name) return '?';
-  return name
-    .split(' ')
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((w) => w[0].toUpperCase())
-    .join('');
 }
 
 export function WorkerAvatar({

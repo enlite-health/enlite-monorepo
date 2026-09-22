@@ -3770,21 +3770,30 @@
           },
           "panel": {
             "title": "Mensagens",
+            "loading": "Carregando mensagens…",
             "empty": "Ainda não há mensagens",
             "noAccess": "Sem acesso a este paciente",
             "close": "Fechar painel de mensagens",
             "loadError": "Não conseguimos carregar as mensagens. Tente de novo.",
+            "retry": "Tentar novamente",
             "readOnly": "Você só pode ver esta conversa"
           },
           "thread": {
             "replies_one": "1 resposta",
             "replies_other": "{{count}} respostas",
+            "reply": "Responder",
+            "repliesBadge_one": "{{count}} resposta",
+            "repliesBadge_other": "{{count}} respostas",
+            "dateConnector": "às",
             "back": "Voltar",
             "deleted": "Mensagem apagada",
+            "loading": "Carregando respostas…",
             "loadError": "Não foi possível carregar as respostas",
+            "retry": "Tentar novamente",
             "attachments": {
               "download": "Baixar anexo",
               "downloadError": "Não conseguimos baixar o arquivo. Tente de novo.",
+              "genericName": "Arquivo",
               "popupBlocked": "Seu navegador bloqueou a janela pop-up. Habilite pop-ups para baixar o arquivo."
             }
           },
@@ -5296,10 +5305,13 @@
       "unknownPatient": "um paciente",
       "bellLabel": "Notificações",
       "unread": "{{count}} notificações não lidas",
+      "unreadItem": "Não lida",
       "panelTitle": "Notificações",
+      "loading": "Carregando notificações…",
       "empty": "Você não tem notificações",
       "close": "Fechar notificações",
       "loadError": "Não conseguimos carregar suas notificações. Tente de novo.",
+      "retry": "Tentar novamente",
       "markAllReadError": "Não conseguimos marcar todas como lidas. Tente de novo."
     }
   },

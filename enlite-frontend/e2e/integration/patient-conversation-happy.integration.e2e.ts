@@ -122,7 +122,11 @@ test.describe('Chat interno por paciente — caminho feliz (US1+US2) @integratio
     // voltar à lista de topo
     await page.getByTestId('thread-back-btn').click();
     await expect(page.getByTestId('conversation-panel-list')).toBeVisible();
-    await expect(page.getByTestId(`conversation-message-${topMessageId}`)).toContainText('1 respuesta');
+    // Selo de contagem (ajustes de UI B5, rodada 2) — mostra só o número, "1 respuesta" vive no
+    // aria-label/title (texto visível não usa "thread"/"hilo", pedido do Gabriel).
+    const repliesBadge = page.getByTestId(`conversation-message-${topMessageId}`).getByTestId('conversation-message-replies');
+    await expect(repliesBadge).toHaveText('1');
+    await expect(repliesBadge).toHaveAttribute('aria-label', '1 respuesta');
 
     await expect(panel).toHaveScreenshot('conversation-happy-painel-aberto.png', {
       mask: [page.locator('[data-testid="message-author"], [data-testid="message-time"]')],
