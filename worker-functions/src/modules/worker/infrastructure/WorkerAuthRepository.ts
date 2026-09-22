@@ -8,6 +8,7 @@ import { Result } from '@shared/utils/Result';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { normalizePhoneAR } from '@shared/utils/phoneNormalization';
 import { resolveCanonicalWorkerId } from '@shared/database/resolveCanonicalWorkerId';
+import { isValidIsoBirthDate } from '@shared/utils/isValidIsoBirthDate';
 
 // ─── findByAuthUid ────────────────────────────────────────────────────────────
 
@@ -89,6 +90,18 @@ export async function findByAuthUid(
         encryptionService.decrypt(row.whatsappPhoneEnc || ''),
       ]);
 
+    // Spec 025 (decisão do Gabriel 21/09, opção A): `birthDateStr` decifrado
+    // pode ser vazio (nunca cadastrou), ISO válido, ou lixo herdado do
+    // Defeito 1 (PUT sem validação em runtime, ex.: "25/31/985"). `birthDate`
+    // só é preenchido quando VÁLIDO — nunca devolvemos o valor inválido em si,
+    // só o veredito em `birthDateStatus`, que é o sinal que o front usa pra
+    // desambiguar de "nunca cadastrou" (ambos seriam `null` sem isto).
+    const birthDateStatus: 'ok' | 'missing' | 'invalid' = !birthDateStr
+      ? 'missing'
+      : isValidIsoBirthDate(birthDateStr)
+        ? 'ok'
+        : 'invalid';
+
     const worker = {
       id: row.id, authUid: row.authUid, email: row.email,
       phone: row.phone || undefined,
@@ -96,7 +109,8 @@ export async function findByAuthUid(
       lgpdConsentAt: row.lgpdConsentAt || undefined,
       firstName: firstName || undefined, lastName: lastName || undefined,
       sex: sex || undefined, gender: gender || undefined,
-      birthDate: birthDateStr ? new Date(birthDateStr) : undefined,
+      birthDate: birthDateStatus === 'ok' ? new Date(birthDateStr) : undefined,
+      birthDateStatus,
       documentType: row.documentType || undefined,
       documentNumber: documentNumber || undefined,
       profilePhotoUrl: profilePhotoUrl || undefined,

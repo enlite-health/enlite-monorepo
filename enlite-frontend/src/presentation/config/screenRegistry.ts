@@ -150,7 +150,11 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
       c('contact', 'worker_contact', ['read']),
       // Dossiê = nascimento, sexo, DNI, raça, religião… (célula da C3/F2). Endereço é célula própria
       // (linha, coordenada, raio) — a MESMA que vale na aba Prestadores do mapa.
-      c('dossier', 'worker_pii', ['read']),
+      // `write` (spec 025, Fase 6, D402 item 4, 21/09): hoje só edição de `birthDate` pelo admin,
+      // gate cumulativo a `worker:update` — checado em código (WorkerEditModal + backend), não é
+      // rota própria. Fica na linha do dossiê (visível), diferente de `patient_clinical:write` que
+      // cai em "Outras células" por escolha do PR-7 original.
+      c('dossier', 'worker_pii', ['read', 'write']),
       c('address', 'worker_address', ['read']),
       c('documents', 'worker_document', ['read', 'create', 'update', 'delete', 'validate'], 'documents'),
       c('encuadres', 'match', ['read'], 'encuadres'),

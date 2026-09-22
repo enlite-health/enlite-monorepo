@@ -21,6 +21,9 @@ export const GeneralInfoTab = memo(function GeneralInfoTab(): JSX.Element {
   const data = useWorkerRegistrationStore((state) => state.data);
   const isFieldReadonly = useWorkerRegistrationStore((state) => state.isFieldReadonly);
   const hydrateFromServer = useWorkerRegistrationStore((state) => state.hydrateFromServer);
+  // Spec 025 (opção A, 21/09): veredito FRESCO do backend, recalculado a cada
+  // hydrateFromServer — ver comentário no store.
+  const birthDateInvalid = useWorkerRegistrationStore((state) => state.birthDateInvalid);
   const [profilePhotoPreview, setProfilePhotoPreview] = useState<string | null>(data.generalInfo.profilePhoto || null);
   const showToast = useToast();
 
@@ -268,6 +271,7 @@ export const GeneralInfoTab = memo(function GeneralInfoTab(): JSX.Element {
           isFieldReadonly={isFieldReadonly}
           triggerSave={triggerSave}
           profilePhotoElement={profilePhotoElement}
+          birthDateInvalid={birthDateInvalid}
         />
       </form>
 

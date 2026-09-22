@@ -87,7 +87,13 @@ export function mergeGeneralInfo<T extends GeneralInfoShape>(
     fullName: str(serverData.firstName, local.fullName),
     lastName: str(serverData.lastName, local.lastName),
     phone: str(serverData.phone, local.phone),
-    birthDate: str(serverData.birthDate, local.birthDate),
+    // `birthDateStatus === 'invalid'` é um veredito do SERVIDOR: o dado
+    // gravado não é uma data real. Cair para `local` aqui reaproveitaria o
+    // texto que o localStorage guardou da mesma digitação inválida (medido em
+    // T2.3 — o campo ficava travado mostrando a data ruim pra sempre, mesmo
+    // com o servidor já sinalizando o problema). Força vazio pra o worker
+    // digitar de novo, e o aviso explica o porquê.
+    birthDate: serverData.birthDateStatus === 'invalid' ? '' : str(serverData.birthDate, local.birthDate),
     sex: str(serverData.sex, local.sex),
     gender: str(serverData.gender, local.gender),
     documentType: str(serverData.documentType, local.documentType),

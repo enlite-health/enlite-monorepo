@@ -94,7 +94,16 @@ interface WorkerRegistrationState {
   
   // Form data
   data: WorkerRegistrationData;
-  
+
+  /**
+   * Spec 025 (opção A, 21/09): true quando o backend sinalizou
+   * `birthDateStatus === 'invalid'` na última hidratação — a tela mostra o
+   * aviso de recadastro. NUNCA persistido (fica fora do `partialize` abaixo):
+   * é sempre o veredito FRESCO do servidor, recalculado a cada
+   * `hydrateFromServer`, nunca um estado que sobrevive no localStorage.
+   */
+  birthDateInvalid: boolean;
+
   // Readonly fields (for pre-filled data)
   readonlyFields: Set<string>;
   
@@ -199,6 +208,7 @@ export const useWorkerRegistrationStore = create<WorkerRegistrationState>()(
       workerId: null,
       mode: 'self' as RegistrationMode,
       data: initialData,
+      birthDateInvalid: false,
       readonlyFields: new Set(),
       completedSteps: new Set(),
 
@@ -231,6 +241,7 @@ export const useWorkerRegistrationStore = create<WorkerRegistrationState>()(
           currentStep: stepName,
           currentStepIndex: stepIndex,
           completedSteps,
+          birthDateInvalid: serverData.birthDateStatus === 'invalid',
           data: {
             ...state.data,
             generalInfo: mergeGeneralInfo(serverData, state.data.generalInfo, options),
@@ -349,6 +360,7 @@ export const useWorkerRegistrationStore = create<WorkerRegistrationState>()(
           workerId: null,
           mode: 'self',
           data: initialData,
+          birthDateInvalid: false,
           readonlyFields: new Set(),
           completedSteps: new Set(),
         });

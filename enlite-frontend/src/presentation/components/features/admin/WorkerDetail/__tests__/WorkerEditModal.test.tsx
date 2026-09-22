@@ -343,4 +343,48 @@ describe('WorkerEditModal', () => {
     fireEvent.click(screen.getByTestId('we-save'));
     expect(await screen.findByText('Error al guardar')).toBeInTheDocument();
   });
+
+  // Spec 025 (Fase 6, D402 item 4) — birthDate gated por worker_pii:write.
+  describe('dossiê — birthDate atrás de worker_pii:write', () => {
+    it('SEM worker_pii:write (mesmo com worker:update): o campo NÃO existe no DOM', () => {
+      comEnforcement(['worker:update'], 'on');
+      renderModal();
+      expect(screen.getByTestId('we-save')).toBeInTheDocument();
+      expect(screen.queryByTestId('we-birthDate')).not.toBeInTheDocument();
+    });
+
+    it('COM worker_pii:write: o campo existe e vem pré-carregado com o valor atual', () => {
+      comEnforcement(['worker:update', 'worker_pii:write'], 'on');
+      render(<WorkerEditModal worker={{ ...baseWorker, birthDate: '1990-05-15' }} onClose={vi.fn()} onSaved={vi.fn()} />);
+      expect(screen.getByTestId('we-birthDate')).toHaveValue('1990-05-15');
+    });
+
+    it('COM a célula: altera birthDate e salva → o patch leva a data ISO nova', async () => {
+      comEnforcement(['worker:update', 'worker_pii:write'], 'on');
+      renderModal();
+      fireEvent.change(screen.getByTestId('we-birthDate'), { target: { value: '1985-03-20' } });
+      fireEvent.click(screen.getByTestId('we-save'));
+      await waitFor(() => expect(AdminApiService.updateWorkerProfile).toHaveBeenCalledWith('w1', { birthDate: '1985-03-20' }));
+    });
+
+    it('COM a célula: sem MUDAR a data (mesmo valor) → não entra no patch', async () => {
+      comEnforcement(['worker:update', 'worker_pii:write'], 'on');
+      render(<WorkerEditModal worker={{ ...baseWorker, birthDate: '1990-05-15', firstName: 'Outro' }} onClose={vi.fn()} onSaved={vi.fn()} />);
+      fireEvent.change(screen.getByTestId('we-firstName'), { target: { value: 'Outro Nome' } });
+      fireEvent.click(screen.getByTestId('we-save'));
+      await waitFor(() => expect(AdminApiService.updateWorkerProfile).toHaveBeenCalledWith('w1', { firstName: 'Outro Nome' }));
+    });
+
+    it('data inválida (calendário nativo rejeita fora do formato yyyy-MM-dd): input não aceita e nada é enviado', async () => {
+      comEnforcement(['worker:update', 'worker_pii:write'], 'on');
+      renderModal();
+      // <input type="date"> descarta silenciosamente qualquer valor fora de yyyy-MM-dd — a
+      // validação de calendário é do PRÓPRIO NAVEGADOR (não um regex nosso a duplicar).
+      fireEvent.change(screen.getByTestId('we-birthDate'), { target: { value: '31/02/1990' } });
+      expect(screen.getByTestId('we-birthDate')).toHaveValue('');
+      fireEvent.click(screen.getByTestId('we-save'));
+      await vi.advanceTimersByTimeAsync(400);
+      expect(AdminApiService.updateWorkerProfile).not.toHaveBeenCalled();
+    });
+  });
 });
