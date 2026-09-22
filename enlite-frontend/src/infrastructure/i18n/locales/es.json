@@ -4194,7 +4194,7 @@
       "tabs": {
         "groups": "Grupos",
         "features": "Funciones por país",
-        "audit": "Auditoría"
+        "history": "Historial"
       },
       "loading": "Cargando tu contrato de autorización…",
       "authzError": "No se pudo cargar tu contrato de autorización. Recargá la página; si persiste, avisá a Tecnología.",
@@ -4647,20 +4647,32 @@
         "override": "panel",
         "loadError": "No se pudieron cargar las funciones."
       },
-      "audit": {
-        "title": "Auditoría de decisiones",
-        "userId": "Usuario (uid)",
-        "resource": "Recurso",
+      "history": {
+        "title": "Historial de cambios de permisos",
+        "note": "Quién cambió un permiso, en qué grupo, cuándo, y cuál fue el cambio.",
+        "group": "Grupo",
+        "allGroups": "Todos los grupos",
+        "typeLabel": "Tipo",
+        "typeCol": "Tipo",
+        "type": {
+          "all": "Todos",
+          "permission": "Permiso",
+          "member": "Persona"
+        },
         "limit": "Límite",
         "search": "Buscar",
         "when": "Cuándo",
-        "action": "Acción",
-        "decision": "Decisión",
-        "resourceId": "Id del recurso",
-        "country": "País",
+        "who": "Quién",
+        "groupCol": "Grupo",
+        "actionCol": "Acción",
+        "detail": "Permiso / Persona",
+        "action": {
+          "add": "Agregó",
+          "remove": "Quitó"
+        },
         "empty": "Sin registros para ese filtro.",
-        "loadError": "No se pudo leer la auditoría.",
-        "note": "La auditoría muestra identificadores y metadatos; nunca contenido."
+        "loadError": "No se pudo leer el historial.",
+        "groupsLoadError": "No se pudieron cargar los grupos."
       },
       "screens": {
         "dashboard": {
