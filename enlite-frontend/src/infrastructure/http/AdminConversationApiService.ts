@@ -31,11 +31,18 @@ export interface ConversationMessageAttachment {
 export interface ConversationMessage {
   id: string;
   authorUid: string;
+  /** Item 5a (change 022-ux-mencao-e-notificacao, F19): nome resolvido por JOIN no SERVIDOR —
+   * `null` quando o autor não tem registro em `users` (defesa). Fonte preferencial de exibição;
+   * `useStaffDisplayName`/`staffNameCache` (cache do navegador) vira só FALLBACK. */
+  authorDisplayName: string | null;
   body: string;
   createdAt: string;
   editedAt: string | null;
   deletedAt: string | null;
   mentions: string[];
+  /** Item 5a — nome de cada uid de `mentions`, mesma resolução por JOIN. `null` quando o uid
+   * mencionado não tem `display_name` resolvível. */
+  mentionDisplayNames: Record<string, string | null>;
   replyCount: number;
   lastReplyAt: string | null;
   attachments: ConversationMessageAttachment[];

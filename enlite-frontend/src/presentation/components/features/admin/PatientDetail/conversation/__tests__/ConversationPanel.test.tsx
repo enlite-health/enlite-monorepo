@@ -65,11 +65,13 @@ const PT = ptBR.admin.patients.detail.conversation;
 const msg = (overrides: Partial<ConversationMessage> = {}): ConversationMessage => ({
   id: '11111111-1111-1111-1111-111111111111',
   authorUid: 'staff-um',
+  authorDisplayName: null,
   body: 'msg-1',
   createdAt: '2026-09-01T10:00:00.000Z',
   editedAt: null,
   deletedAt: null,
   mentions: [],
+  mentionDisplayNames: {},
   replyCount: 0,
   lastReplyAt: null,
   attachments: [],
