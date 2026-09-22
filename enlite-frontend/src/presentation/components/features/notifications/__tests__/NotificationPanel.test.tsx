@@ -304,4 +304,18 @@ describe('NotificationPanel (spec 022, T412/T413)', () => {
     await screen.findByTestId('notification-item-n1');
     expect(screen.queryByTestId('notification-load-error')).not.toBeInTheDocument();
   });
+
+  it('🔒 Defeito 3 (Rodada 2, medido em prd 21-22/09): o header reserva espaço à direita para o ✕ do SlideOverPanel — "Marcar todas" não encosta nele', async () => {
+    // O ✕ é do `SlideOverPanel` (pai), `absolute top-3 right-3` — este painel nunca o renderiza
+    // sozinho. O conserto é LOCAL: o header do `NotificationPanel` reserva a faixa direita (padding
+    // maior que o `px-4` simétrico de antes) para o botão "Marcar todas" nunca invadir a área do X,
+    // mesmo sem o `SlideOverPanel` montado neste teste (prova geométrica real — rects não se
+    // intersectam — é o e2e `notification-bell-sidebar-collapsed`/tela real, jsdom não faz layout).
+    vi.mocked(AdminNotificationApiService.listNotifications).mockResolvedValue([]);
+    render(<NotificationPanel isOpen onClose={vi.fn()} />);
+    await screen.findByTestId('notification-empty');
+
+    const header = screen.getByTestId('notification-mark-all-read').closest('div');
+    expect(header?.className).toMatch(/\bpr-10\b/);
+  });
 });
