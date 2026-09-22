@@ -4,6 +4,7 @@ import { useAdminAuth } from '@presentation/hooks/useAdminAuth';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import { shouldShowWelcomeNoGroup, welcomeNoGroupReason } from '@domain/entities/Authz';
 import { WelcomeNoGroupPage } from '@presentation/pages/admin/WelcomeNoGroupPage';
+import { usePresenceHeartbeat } from '@hooks/admin/usePresenceHeartbeat';
 
 interface AdminProtectedRouteProps {
   children: ReactNode;
@@ -37,6 +38,17 @@ export function AdminProtectedRoute({ children }: AdminProtectedRouteProps) {
   const { isAuthenticated, isLoading, adminProfile } = useAdminAuth();
   const authz = useAdminAuthStore((s) => s.authz);
   const authzStatus = useAdminAuthStore((s) => s.authzStatus);
+
+  // Presença (spec 022, Rodada 2, 22/09): heartbeat monta AQUI, não no `AdminLayout` — este é o
+  // ponto ÚNICO onde o app decide "staff autenticado" (mesmo comentário da D268 acima: toda rota
+  // `/admin/*` passa por aqui). Cobre também os estados em que `AdminLayout` NUNCA chega a montar
+  // (spinner de authz, `WelcomeNoGroupPage`) — presença mais abrangente que "só dentro do painel
+  // com Outlet renderizado". O hook decide internamente frequência/immediate/pauseWhenHidden; ele
+  // só PODE rodar aqui porque este componente só renderiza para staff já autenticado (linha do
+  // `isAuthenticated`/`adminProfile` abaixo) — nunca para worker/paciente (outros tipos de sessão
+  // do app nem passam por este componente). `enabled` replica a MESMA condição que decide se os
+  // `children` renderizam mais abaixo — desligado enquanto não há sessão de staff resolvida.
+  usePresenceHeartbeat(isAuthenticated && !!adminProfile);
 
   console.log('[AdminProtectedRoute] Estado:', { isAuthenticated, isLoading, hasProfile: !!adminProfile });
 

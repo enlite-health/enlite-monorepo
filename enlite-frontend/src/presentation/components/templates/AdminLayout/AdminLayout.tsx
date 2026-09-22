@@ -4,7 +4,6 @@ import { useNavigate } from 'react-router-dom';
 import { useAdminAuth } from '@presentation/hooks/useAdminAuth';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import { useAdminNavItems } from '@presentation/config/adminNavigation';
-import { usePresenceHeartbeat } from '@hooks/admin/usePresenceHeartbeat';
 import { AppSidebar } from '@presentation/components/templates/DashboardLayout';
 
 export function AdminLayout() {
@@ -12,10 +11,10 @@ export function AdminLayout() {
   const navigate = useNavigate();
   const navItems = useAdminNavItems();
   const location = useLocation();
-  // Presença simples (spec 022, Rodada 2/R2-F): heartbeat a cada ~60s enquanto o painel admin
-  // está montado — UMA vez aqui, nunca por página (o `AdminLayout` é o único ancestral comum de
-  // toda rota `/admin/*`).
-  usePresenceHeartbeat();
+  // Presença (spec 022, Rodada 2): o heartbeat SAIU daqui (22/09) — monta em `AdminProtectedRoute`
+  // agora, o ponto único onde o app decide "staff autenticado", para cobrir também os estados em
+  // que este layout ainda não montou (spinner de authz, `WelcomeNoGroupPage`). Ver
+  // `usePresenceHeartbeat.ts`.
 
   // O contrato de authz é recarregado ao mudar de ÁREA (1º segmento depois de
   // `/admin`): uma revogação feita por outro gestor vale na próxima área que a
