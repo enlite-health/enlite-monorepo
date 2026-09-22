@@ -71,7 +71,21 @@ describe('MessageComposer', () => {
     expect(screen.getByTestId('composer-mention-item-u-1')).toHaveTextContent('QA Staff Um');
   });
 
-  it('com 1 caractere NÃO busca', async () => {
+  it('digitar só @ (0 caracteres) já busca e mostra a lista (item 1, revoga D-06)', async () => {
+    searchStaffDirectory.mockResolvedValue([{ uid: 'u-1', displayName: 'QA Staff Um' }]);
+    render(<MessageComposer patientId="p1" />);
+
+    const editor = screen.getByTestId('composer-editor');
+    const user = userEvent.setup();
+    await user.click(editor);
+    await user.type(editor, '@');
+
+    await waitFor(() => expect(searchStaffDirectory).toHaveBeenCalledWith(''));
+    await waitFor(() => expect(screen.getByTestId('composer-mention-list')).toBeInTheDocument());
+  });
+
+  it('com 1 caractere já busca (item 1, revoga D-06 — antes exigia 2+)', async () => {
+    searchStaffDirectory.mockResolvedValue([]);
     render(<MessageComposer patientId="p1" />);
 
     const editor = screen.getByTestId('composer-editor');
@@ -79,9 +93,36 @@ describe('MessageComposer', () => {
     await user.click(editor);
     await user.type(editor, '@q');
 
-    // dá tempo pra qualquer microtask pendente resolver antes de afirmar ausência.
-    await act(async () => { await new Promise((r) => setTimeout(r, 0)); });
-    expect(searchStaffDirectory).not.toHaveBeenCalled();
+    await waitFor(() => expect(searchStaffDirectory).toHaveBeenCalledWith('q'));
+  });
+
+  it('falha do diretório mostra estado de erro discreto, distinto de "sem resultado" (F5, item 1)', async () => {
+    searchStaffDirectory.mockRejectedValue(new Error('network'));
+    render(<MessageComposer patientId="p1" />);
+
+    const editor = screen.getByTestId('composer-editor');
+    const user = userEvent.setup();
+    await user.click(editor);
+    await user.type(editor, '@');
+
+    await waitFor(() => expect(screen.getByTestId('composer-mention-error')).toBeInTheDocument());
+    expect(screen.queryByTestId('composer-mention-list')).not.toBeInTheDocument();
+  });
+
+  it('depois de um erro, uma busca que dá certo substitui o erro pela lista', async () => {
+    searchStaffDirectory.mockRejectedValueOnce(new Error('network'));
+    searchStaffDirectory.mockResolvedValue([{ uid: 'u-1', displayName: 'QA Staff Um' }]);
+    render(<MessageComposer patientId="p1" />);
+
+    const editor = screen.getByTestId('composer-editor');
+    const user = userEvent.setup();
+    await user.click(editor);
+    await user.type(editor, '@');
+    await waitFor(() => expect(screen.getByTestId('composer-mention-error')).toBeInTheDocument());
+
+    await user.type(editor, 'qa');
+    await waitFor(() => expect(screen.getByTestId('composer-mention-list')).toBeInTheDocument());
+    expect(screen.queryByTestId('composer-mention-error')).not.toBeInTheDocument();
   });
 
   it('escolher um item insere o chip visual E a string serializada contém <@uid>', async () => {

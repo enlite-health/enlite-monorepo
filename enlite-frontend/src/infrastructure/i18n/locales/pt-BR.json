@@ -3776,7 +3776,8 @@
             "close": "Fechar painel de mensagens",
             "loadError": "Não conseguimos carregar as mensagens. Tente de novo.",
             "retry": "Tentar novamente",
-            "readOnly": "Você só pode ver esta conversa"
+            "readOnly": "Você só pode ver esta conversa",
+            "messageNotFound": "Não foi possível encontrar esta mensagem."
           },
           "thread": {
             "replies_one": "1 resposta",
@@ -3808,7 +3809,8 @@
               "remove": "Remover anexo",
               "uploading": "Enviando…",
               "max": "Máximo de 5 anexos"
-            }
+            },
+            "mentionDirectoryError": "Não foi possível buscar. Tente digitar de novo."
           }
         }
       },
