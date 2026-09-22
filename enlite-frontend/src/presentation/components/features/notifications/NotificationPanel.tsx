@@ -95,11 +95,15 @@ export function NotificationPanel({ isOpen, onClose, onNotificationsChanged }: N
 
   return (
     <div className="flex flex-col h-full" data-testid="notification-panel-content">
-      {/* 🔒 Defeito 3 (Rodada 2, medido em prd 21-22/09): `pr-10` (não `px-4` simétrico) — o ✕ do
+      {/* 🔒 Defeito 3 (Rodada 2, medido em prd 21-22/09): `pr-14` (não `px-4` simétrico) — o ✕ do
           `SlideOverPanel` que embrulha este painel é `absolute top-3 right-3` (fora do fluxo,
-          nunca visto por este componente); sem a folga extra à direita, "Marcar todas" encostava
-          nele (hit-area sobreposta). Fix LOCAL: reserva a faixa direita, não mexe no `SlideOverPanel`. */}
-      <div className="flex items-center justify-between pl-4 pr-10 py-3 border-b border-gray-200 flex-shrink-0">
+          nunca visto por este componente): ocupa ~28px (ícone 20px + padding 4px de cada lado),
+          a partir de 12px da borda — ou seja, sua borda ESQUERDA fica a 40px da borda do painel.
+          `pr-10` (40px, medido/testado primeiro) alinhava "Marcar todas" bem NESSA borda — toque
+          sem gap real, não folga (prova geométrica real via Playwright, `getBoundingClientRect`,
+          jsdom não pega isso). `pr-14` (56px) dá 16px de respiro de verdade. Fix LOCAL, sem mexer
+          no `SlideOverPanel`. */}
+      <div className="flex items-center justify-between pl-4 pr-14 py-3 border-b border-gray-200 flex-shrink-0">
         <Text as="span" size="base" weight="semibold">
           {t('admin.notifications.panelTitle')}
         </Text>

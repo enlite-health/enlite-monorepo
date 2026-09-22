@@ -365,6 +365,6 @@ describe('NotificationPanel (spec 022, T412/T413)', () => {
     await screen.findByTestId('notification-empty');
 
     const header = screen.getByTestId('notification-mark-all-read').closest('div');
-    expect(header?.className).toMatch(/\bpr-10\b/);
+    expect(header?.className).toMatch(/\bpr-14\b/);
   });
 });
