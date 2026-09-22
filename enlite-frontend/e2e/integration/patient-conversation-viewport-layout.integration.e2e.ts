@@ -12,11 +12,29 @@
  * (gotcha clássico de flexbox: sem isso, o item não encolhe, e o excesso empurra o rodapé pra fora
  * da área visível do painel) — `min-h-0` na lista + `flex-shrink-0` no cabeçalho/compositor.
  */
-import { test, expect } from '@playwright/test';
+import { test, expect, type Locator } from '@playwright/test';
 import {
   seedPatientQA, cleanupPatientQA, seedStaffInGroup, cleanupStaffAndGroup, grantCell, loginAs,
   tokenFor, type MockUser,
 } from '../helpers/patient-conversation-helper';
+
+/**
+ * Achado A8 do gate 21/09: mede a condição real (o `transform` computado do painel) em vez de
+ * dormir um tempo fixo — `waitForTimeout(400)` é flaky (assenta rápido demais numa máquina veloz
+ * e devagar demais numa lenta). `SlideOverPanel` desliza via `translate-x-full` → `translate-x-0`
+ * (`transition-transform`); a matriz final, sem rotação/escala e com `translateX` a 0, é a
+ * identidade (`matrix(1, 0, 0, 1, 0, 0)` ou `none`, a depender de como o browser normaliza). Tolerância
+ * pequena (`0.5px` no `e`, `0.01` nos demais) absorve arredondamento de subpixel sem aceitar uma
+ * posição ainda em trânsito.
+ */
+async function isPanelSlideSettled(panel: Locator): Promise<boolean> {
+  const transform = await panel.evaluate((el) => getComputedStyle(el).transform);
+  if (transform === 'none') return true;
+  const match = transform.match(/matrix\(([-\d.,\s]+)\)/);
+  if (!match) return false;
+  const [a, b, c, d, e] = match[1].split(',').map((n) => parseFloat(n.trim()));
+  return Math.abs(a - 1) < 0.01 && Math.abs(b) < 0.01 && Math.abs(c) < 0.01 && Math.abs(d - 1) < 0.01 && Math.abs(e) < 0.5;
+}
 
 const RUN_ID = `${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
 const AUTORA_UID = `e2e-conv-viewport-${RUN_ID}`;
@@ -73,12 +91,16 @@ test.describe('Compositor SEMPRE visível — 3 viewports (ajustes de UI B5, ite
       const panel = page.getByTestId('patient-conversation-panel');
       await expect(panel).toBeVisible();
       await expect(page.getByTestId('conversation-panel-list')).toContainText('mensagem de teste de layout número 12');
-      // 🔒 achado desta sessão: `SlideOverPanel` desliza com `transition-transform duration-300`
-      // (`translate-x-full` → `translate-x-0`). `toBeVisible()` já passa a meio da animação (o
-      // elemento não é `display:none` desde o primeiro frame) — medir `boundingBox()` ANTES da
-      // transição assentar pega uma posição INTERMEDIÁRIA (o painel ainda deslizando), dando um
-      // "corte na direita" FALSO que não existe no estado final. Espera a transição (300ms) + folga.
-      await page.waitForTimeout(400);
+      // 🔒 achado desta sessão (`toBeVisible()` já passa a meio da animação — o elemento não é
+      // `display:none` desde o primeiro frame): medir `boundingBox()` ANTES da transição assentar
+      // pega uma posição INTERMEDIÁRIA (o painel ainda deslizando), dando um "corte na direita"
+      // FALSO que não existe no estado final. Espera pela condição MEDIDA (achado A8 do gate:
+      // `transform` computado = identidade), não por um tempo fixo — determinístico em máquina
+      // rápida ou lenta.
+      await expect.poll(() => isPanelSlideSettled(panel), {
+        timeout: 5_000,
+        message: `painel deveria terminar de deslizar (transform = identidade) em ${vp.label}`,
+      }).toBe(true);
 
       const sendBtn = page.getByTestId('composer-send-btn');
       const attachBtn = page.getByTestId('composer-attach-btn');
