@@ -105,6 +105,32 @@ describe('PermissionMiddleware.family().require()', () => {
     expect(client.resolve).not.toHaveBeenCalled();
   });
 
+  // G2 (gate da change 022-ux-mencao-e-notificacao): cenário de prd real — a família JÁ está na
+  // lista de `PERMISSION_ENFORCED_ROUTES` (rollout já declarou "esta rota está pronta"), mas o
+  // engine geral ainda está DESLIGADO (D285). `isPermissionFamilyEnforced` combina as duas
+  // alavancas — nenhuma decide sozinha — e sem essa combinação a família "pronta" começaria a
+  // exigir célula assim que alguém ligasse `PERMISSION_ENFORCED_ROUTES` em prd, mesmo com o
+  // engine geral ainda apagado.
+  it('ambiente de prd — engine DESLIGADO mesmo com a família JÁ na lista de enforced — passa sem resolver (D285)', async () => {
+    const client = clientStub();
+    const { app } = harness(
+      { PERMISSION_ENGINE_ENABLED: 'false', PERMISSION_ENFORCED_ROUTES: 'admin.users' },
+      client,
+    );
+    await request(app).get('/api/admin/users/1').expect(200);
+    expect(client.resolve).not.toHaveBeenCalled();
+  });
+
+  it('mesmo cenário, família em MEIO a uma lista de várias — ainda passa sem resolver', async () => {
+    const client = clientStub();
+    const { app } = harness(
+      { PERMISSION_ENGINE_ENABLED: 'false', PERMISSION_ENFORCED_ROUTES: 'admin.patients;admin.users' },
+      client,
+    );
+    await request(app).get('/api/admin/users/1').expect(200);
+    expect(client.resolve).not.toHaveBeenCalled();
+  });
+
   it('avisa UMA vez por família que a rota não está enforced (log de boot, não por request)', async () => {
     const client = clientStub();
     const { app } = harness(
