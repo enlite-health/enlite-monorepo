@@ -97,9 +97,30 @@ export class AdminRepository {
    * caractere comum e o curinga volta a valer.
    * `ORDER BY u.display_name, u.firebase_uid` desempata nome repetido — sem isso, `LIMIT 20` corta
    * o mesmo conjunto de linhas empatadas em ordem instável entre chamadas (paginação/teste flaky).
+   *
+   * `q` AUSENTE/VAZIO (item 1 da change 022-ux-mencao-e-notificacao, revoga D-06): pula a
+   * cláusula `ILIKE` inteira — não roda `ILIKE '%%'` (que casaria tudo do mesmo jeito, mas força o
+   * planner a escanear via `ILIKE` em vez de poder usar um índice de igualdade/prefixo em
+   * `display_name` se algum existir). Sem filtro nenhum, é só `ORDER BY ... LIMIT`, "os primeiros
+   * N do diretório".
    */
-  async searchStaffDirectory(q: string, limit = 20): Promise<StaffDirectoryEntry[]> {
-    const escaped = escapeIlikeWildcards(q);
+  async searchStaffDirectory(q: string | undefined, limit = 20): Promise<StaffDirectoryEntry[]> {
+    const trimmed = q?.trim();
+    if (!trimmed) {
+      const result = await this.pool.query(
+        `SELECT
+          u.firebase_uid AS uid,
+          u.display_name AS "displayName"
+        FROM users u
+        WHERE u.account_type = 'staff' AND u.is_active = true
+        ORDER BY u.display_name, u.firebase_uid
+        LIMIT $1`,
+        [limit]
+      );
+      return result.rows;
+    }
+
+    const escaped = escapeIlikeWildcards(trimmed);
     const result = await this.pool.query(
       `SELECT
         u.firebase_uid AS uid,
