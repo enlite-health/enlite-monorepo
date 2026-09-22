@@ -73,6 +73,8 @@ interface MessageItemProps {
   onOpenThread: () => void;
   /** Deep-link (item 3): true = esta é a mensagem-alvo da notificação clicada. */
   highlighted?: boolean;
+  /** G6: ver `MessageContentProps.onHighlighted` — repassado direto. */
+  onHighlighted?: () => void;
 }
 
 /**
@@ -83,7 +85,7 @@ interface MessageItemProps {
  * `ThreadView.MessageContent`), selo ANTES do botão. Ambos abrem a MESMA thread —
  * `onOpenThread` não muda por quem clicou.
  */
-function MessageItem({ message, patientId, onOpenThread, highlighted = false }: MessageItemProps): JSX.Element {
+function MessageItem({ message, patientId, onOpenThread, highlighted = false, onHighlighted }: MessageItemProps): JSX.Element {
   const { t } = useTranslation();
   const th = (key: string, optsOrDefault?: Record<string, unknown> | string): string =>
     t(`admin.patients.detail.conversation.thread.${key}`, optsOrDefault as string);
@@ -104,7 +106,7 @@ function MessageItem({ message, patientId, onOpenThread, highlighted = false }: 
 
   return (
     <div data-testid={`conversation-message-${message.id}`} className="px-3 py-2">
-      <MessageContent message={message} patientId={patientId} footer={footer} highlighted={highlighted} />
+      <MessageContent message={message} patientId={patientId} footer={footer} highlighted={highlighted} onHighlighted={onHighlighted} />
     </div>
   );
 }
@@ -286,11 +288,39 @@ export function ConversationPanel({
 
   // Destaque é MOMENTÂNEO (~2s, design.md §3) — o próprio `MessageContent` faz o fade via CSS
   // quando esta prop volta a `false`; aqui só o TIMER que decide QUANDO isso acontece.
+  //
+  // G6 (achado do gate desta change): o timer NÃO começa quando `highlightMessageId` é setado —
+  // começa só quando `MessageContent` avisa (`onHighlighted`) que o card-ALVO já está no DOM e já
+  // tentou rolar. Antes, para uma REPLY, `highlightMessageId` era setado no MESMO tick em que a
+  // thread abria (`setOpenThreadId`) — e `ThreadView.fetchReplies` é assíncrono. Numa rede lenta,
+  // os ~2s do timer antigo esgotavam ANTES da reply sequer existir no DOM: o destaque já tinha
+  // sido desligado quando ela finalmente aparecia, e a usuária nunca via o flash nem o scroll.
+  const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearHighlightTimer = useCallback((): void => {
+    if (highlightTimerRef.current !== null) {
+      clearTimeout(highlightTimerRef.current);
+      highlightTimerRef.current = null;
+    }
+  }, []);
+  const handleHighlightShown = useCallback(
+    (messageId: string): void => {
+      // Alvo pode ter mudado (novo deep-link) entre o card antigo desmontar e este callback
+      // chegar — só inicia o timer se ainda for o alvo ATUAL.
+      if (messageId !== highlightMessageId) return;
+      clearHighlightTimer();
+      highlightTimerRef.current = setTimeout(() => {
+        highlightTimerRef.current = null;
+        setHighlightMessageId(null);
+      }, HIGHLIGHT_DURATION_MS);
+    },
+    [highlightMessageId, clearHighlightTimer],
+  );
+  // Painel fechado/trocou de alvo por fora (reset da abertura) — nenhum timer pendente deve
+  // sobreviver, e limpeza no unmount por segurança.
   useEffect(() => {
-    if (!highlightMessageId) return undefined;
-    const timer = setTimeout(() => setHighlightMessageId(null), HIGHLIGHT_DURATION_MS);
-    return () => clearTimeout(timer);
-  }, [highlightMessageId]);
+    if (!highlightMessageId) clearHighlightTimer();
+    return clearHighlightTimer;
+  }, [highlightMessageId, clearHighlightTimer]);
 
   // Sem `openThreadId`, nenhuma mensagem tem `id === null` — o fallback já resolve pra `null`
   // sem precisar de um ternário extra por fora (branch que só existiria pra nunca ser tomada).
@@ -323,6 +353,7 @@ export function ConversationPanel({
             onBack={() => setOpenThreadId(null)}
             refreshToken={replyRefreshToken}
             highlightMessageId={highlightMessageId}
+            onHighlightShown={handleHighlightShown}
             composer={isOpen ? (
               canCompose ? (
                 <Suspense fallback={null}>
@@ -383,6 +414,7 @@ export function ConversationPanel({
                       patientId={patientId}
                       onOpenThread={() => setOpenThreadId(m.id)}
                       highlighted={m.id === highlightMessageId}
+                      onHighlighted={() => handleHighlightShown(m.id)}
                     />
                   </li>
                 ))}

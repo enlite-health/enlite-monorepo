@@ -105,9 +105,19 @@ export interface MessageContentProps {
    * volta a `false` (CSS `transition-colors`, ver `className` abaixo).
    */
   highlighted?: boolean;
+  /**
+   * G6 (achado do gate desta change): avisa o CALLER que o card do destaque ACABOU de entrar no
+   * DOM e de tentar rolar — só então o timer de ~2s pode começar a contar. Antes, o timer
+   * (`ConversationPanel`) começava no exato momento em que `highlightMessageId` era setado, que
+   * para uma REPLY acontece ANTES da thread terminar de carregar (`ThreadView.fetchReplies` é
+   * assíncrono) — numa rede lenta, os 2s esgotavam e o destaque já tinha sido desligado quando a
+   * reply finalmente aparecia na tela (usuária nunca via o flash). Chamado de dentro do MESMO
+   * efeito que tenta o `scrollIntoView`, nunca antes.
+   */
+  onHighlighted?: () => void;
 }
 
-export function MessageContent({ message, patientId, footer, highlighted = false }: MessageContentProps): JSX.Element {
+export function MessageContent({ message, patientId, footer, highlighted = false, onHighlighted }: MessageContentProps): JSX.Element {
   const { t, i18n } = useTranslation();
   const td = (key: string, optsOrDefault?: Record<string, unknown> | string): string =>
     t(`admin.patients.detail.conversation.thread.${key}`, optsOrDefault as string);
@@ -128,11 +138,19 @@ export function MessageContent({ message, patientId, footer, highlighted = false
     [],
   );
 
+  // G6: ref (não dep do efeito abaixo) — sempre a versão mais recente do callback, sem forçar o
+  // efeito a rodar de novo só porque o CALLER passou uma closure nova a cada render (o que
+  // reiniciaria o scroll/timer em todo re-render alheio, ex.: o poll do painel).
+  const onHighlightedRef = useRef(onHighlighted);
+  useEffect(() => { onHighlightedRef.current = onHighlighted; });
+
   useEffect(() => {
     if (!highlighted) return;
     // `scrollIntoView` não existe no jsdom (ambiente de teste) — `?.` protege o unit test sem
     // precisar mockar o DOM inteiro; em navegador real sempre existe.
     cardRef.current?.scrollIntoView?.({ block: 'center', behavior: prefersReducedMotion ? 'auto' : 'smooth' });
+    // G6: só agora — card já está no DOM (o `ref` existe) e a tentativa de rolar já aconteceu.
+    onHighlightedRef.current?.();
   }, [highlighted, prefersReducedMotion]);
 
   return (
@@ -201,6 +219,9 @@ interface ThreadViewProps {
   /** Deep-link (item 3): id da mensagem (root OU reply) a destacar dentro desta thread — `null`/
    * ausente = nenhum destaque. `ConversationPanel` é quem calcula e limpa depois de ~2s. */
   highlightMessageId?: string | null;
+  /** G6: repassado direto ao `MessageContent` do root/reply destacado — ver docstring de
+   * `MessageContentProps.onHighlighted`. */
+  onHighlightShown?: (messageId: string) => void;
 }
 
 type ThreadStatus = 'loading' | 'ready' | 'error';
@@ -215,7 +236,7 @@ type ThreadStatus = 'loading' | 'ready' | 'error';
  * decisão de escopo aceita (`tasks.md:682`), não bug.
  */
 export function ThreadView({
-  patientId, rootMessage, onBack, composer, refreshToken, highlightMessageId,
+  patientId, rootMessage, onBack, composer, refreshToken, highlightMessageId, onHighlightShown,
 }: ThreadViewProps): JSX.Element {
   const { t } = useTranslation();
   const tk = (key: string): string => t(`admin.patients.detail.conversation.thread.${key}`);
@@ -263,7 +284,12 @@ export function ThreadView({
           ←
         </button>
         <div data-testid="thread-root-message" className="flex-1 min-w-0">
-          <MessageContent message={rootMessage} patientId={patientId} highlighted={rootMessage.id === highlightMessageId} />
+          <MessageContent
+            message={rootMessage}
+            patientId={patientId}
+            highlighted={rootMessage.id === highlightMessageId}
+            onHighlighted={() => onHighlightShown?.(rootMessage.id)}
+          />
         </div>
       </div>
       {status === 'loading' && (
@@ -288,7 +314,12 @@ export function ThreadView({
         <ul data-testid="thread-replies-list" className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-2 p-2">
           {replies.map((reply) => (
             <li key={reply.id} data-testid={`thread-reply-${reply.id}`} className="min-w-0">
-              <MessageContent message={reply} patientId={patientId} highlighted={reply.id === highlightMessageId} />
+              <MessageContent
+                message={reply}
+                patientId={patientId}
+                highlighted={reply.id === highlightMessageId}
+                onHighlighted={() => onHighlightShown?.(reply.id)}
+              />
             </li>
           ))}
         </ul>

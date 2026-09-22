@@ -611,6 +611,42 @@ describe('ConversationPanel', () => {
       expect(screen.queryByTestId('conversation-message-not-found')).not.toBeInTheDocument();
     });
 
+    // G6 (achado do gate desta change): o timer de ~2s do destaque não pode começar a contar
+    // antes de a mensagem-alvo estar de fato no DOM — para uma REPLY, isso só acontece depois de
+    // `ThreadView.fetchReplies` (assíncrono) resolver.
+    it('G6: reply demora a carregar (thread ainda buscando) — o timer do destaque só COMEÇA quando ela está no DOM, nunca antes', async () => {
+      vi.useFakeTimers();
+      getConversation.mockResolvedValue({
+        conversationId: 'conv-1',
+        messages: [msg({ id: 'root-1', replyCount: 1 })],
+        nextCursor: null,
+      });
+      let resolveReplies!: (v: ConversationMessage[]) => void;
+      getConversationReplies.mockReset();
+      getConversationReplies.mockImplementation(
+        () => new Promise<ConversationMessage[]>((resolve) => { resolveReplies = resolve; }),
+      );
+
+      render(<ConversationPanel patientId="p1" isOpen focusTarget={{ messageId: 'reply-1', rootMessageId: 'root-1' }} />);
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+      expect(screen.getByTestId('thread-view')).toBeInTheDocument();
+      // A reply ainda não existe no DOM — `getConversationReplies` não resolveu.
+      expect(screen.queryByTestId('message-card-reply-1')).not.toBeInTheDocument();
+
+      // Avança bem além dos 2s do destaque ENQUANTO a reply ainda não carregou. Com o timer
+      // antigo (armado no instante em que `highlightMessageId` era setado, ANTES da thread
+      // carregar), o destaque já teria sido desligado aqui — antes mesmo de a reply existir.
+      await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+
+      await act(async () => {
+        resolveReplies([msg({ id: 'reply-1', body: 'resposta' })]);
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      expect(screen.getByTestId('message-card-reply-1')).toHaveAttribute('data-highlighted', 'true');
+    });
+
     // G7 (achado do gate desta change): clicar de novo na MESMA notificação (2º clique, `token`
     // novo) com o painel já aberto tem de reprocessar — antes, `processedFocusIdRef` só zerava ao
     // abrir o painel/trocar de paciente, então o 2º clique caía numa guarda presa para sempre
