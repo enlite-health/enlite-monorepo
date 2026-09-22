@@ -63,7 +63,9 @@ import {
   type GroupMemberView,
   type ListPermissionCatalogUseCase,
   type PermissionGroupDetail,
+  type PermissionHistoryEventType,
   type QueryPermissionAuditUseCase,
+  type QueryPermissionHistoryUseCase,
 } from '@modules/identity/permissions';
 import type { AuthMiddleware } from '../middleware/AuthMiddleware';
 import type { PermissionMiddleware } from '../middleware/PermissionMiddleware';
@@ -91,6 +93,7 @@ export interface PermissionPanelDeps {
   groups: PanelGroupReader;
   features: PanelFeatureReader;
   audit: QueryPermissionAuditUseCase;
+  history: QueryPermissionHistoryUseCase;
   auth: AuthMiddleware;
   permissions: PermissionMiddleware;
   tenantId?: string;
@@ -146,6 +149,20 @@ const AuditQuery = z
 const AuditBody = AuditQuery.extend({
   userId: z.string().min(1).max(128).optional(),
 });
+
+/**
+ * Histórico de mudanças de permissão. `groupId` filtra por grupo; `type`
+ * filtra por tipo de evento (`permission`|`member`) — a UI mostra os dois com
+ * rótulo visual distinto, mas o filtro é opt-in para reduzir a lista.
+ * `.strict()` pelo mesmo motivo da `AuditQuery`: chave desconhecida é 400.
+ */
+const HistoryQuery = z
+  .object({
+    groupId: z.string().uuid().optional(),
+    type: z.enum(['permission', 'member']).optional(),
+    limit: z.coerce.number().int().min(1).max(1000).optional(),
+  })
+  .strict();
 
 // ── Casca comum ──────────────────────────────────────────────────────────────
 
@@ -273,6 +290,26 @@ export function createPermissionPanelRoutes(deps: PermissionPanelDeps): Router {
     }
 
     executarAuditoria(deps, res, body.data);
+  });
+
+  // Histórico de mudanças de permissão — substitui a Auditoría ALLOW/DENY na
+  // UI. MESMA `portao` (célula declarada ESTÁTICA no array acima, nunca dentro
+  // de closure — é a armadilha que faz o sync do catálogo descontinuar a
+  // célula em silêncio).
+  router.get('/permission-history', ...portao, (req, res) => {
+    const query = HistoryQuery.safeParse(req.query);
+    if (!query.success) {
+      res.status(400).json({ success: false, error: 'Invalid query parameters' });
+      return;
+    }
+
+    responder(res, 'permission history', async () => ({
+      events: await deps.history.execute({
+        groupId: query.data.groupId,
+        type: query.data.type as PermissionHistoryEventType | undefined,
+        limit: query.data.limit,
+      }),
+    }));
   });
 
   return router;

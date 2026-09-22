@@ -86,16 +86,19 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'GET /api/admin/users → user_management:read',
         'POST /api/admin/users → user_management:create',
         'POST /api/admin/users/:id/reset-password → user_management:update',
-        // ── admin.permissions (7) — a leitura do painel (F3) + o POST de
-        // leitura da C6. São estas linhas que mantêm `permission_management:read`
-        // viva no catálogo: sem nenhuma delas o sync descontinua a célula e
-        // `iam.query_audit` responde 42501 para todos. Ordenadas como o `.sort()`
-        // acima devolve.
+        // ── admin.permissions (8) — a leitura do painel (F3) + o POST de
+        // leitura da C6 + o histórico de mudanças (substitui a Auditoría
+        // ALLOW/DENY na UI, mig 458). São estas linhas que mantêm
+        // `permission_management:read` viva no catálogo: sem nenhuma delas o
+        // sync descontinua a célula e `iam.query_audit`/`iam.
+        // query_permission_history` responde 42501 para todos. Ordenadas como
+        // o `.sort()` acima devolve.
         'GET /api/admin/country-features → permission_management:read',
         'GET /api/admin/permission-audit → permission_management:read',
         'GET /api/admin/permission-groups → permission_management:read',
         'GET /api/admin/permission-groups/:id → permission_management:read',
         'GET /api/admin/permission-groups/:id/members → permission_management:read',
+        'GET /api/admin/permission-history → permission_management:read',
         'GET /api/admin/permissions/catalog → permission_management:read',
         // POST na FORMA (a C6 tira `userId` da query), `:read` na REGRA — a
         // exceção declarada à convenção "POST é sempre `:write`" desta família.

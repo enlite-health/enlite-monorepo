@@ -17,7 +17,7 @@ import { AdminLayout } from './components/templates/AdminLayout/AdminLayout';
 import { AdminLoginPage } from './pages/admin/AdminLoginPage';
 import { AuthActionPage } from './pages/auth/AuthActionPage';
 import { AdminUsersPage } from './pages/admin/AdminUsersPage';
-import { AccessPage, GroupDetailPage, CountryFeaturesPage, AuditPage } from './pages/admin/access';
+import { AccessPage, GroupDetailPage, CountryFeaturesPage, PermissionHistoryPage } from './pages/admin/access';
 import { AdminVacanciesPage } from './pages/admin/AdminVacanciesPage';
 import { AdminRecruitmentPage } from './pages/admin/AdminRecruitmentPage';
 import { ManagementDashboardPage } from './pages/admin/ManagementDashboardPage';
@@ -237,7 +237,8 @@ export function App() {
           <Route path="access" element={<FeatureRouteGate feature="screen:access-permissions"><AccessPage /></FeatureRouteGate>} />
           <Route path="access/groups/:id" element={<FeatureRouteGate feature="screen:access-permissions"><GroupDetailPage /></FeatureRouteGate>} />
           <Route path="access/features" element={<FeatureRouteGate feature="screen:access-permissions"><CountryFeaturesPage /></FeatureRouteGate>} />
-          <Route path="access/audit" element={<FeatureRouteGate feature="screen:access-permissions"><AuditPage /></FeatureRouteGate>} />
+          {/* Histórico de mudanças de permissão — substitui a Auditoría ALLOW/DENY (mesma URL, mesma célula). */}
+          <Route path="access/audit" element={<FeatureRouteGate feature="screen:access-permissions"><PermissionHistoryPage /></FeatureRouteGate>} />
           <Route
             path="api-docs"
             element={
