@@ -96,10 +96,10 @@ export { createAuthTelemetryRoutes } from './interfaces/routes/authTelemetryRout
 export { createAdminUsersRoutes } from './interfaces/routes/adminUsersRoutes';
 export { createAdminStaffDirectoryRoutes } from './interfaces/routes/adminStaffDirectoryRoutes';
 export { AdminStaffDirectoryController } from './interfaces/controllers/AdminStaffDirectoryController';
-// Change 022-ux-mencao-e-notificacao, Rodada 2/R2-B — heartbeat de presença.
-export { createAdminPresenceRoutes } from './interfaces/routes/adminPresenceRoutes';
-export { AdminPresenceController } from './interfaces/controllers/AdminPresenceController';
-export { UpdatePresenceUseCase } from './application/UpdatePresenceUseCase';
+// Heartbeat de presença mudou para módulo PRÓPRIO em 22/09/2026 (change
+// 022-ux-mencao-e-notificacao, Rodada 2) — ver `@modules/presence`. `principalUid` (usado pelo
+// `AdminPresenceController` de lá) já é exportado por este barrel logo abaixo (linha do
+// PermissionMiddleware), sem precisar de import direto em subpasta.
 export { createPermissionPanelRoutes, ADMIN_PERMISSIONS_FAMILY } from './interfaces/routes/permissionPanelRoutes';
 export { createPermissionPanelWriteRoutes } from './interfaces/routes/permissionPanelWriteRoutes';
 export type { PanelWriter, PermissionPanelWriteDeps } from './interfaces/routes/permissionPanelWriteRoutes';

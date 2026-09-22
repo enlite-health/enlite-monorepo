@@ -1,7 +1,8 @@
 /**
- * AdminPresenceController — R2-B (change 022-ux-mencao-e-notificacao, Rodada 2). Unit puro
- * (use case mockada, `req`/`res` fake) — molde `AdminNotificationController` (implícito: mesma
- * forma de 401 explícito quando `principalUid` não resolve, 204 no caminho feliz).
+ * AdminPresenceController — change 022-ux-mencao-e-notificacao, Rodada 2 (módulo
+ * `@modules/presence` a partir de 22/09/2026). Unit puro (use case mockada, `req`/`res` fake) —
+ * molde `AdminNotificationController` (implícito: mesma forma de 401 explícito quando
+ * `principalUid` não resolve, 204 no caminho feliz).
  */
 import type { Request, Response } from 'express';
 import { AdminPresenceController } from '../AdminPresenceController';

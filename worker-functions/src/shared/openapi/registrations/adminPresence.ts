@@ -16,7 +16,8 @@ registry.registerPath({
   tags: ['Admin · Users'],
   summary: 'Heartbeat de presença do painel admin',
   description:
-    'Marca o PRÓPRIO uid autenticado como "visto por último" agora (`users.last_seen_at`). Sem '
+    'Marca o PRÓPRIO uid autenticado como "visto por último" agora (`staff_presence.last_seen_at`, '
+    + 'tabela própria — nunca `users`). Sem '
     + 'corpo de request. Throttle no servidor: só regrava se o valor atual tiver mais de 30s — '
     + 'transparente ao cliente (sempre 204). Exige `own_presence:update` (nasce concedida a todo '
     + 'staff ativo, mesma regra de `own_notifications`, D-07).',

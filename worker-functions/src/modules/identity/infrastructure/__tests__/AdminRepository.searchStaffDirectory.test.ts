@@ -22,9 +22,18 @@ describe('AdminRepository.searchStaffDirectory', () => {
 
     expect(rows).toEqual([{ uid: 'u1', displayName: 'Ana', isOnline: true }]);
     const [sql, params] = mockQuery.mock.calls[0];
-    expect(String(sql)).not.toContain('ILIKE');
-    expect(String(sql)).toContain('isOnline');
-    expect(String(sql)).toContain("interval '5 minutes'");
+    const sqlStr = String(sql);
+    expect(sqlStr).not.toContain('ILIKE');
+    expect(sqlStr).toContain('isOnline');
+    expect(sqlStr).toContain("interval '5 minutes'");
+    expect(sqlStr).toContain('LEFT JOIN staff_presence');
+    // 🔒 Guarda dura (gate revisao-pr, critério 8): se alguém remover a exclusão do PRÓPRIO
+    // requester neste ramo (sem `q`), este teste tem de morrer — a cláusula literal
+    // `firebase_uid <> $2` é o que impede o requester de aparecer na própria lista de
+    // mencionáveis. Provado por sabotagem em cópia (ver relatório da execução): removendo esta
+    // linha do `AdminRepository.ts` copiado, este `expect` falha (RED); com o arquivo original,
+    // passa (GREEN).
+    expect(sqlStr).toContain('firebase_uid <> $2');
     expect(params).toEqual([20, 'me-uid']);
   });
 
@@ -38,8 +47,11 @@ describe('AdminRepository.searchStaffDirectory', () => {
     mockQuery.mockResolvedValue({ rows: [] });
     await new AdminRepository().searchStaffDirectory('ana', 20, 'me-uid');
     const [sql, params] = mockQuery.mock.calls[0];
-    expect(String(sql)).toContain('ILIKE');
-    expect(String(sql)).toContain('isOnline');
+    const sqlStr = String(sql);
+    expect(sqlStr).toContain('ILIKE');
+    expect(sqlStr).toContain('isOnline');
+    expect(sqlStr).toContain('LEFT JOIN staff_presence');
+    expect(sqlStr).toContain('firebase_uid <> $3');
     expect(params).toEqual(['ana', 20, 'me-uid']);
   });
 

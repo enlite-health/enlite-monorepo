@@ -92,9 +92,14 @@ describe('Diretório de staff (spec 022, Bloco 1) — HTTP real, Postgres real, 
       [U.comCelula, U.comCelula2, U.semCelula, U.inativo, TENANT_E2E],
     );
 
-    // R2-B: comCelula tem heartbeat RECENTE (isOnline=true visto por outro); comCelula2 nunca
-    // mandou heartbeat (last_seen_at NULL → isOnline=false, controle).
-    await pool.query(`UPDATE users SET last_seen_at = now() WHERE firebase_uid = $1`, [U.comCelula]);
+    // R2-B (reescrito 22/09 para tabela própria): comCelula tem heartbeat RECENTE (isOnline=true
+    // visto por outro) — linha em `staff_presence`; comCelula2 nunca mandou heartbeat (nenhuma
+    // linha em `staff_presence` → isOnline=false, controle, por AUSÊNCIA de linha, não `NULL`
+    // numa coluna).
+    await pool.query(
+      `INSERT INTO staff_presence (firebase_uid, last_seen_at) VALUES ($1, now())`,
+      [U.comCelula],
+    );
 
     // Célula NOVA (`staff_directory:read`) — não veio do seed da mig 206, então precisa ser
     // garantida antes de `grupoComCelulas` (que falha alto se a célula não existir).

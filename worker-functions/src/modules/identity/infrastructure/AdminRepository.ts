@@ -111,9 +111,11 @@ export class AdminRepository {
    * de mencionáveis — `undefined`/`null` não exclui ninguém (uso interno/teste que não tem um
    * requester para excluir).
    *
-   * `isOnline` (R2-B): calculado AQUI, no SQL, na leitura — nunca persistido
-   * (`migrations/465_users_last_seen_at.sql`). Presença "simples": só o `last_seen_at` mais
-   * recente importa, sem histórico.
+   * `isOnline` (R2-B, reescrito 22/09 para tabela própria): calculado AQUI, no SQL, na leitura —
+   * nunca persistido (`migrations/465_staff_presence.sql`). `LEFT JOIN staff_presence` — staff que
+   * nunca mandou heartbeat não tem linha lá (ausência de linha, não `NULL` numa coluna de
+   * `users`), por isso `isOnline` cai em `false` por ausência de match. Este módulo (identity) só
+   * faz o JOIN de leitura; a ESCRITA do heartbeat vive em `@modules/presence` (módulo próprio).
    */
   async searchStaffDirectory(
     q: string | undefined,
@@ -127,8 +129,9 @@ export class AdminRepository {
         `SELECT
           u.firebase_uid AS uid,
           u.display_name AS "displayName",
-          (u.last_seen_at IS NOT NULL AND u.last_seen_at > now() - interval '5 minutes') AS "isOnline"
+          (sp.last_seen_at IS NOT NULL AND sp.last_seen_at > now() - interval '5 minutes') AS "isOnline"
         FROM users u
+        LEFT JOIN staff_presence sp ON sp.firebase_uid = u.firebase_uid
         WHERE u.account_type = 'staff' AND u.is_active = true
           AND ($2::text IS NULL OR u.firebase_uid <> $2)
         ORDER BY u.display_name, u.firebase_uid
@@ -143,8 +146,9 @@ export class AdminRepository {
       `SELECT
         u.firebase_uid AS uid,
         u.display_name AS "displayName",
-        (u.last_seen_at IS NOT NULL AND u.last_seen_at > now() - interval '5 minutes') AS "isOnline"
+        (sp.last_seen_at IS NOT NULL AND sp.last_seen_at > now() - interval '5 minutes') AS "isOnline"
       FROM users u
+      LEFT JOIN staff_presence sp ON sp.firebase_uid = u.firebase_uid
       WHERE u.account_type = 'staff' AND u.is_active = true
         AND (u.display_name ILIKE '%' || $1 || '%' ESCAPE '\\'
           OR u.email ILIKE '%' || $1 || '%' ESCAPE '\\')
@@ -154,29 +158,6 @@ export class AdminRepository {
       [escaped, limit, exclude]
     );
     return result.rows;
-  }
-
-  /**
-   * Heartbeat de presença (R2-B, `POST /api/admin/me/presence`) — molde `updateLastLogin` (mesma
-   * tabela, mesma forma: `UPDATE users SET <coluna> WHERE firebase_uid = $1`, sem
-   * `withActorContext`/transação própria, porque não é ato auditável (sem histórico por decisão
-   * do Gabriel, 22/09) nem depende de trigger que exija `app.current_uid`.
-   *
-   * Throttle NO SQL (WHERE), não na aplicação: `now() - interval '30 seconds'` na própria cláusula
-   * torna a checagem e a escrita atômicas (sem round-trip de leitura antes) e barata — heartbeat
-   * chamado a cada ~60s do cliente já não bateria o throttle na maioria das chamadas; a proteção
-   * é para chamada em rajada (retry, múltiplas abas). Devolve se REGRAVOU (para teste/observabilidade
-   * — o endpoint HTTP sempre responde 204 de qualquer forma, throttle é transparente ao cliente).
-   */
-  async touchPresence(firebaseUid: string): Promise<boolean> {
-    const result = await this.pool.query(
-      `UPDATE users
-         SET last_seen_at = now()
-       WHERE firebase_uid = $1
-         AND (last_seen_at IS NULL OR last_seen_at < now() - interval '30 seconds')`,
-      [firebaseUid]
-    );
-    return (result.rowCount ?? 0) > 0;
   }
 
   async countAdmins(): Promise<number> {

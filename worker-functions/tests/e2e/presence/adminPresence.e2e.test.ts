@@ -1,13 +1,16 @@
 /**
  * adminPresence.e2e.test.ts — heartbeat de presença (change 022-ux-mencao-e-notificacao,
- * Rodada 2/R2-B). HTTP real (app em processo, `permissionFamilyHarness.ts`), Postgres real,
+ * Rodada 2). HTTP real (app em processo, `permissionFamilyHarness.ts`), Postgres real,
  * engine ABAC LIGADO (`PERMISSION_ENGINE_ENABLED=true` + família `admin.users`). Molde:
  * `adminStaffDirectory.e2e.test.ts`/`adminNotifications.e2e.test.ts` (mesma classe "own_*").
  *
- * Cobre o ciclo completo: `POST /api/admin/me/presence` grava `last_seen_at` do PRÓPRIO uid;
- * `GET /api/admin/staff-directory` calcula `isOnline` sobre o que o heartbeat gravou — não são
- * 2 features testadas em paralelo, é o MESMO dado (`users.last_seen_at`) visto pelas duas pontas
- * (testes 5/6 fazem o round-trip real pelas duas rotas).
+ * Cobre o ciclo completo: `POST /api/admin/me/presence` grava `last_seen_at` em `staff_presence`
+ * (tabela PRÓPRIA, reescrita 22/09/2026 — NUNCA `users`); `GET /api/admin/staff-directory` calcula
+ * `isOnline` sobre o que o heartbeat gravou por LEFT JOIN — não são 2 features testadas em
+ * paralelo, é o MESMO dado (`staff_presence.last_seen_at`) visto pelas duas pontas (testes 5/6
+ * fazem o round-trip real pelas duas rotas). Teste 7 prova a razão de existir da tabela própria:
+ * `users.updated_at` NUNCA muda por causa de heartbeat (o defeito da versão anterior, que gravava
+ * `users.last_seen_at` e disparava o trigger `update_users_updated_at`).
  *
  * Nenhuma PII real — uid/e-mail/nome sintéticos (`e022-presence-*`, `@e2e.local`).
  */
@@ -80,8 +83,13 @@ describe('Presença — heartbeat (change 022-ux-mencao-e-notificacao R2-B) — 
   }
 
   async function lastSeenAt(uid: string): Promise<Date | null> {
-    const r = await pool.query(`SELECT last_seen_at FROM users WHERE firebase_uid = $1`, [uid]);
+    const r = await pool.query(`SELECT last_seen_at FROM staff_presence WHERE firebase_uid = $1`, [uid]);
     return r.rows[0]?.last_seen_at ?? null;
+  }
+
+  async function usersUpdatedAt(uid: string): Promise<Date | null> {
+    const r = await pool.query(`SELECT updated_at FROM users WHERE firebase_uid = $1`, [uid]);
+    return r.rows[0]?.updated_at ?? null;
   }
 
   beforeAll(async () => {
@@ -122,7 +130,7 @@ describe('Presença — heartbeat (change 022-ux-mencao-e-notificacao R2-B) — 
     setEnv('DATABASE_URL', DATABASE_URL);
 
     const { createAdminPresenceRoutes } = await import(
-      '../../../src/modules/identity/interfaces/routes/adminPresenceRoutes'
+      '../../../src/modules/presence/interfaces/routes/adminPresenceRoutes'
     );
     const { createAdminStaffDirectoryRoutes } = await import(
       '../../../src/modules/identity/interfaces/routes/adminStaffDirectoryRoutes'
@@ -198,7 +206,7 @@ describe('Presença — heartbeat (change 022-ux-mencao-e-notificacao R2-B) — 
 
   it('6. last_seen_at de mais de 5 min atrás (ajustado via SQL, sem tocar o heartbeat) → isOnline=false', async () => {
     await pool.query(
-      `UPDATE users SET last_seen_at = now() - interval '10 minutes' WHERE firebase_uid = $1`,
+      `UPDATE staff_presence SET last_seen_at = now() - interval '10 minutes' WHERE firebase_uid = $1`,
       [U.comCelula],
     );
 
@@ -207,5 +215,37 @@ describe('Presença — heartbeat (change 022-ux-mencao-e-notificacao R2-B) — 
     const linha = dir.body.data.find((e: { uid: string }) => e.uid === U.comCelula);
     expect(linha).toBeDefined();
     expect(linha.isOnline).toBe(false);
+  });
+
+  it('7. heartbeat NUNCA altera users.updated_at (a razão de existir de staff_presence como tabela própria)', async () => {
+    const antes = await usersUpdatedAt(U.comCelula);
+    // Espera >1s para não empatar com timestamps de setup no mesmo milissegundo em CI rápido.
+    await new Promise((r) => setTimeout(r, 1100));
+
+    const res = await heartbeat(U.comCelula);
+    expect(res.status).toBe(204);
+
+    const depois = await usersUpdatedAt(U.comCelula);
+    expect(depois?.getTime()).toBe(antes?.getTime());
+  });
+
+  it('8. 2 "abas" (2 chamadas em rajada, <30s de intervalo) gravam APENAS 1 linha/1 valor em staff_presence', async () => {
+    await pool.query(`DELETE FROM staff_presence WHERE firebase_uid = $1`, [U.comCelula]);
+
+    const r1 = await heartbeat(U.comCelula); // aba 1
+    expect(r1.status).toBe(204);
+    const primeiro = await lastSeenAt(U.comCelula);
+    expect(primeiro).not.toBeNull();
+
+    const r2 = await heartbeat(U.comCelula); // aba 2, milissegundos depois — throttle deve segurar
+    expect(r2.status).toBe(204);
+    const segundo = await lastSeenAt(U.comCelula);
+
+    expect(segundo!.getTime()).toBe(primeiro!.getTime());
+    const contagem = await pool.query(
+      `SELECT COUNT(*)::int AS n FROM staff_presence WHERE firebase_uid = $1`,
+      [U.comCelula],
+    );
+    expect(contagem.rows[0].n).toBe(1);
   });
 });

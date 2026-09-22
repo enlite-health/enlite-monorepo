@@ -40,7 +40,8 @@ import { createAdminNotificationRoutes } from '@modules/inapp-notification/inter
 import { AdminPatientDiagnosesController } from '@modules/diagnosis/interfaces/controllers/AdminPatientDiagnosesController';
 import { AdminTerminologySearchController } from '@modules/terminology/interfaces/controllers/AdminTerminologySearchController';
 import { UserController } from '@modules/identity';
-import { AdminController, createAuthTelemetryRoutes, createAdminUsersRoutes, createAdminStaffDirectoryRoutes, createAdminPresenceRoutes, createPermissionPanelRoutes, createPermissionPanelWriteRoutes, principalUid } from '@modules/identity';
+import { AdminController, createAuthTelemetryRoutes, createAdminUsersRoutes, createAdminStaffDirectoryRoutes, createPermissionPanelRoutes, createPermissionPanelWriteRoutes, principalUid } from '@modules/identity';
+import { createAdminPresenceRoutes } from '@modules/presence';
 import { createMeAuthzRouter } from '@modules/identity/permissions';
 import {
   AuthMiddleware,
