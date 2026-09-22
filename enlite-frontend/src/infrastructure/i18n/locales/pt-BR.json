@@ -109,7 +109,11 @@
       "selectedCount": "{{count}} selecionados"
     },
     "yes": "Sim",
-    "no": "Não"
+    "no": "Não",
+    "presence": {
+      "online": "Online",
+      "offline": "Offline"
+    }
   },
   "sidebar": {
     "expandMenu": "Expandir menu",
