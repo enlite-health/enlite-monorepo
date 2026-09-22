@@ -1,12 +1,14 @@
 /**
- * MessageAttachments — testes unitários (ajustes de UI B5, spec 022).
+ * MessageAttachments — testes unitários (ajustes de UI B5, spec 022; gate 21/09, achado A1).
  *
  * Cobre:
  *   - PDF/DOCX: chip com nome (truncado + `title`) + tamanho legível ("1 KB");
  *   - IMAGEM (png/jpeg): miniatura só carrega depois que o `IntersectionObserver` reporta
- *     visibilidade — via `fetch` → `blob` → `URL.createObjectURL` (nunca `<img src={signedUrl}>` cru);
- *   - erro no fetch da imagem não quebra a tela (mostra estado de erro, sem crash);
- *   - `URL.revokeObjectURL` é chamado no unmount (sem vazar blob).
+ *     visibilidade — via `<img src={signedUrl}>` DIRETO (achado A1 do gate: o bucket de
+ *     produção `enlite-patient-documents` não tem CORS configurado de propósito — `fetch(url)`
+ *     cross-origin quebra em prd, mas um `<img>` como subresource NÃO exige CORS);
+ *   - erro de rede/expiração no `<img>` (evento `onError`) faz UMA tentativa de renovar a signed
+ *     URL antes de desistir e mostrar o estado de erro.
  *
  * `IntersectionObserver` não existe em jsdom — mock mínimo neste arquivo, controlado pelo teste
  * (dispara `isIntersecting` manualmente), documentado aqui em vez de no setup global (raio de
@@ -67,16 +69,13 @@ describe('MessageAttachments', () => {
     disconnectSpy = vi.fn();
     intersectCallback = null;
     vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver as unknown as typeof IntersectionObserver);
+    // 🔒 espião de `fetch` global — nenhum teste deste arquivo deve fazer o componente chamá-lo
+    // pra baixar bytes de imagem (achado A1 do gate: isso é exatamente o que quebra em prd, bucket
+    // sem CORS). Fica de sentinela em TODOS os testes, não só nos de imagem.
     vi.stubGlobal('fetch', vi.fn());
-    vi.stubGlobal('URL', { ...URL, createObjectURL: vi.fn(() => 'blob:fake-url'), revokeObjectURL: vi.fn() });
   });
 
   afterEach(() => {
-    // `cleanup()` EXPLÍCITO antes de tirar os stubs — a limpeza automática do testing-library
-    // (registrada em `afterEach` no import de `@testing-library/react`) pode rodar DEPOIS deste
-    // hook (ordem entre múltiplos `afterEach` não é garantida entre escopos), e o jsdom NÃO
-    // implementa `URL.revokeObjectURL` nativamente — desmontar com o stub já removido quebrava
-    // o cleanup do `ImageAttachment` (achado medido nesta sessão).
     cleanup();
     vi.unstubAllGlobals();
   });
@@ -129,33 +128,32 @@ describe('MessageAttachments', () => {
     });
   });
 
-  describe('IMAGEM — miniatura lazy (IntersectionObserver + fetch→blob→objectURL)', () => {
+  describe('IMAGEM — miniatura lazy (IntersectionObserver + <img src={signedUrl}> direto, achado A1)', () => {
     it('NÃO chama a API antes de ficar visível', () => {
       render(<MessageAttachments patientId="p1" attachments={[imageAttachment]} />);
       expect(getConversationAttachmentUrl).not.toHaveBeenCalled();
       expect(screen.queryByTestId('message-attachment-image-file-img')).not.toBeInTheDocument();
     });
 
-    it('fica visível → busca a signed URL → fetch → blob → <img> com objectURL (nunca a signed URL crua no src)', async () => {
+    it('fica visível → busca a signed URL → <img src> É a signed URL, SEM fetch() dos bytes (bucket de prd não tem CORS — achado A1)', async () => {
       getConversationAttachmentUrl.mockResolvedValue({ url: 'https://signed.example/img', expiresInSeconds: 300 });
-      const fakeBlob = new Blob(['x']);
-      (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({ blob: async () => fakeBlob });
 
       render(<MessageAttachments patientId="p1" attachments={[imageAttachment]} />);
       triggerIntersect(true);
 
       await waitFor(() => expect(getConversationAttachmentUrl).toHaveBeenCalledWith('p1', 'file-img'));
-      await waitFor(() => expect(global.fetch).toHaveBeenCalledWith('https://signed.example/img'));
       await waitFor(() => expect(screen.getByTestId('message-attachment-image-file-img')).toBeInTheDocument());
 
       const img = screen.getByTestId('message-attachment-image-file-img') as HTMLImageElement;
-      expect(img.src).toBe('blob:fake-url');
-      expect(img.src).not.toContain('signed.example'); // nunca a signed URL crua no DOM
+      expect(img.src).toBe('https://signed.example/img');
+      // 🔒 a prova negativa do achado A1: nenhum `fetch` pros bytes da imagem. `<img src>` é uma
+      // carga de subresource do PRÓPRIO browser (fora do `fetch` do app), que não exige CORS —
+      // é exatamente por isso que troca o approach antigo (`fetch→blob→objectURL`, que exigia).
+      expect(global.fetch).not.toHaveBeenCalled();
     });
 
     it('nome do arquivo aparece embaixo da miniatura', async () => {
       getConversationAttachmentUrl.mockResolvedValue({ url: 'https://signed.example/img', expiresInSeconds: 300 });
-      (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({ blob: async () => new Blob(['x']) });
 
       render(<MessageAttachments patientId="p1" attachments={[imageAttachment]} />);
       triggerIntersect(true);
@@ -164,7 +162,7 @@ describe('MessageAttachments', () => {
       expect(screen.getByTestId('message-attachment-file-img')).toHaveTextContent('foto-ferida.png');
     });
 
-    it('erro no fetch da imagem não quebra a tela — mostra estado de erro', async () => {
+    it('erro ao buscar a signed URL (API) não quebra a tela — mostra estado de erro', async () => {
       getConversationAttachmentUrl.mockRejectedValue(new Error('network down'));
 
       render(<MessageAttachments patientId="p1" attachments={[imageAttachment]} />);
@@ -174,16 +172,43 @@ describe('MessageAttachments', () => {
       expect(screen.queryByTestId('message-attachment-image-file-img')).not.toBeInTheDocument();
     });
 
-    it('unmount revoga o objectURL (sem vazar blob)', async () => {
-      getConversationAttachmentUrl.mockResolvedValue({ url: 'https://signed.example/img', expiresInSeconds: 300 });
-      (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({ blob: async () => new Blob(['x']) });
+    it('`onError` do <img> (ex.: signed URL expirada, TTL 300s) pede UMA URL nova antes de desistir', async () => {
+      getConversationAttachmentUrl
+        .mockResolvedValueOnce({ url: 'https://signed.example/img-velha', expiresInSeconds: 300 })
+        .mockResolvedValueOnce({ url: 'https://signed.example/img-nova', expiresInSeconds: 300 });
 
-      const { unmount } = render(<MessageAttachments patientId="p1" attachments={[imageAttachment]} />);
+      render(<MessageAttachments patientId="p1" attachments={[imageAttachment]} />);
+      triggerIntersect(true);
+
+      await waitFor(() => expect(screen.getByTestId('message-attachment-image-file-img')).toBeInTheDocument());
+      expect((screen.getByTestId('message-attachment-image-file-img') as HTMLImageElement).src).toBe('https://signed.example/img-velha');
+
+      fireEvent.error(screen.getByTestId('message-attachment-image-file-img'));
+
+      await waitFor(() => expect(getConversationAttachmentUrl).toHaveBeenCalledTimes(2));
+      await waitFor(() =>
+        expect((screen.getByTestId('message-attachment-image-file-img') as HTMLImageElement).src).toBe('https://signed.example/img-nova'),
+      );
+      expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('segundo `onError` (a URL renovada TAMBÉM falha) desiste e mostra o estado de erro', async () => {
+      getConversationAttachmentUrl.mockResolvedValue({ url: 'https://signed.example/img', expiresInSeconds: 300 });
+
+      render(<MessageAttachments patientId="p1" attachments={[imageAttachment]} />);
       triggerIntersect(true);
       await waitFor(() => expect(screen.getByTestId('message-attachment-image-file-img')).toBeInTheDocument());
 
-      unmount();
-      expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:fake-url');
+      fireEvent.error(screen.getByTestId('message-attachment-image-file-img'));
+      await waitFor(() => expect(getConversationAttachmentUrl).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(screen.getByTestId('message-attachment-image-file-img')).toBeInTheDocument());
+
+      fireEvent.error(screen.getByTestId('message-attachment-image-file-img'));
+
+      await waitFor(() => expect(screen.queryByTestId('message-attachment-image-file-img')).not.toBeInTheDocument());
+      expect(screen.getByTestId('message-attachment-file-img')).toHaveTextContent(
+        'Não conseguimos baixar o arquivo. Tente de novo.',
+      );
     });
   });
 });

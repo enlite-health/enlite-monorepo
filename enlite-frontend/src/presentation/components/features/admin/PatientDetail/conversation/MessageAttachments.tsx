@@ -5,6 +5,15 @@
  *
  * IMAGEM (png/jpeg) → miniatura inline (`ImageAttachment`, lazy por `IntersectionObserver`).
  * PDF/DOCX → chip com ícone + nome (truncado) + tamanho, clique baixa (comportamento antigo).
+ *
+ * 🔒 Achado A1 do gate (21/09): a miniatura usava `fetch(signedUrl)→blob→URL.createObjectURL`.
+ * Isso QUEBRA em produção — o bucket `enlite-patient-documents` não tem CORS configurado, DE
+ * PROPÓSITO (`terraform/environments/prd/storage.tf`, não mexer). Um `fetch` de `app.enlite.health`
+ * pra `storage.googleapis.com` é bloqueado pelo browser sem `Access-Control-Allow-Origin`. O e2e
+ * local passava porque o `fake-gcs-server` responde CORS — nunca pegou o defeito. Conserto:
+ * `<img src={signedUrl}>` direto — carga de SUBRESOURCE do próprio browser, não passa pelo `fetch`
+ * do app, e por isso não exige CORS (só `fetch`/XHR cross-origin exigem). `Content-Disposition:
+ * attachment` do endpoint de download também não se aplica aqui (só afeta NAVEGAÇÃO de topo).
  */
 import { useCallback, useEffect, useRef, useState, type JSX } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -63,23 +72,24 @@ interface ImageAttachmentProps {
 
 /**
  * Miniatura de imagem — carrega a signed URL (mesmo endpoint de download, `GET .../files/:fileId/url`)
- * só quando o card FICA VISÍVEL (`IntersectionObserver`) e via `fetch` → `blob` → `URL.createObjectURL`
- * (nunca `<img src={signedUrl}>` cru): a signed URL não fica exposta no DOM/print de tela, e o
- * `objectURL` some no unmount (`revokeObjectURL`) — sem isto, uma conversa com muitas imagens
- * vazaria memória de blob a cada abertura/fechamento do painel.
+ * só quando o card FICA VISÍVEL (`IntersectionObserver`) e usa `<img src={signedUrl}>` DIRETO
+ * (achado A1 do gate — ver comentário de topo do arquivo: `fetch→blob` quebra em prd por CORS,
+ * `<img>` não exige). A signed URL vive só no atributo `src` do `<img>` — nunca é lida de volta
+ * nem persistida em estado além do necessário pra renderizar.
  *
- * 🔒 Sem CSP configurada neste frontend (`grep -rn "Content-Security-Policy\|img-src"` — vazio em
- * toda a árvore, sem `dist`/`node_modules`) — `img-src` não é um risco aqui hoje; o `fetch`→`blob`
- * foi escolhido mesmo assim por ser MAIS testável (mock de `fetch`, sem depender do carregamento
- * de rede de um `<img>` em jsdom) e por nunca deixar a signed URL (300s, mas ainda assim um
- * segredo de curta duração) crua num atributo `src` que sobrevive em devtools/prints.
+ * `onError` do `<img>` cobre DOIS casos sem distingui-los (o browser não diz o motivo): a signed
+ * URL EXPIROU (TTL 300s — acontece se o card ficou fora da tela por mais de 5 min antes de rolar
+ * de volta) ou uma falha de rede/GCS de verdade. Em ambos, a estratégia é a mesma: pedir UMA
+ * signed URL nova (`retriedRef`, nunca reseta — por design de sessão de componente, não por
+ * anexo) e só desistir (estado de erro) se ela TAMBÉM falhar.
  */
 function ImageAttachment({ patientId, attachment, onDownload }: ImageAttachmentProps): JSX.Element {
   const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
-  const [objectUrl, setObjectUrl] = useState<string | null>(null);
+  const [src, setSrc] = useState<string | null>(null);
   const [loadError, setLoadError] = useState(false);
+  const retriedRef = useRef(false);
   const name = attachment.originalName || extensionForContentType(attachment.contentType);
 
   useEffect(() => {
@@ -99,27 +109,31 @@ function ImageAttachment({ patientId, attachment, onDownload }: ImageAttachmentP
     return () => observer.disconnect();
   }, []);
 
+  const requestSignedUrl = useCallback(async (): Promise<void> => {
+    try {
+      const { url } = await AdminConversationApiService.getConversationAttachmentUrl(patientId, attachment.fileId);
+      setSrc(url);
+    } catch {
+      setLoadError(true);
+    }
+  }, [patientId, attachment.fileId]);
+
   useEffect(() => {
-    if (!visible) return undefined;
-    let cancelled = false;
-    let createdUrl: string | null = null;
-    void (async (): Promise<void> => {
-      try {
-        const { url } = await AdminConversationApiService.getConversationAttachmentUrl(patientId, attachment.fileId);
-        const response = await fetch(url);
-        const blob = await response.blob();
-        if (cancelled) return;
-        createdUrl = URL.createObjectURL(blob);
-        setObjectUrl(createdUrl);
-      } catch {
-        if (!cancelled) setLoadError(true);
-      }
-    })();
-    return () => {
-      cancelled = true;
-      if (createdUrl) URL.revokeObjectURL(createdUrl);
-    };
-  }, [visible, patientId, attachment.fileId]);
+    if (!visible) return;
+    void requestSignedUrl();
+  }, [visible, requestSignedUrl]);
+
+  const handleImageError = useCallback((): void => {
+    if (!retriedRef.current) {
+      retriedRef.current = true;
+      setSrc(null);
+      void requestSignedUrl();
+      return;
+    }
+    setLoadError(true);
+  }, [requestSignedUrl]);
+
+  const showImage = src !== null && !loadError;
 
   return (
     <div
@@ -128,22 +142,23 @@ function ImageAttachment({ patientId, attachment, onDownload }: ImageAttachmentP
       className="flex flex-col gap-1 max-w-[220px] min-w-0"
     >
       <div className="relative group rounded-md overflow-hidden border border-gray-300 bg-gray-200">
-        {objectUrl && (
+        {showImage && (
           <img
-            src={objectUrl}
+            src={src}
             alt={name}
             data-testid={`message-attachment-image-${attachment.fileId}`}
             className="w-full max-h-40 object-cover block"
+            onError={handleImageError}
           />
         )}
-        {!objectUrl && (
+        {!showImage && (
           <div className="w-full h-24 flex items-center justify-center">
             <Text size="xs" className="text-gray-800">
               {loadError ? t('admin.patients.detail.conversation.thread.attachments.downloadError', 'Não conseguimos baixar o arquivo. Tente de novo.') : '…'}
             </Text>
           </div>
         )}
-        {objectUrl && (
+        {showImage && (
           <button
             type="button"
             data-testid={`message-attachment-download-${attachment.fileId}`}

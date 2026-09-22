@@ -114,13 +114,18 @@ test.describe('Chat interno — card redesenhado (ajustes de UI B5) @integration
     await expect(avatar).toBeVisible();
     await expect(avatar).not.toHaveText('');
 
-    // ── imagem: miniatura de verdade (fetch->blob->objectURL), não um placeholder de texto ──
+    // ── imagem: miniatura de verdade (`<img src={signedUrl}>` direto, achado A1 do gate 21/09 —
+    // fetch→blob→objectURL foi removido: quebrava em prd por o bucket não ter CORS; um `<img>`
+    // como subresource não exige CORS), não um placeholder de texto ──
     const img = card.locator('img[data-testid^="message-attachment-image-"]');
     await expect(img).toBeVisible({ timeout: 10_000 });
     const naturalWidth = await img.evaluate((el: HTMLImageElement) => el.naturalWidth);
     expect(naturalWidth).toBeGreaterThan(0);
     const src = await img.getAttribute('src');
-    expect(src).toMatch(/^blob:/); // nunca a signed URL crua no DOM
+    // a signed URL de verdade (v4, `@google-cloud/storage`) — nunca mais um `blob:` local; a
+    // prova de que ISSO sobrevive a um bucket sem CORS é o teste dedicado (`*-thumbnail-cors`).
+    expect(src).toMatch(/^https?:\/\//);
+    expect(src).toContain('X-Goog-Signature');
 
     // ── contraste real do nome e da hora (getComputedStyle, cálculo W3C) ──
     const authorRgb = await card.getByTestId('message-author').evaluate((el) => getComputedStyle(el).color);
