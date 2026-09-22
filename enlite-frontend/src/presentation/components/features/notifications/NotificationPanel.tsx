@@ -69,8 +69,19 @@ export function NotificationPanel({ isOpen, onClose, onNotificationsChanged }: N
       // a operadora não pode ficar presa por um POST que falhou.
     }
     if (notification.patientId) {
+      // Item 3 (deep-link, change 022-ux-mencao-e-notificacao, F10/F11/F12): antes só disparava
+      // `token: Date.now()` pra reabrir o painel — sem alvo nenhum. Agora propaga o `messageId`/
+      // `rootMessageId` REAIS da mensagem de origem; `ConversationPanel` (via
+      // `PatientConversationHandle`) usa isto pra rolar/destacar a mensagem certa.
       navigate(`/admin/patients/${notification.patientId}`, {
-        state: { focusRequest: { code: 'conversation', token: Date.now() } },
+        state: {
+          focusRequest: {
+            code: 'conversation',
+            token: Date.now(),
+            messageId: notification.messageId ?? undefined,
+            rootMessageId: notification.rootMessageId,
+          },
+        },
       });
       onClose();
     }

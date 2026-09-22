@@ -103,6 +103,28 @@ describe('NotificationPanel (spec 022, T412/T413)', () => {
     );
   });
 
+  it('item 3 (deep-link): clique propaga messageId/rootMessageId reais no focusRequest', async () => {
+    vi.mocked(AdminNotificationApiService.listNotifications).mockResolvedValue([
+      notif({ id: 'n1', patientId: 'p42', messageId: 'msg-1', rootMessageId: 'root-1' }),
+    ]);
+    render(<NotificationPanel isOpen onClose={vi.fn()} />);
+
+    fireEvent.click(await screen.findByTestId('notification-item-n1'));
+
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith(
+      '/admin/patients/p42',
+      expect.objectContaining({
+        state: {
+          focusRequest: expect.objectContaining({
+            code: 'conversation',
+            messageId: 'msg-1',
+            rootMessageId: 'root-1',
+          }),
+        },
+      }),
+    ));
+  });
+
   it('notificação sem patientId (edge case): clique marca lida mas NÃO navega', async () => {
     vi.mocked(AdminNotificationApiService.listNotifications).mockResolvedValue([notif({ id: 'n1', patientId: null })]);
     render(<NotificationPanel isOpen onClose={vi.fn()} />);

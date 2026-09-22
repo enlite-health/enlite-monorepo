@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode, type JSX } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type JSX } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   AdminConversationApiService,
@@ -97,9 +97,17 @@ export interface MessageContentProps {
   message: ConversationMessage;
   patientId: string;
   footer?: ReactNode;
+  /**
+   * Deep-link (item 3, change 022-ux-mencao-e-notificacao): `true` = acabou de navegar até esta
+   * mensagem — rola o card até o centro da tela (`scrollIntoView`) e aplica um destaque visual
+   * MOMENTÂNEO. O CALLER (`ConversationPanel`/`ThreadView`) é quem decide QUANDO desligar (timer
+   * de ~2s) — este componente só reage à mudança da prop; a transição de fade acontece quando ela
+   * volta a `false` (CSS `transition-colors`, ver `className` abaixo).
+   */
+  highlighted?: boolean;
 }
 
-export function MessageContent({ message, patientId, footer }: MessageContentProps): JSX.Element {
+export function MessageContent({ message, patientId, footer, highlighted = false }: MessageContentProps): JSX.Element {
   const { t, i18n } = useTranslation();
   const td = (key: string, optsOrDefault?: Record<string, unknown> | string): string =>
     t(`admin.patients.detail.conversation.thread.${key}`, optsOrDefault as string);
@@ -111,8 +119,33 @@ export function MessageContent({ message, patientId, footer }: MessageContentPro
   const connector = td('dateConnector', i18n.language.toLowerCase().startsWith('pt') ? 'às' : 'a las');
   const dateLabel = formatMessageDateTime(message.createdAt, i18n.language, connector);
 
+  const cardRef = useRef<HTMLDivElement>(null);
+  // `prefers-reduced-motion` (MDN, Prior-art do design.md §3): calculado uma vez — o media query
+  // não muda no meio da vida do componente numa sessão real, e ler de novo a cada highlight seria
+  // trabalho redundante.
+  const prefersReducedMotion = useMemo(
+    () => typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches === true,
+    [],
+  );
+
+  useEffect(() => {
+    if (!highlighted) return;
+    // `scrollIntoView` não existe no jsdom (ambiente de teste) — `?.` protege o unit test sem
+    // precisar mockar o DOM inteiro; em navegador real sempre existe.
+    cardRef.current?.scrollIntoView?.({ block: 'center', behavior: prefersReducedMotion ? 'auto' : 'smooth' });
+  }, [highlighted, prefersReducedMotion]);
+
   return (
-    <div data-testid={`message-card-${message.id}`} className="flex flex-col gap-2 rounded-xl border border-gray-300 bg-white p-3 min-w-0">
+    <div
+      ref={cardRef}
+      data-testid={`message-card-${message.id}`}
+      data-highlighted={highlighted ? 'true' : undefined}
+      className={`flex flex-col gap-2 rounded-xl border p-3 min-w-0 ${
+        highlighted
+          ? `message-card-highlighted bg-primary/10 border-primary ${prefersReducedMotion ? '' : 'transition-colors duration-[2000ms]'}`
+          : `bg-white border-gray-300 ${prefersReducedMotion ? '' : 'transition-colors duration-[2000ms]'}`
+      }`}
+    >
       <div className="flex items-center gap-2 min-w-0">
         <MessageAvatar uid={message.authorUid} name={authorName} />
         {/* `min-w-0`: gotcha clássico de flexbox — sem isto, um item flex com `truncate` NUNCA
@@ -165,6 +198,9 @@ interface ThreadViewProps {
    * thread. Opcional: quem não manda, mantém o comportamento antigo (só carrega no mount).
    */
   refreshToken?: number;
+  /** Deep-link (item 3): id da mensagem (root OU reply) a destacar dentro desta thread — `null`/
+   * ausente = nenhum destaque. `ConversationPanel` é quem calcula e limpa depois de ~2s. */
+  highlightMessageId?: string | null;
 }
 
 type ThreadStatus = 'loading' | 'ready' | 'error';
@@ -179,7 +215,7 @@ type ThreadStatus = 'loading' | 'ready' | 'error';
  * decisão de escopo aceita (`tasks.md:682`), não bug.
  */
 export function ThreadView({
-  patientId, rootMessage, onBack, composer, refreshToken,
+  patientId, rootMessage, onBack, composer, refreshToken, highlightMessageId,
 }: ThreadViewProps): JSX.Element {
   const { t } = useTranslation();
   const tk = (key: string): string => t(`admin.patients.detail.conversation.thread.${key}`);
@@ -227,7 +263,7 @@ export function ThreadView({
           ←
         </button>
         <div data-testid="thread-root-message" className="flex-1 min-w-0">
-          <MessageContent message={rootMessage} patientId={patientId} />
+          <MessageContent message={rootMessage} patientId={patientId} highlighted={rootMessage.id === highlightMessageId} />
         </div>
       </div>
       {status === 'loading' && (
@@ -252,7 +288,7 @@ export function ThreadView({
         <ul data-testid="thread-replies-list" className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-2 p-2">
           {replies.map((reply) => (
             <li key={reply.id} data-testid={`thread-reply-${reply.id}`} className="min-w-0">
-              <MessageContent message={reply} patientId={patientId} />
+              <MessageContent message={reply} patientId={patientId} highlighted={reply.id === highlightMessageId} />
             </li>
           ))}
         </ul>

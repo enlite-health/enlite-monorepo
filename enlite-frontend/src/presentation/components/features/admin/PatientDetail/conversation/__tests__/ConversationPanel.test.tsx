@@ -546,4 +546,69 @@ describe('ConversationPanel', () => {
       await waitFor(() => expect(screen.getByTestId('thread-view')).toBeInTheDocument());
     });
   });
+
+  describe('item 3 (change 022-ux-mencao-e-notificacao) — deep-link: rola/destaca a mensagem-alvo da notificação', () => {
+    it('feliz: mensagem-alvo já está na 1ª página — destaque aplicado direto, sem página extra', async () => {
+      getConversation.mockResolvedValue({
+        conversationId: 'conv-1',
+        messages: [msg({ id: 'm1' }), msg({ id: 'm2' })],
+        nextCursor: null,
+      });
+      render(<ConversationPanel patientId="p1" isOpen focusTarget={{ messageId: 'm2', rootMessageId: null }} />);
+
+      await waitFor(() => expect(screen.getByTestId('message-card-m2')).toHaveAttribute('data-highlighted', 'true'));
+      expect(screen.getByTestId('message-card-m1')).not.toHaveAttribute('data-highlighted');
+      expect(getConversation).toHaveBeenCalledTimes(1); // já estava carregada — nenhum loop de página
+    });
+
+    it('alt: mensagem-alvo fora da 1ª página — carrega páginas em loop até achar, sem travar a UI', async () => {
+      getConversation
+        .mockResolvedValueOnce({ conversationId: 'conv-1', messages: [msg({ id: 'm1' })], nextCursor: 'cursor-1' })
+        .mockResolvedValueOnce({ conversationId: 'conv-1', messages: [msg({ id: 'm2' })], nextCursor: null });
+      render(<ConversationPanel patientId="p1" isOpen focusTarget={{ messageId: 'm2', rootMessageId: null }} />);
+
+      await waitFor(() => expect(screen.getByTestId('message-card-m2')).toBeInTheDocument());
+      expect(screen.getByTestId('message-card-m2')).toHaveAttribute('data-highlighted', 'true');
+      expect(getConversation).toHaveBeenCalledTimes(2);
+      expect(getConversation).toHaveBeenNthCalledWith(2, 'p1', { after: 'cursor-1' });
+    });
+
+    it('alt: mensagem-alvo é REPLY (rootMessageId presente) — abre a thread certa e destaca a reply dentro dela', async () => {
+      getConversation.mockResolvedValue({
+        conversationId: 'conv-1',
+        messages: [msg({ id: 'root-1', replyCount: 1 })],
+        nextCursor: null,
+      });
+      getConversationReplies.mockResolvedValue([msg({ id: 'reply-1', body: 'resposta' })]);
+      render(<ConversationPanel patientId="p1" isOpen focusTarget={{ messageId: 'reply-1', rootMessageId: 'root-1' }} />);
+
+      await waitFor(() => expect(screen.getByTestId('thread-view')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByTestId('message-card-reply-1')).toHaveAttribute('data-highlighted', 'true'));
+    });
+
+    it('alt: esgota as páginas sem achar — mostra estado "não encontrada", não trava a UI', async () => {
+      getConversation.mockResolvedValue({ conversationId: 'conv-1', messages: [msg({ id: 'm1' })], nextCursor: null });
+      render(<ConversationPanel patientId="p1" isOpen focusTarget={{ messageId: 'nunca-existiu', rootMessageId: null }} />);
+
+      await waitFor(() => expect(screen.getByTestId('conversation-message-not-found')).toBeInTheDocument());
+      expect(screen.getByTestId('conversation-panel-list')).toBeInTheDocument(); // painel continua usável
+    });
+
+    it('onFocusHandled é chamado depois de processar o alvo (achado)', async () => {
+      const onFocusHandled = vi.fn();
+      getConversation.mockResolvedValue({ conversationId: 'conv-1', messages: [msg({ id: 'm1' })], nextCursor: null });
+      render(<ConversationPanel patientId="p1" isOpen focusTarget={{ messageId: 'm1', rootMessageId: null }} onFocusHandled={onFocusHandled} />);
+
+      await waitFor(() => expect(onFocusHandled).toHaveBeenCalledTimes(1));
+    });
+
+    it('sem focusTarget: nenhum destaque, comportamento normal preservado', async () => {
+      getConversation.mockResolvedValue({ conversationId: 'conv-1', messages: [msg({ id: 'm1' })], nextCursor: null });
+      render(<ConversationPanel patientId="p1" isOpen />);
+
+      await waitFor(() => expect(screen.getByTestId('message-card-m1')).toBeInTheDocument());
+      expect(screen.getByTestId('message-card-m1')).not.toHaveAttribute('data-highlighted');
+      expect(screen.queryByTestId('conversation-message-not-found')).not.toBeInTheDocument();
+    });
+  });
 });
