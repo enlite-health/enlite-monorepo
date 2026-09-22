@@ -34,6 +34,9 @@ export interface TopMessageRow {
   id: string;
   conversationId: string;
   authorUid: string;
+  /** Item 5a (F19, achado "un uid cru" em prd): nome resolvido por JOIN no SERVIDOR — null
+   *  quando o autor não tem registro em `users` (defesa, nunca esperado no caminho normal). */
+  authorDisplayName: string | null;
   body: string;
   createdAt: Date;
   editedAt: Date | null;
@@ -41,6 +44,10 @@ export interface TopMessageRow {
   replyCount: number;
   lastReplyAt: Date | null;
   mentions: string[];
+  /** Item 5a — nome de cada uid de `mentions` (mesma agregação, mesma query). `null` quando o
+   *  uid mencionado não tem `display_name` resolvível (JOIN vazio) — o front cai no uid como
+   *  hoje, mas deixa de depender do cache do navegador (F20) para o caso comum. */
+  mentionDisplayNames: Record<string, string | null>;
   attachments: AttachmentRow[];
 }
 
@@ -79,11 +86,15 @@ export interface ReplyMessageRow {
   conversationId: string;
   rootMessageId: string;
   authorUid: string;
+  /** Item 5a — mesma resolução de `TopMessageRow.authorDisplayName`, por JOIN no servidor. */
+  authorDisplayName: string | null;
   body: string;
   createdAt: Date;
   editedAt: Date | null;
   deletedAt: Date | null;
   mentions: string[];
+  /** Item 5a — mesma forma de `TopMessageRow.mentionDisplayNames`. */
+  mentionDisplayNames: Record<string, string | null>;
   attachments: AttachmentRow[];
 }
 
@@ -110,6 +121,7 @@ interface RawTopMessageRow {
   id: string;
   conversationId: string;
   authorUid: string;
+  authorDisplayName: string | null;
   bodyEncrypted: string | null;
   createdAt: Date;
   editedAt: Date | null;
@@ -123,6 +135,7 @@ interface RawReplyRow {
   conversationId: string;
   rootMessageId: string;
   authorUid: string;
+  authorDisplayName: string | null;
   bodyEncrypted: string | null;
   createdAt: Date;
   editedAt: Date | null;
@@ -132,6 +145,13 @@ interface RawReplyRow {
 interface RawMentionRow {
   messageId: string;
   mentionedUid: string;
+  mentionedDisplayName: string | null;
+}
+
+/** Agregação por mensagem: uids (ordem alfabética, forma inalterada) + nome de cada um. */
+interface MentionAggregate {
+  uids: string[];
+  displayNames: Record<string, string | null>;
 }
 
 interface RawAttachmentRow {
@@ -181,6 +201,7 @@ export class ConversationRepository {
           m.id,
           m.conversation_id AS "conversationId",
           m.author_uid AS "authorUid",
+          ua.display_name AS "authorDisplayName",
           m.body_encrypted AS "bodyEncrypted",
           m.created_at AS "createdAt",
           m.edited_at AS "editedAt",
@@ -188,6 +209,7 @@ export class ConversationRepository {
           COALESCE(r.reply_count, 0)::int AS "replyCount",
           r.last_reply_at AS "lastReplyAt"
        FROM conversation_messages m
+       LEFT JOIN users ua ON ua.firebase_uid = m.author_uid
        LEFT JOIN (
          SELECT root_message_id, COUNT(*) AS reply_count, MAX(created_at) AS last_reply_at
          FROM conversation_messages
@@ -212,13 +234,15 @@ export class ConversationRepository {
       id: row.id,
       conversationId: row.conversationId,
       authorUid: row.authorUid,
+      authorDisplayName: row.authorDisplayName ?? null,
       body: bodies[i],
       createdAt: row.createdAt,
       editedAt: row.editedAt,
       deletedAt: row.deletedAt,
       replyCount: row.replyCount,
       lastReplyAt: row.lastReplyAt,
-      mentions: mentionsByMessageId.get(row.id) ?? [],
+      mentions: mentionsByMessageId.get(row.id)?.uids ?? [],
+      mentionDisplayNames: mentionsByMessageId.get(row.id)?.displayNames ?? {},
       attachments: attachmentsByMessageId.get(row.id) ?? [],
     }));
   }
@@ -231,16 +255,24 @@ export class ConversationRepository {
    * `(message_id, mentioned_uid)`; a ordem de leitura do corpo, se algum dia importar para a UI,
    * é responsabilidade de quem grava, não desta leitura).
    */
+  /**
+   * Item 5a (F19, gap irmão do `authorDisplayName`): o `LEFT JOIN users` traz o nome de cada uid
+   * mencionado NA MESMA query — nunca uma 2ª chamada por mensagem/menção. `mentions` (uids, ordem
+   * alfabética) fica bit-a-bit igual ao que já existia (contrato/testes existentes inalterados);
+   * `mentionDisplayNames` é aditivo. `mentionedDisplayName: null` quando o uid mencionado não tem
+   * `display_name` resolvível (JOIN vazio) — o caller decide o fallback (uid cru), nunca aqui.
+   */
   private async fetchMentionsByMessageIds(
     messageIds: string[],
     executor: Pool | PoolClient,
-  ): Promise<Map<string, string[]>> {
-    const mentionsByMessageId = new Map<string, string[]>();
+  ): Promise<Map<string, MentionAggregate>> {
+    const mentionsByMessageId = new Map<string, MentionAggregate>();
     if (messageIds.length === 0) return mentionsByMessageId;
 
     const { rows } = await executor.query<RawMentionRow>(
-      `SELECT message_id AS "messageId", mentioned_uid AS "mentionedUid"
+      `SELECT message_id AS "messageId", mentioned_uid AS "mentionedUid", u.display_name AS "mentionedDisplayName"
          FROM conversation_message_mentions
+         LEFT JOIN users u ON u.firebase_uid = conversation_message_mentions.mentioned_uid
         WHERE message_id = ANY($1::uuid[])
         ORDER BY message_id, mentioned_uid`,
       [messageIds],
@@ -248,8 +280,15 @@ export class ConversationRepository {
 
     for (const row of rows) {
       const existing = mentionsByMessageId.get(row.messageId);
-      if (existing) existing.push(row.mentionedUid);
-      else mentionsByMessageId.set(row.messageId, [row.mentionedUid]);
+      if (existing) {
+        existing.uids.push(row.mentionedUid);
+        existing.displayNames[row.mentionedUid] = row.mentionedDisplayName;
+      } else {
+        mentionsByMessageId.set(row.messageId, {
+          uids: [row.mentionedUid],
+          displayNames: { [row.mentionedUid]: row.mentionedDisplayName },
+        });
+      }
     }
     return mentionsByMessageId;
   }
@@ -351,11 +390,13 @@ export class ConversationRepository {
           conversation_id AS "conversationId",
           root_message_id AS "rootMessageId",
           author_uid AS "authorUid",
+          ua.display_name AS "authorDisplayName",
           body_encrypted AS "bodyEncrypted",
           created_at AS "createdAt",
           edited_at AS "editedAt",
           deleted_at AS "deletedAt"
        FROM conversation_messages
+       LEFT JOIN users ua ON ua.firebase_uid = conversation_messages.author_uid
        WHERE root_message_id = $1
        ORDER BY created_at ASC, id ASC`,
       [rootMessageId],
@@ -372,11 +413,13 @@ export class ConversationRepository {
       conversationId: row.conversationId,
       rootMessageId: row.rootMessageId,
       authorUid: row.authorUid,
+      authorDisplayName: row.authorDisplayName ?? null,
       body: bodies[i],
       createdAt: row.createdAt,
       editedAt: row.editedAt,
       deletedAt: row.deletedAt,
-      mentions: mentionsByMessageId.get(row.id) ?? [],
+      mentions: mentionsByMessageId.get(row.id)?.uids ?? [],
+      mentionDisplayNames: mentionsByMessageId.get(row.id)?.displayNames ?? {},
       attachments: attachmentsByMessageId.get(row.id) ?? [],
     }));
   }

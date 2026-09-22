@@ -323,6 +323,31 @@ describe('Conversa do paciente (spec 022, Bloco 1) — HTTP real, Postgres real,
     expect(replies.body.data.messages[0].mentions).toEqual([U.outro]);
   });
 
+  it('12b. item 5a — authorDisplayName/mentionDisplayNames vêm do SERVIDOR, sem depender de cache do navegador (F19/F20)', async () => {
+    const topo = await chamar('POST', `/api/admin/patients/${PATIENT}/conversation/messages`, U.autor, {
+      body: `msg-12b <@${U.outro}>`,
+    });
+    expect(topo.status).toBe(201);
+    const topoId = topo.body.data.id;
+
+    // U.outro nunca buscou nada no autocomplete desta sessão (não há "sessão de navegador" nenhuma
+    // aqui — é HTTP puro) — se o nome aparecesse só por cache do cliente, sairia null/uid cru.
+    const lista = await chamar('GET', `/api/admin/patients/${PATIENT}/conversation`, U.outro);
+    const linhaTopo = lista.body.data.messages.find((m: { id: string }) => m.id === topoId);
+    expect(linhaTopo.authorDisplayName).toBe('Autor'); // display_name de U.autor, resolvido por JOIN
+    expect(linhaTopo.mentionDisplayNames).toEqual({ [U.outro]: 'Outro' });
+
+    const reply = await chamar('POST', `/api/admin/patients/${PATIENT}/conversation/messages`, U.outro, {
+      body: `msg-12b-reply <@${U.autor}>`,
+      rootMessageId: topoId,
+    });
+    expect(reply.status).toBe(201);
+
+    const replies = await chamar('GET', `/api/admin/patients/${PATIENT}/conversation/messages/${topoId}/replies`, U.autor);
+    expect(replies.body.data.messages[0].authorDisplayName).toBe('Outro');
+    expect(replies.body.data.messages[0].mentionDisplayNames).toEqual({ [U.autor]: 'Autor' });
+  });
+
   it('13. GET replies com :mid de OUTRO paciente — 404 (nunca vaza a thread alheia; fecho da classe do gate revisao-pr)', async () => {
     const topoOutro = await chamar('POST', `/api/admin/patients/${PATIENT_OUTRO}/conversation/messages`, U.autor, {
       body: 'msg-13-de-outro-paciente',

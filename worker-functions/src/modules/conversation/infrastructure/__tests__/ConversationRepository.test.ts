@@ -306,6 +306,117 @@ describe('ConversationRepository', () => {
     });
   });
 
+  describe('mentionDisplayNames — nome de cada menção resolvido na MESMA leitura (item 5a, gap irmão de authorDisplayName, F19)', () => {
+    it('listTopMessages: cada uid mencionado ganha displayName no mapa, na MESMA query de mentions (sem query nova)', async () => {
+      const query = jest
+        .fn()
+        .mockResolvedValueOnce({ rows: [topRow({ id: 'm1' }), topRow({ id: 'm2' })] })
+        .mockResolvedValueOnce({
+          rows: [
+            { messageId: 'm1', mentionedUid: 'staff:2', mentionedDisplayName: 'Fulano' },
+            { messageId: 'm1', mentionedUid: 'staff:3', mentionedDisplayName: 'Beltrano' },
+            { messageId: 'm2', mentionedUid: 'staff:4', mentionedDisplayName: null },
+          ],
+        })
+        .mockResolvedValueOnce({ rows: [] });
+      const repo = new ConversationRepository(poolWith(query));
+
+      const out = await repo.listTopMessages(CONVERSATION_ID, null, 50);
+
+      // continua exatamente 3 chamadas — o nome vem da MESMA query de mentions, não de uma nova.
+      expect(query).toHaveBeenCalledTimes(3);
+      const m1 = out.find((m) => m.id === 'm1');
+      const m2 = out.find((m) => m.id === 'm2');
+      expect(m1?.mentions).toEqual(['staff:2', 'staff:3']); // uids inalterados (compat)
+      expect(m1?.mentionDisplayNames).toEqual({ 'staff:2': 'Fulano', 'staff:3': 'Beltrano' });
+      expect(m2?.mentionDisplayNames).toEqual({ 'staff:4': null }); // uid mencionado sem cadastro/JOIN vazio
+    });
+
+    it('listTopMessages: mensagem sem menção nenhuma devolve mentionDisplayNames: {} (nunca undefined)', async () => {
+      const query = jest
+        .fn()
+        .mockResolvedValueOnce({ rows: [topRow({ id: 'm1' })] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] });
+      const repo = new ConversationRepository(poolWith(query));
+
+      const [out] = await repo.listTopMessages(CONVERSATION_ID, null, 50);
+
+      expect(out.mentionDisplayNames).toEqual({});
+    });
+
+    it('a query de mentions faz LEFT JOIN users sem quebrar o WHERE já testado (message_id = ANY)', async () => {
+      const query = jest
+        .fn()
+        .mockResolvedValueOnce({ rows: [topRow({ id: 'm1' })] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] });
+      const repo = new ConversationRepository(poolWith(query));
+
+      await repo.listTopMessages(CONVERSATION_ID, null, 50);
+
+      const [mentionsSql] = query.mock.calls[1];
+      expect(mentionsSql).toContain('LEFT JOIN users');
+      expect(mentionsSql).toContain('WHERE message_id = ANY($1::uuid[])');
+    });
+
+    it('listReplies: mesmo mapa de nomes, por reply', async () => {
+      const query = jest
+        .fn()
+        .mockResolvedValueOnce({ rows: [replyRow({ id: 'r1' })] })
+        .mockResolvedValueOnce({ rows: [{ messageId: 'r1', mentionedUid: 'staff:9', mentionedDisplayName: 'Ciclana' }] })
+        .mockResolvedValueOnce({ rows: [] });
+      const repo = new ConversationRepository(poolWith(query));
+
+      const [out] = await repo.listReplies('m1');
+
+      expect(out.mentionDisplayNames).toEqual({ 'staff:9': 'Ciclana' });
+    });
+  });
+
+  describe('authorDisplayName — nome do autor por JOIN no servidor (item 5a, "un uid cru" em prd)', () => {
+    it('listTopMessages: SELECT ganha LEFT JOIN users e devolve authorDisplayName da linha', async () => {
+      const query = jest.fn().mockResolvedValue({
+        rows: [{ ...topRow({ id: 'm1', authorUid: 'staff:1' }), authorDisplayName: 'Fulano de Tal' }],
+      });
+      const repo = new ConversationRepository(poolWith(query));
+
+      const [out] = await repo.listTopMessages(CONVERSATION_ID, null, 50);
+
+      expect(out.authorDisplayName).toBe('Fulano de Tal');
+      const [sql] = query.mock.calls[0];
+      expect(sql).toContain('LEFT JOIN users');
+      expect(sql).toContain('"authorDisplayName"');
+    });
+
+    it('listTopMessages: autor sem registro em users (JOIN vazio) devolve authorDisplayName null, nunca undefined', async () => {
+      const query = jest.fn().mockResolvedValue({
+        rows: [{ ...topRow({ id: 'm1' }), authorDisplayName: null }],
+      });
+      const repo = new ConversationRepository(poolWith(query));
+
+      const [out] = await repo.listTopMessages(CONVERSATION_ID, null, 50);
+
+      expect(out.authorDisplayName).toBeNull();
+    });
+
+    it('listReplies: mesma resolução de authorDisplayName por JOIN', async () => {
+      const query = jest.fn().mockResolvedValue({
+        rows: [{ ...replyRow({ id: 'r1', authorUid: 'staff:1' }), authorDisplayName: 'Fulano de Tal' }],
+      });
+      const repo = new ConversationRepository(poolWith(query));
+
+      const [out] = await repo.listReplies('m1');
+
+      expect(out.authorDisplayName).toBe('Fulano de Tal');
+      const [sql] = query.mock.calls[0];
+      expect(sql).toContain('LEFT JOIN users');
+      // as duas asserções já existentes (WHERE/ORDER BY) continuam válidas — SQL só ganhou o JOIN.
+      expect(sql).toContain('WHERE root_message_id = $1');
+      expect(sql).toContain('ORDER BY created_at ASC, id ASC');
+    });
+  });
+
   describe('attachments — agregação por mensagem (achado fechado no Bloco 3, evidencias/b3-backend-anexo.md)', () => {
     it('listTopMessages: UMA query com JOIN+ANY para anexos de VÁRIAS mensagens — nunca uma por mensagem (evita N+1)', async () => {
       const query = jest
