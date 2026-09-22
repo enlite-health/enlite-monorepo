@@ -98,6 +98,10 @@ test.describe('Deep-link — scroll + destaque momentâneo (item 3) @integration
     await openBellAndClickLatest(page, 'QA');
 
     await expect(page).toHaveURL(new RegExp(`/admin/patients/${patientId}`));
+    // D3 (achado da revisão visual da Fase 2, 22/09): o painel de notificações continuava aberto
+    // cobrindo a conversa depois do deep-link — deve fechar ao navegar.
+    const notificationPanel = page.getByTestId('notification-panel');
+    await expect(notificationPanel).toHaveClass(/translate-x-full/);
     const card = page.getByTestId(`message-card-${messageId}`);
     await expect(card).toBeVisible({ timeout: 10_000 });
     // presente logo após o clique...
