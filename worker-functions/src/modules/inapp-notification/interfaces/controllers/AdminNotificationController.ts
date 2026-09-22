@@ -24,6 +24,8 @@ function toNotificationDto(row: NotificationDto) {
     patientDisplayName: row.patientDisplayName,
     conversationId: row.conversationId,
     messageId: row.messageId,
+    rootMessageId: row.rootMessageId,
+    messageExcerpt: row.messageExcerpt,
     createdAt: row.createdAt.toISOString(),
     readAt: row.readAt ? row.readAt.toISOString() : null,
   };

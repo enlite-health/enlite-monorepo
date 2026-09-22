@@ -411,9 +411,11 @@ describe('ConversationRepository', () => {
       expect(out.authorDisplayName).toBe('Fulano de Tal');
       const [sql] = query.mock.calls[0];
       expect(sql).toContain('LEFT JOIN users');
-      // as duas asserções já existentes (WHERE/ORDER BY) continuam válidas — SQL só ganhou o JOIN.
-      expect(sql).toContain('WHERE root_message_id = $1');
-      expect(sql).toContain('ORDER BY created_at ASC, id ASC');
+      // WHERE/ORDER BY continuam filtrando/ordenando pela MESMA coluna — só precisaram ganhar o
+      // prefixo da tabela porque o JOIN com `users` (que também tem `created_at`) tornaria a
+      // coluna ambígua sem qualificar (achado rodando contra Postgres real, 42702).
+      expect(sql).toContain('WHERE conversation_messages.root_message_id = $1');
+      expect(sql).toContain('ORDER BY conversation_messages.created_at ASC, conversation_messages.id ASC');
     });
   });
 
@@ -626,8 +628,11 @@ describe('ConversationRepository', () => {
       await repo.listReplies('m1');
 
       const [sql, params] = query.mock.calls[0];
-      expect(sql).toContain('WHERE root_message_id = $1');
-      expect(sql).toContain('ORDER BY created_at ASC, id ASC');
+      // Qualificado com `conversation_messages.` (achado rodando contra Postgres real, 42702):
+      // o `LEFT JOIN users` do item 5a tem `created_at` também, então a coluna sem prefixo vira
+      // ambígua — mesma coluna, mesmo filtro/ordenação, só precisou nomear a tabela.
+      expect(sql).toContain('WHERE conversation_messages.root_message_id = $1');
+      expect(sql).toContain('ORDER BY conversation_messages.created_at ASC, conversation_messages.id ASC');
       expect(params).toEqual(['m1']);
     });
 

@@ -11,6 +11,15 @@
  */
 import type { Pool, PoolClient } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
+import { mapWithConcurrency } from '@shared/async/mapWithConcurrency';
+import { reportError } from '@shared/logging';
+
+/** Limite de decifra KMS em paralelo — mesmo valor de `ConversationRepository` (D-01). */
+const DECRYPT_CONCURRENCY_LIMIT = 10;
+
+/** Trecho da notificação (item 2, design.md §2) — mesmo teto citado no contrato/spec. */
+const MESSAGE_EXCERPT_MAX_LENGTH = 140;
 
 export type NotificationTypeCode = 'CONVERSATION_MENTIONED' | 'CONVERSATION_REPLIED';
 
@@ -53,9 +62,11 @@ export interface ListNotificationsOptions {
 
 export class NotificationRepository {
   private pool: Pool;
+  private encryptionService: KMSEncryptionService;
 
-  constructor(pool?: Pool) {
+  constructor(pool?: Pool, encryptionService?: KMSEncryptionService) {
     this.pool = pool ?? DatabaseConnection.getInstance().getPool();
+    this.encryptionService = encryptionService ?? new KMSEncryptionService();
   }
 
   /**
@@ -175,5 +186,67 @@ export class NotificationRepository {
     if (!row) return null;
     const full = [row.firstName, row.lastName].filter(Boolean).join(' ').trim();
     return full.length > 0 ? full : null;
+  }
+
+  /**
+   * Item 3 (deep-link, F10/F11 de `fatos-medidos.md`): `root_message_id` de cada mensagem de
+   * origem das notificações, EM LOTE (mesma disciplina anti-N+1 de
+   * `ConversationRepository.fetchMentionsByMessageIds`). Ungated de propósito — igual ao
+   * `messageId` que a notificação já carrega hoje (F10), o alvo do deep-link não depende da
+   * célula de leitura do paciente (a UI decide "sem acesso" separadamente, F-scenario "clique em
+   * notificação sem célula"). `null` no Map (via `rootMessageId: null` na linha) significa que a
+   * própria mensagem É o root; messageId sem linha correspondente (mensagem removida?) não entra
+   * no Map — o caller trata ausência como "sem dado", nunca lança.
+   */
+  async findRootMessageIds(
+    messageIds: string[],
+    executor: Pool | PoolClient = this.pool,
+  ): Promise<Map<string, string | null>> {
+    const rootByMessageId = new Map<string, string | null>();
+    if (messageIds.length === 0) return rootByMessageId;
+
+    const { rows } = await executor.query<{ id: string; rootMessageId: string | null }>(
+      `SELECT id, root_message_id AS "rootMessageId" FROM conversation_messages WHERE id = ANY($1::uuid[])`,
+      [messageIds],
+    );
+    for (const row of rows) rootByMessageId.set(row.id, row.rootMessageId);
+    return rootByMessageId;
+  }
+
+  /**
+   * Item 2 (card com trecho, F8/F9 de `fatos-medidos.md`): trecho decifrado (~140 chars) do corpo
+   * de cada mensagem — SÓ chamado pelo use case para as linhas em que o DESTINATÁRIO já tem
+   * `patient_conversation:read` (mesmo gate de `findPatientDisplayName`, F7 — reusado, nunca
+   * duplicado aqui). Decifra em LOTE com `mapWithConcurrency`, mesmo limite (10) e mesmo padrão de
+   * `ConversationRepository.listTopMessages` (D-01). Corta em `MESSAGE_EXCERPT_MAX_LENGTH` chars
+   * DEPOIS de decifrar — nunca corta o ciphertext. Falha de decifra de UMA linha isola só aquela
+   * (`null`, mesmo padrão de `patientDisplayName` ausente); `reportError` leva só `messageId`,
+   * NUNCA o corpo/ciphertext (regra dura: texto clínico nunca em log).
+   */
+  async findMessageExcerpts(
+    messageIds: string[],
+    executor: Pool | PoolClient = this.pool,
+  ): Promise<Map<string, string | null>> {
+    const excerptByMessageId = new Map<string, string | null>();
+    if (messageIds.length === 0) return excerptByMessageId;
+
+    const { rows } = await executor.query<{ id: string; bodyEncrypted: string | null }>(
+      `SELECT id, body_encrypted AS "bodyEncrypted" FROM conversation_messages WHERE id = ANY($1::uuid[])`,
+      [messageIds],
+    );
+
+    const excerpts = await mapWithConcurrency(rows, DECRYPT_CONCURRENCY_LIMIT, async (row) => {
+      try {
+        const body = await this.encryptionService.decrypt(row.bodyEncrypted);
+        return body.length > MESSAGE_EXCERPT_MAX_LENGTH ? body.slice(0, MESSAGE_EXCERPT_MAX_LENGTH) : body;
+      } catch (error) {
+        const err = error instanceof Error ? error : new Error(String(error));
+        reportError(err, { source: 'NotificationRepository:findMessageExcerpts', messageId: row.id });
+        return null;
+      }
+    });
+
+    rows.forEach((row, i) => excerptByMessageId.set(row.id, excerpts[i]));
+    return excerptByMessageId;
   }
 }

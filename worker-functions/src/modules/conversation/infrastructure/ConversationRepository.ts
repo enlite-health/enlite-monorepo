@@ -386,19 +386,19 @@ export class ConversationRepository {
   ): Promise<ReplyMessageRow[]> {
     const { rows } = await executor.query<RawReplyRow>(
       `SELECT
-          id,
-          conversation_id AS "conversationId",
-          root_message_id AS "rootMessageId",
-          author_uid AS "authorUid",
+          conversation_messages.id,
+          conversation_messages.conversation_id AS "conversationId",
+          conversation_messages.root_message_id AS "rootMessageId",
+          conversation_messages.author_uid AS "authorUid",
           ua.display_name AS "authorDisplayName",
-          body_encrypted AS "bodyEncrypted",
-          created_at AS "createdAt",
-          edited_at AS "editedAt",
-          deleted_at AS "deletedAt"
+          conversation_messages.body_encrypted AS "bodyEncrypted",
+          conversation_messages.created_at AS "createdAt",
+          conversation_messages.edited_at AS "editedAt",
+          conversation_messages.deleted_at AS "deletedAt"
        FROM conversation_messages
        LEFT JOIN users ua ON ua.firebase_uid = conversation_messages.author_uid
-       WHERE root_message_id = $1
-       ORDER BY created_at ASC, id ASC`,
+       WHERE conversation_messages.root_message_id = $1
+       ORDER BY conversation_messages.created_at ASC, conversation_messages.id ASC`,
       [rootMessageId],
     );
 

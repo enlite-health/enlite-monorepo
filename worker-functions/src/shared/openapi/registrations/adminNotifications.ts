@@ -20,6 +20,18 @@ const NotificationItem = z.object({
   }),
   conversationId: z.string().uuid().nullable(),
   messageId: z.string().uuid().nullable(),
+  rootMessageId: z.string().uuid().nullable().openapi({
+    description:
+      'Item 3 (deep-link, change 022-ux-mencao-e-notificacao): `null` quando a mensagem de origem '
+      + 'É o root, preenchido quando é reply. UNGATED — igual ao `messageId`, não depende de '
+      + '`patient_conversation:read` (a UI decide "sem acesso" separadamente).',
+  }),
+  messageExcerpt: z.string().nullable().openapi({
+    description:
+      'Item 2: até 140 caracteres do corpo, decifrado NA LEITURA. MESMO gate de '
+      + '`patientDisplayName` — `null` se o destinatário não tiver `patient_conversation:read` para '
+      + 'o paciente da conversa, ou se a decifra falhar. Nunca persistido em `payload`.',
+  }),
   createdAt: z.string(),
   readAt: z.string().nullable(),
 });
