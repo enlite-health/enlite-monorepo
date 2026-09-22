@@ -85,6 +85,9 @@ export interface CreateConversationMessageResult {
 export interface StaffDirectoryEntry {
   uid: string;
   displayName: string;
+  /** Janela de 5min calculada no servidor (`last_seen_at`, nunca exposto cru) — Rodada 2/R2-B,
+   * usado pela bolinha de presença do popup de menção estilo ClickUp. */
+  isOnline: boolean;
 }
 
 export interface UploadConversationAttachmentResult {
@@ -204,8 +207,15 @@ export class AdminConversationApiServiceClass {
 
   // ========== Diretório de staff (autocomplete de menção) ==========
 
-  async searchStaffDirectory(q: string): Promise<StaffDirectoryEntry[]> {
-    return this.requestJson<StaffDirectoryEntry[]>('GET', `/api/admin/staff-directory?q=${encodeURIComponent(q)}`);
+  /** `limit` (Rodada 2/R2-B, "Mostrar todos" do popup estilo ClickUp): opcional — omitido, o
+   * controller decide o default (20); até o teto do backend (200) quando informado.
+   *
+   * `encodeURIComponent` direto (não `URLSearchParams`): preserva `%20` em vez de `+` — mantém a
+   * forma de querystring que o teste/contrato já fixava antes do `limit` existir. */
+  async searchStaffDirectory(q: string, limit?: number): Promise<StaffDirectoryEntry[]> {
+    const params = [`q=${encodeURIComponent(q)}`];
+    if (limit !== undefined) params.push(`limit=${limit}`);
+    return this.requestJson<StaffDirectoryEntry[]>('GET', `/api/admin/staff-directory?${params.join('&')}`);
   }
 }
 

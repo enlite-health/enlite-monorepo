@@ -74,6 +74,10 @@ describe('SCREEN_REGISTRY — paridade com o catálogo do back', () => {
       // tratamento já dado a `staff_directory:read` logo abaixo.
       'own_notifications:read',
       'own_notifications:update',
+      // Spec 022, Rodada 2 (migrations 465/466): `own_presence:update` é o heartbeat de presença
+      // (popup de menção estilo ClickUp) — MESMA categoria de `own_notifications:*` acima, sem
+      // rota própria em `App.tsx` por desenho (não é uma tela, é uma chamada de fundo).
+      'own_presence:update',
       'patient:write',
       'patient_clinical:write',
       'prescreening:write',

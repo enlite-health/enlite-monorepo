@@ -17,6 +17,9 @@ const MODULES = [
   { name: 'integration',  barrel: '@modules/integration',     pathBase: 'modules' },
   { name: 'worker',       barrel: '@modules/worker',          pathBase: 'modules' },
   { name: 'matching',     barrel: '@modules/matching',        pathBase: 'modules',  subdirs: ['domain', 'infrastructure', 'application', 'interfaces'] },
+  // Extraído de identity em 22/09/2026 (change 022-ux-mencao-e-notificacao, R2): heartbeat de
+  // presença é reusável fora do staff-directory — ver `src/modules/presence/index.ts`.
+  { name: 'presence',     barrel: '@modules/presence',        pathBase: 'modules',  subdirs: ['infrastructure', 'application', 'interfaces'] },
   // Submódulo de identity com fronteira PRÓPRIA (D115 §7: extraível para
   // permission-service). Fica listado à parte porque o override de `identity`
   // desliga a regra dentro de `src/modules/identity/**` — sem esta entrada,

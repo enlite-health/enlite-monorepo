@@ -109,7 +109,11 @@
       "selectedCount": "{{count}} seleccionados"
     },
     "yes": "Sí",
-    "no": "No"
+    "no": "No",
+    "presence": {
+      "online": "En línea",
+      "offline": "Desconectado"
+    }
   },
   "sidebar": {
     "expandMenu": "Expandir menú",
@@ -3892,7 +3896,9 @@
               "uploading": "Subiendo…",
               "max": "Máximo 5 archivos adjuntos"
             },
-            "mentionDirectoryError": "No se pudo buscar. Probá escribir de nuevo."
+            "mentionDirectoryError": "No se pudo buscar. Probá escribir de nuevo.",
+            "mentionListLabel": "Mencionar a alguien",
+            "mentionShowAll": "Mostrar todos"
           }
         }
       },
@@ -4334,6 +4340,7 @@
             "anacare_hours": "Conferencia de horas del Ana Care",
             "patient_conversation": "Conversación del paciente",
             "own_notifications": "Mis notificaciones",
+            "own_presence": "Mi presencia en línea",
             "staff_directory": "Directorio del equipo"
           },
           "help": {
@@ -5385,6 +5392,8 @@
     "notifications": {
       "mentioned": "{{actor}} mencionó a vos en {{patient}}",
       "replied": "{{actor}} respondió en la conversación de {{patient}}",
+      "generic": "{{actor}} tiene una actualización para vos",
+      "inPatient": "en {{patient}}",
       "markAllRead": "Marcar todas como leídas",
       "unknownPatient": "un paciente",
       "bellLabel": "Notificaciones",

@@ -394,6 +394,10 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'GET /api/admin/notifications/unread-count → own_notifications:read',
         'POST /api/admin/notifications/:id/read → own_notifications:update',
         'POST /api/admin/notifications/read-all → own_notifications:update',
+        // Presença/heartbeat (Rodada 2/R2-B, `adminPresenceRoutes.ts`, src/index.ts:451) —
+        // família `admin.users`, célula NOVA `own_presence:update` (nasce concedida a todo
+        // staff, mesma regra de `own_notifications`, D-07; migration 466).
+        'POST /api/admin/me/presence → own_presence:update',
       ].sort(),
     );
   });

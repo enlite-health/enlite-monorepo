@@ -222,10 +222,10 @@ describe('AdminConversationApiService', () => {
 
   // ========== 7. searchStaffDirectory (GET /api/admin/staff-directory?q=) ==========
 
-  it('searchStaffDirectory: GET com q codificado, devolve [{uid, displayName}] (nunca email/role)', async () => {
-    fetchMock.mockResolvedValue(json({ success: true, data: [{ uid: 'staff-1', displayName: 'Fulano' }] }));
+  it('searchStaffDirectory: GET com q codificado, devolve [{uid, displayName, isOnline}] (nunca email/role)', async () => {
+    fetchMock.mockResolvedValue(json({ success: true, data: [{ uid: 'staff-1', displayName: 'Fulano', isOnline: true }] }));
     const result = await AdminConversationApiService.searchStaffDirectory('ana maria');
-    expect(result).toEqual([{ uid: 'staff-1', displayName: 'Fulano' }]);
+    expect(result).toEqual([{ uid: 'staff-1', displayName: 'Fulano', isOnline: true }]);
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe('http://localhost:8080/api/admin/staff-directory?q=ana%20maria');
     expect(init.method).toBe('GET');
@@ -234,6 +234,20 @@ describe('AdminConversationApiService', () => {
   it('searchStaffDirectory: 400 quando q tem menos de 2 caracteres', async () => {
     fetchMock.mockResolvedValue(json({ success: false, error: 'Invalid query', code: 'INVALID_QUERY' }, 400));
     await expect(AdminConversationApiService.searchStaffDirectory('a')).rejects.toMatchObject({ status: 400 });
+  });
+
+  it('searchStaffDirectory: limit (R2-B, "Mostrar todos") vira ?limit= na querystring', async () => {
+    fetchMock.mockResolvedValue(json({ success: true, data: [] }));
+    await AdminConversationApiService.searchStaffDirectory('', 200);
+    const [url] = fetchMock.mock.calls[0];
+    expect(url).toBe('http://localhost:8080/api/admin/staff-directory?q=&limit=200');
+  });
+
+  it('searchStaffDirectory: sem limit, não manda o parâmetro (o controller decide o default)', async () => {
+    fetchMock.mockResolvedValue(json({ success: true, data: [] }));
+    await AdminConversationApiService.searchStaffDirectory('ana');
+    const [url] = fetchMock.mock.calls[0];
+    expect(url).toBe('http://localhost:8080/api/admin/staff-directory?q=ana');
   });
 
   // ========== transversal ==========
