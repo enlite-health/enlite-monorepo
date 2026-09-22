@@ -25,6 +25,7 @@
 import { test, expect } from '@playwright/test';
 import {
   seedPatientQA, cleanupPatientQA, seedStaffInGroup, cleanupStaffAndGroup, grantCell, loginAs, safeSql, psql,
+  waitForSlideOverSettled,
   type MockUser,
 } from '../helpers/patient-conversation-helper';
 
@@ -161,6 +162,10 @@ test.describe('Notificação — deep-link na mesma página + card em 3 linhas +
       await bellBtn.click();
       const panel = pageB.getByTestId('notification-panel');
       await expect(panel).toHaveClass(/translate-x-0/);
+      // P5 (gate): `translate-x-0` já está no DOM no instante do clique, mas o `SlideOverPanel`
+      // ainda está no meio do `transition-transform duration-300` — o print anterior foi tirado
+      // com o painel ainda deslizando. Espera o `transform` computado chegar no repouso final.
+      await waitForSlideOverSettled(panel);
 
       const item = panel.locator('[data-testid^="notification-item-"]').first();
       const id = (await item.getAttribute('data-testid'))!.replace('notification-item-', '');
@@ -202,6 +207,7 @@ test.describe('Notificação — deep-link na mesma página + card em 3 linhas +
       await pageB.getByTestId('notification-bell-btn').click();
       const panel = pageB.getByTestId('notification-panel');
       await expect(panel).toHaveClass(/translate-x-0/);
+      await waitForSlideOverSettled(panel); // P5 — mesmo motivo do teste "alternativo 1" acima.
 
       const markAll = pageB.getByTestId('notification-mark-all-read');
       const closeBtn = pageB.getByTestId('notification-panel-close-btn');

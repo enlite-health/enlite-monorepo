@@ -8,6 +8,7 @@
  *
  * Sem PII/texto clínico: paciente é sempre "Paciente QA", staff "QA Staff <N>", corpo "msg-1".
  */
+import { expect, type Locator } from '@playwright/test';
 import { insertTestPatient, cleanupTestPatient } from './db-test-helper';
 import { psql, safeSql, ABAC_TENANT } from './abac-stack-helper';
 
@@ -35,4 +36,18 @@ export function seedPlainStaff(uid: string, email: string, displayName: string):
 
 export function cleanupPlainStaff(uid: string): void {
   safeSql(`DELETE FROM users WHERE firebase_uid = '${uid}'`);
+}
+
+/**
+ * Espera a transição CSS do `SlideOverPanel` terminar de verdade (P5, r2-card-3-linhas.png/
+ * r2-painel-header.png tirados com o painel ainda no meio do `transition-transform duration-300`
+ * — a classe `translate-x-0` já está no DOM no instante do clique, mas o `transform` computado só
+ * chega em `matrix(1, 0, 0, 1, 0, 0)` 300ms depois). `expect.poll` no valor REAL de
+ * `getComputedStyle`, nunca um `waitForTimeout` fixo — se a duração do CSS mudar, isto não quebra
+ * nem mente sobre estar pronto antes da hora.
+ */
+export async function waitForSlideOverSettled(panel: Locator): Promise<void> {
+  await expect.poll(async () => panel.evaluate((el) => getComputedStyle(el).transform)).toMatch(
+    /^(none|matrix\(1, 0, 0, 1, 0, 0\))$/,
+  );
 }

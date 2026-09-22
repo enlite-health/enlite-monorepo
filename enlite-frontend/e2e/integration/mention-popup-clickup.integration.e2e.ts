@@ -24,6 +24,7 @@ import {
   type MockUser,
 } from '../helpers/patient-conversation-helper';
 import { ABAC_API_URL } from '../helpers/abac-stack-helper';
+import { contrastRatioFromCss, readTextContrastRatio } from '../helpers/contrast-helper';
 
 const RUN_ID = `${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
 const AUTORA_UID = `e2e-clickup-${RUN_ID}`;
@@ -108,6 +109,27 @@ test.describe('Popup de @ estilo ClickUp — avatar+presença, top-5, Mostrar to
     }
     await expect(page.getByTestId('composer-mention-show-all')).toBeVisible();
 
+    // P1 (gate): as iniciais (2 letras) do avatar `size={24}` do popup NÃO podem transbordar o
+    // círculo — medido pelo par real do browser (scrollWidth = largura do CONTEÚDO,
+    // clientWidth = largura visível), nunca presumido pela classe CSS escrita.
+    const firstAvatar = items.first().locator('[data-testid="person-avatar"]');
+    const [scrollWidth, clientWidth] = await firstAvatar.evaluate((el) => [el.scrollWidth, el.clientWidth]);
+    expect(scrollWidth, 'iniciais do avatar do popup transbordam o círculo').toBeLessThanOrEqual(clientWidth);
+
+    // P3 (gate): nome da linha em cor de texto primária do painel, ≥4.5:1 — medido de verdade
+    // (getComputedStyle), não pela classe. `button > span` (filho DIRETO) pega só o nome — a
+    // bolinha de presença também é um `<span>`, mas vive DENTRO do `div` do avatar, não filho
+    // direto do botão (mesmo padrão já usado neste arquivo no teste "alternativo 1").
+    const firstName = items.first().locator('button > span').last();
+    const nameRatio = await readTextContrastRatio(firstName);
+    expect(nameRatio).toBeGreaterThanOrEqual(4.5);
+
+    // P3 (gate): item ativo (o 1º, foco inicial do popup) com fundo de destaque REALMENTE visível
+    // — antes `bg-gray-100` (#FFF9FC) sobre o `bg-white` do popup era quase o mesmo branco.
+    const activeBg = await items.first().locator('button').evaluate((el) => getComputedStyle(el).backgroundColor);
+    const popupBg = await list.evaluate((el) => getComputedStyle(el).backgroundColor);
+    expect(activeBg, 'fundo do item ativo igual ao do popup — destaque invisível').not.toBe(popupBg);
+
     await page.screenshot({
       path: '/Users/gabrielstein-dev/projects/enlite/ebrain/openspec/changes/022-ux-mencao-e-notificacao/evidencias/r2-popup-top5.png',
     });
@@ -141,9 +163,19 @@ test.describe('Popup de @ estilo ClickUp — avatar+presença, top-5, Mostrar to
 
     // presença REAL: o item do staff ONLINE tem bolinha verde; qualquer OFFLINE tem cinza.
     const onlineItem = page.getByTestId(`composer-mention-item-${ONLINE_UID}`);
-    await expect(onlineItem.locator('[data-testid="presence-dot"]')).toHaveClass(/bg-green-500/);
+    const onlineDot = onlineItem.locator('[data-testid="presence-dot"]');
+    await expect(onlineDot).toHaveClass(/bg-green-600/);
     const offlineItem = page.getByTestId(`composer-mention-item-${OFFLINE_STAFF[0].uid}`);
-    await expect(offlineItem.locator('[data-testid="presence-dot"]')).toHaveClass(/bg-gray-400/);
+    const offlineDot = offlineItem.locator('[data-testid="presence-dot"]');
+    await expect(offlineDot).toHaveClass(/bg-gray-800/);
+
+    // P2 (gate): contraste NÃO-TEXTUAL real (WCAG 1.4.11, ≥3:1) das duas bolinhas contra a borda
+    // branca (`border-white`) que as separa do avatar — medido pela mesma fórmula de
+    // `contrast-helper.ts`, contra branco real (não a classe escrita).
+    const onlineDotColor = await onlineDot.evaluate((el) => getComputedStyle(el).backgroundColor);
+    const offlineDotColor = await offlineDot.evaluate((el) => getComputedStyle(el).backgroundColor);
+    expect(contrastRatioFromCss(onlineDotColor, 'rgb(255, 255, 255)')).toBeGreaterThanOrEqual(3);
+    expect(contrastRatioFromCss(offlineDotColor, 'rgb(255, 255, 255)')).toBeGreaterThanOrEqual(3);
 
     // teclado até o FIM, sem presumir ordem do backend: lê o ÚLTIMO item real da lista.
     const lastItem = items.last();
