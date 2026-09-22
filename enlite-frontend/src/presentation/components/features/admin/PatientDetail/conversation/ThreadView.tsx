@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode, type JSX } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type JSX } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   AdminConversationApiService,
@@ -13,12 +13,16 @@ import { formatMessageDateTime } from './messageDateFormat';
 
 const MENTION_PATTERN = /<@([^>]+)>/g;
 
-/** Chip de UMA menção confirmada — nome de exibição quando resolvível (`useStaffDisplayName`,
- * achado baixo do gate do B2: mostrava uid cru), com fallback pro próprio uid. Componente
- * separado (não só `<span>`) porque a resolução de nome usa um hook — `renderMessageBody` abaixo
- * é uma função pura, não pode chamar hook direto. */
-function MentionChip({ uid }: { uid: string }): JSX.Element {
-  const displayName = useStaffDisplayName(uid);
+/** Chip de UMA menção confirmada — nome de exibição, nesta ordem (item 5a, change
+ * 022-ux-mencao-e-notificacao, F19/F20): 1) `mentionDisplayNames[uid]` resolvido pelo SERVIDOR
+ * (JOIN na mesma leitura, nunca depende de o cliente já ter buscado este uid); 2)
+ * `useStaffDisplayName` (cache do navegador / perfil próprio) como FALLBACK, não fonte única —
+ * cobre o caso de payload antigo/mock sem o campo novo; 3) o próprio uid, se nada resolver.
+ * Componente separado (não só `<span>`) porque a resolução de nome usa um hook —
+ * `renderMessageBody` abaixo é uma função pura, não pode chamar hook direto. */
+function MentionChip({ uid, serverName }: { uid: string; serverName: string | null | undefined }): JSX.Element {
+  const cachedName = useStaffDisplayName(uid);
+  const displayName = serverName ?? cachedName;
   return (
     <span
       data-testid="mention-chip"
@@ -45,7 +49,11 @@ function MentionChip({ uid }: { uid: string }): JSX.Element {
  * (mensagem de topo e reply) que `ConversationPanel.tsx` usa, sem duplicar a lógica de parsing.
  * Não exportada: nada fora deste arquivo importa a função diretamente (só via `MessageContent`).
  */
-function renderMessageBody(body: string, mentions: readonly string[]): ReactNode[] {
+function renderMessageBody(
+  body: string,
+  mentions: readonly string[],
+  mentionDisplayNames: Readonly<Record<string, string | null>> = {},
+): ReactNode[] {
   const confirmedUids = new Set(mentions);
   const parts: ReactNode[] = [];
   let lastIndex = 0;
@@ -55,7 +63,7 @@ function renderMessageBody(body: string, mentions: readonly string[]): ReactNode
     if (match.index > lastIndex) parts.push(body.slice(lastIndex, match.index));
     const uid = match[1];
     if (confirmedUids.has(uid)) {
-      parts.push(<MentionChip key={`mention-${match.index}`} uid={uid} />);
+      parts.push(<MentionChip key={`mention-${match.index}`} uid={uid} serverName={mentionDisplayNames[uid]} />);
     } else {
       parts.push(body.slice(match.index, match.index + match[0].length));
     }
@@ -89,21 +97,73 @@ export interface MessageContentProps {
   message: ConversationMessage;
   patientId: string;
   footer?: ReactNode;
+  /**
+   * Deep-link (item 3, change 022-ux-mencao-e-notificacao): `true` = acabou de navegar até esta
+   * mensagem — rola o card até o centro da tela (`scrollIntoView`) e aplica um destaque visual
+   * MOMENTÂNEO. O CALLER (`ConversationPanel`/`ThreadView`) é quem decide QUANDO desligar (timer
+   * de ~2s) — este componente só reage à mudança da prop; a transição de fade acontece quando ela
+   * volta a `false` (CSS `transition-colors`, ver `className` abaixo).
+   */
+  highlighted?: boolean;
+  /**
+   * G6 (achado do gate desta change): avisa o CALLER que o card do destaque ACABOU de entrar no
+   * DOM e de tentar rolar — só então o timer de ~2s pode começar a contar. Antes, o timer
+   * (`ConversationPanel`) começava no exato momento em que `highlightMessageId` era setado, que
+   * para uma REPLY acontece ANTES da thread terminar de carregar (`ThreadView.fetchReplies` é
+   * assíncrono) — numa rede lenta, os 2s esgotavam e o destaque já tinha sido desligado quando a
+   * reply finalmente aparecia na tela (usuária nunca via o flash). Chamado de dentro do MESMO
+   * efeito que tenta o `scrollIntoView`, nunca antes.
+   */
+  onHighlighted?: () => void;
 }
 
-export function MessageContent({ message, patientId, footer }: MessageContentProps): JSX.Element {
+export function MessageContent({ message, patientId, footer, highlighted = false, onHighlighted }: MessageContentProps): JSX.Element {
   const { t, i18n } = useTranslation();
   const td = (key: string, optsOrDefault?: Record<string, unknown> | string): string =>
     t(`admin.patients.detail.conversation.thread.${key}`, optsOrDefault as string);
-  // Achado baixo do gate do B2: mostrava uid cru. `useStaffDisplayName` resolve pelo próprio
-  // perfil (autor === ator logado) ou pelo cache de busca do diretório (`MessageComposer`) —
-  // fallback pro uid quando nenhuma das duas resolve (nunca inventa nome, nunca quebra).
-  const authorName = useStaffDisplayName(message.authorUid);
+  // Item 5a (F19/F20): `authorDisplayName` do SERVIDOR é a fonte preferencial (JOIN na mesma
+  // leitura, não depende de o cliente já ter buscado este uid). `useStaffDisplayName` (perfil
+  // próprio / cache do autocomplete de menção) é FALLBACK — nunca mais a única fonte.
+  const cachedAuthorName = useStaffDisplayName(message.authorUid);
+  const authorName = message.authorDisplayName ?? cachedAuthorName;
   const connector = td('dateConnector', i18n.language.toLowerCase().startsWith('pt') ? 'às' : 'a las');
   const dateLabel = formatMessageDateTime(message.createdAt, i18n.language, connector);
 
+  const cardRef = useRef<HTMLDivElement>(null);
+  // `prefers-reduced-motion` (MDN, Prior-art do design.md §3): calculado uma vez — o media query
+  // não muda no meio da vida do componente numa sessão real, e ler de novo a cada highlight seria
+  // trabalho redundante.
+  const prefersReducedMotion = useMemo(
+    () => typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches === true,
+    [],
+  );
+
+  // G6: ref (não dep do efeito abaixo) — sempre a versão mais recente do callback, sem forçar o
+  // efeito a rodar de novo só porque o CALLER passou uma closure nova a cada render (o que
+  // reiniciaria o scroll/timer em todo re-render alheio, ex.: o poll do painel).
+  const onHighlightedRef = useRef(onHighlighted);
+  useEffect(() => { onHighlightedRef.current = onHighlighted; });
+
+  useEffect(() => {
+    if (!highlighted) return;
+    // `scrollIntoView` não existe no jsdom (ambiente de teste) — `?.` protege o unit test sem
+    // precisar mockar o DOM inteiro; em navegador real sempre existe.
+    cardRef.current?.scrollIntoView?.({ block: 'center', behavior: prefersReducedMotion ? 'auto' : 'smooth' });
+    // G6: só agora — card já está no DOM (o `ref` existe) e a tentativa de rolar já aconteceu.
+    onHighlightedRef.current?.();
+  }, [highlighted, prefersReducedMotion]);
+
   return (
-    <div data-testid={`message-card-${message.id}`} className="flex flex-col gap-2 rounded-xl border border-gray-300 bg-white p-3 min-w-0">
+    <div
+      ref={cardRef}
+      data-testid={`message-card-${message.id}`}
+      data-highlighted={highlighted ? 'true' : undefined}
+      className={`flex flex-col gap-2 rounded-xl border p-3 min-w-0 ${
+        highlighted
+          ? `message-card-highlighted bg-primary/10 border-primary ${prefersReducedMotion ? '' : 'transition-colors duration-[2000ms]'}`
+          : `bg-white border-gray-300 ${prefersReducedMotion ? '' : 'transition-colors duration-[2000ms]'}`
+      }`}
+    >
       <div className="flex items-center gap-2 min-w-0">
         <MessageAvatar uid={message.authorUid} name={authorName} />
         {/* `min-w-0`: gotcha clássico de flexbox — sem isto, um item flex com `truncate` NUNCA
@@ -121,7 +181,7 @@ export function MessageContent({ message, patientId, footer }: MessageContentPro
       <div data-testid="message-body" className="whitespace-pre-wrap break-words text-sm">
         {message.deletedAt
           ? <em>{td('deleted', 'Mensagem apagada')}</em>
-          : renderMessageBody(message.body, message.mentions)}
+          : renderMessageBody(message.body, message.mentions, message.mentionDisplayNames)}
       </div>
       {/* Mensagem apagada nunca mostra anexo (corpo cifrado já foi zerado — D-04/soft delete). */}
       {!message.deletedAt && <MessageAttachments patientId={patientId} attachments={message.attachments} />}
@@ -156,6 +216,12 @@ interface ThreadViewProps {
    * thread. Opcional: quem não manda, mantém o comportamento antigo (só carrega no mount).
    */
   refreshToken?: number;
+  /** Deep-link (item 3): id da mensagem (root OU reply) a destacar dentro desta thread — `null`/
+   * ausente = nenhum destaque. `ConversationPanel` é quem calcula e limpa depois de ~2s. */
+  highlightMessageId?: string | null;
+  /** G6: repassado direto ao `MessageContent` do root/reply destacado — ver docstring de
+   * `MessageContentProps.onHighlighted`. */
+  onHighlightShown?: (messageId: string) => void;
 }
 
 type ThreadStatus = 'loading' | 'ready' | 'error';
@@ -170,7 +236,7 @@ type ThreadStatus = 'loading' | 'ready' | 'error';
  * decisão de escopo aceita (`tasks.md:682`), não bug.
  */
 export function ThreadView({
-  patientId, rootMessage, onBack, composer, refreshToken,
+  patientId, rootMessage, onBack, composer, refreshToken, highlightMessageId, onHighlightShown,
 }: ThreadViewProps): JSX.Element {
   const { t } = useTranslation();
   const tk = (key: string): string => t(`admin.patients.detail.conversation.thread.${key}`);
@@ -218,7 +284,12 @@ export function ThreadView({
           ←
         </button>
         <div data-testid="thread-root-message" className="flex-1 min-w-0">
-          <MessageContent message={rootMessage} patientId={patientId} />
+          <MessageContent
+            message={rootMessage}
+            patientId={patientId}
+            highlighted={rootMessage.id === highlightMessageId}
+            onHighlighted={() => onHighlightShown?.(rootMessage.id)}
+          />
         </div>
       </div>
       {status === 'loading' && (
@@ -243,7 +314,12 @@ export function ThreadView({
         <ul data-testid="thread-replies-list" className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-2 p-2">
           {replies.map((reply) => (
             <li key={reply.id} data-testid={`thread-reply-${reply.id}`} className="min-w-0">
-              <MessageContent message={reply} patientId={patientId} />
+              <MessageContent
+                message={reply}
+                patientId={patientId}
+                highlighted={reply.id === highlightMessageId}
+                onHighlighted={() => onHighlightShown?.(reply.id)}
+              />
             </li>
           ))}
         </ul>

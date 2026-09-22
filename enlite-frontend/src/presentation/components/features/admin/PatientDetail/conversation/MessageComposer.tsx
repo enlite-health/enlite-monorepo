@@ -10,10 +10,17 @@
  * (`Mention.renderText`, que o `editor.getText()` já respeita via `schema.toText`), em vez de um
  * serializador de DOM escrito à mão.
  *
- * 🔒 MÍNIMO DE 2 CARACTERES ANTES DE BUSCAR (`minQueryLength`, `contracts/openapi-staff-directory.md`
- * linha 10: `q` é `min(2)` no backend — 1 caractere dá 400). `minQueryLength: 2` na config do
- * `suggestion` do TipTap já impede a chamada antes disso — sem essa trava, cada tecla depois do
- * `@` bateria no backend e devolveria erro.
+ * 🔒 MIN 0 CARACTERES ANTES DE BUSCAR (change 022-ux-mencao-e-notificacao, item 1 — revoga D-06,
+ * `fatos-medidos.md` F1/F2). Antes exigia 2+ caracteres (`contracts/openapi-staff-directory.md`
+ * linha 10 dizia `q` era `min(2)`); o backend agora aceita `q` ausente/vazio (`staffDirectorySchema`
+ * revisado) e devolve os primeiros N do diretório — `minQueryLength: 0` só habilita o TipTap a
+ * CHAMAR `items()` com a query vazia, a mesma função que já buscava com texto.
+ *
+ * 🔒 POPUP ANCORADO NO CURSOR (F4): antes o elemento era só `document.body.appendChild` sem ler
+ * posição nenhuma (nascia em `(0,0)`). Agora lê `props.clientRect()` (posição real do cursor no
+ * editor, que o próprio TipTap calcula) e usa `clampMentionPopupPosition` (aritmética pura,
+ * testada à parte) para nunca deixar o popup nascer fora do viewport — sem lib de posicionamento
+ * nova (Popper/Floating UI), design.md §1.
  *
  * 🔒 ANEXO É UPLOAD REAL (D-14, Bloco 3, T320) — `AttachmentPicker` (T318/T319) faz o upload e a
  * validação de conteúdo/tamanho; este componente só acumula os `fileId`s que ele confirma
@@ -47,9 +54,11 @@ import { useStaffNameCache } from '@presentation/stores/staffNameCache';
 import { Button } from '@presentation/components/atoms/Button';
 import { Text } from '@presentation/components/atoms/Text';
 import { AttachmentPicker } from './AttachmentPicker';
+import { clampMentionPopupPosition } from './mentionPopupPosition';
 
-/** `contracts/openapi-staff-directory.md`: `q` é `min(2)` no backend, `LIMIT 20`. */
-const MENTION_MIN_QUERY_LENGTH = 2;
+/** `q` ausente/vazio agora é aceito pelo backend (item 1, revoga D-06) — `0` deixa o TipTap
+ * chamar `items()` a partir do próprio `@`, sem exigir nenhum caractere depois. */
+const MENTION_MIN_QUERY_LENGTH = 0;
 const MENTION_MAX_RESULTS = 20;
 
 export interface MessageComposerHandle {
@@ -73,15 +82,43 @@ export interface MessageComposerProps {
 
 interface MentionListProps {
   items: StaffDirectoryEntry[];
+  /** `true` quando a última chamada ao diretório falhou (rede/403/500) — distinto de "0
+   * resultados de verdade" (F5, item 1). `items` some `[]` nos dois casos; só este flag diferencia. */
+  error: boolean;
   command: (attrs: { id: string; label: string }) => void;
 }
 
 /** Popup do autocomplete de menção — renderizado via `ReactRenderer` fora da árvore React normal
- * (é assim que o `suggestion.render` do TipTap funciona), mas é um componente React comum. */
-function MentionList({ items, command }: MentionListProps): JSX.Element | null {
+ * (é assim que o `suggestion.render` do TipTap funciona), mas é um componente React comum.
+ *
+ * 🔒 Estado de erro (F5, item 1): antes, falha do diretório virava `[]` — indistinguível de "sem
+ * resultado", e o popup simplesmente sumia (mentindo "não achei nada" quando na verdade não deu
+ * pra perguntar). Agora `error` mostra uma linha discreta, nunca um crash, nunca um toast
+ * (autocomplete continua não sendo canal de alerta — só deixa de mentir). */
+function MentionList({ items, error, command }: MentionListProps): JSX.Element | null {
+  const { t } = useTranslation();
+  if (error) {
+    return (
+      <div
+        data-testid="composer-mention-error"
+        className="rounded-md border bg-white shadow-md px-3 py-2"
+      >
+        <Text as="span" size="xs" color="secondary">
+          {t('admin.patients.detail.conversation.composer.mentionDirectoryError')}
+        </Text>
+      </div>
+    );
+  }
   if (items.length === 0) return null;
   return (
-    <ul data-testid="composer-mention-list" className="rounded-md border bg-white shadow-md py-1">
+    <ul
+      data-testid="composer-mention-list"
+      // `max-h` + `overflow-y-auto`: até 20 resultados (`MENTION_MAX_RESULTS`) cabem numa lista
+      // mais alta que muitos viewports — sem teto, o clamp vertical teria que abrir ACIMA de todo
+      // o histórico da conversa para caber, o que nem sempre existe. Rolar por dentro é o padrão
+      // de popover (item 1, design.md §1); 240px ≈ 6 itens visíveis antes de rolar.
+      className="rounded-md border bg-white shadow-md py-1 max-h-[240px] overflow-y-auto"
+    >
       {items.map((item) => (
         <li key={item.uid}>
           <button
@@ -120,6 +157,12 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
      * ver `AttachmentPicker.onUploadingChange`. */
     const [isUploading, setIsUploading] = useState(false);
 
+    // Closure compartilhada entre `items()` e `render()` do `suggestion` do TipTap (item 1, F5) —
+    // ver comentário em `items()` abaixo. Vive fora de `useState` de propósito: não deve causar
+    // re-render do `MessageComposer`, só é lido pelo próprio popup (componente React separado,
+    // fora desta árvore) no instante em que `onStart`/`onUpdate` disparam.
+    let lastDirectoryError = false;
+
     const editor = useEditor({
       extensions: [
         Document,
@@ -142,10 +185,6 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
             char: '@',
             minQueryLength: MENTION_MIN_QUERY_LENGTH,
             items: async ({ query }: { query: string }): Promise<StaffDirectoryEntry[]> => {
-              // `minQueryLength` (linha acima) já impede o TipTap de CHAMAR esta função com
-              // menos de 2 caracteres — não duplicamos a trava aqui (branch morto e não
-              // testável: `contracts/openapi-staff-directory.md` linha 25 nunca é alcançável
-              // por este caminho).
               try {
                 const results = await AdminConversationApiService.searchStaffDirectory(query);
                 // Achado baixo do gate do B2 (`ThreadView` mostrava uid cru): esta é a ÚNICA fonte
@@ -153,27 +192,69 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
                 // que aparece aqui fica disponível pro `useStaffDisplayName` de qualquer mensagem
                 // dele nesta conversa, não só para o item escolhido.
                 useStaffNameCache.getState().remember(results);
+                lastDirectoryError = false;
                 return results.slice(0, MENTION_MAX_RESULTS);
               } catch {
-                return []; // autocomplete não é canal de alerta — falha vira lista vazia, não crash
+                // F5/item 1: falha vira `[]` (autocomplete não é canal de alerta — nunca crash),
+                // mas `lastDirectoryError` (closure compartilhada com `render()` abaixo, mesma
+                // chamada de `Mention.configure`) deixa o popup MOSTRAR que falhou, em vez de
+                // mentir "nenhum resultado" — TipTap resolve `items()` ANTES de chamar
+                // `onStart`/`onUpdate` com o resultado, então a flag já está atualizada a tempo.
+                lastDirectoryError = true;
+                return [];
               }
             },
             render: () => {
               let component: ReactRenderer<unknown, MentionListProps> | null = null;
+
+              // Achado da instrumentação deste conserto (item 1, vertical): `component.element`
+              // é anexado ao `document.body` de imediato, mas o `ReactRenderer` do TipTap só faz
+              // o COMMIT real do conteúdo (portal dentro do `EditorContent`) de forma assíncrona
+              // — medido: em `onStart` E nas primeiras chamadas de `onUpdate`,
+              // `getBoundingClientRect()` devolvia `{width:0, height:0}` porque a `<ul>` ainda não
+              // tinha sido pintada. Com altura 0, o clamp de `clampMentionPopupPosition` nunca
+              // detecta que faltaria espaço abaixo — o flip vertical é matematicamente correto
+              // (ver `mentionPopupPosition.test.ts`), mas recebia um `popup.height` mentiroso.
+              // `applyPosition` faz o posicionamento com o que houver na hora (evita o popup
+              // nascer no canto (0,0) por um frame) E é chamado de novo dentro de
+              // `requestAnimationFrame` — que só dispara depois que o navegador processou o
+              // commit pendente — para corrigir com a altura REAL, uma vez que ela exista.
+              const applyPosition = (rect: DOMRect): void => {
+                if (!component) return;
+                const popupRect = component.element.getBoundingClientRect();
+                const { top, left } = clampMentionPopupPosition(
+                  rect,
+                  { width: popupRect.width, height: popupRect.height },
+                  { width: window.innerWidth, height: window.innerHeight },
+                );
+                component.element.style.top = `${top}px`;
+                component.element.style.left = `${left}px`;
+              };
+
+              const reposition = (clientRect: (() => (DOMRect | null)) | null | undefined): void => {
+                if (!component) return;
+                const rect = clientRect?.();
+                if (!rect) return;
+                applyPosition(rect);
+                requestAnimationFrame(() => applyPosition(rect));
+              };
+
               return {
                 onStart: (props) => {
                   component = new ReactRenderer(MentionList, {
-                    props: { items: props.items, command: props.command },
+                    props: { items: props.items, error: lastDirectoryError, command: props.command },
                     editor: props.editor,
                   });
                   // `ReactRenderer.element` é `HTMLElement` sempre (tipo da própria lib) —
                   // sem `instanceof` redundante.
-                  component.element.style.position = 'absolute';
+                  component.element.style.position = 'fixed';
                   component.element.style.zIndex = '50';
                   document.body.appendChild(component.element);
+                  reposition(props.clientRect);
                 },
                 onUpdate: (props) => {
-                  component?.updateProps({ items: props.items, command: props.command });
+                  component?.updateProps({ items: props.items, error: lastDirectoryError, command: props.command });
+                  reposition(props.clientRect);
                 },
                 onKeyDown: ({ event }) => event.key === 'Escape',
                 onExit: () => {

@@ -36,9 +36,29 @@ interface ConversationPanelProps {
    * composer decide quando é seguro chamar.
    */
   onComposerClose?: () => void;
+  /**
+   * Deep-link (item 3, change 022-ux-mencao-e-notificacao): alvo a rolar/destacar ao abrir —
+   * vem da notificação clicada (`NotificationPanel` → `PatientConversationHandle`). `null`/ausente
+   * = abertura normal, sem alvo nenhum.
+   *
+   * `token` (G7, achado do gate desta change): identifica O CLIQUE, não a mensagem — o mesmo
+   * `messageId` pode chegar de novo (usuária clica na MESMA notificação de novo com o painel já
+   * aberto). Opcional só para não quebrar quem ainda não tem um clique pra identificar (a guarda
+   * de reprocessamento cai para o `messageId` quando ausente — ver `processedFocusKeyRef`).
+   */
+  focusTarget?: { messageId: string; rootMessageId: string | null; token?: number } | null;
+  /** Chamado depois que o alvo foi PROCESSADO (achado ou esgotado as páginas) — quem embrulha usa
+   * isto para não reprocessar o mesmo alvo numa próxima renderização. */
+  onFocusHandled?: () => void;
 }
 
 type PanelStatus = 'loading' | 'forbidden' | 'ready' | 'error';
+
+/** ~2s, com fade (design.md §3, Prior-art GitHub "comment mention"). */
+const HIGHLIGHT_DURATION_MS = 2000;
+/** Teto de segurança do loop de páginas (item 3, F16) — nunca itera pra sempre mesmo com um
+ * backend que devolvesse cursor não-null indefinidamente por engano. */
+const MAX_FOCUS_SEARCH_PAGES = 50;
 
 function mergeById(prev: ConversationMessage[], incoming: ConversationMessage[]): ConversationMessage[] {
   if (incoming.length === 0) return prev;
@@ -51,6 +71,10 @@ interface MessageItemProps {
   message: ConversationMessage;
   patientId: string;
   onOpenThread: () => void;
+  /** Deep-link (item 3): true = esta é a mensagem-alvo da notificação clicada. */
+  highlighted?: boolean;
+  /** G6: ver `MessageContentProps.onHighlighted` — repassado direto. */
+  onHighlighted?: () => void;
 }
 
 /**
@@ -61,7 +85,7 @@ interface MessageItemProps {
  * `ThreadView.MessageContent`), selo ANTES do botão. Ambos abrem a MESMA thread —
  * `onOpenThread` não muda por quem clicou.
  */
-function MessageItem({ message, patientId, onOpenThread }: MessageItemProps): JSX.Element {
+function MessageItem({ message, patientId, onOpenThread, highlighted = false, onHighlighted }: MessageItemProps): JSX.Element {
   const { t } = useTranslation();
   const th = (key: string, optsOrDefault?: Record<string, unknown> | string): string =>
     t(`admin.patients.detail.conversation.thread.${key}`, optsOrDefault as string);
@@ -82,7 +106,7 @@ function MessageItem({ message, patientId, onOpenThread }: MessageItemProps): JS
 
   return (
     <div data-testid={`conversation-message-${message.id}`} className="px-3 py-2">
-      <MessageContent message={message} patientId={patientId} footer={footer} />
+      <MessageContent message={message} patientId={patientId} footer={footer} highlighted={highlighted} onHighlighted={onHighlighted} />
     </div>
   );
 }
@@ -121,7 +145,7 @@ function MessageItem({ message, patientId, onOpenThread }: MessageItemProps): JS
  * descarte confirmado pelo usuário).
  */
 export function ConversationPanel({
-  patientId, isOpen, composerRef, onComposerClose,
+  patientId, isOpen, composerRef, onComposerClose, focusTarget, onFocusHandled,
 }: ConversationPanelProps): JSX.Element {
   const { t } = useTranslation();
   const tp = (key: string): string => t(`admin.patients.detail.conversation.panel.${key}`);
@@ -136,6 +160,26 @@ export function ConversationPanel({
   const [replyRefreshToken, setReplyRefreshToken] = useState<number | undefined>(undefined);
   const cursorRef = useRef<string | null>(null);
   const isMountedRef = useRef(true);
+  const messagesRef = useRef<ConversationMessage[]>([]);
+  useEffect(() => { messagesRef.current = messages; }, [messages]);
+  /** Deep-link (item 3): id da mensagem a destacar (root OU top-level), `null` = sem destaque. */
+  const [highlightMessageId, setHighlightMessageId] = useState<string | null>(null);
+  /** `messageId` do alvo que ESGOTOU as páginas sem ser achado — mostra o aviso "não encontrada"
+   * sem travar o resto do painel (design.md §3, cenário "mensagem fora da 1ª página"). */
+  const [notFoundTargetId, setNotFoundTargetId] = useState<string | null>(null);
+  /**
+   * Chave do `focusTarget` já processado nesta abertura — evita reprocessar o MESMO alvo a cada
+   * re-render (o pai pode manter a mesma referência de objeto entre renders).
+   *
+   * G7 (achado do gate desta change): a chave é o `token` do clique quando ele vem (não só o
+   * `messageId`) — antes, a guarda comparava só `messageId`, e como ela NUNCA era resetada fora
+   * de abrir o painel/trocar de paciente, clicar de nova na MESMA notificação com o painel JÁ
+   * aberto (2º clique, `token` novo, mesmo `messageId`) caía nesta guarda e nunca era processado —
+   * nem o destaque acontecia, nem `onFocusHandled` era chamado (o `focusTarget` ficava preso no
+   * pai para sempre). Sem `token` (chamador antigo/teste que não o passa), cai no `messageId`
+   * puro — comportamento inalterado.
+   */
+  const processedFocusKeyRef = useRef<string | null>(null);
   /** `true` a partir da 1ª resposta boa desta abertura — separa "carga inicial falhou" (mostra
    * `'error'`, painel nunca carregou nada) de "poll depois de já ter carregado" (silencioso,
    * mantém a última lista boa — comportamento antigo, preservado). */
@@ -179,6 +223,9 @@ export function ConversationPanel({
     setOpenThreadId(null);
     setStatus('loading');
     setMessages([]);
+    setHighlightMessageId(null);
+    setNotFoundTargetId(null);
+    processedFocusKeyRef.current = null;
     void fetchPage();
   }, [isOpen, patientId, fetchPage]);
 
@@ -186,6 +233,94 @@ export function ConversationPanel({
     if (!isOpen || status === 'forbidden') return;
     void fetchPage(cursorRef.current ?? undefined);
   }, POLL_MS, { pauseWhenHidden: true });
+
+  // Deep-link (item 3, design.md §3 — decisão de menor diff F16): carrega páginas em loop,
+  // reaproveitando `fetchPage`/`cursorRef`, até achar a mensagem-alvo (ou o ROOT dela, se for
+  // reply) ou esgotar (`nextCursor === null`). A busca por página ASC garante que qualquer
+  // mensagem ausente da 1ª carga é necessariamente MAIS NOVA (F14) — nunca "mais antiga",
+  // então o loop para frente sempre alcança, sem precisar de "carregar anterior".
+  useEffect(() => {
+    if (!isOpen || !focusTarget || status !== 'ready') return;
+    // G7: chave por TOKEN quando o clique traz um — cada clique novo (mesmo `messageId` de antes)
+    // tem `token` diferente e por isso é reprocessado. Sem `token`, cai no `messageId` puro.
+    const focusKey = focusTarget.token !== undefined ? `token:${focusTarget.token}` : `msg:${focusTarget.messageId}`;
+    if (processedFocusKeyRef.current === focusKey) return;
+    const target = focusTarget;
+    let cancelled = false;
+
+    (async () => {
+      const searchId = target.rootMessageId ?? target.messageId;
+      let found = messagesRef.current.find((m) => m.id === searchId) ?? null;
+      let cursor = cursorRef.current;
+      let guard = 0;
+      while (!found && cursor !== null && guard < MAX_FOCUS_SEARCH_PAGES) {
+        guard += 1;
+        let page;
+        try {
+          page = await AdminConversationApiService.getConversation(patientId, { after: cursor });
+        } catch {
+          break; // rede falhou no meio da busca — trata como esgotado, nunca trava a UI.
+        }
+        if (cancelled || !isMountedRef.current) return;
+        setMessages((prev) => mergeById(prev, page.messages));
+        messagesRef.current = mergeById(messagesRef.current, page.messages);
+        cursorRef.current = page.nextCursor;
+        cursor = page.nextCursor;
+        found = page.messages.find((m) => m.id === searchId) ?? null;
+      }
+      if (cancelled || !isMountedRef.current) return;
+      processedFocusKeyRef.current = focusKey;
+      if (!found) {
+        setNotFoundTargetId(target.messageId);
+        onFocusHandled?.();
+        return;
+      }
+      setNotFoundTargetId(null);
+      if (target.rootMessageId) {
+        setOpenThreadId(found.id); // `found` é o ROOT — abre a thread pra revelar a reply-alvo.
+      }
+      setHighlightMessageId(target.messageId);
+      onFocusHandled?.();
+    })();
+
+    return () => { cancelled = true; };
+  }, [isOpen, focusTarget, status, patientId, onFocusHandled]);
+
+  // Destaque é MOMENTÂNEO (~2s, design.md §3) — o próprio `MessageContent` faz o fade via CSS
+  // quando esta prop volta a `false`; aqui só o TIMER que decide QUANDO isso acontece.
+  //
+  // G6 (achado do gate desta change): o timer NÃO começa quando `highlightMessageId` é setado —
+  // começa só quando `MessageContent` avisa (`onHighlighted`) que o card-ALVO já está no DOM e já
+  // tentou rolar. Antes, para uma REPLY, `highlightMessageId` era setado no MESMO tick em que a
+  // thread abria (`setOpenThreadId`) — e `ThreadView.fetchReplies` é assíncrono. Numa rede lenta,
+  // os ~2s do timer antigo esgotavam ANTES da reply sequer existir no DOM: o destaque já tinha
+  // sido desligado quando ela finalmente aparecia, e a usuária nunca via o flash nem o scroll.
+  const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearHighlightTimer = useCallback((): void => {
+    if (highlightTimerRef.current !== null) {
+      clearTimeout(highlightTimerRef.current);
+      highlightTimerRef.current = null;
+    }
+  }, []);
+  const handleHighlightShown = useCallback(
+    (messageId: string): void => {
+      // Alvo pode ter mudado (novo deep-link) entre o card antigo desmontar e este callback
+      // chegar — só inicia o timer se ainda for o alvo ATUAL.
+      if (messageId !== highlightMessageId) return;
+      clearHighlightTimer();
+      highlightTimerRef.current = setTimeout(() => {
+        highlightTimerRef.current = null;
+        setHighlightMessageId(null);
+      }, HIGHLIGHT_DURATION_MS);
+    },
+    [highlightMessageId, clearHighlightTimer],
+  );
+  // Painel fechado/trocou de alvo por fora (reset da abertura) — nenhum timer pendente deve
+  // sobreviver, e limpeza no unmount por segurança.
+  useEffect(() => {
+    if (!highlightMessageId) clearHighlightTimer();
+    return clearHighlightTimer;
+  }, [highlightMessageId, clearHighlightTimer]);
 
   // Sem `openThreadId`, nenhuma mensagem tem `id === null` — o fallback já resolve pra `null`
   // sem precisar de um ternário extra por fora (branch que só existiria pra nunca ser tomada).
@@ -217,6 +352,8 @@ export function ConversationPanel({
             rootMessage={openThreadMessage}
             onBack={() => setOpenThreadId(null)}
             refreshToken={replyRefreshToken}
+            highlightMessageId={highlightMessageId}
+            onHighlightShown={handleHighlightShown}
             composer={isOpen ? (
               canCompose ? (
                 <Suspense fallback={null}>
@@ -258,6 +395,13 @@ export function ConversationPanel({
                 </button>
               </div>
             )}
+            {status === 'ready' && notFoundTargetId && (
+              // Deep-link esgotou as páginas sem achar o alvo (design.md §3) — aviso explícito,
+              // nunca uma UI travada nem um silêncio que parece bug.
+              <div data-testid="conversation-message-not-found" className="px-4 py-2 flex-shrink-0">
+                <Text size="xs" className="text-gray-800">{tp('messageNotFound')}</Text>
+              </div>
+            )}
             {status === 'ready' && messages.length === 0 && (
               <p data-testid="conversation-panel-empty" className="p-4 text-gray-800">{tp('empty')}</p>
             )}
@@ -265,7 +409,13 @@ export function ConversationPanel({
               <ul data-testid="conversation-panel-list">
                 {messages.map((m) => (
                   <li key={m.id}>
-                    <MessageItem message={m} patientId={patientId} onOpenThread={() => setOpenThreadId(m.id)} />
+                    <MessageItem
+                      message={m}
+                      patientId={patientId}
+                      onOpenThread={() => setOpenThreadId(m.id)}
+                      highlighted={m.id === highlightMessageId}
+                      onHighlighted={() => handleHighlightShown(m.id)}
+                    />
                   </li>
                 ))}
               </ul>

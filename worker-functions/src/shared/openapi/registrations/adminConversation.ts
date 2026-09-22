@@ -21,6 +21,12 @@ const AttachmentDto = z.object({
 const ConversationMessageDto = z.object({
   id: z.string().uuid(),
   authorUid: z.string().openapi({ description: 'Firebase UID de quem escreveu.' }),
+  authorDisplayName: z.string().nullable().openapi({
+    description:
+      'Nome de exibição do autor, resolvido por JOIN no SERVIDOR (item 5a da change '
+      + '022-ux-mencao-e-notificacao) — nunca depende do `staffNameCache` do navegador. `null` só '
+      + 'se o autor não tiver registro em `users` (defesa, não esperado no caminho normal).',
+  }),
   body: z.string().openapi({
     description:
       'Corpo decifrado. String VAZIA (nunca `null`) quando a mensagem foi apagada (soft delete) — '
@@ -31,6 +37,11 @@ const ConversationMessageDto = z.object({
   editedAt: z.string().datetime().nullable(),
   deletedAt: z.string().datetime().nullable(),
   mentions: z.array(z.string()).openapi({ description: 'UIDs mencionados (`<@uid>` no corpo), ordem alfabética.' }),
+  mentionDisplayNames: z.record(z.string(), z.string().nullable()).openapi({
+    description:
+      'Nome de exibição de cada uid de `mentions` (item 5a), resolvido na MESMA leitura — chave é '
+      + 'o uid, valor `null` se aquele uid não tiver `display_name` resolvível.',
+  }),
   replyCount: z.number().int().nonnegative().openapi({ description: 'Sempre 0 numa reply — thread de 1 nível (D-03).' }),
   lastReplyAt: z.string().datetime().nullable(),
   attachments: z.array(AttachmentDto).openapi({

@@ -1,12 +1,34 @@
 /**
  * NotificationRepository — unit (pool/client mockados na fronteira). Molde:
  * `ConversationRepository.test.ts` (pool injetado no construtor, sem `DatabaseConnection` real).
+ *
+ * `findRootMessageIds`/`findMessageExcerpts` (itens 2/3 da change 022-ux-mencao-e-notificacao):
+ * KMS também mockado por módulo, MESMO padrão de `ConversationRepository.test.ts` (decrypt vira
+ * `plain:<ciphertext>`, determinístico e sem chamar o KMS de verdade).
  */
 jest.mock('@shared/database/DatabaseConnection', () => ({
   DatabaseConnection: { getInstance: () => ({ getPool: () => ({ query: jest.fn() }) }) },
 }));
 
+const mockDecrypt = jest.fn(async (v: string | null) => (v ? `plain:${v}` : ''));
+jest.mock('@shared/security/KMSEncryptionService', () => ({
+  KMSEncryptionService: jest.fn().mockImplementation(() => ({ decrypt: mockDecrypt })),
+  // G4: constante compartilhada com ConversationRepository — o mock precisa expor o MESMO valor
+  // real, senão `DECRYPT_CONCURRENCY_LIMIT` chega `undefined` no módulo sob teste.
+  KMS_DECRYPT_CONCURRENCY_LIMIT: 10,
+}));
+
+const mockReportError = jest.fn();
+jest.mock('@shared/logging', () => ({ reportError: mockReportError }));
+
+jest.mock('@shared/async/mapWithConcurrency', () => ({
+  mapWithConcurrency: jest.fn((items: unknown[], _limit: number, fn: (item: unknown) => Promise<unknown>) =>
+    Promise.all(items.map(fn)),
+  ),
+}));
+
 import type { Pool, PoolClient } from 'pg';
+import { mapWithConcurrency } from '@shared/async/mapWithConcurrency';
 import { NotificationRepository } from '../NotificationRepository';
 
 function poolWith(query: jest.Mock): Pool {
@@ -148,6 +170,186 @@ describe('NotificationRepository', () => {
       const repo = new NotificationRepository();
 
       expect(await repo.markAllRead('u1', clientWith(query))).toBe(0);
+    });
+  });
+
+  describe('findRootMessageIds — rootMessageId de cada mensagem de origem, EM LOTE (item 3, F11)', () => {
+    it('lista vazia: não chama query, devolve Map vazio', async () => {
+      const query = jest.fn();
+      const repo = new NotificationRepository(poolWith(query));
+
+      const out = await repo.findRootMessageIds([], poolWith(query));
+
+      expect(query).not.toHaveBeenCalled();
+      expect(out.size).toBe(0);
+    });
+
+    it('UMA query com ANY para VÁRIOS messageIds — nunca uma por mensagem', async () => {
+      const query = jest.fn().mockResolvedValue({
+        rows: [
+          { id: 'm1', rootMessageId: null }, // m1 é o próprio root
+          { id: 'r1', rootMessageId: 'm1' }, // r1 é reply de m1
+        ],
+      });
+      const repo = new NotificationRepository();
+
+      const out = await repo.findRootMessageIds(['m1', 'r1'], poolWith(query));
+
+      expect(query).toHaveBeenCalledTimes(1);
+      const [sql, params] = query.mock.calls[0];
+      expect(sql).toContain('WHERE id = ANY($1::uuid[])');
+      expect(params).toEqual([['m1', 'r1']]);
+      expect(out.get('m1')).toBeNull();
+      expect(out.get('r1')).toBe('m1');
+    });
+
+    it('messageId sem linha correspondente (mensagem removida?) não entra no Map', async () => {
+      const query = jest.fn().mockResolvedValue({ rows: [] });
+      const repo = new NotificationRepository();
+
+      const out = await repo.findRootMessageIds(['inexistente'], poolWith(query));
+
+      expect(out.has('inexistente')).toBe(false);
+    });
+  });
+
+  describe('findMessageExcerpts — trecho decifrado (~140 chars) por mensagem (item 2, F8/F9)', () => {
+    it('lista vazia: não chama query, devolve Map vazio', async () => {
+      const query = jest.fn();
+      const repo = new NotificationRepository(poolWith(query));
+
+      const out = await repo.findMessageExcerpts([], poolWith(query));
+
+      expect(query).not.toHaveBeenCalled();
+      expect(out.size).toBe(0);
+    });
+
+    it('decifra e devolve o corpo (não corta quando cabe em 140 chars)', async () => {
+      const query = jest.fn().mockResolvedValue({ rows: [{ id: 'm1', bodyEncrypted: 'enc:oi' }] });
+      const repo = new NotificationRepository(poolWith(query));
+
+      const out = await repo.findMessageExcerpts(['m1'], poolWith(query));
+
+      expect(out.get('m1')).toBe('plain:enc:oi');
+      expect(mockDecrypt).toHaveBeenCalledWith('enc:oi');
+    });
+
+    it('corta em 140 chars DEPOIS de decifrar — nunca corta o ciphertext', async () => {
+      const corpoLongo = 'a'.repeat(200);
+      mockDecrypt.mockResolvedValueOnce(corpoLongo);
+      const query = jest.fn().mockResolvedValue({ rows: [{ id: 'm1', bodyEncrypted: 'enc:longo' }] });
+      const repo = new NotificationRepository(poolWith(query));
+
+      const out = await repo.findMessageExcerpts(['m1'], poolWith(query));
+
+      expect(out.get('m1')).toHaveLength(140);
+      expect(out.get('m1')).toBe(corpoLongo.slice(0, 140));
+    });
+
+    it('decifra via mapWithConcurrency com limite 10 — mesmo padrão de ConversationRepository (D-01)', async () => {
+      const query = jest.fn().mockResolvedValue({ rows: [{ id: 'm1', bodyEncrypted: 'enc:oi' }] });
+      const repo = new NotificationRepository(poolWith(query));
+
+      await repo.findMessageExcerpts(['m1'], poolWith(query));
+
+      expect(mapWithConcurrency).toHaveBeenCalledWith(expect.any(Array), 10, expect.any(Function));
+    });
+
+    it('falha de decifra de UMA linha isola só aquela — excerpt null, reportError SÓ com messageId (nunca corpo/ciphertext)', async () => {
+      mockDecrypt.mockRejectedValueOnce(new Error('kms indisponível'));
+      const query = jest.fn().mockResolvedValue({
+        rows: [
+          { id: 'm1', bodyEncrypted: 'enc:falha' },
+          { id: 'm2', bodyEncrypted: 'enc:ok' },
+        ],
+      });
+      const repo = new NotificationRepository(poolWith(query));
+
+      const out = await repo.findMessageExcerpts(['m1', 'm2'], poolWith(query));
+
+      expect(out.get('m1')).toBeNull();
+      expect(out.get('m2')).toBe('plain:enc:ok');
+      const [, context] = mockReportError.mock.calls[0];
+      expect(context).toMatchObject({ messageId: 'm1' });
+      expect(JSON.stringify(context)).not.toContain('falha'); // nunca o corpo/ciphertext no log
+    });
+
+    it('UMA query com ANY para VÁRIAS mensagens — nunca uma por mensagem', async () => {
+      const query = jest.fn().mockResolvedValue({
+        rows: [{ id: 'm1', bodyEncrypted: 'enc:a' }, { id: 'm2', bodyEncrypted: 'enc:b' }],
+      });
+      const repo = new NotificationRepository(poolWith(query));
+
+      await repo.findMessageExcerpts(['m1', 'm2'], poolWith(query));
+
+      expect(query).toHaveBeenCalledTimes(1);
+      const [sql, params] = query.mock.calls[0];
+      expect(sql).toContain('WHERE id = ANY($1::uuid[])');
+      expect(params).toEqual([['m1', 'm2']]);
+    });
+
+    // D2 (achado da revisão visual da Fase 2, 22/09): o trecho saía com a marcação crua
+    // `<@uid>` em vez de `@Nome` — a operadora via um uid de 20+ chars no card, nunca o nome.
+    describe('D2 — substitui `<@uid>` por `@Nome` (nunca a marcação crua)', () => {
+      it('corpo com UMA menção resolvida: troca `<@uid>` por `@<displayName>`', async () => {
+        const query = jest
+          .fn()
+          .mockResolvedValueOnce({ rows: [{ id: 'm1', bodyEncrypted: 'enc:oi' }] })
+          .mockResolvedValueOnce({
+            rows: [{ messageId: 'm1', mentionedUid: 'uid-ana', mentionedDisplayName: 'Ana Silva' }],
+          });
+        mockDecrypt.mockResolvedValueOnce('oi <@uid-ana>, olha isso');
+        const repo = new NotificationRepository(poolWith(query));
+
+        const out = await repo.findMessageExcerpts(['m1'], poolWith(query));
+
+        expect(out.get('m1')).toBe('oi @Ana Silva, olha isso');
+      });
+
+      it('uid mencionado sem display_name resolvível: fallback rótulo genérico (nunca o uid cru)', async () => {
+        const query = jest
+          .fn()
+          .mockResolvedValueOnce({ rows: [{ id: 'm1', bodyEncrypted: 'enc:oi' }] })
+          .mockResolvedValueOnce({
+            rows: [{ messageId: 'm1', mentionedUid: 'uid-fantasma', mentionedDisplayName: null }],
+          });
+        mockDecrypt.mockResolvedValueOnce('oi <@uid-fantasma>');
+        const repo = new NotificationRepository(poolWith(query));
+
+        const out = await repo.findMessageExcerpts(['m1'], poolWith(query));
+
+        expect(out.get('m1')).not.toContain('uid-fantasma');
+        expect(out.get('m1')).toMatch(/^oi @\S+$/);
+      });
+
+      it('corpo sem menção: NÃO dispara a 2ª query de nomes (custo evitado)', async () => {
+        const query = jest.fn().mockResolvedValue({ rows: [{ id: 'm1', bodyEncrypted: 'enc:oi' }] });
+        mockDecrypt.mockResolvedValueOnce('oi, sem menção nenhuma');
+        const repo = new NotificationRepository(poolWith(query));
+
+        await repo.findMessageExcerpts(['m1'], poolWith(query));
+
+        expect(query).toHaveBeenCalledTimes(1);
+      });
+
+      it('corte de 140 chars NUNCA parte um token `@Nome` no meio — recua para antes da menção', async () => {
+        const prefixo = 'a'.repeat(135); // corte cairia no meio de "@Ana Silva"
+        const query = jest
+          .fn()
+          .mockResolvedValueOnce({ rows: [{ id: 'm1', bodyEncrypted: 'enc:longo' }] })
+          .mockResolvedValueOnce({
+            rows: [{ messageId: 'm1', mentionedUid: 'uid-ana', mentionedDisplayName: 'Ana Silva' }],
+          });
+        mockDecrypt.mockResolvedValueOnce(`${prefixo} <@uid-ana> resto que nunca deveria aparecer`);
+        const repo = new NotificationRepository(poolWith(query));
+
+        const out = await repo.findMessageExcerpts(['m1'], poolWith(query));
+        const excerpt = out.get('m1') as string;
+
+        expect(excerpt.length).toBeLessThanOrEqual(140);
+        expect(excerpt).not.toMatch(/@Ana S$/); // não corta o nome no meio
+        expect(excerpt.endsWith('@Ana Silva') || !excerpt.includes('@')).toBe(true);
+      });
     });
   });
 

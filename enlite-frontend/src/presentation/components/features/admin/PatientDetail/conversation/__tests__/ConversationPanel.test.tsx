@@ -65,11 +65,13 @@ const PT = ptBR.admin.patients.detail.conversation;
 const msg = (overrides: Partial<ConversationMessage> = {}): ConversationMessage => ({
   id: '11111111-1111-1111-1111-111111111111',
   authorUid: 'staff-um',
+  authorDisplayName: null,
   body: 'msg-1',
   createdAt: '2026-09-01T10:00:00.000Z',
   editedAt: null,
   deletedAt: null,
   mentions: [],
+  mentionDisplayNames: {},
   replyCount: 0,
   lastReplyAt: null,
   attachments: [],
@@ -542,6 +544,149 @@ describe('ConversationPanel', () => {
       await waitFor(() => expect(screen.getByTestId('conversation-message-m1')).toBeInTheDocument());
       fireEvent.click(screen.getByTestId('conversation-message-replies'));
       await waitFor(() => expect(screen.getByTestId('thread-view')).toBeInTheDocument());
+    });
+  });
+
+  describe('item 3 (change 022-ux-mencao-e-notificacao) — deep-link: rola/destaca a mensagem-alvo da notificação', () => {
+    it('feliz: mensagem-alvo já está na 1ª página — destaque aplicado direto, sem página extra', async () => {
+      getConversation.mockResolvedValue({
+        conversationId: 'conv-1',
+        messages: [msg({ id: 'm1' }), msg({ id: 'm2' })],
+        nextCursor: null,
+      });
+      render(<ConversationPanel patientId="p1" isOpen focusTarget={{ messageId: 'm2', rootMessageId: null }} />);
+
+      await waitFor(() => expect(screen.getByTestId('message-card-m2')).toHaveAttribute('data-highlighted', 'true'));
+      expect(screen.getByTestId('message-card-m1')).not.toHaveAttribute('data-highlighted');
+      expect(getConversation).toHaveBeenCalledTimes(1); // já estava carregada — nenhum loop de página
+    });
+
+    it('alt: mensagem-alvo fora da 1ª página — carrega páginas em loop até achar, sem travar a UI', async () => {
+      getConversation
+        .mockResolvedValueOnce({ conversationId: 'conv-1', messages: [msg({ id: 'm1' })], nextCursor: 'cursor-1' })
+        .mockResolvedValueOnce({ conversationId: 'conv-1', messages: [msg({ id: 'm2' })], nextCursor: null });
+      render(<ConversationPanel patientId="p1" isOpen focusTarget={{ messageId: 'm2', rootMessageId: null }} />);
+
+      await waitFor(() => expect(screen.getByTestId('message-card-m2')).toBeInTheDocument());
+      expect(screen.getByTestId('message-card-m2')).toHaveAttribute('data-highlighted', 'true');
+      expect(getConversation).toHaveBeenCalledTimes(2);
+      expect(getConversation).toHaveBeenNthCalledWith(2, 'p1', { after: 'cursor-1' });
+    });
+
+    it('alt: mensagem-alvo é REPLY (rootMessageId presente) — abre a thread certa e destaca a reply dentro dela', async () => {
+      getConversation.mockResolvedValue({
+        conversationId: 'conv-1',
+        messages: [msg({ id: 'root-1', replyCount: 1 })],
+        nextCursor: null,
+      });
+      getConversationReplies.mockResolvedValue([msg({ id: 'reply-1', body: 'resposta' })]);
+      render(<ConversationPanel patientId="p1" isOpen focusTarget={{ messageId: 'reply-1', rootMessageId: 'root-1' }} />);
+
+      await waitFor(() => expect(screen.getByTestId('thread-view')).toBeInTheDocument());
+      await waitFor(() => expect(screen.getByTestId('message-card-reply-1')).toHaveAttribute('data-highlighted', 'true'));
+    });
+
+    it('alt: esgota as páginas sem achar — mostra estado "não encontrada", não trava a UI', async () => {
+      getConversation.mockResolvedValue({ conversationId: 'conv-1', messages: [msg({ id: 'm1' })], nextCursor: null });
+      render(<ConversationPanel patientId="p1" isOpen focusTarget={{ messageId: 'nunca-existiu', rootMessageId: null }} />);
+
+      await waitFor(() => expect(screen.getByTestId('conversation-message-not-found')).toBeInTheDocument());
+      expect(screen.getByTestId('conversation-panel-list')).toBeInTheDocument(); // painel continua usável
+    });
+
+    it('onFocusHandled é chamado depois de processar o alvo (achado)', async () => {
+      const onFocusHandled = vi.fn();
+      getConversation.mockResolvedValue({ conversationId: 'conv-1', messages: [msg({ id: 'm1' })], nextCursor: null });
+      render(<ConversationPanel patientId="p1" isOpen focusTarget={{ messageId: 'm1', rootMessageId: null }} onFocusHandled={onFocusHandled} />);
+
+      await waitFor(() => expect(onFocusHandled).toHaveBeenCalledTimes(1));
+    });
+
+    it('sem focusTarget: nenhum destaque, comportamento normal preservado', async () => {
+      getConversation.mockResolvedValue({ conversationId: 'conv-1', messages: [msg({ id: 'm1' })], nextCursor: null });
+      render(<ConversationPanel patientId="p1" isOpen />);
+
+      await waitFor(() => expect(screen.getByTestId('message-card-m1')).toBeInTheDocument());
+      expect(screen.getByTestId('message-card-m1')).not.toHaveAttribute('data-highlighted');
+      expect(screen.queryByTestId('conversation-message-not-found')).not.toBeInTheDocument();
+    });
+
+    // G6 (achado do gate desta change): o timer de ~2s do destaque não pode começar a contar
+    // antes de a mensagem-alvo estar de fato no DOM — para uma REPLY, isso só acontece depois de
+    // `ThreadView.fetchReplies` (assíncrono) resolver.
+    it('G6: reply demora a carregar (thread ainda buscando) — o timer do destaque só COMEÇA quando ela está no DOM, nunca antes', async () => {
+      vi.useFakeTimers();
+      getConversation.mockResolvedValue({
+        conversationId: 'conv-1',
+        messages: [msg({ id: 'root-1', replyCount: 1 })],
+        nextCursor: null,
+      });
+      let resolveReplies!: (v: ConversationMessage[]) => void;
+      getConversationReplies.mockReset();
+      getConversationReplies.mockImplementation(
+        () => new Promise<ConversationMessage[]>((resolve) => { resolveReplies = resolve; }),
+      );
+
+      render(<ConversationPanel patientId="p1" isOpen focusTarget={{ messageId: 'reply-1', rootMessageId: 'root-1' }} />);
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+      expect(screen.getByTestId('thread-view')).toBeInTheDocument();
+      // A reply ainda não existe no DOM — `getConversationReplies` não resolveu.
+      expect(screen.queryByTestId('message-card-reply-1')).not.toBeInTheDocument();
+
+      // Avança bem além dos 2s do destaque ENQUANTO a reply ainda não carregou. Com o timer
+      // antigo (armado no instante em que `highlightMessageId` era setado, ANTES da thread
+      // carregar), o destaque já teria sido desligado aqui — antes mesmo de a reply existir.
+      await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+
+      await act(async () => {
+        resolveReplies([msg({ id: 'reply-1', body: 'resposta' })]);
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      expect(screen.getByTestId('message-card-reply-1')).toHaveAttribute('data-highlighted', 'true');
+    });
+
+    // G7 (achado do gate desta change): clicar de novo na MESMA notificação (2º clique, `token`
+    // novo) com o painel já aberto tem de reprocessar — antes, `processedFocusIdRef` só zerava ao
+    // abrir o painel/trocar de paciente, então o 2º clique caía numa guarda presa para sempre
+    // (nem destacava, nem chamava `onFocusHandled` — o `focusTarget` ficava preso no pai).
+    it('G7: 2º clique na MESMA notificação (token novo) com o painel já aberto — reprocessa (onFocusHandled de novo)', async () => {
+      const onFocusHandled = vi.fn();
+      getConversation.mockResolvedValue({
+        conversationId: 'conv-1',
+        messages: [msg({ id: 'm1' }), msg({ id: 'm2' })],
+        nextCursor: null,
+      });
+      const { rerender } = render(
+        <ConversationPanel
+          patientId="p1"
+          isOpen
+          focusTarget={{ messageId: 'm1', rootMessageId: null, token: 1 }}
+          onFocusHandled={onFocusHandled}
+        />,
+      );
+
+      await waitFor(() => expect(screen.getByTestId('message-card-m1')).toHaveAttribute('data-highlighted', 'true'));
+      expect(onFocusHandled).toHaveBeenCalledTimes(1);
+
+      // O pai real zera `focusTarget` depois de `onFocusHandled` (mesmo protocolo do
+      // `PatientConversationHandle`) — simula aqui.
+      rerender(
+        <ConversationPanel patientId="p1" isOpen focusTarget={null} onFocusHandled={onFocusHandled} />,
+      );
+
+      // 2º clique NA MESMA notificação: mesmo `messageId`, `token` NOVO.
+      rerender(
+        <ConversationPanel
+          patientId="p1"
+          isOpen
+          focusTarget={{ messageId: 'm1', rootMessageId: null, token: 2 }}
+          onFocusHandled={onFocusHandled}
+        />,
+      );
+
+      await waitFor(() => expect(onFocusHandled).toHaveBeenCalledTimes(2));
     });
   });
 });

@@ -34,6 +34,8 @@ function repoWith(rows: NotificationEventRow[], patientName: string | null = 'An
   return {
     listForRecipient: jest.fn().mockResolvedValue(rows),
     findPatientDisplayName: jest.fn().mockResolvedValue(patientName),
+    findRootMessageIds: jest.fn().mockResolvedValue(new Map()),
+    findMessageExcerpts: jest.fn().mockResolvedValue(new Map()),
   } as unknown as NotificationRepository;
 }
 
@@ -99,5 +101,103 @@ describe('GetNotificationsUseCase (D-13 revisado no fecho B5: célula do DESTINA
     await useCase.execute({ recipientUid: 'me', unreadOnly: true, limit: 10 });
 
     expect(repo.listForRecipient).toHaveBeenCalledWith('me', { unreadOnly: true, limit: 10 });
+  });
+});
+
+describe('GetNotificationsUseCase — rootMessageId (item 3, F10/F11) — UNGATED, igual ao messageId', () => {
+  it('propaga o rootMessageId resolvido pelo repositório, mesmo SEM accessChecker/célula', async () => {
+    const repo = repoWith([row({ messageId: 'm1', patientId: null })]);
+    (repo.findRootMessageIds as jest.Mock).mockResolvedValue(new Map([['m1', 'root-1']]));
+    const useCase = new GetNotificationsUseCase(repo);
+
+    const [dto] = await useCase.execute({ recipientUid: 'me', limit: 20 });
+
+    expect(dto.rootMessageId).toBe('root-1');
+    expect(repo.findRootMessageIds).toHaveBeenCalledWith(['m1']);
+  });
+
+  it('mensagem de TOPO (rootMessageId null no repositório): dto.rootMessageId sai null', async () => {
+    const repo = repoWith([row({ messageId: 'm1' })]);
+    (repo.findRootMessageIds as jest.Mock).mockResolvedValue(new Map([['m1', null]]));
+    const useCase = new GetNotificationsUseCase(repo);
+
+    const [dto] = await useCase.execute({ recipientUid: 'me', limit: 20 });
+
+    expect(dto.rootMessageId).toBeNull();
+  });
+
+  it('messageId null no evento: nunca chama findRootMessageIds para ele, dto.rootMessageId null', async () => {
+    const repo = repoWith([row({ messageId: null, patientId: null })]);
+    const useCase = new GetNotificationsUseCase(repo);
+
+    const [dto] = await useCase.execute({ recipientUid: 'me', limit: 20 });
+
+    expect(dto.rootMessageId).toBeNull();
+    expect(repo.findRootMessageIds).toHaveBeenCalledWith([]);
+  });
+
+  it('2 notificações com o MESMO messageId: dedup antes de chamar o repositório (custo de leitura, F8)', async () => {
+    const repo = repoWith([row({ id: 'n1', messageId: 'm1', patientId: null }), row({ id: 'n2', messageId: 'm1', patientId: null })]);
+    const useCase = new GetNotificationsUseCase(repo);
+
+    await useCase.execute({ recipientUid: 'me', limit: 20 });
+
+    expect(repo.findRootMessageIds).toHaveBeenCalledWith(['m1']);
+  });
+});
+
+describe('GetNotificationsUseCase — messageExcerpt (item 2, F7/F8) — MESMO gate de patientDisplayName', () => {
+  it('destinatário TEM patient_conversation:read: messageExcerpt vem do repositório', async () => {
+    const repo = repoWith([row({ messageId: 'm1' })]);
+    (repo.findMessageExcerpts as jest.Mock).mockResolvedValue(new Map([['m1', 'trecho da mensagem']]));
+    const checker: ActorPatientConversationAccessChecker = { canReadPatientConversation: jest.fn().mockResolvedValue(true) };
+    const useCase = new GetNotificationsUseCase(repo, checker);
+
+    const [dto] = await useCase.execute({ recipientUid: 'me', limit: 20 });
+
+    expect(dto.messageExcerpt).toBe('trecho da mensagem');
+    expect(repo.findMessageExcerpts).toHaveBeenCalledWith(['m1']);
+  });
+
+  it('destinatário SEM patient_conversation:read: messageExcerpt null, NUNCA chama findMessageExcerpts (mesmo gate de patientDisplayName)', async () => {
+    const repo = repoWith([row({ messageId: 'm1' })]);
+    const checker: ActorPatientConversationAccessChecker = { canReadPatientConversation: jest.fn().mockResolvedValue(false) };
+    const useCase = new GetNotificationsUseCase(repo, checker);
+
+    const [dto] = await useCase.execute({ recipientUid: 'me', limit: 20 });
+
+    expect(dto.messageExcerpt).toBeNull();
+    expect(repo.findMessageExcerpts).toHaveBeenCalledWith([]);
+  });
+
+  it('patientId null no evento (sem paciente associado): messageExcerpt null, nunca elegível', async () => {
+    const repo = repoWith([row({ messageId: 'm1', patientId: null })]);
+    const checker: ActorPatientConversationAccessChecker = { canReadPatientConversation: jest.fn().mockResolvedValue(true) };
+    const useCase = new GetNotificationsUseCase(repo, checker);
+
+    const [dto] = await useCase.execute({ recipientUid: 'me', limit: 20 });
+
+    expect(dto.messageExcerpt).toBeNull();
+    expect(repo.findMessageExcerpts).toHaveBeenCalledWith([]);
+  });
+
+  it('sem accessChecker (composição incompleta): messageExcerpt fica null, nunca lança', async () => {
+    const repo = repoWith([row({ messageId: 'm1' })]);
+    const useCase = new GetNotificationsUseCase(repo);
+
+    const [dto] = await useCase.execute({ recipientUid: 'me', limit: 20 });
+
+    expect(dto.messageExcerpt).toBeNull();
+  });
+
+  it('repositório resolve null para o messageId (sem body/falha de decifra): dto.messageExcerpt null', async () => {
+    const repo = repoWith([row({ messageId: 'm1' })]);
+    (repo.findMessageExcerpts as jest.Mock).mockResolvedValue(new Map([['m1', null]]));
+    const checker: ActorPatientConversationAccessChecker = { canReadPatientConversation: jest.fn().mockResolvedValue(true) };
+    const useCase = new GetNotificationsUseCase(repo, checker);
+
+    const [dto] = await useCase.execute({ recipientUid: 'me', limit: 20 });
+
+    expect(dto.messageExcerpt).toBeNull();
   });
 });

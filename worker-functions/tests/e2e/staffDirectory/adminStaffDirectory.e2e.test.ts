@@ -177,4 +177,34 @@ describe('Diretório de staff (spec 022, Bloco 1) — HTTP real, Postgres real, 
     expect(comCelula.status).toBe(200);
     expect(comCelula.body.success).toBe(true);
   });
+
+  // Item 1 da change 022-ux-mencao-e-notificacao (revoga D-06, `fatos-medidos.md` F2): `q`
+  // ausente/vazio deixa de ser 400 e passa a listar os primeiros N do diretório.
+  it('6. q AUSENTE — 200 com os primeiros resultados (revoga D-06)', async () => {
+    const res = await chamar('/api/admin/staff-directory', U.comCelula);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(Array.isArray(res.body.data)).toBe(true);
+
+    const uids = res.body.data.map((e: { uid: string }) => e.uid);
+    expect(uids).toContain(U.comCelula);
+    expect(uids).not.toContain(U.inativo); // mesma régua de is_active=false
+  });
+
+  it('7. q VAZIO (?q=) — mesmo comportamento de q ausente, 200 com a lista', async () => {
+    const res = await chamar('/api/admin/staff-directory?q=', U.comCelula);
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    const uids = res.body.data.map((e: { uid: string }) => e.uid);
+    expect(uids).toContain(U.comCelula);
+  });
+
+  it('8. resposta de q ausente também NUNCA contém email nem role (mesma forma da busca com texto)', async () => {
+    const res = await chamar('/api/admin/staff-directory', U.comCelula);
+    expect(res.status).toBe(200);
+    expect(res.body.data.length).toBeGreaterThan(0);
+    for (const entrada of res.body.data) {
+      expect(Object.keys(entrada).sort()).toEqual(['displayName', 'uid']);
+    }
+  });
 });

@@ -5,7 +5,12 @@
  * espaço). Duplicatas no corpo colapsam numa única entrada, na ORDEM em que aparecem — a UI
  * lista "menciona X, Y" uma vez cada, não uma por ocorrência.
  */
-const MENTION_PATTERN = /<@([^<>\s]+)>/g;
+/**
+ * Exportado (D2, change 022-ux-mencao-e-notificacao): `NotificationRepository.findMessageExcerpts`
+ * reusa o MESMO padrão para trocar `<@uid>` por `@Nome` no trecho da notificação — nunca uma 2ª
+ * definição divergente da sintaxe de menção.
+ */
+export const MENTION_PATTERN = /<@([^<>\s]+)>/g;
 
 /** Uids únicos mencionados no corpo, na ordem em que aparecem. */
 export function extractMentionedUids(body: string): string[] {

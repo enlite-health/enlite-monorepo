@@ -66,6 +66,11 @@ export function PatientConversationHandle({ patientId, focusRequest }: PatientCo
   const [unreadCount, setUnreadCount] = useState(0);
   /** `MessageComposer` ATIVO (topo ou reply) — ver docstring do componente. */
   const composerRef = useRef<MessageComposerHandle>(null);
+  /** Deep-link (item 3, change 022-ux-mencao-e-notificacao): alvo repassado ao `ConversationPanel`
+   * quando a notificação clicada tinha `messageId`. `null` = abertura normal (clique no botão).
+   * `token` (G7): o do próprio `DrawerFocusRequest` — identifica O CLIQUE, não a mensagem, para o
+   * `ConversationPanel` saber reprocessar mesmo quando é a MESMA notificação clicada de novo. */
+  const [focusTarget, setFocusTarget] = useState<{ messageId: string; rootMessageId: string | null; token: number } | null>(null);
 
   usePolling(async () => {
     try {
@@ -77,18 +82,31 @@ export function PatientConversationHandle({ patientId, focusRequest }: PatientCo
     }
   }, POLL_MS, { pauseWhenHidden: true });
 
-  const handleOpen = (): void => {
+  const handleOpen = (request?: DrawerFocusRequest): void => {
     setUnreadCount(0);
     setIsPanelOpen(true);
+    // Item 3 (deep-link): quando a abertura veio de uma notificação COM messageId, guarda o alvo
+    // pro `ConversationPanel` processar (rolar/destacar). Clique direto no botão (sem `request`,
+    // ou notificação sem `messageId` — D-08) mantém o comportamento antigo: abertura normal.
+    setFocusTarget(
+      request?.messageId
+        ? { messageId: request.messageId, rootMessageId: request.rootMessageId ?? null, token: request.token }
+        : null,
+    );
     // Persiste a marca de leitura no servidor — sem isto, o badge zera aqui só na TELA, mas o
     // próximo GET (poll ou reload) devolveria o `unreadCount` de ANTES de abrir. Mesmo freio das
     // outras falhas deste componente: best-effort, badge não é canal de alerta.
     void AdminConversationApiService.markConversationRead(patientId).catch(() => {});
   };
 
-  // Deep-link do sino (T413): mesmo mecanismo do checklist (US-D1) — abre o painel sozinho
-  // quando `focusRequest.code === 'conversation'`, nunca duas vezes pelo MESMO token.
+  // Deep-link do sino (T413/item 3): mesmo mecanismo do checklist (US-D1) — abre o painel sozinho
+  // quando `focusRequest.code === 'conversation'`, nunca duas vezes pelo MESMO token; agora também
+  // repassa `messageId`/`rootMessageId` (se vierem) pro `ConversationPanel`.
   useAutoOpenDrawer(focusRequest, 'conversation', handleOpen);
+
+  /** Chamado pelo `ConversationPanel` depois de processar o alvo (achado ou esgotado) — evita
+   * reprocessar o MESMO alvo se o painel re-renderizar sem um clique novo. */
+  const handleFocusHandled = useCallback((): void => setFocusTarget(null), []);
 
   /** Fechamento incondicional — chamado pelo composer (via `onComposerClose`) só quando é seguro
    * (rascunho vazio, ou descarte confirmado), e usado como fallback quando não há composer
@@ -111,7 +129,7 @@ export function PatientConversationHandle({ patientId, focusRequest }: PatientCo
         type="button"
         data-testid="patient-conversation-handle-btn"
         aria-label={tc('label')}
-        onClick={handleOpen}
+        onClick={() => handleOpen()}
         className="fixed right-0 top-1/2 -translate-y-1/2 z-30 flex flex-col items-center gap-1 bg-primary px-2 py-3 rounded-l-lg shadow-lg hover:bg-primary/90 transition-colors"
       >
         <MessageCircle className="w-4 h-4 text-white" />
@@ -143,6 +161,8 @@ export function PatientConversationHandle({ patientId, focusRequest }: PatientCo
           isOpen={isPanelOpen}
           composerRef={composerRef}
           onComposerClose={handlePanelClose}
+          focusTarget={focusTarget}
+          onFocusHandled={handleFocusHandled}
         />
       </SlideOverPanel>
     </>

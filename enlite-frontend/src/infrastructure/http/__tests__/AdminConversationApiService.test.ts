@@ -24,11 +24,13 @@ const json = (body: unknown, status = 200): Response =>
 const syntheticMessage = (overrides: Partial<Record<string, unknown>> = {}) => ({
   id: '11111111-1111-1111-1111-111111111111',
   authorUid: 'staff-1',
+  authorDisplayName: null,
   body: 'msg-1',
   createdAt: '2026-09-01T10:00:00.000Z',
   editedAt: null,
   deletedAt: null,
   mentions: [],
+  mentionDisplayNames: {},
   replyCount: 0,
   lastReplyAt: null,
   attachments: [],

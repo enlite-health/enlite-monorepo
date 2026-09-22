@@ -15,7 +15,7 @@ import { useTranslation } from 'react-i18next';
 import { Text } from '@presentation/components/atoms/Text';
 import { InlineLoadingState } from '@presentation/components/molecules/InlineLoadingState/InlineLoadingState';
 import { AdminNotificationApiService, type AdminNotification } from '@infrastructure/http/AdminNotificationApiService';
-import { buildNotificationText } from './notificationText';
+import { NotificationCard } from './NotificationCard';
 
 interface NotificationPanelProps {
   isOpen: boolean;
@@ -69,8 +69,19 @@ export function NotificationPanel({ isOpen, onClose, onNotificationsChanged }: N
       // a operadora não pode ficar presa por um POST que falhou.
     }
     if (notification.patientId) {
+      // Item 3 (deep-link, change 022-ux-mencao-e-notificacao, F10/F11/F12): antes só disparava
+      // `token: Date.now()` pra reabrir o painel — sem alvo nenhum. Agora propaga o `messageId`/
+      // `rootMessageId` REAIS da mensagem de origem; `ConversationPanel` (via
+      // `PatientConversationHandle`) usa isto pra rolar/destacar a mensagem certa.
       navigate(`/admin/patients/${notification.patientId}`, {
-        state: { focusRequest: { code: 'conversation', token: Date.now() } },
+        state: {
+          focusRequest: {
+            code: 'conversation',
+            token: Date.now(),
+            messageId: notification.messageId ?? undefined,
+            rootMessageId: notification.rootMessageId,
+          },
+        },
       });
       onClose();
     }
@@ -143,37 +154,7 @@ export function NotificationPanel({ isOpen, onClose, onNotificationsChanged }: N
           </div>
         )}
         {!loadError && notifications.map((n) => (
-          <button
-            key={n.id}
-            type="button"
-            data-testid={`notification-item-${n.id}`}
-            onClick={() => void handleClick(n)}
-            // 🔒 Contraste (ajustes de UI B5, rodada de contraste): `opacity-60` no item LIDO
-            // esmaecia o TEXTO junto com o resto — `gray-800` (4.74:1) sob 60% de opacidade cai a
-            // ~2.3:1 (medido nesta sessão), abaixo do piso AA. A distinção lido/não-lido agora é
-            // só de FUNDO (`bg-gray-200`), nunca do texto — texto sempre 100% opaco.
-            //
-            // 🔒 Achado A9 do gate (21/09): a distinção acima é sutil demais (fundo quase idêntico
-            // ao branco) para servir de affordance sozinha. Não lida ganha um marcador PRÓPRIO —
-            // ponto na cor de destaque (`bg-primary`, 18.43:1, decorativo — não carrega texto) +
-            // peso de fonte maior (`semibold`) — nunca reduz o contraste do texto, que continua
-            // `gray-800` (4.74:1) nos dois estados.
-            className={`w-full flex items-start gap-2 text-left px-4 py-3 border-b border-gray-100 hover:bg-gray-50 transition-colors ${
-              n.readAt ? 'bg-gray-200' : ''
-            }`}
-          >
-            {!n.readAt && (
-              <span
-                data-testid={`notification-unread-dot-${n.id}`}
-                role="img"
-                aria-label={t('admin.notifications.unreadItem')}
-                className="mt-1.5 w-2 h-2 rounded-full bg-primary flex-shrink-0"
-              />
-            )}
-            <Text as="span" size="sm" weight={n.readAt ? 'normal' : 'semibold'}>
-              {buildNotificationText(n, t)}
-            </Text>
-          </button>
+          <NotificationCard key={n.id} notification={n} onClick={() => void handleClick(n)} />
         ))}
       </div>
     </div>

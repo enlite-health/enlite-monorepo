@@ -63,11 +63,13 @@ function msg(overrides: Partial<ConversationMessage>): ConversationMessage {
   return {
     id: 'm1',
     authorUid: OTHER_UID,
+  authorDisplayName: null,
     body: 'msg-1',
     createdAt: '2026-09-21T10:00:00.000Z',
     editedAt: null,
     deletedAt: null,
     mentions: [],
+    mentionDisplayNames: {},
     replyCount: 0,
     lastReplyAt: null,
     attachments: [],

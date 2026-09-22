@@ -102,6 +102,7 @@ export type { PermissionFamily } from './infrastructure/catalog/permissionFamili
 export { buildRouteIndex } from './infrastructure/catalog/routeMatcher';
 export type { RouteIndex } from './infrastructure/catalog/routeMatcher';
 export { CATALOG_OWNER_SERVICE } from './application/SyncPermissionCatalogUseCase';
+export { isPermissionFamilyEnforced } from './application/permissionFamilyEnforcement';
 
 // ── Disponibilidade por país ─────────────────────────────────────────────────
 export {

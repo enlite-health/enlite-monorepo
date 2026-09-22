@@ -14,6 +14,7 @@ jest.mock('@shared/database/DatabaseConnection', () => ({
 }));
 
 jest.mock('@shared/security/KMSEncryptionService', () => ({
+  ...jest.requireActual('@shared/security/KMSEncryptionService'),
   KMSEncryptionService: jest.fn().mockImplementation(() => ({
     decrypt: mockDefaultRepoDecrypt,
     encrypt: jest.fn().mockResolvedValue(null),
@@ -81,6 +82,7 @@ describe('ListConversationUseCase', () => {
           id: 'msg-1',
           conversationId,
           authorUid: 'uid-1',
+          authorDisplayName: null,
           body: 'msg-1',
           createdAt: new Date('2026-01-01T10:00:00Z'),
           editedAt: null,
@@ -88,12 +90,14 @@ describe('ListConversationUseCase', () => {
           replyCount: 0,
           lastReplyAt: null,
           mentions: [],
+          mentionDisplayNames: {},
           attachments: [],
         },
         {
           id: 'msg-2',
           conversationId,
           authorUid: 'uid-2',
+          authorDisplayName: null,
           body: 'msg-2',
           createdAt: new Date('2026-01-01T11:00:00Z'),
           editedAt: null,
@@ -101,6 +105,7 @@ describe('ListConversationUseCase', () => {
           replyCount: 0,
           lastReplyAt: null,
           mentions: [],
+          mentionDisplayNames: {},
           attachments: [],
         },
       ];
@@ -118,6 +123,7 @@ describe('ListConversationUseCase', () => {
         id: `msg-${i + 1}`,
         conversationId,
         authorUid: `uid-${i + 1}`,
+        authorDisplayName: null,
         body: `msg-${i + 1}`,
         createdAt: new Date(`2026-01-01T${String(10 + Math.floor(i / 24)).padStart(2, '0')}:${String((i * 60) % 60).padStart(2, '0')}:00Z`),
         editedAt: null,
@@ -125,6 +131,7 @@ describe('ListConversationUseCase', () => {
         replyCount: 0,
         lastReplyAt: null,
         mentions: [] as string[],
+        mentionDisplayNames: {},
         attachments: [],
       }));
       mockRepository.listTopMessages.mockResolvedValue(messages);
@@ -148,6 +155,7 @@ describe('ListConversationUseCase', () => {
           id: 'msg-51',
           conversationId,
           authorUid: 'uid-51',
+          authorDisplayName: null,
           body: 'msg-51',
           createdAt: new Date('2026-01-01T11:00:00Z'),
           editedAt: null,
@@ -155,6 +163,7 @@ describe('ListConversationUseCase', () => {
           replyCount: 0,
           lastReplyAt: null,
           mentions: [],
+          mentionDisplayNames: {},
           attachments: [],
         },
       ];
@@ -191,6 +200,7 @@ describe('ListConversationUseCase', () => {
           id: 'msg-1',
           conversationId,
           authorUid: 'uid-1',
+          authorDisplayName: null,
           body: 'first',
           createdAt: new Date('2026-01-01T10:00:00Z'),
           editedAt: null,
@@ -198,12 +208,14 @@ describe('ListConversationUseCase', () => {
           replyCount: 2,
           lastReplyAt: new Date('2026-01-01T12:00:00Z'),
           mentions: [],
+          mentionDisplayNames: {},
           attachments: [],
         },
         {
           id: 'msg-2',
           conversationId,
           authorUid: 'uid-2',
+          authorDisplayName: null,
           body: 'second',
           createdAt: new Date('2026-01-01T11:00:00Z'),
           editedAt: new Date('2026-01-01T11:30:00Z'),
@@ -211,12 +223,14 @@ describe('ListConversationUseCase', () => {
           replyCount: 0,
           lastReplyAt: null,
           mentions: [],
+          mentionDisplayNames: {},
           attachments: [],
         },
         {
           id: 'msg-3',
           conversationId,
           authorUid: 'uid-3',
+          authorDisplayName: null,
           body: 'third',
           createdAt: new Date('2026-01-01T12:00:00Z'),
           editedAt: null,
@@ -224,6 +238,7 @@ describe('ListConversationUseCase', () => {
           replyCount: 1,
           lastReplyAt: new Date('2026-01-01T12:30:00Z'),
           mentions: [],
+          mentionDisplayNames: {},
           attachments: [],
         },
       ];
@@ -246,6 +261,7 @@ describe('ListConversationUseCase', () => {
               id: 'msg-default-1',
               conversationId,
               authorUid: 'uid-default-1',
+              authorDisplayName: null,
               bodyEncrypted: Buffer.from('cipher'),
               createdAt: new Date('2026-01-01T09:00:00Z'),
               editedAt: null,

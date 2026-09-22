@@ -6,7 +6,7 @@
  * botão "marcar todas como lidas".
  */
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import esJson from '@infrastructure/i18n/locales/es.json';
@@ -50,6 +50,8 @@ function notif(overrides: Partial<AdminNotification> = {}): AdminNotification {
     patientDisplayName: 'Fulano Paciente',
     conversationId: 'c1',
     messageId: 'm1',
+    rootMessageId: null,
+    messageExcerpt: null,
     createdAt: '2026-09-21T10:00:00.000Z',
     readAt: null,
     ...overrides,
@@ -99,6 +101,28 @@ describe('NotificationPanel (spec 022, T412/T413)', () => {
         state: { focusRequest: expect.objectContaining({ code: 'conversation' }) },
       }),
     );
+  });
+
+  it('item 3 (deep-link): clique propaga messageId/rootMessageId reais no focusRequest', async () => {
+    vi.mocked(AdminNotificationApiService.listNotifications).mockResolvedValue([
+      notif({ id: 'n1', patientId: 'p42', messageId: 'msg-1', rootMessageId: 'root-1' }),
+    ]);
+    render(<NotificationPanel isOpen onClose={vi.fn()} />);
+
+    fireEvent.click(await screen.findByTestId('notification-item-n1'));
+
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith(
+      '/admin/patients/p42',
+      expect.objectContaining({
+        state: {
+          focusRequest: expect.objectContaining({
+            code: 'conversation',
+            messageId: 'msg-1',
+            rootMessageId: 'root-1',
+          }),
+        },
+      }),
+    ));
   });
 
   it('notificação sem patientId (edge case): clique marca lida mas NÃO navega', async () => {
@@ -233,11 +257,37 @@ describe('NotificationPanel (spec 022, T412/T413)', () => {
 
     const unreadDot = screen.getByTestId('notification-unread-dot-n1');
     expect(unreadDot).toHaveAttribute('aria-label', 'No leída');
-    const unreadText = unreadItem.querySelector('[data-testid]')?.nextElementSibling;
-    expect(unreadText?.className).toMatch(/font-semibold/);
+    const unreadText = within(unreadItem).getByText('Ana Staff mencionó a vos en Fulano Paciente');
+    expect(unreadText.className).toMatch(/font-semibold/);
 
     expect(screen.queryByTestId('notification-unread-dot-n2')).not.toBeInTheDocument();
-    expect(readItem.querySelector('p, span')?.className).not.toMatch(/font-semibold/);
+    const readText = within(readItem).getByText('Ana Staff mencionó a vos en Fulano Paciente');
+    expect(readText.className).not.toMatch(/font-semibold/);
+  });
+
+  describe('item 2 (change 022-ux-mencao-e-notificacao) — card com avatar, paciente, data e trecho', () => {
+    it('card completo: avatar (iniciais), nome do autor, paciente, data e trecho aparecem', async () => {
+      vi.mocked(AdminNotificationApiService.listNotifications).mockResolvedValue([
+        notif({ id: 'n1', messageExcerpt: 'trecho da mensagem original' }),
+      ]);
+      render(<NotificationPanel isOpen onClose={vi.fn()} />);
+
+      const item = await screen.findByTestId('notification-item-n1');
+      expect(within(item).getByTestId('message-avatar')).toHaveTextContent('AS'); // getInitials('Ana Staff')
+      expect(within(item).getByText('Ana Staff mencionó a vos en Fulano Paciente')).toBeInTheDocument();
+      expect(within(item).getByTestId('notification-excerpt-n1')).toHaveTextContent('trecho da mensagem original');
+    });
+
+    it('messageExcerpt null (sem célula ou falha de decifra): card sem a linha de trecho, sem quebrar o layout', async () => {
+      vi.mocked(AdminNotificationApiService.listNotifications).mockResolvedValue([
+        notif({ id: 'n1', messageExcerpt: null }),
+      ]);
+      render(<NotificationPanel isOpen onClose={vi.fn()} />);
+
+      const item = await screen.findByTestId('notification-item-n1');
+      expect(within(item).getByText('Ana Staff mencionó a vos en Fulano Paciente')).toBeInTheDocument();
+      expect(within(item).queryByTestId('notification-excerpt-n1')).not.toBeInTheDocument();
+    });
   });
 
   it('erro de carga some numa busca seguinte bem-sucedida (reabrir o painel, por exemplo)', async () => {

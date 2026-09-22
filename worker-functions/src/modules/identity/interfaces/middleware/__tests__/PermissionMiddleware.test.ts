@@ -105,6 +105,47 @@ describe('PermissionMiddleware.family().require()', () => {
     expect(client.resolve).not.toHaveBeenCalled();
   });
 
+  // G2 (gate da change 022-ux-mencao-e-notificacao): cenário de prd real — a família JÁ está na
+  // lista de `PERMISSION_ENFORCED_ROUTES` (rollout já declarou "esta rota está pronta"), mas o
+  // engine geral ainda está DESLIGADO (D285). `isPermissionFamilyEnforced` combina as duas
+  // alavancas — nenhuma decide sozinha — e sem essa combinação a família "pronta" começaria a
+  // exigir célula assim que alguém ligasse `PERMISSION_ENFORCED_ROUTES` em prd, mesmo com o
+  // engine geral ainda apagado.
+  it('ambiente de prd — engine DESLIGADO mesmo com a família JÁ na lista de enforced — passa sem resolver (D285)', async () => {
+    const client = clientStub();
+    const { app } = harness(
+      { PERMISSION_ENGINE_ENABLED: 'false', PERMISSION_ENFORCED_ROUTES: 'admin.users' },
+      client,
+    );
+    await request(app).get('/api/admin/users/1').expect(200);
+    expect(client.resolve).not.toHaveBeenCalled();
+  });
+
+  it('mesmo cenário, família em MEIO a uma lista de várias — ainda passa sem resolver', async () => {
+    const client = clientStub();
+    const { app } = harness(
+      { PERMISSION_ENGINE_ENABLED: 'false', PERMISSION_ENFORCED_ROUTES: 'admin.patients;admin.users' },
+      client,
+    );
+    await request(app).get('/api/admin/users/1').expect(200);
+    expect(client.resolve).not.toHaveBeenCalled();
+  });
+
+  // G3 (gate da change 022-ux-mencao-e-notificacao): o log de "família pendente" só faz sentido
+  // quando o engine JÁ está ligado (senão a família nem chegou a ser avaliada de verdade — é só
+  // o ambiente inteiro que está neutro, caso já coberto acima). Sem o `if (isEnvFlagOn(...))` em
+  // PermissionMiddleware.ts:166, todo boot com engine desligado logaria "não enforced" para toda
+  // família fora da lista — ruído em todo ambiente local/CI que roda com o engine apagado.
+  it('com o engine DESLIGADO, NÃO loga "família pendente" (o log só existe quando o engine já decide)', async () => {
+    const client = clientStub();
+    const { app } = harness({ PERMISSION_ENFORCED_ROUTES: 'admin.patients' }, client);
+    const { logger } = jest.requireMock('@shared/logging') as { logger: { info: jest.Mock } };
+
+    await request(app).get('/api/admin/users/1').expect(200);
+
+    expect(logger.info.mock.calls.filter((c) => String(c[1]).includes('não enforced'))).toHaveLength(0);
+  });
+
   it('avisa UMA vez por família que a rota não está enforced (log de boot, não por request)', async () => {
     const client = clientStub();
     const { app } = harness(

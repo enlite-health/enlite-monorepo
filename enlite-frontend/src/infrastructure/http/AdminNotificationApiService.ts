@@ -24,6 +24,13 @@ export interface AdminNotification {
   patientDisplayName: string | null;
   conversationId: string | null;
   messageId: string | null;
+  /** Item 3 (deep-link, change 022-ux-mencao-e-notificacao): UNGATED, presente sempre que
+   * `messageId` existir. `null` quando a mensagem de origem É o root (não é uma reply). */
+  rootMessageId: string | null;
+  /** Item 2 (card com trecho): MESMO gate de `patientDisplayName` — `null` sem célula
+   * `patient_conversation:read`, sem `messageId`, ou se a decifra falhar. Nunca texto clínico
+   * fora da resposta HTTP autenticada (regra dura). */
+  messageExcerpt: string | null;
   createdAt: string;
   readAt: string | null;
 }

@@ -19,6 +19,7 @@ jest.mock('@shared/database/DatabaseConnection', () => ({
 }));
 
 jest.mock('@shared/security/KMSEncryptionService', () => ({
+  ...jest.requireActual('@shared/security/KMSEncryptionService'),
   KMSEncryptionService: jest.fn().mockImplementation(() => ({
     decrypt: mockDefaultRepoDecrypt,
     encrypt: jest.fn().mockResolvedValue(null),
@@ -50,11 +51,13 @@ describe('ListRepliesUseCase', () => {
           conversationId: 'conv-1',
           rootMessageId: 'm1',
           authorUid: 'uid-1',
+          authorDisplayName: null,
           body: 'msg-1',
           createdAt: new Date('2026-01-01T10:00:00Z'),
           editedAt: null,
           deletedAt: null,
           mentions: [],
+          mentionDisplayNames: {},
           attachments: [],
         },
       ];

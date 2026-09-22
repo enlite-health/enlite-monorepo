@@ -380,4 +380,68 @@ describe('Notificações in-app — CRUD, isolamento (D-24) e matriz ABAC (Spec 
       expect(notif.patientDisplayName).toBe('Paciente B4');
     });
   });
+
+  describe('messageExcerpt + rootMessageId (itens 2/3 da change 022-ux-mencao-e-notificacao)', () => {
+    it('destinatário COM patient_conversation:read: messageExcerpt vem preenchido (≤140 chars, corpo real); mensagem de TOPO tem rootMessageId null', async () => {
+      const post = await chamar(
+        'POST',
+        `/api/admin/patients/${PATIENT}/conversation/messages`,
+        U_MENCIONADOR2,
+        { body: `mencao-excerpt-topo <@${U_COM_CELULA_PACIENTE}>` },
+      );
+      expect(post.status).toBe(201);
+      const topoId = post.body.data.id;
+
+      const lista = await chamar('GET', '/api/admin/notifications', U_COM_CELULA_PACIENTE);
+      const notif = lista.body.data.find((n: any) => n.messageId === topoId);
+      expect(notif).toBeDefined();
+      // Desde 97cb687d o servidor troca `<@uid>` por `@<display_name>` no trecho — o usuário
+      // semeado na linha ~132 com esse uid tem display_name "Destinatario Com Celula".
+      expect(notif.messageExcerpt).toBe('mencao-excerpt-topo @Destinatario Com Celula');
+      expect(notif.messageExcerpt.length).toBeLessThanOrEqual(140);
+      expect(notif.rootMessageId).toBeNull();
+    });
+
+    it('destinatário SEM patient_conversation:read: messageExcerpt null, MESMO gate de patientDisplayName', async () => {
+      const post = await chamar(
+        'POST',
+        `/api/admin/patients/${PATIENT}/conversation/messages`,
+        U_MENCIONADOR2,
+        { body: `mencao-excerpt-sem-celula <@${U_SEM_CELULA_PACIENTE}>` },
+      );
+      expect(post.status).toBe(201);
+      const topoId = post.body.data.id;
+
+      const lista = await chamar('GET', '/api/admin/notifications', U_SEM_CELULA_PACIENTE);
+      const notif = lista.body.data.find((n: any) => n.messageId === topoId);
+      expect(notif).toBeDefined();
+      expect(notif.messageExcerpt).toBeNull();
+      expect(notif.patientDisplayName).toBeNull();
+    });
+
+    it('notificação de REPLY: rootMessageId aponta para a mensagem de TOPO (item 3, F11)', async () => {
+      const topo = await chamar(
+        'POST',
+        `/api/admin/patients/${PATIENT}/conversation/messages`,
+        U_MENCIONADOR2,
+        { body: 'raiz-para-reply-b5' },
+      );
+      expect(topo.status).toBe(201);
+      const topoId = topo.body.data.id;
+
+      const reply = await chamar(
+        'POST',
+        `/api/admin/patients/${PATIENT}/conversation/messages`,
+        U_MENCIONADOR2,
+        { body: `reply-com-mencao <@${U_COM_CELULA_PACIENTE}>`, rootMessageId: topoId },
+      );
+      expect(reply.status).toBe(201);
+      const replyId = reply.body.data.id;
+
+      const lista = await chamar('GET', '/api/admin/notifications', U_COM_CELULA_PACIENTE);
+      const notif = lista.body.data.find((n: any) => n.messageId === replyId);
+      expect(notif).toBeDefined();
+      expect(notif.rootMessageId).toBe(topoId);
+    });
+  });
 });

@@ -48,11 +48,13 @@ const PT = ptBR.admin.patients.detail.conversation;
 const msg = (overrides: Partial<ConversationMessage> = {}): ConversationMessage => ({
   id: '11111111-1111-1111-1111-111111111111',
   authorUid: 'staff-um',
+  authorDisplayName: null,
   body: 'msg-1',
   createdAt: '2026-09-01T10:00:00.000Z',
   editedAt: null,
   deletedAt: null,
   mentions: [],
+  mentionDisplayNames: {},
   replyCount: 0,
   lastReplyAt: null,
   attachments: [],
@@ -207,6 +209,46 @@ describe('ThreadView', () => {
     // 2º token no texto é <@u-alfa> → tem que mostrar 'u-alfa', NUNCA 'u-zeta'.
     expect(chips[1]).toHaveTextContent('u-alfa');
     expect(chips[1]).not.toHaveTextContent('u-zeta');
+  });
+
+  describe('item 5a (change 022-ux-mencao-e-notificacao, F19/F20) — nome vem do SERVIDOR, cache é só fallback', () => {
+    it('authorDisplayName do servidor aparece, mesmo sem busca prévia no autocomplete (nunca uid cru)', async () => {
+      getConversationReplies.mockResolvedValue([
+        msg({ id: 'r1', authorUid: 'staff-nunca-visto', authorDisplayName: 'Fulano de Tal' }),
+      ]);
+      render(<ThreadView patientId="p1" rootMessage={msg({ id: 'root-1' })} onBack={vi.fn()} />);
+
+      await waitFor(() => expect(screen.getByTestId('thread-reply-r1')).toBeInTheDocument());
+      const author = screen.getByTestId('thread-reply-r1').querySelector('[data-testid="message-author"]');
+      expect(author).toHaveTextContent('Fulano de Tal');
+      expect(author).not.toHaveTextContent('staff-nunca-visto');
+    });
+
+    it('authorDisplayName null (sem registro em users): cai no fallback do cache/uid, nunca quebra', async () => {
+      getConversationReplies.mockResolvedValue([
+        msg({ id: 'r1', authorUid: 'staff-sem-cadastro', authorDisplayName: null }),
+      ]);
+      render(<ThreadView patientId="p1" rootMessage={msg({ id: 'root-1' })} onBack={vi.fn()} />);
+
+      await waitFor(() => expect(screen.getByTestId('thread-reply-r1')).toBeInTheDocument());
+      const author = screen.getByTestId('thread-reply-r1').querySelector('[data-testid="message-author"]');
+      expect(author).toHaveTextContent('staff-sem-cadastro'); // fallback do hook: o próprio uid
+    });
+
+    it('mentionDisplayNames do servidor resolve o chip, sem depender do autocomplete', async () => {
+      getConversationReplies.mockResolvedValue([
+        msg({
+          id: 'r1',
+          body: 'Oi <@u-9>',
+          mentions: ['u-9'],
+          mentionDisplayNames: { 'u-9': 'Ciclana Staff' },
+        }),
+      ]);
+      render(<ThreadView patientId="p1" rootMessage={msg({ id: 'root-1' })} onBack={vi.fn()} />);
+
+      await waitFor(() => expect(screen.getByTestId('thread-reply-r1')).toBeInTheDocument());
+      expect(screen.getByTestId('mention-chip')).toHaveTextContent('Ciclana Staff');
+    });
   });
 
   it('desmontar ANTES da resposta chegar não seta estado depois (guarda de corrida — sem warning de act)', async () => {

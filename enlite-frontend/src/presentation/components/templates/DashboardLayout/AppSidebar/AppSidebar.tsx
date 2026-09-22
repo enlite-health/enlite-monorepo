@@ -73,6 +73,13 @@ export const AppSidebar = ({
         </button>
       </div>
 
+      {/* Sino de notificações (item 4, change 022-ux-mencao-e-notificacao, F17/F18) — 1º item da
+          sidebar, ACIMA de `navItems`, SEMPRE montado (expandido ou recolhido — antes desmontava
+          e o poll parava junto ao recolher). Global de staff (`own_notifications:*` nasce
+          concedida a TODO staff, D-07), não uma rota de navegação — por isso nunca entra na lista
+          `navItems`, igual antes. */}
+      <NotificationBell isCollapsed={isCollapsed} />
+
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-2">
         {navItems
@@ -118,13 +125,6 @@ export const AppSidebar = ({
             </div>
           ))}
       </nav>
-
-      {/* Sino de notificações (spec 022, Bloco 4, T411) — IMEDIATAMENTE ACIMA do bloco do
-          usuário, separado dos menus por `border-t` (D-13). Nunca dentro de `navItems`: é
-          global de staff (`own_notifications:*` nasce concedida a TODO staff, D-07), não uma
-          rota de navegação. Só no modo expandido — mesmo tratamento do `SidebarFooter` logo
-          abaixo (colapsado mostra só o avatar). */}
-      {!isCollapsed && <NotificationBell />}
 
       {/* Footer */}
       {!isCollapsed && (
