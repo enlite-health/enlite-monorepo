@@ -111,7 +111,14 @@ function MentionList({ items, error, command }: MentionListProps): JSX.Element |
   }
   if (items.length === 0) return null;
   return (
-    <ul data-testid="composer-mention-list" className="rounded-md border bg-white shadow-md py-1">
+    <ul
+      data-testid="composer-mention-list"
+      // `max-h` + `overflow-y-auto`: até 20 resultados (`MENTION_MAX_RESULTS`) cabem numa lista
+      // mais alta que muitos viewports — sem teto, o clamp vertical teria que abrir ACIMA de todo
+      // o histórico da conversa para caber, o que nem sempre existe. Rolar por dentro é o padrão
+      // de popover (item 1, design.md §1); 240px ≈ 6 itens visíveis antes de rolar.
+      className="rounded-md border bg-white shadow-md py-1 max-h-[240px] overflow-y-auto"
+    >
       {items.map((item) => (
         <li key={item.uid}>
           <button
@@ -200,10 +207,20 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
             render: () => {
               let component: ReactRenderer<unknown, MentionListProps> | null = null;
 
-              const reposition = (clientRect: (() => (DOMRect | null)) | null | undefined): void => {
+              // Achado da instrumentação deste conserto (item 1, vertical): `component.element`
+              // é anexado ao `document.body` de imediato, mas o `ReactRenderer` do TipTap só faz
+              // o COMMIT real do conteúdo (portal dentro do `EditorContent`) de forma assíncrona
+              // — medido: em `onStart` E nas primeiras chamadas de `onUpdate`,
+              // `getBoundingClientRect()` devolvia `{width:0, height:0}` porque a `<ul>` ainda não
+              // tinha sido pintada. Com altura 0, o clamp de `clampMentionPopupPosition` nunca
+              // detecta que faltaria espaço abaixo — o flip vertical é matematicamente correto
+              // (ver `mentionPopupPosition.test.ts`), mas recebia um `popup.height` mentiroso.
+              // `applyPosition` faz o posicionamento com o que houver na hora (evita o popup
+              // nascer no canto (0,0) por um frame) E é chamado de novo dentro de
+              // `requestAnimationFrame` — que só dispara depois que o navegador processou o
+              // commit pendente — para corrigir com a altura REAL, uma vez que ela exista.
+              const applyPosition = (rect: DOMRect): void => {
                 if (!component) return;
-                const rect = clientRect?.();
-                if (!rect) return;
                 const popupRect = component.element.getBoundingClientRect();
                 const { top, left } = clampMentionPopupPosition(
                   rect,
@@ -212,6 +229,14 @@ export const MessageComposer = forwardRef<MessageComposerHandle, MessageComposer
                 );
                 component.element.style.top = `${top}px`;
                 component.element.style.left = `${left}px`;
+              };
+
+              const reposition = (clientRect: (() => (DOMRect | null)) | null | undefined): void => {
+                if (!component) return;
+                const rect = clientRect?.();
+                if (!rect) return;
+                applyPosition(rect);
+                requestAnimationFrame(() => applyPosition(rect));
               };
 
               return {
