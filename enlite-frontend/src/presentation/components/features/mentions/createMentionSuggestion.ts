@@ -96,12 +96,25 @@ export function configureMentionSuggestion(options: ConfigureMentionSuggestionOp
       const showAllFor = (query: string): (() => Promise<StaffDirectoryEntry[]>) | undefined =>
         (loadAll && query.length === 0) ? loadAll : undefined;
 
+      // Rodada 3/R3-F (item 2): "ninguém pode ser mencionado" só é uma leitura honesta quando a
+      // busca não tinha filtro nenhum (`query === ''`) — com texto digitado, 0 resultados só
+      // significa "não bateu com ESTA busca", nunca "não há candidato nenhum" (preserva o
+      // silêncio antigo desse caso, `MentionPopupList` só troca de comportamento com o flag).
+      const isEmptyState = (query: string, resultItems: StaffDirectoryEntry[]): boolean =>
+        !lastDirectoryError && query.length === 0 && resultItems.length === 0;
+
       return {
         onStart: (props) => {
           // `ReactRenderer.element` é `HTMLElement` sempre (tipo da própria lib) — sem
           // `instanceof` redundante.
           component = new ReactRenderer(MentionPopupList, {
-            props: { items: props.items, error: lastDirectoryError, command: props.command, onShowAll: showAllFor(props.query) },
+            props: {
+              items: props.items,
+              error: lastDirectoryError,
+              command: props.command,
+              onShowAll: showAllFor(props.query),
+              emptyState: isEmptyState(props.query, props.items),
+            },
             editor: props.editor,
           });
           component.element.style.position = 'fixed';
@@ -110,7 +123,13 @@ export function configureMentionSuggestion(options: ConfigureMentionSuggestionOp
           reposition(props.clientRect);
         },
         onUpdate: (props) => {
-          component?.updateProps({ items: props.items, error: lastDirectoryError, command: props.command, onShowAll: showAllFor(props.query) });
+          component?.updateProps({
+            items: props.items,
+            error: lastDirectoryError,
+            command: props.command,
+            onShowAll: showAllFor(props.query),
+            emptyState: isEmptyState(props.query, props.items),
+          });
           reposition(props.clientRect);
         },
         // Escape já é tratado pelo próprio `Suggestion` plugin (sempre fecha, `dispatchExit`)

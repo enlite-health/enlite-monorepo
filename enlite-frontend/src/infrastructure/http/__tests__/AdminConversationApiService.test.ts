@@ -250,6 +250,20 @@ describe('AdminConversationApiService', () => {
     expect(url).toBe('http://localhost:8080/api/admin/staff-directory?q=ana');
   });
 
+  it('searchStaffDirectory: patientId (Rodada 3/R3-F, contrato novo R3-1) vira ?patientId= na querystring', async () => {
+    fetchMock.mockResolvedValue(json({ success: true, data: [] }));
+    await AdminConversationApiService.searchStaffDirectory('ana', undefined, 'patient-1');
+    const [url] = fetchMock.mock.calls[0];
+    expect(url).toBe('http://localhost:8080/api/admin/staff-directory?q=ana&patientId=patient-1');
+  });
+
+  it('searchStaffDirectory: sem patientId, não manda o parâmetro (comportamento de antes)', async () => {
+    fetchMock.mockResolvedValue(json({ success: true, data: [] }));
+    await AdminConversationApiService.searchStaffDirectory('ana');
+    const [url] = fetchMock.mock.calls[0];
+    expect(url).not.toContain('patientId');
+  });
+
   // ========== transversal ==========
 
   it('sem token: nenhuma chamada manda Authorization', async () => {

@@ -66,7 +66,7 @@ describe('MessageComposer', () => {
     await user.click(editor);
     await user.type(editor, '@qa');
 
-    await waitFor(() => expect(searchStaffDirectory).toHaveBeenCalledWith('qa'));
+    await waitFor(() => expect(searchStaffDirectory).toHaveBeenCalledWith('qa', undefined, 'p1'));
     await waitFor(() => expect(screen.getByTestId('composer-mention-list')).toBeInTheDocument());
     expect(screen.getByTestId('composer-mention-item-u-1')).toHaveTextContent('QA Staff Um');
   });
@@ -80,8 +80,35 @@ describe('MessageComposer', () => {
     await user.click(editor);
     await user.type(editor, '@');
 
-    await waitFor(() => expect(searchStaffDirectory).toHaveBeenCalledWith(''));
+    await waitFor(() => expect(searchStaffDirectory).toHaveBeenCalledWith('', undefined, 'p1'));
     await waitFor(() => expect(screen.getByTestId('composer-mention-list')).toBeInTheDocument());
+  });
+
+  it('🔒 Rodada 3/R3-F: a busca do @ manda o patientId DA CONVERSA aberta (sabotagem morre sem ele)', async () => {
+    searchStaffDirectory.mockResolvedValue([{ uid: 'u-1', displayName: 'QA Staff Um' }]);
+    render(<MessageComposer patientId="patient-xyz" />);
+
+    const editor = screen.getByTestId('composer-editor');
+    const user = userEvent.setup();
+    await user.click(editor);
+    await user.type(editor, '@qa');
+
+    await waitFor(() => expect(searchStaffDirectory).toHaveBeenCalledWith('qa', undefined, 'patient-xyz'));
+  });
+
+  it('🔒 Rodada 3/R3-F, item 2: ninguém mencionável (busca vazia sem filtro) mostra a linha de estado vazio, não a lista', async () => {
+    searchStaffDirectory.mockResolvedValue([]);
+    render(<MessageComposer patientId="patient-sem-acesso" />);
+
+    const editor = screen.getByTestId('composer-editor');
+    const user = userEvent.setup();
+    await user.click(editor);
+    await user.type(editor, '@');
+
+    await waitFor(() => expect(screen.getByTestId('composer-mention-empty')).toBeInTheDocument());
+    expect(screen.getByTestId('composer-mention-empty')).toHaveTextContent(PT.mentionNoEligibleRecipients);
+    expect(screen.queryByTestId('composer-mention-list')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('composer-mention-error')).not.toBeInTheDocument();
   });
 
   it('"Mostrar todos" (Rodada 2, popup estilo ClickUp): busca com limit=200 e substitui a lista de topo', async () => {
@@ -100,7 +127,7 @@ describe('MessageComposer', () => {
 
     fireEvent.click(screen.getByTestId('composer-mention-show-all'));
 
-    await waitFor(() => expect(searchStaffDirectory).toHaveBeenLastCalledWith('', 200));
+    await waitFor(() => expect(searchStaffDirectory).toHaveBeenLastCalledWith('', 200, 'p1'));
     await waitFor(() => expect(screen.getByTestId('composer-mention-item-u-2')).toBeInTheDocument());
     expect(screen.queryByTestId('composer-mention-show-all')).not.toBeInTheDocument();
   });
@@ -116,7 +143,7 @@ describe('MessageComposer', () => {
     await waitFor(() => expect(screen.getByTestId('composer-mention-show-all')).toBeInTheDocument());
 
     await user.type(editor, 'qa');
-    await waitFor(() => expect(searchStaffDirectory).toHaveBeenLastCalledWith('qa'));
+    await waitFor(() => expect(searchStaffDirectory).toHaveBeenLastCalledWith('qa', undefined, 'p1'));
     // "Mostrar todos" não pode aparecer ao lado de um resultado FILTRADO — quem conta os <li>
     // da lista (e2e `mention-autocomplete-min-zero`, "digitar filtra para 1 resultado só") não
     // pode ver um item a mais que não é candidato nenhum.
@@ -132,7 +159,7 @@ describe('MessageComposer', () => {
     await user.click(editor);
     await user.type(editor, '@q');
 
-    await waitFor(() => expect(searchStaffDirectory).toHaveBeenCalledWith('q'));
+    await waitFor(() => expect(searchStaffDirectory).toHaveBeenCalledWith('q', undefined, 'p1'));
   });
 
   it('falha do diretório mostra estado de erro discreto, distinto de "sem resultado" (F5, item 1)', async () => {
@@ -197,7 +224,7 @@ describe('MessageComposer', () => {
     await user.click(editor);
     await user.type(editor, '@qa');
 
-    await waitFor(() => expect(searchStaffDirectory).toHaveBeenCalledWith('qa'));
+    await waitFor(() => expect(searchStaffDirectory).toHaveBeenCalledWith('qa', undefined, 'p1'));
     expect(screen.queryByTestId('composer-mention-list')).not.toBeInTheDocument();
     expect(screen.getByTestId('message-composer')).toBeInTheDocument(); // não quebrou o componente
   });

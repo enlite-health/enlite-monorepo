@@ -65,6 +65,38 @@ describe('staffDirectoryStore (spec 022, Rodada 2/R2-F)', () => {
     expect(useStaffDirectoryStore.getState().error).toBe(true);
   });
 
+  it('search(q, patientId): repassa patientId ao client (contrato novo R3-1)', async () => {
+    vi.mocked(AdminConversationApiService.searchStaffDirectory).mockResolvedValue(ENTRIES);
+
+    await useStaffDirectoryStore.getState().search('qa', 'patient-1');
+
+    expect(AdminConversationApiService.searchStaffDirectory).toHaveBeenCalledWith('qa', undefined, 'patient-1');
+  });
+
+  it('search(q) SEM patientId: chama o client só com q — nenhum ripple no caller que não tem paciente', async () => {
+    vi.mocked(AdminConversationApiService.searchStaffDirectory).mockResolvedValue(ENTRIES);
+
+    await useStaffDirectoryStore.getState().search('qa');
+
+    expect(AdminConversationApiService.searchStaffDirectory).toHaveBeenCalledWith('qa');
+  });
+
+  it('loadAll(patientId): repassa patientId ao client junto do limit=200 (contrato novo R3-1)', async () => {
+    vi.mocked(AdminConversationApiService.searchStaffDirectory).mockResolvedValue(ENTRIES);
+
+    await useStaffDirectoryStore.getState().loadAll('patient-1');
+
+    expect(AdminConversationApiService.searchStaffDirectory).toHaveBeenCalledWith('', 200, 'patient-1');
+  });
+
+  it('loadAll() SEM patientId: comportamento de antes, sem o 3º argumento', async () => {
+    vi.mocked(AdminConversationApiService.searchStaffDirectory).mockResolvedValue(ENTRIES);
+
+    await useStaffDirectoryStore.getState().loadAll();
+
+    expect(AdminConversationApiService.searchStaffDirectory).toHaveBeenCalledWith('', 200);
+  });
+
   it('loading fica true DURANTE a chamada e volta a false ao terminar', async () => {
     let resolveFn: (v: typeof ENTRIES) => void;
     vi.mocked(AdminConversationApiService.searchStaffDirectory).mockReturnValue(

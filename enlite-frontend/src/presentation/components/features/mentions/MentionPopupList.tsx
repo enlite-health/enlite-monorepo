@@ -40,6 +40,15 @@ export interface MentionPopupListProps {
    * Ausente = sem essa linha, o popup só mostra `items`. Injetado (nunca importa um client HTTP
    * direto) — mesma régua de `createMentionSuggestion`/`fetchCandidates`. */
   onShowAll?: () => Promise<StaffDirectoryEntry[]>;
+  /**
+   * Rodada 3/R3-F (item 2): `true` só quando o CHAMADOR já verificou que a busca voltou vazia SEM
+   * filtro nenhum (`query === ''`) — ou seja, ninguém pode ser mencionado de verdade (ex.:
+   * `patientId` filtra e nenhum outro staff tem acesso à conversa), nunca "esta busca específica
+   * não bateu com ninguém". Distinto de `error` (F5, item 1): aqui a chamada teve SUCESSO, só que
+   * o resultado é genuinamente vazio. Ausente/`false` preserva o comportamento antigo (0 itens
+   * sem filtro nenhum de erro nem de vazio-honesto = não renderiza nada, ex.: busca com texto que
+   * não bate com ninguém). */
+  emptyState?: boolean;
 }
 
 export interface MentionPopupListHandle {
@@ -49,7 +58,7 @@ export interface MentionPopupListHandle {
 }
 
 export const MentionPopupList = forwardRef<MentionPopupListHandle, MentionPopupListProps>(
-  function MentionPopupList({ items, error, command, onShowAll }, ref) {
+  function MentionPopupList({ items, error, command, onShowAll, emptyState = false }, ref) {
     const { t } = useTranslation();
     const [activeIndex, setActiveIndex] = useState(0);
     /** `null` = visão de topo (`items`); array = "Mostrar todos" já carregado — substitui `items`
@@ -67,7 +76,12 @@ export const MentionPopupList = forwardRef<MentionPopupListHandle, MentionPopupL
     }, [items]);
 
     const visibleItems = allItems ?? items;
-    const showAllRowVisible = allItems === null && !!onShowAll;
+    // Rodada 3/R3-F (item 2): sem NENHUM candidato na visão de topo, "Mostrar todos" não tem o
+    // que buscar de novo (a mesma busca sem filtro voltaria vazia de novo) — mostrá-lo ali seria
+    // prometer mais gente pra quem já é a lista completa (vazia). `visibleItems.length > 0` é a
+    // guarda; sem ela, o estado vazio (abaixo) nunca aparecia — a linha "Mostrar todos" sozinha
+    // já deixava `optionCount` em 1, nunca 0.
+    const showAllRowVisible = allItems === null && !!onShowAll && visibleItems.length > 0;
     /** Índice VIRTUAL da linha "Mostrar todos" — sempre o último slot do ciclo de teclado. */
     const showAllIndex = visibleItems.length;
     const optionCount = visibleItems.length + (showAllRowVisible ? 1 : 0);
@@ -127,7 +141,25 @@ export const MentionPopupList = forwardRef<MentionPopupListHandle, MentionPopupL
         </div>
       );
     }
-    if (optionCount === 0) return null;
+    if (optionCount === 0) {
+      // Rodada 3/R3-F (item 2): honesto ("ninguém pode ser mencionado") em vez de silencioso —
+      // só quando o CHAMADOR sinalizou `emptyState` (busca sem filtro, resultado vazio, sem
+      // erro). Sem o flag, preserva o comportamento antigo (nada renderizado).
+      if (emptyState) {
+        return (
+          <div
+            data-testid="composer-mention-empty"
+            role="status"
+            className="rounded-md border bg-white shadow-md px-3 py-2"
+          >
+            <Text as="span" size="xs" color="secondary">
+              {t('admin.patients.detail.conversation.composer.mentionNoEligibleRecipients')}
+            </Text>
+          </div>
+        );
+      }
+      return null;
+    }
 
     const activeId = activeIndex === showAllIndex && showAllRowVisible
       ? 'composer-mention-showall'

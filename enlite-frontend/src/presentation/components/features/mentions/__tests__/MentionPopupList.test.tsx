@@ -108,6 +108,42 @@ describe('MentionPopupList (estilo ClickUp, Rodada 2/R2-F)', () => {
     expect(container).toBeEmptyDOMElement();
   });
 
+  // Rodada 3/R3-F, item 2: estado vazio honesto ("ninguém pode ser mencionado") — o CHAMADOR
+  // (`createMentionSuggestion`) já verificou que a busca era sem filtro; aqui só a renderização.
+  it('items=[] com emptyState=true: mostra a linha de estado vazio (distinta do erro)', () => {
+    render(<MentionPopupList items={[]} error={false} emptyState command={vi.fn()} />);
+    expect(screen.getByTestId('composer-mention-empty')).toBeInTheDocument();
+    expect(screen.getByTestId('composer-mention-empty')).toHaveTextContent(
+      resolve('admin.patients.detail.conversation.composer.mentionNoEligibleRecipients') as string,
+    );
+    expect(screen.queryByTestId('composer-mention-error')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('composer-mention-list')).not.toBeInTheDocument();
+  });
+
+  it('items=[] com emptyState=true, mas error=true: erro sempre vence (F5, nunca mentir "vazio" numa falha real)', () => {
+    render(<MentionPopupList items={[]} error emptyState command={vi.fn()} />);
+    expect(screen.getByTestId('composer-mention-error')).toBeInTheDocument();
+    expect(screen.queryByTestId('composer-mention-empty')).not.toBeInTheDocument();
+  });
+
+  it('items não-vazio com emptyState=true (nunca acontece no uso real, mas a lista sempre vence): mostra a lista', () => {
+    render(<MentionPopupList items={ITEMS} error={false} emptyState command={vi.fn()} />);
+    expect(screen.getByTestId('composer-mention-list')).toBeInTheDocument();
+    expect(screen.queryByTestId('composer-mention-empty')).not.toBeInTheDocument();
+  });
+
+  it('emptyState ausente (default false): items=[] continua sem renderizar nada — não quebra quem já usava o componente sem o flag', () => {
+    const { container } = render(<MentionPopupList items={[]} error={false} command={vi.fn()} />);
+    expect(container).toBeEmptyDOMElement();
+    expect(screen.queryByTestId('composer-mention-empty')).not.toBeInTheDocument();
+  });
+
+  it('emptyState=true: onKeyDown nunca intercepta nada (nada pra navegar)', () => {
+    const ref = createRef<MentionPopupListHandle>();
+    render(<MentionPopupList ref={ref} items={[]} error={false} emptyState command={vi.fn()} />);
+    expect(ref.current!.onKeyDown({ event: press('ArrowDown') })).toBe(false);
+  });
+
   it('error=true: mostra o aviso de falha, nunca a lista (distinto de "0 resultados")', () => {
     render(<MentionPopupList items={[]} error command={vi.fn()} />);
     expect(screen.getByTestId('composer-mention-error')).toBeInTheDocument();
