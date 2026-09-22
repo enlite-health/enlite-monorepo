@@ -59,6 +59,12 @@ Pessoas: Gabriel (dono do produto, GCP-native, aprendendo E2E/monitoring junto) 
    metade. Consequência de custo, medido em prod: 15min e 24h = **1 página (~2s)**; 30d = **4 páginas
    (~24s)**; 90d = 5. Mantenha as consultas do monitor estreitas; alargar janela agora custa tempo real,
    e dentro de `waitForLog` isso multiplica pelos polls e encosta no `timeout: 60_000` do teste.
+   · **`regression/anacare-hours-sync.regression.ts`** (desde 21/09): intercepta o
+   `POST /api/admin/anacare-hours/sync` com `page.route`/`route.fulfill` DE PROPÓSITO — o e2e-prod
+   é só teste e nunca pode disparar o sync real em prd (decisão do Gabriel, 21/09/2026; sync
+   automático adiado pela D388). Prova o CORPO do request (mês lido da tela, `budgetMs`); o fluxo
+   real do sync é coberto pelo e2e de integração local
+   `enlite-frontend/e2e/integration/anacare-hours-conclusao-de-corrida.integration.e2e.ts`.
 2. **Teardown garantido.** Tudo que a suíte cria leva marca inequívoca (email `gabriel+e2e-<data>@`,
    prefixo `[E2E]`). Cleanup em 2 níveis: afterEach/afterAll (normal) + **sweeper idempotente**
    que roda ANTES da suíte e limpa órfãos por marca (rede de segurança se um teste morre no meio).
