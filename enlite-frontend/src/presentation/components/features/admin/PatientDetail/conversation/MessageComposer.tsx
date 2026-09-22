@@ -54,7 +54,7 @@ import { useStaffNameCache } from '@presentation/stores/staffNameCache';
 import { Button } from '@presentation/components/atoms/Button';
 import { Text } from '@presentation/components/atoms/Text';
 import { AttachmentPicker } from './AttachmentPicker';
-import { clampMentionPopupPosition } from './mentionPopupPosition';
+import { clampMentionPopupPosition } from '@presentation/components/features/mentions/mentionPopupPosition';
 
 /** `q` ausente/vazio agora é aceito pelo backend (item 1, revoga D-06) — `0` deixa o TipTap
  * chamar `items()` a partir do próprio `@`, sem exigir nenhum caractere depois. */
