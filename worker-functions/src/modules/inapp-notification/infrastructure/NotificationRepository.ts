@@ -14,12 +14,26 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { mapWithConcurrency } from '@shared/async/mapWithConcurrency';
 import { reportError } from '@shared/logging';
+import { MENTION_PATTERN } from '@modules/conversation/domain/ConversationMention';
 
 /** Limite de decifra KMS em paralelo — mesmo valor de `ConversationRepository` (D-01). */
 const DECRYPT_CONCURRENCY_LIMIT = 10;
 
 /** Trecho da notificação (item 2, design.md §2) — mesmo teto citado no contrato/spec. */
 const MESSAGE_EXCERPT_MAX_LENGTH = 140;
+
+/**
+ * D2 (achado da revisão visual da Fase 2, 22/09): rótulo usado quando o uid mencionado não tem
+ * `display_name` resolvível (JOIN vazio) — nunca o uid cru no trecho. Sem i18n no backend (não há
+ * infra de locale aqui, só no frontend); espanhol argentino por ser a língua primária do produto
+ * (CLAUDE.md), mesma decisão de "sem tradução server-side" já em uso no restante deste arquivo.
+ */
+const MENTION_FALLBACK_LABEL = 'usuario';
+
+interface MentionSpan {
+  start: number;
+  end: number;
+}
 
 export type NotificationTypeCode = 'CONVERSATION_MENTIONED' | 'CONVERSATION_REPLIED';
 
@@ -235,10 +249,9 @@ export class NotificationRepository {
       [messageIds],
     );
 
-    const excerpts = await mapWithConcurrency(rows, DECRYPT_CONCURRENCY_LIMIT, async (row) => {
+    const decryptedBodies = await mapWithConcurrency(rows, DECRYPT_CONCURRENCY_LIMIT, async (row) => {
       try {
-        const body = await this.encryptionService.decrypt(row.bodyEncrypted);
-        return body.length > MESSAGE_EXCERPT_MAX_LENGTH ? body.slice(0, MESSAGE_EXCERPT_MAX_LENGTH) : body;
+        return await this.encryptionService.decrypt(row.bodyEncrypted);
       } catch (error) {
         const err = error instanceof Error ? error : new Error(String(error));
         reportError(err, { source: 'NotificationRepository:findMessageExcerpts', messageId: row.id });
@@ -246,7 +259,94 @@ export class NotificationRepository {
       }
     });
 
-    rows.forEach((row, i) => excerptByMessageId.set(row.id, excerpts[i]));
+    // D2 (achado da revisão visual da Fase 2, 22/09): o trecho saía com `<@uid>` cru. Só busca
+    // nomes de menção para as mensagens cujo corpo DECIFRADO realmente contém `<@` — custo evitado
+    // na maioria das notificações, que não mencionam ninguém no corpo.
+    const messageIdsWithMentions = rows
+      .filter((row, i) => typeof decryptedBodies[i] === 'string' && (decryptedBodies[i] as string).includes('<@'))
+      .map((row) => row.id);
+    const mentionNamesByMessageId =
+      messageIdsWithMentions.length > 0
+        ? await this.findMentionDisplayNames(messageIdsWithMentions, executor)
+        : new Map<string, Record<string, string | null>>();
+
+    rows.forEach((row, i) => {
+      const body = decryptedBodies[i];
+      if (body === null) {
+        excerptByMessageId.set(row.id, null);
+        return;
+      }
+      const { text, spans } = substituteMentionTokens(body, mentionNamesByMessageId.get(row.id) ?? {});
+      excerptByMessageId.set(row.id, truncateExcerpt(text, MESSAGE_EXCERPT_MAX_LENGTH, spans));
+    });
+
     return excerptByMessageId;
   }
+
+  /**
+   * D2: nome de cada uid mencionado no corpo das mensagens dadas — MESMO padrão de
+   * `ConversationRepository.fetchMentionsByMessageIds` (JOIN `users`, uma query em lote via `ANY`,
+   * nunca uma por mensagem). Só chamada por `findMessageExcerpts` quando o corpo decifrado contém
+   * `<@` — nunca para o conjunto inteiro de mensagens.
+   */
+  private async findMentionDisplayNames(
+    messageIds: string[],
+    executor: Pool | PoolClient,
+  ): Promise<Map<string, Record<string, string | null>>> {
+    const byMessageId = new Map<string, Record<string, string | null>>();
+    const { rows } = await executor.query<{
+      messageId: string;
+      mentionedUid: string;
+      mentionedDisplayName: string | null;
+    }>(
+      `SELECT message_id AS "messageId", mentioned_uid AS "mentionedUid", u.display_name AS "mentionedDisplayName"
+         FROM conversation_message_mentions
+         LEFT JOIN users u ON u.firebase_uid = conversation_message_mentions.mentioned_uid
+        WHERE message_id = ANY($1::uuid[])`,
+      [messageIds],
+    );
+    for (const row of rows) {
+      const existing = byMessageId.get(row.messageId) ?? {};
+      existing[row.mentionedUid] = row.mentionedDisplayName;
+      byMessageId.set(row.messageId, existing);
+    }
+    return byMessageId;
+  }
+}
+
+/**
+ * Troca cada `<@uid>` do corpo por `@<Nome>` (ou `@${MENTION_FALLBACK_LABEL}` sem nome
+ * resolvível) e devolve também os `spans` — posição de início/fim de cada substituição no texto
+ * RESULTANTE — que `truncateExcerpt` usa para nunca cortar um token no meio.
+ */
+function substituteMentionTokens(
+  body: string,
+  displayNames: Record<string, string | null>,
+): { text: string; spans: MentionSpan[] } {
+  const spans: MentionSpan[] = [];
+  let result = '';
+  let lastIndex = 0;
+  MENTION_PATTERN.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = MENTION_PATTERN.exec(body)) !== null) {
+    result += body.slice(lastIndex, match.index);
+    const uid = match[1];
+    const token = `@${displayNames[uid] ?? MENTION_FALLBACK_LABEL}`;
+    spans.push({ start: result.length, end: result.length + token.length });
+    result += token;
+    lastIndex = match.index + match[0].length;
+  }
+  result += body.slice(lastIndex);
+  return { text: result, spans };
+}
+
+/**
+ * Corta em `maxLength` chars (mesmo teto de sempre). Se o corte cair NO MEIO de um token `@Nome`
+ * (um dos `spans`), recua para o INÍCIO daquele token em vez de partir o nome — nunca um
+ * `@Ana S` pela metade.
+ */
+function truncateExcerpt(text: string, maxLength: number, spans: MentionSpan[]): string {
+  if (text.length <= maxLength) return text;
+  const breaking = spans.find((s) => maxLength > s.start && maxLength < s.end);
+  return text.slice(0, breaking ? breaking.start : maxLength);
 }

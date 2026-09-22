@@ -284,6 +284,70 @@ describe('NotificationRepository', () => {
       expect(sql).toContain('WHERE id = ANY($1::uuid[])');
       expect(params).toEqual([['m1', 'm2']]);
     });
+
+    // D2 (achado da revisão visual da Fase 2, 22/09): o trecho saía com a marcação crua
+    // `<@uid>` em vez de `@Nome` — a operadora via um uid de 20+ chars no card, nunca o nome.
+    describe('D2 — substitui `<@uid>` por `@Nome` (nunca a marcação crua)', () => {
+      it('corpo com UMA menção resolvida: troca `<@uid>` por `@<displayName>`', async () => {
+        const query = jest
+          .fn()
+          .mockResolvedValueOnce({ rows: [{ id: 'm1', bodyEncrypted: 'enc:oi' }] })
+          .mockResolvedValueOnce({
+            rows: [{ messageId: 'm1', mentionedUid: 'uid-ana', mentionedDisplayName: 'Ana Silva' }],
+          });
+        mockDecrypt.mockResolvedValueOnce('oi <@uid-ana>, olha isso');
+        const repo = new NotificationRepository(poolWith(query));
+
+        const out = await repo.findMessageExcerpts(['m1'], poolWith(query));
+
+        expect(out.get('m1')).toBe('oi @Ana Silva, olha isso');
+      });
+
+      it('uid mencionado sem display_name resolvível: fallback rótulo genérico (nunca o uid cru)', async () => {
+        const query = jest
+          .fn()
+          .mockResolvedValueOnce({ rows: [{ id: 'm1', bodyEncrypted: 'enc:oi' }] })
+          .mockResolvedValueOnce({
+            rows: [{ messageId: 'm1', mentionedUid: 'uid-fantasma', mentionedDisplayName: null }],
+          });
+        mockDecrypt.mockResolvedValueOnce('oi <@uid-fantasma>');
+        const repo = new NotificationRepository(poolWith(query));
+
+        const out = await repo.findMessageExcerpts(['m1'], poolWith(query));
+
+        expect(out.get('m1')).not.toContain('uid-fantasma');
+        expect(out.get('m1')).toMatch(/^oi @\S+$/);
+      });
+
+      it('corpo sem menção: NÃO dispara a 2ª query de nomes (custo evitado)', async () => {
+        const query = jest.fn().mockResolvedValue({ rows: [{ id: 'm1', bodyEncrypted: 'enc:oi' }] });
+        mockDecrypt.mockResolvedValueOnce('oi, sem menção nenhuma');
+        const repo = new NotificationRepository(poolWith(query));
+
+        await repo.findMessageExcerpts(['m1'], poolWith(query));
+
+        expect(query).toHaveBeenCalledTimes(1);
+      });
+
+      it('corte de 140 chars NUNCA parte um token `@Nome` no meio — recua para antes da menção', async () => {
+        const prefixo = 'a'.repeat(135); // corte cairia no meio de "@Ana Silva"
+        const query = jest
+          .fn()
+          .mockResolvedValueOnce({ rows: [{ id: 'm1', bodyEncrypted: 'enc:longo' }] })
+          .mockResolvedValueOnce({
+            rows: [{ messageId: 'm1', mentionedUid: 'uid-ana', mentionedDisplayName: 'Ana Silva' }],
+          });
+        mockDecrypt.mockResolvedValueOnce(`${prefixo} <@uid-ana> resto que nunca deveria aparecer`);
+        const repo = new NotificationRepository(poolWith(query));
+
+        const out = await repo.findMessageExcerpts(['m1'], poolWith(query));
+        const excerpt = out.get('m1') as string;
+
+        expect(excerpt.length).toBeLessThanOrEqual(140);
+        expect(excerpt).not.toMatch(/@Ana S$/); // não corta o nome no meio
+        expect(excerpt.endsWith('@Ana Silva') || !excerpt.includes('@')).toBe(true);
+      });
+    });
   });
 
   describe('findPatientDisplayName — nome em claro (não é campo cifrado, D-13)', () => {
