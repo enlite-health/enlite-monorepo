@@ -20,6 +20,7 @@ import {
   seedPatientQA, cleanupPatientQA, seedStaffInGroup, cleanupStaffAndGroup, grantCell, loginAs,
   type MockUser,
 } from '../helpers/patient-conversation-helper';
+import { readTextContrastRatio } from '../helpers/contrast-helper';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const RUN_ID = `${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
@@ -32,32 +33,6 @@ let patientId = '';
 let groupId = '';
 
 const AUTORA: MockUser = { uid: AUTORA_UID, email: AUTORA_EMAIL, role: 'recruiter', country: 'AR' };
-
-/**
- * Contraste real (WCAG), a partir de `getComputedStyle` — luminância relativa W3C. Independe de
- * qual classe Tailwind está por trás (o unit trava a CLASSE; isto trava o NÚMERO de verdade,
- * lido do DOM renderizado no browser).
- */
-function relativeLuminance(rgb: [number, number, number]): number {
-  const [r, g, b] = rgb.map((c) => {
-    const s = c / 255;
-    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
-  });
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-}
-
-function parseRgb(value: string): [number, number, number] {
-  const match = value.match(/(\d+),\s*(\d+),\s*(\d+)/);
-  if (!match) throw new Error(`cor não reconhecida: ${value}`);
-  return [Number(match[1]), Number(match[2]), Number(match[3])];
-}
-
-function contrastRatio(fg: [number, number, number], bg: [number, number, number]): number {
-  const L1 = relativeLuminance(fg);
-  const L2 = relativeLuminance(bg);
-  const [lighter, darker] = L1 > L2 ? [L1, L2] : [L2, L1];
-  return (lighter + 0.05) / (darker + 0.05);
-}
 
 test.describe('Chat interno — card redesenhado (ajustes de UI B5) @integration', () => {
   test.describe.configure({ mode: 'serial' });
@@ -127,13 +102,11 @@ test.describe('Chat interno — card redesenhado (ajustes de UI B5) @integration
     expect(src).toMatch(/^https?:\/\//);
     expect(src).toContain('X-Goog-Signature');
 
-    // ── contraste real do nome e da hora (getComputedStyle, cálculo W3C) ──
-    const authorRgb = await card.getByTestId('message-author').evaluate((el) => getComputedStyle(el).color);
-    const timeRgb = await card.getByTestId('message-time').evaluate((el) => getComputedStyle(el).color);
-    const bgRgb = await card.evaluate((el) => getComputedStyle(el).backgroundColor);
-    const bg = parseRgb(bgRgb);
-    const authorRatio = contrastRatio(parseRgb(authorRgb), bg);
-    const timeRatio = contrastRatio(parseRgb(timeRgb), bg);
+    // ── contraste real do nome e da hora (achado A6 do gate: reusa `readTextContrastRatio` de
+    // `e2e/helpers/contrast-helper.ts` — a MESMA régua W3C que `contrast-audit.integration.e2e.ts`
+    // usa, em vez de uma 2ª implementação de luminância/parse/contraste só deste arquivo) ──
+    const authorRatio = await readTextContrastRatio(card.getByTestId('message-author'));
+    const timeRatio = await readTextContrastRatio(card.getByTestId('message-time'));
     // Medido nesta sessão: author/time = rgb(115,115,115) (#737373, `text-gray-800`) sobre
     // rgb(255,255,255) (`bg-white` do card) → 4.74:1, acima do piso AA (4.5:1) checado abaixo.
     expect(authorRatio).toBeGreaterThanOrEqual(4.5);
