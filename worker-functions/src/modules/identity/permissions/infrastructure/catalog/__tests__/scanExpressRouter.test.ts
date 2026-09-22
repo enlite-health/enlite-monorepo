@@ -367,6 +367,10 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       // (família `admin.users`). Mesma situação das 5 células acima: rota real existe
       // (`adminNotificationRoutes.ts`), mas o fixture de 2 rotas deste teste não a declara.
       'own_notifications:read', 'own_notifications:update',
+      // Change 022-ux-mencao-e-notificacao, Rodada 2/R2-B (22/09): heartbeat de presença —
+      // `own_presence:update` (família `admin.users`). Mesma situação: rota real existe
+      // (`adminPresenceRoutes.ts`), mas o fixture de 2 rotas deste teste não a declara.
+      'own_presence:update',
       'patient_identity:create', 'patient_identity:update',
       'patient_clinical:create', 'patient_clinical:update',
       'patient_care_team:create', 'patient_care_team:update',

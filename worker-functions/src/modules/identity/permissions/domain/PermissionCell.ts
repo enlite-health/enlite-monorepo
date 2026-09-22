@@ -98,6 +98,8 @@ export const RESOURCE_CATEGORY: Readonly<Record<string, PermissionCategory>> = {
   permission_management: 'Administração',
   staff_directory: 'Administração',
   own_notifications: 'Administração',
+  // Change 022-ux-mencao-e-notificacao, Rodada 2 (R2-B): heartbeat de presença do painel admin.
+  own_presence: 'Administração',
 };
 
 /**
@@ -295,6 +297,10 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
   'own_notifications:update':
     'Marcar a(s) PRÓPRIA(s) notificação(ões) do sino como lida(s). Nasce concedida a TODO staff ativo '
     + '(D-07) — nunca marca notificação de outro uid (isolamento entre destinatários, D-24).',
+  'own_presence:update':
+    'Marcar a PRÓPRIA presença como ativa (heartbeat do painel admin, a cada ~60s). Nasce '
+    + 'concedida a TODO staff ativo (mesma regra de own_notifications, D-07) — nunca grava '
+    + '`last_seen_at` de outro uid.',
   'patient_identity:create':
     'Cadastrar a identidade do paciente (nome, documento, nascimento, sexo, telefone, e-mail de '
     + 'contato) e subir a primeira foto/consentimento de imagem.',
