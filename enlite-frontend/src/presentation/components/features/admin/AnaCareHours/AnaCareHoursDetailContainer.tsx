@@ -154,6 +154,13 @@ export function AnaCareHoursDetailContainer({
         onValidateBatch={handleValidateBatch}
         onContestShift={handleContestShift}
         onRefresh={refetch}
+        // change `anacare-horas-feedback-visual-sync` (Requisito 4) — MESMO `isLoading` do hook
+        // (`useAnaCareHoursPatient`), independente de `!snapshot`: na 1ª carga esta prop nem chega
+        // a ser lida (o `if (isLoading && !snapshot)` acima retorna a tela de loading de página
+        // inteira antes deste JSX), então só importa na 2ª busca em diante — exatamente quando o
+        // clique em "Actualizar" precisa de sinal visual próprio (spec: spinner + disabled no
+        // BOTÃO, sem tocar a condição de loading de página inteira).
+        isRefreshing={isLoading}
         sinCheckinHoursMode={sinCheckinHoursMode}
         blockReasonMode={blockReasonMode}
         disableActionsReason={validateGate.denied ? t('admin.anacareHours.error.noValidateCell') : undefined}

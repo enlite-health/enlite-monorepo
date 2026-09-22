@@ -5,6 +5,14 @@ import { AnaCareHoursServiceError } from '@presentation/components/features/admi
 import type { AnaCareHoursService } from '@presentation/components/features/admin/AnaCareHours/AnaCareHoursService';
 import type { TriggerSyncResult } from '@presentation/components/features/admin/AnaCareHours/types';
 
+// change `anacare-horas-feedback-visual-sync` (Requisito 3) — o hook agora traduz o erro por
+// CÓDIGO via `t(key, fallback)` (nunca `err.message`). O ambiente de teste (`src/test/setup.ts`)
+// inicializa i18next com `resources: {}` (sem os JSON de verdade) — mockar `t` para devolver a
+// PRÓPRIA CHAVE deixa o teste verificar qual chave o hook escolheu para cada classe de erro, sem
+// depender do texto final (isso é responsabilidade do teste de paridade i18n, tarefa 7.1, e do
+// e2e real, que carrega o Vite com os JSON de verdade).
+vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
+
 function baseService(triggerSync: AnaCareHoursService['triggerSync']): AnaCareHoursService {
   return {
     getMonthSnapshot: vi.fn(),
@@ -26,6 +34,8 @@ function result(overrides: Partial<TriggerSyncResult> = {}): TriggerSyncResult {
     shiftsWritten: 10,
     nextCursor: null,
     runStartedAt: '2026-09-18T10:00:00-03:00',
+    reservationsTotal: 0,
+    reservationsDone: 0,
     shiftsSkippedNoProvider: 0,
     shiftsSkippedNoPatient: 0,
     ...overrides,
@@ -77,10 +87,96 @@ describe('useAnaCareHoursSync', () => {
 
     expect(hook.current.status).not.toBe('done');
     expect(onComplete).not.toHaveBeenCalled();
-    expect(hook.current.error).toBe('Erro ao conectar ao servidor (HTTP 500).');
+    // Requisito 3: NUNCA `err.message`/texto técnico — tradução por CÓDIGO
+    // (`admin.anacareHours.error.byCode.<CODE>`, mesmo namespace de `AnaCareHoursDetailContainer`).
+    // O mock de `t` (topo do arquivo) devolve a própria chave — aqui só provamos QUAL chave, não o
+    // texto final (isso é o teste de paridade i18n + o e2e real).
+    expect(hook.current.error).toBe('admin.anacareHours.error.byCode.DESCONHECIDO');
+    expect(hook.current.error).not.toContain('HTTP 500');
     // cursor da rodada 1 (bem-sucedida) foi persistido; a rodada 2 (que falhou) nunca sobrescreveu.
     expect(hook.current.resumableCursor).toBe(50);
     expect(sessionStorage.getItem('anacare-hours-sync:2026-08')).toBe(JSON.stringify({ cursor: 50 }));
+  });
+
+  it('NEGATIVO (Requisito 3) — erro de REDE (fetch rejeitando, sem AnaCareHoursServiceError) nunca vaza texto técnico do fetch — traduz por código NETWORK_ERROR', async () => {
+    const trigger = vi.fn().mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    const service = baseService(trigger);
+
+    const { result: hook } = renderHook(() => useAnaCareHoursSync(service, MONTH));
+    act(() => hook.current.start());
+
+    await waitFor(() => expect(hook.current.status).toBe('error'));
+
+    expect(hook.current.error).toBe('admin.anacareHours.error.byCode.NETWORK_ERROR');
+    expect(hook.current.error).not.toContain('Failed to fetch');
+    expect(hook.current.error).not.toMatch(/^TypeError/);
+  });
+
+  it('NEGATIVO (Requisito 3) — 409 de colisão (AnaCareHoursServiceError DESCONHECIDO cuja .message embute anaCarePatientIds) nunca aparece na tela', async () => {
+    // Mesmo formato que `AnaCareHoursHttpService.mapErrorCode` produz para o 409
+    // `ANACARE_PATIENT_MONTH_COLLISION` (código fora de `KNOWN_ERROR_CODES` → cai em
+    // 'DESCONHECIDO', mas a MENSAGEM original do backend (`e.message` de
+    // `AnaCarePatientMonthCollisionError`) embute os ids do paciente).
+    const leakedMessage = 'Conflito: anaCarePatientIds=["E2E-PATIENT-123"] já sendo processados por outra corrida';
+    const trigger = vi.fn().mockRejectedValueOnce(new AnaCareHoursServiceError('DESCONHECIDO', leakedMessage));
+    const service = baseService(trigger);
+
+    const { result: hook } = renderHook(() => useAnaCareHoursSync(service, MONTH));
+    act(() => hook.current.start());
+
+    await waitFor(() => expect(hook.current.status).toBe('error'));
+
+    expect(hook.current.error).not.toContain('anaCarePatientIds');
+    expect(hook.current.error).not.toContain('E2E-PATIENT-123');
+    expect(hook.current.error).toBe('admin.anacareHours.error.byCode.DESCONHECIDO');
+  });
+
+  it('POSITIVO (Requisito 1) — reservationsTotal/reservationsDone refletem o ACUMULADO de cada rodada (sobrescreve, nunca soma) e crescem a cada rodada', async () => {
+    // Rodada 2 fica PENDENTE de propósito (mesmo padrão dos testes CANCELAMENTO acima) — sem
+    // controlar o momento em que ela resolve, as duas rodadas resolveriam no mesmo flush de
+    // microtasks e não daria para observar o estado INTERMEDIÁRIO (round 1) de forma determinística.
+    let resolveSecondRound: ((value: TriggerSyncResult) => void) | undefined;
+    const pendingSecondRound = new Promise<TriggerSyncResult>((resolve) => {
+      resolveSecondRound = resolve;
+    });
+    const trigger = vi
+      .fn()
+      .mockResolvedValueOnce(result({ reservationsProcessed: 120, reservationsTotal: 285, reservationsDone: 120, nextCursor: 120 }))
+      .mockReturnValueOnce(pendingSecondRound);
+    const service = baseService(trigger);
+
+    const { result: hook } = renderHook(() => useAnaCareHoursSync(service, MONTH));
+    act(() => hook.current.start());
+
+    // Rodada 1 já resolveu e a 2ª foi disparada (mock chamado) mas está presa em `pendingSecondRound`.
+    await waitFor(() => expect(trigger).toHaveBeenCalledTimes(2));
+    expect(hook.current.status).toBe('running');
+    expect(hook.current.reservationsTotal).toBe(285);
+    expect(hook.current.reservationsDone).toBe(120);
+
+    await act(async () => {
+      resolveSecondRound?.(result({ reservationsProcessed: 165, reservationsTotal: 285, reservationsDone: 285, nextCursor: null }));
+      await pendingSecondRound;
+    });
+
+    await waitFor(() => expect(hook.current.status).toBe('done'));
+    expect(hook.current.reservationsTotal).toBe(285);
+    expect(hook.current.reservationsDone).toBe(285); // cresceu, nunca diminuiu
+  });
+
+  it('POSITIVO (risco nomeado em design.md) — resposta sem reservationsTotal/reservationsDone (ex.: backend antigo em cache) vira "sem contagem" (null), nunca NaN/undefined', async () => {
+    const legacyResponse = { ...result({ nextCursor: null }) } as Partial<TriggerSyncResult>;
+    delete legacyResponse.reservationsTotal;
+    delete legacyResponse.reservationsDone;
+    const trigger = vi.fn().mockResolvedValueOnce(legacyResponse as TriggerSyncResult);
+    const service = baseService(trigger);
+
+    const { result: hook } = renderHook(() => useAnaCareHoursSync(service, MONTH));
+    act(() => hook.current.start());
+
+    await waitFor(() => expect(hook.current.status).toBe('done'));
+    expect(hook.current.reservationsTotal).toBeNull();
+    expect(hook.current.reservationsDone).toBeNull();
   });
 
   it('POSITIVO — retomada do sessionStorage: hook novo (ex.: após refresh) lê o cursor persistido e o usa na 1ª rodada', async () => {
