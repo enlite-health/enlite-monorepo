@@ -21,6 +21,7 @@ import type {
   ListPermissionCatalogUseCase,
   PermissionGroupDetail,
   QueryPermissionAuditUseCase,
+  QueryPermissionHistoryUseCase,
 } from '@modules/identity/permissions';
 import {
   createPermissionPanelRoutes,
@@ -44,6 +45,7 @@ const ESPERADO: Record<string, string> = {
   'GET /country-features': 'permission_management:read',
   'GET /permission-audit': 'permission_management:read',
   'POST /permission-audit/query': 'permission_management:read',
+  'GET /permission-history': 'permission_management:read',
 };
 
 const ID = '11111111-1111-4111-8111-111111111111';
@@ -76,6 +78,15 @@ const TRILHA = [
   { id: 'a1', userId: 'uid-1', resource: 'worker_pii', action: 'read', resourceId: '<oculto>', decision: 'ALLOW', createdAt: new Date('2026-08-04T00:00:00Z'), country: 'AR' },
 ];
 
+const HISTORICO = [
+  {
+    eventType: 'permission', occurredAt: new Date('2026-09-20T00:00:00Z'), groupId: ID, groupName: 'Recrutamento AR',
+    actorUid: 'uid-0', actorDisplayName: 'Ana Gestora', actorEmail: 'ana@enlite.health',
+    op: 'add', resource: 'worker', action: 'read',
+    subjectUserId: null, subjectDisplayName: null, subjectEmail: null,
+  },
+];
+
 interface Dubles {
   catalogo: jest.Mock;
   list: jest.Mock;
@@ -83,6 +94,7 @@ interface Dubles {
   listMembers: jest.Mock;
   features: jest.Mock;
   audit: jest.Mock;
+  history: jest.Mock;
 }
 
 function build(over: Partial<Dubles> = {}) {
@@ -93,6 +105,7 @@ function build(over: Partial<Dubles> = {}) {
     listMembers: over.listMembers ?? jest.fn().mockResolvedValue(MEMBROS),
     features: over.features ?? jest.fn().mockResolvedValue(FEATURES),
     audit: over.audit ?? jest.fn().mockResolvedValue(TRILHA),
+    history: over.history ?? jest.fn().mockResolvedValue(HISTORICO),
   };
 
   const router = createPermissionPanelRoutes({
@@ -100,6 +113,7 @@ function build(over: Partial<Dubles> = {}) {
     groups: { list: d.list, findById: d.findById, listMembers: d.listMembers } as PanelGroupReader,
     features: { list: d.features } as PanelFeatureReader,
     audit: { execute: d.audit } as unknown as QueryPermissionAuditUseCase,
+    history: { execute: d.history } as unknown as QueryPermissionHistoryUseCase,
     auth: authDouble(),
     permissions: permissionsDouble(),
     tenantId: TENANT,
@@ -148,6 +162,7 @@ describe('createPermissionPanelRoutes — declaração', () => {
       'GET /api/admin/permission-groups → permission_management:read',
       'GET /api/admin/permission-groups/:id → permission_management:read',
       'GET /api/admin/permission-groups/:id/members → permission_management:read',
+      'GET /api/admin/permission-history → permission_management:read',
       'GET /api/admin/permissions/catalog → permission_management:read',
       'POST /api/admin/permission-audit/query → permission_management:read',
     ]);
@@ -160,6 +175,7 @@ describe('createPermissionPanelRoutes — declaração', () => {
       groups: { list: d.list, findById: jest.fn(), listMembers: jest.fn() } as PanelGroupReader,
       features: { list: jest.fn() } as PanelFeatureReader,
       audit: { execute: jest.fn() } as unknown as QueryPermissionAuditUseCase,
+      history: { execute: jest.fn() } as unknown as QueryPermissionHistoryUseCase,
       auth: authDouble(),
       permissions: permissionsDouble(),
     });
@@ -514,5 +530,66 @@ describe('POST /permission-audit/query — o único jeito de filtrar por userId 
     const res = await POST(router, '/permission-audit/query', { userId: 'uid-1' }).expect(500);
 
     expect(res.body).toEqual({ success: false, error: 'Failed to read permission audit' });
+  });
+});
+
+describe('GET /permission-history — histórico de mudanças de permissão', () => {
+  it('devolve os eventos como o use case mandou, sem filtro', async () => {
+    const { router, d } = build();
+
+    const res = await GET(router, '/permission-history').expect(200);
+
+    expect(res.body.events).toEqual(HISTORICO.map((e) => ({ ...e, occurredAt: e.occurredAt.toISOString() })));
+    expect(d.history).toHaveBeenCalledWith({ groupId: undefined, type: undefined, limit: undefined });
+  });
+
+  it('filtra por grupo e por tipo, e o limite chega tipado (número)', async () => {
+    const { router, d } = build();
+
+    await GET(router, `/permission-history?groupId=${ID}&type=member&limit=50`).expect(200);
+
+    expect(d.history).toHaveBeenCalledWith({ groupId: ID, type: 'member', limit: 50 });
+  });
+
+  it('`type` fora de `permission`/`member` é 400', async () => {
+    const { router, d } = build();
+
+    const res = await GET(router, '/permission-history?type=outro').expect(400);
+
+    expect(res.body).toEqual({ success: false, error: 'Invalid query parameters' });
+    expect(d.history).not.toHaveBeenCalled();
+  });
+
+  it('`groupId` malformado (não uuid) é 400', async () => {
+    const { router, d } = build();
+
+    await GET(router, '/permission-history?groupId=nao-e-uuid').expect(400);
+
+    expect(d.history).not.toHaveBeenCalled();
+  });
+
+  it('`limit` acima do teto do banco é 400 — o teto é contrato, não sugestão', async () => {
+    const { router, d } = build();
+
+    await GET(router, '/permission-history?limit=5000').expect(400);
+
+    expect(d.history).not.toHaveBeenCalled();
+  });
+
+  it('chave extra na query é 400 — `.strict()`, mesma convenção da `AuditQuery`', async () => {
+    const { router, d } = build();
+
+    const res = await GET(router, '/permission-history?userId=uid-1').expect(400);
+
+    expect(res.body).toEqual({ success: false, error: 'Invalid query parameters' });
+    expect(d.history).not.toHaveBeenCalled();
+  });
+
+  it('falha da função de histórico é 500 (inclui o 42501 de quem perdeu a célula)', async () => {
+    const { router } = build({ history: jest.fn().mockRejectedValue(new Error('permission denied')) });
+
+    const res = await GET(router, '/permission-history').expect(500);
+
+    expect(res.body).toEqual({ success: false, error: 'Failed to read permission history' });
   });
 });

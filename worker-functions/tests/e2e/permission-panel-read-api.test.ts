@@ -35,16 +35,19 @@ describe('API de leitura do painel de acessos (HTTP real, banco real)', () => {
   let pool: Pool;
   let app: AppDeFamilia;
   const U = {
-    /** Tem `permission_management:read` — quem opera o painel. */
+    /** Tem `permission_management:read`+`:write` — quem opera o painel (o histórico também escreve). */
     gestora: 'panel-e2e-gestora',
     /** Staff ativo, em grupo SEM a célula do painel. */
     semCelula: 'panel-e2e-sem-celula',
     /** Staff ativo e sem NENHUM grupo — o caso da tela de boas-vindas. */
     semGrupo: 'panel-e2e-sem-grupo',
+    /** Quem entra/sai do grupo no bloco do histórico — sujeito, nunca ator. */
+    historicoMembro: 'panel-e2e-historico-membro',
   };
   const GRUPO_GESTAO = 'Panel E2E Gestão de Acessos';
   const GRUPO_SEM_CELULA = 'Panel E2E Sem Células';
   let grupoGestaoId: string;
+  let grupoSemCelulaId: string;
   /**
    * ⚠️ `iam.country_features` nasce VAZIA no banco de e2e (medido: 0 linhas) —
    * quem a preenche é o sync do manifest no boot, que não roda aqui. Sem esta
@@ -87,6 +90,20 @@ describe('API de leitura do painel de acessos (HTTP real, banco real)', () => {
     return { status: res.status, body: (await res.json().catch(() => ({}))) as Record<string, unknown> };
   }
 
+  /** Escrita (F4): PUT/POST/DELETE com corpo, sempre como `U.gestora` (tem `:write`). */
+  async function chamarEscrita(
+    metodo: string,
+    caminho: string,
+    corpo?: unknown,
+  ): Promise<{ status: number; body: Record<string, unknown> }> {
+    const res = await fetch(`${app.url}${caminho}`, {
+      method: metodo,
+      headers: { 'Content-Type': 'application/json', Authorization: tokenMock(U.gestora) },
+      ...(corpo === undefined ? {} : { body: JSON.stringify(corpo) }),
+    });
+    return { status: res.status, body: (await res.json().catch(() => ({}))) as Record<string, unknown> };
+  }
+
   async function limpar(): Promise<void> {
     await pool.query(`DELETE FROM iam.country_features WHERE feature_key = $1`, [FEATURE_E2E]);
     await limparIamFixtures(pool, { uids: Object.values(U), grupos: [GRUPO_GESTAO, GRUPO_SEM_CELULA] });
@@ -97,21 +114,24 @@ describe('API de leitura do painel de acessos (HTTP real, banco real)', () => {
     await limpar();
 
     await pool.query(
-      `INSERT INTO users (firebase_uid, email, role, status, is_active, tenant_id) VALUES
-         ($1, 'panel-gestora@e2e.local',  'admin', 'ACTIVE', true, $4),
-         ($2, 'panel-semcel@e2e.local',   'admin', 'ACTIVE', true, $4),
-         ($3, 'panel-semgrupo@e2e.local', 'admin', 'ACTIVE', true, $4)`,
-      [U.gestora, U.semCelula, U.semGrupo, TENANT_E2E],
+      `INSERT INTO users (firebase_uid, email, display_name, role, status, is_active, tenant_id) VALUES
+         ($1, 'panel-gestora@e2e.local',  'Ana Gestora E2E', 'admin', 'ACTIVE', true, $5),
+         ($2, 'panel-semcel@e2e.local',   NULL,               'admin', 'ACTIVE', true, $5),
+         ($3, 'panel-semgrupo@e2e.local', NULL,               'admin', 'ACTIVE', true, $5),
+         ($4, 'panel-histmembro@e2e.local', NULL,             'admin', 'ACTIVE', true, $5)`,
+      [U.gestora, U.semCelula, U.semGrupo, U.historicoMembro, TENANT_E2E],
     );
 
     // `grupoComCelulas` explode se a célula não existir em `iam.permissions` —
     // é o controle positivo de que `permission_management:read` está no seed.
+    // `:write` entra também: o bloco do histórico usa a gestora para gerar
+    // eventos reais pelas rotas de ESCRITA (F4), não só para ler.
     grupoGestaoId = await grupoComCelulas(pool, {
       nome: GRUPO_GESTAO,
       uid: U.gestora,
-      celulas: [['permission_management', 'read']],
+      celulas: [['permission_management', 'read'], ['permission_management', 'write']],
     });
-    await grupoComCelulas(pool, {
+    grupoSemCelulaId = await grupoComCelulas(pool, {
       nome: GRUPO_SEM_CELULA,
       uid: U.semCelula,
       celulas: [['vacancy', 'read']],
@@ -130,7 +150,7 @@ describe('API de leitura do painel de acessos (HTTP real, banco real)', () => {
     setEnv('PERMISSION_CACHE_TTL_MS', '0');
     setEnv('DATABASE_URL', DATABASE_URL);
 
-    const { createPermissionPanelRoutes, principalUid } = await import('@modules/identity');
+    const { createPermissionPanelRoutes, createPermissionPanelWriteRoutes, principalUid } = await import('@modules/identity');
     const { createMeAuthzRouter } = await import('@modules/identity/permissions');
 
     app = await montarAppDeFamilia({
@@ -141,6 +161,17 @@ describe('API de leitura do painel de acessos (HTTP real, banco real)', () => {
           groups: modulo.repositories.groups,
           features: modulo.repositories.features,
           audit: modulo.audit,
+          history: modulo.history,
+          auth,
+          permissions,
+          tenantId: TENANT_E2E,
+        }));
+        // Escrita (F4) montada aqui também: o bloco do histórico precisa
+        // gerar eventos REAIS (`PUT .../permissions`, `POST/DELETE
+        // .../members`) para provar que a leitura nova reflete o que a
+        // escrita grava — não um fixture inserido direto na tabela.
+        express.use('/api/admin', createPermissionPanelWriteRoutes({
+          writer: modulo,
           auth,
           permissions,
           tenantId: TENANT_E2E,
@@ -266,7 +297,9 @@ describe('API de leitura do painel de acessos (HTTP real, banco real)', () => {
       const grupos = res.body.groups as Array<{ id: string; name: string; cells: string[]; memberCount: number }>;
       const gestao = grupos.find((g) => g.id === grupoGestaoId);
       expect(gestao).toMatchObject({ name: GRUPO_GESTAO, memberCount: 1 });
-      expect(gestao?.cells).toEqual(['permission_management:read']);
+      // `:write` entrou no fixture (Passo 6, bloco do histórico) para a gestora
+      // poder gerar eventos reais pelas rotas de ESCRITA — ver `beforeAll`.
+      expect(gestao?.cells).toEqual(['permission_management:read', 'permission_management:write']);
     });
 
     it('staff SEM a célula → 403, e a lista não sai', async () => {
@@ -409,6 +442,113 @@ describe('API de leitura do painel de acessos (HTTP real, banco real)', () => {
 
       expect(res.status).toBe(403);
       expect(res.body.entries).toBeUndefined();
+    });
+  });
+
+  describe('GET /api/admin/permission-history — histórico de mudanças (substitui a Auditoría ALLOW/DENY)', () => {
+    it('🔴 uma mudança de PERMISSÃO e uma de MEMBRO, feitas pelas rotas de escrita, aparecem no histórico com nome de grupo e de pessoa resolvidos — não uid', async () => {
+      // Evento de PERMISSÃO: adiciona `worker:read` ao conjunto do grupo (o PUT
+      // manda o conjunto inteiro — o que já estava lá continua).
+      const escritaPermissao = await chamarEscrita(
+        'PUT',
+        `/api/admin/permission-groups/${grupoGestaoId}/permissions`,
+        { cellKeys: ['permission_management:read', 'permission_management:write', 'worker:read'], reason: null },
+      );
+      expect(escritaPermissao.status).toBe(200);
+
+      // Evento de MEMBRO: adiciona e depois remove `historicoMembro` — a MESMA
+      // linha de `user_groups` deve virar OS DOIS eventos na leitura.
+      const escritaMembroAdd = await chamarEscrita('POST', `/api/admin/permission-groups/${grupoGestaoId}/members`, {
+        userId: U.historicoMembro,
+      });
+      expect(escritaMembroAdd.status).toBe(200);
+      const escritaMembroRemove = await chamarEscrita(
+        'DELETE',
+        `/api/admin/permission-groups/${grupoGestaoId}/members`,
+        { userId: U.historicoMembro },
+      );
+      expect(escritaMembroRemove.status).toBe(200);
+
+      const res = await chamar(`/api/admin/permission-history?groupId=${grupoGestaoId}&limit=100`, U.gestora);
+      expect(res.status).toBe(200);
+      const eventos = res.body.events as Array<Record<string, unknown>>;
+
+      const dePermissao = eventos.find((e) => e.eventType === 'permission' && e.resource === 'worker' && e.action === 'read');
+      expect(dePermissao).toMatchObject({
+        eventType: 'permission',
+        groupId: grupoGestaoId,
+        groupName: GRUPO_GESTAO,
+        actorUid: U.gestora,
+        actorDisplayName: 'Ana Gestora E2E',
+        op: 'add',
+        resource: 'worker',
+        action: 'read',
+        subjectUserId: null,
+      });
+      // `reason` NUNCA aparece no corpo — texto livre, proibido pela spec da tela.
+      expect(dePermissao).not.toHaveProperty('reason');
+
+      const membroAdicionado = eventos.find((e) => e.eventType === 'member' && e.op === 'add' && e.subjectUserId === U.historicoMembro);
+      expect(membroAdicionado).toMatchObject({
+        eventType: 'member',
+        groupId: grupoGestaoId,
+        groupName: GRUPO_GESTAO,
+        actorUid: U.gestora,
+        op: 'add',
+        subjectUserId: U.historicoMembro,
+        subjectEmail: 'panel-histmembro@e2e.local',
+      });
+
+      const membroRemovido = eventos.find((e) => e.eventType === 'member' && e.op === 'remove' && e.subjectUserId === U.historicoMembro);
+      expect(membroRemovido).toMatchObject({
+        eventType: 'member',
+        op: 'remove',
+        subjectUserId: U.historicoMembro,
+        actorUid: U.gestora,
+      });
+    });
+
+    it('`type=member` filtra e devolve só eventos de pessoa — nenhum de célula', async () => {
+      const res = await chamar(`/api/admin/permission-history?groupId=${grupoGestaoId}&type=member&limit=100`, U.gestora);
+
+      expect(res.status).toBe(200);
+      const eventos = res.body.events as Array<{ eventType: string }>;
+      expect(eventos.length).toBeGreaterThan(0);
+      expect(eventos.every((e) => e.eventType === 'member')).toBe(true);
+    });
+
+    it('`type=permission` filtra e devolve só eventos de célula', async () => {
+      const res = await chamar(`/api/admin/permission-history?groupId=${grupoGestaoId}&type=permission&limit=100`, U.gestora);
+
+      expect(res.status).toBe(200);
+      const eventos = res.body.events as Array<{ eventType: string }>;
+      expect(eventos.length).toBeGreaterThan(0);
+      expect(eventos.every((e) => e.eventType === 'permission')).toBe(true);
+    });
+
+    it('`groupId` de outro grupo NÃO traz os eventos do grupo de gestão — o filtro funciona', async () => {
+      const res = await chamar(`/api/admin/permission-history?groupId=${grupoSemCelulaId}&limit=100`, U.gestora);
+
+      expect(res.status).toBe(200);
+      const eventos = res.body.events as Array<{ groupId: string }>;
+      // Não-vazio primeiro: `every` de lista vazia é `true` e aprovaria o filtro quebrado.
+      expect(eventos.length).toBeGreaterThan(0);
+      expect(eventos.every((e) => e.groupId === grupoSemCelulaId)).toBe(true);
+    });
+
+    it('🔴 staff SEM a célula → 403, e os eventos não saem', async () => {
+      const res = await chamar(`/api/admin/permission-history?groupId=${grupoGestaoId}`, U.semCelula);
+
+      expect(res.status).toBe(403);
+      expect(res.body.events).toBeUndefined();
+    });
+
+    it('`type` fora de `permission`/`member` → 400', async () => {
+      expect((await chamar('/api/admin/permission-history?type=outro', U.gestora)).status).toBe(400);
+    });
+
+    it('`limit` acima do teto → 400', async () => {
+      expect((await chamar('/api/admin/permission-history?limit=5000', U.gestora)).status).toBe(400);
     });
   });
 });

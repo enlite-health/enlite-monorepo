@@ -40,7 +40,7 @@ export function AccessGate({ children }: { children: ReactNode }): JSX.Element {
           {t('admin.access.tabs.features')}
         </NavLink>
         <NavLink to="/admin/access/audit" className={({ isActive }) => `${tab} ${isActive ? 'bg-gray-100 font-semibold' : ''}`}>
-          {t('admin.access.tabs.audit')}
+          {t('admin.access.tabs.history')}
         </NavLink>
       </nav>
       {access.level === 'read' && (
