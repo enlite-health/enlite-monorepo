@@ -22,17 +22,44 @@
  * staff. `false` faz o corpo do poll virar no-op (nunca chama a API) sem violar Rules of Hooks —
  * o hook precisa ser chamado incondicionalmente a cada render do componente que o hospeda, então
  * o "desligar" é por parâmetro, não por pular a chamada.
+ *
+ * 🔒 Achado do gate revisao-pr (r2): o `immediate: true` do `usePolling` só roda no efeito de
+ * MONTE, cujas deps `[ms, pauseWhenHidden, immediate]` NÃO incluem `enabled` — carregamento a frio
+ * (F5, ou link direto pra `/admin/...` já logado) monta este hook com `enabled=false` porque o
+ * `adminAuthStore` ainda não resolveu (`adminProfile` null / `isLoading` true nesse instante). O
+ * `immediate` do `usePolling` dispara e vira no-op ali mesmo, mas o efeito nunca roda de novo
+ * quando `enabled` passa a `true` (o componente que hospeda o hook não desmonta — só re-renderiza)
+ * — sem o `useEffect` abaixo, o 1º heartbeat real só sairia no próximo intervalo de 60s, e a
+ * pessoa aparece offline até lá. Decisão: NÃO tocar em `usePolling` (compartilhado com sino e
+ * conversa — mudar suas deps arrisca ripple nos outros callers); em vez disso, um efeito PRÓPRIO
+ * aqui observa só a transição `false→true` e dispara o heartbeat imediato nesse momento. Ele NÃO
+ * duplica quando já monta com `enabled=true` (o `wasEnabledRef` nasce igual ao `enabled` inicial,
+ * então o 1º disparo desse efeito não vê transição) nem dispara em `true→false` (logout).
  */
+import { useEffect, useRef } from 'react';
 import { usePolling } from '@hooks/usePolling';
 import { AdminPresenceApiService } from '@infrastructure/http/AdminPresenceApiService';
 
 const HEARTBEAT_MS = 60000;
 
+function sendHeartbeat(): void {
+  void AdminPresenceApiService.heartbeat().catch(() => {
+    // Best-effort — ver docstring acima.
+  });
+}
+
 export function usePresenceHeartbeat(enabled = true): void {
   usePolling(() => {
     if (!enabled) return;
-    void AdminPresenceApiService.heartbeat().catch(() => {
-      // Best-effort — ver docstring acima.
-    });
+    sendHeartbeat();
   }, HEARTBEAT_MS, { immediate: true });
+
+  const wasEnabledRef = useRef(enabled);
+  useEffect(() => {
+    const wasEnabled = wasEnabledRef.current;
+    wasEnabledRef.current = enabled;
+    if (!wasEnabled && enabled) {
+      sendHeartbeat();
+    }
+  }, [enabled]);
 }

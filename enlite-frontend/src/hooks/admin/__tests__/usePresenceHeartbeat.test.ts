@@ -85,4 +85,53 @@ describe('usePresenceHeartbeat (spec 022, Rodada 2)', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(0); });
     expect(AdminPresenceApiService.heartbeat).toHaveBeenCalledTimes(1);
   });
+
+  // 🔒 Achado do gate (sonda: 0 chamadas 2s após enabled virar true; 1 aos 61s). Causa raiz: o
+  // `immediate: true` do usePolling só roda no efeito de MONTE, cujas deps [ms, pauseWhenHidden,
+  // immediate] não incluem `enabled` — então um monte a frio com `enabled=false` (adminAuthStore
+  // ainda resolvendo, ex.: F5 numa rota /admin/* já logada) captura o `enabled=false` no fechamento
+  // daquele efeito para sempre; quando `enabled` vira `true` depois (auth resolveu), o efeito de
+  // monte não roda de novo, e o heartbeat só sai no próximo intervalo de 60s.
+  describe('transição de enabled depois do monte (auth resolve DEPOIS que o componente já montou)', () => {
+    it('monta com enabled=false e nada dispara (nem o immediate, que vira no-op)', async () => {
+      renderHook(({ enabled }) => usePresenceHeartbeat(enabled), { initialProps: { enabled: false } });
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+      expect(AdminPresenceApiService.heartbeat).not.toHaveBeenCalled();
+    });
+
+    it('🔒 false→true dispara heartbeat IMEDIATO, sem esperar os 60s do próximo intervalo', async () => {
+      const { rerender } = renderHook(
+        ({ enabled }) => usePresenceHeartbeat(enabled),
+        { initialProps: { enabled: false } },
+      );
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+      expect(AdminPresenceApiService.heartbeat).not.toHaveBeenCalled();
+
+      rerender({ enabled: true });
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); }); // sem avançar o timer de 60s
+
+      expect(AdminPresenceApiService.heartbeat).toHaveBeenCalledTimes(1);
+    });
+
+    it('monta DIRETO com enabled=true: o immediate do usePolling já cobre — a transição NÃO soma uma 2ª chamada', async () => {
+      renderHook(({ enabled }) => usePresenceHeartbeat(enabled), { initialProps: { enabled: true } });
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+      expect(AdminPresenceApiService.heartbeat).toHaveBeenCalledTimes(1); // não 2
+    });
+
+    it('true→false (logout): a transição não dispara heartbeat novo', async () => {
+      const { rerender } = renderHook(
+        ({ enabled }) => usePresenceHeartbeat(enabled),
+        { initialProps: { enabled: true } },
+      );
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+      expect(AdminPresenceApiService.heartbeat).toHaveBeenCalledTimes(1);
+      vi.mocked(AdminPresenceApiService.heartbeat).mockClear();
+
+      rerender({ enabled: false });
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+
+      expect(AdminPresenceApiService.heartbeat).not.toHaveBeenCalled();
+    });
+  });
 });
