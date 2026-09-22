@@ -5310,6 +5310,7 @@
       "mentioned": "{{actor}} mencionou você em {{patient}}",
       "replied": "{{actor}} respondeu na conversa de {{patient}}",
       "generic": "{{actor}} tem uma atualização para você",
+      "inPatient": "em {{patient}}",
       "markAllRead": "Marcar todas como lidas",
       "unknownPatient": "um paciente",
       "bellLabel": "Notificações",

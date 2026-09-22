@@ -5389,6 +5389,7 @@
       "mentioned": "{{actor}} mencionó a vos en {{patient}}",
       "replied": "{{actor}} respondió en la conversación de {{patient}}",
       "generic": "{{actor}} tiene una actualización para vos",
+      "inPatient": "en {{patient}}",
       "markAllRead": "Marcar todas como leídas",
       "unknownPatient": "un paciente",
       "bellLabel": "Notificaciones",

@@ -65,24 +65,24 @@ describe('NotificationPanel (spec 022, T412/T413)', () => {
 
   afterEach(() => { vi.clearAllMocks(); });
 
-  it('painel aberto: busca e lista as notificações, texto montado no cliente', async () => {
+  it('painel aberto: busca e lista as notificações — autor na linha 1, aria-label com a frase completa montada no CLIENTE (FR-015)', async () => {
     vi.mocked(AdminNotificationApiService.listNotifications).mockResolvedValue([notif()]);
     render(<NotificationPanel isOpen onClose={vi.fn()} />);
 
-    await waitFor(() => {
-      expect(screen.getByText('Ana Staff mencionó a vos en Fulano Paciente')).toBeInTheDocument();
-    });
+    const item = await screen.findByTestId('notification-item-n1');
+    expect(within(item).getByText('Ana Staff')).toBeInTheDocument();
+    expect(item).toHaveAttribute('aria-label', 'Ana Staff mencionó a vos en Fulano Paciente');
   });
 
-  it('patientDisplayName null (D-13, ator perdeu a célula): cai no fallback "un paciente"', async () => {
+  it('patientDisplayName null (D-13, ator perdeu a célula): cai no fallback "un paciente" (linha do paciente E aria-label)', async () => {
     vi.mocked(AdminNotificationApiService.listNotifications).mockResolvedValue([
       notif({ patientDisplayName: null, typeCode: 'CONVERSATION_REPLIED' }),
     ]);
     render(<NotificationPanel isOpen onClose={vi.fn()} />);
 
-    await waitFor(() => {
-      expect(screen.getByText('Ana Staff respondió en la conversación de un paciente')).toBeInTheDocument();
-    });
+    const item = await screen.findByTestId('notification-item-n1');
+    expect(within(item).getByTestId('notification-patient-n1')).toHaveTextContent('un paciente');
+    expect(item).toHaveAttribute('aria-label', 'Ana Staff respondió en la conversación de un paciente');
   });
 
   it('clique numa notificação: marca lida E navega para patients/:patientId com DrawerFocusRequest code=conversation', async () => {
@@ -257,12 +257,12 @@ describe('NotificationPanel (spec 022, T412/T413)', () => {
 
     const unreadDot = screen.getByTestId('notification-unread-dot-n1');
     expect(unreadDot).toHaveAttribute('aria-label', 'No leída');
-    const unreadText = within(unreadItem).getByText('Ana Staff mencionó a vos en Fulano Paciente');
-    expect(unreadText.className).toMatch(/font-semibold/);
+    const unreadAuthor = within(unreadItem).getByText('Ana Staff');
+    expect(unreadAuthor.className).toMatch(/font-semibold/);
 
     expect(screen.queryByTestId('notification-unread-dot-n2')).not.toBeInTheDocument();
-    const readText = within(readItem).getByText('Ana Staff mencionó a vos en Fulano Paciente');
-    expect(readText.className).not.toMatch(/font-semibold/);
+    const readAuthor = within(readItem).getByText('Ana Staff');
+    expect(readAuthor.className).not.toMatch(/font-semibold/);
   });
 
   describe('item 2 (change 022-ux-mencao-e-notificacao) — card com avatar, paciente, data e trecho', () => {
@@ -274,7 +274,8 @@ describe('NotificationPanel (spec 022, T412/T413)', () => {
 
       const item = await screen.findByTestId('notification-item-n1');
       expect(within(item).getByTestId('message-avatar')).toHaveTextContent('AS'); // getInitials('Ana Staff')
-      expect(within(item).getByText('Ana Staff mencionó a vos en Fulano Paciente')).toBeInTheDocument();
+      expect(within(item).getByText('Ana Staff')).toBeInTheDocument();
+      expect(within(item).getByTestId('notification-patient-n1')).toHaveTextContent('Fulano Paciente');
       expect(within(item).getByTestId('notification-excerpt-n1')).toHaveTextContent('trecho da mensagem original');
     });
 
@@ -285,8 +286,56 @@ describe('NotificationPanel (spec 022, T412/T413)', () => {
       render(<NotificationPanel isOpen onClose={vi.fn()} />);
 
       const item = await screen.findByTestId('notification-item-n1');
-      expect(within(item).getByText('Ana Staff mencionó a vos en Fulano Paciente')).toBeInTheDocument();
+      expect(within(item).getByText('Ana Staff')).toBeInTheDocument();
+      expect(within(item).getByTestId('notification-patient-n1')).toHaveTextContent('Fulano Paciente');
       expect(within(item).queryByTestId('notification-excerpt-n1')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('🔒 Defeito 2 (decisão do orquestrador, Rodada 2): card em 3 linhas — autor+data (linha 1), paciente (linha 2), trecho (linha 3)', () => {
+    it('linha 1: autor E data no MESMO elemento pai, a data nunca encolhe (flex-shrink-0)', async () => {
+      vi.mocked(AdminNotificationApiService.listNotifications).mockResolvedValue([notif({ id: 'n1' })]);
+      render(<NotificationPanel isOpen onClose={vi.fn()} />);
+
+      const item = await screen.findByTestId('notification-item-n1');
+      const author = within(item).getByText('Ana Staff');
+      const authorRow = author.parentElement;
+      expect(authorRow).not.toBeNull();
+      const dateEl = within(authorRow as HTMLElement).getByText(/sep/i);
+      expect(dateEl.className).toMatch(/flex-shrink-0/);
+      // Autor trunca (nome comprido não estica a linha) — o teste de largura REAL é o e2e.
+      expect(author.className).toMatch(/truncate/);
+    });
+
+    it('linha 2: SEMPRE um elemento PRÓPRIO (não compartilha nó com a linha 1) — nunca cortada pela data', async () => {
+      vi.mocked(AdminNotificationApiService.listNotifications).mockResolvedValue([
+        notif({ id: 'n1', patientDisplayName: 'Paciente Com Nome Bem Comprido Para Testar Truncamento' }),
+      ]);
+      render(<NotificationPanel isOpen onClose={vi.fn()} />);
+
+      const item = await screen.findByTestId('notification-item-n1');
+      const patientLine = within(item).getByTestId('notification-patient-n1');
+      expect(patientLine).toHaveTextContent('Paciente Com Nome Bem Comprido Para Testar Truncamento');
+      // Elemento PRÓPRIO — não é o mesmo nó que mostra o autor.
+      expect(patientLine).not.toBe(within(item).getByText('Ana Staff'));
+      expect(patientLine.className).toMatch(/truncate/);
+    });
+
+    it('linha 3 (trecho): line-clamp-2, não trunca em 1 linha só', async () => {
+      vi.mocked(AdminNotificationApiService.listNotifications).mockResolvedValue([
+        notif({ id: 'n1', messageExcerpt: 'Um trecho relativamente longo que poderia ocupar mais de uma linha no card' }),
+      ]);
+      render(<NotificationPanel isOpen onClose={vi.fn()} />);
+
+      const excerpt = await screen.findByTestId('notification-excerpt-n1');
+      expect(excerpt.className).toMatch(/line-clamp-2/);
+    });
+
+    it('ponto de não lida (A9) continua presente e com o MESMO aria-label — o redesenho não regride o achado do gate', async () => {
+      vi.mocked(AdminNotificationApiService.listNotifications).mockResolvedValue([notif({ id: 'n1', readAt: null })]);
+      render(<NotificationPanel isOpen onClose={vi.fn()} />);
+      await screen.findByTestId('notification-item-n1');
+      expect(screen.getByTestId('notification-unread-dot-n1')).toHaveAttribute('aria-label', 'No leída');
     });
   });
 
