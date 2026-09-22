@@ -19,7 +19,7 @@
  */
 import { test, expect } from '@playwright/test';
 import {
-  seedPatientQA, cleanupPatientQA, seedPlainStaff, cleanupPlainStaff,
+  seedPatientQA, cleanupPatientQA, seedMentionableStaff,
   seedStaffInGroup, cleanupStaffAndGroup, grantCell, loginAs, tokenFor,
   type MockUser,
 } from '../helpers/patient-conversation-helper';
@@ -44,6 +44,10 @@ const OFFLINE_STAFF = Array.from({ length: 10 }, (_, i) => ({
 let patientId = '';
 let groupId = '';
 let groupIdOnline = '';
+// Rodada 3/R3-F: um grupo próprio por OFFLINE_STAFF (`seedMentionableStaff`) — precisam de
+// `patient_conversation:read` (país AR) pra continuar aparecendo no popup, que desde esta rodada
+// sempre manda o `patientId` da conversa aberta.
+let groupIdsOffline: string[] = [];
 
 const AUTORA: MockUser = { uid: AUTORA_UID, email: AUTORA_EMAIL, role: 'recruiter', country: 'AR' };
 const ONLINE: MockUser = { uid: ONLINE_UID, email: ONLINE_EMAIL, role: 'recruiter', country: 'AR' };
@@ -70,11 +74,14 @@ test.describe('Popup de @ estilo ClickUp — avatar+presença, top-5, Mostrar to
     grantCell(groupId, 'patient_conversation', 'create');
     grantCell(groupId, 'staff_directory', 'read');
 
-    for (const s of OFFLINE_STAFF) seedPlainStaff(s.uid, s.email, s.name);
+    groupIdsOffline = OFFLINE_STAFF.map((s) => seedMentionableStaff(s.uid, s.email, s.name).groupId);
 
     const seededOnline = seedStaffInGroup({ uid: ONLINE_UID, email: ONLINE_EMAIL, groupName: GRUPO_ONLINE, country: 'AR' });
     groupIdOnline = seededOnline.groupId;
     grantCell(groupIdOnline, 'own_presence', 'update');
+    // Rodada 3/R3-F: sem esta célula o ONLINE (assim como os OFFLINE_STAFF acima) sumiria do
+    // popup — `own_presence:update` só cobre o heartbeat, não a visibilidade na conversa.
+    grantCell(groupIdOnline, 'patient_conversation', 'read');
 
     // Heartbeat REAL via API (sem mock) — é isto que faz `isOnline` virar `true` pra este uid.
     const res = await request.post(`${ABAC_API_URL}/api/admin/me/presence`, {
@@ -86,7 +93,7 @@ test.describe('Popup de @ estilo ClickUp — avatar+presença, top-5, Mostrar to
   test.afterAll(() => {
     cleanupStaffAndGroup(AUTORA_UID, groupId);
     cleanupStaffAndGroup(ONLINE_UID, groupIdOnline);
-    for (const s of OFFLINE_STAFF) cleanupPlainStaff(s.uid);
+    OFFLINE_STAFF.forEach((s, i) => cleanupStaffAndGroup(s.uid, groupIdsOffline[i]));
     cleanupPatientQA(patientId);
   });
 

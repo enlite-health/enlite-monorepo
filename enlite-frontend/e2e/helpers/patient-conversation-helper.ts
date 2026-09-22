@@ -10,7 +10,9 @@
  */
 import { expect, type Locator } from '@playwright/test';
 import { insertTestPatient, cleanupTestPatient } from './db-test-helper';
-import { psql, safeSql, ABAC_TENANT } from './abac-stack-helper';
+import {
+  psql, safeSql, scalar as scalarLocal, grantCell, ABAC_TENANT,
+} from './abac-stack-helper';
 
 export { grantCell, seedStaffInGroup, cleanupStaffAndGroup, loginAs, tokenFor, installAuthInterceptors, psql, scalar, safeSql, meAuthz, ABAC_API_URL, ABAC_DB_URL, ABAC_TENANT } from './abac-stack-helper';
 export type { MockUser } from './abac-stack-helper';
@@ -36,6 +38,32 @@ export function seedPlainStaff(uid: string, email: string, displayName: string):
 
 export function cleanupPlainStaff(uid: string): void {
   safeSql(`DELETE FROM users WHERE firebase_uid = '${uid}'`);
+}
+
+/**
+ * 🔒 Rodada 3/R3-F: staff MENCIONÁVEL na conversa de UM paciente — como `seedPlainStaff` (uid/
+ * email/displayName livres, útil quando o teste faz asserção pelo NOME exibido), mas com grupo
+ * próprio escopado a `country` (default 'AR', o mesmo país hardcoded de `seedPatientQA`) e a
+ * célula `patient_conversation:read`. Desde a Rodada 3 (contrato R3-1), o popup de @ sempre manda
+ * o `patientId` da conversa aberta — um staff sem esta célula/escopo NUNCA aparece nele, mesmo
+ * que continue aparecendo no diretório CRU (sem `patientId`). Specs anteriores à Rodada 3 que
+ * usavam `seedPlainStaff` para o alvo da menção precisam trocar para este helper (achado medido
+ * ao reexecutar `mention-autocomplete-min-zero`/`mention-popup-clickup`/`patient-conversation-happy`
+ * depois do wiring do `patientId` — ver `docs/.../tasks.md` "Rodada 3").
+ */
+export function seedMentionableStaff(
+  uid: string, email: string, displayName: string, country = 'AR',
+): { groupId: string } {
+  psql(`INSERT INTO users (firebase_uid, email, display_name, role, is_active, status, tenant_id)
+        VALUES ('${uid}', '${email}', '${displayName}', 'recruiter', true, 'ACTIVE', '${ABAC_TENANT}')`);
+  const groupId = scalarLocal(`INSERT INTO iam.permission_groups (tenant_id, name, description)
+        VALUES ('${ABAC_TENANT}', 'E2E Mencionavel ${uid}', 'e2e — nao mexer manual')
+        RETURNING id`);
+  psql(`INSERT INTO iam.group_country_scopes (group_id, country, granted_by, reason)
+        VALUES ('${groupId}', '${country}', '${uid}', 'e2e setup')`);
+  psql(`INSERT INTO iam.user_groups (user_id, group_id, tenant_id) VALUES ('${uid}', '${groupId}', '${ABAC_TENANT}')`);
+  grantCell(groupId, 'patient_conversation', 'read');
+  return { groupId };
 }
 
 /**
