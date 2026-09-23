@@ -185,12 +185,33 @@ describe('IAM — use cases do painel de grupos (banco real, role app_runtime)',
           reason: 'setup do e2e',
         }),
       );
-      const changes = await admin.query(
-        `SELECT op, changed_by, reason FROM iam.permission_group_changes WHERE group_id = $1 ORDER BY changed_at`,
+      // migration 469 (spec 022 R4): `iam.create_group` já concede a este grupo, NA CRIAÇÃO
+      // (teste "cria o grupo" acima), as 3 células `own_*` do catálogo (own_notifications:read,
+      // own_notifications:update, own_presence:update — mig 464/466) — direto em
+      // `group_permissions`, sem trilha própria. `set_group_permissions` é REPLACE TOTAL: ao
+      // gravar só as 2 cellKeys de vacancy (expandidas a 3 ids), as 3 `own_*` saem do conjunto
+      // NA MESMA chamada e entram na trilha como 'remove', ao lado dos 3 'add' de vacancy — por
+      // isso a linha de base soma aqui, não substitui. A ordem entre os dois blocos (remove ×
+      // add) não é uma garantia do SQL (mesmo `changed_at`, sem tiebreaker) — a asserção conta
+      // por grupo em vez de indexar posição.
+      //
+      // Achado a registrar (fora do escopo deste conserto): salvar a matriz do painel SEM
+      // marcar as `own_*` revoga essas células de verdade — é o REPLACE total da
+      // `iam.set_group_permissions` (279) encontrando a baseline nova da 469.
+      const OWN_PREFIX_BASELINE = 3;
+      const changes = await admin.query<{ op: string; changed_by: string; reason: string | null; resource: string }>(
+        `SELECT c.op, c.changed_by, c.reason, p.resource
+           FROM iam.permission_group_changes c
+           JOIN iam.permissions p ON p.id = c.permission_id
+          WHERE c.group_id = $1`,
         [groupId],
       );
-      expect(changes.rows).toHaveLength(3);
-      expect(changes.rows[0]).toMatchObject({ op: 'add', changed_by: U.gestor, reason: 'setup do e2e' });
+      const ownRemoves = changes.rows.filter((r) => r.resource.startsWith('own_') && r.op === 'remove');
+      const vacancyAdds = changes.rows.filter((r) => !r.resource.startsWith('own_'));
+      expect(changes.rows).toHaveLength(OWN_PREFIX_BASELINE + 3);
+      expect(ownRemoves).toHaveLength(OWN_PREFIX_BASELINE);
+      expect(vacancyAdds).toHaveLength(3);
+      expect(vacancyAdds.every((r) => r.op === 'add' && r.changed_by === U.gestor && r.reason === 'setup do e2e')).toBe(true);
     });
 
     it('célula fora do catálogo é recusada dizendo QUAL — e nada É GRAVADO A MAIS (fica no estado do teste anterior: 3 linhas expandidas)', async () => {
