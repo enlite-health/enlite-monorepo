@@ -24,6 +24,7 @@ describe('casarPrestador', () => {
         telefono: '+54 11 9999 9999',
         email: 'beatriz@example.test',
         nombre: 'Beatriz Nueve',
+        apellidos: null,
       },
       {
         id: 402,
@@ -31,6 +32,7 @@ describe('casarPrestador', () => {
         telefono: '+54 11 8888 8888',
         email: 'carla@example.test',
         nombre: 'Carla Ocho',
+        apellidos: null,
       },
     ];
     const resultado = casarPrestador(worker, enfermeiras);
@@ -51,6 +53,7 @@ describe('casarPrestador', () => {
         telefono: '+54 11 1111 1111',
         email: 'ana@example.test',
         nombre: 'Ana Uno',
+        apellidos: null,
       },
     ];
     const resultado = casarPrestador(worker, enfermeiras);
@@ -74,6 +77,7 @@ describe('casarPrestador', () => {
         telefono: '+54 11 1111 1111',
         email: 'ana601@example.test',
         nombre: 'Ana Uno',
+        apellidos: null,
       },
       {
         id: 602,
@@ -81,6 +85,7 @@ describe('casarPrestador', () => {
         telefono: '+54 11 1111 1111',
         email: 'ana602@example.test',
         nombre: 'Ana Uno',
+        apellidos: null,
       },
     ];
     const resultado = casarPrestador(worker, enfermeiras);
@@ -104,6 +109,7 @@ describe('casarPrestador', () => {
         telefono: '+54 11 1111 1111',
         email: 'ana701@example.test',
         nombre: 'Ana Uno',
+        apellidos: null,
       },
       {
         id: 702,
@@ -111,6 +117,7 @@ describe('casarPrestador', () => {
         telefono: '+54 11 3333 3333',
         email: 'zulema@example.test',
         nombre: 'Zulema Dos',
+        apellidos: null,
       },
     ];
     const resultado = casarPrestador(worker, enfermeiras);
@@ -119,5 +126,28 @@ describe('casarPrestador', () => {
     expect(resultado.candidatos).toContain(701);
     expect(resultado.candidatos).toContain(702);
     expect(resultado).not.toHaveProperty('nurseId');
+  });
+
+  it('casa por telefone_nome quando o nome da enfermeira vem partido em nombre + apellidos', () => {
+    const worker = {
+      documento: '55555555',
+      telefone: '+54 11 5555 5555',
+      email: 'nao-bate' + '@' + 'example.test',
+      nome: 'Maria Fernandez Lopez',
+    };
+    const enfermeiras = [
+      {
+        id: 801,
+        cedula_ciudadania: '66666666',
+        telefono: '+54 11 5555 5555',
+        email: 'maria@example.test',
+        nombre: 'Maria',
+        apellidos: 'Fernandez Lopez',
+      },
+    ];
+    const resultado = casarPrestador(worker, enfermeiras);
+    if (resultado.tipo !== 'unico') throw new Error('tipo inesperado: ' + resultado.tipo);
+    expect(resultado.nurseId).toBe(801);
+    expect(resultado.criterios).toContain('telefone_nome');
   });
 });
