@@ -56,7 +56,7 @@
 -- célula `own_*` de UM grupo (o REPLACE TOTAL nunca mais a remove, seja qual for a lista
 -- enviada). Caminho de exceção hoje: `DELETE FROM iam.group_permissions WHERE group_id =
 -- '<id>' AND permission_id = '<id da own_* a revogar>';` direto em prd, registrado como
--- migration manual (ver `docs/funcionalidades/ebrain/...`) — não há função exposta para isso.
+-- migration manual — não há função exposta para isso.
 --
 -- ROLLBACK: `CREATE OR REPLACE FUNCTION iam.set_group_permissions(...)` de volta ao corpo da
 -- **456** (com `PERFORM iam._require_master_membership(p_group_id);` e SEM os dois filtros
