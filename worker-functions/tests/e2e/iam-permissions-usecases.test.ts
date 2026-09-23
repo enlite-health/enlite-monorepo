@@ -188,16 +188,12 @@ describe('IAM — use cases do painel de grupos (banco real, role app_runtime)',
       // migration 469 (spec 022 R4): `iam.create_group` já concede a este grupo, NA CRIAÇÃO
       // (teste "cria o grupo" acima), as 3 células `own_*` do catálogo (own_notifications:read,
       // own_notifications:update, own_presence:update — mig 464/466) — direto em
-      // `group_permissions`, sem trilha própria. `set_group_permissions` é REPLACE TOTAL: ao
-      // gravar só as 2 cellKeys de vacancy (expandidas a 3 ids), as 3 `own_*` saem do conjunto
-      // NA MESMA chamada e entram na trilha como 'remove', ao lado dos 3 'add' de vacancy — por
-      // isso a linha de base soma aqui, não substitui. A ordem entre os dois blocos (remove ×
-      // add) não é uma garantia do SQL (mesmo `changed_at`, sem tiebreaker) — a asserção conta
-      // por grupo em vez de indexar posição.
-      //
-      // Achado a registrar (fora do escopo deste conserto): salvar a matriz do painel SEM
-      // marcar as `own_*` revoga essas células de verdade — é o REPLACE total da
-      // `iam.set_group_permissions` (279) encontrando a baseline nova da 469.
+      // `group_permissions`, sem trilha própria. `set_group_permissions` é REPLACE TOTAL, mas a
+      // migration 470 (Rodada 5, achado A5 do gate revisao-pr da Rodada 4) protege a família
+      // `own_*` desse REPLACE: ao gravar só as 2 cellKeys de vacancy (expandidas a 3 ids), as 3
+      // `own_*` PERMANECEM no grupo e NÃO entram na trilha como 'remove' — só os 3 'add' de
+      // vacancy aparecem. Antes da 470, as 3 `own_*` saíam do conjunto e geravam 'remove'
+      // fantasma (111 DENY em 2h medidos em prd) — ver cabeçalho da migration 470.
       const OWN_PREFIX_BASELINE = 3;
       const changes = await admin.query<{ op: string; changed_by: string; reason: string | null; resource: string }>(
         `SELECT c.op, c.changed_by, c.reason, p.resource
@@ -208,13 +204,17 @@ describe('IAM — use cases do painel de grupos (banco real, role app_runtime)',
       );
       const ownRemoves = changes.rows.filter((r) => r.resource.startsWith('own_') && r.op === 'remove');
       const vacancyAdds = changes.rows.filter((r) => !r.resource.startsWith('own_'));
-      expect(changes.rows).toHaveLength(OWN_PREFIX_BASELINE + 3);
-      expect(ownRemoves).toHaveLength(OWN_PREFIX_BASELINE);
+      expect(changes.rows).toHaveLength(3); // só os 3 'add' de vacancy — mig 470 barra o 'remove' fantasma de own_*
+      expect(ownRemoves).toHaveLength(0); // as OWN_PREFIX_BASELINE own_* NÃO saem mais do grupo (mig 470)
       expect(vacancyAdds).toHaveLength(3);
       expect(vacancyAdds.every((r) => r.op === 'add' && r.changed_by === U.gestor && r.reason === 'setup do e2e')).toBe(true);
+      // as own_* continuam em group_permissions — confirmado explicitamente aqui porque o
+      // teste seguinte usa esta contagem como estado de partida
+      const cellCount = await admin.query(`SELECT count(*)::int n FROM iam.group_permissions WHERE group_id = $1`, [groupId]);
+      expect(cellCount.rows[0].n).toBe(OWN_PREFIX_BASELINE + 3);
     });
 
-    it('célula fora do catálogo é recusada dizendo QUAL — e nada É GRAVADO A MAIS (fica no estado do teste anterior: 3 linhas expandidas)', async () => {
+    it('célula fora do catálogo é recusada dizendo QUAL — e nada É GRAVADO A MAIS (fica no estado do teste anterior: 3 own_* protegidas + 3 vacancy)', async () => {
       await expect(
         asStaff(U.gestor, () =>
           permissions.groups.setPermissions.execute({
@@ -224,8 +224,9 @@ describe('IAM — use cases do painel de grupos (banco real, role app_runtime)',
           }),
         ),
       ).rejects.toThrow(/inventada:read/);
+      const OWN_PREFIX_BASELINE = 3;
       const cells = await admin.query(`SELECT count(*)::int n FROM iam.group_permissions WHERE group_id = $1`, [groupId]);
-      expect(cells.rows[0].n).toBe(3);
+      expect(cells.rows[0].n).toBe(OWN_PREFIX_BASELINE + 3);
     });
 
     it('concede país com motivo (idempotente) e o país aparece em effective_countries', async () => {
