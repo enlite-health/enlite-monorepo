@@ -1,0 +1,18 @@
+# Override de portas/nomes para a rodada de conserto da migration 470 (achado 🔴 do gate
+# revisao-pr, R5-1) — segue o precedente de docker-compose.021b2-ports.yml (mesma razão:
+# tests/e2e/setup.ts exige a API de pé mesmo para suíte que só fala com Postgres).
+# 5442/8172/54463 conferidos livres via `lsof` antes de subir; nomes próprios para nunca
+# colidir com enlite-postgres/enlite-api (já rodando nesta máquina, 6h+ de uptime).
+services:
+  postgres:
+    container_name: r5b-pg
+    ports: !override
+      - "5442:5432"
+  api:
+    container_name: r5b-api
+    ports: !override
+      - "8172:8080"
+  fake-gcs:
+    container_name: r5b-fake-gcs
+    ports: !override
+      - "54463:4443"

@@ -29,18 +29,40 @@
 -- DELETE mas ainda registraria um 'remove' fantasma (a célula continua lá, mas o histórico
 -- mentiria que foi revogada) — por isso o filtro entra nos DOIS INSERTs/DELETE, não só um.
 --
+-- ⚠️ CORREÇÃO (23/09, achado 🔴 do gate `revisao-pr`): a definição VIVA de
+-- `iam.set_group_permissions` antes desta migration NÃO é a da 279 — é a da **456**
+-- (`456_iam_master_group_self_managed.sql`, em main desde 5628c326), que já roda em prd. A
+-- primeira versão desta migration copiou o corpo da 279 e, com isso, removeu em silêncio a
+-- linha `PERFORM iam._require_master_membership(p_group_id);` que a 456 tinha acrescentado —
+-- o guard que impede alguém de fora do Acesso Master reescrever as próprias células do Acesso
+-- Master (spec 021, bloco 2). Em prd há 1 pessoa no Super Admin que voltaria a poder fazer
+-- isso; o anti-lockout da 451/456 não protege contra essa reintrodução porque ela nunca
+-- remove membro, só a checagem. Corrigido: o corpo abaixo parte da 456, com a linha
+-- `PERFORM iam._require_master_membership(p_group_id);` mantida logo após
+-- `v_actor := iam._require_manager(v_g.tenant_id);`, e SÓ os dois filtros `own_*` descritos
+-- acima como diff sobre esse corpo.
+--
 -- O QUE NÃO MUDA: assinatura (`p_group_id UUID, p_permission_ids UUID[], p_reason TEXT`),
--- retorno (`VOID`), dono, ACL (`CREATE OR REPLACE` preserva GRANT/REVOKE já feitos pela 279 —
+-- retorno (`VOID`), dono, ACL (`CREATE OR REPLACE` preserva GRANT/REVOKE já feitos —
 -- esta migration não repete o bloco de GRANT EXECUTE), `SECURITY DEFINER`, `search_path`, os
--- gates (`_require_manager`, catálogo, anti-lockout) e a semântica REPLACE para qualquer
--- célula fora do prefixo `own_` — o bloco de "adicionadas" é IDÊNTICO ao da 279 (se a lista
--- enviada incluir uma `own_*`, o `NOT EXISTS` já barra o 'add' repetido e o `ON CONFLICT DO
--- NOTHING` já barra a linha duplicada — nenhum dos dois precisou de código novo).
+-- gates (`_require_manager`, `_require_master_membership` da 456, catálogo, anti-lockout) e a
+-- semântica REPLACE para qualquer célula fora do prefixo `own_` — o bloco de "adicionadas" é
+-- IDÊNTICO ao da 456/279 (se a lista enviada incluir uma `own_*`, o `NOT EXISTS` já barra o
+-- 'add' repetido e o `ON CONFLICT DO NOTHING` já barra a linha duplicada — nenhum dos dois
+-- precisou de código novo).
+--
+-- REVERSIBILIDADE PARCIAL (achado 🟡 do gate, registrado — não implementado aqui por decisão
+-- do Gabriel): depois desta migration não existe caminho de APLICAÇÃO para revogar uma única
+-- célula `own_*` de UM grupo (o REPLACE TOTAL nunca mais a remove, seja qual for a lista
+-- enviada). Caminho de exceção hoje: `DELETE FROM iam.group_permissions WHERE group_id =
+-- '<id>' AND permission_id = '<id da own_* a revogar>';` direto em prd, registrado como
+-- migration manual (ver `docs/funcionalidades/ebrain/...`) — não há função exposta para isso.
 --
 -- ROLLBACK: `CREATE OR REPLACE FUNCTION iam.set_group_permissions(...)` de volta ao corpo da
--- 279 (sem os dois filtros `AND NOT (p.resource LIKE 'own\_%' ESCAPE '\')`). Reabre o achado
--- A5 — não desfaz nenhuma gravação já feita com a proteção ativa (mesma lógica "não desfaz o
--- que já fechou o bug" da 467/469).
+-- **456** (com `PERFORM iam._require_master_membership(p_group_id);` e SEM os dois filtros
+-- `AND NOT (p.resource LIKE 'own\_%' ESCAPE '\')`). Reabre o achado A5 — não desfaz nenhuma
+-- gravação já feita com a proteção ativa (mesma lógica "não desfaz o que já fechou o bug" da
+-- 467/469).
 
 BEGIN;
 
@@ -57,6 +79,7 @@ BEGIN
   SELECT * INTO v_g FROM iam.permission_groups WHERE id = p_group_id AND archived_at IS NULL;
   IF NOT FOUND THEN RAISE EXCEPTION USING ERRCODE = 'P0002', MESSAGE = '[iam] grupo inexistente ou arquivado'; END IF;
   v_actor := iam._require_manager(v_g.tenant_id);
+  PERFORM iam._require_master_membership(p_group_id);
 
   -- toda célula precisa existir no catálogo e não estar descontinuada
   SELECT count(*) INTO v_bad
@@ -101,8 +124,9 @@ END;
 $$;
 
 COMMENT ON FUNCTION iam.set_group_permissions(UUID, UUID[], TEXT) IS
-  'REPLACE TOTAL das células do grupo (279), exceto a família own_* — protegida do DELETE e '
-  'da trilha remove desde a 470 (R5-1, achado A5 do gate revisao-pr da Rodada 4): são células '
-  'sobre o PRÓPRIO usuário, não acesso a dado de terceiro.';
+  'REPLACE TOTAL das células do grupo (corpo da 456, com o guard _require_master_membership '
+  'da spec 021/bloco 2 preservado), exceto a família own_* — protegida do DELETE e da trilha '
+  'remove desde a 470 (R5-1, achado A5 do gate revisao-pr da Rodada 4): são células sobre o '
+  'PRÓPRIO usuário, não acesso a dado de terceiro.';
 
 COMMIT;
