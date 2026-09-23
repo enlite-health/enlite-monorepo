@@ -5384,6 +5384,14 @@
     }
   },
   "access": {
-    "actionDenied": "Você não tem permissão para esta ação"
+    "actionDenied": "Você não tem permissão para esta ação",
+    "simulation": {
+      "select": "Ver como grupo",
+      "exit": "Sair da simulação",
+      "viewingAs": "Você está vendo como: {{group}}",
+      "expired": "A simulação expirou. Você voltou ao seu acesso normal.",
+      "disabledEngineOff": "Disponível somente com o controle de permissões ativado",
+      "groupNotSimulable": "Este grupo não pode ser simulado"
+    }
   }
 }

@@ -215,12 +215,12 @@ export class PermissionMiddleware {
 
       const denial = denialFor(resolved, resource, action);
       if (denial) {
-        this.refuse(req, res, next, { uid, resource, action, code: denial });
+        this.refuse(req, res, next, { uid, resource, action, code: denial, simulationId: resolved.simulation?.id ?? null });
         return;
       }
 
       if (isSensitive(resource, action)) {
-        this.record(uid, resource, action, 'ALLOW', req, null);
+        this.record(uid, resource, action, 'ALLOW', req, null, resolved.simulation?.id ?? null);
       }
       next();
     };
@@ -299,13 +299,20 @@ export class PermissionMiddleware {
     req: Request,
     res: Response,
     next: NextFunction,
-    entry: { uid: string | null; resource: string; action: string; code: DenialCode },
+    entry: {
+      uid: string | null;
+      resource: string;
+      action: string;
+      code: DenialCode;
+      /** Spec 026 (D407): só quando `resolved` chegou a existir (negativa de célula). */
+      simulationId?: string | null;
+    },
   ): void {
-    const { uid, resource, action, code } = entry;
+    const { uid, resource, action, code, simulationId } = entry;
     // (lex C16) Só o uid vai para a trilha; sem uid não há a quem atribuir e a
     // linha viraria ruído anônimo. A spec diz "toda negativa é registrada" — a
     // exceção é esta, e ela é a ausência de sujeito, não uma dispensa.
-    if (uid) this.record(uid, resource, action, 'DENY', req, code);
+    if (uid) this.record(uid, resource, action, 'DENY', req, code, simulationId ?? null);
 
     // ANTES do REPORT_ONLY de propósito: o modo de ensaio existe para medir
     // negativa de PERMISSÃO, não para relaxar autenticação.
@@ -337,6 +344,7 @@ export class PermissionMiddleware {
     decision: 'ALLOW' | 'DENY',
     req: Request,
     code: DenialCode | null,
+    simulationId: string | null,
   ): void {
     this.audit.record({
       tenantId: this.tenantId,
@@ -351,6 +359,8 @@ export class PermissionMiddleware {
       // podia tocar, então é o que a trilha pode afirmar com honestidade. NULL em
       // caminho sem contexto de país (mig 283).
       country: currentDbContext()?.country ?? null,
+      // Spec 026 (D407): a simulação ativa do ator no momento da decisão, se houver.
+      simulationId,
     });
   }
 }

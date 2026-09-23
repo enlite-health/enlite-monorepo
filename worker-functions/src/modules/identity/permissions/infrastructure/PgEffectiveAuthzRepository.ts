@@ -13,6 +13,7 @@ import type { Pool } from 'pg';
 import type { CountryCode } from '@shared/domain/countryCodes';
 import { isCountryCode } from '@shared/domain/countryCodes';
 import type { EffectiveAuthzRepository, ResolvedAuthz, StaffStatus } from '../application/ports';
+import type { GroupSimulation } from '../domain/GroupSimulation';
 import { readRows } from './dbAccess';
 
 const STATUSES: readonly string[] = ['ACTIVE', 'PENDING_ONBOARDING', 'SUSPENDED', 'DEACTIVATED'];
@@ -25,12 +26,45 @@ function asCountries(values: unknown): CountryCode[] {
   return Array.isArray(values) ? values.filter(isCountryCode) : [];
 }
 
+/** `simulation_id` NULL = sem simulação viva (o `CROSS JOIN` sempre traz a linha, campos NULL). */
+function asSimulation(row?: {
+  simulation_id: string | null;
+  simulation_group_id: string | null;
+  simulation_group_name: string | null;
+  simulation_started_at: Date | null;
+  simulation_expires_at: Date | null;
+}): GroupSimulation | null {
+  if (!row?.simulation_id || !row.simulation_group_id || !row.simulation_started_at || !row.simulation_expires_at) {
+    return null;
+  }
+  return {
+    id: row.simulation_id,
+    groupId: row.simulation_group_id,
+    groupName: row.simulation_group_name ?? '',
+    startedAt: row.simulation_started_at,
+    expiresAt: row.simulation_expires_at,
+  };
+}
+
 /**
- * Snapshot numa consulta só: status, células, países e grupos vigentes.
+ * Snapshot numa consulta só: status, células, países, grupos vigentes,
+ * `canSimulate` e a simulação ativa (spec 026, D407).
  *
  * `LEFT JOIN` + `FILTER` porque staff sem grupo TEM que voltar linha (é
  * exatamente quem cai na tela de boas-vindas) — com `INNER JOIN` ele sumiria e o
  * resolver não saberia distinguir "sem grupo" de "usuário inexistente".
+ *
+ * `groups` sai de `iam.acting_groups` (mig 458) — NUNCA mais `iam.user_groups`
+ * direto. `acting_groups` é o COALESCE(grupo simulado, grupos reais vivos) que
+ * `effective_permissions`/`effective_countries` já usam (abaixo); ler
+ * `user_groups` aqui faria `groups` mentir sob simulação — "ator real ×
+ * efetivo" (`pesquisa-modelo-de-dados.md` §6): `uid` continua o ator real, o
+ * grupo EFETIVO aparece em `groups` (e em `simulation`).
+ *
+ * `sim`/`sg` decompõem `iam.active_group_simulation` (função que devolve UMA
+ * linha composta, nunca SETOF — por isso `CROSS JOIN`, não `LEFT JOIN`: ela
+ * sempre produz exatamente 1 linha, com campos NULL quando não há simulação
+ * viva) e juntam o NOME do grupo simulado, que a função não carrega.
  */
 const SNAPSHOT_SQL = `
   SELECT u.status,
@@ -40,17 +74,27 @@ const SNAPSHOT_SQL = `
            json_agg(DISTINCT jsonb_build_object('id', g.id, 'name', g.name))
              FILTER (WHERE g.id IS NOT NULL),
            '[]'
-         ) AS groups
+         ) AS groups,
+         iam.is_master_member($1) AS can_simulate,
+         sim.id AS simulation_id,
+         sim.group_id AS simulation_group_id,
+         sg.name AS simulation_group_name,
+         sim.started_at AS simulation_started_at,
+         sim.expires_at AS simulation_expires_at
     FROM users u
-    LEFT JOIN iam.user_groups ug
-      ON ug.user_id = u.firebase_uid
-     AND ug.removed_at IS NULL
+    LEFT JOIN iam.acting_groups($1, $2) ag ON true
     LEFT JOIN iam.permission_groups g
-      ON g.id = ug.group_id
+      ON g.id = ag
      AND g.archived_at IS NULL
      AND g.tenant_id = $2
+    CROSS JOIN (
+      SELECT s.id, s.group_id, s.started_at, s.expires_at
+        FROM iam.active_group_simulation($1, $2) s
+    ) AS sim
+    LEFT JOIN iam.permission_groups sg
+      ON sg.id = sim.group_id
    WHERE u.firebase_uid = $1
-   GROUP BY u.status`;
+   GROUP BY u.status, sim.id, sim.group_id, sg.name, sim.started_at, sim.expires_at`;
 
 /**
  * Staff ACTIVE sem NENHUM grupo vigente — a medida do gate da virada (task 2.7).
@@ -105,6 +149,12 @@ export class PgEffectiveAuthzRepository implements EffectiveAuthzRepository {
         permissions: string[] | null;
         countries: string[] | null;
         groups: Array<{ id: string; name: string }> | null;
+        can_simulate: boolean | null;
+        simulation_id: string | null;
+        simulation_group_id: string | null;
+        simulation_group_name: string | null;
+        simulation_started_at: Date | null;
+        simulation_expires_at: Date | null;
       }>(SNAPSHOT_SQL, [uid, tenantId]),
     );
     const row = result.rows[0];
@@ -115,6 +165,8 @@ export class PgEffectiveAuthzRepository implements EffectiveAuthzRepository {
       permissions: row?.permissions ?? [],
       countries: asCountries(row?.countries),
       groups: row?.groups ?? [],
+      canSimulate: Boolean(row?.can_simulate),
+      simulation: asSimulation(row),
     };
   }
 

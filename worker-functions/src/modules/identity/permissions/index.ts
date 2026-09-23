@@ -25,6 +25,7 @@ export type {
   CatalogSyncResult,
   DeclaredCell,
   GroupMemberView,
+  GroupSimulationRepository,
   PermissionAuditFilters,
   PermissionAuditRow,
   PermissionHistoryFilters,
@@ -67,6 +68,8 @@ export type {
   PermissionHistoryEventType,
   PermissionHistoryOp,
 } from './domain/PermissionHistory';
+export { isLiveSimulation } from './domain/GroupSimulation';
+export type { GroupSimulation } from './domain/GroupSimulation';
 export { ENLITE_TENANT_ID } from './domain/tenant';
 export {
   ACTOR_CLASSES,
@@ -128,13 +131,22 @@ export type { HandlerRegistry } from './interface/registerPermissionEventHandler
 export { createWellKnownPermissionsRouter } from './interface/wellKnownPermissionsRoute';
 export { createMeAuthzRouter } from './interface/meAuthzRoute';
 export type { MeAuthzRouterDeps } from './interface/meAuthzRoute';
+export { createMeSimulationRouter } from './interface/meSimulationRoute';
+export type { MeSimulationRouterDeps } from './interface/meSimulationRoute';
 
 // ── Use cases (a API do painel monta em cima destes) ─────────────────────────
 export { AssertNoActiveStaffWithoutGroupUseCase, ROLLOUT_MARKER_KEY, ROLLOUT_MARKER_DONE } from './application/AssertNoActiveStaffWithoutGroupUseCase';
+export { EndGroupSimulationUseCase } from './application/EndGroupSimulationUseCase';
 export { GetMyAuthzUseCase } from './application/GetMyAuthzUseCase';
 export { ListPermissionCatalogUseCase } from './application/ListPermissionCatalogUseCase';
+export { ListSimulatableGroupsUseCase } from './application/ListSimulatableGroupsUseCase';
 export { QueryPermissionAuditUseCase } from './application/QueryPermissionAuditUseCase';
 export { QueryPermissionHistoryUseCase } from './application/QueryPermissionHistoryUseCase';
+export {
+  DEFAULT_PERMISSION_SIMULATION_TTL_MINUTES,
+  permissionSimulationTtlMinutes,
+  StartGroupSimulationUseCase,
+} from './application/StartGroupSimulationUseCase';
 export { SyncCountryFeaturesUseCase } from './application/SyncCountryFeaturesUseCase';
 export { SyncPermissionCatalogUseCase } from './application/SyncPermissionCatalogUseCase';
 export { projectWorkerFields, ProjecaoSemDecryptorError, NOME_REDIGIDO, CELL_WORKER_READ, CELL_WORKER_CONTACT_READ, CELL_WORKER_PII_READ, CELL_WORKER_DISABLE } from './application/projectWorkerFields';
