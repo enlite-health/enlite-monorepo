@@ -500,6 +500,31 @@ export function isValidCellKey(key: string): boolean {
 }
 
 /**
+ * Prefixo canônico das células "sobre o PRÓPRIO usuário" (`own_*` — heartbeat de presença,
+ * marcar a própria notificação como lida), nunca acesso a dado de terceiro. Espelha, LITERAL,
+ * o filtro SQL `p.resource LIKE 'own\_%' ESCAPE '\'` das migrations 464/466/467/468/469/470
+ * (spec 022) — aplica-se ao RESOURCE (antes do `:`), nunca à chave inteira.
+ *
+ * ⚠️ É `own_` COM underscore, não `own`: `ownership:read` e `owner:update` NÃO são células
+ * `own_*` — só compartilham o prefixo textual "own", sem o boundary que o `_` marca no SQL
+ * (`ESCAPE '\'` força o `_` literal, não o wildcard de 1 caractere do LIKE).
+ * `ownCellsAutoGrantRuleDerivadaDoCatalogo.test.ts` prova que este literal não diverge do SQL.
+ */
+export const OWN_CELL_RESOURCE_PREFIX = 'own_';
+
+/**
+ * Célula `own_*` (ver `OWN_CELL_RESOURCE_PREFIX`) — migration 470 a tornou não-removível por
+ * `iam.set_group_permissions` (REPLACE TOTAL protege a família). `planIamConfigImport` usa
+ * este predicado para ignorá-las NA COMPARAÇÃO (não no export/hash): um diff que aponta o que
+ * o aplicador nunca escreve faria o plano nunca convergir.
+ */
+export function isOwnCell(key: string): boolean {
+  // `split(':', 1)[0]` sem ternário/branch: com ou sem ':' na string, o índice 0 sempre existe
+  // (é o próprio `key` inteiro quando não há ':'), então não há ramo para cobrir.
+  return key.split(':', 1)[0].startsWith(OWN_CELL_RESOURCE_PREFIX);
+}
+
+/**
  * Categoria do recurso. Desconhecido → `UNCATEGORIZED` (a tela mostra que falta
  * decidir), nunca uma categoria "quase certa".
  */

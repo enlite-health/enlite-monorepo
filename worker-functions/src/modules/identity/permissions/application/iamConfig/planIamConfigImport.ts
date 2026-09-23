@@ -19,6 +19,7 @@
  *   · o NOME é a chave do grupo — renomear é criar outro (SUP-5).
  */
 
+import { isOwnCell } from '../../domain/PermissionCell';
 import { normalizeSnapshot, sameConfig } from './snapshot';
 import type { IamConfigSnapshot, IamImportError, IamImportOp, IamImportOptions, IamImportPendency, IamImportPlan } from './types';
 
@@ -110,7 +111,21 @@ export function planIamConfigImport(
     }
     const cur = currentByName.get(g.name);
     const have = cur?.cells ?? [];
-    if (have.length !== g.cells.length || have.some((c, i) => c !== g.cells[i])) {
+    // R5 (migration 470, decisão do Gabriel 22/09): `own_*` (heartbeat de presença, marcar a
+    // própria notificação como lida) deixou de ser removível por `iam.set_group_permissions`
+    // — o REPLACE TOTAL protege a família. Comparar com `own_*` dos dois lados faria o plano
+    // apontar `set_permissions` para algo que o aplicador NUNCA escreve (o grupo criado pela
+    // 469 já nasce com `own_*`; um `iam-config.json` que nunca marcou essas células voltaria a
+    // divergir do alvo PARA SEMPRE — o dry-run deixaria de significar "não falta nada").
+    // Filtro só NA COMPARAÇÃO: `have`/`g.cells` continuam intocados fora daqui — o `cells` do
+    // `set_permissions` (quando uma célula NÃO-own de verdade diverge) segue sendo o
+    // `g.cells` completo, e o export/hash (`normalizeSnapshot`) nem passa por este arquivo.
+    // Precedente interno: `country_features` com `source='default'` também fica fora da
+    // comparação (REQ-4 da spec 007) — lá filtrado no export; aqui, na comparação, porque o
+    // export continua listando `own_*` para auditoria.
+    const haveComparavel = have.filter((c) => !isOwnCell(c));
+    const wantComparavel = g.cells.filter((c) => !isOwnCell(c));
+    if (haveComparavel.length !== wantComparavel.length || haveComparavel.some((c, i) => c !== wantComparavel[i])) {
       ops.push({ kind: 'set_permissions', group: g.name, cells: g.cells });
     }
   }
