@@ -16,18 +16,22 @@ import { AddGroupMemberUseCase, RemoveGroupMemberUseCase } from './application/G
 import { ArchiveGroupUseCase } from './application/ArchiveGroupUseCase';
 import { AssertNoActiveStaffWithoutGroupUseCase } from './application/AssertNoActiveStaffWithoutGroupUseCase';
 import { CreatePermissionGroupUseCase } from './application/CreatePermissionGroupUseCase';
+import { EndGroupSimulationUseCase } from './application/EndGroupSimulationUseCase';
 import { GetMyAuthzUseCase } from './application/GetMyAuthzUseCase';
 import { GrantGroupCountryUseCase, RevokeGroupCountryUseCase } from './application/GrantGroupCountryUseCase';
 import { ListPermissionCatalogUseCase } from './application/ListPermissionCatalogUseCase';
+import { ListSimulatableGroupsUseCase } from './application/ListSimulatableGroupsUseCase';
 import { QueryPermissionAuditUseCase } from './application/QueryPermissionAuditUseCase';
 import { SetCountryFeatureUseCase } from './application/SetCountryFeatureUseCase';
 import { SetGroupPermissionsUseCase } from './application/SetGroupPermissionsUseCase';
+import { StartGroupSimulationUseCase } from './application/StartGroupSimulationUseCase';
 import { SyncCountryFeaturesUseCase } from './application/SyncCountryFeaturesUseCase';
 import { SyncPermissionCatalogUseCase } from './application/SyncPermissionCatalogUseCase';
 import { UpdatePermissionGroupUseCase } from './application/UpdatePermissionGroupUseCase';
 import { DomainEventPermissionPublisher } from './infrastructure/DomainEventPermissionPublisher';
 import { PgCountryFeatureRepository } from './infrastructure/PgCountryFeatureRepository';
 import { PgEffectiveAuthzRepository } from './infrastructure/PgEffectiveAuthzRepository';
+import { PgGroupSimulationRepository } from './infrastructure/PgGroupSimulationRepository';
 import { PgPermissionAuditRepository } from './infrastructure/PgPermissionAuditRepository';
 import { PgPermissionCatalogRepository } from './infrastructure/PgPermissionCatalogRepository';
 import { PgPermissionGroupRepository } from './infrastructure/PgPermissionGroupRepository';
@@ -65,6 +69,12 @@ export interface PermissionsModule {
   features: { set: SetCountryFeatureUseCase; sync: SyncCountryFeaturesUseCase };
   audit: QueryPermissionAuditUseCase;
   authz: GetMyAuthzUseCase;
+  /** Spec 026 (D407) — simulação de grupo (só Acesso Master). */
+  simulation: {
+    list: ListSimulatableGroupsUseCase;
+    start: StartGroupSimulationUseCase;
+    end: EndGroupSimulationUseCase;
+  };
   assertStaffHasGroup: AssertNoActiveStaffWithoutGroupUseCase;
   /** Repositórios expostos só para leitura da API do painel (grupo 4). */
   repositories: {
@@ -73,6 +83,7 @@ export interface PermissionsModule {
     features: PgCountryFeatureRepository;
     authz: PgEffectiveAuthzRepository;
     audit: PgPermissionAuditRepository;
+    simulation: PgGroupSimulationRepository;
   };
 }
 
@@ -83,6 +94,7 @@ export function createPermissionsModule(deps: PermissionsModuleDeps): Permission
   const authzRepo = new PgEffectiveAuthzRepository(deps.pool);
   const auditRepo = new PgPermissionAuditRepository(deps.pool);
   const rolloutRepo = new PgRolloutStateRepository(deps.pool);
+  const simulationRepo = new PgGroupSimulationRepository(deps.pool);
   const events = new DomainEventPermissionPublisher(deps.pool);
 
   const client = new PermissionService(authzRepo, featuresRepo, {
@@ -111,6 +123,11 @@ export function createPermissionsModule(deps: PermissionsModuleDeps): Permission
     },
     audit: new QueryPermissionAuditUseCase(auditRepo),
     authz: new GetMyAuthzUseCase(client, deps.engineEnabled ?? false),
+    simulation: {
+      list: new ListSimulatableGroupsUseCase(groupsRepo),
+      start: new StartGroupSimulationUseCase(simulationRepo, events),
+      end: new EndGroupSimulationUseCase(simulationRepo, events),
+    },
     assertStaffHasGroup: new AssertNoActiveStaffWithoutGroupUseCase(authzRepo, rolloutRepo),
     repositories: {
       groups: groupsRepo,
@@ -118,6 +135,7 @@ export function createPermissionsModule(deps: PermissionsModuleDeps): Permission
       features: featuresRepo,
       authz: authzRepo,
       audit: auditRepo,
+      simulation: simulationRepo,
     },
   };
 }

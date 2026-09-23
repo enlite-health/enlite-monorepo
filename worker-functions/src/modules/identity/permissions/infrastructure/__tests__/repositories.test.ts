@@ -11,6 +11,7 @@
 import { poolMockWithConnect } from '@shared/database/poolMockSupport';
 import { PgCountryFeatureRepository } from '../PgCountryFeatureRepository';
 import { PgEffectiveAuthzRepository } from '../PgEffectiveAuthzRepository';
+import { PgGroupSimulationRepository } from '../PgGroupSimulationRepository';
 import { PgPermissionAuditRepository } from '../PgPermissionAuditRepository';
 import { PgPermissionCatalogRepository, PROTECTED_CELLS } from '../PgPermissionCatalogRepository';
 import { PgPermissionGroupRepository } from '../PgPermissionGroupRepository';
@@ -57,6 +58,12 @@ describe('PgEffectiveAuthzRepository', () => {
           permissions: ['vacancy:read'],
           countries: ['AR'],
           groups: [{ id: 'g1', name: 'Recrutador' }],
+          can_simulate: false,
+          simulation_id: null,
+          simulation_group_id: null,
+          simulation_group_name: null,
+          simulation_started_at: null,
+          simulation_expires_at: null,
         },
       ],
     });
@@ -68,17 +75,108 @@ describe('PgEffectiveAuthzRepository', () => {
       permissions: ['vacancy:read'],
       countries: ['AR'],
       groups: [{ id: 'g1', name: 'Recrutador' }],
+      canSimulate: false,
+      simulation: null,
     });
 
     const vazio = makePool({ rows: [] });
     const semUsuario = await new PgEffectiveAuthzRepository(vazio.pool).snapshot('fantasma', TENANT);
-    expect(semUsuario).toMatchObject({ status: null, permissions: [], countries: [], groups: [] });
+    expect(semUsuario).toMatchObject({
+      status: null,
+      permissions: [],
+      countries: [],
+      groups: [],
+      canSimulate: false,
+      simulation: null,
+    });
   });
 
   it('status desconhecido não é repassado como se fosse válido', async () => {
     const { pool } = makePool({ rows: [{ status: 'INVENTADO', permissions: [], countries: [], groups: [] }] });
     const repo = new PgEffectiveAuthzRepository(pool);
     expect((await repo.snapshot('ana', TENANT)).status).toBeNull();
+  });
+
+  it('snapshot mapeia canSimulate e a simulação ativa (spec 026, D407) — SNAPSHOT_SQL chama as duas funções da 458', async () => {
+    const { pool, query } = makePool({
+      rows: [
+        {
+          status: 'ACTIVE',
+          permissions: ['vacancy:read'],
+          countries: ['AR'],
+          groups: [{ id: 'g2', name: 'Recrutamento AR' }],
+          can_simulate: true,
+          simulation_id: 'sim-1',
+          simulation_group_id: 'g2',
+          simulation_group_name: 'Recrutamento AR',
+          simulation_started_at: new Date('2026-09-22T18:00:00Z'),
+          simulation_expires_at: new Date('2026-09-22T22:00:00Z'),
+        },
+      ],
+    });
+    const repo = new PgEffectiveAuthzRepository(pool);
+
+    const snapshot = await repo.snapshot('ana', TENANT);
+    expect(snapshot.canSimulate).toBe(true);
+    expect(snapshot.simulation).toEqual({
+      id: 'sim-1',
+      groupId: 'g2',
+      groupName: 'Recrutamento AR',
+      startedAt: new Date('2026-09-22T18:00:00Z'),
+      expiresAt: new Date('2026-09-22T22:00:00Z'),
+    });
+    expect(sqls(query)[0]).toContain('iam.active_group_simulation($1, $2)');
+    expect(sqls(query)[0]).toContain('iam.is_master_member($1)');
+    // groups agora vem de acting_groups (COALESCE simulado/real, mig 458) — nunca mais
+    // iam.user_groups direto, senão `groups` mentiria sob simulação (D407, "ator real ×
+    // efetivo": uid continua real, groups é o EFETIVO).
+    expect(sqls(query)[0]).toContain('iam.acting_groups($1, $2)');
+    expect(sqls(query)[0]).not.toContain('iam.user_groups ug');
+  });
+
+  it('sem simulação ativa, simulation é null mesmo com can_simulate true (Master fora de simulação)', async () => {
+    const { pool } = makePool({
+      rows: [
+        {
+          status: 'ACTIVE',
+          permissions: [],
+          countries: [],
+          groups: [],
+          can_simulate: true,
+          simulation_id: null,
+          simulation_group_id: null,
+          simulation_group_name: null,
+          simulation_started_at: null,
+          simulation_expires_at: null,
+        },
+      ],
+    });
+    const repo = new PgEffectiveAuthzRepository(pool);
+    const snapshot = await repo.snapshot('ana', TENANT);
+    expect(snapshot.canSimulate).toBe(true);
+    expect(snapshot.simulation).toBeNull();
+  });
+
+  it('simulação ativa sem nome de grupo (JOIN não achou) mapeia groupName como string vazia, não undefined', async () => {
+    const { pool } = makePool({
+      rows: [
+        {
+          status: 'ACTIVE',
+          permissions: [],
+          countries: [],
+          groups: [],
+          can_simulate: true,
+          simulation_id: 'sim-1',
+          simulation_group_id: 'g2',
+          simulation_group_name: null,
+          simulation_started_at: new Date('2026-09-22T18:00:00Z'),
+          simulation_expires_at: new Date('2026-09-22T22:00:00Z'),
+        },
+      ],
+    });
+    const repo = new PgEffectiveAuthzRepository(pool);
+    const snapshot = await repo.snapshot('ana', TENANT);
+    expect(snapshot.simulation?.groupName).toBe('');
   });
 
   it('contagem de staff sem grupo filtra por account_type = staff (D294)', async () => {
@@ -382,6 +480,26 @@ describe('bordas do mapeamento (linha ausente, coluna nula, lista cheia)', () =>
     await new Promise(process.nextTick);
     expect(query.mock.calls[0][1][4]).toBeNull();
   });
+
+  it('trilha sem simulationId grava null (8ª coluna) — histórico fora de simulação', async () => {
+    const query = jest.fn().mockResolvedValue({ rows: [] });
+    new PgPermissionAuditRepository(poolMockWithConnect(query) as never).record({
+      tenantId: TENANT, userId: 'ana', resource: 'worker', action: 'read', decision: 'ALLOW',
+    });
+    await new Promise(process.nextTick);
+    expect(sqls(query)[0]).toContain('simulation_id');
+    expect(query.mock.calls[0][1]).toHaveLength(8);
+    expect(query.mock.calls[0][1][7]).toBeNull();
+  });
+
+  it('trilha SOB simulação grava o simulation_id (spec 026, D407)', async () => {
+    const query = jest.fn().mockResolvedValue({ rows: [] });
+    new PgPermissionAuditRepository(poolMockWithConnect(query) as never).record({
+      tenantId: TENANT, userId: 'ana', resource: 'worker', action: 'read', decision: 'ALLOW', simulationId: 'sim-1',
+    });
+    await new Promise(process.nextTick);
+    expect(query.mock.calls[0][1][7]).toBe('sim-1');
+  });
 });
 
 describe('PgRolloutStateRepository', () => {
@@ -399,5 +517,92 @@ describe('PgRolloutStateRepository', () => {
     const query = jest.fn().mockRejectedValue(Object.assign(new Error('relation does not exist'), { code: '42P01' }));
     const repo = new PgRolloutStateRepository(poolMockWithConnect(query) as never);
     await expect(repo.get('qualquer')).resolves.toBeNull();
+  });
+});
+
+describe('PgGroupSimulationRepository', () => {
+  const SIM_ROW = {
+    id: 'sim-1',
+    group_id: 'g2',
+    group_name: 'Recrutamento AR',
+    started_at: new Date('2026-09-22T18:00:00Z'),
+    expires_at: new Date('2026-09-22T22:00:00Z'),
+  };
+
+  it('findActive chama iam.active_group_simulation e mapeia a linha', async () => {
+    const { pool, query } = makePool({ rows: [SIM_ROW] });
+    const repo = new PgGroupSimulationRepository(pool);
+
+    const result = await repo.findActive('ana', TENANT);
+
+    expect(result).toEqual({
+      id: 'sim-1',
+      groupId: 'g2',
+      groupName: 'Recrutamento AR',
+      startedAt: new Date('2026-09-22T18:00:00Z'),
+      expiresAt: new Date('2026-09-22T22:00:00Z'),
+    });
+    expect(sqls(query)[0]).toContain('iam.active_group_simulation($1, $2)');
+    expect(query.mock.calls[0][1]).toEqual(['ana', TENANT]);
+  });
+
+  it('findActive sem simulação viva devolve null', async () => {
+    const { pool } = makePool({ rows: [] });
+    const repo = new PgGroupSimulationRepository(pool);
+    expect(await repo.findActive('ana', TENANT)).toBeNull();
+  });
+
+  it('start chama iam.start_group_simulation dentro de withStaffWrite — nunca INSERT direto', async () => {
+    const { pool, query } = makePool({ rows: [SIM_ROW] });
+    const repo = new PgGroupSimulationRepository(pool);
+
+    const result = await repo.start('ana', TENANT, 'g2', '240 minutes');
+
+    expect(result).toEqual({
+      id: 'sim-1',
+      groupId: 'g2',
+      groupName: 'Recrutamento AR',
+      startedAt: new Date('2026-09-22T18:00:00Z'),
+      expiresAt: new Date('2026-09-22T22:00:00Z'),
+    });
+    const startCall = sqls(query).find((sql) => sql.includes('iam.start_group_simulation'));
+    expect(startCall).toContain('iam.start_group_simulation($1, $2::interval)');
+    expect(startCall).not.toMatch(/INSERT\s+INTO/i);
+  });
+
+  it('start traduz erro do banco pelo toPermissionError existente — sem mapeamento próprio', async () => {
+    const query = jest.fn().mockRejectedValue(Object.assign(new Error('[iam] ator não é membro vivo do Acesso Master'), { code: '42501' }));
+    const repo = new PgGroupSimulationRepository(poolMockWithConnect(query) as never);
+
+    await expect(repo.start('ana', TENANT, 'g2', '240 minutes')).rejects.toMatchObject({ code: 'forbidden' });
+  });
+
+  it('end chama iam.end_group_simulation dentro de withStaffWrite e devolve o booleano', async () => {
+    const { pool, query } = makePool({ rows: [{ ended: true }] });
+    const repo = new PgGroupSimulationRepository(pool);
+
+    expect(await repo.end('ana', TENANT)).toBe(true);
+    const endCall = sqls(query).find((sql) => sql.includes('iam.end_group_simulation'));
+    expect(endCall).toContain('iam.end_group_simulation()');
+  });
+
+  it('end idempotente: nada aberto para fechar devolve false, sem lançar', async () => {
+    const { pool } = makePool({ rows: [{ ended: false }] });
+    const repo = new PgGroupSimulationRepository(pool);
+    expect(await repo.end('ana', TENANT)).toBe(false);
+  });
+
+  it('end sem NENHUMA linha de retorno (rows vazio) também devolve false — nunca undefined', async () => {
+    const { pool } = makePool({ rows: [] });
+    const repo = new PgGroupSimulationRepository(pool);
+    expect(await repo.end('ana', TENANT)).toBe(false);
+  });
+
+  it('start sem linha de retorno lança PermissionError invalid_input — fail-closed, nunca inventa a simulação', async () => {
+    const { pool } = makePool({ rows: [] });
+    const repo = new PgGroupSimulationRepository(pool);
+    await expect(repo.start('ana', TENANT, 'g2', '240 minutes')).rejects.toMatchObject({
+      code: 'invalid_input',
+    });
   });
 });

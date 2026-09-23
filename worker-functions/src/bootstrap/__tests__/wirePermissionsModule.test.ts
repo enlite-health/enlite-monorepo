@@ -178,7 +178,16 @@ describe('wirePermissionsModule', () => {
     async function enforcementCom(boundary: PermissionsBoundary): Promise<string> {
       const resolveStub = jest
         .spyOn(boundary.permissions.repositories.authz, 'snapshot')
-        .mockResolvedValue({ uid: 'u', tenantId: 't', status: 'ACTIVE', permissions: [], countries: [], groups: [] });
+        .mockResolvedValue({
+          uid: 'u',
+          tenantId: 't',
+          status: 'ACTIVE',
+          permissions: [],
+          countries: [],
+          groups: [],
+          canSimulate: false,
+          simulation: null,
+        });
       const contrato = await boundary.permissions.authz.execute({ uid: 'u', tenantId: 't' });
       resolveStub.mockRestore();
       return contrato.enforcement;
@@ -215,7 +224,16 @@ describe('wirePermissionsModule', () => {
       const permissions = createPermissionsModule({ pool: poolStub, systemPool: poolStub });
       jest
         .spyOn(permissions.repositories.authz, 'snapshot')
-        .mockResolvedValue({ uid: 'u', tenantId: 't', status: 'ACTIVE', permissions: [], countries: [], groups: [] });
+        .mockResolvedValue({
+          uid: 'u',
+          tenantId: 't',
+          status: 'ACTIVE',
+          permissions: [],
+          countries: [],
+          groups: [],
+          canSimulate: false,
+          simulation: null,
+        });
       const contrato = await permissions.authz.execute({ uid: 'u', tenantId: 't' });
       expect(contrato.enforcement).toBe('off');
     });

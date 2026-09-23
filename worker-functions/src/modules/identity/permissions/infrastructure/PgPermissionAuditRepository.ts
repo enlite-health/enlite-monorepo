@@ -28,8 +28,8 @@ import type {
 import { readRows, withStaffWrite } from './dbAccess';
 
 const INSERT_SQL = `
-  INSERT INTO iam.permission_audit_log (tenant_id, user_id, resource, action, resource_id, decision, country)
-  VALUES ($1, $2, $3, $4, $5, $6, $7)`;
+  INSERT INTO iam.permission_audit_log (tenant_id, user_id, resource, action, resource_id, decision, country, simulation_id)
+  VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`;
 
 export class PgPermissionAuditRepository implements PermissionAuditRepository {
   constructor(private readonly pool: Pool) {}
@@ -44,6 +44,7 @@ export class PgPermissionAuditRepository implements PermissionAuditRepository {
         entry.resourceId ?? null,
         entry.decision,
         entry.country ?? null,
+        entry.simulationId ?? null,
       ])
       .catch((err: unknown) => {
         logger.error(

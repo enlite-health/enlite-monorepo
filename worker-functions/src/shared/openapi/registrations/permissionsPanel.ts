@@ -49,6 +49,23 @@ const PermissionCellSchema = z
   })
   .openapi({ description: 'Uma célula `recurso:ação` do catálogo.' });
 
+// Spec 026 (D407) — o shape que `ResolvedAuthz.simulation` expõe: SEM `endedAt`
+// (só simulação VIVA chega aqui; `iam.active_group_simulation`, mig 458, já
+// filtra `ended_at IS NULL AND expires_at > now()` antes de qualquer linha
+// voltar). Mesmo shape do 201 de `POST /v1/me/simulation`.
+const GroupSimulationSchema = registry.register(
+  'GroupSimulation',
+  z
+    .object({
+      id: z.string().uuid(),
+      groupId: z.string().uuid().openapi({ description: 'Grupo que DECIDE durante a simulação — nunca o Acesso Master.' }),
+      groupName: z.string().openapi({ example: 'Recrutamento AR' }),
+      startedAt: z.string().datetime(),
+      expiresAt: z.string().datetime(),
+    })
+    .openapi({ description: 'A simulação de grupo ativa do ator (spec 026, D407).' }),
+);
+
 const AuthzContractSchema = registry.register(
   'AuthzContract',
   z
@@ -60,13 +77,17 @@ const AuthzContractSchema = registry.register(
         .nullable()
         .openapi({ description: 'Status da conta. `null` = conta não encontrada no tenant.' }),
       permissions: z.array(z.string()).openapi({
-        description: 'Chaves `recurso:ação` — a UNIÃO dos grupos vigentes.',
+        description: 'Chaves `recurso:ação` — a UNIÃO dos grupos vigentes (= do grupo simulado, sob simulação).',
         example: ['worker:read', 'funnel:read'],
       }),
       countries: z.array(z.string()).openapi({ example: ['AR'] }),
       groups: z
         .array(z.object({ id: z.string(), name: z.string() }))
-        .openapi({ description: 'Grupos vigentes. Vazio = tela de boas-vindas.' }),
+        .openapi({
+          description:
+            'Grupos vigentes. Vazio = tela de boas-vindas. Sob simulação (D407): vira `[grupo simulado]` — ' +
+            '`uid` continua o ator REAL, `groups` é o EFETIVO (análogo ao claim `act` da RFC 8693).',
+        }),
       features: z.record(z.record(z.object({ enabled: z.boolean(), config: z.unknown() }))).openapi({
         description: 'país → featureKey → disponibilidade. `enabled:false` = a tela nem aparece.',
       }),
@@ -75,6 +96,14 @@ const AuthzContractSchema = registry.register(
           'Reflete `PERMISSION_ENGINE_ENABLED` no ambiente (D268). `off` = `groups` vem do banco mas ' +
           'NENHUMA rota está de fato gateada — "sem grupo" ainda não significa "sem acesso".',
         example: 'off',
+      }),
+      canSimulate: z.boolean().openapi({
+        description:
+          'Spec 026 (D407): filiação REAL e VIVA no Acesso Master (`iam.is_master_member`) — nunca célula. ' +
+          'Decide se o painel mostra o seletor de simulação.',
+      }),
+      simulation: GroupSimulationSchema.nullable().openapi({
+        description: 'A simulação ativa do ator, se houver. `null` fora de simulação.',
       }),
     })
     .openapi({
@@ -102,6 +131,72 @@ registry.registerPath({
     401: { description: 'Não autenticado, ou principal sem uid (chave de API de serviço).', content: { 'application/json': { schema: ErrorResponseSchema } } },
     403: { description: 'Autenticado, mas não é staff.', content: { 'application/json': { schema: ErrorResponseSchema } } },
     500: { description: 'Falha ao resolver permissões.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+  },
+});
+
+// ── Simulação de grupo (spec 026, D407) ──────────────────────────────────────
+// Mesma família de `/v1/me/authz` acima: self, versionado, SEM célula — o
+// portão real de "só o Acesso Master simula" mora no banco
+// (`iam.start_group_simulation`/`iam.is_master_member`, mig 458).
+const NotMasterMemberSchema = z.object({ code: z.literal('not_master_member') });
+const GroupNotSimulableSchema = z.object({ code: z.literal('group_not_simulable') });
+
+registry.registerPath({
+  method: 'get',
+  path: '/v1/me/simulation/groups',
+  tags: ['Painel · Acessos'],
+  summary: 'Grupos que o Acesso Master pode simular',
+  description:
+    'Grupos VIVOS do tenant, sem o Acesso Master, ordenados por nome — reusa ' +
+    '`PermissionGroupRepository.list`, nenhuma query nova. Só quem tem `canSimulate: true` ' +
+    '(filiação REAL e viva no Acesso Master) vê a lista; os demais recebem 403.',
+  security: [{ firebaseAuth: [] }],
+  responses: {
+    200: {
+      description: 'Grupos simuláveis.',
+      content: { 'application/json': { schema: z.array(z.object({ id: z.string().uuid(), name: z.string() })) } },
+    },
+    401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    403: { description: 'Ator não é membro vivo do Acesso Master.', content: { 'application/json': { schema: NotMasterMemberSchema } } },
+    500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+  },
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/v1/me/simulation',
+  tags: ['Painel · Acessos'],
+  summary: 'Abre a simulação de outro grupo',
+  description:
+    'Encerra a simulação aberta anterior do ator (SUPERSEDED/EXPIRED) e abre a nova — nunca soma. ' +
+    'TTL por `PERMISSION_SIMULATION_TTL_MINUTES` (default 4h). O gate "só Acesso Master" é do BANCO ' +
+    '(`iam.start_group_simulation`, mig 458): 403 se não-Master, 422 se o grupo é o próprio Master, ' +
+    'arquivado, inexistente ou de outro tenant.',
+  security: [{ firebaseAuth: [] }],
+  request: {
+    body: { content: { 'application/json': { schema: z.object({ groupId: z.string().uuid() }) } } },
+  },
+  responses: {
+    201: { description: 'Simulação aberta.', content: { 'application/json': { schema: GroupSimulationSchema } } },
+    400: { description: 'Corpo inválido (`groupId` ausente ou não-uuid).', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    403: { description: 'Ator não é membro vivo do Acesso Master.', content: { 'application/json': { schema: NotMasterMemberSchema } } },
+    422: { description: 'Grupo não simulável (arquivado, inexistente no tenant, ou o próprio Acesso Master).', content: { 'application/json': { schema: GroupNotSimulableSchema } } },
+    500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+  },
+});
+
+registry.registerPath({
+  method: 'delete',
+  path: '/v1/me/simulation',
+  tags: ['Painel · Acessos'],
+  summary: 'Encerra a simulação aberta do ator',
+  description: 'Idempotente: 204 sempre, mesmo sem nenhuma simulação aberta para fechar.',
+  security: [{ firebaseAuth: [] }],
+  responses: {
+    204: { description: 'Encerrada (ou já não havia nenhuma aberta).' },
+    401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
   },
 });
 
