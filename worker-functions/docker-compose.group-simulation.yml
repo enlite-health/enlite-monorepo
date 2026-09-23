@@ -1,0 +1,24 @@
+# Override dedicado ao e2e de integração da "Simulação de grupo de acesso"
+# (`enlite-frontend/e2e/integration/group-simulation.integration.e2e.ts`, spec 026).
+#
+# Só o service `api`, só as envs que a spec exige por cima do stack padrão
+# (`docker-compose.yml` + `docker-compose.test.yml`): engine de permissão ABAC
+# ligado com TODAS as 12 famílias em `PERMISSION_ENFORCED_ROUTES` — a simulação
+# de grupo precisa que o menu perca telas de verdade e que as rotas dessas
+# telas devolvam 403 `missing_cell` quando o grupo simulado não tem a célula,
+# em qualquer família, não só `admin.patients` como no override do Ana Care.
+#
+# Sem `ANACARE_HOURS_SOURCE` — essa spec não mexe em fonte de horas.
+#
+# ⚠️ Isolamento: como o override do Ana Care, este arquivo é usado SÓ pelo job
+# dedicado desta spec. O job padrão de integration segue com o engine
+# desligado.
+#
+# Sem segredo: nenhuma env abaixo é sensível.
+services:
+  api:
+    environment:
+      PERMISSION_ENGINE_ENABLED: "true"
+      PERMISSION_ENFORCED_ROUTES: "admin.analytics;admin.dedup;admin.encuadre;admin.integrations;admin.messaging;admin.patients;admin.permissions;admin.recruitment;admin.test_fixtures;admin.users;admin.vacancies;admin.workers"
+      PERMISSION_CATALOG_SYNC_ENABLED: "true"
+      PERMISSION_CACHE_TTL_MS: "0"
