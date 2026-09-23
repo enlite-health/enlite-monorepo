@@ -16,11 +16,13 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { OWN_CELL_RESOURCE_PREFIX, isOwnCell } from '../PermissionCell';
 
 const MIGRATIONS_DIR = path.resolve(__dirname, '..', '..', '..', '..', '..', '..', 'migrations');
 
 const MIGRATION_468 = '468_grant_own_prefix_cells_catchup_new_groups.sql';
 const MIGRATION_469 = '469_iam_create_group_grants_own_prefix_cells.sql';
+const MIGRATION_470 = '470_set_group_permissions_protects_own_cells.sql';
 
 // O filtro CANÔNICO: prefixo, nunca lista de resources literais.
 const FILTRO_PREFIXO = "p.resource LIKE 'own\\_%' ESCAPE '\\'";
@@ -93,5 +95,36 @@ describe('R4 — regra de concessão own_* é derivada do catálogo por PREFIXO,
     const sql = semComentarios(lerMigration(MIGRATION_469));
     expect(sql).toContain('CREATE OR REPLACE FUNCTION iam.create_group(p_tenant_id UUID, p_name TEXT, p_description TEXT)');
     expect(sql).toContain('iam._require_manager(p_tenant_id)');
+  });
+});
+
+/**
+ * R5 (migration 470, spec 022, decisão do Gabriel 22/09) — `planIamConfigImport` passou a
+ * ignorar `own_*` NA COMPARAÇÃO (não no export/hash), usando o predicado TS `isOwnCell` /
+ * `OWN_CELL_RESOURCE_PREFIX` de `PermissionCell.ts`. Este describe estende a prova de
+ * não-deriva do resto do arquivo (que já cobre 468×469) ao lado TS: se `OWN_CELL_RESOURCE_PREFIX`
+ * mudar sem que as migrations mudem junto (ou vice-versa), o literal SQL derivado da constante
+ * TS deixa de bater com o texto das migrations, e este teste cai.
+ */
+describe('R5 — o predicado TS que planIamConfigImport usa (isOwnCell/OWN_CELL_RESOURCE_PREFIX) não diverge do SQL das migrations', () => {
+  // Literal SQL DERIVADO da constante TS (não hardcoded aqui) — se `OWN_CELL_RESOURCE_PREFIX`
+  // virar 'own' (sem underscore) ou qualquer outra coisa, este literal muda junto, e as
+  // migrations (que continuam com o texto ORIGINAL 'own\_%') deixam de conter o literal abaixo.
+  const filtroDerivadoDoTS = `p.resource LIKE '${OWN_CELL_RESOURCE_PREFIX.replace(/_$/, '\\_')}%' ESCAPE '\\'`;
+
+  it('a constante TS é EXATAMENTE `own_` (com underscore) e gera o mesmo literal das migrations 468/469/470', () => {
+    expect(OWN_CELL_RESOURCE_PREFIX).toBe('own_');
+    expect(filtroDerivadoDoTS).toBe(FILTRO_PREFIXO);
+    expect(semComentarios(lerMigration(MIGRATION_468))).toContain(filtroDerivadoDoTS);
+    expect(semComentarios(lerMigration(MIGRATION_469))).toContain(filtroDerivadoDoTS);
+    expect(semComentarios(lerMigration(MIGRATION_470))).toContain(filtroDerivadoDoTS);
+  });
+
+  it('isOwnCell exige o UNDERSCORE — own_notifications:read/own_presence:update SÃO own_*; ownership:read e owner:update NÃO SÃO', () => {
+    expect(isOwnCell('own_notifications:read')).toBe(true);
+    expect(isOwnCell('own_presence:update')).toBe(true);
+    expect(isOwnCell('ownership:read')).toBe(false);
+    expect(isOwnCell('owner:update')).toBe(false);
+    expect(isOwnCell('worker:read')).toBe(false);
   });
 });
