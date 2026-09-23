@@ -19,6 +19,14 @@ interface AdminAuthState {
    */
   authz: AuthzContract | null;
   authzStatus: AuthzStatus;
+  /**
+   * F3 (spec 026), decisão #4: `true` quando a simulação de grupo VENCEU
+   * sozinha (TTL de 4h) — `fetchAuthz()` é quem detecta (contrato anterior
+   * tinha `simulation`, o novo não tem). Ação EXPLÍCITA do ator
+   * (`startSimulation`/`endSimulation`) sempre zera a flag na volta — nunca é
+   * lida como "expirou", porque foi o próprio ator que mudou de estado.
+   */
+  simulationExpired: boolean;
 
   setUser: (user: User | null) => void;
   setLoading: (isLoading: boolean) => void;
@@ -28,6 +36,14 @@ interface AdminAuthState {
   fetchProfile: () => Promise<void>;
   /** Carrega o contrato. Nunca lança: falha vira `authzStatus = 'error'` (fail-closed na tela). */
   fetchAuthz: () => Promise<void>;
+  /** Inicia a simulação (só quem tem `canSimulate`) e refaz `fetchAuthz()`. Rejeita em erro (ex.: 422 `group_not_simulable`) — não engole. */
+  startSimulation: (groupId: string) => Promise<void>;
+  /** Encerra a simulação ativa e refaz `fetchAuthz()`. Idempotente do lado do backend (DELETE sempre 204). */
+  endSimulation: () => Promise<void>;
+  /** Fecha o aviso de "expiró" sem mexer no `authz`. */
+  dismissSimulationExpired: () => void;
+  /** Grupos vivos que o ator pode simular (sem o Master). */
+  listSimulatableGroups: () => Promise<Array<{ id: string; name: string }>>;
   initialize: () => () => void;
 }
 
@@ -40,6 +56,7 @@ export const useAdminAuthStore = create<AdminAuthState>((set, get) => ({
   isAuthenticated: false,
   authz: null,
   authzStatus: 'idle',
+  simulationExpired: false,
 
   setUser: (user: User | null): void => set({ user, isAuthenticated: user !== null }),
 
@@ -98,7 +115,14 @@ export const useAdminAuthStore = create<AdminAuthState>((set, get) => ({
 
   logout: async (): Promise<void> => {
     await authService.logout();
-    set({ user: null, isAuthenticated: false, adminProfile: null, authz: null, authzStatus: 'idle' });
+    set({
+      user: null,
+      isAuthenticated: false,
+      adminProfile: null,
+      authz: null,
+      authzStatus: 'idle',
+      simulationExpired: false,
+    });
   },
 
   fetchAuthz: async (): Promise<void> => {
@@ -113,7 +137,13 @@ export const useAdminAuthStore = create<AdminAuthState>((set, get) => ({
     if (!anterior) set({ authzStatus: 'loading' });
     try {
       const authz = await AdminAuthzApiService.getMyAuthz();
-      set({ authz, authzStatus: 'ready' });
+      // "expiró" (decisão #4): só o TTL vencendo sozinho passa por aqui com a
+      // transição "tinha simulação → não tem mais". `startSimulation`/
+      // `endSimulation` zeram a flag por cima logo depois de chamar isto, então
+      // o refetch DELAS nunca fica marcado como expirado — só quem chega aqui
+      // por fora (troca de área, polling) é que pode estar vendo o vencimento.
+      const simulacaoVenceu = !!anterior?.simulation && !authz.simulation;
+      set({ authz, authzStatus: 'ready', simulationExpired: simulacaoVenceu });
     } catch {
       // Sem contrato prévio: a tela não decide nada, e não pode fingir que
       // decidiu — contrato vazio aqui seria lido como "sem grupo" (D114),
@@ -122,6 +152,25 @@ export const useAdminAuthStore = create<AdminAuthState>((set, get) => ({
       set((state) => (state.authz ? state : { authz: null, authzStatus: 'error' }));
     }
   },
+
+  startSimulation: async (groupId: string): Promise<void> => {
+    await AdminAuthzApiService.startSimulation(groupId);
+    await get().fetchAuthz();
+    // ação explícita do ator — nunca é "expirou".
+    set({ simulationExpired: false });
+  },
+
+  endSimulation: async (): Promise<void> => {
+    await AdminAuthzApiService.endSimulation();
+    await get().fetchAuthz();
+    // idem: o próprio ator encerrou, não é vencimento de TTL.
+    set({ simulationExpired: false });
+  },
+
+  dismissSimulationExpired: (): void => set({ simulationExpired: false }),
+
+  listSimulatableGroups: (): Promise<Array<{ id: string; name: string }>> =>
+    AdminAuthzApiService.listSimulatableGroups(),
 
   fetchProfile: async (): Promise<void> => {
     try {

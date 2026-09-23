@@ -47,6 +47,10 @@ import { DedupCenterPage } from './pages/admin/DedupCenterPage/DedupCenterPage';
 import { NewVersionBanner } from './components/molecules/NewVersionBanner/NewVersionBanner';
 import { Toaster } from './components/molecules/Toaster';
 import { InviteProgressPanel } from './components/features/admin/VacancyMatch/InviteProgressPanel';
+import { GroupSimulationBanner } from './components/features/access/GroupSimulationBanner';
+import { GroupSimulationSelect } from './components/features/access/GroupSimulationSelect';
+import { useAdminAuthStore } from './stores/adminAuthStore';
+import { shouldShowWelcomeNoGroup } from '@domain/entities/Authz';
 
 // Lazy-loaded pages — com retry automático para falhas de chunk após deploy
 const PublicVacancyPage = lazyWithRetry(() => import('./pages/public/PublicVacancyPage'));
@@ -90,6 +94,36 @@ export function VacancyEnAliasRedirect() {
   // /vacancies/<id>. (autolink do WhatsApp colava o ponto na URL).
   const cleanId = (id ?? '').replace(/[.\s]+$/, '');
   return <Navigate to={`/vacantes/${cleanId}${search}`} replace />;
+}
+
+/**
+ * F3 (spec 026) — acima de `AdminProtectedRoute` de propósito: o banner
+ * precisa aparecer POR CIMA de qualquer coisa que a rota decida renderizar
+ * embaixo, inclusive a `WelcomeNoGroupPage` (História 2).
+ *
+ * ACHADO (23/09): `WelcomeNoGroupPage` substitui `children` inteiro em
+ * `AdminProtectedRoute` — não é um card dentro do `AdminLayout`, então o
+ * `AppSidebar`/rodapé (onde mora o `GroupSimulationSelect`) NUNCA monta
+ * nessa tela. Sem isto aqui, quem está simulando um grupo com zero células
+ * cairia na tela "sem grupo" sem NENHUM jeito de encerrar a simulação. Por
+ * isso este overlay recalcula `shouldShowWelcomeNoGroup` (mesma função pura
+ * do gate) e, só nesse caso, monta o `Select`/botão de sair também aqui.
+ */
+export function GroupSimulationOverlay() {
+  const authz = useAdminAuthStore((s) => s.authz);
+  const authzStatus = useAdminAuthStore((s) => s.authzStatus);
+  const semGrupo = shouldShowWelcomeNoGroup(authz, authzStatus);
+
+  return (
+    <>
+      <GroupSimulationBanner />
+      {semGrupo && (
+        <div className="fixed top-2 right-2 z-50" data-testid="group-simulation-select-welcome-overlay">
+          <GroupSimulationSelect />
+        </div>
+      )}
+    </>
+  );
 }
 
 export function App() {
@@ -190,6 +224,7 @@ export function App() {
           element={
             <AdminErrorBoundary>
               <Suspense fallback={<AdminFallback />}>
+                <GroupSimulationOverlay />
                 <AdminProtectedRoute>
                   <AdminLayout />
                 </AdminProtectedRoute>
