@@ -299,6 +299,59 @@ const AuditRowSchema = z
   })
   .openapi({ description: 'Uma decisão da trilha. Identificador e metadado — nunca conteúdo de dado pessoal.' });
 
+const PermissionHistoryEventSchema = z
+  .object({
+    eventType: z.enum(['permission', 'member']).openapi({
+      description: '`permission` = célula adicionada/removida de um grupo. `member` = pessoa adicionada/removida.',
+    }),
+    occurredAt: z.string().datetime(),
+    groupId: z.string().uuid(),
+    groupName: z.string().openapi({ example: 'Recrutamento AR' }),
+    actorUid: z.string().nullable(),
+    actorDisplayName: z.string().nullable(),
+    actorEmail: z.string().nullable(),
+    op: z.enum(['add', 'remove']),
+    resource: z.string().nullable().openapi({ description: 'Só em eventos `permission`.' }),
+    action: z.string().nullable().openapi({ description: 'Só em eventos `permission`.' }),
+    subjectUserId: z.string().nullable().openapi({ description: 'Só em eventos `member` — quem entrou/saiu.' }),
+    subjectDisplayName: z.string().nullable(),
+    subjectEmail: z.string().nullable(),
+  })
+  .openapi({
+    description:
+      'Um evento do histórico. NUNCA inclui `reason` (texto livre de `permission_group_changes`) — ' +
+      'a spec da tela proíbe expor esse campo.',
+  });
+
+registry.registerPath({
+  method: 'get',
+  path: '/api/admin/permission-history',
+  tags: ['Painel · Acessos'],
+  summary: 'Histórico de mudanças de permissão — quem, quando, em qual grupo, qual mudança',
+  description:
+    'Substitui a Auditoría ALLOW/DENY na UI: responde "quem mudou uma permissão, em qual grupo, ' +
+    'quando, e qual foi a mudança" — pergunta que `iam.query_audit` não responde. Une ' +
+    '`iam.permission_group_changes` (célula) e `iam.user_groups` (pessoa — uma linha pode virar até ' +
+    'dois eventos, um por `assigned_at` e outro por `removed_at`) numa lista só, por ' +
+    '`iam.query_permission_history` (mig 458), gated como `iam.query_audit`. `groupId` filtra por ' +
+    'grupo; `type` filtra por tipo de evento.',
+  security: [{ firebaseAuth: [] }],
+  request: {
+    query: z.object({
+      groupId: z.string().uuid().optional(),
+      type: z.enum(['permission', 'member']).optional(),
+      limit: z.coerce.number().int().min(1).max(1000).optional().openapi({ description: 'Default 200, teto 1000.' }),
+    }),
+  },
+  responses: {
+    200: { description: 'OK.', content: { 'application/json': { schema: z.object({ events: z.array(PermissionHistoryEventSchema) }) } } },
+    400: { description: 'Query inválida.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    403: { description: 'Sem `permission_management:read`.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+  },
+});
+
 const painel = (path: string, summary: string, description: string, ok: z.ZodTypeAny, extras: Record<number, string> = {}) => {
   registry.registerPath({
     method: 'get',

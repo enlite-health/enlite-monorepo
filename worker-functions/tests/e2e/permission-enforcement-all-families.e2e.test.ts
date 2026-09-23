@@ -382,6 +382,7 @@ describe('C1 — engine ligado com as 12 famílias de uma vez (HTTP real, banco 
         groups: modulo.repositories.groups,
         features: modulo.repositories.features,
         audit: modulo.audit,
+        history: modulo.history,
         auth,
         permissions,
         tenantId: TENANT_E2E,

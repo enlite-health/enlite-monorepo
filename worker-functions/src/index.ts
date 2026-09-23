@@ -447,6 +447,7 @@ app.use('/api/admin', createPermissionPanelRoutes({
   groups: permissionsBoundary.permissions.repositories.groups,
   features: permissionsBoundary.permissions.repositories.features,
   audit: permissionsBoundary.permissions.audit,
+  history: permissionsBoundary.permissions.history,
   auth: authMiddleware,
   permissions: permissionMiddleware,
 }));

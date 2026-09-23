@@ -76,6 +76,31 @@ export interface AuditFilters {
   limit?: number;
 }
 
+/** Um evento do histórico de mudanças de permissão (substitui a Auditoría ALLOW/DENY na UI). */
+export interface PermissionHistoryEvent {
+  eventType: 'permission' | 'member';
+  occurredAt: string;
+  groupId: string;
+  groupName: string;
+  actorUid: string | null;
+  actorDisplayName: string | null;
+  actorEmail: string | null;
+  op: 'add' | 'remove';
+  /** Só em eventos `permission`. */
+  resource: string | null;
+  action: string | null;
+  /** Só em eventos `member` — quem entrou/saiu do grupo. */
+  subjectUserId: string | null;
+  subjectDisplayName: string | null;
+  subjectEmail: string | null;
+}
+
+export interface PermissionHistoryFilters {
+  groupId?: string;
+  type?: 'permission' | 'member';
+  limit?: number;
+}
+
 /** Códigos ESTÁVEIS que o backend publica no 409 — a frase de `error` pode mudar. */
 export type PanelConflictCode = 'duplicate_name' | 'system_group' | 'last_manager';
 
@@ -153,6 +178,20 @@ class AdminPermissionsApiServiceClass {
     }
     const q = params.toString() ? `?${params}` : '';
     return (await this.request<{ entries: PermissionAuditRow[] }>('GET', `/api/admin/permission-audit${q}`)).entries;
+  }
+
+  /**
+   * Histórico de mudanças de permissão — substitui `queryAudit` na UI (a tela
+   * `/admin/access/audit` agora é esta lista). `groupId` e `type` são os dois
+   * filtros de servidor; sem eles, todos os grupos e os dois tipos de evento.
+   */
+  async queryHistory(filters: PermissionHistoryFilters = {}): Promise<PermissionHistoryEvent[]> {
+    const params = new URLSearchParams();
+    for (const [k, v] of Object.entries(filters)) {
+      if (v !== undefined && v !== '') params.set(k, String(v));
+    }
+    const q = params.toString() ? `?${params}` : '';
+    return (await this.request<{ events: PermissionHistoryEvent[] }>('GET', `/api/admin/permission-history${q}`)).events;
   }
 
   // ── Escrita ────────────────────────────────────────────────────────────────

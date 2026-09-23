@@ -17,6 +17,7 @@ import type { PermissionCell } from '../domain/PermissionCell';
 import type { PermissionGroup, PermissionGroupDetail } from '../domain/PermissionGroup';
 import type { CountryFeature } from '../domain/CountryFeature';
 import type { GroupMembership } from '../domain/GroupMembership';
+import type { PermissionHistoryEvent, PermissionHistoryEventType } from '../domain/PermissionHistory';
 import type { GroupSimulation } from '../domain/GroupSimulation';
 
 /** Status de conta que o resolver enxerga (`users.status`, mig 206). */
@@ -255,6 +256,21 @@ export interface PermissionAuditRepository {
 }
 
 /**
+ * Histórico de mudanças de permissão (substitui a Auditoría ALLOW/DENY na UI).
+ * `groupId` nulo = todos os grupos; `type` nulo = os dois tipos de evento.
+ */
+export interface PermissionHistoryFilters {
+  groupId?: string | null;
+  type?: PermissionHistoryEventType | null;
+  limit?: number | null;
+}
+
+export interface PermissionHistoryRepository {
+  /** Leitura por `iam.query_permission_history` (mig 458) — mesmo gate do `query_audit`. */
+  query(filters: PermissionHistoryFilters): Promise<PermissionHistoryEvent[]>;
+}
+
+/**
  * Invalidação de cache entre instâncias (design 4): toda mutação publica o
  * evento; a instância que o processa limpa o cache local. Janela ≈ 0 onde a
  * mudança foi feita, ≤ TTL nas outras.
@@ -279,4 +295,13 @@ export interface PermissionClient {
   invalidate(uids?: string[]): void;
 }
 
-export type { PermissionCell, PermissionGroup, PermissionGroupDetail, CountryFeature, GroupMembership, GroupSimulation };
+export type {
+  PermissionCell,
+  PermissionGroup,
+  PermissionGroupDetail,
+  CountryFeature,
+  GroupMembership,
+  PermissionHistoryEvent,
+  PermissionHistoryEventType,
+  GroupSimulation,
+};

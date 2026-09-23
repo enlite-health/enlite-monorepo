@@ -28,6 +28,7 @@ export type {
   GroupSimulationRepository,
   PermissionAuditFilters,
   PermissionAuditRow,
+  PermissionHistoryFilters,
   PermissionClient,
   PermissionDecision,
   ResolvedAuthz,
@@ -62,6 +63,11 @@ export {
 } from './domain/CountryFeature';
 export type { CountryFeature, FeatureType } from './domain/CountryFeature';
 export type { CountryGrant, GroupMembership } from './domain/GroupMembership';
+export type {
+  PermissionHistoryEvent,
+  PermissionHistoryEventType,
+  PermissionHistoryOp,
+} from './domain/PermissionHistory';
 export { isLiveSimulation } from './domain/GroupSimulation';
 export type { GroupSimulation } from './domain/GroupSimulation';
 export { ENLITE_TENANT_ID } from './domain/tenant';
@@ -135,6 +141,7 @@ export { GetMyAuthzUseCase } from './application/GetMyAuthzUseCase';
 export { ListPermissionCatalogUseCase } from './application/ListPermissionCatalogUseCase';
 export { ListSimulatableGroupsUseCase } from './application/ListSimulatableGroupsUseCase';
 export { QueryPermissionAuditUseCase } from './application/QueryPermissionAuditUseCase';
+export { QueryPermissionHistoryUseCase } from './application/QueryPermissionHistoryUseCase';
 export {
   DEFAULT_PERMISSION_SIMULATION_TTL_MINUTES,
   permissionSimulationTtlMinutes,
