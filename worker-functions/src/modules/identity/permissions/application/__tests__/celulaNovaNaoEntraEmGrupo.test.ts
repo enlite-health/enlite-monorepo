@@ -34,6 +34,7 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { CELL_DESCRIPTION } from '../../domain/PermissionCell';
 
 const RAIZ = path.resolve(__dirname, '..', '..', '..', '..', '..', '..');
 
@@ -266,6 +267,15 @@ describe('own_ (revogação ESTREITA da D338, decisão do Gabriel 23/09/2026, mi
     // todo grupo sem revisão humana. Se uma QUARTA aparecer, este teste FALHA de propósito:
     // a decisão de "isso realmente só afeta o próprio registro do usuário" é do Gabriel, não
     // pode ser inferida por um agente só porque o nome começa com `own_`.
+    //
+    // ⚠️ O catálogo fundido no boot (`wirePermissionsModule.ts`) tem DUAS fontes: as ROTAS
+    // (varridas abaixo por regex) e `cellsForaDeRota` (`scanExpressRouter.ts`), que itera
+    // `CELL_DESCRIPTION` inteiro. Uma célula `own_*` declarada SÓ em `CELL_DESCRIPTION` (sem
+    // NENHUMA rota) entra no catálogo por essa segunda via e seria auto-concedida a todo grupo
+    // pela 471 sem este teste enxergar — precedente real de célula que só existe por essa via:
+    // `patient_therapeutic_project:export` (PermissionCell.ts). Por isso as chaves `own_*` de
+    // `CELL_DESCRIPTION` entram no MESMO conjunto que a varredura de rota, ANTES do filtro
+    // contra a lista conhecida.
     const SRC_DIR = path.join(RAIZ, 'src');
     const arquivosTs: string[] = [];
     const empilhar = (dir: string) => {
@@ -279,13 +289,41 @@ describe('own_ (revogação ESTREITA da D338, decisão do Gabriel 23/09/2026, mi
     empilhar(SRC_DIR);
 
     const encontradas = new Set<string>();
-    const regexRequire = /perm\.require\(\s*['"]own_[a-z_]+['"]\s*,\s*['"][a-z_]+['"]\s*\)/g;
+    // Ação/recurso aceitam dígito e maiúscula (`[a-zA-Z0-9_]+`) — a regex antiga só cobria
+    // `[a-z_]+` e perderia uma célula real como `own_favorites2:updateV2`.
+    const regexRequire = /perm\.require\(\s*['"]own_[a-zA-Z0-9_]+['"]\s*,\s*['"][a-zA-Z0-9_]+['"]\s*\)/g;
+    const naoLiterais: string[] = [];
     for (const arquivo of arquivosTs) {
       const conteudo = fs.readFileSync(arquivo, 'utf8');
       for (const m of conteudo.matchAll(regexRequire)) {
-        const partes = m[0].match(/['"]([a-z_]+)['"]\s*,\s*['"]([a-z_]+)['"]/);
+        const partes = m[0].match(/['"]([a-zA-Z0-9_]+)['"]\s*,\s*['"]([a-zA-Z0-9_]+)['"]/);
         if (partes) encontradas.add(`${partes[1]}:${partes[2]}`);
       }
+      // Sinaliza (NÃO reprova) `perm.require(` com 1º argumento NÃO-literal — a regex acima é
+      // cega a `perm.require(variavel, 'acao')`: se `variavel` resolver para um resource
+      // `own_*` em runtime, a célula nasceria sem passar por esta varredura estática. Hoje já
+      // existem ocorrências assim (ex.: `perm.require(resource, 'update')` em
+      // adminPatientsRoutes.ts, `perm.require(THERAPEUTIC_PROJECT_RESOURCE, 'read')` em
+      // adminTherapeuticProjectsRoutes.ts) — nenhuma é `own_*` hoje, então isto REPORTA em vez
+      // de reprovar; reprovar aqui quebraria o teste por um achado fora do escopo deste conserto.
+      for (const m of conteudo.matchAll(/perm\.require\(\s*([^'",)]+)\s*,/g)) {
+        naoLiterais.push(`${path.relative(RAIZ, arquivo)}: perm.require(${m[1].trim()}, ...)`);
+      }
+    }
+    if (naoLiterais.length > 0) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[celulaNovaNaoEntraEmGrupo] ${naoLiterais.length} chamada(s) perm.require(...) com 1º `
+          + 'argumento NÃO-literal (não auditável pela varredura estática de own_):\n'
+          + naoLiterais.map((l) => `  - ${l}`).join('\n'),
+      );
+    }
+
+    // Segunda fonte do catálogo (`cellsForaDeRota` / `CELL_DESCRIPTION`): toda célula `own_`
+    // declarada aqui entra no catálogo mesmo sem NENHUMA rota — sem isto o teste audita só
+    // metade do que o boot funde.
+    for (const key of Object.keys(CELL_DESCRIPTION)) {
+      if (key.startsWith('own_')) encontradas.add(key);
     }
 
     const KNOWN_OWN_CELLS = ['own_notifications:read', 'own_notifications:update', 'own_presence:update'];

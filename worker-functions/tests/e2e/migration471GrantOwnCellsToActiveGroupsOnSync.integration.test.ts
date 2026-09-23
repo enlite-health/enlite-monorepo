@@ -20,7 +20,6 @@
  */
 import { Pool } from 'pg';
 import { execFileSync } from 'child_process';
-import * as fs from 'fs';
 import * as path from 'path';
 
 const BASE_URL =
