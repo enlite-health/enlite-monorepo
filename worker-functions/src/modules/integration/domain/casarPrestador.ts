@@ -14,6 +14,7 @@ export interface EnfermeiraParaCasar {
   telefono: string | null;
   email: string | null;
   nombre: string | null;
+  apellidos: string | null;
 }
 
 type CriterioResult = { nenhum: true } | { um: number } | { varios: number[] };
@@ -68,7 +69,7 @@ function casarPorTelefoneNome(worker: WorkerParaCasar, enfermeiras: EnfermeiraPa
 
   for (const enfermeira of enfermeiras) {
     const enfermeiraTelefonNormalized = normalizarTelefone(enfermeira.telefono);
-    const enfermeiraNomeNormalized = normalizarNome(enfermeira.nombre || '');
+    const enfermeiraNomeNormalized = normalizarNome(`${enfermeira.nombre || ''} ${enfermeira.apellidos || ''}`);
 
     // Se o telefone normalizado da enfermeira for vazio/nulo, não casa
     if (!enfermeiraTelefonNormalized) {
