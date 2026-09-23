@@ -42,7 +42,7 @@ import { AdminTerminologySearchController } from '@modules/terminology/interface
 import { UserController } from '@modules/identity';
 import { AdminController, createAuthTelemetryRoutes, createAdminUsersRoutes, createAdminStaffDirectoryRoutes, createPermissionPanelRoutes, createPermissionPanelWriteRoutes, principalUid } from '@modules/identity';
 import { createAdminPresenceRoutes } from '@modules/presence';
-import { createMeAuthzRouter } from '@modules/identity/permissions';
+import { createMeAuthzRouter, createMeSimulationRouter } from '@modules/identity/permissions';
 import {
   AuthMiddleware,
   MultiAuthService,
@@ -476,6 +476,17 @@ app.use('/api/admin', createPermissionPanelWriteRoutes({
 // staff, e descreve o próprio ator para ele mesmo (por isso não pede célula).
 app.use('/v1', createMeAuthzRouter({
   getMyAuthz: permissionsBoundary.permissions.authz,
+  staffGuard: authMiddleware.requireStaff(),
+  uidOf: principalUid,
+}));
+// `/v1/me/simulation*` — spec 026 (D407): o Acesso Master simula outro grupo
+// por um período. Mesma família de `/v1/me/authz` (self, versionado, sem
+// célula) — o portão real de "só Master simula" mora no banco (mig 458).
+app.use('/v1', createMeSimulationRouter({
+  listGroups: permissionsBoundary.permissions.simulation.list,
+  startSimulation: permissionsBoundary.permissions.simulation.start,
+  endSimulation: permissionsBoundary.permissions.simulation.end,
+  client: permissionsBoundary.permissions.client,
   staffGuard: authMiddleware.requireStaff(),
   uidOf: principalUid,
 }));

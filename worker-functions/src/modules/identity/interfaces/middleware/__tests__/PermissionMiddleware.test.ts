@@ -34,6 +34,8 @@ function authz(over: Partial<ResolvedAuthz> = {}): ResolvedAuthz {
     permissions: ['user_management:read'],
     countries: ['AR'],
     groups: [{ id: 'g1', name: 'Recrutador' }],
+    canSimulate: false,
+    simulation: null,
     ...over,
   };
 }
@@ -264,6 +266,60 @@ describe('PermissionMiddleware.family().require()', () => {
     await request(app).get('/api/admin/users/9').expect(200);
 
     expect(gravadas[0]).toMatchObject({ decision: 'ALLOW', action: 'delete' });
+  });
+
+  it('spec 026 (D407): ALLOW sob simulação carimba simulationId na trilha', async () => {
+    const client = clientStub({
+      resolve: jest.fn().mockResolvedValue(
+        authz({
+          permissions: ['worker_pii:read'],
+          simulation: {
+            id: 'sim-1',
+            groupId: 'g2',
+            groupName: 'Recrutamento AR',
+            startedAt: new Date('2026-09-22T18:00:00Z'),
+            expiresAt: new Date('2026-09-22T22:00:00Z'),
+          },
+        }),
+      ),
+    });
+    const { app, gravadas } = harness(LIGADO, client, { resource: 'worker_pii', action: 'read' });
+
+    await request(app).get('/api/admin/users/77').expect(200);
+
+    expect(gravadas[0]).toMatchObject({ decision: 'ALLOW', simulationId: 'sim-1' });
+  });
+
+  it('spec 026 (D407): DENY sob simulação também carimba simulationId', async () => {
+    const client = clientStub({
+      resolve: jest.fn().mockResolvedValue(
+        authz({
+          permissions: [],
+          simulation: {
+            id: 'sim-1',
+            groupId: 'g2',
+            groupName: 'Recrutamento AR',
+            startedAt: new Date('2026-09-22T18:00:00Z'),
+            expiresAt: new Date('2026-09-22T22:00:00Z'),
+          },
+        }),
+      ),
+    });
+    const { app, gravadas } = harness(LIGADO, client);
+
+    await request(app).get('/api/admin/users/1').expect(403);
+
+    expect(gravadas[0]).toMatchObject({ decision: 'DENY', reason: 'missing_cell', simulationId: 'sim-1' });
+  });
+
+  it('fora de simulação, simulationId grava null (não some, não vira undefined)', async () => {
+    const { app, gravadas } = harness(LIGADO, clientStub({
+      resolve: jest.fn().mockResolvedValue(authz({ permissions: ['worker_pii:read'] })),
+    }), { resource: 'worker_pii', action: 'read' });
+
+    await request(app).get('/api/admin/users/77').expect(200);
+
+    expect(gravadas[0].simulationId).toBeNull();
   });
 
   it('o log do ensaio usa o caminho COMPLETO, não o relativo ao router', async () => {

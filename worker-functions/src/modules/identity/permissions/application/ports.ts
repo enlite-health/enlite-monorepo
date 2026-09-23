@@ -18,6 +18,7 @@ import type { PermissionGroup, PermissionGroupDetail } from '../domain/Permissio
 import type { CountryFeature } from '../domain/CountryFeature';
 import type { GroupMembership } from '../domain/GroupMembership';
 import type { PermissionHistoryEvent, PermissionHistoryEventType } from '../domain/PermissionHistory';
+import type { GroupSimulation } from '../domain/GroupSimulation';
 
 /** Status de conta que o resolver enxerga (`users.status`, mig 206). */
 export type StaffStatus = 'ACTIVE' | 'PENDING_ONBOARDING' | 'SUSPENDED' | 'DEACTIVATED';
@@ -32,6 +33,17 @@ export interface ResolvedAuthz {
   countries: CountryCode[];
   /** Grupos vigentes (id + nome) — a tela de boas-vindas e a auditoria usam. */
   groups: Array<{ id: string; name: string }>;
+  /**
+   * Spec 026 (D407): filiação REAL e VIVA no Acesso Master (`iam.is_master_member`,
+   * mig 458) — nunca célula. É o que decide se o painel mostra o seletor de simulação.
+   */
+  canSimulate: boolean;
+  /**
+   * A simulação ATIVA do ator, se houver (`iam.active_group_simulation`, mig 458).
+   * `null` fora de simulação. Análogo ao claim `act` da RFC 8693: `uid` continua sendo
+   * o ator REAL; o grupo EFETIVO durante a simulação aparece aqui — e em `groups`.
+   */
+  simulation: GroupSimulation | null;
 }
 
 /** Contrato agregado do painel (`GET /v1/me/authz`, design 11). */
@@ -98,6 +110,25 @@ export interface PermissionGroupRepository {
   revokeCountry(groupId: string, country: CountryCode): Promise<number>;
   addMember(groupId: string, userId: string): Promise<string>;
   removeMember(groupId: string, userId: string): Promise<number>;
+}
+
+/**
+ * Spec 026 (D407): a simulação em si — nunca `iam.user_groups` (a simulação não é
+ * filiação). Escrita SEMPRE pelas writer functions `SECURITY DEFINER` da mig 458
+ * (`iam.start_group_simulation`/`iam.end_group_simulation`), mesmo molde de
+ * `PermissionGroupRepository` acima — a role do app não tem INSERT/UPDATE na tabela.
+ */
+export interface GroupSimulationRepository {
+  /** A simulação viva do ator, se houver (`iam.active_group_simulation`). `null` fora dela. */
+  findActive(uid: string, tenantId: string): Promise<GroupSimulation | null>;
+  /**
+   * Abre a simulação de `groupId` por `ttl` (literal de intervalo Postgres, ex.
+   * `'240 minutes'`). Fecha a aberta anterior do ator antes (SUPERSEDED/EXPIRED,
+   * `iam.start_group_simulation`). Erros pelo `toPermissionError` existente.
+   */
+  start(uid: string, tenantId: string, groupId: string, ttl: string): Promise<GroupSimulation>;
+  /** Encerra a simulação aberta do ator. `true` se havia uma para fechar (idempotente). */
+  end(uid: string, tenantId: string): Promise<boolean>;
 }
 
 /** Célula declarada no código — o que o scanner encontra numa rota. */
@@ -192,6 +223,12 @@ export interface PermissionDecision {
    * cegaria a detecção de acesso cross-país (lex 0.2, M2-5; mig 283).
    */
   country?: string | null;
+  /**
+   * Spec 026 (D407): `resolved.simulation?.id` no momento da decisão, se o
+   * ator estava simulando um grupo. `null`/ausente fora de simulação (todo o
+   * histórico anterior à mig 458). Trilha em `iam.permission_audit_log.simulation_id`.
+   */
+  simulationId?: string | null;
 }
 
 export interface PermissionAuditFilters {
@@ -273,4 +310,5 @@ export type {
   GroupMembership,
   PermissionHistoryEvent,
   PermissionHistoryEventType,
+  GroupSimulation,
 };

@@ -17,6 +17,8 @@ function snapshot(overrides: Partial<ResolvedAuthz> = {}): ResolvedAuthz {
     permissions: ['vacancy:read', 'vacancy:write'],
     countries: ['AR'],
     groups: [{ id: 'g1', name: 'Recrutador' }],
+    canSimulate: false,
+    simulation: null,
     ...overrides,
   };
 }

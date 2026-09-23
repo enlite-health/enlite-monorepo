@@ -28,6 +28,8 @@ const CONTRATO: AuthzContract = {
   groups: [{ id: 'g1', name: 'Recrutamento AR' }],
   features: { AR: { 'screen:access': { enabled: true, config: null } } },
   enforcement: 'off',
+  canSimulate: false,
+  simulation: null,
 };
 
 function build(over: { execute?: jest.Mock; uid?: string | null; tenantId?: string; staffGuard?: express.RequestHandler } = {}) {
@@ -53,11 +55,13 @@ describe('GET /v1/me/authz', () => {
 
     expect(res.body).toEqual(CONTRATO);
     expect(Object.keys(res.body).sort()).toEqual([
+      'canSimulate',
       'countries',
       'enforcement',
       'features',
       'groups',
       'permissions',
+      'simulation',
       'status',
       'tenantId',
       'uid',

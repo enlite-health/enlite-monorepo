@@ -27,6 +27,8 @@ function resolved(over: Partial<ResolvedAuthz> = {}): ResolvedAuthz {
     permissions: ['user_management:read'],
     countries: ['AR'],
     groups: [{ id: 'g1', name: 'Recrutador' }],
+    canSimulate: false,
+    simulation: null,
     ...over,
   };
 }
