@@ -38,9 +38,9 @@ function concretizar(path: string): string {
 }
 
 /**
- * As 6 rotas isentas do perímetro têm contrato próprio para um prestador — nenhuma
+ * As 9 rotas isentas do perímetro têm contrato próprio para um prestador — nenhuma
  * devolve dado de staff. O que se afirma aqui é o status EXATO de cada uma, para
- * uma isenção nova nunca passar despercebida (a varredura falha se aparecer uma 7ª).
+ * uma isenção nova nunca passar despercebida (a varredura falha se aparecer uma 10ª).
  */
 const ISENTAS_ESPERADO: Record<string, number> = {
   'POST /api/admin/setup': 403, // bootstrap desligado por env
@@ -55,6 +55,14 @@ const ISENTAS_ESPERADO: Record<string, number> = {
   // mesmo desenho do /support-network — o `staffOnly` na frente barra o prestador ANTES
   // do 410, então o contrato para o prestador é 403, não 410.
   'POST /api/admin/patients/:id/activate': 403,
+  // /v1/me/simulation* (spec 026, D407, F2) — mesmo molde do /v1/me/authz: MESMO
+  // `staffGuard` (`authMiddleware.requireStaff()`, injetado em index.ts) montado
+  // ANTES do `exemptHandler` e do handler em meSimulationRoute.ts. O guard roda
+  // primeiro (inclusive antes do Zod em POST), então o prestador nunca alcança a
+  // validação de corpo nem o banco — 403 "Staff access required", igual ao authz.
+  'GET /v1/me/simulation/groups': 403,
+  'POST /v1/me/simulation': 403,
+  'DELETE /v1/me/simulation': 403,
 };
 
 describe('prestador com token REAL nunca entra no painel (account_type, D294)', () => {
@@ -134,7 +142,7 @@ describe('prestador com token REAL nunca entra no painel (account_type, D294)', 
     expect(declaradas.length).toBeGreaterThan(150);
   });
 
-  it('as rotas ISENTAS são exatamente 6 e cada uma responde ao prestador o que o contrato diz', async () => {
+  it('as rotas ISENTAS são exatamente 9 e cada uma responde ao prestador o que o contrato diz', async () => {
     const isentas = rotas.filter((r) => r.status === 'exempt');
     expect(isentas.map((r) => `${r.method} ${r.path}`).sort()).toEqual(Object.keys(ISENTAS_ESPERADO).sort());
     for (const rota of isentas) {
