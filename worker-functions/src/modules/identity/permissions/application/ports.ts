@@ -127,6 +127,13 @@ export interface CatalogSyncResult {
    * outro grupo.
    */
   fixedAccountsGranted: number;
+  /**
+   * Revogação ESTREITA da D338 (mig 471, decisão Gabriel 23/09/2026): células `own_*` ATIVAS
+   * concedidas a TODO GRUPO ATIVO nesta sincronização (0 na maioria dos boots — só sobe quando
+   * o catálogo ganhou célula `own_*` nova, ou reconcilia um grant removido por fora). Célula
+   * NÃO-own continua fora deste mecanismo — só o Master a recebe (masterGranted acima).
+   */
+  ownCellsGranted: number;
 }
 
 export interface PermissionCatalogRepository {

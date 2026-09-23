@@ -1,26 +1,40 @@
 /**
- * C10 — célula nova NÃO entra em grupo default sem a revisão da C12.
+ * C10 — célula NÃO-own nova não entra em grupo default sem a revisão da C12.
  *
- * D338 (15/09/2026, decisão do Gabriel) abriu UMA exceção nomeada: o Acesso Master (id FIXO
- * `a0000000-0000-0000-0000-000000000001`, seed 206) passa a receber automaticamente toda
+ * O invariante original (D338, 15/09/2026) abriu UMA exceção nomeada: o Acesso Master (id
+ * FIXO `a0000000-0000-0000-0000-000000000001`, seed 206) passa a receber automaticamente toda
  * célula ATIVA do catálogo — a D285 ("célula nova nasce com 0 grupos") deixa de valer só para
- * ele. Este arquivo virou dois testes com propósitos opostos:
+ * ele.
+ *
+ * ⚠️ REVOGAÇÃO ESTREITA da D338 (decisão do Gabriel, 23/09/2026, mig 471): célula cujo
+ * `resource` começa com `own_` abriu uma SEGUNDA exceção nomeada — não dá acesso a dado de
+ * TERCEIRO (só ao próprio registro do usuário autenticado: marcar a própria notificação como
+ * lida, marcar a própria presença), então passa a ser concedida a TODO GRUPO ATIVO, não só ao
+ * Master (`iam.grant_own_cells_to_active_groups`, chamada no sync logo após o grant do
+ * Master). O invariante para TODA CÉLULA NÃO-own continua INTACTO: nasce com 0 grupos (D285),
+ * nunca entra sozinha — só o Master a recebe (D338). Este arquivo tem TRÊS blocos:
  *
  *   1. o caminho GERAL (`FONTES_DO_SYNC`) continua PROIBINDO concessão automática — inclusive
- *      ao Master — fora do mecanismo nomeado da 436/`grant_active_permissions_to_master`;
- *   2. o mecanismo nomeado (`FONTE_MASTER_GRANT`) É AUDITADO: só concede ao id fixo do Master,
- *      nunca aos outros 4 ids de grupo semeados na 206, e nenhuma migration NOVA (>206) grava
- *      `group_permissions` para outro grupo por fora dele.
+ *      ao Master — fora dos DOIS mecanismos nomeados (436/Master e 471/own_);
+ *   2. o mecanismo nomeado do Master (`FONTE_MASTER_GRANT`) É AUDITADO: só concede ao id fixo
+ *      do Master, nunca aos outros 4 ids de grupo semeados na 206, e nenhuma migration NOVA
+ *      (>206, fora da 471) grava `group_permissions` para outro grupo por fora dele;
+ *   3. o mecanismo nomeado da own_ (`FONTE_OWN_GRANT`) É AUDITADO: só concede célula cujo
+ *      `resource` bate o PREFIXO `own_` (nunca uma lista hardcoded, nunca outro prefixo), a
+ *      TODO grupo ATIVO (nunca por id literal — teria de valer para grupo criado no futuro).
  *
- * ⚠️ É outra exigência NEGATIVA, e negativa é a que se perde. O caminho de quebrar isto é
- * simpático e óbvio: "já que o Master recebe tudo, os outros grupos de sistema também podem" —
- * se alguém generalizar a concessão automática para QUALQUER outro grupo, os testes 2.x abaixo
- * caem. Se alguém remover o gate e conceder a partir de `SyncPermissionCatalogUseCase.ts` ou
- * `permissionMetadata.ts` (em vez do mecanismo isolado e nomeado), os testes 1.x caem.
+ * ⚠️ É exigência NEGATIVA, e negativa é a que se perde. O caminho de quebrar isto é simpático e
+ * óbvio: "já que own_ pode ir a todo grupo, dá pra generalizar mais um prefixo" ou "já que o
+ * Master recebe tudo, os outros grupos de sistema também podem" — se alguém generalizar a
+ * concessão automática para QUALQUER outro grupo ou QUALQUER outro prefixo, os testes 2.x/3.x
+ * abaixo caem. Se alguém remover o gate e conceder a partir de `SyncPermissionCatalogUseCase.ts`
+ * ou `permissionMetadata.ts` (em vez de um dos dois mecanismos isolados e nomeados), os testes
+ * 1.x caem.
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { CELL_DESCRIPTION } from '../../domain/PermissionCell';
 
 const RAIZ = path.resolve(__dirname, '..', '..', '..', '..', '..', '..');
 
@@ -63,7 +77,17 @@ const OUTROS_GRUPOS_IDS = [
   'a0000000-0000-0000-0000-000000000005', // Super Admin
 ];
 
-describe('C10 — o sync do catálogo cria a célula e NÃO a concede a grupo genérico', () => {
+/**
+ * O segundo lugar autorizado (revogação ESTREITA da D338, 23/09/2026, mig 471) a conceder
+ * automaticamente a grupo — e só célula `own_*`, a TODO grupo ATIVO (nunca por id literal).
+ */
+const FONTE_OWN_GRANT_TS = FONTE_MASTER_GRANT_TS; // mesmo arquivo — chama os dois mecanismos
+const FONTE_OWN_GRANT_SQL = 'migrations/471_grant_own_cells_to_active_groups_on_sync.sql';
+
+/** O filtro CANÔNICO de `own_*`: prefixo, nunca lista de resources literais (mesmo das 468/469/470). */
+const FILTRO_OWN_PREFIXO = "p.resource LIKE 'own\\_%' ESCAPE '\\'";
+
+describe('C10 — o sync do catálogo cria a célula NÃO-own e NÃO a concede a grupo genérico', () => {
   it('as fontes do sync existem — sem isto o teste passa no vácuo', () => {
     for (const f of FONTES_DO_SYNC) {
       expect([f, fs.existsSync(path.join(RAIZ, f))]).toEqual([f, true]);
@@ -158,11 +182,15 @@ describe('D338 — o mecanismo nomeado concede SÓ ao Acesso Master, nunca a out
     expect(/INSERT\s+INTO\s+(iam\.)?group_permissions/i.test(ts)).toBe(false);
   });
 
-  it('NENHUMA outra migration nova (>206) concede a QUALQUER grupo que não o Master', () => {
+  it('NENHUMA outra migration nova (>206, fora da 436 e da 471/own_) concede a QUALQUER grupo que não o Master', () => {
     // Proibição dura: se alguém "generalizar" a concessão automática (dar a Recrutador,
-    // Community Manager, Financeiro ou Super Admin também), este teste morre.
+    // Community Manager, Financeiro ou Super Admin também), este teste morre. A 471 é
+    // excluída aqui porque é o SEGUNDO mecanismo nomeado (own_, revogação estreita da D338) —
+    // auditado linha a linha no describe da own_ abaixo, não aqui.
     const dir = path.join(RAIZ, 'migrations');
-    const novas = migrationsNovas(dir).filter((f) => f !== path.basename(FONTE_MASTER_GRANT_SQL));
+    const novas = migrationsNovas(dir).filter(
+      (f) => f !== path.basename(FONTE_MASTER_GRANT_SQL) && f !== path.basename(FONTE_OWN_GRANT_SQL),
+    );
     expect(novas.length).toBeGreaterThan(0);
 
     const culpadas = novas.filter((f) => {
@@ -190,5 +218,125 @@ describe('D338 — o mecanismo nomeado concede SÓ ao Acesso Master, nunca a out
       const primeiraExpressao = m[1].trim();
       expect(primeiraExpressao).toBe('v_master_id');
     }
+  });
+});
+
+describe('own_ (revogação ESTREITA da D338, decisão do Gabriel 23/09/2026, mig 471) — concede SÓ célula own_, a TODO grupo ativo', () => {
+  it('a fonte da concessão automática own_ existe (TS + SQL)', () => {
+    for (const f of [FONTE_OWN_GRANT_TS, FONTE_OWN_GRANT_SQL]) {
+      expect([f, fs.existsSync(path.join(RAIZ, f))]).toEqual([f, true]);
+    }
+  });
+
+  it('a função SQL da 471 filtra por PREFIXO own_ — nunca lista hardcoded, nunca outro prefixo', () => {
+    // Sabotagem-alvo desta exigência: se alguém trocar `'own\_%'` por `'own_notifications'`
+    // (lista hardcoded) ou generalizar para outro prefixo qualquer (`'shared\_%'`, sem
+    // prefixo nenhum), este `toContain` do literal EXATO cai — é a forma mais direta de travar
+    // "se alguém generalizar para outro prefixo, o teste cai".
+    const sql = ler(FONTE_OWN_GRANT_SQL).split('\n').filter((l) => !l.trim().startsWith('--')).join('\n');
+    expect(sql).toContain(FILTRO_OWN_PREFIXO);
+    expect(sql).toContain('grant_own_cells_to_active_groups');
+    expect(sql).toContain('ON CONFLICT DO NOTHING');
+    expect(/DELETE\s+FROM\s+(iam\.)?group_permissions/i.test(sql)).toBe(false);
+  });
+
+  it('a 471 concede a TODO grupo ATIVO por JOIN genérico — nunca por id literal (teria de valer para grupo futuro)', () => {
+    const sql = ler(FONTE_OWN_GRANT_SQL).split('\n').filter((l) => !l.trim().startsWith('--')).join('\n');
+    expect(sql).toMatch(/FROM\s+iam\.permission_groups\s+g/i);
+    expect(sql).toMatch(/CROSS\s+JOIN\s+iam\.permissions\s+p/i);
+    expect(sql).toMatch(/g\.archived_at\s+IS\s+NULL/i);
+    expect(sql).toMatch(/p\.deprecated_at\s+IS\s+NULL/i);
+    expect(/a0000000-0000-0000-0000-00000000000\d/.test(sql)).toBe(false);
+  });
+
+  it('o repositório chama a função nomeada logo APÓS o grant do Master, na mesma transação — não monta INSERT à mão', () => {
+    const ts = ler(FONTE_OWN_GRANT_TS);
+    expect(ts).toContain('grant_own_cells_to_active_groups');
+    expect(/INSERT\s+INTO\s+(iam\.)?group_permissions/i.test(ts)).toBe(false);
+    // ordem: a chamada de own_ vem DEPOIS da chamada do Master no código-fonte (mesma
+    // transação — a 471 exige "logo após grant_active_permissions_to_master").
+    expect(ts.indexOf('grant_own_cells_to_active_groups')).toBeGreaterThan(
+      ts.indexOf('grant_active_permissions_to_master'),
+    );
+  });
+
+  it('KNOWN_OWN_CELLS — as 3 células own_ conhecidas hoje; uma QUARTA exige decisão do Gabriel', () => {
+    // Varredura ESTÁTICA de toda declaração `perm.require('own_...', ...)` no código-fonte
+    // (a mesma fonte que o sync do catálogo deriva). O critério de concessão automática virou
+    // o NOME do prefixo `own_` — por isso toda célula NOVA com esse prefixo é auto-concedida a
+    // todo grupo sem revisão humana. Se uma QUARTA aparecer, este teste FALHA de propósito:
+    // a decisão de "isso realmente só afeta o próprio registro do usuário" é do Gabriel, não
+    // pode ser inferida por um agente só porque o nome começa com `own_`.
+    //
+    // ⚠️ O catálogo fundido no boot (`wirePermissionsModule.ts`) tem DUAS fontes: as ROTAS
+    // (varridas abaixo por regex) e `cellsForaDeRota` (`scanExpressRouter.ts`), que itera
+    // `CELL_DESCRIPTION` inteiro. Uma célula `own_*` declarada SÓ em `CELL_DESCRIPTION` (sem
+    // NENHUMA rota) entra no catálogo por essa segunda via e seria auto-concedida a todo grupo
+    // pela 471 sem este teste enxergar — precedente real de célula que só existe por essa via:
+    // `patient_therapeutic_project:export` (PermissionCell.ts). Por isso as chaves `own_*` de
+    // `CELL_DESCRIPTION` entram no MESMO conjunto que a varredura de rota, ANTES do filtro
+    // contra a lista conhecida.
+    const SRC_DIR = path.join(RAIZ, 'src');
+    const arquivosTs: string[] = [];
+    const empilhar = (dir: string) => {
+      for (const entrada of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (entrada.name === '__tests__' || entrada.name === 'node_modules') continue;
+        const p = path.join(dir, entrada.name);
+        if (entrada.isDirectory()) empilhar(p);
+        else if (entrada.name.endsWith('.ts')) arquivosTs.push(p);
+      }
+    };
+    empilhar(SRC_DIR);
+
+    const encontradas = new Set<string>();
+    // Ação/recurso aceitam dígito e maiúscula (`[a-zA-Z0-9_]+`) — a regex antiga só cobria
+    // `[a-z_]+` e perderia uma célula real como `own_favorites2:updateV2`.
+    const regexRequire = /perm\.require\(\s*['"]own_[a-zA-Z0-9_]+['"]\s*,\s*['"][a-zA-Z0-9_]+['"]\s*\)/g;
+    const naoLiterais: string[] = [];
+    for (const arquivo of arquivosTs) {
+      const conteudo = fs.readFileSync(arquivo, 'utf8');
+      for (const m of conteudo.matchAll(regexRequire)) {
+        const partes = m[0].match(/['"]([a-zA-Z0-9_]+)['"]\s*,\s*['"]([a-zA-Z0-9_]+)['"]/);
+        if (partes) encontradas.add(`${partes[1]}:${partes[2]}`);
+      }
+      // Sinaliza (NÃO reprova) `perm.require(` com 1º argumento NÃO-literal — a regex acima é
+      // cega a `perm.require(variavel, 'acao')`: se `variavel` resolver para um resource
+      // `own_*` em runtime, a célula nasceria sem passar por esta varredura estática. Hoje já
+      // existem ocorrências assim (ex.: `perm.require(resource, 'update')` em
+      // adminPatientsRoutes.ts, `perm.require(THERAPEUTIC_PROJECT_RESOURCE, 'read')` em
+      // adminTherapeuticProjectsRoutes.ts) — nenhuma é `own_*` hoje, então isto REPORTA em vez
+      // de reprovar; reprovar aqui quebraria o teste por um achado fora do escopo deste conserto.
+      for (const m of conteudo.matchAll(/perm\.require\(\s*([^'",)]+)\s*,/g)) {
+        naoLiterais.push(`${path.relative(RAIZ, arquivo)}: perm.require(${m[1].trim()}, ...)`);
+      }
+    }
+    if (naoLiterais.length > 0) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[celulaNovaNaoEntraEmGrupo] ${naoLiterais.length} chamada(s) perm.require(...) com 1º `
+          + 'argumento NÃO-literal (não auditável pela varredura estática de own_):\n'
+          + naoLiterais.map((l) => `  - ${l}`).join('\n'),
+      );
+    }
+
+    // Segunda fonte do catálogo (`cellsForaDeRota` / `CELL_DESCRIPTION`): toda célula `own_`
+    // declarada aqui entra no catálogo mesmo sem NENHUMA rota — sem isto o teste audita só
+    // metade do que o boot funde.
+    for (const key of Object.keys(CELL_DESCRIPTION)) {
+      if (key.startsWith('own_')) encontradas.add(key);
+    }
+
+    const KNOWN_OWN_CELLS = ['own_notifications:read', 'own_notifications:update', 'own_presence:update'];
+    const novas = [...encontradas].filter((c) => !KNOWN_OWN_CELLS.includes(c));
+    if (novas.length > 0) {
+      throw new Error(
+        `célula(s) own_ NOVA(s) encontrada(s) fora das 3 conhecidas: ${novas.join(', ')}. ` +
+          'O critério de concessão automática a TODO grupo (mig 471) virou o NOME do prefixo ' +
+          '`own_` — antes de deixar isso passar, volte ao Gabriel: essa célula nova dá acesso ' +
+          'SÓ ao próprio registro do usuário autenticado, ou a dado de terceiro? Se a resposta ' +
+          'não for claramente "só ao próprio registro", ela não pode nascer com esse prefixo.',
+      );
+    }
+    expect([...encontradas].sort()).toEqual([...KNOWN_OWN_CELLS].sort());
   });
 });

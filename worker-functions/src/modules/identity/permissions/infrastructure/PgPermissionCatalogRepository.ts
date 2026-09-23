@@ -119,6 +119,14 @@ export class PgPermissionCatalogRepository implements PermissionCatalogRepositor
       const masterGrant = await client.query<{ n: number }>(
         `SELECT iam.grant_active_permissions_to_master() AS n`,
       );
+      // Revogação ESTREITA da D338 (mig 471, decisão Gabriel 23/09/2026): célula `own_*` NOVA
+      // (nascida DEPOIS do boot, aqui no sync) passa a ser concedida a TODO GRUPO ATIVO — não
+      // só ao Master acima. `own_*` nunca dá acesso a dado de TERCEIRO (só ao próprio registro
+      // do usuário autenticado), então isso NÃO reabre D285/D338 para o resto do catálogo:
+      // célula NÃO-own continua nascendo com 0 grupos, só o Master a recebe automaticamente.
+      const ownCellsGrant = await client.query<{ n: number }>(
+        `SELECT iam.grant_own_cells_to_active_groups() AS n`,
+      );
       // B-1 (mig 451, decisão Gabriel 19/09/2026): as 5 contas fixas do Master reconciliam
       // no MESMO boot — conta criada depois da migration entra sem ação humana. Mesmo molde
       // do masterGrant acima (mesma transação, nunca remove, nunca toca outro grupo).
@@ -131,6 +139,7 @@ export class PgPermissionCatalogRepository implements PermissionCatalogRepositor
         deprecated: gone.rows[0]?.n ?? 0,
         total: cells.length,
         masterGranted: masterGrant.rows[0]?.n ?? 0,
+        ownCellsGranted: ownCellsGrant.rows[0]?.n ?? 0,
         fixedAccountsGranted: fixedAccountsGrant.rows[0]?.n ?? 0,
       };
     });
