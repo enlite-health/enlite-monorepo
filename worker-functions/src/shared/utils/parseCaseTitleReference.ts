@@ -14,11 +14,15 @@
  * informativo. É o risco nº 1 da spec 027 Fase 6.
  *
  * Formatos aceitos (primeiro que casar vence):
- *   1. "CASO 729-5568"  → { caseNumber: 729,  ordinal: 5568 }  (legado)
- *   2. "CASO 230"       → { caseNumber: 230,  ordinal: null }  (nova vacante)
- *   3. "EN1234#01"      → { caseNumber: 1234, ordinal: 1 }     (novo, ClickUp nativo)
- *   4. "729#03"         → { caseNumber: 729,  ordinal: 3 }     (novo, caso legado)
- *   sem match           → { caseNumber: null, ordinal: null }
+ *   1. "CASO 729-5568"    → { caseNumber: 729,  ordinal: 5568 }  (legado)
+ *   2. "CASO 230"         → { caseNumber: 230,  ordinal: null }  (nova vacante)
+ *   3. "CASO EN1041-5597" → { caseNumber: 1041, ordinal: 5597 }  (24/09/2026, D422 —
+ *      título de vacante de caso NATIVO, ≥1000; ramo explícito, não cai mais por
+ *      acidente no EN_PATTERN do item 5)
+ *   4. "CASO EN1041"      → { caseNumber: 1041, ordinal: null }  (idem, sem vacancy_number)
+ *   5. "EN1234#01"        → { caseNumber: 1234, ordinal: 1 }     (novo, ClickUp nativo)
+ *   6. "729#03"           → { caseNumber: 729,  ordinal: 3 }     (novo, caso legado)
+ *   sem match             → { caseNumber: null, ordinal: null }
  *
  * ⚠️ CORRIGIDO (rodada de fecho do gate, pós-T063): o comentário antigo afirmava que
  * "EN1234#01" era "o formato que a EXIBIÇÃO da app usa desde a T062". **Isso é falso,
@@ -39,9 +43,14 @@
  * 400 de 590 não batem "CASO N"). Título que não casar com segurança devolve
  * `{null, null}` — nunca um palpite.
  *
- * ⚠️ O segundo número tem DOIS significados diferentes conforme o formato:
- *   - no formato legado "CASO N-M", M é `vacancy_number` (sequence global, migration 114);
- *   - no formato novo "EN N#M" / "N#M", M é `case_ordinal` (posição do caso, migration 460).
+ * ⚠️ O segundo número tem DOIS significados diferentes conforme o formato — e o critério
+ * é "tem 'CASO' na frente", não o separador:
+ *   - "CASO N-M" (legado) e "CASO EN N-M" (nativo, D422, 24/09/2026): M é `vacancy_number`
+ *     (sequence global, migration 114) — é o mesmo `-{m}` que `formatCaseTitle` grava no
+ *     título (`caseNumberFormat.ts`), então o ramo `CASO EN` deste parser existe para lê-lo
+ *     de volta com o rótulo certo, em vez de cair no EN_PATTERN por acidente.
+ *   - "EN N#M" / "N#M" **sem** "CASO" na frente: M é `case_ordinal` (posição do caso,
+ *     migration 460).
  *   Este parser NÃO tenta reconciliar os dois — devolve o valor cru em `ordinal` e
  *   quem chama decide o uso (os 3 sítios já toleram mismatch via fallback por case_number).
  */
@@ -52,6 +61,10 @@ export interface ParsedCaseTitleReference {
 }
 
 const CASO_PATTERN = /CASO\s+(\d+)(?:-(\d+))?/i;
+// Ramo explícito p/ "CASO EN{n}(-{m})?" (D422) — tentado ANTES do EN_PATTERN genérico
+// (item 5 do comentário acima) para que o 2º número seja lido como vacancy_number
+// (mesma convenção do CASO_PATTERN legado), não como case_ordinal.
+const CASO_EN_PATTERN = /CASO\s+EN(\d+)(?:-(\d+))?/i;
 const EN_PATTERN = /\bEN(\d+)(?:[-#](\d+))?/i;
 const BARE_PATTERN = /^\s*(\d+)[-#](\d+)\b/;
 
@@ -63,6 +76,14 @@ export function parseCaseTitleReference(title: string): ParsedCaseTitleReference
     return {
       caseNumber: parseInt(casoMatch[1], 10),
       ordinal: casoMatch[2] != null ? parseInt(casoMatch[2], 10) : null,
+    };
+  }
+
+  const casoEnMatch = title.match(CASO_EN_PATTERN);
+  if (casoEnMatch) {
+    return {
+      caseNumber: parseInt(casoEnMatch[1], 10),
+      ordinal: casoEnMatch[2] != null ? parseInt(casoEnMatch[2], 10) : null,
     };
   }
 

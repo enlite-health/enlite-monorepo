@@ -223,6 +223,12 @@ describe('QualifiedInterviewHandler', () => {
     expect(variablesOf(mockQuery)).toMatchObject({ slot_1: 'Lun 10/08 08:30', slot_2: 'Lun 10/08 08:30', slot_3: 'Lun 10/08 08:30' });
   });
 
+  it('case_number nativo (>=1000, migration 459) → placeholder "EN{n}" (formatCaseNumber)', async () => {
+    program(mockQuery, { vacancy: [{ ...vacancyRow, case_number: 1000 }] });
+    await handler(payload);
+    expect(variablesOf(mockQuery)).toMatchObject({ case_number: 'EN1000' });
+  });
+
   it('case_number null produz "—"; fuso de São Paulo formata na hora dele; timezone null cai no default', async () => {
     program(mockQuery, { vacancy: [{ ...vacancyRow, case_number: null, timezone: 'America/Sao_Paulo' }] });
     await handler(payload);

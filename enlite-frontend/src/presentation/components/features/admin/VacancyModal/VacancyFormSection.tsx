@@ -18,6 +18,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useTranslation } from 'react-i18next';
 import { Text } from '@presentation/components/atoms/Text';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
+import { formatCaseNumber } from '@domain/value-objects/caseNumberFormat';
 import { handlePublishedVacancyForbidden } from './vacancyFormDefense';
 import type { PatientAddressRow } from '@domain/entities/PatientAddress';
 import type { PatientDetail } from '@domain/entities/PatientDetail';
@@ -211,7 +212,7 @@ export function VacancyFormSection({
       AdminApiService.getNextVacancyNumber()
         .then((n) => {
           const cn = selectedCaseNumber;
-          setValue('title', cn != null ? `CASO ${cn}-${n}` : `CASO ${n}`);
+          setValue('title', cn != null ? `CASO ${formatCaseNumber(cn)}-${n}` : `CASO ${n}`);
         })
         .catch(() => {});
     }
@@ -222,7 +223,7 @@ export function VacancyFormSection({
   useEffect(() => {
     if (mode !== 'create' || selectedCaseNumber == null) return;
     AdminApiService.getNextVacancyNumber()
-      .then((n) => setValue('title', `CASO ${selectedCaseNumber}-${n}`))
+      .then((n) => setValue('title', `CASO ${formatCaseNumber(selectedCaseNumber)}-${n}`))
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCaseNumber, mode]);

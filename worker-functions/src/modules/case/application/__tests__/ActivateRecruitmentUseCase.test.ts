@@ -150,6 +150,19 @@ describe('ActivateRecruitmentUseCase', () => {
     );
   });
 
+  it('case_number nativo (≥1000, migration 459) → computedTitle usa formatCaseTitle: "CASO EN{n}-{m}"', async () => {
+    const { promise } = run({
+      patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 1000, insurance_informed: 'Particular' },
+      serviceRow: READY_SERVICE,
+      vacancyNumber: 501,
+      insertedId: 'vac-43',
+    });
+    await promise;
+    expect(mockBuildInsertParams).toHaveBeenCalledWith(
+      expect.objectContaining({ computedTitle: 'CASO EN1000-501' }),
+    );
+  });
+
   it('201 feliz — paciente já ACTIVE (2º serviço): cria a vaga SEM mudar o status (statusChanged:false)', async () => {
     const { promise } = run({
       patientRow: { id: PATIENT_ID, status: 'ACTIVE', case_number: 100, insurance_informed: 'Particular' },
