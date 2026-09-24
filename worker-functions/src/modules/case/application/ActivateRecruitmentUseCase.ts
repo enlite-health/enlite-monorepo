@@ -1,7 +1,11 @@
 import * as functions from "firebase-functions";
 import type { PoolClient } from "pg";
 import { inPatientTransaction } from "./patientTransaction";
-import { buildInsertQuery, buildInsertParams } from "@modules/matching";
+import {
+  buildInsertQuery,
+  buildInsertParams,
+  retryOnCaseOrdinalConflict,
+} from "@modules/matching";
 import { auditVacancyCreated } from "../../matching/interfaces/controllers/vacancyCrudAuditHelpers";
 import {
   computeRecruitmentReadiness,
@@ -215,9 +219,23 @@ export class ActivateRecruitmentUseCase {
       closes_at: null,
       is_test: false,
     });
-    const insRes = await client.query<Record<string, unknown> & { id: string }>(
-      buildInsertQuery(),
-      params,
+    // case_ordinal (spec 027 Fase 5) é computado dentro do próprio INSERT
+    // (buildInsertQuery); a corrida entre dois cliques simultâneos no mesmo
+    // caso bate no índice único idx_job_postings_case_ordinal — SAVEPOINT +
+    // retry recalcula o ordinal e tenta de novo.
+    const insRes = await retryOnCaseOrdinalConflict(
+      async () => {
+        await client.query("SAVEPOINT case_ordinal_retry");
+        const res = await client.query<Record<string, unknown> & { id: string }>(
+          buildInsertQuery(),
+          params,
+        );
+        await client.query("RELEASE SAVEPOINT case_ordinal_retry");
+        return res;
+      },
+      async () => {
+        await client.query("ROLLBACK TO SAVEPOINT case_ordinal_retry");
+      },
     );
     const vacancyId = insRes.rows[0].id;
 

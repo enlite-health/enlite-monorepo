@@ -62,6 +62,8 @@ export {
   buildInsertQuery,
   buildInsertParams,
   CANONICAL_STATUSES,
+  isCaseOrdinalConflict,
+  retryOnCaseOrdinalConflict,
 } from './interfaces/controllers/vacancyCrudHelpers';
 export type { VacancyInsertParams } from './interfaces/controllers/vacancyCrudHelpers';
 export { VacancyAddressReviewController } from './interfaces/controllers/VacancyAddressReviewController';
