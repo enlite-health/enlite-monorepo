@@ -273,6 +273,26 @@ export class PatientIdentityRepository {
     return { id: result.rows[0].id, created: true };
   }
 
+  /**
+   * Aloca o próximo `case_number` NATIVO (migration 459 — spec 027 T011).
+   *
+   * SEQUENCE dedicada, não DEFAULT da coluna: o legado do ClickUp ocupa
+   * 110..828 (congelado, ClickUp parou de numerar em 23/09/2026) e a coluna
+   * continua sem DEFAULT/NOT NULL de propósito (43 pacientes com NULL hoje,
+   * backfill é outra task) — então quem decide QUANDO pedir um número é o
+   * código de aplicação, não o schema.
+   *
+   * Recebe o `client` da transação corrente do chamador (nunca `this.pool`):
+   * roda sempre dentro de `inPatientTransaction`/`withActorContext`, como o
+   * resto da escrita de paciente (ver patientTransaction.ts).
+   */
+  async nextCaseNumber(client: PoolClient): Promise<number> {
+    const result = await client.query<{ n: string }>(
+      "SELECT nextval('patients_case_number_seq') AS n",
+    );
+    return parseInt(result.rows[0].n, 10);
+  }
+
   async findById(id: string): Promise<PatientIdentity | null> {
     const result = await this.pool.query<PatientIdentity>(
       `SELECT

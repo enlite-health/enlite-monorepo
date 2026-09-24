@@ -200,6 +200,44 @@ describe('PatientIdentityRepository.insertNative', () => {
   });
 });
 
+describe('PatientIdentityRepository.nextCaseNumber (migration 459, spec 027 T011)', () => {
+  it('emite SELECT nextval(...) na transação do CHAMADOR (client), nunca no pool', async () => {
+    const clientQuery = jest.fn().mockResolvedValue({ rows: [{ n: '1000' }] });
+    const n = await new PatientIdentityRepository().nextCaseNumber(
+      { query: clientQuery } as unknown as PoolClient,
+    );
+
+    expect(n).toBe(1000);
+    expect(clientQuery).toHaveBeenCalledTimes(1);
+    expect(clientQuery.mock.calls[0][0]).toMatch(/nextval\('patients_case_number_seq'\)/);
+    expect(mockPoolQuery).not.toHaveBeenCalled();
+  });
+
+  it('duas chamadas em sequência: case_number consecutivos e ≥1000 (T014)', async () => {
+    const clientQuery = jest
+      .fn()
+      .mockResolvedValueOnce({ rows: [{ n: '1000' }] })
+      .mockResolvedValueOnce({ rows: [{ n: '1001' }] });
+    const client = { query: clientQuery } as unknown as PoolClient;
+    const repo = new PatientIdentityRepository();
+
+    const first  = await repo.nextCaseNumber(client);
+    const second = await repo.nextCaseNumber(client);
+
+    expect(first).toBeGreaterThanOrEqual(1000);
+    expect(second).toBe(first + 1);
+  });
+
+  it('devolve number, não string (bigint do pg chega como string — precisa do parseInt)', async () => {
+    const clientQuery = jest.fn().mockResolvedValue({ rows: [{ n: '4294967296' }] });
+    const n = await new PatientIdentityRepository().nextCaseNumber(
+      { query: clientQuery } as unknown as PoolClient,
+    );
+    expect(typeof n).toBe('number');
+    expect(n).toBe(4294967296);
+  });
+});
+
 describe('PatientIdentityRepository.findById', () => {
   it('devolve a linha quando existe, com os chat ids agregados', async () => {
     mockPoolQuery.mockReset().mockResolvedValue({ rows: [{ id: ID, firstName: 'Nome' }] });
