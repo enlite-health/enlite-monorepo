@@ -156,6 +156,19 @@ export function patientDisplayName(patient: { anaCareId: string; name?: string }
  */
 const SOURCE_TIME_ZONE = 'Etc/GMT+6';
 
+/**
+ * Esta feature convive com DOIS fusos, e os dois são deliberados: `SOURCE_TIME_ZONE` (acima) é a
+ * hora da FONTE — a tela existe para CONFERIR contra o Ana Care, então check-in/check-out mostram
+ * o relógio de lá. `DISPLAY_TIME_ZONE` é a hora do OPERADOR — usada só em metadado da UI (ex.:
+ * "atualizado às", `formatDateTime` em `AnaCareHoursListPage`), nunca em campo que é conferência.
+ * Identificador IANA (`America/Argentina/Buenos_Aires`), não offset fixo `-03`, porque só o IANA
+ * resolve mudança de regra de DST do país automaticamente (Argentina não tem DST hoje, mas um
+ * offset cravado não se atualiza se isso mudar). Não importar de `AdmisionPage.tsx`
+ * (`COUNTRY_TZ.AR`) — mesma constante por coincidência, mas amarrar as duas features por um
+ * import criaria acoplamento sem necessidade.
+ */
+export const DISPLAY_TIME_ZONE = 'America/Argentina/Buenos_Aires';
+
 const wallClockFormatter = new Intl.DateTimeFormat('en-GB', {
   hour: '2-digit',
   minute: '2-digit',
