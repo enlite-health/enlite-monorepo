@@ -8,6 +8,7 @@ import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { ActionButton } from '@presentation/components/features/access';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
+import { formatCaseNumber } from '@domain/value-objects/caseNumberFormat';
 
 const CHANNELS = ['facebook', 'instagram', 'whatsapp', 'linkedin', 'site'] as const;
 type SocialChannel = (typeof CHANNELS)[number];
@@ -110,9 +111,18 @@ export function VacancySocialLinksCard({
         </Text>
       </div>
 
+      {/*
+        T062-resto (spec 027 Fase 6): o agente da T062 deliberadamente NÃO aplicou o helper
+        aqui — prefixar "EN" antes da T066 geraria uma URL que 404ava (SLUG_REGEX só casava
+        "caso{N}-{M}" sem prefixo). Com a T066, PublicVacancyController.SLUG_REGEX passou a
+        aceitar `caso(?:EN)?(\d+)[-#](\d+)`, então este preview pode usar o helper — só o
+        `caseNumber` ganha o prefixo condicional (formatCaseNumber); `vacancyNumber` e o
+        separador "-" ficam como estão, iguais ao que ShortLinkService.buildAndCreate() de
+        fato gera (achado registrado à parte: ele não usa o helper — fora de escopo aqui).
+      */}
       {!noCaseNumber && (
         <div className="text-xs text-slate-400 bg-slate-50 rounded-lg px-3 py-2 font-mono truncate">
-          https://app.enlite.health/vacantes/caso{caseNumber}-{vacancyNumber}
+          https://app.enlite.health/vacantes/caso{formatCaseNumber(caseNumber)}-{vacancyNumber}
         </div>
       )}
 
