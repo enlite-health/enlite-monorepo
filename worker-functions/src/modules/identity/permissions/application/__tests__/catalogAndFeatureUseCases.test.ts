@@ -245,6 +245,7 @@ describe('AssertNoActiveStaffWithoutGroupUseCase', () => {
     effectivePermissions: jest.fn(),
     effectiveCountries: jest.fn(),
     countActiveStaffWithoutGroup: jest.fn().mockResolvedValue(count),
+    simulationVersion: jest.fn(),
   });
   // F12: `RolloutStateRepository` ganhou `set` (escrita do marcador pelo
   // script de import) — este describe só exercita `get` (leitura, o caminho
@@ -274,6 +275,7 @@ describe('AssertNoActiveStaffWithoutGroupUseCase', () => {
       effectivePermissions: jest.fn(),
       effectiveCountries: jest.fn(),
       countActiveStaffWithoutGroup: jest.fn().mockRejectedValue(new Error('pg fora')),
+      simulationVersion: jest.fn(),
     };
     await expect(
       new AssertNoActiveStaffWithoutGroupUseCase(quebrado, rolloutRepo(null)).alertOnBoot('t', true),

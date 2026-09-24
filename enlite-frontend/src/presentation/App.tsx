@@ -49,6 +49,7 @@ import { Toaster } from './components/molecules/Toaster';
 import { InviteProgressPanel } from './components/features/admin/VacancyMatch/InviteProgressPanel';
 import { GroupSimulationBanner } from './components/features/access/GroupSimulationBanner';
 import { GroupSimulationSelect } from './components/features/access/GroupSimulationSelect';
+import { GroupSwitchOverlay } from './components/features/access/GroupSwitchOverlay';
 import { useAdminAuthStore } from './stores/adminAuthStore';
 import { shouldShowWelcomeNoGroup } from '@domain/entities/Authz';
 
@@ -117,6 +118,7 @@ export function GroupSimulationOverlay() {
   return (
     <>
       <GroupSimulationBanner />
+      <GroupSwitchOverlay />
       {semGrupo && (
         <div className="fixed top-2 right-2 z-50" data-testid="group-simulation-select-welcome-overlay">
           <GroupSimulationSelect />

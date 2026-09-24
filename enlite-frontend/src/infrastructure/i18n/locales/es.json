@@ -5470,7 +5470,11 @@
       "viewingAs": "Estás viendo como: {{group}}",
       "expired": "La simulación expiró. Volviste a tu acceso habitual.",
       "disabledEngineOff": "Disponible solo con el control de permisos activado",
-      "groupNotSimulable": "Este grupo no se puede simular"
+      "groupNotSimulable": "Este grupo no se puede simular",
+      "switchingTo": "Cambiando a {{group}}…",
+      "switchingBack": "Volviendo a tu acceso habitual…",
+      "switchUnconfirmed": "No pudimos confirmar el cambio de grupo. Reintentá.",
+      "switchRetry": "Reintentar"
     }
   }
 }

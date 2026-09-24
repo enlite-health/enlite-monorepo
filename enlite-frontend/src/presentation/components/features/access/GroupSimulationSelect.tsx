@@ -24,6 +24,7 @@ import { AuthzActionError } from '@infrastructure/http/AdminAuthzApiService';
 export function GroupSimulationSelect(): JSX.Element | null {
   const { t } = useTranslation();
   const authz = useAdminAuthStore((s) => s.authz);
+  const switching = useAdminAuthStore((s) => s.switching);
   const startSimulation = useAdminAuthStore((s) => s.startSimulation);
   const endSimulation = useAdminAuthStore((s) => s.endSimulation);
   const listSimulatableGroups = useAdminAuthStore((s) => s.listSimulatableGroups);
@@ -57,8 +58,9 @@ export function GroupSimulationSelect(): JSX.Element | null {
   const handleChange = async (groupId: string): Promise<void> => {
     if (!groupId) return;
     setErroCode(null);
+    const groupName = grupos.find((g) => g.id === groupId)?.name ?? '';
     try {
-      await startSimulation(groupId);
+      await startSimulation(groupId, groupName);
     } catch (err) {
       setErroCode(err instanceof AuthzActionError ? err.code : 'unknown');
     }
@@ -80,7 +82,7 @@ export function GroupSimulationSelect(): JSX.Element | null {
           options={grupos.map((g) => ({ value: g.id, label: g.name }))}
           placeholder={t('access.simulation.select')}
           value=""
-          disabled={!enforcementOn}
+          disabled={!enforcementOn || switching !== null}
           inputSize="dense"
           onValueChange={handleChange}
         />
@@ -91,7 +93,8 @@ export function GroupSimulationSelect(): JSX.Element | null {
           type="button"
           aria-label={t('access.simulation.exit')}
           onClick={handleExit}
-          className="hover:opacity-70 transition-opacity shrink-0"
+          disabled={switching !== null}
+          className="hover:opacity-70 transition-opacity shrink-0 disabled:opacity-40 disabled:pointer-events-none"
         >
           <LogOut size={14} />
         </button>

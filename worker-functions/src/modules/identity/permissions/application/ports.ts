@@ -69,6 +69,16 @@ export interface EffectiveAuthzRepository {
   snapshot(uid: string, tenantId: string): Promise<ResolvedAuthz>;
   /** Gate da virada (task 2.7): quantos staff ACTIVE ficariam sem NENHUM grupo. */
   countActiveStaffWithoutGroup(tenantId: string): Promise<number>;
+  /**
+   * Chave de versão da simulação ATIVA do ator (`iam.group_simulations.id` viva),
+   * `null` fora de simulação. Troca de grupo simulado = id novo = chave de cache
+   * de `PermissionService` muda sozinha, sem depender do outbox de eventos ter
+   * rodado (spec 026, troca de grupo com feedback). Consulta direta na tabela —
+   * mais barata que `iam.active_group_simulation` (sem JOIN em `permission_groups`,
+   * medido 0,035ms × 0,48ms) porque aqui só a IDENTIDADE da simulação importa, o
+   * snapshot ao lado já aplica as regras completas.
+   */
+  simulationVersion(uid: string, tenantId: string): Promise<string | null>;
 }
 
 export interface CreateGroupInput {
