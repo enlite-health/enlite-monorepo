@@ -50,6 +50,7 @@ jest.mock('../../infrastructure/PatientIdentityRepository', () => ({
   PatientIdentityRepository: jest.fn().mockImplementation(() => ({
     upsert:       jest.fn(),
     insertNative: jest.fn(),
+    nextCaseNumber: jest.fn(),
   })),
 }));
 
@@ -100,6 +101,7 @@ describe('PatientService — native write path (migration 251)', () => {
   let mockInsertNative: jest.Mock;
   let mockUpsert: jest.Mock;
   let mockReplaceAll: jest.Mock;
+  let mockNextCaseNumber: jest.Mock;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -110,9 +112,13 @@ describe('PatientService — native write path (migration 251)', () => {
 
     const identityInstance = (PatientIdentityRepository as jest.Mock).mock.results[
       (PatientIdentityRepository as jest.Mock).mock.results.length - 1
-    ].value as { upsert: jest.Mock; insertNative: jest.Mock };
-    mockInsertNative = identityInstance.insertNative;
-    mockUpsert       = identityInstance.upsert;
+    ].value as { upsert: jest.Mock; insertNative: jest.Mock; nextCaseNumber: jest.Mock };
+    mockInsertNative   = identityInstance.insertNative;
+    mockUpsert         = identityInstance.upsert;
+    mockNextCaseNumber = identityInstance.nextCaseNumber;
+    // Default: nenhum teste deste arquivo verifica o VALOR do case_number
+    // auto-gerado (T012) exceto a suíte de retry (f.), que sobrescreve.
+    mockNextCaseNumber.mockResolvedValue(9000);
 
     const respInstance = (PatientResponsibleRepository as jest.Mock).mock.results[
       (PatientResponsibleRepository as jest.Mock).mock.results.length - 1
@@ -296,7 +302,8 @@ describe('PatientService — native write path (migration 251)', () => {
     constraint: 'patients_case_number_active_unique',
   });
 
-  it('f1. conflito de case_number → retry em transação NOVA, sem case_number e sinalizado', async () => {
+  it('f1. conflito de case_number → retry em transação NOVA, COM número novo (T013)', async () => {
+    mockNextCaseNumber.mockResolvedValueOnce(9001);
     mockInsertNative
       .mockRejectedValueOnce(CASE_NUMBER_CONFLICT_ERR)
       .mockResolvedValueOnce({ id: 'nat-retry-1', created: true });
@@ -314,12 +321,12 @@ describe('PatientService — native write path (migration 251)', () => {
     const sqls = mockClient.query.mock.calls.map((c) => String(c[0]));
     expect(sqls).toContain('ROLLBACK');
 
-    // Retry: SEM case_number, marcado para revisão operacional, e em transação
-    // NOVA (segundo connect no pool — a abortada não serve para mais nada).
+    // Retry (T013): NÚMERO NOVO via nextval, NÃO null — só o fallback depois de
+    // esgotar as tentativas (f3.) marca CASE_NUMBER_CONFLICT.
     const retryArg = mockInsertNative.mock.calls[1][0] as PatientIdentityNativeInsertInput;
-    expect(retryArg.caseNumber).toBeNull();
-    expect(retryArg.needsAttention).toBe(true);
-    expect(retryArg.attentionReasons).toContain('CASE_NUMBER_CONFLICT');
+    expect(retryArg.caseNumber).toBe(9001);
+    expect(retryArg.needsAttention).not.toBe(true);
+    expect(retryArg.attentionReasons ?? []).not.toContain('CASE_NUMBER_CONFLICT');
     expect(mockGetClient).toHaveBeenCalledTimes(2);
     expect(sqls.filter((s) => s === 'COMMIT')).toHaveLength(1);
   });
@@ -343,19 +350,82 @@ describe('PatientService — native write path (migration 251)', () => {
     expect(mockGetClient).toHaveBeenCalledTimes(1); // nenhuma transação extra
   });
 
-  it('f3. conflito TAMBÉM no retry propaga cru — uma tentativa só, nunca loop', async () => {
+  // T015 (spec 027, disciplina red-first) — o 23505 de
+  // `patients_case_number_active_unique` no PRIMEIRO insert não pode mais
+  // fazer o paciente nascer SEM número: antes da T013, este teste falhava
+  // (`retryArg.caseNumber` vinha `null` e `attention_reasons` trazia
+  // `CASE_NUMBER_CONFLICT`) — ver o vermelho colado no relatório do agente.
+  it('T015. conflito 23505 (patients_case_number_active_unique) no 1º insert → paciente nasce COM número, sem CASE_NUMBER_CONFLICT', async () => {
+    mockNextCaseNumber.mockResolvedValueOnce(1234);
     mockInsertNative
       .mockRejectedValueOnce(CASE_NUMBER_CONFLICT_ERR)
-      .mockRejectedValueOnce(CASE_NUMBER_CONFLICT_ERR);
+      .mockResolvedValueOnce({ id: 'nat-t015', created: true });
 
-    await expect(
-      service.createNativePatient(makeNativeInput({ caseNumber: 4711 }), {
-        origin: 'admin_manual',
-        status: 'ADMISSION',
-      }),
-    ).rejects.toBe(CASE_NUMBER_CONFLICT_ERR);
+    const result = await service.createNativePatient(makeNativeInput({ caseNumber: 500 }), {
+      origin: 'admin_manual',
+      status: 'ADMISSION',
+    });
 
-    // Exatamente 2 tentativas (original + retry) — o retry não re-arma o retry.
+    expect(result).toEqual({ id: 'nat-t015', created: true });
+    const retryArg = mockInsertNative.mock.calls[1][0] as PatientIdentityNativeInsertInput;
+    expect(retryArg.caseNumber).not.toBeNull();
+    expect(retryArg.caseNumber).toBe(1234);
+    expect(retryArg.attentionReasons ?? []).not.toContain('CASE_NUMBER_CONFLICT');
+  });
+
+  it('f3. conflito se repete em TODA tentativa nova → esgota o teto de 3 e cai no fallback antigo (sem número, sinalizado)', async () => {
+    mockInsertNative
+      .mockRejectedValueOnce(CASE_NUMBER_CONFLICT_ERR) // tentativa original (case_number=4711)
+      .mockRejectedValueOnce(CASE_NUMBER_CONFLICT_ERR) // retry attempt 0 (nextval novo)
+      .mockRejectedValueOnce(CASE_NUMBER_CONFLICT_ERR) // retry attempt 1
+      .mockRejectedValueOnce(CASE_NUMBER_CONFLICT_ERR) // retry attempt 2 — esgota MAX_CASE_NUMBER_RETRY_ATTEMPTS
+      .mockResolvedValueOnce({ id: 'nat-retry-fallback', created: true }); // fallback: insert sem número
+
+    const result = await service.createNativePatient(makeNativeInput({ caseNumber: 4711 }), {
+      origin: 'admin_manual',
+      status: 'ADMISSION',
+    });
+
+    expect(result).toEqual({ id: 'nat-retry-fallback', created: true });
+    // original + 3 tentativas com número novo + 1 fallback = 5.
+    expect(mockInsertNative).toHaveBeenCalledTimes(5);
+    expect(mockGetClient).toHaveBeenCalledTimes(5);
+
+    const fallbackArg = mockInsertNative.mock.calls[4][0] as PatientIdentityNativeInsertInput;
+    expect(fallbackArg.caseNumber).toBeNull();
+    expect(fallbackArg.needsAttention).toBe(true);
+    expect(fallbackArg.attentionReasons).toContain('CASE_NUMBER_CONFLICT');
+  });
+
+  // ── T014 — dois pacientes nativos SEM case_number pedido pelo chamador ────
+  //
+  // T012 preenche o case_number ANTES do insert quando o chamador não trouxe
+  // um (web-form lead, admin manual sem número escolhido à mão) — o caminho
+  // feliz da spec 027 US1. Prova que dois nascimentos seguidos pegam números
+  // CONSECUTIVOS e ≥1000 (a faixa nativa da migration 459; o legado do
+  // ClickUp fica em 110..828).
+  it('T014. dois pacientes nativos sem case_number → recebem números consecutivos e ≥1000', async () => {
+    mockNextCaseNumber
+      .mockResolvedValueOnce(1000)
+      .mockResolvedValueOnce(1001);
+    mockInsertNative
+      .mockResolvedValueOnce({ id: 'nat-seq-1', created: true })
+      .mockResolvedValueOnce({ id: 'nat-seq-2', created: true });
+
+    await service.createNativePatient(makeNativeInput(), {
+      origin: 'web_form',
+      status: 'SOLICITANTE',
+    });
+    await service.createNativePatient(makeNativeInput(), {
+      origin: 'web_form',
+      status: 'SOLICITANTE',
+    });
+
     expect(mockInsertNative).toHaveBeenCalledTimes(2);
+    const firstCaseNumber  = (mockInsertNative.mock.calls[0][0] as PatientIdentityNativeInsertInput).caseNumber;
+    const secondCaseNumber = (mockInsertNative.mock.calls[1][0] as PatientIdentityNativeInsertInput).caseNumber;
+
+    expect(firstCaseNumber).toBeGreaterThanOrEqual(1000);
+    expect(secondCaseNumber).toBe((firstCaseNumber as number) + 1);
   });
 });
