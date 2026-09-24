@@ -15,6 +15,7 @@
  */
 
 import type { Pool, PoolClient } from 'pg';
+import type { AuditActorType } from '@shared/audit/types';
 import {
   JobPostingAuditRepository,
 } from '../../infrastructure/JobPostingAuditRepository';
@@ -30,10 +31,20 @@ const auditRepo = new JobPostingAuditRepository();
 
 // ─── Actor type ───────────────────────────────────────────────────────────────
 
+/**
+ * Ator de uma escrita auditada de vaga. Chamava-se `HumanActor` porque, até a
+ * T017 (spec 027, US2), só o painel humano (`extractHumanActor`, sempre
+ * `actorType: 'HUMAN'`/`actorLabel: 'admin_panel'`) chegava até aqui. Agora
+ * aceita os 4 valores que `audit_log.actor_type` já permite (ver
+ * `@shared/audit/types.ts:20`) — o disparo do sistema (T018,
+ * `ActivateRecruitmentUseCase`) é o primeiro caller que não é humano.
+ * NÃO renomeada: os 3 call sites de `VacancyCrudController.ts` continuam
+ * importando `HumanActor` e passando `'HUMAN'`/`'admin_panel'` sem mudar nada.
+ */
 export interface HumanActor {
   actorUserId: string | null;
-  actorType: 'HUMAN';
-  actorLabel: 'admin_panel';
+  actorType: AuditActorType;
+  actorLabel: string;
   traceId?: string | null;
 }
 
