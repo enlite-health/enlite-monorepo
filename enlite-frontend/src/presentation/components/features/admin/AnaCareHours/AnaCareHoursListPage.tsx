@@ -20,7 +20,7 @@ import { OriginLegend } from './OriginLegend';
 import { ProviderFilterCombobox } from './ProviderFilterCombobox';
 import { AnaCareHoursSyncButton } from './AnaCareHoursSyncButton';
 import type { AnaCareListPatient, AnaCareMonthSnapshot } from './types';
-import { formatMonthLabel, monthOptionsUntilNow, patientDisplayName, providerDisplayName, shouldShowStatusBanner, statusBannerKind, type SinCheckinHoursMode } from './selectors';
+import { DISPLAY_TIME_ZONE, formatMonthLabel, monthOptionsUntilNow, patientDisplayName, providerDisplayName, shouldShowStatusBanner, statusBannerKind, type SinCheckinHoursMode } from './selectors';
 import type { UseAnaCareHoursSyncResult } from '@hooks/admin/useAnaCareHoursSync';
 
 interface AnaCareHoursListPageProps {
@@ -308,7 +308,20 @@ function MiniOriginCount({ count, origin, label }: { count: number; origin: 'sin
   );
 }
 
-function formatDateTime(iso: string): string {
+/**
+ * Relógio do OPERADOR (fuso explícito `DISPLAY_TIME_ZONE`), não o da FONTE — essa é
+ * `formatSourceTime`/`formatSourceRange` em `selectors.ts`, propositalmente diferente. Antes,
+ * `toLocaleString` sem `timeZone` caía no fuso do NAVEGADOR por omissão, sem decisão documentada
+ * (ver comentário de `DISPLAY_TIME_ZONE`).
+ */
+export function formatDateTime(iso: string): string {
   const d = new Date(iso);
-  return d.toLocaleString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return d.toLocaleString('es-AR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: DISPLAY_TIME_ZONE,
+  });
 }
