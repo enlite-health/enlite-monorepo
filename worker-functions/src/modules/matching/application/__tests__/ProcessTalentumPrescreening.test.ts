@@ -592,6 +592,33 @@ describe('ProcessTalentumPrescreening', () => {
     expect(mockJobPostingLookup.findByTitleILike).toHaveBeenCalledWith('Some Other Name');
   });
 
+  // ─── 12.6. F0 (medição) — spec caso-en-em-todo-lugar (24/09/2026) ──────
+  // Decisão do Gabriel: "CASO EN1041-5597" (nativo, >=1000) deve achar o
+  // caso 1041, igual "CASO 1041-5597" (legado) acha o caso 1041. A regex
+  // desta função (linha ~201, `/CASO\s+\d+/i`) exige DÍGITO logo após
+  // "CASO " — em "CASO EN1041-5597" vem "EN" (letras), então casoMatch é
+  // null e o searchTerm cai pro texto livre inteiro (não "CASO 1041").
+
+  it('CONTROLE — "CASO 1041-5597" (legado) extrai "CASO 1041" antes do lookup', async () => {
+    const payload = buildPayload({ status: 'IN_PROGRESS' });
+    (payload.data.response as any).statusLabel = undefined;
+    payload.data.prescreening.name = 'CASO 1041-5597, AT, para pacientes con Depresión (F32) - Avellaneda';
+
+    await useCase.execute(payload);
+
+    expect(mockJobPostingLookup.findByTitleILike).toHaveBeenCalledWith('CASO 1041');
+  });
+
+  it('"CASO EN1041-5597" (nativo) deveria achar o caso 1041 igual ao legado — mesmo comportamento esperado', async () => {
+    const payload = buildPayload({ status: 'IN_PROGRESS' });
+    (payload.data.response as any).statusLabel = undefined;
+    payload.data.prescreening.name = 'CASO EN1041-5597, AT, para pacientes con Depresión (F32) - Avellaneda';
+
+    await useCase.execute(payload);
+
+    expect(mockJobPostingLookup.findByTitleILike).toHaveBeenCalledWith('CASO 1041');
+  });
+
   // ─── 13. upsertQuestions com responseType vazio ─────────────────────
 
   it('usa responseType vazio quando não informado', async () => {
