@@ -213,7 +213,14 @@ export class ProcessTalentumPrescreening {
     const caseRef = searchTerm ?? '<outro>';
     console.log(`${TAG} resolveJobPosting | caseRef=${caseRef}`);
     try {
-      const posting = await this.jobPostingLookup.findByTitleILike(searchTerm ?? caseName);
+      let posting = await this.jobPostingLookup.findByTitleILike(searchTerm ?? caseName);
+      // Achado CI #515 (24/09/2026): o título formatado (prefixo `EN` decidido pela FAIXA
+      // numérica, não pelo texto real) não bate quando o título gravado ainda não segue
+      // essa convenção (ex.: número sintético de teste, ou título legado nunca reescrito).
+      // Fallback preserva o comportamento anterior a D422: procura pelo texto LIVRE inteiro.
+      if (!posting && searchTerm != null) {
+        posting = await this.jobPostingLookup.findByTitleILike(caseName);
+      }
       const id = posting?.id ?? null;
       console.log(`${TAG} resolveJobPosting → ${id ?? 'NOT FOUND'} (caseRef=${caseRef})`);
       return id;
