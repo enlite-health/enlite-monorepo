@@ -768,6 +768,61 @@ describe('AdminPatientsController.listPatients — caseNumber', () => {
       expect(res.status).toHaveBeenCalledWith(400);
     });
   });
+
+  // T067 (spec 027 Fase 6): "EN1234" (formato de EXIBIÇÃO do caso nativo,
+  // caseNumberFormat.ts) devolvia 400 antes — a coluna continua INTEGER, então o
+  // prefixo precisa ser removido ANTES da query, não guardado.
+  describe('Cenário 14 — filtro case_number com prefixo EN (T067)', () => {
+    it('deve aceitar "EN1234" (200, não 400) e repassar ao repo SEM o prefixo', async () => {
+      mockList.mockResolvedValue({ rows: [], total: 0 });
+
+      const [req, res] = mockReqResWithQuery({ case_number: 'EN1234' });
+      await controller.listPatients(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(mockList).toHaveBeenCalledWith(
+        expect.objectContaining({ case_number: '1234' }),
+        expect.anything(),
+      );
+    });
+
+    it('deve aceitar "en" minúsculo (case-insensitive)', async () => {
+      mockList.mockResolvedValue({ rows: [], total: 0 });
+
+      const [req, res] = mockReqResWithQuery({ case_number: 'en1234' });
+      await controller.listPatients(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(mockList).toHaveBeenCalledWith(
+        expect.objectContaining({ case_number: '1234' }),
+        expect.anything(),
+      );
+    });
+
+    it('"EN1234" e "1234" chegam ao repo com o MESMO filtro — buscam o mesmo paciente', async () => {
+      mockList.mockResolvedValue({ rows: [{ ...baseRow, caseNumber: 1234 }], total: 1 });
+
+      const [reqPrefixed, resPrefixed] = mockReqResWithQuery({ case_number: 'EN1234' });
+      await controller.listPatients(reqPrefixed, resPrefixed);
+      const filtroComPrefixo = mockList.mock.calls[0][0].case_number;
+
+      mockList.mockClear();
+      const [reqPlain, resPlain] = mockReqResWithQuery({ case_number: '1234' });
+      await controller.listPatients(reqPlain, resPlain);
+      const filtroSemPrefixo = mockList.mock.calls[0][0].case_number;
+
+      expect(filtroComPrefixo).toBe(filtroSemPrefixo);
+      expect(filtroComPrefixo).toBe('1234');
+    });
+
+    it('prefixo sozinho sem dígitos ("EN") continua 400', async () => {
+      const [req, res] = mockReqResWithQuery({ case_number: 'EN' });
+      await controller.listPatients(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(mockList).not.toHaveBeenCalled();
+    });
+  });
 });
 
 // ─── test-flag / purge (synthetic monitoring) ─────────────────────────────────
