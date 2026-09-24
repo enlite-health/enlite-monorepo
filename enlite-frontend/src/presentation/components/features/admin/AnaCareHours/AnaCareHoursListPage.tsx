@@ -20,7 +20,7 @@ import { OriginLegend } from './OriginLegend';
 import { ProviderFilterCombobox } from './ProviderFilterCombobox';
 import { AnaCareHoursSyncButton } from './AnaCareHoursSyncButton';
 import type { AnaCareListPatient, AnaCareMonthSnapshot } from './types';
-import { formatMonthLabel, monthOptionsUntilNow, patientDisplayName, providerDisplayName, shouldShowStatusBanner, statusBannerKind, type SinCheckinHoursMode } from './selectors';
+import { formatDateTime, formatMonthLabel, monthOptionsUntilNow, patientDisplayName, providerDisplayName, shouldShowStatusBanner, statusBannerKind, type SinCheckinHoursMode } from './selectors';
 import type { UseAnaCareHoursSyncResult } from '@hooks/admin/useAnaCareHoursSync';
 
 interface AnaCareHoursListPageProps {
@@ -306,9 +306,4 @@ function MiniOriginCount({ count, origin, label }: { count: number; origin: 'sin
       </Text>
     </span>
   );
-}
-
-function formatDateTime(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
