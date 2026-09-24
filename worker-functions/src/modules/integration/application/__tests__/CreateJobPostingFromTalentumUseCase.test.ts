@@ -253,6 +253,34 @@ describe('CreateJobPostingFromTalentumUseCase', () => {
       expect(insertParams[2]).toBe('CASO 230-99'); // title
     });
 
+    it('deve gerar titulo "CASO EN{caseNumber}-{vacancyNumber}" para case_number nativo (>=1000, migration 459)', async () => {
+      // Pool: anti-loop, case_number SELECT, nextval; INSERT on client
+      mockQuery
+        .mockResolvedValueOnce({ rows: [] })           // SELECT anti-loop
+        .mockResolvedValueOnce({ rows: [] })           // SELECT por case_number (not found)
+        .mockResolvedValueOnce({ rows: [{ vn: '1500' }] }); // nextval
+      mockClientQuery
+        .mockResolvedValueOnce({})                          // BEGIN
+        .mockResolvedValueOnce({ rows: [{ id: 'jp-1000' }] }) // INSERT RETURNING id
+        .mockResolvedValue({ rows: [] });                   // audit + COMMIT
+
+      const useCase = new CreateJobPostingFromTalentumUseCase(makePool(mockQuery, mockClientQuery));
+      await useCase.execute(
+        makeInput({ _id: 'proj-1000', name: 'CASO 1000, AT para paciente complexo' }),
+        'production',
+      );
+
+      const insertCall = mockClientQuery.mock.calls.find(
+        (c: unknown[]) => typeof c[0] === 'string' && (c[0] as string).includes('INSERT INTO job_postings'),
+      );
+      expect(insertCall).toBeDefined();
+      const insertParams = insertCall![1] as unknown[];
+
+      expect(insertParams[0]).toBe(1500);   // vacancy_number
+      expect(insertParams[1]).toBe(1000);   // case_number
+      expect(insertParams[2]).toBe('CASO EN1000-1500'); // title
+    });
+
     it('deve gerar titulo "VACANTE {vacancyNumber}" quando case_number nao encontrado no nome', async () => {
       // No case_number in name → no case_number lookup; only anti-loop + nextval on pool
       mockQuery

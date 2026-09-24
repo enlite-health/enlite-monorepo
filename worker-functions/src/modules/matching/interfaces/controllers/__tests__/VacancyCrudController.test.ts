@@ -253,13 +253,13 @@ describe('VacancyCrudController', () => {
         .mockResolvedValueOnce({ rows: [{ vn: '20' }] });   // nextval — roda incondicionalmente antes do hasUpdate branch
       mockCreateWithPatientUpdate.mockResolvedValueOnce({ id: 'jp-with-update', status: 'SEARCHING', is_test: false });
 
-      const req = makeReq({ body: { patient_id: 'p-1', case_number: 230, updatePatient: { diagnosis: 'x' } } });
+      const req = makeReq({ body: { patient_id: 'p-1', case_number: 230, updatePatient: { zone_neighborhood: 'x' } } });
       const res = makeRes();
 
       await controller.createVacancy(req, res);
 
       expect(res.status).toHaveBeenCalledWith(201);
-      expect(mockCreateWithPatientUpdate).toHaveBeenCalledWith(expect.anything(), 230, { diagnosis: 'x' }, expect.any(Object), expect.any(Object));
+      expect(mockCreateWithPatientUpdate).toHaveBeenCalledWith(expect.anything(), 230, { zone_neighborhood: 'x' }, expect.any(Object), expect.any(Object));
       expect(mockRetryOnCaseOrdinalConflict).not.toHaveBeenCalled();
     });
 

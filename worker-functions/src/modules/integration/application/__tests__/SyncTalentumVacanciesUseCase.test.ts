@@ -238,6 +238,32 @@ describe('SyncTalentumVacanciesUseCase', () => {
       expect(insertParams[2]).toBe('CASO 55-99'); // title
     });
 
+    it('deve gerar titulo "CASO EN{caseNumber}-{vacancyNumber}" no INSERT para case_number nativo (>=1000, migration 459)', async () => {
+      const project = makeTalentumProject({ title: 'CASO 1000' });
+      mockListAllPrescreenings.mockResolvedValue([project]);
+
+      mockQuery
+        .mockResolvedValueOnce({ rows: [] })    // lookup por talentum_project_id
+        .mockResolvedValueOnce({ rows: [] })    // lookup por case_number
+        .mockResolvedValueOnce({ rows: [{ vn: '1500' }] }); // nextval
+      mockClientQuery
+        .mockResolvedValueOnce({})                          // BEGIN
+        .mockResolvedValueOnce({ rows: [{ id: 'jp-1000' }] }) // INSERT RETURNING id
+        .mockResolvedValue({ rows: [] });                    // audit + COMMIT + saveTalentumReference txn
+
+      await useCase.execute();
+
+      // INSERT is on clientQuery
+      const insertCall = mockClientQuery.mock.calls.find(
+        (c: unknown[]) => typeof c[0] === 'string' && (c[0] as string).includes('INSERT INTO job_postings'),
+      );
+      expect(insertCall).toBeDefined();
+      const insertParams = insertCall![1] as unknown[];
+      expect(insertParams[0]).toBe(1500);          // vacancy_number
+      expect(insertParams[1]).toBe(1000);          // case_number
+      expect(insertParams[2]).toBe('CASO EN1000-1500'); // title
+    });
+
     it('deve buscar por vacancy_number quando titulo é "CASO N-M" e talentum_project_id não bate (link com vacante do novo esquema)', async () => {
       const project = makeTalentumProject({ projectId: 'proj-new-src', title: 'CASO 230-42' });
       mockListAllPrescreenings.mockResolvedValue([project]);
