@@ -1,3 +1,4 @@
+// diagnóstico de CI — este commit não deve ser mergeado
 export type StepStatus = 'completed' | 'pending' | 'locked';
 
 export interface RegistrationStep {
