@@ -26,7 +26,9 @@
  *   docker compose -p 027fase4 -f worker-functions/docker-compose.yml \
  *     -f worker-functions/docker-compose.027fase4-ports.yml up -d postgres api
  *   cd enlite-frontend && pnpm dev   (porta 5173, .env local aponta
- *     VITE_API_WORKER_FUNCTIONS_URL=http://localhost:8479)
+ *     VITE_API_WORKER_FUNCTIONS_URL=http://localhost:8479, e precisa também
+ *     das VITE_FIREBASE_* — sem elas o app monta BRANCO e o teste falha em
+ *     `input[type=email]` como timeout opaco, não como o erro de fato)
  * Run:
  *   E2E_PG_CONTAINER=027fase4-postgres PW_BASE_URL=http://localhost:5173 \
  *     pnpm test:e2e:integration --grep "busca.*EN"
@@ -35,7 +37,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { execSync } from 'child_process';
 import { loginAsWorker } from '../helpers/worker-auth-helper';
 
-const CONTAINER = process.env.E2E_PG_CONTAINER || '027fase4-postgres';
+const CONTAINER = process.env.E2E_PG_CONTAINER || 'enlite-postgres';
 const DB_USER = 'enlite_admin';
 const DB_NAME = 'enlite_e2e';
 
