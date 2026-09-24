@@ -11,6 +11,11 @@ describe('parseCaseTitleReference', () => {
     ['EN1234#01', { caseNumber: 1234, ordinal: 1 }],
     ['729#03', { caseNumber: 729, ordinal: 3 }],
     ['Recepcionista Zona Norte', { caseNumber: null, ordinal: null }],
+    // Rodada de fecho do gate: BARE_PATTERN sem âncora casava texto livre com
+    // número no meio do título e vinculava o worker ao caso errado (WJA + encuadre),
+    // sem erro nem log — ver o comentário do parser para a medição de 68%.
+    ['Turno 8-14', { caseNumber: null, ordinal: null }],
+    ['Cuidador 2026-09', { caseNumber: null, ordinal: null }],
   ])('%s → %o', (title, expected) => {
     expect(parseCaseTitleReference(title)).toEqual(expected);
   });
