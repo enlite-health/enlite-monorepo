@@ -592,31 +592,62 @@ describe('ProcessTalentumPrescreening', () => {
     expect(mockJobPostingLookup.findByTitleILike).toHaveBeenCalledWith('Some Other Name');
   });
 
-  // ─── 12.6. F0 (medição) — spec caso-en-em-todo-lugar (24/09/2026) ──────
-  // Decisão do Gabriel: "CASO EN1041-5597" (nativo, >=1000) deve achar o
-  // caso 1041, igual "CASO 1041-5597" (legado) acha o caso 1041. A regex
-  // desta função (linha ~201, `/CASO\s+\d+/i`) exige DÍGITO logo após
-  // "CASO " — em "CASO EN1041-5597" vem "EN" (letras), então casoMatch é
-  // null e o searchTerm cai pro texto livre inteiro (não "CASO 1041").
+  // ─── 12.6. spec 028 (caso-en-em-todo-lugar, D422, 24/09/2026) ──────────
+  // Achado #6 (spec 027) fechado: religa ao parser COMPARTILHADO
+  // (`parseCaseTitleReference`) em vez da regex própria (linha ~201, antiga
+  // `/CASO\s+\d+/i`, que exigia dígito logo após "CASO " e não casava "CASO
+  // EN1041-5597").
+  //
+  // O searchTerm passado a `findByTitleILike` é remontado via
+  // `formatCaseNumber(caseNumber)` — NUNCA copiado cru do texto recebido —
+  // porque precisa bater, via ILIKE, contra o título REAL gravado no
+  // job_posting (`formatCaseTitle`, `caseNumberFormat.ts`): "CASO EN{n}-…"
+  // para caso nativo (≥1000), "CASO {n}-…" para legado (<1000, D412 — a
+  // sequence do ClickUp está CONGELADA em 828, então não existe (nem vai
+  // existir) job_posting <1000 com título "CASO EN…"). A migration 472
+  // reescreve TODAS as linhas nativas existentes (vivas e apagadas, SUP-5) —
+  // então não sobra job_posting nativo com título sem EN para procurar; usar
+  // o número cru do texto recebido (em vez de reformatar) NÃO bateria contra
+  // o título real de um caso nativo.
+  //   - CONTROLE: caso LEGADO (828, <1000) — searchTerm sempre "CASO 828",
+  //     texto recebido com ou sem variação não muda o formato (sem prefixo).
+  //   - novo: caso NATIVO (1041, ≥1000) — texto recebido pode chegar em
+  //     qualquer estilo ("CASO 1041-…" ou "CASO EN1041-…", o Talentum pode
+  //     mandar título desatualizado); o searchTerm SEMPRE sai "CASO EN1041",
+  //     porque é isso que o job_posting real tem gravado. Essa era
+  //     exatamente a hipótese de conserto marcada como NÃO CONFIRMADA na F0
+  //     (`f0-medicao.md` §(b), "Não feito/desvio") — medida agora pela
+  //     mecânica real do ILIKE (substring), a hipótese original ("mesmo
+  //     searchTerm cru 'CASO 1041' pros dois") estava ERRADA; corrigida aqui.
 
-  it('CONTROLE — "CASO 1041-5597" (legado) extrai "CASO 1041" antes do lookup', async () => {
+  it('CONTROLE — caso legado (828, <1000): searchTerm sai sem prefixo, com ou sem "EN" no texto recebido', async () => {
+    const payload = buildPayload({ status: 'IN_PROGRESS' });
+    (payload.data.response as any).statusLabel = undefined;
+    payload.data.prescreening.name = 'CASO 828-5597, AT, para pacientes con Depresión (F32) - Avellaneda';
+
+    await useCase.execute(payload);
+
+    expect(mockJobPostingLookup.findByTitleILike).toHaveBeenCalledWith('CASO 828');
+  });
+
+  it('"CASO 1041-5597" (nativo, texto do Talentum sem EN) → searchTerm reformatado "CASO EN1041", bate contra o título real', async () => {
     const payload = buildPayload({ status: 'IN_PROGRESS' });
     (payload.data.response as any).statusLabel = undefined;
     payload.data.prescreening.name = 'CASO 1041-5597, AT, para pacientes con Depresión (F32) - Avellaneda';
 
     await useCase.execute(payload);
 
-    expect(mockJobPostingLookup.findByTitleILike).toHaveBeenCalledWith('CASO 1041');
+    expect(mockJobPostingLookup.findByTitleILike).toHaveBeenCalledWith('CASO EN1041');
   });
 
-  it('"CASO EN1041-5597" (nativo) deveria achar o caso 1041 igual ao legado — mesmo comportamento esperado', async () => {
+  it('"CASO EN1041-5597" (nativo, texto já no formato D422) → searchTerm "CASO EN1041"', async () => {
     const payload = buildPayload({ status: 'IN_PROGRESS' });
     (payload.data.response as any).statusLabel = undefined;
     payload.data.prescreening.name = 'CASO EN1041-5597, AT, para pacientes con Depresión (F32) - Avellaneda';
 
     await useCase.execute(payload);
 
-    expect(mockJobPostingLookup.findByTitleILike).toHaveBeenCalledWith('CASO 1041');
+    expect(mockJobPostingLookup.findByTitleILike).toHaveBeenCalledWith('CASO EN1041');
   });
 
   // ─── 13. upsertQuestions com responseType vazio ─────────────────────

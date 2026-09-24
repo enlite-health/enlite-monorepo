@@ -14,6 +14,7 @@ import {
 import { vacancyRangeForProviderAgeBand } from "../domain/ProviderAgeBandMapping";
 import type { ProviderAgeBand } from "../domain/enums/ContractedService";
 import { ADMISSION_FUNNEL_STATUSES } from "../domain/enums/PatientStatus";
+import { formatCaseTitle } from "@shared/utils/caseNumberFormat";
 
 /** Paciente inexistente (ou soft-deletado). O controller mapeia para 404. */
 export class PatientNotFoundForRecruitmentError extends Error {
@@ -189,7 +190,7 @@ export class ActivateRecruitmentUseCase {
       "SELECT nextval('job_postings_vacancy_number_seq') AS vn",
     );
     const vacancyNumber = parseInt(vnRes.rows[0].vn, 10);
-    const computedTitle = `CASO ${case_number}-${vacancyNumber}`;
+    const computedTitle = formatCaseTitle(case_number, vacancyNumber);
     const ageRange = vacancyRangeForProviderAgeBand(
       service.provider_age_band as ProviderAgeBand | null,
     );

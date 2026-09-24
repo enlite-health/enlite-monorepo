@@ -12,6 +12,7 @@ import {
 import type { ParsedVacancyResult } from './GeminiVacancyParserService';
 import { generateContentVertex } from './vertex-gemini';
 import { parseCaseTitleReference } from '@shared/utils/parseCaseTitleReference';
+import { formatCaseNumberTitle } from '@shared/utils/caseNumberFormat';
 
 // ── parseFromTalentumDescription ─────────────────────────────────────────────
 
@@ -68,7 +69,13 @@ export async function parseFromTalentumDescriptionHelper(
   const vacancy: ParsedVacancyResult['vacancy'] = {
     ...parsed,
     case_number: caseNumber,
-    title: caseNumber ? `CASO ${caseNumber}` : title,
+    // Sem vacancy_number neste sítio (não é o título final da vaga, só o INSERT
+    // inicial do vacancy CRUD via Gemini) — usa formatCaseNumberTitle (variante de
+    // formatCaseTitle sem o 2º número) em vez do template cru. D422 (24/09/2026).
+    // Guard `caseNumber ? ... : title` (truthy, não `!= null`) preservado byte a
+    // byte do código anterior — case_number nunca é 0 na prática, mas o guard
+    // original já era truthy e não é desta task trocar essa semântica.
+    title: caseNumber ? formatCaseNumberTitle(caseNumber)! : title,
     status: 'SEARCHING',
     providers_needed: parsed.providers_needed || 1,
     required_professions:

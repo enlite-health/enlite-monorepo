@@ -9,6 +9,8 @@ import { reportError } from '@shared/logging';
 import { maskPhoneForLog } from '@shared/utils/phoneMask';
 import { maskEmailForLog } from '@shared/utils/emailMask';
 import { PrescreeningQuestionsWriter } from './PrescreeningQuestionsWriter';
+import { parseCaseTitleReference } from '@shared/utils/parseCaseTitleReference';
+import { formatCaseNumberTitle } from '@shared/utils/caseNumberFormat';
 
 const TAG = '[ProcessTalentumPrescreening]';
 
@@ -198,12 +200,20 @@ export class ProcessTalentumPrescreening {
     // caem no fallback pro texto livre inteiro. Como nem todos batem, nunca se
     // loga o texto livre — só o "CASO N" extraído (`caseRef`) ou o marcador fixo
     // `<outro>` quando a extração falha, nos dois logs.
-    const casoMatch = caseName.match(/CASO\s+\d+/i);
-    const caseRef = casoMatch ? casoMatch[0] : '<outro>';
+    // Achado #6 (spec 027) fechado, D422 (24/09/2026): religa ao parser
+    // COMPARTILHADO (`parseCaseTitleReference`) em vez da regex própria — a
+    // antiga (`/CASO\s+\d+/i`) exigia dígito logo após "CASO ", então "CASO
+    // EN1041-…" não casava e caía inteiro no fallback de texto livre. O termo
+    // de busca é remontado via `formatCaseNumberTitle` (não o texto cru do título)
+    // porque é EXATAMENTE o prefixo que `formatCaseTitle` grava no título real da
+    // vaga (`CASO EN1041-…` para nativo, `CASO 1041-…` para legado) — usar o
+    // número cru aqui não bateria via ILIKE contra o título formatado.
+    const { caseNumber } = parseCaseTitleReference(caseName);
+    const searchTerm = formatCaseNumberTitle(caseNumber);
+    const caseRef = searchTerm ?? '<outro>';
     console.log(`${TAG} resolveJobPosting | caseRef=${caseRef}`);
     try {
-      const searchTerm = casoMatch ? casoMatch[0] : caseName;
-      const posting = await this.jobPostingLookup.findByTitleILike(searchTerm);
+      const posting = await this.jobPostingLookup.findByTitleILike(searchTerm ?? caseName);
       const id = posting?.id ?? null;
       console.log(`${TAG} resolveJobPosting → ${id ?? 'NOT FOUND'} (caseRef=${caseRef})`);
       return id;

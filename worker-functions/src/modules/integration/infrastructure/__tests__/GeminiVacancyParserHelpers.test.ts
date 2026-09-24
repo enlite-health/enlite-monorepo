@@ -55,11 +55,19 @@ describe('parseFromTalentumDescriptionHelper — extração de case_number do t�
     expect(vacancy.case_number).toBe(expectedCaseNumber);
   });
 
-  it('título no formato novo EN<N>#<M> gera title "CASO <N>" (write path preservado — T065 só muda a leitura)', async () => {
+  it('título no formato novo EN<N>#<M>, caso nativo (≥1000) → title "CASO EN<N>" (D422, 24/09/2026 — write path passa a formatar)', async () => {
     mockGeminiJsonResponse(MINIMAL_VACANCY_BODY);
 
     const vacancy = await parseFromTalentumDescriptionHelper('gemini-test', 'descrição', 'EN1234#01');
 
-    expect(vacancy.title).toBe('CASO 1234');
+    expect(vacancy.title).toBe('CASO EN1234');
+  });
+
+  it('título "CASO 230" (legado, <1000) → title "CASO 230", sem prefixo (D412, inalterado)', async () => {
+    mockGeminiJsonResponse(MINIMAL_VACANCY_BODY);
+
+    const vacancy = await parseFromTalentumDescriptionHelper('gemini-test', 'descrição', 'CASO 230');
+
+    expect(vacancy.title).toBe('CASO 230');
   });
 });
