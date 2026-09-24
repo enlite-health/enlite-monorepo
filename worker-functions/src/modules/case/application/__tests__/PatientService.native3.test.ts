@@ -47,6 +47,7 @@ jest.mock('../../infrastructure/PatientIdentityRepository', () => ({
   PatientIdentityRepository: jest.fn().mockImplementation(() => ({
     upsert:       jest.fn(),
     insertNative: jest.fn(),
+    nextCaseNumber: jest.fn(),
   })),
 }));
 
@@ -93,7 +94,7 @@ import {
   type CreateNativePatientInput,
   type PatientServiceUpsertInput,
 } from '../PatientService';
-import { PatientIdentityRepository } from '../../infrastructure/PatientIdentityRepository';
+import { PatientIdentityRepository, type PatientIdentityNativeInsertInput } from '../../infrastructure/PatientIdentityRepository';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -226,6 +227,7 @@ describe('PatientService.upsertFromClickUp — caseNumber undefined (?? null bra
 describe('PatientService.createNativePatient — caseNumber undefined (?? null branch)', () => {
   let service: PatientService;
   let mockInsertNative: jest.Mock;
+  let mockNextCaseNumber: jest.Mock;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -235,8 +237,10 @@ describe('PatientService.createNativePatient — caseNumber undefined (?? null b
 
     const identityInstance = (PatientIdentityRepository as jest.Mock).mock.results[
       (PatientIdentityRepository as jest.Mock).mock.results.length - 1
-    ].value as { upsert: jest.Mock; insertNative: jest.Mock };
-    mockInsertNative = identityInstance.insertNative;
+    ].value as { upsert: jest.Mock; insertNative: jest.Mock; nextCaseNumber: jest.Mock };
+    mockInsertNative   = identityInstance.insertNative;
+    mockNextCaseNumber = identityInstance.nextCaseNumber;
+    mockNextCaseNumber.mockResolvedValue(1500);
   });
 
   it('11. createNativePatient with `responsibles` present exercises the primary-finder callback', async () => {
@@ -256,7 +260,7 @@ describe('PatientService.createNativePatient — caseNumber undefined (?? null b
     expect(mockInsertNative).toHaveBeenCalledTimes(1);
   });
 
-  it('10. caseNumber undefined → native conflict-retry warn logs rejectedCaseNumber=null', async () => {
+  it('10. caseNumber undefined → T012 preenche via nextCaseNumber ANTES do insert; o conflito loga o número REALMENTE tentado (não null)', async () => {
     mockInsertNative
       .mockRejectedValueOnce(makePgUniqueError())
       .mockResolvedValueOnce({ id: 'nat-no-case', created: true });
@@ -266,9 +270,14 @@ describe('PatientService.createNativePatient — caseNumber undefined (?? null b
       status: 'ADMISSION',
     });
 
+    // caseNumber undefined não vira NULL no insert: T012 pede um nextval ANTES
+    // de tentar, então o número que a constraint rejeitou é o gerado (1500),
+    // não null — o `?? null` do log só cobre o caso em que nem o auto-fill
+    // rodou (branch morta hoje, mantida como defesa).
+    expect((mockInsertNative.mock.calls[0][0] as PatientIdentityNativeInsertInput).caseNumber).toBe(1500);
     expect(mockLoggerWarn).toHaveBeenCalledWith(
       'patient_service.native_case_number_conflict_retry',
-      expect.objectContaining({ rejectedCaseNumber: null }),
+      expect.objectContaining({ rejectedCaseNumber: 1500 }),
     );
   });
 });
