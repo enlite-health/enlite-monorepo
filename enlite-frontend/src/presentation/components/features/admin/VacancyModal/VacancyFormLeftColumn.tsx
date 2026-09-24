@@ -17,6 +17,7 @@ import { useTranslation } from 'react-i18next';
 import { Search, Loader2 } from 'lucide-react';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import type { CaseOption } from '@hooks/admin/useVacancyModalFlow';
+import { formatCaseNumber } from '@domain/value-objects/caseNumberFormat';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { FormField } from '@presentation/components/molecules/FormField/FormField';
 import { SelectField } from '@presentation/components/molecules/SelectField/SelectField';
@@ -84,7 +85,11 @@ export function VacancyFormLeftColumn({
 
   const handleCaseChange = (val: string): void => {
     if (!val) return;
-    const found = cases.find((c) => c.caseNumber === Number(val));
+    // Comparação por STRING, não `Number(val)`: `val` já é `String(c.caseNumber)` (a
+    // `SearchableSelect` recebe `value` cru — só o `label` leva o prefixo `EN`, formatado).
+    // `Number()` sobre texto formatado (`"EN1234"`) dá `NaN`, e `NaN !== NaN` é sempre true —
+    // clique sem efeito, sem erro.
+    const found = cases.find((c) => String(c.caseNumber) === val);
     if (found) selectCase(found.caseNumber, found.patientId);
   };
 
@@ -130,9 +135,11 @@ export function VacancyFormLeftColumn({
                   value={selectedCaseNumber != null ? String(selectedCaseNumber) : ''}
                   onChange={handleCaseChange}
                   options={cases.map((c) => ({
+                    // `value` fica CRU (nunca o formatado) — é o que `handleCaseChange` compara
+                    // de volta contra `String(c.caseNumber)`. Só o `label` leva o prefixo `EN`.
                     value: String(c.caseNumber),
                     label: t('admin.vacancyModal.caseSelectStep.caseOptionLabel', {
-                      caseNumber: c.caseNumber,
+                      caseNumber: formatCaseNumber(c.caseNumber),
                     }),
                   }))}
                   placeholder={t('admin.vacancyModal.caseSelectStep.casePlaceholder')}
@@ -142,7 +149,7 @@ export function VacancyFormLeftColumn({
             )
           ) : (
             <div className={READONLY_CLS} data-testid="case-number-display">
-              {selectedCaseNumber != null ? `CASO ${selectedCaseNumber}` : '—'}
+              {selectedCaseNumber != null ? `CASO ${formatCaseNumber(selectedCaseNumber)}` : '—'}
             </div>
           )}
         </FormField>
