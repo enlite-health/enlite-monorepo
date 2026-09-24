@@ -415,6 +415,27 @@ describe('CreateJobPostingFromTalentumUseCase', () => {
       expect(result.vacancyNumber).toBe(10);
     });
 
+    it('deve dar ROLLBACK e propagar o erro se o UPDATE de link falhar (transação de link não é best-effort)', async () => {
+      const updateError = new Error('connection lost');
+
+      mockQuery
+        .mockResolvedValueOnce({ rows: [] })               // SELECT anti-loop
+        .mockResolvedValueOnce({ rows: [{ id: 'jp-existing', vacancy_number: 42 }] }); // SELECT vacancy_number=42
+      mockClientQuery
+        .mockResolvedValueOnce({})                         // BEGIN
+        .mockRejectedValueOnce(updateError)                 // UPDATE job_postings — falha
+        .mockResolvedValueOnce({});                         // ROLLBACK (inside catch)
+
+      const useCase = new CreateJobPostingFromTalentumUseCase(makePool(mockQuery, mockClientQuery));
+
+      await expect(
+        useCase.execute(makeInput({ _id: 'proj-link-fail', name: 'CASO 230-42' }), 'production'),
+      ).rejects.toThrow('connection lost');
+
+      const rollbackCall = mockClientQuery.mock.calls.find((c: unknown[]) => c[0] === 'ROLLBACK');
+      expect(rollbackCall).toBeDefined();
+    });
+
     it('deve criar nova vacante quando vacancy_number não encontra match', async () => {
       // Pool: anti-loop, SELECT by vacancy_number (not found), nextval; INSERT on client
       mockQuery

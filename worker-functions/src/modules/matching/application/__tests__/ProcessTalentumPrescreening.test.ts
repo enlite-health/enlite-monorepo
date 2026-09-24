@@ -258,6 +258,28 @@ describe('ProcessTalentumPrescreening', () => {
     expect(mockPubsub.publish).not.toHaveBeenCalled();
   });
 
+  it('auto-rejeição sem prescreeningId (upsert não devolveu id) → domain_event grava prescreeningId=null, não undefined', async () => {
+    const payload = buildPayload({ statusLabel: 'NOT_QUALIFIED' });
+    mockPrescreeningRepo.upsertWorkerJobApplicationFromTalentum.mockResolvedValue({
+      previousStage: null,
+    });
+    // Simula upsertPrescreening sem `id` no retorno — o `?? null` do domain_event
+    // precisa cobrir esse caminho (senão JSON.stringify grava `undefined` implícito).
+    mockPrescreeningRepo.upsertPrescreening.mockResolvedValueOnce({
+      prescreening: { id: undefined, talentumPrescreeningId: 'tp-1', workerId: 'w-1', jobPostingId: 'jp-1' },
+      created: true,
+    });
+
+    await useCase.execute(payload);
+
+    const rejectedEventCall = mockPoolClient.query.mock.calls.find(
+      (call: any[]) => typeof call[0] === 'string' && call[0].includes('funnel_stage.rejected'),
+    );
+    expect(rejectedEventCall).toBeDefined();
+    const rejectedPayload = JSON.parse(rejectedEventCall[1][0]);
+    expect(rejectedPayload.prescreeningId).toBeNull();
+  });
+
   it('não re-executa auto-rejeição se previousStage já era REJECTED (deduplicação — webhook duplicado)', async () => {
     const payload = buildPayload({ statusLabel: 'NOT_QUALIFIED' });
     mockPrescreeningRepo.upsertWorkerJobApplicationFromTalentum.mockResolvedValue({
@@ -912,6 +934,32 @@ describe('ProcessTalentumPrescreening', () => {
       expect(lines).not.toContain(NON_E164_PHONE);
       expect(lines).not.toContain('11512');
       consoleSpy.mockRestore();
+    });
+
+    it('ensureEncuadre: erro não-Error (rejeição com valor cru) é normalizado antes de ir pro reportError', async () => {
+      const payload = buildPayload();
+      // INSERT INTO encuadres rejeita com um valor NÃO-Error (string crua) —
+      // cobre o branch `err instanceof Error ? err : new Error(String(err))`.
+      mockPool.query.mockImplementation((sql: string) => {
+        if (sql.includes('INSERT INTO encuadres')) {
+          return Promise.reject('encuadre boom');
+        }
+        if (sql.includes('WITH RECURSIVE chain')) {
+          return Promise.resolve({ rows: [{ id: 'w-1', depth: 0, merged_into_id: null }] });
+        }
+        return Promise.resolve({ rows: [] });
+      });
+
+      await useCase.execute(payload);
+
+      expect(reportError).toHaveBeenCalledWith(
+        expect.any(Error),
+        expect.objectContaining({ source: 'ProcessTalentumPrescreening:ensureEncuadre' }),
+      );
+      const [normalizedErr] = (reportError as jest.Mock).mock.calls.find(
+        (call) => call[1]?.source === 'ProcessTalentumPrescreening:ensureEncuadre',
+      );
+      expect(normalizedErr.message).toBe('encuadre boom');
     });
 
     it('ensureEncuadre: nome NUNCA aparece — só presença (hasName)', async () => {
