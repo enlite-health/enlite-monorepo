@@ -7,6 +7,7 @@ import { PublicApiService } from '@infrastructure/http/PublicApiService';
 import { IncompleteRegistrationModal } from '@presentation/pages/public/components/IncompleteRegistrationModal';
 import { PostularseErrorModal } from '@presentation/pages/public/components/PostularseErrorModal';
 import type { PublicJobListing } from '@domain/entities/PublicJobListing';
+import { formatCaseNumber } from '@domain/value-objects/caseNumberFormat';
 import { JobCard } from './JobCard';
 import {
   type Job,
@@ -45,10 +46,11 @@ function adaptPublicJobListing(dto: PublicJobListing): Job {
   return {
     id: dto.id,
     // "824-5012" — MESMO formato que o painel admin usa (VacancyDetailPage.tsx,
-    // `${case_number}-${vacancy_number}`). Antes só mostrava case_number
+    // case_number formatado + vacancy_number). Antes só mostrava case_number
     // ("824"), perdendo o vacancy_number — os dois campos existem e vêm
-    // sempre populados na API pública (confirmado: 189/189 vagas).
-    code: `${dto.case_number}-${dto.vacancy_number}`,
+    // sempre populados na API pública (confirmado: 189/189 vagas). Spec 027
+    // T061/T062: case_number passa pelo helper (prefixo EN >= 1000).
+    code: `${formatCaseNumber(dto.case_number)}-${dto.vacancy_number}`,
     title: dto.title,
     workerType: (dto.worker_type ?? []).join(', '),
     provincia: dto.state ?? '',

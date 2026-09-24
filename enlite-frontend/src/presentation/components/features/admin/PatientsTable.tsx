@@ -3,6 +3,7 @@ import { Eye, CalendarDays } from 'lucide-react';
 import { Text } from '@presentation/components/atoms/Text';
 import { resolveDateLocale, SHORT_DATE_OPTIONS } from '@presentation/utils/dateLocale';
 import { toDisplayName } from '@domain/value-objects/displayName';
+import { formatCaseNumber } from '@domain/value-objects/caseNumberFormat';
 import {
   Table,
   TableHeader,
@@ -161,8 +162,9 @@ export function PatientsTable({ patients, onRowClick }: PatientsTableProps): JSX
               const registeredAt = formatRegisteredAt(row.createdAt, i18n.language);
               const serviceLabel = formatServiceType(t, row.serviceType);
               const specialtyLabel = formatSpecialty(t, row.clinicalSpecialty);
-              const caseLabel = row.caseNumber != null
-                ? `${t('admin.patients.codeColumn')} #${row.caseNumber}`
+              const formattedCaseNumber = formatCaseNumber(row.caseNumber);
+              const caseLabel = formattedCaseNumber != null
+                ? `${t('admin.patients.codeColumn')} #${formattedCaseNumber}`
                 : '—';
               return (
                 <TableRow
