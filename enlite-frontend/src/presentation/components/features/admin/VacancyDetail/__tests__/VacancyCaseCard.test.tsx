@@ -172,7 +172,6 @@ describe('VacancyCaseCard — partial data (missing optional fields)', () => {
 describe('VacancyCaseCard — formatDateAR catch (defensivo)', () => {
   it('toLocaleDateString lançando: cai no "—" em vez de propagar', () => {
     const original = Date.prototype.toLocaleDateString;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (Date.prototype as any).toLocaleDateString = () => {
       throw new Error('boom — Intl indisponível');
     };
