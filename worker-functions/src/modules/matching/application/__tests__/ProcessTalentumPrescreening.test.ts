@@ -672,6 +672,28 @@ describe('ProcessTalentumPrescreening', () => {
     expect(mockJobPostingLookup.findByTitleILike).toHaveBeenCalledWith('CASO EN1041');
   });
 
+  // Achado CI #515 (24/09/2026, pós-D422): `formatCaseNumberTitle` decide o prefixo
+  // "EN" pela FAIXA NUMÉRICA do `caseNumber` (≥1000), não pelo texto real do título
+  // — então um número ≥1000 cujo título gravado ainda NÃO tem o prefixo (número
+  // sintético de teste, ou título legado nunca reescrito por engano) não bate via
+  // ILIKE contra o searchTerm formatado, e o job posting deixa de ser encontrado
+  // mesmo existindo. Fallback restaura o comportamento pré-D422: se o searchTerm
+  // formatado não achar, tenta o texto livre inteiro (`caseName`) antes de desistir.
+  it('fallback: searchTerm formatado ("CASO EN{n}") não bate → tenta o texto livre inteiro antes de desistir', async () => {
+    const payload = buildPayload({ status: 'IN_PROGRESS' });
+    (payload.data.response as any).statusLabel = undefined;
+    payload.data.prescreening.name = 'CASO 99950 WFF E2E';
+    mockJobPostingLookup.findByTitleILike.mockImplementation((term: string) =>
+      Promise.resolve(term === 'CASO 99950 WFF E2E' ? { id: 'jp-fallback' } : null),
+    );
+
+    const result = await useCase.execute(payload);
+
+    expect(mockJobPostingLookup.findByTitleILike).toHaveBeenNthCalledWith(1, 'CASO EN99950');
+    expect(mockJobPostingLookup.findByTitleILike).toHaveBeenNthCalledWith(2, 'CASO 99950 WFF E2E');
+    expect(result.jobPostingId).toBe('jp-fallback');
+  });
+
   // ─── 13. upsertQuestions com responseType vazio ─────────────────────
 
   it('usa responseType vazio quando não informado', async () => {
