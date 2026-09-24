@@ -93,7 +93,8 @@ export function GroupSimulationSelect(): JSX.Element | null {
           type="button"
           aria-label={t('access.simulation.exit')}
           onClick={handleExit}
-          className="hover:opacity-70 transition-opacity shrink-0"
+          disabled={switching !== null}
+          className="hover:opacity-70 transition-opacity shrink-0 disabled:opacity-40 disabled:pointer-events-none"
         >
           <LogOut size={14} />
         </button>
