@@ -4,7 +4,9 @@ import {
   axonicoDayEligibility,
   blockReason,
   currentMonthIso,
+  DISPLAY_TIME_ZONE,
   filterPatients,
+  formatDateTime,
   formatMonthLabel,
   formatSourceRange,
   formatSourceTime,
@@ -584,5 +586,63 @@ describe('formatMonthLabel', () => {
   it('POSITIVO — pt-BR: mesmo formato, nome do mês em português', () => {
     expect(formatMonthLabel('2026-08', 'pt-BR')).toBe('Agosto 2026');
     expect(formatMonthLabel('2026-09', 'pt-BR')).toBe('Setembro 2026');
+  });
+});
+
+/**
+ * `snapshot.updatedAt` é o relógio do OPERADOR, não a hora da FONTE (esse é `formatSourceTime`,
+ * fuso `Etc/GMT+6`, propositalmente NÃO tocado aqui). Antes desta cobertura, `formatDateTime`
+ * fazia `toLocaleString('es-AR', {...})` SEM `timeZone` — cai no fuso do NAVEGADOR por omissão,
+ * sem decisão documentada.
+ *
+ * 🔴 `TZ` do PROCESSO não é controlável a partir de dentro do teste nesta versão (Node 24 +
+ * Vitest 1.4, pool `threads`, medido): `vi.stubEnv('TZ', ...)` e até atribuição direta a
+ * `process.env.TZ` mudam a variável, mas `Intl`/`Date` já cacheiam o fuso do HOST na primeira
+ * chamada feita por QUALQUER código no worker (setup, outro arquivo de teste reaproveitando o
+ * mesmo worker, etc.) — mudar a env DEPOIS não invalida esse cache. Só funcionou isolado com
+ * `--pool=forks --poolOptions.forks.singleFork` (processo novo por arquivo), o que exigiria
+ * mudar o pool do projeto inteiro (fora do escopo desta task) e ainda ficaria frágil à ordem dos
+ * arquivos na suíte real.
+ *
+ * A versão anterior deste teste espionava `Date.prototype.toLocaleString` com `vi.spyOn` — uma
+ * mutação de PROTOTYPE GLOBAL restaurada só no fim do próprio `it` (nunca em `finally`/`afterEach`).
+ * No Node 24 local isso não vazava; no Node 20 do CI vazava para OUTRO arquivo (`PointsMap.test.tsx`,
+ * 2/2 vermelho — atribuído por PR de controle: `main` + no-op passa 507/507). Por isso o espião foi
+ * removido por inteiro: a régua abaixo não toca nenhum global. Ela compara a SAÍDA de `formatDateTime`
+ * contra uma referência construída localmente com `Intl.DateTimeFormat` e o `timeZone` esperado —
+ * mesmas opções, mesmo `iso` — mais um controle negativo com um fuso distante.
+ *
+ * 🔴 LIMITE HONESTO desta régua — leia antes de confiar nela: com `timeZone: DISPLAY_TIME_ZONE`
+ * removido de `formatDateTime` (o bug que esta suíte deve pegar), `toLocaleString` cai no fuso do
+ * HOST. No CI o host é UTC — a asserção POSITIVA abaixo MORDE (fica vermelha) porque UTC ≠ -03 de
+ * Buenos Aires. Nesta máquina de desenvolvimento o host é `America/Sao_Paulo`, que hoje tem o
+ * MESMO offset -03 de Buenos Aires — então a asserção positiva PASSA mesmo com o bug reintroduzido
+ * localmente. Ou seja: a régua é viva no CI e CEGA nesta máquina, por coincidência de offset, não
+ * por desenho. Não é possível contornar isso de dentro do teste (ver parágrafo acima sobre `TZ`).
+ */
+describe('formatDateTime', () => {
+  const OPTIONS = {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  } as const;
+
+  it('POSITIVO — igual a uma referência Intl.DateTimeFormat construída localmente com o MESMO timeZone (sem tocar nenhum global) — vide limite honesto no comentário acima', () => {
+    const iso = '2026-09-15T02:30:00Z';
+    const referenciaBA = new Intl.DateTimeFormat('es-AR', { ...OPTIONS, timeZone: DISPLAY_TIME_ZONE }).format(new Date(iso));
+    expect(formatDateTime(iso)).toBe(referenciaBA);
+  });
+
+  it('CONTROLE NEGATIVO — o MESMO iso formatado com um fuso distante (Asia/Tokyo) dá resultado DIFERENTE da referência de Buenos Aires — prova que a comparação acima tem dentes: se `timeZone` não afetasse `Intl.DateTimeFormat`, a positiva passaria com qualquer fuso e não provaria nada', () => {
+    const iso = '2026-09-15T02:30:00Z';
+    const referenciaBA = new Intl.DateTimeFormat('es-AR', { ...OPTIONS, timeZone: DISPLAY_TIME_ZONE }).format(new Date(iso));
+    const referenciaTokyo = new Intl.DateTimeFormat('es-AR', { ...OPTIONS, timeZone: 'Asia/Tokyo' }).format(new Date(iso));
+    expect(referenciaTokyo).not.toBe(referenciaBA);
+  });
+
+  it('POSITIVO — hora de Buenos Aires (-03), independente do fuso do processo/navegador', () => {
+    expect(formatDateTime('2026-09-15T02:30:00Z')).toBe('14/09/2026, 11:30 p. m.');
   });
 });
