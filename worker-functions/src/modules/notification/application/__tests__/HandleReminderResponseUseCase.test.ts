@@ -145,6 +145,22 @@ describe('HandleReminderResponseUseCase', () => {
       expect(result.isFailure).toBe(true);
       expect(result.error).toBe('Invalid transition');
     });
+
+    it('interview_datetime null → passa undefined pro Calendar (nunca null cru)', async () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [WORKER] })
+        .mockResolvedValueOnce({ rows: [{ ...CONFIRMED_APP, interview_datetime: null }] })
+        .mockResolvedValueOnce({ rows: [] });
+
+      const result = await useCase.execute('whatsapp:+5491112345678', 'confirm_yes');
+
+      expect(result.isSuccess).toBe(true);
+      expect(mockCalendar.confirmAttendee).toHaveBeenCalledWith(
+        CONFIRMED_APP.interview_meet_link,
+        WORKER.email,
+        undefined,
+      );
+    });
   });
 
   // ─── confirm_no → awaiting_reschedule ─────────────────────────
@@ -214,6 +230,38 @@ describe('HandleReminderResponseUseCase', () => {
 
       const result = await useCase.execute('whatsapp:+5491112345678', 'reschedule_yes');
       expect(result.isSuccess).toBe(true);
+    });
+
+    it('dedup atomico (TD-025): WHERE NOT EXISTS não insere (0 rows) → sucesso silencioso, sem publish', async () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [WORKER] })
+        .mockResolvedValueOnce({ rows: [AWAITING_APP] })
+        .mockResolvedValueOnce({ rows: [] })                           // release slot
+        .mockResolvedValueOnce({ rows: [{ case_number: 747 }] })      // vacancy lookup
+        .mockResolvedValueOnce({ rows: [] })                           // update WJA
+        .mockResolvedValueOnce({ rows: [] });                          // INSERT dedupado — já existe outbox pendente
+
+      const result = await useCase.execute('whatsapp:+5491112345678', 'reschedule_yes');
+
+      expect(result.isSuccess).toBe(true);
+      expect(mockPubsub.publish).not.toHaveBeenCalled();
+    });
+
+    it('vacancy sem case_number (rows vazio) → caseNumber=null → formatCaseNumber cai no fallback vazio', async () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [WORKER] })
+        .mockResolvedValueOnce({ rows: [AWAITING_APP] })
+        .mockResolvedValueOnce({ rows: [] })                           // release slot
+        .mockResolvedValueOnce({ rows: [] })                           // vacancy lookup — sem rows
+        .mockResolvedValueOnce({ rows: [] })                           // update WJA
+        .mockResolvedValueOnce({ rows: [{ id: 'outbox-no-case' }] }); // insert outbox
+
+      const result = await useCase.execute('whatsapp:+5491112345678', 'reschedule_yes');
+
+      expect(result.isSuccess).toBe(true);
+      const outboxCall = mockQuery.mock.calls[5];
+      const variables = JSON.parse(outboxCall[1][1]);
+      expect(variables.case_number).toBe('');
     });
 
     it('pula slot release se interview_slot_id null', async () => {
@@ -356,6 +404,23 @@ describe('HandleReminderResponseUseCase', () => {
       expect(mockCalendar.declineAttendee).not.toHaveBeenCalled();
     });
 
+    it('interview_datetime null → passa undefined pro declineAttendee (nunca null cru)', async () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [WORKER] })
+        .mockResolvedValueOnce({ rows: [{ ...REASON_APP, interview_datetime: null }] })
+        .mockResolvedValueOnce({ rows: [] })                              // release slot
+        .mockResolvedValueOnce({ rows: [] })                              // update WJA
+        .mockResolvedValueOnce({ rows: [{ id: 'outbox-8' }] });          // insert outbox
+
+      await useCase.executeTextResponse('whatsapp:+5491112345678', 'Motivo');
+
+      expect(mockCalendar.declineAttendee).toHaveBeenCalledWith(
+        REASON_APP.interview_meet_link,
+        WORKER.email,
+        undefined,
+      );
+    });
+
     it('falha se worker not found', async () => {
       mockQuery.mockResolvedValueOnce({ rows: [] });
 
@@ -372,6 +437,20 @@ describe('HandleReminderResponseUseCase', () => {
       const result = await useCase.executeTextResponse('whatsapp:+5491112345678', 'Motivo');
       expect(result.isFailure).toBe(true);
       expect(result.error).toBe('No application awaiting reason');
+    });
+
+    // Guard defensivo: o SQL de findAwaitingReasonApplication já filtra
+    // WHERE interview_response = 'awaiting_reason' (canTransition('awaiting_reason','declined')
+    // é sempre true na prática), mas o canTransition dentro de handleDeclineWithReason
+    // é a última linha de defesa se essa invariante quebrar — cobre o branch falso.
+    it('falha se o estado devolvido não permite → declined (guard defensivo, invariante do SQL quebrada)', async () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [WORKER] })
+        .mockResolvedValueOnce({ rows: [{ ...REASON_APP, interview_response: 'declined' }] });
+
+      const result = await useCase.executeTextResponse('whatsapp:+5491112345678', 'Motivo');
+      expect(result.isFailure).toBe(true);
+      expect(result.error).toBe('Invalid transition');
     });
   });
 

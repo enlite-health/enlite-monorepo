@@ -131,6 +131,30 @@ describe('SyncTalentumVacanciesUseCase', () => {
       expect(report.updated).toBe(0);
       expect(report.created).toBe(0);
     });
+
+    it('deve dar ROLLBACK e registrar o erro no report se o UPDATE de saveTalentumReference falhar (não é best-effort)', async () => {
+      const project = makeTalentumProject({ projectId: 'proj-ref-fail', title: 'CASO 400' });
+      mockListAllPrescreenings.mockResolvedValue([project]);
+
+      // Achado por talentum_project_id, mas com projectId DIFERENTE do atual — não é skip.
+      mockQuery
+        .mockResolvedValueOnce({ rows: [{ id: 'jp-ref-fail', talentum_project_id: 'other-proj' }] });
+      mockClientQuery
+        .mockResolvedValueOnce({})                              // BEGIN (saveTalentumReference)
+        .mockRejectedValueOnce(new Error('update ref failed'))  // UPDATE job_postings — falha
+        .mockResolvedValueOnce({});                              // ROLLBACK
+
+      const report = await useCase.execute();
+
+      expect(report.errors).toHaveLength(1);
+      expect(report.errors[0]).toEqual({
+        projectId: 'proj-ref-fail',
+        title: 'CASO 400',
+        error: 'update ref failed',
+      });
+      const rollbackCall = mockClientQuery.mock.calls.find((c: unknown[]) => c[0] === 'ROLLBACK');
+      expect(rollbackCall).toBeDefined();
+    });
   });
 
   // ── 2. Sync com vacante nova ─────────────────────────────────
@@ -212,6 +236,73 @@ describe('SyncTalentumVacanciesUseCase', () => {
       expect(insertParams[0]).toBe(99);       // vacancy_number
       expect(insertParams[1]).toBe(55);       // case_number
       expect(insertParams[2]).toBe('CASO 55-99'); // title
+    });
+
+    it('deve buscar por vacancy_number quando titulo é "CASO N-M" e talentum_project_id não bate (link com vacante do novo esquema)', async () => {
+      const project = makeTalentumProject({ projectId: 'proj-new-src', title: 'CASO 230-42' });
+      mockListAllPrescreenings.mockResolvedValue([project]);
+
+      mockQuery
+        .mockResolvedValueOnce({ rows: [] })  // lookup por talentum_project_id (not found)
+        .mockResolvedValueOnce({ rows: [{ id: 'jp-v42', talentum_project_id: null }] }); // lookup por vacancy_number=42 (found)
+
+      const report = await useCase.execute();
+
+      expect(report.updated).toBe(1);
+      expect(report.created).toBe(0);
+      expect(report.errors).toHaveLength(0);
+
+      const vacancyLookupCall = mockQuery.mock.calls[1];
+      expect(vacancyLookupCall[0]).toContain('vacancy_number = $1');
+      expect(vacancyLookupCall[1]).toEqual([42]);
+    });
+
+    it('não encontra por vacancy_number ("CASO N-M" sem vacante correspondente) → cai no lookup por case_number e cria nova', async () => {
+      const project = makeTalentumProject({ projectId: 'proj-vac-miss', title: 'CASO 600-15' });
+      mockListAllPrescreenings.mockResolvedValue([project]);
+
+      mockQuery
+        .mockResolvedValueOnce({ rows: [] })              // lookup por talentum_project_id
+        .mockResolvedValueOnce({ rows: [] })              // lookup por vacancy_number=15 (not found)
+        .mockResolvedValueOnce({ rows: [] })              // lookup por case_number=600 (not found)
+        .mockResolvedValueOnce({ rows: [{ vn: '16' }] }); // nextval
+      mockClientQuery
+        .mockResolvedValueOnce({})                          // BEGIN
+        .mockResolvedValueOnce({ rows: [{ id: 'jp-600' }] }) // INSERT RETURNING id
+        .mockResolvedValue({ rows: [] });                   // audit + COMMIT + saveTalentumReference txn
+
+      const report = await useCase.execute();
+
+      expect(report.created).toBe(1);
+      const vacancyLookupCall = mockQuery.mock.calls[1];
+      expect(vacancyLookupCall[1]).toEqual([15]);
+      const caseLookupCall = mockQuery.mock.calls[2];
+      expect(caseLookupCall[1]).toEqual([600]);
+    });
+
+    it('deve dar ROLLBACK e registrar o erro no report se o INSERT de createFromSync falhar (create não é best-effort)', async () => {
+      const project = makeTalentumProject({ projectId: 'proj-create-fail', title: 'CASO 300' });
+      mockListAllPrescreenings.mockResolvedValue([project]);
+
+      mockQuery
+        .mockResolvedValueOnce({ rows: [] })              // lookup por talentum_project_id
+        .mockResolvedValueOnce({ rows: [] })              // lookup por case_number
+        .mockResolvedValueOnce({ rows: [{ vn: '77' }] }); // nextval
+      mockClientQuery
+        .mockResolvedValueOnce({})                              // BEGIN (createFromSync)
+        .mockRejectedValueOnce(new Error('insert failed'))      // INSERT RETURNING id — falha
+        .mockResolvedValueOnce({});                              // ROLLBACK
+
+      const report = await useCase.execute();
+
+      expect(report.errors).toHaveLength(1);
+      expect(report.errors[0]).toEqual({
+        projectId: 'proj-create-fail',
+        title: 'CASO 300',
+        error: 'insert failed',
+      });
+      const rollbackCall = mockClientQuery.mock.calls.find((c: unknown[]) => c[0] === 'ROLLBACK');
+      expect(rollbackCall).toBeDefined();
     });
   });
 
@@ -320,6 +411,29 @@ describe('SyncTalentumVacanciesUseCase', () => {
         title: 'CASO 77 - fallido',
         error: 'timeout',
       });
+    });
+  });
+
+  // ── 4b. Parametro `force` default (processProject) ──────────
+  //
+  // `execute()` sempre encaminha `force` já resolvido (`opts?.force ?? false`),
+  // então o valor DEFAULT do parâmetro de `processProject` nunca é exercitado
+  // pela API pública — chamada direta ao método privado é o único jeito de
+  // cobrir esse branch (cobertura 100% do ARQUIVO, não só do caminho público).
+  describe('parametro force default de processProject (branch não alcançável via execute())', () => {
+    it('chamada sem 4º argumento (force) trata como false — já synced é skip', async () => {
+      const project = makeTalentumProject({ projectId: 'proj-force-default', title: 'CASO 500' });
+      const report: SyncReport = { total: 0, updated: 0, created: 0, skipped: 0, errors: [] };
+
+      mockQuery
+        .mockResolvedValueOnce({ rows: [{ id: 'jp-500', talentum_project_id: 'proj-force-default' }] }); // já synced
+
+      // needsDetail=false (project tem description+questions) → talentumClient nunca é usado.
+      await (useCase as any).processProject(project, {} as never, report);
+
+      expect(report.skipped).toBe(1);
+      expect(report.updated).toBe(0);
+      expect(report.created).toBe(0);
     });
   });
 
