@@ -4,6 +4,7 @@ import { Clock } from 'lucide-react';
 import { Text } from '@presentation/components/atoms/Text';
 import { toDisplayName } from '@domain/value-objects/displayName';
 import type { PatientKanbanItem } from '@domain/entities/PatientDetail';
+import { formatCaseNumber } from '@domain/value-objects/caseNumberFormat';
 
 interface Props {
   patient: PatientKanbanItem;
@@ -80,7 +81,7 @@ export function PatientKanbanCard({ patient }: Props): JSX.Element {
         </button>
         {patient.caseNumber != null && (
           <span className="shrink-0 inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold bg-purple-50 text-purple-700">
-            {t('admin.patients.kanban.caseNumber', { defaultValue: 'Caso' })} #{patient.caseNumber}
+            {t('admin.patients.kanban.caseNumber', { defaultValue: 'Caso' })} #{formatCaseNumber(patient.caseNumber)}
           </span>
         )}
       </div>

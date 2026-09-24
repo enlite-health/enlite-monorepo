@@ -35,6 +35,7 @@ import { ContainerGate } from '@presentation/components/features/access';
 import { tabsVisibleFor } from '@presentation/hooks/useCellAccess';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import { screenById } from '@presentation/config/screenRegistry';
+import { formatCaseNumber } from '@domain/value-objects/caseNumberFormat';
 
 export default function VacancyDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -101,9 +102,9 @@ export default function VacancyDetailPage() {
 
   const pageTitle =
     vacancy.case_number != null && vacancy.vacancy_number != null
-      ? `${t('admin.vacancyDetail.case')} ${vacancy.case_number}-${vacancy.vacancy_number}${patientName ? ` — ${patientName}` : ''}`
+      ? `${t('admin.vacancyDetail.case')} ${formatCaseNumber(vacancy.case_number)}-${vacancy.vacancy_number}${patientName ? ` — ${patientName}` : ''}`
       : vacancy.case_number != null
-        ? `${t('admin.vacancyDetail.case')} ${vacancy.case_number}${patientName ? ` — ${patientName}` : ''}`
+        ? `${t('admin.vacancyDetail.case')} ${formatCaseNumber(vacancy.case_number)}${patientName ? ` — ${patientName}` : ''}`
         : vacancy.title ?? t('admin.vacancyDetail.vacancy');
 
   const publications: Array<{

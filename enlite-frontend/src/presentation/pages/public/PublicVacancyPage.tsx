@@ -16,6 +16,7 @@ import { UnauthenticatedModal } from './components/UnauthenticatedModal';
 import { IncompleteRegistrationModal } from './components/IncompleteRegistrationModal';
 import { PostularseErrorModal } from './components/PostularseErrorModal';
 import type { PublicVacancyDetail } from '@domain/entities/Vacancy';
+import { formatCaseNumber } from '@domain/value-objects/caseNumberFormat';
 
 const VALID_UTM_SOURCES = new Set(['facebook', 'instagram', 'whatsapp', 'linkedin', 'site']);
 
@@ -71,7 +72,7 @@ function VacancyCaseCard({
         <div className="flex items-center justify-between w-full gap-3">
           <Heading level={2} weight="semibold" color="primary" className="leading-[1.3]">
             {vacancy.case_number != null
-              ? `CASO ${vacancy.case_number}-${vacancy.vacancy_number}`
+              ? `CASO ${formatCaseNumber(vacancy.case_number)}-${vacancy.vacancy_number}`
               : `CASO ${vacancy.vacancy_number}`}
           </Heading>
           <VacancyStatusBadge status={vacancy.status} className="shrink-0" />

@@ -7,6 +7,7 @@ import { Button } from '@presentation/components/atoms/Button';
 import { ActionButton } from '@presentation/components/features/access';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import type { PatientDetail } from '@domain/entities/PatientDetail';
+import { formatCaseNumber } from '@domain/value-objects/caseNumberFormat';
 import { FieldPair, FieldPairGrid, FieldGroupTitle } from './FieldPairs';
 import { maskDocumentNumber } from '@presentation/utils/maskDocumentNumber';
 import { PatientPhotoSlot } from './PatientPhotoSlot';
@@ -210,7 +211,7 @@ export function PatientIdentityCard({ patient, onSaved }: PatientIdentityCardPro
             {patient.lastCaseNumber != null && (
               <span className="inline-flex px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-700">
                 <Text as="span" size="xs" weight="semibold" color="inherit">
-                  {t('admin.patients.detail.caseNumber')} #{patient.lastCaseNumber}
+                  {t('admin.patients.detail.caseNumber')} #{formatCaseNumber(patient.lastCaseNumber)}
                 </Text>
               </span>
             )}

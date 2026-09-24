@@ -270,6 +270,13 @@ describe('JobsEmbeddedSection — fonte pública de vagas', () => {
     render(<JobsEmbeddedSection isRegistrationComplete />);
     await waitFor(() => expect(screen.getByText('824-5012')).toBeInTheDocument());
   });
+
+  it('caso NATIVO (>= 1000) exibe o prefixo EN no código (spec 027 T061/T062)', async () => {
+    (window as { __USE_PUBLIC_JOBS_API?: boolean }).__USE_PUBLIC_JOBS_API = true;
+    mockGetPublicJobs.mockResolvedValue([publicListing({ case_number: 1234, vacancy_number: 5568 })]);
+    render(<JobsEmbeddedSection isRegistrationComplete />);
+    await waitFor(() => expect(screen.getByText('EN1234-5568')).toBeInTheDocument());
+  });
 });
 
 // ── PADRÃO da fonte de vagas (achado do gate 12/09): a home liga a API ────────
