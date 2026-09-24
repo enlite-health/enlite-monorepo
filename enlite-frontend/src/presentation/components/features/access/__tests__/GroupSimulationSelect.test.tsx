@@ -231,6 +231,24 @@ describe('GroupSimulationSelect (F3/T3.1 RED, decisão #2)', () => {
     await waitFor(() => expect(listSimulatableGroups).toHaveBeenCalledTimes(1));
   });
 
+  it('F2 (achado do gate): o botão "Salir" também fica desabilitado durante switching !== null', async () => {
+    const { listSimulatableGroups } = montarStore({ authz: contrato({ simulation: SIMULACAO }) });
+    useAdminAuthStore.setState({ switching: { kind: 'end', groupId: 'g-recl', groupName: 'Reclutamiento - AG' } } as never);
+    render(<GroupSimulationSelect />);
+
+    expect(screen.getByRole('button', { name: 'access.simulation.exit' })).toBeDisabled();
+    await waitFor(() => expect(listSimulatableGroups).toHaveBeenCalledTimes(1));
+  });
+
+  it('F2 (achado do gate): o botão "Salir" fica habilitado fora de switching', async () => {
+    const { listSimulatableGroups } = montarStore({ authz: contrato({ simulation: SIMULACAO }) });
+    render(<GroupSimulationSelect />);
+
+    await screen.findByRole('option', { name: 'Reclutamiento - AG' });
+    expect(screen.getByRole('button', { name: 'access.simulation.exit' })).toBeEnabled();
+    await waitFor(() => expect(listSimulatableGroups).toHaveBeenCalledTimes(1));
+  });
+
   it('cobertura T3.7: startSimulation rejeitando com erro genérico (sem code) não mostra o texto de groupNotSimulable', async () => {
     const startSimulation = vi.fn().mockRejectedValue(new Error('boom'));
     montarStore({ startSimulation });
