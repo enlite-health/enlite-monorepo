@@ -57,6 +57,11 @@ function runSQL(sql: string): string {
   }).toString();
 }
 
+function extractUUID(psqlOutput: string): string | null {
+  const m = psqlOutput.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+  return m ? m[0] : null;
+}
+
 // ── Seed: admin mock user + 2 pacientes (caso nativo / caso legado) ───────────
 
 const ADMIN_UID = 'e2e-admin-027-case-select';
@@ -65,6 +70,14 @@ const NATIVE_CASE = 420071; // >= 1000 → "EN420071"
 const LEGACY_CASE = 887;    // < 1000  → "887"
 const NATIVE_TASK = 'E2E-027-CS-NATIVO';
 const LEGACY_TASK = 'E2E-027-CS-LEGADO';
+
+// Gate `revisao-pr` MODO fecho, PR #512 — blocker 4/D354: 4 das 7 superfícies sem
+// e2e do `EN####` (PatientsTable, VacancyDetailPage, VacancySummaryCard,
+// PatientVacanciesCard) são alcançáveis SEM reconstruir jornada — o admin mock
+// deste arquivo já está logado e o paciente NATIVO já existe; só falta 1 vaga
+// própria (capturada abaixo) e alguns `goto` a mais no teste novo no fim do arquivo.
+let nativePatientId = '';
+let nativeVacancyId = '';
 
 function seed(): void {
   runSQL(`
@@ -90,9 +103,45 @@ function seed(): void {
     SELECT id, 'Calle Legado ${LEGACY_CASE}, CABA', 'Calle Legado ${LEGACY_CASE}', -34.6, -58.4, 1, 'manual', NOW(), NOW()
     FROM patients WHERE clickup_task_id = '${LEGACY_TASK}';
   `);
+
+  // Blocker 4/D354: 1 vaga própria do paciente NATIVO — dá cobertura real (Postgres,
+  // zero mock de dado) a VacancyDetailPage/VacancySummaryCard/PatientVacanciesCard/
+  // PatientsTable no teste novo abaixo, sem reconstruir a jornada de criação de vaga.
+  // `talentum_description` PREENCHIDA de propósito: TalentumConfigPage auto-gera via
+  // Gemini (custo real) quando a vaga não tem descrição salva — ver
+  // `useTalentumConfig.ts` ("Sem isso a página auto-gera via Gemini"). Semear o texto
+  // evita a chamada paga ao abrir `/admin/vacancies/:id/talentum`.
+  nativePatientId = extractUUID(runSQL(`SELECT id FROM patients WHERE clickup_task_id = '${NATIVE_TASK}'`))!;
+  if (!nativePatientId) throw new Error('seed: paciente nativo não foi inserido');
+  const nativeAddressId = extractUUID(
+    runSQL(`SELECT id FROM patient_addresses WHERE patient_id = '${nativePatientId}' LIMIT 1`),
+  )!;
+  if (!nativeAddressId) throw new Error('seed: endereço do paciente nativo não foi inserido');
+  runSQL(`
+    INSERT INTO job_postings (
+      vacancy_number, case_number, title, description, talentum_description,
+      patient_id, patient_address_id,
+      required_professions, providers_needed,
+      status, is_draft, country,
+      created_at, updated_at
+    ) VALUES (
+      nextval('job_postings_vacancy_number_seq'), ${NATIVE_CASE},
+      'CASO ${NATIVE_CASE} Test case-select', '', 'Descrição semeada pelo e2e — evita a geração via Gemini.',
+      '${nativePatientId}',
+      '${nativeAddressId}',
+      ARRAY['AT']::varchar[], 1,
+      'PENDING_ACTIVATION', false, 'AR',
+      NOW(), NOW()
+    );
+  `);
+  nativeVacancyId = extractUUID(
+    runSQL(`SELECT id FROM job_postings WHERE patient_id = '${nativePatientId}' ORDER BY created_at DESC LIMIT 1`),
+  )!;
+  if (!nativeVacancyId) throw new Error('seed: vaga do paciente nativo não foi inserida');
 }
 
 function cleanup(): void {
+  runSQL(`DELETE FROM job_postings WHERE patient_id IN (SELECT id FROM patients WHERE clickup_task_id IN ('${NATIVE_TASK}', '${LEGACY_TASK}'));`);
   runSQL(`DELETE FROM patient_addresses WHERE patient_id IN (SELECT id FROM patients WHERE clickup_task_id IN ('${NATIVE_TASK}', '${LEGACY_TASK}'));`);
   runSQL(`DELETE FROM patients WHERE clickup_task_id IN ('${NATIVE_TASK}', '${LEGACY_TASK}');`);
   runSQL(`DELETE FROM users WHERE firebase_uid = '${ADMIN_UID}';`);
@@ -270,5 +319,42 @@ test.describe('@integration Modal Nueva Vacante — seleção de caso (nativo ×
     // Nada foi selecionado: sem endereço, hint continua visível, botão continua no placeholder.
     await expect(page.locator('[data-testid^="address-option-"]')).toHaveCount(0);
     await expect(page.getByText(/seleccion[aá] un caso primero/i)).toBeVisible();
+  });
+
+  // Gate `revisao-pr` MODO fecho, PR #512 — blocker 4/D354: 4 telas que ainda não
+  // tinham e2e afirmando o `EN####`. Reusa a MESMA sessão admin mock (auth real do
+  // stack, dado real do Postgres — só o header de auth é interceptado) e a vaga
+  // nativa semeada em `seed()`, sem reconstruir jornada nova para cada tela.
+  test('feliz — a vaga NATIVA (EN420071) mostra o código EN em PatientsTable, PatientVacanciesCard, VacancyDetailPage e VacancySummaryCard', async ({ page }) => {
+    await loginAsAdminMock(page, ADMIN_UID, ADMIN_EMAIL);
+
+    // PatientsTable (/admin/patients) — filtro por código: click + digitar tecla a
+    // tecla (nunca fill()), mesmo elemento de `PatientFilters.tsx` (`filter-code`).
+    await page.goto('/admin/patients');
+    const codeFilterInput = page.locator('[data-testid="filter-code"] input');
+    await expect(codeFilterInput).toBeVisible({ timeout: 15_000 });
+    const filteredReq = page.waitForRequest(
+      (req) => req.url().includes('/api/admin/patients') && req.url().includes(`case_number=${NATIVE_CASE}`),
+      { timeout: 10_000 },
+    );
+    await codeFilterInput.click();
+    await codeFilterInput.type(String(NATIVE_CASE), { delay: 20 });
+    await filteredReq;
+    await expect(page.getByText(`EN${NATIVE_CASE}`, { exact: false })).toBeVisible({ timeout: 10_000 });
+
+    // PatientVacanciesCard (/admin/patients/:id, aba "Vacantes" — click real, não deep-link).
+    await page.goto(`/admin/patients/${nativePatientId}`);
+    await expect(page.getByTestId('patient-identity-card')).toBeVisible({ timeout: 15_000 });
+    await page.getByRole('button', { name: /^Vacantes$/i }).click();
+    await expect(page.getByText(`CASO EN${NATIVE_CASE}`, { exact: false })).toBeVisible({ timeout: 10_000 });
+
+    // VacancyDetailPage (/admin/vacancies/:id) — título da página monta com formatCaseNumber.
+    await page.goto(`/admin/vacancies/${nativeVacancyId}`);
+    await expect(page.getByText(`EN${NATIVE_CASE}`, { exact: false })).toBeVisible({ timeout: 15_000 });
+
+    // VacancySummaryCard (/admin/vacancies/:id/talentum) — talentum_description já
+    // semeada em seed() evita a auto-geração via Gemini ao abrir esta rota.
+    await page.goto(`/admin/vacancies/${nativeVacancyId}/talentum`);
+    await expect(page.getByText(`CASO EN${NATIVE_CASE}`, { exact: false })).toBeVisible({ timeout: 15_000 });
   });
 });
