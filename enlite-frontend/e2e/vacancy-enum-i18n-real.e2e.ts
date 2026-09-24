@@ -126,7 +126,12 @@ test.describe('Vacancy enums via i18n — auth real + backend real @real-auth', 
 
     // Fluxo real: detalhe da vaga semeada, dados vindos do backend prod-auth
     await page.goto(`/admin/vacancies/${SEED_VACANCY_ID}`);
-    await expect(page.getByText(/CASO\s+79800/i).first()).toBeVisible({
+    // Spec 028 — caso NATIVO (case_number >= 1000): VacancyCaseCard e o header
+    // da página passam a formatar com o prefixo `EN` (antes só o header já
+    // formatava; o card mostrava o número cru — a divergência era o bug
+    // original reportado pelo Gabriel). `\s+EN` em vez de `\s+` prova que o
+    // card não regrediu pro número cru.
+    await expect(page.getByText(/CASO\s+EN79800/i).first()).toBeVisible({
       timeout: 20_000,
     });
 
@@ -149,7 +154,7 @@ test.describe('Vacancy enums via i18n — auth real + backend real @real-auth', 
     await loginAsAdmin(page);
 
     await page.goto(`/admin/vacancies/${SEED_VACANCY_ID}`);
-    await expect(page.getByText(/CASO\s+79800/i).first()).toBeVisible({
+    await expect(page.getByText(/CASO\s+EN79800/i).first()).toBeVisible({
       timeout: 20_000,
     });
 
