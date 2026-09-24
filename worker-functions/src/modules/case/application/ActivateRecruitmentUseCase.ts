@@ -1,7 +1,12 @@
 import * as functions from "firebase-functions";
 import type { PoolClient } from "pg";
 import { inPatientTransaction } from "./patientTransaction";
-import { buildInsertQuery, buildInsertParams } from "@modules/matching";
+import {
+  buildInsertQuery,
+  buildInsertParams,
+  retryOnCaseOrdinalConflict,
+} from "@modules/matching";
+import { auditVacancyCreated } from "../../matching/interfaces/controllers/vacancyCrudAuditHelpers";
 import {
   computeRecruitmentReadiness,
   type RECRUITMENT_BLOCKING_CODES,
@@ -214,11 +219,37 @@ export class ActivateRecruitmentUseCase {
       closes_at: null,
       is_test: false,
     });
-    const insRes = await client.query<{ id: string }>(
-      buildInsertQuery(),
-      params,
+    // case_ordinal (spec 027 Fase 5) é computado dentro do próprio INSERT
+    // (buildInsertQuery); a corrida entre dois cliques simultâneos no mesmo
+    // caso bate no índice único idx_job_postings_case_ordinal — SAVEPOINT +
+    // retry recalcula o ordinal e tenta de novo.
+    const insRes = await retryOnCaseOrdinalConflict(
+      async () => {
+        await client.query("SAVEPOINT case_ordinal_retry");
+        const res = await client.query<Record<string, unknown> & { id: string }>(
+          buildInsertQuery(),
+          params,
+        );
+        await client.query("RELEASE SAVEPOINT case_ordinal_retry");
+        return res;
+      },
+      async () => {
+        await client.query("ROLLBACK TO SAVEPOINT case_ordinal_retry");
+      },
     );
     const vacancyId = insRes.rows[0].id;
+
+    // T018 (spec 027, US2) — trilha de auditoria da vaga criada pelo SISTEMA
+    // (nenhum humano no painel apertou "criar"). `auditVacancyCreated` grava
+    // dentro de um SAVEPOINT (logEventSafe) e NUNCA relança — a mesma garantia
+    // best-effort do fluxo manual (VacancyCrudController.createVacancy): falha
+    // de auditoria não pode derrubar a vaga que acabou de ser inserida nesta
+    // MESMA transação.
+    await auditVacancyCreated(client, vacancyId, insRes.rows[0], {
+      actorUserId: null,
+      actorType: "SYSTEM",
+      actorLabel: "activate_recruitment",
+    });
 
     const isFunnel = (ADMISSION_FUNNEL_STATUSES as readonly string[]).includes(
       status,

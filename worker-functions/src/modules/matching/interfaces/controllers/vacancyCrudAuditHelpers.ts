@@ -15,6 +15,7 @@
  */
 
 import type { Pool, PoolClient } from 'pg';
+import type { AuditActorType } from '@shared/audit/types';
 import {
   JobPostingAuditRepository,
 } from '../../infrastructure/JobPostingAuditRepository';
@@ -23,6 +24,7 @@ import {
   FULL_ALLOWED_UPDATE_FIELDS,
   buildInsertQuery,
   buildInsertParams,
+  retryOnCaseOrdinalConflict,
   type VacancyInsertParams,
 } from './vacancyCrudHelpers';
 
@@ -30,10 +32,20 @@ const auditRepo = new JobPostingAuditRepository();
 
 // ─── Actor type ───────────────────────────────────────────────────────────────
 
+/**
+ * Ator de uma escrita auditada de vaga. Chamava-se `HumanActor` porque, até a
+ * T017 (spec 027, US2), só o painel humano (`extractHumanActor`, sempre
+ * `actorType: 'HUMAN'`/`actorLabel: 'admin_panel'`) chegava até aqui. Agora
+ * aceita os 4 valores que `audit_log.actor_type` já permite (ver
+ * `@shared/audit/types.ts:20`) — o disparo do sistema (T018,
+ * `ActivateRecruitmentUseCase`) é o primeiro caller que não é humano.
+ * NÃO renomeada: os 3 call sites de `VacancyCrudController.ts` continuam
+ * importando `HumanActor` e passando `'HUMAN'`/`'admin_panel'` sem mudar nada.
+ */
 export interface HumanActor {
   actorUserId: string | null;
-  actorType: 'HUMAN';
-  actorLabel: 'admin_panel';
+  actorType: AuditActorType;
+  actorLabel: string;
   traceId?: string | null;
 }
 
@@ -182,7 +194,20 @@ export async function createWithPatientUpdate(
       }
     }
 
-    const result = await client.query(buildInsertQuery(), buildInsertParams(insertArgs));
+    // case_ordinal (spec 027 Fase 5) é computado dentro do próprio INSERT; em conflito
+    // (23505 de idx_job_postings_case_ordinal) SAVEPOINT + retry recalcula e tenta de novo,
+    // sem abortar a transação (paciente + audit) que o envolve.
+    const result = await retryOnCaseOrdinalConflict(
+      async () => {
+        await client.query('SAVEPOINT case_ordinal_retry');
+        const r = await client.query(buildInsertQuery(), buildInsertParams(insertArgs));
+        await client.query('RELEASE SAVEPOINT case_ordinal_retry');
+        return r;
+      },
+      async () => {
+        await client.query('ROLLBACK TO SAVEPOINT case_ordinal_retry');
+      },
+    );
     const newVacancy = result.rows[0] as Record<string, unknown>;
 
     // Audit inside the same transaction — atomic with the insert

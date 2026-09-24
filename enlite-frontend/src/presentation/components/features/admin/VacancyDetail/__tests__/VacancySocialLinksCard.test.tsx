@@ -94,4 +94,36 @@ describe('VacancySocialLinksCard', () => {
     render(<VacancySocialLinksCard {...baseProps} />);
     expect(screen.getAllByRole('button', { name: /generate/ }).length).toBeGreaterThan(0);
   });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // T062-resto (spec 027 Fase 6) — o preview do slug usa o helper de formatação
+  // (formatCaseNumber). As duas pontas (preview aqui × PublicVacancyController.SLUG_REGEX
+  // no worker-functions) NÃO podem ser ligadas por import — são pacotes diferentes.
+  // Prova-se cada lado separadamente pelo LITERAL: este teste fixa a string EXATA que o
+  // preview gera para um case_number nativo (≥1000); o teste irmão em
+  // worker-functions/.../__tests__/PublicVacancyController.test.ts ("slug NOVO
+  // 'casoEN{N}-{M}'") fixa que SLUG_REGEX aceita esse MESMO literal ("casoEN1234-01").
+  // Se um dos dois lados mudar o formato sem o outro acompanhar, cada teste falha
+  // isoladamente — não há teste único cross-package possível aqui.
+  // ══════════════════════════════════════════════════════════════════════════
+  describe('T062-resto — preview do slug usa formatCaseNumber', () => {
+    it('case_number LEGADO (<1000): preview sem prefixo "EN" — "caso748-3"', () => {
+      render(<VacancySocialLinksCard {...baseProps} caseNumber={748} vacancyNumber={3} />);
+      expect(
+        screen.getByText('https://app.enlite.health/vacantes/caso748-3'),
+      ).toBeInTheDocument();
+    });
+
+    it('case_number NATIVO (≥1000): preview COM prefixo "EN" — "casoEN1234-1" (o slug que o SLUG_REGEX do T066 aceita)', () => {
+      render(<VacancySocialLinksCard {...baseProps} caseNumber={1234} vacancyNumber={1} />);
+      expect(
+        screen.getByText('https://app.enlite.health/vacantes/casoEN1234-1'),
+      ).toBeInTheDocument();
+    });
+
+    it('caseNumber null: preview não é renderizado (nada para formatar)', () => {
+      render(<VacancySocialLinksCard {...baseProps} caseNumber={null} />);
+      expect(screen.queryByText(/vacantes\/caso/)).not.toBeInTheDocument();
+    });
+  });
 });

@@ -186,6 +186,16 @@ export function buildInsertQuery(): string {
   // `published_at` defaults to NOW() when the caller passes NULL — matches the
   // product rule that publication date auto-fills with today if left blank.
   // `closes_at` stays NULL when not provided (optional).
+  //
+  // `case_ordinal` (spec 027 Fase 5, migration 460) — a enésima vaga do caso
+  // (patient_id). NÃO ganha placeholder novo: é computada por subquery DENTRO
+  // do próprio INSERT, reusando $4 (patient_id) — sempre a MESMA transação/
+  // statement de quem chama, nunca uma 2ª ida ao banco. Concorrência real (dois
+  // cliques simultâneos no mesmo caso) é resolvida pelo índice único
+  // idx_job_postings_case_ordinal: o 2º INSERT bloqueia no lock de valor do
+  // índice, e ao destravar já vê o valor commitado do 1º — reconta e bate 23505
+  // se ainda colidir. Callers tratam 23505 com retry (ver isCaseOrdinalConflict/
+  // retryOnCaseOrdinalConflict abaixo).
   return `
     INSERT INTO job_postings (
       vacancy_number, case_number, title, patient_id,
@@ -201,7 +211,8 @@ export function buildInsertQuery(): string {
       country,
       is_test,
       contracted_service_id,
-      is_draft
+      is_draft,
+      case_ordinal
     ) VALUES (
       $1, $2, $3, $4,
       $5, $6,
@@ -216,10 +227,52 @@ export function buildInsertQuery(): string {
       'AR',
       $22,
       $23,
-      $24
+      $24,
+      CASE WHEN $4::uuid IS NULL THEN NULL ELSE (
+        SELECT COALESCE(MAX(jp2.case_ordinal), 0) + 1
+          FROM job_postings jp2
+         WHERE jp2.patient_id = $4::uuid
+      ) END
     )
     RETURNING *
   `;
+}
+
+// ─── case_ordinal conflict retry (spec 027 Fase 5) ───────────────────────────
+
+/** O 23505 que é CONFLITO DE case_ordinal — e só ele (mesma régua de isCaseNumberConflict). */
+export function isCaseOrdinalConflict(err: unknown): boolean {
+  if (typeof err !== 'object' || err === null) return false;
+  const e = err as { code?: string; constraint?: string };
+  return e.code === '23505' && e.constraint === 'idx_job_postings_case_ordinal';
+}
+
+export const CASE_ORDINAL_MAX_ATTEMPTS = 5;
+
+/**
+ * Reexecuta `attempt` até MAX_ATTEMPTS quando o erro é um conflito de
+ * case_ordinal (corrida entre dois INSERTs no mesmo caso). `onConflict`,
+ * quando informado, roda ANTES de cada nova tentativa — usado pelos callers
+ * que estão dentro de uma transação explícita para `ROLLBACK TO SAVEPOINT`
+ * (o 23505 aborta a transação até lá). Erro que não é conflito de
+ * case_ordinal sobe na hora, sem retry.
+ */
+export async function retryOnCaseOrdinalConflict<T>(
+  attempt: () => Promise<T>,
+  onConflict?: () => Promise<void>,
+  maxAttempts: number = CASE_ORDINAL_MAX_ATTEMPTS,
+): Promise<T> {
+  let lastErr: unknown;
+  for (let i = 0; i < maxAttempts; i++) {
+    try {
+      return await attempt();
+    } catch (err) {
+      if (!isCaseOrdinalConflict(err)) throw err;
+      lastErr = err;
+      if (onConflict) await onConflict();
+    }
+  }
+  throw lastErr;
 }
 
 // ─── Diff helper (Onda A — pure, no DB) ──────────────────────────────────────

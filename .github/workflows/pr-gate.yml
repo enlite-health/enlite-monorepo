@@ -109,7 +109,15 @@ jobs:
       # `worker-completude-vitrine` entra aqui porque é a ÚNICA guarda que
       # atravessa as camadas do conserto da D302 (banco → API → tela). Guarda
       # que nenhum pipeline executa apodrece — foi o blocker B-A do gate.
-      grep: 'worker-profile-fields-persist|worker-completude-vitrine'
+      #
+      # PR #512, blocker 4/D354 — e2e de tela pro `EN####` (spec 027 fase 6): as 7
+      # superfícies ganharam asserção DENTRO dos 2 specs 027 já listados acima (login
+      # mock já provado neste job), sem precisar de arquivo novo no filtro.
+      # `patient-status-aguardando-financeiro` foi cogitado e DESCARTADO (não é seu):
+      # medido no run 36002913871 — falha no PRÓPRIO login (`expect(page).not.toHaveURL(/login/)`
+      # nunca sai de `/admin/login`), sem relação com case_number. Rot pré-existente de
+      # arquivo nunca executado neste job — fora de escopo do blocker 4, ver relatório.
+      grep: 'worker-profile-fields-persist|worker-completude-vitrine|027-public-jobs-search-en-code|027-vacancy-case-select'
 
   # O agregador. `if: always()` é o que garante que ele reporta mesmo quando
   # tudo acima foi pulado — sem isso, voltaríamos ao problema que este arquivo

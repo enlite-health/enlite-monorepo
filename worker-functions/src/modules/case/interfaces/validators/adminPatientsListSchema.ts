@@ -6,8 +6,12 @@ import { CLINICAL_SPECIALTIES } from '../../domain/enums/ClinicalSpecialty';
  * adminPatientsListSchema — validates query params for GET /api/admin/patients.
  * All params are optional. Invalid enum values produce a 400 response.
  *
- * case_number: partial numeric match (digits only). Filters against the
- * effective case_number: COALESCE(patients.case_number, MAX(job_postings.case_number)).
+ * case_number: partial numeric match (digits only, prefixo `EN` opcional — T067,
+ * spec 027 Fase 6). O prefixo é só a formatação de EXIBIÇÃO do caso nativo
+ * (`caseNumberFormat.ts`, case_number >= 1000) — a coluna continua INTEGER, então
+ * o prefixo é removido ANTES da query (`.transform`) e "EN1234" busca igual a
+ * "1234". Filtra contra o case_number efetivo:
+ * COALESCE(patients.case_number, MAX(job_postings.case_number)).
  */
 export const adminPatientsListSchema = z.object({
   search: z.string().optional(),
@@ -18,7 +22,8 @@ export const adminPatientsListSchema = z.object({
   case_number: z
     .string()
     .trim()
-    .regex(/^\d+$/, { message: 'case_number must contain digits only' })
+    .regex(/^(?:EN)?\d+$/i, { message: 'case_number must contain digits only (optional EN prefix)' })
+    .transform((v) => v.replace(/^EN/i, ''))
     .optional(),
   /** País do paciente. Ausente = todos os países (comportamento atual). */
   country: z.enum(['AR', 'BR']).optional(),

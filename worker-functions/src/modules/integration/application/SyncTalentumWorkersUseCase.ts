@@ -27,6 +27,7 @@ import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { BlindIndexService } from '@shared/security/BlindIndexService';
 import { normalizePhoneAR, generatePhoneCandidates } from '@shared/utils/phoneNormalization';
 import { logger, safeErrorFields } from '@shared/logging';
+import { parseCaseTitleReference } from '@shared/utils/parseCaseTitleReference';
 import type { TalentumDashboardProfile } from '../domain/ITalentumApiClient';
 
 const TAG = '[SyncTalentumWorkers]';
@@ -43,6 +44,13 @@ export interface WorkerSyncReport {
   linked: number;
   /** Workers cujo linkToCases foi pulado porque status != REGISTERED (cadastro/docs incompletos) */
   skippedIncompleteRegistration: number;
+  /**
+   * T064 — projetos cujo título não casou NENHUM formato conhecido de referência de
+   * caso (nem "CASO N[-M]" legado, nem "EN N#M" / "N#M" novo — ver `parseCaseTitleReference`).
+   * Antes desse contador, esse `continue` era silencioso: a régua de sucesso do sync não
+   * acusava título desconhecido, só quem lesse o log linha a linha percebia.
+   */
+  skippedUnknownTitleFormat: number;
   errors: Array<{ profileId: string; name: string; error: string }>;
 }
 
@@ -64,7 +72,7 @@ export class SyncTalentumWorkersUseCase {
   async execute(): Promise<WorkerSyncReport> {
     const report: WorkerSyncReport = {
       total: 0, created: 0, updated: 0, skipped: 0, linked: 0,
-      skippedIncompleteRegistration: 0, errors: [],
+      skippedIncompleteRegistration: 0, skippedUnknownTitleFormat: 0, errors: [],
     };
 
     const talentumClient = await TalentumApiClient.create();
@@ -89,6 +97,7 @@ export class SyncTalentumWorkersUseCase {
       total: report.total, created: report.created,
       updated: report.updated, skipped: report.skipped, linked: report.linked,
       skippedIncompleteRegistration: report.skippedIncompleteRegistration,
+      skippedUnknownTitleFormat: report.skippedUnknownTitleFormat,
       errors: report.errors.length,
     });
     return report;
@@ -307,8 +316,14 @@ export class SyncTalentumWorkersUseCase {
 
     for (const project of profile.projects) {
       try {
-        const caseNumber = this.extractCaseNumber(project.title);
-        if (caseNumber == null) continue;
+        // T063: parser compartilhado — tolera "CASO N[-M]" (legado) e "EN N#M" / "N#M" (novo).
+        const { caseNumber } = parseCaseTitleReference(project.title);
+        if (caseNumber == null) {
+          // T064: antes este continue era silencioso — a régua de sucesso do sync
+          // não acusava título desconhecido em lugar nenhum.
+          report.skippedUnknownTitleFormat++;
+          continue;
+        }
 
         const jp = await this.db.query(
           `SELECT id FROM job_postings WHERE case_number = $1 AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 1`,
@@ -355,10 +370,5 @@ export class SyncTalentumWorkersUseCase {
     }
 
     return linked;
-  }
-
-  private extractCaseNumber(title: string): number | null {
-    const match = title.match(/CASO\s+(\d+)/i);
-    return match ? parseInt(match[1], 10) : null;
   }
 }
