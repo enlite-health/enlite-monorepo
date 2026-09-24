@@ -1,5 +1,5 @@
 import * as functions from "firebase-functions";
-import type { Pool, PoolClient } from "pg";
+import type { PoolClient } from "pg";
 import { inPatientTransaction } from "./patientTransaction";
 import {
   buildInsertQuery,
@@ -7,7 +7,6 @@ import {
   retryOnCaseOrdinalConflict,
 } from "@modules/matching";
 import { auditVacancyCreated } from "../../matching/interfaces/controllers/vacancyCrudAuditHelpers";
-import { tryEnsureShortLink } from "../../matching/interfaces/controllers/VacancyCrudController";
 import {
   computeRecruitmentReadiness,
   type RECRUITMENT_BLOCKING_CODES,
@@ -15,9 +14,6 @@ import {
 import { vacancyRangeForProviderAgeBand } from "../domain/ProviderAgeBandMapping";
 import type { ProviderAgeBand } from "../domain/enums/ContractedService";
 import { ADMISSION_FUNNEL_STATUSES } from "../domain/enums/PatientStatus";
-import { enqueueDomainEvent } from "@shared/events/enqueueDomainEvent";
-import { loggingAls } from "@shared/logging";
-import { withSystemDbContext } from "@shared/database/requestDbSession";
 
 /** Paciente inexistente (ou soft-deletado). O controller mapeia para 404. */
 export class PatientNotFoundForRecruitmentError extends Error {
@@ -85,13 +81,9 @@ export interface ActivateRecruitmentResult {
  * do paciente NÃO muda — ativar recrutamento de um 2º serviço de um paciente já ACTIVE não deve
  * regredir o status dele.
  *
- * Emite `vacancy.created` (T040/T041, spec 027 Fase 4) DEPOIS do commit, num
- * `setImmediate` — mesmo molde pós-commit de `VacancyCrudController.createVacancy`
- * (fora da resposta, sob `withSystemDbContext`, best-effort). A vaga nasce
- * rascunho (`is_draft` default true, `status` 'PENDING_ACTIVATION'), então o
- * evento dispara matchmaking/convite automático mas `tryEnsureShortLink` é
- * no-op hoje (só age em `PUBLIC_STATUSES`) — chamado aqui só por paridade com
- * o fluxo manual, para quando a vaga nascer publicada.
+ * NÃO emite `vacancy.created` — a vaga nasce rascunho (`is_draft` default true, `status`
+ * 'PENDING_ACTIVATION') para a equipe revisar e publicar (fluxo existente), igual ao
+ * antecessor.
  */
 export class ActivateRecruitmentUseCase {
   async execute(
@@ -100,10 +92,9 @@ export class ActivateRecruitmentUseCase {
   ): Promise<ActivateRecruitmentResult> {
     const startMs = Date.now();
     try {
-      const txResult = await inPatientTransaction((client) =>
+      const result = await inPatientTransaction((client) =>
         this.runInTransaction(client, patientId, serviceId),
       );
-      const { vacancyStatus, vacancyIsTest, ...result } = txResult;
       functions.logger.info("activate_recruitment.completed", {
         patientId,
         serviceId,
@@ -111,22 +102,6 @@ export class ActivateRecruitmentUseCase {
         statusChanged: result.statusChanged,
         durationMs: Date.now() - startMs,
       });
-
-      // T040/T041 (spec 027, Fase 4) — pós-commit, fora da resposta já
-      // resolvida. Falha aqui NUNCA pode derrubar o 201 nem virar unhandled
-      // rejection: cada chamada dentro de `postCreatePipeline` tem seu
-      // próprio catch (enqueueDomainEvent) ou já nunca rejeita por si
-      // (tryEnsureShortLink, ver comentário no call site).
-      const traceId = loggingAls.getStore()?.traceId ?? null;
-      setImmediate(() => {
-        void this.postCreatePipeline(
-          result.vacancyId,
-          vacancyStatus,
-          vacancyIsTest,
-          traceId,
-        );
-      });
-
       return result;
     } catch (err) {
       const expected =
@@ -146,54 +121,11 @@ export class ActivateRecruitmentUseCase {
     }
   }
 
-  /**
-   * Pool para o pós-commit (T040/T041). Lazy require — não exige
-   * `DATABASE_URL` no import deste módulo; mesmo molde de
-   * `SavePersonalInfoUseCase.getPool()`.
-   */
-  private getPool(): Pool {
-    const { DatabaseConnection } = require("@shared/database/DatabaseConnection") as typeof import("@shared/database/DatabaseConnection");
-    return DatabaseConnection.getInstance().getPool();
-  }
-
-  /**
-   * Enfileira `vacancy.created` e tenta o short link, no MESMO `setImmediate`
-   * pós-commit (T040/T041). `withSystemDbContext`: o ALS da request pode já
-   * ter encerrado a esta altura — sem contexto de sistema a query sairia pelo
-   * pool cru, sob RLS de país, e devolveria zero linha (mesmo motivo do
-   * `VacancyCrudController.createVacancy`).
-   */
-  private async postCreatePipeline(
-    vacancyId: string,
-    status: string,
-    isTest: boolean,
-    traceId: string | null,
-  ): Promise<void> {
-    const pool = this.getPool();
-    await withSystemDbContext("job:activate-recruitment-postcreate", async () => {
-      try {
-        await enqueueDomainEvent(pool, {
-          event: "vacancy.created",
-          payload: { jobPostingId: vacancyId },
-          traceId,
-        });
-      } catch (err: unknown) {
-        const e = err instanceof Error ? err : new Error(String(err));
-        functions.logger.warn("activate_recruitment.enqueue_failed", {
-          vacancyId,
-          error: e.message,
-        });
-      }
-      // tryEnsureShortLink nunca rejeita (auto-captura e reporta) — sem catch aqui.
-      await tryEnsureShortLink(pool, vacancyId, status, isTest);
-    });
-  }
-
   private async runInTransaction(
     client: PoolClient,
     patientId: string,
     serviceId: string,
-  ): Promise<ActivateRecruitmentResult & { vacancyStatus: string; vacancyIsTest: boolean }> {
+  ): Promise<ActivateRecruitmentResult> {
     const patientRes = await client.query<{
       id: string;
       status: string;
@@ -336,12 +268,6 @@ export class ActivateRecruitmentUseCase {
       statusChanged = true;
     }
 
-    return {
-      vacancyId,
-      patientStatus,
-      statusChanged,
-      vacancyStatus: insRes.rows[0].status as string,
-      vacancyIsTest: insRes.rows[0].is_test === true,
-    };
+    return { vacancyId, patientStatus, statusChanged };
   }
 }
