@@ -5,6 +5,7 @@ import { TokenService } from '../../../modules/notification/infrastructure/Token
 import { logger } from '../../logging';
 import { optedOutExistsSql } from '../../database/messagingOptOutFilter';
 import { resolveOfferedSlots, type VacancySlotSource } from '../../../modules/matching/domain/interviewSlotResolver';
+import { formatCaseNumber } from '../../utils/caseNumberFormat';
 
 export type InviteSkipReason =
   | 'VACANCY_NOT_FOUND'
@@ -170,7 +171,8 @@ export function createQualifiedInterviewHandler(
           slot_2: (offered[1] ?? last).label,
           slot_3: (offered[2] ?? last).label,
           // '—' nunca acontece na prática (case_number é obrigatório na vaga) mas mantém o envio vivo.
-          case_number: String(vacancy.case_number ?? '—'),
+          // D422 (24/09/2026): formatado (prefixo EN para caso nativo, ≥1000) — antes ia cru.
+          case_number: formatCaseNumber(vacancy.case_number) ?? '—',
           job_posting_id: jobPostingId,
         }),
       ],

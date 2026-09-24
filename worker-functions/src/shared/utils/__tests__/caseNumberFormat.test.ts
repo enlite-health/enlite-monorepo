@@ -1,4 +1,4 @@
-import { formatCaseNumber, formatCaseLabel, formatCaseOrdinal } from '../caseNumberFormat';
+import { formatCaseNumber, formatCaseLabel, formatCaseOrdinal, formatCaseTitle, formatCaseNumberTitle } from '../caseNumberFormat';
 
 describe('formatCaseNumber', () => {
   it('legado do ClickUp (828, < 1000) — sem prefixo', () => {
@@ -46,5 +46,41 @@ describe('formatCaseOrdinal', () => {
 
   it('null passa direto', () => {
     expect(formatCaseOrdinal(null)).toBeNull();
+  });
+});
+
+describe('formatCaseTitle', () => {
+  it('caso nativo (>= 1000) — título leva o prefixo EN', () => {
+    expect(formatCaseTitle(1041, 5597)).toBe('CASO EN1041-5597');
+  });
+
+  it('caso legado (< 1000) — título sem prefixo, formato inalterado (D412)', () => {
+    expect(formatCaseTitle(828, 5597)).toBe('CASO 828-5597');
+  });
+
+  it('aceita vacancyNumber como string (ex.: já veio de parseInt/coluna)', () => {
+    expect(formatCaseTitle(1041, '5597')).toBe('CASO EN1041-5597');
+  });
+
+  it('fronteira exata da sequence nativa (1000)', () => {
+    expect(formatCaseTitle(1000, 1)).toBe('CASO EN1000-1');
+  });
+
+  it('caseNumber null — preserva o texto legado ("CASO null-{m}"), nenhum guard novo', () => {
+    expect(formatCaseTitle(null, 5597)).toBe('CASO null-5597');
+  });
+});
+
+describe('formatCaseNumberTitle', () => {
+  it('caso nativo (>= 1000) — "CASO EN{n}", sem 2º número', () => {
+    expect(formatCaseNumberTitle(1234)).toBe('CASO EN1234');
+  });
+
+  it('caso legado (< 1000) — "CASO {n}", sem prefixo', () => {
+    expect(formatCaseNumberTitle(230)).toBe('CASO 230');
+  });
+
+  it('null — devolve null, sem fallback (quem chama decide)', () => {
+    expect(formatCaseNumberTitle(null)).toBeNull();
   });
 });

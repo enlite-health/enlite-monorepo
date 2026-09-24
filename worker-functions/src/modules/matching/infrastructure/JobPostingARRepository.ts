@@ -3,6 +3,7 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import type { PublicJobRow } from '../domain/PublicJobDto';
 import type { PublicJobsFilters } from '../domain/PublicJobsFilters';
 import { buildPublicJobsWhere } from './PublicJobsQueryBuilder';
+import { formatCaseTitle } from '@shared/utils/caseNumberFormat';
 
 // ─── Helper: resolve coordinator_name → coordinator_id (findOrCreate) ──────────
 
@@ -80,7 +81,7 @@ export class JobPostingARRepository {
         "SELECT nextval('job_postings_vacancy_number_seq') AS vn",
       );
       const vacancyNumber = parseInt(vnResult.rows[0].vn);
-      const title = `CASO ${data.caseNumber}-${vacancyNumber}`;
+      const title = formatCaseTitle(data.caseNumber, vacancyNumber);
 
       const result = await this.pool.query<{ id: string }>(
         `INSERT INTO job_postings (
@@ -214,7 +215,7 @@ export class JobPostingARRepository {
       "SELECT nextval('job_postings_vacancy_number_seq') AS vn",
     );
     const vacancyNumber = parseInt(vnResult.rows[0].vn);
-    const title = data.title ?? `CASO ${data.caseNumber}-${vacancyNumber}`;
+    const title = data.title ?? formatCaseTitle(data.caseNumber, vacancyNumber);
 
     const insertResult = await this.pool.query<{ id: string }>(
       `INSERT INTO job_postings (

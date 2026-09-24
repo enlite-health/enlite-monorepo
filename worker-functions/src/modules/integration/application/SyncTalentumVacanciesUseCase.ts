@@ -19,6 +19,7 @@ import {
 } from '../../matching/infrastructure/JobPostingAuditRepository';
 import { normalizePrescreeningResponseType } from '@shared/utils/normalizePrescreeningResponseType';
 import { parseCaseTitleReference } from '@shared/utils/parseCaseTitleReference';
+import { formatCaseTitle } from '@shared/utils/caseNumberFormat';
 
 // ─────────────────────────────────────────────────────────────────
 // Types
@@ -189,7 +190,7 @@ export class SyncTalentumVacanciesUseCase {
     );
     const vacancyNumber = parseInt(vnResult.rows[0].vn);
     const title = caseNumber != null
-      ? `CASO ${caseNumber}-${vacancyNumber}`
+      ? formatCaseTitle(caseNumber, vacancyNumber)
       : `VACANTE ${vacancyNumber}`;
 
     const client = await this.db.connect();
