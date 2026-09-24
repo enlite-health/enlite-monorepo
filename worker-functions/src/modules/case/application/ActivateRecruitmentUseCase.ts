@@ -2,6 +2,7 @@ import * as functions from "firebase-functions";
 import type { PoolClient } from "pg";
 import { inPatientTransaction } from "./patientTransaction";
 import { buildInsertQuery, buildInsertParams } from "@modules/matching";
+import { auditVacancyCreated } from "../../matching/interfaces/controllers/vacancyCrudAuditHelpers";
 import {
   computeRecruitmentReadiness,
   type RECRUITMENT_BLOCKING_CODES,
@@ -214,11 +215,23 @@ export class ActivateRecruitmentUseCase {
       closes_at: null,
       is_test: false,
     });
-    const insRes = await client.query<{ id: string }>(
+    const insRes = await client.query<Record<string, unknown> & { id: string }>(
       buildInsertQuery(),
       params,
     );
     const vacancyId = insRes.rows[0].id;
+
+    // T018 (spec 027, US2) — trilha de auditoria da vaga criada pelo SISTEMA
+    // (nenhum humano no painel apertou "criar"). `auditVacancyCreated` grava
+    // dentro de um SAVEPOINT (logEventSafe) e NUNCA relança — a mesma garantia
+    // best-effort do fluxo manual (VacancyCrudController.createVacancy): falha
+    // de auditoria não pode derrubar a vaga que acabou de ser inserida nesta
+    // MESMA transação.
+    await auditVacancyCreated(client, vacancyId, insRes.rows[0], {
+      actorUserId: null,
+      actorType: "SYSTEM",
+      actorLabel: "activate_recruitment",
+    });
 
     const isFunnel = (ADMISSION_FUNNEL_STATUSES as readonly string[]).includes(
       status,

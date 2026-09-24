@@ -50,10 +50,23 @@ interface DispatchOpts {
   liveVacancyId?: string | null;
   vacancyNumber?: number;
   insertedId?: string;
+  /** T019 — força o INSERT do audit (dentro do SAVEPOINT) a rejeitar. */
+  auditInsertThrows?: boolean;
 }
 
 function makeClient(opts: DispatchOpts) {
-  const query = jest.fn(async (sql: string) => {
+  const query = jest.fn(async (sql: string, params?: unknown[]) => {
+    // T018/T019 — SAVEPOINT do `logEventSafe` (best-effort): SAVEPOINT/RELEASE/
+    // ROLLBACK sempre "sucedem" no mock; só o INSERT do audit pode ser
+    // instruído a falhar (auditInsertThrows), para provar que o falho NÃO
+    // propaga e a vaga continua sendo criada.
+    if (/^SAVEPOINT /.test(sql) || /^RELEASE SAVEPOINT /.test(sql) || /^ROLLBACK TO SAVEPOINT /.test(sql)) {
+      return {};
+    }
+    if (sql.includes('INSERT INTO job_posting_audit_log')) {
+      if (opts.auditInsertThrows) throw new Error('audit insert falhou (simulado, T019)');
+      return { rows: [] };
+    }
     if (sql.includes('FROM patients') && sql.includes('FOR UPDATE')) {
       if (!opts.patientRow) return { rowCount: 0, rows: [] };
       const { id, status, case_number, insurance_informed } = opts.patientRow;
@@ -296,5 +309,46 @@ describe('ActivateRecruitmentUseCase', () => {
     mockInPatientTransaction.mockImplementationOnce((fn: (c: unknown) => unknown) => fn(client));
     const useCase = new ActivateRecruitmentUseCase();
     await expect(useCase.execute(PATIENT_ID, SERVICE_ID)).resolves.toMatchObject({ vacancyId: 'vac-x' });
+  });
+
+  // ── T019 (spec 027, US2) — trilha de auditoria da vaga criada pelo SISTEMA ──
+
+  describe('audit — vaga criada pelo sistema (T018)', () => {
+    it('audit. INSERT do audit log leva event_type=CREATED, actor_type=SYSTEM, actor_label=activate_recruitment', async () => {
+      const { promise, client } = run({
+        patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular' },
+        serviceRow: READY_SERVICE,
+        vacancyNumber: 500,
+        insertedId: 'vac-42',
+      });
+      const result = await promise;
+      expect(result.vacancyId).toBe('vac-42');
+
+      const auditCall = (client.query as jest.Mock).mock.calls.find(
+        ([sql]: [string]) => typeof sql === 'string' && sql.includes('INSERT INTO job_posting_audit_log'),
+      );
+      expect(auditCall).toBeDefined();
+      const [, values] = auditCall as [string, unknown[]];
+      // Ordem de BaseAuditLogRepository.logEvent: [entityId, eventType, fieldName,
+      // changesJSON, actorUserId, actorType, actorLabel, traceId].
+      expect(values[0]).toBe('vac-42');       // job_posting_id
+      expect(values[1]).toBe('CREATED');      // event_type
+      expect(values[4]).toBeNull();           // actor_user_id
+      expect(values[5]).toBe('SYSTEM');       // actor_type
+      expect(values[6]).toBe('activate_recruitment'); // actor_label
+    });
+
+    it('audit throws. auditoria lança dentro do SAVEPOINT → a vaga é criada MESMO ASSIM (best-effort, nunca derruba)', async () => {
+      const { promise } = run({
+        patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular' },
+        serviceRow: READY_SERVICE,
+        vacancyNumber: 501,
+        insertedId: 'vac-43',
+        auditInsertThrows: true,
+      });
+
+      const result = await promise;
+      expect(result).toEqual({ vacancyId: 'vac-43', patientStatus: 'SEARCHING', statusChanged: true });
+    });
   });
 });
