@@ -126,6 +126,55 @@ interface AxonicoMedicoParametroPortalResponseBody {
 
 interface AxonicoErrorResponseBody {
   data?: { errors?: Record<string, string[]>; message?: string };
+  // Raiz — nem sempre o Axonico embrulha o erro em `data` (medido em prd 24/09/2026:
+  // `POST /api/comprobante/filter` devolveu 400 sem `data.message`, motivo real perdido em
+  // silêncio). `message` cobre o padrão Laravel; `error` é o formato-string alternativo.
+  message?: string;
+  error?: string;
+}
+
+// Teto do corpo cru guardado em log/mensagem — nunca o payload inteiro (pode ser grande e vir de
+// proxy/HTML de erro).
+const MAX_ERROR_BODY_LENGTH = 500;
+// DNI, historia_clinica, nro_afiliado, telefone — todos numéricos com 6+ dígitos. Redigir por
+// PADRÃO (qualquer sequência), não por nome de campo: o corpo cru de erro não tem schema
+// conhecido, e a regra dura do módulo é "texto clínico/PII nunca sai" — errar para o lado de
+// redigir demais é seguro aqui, errar pra menos não é.
+const LONG_DIGIT_SEQUENCE = /\d{6,}/g;
+
+function redigirSequenciasLongas(texto: string): string {
+  return texto.replace(LONG_DIGIT_SEQUENCE, '<redigido>');
+}
+
+function truncar(texto: string, max: number): string {
+  return texto.length > max ? texto.slice(0, max) : texto;
+}
+
+/** `undefined` quando o corpo é vazio ou não é JSON válido (HTML de proxy, texto plano) — nunca
+ *  lança, o chamador decide o fallback. */
+function parseAxonicoErrorBody(rawBody: string): AxonicoErrorResponseBody | undefined {
+  if (!rawBody.trim()) return undefined;
+  try {
+    return JSON.parse(rawBody) as AxonicoErrorResponseBody;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Ordem de prioridade medida contra o que o Axonico realmente devolve: `data.message` (formato
+ *  já visto em prod) → `message`/`error` na raiz (formatos alternativos, nunca vistos ainda mas
+ *  prováveis — proxy Laravel-like) → o corpo cru truncado (motivo real, mesmo sem chave conhecida)
+ *  → só cai no fallback mudo `HTTP ${status}` se o corpo estiver de fato vazio. */
+function extrairMensagemDeErro(
+  body: AxonicoErrorResponseBody | undefined,
+  corpoCruTruncado: string,
+  status: number,
+): string {
+  const candidatos = [body?.data?.message, body?.message, typeof body?.error === 'string' ? body.error : undefined];
+  for (const candidato of candidatos) {
+    if (candidato) return redigirSequenciasLongas(candidato);
+  }
+  return corpoCruTruncado || `HTTP ${status}`;
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -350,10 +399,14 @@ export class AxonicoApiClient implements IAxonicoApiClient {
    * que fazer, mas o rastro no log já existe mesmo se o chamador não relogar o erro.
    */
   private async throwTypedError(method: string, path: string, res: Response, durationMs: number): Promise<never> {
-    const body = (await res.json().catch(() => ({}))) as AxonicoErrorResponseBody;
+    // TEXTO, não `.json()` direto: um corpo não-JSON (HTML de proxy, texto plano) virava `{}`
+    // mudo e o motivo real do parceiro se perdia — medido em prd 24/09/2026
+    // (`POST /api/comprobante/filter — HTTP 400: HTTP 400`, sem pista do porquê).
+    const rawBody = await res.text().catch(() => '');
+    const body = parseAxonicoErrorBody(rawBody);
 
     if (res.status === 422) {
-      const fieldErrors = body.data?.errors ?? {};
+      const fieldErrors = body?.data?.errors ?? {};
       logger.error({
         msg: `${TAG} erro do terceiro — HTTP 422 (validação)`,
         method,
@@ -364,8 +417,10 @@ export class AxonicoApiClient implements IAxonicoApiClient {
       });
       throw new AxonicoValidationError(method, path, fieldErrors);
     }
-    // 400/403/412/500 — erro de negócio/servidor (data.message).
-    const message = body.data?.message ?? `HTTP ${res.status}`;
+    // 400/403/412/500 — erro de negócio/servidor. `axonicoBody` é o corpo cru (truncado e
+    // redigido) que antes se perdia em silêncio — item 4 do contrato ("por quê" do terceiro).
+    const axonicoBody = truncar(redigirSequenciasLongas(rawBody.trim()), MAX_ERROR_BODY_LENGTH);
+    const message = extrairMensagemDeErro(body, axonicoBody, res.status);
     logger.error({
       msg: `${TAG} erro do terceiro — HTTP não-2xx (negócio/servidor)`,
       method,
@@ -373,6 +428,7 @@ export class AxonicoApiClient implements IAxonicoApiClient {
       status: res.status,
       durationMs,
       axonicoMessage: message,
+      axonicoBody,
     });
     throw new AxonicoBusinessError(method, path, res.status, message);
   }
