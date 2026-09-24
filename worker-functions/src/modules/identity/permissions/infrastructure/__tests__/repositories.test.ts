@@ -186,6 +186,24 @@ describe('PgEffectiveAuthzRepository', () => {
     // D294: staff é `account_type = 'staff'` — vocabulário do banco, sem lista de papéis injetada.
     expect(query.mock.calls[0][1]).toEqual([TENANT, 'staff']);
   });
+
+  it('simulationVersion devolve o id da simulação viva — WHERE por tenant/user/ended_at/expires_at, sem JOIN', async () => {
+    const { pool, query } = makePool({ rows: [{ id: 'sim-1' }] });
+    const repo = new PgEffectiveAuthzRepository(pool);
+    expect(await repo.simulationVersion('ana', TENANT)).toBe('sim-1');
+    const sql = sqls(query)[0];
+    expect(sql).toContain('iam.group_simulations');
+    expect(sql).toContain('ended_at IS NULL');
+    expect(sql).toContain('expires_at > now()');
+    expect(sql).not.toContain('JOIN'); // consulta direta — mais barata que active_group_simulation
+    expect(query.mock.calls[0][1]).toEqual([TENANT, 'ana']);
+  });
+
+  it('simulationVersion devolve null sem simulação viva', async () => {
+    const { pool } = makePool({ rows: [] });
+    const repo = new PgEffectiveAuthzRepository(pool);
+    expect(await repo.simulationVersion('ana', TENANT)).toBeNull();
+  });
 });
 
 describe('PgPermissionGroupRepository', () => {

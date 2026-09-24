@@ -176,4 +176,22 @@ export class PgEffectiveAuthzRepository implements EffectiveAuthzRepository {
     );
     return result.rows[0]?.n ?? 0;
   }
+
+  /**
+   * `id` da simulação viva do ator, ou `null`. Consulta direta em
+   * `iam.group_simulations` (índice parcial `uq_group_simulations_live`) — sem
+   * JOIN em `permission_groups`, ao contrário de `iam.active_group_simulation`:
+   * aqui só a IDENTIDADE da simulação importa (troca de versão = cache stale),
+   * não o grupo em si.
+   */
+  async simulationVersion(uid: string, tenantId: string): Promise<string | null> {
+    const result = await readRows(() =>
+      this.pool.query<{ id: string }>(
+        `SELECT id FROM iam.group_simulations
+          WHERE tenant_id = $1 AND user_id = $2 AND ended_at IS NULL AND expires_at > now()`,
+        [tenantId, uid],
+      ),
+    );
+    return result.rows[0]?.id ?? null;
+  }
 }

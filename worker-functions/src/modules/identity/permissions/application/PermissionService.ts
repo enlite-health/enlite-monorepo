@@ -62,6 +62,21 @@ interface CacheEntry<T> {
   expiresAt: number;
 }
 
+/**
+ * `authzCache` ganha a versão da simulação ATIVA do ator no momento em que a
+ * entrada foi gravada (`null` fora de simulação) — `featuresCache` não, evento
+ * de país/feature não tem simulação. Spec 026 (troca de grupo com feedback): a
+ * invalidação por evento (`permissionChanged`) só roda quando o
+ * `DomainEventProcessor` drena o outbox — não na MESMA request que fez a
+ * mudança nem em request isolada antes disso. Versionar a entrada pela
+ * simulação fecha essa lacuna sem depender do outbox: um hit exige TTL
+ * válido E a mesma versão; start/end de simulação mudam a versão, então a
+ * request seguinte já vê a troca, em qualquer instância.
+ */
+interface AuthzCacheEntry extends CacheEntry<ResolvedAuthz> {
+  simulationVersion: string | null;
+}
+
 export interface PermissionServiceOptions {
   ttlMs?: number;
   manifest?: CountryFeatureManifest;
@@ -76,7 +91,7 @@ export class PermissionService implements PermissionClient {
   private readonly ttlMs: number;
   private readonly manifest: CountryFeatureManifest;
   private readonly now: () => number;
-  private readonly authzCache = new Map<string, CacheEntry<ResolvedAuthz>>();
+  private readonly authzCache = new Map<string, AuthzCacheEntry>();
   private featuresCache?: CacheEntry<FeaturesByCountry>;
 
   constructor(
@@ -91,13 +106,22 @@ export class PermissionService implements PermissionClient {
 
   async resolve(uid: string, tenantId: string): Promise<ResolvedAuthz> {
     const key = `${tenantId}:${uid}`;
-    const cached = this.authzCache.get(key);
-    if (cached && cached.expiresAt > this.now()) return cached.value;
+    // Lida a CADA chamada, mesmo em hit — é o que detecta a troca de simulação
+    // sem esperar o outbox. Ator sem uid/tenant (staffGuard em rota pública,
+    // se algum dia existir) não tem simulação possível: `null` sem consulta.
+    const version = uid && tenantId ? await this.authzRepository.simulationVersion(uid, tenantId) : null;
 
+    const cached = this.authzCache.get(key);
+    if (cached && cached.expiresAt > this.now() && cached.simulationVersion === version) return cached.value;
+
+    // Versão lida ANTES do snapshot: se a simulação mudar entre as duas
+    // leituras, a entrada grava com a versão de ANTES da mudança — na
+    // request seguinte o `version` já lido de novo diverge e é miss, em vez
+    // de cachear um snapshot novo sob uma chave que ele não corresponde mais.
     const resolved = await this.authzRepository.snapshot(uid, tenantId);
     if (this.ttlMs > 0) {
       if (this.authzCache.size >= MAX_CACHE_ENTRIES) this.evictOldest();
-      this.authzCache.set(key, { value: resolved, expiresAt: this.now() + this.ttlMs });
+      this.authzCache.set(key, { value: resolved, expiresAt: this.now() + this.ttlMs, simulationVersion: version });
     }
     return resolved;
   }
