@@ -321,11 +321,16 @@ test.describe('@integration Modal Nueva Vacante — seleção de caso (nativo ×
     await expect(page.getByText(/seleccion[aá] un caso primero/i)).toBeVisible();
   });
 
-  // Gate `revisao-pr` MODO fecho, PR #512 — blocker 4/D354: 4 telas que ainda não
-  // tinham e2e afirmando o `EN####`. Reusa a MESMA sessão admin mock (auth real do
-  // stack, dado real do Postgres — só o header de auth é interceptado) e a vaga
-  // nativa semeada em `seed()`, sem reconstruir jornada nova para cada tela.
-  test('feliz — a vaga NATIVA (EN420071) mostra o código EN em PatientsTable, PatientVacanciesCard, VacancyDetailPage e VacancySummaryCard', async ({ page }) => {
+  // Gate `revisao-pr` MODO fecho, PR #512 — blocker 4/D354: 6 telas sem e2e afirmando
+  // o `EN####`. Reusa a MESMA sessão admin mock (auth real do stack, dado real do
+  // Postgres — só o header de auth é interceptado) e a vaga nativa semeada em
+  // `seed()`, sem reconstruir jornada nova para cada tela.
+  //
+  // Medido no run 36002913871 (1ª tentativa): a asserção do VacancySummaryCard deu
+  // "strict mode violation: getByText('CASO EN420071') resolved to 2 elements" — o
+  // componente mostra o mesmo texto 2x (título h2 + linha "· CASO EN..."). `.first()`
+  // resolve; as outras 3 asserções desta mesma corrida PASSARAM sem retry.
+  test('feliz — a vaga NATIVA (EN420071) mostra o código EN em PatientsTable, PatientIdentityCard, PatientKanbanCard, PatientVacanciesCard, VacancyDetailPage e VacancySummaryCard', async ({ page }) => {
     await loginAsAdminMock(page, ADMIN_UID, ADMIN_EMAIL);
 
     // PatientsTable (/admin/patients) — filtro por código: click + digitar tecla a
@@ -342,19 +347,35 @@ test.describe('@integration Modal Nueva Vacante — seleção de caso (nativo ×
     await filteredReq;
     await expect(page.getByText(`EN${NATIVE_CASE}`, { exact: false })).toBeVisible({ timeout: 10_000 });
 
-    // PatientVacanciesCard (/admin/patients/:id, aba "Vacantes" — click real, não deep-link).
+    // PatientIdentityCard (/admin/patients/:id) — badge "Caso #EN..." vem de
+    // `lastCaseNumber` = COALESCE(patients.case_number, MAX(job_postings.case_number));
+    // o paciente nativo já tem patients.case_number = NATIVE_CASE desde o seed() original.
     await page.goto(`/admin/patients/${nativePatientId}`);
-    await expect(page.getByTestId('patient-identity-card')).toBeVisible({ timeout: 15_000 });
+    const identityCard = page.getByTestId('patient-identity-card');
+    await expect(identityCard).toBeVisible({ timeout: 15_000 });
+    await expect(identityCard.getByText(`EN${NATIVE_CASE}`, { exact: false })).toBeVisible({ timeout: 10_000 });
+
+    // PatientVacanciesCard (mesma ficha, aba "Vacantes" — click real, não deep-link).
     await page.getByRole('button', { name: /^Vacantes$/i }).click();
-    await expect(page.getByText(`CASO EN${NATIVE_CASE}`, { exact: false })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText(`CASO EN${NATIVE_CASE}`, { exact: false }).first()).toBeVisible({ timeout: 10_000 });
+
+    // PatientKanbanCard (/admin/patients/kanban) — mesma fonte de `caseNumber` da
+    // PatientsTable (PatientQueryRepository); paciente nativo está status=ACTIVE →
+    // cai na coluna DONE ("Activo") do funil de admissão. Escopado ao testid do
+    // card (`patient-kanban-card-<id>`) para não repetir o strict-mode-violation.
+    await page.goto('/admin/patients/kanban');
+    const kanbanCard = page.getByTestId(`patient-kanban-card-${nativePatientId}`);
+    await expect(kanbanCard).toBeVisible({ timeout: 20_000 });
+    await expect(kanbanCard.getByText(`EN${NATIVE_CASE}`, { exact: false })).toBeVisible({ timeout: 10_000 });
 
     // VacancyDetailPage (/admin/vacancies/:id) — título da página monta com formatCaseNumber.
     await page.goto(`/admin/vacancies/${nativeVacancyId}`);
-    await expect(page.getByText(`EN${NATIVE_CASE}`, { exact: false })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(`EN${NATIVE_CASE}`, { exact: false }).first()).toBeVisible({ timeout: 15_000 });
 
     // VacancySummaryCard (/admin/vacancies/:id/talentum) — talentum_description já
-    // semeada em seed() evita a auto-geração via Gemini ao abrir esta rota.
+    // semeada em seed() evita a auto-geração via Gemini ao abrir esta rota. `.first()`:
+    // o mesmo "CASO EN..." aparece 2x no card (título h2 + linha "· CASO EN...").
     await page.goto(`/admin/vacancies/${nativeVacancyId}/talentum`);
-    await expect(page.getByText(`CASO EN${NATIVE_CASE}`, { exact: false })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(`CASO EN${NATIVE_CASE}`, { exact: false }).first()).toBeVisible({ timeout: 15_000 });
   });
 });

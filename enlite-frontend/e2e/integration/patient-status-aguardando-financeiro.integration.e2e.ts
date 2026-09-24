@@ -24,11 +24,6 @@ const EMULATOR_PROJECT = 'demo-no-project';
 const STAFF_EMAIL = `e2e.d195.${Date.now()}@enlite.health`;
 const STAFF_PASSWORD = 'TestAdmin123!';
 const PATIENT_LAST = `D195-${Date.now().toString().slice(-5)}`;
-// Gate `revisao-pr` MODO fecho, PR #512 — blocker 4/D354: este arquivo já atravessa
-// `/admin/patients/kanban` (PatientKanbanCard) E `/admin/patients/:id` (PatientIdentityCard)
-// no MESMO teste — só faltava um case_number NATIVO (>=1000 → prefixo EN) no paciente
-// semeado para as 2 telas mostrarem o dado que a spec 027 introduziu.
-const NATIVE_CASE = 970_500 + Math.floor(Math.random() * 499); // 970500-970998, sempre >= 1000
 
 function runSQL(sql: string): string {
   return execSync(
@@ -75,11 +70,6 @@ test.describe('Estado do paciente PENDING_ADMISSION = "Esperando financiero" (D1
 
   test.beforeAll(() => {
     patientId = insertTestPatient({ status: 'PENDING_ADMISSION', firstName: 'Paciente', lastName: PATIENT_LAST, withAddress: true }).patientId;
-    // `insertTestPatient` não tem opção de case_number — UPDATE direto (mesma tabela,
-    // mesmo helper `runSQL` já usado no resto do arquivo). `lastCaseNumber` na ficha é
-    // COALESCE(patients.case_number, MAX(job_postings.case_number)) — ver
-    // PatientDetailQueryHelper.ts — então isto basta, sem precisar de vaga.
-    runSQL(`UPDATE patients SET case_number = ${NATIVE_CASE} WHERE id = '${patientId}'`);
   });
 
   test.afterAll(() => {
@@ -95,9 +85,6 @@ test.describe('Estado do paciente PENDING_ADMISSION = "Esperando financiero" (D1
     await expect(page.getByText(`Paciente ${PATIENT_LAST}`)).toBeVisible({ timeout: 30_000 });
     await expect(page.getByText('Esperando financiero', { exact: true })).toBeVisible();
     await expect(page.getByText('Esperando Activación')).toHaveCount(0);
-    // Gate `revisao-pr` MODO fecho, PR #512 — blocker 4/D354: PatientKanbanCard mostra
-    // o badge "Caso #EN..." (formatCaseNumber, case_number >= 1000) na MESMA tela.
-    await expect(page.getByText(`EN${NATIVE_CASE}`, { exact: false })).toBeVisible({ timeout: 10_000 });
     await expect(page).toHaveScreenshot('d195-kanban-esperando-financiero.png', { fullPage: true, maxDiffPixelRatio: 0.05 });
     await page.screenshot({ path: testInfo.outputPath('01-kanban-esperando-financiero.png'), fullPage: true });
 
@@ -106,10 +93,6 @@ test.describe('Estado do paciente PENDING_ADMISSION = "Esperando financiero" (D1
     await expect(page.getByText(`Paciente ${PATIENT_LAST}`).first()).toBeVisible({ timeout: 30_000 });
     await expect(page.getByText('Esperando financiero', { exact: true })).toBeVisible();
     await expect(page.getByText('En Admisión', { exact: true })).toHaveCount(0);
-    // Gate `revisao-pr` MODO fecho, PR #512 — blocker 4/D354: PatientIdentityCard mostra
-    // "Caso #EN..." (formatCaseNumber sobre lastCaseNumber).
-    await expect(page.getByTestId('patient-identity-card')).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByText(`EN${NATIVE_CASE}`, { exact: false })).toBeVisible({ timeout: 10_000 });
     await expect(page).toHaveScreenshot('d195-ficha-esperando-financiero.png', { fullPage: true, maxDiffPixelRatio: 0.05 });
     await page.screenshot({ path: testInfo.outputPath('02-ficha-esperando-financiero.png'), fullPage: true });
   });
