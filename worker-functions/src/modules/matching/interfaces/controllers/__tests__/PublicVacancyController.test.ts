@@ -10,6 +10,7 @@
  */
 
 const mockQuery = jest.fn();
+const mockLoggerWarn = jest.fn();
 
 jest.mock('@shared/database/DatabaseConnection', () => ({
   DatabaseConnection: {
@@ -19,6 +20,11 @@ jest.mock('@shared/database/DatabaseConnection', () => ({
       }),
     }),
   },
+}));
+
+jest.mock('@shared/logging', () => ({
+  ...jest.requireActual('@shared/logging'),
+  logger: { info: jest.fn(), warn: (...a: unknown[]) => mockLoggerWarn(...a), error: jest.fn() },
 }));
 
 import { PublicVacancyController } from '../PublicVacancyController';
@@ -131,6 +137,95 @@ describe('PublicVacancyController.getById', () => {
     const data = (res.json as jest.Mock).mock.calls[0][0].data;
     expect(Object.keys(data).sort()).toEqual(CAMPOS_PUBLICOS);
     expect(data.case_number).toBe(row.case_number);
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // T066 (spec 027 Fase 6) — slug tolera formato antigo E novo (prefixo EN,
+  // separador "#"), sem quebrar URL antiga já publicada; slug inválido (mas
+  // parecido) loga distinto do 404 intencional de vaga não publicável.
+  // ══════════════════════════════════════════════════════════════════════════
+  describe('T066 — slug antigo, novo e inválido', () => {
+    it('slug ANTIGO "caso{N}-{M}" continua funcionando (URL já publicada não quebra)', async () => {
+      const row = makeVacancyRow();
+      mockQuery.mockResolvedValueOnce({ rows: [row] });
+
+      const [req, res] = mockReqRes({ id: 'caso729-5568' });
+      await controller.getById(req, res);
+
+      const [sql, params] = mockQuery.mock.calls[0];
+      expect(sql).toContain('jp.case_number = $1');
+      expect(sql).toContain('jp.vacancy_number = $2');
+      expect(params).toEqual([729, 5568, STATUS_PUBLICAVEL]);
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(mockLoggerWarn).not.toHaveBeenCalled();
+    });
+
+    // Literal "casoEN1234-1" — de propósito o MESMO literal que o teste irmão do
+    // VacancySocialLinksCard (enlite-frontend) prova que o preview do card GERA
+    // (case_number=1234, vacancyNumber=1) — ver T062-resto. Ligação pelo literal,
+    // não por import: são pacotes diferentes.
+    it('slug NOVO "casoEN{N}-{M}" (prefixo EN, separador "-") resolve para o mesmo par', async () => {
+      const row = makeVacancyRow();
+      mockQuery.mockResolvedValueOnce({ rows: [row] });
+
+      const [req, res] = mockReqRes({ id: 'casoEN1234-1' });
+      await controller.getById(req, res);
+
+      const [sql, params] = mockQuery.mock.calls[0];
+      expect(sql).toContain('jp.case_number = $1');
+      expect(sql).toContain('jp.vacancy_number = $2');
+      expect(params).toEqual([1234, 1, STATUS_PUBLICAVEL]);
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(mockLoggerWarn).not.toHaveBeenCalled();
+    });
+
+    it('slug NOVO com separador "#" ("caso{N}#{M}") também resolve', async () => {
+      const row = makeVacancyRow();
+      mockQuery.mockResolvedValueOnce({ rows: [row] });
+
+      const [req, res] = mockReqRes({ id: 'caso729#03' });
+      await controller.getById(req, res);
+
+      const [, params] = mockQuery.mock.calls[0];
+      expect(params).toEqual([729, 3, STATUS_PUBLICAVEL]);
+      expect(res.status).toHaveBeenCalledWith(200);
+    });
+
+    it('slug INVÁLIDO (parece slug mas não casa nenhum formato) — 404 igual ao intencional, mas loga distinto', async () => {
+      // "casoXX-01" não tem dígitos no lugar do case_number — cai no ramo "id cru",
+      // a query por jp.id = $1 não acha nada (0 rows) → mesmo 404 de "vaga não existe".
+      mockQuery.mockResolvedValueOnce({ rows: [] });
+
+      const [req, res] = mockReqRes({ id: 'casoXX-01' });
+      await controller.getById(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(404);
+      expect(res.json).toHaveBeenCalledWith({ success: false, error: 'Vacancy not found' });
+
+      // ⚠️ O que distingue este 404 do 404 intencional (vaga que existe mas não é
+      // publicável) é este log — sem ele, os dois são indistinguíveis por fora.
+      expect(mockLoggerWarn).toHaveBeenCalledWith(
+        expect.objectContaining({
+          msg: expect.stringContaining('slug-like id'),
+          id: 'casoXX-01',
+        }),
+      );
+
+      // A query foi pelo ramo "id cru" (uuid), não pelo par case_number/vacancy_number
+      const [sql, params] = mockQuery.mock.calls[0];
+      expect(sql).toContain('jp.id = $1');
+      expect(params).toEqual(['casoXX-01', STATUS_PUBLICAVEL]);
+    });
+
+    it('id que NÃO parece slug (uuid real) não loga o aviso do T066, mesmo em 404', async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [] });
+
+      const [req, res] = mockReqRes({ id: VACANCY_ID });
+      await controller.getById(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(404);
+      expect(mockLoggerWarn).not.toHaveBeenCalled();
+    });
   });
 
   it('returns 404 when vacancy not found', async () => {

@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { Typography } from '@presentation/components/atoms/Typography';
 import { VacancyStatusBadge } from '@presentation/components/atoms/VacancyStatusBadge';
+import { formatCaseNumber } from '@domain/value-objects/caseNumberFormat';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -43,7 +44,7 @@ export function VacancySummaryCard({ data }: Props) {
 
   const title =
     data.caseNumber != null && data.vacancyNumber != null
-      ? `CASO ${data.caseNumber}-${data.vacancyNumber}`
+      ? `CASO ${formatCaseNumber(data.caseNumber)}-${data.vacancyNumber}`
       : tc('noTitle');
 
   const patientName =
@@ -66,7 +67,7 @@ export function VacancySummaryCard({ data }: Props) {
       <p className="font-['Lexend'] font-medium text-[16px] text-[#737373] leading-snug">
         {tc('patientLabel')}: {patientName}
         {data.caseNumber != null && (
-          <span className="ml-2 text-[#737373]">· CASO {data.caseNumber}</span>
+          <span className="ml-2 text-[#737373]">· CASO {formatCaseNumber(data.caseNumber)}</span>
         )}
       </p>
 

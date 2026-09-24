@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import type { PatientVacancySummary } from '@domain/entities/PatientDetail';
+import { formatCaseNumber } from '@domain/value-objects/caseNumberFormat';
 
 interface PatientVacanciesCardProps {
   patientId: string;
@@ -48,7 +49,7 @@ function DraftBadge() {
 
 function buildVacancyTitle(v: PatientVacancySummary): string {
   if (v.caseNumber != null && v.vacancyNumber != null) {
-    return `CASO ${v.caseNumber}-${v.vacancyNumber}`;
+    return `CASO ${formatCaseNumber(v.caseNumber)}-${v.vacancyNumber}`;
   }
   return v.title ?? '—';
 }

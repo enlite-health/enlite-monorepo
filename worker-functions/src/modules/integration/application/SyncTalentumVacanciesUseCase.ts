@@ -18,6 +18,7 @@ import {
   JobPostingAuditRepository,
 } from '../../matching/infrastructure/JobPostingAuditRepository';
 import { normalizePrescreeningResponseType } from '@shared/utils/normalizePrescreeningResponseType';
+import { parseCaseTitleReference } from '@shared/utils/parseCaseTitleReference';
 
 // ─────────────────────────────────────────────────────────────────
 // Types
@@ -93,12 +94,12 @@ export class SyncTalentumVacanciesUseCase {
     report: SyncReport,
     force = false,
   ): Promise<void> {
-    // 2a. Extract case_number and vacancy_number from title
+    // 2a. Extract case_number and vacancy_number from title — T063: tolera os
+    //   formatos "CASO N[-M]" (legado) e "EN N#M" / "N#M" (novo, ver parser
+    //   compartilhado para por que o segundo número tem dois significados).
     //   "CASO 230"    → case_number=230, nova vacante
     //   "CASO 230-42" → case_number=230, vacancy_number=42 (vacante existente)
-    const match = project.title.match(/CASO\s+(\d+)(?:-(\d+))?/i);
-    const caseNumber = match ? parseInt(match[1], 10) : null;
-    const parsedVacancyNumber = match?.[2] ? parseInt(match[2], 10) : null;
+    const { caseNumber, ordinal: parsedVacancyNumber } = parseCaseTitleReference(project.title);
 
     // 2b. Lookup in DB — first by talentum_project_id, then by vacancy_number
     let existing: { id: string; talentum_project_id: string | null } | null = null;

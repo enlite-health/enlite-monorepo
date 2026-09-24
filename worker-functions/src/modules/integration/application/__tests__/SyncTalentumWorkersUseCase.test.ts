@@ -370,6 +370,55 @@ describe('SyncTalentumWorkersUseCase', () => {
       const report = await useCase.execute();
 
       expect(report.linked).toBe(0);
+      // T064: o continue por formato desconhecido agora é contado, não mais silencioso.
+      expect(report.skippedUnknownTitleFormat).toBe(1);
+    });
+
+    // T063/T064 — formato novo (EN<caseNumber>#<ordinal>), que staff passa a digitar
+    // no Talentum desde que a app EXIBE case_number com prefixo EN (T061/T062).
+    it('deve linkar caso o titulo venha no formato novo EN<caseNumber>#<ordinal>', async () => {
+      const profile = makeProfile({
+        projects: [{ projectId: null, title: 'EN1234#01', active: true }],
+      });
+      mockListAllDashboardProfiles.mockResolvedValue([profile]);
+
+      mockQuery
+        .mockResolvedValueOnce({ rows: [{ id: 'w-1' }] })
+        .mockResolvedValueOnce({ rows: [{ email: 'maria@example.com', phone: '123', first_name_encrypted: 'enc', last_name_encrypted: 'enc', auth_uid: 'talentum_abc123' }] })
+        .mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] }) // linkToCases status check
+        .mockResolvedValueOnce({ rows: [{ id: 'jp-1234' }] })              // find job_posting by case_number=1234
+        .mockResolvedValueOnce({ rows: [{ id: 'wja-1' }], rowCount: 1 })   // INSERT wja
+        .mockResolvedValueOnce({ rows: [] });                              // INSERT encuadre
+
+      const report = await useCase.execute();
+
+      expect(report.linked).toBe(1);
+      expect(report.skippedUnknownTitleFormat).toBe(0);
+      const jpCall = mockQuery.mock.calls.find(
+        (call: any[]) => (call[0] as string).includes('SELECT id FROM job_postings WHERE case_number'),
+      );
+      expect(jpCall![1]).toEqual([1234]);
+    });
+
+    // T063/T064 — formato novo sem prefixo EN (caso legado do ClickUp, <1000).
+    it('deve linkar caso o titulo venha no formato novo <caseNumber>#<ordinal> sem prefixo EN', async () => {
+      const profile = makeProfile({
+        projects: [{ projectId: null, title: '729#03', active: true }],
+      });
+      mockListAllDashboardProfiles.mockResolvedValue([profile]);
+
+      mockQuery
+        .mockResolvedValueOnce({ rows: [{ id: 'w-1' }] })
+        .mockResolvedValueOnce({ rows: [{ email: 'maria@example.com', phone: '123', first_name_encrypted: 'enc', last_name_encrypted: 'enc', auth_uid: 'talentum_abc123' }] })
+        .mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] })
+        .mockResolvedValueOnce({ rows: [{ id: 'jp-729' }] })
+        .mockResolvedValueOnce({ rows: [{ id: 'wja-1' }], rowCount: 1 })
+        .mockResolvedValueOnce({ rows: [] });
+
+      const report = await useCase.execute();
+
+      expect(report.linked).toBe(1);
+      expect(report.skippedUnknownTitleFormat).toBe(0);
     });
 
     it('deve ignorar quando job_posting nao existe para o case_number', async () => {

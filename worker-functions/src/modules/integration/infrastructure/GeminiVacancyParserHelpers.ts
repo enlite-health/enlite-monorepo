@@ -11,6 +11,7 @@ import {
 } from './gemini-vacancy-constants';
 import type { ParsedVacancyResult } from './GeminiVacancyParserService';
 import { generateContentVertex } from './vertex-gemini';
+import { parseCaseTitleReference } from '@shared/utils/parseCaseTitleReference';
 
 // ── parseFromTalentumDescription ─────────────────────────────────────────────
 
@@ -60,9 +61,9 @@ export async function parseFromTalentumDescriptionHelper(
 
   const parsed = JSON.parse(content) as Omit<ParsedVacancyResult['vacancy'], 'case_number' | 'title'>;
 
-  // Extract case_number from title (source of truth)
-  const match = title.match(/CASO\s+(\d+)/i);
-  const caseNumber = match ? parseInt(match[1], 10) : null;
+  // Extract case_number from title (source of truth) — T065: tolera "CASO N[-M]"
+  // (legado) e "EN N#M" / "N#M" (novo), mesmo parser dos 3 matchers do Talentum (T063).
+  const { caseNumber } = parseCaseTitleReference(title);
 
   const vacancy: ParsedVacancyResult['vacancy'] = {
     ...parsed,

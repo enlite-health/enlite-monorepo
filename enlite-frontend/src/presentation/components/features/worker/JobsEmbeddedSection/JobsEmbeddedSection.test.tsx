@@ -270,6 +270,13 @@ describe('JobsEmbeddedSection — fonte pública de vagas', () => {
     render(<JobsEmbeddedSection isRegistrationComplete />);
     await waitFor(() => expect(screen.getByText('824-5012')).toBeInTheDocument());
   });
+
+  it('caso NATIVO (>= 1000) exibe o prefixo EN no código (spec 027 T061/T062)', async () => {
+    (window as { __USE_PUBLIC_JOBS_API?: boolean }).__USE_PUBLIC_JOBS_API = true;
+    mockGetPublicJobs.mockResolvedValue([publicListing({ case_number: 1234, vacancy_number: 5568 })]);
+    render(<JobsEmbeddedSection isRegistrationComplete />);
+    await waitFor(() => expect(screen.getByText('EN1234-5568')).toBeInTheDocument());
+  });
 });
 
 // ── PADRÃO da fonte de vagas (achado do gate 12/09): a home liga a API ────────
@@ -683,6 +690,40 @@ describe('JobsEmbeddedSection — filtros e busca', () => {
     fireEvent.change(screen.getByPlaceholderText('jobs.searchPlaceholder'), { target: { value: '732' } });
     expect(screen.getByText('732')).toBeInTheDocument();
     expect(screen.queryByText('736')).not.toBeInTheDocument();
+  });
+
+  // Rodada de fecho do gate: a T062 passou a incluir o prefixo `EN` no `code`
+  // (`JobsEmbeddedSection.tsx:133`), e essa comparação era a ÚNICA das 5 do
+  // filtro que não normalizava caixa — digitar "en1234" minúsculo dava ZERO
+  // resultado, enquanto "EN1234" e "1234" funcionavam. Este teste EXERCITA o
+  // filtro de verdade (fireEvent.change no input real), não só afirma exibição.
+  it('busca por código NATIVO (prefixo EN) é insensível a maiúscula/minúscula — en1234, EN1234 e 1234 acham a MESMA vaga', async () => {
+    (window as { __USE_PUBLIC_JOBS_API?: boolean }).__USE_PUBLIC_JOBS_API = true;
+    mockGetPublicJobs.mockResolvedValue([publicListing({ case_number: 1234, vacancy_number: 5568 })]);
+    render(<JobsEmbeddedSection isRegistrationComplete />);
+    await waitFor(() => expect(screen.getByText('EN1234-5568')).toBeInTheDocument());
+
+    const searchInput = screen.getByPlaceholderText('jobs.searchPlaceholder');
+
+    fireEvent.change(searchInput, { target: { value: 'en1234' } });
+    expect(screen.getByText('EN1234-5568')).toBeInTheDocument();
+    expect(screen.queryByText('jobs.noResults')).not.toBeInTheDocument();
+
+    fireEvent.change(searchInput, { target: { value: 'EN1234' } });
+    expect(screen.getByText('EN1234-5568')).toBeInTheDocument();
+
+    fireEvent.change(searchInput, { target: { value: '1234' } });
+    expect(screen.getByText('EN1234-5568')).toBeInTheDocument();
+  });
+
+  it('busca sem match → estado vazio (jobs.noResults)', async () => {
+    (window as { __USE_PUBLIC_JOBS_API?: boolean }).__USE_PUBLIC_JOBS_API = true;
+    mockGetPublicJobs.mockResolvedValue([publicListing({ case_number: 1234, vacancy_number: 5568 })]);
+    render(<JobsEmbeddedSection isRegistrationComplete />);
+    await waitFor(() => expect(screen.getByText('EN1234-5568')).toBeInTheDocument());
+
+    fireEvent.change(screen.getByPlaceholderText('jobs.searchPlaceholder'), { target: { value: 'EN9999' } });
+    expect(screen.getByText('jobs.noResults')).toBeInTheDocument();
   });
 
   it('filtro de tipo/provincia/localidade/sexo restringe a lista e habilita "Limpiar"', async () => {

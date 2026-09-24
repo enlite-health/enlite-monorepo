@@ -49,6 +49,7 @@ jest.mock('../../infrastructure/PatientIdentityRepository', () => ({
   PatientIdentityRepository: jest.fn().mockImplementation(() => ({
     upsert:       jest.fn(),
     insertNative: jest.fn(),
+    nextCaseNumber: jest.fn(),
   })),
 }));
 
@@ -134,6 +135,7 @@ describe('PatientService — native case_number conflict retry', () => {
   let service: PatientService;
   let mockInsertNative: jest.Mock;
   let mockUpsert: jest.Mock;
+  let mockNextCaseNumber: jest.Mock;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -145,12 +147,15 @@ describe('PatientService — native case_number conflict retry', () => {
 
     const identityInstance = (PatientIdentityRepository as jest.Mock).mock.results[
       (PatientIdentityRepository as jest.Mock).mock.results.length - 1
-    ].value as { upsert: jest.Mock; insertNative: jest.Mock };
-    mockInsertNative = identityInstance.insertNative;
-    mockUpsert       = identityInstance.upsert;
+    ].value as { upsert: jest.Mock; insertNative: jest.Mock; nextCaseNumber: jest.Mock };
+    mockInsertNative   = identityInstance.insertNative;
+    mockUpsert         = identityInstance.upsert;
+    mockNextCaseNumber = identityInstance.nextCaseNumber;
+    mockNextCaseNumber.mockResolvedValue(8500);
   });
 
-  it('1. insertNative throws 23505 → retries without caseNumber and succeeds', async () => {
+  it('1. insertNative throws 23505 → retries WITH a fresh case_number (T013) and succeeds', async () => {
+    mockNextCaseNumber.mockResolvedValueOnce(8501);
     mockInsertNative
       .mockRejectedValueOnce(makePgUniqueError())
       .mockResolvedValueOnce({ id: 'nat-retry-1', created: true });
@@ -165,9 +170,9 @@ describe('PatientService — native case_number conflict retry', () => {
     expect(mockUpsert).not.toHaveBeenCalled();
 
     const retryArg = mockInsertNative.mock.calls[1][0] as PatientIdentityNativeInsertInput;
-    expect(retryArg.caseNumber).toBeNull();
-    expect(retryArg.needsAttention).toBe(true);
-    expect(retryArg.attentionReasons).toContain('CASE_NUMBER_CONFLICT');
+    expect(retryArg.caseNumber).toBe(8501);
+    expect(retryArg.needsAttention).not.toBe(true);
+    expect(retryArg.attentionReasons ?? []).not.toContain('CASE_NUMBER_CONFLICT');
 
     expect(mockLoggerWarn).toHaveBeenCalledWith(
       'patient_service.native_case_number_conflict_retry',

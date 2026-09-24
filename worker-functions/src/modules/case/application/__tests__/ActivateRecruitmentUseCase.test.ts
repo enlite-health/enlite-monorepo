@@ -13,13 +13,41 @@ jest.mock('../patientTransaction', () => ({
 }));
 
 const mockBuildInsertParams = jest.fn((p: Record<string, unknown>) => [p]);
-jest.mock('@modules/matching', () => ({
-  buildInsertQuery: jest.fn(() => 'INSERT INTO job_postings (...) VALUES (...) RETURNING *'),
-  buildInsertParams: (p: Record<string, unknown>) => mockBuildInsertParams(p),
-}));
+jest.mock('@modules/matching', () => {
+  // T052/T053 (spec 027, Fase 5) — retryOnCaseOrdinalConflict é a implementação
+  // REAL (não mockada), pega direto do arquivo por caminho profundo — só a
+  // fachada '@modules/matching' está mockada aqui, um require deste caminho
+  // NÃO passa pelo factory abaixo. É essa função real que o teste de colisão
+  // (describe 'case_ordinal — colisão real') está provando.
+  const real = require('@modules/matching/interfaces/controllers/vacancyCrudHelpers');
+  return {
+    buildInsertQuery: jest.fn(() => 'INSERT INTO job_postings (...) VALUES (...) RETURNING *'),
+    buildInsertParams: (p: Record<string, unknown>) => mockBuildInsertParams(p),
+    retryOnCaseOrdinalConflict: real.retryOnCaseOrdinalConflict,
+    isCaseOrdinalConflict: real.isCaseOrdinalConflict,
+  };
+});
 
 jest.mock('firebase-functions', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
+}));
+
+// T040/T041 (spec 027, Fase 4) — `postCreatePipeline` (pós-commit, setImmediate)
+// resolve o pool via `DatabaseConnection.getInstance().getPool()` (lazy require,
+// mesmo molde de SavePersonalInfoUseCase.getPool()). Sem este mock, TODO teste
+// que passa pelo ramo 201 chamaria a DatabaseConnection REAL a partir do
+// setImmediate — mesmo capturado pelo try/catch, arriscaria uma tentativa de
+// conexão de verdade a partir da suíte unitária. `mockPostCreateQuery` também
+// cobre `tryEnsureShortLink` (chamado no mesmo pipeline), mas hoje ele é
+// no-op para toda vaga destes testes (status vem undefined do mock de
+// `buildInsertQuery`/INSERT — nunca em `PUBLIC_STATUSES` — então nem chega a
+// tocar o pool).
+const mockPostCreateQuery = jest.fn().mockResolvedValue({ rows: [{ id: 'evt-mock' }] });
+const mockPostCreatePool = { query: mockPostCreateQuery };
+jest.mock('@shared/database/DatabaseConnection', () => ({
+  DatabaseConnection: {
+    getInstance: () => ({ getPool: () => mockPostCreatePool }),
+  },
 }));
 
 import {
@@ -50,10 +78,23 @@ interface DispatchOpts {
   liveVacancyId?: string | null;
   vacancyNumber?: number;
   insertedId?: string;
+  /** T019 — força o INSERT do audit (dentro do SAVEPOINT) a rejeitar. */
+  auditInsertThrows?: boolean;
 }
 
 function makeClient(opts: DispatchOpts) {
-  const query = jest.fn(async (sql: string) => {
+  const query = jest.fn(async (sql: string, params?: unknown[]) => {
+    // T018/T019 — SAVEPOINT do `logEventSafe` (best-effort): SAVEPOINT/RELEASE/
+    // ROLLBACK sempre "sucedem" no mock; só o INSERT do audit pode ser
+    // instruído a falhar (auditInsertThrows), para provar que o falho NÃO
+    // propaga e a vaga continua sendo criada.
+    if (/^SAVEPOINT /.test(sql) || /^RELEASE SAVEPOINT /.test(sql) || /^ROLLBACK TO SAVEPOINT /.test(sql)) {
+      return {};
+    }
+    if (sql.includes('INSERT INTO job_posting_audit_log')) {
+      if (opts.auditInsertThrows) throw new Error('audit insert falhou (simulado, T019)');
+      return { rows: [] };
+    }
     if (sql.includes('FROM patients') && sql.includes('FOR UPDATE')) {
       if (!opts.patientRow) return { rowCount: 0, rows: [] };
       const { id, status, case_number, insurance_informed } = opts.patientRow;
@@ -103,6 +144,18 @@ const READY_SERVICE = {
 
 describe('ActivateRecruitmentUseCase', () => {
   beforeEach(() => jest.clearAllMocks());
+
+  // T040/T041 (spec 027, Fase 4) — todo ramo 201 agenda `postCreatePipeline`
+  // num `setImmediate` que este describe NÃO aguarda em cada `it`. Sem este
+  // flush, o callback de um teste fica pendente na fila de macrotasks e só
+  // dispara DEPOIS que `beforeEach` já rodou `clearAllMocks()` do teste
+  // seguinte — poluindo `mockPostCreateQuery.mock.calls` de quem vier depois
+  // (medido: o describe de baixo via a chamada de OUTRO teste). Flush aqui
+  // garante que cada teste drena o que ele mesmo agendou antes do próximo.
+  afterEach(async () => {
+    await new Promise(resolve => setImmediate(resolve));
+    await new Promise(resolve => setImmediate(resolve));
+  });
 
   it('201 feliz — paciente no funil (ADMISSION): cria a vaga e move para SEARCHING (statusChanged:true)', async () => {
     const { promise } = run({
@@ -277,6 +330,9 @@ describe('ActivateRecruitmentUseCase', () => {
     // explícito), só que com `rowCount: undefined` em vez de `0` — o `?? 0` do código.
     const client = {
       query: jest.fn(async (sql: string) => {
+        if (/^SAVEPOINT /.test(sql) || /^RELEASE SAVEPOINT /.test(sql) || /^ROLLBACK TO SAVEPOINT /.test(sql)) {
+          return {};
+        }
         if (sql.includes('FROM patients') && sql.includes('FOR UPDATE')) {
           return { rowCount: 1, rows: [{ id: PATIENT_ID, status: 'ADMISSION', case_number: 1, insurance_informed: 'Particular' }] };
         }
@@ -290,11 +346,230 @@ describe('ActivateRecruitmentUseCase', () => {
         if (sql === "SELECT set_config('app.change_source', $1, true)") return {};
         if (sql.includes('UPDATE patients SET status')) return {};
         if (sql.startsWith('INSERT INTO job_postings')) return { rows: [{ id: 'vac-x' }] };
+        if (sql.includes('INSERT INTO job_posting_audit_log')) return { rows: [] };
         throw new Error(`unexpected: ${sql}`);
       }),
     };
     mockInPatientTransaction.mockImplementationOnce((fn: (c: unknown) => unknown) => fn(client));
     const useCase = new ActivateRecruitmentUseCase();
     await expect(useCase.execute(PATIENT_ID, SERVICE_ID)).resolves.toMatchObject({ vacancyId: 'vac-x' });
+  });
+
+  // ── T019 (spec 027, US2) — trilha de auditoria da vaga criada pelo SISTEMA ──
+
+  describe('audit — vaga criada pelo sistema (T018)', () => {
+    it('audit. INSERT do audit log leva event_type=CREATED, actor_type=SYSTEM, actor_label=activate_recruitment', async () => {
+      const { promise, client } = run({
+        patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular' },
+        serviceRow: READY_SERVICE,
+        vacancyNumber: 500,
+        insertedId: 'vac-42',
+      });
+      const result = await promise;
+      expect(result.vacancyId).toBe('vac-42');
+
+      const auditCall = (client.query as jest.Mock).mock.calls.find(
+        ([sql]: [string]) => typeof sql === 'string' && sql.includes('INSERT INTO job_posting_audit_log'),
+      );
+      expect(auditCall).toBeDefined();
+      const [, values] = auditCall as [string, unknown[]];
+      // Ordem de BaseAuditLogRepository.logEvent: [entityId, eventType, fieldName,
+      // changesJSON, actorUserId, actorType, actorLabel, traceId].
+      expect(values[0]).toBe('vac-42');       // job_posting_id
+      expect(values[1]).toBe('CREATED');      // event_type
+      expect(values[4]).toBeNull();           // actor_user_id
+      expect(values[5]).toBe('SYSTEM');       // actor_type
+      expect(values[6]).toBe('activate_recruitment'); // actor_label
+    });
+
+    it('audit throws. auditoria lança dentro do SAVEPOINT → a vaga é criada MESMO ASSIM (best-effort, nunca derruba)', async () => {
+      const { promise } = run({
+        patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular' },
+        serviceRow: READY_SERVICE,
+        vacancyNumber: 501,
+        insertedId: 'vac-43',
+        auditInsertThrows: true,
+      });
+
+      const result = await promise;
+      expect(result).toEqual({ vacancyId: 'vac-43', patientStatus: 'SEARCHING', statusChanged: true });
+    });
+  });
+
+  // ── case_ordinal — colisão real (spec 027 Fase 5, T052/T053) ─────────────
+  //
+  // retryOnCaseOrdinalConflict AQUI é a implementação REAL (ver jest.mock('@modules/matching')
+  // no topo do arquivo) — só buildInsertQuery/buildInsertParams continuam stub. Este teste prova
+  // o caminho que só existe NESTE call site (dentro de uma transação explícita, via
+  // inPatientTransaction): SAVEPOINT antes da 1ª tentativa, ROLLBACK TO SAVEPOINT quando bate
+  // 23505 de idx_job_postings_case_ordinal, nova tentativa dentro da MESMA transação, RELEASE
+  // SAVEPOINT quando finalmente cria.
+  describe('case_ordinal — colisão real (T052/T053)', () => {
+    it('1ª tentativa de INSERT colide (23505 em idx_job_postings_case_ordinal); SAVEPOINT + retry recupera na MESMA transação', async () => {
+      const conflictErr = Object.assign(
+        new Error('duplicate key value violates unique constraint "idx_job_postings_case_ordinal"'),
+        { code: '23505', constraint: 'idx_job_postings_case_ordinal' },
+      );
+      const savepointCalls: string[] = [];
+      let insertAttempts = 0;
+
+      const client = {
+        query: jest.fn(async (sql: string, params?: unknown[]) => {
+          if (/^SAVEPOINT /.test(sql) || /^RELEASE SAVEPOINT /.test(sql) || /^ROLLBACK TO SAVEPOINT /.test(sql)) {
+            savepointCalls.push(sql);
+            return {};
+          }
+          if (sql.includes('INSERT INTO job_posting_audit_log')) return { rows: [] };
+          if (sql.includes('FROM patients') && sql.includes('FOR UPDATE')) {
+            return { rowCount: 1, rows: [{ id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular' }] };
+          }
+          if (sql.includes('FROM patient_contracted_services pcs') && sql.includes('FOR UPDATE OF pcs')) {
+            return { rowCount: 1, rows: [READY_SERVICE] };
+          }
+          if (sql.includes('FROM job_postings WHERE contracted_service_id')) {
+            return { rowCount: 0, rows: [] };
+          }
+          if (sql.includes('nextval')) return { rows: [{ vn: '700' }] };
+          if (sql === "SELECT set_config('app.change_source', $1, true)") return {};
+          if (sql.includes('UPDATE patients SET status')) return {};
+          if (sql.startsWith('INSERT INTO job_postings')) {
+            insertAttempts += 1;
+            if (insertAttempts === 1) throw conflictErr;
+            return { rows: [{ id: 'vac-recovered-700' }] };
+          }
+          throw new Error(`unexpected query in test: ${sql} (params=${JSON.stringify(params)})`);
+        }),
+      };
+      mockInPatientTransaction.mockImplementationOnce((fn: (c: unknown) => unknown) => fn(client));
+
+      const useCase = new ActivateRecruitmentUseCase();
+      const result = await useCase.execute(PATIENT_ID, SERVICE_ID);
+
+      expect(result.vacancyId).toBe('vac-recovered-700');
+      expect(insertAttempts).toBe(2); // 1ª colidiu, 2ª recuperou
+      // SAVEPOINT case_ordinal_retry → (colide) → ROLLBACK TO SAVEPOINT case_ordinal_retry →
+      // SAVEPOINT case_ordinal_retry (2ª tentativa) → RELEASE SAVEPOINT case_ordinal_retry.
+      // Filtro pelo SAVEPOINT do case_ordinal especificamente — o audit best-effort
+      // (logEventSafe) abre o SEU PRÓPRIO savepoint nomeado à parte (audit_sp_...), que não
+      // é o que este teste está provando.
+      const caseOrdinalSavepoints = savepointCalls.filter(s => s.includes('case_ordinal_retry'));
+      expect(caseOrdinalSavepoints.filter(s => s.startsWith('SAVEPOINT '))).toHaveLength(2);
+      expect(caseOrdinalSavepoints.filter(s => s.startsWith('ROLLBACK TO SAVEPOINT '))).toHaveLength(1);
+      expect(caseOrdinalSavepoints.filter(s => s.startsWith('RELEASE SAVEPOINT '))).toHaveLength(1);
+    });
+
+    it('23505 de OUTRA constraint (não case_ordinal) NÃO é retentado — sobe cru', async () => {
+      const otherErr = Object.assign(
+        new Error('duplicate key value violates unique constraint "idx_job_postings_vacancy_number"'),
+        { code: '23505', constraint: 'idx_job_postings_vacancy_number' },
+      );
+      let insertAttempts = 0;
+      const client = {
+        query: jest.fn(async (sql: string) => {
+          if (/^SAVEPOINT /.test(sql) || /^RELEASE SAVEPOINT /.test(sql) || /^ROLLBACK TO SAVEPOINT /.test(sql)) return {};
+          if (sql.includes('FROM patients') && sql.includes('FOR UPDATE')) {
+            return { rowCount: 1, rows: [{ id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular' }] };
+          }
+          if (sql.includes('FROM patient_contracted_services pcs') && sql.includes('FOR UPDATE OF pcs')) {
+            return { rowCount: 1, rows: [READY_SERVICE] };
+          }
+          if (sql.includes('FROM job_postings WHERE contracted_service_id')) return { rowCount: 0, rows: [] };
+          if (sql.includes('nextval')) return { rows: [{ vn: '701' }] };
+          if (sql.startsWith('INSERT INTO job_postings')) {
+            insertAttempts += 1;
+            throw otherErr;
+          }
+          throw new Error(`unexpected query in test: ${sql}`);
+        }),
+      };
+      mockInPatientTransaction.mockImplementationOnce((fn: (c: unknown) => unknown) => fn(client));
+
+      const useCase = new ActivateRecruitmentUseCase();
+      await expect(useCase.execute(PATIENT_ID, SERVICE_ID)).rejects.toBe(otherErr);
+      expect(insertAttempts).toBe(1); // não retentou
+    });
+  });
+
+  // ── vacancy.created — evento pós-commit (T040/T041, spec 027 Fase 4) ──────
+  //
+  // `postCreatePipeline` roda dentro de um `setImmediate` DEPOIS que `execute()`
+  // já resolveu — por isso todo teste aqui precisa flushar o macrotask (2x:
+  // 1 para o próprio setImmediate, 1 para a Promise do `withSystemDbContext` +
+  // `enqueueDomainEvent` encadeada dentro dele) antes de inspecionar
+  // `mockPostCreateQuery`.
+  describe('vacancy.created — pós-commit (T040/T041)', () => {
+    it('enfileira vacancy.created (payload={jobPostingId}) após o 201, fora da transação', async () => {
+      const { promise } = run({
+        patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular' },
+        serviceRow: READY_SERVICE,
+        vacancyNumber: 900,
+        insertedId: 'vac-evt-1',
+      });
+      const result = await promise;
+      expect(result.vacancyId).toBe('vac-evt-1');
+
+      await new Promise(resolve => setImmediate(resolve));
+      await new Promise(resolve => setImmediate(resolve));
+
+      const domainEventCall = mockPostCreateQuery.mock.calls.find(
+        ([sql]: [string]) => typeof sql === 'string' && sql.includes('INSERT INTO domain_events'),
+      );
+      expect(domainEventCall).toBeTruthy();
+      const [, values] = domainEventCall as [string, unknown[]];
+      expect(values[0]).toBe('vacancy.created');
+      expect(JSON.parse(values[1] as string)).toEqual({ jobPostingId: 'vac-evt-1' });
+    });
+
+    it('falha ao enfileirar vacancy.created NÃO derruba a vaga criada nem vira unhandled rejection', async () => {
+      mockPostCreateQuery.mockRejectedValueOnce(new Error('domain_events indisponível (simulado, T042)'));
+
+      const { promise } = run({
+        patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular' },
+        serviceRow: READY_SERVICE,
+        vacancyNumber: 901,
+        insertedId: 'vac-evt-2',
+      });
+
+      // A vaga é criada e o 201 (equivalente) resolve normalmente — o enqueue
+      // roda DEPOIS, no setImmediate, então a rejeição instruída acima ainda
+      // nem aconteceu quando `promise` resolve.
+      await expect(promise).resolves.toMatchObject({ vacancyId: 'vac-evt-2' });
+
+      await new Promise(resolve => setImmediate(resolve));
+      await new Promise(resolve => setImmediate(resolve));
+
+      // A tentativa aconteceu e falhou (rejeitada acima) — chegar até aqui
+      // sem o teste explodir com unhandled rejection É a prova do catch
+      // dentro de `postCreatePipeline`.
+      const domainEventCall = mockPostCreateQuery.mock.calls.find(
+        ([sql]: [string]) => typeof sql === 'string' && sql.includes('INSERT INTO domain_events'),
+      );
+      expect(domainEventCall).toBeTruthy();
+    });
+
+    // Cobertura de branch (medido: `npm test -- --coverage` acusou
+    // "ActivateRecruitmentUseCase.ts coverage threshold for branches (100%)
+    // not met: 95.83%" na linha 181 — `err instanceof Error ? err : new
+    // Error(String(err))` só tinha o ramo Error exercitado pelo teste acima).
+    it('falha ao enfileirar vacancy.created com rejeição que NÃO é Error também não derruba a vaga', async () => {
+      mockPostCreateQuery.mockRejectedValueOnce('rejeição crua (simulado, cobertura de branch)');
+
+      const { promise } = run({
+        patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular' },
+        serviceRow: READY_SERVICE,
+        vacancyNumber: 902,
+        insertedId: 'vac-evt-3',
+      });
+
+      await expect(promise).resolves.toMatchObject({ vacancyId: 'vac-evt-3' });
+
+      await new Promise(resolve => setImmediate(resolve));
+      await new Promise(resolve => setImmediate(resolve));
+
+      const domainEventCall = mockPostCreateQuery.mock.calls.find(
+        ([sql]: [string]) => typeof sql === 'string' && sql.includes('INSERT INTO domain_events'),
+      );
+      expect(domainEventCall).toBeTruthy();
+    });
   });
 });

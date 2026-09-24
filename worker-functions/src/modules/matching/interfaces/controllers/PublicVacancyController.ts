@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { normalizeSchedule } from '../../infrastructure/scheduleNormalizer';
+import { logger } from '@shared/logging';
 
 /**
  * PublicVacancyController
@@ -41,7 +42,17 @@ import { normalizeSchedule } from '../../infrastructure/scheduleNormalizer';
  * em vez de silenciosa.
  */
 
-const SLUG_REGEX = /^caso(\d+)-(\d+)$/;
+/**
+ * T066 (spec 027 Fase 6) — o slug tolera os dois formatos de `case_number`:
+ *   - legado: "caso729-5568" (sem prefixo, separador "-")
+ *   - novo:   "casoEN1234-01" / "casoEN1234#01" / "caso1234#01" (prefixo `EN`
+ *     opcional — ver `caseNumberFormat.ts` — e separador "-" OU "#")
+ * ⚠️ O ramo antigo continua casando sem alteração — URL já publicada não quebra.
+ */
+const SLUG_REGEX = /^caso(?:EN)?(\d+)[-#](\d+)$/i;
+
+/** Só para o log distinto do T066 — "começa com caso" mas não casou o SLUG_REGEX. */
+const LOOKS_LIKE_SLUG = /^caso/i;
 
 /**
  * Uma vaga só é pública se está publicável. Antes, qualquer `job_posting` não-deletada
@@ -63,6 +74,15 @@ export class PublicVacancyController {
 
       const slugMatch = SLUG_REGEX.exec(id);
       const isSlug = !!slugMatch;
+
+      // T066: distingue "vaga não existe" (404 intencional) de "slug com formato
+      // desconhecido" (nem "casoNNN-MM" legado, nem "casoEN NNN[-#]MM" novo) — sem
+      // isso, os dois 404 são idênticos e ninguém percebe o slug mal formado.
+      // `id` não é PII: é parâmetro de rota de link público (case/vacancy number).
+      if (!isSlug && LOOKS_LIKE_SLUG.test(id)) {
+        logger.warn({ msg: '[PublicVacancyController] slug-like id não casou nenhum formato conhecido', id });
+      }
+
       const params: (string | number | string[])[] = isSlug
         ? [Number(slugMatch![1]), Number(slugMatch![2])]
         : [id];
