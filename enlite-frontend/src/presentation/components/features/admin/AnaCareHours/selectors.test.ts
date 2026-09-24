@@ -1,10 +1,12 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   allShiftsOf,
   axonicoDayEligibility,
   blockReason,
   currentMonthIso,
+  DISPLAY_TIME_ZONE,
   filterPatients,
+  formatDateTime,
   formatMonthLabel,
   formatSourceRange,
   formatSourceTime,
@@ -584,5 +586,35 @@ describe('formatMonthLabel', () => {
   it('POSITIVO — pt-BR: mesmo formato, nome do mês em português', () => {
     expect(formatMonthLabel('2026-08', 'pt-BR')).toBe('Agosto 2026');
     expect(formatMonthLabel('2026-09', 'pt-BR')).toBe('Setembro 2026');
+  });
+});
+
+/**
+ * `snapshot.updatedAt` é o relógio do OPERADOR, não a hora da FONTE (esse é `formatSourceTime`,
+ * fuso `Etc/GMT+6`, propositalmente NÃO tocado aqui). Antes desta cobertura, `formatDateTime`
+ * fazia `toLocaleString('es-AR', {...})` SEM `timeZone` — cai no fuso do NAVEGADOR por omissão,
+ * sem decisão documentada.
+ *
+ * 🔴 `TZ` do PROCESSO não é controlável a partir de dentro do teste nesta versão (Node 24 +
+ * Vitest 1.4, pool `threads`, medido): `vi.stubEnv('TZ', ...)` e até atribuição direta a
+ * `process.env.TZ` mudam a variável, mas `Intl`/`Date` já cacheiam o fuso do HOST na primeira
+ * chamada feita por QUALQUER código no worker (setup, outro arquivo de teste reaproveitando o
+ * mesmo worker, etc.) — mudar a env DEPOIS não invalida esse cache. Só funcionou isolado com
+ * `--pool=forks --poolOptions.forks.singleFork` (processo novo por arquivo), o que exigiria
+ * mudar o pool do projeto inteiro (fora do escopo desta task) e ainda ficaria frágil à ordem dos
+ * arquivos na suíte real. Por isso a régua aqui NÃO depende do fuso padrão do processo: ela
+ * espiona a chamada real a `toLocaleString` e prova que `timeZone` foi passado explicitamente —
+ * funciona em QUALQUER fuso de máquina/CI, sem env externo e sem depender de cache do ICU.
+ */
+describe('formatDateTime', () => {
+  it('SANIDADE — toLocaleString recebe o fuso de Buenos Aires explícito, não implícito', () => {
+    const spy = vi.spyOn(Date.prototype, 'toLocaleString');
+    formatDateTime('2026-09-15T02:30:00Z');
+    expect(spy).toHaveBeenCalledWith('es-AR', expect.objectContaining({ timeZone: DISPLAY_TIME_ZONE }));
+    spy.mockRestore();
+  });
+
+  it('POSITIVO — hora de Buenos Aires (-03), independente do fuso do processo/navegador', () => {
+    expect(formatDateTime('2026-09-15T02:30:00Z')).toBe('14/09/2026, 11:30 p. m.');
   });
 });

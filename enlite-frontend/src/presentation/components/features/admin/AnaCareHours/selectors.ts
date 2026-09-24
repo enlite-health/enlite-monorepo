@@ -192,6 +192,24 @@ export function formatSourceTime(iso: string | null | undefined): string | undef
 }
 
 /**
+ * Relógio do OPERADOR (fuso explícito `DISPLAY_TIME_ZONE`), não o da FONTE — essa é
+ * `formatSourceTime`/`formatSourceRange` acima, propositalmente diferente. Antes,
+ * `toLocaleString` sem `timeZone` caía no fuso do NAVEGADOR por omissão, sem decisão documentada
+ * (ver comentário de `DISPLAY_TIME_ZONE`). Usada por `AnaCareHoursListPage` para "atualizado às".
+ */
+export function formatDateTime(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleString('es-AR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: DISPLAY_TIME_ZONE,
+  });
+}
+
+/**
  * `YYYY-MM-DD` no fuso da FONTE — só para COMPARAR dias (turno cruzando meia-noite), nunca
  * exibido cru. Sem checagem de validade própria: o único chamador (`formatSourceRange`) só
  * invoca depois que `formatSourceTime` já validou o MESMO iso — duplicar o guard aqui seria
