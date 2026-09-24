@@ -62,6 +62,20 @@ function jsonResponse(body: unknown, status = 200) {
     ok: status >= 200 && status < 300,
     status,
     json: () => Promise.resolve(body),
+    // `throwTypedError` lê o corpo de erro por `.text()` (24/09/2026 — corpo cru, nunca `.json()`
+    // direto, pra não perder corpo não-JSON). Mantém o MESMO corpo serializado, pra não divergir
+    // do que `json()` já devolvia.
+    text: () => Promise.resolve(JSON.stringify(body)),
+  } as Response;
+}
+
+/** Corpo de erro que NÃO é JSON — proxy/HTML de erro ou texto plano do Axonico. */
+function textResponse(rawBody: string, status: number) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    json: () => Promise.reject(new Error('corpo não é JSON')),
+    text: () => Promise.resolve(rawBody),
   } as Response;
 }
 
@@ -766,6 +780,112 @@ describe('AxonicoApiClient — erros tipados', () => {
       }),
     );
   });
+
+  // ── Corpo cru — corpo real do Axonico que não é `data.message` (24/09/2026) ──────────
+
+  it('400 com `message` na RAIZ (padrão Laravel, sem `data`) → mensagem chega na `AxonicoBusinessError` e no log (`axonicoBody`)', async () => {
+    mockFetch.mockResolvedValueOnce(loginResponse());
+    mockFetch.mockResolvedValueOnce(jsonResponse({ message: 'La fecha es inválida' }, 400));
+
+    const client = makeClient();
+    let caught: unknown;
+    try {
+      await client.submitComprobante({
+        historiaClinica: 'HC-123',
+        nroCobertura: 'AF-456',
+        serviceCodes: SERVICE_CODES,
+        serviceDate: SERVICE_DATE,
+        cantidad: 1,
+      });
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(AxonicoBusinessError);
+    expect((caught as Error).message).toContain('La fecha es inválida');
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 400,
+        axonicoMessage: 'La fecha es inválida',
+        axonicoBody: expect.stringContaining('La fecha es inválida'),
+      }),
+    );
+  });
+
+  it('400 com corpo TEXTO PLANO (não-JSON, ex. proxy) → mensagem chega com o texto cru', async () => {
+    mockFetch.mockResolvedValueOnce(loginResponse());
+    mockFetch.mockResolvedValueOnce(textResponse('Bad Request: campo X inválido', 400));
+
+    const client = makeClient();
+    let caught: unknown;
+    try {
+      await client.submitComprobante({
+        historiaClinica: 'HC-123',
+        nroCobertura: 'AF-456',
+        serviceCodes: SERVICE_CODES,
+        serviceDate: SERVICE_DATE,
+        cantidad: 1,
+      });
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(AxonicoBusinessError);
+    expect((caught as Error).message).toContain('Bad Request: campo X inválido');
+  });
+
+  it('400 com corpo VAZIO → mensagem termina em "HTTP 400" (fallback mudo preservado)', async () => {
+    mockFetch.mockResolvedValueOnce(loginResponse());
+    mockFetch.mockResolvedValueOnce(textResponse('', 400));
+
+    const client = makeClient();
+    let caught: unknown;
+    try {
+      await client.submitComprobante({
+        historiaClinica: 'HC-123',
+        nroCobertura: 'AF-456',
+        serviceCodes: SERVICE_CODES,
+        serviceDate: SERVICE_DATE,
+        cantidad: 1,
+      });
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(AxonicoBusinessError);
+    expect((caught as Error).message).toMatch(/HTTP 400$/);
+  });
+
+  it('400 com corpo contendo sequência de 6+ dígitos (DNI/historia/nro_afiliado) → REDIGIDO na mensagem e no `axonicoBody`, nunca em claro', async () => {
+    mockFetch.mockResolvedValueOnce(loginResponse());
+    mockFetch.mockResolvedValueOnce(textResponse('Paciente não encontrado: historia 12345678', 400));
+
+    const client = makeClient();
+    let caught: unknown;
+    try {
+      await client.submitComprobante({
+        historiaClinica: 'HC-123',
+        nroCobertura: 'AF-456',
+        serviceCodes: SERVICE_CODES,
+        serviceDate: SERVICE_DATE,
+        cantidad: 1,
+      });
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(AxonicoBusinessError);
+    expect((caught as Error).message).not.toContain('12345678');
+    expect((caught as Error).message).toContain('<redigido>');
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        axonicoMessage: expect.not.stringContaining('12345678'),
+        axonicoBody: expect.not.stringContaining('12345678'),
+      }),
+    );
+    const loggedCall = mockLogger.error.mock.calls.find(([f]: [{ axonicoBody?: string }]) => f.axonicoBody !== undefined);
+    expect(loggedCall?.[0].axonicoBody).toContain('<redigido>');
+  });
 });
 
 // ── Vocabulário: só a chave canônica em inglês (CAREGIVER) é válida ───
@@ -934,12 +1054,13 @@ describe('AxonicoApiClient — relógio default e parse defensivo de erro', () =
     expect(body.fecha).toMatch(/^10\/09\/2026 \d{2}:\d{2}:\d{2}$/);
   });
 
-  it('corpo de erro que não é JSON válido cai no fallback ({}) — ainda assim erro tipado', async () => {
+  it('leitura do corpo de erro falha (`.text()` rejeita) → cai no fallback mudo "HTTP 500", ainda assim erro tipado', async () => {
     mockFetch.mockResolvedValueOnce(loginResponse());
     mockFetch.mockResolvedValueOnce({
       ok: false,
       status: 500,
       json: () => Promise.reject(new Error('corpo não é JSON')),
+      text: () => Promise.reject(new Error('corpo não pôde ser lido')),
     } as unknown as Response);
 
     const client = makeClient();
