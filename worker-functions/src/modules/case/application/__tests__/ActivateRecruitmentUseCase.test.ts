@@ -13,10 +13,20 @@ jest.mock('../patientTransaction', () => ({
 }));
 
 const mockBuildInsertParams = jest.fn((p: Record<string, unknown>) => [p]);
-jest.mock('@modules/matching', () => ({
-  buildInsertQuery: jest.fn(() => 'INSERT INTO job_postings (...) VALUES (...) RETURNING *'),
-  buildInsertParams: (p: Record<string, unknown>) => mockBuildInsertParams(p),
-}));
+jest.mock('@modules/matching', () => {
+  // T052/T053 (spec 027, Fase 5) — retryOnCaseOrdinalConflict é a implementação
+  // REAL (não mockada), pega direto do arquivo por caminho profundo — só a
+  // fachada '@modules/matching' está mockada aqui, um require deste caminho
+  // NÃO passa pelo factory abaixo. É essa função real que o teste de colisão
+  // (describe 'case_ordinal — colisão real') está provando.
+  const real = require('@modules/matching/interfaces/controllers/vacancyCrudHelpers');
+  return {
+    buildInsertQuery: jest.fn(() => 'INSERT INTO job_postings (...) VALUES (...) RETURNING *'),
+    buildInsertParams: (p: Record<string, unknown>) => mockBuildInsertParams(p),
+    retryOnCaseOrdinalConflict: real.retryOnCaseOrdinalConflict,
+    isCaseOrdinalConflict: real.isCaseOrdinalConflict,
+  };
+});
 
 jest.mock('firebase-functions', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
@@ -290,6 +300,9 @@ describe('ActivateRecruitmentUseCase', () => {
     // explícito), só que com `rowCount: undefined` em vez de `0` — o `?? 0` do código.
     const client = {
       query: jest.fn(async (sql: string) => {
+        if (/^SAVEPOINT /.test(sql) || /^RELEASE SAVEPOINT /.test(sql) || /^ROLLBACK TO SAVEPOINT /.test(sql)) {
+          return {};
+        }
         if (sql.includes('FROM patients') && sql.includes('FOR UPDATE')) {
           return { rowCount: 1, rows: [{ id: PATIENT_ID, status: 'ADMISSION', case_number: 1, insurance_informed: 'Particular' }] };
         }
@@ -303,6 +316,7 @@ describe('ActivateRecruitmentUseCase', () => {
         if (sql === "SELECT set_config('app.change_source', $1, true)") return {};
         if (sql.includes('UPDATE patients SET status')) return {};
         if (sql.startsWith('INSERT INTO job_postings')) return { rows: [{ id: 'vac-x' }] };
+        if (sql.includes('INSERT INTO job_posting_audit_log')) return { rows: [] };
         throw new Error(`unexpected: ${sql}`);
       }),
     };
@@ -349,6 +363,100 @@ describe('ActivateRecruitmentUseCase', () => {
 
       const result = await promise;
       expect(result).toEqual({ vacancyId: 'vac-43', patientStatus: 'SEARCHING', statusChanged: true });
+    });
+  });
+
+  // ── case_ordinal — colisão real (spec 027 Fase 5, T052/T053) ─────────────
+  //
+  // retryOnCaseOrdinalConflict AQUI é a implementação REAL (ver jest.mock('@modules/matching')
+  // no topo do arquivo) — só buildInsertQuery/buildInsertParams continuam stub. Este teste prova
+  // o caminho que só existe NESTE call site (dentro de uma transação explícita, via
+  // inPatientTransaction): SAVEPOINT antes da 1ª tentativa, ROLLBACK TO SAVEPOINT quando bate
+  // 23505 de idx_job_postings_case_ordinal, nova tentativa dentro da MESMA transação, RELEASE
+  // SAVEPOINT quando finalmente cria.
+  describe('case_ordinal — colisão real (T052/T053)', () => {
+    it('1ª tentativa de INSERT colide (23505 em idx_job_postings_case_ordinal); SAVEPOINT + retry recupera na MESMA transação', async () => {
+      const conflictErr = Object.assign(
+        new Error('duplicate key value violates unique constraint "idx_job_postings_case_ordinal"'),
+        { code: '23505', constraint: 'idx_job_postings_case_ordinal' },
+      );
+      const savepointCalls: string[] = [];
+      let insertAttempts = 0;
+
+      const client = {
+        query: jest.fn(async (sql: string, params?: unknown[]) => {
+          if (/^SAVEPOINT /.test(sql) || /^RELEASE SAVEPOINT /.test(sql) || /^ROLLBACK TO SAVEPOINT /.test(sql)) {
+            savepointCalls.push(sql);
+            return {};
+          }
+          if (sql.includes('INSERT INTO job_posting_audit_log')) return { rows: [] };
+          if (sql.includes('FROM patients') && sql.includes('FOR UPDATE')) {
+            return { rowCount: 1, rows: [{ id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular' }] };
+          }
+          if (sql.includes('FROM patient_contracted_services pcs') && sql.includes('FOR UPDATE OF pcs')) {
+            return { rowCount: 1, rows: [READY_SERVICE] };
+          }
+          if (sql.includes('FROM job_postings WHERE contracted_service_id')) {
+            return { rowCount: 0, rows: [] };
+          }
+          if (sql.includes('nextval')) return { rows: [{ vn: '700' }] };
+          if (sql === "SELECT set_config('app.change_source', $1, true)") return {};
+          if (sql.includes('UPDATE patients SET status')) return {};
+          if (sql.startsWith('INSERT INTO job_postings')) {
+            insertAttempts += 1;
+            if (insertAttempts === 1) throw conflictErr;
+            return { rows: [{ id: 'vac-recovered-700' }] };
+          }
+          throw new Error(`unexpected query in test: ${sql} (params=${JSON.stringify(params)})`);
+        }),
+      };
+      mockInPatientTransaction.mockImplementationOnce((fn: (c: unknown) => unknown) => fn(client));
+
+      const useCase = new ActivateRecruitmentUseCase();
+      const result = await useCase.execute(PATIENT_ID, SERVICE_ID);
+
+      expect(result.vacancyId).toBe('vac-recovered-700');
+      expect(insertAttempts).toBe(2); // 1ª colidiu, 2ª recuperou
+      // SAVEPOINT case_ordinal_retry → (colide) → ROLLBACK TO SAVEPOINT case_ordinal_retry →
+      // SAVEPOINT case_ordinal_retry (2ª tentativa) → RELEASE SAVEPOINT case_ordinal_retry.
+      // Filtro pelo SAVEPOINT do case_ordinal especificamente — o audit best-effort
+      // (logEventSafe) abre o SEU PRÓPRIO savepoint nomeado à parte (audit_sp_...), que não
+      // é o que este teste está provando.
+      const caseOrdinalSavepoints = savepointCalls.filter(s => s.includes('case_ordinal_retry'));
+      expect(caseOrdinalSavepoints.filter(s => s.startsWith('SAVEPOINT '))).toHaveLength(2);
+      expect(caseOrdinalSavepoints.filter(s => s.startsWith('ROLLBACK TO SAVEPOINT '))).toHaveLength(1);
+      expect(caseOrdinalSavepoints.filter(s => s.startsWith('RELEASE SAVEPOINT '))).toHaveLength(1);
+    });
+
+    it('23505 de OUTRA constraint (não case_ordinal) NÃO é retentado — sobe cru', async () => {
+      const otherErr = Object.assign(
+        new Error('duplicate key value violates unique constraint "idx_job_postings_vacancy_number"'),
+        { code: '23505', constraint: 'idx_job_postings_vacancy_number' },
+      );
+      let insertAttempts = 0;
+      const client = {
+        query: jest.fn(async (sql: string) => {
+          if (/^SAVEPOINT /.test(sql) || /^RELEASE SAVEPOINT /.test(sql) || /^ROLLBACK TO SAVEPOINT /.test(sql)) return {};
+          if (sql.includes('FROM patients') && sql.includes('FOR UPDATE')) {
+            return { rowCount: 1, rows: [{ id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular' }] };
+          }
+          if (sql.includes('FROM patient_contracted_services pcs') && sql.includes('FOR UPDATE OF pcs')) {
+            return { rowCount: 1, rows: [READY_SERVICE] };
+          }
+          if (sql.includes('FROM job_postings WHERE contracted_service_id')) return { rowCount: 0, rows: [] };
+          if (sql.includes('nextval')) return { rows: [{ vn: '701' }] };
+          if (sql.startsWith('INSERT INTO job_postings')) {
+            insertAttempts += 1;
+            throw otherErr;
+          }
+          throw new Error(`unexpected query in test: ${sql}`);
+        }),
+      };
+      mockInPatientTransaction.mockImplementationOnce((fn: (c: unknown) => unknown) => fn(client));
+
+      const useCase = new ActivateRecruitmentUseCase();
+      await expect(useCase.execute(PATIENT_ID, SERVICE_ID)).rejects.toBe(otherErr);
+      expect(insertAttempts).toBe(1); // não retentou
     });
   });
 });

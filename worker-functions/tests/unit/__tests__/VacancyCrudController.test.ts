@@ -471,9 +471,10 @@ describe('VacancyCrudController', () => {
       const columns = colMatch![1].split(',').map(c => c.trim()).filter(Boolean);
       // 21 param columns + country (literal 'AR') + is_test (param) + contracted_service_id
       // (migration 320, spec 013 bloco C) + is_draft (param, computed by buildInsertParams,
-      // ver describe 'is_draft field' abaixo) = 25 total.
+      // ver describe 'is_draft field' abaixo) + case_ordinal (spec 027 Fase 5, migration 460 —
+      // subquery computada a partir de $4/patient_id, SEM placeholder novo) = 26 total.
       // (description column dropped in migration 214 — no longer inserted)
-      expect(columns).toHaveLength(25);
+      expect(columns).toHaveLength(26);
     });
 
     it('does NOT include state, city, pathology_types, dependency_level, service_device_types in INSERT SQL', async () => {
@@ -656,6 +657,110 @@ describe('VacancyCrudController', () => {
 
         expect(mockShortLinkFromEnv).not.toHaveBeenCalled();
         expect(mockEnsureUseCaseExecute).not.toHaveBeenCalled();
+      });
+    });
+
+    // ── case_ordinal (spec 027 Fase 5, T052/T053) ───────────────────
+    //
+    // buildInsertQuery/buildInsertParams/retryOnCaseOrdinalConflict/
+    // isCaseOrdinalConflict NÃO são mockados neste arquivo — são os módulos
+    // reais (vacancyCrudHelpers.ts). Diferente da prova em Postgres real
+    // (script ad-hoc, spec 027 T053 — dois INSERTs sequenciais deram
+    // case_ordinal 1 e 2, e uma colisão concorrente real bateu 23505 em
+    // idx_job_postings_case_ordinal e o retry recuperou), estes testes
+    // provam a ORQUESTRAÇÃO: a SQL que o controller manda para o banco
+    // calcula o ordinal certo e via qual placeholder, e que uma rejeição
+    // 23505 daquela constraint específica é retentada com a MESMA query.
+    describe('case_ordinal (spec 027 Fase 5)', () => {
+      it('INSERT SQL inclui case_ordinal calculado por subquery sobre $4 (patient_id) — SEM placeholder novo (continua 24 params)', async () => {
+        mockCreateSuccess({ vacancyRow: { ...VACANCY_ROW, case_ordinal: 1 } });
+        const req = mockReq(FULL_BODY);
+        const res = mockRes();
+
+        await controller.createVacancy(req as never, res as never);
+
+        const insertSql = mockQuery.mock.calls[2][0] as string;
+        const insertParams = mockQuery.mock.calls[2][1] as unknown[];
+        expect(insertSql).toContain('case_ordinal');
+        expect(insertSql).toMatch(/MAX\(jp2\.case_ordinal\)/);
+        expect(insertSql).toMatch(/WHERE jp2\.patient_id = \$4/);
+        expect(insertParams).toHaveLength(24); // sem novo placeholder — reusa $4
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+          success: true,
+          data: expect.objectContaining({ case_ordinal: 1 }),
+        }));
+      });
+
+      it('duas vagas criadas em sequência para o MESMO paciente: a 1ª recebe case_ordinal 1, a 2ª recebe 2 (RETURNING * ecoa o que a subquery calculou)', async () => {
+        // 1ª vaga — mock representa o que a subquery calcularia num caso sem vagas anteriores.
+        mockQuery
+          .mockResolvedValueOnce({ rows: [{ id: PATIENT_ID }] })
+          .mockResolvedValueOnce({ rows: [{ vn: '201' }] })
+          .mockResolvedValueOnce({ rows: [{ ...VACANCY_ROW, id: 'vac-seq-1', case_ordinal: 1 }] });
+        const res1 = mockRes();
+        await controller.createVacancy(mockReq(FULL_BODY) as never, res1 as never);
+        expect(res1.json).toHaveBeenCalledWith(expect.objectContaining({
+          data: expect.objectContaining({ id: 'vac-seq-1', case_ordinal: 1 }),
+        }));
+
+        // 2ª vaga do MESMO paciente — mock representa o que a subquery calcularia agora que
+        // existe 1 vaga anterior viva (MAX(case_ordinal)=1 → 2).
+        mockQuery
+          .mockResolvedValueOnce({ rows: [{ id: PATIENT_ID }] })
+          .mockResolvedValueOnce({ rows: [{ vn: '202' }] })
+          .mockResolvedValueOnce({ rows: [{ ...VACANCY_ROW, id: 'vac-seq-2', case_ordinal: 2 }] });
+        const res2 = mockRes();
+        await controller.createVacancy(mockReq(FULL_BODY) as never, res2 as never);
+        expect(res2.json).toHaveBeenCalledWith(expect.objectContaining({
+          data: expect.objectContaining({ id: 'vac-seq-2', case_ordinal: 2 }),
+        }));
+      });
+
+      it('colisão real (23505 em idx_job_postings_case_ordinal): a 1ª tentativa de INSERT falha, retryOnCaseOrdinalConflict refaz a MESMA query e a 2ª tentativa cria a vaga (201)', async () => {
+        const conflictErr = Object.assign(
+          new Error('duplicate key value violates unique constraint "idx_job_postings_case_ordinal"'),
+          { code: '23505', constraint: 'idx_job_postings_case_ordinal' },
+        );
+        mockQuery
+          .mockResolvedValueOnce({ rows: [{ id: PATIENT_ID }] }) // patient check
+          .mockResolvedValueOnce({ rows: [{ vn: '300' }] })       // nextval
+          .mockRejectedValueOnce(conflictErr)                     // 1ª tentativa de INSERT: colide
+          .mockResolvedValueOnce({ rows: [{ ...VACANCY_ROW, id: 'vac-recovered', case_ordinal: 2 }] }); // 2ª tentativa: sucesso
+
+        const req = mockReq(FULL_BODY);
+        const res = mockRes();
+        await controller.createVacancy(req as never, res as never);
+
+        expect(res.status).toHaveBeenCalledWith(201);
+        expect(res.json).toHaveBeenCalledWith(expect.objectContaining({
+          success: true,
+          data: expect.objectContaining({ id: 'vac-recovered', case_ordinal: 2 }),
+        }));
+        const insertAttempts = mockQuery.mock.calls.filter(
+          ([sql]) => typeof sql === 'string' && sql.trim().startsWith('INSERT INTO job_postings'),
+        );
+        expect(insertAttempts).toHaveLength(2);
+      });
+
+      it('23505 de OUTRA constraint (não case_ordinal) NÃO é retentado — sobe cru e vira 500', async () => {
+        const otherConstraintErr = Object.assign(
+          new Error('duplicate key value violates unique constraint "idx_job_postings_vacancy_number"'),
+          { code: '23505', constraint: 'idx_job_postings_vacancy_number' },
+        );
+        mockQuery
+          .mockResolvedValueOnce({ rows: [{ id: PATIENT_ID }] })
+          .mockResolvedValueOnce({ rows: [{ vn: '301' }] })
+          .mockRejectedValueOnce(otherConstraintErr);
+
+        const req = mockReq(FULL_BODY);
+        const res = mockRes();
+        await controller.createVacancy(req as never, res as never);
+
+        expect(res.status).toHaveBeenCalledWith(500);
+        const insertAttempts = mockQuery.mock.calls.filter(
+          ([sql]) => typeof sql === 'string' && sql.trim().startsWith('INSERT INTO job_postings'),
+        );
+        expect(insertAttempts).toHaveLength(1); // não retentou — não é conflito de case_ordinal
       });
     });
   });

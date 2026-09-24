@@ -8,6 +8,7 @@ import {
   buildInsertParams,
   FULL_ALLOWED_UPDATE_FIELDS,
   OPERATIONAL_EDITABLE_FIELDS,
+  retryOnCaseOrdinalConflict,
 } from './vacancyCrudHelpers';
 import {
   auditVacancyCreated,
@@ -184,8 +185,13 @@ export class VacancyCrudController {
       if (hasUpdate) {
         newVacancy = await createWithPatientUpdate(this.db, case_number, updatePatient, insertArgs, actor);
       } else {
-        // Non-transactional path: insert, then best-effort audit in separate transaction
-        const result = await this.db.query(buildInsertQuery(), buildInsertParams(insertArgs));
+        // Non-transactional path: insert, then best-effort audit in separate transaction.
+        // case_ordinal (spec 027 Fase 5) é computado dentro do próprio INSERT; em conflito
+        // (23505 de idx_job_postings_case_ordinal) o retry refaz a MESMA query — cada
+        // this.db.query já é sua própria transação implícita, sem SAVEPOINT a limpar.
+        const result = await retryOnCaseOrdinalConflict(() =>
+          this.db.query(buildInsertQuery(), buildInsertParams(insertArgs)),
+        );
         newVacancy = result.rows[0] as Record<string, unknown>;
         // Best-effort audit: acquire a throwaway client, do the insert, release.
         // Audit failure MUST NOT affect the 201 response already committed above.
