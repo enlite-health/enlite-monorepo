@@ -50,6 +50,12 @@ describe('VacancyCaseCard — full data', () => {
     expect(elements.length).toBeGreaterThan(0);
   });
 
+  it('renders legado case number WITHOUT the "EN" prefix (< 1000, D412)', () => {
+    renderCard({ caseNumber: 748 });
+    expect(screen.queryByText(/EN748/)).not.toBeInTheDocument();
+    expect(screen.getAllByText(/748/).length).toBeGreaterThan(0);
+  });
+
   it('renders dependency level pill', () => {
     renderCard();
     expect(screen.getByText('admin.patients.dependencyOptions.MODERATE')).toBeInTheDocument();
@@ -92,6 +98,24 @@ describe('VacancyCaseCard — full data', () => {
   });
 });
 
+// ── Spec 028 — "CASO EN{n}" (formatCaseNumber) ───────────────────────────────
+
+describe('VacancyCaseCard — formatCaseNumber (spec 028, caso nativo × nulo)', () => {
+  it('caso NATIVO (case_number >= 1000): heading e descrição mostram "EN{n}"', () => {
+    renderCard({ caseNumber: 1041 });
+    // Heading: "admin.vacancyDetail.caseCard.caseLabel EN1041"
+    expect(screen.getAllByText(/EN1041/).length).toBeGreaterThan(0);
+    // Never the raw number without the prefix
+    expect(screen.queryByText(/(?<!EN)\b1041\b/)).not.toBeInTheDocument();
+  });
+
+  it('caso nulo: heading cai para "—", sem lançar', () => {
+    renderCard({ caseNumber: null });
+    const dashes = screen.getAllByText('—');
+    expect(dashes.length).toBeGreaterThan(0);
+  });
+});
+
 // ── Partial/null data ────────────────────────────────────────────────────────
 
 describe('VacancyCaseCard — partial data (missing optional fields)', () => {
@@ -116,6 +140,49 @@ describe('VacancyCaseCard — partial data (missing optional fields)', () => {
   it('does NOT render location row when patientCity and patientNeighborhood are null', () => {
     renderCard({ patientCity: null, patientNeighborhood: null });
     expect(screen.queryByText(/Buenos Aires/)).not.toBeInTheDocument();
+  });
+
+  it('renders "—" for providersNeeded when null', () => {
+    renderCard({ providersNeeded: null });
+    const dashes = screen.getAllByText('—');
+    expect(dashes.length).toBeGreaterThan(0);
+  });
+
+  it('renders "—" for paymentTermDays when null', () => {
+    renderCard({ paymentTermDays: null });
+    const dashes = screen.getAllByText('—');
+    expect(dashes.length).toBeGreaterThan(0);
+  });
+
+  it('profession e sex nulos: caseParts cai só no zone (sexLabel/professionLabel = null)', () => {
+    renderCard({ profession: null, sex: null, zone: 'Palermo' });
+    // caseDesc vira "CASO 748 - Palermo" — sem os rótulos de profissão/sexo.
+    expect(screen.getAllByText(/748 - Palermo/).length).toBeGreaterThan(0);
+  });
+
+  it('caso nulo E sem profissão/sexo/zona: caseDesc cai no "—" (nenhuma caseParts)', () => {
+    renderCard({ caseNumber: null, profession: null, sex: null, zone: null });
+    const dashes = screen.getAllByText('—');
+    expect(dashes.length).toBeGreaterThan(0);
+  });
+});
+
+// ── formatDateAR — branch do catch (defensivo) ───────────────────────────────
+
+describe('VacancyCaseCard — formatDateAR catch (defensivo)', () => {
+  it('toLocaleDateString lançando: cai no "—" em vez de propagar', () => {
+    const original = Date.prototype.toLocaleDateString;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (Date.prototype as any).toLocaleDateString = () => {
+      throw new Error('boom — Intl indisponível');
+    };
+    try {
+      renderCard({ publishedAt: '2026-02-25T00:00:00Z' });
+      const dashes = screen.getAllByText('—');
+      expect(dashes.length).toBeGreaterThan(0);
+    } finally {
+      Date.prototype.toLocaleDateString = original;
+    }
   });
 });
 

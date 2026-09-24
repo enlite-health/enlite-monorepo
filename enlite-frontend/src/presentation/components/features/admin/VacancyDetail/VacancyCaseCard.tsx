@@ -3,6 +3,7 @@ import { MapPin } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { VacancyStatusBadge } from '@presentation/components/atoms/VacancyStatusBadge';
+import { formatCaseNumber } from '@domain/value-objects/caseNumberFormat';
 import { useActionGate } from '@presentation/hooks/useCellAccess';
 import {
   VacancyStatusEditor,
@@ -118,7 +119,7 @@ export function VacancyCaseCard({
   ].filter(Boolean).join(' - ');
 
   const caseDesc = caseNumber != null
-    ? [`${t('admin.vacancyDetail.caseCard.caseLabel')} ${caseNumber}`, caseParts]
+    ? [`${t('admin.vacancyDetail.caseCard.caseLabel')} ${formatCaseNumber(caseNumber)}`, caseParts]
         .filter(Boolean)
         .join(' - ')
     : caseParts || '—';
@@ -134,7 +135,7 @@ export function VacancyCaseCard({
       {/* Header: case label + badge */}
       <div className="flex justify-between items-center mb-5">
         <Heading level={2} color="primary" weight="medium">
-          {t('admin.vacancyDetail.caseCard.caseLabel')} {caseNumber ?? '—'}
+          {t('admin.vacancyDetail.caseCard.caseLabel')} {formatCaseNumber(caseNumber) ?? '—'}
         </Heading>
         {/* D269 — sem vacancy:write o valor vira TEXTO (o badge), sem os
             controles do editor (nem dropdown, nem gatilho clicável). */}
