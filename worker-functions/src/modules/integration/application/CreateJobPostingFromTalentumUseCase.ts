@@ -5,7 +5,8 @@
  *
  * Rules:
  *  - vacancy_number is generated via SEQUENCE job_postings_vacancy_number_seq
- *  - case_number is extracted from data.name via regex /CASO\s+(\d+)/i
+ *  - case_number is extracted from data.name via the shared parser (T063 —
+ *    tolerates "CASO N[-M]" legado e "EN N#M" / "N#M" novo)
  *  - Title: "CASO {caseNumber}-{vacancyNumber}" if caseNumber found, else "VACANTE {vacancyNumber}"
  *  - Status is always SEARCHING
  *  - Country defaults to AR
@@ -22,6 +23,7 @@ import { Pool } from 'pg';
 import {
   JobPostingAuditRepository,
 } from '../../matching/infrastructure/JobPostingAuditRepository';
+import { parseCaseTitleReference } from '@shared/utils/parseCaseTitleReference';
 
 // ─────────────────────────────────────────────────────────────────
 // Input / Output types
@@ -76,9 +78,8 @@ export class CreateJobPostingFromTalentumUseCase {
     }
 
     // ── 2. Extrair case_number e vacancy_number do título Talentum ───
-    const caseMatch = data.name.match(/CASO\s+(\d+)(?:-(\d+))?/i);
-    const caseNumber: number | null = caseMatch ? parseInt(caseMatch[1], 10) : null;
-    const parsedVacancyNumber: number | null = caseMatch?.[2] ? parseInt(caseMatch[2], 10) : null;
+    // T063: parser compartilhado — tolera "CASO N[-M]" (legado) e "EN N#M" / "N#M" (novo).
+    const { caseNumber, ordinal: parsedVacancyNumber } = parseCaseTitleReference(data.name);
 
     // ── 3. Buscar vacante existente ────────────────────────────────
     let existingVacancy: { id: string; vacancy_number: number } | null = null;
