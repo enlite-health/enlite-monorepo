@@ -358,6 +358,82 @@ test.describe('Simulação de grupo de acesso (spec 026, F3/T3.6) — integraç�
 
     await apiSimulation(page.request, 'DELETE', '/v1/me/simulation', MASTER);
   });
+
+  // ── F2 (troca-de-grupo-simulado-com-feedback-e-cache-versionado) ──
+  //
+  // Dor do Gabriel (24/09): "escolho o grupo no select e demora, não sei se
+  // está mudando ou travado". `startSimulation`/`endSimulation` (adminAuthStore)
+  // agora CONFIRMAM a troca antes de soltar o overlay (refazem `fetchAuthz()`
+  // em loop até o contrato refletir) — os 3 testes abaixo provam isso contra o
+  // backend/Postgres reais, sem mock.
+
+  test('6. FEEDBACK — overlay de tela inteira aparece ao escolher o grupo e some antes de 5s', async ({ page }) => {
+    await loginAs(page, MASTER);
+    const nav = page.getByRole('navigation').first();
+    await expect(nav.getByRole('link', { name: 'Vacantes' })).toBeVisible({ timeout: 15_000 });
+
+    const overlay = page.getByTestId('group-switch-overlay');
+    const inicio = Date.now();
+    const via = await escolherGrupoPorTeclado(page, GROUP_LIMITADO_NAME, groupLimitadoId);
+    console.log(`[prova] escolha do Select via: ${via}`);
+
+    await expect(overlay).toBeVisible({ timeout: 5_000 });
+    await expect(overlay).toContainText(GROUP_LIMITADO_NAME);
+    await expect(overlay).toBeHidden({ timeout: 10_000 });
+    const decorrido = Date.now() - inicio;
+    console.log(`[prova] escolha → overlay some: ${decorrido}ms`);
+    expect(decorrido, 'overlay deveria confirmar a troca em menos de 5s').toBeLessThan(5_000);
+
+    // O item que o grupo não tem já sumiu quando o overlay some (mesma asserção do teste 1) —
+    // e o banner já reflete o grupo novo, não o estado velho.
+    await expect(nav.getByRole('link', { name: 'Vacantes' }), '"Vacantes" deveria sumir sob a simulação').toHaveCount(0);
+    await expect(page.getByTestId('group-simulation-banner')).toContainText(GROUP_LIMITADO_NAME);
+  });
+
+  test('7. FEEDBACK — sair: overlay "Volviendo…" aparece e some, banner some, sem "expiró" (L37)', async ({ page }) => {
+    // Simulação segue ativa do teste 6 (serial, mesmo backend) — página nova + login
+    // reflete o estado real, não o componente já montado do teste anterior.
+    await loginAs(page, MASTER);
+    await expect(page.getByTestId('group-simulation-banner')).toContainText(GROUP_LIMITADO_NAME);
+
+    const overlay = page.getByTestId('group-switch-overlay');
+    const sair = page.getByRole('button', { name: /Salir de la simulación|access\.simulation\.exit/i });
+    await sair.click();
+
+    await expect(overlay).toBeVisible({ timeout: 5_000 });
+    await expect(overlay).toContainText(/Volviendo|access\.simulation\.switchingBack/i);
+    await expect(overlay).toBeHidden({ timeout: 10_000 });
+
+    await expect(page.getByTestId('group-simulation-banner')).toHaveCount(0, { timeout: 10_000 });
+    // L37 — troca EXPLÍCITA nunca é lida como "expiró" (nem o texto es, nem o pt-BR de fallback).
+    await expect(page.getByText(/expiró|expirou/i)).toHaveCount(0);
+  });
+
+  test('8. SCREENSHOT — overlay de troca de grupo (visível) e banner pós-troca', async ({ page }) => {
+    await loginAs(page, MASTER);
+    const overlay = page.getByTestId('group-switch-overlay');
+    const banner = page.getByTestId('group-simulation-banner');
+
+    // `page.screenshot()` (não `locator.screenshot()`): o overlay confirma e some em
+    // ~1s (medido nos testes 6/7) — `locator.screenshot()` faz scroll-into-view +
+    // espera de estabilidade ANTES de capturar, e essa espera sozinha já estourou a
+    // janela numa 1ª tentativa (achado: "Element is not attached to the DOM",
+    // retry #1/#2). `page.screenshot()` captura o viewport na hora, sem essa dança.
+    await escolherGrupoPorTeclado(page, GROUP_REDACAO_NAME, groupRedacaoId);
+    await expect(overlay).toBeVisible({ timeout: 5_000 });
+    await page.screenshot({ path: 'evidencias/troca-de-grupo/f2-overlay-cambiando.png' });
+    await expect(overlay).toBeHidden({ timeout: 10_000 });
+
+    // Banner: estável (não some sozinho como o overlay) — `locator.screenshot()`
+    // aqui é seguro e mais fiel (espera a pintura assentar antes de capturar;
+    // achado: `page.screenshot()` bateu ANTES do repaint do banner nesta mesma
+    // rodada — texto ausente no PNG apesar do `toContainText` já ter passado).
+    await expect(banner).toBeVisible({ timeout: 10_000 });
+    await expect(banner).toContainText(GROUP_REDACAO_NAME);
+    await banner.screenshot({ path: 'evidencias/troca-de-grupo/f2-banner-pos-troca.png' });
+
+    await apiSimulation(page.request, 'DELETE', '/v1/me/simulation', MASTER);
+  });
 });
 
 /** Normaliza espaço em branco pra comparar innerText de duas sessões sem ruído de layout. */
