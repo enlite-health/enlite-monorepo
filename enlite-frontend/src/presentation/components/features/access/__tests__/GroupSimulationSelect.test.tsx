@@ -100,7 +100,7 @@ function montarStore(over: MontarOver = {}): {
 
 describe('GroupSimulationSelect (F3/T3.1 RED, decisão #2)', () => {
   beforeEach(() => {
-    useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' } as never);
+    useAdminAuthStore.setState({ authz: null, authzStatus: 'idle', switching: null, switchError: null } as never);
   });
 
   it('não renderiza nada quando authz.canSimulate === false', () => {
@@ -167,7 +167,7 @@ describe('GroupSimulationSelect (F3/T3.1 RED, decisão #2)', () => {
     expect(endSimulation).toHaveBeenCalledTimes(1);
   });
 
-  it('escolher uma opção chama startSimulation(groupId)', async () => {
+  it('escolher uma opção chama startSimulation(groupId, groupName) — F2: o nome alimenta o overlay de troca', async () => {
     const { startSimulation } = montarStore();
     render(<GroupSimulationSelect />);
 
@@ -175,7 +175,7 @@ describe('GroupSimulationSelect (F3/T3.1 RED, decisão #2)', () => {
     await screen.findByRole('option', { name: 'Finanzas - AG' }); // espera o fetch de listSimulatableGroups popular as opções
     await userEvent.selectOptions(select, 'g-fin');
 
-    await waitFor(() => expect(startSimulation).toHaveBeenCalledWith('g-fin'));
+    await waitFor(() => expect(startSimulation).toHaveBeenCalledWith('g-fin', 'Finanzas - AG'));
   });
 
   it('nenhum texto cru em espanhol — só as chaves i18n fechadas (select, exit, disabledEngineOff)', async () => {
@@ -222,6 +222,15 @@ describe('GroupSimulationSelect (F3/T3.1 RED, decisão #2)', () => {
     expect(await screen.findByText('access.simulation.groupNotSimulable')).toBeInTheDocument();
   });
 
+  it('F2: switching !== null desabilita o Select, mesmo com enforcement=on', async () => {
+    const { listSimulatableGroups } = montarStore();
+    useAdminAuthStore.setState({ switching: { kind: 'start', groupId: 'g-recl', groupName: 'Reclutamiento - AG' } } as never);
+    render(<GroupSimulationSelect />);
+
+    expect(screen.getByRole('combobox', { name: 'access.simulation.select' })).toBeDisabled();
+    await waitFor(() => expect(listSimulatableGroups).toHaveBeenCalledTimes(1));
+  });
+
   it('cobertura T3.7: startSimulation rejeitando com erro genérico (sem code) não mostra o texto de groupNotSimulable', async () => {
     const startSimulation = vi.fn().mockRejectedValue(new Error('boom'));
     montarStore({ startSimulation });
@@ -231,7 +240,7 @@ describe('GroupSimulationSelect (F3/T3.1 RED, decisão #2)', () => {
     await screen.findByRole('option', { name: 'Finanzas - AG' });
     await userEvent.selectOptions(select, 'g-fin');
 
-    await waitFor(() => expect(startSimulation).toHaveBeenCalledWith('g-fin'));
+    await waitFor(() => expect(startSimulation).toHaveBeenCalledWith('g-fin', 'Finanzas - AG'));
     expect(screen.queryByText('access.simulation.groupNotSimulable')).not.toBeInTheDocument();
   });
 });
