@@ -264,6 +264,23 @@ describe('HandleReminderResponseUseCase', () => {
       expect(variables.case_number).toBe('');
     });
 
+    it('vacancy com case_number nativo (>=1000, migration 459) → variables.case_number = "EN{n}" (formatCaseNumber)', async () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [WORKER] })
+        .mockResolvedValueOnce({ rows: [AWAITING_APP] })
+        .mockResolvedValueOnce({ rows: [] })                           // release slot
+        .mockResolvedValueOnce({ rows: [{ case_number: 1000 }] })     // vacancy lookup
+        .mockResolvedValueOnce({ rows: [] })                           // update WJA
+        .mockResolvedValueOnce({ rows: [{ id: 'outbox-en-case' }] }); // insert outbox
+
+      const result = await useCase.execute('whatsapp:+5491112345678', 'reschedule_yes');
+
+      expect(result.isSuccess).toBe(true);
+      const outboxCall = mockQuery.mock.calls[5];
+      const variables = JSON.parse(outboxCall[1][1]);
+      expect(variables.case_number).toBe('EN1000');
+    });
+
     it('pula slot release se interview_slot_id null', async () => {
       const appNoSlot = { ...AWAITING_APP, interview_slot_id: null };
       mockQuery
