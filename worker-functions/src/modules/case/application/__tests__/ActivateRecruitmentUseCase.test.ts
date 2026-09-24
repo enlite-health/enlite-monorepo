@@ -32,6 +32,24 @@ jest.mock('firebase-functions', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
 }));
 
+// T040/T041 (spec 027, Fase 4) — `postCreatePipeline` (pós-commit, setImmediate)
+// resolve o pool via `DatabaseConnection.getInstance().getPool()` (lazy require,
+// mesmo molde de SavePersonalInfoUseCase.getPool()). Sem este mock, TODO teste
+// que passa pelo ramo 201 chamaria a DatabaseConnection REAL a partir do
+// setImmediate — mesmo capturado pelo try/catch, arriscaria uma tentativa de
+// conexão de verdade a partir da suíte unitária. `mockPostCreateQuery` também
+// cobre `tryEnsureShortLink` (chamado no mesmo pipeline), mas hoje ele é
+// no-op para toda vaga destes testes (status vem undefined do mock de
+// `buildInsertQuery`/INSERT — nunca em `PUBLIC_STATUSES` — então nem chega a
+// tocar o pool).
+const mockPostCreateQuery = jest.fn().mockResolvedValue({ rows: [{ id: 'evt-mock' }] });
+const mockPostCreatePool = { query: mockPostCreateQuery };
+jest.mock('@shared/database/DatabaseConnection', () => ({
+  DatabaseConnection: {
+    getInstance: () => ({ getPool: () => mockPostCreatePool }),
+  },
+}));
+
 import {
   ActivateRecruitmentUseCase,
   PatientNotFoundForRecruitmentError,
@@ -126,6 +144,18 @@ const READY_SERVICE = {
 
 describe('ActivateRecruitmentUseCase', () => {
   beforeEach(() => jest.clearAllMocks());
+
+  // T040/T041 (spec 027, Fase 4) — todo ramo 201 agenda `postCreatePipeline`
+  // num `setImmediate` que este describe NÃO aguarda em cada `it`. Sem este
+  // flush, o callback de um teste fica pendente na fila de macrotasks e só
+  // dispara DEPOIS que `beforeEach` já rodou `clearAllMocks()` do teste
+  // seguinte — poluindo `mockPostCreateQuery.mock.calls` de quem vier depois
+  // (medido: o describe de baixo via a chamada de OUTRO teste). Flush aqui
+  // garante que cada teste drena o que ele mesmo agendou antes do próximo.
+  afterEach(async () => {
+    await new Promise(resolve => setImmediate(resolve));
+    await new Promise(resolve => setImmediate(resolve));
+  });
 
   it('201 feliz — paciente no funil (ADMISSION): cria a vaga e move para SEARCHING (statusChanged:true)', async () => {
     const { promise } = run({
@@ -457,6 +487,89 @@ describe('ActivateRecruitmentUseCase', () => {
       const useCase = new ActivateRecruitmentUseCase();
       await expect(useCase.execute(PATIENT_ID, SERVICE_ID)).rejects.toBe(otherErr);
       expect(insertAttempts).toBe(1); // não retentou
+    });
+  });
+
+  // ── vacancy.created — evento pós-commit (T040/T041, spec 027 Fase 4) ──────
+  //
+  // `postCreatePipeline` roda dentro de um `setImmediate` DEPOIS que `execute()`
+  // já resolveu — por isso todo teste aqui precisa flushar o macrotask (2x:
+  // 1 para o próprio setImmediate, 1 para a Promise do `withSystemDbContext` +
+  // `enqueueDomainEvent` encadeada dentro dele) antes de inspecionar
+  // `mockPostCreateQuery`.
+  describe('vacancy.created — pós-commit (T040/T041)', () => {
+    it('enfileira vacancy.created (payload={jobPostingId}) após o 201, fora da transação', async () => {
+      const { promise } = run({
+        patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular' },
+        serviceRow: READY_SERVICE,
+        vacancyNumber: 900,
+        insertedId: 'vac-evt-1',
+      });
+      const result = await promise;
+      expect(result.vacancyId).toBe('vac-evt-1');
+
+      await new Promise(resolve => setImmediate(resolve));
+      await new Promise(resolve => setImmediate(resolve));
+
+      const domainEventCall = mockPostCreateQuery.mock.calls.find(
+        ([sql]: [string]) => typeof sql === 'string' && sql.includes('INSERT INTO domain_events'),
+      );
+      expect(domainEventCall).toBeTruthy();
+      const [, values] = domainEventCall as [string, unknown[]];
+      expect(values[0]).toBe('vacancy.created');
+      expect(JSON.parse(values[1] as string)).toEqual({ jobPostingId: 'vac-evt-1' });
+    });
+
+    it('falha ao enfileirar vacancy.created NÃO derruba a vaga criada nem vira unhandled rejection', async () => {
+      mockPostCreateQuery.mockRejectedValueOnce(new Error('domain_events indisponível (simulado, T042)'));
+
+      const { promise } = run({
+        patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular' },
+        serviceRow: READY_SERVICE,
+        vacancyNumber: 901,
+        insertedId: 'vac-evt-2',
+      });
+
+      // A vaga é criada e o 201 (equivalente) resolve normalmente — o enqueue
+      // roda DEPOIS, no setImmediate, então a rejeição instruída acima ainda
+      // nem aconteceu quando `promise` resolve.
+      await expect(promise).resolves.toMatchObject({ vacancyId: 'vac-evt-2' });
+
+      await new Promise(resolve => setImmediate(resolve));
+      await new Promise(resolve => setImmediate(resolve));
+
+      // A tentativa aconteceu e falhou (rejeitada acima) — chegar até aqui
+      // sem o teste explodir com unhandled rejection É a prova do catch
+      // dentro de `postCreatePipeline`.
+      const domainEventCall = mockPostCreateQuery.mock.calls.find(
+        ([sql]: [string]) => typeof sql === 'string' && sql.includes('INSERT INTO domain_events'),
+      );
+      expect(domainEventCall).toBeTruthy();
+    });
+
+    // Cobertura de branch (medido: `npm test -- --coverage` acusou
+    // "ActivateRecruitmentUseCase.ts coverage threshold for branches (100%)
+    // not met: 95.83%" na linha 181 — `err instanceof Error ? err : new
+    // Error(String(err))` só tinha o ramo Error exercitado pelo teste acima).
+    it('falha ao enfileirar vacancy.created com rejeição que NÃO é Error também não derruba a vaga', async () => {
+      mockPostCreateQuery.mockRejectedValueOnce('rejeição crua (simulado, cobertura de branch)');
+
+      const { promise } = run({
+        patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular' },
+        serviceRow: READY_SERVICE,
+        vacancyNumber: 902,
+        insertedId: 'vac-evt-3',
+      });
+
+      await expect(promise).resolves.toMatchObject({ vacancyId: 'vac-evt-3' });
+
+      await new Promise(resolve => setImmediate(resolve));
+      await new Promise(resolve => setImmediate(resolve));
+
+      const domainEventCall = mockPostCreateQuery.mock.calls.find(
+        ([sql]: [string]) => typeof sql === 'string' && sql.includes('INSERT INTO domain_events'),
+      );
+      expect(domainEventCall).toBeTruthy();
     });
   });
 });
