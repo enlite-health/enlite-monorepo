@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Loader2, MapPin } from 'lucide-react';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import type { CaseOption, VacancyModalFlowState, VacancyModalFlowActions } from '@hooks/admin/useVacancyModalFlow';
+import { formatCaseNumber } from '@domain/value-objects/caseNumberFormat';
 
 interface CaseSelectStepProps
   extends Pick<VacancyModalFlowState, 'selectedCaseNumber' | 'selectedPatientId' | 'dependencyLevel' | 'addresses' | 'selectedAddressId' | 'isLoadingPatient' | 'patientError'>
@@ -37,7 +38,10 @@ export function CaseSelectStep({
   const handleCaseChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const val = e.target.value;
     if (!val) return;
-    const found = cases.find((c) => c.caseNumber === Number(val));
+    // Comparação por STRING, não `Number(val)`: `val` já é `String(c.caseNumber)` (o `value` da
+    // `<option>` nunca leva o prefixo `EN` — só o `label`, formatado). `Number()` sobre texto
+    // formatado (`"EN1234"`) dá `NaN`, e `NaN !== NaN` é sempre true — clique sem efeito, sem erro.
+    const found = cases.find((c) => String(c.caseNumber) === val);
     if (found) selectCase(found.caseNumber, found.patientId);
   };
 
@@ -72,7 +76,7 @@ export function CaseSelectStep({
               {cases.map((c) => (
                 <option key={c.caseNumber} value={c.caseNumber}>
                   {t('admin.vacancyModal.caseSelectStep.caseOptionLabel', {
-                    caseNumber: c.caseNumber,
+                    caseNumber: formatCaseNumber(c.caseNumber),
                     dependencyLevel: c.dependencyLevel || '—',
                   })}
                 </option>
