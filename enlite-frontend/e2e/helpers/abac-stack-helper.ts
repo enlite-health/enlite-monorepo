@@ -133,6 +133,8 @@ export async function installAuthInterceptors(page: Page, u: MockUser): Promise<
   };
   await page.route('**/api/**', swapToken);
   await page.route('**/v1/me/authz', swapToken);
+  // spec 026 (F3/T3.6): rotas de simulação de grupo, mesmo `/v1/me/*`.
+  await page.route('**/v1/me/simulation**', swapToken);
 }
 
 /** Login como uma pessoa faz: clica no campo, digita, clica no botão. */

@@ -27,6 +27,32 @@ export interface AuthzContract {
   features: Record<string, Record<string, { enabled: boolean; config: unknown }>>;
   /** Ausente = `'off'` (contrato de transição — ver `Enforcement`). */
   enforcement?: Enforcement;
+  /**
+   * F3 (spec 026) — filiação REAL no grupo "Acesso Master" (não muda com a
+   * simulação ativa). Opcional pelo MESMO motivo de `enforcement` acima:
+   * dezenas de fixtures de teste em todo o app montam `AuthzContract` sem
+   * conhecer este campo (medido: tornar obrigatório quebra 77 asserções em 62
+   * arquivos fora do escopo desta mudança — ver decisão registrada no diário).
+   * Ausente é tratado como `false` em toda leitura — nunca habilita por
+   * omissão, mesmo padrão fail-closed de `enforcement`.
+   */
+  canSimulate?: boolean;
+  /** Ausente é tratado como `null` (sem simulação ativa) — mesmo motivo de `canSimulate`. */
+  simulation?: GroupSimulation | null;
+}
+
+/** Snapshot de uma simulação de grupo ativa (F3, spec 026). `startedAt`/`expiresAt` chegam como ISO string no JSON — nunca `Date` no lado do frontend. */
+export interface GroupSimulation {
+  id: string;
+  groupId: string;
+  groupName: string;
+  startedAt: string;
+  expiresAt: string;
+}
+
+/** Pura: há uma simulação de grupo ativa neste contrato? `authz` null ou `simulation` ausente/null → `false`. */
+export function isSimulating(authz: AuthzContract | null): boolean {
+  return !!authz?.simulation;
 }
 
 /**
