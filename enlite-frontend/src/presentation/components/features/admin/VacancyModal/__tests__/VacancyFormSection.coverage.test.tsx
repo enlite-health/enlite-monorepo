@@ -192,7 +192,6 @@ describe('VacancyFormSection — onSubmit catch: erro genérico, não-Error, e 4
   });
 
   it('valor não-Error (string crua): banner cai no fallback i18n', async () => {
-    // eslint-disable-next-line prefer-promise-reject-errors
     updateVacancy.mockRejectedValueOnce('erro cru, não é instância de Error');
 
     await submitEditForm();
