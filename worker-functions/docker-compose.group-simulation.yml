@@ -21,4 +21,7 @@ services:
       PERMISSION_ENGINE_ENABLED: "true"
       PERMISSION_ENFORCED_ROUTES: "admin.analytics;admin.dedup;admin.encuadre;admin.integrations;admin.messaging;admin.patients;admin.permissions;admin.recruitment;admin.test_fixtures;admin.users;admin.vacancies;admin.workers"
       PERMISSION_CATALOG_SYNC_ENABLED: "true"
-      PERMISSION_CACHE_TTL_MS: "0"
+      # TTL LIGADO de propósito (era "0"): é a régua que morre se alguém desfizer o
+      # conserto da chave de cache versionada por simulação (PermissionService.ts) —
+      # com TTL 0 o e2e de integração nunca mediria a lacuna de propagação.
+      PERMISSION_CACHE_TTL_MS: "30000"

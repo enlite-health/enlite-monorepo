@@ -23,12 +23,16 @@ function snapshot(overrides: Partial<ResolvedAuthz> = {}): ResolvedAuthz {
   };
 }
 
-function makeAuthzRepo(value = snapshot()): jest.Mocked<EffectiveAuthzRepository> {
+function makeAuthzRepo(
+  value = snapshot(),
+  simulationVersion: string | null = null,
+): jest.Mocked<EffectiveAuthzRepository> {
   return {
     snapshot: jest.fn().mockResolvedValue(value),
     effectivePermissions: jest.fn().mockResolvedValue(value.permissions),
     effectiveCountries: jest.fn().mockResolvedValue(value.countries),
     countActiveStaffWithoutGroup: jest.fn().mockResolvedValue(0),
+    simulationVersion: jest.fn().mockResolvedValue(simulationVersion),
   };
 }
 
@@ -159,6 +163,62 @@ describe('PermissionService — resolução e cache', () => {
       { ttlMs: 0 },
     );
     expect(await semGrupo.can('ana', TENANT, 'vacancy', 'read')).toBe(false);
+  });
+});
+
+describe('PermissionService — cache versionado pela simulação ativa (spec 026)', () => {
+  it('versão igual → hit: snapshot chamado 1×, mesmo consultando a versão a cada resolve()', async () => {
+    const repo = makeAuthzRepo(snapshot(), 'sim-1');
+    const service = new PermissionService(repo, makeFeatureRepo(), { ttlMs: 30_000 });
+
+    await service.resolve('ana', TENANT);
+    await service.resolve('ana', TENANT);
+
+    expect(repo.snapshot).toHaveBeenCalledTimes(1);
+    expect(repo.simulationVersion).toHaveBeenCalledTimes(2);
+  });
+
+  it('versão muda entre as duas chamadas → miss: snapshot chamado 2×', async () => {
+    const repo = makeAuthzRepo();
+    repo.simulationVersion.mockResolvedValueOnce('sim-1').mockResolvedValueOnce('sim-2');
+    const service = new PermissionService(repo, makeFeatureRepo(), { ttlMs: 30_000 });
+
+    await service.resolve('ana', TENANT);
+    await service.resolve('ana', TENANT);
+
+    expect(repo.snapshot).toHaveBeenCalledTimes(2);
+  });
+
+  it('null → null (fora de simulação nas duas leituras) → hit', async () => {
+    const repo = makeAuthzRepo(snapshot(), null);
+    const service = new PermissionService(repo, makeFeatureRepo(), { ttlMs: 30_000 });
+
+    await service.resolve('ana', TENANT);
+    await service.resolve('ana', TENANT);
+
+    expect(repo.snapshot).toHaveBeenCalledTimes(1);
+  });
+
+  it('TTL vencido → miss mesmo com a MESMA versão de simulação', async () => {
+    let now = 1_000;
+    const repo = makeAuthzRepo(snapshot(), 'sim-1');
+    const service = new PermissionService(repo, makeFeatureRepo(), { ttlMs: 30_000, now: () => now });
+
+    await service.resolve('ana', TENANT);
+    now += 30_001;
+    await service.resolve('ana', TENANT);
+
+    expect(repo.snapshot).toHaveBeenCalledTimes(2);
+  });
+
+  it('uid ou tenantId vazio: versão é null SEM consultar o repositório', async () => {
+    const repo = makeAuthzRepo();
+    const service = new PermissionService(repo, makeFeatureRepo(), { ttlMs: 30_000 });
+
+    await service.resolve('', TENANT);
+    await service.resolve('ana', '');
+
+    expect(repo.simulationVersion).not.toHaveBeenCalled();
   });
 });
 
