@@ -302,4 +302,72 @@ describe('Fluxo A — convite automático pós-criação de vaga (templates Twil
       expect(Number(rows[0].cnt)).toBeLessThanOrEqual(1);
     }
   });
+
+  it('T044 (spec 027, Fase 4) — is_test=true NÃO gera messaging_outbox; a MESMA consulta acha >0 linha pra is_test=false (contagem zero não é "não olhei")', async () => {
+    // Mesmo patient/address/workers do describe — só muda is_test. Guarda em
+    // VacancyAutoInviteHandler.ts (~linhas 100-103): `is_test === true` retorna
+    // ANTES de matchWorkersForJob, então nem chega a rodar matchmaking.
+    const isTestRes = await api.post(
+      '/api/admin/vacancies',
+      {
+        case_number: CASE_NUMBER,
+        patient_id: patientId,
+        patient_address_id: patientAddressId,
+        status: 'SEARCHING',
+        is_test: true,
+      },
+      { headers: { Authorization: `Bearer ${adminToken}` } },
+    );
+    expect(isTestRes.status).toBe(201);
+    const isTestVacancyId = isTestRes.data.data.id as string;
+
+    try {
+      await waitForCondition(async () => {
+        const { rows } = await pool.query(
+          `SELECT id FROM domain_events WHERE event = 'vacancy.created' AND payload->>'jobPostingId' = $1`,
+          [isTestVacancyId],
+        );
+        return rows.length > 0;
+      }, 5000);
+
+      const evtRes = await pool.query<{ id: string }>(
+        `SELECT id FROM domain_events WHERE event = 'vacancy.created' AND payload->>'jobPostingId' = $1 LIMIT 1`,
+        [isTestVacancyId],
+      );
+      const eventId = evtRes.rows[0].id;
+
+      const pubsubPayload = Buffer.from(JSON.stringify({ eventId })).toString('base64');
+      const processRes = await api.post(
+        '/api/internal/events/process',
+        { message: { data: pubsubPayload } },
+        { headers: { 'X-Internal-Secret': INTERNAL_SECRET } },
+      );
+      expect([200, 204]).toContain(processRes.status);
+
+      // Dá tempo do handler terminar (early-return é rápido, mas ainda
+      // assíncrono atrás do 200/204 do endpoint de process) antes de contar.
+      await new Promise(r => setTimeout(r, 1500));
+
+      const { rows: zeroRows } = await pool.query(
+        `SELECT id FROM messaging_outbox WHERE job_posting_id = $1`,
+        [isTestVacancyId],
+      );
+      expect(zeroRows.length).toBe(0);
+
+      // Contagem zero é falha até prova em contrário (regra dura do projeto):
+      // a MESMA consulta, pra vaga is_test=false criada no topo deste describe
+      // (já processada pelos testes acima), TEM que achar linha — senão o
+      // zero acima não provaria guarda nenhuma, só query quebrada/tabela vazia.
+      const { rows: nonZeroRows } = await pool.query(
+        `SELECT id FROM messaging_outbox WHERE job_posting_id = $1`,
+        [vacancyId],
+      );
+      expect(nonZeroRows.length).toBeGreaterThan(0);
+    } finally {
+      await pool.query(`DELETE FROM messaging_outbox WHERE job_posting_id = $1`, [isTestVacancyId]);
+      await pool.query(`DELETE FROM worker_job_applications WHERE job_posting_id = $1`, [isTestVacancyId]);
+      await pool.query(`DELETE FROM domain_events WHERE payload->>'jobPostingId' = $1`, [isTestVacancyId]);
+      await pool.query(`DELETE FROM job_postings WHERE id = $1`, [isTestVacancyId]);
+    }
+  });
 });
