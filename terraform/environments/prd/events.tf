@@ -474,11 +474,11 @@ resource "google_monitoring_alert_policy" "anacare_mirror_stuck" {
 # ---------------------------------------------------------------------------
 # Monitor diário e2e-prod: alerta de FALHA DE EXECUÇÃO do Cloud Run Job
 # ---------------------------------------------------------------------------
-# Hoje, se o Job `e2e-prod-smoke` (roda às 3h AR) falha, ninguém é avisado. Ficou
-# mais grave em 20/09/2026: esse mesmo job passou a executar também a rotina que
-# sincroniza o Ana Care Horas — falha no meio dela deixa o mês parcial em prod, e
-# sem tripwire ninguém percebe (foi essa lacuna, sem esta policy, que custou
-# semanas com agosto/2026 fechado em 40%).
+# Hoje, se o Job `e2e-prod-smoke` (roda às 3h AR) falha, ninguém é avisado — o job
+# só roda de novo amanhã, e o dia fica sem cobertura de smoke test em prd até
+# alguém notar. Até 22/09/2026 essa mesma execução também sincronizava o Ana Care
+# Horas; foi desacoplado (o teste passou a interceptar a chamada via page.route em
+# vez de executá-la de verdade) — este alerta cobre só a execução do smoke test.
 #
 # Métrica NATIVA do Cloud Run Job (não é log-based, não precisa de
 # google_logging_metric nem depends_on): run.googleapis.com/job/completed_execution_count,
@@ -500,31 +500,35 @@ resource "google_monitoring_alert_policy" "e2e_prod_smoke_execution_failed" {
     subject   = "Execução do monitor diário e2e-prod-smoke falhou"
     content   = <<-EOT
       ## Impacto
-      O Cloud Run Job `e2e-prod-smoke` roda todo dia às 3h (horário AR) e, desde 20/09/2026,
-      essa mesma execução também é a rotina que sincroniza o **Ana Care Horas** do mês. Se o
-      job falha — por exemplo por estourar o timeout com a sincronização pela metade — o mês
-      fica **parcial em produção**, e sem este alerta ninguém percebe. Foi exatamente esse tipo
-      de falha silenciosa que custou semanas com agosto/2026 fechado em 40%.
+      O Cloud Run Job `e2e-prod-smoke` roda todo dia às 3h (horário AR) e executa a suíte de
+      synthetic monitoring (`e2e-prod/`) contra produção. Se a execução falha, ninguém é
+      avisado sem este alerta — o job só roda de novo amanhã, e o dia fica sem cobertura de
+      smoke test em prd até alguém notar.
+
+      **Desde 22/09/2026 este job NÃO sincroniza mais o Ana Care Horas.** Até então a mesma
+      execução também disparava essa sincronização; foi desacoplado — o teste agora
+      intercepta a chamada via `page.route` em vez de executá-la de verdade. Este alerta
+      cobre só a execução do smoke test; a sincronização do Ana Care Horas tem rotina e
+      monitoramento próprios.
 
       ## O que este alerta afirma
       Existe pelo menos uma execução do job `e2e-prod-smoke` (projeto `enlite-prd`, região
       `southamerica-west1`) que terminou com `result="failed"` na métrica nativa
       `run.googleapis.com/job/completed_execution_count`.
 
-      ## O que fazer ao receber
-      1. Conferir a execução no Cloud Run: `gcloud run jobs executions list --job=e2e-prod-smoke
-         --region=southamerica-west1 --project=enlite-prd` e os logs da execução que falhou.
-      2. **Rodar a sincronização do Ana Care Horas até o fim.** O mês parcial NÃO se conserta
-         sozinho só porque o job roda de novo amanhã — a lacuna de hoje fica aberta até alguém
-         completar o sync manualmente.
+      ## Modos de falha reais
+      1. **Teste de regressão quebrado** — mudança em prod (ou no próprio código de teste)
+         derrubou um dos specs Playwright da suíte. É o modo mais comum.
+      2. **Timeout do job** — a suíte não termina dentro do limite configurado no Cloud Run Job.
+      3. **Erro de infra** — falha no deploy da imagem, permissão da service account, ou
+         indisponibilidade momentânea do Cloud Run/rede.
 
-      ## O que este alerta NÃO cobre
-      Ele cobre a FALHA DO JOB, não a completude da sincronização. Uma execução que termina com
-      `result="succeeded"` ainda pode ter sincronizado o mês pela metade se a lógica interna
-      engolir um erro parcial — isso hoje **não é observável** e depende de trabalho futuro (uma
-      coluna de status da corrida do sync). Um alerta que parecesse cobrir mais do que cobre
-      seria pior que nenhum alerta: silêncio passaria a ser lido como "sincronizou completo",
-      sem prova disso.
+      ## Diagnóstico (nesta ordem)
+      1. `gcloud run jobs executions list --job=e2e-prod-smoke --region=southamerica-west1
+         --project=enlite-prd` e ler os logs da execução que falhou.
+      2. Achar qual spec falhou (nome do teste no log) — decide entre modo 1 (regressão real
+         em prod) e modo 2/3 (infra).
+      3. Se for modo 1: reproduzir localmente contra prod antes de mexer em código.
     EOT
   }
 
