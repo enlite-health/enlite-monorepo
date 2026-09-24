@@ -130,7 +130,7 @@ export const JobsEmbeddedSection = ({
       const searchLower = searchTerm.toLowerCase();
       const matchesSearch = !searchTerm ||
         job.title.toLowerCase().includes(searchLower) ||
-        job.code.includes(searchTerm) ||
+        job.code.toLowerCase().includes(searchLower) ||
         job.workerType.toLowerCase().includes(searchLower) ||
         job.localidad.toLowerCase().includes(searchLower) ||
         job.provincia.toLowerCase().includes(searchLower);
