@@ -29,6 +29,7 @@ export type ClinicalPatientStatus =
   | 'SEARCHING'    // búsqueda de prestador
   | 'REPLACEMENT'  // reemplazo de prestador
   | 'SUSPENDED'    // suspensão (internação/viagem)
+  | 'ALTA'         // alta — manual, D430; única saída: DISCHARGED (D437)
   | 'DISCHARGED';  // baja
 
 export type PatientStatus = AdmissionFunnelStatus | ClinicalPatientStatus;
@@ -45,6 +46,7 @@ export const CLINICAL_PATIENT_STATUSES: readonly ClinicalPatientStatus[] = [
   'SEARCHING',
   'REPLACEMENT',
   'SUSPENDED',
+  'ALTA',
   'DISCHARGED',
 ] as const;
 

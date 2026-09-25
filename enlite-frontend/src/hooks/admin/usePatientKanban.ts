@@ -1,17 +1,23 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import type { PatientKanbanItem } from '@domain/entities/PatientDetail';
+import { ADMISSION_FUNNEL_STATUSES } from '@domain/entities/patientEnums';
 
 /**
- * As colunas do board = o FUNIL DE ADMISSÃO (`patients.admission_status`, migration 313 — spec
- * 012, US-B7). DONE é a coluna "Activo": quem já passou pela admissão, qualquer que seja o estado
- * clínico v2 (ACTIVE, ON_HOLD, SEARCHING…). O estado clínico mora na ficha, não aqui.
+ * As colunas do board agrupam por `patients.status` (estado clínico v2). ADMISSION junta os 3
+ * estados do funil de admissão antigo (SOLICITANTE, ADMISSION, PENDING_ADMISSION) numa coluna só;
+ * os demais estados clínicos (SEARCHING, REPLACEMENT, ACTIVE, ON_HOLD, SUSPENDED, ALTA,
+ * DISCHARGED) têm cada um a sua coluna.
  */
 export const PATIENT_KANBAN_STATUSES = [
-  'SOLICITANTE',
   'ADMISSION',
-  'PENDING_ADMISSION',
-  'DONE',
+  'SEARCHING',
+  'REPLACEMENT',
+  'ACTIVE',
+  'ON_HOLD',
+  'SUSPENDED',
+  'ALTA',
+  'DISCHARGED',
 ] as const;
 
 export type PatientKanbanStatus = (typeof PATIENT_KANBAN_STATUSES)[number];
@@ -29,14 +35,30 @@ export interface PatientKanbanMoveError {
 }
 
 function emptyGroups(): PatientKanbanGroups {
-  return { SOLICITANTE: [], ADMISSION: [], PENDING_ADMISSION: [], DONE: [] };
+  return {
+    ADMISSION: [],
+    SEARCHING: [],
+    REPLACEMENT: [],
+    ACTIVE: [],
+    ON_HOLD: [],
+    SUSPENDED: [],
+    ALTA: [],
+    DISCHARGED: [],
+  };
 }
 
-function groupByAdmissionStatus(items: PatientKanbanItem[]): PatientKanbanGroups {
+function columnOf(status: string | null): PatientKanbanStatus | null {
+  if (status && (ADMISSION_FUNNEL_STATUSES as readonly string[]).includes(status)) return 'ADMISSION';
+  return (PATIENT_KANBAN_STATUSES as readonly string[]).includes(status ?? '')
+    ? (status as PatientKanbanStatus)
+    : null;
+}
+
+function groupByStatus(items: PatientKanbanItem[]): PatientKanbanGroups {
   const groups = emptyGroups();
   for (const item of items) {
-    const s = item.admissionStatus as PatientKanbanStatus;
-    if (s in groups) groups[s].push(item);
+    const col = columnOf(item.status);
+    if (col) groups[col].push(item);
   }
   return groups;
 }
@@ -57,7 +79,8 @@ export const KANBAN_ACTIVATION_MOVED_TO_SERVICE = 'KANBAN_ACTIVATION_MOVED_TO_SE
  * PUT /api/admin/patients/:id/status. The move is optimistic with rollback on
  * error (the funnel refetches; here we keep it snappy for drag-and-drop).
  *
- * NOTE: grouping depends on each row carrying `admissionStatus`. See listPatientsForKanban.
+ * NOTE: grouping depends on each row carrying `status`. See listPatientsForKanban. Agrupa por
+ * `patients.status`; admisión junta os 3 do funil.
  */
 export function usePatientKanban(country?: string) {
   const [groups, setGroupsState] = useState<PatientKanbanGroups>(emptyGroups);
@@ -77,7 +100,7 @@ export function usePatientKanban(country?: string) {
       setIsLoading(true);
       setError(null);
       const items = await AdminApiService.listPatientsForKanban(country || undefined);
-      setGroups(groupByAdmissionStatus(items));
+      setGroups(groupByStatus(items));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load patients');
     } finally {
@@ -97,14 +120,6 @@ export function usePatientKanban(country?: string) {
     patientId: string,
     targetStatus: PatientKanbanStatus,
   ): Promise<PatientKanbanMoveError | null> => {
-    // Spec 018, PR-6, ADR-5: DONE ("Activo") não é mais um alvo de drop — a 428 tirou
-    // funil→ACTIVE do catálogo. O card NÃO se move (sem otimismo para desfazer) e o chamador
-    // toasta o caminho novo. Mover DENTRO do funil (SOLICITANTE/ADMISSION/PENDING_ADMISSION)
-    // continua livre, exatamente como antes.
-    if (targetStatus === 'DONE') {
-      return { code: KANBAN_ACTIVATION_MOVED_TO_SERVICE };
-    }
-
     const previous = groupsRef.current;
     // find the card in any column
     let card: PatientKanbanItem | undefined;
@@ -112,12 +127,21 @@ export function usePatientKanban(country?: string) {
       const found = previous[key].find((c) => c.id === patientId);
       if (found) { card = found; break; }
     }
+
+    // Spec 018, PR-6, ADR-5: sair de ADMISSION direto para ACTIVE ("Activo") não é mais um alvo
+    // de drop — a 428 tirou funil→ACTIVE do catálogo. O card NÃO se move (sem otimismo para
+    // desfazer) e o chamador toasta o caminho novo. Mover DENTRO da coluna ADMISSION (o funil
+    // antigo) continua livre, exatamente como antes.
+    if (targetStatus === 'ACTIVE' && card && columnOf(card.status) === 'ADMISSION') {
+      return { code: KANBAN_ACTIVATION_MOVED_TO_SERVICE };
+    }
+
     if (card) {
       const next = emptyGroups();
       for (const key of PATIENT_KANBAN_STATUSES) {
         next[key] = previous[key].filter((c) => c.id !== patientId);
       }
-      next[targetStatus] = [{ ...card, admissionStatus: targetStatus }, ...next[targetStatus]];
+      next[targetStatus] = [{ ...card, status: targetStatus }, ...next[targetStatus]];
       setGroups(next);
     }
 

@@ -3291,7 +3291,13 @@
           "ADMISSION": "Admisión",
           "PENDING_ADMISSION": "Esperando financiero",
           "ACTIVE": "Activo",
-          "DONE": "Activo"
+          "DONE": "Activo",
+          "SEARCHING": "Búsqueda",
+          "REPLACEMENT": "Reemplazos",
+          "ON_HOLD": "En espera",
+          "SUSPENDED": "Suspendido temporalmente",
+          "ALTA": "Alta",
+          "DISCHARGED": "Baja"
         },
         "contactOfResponsible": "Contacto del responsable",
         "responsible": "Responsable",
@@ -3939,6 +3945,7 @@
         "SEARCHING": "Búsqueda",
         "REPLACEMENT": "Reemplazo",
         "SUSPENDED": "Suspendido",
+        "ALTA": "Alta",
         "DISCHARGED": "Baja"
       },
       "onHoldReasonOptions": {
@@ -5006,7 +5013,8 @@
         "SEARCHING": "Búsqueda",
         "REPLACEMENT": "Reemplazo",
         "SUSPENDED": "Suspendido",
-        "DISCHARGED": "Alta"
+        "ALTA": "Alta",
+        "DISCHARGED": "Baja"
       },
       "onlyOpenVacancies": "Solo con vacantes abiertas",
       "openVacancies": "{{count}} vacante(s) abierta(s)",

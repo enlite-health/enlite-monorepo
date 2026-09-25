@@ -35,12 +35,15 @@ vi.mock('@presentation/components/features/admin/Kanban/KanbanBoardShell', () =>
 }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (k: string) => k }) }));
 
-const vazio: PatientKanbanGroups = { SOLICITANTE: [], ADMISSION: [], PENDING_ADMISSION: [], DONE: [] };
+const vazio: PatientKanbanGroups = {
+  ADMISSION: [], SEARCHING: [], REPLACEMENT: [], ACTIVE: [],
+  ON_HOLD: [], SUSPENDED: [], ALTA: [], DISCHARGED: [],
+};
 
 const comItem: PatientKanbanGroups = {
   ...vazio,
-  SOLICITANTE: [{ id: 'p1', firstName: 'Solicitante', lastName: null, caseNumber: null,
-                  dependencyLevel: null, status: 'SOLICITANTE', admissionStatus: 'SOLICITANTE', responsibleName: null,
+  ADMISSION: [{ id: 'p1', firstName: 'Solicitante', lastName: null, caseNumber: null,
+                  dependencyLevel: null, status: 'ADMISSION', admissionStatus: 'SOLICITANTE', responsibleName: null,
                   leadContactEmailMasked: null, leadContactIsResponsible: false }],
 };
 
@@ -51,22 +54,22 @@ describe('soltar um card', () => {
     const onMove = vi.fn().mockResolvedValue(null);
     render(<PatientKanbanBoard groups={vazio} onMove={onMove} />);
 
-    capturado!({ itemId: 'p1', fromColumnId: 'SOLICITANTE', toColumnId: 'ADMISSION' });
-    expect(onMove).toHaveBeenCalledWith('p1', 'ADMISSION');
+    capturado!({ itemId: 'p1', fromColumnId: 'ADMISSION', toColumnId: 'ALTA' });
+    expect(onMove).toHaveBeenCalledWith('p1', 'ALTA');
   });
 
   it('soltar na PRÓPRIA coluna não gasta request', () => {
     const onMove = vi.fn().mockResolvedValue(null);
     render(<PatientKanbanBoard groups={vazio} onMove={onMove} />);
 
-    capturado!({ itemId: 'p1', fromColumnId: 'DONE', toColumnId: 'DONE' });
+    capturado!({ itemId: 'p1', fromColumnId: 'DISCHARGED', toColumnId: 'DISCHARGED' });
     expect(onMove).not.toHaveBeenCalled();
   });
 
-  it('as 4 colunas e o card são montados pelas render-props do board', () => {
+  it('as 8 colunas e o card são montados pelas render-props do board', () => {
     const { getByTestId } = render(<MemoryRouter><PatientKanbanBoard groups={comItem} onMove={async () => null} /></MemoryRouter>);
     expect(getByTestId('colunas').textContent)
-      .toBe('SOLICITANTE,ADMISSION,PENDING_ADMISSION,DONE');
+      .toBe('ADMISSION,SEARCHING,REPLACEMENT,ACTIVE,ON_HOLD,SUSPENDED,ALTA,DISCHARGED');
     expect(getByTestId('item-p1')).toBeInTheDocument();
   });
 
