@@ -75,6 +75,7 @@ export const PATIENT_STATUS_COLOR: Record<string, string> = {
   SEARCHING: '#0891b2',
   REPLACEMENT: '#db2777',
   SUSPENDED: '#ea580c',
+  ALTA: '#0D9488', // alta (D430) — pin do mapa exige hex, como os vizinhos
   DISCHARGED: '#6b7280',
 };
 

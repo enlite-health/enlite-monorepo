@@ -41,12 +41,12 @@ describe('PatientStatusControl', () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it('mostra os 6 estados clínicos traduzidos com o atual selecionado; Guardar desabilitado sem mudança', () => {
+  it('mostra os 7 estados clínicos traduzidos (ALTA entrou na migration 473, D430) com o atual selecionado; Guardar desabilitado sem mudança', () => {
     render(<PatientStatusControl patient={active} onSaved={vi.fn()} />);
     const select = screen.getByTestId('patient-status-select') as HTMLSelectElement;
     expect(select.value).toBe('ACTIVE');
     const values = [...select.options].map((o) => o.value).filter(Boolean); // o SelectField sempre emite a option de placeholder
-    expect(values).toEqual(['ACTIVE', 'ON_HOLD', 'SEARCHING', 'REPLACEMENT', 'SUSPENDED', 'DISCHARGED']);
+    expect(values).toEqual(['ACTIVE', 'ON_HOLD', 'SEARCHING', 'REPLACEMENT', 'SUSPENDED', 'ALTA', 'DISCHARGED']);
     expect([...select.options].map((o) => o.textContent)).toContain('Em espera');
     expect(screen.getByTestId('patient-status-save')).toBeDisabled();
     expect(screen.queryByTestId('patient-status-reason')).not.toBeInTheDocument();

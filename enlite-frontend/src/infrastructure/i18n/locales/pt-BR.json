@@ -3859,6 +3859,7 @@
         "SEARCHING": "Busca",
         "REPLACEMENT": "Substituição",
         "SUSPENDED": "Suspenso",
+        "ALTA": "Alta",
         "DISCHARGED": "Baixa"
       },
       "onHoldReasonOptions": {

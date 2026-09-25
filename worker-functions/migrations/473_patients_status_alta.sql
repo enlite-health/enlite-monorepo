@@ -9,6 +9,13 @@ ALTER TABLE patients ADD CONSTRAINT patients_status_check
     'SOLICITANTE', 'ADMISSION', 'PENDING_ADMISSION',
     'DISCONTINUED'
   ));
+
+COMMENT ON CONSTRAINT patients_status_check ON patients IS
+  'PatientStatus v2 (migration 314): ACTIVE, ON_HOLD, SEARCHING, REPLACEMENT, SUSPENDED, ALTA, '
+  'DISCHARGED + funil (SOLICITANTE, ADMISSION, PENDING_ADMISSION — ver admission_status, 313). '
+  'DISCONTINUED é legado tolerado (backfill → DISCHARGED, migration 314). ALTA manual, migration '
+  '473 (D430). Transições permitidas: patient_status_transitions (315, 473).';
+
 INSERT INTO patient_status_transitions (from_status, to_status) VALUES
   ('SOLICITANTE','ALTA'), ('ADMISSION','ALTA'), ('PENDING_ADMISSION','ALTA'),
   ('SEARCHING','ALTA'), ('REPLACEMENT','ALTA'), ('ACTIVE','ALTA'), ('ON_HOLD','ALTA'), ('SUSPENDED','ALTA'),

@@ -3938,6 +3938,7 @@
         "SEARCHING": "Búsqueda",
         "REPLACEMENT": "Reemplazo",
         "SUSPENDED": "Suspendido",
+        "ALTA": "Alta",
         "DISCHARGED": "Baja"
       },
       "onHoldReasonOptions": {

@@ -49,6 +49,12 @@ export function PatientKanbanCard({ patient }: Props): JSX.Element {
   const dependencyLabel = patient.dependencyLevel
     ? t(`admin.patients.dependencyOptions.${patient.dependencyLevel}`, { defaultValue: patient.dependencyLevel })
     : null;
+  // "admisión" agrupa SOLICITANTE/ADMISSION/PENDING_ADMISSION numa coluna só (Fase 1 da change
+  // cadeia-paciente-vacante-itinerario) — sem o subestágio no card, os três ficam indistinguíveis
+  // dentro da mesma coluna. Mesmo vocabulário da coluna (`admin.patients.kanban.columns.<status>`).
+  const subStageLabel = patient.status === 'SOLICITANTE' || patient.status === 'ADMISSION' || patient.status === 'PENDING_ADMISSION'
+    ? t(`admin.patients.kanban.columns.${patient.status}`, { defaultValue: patient.status })
+    : null;
 
   return (
     <div
@@ -106,6 +112,16 @@ export function PatientKanbanCard({ patient }: Props): JSX.Element {
           className="mt-1 inline-block rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700"
         >
           {t('admin.patients.kanban.contactOfResponsible', { defaultValue: 'Contacto del responsable' })}
+        </span>
+      )}
+      {subStageLabel && (
+        <span
+          data-testid="patient-kanban-card-substage"
+          className="inline-flex mt-1 mr-1 px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700"
+        >
+          <Text as="span" size="xs" weight="medium" color="inherit">
+            {subStageLabel}
+          </Text>
         </span>
       )}
       {dependencyLabel && (

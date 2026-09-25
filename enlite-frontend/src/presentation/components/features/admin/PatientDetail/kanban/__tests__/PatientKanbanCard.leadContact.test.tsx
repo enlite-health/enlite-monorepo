@@ -70,13 +70,17 @@ describe('o que desempata os cards', () => {
 });
 
 describe('hierarquia: o contato é a identidade, não um rodapé', () => {
-  it('com contato, o TÍTULO é o contato — a palavra "Solicitante" não aparece', () => {
-    // A coluna já se chama "Solicitante". Repetir a palavra em negrito escuro em
-    // cada card empurrava para cinza de 11px a única coisa que os distingue.
+  it('com contato, o TÍTULO é o contato — a palavra "Solicitante" não vira título', () => {
+    // A coluna virou "Admisión" (Fase 1, cadeia-paciente-vacante-itinerario juntou
+    // SOLICITANTE/ADMISSION/PENDING_ADMISSION numa coluna só — `usePatientKanban.ts`,
+    // ADMISSION_GROUP) e o card ganhou uma badge de SUBESTÁGIO
+    // (`patient-kanban-card-substage`) para não perder a distinção — por isso
+    // "Solicitante" volta a aparecer no card (na badge), mas nunca como TÍTULO, que
+    // segue sendo o contato mascarado (ver `PatientKanbanCard.substage.test.tsx`).
     renderCard(lead());
-    const card = screen.getByTestId('patient-kanban-card-lead-1');
-    expect(card).toHaveTextContent('jo***@gmail.com');
-    expect(card).not.toHaveTextContent('Solicitante');
+    const titulo = screen.getByTestId('patient-kanban-card-lead-1-open');
+    expect(titulo).toHaveTextContent('jo***@gmail.com');
+    expect(titulo).not.toHaveTextContent('Solicitante');
   });
 
   it('o contato é o alvo de clique que abre a ficha', () => {

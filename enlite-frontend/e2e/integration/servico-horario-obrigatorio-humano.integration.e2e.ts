@@ -197,7 +197,7 @@ test.describe('Horário obrigatório para mudar de status — o operador é avis
 
       const card = page.locator(`[data-testid="kanban-draggable-${s3.patientId}"]`);
       await expect(card).toBeVisible({ timeout: 30_000 });
-      const destino = page.locator('[data-testid="kanban-column-DONE"]'); // coluna "Activo"
+      const destino = page.locator('[data-testid="kanban-column-ACTIVE"]'); // coluna "Activo"
       await expect(destino).toBeVisible();
 
       const cardBB = await card.boundingBox();
@@ -240,7 +240,7 @@ test.describe('Horário obrigatório para mudar de status — o operador é avis
   test('no select de estado da ficha, ir para "Reemplazo" é RECUSADO nomeando o que falta', async ({ page }) => {
     const s4 = seedActivatablePatient(725000);
     try {
-      // paciente JÁ ativo (o select clínico só aparece com admissionStatus DONE), com serviço sem horário
+      // paciente JÁ ativo (o select clínico só aparece com status ACTIVE), com serviço sem horário
       runSQL(`UPDATE patients SET status = 'ACTIVE' WHERE id = '${s4.patientId}'`);
       runSQL(
         `INSERT INTO patient_contracted_services (patient_id, service_code, active, country, created_by, updated_by, address_id, schedule)

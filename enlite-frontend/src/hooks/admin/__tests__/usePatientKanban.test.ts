@@ -180,4 +180,19 @@ describe('usePatientKanban — admission_status', () => {
     await act(async () => { void result.current.refetch(); await result.current.refetch(); });
     expect(listPatientsForKanban).toHaveBeenCalledTimes(1);
   });
+
+  // `columnOf` (usePatientKanban.ts:55) descarta quem não é nem um dos 8 status do board nem um
+  // dos 3 do funil de admissão — o card não pode ficar preso "em algum lugar" fora dessas colunas.
+  it('status fora das 8 colunas (ex.: DISCONTINUED legado) ou nulo é descartado — não aparece em nenhuma coluna', async () => {
+    listPatientsForKanban.mockReset().mockResolvedValueOnce([
+      item('a', 'SOLICITANTE', 'SOLICITANTE'),
+      item('f', 'DONE', 'DISCONTINUED'),
+      { ...item('g', 'DONE', 'ACTIVE'), status: null as unknown as string },
+    ]);
+    const { result } = renderHook(() => usePatientKanban());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    const allIds = PATIENT_KANBAN_STATUSES.flatMap((key) => result.current.groups[key].map((p) => p.id));
+    expect(allIds).toEqual(['a']);
+  });
 });
