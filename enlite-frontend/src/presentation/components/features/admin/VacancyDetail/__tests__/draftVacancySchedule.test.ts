@@ -15,9 +15,10 @@ describe('draftVacancySchedule — a grade de 7 dias (F24/F28)', () => {
   });
 
   it('ordem de exibição é Lun→Dom (semana comercial), não a ordem de getDay() do backend', () => {
+    // Só a CHAVE (identificador do dado, `DAY_KEYS_ES` do backend) — o RÓTULO de exibição saiu
+    // daqui pro i18n (`admin.draftVacancy.days.short/full`), achado #4 do gate parcial 25/09.
     const grid = buildScheduleGrid(null);
     expect(grid.map((d) => d.key)).toEqual(['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo']);
-    expect(grid.map((d) => d.short)).toEqual(['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']);
   });
 
   it('F28: dia com MAIS de um bloco chega intacto — nenhum se perde nem funde', () => {
