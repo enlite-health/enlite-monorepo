@@ -229,6 +229,10 @@ test.describe('Permissões criar × editar — prova humana contra o backend rea
   const GESTORA: MockUser = { uid: GESTORA_UID, email: GESTORA_EMAIL, role: 'admin', country: 'AR' };
 
   test('(a) grupo só com vacancy:create: vê "Nueva vacante", digita um dado real, e NÃO vê a ação de editar a vaga existente', async ({ page }) => {
+    // D425 item 4 (24/09/2026, docs/decisoes.md, Fase 3) — "Nueva" sai temporariamente: o
+    // ASSUNTO deste teste é justamente clicar em "Nueva vacante" e digitar no form de
+    // criação, que não é mais alcançável (botão some, /new redireciona). Skip, não apagado.
+    test.skip(true, 'D425 item 4 — "Nueva" fora temporariamente; vacante nasce só do serviço contratado');
     await loginAs(page, CRIADORA);
 
     // A lista mostra "Nueva vacante" (create) — e NENHUM lápis/editar por linha (a lista não tem

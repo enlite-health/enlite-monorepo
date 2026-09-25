@@ -291,6 +291,12 @@ async function selectCaseNumber(page: Page, caseNumber: number): Promise<void> {
 
 // ── Test Suite ────────────────────────────────────────────────────────────────
 
+// D425 item 4 (24/09/2026, docs/decisoes.md, Fase 3 de completar-vacante-em-rascunho) —
+// "Nueva" sai temporariamente: vacante nasce só do serviço contratado. O ASSUNTO desta
+// suíte inteira é o ResumeDraftVacancyDialog, que só abre dentro do wizard de criação em
+// /admin/vacancies/new — rota que agora redireciona pra /admin/vacancies. Cada teste abaixo
+// tem `test.skip(true, ...)` citando D425 — não apagados; o componente fica no código,
+// dormente (D425), e voltam a ser alcançáveis quando "Nueva" voltar.
 test.describe('Retomar rascunho de vaga @integration', () => {
   test.setTimeout(120_000);
 
@@ -411,6 +417,7 @@ test.describe('Retomar rascunho de vaga @integration', () => {
   // ── Cenário 1: Happy path — 2 drafts, modal abre, Retomar navega para /edit ──
 
   test('1. dois rascunhos existentes → modal abre com 2 itens → "Retomar" navega para /edit com form hidratado', async ({ page }) => {
+    test.skip(true, 'D425 item 4 — "Nueva" fora temporariamente; vacante nasce só do serviço contratado');
     test.skip(!patientId || !addressId, 'Could not seed test patient');
 
     await loginAsAdmin(page);
@@ -459,6 +466,7 @@ test.describe('Retomar rascunho de vaga @integration', () => {
   // ── Cenário 2: Cancelar — deselecta paciente, modal fecha ─────────────────────
 
   test('2. Cancelar → modal fecha e seleção do caso é limpa', async ({ page }) => {
+    test.skip(true, 'D425 item 4 — "Nueva" fora temporariamente; vacante nasce só do serviço contratado');
     test.skip(!patientId, 'Could not seed test patient');
 
     await loginAsAdmin(page);
@@ -491,6 +499,7 @@ test.describe('Retomar rascunho de vaga @integration', () => {
   // ── Cenário 3: Crear nueva — fecha modal, form continua com paciente selecionado ─
 
   test('3. "Crear nueva vacante" → modal fecha, paciente permanece selecionado', async ({ page }) => {
+    test.skip(true, 'D425 item 4 — "Nueva" fora temporariamente; vacante nasce só do serviço contratado');
     test.skip(!patientId, 'Could not seed test patient');
 
     await loginAsAdmin(page);
@@ -523,6 +532,7 @@ test.describe('Retomar rascunho de vaga @integration', () => {
   // ── Cenário 4: Nenhum rascunho — modal não aparece ───────────────────────────
 
   test('4. paciente sem rascunhos → modal NÃO abre', async ({ page }) => {
+    test.skip(true, 'D425 item 4 — "Nueva" fora temporariamente; vacante nasce só do serviço contratado');
     test.skip(!patientNoDraftsId, 'Could not seed no-drafts patient');
 
     await loginAsAdmin(page);
@@ -545,6 +555,7 @@ test.describe('Retomar rascunho de vaga @integration', () => {
   // ── Cenário 5: Rascunho do ClickUp — ignorado, modal não abre ────────────────
 
   test('5. rascunho ClickUp-synced → filtrado, modal NÃO abre', async ({ page }) => {
+    test.skip(true, 'D425 item 4 — "Nueva" fora temporariamente; vacante nasce só do serviço contratado');
     test.skip(!patientClickupId, 'Could not seed clickup patient');
 
     await loginAsAdmin(page);
@@ -582,6 +593,7 @@ test.describe('Retomar rascunho de vaga @integration', () => {
   // after-save-with-ai-error.png gerada separadamente se necessário.
 
   test('6. fluxo real fim-a-fim: draft em DB → /new → modal → Retomar → /edit hidratado', async ({ page }) => {
+    test.skip(true, 'D425 item 4 — "Nueva" fora temporariamente; vacante nasce só do serviço contratado');
     test.setTimeout(120_000);
 
     // ── Setup: paciente exclusivo para este cenário ──────────────────────────
@@ -690,6 +702,7 @@ test.describe('Retomar rascunho de vaga @integration', () => {
   // no modal, independentemente do status (SEARCHING/ACTIVE/CLOSED).
 
   test('8. vagas publicadas (is_draft = false) não aparecem como rascunho — modal lista só as is_draft = true', async ({ page }) => {
+    test.skip(true, 'D425 item 4 — "Nueva" fora temporariamente; vacante nasce só do serviço contratado');
     test.setTimeout(90_000);
 
     // ── Setup: paciente exclusivo com 1 draft real + 3 vagas publicadas/fechadas ─
@@ -776,6 +789,7 @@ test.describe('Retomar rascunho de vaga @integration', () => {
   // ── Cenário 7: Modal com 1 draft — título singular ────────────────────────
 
   test('7. modal com 1 draft → título singular "Vacante en curso encontrada"', async ({ page }) => {
+    test.skip(true, 'D425 item 4 — "Nueva" fora temporariamente; vacante nasce só do serviço contratado');
     test.setTimeout(60_000);
 
     // ── Setup: paciente exclusivo com 1 draft ─────────────────────────────
@@ -851,6 +865,7 @@ test.describe('Retomar rascunho de vaga @integration', () => {
   // de chamar publish. Sem o mock, o real backend exigiria presença de perguntas.
 
   test('9. fluxo completo: draft → publicar via mock → nova visita a /new → modal NÃO aparece', async ({ page }) => {
+    test.skip(true, 'D425 item 4 — "Nueva" fora temporariamente; vacante nasce só do serviço contratado');
     test.setTimeout(120_000);
 
     // ── Setup: paciente exclusivo com 1 draft PENDING_ACTIVATION ─────────
@@ -1029,6 +1044,7 @@ test.describe('Retomar rascunho de vaga @integration', () => {
   // independente do status), o modal lista a vaga e o operador pode retomar.
 
   test('10. vaga SEARCHING + is_draft = true (regressão caso 771-718) → modal lista como rascunho', async ({ page }) => {
+    test.skip(true, 'D425 item 4 — "Nueva" fora temporariamente; vacante nasce só do serviço contratado');
     test.setTimeout(60_000);
 
     const regressionCaseNumber = 977_000 + Math.floor(Math.random() * 9999);

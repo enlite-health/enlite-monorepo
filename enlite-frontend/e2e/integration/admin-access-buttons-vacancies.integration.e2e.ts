@@ -323,7 +323,10 @@ test.describe('Botões da família vagas — desabilitar em vez de sumir (D269) 
     await loginAs(page, RECRUTADORA);
     await page.goto('/admin/vacancies');
     await expect(page.getByRole('heading', { name: 'Vacantes', exact: true })).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByTestId('new-vacancy-btn')).toBeVisible({ timeout: 10_000 });
+    // "Nueva" (new-vacancy-btn) SAIU temporariamente (D425 item 4, 24/09/2026,
+    // docs/decisoes.md, Fase 3 de completar-vacante-em-rascunho) — some para TODO mundo,
+    // independente de `vacancy:create`/`vacancy:update`. Deixou de ser prova de D269 aqui;
+    // count(0) incondicional já está coberto no teste 1 acima e em admin-access-panel.
     await expect(page.getByTestId('sync-talentum-btn')).toBeVisible();
 
     await page.goto(`/admin/vacancies/${vacancyId}`);
