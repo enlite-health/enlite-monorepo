@@ -102,10 +102,10 @@ export function AdminVacanciesPage(): JSX.Element {
   const podeSyncTalentum = podeCriarTalentum && podeAtualizarTalentum;
 
   // D426: "Completar vacante" (modal de escolha + botão na tela do rascunho) exige as DUAS
-  // células que já publicam/editam a vaga — a mesma régua de `DraftVacancyPage.tsx`.
-  const podeAtualizarTalentumParaCompletar = useActionGate('talentum', 'update').allowed;
+  // células que já publicam/editam a vaga — a mesma régua de `DraftVacancyPage.tsx`. Reusa
+  // `podeAtualizarTalentum` (linha acima, mesma célula `talentum:update`) — nunca duplicar.
   const podeAtualizarVacancy = useActionGate('vacancy', 'update').allowed;
-  const podeCompletarRascunho = podeAtualizarTalentumParaCompletar && podeAtualizarVacancy;
+  const podeCompletarRascunho = podeAtualizarTalentum && podeAtualizarVacancy;
 
   // F25/D425 item 2 — clique na linha em rascunho: com célula, o modal decide; sem célula,
   // vai direto para a tela somente-leitura. O lápis e o `VacancyModal` antigo saíram (Fase 3).
