@@ -28,7 +28,7 @@ import type { AnaCareRetratoSourceStatus, SourceShiftDTO } from '../domain/AnaCa
 import type { SyncRunConclusion } from '../domain/AnaCareHoursSyncPorts';
 import type { ValidationRow } from '../infrastructure/ShiftHoursValidationRepository';
 import type { AnaCareListPatient, AnaCareMonthSnapshot, AnaCarePatient, AnaCareProvider, AnaCareShift, AnaCareSnapshotState, ValidationStatus } from '../domain/AnaCareShift';
-import type { AxonicoLancamentoSentRecord, EnliteServiceType } from '@modules/integration';
+import type { AxonicoLancamentoSentRecord, EnliteServiceType, IAnaCarePatientDocumentRepository } from '@modules/integration';
 
 const STATUS_MAP: Record<ValidationRow['status'], ValidationStatus> = {
   pendente: 'pendiente',
@@ -294,4 +294,25 @@ export function attachAxonicoToPatient(patient: AnaCarePatient, sent: readonly A
       };
     }
   }
+}
+
+/**
+ * A2 (achado do gate `revisao-pr`, 25/09/2026): documento para a CHAVE de busca do Axonico —
+ * SEMPRE resolvido, independente da célula `patient_identity:read` (que só filtra o campo EXPOSTO
+ * ao front, `AnaCarePatient.documentNumber`, em `AnaCareHoursService.buildPatients`). Antes,
+ * `getPatientMonth` só consultava o Axonico quando esse campo gated saía preenchido — sem a
+ * célula, o dia perdia `axonico` a cada reload, mesmo já lançado por outra pessoa (o botão
+ * "Enviar" reaparecia). Mesma fonte que `resolveRegisteredDocuments` usa (fonte primeiro, fallback
+ * no documento REGISTRADO manualmente) — mas o valor NUNCA é devolvido ao chamador, só usado como
+ * chave de `findSentByDocumentAndMonth`.
+ */
+export async function resolveDocumentNumberForAxonico(
+  sourceShifts: readonly SourceShiftDTO[],
+  patientId: string,
+  patientDocuments: IAnaCarePatientDocumentRepository,
+): Promise<string | null> {
+  const fromSource = sourceShifts.find((s) => s.patientDocumentNumber)?.patientDocumentNumber;
+  if (fromSource) return fromSource;
+  const registered = await patientDocuments.findByPatientId(patientId);
+  return registered?.documentNumber ?? null;
 }

@@ -91,17 +91,27 @@ export class LancarPrestacaoAxonicoController {
    */
   constructor(private readonly useCaseFactory: () => Promise<LancarPrestacaoAxonicoUseCase>) {}
 
-  /** POST /integrations/axonico/comprobante — um lançamento. */
-  async handle(req: Request, res: Response): Promise<void> {
-    // uid de quem está disparando — resolvido da sessão, nunca do corpo (mesmo padrão de
-    // `AnaCareHoursController.actorUid`). Sem uid: 401 ANTES de validar o corpo — um lançamento que
-    // fatura de verdade não pode ficar sem autor conhecido (diferente de `actorUid`, que aceita
-    // `'unknown'` para leituras/escritas que não faturam).
+  /**
+   * L1 (achado do gate `revisao-pr`, 25/09/2026): guard extraído — estava duplicado byte a byte em
+   * `handle`/`handleLote`. Uid de quem está disparando, resolvido da sessão, nunca do corpo (mesmo
+   * padrão de `AnaCareHoursController.actorUid`). Sem uid: escreve 401 em `res` e devolve
+   * `undefined` — o chamador só precisa checar `if (!sentBy) return;`. Diferente de `actorUid`
+   * (que cai em `'unknown'`): aqui a ausência de uid é 401, porque o registro de quem lançou uma
+   * prestação que FATURA de verdade não pode ser "desconhecido".
+   */
+  private requireSentBy(req: Request, res: Response): string | undefined {
     const sentBy = AuthMiddleware.getAuthContext(req)?.principal.id;
     if (!sentBy) {
       res.status(401).json({ success: false, error: 'Unauthorized' });
-      return;
+      return undefined;
     }
+    return sentBy;
+  }
+
+  /** POST /integrations/axonico/comprobante — um lançamento. */
+  async handle(req: Request, res: Response): Promise<void> {
+    const sentBy = this.requireSentBy(req, res);
+    if (!sentBy) return;
 
     const parsed = LancamentoBodySchema.safeParse(req.body ?? {});
     if (!parsed.success) {
@@ -159,11 +169,8 @@ export class LancarPrestacaoAxonicoController {
   async handleLote(req: Request, res: Response): Promise<void> {
     // Mesmo guard de `handle` — uma uid só, válida para o lote inteiro (quem disparou o lote é
     // quem disparou cada item dele).
-    const sentBy = AuthMiddleware.getAuthContext(req)?.principal.id;
-    if (!sentBy) {
-      res.status(401).json({ success: false, error: 'Unauthorized' });
-      return;
-    }
+    const sentBy = this.requireSentBy(req, res);
+    if (!sentBy) return;
 
     const parsed = LoteBodySchema.safeParse(req.body ?? {});
     if (!parsed.success) {

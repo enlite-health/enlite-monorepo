@@ -386,6 +386,10 @@ describe('Axonico Lançamento API (F4)', () => {
     let getToken: string;
     let anaCarePatientId: string | null = null;
     let serviceDateEscolhida: string | null = null;
+    // A1 (achado do gate revisao-pr, 25/09/2026) precisa de uma SEGUNDA data livre — reusa o
+    // mesmo paciente/documento, mas com uid de POST diferente (sem linha em `users`), então não
+    // pode colidir com `serviceDateEscolhida` (dedupe local por documentNumber+serviceType+serviceDate).
+    let datasLivres: string[] = [];
     let sourceIndisponivel = false;
 
     beforeAll(async () => {
@@ -451,6 +455,7 @@ describe('Axonico Lançamento API (F4)', () => {
 
       anaCarePatientId = primeiroPacienteId;
       serviceDateEscolhida = todasAsDatas[0];
+      datasLivres = todasAsDatas;
 
       // Documento do paciente (fallback de item 5, migration 446) — sem isto,
       // `patientDocumentNumber` sai ausente e `getPatientMonth` nem consulta o Axonico.
@@ -466,6 +471,10 @@ describe('Axonico Lançamento API (F4)', () => {
       if (anaCarePatientId) {
         await pool.query(`DELETE FROM ana_care_patient_document WHERE ana_care_patient_id = $1`, [anaCarePatientId]).catch(() => {});
       }
+      // Lançamentos deste describe não passam por `patientComDni`/`semearDuplicadoLocal` (tracked
+      // por `patientIds`/`lancamentoIds` no afterAll de fora) — limpa por DNI_GET explicitamente,
+      // inclusive o gravado pelo uid A1 SEM linha em `users`.
+      await pool.query(`DELETE FROM axonico_comprobante_lancamento WHERE document_number = $1`, [DNI_GET]).catch(() => {});
       await limparIamFixtures(pool, { uids: [GET_UID], grupos: [GRUPO_GET] });
     });
 
@@ -503,6 +512,52 @@ describe('Axonico Lançamento API (F4)', () => {
       const displayNameRow = await pool.query(`SELECT display_name FROM users WHERE firebase_uid = 'axonico-lancamento-admin'`);
       const displayNameEsperado = displayNameRow.rows[0]?.display_name ?? null;
       expect((turnoDoDia?.axonico as { sentBy: { displayName: string | null } }).sentBy.displayName).toBe(displayNameEsperado);
+    });
+
+    /**
+     * A1 (achado do gate `revisao-pr`, 25/09/2026) — PROVA CENTRAL da correção: o uid autenticado
+     * NÃO TEM linha em `users` (nunca inserida por este teste, de propósito). Antes da correção,
+     * `sent_by REFERENCES users(firebase_uid)` fazia o INSERT do `enviado` estourar 23503 NESTE
+     * EXATO cenário — DEPOIS do `PUT /api/comprobante` já ter faturado no stub — perdendo o
+     * registro local, o dedupe local e o "Enviado" da tela. Agora grava normalmente, e o GET
+     * devolve `sentBy: { uid, displayName: null }` (LEFT JOIN não achou), nunca 500, nunca omite o
+     * campo `displayName`.
+     */
+    it('A1 — uid autenticado SEM linha em users: POST grava sem erro (nunca 500), GET devolve sentBy.displayName=null', async () => {
+      if (sourceIndisponivel || !anaCarePatientId || !datasLivres[1]) {
+        // eslint-disable-next-line no-console
+        console.warn('[NÃO RODADO] teste A1 pulado — ver aviso do beforeAll (ANACARE_HOURS_SOURCE ausente ou massa sem segunda data livre).');
+        return;
+      }
+      const POST_UID_SEM_USERS = 'axonico-a1-uid-sem-linha-em-users';
+      const dataDoTeste = datasLivres[1];
+      const postToken = await getMockToken(api, { uid: POST_UID_SEM_USERS, email: `${POST_UID_SEM_USERS}@e2e.local`, role: 'admin' });
+
+      // Confirma a premissa do teste — sem isso a "prova" seria vazia.
+      const semUsersRow = await pool.query(`SELECT 1 FROM users WHERE firebase_uid = $1`, [POST_UID_SEM_USERS]);
+      expect(semUsersRow.rowCount).toBe(0);
+
+      const resPost = await api.post(
+        '/api/admin/integrations/axonico/comprobante',
+        { documentNumber: DNI_GET, serviceType: 'AT', serviceDate: dataDoTeste, hours: 1 },
+        auth(postToken),
+      );
+      expect(resPost.status).toBe(200); // achado A1: sem a correção, isto vinha 500 (FK 23503)
+      expect(resPost.data.data.status).toBe('enviado');
+
+      const rowNoBanco = await pool.query(
+        `SELECT sent_by FROM axonico_comprobante_lancamento WHERE document_number = $1 AND service_date = $2 ORDER BY id DESC LIMIT 1`,
+        [DNI_GET, dataDoTeste],
+      );
+      expect(rowNoBanco.rows[0].sent_by).toBe(POST_UID_SEM_USERS);
+
+      const resGet = await api.get(`/api/admin/anacare-hours/months/${MONTH}/patients/${anaCarePatientId}`, auth(getToken));
+      expect(resGet.status).toBe(200);
+      const todosOsTurnos = (resGet.data.data.providers as Array<{ shifts: Array<{ date: string; axonico?: { sentBy?: { uid: string; displayName: string | null } } }> }>).flatMap(
+        (p) => p.shifts,
+      );
+      const turnoDoDia = todosOsTurnos.find((s) => s.date === dataDoTeste);
+      expect(turnoDoDia?.axonico?.sentBy).toEqual({ uid: POST_UID_SEM_USERS, displayName: null });
     });
   });
 

@@ -14,10 +14,19 @@
  * continua gravado (rastreabilidade), só sai da chave de dedupe/busca.
  *
  * CORREÇÃO (24/09/2026, change `axonico-envio-rastreavel`): `sent_by` (migration 473) — toda
- * tentativa agora grava quem a disparou. Como a coluna tem FK real para `users(firebase_uid)`
- * (mesmo molde de `shift_hours_validation.validated_by`), este teste semeia uma linha própria em
- * `users` no `beforeAll` (mesmo padrão de `tests/e2e/wave4-entities-and-fks.test.ts`) — um
- * `sentBy` que não existe em `users` estouraria a FK, não o dedupe.
+ * tentativa agora grava quem a disparou. Este teste semeia uma linha própria em `users` no
+ * `beforeAll` (mesmo padrão de `tests/e2e/wave4-entities-and-fks.test.ts`) só para exercitar o
+ * JOIN de `findSentByDocumentAndMonth` (`sentByName` resolvido) — NÃO porque a coluna exija.
+ *
+ * CORREÇÃO (25/09/2026, achado A1 do gate `revisao-pr`, ANTES do merge): a versão original desta
+ * migration levava `sent_by REFERENCES users(firebase_uid)`. Errado — o uid autenticado
+ * (`FirebaseAuthStrategy.authenticateProduction`) pode não ter linha em `users` (JWT com claims
+ * `role`+`account_type` nunca consulta o banco; ou a linha existe mas foi achada só por E-MAIL,
+ * com um `firebase_uid` diferente do uid do token) — e a tentativa JÁ FATUROU no Axonico antes
+ * deste INSERT. Uma FK que estoura aqui perde o registro local de um faturamento real. `sent_by`
+ * é `VARCHAR(128) NULL` simples, sem FK: grava QUALQUER uid, mesmo sem linha correspondente em
+ * `users` — a leitura (`findSentByDocumentAndMonth`) é sempre `LEFT JOIN`, `sentByName` sai `null`
+ * quando não acha, nunca quebra.
  *
  * Como rodar (fora da stack completa de `jest.config.e2e.js` — sem API nem Firebase Emulator):
  *   docker run -d --name axonico-f2-postgres -p 127.0.0.1:5543:5432 \
@@ -235,14 +244,29 @@ describe('AxonicoLancamentoRepository @repo (Postgres real, migration 445)', () 
       expect(found?.sentBy).toBe(SENT_BY_UID);
     });
 
-    it('sent_by aponta para users.firebase_uid inexistente: estoura FK (não é o dedupe que barra)', async () => {
-      await expect(
-        repo.insert({
-          patientId, documentNumber: DNI, serviceType: 'AT', serviceDate: '2026-09-18', hours: 1,
-          numeroComprobante: 'CMP-FK', codAutorizacion: 'AUT-FK', status: 'enviado', errorMessage: null,
-          sentBy: 'uid-que-nao-existe-em-users',
-        }),
-      ).rejects.toThrow(/foreign key|violates/i);
+    it('A1 (25/09/2026) — sent_by aponta para um uid SEM linha em users: grava normalmente, sem erro (sent_by é trilha, não invariante relacional)', async () => {
+      const inserted = await repo.insert({
+        patientId, documentNumber: DNI, serviceType: 'AT', serviceDate: '2026-09-18', hours: 1,
+        numeroComprobante: 'CMP-SEM-USERS', codAutorizacion: 'AUT-SEM-USERS', status: 'enviado', errorMessage: null,
+        sentBy: 'uid-sem-linha-em-users',
+      });
+      expect(inserted.sentBy).toBe('uid-sem-linha-em-users');
+
+      const found = await repo.findExisting(DNI, 'AT', '2026-09-18');
+      expect(found?.sentBy).toBe('uid-sem-linha-em-users');
+    });
+
+    it('A1 (25/09/2026) — findSentByDocumentAndMonth com sent_by SEM linha em users: sentByName null (LEFT JOIN não quebra), front mostraria só a data', async () => {
+      await repo.insert({
+        patientId, documentNumber: DNI, serviceType: 'AT', serviceDate: '2026-09-18', hours: 1,
+        numeroComprobante: 'CMP-SEM-USERS-2', codAutorizacion: 'AUT-SEM-USERS-2', status: 'enviado', errorMessage: null,
+        sentBy: 'uid-sem-linha-em-users-2',
+      });
+
+      const sent = await repo.findSentByDocumentAndMonth(DNI, 'AT', '2026-09-01');
+      expect(sent).toHaveLength(1);
+      expect(sent[0].sentBy).toBe('uid-sem-linha-em-users-2');
+      expect(sent[0].sentByName).toBeNull();
     });
 
     it('findSentByDocumentAndMonth devolve a tentativa enviado do mês, com displayName resolvido via JOIN em users', async () => {

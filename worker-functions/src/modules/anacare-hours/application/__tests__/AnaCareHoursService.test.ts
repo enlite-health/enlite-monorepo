@@ -577,7 +577,16 @@ describe('AnaCareHoursService', () => {
         expect(patientDocuments.findByPatientId).toHaveBeenCalledWith('AC-PAT-0');
       });
 
-      it('fonte SEM documento + SEM patient_identity:read → nunca consulta o registrado (documento ausente, gate intacto)', async () => {
+      /**
+       * A2 (achado do gate `revisao-pr`, 25/09/2026, REVISÃO desta asserção): antes, o teste
+       * afirmava que SEM `patient_identity:read` o registrado nunca era consultado. Isso só valia
+       * porque, até a correção, a busca do Axonico dependia do campo EXPOSTO (gated) — ninguém
+       * mais chamava `findByPatientId` sem a célula. Agora `resolveDocumentNumberForAxonico`
+       * consulta o REGISTRADO de qualquer forma (é a CHAVE interna do Axonico, nunca devolvida ao
+       * chamador) — o que continua intacto é só o campo EXPOSTO (`documentType`/`documentNumber`
+       * no `AnaCarePatient`), que seguem `undefined` sem a célula.
+       */
+      it('fonte SEM documento + SEM patient_identity:read → CONSULTA o registrado (chave interna do Axonico), mas o campo EXPOSTO continua ausente (gate intacto)', async () => {
         const patientDocuments = mockPatientDocuments({ findByPatientId: jest.fn().mockResolvedValue(REGISTERED) });
         const service = new AnaCareHoursService(
           makeSourceSemDocumento(),
@@ -592,7 +601,7 @@ describe('AnaCareHoursService', () => {
 
         expect(patient?.documentType).toBeUndefined();
         expect(patient?.documentNumber).toBeUndefined();
-        expect(patientDocuments.findByPatientId).not.toHaveBeenCalled();
+        expect(patientDocuments.findByPatientId).toHaveBeenCalledWith('AC-PAT-0');
       });
 
       it('fonte COM documento — NUNCA consulta o registrado (fonte tem precedência, fallback só cobre ausência)', async () => {
@@ -732,7 +741,17 @@ describe('AnaCareHoursService', () => {
         }
       });
 
-      it('SEM patient_identity:read (documentNumber ausente no paciente montado): NUNCA consulta findSentByDocumentAndMonth, nenhum turno ganha axonico', async () => {
+      /**
+       * A2 (achado do gate `revisao-pr`, 25/09/2026): ANTES desta correção, a busca do Axonico só
+       * rodava quando `patient.documentNumber` saía no payload exposto — que é gated por
+       * `patient_identity:read`. Sem a célula, `getPatientMonth` NUNCA consultava
+       * `findSentByDocumentAndMonth`, e o dia perdia `axonico` a cada reload para quem não tem a
+       * célula, mesmo já lançado por outra pessoa. Agora a CHAVE de busca vem direto da FONTE
+       * (`SourceShiftDTO.patientDocumentNumber`, sempre presente independente do gate) — a busca
+       * roda igual, `axonico` é anexado igual; só o campo EXPOSTO (`patient.documentNumber`)
+       * continua ausente, porque esse sim é PII gated.
+       */
+      it('SEM patient_identity:read (documentNumber ausente no paciente EXPOSTO): AINDA ASSIM consulta findSentByDocumentAndMonth com o documento da FONTE e anexa axonico', async () => {
         const lancamentoRepository = mockLancamentoRepository({
           findSentByDocumentAndMonth: jest.fn().mockResolvedValue([SENT_RECORD]),
         });
@@ -747,7 +766,64 @@ describe('AnaCareHoursService', () => {
           lancamentoRepository,
         );
 
-        // canReadPatientDocument=false (5º parâmetro, default) — patient.documentNumber fica undefined.
+        // canReadPatientDocument=false (5º parâmetro, default) — patient.documentNumber (EXPOSTO)
+        // fica undefined, mas SHIFT_A.patientDocumentNumber ('30999888') é a chave usada por baixo.
+        const patient = await service.getPatientMonth('2026-09', 'AC-PAT-0', false);
+
+        expect(patient!.documentNumber).toBeUndefined(); // gate intacto no campo exposto
+        expect(lancamentoRepository.findSentByDocumentAndMonth).toHaveBeenCalledWith('30999888', 'AT', '2026-09-01');
+        expect(patient!.providers[0].shifts.every((s) => s.axonico?.numeroComprobante === 'CMP-777')).toBe(true);
+      });
+
+      it('A2 — SEM patient_identity:read E a fonte não mandou documento (só existe no REGISTRADO manualmente): ainda assim consulta e anexa axonico pelo fallback', async () => {
+        const shiftSemDocumentoNaFonte: SourceShiftDTO = { ...SHIFT_A, patientDocumentType: null, patientDocumentNumber: null };
+        const patientDocuments = {
+          findByPatientId: jest.fn().mockResolvedValue({
+            id: 'doc-1', anaCarePatientId: 'AC-PAT-0', documentNumber: '40111222', documentType: 'DNI',
+            registeredBy: 'uid-staff-1', createdAt: new Date(), updatedAt: new Date(),
+          }),
+          insert: jest.fn(),
+        };
+        const lancamentoRepository = mockLancamentoRepository({
+          findSentByDocumentAndMonth: jest.fn().mockResolvedValue([SENT_RECORD]),
+        });
+        const service = new AnaCareHoursService(
+          new StubSource([shiftSemDocumentoNaFonte]),
+          mockRepo(),
+          new KMSEncryptionService(),
+          undefined,
+          undefined,
+          patientDocuments,
+          undefined,
+          lancamentoRepository,
+        );
+
+        // canReadPatientDocument=false — o campo EXPOSTO fica undefined mesmo com fallback existindo.
+        const patient = await service.getPatientMonth('2026-09', 'AC-PAT-0', false);
+
+        expect(patient!.documentNumber).toBeUndefined();
+        expect(patientDocuments.findByPatientId).toHaveBeenCalledWith('AC-PAT-0');
+        expect(lancamentoRepository.findSentByDocumentAndMonth).toHaveBeenCalledWith('40111222', 'AT', '2026-09-01');
+        expect(patient!.providers[0].shifts[0].axonico?.numeroComprobante).toBe('CMP-777');
+      });
+
+      it('A2 — SEM patient_identity:read, fonte sem documento E sem registro nenhum: nunca consulta (não há chave), axonico ausente, sem erro', async () => {
+        const shiftSemDocumentoNenhum: SourceShiftDTO = { ...SHIFT_A, patientDocumentType: null, patientDocumentNumber: null };
+        const patientDocuments = { findByPatientId: jest.fn().mockResolvedValue(null), insert: jest.fn() };
+        const lancamentoRepository = mockLancamentoRepository({
+          findSentByDocumentAndMonth: jest.fn().mockResolvedValue([SENT_RECORD]),
+        });
+        const service = new AnaCareHoursService(
+          new StubSource([shiftSemDocumentoNenhum]),
+          mockRepo(),
+          new KMSEncryptionService(),
+          undefined,
+          undefined,
+          patientDocuments,
+          undefined,
+          lancamentoRepository,
+        );
+
         const patient = await service.getPatientMonth('2026-09', 'AC-PAT-0', false);
 
         expect(lancamentoRepository.findSentByDocumentAndMonth).not.toHaveBeenCalled();
