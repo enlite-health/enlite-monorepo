@@ -8,6 +8,10 @@ import {
   evaluateTemplateEligibility,
   twilioSlotCount,
 } from '../../../modules/notification/application/StageTemplateEligibility';
+import {
+  WorkerMessageAuditRepository,
+  isWorkerStatusAtDispatch,
+} from '../../messaging/WorkerMessageAuditRepository';
 
 /**
  * StageMessageHandler — a "mensagem por etapa" (DEC-12 / PEND-14).
@@ -57,6 +61,7 @@ export function createStageMessageHandler(
   tokenService: TokenService,
   stage: string,
 ): (payload: Record<string, unknown>) => Promise<void> {
+  const auditRepo = new WorkerMessageAuditRepository();
   return async (payload) => {
     const workerId = payload.workerId as string;
     const jobPostingId = payload.jobPostingId as string;
@@ -96,6 +101,24 @@ export function createStageMessageHandler(
          VALUES ($1, $2, $3, $4, $5, $6, NULL, 'skipped', $7, $8)`,
         [worker?.id ?? null, vacancy ? jobPostingId : null, stage, templateSlug, actorUid, source, skipReason, country],
       );
+      // Auditoria de DECISÃO (worker_message_audit, migration 474) — só quando já existe
+      // template_slug resolvido: a coluna é NOT NULL (design.md), e boa parte dos pulos daqui
+      // (SOURCE_NOT_HUMAN, VACANCY_NOT_FOUND, WORKER_NOT_FOUND, COUNTRY_BLOCKED, DISABLED,
+      // NO_TEMPLATE) acontece ANTES de qualquer template ser resolvido — sem dado real pra
+      // coluna. `funnel_stage_message_log` (acima) continua sendo a trilha completa de TODOS
+      // os pulos, com template_slug nullable.
+      if (templateSlug) {
+        await auditRepo.record(db, {
+          workerId: worker?.id ?? null,
+          jobPostingId: vacancy ? jobPostingId : null,
+          templateSlug,
+          source,
+          actorUid,
+          workerStatusAtDispatch: isWorkerStatusAtDispatch(worker?.status) ? worker.status : null,
+          outcome: 'skipped',
+          skipReason,
+        });
+      }
     };
 
     if (source !== 'kanban') { await skip('SOURCE_NOT_HUMAN'); return; }
@@ -164,6 +187,19 @@ export function createStageMessageHandler(
            VALUES ($1, $2, $3, $4, $5, 'kanban', $6, 'queued', $7)`,
           [workerId, jobPostingId, stage, templateSlug, actorUid, outboxId, country],
         );
+        // Auditoria de DECISÃO (worker_message_audit, migration 474) — DENTRO da mesma
+        // transação/client do outbox+log acima (C3, advisory lock já adquirido). Se isto
+        // usasse `db` em vez de `client`, confirmaria um outbox_id que a transação principal
+        // ainda pode reverter (ROLLBACK do catch abaixo) — ver design.md e tasks.md Fase 3.
+        await auditRepo.record(client, {
+          workerId,
+          jobPostingId,
+          templateSlug,
+          source,
+          actorUid,
+          workerStatusAtDispatch: isWorkerStatusAtDispatch(worker.status) ? worker.status : null,
+          outcome: 'queued',
+        });
       }
       await client.query('COMMIT');
     } catch (err) {

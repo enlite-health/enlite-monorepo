@@ -3,6 +3,10 @@ import { v4 as uuidv4 } from 'uuid';
 import { IMessagingService } from '../domain/IMessagingService';
 import { TokenService } from '../infrastructure/TokenService';
 import { logger, reportError } from '@shared/logging';
+import {
+  WorkerMessageAuditRepository,
+  isWorkerStatusAtDispatch,
+} from '@shared/messaging/WorkerMessageAuditRepository';
 
 const TEMPLATE_SLUG = 'talentum_incomplete_reminder';
 
@@ -49,7 +53,8 @@ const TALENTUM_INCOMPLETE_QUERY = `
   SELECT DISTINCT
     w.id AS worker_id,
     w.phone AS phone,
-    w.messaging_channel AS messaging_channel
+    w.messaging_channel AS messaging_channel,
+    w.status AS status
   FROM workers w
   INNER JOIN worker_job_applications wja
     ON wja.worker_id = w.id
@@ -90,6 +95,8 @@ export interface BulkDispatchTalentumResult {
 }
 
 export class BulkDispatchTalentumIncompleteUseCase {
+  private readonly auditRepo = new WorkerMessageAuditRepository();
+
   constructor(
     private readonly db: Pool,
     private readonly messaging: IMessagingService,
@@ -101,7 +108,7 @@ export class BulkDispatchTalentumIncompleteUseCase {
 
     batchLogger.info({ msg: 'BulkDispatchTalentum iniciado' });
 
-    const rows = await this.db.query<{ worker_id: string; phone: string; messaging_channel: string | null }>(
+    const rows = await this.db.query<{ worker_id: string; phone: string; messaging_channel: string | null; status: string | null }>(
       TALENTUM_INCOMPLETE_QUERY,
     );
 
@@ -190,6 +197,22 @@ export class BulkDispatchTalentumIncompleteUseCase {
             batchLogger.warn({ workerId: row.worker_id, error: e.message }, 'Falha ao gravar log de dispatch Talentum');
             reportError(e, { source: 'BulkDispatchTalentum:log', workerId: row.worker_id, batchId });
           });
+
+        // 5. Auditoria de DECISÃO (worker_message_audit, migration 474) — disparo SÍNCRONO,
+        // outcome 'sent'/'failed' (nunca 'queued'). worker_status reaproveita a MESMA linha já
+        // lida em TALENTUM_INCOMPLETE_QUERY. Sem JOIN a worker_documents aqui (este template
+        // não depende de documentos) — documents_status_at_dispatch fica NULL, não vale
+        // adicionar consulta nova só para popular a auditoria (mesmo princípio da Fase 4).
+        await this.auditRepo.record(this.db, {
+          workerId: row.worker_id,
+          templateSlug: TEMPLATE_SLUG,
+          channel: row.messaging_channel === 'periskope' ? 'periskope' : 'twilio',
+          source: 'bulk',
+          actorUid: triggeredBy,
+          workerStatusAtDispatch: isWorkerStatusAtDispatch(row.status) ? row.status : null,
+          outcome: finalStatus === 'sent' ? 'sent' : 'failed',
+          skipReason: errorMsg,
+        });
       } catch (err) {
         errors++;
         const e = err instanceof Error ? err : new Error(String(err));
