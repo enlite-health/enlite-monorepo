@@ -9,9 +9,9 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-import { DraftVacancyChoiceDialog } from '../DraftVacancyChoiceDialog';
+import { DraftVacancyChoiceDialog, type DraftVacancyChoiceDialogProps } from '../DraftVacancyChoiceDialog';
 
-const defaultProps = {
+const defaultProps: DraftVacancyChoiceDialogProps = {
   isOpen: true,
   vacancyId: 'vac-123',
   onComplete: vi.fn(),
