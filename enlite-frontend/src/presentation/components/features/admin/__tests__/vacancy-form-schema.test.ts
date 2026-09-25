@@ -144,3 +144,68 @@ describe('vacancyFormSchema — patientAddressId obrigatório (US-D6)', () => {
     expect(DEFAULT_FORM_VALUES.patientAddressId).toBe('');
   });
 });
+
+// ---------------------------------------------------------------------------
+// buildScheduleFromVacancy — GET devolve `schedule` NORMALIZADO como objeto
+// (scheduleNormalizer.ts, worker-functions), não como array. Bug: a função só
+// aceitava array, então toda edição de vaga com horário abria com o horário
+// vazio e não persistia (achado 25/09).
+// ---------------------------------------------------------------------------
+
+import { buildScheduleFromVacancy } from '../vacancy-form-schema';
+
+describe('buildScheduleFromVacancy — aceita schedule como objeto (forma do GET)', () => {
+  it('(a) schedule como objeto normalizado (forma exata do scheduleNormalizer) → ScheduleValue com dias e horas corretos', () => {
+    const vacancy = {
+      schedule: {
+        lunes: [{ start: '08:00', end: '16:00' }],
+        miercoles: [{ start: '08:00', end: '16:00' }],
+      },
+    };
+    const result = buildScheduleFromVacancy(vacancy);
+    expect(result).toEqual([{ days: ['lun', 'mie'], timeFrom: '08:00', timeTo: '16:00' }]);
+  });
+
+  it('(a2) schedule como objeto com dois blocos de horário diferentes → duas entradas agrupadas por horário', () => {
+    const vacancy = {
+      schedule: {
+        lunes: [{ start: '08:00', end: '16:00' }],
+        martes: [{ start: '09:00', end: '13:00' }],
+      },
+    };
+    const result = buildScheduleFromVacancy(vacancy);
+    expect(result).toEqual([
+      { days: ['lun'], timeFrom: '08:00', timeTo: '16:00' },
+      { days: ['mar'], timeFrom: '09:00', timeTo: '13:00' },
+    ]);
+  });
+
+  it('(b) schedule como array (forma antiga do jsonbToSchedule) → continua funcionando', () => {
+    const vacancy = {
+      schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '16:00' }],
+    };
+    const result = buildScheduleFromVacancy(vacancy);
+    expect(result).toEqual([{ days: ['lun'], timeFrom: '08:00', timeTo: '16:00' }]);
+  });
+
+  it('(c) schedule ausente com schedule_days_hours (texto legado) → fallback legado', () => {
+    const vacancy = {
+      schedule: null,
+      schedule_days_hours: 'Lunes, Martes 09:00-17:00',
+    };
+    const result = buildScheduleFromVacancy(vacancy);
+    expect(result).toEqual([{ days: ['lun', 'mar'], timeFrom: '09:00', timeTo: '17:00' }]);
+  });
+
+  it('(d) tudo vazio (schedule null, sem schedule_days_hours) → EMPTY_SCHEDULE', () => {
+    const vacancy = { schedule: null, schedule_days_hours: '' };
+    const result = buildScheduleFromVacancy(vacancy);
+    expect(result).toEqual([{ days: [], timeFrom: '', timeTo: '' }]);
+  });
+
+  it('(d2) schedule como objeto vazio ({}) → EMPTY_SCHEDULE (não quebra, não inventa horário)', () => {
+    const vacancy = { schedule: {}, schedule_days_hours: '' };
+    const result = buildScheduleFromVacancy(vacancy);
+    expect(result).toEqual([{ days: [], timeFrom: '', timeTo: '' }]);
+  });
+});
