@@ -218,7 +218,13 @@ export class ActivateRecruitmentUseCase {
       schedule: service.schedule,
       providers_needed: service.providers_needed,
     };
-    const fromRecruitment = {
+    // Tipado com o MESMO `Omit` que sobra de `fromOrigin` (+`vacancyNumber`/`computedTitle`, que não
+    // são nem origem nem recrutamento) — sem isto, uma chave travada repetida aqui (ex.:
+    // `schedule: null`) sobrescreveria `fromOrigin` em silêncio se o spread viesse depois dela (achado
+    // do gate revisao-pr). A ordem do spread abaixo (`fromOrigin` por ÚLTIMO) é a segunda trava —
+    // as duas juntas: o tipo host barra a chave errada AQUI, e a ordem barra a chave certa perdendo
+    // se alguém escapar o tipo.
+    const fromRecruitment: Omit<VacancyInsertParams, SourceLockedField | 'vacancyNumber' | 'computedTitle'> = {
       required_professions: null,
       required_sex: null,
       worker_profile_sought: null,
@@ -236,8 +242,8 @@ export class ActivateRecruitmentUseCase {
     const params = buildInsertParams({
       vacancyNumber,
       computedTitle,
-      ...fromOrigin,
       ...fromRecruitment,
+      ...fromOrigin,
     });
     // case_ordinal (spec 027 Fase 5) é computado dentro do próprio INSERT
     // (buildInsertQuery); a corrida entre dois cliques simultâneos no mesmo
