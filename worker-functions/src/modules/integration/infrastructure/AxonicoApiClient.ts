@@ -86,10 +86,21 @@ interface AxonicoLoginResponseBody {
   medico?: { matricula?: unknown };
 }
 
+interface AxonicoPacienteCoberturaEstado {
+  estado?: unknown;
+  descripcion?: string;
+}
+
 interface AxonicoPacienteCobertura {
+  /** Índice interno do Axonico (1 dígito) — é ISSO que `comprobante/filter` e o PUT esperam como
+   *  `nro_cobertura`, medido 24/09/2026: `nro_afiliado` (19 dígitos) devolve
+   *  400 "Alguno de los valores del filtro no es válido para su campo." */
+  nro_cobertura?: string;
   nro_afiliado?: string;
   obra_social?: string;
   plan?: string;
+  /** Pode vir ausente — cobertura sem `estado` reconhecível NÃO conta como ativa. */
+  estado?: AxonicoPacienteCoberturaEstado;
 }
 
 interface AxonicoPacienteFilterEntry {
@@ -148,6 +159,19 @@ function redigirSequenciasLongas(texto: string): string {
 
 function truncar(texto: string, max: number): string {
   return texto.length > max ? texto.slice(0, max) : texto;
+}
+
+/** `estado.descripcion` normalizado (trim, minúsculo, sem acento) === 'activo'. `estado` ausente
+ *  ou `descripcion` não-string NÃO conta como ativa — nunca cai para `[0]` por omissão. */
+function isCoberturaAtiva(cobertura: AxonicoPacienteCobertura): boolean {
+  const descricao = cobertura.estado?.descripcion;
+  if (typeof descricao !== 'string') return false;
+  const normalizada = descricao
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .trim()
+    .toLowerCase();
+  return normalizada === 'activo';
 }
 
 /** `undefined` quando o corpo é vazio ou não é JSON válido (HTML de proxy, texto plano) — nunca
@@ -506,7 +530,15 @@ export class AxonicoApiClient implements IAxonicoApiClient {
 
     const entry = result[0];
     const historiaClinica = entry?.historia_clinica;
-    const nroCobertura = entry?.coberturas?.[0]?.nro_afiliado;
+    const coberturas = entry?.coberturas ?? [];
+    const coberturaAtivaIndex = coberturas.findIndex(isCoberturaAtiva);
+    const nroCobertura = coberturaAtivaIndex >= 0 ? coberturas[coberturaAtivaIndex]?.nro_cobertura : undefined;
+
+    logger.info({
+      msg: `${TAG} findPatientByDni — seleção de cobertura ativa`,
+      coberturasTotal: coberturas.length,
+      coberturaAtivaIndex,
+    });
 
     if (!entry || !historiaClinica || !nroCobertura) {
       return null;

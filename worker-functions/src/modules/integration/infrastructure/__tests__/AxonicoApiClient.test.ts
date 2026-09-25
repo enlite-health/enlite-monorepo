@@ -89,7 +89,10 @@ function loginResponse(overrides: { accessToken?: string; matricula?: string } =
 }
 
 function pacienteFilterResponse(
-  entries: Array<{ historia_clinica: string; coberturas: Array<{ nro_afiliado: string }> }>
+  entries: Array<{
+    historia_clinica: string;
+    coberturas: Array<{ nro_cobertura: string; nro_afiliado?: string; estado?: { descripcion: string } }>;
+  }>
 ) {
   return jsonResponse({ data: entries });
 }
@@ -433,18 +436,113 @@ describe('AxonicoApiClient — findPatientByDni', () => {
     expect(result).toBeNull();
   });
 
-  it('com match → historiaClinica e nroCobertura extraídos da 1ª cobertura', async () => {
+  it('com match → historiaClinica e nroCobertura extraídos da cobertura ativa no índice 0 (caso simples)', async () => {
     mockFetch.mockResolvedValueOnce(loginResponse());
     mockFetch.mockResolvedValueOnce(
       pacienteFilterResponse([
-        { historia_clinica: 'HC-123', coberturas: [{ nro_afiliado: 'AF-456' }] },
+        {
+          historia_clinica: 'HC-123',
+          coberturas: [{ nro_cobertura: '1', nro_afiliado: 'AF-456', estado: { descripcion: 'Activo' } }],
+        },
       ])
     );
 
     const client = makeClient();
     const result = await client.findPatientByDni('30712345');
 
-    expect(result).toEqual({ historiaClinica: 'HC-123', nroCobertura: 'AF-456' });
+    expect(result).toEqual({ historiaClinica: 'HC-123', nroCobertura: '1' });
+  });
+
+  it('4 coberturas (0-2 Baja, 3 Activo) → usa nro_cobertura (1 dígito) do índice 3, nunca o nro_afiliado (19 dígitos) nem o índice 0', async () => {
+    mockFetch.mockResolvedValueOnce(loginResponse());
+    mockFetch.mockResolvedValueOnce(
+      pacienteFilterResponse([
+        {
+          historia_clinica: 'HC-123',
+          coberturas: [
+            { nro_cobertura: '0', nro_afiliado: '1111111111111111110', estado: { descripcion: 'Baja' } },
+            { nro_cobertura: '1', nro_afiliado: '1111111111111111111', estado: { descripcion: 'Baja' } },
+            { nro_cobertura: '2', nro_afiliado: '1111111111111111112', estado: { descripcion: 'Baja' } },
+            { nro_cobertura: '3', nro_afiliado: '1111111111111111113', estado: { descripcion: 'Activo' } },
+          ],
+        },
+      ])
+    );
+
+    const client = makeClient();
+    const result = await client.findPatientByDni('30712345');
+
+    expect(result).toEqual({ historiaClinica: 'HC-123', nroCobertura: '3' });
+  });
+
+  it('estado.descripcion " ACTIVO " (caixa/espaço) → conta como ativa', async () => {
+    mockFetch.mockResolvedValueOnce(loginResponse());
+    mockFetch.mockResolvedValueOnce(
+      pacienteFilterResponse([
+        { historia_clinica: 'HC-123', coberturas: [{ nro_cobertura: '2', estado: { descripcion: ' ACTIVO ' } }] },
+      ])
+    );
+
+    const client = makeClient();
+    const result = await client.findPatientByDni('30712345');
+
+    expect(result).toEqual({ historiaClinica: 'HC-123', nroCobertura: '2' });
+  });
+
+  it('todas as coberturas Baja → null, sem cair para a [0]', async () => {
+    mockFetch.mockResolvedValueOnce(loginResponse());
+    mockFetch.mockResolvedValueOnce(
+      pacienteFilterResponse([
+        {
+          historia_clinica: 'HC-123',
+          coberturas: [
+            { nro_cobertura: '0', estado: { descripcion: 'Baja' } },
+            { nro_cobertura: '1', estado: { descripcion: 'Baja' } },
+          ],
+        },
+      ])
+    );
+
+    const client = makeClient();
+    const result = await client.findPatientByDni('30712345');
+
+    expect(result).toBeNull();
+    // Log sem PII (nunca os números de cobertura/afiliado) — só contagem e índice.
+    expect(mockLogger.info).toHaveBeenCalledWith(
+      expect.objectContaining({ coberturasTotal: 2, coberturaAtivaIndex: -1 }),
+    );
+    const logCall = mockLogger.info.mock.calls.find(([arg]) => 'coberturaAtivaIndex' in arg);
+    expect(JSON.stringify(logCall)).not.toMatch(/Baja/);
+  });
+
+  it('estado ausente em todas as coberturas → null, sem cair para a [0]', async () => {
+    mockFetch.mockResolvedValueOnce(loginResponse());
+    mockFetch.mockResolvedValueOnce(
+      pacienteFilterResponse([
+        { historia_clinica: 'HC-123', coberturas: [{ nro_cobertura: '0' }, { nro_cobertura: '1' }] },
+      ])
+    );
+
+    const client = makeClient();
+    const result = await client.findPatientByDni('30712345');
+
+    expect(result).toBeNull();
+  });
+
+  it('sem cobertura ativa → nenhuma chamada a comprobante/filter nem a PUT (findPatientByDni sozinho não faz essas chamadas; confirma que o resultado null não é seguido de nada)', async () => {
+    mockFetch.mockResolvedValueOnce(loginResponse());
+    mockFetch.mockResolvedValueOnce(
+      pacienteFilterResponse([
+        { historia_clinica: 'HC-123', coberturas: [{ nro_cobertura: '0', estado: { descripcion: 'Baja' } }] },
+      ])
+    );
+
+    const client = makeClient();
+    await client.findPatientByDni('30712345');
+
+    const chamadas = mockFetch.mock.calls.map(([url]) => String(url));
+    expect(chamadas.some((u) => u.includes('/api/comprobante'))).toBe(false);
+    expect(mockFetch).toHaveBeenCalledTimes(2); // login + paciente/filter, nada mais
   });
 
   it('doc_tipo enviado é sempre "0" (DNI), medido no corpo da requisição', async () => {
