@@ -249,26 +249,9 @@ test.describe('Spec 014 bloco D — o fluxo se entende sem documentação @integ
     await expect(page).toHaveURL(/\/admin\/patients\/kanban$/, { timeout: 15_000 });
   });
 
-  test('6a. Nueva Vacante — secciones agrupando los 22 campos (modo CREAR)', async ({ page }) => {
-    // D425 item 4 (24/09/2026, docs/decisoes.md, Fase 3 de completar-vacante-em-rascunho) —
-    // "Nueva" sai temporariamente: o ASSUNTO desta metade é o modo CRIAR do wizard em
-    // /admin/vacancies/new (seções agrupando os 22 campos), que agora redireciona pra
-    // /admin/vacancies. Split de um teste que também cobria o banner D6.1 em modo EDIÇÃO
-    // (6b abaixo, que NÃO depende de /new e continua rodando). Skip, não apagado.
-    test.skip(true, 'D425 item 4 — "Nueva" fora temporariamente; modo criar do wizard não é mais alcançável por /new');
-    await loginAsRealStaff(page);
-    await page.goto('/admin/vacancies/new');
-    await expect(page.getByTestId('case-select')).toBeVisible({ timeout: 15_000 });
-
-    // US-D6: títulos de sección (Heading) agrupando los campos — no una lista plana.
-    await expect(page.getByText('Caso y perfil profesional')).toBeVisible();
-    await expect(page.getByText('Meet y fechas')).toBeVisible();
-    await expect(page.getByText('Estado y ubicación')).toBeVisible();
-    await expect(page.getByText('Condiciones de la vacante')).toBeVisible();
-
-    await expect(page).toHaveScreenshot('bloco-d-vacante.png', { maxDiffPixelRatio: 0.1 });
-  });
-
+  // 6a (modo CRIAR do wizard, seções agrupando os 22 campos) saiu — D425 item 4, "Nueva" fora
+  // temporariamente, /admin/vacancies/new não é mais alcançável. O que sobra do teste 6
+  // original é o banner D6.1 em modo EDIÇÃO, abaixo — nunca dependeu de /new.
   test('6b. banner de validação lista os campos por NOMBRE (lex D6.1) — modo EDIÇÃO, não depende de "Nueva"', async ({ page }) => {
     await loginAsRealStaff(page);
 
