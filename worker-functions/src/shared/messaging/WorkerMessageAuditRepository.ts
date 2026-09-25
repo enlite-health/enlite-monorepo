@@ -92,8 +92,33 @@ export interface WorkerMessageAuditParams {
 }
 
 export class WorkerMessageAuditRepository {
+  /**
+   * `client` pode ser um `Pool` (bulk/individual/system — sem transação aberta: cada
+   * `.query()` já é sua própria transação implícita) OU um `PoolClient` de uma transação
+   * aberta pelo caller (`StageMessageHandler`, C3 com advisory lock — `client` entre `BEGIN`
+   * e `COMMIT`).
+   *
+   * Achado do gate 25/09: quando é um `PoolClient` DENTRO de uma transação, uma falha no
+   * INSERT abaixo deixava a transação Postgres ABORTED — o catch best-effort engolia o erro,
+   * mas o `COMMIT` seguinte do caller fazia ROLLBACK *silenciosamente* (Postgres não lança em
+   * COMMIT de transação abortada), e o handler publicava `outbox-enqueued` pra um outbox que
+   * nunca foi persistido. Envolve o INSERT num SAVEPOINT nesse caso — reusa o MESMO mecanismo
+   * de `BaseAuditLogRepository.logEventSafe` (src/shared/audit/BaseAuditLogRepository.ts:110-130,
+   * ADR-007: nome de savepoint único, `ROLLBACK TO SAVEPOINT` + `RELEASE SAVEPOINT` no catch).
+   * Não herda de `BaseAuditLogRepository` — o schema dele é outro (mutação de campo com
+   * `actor_user_id` FK em `users`); só o mecanismo de savepoint é replicado aqui.
+   *
+   * Distingue Pool de PoolClient por duck-typing (`typeof client.release === 'function'` —
+   * só `PoolClient` tem `.release()`), não por `instanceof Pool`: os ~15 pontos de chamada
+   * (e os testes) passam mocks simples, nunca uma instância real de `pg.Pool`.
+   */
   async record(client: Pool | PoolClient, params: WorkerMessageAuditParams): Promise<void> {
+    const usingSavepoint = typeof (client as PoolClient).release === 'function';
+    const savepoint = usingSavepoint
+      ? `worker_msg_audit_sp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+      : null;
     try {
+      if (savepoint) await client.query(`SAVEPOINT ${savepoint}`);
       await client.query(
         `INSERT INTO worker_message_audit
            (worker_id, job_posting_id, template_slug, channel, source, actor_uid, trace_id,
@@ -115,7 +140,15 @@ export class WorkerMessageAuditRepository {
           params.skipReason ?? null,
         ],
       );
+      if (savepoint) await client.query(`RELEASE SAVEPOINT ${savepoint}`);
     } catch (err) {
+      if (savepoint) {
+        // Best-effort na própria recuperação: se o ROLLBACK TO / RELEASE falharem (ex.:
+        // conexão já caiu), não há mais nada a fazer aqui — o catch abaixo do caller (ou o
+        // COMMIT dele) é quem vai perceber. Mesmo padrão de logEventSafe.
+        try { await client.query(`ROLLBACK TO SAVEPOINT ${savepoint}`); } catch { /* ignore */ }
+        try { await client.query(`RELEASE SAVEPOINT ${savepoint}`); } catch { /* ignore */ }
+      }
       const error = err instanceof Error ? err : new Error(String(err));
       logger.warn(
         {
