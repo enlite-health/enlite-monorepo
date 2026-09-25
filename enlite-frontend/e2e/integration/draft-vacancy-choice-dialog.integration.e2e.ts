@@ -136,9 +136,13 @@ test.describe('draft-vacancy-choice — fase 3 (completar-vacante-em-rascunho, F
 
     // Ator COM as duas células de D426 — vê o modal de escolha; precisa também de
     // `vacancy:read`/`patient*:read` pra listagem carregar (mesmo conjunto da Fase 2).
+    // `talentum:create` a mais (item 5, "Nueva fora"): controle positivo do teste 5 é
+    // `sync-talentum-btn`, que exige talentum:create E talentum:update JUNTAS
+    // (AdminVacanciesPage.tsx `podeSyncTalentum`) — sem essa célula o botão nunca apareceria,
+    // e o teste provaria menos do que promete.
     comCelulaGroupId = seedStaffInGroup({ uid: COM_CELULA.uid, email: COM_CELULA.email, groupName: `E2E Choice ComCelula ${RUN_ID}`, country: 'AR' }).groupId;
     for (const [resource, action] of [
-      ['vacancy', 'read'], ['vacancy', 'update'], ['talentum', 'update'],
+      ['vacancy', 'read'], ['vacancy', 'update'], ['talentum', 'create'], ['talentum', 'update'],
       ['patient', 'read'], ['patient_identity', 'read'], ['patient_services', 'read'],
     ] as const) grantCell(comCelulaGroupId, resource, action);
 
@@ -221,5 +225,24 @@ test.describe('draft-vacancy-choice — fase 3 (completar-vacante-em-rascunho, F
     const badges = await page.locator('[data-testid^="vacancy-draft-badge-"]').count();
     expect(oldControls).toBe(0);
     expect(badges).toBeGreaterThanOrEqual(1);
+  });
+
+  test('5. "Nueva" fora — botão sumiu incondicionalmente (controle positivo: sync-talentum-btn aparece pra quem tem célula), /new redireciona', async ({ page }) => {
+    await loginAs(page, COM_CELULA);
+    await page.goto('/admin/vacancies');
+    await expect(page.getByTestId(`vacancy-draft-badge-${draftVacancyId}`)).toBeVisible({ timeout: 20_000 });
+
+    const newBtnCount = await page.getByTestId('new-vacancy-btn').count();
+    const syncBtnCount = await page.getByTestId('sync-talentum-btn').count();
+    console.log(`[prova] new-vacancy-btn=${newBtnCount} sync-talentum-btn=${syncBtnCount}`);
+    expect(newBtnCount).toBe(0);
+    // Controle positivo: COM_CELULA TEM as células de outro botão da mesma tela — prova que a
+    // ausência do "Nueva" é sobre o "Nueva" (D425 item 4), não sobre a tela inteira estar
+    // escondendo botão por falta de contrato/permissão.
+    expect(syncBtnCount).toBe(1);
+
+    await page.goto('/admin/vacancies/new');
+    await expect(page).toHaveURL(/\/admin\/vacancies$/, { timeout: 15_000 });
+    console.log(`[prova] URL final após /new: ${page.url()}`);
   });
 });
