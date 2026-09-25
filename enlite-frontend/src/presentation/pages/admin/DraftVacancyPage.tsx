@@ -8,7 +8,7 @@ import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 import { PageContainer } from '@presentation/components/atoms/PageContainer';
 import { ContainerGate } from '@presentation/components/features/access';
-import { useActionGate, useHasCell } from '@presentation/hooks/useCellAccess';
+import { useActionGate, useContainerAccess } from '@presentation/hooks/useCellAccess';
 import { useVacancyDetail } from '@hooks/admin/useVacancyDetail';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { formatCaseNumber } from '@domain/value-objects/caseNumberFormat';
@@ -69,10 +69,15 @@ export default function DraftVacancyPage() {
   // D181 (memória `container-e-a-fronteira-do-redesenho`): permissão ausente NUNCA pode
   // parecer "vazio" — o GET zera estes campos sem a célula (`patientInVacancyProjection.ts`,
   // backend), e a tela precisa saber QUE célula é essa para não confundir "não preenchido" com
-  // "não posso ver" (achado #6 do gate parcial 25/09).
-  const hasIdentityCell = useHasCell('patient_identity', 'read');
-  const hasAddressCell = useHasCell('patient_address', 'read');
-  const hasClinicalCell = useHasCell('patient_clinical', 'read');
+  // "não posso ver" (achado #6 do gate parcial 25/09). `useContainerAccess` (não `useHasCell`) —
+  // rodada seguinte do gate (25/09): `useHasCell` não olha `enforcement`, então com o engine fora
+  // de `on` (prd hoje) a tela mostraria "No visible" num campo que o backend devolveu CHEIO
+  // (`patientContainerAccess.ts:123`: `cells===null` → devolve o dado). `useContainerAccess`
+  // (mesmo padrão de `VacancyFilters.tsx:51`) já embute o freio: sem enforcement `on`, `visible`
+  // é sempre `true` e quem manda é o valor do GET.
+  const hasIdentityCell = useContainerAccess('patient_identity').visible;
+  const hasAddressCell = useContainerAccess('patient_address').visible;
+  const hasClinicalCell = useContainerAccess('patient_clinical').visible;
 
   if (isLoading) return <DetailSkeleton />;
 
