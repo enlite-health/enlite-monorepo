@@ -20,11 +20,18 @@
  * obrigatório; `documentType` é aceito e reservado (ainda não usado). Um corpo com `patientId` e
  * sem `documentNumber` é recusado pelo Zod (campo obrigatório ausente) — `patientId` extra é apenas
  * ignorado (schema não-`strict`), nunca usado.
+ *
+ * CORREÇÃO (24/09/2026, change `axonico-envio-rastreavel`): quem disparou a tentativa nunca vinha
+ * do payload (não é confiável) — vem da sessão autenticada, mesmo padrão de
+ * `AnaCareHoursController.actorUid` (`AuthMiddleware.getAuthContext(req)?.principal.id`). Ao
+ * contrário daquele método (que cai em `'unknown'` quando ausente), aqui a ausência de uid é 401 —
+ * o registro de quem lançou uma prestação que FATURA de verdade não pode ser "desconhecido".
  */
 
 import { Request, Response } from 'express';
 import { z } from 'zod';
 import { logger } from '@shared/logging';
+import { AuthMiddleware } from '@modules/identity';
 import { LancarPrestacaoAxonicoUseCase } from '../../application/LancarPrestacaoAxonicoUseCase';
 import {
   PacienteSemDniError,
@@ -86,6 +93,16 @@ export class LancarPrestacaoAxonicoController {
 
   /** POST /integrations/axonico/comprobante — um lançamento. */
   async handle(req: Request, res: Response): Promise<void> {
+    // uid de quem está disparando — resolvido da sessão, nunca do corpo (mesmo padrão de
+    // `AnaCareHoursController.actorUid`). Sem uid: 401 ANTES de validar o corpo — um lançamento que
+    // fatura de verdade não pode ficar sem autor conhecido (diferente de `actorUid`, que aceita
+    // `'unknown'` para leituras/escritas que não faturam).
+    const sentBy = AuthMiddleware.getAuthContext(req)?.principal.id;
+    if (!sentBy) {
+      res.status(401).json({ success: false, error: 'Unauthorized' });
+      return;
+    }
+
     const parsed = LancamentoBodySchema.safeParse(req.body ?? {});
     if (!parsed.success) {
       // Nunca logar req.body (pode carregar documentNumber = DNI) — só os NOMES dos campos que
@@ -105,7 +122,7 @@ export class LancarPrestacaoAxonicoController {
       hours: parsed.data.hours,
     });
 
-    const outcome = await this.executarUm(parsed.data);
+    const outcome = await this.executarUm(parsed.data, sentBy);
     if (outcome.status === 'erro') {
       // errorType/httpStatus/message já são seguros (testes da suíte do use case garantem que a
       // mensagem nunca interpola o DNI) — o boundary HTTP loga o VEREDITO da requisição, não
@@ -140,6 +157,14 @@ export class LancarPrestacaoAxonicoController {
 
   /** POST /integrations/axonico/comprobante/lote — laço sobre o caminho unitário, item a item. */
   async handleLote(req: Request, res: Response): Promise<void> {
+    // Mesmo guard de `handle` — uma uid só, válida para o lote inteiro (quem disparou o lote é
+    // quem disparou cada item dele).
+    const sentBy = AuthMiddleware.getAuthContext(req)?.principal.id;
+    if (!sentBy) {
+      res.status(401).json({ success: false, error: 'Unauthorized' });
+      return;
+    }
+
     const parsed = LoteBodySchema.safeParse(req.body ?? {});
     if (!parsed.success) {
       logger.warn({
@@ -157,7 +182,7 @@ export class LancarPrestacaoAxonicoController {
     // linhas 107-124): falha de um item NUNCA aborta os seguintes.
     for (let index = 0; index < parsed.data.itens.length; index++) {
       const item = parsed.data.itens[index];
-      const outcome = await this.executarUm(item);
+      const outcome = await this.executarUm(item, sentBy);
       if (outcome.status === 'erro') {
         resultados.push({
           index,
@@ -199,13 +224,14 @@ export class LancarPrestacaoAxonicoController {
    *  lógica de negócio aqui — só tradução de exceção já lançada pelo miolo. */
   private async executarUm(
     input: LancamentoBody,
+    sentBy: string,
   ): Promise<
     | { status: 'ok'; result: LancarPrestacaoAxonicoResult }
     | { status: 'erro'; errorType: string; message: string; httpStatus: number; data?: unknown }
   > {
     try {
       const useCase = await this.useCaseFactory();
-      const result = await useCase.execute(input);
+      const result = await useCase.execute({ ...input, sentBy });
       return { status: 'ok', result };
     } catch (err) {
       return { status: 'erro', ...mapError(err) };

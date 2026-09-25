@@ -13,12 +13,12 @@
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import type { AnaCareShiftsSource, SourceShiftDTO } from '../domain/AnaCareShiftsSource';
 import type { PatientMonthSyncRepository, SyncRunRepository } from '../domain/AnaCareHoursSyncPorts';
-import { AnaCarePatientDocumentRepository, type IAnaCarePatientDocumentRepository } from '@modules/integration';
+import { AnaCarePatientDocumentRepository, AxonicoLancamentoRepository, type IAnaCarePatientDocumentRepository, type IAxonicoLancamentoRepository } from '@modules/integration';
 import { ShiftHoursValidationRepository, ShiftAlreadyValidatedError } from '../infrastructure/ShiftHoursValidationRepository';
 import { WorkerLinkRepository } from '../infrastructure/WorkerLinkRepository';
 import { AnaCarePatientMonthRepository } from '../infrastructure/AnaCarePatientMonthRepository';
 import { AnaCareSyncRunRepository } from '../infrastructure/AnaCareSyncRunRepository';
-import { mapShift, groupIntoPatients, buildSnapshot, computeActualHours, joinSourceName } from './AnaCareHoursMapper';
+import { mapShift, groupIntoPatients, buildSnapshot, computeActualHours, joinSourceName, attachAxonicoToPatient, AXONICO_SERVICE_TYPE } from './AnaCareHoursMapper';
 import {
   AnaCareHoursServiceError,
   CONTEST_NOTE_MAX_LENGTH,
@@ -79,6 +79,7 @@ export class AnaCareHoursService {
      * `patientDocuments` precisa mudar.
      */
     private readonly syncRunRepository: SyncRunRepository = new AnaCareSyncRunRepository(),
+    private readonly lancamentoRepository: IAxonicoLancamentoRepository = new AxonicoLancamentoRepository(), // `axonico-envio-rastreavel` (migration 473): lançamentos `enviado` do mês, anexados em `getPatientMonth`.
   ) {}
 
   /**
@@ -270,7 +271,12 @@ export class AnaCareHoursService {
     // só o sync (`AnaCareHoursSyncRunner`) agrega e conta; achado registrado em separado.
     const { shifts: sourceShifts } = await this.source.listShifts({ month, patientId });
     const patients = await this.buildPatients(sourceShifts, canReadNote, canReadProviderName, canReadPatientDocument);
-    return patients.find((p) => p.anaCareId === patientId) ?? null;
+    const patient = patients.find((p) => p.anaCareId === patientId) ?? null;
+    if (patient?.documentNumber) {
+      const sent = await this.lancamentoRepository.findSentByDocumentAndMonth(patient.documentNumber, AXONICO_SERVICE_TYPE, periodMonthDate(month));
+      attachAxonicoToPatient(patient, sent); // `axonico-envio-rastreavel`: sem documentNumber nem consulta — `axonico` ausente, sem erro.
+    }
+    return patient;
   }
 
   /**

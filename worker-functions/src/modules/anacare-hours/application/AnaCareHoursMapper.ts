@@ -28,6 +28,7 @@ import type { AnaCareRetratoSourceStatus, SourceShiftDTO } from '../domain/AnaCa
 import type { SyncRunConclusion } from '../domain/AnaCareHoursSyncPorts';
 import type { ValidationRow } from '../infrastructure/ShiftHoursValidationRepository';
 import type { AnaCareListPatient, AnaCareMonthSnapshot, AnaCarePatient, AnaCareProvider, AnaCareShift, AnaCareSnapshotState, ValidationStatus } from '../domain/AnaCareShift';
+import type { AxonicoLancamentoSentRecord, EnliteServiceType } from '@modules/integration';
 
 const STATUS_MAP: Record<ValidationRow['status'], ValidationStatus> = {
   pendente: 'pendiente',
@@ -260,4 +261,37 @@ export function buildSnapshot(
     snapshot.reservationsDone = conclusion.reservationsDone;
   }
   return snapshot;
+}
+
+/**
+ * change `axonico-envio-rastreavel` (24/09/2026, migration 473) — único tipo de serviço lançado
+ * no Axonico a partir desta tela, mesmo hardcode do front (`AxonicoComprobanteHttpService.ts`:
+ * `serviceType: 'AT' as const`).
+ */
+export const AXONICO_SERVICE_TYPE: EnliteServiceType = 'AT';
+
+/**
+ * Anexa `axonico` a cada `AnaCareShift` cujo `date` casa com o `serviceDate` de uma tentativa
+ * `enviado` do mês (`IAxonicoLancamentoRepository.findSentByDocumentAndMonth`) — mutação IN-PLACE
+ * dos turnos já montados por `AnaCareHoursService.buildPatients` (objeto que só a requisição atual
+ * enxerga, nunca compartilhado entre requisições). Vários turnos podem cair no MESMO dia
+ * (prestadores diferentes) — todos ganham o mesmo `axonico`, porque o lançamento foi feito pelo
+ * DIA inteiro, não por turno. `sent.length === 0` (nunca lançado neste mês) é no-op.
+ */
+export function attachAxonicoToPatient(patient: AnaCarePatient, sent: readonly AxonicoLancamentoSentRecord[]): void {
+  if (sent.length === 0) return;
+  const byServiceDate = new Map(sent.map((s) => [s.serviceDate, s]));
+  for (const provider of patient.providers) {
+    for (const shift of provider.shifts) {
+      const record = byServiceDate.get(shift.date);
+      if (!record) continue;
+      shift.axonico = {
+        status: 'enviado',
+        numeroComprobante: record.numeroComprobante,
+        codAutorizacion: record.codAutorizacion,
+        sentAt: record.createdAt.toISOString(),
+        ...(record.sentBy ? { sentBy: { uid: record.sentBy, displayName: record.sentByName } } : {}),
+      };
+    }
+  }
 }

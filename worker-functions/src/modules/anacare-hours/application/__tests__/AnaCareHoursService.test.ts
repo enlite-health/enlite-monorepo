@@ -11,7 +11,23 @@ import { AnaCareHoursServiceError, VALIDATE_BATCH_MAX_SHIFTS } from '../../domai
 import type { AnaCareRetratoSourceStatus, AnaCareShiftsSource, SourceShiftDTO } from '../../domain/AnaCareShiftsSource';
 import type { PatientMonthSyncRepository, SyncRunConclusion, SyncRunRepository } from '../../domain/AnaCareHoursSyncPorts';
 import type { AnaCarePatientMonthAggregate, AnaCarePatientMonthProviderAggregate } from '../../domain/AnaCarePatientMonth';
-import type { AnaCarePatientDocumentRecord, IAnaCarePatientDocumentRepository } from '@modules/integration';
+import type { AnaCarePatientDocumentRecord, IAnaCarePatientDocumentRepository, AxonicoLancamentoSentRecord, IAxonicoLancamentoRepository } from '@modules/integration';
+
+// change `axonico-envio-rastreavel` (24/09/2026): sem este mock, o novo parâmetro default
+// (`new AxonicoLancamentoRepository()`, 8º positional) tentaria abrir o Pool de verdade em TODO
+// teste de `getPatientMonth` que lê `documentNumber` (vários já fazem, ver describe "item 4") sem
+// injetar `lancamentoRepository` — mesmo racional do mock de `WorkerLinkRepository`/
+// `AnaCareSyncRunRepository` abaixo. Default devolve `[]` (nenhum lançamento no mês), que é
+// exatamente o comportamento ANTERIOR a esta fase (`axonico` nunca aparecia).
+jest.mock('@modules/integration', () => {
+  const actual = jest.requireActual('@modules/integration');
+  return {
+    ...actual,
+    AxonicoLancamentoRepository: jest.fn().mockImplementation(() => ({
+      findSentByDocumentAndMonth: jest.fn().mockResolvedValue([]),
+    })),
+  };
+});
 
 jest.mock('../../infrastructure/ShiftHoursValidationRepository', () => {
   const actual = jest.requireActual('../../infrastructure/ShiftHoursValidationRepository');
@@ -658,6 +674,150 @@ describe('AnaCareHoursService', () => {
       const shiftComCelula = comCelula!.providers[0].shifts.find((s) => s.id === 'shift-a')!;
       expect(shiftComCelula.contestNote).toBe('nota decifrada');
       expect(decrypt).toHaveBeenCalledWith('cifra');
+    });
+
+    /**
+     * change `axonico-envio-rastreavel` (24/09/2026): `getPatientMonth` anexa `AnaCareShift.axonico`
+     * a cada dia com lançamento `enviado` no mês — casado por `service_date`, não por turno. Injeta
+     * um `IAxonicoLancamentoRepository` MOCKADO (jest) como 8º parâmetro posicional (nunca o real —
+     * mesmo padrão de `mockRepo`/`mockPatientDocuments` para as outras portas).
+     */
+    describe('axonico (change axonico-envio-rastreavel, migration 473)', () => {
+      function mockLancamentoRepository(
+        overrides: Partial<jest.Mocked<IAxonicoLancamentoRepository>> = {},
+      ): jest.Mocked<IAxonicoLancamentoRepository> {
+        return {
+          findSentByDocumentAndMonth: jest.fn().mockResolvedValue([]),
+          ...overrides,
+        } as unknown as jest.Mocked<IAxonicoLancamentoRepository>;
+      }
+
+      const SENT_RECORD: AxonicoLancamentoSentRecord = {
+        serviceDate: '2026-09-10', // mesmo dia de SHIFT_A/SHIFT_SEM_CHECKIN
+        numeroComprobante: 'CMP-777',
+        codAutorizacion: 'AUT-777',
+        createdAt: new Date('2026-09-10T15:00:00.000Z'),
+        sentBy: 'uid-staff-9',
+        sentByName: 'Elizabeth Soñez',
+      };
+
+      it('COM patient_identity:read e documentNumber presente: anexa axonico a TODOS os turnos do dia casado (SHIFT_A e SHIFT_SEM_CHECKIN, mesmo dia), consultando pelo documentNumber+AT+mês', async () => {
+        const lancamentoRepository = mockLancamentoRepository({
+          findSentByDocumentAndMonth: jest.fn().mockResolvedValue([SENT_RECORD]),
+        });
+        const service = new AnaCareHoursService(
+          new StubSource(),
+          mockRepo(),
+          new KMSEncryptionService(),
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          lancamentoRepository,
+        );
+
+        const patient = await service.getPatientMonth('2026-09', 'AC-PAT-0', false, false, true);
+
+        expect(lancamentoRepository.findSentByDocumentAndMonth).toHaveBeenCalledWith('30999888', 'AT', '2026-09-01');
+        const shifts = patient!.providers[0].shifts;
+        expect(shifts).toHaveLength(2); // SHIFT_A + SHIFT_SEM_CHECKIN, mesmo dia 2026-09-10
+        for (const shift of shifts) {
+          expect(shift.axonico).toEqual({
+            status: 'enviado',
+            numeroComprobante: 'CMP-777',
+            codAutorizacion: 'AUT-777',
+            sentAt: '2026-09-10T15:00:00.000Z',
+            sentBy: { uid: 'uid-staff-9', displayName: 'Elizabeth Soñez' },
+          });
+        }
+      });
+
+      it('SEM patient_identity:read (documentNumber ausente no paciente montado): NUNCA consulta findSentByDocumentAndMonth, nenhum turno ganha axonico', async () => {
+        const lancamentoRepository = mockLancamentoRepository({
+          findSentByDocumentAndMonth: jest.fn().mockResolvedValue([SENT_RECORD]),
+        });
+        const service = new AnaCareHoursService(
+          new StubSource(),
+          mockRepo(),
+          new KMSEncryptionService(),
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          lancamentoRepository,
+        );
+
+        // canReadPatientDocument=false (5º parâmetro, default) — patient.documentNumber fica undefined.
+        const patient = await service.getPatientMonth('2026-09', 'AC-PAT-0', false);
+
+        expect(lancamentoRepository.findSentByDocumentAndMonth).not.toHaveBeenCalled();
+        expect(patient!.providers[0].shifts.every((s) => s.axonico === undefined)).toBe(true);
+      });
+
+      it('nenhum lançamento enviado no mês (findSentByDocumentAndMonth devolve []): nenhum turno ganha axonico', async () => {
+        const lancamentoRepository = mockLancamentoRepository(); // default: []
+        const service = new AnaCareHoursService(
+          new StubSource(),
+          mockRepo(),
+          new KMSEncryptionService(),
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          lancamentoRepository,
+        );
+
+        const patient = await service.getPatientMonth('2026-09', 'AC-PAT-0', false, false, true);
+
+        expect(patient!.providers[0].shifts.every((s) => s.axonico === undefined)).toBe(true);
+      });
+
+      it('lançamento de um dia DIFERENTE do turno: o turno NÃO casado fica sem axonico (casamento é por service_date, não "qualquer lançamento do mês")', async () => {
+        const outroDiaShift: SourceShiftDTO = { ...SHIFT_A, sourceShiftId: 'shift-outro-dia', date: '2026-09-20' };
+        const source = new StubSource([SHIFT_A, outroDiaShift]);
+        const lancamentoRepository = mockLancamentoRepository({
+          // Lançamento só para o dia de SHIFT_A (2026-09-10) — outroDiaShift (2026-09-20) fica de fora.
+          findSentByDocumentAndMonth: jest.fn().mockResolvedValue([SENT_RECORD]),
+        });
+        const service = new AnaCareHoursService(
+          source,
+          mockRepo(),
+          new KMSEncryptionService(),
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          lancamentoRepository,
+        );
+
+        const patient = await service.getPatientMonth('2026-09', 'AC-PAT-0', false, false, true);
+        const shifts = patient!.providers[0].shifts;
+
+        expect(shifts.find((s) => s.id === 'shift-a')?.axonico?.numeroComprobante).toBe('CMP-777');
+        expect(shifts.find((s) => s.id === 'shift-outro-dia')?.axonico).toBeUndefined();
+      });
+
+      it('sentBy=null no registro (tentativa gravada antes da migration 473): shift.axonico presente, mas SEM a chave sentBy', async () => {
+        const lancamentoRepository = mockLancamentoRepository({
+          findSentByDocumentAndMonth: jest.fn().mockResolvedValue([{ ...SENT_RECORD, sentBy: null, sentByName: null }]),
+        });
+        const service = new AnaCareHoursService(
+          new StubSource(),
+          mockRepo(),
+          new KMSEncryptionService(),
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          lancamentoRepository,
+        );
+
+        const patient = await service.getPatientMonth('2026-09', 'AC-PAT-0', false, false, true);
+        const shift = patient!.providers[0].shifts.find((s) => s.id === 'shift-a')!;
+
+        expect(shift.axonico?.status).toBe('enviado');
+        expect(shift.axonico).not.toHaveProperty('sentBy');
+      });
     });
   });
 

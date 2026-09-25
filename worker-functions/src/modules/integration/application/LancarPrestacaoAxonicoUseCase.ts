@@ -83,6 +83,14 @@ export interface LancarPrestacaoAxonicoInput {
   serviceDate: string;
   /** Sempre inteiro positivo (D366) — o guard 1 reconfirma, nunca confia no chamador. */
   hours: number;
+  /**
+   * uid (`users.firebase_uid`) de quem disparou esta tentativa (change `axonico-envio-rastreavel`,
+   * 24/09/2026) — grava em TODA linha (`enviado`/`duplicado`/`erro`), mesmo molde de
+   * `AnaCareHoursService.validateShift(shiftId, validatorUid)`. O controller (F4) resolve isto da
+   * sessão autenticada e recusa a requisição com 401 ANTES de chamar `execute` quando ausente —
+   * este campo nunca chega vazio ao use case.
+   */
+  sentBy: string;
 }
 
 export type LancarPrestacaoAxonicoResult =
@@ -275,6 +283,7 @@ export class LancarPrestacaoAxonicoUseCase {
         codAutorizacion: null,
         status: 'duplicado',
         errorMessage: null,
+        sentBy: input.sentBy,
       });
       // Nunca logar documentNumber (DNI) — PII clínica. Sem patientId (19/09/2026) — correlaciona
       // por serviceType/serviceDate e por insertedId (a linha gravada — id interno, nunca o DNI).
@@ -358,7 +367,7 @@ export class LancarPrestacaoAxonicoUseCase {
         serviceDate,
       });
     } catch (err) {
-      await this.gravaErro(documentNumber, serviceType, serviceDateStr, hours, err);
+      await this.gravaErro(documentNumber, serviceType, serviceDateStr, hours, input.sentBy, err);
       throw err;
     }
 
@@ -373,6 +382,7 @@ export class LancarPrestacaoAxonicoUseCase {
         codAutorizacion: null,
         status: 'duplicado',
         errorMessage: null,
+        sentBy: input.sentBy,
       });
       // Nunca logar documentNumber (DNI) — PII clínica. Sem patientId (19/09/2026) — correlaciona
       // por serviceType/serviceDate e por insertedId (a linha gravada — id interno, nunca o DNI).
@@ -402,7 +412,7 @@ export class LancarPrestacaoAxonicoUseCase {
         cantidad: hours,
       });
     } catch (err) {
-      await this.gravaErro(documentNumber, serviceType, serviceDateStr, hours, err);
+      await this.gravaErro(documentNumber, serviceType, serviceDateStr, hours, input.sentBy, err);
       throw err;
     }
 
@@ -418,6 +428,7 @@ export class LancarPrestacaoAxonicoUseCase {
         codAutorizacion: submitResult.codAutorizacion,
         status: 'enviado',
         errorMessage: null,
+        sentBy: input.sentBy,
       });
     } catch (err) {
       // O comprovante JÁ FOI CRIADO no Axonico (submitComprobante deu certo) — este catch só
@@ -494,6 +505,7 @@ export class LancarPrestacaoAxonicoUseCase {
     serviceType: EnliteServiceType,
     serviceDateStr: string,
     hours: number,
+    sentBy: string,
     err: unknown,
   ): Promise<void> {
     const errorMessage = err instanceof Error ? err.message : String(err);
@@ -507,6 +519,7 @@ export class LancarPrestacaoAxonicoUseCase {
       codAutorizacion: null,
       status: 'erro',
       errorMessage,
+      sentBy,
     });
     // Nunca logar documentNumber (DNI) — PII clínica. Não há mais patientId (19/09/2026) — o log
     // correlaciona por serviceType/serviceDate e por insertedId (a linha gravada).
