@@ -193,25 +193,23 @@ const EMPTY_SCHEDULE: ScheduleValue = [{ days: [], timeFrom: '', timeTo: '' }];
 /**
  * Backend `normalizeSchedule` object (`{ <dayNameEs>: {start,end}[] }`, forma que o GET de
  * vaga devolve — `worker-functions/.../scheduleNormalizer.ts`) → SchedulePicker value.
- * Mesma lógica de agrupamento por horário que `jsonbToSchedule`, só troca a origem do dia
- * (nome por extenso via `LABEL_TO_KEY`, em vez de `dayOfWeek` numérico).
+ * Reaproveita `LABEL_TO_KEY` (nome → abreviação, já exportado de `vacancyScheduleUtils.ts`) +
+ * `DAY_KEY_TO_NUM` (abreviação → índice numérico, já usado por `scheduleToJsonb` acima) só
+ * pra montar `ScheduleSlot[]` — a forma que `jsonbToSchedule` já consome — e delega o
+ * agrupamento por horário a ele. Zero lógica de agrupamento duplicada (mesma ideia de
+ * `VacancyScheduleEditModal.tsx#hydrateSlots`, que resolve o mesmo shape objeto→slots pro
+ * modal de edição de horário do detalhe).
  */
 export function scheduleObjectToValue(schedule: Record<string, { start: string; end: string }[]>): ScheduleValue {
-  const groups = new Map<string, string[]>();
+  const slots: ScheduleSlot[] = [];
   for (const [dayName, blocks] of Object.entries(schedule)) {
     const dayKey = LABEL_TO_KEY[dayName.toLowerCase()];
     if (!dayKey || !Array.isArray(blocks)) continue;
     for (const block of blocks) {
-      const key = `${block.start}|${block.end}`;
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key)!.push(dayKey);
+      slots.push({ dayOfWeek: DAY_KEY_TO_NUM[dayKey], startTime: block.start, endTime: block.end });
     }
   }
-  if (groups.size === 0) return EMPTY_SCHEDULE;
-  return Array.from(groups.entries()).map(([key, days]) => {
-    const [timeFrom, timeTo] = key.split('|');
-    return { days, timeFrom, timeTo };
-  });
+  return jsonbToSchedule(slots);
 }
 
 /** Build ScheduleValue from vacancy object (prefers JSONB, falls back to legacy text) */

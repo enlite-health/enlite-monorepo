@@ -12,6 +12,7 @@ import {
   DEFAULT_FORM_VALUES,
   buildVacancyPayload,
   vacancyFormSchema,
+  buildScheduleFromVacancy,
   type VacancyFormData,
 } from '../vacancy-form-schema';
 
@@ -151,8 +152,6 @@ describe('vacancyFormSchema — patientAddressId obrigatório (US-D6)', () => {
 // aceitava array, então toda edição de vaga com horário abria com o horário
 // vazio e não persistia (achado 25/09).
 // ---------------------------------------------------------------------------
-
-import { buildScheduleFromVacancy } from '../vacancy-form-schema';
 
 describe('buildScheduleFromVacancy — aceita schedule como objeto (forma do GET)', () => {
   it('(a) schedule como objeto normalizado (forma exata do scheduleNormalizer) → ScheduleValue com dias e horas corretos', () => {
