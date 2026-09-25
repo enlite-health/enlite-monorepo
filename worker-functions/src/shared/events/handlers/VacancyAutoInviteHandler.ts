@@ -3,8 +3,9 @@ import { CloudTasksClient } from '../CloudTasksClient';
 import { MatchmakingService } from '../../../modules/matching/infrastructure/MatchmakingService';
 import { TokenService } from '../../../modules/notification/infrastructure/TokenService';
 import { logger, reportError, loggingAls } from '../../logging';
-import { getRequiredColumns } from '../../../modules/worker/application/workerDocumentPolicy';
+import { getRequiredColumns, getRequiredSlugs } from '../../../modules/worker/application/workerDocumentPolicy';
 import { assertVacancyInviteAllowed } from '../../../modules/notification/application/VacancyInviteGuard';
+import { WorkerMessageAuditRepository } from '../../messaging/WorkerMessageAuditRepository';
 
 const TEMPLATE_SLUG_COMPLETE   = 'ar_vacancy_match_complete';
 const TEMPLATE_SLUG_INCOMPLETE = 'ar_vacancy_match_incomplete';
@@ -123,6 +124,7 @@ export function createVacancyAutoInviteHandler(
 
     // 4. TokenService para PII (worker_name)
     const tokenService = new TokenService(db);
+    const auditRepo = new WorkerMessageAuditRepository();
 
     const vacancyUrl = `https://app.enlite.health/vacantes/${jobPostingId}`;
 
@@ -187,6 +189,27 @@ export function createVacancyAutoInviteHandler(
             traceId,
           ],
         );
+
+        // Auditoria de DECISÃO (worker_message_audit, migration 474) — logo após o
+        // INSERT no outbox, snapshot em memória (candidate.workerStatus, lido acima,
+        // NUNCA uma releitura de workers.status). channel:null porque o canal só é
+        // resolvido depois, pelo OutboxProcessor (fora do escopo desta change — ver
+        // design.md §Decisão 1). Best-effort: WorkerMessageAuditRepository nunca lança.
+        const missingDocuments = isComplete
+          ? []
+          : await computeMissingDocumentSlugs(db, candidate.workerId);
+        await auditRepo.record(db, {
+          workerId: candidate.workerId,
+          jobPostingId,
+          templateSlug,
+          channel: null,
+          source: 'system',
+          traceId,
+          workerStatusAtDispatch: workerStatus,
+          documentsStatusAtDispatch: null,
+          missingDocuments,
+          outcome: 'queued',
+        });
 
         // Agendar Cloud Task na queue whatsapp-paced — rate limit 0.5/s
         // configurado no GCP previne burst que Meta classificaria como spam.
@@ -274,6 +297,59 @@ export async function formatPendingDocuments(db: Pool, workerId: string): Promis
   }
 
   return joinWithY(pending);
+}
+
+/**
+ * Função irmã de `formatPendingDocuments`: reaproveita a MESMA query SQL e o
+ * MESMO `getRequiredColumns`/`getRequiredSlugs` (workerDocumentPolicy.ts) —
+ * uma única fonte de verdade sobre "o que é obrigatório por profissão", só
+ * trocando o mapeamento final (slug JSONB em vez de label em espanhol).
+ *
+ * Usada para popular `worker_message_audit.missing_documents` (migration 474)
+ * — NUNCA a prosa que `formatPendingDocuments` devolve, que seria dado
+ * pessoal sobre os documentos de um worker específico.
+ */
+export async function computeMissingDocumentSlugs(db: Pool, workerId: string): Promise<string[]> {
+  const res = await db.query<WorkerDocumentsRow>(
+    `SELECT w.profession,
+            (wd.worker_id IS NOT NULL) AS has_documents,
+            wd.identity_document_url,
+            wd.identity_document_back_url,
+            wd.criminal_record_url,
+            wd.resume_cv_url,
+            wd.at_certificate_url
+     FROM workers w
+     LEFT JOIN worker_documents wd ON wd.worker_id = w.id
+     WHERE w.id = $1
+     LIMIT 1`,
+    [workerId],
+  );
+
+  const rows = res?.rows ?? [];
+  const profession = rows[0]?.profession ?? null;
+  const requiredColumns = getRequiredColumns(profession);
+  const requiredSlugs = getRequiredSlugs(profession);
+  // getRequiredColumns/getRequiredSlugs constroem os arrays na MESMA ordem
+  // (BASE_* + AT_EXTRA_*) — zip por índice é seguro e não cria 2ª fonte de verdade.
+  const columnToSlug = new Map(requiredColumns.map((col, i) => [col, requiredSlugs[i]]));
+
+  if (rows.length === 0 || !rows[0].has_documents) {
+    // Worker não encontrado ou sem linha em worker_documents — todos obrigatórios faltando
+    return requiredColumns
+      .map(col => columnToSlug.get(col))
+      .filter((slug): slug is string => Boolean(slug));
+  }
+
+  const row = rows[0];
+  const missing: string[] = [];
+  for (const col of requiredColumns) {
+    const value = row[col as keyof WorkerDocumentsRow];
+    if (!value) {
+      const slug = columnToSlug.get(col);
+      if (slug) missing.push(slug);
+    }
+  }
+  return missing;
 }
 
 /**
