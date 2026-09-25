@@ -361,13 +361,16 @@ test.describe('draft-wizard-locked — fase 4 (completar-vacante-em-rascunho) @i
     await page.goto(`/admin/vacancies/${draftVacancyId}/edit`);
     await expect(page.getByTestId('create-vacancy-save-btn')).toBeEnabled({ timeout: 15_000 });
 
-    let capturedBody: Record<string, unknown> | null = null;
+    // `undefined` = nenhum PUT interceptado ainda; `null` = PUT chegou mas o body não era
+    // JSON (falha de verdade — antes virava `{}` e passava calado, medindo interseção vazia
+    // sem nunca ter olhado o body real); objeto = parse ok.
+    let capturedBody: Record<string, unknown> | null | undefined = undefined;
     page.on('request', (req) => {
       if (req.method() === 'PUT' && req.url().includes(`/api/admin/vacancies/${draftVacancyId}`)) {
         try {
           capturedBody = JSON.parse(req.postData() ?? '{}');
         } catch {
-          capturedBody = {};
+          capturedBody = null;
         }
       }
     });
@@ -378,7 +381,8 @@ test.describe('draft-wizard-locked — fase 4 (completar-vacante-em-rascunho) @i
     await page.getByTestId('create-vacancy-save-btn').click();
     await expect(page).toHaveURL(/\/admin\/vacancies\/.+\/talentum/, { timeout: 30_000 });
 
-    expect(capturedBody, 'nenhum PUT capturado — o save não disparou request nenhum').not.toBeNull();
+    expect(capturedBody, 'nenhum PUT capturado — o save não disparou request nenhum').not.toBeUndefined();
+    expect(capturedBody, 'body do PUT não era JSON').not.toBeNull();
     const bodyKeys = Object.keys(capturedBody ?? {});
     const intersection = bodyKeys.filter((k) => lockedFields.includes(k));
     console.log(`body keys: ${JSON.stringify(bodyKeys)} · locked_fields: ${JSON.stringify(lockedFields)} · interseção: ${JSON.stringify(intersection)}`);
