@@ -2138,7 +2138,12 @@
           "to": "Até"
         }
       },
-      "completeVacancy": "Completar vaga"
+      "completeVacancy": "Completar vaga",
+      "draftChoiceDialog": {
+        "title": "O que você quer fazer com este rascunho?",
+        "viewOnly": "Somente visualizar",
+        "cancel": "Cancelar"
+      }
     },
     "draftVacancy": {
       "back": "Voltar para vagas",
