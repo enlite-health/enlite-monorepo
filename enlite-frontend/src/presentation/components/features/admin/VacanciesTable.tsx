@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { Eye, Pencil, FileText } from 'lucide-react';
+import { Eye, FileText } from 'lucide-react';
 import { Text } from '@presentation/components/atoms/Text';
 import {
   Table,
@@ -9,7 +9,6 @@ import {
   TableHead,
   TableCell,
 } from '@presentation/components/atoms/Table';
-import { useActionGate } from '@presentation/hooks/useCellAccess';
 
 export type VacancyPriority = 'URGENT' | 'HIGH' | 'NORMAL' | 'LOW';
 
@@ -29,8 +28,9 @@ export interface VacancyRow {
 
 interface VacanciesTableProps {
   vacancies: VacancyRow[];
-  onRowClick?: (id: string) => void;
-  onEditClick?: (id: string, isDraft: boolean) => void;
+  /** F25/D425 (Fase 3) — o lápis saiu; o clique na linha inteira decide o destino,
+   * inclusive a bifurcação por permissão em rascunho (`AdminVacanciesPage.tsx`). */
+  onRowClick?: (id: string, isDraft: boolean) => void;
 }
 
 const COLUMNS = [
@@ -67,12 +67,9 @@ function PriorityCell({ priority }: { priority: VacancyPriority | null }): JSX.E
   );
 }
 
-export function VacanciesTable({ vacancies, onRowClick, onEditClick }: VacanciesTableProps): JSX.Element {
+export function VacanciesTable({ vacancies, onRowClick }: VacanciesTableProps): JSX.Element {
   const { t } = useTranslation();
   const safeVacancies = vacancies ?? [];
-  // PUT /vacancies/:id (edit) / VacancyModal → vacancy:update (PR-8b, ADR-2). O lápis não tinha
-  // gate e aparecia para quem só tem vacancy:create (achado na prova do PR-8b, #391).
-  const { allowed: podeEditarVacancy } = useActionGate('vacancy', 'update');
 
   return (
     <div className="w-full rounded-xl overflow-hidden border border-gray-400">
@@ -98,23 +95,13 @@ export function VacanciesTable({ vacancies, onRowClick, onEditClick }: Vacancies
             safeVacancies.map((row) => (
               <TableRow
                 key={row.id}
-                onClick={onRowClick ? () => onRowClick(row.id) : undefined}
+                data-testid={`vacancy-row-${row.id}`}
+                onClick={onRowClick ? () => onRowClick(row.id, row.isDraft) : undefined}
                 className="bg-white h-[72px]"
               >
                 <TableCell unwrapped className="w-10">
                   <div className="flex items-center gap-1.5">
                     <Eye className="w-4 h-4 text-gray-800" aria-label={t('admin.vacancies.table.view')} />
-                    {onEditClick && podeEditarVacancy && (
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); onEditClick(row.id, row.isDraft); }}
-                        className="p-0.5 hover:text-primary transition-colors"
-                        aria-label={t('admin.vacancies.table.edit')}
-                        data-testid={`edit-vacancy-${row.id}`}
-                      >
-                        <Pencil className="w-4 h-4 text-gray-800 hover:text-primary" />
-                      </button>
-                    )}
                   </div>
                 </TableCell>
                 <TableCell weight="medium">{row.caso}</TableCell>
