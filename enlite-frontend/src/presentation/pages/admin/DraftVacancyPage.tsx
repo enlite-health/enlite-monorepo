@@ -181,18 +181,22 @@ export default function DraftVacancyPage() {
     t('admin.draftVacancy.kickerDate', { date: createdLabel ?? emptyValue }),
   ].filter((p): p is string => Boolean(p));
 
+  // `providers_needed` vem do GET (`any`, sem tipo) — às vezes chega STRING, e `Number(null ??
+  // 0)` mascarava ausência como "0 profesionales" (achado do gate fecho 25/09, rodada 2: `null`
+  // não é "zero prestadores", é "não sei" — mesma regra do zoneCity/schedule abaixo). Segmento
+  // só entra com um NÚMERO de verdade; `null`/string inválida (`Number.isNaN`) omite, não inventa.
+  const providersCount = vacancy.providers_needed == null ? null : Number(vacancy.providers_needed);
+  const providersSegment =
+    providersCount != null && !Number.isNaN(providersCount)
+      ? t('admin.draftVacancy.subtitleProviders', { count: providersCount })
+      : null;
+
   // Subtítulo do cabeçalho ("Palermo, CABA · 6 días por semana, 32 horas · 2 profesionales"):
   // cada segmento só entra se tiver conteúdo REAL — achado #2 do gate fecho 25/09 ("0 días" e
   // "Sin completar ·" soltos no meio da frase são desonestos sobre o que a vaga tem).
-  const subtitleParts = [
-    zoneCitySubtitleSegment,
-    hasSchedule ? scheduleText : null,
-    // `Number(...)` — achado do e2e (gate fecho 25/09): `vacancy.providers_needed` vem do GET
-    // (`any`, sem tipo) e às vezes chega STRING; i18next pluraliza por `Intl.PluralRules`, que
-    // com `count` string não resolve `_one`/`_other` e devolve a CHAVE crua no DOM (reproduzido
-    // isolado: `t(key, {count:'2'})` → "admin.draftVacancy.subtitleProviders" literal).
-    t('admin.draftVacancy.subtitleProviders', { count: Number(vacancy.providers_needed ?? 0) }),
-  ].filter((p): p is string => Boolean(p));
+  const subtitleParts = [zoneCitySubtitleSegment, hasSchedule ? scheduleText : null, providersSegment].filter(
+    (p): p is string => Boolean(p),
+  );
 
   return (
     <PageContainer>
