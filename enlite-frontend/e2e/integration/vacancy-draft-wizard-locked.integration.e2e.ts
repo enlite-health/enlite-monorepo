@@ -269,22 +269,7 @@ test.describe('draft-wizard-locked — fase 4 (completar-vacante-em-rascunho) @i
     await expect(page.getByTestId('vacancy-schedule-add-lun')).toBeDisabled();
     await expect(page.getByTestId('locked-field-link-schedule')).toBeVisible();
 
-    // BLOQUEADO daqui pra baixo — achado FORA DO ESCOPO desta fase, não corrigido aqui:
-    // `buildScheduleFromVacancy` (vacancy-form-schema.ts:195) só aceita `vacancy.schedule` como
-    // ARRAY (`Array.isArray`); o GET real devolve OBJETO (`normalizeSchedule`,
-    // scheduleNormalizer.ts, já existente ANTES da fase 1 — `git log` do arquivo do controller
-    // confirma). Medido nesta mesma vaga: SQL `schedule` = `[{"endTime":"12:00","dayOfWeek":1,
-    // "startTime":"08:00"}]`; GET `data.schedule` = `{"lunes":[{"start":"08:00","end":"12:00"}]}`.
-    // Resultado: toda hidratação de edição trata um rascunho do foguete como "sem horário", Zod
-    // recusa o submit ("Horario de los atendimientos" faltando) e NINGUÉM consegue completar
-    // uma vacante com Continuar — bug pré-existente, não introduzido por esta fase, mas que a
-    // bloqueia. Reportado no fecho; não corrigido aqui (fora do achado nomeado: locked_fields).
-    test.fixme(
-      true,
-      'buildScheduleFromVacancy (vacancy-form-schema.ts:195) só aceita schedule como array; o GET ' +
-        'devolve objeto (normalizeSchedule) — bug pré-existente que impede "Continuar" para QUALQUER ' +
-        'vacante com schedule já setado (todo rascunho do foguete). Ver comentário acima do título deste teste.',
-    );
+    // Dependia do fix de `buildScheduleFromVacancy` (#526, na stage).
 
     // Preenche profissão + valor por hora — os dois campos livres que o recrutamento completa.
     // O input real é `sr-only` (Checkbox atom): quem recebe o clique de um humano de verdade é o
@@ -360,13 +345,7 @@ test.describe('draft-wizard-locked — fase 4 (completar-vacante-em-rascunho) @i
   });
 
   test('4. body do PUT sem campo travado — Object.keys(body) ∩ locked_fields = []', async ({ page, request }) => {
-    // BLOQUEADO pelo mesmo achado do teste 1 (buildScheduleFromVacancy, vacancy-form-schema.ts:195):
-    // Zod nunca deixa `onSubmit` rodar (schedule vem vazio da hidratação) — nenhum PUT chega a sair.
-    // `stripLockedFields` está coberto por unit (vacancyLockedFields.test.ts, 5 casos, incluindo
-    // "não muta o body" e "remove toda chave presente em lockedFields"); o que falta aqui é só a
-    // prova de FIAÇÃO (VacancyFormSection chama a função antes do PUT real), inalcançável enquanto
-    // o bug de cima não for corrigido — fora do escopo nomeado desta fase.
-    test.fixme(true, 'depende de Continuar funcionar — bloqueado pelo achado de buildScheduleFromVacancy do teste 1.');
+    // Dependia do fix de `buildScheduleFromVacancy` (#526, na stage).
     await loginAsAdmin(page);
     await page.goto(`/admin/vacancies/${draftVacancyId}/edit`);
     await expect(page.getByTestId('create-vacancy-save-btn')).toBeEnabled({ timeout: 15_000 });
@@ -396,12 +375,7 @@ test.describe('draft-wizard-locked — fase 4 (completar-vacante-em-rascunho) @i
   });
 
   test('5. sabotagem — page.route força "schedule" no body do PUT → 422 e o valor não muda', async ({ page, request }) => {
-    // BLOQUEADO pelo mesmo achado do teste 1 — sem `onSubmit` rodar, `page.route` nunca vê o PUT
-    // pra sabotar. O 422/locked_fields do backend já está provado por
-    // `vacancy-locked-fields.integration.e2e.ts` (fase 1, teste 2) — o que faltaria aqui é só a
-    // prova de que o FRONT deixa a sabotagem alcançar o backend, inalcançável até o bug de cima
-    // ser corrigido — fora do escopo nomeado desta fase.
-    test.fixme(true, 'depende de Continuar funcionar — bloqueado pelo achado de buildScheduleFromVacancy do teste 1.');
+    // Dependia do fix de `buildScheduleFromVacancy` (#526, na stage).
     await loginAsAdmin(page);
 
     const before = await request.get(`${BACKEND_URL}/api/admin/vacancies/${draftVacancyId}`, { headers: AUTH_HEADERS });
