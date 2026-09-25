@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { ChevronLeft, ChevronRight, Plus, RefreshCw } from 'lucide-react';
+import { ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { Typography } from '@presentation/components/atoms/Typography';
 import { ActionButton } from '@presentation/components/features/access';
@@ -11,17 +11,11 @@ import { Select } from '@presentation/components/atoms/Select';
 import { VacancyStatsCards } from '@presentation/components/features/admin/VacancyStatsCards';
 import { VacancyFilters, type VacancyAdvancedFilters } from '@presentation/components/features/admin/VacancyFilters';
 import { VacanciesTable, VacancyPriority } from '@presentation/components/features/admin/VacanciesTable';
-import { VacancyModal } from '@presentation/components/features/admin/VacancyModal/VacancyModal';
+import { DraftVacancyChoiceDialog } from '@presentation/components/features/admin/DraftVacancyChoiceDialog';
 import { useVacanciesData } from '@hooks/admin/useVacanciesData';
 import { getStatusOptions, getPriorityOptions } from './vacanciesData';
 import { TableSkeleton } from '@presentation/components/ui/skeletons';
 import type { SelectOption } from '@presentation/components/atoms/Select';
-
-interface ModalState {
-  isOpen: boolean;
-  mode: 'create' | 'edit';
-  vacancyId?: string;
-}
 
 const PRIORITY_SET: ReadonlySet<string> = new Set(['URGENT', 'HIGH', 'NORMAL', 'LOW']);
 
@@ -107,24 +101,27 @@ export function AdminVacanciesPage(): JSX.Element {
   const podeAtualizarTalentum = useActionGate('talentum', 'update').allowed;
   const podeSyncTalentum = podeCriarTalentum && podeAtualizarTalentum;
 
-  const [modalState, setModalState] = useState<ModalState>({ isOpen: false, mode: 'create' });
+  // D426: "Completar vacante" (modal de escolha + botão na tela do rascunho) exige as DUAS
+  // células que já publicam/editam a vaga — a mesma régua de `DraftVacancyPage.tsx`. Reusa
+  // `podeAtualizarTalentum` (linha acima, mesma célula `talentum:update`) — nunca duplicar.
+  const podeAtualizarVacancy = useActionGate('vacancy', 'update').allowed;
+  const podeCompletarRascunho = podeAtualizarTalentum && podeAtualizarVacancy;
 
-  const openEditModal = useCallback((vacancyId: string, isDraft: boolean) => {
+  // F25/D425 item 2 — clique na linha em rascunho: com célula, o modal decide; sem célula,
+  // vai direto para a tela somente-leitura. O lápis e o `VacancyModal` antigo saíram (Fase 3).
+  const [choiceDialogVacancyId, setChoiceDialogVacancyId] = useState<string | null>(null);
+
+  const handleRowClick = useCallback((vacancyId: string, isDraft: boolean) => {
     if (!isDraft) {
       navigate(`/admin/vacancies/${vacancyId}`);
       return;
     }
-    setModalState({ isOpen: true, mode: 'edit', vacancyId });
-  }, [navigate]);
-
-  const closeModal = useCallback(() => {
-    setModalState((prev) => ({ ...prev, isOpen: false }));
-  }, []);
-
-  const handleModalSuccess = useCallback(() => {
-    closeModal();
-    refetch();
-  }, [closeModal, refetch]);
+    if (podeCompletarRascunho) {
+      setChoiceDialogVacancyId(vacancyId);
+      return;
+    }
+    navigate(`/admin/vacancies/${vacancyId}/borrador`);
+  }, [navigate, podeCompletarRascunho]);
 
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -279,21 +276,9 @@ export function AdminVacanciesPage(): JSX.Element {
               </Typography>
             </ActionButton>
             )}
-            {/* POST /vacancies → `createVacancy` → vacancy:create (PR-8b). */}
-            <ActionButton
-              resource="vacancy"
-              action="create"
-              variant="outline"
-              size="md"
-              className="w-40 h-10 border-primary text-primary flex items-center justify-center gap-3"
-              onClick={() => navigate('/admin/vacancies/new')}
-              data-testid="new-vacancy-btn"
-            >
-              <Typography variant="h3" weight="semibold" className="text-primary font-poppins text-base">
-                {t('admin.vacancies.new')}
-              </Typography>
-              <Plus className="w-3.5 h-3.5 text-primary" />
-            </ActionButton>
+            {/* D425 item 4 — "Nueva" sai temporariamente: vacante nasce só do serviço
+                contratado. Botão removido (não só escondido); a rota /new redireciona
+                (App.tsx). Voltar é outra change (docs/decisoes.md, 24/09). */}
           </div>
         </div>
 
@@ -325,8 +310,7 @@ export function AdminVacanciesPage(): JSX.Element {
           <div className="mt-6">
             <VacanciesTable
               vacancies={vacancies}
-              onRowClick={(id) => navigate(`/admin/vacancies/${id}`)}
-              onEditClick={openEditModal}
+              onRowClick={handleRowClick}
             />
           </div>
         )}
@@ -375,12 +359,18 @@ export function AdminVacanciesPage(): JSX.Element {
         </div>
       </div>
 
-      <VacancyModal
-        mode={modalState.mode}
-        vacancyId={modalState.vacancyId}
-        isOpen={modalState.isOpen}
-        onClose={closeModal}
-        onSuccess={handleModalSuccess}
+      <DraftVacancyChoiceDialog
+        isOpen={choiceDialogVacancyId !== null}
+        vacancyId={choiceDialogVacancyId}
+        onComplete={(vacancyId) => {
+          setChoiceDialogVacancyId(null);
+          navigate(`/admin/vacancies/${vacancyId}/edit`);
+        }}
+        onViewOnly={(vacancyId) => {
+          setChoiceDialogVacancyId(null);
+          navigate(`/admin/vacancies/${vacancyId}/borrador`);
+        }}
+        onCancel={() => setChoiceDialogVacancyId(null)}
       />
     </PageContainer>
   );

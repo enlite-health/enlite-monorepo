@@ -1,26 +1,63 @@
 /**
  * admin-vacancies-edit-routing.integration.e2e.ts @integration
  *
- * Full-stack E2E — valida o roteamento do botão de editar (ícone lápis) na
- * listagem de vagas (AdminVacanciesPage) em função de `is_draft` da vaga.
+ * Full-stack E2E — valida o roteamento do CLIQUE NA LINHA na listagem de vagas
+ * (AdminVacanciesPage) em função de `is_draft` da vaga.
  *
- * Regra (autoritativa no backend `vacancyCrudHelpers.ts`):
- *   - Vagas com `is_draft = true`  → operador ainda pode editar todos os campos
- *     (modal grande VacancyModal continua válido).
+ * Reescrito na Fase 3 (`completar-vacante-em-rascunho`, F25/D425/D426, 25/09): o lápis
+ * (`edit-vacancy-${id}`) e o `VacancyModal` antigo SAÍRAM da lista — quem decide o destino
+ * agora é o clique na linha inteira:
+ *   - Linha non-draft → clique navega direto pra `/admin/vacancies/{id}` (o detalhe), igual
+ *     sempre foi.
+ *   - Linha draft → clique abre o modal `DraftVacancyChoiceDialog` ("¿Qué querés hacer con
+ *     este borrador?") para quem tem `talentum:update` + `vacancy:update`. Este stack roda
+ *     com o engine ABAC OFF — `useActionGate` devolve `allowed: true` sempre que
+ *     `enforcement !== 'on'` (`useCellAccess.ts:70`), então o modal abre pra qualquer admin
+ *     autenticado aqui. A bifurcação por permissão REAL (ator SEM as células) está provada à
+ *     parte, com o engine ligado, em `draft-vacancy-choice-dialog.integration.e2e.ts`.
+ *
+ * Roda contra um stack ISOLADO próprio (projeto docker `cv-fase3-standard`, Postgres `5472`,
+ * API `8122`, Vite `5193`) — achado 25/09 (gate parcial): o stack padrão `enlite-api`/
+ * `enlite-postgres` (8080/5432) e a porta 5173 já estavam ocupados pelo Vite de OUTRA worktree
+ * (`_worktrees/completar-vacante`), e o CORS default do backend só libera `:5173`/`:3000`
+ * (`corsConfig.ts`) — um Vite desta worktree noutra porta contra esses containers falha em
+ * silêncio (nenhum dado carrega, tela presa em skeleton).
+ *
+ * COMO SUBIR. O bloco de ENGINE fica de fora de propósito aqui — este é o stack OFF, não usa
+ * `docker-compose.group-simulation.yml`. `worker-functions/docker-compose.fase3-standard.local.yml`
+ * — não existe no git (gitignorado, `docker-compose.*.local.yml`); recriar com este conteúdo:
+ *   services:
+ *     postgres:
+ *       container_name: cv-fase3-standard-postgres
+ *       ports: !override
+ *         - "5472:5432"
+ *     api:
+ *       image: worker-functions-api
+ *       container_name: cv-fase3-standard-api
+ *       ports: !override
+ *         - "8122:8080"
+ *       environment:
+ *         CORS_ALLOWED_ORIGINS: "http://localhost:5193"
+ *
+ *   cd worker-functions
+ *   docker compose -p cv-fase3-standard -f docker-compose.yml -f docker-compose.test.yml \
+ *     -f docker-compose.fase3-standard.local.yml up -d postgres api
+ *   cd ../enlite-frontend && VITE_API_WORKER_FUNCTIONS_URL=http://localhost:8122 <demais VITE_FIREBASE_*> \
+ *     npx vite --port 5193 --strictPort
+ *   E2E_PG_CONTAINER=cv-fase3-standard-postgres PW_BASE_URL=http://localhost:5193 \
+ *     npx playwright test --project=integration --grep "edit routing por is_draft"
+ *
+ * Regra de fundo, ainda válida (autoritativa no backend `vacancyCrudHelpers.ts`):
+ *   - Vagas com `is_draft = true`  → operador ainda pode editar todos os campos.
  *   - Vagas com `is_draft = false` → backend bloqueia com 403 qualquer campo
  *     fora de { schedule, status }. O fluxo correto é editar no detalhe via
  *     VacancyScheduleEditModal + VacancyStatusEditor.
  *
- * Antes deste teste, clicar no lápis em uma vaga SEARCHING_REPLACEMENT
- * (is_draft=false) abria o modal grande, que enviava o payload completo no
- * PUT — backend respondia 403 e a UI mostrava a mensagem "Forbidden fields
- * for vacancy in status SEARCHING_REPLACEMENT…".
- *
  * Esses cenários blindam:
- *   1. Lápis em vaga non-draft (status SEARCHING_REPLACEMENT) → NAVEGA pra
- *      /admin/vacancies/{id}, NÃO abre o modal grande.
- *   2. Lápis em vaga draft (status PENDING_ACTIVATION) → abre o modal grande
- *      (VacancyModal).
+ *   1. Clique na linha non-draft (status SEARCHING_REPLACEMENT) → NAVEGA pra
+ *      /admin/vacancies/{id}, nenhum dialog no DOM.
+ *   2. Clique na linha draft (status PENDING_ACTIVATION) → abre o
+ *      `DraftVacancyChoiceDialog`.
  *   3. No detalhe, abrir VacancyScheduleEditModal + salvar uma alteração de
  *      schedule numa vaga non-draft NÃO retorna 403 — o endpoint aceita o
  *      payload restrito { schedule }.
@@ -41,6 +78,9 @@ const MOCK_ADMIN_USER = {
   uid: 'e2e-int-edit-routing',
   email: 'admin.edit-routing@e2e.test',
   role: 'admin',
+  // Sem isto, `/v1/me/authz` (agora interceptado — ver `installInterceptors`) devolve
+  // 401/403 mudo e o login nunca sai de `/admin/login` (memória `stack-e2e-abac-ligado`).
+  country: 'AR',
 };
 
 const MOCK_TOKEN =
@@ -63,7 +103,10 @@ const FAKE_ID_TOKEN =
 
 // ── DB helpers ────────────────────────────────────────────────────────────────
 
-const CONTAINER = 'enlite-postgres';
+// `E2E_PG_CONTAINER` permite apontar para um stack isolado por projeto docker
+// (mesmo padrão de `db-test-helper.ts:20`) — sem isso este arquivo só roda contra o
+// container fixo `enlite-postgres`, que pode estar servindo OUTRA worktree.
+const CONTAINER = process.env.E2E_PG_CONTAINER || 'enlite-postgres';
 const DB_USER = 'enlite_admin';
 const DB_NAME = 'enlite_e2e';
 
@@ -187,6 +230,25 @@ async function installInterceptors(page: Page): Promise<void> {
     };
     await route.continue({ headers });
   });
+
+  // `/v1/me/authz` (o contrato que `AdminProtectedRoute`/`useAdminAuthStore` esperam antes de
+  // liberar a tela — achado ao rodar Fase 3 contra um stack isolado, `docker-compose -p`, F8)
+  // é um path DIFERENTE de `/api/**` e não era coberto aqui — sem isso o request saía com o
+  // `FAKE_ID_TOKEN` cru, o backend recusava, e a página ficava presa num loop de retry/remount
+  // (skeleton pra sempre, `edit-vacancy-*`/`vacancy-row-*` nunca aparecem). Mesmo padrão de
+  // `abac-stack-helper.ts`, que já cobre isto — mas ESTRITO em `**/v1/me/authz`, nunca
+  // `**/v1/**`: `identitytoolkit.googleapis.com/v1/accounts:signInWithPassword` também bate
+  // em `/v1/`, e um catch-all genérico rouba a interceptação já registrada pra ele (Playwright
+  // resolve rota sobreposta pela ÚLTIMA registrada), fazendo o login de verdade sair pro
+  // Google com header forjado → 401 real, `not toHaveURL(login)` nunca passa (achado medido
+  // rodando este arquivo contra um stack isolado antes deste ajuste).
+  await page.route('**/v1/me/authz', async (route: Route) => {
+    const headers = {
+      ...route.request().headers(),
+      authorization: `Bearer ${MOCK_TOKEN}`,
+    };
+    await route.continue({ headers });
+  });
 }
 
 async function loginAsAdmin(page: Page): Promise<void> {
@@ -268,20 +330,20 @@ test.describe('AdminVacanciesPage — edit routing por is_draft @integration', (
     cleanupTestPatient(patientId);
   });
 
-  // ── Cenário 1: non-draft → lápis navega pro detalhe, NÃO abre modal grande ───
+  // ── Cenário 1: non-draft → clique na linha navega pro detalhe, sem dialog ────
 
-  test('1. lápis em vaga non-draft (SEARCHING_REPLACEMENT) → navega pro detalhe, NÃO abre modal grande', async ({ page }) => {
+  test('1. clique na linha non-draft (SEARCHING_REPLACEMENT) → navega pro detalhe, nenhum dialog no DOM', async ({ page }) => {
     test.skip(!nonDraftVacancyId, 'Could not seed non-draft vacancy');
 
     await loginAsAdmin(page);
     await page.goto('/admin/vacancies');
 
-    // Aguarda a tabela carregar
-    const editBtn = page.getByTestId(`edit-vacancy-${nonDraftVacancyId}`);
-    await expect(editBtn).toBeVisible({ timeout: 20_000 });
+    // Lápis SAIU da lista (F25/D425) — a linha inteira é o alvo do clique agora.
+    await expect(page.getByTestId(`edit-vacancy-${nonDraftVacancyId}`)).toHaveCount(0);
+    const row = page.getByTestId(`vacancy-row-${nonDraftVacancyId}`);
+    await expect(row).toBeVisible({ timeout: 20_000 });
 
-    // Clica no lápis
-    await editBtn.click();
+    await row.click();
 
     // ── Deve navegar pra /admin/vacancies/{id} ───────────────────────────────
     await expect(page).toHaveURL(
@@ -289,9 +351,9 @@ test.describe('AdminVacanciesPage — edit routing por is_draft @integration', (
       { timeout: 10_000 },
     );
 
-    // ── Modal grande NÃO deve estar visível ─────────────────────────────────
-    const bigModal = page.getByTestId('vacancy-modal');
-    await expect(bigModal).not.toBeVisible();
+    // ── Nenhum modal/dialog deve estar visível ──────────────────────────────
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(page.getByTestId('vacancy-modal')).toHaveCount(0);
 
     // ── Screenshot do detalhe (regressão visual) ────────────────────────────
     await expect(page).toHaveScreenshot('non-draft-redirected-to-detail.png', {
@@ -300,22 +362,27 @@ test.describe('AdminVacanciesPage — edit routing por is_draft @integration', (
     });
   });
 
-  // ── Cenário 2: draft → lápis abre modal grande ───────────────────────────
+  // ── Cenário 2: draft → clique na linha abre o DraftVacancyChoiceDialog ───
 
-  test('2. lápis em vaga draft (PENDING_ACTIVATION, is_draft=true) → abre modal grande', async ({ page }) => {
+  test('2. clique na linha draft (PENDING_ACTIVATION, is_draft=true) → abre o DraftVacancyChoiceDialog', async ({ page }) => {
     test.skip(!draftVacancyId, 'Could not seed draft vacancy');
 
     await loginAsAdmin(page);
     await page.goto('/admin/vacancies');
 
-    const editBtn = page.getByTestId(`edit-vacancy-${draftVacancyId}`);
-    await expect(editBtn).toBeVisible({ timeout: 20_000 });
+    // Lápis SAIU (F25/D425); o badge de rascunho é o controle de que a linha carregou.
+    await expect(page.getByTestId(`edit-vacancy-${draftVacancyId}`)).toHaveCount(0);
+    const badge = page.getByTestId(`vacancy-draft-badge-${draftVacancyId}`);
+    await expect(badge).toBeVisible({ timeout: 20_000 });
 
-    await editBtn.click();
+    await badge.click();
 
-    // ── Modal grande DEVE abrir ──────────────────────────────────────────────
-    const bigModal = page.getByTestId('vacancy-modal');
-    await expect(bigModal).toBeVisible({ timeout: 10_000 });
+    // ── O DraftVacancyChoiceDialog DEVE abrir (engine ABAC off neste stack →
+    //    useActionGate sempre allowed=true, F8/useCellAccess.ts:70) ──────────
+    const dialog = page.getByRole('dialog');
+    await expect(dialog).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId('choice-complete')).toBeVisible();
+    await expect(page.getByTestId('choice-view')).toBeVisible();
 
     // ── NÃO deve ter navegado pra fora da listagem ──────────────────────────
     await expect(page).toHaveURL(/\/admin\/vacancies(?:\?|$)/);

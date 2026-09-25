@@ -241,7 +241,13 @@ export function App() {
               `AccessGate` já usa para `hidden`). `tags`/`patient-chat-roles`/`dedup`/
               `api-docs` não têm chave `screen:*` no manifest — ficam de fora. */}
           <Route path="vacancies" element={<FeatureRouteGate feature="screen:vacancies"><AdminVacanciesPage /></FeatureRouteGate>} />
-          <Route path="vacancies/new" element={<FeatureRouteGate feature="screen:vacancies"><CreateVacancyPage /></FeatureRouteGate>} />
+          {/* D425 item 4 (Fase 3, 24/09) — "Nueva" sai temporariamente: vacante nasce só do
+              serviço contratado. Esconder só o botão deixaria a porta aberta por URL — a
+              rota redireciona direto, sem passar pelo wizard em modo criação. Mantém
+              `FeatureRouteGate feature="screen:vacancies"` (a mesma chave de antes) por
+              paridade com `screenFeatureMap.ts`/`screenFeatureMap.test.ts` (B1/D268) — a
+              rota continua listada lá, só o destino mudou. */}
+          <Route path="vacancies/new" element={<FeatureRouteGate feature="screen:vacancies"><Navigate to="/admin/vacancies" replace /></FeatureRouteGate>} />
           <Route path="vacancies/pending-address-review" element={<FeatureRouteGate feature="screen:vacancies"><PendingAddressReviewPage /></FeatureRouteGate>} />
           <Route path="vacancies/:id/edit" element={<FeatureRouteGate feature="screen:vacancies"><CreateVacancyPage /></FeatureRouteGate>} />
           <Route path="vacancies/:id/talentum" element={<FeatureRouteGate feature="screen:talentum"><TalentumConfigPage /></FeatureRouteGate>} />

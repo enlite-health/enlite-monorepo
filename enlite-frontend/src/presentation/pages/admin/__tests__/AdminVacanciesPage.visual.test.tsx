@@ -56,10 +56,6 @@ vi.mock('@hooks/admin/useVacanciesData', () => ({
   }),
 }));
 
-vi.mock('@presentation/components/features/admin/VacancyModal/VacancyModal', () => ({
-  VacancyModal: () => null,
-}));
-
 function renderPage() {
   return render(
     <MemoryRouter>

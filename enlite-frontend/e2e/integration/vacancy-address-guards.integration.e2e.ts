@@ -196,6 +196,11 @@ test.describe('Address guards @integration', () => {
     test('form lista os 2 endereços ativos e operador consegue selecionar o secundário', async ({
       page,
     }) => {
+      // D425 item 4 (24/09/2026, docs/decisoes.md, Fase 3) — "Nueva" sai temporariamente: o
+      // AddressHasVacancyDialog só é alcançável dentro do modo CRIAR do wizard, em
+      // /admin/vacancies/new, que agora redireciona pra /admin/vacancies. Skip, não apagado —
+      // o componente fica no código, dormente (D425).
+      test.skip(true, 'D425 item 4 — "Nueva" fora temporariamente; AddressHasVacancyDialog só existe no modo criar');
       test.skip(!patientId || !primaryAddressId || !secondaryAddressId, 'seed failed');
 
       await loginAsAdmin(page);
@@ -273,6 +278,11 @@ test.describe('Address guards @integration', () => {
     });
 
     test('AddressHasVacancyDialog aparece com link para a vaga existente', async ({ page }) => {
+      // D425 item 4 (24/09/2026, docs/decisoes.md, Fase 3) — "Nueva" sai temporariamente: o
+      // AddressHasVacancyDialog só é alcançável dentro do modo CRIAR do wizard, em
+      // /admin/vacancies/new, que agora redireciona pra /admin/vacancies. Skip, não apagado —
+      // o componente fica no código, dormente (D425).
+      test.skip(true, 'D425 item 4 — "Nueva" fora temporariamente; AddressHasVacancyDialog só existe no modo criar');
       test.skip(!patientId || !addressId, 'seed failed');
 
       await loginAsAdmin(page);
@@ -309,6 +319,11 @@ test.describe('Address guards @integration', () => {
     test('"Criar nova mesmo assim" fecha o diálogo e o form fica disponível', async ({
       page,
     }) => {
+      // D425 item 4 (24/09/2026, docs/decisoes.md, Fase 3) — "Nueva" sai temporariamente: o
+      // AddressHasVacancyDialog só é alcançável dentro do modo CRIAR do wizard, em
+      // /admin/vacancies/new, que agora redireciona pra /admin/vacancies. Skip, não apagado —
+      // o componente fica no código, dormente (D425).
+      test.skip(true, 'D425 item 4 — "Nueva" fora temporariamente; AddressHasVacancyDialog só existe no modo criar');
       test.skip(!patientId || !addressId, 'seed failed');
 
       await loginAsAdmin(page);
@@ -338,6 +353,11 @@ test.describe('Address guards @integration', () => {
     });
 
     test('"Escolher outro endereço" limpa a seleção do endereço', async ({ page }) => {
+      // D425 item 4 (24/09/2026, docs/decisoes.md, Fase 3) — "Nueva" sai temporariamente: o
+      // AddressHasVacancyDialog só é alcançável dentro do modo CRIAR do wizard, em
+      // /admin/vacancies/new, que agora redireciona pra /admin/vacancies. Skip, não apagado —
+      // o componente fica no código, dormente (D425).
+      test.skip(true, 'D425 item 4 — "Nueva" fora temporariamente; AddressHasVacancyDialog só existe no modo criar');
       test.skip(!patientId || !addressId, 'seed failed');
 
       await loginAsAdmin(page);
