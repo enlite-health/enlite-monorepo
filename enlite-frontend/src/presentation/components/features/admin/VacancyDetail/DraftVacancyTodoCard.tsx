@@ -13,7 +13,10 @@ export function DraftVacancyTodoCard({ vacancy, missing }: { vacancy: DraftVacan
   const { t } = useTranslation();
 
   return (
-    <section className="bg-white rounded-2xl border-2 border-gray-600 p-6 sm:p-7">
+    // Borda igual aos cards de VacancyDetailPage (VacancyCaseCard/VacancyPatientCard/
+    // VacancyProfessionCard) e ao `.panel` do protótipo v3 (2.5px, `--line`=gray-400,
+    // border-radius 20px=`rounded-card`) — achado #5 do gate fecho 25/09.
+    <section className="bg-white rounded-card border-[2.5px] border-gray-400 p-6 sm:p-7">
       <Heading level={2} weight="semibold" color="primary" className="mb-5">
         {t('admin.draftVacancy.todoTitle')}{' '}
         <Text as="span" size="sm" color="tertiary" weight="normal">
