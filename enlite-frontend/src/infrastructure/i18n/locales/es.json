@@ -2133,7 +2133,89 @@
           "from": "Desde",
           "to": "Hasta"
         }
-      }
+      },
+      "completeVacancy": "Completar vacante"
+    },
+    "draftVacancy": {
+      "back": "Volver a vacantes",
+      "kickerCase": "Caso {{case}}",
+      "kickerVacancy": "Vacante {{vacancy}}",
+      "kickerDate": "creada el {{date}}",
+      "title": "{{service}} para {{patient}}",
+      "titleFallback": "Vacante {{vacancy}}",
+      "subtitleSchedule_one": "{{count}} día por semana, {{hours}} horas",
+      "subtitleSchedule_other": "{{count}} días por semana, {{hours}} horas",
+      "subtitleProviders_one": "{{count}} profesional",
+      "subtitleProviders_other": "{{count}} profesionales",
+      "emptyValue": "Sin completar",
+      "notVisibleForRole": "No visible para tu perfil",
+      "patientLoadError": "No se pudo cargar la ficha del paciente",
+      "calloutTitleCanComplete_one": "Falta completar {{count}} dato para publicar esta vacante.",
+      "calloutTitleCanComplete_other": "Falta completar {{count}} datos para publicar esta vacante.",
+      "calloutTitleNothingMissing": "No falta ningún dato para publicar esta vacante.",
+      "calloutBodyCanComplete": "Vas a entrar al formulario de siempre. Los datos del paciente ya están cargados; completás los que faltan y publicás.",
+      "calloutTitleReadOnly": "Esta vacante todavía no está publicada.",
+      "calloutBodyReadOnly": "El equipo de Recrutamento la va a completar y publicar. Acá podés ver lo que ya está cargado y lo que falta.",
+      "readOnlyPill": "Solo lectura",
+      "knownTitle": "Lo que ya sabemos",
+      "knownNote": "Estos datos vienen de la ficha del paciente.",
+      "knownNoteLink": "Abrir la ficha",
+      "dependencyPrefix": "Dependencia {{level}}",
+      "defaultValueHint": "valor por defecto",
+      "ageRangeValue": "Entre {{min}} y {{max}} años",
+      "fields": {
+        "patient": "Paciente",
+        "service": "Servicio",
+        "providersNeeded": "Cantidad de profesionales",
+        "address": "Dirección",
+        "schedule": "Horario",
+        "ageRange": "Edad del prestador",
+        "hourlyRate": "Valor por hora",
+        "publication": "Publicación"
+      },
+      "schedule": {
+        "ariaLabel": "Horario de atención por día",
+        "dayOffAria": "{{day}}: sin atención",
+        "timeRange": "{{start}} a {{end}}",
+        "noAttendance": "sin atención"
+      },
+      "days": {
+        "short": {
+          "lunes": "Lun",
+          "martes": "Mar",
+          "miercoles": "Mié",
+          "jueves": "Jue",
+          "viernes": "Vie",
+          "sabado": "Sáb",
+          "domingo": "Dom"
+        },
+        "full": {
+          "lunes": "lunes",
+          "martes": "martes",
+          "miercoles": "miércoles",
+          "jueves": "jueves",
+          "viernes": "viernes",
+          "sabado": "sábado",
+          "domingo": "domingo"
+        }
+      },
+      "todoTitle": "Lo que falta",
+      "todoCount_one": "{{count}} dato",
+      "todoCount_other": "{{count}} datos",
+      "todoThen": "Después de esto queda la configuración de Talentum y publicar.",
+      "todo": {
+        "professionType": "Tipo de profesional",
+        "availableFor": "Disponible para",
+        "availableForAside": "mujer, varón o indistinto",
+        "profileSought": "Perfil buscado",
+        "workerAttributes": "Atributos del prestador",
+        "requiredExperience": "Experiencia requerida",
+        "paymentDay": "Plazo de pago",
+        "closesAt": "Fecha de cierre",
+        "meetLinks": "Links de Google Meet",
+        "meetLinksAside": "para las entrevistas"
+      },
+      "lastUpdated": "Última edición: {{date}}"
     },
     "vacancyDetail": {
       "notFound": "Vacante no encontrada",
