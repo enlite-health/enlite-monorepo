@@ -343,6 +343,37 @@ describe('VacancyCrudController', () => {
       expect((res.json as jest.Mock).mock.calls[0][0].error).toBe('status inválido');
     });
 
+    it('authorizeVacancyUpdate → 422 de campo travado (lockedFields) → controller repassa locked_fields no corpo (F3/fase-1)', async () => {
+      mockAuthorizeVacancyUpdate.mockResolvedValueOnce({
+        kind: 'error',
+        status: 422,
+        error: 'Campos travados pela origem (paciente/serviço contratado) não podem ser editados: schedule.',
+        lockedFields: ['schedule'],
+      });
+
+      const req = makeReq({ params: { id: 'jp-1' }, body: { schedule: [] } });
+      const res = makeRes();
+
+      await controller.updateVacancy(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(422);
+      const body = (res.json as jest.Mock).mock.calls[0][0];
+      expect(body.success).toBe(false);
+      expect(body.locked_fields).toEqual(['schedule']);
+    });
+
+    it('authorizeVacancyUpdate → erro SEM lockedFields (ex: 400 de status inválido) → corpo não ganha locked_fields', async () => {
+      mockAuthorizeVacancyUpdate.mockResolvedValueOnce({ kind: 'error', status: 400, error: 'status inválido' });
+
+      const req = makeReq({ params: { id: 'jp-1' }, body: { status: 'FOO' } });
+      const res = makeRes();
+
+      await controller.updateVacancy(req, res);
+
+      const body = (res.json as jest.Mock).mock.calls[0][0];
+      expect(body.locked_fields).toBeUndefined();
+    });
+
     it('nenhum campo permitido no body → 400 "No valid fields to update"', async () => {
       mockAuthorizeVacancyUpdate.mockResolvedValueOnce({ kind: 'ok', isDraft: false, currentStatus: 'SEARCHING' });
 
