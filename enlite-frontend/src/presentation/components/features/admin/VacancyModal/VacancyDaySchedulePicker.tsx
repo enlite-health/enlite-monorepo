@@ -73,6 +73,9 @@ export interface VacancyDaySchedulePickerProps {
   value: ScheduleValue;
   onChange: (value: ScheduleValue) => void;
   error?: string;
+  /** Fase 4 (`completar-vacante-em-rascunho`): `true` quando `schedule` está em `locked_fields`
+   *  do GET — desabilita adicionar/remover slot e os `TimeSelect`, sem esconder o valor vivo. */
+  disabled?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -83,6 +86,7 @@ export function VacancyDaySchedulePicker({
   value,
   onChange,
   error,
+  disabled = false,
 }: VacancyDaySchedulePickerProps): JSX.Element {
   const { t } = useTranslation();
 
@@ -127,9 +131,10 @@ export function VacancyDaySchedulePicker({
         return (
           <div
             key={day}
+            data-testid={`vacancy-schedule-day-${day}`}
             className={`flex flex-col px-4 py-4 rounded-card border-2 transition-all duration-200 ${
               enabled ? 'border-primary gap-3' : 'border-[#D9D9D9] gap-2'
-            }`}
+            } ${disabled ? 'opacity-60' : ''}`}
           >
             {/* Card header */}
             <div className="flex items-center justify-between">
@@ -151,9 +156,10 @@ export function VacancyDaySchedulePicker({
                 <button
                   type="button"
                   onClick={() => addSlot(day)}
-                  disabled={dayFull}
+                  disabled={dayFull || disabled}
+                  data-testid={`vacancy-schedule-add-${day}`}
                   className={`p-2 rounded-pill transition-colors ${
-                    dayFull
+                    dayFull || disabled
                       ? 'bg-gray-300 cursor-not-allowed'
                       : 'bg-primary hover:bg-primary/90'
                   }`}
@@ -182,6 +188,7 @@ export function VacancyDaySchedulePicker({
                       <TimeSelect
                         value={slot.startTime}
                         onChange={(e) => updateSlot(day, i, 'startTime', e.target.value)}
+                        disabled={disabled}
                         className="bg-transparent font-lexend text-white focus:outline-none text-sm cursor-pointer [&>option]:text-gray-900"
                       />
                       <span className="text-white">-</span>
@@ -189,6 +196,7 @@ export function VacancyDaySchedulePicker({
                         value={slot.endTime}
                         onChange={(e) => updateSlot(day, i, 'endTime', e.target.value)}
                         includeEndOfDay
+                        disabled={disabled}
                         className="bg-transparent font-lexend text-white focus:outline-none text-sm cursor-pointer [&>option]:text-gray-900"
                       />
                     </div>
@@ -196,7 +204,8 @@ export function VacancyDaySchedulePicker({
                     <button
                       type="button"
                       onClick={() => removeSlot(day, i)}
-                      className="p-1 text-primary hover:text-red-500 transition-colors"
+                      disabled={disabled}
+                      className={`p-1 transition-colors ${disabled ? 'text-gray-300 cursor-not-allowed' : 'text-primary hover:text-red-500'}`}
                       aria-label={t('admin.vacancyModal.scheduleRemoveSlot')}
                     >
                       <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">

@@ -33,12 +33,15 @@ import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { Stepper } from '@presentation/components/molecules/Stepper';
 import { useVacancyModalFlow } from '@hooks/admin/useVacancyModalFlow';
+import { useUnsavedChangesGuard } from '@hooks/useUnsavedChangesGuard';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import type { VacancyDraftSummary, VacancyByAddressSummary } from '@domain/entities/VacancyDraft';
 import type { AdminVacancyDetail } from '@domain/entities/Vacancy';
 import { VacancyFormSection } from '@presentation/components/features/admin/VacancyModal/VacancyFormSection';
 import { ResumeDraftVacancyDialog } from '@presentation/components/features/admin/VacancyModal/ResumeDraftVacancyDialog';
 import { AddressHasVacancyDialog } from '@presentation/components/features/admin/VacancyModal/AddressHasVacancyDialog';
+import { UnsavedChangesDialog } from '@presentation/components/features/admin/VacancyModal/UnsavedChangesDialog';
+import { Button } from '@presentation/components/atoms/Button';
 
 export default function CreateVacancyPage(): JSX.Element {
   const { t } = useTranslation();
@@ -76,6 +79,8 @@ export default function CreateVacancyPage(): JSX.Element {
 
   const flow = useVacancyModalFlow();
   const patientSelected = isEditMode || flow.selectedCaseNumber != null;
+
+  const guard = useUnsavedChangesGuard(); // Fase 4 (F27) — só o Volver passa por `guardedAction`.
 
   // Hydrate edit mode: fetch existing vacancy + seed flow with case/patient/address
   // so the form pre-fills and the address selector highlights the linked address.
@@ -238,23 +243,40 @@ export default function CreateVacancyPage(): JSX.Element {
           <Heading level={1} weight="semibold">
             {v('pageTitle')}
           </Heading>
-          <ActionButton
-            resource="vacancy"
-            action={isEditMode ? 'update' : 'create'}
-            variant="primary"
-            size="sm"
-            onClick={handleSave}
-            // In edit mode the vacancy already passed validation when it was
-            // created — relying on `formComplete` here causes the button to
-            // get stuck disabled while RHF/flow rehydrate from `existingVacancy`.
-            // Let RHF validate on submit and surface errors via the banner.
-            disabled={isBusy || (!isEditMode && !formComplete)}
-            isLoading={isBusy}
-            className="h-10 w-40 rounded-full bg-[#180149] text-white font-['Poppins'] font-semibold text-[16px] hover:bg-[#180149]/90 active:bg-[#180149]/80"
-            data-testid="create-vacancy-save-btn"
-          >
-            {generating ? v('generatingAI') : submitting ? v('saving') : v('saveButton')}
-          </ActionButton>
+          <div className="flex items-center gap-3">
+            {/* Fase 4 (F27): só em edição — Volver devolve à tela do rascunho. */}
+            {isEditMode && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  guard.guardedAction(() => navigate(`/admin/vacancies/${routeVacancyId}/borrador`))
+                }
+                disabled={isBusy}
+                className="h-10 rounded-full"
+                data-testid="vacancy-wizard-back-btn"
+              >
+                {v('backButton')}
+              </Button>
+            )}
+            <ActionButton
+              resource="vacancy"
+              action={isEditMode ? 'update' : 'create'}
+              variant="primary"
+              size="sm"
+              onClick={handleSave}
+              // In edit mode the vacancy already passed validation when it was
+              // created — relying on `formComplete` here causes the button to
+              // get stuck disabled while RHF/flow rehydrate from `existingVacancy`.
+              // Let RHF validate on submit and surface errors via the banner.
+              disabled={isBusy || (!isEditMode && !formComplete)}
+              isLoading={isBusy}
+              className="h-10 w-40 rounded-full bg-[#180149] text-white font-['Poppins'] font-semibold text-[16px] hover:bg-[#180149]/90 active:bg-[#180149]/80"
+              data-testid="create-vacancy-save-btn"
+            >
+              {generating ? v('generatingAI') : submitting ? v('saving') : v('saveButton')}
+            </ActionButton>
+          </div>
         </div>
 
         {/* Stepper */}
@@ -326,10 +348,18 @@ export default function CreateVacancyPage(): JSX.Element {
               selectAddress={flow.selectAddress}
               onValidationFailedFieldsChange={setValidationFailedFields}
               onCompleteChange={setFormComplete}
+              onDirtyChange={(dirty) => (dirty ? guard.markDirty() : guard.markClean())}
             />
           )}
         </div>
       </div>
+
+      {/* Fase 4 (F27): confirmação de saída com alteração não gravada. */}
+      <UnsavedChangesDialog
+        isOpen={guard.isConfirmOpen}
+        onConfirm={guard.confirmDiscard}
+        onCancel={guard.cancelDiscard}
+      />
 
       {/* Draft-resume dialog (per-patient) */}
       <ResumeDraftVacancyDialog

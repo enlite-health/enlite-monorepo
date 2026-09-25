@@ -10,6 +10,12 @@ interface FormFieldProps {
    * grade de três campos, ele quebra linha e compete com o valor. Default inalterado.
    */
   labelSize?: LabelSize;
+  /**
+   * Conteúdo extra ao lado do rótulo (fase-4, `completar-vacante-em-rascunho`: o link "Editar en
+   * la ficha del paciente" de um campo travado pela origem). Não é `hint` — fica na MESMA linha
+   * do rótulo, não abaixo/acima do campo.
+   */
+  labelExtra?: ReactNode;
   /** Texto auxiliar curto exibido abaixo do label (ex.: diferenciar Sexo de Género). */
   hint?: string;
   /**
@@ -28,6 +34,7 @@ interface FormFieldProps {
 
 export function FormField({
   label,
+  labelExtra,
   hint,
   hintBelow = false,
   error,
@@ -38,11 +45,25 @@ export function FormField({
   htmlFor,
   className = '',
 }: FormFieldProps): JSX.Element {
+  const labelNode = (
+    <Label htmlFor={htmlFor} required={required} optional={optional} size={labelSize}>
+      {label}
+    </Label>
+  );
+
   return (
     <div className={`flex flex-col gap-1 ${className}`}>
-      <Label htmlFor={htmlFor} required={required} optional={optional} size={labelSize}>
-        {label}
-      </Label>
+      {/* `labelExtra` some na maioria dos usos — não envolve `Label` num wrapper novo nesse caso,
+          para não mudar a posição de `label.parentElement` de quem já testa contra o root deste
+          componente (ex. `ContractedServiceFormRow.test.tsx`, gate 06/09). */}
+      {labelExtra ? (
+        <div className="flex items-center gap-2">
+          {labelNode}
+          {labelExtra}
+        </div>
+      ) : (
+        labelNode
+      )}
       {hint && !hintBelow && (
         <Text as="span" size="xs" color="muted" className="-mt-0.5">
           {hint}

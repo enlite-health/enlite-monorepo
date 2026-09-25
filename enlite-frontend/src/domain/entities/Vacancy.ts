@@ -134,4 +134,12 @@ export interface AdminVacancyDetail {
   payment_term_days?: number | null;
   net_hourly_rate?: string | null;
   weekly_hours?: number | null;
+  /** F3/fase-1 (`completar-vacante-em-rascunho`): colunas cujo valor vem do paciente/serviço
+   *  contratado quando a vaga nasceu do foguete (`contracted_service_id IS NOT NULL`) —
+   *  `SOURCE_LOCKED_FIELDS` no backend (`vacancyCrudHelpers.ts`). `[]`/ausente quando a vaga foi
+   *  criada direto. Fase 4 usa isto para desabilitar os campos correspondentes do form. */
+  locked_fields?: string[];
+  /** Timestamp da última gravação (coluna `updated_at`). Já consumido por `DraftVacancyPage`
+   *  ("Última edición", fase 2); Fase 4 também confirma que o PUT do passo 1 o atualiza. */
+  updated_at?: string | null;
 }

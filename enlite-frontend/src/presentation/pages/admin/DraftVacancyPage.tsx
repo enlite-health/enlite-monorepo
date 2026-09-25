@@ -304,7 +304,7 @@ export default function DraftVacancyPage() {
         </ContainerGate>
       </div>
 
-      <Text size="xs" color="tertiary" className="mt-6">
+      <Text size="xs" color="tertiary" className="mt-6" data-testid="vacancy-last-updated">
         {t('admin.draftVacancy.lastUpdated', { date: formatDateTime(vacancy.updated_at, i18n.language) ?? emptyValue })}
       </Text>
 
