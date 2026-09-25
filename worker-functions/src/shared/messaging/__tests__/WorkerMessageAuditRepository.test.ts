@@ -155,4 +155,106 @@ describe('WorkerMessageAuditRepository', () => {
     expect(txClient.query).toHaveBeenCalledTimes(1);
     expect(mockQuery).not.toHaveBeenCalled();
   });
+
+  // Achado do gate 25/09 (Achado 2): `client` sem `.release` (Pool bruto, ou o mock acima que
+  // só tem `.query`) não é uma transação aberta por este caller — cada `.query()` já é sua
+  // própria transação implícita no Postgres, então uma falha aqui não pode deixar nada
+  // "aborted" por trás. Prova: nenhum SAVEPOINT é emitido nesse caso (mantém o comportamento
+  // de sempre 1 único INSERT, testado acima).
+  it('client sem .release (Pool bruto) — NÃO emite SAVEPOINT', async () => {
+    await repo.record(mockClient as never, {
+      workerId: 'worker-4',
+      templateSlug: 'ar_vacancy_match_complete',
+      source: 'bulk',
+      outcome: 'sent',
+    });
+    expect(mockQuery).toHaveBeenCalledTimes(1);
+    expect(mockQuery.mock.calls[0][0]).toContain('INSERT INTO worker_message_audit');
+  });
+
+  describe('SAVEPOINT — client com .release (PoolClient de transação aberta pelo caller)', () => {
+    /**
+     * Fake mínimo do comportamento REAL do Postgres dentro de um bloco BEGIN...COMMIT:
+     *   - um erro em QUALQUER comando deixa a transação "aborted" até um ROLLBACK (ou um
+     *     ROLLBACK TO SAVEPOINT, que recupera só até o ponto do savepoint);
+     *   - COMMIT executado com a transação "aborted" NÃO LANÇA — o Postgres faz ROLLBACK
+     *     silenciosamente (é exatamente o comportamento medido no achado: o caller não
+     *     percebe e segue como se tivesse commitado).
+     * Isto NÃO é um mock ingênuo que sempre resolve — ele reproduz a semântica que faz o bug
+     * ser real, para que o teste morra se o SAVEPOINT for removido de `record()`.
+     */
+    function makeFakePgTransaction() {
+      let aborted = false;
+      let committed = false;
+      const calls: string[] = [];
+      const query = jest.fn(async (sql: string) => {
+        calls.push(sql);
+        if (sql === 'BEGIN') { aborted = false; return { rows: [] }; }
+        if (sql.startsWith('SAVEPOINT ')) {
+          if (aborted) throw new Error('current transaction is aborted, commands ignored until end of transaction block');
+          return { rows: [] };
+        }
+        if (sql.startsWith('ROLLBACK TO SAVEPOINT ')) { aborted = false; return { rows: [] }; }
+        if (sql.startsWith('RELEASE SAVEPOINT ')) {
+          if (aborted) throw new Error('current transaction is aborted, commands ignored until end of transaction block');
+          return { rows: [] };
+        }
+        if (sql.includes('INSERT INTO worker_message_audit')) {
+          if (aborted) throw new Error('current transaction is aborted, commands ignored until end of transaction block');
+          aborted = true; // simula a falha do INSERT de auditoria
+          throw new Error('simulated worker_message_audit insert failure');
+        }
+        if (sql === 'COMMIT') {
+          if (aborted) { committed = false; return { rows: [] }; } // ROLLBACK silencioso, sem lançar
+          committed = true;
+          return { rows: [] };
+        }
+        if (sql === 'ROLLBACK') { aborted = false; committed = false; return { rows: [] }; }
+        return { rows: [] };
+      });
+      return {
+        client: { query, release: jest.fn() },
+        calls,
+        isCommitted: () => committed,
+      };
+    }
+
+    it('INSERT de auditoria falha DENTRO da transação → SAVEPOINT protege: a transação principal ainda COMMITA', async () => {
+      const { client, calls, isCommitted } = makeFakePgTransaction();
+
+      await client.query('BEGIN');
+      await repo.record(client as never, {
+        workerId: 'worker-5',
+        jobPostingId: 'job-5',
+        templateSlug: 'qualified_reprogram_confirm',
+        source: 'kanban',
+        outcome: 'queued',
+      });
+      await client.query('COMMIT');
+
+      expect(isCommitted()).toBe(true);
+      expect(calls.some((c) => c.startsWith('SAVEPOINT '))).toBe(true);
+      expect(calls.some((c) => c.startsWith('ROLLBACK TO SAVEPOINT '))).toBe(true);
+      expect(calls.some((c) => c.startsWith('RELEASE SAVEPOINT '))).toBe(true);
+      // best-effort continua: a falha do INSERT de auditoria em si ainda é logada
+      expect(logger.warn).toHaveBeenCalledTimes(1);
+    });
+
+    it('savepoint tem nome único por chamada (duas auditorias na mesma transação não colidem)', async () => {
+      const { client } = makeFakePgTransaction();
+      await client.query('BEGIN');
+      await repo.record(client as never, {
+        workerId: 'worker-6', templateSlug: 'a', source: 'kanban', outcome: 'queued',
+      });
+      const firstSavepoint = (client.query as jest.Mock).mock.calls.find((c) => (c[0] as string).startsWith('SAVEPOINT '))![0];
+      await repo.record(client as never, {
+        workerId: 'worker-7', templateSlug: 'b', source: 'kanban', outcome: 'queued',
+      });
+      const savepoints = (client.query as jest.Mock).mock.calls
+        .map((c) => c[0] as string)
+        .filter((sql) => sql.startsWith('SAVEPOINT '));
+      expect(savepoints).toHaveLength(2);
+      expect(savepoints[1]).not.toBe(firstSavepoint);
+    });
+  });
 });

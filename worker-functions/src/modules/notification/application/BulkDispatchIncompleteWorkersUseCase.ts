@@ -10,6 +10,7 @@ import {
   isWorkerStatusAtDispatch,
   isDocumentsStatusAtDispatch,
 } from '@shared/messaging/WorkerMessageAuditRepository';
+import { classifyMessagingFailureReason } from '../domain/messagingFailureReason';
 
 const TEMPLATE_SLUG = 'complete_register_ofc';
 
@@ -289,7 +290,11 @@ export class BulkDispatchIncompleteWorkersUseCase {
         workerStatusAtDispatch: isWorkerStatusAtDispatch(row.status) ? row.status : null,
         documentsStatusAtDispatch: isDocumentsStatusAtDispatch(row.documents_status) ? row.documents_status : null,
         outcome: detail.status === 'sent' ? 'sent' : 'failed',
-        skipReason: detail.error ?? null,
+        // Achado do gate 25/09: `detail.error` é a string CRUA do provider (Twilio/Periskope) —
+        // pode carregar o telefone do worker (ver TwilioMessagingService.ts:116,
+        // PeriskopeMessagingService.ts:79-80). worker_message_audit (migration 474) tem garantia
+        // explícita de nunca ter PII (COMMENT ON TABLE) — grava um CÓDIGO estável, nunca o texto.
+        skipReason: detail.error ? classifyMessagingFailureReason(detail.error) : null,
       });
     }
 

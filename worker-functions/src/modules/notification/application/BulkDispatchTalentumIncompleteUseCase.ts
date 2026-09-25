@@ -7,6 +7,7 @@ import {
   WorkerMessageAuditRepository,
   isWorkerStatusAtDispatch,
 } from '@shared/messaging/WorkerMessageAuditRepository';
+import { classifyMessagingFailureReason } from '../domain/messagingFailureReason';
 
 const TEMPLATE_SLUG = 'talentum_incomplete_reminder';
 
@@ -211,7 +212,13 @@ export class BulkDispatchTalentumIncompleteUseCase {
           actorUid: triggeredBy,
           workerStatusAtDispatch: isWorkerStatusAtDispatch(row.status) ? row.status : null,
           outcome: finalStatus === 'sent' ? 'sent' : 'failed',
-          skipReason: errorMsg,
+          // Achado do gate 25/09: `errorMsg` é a string CRUA do provider (Twilio/Periskope) — pode
+          // carregar o telefone do worker (ver TwilioMessagingService.ts:116,
+          // PeriskopeMessagingService.ts:79-80). worker_message_audit (migration 474) tem garantia
+          // explícita de nunca ter PII (COMMENT ON TABLE) — grava um CÓDIGO estável, nunca o texto.
+          // `whatsapp_bulk_dispatch_logs.error_message` (INSERT acima) continua com o texto cru —
+          // essa tabela não tem a mesma garantia de não-PII, e não é o escopo deste achado.
+          skipReason: errorMsg ? classifyMessagingFailureReason(errorMsg) : null,
         });
       } catch (err) {
         errors++;

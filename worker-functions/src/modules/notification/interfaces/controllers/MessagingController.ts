@@ -8,7 +8,7 @@ import { BulkDispatchIncompleteWorkersUseCase } from '../../application/BulkDisp
 import { BuildVacancyMatchVariablesUseCase } from '../../application/BuildVacancyMatchVariablesUseCase';
 import { assertVacancyInviteAllowed } from '../../application/VacancyInviteGuard';
 import { AuthMiddleware } from '@modules/identity';
-import { logger, reportError } from '@shared/logging';
+import { logger, reportError, safeErrorFields } from '@shared/logging';
 import { WorkerMessageAuditRepository } from '@shared/messaging/WorkerMessageAuditRepository';
 
 const SLUG_COMPLETE   = 'ar_vacancy_match_complete';
@@ -222,7 +222,16 @@ export class MessagingController {
          LIMIT 1`,
         [digitsOnly],
       )
-      .catch(() => null);
+      .catch((err: unknown) => {
+        // Achado do gate 25/09: antes desta rota extrair o SELECT do worker canônico pra fora
+        // do INSERT (era subquery em VALUES), o erro dele era capturado e logado pelo catch do
+        // INSERT abaixo. Virou catch(() => null) silencioso na extração — restaura o log, sem
+        // derrubar o request (resolvedWorkerId cai pra null, igual antes). safeErrorFields (não
+        // err.message cru): esta query interpola `digitsOnly`, dígitos do telefone — regra dura
+        // do projeto é nunca logar PII.
+        logger.warn({ ...safeErrorFields(err) }, 'MessagingController sendDirect: falha ao resolver worker canônico por telefone');
+        return null;
+      });
     const resolvedWorkerId = resolvedWorkerRes?.rows[0]?.id ?? null;
 
     await this.db
