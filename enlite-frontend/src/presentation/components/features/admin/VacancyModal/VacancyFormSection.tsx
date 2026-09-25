@@ -18,6 +18,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useTranslation } from 'react-i18next';
 import { Text } from '@presentation/components/atoms/Text';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
+import { useNotifyOnChange } from '@hooks/useNotifyOnChange';
 import { formatCaseNumber } from '@domain/value-objects/caseNumberFormat';
 import { handlePublishedVacancyForbidden } from './vacancyFormDefense';
 import type { PatientAddressRow } from '@domain/entities/PatientAddress';
@@ -31,6 +32,7 @@ import {
   MEET_LINK_REGEX,
 } from '../vacancy-form-schema';
 import { listInvalidFields } from '../vacancyFormValidation';
+import { lockedFormFields, stripLockedFields } from '../vacancyLockedFields';
 import { summarizeAddress } from '@presentation/utils/summarizeAddress';
 import { VacancyFormLeftColumn } from './VacancyFormLeftColumn';
 import { VacancyFormRightColumn } from './VacancyFormRightColumn';
@@ -66,6 +68,12 @@ export interface VacancyFormSectionProps {
    * + at least one valid Meet link).
    */
   onCompleteChange?: (isComplete: boolean) => void;
+  /**
+   * Fase 4 (`completar-vacante-em-rascunho`, F27): notifica o pai a cada mudança do
+   * `formState.isDirty` do RHF — é o que `CreateVacancyPage` usa para alimentar
+   * `useUnsavedChangesGuard` (o botão Volver só confirma quando há alteração não gravada).
+   */
+  onDirtyChange?: (isDirty: boolean) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -89,6 +97,7 @@ export function VacancyFormSection({
   selectAddress,
   onValidationFailedFieldsChange,
   onCompleteChange,
+  onDirtyChange,
 }: VacancyFormSectionProps): JSX.Element {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -108,20 +117,20 @@ export function VacancyFormSection({
     reset,
     control,
     setValue,
-    formState: { errors },
+    formState: { errors, isDirty },
   } = useForm<VacancyFormData>({
     resolver: zodResolver(vacancyFormSchema),
     defaultValues: DEFAULT_FORM_VALUES,
   });
 
   // Sync submitting state to parent (for header Save button)
-  const prevSubmitting = useRef(submitting);
-  useEffect(() => {
-    if (prevSubmitting.current !== submitting) {
-      onSubmittingChange(submitting);
-      prevSubmitting.current = submitting;
-    }
-  }, [submitting, onSubmittingChange]);
+  useNotifyOnChange(submitting, onSubmittingChange);
+
+  // Fase 4 (F27): alimenta `useUnsavedChangesGuard` em `CreateVacancyPage`.
+  useNotifyOnChange(isDirty, onDirtyChange);
+
+  // Fase 4: campos do form travados pela origem, derivados de `locked_fields` do GET.
+  const lockedFields = mode === 'edit' ? lockedFormFields(existingVacancy?.locked_fields) : new Set<keyof VacancyFormData>();
 
   // Watch the minimum invariants required by the schema so the parent can
   // gate the "Continuar" button without triggering a full RHF validation pass.
@@ -146,6 +155,9 @@ export function VacancyFormSection({
     Array.isArray(meetLinks) &&
     meetLinks.some((l) => !!l && MEET_LINK_REGEX.test(l));
 
+  // `null` de propósito (≠ boolean): força a 1ª chamada no mount, mesmo quando `isComplete`
+  // nasce `false` — o "Continuar" precisa saber que está incompleto desde o início, não só
+  // quando muda. Por isso não usa `useNotifyOnChange` (que não notifica no mount).
   const prevComplete = useRef<boolean | null>(null);
   useEffect(() => {
     if (prevComplete.current !== isComplete) {
@@ -255,12 +267,19 @@ export function VacancyFormSection({
           ? selectedAddressId
           : (selectedAddressId ?? existingVacancy?.patient_address_id);
 
-      const payload = buildVacancyPayload(
+      const payloadFull = buildVacancyPayload(
         data,
         selectedCaseNumber ?? (existingVacancy?.case_number ?? null),
         patientId,
         addressId,
       );
+      // Fase 4 (F3/fase-1): o PUT nunca leva campo travado pela origem — a API recusa (422)
+      // qualquer chave de `locked_fields`, mesmo com valor igual ao já gravado
+      // (`f in updates`, `vacancyCrudHelpers.ts:188`). `stripLockedFields` é no-op em modo
+      // `create` (existingVacancy é null, `locked_fields` some do payload por não existir ali).
+      const payload = mode === 'edit'
+        ? stripLockedFields(payloadFull, existingVacancy?.locked_fields)
+        : payloadFull;
 
       let vacancyId: string;
       if (mode === 'edit' && existingVacancy) {
@@ -342,6 +361,7 @@ export function VacancyFormSection({
           dependencyLevel={dependencyLevel}
           selectCase={selectCase}
           setValue={(field, value) => setValue(field, value)}
+          lockedFields={lockedFields}
         />
 
         <VacancyFormRightColumn
@@ -360,6 +380,8 @@ export function VacancyFormSection({
           }
           serviceType={patientDetail?.serviceType ?? null}
           selectAddress={selectAddress}
+          lockedFields={lockedFields}
+          patientId={selectedPatientId ?? existingVacancy?.patient_id ?? null}
         />
       </div>
 
