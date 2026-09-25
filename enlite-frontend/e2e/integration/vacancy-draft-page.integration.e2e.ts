@@ -12,7 +12,23 @@
  * (`PERMISSION_ENGINE_ENABLED`/`_ENFORCED_ROUTES`/`_CATALOG_SYNC_ENABLED`) já vive VERSIONADO
  * em `docker-compose.group-simulation.yml` — nunca duplicar; o override desta task é só porta/
  * container_name/CORS, LOCAL desta máquina (gitignorado, `docker-compose.*.local.yml`, gate
- * parcial 25/09: o arquivo antigo duplicava o bloco de engine e saiu do repo, achado #1):
+ * parcial 25/09: o arquivo antigo duplicava o bloco de engine e saiu do repo, achado #1).
+ * `worker-functions/docker-compose.fase2-abac.local.yml` — não existe no git; recriar com este
+ * conteúdo (rodada 2 do gate, 25/09: colado aqui para quem não tem esta máquina não precisar
+ * adivinhar):
+ *   services:
+ *     postgres:
+ *       container_name: cv-fase2-abac-postgres
+ *       ports: !override
+ *         - "5442:5432"
+ *     api:
+ *       image: worker-functions-api
+ *       container_name: cv-fase2-abac-api
+ *       ports: !override
+ *         - "8092:8080"
+ *       environment:
+ *         CORS_ALLOWED_ORIGINS: "http://localhost:5178"
+ *
  *   cd worker-functions
  *   docker compose -p cv-fase2-abac -f docker-compose.yml -f docker-compose.test.yml \
  *     -f docker-compose.group-simulation.yml -f docker-compose.fase2-abac.local.yml \
