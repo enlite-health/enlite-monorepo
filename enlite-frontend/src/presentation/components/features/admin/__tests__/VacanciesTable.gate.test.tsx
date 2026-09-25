@@ -6,7 +6,7 @@ import type { AuthzContract } from '@domain/entities/Authz';
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (k: string) => k }) }));
 
-const row: VacancyRow = {
+const draftRow: VacancyRow = {
   id: 'v1',
   caso: 'Caso 1',
   status: 'Esperando Ativação',
@@ -17,8 +17,10 @@ const row: VacancyRow = {
   confirmados: '1',
   selecionados: '1',
   faltantes: '1',
-  isDraft: false,
+  isDraft: true,
 };
+
+const publishedRow: VacancyRow = { ...draftRow, id: 'v2', isDraft: false };
 
 function comEnforcement(permissions: string[], enforcement: AuthzContract['enforcement']) {
   useAdminAuthStore.setState({
@@ -29,30 +31,34 @@ function comEnforcement(permissions: string[], enforcement: AuthzContract['enfor
   });
 }
 
-describe('VacanciesTable — lápis de editar vaga (gate)', () => {
+// Fase 3 (completar-vacante-em-rascunho, D425/F25) — o lápis (`edit-vacancy-${id}`) e o
+// `VacancyModal` antigo SAÍRAM da lista, para linha em rascunho e publicada, com ou sem
+// `vacancy:update`: quem decide o destino do clique agora é `AdminVacanciesPage.tsx`
+// (bifurca por permissão só para rascunho, via `onRowClick(id, isDraft)`).
+describe('VacanciesTable — clique na linha decide o destino (lápis removido, F25)', () => {
   beforeEach(() => {
     useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' });
   });
 
-  it('PR-8b — enforcement=on sem vacancy:update: lápis NÃO existe na árvore', () => {
-    comEnforcement(['vacancy:create'], 'on');
-    render(<VacanciesTable vacancies={[row]} onEditClick={vi.fn()} />);
-    expect(screen.queryByTestId(`edit-vacancy-${row.id}`)).not.toBeInTheDocument();
+  it('lápis NÃO existe na árvore mesmo com enforcement=on e vacancy:update concedido', () => {
+    comEnforcement(['vacancy:update'], 'on');
+    render(<VacanciesTable vacancies={[draftRow, publishedRow]} onRowClick={vi.fn()} />);
+    expect(screen.queryByTestId(`edit-vacancy-${draftRow.id}`)).not.toBeInTheDocument();
+    expect(screen.queryByTestId(`edit-vacancy-${publishedRow.id}`)).not.toBeInTheDocument();
+    expect(screen.queryByTestId('vacancy-modal')).not.toBeInTheDocument();
   });
 
-  it('PR-8b — enforcement=on com vacancy:update: lápis existe na árvore', () => {
-    comEnforcement(['vacancy:update'], 'on');
-    render(<VacanciesTable vacancies={[row]} onEditClick={vi.fn()} />);
-    expect(screen.getByTestId(`edit-vacancy-${row.id}`)).toBeInTheDocument();
-  });
-
-  it('PR-8b — clicar no lápis chama onEditClick(id, isDraft) e não propaga pro onRowClick', () => {
-    comEnforcement(['vacancy:update'], 'on');
-    const onEditClick = vi.fn();
+  it('clicar na linha em rascunho chama onRowClick(id, true) — quem decide modal × navegação direta é o pai', () => {
     const onRowClick = vi.fn();
-    render(<VacanciesTable vacancies={[row]} onEditClick={onEditClick} onRowClick={onRowClick} />);
-    fireEvent.click(screen.getByTestId(`edit-vacancy-${row.id}`));
-    expect(onEditClick).toHaveBeenCalledWith(row.id, row.isDraft);
-    expect(onRowClick).not.toHaveBeenCalled();
+    render(<VacanciesTable vacancies={[draftRow]} onRowClick={onRowClick} />);
+    fireEvent.click(screen.getByText(draftRow.caso));
+    expect(onRowClick).toHaveBeenCalledWith(draftRow.id, true);
+  });
+
+  it('clicar na linha publicada chama onRowClick(id, false)', () => {
+    const onRowClick = vi.fn();
+    render(<VacanciesTable vacancies={[publishedRow]} onRowClick={onRowClick} />);
+    fireEvent.click(screen.getByText(publishedRow.caso));
+    expect(onRowClick).toHaveBeenCalledWith(publishedRow.id, false);
   });
 });
