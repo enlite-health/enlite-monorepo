@@ -17,7 +17,9 @@
 export interface AxonicoPatientMatch {
   /** Identificador do paciente no Axonico (`historia_clinica`, resposta de `paciente/filter`). */
   historiaClinica: string;
-  /** Identificador da cobertura/plano ativa do paciente (`nro_afiliado` da 1ª cobertura ativa). */
+  /** Identificador da cobertura/plano ativa do paciente (`nro_cobertura` da PRIMEIRA cobertura
+   *  cujo `estado.descripcion` normalizado é "activo" — nunca `nro_afiliado`, nunca `coberturas[0]`
+   *  sem checar o estado, medido 24/09/2026 contra o Axonico real). */
   nroCobertura: string;
 }
 
