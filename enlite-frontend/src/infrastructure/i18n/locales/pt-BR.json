@@ -2142,11 +2142,16 @@
     },
     "draftVacancy": {
       "back": "Voltar para vagas",
-      "kicker": "Caso {{case}} · Vaga {{vacancy}} · criada em {{date}}",
+      "kickerCase": "Caso {{case}}",
+      "kickerVacancy": "Vaga {{vacancy}}",
+      "kickerDate": "criada em {{date}}",
       "title": "{{service}} para {{patient}}",
-      "subtitleSchedule": "{{days}} dias por semana, {{hours}} horas",
+      "subtitleSchedule_one": "{{count}} dia por semana, {{hours}} horas",
+      "subtitleSchedule_other": "{{count}} dias por semana, {{hours}} horas",
       "subtitleProviders": "{{count}} profissionais",
       "emptyValue": "Não preenchido",
+      "notVisibleForRole": "Não visível para seu perfil",
+      "patientLoadError": "Não foi possível carregar a ficha do paciente",
       "calloutTitleCanComplete": "Falta completar {{count}} dados para publicar esta vaga.",
       "calloutBodyCanComplete": "Você vai entrar no formulário de sempre. Os dados do paciente já estão carregados; complete o que falta e publique.",
       "calloutTitleReadOnly": "Esta vaga ainda não foi publicada.",
@@ -2167,6 +2172,10 @@
         "ageRange": "Idade do prestador",
         "hourlyRate": "Valor por hora",
         "publication": "Publicação"
+      },
+      "schedule": {
+        "ariaLabel": "Horário de atendimento por dia",
+        "dayOffAria": "{{day}}: sem atendimento"
       },
       "todoTitle": "O que falta",
       "todoCount": "{{count}} dados",

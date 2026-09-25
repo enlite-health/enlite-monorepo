@@ -47,6 +47,19 @@ export function buildScheduleGrid(schedule: NormalizedSchedule | null | undefine
   }));
 }
 
+/**
+ * "08:00" → "8"; "14:30" → "14:30" (protótipo v3: sem zero à esquerda na hora, minutos só
+ * quando ≠ ":00" — gate parcial 25/09, achado #5b). Entrada fora do formato HH:MM volta como
+ * veio, sem lançar — a grade não pode quebrar por um valor que o backend um dia mande diferente.
+ */
+export function formatScheduleTime(value: string): string {
+  const m = value.match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return value;
+  const hour = String(Number(m[1]));
+  const minutes = m[2];
+  return minutes === '00' ? hour : `${hour}:${minutes}`;
+}
+
 function parseHHMMToMinutes(value: string): number | null {
   const m = value.match(/^(\d{1,2}):(\d{2})$/);
   if (!m) return null;
