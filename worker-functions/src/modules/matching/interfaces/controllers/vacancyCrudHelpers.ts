@@ -80,8 +80,57 @@ export const FULL_ALLOWED_UPDATE_FIELDS = [
   'published_at', 'closes_at',
 ];
 
+/**
+ * SOURCE_LOCKED_FIELDS — as colunas de `job_postings` cujo valor vem do
+ * paciente/serviço contratado (F3, `docs`/`fatos-medidos.md` da change
+ * `completar-vacante-em-rascunho`), não do recrutamento. Fonte única: o
+ * dono é `buildInsertParams` (via `pickSourceLockedFields`, abaixo) — é o
+ * MESMO código que preenche essas colunas no INSERT do foguete
+ * (`ActivateRecruitmentUseCase`). `GET /vacancies/:id` devolve esta lista
+ * como `locked_fields` quando `contracted_service_id IS NOT NULL`, e `PUT
+ * /vacancies/:id` (`authorizeVacancyUpdate`, abaixo) recusa com 422 qualquer
+ * body que toque uma destas chaves na mesma condição — rascunho ou
+ * publicada, porque a origem não muda de dono ao publicar.
+ *
+ * Coluna nova preenchida pelo foguete que não entrar aqui NÃO pode ser lida
+ * de `pickSourceLockedFields` (o tipo não deixa) — e se alguém sabotar isso
+ * por fora, o teste de paridade (`ActivateRecruitmentUseCase.sourceLockedFields.test.ts`,
+ * `-t "paridade"`) morre.
+ */
+export const SOURCE_LOCKED_FIELDS = [
+  'case_number',
+  'patient_id',
+  'patient_address_id',
+  'contracted_service_id',
+  'age_range_min',
+  'age_range_max',
+  'schedule',
+  'providers_needed',
+] as const satisfies readonly (keyof VacancyInsertParams)[];
+
+export type SourceLockedField = (typeof SOURCE_LOCKED_FIELDS)[number];
+
+/**
+ * Extrai de `p` só os campos travados pela origem (`SOURCE_LOCKED_FIELDS`).
+ * `buildInsertParams` consome isto para montar as colunas do INSERT que vêm
+ * do serviço — nunca lê `p.case_number`/`p.patient_id`/etc. direto para
+ * essas 8 colunas. O tipo de retorno (`Pick<VacancyInsertParams,
+ * SourceLockedField>`) é o que faz uma coluna nova "não compilar" sem
+ * entrar na constante: não dá para ler `locked.<campo>` se `<campo>` não
+ * está em `SOURCE_LOCKED_FIELDS`.
+ */
+export function pickSourceLockedFields(
+  p: VacancyInsertParams,
+): Pick<VacancyInsertParams, SourceLockedField> {
+  const out = {} as Pick<VacancyInsertParams, SourceLockedField>;
+  for (const field of SOURCE_LOCKED_FIELDS) {
+    out[field] = p[field];
+  }
+  return out;
+}
+
 export type UpdateAuthorizationResult =
-  | { kind: 'error'; status: number; error: string }
+  | { kind: 'error'; status: number; error: string; lockedFields?: readonly string[] }
   | { kind: 'ok'; isDraft: boolean; currentStatus: string | null };
 
 /**
@@ -114,8 +163,9 @@ export async function authorizeVacancyUpdate(
     status: string | null;
     is_draft: boolean | null;
     patient_id: string | null;
+    contracted_service_id: string | null;
   }>(
-    'SELECT status, is_draft, patient_id FROM job_postings WHERE id = $1',
+    'SELECT status, is_draft, patient_id, contracted_service_id FROM job_postings WHERE id = $1',
     [vacancyId],
   );
   if (currentRow.rows.length === 0) {
@@ -123,10 +173,28 @@ export async function authorizeVacancyUpdate(
   }
   const currentStatus = currentRow.rows[0].status;
   const isDraft = currentRow.rows[0].is_draft === true;
+  const contractedServiceId = currentRow.rows[0].contracted_service_id;
   const effectivePatientId =
     typeof updates.patient_id === 'string' && updates.patient_id
       ? (updates.patient_id as string)
       : currentRow.rows[0].patient_id;
+
+  // F3/fase-1 (`completar-vacante-em-rascunho`): a vaga nascida do foguete tem
+  // `contracted_service_id` — os campos de SOURCE_LOCKED_FIELDS vêm do
+  // paciente/serviço, não do recrutamento, e continuam travados MESMO
+  // publicada (a origem não muda de dono ao publicar). Roda ANTES do gate de
+  // rascunho/publicada abaixo — o 422 é a regra mais específica.
+  if (contractedServiceId != null) {
+    const lockedFields = SOURCE_LOCKED_FIELDS.filter((f) => f in updates);
+    if (lockedFields.length > 0) {
+      return {
+        kind: 'error',
+        status: 422,
+        error: `Campos travados pela origem (paciente/serviço contratado) não podem ser editados: ${lockedFields.join(', ')}.`,
+        lockedFields,
+      };
+    }
+  }
 
   if (!isDraft) {
     const forbidden = Object.keys(updates).filter(f => !OPERATIONAL_EDITABLE_FIELDS.has(f));
@@ -314,30 +382,35 @@ export function buildInsertParams(p: VacancyInsertParams): unknown[] {
   // fixture de E2E precisa nascer publicável sem tocar Talentum/Groq.
   const isDraft = !(p.is_test === true && p.is_draft === false);
 
+  // As 8 colunas que vêm do paciente/serviço (SOURCE_LOCKED_FIELDS) são lidas
+  // SÓ daqui — nunca de `p.<campo>` direto — para que o INSERT e o `locked_fields`
+  // do GET/PUT nunca divirjam (fonte única, teste de paridade).
+  const locked = pickSourceLockedFields(p);
+
   return [
     p.vacancyNumber,
-    p.case_number,
+    locked.case_number,
     p.computedTitle,
-    p.patient_id,
+    locked.patient_id,
     p.required_professions ?? [],
     p.required_sex ?? null,
-    p.age_range_min ?? null,
-    p.age_range_max ?? null,
+    locked.age_range_min ?? null,
+    locked.age_range_max ?? null,
     p.worker_profile_sought ?? null,
     p.required_experience ?? null,
     p.worker_attributes ?? null,
-    p.schedule ? JSON.stringify(p.schedule) : null,
+    locked.schedule ? JSON.stringify(locked.schedule) : null,
     p.work_schedule ?? null,
-    p.providers_needed,
+    locked.providers_needed,
     p.salary_text ?? 'A convenir',
     p.payment_day ?? null,
     p.daily_obs ?? null,
-    p.patient_address_id ?? null,
+    locked.patient_address_id ?? null,
     status,
     p.published_at ?? null,
     p.closes_at ?? null,
     p.is_test === true,
-    p.contracted_service_id ?? null,
+    locked.contracted_service_id ?? null,
     isDraft,
   ];
 }
