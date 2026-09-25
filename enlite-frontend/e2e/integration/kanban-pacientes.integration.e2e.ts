@@ -177,11 +177,27 @@ test.describe('kanban de pacientes @integration', () => {
     await loginAsAdmin(page);
 
     await page.goto('/admin/patients/kanban');
+
+    await waitForBoard(page);
+
+    // Captura depois de waitForBoard: "primeiro passo depois da navegação" é depois de a tela existir,
+    // não logo após o goto (que ainda mostra o esqueleto de loading).
     if (process.env.PRINT_DIR) {
       await page.screenshot({ path: `${process.env.PRINT_DIR}/kanban-pacientes.png`, fullPage: true });
     }
 
-    await waitForBoard(page);
+    // Segunda captura com o board rolado ao fim: em 1366 px cabem 4 colunas; alta e baja são as duas últimas.
+    if (process.env.PRINT_DIR) {
+      const board = page.locator('[data-testid="patient-kanban-board"]');
+      await board.evaluate((n) => {
+        n.scrollLeft = n.scrollWidth;
+      });
+      await page.waitForTimeout(300);
+      await page.screenshot({ path: `${process.env.PRINT_DIR}/kanban-pacientes-fim.png`, fullPage: true });
+      await board.evaluate((n) => {
+        n.scrollLeft = 0;
+      });
+    }
 
     const columnIds = await page.locator(COLUMN_SELECTOR).evaluateAll((els) =>
       els.map((el) => el.getAttribute('data-testid')),
