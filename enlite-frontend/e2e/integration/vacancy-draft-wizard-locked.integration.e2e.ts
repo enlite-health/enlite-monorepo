@@ -20,7 +20,7 @@
 import { test, expect, type Page, type Route } from '@playwright/test';
 import { insertTestPatient, cleanupTestPatient, backdateVacancyUpdatedAt } from '../helpers/db-test-helper';
 
-const BACKEND_URL = process.env.API_BASE_URL || 'http://localhost:8100';
+const BACKEND_URL = process.env.API_BASE_URL || 'http://localhost:8080';
 
 // `country` é OBRIGATÓRIO no claim mock (memória `stack-e2e-abac-ligado`): sem ele, o trigger
 // `fn_patient_contracted_services_country_from_patient` (migration 319) faz `SELECT p.country
