@@ -11,11 +11,41 @@
  *     sempre foi.
  *   - Linha draft → clique abre o modal `DraftVacancyChoiceDialog` ("¿Qué querés hacer con
  *     este borrador?") para quem tem `talentum:update` + `vacancy:update`. Este stack roda
- *     com o engine ABAC OFF (`docker-compose.test.yml` padrão desta worktree) — `useActionGate`
- *     devolve `allowed: true` sempre que `enforcement !== 'on'` (`useCellAccess.ts:70`), então
- *     o modal abre pra qualquer admin autenticado aqui. A bifurcação por permissão REAL (ator
- *     SEM as células) está provada à parte, com o engine ligado, em
- *     `draft-vacancy-choice-dialog.integration.e2e.ts`.
+ *     com o engine ABAC OFF — `useActionGate` devolve `allowed: true` sempre que
+ *     `enforcement !== 'on'` (`useCellAccess.ts:70`), então o modal abre pra qualquer admin
+ *     autenticado aqui. A bifurcação por permissão REAL (ator SEM as células) está provada à
+ *     parte, com o engine ligado, em `draft-vacancy-choice-dialog.integration.e2e.ts`.
+ *
+ * Roda contra um stack ISOLADO próprio (projeto docker `cv-fase3-standard`, Postgres `5472`,
+ * API `8122`, Vite `5193`) — achado 25/09 (gate parcial): o stack padrão `enlite-api`/
+ * `enlite-postgres` (8080/5432) e a porta 5173 já estavam ocupados pelo Vite de OUTRA worktree
+ * (`_worktrees/completar-vacante`), e o CORS default do backend só libera `:5173`/`:3000`
+ * (`corsConfig.ts`) — um Vite desta worktree noutra porta contra esses containers falha em
+ * silêncio (nenhum dado carrega, tela presa em skeleton).
+ *
+ * COMO SUBIR. O bloco de ENGINE fica de fora de propósito aqui — este é o stack OFF, não usa
+ * `docker-compose.group-simulation.yml`. `worker-functions/docker-compose.fase3-standard.local.yml`
+ * — não existe no git (gitignorado, `docker-compose.*.local.yml`); recriar com este conteúdo:
+ *   services:
+ *     postgres:
+ *       container_name: cv-fase3-standard-postgres
+ *       ports: !override
+ *         - "5472:5432"
+ *     api:
+ *       image: worker-functions-api
+ *       container_name: cv-fase3-standard-api
+ *       ports: !override
+ *         - "8122:8080"
+ *       environment:
+ *         CORS_ALLOWED_ORIGINS: "http://localhost:5193"
+ *
+ *   cd worker-functions
+ *   docker compose -p cv-fase3-standard -f docker-compose.yml -f docker-compose.test.yml \
+ *     -f docker-compose.fase3-standard.local.yml up -d postgres api
+ *   cd ../enlite-frontend && VITE_API_WORKER_FUNCTIONS_URL=http://localhost:8122 <demais VITE_FIREBASE_*> \
+ *     npx vite --port 5193 --strictPort
+ *   E2E_PG_CONTAINER=cv-fase3-standard-postgres PW_BASE_URL=http://localhost:5193 \
+ *     npx playwright test --project=integration --grep "edit routing por is_draft"
  *
  * Regra de fundo, ainda válida (autoritativa no backend `vacancyCrudHelpers.ts`):
  *   - Vagas com `is_draft = true`  → operador ainda pode editar todos os campos.
