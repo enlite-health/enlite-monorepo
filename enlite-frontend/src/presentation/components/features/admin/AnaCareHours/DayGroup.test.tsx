@@ -359,4 +359,82 @@ describe('DayGroup', () => {
     expect(screen.getByTestId('anacare-hours-shift-checkin-s1')).toHaveTextContent('—');
     expect(screen.getByTestId('anacare-hours-shift-checkout-s1')).toHaveTextContent('—');
   });
+
+  // change `axonico-envio-rastreavel` (24/09/2026, migration 473): `shift.axonico` (dado
+  // PERSISTIDO, sobrevive a reload) é repassado a `AxonicoSendControl` como prop `sent` — o dia
+  // continua "Enviado" depois de recarregar, sem depender do estado local do hook.
+  describe('axonico persistido (shift.axonico → AxonicoSendControl.sent)', () => {
+    it('POSITIVO — turno do dia com axonico: mostra "Enviado — comprobante N" e "Por: <nome> · dd/MM" SEM botão, mesmo sem nenhum clique nesta sessão (simula reload)', () => {
+      const providerA = makeProvider({ anaCareId: 'p1' });
+      const day = makeDay([
+        {
+          shift: eligibleShift({
+            id: 's1',
+            axonico: {
+              status: 'enviado',
+              numeroComprobante: 'C-PERSISTIDO',
+              codAutorizacion: 'A-PERSISTIDO',
+              sentAt: '2026-08-14T15:00:00.000Z',
+              sentBy: { uid: 'uid-staff-9', displayName: 'Elizabeth Soñez' },
+            },
+          }),
+          provider: providerA,
+        },
+      ]);
+      render(<DayGroup day={day} disableActions={false} selectedShiftIds={new Set()} axonicoService={makeAxonicoService()} patientDocumentNumber={DOC} {...noop} />);
+
+      expect(screen.getByTestId('anacare-hours-day-sent-2026-08-14')).toHaveTextContent('C-PERSISTIDO');
+      expect(screen.getByTestId('anacare-hours-day-sent-by-2026-08-14')).toHaveTextContent(
+        'admin.anacareHours.dayGroup.axonico.sentBy|{"name":"Elizabeth Soñez","date":"14/08"}',
+      );
+      expect(screen.queryByTestId('anacare-hours-send-day-2026-08-14')).not.toBeInTheDocument();
+    });
+
+    it('POSITIVO — dois turnos do MESMO dia, só um carrega axonico (backend anexa a todos, mas o selector aceita achar em qualquer um): dia mostra Enviado', () => {
+      const providerA = makeProvider({ anaCareId: 'p1' });
+      const day = makeDay([
+        { shift: eligibleShift({ id: 's1' }), provider: providerA },
+        {
+          shift: eligibleShift({
+            id: 's2',
+            axonico: { status: 'enviado', numeroComprobante: 'C-2', codAutorizacion: 'A-2', sentAt: '2026-08-14T15:00:00.000Z' },
+          }),
+          provider: providerA,
+        },
+      ]);
+      render(<DayGroup day={day} disableActions={false} selectedShiftIds={new Set()} axonicoService={makeAxonicoService()} patientDocumentNumber={DOC} {...noop} />);
+
+      expect(screen.getByTestId('anacare-hours-day-sent-2026-08-14')).toHaveTextContent('C-2');
+    });
+
+    it('NEGATIVO — nenhum turno do dia com axonico: comportamento de HOJE intacto (botão aparece)', () => {
+      const providerA = makeProvider({ anaCareId: 'p1' });
+      const day = makeDay([{ shift: eligibleShift({ id: 's1' }), provider: providerA }]);
+      render(<DayGroup day={day} disableActions={false} selectedShiftIds={new Set()} axonicoService={makeAxonicoService()} patientDocumentNumber={DOC} {...noop} />);
+
+      expect(screen.getByTestId('anacare-hours-send-day-2026-08-14')).toBeInTheDocument();
+      expect(screen.queryByTestId('anacare-hours-day-sent-by-2026-08-14')).not.toBeInTheDocument();
+    });
+
+    it('POSITIVO — onSent repassado a AxonicoSendControl chama o refetch do pai após um clique bem-sucedido', async () => {
+      const enviarComprobante = vi.fn().mockResolvedValue({ status: 'enviado', numeroComprobante: 'C-1', codAutorizacion: 'A-1' });
+      const onSent = vi.fn();
+      const providerA = makeProvider({ anaCareId: 'p1' });
+      const day = makeDay([{ shift: eligibleShift({ id: 's1' }), provider: providerA }]);
+      render(
+        <DayGroup
+          day={day}
+          disableActions={false}
+          selectedShiftIds={new Set()}
+          axonicoService={makeAxonicoService({ enviarComprobante })}
+          patientDocumentNumber={DOC}
+          {...noop}
+          onSent={onSent}
+        />,
+      );
+
+      fireEvent.click(screen.getByTestId('anacare-hours-send-day-2026-08-14'));
+      await waitFor(() => expect(onSent).toHaveBeenCalledTimes(1));
+    });
+  });
 });

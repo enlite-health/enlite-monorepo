@@ -11,6 +11,10 @@
  * pronto do Ana Care no corpo da requisição. `IPatientReadPort` SAIU do construtor (2 argumentos
  * agora, não 3). Toda tentativa grava `patientId: null`.
  *
+ * CORREÇÃO (24/09/2026, change `axonico-envio-rastreavel`): `sentBy` (uid de quem disparou)
+ * entrou no input e é gravado em TODA tentativa (`enviado`/`duplicado`/`erro`) — `makeInput()`
+ * carrega `sentBy: SENT_BY` por default.
+ *
  * Cenários (tasks.md §3 "Termina quando", F3, ajustados à correção de 19/09):
  *  1. `documentNumber` ausente/vazio → recusado sem nenhuma chamada ao `IAxonicoApiClient`.
  *  2. `documentNumber` inválido (curto, string 'null' literal) → recusado sem nenhuma chamada ao
@@ -61,6 +65,7 @@ const { logger: mockLogger } = require('@shared/logging') as {
 
 const DNI = '30111222';
 const SERVICE_DATE = '2026-09-18'; // dia civil como STRING 'YYYY-MM-DD' — nunca Date
+const SENT_BY = 'uid-supervisor-1';
 
 function makeInput(overrides: Partial<LancarPrestacaoAxonicoInput> = {}): LancarPrestacaoAxonicoInput {
   return {
@@ -68,6 +73,7 @@ function makeInput(overrides: Partial<LancarPrestacaoAxonicoInput> = {}): Lancar
     serviceType: 'AT',
     serviceDate: SERVICE_DATE,
     hours: 4,
+    sentBy: SENT_BY,
     ...overrides,
   };
 }
@@ -95,6 +101,9 @@ function makeLancamentoRepository(
     insert: jest.fn().mockImplementation((params) =>
       Promise.resolve({ id: 'lanc-1', ...params, createdAt: new Date() } as AxonicoLancamentoRecord),
     ),
+    // change `axonico-envio-rastreavel` (24/09/2026): nenhum teste desta suíte exercita a LEITURA
+    // (isso é `AnaCareHoursService.test.ts`) — default vazio só satisfaz o contrato da interface.
+    findSentByDocumentAndMonth: jest.fn().mockResolvedValue([]),
     ...overrides,
   };
 }
@@ -139,6 +148,7 @@ describe('LancarPrestacaoAxonicoUseCase', () => {
         codAutorizacion: 'ca-1',
         status: 'enviado',
         errorMessage: null,
+        sentBy: SENT_BY,
       });
 
       // Sucesso também loga (requisito duro do audit D384, 20/09/2026) — nível info, carrega
@@ -336,6 +346,7 @@ describe('LancarPrestacaoAxonicoUseCase', () => {
         codAutorizacion: 'ca-old',
         status: 'enviado',
         errorMessage: null,
+        sentBy: 'uid-winner-flow',
         createdAt: existingCreatedAt,
       };
       const lancamentoRepository = makeLancamentoRepository({
@@ -537,6 +548,7 @@ describe('LancarPrestacaoAxonicoUseCase', () => {
         codAutorizacion: null,
         status: 'erro',
         errorMessage: submitError.message,
+        sentBy: SENT_BY,
       });
     });
   });
@@ -619,6 +631,7 @@ describe('LancarPrestacaoAxonicoUseCase', () => {
         codAutorizacion: 'ca-winner',
         status: 'enviado',
         errorMessage: null,
+        sentBy: 'uid-winner-flow',
         createdAt: existingCreatedAt,
       };
       const conflictError = Object.assign(new Error('duplicate key value violates unique constraint "uq_axonico_lancamento_dedupe"'), {
@@ -679,6 +692,7 @@ describe('LancarPrestacaoAxonicoUseCase', () => {
           codAutorizacion: 'ca-original',
           status: 'enviado',
           errorMessage: null,
+          sentBy: 'uid-winner-flow',
           createdAt: existingCreatedAt,
         } satisfies AxonicoLancamentoRecord),
       });
@@ -707,6 +721,7 @@ describe('LancarPrestacaoAxonicoUseCase', () => {
         codAutorizacion: 'ca-winner',
         status: 'enviado',
         errorMessage: null,
+        sentBy: 'uid-winner-flow',
         createdAt: existingCreatedAt,
       };
       const conflictError = Object.assign(new Error('duplicate key value violates unique constraint "uq_axonico_lancamento_dedupe"'), {
