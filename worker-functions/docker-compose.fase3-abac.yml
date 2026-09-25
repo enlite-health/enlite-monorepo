@@ -1,0 +1,25 @@
+# Stack ISOLADO (projeto docker `cv-fase3-abac`) com o engine ABAC LIGADO, para o e2e de tela
+# da Fase 3 (`completar-vacante-em-rascunho`) que precisa diferenciar ator COM/SEM as células
+# de D426 (`talentum:update` + `vacancy:update`) ao clicar na linha em rascunho. Molde:
+# `docker-compose.fase2-abac.yml` (Fase 2) — portas próprias (+10) pra não colidir com o stack
+# da Fase 2, que pode estar rodando ao mesmo tempo em OUTRA worktree (mesmo daemon Docker,
+# nomes de container e portas são globais). Não mexe no stack padrão 8080/5432/5173 desta
+# worktree, nem no da Fase 2 (5442/8092/5178).
+#
+# Reusa a imagem JÁ CONSTRUÍDA `worker-functions-api` (a mesma que roda em `enlite-api`) via
+# `image:`, sem rebuild — só troca env/portas.
+services:
+  postgres:
+    container_name: cv-fase3-abac-postgres
+    ports: !override
+      - "5452:5432"
+  api:
+    image: worker-functions-api
+    container_name: cv-fase3-abac-api
+    ports: !override
+      - "8102:8080"
+    environment:
+      CORS_ALLOWED_ORIGINS: "http://localhost:5188"
+      PERMISSION_ENGINE_ENABLED: "true"
+      PERMISSION_ENFORCED_ROUTES: "admin.analytics,admin.dedup,admin.encuadre,admin.integrations,admin.messaging,admin.patients,admin.permissions,admin.recruitment,admin.test_fixtures,admin.users,admin.vacancies,admin.workers"
+      PERMISSION_CATALOG_SYNC_ENABLED: "true"
