@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   buildScheduleGrid,
   daysWithAttendanceCount,
+  formatScheduleTime,
   weeklyHoursFromSchedule,
   type NormalizedSchedule,
 } from '../draftVacancySchedule';
@@ -59,6 +60,18 @@ describe('draftVacancySchedule — a grade de 7 dias (F24/F28)', () => {
 
   it('weeklyHoursFromSchedule(null) é 0', () => {
     expect(weeklyHoursFromSchedule(null)).toBe(0);
+  });
+
+  it('formatScheduleTime: sem zero à esquerda na hora, minutos só quando ≠ :00 (protótipo v3)', () => {
+    expect(formatScheduleTime('08:00')).toBe('8');
+    expect(formatScheduleTime('14:00')).toBe('14');
+    expect(formatScheduleTime('08:30')).toBe('8:30');
+    expect(formatScheduleTime('00:00')).toBe('0');
+  });
+
+  it('formatScheduleTime: valor fora do formato HH:MM volta como veio, sem lançar', () => {
+    expect(formatScheduleTime('')).toBe('');
+    expect(formatScheduleTime('garbage')).toBe('garbage');
   });
 
   it('daysWithAttendanceCount conta dias com ao menos 1 bloco — não conta blocos', () => {
