@@ -297,6 +297,9 @@ test.describe('Botões da família vagas — desabilitar em vez de sumir (D269) 
     // alcançáveis DIRETO por URL (não só pelo botão que leva até elas) — sem
     // `vacancy:write`/`talentum:write` a PORTA fecha (`<Navigate replace>`),
     // não só o botão de salvar/publicar. Prova pela URL FINAL após o redirect.
+    // Desde D425 item 4 ("Nueva" fora) esta asserção é trivialmente verdadeira — /new
+    // redireciona pra /admin/vacancies pra QUALQUER ator, não só sem vacancy:create; ao
+    // voltar o "Nueva", restaurar a prova do gate D269.
     await page.goto('/admin/vacancies/new');
     await expect(page).toHaveURL(/\/admin\/vacancies$/, { timeout: 15_000 });
 
