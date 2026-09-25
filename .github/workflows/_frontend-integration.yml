@@ -574,13 +574,24 @@ jobs:
       # confirmada em `worker-functions/docker-compose.test.yml` (override de
       # `postgres: ports: 5432:5432` do `docker-compose.yml` base para `5433:5432`,
       # e este job usa os dois arquivos, na ordem em que o segundo vence).
-      - name: Teste de integração — simulação de grupo de acesso
+      # `draft-vacancy-page|draft-vacancy-choice` ENTRARAM neste job (não um
+      # novo) para não abrir mais um runner: os dois usam `abac-stack-helper`
+      # (psql/grantCell/loginAs — usuário REAL gravado em `users`), então
+      # sobrevivem ao engine ABAC ligado e herdam o Vite já de pé. `--grep`
+      # casa contra a linha inteira do reporter (describe + título + CAMINHO
+      # do arquivo), não só o título — confirmado com `--list --grep` (6+5 =
+      # 11 testes, mais os 9 de group-simulation = 20 em 3 arquivos).
+      # `draft-wizard-locked` NÃO entra aqui:
+      # usa token mock simples, sem linha em `users` — sob engine ligado bate
+      # em 403 `account_not_active` em qualquer rota `admin.patients`
+      # (medido). Vive no job padrão (`pr-gate.yml`, engine OFF).
+      - name: Teste de integração — simulação de grupo de acesso + completar-vacante (fases 2-3)
         working-directory: enlite-frontend
         env:
           CI: 'true'
           ABAC_API_URL: http://localhost:8080
           ABAC_TEST_DB_URL: postgresql://enlite_admin:enlite_password@localhost:5433/enlite_e2e
-        run: npx playwright test --project=integration --ignore-snapshots --grep "group-simulation"
+        run: npx playwright test --project=integration --ignore-snapshots --grep "group-simulation|draft-vacancy-page|draft-vacancy-choice"
 
       - name: Relatório (só quando falha)
         if: failure()

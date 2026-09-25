@@ -2701,6 +2701,7 @@
       "cancel": "Cancelar",
       "save": "Guardar",
       "saving": "Guardando...",
+      "lockedFieldLink": "Editar en la ficha del paciente",
       "back": "Anterior",
       "next": "Siguiente",
       "stepCaseSelect": "Selección de Caso",
@@ -2883,6 +2884,12 @@
       "saveButton": "Continuar",
       "saving": "Guardando...",
       "generatingAI": "Generando contenido con IA...",
+      "backButton": "Volver",
+      "unsavedChangesDialog": {
+        "title": "¿Salir sin guardar? Los cambios de este paso se pierden.",
+        "confirm": "Salir sin guardar",
+        "cancel": "Seguir editando"
+      },
       "steps": {
         "vacancyData": "Datos de la vacante",
         "talentumConfig": "Configuración Talentum",
