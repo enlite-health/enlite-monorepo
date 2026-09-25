@@ -272,6 +272,11 @@ test.describe('Caminho feliz: criar vaga ponta-a-ponta @integration', () => {
   });
 
   test('seleciona caso → preenche → salva → AI mockado → publica → DB persistiu tudo', async ({ page }) => {
+    // D425 item 4 (24/09/2026, docs/decisoes.md) — "Nueva" sai temporariamente: vacante nasce
+    // só do serviço contratado. O ASSUNTO deste teste é o próprio fluxo de criação pelo
+    // wizard em /admin/vacancies/new, que agora redireciona pra /admin/vacancies. Skip, não
+    // apagado — volta quando "Nueva" voltar.
+    test.skip(true, 'D425 item 4 — "Nueva" fora temporariamente; vacante nasce só do serviço contratado');
     test.skip(!patientId || !addressId, 'Could not seed test patient + address');
 
     await loginAsAdmin(page);
