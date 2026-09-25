@@ -31,7 +31,7 @@ const item = (id: string, admissionStatus: string, status: string) => ({
   id, firstName: 'P', lastName: id, caseNumber: null, dependencyLevel: null, status, admissionStatus, responsibleName: null,
 });
 
-describe('usePatientKanban — admission_status', () => {
+describe('usePatientKanban — patients.status', () => {
   beforeEach(() => {
     listPatientsForKanban.mockReset().mockResolvedValue([
       item('a', 'SOLICITANTE', 'SOLICITANTE'),

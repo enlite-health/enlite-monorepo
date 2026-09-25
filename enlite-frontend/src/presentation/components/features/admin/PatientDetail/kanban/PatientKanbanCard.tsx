@@ -5,6 +5,7 @@ import { Text } from '@presentation/components/atoms/Text';
 import { toDisplayName } from '@domain/value-objects/displayName';
 import type { PatientKanbanItem } from '@domain/entities/PatientDetail';
 import { formatCaseNumber } from '@domain/value-objects/caseNumberFormat';
+import { ADMISSION_FUNNEL_STATUSES } from '@domain/entities/patientEnums';
 
 interface Props {
   patient: PatientKanbanItem;
@@ -52,7 +53,7 @@ export function PatientKanbanCard({ patient }: Props): JSX.Element {
   // "admisión" agrupa SOLICITANTE/ADMISSION/PENDING_ADMISSION numa coluna só (Fase 1 da change
   // cadeia-paciente-vacante-itinerario) — sem o subestágio no card, os três ficam indistinguíveis
   // dentro da mesma coluna. Mesmo vocabulário da coluna (`admin.patients.kanban.columns.<status>`).
-  const subStageLabel = patient.status === 'SOLICITANTE' || patient.status === 'ADMISSION' || patient.status === 'PENDING_ADMISSION'
+  const subStageLabel = patient.status && (ADMISSION_FUNNEL_STATUSES as readonly string[]).includes(patient.status)
     ? t(`admin.patients.kanban.columns.${patient.status}`, { defaultValue: patient.status })
     : null;
 

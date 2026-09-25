@@ -111,7 +111,7 @@ test.describe('kanban de pacientes @integration', () => {
   test.setTimeout(90_000);
 
   // ── P9 · as 8 colunas na ordem + o print ────────────────────────────────
-  test('kanban-pacientes-oito-colunas', async ({ page, request }) => {
+  test('kanban-pacientes-oito-colunas', async ({ page }) => {
     await loginAsAdmin(page);
 
     await page.goto('/admin/patients/kanban');
@@ -152,8 +152,8 @@ test.describe('kanban de pacientes @integration', () => {
       'kanban-column-DISCHARGED',
     ]);
 
-    // CLAUDE.md (Testes Visuais, obrigatório) — padrão dos 74 specs irmãos. O CI roda
-    // `--ignore-snapshots`; a baseline não é gerada por este agente (sem Playwright aqui).
+    // CLAUDE.md (Testes Visuais, obrigatório) — padrão dos 74 specs irmãos. Baseline darwin
+    // commitada (53c4a091); o CI roda --ignore-snapshots.
     await expect(page).toHaveScreenshot('kanban-pacientes-oito-colunas.png', { fullPage: true, maxDiffPixelRatio: 0.05 });
   });
 
@@ -199,7 +199,7 @@ test.describe('kanban de pacientes @integration', () => {
   });
 
   // ── P11 · baja não aparece em activo ────────────────────────────────────
-  test('kanban-pacientes-baja-fora-de-activo', async ({ page, request }) => {
+  test('kanban-pacientes-baja-fora-de-activo', async ({ page }) => {
     const lastName = `Baja-${Date.now()}`;
     const { patientId } = insertTestPatient({
       status: 'DISCHARGED',
