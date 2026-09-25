@@ -236,7 +236,7 @@ test.describe('draft-wizard-locked — fase 4 (completar-vacante-em-rascunho) @i
 
   test.afterAll(() => cleanupTestPatient(patientId));
 
-  test('1. feliz — locked_fields do GET desabilita os 4 grupos com link; Continuar/persistência BLOQUEADOS por bug pré-existente de hidratação de schedule (ver comentário)', async ({ page, request }) => {
+  test('1. feliz — campos travados disabled; Continuar persiste e is_draft segue true', async ({ page, request }) => {
     await loginAsAdmin(page);
 
     // "Última edición" ANTES — via /borrador (Fase 2), prova a Retomada (item 4 do "O que
