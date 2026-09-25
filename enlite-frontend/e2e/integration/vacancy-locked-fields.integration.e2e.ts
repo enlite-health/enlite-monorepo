@@ -32,6 +32,10 @@ const AUTH_HEADERS = {
 };
 
 test.describe('vacancy-locked-fields — fase 1 (completar-vacante-em-rascunho) @integration', () => {
+  // Os 3 testes compartilham `vacancyId` (1 vaga só, criada no beforeAll) e o 3º muda
+  // `is_draft` dela por SQL — sem serial, `fullyParallel` do config rodaria os 3 em workers
+  // concorrentes sobre a MESMA linha (achado do gate revisao-pr, item 3c).
+  test.describe.configure({ mode: 'serial' });
   test.setTimeout(60_000);
 
   let patientId = '';
@@ -84,7 +88,7 @@ test.describe('vacancy-locked-fields — fase 1 (completar-vacante-em-rascunho) 
   test.afterAll(() => cleanupTestPatient(patientId));
 
   test('GET devolve locked_fields com os 8 campos travados (contracted_service_id setado pelo foguete) e updated_at presente', async ({ request }) => {
-    test.skip(!vacancyId, 'foguete não criou vacancyId no beforeAll');
+    expect(vacancyId, 'foguete não criou vacancyId no beforeAll — ver falha do POST activate-recruitment acima').toBeTruthy();
 
     const res = await request.get(`${BACKEND_URL}/api/admin/vacancies/${vacancyId}`, { headers: AUTH_HEADERS });
     expect(res.ok(), `GET falhou: ${res.status()} ${await res.text()}`).toBe(true);
@@ -102,7 +106,7 @@ test.describe('vacancy-locked-fields — fase 1 (completar-vacante-em-rascunho) 
   });
 
   test('PUT em campo travado (schedule) → 422 com locked_fields e o banco não muda; PUT em campo livre (required_professions) → 200 e persiste', async ({ request }) => {
-    test.skip(!vacancyId, 'foguete não criou vacancyId no beforeAll');
+    expect(vacancyId, 'foguete não criou vacancyId no beforeAll — ver falha do POST activate-recruitment acima').toBeTruthy();
 
     // `locked_fields` do GET — a comparação abaixo é contra ELE, na mesma execução, não contra
     // uma lista escrita neste arquivo (fase-1.md, "Termina quando" #3).
@@ -110,6 +114,11 @@ test.describe('vacancy-locked-fields — fase 1 (completar-vacante-em-rascunho) 
     const lockedFromGet: string[] = (await getRes.json()).data.locked_fields;
 
     const scheduleBefore = runSQL(`SELECT schedule::text FROM job_postings WHERE id='${vacancyId}'`);
+    // O "antes" tem de ser um horário DE VERDADE (o que o foguete gravou do serviço) — senão o
+    // "antes == depois" do 422 provaria só que dois vazios são iguais (achado do gate, item 3a).
+    const scheduleBeforeParsed = JSON.parse(scheduleBefore);
+    expect(Array.isArray(scheduleBeforeParsed)).toBe(true);
+    expect(scheduleBeforeParsed.length).toBeGreaterThanOrEqual(1);
 
     const putLocked = await request.put(`${BACKEND_URL}/api/admin/vacancies/${vacancyId}`, {
       headers: AUTH_HEADERS,
@@ -131,5 +140,20 @@ test.describe('vacancy-locked-fields — fase 1 (completar-vacante-em-rascunho) 
 
     const professionsAfter = runSQL(`SELECT required_professions::text FROM job_postings WHERE id='${vacancyId}'`);
     expect(professionsAfter).toBe('{AT}');
+  });
+
+  test('vaga PUBLICADA (is_draft=false, sem Talentum) → PUT em schedule AINDA 422 — a origem não muda de dono ao publicar', async ({ request }) => {
+    expect(vacancyId, 'foguete não criou vacancyId no beforeAll — ver falha do POST activate-recruitment acima').toBeTruthy();
+
+    // Vira publicada por SQL direto — não passa por PublishVacancyToTalentumUseCase (canal real
+    // proibido em teste, F11): só o bit `is_draft` importa para o gate de SOURCE_LOCKED_FIELDS.
+    runSQL(`UPDATE job_postings SET is_draft = false WHERE id = '${vacancyId}'`);
+
+    const put = await request.put(`${BACKEND_URL}/api/admin/vacancies/${vacancyId}`, {
+      headers: AUTH_HEADERS,
+      data: { schedule: [{ dayOfWeek: 4, startTime: '10:00', endTime: '14:00' }] },
+    });
+    expect(put.status()).toBe(422);
+    expect((await put.json()).locked_fields).toEqual(['schedule']);
   });
 });
