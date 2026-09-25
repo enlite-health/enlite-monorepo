@@ -305,13 +305,19 @@ export function attachAxonicoToPatient(patient: AnaCarePatient, sent: readonly A
  * "Enviar" reaparecia). Mesma fonte que `resolveRegisteredDocuments` usa (fonte primeiro, fallback
  * no documento REGISTRADO manualmente) — mas o valor NUNCA é devolvido ao chamador, só usado como
  * chave de `findSentByDocumentAndMonth`.
+ *
+ * R1 (achado do gate, 25/09/2026): o `find` tem de casar `anaCarePatientId === patientId` — antes
+ * pegava o 1º turno de `sourceShifts` com `patientDocumentNumber`, qualquer que fosse o paciente.
+ * Em produção `sourceShifts` já vem filtrado por paciente (`this.source.listShifts({ month,
+ * patientId })`, ver `getPatientMonth`), então o defeito ficava mascarado — só aparece se a fonte
+ * um dia devolver turnos de outro paciente na mesma lista.
  */
 export async function resolveDocumentNumberForAxonico(
   sourceShifts: readonly SourceShiftDTO[],
   patientId: string,
   patientDocuments: IAnaCarePatientDocumentRepository,
 ): Promise<string | null> {
-  const fromSource = sourceShifts.find((s) => s.patientDocumentNumber)?.patientDocumentNumber;
+  const fromSource = sourceShifts.find((s) => s.anaCarePatientId === patientId && s.patientDocumentNumber)?.patientDocumentNumber;
   if (fromSource) return fromSource;
   const registered = await patientDocuments.findByPatientId(patientId);
   return registered?.documentNumber ?? null;
