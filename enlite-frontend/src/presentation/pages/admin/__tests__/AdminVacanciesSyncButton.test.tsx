@@ -57,10 +57,6 @@ vi.mock('@presentation/components/features/admin/VacancyFormModal', () => ({
   VacancyFormModal: () => null,
 }));
 
-vi.mock('@presentation/components/features/admin/VacancyModal/VacancyModal', () => ({
-  VacancyModal: () => null,
-}));
-
 // ── Helpers ───────────────────────────────────────────────────────────────
 
 function renderPage() {
