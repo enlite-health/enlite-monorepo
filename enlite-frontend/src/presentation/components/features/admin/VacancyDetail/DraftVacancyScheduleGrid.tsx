@@ -1,5 +1,6 @@
+import { useTranslation } from 'react-i18next';
 import { Text } from '@presentation/components/atoms/Text';
-import { buildScheduleGrid, type NormalizedSchedule } from './draftVacancySchedule';
+import { buildScheduleGrid, formatScheduleTime, type NormalizedSchedule } from './draftVacancySchedule';
 
 /**
  * A grade de 7 dias do protótipo v3 (F24) — uma coluna por dia no desktop, lista no celular
@@ -7,11 +8,12 @@ import { buildScheduleGrid, type NormalizedSchedule } from './draftVacancySchedu
  * atendimento mostra travessão em vez do tempo (F28); dia com mais de um bloco empilha os dois.
  */
 export function DraftVacancyScheduleGrid({ schedule }: { schedule: NormalizedSchedule | null }) {
+  const { t } = useTranslation();
   const days = buildScheduleGrid(schedule);
 
   return (
     <ul
-      aria-label="Horario de atención por día"
+      aria-label={t('admin.draftVacancy.schedule.ariaLabel')}
       className="grid grid-cols-4 sm:grid-cols-7 gap-1.5 list-none m-0 p-0"
     >
       {days.map((day) => {
@@ -19,7 +21,7 @@ export function DraftVacancyScheduleGrid({ schedule }: { schedule: NormalizedSch
         return (
           <li
             key={day.key}
-            aria-label={isOff ? `${day.full}: sin atención` : day.full}
+            aria-label={isOff ? t('admin.draftVacancy.schedule.dayOffAria', { day: day.full }) : day.full}
             className={
               isOff
                 ? 'flex flex-col items-center justify-start gap-0.5 rounded-lg border border-dashed border-gray-600 px-1 py-2'
@@ -36,7 +38,7 @@ export function DraftVacancyScheduleGrid({ schedule }: { schedule: NormalizedSch
             ) : (
               day.blocks.map((block, i) => (
                 <Text as="span" key={i} size="xs" weight="medium" color="secondary" className="whitespace-nowrap">
-                  {block.start} a {block.end}
+                  {formatScheduleTime(block.start)} a {formatScheduleTime(block.end)}
                 </Text>
               ))
             )}

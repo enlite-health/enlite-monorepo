@@ -1,56 +1,30 @@
 import { useEffect, useState } from 'react';
 import { Navigate, useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { ArrowLeft, ArrowRight, Check, Eye, FileText } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Eye, FileText } from 'lucide-react';
 import { DetailSkeleton } from '@presentation/components/ui/skeletons';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 import { PageContainer } from '@presentation/components/atoms/PageContainer';
 import { ContainerGate } from '@presentation/components/features/access';
-import { useActionGate } from '@presentation/hooks/useCellAccess';
+import { useActionGate, useHasCell } from '@presentation/hooks/useCellAccess';
 import { useVacancyDetail } from '@hooks/admin/useVacancyDetail';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { formatCaseNumber } from '@domain/value-objects/caseNumberFormat';
 import type { PatientDetail } from '@domain/entities/PatientDetail';
-import { FieldPair, FieldPairGrid } from '@presentation/components/features/admin/PatientDetail/FieldPairs';
-import { DraftVacancyScheduleGrid } from '@presentation/components/features/admin/VacancyDetail/DraftVacancyScheduleGrid';
+import { DraftVacancyKnownCard } from '@presentation/components/features/admin/VacancyDetail/DraftVacancyKnownCard';
+import { DraftVacancyTodoCard } from '@presentation/components/features/admin/VacancyDetail/DraftVacancyTodoCard';
+import { formatDayMonth, formatDateTime } from '@presentation/components/features/admin/VacancyDetail/draftVacancyFormat';
 import {
   daysWithAttendanceCount,
   weeklyHoursFromSchedule,
   type NormalizedSchedule,
 } from '@presentation/components/features/admin/VacancyDetail/draftVacancySchedule';
 import {
-  DRAFT_TODO_FIELDS,
   assertKnownLockedFields,
   missingDraftFieldsCount,
 } from '@presentation/components/features/admin/VacancyDetail/draftVacancyFields';
-
-/** `Date` no fuso `es-AR`, só dia+mês ("23 de septiembre") — o mesmo formato do protótipo v3. */
-function formatDayMonth(iso: string | null | undefined): string | null {
-  if (!iso) return null;
-  try {
-    return new Date(iso).toLocaleDateString('es-AR', { day: 'numeric', month: 'long' });
-  } catch {
-    return null;
-  }
-}
-
-/** Data + hora, para "Última edición" (F27 — o dado liga de verdade na Fase 4). */
-function formatDateTime(iso: string | null | undefined): string | null {
-  if (!iso) return null;
-  try {
-    return new Date(iso).toLocaleString('es-AR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  } catch {
-    return null;
-  }
-}
 
 export default function DraftVacancyPage() {
   const { id } = useParams<{ id: string }>();
@@ -58,20 +32,30 @@ export default function DraftVacancyPage() {
   const { t } = useTranslation();
   const { vacancy, isLoading, error } = useVacancyDetail(id);
 
+  // Só para achar o SERVIÇO contratado (`contracted_service_id` → `contractedServices`) — nome
+  // e endereço do paciente já vêm no GET da vaga, filtrados por célula (achado #7 do gate
+  // parcial 25/09: antes esta 2ª leitura também era a fonte do nome, e uma falha dela apagava
+  // o nome em silêncio mesmo quando o GET da vaga já trazia).
   const [patient, setPatient] = useState<PatientDetail | null>(null);
+  const [patientLoadFailed, setPatientLoadFailed] = useState(false);
 
   useEffect(() => {
     const patientId = vacancy?.patient_id;
     if (!patientId) return;
     let cancelled = false;
+    setPatientLoadFailed(false);
     AdminApiService.getPatientById(patientId)
       .then((p) => {
         if (!cancelled) setPatient(p);
       })
-      .catch(() => {
-        // Resiliente de propósito: sem `patient_identity`/`patient_services:read` (ou erro de
-        // rede) a tela ainda mostra o que a vaga sozinha tem — "Sin completar" cobre o resto.
-        if (!cancelled) setPatient(null);
+      .catch((err) => {
+        // Sem logger de frontend neste repo — mesmo molde de CreateVacancyPage.tsx
+        // (`[Componente] o-que-falhou:`, err).
+        console.error('[DraftVacancyPage] getPatientById failed:', err);
+        if (!cancelled) {
+          setPatient(null);
+          setPatientLoadFailed(true);
+        }
       });
     return () => {
       cancelled = true;
@@ -81,6 +65,14 @@ export default function DraftVacancyPage() {
   const talentumGate = useActionGate('talentum', 'update');
   const vacancyWriteGate = useActionGate('vacancy', 'update');
   const canComplete = talentumGate.allowed && vacancyWriteGate.allowed;
+
+  // D181 (memória `container-e-a-fronteira-do-redesenho`): permissão ausente NUNCA pode
+  // parecer "vazio" — o GET zera estes campos sem a célula (`patientInVacancyProjection.ts`,
+  // backend), e a tela precisa saber QUE célula é essa para não confundir "não preenchido" com
+  // "não posso ver" (achado #6 do gate parcial 25/09).
+  const hasIdentityCell = useHasCell('patient_identity', 'read');
+  const hasAddressCell = useHasCell('patient_address', 'read');
+  const hasClinicalCell = useHasCell('patient_clinical', 'read');
 
   if (isLoading) return <DetailSkeleton />;
 
@@ -104,10 +96,18 @@ export default function DraftVacancyPage() {
   }
 
   // Sabotagem de contrato (paridade #5): se o GET trouxer `locked_fields` com um nome que este
-  // arquivo não reconhece, falha alto — não silencioso.
-  assertKnownLockedFields(vacancy.locked_fields);
+  // arquivo não reconhece, ACUSA (log), mas não derruba a tela pra todo mundo — achado #8 do
+  // gate parcial 25/09 (antes lançava dentro do render → RouteErrorBoundary geral). A versão
+  // pura continua lançando (`draftVacancyFields.test.ts`) — é só este call site que virou
+  // resiliente, mesmo padrão do `patient` acima.
+  try {
+    assertKnownLockedFields(vacancy.locked_fields);
+  } catch (err) {
+    console.error('[DraftVacancyPage] assertKnownLockedFields:', err);
+  }
 
   const emptyValue = t('admin.draftVacancy.emptyValue');
+  const notVisible = t('admin.draftVacancy.notVisibleForRole');
   const schedule = (vacancy.schedule ?? null) as NormalizedSchedule | null;
   const missing = missingDraftFieldsCount(vacancy);
 
@@ -115,24 +115,50 @@ export default function DraftVacancyPage() {
   const serviceLabel = service
     ? t(`admin.patients.detail.contractedServicesCard.serviceTypes.${service.serviceCode}`, service.serviceCode)
     : null;
-  const patientName = patient ? [patient.firstName, patient.lastName].filter(Boolean).join(' ') : null;
-  // `patients.dependencyOptions` (SEVERE|VERY_SEVERE|MODERATE|MILD — CHECK de `patients`), não
-  // `vacancyDetail.vacancyForm.dependencyOptions` (Leve/Moderado/Grave/Alto/Muy Grave em
-  // português-livre, outro domínio de texto do wizard): o valor real de `dependency_level` é o
-  // enum ALL_CAPS do paciente, e a `rawEnumLeakGuard` deste repo pega a tabela errada.
-  const dependencyLabel = vacancy.dependency_level
-    ? t(`admin.patients.dependencyOptions.${vacancy.dependency_level}`, vacancy.dependency_level)
-    : null;
+  const serviceDisplayValue = patientLoadFailed ? t('admin.draftVacancy.patientLoadError') : (serviceLabel ?? emptyValue);
 
-  const zoneCity = [vacancy.patient_zone, vacancy.patient_city].filter(Boolean).join(', ');
+  // Nome vem do GET DA VAGA (`patient_first_name`/`patient_last_name`), já projetado pelo
+  // backend por `patient_identity:read` (`projectPatientInVacancy.ts`) — não da 2ª leitura.
+  const rawPatientName = [vacancy.patient_first_name, vacancy.patient_last_name].filter(Boolean).join(' ') || null;
+  const patientDisplayName = !hasIdentityCell ? notVisible : (rawPatientName ?? emptyValue);
+
+  // `patients.dependencyOptions` (SEVERE|VERY_SEVERE|MODERATE|MILD — CHECK de `patients`), não
+  // `vacancyDetail.vacancyForm.dependencyOptions` (outro domínio, valores em português livre): o
+  // valor real de `dependency_level` é o enum ALL_CAPS do paciente. Célula `patient_clinical`
+  // (`patientInVacancyProjection.ts`) — sem ela a linha some, não vira "Sin completar".
+  const dependencyLabel =
+    hasClinicalCell && vacancy.dependency_level
+      ? t(`admin.patients.dependencyOptions.${vacancy.dependency_level}`, vacancy.dependency_level)
+      : null;
+  const dependencyLine = dependencyLabel ? t('admin.draftVacancy.dependencyPrefix', { level: dependencyLabel }) : null;
+
+  // Célula `patient_address` (`patientInVacancyProjection.ts`) — sem ela os 5 campos de endereço
+  // (incl. zona/cidade) vêm `null` do backend INDEPENDENTE de estarem preenchidos ou não; por
+  // isso o front não pode escrever "Sin completar" aqui — escreveria uma mentira sobre o dado.
+  const rawZoneCity = [vacancy.patient_zone, vacancy.patient_city].filter(Boolean).join(', ') || null;
+  const zoneCityDisplay = !hasAddressCell ? notVisible : (rawZoneCity ?? emptyValue);
+  const rawAddress = vacancy.patient_address_formatted ?? vacancy.patient_address_raw ?? null;
+  const addressDisplayValue = !hasAddressCell ? notVisible : (rawAddress ?? emptyValue);
+
   const weeklyHours = weeklyHoursFromSchedule(schedule);
   const daysCount = daysWithAttendanceCount(schedule);
-  const address = vacancy.patient_address_formatted ?? vacancy.patient_address_raw ?? null;
   const isDefaultSalary = vacancy.salary_text === 'A convenir';
   const createdLabel = formatDayMonth(vacancy.created_at);
 
-  const titleService = serviceLabel ?? emptyValue;
-  const titlePatient = patientName ?? emptyValue;
+  const titleService = serviceDisplayValue;
+  const titlePatient = patientDisplayName;
+
+  const scheduleText = t('admin.draftVacancy.subtitleSchedule', { count: daysCount, hours: weeklyHours });
+  const scheduleSummary = schedule ? scheduleText : emptyValue;
+
+  // "Caso N" só entra quando existe case_number — sem ele, o kicker não deve dizer "Caso Sin
+  // completar" (achado #5c do gate parcial 25/09).
+  const caseNumberFormatted = formatCaseNumber(vacancy.case_number);
+  const kickerParts = [
+    caseNumberFormatted ? t('admin.draftVacancy.kickerCase', { case: caseNumberFormatted }) : null,
+    t('admin.draftVacancy.kickerVacancy', { vacancy: vacancy.vacancy_number ?? emptyValue }),
+    t('admin.draftVacancy.kickerDate', { date: createdLabel ?? emptyValue }),
+  ].filter((p): p is string => Boolean(p));
 
   return (
     <PageContainer>
@@ -159,25 +185,19 @@ export default function DraftVacancyPage() {
             </Text>
           </span>
           <Text as="span" size="sm" color="muted" className="break-words min-w-0">
-            {t('admin.draftVacancy.kicker', {
-              case: formatCaseNumber(vacancy.case_number) ?? emptyValue,
-              vacancy: vacancy.vacancy_number ?? emptyValue,
-              date: createdLabel ?? emptyValue,
-            })}
+            {kickerParts.join(' · ')}
           </Text>
         </div>
-        {/* `break-words` — nome/serviço vêm de dado real (patient) e podem ter uma palavra longa
-            sem espaço; sem isso o h1 empurra a largura da tela em vez de quebrar (medido a
-            400px com fixture sintética, 25/09). */}
+        {/* `break-words` — nome/serviço vêm de dado real e podem ter uma palavra longa sem
+            espaço; sem isso o h1 empurra a largura da tela em vez de quebrar (medido a 400px
+            com fixture sintética, 25/09). */}
         <Heading level={1} weight="semibold" color="primary" className="break-words">
           {t('admin.draftVacancy.title', { service: titleService, patient: titlePatient })}
         </Heading>
         <Text size="base" color="muted" className="break-words">
-          {[
-            zoneCity || emptyValue,
-            t('admin.draftVacancy.subtitleSchedule', { days: daysCount, hours: weeklyHours }),
-            t('admin.draftVacancy.subtitleProviders', { count: vacancy.providers_needed ?? 0 }),
-          ].join(' · ')}
+          {[zoneCityDisplay, scheduleText, t('admin.draftVacancy.subtitleProviders', { count: vacancy.providers_needed ?? 0 })].join(
+            ' · ',
+          )}
         </Text>
       </header>
 
@@ -192,9 +212,7 @@ export default function DraftVacancyPage() {
               : t('admin.draftVacancy.calloutTitleReadOnly')}
           </Heading>
           <Text size="sm" color="muted" className="max-w-[60ch]">
-            {canComplete
-              ? t('admin.draftVacancy.calloutBodyCanComplete')
-              : t('admin.draftVacancy.calloutBodyReadOnly')}
+            {canComplete ? t('admin.draftVacancy.calloutBodyCanComplete') : t('admin.draftVacancy.calloutBodyReadOnly')}
           </Text>
         </div>
         {canComplete ? (
@@ -219,128 +237,29 @@ export default function DraftVacancyPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <ContainerGate resource="vacancy">
-          <section className="bg-white rounded-2xl border-2 border-gray-600 p-6 sm:p-7">
-            <Heading level={2} weight="semibold" color="primary" className="mb-5">
-              {t('admin.draftVacancy.knownTitle')}
-            </Heading>
-            <FieldPairGrid>
-              <FieldPair
-                label={t('admin.draftVacancy.fields.patient')}
-                full
-                value={
-                  patientName ? (
-                    <>
-                      {patientName}
-                      {dependencyLabel && (
-                        <Text as="span" size="xs" color="muted" className="block font-normal">
-                          {t('admin.draftVacancy.dependencyPrefix', { level: dependencyLabel })}
-                        </Text>
-                      )}
-                    </>
-                  ) : (
-                    emptyValue
-                  )
-                }
-              />
-              <FieldPair label={t('admin.draftVacancy.fields.service')} value={serviceLabel ?? emptyValue} />
-              <FieldPair
-                label={t('admin.draftVacancy.fields.providersNeeded')}
-                value={vacancy.providers_needed ?? emptyValue}
-              />
-              <FieldPair label={t('admin.draftVacancy.fields.address')} full value={address ?? emptyValue} />
-              <div className="flex flex-col min-w-0 sm:col-span-2">
-                <Text as="span" size="2xs" color="primary" className="uppercase tracking-wide">
-                  {t('admin.draftVacancy.fields.schedule')}
-                </Text>
-                <div className="mt-1.5">
-                  <DraftVacancyScheduleGrid schedule={schedule} />
-                </div>
-                <Text as="span" size="sm" weight="medium" color="muted" className="mt-1.5">
-                  {schedule
-                    ? t('admin.draftVacancy.subtitleSchedule', { days: daysCount, hours: weeklyHours })
-                    : emptyValue}
-                </Text>
-              </div>
-              <FieldPair
-                label={t('admin.draftVacancy.fields.ageRange')}
-                value={
-                  vacancy.age_range_min != null && vacancy.age_range_max != null
-                    ? t('admin.draftVacancy.ageRangeValue', {
-                        min: vacancy.age_range_min,
-                        max: vacancy.age_range_max,
-                      })
-                    : emptyValue
-                }
-              />
-              <FieldPair
-                label={t('admin.draftVacancy.fields.hourlyRate')}
-                value={
-                  vacancy.salary_text ? (
-                    <>
-                      {vacancy.salary_text}
-                      {isDefaultSalary && (
-                        <Text as="span" size="xs" color="muted" className="block font-normal">
-                          {t('admin.draftVacancy.defaultValueHint')}
-                        </Text>
-                      )}
-                    </>
-                  ) : (
-                    emptyValue
-                  )
-                }
-              />
-              <FieldPair label={t('admin.draftVacancy.fields.publication')} value={createdLabel ?? emptyValue} />
-            </FieldPairGrid>
-            <Text size="xs" color="muted" className="mt-5 pt-4 border-t border-gray-600">
-              {t('admin.draftVacancy.knownNote')}{' '}
-              <a href={`/admin/patients/${vacancy.patient_id}`} className="underline">
-                {t('admin.draftVacancy.knownNoteLink')}
-              </a>
-            </Text>
-          </section>
+          <DraftVacancyKnownCard
+            patientDisplayName={patientDisplayName}
+            dependencyLine={dependencyLine}
+            serviceDisplayValue={serviceDisplayValue}
+            providersNeeded={vacancy.providers_needed}
+            emptyValue={emptyValue}
+            addressDisplayValue={addressDisplayValue}
+            schedule={schedule}
+            scheduleSummary={scheduleSummary}
+            ageRangeValue={
+              vacancy.age_range_min != null && vacancy.age_range_max != null
+                ? t('admin.draftVacancy.ageRangeValue', { min: vacancy.age_range_min, max: vacancy.age_range_max })
+                : emptyValue
+            }
+            hourlyRateValue={vacancy.salary_text ?? null}
+            isDefaultSalary={isDefaultSalary}
+            publicationLabel={createdLabel ?? emptyValue}
+            patientId={vacancy.patient_id}
+          />
         </ContainerGate>
 
         <ContainerGate resource="vacancy">
-          <section className="bg-white rounded-2xl border-2 border-gray-600 p-6 sm:p-7">
-            <Heading level={2} weight="semibold" color="primary" className="mb-5">
-              {t('admin.draftVacancy.todoTitle')}{' '}
-              <Text as="span" size="sm" color="tertiary" weight="normal">
-                {t('admin.draftVacancy.todoCount', { count: missing })}
-              </Text>
-            </Heading>
-            <ul className="flex flex-col">
-              {DRAFT_TODO_FIELDS.map((field) => {
-                const done = !field.isEmpty(vacancy);
-                return (
-                  <li
-                    key={field.key}
-                    className="flex items-center gap-3 py-2.5 border-b border-gray-600 last:border-b-0"
-                  >
-                    <span
-                      className={
-                        done
-                          ? 'w-[18px] h-[18px] rounded-full bg-green-600 flex items-center justify-center shrink-0'
-                          : 'w-[18px] h-[18px] rounded-full border-2 border-gray-600 shrink-0'
-                      }
-                    >
-                      {done && <Check className="w-[11px] h-[11px] text-white" aria-hidden="true" />}
-                    </span>
-                    <Text as="span" size="sm" color={done ? 'muted' : 'secondary'}>
-                      {t(`admin.draftVacancy.todo.${field.labelKey}`)}
-                    </Text>
-                    {field.asideKey && (
-                      <Text as="span" size="xs" color="tertiary" className="ml-auto">
-                        {t(`admin.draftVacancy.todo.${field.asideKey}`)}
-                      </Text>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
-            <Text size="xs" color="muted" className="mt-5 pt-4 border-t border-gray-600">
-              {t('admin.draftVacancy.todoThen')}
-            </Text>
-          </section>
+          <DraftVacancyTodoCard vacancy={vacancy} missing={missing} />
         </ContainerGate>
       </div>
 
