@@ -203,6 +203,25 @@ export function cleanupVacancies(ids: string[]): void {
   runSQL(`DELETE FROM job_postings WHERE id IN (${idList})`);
 }
 
+/**
+ * Recua `updated_at` de uma vaga por N dias — para testes de "Última edición" que
+ * comparam o texto exibido ANTES/DEPOIS de um save: `formatDateTime` mostra só até o
+ * minuto, então sem recuar o "antes" um round-trip local (segundos) faz o texto bater
+ * por granularidade, não por falta de persistência.
+ *
+ * `job_postings` tem o trigger `update_job_postings_updated_at` (BEFORE UPDATE) que força
+ * `NEW.updated_at = NOW()` em QUALQUER UPDATE — sem desligar, o `UPDATE` abaixo "funciona"
+ * sem erro, mas o trigger sobrescreve o valor de volta para agora antes de gravar (medido:
+ * a coluna ficava inalterada). Desliga → recua → religa, no mesmo `runSQL` (uma conexão).
+ */
+export function backdateVacancyUpdatedAt(id: string, days: number): void {
+  runSQL(
+    `ALTER TABLE job_postings DISABLE TRIGGER update_job_postings_updated_at; ` +
+      `UPDATE job_postings SET updated_at = now() - interval '${days} day' WHERE id = '${id}'; ` +
+      `ALTER TABLE job_postings ENABLE TRIGGER update_job_postings_updated_at;`,
+  );
+}
+
 export interface InsertTestWorkerOpts {
   /** 'M' | 'F' — clear-text. Helper handles the KMS-testMode base64 encode. */
   sex?: 'M' | 'F' | null;

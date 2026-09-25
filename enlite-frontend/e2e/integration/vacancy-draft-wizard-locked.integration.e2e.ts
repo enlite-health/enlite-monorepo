@@ -18,7 +18,7 @@
  * `contracted_service_id` setado, então `locked_fields` do GET traz os 8 nomes.
  */
 import { test, expect, type Page, type Route } from '@playwright/test';
-import { insertTestPatient, cleanupTestPatient } from '../helpers/db-test-helper';
+import { insertTestPatient, cleanupTestPatient, backdateVacancyUpdatedAt } from '../helpers/db-test-helper';
 
 const BACKEND_URL = process.env.API_BASE_URL || 'http://localhost:8100';
 
@@ -232,6 +232,11 @@ test.describe('draft-wizard-locked — fase 4 (completar-vacante-em-rascunho) @i
     );
     expect(activateRes.ok(), `activate-recruitment falhou: ${activateRes.status()} ${await activateRes.text()}`).toBe(true);
     draftVacancyId = (await activateRes.json()).data.vacancyId as string;
+
+    // `formatDateTime` mostra só até o MINUTO — sem recuar o "antes", o round-trip do
+    // teste 1 (segundos) faz o texto de "Última edición" bater por granularidade, não
+    // por falta de persistência. Recua 1 dia para o depois divergir de verdade.
+    backdateVacancyUpdatedAt(draftVacancyId, 1);
   });
 
   test.afterAll(() => cleanupTestPatient(patientId));
@@ -253,7 +258,9 @@ test.describe('draft-wizard-locked — fase 4 (completar-vacante-em-rascunho) @i
     await expect(page).toHaveURL(new RegExp(`/admin/vacancies/${draftVacancyId}/edit$`));
 
     // locked_fields LIDO DO GET NA MESMA EXECUÇÃO — nunca uma lista escrita neste arquivo.
-    const lockedFields: string[] = (await getResp.json()).data.locked_fields;
+    const getData = (await getResp.json()).data;
+    const lockedFields: string[] = getData.locked_fields;
+    const updatedAtBefore: string = getData.updated_at;
     expect(new Set(lockedFields)).toEqual(
       new Set(['case_number', 'patient_id', 'patient_address_id', 'contracted_service_id', 'age_range_min', 'age_range_max', 'schedule', 'providers_needed']),
     );
@@ -301,8 +308,12 @@ test.describe('draft-wizard-locked — fase 4 (completar-vacante-em-rascunho) @i
     expect(verified.required_professions).toEqual(['AT']);
     expect(verified.salary_text).toBe('$5000');
     expect(verified.is_draft).toBe(true);
+    // Prova de verdade da persistência — `updated_at` BRUTO da API, não o texto da UI
+    // (que só mostra até o minuto): o GET pós-save tem que ser mais recente que o de antes.
+    expect(new Date(verified.updated_at).getTime()).toBeGreaterThan(new Date(updatedAtBefore).getTime());
 
-    // "Última edición" DEPOIS — muda em relação ao "antes".
+    // "Última edición" DEPOIS — muda em relação ao "antes" (garantido pelo recuo de 1 dia
+    // no `beforeAll`; sem ele o round-trip local caberia no mesmo minuto exibido).
     await page.goto(`/admin/vacancies/${draftVacancyId}/borrador`);
     const lastUpdatedAfter = (await page.getByTestId('vacancy-last-updated').textContent()) ?? '';
     expect(lastUpdatedAfter).toBeTruthy();
