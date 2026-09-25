@@ -17,6 +17,7 @@ import { Pool } from 'pg';
 import { createApiClient, waitForBackend } from './helpers';
 import { envelope } from '../fixtures/talentumPayload';
 import type { AnalyzedBlock } from './wja-full-flow-types';
+import { formatCaseNumber } from '@shared/utils/caseNumberFormat';
 import {
   OD_CASE_2,
   OD_PHONE_2,
@@ -194,7 +195,9 @@ describe('WJA Outbox Delivery Part 2 — T6 Slots Parciais + T7 Invalid Slot @in
       // (variável vazia derruba o envio na Meta: 'Content Variables invalid')
       expect(outbox.variables.slot_2).toBe('Lun 10/08 07:00');
       expect(outbox.variables.slot_3).toBe('Lun 10/08 07:00');
-      expect(outbox.variables.case_number).toBe(String(OD_CASE_2));
+      // D422 (24/09/2026, decisão do Gabriel): mensagem ao worker usa o valor
+      // FORMATADO ("EN{n}" para caso >=1000) — fixture desatualizada, não o código.
+      expect(outbox.variables.case_number).toBe(formatCaseNumber(OD_CASE_2));
       expect(outbox.variables.job_posting_id).toBe(job2Id);
     });
   });

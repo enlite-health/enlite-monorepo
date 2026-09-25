@@ -24,6 +24,7 @@ import {
   JobPostingAuditRepository,
 } from '../../matching/infrastructure/JobPostingAuditRepository';
 import { parseCaseTitleReference } from '@shared/utils/parseCaseTitleReference';
+import { formatCaseTitle } from '@shared/utils/caseNumberFormat';
 
 // ─────────────────────────────────────────────────────────────────
 // Input / Output types
@@ -142,7 +143,7 @@ export class CreateJobPostingFromTalentumUseCase {
     );
     const vacancyNumber = parseInt(vnResult.rows[0].vn);
     const title = caseNumber != null
-      ? `CASO ${caseNumber}-${vacancyNumber}`
+      ? formatCaseTitle(caseNumber, vacancyNumber)
       : `VACANTE ${vacancyNumber}`;
 
     // ── 5. Inserir job_posting + audit CREATED na mesma transação ──

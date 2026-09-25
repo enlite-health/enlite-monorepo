@@ -5,6 +5,7 @@ import { canTransition } from '../domain/InterviewStateMachine';
 import { PubSubClient } from '@shared/events/PubSubClient';
 import { GoogleCalendarService } from '@modules/matching';
 import { HandleReminderResponseQueries, PendingApplication } from './HandleReminderResponseQueries';
+import { formatCaseNumber } from '@shared/utils/caseNumberFormat';
 
 /**
  * HandleReminderResponseUseCase — Step 8 do roadmap.
@@ -187,7 +188,7 @@ export class HandleReminderResponseUseCase extends HandleReminderResponseQueries
       `SELECT case_number FROM job_postings WHERE id = $1`,
       [application.job_posting_id],
     );
-    const caseNumber = vacancyResult.rows[0]?.case_number ?? '';
+    const caseNumber = vacancyResult.rows[0]?.case_number ?? null;
 
     // F7.b: manter funnel_stage = CONFIRMED; zerar campos de slot/link
     // Workers em CONFIRMED + awaiting_reschedule + meet_link=NULL aguardam novo link
@@ -218,7 +219,8 @@ export class HandleReminderResponseUseCase extends HandleReminderResponseQueries
        RETURNING id`,
       [
         worker.id,
-        JSON.stringify({ case_number: String(caseNumber), job_posting_id: application.job_posting_id }),
+        // D422 (24/09/2026): formatado (prefixo EN para caso nativo, ≥1000) — antes ia cru.
+        JSON.stringify({ case_number: formatCaseNumber(caseNumber) ?? '', job_posting_id: application.job_posting_id }),
         application.job_posting_id,
       ],
     );

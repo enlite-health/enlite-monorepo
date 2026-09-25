@@ -221,9 +221,9 @@ MAPEO DE VALORES (usar SIEMPRE estos códigos, no texto libre):
 - Día de semana: 0=Dom, 1=Lun, 2=Mar, 3=Mié, 4=Jue, 5=Vie, 6=Sáb
 - Nivel de dependencia: usar SIEMPRE uno de estos valores exactos (capitalización incluida): "Leve", "Moderado", "Grave", "Alto", "Muy Grave". Mapeo: LEVE→"Leve", MODERADO/MODERADA→"Moderado", GRAVE→"Grave", ALTO/ALTA→"Alto", MUY GRAVE→"Muy Grave". Si no se menciona, null.
 
-REGLA DE FORMATO DEL NÚMERO DE CASO (spec 027 Fase 6 — case_number ≥ 1000 es secuencia nativa, < 1000 es legado de ClickUp):
-- Al ESCRIBIR el número de caso en "title" o "titulo_propuesta": usá el prefijo "EN" si case_number ≥ 1000 (ej: "EN1234"), y SIN prefijo si case_number < 1000 (ej: "729").
-- Al LEER el número de caso desde el texto fuente: reconocé ambos formatos por igual — "CASO 1234", "EN1234" y "1234" refieren al mismo caso.
+REGLA DE FORMATO DEL NÚMERO DE CASO (D422, 24/09/2026 — case_number ≥ 1000 es secuencia nativa, < 1000 es legado de ClickUp):
+- Al ESCRIBIR el número de caso en "title" o "titulo_propuesta": usá "CASO EN{n}" si case_number ≥ 1000 (ej: "CASO EN1234"), y "CASO {n}" sin prefijo si case_number < 1000 (ej: "CASO 729").
+- Al LEER el número de caso desde el texto fuente: reconocé todos los formatos por igual — "CASO 1234", "CASO EN1234", "EN1234" y "1234" refieren al mismo caso.
 
 EXTRACCIÓN DE HORARIOS (schedule):
 - Si el PDF contiene el campo estructurado "Días y Horarios de Acompañamiento", usar ESE como fuente única de verdad e IGNORAR cualquier otro horario mencionado en el encabezado o descripción libre (aunque difieran).
@@ -234,7 +234,7 @@ ESQUEMA JSON:
 {
   "vacancy": {
     "case_number": <integer o null>,
-    "title": "<number o EN<number> — ver REGLA DE FORMATO DEL NÚMERO DE CASO>",
+    "title": "<CASO N o CASO EN<N> — ver REGLA DE FORMATO DEL NÚMERO DE CASO>",
     "required_professions": ["AT"|"CAREGIVER"|"NURSE"|"KINESIOLOGIST"|"PSYCHOLOGIST"],
     "required_sex": "M"|"F"|"BOTH"|null,
     "age_range_min": <integer o null>,
@@ -270,7 +270,7 @@ ESQUEMA JSON:
     ]
   },
   "description": {
-    "titulo_propuesta": "<N o EN<N> — ver REGLA DE FORMATO DEL NÚMERO DE CASO>, <TIPO> - <ZONA>",
+    "titulo_propuesta": "<CASO N o CASO EN<N> — ver REGLA DE FORMATO DEL NÚMERO DE CASO>, <TIPO> - <ZONA>",
     "descripcion_propuesta": "<texto Descripción de la Propuesta>",
     "perfil_profesional": "<texto Perfil Profesional Sugerido>"
   }

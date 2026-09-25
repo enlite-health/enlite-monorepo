@@ -17,6 +17,7 @@ import { Pool } from 'pg';
 import { createApiClient, waitForBackend } from './helpers';
 import { envelope } from '../fixtures/talentumPayload';
 import type { AnalyzedBlock } from './wja-full-flow-types';
+import { formatCaseNumber } from '@shared/utils/caseNumberFormat';
 
 const DATABASE_URL =
   process.env.DATABASE_URL ||
@@ -252,7 +253,10 @@ describe('WJA Outbox Delivery Part 1 — T6 + T7 + Dedup @integration', () => {
         slot_1: 'Lun 10/08 07:00',
         slot_2: 'Lun 10/08 11:00',
         slot_3: 'Mar 11/08 06:30',
-        case_number: String(OD_CASE_1),
+        // D422 (24/09/2026, decisão do Gabriel): mensagem ao worker usa o valor
+        // FORMATADO ("CASO EN{n}" no título, "EN{n}" aqui na variável) — não o
+        // número cru — para caso >=1000. Fixture desatualizada, não o código.
+        case_number: formatCaseNumber(OD_CASE_1),
         job_posting_id: job1Id,
       });
     });

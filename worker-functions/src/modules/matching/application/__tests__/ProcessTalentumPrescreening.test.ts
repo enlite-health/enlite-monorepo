@@ -258,6 +258,28 @@ describe('ProcessTalentumPrescreening', () => {
     expect(mockPubsub.publish).not.toHaveBeenCalled();
   });
 
+  it('auto-rejeição sem prescreeningId (upsert não devolveu id) → domain_event grava prescreeningId=null, não undefined', async () => {
+    const payload = buildPayload({ statusLabel: 'NOT_QUALIFIED' });
+    mockPrescreeningRepo.upsertWorkerJobApplicationFromTalentum.mockResolvedValue({
+      previousStage: null,
+    });
+    // Simula upsertPrescreening sem `id` no retorno — o `?? null` do domain_event
+    // precisa cobrir esse caminho (senão JSON.stringify grava `undefined` implícito).
+    mockPrescreeningRepo.upsertPrescreening.mockResolvedValueOnce({
+      prescreening: { id: undefined, talentumPrescreeningId: 'tp-1', workerId: 'w-1', jobPostingId: 'jp-1' },
+      created: true,
+    });
+
+    await useCase.execute(payload);
+
+    const rejectedEventCall = mockPoolClient.query.mock.calls.find(
+      (call: any[]) => typeof call[0] === 'string' && call[0].includes('funnel_stage.rejected'),
+    );
+    expect(rejectedEventCall).toBeDefined();
+    const rejectedPayload = JSON.parse(rejectedEventCall[1][0]);
+    expect(rejectedPayload.prescreeningId).toBeNull();
+  });
+
   it('não re-executa auto-rejeição se previousStage já era REJECTED (deduplicação — webhook duplicado)', async () => {
     const payload = buildPayload({ statusLabel: 'NOT_QUALIFIED' });
     mockPrescreeningRepo.upsertWorkerJobApplicationFromTalentum.mockResolvedValue({
@@ -592,6 +614,86 @@ describe('ProcessTalentumPrescreening', () => {
     expect(mockJobPostingLookup.findByTitleILike).toHaveBeenCalledWith('Some Other Name');
   });
 
+  // ─── 12.6. spec 028 (caso-en-em-todo-lugar, D422, 24/09/2026) ──────────
+  // Achado #6 (spec 027) fechado: religa ao parser COMPARTILHADO
+  // (`parseCaseTitleReference`) em vez da regex própria (linha ~201, antiga
+  // `/CASO\s+\d+/i`, que exigia dígito logo após "CASO " e não casava "CASO
+  // EN1041-5597").
+  //
+  // O searchTerm passado a `findByTitleILike` é remontado via
+  // `formatCaseNumber(caseNumber)` — NUNCA copiado cru do texto recebido —
+  // porque precisa bater, via ILIKE, contra o título REAL gravado no
+  // job_posting (`formatCaseTitle`, `caseNumberFormat.ts`): "CASO EN{n}-…"
+  // para caso nativo (≥1000), "CASO {n}-…" para legado (<1000, D412 — a
+  // sequence do ClickUp está CONGELADA em 828, então não existe (nem vai
+  // existir) job_posting <1000 com título "CASO EN…"). A migration 472
+  // reescreve TODAS as linhas nativas existentes (vivas e apagadas, SUP-5) —
+  // então não sobra job_posting nativo com título sem EN para procurar; usar
+  // o número cru do texto recebido (em vez de reformatar) NÃO bateria contra
+  // o título real de um caso nativo.
+  //   - CONTROLE: caso LEGADO (828, <1000) — searchTerm sempre "CASO 828",
+  //     texto recebido com ou sem variação não muda o formato (sem prefixo).
+  //   - novo: caso NATIVO (1041, ≥1000) — texto recebido pode chegar em
+  //     qualquer estilo ("CASO 1041-…" ou "CASO EN1041-…", o Talentum pode
+  //     mandar título desatualizado); o searchTerm SEMPRE sai "CASO EN1041",
+  //     porque é isso que o job_posting real tem gravado. Essa era
+  //     exatamente a hipótese de conserto marcada como NÃO CONFIRMADA na F0
+  //     (`f0-medicao.md` §(b), "Não feito/desvio") — medida agora pela
+  //     mecânica real do ILIKE (substring), a hipótese original ("mesmo
+  //     searchTerm cru 'CASO 1041' pros dois") estava ERRADA; corrigida aqui.
+
+  it('CONTROLE — caso legado (828, <1000): searchTerm sai sem prefixo, com ou sem "EN" no texto recebido', async () => {
+    const payload = buildPayload({ status: 'IN_PROGRESS' });
+    (payload.data.response as any).statusLabel = undefined;
+    payload.data.prescreening.name = 'CASO 828-5597, AT, para pacientes con Depresión (F32) - Avellaneda';
+
+    await useCase.execute(payload);
+
+    expect(mockJobPostingLookup.findByTitleILike).toHaveBeenCalledWith('CASO 828');
+  });
+
+  it('"CASO 1041-5597" (nativo, texto do Talentum sem EN) → searchTerm reformatado "CASO EN1041", bate contra o título real', async () => {
+    const payload = buildPayload({ status: 'IN_PROGRESS' });
+    (payload.data.response as any).statusLabel = undefined;
+    payload.data.prescreening.name = 'CASO 1041-5597, AT, para pacientes con Depresión (F32) - Avellaneda';
+
+    await useCase.execute(payload);
+
+    expect(mockJobPostingLookup.findByTitleILike).toHaveBeenCalledWith('CASO EN1041');
+  });
+
+  it('"CASO EN1041-5597" (nativo, texto já no formato D422) → searchTerm "CASO EN1041"', async () => {
+    const payload = buildPayload({ status: 'IN_PROGRESS' });
+    (payload.data.response as any).statusLabel = undefined;
+    payload.data.prescreening.name = 'CASO EN1041-5597, AT, para pacientes con Depresión (F32) - Avellaneda';
+
+    await useCase.execute(payload);
+
+    expect(mockJobPostingLookup.findByTitleILike).toHaveBeenCalledWith('CASO EN1041');
+  });
+
+  // Achado CI #515 (24/09/2026, pós-D422): `formatCaseNumberTitle` decide o prefixo
+  // "EN" pela FAIXA NUMÉRICA do `caseNumber` (≥1000), não pelo texto real do título
+  // — então um número ≥1000 cujo título gravado ainda NÃO tem o prefixo (número
+  // sintético de teste, ou título legado nunca reescrito por engano) não bate via
+  // ILIKE contra o searchTerm formatado, e o job posting deixa de ser encontrado
+  // mesmo existindo. Fallback restaura o comportamento pré-D422: se o searchTerm
+  // formatado não achar, tenta o texto livre inteiro (`caseName`) antes de desistir.
+  it('fallback: searchTerm formatado ("CASO EN{n}") não bate → tenta o texto livre inteiro antes de desistir', async () => {
+    const payload = buildPayload({ status: 'IN_PROGRESS' });
+    (payload.data.response as any).statusLabel = undefined;
+    payload.data.prescreening.name = 'CASO 99950 WFF E2E';
+    mockJobPostingLookup.findByTitleILike.mockImplementation((term: string) =>
+      Promise.resolve(term === 'CASO 99950 WFF E2E' ? { id: 'jp-fallback' } : null),
+    );
+
+    const result = await useCase.execute(payload);
+
+    expect(mockJobPostingLookup.findByTitleILike).toHaveBeenNthCalledWith(1, 'CASO EN99950');
+    expect(mockJobPostingLookup.findByTitleILike).toHaveBeenNthCalledWith(2, 'CASO 99950 WFF E2E');
+    expect(result.jobPostingId).toBe('jp-fallback');
+  });
+
   // ─── 13. upsertQuestions com responseType vazio ─────────────────────
 
   it('usa responseType vazio quando não informado', async () => {
@@ -854,6 +956,32 @@ describe('ProcessTalentumPrescreening', () => {
       expect(lines).not.toContain(NON_E164_PHONE);
       expect(lines).not.toContain('11512');
       consoleSpy.mockRestore();
+    });
+
+    it('ensureEncuadre: erro não-Error (rejeição com valor cru) é normalizado antes de ir pro reportError', async () => {
+      const payload = buildPayload();
+      // INSERT INTO encuadres rejeita com um valor NÃO-Error (string crua) —
+      // cobre o branch `err instanceof Error ? err : new Error(String(err))`.
+      mockPool.query.mockImplementation((sql: string) => {
+        if (sql.includes('INSERT INTO encuadres')) {
+          return Promise.reject('encuadre boom');
+        }
+        if (sql.includes('WITH RECURSIVE chain')) {
+          return Promise.resolve({ rows: [{ id: 'w-1', depth: 0, merged_into_id: null }] });
+        }
+        return Promise.resolve({ rows: [] });
+      });
+
+      await useCase.execute(payload);
+
+      expect(reportError).toHaveBeenCalledWith(
+        expect.any(Error),
+        expect.objectContaining({ source: 'ProcessTalentumPrescreening:ensureEncuadre' }),
+      );
+      const [normalizedErr] = (reportError as jest.Mock).mock.calls.find(
+        (call) => call[1]?.source === 'ProcessTalentumPrescreening:ensureEncuadre',
+      );
+      expect(normalizedErr.message).toBe('encuadre boom');
     });
 
     it('ensureEncuadre: nome NUNCA aparece — só presença (hasName)', async () => {

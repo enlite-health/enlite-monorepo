@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import { z } from 'zod';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { formatCaseTitle } from '@shared/utils/caseNumberFormat';
 import {
   authorizeVacancyUpdate,
   buildInsertQuery,
@@ -161,7 +162,7 @@ export class VacancyCrudController {
 
       const vnResult = await this.db.query("SELECT nextval('job_postings_vacancy_number_seq') AS vn");
       const vacancyNumber = parseInt(vnResult.rows[0].vn);
-      const computedTitle = `CASO ${case_number}-${vacancyNumber}`;
+      const computedTitle = formatCaseTitle(case_number, vacancyNumber);
 
       const hasUpdate =
         updatePatient && typeof updatePatient === 'object' && Object.keys(updatePatient).length > 0;
