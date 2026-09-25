@@ -11,10 +11,10 @@ import {
 } from '../patientEnums';
 
 describe('patientEnums (spec 012)', () => {
-  it('PatientStatus v2: 6 clínicos + 3 do funil; DISCONTINUED saiu', () => {
-    expect([...CLINICAL_PATIENT_STATUSES]).toEqual(['ACTIVE', 'ON_HOLD', 'SEARCHING', 'REPLACEMENT', 'SUSPENDED', 'DISCHARGED']);
+  it('PatientStatus v2: 7 clínicos (ALTA entrou na migration 473, D430) + 3 do funil; DISCONTINUED saiu', () => {
+    expect([...CLINICAL_PATIENT_STATUSES]).toEqual(['ACTIVE', 'ON_HOLD', 'SEARCHING', 'REPLACEMENT', 'SUSPENDED', 'ALTA', 'DISCHARGED']);
     expect([...ADMISSION_FUNNEL_STATUSES]).toEqual(['SOLICITANTE', 'ADMISSION', 'PENDING_ADMISSION']);
-    expect(PATIENT_STATUSES).toHaveLength(9);
+    expect(PATIENT_STATUSES).toHaveLength(10);
     expect(PATIENT_STATUSES).not.toContain('DISCONTINUED');
   });
 

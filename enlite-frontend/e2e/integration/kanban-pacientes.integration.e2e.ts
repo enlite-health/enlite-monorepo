@@ -17,6 +17,7 @@
 import { test, expect, type APIRequestContext, type Page, type Route } from '@playwright/test';
 import { insertTestPatient, cleanupTestPatient } from '../helpers/db-test-helper';
 import { dndKitDrag } from '../helpers/dndKitDrag';
+import { installAuthInterceptors, tokenFor, type MockUser } from '../helpers/abac-stack-helper';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -26,109 +27,46 @@ import { dndKitDrag } from '../helpers/dndKitDrag';
 // errado. `E2E_BACKEND_URL` mantém o default 8080 para não quebrar o CI.
 const BACKEND_URL = process.env.E2E_BACKEND_URL ?? 'http://localhost:8080';
 
-const MOCK_ADMIN_USER = {
+const MOCK_ADMIN_USER: MockUser = {
   uid: 'e2e-int-admin-kanban-pacientes',
   email: 'admin.kanban.pacientes@e2e.test',
   role: 'admin',
+  country: 'AR',
 };
-const MOCK_TOKEN =
-  'mock_' + Buffer.from(JSON.stringify(MOCK_ADMIN_USER), 'utf-8').toString('base64');
+const MOCK_TOKEN = tokenFor(MOCK_ADMIN_USER);
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const FAKE_ID_TOKEN =
-  'eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.' +
-  Buffer.from(
-    JSON.stringify({
-      sub: MOCK_ADMIN_USER.uid,
-      uid: MOCK_ADMIN_USER.uid,
-      email: MOCK_ADMIN_USER.email,
-      iss: 'https://securetoken.google.com/enlite-prd',
-      aud: 'enlite-prd',
-      iat: Math.floor(Date.now() / 1000),
-      exp: Math.floor(Date.now() / 1000) + 3600,
-    }),
-  ).toString('base64url') +
-  '.';
-
-// DX-EX-2 (revisado): CORS já liberado p/ 5175 no container — só troca o
-// token, igual ao molde. Usado em `/api/**` e `/v1/me/**` (ver abaixo).
-async function swapAuth(route: Route): Promise<void> {
-  const headers = { ...route.request().headers(), authorization: `Bearer ${MOCK_TOKEN}` };
-  await route.continue({ headers });
-}
-
+// Gate revisao-pr (item 4a): interceptação movida para o helper compartilhado
+// `abac-stack-helper.ts` (`installAuthInterceptors`/`tokenFor`) — cobre Identity
+// Toolkit, securetoken, `/api/**` e `/v1/me/authz`/`/v1/me/simulation**`, igual
+// ao que este arquivo duplicava inline. `/api/admin/auth/profile` continua
+// mockado AQUI (registrado DEPOIS — Playwright prioriza o route mais recente):
+// o helper deixa `/api/**` seguir para o backend REAL, que exige uma linha em
+// `users` (e, em specs com engine ABAC, grupo/célula) para responder o profile —
+// este teste não semeia `users`/grupo ABAC (fora do escopo deste gate), então a
+// parte reaproveitada do helper é só a de INTERCEPTAÇÃO.
 async function installInterceptors(page: Page): Promise<void> {
-  await page.route('**/identitytoolkit.googleapis.com/**', async (route: Route) => {
-    const url = route.request().url();
-    if (url.includes('signInWithPassword') || url.includes('signUp')) {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          kind: 'identitytoolkit#VerifyPasswordResponse',
-          localId: MOCK_ADMIN_USER.uid,
+  await installAuthInterceptors(page, MOCK_ADMIN_USER);
+
+  await page.route('**/api/admin/auth/profile', async (route: Route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        success: true,
+        data: {
+          id: MOCK_ADMIN_USER.uid,
           email: MOCK_ADMIN_USER.email,
-          idToken: FAKE_ID_TOKEN,
-          refreshToken: 'fake-refresh-token',
-          expiresIn: '3600',
-          registered: true,
-        }),
-      });
-      return;
-    }
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        users: [{ localId: MOCK_ADMIN_USER.uid, email: MOCK_ADMIN_USER.email, emailVerified: true }],
+          role: 'superadmin',
+          firstName: 'Kanban',
+          lastName: 'Pacientes',
+          isActive: true,
+          mustChangePassword: false,
+        },
       }),
     });
   });
-
-  await page.route('**/securetoken.googleapis.com/**', async (route: Route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        access_token: FAKE_ID_TOKEN,
-        expires_in: '3600',
-        token_type: 'Bearer',
-        refresh_token: 'fake-refresh-token',
-        id_token: FAKE_ID_TOKEN,
-      }),
-    });
-  });
-
-  await page.route('**/api/**', async (route: Route) => {
-    const url = route.request().url();
-
-    if (url.includes('/api/admin/auth/profile')) {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          success: true,
-          data: {
-            id: MOCK_ADMIN_USER.uid,
-            email: MOCK_ADMIN_USER.email,
-            role: 'superadmin',
-            firstName: 'Kanban',
-            lastName: 'Pacientes',
-            isActive: true,
-            mustChangePassword: false,
-          },
-        }),
-      });
-      return;
-    }
-
-    await swapAuth(route);
-  });
-
-  // `/v1/me/authz` (ABAC) fica fora de `/api/**`; sem troca de token dá 401 e
-  // realimenta o remount-loop de `AdminProtectedRoute` (medido nesta sessão).
-  await page.route('**/v1/me/**', swapAuth);
 }
 
 /** Logs in via the admin login form with mocked Firebase Auth responses. */
@@ -154,7 +92,7 @@ async function fetchPatientStatus(
   const res = await request.get(`${BACKEND_URL}/api/admin/patients/${patientId}`, {
     headers: { Authorization: `Bearer ${MOCK_TOKEN}` },
   });
-  if (!res.ok()) return null;
+  if (!res.ok()) throw new Error(`GET status ${res.status()}`);
   const body = (await res.json()) as { data?: { status?: string } };
   return body.data?.status ?? null;
 }
@@ -213,6 +151,10 @@ test.describe('kanban de pacientes @integration', () => {
       'kanban-column-ALTA',
       'kanban-column-DISCHARGED',
     ]);
+
+    // CLAUDE.md (Testes Visuais, obrigatório) — padrão dos 74 specs irmãos. O CI roda
+    // `--ignore-snapshots`; a baseline não é gerada por este agente (sem Playwright aqui).
+    await expect(page).toHaveScreenshot('kanban-pacientes-oito-colunas.png', { fullPage: true, maxDiffPixelRatio: 0.05 });
   });
 
   // ── P10 · o totalizador bate com a API ──────────────────────────────────
@@ -313,7 +255,13 @@ test.describe('kanban de pacientes @integration', () => {
         // no status original). O helper (`e2e/helpers/dndKitDrag.ts`) não foi
         // tocado — só a chamada, aqui.
         await card.scrollIntoViewIfNeeded();
-        await dndKitDrag(page, card, targetColumn);
+        // Item 4c (gate revisao-pr): espera o PUT /status disparado JUNTO com o drag —
+        // sem isso a leitura pela API (linha abaixo) podia correr antes do backend
+        // aplicar a mudança (corrida, não o resultado do drag).
+        await Promise.all([
+          page.waitForResponse((r) => r.request().method() === 'PUT' && /\/status$/.test(r.url())),
+          dndKitDrag(page, card, targetColumn),
+        ]);
 
         const status = await fetchPatientStatus(request, patientId);
         if (status === 'ALTA') reached.push(origin);

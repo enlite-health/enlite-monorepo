@@ -20,10 +20,14 @@ const base: PatientKanbanItem = {
 };
 
 describe('US-B10 — o card identifica o solicitante', () => {
-  it('lead com nome (D249): título é o nome capitalizado; "Solicitante" não aparece; nenhum telefone', () => {
+  it('lead com nome (D249): título é o nome capitalizado, nunca o literal "Solicitante"; nenhum telefone', () => {
+    // Fase 1 (cadeia-paciente-vacante-itinerario) juntou SOLICITANTE/ADMISSION/PENDING_ADMISSION
+    // numa única coluna "Admisión" — o card passou a mostrar o subestágio (badge própria,
+    // `patient-kanban-card-substage`) para não perder a distinção. A garantia que resta aqui é a
+    // ORIGINAL (D249): o TÍTULO do card é o nome, nunca o literal "Solicitante".
     const { container } = render(<MemoryRouter><PatientKanbanCard patient={base} /></MemoryRouter>);
     expect(screen.getByTestId('patient-kanban-card-p-nome-open')).toHaveTextContent('Ana García');
-    expect(container.textContent).not.toMatch(/Solicitante/);
+    expect(screen.getByTestId('patient-kanban-card-p-nome-open')).not.toHaveTextContent('Solicitante');
     expect(container.textContent).not.toMatch(/\+\d{8,}|\d[\d\s-]{9,}\d/);
   });
 
