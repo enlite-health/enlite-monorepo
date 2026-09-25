@@ -17,33 +17,22 @@ export interface ScheduleBlock {
 export type NormalizedSchedule = Record<string, ScheduleBlock[]>;
 
 export interface ScheduleGridDay {
-  /** Chave como o backend manda (sem acento) — `lunes`, `miercoles`, … */
+  /** Chave como o backend manda (sem acento) — `lunes`, `miercoles`, … Não é texto de UI: é o
+   *  identificador do dado (`DAY_KEYS_ES` do backend), por isso fica fora do i18n — quem traduz
+   *  para exibição é o componente, via `admin.draftVacancy.days.short/full.<key>` (gate parcial
+   *  25/09, achado #4: os RÓTULOS saíram daqui, só a CHAVE fica). */
   key: string;
-  /** Rótulo curto pt. do protótipo v3 — Lun, Mar, Mié, Jue, Vie, Sáb, Dom. */
-  short: string;
-  /** Rótulo completo, para `aria-label`. */
-  full: string;
   blocks: ScheduleBlock[];
 }
 
 /** Ordem de exibição Lun→Dom (o protótipo v3 é semana-comercial, não semana ISO nem `getDay()`). */
-const DAY_ORDER: ReadonlyArray<{ key: string; short: string; full: string }> = [
-  { key: 'lunes', short: 'Lun', full: 'lunes' },
-  { key: 'martes', short: 'Mar', full: 'martes' },
-  { key: 'miercoles', short: 'Mié', full: 'miércoles' },
-  { key: 'jueves', short: 'Jue', full: 'jueves' },
-  { key: 'viernes', short: 'Vie', full: 'viernes' },
-  { key: 'sabado', short: 'Sáb', full: 'sábado' },
-  { key: 'domingo', short: 'Dom', full: 'domingo' },
-];
+const DAY_ORDER: readonly string[] = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo'];
 
 /** As 7 posições da grade, cada uma com os blocos do dia (`[]` = "sin atención"). */
 export function buildScheduleGrid(schedule: NormalizedSchedule | null | undefined): ScheduleGridDay[] {
-  return DAY_ORDER.map((d) => ({
-    key: d.key,
-    short: d.short,
-    full: d.full,
-    blocks: schedule?.[d.key] ?? [],
+  return DAY_ORDER.map((key) => ({
+    key,
+    blocks: schedule?.[key] ?? [],
   }));
 }
 
