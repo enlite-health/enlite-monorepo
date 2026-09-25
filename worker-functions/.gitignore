@@ -15,4 +15,10 @@ docs/excel/seeds/999_prod_snapshot.sql
 seeds/.last-snapshot-image-id
 tests/e2e/.wja-full-flow-state.json
 tests/e2e/.wja-outbox-delivery-state.json
+# Override de docker-compose só de porta/container_name/CORS desta máquina — nunca sobe pro
+# repo (achado do gate parcial da fase-2, `completar-vacante-em-rascunho`, 25/09): o bloco de
+# ENGINE (PERMISSION_ENGINE_ENABLED/ROUTES/CATALOG_SYNC) já vive versionado em
+# `docker-compose.group-simulation.yml` — reusar com `-f`, nunca duplicar. Precedente:
+# `eb884041` tirou `docker-compose.wf027b-ports.yml` do repo pelo mesmo motivo.
+docker-compose.*.local.yml
 
