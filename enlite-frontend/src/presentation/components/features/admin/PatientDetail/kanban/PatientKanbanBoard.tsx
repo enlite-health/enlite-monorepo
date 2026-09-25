@@ -21,12 +21,16 @@ interface Props {
   ) => Promise<PatientKanbanMoveError | null>;
 }
 
-// Spec 012: as colunas são o FUNIL DE ADMISSÃO (`admission_status`); DONE = "Activo".
+// eixo = `patients.status` (D427/D430)
 const COLUMN_COLOR: Record<PatientKanbanStatus, string> = {
-  SOLICITANTE: 'bg-slate-400',
   ADMISSION: 'bg-blue-400',
-  PENDING_ADMISSION: 'bg-yellow-400',
-  DONE: 'bg-green-500',
+  SEARCHING: 'bg-wait',
+  REPLACEMENT: 'bg-indigo-400',
+  ACTIVE: 'bg-green-500',
+  ON_HOLD: 'bg-clinic',
+  SUSPENDED: 'bg-orange-400',
+  ALTA: 'bg-teal-500',
+  DISCHARGED: 'bg-slate-400',
 };
 
 /**
@@ -65,9 +69,8 @@ export function PatientKanbanBoard({ groups, onMove }: Props): JSX.Element {
       isDragDisabled={() => patientWriteGate.denied}
       onDrop={handleDrop}
       collapseStorageKey="kanban-collapsed-patients"
-      // 4 colunas: a 280px somavam 1156px em 1096px úteis e a 4ª ("Activo")
-      // ficava 60px fora da tela. A 260px cabem as quatro (1076px) e ninguém
-      // precisa descobrir que o board rola para ver a coluna que importa.
+      // 8 colunas: como no funil de vagas (DX-6), rolam horizontalmente — não
+      // cabem todas na tela, e o board não precisa descobrir isso sozinho.
       columnWidthClass="w-[260px]"
       renderCard={(p) => <PatientKanbanCard patient={p} />}
     />

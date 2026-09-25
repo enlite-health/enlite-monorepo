@@ -20,20 +20,34 @@ import type { PatientKanbanGroups } from '@hooks/admin/usePatientKanban';
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (k: string) => k }) }));
 
 const empty: PatientKanbanGroups = {
-  SOLICITANTE: [], ADMISSION: [], PENDING_ADMISSION: [], DONE: [],
+  ADMISSION: [],
+  SEARCHING: [],
+  REPLACEMENT: [],
+  ACTIVE: [],
+  ON_HOLD: [],
+  SUSPENDED: [],
+  ALTA: [],
+  DISCHARGED: [],
 };
 
 describe('largura das colunas', () => {
-  it('as 4 colunas usam a largura reduzida, não os 280px do funil de vagas', () => {
-    const { container } = render(
+  it('as 8 colunas usam a largura reduzida, não os 280px do funil de vagas', () => {
+    const { container, getByTestId } = render(
       <PatientKanbanBoard groups={empty} onMove={async () => null} />,
     );
     const board = container.querySelector('[data-testid="patient-kanban-board"]')!;
     const cols = [...board.children];
-    expect(cols).toHaveLength(4);
+    expect(cols).toHaveLength(8);
     for (const c of cols) {
       expect(c.className).toContain('w-[260px]');
       expect(c.className).not.toContain('w-[280px]');
     }
+
+    // #DEC-06 — a bolinha de SEARCHING ("en espera") é a cor de espera; ON_HOLD
+    // não pode ser, senão as duas colunas ficam indistinguíveis à primeira vista.
+    const searchingDot = getByTestId('kanban-column-SEARCHING').querySelector('div.rounded-full')!;
+    const onHoldDot = getByTestId('kanban-column-ON_HOLD').querySelector('div.rounded-full')!;
+    expect(searchingDot.className).toContain('bg-wait');
+    expect(onHoldDot.className).not.toContain('bg-wait');
   });
 });
