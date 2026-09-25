@@ -34,15 +34,19 @@ const { PatientKanbanBoard } = await import('../PatientKanbanBoard');
 
 const PATIENT_1 = {
   id: 'p1', firstName: 'Ana', lastName: 'Gomez', caseNumber: 10,
-  dependencyLevel: null, status: 'SOLICITANTE', admissionStatus: 'SOLICITANTE', responsibleName: null,
+  dependencyLevel: null, status: 'ADMISSION', admissionStatus: 'SOLICITANTE', responsibleName: null,
   hoursInStage: null, slaBreached: false,
 };
 
 const GROUPS: PatientKanbanGroups = {
-  SOLICITANTE: [PATIENT_1],
-  ADMISSION: [],
-  PENDING_ADMISSION: [],
-  DONE: [],
+  ADMISSION: [PATIENT_1],
+  SEARCHING: [],
+  REPLACEMENT: [],
+  ACTIVE: [],
+  ON_HOLD: [],
+  SUSPENDED: [],
+  ALTA: [],
+  DISCHARGED: [],
 };
 
 function comEnforcement(permissions: string[], enforcement: AuthzContract['enforcement']) {
@@ -60,23 +64,23 @@ describe('PatientKanbanBoard', () => {
     useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' });
   });
 
-  it('monta as 4 colunas de status, todas droppable, na ordem de PATIENT_KANBAN_STATUSES', () => {
+  it('monta as 8 colunas de status, todas droppable, na ordem de PATIENT_KANBAN_STATUSES', () => {
     render(<PatientKanbanBoard groups={GROUPS} onMove={vi.fn()} />);
     expect(captured.columns.map((c: { id: string }) => c.id)).toEqual([
-      'SOLICITANTE', 'ADMISSION', 'PENDING_ADMISSION', 'DONE',
+      'ADMISSION', 'SEARCHING', 'REPLACEMENT', 'ACTIVE', 'ON_HOLD', 'SUSPENDED', 'ALTA', 'DISCHARGED',
     ]);
     expect(captured.columns.every((c: { droppable: boolean }) => c.droppable)).toBe(true);
   });
 
   it('itemsOf devolve os itens do grupo da coluna pedida', () => {
     render(<PatientKanbanBoard groups={GROUPS} onMove={vi.fn()} />);
-    expect(captured.itemsOf('SOLICITANTE')).toEqual([PATIENT_1]);
-    expect(captured.itemsOf('ADMISSION')).toEqual([]);
+    expect(captured.itemsOf('ADMISSION')).toEqual([PATIENT_1]);
+    expect(captured.itemsOf('SEARCHING')).toEqual([]);
   });
 
   it('itemsOf devolve [] para uma coluna sem grupo (defensivo)', () => {
     render(<PatientKanbanBoard groups={{} as PatientKanbanGroups} onMove={vi.fn()} />);
-    expect(captured.itemsOf('DONE')).toEqual([]);
+    expect(captured.itemsOf('DISCHARGED')).toEqual([]);
   });
 
   it('getItemId devolve o id do paciente', () => {
@@ -93,15 +97,15 @@ describe('PatientKanbanBoard', () => {
   it('soltar na PRÓPRIA coluna é no-op — não chama onMove', () => {
     const onMove = vi.fn();
     render(<PatientKanbanBoard groups={GROUPS} onMove={onMove} />);
-    captured.onDrop({ item: PATIENT_1, itemId: 'p1', fromColumnId: 'SOLICITANTE', toColumnId: 'SOLICITANTE' });
+    captured.onDrop({ item: PATIENT_1, itemId: 'p1', fromColumnId: 'ADMISSION', toColumnId: 'ADMISSION' });
     expect(onMove).not.toHaveBeenCalled();
   });
 
   it('soltar em coluna DIFERENTE chama onMove com o id e o status alvo', () => {
     const onMove = vi.fn().mockResolvedValue(null);
     render(<PatientKanbanBoard groups={GROUPS} onMove={onMove} />);
-    captured.onDrop({ item: PATIENT_1, itemId: 'p1', fromColumnId: 'SOLICITANTE', toColumnId: 'ADMISSION' });
-    expect(onMove).toHaveBeenCalledWith('p1', 'ADMISSION');
+    captured.onDrop({ item: PATIENT_1, itemId: 'p1', fromColumnId: 'ADMISSION', toColumnId: 'ALTA' });
+    expect(onMove).toHaveBeenCalledWith('p1', 'ALTA');
   });
 
   // ── D269 — soltar chama PUT /patients/:id/status → patient:write ──────────

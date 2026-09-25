@@ -3205,7 +3205,13 @@
           "ADMISSION": "Admissão",
           "PENDING_ADMISSION": "Aguardando financeiro",
           "ACTIVE": "Ativo",
-          "DONE": "Ativo"
+          "DONE": "Ativo",
+          "SEARCHING": "Busca",
+          "REPLACEMENT": "Substituições",
+          "ON_HOLD": "Em espera",
+          "SUSPENDED": "Suspenso temporariamente",
+          "ALTA": "Alta",
+          "DISCHARGED": "Baixa"
         },
         "contactOfResponsible": "Contato do responsável",
         "responsible": "Responsável",
@@ -4920,7 +4926,8 @@
         "SEARCHING": "Busca",
         "REPLACEMENT": "Substituição",
         "SUSPENDED": "Suspenso",
-        "DISCHARGED": "Alta"
+        "ALTA": "Alta",
+        "DISCHARGED": "Baixa"
       },
       "onlyOpenVacancies": "Só com vagas abertas",
       "openVacancies": "{{count}} vaga(s) aberta(s)",

@@ -138,6 +138,19 @@ describe('PatientService.moveStatus v2', () => {
     expect(calls().some((x) => /patient_status_transitions/.test(x.sql))).toBe(true);
   });
 
+  it('4c. SOLICITANTE → ALTA consulta a tabela e grava', async () => {
+    db('SOLICITANTE', [['SOLICITANTE', 'ALTA']]);
+    await expect(service.moveStatus(PID, 'ALTA', { changeSource: 'admin_panel' })).resolves.toEqual({ id: PID, status: 'ALTA' });
+    expect(calls().some((x) => /patient_status_transitions/.test(x.sql))).toBe(true);
+  });
+
+  it('4d. SOLICITANTE → ALTA sem linha no catálogo é recusado', async () => {
+    db('SOLICITANTE', []);
+    await expect(service.moveStatus(PID, 'ALTA', { changeSource: 'admin_panel' })).rejects.toMatchObject({
+      code: 'PATIENT_STATUS_TRANSITION_NOT_ALLOWED', from: 'SOLICITANTE', to: 'ALTA',
+    });
+  });
+
   // ── Guarda de completude (decisão do Gabriel 07/09) ────────────────────────────────────────
   describe('guarda de completude por status-alvo', () => {
     it('serviço ativo SEM horário → ACTIVE é RECUSADO com PATIENT_STATUS_NOT_READY, ROLLBACK, nenhum UPDATE', async () => {
