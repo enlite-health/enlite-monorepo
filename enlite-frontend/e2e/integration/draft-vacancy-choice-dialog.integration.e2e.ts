@@ -14,21 +14,59 @@
  * Fase 2 (`cv-fase2-abac`, 5442/8092/5178), que pode estar rodando ao mesmo tempo em OUTRA
  * worktree.
  *
- * COMO SUBIR (molde: `vacancy-draft-page.integration.e2e.ts`):
+ * COMO SUBIR (molde: `vacancy-draft-page.integration.e2e.ts`, Fase 2). O bloco de ENGINE
+ * (`PERMISSION_ENGINE_ENABLED`/`_ENFORCED_ROUTES`/`_CATALOG_SYNC_ENABLED`) já vive VERSIONADO
+ * em `docker-compose.group-simulation.yml` — nunca duplicar; o override desta task é só porta/
+ * container_name/CORS, LOCAL desta máquina (gitignorado, `docker-compose.*.local.yml`, gate
+ * parcial 25/09: o arquivo antigo duplicava o bloco de engine e saiu do repo, achado #1).
+ * `worker-functions/docker-compose.fase3-abac.local.yml` — não existe no git; recriar com este
+ * conteúdo (colado aqui pra quem não tem esta máquina não precisar adivinhar):
+ *   services:
+ *     postgres:
+ *       container_name: cv-fase3-abac-postgres
+ *       ports: !override
+ *         - "5452:5432"
+ *     api:
+ *       image: worker-functions-api
+ *       container_name: cv-fase3-abac-api
+ *       ports: !override
+ *         - "8102:8080"
+ *       environment:
+ *         CORS_ALLOWED_ORIGINS: "http://localhost:5188"
+ *
  *   cd worker-functions
  *   docker compose -p cv-fase3-abac -f docker-compose.yml -f docker-compose.test.yml \
- *     -f docker-compose.fase3-abac.yml up -d postgres api
- *   # engine recusa subir sem o marcador da migração de grupos (D117, fail-closed):
+ *     -f docker-compose.group-simulation.yml -f docker-compose.fase3-abac.local.yml \
+ *     up -d postgres api
+ *   # engine recusa subir sem o marcador da migração de grupos (D117, fail-closed) — hoje uma
+ *   # migration já semeia 'done' em banco novo; se subir vazio (versão antiga da imagem):
  *   psql postgresql://enlite_admin:enlite_password@localhost:5452/enlite_e2e -c \
  *     "INSERT INTO iam.rollout_state (key,value,note,updated_by) VALUES \
  *      ('permission_groups_migrated','done','e2e fase-3','e2e:local') ON CONFLICT (key) DO UPDATE SET value='done'"
- *   docker compose -p cv-fase3-abac -f docker-compose.yml -f docker-compose.test.yml \
- *     -f docker-compose.fase3-abac.yml up -d --no-deps api
  *   cd ../enlite-frontend && VITE_API_WORKER_FUNCTIONS_URL=http://localhost:8102 <demais VITE_FIREBASE_*> \
  *     npx vite --port 5188 --strictPort
  *   E2E_PG_CONTAINER=cv-fase3-abac-postgres ABAC_TEST_DB_URL=postgresql://enlite_admin:enlite_password@localhost:5452/enlite_e2e \
  *     ABAC_API_URL=http://localhost:8102 PW_BASE_URL=http://localhost:5188 \
  *     npx playwright test --project=integration --grep "draft-vacancy-choice"
+ *
+ * O stack IRMÃO desta change (engine ABAC OFF, usado por
+ * `admin-vacancies-edit-routing.integration.e2e.ts`) segue o MESMO padrão —
+ * `worker-functions/docker-compose.fase3-standard.local.yml`, local, não existe no git:
+ *   services:
+ *     postgres:
+ *       container_name: cv-fase3-standard-postgres
+ *       ports: !override
+ *         - "5472:5432"
+ *     api:
+ *       image: worker-functions-api
+ *       container_name: cv-fase3-standard-api
+ *       ports: !override
+ *         - "8122:8080"
+ *       environment:
+ *         CORS_ALLOWED_ORIGINS: "http://localhost:5193"
+ *   Esse aqui NÃO usa `docker-compose.group-simulation.yml` (engine fica OFF, o padrão do
+ *   stack quando nenhuma `PERMISSION_*` é setada) — ver o cabeçalho de
+ *   `admin-vacancies-edit-routing.integration.e2e.ts` para o comando de subida completo.
  *
  * Auth: `loginAs`/`installAuthInterceptors` de `abac-stack-helper.ts` — humano (click +
  * keyboard.type). Setup de fixture (paciente/serviço/foguete) por um TERCEIRO ator, com só
