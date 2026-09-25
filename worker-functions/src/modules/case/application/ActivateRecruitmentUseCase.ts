@@ -5,6 +5,8 @@ import {
   buildInsertQuery,
   buildInsertParams,
   retryOnCaseOrdinalConflict,
+  type VacancyInsertParams,
+  type SourceLockedField,
 } from "@modules/matching";
 import { auditVacancyCreated } from "../../matching/interfaces/controllers/vacancyCrudAuditHelpers";
 import {
@@ -195,23 +197,34 @@ export class ActivateRecruitmentUseCase {
       service.provider_age_band as ProviderAgeBand | null,
     );
 
-    const params = buildInsertParams({
-      vacancyNumber,
+    // T054 (achado do gate revisao-pr, fase 1): separado em DOIS objetos —
+    // `fromOrigin` (o que o PACIENTE/SERVIÇO manda, tipado EXATAMENTE como
+    // `Pick<VacancyInsertParams, SourceLockedField>`) e `fromRecruitment` (o
+    // que fica para a equipe de recrutamento preencher depois, F3). O tipo
+    // explícito em `fromOrigin` é o que faz o TS recusar propriedade
+    // excedente num objeto literal — uma coluna nova que o foguete passe a
+    // preencher "por engano" como se fosse da origem (ex.: `daily_obs:
+    // service.daily_obs` dentro de `fromOrigin`) NÃO COMPILA sem entrar em
+    // `SourceLockedField` (`vacancyCrudHelpers.ts`, `SOURCE_LOCKED_FIELDS`) —
+    // o teste de paridade cobre o caminho inverso (a constante lida de
+    // volta), este objeto cobre o ÚNICO call site real do foguete.
+    const fromOrigin: Pick<VacancyInsertParams, SourceLockedField> = {
       case_number,
-      computedTitle,
       patient_id: patientId,
       patient_address_id: service.live_address_id,
       contracted_service_id: service.id,
-      required_professions: null,
-      required_sex: null,
       age_range_min: ageRange.min,
       age_range_max: ageRange.max,
+      schedule: service.schedule,
+      providers_needed: service.providers_needed,
+    };
+    const fromRecruitment = {
+      required_professions: null,
+      required_sex: null,
       worker_profile_sought: null,
       required_experience: null,
       worker_attributes: null,
-      schedule: service.schedule,
       work_schedule: null,
-      providers_needed: service.providers_needed,
       salary_text: null,
       payment_day: null,
       daily_obs: null,
@@ -219,6 +232,12 @@ export class ActivateRecruitmentUseCase {
       published_at: null,
       closes_at: null,
       is_test: false,
+    };
+    const params = buildInsertParams({
+      vacancyNumber,
+      computedTitle,
+      ...fromOrigin,
+      ...fromRecruitment,
     });
     // case_ordinal (spec 027 Fase 5) é computado dentro do próprio INSERT
     // (buildInsertQuery); a corrida entre dois cliques simultâneos no mesmo
