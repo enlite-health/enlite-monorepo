@@ -30,6 +30,7 @@ import { SelectField } from '@presentation/components/molecules/SelectField/Sele
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon/InputWithIcon';
 import { ServiceAreaMap } from '@presentation/components/molecules/ServiceAreaMap';
 import { VacancyDaySchedulePicker } from './VacancyDaySchedulePicker';
+import { LockedFieldBadgeLink } from './LockedFieldBadgeLink';
 import type { VacancyFormData } from '../vacancy-form-schema';
 import { STATUS_OPTIONS } from '../vacancy-form-schema';
 import { computeWeeklyHours } from '../vacancyScheduleUtils';
@@ -51,6 +52,11 @@ export interface VacancyFormRightColumnProps {
   /** Patient's service_type from ClickUp (Profession[]). Drives the read-only "Tipo de servicio" field. */
   serviceType?: string[] | null;
   selectAddress: (addressId: string) => void;
+  /** Fase 4: campos do form travados pela origem (`locked_fields` do GET, já invertido —
+   *  `lockedFormFields`). Vazio em modo `create` ou vaga sem origem. */
+  lockedFields?: Set<keyof VacancyFormData>;
+  /** Id do paciente da vaga — destino do link "Editar en la ficha del paciente". */
+  patientId?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -68,10 +74,16 @@ export function VacancyFormRightColumn({
   cityLocality,
   serviceType,
   selectAddress,
+  lockedFields,
+  patientId,
 }: VacancyFormRightColumnProps): JSX.Element {
   const { t } = useTranslation();
   const tp = (k: string) => t(`admin.vacancyModal.${k}`);
   const tf = (k: string) => t(`admin.vacancyDetail.vacancyForm.${k}`);
+
+  const isAddressLocked = lockedFields?.has('patientAddressId') ?? false;
+  const isProvidersLocked = lockedFields?.has('providers_needed') ?? false;
+  const isScheduleLocked = lockedFields?.has('schedule') ?? false;
 
   // When patient isn't selected: gray-out the white wrappers of inputs/selects/readonly cells
   // (signals "fill the case first") without fading labels. We target `.bg-white` on the
@@ -152,6 +164,7 @@ export function VacancyFormRightColumn({
         <FormField
           label={tp('serviceAddress')}
           required
+          labelExtra={isAddressLocked ? <LockedFieldBadgeLink patientId={patientId} testId="locked-field-link-address" /> : null}
           error={errors.patientAddressId ? tf('validation.addressRequired') : undefined}
         >
           {isLoadingPatient ? (
@@ -163,14 +176,16 @@ export function VacancyFormRightColumn({
               {patientError}
             </div>
           ) : addresses.length > 0 ? (
-            <div className="space-y-2">
+            <div className="space-y-2" data-testid="address-options" aria-disabled={isAddressLocked}>
               {addresses.map((addr) => (
                 <button
                   key={addr.id}
                   type="button"
+                  disabled={isAddressLocked}
                   onClick={() => selectAddress(addr.id)}
                   className={[
                     'w-full text-left h-[60px] px-5 rounded-xl border transition-colors flex items-center gap-3',
+                    isAddressLocked ? 'opacity-60 cursor-not-allowed' : '',
                     selectedAddressId === addr.id
                       ? 'border-primary bg-primary/5 ring-1 ring-primary/30'
                       : 'border-[#E5E7EB] bg-white hover:border-slate-300',
@@ -232,6 +247,7 @@ export function VacancyFormRightColumn({
       <FormField
         label={tp('providersNeeded')}
         required
+        labelExtra={isProvidersLocked ? <LockedFieldBadgeLink patientId={patientId} testId="locked-field-link-providers" /> : null}
         error={
           errors.providers_needed
             ? tf('validation.providersMin')
@@ -241,6 +257,7 @@ export function VacancyFormRightColumn({
         <InputWithIcon
           type="number"
           min={1}
+          disabled={isProvidersLocked}
           {...register('providers_needed', { valueAsNumber: true })}
           data-testid="providers-needed-input"
           error={
@@ -253,7 +270,7 @@ export function VacancyFormRightColumn({
 
       {/* 9. Net hourly rate (salary_text) */}
       <FormField label={tp('netHourlyRate')}>
-        <InputWithIcon type="text" {...register('salary_text')} />
+        <InputWithIcon type="text" {...register('salary_text')} data-testid="salary-text-input" />
       </FormField>
 
       {/* 10. Weekly hours — auto-computed from the schedule below */}
@@ -267,13 +284,14 @@ export function VacancyFormRightColumn({
       <FormField
         label={tp('schedule')}
         required
+        labelExtra={isScheduleLocked ? <LockedFieldBadgeLink patientId={patientId} testId="locked-field-link-schedule" /> : null}
         error={errors.schedule ? tf('validation.scheduleRequired') : undefined}
       >
         <Controller
           name="schedule"
           control={control}
           render={({ field }) => (
-            <VacancyDaySchedulePicker value={field.value} onChange={field.onChange} />
+            <VacancyDaySchedulePicker value={field.value} onChange={field.onChange} disabled={isScheduleLocked} />
           )}
         />
       </FormField>

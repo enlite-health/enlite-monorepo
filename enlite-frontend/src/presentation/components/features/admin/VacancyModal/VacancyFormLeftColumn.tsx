@@ -28,6 +28,7 @@ import type { VacancyFormData } from '../vacancy-form-schema';
 import { PROFESSION_OPTIONS, SEX_OPTIONS, AGE_RANGE_OPTIONS } from '../vacancy-form-schema';
 import { TEXTAREA_CLS, READONLY_CLS } from './vacancyFormShared';
 import { MeetLinksField } from './MeetLinksField';
+import { LockedFieldBadgeLink } from './LockedFieldBadgeLink';
 
 // ---------------------------------------------------------------------------
 // Props
@@ -45,6 +46,10 @@ export interface VacancyFormLeftColumnProps {
   dependencyLevel: string | null;
   selectCase: (caseNumber: number, patientId: string) => void;
   setValue: (field: 'age_range_min' | 'age_range_max', value: number | undefined) => void;
+  /** Fase 4: campos do form travados pela origem (`locked_fields` do GET, já invertido —
+   *  `lockedFormFields`). Vazio em modo `create` ou vaga sem origem. Reusa `selectedPatientId`
+   *  (já uma prop desta coluna) como destino do link "Editar en la ficha del paciente". */
+  lockedFields?: Set<keyof VacancyFormData>;
 }
 
 // ---------------------------------------------------------------------------
@@ -63,10 +68,13 @@ export function VacancyFormLeftColumn({
   dependencyLevel,
   selectCase,
   setValue,
+  lockedFields,
 }: VacancyFormLeftColumnProps): JSX.Element {
   const { t } = useTranslation();
   const tp = (k: string) => t(`admin.vacancyModal.${k}`);
   const tf = (k: string) => t(`admin.vacancyDetail.vacancyForm.${k}`);
+
+  const isAgeRangeLocked = lockedFields?.has('age_range_min') ?? false;
 
   const [cases, setCases] = useState<CaseOption[]>([]);
   const [isLoadingCases, setIsLoadingCases] = useState(mode === 'create');
@@ -108,9 +116,6 @@ export function VacancyFormLeftColumn({
   const patientDis = !patientSelected
     ? 'pointer-events-none select-none [&_.bg-white]:!bg-[#f3f4f6]'
     : '';
-
-  // Reference selectedPatientId to avoid unused-variable lint error
-  void selectedPatientId;
 
   return (
     <div className="space-y-6">
@@ -226,6 +231,7 @@ export function VacancyFormLeftColumn({
       <FormField label={tp('workerProfile')}>
         <textarea
           {...register('worker_attributes')}
+          data-testid="worker-attributes-textarea"
           className={`${TEXTAREA_CLS} h-[183px]`}
         />
       </FormField>
@@ -264,9 +270,13 @@ export function VacancyFormLeftColumn({
       </div>
 
       {/* 8. Age range — bucket select. All buckets respect the schema floor (min ≥ 18). */}
-      <FormField label={tp('ageRange')}>
+      <FormField
+        label={tp('ageRange')}
+        labelExtra={isAgeRangeLocked ? <LockedFieldBadgeLink patientId={selectedPatientId} testId="locked-field-link-age-range" /> : null}
+      >
         <SelectField
           value={selectedAgeKey}
+          disabled={isAgeRangeLocked}
           onChange={(key) => {
             const opt = AGE_RANGE_OPTIONS.find((o) => o.key === key);
             setValue('age_range_min', opt?.min);
