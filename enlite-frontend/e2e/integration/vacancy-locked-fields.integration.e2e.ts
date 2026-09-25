@@ -149,11 +149,17 @@ test.describe('vacancy-locked-fields — fase 1 (completar-vacante-em-rascunho) 
     // proibido em teste, F11): só o bit `is_draft` importa para o gate de SOURCE_LOCKED_FIELDS.
     runSQL(`UPDATE job_postings SET is_draft = false WHERE id = '${vacancyId}'`);
 
+    const scheduleBefore = runSQL(`SELECT schedule::text FROM job_postings WHERE id='${vacancyId}'`);
+
     const put = await request.put(`${BACKEND_URL}/api/admin/vacancies/${vacancyId}`, {
       headers: AUTH_HEADERS,
       data: { schedule: [{ dayOfWeek: 4, startTime: '10:00', endTime: '14:00' }] },
     });
     expect(put.status()).toBe(422);
     expect((await put.json()).locked_fields).toEqual(['schedule']);
+
+    // Mesmo padrão do caso do rascunho: o 422 recusa ANTES de escrever — publicada ou não.
+    const scheduleAfter = runSQL(`SELECT schedule::text FROM job_postings WHERE id='${vacancyId}'`);
+    expect(scheduleAfter).toBe(scheduleBefore);
   });
 });
