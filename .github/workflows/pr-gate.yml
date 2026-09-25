@@ -129,9 +129,10 @@ jobs:
       # `account_not_active` em qualquer rota `admin.patients` (medido,
       # commit anterior). Pertence ao job padrão (engine OFF), 5 testes.
       # `kanban-pacientes` ENTROU (cadeia paciente→vacante→itinerário, Fase 1):
-      # 5 testes do Kanban de pacientes com 8 colunas lendo `patients.status`
-      # (ordem, totalizador == API, baja fora de activo, alta por arrasto de
-      # cada coluna viva, transição recusada). Token mock, sem linha em `users`
+      # 5 testes (o `--grep` casa 6: o health check do describe entra junto) do
+      # Kanban de pacientes com 8 colunas lendo `patients.status` (ordem,
+      # totalizador == API, baja fora de activo, alta por arrasto de cada
+      # coluna viva, transição recusada). Token mock, sem linha em `users`
       # — job padrão, como `draft-wizard-locked`.
       grep: 'worker-profile-fields-persist|worker-completude-vitrine|027-public-jobs-search-en-code|vacancy-locked-fields|vacancy-schedule-hydration|draft-wizard-locked|027-vacancy-case-select|kanban-pacientes'
 

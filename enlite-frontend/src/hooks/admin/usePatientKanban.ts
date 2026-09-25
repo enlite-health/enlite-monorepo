@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import type { PatientKanbanItem } from '@domain/entities/PatientDetail';
+import { ADMISSION_FUNNEL_STATUSES } from '@domain/entities/patientEnums';
 
 /**
  * As colunas do board agrupam por `patients.status` (estado clínico v2). ADMISSION junta os 3
@@ -46,10 +47,8 @@ function emptyGroups(): PatientKanbanGroups {
   };
 }
 
-const ADMISSION_GROUP: readonly string[] = ['SOLICITANTE', 'ADMISSION', 'PENDING_ADMISSION'];
-
 function columnOf(status: string | null): PatientKanbanStatus | null {
-  if (status && ADMISSION_GROUP.includes(status)) return 'ADMISSION';
+  if (status && (ADMISSION_FUNNEL_STATUSES as readonly string[]).includes(status)) return 'ADMISSION';
   return (PATIENT_KANBAN_STATUSES as readonly string[]).includes(status ?? '')
     ? (status as PatientKanbanStatus)
     : null;
