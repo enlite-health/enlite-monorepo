@@ -578,9 +578,10 @@ jobs:
       # novo) para não abrir mais um runner: os dois usam `abac-stack-helper`
       # (psql/grantCell/loginAs — usuário REAL gravado em `users`), então
       # sobrevivem ao engine ABAC ligado e herdam o Vite já de pé. `--grep`
-      # casa TÍTULO, não arquivo — confirmado pelos `test.describe` de cada
-      # spec (6+5 = 11 testes, mais os 9 de group-simulation = 20 em 3
-      # arquivos; medido com `--list`). `draft-wizard-locked` NÃO entra aqui:
+      # casa contra a linha inteira do reporter (describe + título + CAMINHO
+      # do arquivo), não só o título — confirmado com `--list --grep` (6+5 =
+      # 11 testes, mais os 9 de group-simulation = 20 em 3 arquivos).
+      # `draft-wizard-locked` NÃO entra aqui:
       # usa token mock simples, sem linha em `users` — sob engine ligado bate
       # em 403 `account_not_active` em qualquer rota `admin.patients`
       # (medido). Vive no job padrão (`pr-gate.yml`, engine OFF).

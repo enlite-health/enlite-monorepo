@@ -110,22 +110,25 @@ jobs:
       # atravessa as camadas do conserto da D302 (banco → API → tela). Guarda
       # que nenhum pipeline executa apodrece — foi o blocker B-A do gate.
       #
-      # `027-vacancy-case-select` SAIU: o `--grep` do Playwright casa com o
-      # TÍTULO do teste, não o nome do arquivo, e o describe do spec é
-      # "@integration Modal Nueva Vacante — seleção de caso..." — sem a string
-      # "027-vacancy-case-select" em lugar nenhum. Rodava 0 testes desde a
-      # Fase 3 (medido: `--list --grep` com e sem o termo dá o mesmo total).
+      # `027-vacancy-case-select` FICA: o `--grep` do Playwright casa contra a
+      # linha inteira do reporter (describe + título + CAMINHO do arquivo),
+      # não só o título — `027-vacancy-case-select.integration.e2e.ts` casa
+      # pelo nome do arquivo mesmo o describe não tendo a string (medido:
+      # `--list --grep "027-vacancy-case-select"` sozinho dá 3 testes, não 0).
+      # Os 3 estão `test.skip` (D425 item 4 — "Nueva" fora temporariamente),
+      # então custam 0 tempo de execução — mantidos por reserva de cobertura:
+      # se o skip sair, o teste já está no portão sem precisar tocar este
+      # arquivo de novo.
       # `vacancy-locked-fields` ENTROU: guarda real da Fase 1 (campo travado
-      # não aceita PUT), 3 testes. `vacancy-schedule-hydration` ENTROU embora
-      # o spec ainda não exista NESTA branch — vem de outro PR que entra na
-      # stage antes desta; contribui 0 até lá e passa a contribuir sem exigir
-      # outro ajuste neste arquivo.
+      # não aceita PUT), 3 testes. `vacancy-schedule-hydration` ENTROU — o
+      # spec já existe nesta branch (veio com o merge do #526, commit
+      # `44970cf3`), 3 testes.
       # `draft-wizard-locked` ENTROU aqui, não no job `integration-e2e-group-
       # simulation`: usa token mock simples (molde `full-create-vacancy`),
       # sem linha em `users` — sob engine ABAC ligado bate em 403
       # `account_not_active` em qualquer rota `admin.patients` (medido,
       # commit anterior). Pertence ao job padrão (engine OFF), 5 testes.
-      grep: 'worker-profile-fields-persist|worker-completude-vitrine|027-public-jobs-search-en-code|vacancy-locked-fields|vacancy-schedule-hydration|draft-wizard-locked'
+      grep: 'worker-profile-fields-persist|worker-completude-vitrine|027-public-jobs-search-en-code|vacancy-locked-fields|vacancy-schedule-hydration|draft-wizard-locked|027-vacancy-case-select'
 
   # O agregador. `if: always()` é o que garante que ele reporta mesmo quando
   # tudo acima foi pulado — sem isso, voltaríamos ao problema que este arquivo
