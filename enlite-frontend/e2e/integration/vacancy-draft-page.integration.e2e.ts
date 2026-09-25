@@ -185,24 +185,33 @@ test.describe('draft-vacancy-page — fase 2 (completar-vacante-em-rascunho, D42
     await expect(page).toHaveURL(new RegExp(`/admin/vacancies/${draftVacancyId}/edit$`));
   });
 
-  test('2. alternativo 1 — ator sem as células: zero controles no DOM, ≥2 "Sin completar"', async ({ page }) => {
+  test('2. alternativo 1 — ator sem as células: zero controles no DOM, ≥1 "Sin completar"', async ({ page }) => {
     await loginAs(page, SEM_CELULA);
-    await page.goto(`/admin/vacancies/${draftVacancyId}/borrador`);
+    // Entra pela URL do DETALHE, como o contrato descreve ("abre a tela do rascunho" — spec.md,
+    // cenário "visualização por quem não publica") — não direto em `/borrador` (achado #7 do
+    // gate fecho 25/09). O redirect em si já é provado pelo teste 1; aqui só confirma que
+    // continua valendo também para quem NÃO tem a célula de publicar.
+    await page.goto(`/admin/vacancies/${draftVacancyId}`);
+    await expect(page).toHaveURL(new RegExp(`/admin/vacancies/${draftVacancyId}/borrador$`));
     await expect(page.getByTestId('draft-vacancy-callout')).toBeVisible();
 
     const controls = await page.locator('input, select, textarea, [data-testid="complete-vacancy-btn"]').count();
-    const semCompletar = await page.getByText('Sin completar').count();
-    expect({ controls, semCompletar }).toEqual({ controls: 0, semCompletar });
     expect(controls).toBe(0);
-    // ≥ 2, não ≥ 7 (gate parcial 25/09, achado #6): com `patient_address`/`patient_clinical:read`
+    // ≥ 1, não ≥ 7 (gate parcial 25/09, achado #6): com `patient_address`/`patient_clinical:read`
     // concedidas aos dois atores, endereço/zona/dependência deixam de contar como "Sin completar"
-    // (a permissão não é mais o que zera esses campos — o dado real é). Os 2 que SOBRAM são
-    // genuinamente vazios NESTA fixture, não por permissão: "Edad del prestador" (o foguete só
-    // preenche via `providerAgeBand` do serviço, que este `beforeAll` não passa de propósito) e
-    // "Valor por hora" (`ActivateRecruitmentUseCase.ts` grava `salary_text: null` explícito no
-    // INSERT, sempre — não há default de coluna que sobreviva a isso). ≥ 2 é o piso estável
-    // desta fixture; se a Fase 4 mudar o que o foguete preenche, este número muda com ela.
-    expect(semCompletar).toBeGreaterThanOrEqual(2);
+    // (a permissão não é mais o que zera esses campos — o dado real é). O 1 que SOBRA é
+    // genuinamente vazio NESTA fixture, não por permissão: "Edad del prestador" (o foguete só
+    // preenche via `providerAgeBand` do serviço, que este `beforeAll` não passa de propósito).
+    // "Valor por hora" NÃO entra (medido no gate fecho 25/09, achado #8): mesmo com
+    // `ActivateRecruitmentUseCase.ts` gravando `salary_text: null` no INSERT, o GET devolve "A
+    // convenir" (F2 — o default é aplicado na leitura, não sobrevive só na escrita como eu
+    // supunha antes; corrigido aqui pela evidência do e2e, não por suposição). ≥ 1 é o piso
+    // estável desta fixture; se a Fase 4 mudar o que o foguete preenche, este número muda com
+    // ela. O protótipo v3 NÃO escreve "Sin completar" na lista "Lo que falta" (só rótulos de
+    // campo com círculo vazio/cheio) — todo "Sin completar" desta contagem vem do card "Lo que
+    // ya sabemos".
+    const semCompletar = await page.getByText('Sin completar').count();
+    expect(semCompletar).toBeGreaterThanOrEqual(1);
   });
 
   test('3. alternativo 2 — vaga publicada: /borrador redireciona ao detalhe, sem banner de rascunho', async ({ page }) => {
