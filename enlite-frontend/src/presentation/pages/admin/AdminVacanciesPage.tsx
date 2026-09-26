@@ -196,10 +196,8 @@ export function AdminVacanciesPage(): JSX.Element {
         status: (vac.status as string) || '—',
         priority: toPriority(vac.priority),
         diasAberto: (vac.diasAberto as string) || '—',
-        convidados: vac.convidados != null ? String(vac.convidados) : '—',
+        stageCounts: (vac.stageCounts as Record<string, number> | undefined) ?? {},
         postulados: vac.postulados != null ? String(vac.postulados) : '—',
-        confirmados: vac.confirmados != null ? String(vac.confirmados) : '—',
-        selecionados: vac.selecionados != null ? String(vac.selecionados) : '—',
         faltantes: vac.faltantes != null ? String(vac.faltantes) : '—',
         isDraft: vac.is_draft === true,
       };
@@ -220,7 +218,7 @@ export function AdminVacanciesPage(): JSX.Element {
             alt="Argentina"
             src="https://c.animaapp.com/UVSSEdVv/img/group-237688.svg"
           />
-          <Typography variant="body" weight="medium" className="text-[#737373]">
+          <Typography variant="body" weight="medium" className="text-gray-800">
             {t('common.country')}
           </Typography>
         </div>
@@ -231,8 +229,8 @@ export function AdminVacanciesPage(): JSX.Element {
       {/* Table section */}
       <div className="flex flex-col">
         {/* Section header */}
-        <div className="bg-white rounded-t-[20px] border-2 border-b-0 border-[#D9D9D9] h-24 flex items-center justify-between px-7">
-          <Typography variant="h1" weight="semibold" className="text-[#737373] font-poppins text-2xl">
+        <div className="bg-white rounded-t-[20px] border-2 border-b-0 border-gray-600 h-24 flex items-center justify-between px-7">
+          <Typography variant="h1" weight="semibold" className="text-gray-800 font-poppins text-2xl">
             {t('admin.vacancies.vacanciesTitle')}
           </Typography>
           <div className="flex items-center gap-3">
@@ -329,7 +327,7 @@ export function AdminVacanciesPage(): JSX.Element {
               onValueChange={handleItemsPerPageChange}
             />
           </div>
-          <Typography variant="body" weight="medium" className="text-[#737373] font-lexend text-base">
+          <Typography variant="body" weight="medium" className="text-gray-800 font-lexend text-base">
             {total === 0
               ? t('admin.vacancies.pagination', { start: 0, end: 0, total: 0 })
               : t('admin.vacancies.pagination', {
@@ -345,7 +343,7 @@ export function AdminVacanciesPage(): JSX.Element {
               className="p-1 rounded disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer hover:bg-gray-100 transition-colors"
               aria-label={t('admin.vacancies.previousPage')}
             >
-              <ChevronLeft className="w-4 h-4 text-[#737373]" />
+              <ChevronLeft className="w-4 h-4 text-gray-800" />
             </button>
             <button
               onClick={() => setCurrentPage((p) => Math.min(Math.ceil(total / parseInt(itemsPerPage)), p + 1))}
@@ -353,7 +351,7 @@ export function AdminVacanciesPage(): JSX.Element {
               className="p-1 rounded disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer hover:bg-gray-100 transition-colors"
               aria-label={t('admin.vacancies.nextPage')}
             >
-              <ChevronRight className="w-4 h-4 text-[#737373]" />
+              <ChevronRight className="w-4 h-4 text-gray-800" />
             </button>
           </div>
         </div>

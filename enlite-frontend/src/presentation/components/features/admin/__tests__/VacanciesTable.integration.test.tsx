@@ -11,10 +11,16 @@ describe('VacanciesTable - Integration Test - GARANTIA DE RENDERIZAÇÃO', () =>
         status: 'Esperando Ativação',
         priority: 'URGENT',
         diasAberto: '05',
-        convidados: '329',
+        stageCounts: {
+          INVITED: 32,
+          INICIADO: 9,
+          PRE_SCREENING: 5,
+          COMPLETED: 3,
+          CONFIRMED: 43,
+          SELECTED: 27,
+          REJECTED: 2,
+        },
         postulados: '115',
-        confirmados: '43',
-        selecionados: '27',
         faltantes: '00',
         isDraft: false,
       },
@@ -24,11 +30,17 @@ describe('VacanciesTable - Integration Test - GARANTIA DE RENDERIZAÇÃO', () =>
         status: 'Esperando Ativação',
         priority: 'NORMAL',
         diasAberto: '03',
-        convidados: '164',
+        stageCounts: {
+          INVITED: 16,
+          INICIADO: 41,
+          PRE_SCREENING: 18,
+          COMPLETED: 11,
+          CONFIRMED: 19,
+          SELECTED: 61,
+          REJECTED: 10,
+        },
         postulados: '52',
-        confirmados: '09',
-        selecionados: '06',
-        faltantes: '00',
+        faltantes: '01',
         isDraft: false,
       },
     ];
@@ -48,15 +60,16 @@ describe('VacanciesTable - Integration Test - GARANTIA DE RENDERIZAÇÃO', () =>
     expect(screen.getByText('admin.vacancies.priorityOptions.urgent')).toBeVisible();
     expect(screen.getByText('admin.vacancies.priorityOptions.normal')).toBeVisible();
 
-    // GARANTIA 4: Dados numéricos visíveis
-    expect(screen.getByText('329')).toBeVisible();
-    expect(screen.getByText('115')).toBeVisible();
+    // GARANTIA 4: Dados numéricos visíveis (stageCounts das 7 colunas + postulados/faltantes)
+    expect(screen.getByText('32')).toBeVisible();
+    expect(screen.getByText('09')).toBeVisible();
+    expect(screen.getByText('05')).toBeVisible();
+    expect(screen.getByText('03')).toBeVisible();
     expect(screen.getByText('43')).toBeVisible();
     expect(screen.getByText('27')).toBeVisible();
-    expect(screen.getByText('164')).toBeVisible();
-    expect(screen.getByText('52')).toBeVisible();
-    expect(screen.getByText('09')).toBeVisible();
-    expect(screen.getByText('06')).toBeVisible();
+    expect(screen.getByText('02')).toBeVisible();
+    expect(screen.getByText('115')).toBeVisible();
+    expect(screen.getByText('00')).toBeVisible();
 
     // GARANTIA 5: 2 linhas de dados
     const dataRows = container.querySelectorAll('[class*="h-[72px]"]');
