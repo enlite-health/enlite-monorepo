@@ -16,8 +16,15 @@ import {
   parseDaysCsv,
   parseTimeHHMM,
 } from './vacancyScheduleFilter';
+import type { Pool } from 'pg';
 import { workerNotDisabledSql } from '@shared/database/activeWorkerFilter';
 import { INICIAIS_REDIGIDAS, patientNameIsRedacted } from '../../application/patientInVacancyProjection';
+import {
+  tallyKanbanColumns,
+  type KanbanTallyRow,
+  type FunnelColumnCounts,
+} from '../../domain/kanbanColumn';
+import { blockedNotPromotedSql } from '../../infrastructure/BlockedApplicationQueryRepository';
 
 // ── Display mappers ────────────────────────────────────────────────────────────
 
@@ -239,6 +246,35 @@ export function buildListVacanciesQuery(filters: ListVacanciesFilters, opts: { s
   }
 
   return { baseQuery, params, paramIndex };
+}
+
+/**
+ * Contagem por coluna do Kanban para uma PÁGINA de vagas, numa consulta só (não
+ * uma por vaga — critério 10). UNION ALL de WJA (agrupada por stage/source/messaged)
+ * com tentativas negadas não promovidas (blockedNotPromotedSql), dobrado em JS por
+ * tallyKanbanColumns — o MESMO SSOT do Kanban da vaga (Passo 0 (a): não repetir a
+ * regra em SQL).
+ */
+export async function loadStageCounts(db: Pool, jobPostingIds: string[]): Promise<Map<string, FunnelColumnCounts>> {
+  const out = new Map<string, FunnelColumnCounts>();
+  if (jobPostingIds.length === 0) return out;
+  const { rows } = await db.query(
+    `SELECT wja.job_posting_id AS id, 'wja' AS kind, wja.application_funnel_stage AS stage, wja.source,
+            (wja.messaged_at IS NOT NULL) AS messaged, COUNT(*)::int AS n
+       FROM worker_job_applications wja
+      WHERE wja.job_posting_id = ANY($1::uuid[]) AND ${WORKER_ACTIVE_SQL}
+      GROUP BY 1, 2, 3, 4, 5
+     UNION ALL
+     SELECT wba.job_posting_id, 'blocked', NULL, NULL, false, COUNT(*)::int
+       FROM worker_blocked_applications wba
+      WHERE wba.job_posting_id = ANY($1::uuid[]) AND ${blockedNotPromotedSql('wba')}
+      GROUP BY 1`,
+    [jobPostingIds],
+  );
+  const byId = new Map<string, KanbanTallyRow[]>();
+  for (const r of rows) (byId.get(r.id) ?? byId.set(r.id, []).get(r.id)!).push(r);
+  for (const id of jobPostingIds) out.set(id, tallyKanbanColumns(byId.get(id) ?? []));
+  return out;
 }
 
 // ── Row mapper ─────────────────────────────────────────────────────────────────
