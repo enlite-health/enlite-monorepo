@@ -1047,7 +1047,7 @@
         "bloqueadosFunil": {
           "title": "Bloqueados (embudo)",
           "que": "Personas que intentaron postularse a una vacante viva y fueron frenadas porque su registro estaba incompleto. La postulación no se crea; queda el intento registrado.",
-          "origen": "• Al postularse, el sistema verifica el registro. Si falta algo, registra el intento con el motivo y qué faltó.\n• En el Kanban de la vacante es la columna roja BLOQUEADO (la tarjeta no se puede arrastrar).",
+          "origen": "• Al postularse, el sistema verifica el registro. Si falta algo, registra el intento con el motivo y qué faltó.\n• En el Kanban de la vacante aparece en la columna Rechazados, con la etiqueta BLOQUEADO (la tarjeta no se puede arrastrar).",
           "cambia": "• Alguien con registro incompleto intenta postularse: sube.\n• La persona completa el registro y el intento se promueve a postulación real: baja.\n• Rechazar el intento: sale.",
           "ojo": "Queda afuera de las columnas del embudo a propósito (no hay candidatura real, y sumarlo rompería el total). Es la fila más accionable del panel: la persona ya mostró interés — falta un documento. No confundir con \"Profesionales bloqueados\"."
         },
@@ -1103,8 +1103,8 @@
           "ojo": "Cargar el rol acá es lo que permite medir \"Equipos armados\" — una selección sin rol deja el caso sin poder evaluarse."
         },
         "stage_REJECTED": {
-          "title": "Perdidos (columna)",
-          "que": "Candidaturas cerradas sin selección — antes esta columna se llamaba \"Rechazados\".",
+          "title": "Rechazados (columna)",
+          "que": "Candidaturas cerradas sin selección.",
           "origen": "• Cuatro caminos: la reclutadora rechaza con motivo · el triage reprueba automáticamente · la persona declina por WhatsApp · se rechaza un intento bloqueado.",
           "cambia": "• En la práctica solo sube: es acumulado, el rechazo no se deshace.",
           "ojo": "Perdido en UNA vacante no es perdido como prestador: mucha gente rechazada en una vacante sigue activa en otras."
@@ -1251,7 +1251,7 @@
           "COMPLETED": "Completos",
           "CONFIRMED": "Agendados",
           "SELECTED": "Seleccionados",
-          "REJECTED": "Perdidos"
+          "REJECTED": "Rechazados"
         },
         "periodLabel": "Entrada al embudo:",
         "periodAll": "Todo",
@@ -1758,7 +1758,7 @@
         "COMPLETED": "Completado",
         "CONFIRMED": "Confirmados",
         "SELECTED": "Seleccionados",
-        "REJECTED": "Perdidos",
+        "REJECTED": "Rechazados",
         "INICIADO": "Iniciados",
         "PRE_SCREENING": "Pre Screening"
       },
@@ -2349,6 +2349,7 @@
       },
       "funnelTabs": {
         "ariaLabel": "Filtros del embudo",
+        "all": "Todos",
         "invited": "Invitados",
         "postulated": "Postulados",
         "preSelected": "Pre Seleccionados",

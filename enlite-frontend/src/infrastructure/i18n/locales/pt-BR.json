@@ -1047,7 +1047,7 @@
         "bloqueadosFunil": {
           "title": "Bloqueados (funil)",
           "que": "Pessoas que tentaram se candidatar a uma vaga viva e foram barradas porque o cadastro estava incompleto. A candidatura não é criada; fica a tentativa registrada.",
-          "origen": "• Ao se candidatar, o sistema confere o cadastro. Se falta algo, registra a tentativa com o motivo e o que faltou.\n• No Kanban da vaga é a coluna vermelha BLOQUEADO (o card não pode ser arrastado).",
+          "origen": "• Ao se candidatar, o sistema confere o cadastro. Se falta algo, registra a tentativa com o motivo e o que faltou.\n• No Kanban da vaga aparece na coluna Rejeitados, com a etiqueta BLOQUEADO (o card não pode ser arrastado).",
           "cambia": "• Alguém com cadastro incompleto tenta se candidatar: sobe.\n• A pessoa completa o cadastro e a tentativa vira candidatura real: desce.\n• Rejeitar a tentativa: sai.",
           "ojo": "Fica fora das colunas do funil de propósito (não há candidatura real, e somá-la quebraria o total). É a fila mais acionável do painel: a pessoa já demonstrou interesse — falta um documento. Não confundir com \"Profissionais bloqueados\"."
         },
@@ -1103,8 +1103,8 @@
           "ojo": "Preencher o papel aqui é o que permite medir \"Equipes armadas\" — seleção sem papel deixa o caso sem poder ser avaliado."
         },
         "stage_REJECTED": {
-          "title": "Perdidos (coluna)",
-          "que": "Candidaturas encerradas sem seleção — antes esta coluna se chamava \"Rechazados\".",
+          "title": "Rejeitados (coluna)",
+          "que": "Candidaturas encerradas sem seleção.",
           "origen": "• Quatro caminhos: a recrutadora rejeita com motivo · a triagem reprova automaticamente · a pessoa declina pelo WhatsApp · uma tentativa bloqueada é rejeitada.",
           "cambia": "• Na prática só sobe: é acumulado, rejeição não se desfaz.",
           "ojo": "Perdido em UMA vaga não é perdido como prestador: muita gente rejeitada numa vaga segue ativa em outras."
@@ -1251,7 +1251,7 @@
           "COMPLETED": "Completos",
           "CONFIRMED": "Agendados",
           "SELECTED": "Selecionados",
-          "REJECTED": "Perdidos"
+          "REJECTED": "Rejeitados"
         },
         "periodLabel": "Entrada no funil:",
         "periodAll": "Tudo",
@@ -1758,7 +1758,7 @@
         "COMPLETED": "Completado",
         "CONFIRMED": "Confirmados",
         "SELECTED": "Selecionados",
-        "REJECTED": "Perdidos",
+        "REJECTED": "Rejeitados",
         "INICIADO": "Iniciados",
         "PRE_SCREENING": "Pré-triagem"
       },
@@ -2333,6 +2333,7 @@
       },
       "funnelTabs": {
         "ariaLabel": "Filtros do funil",
+        "all": "Todos",
         "invited": "Convidados",
         "postulated": "Postulados",
         "preSelected": "Pré Selecionados",
