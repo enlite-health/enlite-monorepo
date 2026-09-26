@@ -337,6 +337,8 @@ describe('família admin.vacancies — 46 rotas declaram célula', () => {
       ['get', '/api/admin/vacancies/v1/workers/w1/contact-notes', 'AUX'],
       ['post', '/api/admin/vacancies/v1/workers/w1/contact-notes', 'AUX'],
       ['delete', '/api/admin/vacancies/v1/workers/w1/contact-notes/n1', 'AUX'],
+      ['get', '/api/admin/vacancies/v1/notes', 'AUX'],
+      ['post', '/api/admin/vacancies/v1/notes', 'AUX'],
       ['get', '/api/admin/vacancies/v1/workers/w1/delivery-status', 'AUX'],
   ] as const)('%s %s → %s', async (metodo, caminho, esperado) => {
     const app = appDeRota('adminVacancies', '/api/admin', build);
