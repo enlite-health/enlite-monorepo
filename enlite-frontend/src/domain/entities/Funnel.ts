@@ -39,6 +39,8 @@ export interface FunnelTableRow {
   kanbanColumn: string | null;
   /** true quando a linha é uma tentativa negada (worker_blocked_applications), não uma candidatura (WJA). */
   isBlocked: boolean;
+  /** km do candidato até a vaga (DX-3.10); ausente/null = tentativa negada ou sem geocoding. */
+  distanceKm?: number | null;
 }
 
 export interface FunnelTableCounts {

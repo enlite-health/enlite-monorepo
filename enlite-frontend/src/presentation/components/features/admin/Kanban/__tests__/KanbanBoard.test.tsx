@@ -234,6 +234,26 @@ describe('KanbanBoard — column rendering', () => {
   });
 });
 
+// ── Ordenação por distância (DX-3.11) ───────────────────────────────────────────
+
+describe('KanbanBoard — ordem por km dentro da coluna', () => {
+  it('ordena os cards por km crescente, com sem-distância no fim', () => {
+    const c40 = makeEncuadre({ id: 'c40', distanceKm: 40 });
+    const cNull = makeEncuadre({ id: 'cNull', distanceKm: null });
+    const c3 = makeEncuadre({ id: 'c3', distanceKm: 3 });
+    const c12 = makeEncuadre({ id: 'c12', distanceKm: 12 });
+    const stages = emptyStages();
+    stages.INVITED = [c40, cNull, c3, c12];
+
+    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} />);
+
+    const invitedCol = screen.getByTestId('kanban-column-INVITED');
+    const cards = within(invitedCol).getAllByTestId(/^kanban-card-/);
+    const ids = cards.map((el) => el.getAttribute('data-testid')!.replace('kanban-card-', ''));
+    expect(ids).toEqual(['c3', 'c12', 'c40', 'cNull']);
+  });
+});
+
 // ── Drag & Drop Behavior ─────────────────────────────────────────────────────
 
 describe('KanbanBoard — drag & drop rules', () => {
