@@ -28,6 +28,7 @@ import type { AnaCareRetratoSourceStatus, SourceShiftDTO } from '../domain/AnaCa
 import type { SyncRunConclusion } from '../domain/AnaCareHoursSyncPorts';
 import type { ValidationRow } from '../infrastructure/ShiftHoursValidationRepository';
 import type { AnaCareListPatient, AnaCareMonthSnapshot, AnaCarePatient, AnaCareProvider, AnaCareShift, AnaCareSnapshotState, ValidationStatus } from '../domain/AnaCareShift';
+import type { AxonicoLancamentoSentRecord, EnliteServiceType, IAnaCarePatientDocumentRepository } from '@modules/integration';
 
 const STATUS_MAP: Record<ValidationRow['status'], ValidationStatus> = {
   pendente: 'pendiente',
@@ -260,4 +261,64 @@ export function buildSnapshot(
     snapshot.reservationsDone = conclusion.reservationsDone;
   }
   return snapshot;
+}
+
+/**
+ * change `axonico-envio-rastreavel` (24/09/2026, migration 473) — único tipo de serviço lançado
+ * no Axonico a partir desta tela, mesmo hardcode do front (`AxonicoComprobanteHttpService.ts`:
+ * `serviceType: 'AT' as const`).
+ */
+export const AXONICO_SERVICE_TYPE: EnliteServiceType = 'AT';
+
+/**
+ * Anexa `axonico` a cada `AnaCareShift` cujo `date` casa com o `serviceDate` de uma tentativa
+ * `enviado` do mês (`IAxonicoLancamentoRepository.findSentByDocumentAndMonth`) — mutação IN-PLACE
+ * dos turnos já montados por `AnaCareHoursService.buildPatients` (objeto que só a requisição atual
+ * enxerga, nunca compartilhado entre requisições). Vários turnos podem cair no MESMO dia
+ * (prestadores diferentes) — todos ganham o mesmo `axonico`, porque o lançamento foi feito pelo
+ * DIA inteiro, não por turno. `sent.length === 0` (nunca lançado neste mês) é no-op.
+ */
+export function attachAxonicoToPatient(patient: AnaCarePatient, sent: readonly AxonicoLancamentoSentRecord[]): void {
+  if (sent.length === 0) return;
+  const byServiceDate = new Map(sent.map((s) => [s.serviceDate, s]));
+  for (const provider of patient.providers) {
+    for (const shift of provider.shifts) {
+      const record = byServiceDate.get(shift.date);
+      if (!record) continue;
+      shift.axonico = {
+        status: 'enviado',
+        numeroComprobante: record.numeroComprobante,
+        codAutorizacion: record.codAutorizacion,
+        sentAt: record.createdAt.toISOString(),
+        ...(record.sentBy ? { sentBy: { uid: record.sentBy, displayName: record.sentByName } } : {}),
+      };
+    }
+  }
+}
+
+/**
+ * A2 (achado do gate `revisao-pr`, 25/09/2026): documento para a CHAVE de busca do Axonico —
+ * SEMPRE resolvido, independente da célula `patient_identity:read` (que só filtra o campo EXPOSTO
+ * ao front, `AnaCarePatient.documentNumber`, em `AnaCareHoursService.buildPatients`). Antes,
+ * `getPatientMonth` só consultava o Axonico quando esse campo gated saía preenchido — sem a
+ * célula, o dia perdia `axonico` a cada reload, mesmo já lançado por outra pessoa (o botão
+ * "Enviar" reaparecia). Mesma fonte que `resolveRegisteredDocuments` usa (fonte primeiro, fallback
+ * no documento REGISTRADO manualmente) — mas o valor NUNCA é devolvido ao chamador, só usado como
+ * chave de `findSentByDocumentAndMonth`.
+ *
+ * R1 (achado do gate, 25/09/2026): o `find` tem de casar `anaCarePatientId === patientId` — antes
+ * pegava o 1º turno de `sourceShifts` com `patientDocumentNumber`, qualquer que fosse o paciente.
+ * Em produção `sourceShifts` já vem filtrado por paciente (`this.source.listShifts({ month,
+ * patientId })`, ver `getPatientMonth`), então o defeito ficava mascarado — só aparece se a fonte
+ * um dia devolver turnos de outro paciente na mesma lista.
+ */
+export async function resolveDocumentNumberForAxonico(
+  sourceShifts: readonly SourceShiftDTO[],
+  patientId: string,
+  patientDocuments: IAnaCarePatientDocumentRepository,
+): Promise<string | null> {
+  const fromSource = sourceShifts.find((s) => s.anaCarePatientId === patientId && s.patientDocumentNumber)?.patientDocumentNumber;
+  if (fromSource) return fromSource;
+  const registered = await patientDocuments.findByPatientId(patientId);
+  return registered?.documentNumber ?? null;
 }

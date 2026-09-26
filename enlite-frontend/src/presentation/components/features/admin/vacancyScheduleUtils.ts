@@ -20,7 +20,7 @@ export const DAY_LABELS: Record<DayKey, string> = {
   dom: 'Domingo',
 };
 
-const LABEL_TO_KEY: Record<string, DayKey> = {
+export const LABEL_TO_KEY: Record<string, DayKey> = {
   lunes: 'lun',
   martes: 'mar',
   miércoles: 'mie',
