@@ -29,6 +29,8 @@ function makeRow(
     interviewResponse: null,
     registrationComplete: false,
     contactNotesCount: 0,
+    kanbanColumn: null,
+    isBlocked: false,
   };
 }
 
@@ -61,6 +63,7 @@ describe('useInvitedPendingCandidates', () => {
         REJECTED: 0,
         WITHDREW: 0,
         ALL: 3,
+        columns: {},
       },
     });
 
@@ -89,6 +92,7 @@ describe('useInvitedPendingCandidates', () => {
         REJECTED: 0,
         WITHDREW: 0,
         ALL: 3,
+        columns: {},
       },
     });
 

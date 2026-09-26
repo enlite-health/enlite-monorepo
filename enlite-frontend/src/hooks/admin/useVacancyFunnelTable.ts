@@ -1,12 +1,25 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import type { FunnelBucket, FunnelTableData } from '@domain/entities/Funnel';
+import type { VacancyFunnelColumn } from '@presentation/components/features/admin/VacancyDetail/Funnel/funnelTabsConfig';
 
 const POLL_INTERVAL_MS = 10_000;
 
+/**
+ * O que o hook precisa de uma aba para montar a query (DX-2.1/DX-2.6): `key` identifica a aba
+ * (dependência do fetch), e ou ela é uma coluna do Kanban (`columns=<sources>`) ou um bucket velho
+ * (`bucket=<b>`). `FunnelTab` (funnelTabsConfig.ts) satisfaz esta forma estruturalmente — é o tipo
+ * usado pelas abas de fato renderizadas (P17). `bucket` aqui aceita qualquer `FunnelBucket`
+ * (não só os 3 que sobraram em `FunnelTab`), porque `useInvitedPendingCandidates` continua pedindo
+ * `?bucket=INVITED` direto, sem estar entre as abas visíveis.
+ */
+export type FunnelTableTab =
+  | { key: string; kind: 'column'; column: VacancyFunnelColumn }
+  | { key: string; kind: 'bucket'; bucket: FunnelBucket };
+
 export function useVacancyFunnelTable(
   vacancyId: string | undefined,
-  bucket: FunnelBucket,
+  tab: FunnelTableTab,
   enabled: boolean,
 ) {
   const [data, setData] = useState<FunnelTableData | null>(null);
@@ -25,7 +38,7 @@ export function useVacancyFunnelTable(
         }
         const response = await AdminApiService.getVacancyFunnelTable(
           vacancyId,
-          bucket,
+          tab.kind === 'column' ? { columns: tab.column.sources } : { bucket: tab.bucket },
         );
         setData(response);
         if (!silent) setError(null);
@@ -39,7 +52,7 @@ export function useVacancyFunnelTable(
         isFetchingRef.current = false;
       }
     },
-    [vacancyId, bucket, enabled],
+    [vacancyId, tab.key, enabled],
   );
 
   useEffect(() => {

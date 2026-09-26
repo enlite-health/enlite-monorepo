@@ -69,6 +69,8 @@ const mockRows: FunnelTableRow[] = [
     interviewResponse: null,
     registrationComplete: true,
     contactNotesCount: 2,
+    kanbanColumn: null,
+    isBlocked: false,
   },
   {
     id: 'row-2',
@@ -85,6 +87,8 @@ const mockRows: FunnelTableRow[] = [
     interviewResponse: null,
     registrationComplete: false,
     contactNotesCount: 0,
+    kanbanColumn: null,
+    isBlocked: false,
   },
 ];
 

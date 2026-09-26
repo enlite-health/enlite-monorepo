@@ -35,6 +35,10 @@ export interface FunnelTableRow {
    * prova de desinteresse.
    */
   selfAppliedAt?: string | null;
+  /** Coluna derivada do Kanban (DX-2.2) para esta linha; null quando o backend não a calcula (bucket sem coluna). */
+  kanbanColumn: string | null;
+  /** true quando a linha é uma tentativa negada (worker_blocked_applications), não uma candidatura (WJA). */
+  isBlocked: boolean;
 }
 
 export interface FunnelTableCounts {
@@ -44,6 +48,8 @@ export interface FunnelTableCounts {
   REJECTED: number;
   WITHDREW: number;
   ALL: number;
+  /** Contagem por coluna derivada do Kanban (DX-2.3), chaves = VacancyFunnelColumnId + 'IN_PROGRESS'. */
+  columns: Record<string, number>;
 }
 
 export interface FunnelTableData {
