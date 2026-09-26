@@ -3,7 +3,7 @@
  *
  * Anotação manual por vacante — "o que o time fez com a vaga" (divulgação,
  * contato, outro), #DEC-31 (cadeia-paciente-vacante-itinerario, Fase 3).
- * Categorias = CHECK da migration 474 (`job_posting_notes`); repositório e
+ * Categorias = CHECK da migration 476 (`job_posting_notes`); repositório e
  * use case importam a lista daqui, nunca a repetem.
  */
 import { z } from 'zod';
