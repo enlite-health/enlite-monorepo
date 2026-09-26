@@ -8,7 +8,6 @@ import {
   TableHead,
 } from '@presentation/components/atoms/Table';
 import type { FunnelTableRow } from '@domain/entities/Funnel';
-import type { FunnelBucket } from '@domain/entities/Funnel';
 import { VacancyFunnelTableRow } from './VacancyFunnelTableRow';
 import { ContactNotesModal } from './ContactNotesModal';
 
@@ -16,7 +15,8 @@ interface VacancyFunnelTableProps {
   vacancyId: string;
   rows: FunnelTableRow[];
   isLoading: boolean;
-  activeBucket: FunnelBucket;
+  /** Rótulo já traduzido da aba ativa (View resolve via `t(activeTab.i18nKey)`), pro aria-label da tabela. */
+  activeTabLabel: string;
 }
 
 interface ActiveNotesModal {
@@ -28,7 +28,7 @@ export function VacancyFunnelTable({
   vacancyId,
   rows,
   isLoading,
-  activeBucket,
+  activeTabLabel,
 }: VacancyFunnelTableProps): JSX.Element {
   const { t } = useTranslation();
   const [activeNotes, setActiveNotes] = useState<ActiveNotesModal | null>(null);
@@ -74,7 +74,7 @@ export function VacancyFunnelTable({
     <>
       <Table
         role="table"
-        aria-label={`${t('admin.vacancyDetail.funnelTabs.' + activeBucket.toLowerCase().replace('_', ''))} funnel`}
+        aria-label={`${activeTabLabel} funnel`}
         className="border-collapse"
       >
         <TableHeader>

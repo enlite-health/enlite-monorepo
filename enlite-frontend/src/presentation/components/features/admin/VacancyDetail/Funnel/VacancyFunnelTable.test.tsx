@@ -96,7 +96,7 @@ const defaultProps = {
   vacancyId: 'vac-1',
   rows: mockRows,
   isLoading: false,
-  activeBucket: 'INVITED' as const,
+  activeTabLabel: 'Invitados',
 };
 
 describe('VacancyFunnelTable', () => {
@@ -222,7 +222,7 @@ describe('VacancyFunnelTable', () => {
 // Coluna "Origen" — o mesmo sinal do card do Kanban, aqui na vista que é o DEFAULT
 // do funil. Sem isto, quem nunca troca de vista não vê quem levantou a mão.
 describe('VacancyFunnelTable — coluna Origen (levantou a mão)', () => {
-  const props = { vacancyId: 'vac-123', isLoading: false, activeBucket: 'INVITED' as const };
+  const props = { vacancyId: 'vac-123', isLoading: false, activeTabLabel: 'Invitados' };
 
   it('mostra o selo quando o próprio prestador entrou pelo link', () => {
     const rows: FunnelTableRow[] = [
