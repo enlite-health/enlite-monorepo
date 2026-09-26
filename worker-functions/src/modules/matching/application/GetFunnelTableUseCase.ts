@@ -187,6 +187,7 @@ export class GetFunnelTableUseCase {
       selfAppliedAt: raw.self_applied_at ?? null,
       kanbanColumn,
       isBlocked: raw.is_blocked,
+      distanceKm: raw.distance_km == null ? null : Number(raw.distance_km),
     };
   }
 
