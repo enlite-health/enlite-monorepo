@@ -232,6 +232,17 @@ export function formatSourceRange(startIso: string | null | undefined, endIso: s
   return crossesMidnight ? `${start}–${end} (+1)` : `${start}–${end}`;
 }
 
+/**
+ * `dd/MM` de um `YYYY-MM-DD` — formato curto usado em "Validado por X · dd/MM" (`DayGroup`) e "Por:
+ * X · dd/MM" (`AxonicoSendControl`). Movida de `DayGroup.tsx` (24/09/2026, change
+ * `axonico-envio-rastreavel`) para cá — as DUAS telas precisavam do mesmo formato, e o dono único
+ * de formatação de dia já é este arquivo (`formatSourceRange`/`formatSourceTime` acima).
+ */
+export function formatShortDate(isoDate: string): string {
+  const [, month, day] = isoDate.split('-');
+  return `${day}/${month}`;
+}
+
 /** Turnos com "Sin check-in" entre os pendentes de um lote — informação exibida no modal de lote. */
 export function pendingOriginBreakdown(shifts: AnaCareShift[]): { sinCheckin: number; webAdmin: number } {
   return {
@@ -478,4 +489,29 @@ export function axonicoDayEligibility(
   if (Math.abs(total - Math.round(total)) >= WHOLE_HOUR_EPSILON) reasons.push('fractionalHours');
   if (!documentNumber) reasons.push('missingDocument');
   return { eligible: reasons.length === 0, reasons };
+}
+
+/** ↔ `AnaCareShift.axonico`, já resolvido pro DIA — forma que `AxonicoSendControl` consome (prop `sent`). */
+export interface AxonicoSentInfo {
+  numeroComprobante: string;
+  /** `null` = tentativa gravada antes da migration 473 (sem autor conhecido) — nunca "Por: null". */
+  sentBy: { displayName: string | null } | null;
+  sentAt: string;
+}
+
+/**
+ * change `axonico-envio-rastreavel` (24/09/2026): o backend anexa `axonico` a CADA turno do dia
+ * casado (mesmo valor em todos — o lançamento foi feito pelo DIA, não pelo turno individual), então
+ * basta olhar o PRIMEIRO turno que tiver o campo. `undefined` = nenhum turno do dia tem
+ * `axonico` (nunca lançado neste mês, ou paciente sem `documentNumber` — `getPatientMonth` nem
+ * consulta o backend nesse caso). Único dono — `DayGroup` só lê o resultado.
+ */
+export function axonicoSentOf(shifts: AnaCareShift[]): AxonicoSentInfo | undefined {
+  const withAxonico = shifts.find((s) => s.axonico !== undefined);
+  if (!withAxonico?.axonico) return undefined;
+  return {
+    numeroComprobante: withAxonico.axonico.numeroComprobante,
+    sentBy: withAxonico.axonico.sentBy ?? null,
+    sentAt: withAxonico.axonico.sentAt,
+  };
 }

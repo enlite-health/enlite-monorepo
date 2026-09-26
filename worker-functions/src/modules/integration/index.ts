@@ -10,6 +10,14 @@ export type { WorkerMirrorRecord, WorkerMirrorAddress } from './domain/WorkerMir
 export type { WorkerMirrorProvider, WorkerMirrorUpsertResult } from './domain/WorkerMirrorProvider';
 export type { IAnaCareApiClient, AnaCareNursePayload, AnaCareNurse, AnaCareNurseType, AnaCareHiringType, AnaCarePagedResponse, AnaCareNurseBulkItem, AnaCareNurseBulkPayload } from './domain/IAnaCareApiClient';
 export type { IAnaCarePatientDocumentRepository, AnaCarePatientDocumentRecord, InsertAnaCarePatientDocumentParams } from './domain/IAnaCarePatientDocumentRepository';
+export type { EnliteServiceType } from './domain/EnliteServiceType';
+export type {
+  IAxonicoLancamentoRepository,
+  AxonicoLancamentoRecord,
+  AxonicoLancamentoSentRecord,
+  AxonicoLancamentoStatus,
+  InsertAxonicoLancamentoParams,
+} from './domain/IAxonicoLancamentoRepository';
 
 // Ports
 export type { IWebhookPartnerRepository } from './ports/IWebhookPartnerRepository';
@@ -56,6 +64,7 @@ export { AnaCareShiftsSourceReal } from './infrastructure/anacare/AnaCareShiftsS
 export { AnaCareEnliteDirectory, AnaCareEnliteDirectoryError } from './infrastructure/anacare/AnaCareEnliteDirectory';
 export type { EnliteDirectoryEntry, EnliteDirectory } from './infrastructure/anacare/AnaCareEnliteDirectory';
 export { AnaCarePatientDocumentRepository } from './infrastructure/AnaCarePatientDocumentRepository';
+export { AxonicoLancamentoRepository } from './infrastructure/AxonicoLancamentoRepository';
 
 // Application — use cases
 export { PublishVacancyToTalentumUseCase, PublishError } from './application/PublishVacancyToTalentumUseCase';

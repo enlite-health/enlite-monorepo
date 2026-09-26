@@ -488,6 +488,30 @@ test.describe('Envio ao Axonico — E2E real @integration', () => {
     // PROVA POSITIVA (b) — o PUT chegou no stub de verdade; contagem parada = tráfego foi pra
     // outro lugar (produção ou nenhum lugar), o que é FALHA, nunca sucesso.
     expect(stub.requestCounts.comprobantePut).toBeGreaterThan(countesAntes);
+
+    // change `axonico-envio-rastreavel` (24/09/2026, migration 473) — PROVA CENTRAL desta change:
+    // antes, o cabeçalho mostrava "Enviado" só por ESTADO LOCAL do hook (`useSendComprobanteToAxonico`)
+    // — um reload perdia o estado e o botão "Enviar" voltava. Agora o GET do dia traz `axonico`
+    // persistido (`sent_by` gravado no INSERT), e a tela continua "Enviado" depois do F5, com quem
+    // enviou. Nenhum PUT novo ao stub — o dado vem só de leitura.
+    const putAntesDoReload = stub.requestCounts.comprobantePut;
+    await page.reload();
+    semana.resetarAposReloadOuMount();
+    await expect(page.getByRole('heading', { name: /ID AC-PAT-7/ })).toBeVisible({ timeout: 15_000 });
+    await semana.irPara(TARGET_FELIZ.dateIso);
+
+    const sentLabelAposReload = page.getByTestId(`anacare-hours-day-sent-${TARGET_FELIZ.dateIso}`);
+    await expect(sentLabelAposReload).toBeVisible({ timeout: 15_000 });
+    await expect(sentLabelAposReload).toContainText('CMP-');
+    const sentByLabel = page.getByTestId(`anacare-hours-day-sent-by-${TARGET_FELIZ.dateIso}`);
+    await expect(sentByLabel).toBeVisible({ timeout: 10_000 });
+    // display_name do staff que enviou (semeado no beforeAll: 'E2E Axonico Envio') — a prova de
+    // QUEM disparou, não só QUE foi disparado.
+    await expect(sentByLabel).toContainText('E2E Axonico Envio');
+    // Botão "Enviar" NUNCA reaparece pra um dia já persistido como enviado.
+    await expect(page.getByTestId(`anacare-hours-send-day-${TARGET_FELIZ.dateIso}`)).toHaveCount(0);
+    await print(page, 'feliz-enviado-apos-reload.png');
+    expect(stub.requestCounts.comprobantePut).toBe(putAntesDoReload);
   });
 
   test('ALTERNATIVO duplicado — stub responde duplicado SEM número; a tela nunca mostra "undefined"', async ({ page }) => {
@@ -574,21 +598,24 @@ test.describe('Envio ao Axonico — E2E real @integration', () => {
 
     // reload — prova "depois disso não perguntar mais": o documento agora vem do BANCO
     // (`ana_care_patient_document`, populado pelo registro acima) no próximo GET, então
-    // `missingDocument` não é mais razão nenhuma e o clique NUNCA abre o modal de novo.
+    // `missingDocument` não é mais razão nenhuma.
+    //
+    // change `axonico-envio-rastreavel` (24/09/2026, migration 473) — REVISÃO desta asserção: antes
+    // desta change, o botão "Enviar" REAPARECIA após o reload (bug que esta change fecha — estado
+    // local perdido) e um segundo clique caía no dedupe LOCAL sem reabrir o modal. Agora o dia vem
+    // PERSISTIDO como enviado (`axonico` no GET) — o botão "Enviar" NEM CHEGA a reaparecer, então o
+    // modal de documento não tem como reabrir por CONSTRUÇÃO (não há mais clique nenhum), prova
+    // mais forte do que "cliquei e não abriu".
     await page.reload();
     semana.resetarAposReloadOuMount();
     await expect(page.getByRole('heading', { name: /ID AC-PAT-9/ })).toBeVisible({ timeout: 15_000 });
     await semana.irPara(TARGET_DNI.dateIso);
 
     await expect(page.getByTestId(`anacare-hours-axonico-reason-missingDocument-${TARGET_DNI.dateIso}`)).toHaveCount(0, { timeout: 15_000 });
-    const enviarBtnDeNovo = page.getByTestId(`anacare-hours-send-day-${TARGET_DNI.dateIso}`);
-    await expect(enviarBtnDeNovo).toBeVisible({ timeout: 15_000 });
-    await enviarBtnDeNovo.click();
-
-    // o clique segue direto (duplicado LOCAL, guard 2 — mesmo doc/mesma data/mesmo tipo já
-    // enviado acima) — o que importa aqui é só isto: o modal NUNCA aparece de novo.
-    await page.waitForTimeout(1_500);
+    const sentLabelAposReload = page.getByTestId(`anacare-hours-day-sent-${TARGET_DNI.dateIso}`);
+    await expect(sentLabelAposReload).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId(`anacare-hours-send-day-${TARGET_DNI.dateIso}`)).toHaveCount(0);
     await expect(page.getByTestId('anacare-hours-axonico-document-modal')).toHaveCount(0);
-    await print(page, 'dni-reload-sem-modal.png');
+    await print(page, 'dni-reload-persistido-sem-modal.png');
   });
 });

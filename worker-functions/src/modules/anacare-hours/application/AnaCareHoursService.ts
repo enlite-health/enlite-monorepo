@@ -2,23 +2,21 @@
  * src/modules/anacare-hours/application/AnaCareHoursService.ts
  *
  * Orquestra a porta `AnaCareShiftsSource` (adapter falso em F1) + `ShiftHoursValidationRepository`
- * + KMS (nota de contestação) para servir os 6 métodos do contrato do protótipo (spec §Contrato
- * de dados): getMonthSnapshot, getPatientMonth, getRetratoStatus, validateShift, validateBatch,
- * contestShift.
- *
- * Nenhum `reportError`/`logger` abaixo carrega nome, ID de paciente/prestador da Ana Care nem o
- * texto da nota — regra dura CLAUDE.md (texto clínico nunca em log).
+ * + KMS (nota de contestação) para servir os 6 métodos do contrato do protótipo: getMonthSnapshot,
+ * getPatientMonth, getRetratoStatus, validateShift, validateBatch, contestShift. Nenhum
+ * `reportError`/`logger` abaixo carrega nome, ID de paciente/prestador nem texto de nota — regra
+ * dura CLAUDE.md (texto clínico nunca em log).
  */
 
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import type { AnaCareShiftsSource, SourceShiftDTO } from '../domain/AnaCareShiftsSource';
 import type { PatientMonthSyncRepository, SyncRunRepository } from '../domain/AnaCareHoursSyncPorts';
-import { AnaCarePatientDocumentRepository, type IAnaCarePatientDocumentRepository } from '@modules/integration';
+import { AnaCarePatientDocumentRepository, AxonicoLancamentoRepository, type IAnaCarePatientDocumentRepository, type IAxonicoLancamentoRepository } from '@modules/integration';
 import { ShiftHoursValidationRepository, ShiftAlreadyValidatedError } from '../infrastructure/ShiftHoursValidationRepository';
 import { WorkerLinkRepository } from '../infrastructure/WorkerLinkRepository';
 import { AnaCarePatientMonthRepository } from '../infrastructure/AnaCarePatientMonthRepository';
 import { AnaCareSyncRunRepository } from '../infrastructure/AnaCareSyncRunRepository';
-import { mapShift, groupIntoPatients, buildSnapshot, computeActualHours, joinSourceName } from './AnaCareHoursMapper';
+import { mapShift, groupIntoPatients, buildSnapshot, computeActualHours, joinSourceName, attachAxonicoToPatient, resolveDocumentNumberForAxonico, AXONICO_SERVICE_TYPE } from './AnaCareHoursMapper';
 import {
   AnaCareHoursServiceError,
   CONTEST_NOTE_MAX_LENGTH,
@@ -79,6 +77,7 @@ export class AnaCareHoursService {
      * `patientDocuments` precisa mudar.
      */
     private readonly syncRunRepository: SyncRunRepository = new AnaCareSyncRunRepository(),
+    private readonly lancamentoRepository: IAxonicoLancamentoRepository = new AxonicoLancamentoRepository(),
   ) {}
 
   /**
@@ -266,11 +265,18 @@ export class AnaCareHoursService {
     canReadProviderName = false,
     canReadPatientDocument = false,
   ): Promise<AnaCarePatient | null> {
-    // `skipped` (turno sem paciente/prestador) não é reportado por este caminho de DETALHE —
-    // só o sync (`AnaCareHoursSyncRunner`) agrega e conta; achado registrado em separado.
+    // `skipped` (turno sem paciente/prestador) não é reportado aqui — só o sync agrega e conta.
     const { shifts: sourceShifts } = await this.source.listShifts({ month, patientId });
     const patients = await this.buildPatients(sourceShifts, canReadNote, canReadProviderName, canReadPatientDocument);
-    return patients.find((p) => p.anaCareId === patientId) ?? null;
+    const patient = patients.find((p) => p.anaCareId === patientId) ?? null;
+    if (patient) {
+      // A2 (gate revisao-pr): chave do Axonico SEMPRE resolvida — nunca via `patient.documentNumber` (gated por `patient_identity:read`).
+      const axonicoDocumentNumber = await resolveDocumentNumberForAxonico(sourceShifts, patientId, this.patientDocuments);
+      if (axonicoDocumentNumber) {
+        attachAxonicoToPatient(patient, await this.lancamentoRepository.findSentByDocumentAndMonth(axonicoDocumentNumber, AXONICO_SERVICE_TYPE, periodMonthDate(month)));
+      }
+    }
+    return patient;
   }
 
   /**
