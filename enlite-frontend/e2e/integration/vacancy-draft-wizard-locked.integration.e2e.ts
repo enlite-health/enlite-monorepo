@@ -332,7 +332,7 @@ test.describe('draft-wizard-locked — fase 4 (completar-vacante-em-rascunho) @i
     await expect(textarea).toHaveValue(dirtyValue);
 
     await page.getByTestId('vacancy-wizard-back-btn').click();
-    const dialog = page.getByRole('dialog');
+    const dialog = page.getByTestId('unsaved-changes-dialog');
     await expect(dialog).toBeVisible();
     await expect(dialog).toContainText('guardar');
 
@@ -349,9 +349,9 @@ test.describe('draft-wizard-locked — fase 4 (completar-vacante-em-rascunho) @i
     await page.goto(`/admin/vacancies/${draftVacancyId}/edit`);
     await expect(page.getByTestId('vacancy-wizard-back-btn')).toBeVisible({ timeout: 15_000 });
 
-    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(page.getByTestId('unsaved-changes-dialog')).toHaveCount(0);
     await page.getByTestId('vacancy-wizard-back-btn').click();
-    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(page.getByTestId('unsaved-changes-dialog')).toHaveCount(0);
     await expect(page).toHaveURL(new RegExp(`/admin/vacancies/${draftVacancyId}/borrador$`));
   });
 
