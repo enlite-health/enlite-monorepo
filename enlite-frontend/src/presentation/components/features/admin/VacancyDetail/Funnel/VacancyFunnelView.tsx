@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from 'react';
 import { Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { ActionButton } from '@presentation/components/features/access';
-import type { FunnelBucket } from '@domain/entities/Funnel';
 import { useVacancyFunnelTable } from '@hooks/admin/useVacancyFunnelTable';
 import { useInvitedPendingCandidates } from '@hooks/admin/useInvitedPendingCandidates';
 import type { InviteTarget } from '../../VacancyMatch/inviteTypes';
@@ -15,8 +14,9 @@ import { DispatchConfirmModal } from './DispatchConfirmModal';
 import { MatchVacancyModal } from '../../VacancyMatch/MatchVacancyModal';
 import { useInviteProgressStore } from '@presentation/stores/inviteProgressStore';
 import type { VacancyForMatch } from '../../VacancyMatch/matchModalHelpers';
+import { FUNNEL_TABS, type FunnelTab } from './funnelTabsConfig';
 
-const DEFAULT_BUCKET: FunnelBucket = 'INVITED';
+const DEFAULT_TAB_KEY: FunnelTab['key'] = 'INVITED';
 
 function getPersistedView(vacancyId: string): FunnelView {
   if (typeof window === 'undefined') return 'list';
@@ -51,8 +51,8 @@ export function VacancyFunnelView({
   const [view, setView] = useState<FunnelView>(() =>
     getPersistedView(vacancyId),
   );
-  const [activeBucket, setActiveBucket] =
-    useState<FunnelBucket>(DEFAULT_BUCKET);
+  const [activeTabKey, setActiveTabKey] =
+    useState<FunnelTab['key']>(DEFAULT_TAB_KEY);
   const [showMatchModal, setShowMatchModal] = useState(false);
   const [showDispatchConfirm, setShowDispatchConfirm] = useState(false);
   const [dispatchSnapshot, setDispatchSnapshot] = useState<InviteTarget[]>([]);
@@ -61,10 +61,11 @@ export function VacancyFunnelView({
   const isSendingInvites = useInviteProgressStore((s) => s.isSending);
 
   const isListView = view === 'list';
+  const activeTab = FUNNEL_TABS.find((tab) => tab.key === activeTabKey)!;
 
   const { data, isLoading } = useVacancyFunnelTable(
     vacancyId,
-    activeBucket,
+    activeTab,
     isListView,
   );
 
@@ -79,8 +80,8 @@ export function VacancyFunnelView({
     persistView(vacancyId, newView);
   }
 
-  function handleBucketChange(bucket: FunnelBucket) {
-    setActiveBucket(bucket);
+  function handleTabChange(tab: FunnelTab) {
+    setActiveTabKey(tab.key);
   }
 
   function handleDispatchInvites() {
@@ -106,10 +107,10 @@ export function VacancyFunnelView({
     wasSending.current = isSendingInvites;
   }, [isSendingInvites, refetchPending]);
 
-  // Reset bucket when switching back to list view
+  // Reset tab when switching back to list view
   useEffect(() => {
     if (isListView) {
-      setActiveBucket(DEFAULT_BUCKET);
+      setActiveTabKey(DEFAULT_TAB_KEY);
     }
   }, [isListView]);
 
@@ -152,20 +153,20 @@ export function VacancyFunnelView({
       {isListView && (
         <>
           <VacancyFunnelTabs
-            activeBucket={activeBucket}
+            activeTab={activeTabKey}
             counts={data?.counts}
-            onBucketChange={handleBucketChange}
+            onTabChange={handleTabChange}
           />
           <div
             role="tabpanel"
-            id={`funnel-panel-${activeBucket}`}
-            aria-labelledby={`funnel-tab-${activeBucket}`}
+            id={`funnel-panel-${activeTabKey}`}
+            aria-labelledby={`funnel-tab-${activeTabKey}`}
           >
             <VacancyFunnelTable
               vacancyId={vacancyId}
               rows={data?.rows ?? []}
               isLoading={isLoading}
-              activeBucket={activeBucket}
+              activeTabLabel={t(activeTab.i18nKey)}
             />
           </div>
           {isLoading && data && (
