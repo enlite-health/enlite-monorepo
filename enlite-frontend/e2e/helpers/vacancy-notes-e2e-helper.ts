@@ -69,6 +69,10 @@ export interface CreateNoteViaUiOpts {
   /** Quando informado, digita o "cuándo" como `hoje − daysAgo` (fuso de Buenos
    *  Aires). Omitido: mantém o default do formulário (agora). */
   daysAgo?: number;
+  /** Quando informado, digita o "cuándo" como `hoje + daysAhead` (fuso de
+   *  Buenos Aires) — data no futuro, para provar a recusa do servidor
+   *  (`occurredAt no futuro`, DX-3.3). Mutuamente exclusivo com `daysAgo`. */
+  daysAhead?: number;
   category: VacancyNoteCategory;
   contact: string;
   body: string;
@@ -119,13 +123,17 @@ async function typeWhen(page: Page, when: ReturnType<Page['getByTestId']>, d: Da
  * HTTP do `POST /api/admin/vacancies/:id/notes` que o save dispara.
  */
 export async function createNoteViaUi(page: Page, opts: CreateNoteViaUiOpts): Promise<number> {
-  const { daysAgo, category, contact, body } = opts;
+  const { daysAgo, daysAhead, category, contact, body } = opts;
 
   await page.getByTestId('vacancy-notes-new-button').click();
 
   if (daysAgo !== undefined) {
     const when = page.getByTestId('vacancy-note-when');
     const target = new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000);
+    await typeWhen(page, when, target);
+  } else if (daysAhead !== undefined) {
+    const when = page.getByTestId('vacancy-note-when');
+    const target = new Date(Date.now() + daysAhead * 24 * 60 * 60 * 1000);
     await typeWhen(page, when, target);
   }
 
