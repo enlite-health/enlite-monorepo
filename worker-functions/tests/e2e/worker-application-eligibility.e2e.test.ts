@@ -192,7 +192,7 @@ describe('Worker application eligibility — bloqueio de postulação incompleta
     it('worker REGISTERED → 200 e atualiza application_funnel_stage', async () => {
       const res = await api.put(
         `/api/admin/encuadres/${E.REG}/move`,
-        { targetStage: 'CONFIRMED' },
+        { targetStage: 'CONFIRMED', reasonCategory: 'ENCUADRE_ANTECIPADO' },
         { headers: { Authorization: `Bearer ${adminToken}` } },
       );
 

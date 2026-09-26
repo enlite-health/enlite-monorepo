@@ -161,7 +161,7 @@ describe('Mensagem por etapa do Kanban (PEND-14 / DEC-12) @integration', () => {
   });
 
   it('mover a tarjeta para COMPLETED → evento na mesma transação → outbox com o template e log queued com quem moveu', async () => {
-    const mv = await api.put(`/api/admin/encuadres/${encA}/move`, { targetStage: 'COMPLETED' }, asRecruiter);
+    const mv = await api.put(`/api/admin/encuadres/${encA}/move`, { targetStage: 'COMPLETED', reasonCategory: 'ENCUADRE_ANTECIPADO' }, asRecruiter);
     expect(mv.status).toBe(200);
     const stage = await pool.query(`SELECT application_funnel_stage FROM worker_job_applications WHERE worker_id = $1 AND job_posting_id = $2`, [workerA, jobA]);
     expect(stage.rows[0].application_funnel_stage).toBe('COMPLETED');
@@ -198,7 +198,7 @@ describe('Mensagem por etapa do Kanban (PEND-14 / DEC-12) @integration', () => {
   });
 
   it('worker em opt-out → OPT_OUT, zero outbox, base do opt-out intacta (lex C2)', async () => {
-    expect((await api.put(`/api/admin/encuadres/${encOpt}/move`, { targetStage: 'COMPLETED' }, asAdmin)).status).toBe(200);
+    expect((await api.put(`/api/admin/encuadres/${encOpt}/move`, { targetStage: 'COMPLETED', reasonCategory: 'ENCUADRE_ANTECIPADO' }, asAdmin)).status).toBe(200);
     await processLatestEvent('funnel_stage.completed', workerOptOut);
     expect((await outboxFor(workerOptOut)).rows).toHaveLength(0);
     expect((await logFor(workerOptOut)).rows.map((r) => `${r.status}:${r.skip_reason}`)).toEqual(['skipped:OPT_OUT']);
@@ -222,7 +222,7 @@ describe('Mensagem por etapa do Kanban (PEND-14 / DEC-12) @integration', () => {
     expect(cfg0.data.data.stages.find((x: { stage: string }) => x.stage === 'COMPLETED')).toMatchObject({ templateSlug: TEMPLATE, enabled: true });
 
     // 1) Arrasta a tarjeta do worker B → sai o TEMPLATE.
-    expect((await api.put(`/api/admin/encuadres/${encB}/move`, { targetStage: 'COMPLETED' }, asAdmin)).status).toBe(200);
+    expect((await api.put(`/api/admin/encuadres/${encB}/move`, { targetStage: 'COMPLETED', reasonCategory: 'ENCUADRE_ANTECIPADO' }, asAdmin)).status).toBe(200);
     await processLatestEvent('funnel_stage.completed', workerB);
     const outB = await pool.query(`SELECT template_slug FROM messaging_outbox WHERE worker_id = $1`, [workerB]);
     expect(outB.rows.map((r) => r.template_slug)).toEqual([TEMPLATE]);
@@ -232,7 +232,7 @@ describe('Mensagem por etapa do Kanban (PEND-14 / DEC-12) @integration', () => {
     expect(troca.status).toBe(200);
 
     // 3) Arrasta a tarjeta do worker C → tem de sair o NOVO, e só ele.
-    expect((await api.put(`/api/admin/encuadres/${encC}/move`, { targetStage: 'COMPLETED' }, asAdmin)).status).toBe(200);
+    expect((await api.put(`/api/admin/encuadres/${encC}/move`, { targetStage: 'COMPLETED', reasonCategory: 'ENCUADRE_ANTECIPADO' }, asAdmin)).status).toBe(200);
     await processLatestEvent('funnel_stage.completed', workerC);
     const outC = await pool.query(`SELECT template_slug, variables FROM messaging_outbox WHERE worker_id = $1`, [workerC]);
     expect(outC.rows.map((r) => r.template_slug)).toEqual([TEMPLATE_B]);

@@ -72,7 +72,7 @@ describe('PUT /encuadres/:id/move — captura de papel (SELECTED) @integration',
   it('move SELECTED com role=TITULAR grava encuadres.role', async () => {
     const res = await api.put(
       `/api/admin/encuadres/${encuadreId}/move`,
-      { targetStage: 'SELECTED', role: 'TITULAR' },
+      { targetStage: 'SELECTED', role: 'TITULAR', reasonCategory: 'ENCUADRE_ANTECIPADO' },
       { headers: { Authorization: `Bearer ${adminToken}` } },
     );
     expect(res.status).toBe(200);
