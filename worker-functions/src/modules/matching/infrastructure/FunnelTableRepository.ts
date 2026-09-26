@@ -1,6 +1,8 @@
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { excludeDisabledWorkersSql } from '@shared/database/activeWorkerFilter';
+import { liveWorkerJoinSql } from './blockedAttemptLiveState';
+import { blockedNotPromotedSql } from './BlockedApplicationQueryRepository';
 
 /**
  * Raw database row returned by the funnel-table query (before domain mapping).
@@ -32,6 +34,12 @@ export interface FunnelTableRawRow {
    * card antigo sem carimbo NÃO significa que a pessoa não se manifestou.
    */
   self_applied_at: string | null;
+  /** worker_job_applications.source — 'manual' entra em INICIADO, o resto em INVITED. */
+  source: string | null;
+  /** worker_job_applications.messaged_at — distingue match candidate de convite real. */
+  messaged_at: string | null;
+  /** true quando a linha veio de worker_blocked_applications (fetchBlockedRawRows), não de WJA. */
+  is_blocked: boolean;
 }
 
 /**
@@ -66,6 +74,9 @@ export class FunnelTableRepository {
          COALESCE(wja.created_at, wja.messaged_at)::text  AS invited_at,
          wja.application_funnel_stage                      AS funnel_stage,
          wja.interview_response,
+         wja.source,
+         wja.messaged_at::text                             AS messaged_at,
+         false                                              AS is_blocked,
          latest_wbdl.dispatched_at::text                  AS wbdl_dispatched_at,
          latest_wbdl.delivery_status                      AS wbdl_delivery_status,
          latest_wbdl.status                               AS wbdl_status,
@@ -107,6 +118,27 @@ export class FunnelTableRepository {
          -- abas, que o GetFunnelTableUseCase deriva destas linhas).
          AND ${excludeDisabledWorkersSql('w')}
        ORDER BY wja.created_at DESC NULLS LAST`,
+      [jobPostingId],
+    );
+
+    return result.rows;
+  }
+
+  /**
+   * Tentativas negadas (worker_blocked_applications) não promovidas, para a tabela
+   * do modo lista — mesmo shape de linha de fetchRawRows, para o mapper (P8) tratar
+   * as duas fontes de forma uniforme. Só aparecem quando o filtro `columns` inclui
+   * REJECTED (D433) — não entram no bucket 'ALL' de hoje.
+   */
+  async fetchBlockedRawRows(jobPostingId: string): Promise<FunnelTableRawRow[]> {
+    const result = await this.pool.query<FunnelTableRawRow>(
+      `SELECT wba.id, wba.worker_id, lw.first_name_encrypted, lw.last_name_encrypted, NULL::text AS worker_raw_name, lw.email,
+lw.phone, lw.profile_photo_url_encrypted, wba.last_attempted_at::text AS invited_at, NULL::text AS funnel_stage,
+NULL::text AS interview_response, NULL::text AS wbdl_dispatched_at, NULL::text AS wbdl_delivery_status,
+NULL::text AS wbdl_status, lw.status AS worker_status, (SELECT COUNT(*)::int FROM wja_contact_notes cn WHERE
+cn.worker_id = wba.worker_id AND cn.job_posting_id = wba.job_posting_id) AS contact_notes_count, NULL::text AS
+self_applied_at, NULL::text AS source, NULL::text AS messaged_at, true AS is_blocked FROM worker_blocked_applications wba
+${liveWorkerJoinSql()} WHERE wba.job_posting_id = $1 AND ${blockedNotPromotedSql('wba')} ORDER BY wba.last_attempted_at DESC`,
       [jobPostingId],
     );
 
