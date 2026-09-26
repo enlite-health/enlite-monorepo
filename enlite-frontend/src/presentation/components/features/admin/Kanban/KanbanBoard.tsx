@@ -225,7 +225,10 @@ export function KanbanBoard({ stages, vacancyId, onMove, onPromoteBlocked, onRes
         columns={columns}
         itemsOf={(columnId) => {
           const col = VACANCY_FUNNEL_COLUMNS.find((c) => c.id === columnId);
-          return col ? columnItems(col, stages) : [];
+          // FunnelStages não tem index signature; columnItems só lê por chave conhecida, e as 8
+          // chaves de FunnelStages cobrem todo `sources` possível de VACANCY_FUNNEL_COLUMNS. Sem
+          // mudança de comportamento — só o tipo que o tsc exige para a assinatura genérica.
+          return col ? columnItems(col, stages as unknown as Partial<Record<string, FunnelCard[]>>) : [];
         }}
         getItemId={(enc) => enc.id}
         isDragDisabled={(enc) => !enc.encuadreId || funnelWriteGate.denied}

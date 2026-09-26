@@ -15,7 +15,7 @@ interface Result {
 export function useInvitedPendingCandidates(vacancyId: string): Result {
   const { data, isLoading, refetch } = useVacancyFunnelTable(
     vacancyId,
-    'INVITED',
+    { key: 'INVITED', kind: 'bucket', bucket: 'INVITED' },
     true,
   );
 

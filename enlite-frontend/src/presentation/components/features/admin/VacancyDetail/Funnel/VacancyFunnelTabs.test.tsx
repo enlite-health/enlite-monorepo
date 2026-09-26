@@ -15,6 +15,7 @@ const mockCounts: FunnelTableCounts = {
   REJECTED: 1,
   WITHDREW: 0,
   ALL: 11,
+  columns: {},
 };
 
 describe('VacancyFunnelTabs', () => {
