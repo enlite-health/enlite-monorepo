@@ -243,7 +243,14 @@ export class VacancyCrudController {
 
       const auth = await authorizeVacancyUpdate(this.db, id, updates);
       if (auth.kind === 'error') {
-        res.status(auth.status).json({ success: false, error: auth.error });
+        // F3/fase-1: 422 de campo travado pela origem carrega `locked_fields` —
+        // as chaves recusadas, na MESMA forma que `GET /vacancies/:id` anuncia.
+        const body: { success: false; error: string; locked_fields?: readonly string[] } = {
+          success: false,
+          error: auth.error,
+        };
+        if (auth.lockedFields) body.locked_fields = auth.lockedFields;
+        res.status(auth.status).json(body);
         return;
       }
       const allowedFields = auth.isDraft

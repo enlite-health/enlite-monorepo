@@ -64,8 +64,10 @@ export {
   CANONICAL_STATUSES,
   isCaseOrdinalConflict,
   retryOnCaseOrdinalConflict,
+  SOURCE_LOCKED_FIELDS,
+  pickSourceLockedFields,
 } from './interfaces/controllers/vacancyCrudHelpers';
-export type { VacancyInsertParams } from './interfaces/controllers/vacancyCrudHelpers';
+export type { VacancyInsertParams, SourceLockedField } from './interfaces/controllers/vacancyCrudHelpers';
 export { VacancyAddressReviewController } from './interfaces/controllers/VacancyAddressReviewController';
 export { VacancySocialLinksController } from './interfaces/controllers/VacancySocialLinksController';
 export { WorkerApplicationsController } from './interfaces/controllers/WorkerApplicationsController';

@@ -7,6 +7,7 @@ import {
   VacancyListRow,
 } from './vacancyListHelpers';
 import { normalizeSchedule } from '../../infrastructure/scheduleNormalizer';
+import { SOURCE_LOCKED_FIELDS } from './vacancyCrudHelpers';
 import { AdminVacancyDetailSchema } from '../schemas/AdminVacancyDetailSchema';
 import { reportError } from '@shared/logging';
 import { excludeDisabledWorkersSql } from '@shared/database/activeWorkerFilter';
@@ -266,6 +267,12 @@ export class VacanciesController {
           )
         : row.encuadres;
 
+      // F3/fase-1 (`completar-vacante-em-rascunho`): `locked_fields` é
+      // SOURCE_LOCKED_FIELDS quando a vaga nasceu de um serviço contratado
+      // (`contracted_service_id IS NOT NULL`) — mesmo rascunho ou publicada.
+      // `[]` quando a vaga não tem origem (criada direto por `POST /vacancies`).
+      const lockedFields = row.contracted_service_id != null ? [...SOURCE_LOCKED_FIELDS] : [];
+
       // D286 fase 2: nome, endereço (com zona/cidade/bairro) e nível de dependência do PACIENTE
       // seguem a célula do paciente (identidade, endereço, clínica), não a da vaga — a mesma chave
       // que vale na ficha dele e no mapa (`lex` fase 2, P3 e condição 7).
@@ -273,6 +280,7 @@ export class VacanciesController {
         ...row,
         encuadres,
         schedule: normalizeSchedule(row.schedule),
+        locked_fields: lockedFields,
       }, cells);
 
       // Observe-only contract check: log shape drift without breaking requests.
