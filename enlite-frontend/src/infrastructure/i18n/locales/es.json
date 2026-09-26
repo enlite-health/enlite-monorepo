@@ -2139,7 +2139,12 @@
           "to": "Hasta"
         }
       },
-      "completeVacancy": "Completar vacante"
+      "completeVacancy": "Completar vacante",
+      "draftChoiceDialog": {
+        "title": "¿Qué querés hacer con este borrador?",
+        "viewOnly": "Solo visualizar",
+        "cancel": "Cancelar"
+      }
     },
     "draftVacancy": {
       "back": "Volver a vacantes",

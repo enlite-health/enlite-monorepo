@@ -566,6 +566,9 @@ test.describe('Painel de acessos ABAC — integração real @integration', () =>
     // Prova mais completa (várias famílias de botão, screenshot, e o caminho
     // inverso write→aparece) está em
     // admin-access-buttons-vacancies.integration.e2e.ts.
+    // Desde D425 item 4 ("Nueva" fora) esta asserção é trivialmente verdadeira — o botão some
+    // pra QUALQUER ator, não só sem vacancy:write; ao voltar o "Nueva", restaurar a prova do
+    // gate D269.
     await expect(page.getByTestId('new-vacancy-btn')).toHaveCount(0);
 
     const writeCells = scalar(`SELECT COUNT(*) FROM iam.group_permissions gp

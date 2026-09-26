@@ -261,6 +261,12 @@ test.describe('@integration Modal Nueva Vacante — seleção de caso (nativo ×
   });
 
   test('feliz — caso NATIVO (EN420071): buscar, selecionar e ver o endereço real do paciente hidratar', async ({ page }) => {
+    // D425 item 4 (24/09/2026, docs/decisoes.md, Fase 3) — "Nueva" sai temporariamente: o
+    // seletor de caso testado aqui só existe no modo CRIAR do wizard, em /admin/vacancies/new,
+    // que agora redireciona pra /admin/vacancies (em modo edição o caso é um dos campos
+    // travados pelo foguete, D426 item 3 — não é mais um SearchableSelect interativo). Skip,
+    // não apagado.
+    test.skip(true, 'D425 item 4 — "Nueva" fora temporariamente; case-select só existe no modo criar');
     await loginAsAdminMock(page, ADMIN_UID, ADMIN_EMAIL);
     await expect(page.getByText('Nueva Vacante')).toBeVisible({ timeout: 15_000 });
 
@@ -287,6 +293,12 @@ test.describe('@integration Modal Nueva Vacante — seleção de caso (nativo ×
   });
 
   test('alt — caso LEGADO (887, sem prefixo EN): seleção também hidrata o paciente certo', async ({ page }) => {
+    // D425 item 4 (24/09/2026, docs/decisoes.md, Fase 3) — "Nueva" sai temporariamente: o
+    // seletor de caso testado aqui só existe no modo CRIAR do wizard, em /admin/vacancies/new,
+    // que agora redireciona pra /admin/vacancies (em modo edição o caso é um dos campos
+    // travados pelo foguete, D426 item 3 — não é mais um SearchableSelect interativo). Skip,
+    // não apagado.
+    test.skip(true, 'D425 item 4 — "Nueva" fora temporariamente; case-select só existe no modo criar');
     await loginAsAdminMock(page, ADMIN_UID, ADMIN_EMAIL);
     await expect(page.getByText('Nueva Vacante')).toBeVisible({ timeout: 15_000 });
 
@@ -309,6 +321,12 @@ test.describe('@integration Modal Nueva Vacante — seleção de caso (nativo ×
   });
 
   test('alt — busca sem match (caso inexistente): "Sin resultados", nada selecionável, hint permanece', async ({ page }) => {
+    // D425 item 4 (24/09/2026, docs/decisoes.md, Fase 3) — "Nueva" sai temporariamente: o
+    // seletor de caso testado aqui só existe no modo CRIAR do wizard, em /admin/vacancies/new,
+    // que agora redireciona pra /admin/vacancies (em modo edição o caso é um dos campos
+    // travados pelo foguete, D426 item 3 — não é mais um SearchableSelect interativo). Skip,
+    // não apagado.
+    test.skip(true, 'D425 item 4 — "Nueva" fora temporariamente; case-select só existe no modo criar');
     await loginAsAdminMock(page, ADMIN_UID, ADMIN_EMAIL);
     await expect(page.getByText('Nueva Vacante')).toBeVisible({ timeout: 15_000 });
 

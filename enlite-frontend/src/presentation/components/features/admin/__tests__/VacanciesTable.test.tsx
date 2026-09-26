@@ -125,10 +125,10 @@ describe('VacanciesTable', () => {
     expect(screen.getByText('admin.vacancies.noVacancies')).toBeInTheDocument();
   });
 
-  it('calls onRowClick with the row id when the row is clicked', () => {
+  it('calls onRowClick with the row id AND isDraft when the row is clicked (F25/D425, Fase 3 — quem decide o destino em rascunho é o pai)', () => {
     const onRowClick = vi.fn();
     render(<VacanciesTable vacancies={realApiData} onRowClick={onRowClick} />);
     fireEvent.click(screen.getByText('Caso 349'));
-    expect(onRowClick).toHaveBeenCalledWith('fd269cde-d8c9-4fdc-88a9-5b19ebcdb531');
+    expect(onRowClick).toHaveBeenCalledWith('fd269cde-d8c9-4fdc-88a9-5b19ebcdb531', false);
   });
 });

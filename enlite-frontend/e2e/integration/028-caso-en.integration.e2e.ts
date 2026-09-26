@@ -365,6 +365,13 @@ test.describe('@integration Spec 028 — "CASO EN{n}" no cartão, no prefill e n
   });
 
   test('feliz — criar vaga pela UI (paciente nativo) → backend escreve "CASO EN{n}-{m}", cartão e lista concordam', async ({ page }) => {
+    // D425 item 4 (24/09/2026, docs/decisoes.md, Fase 3 de completar-vacante-em-rascunho) —
+    // "Nueva" sai temporariamente: este teste cria a vaga pela UI via /admin/vacancies/new,
+    // rota que agora redireciona pra /admin/vacancies. Achado FORA da lista medida na Fase 0
+    // (`evidencias/medicao-fase-0.md` §Fase 3 só listava 9 arquivos) — este é o 10º, achado
+    // pelo grep de "Nueva Vacante" no Passo 6 da Fase 3. Skip, não apagado; os testes 1-3
+    // deste arquivo (que navegam direto por ID) não são afetados.
+    test.skip(true, 'D425 item 4 — "Nueva" fora temporariamente; vacante nasce só do serviço contratado');
     await loginAsAdminMock(page, '/admin/vacancies/new');
     await expect(page.getByText('Nueva Vacante')).toBeVisible({ timeout: 15_000 });
 
