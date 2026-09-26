@@ -52,6 +52,7 @@ export function useVacancyFunnelTable(
         isFetchingRef.current = false;
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- tab.key identifica a aba; o objeto tab é recriado a cada render pelo chamador
     [vacancyId, tab.key, enabled],
   );
 
