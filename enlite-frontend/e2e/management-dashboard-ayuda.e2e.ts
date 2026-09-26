@@ -213,7 +213,7 @@ test.describe('Gestión a la Vista — ¿Qué es este número?', () => {
     await expect(page.getByTestId('mgmt-help-drawer')).toHaveCount(0, { timeout: 2000 });
   });
 
-  test('o "?" de uma coluna do funil abre o documento da coluna (Perdidos)', async ({ page }) => {
+  test('o "?" de uma coluna do funil abre o documento da coluna (Rechazados)', async ({ page }) => {
     await openDashboard(page);
 
     await page
@@ -223,7 +223,7 @@ test.describe('Gestión a la Vista — ¿Qué es este número?', () => {
 
     const drawer = page.getByTestId('mgmt-help-drawer');
     await expect(drawer).toBeVisible();
-    await expect(drawer).toContainText('Perdidos (columna)');
+    await expect(drawer).toContainText('Rechazados (columna)');
     await expect(drawer).toContainText('Rechazados');
 
     // Backdrop também fecha (clicar fora da sidebar e fora do painel).
