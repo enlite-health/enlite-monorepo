@@ -1,5 +1,5 @@
 /**
- * A QUARTA e MAIOR família (task 3.5-A2): 46 rotas, 16 células, um arquivo
+ * A QUARTA e MAIOR família (task 3.5-A2): 48 rotas, 16 células, um arquivo
  * (45 + `promote`, D300, entrada no merge main→stage 19/09).
  * Mesmo papel dos testes de `admin.users`, `admin.patients` e `admin.workers`:
  * varrer o router de verdade (o mesmo `scanExpressRouter` do catálogo) e afirmar
@@ -135,7 +135,7 @@ function declaradas(): Record<string, string | null> {
   );
 }
 
-describe('família admin.vacancies — 46 rotas declaram célula', () => {
+describe('família admin.vacancies — 48 rotas declaram célula', () => {
   it('a família é `admin.vacancies` — o nome que PERMISSION_ENFORCED_ROUTES liga', () => {
     expect(ADMIN_VACANCIES_FAMILY).toBe('admin.vacancies');
   });
