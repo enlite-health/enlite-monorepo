@@ -56,6 +56,7 @@ export default {
         'medium': '0px 8px 16px 0px rgba(0, 0, 0, 0.08)',
         'large': '0px 12px 24px 0px rgba(0, 0, 0, 0.12)',
         'extra-large': '0px 16px 32px 0px rgba(0, 0, 0, 0.16)',
+        'tab': '0px 4px 10px 0px rgba(0, 0, 0, 0.4)',
       },
     },
   },

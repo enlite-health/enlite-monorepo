@@ -1,25 +1,25 @@
 import { Info } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import type { FunnelBucket, FunnelTableCounts } from '@domain/entities/Funnel';
-import { FUNNEL_TABS } from './funnelTabsConfig';
+import type { FunnelTableCounts } from '@domain/entities/Funnel';
+import { FUNNEL_TABS, columnCount, type FunnelTab } from './funnelTabsConfig';
 
 interface VacancyFunnelTabsProps {
-  activeBucket: FunnelBucket;
+  activeTab: FunnelTab['key'];
   counts: FunnelTableCounts | undefined;
-  onBucketChange: (bucket: FunnelBucket) => void;
+  onTabChange: (tab: FunnelTab) => void;
 }
 
 const tabActive =
   'bg-primary text-white px-5 h-10 rounded-pill font-poppins font-semibold text-base ' +
-  'shadow-[0px_4px_10px_rgba(0,0,0,0.4)] flex gap-2.5 items-center transition-colors';
+  'shadow-tab flex gap-2.5 items-center transition-colors';
 const tabInactive =
   'text-gray-800 hover:text-primary px-5 h-10 rounded-pill font-poppins font-semibold text-base ' +
   'flex gap-2 items-center transition-colors';
 
 export function VacancyFunnelTabs({
-  activeBucket,
+  activeTab,
   counts,
-  onBucketChange,
+  onTabChange,
 }: VacancyFunnelTabsProps): JSX.Element {
   const { t } = useTranslation();
 
@@ -29,9 +29,13 @@ export function VacancyFunnelTabs({
       aria-label={t('admin.vacancyDetail.funnelTabs.ariaLabel')}
       className="flex gap-4 items-center flex-wrap mb-5"
     >
-      {FUNNEL_TABS.map(({ key, i18nKey }) => {
-        const isActive = activeBucket === key;
-        const count = counts ? counts[key as keyof FunnelTableCounts] : 0;
+      {FUNNEL_TABS.map((tab) => {
+        const { key, i18nKey } = tab;
+        const isActive = activeTab === key;
+        const count =
+          tab.kind === 'column'
+            ? columnCount(tab.column, counts?.columns)
+            : (counts?.[tab.bucket] ?? 0);
         return (
           <button
             key={key}
@@ -40,11 +44,11 @@ export function VacancyFunnelTabs({
             aria-selected={isActive}
             aria-controls={`funnel-panel-${key}`}
             id={`funnel-tab-${key}`}
-            onClick={() => onBucketChange(key)}
+            onClick={() => onTabChange(tab)}
             className={isActive ? tabActive : tabInactive}
           >
             <span>
-              {t(i18nKey)} ({count})
+              {t(i18nKey)} (<span data-testid={`funnel-tab-${key}-count`}>{count}</span>)
             </span>
             <Info
               size={17}
