@@ -9,6 +9,10 @@
  */
 
 import { FirebaseAuthService } from '@infrastructure/services/FirebaseAuthService';
+import type {
+  VacancyNote,
+  CreateVacancyNotePayload,
+} from '@domain/entities/VacancyNote';
 
 export interface VacancyListFilters {
   search?: string;
@@ -82,6 +86,31 @@ class AdminVacancyListApiServiceClass {
     const json = await response.json();
     if (!json.success) throw new Error(json.error || `HTTP ${response.status}`);
     return json.data as VacancyFilterOptions;
+  }
+
+  async listVacancyNotes(vacancyId: string): Promise<VacancyNote[]> {
+    const headers = await this.getAuthHeaders();
+    const response = await fetch(
+      `${this.baseURL}/api/admin/vacancies/${vacancyId}/notes`,
+      { method: 'GET', headers },
+    );
+    const json = await response.json();
+    if (!json.success) throw new Error(json.error || `HTTP ${response.status}`);
+    return json.data as VacancyNote[];
+  }
+
+  async createVacancyNote(
+    vacancyId: string,
+    payload: CreateVacancyNotePayload,
+  ): Promise<VacancyNote> {
+    const headers = await this.getAuthHeaders();
+    const response = await fetch(
+      `${this.baseURL}/api/admin/vacancies/${vacancyId}/notes`,
+      { method: 'POST', headers, body: JSON.stringify(payload) },
+    );
+    const json = await response.json();
+    if (!json.success) throw new Error(json.error || `HTTP ${response.status}`);
+    return json.data as VacancyNote;
   }
 }
 
