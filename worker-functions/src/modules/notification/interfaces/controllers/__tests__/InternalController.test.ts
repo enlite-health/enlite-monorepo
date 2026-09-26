@@ -7,6 +7,7 @@ import { OutboxProcessor } from '../../../infrastructure/OutboxProcessor';
 import { ReminderScheduler } from '../../../infrastructure/ReminderScheduler';
 import { BulkDispatchScheduler } from '../../../infrastructure/BulkDispatchScheduler';
 import { BulkDispatchTalentumScheduler } from '../../../infrastructure/BulkDispatchTalentumScheduler';
+import { MessagingRetentionService } from '../../../infrastructure/MessagingRetentionService';
 
 jest.mock('@shared/logging', () => ({
   logger: {
@@ -48,6 +49,7 @@ describe('InternalController', () => {
   let bulkDispatchTalentumScheduler: jest.Mocked<BulkDispatchTalentumScheduler>;
   let domainEventBacklogService: jest.Mocked<DomainEventBacklogService>;
   let anaCareMirrorHealthService: jest.Mocked<AnaCareMirrorHealthService>;
+  let messagingRetentionService: jest.Mocked<MessagingRetentionService>;
   let controller: InternalController;
 
   beforeEach(() => {
@@ -93,6 +95,10 @@ describe('InternalController', () => {
       }),
     } as unknown as jest.Mocked<AnaCareMirrorHealthService>;
 
+    messagingRetentionService = {
+      run: jest.fn().mockResolvedValue({ outboxDeleted: 0, bulkDeleted: 0, tokensDeleted: 0 }),
+    } as unknown as jest.Mocked<MessagingRetentionService>;
+
     controller = new InternalController(
       eventProcessor,
       outboxProcessor,
@@ -101,6 +107,7 @@ describe('InternalController', () => {
       bulkDispatchTalentumScheduler,
       domainEventBacklogService,
       anaCareMirrorHealthService,
+      messagingRetentionService,
     );
   });
 
@@ -217,6 +224,33 @@ describe('InternalController', () => {
       outboxProcessor.processBatch.mockRejectedValue(new Error('fail'));
       const res = mockRes();
       await controller.sweepOutbox(mockReq(), res);
+
+      expect(res.status).toHaveBeenCalledWith(500);
+    });
+  });
+
+  // ─── sweepMessagingRetention ─────────────────────────────────────
+
+  describe('sweepMessagingRetention', () => {
+    it('calls MessagingRetentionService.run and returns the counts', async () => {
+      messagingRetentionService.run.mockResolvedValue({ outboxDeleted: 226, bulkDeleted: 40, tokensDeleted: 1501 });
+      const res = mockRes();
+      await controller.sweepMessagingRetention(mockReq(), res);
+
+      expect(messagingRetentionService.run).toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith({
+        status: 'ok',
+        outboxDeleted: 226,
+        bulkDeleted: 40,
+        tokensDeleted: 1501,
+      });
+    });
+
+    it('returns 500 on error', async () => {
+      messagingRetentionService.run.mockRejectedValue(new Error('fail'));
+      const res = mockRes();
+      await controller.sweepMessagingRetention(mockReq(), res);
 
       expect(res.status).toHaveBeenCalledWith(500);
     });

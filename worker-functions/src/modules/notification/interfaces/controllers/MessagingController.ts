@@ -121,7 +121,7 @@ export class MessagingController {
       return;
     }
 
-    const { externalId, to: normalizedTo } = result.getValue()!;
+    const { externalId } = result.getValue()!;
     const triggeredBy = `admin:${AuthMiddleware.getAuthContext(req)?.principal.id ?? 'unknown'}`;
 
     // Atualiza messaged_at na candidatura — best-effort
@@ -138,12 +138,14 @@ export class MessagingController {
       });
 
     // Persiste log de envio individual — best-effort
+    // phone = NULL sempre (migration 475, mensageria-pii-e-retencao): telefone em claro não é
+    // mais gravado aqui; worker_id já é suficiente e o dado é derivável por JOIN em workers.phone.
     await this.db
       .query(
         `INSERT INTO whatsapp_bulk_dispatch_logs
            (worker_id, job_posting_id, triggered_by, phone, template_slug, status, twilio_sid, source)
-         VALUES ($1, $2, $3, $4, $5, 'sent', $6, 'individual')`,
-        [workerId, jobPostingId, triggeredBy, normalizedTo, slug, externalId],
+         VALUES ($1, $2, $3, NULL, $4, 'sent', $5, 'individual')`,
+        [workerId, jobPostingId, triggeredBy, slug, externalId],
       )
       .catch((err: unknown) => {
         const error = err instanceof Error ? err : new Error(String(err));
@@ -234,12 +236,14 @@ export class MessagingController {
       });
     const resolvedWorkerId = resolvedWorkerRes?.rows[0]?.id ?? null;
 
+    // phone = NULL sempre (migration 475, mensageria-pii-e-retencao). digitsOnly acima só
+    // resolve o worker_id pelo telefone normalizado — não é gravado na tabela.
     await this.db
       .query(
         `INSERT INTO whatsapp_bulk_dispatch_logs
            (worker_id, triggered_by, phone, template_slug, status, twilio_sid, source)
-         VALUES ($1, $2, $3, $4, 'sent', $5, 'individual')`,
-        [resolvedWorkerId, triggeredBy, normalizedTo, templateSlug.trim(), externalId],
+         VALUES ($1, $2, NULL, $3, 'sent', $4, 'individual')`,
+        [resolvedWorkerId, triggeredBy, templateSlug.trim(), externalId],
       )
       .catch((err: unknown) => {
         const error = err instanceof Error ? err : new Error(String(err));

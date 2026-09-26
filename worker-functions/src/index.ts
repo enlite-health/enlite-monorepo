@@ -94,6 +94,7 @@ import { createPresentationInviteRoutes } from '@modules/notification/interfaces
 import { PresentationInviteController } from '@modules/notification/interfaces/controllers/PresentationInviteController';
 import { InvitePresentationMeetingUseCase } from '@modules/notification/application/InvitePresentationMeetingUseCase';
 import { InternalController } from '@modules/notification/interfaces/controllers/InternalController';
+import { MessagingRetentionService } from '@modules/notification/infrastructure/MessagingRetentionService';
 import { createInternalRoutes } from '@modules/notification/interfaces/routes/internalRoutes';
 import { internalAuthMiddleware } from '@modules/notification';
 import { AdmissionSchedulingService } from '@modules/matching/application/AdmissionSchedulingService';
@@ -641,7 +642,8 @@ const bulkDispatchTalentumScheduler = new BulkDispatchTalentumScheduler(dbPool, 
 const recruitmentHealthController = new RecruitmentHealthController(dbPool);
 const domainEventBacklogService = new DomainEventBacklogService(dbPool);
 const anaCareMirrorHealthService = new AnaCareMirrorHealthService(dbPool);
-const internalController = new InternalController(domainEventProcessor, outboxProcessor, reminderScheduler, bulkDispatchScheduler, bulkDispatchTalentumScheduler, domainEventBacklogService, anaCareMirrorHealthService);
+const messagingRetentionService = new MessagingRetentionService(dbPool);
+const internalController = new InternalController(domainEventProcessor, outboxProcessor, reminderScheduler, bulkDispatchScheduler, bulkDispatchTalentumScheduler, domainEventBacklogService, anaCareMirrorHealthService, messagingRetentionService);
 app.use('/api/internal', systemContextMiddleware('job:internal'), createInternalRoutes(internalController));
 app.use(
   '/api/internal',

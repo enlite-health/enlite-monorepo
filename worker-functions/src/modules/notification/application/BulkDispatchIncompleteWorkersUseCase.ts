@@ -256,16 +256,17 @@ export class BulkDispatchIncompleteWorkersUseCase {
         });
       }
 
-      // 2d. Persiste log de auditoria — falhas de log são non-blocking
+      // 2d. Persiste log de auditoria — falhas de log são non-blocking.
+      // phone = NULL sempre (migration 475, mensageria-pii-e-retencao): row.phone segue sendo lido
+      // (usado para o envio acima), só não é mais gravado neste log.
       await this.db
         .query(
           `INSERT INTO whatsapp_bulk_dispatch_logs
              (worker_id, triggered_by, phone, template_slug, status, twilio_sid, error_message, batch_id, source)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'bulk')`,
+           VALUES ($1, $2, NULL, $3, $4, $5, $6, $7, 'bulk')`,
           [
             row.id,
             triggeredBy,
-            row.phone,
             TEMPLATE_SLUG,
             detail.status,
             detail.twilioSid ?? null,
