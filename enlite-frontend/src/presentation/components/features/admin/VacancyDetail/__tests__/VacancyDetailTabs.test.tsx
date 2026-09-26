@@ -9,7 +9,7 @@ vi.mock('react-i18next', () => ({
 
 const onTabChange = vi.fn();
 
-function renderTabs(activeTab: 'encuadres' | 'talentum' | 'links' = 'encuadres') {
+function renderTabs(activeTab: 'encuadres' | 'talentum' | 'links' | 'notes' = 'encuadres') {
   return render(<VacancyDetailTabs activeTab={activeTab} onTabChange={onTabChange} />);
 }
 
@@ -22,10 +22,10 @@ beforeEach(() => {
 });
 
 describe('VacancyDetailTabs — rendering', () => {
-  it('renders exactly 3 tab buttons', () => {
+  it('renders exactly 4 tab buttons', () => {
     renderTabs();
     const buttons = screen.getAllByRole('button');
-    expect(buttons).toHaveLength(3);
+    expect(buttons).toHaveLength(4);
   });
 
   it('renders Encuadres tab with i18n key', () => {
@@ -41,6 +41,12 @@ describe('VacancyDetailTabs — rendering', () => {
   it('renders Links tab with i18n key', () => {
     renderTabs();
     expect(screen.getByText('admin.vacancyDetail.tabs.links')).toBeInTheDocument();
+  });
+
+  it('renders Notes tab with i18n key', () => {
+    renderTabs();
+    expect(screen.getByText('admin.vacancyDetail.tabs.notes')).toBeInTheDocument();
+    expect(screen.getByTestId('vacancy-tab-notes')).toBeInTheDocument();
   });
 });
 
