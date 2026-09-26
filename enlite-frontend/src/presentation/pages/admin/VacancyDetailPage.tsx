@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { useParams, useNavigate, useLocation, Navigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { ArrowLeft, ChevronRight } from 'lucide-react';
 import { DetailSkeleton } from '@presentation/components/ui/skeletons';
@@ -94,6 +94,12 @@ export default function VacancyDetailPage() {
         </Button>
       </div>
     );
+  }
+
+  // Fase 2 (`completar-vacante-em-rascunho`): vaga em rascunho tem TELA PRÓPRIA, somente
+  // leitura — este detalhe (editável, F13) nunca a mostra. O inverso mora em `DraftVacancyPage`.
+  if (vacancy.is_draft === true) {
+    return <Navigate to={`/admin/vacancies/${id}/borrador`} replace />;
   }
 
   const patientName = [vacancy.patient_first_name, vacancy.patient_last_name]
