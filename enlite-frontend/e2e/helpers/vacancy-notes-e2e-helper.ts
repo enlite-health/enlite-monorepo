@@ -125,6 +125,10 @@ async function typeWhen(page: Page, when: ReturnType<Page['getByTestId']>, d: Da
 export async function createNoteViaUi(page: Page, opts: CreateNoteViaUiOpts): Promise<number> {
   const { daysAgo, daysAhead, category, contact, body } = opts;
 
+  if (daysAgo !== undefined && daysAhead !== undefined) {
+    throw new Error('daysAgo e daysAhead são exclusivos');
+  }
+
   await page.getByTestId('vacancy-notes-new-button').click();
 
   if (daysAgo !== undefined) {
