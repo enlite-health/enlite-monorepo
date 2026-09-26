@@ -226,8 +226,8 @@ describe('GET /api/admin/vacancies/:id/funnel-table', () => {
     beforeAll(async () => {
       await pool.query(
         `INSERT INTO whatsapp_bulk_dispatch_logs
-           (worker_id, job_posting_id, triggered_by, phone, template_slug, status, delivery_status, dispatched_at)
-         VALUES ($1, $2, 'fnt-admin', '+5491100000010', 'test-tpl', 'sent', 'delivered', NOW() - INTERVAL '10 minutes')`,
+           (worker_id, job_posting_id, triggered_by, template_slug, status, delivery_status, dispatched_at)
+         VALUES ($1, $2, 'fnt-admin', 'test-tpl', 'sent', 'delivered', NOW() - INTERVAL '10 minutes')`,
         [IDS.w1, IDS.jobEmpty],
       );
     });
@@ -322,38 +322,38 @@ async function seedFixtures(pool: Pool): Promise<void> {
   // W2: DELIVERED
   await pool.query(
     `INSERT INTO whatsapp_bulk_dispatch_logs
-       (worker_id, job_posting_id, triggered_by, phone, template_slug, status, delivery_status, dispatched_at)
-     VALUES ($1, $2, 'fnt-admin', '+5491100000020', 'test-tpl', 'sent', 'delivered', NOW() - INTERVAL '1 hour')`,
+       (worker_id, job_posting_id, triggered_by, template_slug, status, delivery_status, dispatched_at)
+     VALUES ($1, $2, 'fnt-admin', 'test-tpl', 'sent', 'delivered', NOW() - INTERVAL '1 hour')`,
     [IDS.w2, IDS.jobFull],
   );
 
   // W3: 2 dispatches — older=SENT (no delivery_status), newer=READ
   await pool.query(
     `INSERT INTO whatsapp_bulk_dispatch_logs
-       (worker_id, job_posting_id, triggered_by, phone, template_slug, status, delivery_status, dispatched_at)
-     VALUES ($1, $2, 'fnt-admin', '+5491100000030', 'test-tpl', 'sent', NULL, NOW() - INTERVAL '2 hours')`,
+       (worker_id, job_posting_id, triggered_by, template_slug, status, delivery_status, dispatched_at)
+     VALUES ($1, $2, 'fnt-admin', 'test-tpl', 'sent', NULL, NOW() - INTERVAL '2 hours')`,
     [IDS.w3, IDS.jobFull],
   );
   await pool.query(
     `INSERT INTO whatsapp_bulk_dispatch_logs
-       (worker_id, job_posting_id, triggered_by, phone, template_slug, status, delivery_status, dispatched_at)
-     VALUES ($1, $2, 'fnt-admin', '+5491100000030', 'test-tpl', 'sent', 'read', NOW() - INTERVAL '30 minutes')`,
+       (worker_id, job_posting_id, triggered_by, template_slug, status, delivery_status, dispatched_at)
+     VALUES ($1, $2, 'fnt-admin', 'test-tpl', 'sent', 'read', NOW() - INTERVAL '30 minutes')`,
     [IDS.w3, IDS.jobFull],
   );
 
   // W4: dispatch exists (REPLIED override because confirmed)
   await pool.query(
     `INSERT INTO whatsapp_bulk_dispatch_logs
-       (worker_id, job_posting_id, triggered_by, phone, template_slug, status, delivery_status, dispatched_at)
-     VALUES ($1, $2, 'fnt-admin', '+5491100000040', 'test-tpl', 'sent', 'delivered', NOW() - INTERVAL '1 hour')`,
+       (worker_id, job_posting_id, triggered_by, template_slug, status, delivery_status, dispatched_at)
+     VALUES ($1, $2, 'fnt-admin', 'test-tpl', 'sent', 'delivered', NOW() - INTERVAL '1 hour')`,
     [IDS.w4, IDS.jobFull],
   );
 
   // W5: dispatch exists (REPLIED override because declined)
   await pool.query(
     `INSERT INTO whatsapp_bulk_dispatch_logs
-       (worker_id, job_posting_id, triggered_by, phone, template_slug, status, delivery_status, dispatched_at)
-     VALUES ($1, $2, 'fnt-admin', '+5491100000050', 'test-tpl', 'sent', 'delivered', NOW() - INTERVAL '1 hour')`,
+       (worker_id, job_posting_id, triggered_by, template_slug, status, delivery_status, dispatched_at)
+     VALUES ($1, $2, 'fnt-admin', 'test-tpl', 'sent', 'delivered', NOW() - INTERVAL '1 hour')`,
     [IDS.w5, IDS.jobFull],
   );
 }

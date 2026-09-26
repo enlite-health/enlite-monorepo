@@ -238,8 +238,8 @@ describe('D2 — messaging: TABLE COMMENT + ON DELETE SET NULL', () => {
     // Criar registro em whatsapp_bulk_dispatch_logs
     await pool.query(
       `INSERT INTO whatsapp_bulk_dispatch_logs
-       (worker_id, triggered_by, phone, template_slug, status)
-       VALUES ($1, 'admin-uid-test', '+5491100000010', 'bulk_test', 'sent')`,
+       (worker_id, triggered_by, template_slug, status)
+       VALUES ($1, 'admin-uid-test', 'bulk_test', 'sent')`,
       [IDS.worker1]
     );
 
