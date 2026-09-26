@@ -323,6 +323,11 @@ export interface InsertBaseVacancyOpts {
   /** Default null. Set a Google Meet link so the match modal libera o envio de
    *  convites (o gate `hasAnyMeetLink`). */
   meetLink1?: string | null;
+  /** Default `'NOW()'` (CI inalterado). Expressão SQL para o `updated_at` (2ª
+   *  posição do `NOW(), NOW()` do INSERT) — usada só pela sabotagem de
+   *  precisão da "última ação" (DX-3.14), que nasce a vaga com `updated_at`
+   *  recuado para provar que a fonte não é essa coluna. */
+  updatedAtSql?: string;
 }
 
 /**
@@ -341,6 +346,7 @@ export function insertBaseVacancy(opts: InsertBaseVacancyOpts): string {
     status = 'PENDING_ACTIVATION',
     isDraft = true,
     meetLink1 = null,
+    updatedAtSql = 'NOW()',
   } = opts;
 
   const professionsSql =
@@ -370,7 +376,7 @@ export function insertBaseVacancy(opts: InsertBaseVacancyOpts): string {
       ${isDraft},
       'AR',
       ${meetLinkSql},
-      NOW(), NOW()
+      NOW(), ${updatedAtSql}
     )
   `);
 

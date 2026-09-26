@@ -1,5 +1,5 @@
 /**
- * A QUARTA e MAIOR família (task 3.5-A2): 46 rotas, 16 células, um arquivo
+ * A QUARTA e MAIOR família (task 3.5-A2): 48 rotas, 16 células, um arquivo
  * (45 + `promote`, D300, entrada no merge main→stage 19/09).
  * Mesmo papel dos testes de `admin.users`, `admin.patients` e `admin.workers`:
  * varrer o router de verdade (o mesmo `scanExpressRouter` do catálogo) e afirmar
@@ -56,6 +56,7 @@ const ESPERADO: Record<string, string> = {
   'GET /vacancies/:id/funnel-table': 'funnel:read',
   'GET /vacancies/:id/interview-slots': 'interview:read',
   'GET /vacancies/:id/match-results': 'match:read',
+  'GET /vacancies/:id/notes': 'vacancy:read',
   'GET /vacancies/:id/prescreening-config': 'prescreening:read',
   'GET /vacancies/:id/social-links-stats': 'vacancy:read',
   'GET /vacancies/:id/talentum-status': 'talentum:read',
@@ -74,6 +75,7 @@ const ESPERADO: Record<string, string> = {
   'POST /vacancies/:id/generate-talentum-description': 'talentum:update',
   'POST /vacancies/:id/interview-slots': 'interview:create',
   'POST /vacancies/:id/match': 'match:execute',
+  'POST /vacancies/:id/notes': 'vacancy:update',
   'POST /vacancies/:id/prescreening-config': 'prescreening:update',
   'POST /vacancies/:id/publish-talentum': 'talentum:update',
   'POST /vacancies/:id/resolve-address-review': 'vacancy:update',
@@ -133,7 +135,7 @@ function declaradas(): Record<string, string | null> {
   );
 }
 
-describe('família admin.vacancies — 46 rotas declaram célula', () => {
+describe('família admin.vacancies — 48 rotas declaram célula', () => {
   it('a família é `admin.vacancies` — o nome que PERMISSION_ENFORCED_ROUTES liga', () => {
     expect(ADMIN_VACANCIES_FAMILY).toBe('admin.vacancies');
   });
@@ -146,9 +148,9 @@ describe('família admin.vacancies — 46 rotas declaram célula', () => {
     expect(undeclaredRoutes(scanExpressRouter(build()), () => true)).toEqual([]);
   });
 
-  it('a família soma exatamente 46 rotas — a conta que saiu do PENDING_DECLARATIONS + promote (D300)', () => {
-    expect(Object.keys(ESPERADO)).toHaveLength(46);
-    expect(scanExpressRouter(build())).toHaveLength(46);
+  it('a família soma exatamente 48 rotas — a conta que saiu do PENDING_DECLARATIONS + promote (D300)', () => {
+    expect(Object.keys(ESPERADO)).toHaveLength(48);
+    expect(scanExpressRouter(build())).toHaveLength(48);
   });
 
   it('as 2 rotas de controller OPCIONAL estão presentes — montadas como em produção', () => {
@@ -175,7 +177,7 @@ describe('família admin.vacancies — 46 rotas declaram célula', () => {
       authDouble(),
       permissionsDouble(),
     );
-    expect(scanExpressRouter(semOpcionais)).toHaveLength(44);
+    expect(scanExpressRouter(semOpcionais)).toHaveLength(46);
   });
 
   describe('as células que separam ações de peso diferente', () => {
@@ -335,6 +337,8 @@ describe('família admin.vacancies — 46 rotas declaram célula', () => {
       ['get', '/api/admin/vacancies/v1/workers/w1/contact-notes', 'AUX'],
       ['post', '/api/admin/vacancies/v1/workers/w1/contact-notes', 'AUX'],
       ['delete', '/api/admin/vacancies/v1/workers/w1/contact-notes/n1', 'AUX'],
+      ['get', '/api/admin/vacancies/v1/notes', 'AUX'],
+      ['post', '/api/admin/vacancies/v1/notes', 'AUX'],
       ['get', '/api/admin/vacancies/v1/workers/w1/delivery-status', 'AUX'],
   ] as const)('%s %s → %s', async (metodo, caminho, esperado) => {
     const app = appDeRota('adminVacancies', '/api/admin', build);

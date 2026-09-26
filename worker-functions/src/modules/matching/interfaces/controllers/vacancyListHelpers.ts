@@ -25,6 +25,7 @@ import {
   type FunnelColumnCounts,
 } from '../../domain/kanbanColumn';
 import { blockedNotPromotedSql } from '../../infrastructure/BlockedApplicationQueryRepository';
+import { OPERATION_TIMEZONE } from '../../domain/interviewSchedule';
 
 // ── Display mappers ────────────────────────────────────────────────────────────
 
@@ -274,6 +275,48 @@ export async function loadStageCounts(db: Pool, jobPostingIds: string[]): Promis
   const byId = new Map<string, KanbanTallyRow[]>();
   for (const r of rows) (byId.get(r.id) ?? byId.set(r.id, []).get(r.id)!).push(r);
   for (const id of jobPostingIds) out.set(id, tallyKanbanColumns(byId.get(id) ?? []));
+  return out;
+}
+
+/**
+ * Última ação e dias sem divulgação para uma PÁGINA de vagas, numa consulta só
+ * (irmã de `loadStageCounts` — DX-3.4). `lastActionAt` = GREATEST(última nota,
+ * último movimento de funil de qualquer WJA da vaga, publicação na Talentum);
+ * NUNCA `updated_at` (DX-3.5 — sabotagem futura testada em P6). `daysWithoutDivulgation`
+ * conta só notas de categoria DIVULGACAO, em dias de calendário do fuso da operação
+ * (DX-3.6); sem nota → `null` (nunca `0`).
+ */
+export interface VacancyActivity {
+  lastActionAt: string | null;
+  daysWithoutDivulgation: number | null;
+}
+
+const TZ = OPERATION_TIMEZONE;
+
+export async function loadVacancyActivity(db: Pool, jobPostingIds: string[]): Promise<Map<string, VacancyActivity>> {
+  const out = new Map<string, VacancyActivity>();
+  if (jobPostingIds.length === 0) return out;
+  const { rows } = await db.query(
+    `SELECT jp.id,
+            GREATEST(
+              (SELECT MAX(n.occurred_at) FROM job_posting_notes n WHERE n.job_posting_id = jp.id),
+              (SELECT MAX(h.created_at) FROM worker_job_application_stage_history h
+                 JOIN worker_job_applications w ON w.id = h.application_id
+                WHERE w.job_posting_id = jp.id),
+              jp.talentum_published_at
+            ) AS last_action_at,
+            ((NOW() AT TIME ZONE '${TZ}')::date
+              - ((SELECT MAX(d.occurred_at) FROM job_posting_notes d
+                   WHERE d.job_posting_id = jp.id AND d.category = 'DIVULGACAO') AT TIME ZONE '${TZ}')::date
+            ) AS days_without_divulgation
+       FROM job_postings jp
+      WHERE jp.id = ANY($1::uuid[])`,
+    [jobPostingIds],
+  );
+  for (const r of rows) out.set(r.id, {
+    lastActionAt: r.last_action_at ? new Date(r.last_action_at).toISOString() : null,
+    daysWithoutDivulgation: r.days_without_divulgation == null ? null : Number(r.days_without_divulgation) });
+  for (const id of jobPostingIds) if (!out.has(id)) out.set(id, { lastActionAt: null, daysWithoutDivulgation: null });
   return out;
 }
 

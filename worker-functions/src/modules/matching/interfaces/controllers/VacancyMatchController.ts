@@ -12,6 +12,7 @@ import { UpdateEncuadreResultUseCase } from '../../application/UpdateEncuadreRes
 import { EncuadreResultado, RejectionReasonCategory } from '../../domain/Encuadre';
 import { cellsOfRequest, projectWorkerFields, NOME_REDIGIDO } from '@modules/identity/permissions';
 import { emitirTrilhaDeContato } from '@shared/audit/contactAccessFromRequest';
+import { distanceKmSql } from '../../infrastructure/candidateDistanceSql';
 
 /**
  * VacancyMatchController
@@ -91,14 +92,7 @@ export class VacancyMatchController {
            w.status,
            wd.documents_status,
            wsa.work_zone,
-           CASE
-             WHEN wsa.location IS NOT NULL AND pa.lat IS NOT NULL AND pa.lng IS NOT NULL
-             THEN ROUND(
-               (ST_Distance(wsa.location, ST_MakePoint(pa.lng, pa.lat)::geography) / 1000.0)::numeric,
-               1
-             )::float
-             ELSE NULL
-           END AS distance_km,
+           ${distanceKmSql('wsa.location', 'pa.lat', 'pa.lng')} AS distance_km,
            (
              SELECT COUNT(*)::int
              FROM encuadres ea

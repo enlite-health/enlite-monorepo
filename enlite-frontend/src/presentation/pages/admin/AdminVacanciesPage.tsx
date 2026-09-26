@@ -200,6 +200,8 @@ export function AdminVacanciesPage(): JSX.Element {
         postulados: vac.postulados != null ? String(vac.postulados) : '—',
         faltantes: vac.faltantes != null ? String(vac.faltantes) : '—',
         isDraft: vac.is_draft === true,
+        lastActionAt: (vac.lastActionAt as string | null | undefined) ?? null,
+        daysWithoutDivulgation: typeof vac.daysWithoutDivulgation === 'number' ? vac.daysWithoutDivulgation : null,
       };
     }),
     [rawVacancies],

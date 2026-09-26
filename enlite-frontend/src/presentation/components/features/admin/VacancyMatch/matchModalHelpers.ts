@@ -1,4 +1,5 @@
 import type { SavedCandidate } from '../../../../../types/match';
+import { compareByDistanceKm } from '@domain/value-objects/candidateDistance';
 
 export const BUCKET_THRESHOLDS = [5, 10, 20, 50] as const;
 export const MATCH_RADIUS_KM = 50;
@@ -24,9 +25,7 @@ export interface DistanceBucket {
 }
 
 export function bucketize(candidates: SavedCandidate[]): DistanceBucket[] {
-  const sorted = [...candidates].sort(
-    (a, b) => (a.distanceKm ?? Infinity) - (b.distanceKm ?? Infinity),
-  );
+  const sorted = [...candidates].sort(compareByDistanceKm);
 
   const distanceBuckets: DistanceBucket[] = BUCKET_THRESHOLDS.map((maxKm, idx) => ({
     label:

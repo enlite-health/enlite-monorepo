@@ -8,6 +8,7 @@ import { RoleSelect } from './RoleSelect';
 import { InterviewScheduleSelect, type InterviewSchedule } from './InterviewScheduleSelect';
 import { ContactNotesModal } from '@presentation/components/features/admin/VacancyDetail/Funnel/ContactNotesModal';
 import { VACANCY_FUNNEL_COLUMNS, columnItems } from '@presentation/components/features/admin/VacancyDetail/Funnel/funnelTabsConfig';
+import { compareByDistanceKm } from '@domain/value-objects/candidateDistance';
 import { useActionGate } from '@presentation/hooks/useCellAccess';
 import type { EncuadreRole } from '@domain/entities/EncuadreRole';
 import type { PresentationInviteResult } from '@infrastructure/http/AdminPresentationInviteApiService';
@@ -228,7 +229,7 @@ export function KanbanBoard({ stages, vacancyId, onMove, onPromoteBlocked, onRes
           // FunnelStages não tem index signature; columnItems só lê por chave conhecida, e as 8
           // chaves de FunnelStages cobrem todo `sources` possível de VACANCY_FUNNEL_COLUMNS. Sem
           // mudança de comportamento — só o tipo que o tsc exige para a assinatura genérica.
-          return col ? columnItems(col, stages as unknown as Partial<Record<string, FunnelCard[]>>) : [];
+          return col ? columnItems(col, stages as unknown as Partial<Record<string, FunnelCard[]>>).sort(compareByDistanceKm) : [];
         }}
         getItemId={(enc) => enc.id}
         isDragDisabled={(enc) => !enc.encuadreId || funnelWriteGate.denied}

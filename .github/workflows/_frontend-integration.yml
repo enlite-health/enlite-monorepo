@@ -585,13 +585,15 @@ jobs:
       # usa token mock simples, sem linha em `users` — sob engine ligado bate
       # em 403 `account_not_active` em qualquer rota `admin.patients`
       # (medido). Vive no job padrão (`pr-gate.yml`, engine OFF).
+      # `vacante-anotacao-sem-celula` ENTROU (cadeia, Fase 3): precisa do engine ligado
+      # (403 sem `vacancy:update`); usa `abac-stack-helper`.
       - name: Teste de integração — simulação de grupo de acesso + completar-vacante (fases 2-3)
         working-directory: enlite-frontend
         env:
           CI: 'true'
           ABAC_API_URL: http://localhost:8080
           ABAC_TEST_DB_URL: postgresql://enlite_admin:enlite_password@localhost:5433/enlite_e2e
-        run: npx playwright test --project=integration --ignore-snapshots --grep "group-simulation|draft-vacancy-page|draft-vacancy-choice"
+        run: npx playwright test --project=integration --ignore-snapshots --grep "group-simulation|draft-vacancy-page|draft-vacancy-choice|vacante-anotacao-sem-celula"
 
       - name: Relatório (só quando falha)
         if: failure()
