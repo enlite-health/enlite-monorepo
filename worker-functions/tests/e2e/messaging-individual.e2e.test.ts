@@ -64,9 +64,9 @@ describe('Fase 2 — whatsapp_bulk_dispatch_logs source column + timeline', () =
       await expect(
         pool.query(
           `INSERT INTO whatsapp_bulk_dispatch_logs
-             (worker_id, triggered_by, phone, template_slug, status, source)
-           VALUES ($1, 'admin:test-user', $2, 'talent_search_welcome', 'sent', 'individual')`,
-          [workerId, `+551${suffix}`.slice(0, 14)],
+             (worker_id, triggered_by, template_slug, status, source)
+           VALUES ($1, 'admin:test-user', 'talent_search_welcome', 'sent', 'individual')`,
+          [workerId],
         ),
       ).resolves.toBeDefined();
     });
@@ -75,9 +75,9 @@ describe('Fase 2 — whatsapp_bulk_dispatch_logs source column + timeline', () =
       await expect(
         pool.query(
           `INSERT INTO whatsapp_bulk_dispatch_logs
-             (worker_id, triggered_by, phone, template_slug, status, source)
-           VALUES ($1, 'system:outbox:some-id', $2, 'talent_search_welcome', 'sent', 'outbox')`,
-          [workerId, `+551${suffix}`.slice(0, 14)],
+             (worker_id, triggered_by, template_slug, status, source)
+           VALUES ($1, 'system:outbox:some-id', 'talent_search_welcome', 'sent', 'outbox')`,
+          [workerId],
         ),
       ).resolves.toBeDefined();
     });
@@ -86,9 +86,9 @@ describe('Fase 2 — whatsapp_bulk_dispatch_logs source column + timeline', () =
       await expect(
         pool.query(
           `INSERT INTO whatsapp_bulk_dispatch_logs
-             (worker_id, triggered_by, phone, template_slug, status)
-           VALUES ($1, 'admin:test-bulk', $2, 'talent_search_welcome', 'sent')`,
-          [workerId, `+551${suffix}`.slice(0, 14)],
+             (worker_id, triggered_by, template_slug, status)
+           VALUES ($1, 'admin:test-bulk', 'talent_search_welcome', 'sent')`,
+          [workerId],
         ),
       ).resolves.toBeDefined();
 
@@ -106,9 +106,9 @@ describe('Fase 2 — whatsapp_bulk_dispatch_logs source column + timeline', () =
       await expect(
         pool.query(
           `INSERT INTO whatsapp_bulk_dispatch_logs
-             (worker_id, triggered_by, phone, template_slug, status, source)
-           VALUES ($1, 'admin:test', $2, 'talent_search_welcome', 'sent', 'invalid_source')`,
-          [workerId, `+551${suffix}`.slice(0, 14)],
+             (worker_id, triggered_by, template_slug, status, source)
+           VALUES ($1, 'admin:test', 'talent_search_welcome', 'sent', 'invalid_source')`,
+          [workerId],
         ),
       ).rejects.toThrow();
     });

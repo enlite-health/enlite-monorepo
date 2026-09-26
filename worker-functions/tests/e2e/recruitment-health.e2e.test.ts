@@ -96,8 +96,8 @@ describe('GET /api/admin/recruitment/health — Fase 6', () => {
     batchId = '11111111-2222-4333-8444-555555555555';
     await pool.query(
       `INSERT INTO whatsapp_bulk_dispatch_logs
-         (worker_id, triggered_by, phone, template_slug, status, batch_id, source)
-       VALUES ($1, 'system', '+5511999990000', 'complete_register_ofc', 'sent', $2::uuid, 'bulk')`,
+         (worker_id, triggered_by, template_slug, status, batch_id, source)
+       VALUES ($1, 'system', 'complete_register_ofc', 'sent', $2::uuid, 'bulk')`,
       [workerId, batchId],
     );
   });

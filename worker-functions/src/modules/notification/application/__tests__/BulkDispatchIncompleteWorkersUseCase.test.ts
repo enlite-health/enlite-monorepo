@@ -136,10 +136,14 @@ describe('BulkDispatchIncompleteWorkersUseCase', () => {
 
       const logCall = calls.find(([sql]) => sql.includes('INSERT INTO whatsapp_bulk_dispatch_logs'));
       expect(logCall).toBeDefined();
+      // phone = NULL sempre (migration 475, mensageria-pii-e-retencao): o SQL grava NULL
+      // literal na coluna phone — não é mais um parâmetro bindado.
+      expect(logCall![0]).toMatch(/\(worker_id, triggered_by, phone, template_slug, status, twilio_sid, error_message, batch_id, source\)\s*\n\s*VALUES \(\$1, \$2, NULL, \$3, \$4, \$5, \$6, \$7, 'bulk'\)/);
       const logParams = logCall![1] as unknown[];
-      expect(logParams[3]).toBe('complete_register_ofc');
-      expect(logParams[4]).toBe('sent');
-      expect(logParams[5]).toBe('SM_inc_ok');
+      expect(logParams[2]).toBe('complete_register_ofc');
+      expect(logParams[3]).toBe('sent');
+      expect(logParams[4]).toBe('SM_inc_ok');
+      expect(logParams).not.toContain(WORKER_A.phone);
     });
   });
 
@@ -167,9 +171,10 @@ describe('BulkDispatchIncompleteWorkersUseCase', () => {
 
       const logCall = calls.find(([sql]) => sql.includes('INSERT INTO whatsapp_bulk_dispatch_logs'));
       const logParams = logCall![1] as unknown[];
-      expect(logParams[4]).toBe('error');
-      expect(logParams[5]).toBeNull();
-      expect(logParams[6]).toBe('Twilio error');
+      expect(logParams[3]).toBe('error');
+      expect(logParams[4]).toBeNull();
+      expect(logParams[5]).toBe('Twilio error');
+      expect(logParams).not.toContain(WORKER_A.phone);
     });
 
     // Achado do gate 25/09 (Achado 1): `sendResult.error` (Twilio/Periskope) pode conter o
