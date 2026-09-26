@@ -15,6 +15,7 @@
  *   P20 — os 3 lugares e a API dizem o mesmo número + print (DX-2.11, DX-2.13)
  *   P21 — Pre Screening une PRE_SCREENING + IN_PROGRESS numa coluna só
  *   P22 — tentativa negada aparece em Rejeitados (D433/DX-2.4), não some
+ *   P23 — vaga sem candidatura mostra 00/0/0 nos 3 lugares
  */
 
 import { test, expect, type APIRequestContext, type Page, type Response } from '@playwright/test';
@@ -500,6 +501,52 @@ test.describe('funil da vacante @integration', () => {
       } catch (err) {
         console.error('[cleanup] worker incompleto falhou (seguindo)', err);
       }
+    }
+  });
+
+  // ── P23 · vaga sem candidatura ─────────────────────────────────────────────
+  test('funil-vacante-vazia', async ({ page }) => {
+    const { patientId, addressId } = insertTestPatient({
+      withAddress: true,
+      firstName: 'FunilV3',
+      lastName: `Vazia-${Date.now()}`,
+    });
+    const caseNumber = 982_000 + Math.floor(Math.random() * 900);
+    const vacancyId = insertBaseVacancy({
+      patientId,
+      patientAddressId: addressId!,
+      caseNumber,
+      status: 'SEARCHING',
+      isDraft: false,
+    });
+
+    try {
+      await loginAs(page, MOCK_ADMIN_USER);
+
+      // Lista de vacantes: não pula — o `00` vem do padStart (DX-2.7).
+      await gotoVacanciesList(page);
+      await expect(page.getByTestId(`vacancy-row-${vacancyId}`)).toBeVisible({ timeout: 15_000 });
+      const listCounts = await readTestIdNumbers(page, (col) => `vacancy-row-${vacancyId}-stage-${col}`);
+      for (const col of COLUMN_IDS) {
+        expect(listCounts[col], `lista.${col}`).toBe(0);
+        await expect(page.getByTestId(`vacancy-row-${vacancyId}-stage-${col}`)).toHaveText('00');
+      }
+
+      // Modo lista.
+      await gotoVacancyDetail(page, vacancyId);
+      await expect(page.getByTestId('vacancy-funnel-view')).toBeVisible({ timeout: 15_000 });
+      for (const col of COLUMN_IDS) {
+        await expect(page.getByTestId(`funnel-tab-${col}-count`)).toHaveText('0');
+      }
+
+      // Kanban.
+      await switchToKanban(page, vacancyId);
+      await expect(page.getByTestId('kanban-board')).toBeVisible({ timeout: 15_000 });
+      for (const col of COLUMN_IDS) {
+        await expect(page.getByTestId(`kanban-column-${col}-count`)).toHaveText('0');
+      }
+    } finally {
+      cleanupTestPatient(patientId);
     }
   });
 });
