@@ -8,7 +8,7 @@
  */
 import { z } from 'zod';
 
-export const VACANCY_NOTE_CATEGORIES = ['DIVULGACAO', 'CONTATO', 'OUTRO'] as const; // = CHECK da 474
+export const VACANCY_NOTE_CATEGORIES = ['DIVULGACAO', 'CONTATO', 'OUTRO'] as const; // = CHECK da 476
 export type VacancyNoteCategory = (typeof VACANCY_NOTE_CATEGORIES)[number];
 
 export interface VacancyNote {
