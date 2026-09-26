@@ -5,7 +5,7 @@ import es from '@infrastructure/i18n/locales/es.json';
 const ptBRTabs = (ptBR as Record<string, any>).admin.vacancyDetail.tabs as Record<string, string>;
 const esTabs = (es as Record<string, any>).admin.vacancyDetail.tabs as Record<string, string>;
 
-const TAB_KEYS = ['encuadres', 'talentum', 'links'];
+const TAB_KEYS = ['encuadres', 'talentum', 'links', 'notes'];
 
 // ── Key completeness ─────────────────────────────────────────────────────────
 
