@@ -461,7 +461,7 @@ describe('Worker engagements por worker (banco real)', () => {
     // vPre tem WJA → excluído; só vBlocked aparece.
     expect(rows).toHaveLength(1);
     expect(rows[0].jobPostingId).toBe(vBlocked);
-    expect(rows[0].kanbanStage).toBe('BLOQUEADO');
+    expect(rows[0].kanbanStage).toBe('REJECTED');
     expect(rows[0].isBlocked).toBe(true);
     expect(rows[0].caseNumber).toBe(88883);
     expect(rows[0].attemptCount).toBe(5);
