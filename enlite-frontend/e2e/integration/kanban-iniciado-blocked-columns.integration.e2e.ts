@@ -7,7 +7,7 @@
  * Cenários cobertos:
  *   K1 — Board com 9 colunas na ordem correta (INVITED→BLOQUEADO→INICIADO→...)
  *   K2 — Coluna INICIADO: card normal (sem flag isBlocked)
- *   K3 — Coluna BLOQUEADO: card bloqueado com badge + motivo + missingFields + attemptCount
+ *   K3 — Coluna Rejeitados (tentativa negada): card bloqueado com badge + motivo + missingFields + attemptCount
  *   K4 — Fluxo real de promoção: worker completa cadastro → card some de BLOQUEADO e
  *        reaparece como card normal em INICIADO (o backend cria a WJA)
  *   K5 — Coluna PRE_SCREENING: card normal (worker que passou pelo gate Talentum)
@@ -309,7 +309,7 @@ test.describe('Kanban INICIADO + PRE_SCREENING — colunas novas @integration', 
 
   // ── K3 — BLOQUEADO: card com badge + motivo + missingFields ─────────────────
 
-  test('K3 — Coluna BLOQUEADO: card com badge, motivo e campos faltantes', async ({ page }) => {
+  test('K3 — Coluna Rejeitados (tentativa negada): card com badge, motivo e campos faltantes', async ({ page }) => {
     // Tentativa REAL de postulação: worker INCOMPLETE_REGISTER chama o mesmo
     // endpoint da pessoa real e o gate (assertWorkerCanApply) devolve 403 e grava
     // worker_blocked_applications com missing_fields_at_attempt calculados por
