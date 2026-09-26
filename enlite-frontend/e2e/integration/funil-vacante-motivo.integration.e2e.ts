@@ -41,6 +41,9 @@ import { runSQL } from '../helpers/patient-detail-a-helper';
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const BACKEND_URL = process.env.E2E_BACKEND_URL ?? 'http://localhost:8080';
+// Host da própria API sob teste — derivado de BACKEND_URL (não um literal fixo): no CI
+// a api sobe em localhost:8080, neste worktree local em localhost:8105 (ver BRIEF-COMUM.md).
+const API_HOST = new URL(BACKEND_URL).host;
 
 const MOCK_STAFF: MockUser = {
   uid: 'e2e-int-staff-funil-motivo',
@@ -51,11 +54,11 @@ const MOCK_STAFF: MockUser = {
 const MOCK_TOKEN = tokenFor(MOCK_STAFF);
 
 // Hosts de canal real — critério 11 (DX-4.7): mover para QUICK_RESPONSE_TEAM não pode
-// tocar nenhum deles. Controle positivo: localhost:8105 (a própria API do teste).
+// tocar nenhum deles. Controle positivo: API_HOST (a própria API do teste).
 // Testa só o HOSTNAME (não a URL inteira): a própria API local tem rotas com
 // "talentum" no path (`/api/admin/workers/sync-talentum`) — um match por substring
 // na URL inteira acusaria a própria stack de teste como "canal real" (medido: 40
-// falsos positivos, todos localhost:8105).
+// falsos positivos, todos no host da própria API).
 const FORBIDDEN_HOSTS_RE = /twilio|whatsapp|facebook|graph\.facebook|periskope|talentum/i;
 
 function isForbiddenHost(url: string): boolean {
@@ -312,8 +315,8 @@ test.describe('funil da vacante — motivo obrigatório @integration', () => {
       expect(outbound.outbox, 'outbox').toBe(0);
 
       const forbiddenCount = requestUrls.filter(isForbiddenHost).length;
-      const localCount = requestUrls.filter((u) => u.includes('localhost:8105')).length;
-      console.log('[P17] requests forbidden=', forbiddenCount, 'localhost:8105=', localCount);
+      const localCount = requestUrls.filter((u) => u.includes(API_HOST)).length;
+      console.log('[P17] requests forbidden=', forbiddenCount, `${API_HOST}=`, localCount);
       expect(forbiddenCount, 'nenhuma request a canal real').toBe(0);
       expect(localCount, 'controle positivo: requests à própria API').toBeGreaterThan(0);
     } finally {
