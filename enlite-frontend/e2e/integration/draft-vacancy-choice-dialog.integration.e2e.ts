@@ -179,7 +179,7 @@ test.describe('draft-vacancy-choice — fase 3 (completar-vacante-em-rascunho, F
 
     await page.getByTestId(`vacancy-row-${draftVacancyId}`).click();
 
-    const dialog = page.getByRole('dialog');
+    const dialog = page.getByTestId('draft-vacancy-choice-dialog');
     await expect(dialog).toBeVisible({ timeout: 10_000 });
     const complete = page.getByTestId('choice-complete');
     const viewOnly = page.getByTestId('choice-view');
@@ -199,7 +199,7 @@ test.describe('draft-vacancy-choice — fase 3 (completar-vacante-em-rascunho, F
     await expect(page.getByTestId(`vacancy-draft-badge-${draftVacancyId}`)).toBeVisible({ timeout: 20_000 });
 
     await page.getByTestId(`vacancy-row-${draftVacancyId}`).click();
-    await expect(page.getByRole('dialog')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId('draft-vacancy-choice-dialog')).toBeVisible({ timeout: 10_000 });
 
     await page.getByTestId('choice-view').click();
     await expect(page).toHaveURL(new RegExp(`/admin/vacancies/${draftVacancyId}/borrador$`));
@@ -212,7 +212,7 @@ test.describe('draft-vacancy-choice — fase 3 (completar-vacante-em-rascunho, F
 
     await page.getByTestId(`vacancy-row-${draftVacancyId}`).click();
 
-    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(page.getByTestId('draft-vacancy-choice-dialog')).toHaveCount(0);
     await expect(page).toHaveURL(new RegExp(`/admin/vacancies/${draftVacancyId}/borrador$`));
   });
 
