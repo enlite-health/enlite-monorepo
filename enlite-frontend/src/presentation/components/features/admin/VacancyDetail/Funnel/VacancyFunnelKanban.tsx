@@ -18,7 +18,7 @@ export function VacancyFunnelKanban({
   vacancyId,
 }: VacancyFunnelKanbanProps): JSX.Element {
   const { t } = useTranslation();
-  const { data, isLoading, error, refetch, moveEncuadre, rejectBlocked, unrejectBlocked, promoteBlocked } =
+  const { data, isLoading, error, refetch, moveEncuadre, promoteBlocked } =
     useWJAFunnel(vacancyId);
   const [moveError, setMoveError] = useState<MoveEncuadreError | null>(null);
 
@@ -58,15 +58,6 @@ export function VacancyFunnelKanban({
     [promoteBlocked, t],
   );
 
-  const handleRejectBlocked = useCallback(
-    async (blockedId: string, rejectionReasonCategory: string) => {
-      const err = await rejectBlocked(blockedId, rejectionReasonCategory);
-      setMoveError(err);
-      return err;
-    },
-    [rejectBlocked],
-  );
-
   /**
    * "Reenviar" da tarjeta (REQ-08): mesmo endpoint do convite, com `resend: true`
    * (o backend troca as travas de convite pelo cooldown de reenvio). Recusa 422
@@ -90,15 +81,6 @@ export function VacancyFunnelKanban({
   const handlePresentationInvite = useCallback(
     (workerId: string) => AdminPresentationInviteApiService.invite(workerId, 'kanban', vacancyId),
     [vacancyId],
-  );
-
-  const handleUnrejectBlocked = useCallback(
-    async (blockedId: string) => {
-      const err = await unrejectBlocked(blockedId);
-      setMoveError(err);
-      return err;
-    },
-    [unrejectBlocked],
   );
 
   return (
@@ -185,9 +167,7 @@ export function VacancyFunnelKanban({
           stages={data.stages}
           vacancyId={vacancyId}
           onMove={handleMove}
-          onRejectBlocked={handleRejectBlocked}
           onPromoteBlocked={handlePromoteBlocked}
-          onUnrejectBlocked={handleUnrejectBlocked}
           onResendInvite={handleResendInvite}
           onPresentationInvite={handlePresentationInvite}
         />
