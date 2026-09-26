@@ -209,7 +209,7 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'POST /api/admin/workers/:id/tags/:tagId → worker:update',
         'POST /api/admin/workers/sync-talentum → talentum:create+talentum:update',
         'PUT /api/admin/workers/:id/service-area → worker:update',
-        // ── admin.vacancies (45) — a 4ª e maior, um arquivo só
+        // ── admin.vacancies (47) — a 4ª e maior, um arquivo só
         'DELETE /api/admin/interview-slots/:slotId → interview:delete',
         'DELETE /api/admin/vacancies/:id → vacancy:delete',
         'DELETE /api/admin/vacancies/:id/publish-talentum → talentum:update',
@@ -223,6 +223,7 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'GET /api/admin/vacancies/:id/funnel-table → funnel:read',
         'GET /api/admin/vacancies/:id/interview-slots → interview:read',
         'GET /api/admin/vacancies/:id/match-results → match:read',
+        'GET /api/admin/vacancies/:id/notes → vacancy:read',
         'GET /api/admin/vacancies/:id/prescreening-config → prescreening:read',
         'GET /api/admin/vacancies/:id/social-links-stats → vacancy:read',
         'GET /api/admin/vacancies/:id/talentum-status → talentum:read',
@@ -241,6 +242,7 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'POST /api/admin/vacancies/:id/generate-talentum-description → talentum:update',
         'POST /api/admin/vacancies/:id/interview-slots → interview:create',
         'POST /api/admin/vacancies/:id/match → match:execute',
+        'POST /api/admin/vacancies/:id/notes → vacancy:update',
         'POST /api/admin/vacancies/:id/prescreening-config → prescreening:update',
         'POST /api/admin/vacancies/:id/publish-talentum → talentum:update',
         'POST /api/admin/vacancies/:id/resolve-address-review → vacancy:update',
