@@ -270,7 +270,9 @@ describe('WJAFunnelController — ramos de erro/decrypt do KMS e de negócio', (
         rows: [{ worker_id: 'w-1', job_posting_id: 'jp-1' }],
       });
       mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
-      mockQuery.mockResolvedValueOnce({ rows: [] }); // etapa anterior (evento funnel_stage.*, PEND-14)
+      // etapa anterior: CONFIRMED (1 posição antes de SELECTED) — não é salto (Fase 4,
+      // DX-4.5), então não precisa de reasonCategory.
+      mockQuery.mockResolvedValueOnce({ rows: [{ application_funnel_stage: 'CONFIRMED', source: 'talentum' }] });
       mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [] }); // upsert wja
       mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [] }); // UPDATE encuadres resultado+role
       mockQuery.mockResolvedValueOnce({ rows: [{ id: 'ev-1' }] }); // INSERT domain_events (funnel_stage.selected)

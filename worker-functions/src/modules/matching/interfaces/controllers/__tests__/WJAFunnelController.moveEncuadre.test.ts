@@ -79,7 +79,9 @@ describe('WJAFunnelController — moveEncuadre', () => {
       rows: [{ worker_id: 'w-1', job_posting_id: 'jp-1' }],
     });
     mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
-    mockQuery.mockResolvedValueOnce({ rows: [] }); // etapa anterior (PEND-14: evento por etapa)
+    // etapa anterior: INICIADO (1 posição antes de PRE_SCREENING no quadro B) — não é
+    // salto (Fase 4, DX-4.5), então não precisa de reasonCategory.
+    mockQuery.mockResolvedValueOnce({ rows: [{ application_funnel_stage: 'INVITED', source: 'manual' }] });
     mockQuery.mockResolvedValue({ rowCount: 1, rows: [] });
 
     const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'PRE_SCREENING' });
@@ -142,7 +144,8 @@ describe('WJAFunnelController — moveEncuadre', () => {
   it('falha ao publicar o evento no Pub/Sub depois do COMMIT → 200 mesmo assim + reportError (a varredura reprocessa)', async () => {
     mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [{ worker_id: 'w-1', job_posting_id: 'jp-1' }] });
     mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
-    mockQuery.mockResolvedValueOnce({ rows: [{ application_funnel_stage: 'INVITED' }] }); // etapa anterior
+    // etapa anterior: COMPLETED (1 posição antes de CONFIRMED) — não é salto (DX-4.5).
+    mockQuery.mockResolvedValueOnce({ rows: [{ application_funnel_stage: 'COMPLETED', source: 'talentum' }] });
     mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [] }); // upsert wja
     mockQuery.mockResolvedValueOnce({ rows: [{ id: 'ev-1' }] }); // INSERT domain_events
     (controller as unknown as { pubsub: { publish: jest.Mock } }).pubsub = { publish: jest.fn().mockRejectedValue(new Error('pubsub down')) };
@@ -157,7 +160,8 @@ describe('WJAFunnelController — moveEncuadre', () => {
   it('rejeição do Pub/Sub que não é Error vira Error no reportError (nunca engole)', async () => {
     mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [{ worker_id: 'w-1', job_posting_id: 'jp-1' }] });
     mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
-    mockQuery.mockResolvedValueOnce({ rows: [{ application_funnel_stage: 'INVITED' }] });
+    // etapa anterior: COMPLETED (1 posição antes de CONFIRMED) — não é salto (DX-4.5).
+    mockQuery.mockResolvedValueOnce({ rows: [{ application_funnel_stage: 'COMPLETED', source: 'talentum' }] });
     mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [] });
     mockQuery.mockResolvedValueOnce({ rows: [{ id: 'ev-1' }] });
     (controller as unknown as { pubsub: { publish: jest.Mock } }).pubsub = { publish: jest.fn().mockRejectedValue('pubsub string') };
@@ -179,7 +183,9 @@ describe('WJAFunnelController — moveEncuadre', () => {
     });
     // Query 2: SELECT status FROM workers (eligibility check)
     mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
-    mockQuery.mockResolvedValueOnce({ rows: [] }); // etapa anterior (PEND-14: evento por etapa)
+    // etapa anterior: COMPLETED (1 posição antes de CONFIRMED) — não é salto (DX-4.5),
+    // então não precisa de reasonCategory.
+    mockQuery.mockResolvedValueOnce({ rows: [{ application_funnel_stage: 'COMPLETED', source: 'talentum' }] });
     // Query 3: INSERT/UPDATE worker_job_applications
     mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [] });
 
@@ -204,6 +210,9 @@ describe('WJAFunnelController — moveEncuadre', () => {
     expect(upsertCall[0]).toContain(
       'CASE WHEN $4::date IS NULL THEN worker_job_applications.interview_datetime',
     );
+    // Fase 4: sem salto, nenhuma query de motivo é montada (set_config('app.move_reason'
+    // NUNCA aparece na lista enviada — nem interceptado, nem de propósito).
+    expect(mockQuery.mock.calls.some(([sql]) => typeof sql === 'string' && sql.includes('move_reason'))).toBe(false);
   });
 
   /**
@@ -218,7 +227,8 @@ describe('WJAFunnelController — moveEncuadre', () => {
         rows: [{ worker_id: 'w-1', job_posting_id: 'jp-1' }],
       });
       mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
-    mockQuery.mockResolvedValueOnce({ rows: [] }); // etapa anterior (PEND-14: evento por etapa)
+      // etapa anterior: COMPLETED (1 posição antes de CONFIRMED) — não é salto (DX-4.5).
+      mockQuery.mockResolvedValueOnce({ rows: [{ application_funnel_stage: 'COMPLETED', source: 'talentum' }] });
       mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [] });
     }
 
@@ -361,7 +371,8 @@ describe('WJAFunnelController — moveEncuadre', () => {
     });
     // Query 2: eligibility check
     mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
-    mockQuery.mockResolvedValueOnce({ rows: [] }); // etapa anterior (PEND-14: evento por etapa)
+    // etapa anterior: CONFIRMED (1 posição antes de SELECTED) — não é salto (DX-4.5).
+    mockQuery.mockResolvedValueOnce({ rows: [{ application_funnel_stage: 'CONFIRMED', source: 'talentum' }] });
     // Query 3: upsert wja
     mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [] });
     // Query 4: UPDATE encuadre resultado = SELECCIONADO
@@ -383,14 +394,16 @@ describe('WJAFunnelController — moveEncuadre', () => {
     expect(updateCall[0]).toContain('SELECCIONADO');
   });
 
-  it('move para REJECTED — atualiza funnel_stage, resultado E rejection_reason_category', async () => {
+  it('move para REJECTED — atualiza funnel_stage, resultado E rejection_reason_category (Fase 4: exige reasonCategory)', async () => {
     mockQuery.mockResolvedValueOnce({
       rowCount: 1,
       rows: [{ worker_id: 'w-1', job_posting_id: 'jp-1' }],
     });
     // eligibility
     mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
-    mockQuery.mockResolvedValueOnce({ rows: [] }); // etapa anterior (PEND-14: evento por etapa)
+    // etapa anterior: candidatura nova (nenhuma linha) — entrar em REJECTED SEMPRE exige
+    // motivo (ENTER_REJECTED, DX-4.6), por isso o corpo abaixo envia reasonCategory.
+    mockQuery.mockResolvedValueOnce({ rows: [] });
     // upsert wja
     mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [] });
     // UPDATE encuadre resultado = RECHAZADO
@@ -398,7 +411,7 @@ describe('WJAFunnelController — moveEncuadre', () => {
 
     const [req, res] = mockReqRes(
       { id: 'e1' },
-      { targetStage: 'REJECTED', rejectionReasonCategory: 'DISTANCE' },
+      { targetStage: 'REJECTED', reasonCategory: 'DISTANCE' },
     );
     await controller.moveEncuadre(req, res);
 
@@ -431,15 +444,183 @@ describe('WJAFunnelController — moveEncuadre', () => {
       });
       // eligibility OK
       mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
-    mockQuery.mockResolvedValueOnce({ rows: [] }); // etapa anterior (PEND-14: evento por etapa)
+      mockQuery.mockResolvedValueOnce({ rows: [] }); // etapa anterior (PEND-14: evento por etapa)
       mockQuery.mockResolvedValue({ rowCount: 1, rows: [] });
 
-      const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: stage });
+      // 'OTHER' está nas 3 listas de motivo (DX-4.4) — cobre qualquer kind que a origem
+      // nula (candidatura nova, DX-4.6) exija para este destino, sem testar a regra em
+      // si (isso é moveReason.test.ts); aqui o alvo é só "o targetStage é aceito".
+      const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: stage, reasonCategory: 'OTHER' });
       await controller.moveEncuadre(req, res);
 
       expect(res.json).toHaveBeenCalledWith(
         expect.objectContaining({ success: true }),
       );
     }
+  });
+
+  /**
+   * Fase 4 (D430/D434, invariante 11) — o motivo do arrasto no quadro B. A regra em si
+   * (quem é salto, quem entra/sai de Rejeitados) está em moveReason.test.ts; aqui só
+   * o CONTRATO do controller: 422 sem motivo (nada escrito), 422 com motivo inválido,
+   * 200 com motivo válido, e o caso QUICK_RESPONSE_TEAM sem evento (DX-4.7).
+   *
+   * Atenção (poolMockSupport.ts:12-27): `set_config('app.move_reason', …)` casa a
+   * regex `TRANSACTION_CONTROL` (contém `set_config(`) e é respondido sozinho pelo
+   * wrapper do client — NUNCA chega a `mockQuery`. Por isso as asserções abaixo são
+   * sobre a lista de queries que REALMENTE chegam ao mock (upsert aconteceu ou não;
+   * nenhuma entrada com "move_reason"), não sobre o efeito do `set_config` em si — a
+   * prova de efeito (a trilha grava `reason_category`) é do e2e com banco real (P9/P10).
+   */
+  describe('Fase 4 — motivo do arrasto (salto, entrar/sair de Rejeitados)', () => {
+    it('salto sem motivo → 422 MOVE_REASON_REQUIRED e NADA é escrito (nem upsert, nem evento)', async () => {
+      mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [{ worker_id: 'w-1', job_posting_id: 'jp-1' }] });
+      mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
+      // etapa anterior: INVITED (posição 0) → CONFIRMED (posição 4) é salto (Q-4.1).
+      mockQuery.mockResolvedValueOnce({ rows: [{ application_funnel_stage: 'INVITED', source: 'talentum' }] });
+
+      const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'CONFIRMED' });
+      await controller.moveEncuadre(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(422);
+      expect(res.json).toHaveBeenCalledWith({
+        success: false,
+        error: 'move_reason_required',
+        code: 'MOVE_REASON_REQUIRED',
+        reason: 'JUMP',
+      });
+      // Exatamente 3 queries (SELECT encuadre + eligibility + etapa anterior) — o
+      // upsert (INSERT INTO worker_job_applications) e o INSERT em domain_events NUNCA
+      // rodam: a 3ª é só a LEITURA da etapa anterior (contém "worker_job_applications"
+      // no SELECT), por isso a prova certa é o COUNT e a ausência de "INSERT".
+      expect(mockQuery).toHaveBeenCalledTimes(3);
+      expect(mockQuery.mock.calls.some(([sql]) => typeof sql === 'string' && sql.includes('INSERT'))).toBe(false);
+    });
+
+    it('salto com motivo válido → segue e escreve (200)', async () => {
+      mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [{ worker_id: 'w-1', job_posting_id: 'jp-1' }] });
+      mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
+      mockQuery.mockResolvedValueOnce({ rows: [{ application_funnel_stage: 'INVITED', source: 'talentum' }] }); // etapa anterior
+      mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [] }); // upsert wja
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 'ev-1' }] }); // INSERT domain_events
+
+      const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'CONFIRMED', reasonCategory: 'ENCUADRE_ANTECIPADO' });
+      await controller.moveEncuadre(req, res);
+
+      expect(res.json).toHaveBeenCalledWith({ success: true, data: { encuadreId: 'e1', targetStage: 'CONFIRMED' } });
+      // Ver nota da classe sobre poolMockSupport — set_config nunca chega a mockQuery.
+      expect(mockQuery.mock.calls.some(([sql]) => typeof sql === 'string' && sql.includes('move_reason'))).toBe(false);
+    });
+
+    it('salto com motivo de OUTRO tipo (motivo de saída de Rejeitados usado no salto) → 422 MOVE_REASON_INVALID', async () => {
+      mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [{ worker_id: 'w-1', job_posting_id: 'jp-1' }] });
+      mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
+      mockQuery.mockResolvedValueOnce({ rows: [{ application_funnel_stage: 'INVITED', source: 'talentum' }] });
+
+      const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'CONFIRMED', reasonCategory: 'REAVALIACAO' });
+      await controller.moveEncuadre(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(422);
+      expect(res.json).toHaveBeenCalledWith({
+        success: false,
+        error: 'move_reason_invalid',
+        code: 'MOVE_REASON_INVALID',
+        reason: 'JUMP',
+      });
+    });
+
+    it('entrar em REJECTED sem motivo → 422 MOVE_REASON_REQUIRED (ENTER_REJECTED)', async () => {
+      mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [{ worker_id: 'w-1', job_posting_id: 'jp-1' }] });
+      mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
+      mockQuery.mockResolvedValueOnce({ rows: [{ application_funnel_stage: 'CONFIRMED', source: 'talentum' }] });
+
+      const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'REJECTED' });
+      await controller.moveEncuadre(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(422);
+      expect(res.json).toHaveBeenCalledWith({
+        success: false,
+        error: 'move_reason_required',
+        code: 'MOVE_REASON_REQUIRED',
+        reason: 'ENTER_REJECTED',
+      });
+    });
+
+    it('motivo de salto usado para entrar em REJECTED → 422 MOVE_REASON_INVALID (ENTER_REJECTED)', async () => {
+      mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [{ worker_id: 'w-1', job_posting_id: 'jp-1' }] });
+      mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
+      mockQuery.mockResolvedValueOnce({ rows: [{ application_funnel_stage: 'CONFIRMED', source: 'talentum' }] });
+
+      const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'REJECTED', reasonCategory: 'ENCUADRE_ANTECIPADO' });
+      await controller.moveEncuadre(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(422);
+      expect(res.json).toHaveBeenCalledWith({
+        success: false,
+        error: 'move_reason_invalid',
+        code: 'MOVE_REASON_INVALID',
+        reason: 'ENTER_REJECTED',
+      });
+    });
+
+    it('sair de REJECTED sem motivo → 422 MOVE_REASON_REQUIRED (LEAVE_REJECTED)', async () => {
+      mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [{ worker_id: 'w-1', job_posting_id: 'jp-1' }] });
+      mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
+      mockQuery.mockResolvedValueOnce({ rows: [{ application_funnel_stage: 'REJECTED', source: 'talentum' }] });
+
+      const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'CONFIRMED' });
+      await controller.moveEncuadre(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(422);
+      expect(res.json).toHaveBeenCalledWith({
+        success: false,
+        error: 'move_reason_required',
+        code: 'MOVE_REASON_REQUIRED',
+        reason: 'LEAVE_REJECTED',
+      });
+    });
+
+    it('sair de REJECTED com REAVALIACAO → 200', async () => {
+      mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [{ worker_id: 'w-1', job_posting_id: 'jp-1' }] });
+      mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
+      mockQuery.mockResolvedValueOnce({ rows: [{ application_funnel_stage: 'REJECTED', source: 'talentum' }] });
+      mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [] }); // upsert wja
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 'ev-1' }] }); // INSERT domain_events
+
+      const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'CONFIRMED', reasonCategory: 'REAVALIACAO' });
+      await controller.moveEncuadre(req, res);
+
+      expect(res.json).toHaveBeenCalledWith({ success: true, data: { encuadreId: 'e1', targetStage: 'CONFIRMED' } });
+    });
+
+    it('vizinho (mesma direção, 1 posição) sem motivo → 200 e nenhuma query de motivo', async () => {
+      mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [{ worker_id: 'w-1', job_posting_id: 'jp-1' }] });
+      mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
+      // Confirmados → Seleccionados: 1 posição à frente, NÃO é salto (Q-4.1, o caso que
+      // a fase explicitamente NÃO pede motivo).
+      mockQuery.mockResolvedValueOnce({ rows: [{ application_funnel_stage: 'CONFIRMED', source: 'talentum' }] });
+      mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [] }); // upsert wja
+      mockQuery.mockResolvedValueOnce({ rows: [{ id: 'ev-1' }] }); // INSERT domain_events
+      mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [] }); // UPDATE encuadres resultado=SELECCIONADO
+
+      const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'SELECTED' });
+      await controller.moveEncuadre(req, res);
+
+      expect(res.json).toHaveBeenCalledWith({ success: true, data: { encuadreId: 'e1', targetStage: 'SELECTED' } });
+      expect(mockQuery.mock.calls.some(([sql]) => typeof sql === 'string' && sql.includes('move_reason'))).toBe(false);
+    });
+
+    it('SELECTED → QUICK_RESPONSE_TEAM: 1 posição à frente (sem motivo), 200, e NENHUM INSERT em domain_events (DX-4.7 — sem mensagem)', async () => {
+      mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [{ worker_id: 'w-1', job_posting_id: 'jp-1' }] });
+      mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
+      mockQuery.mockResolvedValueOnce({ rows: [{ application_funnel_stage: 'SELECTED', source: 'talentum' }] });
+      mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [] }); // upsert wja
+
+      const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'QUICK_RESPONSE_TEAM' });
+      await controller.moveEncuadre(req, res);
+
+      expect(res.json).toHaveBeenCalledWith({ success: true, data: { encuadreId: 'e1', targetStage: 'QUICK_RESPONSE_TEAM' } });
+      expect(mockQuery.mock.calls.some(([sql]) => typeof sql === 'string' && sql.includes('domain_events'))).toBe(false);
+    });
   });
 });
