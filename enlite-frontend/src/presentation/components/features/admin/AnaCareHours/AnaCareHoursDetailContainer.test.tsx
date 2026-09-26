@@ -164,6 +164,32 @@ describe('AnaCareHoursDetailContainer', () => {
     await waitFor(() => expect(screen.getByTestId('anacare-hours-action-error')).toHaveTextContent('admin.anacareHours.error.validateShift'));
   });
 
+  // Achado 1 (gate `revisao-pr`, 26/09) — sabotagem "remover `setValidatingShiftIds` do `finally`
+  // de `AnaCareHoursDetailPage.handleValidateShift`" passava sem acusar: os testes de erro acima só
+  // conferem o banner `anacare-hours-action-error`, nunca se o BOTÃO voltou ao normal. Erro real
+  // (via `service.validateShift` rejeitando, tratado pelo container — achado 2: sem `catch` mudo
+  // em `AnaCareHoursDetailPage`, o `finally` sozinho já garante isso) precisa devolver o botão a
+  // "Validar"/habilitado/`aria-busy=false`, senão a operadora vê "Validando…" pra sempre num erro.
+  it('NEGATIVO — falha ao validar turno: o botão volta a "Validar" habilitado depois do erro (mata a sabotagem "sem reset de validatingShiftIds")', async () => {
+    comEnforcement(['anacare_hours:read', 'anacare_hours:validate'], 'on');
+    const service: AnaCareHoursService = {
+      getMonthSnapshot: vi.fn(),
+      getPatientMonth: vi.fn().mockResolvedValue(makeSnapshot().patients[0]),
+      getRetratoStatus: vi.fn().mockResolvedValue({ updatedAt: makeSnapshot().updatedAt, stale: false, circuitBreakerOpen: false }),
+      validateShift: vi.fn().mockRejectedValue(new AnaCareHoursServiceError('JA_VALIDADO', 'já validado, não pode reabrir')),
+      validateBatch: vi.fn(),
+      contestShift: vi.fn(),
+    };
+    render(<AnaCareHoursDetailContainer axonicoService={AXONICO_SERVICE} patientDocumentService={PATIENT_DOCUMENT_SERVICE} service={service} month="2026-08" patientId="90000" onBack={vi.fn()} />);
+    await waitFor(() => expect(screen.getByTestId('anacare-hours-validate-shift-s1')).toBeInTheDocument());
+    const button = screen.getByTestId('anacare-hours-validate-shift-s1');
+    fireEvent.click(button);
+    await waitFor(() => expect(screen.getByTestId('anacare-hours-action-error')).toBeInTheDocument());
+    expect(button).not.toBeDisabled();
+    expect(button).toHaveAttribute('aria-busy', 'false');
+    expect(button).toHaveTextContent('admin.anacareHours.providerGroup.validateAction');
+  });
+
   it('POSITIVO — validar em lote chama service.validateBatch', async () => {
     comEnforcement(['anacare_hours:read', 'anacare_hours:validate'], 'on');
     const service = new FakeAnaCareHoursService({ '2026-08': makeSnapshot() });
@@ -194,6 +220,37 @@ describe('AnaCareHoursDetailContainer', () => {
     await waitFor(() =>
       expect(screen.getByTestId('anacare-hours-action-error')).toHaveTextContent('admin.anacareHours.error.validateBatch'),
     );
+  });
+
+  // Idem `handleValidateShift` acima, mas pro "Confirmar" do lote — mata a mesma classe de
+  // sabotagem no caminho de erro do `isValidatingBatch` (o caminho de sucesso já é coberto em
+  // `AnaCareHoursDetailPage.test.tsx`). O `finally` de `handleConfirmBatch` fecha o modal e limpa a
+  // seleção mesmo no erro — reabrir o modal (reselecionando) é o jeito de inspecionar se o
+  // "Confirmar" ficou preso em "Validando…"/disabled.
+  it('NEGATIVO — falha ao validar em lote: reabrir o modal mostra "Confirmar" habilitado e no rótulo normal depois do erro (mata a sabotagem "sem reset de isValidatingBatch")', async () => {
+    comEnforcement(['anacare_hours:read', 'anacare_hours:validate'], 'on');
+    const service: AnaCareHoursService = {
+      getMonthSnapshot: vi.fn(),
+      getPatientMonth: vi.fn().mockResolvedValue(makeSnapshot().patients[0]),
+      getRetratoStatus: vi.fn().mockResolvedValue({ updatedAt: makeSnapshot().updatedAt, stale: false, circuitBreakerOpen: false }),
+      validateShift: vi.fn(),
+      validateBatch: vi.fn().mockRejectedValue(new AnaCareHoursServiceError('RETRATO_DESATUALIZADO', 'retrato velho')),
+      contestShift: vi.fn(),
+    };
+    render(<AnaCareHoursDetailContainer axonicoService={AXONICO_SERVICE} patientDocumentService={PATIENT_DOCUMENT_SERVICE} service={service} month="2026-08" patientId="90000" onBack={vi.fn()} />);
+    await waitFor(() => expect(screen.getByTestId('anacare-hours-select-shift-s1')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('anacare-hours-select-shift-s1'));
+    fireEvent.click(screen.getByTestId('anacare-hours-selection-validate'));
+    fireEvent.click(screen.getByTestId('anacare-hours-batch-modal-confirm'));
+    await waitFor(() => expect(screen.getByTestId('anacare-hours-action-error')).toBeInTheDocument());
+    expect(screen.queryByTestId('anacare-hours-batch-modal')).not.toBeInTheDocument();
+    // seleção foi limpa pelo próprio fecho (finally roda mesmo no erro) — seleciona de novo pra reabrir
+    fireEvent.click(screen.getByTestId('anacare-hours-select-shift-s1'));
+    fireEvent.click(screen.getByTestId('anacare-hours-selection-validate'));
+    const confirmBtn = screen.getByTestId('anacare-hours-batch-modal-confirm');
+    expect(confirmBtn).not.toBeDisabled();
+    expect(confirmBtn).toHaveAttribute('aria-busy', 'false');
+    expect(confirmBtn).toHaveTextContent('admin.anacareHours.batchModal.confirm');
   });
 
   it('POSITIVO — contestar chama service.contestShift com reason e note trimados', async () => {

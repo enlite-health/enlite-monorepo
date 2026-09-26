@@ -198,15 +198,16 @@ export function AnaCareHoursDetailPage({
 
   const contestShift = shifts.find((s) => s.id === contestShiftId) ?? null;
 
+  // change `anacare-horas-validando-prd` — revisão 26/09 (achado 2, gate `revisao-pr`): SEM catch
+  // aqui de propósito. Quem trata o erro de verdade é `AnaCareHoursDetailContainer
+  // .handleValidateShift` (nunca rejeita — sempre `setActionError` e resolve). Se `onValidateShift`
+  // rejeitar mesmo assim (só acontece com um mock cru em teste unitário — não no fluxo real), o
+  // `finally` ainda limpa `validatingShiftIds` (a UI volta ao normal), e o erro sobe visível em vez
+  // de ser engolido em silêncio (padrão da casa: nunca `catch {}` mudo).
   async function handleValidateShift(shift: AnaCareShift): Promise<void> {
     setValidatingShiftIds((prev) => new Set(prev).add(shift.id));
     try {
       await onValidateShift?.(shift);
-    } catch {
-      // O erro de verdade já é tratado por quem chama (`AnaCareHoursDetailContainer
-      // .handleValidateShift`, que nunca rejeita — só chega aqui num teste unitário com mock cru
-      // passando `onValidateShift` direto). Sem re-throw: este wrapper só cuida do rótulo
-      // "Validando…", nunca da mensagem de erro.
     } finally {
       setValidatingShiftIds((prev) => {
         const next = new Set(prev);
@@ -241,13 +242,13 @@ export function AnaCareHoursDetailPage({
     });
   }
 
+  // Idem `handleValidateShift` — SEM catch (achado 2, gate `revisao-pr`, 26/09): o container já
+  // trata o erro de verdade; o `finally` sozinho garante que o "Confirmar" volta ao normal e o
+  // modal fecha mesmo se `onValidateBatch` rejeitar.
   async function handleConfirmBatch(): Promise<void> {
     setIsValidatingBatch(true);
     try {
       await onValidateBatch?.(Array.from(selectedShiftIds));
-    } catch {
-      // Idem `handleValidateShift`: o container já trata o erro de verdade — catch aqui é só rede
-      // de segurança pro estado visual em teste unitário com mock cru.
     } finally {
       setIsValidatingBatch(false);
       setSelectedShiftIds(new Set());
