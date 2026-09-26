@@ -356,6 +356,7 @@ export function AnaCareHoursDetailPage({
               patientDocumentNumber={patient.documentNumber}
               patientDocumentType={patient.documentType}
               onDocumentRegistered={onRefresh}
+              onSent={onRefresh}
             />
           ))}
         </div>

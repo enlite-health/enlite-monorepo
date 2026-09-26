@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import type { ScheduleValue } from './vacancyScheduleUtils';
-import { parseScheduleString } from './vacancyScheduleUtils';
+import { parseScheduleString, LABEL_TO_KEY } from './vacancyScheduleUtils';
 
 // ---------------------------------------------------------------------------
 // Zod Schema
@@ -190,10 +190,35 @@ export function jsonbToSchedule(slots: ScheduleSlot[] | null): ScheduleValue {
 
 const EMPTY_SCHEDULE: ScheduleValue = [{ days: [], timeFrom: '', timeTo: '' }];
 
+/**
+ * Backend `normalizeSchedule` object (`{ <dayNameEs>: {start,end}[] }`, forma que o GET de
+ * vaga devolve — `worker-functions/.../scheduleNormalizer.ts`) → SchedulePicker value.
+ * Reaproveita `LABEL_TO_KEY` (nome → abreviação, já exportado de `vacancyScheduleUtils.ts`) +
+ * `DAY_KEY_TO_NUM` (abreviação → índice numérico, já usado por `scheduleToJsonb` acima) só
+ * pra montar `ScheduleSlot[]` — a forma que `jsonbToSchedule` já consome — e delega o
+ * agrupamento por horário a ele. Zero lógica de agrupamento duplicada (mesma ideia de
+ * `VacancyScheduleEditModal.tsx#hydrateSlots`, que resolve o mesmo shape objeto→slots pro
+ * modal de edição de horário do detalhe).
+ */
+export function scheduleObjectToValue(schedule: Record<string, { start: string; end: string }[]>): ScheduleValue {
+  const slots: ScheduleSlot[] = [];
+  for (const [dayName, blocks] of Object.entries(schedule)) {
+    const dayKey = LABEL_TO_KEY[dayName.toLowerCase()];
+    if (!dayKey || !Array.isArray(blocks)) continue;
+    for (const block of blocks) {
+      slots.push({ dayOfWeek: DAY_KEY_TO_NUM[dayKey], startTime: block.start, endTime: block.end });
+    }
+  }
+  return jsonbToSchedule(slots);
+}
+
 /** Build ScheduleValue from vacancy object (prefers JSONB, falls back to legacy text) */
 export function buildScheduleFromVacancy(vacancy: any): ScheduleValue {
   if (vacancy.schedule && Array.isArray(vacancy.schedule) && vacancy.schedule.length > 0) {
     return jsonbToSchedule(vacancy.schedule);
+  }
+  if (vacancy.schedule && typeof vacancy.schedule === 'object' && !Array.isArray(vacancy.schedule) && Object.keys(vacancy.schedule).length > 0) {
+    return scheduleObjectToValue(vacancy.schedule);
   }
   if (vacancy.schedule_days_hours) {
     return parseScheduleString(vacancy.schedule_days_hours) ?? EMPTY_SCHEDULE;
