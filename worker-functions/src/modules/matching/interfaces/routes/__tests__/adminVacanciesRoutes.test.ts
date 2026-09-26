@@ -148,7 +148,7 @@ describe('família admin.vacancies — 46 rotas declaram célula', () => {
     expect(undeclaredRoutes(scanExpressRouter(build()), () => true)).toEqual([]);
   });
 
-  it('a família soma exatamente 46 rotas — a conta que saiu do PENDING_DECLARATIONS + promote (D300)', () => {
+  it('a família soma exatamente 48 rotas — a conta que saiu do PENDING_DECLARATIONS + promote (D300)', () => {
     expect(Object.keys(ESPERADO)).toHaveLength(48);
     expect(scanExpressRouter(build())).toHaveLength(48);
   });

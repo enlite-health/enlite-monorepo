@@ -55,7 +55,7 @@ describe('VacanciesController.listVacancies — stageCounts', () => {
     controller = new VacanciesController();
   });
 
-  it('chama query 3 vezes (total, vagas, stageCounts) e devolve stageCounts por linha', async () => {
+  it('chama query 4 vezes (total, vagas, stageCounts, atividade) e devolve stageCounts por linha', async () => {
     mockQuery
       .mockResolvedValueOnce({ rows: [{ total: '2' }] }) // countQuery
       .mockResolvedValueOnce({
@@ -63,18 +63,27 @@ describe('VacanciesController.listVacancies — stageCounts', () => {
       }) // finalQuery
       .mockResolvedValueOnce({
         rows: [{ id: 'jp-a', kind: 'wja', stage: 'INVITED', source: 'manual', messaged: false, n: 1 }],
-      }); // loadStageCounts
+      }) // loadStageCounts
+      .mockResolvedValueOnce({
+        rows: [{ id: 'jp-a', last_action_at: new Date('2026-09-20T12:00:00Z'), days_without_divulgation: 3 }],
+      }); // loadVacancyActivity
 
     const [req, res] = reqRes();
     await controller.listVacancies(req, res);
 
-    expect(mockQuery).toHaveBeenCalledTimes(3);
+    expect(mockQuery).toHaveBeenCalledTimes(4);
 
     const { data } = (res.json as jest.Mock).mock.calls[0][0];
     expect(data[0].stageCounts.INICIADO).toBe(1);
     expect(Object.values(data[1].stageCounts).every((n) => n === 0)).toBe(true);
+    expect(data[0].lastActionAt).toBe('2026-09-20T12:00:00.000Z');
+    expect(data[0].daysWithoutDivulgation).toBe(3);
+    expect(data[1].lastActionAt).toBeNull();
+    expect(data[1].daysWithoutDivulgation).toBeNull();
 
     const [, thirdCallParams] = mockQuery.mock.calls[2];
     expect(thirdCallParams).toEqual([['jp-a', 'jp-b']]);
+    const [, fourthCallParams] = mockQuery.mock.calls[3];
+    expect(fourthCallParams).toEqual([['jp-a', 'jp-b']]);
   });
 });

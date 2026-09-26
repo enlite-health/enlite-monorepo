@@ -5,6 +5,7 @@ import {
   buildListVacanciesQuery,
   mapVacancyListRow,
   loadStageCounts,
+  loadVacancyActivity,
   VacancyListRow,
 } from './vacancyListHelpers';
 import { emptyFunnelColumnCounts } from '../../domain/kanbanColumn';
@@ -87,10 +88,15 @@ export class VacanciesController {
       params.push(parseInt(limit as string), parseInt(offset as string));
 
       const result = await this.db.query(finalQuery, params);
-      const stageCounts = await loadStageCounts(this.db, (result.rows as VacancyListRow[]).map((r) => r.id));
+      const ids = (result.rows as VacancyListRow[]).map((r) => r.id);
+      const [stageCounts, activity] = await Promise.all([
+        loadStageCounts(this.db, ids),
+        loadVacancyActivity(this.db, ids),
+      ]);
       const vacancies = (result.rows as VacancyListRow[]).map((r) => ({
         ...mapVacancyListRow(projectPatientInVacancy(r, cellsDaLista)),
         stageCounts: stageCounts.get(r.id) ?? emptyFunnelColumnCounts(),
+        ...(activity.get(r.id) ?? { lastActionAt: null, daysWithoutDivulgation: null }),
       }));
 
       res.status(200).json({

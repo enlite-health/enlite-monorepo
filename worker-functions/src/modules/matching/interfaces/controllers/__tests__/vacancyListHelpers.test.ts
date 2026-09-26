@@ -6,7 +6,7 @@
  * existing filters (search, status, priority), and absence of each filter.
  */
 
-import { buildListVacanciesQuery, ListVacanciesFilters, loadStageCounts } from '../vacancyListHelpers';
+import { buildListVacanciesQuery, ListVacanciesFilters, loadStageCounts, loadVacancyActivity } from '../vacancyListHelpers';
 
 // Minimal filters that satisfy the required fields
 function base(overrides: Partial<ListVacanciesFilters> = {}): ListVacanciesFilters {
@@ -272,5 +272,50 @@ describe('loadStageCounts', () => {
     const counts = out.get('jp-sem-linha')!;
     expect(Object.values(counts).every((n) => n === 0)).toBe(true);
     expect(Object.keys(counts)).toHaveLength(8);
+  });
+});
+
+// ── loadVacancyActivity — última ação e dias sem divulgação (DX-3.4/3.5/3.6) ────
+
+describe('loadVacancyActivity', () => {
+  function makePool(rows: unknown[]) {
+    return { query: jest.fn().mockResolvedValue({ rows }) } as unknown as import('pg').Pool;
+  }
+
+  it('não chama query quando a lista de ids está vazia', async () => {
+    const pool = makePool([]);
+    const out = await loadVacancyActivity(pool, []);
+    expect(out.size).toBe(0);
+    expect((pool.query as jest.Mock)).not.toHaveBeenCalled();
+  });
+
+  it('chama query UMA vez, com [ids], e o SQL nunca usa updated_at (DX-3.5)', async () => {
+    const pool = makePool([]);
+    await loadVacancyActivity(pool, ['jp-a', 'jp-b']);
+    expect(pool.query).toHaveBeenCalledTimes(1);
+    const [sql, params] = (pool.query as jest.Mock).mock.calls[0];
+    expect(params).toEqual([['jp-a', 'jp-b']]);
+    expect(sql).toContain('= ANY($1::uuid[])');
+    expect(sql).toContain('job_posting_notes');
+    expect(sql).toContain('worker_job_application_stage_history');
+    expect(sql).toContain('talentum_published_at');
+    expect(sql).toContain("'DIVULGACAO'");
+    expect(sql).not.toMatch(/updated_at/);
+  });
+
+  it('mapeia Date → ISO e days_without_divulgation numérico; sem nenhuma fonte → null', async () => {
+    const pool = makePool([
+      { id: 'jp-a', last_action_at: new Date('2026-09-20T12:00:00Z'), days_without_divulgation: 5 },
+      { id: 'jp-b', last_action_at: null, days_without_divulgation: null },
+    ]);
+    const out = await loadVacancyActivity(pool, ['jp-a', 'jp-b']);
+    expect(out.get('jp-a')).toEqual({ lastActionAt: '2026-09-20T12:00:00.000Z', daysWithoutDivulgation: 5 });
+    expect(out.get('jp-b')).toEqual({ lastActionAt: null, daysWithoutDivulgation: null });
+  });
+
+  it('id sem linha nenhuma devolve os dois campos null', async () => {
+    const pool = makePool([{ id: 'jp-a', last_action_at: new Date('2026-09-20T12:00:00Z'), days_without_divulgation: 5 }]);
+    const out = await loadVacancyActivity(pool, ['jp-a', 'jp-sem-linha']);
+    expect(out.get('jp-sem-linha')).toEqual({ lastActionAt: null, daysWithoutDivulgation: null });
   });
 });
