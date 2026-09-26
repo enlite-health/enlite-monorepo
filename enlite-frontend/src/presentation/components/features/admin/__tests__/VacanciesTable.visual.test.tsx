@@ -31,6 +31,8 @@ const MOCK_VACANCIES: VacancyRow[] = [
     postulados: '5',
     faltantes: '2',
     isDraft: false,
+    lastActionAt: '2026-09-20T14:30:00.000Z',
+    daysWithoutDivulgation: 3,
   },
 ];
 
@@ -70,20 +72,23 @@ describe('VacanciesTable — responsive columns', () => {
     expect(row).toBeTruthy();
 
     const cells = row!.querySelectorAll('td');
-    // Cells: eye(0), caso(1), status(2), priority(3), 7 colunas do funil(4-10), postulados(11), faltantes(12)
-    for (let i = 4; i <= 12; i++) {
+    // Cells: eye(0), caso(1), status(2), priority(3), última ação(4), dias(5),
+    // 7 colunas do funil(6-12), postulados(13), faltantes(14) — DX-3.7.
+    for (let i = 6; i <= 14; i++) {
       expect(cells[i].className).toContain('hidden');
       expect(cells[i].className).toContain('md:table-cell');
     }
   });
 
-  it('CRITICAL: essential columns (caso, status, priority) are always visible', () => {
+  it('CRITICAL: essential columns (caso, status, priority, última ação, dias) are always visible', () => {
     const { container } = render(<VacanciesTable vacancies={MOCK_VACANCIES} />);
 
     const row = container.querySelector('[class*="h-[72px]"]');
     const cells = row!.querySelectorAll('td');
 
-    for (let i = 0; i <= 3; i++) {
+    // olho(0), caso(1), status(2), priority(3), última ação(4), dias(5) — DX-3.7:
+    // as duas colunas novas ficam visíveis também abaixo de md.
+    for (let i = 0; i <= 5; i++) {
       expect(cells[i].className).not.toContain('hidden');
     }
   });
@@ -92,8 +97,9 @@ describe('VacanciesTable — responsive columns', () => {
     const { container } = render(<VacanciesTable vacancies={MOCK_VACANCIES} />);
 
     const headerCells = container.querySelectorAll('thead th');
-    // Headers: empty(0), case(1), status(2), priority(3), 7 colunas do funil(4-10), applicants(11), missing(12)
-    for (let i = 4; i <= 12; i++) {
+    // Headers: empty(0), case(1), status(2), priority(3), última ação(4), dias(5),
+    // 7 colunas do funil(6-12), applicants(13), missing(14) — DX-3.7.
+    for (let i = 6; i <= 14; i++) {
       expect(headerCells[i].className).toContain('hidden');
       expect(headerCells[i].className).toContain('md:table-cell');
     }
@@ -123,7 +129,7 @@ describe('VacanciesTable — empty state colspan', () => {
     expect(emptyCell).toBeTruthy();
 
     const colspan = parseInt(emptyCell!.getAttribute('colspan') || '0');
-    // 3 (case/status/priority) + 7 colunas do funil + 2 (applicants/missing) + 1 (eye) = 13
-    expect(colspan).toBe(13);
+    // 3 (case/status/priority) + 2 (última ação/dias) + 7 colunas do funil + 2 (applicants/missing) + 1 (eye) = 15
+    expect(colspan).toBe(15);
   });
 });

@@ -13,6 +13,7 @@ import {
   VACANCY_FUNNEL_COLUMNS,
   columnCount,
 } from '@presentation/components/features/admin/VacancyDetail/Funnel/funnelTabsConfig';
+import { formatDateTime } from '@presentation/components/features/admin/VacancyDetail/draftVacancyFormat';
 
 export type VacancyPriority = 'URGENT' | 'HIGH' | 'NORMAL' | 'LOW';
 
@@ -27,6 +28,10 @@ export interface VacancyRow {
   postulados: string;
   faltantes: string;
   isDraft: boolean;
+  /** GREATEST(última nota, último movimento de funil, talentum_published_at) — DX-3.5. null = sem nenhuma. */
+  lastActionAt: string | null;
+  /** Dias de calendário (fuso da operação) desde a última nota DIVULGACAO — DX-3.6. null = sem nota. */
+  daysWithoutDivulgation: number | null;
 }
 
 interface VacanciesTableProps {
@@ -49,6 +54,7 @@ const STATIC_COLUMNS_AFTER = [
 
 const TOTAL_COLUMNS =
   STATIC_COLUMNS_BEFORE.length +
+  2 + // última ação + dias sem divulgação (DX-3.7)
   VACANCY_FUNNEL_COLUMNS.length +
   STATIC_COLUMNS_AFTER.length +
   1; // + coluna do olho
@@ -77,7 +83,7 @@ function PriorityCell({ priority }: { priority: VacancyPriority | null }): JSX.E
 }
 
 export function VacanciesTable({ vacancies, onRowClick }: VacanciesTableProps): JSX.Element {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const safeVacancies = vacancies ?? [];
 
   return (
@@ -86,17 +92,23 @@ export function VacanciesTable({ vacancies, onRowClick }: VacanciesTableProps): 
         <TableHeader>
           <TableHead className="w-10" />
           {STATIC_COLUMNS_BEFORE.map(({ key, hiddenClass }) => (
-            <TableHead key={key} className={`whitespace-nowrap ${hiddenClass}`}>
+            <TableHead key={key} data-testid={`vacancies-col-${key}`} className={`whitespace-nowrap ${hiddenClass}`}>
               {t(`admin.vacancies.table.${key}`)}
             </TableHead>
           ))}
+          <TableHead data-testid="vacancies-col-last-action" className="whitespace-nowrap">
+            {t('admin.vacancies.table.lastAction')}
+          </TableHead>
+          <TableHead data-testid="vacancies-col-days-without-divulgation" className="whitespace-nowrap">
+            {t('admin.vacancies.table.daysWithoutDivulgation')}
+          </TableHead>
           {VACANCY_FUNNEL_COLUMNS.map((c) => (
-            <TableHead key={c.id} className="whitespace-nowrap hidden md:table-cell">
+            <TableHead key={c.id} data-testid={`vacancies-col-${c.id}`} className="whitespace-nowrap hidden md:table-cell">
               {t(`admin.kanban.columns.${c.id}`)}
             </TableHead>
           ))}
           {STATIC_COLUMNS_AFTER.map(({ key, hiddenClass }) => (
-            <TableHead key={key} className={`whitespace-nowrap ${hiddenClass}`}>
+            <TableHead key={key} data-testid={`vacancies-col-${key}`} className={`whitespace-nowrap ${hiddenClass}`}>
               {t(`admin.vacancies.table.${key}`)}
             </TableHead>
           ))}
@@ -143,6 +155,20 @@ export function VacanciesTable({ vacancies, onRowClick }: VacanciesTableProps): 
                 </TableCell>
                 <TableCell unwrapped className="whitespace-nowrap">
                   <PriorityCell priority={row.priority} />
+                </TableCell>
+                <TableCell
+                  className="whitespace-nowrap"
+                  data-testid={`vacancies-row-${row.id}-last-action`}
+                >
+                  {formatDateTime(row.lastActionAt, i18n.language) ?? t('admin.vacancies.table.noLastAction')}
+                </TableCell>
+                <TableCell
+                  className="whitespace-nowrap"
+                  data-testid={`vacancies-row-${row.id}-days-without-divulgation`}
+                >
+                  {row.daysWithoutDivulgation == null
+                    ? t('admin.vacancies.table.noDivulgationRecord')
+                    : String(row.daysWithoutDivulgation)}
                 </TableCell>
                 {VACANCY_FUNNEL_COLUMNS.map((c) => (
                   <TableCell

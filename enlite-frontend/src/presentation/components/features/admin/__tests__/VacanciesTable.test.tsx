@@ -22,6 +22,8 @@ describe('VacanciesTable', () => {
       postulados: '115',
       faltantes: '00',
       isDraft: false,
+      lastActionAt: '2026-09-20T14:30:00.000Z',
+      daysWithoutDivulgation: 5,
     },
     {
       id: 'c83963ee-beaf-45f2-88a3-365147b0c205',
@@ -41,6 +43,8 @@ describe('VacanciesTable', () => {
       postulados: '52',
       faltantes: '01',
       isDraft: false,
+      lastActionAt: null,
+      daysWithoutDivulgation: null,
     },
   ];
 
@@ -50,6 +54,8 @@ describe('VacanciesTable', () => {
     expect(screen.getByText('admin.vacancies.table.case')).toBeInTheDocument();
     expect(screen.getByText('admin.vacancies.table.status')).toBeInTheDocument();
     expect(screen.getByText('admin.vacancies.table.priority')).toBeInTheDocument();
+    expect(screen.getByText('admin.vacancies.table.lastAction')).toBeInTheDocument();
+    expect(screen.getByText('admin.vacancies.table.daysWithoutDivulgation')).toBeInTheDocument();
     expect(screen.getByText('admin.kanban.columns.INVITED')).toBeInTheDocument();
     expect(screen.getByText('admin.kanban.columns.INICIADO')).toBeInTheDocument();
     expect(screen.getByText('admin.kanban.columns.PRE_SCREENING')).toBeInTheDocument();
@@ -168,5 +174,70 @@ describe('VacanciesTable', () => {
     render(<VacanciesTable vacancies={realApiData} onRowClick={onRowClick} />);
     fireEvent.click(screen.getByText('Caso 349'));
     expect(onRowClick).toHaveBeenCalledWith('fd269cde-d8c9-4fdc-88a9-5b19ebcdb531', false);
+  });
+});
+
+// Colunas novas da Fase 3 (DX-3.5/DX-3.6/DX-3.7): última ação + dias sem divulgação.
+describe('VacanciesTable — última ação e dias sem divulgação (DX-3.5/DX-3.6)', () => {
+  const base: VacancyRow = {
+    id: 'vac-x',
+    caso: 'Caso X',
+    status: 'Activo',
+    priority: 'NORMAL',
+    diasAberto: '01',
+    stageCounts: {},
+    postulados: '0',
+    faltantes: '0',
+    isDraft: false,
+    lastActionAt: null,
+    daysWithoutDivulgation: null,
+  };
+
+  it('daysWithoutDivulgation: 5 → mostra "5" (sem padStart)', () => {
+    render(<VacanciesTable vacancies={[{ ...base, daysWithoutDivulgation: 5 }]} />);
+    expect(screen.getByTestId('vacancies-row-vac-x-days-without-divulgation')).toHaveTextContent('5');
+  });
+
+  it('daysWithoutDivulgation: null → a chave noDivulgationRecord, NUNCA "0"', () => {
+    render(<VacanciesTable vacancies={[{ ...base, daysWithoutDivulgation: null }]} />);
+    const cell = screen.getByTestId('vacancies-row-vac-x-days-without-divulgation');
+    expect(cell).toHaveTextContent('admin.vacancies.table.noDivulgationRecord');
+    expect(cell).not.toHaveTextContent('0');
+  });
+
+  it('lastActionAt: null → a chave noLastAction', () => {
+    render(<VacanciesTable vacancies={[{ ...base, lastActionAt: null }]} />);
+    expect(screen.getByTestId('vacancies-row-vac-x-last-action')).toHaveTextContent(
+      'admin.vacancies.table.noLastAction',
+    );
+  });
+
+  it('lastActionAt: com valor → formatDateTime, não a chave', () => {
+    render(<VacanciesTable vacancies={[{ ...base, lastActionAt: '2026-09-20T14:30:00.000Z' }]} />);
+    const cell = screen.getByTestId('vacancies-row-vac-x-last-action');
+    expect(cell).not.toHaveTextContent('admin.vacancies.table.noLastAction');
+    expect(cell.textContent).not.toBe('');
+  });
+
+  it('ordem dos vacancies-col-* = lista literal de 14 (tudo menos o olho)', () => {
+    render(<VacanciesTable vacancies={[base]} />);
+    const headers = screen.getAllByTestId(/^vacancies-col-/);
+    const ids = headers.map((el) => el.getAttribute('data-testid')!.replace('vacancies-col-', ''));
+    expect(ids).toEqual([
+      'case',
+      'status',
+      'priority',
+      'last-action',
+      'days-without-divulgation',
+      'INVITED',
+      'INICIADO',
+      'PRE_SCREENING',
+      'COMPLETED',
+      'CONFIRMED',
+      'SELECTED',
+      'REJECTED',
+      'applicants',
+      'missing',
+    ]);
   });
 });
