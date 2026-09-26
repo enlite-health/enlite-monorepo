@@ -5,6 +5,7 @@ export type VacancyFunnelColumnId =
   | 'COMPLETED'
   | 'CONFIRMED'
   | 'SELECTED'
+  | 'QUICK_RESPONSE_TEAM'
   | 'REJECTED';
 
 export interface VacancyFunnelColumn {
@@ -14,7 +15,7 @@ export interface VacancyFunnelColumn {
   droppable: boolean;
 }
 
-/** Quadro B (D433): 7 colunas nesta fase; Fases 4 e 5 acrescentam Equipe de Resposta Rápida e Compatíveis. */
+/** Quadro B (D433): 8 colunas; a Fase 5 acrescenta Compatíveis. */
 export const VACANCY_FUNNEL_COLUMNS: readonly VacancyFunnelColumn[] = [
   { id: 'INVITED', sources: ['INVITED'], color: 'bg-blue-400', droppable: true },
   { id: 'INICIADO', sources: ['INICIADO'], color: 'bg-indigo-400', droppable: false },
@@ -22,6 +23,7 @@ export const VACANCY_FUNNEL_COLUMNS: readonly VacancyFunnelColumn[] = [
   { id: 'COMPLETED', sources: ['COMPLETED'], color: 'bg-violet-600', droppable: false },
   { id: 'CONFIRMED', sources: ['CONFIRMED'], color: 'bg-cyan-400', droppable: true },
   { id: 'SELECTED', sources: ['SELECTED'], color: 'bg-green-500', droppable: true },
+  { id: 'QUICK_RESPONSE_TEAM', sources: ['QUICK_RESPONSE_TEAM'], color: 'bg-teal-500', droppable: true },
   { id: 'REJECTED', sources: ['REJECTED'], color: 'bg-red-400', droppable: true },
 ];
 

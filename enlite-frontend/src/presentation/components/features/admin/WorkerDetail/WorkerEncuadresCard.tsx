@@ -28,6 +28,7 @@ const STAGE_COLORS: Record<WorkerEncuadreKanbanStage, string> = {
   COMPLETED: 'bg-violet-100 text-violet-700',
   CONFIRMED: 'bg-cyan-100 text-cyan-700',
   SELECTED: 'bg-green-100 text-green-700',
+  QUICK_RESPONSE_TEAM: 'bg-teal-100 text-teal-700',
   REJECTED: 'bg-red-100 text-red-700',
 };
 

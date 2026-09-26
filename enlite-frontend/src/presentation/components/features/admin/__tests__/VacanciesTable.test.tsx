@@ -17,6 +17,7 @@ describe('VacanciesTable', () => {
         COMPLETED: 3,
         CONFIRMED: 43,
         SELECTED: 27,
+        QUICK_RESPONSE_TEAM: 7,
         REJECTED: 2,
       },
       postulados: '115',
@@ -38,6 +39,7 @@ describe('VacanciesTable', () => {
         COMPLETED: 11,
         CONFIRMED: 19,
         SELECTED: 61,
+        QUICK_RESPONSE_TEAM: 4,
         REJECTED: 10,
       },
       postulados: '52',
@@ -48,7 +50,7 @@ describe('VacanciesTable', () => {
     },
   ];
 
-  it('should render table headers (case, status, priority, as 7 colunas do funil, applicants, missing)', () => {
+  it('should render table headers (case, status, priority, as 8 colunas do funil, applicants, missing)', () => {
     render(<VacanciesTable vacancies={[]} />);
 
     expect(screen.getByText('admin.vacancies.table.case')).toBeInTheDocument();
@@ -62,6 +64,7 @@ describe('VacanciesTable', () => {
     expect(screen.getByText('admin.kanban.columns.COMPLETED')).toBeInTheDocument();
     expect(screen.getByText('admin.kanban.columns.CONFIRMED')).toBeInTheDocument();
     expect(screen.getByText('admin.kanban.columns.SELECTED')).toBeInTheDocument();
+    expect(screen.getByText('admin.kanban.columns.QUICK_RESPONSE_TEAM')).toBeInTheDocument();
     expect(screen.getByText('admin.kanban.columns.REJECTED')).toBeInTheDocument();
     expect(screen.getByText('admin.vacancies.table.applicants')).toBeInTheDocument();
     expect(screen.getByText('admin.vacancies.table.missing')).toBeInTheDocument();
@@ -95,7 +98,7 @@ describe('VacanciesTable', () => {
     expect(screen.getByText('admin.vacancies.priorityOptions.normal')).toBeInTheDocument();
   });
 
-  it('should render numeric data fields (stageCounts das 7 colunas + postulados/faltantes)', () => {
+  it('should render numeric data fields (stageCounts das 8 colunas, Fase 4: +QUICK_RESPONSE_TEAM, + postulados/faltantes)', () => {
     render(<VacanciesTable vacancies={realApiData} />);
 
     // Caso 349: stageCounts padStart(2,'0')
@@ -105,6 +108,7 @@ describe('VacanciesTable', () => {
     expect(screen.getByText('03')).toBeInTheDocument();
     expect(screen.getByText('43')).toBeInTheDocument();
     expect(screen.getByText('27')).toBeInTheDocument();
+    expect(screen.getByText('07')).toBeInTheDocument();
     expect(screen.getByText('02')).toBeInTheDocument();
     expect(screen.getByText('115')).toBeInTheDocument();
     expect(screen.getByText('00')).toBeInTheDocument();
@@ -115,6 +119,7 @@ describe('VacanciesTable', () => {
     expect(screen.getByText('11')).toBeInTheDocument();
     expect(screen.getByText('19')).toBeInTheDocument();
     expect(screen.getByText('61')).toBeInTheDocument();
+    expect(screen.getByText('04')).toBeInTheDocument();
     expect(screen.getByText('10')).toBeInTheDocument();
     expect(screen.getByText('52')).toBeInTheDocument();
     expect(screen.getByText('01')).toBeInTheDocument();
@@ -219,7 +224,7 @@ describe('VacanciesTable — última ação e dias sem divulgação (DX-3.5/DX-3
     expect(cell.textContent).not.toBe('');
   });
 
-  it('ordem dos vacancies-col-* = lista literal de 14 (tudo menos o olho)', () => {
+  it('ordem dos vacancies-col-* = lista literal de 15 (tudo menos o olho)', () => {
     render(<VacanciesTable vacancies={[base]} />);
     const headers = screen.getAllByTestId(/^vacancies-col-/);
     const ids = headers.map((el) => el.getAttribute('data-testid')!.replace('vacancies-col-', ''));
@@ -235,6 +240,7 @@ describe('VacanciesTable — última ação e dias sem divulgação (DX-3.5/DX-3
       'COMPLETED',
       'CONFIRMED',
       'SELECTED',
+      'QUICK_RESPONSE_TEAM',
       'REJECTED',
       'applicants',
       'missing',
