@@ -9,6 +9,10 @@ import {
   TableHead,
   TableCell,
 } from '@presentation/components/atoms/Table';
+import {
+  VACANCY_FUNNEL_COLUMNS,
+  columnCount,
+} from '@presentation/components/features/admin/VacancyDetail/Funnel/funnelTabsConfig';
 
 export type VacancyPriority = 'URGENT' | 'HIGH' | 'NORMAL' | 'LOW';
 
@@ -18,10 +22,9 @@ export interface VacancyRow {
   status: string;
   priority: VacancyPriority | null;
   diasAberto: string;
-  convidados: string;
+  /** As 7 contagens do funil (DX-2.7), recorte do board — vêm prontas do backend (stageCounts). */
+  stageCounts: Record<string, number>;
   postulados: string;
-  confirmados: string;
-  selecionados: string;
   faltantes: string;
   isDraft: boolean;
 }
@@ -33,16 +36,22 @@ interface VacanciesTableProps {
   onRowClick?: (id: string, isDraft: boolean) => void;
 }
 
-const COLUMNS = [
+const STATIC_COLUMNS_BEFORE = [
   { key: 'case', hiddenClass: '' },
   { key: 'status', hiddenClass: '' },
   { key: 'priority', hiddenClass: '' },
-  { key: 'invited', hiddenClass: 'hidden md:table-cell' },
+] as const;
+
+const STATIC_COLUMNS_AFTER = [
   { key: 'applicants', hiddenClass: 'hidden md:table-cell' },
-  { key: 'confirmed', hiddenClass: 'hidden md:table-cell' },
-  { key: 'selected', hiddenClass: 'hidden md:table-cell' },
   { key: 'missing', hiddenClass: 'hidden md:table-cell' },
 ] as const;
+
+const TOTAL_COLUMNS =
+  STATIC_COLUMNS_BEFORE.length +
+  VACANCY_FUNNEL_COLUMNS.length +
+  STATIC_COLUMNS_AFTER.length +
+  1; // + coluna do olho
 
 const PRIORITY_BADGE: Record<VacancyPriority, string> = {
   URGENT: 'bg-red-100 text-red-700',
@@ -76,7 +85,17 @@ export function VacanciesTable({ vacancies, onRowClick }: VacanciesTableProps): 
       <Table className="min-w-[500px]">
         <TableHeader>
           <TableHead className="w-10" />
-          {COLUMNS.map(({ key, hiddenClass }) => (
+          {STATIC_COLUMNS_BEFORE.map(({ key, hiddenClass }) => (
+            <TableHead key={key} className={`whitespace-nowrap ${hiddenClass}`}>
+              {t(`admin.vacancies.table.${key}`)}
+            </TableHead>
+          ))}
+          {VACANCY_FUNNEL_COLUMNS.map((c) => (
+            <TableHead key={c.id} className="whitespace-nowrap hidden md:table-cell">
+              {t(`admin.kanban.columns.${c.id}`)}
+            </TableHead>
+          ))}
+          {STATIC_COLUMNS_AFTER.map(({ key, hiddenClass }) => (
             <TableHead key={key} className={`whitespace-nowrap ${hiddenClass}`}>
               {t(`admin.vacancies.table.${key}`)}
             </TableHead>
@@ -85,7 +104,7 @@ export function VacanciesTable({ vacancies, onRowClick }: VacanciesTableProps): 
         <TableBody>
           {safeVacancies.length === 0 ? (
             <TableRow>
-              <TableCell unwrapped colSpan={COLUMNS.length + 1} className="h-[200px] bg-white text-center">
+              <TableCell unwrapped colSpan={TOTAL_COLUMNS} className="h-[200px] bg-white text-center">
                 <Text as="span" size="sm" color="secondary">
                   {t('admin.vacancies.noVacancies')}
                 </Text>
@@ -125,17 +144,18 @@ export function VacanciesTable({ vacancies, onRowClick }: VacanciesTableProps): 
                 <TableCell unwrapped className="whitespace-nowrap">
                   <PriorityCell priority={row.priority} />
                 </TableCell>
-                <TableCell weight="medium" className="whitespace-nowrap hidden md:table-cell">
-                  {row.convidados}
-                </TableCell>
+                {VACANCY_FUNNEL_COLUMNS.map((c) => (
+                  <TableCell
+                    key={c.id}
+                    weight="medium"
+                    className="whitespace-nowrap hidden md:table-cell"
+                    data-testid={`vacancy-row-${row.id}-stage-${c.id}`}
+                  >
+                    {String(columnCount(c, row.stageCounts)).padStart(2, '0')}
+                  </TableCell>
+                ))}
                 <TableCell weight="medium" className="whitespace-nowrap hidden md:table-cell">
                   {row.postulados}
-                </TableCell>
-                <TableCell weight="medium" className="whitespace-nowrap hidden md:table-cell">
-                  {row.confirmados}
-                </TableCell>
-                <TableCell weight="medium" className="whitespace-nowrap hidden md:table-cell">
-                  {row.selecionados}
                 </TableCell>
                 <TableCell weight="medium" className="whitespace-nowrap hidden md:table-cell">
                   {row.faltantes}
