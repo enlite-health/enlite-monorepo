@@ -26,6 +26,7 @@ import {
   BACKEND_URL,
   type TalentumWebhookOpts,
 } from '../helpers/talentumWebhookHelper';
+import { runSQL } from '../helpers/patient-detail-a-helper';
 
 // ── State compartilhado pela suite ────────────────────────────────────────────
 
@@ -108,7 +109,7 @@ test.describe('Vacancy Kanban × Talentum Webhook @integration', () => {
     await loginAsKanbanAdmin(page);
     await openKanban(page, vacancyId);
 
-    const colIds = ['INVITED', 'BLOQUEADO', 'INICIADO', 'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED', 'CONFIRMED', 'SELECTED', 'REJECTED'];
+    const colIds = ['INVITED', 'INICIADO', 'PRE_SCREENING', 'COMPLETED', 'CONFIRMED', 'SELECTED', 'REJECTED'];
     for (const id of colIds) {
       await expect(page.locator(`[data-testid="kanban-column-${id}-count"]`)).toHaveText('0');
     }
@@ -167,10 +168,19 @@ test.describe('Vacancy Kanban × Talentum Webhook @integration', () => {
     ).toBe(200);
 
     const encId = await getEncuadreId(request, worker1Id, vacancyId);
-    await waitForCardInStage(page, vacancyId, `kanban-card-${encId}`, 'IN_PROGRESS');
+    // Pre Screening une PRE_SCREENING + IN_PROGRESS (DX-2.1/DX-2.2): o card CONTINUA
+    // na coluna Pre Screening. Sem a conferência direta no banco, o passo do webhook
+    // deixaria de ser provado (o card já estava lá antes do webhook).
+    await waitForCardInStage(page, vacancyId, `kanban-card-${encId}`, 'PRE_SCREENING');
+    const stageAfterInProgress = runSQL(
+      `SELECT application_funnel_stage FROM worker_job_applications WHERE id = '${encId}'`,
+    );
+    if (!stageAfterInProgress.includes('IN_PROGRESS')) {
+      throw new Error(`[C3] webhook IN_PROGRESS não persistiu no banco; estado atual: ${stageAfterInProgress}`);
+    }
 
-    await expect(page.locator('[data-testid="kanban-column-IN_PROGRESS-count"]')).toHaveText('1');
-    await expect(page.locator('[data-testid="kanban-column-PRE_SCREENING-count"]')).toHaveText('0');
+    await expect(page.locator('[data-testid="kanban-column-PRE_SCREENING-count"]')).toHaveText('1');
+    await expect(page.locator('[data-testid="kanban-column-IN_PROGRESS"]')).toHaveCount(0);
 
     await expect(page.locator('[data-testid="kanban-board"]')).toHaveScreenshot(
       'vacancy-kanban-in-progress.png',
@@ -200,7 +210,7 @@ test.describe('Vacancy Kanban × Talentum Webhook @integration', () => {
     await waitForCardInStage(page, vacancyId, `kanban-card-${encId}`, 'COMPLETED');
 
     await expect(page.locator('[data-testid="kanban-column-COMPLETED-count"]')).toHaveText('1');
-    await expect(page.locator('[data-testid="kanban-column-IN_PROGRESS-count"]')).toHaveText('0');
+    await expect(page.locator('[data-testid="kanban-column-PRE_SCREENING-count"]')).toHaveText('0');
 
     await expect(page.locator('[data-testid="kanban-board"]')).toHaveScreenshot(
       'vacancy-kanban-completed.png',
@@ -338,10 +348,9 @@ test.describe('Vacancy Kanban × Talentum Webhook @integration', () => {
     await waitForCardInStage(page, vacancyId, `kanban-card-${enc3Id}`, 'PRE_SCREENING');
 
     // Contadores esperados:
-    // PRE_SCREENING=1 (worker3), IN_PROGRESS=1 (worker4),
+    // PRE_SCREENING=2 (worker3 PRE_SCREENING + worker4 IN_PROGRESS, unidas — DX-2.1/DX-2.2),
     // COMPLETED=1 (worker1 QUALIFIED), REJECTED=1 (worker2 NOT_QUALIFIED, auto-rejeitado)
-    await expect(page.locator('[data-testid="kanban-column-PRE_SCREENING-count"]')).toHaveText('1');
-    await expect(page.locator('[data-testid="kanban-column-IN_PROGRESS-count"]')).toHaveText('1');
+    await expect(page.locator('[data-testid="kanban-column-PRE_SCREENING-count"]')).toHaveText('2');
     await expect(page.locator('[data-testid="kanban-column-COMPLETED-count"]')).toHaveText('1');
     await expect(page.locator('[data-testid="kanban-column-REJECTED-count"]')).toHaveText('1');
 
