@@ -22,7 +22,6 @@ interface WorkerEncuadresCardProps {
  */
 const STAGE_COLORS: Record<WorkerEncuadreKanbanStage, string> = {
   INVITED: 'bg-blue-100 text-blue-700',
-  BLOQUEADO: 'bg-red-100 text-red-700',
   INICIADO: 'bg-indigo-100 text-indigo-700',
   PRE_SCREENING: 'bg-violet-100 text-violet-700',
   IN_PROGRESS: 'bg-violet-100 text-violet-700',

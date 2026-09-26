@@ -48,10 +48,9 @@ export interface WorkerLocation {
   interestZone: string | null;
 }
 
-/** Kanban column ids — mirror of backend domain/kanbanColumn.ts + KanbanBoard COLUMN_CONFIG. */
+/** Espelho do vocabulário do backend (deriveKanbanColumn, 8 valores; tentativa negada chega como REJECTED — D433). */
 export type WorkerEncuadreKanbanStage =
   | 'INVITED'
-  | 'BLOQUEADO'
   | 'INICIADO'
   | 'PRE_SCREENING'
   | 'IN_PROGRESS'

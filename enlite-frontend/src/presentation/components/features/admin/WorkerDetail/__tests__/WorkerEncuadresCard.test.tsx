@@ -150,9 +150,9 @@ describe('WorkerEncuadresCard', () => {
     expect(badge.className).toContain('text-green-700');
   });
 
-  it('applies red badge for the BLOQUEADO stage', () => {
-    render(<WorkerEncuadresCard encuadres={[makeEncuadre({ kanbanStage: 'BLOQUEADO' })]} />);
-    const badge = screen.getByText('BLOQUEADO').parentElement!;
+  it('applies red badge for a blocked attempt (REJECTED, D433)', () => {
+    render(<WorkerEncuadresCard encuadres={[makeEncuadre({ kanbanStage: 'REJECTED', isBlocked: true })]} />);
+    const badge = screen.getByText('REJECTED').parentElement!;
     expect(badge.className).toContain('bg-red-100');
   });
 
@@ -169,7 +169,7 @@ describe('WorkerEncuadresCard', () => {
       id: 'blk-1',
       jobPostingId: 'jp-777',
       caseNumber: 501,
-      kanbanStage: 'BLOQUEADO',
+      kanbanStage: 'REJECTED',
       resultado: null,
       isBlocked: true,
       blockedReason: 'registration_incomplete',
@@ -177,7 +177,7 @@ describe('WorkerEncuadresCard', () => {
       attemptCount: 3,
     });
     render(<WorkerEncuadresCard encuadres={[blocked]} />);
-    expect(screen.getByText('BLOQUEADO')).toBeInTheDocument();
+    expect(screen.getByText('REJECTED')).toBeInTheDocument();
     expect(screen.getByText('501')).toBeInTheDocument();
     // attempt count is shown next to the badge (defaultValue fallback in the mock)
     expect(screen.getByText('3 intento(s)')).toBeInTheDocument();
