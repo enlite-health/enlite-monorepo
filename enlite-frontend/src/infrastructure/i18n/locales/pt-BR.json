@@ -1770,6 +1770,7 @@
         "COMPLETED": "Completado",
         "CONFIRMED": "Confirmados",
         "SELECTED": "Selecionados",
+        "QUICK_RESPONSE_TEAM": "Equipe de Resposta Rápida",
         "REJECTED": "Rejeitados",
         "INICIADO": "Iniciados",
         "PRE_SCREENING": "Pré-triagem"
@@ -1830,6 +1831,12 @@
         "cancel": "Cancelar",
         "confirm": "Confirmar"
       },
+      "moveReasonModal": {
+        "titleJump": "Por que pular etapas?",
+        "titleLeaveRejected": "Por que sai de Rejeitados?",
+        "confirm": "Confirmar",
+        "cancel": "Cancelar"
+      },
       "roleModal": {
         "title": "Titular ou substituto?",
         "subtitle": "Classifique o selecionado para o painel de equipe armada.",
@@ -1854,6 +1861,14 @@
         "DEPENDENCY_MISMATCH": "Nível de dependência",
         "TALENTUM_NOT_QUALIFIED": "Talentum: Não qualificado",
         "OTHER": "Outro motivo"
+      },
+      "moveReasonOptions": {
+        "ENCUADRE_ANTECIPADO": "Encuadre antecipado",
+        "REAPROVEITADO_DE_OUTRA_VAGA": "Reaproveitado de outra vaga",
+        "INDICACAO_DA_EQUIPE": "Indicação da equipe",
+        "REAVALIACAO": "Reavaliação",
+        "REJEITADO_POR_ENGANO": "Rejeitado por engano",
+        "OTHER": "Outro"
       },
       "blockedBadge": "BLOQUEADO",
       "blockedAttemptCount_one": "Tentou {{count}} vez",
