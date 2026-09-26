@@ -3,9 +3,11 @@ import {
   isMatchedNotInvited,
   kanbanColumnRank,
   mostAdvancedColumn,
+  tallyKanbanColumns,
   FUNNEL_COLUMNS,
   KANBAN_COLUMN_BLOCKED,
   type KanbanColumn,
+  type KanbanTallyRow,
 } from '../kanbanColumn';
 
 /**
@@ -155,5 +157,52 @@ describe('mostAdvancedColumn', () => {
 
   it('is stable for equal columns', () => {
     expect(mostAdvancedColumn('CONFIRMED', 'CONFIRMED')).toBe('CONFIRMED');
+  });
+});
+
+/**
+ * A dobra única da contagem por coluna — os MESMOS recortes do Kanban
+ * (isMatchedNotInvited + deriveKanbanColumn), agora sobre linhas já agrupadas.
+ */
+describe('tallyKanbanColumns', () => {
+  const row = (overrides: Partial<KanbanTallyRow>): KanbanTallyRow => ({
+    kind: 'wja',
+    stage: null,
+    source: null,
+    messaged: false,
+    n: 1,
+    ...overrides,
+  });
+
+  it('classifica INVITED+manual como INICIADO e INVITED+system+messaged como INVITED', () => {
+    const tally = tallyKanbanColumns([
+      row({ stage: 'INVITED', source: 'manual' }),
+      row({ stage: 'INVITED', source: 'system', messaged: true }),
+    ]);
+    expect(tally.INICIADO).toBe(1);
+    expect(tally.INVITED).toBe(1);
+  });
+
+  it('descarta candidato de match nunca mensageado (não conta em lugar nenhum)', () => {
+    const tally = tallyKanbanColumns([row({ stage: 'INVITED', source: 'system', messaged: false })]);
+    const total = Object.values(tally).reduce((acc, n) => acc + n, 0);
+    expect(total).toBe(0);
+  });
+
+  it('mantém IN_PROGRESS separado de PRE_SCREENING (a união é feita no front)', () => {
+    const tally = tallyKanbanColumns([row({ stage: 'IN_PROGRESS' })]);
+    expect(tally.IN_PROGRESS).toBe(1);
+    expect(tally.PRE_SCREENING).toBe(0);
+  });
+
+  it('soma tentativas negadas (kind=blocked) em REJECTED', () => {
+    const tally = tallyKanbanColumns([row({ kind: 'blocked', n: 2 })]);
+    expect(tally.REJECTED).toBe(2);
+  });
+
+  it('devolve as 8 colunas, todas zero, quando não há linhas', () => {
+    const tally = tallyKanbanColumns([]);
+    expect(Object.keys(tally)).toHaveLength(8);
+    expect(Object.values(tally).every((n) => n === 0)).toBe(true);
   });
 });

@@ -3,7 +3,8 @@ import {
   deriveKanbanColumn,
   isMatchedNotInvited,
   mostAdvancedColumn,
-  FUNNEL_COLUMNS,
+  emptyFunnelColumnCounts,
+  type FunnelColumnCounts,
   type KanbanColumn,
 } from '../domain/kanbanColumn';
 import { LIVE_JOB_POSTING_SQL } from '../domain/openJobStatuses';
@@ -11,8 +12,7 @@ import { excludeDisabledWorkersSql } from '@shared/database/activeWorkerFilter';
 import { countryPredicateSql } from '@shared/database/countryScopeSql';
 import { COUNTRY_CODES, type CountryCode } from '@shared/domain/countryCodes';
 
-/** Contagem por coluna do Kanban — as MESMAS colunas que o operador vê no board. */
-export type FunnelColumnCounts = Record<Exclude<KanbanColumn, 'BLOQUEADO'>, number>;
+export type { FunnelColumnCounts };
 
 export interface FunnelByWorkerResult {
   /** Prestadores DISTINTOS no recorte (nunca a soma de cards). */
@@ -122,25 +122,16 @@ export class GetFunnelByWorkerUseCase {
       );
     }
 
-    const porEtapa = emptyCounts();
+    const porEtapa = emptyFunnelColumnCounts();
     for (const [column, workers] of workersPorColuna) {
       porEtapa[column as keyof FunnelColumnCounts] = workers.size;
     }
 
-    const consolidado = emptyCounts();
+    const consolidado = emptyFunnelColumnCounts();
     for (const column of colunaDoWorker.values()) {
       consolidado[column as keyof FunnelColumnCounts] += 1;
     }
 
     return { total: colunaDoWorker.size, porEtapa, consolidado };
   }
-}
-
-/** Zero em TODAS as colunas — coluna sem ninguém aparece como 0, nunca ausente. */
-function emptyCounts(): FunnelColumnCounts {
-  const counts = {} as FunnelColumnCounts;
-  for (const column of FUNNEL_COLUMNS) {
-    counts[column as keyof FunnelColumnCounts] = 0;
-  }
-  return counts;
 }
