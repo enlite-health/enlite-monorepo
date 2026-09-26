@@ -42,6 +42,21 @@ describe('VacancyNoteForm', () => {
     expect(new Date(payload.occurredAt).toISOString()).toBe(payload.occurredAt);
   });
 
+  it('"Cuándo" vazio desabilita Guardar e não chama onSubmit', async () => {
+    render(<VacancyNoteForm onSubmit={onSubmit} onCancel={onCancel} isSaving={false} />);
+
+    await userEvent.clear(screen.getByTestId('vacancy-note-when'));
+    await userEvent.click(screen.getByTestId('vacancy-note-contact'));
+    await userEvent.keyboard('  grupo Facebook X  ');
+    await userEvent.click(screen.getByTestId('vacancy-note-body'));
+    await userEvent.keyboard('  Publicado no grupo  ');
+
+    expect(screen.getByTestId('vacancy-note-save')).toBeDisabled();
+    await userEvent.click(screen.getByTestId('vacancy-note-save'));
+
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
   it('clicar em Cancelar chama onCancel', async () => {
     render(<VacancyNoteForm onSubmit={onSubmit} onCancel={onCancel} isSaving={false} />);
     await userEvent.click(screen.getByTestId('vacancy-note-cancel'));

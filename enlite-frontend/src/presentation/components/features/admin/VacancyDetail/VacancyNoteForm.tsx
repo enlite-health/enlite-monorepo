@@ -35,7 +35,8 @@ export function VacancyNoteForm({ onSubmit, onCancel, isSaving }: VacancyNoteFor
     label: t(`admin.vacancyDetail.notes.categoryOptions.${cat}`, cat),
   }));
 
-  const canSave = contact.trim().length > 0 && body.trim().length > 0 && !isSaving;
+  const isWhenValid = !Number.isNaN(new Date(when).getTime());
+  const canSave = isWhenValid && contact.trim().length > 0 && body.trim().length > 0 && !isSaving;
 
   const handleSave = () => {
     if (!canSave) return;
