@@ -5,6 +5,12 @@ import { CadencePolicy } from '../domain/CadencePolicy';
 import { Result } from '@shared/utils/Result';
 import { logger, reportError } from '@shared/logging';
 import { excludeDisabledWorkersSql } from '@shared/database/activeWorkerFilter';
+import {
+  WorkerMessageAuditRepository,
+  isWorkerStatusAtDispatch,
+  isDocumentsStatusAtDispatch,
+} from '@shared/messaging/WorkerMessageAuditRepository';
+import { classifyMessagingFailureReason } from '../domain/messagingFailureReason';
 
 const TEMPLATE_SLUG = 'complete_register_ofc';
 
@@ -49,7 +55,9 @@ const INCOMPLETE_WORKERS_QUERY = `
   SELECT DISTINCT
     w.id,
     w.phone,
-    w.messaging_channel
+    w.messaging_channel,
+    w.status,
+    wd.documents_status
   FROM workers w
   INNER JOIN encuadres e ON e.worker_id = w.id
   LEFT JOIN worker_documents wd ON wd.worker_id = w.id
@@ -127,6 +135,8 @@ export interface BulkDispatchOptions {
 }
 
 export class BulkDispatchIncompleteWorkersUseCase {
+  private readonly auditRepo = new WorkerMessageAuditRepository();
+
   constructor(
     private readonly db: Pool,
     private readonly messaging: IMessagingService,
@@ -140,9 +150,9 @@ export class BulkDispatchIncompleteWorkersUseCase {
     batchLogger.info('BulkDispatch iniciado');
 
     // 1. Busca workers com cadastro incompleto (já exclui quem recebeu hoje via NOT EXISTS)
-    let rows: Array<{ id: string; phone: string; messaging_channel: string | null }>;
+    let rows: Array<{ id: string; phone: string; messaging_channel: string | null; status: string | null; documents_status: string | null }>;
     try {
-      const queryResult = await this.db.query<{ id: string; phone: string; messaging_channel: string | null }>(
+      const queryResult = await this.db.query<{ id: string; phone: string; messaging_channel: string | null; status: string | null; documents_status: string | null }>(
         INCOMPLETE_WORKERS_QUERY,
       );
       rows = queryResult.rows;
@@ -266,6 +276,26 @@ export class BulkDispatchIncompleteWorkersUseCase {
         .catch((err: Error) => {
           batchLogger.warn({ workerId: row.id, error: err.message }, 'Falha ao gravar log de dispatch');
         });
+
+      // 2e. Auditoria de DECISÃO (worker_message_audit, migration 474) — disparo SÍNCRONO
+      // (não enfileira), por isso outcome é 'sent'/'failed', nunca 'queued'. worker_status e
+      // documents_status reaproveitam a MESMA linha já lida na query de elegibilidade acima
+      // (INCOMPLETE_WORKERS_QUERY) — nenhuma consulta nova.
+      await this.auditRepo.record(this.db, {
+        workerId: row.id,
+        templateSlug: TEMPLATE_SLUG,
+        channel: row.messaging_channel === 'periskope' ? 'periskope' : 'twilio',
+        source: 'bulk',
+        actorUid: triggeredBy,
+        workerStatusAtDispatch: isWorkerStatusAtDispatch(row.status) ? row.status : null,
+        documentsStatusAtDispatch: isDocumentsStatusAtDispatch(row.documents_status) ? row.documents_status : null,
+        outcome: detail.status === 'sent' ? 'sent' : 'failed',
+        // Achado do gate 25/09: `detail.error` é a string CRUA do provider (Twilio/Periskope) —
+        // pode carregar o telefone do worker (ver TwilioMessagingService.ts:116,
+        // PeriskopeMessagingService.ts:79-80). worker_message_audit (migration 474) tem garantia
+        // explícita de nunca ter PII (COMMENT ON TABLE) — grava um CÓDIGO estável, nunca o texto.
+        skipReason: detail.error ? classifyMessagingFailureReason(detail.error) : null,
+      });
     }
 
     const sent = details.filter(d => d.status === 'sent').length;

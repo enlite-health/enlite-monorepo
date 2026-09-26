@@ -8,7 +8,8 @@ import { BulkDispatchIncompleteWorkersUseCase } from '../../application/BulkDisp
 import { BuildVacancyMatchVariablesUseCase } from '../../application/BuildVacancyMatchVariablesUseCase';
 import { assertVacancyInviteAllowed } from '../../application/VacancyInviteGuard';
 import { AuthMiddleware } from '@modules/identity';
-import { logger, reportError } from '@shared/logging';
+import { logger, reportError, safeErrorFields } from '@shared/logging';
+import { WorkerMessageAuditRepository } from '@shared/messaging/WorkerMessageAuditRepository';
 
 const SLUG_COMPLETE   = 'ar_vacancy_match_complete';
 const SLUG_INCOMPLETE = 'ar_vacancy_match_incomplete';
@@ -18,12 +19,14 @@ export class MessagingController {
   private templateRepo: MessageTemplateRepository;
   private db: Pool;
   private encryptionService: KMSEncryptionService;
+  private auditRepo: WorkerMessageAuditRepository;
 
   constructor(messaging: IMessagingService, templateRepo: MessageTemplateRepository) {
     this.messaging = messaging;
     this.templateRepo = templateRepo;
     this.db = DatabaseConnection.getInstance().getPool();
     this.encryptionService = new KMSEncryptionService();
+    this.auditRepo = new WorkerMessageAuditRepository();
   }
 
   /**
@@ -148,6 +151,20 @@ export class MessagingController {
         reportError(error, { source: 'MessagingController.sendVacancyMatch:log', workerId, templateSlug: slug });
       });
 
+    // Auditoria de DECISÃO (worker_message_audit, migration 474) — envio manual do admin,
+    // já bem-sucedido (o guard e o sendWhatsApp acima já passaram). Snapshot em memória:
+    // `status` já lido no início do método, não uma releitura de workers.status.
+    await this.auditRepo.record(this.db, {
+      workerId: String(workerId),
+      jobPostingId: String(jobPostingId),
+      templateSlug: slug,
+      channel,
+      source: 'individual',
+      actorUid: triggeredBy,
+      workerStatusAtDispatch: status as 'REGISTERED' | 'INCOMPLETE_REGISTER',
+      outcome: 'sent',
+    });
+
     res.status(200).json({ success: true, data: { templateSlug: slug, ...result.getValue() } });
   }
 
@@ -193,23 +210,54 @@ export class MessagingController {
     const triggeredBy = `admin:${AuthMiddleware.getAuthContext(req)?.principal.id ?? 'unknown'}`;
 
     const digitsOnly = normalizedTo.replace(/^\+/, '');
+
+    // Resolve o worker canônico pelo telefone UMA vez — reaproveitado no INSERT de
+    // whatsapp_bulk_dispatch_logs e na auditoria (worker_message_audit, migration 474)
+    // abaixo, em vez de repetir a mesma busca duas vezes.
+    const resolvedWorkerRes = await this.db
+      .query<{ id: string }>(
+        `SELECT id FROM workers
+         WHERE (REGEXP_REPLACE(phone, '^\\+', '') = $1)
+           AND merged_into_id IS NULL
+         LIMIT 1`,
+        [digitsOnly],
+      )
+      .catch((err: unknown) => {
+        // Achado do gate 25/09: antes desta rota extrair o SELECT do worker canônico pra fora
+        // do INSERT (era subquery em VALUES), o erro dele era capturado e logado pelo catch do
+        // INSERT abaixo. Virou catch(() => null) silencioso na extração — restaura o log, sem
+        // derrubar o request (resolvedWorkerId cai pra null, igual antes). safeErrorFields (não
+        // err.message cru): esta query interpola `digitsOnly`, dígitos do telefone — regra dura
+        // do projeto é nunca logar PII.
+        logger.warn({ ...safeErrorFields(err) }, 'MessagingController sendDirect: falha ao resolver worker canônico por telefone');
+        return null;
+      });
+    const resolvedWorkerId = resolvedWorkerRes?.rows[0]?.id ?? null;
+
     await this.db
       .query(
         `INSERT INTO whatsapp_bulk_dispatch_logs
            (worker_id, triggered_by, phone, template_slug, status, twilio_sid, source)
-         VALUES (
-           (SELECT id FROM workers
-            WHERE (REGEXP_REPLACE(phone, '^\\+', '') = $2)
-              AND merged_into_id IS NULL
-            LIMIT 1),
-           $1, $3, $4, 'sent', $5, 'individual'
-         )`,
-        [triggeredBy, digitsOnly, normalizedTo, templateSlug.trim(), externalId],
+         VALUES ($1, $2, $3, $4, 'sent', $5, 'individual')`,
+        [resolvedWorkerId, triggeredBy, normalizedTo, templateSlug.trim(), externalId],
       )
       .catch((err: unknown) => {
         const error = err instanceof Error ? err : new Error(String(err));
         logger.warn({ error: error.message }, 'MessagingController sendDirect log error');
       });
+
+    // Auditoria de DECISÃO (worker_message_audit, migration 474) — rota @deprecated sem
+    // workerId no body (só `to` cru). channel:null — rota não resolve canal (ver comentário
+    // da Decisão de roteamento acima). worker_status/documents_status ficam NULL: esta rota
+    // nunca leu `workers.status` (não decide template por status).
+    await this.auditRepo.record(this.db, {
+      workerId: resolvedWorkerId,
+      templateSlug: templateSlug.trim(),
+      channel: null,
+      source: 'individual',
+      actorUid: triggeredBy,
+      outcome: 'sent',
+    });
 
     res.status(200).json({ success: true, data: result.getValue() });
   }

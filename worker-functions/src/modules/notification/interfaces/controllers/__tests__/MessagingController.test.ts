@@ -378,7 +378,10 @@ describe('MessagingController.sendDirect — source=individual + admin: prefix',
   });
 
   it('inserts log with source="individual" and triggered_by "admin:{uid}"', async () => {
-    mockQuery.mockResolvedValueOnce({ rows: [] }); // INSERT log
+    mockQuery
+      .mockResolvedValueOnce({ rows: [] }) // SELECT resolve worker canônico por telefone
+      .mockResolvedValueOnce({ rows: [] }) // INSERT log
+      .mockResolvedValueOnce({ rows: [] }); // INSERT worker_message_audit (auditoria)
 
     const req = makeReq({ to: '+5511999888777', templateSlug: 'talent_search_welcome' });
     const res = mockRes();
@@ -387,10 +390,15 @@ describe('MessagingController.sendDirect — source=individual + admin: prefix',
 
     expect(res.status).toHaveBeenCalledWith(200);
 
-    const insertCall = mockQuery.mock.calls[0];
+    const insertCall = mockQuery.mock.calls[1];
     expect(insertCall[0]).toContain('whatsapp_bulk_dispatch_logs');
     expect(insertCall[0]).toContain("'individual'");
-    expect(insertCall[1][0]).toBe('admin:user-abc-123'); // triggered_by with prefix
+    expect(insertCall[1][1]).toBe('admin:user-abc-123'); // triggered_by with prefix
+
+    const auditCall = mockQuery.mock.calls[2];
+    expect(auditCall[0]).toContain('INSERT INTO worker_message_audit');
+    expect(auditCall[1][4]).toBe('individual'); // source
+    expect(auditCall[1][10]).toBe('sent');       // outcome
   });
 });
 

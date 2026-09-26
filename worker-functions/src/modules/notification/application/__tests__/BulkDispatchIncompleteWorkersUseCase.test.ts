@@ -171,6 +171,48 @@ describe('BulkDispatchIncompleteWorkersUseCase', () => {
       expect(logParams[5]).toBeNull();
       expect(logParams[6]).toBe('Twilio error');
     });
+
+    // Achado do gate 25/09 (Achado 1): `sendResult.error` (Twilio/Periskope) pode conter o
+    // telefone do worker (ex.: Twilio "The 'To' number +54911... is not a valid phone number").
+    // whatsapp_bulk_dispatch_logs.error_message (checado acima, logParams[6]) NÃO é o alvo desta
+    // regra — worker_message_audit.skip_reason é, porque a tabela tem garantia explícita de
+    // nunca ter PII (migration 474, COMMENT ON TABLE). Prova: mesmo com um erro que carrega um
+    // telefone real, o skip_reason gravado é um CÓDIGO estável, sem nenhum dígito do telefone.
+    it('erro do provider com telefone → skip_reason da auditoria NÃO contém o telefone (migration 474, sem PII)', async () => {
+      const phoneInError = '+5491155261243';
+      const db = makeDbSequence([
+        { rows: [WORKER_A] },
+        { rows: [{ worker_id: WORKER_A.id }] }, // lock adquirido
+        { rows: [] },                            // UPDATE state
+        { rows: [] },                            // INSERT log (whatsapp_bulk_dispatch_logs)
+        { rows: [] },                            // INSERT worker_message_audit
+      ]);
+      const messaging: jest.Mocked<IMessagingService> = {
+        sendWhatsApp: jest.fn().mockResolvedValue(
+          Result.fail(`Twilio error: The 'To' number ${phoneInError} is not a valid phone number.`),
+        ),
+        sendWithContentSid: jest.fn(),
+      } as unknown as jest.Mocked<IMessagingService>;
+
+      const uc = new BulkDispatchIncompleteWorkersUseCase(db, messaging);
+      await uc.execute('scheduler');
+
+      const calls = (db.query as jest.Mock).mock.calls as Array<[string, ...unknown[]]>;
+
+      // whatsapp_bulk_dispatch_logs.error_message CONTINUA com o texto cru — não é o alvo
+      // deste achado (tabela sem a mesma garantia de não-PII).
+      const bulkLogCall = calls.find(([sql]) => sql.includes('INSERT INTO whatsapp_bulk_dispatch_logs'));
+      expect(bulkLogCall![1]).toContain(`Twilio error: The 'To' number ${phoneInError} is not a valid phone number.`);
+
+      // worker_message_audit.skip_reason — o alvo do achado: nunca a string crua, nunca o telefone.
+      const auditCall = calls.find(([sql]) => sql.includes('INSERT INTO worker_message_audit'));
+      expect(auditCall).toBeDefined();
+      const skipReason = (auditCall![1] as unknown[])[11] as string | null;
+      expect(skipReason).not.toBeNull();
+      expect(skipReason).not.toContain(phoneInError);
+      expect(skipReason).not.toMatch(/\d{8,}/); // nenhuma sequência longa de dígitos (telefone)
+      expect(skipReason).toBe('PROVIDER_ERROR'); // classifyMessagingFailureReason
+    });
   });
 
   describe('slot já adquirido por outro processo', () => {
