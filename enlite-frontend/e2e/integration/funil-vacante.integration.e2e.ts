@@ -14,6 +14,7 @@
  * Exercises (Fase 2 da change):
  *   P20 — os 3 lugares e a API dizem o mesmo número + print (DX-2.11, DX-2.13)
  *   P21 — Pre Screening une PRE_SCREENING + IN_PROGRESS numa coluna só
+ *   P22 — tentativa negada aparece em Rejeitados (D433/DX-2.4), não some
  */
 
 import { test, expect, type APIRequestContext, type Page, type Response } from '@playwright/test';
@@ -131,19 +132,65 @@ async function switchToKanban(page: Page, vacancyId: string): Promise<Response> 
   return response;
 }
 
+/**
+ * `page.waitForResponse` resolve no evento de REDE (CDP) — o `.then()` do
+ * `fetch`/axios da própria página e o re-render do React acontecem num tick
+ * seguinte. Ler o texto uma vez logo depois é uma corrida real (medido:
+ * "aba.INVITED" veio "0" quando os 3 testes rodaram em sequência, sem o
+ * respiro dos `page.screenshot()` do P20 entre navegação e leitura). Por
+ * isso cada célula espera o texto ESTABILIZAR (duas leituras iguais),
+ * em vez de uma leitura crua.
+ */
 async function readTestIdNumbers(
   page: Page,
   testIdFor: (col: string) => string,
 ): Promise<Record<string, number>> {
   const out: Record<string, number> = {};
   for (const col of COLUMN_IDS) {
-    out[col] = Number(await page.getByTestId(testIdFor(col)).innerText());
+    const locator = page.getByTestId(testIdFor(col));
+    await expect(locator).toBeVisible({ timeout: 15_000 });
+    let previous: string | null = null;
+    await expect
+      .poll(
+        async () => {
+          const current = await locator.innerText();
+          const stable = current === previous;
+          previous = current;
+          return stable;
+        },
+        { timeout: 5_000, intervals: [50, 100, 200, 300] },
+      )
+      .toBe(true);
+    out[col] = Number(previous);
   }
   return out;
 }
 
 async function countFunnelTableRows(page: Page): Promise<number> {
   return page.getByTestId('vacancy-funnel-view').getByRole('table').locator('tbody tr').count();
+}
+
+async function readListRowCounts(page: Page, vacancyId: string): Promise<Record<string, number>> {
+  const response = await gotoVacanciesList(page);
+  expect(response.ok(), 'GET /api/admin/vacancies (lista) falhou').toBe(true);
+  await expect(page.getByTestId(`vacancy-row-${vacancyId}`)).toBeVisible({ timeout: 15_000 });
+  return readTestIdNumbers(page, (col) => `vacancy-row-${vacancyId}-stage-${col}`);
+}
+
+async function readFunnelTabCounts(page: Page, vacancyId: string): Promise<Record<string, number>> {
+  const response = await gotoVacancyDetail(page, vacancyId);
+  expect(response.ok(), 'GET funnel-table falhou').toBe(true);
+  await expect(page.getByTestId('vacancy-funnel-view')).toBeVisible({ timeout: 15_000 });
+  return readTestIdNumbers(page, (col) => `funnel-tab-${col}-count`);
+}
+
+async function readKanbanColumnCounts(page: Page, vacancyId: string): Promise<Record<string, number>> {
+  await gotoVacancyDetail(page, vacancyId);
+  await expect(page.getByTestId('vacancy-funnel-view')).toBeVisible({ timeout: 15_000 });
+  const response = await switchToKanban(page, vacancyId);
+  expect(response.ok(), 'GET funnel (kanban) falhou').toBe(true);
+  await expect(page.getByTestId('kanban-board')).toBeVisible({ timeout: 15_000 });
+  return readTestIdNumbers(page, (col) => `kanban-column-${col}-count`);
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────────────
@@ -380,6 +427,79 @@ test.describe('funil da vacante @integration', () => {
       cleanupTestWorker(workerPreScreening);
       cleanupTestWorker(workerInProgress);
       cleanupTestPatient(patientId);
+    }
+  });
+
+  // ── P22 · tentativa negada aparece em Rejeitados, não some ─────────────────
+  test('funil-vacante-tentativa-negada-em-rejeitados', async ({ page, request }) => {
+    // "Antes": as 7 contagens nos 3 lugares + API.
+    const apiBefore = await readApiStageCounts(request, vacancyIdV1);
+    await loginAs(page, MOCK_ADMIN_USER);
+    const listBefore = await readListRowCounts(page, vacancyIdV1);
+    const tabBefore = await readFunnelTabCounts(page, vacancyIdV1);
+    const kanbanBefore = await readKanbanColumnCounts(page, vacancyIdV1);
+
+    await gotoVacancyDetail(page, vacancyIdV1);
+    await page.locator('#funnel-tab-REJECTED').click();
+    const rejectedRowsBefore = await countFunnelTableRows(page);
+
+    // Semeia a tentativa negada — worker INCOMPLETE_REGISTER, SEM WJA (o gatilho 183 recusa).
+    const workerIncomplete = insertTestWorker({
+      status: 'INCOMPLETE_REGISTER',
+      occupation: null,
+      firstName: 'FunilV1Blocked',
+      lastName: `E2E${Date.now()}`,
+    });
+    const wbaId = runSQL(
+      `WITH ins AS (INSERT INTO worker_blocked_applications ` +
+        `(worker_id, job_posting_id, blocked_reason, missing_fields, blocked_reason_at_attempt, missing_fields_at_attempt, acquisition_channel) ` +
+        `VALUES ('${workerIncomplete}', '${vacancyIdV1}', 'registration_incomplete', '[]', 'registration_incomplete', '[]', 'site') ` +
+        `RETURNING id) SELECT id FROM ins`,
+    ).trim();
+
+    try {
+      // "Depois".
+      const apiAfter = await readApiStageCounts(request, vacancyIdV1);
+      const listAfter = await readListRowCounts(page, vacancyIdV1);
+      const tabAfter = await readFunnelTabCounts(page, vacancyIdV1);
+      const kanbanAfter = await readKanbanColumnCounts(page, vacancyIdV1);
+
+      for (const col of COLUMN_IDS) {
+        const expectedDelta = col === 'REJECTED' ? 1 : 0;
+        expect(apiAfter[col] - apiBefore[col], `API.${col}`).toBe(expectedDelta);
+        expect(listAfter[col] - listBefore[col], `lista.${col}`).toBe(expectedDelta);
+        expect(tabAfter[col] - tabBefore[col], `aba.${col}`).toBe(expectedDelta);
+        expect(kanbanAfter[col] - kanbanBefore[col], `kanban.${col}`).toBe(expectedDelta);
+      }
+
+      // `readKanbanColumnCounts` termina no Kanban — direto os asserts do card.
+      await expect(page.getByTestId('kanban-column-BLOQUEADO')).toHaveCount(0);
+      await expect(page.getByTestId('kanban-column-REJECTED')).toHaveCount(1);
+      const card = page.locator(
+        `[data-testid="kanban-column-REJECTED"] [data-testid="kanban-card-${wbaId}"]`,
+      );
+      await expect(card).toBeVisible();
+      await expect(card.getByTestId('blocked-badge')).toBeVisible();
+      await expect(card.getByTestId('reject-button')).toHaveCount(0);
+      await expect(card.getByTestId('undismiss-button')).toHaveCount(0);
+
+      // A aba Rejeitados do modo lista tem uma linha a mais.
+      await gotoVacancyDetail(page, vacancyIdV1);
+      await page.locator('#funnel-tab-REJECTED').click();
+      await expect
+        .poll(() => countFunnelTableRows(page), { message: 'linhas da tabela em Rejeitados' })
+        .toBe(rejectedRowsBefore + 1);
+    } finally {
+      try {
+        runSQL(`DELETE FROM worker_blocked_applications WHERE worker_id = '${workerIncomplete}'`);
+      } catch (err) {
+        console.error('[cleanup] blocked application falhou (seguindo)', err);
+      }
+      try {
+        cleanupTestWorker(workerIncomplete);
+      } catch (err) {
+        console.error('[cleanup] worker incompleto falhou (seguindo)', err);
+      }
     }
   });
 });
