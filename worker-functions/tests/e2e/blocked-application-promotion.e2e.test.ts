@@ -5,7 +5,7 @@
  *
  *   1. Worker tenta postular sem estar REGISTERED → 403 + linha em
  *      worker_blocked_applications (blocked_reason_at_attempt=registration_incomplete).
- *   2. Card aparece em stages.BLOQUEADO no funil (não em INICIADO).
+ *   2. Card aparece em stages.REJECTED (tentativa negada, D433), não em INICIADO.
  *   3. Worker completa o cadastro (INFO + service_area + availability + docs)
  *      → status vira REGISTERED → recalculateWorkerStatus enfileira
  *      domain_events (worker.mirror_requested + worker.registration_completed)
@@ -16,7 +16,7 @@
  *   5. PromoteBlockedApplicationsUseCase cria worker_job_applications
  *      (source='manual', stage='INVITED') e seta promoted_at/promoted_wja_id
  *      na linha bloqueada.
- *   6. Funil agora mostra o card em stages.INICIADO (WJA real) e stages.BLOQUEADO
+ *   6. Funil agora mostra o card em stages.INICIADO (WJA real) e stages.REJECTED
  *      fica vazio para esse worker (listByVacancy: NOT EXISTS já exclui a linha
  *      promovida).
  *
@@ -112,14 +112,16 @@ describe('Promoção automática de tentativas bloqueadas (worker.registration_c
     expect(rows[0].promoted_at).toBeNull();
   });
 
-  it('2. card aparece em stages.BLOQUEADO no funil (não em INICIADO)', async () => {
+  it('2. card aparece em stages.REJECTED (tentativa negada, D433), não em INICIADO', async () => {
     const res = await api.get(`/api/admin/vacancies/${vacancy.id}/funnel`, {
       headers: { Authorization: `Bearer ${adminToken}` },
     });
     expect(res.status).toBe(200);
 
     const { stages } = res.data.data;
-    const bloqueadoIds = (stages.BLOQUEADO as Array<{ workerId: string }>).map(c => c.workerId);
+    const bloqueadoIds = (stages.REJECTED as Array<{ workerId: string; isBlocked?: boolean }>)
+      .filter(c => c.isBlocked)
+      .map(c => c.workerId);
     expect(bloqueadoIds).toContain(worker.id);
 
     const iniciadoIds = (stages.INICIADO as Array<{ workerId: string }>).map(c => c.workerId);
@@ -200,7 +202,7 @@ describe('Promoção automática de tentativas bloqueadas (worker.registration_c
     expect(blockedRows[0].promoted_wja_id).toBe(wjaRows[0].id);
   });
 
-  it('6. funil mostra o card em INICIADO e BLOQUEADO fica vazio pra esse worker', async () => {
+  it('6. funil mostra o card em INICIADO e REJECTED não tem a tentativa', async () => {
     const res = await api.get(`/api/admin/vacancies/${vacancy.id}/funnel`, {
       headers: { Authorization: `Bearer ${adminToken}` },
     });
@@ -210,7 +212,9 @@ describe('Promoção automática de tentativas bloqueadas (worker.registration_c
     const iniciadoIds = (stages.INICIADO as Array<{ workerId: string }>).map(c => c.workerId);
     expect(iniciadoIds).toContain(worker.id);
 
-    const bloqueadoIds = (stages.BLOQUEADO as Array<{ workerId: string }>).map(c => c.workerId);
+    const bloqueadoIds = (stages.REJECTED as Array<{ workerId: string; isBlocked?: boolean }>)
+      .filter(c => c.isBlocked)
+      .map(c => c.workerId);
     expect(bloqueadoIds).not.toContain(worker.id);
   });
 });
