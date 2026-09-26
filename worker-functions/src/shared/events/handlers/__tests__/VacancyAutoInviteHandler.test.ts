@@ -399,6 +399,50 @@ describe('VacancyAutoInviteHandler', () => {
     expect(vars.worker_name).toBe('tk_abc123def456');
     expect(vars.worker_name).toMatch(/^tk_/);
   });
+
+  // Teste que morre se o snapshot virar leitura ao vivo (a regressão que worker_message_audit,
+  // migration 474, existe para prevenir): mesmo que QUALQUER consulta subsequente devolvesse
+  // status REGISTERED (simulando "o worker completou o cadastro entre a decisão e a escrita da
+  // auditoria"), worker_status_at_dispatch tem que continuar INCOMPLETE_REGISTER — porque vem
+  // de candidate.workerStatus já em memória (lido na linha ~135), nunca de um JOIN/subquery
+  // novo. Se alguém trocar a gravação por uma releitura de workers.status, este teste quebra.
+  it('snapshot de status não muda com o worker depois', async () => {
+    mockQuery
+      .mockResolvedValueOnce({ rows: [{ patient_zone: 'Once' }] })       // SELECT patient_zone
+      .mockResolvedValueOnce({ rows: [{ exists: false }] })              // guard: opt-out
+      .mockResolvedValueOnce({ rows: [{ exists: false }] })              // guard: cooldown
+      .mockResolvedValueOnce({ rows: [{ exists: false }] })              // guard: idempotência
+      .mockResolvedValueOnce({ rows: [{ n: 0 }] })                       // guard: count não-resposta
+      .mockResolvedValueOnce({ rows: [{ exists: false }] })              // guard: engaged
+      .mockResolvedValueOnce({ rows: [{                                  // formatPendingDocuments
+        profession: 'CUIDADOR', has_documents: true,
+        identity_document_url: 'x', identity_document_back_url: 'x',
+        criminal_record_url: null, resume_cv_url: 'x', at_certificate_url: 'x',
+      }] })
+      .mockResolvedValueOnce({ rows: [{ id: 'outbox-snap-1' }] })        // INSERT outbox
+      // Trap: QUALQUER query depois desta (inclusive computeMissingDocumentSlugs) "vê" o
+      // worker já REGISTERED — como se o cadastro tivesse sido completado no instante entre
+      // a decisão e a escrita da auditoria.
+      .mockResolvedValue({ rows: [{
+        status: 'REGISTERED', profession: 'CUIDADOR', has_documents: true,
+        identity_document_url: 'x', identity_document_back_url: 'x',
+        criminal_record_url: null, resume_cv_url: 'x', at_certificate_url: 'x',
+      }] });
+
+    const candidate = makeScoredCandidate({ workerId: 'worker-snap-1', workerStatus: 'INCOMPLETE_REGISTER' });
+    mockMatchWorkersForJob.mockResolvedValueOnce(makeMatchResult([candidate]));
+
+    const handler = createVacancyAutoInviteHandler(mockDb as never, mockCloudTasks as never);
+    await handler({ jobPostingId: 'job-1' });
+
+    const auditInsertCall = mockQuery.mock.calls.find(
+      call => typeof call[0] === 'string' && call[0].includes('INSERT INTO worker_message_audit'),
+    );
+    expect(auditInsertCall).toBeDefined();
+    const [, params] = auditInsertCall!;
+    expect(params[0]).toBe('worker-snap-1');       // worker_id
+    expect(params[7]).toBe('INCOMPLETE_REGISTER'); // worker_status_at_dispatch — NÃO 'REGISTERED'
+  });
 });
 
 // ─── formatPendingDocuments unit tests ───────────────────────────────────────

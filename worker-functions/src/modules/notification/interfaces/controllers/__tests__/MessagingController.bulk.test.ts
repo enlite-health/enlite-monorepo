@@ -308,7 +308,9 @@ describe('MessagingController.sendDirect — validação, falha Twilio, falha de
       isSuccess: true,
       getValue: () => ({ externalId: 'SM-direct-sid', to: '+5511999888777', status: 'queued' }),
     });
-    mockQuery.mockRejectedValueOnce(new Error('log insert boom'));
+    mockQuery
+      .mockResolvedValueOnce({ rows: [] }) // SELECT resolve worker canônico por telefone (auditoria)
+      .mockRejectedValueOnce(new Error('log insert boom')); // INSERT whatsapp_bulk_dispatch_logs
 
     const res = mockRes();
     await controller.sendDirect(makeReq({ to: '+5511999888777', templateSlug: 'x' }), res);
@@ -326,7 +328,9 @@ describe('MessagingController.sendDirect — validação, falha Twilio, falha de
       isSuccess: true,
       getValue: () => ({ externalId: 'SM-direct-sid', to: '+5511999888777', status: 'queued' }),
     });
-    mockQuery.mockRejectedValueOnce('plain-string-rejection');
+    mockQuery
+      .mockResolvedValueOnce({ rows: [] }) // SELECT resolve worker canônico por telefone (auditoria)
+      .mockRejectedValueOnce('plain-string-rejection'); // INSERT whatsapp_bulk_dispatch_logs
 
     const res = mockRes();
     await controller.sendDirect(makeReq({ to: '+5511999888777', templateSlug: 'x' }), res);
@@ -347,12 +351,14 @@ describe('MessagingController.sendDirect — validação, falha Twilio, falha de
       isSuccess: true,
       getValue: () => ({ externalId: 'SM-direct-sid', to: '+5511999888777', status: 'queued' }),
     });
-    mockQuery.mockResolvedValueOnce({ rows: [] });
+    mockQuery
+      .mockResolvedValueOnce({ rows: [] }) // SELECT resolve worker canônico por telefone (auditoria)
+      .mockResolvedValueOnce({ rows: [] }); // INSERT whatsapp_bulk_dispatch_logs
 
     const res = mockRes();
     await controller.sendDirect(makeReq({ to: '+5511999888777', templateSlug: 'x' }), res);
 
-    const insertCall = mockQuery.mock.calls[0];
-    expect(insertCall[1][0]).toBe('admin:unknown');
+    const insertCall = mockQuery.mock.calls[1];
+    expect(insertCall[1][1]).toBe('admin:unknown');
   });
 });

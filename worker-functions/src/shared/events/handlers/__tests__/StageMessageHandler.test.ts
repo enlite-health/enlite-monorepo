@@ -22,6 +22,7 @@ function program(q: Q, opts: { vacancy?: unknown[]; worker?: unknown[]; config?:
     if (sql.includes('FROM workers')) return { rows: opts.worker ?? [workerRow] };
     if (sql.includes('FROM funnel_stage_messages')) return { rows: opts.config ?? [configOn] };
     if (sql.includes('INSERT INTO funnel_stage_message_log')) return { rows: [] };
+    if (sql.includes('INSERT INTO worker_message_audit')) return { rows: [] };
     throw new Error(`pool query inesperada: ${sql.slice(0, 50)}`);
   });
 }
@@ -63,6 +64,19 @@ describe('StageMessageHandler', () => {
     // a config é lida por PAÍS da vaga
     const cfg = q.mock.calls.find((c) => (c[0] as string).includes('FROM funnel_stage_messages')) as unknown as [string, unknown[]];
     expect(cfg[1]).toEqual(['AR', 'COMPLETED']);
+  });
+
+  it('worker com status fora do domínio conhecido (legado) → worker_status_at_dispatch fica NULL na auditoria, mas ainda enfileira', async () => {
+    program(q, { worker: [{ ...workerRow, status: 'LEGACY_STATUS' }] });
+    await handler()(payload);
+    const auditCall = client.query.mock.calls.find(
+      (c) => (c[0] as string).includes('INSERT INTO worker_message_audit'),
+    ) as unknown as [string, unknown[]];
+    expect(auditCall).toBeDefined();
+    expect(auditCall[1][7]).toBeNull(); // worker_status_at_dispatch — fora do domínio do CHECK, vira NULL
+    // status desconhecido não é motivo de pulo aqui — só DISABLED é (linha 129) — segue enfileirando.
+    const outboxCall = client.query.mock.calls.find((c) => (c[0] as string).includes('INSERT INTO messaging_outbox'));
+    expect(outboxCall).toBeDefined();
   });
 
   it('template sem placeholder → variables {} e sem chamada ao TokenService', async () => {
@@ -173,6 +187,32 @@ describe('StageMessageHandler', () => {
     expect(client.query).toHaveBeenCalledWith('ROLLBACK');
     expect(client.release).toHaveBeenCalled();
     expect(pubsub.publish).not.toHaveBeenCalled();
+  });
+
+  // Fase 3 (tasks.md): a auditoria de worker_message_audit (migration 474) tem que entrar
+  // DENTRO da mesma transação do outbox — usando `client`, nunca `db` — senão ela confirma
+  // um outbox_id que a transação principal ainda pode reverter. Prova aqui: o INSERT de
+  // auditoria é emitido pelo `client` ANTES do COMMIT, e quando o COMMIT falha (simulado),
+  // o handler propaga o erro e chama ROLLBACK — Postgres reverte TUDO entre BEGIN e ROLLBACK
+  // na mesma conexão, inclusive o INSERT de auditoria que já tinha "sucedido" no mock.
+  it('auditoria reverte junto com a transação', async () => {
+    program(q);
+    client.query.mockImplementation(async (sql: string) => {
+      if (sql === 'COMMIT') throw new Error('commit failed (simulated)');
+      if (sql.includes('FROM funnel_stage_message_log')) return { rows: [] };
+      if (sql.includes('INSERT INTO messaging_outbox')) return { rows: [{ id: 'outbox-1' }] };
+      return { rows: [] };
+    });
+
+    await expect(handler()(payload)).rejects.toThrow('commit failed (simulated)');
+
+    const calls = client.query.mock.calls;
+    const auditIndex = calls.findIndex((c) => (c[0] as string).includes('INSERT INTO worker_message_audit'));
+    const commitIndex = calls.findIndex((c) => c[0] === 'COMMIT');
+    expect(auditIndex).toBeGreaterThan(-1); // a auditoria FOI emitida pelo mesmo `client`
+    expect(auditIndex).toBeLessThan(commitIndex); // ANTES do COMMIT que falhou
+    expect(client.query).toHaveBeenCalledWith('ROLLBACK');
+    expect(client.release).toHaveBeenCalled();
   });
 });
 
