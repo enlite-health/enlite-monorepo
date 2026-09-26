@@ -84,7 +84,7 @@ export class VacancyNoteRepository {
          FROM job_posting_notes n
          LEFT JOIN users u
                 ON n.created_by LIKE 'staff:%'
-               AND u.firebase_uid = substring(n.created_by from 7)
+               AND u.firebase_uid = substr(n.created_by, 7)
         WHERE n.job_posting_id = $1
         ORDER BY n.occurred_at DESC, n.created_at DESC`,
       [jobPostingId],
