@@ -87,7 +87,7 @@ test.describe('Kanban card BLOQUEADO — mesma UX dos demais cards (auth real)',
 
     await page.route(`**/api/admin/vacancies/${VACANCY_ID}/funnel`, (route: Route) => {
       const stages = emptyStages();
-      stages.BLOQUEADO = [blockedFunnelCard];
+      stages.REJECTED = [blockedFunnelCard];
       return route.fulfill(ok({ stages, totalEncuadres: 1 }));
     });
 
@@ -127,7 +127,7 @@ test.describe('Kanban card BLOQUEADO — mesma UX dos demais cards (auth real)',
     await page.waitForSelector('[data-testid="kanban-board"]', { state: 'attached', timeout: 20_000 });
 
     const card = page.locator(`[data-testid="kanban-card-${BLOCKED_CARD_ID}"][data-stage]`).first();
-    await expect(card, 'Card bloqueado deve estar visível na coluna BLOQUEADO').toBeVisible({ timeout: 15_000 });
+    await expect(card, 'Card bloqueado deve estar visível na coluna Rejeitados').toBeVisible({ timeout: 15_000 });
 
     // 1) Link de perfil — nome clicável (mesma UX dos demais cards).
     // O papel é `link` (o nome é um <a href> para o perfil), não `button`: o próprio
