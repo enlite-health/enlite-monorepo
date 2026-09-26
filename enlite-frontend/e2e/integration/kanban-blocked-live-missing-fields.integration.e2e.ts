@@ -30,7 +30,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { insertEligibilityWorker, insertMinimalVacancy, cleanupMinimalVacancy } from '../helpers/eligibility-worker-helper';
 import { loginAsKanbanAdmin, openKanban, BACKEND_URL, MOCK_TOKEN } from '../helpers/talentumWebhookHelper';
 
-const CONTAINER = 'enlite-postgres';
+const CONTAINER = process.env.E2E_PG_CONTAINER || 'enlite-postgres';
 const DB_USER = 'enlite_admin';
 const DB_NAME = 'enlite_e2e';
 
@@ -60,7 +60,7 @@ async function getWorkerMockToken(page: Page, workerId: string): Promise<string>
 let vacancyId = '';
 let workerId = '';
 
-test.describe('Kanban BLOQUEADO — tags de campos faltantes recomputam ao editar perfil @integration', () => {
+test.describe('Kanban Rejeitados (tentativa negada) — tags de campos faltantes recomputam ao editar perfil @integration', () => {
   test.describe.configure({ mode: 'serial' });
   test.setTimeout(120_000);
   test.use({ viewport: { width: 1920, height: 1080 } });
@@ -89,7 +89,7 @@ test.describe('Kanban BLOQUEADO — tags de campos faltantes recomputam ao edita
     if (vacancyId) cleanupMinimalVacancy(vacancyId);
   });
 
-  test('ANTES: card BLOQUEADO mostra "Sin nombre" + tags Nombre/Apellido/Sexo', async ({ page }) => {
+  test('ANTES: card em Rejeitados mostra "Sin nombre" + tags Nombre/Apellido/Sexo', async ({ page }) => {
     // Tentativa REAL de postulação → 403 do gate grava worker_blocked_applications.
     const workerToken = await getWorkerMockToken(page, workerId);
     const applyRes = await page.request.post(`${BACKEND_URL}/api/worker-applications/track-channel`, {
@@ -108,11 +108,11 @@ test.describe('Kanban BLOQUEADO — tags de campos faltantes recomputam ao edita
     await loginAsKanbanAdmin(page);
     await openKanban(page, vacancyId);
 
-    const bloqueadoCol = page.locator('[data-testid="kanban-column-BLOQUEADO"]');
-    await expect(bloqueadoCol, 'coluna BLOQUEADO visível').toBeVisible();
+    const bloqueadoCol = page.locator('[data-testid="kanban-column-REJECTED"]');
+    await expect(bloqueadoCol, 'coluna REJECTED visível').toBeVisible();
     await expect(
-      page.locator('[data-testid="kanban-column-BLOQUEADO-count"]'),
-      'BLOQUEADO deve ter ≥1 card',
+      page.locator('[data-testid="kanban-column-REJECTED-count"]'),
+      'REJECTED deve ter ≥1 card',
     ).not.toHaveText('0', { timeout: 15_000 });
 
     const missingTags = bloqueadoCol.locator('[data-testid="blocked-missing-fields"]').first();
@@ -148,10 +148,10 @@ test.describe('Kanban BLOQUEADO — tags de campos faltantes recomputam ao edita
     await loginAsKanbanAdmin(page);
     await openKanban(page, vacancyId);
 
-    const bloqueadoCol = page.locator('[data-testid="kanban-column-BLOQUEADO"]');
-    await expect(bloqueadoCol, 'card continua em BLOQUEADO (worker ainda incompleto)').toBeVisible();
+    const bloqueadoCol = page.locator('[data-testid="kanban-column-REJECTED"]');
+    await expect(bloqueadoCol, 'card continua em Rejeitados (worker ainda incompleto)').toBeVisible();
     await expect(
-      page.locator('[data-testid="kanban-column-BLOQUEADO-count"]'),
+      page.locator('[data-testid="kanban-column-REJECTED-count"]'),
     ).not.toHaveText('0', { timeout: 15_000 });
 
     // Nome agora aparece no card (deixou de ser "Sin nombre registrado").

@@ -25,7 +25,9 @@ import { expect } from '@playwright/test';
 import { installAuthInterceptors, tokenFor, type MockUser } from './abac-stack-helper';
 import { runSQL } from './patient-detail-a-helper';
 
-export const BACKEND_URL = 'http://localhost:8080';
+// DX-2.12: `E2E_BACKEND_URL` permite apontar para uma stack isolada por projeto docker
+// quando outra sessão ocupa a porta 8080 — default inalterado (CI e uso local comum).
+export const BACKEND_URL = process.env.E2E_BACKEND_URL ?? 'http://localhost:8080';
 
 // ── Admin mock auth ───────────────────────────────────────────────────────────
 
