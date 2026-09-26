@@ -52,6 +52,12 @@ export function createInternalRoutes(controller: InternalController): Router {
     controller.sweepEvents(req, res);
   });
 
+  // Cloud Scheduler (semanal): retenção de mensageria — archive_old_messages() +
+  // cleanup_expired_tokens() (migration 087, sem dono de execução até aqui)
+  router.post('/messaging/retention', (req: Request, res: Response) => {
+    controller.sweepMessagingRetention(req, res);
+  });
+
   // Cloud Scheduler / manual: safety net scoped to an explicit event allowlist
   // (SWEEP_SAFE_EVENTS — never a generic "all pending" sweep)
   router.post('/events/sweep-safe', (req: Request, res: Response) => {

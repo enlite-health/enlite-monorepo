@@ -99,15 +99,22 @@ export class TwilioWebhookController {
    * Suprime o worker se ele já tem >=2 mensagens undelivered/failed. Best-effort:
    * qualquer erro é logado e engolido (não pode quebrar o 200 pro Twilio).
    * ON CONFLICT DO NOTHING = não sobrescreve opt-out por outro motivo (ex: user_request).
+   *
+   * phone vem de workers.w, não de whatsapp_bulk_dispatch_logs.phone (migration 475,
+   * mensageria-pii-e-retencao: essa coluna é sempre NULL a partir daqui). worker_id já
+   * identifica a linha; o telefone é resolvido por JOIN, e usar o ATUAL (não o gravado no
+   * disparo) é estritamente melhor aqui — opt-out deve valer para o número que o worker usa
+   * hoje, não o número de quando a mensagem falhou.
    */
   private async maybeSuppressOnRepeatedFailure(messageSid: string): Promise<void> {
     try {
       const res = await this.db.query<{ worker_id: string; phone: string | null; fails: string }>(
-        `SELECT l.worker_id, l.phone,
+        `SELECT l.worker_id, w.phone,
                 (SELECT COUNT(*) FROM whatsapp_bulk_dispatch_logs l2
                   WHERE l2.worker_id = l.worker_id
                     AND l2.delivery_status IN ('undelivered','failed')) AS fails
          FROM whatsapp_bulk_dispatch_logs l
+         LEFT JOIN workers w ON w.id = l.worker_id
          WHERE l.twilio_sid = $1
          LIMIT 1`,
         [messageSid],

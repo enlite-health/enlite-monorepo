@@ -310,11 +310,15 @@ describe('MessagingController.sendVacancyMatch', () => {
     const insertCall = mockQuery.mock.calls[7];
     expect(insertCall[0]).toContain('whatsapp_bulk_dispatch_logs');
     expect(insertCall[0]).toContain("'individual'");
+    // phone = NULL sempre (migration 475, mensageria-pii-e-retencao) — o SQL grava NULL
+    // literal, não é mais um parâmetro bindado; por isso o array de params encolheu.
+    expect(insertCall[0]).toMatch(/VALUES\s*\(\$1,\s*\$2,\s*\$3,\s*NULL,\s*\$4,\s*'sent',\s*\$5,\s*'individual'\)/);
     expect(insertCall[1][0]).toBe('w-1');                 // worker_id
     expect(insertCall[1][1]).toBe('job-1');               // job_posting_id
     expect(insertCall[1][2]).toBe('admin:user-abc-123');  // triggered_by
-    expect(insertCall[1][4]).toBe('ar_vacancy_match_complete'); // template_slug
-    expect(insertCall[1][5]).toBe('SM-twilio-sid');       // twilio_sid
+    expect(insertCall[1][3]).toBe('ar_vacancy_match_complete'); // template_slug
+    expect(insertCall[1][4]).toBe('SM-twilio-sid');       // twilio_sid
+    expect(insertCall[1]).toHaveLength(5);                // phone não é mais bindado
   });
 
   it('falha de Twilio → 502, sem log inserido', async () => {
@@ -391,6 +395,13 @@ describe('MessagingController.sendDirect — source=individual + admin: prefix',
     expect(insertCall[0]).toContain('whatsapp_bulk_dispatch_logs');
     expect(insertCall[0]).toContain("'individual'");
     expect(insertCall[1][0]).toBe('admin:user-abc-123'); // triggered_by with prefix
+    // phone = NULL sempre (migration 475, mensageria-pii-e-retencao): a coluna phone recebe o
+    // literal NULL no próprio SQL (não um placeholder) — o único telefone que segue bindado
+    // (`digitsOnly`, $2) é usado SÓ na subquery que resolve worker_id por telefone, nunca
+    // gravado na linha do log. Isso é o que a regex abaixo prova: a lista de colunas tem
+    // `phone` mas a de VALUES tem `NULL` na mesma posição.
+    expect(insertCall[0]).toMatch(/\(worker_id, triggered_by, phone, template_slug, status, twilio_sid, source\)/);
+    expect(insertCall[0]).toMatch(/\$1, NULL, \$3, 'sent', \$4, 'individual'/);
   });
 });
 

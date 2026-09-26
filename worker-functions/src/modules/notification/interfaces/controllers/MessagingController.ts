@@ -118,7 +118,7 @@ export class MessagingController {
       return;
     }
 
-    const { externalId, to: normalizedTo } = result.getValue()!;
+    const { externalId } = result.getValue()!;
     const triggeredBy = `admin:${AuthMiddleware.getAuthContext(req)?.principal.id ?? 'unknown'}`;
 
     // Atualiza messaged_at na candidatura — best-effort
@@ -135,12 +135,14 @@ export class MessagingController {
       });
 
     // Persiste log de envio individual — best-effort
+    // phone = NULL sempre (migration 475, mensageria-pii-e-retencao): telefone em claro não é
+    // mais gravado aqui; worker_id já é suficiente e o dado é derivável por JOIN em workers.phone.
     await this.db
       .query(
         `INSERT INTO whatsapp_bulk_dispatch_logs
            (worker_id, job_posting_id, triggered_by, phone, template_slug, status, twilio_sid, source)
-         VALUES ($1, $2, $3, $4, $5, 'sent', $6, 'individual')`,
-        [workerId, jobPostingId, triggeredBy, normalizedTo, slug, externalId],
+         VALUES ($1, $2, $3, NULL, $4, 'sent', $5, 'individual')`,
+        [workerId, jobPostingId, triggeredBy, slug, externalId],
       )
       .catch((err: unknown) => {
         const error = err instanceof Error ? err : new Error(String(err));
@@ -193,6 +195,8 @@ export class MessagingController {
     const triggeredBy = `admin:${AuthMiddleware.getAuthContext(req)?.principal.id ?? 'unknown'}`;
 
     const digitsOnly = normalizedTo.replace(/^\+/, '');
+    // phone = NULL sempre (migration 475, mensageria-pii-e-retencao). $2 (digitsOnly) segue
+    // usado só para resolver o worker_id pelo telefone normalizado — não é gravado na tabela.
     await this.db
       .query(
         `INSERT INTO whatsapp_bulk_dispatch_logs
@@ -202,9 +206,9 @@ export class MessagingController {
             WHERE (REGEXP_REPLACE(phone, '^\\+', '') = $2)
               AND merged_into_id IS NULL
             LIMIT 1),
-           $1, $3, $4, 'sent', $5, 'individual'
+           $1, NULL, $3, 'sent', $4, 'individual'
          )`,
-        [triggeredBy, digitsOnly, normalizedTo, templateSlug.trim(), externalId],
+        [triggeredBy, digitsOnly, templateSlug.trim(), externalId],
       )
       .catch((err: unknown) => {
         const error = err instanceof Error ? err : new Error(String(err));
