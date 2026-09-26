@@ -53,18 +53,17 @@ function card(overrides: Partial<Card> = {}): Card {
   } as Card;
 }
 function stagesWith(c: Card): FunnelStages {
-  return { INVITED: [], BLOQUEADO: [], INICIADO: [], PRE_SCREENING: [], IN_PROGRESS: [], COMPLETED: [c], CONFIRMED: [], SELECTED: [], REJECTED: [] } as unknown as FunnelStages;
+  return { INVITED: [], INICIADO: [], PRE_SCREENING: [], IN_PROGRESS: [], COMPLETED: [c], CONFIRMED: [], SELECTED: [], REJECTED: [] } as unknown as FunnelStages;
 }
 const drop = (c: Card, to: string) =>
   act(() => { capturedOnDrop!({ item: c, itemId: c.id, fromColumnId: 'COMPLETED', toColumnId: to }); });
 
 describe('KanbanBoard — handleDrop', () => {
   const onMove = vi.fn().mockResolvedValue(null);
-  const noop = vi.fn().mockResolvedValue(null);
   beforeEach(() => { onMove.mockClear(); capturedOnDrop = null; });
 
   function renderBoard(c: Card) {
-    render(<KanbanBoard stages={stagesWith(c)} vacancyId="v-1" onMove={onMove} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
+    render(<KanbanBoard stages={stagesWith(c)} vacancyId="v-1" onMove={onMove} />);
     expect(capturedOnDrop).not.toBeNull();
   }
 
