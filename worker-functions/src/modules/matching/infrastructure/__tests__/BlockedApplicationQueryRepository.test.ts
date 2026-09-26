@@ -26,7 +26,7 @@ jest.mock('@shared/database/DatabaseConnection', () => ({
   },
 }));
 
-import { BlockedApplicationQueryRepository } from '../BlockedApplicationQueryRepository';
+import { BlockedApplicationQueryRepository, blockedNotPromotedSql } from '../BlockedApplicationQueryRepository';
 import {
   liveWorkerJoinSql,
   liveBlockedReasonSql,
@@ -431,6 +431,14 @@ describe('BlockedApplicationQueryRepository', () => {
 
     expect(card.dismissedAt).toBe(NOW_DATE.toISOString());
     expect(card.dismissedReason).toBe('OTHER');
+  });
+});
+
+describe('blockedNotPromotedSql', () => {
+  it('usa o alias informado nas duas colunas do NOT EXISTS', () => {
+    const sql = blockedNotPromotedSql('x');
+    expect(sql).toContain('x.worker_id');
+    expect(sql).toContain('x.job_posting_id');
   });
 });
 

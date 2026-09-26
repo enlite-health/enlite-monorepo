@@ -50,6 +50,21 @@ export interface BlockedAggregates {
   byReason: Record<string, number>;
 }
 
+/**
+ * "Tentativa ainda não promovida" — o worker ainda não tem WJA real para o mesmo
+ * par (worker_id, job_posting_id). Promovido (completou cadastro) vira WJA real
+ * e some do lado bloqueado (NOT EXISTS). Usado por listByVacancy, listByWorker
+ * (P4) e loadStageCounts (P5) — MESMO recorte nos três, para a contagem bater
+ * com o board.
+ */
+export function blockedNotPromotedSql(alias = 'wba'): string {
+  return `NOT EXISTS (
+           SELECT 1 FROM worker_job_applications wja
+           WHERE wja.worker_id  = ${alias}.worker_id
+             AND wja.job_posting_id = ${alias}.job_posting_id
+         )`;
+}
+
 export interface ListBlockedAttemptsParams {
   jobPostingId?: string;
   workerId?: string;
@@ -187,11 +202,7 @@ export class BlockedApplicationQueryRepository {
        FROM worker_blocked_applications wba
        ${liveWorkerJoinSql()}
        WHERE wba.job_posting_id = $1
-         AND NOT EXISTS (
-           SELECT 1 FROM worker_job_applications wja
-           WHERE wja.worker_id  = wba.worker_id
-             AND wja.job_posting_id = wba.job_posting_id
-         )
+         AND ${blockedNotPromotedSql()}
        ORDER BY wba.last_attempted_at DESC`,
       [jobPostingId],
     );
@@ -214,7 +225,7 @@ export class BlockedApplicationQueryRepository {
    * Lista tentativas bloqueadas de UM worker (todas as vagas), excluindo pares que já
    * viraram WJA real (NOT EXISTS — mesma dedup do listByVacancy). Enriquece com dados
    * da vaga/paciente para a aba de encuadre do worker-detail e mapeia para o shape
-   * unificado WorkerEngagement (kanbanStage = BLOQUEADO).
+   * unificado WorkerEngagement (kanbanStage = KANBAN_COLUMN_BLOCKED, Rejeitados, D433).
    *
    * Motivo e missing_fields são recomputados ON-READ (`blockedAttemptLiveState`) —
    * editar o perfil do worker, ou ele ser reativado, reflete aqui sem nova tentativa.
@@ -239,11 +250,7 @@ export class BlockedApplicationQueryRepository {
        LEFT JOIN patients p ON jp.patient_id = p.id
        WHERE wba.worker_id = $1
          AND wba.dismissed_at IS NULL
-         AND NOT EXISTS (
-           SELECT 1 FROM worker_job_applications wja
-           WHERE wja.worker_id = wba.worker_id
-             AND wja.job_posting_id = wba.job_posting_id
-         )
+         AND ${blockedNotPromotedSql()}
        ORDER BY wba.last_attempted_at DESC`,
       [workerId],
     );
