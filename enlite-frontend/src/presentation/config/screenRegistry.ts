@@ -171,11 +171,12 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
   {
     id: 'vacancies.detail',
     route: '/admin/vacancies/:id',
-    tabs: ['encuadres', 'talentum', 'links'],
+    tabs: ['encuadres', 'talentum', 'links', 'notes'],
     containers: [
       // `vacancy:delete` sem botão (ui-gate-debt.json): arquivar é status CLOSED via write. O caso
-      // cobre cabeçalho, perfil requerido, links de reunião e a aba Links (tudo dado da vaga).
-      c('case', 'vacancy', ['read', 'create', 'update'], 'links'),
+      // cobre cabeçalho, perfil requerido, links de reunião, a aba Links e a aba Anotações (tudo
+      // dado da vaga).
+      c('case', 'vacancy', ['read', 'create', 'update'], 'links', 'notes'),
       // O card Paciente mostra o NOME do paciente — dado de outro titular, célula de identidade
       // dele (a rota projeta; sem ela vem "Contato restrito").
       c('patient', 'patient_identity', ['read']),

@@ -142,6 +142,7 @@ describe('screensByCell / containersOfTab / screenById', () => {
     const s = screenById('vacancies.detail');
     expect(s.containers?.find((c) => c.id === 'patient')?.resource).toBe('patient_identity');
     expect(containersOfTab(s, 'links').map((c) => c.resource)).toEqual(['vacancy']);
+    expect(containersOfTab(s, 'notes').map((c) => c.resource)).toEqual(['vacancy']);
     expect(containersOfTab(s, 'encuadres').map((c) => c.resource)).toEqual(['funnel', 'match', 'messaging']);
     expect(containersOfTab(s, 'talentum').map((c) => c.resource)).toEqual(['prescreening', 'talentum']);
     // patient_identity:read é UMA célula: ficha do paciente, lista, kanban, vaga

@@ -16,12 +16,13 @@ const TAB_I18N_KEYS: Record<VacancyTab, string> = {
   encuadres: 'admin.vacancyDetail.tabs.encuadres',
   talentum: 'admin.vacancyDetail.tabs.talentum',
   links: 'admin.vacancyDetail.tabs.links',
+  notes: 'admin.vacancyDetail.tabs.notes',
 };
 
 const tabActive =
   'bg-primary text-white px-5 h-10 rounded-pill ' +
   'font-poppins font-semibold text-base whitespace-nowrap ' +
-  'shadow-[0px_4px_20px_0px_rgba(0,0,0,0.4)] transition-colors flex items-center';
+  'shadow-tab-active transition-colors flex items-center';
 const tabInactive =
   'text-gray-800 hover:text-primary px-5 h-10 rounded-pill ' +
   'font-poppins font-semibold text-base whitespace-nowrap ' +
@@ -36,6 +37,7 @@ export function VacancyDetailTabs({ activeTab, onTabChange, visibleTabs }: Vacan
       {tabs.map((tab) => (
         <button
           key={tab}
+          data-testid={`vacancy-tab-${tab}`}
           onClick={() => onTabChange(tab)}
           className={activeTab === tab ? tabActive : tabInactive}
         >

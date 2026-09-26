@@ -199,6 +199,7 @@ describe('VacancyDetailPage — containers por célula (D286 fase 2)', () => {
     expect(aba('talentum')).not.toBeInTheDocument();
     expect(aba('links')).toBeInTheDocument();
     expect(aba('links')?.className).toContain('bg-primary');
+    expect(aba('notes')).toBeInTheDocument();
   });
 
   it('patient_identity:read devolve o card Paciente', () => {
