@@ -87,7 +87,7 @@ export function VacanciesTable({ vacancies, onRowClick }: VacanciesTableProps): 
   const safeVacancies = vacancies ?? [];
 
   return (
-    <div className="w-full rounded-xl overflow-hidden border border-gray-400">
+    <div className="w-full rounded-xl overflow-x-auto border border-gray-400">
       <Table className="min-w-[500px]">
         <TableHeader>
           <TableHead className="w-10" />
