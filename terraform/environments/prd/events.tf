@@ -175,6 +175,53 @@ resource "google_cloud_scheduler_job" "events_sweep_safe" {
 }
 
 # ---------------------------------------------------------------------------
+# Retenção de mensageria (mensageria-pii-e-retencao) — AINDA NÃO APLICADO
+# ---------------------------------------------------------------------------
+# `archive_old_messages()` e `cleanup_expired_tokens()` existem no banco desde a
+# migration 087 (worker-functions/migrations/087_wave7_d9_retention_policy_index.sql).
+# O comentário da migration prometia "job de retenção semanal (n8n)" — medido em
+# 25/09/2026 que isso nunca existiu: pg_cron não está instalado em prd (SELECT extname
+# FROM pg_extension WHERE extname='pg_cron' → 0 linhas) e nenhum n8n bate no serviço.
+# Efeito: messaging_variable_tokens (TTL 24h) com 1.501/1.501 linhas expiradas;
+# messaging_outbox com 226 linhas sent/failed além dos 90 dias.
+#
+# Reusa o MESMO padrão dos dois jobs acima (Cloud Scheduler -> X-Internal-Secret ->
+# InternalController) — ver worker-functions/src/modules/notification/interfaces/
+# controllers/InternalController.ts:sweepMessagingRetention e
+# .../routes/internalRoutes.ts (POST /messaging/retention).
+#
+# ⚠️ ESTE RECURSO NÃO FOI APLICADO. Escrito aqui para revisão — falta `terraform plan`
+# + apply em prd por alguém com autorização (regra do CLAUDE.md: mudança de infra de
+# prd para, autorização nomeada antes de aplicar). Semanal (domingo 05:00 UTC = 02:00
+# AR), fora do horário dos jobs de 5/10min para não competir por conexão de banco.
+resource "google_cloud_scheduler_job" "messaging_retention" {
+  project          = var.project_id
+  region           = var.scheduler_region
+  name             = "messaging-retention"
+  schedule         = "0 5 * * 0"
+  time_zone        = "Etc/UTC"
+  attempt_deadline = "300s"
+
+  retry_config {
+    retry_count          = 0
+    max_backoff_duration = "3600s"
+    max_doublings        = 5
+    max_retry_duration   = "0s"
+    min_backoff_duration = "5s"
+  }
+
+  http_target {
+    http_method = "POST"
+    uri         = "${var.events_api_base_url}/api/internal/messaging/retention"
+    body        = base64encode("{}")
+    headers = {
+      "Content-Type"      = "application/json"
+      "X-Internal-Secret" = data.google_secret_manager_secret_version.internal_token.secret_data
+    }
+  }
+}
+
+# ---------------------------------------------------------------------------
 # Log-based metrics
 # ---------------------------------------------------------------------------
 resource "google_logging_metric" "domain_event_delivery_failure" {

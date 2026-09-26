@@ -185,13 +185,15 @@ export class BulkDispatchTalentumIncompleteUseCase {
           reportError(e, { source: 'BulkDispatchTalentum:updateState', workerId: row.worker_id, batchId });
         });
 
-        // 4. Gravar log de auditoria em whatsapp_bulk_dispatch_logs
+        // 4. Gravar log de auditoria em whatsapp_bulk_dispatch_logs.
+        // phone = NULL sempre (migration 475, mensageria-pii-e-retencao): row.phone segue sendo
+        // lido (usado para o envio acima), só não é mais gravado neste log.
         await this.db
           .query(
             `INSERT INTO whatsapp_bulk_dispatch_logs
                (worker_id, triggered_by, phone, template_slug, status, twilio_sid, error_message, batch_id, source)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'bulk')`,
-            [row.worker_id, triggeredBy, row.phone, TEMPLATE_SLUG, finalStatus === 'sent' ? 'sent' : 'error', externalId, errorMsg, batchId],
+             VALUES ($1, $2, NULL, $3, $4, $5, $6, $7, 'bulk')`,
+            [row.worker_id, triggeredBy, TEMPLATE_SLUG, finalStatus === 'sent' ? 'sent' : 'error', externalId, errorMsg, batchId],
           )
           .catch((err: unknown) => {
             const e = err instanceof Error ? err : new Error(String(err));
