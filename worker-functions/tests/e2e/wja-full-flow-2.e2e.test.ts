@@ -289,7 +289,7 @@ describe('WJA Full Flow Part 2 — REPROGRAMAR + RECHAZAR + Invariantes @integra
         `/api/admin/encuadres/${encuadreBId}/move`,
         {
           targetStage: 'REJECTED',
-          rejectionReasonCategory: 'WORKER_DECLINED',
+          reasonCategory: 'WORKER_DECLINED',
         },
         { headers: { Authorization: `Bearer ${adminToken}` } },
       );
