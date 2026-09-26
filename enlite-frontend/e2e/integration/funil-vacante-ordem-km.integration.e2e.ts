@@ -116,4 +116,65 @@ test.describe('funil da vacante — ordem por km @integration', () => {
       seed.cleanup();
     }
   });
+
+  // ── alt · 2 candidatos SEM endereço: nenhum erra, os 2 aparecem ─────────────
+  test('funil-vacante-ordem-km-sem-endereco', async ({ page, request }) => {
+    const seed = seedVacancyWithCandidatesAtKm([null, null]);
+    const [wjaA, wjaB] = seed.wjaIds;
+    const expectedIds = [wjaA, wjaB];
+
+    try {
+      // 1. API: os 2 têm distanceKm null, nenhum 500.
+      const res = await request.get(`${BACKEND_URL}/api/admin/vacancies/${seed.vacancyId}/funnel`, {
+        headers: { Authorization: `Bearer ${tokenFor(MOCK_ADMIN)}` },
+      });
+      expect(res.ok(), 'GET funnel falhou').toBe(true);
+      const body = (await res.json()) as { data: { stages: Record<string, FunnelItem[]> } };
+      const invited = body.data.stages.INVITED;
+      expect(invited.map((item) => item.distanceKm), 'os 2 sem distância').toEqual([null, null]);
+
+      // 2. Tela — modo lista: os 2 aparecem (ordem do backend, sem erro).
+      await loginAs(page, MOCK_ADMIN);
+      await page
+        .evaluate((id) => localStorage.removeItem(`vacancy-funnel-view-${id}`), seed.vacancyId)
+        .catch(() => {});
+      const funnelTableRe = new RegExp(`/vacancies/${seed.vacancyId}/funnel-table(\\?|$)`);
+      const [funnelTableResponse] = await Promise.all([
+        page.waitForResponse((r) => funnelTableRe.test(r.url()) && r.request().method() === 'GET'),
+        page.goto(`/admin/vacancies/${seed.vacancyId}`),
+      ]);
+      expect(funnelTableResponse.ok(), 'GET funnel-table falhou').toBe(true);
+      await expect(page.getByTestId('vacancy-funnel-view')).toBeVisible({ timeout: 15_000 });
+
+      const listIds = await page
+        .locator('[data-testid^="funnel-row-"]')
+        .evaluateAll((els) => els.map((e) => e.getAttribute('data-testid')));
+      expect(new Set(listIds), 'os 2 cards aparecem no modo lista').toEqual(
+        new Set(expectedIds.map((id) => `funnel-row-${id}`)),
+      );
+      expect(listIds.length, 'nenhum a mais nem a menos').toBe(2);
+
+      // 3. Kanban — os 2 aparecem também.
+      const funnelRe = new RegExp(`/vacancies/${seed.vacancyId}/funnel(\\?|$)`);
+      const [kanbanResponse] = await Promise.all([
+        page.waitForResponse((r) => funnelRe.test(r.url()) && r.request().method() === 'GET'),
+        page
+          .getByRole('group', { name: 'Cambiar vista' })
+          .getByRole('button', { name: /Kanban/i })
+          .click(),
+      ]);
+      expect(kanbanResponse.ok(), 'GET funnel (kanban) falhou').toBe(true);
+      await expect(page.getByTestId('kanban-board')).toBeVisible({ timeout: 15_000 });
+
+      const kanbanIds = await page
+        .locator('[data-testid="kanban-column-INVITED"] [data-testid^="kanban-card-"][data-stage]')
+        .evaluateAll((els) => els.map((e) => e.getAttribute('data-testid')));
+      expect(new Set(kanbanIds), 'os 2 cards aparecem no kanban').toEqual(
+        new Set(expectedIds.map((id) => `kanban-card-${id}`)),
+      );
+      expect(kanbanIds.length, 'nenhum a mais nem a menos').toBe(2);
+    } finally {
+      seed.cleanup();
+    }
+  });
 });

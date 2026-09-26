@@ -314,4 +314,27 @@ test.describe('lista de vacantes e anotações @integration', () => {
     const rowC = await readVacancyListRow(request, BACKEND_URL, tokenFor(MOCK_STAFF), vacancyC);
     expect(rowC.daysWithoutDivulgation, 'VC.daysWithoutDivulgation').toBeNull();
   });
+
+  // ── alt · "Cuándo" no futuro: o servidor recusa (400), a tela avisa ─────────
+  test('vacante-anotacao-data-futura', async ({ page, request }) => {
+    const notesBefore = await listNotesApi(request, BACKEND_URL, tokenFor(MOCK_STAFF), vacancyA);
+
+    await loginAs(page, MOCK_STAFF);
+    await page.goto(`/admin/vacancies/${vacancyA}`);
+    await page.getByTestId('vacancy-tab-notes').click();
+    await expect(page.getByTestId('vacancy-notes-panel')).toBeVisible({ timeout: 15_000 });
+
+    const status = await createNoteViaUi(page, {
+      daysAhead: 2,
+      category: 'OUTRO',
+      contact: 'Coordinación',
+      body: 'Anotación con fecha futura (debe ser rechazada)',
+    });
+    expect(status, 'POST /notes (cuándo no futuro)').toBe(400);
+
+    await expect(page.getByText('No se pudo guardar la anotación')).toBeVisible({ timeout: 15_000 });
+
+    const notesAfter = await listNotesApi(request, BACKEND_URL, tokenFor(MOCK_STAFF), vacancyA);
+    expect(notesAfter.length, 'nenhuma nota nova persistida').toBe(notesBefore.length);
+  });
 });
