@@ -252,3 +252,21 @@ describe('VacancyFunnelTable — coluna Origen (levantou a mão)', () => {
     ).toBeInTheDocument();
   });
 });
+
+// Ordenação por km (DX-3.11): o modo lista usa o MESMO comparador do Kanban.
+describe('VacancyFunnelTable — ordem por km (DX-3.11)', () => {
+  const props = { vacancyId: 'vac-123', isLoading: false, activeTabLabel: 'Invitados' };
+
+  it('ordena as linhas por km crescente, com sem-distância no fim', () => {
+    const r40: FunnelTableRow = { ...mockRows[0], id: 'r40', distanceKm: 40 };
+    const rNull: FunnelTableRow = { ...mockRows[0], id: 'rNull', distanceKm: null };
+    const r3: FunnelTableRow = { ...mockRows[0], id: 'r3', distanceKm: 3 };
+    const r12: FunnelTableRow = { ...mockRows[0], id: 'r12', distanceKm: 12 };
+
+    renderTable({ ...props, rows: [r40, rNull, r3, r12] });
+
+    const rows = screen.getAllByTestId(/^funnel-row-/);
+    const ids = rows.map((el) => el.getAttribute('data-testid')!.replace('funnel-row-', ''));
+    expect(ids).toEqual(['r3', 'r12', 'r40', 'rNull']);
+  });
+});

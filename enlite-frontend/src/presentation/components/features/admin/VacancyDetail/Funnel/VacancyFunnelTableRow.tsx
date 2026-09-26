@@ -45,7 +45,10 @@ export function VacancyFunnelTableRow({
   }
 
   return (
-    <TableRow className={`bg-white${isLast ? ' rounded-bl-[12px] rounded-br-[12px]' : ''}`}>
+    <TableRow
+      data-testid={`funnel-row-${row.id}`}
+      className={`bg-white${isLast ? ' rounded-bl-[12px] rounded-br-[12px]' : ''}`}
+    >
       {/* Contact notes */}
       <TableCell unwrapped className="pl-6 pr-2">
         <button

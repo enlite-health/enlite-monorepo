@@ -32,6 +32,8 @@ interface FunnelEncuadre {
   matchScore: number | null;
   talentumStatus: string | null;
   workZone: string | null;
+  /** km do candidato até a vaga (DX-3.10); null = tentativa negada ou sem geocoding. Fase 3 ordena, não exibe. */
+  distanceKm?: number | null;
   redireccionamiento: string | null;
   acquisitionChannel?: string | null;
   internalStage?: string | null;
