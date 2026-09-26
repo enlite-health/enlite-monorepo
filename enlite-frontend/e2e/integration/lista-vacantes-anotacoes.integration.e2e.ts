@@ -189,9 +189,16 @@ test.describe('lista de vacantes e anotações @integration', () => {
 
     // 3. Tela: a célula mostra a mesma data formatada (opções literais, não
     // importadas — não repetir no teste a mesma fonte que a fase implementa).
+    // `timeZone` explícito: `formatDateTime` (draftVacancyFormat.ts:37-52) não
+    // recebe fuso — quem aplica é o navegador, e o `test.use` deste describe
+    // fixa `timezoneId: 'America/Argentina/Buenos_Aires'` (linha 52). Sem o
+    // `timeZone` aqui, `esperado` sai no fuso do PROCESSO Node (o runner), que
+    // diverge do navegador (CI = UTC, dev local = -03 → 3h de diferença; ver
+    // memória `teste-de-fuso-passa-por-coincidencia`).
     await page.goto('/admin/vacancies');
     await expect(page.getByTestId(`vacancy-row-${vacancyD}`)).toBeVisible({ timeout: 15_000 });
     const esperado = new Date(note.occurredAt).toLocaleString('es-AR', {
+      timeZone: 'America/Argentina/Buenos_Aires',
       day: '2-digit',
       month: '2-digit',
       year: 'numeric',
