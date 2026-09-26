@@ -30,6 +30,7 @@ import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { VacancyPrescreeningConfig } from '@presentation/components/features/admin/VacancyDetail/VacancyPrescreeningConfig';
 import { VacancyTalentumCard } from '@presentation/components/features/admin/VacancyDetail/VacancyTalentumCard';
 import { VacancyDetailTabs } from '@presentation/components/features/admin/VacancyDetail/VacancyDetailTabs';
+import { VacancyNotesPanel } from '@presentation/components/features/admin/VacancyDetail/VacancyNotesPanel';
 import { VACANCY_TABS, type VacancyTab } from '@presentation/components/features/admin/VacancyDetail/vacancyTabs';
 import { ContainerGate } from '@presentation/components/features/access';
 import { tabsVisibleFor } from '@presentation/hooks/useCellAccess';
@@ -341,6 +342,12 @@ export default function VacancyDetailPage() {
             />
           </div>
         </>
+      )}
+
+      {shownTab === 'notes' && (
+        <div className="mb-6">
+          <VacancyNotesPanel vacancyId={id!} />
+        </div>
       )}
 
       {vacancy && id && (
