@@ -178,6 +178,7 @@ export class WJAFunnelController {
         COMPLETED: [],      // agrupa COMPLETED + QUALIFIED + IN_DOUBT (tag diferencia)
         CONFIRMED: [],
         SELECTED: [],
+        QUICK_RESPONSE_TEAM: [], // Fase 4 (D430) — destino do arrasto manual, entrada do quadro C
         REJECTED: [],
       };
 
