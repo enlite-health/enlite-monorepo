@@ -113,9 +113,9 @@ describe('GET /api/admin/workers/:id/timeline', () => {
     // 6. Insert bulk dispatch log
     await pool.query(
       `INSERT INTO whatsapp_bulk_dispatch_logs
-         (worker_id, triggered_by, phone, template_slug, status)
-       VALUES ($1, 'scheduler', $2, 'complete_register_ofc', 'sent')`,
-      [workerId, `+549${suffix}`.slice(0, 15)],
+         (worker_id, triggered_by, template_slug, status)
+       VALUES ($1, 'scheduler', 'complete_register_ofc', 'sent')`,
+      [workerId],
     );
   });
 

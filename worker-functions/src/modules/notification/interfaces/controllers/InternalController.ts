@@ -8,6 +8,7 @@ import { OutboxProcessor } from '../../infrastructure/OutboxProcessor';
 import { ReminderScheduler } from '../../infrastructure/ReminderScheduler';
 import { BulkDispatchScheduler } from '../../infrastructure/BulkDispatchScheduler';
 import { BulkDispatchTalentumScheduler } from '../../infrastructure/BulkDispatchTalentumScheduler';
+import { MessagingRetentionService } from '../../infrastructure/MessagingRetentionService';
 import { logger, reportError } from '@shared/logging';
 
 const EventsHealthQuerySchema = z.object({
@@ -62,6 +63,7 @@ export class InternalController {
     private readonly bulkDispatchTalentumScheduler: BulkDispatchTalentumScheduler,
     private readonly domainEventBacklogService: DomainEventBacklogService,
     private readonly anaCareMirrorHealthService: AnaCareMirrorHealthService,
+    private readonly messagingRetentionService: MessagingRetentionService,
   ) {}
 
   /**
@@ -157,6 +159,26 @@ export class InternalController {
       res.status(200).json({ status: 'ok' });
     } catch (err) {
       console.error('[InternalController] sweepOutbox error:', err);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+
+  /**
+   * POST /api/internal/messaging/retention
+   * Trigger: Cloud Scheduler (semanal) — mesmo padrão dos demais sweeps deste
+   * controller. Chama as duas funções de retenção que existem no banco desde a
+   * migration 087 e nunca tinham dono de execução (`archive_old_messages`,
+   * `cleanup_expired_tokens`) — ver MessagingRetentionService para o porquê.
+   */
+  async sweepMessagingRetention(_req: Request, res: Response): Promise<void> {
+    try {
+      const result = await this.messagingRetentionService.run();
+      logger.info({ msg: '[messaging/retention] done', ...result });
+      res.status(200).json({ status: 'ok', ...result });
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      logger.error({ msg: '[messaging/retention] error', error: error.message });
+      reportError(error, { source: 'InternalController:sweepMessagingRetention' });
       res.status(500).json({ error: 'Internal server error' });
     }
   }

@@ -263,12 +263,13 @@ export class OutboxProcessor {
       );
       if (isFinal) {
         logger.warn({ outboxId: row.id, error: result.error }, 'OutboxProcessor falha definitiva');
-        // Log final failure in dispatch audit table — best-effort
+        // Log final failure in dispatch audit table — best-effort.
+        // phone = NULL sempre (migration 475, mensageria-pii-e-retencao).
         await this.db.query(
           `INSERT INTO whatsapp_bulk_dispatch_logs
              (worker_id, job_posting_id, triggered_by, phone, template_slug, status, error_message, source)
-           VALUES ($1, $2, $3, $4, $5, 'error', $6, 'outbox')`,
-          [row.worker_id, row.job_posting_id, `system:outbox:${row.id}`, to, row.template_slug, result.error],
+           VALUES ($1, $2, $3, NULL, $4, 'error', $5, 'outbox')`,
+          [row.worker_id, row.job_posting_id, `system:outbox:${row.id}`, row.template_slug, result.error],
         ).catch((err: unknown) => {
           const error = err instanceof Error ? err : new Error(String(err));
           logger.warn({ error: error.message, outboxId: row.id }, 'Falha ao gravar log outbox erro');
@@ -291,12 +292,13 @@ export class OutboxProcessor {
       [row.attempts + 1, externalId, row.id, channel],
     );
 
-    // Log successful dispatch in audit table — best-effort
+    // Log successful dispatch in audit table — best-effort.
+    // phone = NULL sempre (migration 475, mensageria-pii-e-retencao).
     await this.db.query(
       `INSERT INTO whatsapp_bulk_dispatch_logs
          (worker_id, job_posting_id, triggered_by, phone, template_slug, status, twilio_sid, source)
-       VALUES ($1, $2, $3, $4, $5, 'sent', $6, 'outbox')`,
-      [row.worker_id, row.job_posting_id, `system:outbox:${row.id}`, to, row.template_slug, externalId],
+       VALUES ($1, $2, $3, NULL, $4, 'sent', $5, 'outbox')`,
+      [row.worker_id, row.job_posting_id, `system:outbox:${row.id}`, row.template_slug, externalId],
     ).catch((err: unknown) => {
       const error = err instanceof Error ? err : new Error(String(err));
       logger.warn({ error: error.message, outboxId: row.id }, 'Falha ao gravar log outbox sucesso');

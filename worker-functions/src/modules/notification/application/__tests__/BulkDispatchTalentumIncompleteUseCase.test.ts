@@ -153,10 +153,14 @@ describe('BulkDispatchTalentumIncompleteUseCase', () => {
       // Verifica INSERT log com status='sent'
       const insertLogCall = calls.find(([sql]) => sql.includes('INSERT INTO whatsapp_bulk_dispatch_logs'));
       expect(insertLogCall).toBeDefined();
+      // phone = NULL sempre (migration 475, mensageria-pii-e-retencao): o SQL grava NULL
+      // literal na coluna phone — não é mais um parâmetro bindado.
+      expect(insertLogCall![0]).toMatch(/\(worker_id, triggered_by, phone, template_slug, status, twilio_sid, error_message, batch_id, source\)\s*\n\s*VALUES \(\$1, \$2, NULL, \$3, \$4, \$5, \$6, \$7, 'bulk'\)/);
       const logParams = insertLogCall![1] as unknown[];
-      expect(logParams[3]).toBe('talentum_incomplete_reminder'); // template_slug
-      expect(logParams[4]).toBe('sent');                         // status
-      expect(logParams[5]).toBe('SM_success_1');                 // twilio_sid
+      expect(logParams[2]).toBe('talentum_incomplete_reminder'); // template_slug
+      expect(logParams[3]).toBe('sent');                         // status
+      expect(logParams[4]).toBe('SM_success_1');                 // twilio_sid
+      expect(logParams).not.toContain(worker.phone);
     });
   });
 
@@ -190,9 +194,10 @@ describe('BulkDispatchTalentumIncompleteUseCase', () => {
       const insertLogCall = calls.find(([sql]) => sql.includes('INSERT INTO whatsapp_bulk_dispatch_logs'));
       expect(insertLogCall).toBeDefined();
       const logParams = insertLogCall![1] as unknown[];
-      expect(logParams[4]).toBe('error'); // status
-      expect(logParams[5]).toBeNull();    // twilio_sid null on error
-      expect(logParams[6]).toBe('Twilio error'); // error_message
+      expect(logParams[3]).toBe('error'); // status
+      expect(logParams[4]).toBeNull();    // twilio_sid null on error
+      expect(logParams[5]).toBe('Twilio error'); // error_message
+      expect(logParams).not.toContain(worker.phone);
     });
   });
 
