@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { FunnelStages, MoveEncuadreError } from '@hooks/admin/useWJAFunnel';
-import { KanbanBoardShell, type KanbanColumnSpec, type KanbanDropEvent } from './KanbanBoardShell';
+import { KanbanBoardShell, type KanbanDropEvent } from './KanbanBoardShell';
 import { KanbanCard } from './KanbanCard';
 import { RejectionReasonSelect } from './RejectionReasonSelect';
 import { RoleSelect } from './RoleSelect';
 import { InterviewScheduleSelect, type InterviewSchedule } from './InterviewScheduleSelect';
 import { ContactNotesModal } from '@presentation/components/features/admin/VacancyDetail/Funnel/ContactNotesModal';
+import { VACANCY_FUNNEL_COLUMNS, columnItems } from '@presentation/components/features/admin/VacancyDetail/Funnel/funnelTabsConfig';
 import { useActionGate } from '@presentation/hooks/useCellAccess';
 import type { EncuadreRole } from '@domain/entities/EncuadreRole';
 import type { PresentationInviteResult } from '@infrastructure/http/AdminPresentationInviteApiService';
@@ -24,10 +25,6 @@ interface KanbanBoardProps {
     /** Data/hora da entrevista ao mover para CONFIRMED. Ausente = "ainda não sei". */
     schedule?: InterviewSchedule,
   ) => Promise<MoveEncuadreError | null>;
-  /** "Rechazar" de um card BLOQUEADO: soft-dismiss com motivo → vai p/ RECHAZADOS. */
-  onRejectBlocked: (blockedId: string, rejectionReasonCategory: string) => Promise<MoveEncuadreError | null>;
-  /** "Voltar a bloqueados": desfaz o rechazo de um card bloqueado (RECHAZADOS → BLOQUEADO). */
-  onUnrejectBlocked: (blockedId: string) => Promise<MoveEncuadreError | null>;
   /** "Promover" um card ELEGIBLE (D300). Devolve mensagem localizada de erro, ou null no sucesso. */
   onPromoteBlocked?: (blockedId: string) => Promise<string | null>;
   /**
@@ -42,20 +39,6 @@ interface KanbanBoardProps {
    */
   onPresentationInvite?: (workerId: string) => Promise<PresentationInviteResult>;
 }
-
-/** Colunas do funil de vaga. Fonte ÚNICA de quais aceitam drop (`droppable`) —
- *  antes existia também um Set DROPPABLE_STAGES espelhando isto à mão. */
-const COLUMN_CONFIG: Omit<KanbanColumnSpec, 'title'>[] = [
-  { id: 'INVITED', color: 'bg-blue-400', droppable: true },
-  { id: 'BLOQUEADO', color: 'bg-red-500', droppable: false, alert: true },
-  { id: 'INICIADO', color: 'bg-indigo-400', droppable: false },
-  { id: 'PRE_SCREENING', color: 'bg-violet-400', droppable: false },
-  { id: 'IN_PROGRESS', color: 'bg-violet-500', droppable: false },
-  { id: 'COMPLETED', color: 'bg-violet-600', droppable: false },
-  { id: 'CONFIRMED', color: 'bg-cyan-400', droppable: true },
-  { id: 'SELECTED', color: 'bg-green-500', droppable: true },
-  { id: 'REJECTED', color: 'bg-red-400', droppable: true },
-];
 
 /** Um card do funil (o mesmo shape em qualquer etapa). */
 type FunnelCard = FunnelStages[keyof FunnelStages][number];
@@ -93,24 +76,18 @@ function cardProps(enc: FunnelCard, stage: string) {
   };
 }
 
-export function KanbanBoard({ stages, vacancyId, onMove, onRejectBlocked, onUnrejectBlocked, onPromoteBlocked, onResendInvite, onPresentationInvite }: KanbanBoardProps) {
+export function KanbanBoard({ stages, vacancyId, onMove, onPromoteBlocked, onResendInvite, onPresentationInvite }: KanbanBoardProps) {
   const { t } = useTranslation();
-  // PUT /encuadres/:id/move, /result, POST .../blocked-applications/:id/reject|restore
+  // PUT /encuadres/:id/move, /result
   // → todos funnel:write. Arrasto e menu de clique chamam a MESMA rota — D269
   // (correção: "esconder, não desabilitar") tira a OFERTA das duas com o
   // mesmo predicado: o drag não é oferecido (`isDragDisabled`, que já
   // significa "sem listener do dnd-kit" — não é um drag "travado") e os
-  // callbacks de mover/rechazar/voltar viram `undefined`, então `KanbanCard`
+  // callbacks de mover/rechazar viram `undefined`, então `KanbanCard`
   // nem monta o `MoveToMenu`/botão (mesmo `{onX && <.../>}` de sempre).
   const funnelWriteGate = useActionGate('funnel', 'update');
-  /**
-   * Modal de motivo de rejeição. Serve dois alvos com o MESMO dropdown:
-   *  - { encuadreId } → mover encuadre para REJECTED (onMove).
-   *  - { blockedId }  → rejeitar tentativa bloqueada, promovendo a RECHAZADOS (onRejectBlocked).
-   */
-  const [showRejectionSelect, setShowRejectionSelect] = useState<
-    { encuadreId: string } | { blockedId: string } | null
-  >(null);
+  /** Modal de motivo de rejeição: move o encuadre para REJECTED (onMove). */
+  const [showRejectionSelect, setShowRejectionSelect] = useState<{ encuadreId: string } | null>(null);
   /** Card aguardando escolha de papel (Titular/Substituto) ao ir para SELECTED. */
   const [showRoleSelect, setShowRoleSelect] = useState<{ encuadreId: string } | null>(null);
   const [showScheduleSelect, setShowScheduleSelect] = useState<{ encuadreId: string } | null>(null);
@@ -171,9 +148,11 @@ export function KanbanBoard({ stages, vacancyId, onMove, onRejectBlocked, onUnre
     }));
   }
 
-  const columns = COLUMN_CONFIG.map((col) => ({
-    ...col,
-    title: t(`admin.kanban.columns.${col.id}`),
+  const columns = VACANCY_FUNNEL_COLUMNS.map((c) => ({
+    id: c.id,
+    color: c.color,
+    droppable: c.droppable,
+    title: t(`admin.kanban.columns.${c.id}`),
   }));
 
   /**
@@ -213,16 +192,9 @@ export function KanbanBoard({ stages, vacancyId, onMove, onRejectBlocked, onUnre
   }
 
 
-  async function handleRejectionSubmit(
-    target: { encuadreId: string } | { blockedId: string },
-    category: string,
-  ) {
+  async function handleRejectionSubmit(target: { encuadreId: string }, category: string) {
     setShowRejectionSelect(null);
-    if ('blockedId' in target) {
-      await onRejectBlocked(target.blockedId, category);
-    } else {
-      await onMove(target.encuadreId, 'REJECTED', category);
-    }
+    await onMove(target.encuadreId, 'REJECTED', category);
   }
 
   async function handleRoleSubmit(encuadreId: string, role: EncuadreRole) {
@@ -251,7 +223,10 @@ export function KanbanBoard({ stages, vacancyId, onMove, onRejectBlocked, onUnre
     <>
       <KanbanBoardShell<FunnelCard>
         columns={columns}
-        itemsOf={(columnId) => stages[columnId as keyof FunnelStages] ?? []}
+        itemsOf={(columnId) => {
+          const col = VACANCY_FUNNEL_COLUMNS.find((c) => c.id === columnId);
+          return col ? columnItems(col, stages) : [];
+        }}
         getItemId={(enc) => enc.id}
         isDragDisabled={(enc) => !enc.encuadreId || funnelWriteGate.denied}
         onDrop={handleDrop}
@@ -261,18 +236,9 @@ export function KanbanBoard({ stages, vacancyId, onMove, onRejectBlocked, onUnre
             {...cardProps(enc, columnId)}
             isDismissed={enc.isDismissed}
             onReject={
-              funnelWriteGate.denied
+              funnelWriteGate.denied || !enc.encuadreId
                 ? undefined
-                : enc.encuadreId
-                  ? () => setShowRejectionSelect({ encuadreId: enc.encuadreId! })
-                  : enc.isBlocked && !enc.isDismissed
-                    ? () => setShowRejectionSelect({ blockedId: enc.id })
-                    : undefined
-            }
-            onUndismiss={
-              !funnelWriteGate.denied && enc.isBlocked && enc.isDismissed
-                ? () => onUnrejectBlocked(enc.id)
-                : undefined
+                : () => setShowRejectionSelect({ encuadreId: enc.encuadreId! })
             }
             onMoveTo={
               !funnelWriteGate.denied && enc.encuadreId
