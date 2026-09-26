@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { AnaCareHoursDetailPage } from './AnaCareHoursDetailPage';
 import type { AnaCareHoursPatientSnapshot } from './types';
 import type { AxonicoComprobanteService } from './AxonicoComprobanteService';
@@ -63,6 +63,17 @@ function snapshot(overrides: Partial<AnaCareHoursPatientSnapshot> = {}): AnaCare
   };
 }
 
+/** Promise controlável de fora — usado pra inspecionar o estado "em voo" (`Validando…`) antes de resolver/rejeitar. */
+function deferred<T = void>(): { promise: Promise<T>; resolve: (value: T) => void; reject: (reason?: unknown) => void } {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
 describe('AnaCareHoursDetailPage', () => {
   // Regra nova (18/09): a semana inicial depende de "hoje" × mês exibido (`snapshot.month`).
   // Todo o resto do arquivo assume a semana de 10-16/08 (onde cai o único turno do fixture,
@@ -71,7 +82,12 @@ describe('AnaCareHoursDetailPage', () => {
   // que o comportamento antigo (turno mais antigo) produzia. Os 2 testes da regra nova congelam
   // outro relógio, isoladamente, quando precisam de outro cenário.
   beforeEach(() => {
-    vi.useFakeTimers();
+    // `shouldAdvanceTime: true` (26/09, mesmo padrão de `AnaCareHoursDetailContainer.test.tsx`):
+    // sem isso, o polling do `waitFor` (setTimeout real) nunca dispara com o relógio fake parado —
+    // os testes novos de "Validando…" (que esperam uma promise controlada assentar) travavam em
+    // timeout de 5s. `shouldAdvanceTime` deixa o relógio fake avançar no ritmo real, sem soltar o
+    // congelamento de data que a navegação de semana (comentário acima) precisa.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     vi.setSystemTime(new Date('2026-08-14T12:00:00-03:00'));
   });
   afterEach(() => {
@@ -224,7 +240,7 @@ describe('AnaCareHoursDetailPage', () => {
     expect(screen.queryByTestId('anacare-hours-selection-bar')).not.toBeInTheDocument();
   });
 
-  it('POSITIVO — validar em lote: abre o modal, confirmar chama onValidateBatch e limpa a seleção', () => {
+  it('POSITIVO — validar em lote: abre o modal, confirmar chama onValidateBatch e limpa a seleção', async () => {
     const onValidateBatch = vi.fn();
     render(<AnaCareHoursDetailPage axonicoService={AXONICO_SERVICE} patientDocumentService={PATIENT_DOCUMENT_SERVICE} snapshot={snapshot()} patientId="90000" onBack={vi.fn()} onValidateBatch={onValidateBatch} />);
     fireEvent.click(screen.getByTestId('anacare-hours-select-shift-s1'));
@@ -232,6 +248,38 @@ describe('AnaCareHoursDetailPage', () => {
     expect(screen.getByTestId('anacare-hours-batch-modal')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('anacare-hours-batch-modal-confirm'));
     expect(onValidateBatch).toHaveBeenCalledWith(['s1']);
+    // change `anacare-horas-validando-prd` (26/09): o fecho do modal + limpeza da seleção agora
+    // esperam a promise de `onValidateBatch` assentar (antes era síncrono) — é o que abre espaço
+    // pro "Validando…" aparecer enquanto ela está em voo (ver testes novos abaixo).
+    await waitFor(() => expect(screen.queryByTestId('anacare-hours-batch-modal')).not.toBeInTheDocument());
+    expect(screen.queryByTestId('anacare-hours-selection-bar')).not.toBeInTheDocument();
+  });
+
+  it('POSITIVO — validar em lote: enquanto a promise está pendente, "Confirmar" mostra "Validando…"/disabled/aria-busy; ao resolver fecha o modal e limpa a seleção', async () => {
+    const { promise, resolve } = deferred();
+    const onValidateBatch = vi.fn(() => promise);
+    render(<AnaCareHoursDetailPage axonicoService={AXONICO_SERVICE} patientDocumentService={PATIENT_DOCUMENT_SERVICE} snapshot={snapshot()} patientId="90000" onBack={vi.fn()} onValidateBatch={onValidateBatch} />);
+    fireEvent.click(screen.getByTestId('anacare-hours-select-shift-s1'));
+    fireEvent.click(screen.getByTestId('anacare-hours-selection-validate'));
+    const confirmBtn = screen.getByTestId('anacare-hours-batch-modal-confirm');
+    fireEvent.click(confirmBtn);
+    expect(onValidateBatch).toHaveBeenCalledWith(['s1']);
+    expect(confirmBtn).toHaveTextContent('admin.anacareHours.batchModal.validating');
+    expect(confirmBtn).toBeDisabled();
+    expect(confirmBtn).toHaveAttribute('aria-busy', 'true');
+    expect(screen.getByTestId('anacare-hours-batch-modal')).toBeInTheDocument();
+    resolve();
+    await waitFor(() => expect(screen.queryByTestId('anacare-hours-batch-modal')).not.toBeInTheDocument());
+    expect(screen.queryByTestId('anacare-hours-selection-bar')).not.toBeInTheDocument();
+  });
+
+  it('NEGATIVO — validar em lote: promise rejeitada também fecha o modal ao final (erro fica por conta de quem chama, já tratado no container)', async () => {
+    const onValidateBatch = vi.fn().mockRejectedValue(new Error('boom'));
+    render(<AnaCareHoursDetailPage axonicoService={AXONICO_SERVICE} patientDocumentService={PATIENT_DOCUMENT_SERVICE} snapshot={snapshot()} patientId="90000" onBack={vi.fn()} onValidateBatch={onValidateBatch} />);
+    fireEvent.click(screen.getByTestId('anacare-hours-select-shift-s1'));
+    fireEvent.click(screen.getByTestId('anacare-hours-selection-validate'));
+    fireEvent.click(screen.getByTestId('anacare-hours-batch-modal-confirm'));
+    await waitFor(() => expect(screen.queryByTestId('anacare-hours-batch-modal')).not.toBeInTheDocument());
     expect(screen.queryByTestId('anacare-hours-selection-bar')).not.toBeInTheDocument();
   });
 
@@ -245,11 +293,40 @@ describe('AnaCareHoursDetailPage', () => {
     expect(onValidateBatch).not.toHaveBeenCalled();
   });
 
-  it('POSITIVO — validar um turno chama onValidateShift', () => {
+  it('POSITIVO — validar um turno chama onValidateShift', async () => {
     const onValidateShift = vi.fn();
     render(<AnaCareHoursDetailPage axonicoService={AXONICO_SERVICE} patientDocumentService={PATIENT_DOCUMENT_SERVICE} snapshot={snapshot()} patientId="90000" onBack={vi.fn()} onValidateShift={onValidateShift} />);
     fireEvent.click(screen.getByTestId('anacare-hours-validate-shift-s1'));
     expect(onValidateShift).toHaveBeenCalled();
+    // change `anacare-horas-validando-prd` (26/09): `handleValidateShift` agora é async (rastreia
+    // `validatingShiftIds`) mesmo com um mock síncrono — sem esperar o `finally` assentar, o
+    // `act()` do RTL acusa "update not wrapped" (o setState do finally ainda não rodou).
+    await waitFor(() => expect(screen.getByTestId('anacare-hours-validate-shift-s1')).not.toBeDisabled());
+  });
+
+  it('POSITIVO — validar turno: enquanto a promise está pendente, o botão mostra "Validando…"/disabled/aria-busy; ao resolver, volta ao normal', async () => {
+    const { promise, resolve } = deferred();
+    const onValidateShift = vi.fn(() => promise);
+    render(<AnaCareHoursDetailPage axonicoService={AXONICO_SERVICE} patientDocumentService={PATIENT_DOCUMENT_SERVICE} snapshot={snapshot()} patientId="90000" onBack={vi.fn()} onValidateShift={onValidateShift} />);
+    const button = screen.getByTestId('anacare-hours-validate-shift-s1');
+    fireEvent.click(button);
+    expect(button).toHaveTextContent('admin.anacareHours.providerGroup.validating');
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute('aria-busy', 'true');
+    resolve();
+    await waitFor(() => expect(button).toHaveTextContent('admin.anacareHours.providerGroup.validateAction'));
+    expect(button).not.toBeDisabled();
+    expect(button).toHaveAttribute('aria-busy', 'false');
+  });
+
+  it('NEGATIVO — validar turno: promise rejeitada também volta ao normal (erro fica por conta de quem chama, já tratado no container)', async () => {
+    const onValidateShift = vi.fn().mockRejectedValue(new Error('boom'));
+    render(<AnaCareHoursDetailPage axonicoService={AXONICO_SERVICE} patientDocumentService={PATIENT_DOCUMENT_SERVICE} snapshot={snapshot()} patientId="90000" onBack={vi.fn()} onValidateShift={onValidateShift} />);
+    const button = screen.getByTestId('anacare-hours-validate-shift-s1');
+    fireEvent.click(button);
+    expect(button).toBeDisabled();
+    await waitFor(() => expect(button).not.toBeDisabled());
+    expect(button).toHaveTextContent('admin.anacareHours.providerGroup.validateAction');
   });
 
   it('POSITIVO — contestar abre o modal e confirmar chama onContestShift(shiftId, reason, note)', () => {
@@ -310,9 +387,10 @@ describe('AnaCareHoursDetailPage', () => {
     expect(screen.getByTestId('anacare-hours-select-shift-s2')).not.toBeChecked();
   });
 
-  it('POSITIVO — sem callbacks de escrita, os cliques não quebram (no-op)', () => {
+  it('POSITIVO — sem callbacks de escrita, os cliques não quebram (no-op)', async () => {
     render(<AnaCareHoursDetailPage axonicoService={AXONICO_SERVICE} patientDocumentService={PATIENT_DOCUMENT_SERVICE} snapshot={snapshot()} patientId="90000" onBack={vi.fn()} />);
     expect(() => fireEvent.click(screen.getByTestId('anacare-hours-validate-shift-s1'))).not.toThrow();
+    await waitFor(() => expect(screen.getByTestId('anacare-hours-validate-shift-s1')).not.toBeDisabled());
   });
 
   it('POSITIVO — resumo com contestados e as 3 origens mostra o sufixo de contestados e as 3 pílulas', () => {

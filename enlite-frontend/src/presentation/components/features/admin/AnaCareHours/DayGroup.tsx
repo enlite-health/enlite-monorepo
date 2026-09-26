@@ -56,6 +56,8 @@ interface DayGroupProps {
   onOpenContestModal: (shift: AnaCareShift) => void;
   selectedShiftIds: ReadonlySet<string>;
   onToggleShift: (shiftId: string) => void;
+  /** Turnos com `onValidateShift` EM VOO (feedback visual, 26/09) — botão da linha vira "Validando…"/disabled/aria-busy enquanto o próprio id estiver aqui. */
+  validatingShiftIds?: ReadonlySet<string>;
   /** Marca/desmarca TODOS os pendentes DESTE DIA de uma vez (checkbox de cabeçalho). */
   onToggleDayPending: (shifts: AnaCareShift[]) => void;
   sinCheckinHoursMode?: SinCheckinHoursMode;
@@ -82,6 +84,7 @@ export function DayGroup({
   onOpenContestModal,
   selectedShiftIds,
   onToggleShift,
+  validatingShiftIds,
   onToggleDayPending,
   sinCheckinHoursMode = 'zero',
   axonicoService,
@@ -173,6 +176,7 @@ export function DayGroup({
               onOpenContestModal={onOpenContestModal}
               selected={selectedShiftIds.has(shift.id)}
               onToggleShift={onToggleShift}
+              isValidating={validatingShiftIds?.has(shift.id) ?? false}
               highlight={shift.origin === 'sin_checkin'}
               sinCheckinHoursMode={sinCheckinHoursMode}
             />
@@ -191,6 +195,7 @@ function ShiftRow({
   onOpenContestModal,
   selected,
   onToggleShift,
+  isValidating,
   highlight,
   sinCheckinHoursMode = 'zero',
 }: {
@@ -201,6 +206,7 @@ function ShiftRow({
   onOpenContestModal: (shift: AnaCareShift) => void;
   selected: boolean;
   onToggleShift: (shiftId: string) => void;
+  isValidating: boolean;
   highlight: boolean;
   sinCheckinHoursMode?: SinCheckinHoursMode;
 }): JSX.Element {
@@ -258,12 +264,14 @@ function ShiftRow({
               <Button
                 size="sm"
                 variant="outline"
-                disabled={disableActions}
+                isLoading={false}
+                disabled={disableActions || isValidating}
+                aria-busy={isValidating}
                 onClick={() => onValidateShift(shift)}
                 className="shrink-0 whitespace-nowrap"
                 data-testid={`anacare-hours-validate-shift-${shift.id}`}
               >
-                {t('admin.anacareHours.providerGroup.validateAction')}
+                {isValidating ? t('admin.anacareHours.providerGroup.validating') : t('admin.anacareHours.providerGroup.validateAction')}
               </Button>
               {shift.status === 'pendiente' && (
                 <Button

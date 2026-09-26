@@ -822,6 +822,7 @@
         },
         "validatedBy": "Validado por {{name}} · {{date}}",
         "validateAction": "Validar",
+        "validating": "Validando…",
         "contestAction": "Contestar",
         "note": "Nota: {{note}}",
         "noteRestricted": "Nota restringida",
@@ -835,6 +836,7 @@
         "description": "De estos turnos, {{sinCheckin}} son sin check-in y {{webAdmin}} fueron cargados desde web admin. Una vez validados, no pueden reabrirse.",
         "cancel": "Cancelar",
         "confirm": "Validar pendientes",
+        "validating": "Validando…",
         "titleSelection_one": "Validar {{count}} turno seleccionado — {{hours}} h",
         "titleSelection_other": "Validar {{count}} turnos seleccionados — {{hours}} h"
       },

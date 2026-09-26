@@ -104,6 +104,13 @@ export function AnaCareHoursDetailPage({
   const [contestShiftId, setContestShiftId] = useState<string | null>(initialContestShiftId);
   const [selectedShiftIds, setSelectedShiftIds] = useState<Set<string>>(new Set());
   const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
+  // change `anacare-horas-validando-prd` (26/09): feedback visual — nada indicava que a validação
+  // (turno único ou lote) estava em voo, e a operadora podia achar que a tela travou. `validatingShiftIds`
+  // guarda os ids com `onValidateShift` pendente (repassado ao `DayGroup`/`ShiftRow`, que troca o
+  // rótulo do botão pra "Validando…"); `isValidatingBatch` faz o mesmo pro "Confirmar" do
+  // `ValidateBatchModal`, que agora só fecha/limpa a seleção DEPOIS que a promise assenta.
+  const [validatingShiftIds, setValidatingShiftIds] = useState<Set<string>>(new Set());
+  const [isValidatingBatch, setIsValidatingBatch] = useState(false);
 
   const shifts = useMemo(() => (patient ? allShiftsOf(patient) : []), [patient]);
   const progress = useMemo(() => validationProgress(shifts), [shifts]);
@@ -191,8 +198,22 @@ export function AnaCareHoursDetailPage({
 
   const contestShift = shifts.find((s) => s.id === contestShiftId) ?? null;
 
-  function handleValidateShift(shift: AnaCareShift): void {
-    void onValidateShift?.(shift);
+  async function handleValidateShift(shift: AnaCareShift): Promise<void> {
+    setValidatingShiftIds((prev) => new Set(prev).add(shift.id));
+    try {
+      await onValidateShift?.(shift);
+    } catch {
+      // O erro de verdade já é tratado por quem chama (`AnaCareHoursDetailContainer
+      // .handleValidateShift`, que nunca rejeita — só chega aqui num teste unitário com mock cru
+      // passando `onValidateShift` direto). Sem re-throw: este wrapper só cuida do rótulo
+      // "Validando…", nunca da mensagem de erro.
+    } finally {
+      setValidatingShiftIds((prev) => {
+        const next = new Set(prev);
+        next.delete(shift.id);
+        return next;
+      });
+    }
   }
 
   function toggleShift(shiftId: string): void {
@@ -220,10 +241,18 @@ export function AnaCareHoursDetailPage({
     });
   }
 
-  function handleConfirmBatch(): void {
-    void onValidateBatch?.(Array.from(selectedShiftIds));
-    setSelectedShiftIds(new Set());
-    setIsBatchModalOpen(false);
+  async function handleConfirmBatch(): Promise<void> {
+    setIsValidatingBatch(true);
+    try {
+      await onValidateBatch?.(Array.from(selectedShiftIds));
+    } catch {
+      // Idem `handleValidateShift`: o container já trata o erro de verdade — catch aqui é só rede
+      // de segurança pro estado visual em teste unitário com mock cru.
+    } finally {
+      setIsValidatingBatch(false);
+      setSelectedShiftIds(new Set());
+      setIsBatchModalOpen(false);
+    }
   }
 
   function handleConfirmContest(reason: ContestReason, note: string): void {
@@ -348,6 +377,7 @@ export function AnaCareHoursDetailPage({
               onOpenContestModal={(s) => setContestShiftId(s.id)}
               selectedShiftIds={selectedShiftIds}
               onToggleShift={toggleShift}
+              validatingShiftIds={validatingShiftIds}
               onToggleDayPending={toggleDayPending}
               sinCheckinHoursMode={sinCheckinHoursMode}
               axonicoService={axonicoService}
@@ -398,6 +428,7 @@ export function AnaCareHoursDetailPage({
           sinCheckinHoursMode={sinCheckinHoursMode}
           onConfirm={handleConfirmBatch}
           onCancel={() => setIsBatchModalOpen(false)}
+          isValidating={isValidatingBatch}
         />
       )}
 
