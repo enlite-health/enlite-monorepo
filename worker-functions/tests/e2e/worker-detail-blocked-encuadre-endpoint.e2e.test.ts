@@ -2,7 +2,7 @@
  * worker-detail-blocked-encuadre-endpoint.e2e.test.ts
  *
  * ClickUp 86ajeu7vw — prova de GARANTIA end-to-end (endpoint real) de que a aba
- * de Encuadres do perfil do prestador inclui os casos em status BLOQUEADO com o
+ * de Encuadres do perfil do prestador inclui os casos em status REJECTED com o
  * estágio (coluna do Kanban) — o caso "Júlia" da reunião: clicou postular, ficou
  * bloqueada por cadastro incompleto e NÃO aparecia na lista dela.
  *
@@ -92,8 +92,8 @@ afterAll(async () => {
   await pool.end();
 });
 
-describe('GET /api/admin/workers/:id — aba Encuadres inclui casos BLOQUEADOS (endpoint real)', () => {
-  it('o caso bloqueado aparece nos encuadres com kanbanStage=BLOQUEADO e isBlocked', async () => {
+describe('GET /api/admin/workers/:id — aba Encuadres inclui casos REJECTED (endpoint real)', () => {
+  it('o caso bloqueado aparece nos encuadres com kanbanStage=REJECTED e isBlocked', async () => {
     const res = await api.get(`/api/admin/workers/${workerId}`, {
       headers: { Authorization: `Bearer ${adminToken}` },
     });
@@ -105,7 +105,7 @@ describe('GET /api/admin/workers/:id — aba Encuadres inclui casos BLOQUEADOS (
 
     const blockedCase = encuadres.find((e) => e.caseNumber === CASE_NUMBER);
     expect(blockedCase).toBeDefined();
-    expect(blockedCase?.kanbanStage).toBe('BLOQUEADO');
+    expect(blockedCase?.kanbanStage).toBe('REJECTED');
     expect(blockedCase?.isBlocked).toBe(true);
   });
 });

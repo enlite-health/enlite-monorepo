@@ -51,7 +51,7 @@ import { dndKitDrag } from '../helpers/dndKitDrag';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-const CONTAINER = 'enlite-postgres';
+const CONTAINER = process.env.E2E_PG_CONTAINER || 'enlite-postgres';
 const DB_USER = 'enlite_admin';
 const DB_NAME = 'enlite_e2e';
 
@@ -244,7 +244,7 @@ test.describe('Kanban Fase 2 — Fluxo Completo E2E @integration', () => {
     await openKanban(page, vacancyId);
 
     const colIds = [
-      'INVITED', 'BLOQUEADO', 'INICIADO', 'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED',
+      'INVITED', 'INICIADO', 'PRE_SCREENING', 'COMPLETED',
       'CONFIRMED', 'SELECTED', 'REJECTED',
     ];
 
@@ -452,7 +452,7 @@ test.describe('Kanban Fase 2 — Fluxo Completo E2E @integration', () => {
     ).toHaveScreenshot('kanban-fase2-pathB-initiated.png', { maxDiffPixelRatio: 0.05 });
   });
 
-  test('F3b — Path B: webhook IN_PROGRESS — card migra para IN_PROGRESS', async ({ page, request }) => {
+  test('F3b — Path B: webhook IN_PROGRESS — card fica em Pre Screening (D433)', async ({ page, request }) => {
     await loginAsKanbanAdmin(page);
 
     expect(
@@ -469,7 +469,16 @@ test.describe('Kanban Fase 2 — Fluxo Completo E2E @integration', () => {
     ).toBe(200);
 
     const encId = await getEncuadreId(request, workerB_Id, vacancyId);
-    await waitForCardInStage(page, vacancyId, `kanban-card-${encId}`, 'IN_PROGRESS');
+    // Pre Screening une PRE_SCREENING + IN_PROGRESS (DX-2.1/DX-2.2): o card CONTINUA
+    // na coluna Pre Screening. Sem a conferência direta no banco, o passo do webhook
+    // deixaria de ser provado (o card já estava lá antes do webhook).
+    await waitForCardInStage(page, vacancyId, `kanban-card-${encId}`, 'PRE_SCREENING');
+    const stageAfterInProgress = runSQL(
+      `SELECT application_funnel_stage FROM worker_job_applications WHERE id = '${encId}'`,
+    );
+    if (!stageAfterInProgress.includes('IN_PROGRESS')) {
+      throw new Error(`[F3b] webhook IN_PROGRESS não persistiu no banco; estado atual: ${stageAfterInProgress}`);
+    }
 
     await expect(
       page.locator('[data-testid="kanban-board"]'),
@@ -548,7 +557,7 @@ test.describe('Kanban Fase 2 — Fluxo Completo E2E @integration', () => {
     });
     await page.waitForTimeout(300);
 
-    // Com 9 colunas (feature BLOQUEADO), COMPLETED e SELECTED ficam fora do
+    // Com 7 colunas (D433), COMPLETED e SELECTED ficam fora do
     // viewport 1920px em scrollLeft=0. Scroll horizontal do board até o fim
     // (mesma técnica de kanban-iniciado-blocked-columns K7) para que ambas as
     // bounding boxes fiquem dentro da área visível para o drag.

@@ -7,7 +7,7 @@
  * - banner vermelho de erro do fetch
  * - banner âmbar de moveError: WORKER_NOT_ELIGIBLE (com e sem workerStatus) vs erro genérico
  * - botão de fechar o banner de moveError (limpa o estado)
- * - handlers de mover/rejeitar/desfazer-rejeição repassados ao KanbanBoard
+ * - handler de mover repassado ao KanbanBoard
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
@@ -17,8 +17,6 @@ vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (k: string) => k }
 
 const refetch = vi.fn().mockResolvedValue(undefined);
 const moveEncuadre = vi.fn();
-const rejectBlocked = vi.fn();
-const unrejectBlocked = vi.fn();
 const promoteBlocked = vi.fn();
 
 interface MockHookState {
@@ -36,8 +34,6 @@ vi.mock('@hooks/admin/useWJAFunnel', () => ({
     error: mockState.error,
     refetch,
     moveEncuadre,
-    rejectBlocked,
-    unrejectBlocked,
     promoteBlocked,
   }),
 }));
@@ -46,13 +42,9 @@ vi.mock('@hooks/admin/useWJAFunnel', () => ({
 vi.mock('@presentation/components/features/admin/Kanban/KanbanBoard', () => ({
   KanbanBoard: ({
     onMove,
-    onRejectBlocked,
-    onUnrejectBlocked,
     onPromoteBlocked,
   }: {
     onMove: (encuadreId: string, targetStage: string) => Promise<unknown>;
-    onRejectBlocked: (blockedId: string, category: string) => Promise<unknown>;
-    onUnrejectBlocked: (blockedId: string) => Promise<unknown>;
     onPromoteBlocked?: (blockedId: string) => Promise<string | null>;
   }): ReactNode => (
     <div data-testid="fake-board">
@@ -68,12 +60,6 @@ vi.mock('@presentation/components/features/admin/Kanban/KanbanBoard', () => ({
       <button data-testid="fake-move" onClick={() => onMove('enc-1', 'REJECTED')}>
         move
       </button>
-      <button data-testid="fake-reject" onClick={() => onRejectBlocked('blk-1', 'WORKER_DECLINED')}>
-        reject
-      </button>
-      <button data-testid="fake-unreject" onClick={() => onUnrejectBlocked('blk-1')}>
-        unreject
-      </button>
     </div>
   ),
 }));
@@ -88,8 +74,6 @@ describe('VacancyFunnelKanban — branches', () => {
   beforeEach(() => {
     refetch.mockClear();
     moveEncuadre.mockReset();
-    rejectBlocked.mockReset();
-    unrejectBlocked.mockReset();
     promoteBlocked.mockReset();
     mockState = { data: null, isLoading: false, error: null };
   });
@@ -172,28 +156,6 @@ describe('VacancyFunnelKanban — branches', () => {
       expect(screen.getByText('admin.vacancyDetail.funnelView.kanban.moveErrorTitle')).toBeInTheDocument(),
     );
     expect(screen.getByText('Falha ao mover o encuadre')).toBeInTheDocument();
-  });
-
-  it('handleRejectBlocked: repassa id+categoria e atualiza o moveError (sucesso = null → sem banner)', async () => {
-    mockState = withBoardData();
-    rejectBlocked.mockResolvedValue(null);
-    render(<VacancyFunnelKanban vacancyId="vac-1" />);
-
-    fireEvent.click(screen.getByTestId('fake-reject'));
-
-    await waitFor(() => expect(rejectBlocked).toHaveBeenCalledWith('blk-1', 'WORKER_DECLINED'));
-    expect(screen.queryByTestId('kanban-move-error')).not.toBeInTheDocument();
-  });
-
-  it('handleUnrejectBlocked: repassa o id e mostra o banner quando falha', async () => {
-    mockState = withBoardData();
-    unrejectBlocked.mockResolvedValue({ message: 'não foi possível restaurar' });
-    render(<VacancyFunnelKanban vacancyId="vac-1" />);
-
-    fireEvent.click(screen.getByTestId('fake-unreject'));
-
-    await waitFor(() => expect(unrejectBlocked).toHaveBeenCalledWith('blk-1'));
-    await waitFor(() => expect(screen.getByText('não foi possível restaurar')).toBeInTheDocument());
   });
 
   // D300 — o handler traduz o motivo do backend para a frase que a recrutadora lê.

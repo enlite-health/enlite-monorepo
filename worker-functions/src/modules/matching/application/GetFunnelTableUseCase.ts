@@ -13,6 +13,15 @@ import {
   PRE_SELECTED_STAGES_SET,
   REJECTION_STAGES_SET,
 } from '../domain/applicationFunnelStages';
+import {
+  deriveKanbanColumn,
+  isMatchedNotInvited,
+  tallyKanbanColumns,
+  emptyFunnelColumnCounts,
+  KANBAN_COLUMN_BLOCKED,
+  type KanbanColumn,
+  type KanbanTallyRow,
+} from '../domain/kanbanColumn';
 
 // ── Bucket classification ────────────────────────────────────────────────────
 
@@ -84,20 +93,44 @@ export class GetFunnelTableUseCase {
     jobPostingId: string,
     bucket: FunnelBucket = 'ALL',
     cells: string[] | null = null,
+    columns: string[] | null = null,
   ): Promise<FunnelTableResult> {
-    const rawRows = await this.repo.fetchRawRows(jobPostingId);
+    const [rawRows, blockedRawRows] = await Promise.all([
+      this.repo.fetchRawRows(jobPostingId),
+      this.repo.fetchBlockedRawRows(jobPostingId),
+    ]);
 
-    // F2/C3: a projeção decide ANTES do KMS — ver projectWorkerFields.
-    const rows = await Promise.all(
-      rawRows.map(r => this.mapRow(r, cells)),
-    );
+    // F2/C3: a projeção decide ANTES do KMS — ver projectWorkerFields. A tentativa
+    // negada passa pela MESMA projeção (não pula o KMS por ser um caminho diferente).
+    const rows = await Promise.all(rawRows.map(r => this.mapRow(r, cells)));
+    const blockedRows = await Promise.all(blockedRawRows.map(r => this.mapRow(r, cells)));
 
-    // Build counts from ALL rows (regardless of bucket filter)
+    // Contagem por bucket: só WJA, igual a hoje (D437 — a Gestão à Vista não muda).
     const counts = this.buildCounts(rows);
+    // Contagem por coluna do Kanban (DX-2.6): WJA ∪ tentativa negada, MESMO SSOT do
+    // board (tallyKanbanColumns), a partir das linhas cruas (stage/source/messaged).
+    const wjaTallyRows: KanbanTallyRow[] = rawRows.map(r => ({
+      kind: 'wja',
+      stage: r.funnel_stage,
+      source: r.source,
+      messaged: r.messaged_at != null,
+      n: 1,
+    }));
+    const blockedTallyRows: KanbanTallyRow[] = blockedRawRows.map(() => ({
+      kind: 'blocked',
+      stage: null,
+      source: null,
+      messaged: false,
+      n: 1,
+    }));
+    counts.columns = tallyKanbanColumns([...wjaTallyRows, ...blockedTallyRows]);
 
-    // Apply optional bucket filter to returned rows
-    const filteredRows =
-      bucket === 'ALL'
+    // Com `columns`: filtra WJA ∪ bloqueadas pela coluna derivada (a tentativa negada
+    // só aparece quando o filtro inclui REJECTED). Sem `columns`: o filtro de bucket
+    // de hoje, só sobre WJA — bloqueadas nunca entram em `bucket=ALL`.
+    const filteredRows = columns
+      ? [...rows, ...blockedRows].filter(r => r.kanbanColumn != null && columns.includes(r.kanbanColumn))
+      : bucket === 'ALL'
         ? rows
         : rows.filter(r => classifyBucket(r) === bucket);
 
@@ -127,6 +160,15 @@ export class GetFunnelTableUseCase {
       ir === 'declined'  ? false :
       null;
 
+    // Mesma classificação do Kanban da vaga (SSOT em kanbanColumn.ts): tentativa
+    // negada = KANBAN_COLUMN_BLOCKED (REJECTED, D433); match candidate nunca
+    // mensageado fica de fora do board (null); o resto segue deriveKanbanColumn.
+    const kanbanColumn: Exclude<KanbanColumn, 'BLOQUEADO'> | null = raw.is_blocked
+      ? (KANBAN_COLUMN_BLOCKED as Exclude<KanbanColumn, 'BLOQUEADO'>)
+      : isMatchedNotInvited(raw.funnel_stage, raw.source, raw.messaged_at)
+        ? null
+        : (deriveKanbanColumn(raw.funnel_stage, raw.source) as Exclude<KanbanColumn, 'BLOQUEADO'>);
+
     return {
       id: raw.id,
       workerId: raw.worker_id,
@@ -143,6 +185,8 @@ export class GetFunnelTableUseCase {
       registrationComplete: raw.worker_status === 'REGISTERED',
       contactNotesCount: Number(raw.contact_notes_count ?? 0),
       selfAppliedAt: raw.self_applied_at ?? null,
+      kanbanColumn,
+      isBlocked: raw.is_blocked,
     };
   }
 
@@ -154,6 +198,7 @@ export class GetFunnelTableUseCase {
       REJECTED: 0,
       WITHDREW: 0,
       ALL: rows.length,
+      columns: emptyFunnelColumnCounts(),
     };
     for (const r of rows) {
       counts[classifyBucket(r)]++;

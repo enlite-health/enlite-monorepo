@@ -6,7 +6,7 @@
  * existing filters (search, status, priority), and absence of each filter.
  */
 
-import { buildListVacanciesQuery, ListVacanciesFilters } from '../vacancyListHelpers';
+import { buildListVacanciesQuery, ListVacanciesFilters, loadStageCounts } from '../vacancyListHelpers';
 
 // Minimal filters that satisfy the required fields
 function base(overrides: Partial<ListVacanciesFilters> = {}): ListVacanciesFilters {
@@ -226,5 +226,51 @@ describe('buildListVacanciesQuery — paramIndex sequencing', () => {
     expect(allParams[1]).toBe(20);           // $paramIndex (LIMIT)
     expect(allParams[2]).toBe(0);            // $paramIndex+1 (OFFSET)
     expect(paramIndex).toBe(2);
+  });
+});
+
+// ── loadStageCounts — uma consulta por página (não por vaga, critério 10) ───────
+
+describe('loadStageCounts', () => {
+  function makePool(rows: unknown[]) {
+    return { query: jest.fn().mockResolvedValue({ rows }) } as unknown as import('pg').Pool;
+  }
+
+  it('não chama query quando a lista de ids está vazia', async () => {
+    const pool = makePool([]);
+    const out = await loadStageCounts(pool, []);
+    expect(out.size).toBe(0);
+    expect((pool.query as jest.Mock)).not.toHaveBeenCalled();
+  });
+
+  it('chama query UMA vez, com [ids] e SQL contendo GROUP BY e UNION ALL', async () => {
+    const pool = makePool([]);
+    await loadStageCounts(pool, ['jp-a', 'jp-b']);
+    expect(pool.query).toHaveBeenCalledTimes(1);
+    const [sql, params] = (pool.query as jest.Mock).mock.calls[0];
+    expect(params).toEqual([['jp-a', 'jp-b']]);
+    expect(sql).toContain('GROUP BY');
+    expect(sql).toContain('UNION ALL');
+  });
+
+  it('agrupa INVITED/manual + IN_PROGRESS + 1 blocked em INICIADO:1, IN_PROGRESS:1, REJECTED:1', async () => {
+    const pool = makePool([
+      { id: 'jp-a', kind: 'wja', stage: 'INVITED', source: 'manual', messaged: false, n: 1 },
+      { id: 'jp-a', kind: 'wja', stage: 'IN_PROGRESS', source: 'talentum', messaged: true, n: 1 },
+      { id: 'jp-a', kind: 'blocked', stage: null, source: null, messaged: false, n: 1 },
+    ]);
+    const out = await loadStageCounts(pool, ['jp-a']);
+    const counts = out.get('jp-a')!;
+    expect(counts.INICIADO).toBe(1);
+    expect(counts.IN_PROGRESS).toBe(1);
+    expect(counts.REJECTED).toBe(1);
+  });
+
+  it('um id sem linha nenhuma devolve as 8 colunas zeradas', async () => {
+    const pool = makePool([{ id: 'jp-a', kind: 'wja', stage: 'INVITED', source: 'manual', messaged: false, n: 1 }]);
+    const out = await loadStageCounts(pool, ['jp-a', 'jp-sem-linha']);
+    const counts = out.get('jp-sem-linha')!;
+    expect(Object.values(counts).every((n) => n === 0)).toBe(true);
+    expect(Object.keys(counts)).toHaveLength(8);
   });
 });

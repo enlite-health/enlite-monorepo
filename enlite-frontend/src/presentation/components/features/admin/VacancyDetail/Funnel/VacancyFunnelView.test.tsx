@@ -33,17 +33,18 @@ vi.mock('./VacancyFunnelTable', () => ({
   VacancyFunnelTable: () => <div data-testid="funnel-table" />,
 }));
 
+// A View só lê `tab.key` do que a aba devolve (handleTabChange); quem resolve o FunnelTab
+// completo (kind/column/bucket) é a própria View, buscando em FUNNEL_TABS de verdade por essa
+// key — por isso o mock abaixo só precisa devolver a key, sem duplicar o shape de FunnelTab.
 vi.mock('./VacancyFunnelTabs', () => ({
   VacancyFunnelTabs: ({
-    onDispatchInvites,
-    onBucketChange,
+    onTabChange,
   }: {
-    onDispatchInvites: () => void;
-    onBucketChange: (b: string) => void;
+    onTabChange: (tab: { key: string }) => void;
   }) => (
     <div data-testid="funnel-tabs">
-      <button onClick={() => onBucketChange('POSTULATED')}>postulated</button>
-      <button onClick={onDispatchInvites}>dispatch</button>
+      <button onClick={() => onTabChange({ key: 'POSTULATED' })}>postulated</button>
+      <button onClick={() => onTabChange({ key: 'PRE_SCREENING' })}>pre-screening</button>
     </div>
   ),
 }));
@@ -73,6 +74,7 @@ const mockData: FunnelTableData = {
     REJECTED: 0,
     WITHDREW: 0,
     ALL: 0,
+    columns: {},
   },
 };
 
@@ -130,5 +132,17 @@ describe('VacancyFunnelView', () => {
         mockUseVacancyFunnelTable.mock.calls.length - 1
       ];
     expect(lastCall[2]).toBe(false);
+  });
+
+  it('clicar em "Pre Screening" chama o hook com a coluna (sources PRE_SCREENING + IN_PROGRESS)', async () => {
+    render(<VacancyFunnelView vacancyId="vac-1" />);
+    await userEvent.click(screen.getByText('pre-screening'));
+    const lastCall =
+      mockUseVacancyFunnelTable.mock.calls[
+        mockUseVacancyFunnelTable.mock.calls.length - 1
+      ];
+    const tabArg = lastCall[1] as { kind: string; column: { sources: string[] } };
+    expect(tabArg.kind).toBe('column');
+    expect(tabArg.column.sources).toEqual(['PRE_SCREENING', 'IN_PROGRESS']);
   });
 });

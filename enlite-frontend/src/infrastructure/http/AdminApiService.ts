@@ -355,9 +355,13 @@ class AdminApiServiceClass {
 
   async getVacancyFunnelTable(
     vacancyId: string,
-    bucket?: 'INVITED' | 'POSTULATED' | 'PRE_SELECTED' | 'REJECTED' | 'WITHDREW' | 'ALL',
+    query:
+      | { bucket: 'INVITED' | 'POSTULATED' | 'PRE_SELECTED' | 'REJECTED' | 'WITHDREW' | 'ALL' }
+      | { columns: readonly string[] },
   ): Promise<import('@domain/entities/Funnel').FunnelTableResponse> {
-    const qs = bucket ? `?bucket=${bucket}` : '';
+    const qs = 'bucket' in query
+      ? `?bucket=${query.bucket}`
+      : `?columns=${query.columns.join(',')}`;
     return this.request<import('@domain/entities/Funnel').FunnelTableResponse>(
       'GET',
       `/api/admin/vacancies/${vacancyId}/funnel-table${qs}`,

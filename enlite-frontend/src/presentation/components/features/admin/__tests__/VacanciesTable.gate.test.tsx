@@ -12,10 +12,8 @@ const draftRow: VacancyRow = {
   status: 'Esperando Ativação',
   priority: 'NORMAL',
   diasAberto: '01',
-  convidados: '1',
+  stageCounts: { INVITED: 1 },
   postulados: '1',
-  confirmados: '1',
-  selecionados: '1',
   faltantes: '1',
   isDraft: true,
 };

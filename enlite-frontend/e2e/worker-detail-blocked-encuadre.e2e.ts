@@ -8,7 +8,7 @@
  *
  * Caso da "Júlia": clicou em postular na vaga 800, foi BLOQUEADO (docs incompletos)
  * e por isso NÃO aparecia na aba de Encuadres — a recrutadora não conseguia ver.
- * Agora a linha bloqueada aparece na tabela com o badge "Bloqueados" na coluna
+ * Agora a linha bloqueada aparece na tabela com o badge "Rechazados" na coluna
  * "Estado", ao lado dos encuadres normais.
  *
  * Login: Firebase Auth REAL (enlite-prd) via UI — mesma conta do auth.setup.
@@ -54,7 +54,7 @@ const blockedEncuadre = {
   caseNumber: 800,
   vacancyNumber: 2,
   patientName: 'Julia Gómez',
-  kanbanStage: 'BLOQUEADO',
+  kanbanStage: 'REJECTED',
   vacancyStatus: 'BUSQUEDA',
   resultado: null,
   interviewDate: null,
@@ -158,10 +158,10 @@ test.describe('Worker detail — aba de Encuadres inclui casos BLOQUEADOS (auth 
     // Coluna de estágio ("Estado") presente no cabeçalho.
     await expect(page.getByRole('columnheader', { name: 'Estado' })).toBeVisible();
 
-    // Caso bloqueado (Júlia — caso 800) aparece com badge "Bloqueados" + contagem.
+    // Caso bloqueado (Júlia — caso 800) aparece com badge "Rechazados" + contagem.
     await expect(table.getByText('800')).toBeVisible();
     await expect(table.getByText('Julia Gómez')).toBeVisible();
-    await expect(table.getByText('Bloqueados')).toBeVisible();
+    await expect(table.getByText('Rechazados')).toBeVisible();
     await expect(table.getByText(/2 intento/)).toBeVisible();
 
     // Encuadre normal continua listado (não substituído).

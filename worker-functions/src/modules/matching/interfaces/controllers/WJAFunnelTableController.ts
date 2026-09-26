@@ -3,10 +3,14 @@ import { reportError } from '@shared/logging';
 import { cellsOfRequest } from '@modules/identity/permissions';
 import { GetFunnelTableUseCase } from '../../application/GetFunnelTableUseCase';
 import { FunnelBucket } from '../../domain/FunnelTableRow';
+import { FUNNEL_COLUMNS } from '../../domain/kanbanColumn';
 
 const VALID_BUCKETS = new Set<FunnelBucket>([
   'ALL', 'INVITED', 'POSTULATED', 'PRE_SELECTED', 'REJECTED', 'WITHDREW',
 ]);
+
+/** As 8 colunas do Kanban, sem BLOQUEADO (D433: tentativa negada = REJECTED). */
+const VALID_COLUMNS = new Set<string>(FUNNEL_COLUMNS);
 
 /**
  * WJAFunnelTableController
@@ -39,9 +43,20 @@ export class WJAFunnelTableController {
         return;
       }
 
+      // ?columns=<ids CSV> — filtro por coluna do Kanban (DX-2.6). BLOQUEADO nunca é
+      // válido aqui: a tentativa negada é filtrada por REJECTED (D433).
+      const columns = (req.query.columns as string | undefined)?.split(',').filter(Boolean) ?? null;
+      if (columns) {
+        const invalida = columns.find((c) => !VALID_COLUMNS.has(c));
+        if (invalida) {
+          res.status(400).json({ success: false, error: `Invalid column "${invalida}"` });
+          return;
+        }
+      }
+
       // F2/C3: as células do ator descem até a projeção. `cellsOfRequest`
       // devolve `null` quando o engine não decidiu — e `null` ≠ `[]`.
-      const result = await this.useCase.execute(id, bucketParam as FunnelBucket, cellsOfRequest(req));
+      const result = await this.useCase.execute(id, bucketParam as FunnelBucket, cellsOfRequest(req), columns);
 
       res.json({ success: true, data: result });
     } catch (error) {

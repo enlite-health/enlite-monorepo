@@ -1,17 +1,17 @@
 /**
  * kanban-iniciado-blocked-columns.integration.e2e.ts @integration
  *
- * Suite E2E visual — nova coluna BLOQUEADO (cards com isBlocked=true, sem encuadreId,
+ * Suite E2E visual — coluna Rejeitados (tentativa negada) (cards com isBlocked=true, sem encuadreId,
  * que DEIXAM de vir mesclados em INICIADO) e coluna PRE_SCREENING (renomeada de INITIATED).
  *
  * Cenários cobertos:
- *   K1 — Board com 9 colunas na ordem correta (INVITED→BLOQUEADO→INICIADO→...)
+ *   K1 — Board com 7 colunas na ordem correta (INVITED→INICIADO→PRE_SCREENING→...→REJECTED)
  *   K2 — Coluna INICIADO: card normal (sem flag isBlocked)
- *   K3 — Coluna BLOQUEADO: card bloqueado com badge + motivo + missingFields + attemptCount
- *   K4 — Fluxo real de promoção: worker completa cadastro → card some de BLOQUEADO e
+ *   K3 — Coluna Rejeitados (tentativa negada): card bloqueado com badge + motivo + missingFields + attemptCount
+ *   K4 — Fluxo real de promoção: worker completa cadastro → card some de Rejeitados e
  *        reaparece como card normal em INICIADO (o backend cria a WJA)
  *   K5 — Coluna PRE_SCREENING: card normal (worker que passou pelo gate Talentum)
- *   K6 — Screenshot assertion das 9 colunas na ordem nova (ES)
+ *   K6 — Screenshot assertion das 7 colunas na ordem nova (ES)
  *   K7 — Jornada do promovido pelas demais colunas: PRE_SCREENING → IN_PROGRESS →
  *        COMPLETED (webhook Talentum real) → SELECTED (drag real), screenshot em cada
  *
@@ -23,7 +23,7 @@
  * Seed criado dinamicamente no beforeAll:
  *   - 1 vaga de teste
  *   - 1 WJA em INVITED (normal)  → seed manual SQL
- *   - 1 tentativa bloqueada (isBlocked=true) via worker_blocked_applications → coluna BLOQUEADO
+ *   - 1 tentativa bloqueada (isBlocked=true) via worker_blocked_applications → coluna Rejeitados (tentativa negada)
  *   - 1 WJA em PRE_SCREENING via webhook Talentum INITIATED
  *
  * Auth: USE_MOCK_AUTH=true no backend; token mock_<base64> injetado pelo interceptor.
@@ -69,7 +69,7 @@ import {
 
 // ── DB helpers ─────────────────────────────────────────────────────────────────
 
-const CONTAINER = 'enlite-postgres';
+const CONTAINER = process.env.E2E_PG_CONTAINER || 'enlite-postgres';
 const DB_USER = 'enlite_admin';
 const DB_NAME = 'enlite_e2e';
 
@@ -237,13 +237,12 @@ test.describe('Kanban INICIADO + PRE_SCREENING — colunas novas @integration', 
 
   // ── K1 — Board exibe 9 colunas na ordem correta ────────────────────────────
 
-  test('K1 — Board exibe 9 colunas na ordem: INVITED→BLOQUEADO→INICIADO→PRE_SCREENING→...→REJECTED', async ({ page }) => {
+  test('K1 — Board exibe 7 colunas na ordem: INVITED→INICIADO→PRE_SCREENING→...→REJECTED', async ({ page }) => {
     await loginAsKanbanAdmin(page);
     await openKanban(page, vacancyId);
 
     const expectedCols = [
-      'INVITED', 'BLOQUEADO', 'INICIADO', 'PRE_SCREENING', 'IN_PROGRESS',
-      'COMPLETED', 'CONFIRMED', 'SELECTED', 'REJECTED',
+      'INVITED', 'INICIADO', 'PRE_SCREENING', 'COMPLETED', 'CONFIRMED', 'SELECTED', 'REJECTED',
     ];
 
     for (const col of expectedCols) {
@@ -308,9 +307,9 @@ test.describe('Kanban INICIADO + PRE_SCREENING — colunas novas @integration', 
     ).toHaveScreenshot('kanban-iniciado-k2-normal-card.png', { maxDiffPixelRatio: 0.05 });
   });
 
-  // ── K3 — BLOQUEADO: card com badge + motivo + missingFields ─────────────────
+  // ── K3 — Rejeitados (tentativa negada): card com badge + motivo + missingFields ─
 
-  test('K3 — Coluna BLOQUEADO: card com badge, motivo e campos faltantes', async ({ page }) => {
+  test('K3 — Coluna Rejeitados (tentativa negada): card com badge, motivo e campos faltantes', async ({ page }) => {
     // Tentativa REAL de postulação: worker INCOMPLETE_REGISTER chama o mesmo
     // endpoint da pessoa real e o gate (assertWorkerCanApply) devolve 403 e grava
     // worker_blocked_applications com missing_fields_at_attempt calculados por
@@ -341,16 +340,15 @@ test.describe('Kanban INICIADO + PRE_SCREENING — colunas novas @integration', 
     await loginAsKanbanAdmin(page);
     await openKanban(page, vacancyId);
 
-    // The blocked card appears in the dedicated BLOQUEADO column — it no longer
-    // gets merged into INICIADO (contract change: stages.BLOQUEADO is a new key,
-    // sem encuadreId → data-drag-disabled=true)
-    const bloqueadoCol = page.locator('[data-testid="kanban-column-BLOQUEADO"]');
-    await expect(bloqueadoCol, 'Coluna BLOQUEADO deve estar visível').toBeVisible();
+    // D433: bloqueado vai para Rejeitados (tentativa negada) — não existe mais coluna
+    // dedicada de bloqueio; o card aparece em REJECTED (sem encuadreId → data-drag-disabled=true)
+    const bloqueadoCol = page.locator('[data-testid="kanban-column-REJECTED"]');
+    await expect(bloqueadoCol, 'Coluna REJECTED deve estar visível').toBeVisible();
 
     // Wait for the column to have at least 1 card (may need polling)
     await expect(
-      page.locator('[data-testid="kanban-column-BLOQUEADO-count"]'),
-      'BLOQUEADO deve ter pelo menos 1 card',
+      page.locator('[data-testid="kanban-column-REJECTED-count"]'),
+      'REJECTED deve ter pelo menos 1 card',
     ).not.toHaveText('0', { timeout: 15_000 });
 
     // INICIADO must NOT contain the blocked card / badge anymore
@@ -360,9 +358,9 @@ test.describe('Kanban INICIADO + PRE_SCREENING — colunas novas @integration', 
       'INICIADO não deve mais conter cards bloqueados (mesclagem removida)',
     ).not.toBeVisible();
 
-    // The blocked card should show the BLOQUEADO badge
+    // The blocked card should show the Rejeitados (tentativa negada) badge
     const blockedBadge = bloqueadoCol.locator('[data-testid="blocked-badge"]').first();
-    await expect(blockedBadge, 'Badge BLOQUEADO deve estar visível na coluna BLOQUEADO').toBeVisible();
+    await expect(blockedBadge, 'Badge de tentativa negada deve estar visível na coluna Rejeitados (tentativa negada)').toBeVisible();
 
     // The blocked reason label should be visible
     const blockedReason = bloqueadoCol.locator('[data-testid="blocked-reason"]').first();
@@ -381,9 +379,9 @@ test.describe('Kanban INICIADO + PRE_SCREENING — colunas novas @integration', 
     ).toHaveScreenshot('kanban-iniciado-k3-blocked-card.png', { maxDiffPixelRatio: 0.05 });
   });
 
-  // ── K4 — Fluxo real de promoção: BLOQUEADO → INICIADO ao completar cadastro ─
+  // ── K4 — Fluxo real de promoção: Rejeitados (tentativa negada) → INICIADO ao completar cadastro ─
 
-  test('K4 — Worker completa cadastro: card some de BLOQUEADO e aparece normal em INICIADO', async ({ page }) => {
+  test('K4 — Worker completa cadastro: card some de Rejeitados e aparece em INICIADO', async ({ page }) => {
     if (!blockedWba_Id) throw new Error('[K4] depende do seed de K3 (worker_blocked_applications)');
 
     // 1) Completar o cadastro pelo MESMO caminho da pessoa real (endpoints
@@ -451,10 +449,15 @@ test.describe('Kanban INICIADO + PRE_SCREENING — colunas novas @integration', 
     );
     expect(availabilityRes.status(), 'availability deve salvar').toBe(200);
 
-    // Docs obrigatórios para CAREGIVER (SSOT workerDocumentPolicy): identity + criminal
+    // Docs obrigatórios para CAREGIVER (SSOT workerDocumentPolicy): identity + criminal.
+    // filePath no PREFIXO que matchesOwnedDocumentPrefix exige para o dono
+    // (workers/<próprio workerId>/..., shape de GCSStorageService.signUpload) —
+    // `gs://e2e-bucket/workers/test/...` cai em resolveDocumentRelativePath como
+    // URL absoluta de outro host e nunca resolve, então a checagem de prefixo
+    // sempre reprovava (400), independente de qual id viesse depois de `workers/`.
     const docs: Record<string, string> = {
-      identity_document: 'gs://e2e-bucket/workers/test/identity_front.pdf',
-      criminal_record: 'gs://e2e-bucket/workers/test/criminal_record.pdf',
+      identity_document: `workers/${workerBlocked_Id}/identity_document/identity_front.pdf`,
+      criminal_record: `workers/${workerBlocked_Id}/criminal_record/criminal_record.pdf`,
     };
     for (const [docType, filePath] of Object.entries(docs)) {
       const docRes = await page.request.post(
@@ -511,21 +514,21 @@ test.describe('Kanban INICIADO + PRE_SCREENING — colunas novas @integration', 
       .poll(
         async () => {
           await openKanban(page, vacancyId);
-          const bloqueadoCard = page.locator(`[data-testid="kanban-card-${blockedWba_Id}"][data-stage="BLOQUEADO"]`);
+          const bloqueadoCard = page.locator(`[data-testid="kanban-card-${blockedWba_Id}"][data-stage="REJECTED"]`);
           return (await bloqueadoCard.count()) === 0;
         },
         {
-          message: 'Card deve sumir da coluna BLOQUEADO após completar o cadastro',
+          message: 'Card deve sumir da coluna REJECTED após completar o cadastro',
           timeout: 60_000,
           intervals: [2_000, 4_000, 6_000, 8_000],
         },
       )
       .toBe(true);
 
-    // Card sumiu de BLOQUEADO
+    // Card sumiu de Rejeitados
     await expect(
-      page.locator('[data-testid="kanban-column-BLOQUEADO"]').locator(`text=${workerBlocked_Phone}`),
-      'Worker promovido não deve mais aparecer em BLOQUEADO',
+      page.locator('[data-testid="kanban-column-REJECTED"]').locator(`text=${workerBlocked_Phone}`),
+      'Worker promovido não deve mais aparecer em Rejeitados',
     ).not.toBeVisible();
 
     await expect(
@@ -538,7 +541,7 @@ test.describe('Kanban INICIADO + PRE_SCREENING — colunas novas @integration', 
     await expect(promotedCard.first(), 'Card promovido deve aparecer normal em INICIADO').toBeVisible({ timeout: 15_000 });
     await expect(
       promotedCard.first().locator('[data-testid="blocked-badge"]'),
-      'Card promovido não deve mais ter o badge BLOQUEADO',
+      'Card promovido não deve mais ter o badge de tentativa negada',
     ).not.toBeVisible();
 
     await expect(
@@ -634,16 +637,15 @@ test.describe('Kanban INICIADO + PRE_SCREENING — colunas novas @integration', 
     ).toHaveScreenshot('kanban-iniciado-k5-pre-screening.png', { maxDiffPixelRatio: 0.05 });
   });
 
-  // ── K6 — Screenshot final das 9 colunas populadas ─────────────────────────
+  // ── K6 — Screenshot final das 7 colunas populadas ─────────────────────────
 
-  test('K6 — Screenshot final: 9 colunas na ordem nova com cards em INVITED, INICIADO, PRE_SCREENING', async ({ page }) => {
+  test('K6 — Screenshot final: 7 colunas na ordem nova com cards em INVITED, INICIADO, PRE_SCREENING', async ({ page }) => {
     await loginAsKanbanAdmin(page);
     await openKanban(page, vacancyId);
 
-    // Assert all 9 columns visible with correct order
+    // Assert all 7 columns visible with correct order
     const expectedCols = [
-      'INVITED', 'BLOQUEADO', 'INICIADO', 'PRE_SCREENING', 'IN_PROGRESS',
-      'COMPLETED', 'CONFIRMED', 'SELECTED', 'REJECTED',
+      'INVITED', 'INICIADO', 'PRE_SCREENING', 'COMPLETED', 'CONFIRMED', 'SELECTED', 'REJECTED',
     ];
 
     for (const col of expectedCols) {
@@ -677,7 +679,7 @@ test.describe('Kanban INICIADO + PRE_SCREENING — colunas novas @integration', 
   // wja-flow-visuals — este cenário NÃO os duplica; cobre só o que é novo: a
   // continuidade do promovido.
 
-  test('K7 — Promovido percorre o funil: PRE_SCREENING → IN_PROGRESS → COMPLETED → SELECTED', async ({ page, request }) => {
+  test('K7 — Promovido percorre o funil: Pre Screening (PRE_SCREENING + IN_PROGRESS) → COMPLETED → SELECTED', async ({ page, request }) => {
     const promotedWjaId = getWjaIdByWorkerAndJob(workerBlocked_Id, vacancyId);
     if (!promotedWjaId) throw new Error('[K7] depende de K4 (WJA promovida inexistente)');
 
@@ -711,12 +713,20 @@ test.describe('Kanban INICIADO + PRE_SCREENING — colunas novas @integration', 
       page.locator('[data-testid="kanban-board"]'),
     ).toHaveScreenshot('kanban-iniciado-k7-prescreening.png', { maxDiffPixelRatio: 0.05 });
 
-    // PRE_SCREENING → IN_PROGRESS
+    // Pre Screening: webhook IN_PROGRESS — o card CONTINUA na coluna Pre Screening
+    // (PRE_SCREENING + IN_PROGRESS unidas, DX-2.1/DX-2.2); sem a conferência direta
+    // no banco, o passo do webhook deixaria de ser provado (o card já estava lá).
     expect(
       await sendTalentumWebhook(request, { ...webhookBase, subtype: 'IN_PROGRESS' }),
       'webhook IN_PROGRESS deve retornar 200',
     ).toBe(200);
-    await waitForCardInStage(page, vacancyId, `kanban-card-${promotedWjaId}`, 'IN_PROGRESS');
+    await waitForCardInStage(page, vacancyId, `kanban-card-${promotedWjaId}`, 'PRE_SCREENING');
+    const stageAfterInProgress = runSQL(
+      `SELECT application_funnel_stage FROM worker_job_applications WHERE id = '${promotedWjaId}'`,
+    );
+    if (!stageAfterInProgress.includes('IN_PROGRESS')) {
+      throw new Error(`[K7] webhook IN_PROGRESS não persistiu no banco; estado atual: ${stageAfterInProgress}`);
+    }
     await expect(
       page.locator('[data-testid="kanban-board"]'),
     ).toHaveScreenshot('kanban-iniciado-k7-in-progress.png', { maxDiffPixelRatio: 0.05 });

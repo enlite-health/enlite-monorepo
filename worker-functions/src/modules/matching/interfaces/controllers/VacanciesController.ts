@@ -4,8 +4,10 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import {
   buildListVacanciesQuery,
   mapVacancyListRow,
+  loadStageCounts,
   VacancyListRow,
 } from './vacancyListHelpers';
+import { emptyFunnelColumnCounts } from '../../domain/kanbanColumn';
 import { normalizeSchedule } from '../../infrastructure/scheduleNormalizer';
 import { SOURCE_LOCKED_FIELDS } from './vacancyCrudHelpers';
 import { AdminVacancyDetailSchema } from '../schemas/AdminVacancyDetailSchema';
@@ -85,7 +87,11 @@ export class VacanciesController {
       params.push(parseInt(limit as string), parseInt(offset as string));
 
       const result = await this.db.query(finalQuery, params);
-      const vacancies = (result.rows as VacancyListRow[]).map((r) => mapVacancyListRow(projectPatientInVacancy(r, cellsDaLista)));
+      const stageCounts = await loadStageCounts(this.db, (result.rows as VacancyListRow[]).map((r) => r.id));
+      const vacancies = (result.rows as VacancyListRow[]).map((r) => ({
+        ...mapVacancyListRow(projectPatientInVacancy(r, cellsDaLista)),
+        stageCounts: stageCounts.get(r.id) ?? emptyFunnelColumnCounts(),
+      }));
 
       res.status(200).json({
         success: true,

@@ -45,7 +45,7 @@ export function ok(body: unknown) {
 
 export function emptyStages(): Record<string, unknown[]> {
   return {
-    INVITED: [], BLOQUEADO: [], INICIADO: [], PRE_SCREENING: [],
+    INVITED: [], INICIADO: [], PRE_SCREENING: [],
     IN_PROGRESS: [], COMPLETED: [], CONFIRMED: [], SELECTED: [], REJECTED: [],
   };
 }

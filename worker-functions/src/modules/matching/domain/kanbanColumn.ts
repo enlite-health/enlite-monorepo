@@ -9,7 +9,8 @@
  *
  * Migration 230: INITIATED renamed to PRE_SCREENING; INICIADO added (INVITED+manual).
  * Feature BLOQUEADO (2026-07-03): blocked attempts (worker_blocked_applications) have
- * no funnel stage — they map to KANBAN_COLUMN_BLOCKED, handled by the caller, not here.
+ * no funnel stage — they map to KANBAN_COLUMN_BLOCKED (= REJECTED, D433), handled by
+ * the caller, not here.
  */
 export type KanbanColumn =
   | 'INVITED'
@@ -22,8 +23,8 @@ export type KanbanColumn =
   | 'SELECTED'
   | 'REJECTED';
 
-/** Column for a blocked postulation attempt (no WJA / no funnel stage). */
-export const KANBAN_COLUMN_BLOCKED: KanbanColumn = 'BLOQUEADO';
+/** Column for a blocked postulation attempt — Rejeitados (D433: 'Bloqueados não existe; bloqueado vai para Rejeitados'). */
+export const KANBAN_COLUMN_BLOCKED: KanbanColumn = 'REJECTED';
 
 /**
  * A WJA row persisted by the matchmaking algorithm (MatchmakingService.saveMatchResults:
@@ -117,4 +118,39 @@ export function deriveKanbanColumn(stage: string | null, source: string | null):
   if (stage === 'INVITED' && source === 'manual') return 'INICIADO';
   // INVITED (auto-invite), null, ou stage desconhecido → INVITED (fallback).
   return 'INVITED';
+}
+
+/** Contagem por coluna do Kanban — as MESMAS colunas que o operador vê no board. */
+export type FunnelColumnCounts = Record<Exclude<KanbanColumn, 'BLOQUEADO'>, number>;
+
+/** Zero em TODAS as colunas — coluna sem ninguém aparece como 0, nunca ausente. */
+export function emptyFunnelColumnCounts(): FunnelColumnCounts {
+  const counts = {} as FunnelColumnCounts;
+  for (const column of FUNNEL_COLUMNS) {
+    counts[column as keyof FunnelColumnCounts] = 0;
+  }
+  return counts;
+}
+
+/** Uma linha já agrupada: candidatura (stage/source/messaged) ou tentativa negada. */
+export interface KanbanTallyRow {
+  kind: 'wja' | 'blocked';
+  stage: string | null;
+  source: string | null;
+  messaged: boolean;
+  n: number;
+}
+
+/** Contagem por coluna com os MESMOS recortes do Kanban (WJAFunnelController.getEncuadreFunnel). */
+export function tallyKanbanColumns(rows: readonly KanbanTallyRow[]): FunnelColumnCounts {
+  const counts = emptyFunnelColumnCounts();
+  for (const r of rows) {
+    if (r.kind === 'blocked') {
+      counts[KANBAN_COLUMN_BLOCKED as keyof FunnelColumnCounts] += r.n;
+      continue;
+    }
+    if (isMatchedNotInvited(r.stage, r.source, r.messaged ? 'sent' : null)) continue;
+    counts[deriveKanbanColumn(r.stage, r.source) as keyof FunnelColumnCounts] += r.n;
+  }
+  return counts;
 }
