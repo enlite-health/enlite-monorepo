@@ -4,8 +4,11 @@ import {
   kanbanColumnRank,
   mostAdvancedColumn,
   tallyKanbanColumns,
+  emptyFunnelColumnCounts,
+  boardPosition,
   FUNNEL_COLUMNS,
   KANBAN_COLUMN_BLOCKED,
+  VACANCY_BOARD_COLUMNS,
   type KanbanColumn,
   type KanbanTallyRow,
 } from '../kanbanColumn';
@@ -20,6 +23,11 @@ describe('deriveKanbanColumn', () => {
     expect(deriveKanbanColumn('SELECTED', 'talentum')).toBe('SELECTED');
     expect(deriveKanbanColumn('REJECTED', 'manual')).toBe('REJECTED');
     expect(deriveKanbanColumn('CONFIRMED', 'talentum')).toBe('CONFIRMED');
+  });
+
+  /** Fase 4 (D430): destino do arrasto manual do quadro B, entre SELECTED e REJECTED. */
+  it('maps QUICK_RESPONSE_TEAM to its own column', () => {
+    expect(deriveKanbanColumn('QUICK_RESPONSE_TEAM', null)).toBe('QUICK_RESPONSE_TEAM');
   });
 
   it('groups COMPLETED / QUALIFIED / IN_DOUBT into COMPLETED', () => {
@@ -127,8 +135,13 @@ describe('kanbanColumnRank', () => {
     const ranked = [...FUNNEL_COLUMNS].sort((a, b) => kanbanColumnRank(a) - kanbanColumnRank(b));
     expect(ranked).toEqual([
       'REJECTED', 'INVITED', 'INICIADO', 'PRE_SCREENING',
-      'IN_PROGRESS', 'COMPLETED', 'CONFIRMED', 'SELECTED',
+      'IN_PROGRESS', 'COMPLETED', 'CONFIRMED', 'SELECTED', 'QUICK_RESPONSE_TEAM',
     ]);
+  });
+
+  /** Fase 4 (DX-4.8): QUICK_RESPONSE_TEAM entra depois de SELECTED — mais avançada. */
+  it('ranks QUICK_RESPONSE_TEAM above SELECTED', () => {
+    expect(kanbanColumnRank('QUICK_RESPONSE_TEAM')).toBeGreaterThan(kanbanColumnRank('SELECTED'));
   });
 
   /**
@@ -200,9 +213,45 @@ describe('tallyKanbanColumns', () => {
     expect(tally.REJECTED).toBe(2);
   });
 
-  it('devolve as 8 colunas, todas zero, quando não há linhas', () => {
+  it('devolve as 9 colunas, todas zero, quando não há linhas (Fase 4: + QUICK_RESPONSE_TEAM)', () => {
     const tally = tallyKanbanColumns([]);
-    expect(Object.keys(tally)).toHaveLength(8);
+    expect(Object.keys(tally)).toHaveLength(9);
     expect(Object.values(tally).every((n) => n === 0)).toBe(true);
+  });
+});
+
+/** emptyFunnelColumnCounts — todas as colunas do funil, nunca uma chave ausente. */
+describe('emptyFunnelColumnCounts', () => {
+  it('tem 9 chaves (Fase 4: + QUICK_RESPONSE_TEAM)', () => {
+    expect(Object.keys(emptyFunnelColumnCounts())).toHaveLength(9);
+  });
+});
+
+/**
+ * VACANCY_BOARD_COLUMNS / boardPosition — a ordem que o operador vê no quadro B
+ * (DX-4.5), base do "salto" que WF/domain/moveReason.ts consome (P6).
+ */
+describe('VACANCY_BOARD_COLUMNS / boardPosition', () => {
+  it('tem as 8 colunas do quadro, na ordem do operador', () => {
+    expect(VACANCY_BOARD_COLUMNS).toEqual([
+      'INVITED', 'INICIADO', 'PRE_SCREENING', 'COMPLETED',
+      'CONFIRMED', 'SELECTED', 'QUICK_RESPONSE_TEAM', 'REJECTED',
+    ]);
+  });
+
+  it('IN_PROGRESS mora na mesma posição de PRE_SCREENING', () => {
+    expect(boardPosition('IN_PROGRESS', null)).toBe(boardPosition('PRE_SCREENING', null));
+  });
+
+  it('origem sem candidatura (stage e source nulos) é a posição 0 (INVITED, mesmo fallback da SSOT)', () => {
+    expect(boardPosition(null, null)).toBe(0);
+  });
+
+  it('INVITED+manual (INICIADO) é a posição 1', () => {
+    expect(boardPosition('INVITED', 'manual')).toBe(1);
+  });
+
+  it('QUALIFIED (colapsado em COMPLETED) é a posição 3', () => {
+    expect(boardPosition('QUALIFIED', null)).toBe(3);
   });
 });
