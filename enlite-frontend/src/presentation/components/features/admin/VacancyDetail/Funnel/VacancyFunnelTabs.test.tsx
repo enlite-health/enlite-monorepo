@@ -20,7 +20,7 @@ const mockCounts: FunnelTableCounts = {
 };
 
 describe('VacancyFunnelTabs', () => {
-  it('renders all 11 tab buttons (Todos + 7 colunas + Postulados + Pre Seleccionados + Desistentes)', () => {
+  it('renders all 12 tab buttons (Todos + 8 colunas + Postulados + Pre Seleccionados + Desistentes)', () => {
     render(
       <VacancyFunnelTabs
         activeTab="ALL"
@@ -35,11 +35,12 @@ describe('VacancyFunnelTabs', () => {
     expect(screen.getByRole('tab', { name: /admin.kanban.columns.COMPLETED/ })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /admin.kanban.columns.CONFIRMED/ })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /admin.kanban.columns.SELECTED/ })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /admin.kanban.columns.QUICK_RESPONSE_TEAM/ })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /admin.kanban.columns.REJECTED/ })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /admin.vacancyDetail.funnelTabs.postulated/ })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /admin.vacancyDetail.funnelTabs.preSelected/ })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /admin.vacancyDetail.funnelTabs.withdrew/ })).toBeInTheDocument();
-    expect(screen.getAllByRole('tab')).toHaveLength(11);
+    expect(screen.getAllByRole('tab')).toHaveLength(12);
   });
 
   it('active tab has bg-primary', () => {
