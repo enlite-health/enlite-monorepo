@@ -25,6 +25,7 @@ import { emitirTrilhaDeContato } from '@shared/audit/contactAccessFromRequest';
 import { RESEND_COOLDOWN_HOURS, resendCooldownUntilSql } from '../../../notification/application/VacancyInviteGuard';
 import { PubSubClient } from '@shared/events/PubSubClient';
 import { emitFunnelStageEvent, FUNNEL_STAGES, isFunnelStage } from '../../application/FunnelStageEventEmitter';
+import { candidateDistanceKmSql } from '../../infrastructure/candidateDistanceSql';
 
 /**
  * Papel opcional ao mover para SELECTED (feature "Equipe Armada").
@@ -142,7 +143,8 @@ export class WJAFunnelController {
               FROM funnel_stage_message_log l
               WHERE l.worker_id = wja.worker_id AND l.job_posting_id = wja.job_posting_id AND l.status = 'queued'
               ORDER BY l.created_at DESC LIMIT 1) AS last_stage_message,
-             wsa.work_zone
+             wsa.work_zone,
+             ${candidateDistanceKmSql('wja.worker_id', 'wja.job_posting_id')} AS distance_km
            FROM worker_job_applications wja
            LEFT JOIN workers w ON w.id = wja.worker_id
            LEFT JOIN LATERAL (
@@ -267,6 +269,7 @@ export class WJAFunnelController {
           acquisitionChannel: row.acquisition_channel ?? null,
           talentumStatus: row.talentum_status ?? null,
           workZone: row.work_zone,
+          distanceKm: row.distance_km == null ? null : Number(row.distance_km),
           redireccionamiento: row.redireccionamiento,
           internalStage: stage ?? null,
           contactNotesCount: Number(row.contact_notes_count ?? 0),
@@ -317,6 +320,7 @@ export class WJAFunnelController {
           acquisitionChannel: ba.acquisitionChannel,
           talentumStatus: null,
           workZone: null,
+          distanceKm: null,
           redireccionamiento: null,
           internalStage: null,
           // Notas de contato escritas enquanto o card estava bloqueado

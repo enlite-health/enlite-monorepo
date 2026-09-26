@@ -519,6 +519,23 @@ describe('WJAFunnelController', () => {
       expect(stages.PRE_SCREENING.find((e: any) => e.id === 'e2').acquisitionChannel).toBeNull();
     });
 
+    it('retorna distanceKm no item a partir de distance_km (DX-3.10); SQL usa a área viva mais próxima', async () => {
+      mockQuery.mockResolvedValueOnce({
+        rows: [
+          makeRow({ id: 'e1', funnel_stage: 'PRE_SCREENING', distance_km: 3.2 }),
+        ],
+      });
+
+      const [req, res] = mockReqRes({ id: 'jp-001' });
+      await controller.getEncuadreFunnel(req, res);
+
+      const { stages } = (res.json as jest.Mock).mock.calls[0][0].data;
+      expect(stages.PRE_SCREENING[0].distanceKm).toBe(3.2);
+
+      const sql: string = mockQuery.mock.calls[0][0];
+      expect(sql).toContain('worker_service_areas wsa_d');
+    });
+
     it('retorna 500 em caso de erro no banco', async () => {
       mockQuery.mockRejectedValueOnce(new Error('DB down'));
 
