@@ -2,7 +2,7 @@
  * VacancyNoteRepository.test.ts
  *
  * Testes unitários (mock de pool) do repositório de anotações da vacante
- * (migration 474, job_posting_notes). Cobre o SQL de listByVacancy
+ * (migration 476, job_posting_notes). Cobre o SQL de listByVacancy
  * (ORDER BY occurred_at DESC) e o mapeamento Date → ISO / authorEmail
  * null quando o LEFT JOIN não acha usuário.
  */

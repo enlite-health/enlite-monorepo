@@ -44,7 +44,7 @@ export interface InsertVacancyNoteInput {
 /**
  * VacancyNoteRepository
  *
- * Persistência da anotação tipo CRM por vacante (migration 474,
+ * Persistência da anotação tipo CRM por vacante (migration 476,
  * `job_posting_notes`). Append-only na aplicação: a tabela só concede
  * SELECT/INSERT a app_runtime/app_system (sem UPDATE/DELETE no GRANT).
  * `authorEmail` nunca é gravado — só resolvido na leitura via LEFT JOIN
