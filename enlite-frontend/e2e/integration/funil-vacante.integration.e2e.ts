@@ -300,11 +300,17 @@ test.describe('funil da vacante @integration', () => {
   });
 
   // ── P20 · os 3 lugares e a API dizem o mesmo número + print ───────────────
+  // Emenda P37 (26/09): print é o PRIMEIRO passo depois de cada navegação, antes
+  // de qualquer seletor novo (critério 15). As TRÊS navegações + prints vêm
+  // primeiro, usando só `vacancy-row-<id>` (sem `-stage-`), `vacancy-funnel-view`,
+  // o toggle "Cambiar vista" e `kanban-board` — todos existem em origin/stage.
+  // A leitura por coluna (`vacancy-row-<id>-stage-<col>`, `funnel-tab-<col>-count`,
+  // `kanban-column-<col>-count` para INICIADO/REJECTED) e `stageCounts` da API são
+  // seletores/campos NOVOS da fase — só entram DEPOIS dos 3 prints, re-navegando
+  // (permitido pelo passo). Asserções: as mesmas de sempre, nada afrouxado.
   test('funil-vacante-tres-lugares', async ({ page, request }) => {
-    // 1. API, na mesma execução — o esperado sai da SOMA de `sources`, não do front.
-    const apiCounts = await readApiStageCounts(request, vacancyIdV1);
-
-    // 2. loginAs (click + keyboard.type). Requests só depois do login.
+    // 1. loginAs (click + keyboard.type). O listener de request entra ANTES da
+    // 1ª navegação, senão o contador do 2.10 perde a primeira requisição.
     await loginAs(page, MOCK_ADMIN_USER);
 
     const requestUrls: string[] = [];
@@ -312,6 +318,7 @@ test.describe('funil da vacante @integration', () => {
       if (req.method() === 'GET') requestUrls.push(req.url());
     });
 
+    // 2. Lista de vacantes — navegação + print (seletor velho: `vacancy-row-<id>`).
     const listResponse = await gotoVacanciesList(page);
     expect(listResponse.ok(), 'GET /api/admin/vacancies (lista) falhou').toBe(true);
     await expect(page.getByTestId(`vacancy-row-${vacancyIdV1}`)).toBeVisible({ timeout: 15_000 });
@@ -321,16 +328,18 @@ test.describe('funil da vacante @integration', () => {
       await page.screenshot({ path: `${process.env.PRINT_DIR}/lista-vacantes.png`, fullPage: true });
     }
 
-    const listCounts = await readTestIdNumbers(page, (col) => `vacancy-row-${vacancyIdV1}-stage-${col}`);
-
-    // 3. Contador (2.10, DX-2.13): 1 listagem distinta, 0 por-vaga NESTA tela.
+    // Contador (2.10, DX-2.13): 1 listagem distinta, 0 por-vaga NESTA tela — tem
+    // de ser lido AQUI, antes de qualquer re-navegação da Fase 2 abaixo (a
+    // navegação ao detalhe bate em `/api/admin/vacancies/<id>/funnel-table`, que
+    // a regex de "por-vaga" também casa).
     const listagensDistintas = new Set(
       requestUrls.filter((u) => /\/api\/admin\/vacancies\?/.test(u)),
     ).size;
     const porVaga = requestUrls.filter((u) => /\/api\/admin\/vacancies\/[0-9a-f-]{36}/.test(u)).length;
     console.log('[2.10] listagens distintas=', listagensDistintas, 'por-vaga=', porVaga);
 
-    // 4. Modo lista: clica na linha → /admin/vacancies/<V1> (default).
+    // 3. Modo lista: clica na linha → /admin/vacancies/<V1> (default). Seletor
+    // velho: `vacancy-funnel-view`.
     const funnelTableRe = new RegExp(`/vacancies/${vacancyIdV1}/funnel-table(\\?|$)`);
     const [funnelTableResponse] = await Promise.all([
       page.waitForResponse((r) => funnelTableRe.test(r.url()) && r.request().method() === 'GET'),
@@ -339,19 +348,31 @@ test.describe('funil da vacante @integration', () => {
     expect(funnelTableResponse.ok(), 'GET funnel-table falhou').toBe(true);
     await expect(page).toHaveURL(new RegExp(`/admin/vacancies/${vacancyIdV1}`));
     await expect(page.getByTestId('vacancy-funnel-view')).toBeVisible({ timeout: 15_000 });
+    // A faixa do funil (abas/toggle) mora num contêiner com scroll interno —
+    // `fullPage` não alcança o que está abaixo da dobra. O toggle "Cambiar
+    // vista" existe nas duas versões (origin/stage e esta branch), por isso
+    // serve de âncora para rolar a região do funil para dentro do quadro
+    // ANTES do print, sem depender de nenhum seletor novo da fase.
+    await page.getByRole('group', { name: 'Cambiar vista' }).scrollIntoViewIfNeeded();
     if (process.env.PRINT_DIR) {
       await page.screenshot({ path: `${process.env.PRINT_DIR}/funil-modo-lista.png`, fullPage: true });
     }
-    const tabCounts = await readTestIdNumbers(page, (col) => `funnel-tab-${col}-count`);
 
-    // 5. Kanban.
+    // 4. Kanban — navegação + print. Seletor velho: `kanban-board`.
     const kanbanResponse = await switchToKanban(page, vacancyIdV1);
     expect(kanbanResponse.ok(), 'GET funnel (kanban) falhou').toBe(true);
     await expect(page.getByTestId('kanban-board')).toBeVisible({ timeout: 15_000 });
     if (process.env.PRINT_DIR) {
       await page.screenshot({ path: `${process.env.PRINT_DIR}/funil-kanban.png`, fullPage: true });
     }
-    const kanbanCounts = await readTestIdNumbers(page, (col) => `kanban-column-${col}-count`);
+
+    // 5. SÓ AGORA os seletores/campos novos: `stageCounts` da API e as 7 colunas
+    // por nome (INICIADO/REJECTED não existem no código revertido). Re-navega
+    // por tela (helpers já existentes, usados no P22) — os 3 prints já saíram.
+    const apiCounts = await readApiStageCounts(request, vacancyIdV1);
+    const listCounts = await readListRowCounts(page, vacancyIdV1);
+    const tabCounts = await readFunnelTabCounts(page, vacancyIdV1);
+    const kanbanCounts = await readKanbanColumnCounts(page, vacancyIdV1);
 
     // 6. Asserts: cell == tab == badge == api, por coluna nomeada.
     for (const col of COLUMN_IDS) {
