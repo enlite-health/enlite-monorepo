@@ -136,7 +136,10 @@ jobs:
       # — job padrão, como `draft-wizard-locked`.
       # `funil-vacante` ENTROU (cadeia, Fase 2): 4 testes do quadro B — os 3 lugares == API, Pre Screening
       # une 2 valores, tentativa negada em Rejeitados, vaga vazia. Token mock + linha em `users`; job padrão.
-      grep: 'worker-profile-fields-persist|worker-completude-vitrine|027-public-jobs-search-en-code|vacancy-locked-fields|vacancy-schedule-hydration|draft-wizard-locked|027-vacancy-case-select|kanban-pacientes|funil-vacante'
+      # `lista-vacantes` ENTROU (cadeia, Fase 3): 4 testes — anotação pela tela, última ação ≠ updated_at, ordem
+      # das colunas + 1 listagem por página, dias sem divulgação; `funil-vacante-ordem-km` já casa por `funil-vacante`. Token mock +
+      # linha em `users`; job padrão.
+      grep: 'worker-profile-fields-persist|worker-completude-vitrine|027-public-jobs-search-en-code|vacancy-locked-fields|vacancy-schedule-hydration|draft-wizard-locked|027-vacancy-case-select|kanban-pacientes|funil-vacante|lista-vacantes'
 
   # O agregador. `if: always()` é o que garante que ele reporta mesmo quando
   # tudo acima foi pulado — sem isso, voltaríamos ao problema que este arquivo
