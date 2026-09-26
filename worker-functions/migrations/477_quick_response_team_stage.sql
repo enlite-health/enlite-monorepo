@@ -11,14 +11,21 @@
 -- Molde: migration 264_remove_initiated_stage_phase2.sql (CHECK :57-74, asserção de
 -- 1 constraint :104-116, função de precedência :119-133).
 --
--- Por que a precedência recebe 7 (mesmo slot de SELECTED/REJECTED), e não -1 como o
--- ELSE de hoje (DX-4.2, execucao/fase-4.md:73-79): funnel_stage_precedence() é a
--- guarda "etapa nunca regride" usada por dois upserts automáticos —
--- TalentumPrescreeningRepository.ts:157-158 e EncuadreRepository.ts:229-230 — que só
--- sobrescrevem a etapa quando precedence(nova) >= precedence(atual). Com -1, QUALQUER
--- webhook da Talentum ou reescrita de encuadre tiraria em silêncio a pessoa da Equipe
--- de Resposta Rápida — o estágio nasceria inseguro contra uma automação escrevendo
--- sobre um estágio que a D430 reserva ao arrasto do operador.
+-- Por que a precedência recebe 8 (acima de SELECTED/REJECTED, não -1 como o ELSE de
+-- hoje): funnel_stage_precedence() é a guarda "etapa nunca regride" usada por dois
+-- upserts automáticos — TalentumPrescreeningRepository.ts:157-158 e
+-- EncuadreRepository.ts:229-230 — que só sobrescrevem a etapa quando precedence(nova)
+-- >= precedence(atual). Com -1, QUALQUER webhook da Talentum ou reescrita de encuadre
+-- tiraria em silêncio a pessoa da Equipe de Resposta Rápida — o estágio nasceria
+-- inseguro contra uma automação escrevendo sobre um estágio que a D430 reserva ao
+-- arrasto do operador. 7 (empatado com SELECTED/REJECTED) NÃO bastava: com >=, um
+-- webhook da Talentum que mapeia para SELECTED ou REJECTED
+-- (TalentumFunnelStageMapper.ts:40,42) ainda venceria o empate e tiraria a pessoa da
+-- Equipe em silêncio, com reason_category NULL — a mesma classe de bug que a
+-- precedência existe para prevenir, só que por empate em vez de ELSE -1. Com 8,
+-- somente o arrasto manual do operador (que não passa por este upsert) tira alguém da
+-- Equipe; nenhuma automação hoje mapeia para um estágio de precedência >= 8, então
+-- SELECTED/REJECTED continuam em 7 (a 264 já os definia assim; não mudam aqui).
 --
 -- Down (rollback, fase-4.md §Rollback — só depois de exportar a contagem para o PR):
 --   SELECT count(*) FROM worker_job_applications WHERE application_funnel_stage='QUICK_RESPONSE_TEAM';
@@ -61,7 +68,7 @@ AS $$
     WHEN 'QUALIFIED'           THEN 5
     WHEN 'CONFIRMED'           THEN 6
     WHEN 'SELECTED'            THEN 7
-    WHEN 'QUICK_RESPONSE_TEAM' THEN 7
+    WHEN 'QUICK_RESPONSE_TEAM' THEN 8
     WHEN 'REJECTED'            THEN 7
     ELSE -1
   END;
@@ -69,9 +76,11 @@ $$;
 
 COMMENT ON FUNCTION funnel_stage_precedence(text) IS
   'Precedência canônica do funil de candidaturas. '
-  'Migration 477 (2026-09-26, Fase 4): QUICK_RESPONSE_TEAM no slot 7 (= SELECTED/REJECTED) — '
-  'guarda "etapa não regride" contra automações da Talentum/Encuadre reescreverem por cima '
-  'do arrasto manual do operador (DX-4.2). '
+  'Migration 477 (2026-09-26, Fase 4): QUICK_RESPONSE_TEAM no slot 8 (acima de '
+  'SELECTED/REJECTED) — guarda "etapa não regride" contra automações da '
+  'Talentum/Encuadre reescreverem por cima do arrasto manual do operador (DX-4.2); '
+  '7 empatava com o mapeamento SELECTED/REJECTED da Talentum e um webhook ainda '
+  'tirava a pessoa da Equipe em silêncio. '
   'Migration 264 (2026-07-04): INITIATED removido definitivamente (Fase-2). '
   'Migration 230 (2026-06-26): PRE_SCREENING adicionado no slot 1 (substitui INITIATED). '
   'F7.b (migration 195): REPROGRAM removido. '
@@ -81,5 +90,5 @@ COMMENT ON FUNCTION funnel_stage_precedence(text) IS
   'ANALYZED nunca esteve no CHECK de WJA — transporte interno do mapper Talentum.';
 
 DO $$ BEGIN
-  RAISE NOTICE 'Migration 477 done: QUICK_RESPONSE_TEAM adicionado ao CHECK + funnel_stage_precedence no slot 7 (Fase 4).';
+  RAISE NOTICE 'Migration 477 done: QUICK_RESPONSE_TEAM adicionado ao CHECK + funnel_stage_precedence no slot 8 (Fase 4).';
 END $$;
