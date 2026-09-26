@@ -5,6 +5,7 @@ import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 import { KanbanBoard } from '@presentation/components/features/admin/Kanban/KanbanBoard';
 import { useWJAFunnel, MoveEncuadreError } from '@hooks/admin/useWJAFunnel';
+import { MOVE_REASON_REQUIRED } from '@domain/entities/MoveReason';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { InviteBlockedError, blockedReasonMessage } from '@infrastructure/http/AdminMessagingApiService';
 import type { EncuadreRole } from '@domain/entities/EncuadreRole';
@@ -32,12 +33,14 @@ export function VacancyFunnelKanban({
     async (
       encuadreId: string,
       targetStage: string,
-      rejectionReasonCategory?: string,
+      reasonCategory?: string,
       role?: EncuadreRole,
       schedule?: { interviewDate: string; interviewTime: string; interviewMeetLink?: string },
     ) => {
-      const err = await moveEncuadre(encuadreId, targetStage, rejectionReasonCategory, role, schedule);
-      setMoveError(err);
+      const err = await moveEncuadre(encuadreId, targetStage, reasonCategory, role, schedule);
+      // 422 MOVE_REASON_REQUIRED (DX-4.6/DX-4.10): o KanbanBoard já abre o diálogo do motivo —
+      // não é o banner de erro do topo (fluxo esperado, não falha de sistema).
+      setMoveError(err?.code === MOVE_REASON_REQUIRED ? null : err);
       return err;
     },
     [moveEncuadre],
