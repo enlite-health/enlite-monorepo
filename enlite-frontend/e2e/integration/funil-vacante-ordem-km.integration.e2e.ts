@@ -33,6 +33,7 @@ test.describe('funil da vacante — ordem por km @integration', () => {
     locale: 'es-AR',
     timezoneId: 'America/Argentina/Buenos_Aires',
   });
+  test.describe.configure({ mode: 'serial' });
   test.setTimeout(90_000);
 
   test.beforeAll(() => {
