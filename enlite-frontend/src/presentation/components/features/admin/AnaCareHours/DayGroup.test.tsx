@@ -64,6 +64,49 @@ const noop = {
 const DOC = '30111222';
 
 describe('DayGroup', () => {
+  // change `anacare-horas-validando-prd` (26/09): feedback visual — botão "Validar" da linha
+  // enquanto `validatingShiftIds` contém o id do turno (o pai é quem preenche esse Set enquanto o
+  // `onValidateShift` está em voo; ver `AnaCareHoursDetailPage.test.tsx` para o fluxo completo).
+  it('POSITIVO — turno em `validatingShiftIds` mostra "Validando…", fica disabled e aria-busy', () => {
+    const providerA = makeProvider({ anaCareId: 'p1' });
+    const day = makeDay([{ shift: makeShift({ id: 's1' }), provider: providerA }]);
+    render(
+      <DayGroup
+        day={day}
+        disableActions={false}
+        selectedShiftIds={new Set()}
+        validatingShiftIds={new Set(['s1'])}
+        axonicoService={makeAxonicoService()}
+        patientDocumentNumber={DOC}
+        {...noop}
+      />,
+    );
+    const button = screen.getByTestId('anacare-hours-validate-shift-s1');
+    expect(button).toHaveTextContent('admin.anacareHours.providerGroup.validating');
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute('aria-busy', 'true');
+  });
+
+  it('NEGATIVO — turno FORA de `validatingShiftIds` continua "Validar", habilitado, sem aria-busy', () => {
+    const providerA = makeProvider({ anaCareId: 'p1' });
+    const day = makeDay([{ shift: makeShift({ id: 's1' }), provider: providerA }]);
+    render(
+      <DayGroup
+        day={day}
+        disableActions={false}
+        selectedShiftIds={new Set()}
+        validatingShiftIds={new Set(['outro-turno'])}
+        axonicoService={makeAxonicoService()}
+        patientDocumentNumber={DOC}
+        {...noop}
+      />,
+    );
+    const button = screen.getByTestId('anacare-hours-validate-shift-s1');
+    expect(button).toHaveTextContent('admin.anacareHours.providerGroup.validateAction');
+    expect(button).not.toBeDisabled();
+    expect(button).toHaveAttribute('aria-busy', 'false');
+  });
+
   it('POSITIVO — dia com 2 prestadores mostra o nome de cada um numa linha própria', () => {
     const providerA = makeProvider({ anaCareId: 'p1', name: 'Rocío García QA' });
     const providerB = makeProvider({ anaCareId: 'p2', name: 'Marta Sosa QA' });

@@ -11,9 +11,11 @@ interface ValidateBatchModalProps {
   onConfirm: () => void;
   onCancel: () => void;
   sinCheckinHoursMode?: SinCheckinHoursMode;
+  /** `onConfirm` do pai (`AnaCareHoursDetailPage.handleConfirmBatch`) em voo (26/09) — "Confirmar" vira "Validando…"/disabled/aria-busy até a promise assentar. */
+  isValidating?: boolean;
 }
 
-export function ValidateBatchModal({ shifts, onConfirm, onCancel, sinCheckinHoursMode = 'zero' }: ValidateBatchModalProps): JSX.Element {
+export function ValidateBatchModal({ shifts, onConfirm, onCancel, sinCheckinHoursMode = 'zero', isValidating = false }: ValidateBatchModalProps): JSX.Element {
   const { t } = useTranslation();
   const hours = totalHours(shifts, sinCheckinHoursMode);
   const breakdown = pendingOriginBreakdown(shifts);
@@ -31,8 +33,14 @@ export function ValidateBatchModal({ shifts, onConfirm, onCancel, sinCheckinHour
           <Button variant="outline" onClick={onCancel} data-testid="anacare-hours-batch-modal-cancel">
             {t('admin.anacareHours.batchModal.cancel')}
           </Button>
-          <Button onClick={onConfirm} data-testid="anacare-hours-batch-modal-confirm">
-            {t('admin.anacareHours.batchModal.confirm')}
+          <Button
+            onClick={onConfirm}
+            isLoading={false}
+            disabled={isValidating}
+            aria-busy={isValidating}
+            data-testid="anacare-hours-batch-modal-confirm"
+          >
+            {isValidating ? t('admin.anacareHours.batchModal.validating') : t('admin.anacareHours.batchModal.confirm')}
           </Button>
         </div>
       </div>

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { AnaCareHoursDetailPage } from './AnaCareHoursDetailPage';
 import type { AnaCareHoursPatientSnapshot } from './types';
 import type { AxonicoComprobanteService } from './AxonicoComprobanteService';
@@ -63,6 +63,17 @@ function snapshot(overrides: Partial<AnaCareHoursPatientSnapshot> = {}): AnaCare
   };
 }
 
+/** Promise controlável de fora — usado pra inspecionar o estado "em voo" (`Validando…`) antes de resolver/rejeitar. */
+function deferred<T = void>(): { promise: Promise<T>; resolve: (value: T) => void; reject: (reason?: unknown) => void } {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
 describe('AnaCareHoursDetailPage', () => {
   // Regra nova (18/09): a semana inicial depende de "hoje" × mês exibido (`snapshot.month`).
   // Todo o resto do arquivo assume a semana de 10-16/08 (onde cai o único turno do fixture,
@@ -71,7 +82,12 @@ describe('AnaCareHoursDetailPage', () => {
   // que o comportamento antigo (turno mais antigo) produzia. Os 2 testes da regra nova congelam
   // outro relógio, isoladamente, quando precisam de outro cenário.
   beforeEach(() => {
-    vi.useFakeTimers();
+    // `shouldAdvanceTime: true` (26/09, mesmo padrão de `AnaCareHoursDetailContainer.test.tsx`):
+    // sem isso, o polling do `waitFor` (setTimeout real) nunca dispara com o relógio fake parado —
+    // os testes novos de "Validando…" (que esperam uma promise controlada assentar) travavam em
+    // timeout de 5s. `shouldAdvanceTime` deixa o relógio fake avançar no ritmo real, sem soltar o
+    // congelamento de data que a navegação de semana (comentário acima) precisa.
+    vi.useFakeTimers({ shouldAdvanceTime: true });
     vi.setSystemTime(new Date('2026-08-14T12:00:00-03:00'));
   });
   afterEach(() => {
@@ -224,7 +240,7 @@ describe('AnaCareHoursDetailPage', () => {
     expect(screen.queryByTestId('anacare-hours-selection-bar')).not.toBeInTheDocument();
   });
 
-  it('POSITIVO — validar em lote: abre o modal, confirmar chama onValidateBatch e limpa a seleção', () => {
+  it('POSITIVO — validar em lote: abre o modal, confirmar chama onValidateBatch e limpa a seleção', async () => {
     const onValidateBatch = vi.fn();
     render(<AnaCareHoursDetailPage axonicoService={AXONICO_SERVICE} patientDocumentService={PATIENT_DOCUMENT_SERVICE} snapshot={snapshot()} patientId="90000" onBack={vi.fn()} onValidateBatch={onValidateBatch} />);
     fireEvent.click(screen.getByTestId('anacare-hours-select-shift-s1'));
@@ -232,7 +248,65 @@ describe('AnaCareHoursDetailPage', () => {
     expect(screen.getByTestId('anacare-hours-batch-modal')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('anacare-hours-batch-modal-confirm'));
     expect(onValidateBatch).toHaveBeenCalledWith(['s1']);
+    // change `anacare-horas-validando-prd` (26/09): o fecho do modal + limpeza da seleção agora
+    // esperam a promise de `onValidateBatch` assentar (antes era síncrono) — é o que abre espaço
+    // pro "Validando…" aparecer enquanto ela está em voo (ver testes novos abaixo).
+    await waitFor(() => expect(screen.queryByTestId('anacare-hours-batch-modal')).not.toBeInTheDocument());
     expect(screen.queryByTestId('anacare-hours-selection-bar')).not.toBeInTheDocument();
+  });
+
+  it('POSITIVO — validar em lote: enquanto a promise está pendente, "Confirmar" mostra "Validando…"/disabled/aria-busy; ao resolver fecha o modal e limpa a seleção', async () => {
+    const { promise, resolve } = deferred();
+    const onValidateBatch = vi.fn(() => promise);
+    render(<AnaCareHoursDetailPage axonicoService={AXONICO_SERVICE} patientDocumentService={PATIENT_DOCUMENT_SERVICE} snapshot={snapshot()} patientId="90000" onBack={vi.fn()} onValidateBatch={onValidateBatch} />);
+    fireEvent.click(screen.getByTestId('anacare-hours-select-shift-s1'));
+    fireEvent.click(screen.getByTestId('anacare-hours-selection-validate'));
+    const confirmBtn = screen.getByTestId('anacare-hours-batch-modal-confirm');
+    fireEvent.click(confirmBtn);
+    expect(onValidateBatch).toHaveBeenCalledWith(['s1']);
+    expect(confirmBtn).toHaveTextContent('admin.anacareHours.batchModal.validating');
+    expect(confirmBtn).toBeDisabled();
+    expect(confirmBtn).toHaveAttribute('aria-busy', 'true');
+    expect(screen.getByTestId('anacare-hours-batch-modal')).toBeInTheDocument();
+    resolve();
+    await waitFor(() => expect(screen.queryByTestId('anacare-hours-batch-modal')).not.toBeInTheDocument());
+    expect(screen.queryByTestId('anacare-hours-selection-bar')).not.toBeInTheDocument();
+  });
+
+  // change `anacare-horas-validando-prd` — revisão 26/09 (achado 2, gate `revisao-pr`):
+  // `handleConfirmBatch` perdeu o `catch` mudo (só `try/finally`). O caminho de ERRO deste
+  // wrapper não é testável aqui sem simular uma rejeição crua de `onValidateBatch` — e como o
+  // `onClick` do "Confirmar" descarta a Promise (fire-and-forget, igual a qualquer handler de
+  // evento), uma rejeição crua vira "unhandled rejection" DE VERDADE pro Node/Vitest (não é um
+  // artefato do teste; é o mesmo evento que apareceria no navegador). O contrato real é: o
+  // CONTAINER (`AnaCareHoursDetailContainer.handleValidateBatch`) é quem trata o erro de verdade e
+  // NUNCA rejeita — por isso o caminho de erro (e o reset de `isValidatingBatch` nele) é provado em
+  // `AnaCareHoursDetailContainer.test.tsx` (mock de `service.validateBatch` rejeitando de verdade,
+  // sem gerar unhandled rejection nenhuma porque o container tem o catch legítimo). Aqui só o
+  // caminho de SUCESSO, que é o suficiente pra este nível de teste.
+  //
+  // Achado 1 (gate `revisao-pr`, 26/09) — sabotagem "remover `setIsValidatingBatch(false)` do
+  // `finally`" passava 85/85 antes: os testes de cima só conferem que o MODAL fecha, nunca que a
+  // FLAG realmente voltou a `false` — se ela ficasse presa em `true`, o modal reaberto mostraria
+  // "Confirmar" desabilitado/"Validando…" pra sempre, e nenhum teste acusava. Este reabre o modal
+  // depois do desfecho e confere o "Confirmar" no estado normal (o caminho de erro do mesmo mata é
+  // o teste equivalente em `AnaCareHoursDetailContainer.test.tsx`).
+  it('POSITIVO — validar em lote: depois de resolver, reabrir o modal mostra "Confirmar" habilitado e no rótulo normal (mata a sabotagem "sem reset de isValidatingBatch")', async () => {
+    const { promise, resolve } = deferred();
+    const onValidateBatch = vi.fn(() => promise);
+    render(<AnaCareHoursDetailPage axonicoService={AXONICO_SERVICE} patientDocumentService={PATIENT_DOCUMENT_SERVICE} snapshot={snapshot()} patientId="90000" onBack={vi.fn()} onValidateBatch={onValidateBatch} />);
+    fireEvent.click(screen.getByTestId('anacare-hours-select-shift-s1'));
+    fireEvent.click(screen.getByTestId('anacare-hours-selection-validate'));
+    fireEvent.click(screen.getByTestId('anacare-hours-batch-modal-confirm'));
+    resolve();
+    await waitFor(() => expect(screen.queryByTestId('anacare-hours-batch-modal')).not.toBeInTheDocument());
+    // seleção foi limpa pelo próprio fecho — seleciona de novo pra reabrir o modal
+    fireEvent.click(screen.getByTestId('anacare-hours-select-shift-s1'));
+    fireEvent.click(screen.getByTestId('anacare-hours-selection-validate'));
+    const confirmBtn = screen.getByTestId('anacare-hours-batch-modal-confirm');
+    expect(confirmBtn).not.toBeDisabled();
+    expect(confirmBtn).toHaveAttribute('aria-busy', 'false');
+    expect(confirmBtn).toHaveTextContent('admin.anacareHours.batchModal.confirm');
   });
 
   it('POSITIVO — cancelar o modal de lote fecha sem chamar onValidateBatch', () => {
@@ -245,12 +319,37 @@ describe('AnaCareHoursDetailPage', () => {
     expect(onValidateBatch).not.toHaveBeenCalled();
   });
 
-  it('POSITIVO — validar um turno chama onValidateShift', () => {
+  it('POSITIVO — validar um turno chama onValidateShift', async () => {
     const onValidateShift = vi.fn();
     render(<AnaCareHoursDetailPage axonicoService={AXONICO_SERVICE} patientDocumentService={PATIENT_DOCUMENT_SERVICE} snapshot={snapshot()} patientId="90000" onBack={vi.fn()} onValidateShift={onValidateShift} />);
     fireEvent.click(screen.getByTestId('anacare-hours-validate-shift-s1'));
     expect(onValidateShift).toHaveBeenCalled();
+    // change `anacare-horas-validando-prd` (26/09): `handleValidateShift` agora é async (rastreia
+    // `validatingShiftIds`) mesmo com um mock síncrono — sem esperar o `finally` assentar, o
+    // `act()` do RTL acusa "update not wrapped" (o setState do finally ainda não rodou).
+    await waitFor(() => expect(screen.getByTestId('anacare-hours-validate-shift-s1')).not.toBeDisabled());
   });
+
+  it('POSITIVO — validar turno: enquanto a promise está pendente, o botão mostra "Validando…"/disabled/aria-busy; ao resolver, volta ao normal', async () => {
+    const { promise, resolve } = deferred();
+    const onValidateShift = vi.fn(() => promise);
+    render(<AnaCareHoursDetailPage axonicoService={AXONICO_SERVICE} patientDocumentService={PATIENT_DOCUMENT_SERVICE} snapshot={snapshot()} patientId="90000" onBack={vi.fn()} onValidateShift={onValidateShift} />);
+    const button = screen.getByTestId('anacare-hours-validate-shift-s1');
+    fireEvent.click(button);
+    expect(button).toHaveTextContent('admin.anacareHours.providerGroup.validating');
+    expect(button).toBeDisabled();
+    expect(button).toHaveAttribute('aria-busy', 'true');
+    resolve();
+    await waitFor(() => expect(button).toHaveTextContent('admin.anacareHours.providerGroup.validateAction'));
+    expect(button).not.toBeDisabled();
+    expect(button).toHaveAttribute('aria-busy', 'false');
+  });
+
+  // change `anacare-horas-validando-prd` — revisão 26/09 (achado 2): mesmo raciocínio do lote —
+  // `handleValidateShift` perdeu o `catch` mudo, e o caminho de ERRO real (via o container, que
+  // nunca deixa a rejeição escapar) é provado em `AnaCareHoursDetailContainer.test.tsx`. Um mock
+  // cru rejeitando NESTE nível viraria unhandled rejection de verdade (o `onClick` descarta a
+  // Promise, igual a qualquer handler de evento) — não é algo que valha simular aqui.
 
   it('POSITIVO — contestar abre o modal e confirmar chama onContestShift(shiftId, reason, note)', () => {
     const onContestShift = vi.fn();
@@ -310,9 +409,10 @@ describe('AnaCareHoursDetailPage', () => {
     expect(screen.getByTestId('anacare-hours-select-shift-s2')).not.toBeChecked();
   });
 
-  it('POSITIVO — sem callbacks de escrita, os cliques não quebram (no-op)', () => {
+  it('POSITIVO — sem callbacks de escrita, os cliques não quebram (no-op)', async () => {
     render(<AnaCareHoursDetailPage axonicoService={AXONICO_SERVICE} patientDocumentService={PATIENT_DOCUMENT_SERVICE} snapshot={snapshot()} patientId="90000" onBack={vi.fn()} />);
     expect(() => fireEvent.click(screen.getByTestId('anacare-hours-validate-shift-s1'))).not.toThrow();
+    await waitFor(() => expect(screen.getByTestId('anacare-hours-validate-shift-s1')).not.toBeDisabled());
   });
 
   it('POSITIVO — resumo com contestados e as 3 origens mostra o sufixo de contestados e as 3 pílulas', () => {
