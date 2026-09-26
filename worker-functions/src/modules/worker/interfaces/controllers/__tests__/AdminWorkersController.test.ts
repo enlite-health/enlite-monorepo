@@ -936,7 +936,7 @@ describe('AdminWorkersController — getWorkerById', () => {
     // ── AC 86ajeu7vw: a aba de encuadre inclui casos BLOQUEADOS (WJA ∪ blocked) ──
     // O caso da "Júlia": clicou postular na vaga 800, foi BLOQUEADO (docs incompletos),
     // e por isso NÃO aparecia na lista de encuadres. Agora aparece, com a coluna de
-    // estágio = coluna do Kanban (BLOQUEADO).
+    // estágio = coluna do Kanban (Rejeitados, D433).
     it('inclui tentativas bloqueadas na lista de encuadres com estágio BLOQUEADO', async () => {
       setupFullMocks({
         encuadreRows: [makeEncuadreRow()], // 1 WJA (SELECTED)
@@ -953,7 +953,7 @@ describe('AdminWorkersController — getWorkerById', () => {
       const blocked = encuadres.find((e: { id: string }) => e.id === 'blk-1');
       expect(blocked).toBeDefined();
       expect(blocked.isBlocked).toBe(true);
-      expect(blocked.kanbanStage).toBe('BLOQUEADO');
+      expect(blocked.kanbanStage).toBe('REJECTED');
       expect(blocked.caseNumber).toBe(800);
       expect(blocked.patientName).toBe('Julia Blocked');
       expect(blocked.blockedReason).toBe('registration_incomplete');

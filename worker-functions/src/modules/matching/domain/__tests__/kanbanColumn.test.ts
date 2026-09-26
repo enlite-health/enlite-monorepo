@@ -58,8 +58,8 @@ describe('deriveKanbanColumn', () => {
     expect(deriveKanbanColumn('SOMETHING_NEW', 'talentum')).toBe('INVITED');
   });
 
-  it('exposes the BLOQUEADO constant for blocked-attempt rows (no WJA stage)', () => {
-    expect(KANBAN_COLUMN_BLOCKED).toBe('BLOQUEADO');
+  it('maps a blocked attempt to REJECTED (D433)', () => {
+    expect(KANBAN_COLUMN_BLOCKED).toBe('REJECTED');
   });
 });
 
@@ -117,7 +117,7 @@ describe('kanbanColumnRank', () => {
   });
 
   it('throws for a column with no declared rank (build-breaker, not a silent drop)', () => {
-    expect(() => kanbanColumnRank(KANBAN_COLUMN_BLOCKED)).toThrow(/no declared advancement rank/);
+    expect(() => kanbanColumnRank('BLOQUEADO' as KanbanColumn)).toThrow(/no declared advancement rank/);
     expect(() => kanbanColumnRank('MADE_UP' as KanbanColumn)).toThrow();
   });
 

@@ -9,7 +9,8 @@
  *
  * Migration 230: INITIATED renamed to PRE_SCREENING; INICIADO added (INVITED+manual).
  * Feature BLOQUEADO (2026-07-03): blocked attempts (worker_blocked_applications) have
- * no funnel stage — they map to KANBAN_COLUMN_BLOCKED, handled by the caller, not here.
+ * no funnel stage — they map to KANBAN_COLUMN_BLOCKED (= REJECTED, D433), handled by
+ * the caller, not here.
  */
 export type KanbanColumn =
   | 'INVITED'
@@ -22,8 +23,8 @@ export type KanbanColumn =
   | 'SELECTED'
   | 'REJECTED';
 
-/** Column for a blocked postulation attempt (no WJA / no funnel stage). */
-export const KANBAN_COLUMN_BLOCKED: KanbanColumn = 'BLOQUEADO';
+/** Column for a blocked postulation attempt — Rejeitados (D433: 'Bloqueados não existe; bloqueado vai para Rejeitados'). */
+export const KANBAN_COLUMN_BLOCKED: KanbanColumn = 'REJECTED';
 
 /**
  * A WJA row persisted by the matchmaking algorithm (MatchmakingService.saveMatchResults:
