@@ -750,6 +750,7 @@
             "missingDocument": "Falta el documento del paciente"
           },
           "sentLabel": "Enviado — comprobante {{numero}}",
+          "sentBy": "Por: {{name}} · {{date}}",
           "duplicatedLabel": "Ya estaba facturado — comprobante {{numero}}",
           "duplicatedNoComprobanteLabel": "Ya fue facturado — número de comprobante no disponible",
           "documentModal": {

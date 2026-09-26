@@ -83,6 +83,25 @@ export interface AnaCareShift {
   contestNote?: string;
   /** ↔ `anacare_shift.source_shift_id` (chave estável na fonte) — usado quando o prestador do turno não está vinculado. */
   anaCareShiftId: string;
+  /**
+   * ↔ `axonico_comprobante_lancamento` (migration 473, change `axonico-envio-rastreavel`) —
+   * lançamento enviado ao Axonico para este DIA (casado por `service_date`, o backend anexa ao
+   * MESMO valor em todos os turnos do dia). Ausente = nunca lançado neste mês (ou paciente sem
+   * `documentNumber`). Persistido — sobrevive a reload, ao contrário do estado local do hook
+   * `useSendComprobanteToAxonico` (que só cobre o clique desta sessão de navegador).
+   */
+  axonico?: {
+    status: 'enviado';
+    numeroComprobante: string;
+    codAutorizacion: string;
+    sentAt: string;
+    /** Ausente só para tentativas gravadas antes da migration 473 (sem autor conhecido). */
+    sentBy?: {
+      uid: string;
+      /** `null` quando `users.display_name` está vazio para este uid. */
+      displayName: string | null;
+    };
+  };
 }
 
 export interface AnaCareProvider {

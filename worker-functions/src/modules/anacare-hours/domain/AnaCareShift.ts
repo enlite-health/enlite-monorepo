@@ -56,6 +56,25 @@ export interface AnaCareShift {
    * mas o contrato já reserva o campo opcional; quem não tem a célula recebe `undefined`). */
   contestNote?: string;
   anaCareShiftId: string;
+  /**
+   * Lançamento no Axonico para este dia (change `axonico-envio-rastreavel`, 24/09/2026, migration
+   * 473) — casado por `service_date` (`AnaCareHoursService.getPatientMonth`, via
+   * `IAxonicoLancamentoRepository.findSentByDocumentAndMonth`). Ausente = nunca lançado NESTE mês
+   * (ou o paciente não tem `documentNumber`, caso em que `getPatientMonth` nem consulta). Só
+   * `status: 'enviado'` é modelado aqui — `duplicado`/`erro` são tentativas, não um estado do dia.
+   */
+  axonico?: {
+    status: 'enviado';
+    numeroComprobante: string;
+    codAutorizacion: string;
+    sentAt: string;
+    /** Ausente só para tentativas gravadas antes da migration 473 (sem autor conhecido). */
+    sentBy?: {
+      uid: string;
+      /** `null` quando `users.display_name` está vazio para este uid — nunca `undefined` (o campo em si está presente). */
+      displayName: string | null;
+    };
+  };
 }
 
 export interface AnaCareProvider {

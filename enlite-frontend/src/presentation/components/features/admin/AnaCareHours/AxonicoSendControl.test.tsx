@@ -302,3 +302,128 @@ describe('AxonicoSendControl — modal de documento', () => {
     });
   });
 });
+
+// change `axonico-envio-rastreavel` (24/09/2026, migration 473): `sent` é o dado PERSISTIDO do dia
+// (sobrevive a reload) — ao contrário do `status`/`result` locais do hook, cobertos acima.
+describe('AxonicoSendControl — sent (dado persistido, sobrevive a reload)', () => {
+  beforeEach(() => {
+    useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' });
+  });
+
+  it('POSITIVO — sent presente: mostra sentLabel + "Por: <nome> · <dd/MM>", SEM botão nem mensagens de reason', () => {
+    render(
+      <AxonicoSendControl
+        date="2026-08-14"
+        service={makeAxonicoService()}
+        patientDocumentService={makePatientDocumentService()}
+        anaCarePatientId="ac-paciente-1"
+        eligibility={eligibility(['notValidated'])} // reasons não devem aparecer com `sent` presente
+        command={{ ...COMMAND, documentNumber: '30111222' }}
+        disableActions={false}
+        sent={{ numeroComprobante: 'C-777', sentBy: { displayName: 'Elizabeth Soñez' }, sentAt: '2026-08-14T15:00:00.000Z' }}
+      />,
+    );
+
+    expect(screen.getByTestId('anacare-hours-day-sent-2026-08-14')).toHaveTextContent('C-777');
+    expect(screen.getByTestId('anacare-hours-day-sent-by-2026-08-14')).toHaveTextContent(
+      'admin.anacareHours.dayGroup.axonico.sentBy|{"name":"Elizabeth Soñez","date":"14/08"}',
+    );
+    expect(screen.queryByTestId('anacare-hours-send-day-2026-08-14')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('anacare-hours-axonico-reason-notValidated-2026-08-14')).not.toBeInTheDocument();
+  });
+
+  it('NEGATIVO — sent.sentBy.displayName null: mostra só a data, NUNCA "Por: null" no DOM', () => {
+    render(
+      <AxonicoSendControl
+        date="2026-08-14"
+        service={makeAxonicoService()}
+        patientDocumentService={makePatientDocumentService()}
+        anaCarePatientId="ac-paciente-1"
+        eligibility={eligibility([])}
+        command={{ ...COMMAND, documentNumber: '30111222' }}
+        disableActions={false}
+        sent={{ numeroComprobante: 'C-777', sentBy: { displayName: null }, sentAt: '2026-08-14T15:00:00.000Z' }}
+      />,
+    );
+
+    const line = screen.getByTestId('anacare-hours-day-sent-by-2026-08-14');
+    expect(line).toHaveTextContent('14/08');
+    expect(line.textContent).not.toMatch(/null|undefined/i);
+  });
+
+  it('NEGATIVO — sent.sentBy null (tentativa anterior à migration 473): mostra só a data, NUNCA "Por: null"', () => {
+    render(
+      <AxonicoSendControl
+        date="2026-08-14"
+        service={makeAxonicoService()}
+        patientDocumentService={makePatientDocumentService()}
+        anaCarePatientId="ac-paciente-1"
+        eligibility={eligibility([])}
+        command={{ ...COMMAND, documentNumber: '30111222' }}
+        disableActions={false}
+        sent={{ numeroComprobante: 'C-777', sentBy: null, sentAt: '2026-08-14T15:00:00.000Z' }}
+      />,
+    );
+
+    const line = screen.getByTestId('anacare-hours-day-sent-by-2026-08-14');
+    expect(line).toHaveTextContent('14/08');
+    expect(line.textContent).not.toMatch(/null|undefined/i);
+  });
+
+  it('POSITIVO — sem sent (comportamento antigo intacto): botão aparece normalmente', () => {
+    render(
+      <AxonicoSendControl
+        date="2026-08-14"
+        service={makeAxonicoService()}
+        patientDocumentService={makePatientDocumentService()}
+        anaCarePatientId="ac-paciente-1"
+        eligibility={eligibility([])}
+        command={{ ...COMMAND, documentNumber: '30111222' }}
+        disableActions={false}
+      />,
+    );
+
+    expect(screen.getByTestId('anacare-hours-send-day-2026-08-14')).toBeInTheDocument();
+    expect(screen.queryByTestId('anacare-hours-day-sent-by-2026-08-14')).not.toBeInTheDocument();
+  });
+
+  it('POSITIVO — clique com sucesso (enviado) chama onSent, pra o pai refazer a busca e o dado persistido assumir', async () => {
+    const enviarComprobante = vi.fn<[], Promise<EnviarComprobanteAxonicoResult>>().mockResolvedValue({ status: 'enviado', numeroComprobante: 'C-1', codAutorizacion: 'A-1' });
+    const onSent = vi.fn();
+    render(
+      <AxonicoSendControl
+        date="2026-08-14"
+        service={makeAxonicoService({ enviarComprobante })}
+        patientDocumentService={makePatientDocumentService()}
+        anaCarePatientId="ac-paciente-1"
+        eligibility={eligibility([])}
+        command={{ ...COMMAND, documentNumber: '30111222' }}
+        disableActions={false}
+        onSent={onSent}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('anacare-hours-send-day-2026-08-14'));
+    await waitFor(() => expect(onSent).toHaveBeenCalledTimes(1));
+  });
+
+  it('POSITIVO — clique com resultado "duplicado" TAMBÉM chama onSent (já é uma tentativa persistida)', async () => {
+    const enviarComprobante = vi.fn().mockResolvedValue({ status: 'duplicado', numeroComprobante: 'C-ORIGINAL', codAutorizacion: 'A-ORIGINAL', jaFaturado: true });
+    const onSent = vi.fn();
+    render(
+      <AxonicoSendControl
+        date="2026-08-14"
+        service={makeAxonicoService({ enviarComprobante })}
+        patientDocumentService={makePatientDocumentService()}
+        anaCarePatientId="ac-paciente-1"
+        eligibility={eligibility([])}
+        command={{ ...COMMAND, documentNumber: '30111222' }}
+        disableActions={false}
+        onSent={onSent}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('anacare-hours-send-day-2026-08-14'));
+    await waitFor(() => expect(onSent).toHaveBeenCalledTimes(1));
+  });
+});

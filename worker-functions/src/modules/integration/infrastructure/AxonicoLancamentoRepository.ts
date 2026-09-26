@@ -24,6 +24,7 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import type { EnliteServiceType } from '../domain/EnliteServiceType';
 import type {
   AxonicoLancamentoRecord,
+  AxonicoLancamentoSentRecord,
   IAxonicoLancamentoRepository,
   InsertAxonicoLancamentoParams,
 } from '../domain/IAxonicoLancamentoRepository';
@@ -40,7 +41,18 @@ interface AxonicoLancamentoRow {
   cod_autorizacion: string | null;
   status: string;
   error_message: string | null;
+  /** `null` nas linhas gravadas antes da migration 473 (coluna nasceu NULLABLE). */
+  sent_by: string | null;
   created_at: string;
+}
+
+interface AxonicoLancamentoSentRow {
+  service_date: string;
+  numero_comprobante: string;
+  cod_autorizacion: string;
+  created_at: string;
+  sent_by: string | null;
+  sent_by_name: string | null;
 }
 
 function toRecord(row: AxonicoLancamentoRow): AxonicoLancamentoRecord {
@@ -55,7 +67,19 @@ function toRecord(row: AxonicoLancamentoRow): AxonicoLancamentoRecord {
     codAutorizacion: row.cod_autorizacion,
     status: row.status as AxonicoLancamentoRecord['status'],
     errorMessage: row.error_message,
+    sentBy: row.sent_by,
     createdAt: new Date(row.created_at),
+  };
+}
+
+function toSentRecord(row: AxonicoLancamentoSentRow): AxonicoLancamentoSentRecord {
+  return {
+    serviceDate: row.service_date,
+    numeroComprobante: row.numero_comprobante,
+    codAutorizacion: row.cod_autorizacion,
+    createdAt: new Date(row.created_at),
+    sentBy: row.sent_by,
+    sentByName: row.sent_by_name,
   };
 }
 
@@ -80,7 +104,7 @@ export class AxonicoLancamentoRepository implements IAxonicoLancamentoRepository
     // verdade por construção, não um `as`.
     const res = await this.pool.query<AxonicoLancamentoRow>(
       `SELECT id, patient_id, document_number, service_type, service_date::text AS service_date, hours,
-              numero_comprobante, cod_autorizacion, status, error_message, created_at
+              numero_comprobante, cod_autorizacion, status, error_message, sent_by, created_at
        FROM axonico_comprobante_lancamento
        WHERE document_number = $1 AND service_type = $2 AND service_date = $3::date AND status = 'enviado'`,
       [documentNumber, serviceType, serviceDate],
@@ -98,10 +122,10 @@ export class AxonicoLancamentoRepository implements IAxonicoLancamentoRepository
     // `pg` devolveria `Date` (meia-noite LOCAL) em vez da string que o contrato promete.
     const res = await this.pool.query<AxonicoLancamentoRow>(
       `INSERT INTO axonico_comprobante_lancamento
-         (patient_id, document_number, service_type, service_date, hours, numero_comprobante, cod_autorizacion, status, error_message)
-       VALUES ($1, $2, $3, $4::date, $5, $6, $7, $8, $9)
+         (patient_id, document_number, service_type, service_date, hours, numero_comprobante, cod_autorizacion, status, error_message, sent_by)
+       VALUES ($1, $2, $3, $4::date, $5, $6, $7, $8, $9, $10)
        RETURNING id, patient_id, document_number, service_type, service_date::text AS service_date, hours,
-                 numero_comprobante, cod_autorizacion, status, error_message, created_at`,
+                 numero_comprobante, cod_autorizacion, status, error_message, sent_by, created_at`,
       [
         params.patientId,
         params.documentNumber,
@@ -112,8 +136,32 @@ export class AxonicoLancamentoRepository implements IAxonicoLancamentoRepository
         params.codAutorizacion,
         params.status,
         params.errorMessage,
+        params.sentBy,
       ],
     );
     return toRecord(res.rows[0]);
+  }
+
+  /**
+   * Leitura por `AnaCareHoursService.getPatientMonth` — junta com `users` (mesmo padrão de
+   * `ShiftHoursValidationRepository.getByShiftIds`) para trazer `display_name` de quem enviou.
+   * `monthStart` é `'YYYY-MM-01'` (mesma convenção de `periodMonthDate`) — o intervalo do mês é
+   * calculado aqui (`+ INTERVAL '1 month'`), o chamador nunca precisa calcular o fim do mês.
+   */
+  async findSentByDocumentAndMonth(
+    documentNumber: string,
+    serviceType: EnliteServiceType,
+    monthStart: string,
+  ): Promise<AxonicoLancamentoSentRecord[]> {
+    const res = await this.pool.query<AxonicoLancamentoSentRow>(
+      `SELECT l.service_date::text AS service_date, l.numero_comprobante, l.cod_autorizacion, l.created_at,
+              l.sent_by, u.display_name AS sent_by_name
+         FROM axonico_comprobante_lancamento l
+         LEFT JOIN users u ON u.firebase_uid = l.sent_by
+        WHERE l.document_number = $1 AND l.service_type = $2 AND l.status = 'enviado'
+          AND l.service_date >= $3::date AND l.service_date < ($3::date + INTERVAL '1 month')`,
+      [documentNumber, serviceType, monthStart],
+    );
+    return res.rows.map(toSentRecord);
   }
 }
