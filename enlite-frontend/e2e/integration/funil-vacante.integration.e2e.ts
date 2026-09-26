@@ -13,6 +13,7 @@
  *
  * Exercises (Fase 2 da change):
  *   P20 — os 3 lugares e a API dizem o mesmo número + print (DX-2.11, DX-2.13)
+ *   P21 — Pre Screening une PRE_SCREENING + IN_PROGRESS numa coluna só
  */
 
 import { test, expect, type APIRequestContext, type Page, type Response } from '@playwright/test';
@@ -100,7 +101,16 @@ async function gotoVacanciesList(page: Page): Promise<Response> {
   return response;
 }
 
+/**
+ * `VacancyFunnelView.tsx` persiste a última vista (list/kanban) em
+ * `localStorage['vacancy-funnel-view-<id>']` — sem limpar, uma 2ª navegação à
+ * MESMA vaga depois de `switchToKanban` reabre em Kanban, não em "lista
+ * (default)". Cada chamada representa uma visita FRESCA: sempre em lista.
+ */
 async function gotoVacancyDetail(page: Page, vacancyId: string): Promise<Response> {
+  await page
+    .evaluate((id) => localStorage.removeItem(`vacancy-funnel-view-${id}`), vacancyId)
+    .catch(() => {});
   const funnelTableRe = new RegExp(`/vacancies/${vacancyId}/funnel-table(\\?|$)`);
   const [response] = await Promise.all([
     page.waitForResponse((r) => funnelTableRe.test(r.url()) && r.request().method() === 'GET'),
@@ -130,6 +140,10 @@ async function readTestIdNumbers(
     out[col] = Number(await page.getByTestId(testIdFor(col)).innerText());
   }
   return out;
+}
+
+async function countFunnelTableRows(page: Page): Promise<number> {
+  return page.getByTestId('vacancy-funnel-view').getByRole('table').locator('tbody tr').count();
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────────────
@@ -306,5 +320,66 @@ test.describe('funil da vacante @integration', () => {
 
     expect(listagensDistintas, 'listagens distintas').toBe(1);
     expect(porVaga, 'requests por-vaga nesta tela').toBe(0);
+  });
+
+  // ── P21 · Pre Screening une PRE_SCREENING + IN_PROGRESS ────────────────────
+  test('funil-vacante-pre-screening-une', async ({ page }) => {
+    const { patientId, addressId } = insertTestPatient({
+      withAddress: true,
+      firstName: 'FunilV2',
+      lastName: `PreScreening-${Date.now()}`,
+    });
+    const caseNumber = 981_000 + Math.floor(Math.random() * 900);
+    const vacancyId = insertBaseVacancy({
+      patientId,
+      patientAddressId: addressId!,
+      caseNumber,
+      status: 'SEARCHING',
+      isDraft: false,
+    });
+    const workerPreScreening = insertTestWorker({ firstName: 'FunilV2PS', lastName: `E2E${Date.now()}` });
+    const workerInProgress = insertTestWorker({ firstName: 'FunilV2IP', lastName: `E2E${Date.now()}` });
+
+    try {
+      insertWJA({
+        workerId: workerPreScreening,
+        jobPostingId: vacancyId,
+        funnelStage: 'PRE_SCREENING',
+        source: 'talentum',
+      });
+      insertWJA({
+        workerId: workerInProgress,
+        jobPostingId: vacancyId,
+        funnelStage: 'IN_PROGRESS',
+        source: 'talentum',
+      });
+
+      await loginAs(page, MOCK_ADMIN_USER);
+
+      // Kanban: uma coluna só (PRE_SCREENING), contando os dois — sem IN_PROGRESS.
+      await gotoVacancyDetail(page, vacancyId);
+      await expect(page.getByTestId('vacancy-funnel-view')).toBeVisible({ timeout: 15_000 });
+      await switchToKanban(page, vacancyId);
+      await expect(page.getByTestId('kanban-board')).toBeVisible({ timeout: 15_000 });
+      // Não conta pelo DOM dos cards (a coluna pode estar colapsada) — pelo contador.
+      await expect(page.getByTestId('kanban-column-PRE_SCREENING-count')).toHaveText('2');
+      await expect(page.getByTestId('kanban-column-IN_PROGRESS')).toHaveCount(0);
+      await expect(page.getByTestId('kanban-column-PRE_SCREENING')).toHaveCount(1);
+
+      // Modo lista: a aba "Pre Screening" também soma os dois, e a tabela mostra as 2 linhas.
+      await gotoVacancyDetail(page, vacancyId);
+      await expect(page.getByTestId('vacancy-funnel-view')).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId('funnel-tab-PRE_SCREENING-count')).toHaveText('2');
+      await page.locator('#funnel-tab-PRE_SCREENING').click();
+      await expect
+        .poll(() => countFunnelTableRows(page), { message: 'linhas da tabela em Pre Screening' })
+        .toBe(2);
+    } finally {
+      cleanupWJAAndEncuadre(workerPreScreening, vacancyId);
+      cleanupWJAAndEncuadre(workerInProgress, vacancyId);
+      cleanupTestWorker(workerPreScreening);
+      cleanupTestWorker(workerInProgress);
+      cleanupTestPatient(patientId);
+    }
   });
 });
