@@ -3,6 +3,7 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { excludeDisabledWorkersSql } from '@shared/database/activeWorkerFilter';
 import { liveWorkerJoinSql } from './blockedAttemptLiveState';
 import { blockedNotPromotedSql } from './BlockedApplicationQueryRepository';
+import { candidateDistanceKmSql } from './candidateDistanceSql';
 
 /**
  * Raw database row returned by the funnel-table query (before domain mapping).
@@ -40,6 +41,7 @@ export interface FunnelTableRawRow {
   messaged_at: string | null;
   /** true quando a linha veio de worker_blocked_applications (fetchBlockedRawRows), não de WJA. */
   is_blocked: boolean;
+  distance_km: number | string | null;
 }
 
 /**
@@ -93,7 +95,8 @@ export class FunnelTableRepository {
          -- enfraquece um guard que já pegou schema drift de verdade.
          (SELECT h.created_at::text FROM worker_job_application_stage_history h
            WHERE h.application_id = wja.id AND h.changed_by LIKE 'worker_self:%'
-           ORDER BY h.created_at ASC LIMIT 1)               AS self_applied_at
+           ORDER BY h.created_at ASC LIMIT 1)               AS self_applied_at,
+         ${candidateDistanceKmSql('wja.worker_id', 'wja.job_posting_id')} AS distance_km
        FROM worker_job_applications wja
        LEFT JOIN workers w
          ON w.id = wja.worker_id
@@ -137,7 +140,7 @@ lw.phone, lw.profile_photo_url_encrypted, wba.last_attempted_at::text AS invited
 NULL::text AS interview_response, NULL::text AS wbdl_dispatched_at, NULL::text AS wbdl_delivery_status,
 NULL::text AS wbdl_status, lw.status AS worker_status, (SELECT COUNT(*)::int FROM wja_contact_notes cn WHERE
 cn.worker_id = wba.worker_id AND cn.job_posting_id = wba.job_posting_id) AS contact_notes_count, NULL::text AS
-self_applied_at, NULL::text AS source, NULL::text AS messaged_at, true AS is_blocked FROM worker_blocked_applications wba
+self_applied_at, NULL::text AS source, NULL::text AS messaged_at, true AS is_blocked, NULL::float AS distance_km FROM worker_blocked_applications wba
 ${liveWorkerJoinSql()} WHERE wba.job_posting_id = $1 AND ${blockedNotPromotedSql('wba')} ORDER BY wba.last_attempted_at DESC`,
       [jobPostingId],
     );

@@ -49,6 +49,8 @@ export interface FunnelTableRow {
   kanbanColumn: Exclude<KanbanColumn, 'BLOQUEADO'> | null;
   /** true quando a linha veio de worker_blocked_applications (fetchBlockedRawRows), não de WJA. */
   isBlocked: boolean;
+  /** km até a vaga (DX-3.10); null = sem coordenada ou tentativa negada. */
+  distanceKm: number | null;
 }
 
 export interface FunnelTableCounts {

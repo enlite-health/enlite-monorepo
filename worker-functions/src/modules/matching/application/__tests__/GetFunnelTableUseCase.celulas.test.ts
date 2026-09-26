@@ -183,4 +183,17 @@ describe('funnel-table — filtro `columns` e tentativa negada (DX-2.6, D433)', 
     expect(out.counts.ALL).toBe(1);
     expect(out.counts.columns.REJECTED).toBe(1);
   });
+
+  it('distanceKm (DX-3.10): "12.5" numérico na linha normal, null na tentativa negada', async () => {
+    mockFetchRawRows.mockResolvedValue([{ ...linhaComStage('CONFIRMED'), distance_km: '12.5' }]);
+    mockFetchBlockedRawRows.mockResolvedValue([linhaBloqueada()]);
+
+    // columns inclui REJECTED (D433) para a bloqueada entrar em `rows` junto com a normal.
+    const out = await new GetFunnelTableUseCase().execute('jp-1', 'ALL', null, ['CONFIRMED', 'REJECTED']);
+
+    const normal = out.rows.find((r) => r.id === 'wja-1');
+    const bloqueada = out.rows.find((r) => r.id === 'blk-1');
+    expect(normal?.distanceKm).toBe(12.5);
+    expect(bloqueada?.distanceKm).toBeNull();
+  });
 });
