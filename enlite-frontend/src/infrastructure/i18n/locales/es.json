@@ -2085,7 +2085,11 @@
         "missing": "Faltantes",
         "view": "Ver",
         "edit": "Editar",
-        "draftBadge": "Borrador"
+        "draftBadge": "Borrador",
+        "lastAction": "Última acción",
+        "daysWithoutDivulgation": "Días sin difusión",
+        "noLastAction": "—",
+        "noDivulgationRecord": "sin registro"
       },
       "statusOptions": {
         "all": "Todos",
@@ -2319,7 +2323,27 @@
       "tabs": {
         "encuadres": "Encuadres",
         "talentum": "Talentum",
-        "links": "Links"
+        "links": "Links",
+        "notes": "Anotaciones"
+      },
+      "notes": {
+        "title": "Anotaciones",
+        "newButton": "Nueva anotación",
+        "empty": "Sin anotaciones",
+        "when": "Cuándo",
+        "category": "Categoría",
+        "contact": "Con quién",
+        "body": "Qué",
+        "author": "Autor",
+        "save": "Guardar",
+        "cancel": "Cancelar",
+        "loadError": "No se pudieron cargar las anotaciones",
+        "saveError": "No se pudo guardar la anotación",
+        "categoryOptions": {
+          "DIVULGACAO": "Difusión",
+          "CONTATO": "Contacto",
+          "OUTRO": "Otro"
+        }
       },
       "funnelView": {
         "viewToggle": {

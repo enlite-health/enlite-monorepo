@@ -2085,7 +2085,11 @@
         "missing": "Faltantes",
         "view": "Ver",
         "edit": "Editar",
-        "draftBadge": "Rascunho"
+        "draftBadge": "Rascunho",
+        "lastAction": "Última ação",
+        "daysWithoutDivulgation": "Dias sem divulgação",
+        "noLastAction": "—",
+        "noDivulgationRecord": "sem registro"
       },
       "statusOptions": {
         "all": "Todos",
@@ -2303,7 +2307,27 @@
       "tabs": {
         "encuadres": "Encuadres",
         "talentum": "Talentum",
-        "links": "Links"
+        "links": "Links",
+        "notes": "Anotações"
+      },
+      "notes": {
+        "title": "Anotações",
+        "newButton": "Nova anotação",
+        "empty": "Sem anotações",
+        "when": "Quando",
+        "category": "Categoria",
+        "contact": "Com quem",
+        "body": "O que",
+        "author": "Autor",
+        "save": "Salvar",
+        "cancel": "Cancelar",
+        "loadError": "Não foi possível carregar as anotações",
+        "saveError": "Não foi possível salvar a anotação",
+        "categoryOptions": {
+          "DIVULGACAO": "Divulgação",
+          "CONTATO": "Contato",
+          "OUTRO": "Outro"
+        }
       },
       "funnelView": {
         "viewToggle": {
