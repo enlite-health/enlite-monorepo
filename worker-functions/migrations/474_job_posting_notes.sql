@@ -2,6 +2,11 @@
 -- Passo 0 (c): job_posting_comments (036) é import do ClickUp (stage: 120 linhas, todas source=clickup) e
 -- wja_contact_notes (204) é por candidatura — nenhuma serve para "o que o time fez com a vacante".
 -- Só acrescenta: app_runtime/app_system recebem SELECT e INSERT, sem UPDATE/DELETE (trilha).
+-- O default privilege do schema public já concede arwd a app_runtime/app_system em toda
+-- tabela nova (269_app_runtime_roles.sql:66-69, ALTER DEFAULT PRIVILEGES); por isso o
+-- GRANT sozinho é aditivo e não basta — precisa do REVOKE abaixo para o append-only pegar
+-- de verdade, mesmo molde do REVOKE UPDATE, DELETE que a 269 já aplica em
+-- worker_job_application_stage_history (269:84-93) para deixá-la só `ar`.
 -- `contact` e `body` são texto do perímetro: nunca a log, GBrain ou payload de agente.
 -- Sem RLS: job_postings não tem (271:36, 413:12).
 -- Rollback (down), só com a tabela vazia (fase-3.md §Rollback):
@@ -23,3 +28,4 @@ CREATE TABLE IF NOT EXISTS job_posting_notes (
 CREATE INDEX IF NOT EXISTS idx_job_posting_notes_posting_occurred
   ON job_posting_notes (job_posting_id, occurred_at DESC);
 GRANT SELECT, INSERT ON job_posting_notes TO app_runtime, app_system;
+REVOKE UPDATE, DELETE ON job_posting_notes FROM app_runtime, app_system;
