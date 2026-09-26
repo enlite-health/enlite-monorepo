@@ -11,10 +11,21 @@
  *
  * `createNoteViaUi`: humano (click + `keyboard.type`), nunca `fill()`/`evaluate`
  * (memória `e2e-humano-nao-e-fill`). O campo "cuándo" é um `<input
- * type="datetime-local">` em locale es-AR (`test.use` da DX-3.16) — aceita
- * dígitos `ddmmaaaahhmm` por segmento, no fuso de Buenos Aires (o mesmo que o
- * SQL da "última ação" usa, DX-3.6, por construção — não por coincidência de
- * fuso, memória `teste-de-fuso-passa-por-coincidencia`).
+ * type="datetime-local">`. A premissa original da DX-3.16 ("es-AR aceita
+ * dígitos `ddmmaaaahhmm` por segmento") **não se sustentou**: MEDIDO (debug
+ * descartável, contra a stack `cadeia-f3`, Chromium headless) que o widget
+ * NATIVO de segmentos do Chromium ignora `test.use({ locale: 'es-AR' })` — a
+ * ordem de clique é sempre `mm/dd/aaaa` (americana), e o segmento do ANO não
+ * avança sozinho ao completar 4 dígitos (aceita até 6, por spec HTML de ano
+ * estendido), então dígitos de hora digitados em seguida vazam pro ano e o
+ * `el.value` fica com ano de 6 dígitos ou vazio ("incomplete or has an
+ * invalid date"). A hora É 24h direto (sem segmento AM/PM) — isso sim é
+ * `es-AR`/`Intl` chegando à página. Ordem que funciona, medida e reproduzida:
+ * `mm` (2) → `dd` (2) → `aaaa` (4) → **ArrowRight explícito** (força sair do
+ * ano) → `hh` 24h (2) → `mm` minuto (2). O fuso de Buenos Aires continua
+ * vindo do `timezoneId` do `test.use` (DX-3.6/DX-3.16), não do locale de
+ * exibição — "5 dias atrás" digitado é 5 dias de calendário de Buenos Aires
+ * por construção (memória `teste-de-fuso-passa-por-coincidencia`).
  *
  * `seedVacancyWithCandidatesAtKm`: a mesma semente do P1
  * (`CH/evidencias/fase-3/prints/antes-spec.ts.txt`) — paciente com endereço,
@@ -64,12 +75,13 @@ export interface CreateNoteViaUiOpts {
 }
 
 /**
- * `dd mm aaaa hh mm` concatenados em Buenos Aires — o que `keyboard.type`
- * digita, segmento a segmento, no `<input type="datetime-local">` em es-AR
- * (DX-3.16). `hourCycle: 'h23'` (não `hour12: false`): ICU vira `24` na
- * meia-noite com `hour12`, o segmento do input não aceita.
+ * Segmentos de `dd/mm/aaaa hh:mm` em Buenos Aires, separados (não
+ * concatenados): a ORDEM de clique do widget nativo do Chromium é sempre
+ * `mm/dd/aaaa` (medido — ignora `test.use({ locale })`), mas a hora é 24h
+ * direto. `hourCycle: 'h23'` (não `hour12: false`): ICU vira `24` na meia-noite
+ * com `hour12`, o segmento do input não aceita.
  */
-function ddmmaaaahhmm(d: Date): string {
+function whenSegments(d: Date): { day: string; month: string; year: string; hour: string; minute: string } {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'America/Argentina/Buenos_Aires',
     day: '2-digit',
@@ -80,7 +92,26 @@ function ddmmaaaahhmm(d: Date): string {
     hourCycle: 'h23',
   }).formatToParts(d);
   const get = (type: string): string => parts.find((p) => p.type === type)?.value ?? '';
-  return `${get('day')}${get('month')}${get('year')}${get('hour')}${get('minute')}`;
+  return { day: get('day'), month: get('month'), year: get('year'), hour: get('hour'), minute: get('minute') };
+}
+
+/**
+ * Digita `d` no `when` (`<input type="datetime-local">`) na ordem REAL do
+ * widget nativo do Chromium headless (MEDIDO 26/09, `CH/evidencias/fase-3/provas/P19-datetime.md`):
+ * `mm` → `dd` → `aaaa` → **ArrowRight** (o segmento do ano não avança sozinho
+ * ao completar 4 dígitos, aceita até 6 por spec de ano estendido — sem o
+ * ArrowRight, os dígitos da hora vazam pro ano) → `hh` (24h) → `mm`.
+ */
+async function typeWhen(page: Page, when: ReturnType<Page['getByTestId']>, d: Date): Promise<void> {
+  const { day, month, year, hour, minute } = whenSegments(d);
+  await when.click();
+  await expect(when).toBeFocused();
+  await page.keyboard.type(month);
+  await page.keyboard.type(day);
+  await page.keyboard.type(year);
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.type(hour);
+  await page.keyboard.type(minute);
 }
 
 /**
@@ -94,10 +125,8 @@ export async function createNoteViaUi(page: Page, opts: CreateNoteViaUiOpts): Pr
 
   if (daysAgo !== undefined) {
     const when = page.getByTestId('vacancy-note-when');
-    await when.click();
-    await expect(when).toBeFocused();
     const target = new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000);
-    await page.keyboard.type(ddmmaaaahhmm(target));
+    await typeWhen(page, when, target);
   }
 
   await page.getByTestId('vacancy-note-category').selectOption(category);
