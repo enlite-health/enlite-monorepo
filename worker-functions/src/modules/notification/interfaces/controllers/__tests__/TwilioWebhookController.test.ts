@@ -50,6 +50,45 @@ describe('TwilioWebhookController — auto-bloqueio por falha repetida', () => {
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
+  it('SELECT de falhas usa LEFT JOIN workers w e resolve o telefone por w.phone, não l.phone da tabela de log (migration 475)', async () => {
+    // Este teste NÃO pode ser satisfeito só pelo shape do retorno mockado — mockQuery
+    // devolve o que mandarmos independente do SQL. Por isso a asserção é sobre o TEXTO
+    // da query: se alguém desfizer o LEFT JOIN e voltar a ler l.phone (a coluna da
+    // própria whatsapp_bulk_dispatch_logs, sempre NULL a partir da migration 475), este
+    // teste morre mesmo com o retorno mockado intacto.
+    mockQuery
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ worker_id: 'w-1', phone: '+5491100000000', fails: '2' }] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    await controller.handleStatusCallback(mockReq({ MessageSid: 'SM5', MessageStatus: 'undelivered' }), mockRes());
+
+    const select = mockQuery.mock.calls[2];
+    const sql = String(select[0]);
+    expect(sql).toMatch(/LEFT JOIN workers w ON w\.id = l\.worker_id/);
+    expect(sql).toMatch(/w\.phone/);
+    // Não pode voltar a selecionar o phone da própria linha de log.
+    expect(sql).not.toMatch(/\bl\.phone\b/);
+  });
+
+  it('worker sem telefone (LEFT JOIN devolve w.phone NULL) -> guard impede INSERT em messaging_opt_out', async () => {
+    // Simula o caso real pós-migration 475: worker sem telefone cadastrado (ou o JOIN
+    // não encontrando a linha), então w.phone vem NULL. O guard
+    // `if (!row || !row.worker_id || !row.phone) return;` tem que impedir o INSERT —
+    // messaging_opt_out.phone é NOT NULL, e um INSERT com phone=NULL quebraria em prod.
+    mockQuery
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [{ worker_id: 'w-3', phone: null, fails: '3' }] });
+
+    await controller.handleStatusCallback(mockReq({ MessageSid: 'SM6', MessageStatus: 'failed' }), mockRes());
+
+    // só as 2 updates + o select; NENHUM insert, mesmo com fails=3 (>=2)
+    expect(mockQuery).toHaveBeenCalledTimes(3);
+    expect(mockQuery.mock.calls.every(c => !String(c[0]).includes('INSERT INTO messaging_opt_out'))).toBe(true);
+  });
+
   it('undelivered + worker com <2 falhas -> NÃO insere', async () => {
     mockQuery
       .mockResolvedValueOnce({ rows: [] })
