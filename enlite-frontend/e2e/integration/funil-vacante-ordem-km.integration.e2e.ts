@@ -11,6 +11,7 @@
 import { test, expect } from '@playwright/test';
 import { loginAs, tokenFor, type MockUser } from '../helpers/abac-stack-helper';
 import { seedMockStaff, cleanupMockStaff, seedVacancyWithCandidatesAtKm } from '../helpers/vacancy-notes-e2e-helper';
+import { runSQL } from '../helpers/patient-detail-a-helper';
 
 const BACKEND_URL = process.env.E2E_BACKEND_URL ?? 'http://localhost:8080';
 
@@ -174,6 +175,97 @@ test.describe('funil da vacante — ordem por km @integration', () => {
         new Set(expectedIds.map((id) => `kanban-card-${id}`)),
       );
       expect(kanbanIds.length, 'nenhum a mais nem a menos').toBe(2);
+    } finally {
+      seed.cleanup();
+    }
+  });
+
+  // ── alt · endereço muda POR FORA da tela: a ordem acompanha (não é dado ─────
+  // congelado na primeira leitura) ────────────────────────────────────────────
+  test('funil-vacante-ordem-km-endereco-muda-por-fora', async ({ page }) => {
+    const seed = seedVacancyWithCandidatesAtKm([3, 12, 40]);
+    const [wja3, wja12, wja40] = seed.wjaIds;
+    const workerId40 = seed.workerIds[2];
+
+    try {
+      // 1. loginAs; abre a vaga (modo lista padrão) e muda pro Kanban — ordem
+      // inicial das distâncias semeadas: 3, 12, 40.
+      await loginAs(page, MOCK_ADMIN);
+      await page
+        .evaluate((id) => localStorage.removeItem(`vacancy-funnel-view-${id}`), seed.vacancyId)
+        .catch(() => {});
+      const funnelTableRe = new RegExp(`/vacancies/${seed.vacancyId}/funnel-table(\\?|$)`);
+      const [funnelTableResponse] = await Promise.all([
+        page.waitForResponse((r) => funnelTableRe.test(r.url()) && r.request().method() === 'GET'),
+        page.goto(`/admin/vacancies/${seed.vacancyId}`),
+      ]);
+      expect(funnelTableResponse.ok(), 'GET funnel-table falhou').toBe(true);
+      await expect(page.getByTestId('vacancy-funnel-view')).toBeVisible({ timeout: 15_000 });
+
+      const funnelRe = new RegExp(`/vacancies/${seed.vacancyId}/funnel(\\?|$)`);
+      const [kanbanResponse] = await Promise.all([
+        page.waitForResponse((r) => funnelRe.test(r.url()) && r.request().method() === 'GET'),
+        page
+          .getByRole('group', { name: 'Cambiar vista' })
+          .getByRole('button', { name: /Kanban/i })
+          .click(),
+      ]);
+      expect(kanbanResponse.ok(), 'GET funnel (kanban) falhou').toBe(true);
+      await expect(page.getByTestId('kanban-board')).toBeVisible({ timeout: 15_000 });
+
+      const kanbanIdsBefore = await page
+        .locator('[data-testid="kanban-column-INVITED"] [data-testid^="kanban-card-"][data-stage]')
+        .evaluateAll((els) => els.map((e) => e.getAttribute('data-testid')));
+      expect(kanbanIdsBefore, 'ordem inicial no kanban (3, 12, 40)').toEqual(
+        [wja3, wja12, wja40].map((id) => `kanban-card-${id}`),
+      );
+
+      // 2. Por fora da tela: a área viva do worker de 40km muda pra ~1km da vaga
+      // (mesma longitude do seed — só a latitude anda 1/111,2 grau, ~1km).
+      const vacancyLat = parseFloat(
+        runSQL(
+          `SELECT pa.lat FROM patient_addresses pa JOIN job_postings jp ON jp.patient_address_id = pa.id ` +
+            `WHERE jp.id = '${seed.vacancyId}'`,
+        ).trim(),
+      );
+      runSQL(
+        `UPDATE worker_service_areas SET latitude = ${vacancyLat + 1 / 111.2} ` +
+          `WHERE worker_id = '${workerId40}' AND deleted_at IS NULL`,
+      );
+
+      // 3. Reload — a view Kanban persiste (localStorage); a ordem lida vira
+      // 1 (ex-40) · 3 · 12, pela ordem de ids, nunca por texto.
+      const [kanbanResponseAfter] = await Promise.all([
+        page.waitForResponse((r) => funnelRe.test(r.url()) && r.request().method() === 'GET'),
+        page.reload(),
+      ]);
+      expect(kanbanResponseAfter.ok(), 'GET funnel (kanban) pós-reload falhou').toBe(true);
+      await expect(page.getByTestId('kanban-board')).toBeVisible({ timeout: 15_000 });
+
+      const kanbanIdsAfter = await page
+        .locator('[data-testid="kanban-column-INVITED"] [data-testid^="kanban-card-"][data-stage]')
+        .evaluateAll((els) => els.map((e) => e.getAttribute('data-testid')));
+      expect(kanbanIdsAfter, 'ordem após mudança por fora no kanban (ex-40, 3, 12)').toEqual(
+        [wja40, wja3, wja12].map((id) => `kanban-card-${id}`),
+      );
+
+      // 4. Modo lista — mesma ordem nova, lida pelas linhas.
+      const [funnelTableResponseAfter] = await Promise.all([
+        page.waitForResponse((r) => funnelTableRe.test(r.url()) && r.request().method() === 'GET'),
+        page
+          .getByRole('group', { name: 'Cambiar vista' })
+          .getByRole('button', { name: 'Lista' })
+          .click(),
+      ]);
+      expect(funnelTableResponseAfter.ok(), 'GET funnel-table pós-mudança falhou').toBe(true);
+      await expect(page.getByTestId('vacancy-funnel-view')).toBeVisible({ timeout: 15_000 });
+
+      const listIdsAfter = await page
+        .locator('[data-testid^="funnel-row-"]')
+        .evaluateAll((els) => els.map((e) => e.getAttribute('data-testid')));
+      expect(listIdsAfter, 'ordem após mudança por fora no modo lista (ex-40, 3, 12)').toEqual(
+        [wja40, wja3, wja12].map((id) => `funnel-row-${id}`),
+      );
     } finally {
       seed.cleanup();
     }
