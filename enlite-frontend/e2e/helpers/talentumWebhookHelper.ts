@@ -9,108 +9,51 @@
  * problemas de CORS e Authorization. O backend roda com USE_MOCK_AUTH=true,
  * portanto o endpoint /api/webhooks/talentum/prescreening não requer header
  * de autenticação.
+ *
+ * P26a v2 (26/09, cadeia-paciente-vacante-itinerario Fase 2): `loginAsKanbanAdmin` e
+ * `installKanbanInterceptors` passaram a DELEGAR para `installAuthInterceptors`/`tokenFor`
+ * de `abac-stack-helper.ts` — o helper deixou de ter interceptor próprio. Motivo: o
+ * catch-all de rotas "/api/(qualquer coisa)" daqui não cobria `/v1/me/authz`; com ABAC
+ * ligado a API recusava (401) e a tela ficava presa em "Carregando...". `MOCK_ADMIN`
+ * ganhou `country: 'AR'` (shape `MockUser`), e `loginAsKanbanAdmin` semeia a linha de
+ * staff em `users` (mesmo padrão de `seedAdminUser` em `funil-vacante.integration.e2e.ts`,
+ * via `runSQL` de `patient-detail-a-helper.ts`) antes de logar.
  */
 
-import type { APIRequestContext, Page, Route } from '@playwright/test';
+import type { APIRequestContext, Page } from '@playwright/test';
 import { expect } from '@playwright/test';
+import { installAuthInterceptors, tokenFor, type MockUser } from './abac-stack-helper';
+import { runSQL } from './patient-detail-a-helper';
 
 export const BACKEND_URL = 'http://localhost:8080';
 
 // ── Admin mock auth ───────────────────────────────────────────────────────────
 
-export const MOCK_ADMIN = {
+export const MOCK_ADMIN: MockUser = {
   uid: 'e2e-talentum-kanban',
   email: 'admin.talentum.kanban@e2e.test',
   role: 'admin',
+  country: 'AR',
 };
 
-export const MOCK_TOKEN =
-  'mock_' + Buffer.from(JSON.stringify(MOCK_ADMIN), 'utf-8').toString('base64');
+export const MOCK_TOKEN = tokenFor(MOCK_ADMIN);
 
-const FAKE_ID_TOKEN =
-  'eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0.' +
-  Buffer.from(
-    JSON.stringify({
-      sub: MOCK_ADMIN.uid,
-      uid: MOCK_ADMIN.uid,
-      email: MOCK_ADMIN.email,
-      iss: 'https://securetoken.google.com/enlite-prd',
-      aud: 'enlite-prd',
-      iat: Math.floor(Date.now() / 1000),
-      exp: Math.floor(Date.now() / 1000) + 3600,
-    }),
-  ).toString('base64url') +
-  '.';
+/** Garante a linha de staff em `users` — mesmo padrão de `seedAdminUser` em funil-vacante.integration.e2e.ts. */
+function seedStaffUser(): void {
+  runSQL(
+    `INSERT INTO users (firebase_uid, email, display_name, role, is_active, account_type, status) ` +
+      `VALUES ('${MOCK_ADMIN.uid}', '${MOCK_ADMIN.email}', 'E2E Talentum Kanban', 'admin', true, 'staff', 'ACTIVE') ` +
+      `ON CONFLICT (firebase_uid) DO NOTHING`,
+  );
+}
 
+/** Delega a `installAuthInterceptors` (abac-stack-helper.ts) — cobre **\/api/**, /v1/me/authz e /v1/me/simulation. */
 export async function installKanbanInterceptors(page: Page): Promise<void> {
-  await page.route('**/identitytoolkit.googleapis.com/**', async (route: Route) => {
-    const url = route.request().url();
-    if (url.includes('signInWithPassword') || url.includes('signUp')) {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          kind: 'identitytoolkit#VerifyPasswordResponse',
-          localId: MOCK_ADMIN.uid,
-          email: MOCK_ADMIN.email,
-          idToken: FAKE_ID_TOKEN,
-          refreshToken: 'fake-refresh',
-          expiresIn: '3600',
-          registered: true,
-        }),
-      });
-      return;
-    }
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        users: [{ localId: MOCK_ADMIN.uid, email: MOCK_ADMIN.email, emailVerified: true }],
-      }),
-    });
-  });
-
-  await page.route('**/securetoken.googleapis.com/**', async (route: Route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        access_token: FAKE_ID_TOKEN,
-        id_token: FAKE_ID_TOKEN,
-        expires_in: '3600',
-        token_type: 'Bearer',
-        refresh_token: 'fake-refresh',
-      }),
-    });
-  });
-
-  await page.route('**/api/**', async (route: Route) => {
-    const url = route.request().url();
-    if (url.includes('/api/admin/auth/profile')) {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          success: true,
-          data: {
-            id: MOCK_ADMIN.uid,
-            email: MOCK_ADMIN.email,
-            role: MOCK_ADMIN.role,
-            firstName: 'Integration',
-            lastName: 'Admin',
-            isActive: true,
-            mustChangePassword: false,
-          },
-        }),
-      });
-      return;
-    }
-    const headers = { ...route.request().headers(), authorization: `Bearer ${MOCK_TOKEN}` };
-    await route.continue({ headers });
-  });
+  await installAuthInterceptors(page, MOCK_ADMIN);
 }
 
 export async function loginAsKanbanAdmin(page: Page): Promise<void> {
+  seedStaffUser();
   await installKanbanInterceptors(page);
   await page.goto('/admin/login');
   await page.locator('input[type="email"]').fill(MOCK_ADMIN.email);
