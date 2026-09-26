@@ -13,6 +13,7 @@ import { useWJAFunnel } from '../useWJAFunnel';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { ApiError } from '@infrastructure/http/ApiError';
 import type { EncuadreRole } from '@domain/entities/EncuadreRole';
+import { MOVE_REASON_REQUIRED } from '@domain/entities/MoveReason';
 
 vi.mock('@infrastructure/http/AdminApiService');
 
@@ -206,7 +207,7 @@ describe('useWJAFunnel — moveEncuadre', () => {
     expect(ret).toBeNull();
     expect(AdminApiService.moveEncuadre).toHaveBeenCalledWith('enc-1', {
       targetStage: 'CONFIRMED',
-      rejectionReasonCategory: 'CAT',
+      reasonCategory: 'CAT',
       role: 'TITULAR',
       interviewDate: '2026-09-01',
       interviewTime: '10:00',
@@ -253,6 +254,23 @@ describe('useWJAFunnel — moveEncuadre', () => {
     });
 
     expect(ret).toEqual({ message: 'Erro desconhecido' });
+  });
+
+  it('422 MOVE_REASON_REQUIRED (DX-4.6/DX-4.10): fluxo esperado, NÃO loga console.error', async () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.mocked(AdminApiService.moveEncuadre).mockRejectedValue(
+      new ApiError({ success: false, error: 'move_reason_required', code: MOVE_REASON_REQUIRED, reason: 'JUMP' }, 422),
+    );
+    const { result } = await mountReady();
+
+    let ret: { message: string; code?: string; reason?: string } | null = null;
+    await act(async () => {
+      ret = await result.current.moveEncuadre('enc-1', 'CONFIRMED');
+    });
+
+    expect(ret).toEqual({ message: 'move_reason_required', code: MOVE_REASON_REQUIRED, reason: 'JUMP', workerStatus: undefined });
+    expect(consoleErrorSpy).not.toHaveBeenCalled();
+    consoleErrorSpy.mockRestore();
   });
 });
 
