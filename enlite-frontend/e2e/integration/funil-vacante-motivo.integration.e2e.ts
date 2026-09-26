@@ -7,12 +7,16 @@
  * USE_MOCK_AUTH=true) + Postgres real, no mesmo padrão de `funil-vacante.integration.e2e.ts`
  * (Fase 2): `loginAs` (click + `keyboard.type`, memória `e2e-humano-nao-e-fill`).
  *
- * `describe` serial com os 5 testes de nome literal (DX-4.16):
+ * `describe` serial com os 7 testes de nome literal (DX-4.16):
  *   funil-err-de-selecionados            — P17: Seleccionados → Equipo, sem pergunta (feliz)
  *   funil-err-salto-com-motivo           — P18: salto pela tela, com o diálogo de motivo
  *   funil-err-salto-sem-motivo-422       — P18: salto pela API, sem motivo → 422
  *   funil-rejeitar-exige-motivo          — P19: entrar em Rejeitados exige motivo
  *   funil-sair-de-rejeitados-exige-motivo — P19: sair de Rejeitados exige motivo
+ *   funil-err-modo-lista-aba-vazia        — alternativo do modo lista (critério 4 do gate 🟡):
+ *                                            aba da Equipe vazia (0 + tabela vazia) → putMove → 1 + linha aparece
+ *   funil-err-lista-vacantes-contagem     — alternativo da lista de vacantes (critério 4 do gate 🟡):
+ *                                            duas vagas, só a movida ganha a coluna nova; Seleccionados cai junto
  *
  * O helper `funnel-move-e2e-helper.ts` (P16) semeia vaga+cards, lê a trilha e conta
  * efeito colateral; este spec só orquestra a interação humana e as asserções.
@@ -132,6 +136,11 @@ async function readStableNumbers(
     out[col] = Number(previous);
   }
   return out;
+}
+
+/** Molde `funil-vacante.integration.e2e.ts` — a tabela do modo lista, sem candidatos na aba, tem 0 `tbody tr`. */
+async function countFunnelTableRows(page: Page): Promise<number> {
+  return page.getByTestId('vacancy-funnel-view').getByRole('table').locator('tbody tr').count();
 }
 
 const COLS = ['SELECTED', 'QUICK_RESPONSE_TEAM'] as const;
@@ -547,6 +556,91 @@ test.describe('funil da vacante — motivo obrigatório @integration', () => {
       expect(statusAfter).toBe(statusBefore);
     } finally {
       seed.cleanup();
+    }
+  });
+
+  // ── Alternativo · modo lista: aba da Equipe vazia, depois ganha 1 (critério 4 🟡) ──
+  test('funil-err-modo-lista-aba-vazia', async ({ page, request }) => {
+    const seed = seedVacancyWithCards([{ stage: 'SELECTED' }]);
+    const [card] = seed.cards;
+
+    try {
+      await loginAs(page, MOCK_STAFF);
+      await gotoVacancyDetail(page, seed.vacancyId);
+
+      // Antes: ninguém na Equipe — a aba mostra 0 e a tabela, ao abrir, não tem
+      // linha nenhuma (o mesmo estado vazio que `funil-vacante-vazia`, Fase 2, lê
+      // por contagem de testid — sem candidato nenhum, todas as abas ficam a 0).
+      await expect(page.getByTestId('funnel-tab-QUICK_RESPONSE_TEAM-count')).toHaveText('0');
+      await page.locator('#funnel-tab-QUICK_RESPONSE_TEAM').click();
+      await expect
+        .poll(() => countFunnelTableRows(page), { message: 'linhas da tabela em Equipo (vazia)' })
+        .toBe(0);
+
+      // Move o card SELECTED para a Equipe pela API — vizinho, sem motivo (o
+      // mesmo par testado no feliz de `funil-err-de-selecionados`).
+      const moveRes = await putMove(request, BACKEND_URL, MOCK_TOKEN, card.encuadreId, {
+        targetStage: 'QUICK_RESPONSE_TEAM',
+      });
+      console.log('[alt-lista] putMove status=', moveRes.status);
+      expect(moveRes.status, `PUT move deveria ser 2xx, veio ${moveRes.status}`).toBe(200);
+
+      // Depois: recarrega o funil — a aba passa a 1 e a linha do card aparece
+      // dentro dela (a tabela só lista a aba selecionada, então isso já prova
+      // kanbanColumn = QUICK_RESPONSE_TEAM sem precisar ler o campo direto).
+      await gotoVacancyDetail(page, seed.vacancyId);
+      await expect(page.getByTestId('funnel-tab-QUICK_RESPONSE_TEAM-count')).toHaveText('1');
+      await page.locator('#funnel-tab-QUICK_RESPONSE_TEAM').click();
+      await expect(page.getByTestId(`funnel-row-${card.wjaId}`)).toBeVisible({ timeout: 10_000 });
+    } finally {
+      seed.cleanup();
+    }
+  });
+
+  // ── Alternativo · lista de vacantes: só a vaga movida ganha a coluna nova (critério 4 🟡) ──
+  test('funil-err-lista-vacantes-contagem', async ({ page, request }) => {
+    const seedWithCard = seedVacancyWithCards([{ stage: 'SELECTED' }]);
+    const seedEmpty = seedVacancyWithCards([]);
+    const [card] = seedWithCard.cards;
+
+    try {
+      await loginAs(page, MOCK_STAFF);
+      await gotoVacanciesList(page);
+      await expect(page.getByTestId(`vacancy-row-${seedWithCard.vacancyId}`)).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId(`vacancy-row-${seedEmpty.vacancyId}`)).toBeVisible({ timeout: 15_000 });
+
+      // Antes: nenhuma das duas vagas tem ninguém na Equipe (00 e 00); a 1ª tem
+      // 1 em Seleccionados (01) — é esse card que vai se mover.
+      await expect(
+        page.getByTestId(`vacancy-row-${seedWithCard.vacancyId}-stage-QUICK_RESPONSE_TEAM`),
+      ).toHaveText('00');
+      await expect(
+        page.getByTestId(`vacancy-row-${seedEmpty.vacancyId}-stage-QUICK_RESPONSE_TEAM`),
+      ).toHaveText('00');
+      await expect(page.getByTestId(`vacancy-row-${seedWithCard.vacancyId}-stage-SELECTED`)).toHaveText('01');
+
+      // Move o card da 1ª vaga para a Equipe pela API — vizinho, sem motivo.
+      const moveRes = await putMove(request, BACKEND_URL, MOCK_TOKEN, card.encuadreId, {
+        targetStage: 'QUICK_RESPONSE_TEAM',
+      });
+      console.log('[alt-vacancies] putMove status=', moveRes.status);
+      expect(moveRes.status, `PUT move deveria ser 2xx, veio ${moveRes.status}`).toBe(200);
+
+      // Depois: só a vaga movida ganha a coluna nova (01) — a outra vaga
+      // continua intocada (00), e Seleccionados da 1ª cai junto (mesmo card,
+      // não um card a mais).
+      await gotoVacanciesList(page);
+      await expect(page.getByTestId(`vacancy-row-${seedWithCard.vacancyId}`)).toBeVisible({ timeout: 15_000 });
+      await expect(
+        page.getByTestId(`vacancy-row-${seedWithCard.vacancyId}-stage-QUICK_RESPONSE_TEAM`),
+      ).toHaveText('01');
+      await expect(
+        page.getByTestId(`vacancy-row-${seedEmpty.vacancyId}-stage-QUICK_RESPONSE_TEAM`),
+      ).toHaveText('00');
+      await expect(page.getByTestId(`vacancy-row-${seedWithCard.vacancyId}-stage-SELECTED`)).toHaveText('00');
+    } finally {
+      seedWithCard.cleanup();
+      seedEmpty.cleanup();
     }
   });
 });
