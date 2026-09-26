@@ -7,6 +7,7 @@
 
 import {
   CONFIRMED_KANBAN_STAGES,
+  FILLED_POSITION_STAGES,
   POSTULATED_STAGES,
   SELECTED_KANBAN_STAGES,
   toSqlInList,
@@ -57,6 +58,7 @@ const WORKER_ACTIVE_SQL = workerNotDisabledSql('wja.worker_id');
 const POSTULATED_SQL = toSqlInList(POSTULATED_STAGES);
 const CONFIRMED_KANBAN_SQL = toSqlInList(CONFIRMED_KANBAN_STAGES);
 const SELECTED_KANBAN_SQL = toSqlInList(SELECTED_KANBAN_STAGES);
+const FILLED_POSITION_SQL = toSqlInList(FILLED_POSITION_STAGES);
 
 const LIST_VACANCIES_BASE = `
   SELECT
@@ -105,9 +107,12 @@ const LIST_VACANCIES_BASE = `
       THEN GREATEST(
         -- quem deu baixa não ocupa a vaga: a posição volta a faltar
         jp.providers_needed::INTEGER - (
+          -- Fase 4 (DX-4.9, critério 11): SELECTED + QUICK_RESPONSE_TEAM ocupam a posição
+          -- da vaga; SELECTED_KANBAN_SQL (linha "selecionados" acima) fica intocado —
+          -- espelha só a coluna "Seleccionados" do Kanban, não "quem preenche a vaga".
           SELECT COUNT(*) FROM worker_job_applications wja
           WHERE wja.job_posting_id = jp.id
-            AND wja.application_funnel_stage IN (${SELECTED_KANBAN_SQL})
+            AND wja.application_funnel_stage IN (${FILLED_POSITION_SQL})
             AND ${WORKER_ACTIVE_SQL}
         ),
         0

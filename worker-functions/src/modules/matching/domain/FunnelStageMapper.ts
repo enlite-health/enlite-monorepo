@@ -28,6 +28,10 @@ export type FunnelStage =
   // CONFIRMED + interview_response='awaiting_reschedule' (ADR-003).
   | 'CONFIRMED'
   | 'SELECTED'
+  // Fase 4 (D430, migration 477): Equipe de Resposta Rápida — destino do arrasto manual
+  // do operador, nunca do vocabulário de um provider externo (nenhum FunnelStageMapper
+  // mapeia para ela); entra aqui só para o union de etapa ficar completo (WorkerJobApplication.ts).
+  | 'QUICK_RESPONSE_TEAM'
   // 'PLACED' removido em F7.a (migration 194) — 0 writers ativos pós-F6,
   // 0 linhas em prod. ADR-002 + ADR-003. Não consta mais em ApplicationFunnelStage
   // nem é mapeado pelo TalentumFunnelStageMapper.

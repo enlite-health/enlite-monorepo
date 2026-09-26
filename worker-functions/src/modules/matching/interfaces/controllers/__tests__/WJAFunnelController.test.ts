@@ -112,12 +112,12 @@ describe('WJAFunnelController', () => {
 
   // ═══════════════════════════════════════════════════════════════════
   // getEncuadreFunnel — classificação por application_funnel_stage
-  // Migration 230 + D433: 8 colunas (INVITED, INICIADO, PRE_SCREENING,
-  //                        IN_PROGRESS, COMPLETED, CONFIRMED, SELECTED, REJECTED)
+  // Migration 230 + D433 + Fase 4 (D430): 9 colunas (INVITED, INICIADO, PRE_SCREENING,
+  //   IN_PROGRESS, COMPLETED, CONFIRMED, SELECTED, QUICK_RESPONSE_TEAM, REJECTED)
   // ═══════════════════════════════════════════════════════════════════
 
   describe('getEncuadreFunnel', () => {
-    it('classifica encuadres nas 8 colunas por funnel_stage (migration 230 + D433)', async () => {
+    it('classifica encuadres nas 9 colunas por funnel_stage (migration 230 + D433 + Fase 4)', async () => {
       // Migration 230: INITIATED renomeado para PRE_SCREENING; INICIADO adicionado.
       // F3: NOT_QUALIFIED não existe mais em prod (migration 191 backfill → REJECTED)
       // F7.a: PLACED removido (migration 194 — 0 linhas em prod, sync F6 morta)
@@ -147,8 +147,8 @@ describe('WJAFunnelController', () => {
 
       const { stages } = response.data;
 
-      // 8 colunas no kanban (migration 230 + D433)
-      expect(Object.keys(stages)).toHaveLength(8);
+      // 9 colunas no kanban (migration 230 + D433 + Fase 4)
+      expect(Object.keys(stages)).toHaveLength(9);
 
       // NULL → INVITED (coluna de auto-invite / sem source)
       expect(stages.INVITED).toHaveLength(2); // e1 (null stage) + e2 (INVITED+system)
@@ -450,7 +450,7 @@ describe('WJAFunnelController', () => {
       expect(items.find(c => c.id === 'wja-4')!.workerName).toBe('Worker sem identificação');
     });
 
-    it('retorna 8 stages vazios quando não há encuadres nem bloqueados (migration 230 + D433)', async () => {
+    it('retorna 9 stages vazios quando não há encuadres nem bloqueados (migration 230 + D433 + Fase 4)', async () => {
       mockQuery.mockResolvedValueOnce({ rows: [] });
 
       const [req, res] = mockReqRes({ id: 'jp-empty' });
@@ -459,8 +459,8 @@ describe('WJAFunnelController', () => {
       const response = (res.json as jest.Mock).mock.calls[0][0];
       expect(response.success).toBe(true);
       expect(response.data.totalEncuadres).toBe(0);
-      // 8 colunas: INVITED, INICIADO, PRE_SCREENING, IN_PROGRESS, COMPLETED, CONFIRMED, SELECTED, REJECTED
-      expect(Object.keys(response.data.stages)).toHaveLength(8);
+      // 9 colunas: INVITED, INICIADO, PRE_SCREENING, IN_PROGRESS, COMPLETED, CONFIRMED, SELECTED, QUICK_RESPONSE_TEAM, REJECTED
+      expect(Object.keys(response.data.stages)).toHaveLength(9);
       Object.values(response.data.stages).forEach((stage: any) => {
         expect(stage).toHaveLength(0);
       });

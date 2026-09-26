@@ -266,12 +266,34 @@ describe('loadStageCounts', () => {
     expect(counts.REJECTED).toBe(1);
   });
 
-  it('um id sem linha nenhuma devolve as 8 colunas zeradas', async () => {
+  it('um id sem linha nenhuma devolve as 9 colunas zeradas (Fase 4: + QUICK_RESPONSE_TEAM)', async () => {
     const pool = makePool([{ id: 'jp-a', kind: 'wja', stage: 'INVITED', source: 'manual', messaged: false, n: 1 }]);
     const out = await loadStageCounts(pool, ['jp-a', 'jp-sem-linha']);
     const counts = out.get('jp-sem-linha')!;
     expect(Object.values(counts).every((n) => n === 0)).toBe(true);
-    expect(Object.keys(counts)).toHaveLength(8);
+    expect(Object.keys(counts)).toHaveLength(9);
+  });
+});
+
+// ── faltantes vs. selecionados — DX-4.9, critério 11 (Fase 4) ───────────────────
+
+describe('buildListVacanciesQuery — faltantes usa SELECTED + QUICK_RESPONSE_TEAM; selecionados só SELECTED', () => {
+  it('a subquery de "faltantes" inclui QUICK_RESPONSE_TEAM; a de "selecionados" não', () => {
+    const { baseQuery } = buildListVacanciesQuery(base());
+
+    const selecionadosIdx = baseQuery.indexOf('as selecionados');
+    const selecionadosBlock = baseQuery.slice(0, selecionadosIdx);
+    expect(selecionadosBlock).toContain("application_funnel_stage IN ('SELECTED')");
+    expect(selecionadosBlock).not.toContain('QUICK_RESPONSE_TEAM');
+
+    const faltantesIdx = baseQuery.indexOf('as faltantes');
+    const faltantesBlock = baseQuery.slice(selecionadosIdx, faltantesIdx);
+    expect(faltantesBlock).toContain("application_funnel_stage IN ('SELECTED','QUICK_RESPONSE_TEAM')");
+  });
+
+  it('não toca a linha de providers_needed (critério 14)', () => {
+    const { baseQuery } = buildListVacanciesQuery(base());
+    expect(baseQuery).toContain('jp.providers_needed::INTEGER');
   });
 });
 
