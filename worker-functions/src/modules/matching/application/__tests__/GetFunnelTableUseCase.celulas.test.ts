@@ -8,10 +8,14 @@
  */
 
 const mockFetchRawRows = jest.fn();
+const mockFetchBlockedRawRows = jest.fn().mockResolvedValue([]);
 const mockKmsDecrypt = jest.fn();
 
 jest.mock('../../infrastructure/FunnelTableRepository', () => ({
-  FunnelTableRepository: jest.fn().mockImplementation(() => ({ fetchRawRows: mockFetchRawRows })),
+  FunnelTableRepository: jest.fn().mockImplementation(() => ({
+    fetchRawRows: mockFetchRawRows,
+    fetchBlockedRawRows: mockFetchBlockedRawRows,
+  })),
 }));
 
 jest.mock('@shared/security/KMSEncryptionService', () => ({
@@ -43,6 +47,25 @@ function linhaCifrada() {
 function linhaLegado() {
   return { ...linhaCifrada(), first_name_encrypted: null, last_name_encrypted: null,
            worker_raw_name: 'Carlos Legado' };
+}
+
+/** Linha crua com `funnel_stage` arbitrário, para exercitar `deriveKanbanColumn`. */
+function linhaComStage(stage: string) {
+  return { ...linhaCifrada(), funnel_stage: stage, source: null, messaged_at: '2026-08-01T10:00:00Z' };
+}
+
+/** Card de tentativa negada (fetchBlockedRawRows) — mesmo shape de linha, `is_blocked: true`. */
+function linhaBloqueada() {
+  return {
+    id: 'blk-1', worker_id: 'w-blk',
+    first_name_encrypted: null, last_name_encrypted: null, worker_raw_name: null,
+    email: null, phone: null, profile_photo_url_encrypted: null,
+    invited_at: '2026-08-01T10:00:00Z',
+    funnel_stage: null, interview_response: null,
+    wbdl_dispatched_at: null, wbdl_delivery_status: null, wbdl_status: null,
+    worker_status: null, contact_notes_count: 0, self_applied_at: null,
+    source: null, messaged_at: null, is_blocked: true,
+  };
 }
 
 describe('funnel-table — a célula decide ANTES do KMS', () => {
@@ -117,5 +140,47 @@ describe('funnel-table — a célula decide ANTES do KMS', () => {
 
     expect(redigido.counts).toEqual(aberto.counts);
     expect(redigido.rows).toHaveLength(aberto.rows.length);
+  });
+});
+
+describe('funnel-table — filtro `columns` e tentativa negada (DX-2.6, D433)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockKmsDecrypt.mockImplementation((v: string | null) =>
+      typeof v === 'string' && v.startsWith('encrypted:')
+        ? Promise.resolve(v.slice('encrypted:'.length))
+        : Promise.resolve(''));
+    mockFetchBlockedRawRows.mockResolvedValue([]);
+  });
+
+  it('columns=[PRE_SCREENING, IN_PROGRESS] devolve as duas linhas', async () => {
+    mockFetchRawRows.mockResolvedValue([linhaComStage('PRE_SCREENING'), linhaComStage('IN_PROGRESS')]);
+
+    const out = await new GetFunnelTableUseCase().execute('jp-1', 'ALL', null, ['PRE_SCREENING', 'IN_PROGRESS']);
+
+    expect(out.rows).toHaveLength(2);
+  });
+
+  it('uma tentativa negada aparece com columns=[REJECTED] e NÃO com bucket=ALL', async () => {
+    mockFetchRawRows.mockResolvedValue([]);
+    mockFetchBlockedRawRows.mockResolvedValue([linhaBloqueada()]);
+
+    const comFiltro = await new GetFunnelTableUseCase().execute('jp-1', 'ALL', null, ['REJECTED']);
+    expect(comFiltro.rows).toHaveLength(1);
+    expect(comFiltro.rows[0].isBlocked).toBe(true);
+    expect(comFiltro.rows[0].kanbanColumn).toBe('REJECTED');
+
+    const semFiltro = await new GetFunnelTableUseCase().execute('jp-1', 'ALL', null);
+    expect(semFiltro.rows).toHaveLength(0);
+  });
+
+  it('counts.ALL não muda com tentativa negada, e counts.columns.REJECTED sobe 1', async () => {
+    mockFetchRawRows.mockResolvedValue([linhaCifrada()]); // funnel_stage=CONFIRMED
+    mockFetchBlockedRawRows.mockResolvedValue([linhaBloqueada()]);
+
+    const out = await new GetFunnelTableUseCase().execute('jp-1', 'ALL');
+
+    expect(out.counts.ALL).toBe(1);
+    expect(out.counts.columns.REJECTED).toBe(1);
   });
 });
