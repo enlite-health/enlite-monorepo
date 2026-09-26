@@ -21,7 +21,7 @@ const VACANCY_ID = 'vac-1';
 function emptyFunnel() {
   return {
     stages: {
-      INVITED: [], BLOQUEADO: [], INICIADO: [], PRE_SCREENING: [], IN_PROGRESS: [],
+      INVITED: [], INICIADO: [], PRE_SCREENING: [], IN_PROGRESS: [],
       COMPLETED: [], CONFIRMED: [], SELECTED: [], REJECTED: [],
     },
     totalEncuadres: 0,
