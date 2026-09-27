@@ -23,6 +23,9 @@ import { backendUrl, postContractedServiceViaApi } from './lancamento-e2e-helper
 import { runSQL } from './patient-detail-a-helper';
 import { tokenFor, type MockUser } from './abac-stack-helper';
 
+/** Espelha o CHECK `pia_status_check` da migration 480 (backend) — pacote diferente, não importa de lá. */
+export type AssignmentStatus = 'ACTIVE' | 'ENDED' | 'CANCELLED';
+
 /** Staff interno só para autenticar as chamadas de API deste helper (nunca exposto ao teste). */
 export const ITINERARIO_STAFF: MockUser = {
   uid: 'e2e-int-admin-itinerario-f7',
@@ -38,7 +41,7 @@ export interface ItineraryAssignmentDto {
   applicationId: string;
   validFrom: string;
   validTo: string | null;
-  status: 'ACTIVE' | 'ENDED' | 'CANCELLED';
+  status: AssignmentStatus;
 }
 
 export interface ItinerarySlotDto {
@@ -152,7 +155,7 @@ export interface SeedAssignmentOpts {
   validFromDaysAgo: number;
   /** Omitido = `valid_to` NULL (vigente sem fim). Informado = hoje − N dias. */
   validToDaysAgo?: number;
-  status: 'ACTIVE' | 'ENDED' | 'CANCELLED';
+  status: AssignmentStatus;
 }
 
 /**

@@ -4,6 +4,7 @@ import {
   computeServiceCoverage,
   type ServiceCoverageSlot,
   type ServiceWeeklyCoveredHours,
+  type ItineraryAssignmentStatus,
 } from '../ServiceCoverageCalculator';
 // Import só de TIPO — o critério 8 proíbe tocar `AddressAvailabilityCalculator.ts`; o teste
 // importa apenas o tipo (regra (ii)) e, à parte, a função pura (regra (iii)) para provar que as
@@ -58,7 +59,7 @@ describe('computeServiceCoverage', () => {
   });
 
   describe('vigência (comparação de string YYYY-MM-DD, sem Date)', () => {
-    const slotWith = (validFrom: string, validTo: string | null, status: 'ACTIVE' | 'ENDED' | 'CANCELLED'): ServiceCoverageSlot => ({
+    const slotWith = (validFrom: string, validTo: string | null, status: ItineraryAssignmentStatus): ServiceCoverageSlot => ({
       weekday: 1,
       startTime: '08:00',
       endTime: '12:00',
