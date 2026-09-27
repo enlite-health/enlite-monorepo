@@ -161,11 +161,23 @@ test.describe('funil da vacante — Compatíveis nos 3 lugares @integration', ()
       const listWindowEnd = requestUrls.length;
 
       // 2. Modo lista (aba padrão) — abre a aba Compatibles e conta as linhas.
+      // Race do spec (achado P23b/P17b): o clique em #funnel-tab-COMPATIBLE dispara um NOVO fetch
+      // (`useVacancyFunnelTable.ts:39-42`, a dependência `tab.key` muda) e `.count()` não faz
+      // polling/retry — lia o DOM antes da tabela reassentar. Espera a resposta do fetch (molde
+      // `gotoVacancyDetail`/`switchToKanban` acima) E confere a contagem de linhas com auto-retry
+      // (`toHaveCount`), sem enfraquecer o valor esperado (continua 2, igual à API).
       await gotoVacancyDetail(page, seed.vacancyId);
-      await page.locator('#funnel-tab-COMPATIBLE').click();
+      const compatibleTableRe = new RegExp(`/vacancies/${seed.vacancyId}/funnel-table\\?columns=COMPATIBLE(&|$)`);
+      const [compatibleTableResponse] = await Promise.all([
+        page.waitForResponse((r) => compatibleTableRe.test(r.url()) && r.request().method() === 'GET'),
+        page.locator('#funnel-tab-COMPATIBLE').click(),
+      ]);
+      expect(compatibleTableResponse.ok(), 'GET funnel-table?columns=COMPATIBLE falhou').toBe(true);
       const listaCounts = await readCompatibleCountsOnScreen(page, seed.vacancyId);
       const listaInvited = await readStageCount(page, 'funnel-tab-INVITED-count');
-      const funnelRowCount = await page.locator('[data-testid^="funnel-row-"]').count();
+      const funnelRowsLocator = page.locator('[data-testid^="funnel-row-"]');
+      await expect(funnelRowsLocator, 'linhas [data-testid^="funnel-row-"] na aba Compatibles').toHaveCount(2);
+      const funnelRowCount = await funnelRowsLocator.count();
 
       // 3. Kanban — contagem da coluna + ordem das 9 colunas.
       await switchToKanban(page, seed.vacancyId);
