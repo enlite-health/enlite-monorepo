@@ -33,6 +33,9 @@ import {
   seedIsolatedVacancy,
   runMatchApi,
   readFunnelApi,
+  gotoVacancyDetail,
+  switchToKanban,
+  readStageCount,
 } from '../helpers/compativeis-e2e-helper';
 import { insertTestWorker, cleanupTestWorker } from '../helpers/db-test-helper';
 import { getWjaByWorkerAndJob, cleanupWJAAndEncuadre } from '../helpers/wja-test-helper';
@@ -66,33 +69,8 @@ function workerIdsInStage(data: FunnelApiData, stage: string): Array<string | nu
   return (data.stages[stage] ?? []).map((item) => item.workerId);
 }
 
-// ── Navegação (molde `funil-vacante-compativeis.integration.e2e.ts`, P17) ──────
-
-async function gotoVacancyDetail(page: Page, vacancyId: string): Promise<void> {
-  await page
-    .evaluate((id) => localStorage.removeItem(`vacancy-funnel-view-${id}`), vacancyId)
-    .catch(() => {});
-  const funnelTableRe = new RegExp(`/vacancies/${vacancyId}/funnel-table(\\?|$)`);
-  const [response] = await Promise.all([
-    page.waitForResponse((r) => funnelTableRe.test(r.url()) && r.request().method() === 'GET'),
-    page.goto(`/admin/vacancies/${vacancyId}`),
-  ]);
-  expect(response.ok(), 'GET funnel-table falhou').toBe(true);
-  await expect(page.getByTestId('vacancy-funnel-view')).toBeVisible({ timeout: 15_000 });
-}
-
-async function switchToKanban(page: Page, vacancyId: string): Promise<void> {
-  const funnelRe = new RegExp(`/vacancies/${vacancyId}/funnel(\\?|$)`);
-  const [response] = await Promise.all([
-    page.waitForResponse((r) => funnelRe.test(r.url()) && r.request().method() === 'GET'),
-    page
-      .getByRole('group', { name: 'Cambiar vista' })
-      .getByRole('button', { name: /Kanban/i })
-      .click(),
-  ]);
-  expect(response.ok(), 'GET funnel (kanban) falhou').toBe(true);
-  await expect(page.getByTestId('kanban-board')).toBeVisible({ timeout: 15_000 });
-}
+// `gotoVacancyDetail`/`switchToKanban`/`readStageCount` vivem em `compativeis-e2e-helper.ts`
+// (achado 🟡-3 do gate parcial, G2) — importadas acima, byte-idênticas nos 4 specs novos.
 
 /** As 9 colunas do quadro B (`funil-vacante-compativeis.integration.e2e.ts`, P17). */
 const ALL_COLUMN_IDS = [
@@ -122,12 +100,6 @@ async function collapseColumnsExcept(page: Page, keep: readonly string[]): Promi
     }
   }
   await page.waitForTimeout(400);
-}
-
-/** Lê a contagem de UM testid (número cru, sem padding — molde P17/P18). */
-async function readStageCount(page: Page, testId: string): Promise<number> {
-  const text = (await page.getByTestId(testId).textContent())?.trim() ?? '';
-  return Number(text);
 }
 
 // ── Test ─────────────────────────────────────────────────────────────────────
