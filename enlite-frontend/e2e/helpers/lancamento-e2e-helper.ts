@@ -315,7 +315,7 @@ export async function completeDraftViaWizard(page: Page, vacancyId: string): Pro
 
   const meetInput = page.getByTestId('meet-link-0');
   await meetInput.click();
-  await page.keyboard.type('meet.google.com/lancamento-f6');
+  await page.keyboard.type('meet.google.com/abc-defg-hij');
   await meetInput.blur();
 
   const saveBtn = page.getByTestId('create-vacancy-save-btn');
