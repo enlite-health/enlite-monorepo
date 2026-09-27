@@ -16,7 +16,8 @@ export type WhatsappStatus =
 
 export interface FunnelTableRow {
   id: string;
-  workerId: string;
+  /** `null` na linha redigida de Compatíveis sem `match:read` (DX-5.7, D113). */
+  workerId: string | null;
   workerName: string | null;
   workerEmail: string | null;
   workerPhone: string | null;

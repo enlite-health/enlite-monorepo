@@ -17,7 +17,7 @@
  * `kanban-reenviar.integration.e2e.ts:40-56,99-103` (hoje locais nele e em mais 4 specs —
  * unificar os antigos para importar daqui é LISTA, DX-5.10, não escopo deste passo).
  */
-import type { APIRequestContext, Page } from '@playwright/test';
+import { expect, type APIRequestContext, type Page } from '@playwright/test';
 import http from 'http';
 import { insertTestPatient, insertBaseVacancy, insertTestWorker, cleanupTestPatient, cleanupTestWorker } from './db-test-helper';
 import { insertWJA, upsertEncuadre, cleanupWJAAndEncuadre } from './wja-test-helper';
@@ -185,6 +185,47 @@ export async function readFunnelTableApi(
   });
   const body = (await res.json().catch(() => null)) as { data?: unknown } | null;
   return body?.data;
+}
+
+// ── Navegação (P17/P18/P19/P20 — molde `funil-vacante-motivo.integration.e2e.ts`) ──
+// Byte-idênticas nos 4 specs novos (achado 🟡-3 do gate parcial da Fase 5, G2); movidas
+// aqui em vez de repetidas — cada spec só importa.
+
+/**
+ * `VacancyFunnelView.tsx` persiste a última vista (list/kanban) em
+ * `localStorage['vacancy-funnel-view-<id>']` — limpa antes de cada visita fresca,
+ * senão uma 2ª navegação à MESMA vaga reabre em Kanban (molde da Fase 2/4).
+ */
+export async function gotoVacancyDetail(page: Page, vacancyId: string): Promise<void> {
+  await page
+    .evaluate((id) => localStorage.removeItem(`vacancy-funnel-view-${id}`), vacancyId)
+    .catch(() => {});
+  const funnelTableRe = new RegExp(`/vacancies/${vacancyId}/funnel-table(\\?|$)`);
+  const [response] = await Promise.all([
+    page.waitForResponse((r) => funnelTableRe.test(r.url()) && r.request().method() === 'GET'),
+    page.goto(`/admin/vacancies/${vacancyId}`),
+  ]);
+  expect(response.ok(), 'GET funnel-table falhou').toBe(true);
+  await expect(page.getByTestId('vacancy-funnel-view')).toBeVisible({ timeout: 15_000 });
+}
+
+export async function switchToKanban(page: Page, vacancyId: string): Promise<void> {
+  const funnelRe = new RegExp(`/vacancies/${vacancyId}/funnel(\\?|$)`);
+  const [response] = await Promise.all([
+    page.waitForResponse((r) => funnelRe.test(r.url()) && r.request().method() === 'GET'),
+    page
+      .getByRole('group', { name: 'Cambiar vista' })
+      .getByRole('button', { name: /Kanban/i })
+      .click(),
+  ]);
+  expect(response.ok(), 'GET funnel (kanban) falhou').toBe(true);
+  await expect(page.getByTestId('kanban-board')).toBeVisible({ timeout: 15_000 });
+}
+
+/** Lê a contagem de UM testid (número cru, sem padding — kanban/aba usam texto puro). */
+export async function readStageCount(page: Page, testId: string): Promise<number> {
+  const text = (await page.getByTestId(testId).textContent())?.trim() ?? '';
+  return Number(text);
 }
 
 // ── Leitura na tela — os 3 lugares (DX-5.10) ───────────────────────────────────────

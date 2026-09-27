@@ -14,8 +14,11 @@
  * spec não pode entrar no job `pr-gate.yml` (engine OFF) — vai só para
  * `integration-e2e-group-simulation` (engine ON), amarrado por `--grep` no P22.
  *
- * Stack isolada `cadeia-f5-abac` (postgres 5494 / api 8107 / Vite 5191) — NÃO é a
- * `cadeia-f5` dos demais e2e da fase (essa continua com o engine OFF).
+ * Stack isolada `cadeia-f5-abac` (postgres/api/Vite próprios, portas em `CH/evidencias/
+ * fase-5/stack.md` — nunca literal aqui) — NÃO é a `cadeia-f5` dos demais e2e da fase
+ * (essa continua com o engine OFF). Toda URL deste spec deriva de `E2E_BACKEND_URL`/
+ * `PW_BASE_URL` (via os helpers importados) — sem host/porta literal e sem depender de
+ * `ABAC_API_URL` (achado 🟡-4/🟡-6 do gate parcial, G2).
  * `PERMISSION_ENGINE_ENABLED`/`PERMISSION_ENFORCED_ROUTES`/`PERMISSION_CATALOG_SYNC_ENABLED`/
  * `PERMISSION_CACHE_TTL_MS` vêm do `docker-compose.group-simulation.yml` (o mesmo trio do
  * job de CI); o override `cadeia-f5-abac.override.yml` só troca porta/nome de
@@ -50,7 +53,6 @@ import {
   seedStaffInGroup,
   cleanupStaffAndGroup,
   grantCell,
-  ABAC_API_URL,
   type MockUser,
 } from '../helpers/abac-stack-helper';
 

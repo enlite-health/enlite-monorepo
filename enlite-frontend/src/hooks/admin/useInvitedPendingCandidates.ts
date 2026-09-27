@@ -22,7 +22,10 @@ export function useInvitedPendingCandidates(vacancyId: string): Result {
   const candidates = useMemo<InviteTarget[]>(() => {
     if (!data?.rows) return [];
     return data.rows
-      .filter((r) => r.whatsappStatus === 'NOT_SENT')
+      .filter(
+        (r): r is typeof r & { workerId: string } =>
+          r.whatsappStatus === 'NOT_SENT' && r.workerId !== null,
+      )
       .map(funnelRowToInviteTarget);
   }, [data]);
 
