@@ -3351,7 +3351,13 @@
           "PATIENT_STATUS_NOT_READY": "No se puede mover: faltan datos obligatorios en la ficha.",
           "KANBAN_ACTIVATION_MOVED_TO_SERVICE": "Para activar, usá \"Activar reclutamiento\" en el servicio contratado de la ficha del paciente."
         },
-        "moveNotReady": "No se puede mover: falta {{items}}."
+        "moveNotReady": "No se puede mover: falta {{items}}.",
+        "subcard": {
+          "weeklyUnit": "hs/sem",
+          "pairAria": "{{covered}} de {{contracted}} horas semanales cubiertas",
+          "openToActivate": "Abrir ficha para activar {{service}}",
+          "loadError": "No se pudieron cargar los servicios de los pacientes."
+        }
       },
       "countryLabel": "País",
       "countryOptions": {

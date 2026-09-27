@@ -6,6 +6,7 @@ import { toDisplayName } from '@domain/value-objects/displayName';
 import type { PatientKanbanItem } from '@domain/entities/PatientDetail';
 import { formatCaseNumber } from '@domain/value-objects/caseNumberFormat';
 import { ADMISSION_FUNNEL_STATUSES } from '@domain/entities/patientEnums';
+import { PatientKanbanSubcards } from './PatientKanbanSubcards';
 
 interface Props {
   patient: PatientKanbanItem;
@@ -81,7 +82,7 @@ export function PatientKanbanCard({ patient }: Props): JSX.Element {
               — o mesmo texto já é o visível. Enquanto o gate A2 (transferência
               AR→EUA) estiver aberto, contato que não precisa ir ao Clarity não vai. */}
           <span data-testid={mostraContatoNoTitulo ? `patient-kanban-card-${patient.id}-contact` : undefined}>
-            <Text as="span" size="sm" weight="semibold" className="text-[#180149] truncate hover:underline">
+            <Text as="span" size="sm" weight="semibold" className="text-primary truncate hover:underline">
               {tituloFinal}
             </Text>
           </span>
@@ -154,6 +155,7 @@ export function PatientKanbanCard({ patient }: Props): JSX.Element {
           </span>
         </div>
       )}
+      <PatientKanbanSubcards patientId={patient.id} services={patient.services} />
     </div>
   );
 }
