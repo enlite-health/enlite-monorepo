@@ -164,11 +164,22 @@ DECLARE
   v_jp_contracted_service_id UUID;
   v_slot_contracted_service_id UUID;
 BEGIN
+  -- Esta trigger é a 2ª régua; a 1ª é a constraint nativa da tabela (NOT NULL/FK). Um trigger
+  -- BEFORE ROW roda ANTES da checagem de NOT NULL/FK da própria linha — se lançar exceção aqui
+  -- sem checar isso, o Postgres nunca chega a avaliar 23502/23503 (P2, critério 10).
+  IF NEW.application_id IS NULL THEN
+    RETURN NEW; -- deixa o NOT NULL da coluna (23502) decidir
+  END IF;
+
   SELECT wja.worker_id, jp.contracted_service_id
     INTO v_wja_worker_id, v_jp_contracted_service_id
     FROM worker_job_applications wja
     JOIN job_postings jp ON jp.id = wja.job_posting_id
     WHERE wja.id = NEW.application_id;
+
+  IF NOT FOUND THEN
+    RETURN NEW; -- deixa a FK de application_id (23503) decidir
+  END IF;
 
   SELECT s.contracted_service_id INTO v_slot_contracted_service_id
     FROM patient_itinerary_slot s WHERE s.id = NEW.slot_id;
