@@ -31,6 +31,8 @@ import {
   isAllowedMoveReason,
   MoveReasonRequiredError,
   MoveReasonInvalidError,
+  compatibleMoveRefusal,
+  CompatibleReadOnlyError,
 } from '../../domain/moveReason';
 
 /**
@@ -402,6 +404,16 @@ export class WJAFunnelController {
    * escrita — a checagem roda antes do upsert, então nada é gravado quando recusa.
    * `targetStage` aceita QUICK_RESPONSE_TEAM (MOVABLE_FUNNEL_STAGES) — é movível mas não
    * mensageável (DX-4.7): `emitFunnelStageEvent` só roda para as etapas de `isFunnelStage`.
+   *
+   * Fase 5 (DX-5.5/DX-5.6, D432): Compatíveis é coluna DERIVADA (candidato do match nunca
+   * mensageado, `WF/domain/kanbanColumn.ts`) — nunca um valor de `application_funnel_stage`,
+   * então nunca é destino MOVÍVEL de verdade. `compatibleMoveRefusal` (`moveReason.ts`) recusa
+   * com 422 `COMPATIBLE_READ_ONLY`: entrar em Compatíveis (`targetStage === 'COMPATIBLE'`,
+   * checado ANTES de qualquer leitura de banco — nem chega a `isMovableFunnelStage`) e sair de
+   * Compatíveis para Invitados por arrasto (virar convidado é ter sido MENSAGEADO, não
+   * arrastado — checado DENTRO da transação, com `messaged_at` da origem, antes de
+   * `requiredMoveReason`). As demais saídas de Compatíveis (Rejeitados, salto) seguem a regra
+   * de motivo de sempre.
    */
   async moveEncuadre(req: Request, res: Response): Promise<void> {
     try {
@@ -417,6 +429,19 @@ export class WJAFunnelController {
         res.status(400).json({
           success: false,
           error: schedule.error.errors[0]?.message ?? 'Dados de agendamento inválidos',
+        });
+        return;
+      }
+
+      // Fase 5 (DX-5.5): Compatíveis nunca é destino de arrasto — checado ANTES de
+      // isMovableFunnelStage e antes de qualquer leitura de banco (não é estágio, não há
+      // encuadre nem worker a buscar para recusar isto).
+      if (compatibleMoveRefusal(null, targetStage) === 'ENTER') {
+        res.status(422).json({
+          success: false,
+          error: 'compatible_read_only',
+          code: 'COMPATIBLE_READ_ONLY',
+          reason: 'ENTER',
         });
         return;
       }
@@ -494,19 +519,33 @@ export class WJAFunnelController {
       const actorUid = ((req as any).user as { uid?: string } | undefined)?.uid ?? null;
       let stageEventId: string | null = null;
       await withActorContext(this.db, async (client) => {
-        const prev = await client.query<{ application_funnel_stage: string | null; source: string | null }>(
-          `SELECT application_funnel_stage, source FROM worker_job_applications WHERE worker_id = $1 AND job_posting_id = $2`,
+        const prev = await client.query<{
+          application_funnel_stage: string | null;
+          source: string | null;
+          messaged_at: string | Date | null;
+        }>(
+          `SELECT application_funnel_stage, source, messaged_at FROM worker_job_applications WHERE worker_id = $1 AND job_posting_id = $2`,
           [workerId, jobPostingId],
         );
         const previousStage = prev.rows[0]?.application_funnel_stage ?? null;
         const previousSource = prev.rows[0]?.source ?? null;
+        const previousMessagedAt = prev.rows[0]?.messaged_at ?? null;
+        const origin = prev.rows[0]
+          ? { stage: previousStage, source: previousSource, messagedAt: previousMessagedAt }
+          : null;
+
+        // Fase 5 (DX-5.6): sair de Compatíveis para Invitados por arrasto é recusado — virar
+        // convidado é ter sido MENSAGEADO (messaged_at), nunca arrastado. Roda ANTES de
+        // requiredMoveReason: para Compatíveis → Invitados aquela devolveria `null` (etapa
+        // igual, INVITED sobre INVITED) e o upsert seria um 200 que não muda nada.
+        const compatibleRefusal = compatibleMoveRefusal(origin, targetStage);
+        if (compatibleRefusal) {
+          throw new CompatibleReadOnlyError(compatibleRefusal);
+        }
 
         // Fase 4 (DX-4.6): a checagem roda DENTRO da transação, ANTES do upsert —
         // se recusar, o catch externo faz ROLLBACK (actorContext.ts) e nada é escrito.
-        const moveReasonKind = requiredMoveReason(
-          prev.rows[0] ? { stage: previousStage, source: previousSource } : null,
-          targetStage,
-        );
+        const moveReasonKind = requiredMoveReason(origin, targetStage);
         if (moveReasonKind) {
           if (reasonCategory === undefined || reasonCategory === null) {
             throw new MoveReasonRequiredError(moveReasonKind);
@@ -585,6 +624,17 @@ export class WJAFunnelController {
 
       res.json({ success: true, data: { encuadreId: id, targetStage } });
     } catch (error) {
+      // Fase 5 (DX-5.6): sair de Compatíveis para Invitados por arrasto — 422 antes dos
+      // de motivo (a recusa da coluna derivada vem primeiro). ROLLBACK já rodou, nada escrito.
+      if (error instanceof CompatibleReadOnlyError) {
+        res.status(422).json({
+          success: false,
+          error: 'compatible_read_only',
+          code: 'COMPATIBLE_READ_ONLY',
+          reason: error.reason,
+        });
+        return;
+      }
       // Fase 4 (DX-4.6): as duas classes de motivo viram 422 — checadas ANTES do
       // catch genérico. A transação já fez ROLLBACK (withActorContext) quando o
       // erro saiu do bloco acima; nada foi escrito.

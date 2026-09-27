@@ -99,7 +99,9 @@ registry.registerPath({
     401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
     404: { description: 'Encuadre não encontrado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
     422: {
-      description: 'Motivo do movimento ausente (MOVE_REASON_REQUIRED) ou fora da lista do tipo (MOVE_REASON_INVALID).',
+      description:
+        'Motivo do movimento ausente (MOVE_REASON_REQUIRED) ou fora da lista do tipo (MOVE_REASON_INVALID), ' +
+        'ou `COMPATIBLE_READ_ONLY` (Compatíveis é derivada do match).',
       content: { 'application/json': { schema: ErrorResponseSchema } },
     },
     500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
