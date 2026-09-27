@@ -11,7 +11,7 @@
  * `Date` à meia-noite LOCAL do processo, e o fuso do Cloud Run não é o do teste nem o do usuário
  * (a conversão certa é `GetPatientItineraryUseCase` + `localParts`).
  *
- * Nenhuma coluna de nome/telefone; nenhuma leitura de `contracted_service_providers` (a alocação
+ * Nenhuma coluna de nome/telefone; nenhuma leitura da tabela da alocação antiga (critério
  * antiga não entra na conta nova — critério 11).
  */
 import type { PoolClient } from 'pg';
