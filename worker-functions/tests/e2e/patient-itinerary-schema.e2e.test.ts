@@ -255,11 +255,14 @@ describe('patient_itinerary_slot / patient_itinerary_assignment — regras do ba
   });
 
   it('(b) application_id inexistente → 23503', async () => {
+    // worker2 (não worker1): o `it` anterior deixou uma linha ACTIVE em (slot1, worker1) — usar o
+    // mesmo par faria o índice único parcial uq_pia_open_pair (23505) recusar o INSERT antes de a
+    // FK (AFTER ROW) rodar. (slot1, worker2) ainda não tem alocação aberta neste ponto do arquivo.
     const err = await expectPgError(
       pool.query(
         `INSERT INTO patient_itinerary_assignment (slot_id, worker_id, application_id, valid_from, created_by, updated_by)
          VALUES ($1, $2, '00000000-0000-0000-0000-000000000000', '2026-01-01', $3, $3)`,
-        [slot1, worker1, TASK_PREFIX],
+        [slot1, worker2, TASK_PREFIX],
       ),
     );
     expect(err.code).toBe('23503');
