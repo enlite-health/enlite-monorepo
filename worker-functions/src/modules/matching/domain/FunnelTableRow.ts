@@ -26,7 +26,8 @@ export type FunnelBucket =
 
 export interface FunnelTableRow {
   id: string;
-  workerId: string;
+  /** null quando COMPATIBLE sem `match:read` (DX-5.7) — card opaco, sem `workerId` para arrastar/notar. */
+  workerId: string | null;
   workerName: string | null;
   workerEmail: string | null;
   workerPhone: string | null;
