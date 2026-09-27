@@ -211,4 +211,14 @@ describe('saveMatchResults — a regra do match_score NULL', () => {
     expect(calls).toHaveLength(0);
     expect(mockWithActorContext).toHaveBeenCalledTimes(1);
   });
+
+  it('o upsert nunca sobrescreve application_funnel_stage/source/messaged_at (Fase 5, DX-5.12 — se isto quebrar, um re-match devolve o Rejeitado a Compatíveis, lacuna C, invariante 6)', async () => {
+    const calls = await persistir([candidate()]);
+
+    const sql = calls[0][0] as string;
+    expect(sql).toMatch(/ON CONFLICT \(worker_id, job_posting_id\) DO UPDATE SET/);
+
+    const afterSet = sql.split(/DO UPDATE SET/)[1];
+    expect(afterSet).not.toMatch(/application_funnel_stage|\bsource\b|messaged_at/);
+  });
 });
