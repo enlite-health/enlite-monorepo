@@ -33,6 +33,7 @@ import {
   MoveReasonInvalidError,
   compatibleMoveRefusal,
   CompatibleReadOnlyError,
+  type CompatibleRefusal,
 } from '../../domain/moveReason';
 
 /**
@@ -42,6 +43,22 @@ import {
  */
 const encuadreRoleSchema = z.enum(['TITULAR', 'RAPID_RESPONSE']);
 
+/**
+ * 422 `COMPATIBLE_READ_ONLY` — corpo montado uma única vez (achado 🟡-7 do gate parcial 1:
+ * o mesmo objeto de 5 campos era escrito duas vezes em `moveEncuadre`, uma para a recusa
+ * de ENTRADA em Compatíveis — antes de qualquer query — e outra para a recusa de SAÍDA
+ * rumo a Invitados sem envio, capturada no catch de `CompatibleReadOnlyError`). Contrato
+ * da resposta inalterado: `{ success:false, error:'compatible_read_only',
+ * code:'COMPATIBLE_READ_ONLY', reason }`.
+ */
+function sendCompatibleReadOnly(res: Response, reason: CompatibleRefusal): void {
+  res.status(422).json({
+    success: false,
+    error: 'compatible_read_only',
+    code: 'COMPATIBLE_READ_ONLY',
+    reason,
+  });
+}
 
 /**
  * WJAFunnelController
@@ -437,12 +454,7 @@ export class WJAFunnelController {
       // isMovableFunnelStage e antes de qualquer leitura de banco (não é estágio, não há
       // encuadre nem worker a buscar para recusar isto).
       if (compatibleMoveRefusal(null, targetStage) === 'ENTER') {
-        res.status(422).json({
-          success: false,
-          error: 'compatible_read_only',
-          code: 'COMPATIBLE_READ_ONLY',
-          reason: 'ENTER',
-        });
+        sendCompatibleReadOnly(res, 'ENTER');
         return;
       }
 
@@ -627,12 +639,7 @@ export class WJAFunnelController {
       // Fase 5 (DX-5.6): sair de Compatíveis para Invitados por arrasto — 422 antes dos
       // de motivo (a recusa da coluna derivada vem primeiro). ROLLBACK já rodou, nada escrito.
       if (error instanceof CompatibleReadOnlyError) {
-        res.status(422).json({
-          success: false,
-          error: 'compatible_read_only',
-          code: 'COMPATIBLE_READ_ONLY',
-          reason: error.reason,
-        });
+        sendCompatibleReadOnly(res, error.reason);
         return;
       }
       // Fase 4 (DX-4.6): as duas classes de motivo viram 422 — checadas ANTES do

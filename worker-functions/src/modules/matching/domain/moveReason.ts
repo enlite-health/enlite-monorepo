@@ -1,5 +1,5 @@
 import { REJECTION_REASON_CATEGORIES } from './Encuadre';
-import { boardPosition, deriveKanbanColumn } from './kanbanColumn';
+import { boardPosition } from './kanbanColumn';
 
 /**
  * Motivo do arrasto no quadro B (funil de candidatura) que pula etapa, entra em
@@ -67,20 +67,24 @@ export const COMPATIBLE_COLUMN = 'COMPATIBLE' as const;
 export type CompatibleRefusal = 'ENTER' | 'INVITE_BY_SEND';
 
 /**
- * DX-5.5/5.6: entrar em Compatíveis nunca; sair para Invitados só pelo envio (messaged_at).
- * As demais saídas de Compatíveis seguem `requiredMoveReason` (Rejeitados com motivo de
+ * DX-5.5/5.6/5.17: entrar em Compatíveis nunca; sair para Invitados só pelo envio
+ * (messaged_at) — venha de onde vier. Achado 🟡-1 do gate parcial 1: a versão anterior só
+ * olhava `from.stage === 'INVITED'` (via `deriveKanbanColumn`), então um card que já tinha
+ * saído de Compatíveis para Rejeitados/Confirmados/etc. — sem NUNCA ter sido mensageado
+ * (`source === 'system'`, `messaged_at` nulo) — voltava para Invitados com 200 e reaparecia
+ * em Compatíveis (reentrada indireta, o "200 que não muda o que diz" que a DX-5.6 quis
+ * fechar). A recusa agora olha só `source`/`messagedAt` da origem, qualquer que seja a
+ * etapa atual: `toStage === 'INVITED' && from.source === 'system' && from.messagedAt ===
+ * null`. Origem `null` (candidatura nova) continua `null` — nunca é candidato do match.
+ * `from.source !== 'system'` ou `messagedAt` presente → `null` (Invitado de verdade). As
+ * demais saídas de Compatíveis seguem `requiredMoveReason` (Rejeitados com motivo de
  * rejeição; salto com motivo de salto). Roda ANTES de `requiredMoveReason`: para
  * Compatíveis → Invitados aquela devolve `null` (etapa igual, INVITED sobre INVITED), e o
  * upsert seria um 200 que não muda nada — o card voltaria a Compatíveis.
- * `from` nulo (sem candidatura) nunca é origem Compatíveis.
  */
 export function compatibleMoveRefusal(from: MoveOrigin | null, toStage: string): CompatibleRefusal | null {
   if (toStage === COMPATIBLE_COLUMN) return 'ENTER';
-  if (
-    from !== null &&
-    toStage === 'INVITED' &&
-    deriveKanbanColumn(from.stage, from.source, from.messagedAt) === COMPATIBLE_COLUMN
-  ) {
+  if (from !== null && toStage === 'INVITED' && from.source === 'system' && from.messagedAt === null) {
     return 'INVITE_BY_SEND';
   }
   return null;

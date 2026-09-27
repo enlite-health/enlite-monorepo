@@ -326,11 +326,42 @@ describe('Fase 5 — origem Compatíveis e a recusa de entrar/convidar sem envio
     it('INVITED/manual sem envio (Iniciados) → INVITED = null (só source=system é candidato do match)', () => {
       expect(compatibleMoveRefusal({ stage: 'INVITED', source: 'manual', messagedAt: null }, 'INVITED')).toBeNull();
     });
+  });
 
-    it('REJECTED/system sem envio → INVITED = null na recusa (o rejeitado não é Compatíveis) e LEAVE_REJECTED no motivo', () => {
-      const rejeitadoDoMatch: MoveOrigin = { stage: 'REJECTED', source: 'system', messagedAt: null };
-      expect(compatibleMoveRefusal(rejeitadoDoMatch, 'INVITED')).toBeNull();
-      expect(requiredMoveReason(rejeitadoDoMatch, 'INVITED')).toBe('LEAVE_REJECTED');
+  /**
+   * DX-5.17 (achado 🟡-1 do gate parcial 1): a recusa `INVITE_BY_SEND` vale para QUALQUER
+   * etapa atual do card, não só `INVITED` — o que decide é `source`/`messagedAt`, nunca a
+   * etapa. Fecha o caminho indireto: Compatíveis → Rejeitados/Confirmados (permitido, DX-5.6)
+   * → de volta para Invitados por arrasto (sem nunca ter sido mensageado) NÃO pode virar
+   * 200 — senão o card reaparece em Compatíveis com um "200 que não muda o que diz".
+   */
+  describe('DX-5.17 — a recusa de convite por arrasto independe da etapa atual', () => {
+    it('REJECTED/system/sem messaged_at → INVITED = INVITE_BY_SEND (voltou de Rejeitados sem nunca ter sido mensageado)', () => {
+      expect(compatibleMoveRefusal({ stage: 'REJECTED', source: 'system', messagedAt: null }, 'INVITED')).toBe(
+        'INVITE_BY_SEND',
+      );
+    });
+
+    it('CONFIRMED/system/sem messaged_at → INVITED = INVITE_BY_SEND (voltou de Confirmados sem nunca ter sido mensageado)', () => {
+      expect(compatibleMoveRefusal({ stage: 'CONFIRMED', source: 'system', messagedAt: null }, 'INVITED')).toBe(
+        'INVITE_BY_SEND',
+      );
+    });
+
+    it('REJECTED/manual/sem messaged_at → INVITED = null (não é candidato do match — source ≠ system)', () => {
+      expect(compatibleMoveRefusal({ stage: 'REJECTED', source: 'manual', messagedAt: null }, 'INVITED')).toBeNull();
+    });
+
+    it('REJECTED/system/messaged_at preenchido → INVITED = null (foi mensageado — Invitado de verdade) e LEAVE_REJECTED no motivo', () => {
+      const rejeitadoConvidado: MoveOrigin = { stage: 'REJECTED', source: 'system', messagedAt: SENT };
+      expect(compatibleMoveRefusal(rejeitadoConvidado, 'INVITED')).toBeNull();
+      expect(requiredMoveReason(rejeitadoConvidado, 'INVITED')).toBe('LEAVE_REJECTED');
+    });
+
+    it('a tabela da Fase 4 (requiredMoveReason) não muda: REJECTED/system/sem messaged_at → INVITED continua LEAVE_REJECTED', () => {
+      expect(requiredMoveReason({ stage: 'REJECTED', source: 'system', messagedAt: null }, 'INVITED')).toBe(
+        'LEAVE_REJECTED',
+      );
     });
   });
 
