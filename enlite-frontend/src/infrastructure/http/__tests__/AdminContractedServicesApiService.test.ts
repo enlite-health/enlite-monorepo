@@ -131,4 +131,33 @@ describe('AdminContractedServicesApiService', () => {
     mockFetch({ success: false }, 500);
     await expect(AdminContractedServicesApiService.listContractedServices(PATIENT_ID)).rejects.toMatchObject({ message: 'HTTP 500' });
   });
+
+  it('listKanbanServices: sem país — GET sem query string', async () => {
+    const f = mockFetch({ success: true, data: { patients: [] } });
+    const out = await AdminContractedServicesApiService.listKanbanServices();
+    expect(out).toEqual({ patients: [] });
+    const [url, init] = f.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain('/api/admin/patients/kanban/services');
+    expect(url).not.toContain('?');
+    expect(init.method).toBe('GET');
+  });
+
+  it('listKanbanServices: com país — GET com ?country=AR', async () => {
+    const f = mockFetch({
+      success: true,
+      data: { patients: [{ patientId: 'p1', asOf: '2026-09-27', services: [] }] },
+    });
+    const out = await AdminContractedServicesApiService.listKanbanServices('AR');
+    expect(out).toEqual({ patients: [{ patientId: 'p1', asOf: '2026-09-27', services: [] }] });
+    const [url] = f.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain('/api/admin/patients/kanban/services?country=AR');
+  });
+
+  it('listKanbanServices: 403 vira ContractedServiceApiError com status 403', async () => {
+    mockFetch({ success: false, error: 'sem célula' }, 403);
+    await expect(AdminContractedServicesApiService.listKanbanServices('AR')).rejects.toMatchObject({
+      name: 'ContractedServiceApiError',
+      status: 403,
+    });
+  });
 });
