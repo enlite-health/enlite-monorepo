@@ -266,12 +266,23 @@ describe('loadStageCounts', () => {
     expect(counts.REJECTED).toBe(1);
   });
 
-  it('um id sem linha nenhuma devolve as 9 colunas zeradas (Fase 4: + QUICK_RESPONSE_TEAM)', async () => {
+  it('um id sem linha nenhuma devolve as 10 colunas zeradas (Fase 5: + COMPATIBLE)', async () => {
     const pool = makePool([{ id: 'jp-a', kind: 'wja', stage: 'INVITED', source: 'manual', messaged: false, n: 1 }]);
     const out = await loadStageCounts(pool, ['jp-a', 'jp-sem-linha']);
     const counts = out.get('jp-sem-linha')!;
     expect(Object.values(counts).every((n) => n === 0)).toBe(true);
-    expect(Object.keys(counts)).toHaveLength(9);
+    expect(Object.keys(counts)).toEqual([
+      'REJECTED',
+      'COMPATIBLE',
+      'INVITED',
+      'INICIADO',
+      'PRE_SCREENING',
+      'IN_PROGRESS',
+      'COMPLETED',
+      'CONFIRMED',
+      'SELECTED',
+      'QUICK_RESPONSE_TEAM',
+    ]);
   });
 });
 
