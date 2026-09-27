@@ -39,6 +39,18 @@ describe('RLS por país — policies de patients e satélites (banco real)', () 
     addressBR: 'ee270000-0a00-0002-0002-000000000001',
     group: 'ee270000-0a00-0003-0001-000000000001',
     scope: 'ee270000-0a00-0004-0001-000000000001',
+    // Fase 7, P3 (itinerário: slot/alocação seguem o pai) — mesmo IDS, mesmo prefixo do arquivo.
+    serviceAR: 'ee270000-0a00-0005-0001-000000000001',
+    serviceBR: 'ee270000-0a00-0005-0002-000000000001',
+    jobAR: 'ee270000-0a00-0006-0001-000000000001',
+    jobBR: 'ee270000-0a00-0006-0002-000000000001',
+    itinWorker: 'ee270000-0a00-0007-0001-000000000001',
+    wjaAR: 'ee270000-0a00-0008-0001-000000000001',
+    wjaBR: 'ee270000-0a00-0008-0002-000000000001',
+    slotAR: 'ee270000-0a00-0009-0001-000000000001',
+    slotBR: 'ee270000-0a00-0009-0002-000000000001',
+    assignmentAR: 'ee270000-0a00-000a-0001-000000000001',
+    assignmentBR: 'ee270000-0a00-000a-0002-000000000001',
   };
 
   async function cleanup(p: Pool): Promise<void> {
@@ -356,6 +368,122 @@ describe('RLS por país — policies de patients e satélites (banco real)', () 
       await expect(
         c.query(`UPDATE worker_status_history SET changed_by = 'x' WHERE worker_id = '00000000-0000-0000-0000-000000000000'`),
       ).rejects.toThrow(/permission denied/);
+    });
+  });
+
+  /**
+   * Fase 7, P3 (DX-7.1, DX-7.9 (3)) — `patient_itinerary_slot` / `patient_itinerary_assignment`
+   * seguem o paciente pela mesma cadeia de RLS que os satélites (413/429): a policy não olha
+   * country da própria linha, olha visibilidade de `patient_contracted_services`/`patient_itinerary_slot`
+   * (que por sua vez segue `patients`). `beforeAll`/`afterAll` próprios, como dono (`pool`), com ids
+   * novos no mesmo `IDS` (prefixo do arquivo) — a semente de cima e os casos existentes não mudam.
+   */
+  describe('itinerário (Fase 7): patient_itinerary_slot / patient_itinerary_assignment seguem o pai', () => {
+    const CREATED_BY = 'rls-e2e-itin';
+
+    beforeAll(async () => {
+      // 1 serviço por paciente de teste (AR/BR), reusando os endereços já semeados acima.
+      await pool.query(
+        `INSERT INTO patient_contracted_services (id, patient_id, service_code, address_id, country, created_by, updated_by)
+         VALUES ($1, $2, 'AT', $3, 'AR', $4, $4), ($5, $6, 'AT', $7, 'BR', $4, $4)`,
+        [IDS.serviceAR, IDS.patientAR, IDS.addressAR, CREATED_BY, IDS.serviceBR, IDS.patientBR, IDS.addressBR],
+      );
+
+      // 1 vaga por serviço (job_postings.contracted_service_id).
+      await pool.query(
+        `INSERT INTO job_postings (id, title, contracted_service_id, patient_id, country)
+         VALUES ($1, 'rls-e2e-itin-vaga-ar', $2, $3, 'AR'), ($4, 'rls-e2e-itin-vaga-br', $5, $6, 'BR')`,
+        [IDS.jobAR, IDS.serviceAR, IDS.patientAR, IDS.jobBR, IDS.serviceBR, IDS.patientBR],
+      );
+
+      // 1 worker, com 1 WJA por vaga.
+      await pool.query(
+        `INSERT INTO workers (id, auth_uid, email, country) VALUES ($1, 'rls-e2e-itin-w1', 'rls-e2e-itin-w1@e2e.local', 'AR')`,
+        [IDS.itinWorker],
+      );
+      await pool.query(
+        `INSERT INTO worker_job_applications (id, worker_id, job_posting_id, application_funnel_stage, source)
+         VALUES ($1, $2, $3, 'INVITED', 'import'), ($4, $2, $5, 'INVITED', 'import')`,
+        [IDS.wjaAR, IDS.itinWorker, IDS.jobAR, IDS.wjaBR, IDS.jobBR],
+      );
+
+      // 1 slot por serviço.
+      await pool.query(
+        `INSERT INTO patient_itinerary_slot (id, contracted_service_id, weekday, start_time, end_time, created_by, updated_by)
+         VALUES ($1, $2, 1, '08:00', '09:00', $3, $3), ($4, $5, 2, '08:00', '09:00', $3, $3)`,
+        [IDS.slotAR, IDS.serviceAR, CREATED_BY, IDS.slotBR, IDS.serviceBR],
+      );
+
+      // 1 alocação por slot (candidatura daquela vaga, daquele worker — invariante 5).
+      await pool.query(
+        `INSERT INTO patient_itinerary_assignment (id, slot_id, worker_id, application_id, valid_from, created_by, updated_by)
+         VALUES ($1, $2, $3, $4, '2026-01-01', $5, $5), ($6, $7, $3, $8, '2026-01-01', $5, $5)`,
+        [IDS.assignmentAR, IDS.slotAR, IDS.itinWorker, IDS.wjaAR, CREATED_BY, IDS.assignmentBR, IDS.slotBR, IDS.wjaBR],
+      );
+    });
+
+    afterAll(async () => {
+      // Ordem: alocações → WJA → vagas → worker, ANTES do cleanup externo (que apaga os
+      // pacientes; job_postings → patients é NO ACTION e recusaria a cascata). O serviço (e o slot,
+      // em cascata) sai aqui também — não no cleanup externo — porque este apaga
+      // `patient_addresses` ANTES de `patients` (semente de cima, intocada), e `pcs_address_same_patient_fk`
+      // recusaria a linha de `patient_addresses` enquanto o serviço ainda a referenciar.
+      await pool.query(`DELETE FROM patient_itinerary_assignment WHERE id = ANY($1)`, [[IDS.assignmentAR, IDS.assignmentBR]]);
+      await pool.query(`DELETE FROM worker_job_applications WHERE id = ANY($1)`, [[IDS.wjaAR, IDS.wjaBR]]);
+      await pool.query(`DELETE FROM job_postings WHERE id = ANY($1)`, [[IDS.jobAR, IDS.jobBR]]);
+      await pool.query(`DELETE FROM workers WHERE id = $1`, [IDS.itinWorker]);
+      await pool.query(`DELETE FROM patient_contracted_services WHERE id = ANY($1)`, [[IDS.serviceAR, IDS.serviceBR]]);
+    });
+
+    it('6c. itinerário segue o pai: staff AR vê só o slot e a alocação do paciente AR', async () => {
+      const slots = await asRole('app_runtime', { userCountry: 'AR', userUid: STAFF_UID }, async (c) => {
+        const res = await c.query(`SELECT id FROM patient_itinerary_slot WHERE id = ANY($1)`, [[IDS.slotAR, IDS.slotBR]]);
+        return res.rows;
+      });
+      expect(slots).toHaveLength(1);
+      expect(slots[0].id).toBe(IDS.slotAR);
+
+      const assignments = await asRole('app_runtime', { userCountry: 'AR', userUid: STAFF_UID }, async (c) => {
+        const res = await c.query(`SELECT id FROM patient_itinerary_assignment WHERE id = ANY($1)`, [
+          [IDS.assignmentAR, IDS.assignmentBR],
+        ]);
+        return res.rows;
+      });
+      expect(assignments).toHaveLength(1);
+      expect(assignments[0].id).toBe(IDS.assignmentAR);
+    });
+
+    it('6d. itinerário com role de sistema + contexto vê os dois', async () => {
+      const slots = await asRole('app_system', { systemContext: 'job:e2e-rls-proof' }, async (c) => {
+        const res = await c.query(`SELECT id FROM patient_itinerary_slot WHERE id = ANY($1)`, [[IDS.slotAR, IDS.slotBR]]);
+        return res.rows;
+      });
+      expect(slots).toHaveLength(2);
+
+      const assignments = await asRole('app_system', { systemContext: 'job:e2e-rls-proof' }, async (c) => {
+        const res = await c.query(`SELECT id FROM patient_itinerary_assignment WHERE id = ANY($1)`, [
+          [IDS.assignmentAR, IDS.assignmentBR],
+        ]);
+        return res.rows;
+      });
+      expect(assignments).toHaveLength(2);
+    });
+
+    it('6e. staff AR não INSERE slot no serviço BR', async () => {
+      // `country` explícito (não-NULL) — o país da linha NÃO entra na policy (que só olha
+      // visibilidade de `patient_contracted_services`); sem isso, o trigger de país tentaria
+      // herdar de `serviceBR`, essa própria leitura já cairia na RLS de `patient_contracted_services`
+      // (que segue `patients`) e o NOT NULL da coluna dispararia ANTES do WITH CHECK — mascarando
+      // a prova de que É a policy da tabela nova que bloqueia.
+      await expect(
+        asRole('app_runtime', { userCountry: 'AR', userUid: STAFF_UID }, async (c) => {
+          await c.query(
+            `INSERT INTO patient_itinerary_slot (contracted_service_id, weekday, start_time, end_time, country, created_by, updated_by)
+             VALUES ($1, 6, '07:00', '08:00', 'AR', $2, $2)`,
+            [IDS.serviceBR, CREATED_BY],
+          );
+        }),
+      ).rejects.toThrow(/new row violates row-level security policy/);
     });
   });
 });
