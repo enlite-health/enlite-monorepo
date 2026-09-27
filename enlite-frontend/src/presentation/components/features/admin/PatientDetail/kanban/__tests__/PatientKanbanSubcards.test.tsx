@@ -6,7 +6,7 @@
  * `updatePatientStatus`/`activateRecruitment` — o foguete só NAVEGA para a ficha (DX-8.8).
  */
 import { describe, it, expect, beforeAll, afterEach, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, cleanup } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
@@ -151,7 +151,14 @@ function comEnforcement(permissions: string[]) {
 
 describe('PatientKanbanSubcards — gate do foguete (patient_services:update + vacancy:update)', () => {
   beforeAll(() => { i18n.changeLanguage('es'); });
-  afterEach(() => { useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' }); });
+  // N2 (gate fecho): `cleanup()` (unmount) ANTES do `setState` — o `afterEach` global de
+  // `src/test/setup.ts` roda DEPOIS deste (outermost por último), então sem este `cleanup()`
+  // aqui o `setState` disparava re-render num componente já "do teste anterior" ainda montado
+  // → warning `not wrapped in act(...)`.
+  afterEach(() => {
+    cleanup();
+    useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' });
+  });
 
   it('com as duas células → foguete aparece', () => {
     comEnforcement(['patient_services:update', 'vacancy:update']);
@@ -168,6 +175,12 @@ describe('PatientKanbanSubcards — gate do foguete (patient_services:update + v
 
   it('só uma das duas células (patient_services:update sem vacancy:update) → sem foguete', () => {
     comEnforcement(['patient_services:update']);
+    renderSubcards([service({ liveVacancyId: null })]);
+    expect(screen.queryByTestId('patient-kanban-subcard-rocket')).toBeNull();
+  });
+
+  it('só a outra célula (vacancy:update sem patient_services:update) → sem foguete', () => {
+    comEnforcement(['vacancy:update']);
     renderSubcards([service({ liveVacancyId: null })]);
     expect(screen.queryByTestId('patient-kanban-subcard-rocket')).toBeNull();
   });

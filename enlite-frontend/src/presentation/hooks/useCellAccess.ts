@@ -71,6 +71,19 @@ export function useActionGate(resource: string, action: string): ActionGate {
   return { allowed: hasCellForAction, denied: !hasCellForAction };
 }
 
+/**
+ * Regra do Gabriel (12/09, PR-8b 15/09): ativar recrutamento (POST .../activate-recruitment)
+ * exige `patient_services:update` E `vacancy:update` JUNTAS (contracts/permissions-split.md —
+ * "ação sobre recurso existente"). Fonte única: usada na ficha (`ServicosContratadosCard` →
+ * `ActivateRecruitmentAction`) e no subcard do Kanban de pacientes (`PatientKanbanSubcards`) —
+ * mudar a regra num lugar e esquecer o outro faria os dois divergirem (gate fecho N3).
+ */
+export function useCanActivateRecruitment(): boolean {
+  const { allowed: podeEscreverServico } = useActionGate('patient_services', 'update');
+  const { allowed: podeEscreverVaga } = useActionGate('vacancy', 'update');
+  return podeEscreverServico && podeEscreverVaga;
+}
+
 export interface ContainerAccess {
   /** O container aparece (card, aba, coluna). Sem enforcement ligado: sempre. */
   visible: boolean;

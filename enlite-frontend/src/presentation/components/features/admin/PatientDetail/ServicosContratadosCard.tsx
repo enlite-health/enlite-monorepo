@@ -12,7 +12,7 @@ import {
   TableCell,
 } from '@presentation/components/atoms/Table';
 import { ActionButton } from '@presentation/components/features/access';
-import { useActionGate } from '@presentation/hooks/useCellAccess';
+import { useActionGate, useCanActivateRecruitment } from '@presentation/hooks/useCellAccess';
 import { useToast } from '@presentation/hooks/useToast';
 import type { PatientAddressDetail, PatientDetail, PatientContractedServiceDetail } from '@domain/entities/PatientDetail';
 import { patientAddressLabel } from '@domain/entities/PatientContractedService';
@@ -52,10 +52,10 @@ function ActivateRecruitmentAction({
   const tc = (k: string, o?: Record<string, unknown>) => t(`admin.patients.detail.contractedServicesCard.${k}`, o);
   const serviceLabel = t(`admin.patients.detail.contractedServicesCard.serviceTypes.${service.serviceCode}`, service.serviceCode);
 
-  // Hooks incondicionais (regra do React) — o GATE em si só se aplica depois do ramo
-  // "Ver vacante" abaixo, que não muda em relação à `stage`.
-  const { allowed: podeEscreverServico } = useActionGate('patient_services', 'update');
-  const { allowed: podeEscreverVaga } = useActionGate('vacancy', 'update');
+  // Hook incondicional (regra do React) — o GATE em si só se aplica depois do ramo
+  // "Ver vacante" abaixo, que não muda em relação à `stage`. Fonte única com o subcard do
+  // Kanban de pacientes (PatientKanbanSubcards.tsx) — gate fecho N3.
+  const podeAtivar = useCanActivateRecruitment();
 
   if (service.liveVacancyId) {
     return (
@@ -75,7 +75,7 @@ function ActivateRecruitmentAction({
   // patient_services:update E vacancy:update JUNTAS (contracts/permissions-split.md — "ação sobre
   // recurso existente") — quem não tem as duas células não vê o BOTÃO de ativar. Só este ramo
   // (o "Ver vacante" acima já retornou e não passa por aqui).
-  if (!podeEscreverServico || !podeEscreverVaga) return null;
+  if (!podeAtivar) return null;
 
   const handleClick = async (e: MouseEvent): Promise<void> => {
     e.stopPropagation();
@@ -187,7 +187,7 @@ function ServiceRow({
         ) : (
           /* `color="inherit"` é obrigatório, não enfeite: o default do `Text` é `secondary` →
              emite `text-gray-800`, e um `text-amber-700` no `className` PERDE pela ordem em que
-             o Tailwind emite as classes — medido com `getComputedStyle`: rgb(115,115,115), cinza.
+             o Tailwind emite as classes — medido com `getComputedStyle`: canais R=G=B=115, cinza.
              `inherit` não emite classe nenhuma, então a do `className` é a única e vale. */
           <Text
             as="span"

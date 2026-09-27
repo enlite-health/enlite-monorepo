@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { Rocket, ExternalLink } from 'lucide-react';
 import { Text } from '@presentation/components/atoms/Text';
-import { useActionGate } from '@presentation/hooks/useCellAccess';
+import { useCanActivateRecruitment } from '@presentation/hooks/useCellAccess';
 import type { PatientKanbanServiceSummary } from '@domain/entities/PatientDetail';
 
 interface Props {
@@ -24,12 +24,10 @@ const ICON_ACTION_CLASS =
 export function PatientKanbanSubcards({ patientId, services }: Props): JSX.Element | null {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  // Regra do Gabriel (12/09, reusada da ficha — ServicosContratadosCard.tsx:74-78): o foguete de
-  // ativar exige `patient_services:update` E `vacancy:update` JUNTAS. Mesmo hook, mesma decisão —
-  // sem as duas células, sem foguete (G2, achado 1).
-  const { allowed: podeEscreverServico } = useActionGate('patient_services', 'update');
-  const { allowed: podeEscreverVaga } = useActionGate('vacancy', 'update');
-  const podeAtivar = podeEscreverServico && podeEscreverVaga;
+  // Regra do Gabriel (12/09, mesma fonte da ficha — ServicosContratadosCard.tsx): o foguete de
+  // ativar exige `patient_services:update` E `vacancy:update` JUNTAS. `useCanActivateRecruitment`
+  // é a fonte única da regra (gate fecho N3) — sem as duas células, sem foguete (G2, achado 1).
+  const podeAtivar = useCanActivateRecruitment();
 
   if (!services?.length) return null;
 
