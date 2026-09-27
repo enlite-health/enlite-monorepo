@@ -32,8 +32,6 @@ import { insertTestPatient, cleanupTestPatient } from '../helpers/db-test-helper
 import { runSQL } from '../helpers/patient-detail-a-helper';
 import { dndKitDrag } from '../helpers/dndKitDrag';
 
-const BACKEND_URL = backendUrl();
-
 const MOCK_ADMIN_USER = mockAdminUserFor('rascunho');
 
 /** Conta TODAS as linhas de `patient_status_history` do paciente (não filtra `change_source`). */
@@ -63,7 +61,7 @@ test.describe('funil-vacante lancamento rascunho @integration', () => {
     try {
       await loginAs(page, MOCK_ADMIN_USER);
 
-      const statusBefore = await readPatientStatusApi(request, BACKEND_URL, token, patient.patientId);
+      const statusBefore = await readPatientStatusApi(request, backendUrl(), token, patient.patientId);
       expect(statusBefore, 'status antes do foguete').toBe('ADMISSION');
 
       const columnBefore = await readPatientKanbanColumn(page, patient.patientId);
@@ -73,7 +71,7 @@ test.describe('funil-vacante lancamento rascunho @integration', () => {
 
       const vacancyId = await clickFoguete(page, patient.patientId, patient.serviceId);
 
-      const statusAfter = await readPatientStatusApi(request, BACKEND_URL, token, patient.patientId);
+      const statusAfter = await readPatientStatusApi(request, backendUrl(), token, patient.patientId);
       expect(statusAfter, 'status depois do foguete').toBe('ADMISSION');
 
       const columnAfter = await readPatientKanbanColumn(page, patient.patientId);
@@ -145,7 +143,7 @@ test.describe('funil-vacante lancamento rascunho @integration', () => {
       const columnAfterReject = await readPatientKanbanColumn(page, patientId);
       expect(columnAfterReject, 'coluna depois do arrasto recusado').toBe('ADMISSION');
 
-      const statusAfterReject = await readPatientStatusApi(request, BACKEND_URL, token, patientId);
+      const statusAfterReject = await readPatientStatusApi(request, backendUrl(), token, patientId);
       expect(statusAfterReject, 'status depois do arrasto recusado').toBe('ADMISSION');
 
       // Controle positivo: o MESMO card, movimento livre dentro do catálogo (Admisión → Alta,
