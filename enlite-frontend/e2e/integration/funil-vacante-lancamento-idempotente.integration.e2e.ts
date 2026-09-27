@@ -34,36 +34,30 @@
 import { test, expect } from '@playwright/test';
 import {
   startTalentumStub,
-  mockGenerateAiContent,
   seedLaunchablePatient,
   seedWorkersNear,
   clickFoguete,
   completeDraftViaWizard,
   publishOnTalentumPage,
   countLaunchTrail,
+  backendUrl,
+  mockAdminUserFor,
+  useLancamentoStaff,
+  loginAndMockAi,
+  LANCAMENTO_VIEWPORT_ES_AR,
+  type FunnelStageItem,
 } from '../helpers/lancamento-e2e-helper';
 import { readPatientStatusApi, chooseReasonInModal } from '../helpers/funnel-move-e2e-helper';
 import { readFunnelApi, gotoVacancyDetail, switchToKanban, readStageCount } from '../helpers/compativeis-e2e-helper';
 import { getWjaByWorkerAndJob } from '../helpers/wja-test-helper';
 import { dndKitDrag } from '../helpers/dndKitDrag';
 import { runSQL } from '../helpers/patient-detail-a-helper';
-import { loginAs, tokenFor, type MockUser } from '../helpers/abac-stack-helper';
-import { seedMockStaff, cleanupMockStaff } from '../helpers/vacancy-notes-e2e-helper';
+import { tokenFor } from '../helpers/abac-stack-helper';
 import { cleanupTestWorker } from '../helpers/db-test-helper';
 
-const BACKEND_URL = process.env.E2E_BACKEND_URL ?? 'http://localhost:8080';
+const BACKEND_URL = backendUrl();
 
-const MOCK_ADMIN_USER: MockUser = {
-  uid: 'e2e-int-admin-lancamento-idemp-f6',
-  email: 'admin.lancamento.idemp.f6@e2e.test',
-  role: 'admin',
-  country: 'AR',
-};
-
-interface FunnelStageItem {
-  id: string;
-  workerId?: string | null;
-}
+const MOCK_ADMIN_USER = mockAdminUserFor('idemp');
 
 /** `is_draft` da vaga — prova de que o despublicar gravou o estado (critério 9). */
 function readIsDraft(vacancyId: string): string {
@@ -71,19 +65,10 @@ function readIsDraft(vacancyId: string): string {
 }
 
 test.describe('funil-vacante lancamento idempotente @integration', () => {
-  test.use({
-    viewport: { width: 1366, height: 768 },
-    locale: 'es-AR',
-    timezoneId: 'America/Argentina/Buenos_Aires',
-  });
+  test.use(LANCAMENTO_VIEWPORT_ES_AR);
   test.setTimeout(120_000);
 
-  test.beforeAll(() => {
-    seedMockStaff(MOCK_ADMIN_USER, 'E2E Lancamento Idempotente F6');
-  });
-  test.afterAll(() => {
-    cleanupMockStaff(MOCK_ADMIN_USER);
-  });
+  useLancamentoStaff(MOCK_ADMIN_USER, 'E2E Lancamento Idempotente F6');
 
   test('lancamento-idempotente', async ({ page, request }) => {
     // Coordenada própria do arquivo (DX-6.9) — distinta de P1/P10/P11/P12/P13/P14/P24.
@@ -97,10 +82,9 @@ test.describe('funil-vacante lancamento idempotente @integration', () => {
     const [workerR, workerC1, workerC2] = seedWorkersNear(LAT, LNG, 3);
 
     try {
-      await loginAs(page, MOCK_ADMIN_USER);
       // DEPOIS do login — mesmo motivo do P12/P13/P14 (`swapToken` de `loginAs` vence rotas
-      // registradas antes dele).
-      await mockGenerateAiContent(page);
+      // registradas antes dele). `loginAndMockAi` (helper, G2) encapsula essa ordem.
+      await loginAndMockAi(page, MOCK_ADMIN_USER);
 
       // (1) Foguete → wizard (profissão AT, salário, meet) → /talentum → 1º lançamento.
       const vacancyId = await clickFoguete(page, patient.patientId, patient.serviceId);
