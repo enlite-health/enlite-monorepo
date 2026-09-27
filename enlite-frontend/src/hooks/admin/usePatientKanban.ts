@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
-import type { PatientKanbanItem } from '@domain/entities/PatientDetail';
+import { AdminContractedServicesApiService, ContractedServiceApiError } from '@infrastructure/http/AdminContractedServicesApiService';
+import type { PatientKanbanItem, PatientKanbanServiceSummary } from '@domain/entities/PatientDetail';
 import { ADMISSION_FUNNEL_STATUSES } from '@domain/entities/patientEnums';
 
 /**
@@ -86,6 +87,10 @@ export function usePatientKanban(country?: string) {
   const [groups, setGroupsState] = useState<PatientKanbanGroups>(emptyGroups);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // DX-8.9: estado do agregado do subcard, carregado em paralelo com a listagem. `undefined` até
+  // a 1ª carga assentar. 'forbidden' (403) é silencioso (o ator não lê serviços); 'error' mostra
+  // o aviso da página (P13) — nunca silêncio nesse caso.
+  const [servicesStatus, setServicesStatus] = useState<'ok' | 'forbidden' | 'error' | undefined>(undefined);
   const isFetchingRef = useRef(false);
   // O agrupamento CORRENTE, síncrono: o rollback do movimento otimista precisa do estado
   // anterior no instante do clique — o updater do setState roda depois, batched, e um PUT que
@@ -99,7 +104,29 @@ export function usePatientKanban(country?: string) {
     try {
       setIsLoading(true);
       setError(null);
-      const items = await AdminApiService.listPatientsForKanban(country || undefined);
+      // DX-8.9: os dois EM PARALELO (Promise.allSettled) — o board só renderiza quando ambos
+      // assentam, um estado de carga só (sem esqueleto por card). A listagem rejeitada cai no
+      // `catch` de hoje; o agregado rejeitado nunca derruba a página (sem serviço no board).
+      const [list, agg] = await Promise.allSettled([
+        AdminApiService.listPatientsForKanban(country || undefined),
+        AdminContractedServicesApiService.listKanbanServices(country || undefined),
+      ]);
+      if (list.status === 'rejected') throw list.reason;
+
+      let status: 'ok' | 'forbidden' | 'error';
+      const servicesByPatient = new Map<string, PatientKanbanServiceSummary[]>();
+      if (agg.status === 'fulfilled') {
+        status = 'ok';
+        for (const p of agg.value.patients) servicesByPatient.set(p.patientId, p.services);
+      } else {
+        status = agg.reason instanceof ContractedServiceApiError && agg.reason.status === 403 ? 'forbidden' : 'error';
+      }
+      setServicesStatus(status);
+
+      const items = list.value.map((item) => ({
+        ...item,
+        services: status === 'ok' ? (servicesByPatient.get(item.id) ?? []) : undefined,
+      }));
       setGroups(groupByStatus(items));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load patients');
@@ -169,5 +196,5 @@ export function usePatientKanban(country?: string) {
     }
   }, [setGroups]);
 
-  return { groups, isLoading, error, refetch: fetchBoard, moveStatus };
+  return { groups, isLoading, error, servicesStatus, refetch: fetchBoard, moveStatus };
 }
