@@ -19,7 +19,7 @@
  * todos os specs antes do `--grep`).
  */
 import { type APIRequestContext } from '@playwright/test';
-import { backendUrl } from './lancamento-e2e-helper';
+import { backendUrl, postContractedServiceViaApi } from './lancamento-e2e-helper';
 import { runSQL } from './patient-detail-a-helper';
 import { tokenFor, type MockUser } from './abac-stack-helper';
 
@@ -120,31 +120,26 @@ export interface CreateServiceViaApiOpts {
   schedule?: Array<{ dayOfWeek: number; startTime: string; endTime: string }>;
 }
 
-/** `POST /patients/:id/contracted-services` — mesmo corpo de `seedLaunchablePatient`, `schedule` opcional. */
+/**
+ * `POST /patients/:id/contracted-services` — wrapper de `postContractedServiceViaApi`
+ * (`lancamento-e2e-helper.ts`, G2: fonte única do POST, antes duplicado aqui). Mesmos defaults
+ * de antes (`serviceCode` AT, `providersNeeded` 1, `weeklyHours` 20, `careLocation` HOME),
+ * `schedule` opcional.
+ */
 export async function createServiceViaApi(
   request: APIRequestContext,
   patientId: string,
   opts: CreateServiceViaApiOpts,
 ): Promise<string> {
   const token = tokenFor(ITINERARIO_STAFF);
-  const data: Record<string, unknown> = {
+  return postContractedServiceViaApi(request, token, patientId, {
     serviceCode: opts.serviceCode ?? 'AT',
     providersNeeded: 1,
     weeklyHours: opts.weeklyHours ?? 20,
     careLocation: 'HOME',
     addressId: opts.addressId,
-  };
-  if (opts.schedule) data.schedule = opts.schedule;
-
-  const res = await request.post(`${backendUrl()}/api/admin/patients/${patientId}/contracted-services`, {
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    data,
+    ...(opts.schedule ? { schedule: opts.schedule } : {}),
   });
-  if (!res.ok()) {
-    throw new Error(`createServiceViaApi: falhou ${res.status()}: ${await res.text()}`);
-  }
-  const body = (await res.json()) as { data: { id: string } };
-  return body.data.id;
 }
 
 // ── Alocação por SQL (Q-EX-7.6: o escritor é da Fase 11) ────────────────────────────
