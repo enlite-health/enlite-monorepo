@@ -9,6 +9,7 @@ import { AdminPatientsMapController } from '../controllers/AdminPatientsMapContr
 import { AdminPatientAddressesController } from '../controllers/AdminPatientAddressesController';
 import { AdminInsuranceProvidersController } from '../controllers/AdminInsuranceProvidersController';
 import { AdminPatientContractedServicesController } from '../controllers/AdminPatientContractedServicesController';
+import { AdminPatientItineraryController } from '../controllers/AdminPatientItineraryController';
 import { AdminPatientDiagnosesController } from '@modules/diagnosis/interfaces/controllers/AdminPatientDiagnosesController';
 import { AdminTerminologySearchController } from '@modules/terminology/interfaces/controllers/AdminTerminologySearchController';
 import { AdminPatientContactRowsController } from '../controllers/AdminPatientContactRowsController';
@@ -73,6 +74,10 @@ export function createAdminPatientsRoutes(
   // Contatos externos + marca de emergência (spec 018, PR-2). Mesmo padrão de default acima.
   externalContactsController: AdminPatientExternalContactsController = new AdminPatientExternalContactsController(),
   emergencyContactController: AdminPatientEmergencyContactController = new AdminPatientEmergencyContactController(),
+  // Itinerário — leitura (fase 7, DX-7.7). Mesmo padrão de default acima: o construtor não abre
+  // banco (o pool só é pego dentro de `readPatientItinerary`), então nenhum teste que constrói o
+  // factory sem os 15º-em-diante argumentos precisa de `DATABASE_URL`.
+  itineraryController: AdminPatientItineraryController = new AdminPatientItineraryController(),
 ): Router {
   const router = Router();
   const staffOnly = authMiddleware.requireStaff();
@@ -264,6 +269,15 @@ export function createAdminPatientsRoutes(
   );
   router.patch('/patients/:id/contracted-services/:sid/providers/:pid', staffOnly, perm.require('patient_services', 'update'), (req: Request, res: Response) =>
     contractedServicesController.updateProvider(req, res),
+  );
+
+  // ── Itinerário — leitura (fase 7, DX-7.6/7.7/D433/D434) ────────────────────
+  // Sob `patient_services:read` (Q-7.3, padrão fixado na DX-7.7): a resposta carrega os mesmos
+  // `weeklyHours`/`authorizedHours` do GET .../contracted-services, que já sobre essa célula
+  // (linha `:240` acima); sob `patient:read` a rota abriria esses números a quem hoje não os lê.
+  // Literal GET, sem colidir com o PATCH dinâmico /:id/:section (é outro método).
+  router.get('/patients/:id/itinerary', staffOnly, perm.require('patient_services', 'read'), (req: Request, res: Response) =>
+    itineraryController.get(req, res),
   );
 
   // ── Diagnóstico estruturado, CID-11 (spec 016 F2, D263) ────────────────────

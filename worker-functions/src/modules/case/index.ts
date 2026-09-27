@@ -224,6 +224,8 @@ export {
 export { AdminInsuranceProvidersController } from './interfaces/controllers/AdminInsuranceProvidersController';
 export { AdminPatientsMapController } from './interfaces/controllers/AdminPatientsMapController';
 export { AdminPatientContractedServicesController } from './interfaces/controllers/AdminPatientContractedServicesController';
+// Fase 7 (DX-7.8): o contrato publicado da leitura do itinerário.
+export { patientItineraryResponseSchema } from './interfaces/validators/itinerarySchemas';
 export { AdminTherapeuticProjectsController } from './interfaces/controllers/AdminTherapeuticProjectsController';
 export { createAdminTherapeuticProjectsRoutes } from './interfaces/routes/adminTherapeuticProjectsRoutes';
 export { AdminPatientChatIdsController } from './interfaces/controllers/AdminPatientChatIdsController';
