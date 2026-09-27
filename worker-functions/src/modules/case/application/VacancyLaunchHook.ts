@@ -61,7 +61,7 @@ export type VacancyLaunchMatchOutcome =
 
 export interface VacancyLaunchOutcome {
   jobPostingId: string;
-  patient: 'no_target' | 'no_patient' | 'unchanged' | 'moved' | 'not_ready' | 'failed';
+  patient: 'no_target' | 'no_patient' | 'patient_not_visible' | 'unchanged' | 'moved' | 'not_ready' | 'failed';
   match: VacancyLaunchMatchOutcome;
 }
 
@@ -117,6 +117,14 @@ async function movePatientIfInFunnel(
   deps: VacancyLaunchDeps,
 ): Promise<VacancyLaunchOutcome['patient']> {
   if (!target.patientId) return 'no_patient';
+  if (target.patientStatus === null) {
+    // `jp.patient_id` existe mas o LEFT JOIN em `patients` (readLaunchTarget) voltou vazio: RLS
+    // escondeu o paciente ao ator (país não bate) ou o registro sumiu por fora do `deleted_at`
+    // filtrado na query. Distinto de `no_patient` (vaga sem paciente): aqui HÁ paciente, só não é
+    // visível. Achado A5 (veredito parcial 1): antes disto virava 'unchanged' sem alarme nenhum.
+    functions.logger.warn('vacancy_launch.patient_not_visible', { jobPostingId, patientId: target.patientId });
+    return 'patient_not_visible';
+  }
   if (!isAdmissionFunnelStatus(target.patientStatus)) return 'unchanged';
 
   try {

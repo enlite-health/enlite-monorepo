@@ -184,12 +184,22 @@ describe('PatientService.moveStatus v2', () => {
       expect(c.some((x) => /^UPDATE patients/.test(x.sql))).toBe(true);
     });
 
-    it('SOLICITANTE/PENDING_ADMISSION → SEARCHING com kanban → recusado (mesma guarda para as 3 pontas do funil)', async () => {
+    it('SOLICITANTE/PENDING_ADMISSION → SEARCHING com kanban → recusado (mesma guarda para as 3 pontas do funil), MESMO com a 479 já no catálogo — com vacancy_launch a mesma linha passa', async () => {
       for (const from of ['SOLICITANTE', 'PENDING_ADMISSION'] as const) {
+        // Achado A6 (veredito parcial 1): com `allowed=[]` a recusa vinha do catálogo vazio, não
+        // da guarda — o teste sobrevivia à remoção de `isLaunchOnlyTransition`. Com a linha da 479
+        // JÁ no catálogo, só a guarda pode recusar o kanban; a consulta ao catálogo nem acontece.
         jest.clearAllMocks();
-        db(from, []);
+        db(from, [[from, 'SEARCHING']]);
         await expect(service.moveStatus(PID, 'SEARCHING', { changeSource: 'kanban' })).rejects.toMatchObject({
           code: 'PATIENT_STATUS_TRANSITION_NOT_ALLOWED', from, to: 'SEARCHING',
+        });
+        expect(calls().some((x) => /patient_status_transitions/.test(x.sql))).toBe(false);
+
+        jest.clearAllMocks();
+        db(from, [[from, 'SEARCHING']]);
+        await expect(service.moveStatus(PID, 'SEARCHING', { changeSource: 'vacancy_launch' })).resolves.toEqual({
+          id: PID, status: 'SEARCHING',
         });
       }
     });
