@@ -6,7 +6,7 @@
  *   - `POST /patients/:id/contracted-services/:sid/activate-recruitment` (novo, este PR): gate
  *     `RECRUITMENT_BLOCKING_CODES` (SERVICE_ADDRESS/SERVICE_SCHEDULE do serviço + COVERAGE do
  *     paciente), 1 vaga em rascunho (`is_draft`/status `PENDING_ACTIVATION`), paciente do funil
- *     vai para SEARCHING;
+ *     PERMANECE no funil — quem move a SEARCHING é o lançamento à Talentum (D434), não este passo;
  *   - `POST /patients/:id/activate` (a rota antiga, de paciente inteiro) virou 410 `ACTIVATION_SPLIT`.
  *
  * API real + Postgres real. Nenhum side-effect outbound: `ActivateRecruitmentUseCase` só faz
@@ -87,7 +87,7 @@ describe('Ativação de recrutamento por serviço (spec 018, PR-6) @integration'
     await pool.end();
   });
 
-  it('FELIZ: paciente de funil sem serviço → cria serviço com endereço/horário/cobertura → activate-recruitment cria vaga em borrador e move o paciente a SEARCHING', async () => {
+  it('FELIZ: paciente de funil sem serviço → cria serviço com endereço/horário/cobertura → activate-recruitment cria vaga em borrador e NÃO move o paciente — o lançamento move, D434', async () => {
     const patientId = await criarPacienteDeFunil({ tag: 'activation-e2e-happy', caseNumber: 991001 });
 
     // endereço do paciente (SERVICE_ADDRESS exige um patient_addresses vivo, referenciado pelo serviço)
@@ -125,8 +125,8 @@ describe('Ativação de recrutamento por serviço (spec 018, PR-6) @integration'
     expect(r.status).toBe(201);
     expect(r.data.success).toBe(true);
     expect(typeof r.data.data.vacancyId).toBe('string');
-    expect(r.data.data.patientStatus).toBe('SEARCHING');
-    expect(r.data.data.statusChanged).toBe(true);
+    expect(r.data.data.patientStatus).toBe('PENDING_ADMISSION');
+    expect(r.data.data.statusChanged).toBe(false);
 
     const { rows: [vacancy] } = await pool.query<{ status: string; is_draft: boolean; contracted_service_id: string }>(
       `SELECT status, is_draft, contracted_service_id FROM job_postings WHERE id = $1`,
@@ -139,7 +139,7 @@ describe('Ativação de recrutamento por serviço (spec 018, PR-6) @integration'
     const { rows: [patient] } = await pool.query<{ status: string }>(
       `SELECT status FROM patients WHERE id = $1`, [patientId],
     );
-    expect(patient.status).toBe('SEARCHING');
+    expect(patient.status).toBe('PENDING_ADMISSION');
 
     // spec 029 — achado: o botão "ativar recrutamento" gravava `job_posting_audit_log` com
     // `actor_type=SYSTEM`/`actor_user_id` NULO, mesmo com um operador humano (asAdmin) autenticado
@@ -212,7 +212,7 @@ describe('Ativação de recrutamento por serviço (spec 018, PR-6) @integration'
     );
     expect(Number(n.n)).toBe(0);
 
-    // recusado → paciente continua no funil, sem mudar para SEARCHING.
+    // recusado → paciente continua no funil (como o caso feliz agora também continua: só o lançamento move a SEARCHING).
     const { rows: [patient] } = await pool.query<{ status: string }>(
       `SELECT status FROM patients WHERE id = $1`, [patientId],
     );
