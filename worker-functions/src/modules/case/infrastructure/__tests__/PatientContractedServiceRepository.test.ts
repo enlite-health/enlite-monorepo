@@ -159,6 +159,19 @@ describe('PatientContractedServiceRepository', () => {
     expect(selectIdx).toBeGreaterThan(syncIdx);
   });
 
+  it('create: schedule: null explícito (chave presente, vazia) → syncSlots injetado 1× com null', async () => {
+    const { cli, chamadas } = cliente();
+    const syncSlots = jest.fn(async () => {
+      chamadas.push({ sql: 'SYNC_SLOTS', params: [] });
+      return { upserted: 0, deactivated: 0 };
+    });
+    mockConnect.mockResolvedValue(cli);
+    const repo = new PatientContractedServiceRepository(fakeProviderRepo(), syncSlots);
+    await repo.create({ patientId: 'pat-1', serviceCode: 'AT', schedule: null, actorUid: 'uid-3' });
+    expect(syncSlots).toHaveBeenCalledTimes(1);
+    expect(syncSlots).toHaveBeenCalledWith(cli, 'svc-1', null, 'uid-3');
+  });
+
   it('create: sem schedule (chave ausente) → syncSlots NUNCA chamado', async () => {
     const { cli } = cliente();
     const syncSlots = jest.fn();

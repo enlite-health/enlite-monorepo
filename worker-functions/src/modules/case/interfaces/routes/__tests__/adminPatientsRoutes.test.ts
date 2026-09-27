@@ -330,6 +330,7 @@ describe('createAdminPatientsRoutes', () => {
     ['patch', '/api/admin/patients/abc-123/contracted-services/s1', 'cs.update'],
     ['post', '/api/admin/patients/abc-123/contracted-services/s1/providers', 'cs.associateProvider'],
     ['patch', '/api/admin/patients/abc-123/contracted-services/s1/providers/p1', 'cs.updateProvider'],
+    ['get', '/api/admin/patients/abc-123/itinerary', 'itinerary.get'],
     ['get', '/api/admin/patients/abc-123/diagnoses', 'diag.list'],
     ['post', '/api/admin/patients/abc-123/diagnoses', 'diag.create'],
     ['patch', '/api/admin/patients/abc-123/diagnoses/d1', 'diag.update'],
