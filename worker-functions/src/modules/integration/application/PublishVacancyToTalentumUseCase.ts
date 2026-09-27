@@ -10,10 +10,13 @@
  * Audit rows are inserted INSIDE the existing transaction via logEventSafe (SAVEPOINT).
  * If the audit INSERT fails, only the audit row is rolled back — the surrounding
  * transaction (UPDATE job_postings) is NOT affected and always commits.
+ *
+ * 7. Pós-commit: `onVacancyLaunched` (paciente do funil → Búsqueda; match sem convite).
  */
 
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { reportError } from '@shared/logging';
 import { TalentumDescriptionService } from '../infrastructure/TalentumDescriptionService';
 import { TalentumApiClient } from '../infrastructure/TalentumApiClient';
 import type { TalentumQuestion, TalentumFaq } from '../domain/ITalentumApiClient';
@@ -22,6 +25,9 @@ import {
   JobPostingAuditRepository,
   type AuditActorType,
 } from '../../matching/infrastructure/JobPostingAuditRepository';
+// DX-6.1: chamado DEPOIS do commit do envio (nunca antes). `onVacancyLaunched` nunca lança
+// (DX-6.2) — o catch abaixo é a 2ª trava, não o contrato do gancho.
+import { onVacancyLaunched } from '../../case/application/VacancyLaunchHook';
 
 // ─────────────────────────────────────────────────────────────────
 // Input / Output types
@@ -55,10 +61,12 @@ export interface AuditActor {
 export class PublishVacancyToTalentumUseCase {
   private db: Pool;
   private auditRepo: JobPostingAuditRepository;
+  private launchHook: (jobPostingId: string) => Promise<unknown>;
 
-  constructor() {
+  constructor(launchHook: (jobPostingId: string) => Promise<unknown> = onVacancyLaunched) {
     this.db = DatabaseConnection.getInstance().getPool();
     this.auditRepo = new JobPostingAuditRepository();
+    this.launchHook = launchHook;
   }
 
   /**
@@ -219,6 +227,16 @@ export class PublishVacancyToTalentumUseCase {
       throw err;
     } finally {
       client.release();
+    }
+
+    // invariante 7 (D434): o lançamento é o envio aceito — pós-commit, idempotente. O gancho
+    // não lança por contrato (DX-6.2); este catch é a 2ª trava: o envio JÁ está commitado e na
+    // Talentum — devolver 500 aqui faria o operador tentar de novo e levar 409.
+    try {
+      await this.launchHook(jobPostingId);
+    } catch (err: unknown) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      reportError(error, { source: 'PublishVacancyToTalentumUseCase:launchHook' });
     }
 
     console.log(
