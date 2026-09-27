@@ -261,6 +261,7 @@ test.describe('lista de vacantes e anotações @integration', () => {
       'vacancies-col-priority',
       'vacancies-col-last-action',
       'vacancies-col-days-without-divulgation',
+      'vacancies-col-COMPATIBLE',
       'vacancies-col-INVITED',
       'vacancies-col-INICIADO',
       'vacancies-col-PRE_SCREENING',
