@@ -48,6 +48,7 @@ const MOCK_TOKEN = tokenFor(MOCK_ADMIN_USER);
 // (não importado de `funnelTabsConfig.ts`), para não repetir no teste a mesma
 // fonte que o P36 (sabotagem) ataca no código de produção.
 const COLUMN_SOURCES: Record<string, string[]> = {
+  COMPATIBLE: ['COMPATIBLE'],
   INVITED: ['INVITED'],
   INICIADO: ['INICIADO'],
   PRE_SCREENING: ['PRE_SCREENING', 'IN_PROGRESS'],
@@ -264,7 +265,8 @@ test.describe('funil da vacante @integration', () => {
     wjaIdsV1.E = insertWJA({ workerId: workersV1.E, jobPostingId: vacancyIdV1, funnelStage: 'SELECTED' });
     // F — Rejeitados (candidatura normal).
     wjaIdsV1.F = insertWJA({ workerId: workersV1.F, jobPostingId: vacancyIdV1, funnelStage: 'REJECTED' });
-    // G — controle: INVITED/system SEM messaged_at, fica fora de tudo (nunca mensageado).
+    // G — controle: INVITED/system SEM messaged_at → SSOT devolve COMPATIBLE (DX-5.14),
+    // não mais "fora de tudo": candidato do match, ainda não convidado pelo envio.
     wjaIdsV1.G = insertWJA({
       workerId: workersV1.G,
       jobPostingId: vacancyIdV1,
@@ -380,7 +382,8 @@ test.describe('funil da vacante @integration', () => {
       expect(tabCounts[col], `aba.${col}`).toBe(apiCounts[col]);
       expect(kanbanCounts[col], `kanban.${col}`).toBe(apiCounts[col]);
     }
-    // Literais que provam o semeado (G fora — nunca mensageado).
+    // Literais que provam o semeado (G agora em Compatíveis, DX-5.14 — não mais "fora").
+    expect(apiCounts.COMPATIBLE, 'COMPATIBLE').toBe(1);
     expect(apiCounts.INVITED, 'INVITED').toBe(1);
     expect(apiCounts.INICIADO, 'INICIADO').toBe(1);
     expect(apiCounts.PRE_SCREENING, 'PRE_SCREENING').toBe(2);
