@@ -1,5 +1,6 @@
 import { GetFunnelByWorkerUseCase } from '../GetFunnelByWorkerUseCase';
 import { OPEN_JOB_STATUSES } from '../../domain/openJobStatuses';
+import { managementDashboardSchema, type ManagementDashboardData } from '../managementDashboardSchema';
 
 interface Row {
   worker_id: string;
@@ -107,12 +108,72 @@ describe('GetFunnelByWorkerUseCase', () => {
     expect(result.porEtapa.INVITED).toBe(1);
   });
 
+  it('candidato do match (INVITED/system/sem messaged) some do payload parseado — nenhuma chave COMPATIBLE (DX-5.4)', async () => {
+    // O painel NÃO ganha Compatíveis nesta fase (D437 item 1: `:107` mantém o
+    // `continue`). `porEtapa`/`consolidado` NASCEM com `COMPATIBLE: 0`
+    // (emptyFunnelColumnCounts inclui as 10 colunas), mas o contrato do endpoint
+    // (`funnelColumnCountsSchema`, só 9 chaves, sem `.strict()`) descarta a chave
+    // no `.parse()` — o descarte é correto por construção (sempre 0).
+    const result = await new GetFunnelByWorkerUseCase(
+      mockDb([
+        row({ worker_id: 'fantasma', stage: 'INVITED', source: 'system', messaged_at: null }),
+        row({ worker_id: 'real', stage: 'INVITED', source: 'system', messaged_at: new Date() }),
+      ]) as never,
+    ).execute();
+
+    expect(result.porEtapa.INVITED).toBe(1);
+    expect((result.porEtapa as Record<string, number>).COMPATIBLE).toBe(0);
+
+    const payload: ManagementDashboardData = {
+      scope: { countries: ['AR'], requested: 'ALL' },
+      bigNumbers: {
+        equiposArmados: 0, equiposPorArmar: 0, pacientesActivos: 0,
+        vacantesAbiertas: 0, vacantesPausadas: 0,
+      },
+      equipoArmada: {
+        armados: 0, porArmar: 0, semConfig: 0, pendenteClasificacao: 0,
+        pctRespostaRapidaArmado: { num: 0, den: 0, excluidos: 0, pct: null },
+      },
+      pacientes: {
+        activos: 0, ubicacionesActivas: 0, solicitudes: 0, entrevistaAgendada: 0,
+        enAdmision: 0, enBusca: 0, sobrepoe: true,
+      },
+      horas: {
+        totais: 0, aPreencher: 0, ativas: 0, ativasConSchedule: 0, ativasSinSchedule: 0,
+        coberturaConSchedule: 0, coberturaSinSchedule: 0,
+      },
+      prioridades: { completosEsperandoAgendamiento: 0, registrosIncompletos: 0, bloqueadosAlPostularse: 0 },
+      funnelPorPrestador: {
+        total: result.total,
+        recorte: 'vagas-vivas',
+        periodoDias: null,
+        bloqueados: 0,
+        porEtapa: { somavel: false, colunas: result.porEtapa },
+        consolidado: { somavel: true, colunas: result.consolidado },
+      },
+      funnel: {
+        invitados: 0, bloqueados: 0, preScreening: 0, completos: 0,
+        agendados: 0, seleccionados: 0, rechazados: 0,
+      },
+      encuadres: { agendadosEstaSemana: 0, semDataRegistrada: 0 },
+      cadastros: {
+        leads: 0, completos: 0, alocados: 0, alocadosActivos: 0, alocadosCubriendoGuardias: 0,
+        incompletos: 0, nuevosCompletosMes: 0,
+      },
+    };
+
+    const parsed = managementDashboardSchema.parse(payload);
+
+    expect(parsed.funnelPorPrestador.porEtapa.colunas).not.toHaveProperty('COMPATIBLE');
+    expect(parsed.funnelPorPrestador.porEtapa.colunas.INVITED).toBe(1);
+  });
+
   it('devolve zero em TODAS as colunas quando não há ninguém (nunca chave ausente)', async () => {
     const result = await new GetFunnelByWorkerUseCase(mockDb([]) as never).execute();
 
     expect(result.total).toBe(0);
     expect(result.porEtapa).toEqual({
-      INVITED: 0, INICIADO: 0, PRE_SCREENING: 0, IN_PROGRESS: 0,
+      COMPATIBLE: 0, INVITED: 0, INICIADO: 0, PRE_SCREENING: 0, IN_PROGRESS: 0,
       COMPLETED: 0, CONFIRMED: 0, SELECTED: 0, QUICK_RESPONSE_TEAM: 0, REJECTED: 0,
     });
     expect(result.consolidado).toEqual(result.porEtapa);

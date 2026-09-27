@@ -587,13 +587,15 @@ jobs:
       # (medido). Vive no job padrão (`pr-gate.yml`, engine OFF).
       # `vacante-anotacao-sem-celula` ENTROU (cadeia, Fase 3): precisa do engine ligado
       # (403 sem `vacancy:update`); usa `abac-stack-helper`.
+      # `funil-compativeis-sem-celula` ENTROU (cadeia, Fase 5): precisa do engine ligado (card de
+      # Compatíveis redigido sem `match:read`); usa `abac-stack-helper`.
       - name: Teste de integração — simulação de grupo de acesso + completar-vacante (fases 2-3)
         working-directory: enlite-frontend
         env:
           CI: 'true'
           ABAC_API_URL: http://localhost:8080
           ABAC_TEST_DB_URL: postgresql://enlite_admin:enlite_password@localhost:5433/enlite_e2e
-        run: npx playwright test --project=integration --ignore-snapshots --grep "group-simulation|draft-vacancy-page|draft-vacancy-choice|vacante-anotacao-sem-celula"
+        run: npx playwright test --project=integration --ignore-snapshots --grep "group-simulation|draft-vacancy-page|draft-vacancy-choice|vacante-anotacao-sem-celula|funil-compativeis-sem-celula"
 
       - name: Relatório (só quando falha)
         if: failure()

@@ -20,7 +20,7 @@ const mockCounts: FunnelTableCounts = {
 };
 
 describe('VacancyFunnelTabs', () => {
-  it('renders all 12 tab buttons (Todos + 8 colunas + Postulados + Pre Seleccionados + Desistentes)', () => {
+  it('renders all 13 tab buttons (Todos + Compatíveis + 8 colunas + Postulados + Pre Seleccionados + Desistentes)', () => {
     render(
       <VacancyFunnelTabs
         activeTab="ALL"
@@ -29,6 +29,7 @@ describe('VacancyFunnelTabs', () => {
       />,
     );
     expect(screen.getByRole('tab', { name: /admin.vacancyDetail.funnelTabs.all/ })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /admin.kanban.columns.COMPATIBLE/ })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /admin.kanban.columns.INVITED/ })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /admin.kanban.columns.INICIADO/ })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /admin.kanban.columns.PRE_SCREENING/ })).toBeInTheDocument();
@@ -40,7 +41,7 @@ describe('VacancyFunnelTabs', () => {
     expect(screen.getByRole('tab', { name: /admin.vacancyDetail.funnelTabs.postulated/ })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /admin.vacancyDetail.funnelTabs.preSelected/ })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /admin.vacancyDetail.funnelTabs.withdrew/ })).toBeInTheDocument();
-    expect(screen.getAllByRole('tab')).toHaveLength(12);
+    expect(screen.getAllByRole('tab')).toHaveLength(13);
   });
 
   it('active tab has bg-primary', () => {

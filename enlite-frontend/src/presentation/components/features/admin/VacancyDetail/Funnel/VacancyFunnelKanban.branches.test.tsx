@@ -175,6 +175,35 @@ describe('VacancyFunnelKanban — branches', () => {
     expect(screen.queryByTestId('kanban-move-error')).not.toBeInTheDocument();
   });
 
+  // Fase 5 (DX-5.6/DX-5.9): a API recusa Compatíveis → Invitados por arrasto (só o envio da
+  // mensagem convida). O banner mostra os dois textos i18n dedicados, nunca o código cru, e
+  // não loga console.error — é fluxo esperado, igual ao MOVE_REASON_REQUIRED acima.
+  it('moveError code=COMPATIBLE_READ_ONLY: banner com os textos dedicados, sem enum cru, sem console.error', async () => {
+    mockState = withBoardData();
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    moveEncuadre.mockResolvedValue({
+      message: 'COMPATIBLE_READ_ONLY',
+      code: 'COMPATIBLE_READ_ONLY',
+      reason: 'INVITE_BY_SEND',
+    });
+    render(<VacancyFunnelKanban vacancyId="vac-1" />);
+
+    fireEvent.click(screen.getByTestId('fake-move'));
+
+    await waitFor(() => expect(screen.getByTestId('kanban-move-error')).toBeInTheDocument());
+    expect(
+      screen.getByText('admin.vacancyDetail.funnelView.kanban.compatibleReadOnlyTitle'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('admin.vacancyDetail.funnelView.kanban.compatibleReadOnlyInviteBySend'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('COMPATIBLE_READ_ONLY')).not.toBeInTheDocument();
+    expect(screen.queryByText('INVITE_BY_SEND')).not.toBeInTheDocument();
+    expect(consoleErrorSpy).not.toHaveBeenCalled();
+
+    consoleErrorSpy.mockRestore();
+  });
+
   // D300 — o handler traduz o motivo do backend para a frase que a recrutadora lê.
   // O valor volta para o CARD (não para o banner do topo): a ação é de uma tarjeta,
   // e o erro tem de aparecer onde ela clicou.

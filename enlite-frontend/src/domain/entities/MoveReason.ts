@@ -12,6 +12,13 @@ export type MoveReasonKind = 'JUMP' | 'ENTER_REJECTED' | 'LEAVE_REJECTED';
 export const MOVE_REASON_REQUIRED = 'MOVE_REASON_REQUIRED';
 
 /**
+ * Código do erro 422 quando a API recusa mover para fora de Compatíveis sem passar pelo envio
+ * de convite (Fase 5, DX-5.6). Compatíveis → Invitados só acontece pelo envio da mensagem
+ * (`messaged_at`); arrasto/menu para esse destino é recusado com `reason: 'INVITE_BY_SEND'`.
+ */
+export const COMPATIBLE_READ_ONLY = 'COMPATIBLE_READ_ONLY';
+
+/**
  * Categorias de rejeição (9 valores) — saiu de `RejectionReasonSelect.tsx` (era `REJECTION_OPTIONS`
  * local); é a mesma lista que a API valida como `ENTER_REJECTED` (DX-4.4, espelho de `Encuadre.ts`
  * no backend, sem cópia de nome de tipo).

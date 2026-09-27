@@ -1,4 +1,5 @@
 export type VacancyFunnelColumnId =
+  | 'COMPATIBLE'
   | 'INVITED'
   | 'INICIADO'
   | 'PRE_SCREENING'
@@ -15,8 +16,9 @@ export interface VacancyFunnelColumn {
   droppable: boolean;
 }
 
-/** Quadro B (D433): 8 colunas; a Fase 5 acrescenta Compatíveis. */
+/** Quadro B (D433): 9 colunas; Compatíveis (Fase 5) é derivada do match, só leitura. */
 export const VACANCY_FUNNEL_COLUMNS: readonly VacancyFunnelColumn[] = [
+  { id: 'COMPATIBLE', sources: ['COMPATIBLE'], color: 'bg-slate-400', droppable: false },
   { id: 'INVITED', sources: ['INVITED'], color: 'bg-blue-400', droppable: true },
   { id: 'INICIADO', sources: ['INICIADO'], color: 'bg-indigo-400', droppable: false },
   { id: 'PRE_SCREENING', sources: ['PRE_SCREENING', 'IN_PROGRESS'], color: 'bg-violet-400', droppable: false },

@@ -11,6 +11,7 @@ describe('VacanciesTable', () => {
       priority: 'URGENT',
       diasAberto: '05',
       stageCounts: {
+        COMPATIBLE: 6,
         INVITED: 32,
         INICIADO: 9,
         PRE_SCREENING: 5,
@@ -33,6 +34,7 @@ describe('VacanciesTable', () => {
       priority: 'NORMAL',
       diasAberto: '03',
       stageCounts: {
+        COMPATIBLE: 8,
         INVITED: 16,
         INICIADO: 41,
         PRE_SCREENING: 18,
@@ -50,7 +52,7 @@ describe('VacanciesTable', () => {
     },
   ];
 
-  it('should render table headers (case, status, priority, as 8 colunas do funil, applicants, missing)', () => {
+  it('should render table headers (case, status, priority, as 9 colunas do funil, applicants, missing)', () => {
     render(<VacanciesTable vacancies={[]} />);
 
     expect(screen.getByText('admin.vacancies.table.case')).toBeInTheDocument();
@@ -58,6 +60,7 @@ describe('VacanciesTable', () => {
     expect(screen.getByText('admin.vacancies.table.priority')).toBeInTheDocument();
     expect(screen.getByText('admin.vacancies.table.lastAction')).toBeInTheDocument();
     expect(screen.getByText('admin.vacancies.table.daysWithoutDivulgation')).toBeInTheDocument();
+    expect(screen.getByText('admin.kanban.columns.COMPATIBLE')).toBeInTheDocument();
     expect(screen.getByText('admin.kanban.columns.INVITED')).toBeInTheDocument();
     expect(screen.getByText('admin.kanban.columns.INICIADO')).toBeInTheDocument();
     expect(screen.getByText('admin.kanban.columns.PRE_SCREENING')).toBeInTheDocument();
@@ -98,10 +101,11 @@ describe('VacanciesTable', () => {
     expect(screen.getByText('admin.vacancies.priorityOptions.normal')).toBeInTheDocument();
   });
 
-  it('should render numeric data fields (stageCounts das 8 colunas, Fase 4: +QUICK_RESPONSE_TEAM, + postulados/faltantes)', () => {
+  it('should render numeric data fields (stageCounts das 9 colunas, Fase 5: +COMPATIBLE, + postulados/faltantes)', () => {
     render(<VacanciesTable vacancies={realApiData} />);
 
     // Caso 349: stageCounts padStart(2,'0')
+    expect(screen.getByText('06')).toBeInTheDocument();
     expect(screen.getByText('32')).toBeInTheDocument();
     expect(screen.getByText('09')).toBeInTheDocument();
     expect(screen.getByText('05')).toBeInTheDocument();
@@ -113,6 +117,7 @@ describe('VacanciesTable', () => {
     expect(screen.getByText('115')).toBeInTheDocument();
     expect(screen.getByText('00')).toBeInTheDocument();
     // Caso 348
+    expect(screen.getByText('08')).toBeInTheDocument();
     expect(screen.getByText('16')).toBeInTheDocument();
     expect(screen.getByText('41')).toBeInTheDocument();
     expect(screen.getByText('18')).toBeInTheDocument();
@@ -224,7 +229,7 @@ describe('VacanciesTable — última ação e dias sem divulgação (DX-3.5/DX-3
     expect(cell.textContent).not.toBe('');
   });
 
-  it('ordem dos vacancies-col-* = lista literal de 15 (tudo menos o olho)', () => {
+  it('ordem dos vacancies-col-* = lista literal de 16 (tudo menos o olho; Fase 5: +COMPATIBLE)', () => {
     render(<VacanciesTable vacancies={[base]} />);
     const headers = screen.getAllByTestId(/^vacancies-col-/);
     const ids = headers.map((el) => el.getAttribute('data-testid')!.replace('vacancies-col-', ''));
@@ -234,6 +239,7 @@ describe('VacanciesTable — última ação e dias sem divulgação (DX-3.5/DX-3
       'priority',
       'last-action',
       'days-without-divulgation',
+      'COMPATIBLE',
       'INVITED',
       'INICIADO',
       'PRE_SCREENING',

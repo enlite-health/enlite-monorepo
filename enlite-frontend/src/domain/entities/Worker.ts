@@ -48,8 +48,9 @@ export interface WorkerLocation {
   interestZone: string | null;
 }
 
-/** Espelho do vocabulário do backend (deriveKanbanColumn, 9 valores; tentativa negada chega como REJECTED — D433). */
+/** Espelho do vocabulário do backend (deriveKanbanColumn, 10 valores; tentativa negada chega como REJECTED — D433). */
 export type WorkerEncuadreKanbanStage =
+  | 'COMPATIBLE'
   | 'INVITED'
   | 'INICIADO'
   | 'PRE_SCREENING'

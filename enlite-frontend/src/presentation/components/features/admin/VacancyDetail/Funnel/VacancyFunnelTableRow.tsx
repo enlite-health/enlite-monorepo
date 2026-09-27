@@ -41,6 +41,9 @@ export function VacancyFunnelTableRow({
 
   function handleNotesClick(e: React.MouseEvent) {
     e.stopPropagation();
+    // Linha redigida (Compatíveis sem match:read, DX-5.7): sem workerId não há
+    // par worker×vaga para abrir notas — o botão vive desabilitado (ver abaixo).
+    if (!row.workerId) return;
     onOpenNotes(row.workerId);
   }
 
@@ -54,9 +57,14 @@ export function VacancyFunnelTableRow({
         <button
           type="button"
           onClick={handleNotesClick}
+          disabled={!row.workerId}
           aria-label={t('admin.vacancyDetail.funnelTable.headers.notes')}
           data-testid="funnel-notes-button"
-          className="inline-flex items-center gap-1.5 text-gray-800 hover:text-primary transition-colors"
+          className={`inline-flex items-center gap-1.5 transition-colors ${
+            row.workerId
+              ? 'text-gray-800 hover:text-primary'
+              : 'text-gray-300 cursor-not-allowed hover:text-gray-300'
+          }`}
         >
           <MessageSquare size={16} aria-hidden="true" />
           <NotesCountBadge count={row.contactNotesCount} />

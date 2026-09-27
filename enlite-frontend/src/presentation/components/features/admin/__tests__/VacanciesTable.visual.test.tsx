@@ -129,7 +129,7 @@ describe('VacanciesTable — empty state colspan', () => {
     expect(emptyCell).toBeTruthy();
 
     const colspan = parseInt(emptyCell!.getAttribute('colspan') || '0');
-    // 3 (case/status/priority) + 2 (última ação/dias) + 8 colunas do funil (Fase 4: +QUICK_RESPONSE_TEAM) + 2 (applicants/missing) + 1 (eye) = 16
-    expect(colspan).toBe(16);
+    // 3 (case/status/priority) + 2 (última ação/dias) + 9 colunas do funil (Fase 5: +COMPATIBLE) + 2 (applicants/missing) + 1 (eye) = 17
+    expect(colspan).toBe(17);
   });
 });

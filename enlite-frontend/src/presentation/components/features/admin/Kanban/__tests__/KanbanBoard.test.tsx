@@ -29,16 +29,23 @@ let draggableIds: { id: string; disabled: boolean }[] = [];
 // Capturado do DndContext real (KanbanBoardShell) — permite simular o INÍCIO
 // do arrasto sem depender de pointer events reais do dnd-kit em jsdom.
 let capturedOnDragStart: ((e: { active: { id: string } }) => void) | null = null;
+// Capturado junto (P20b, DX-5.16) — permite simular o FIM do arrasto (`over`)
+// sem depender do dnd-kit real; o shell é o de verdade (não mockado neste
+// arquivo), então `handleDragEnd`/`onDrop` rodam como em produção.
+let capturedOnDragEnd: ((e: { over: { id: string } | null }) => void) | null = null;
 
 vi.mock('@dnd-kit/core', () => ({
   DndContext: ({
     children,
     onDragStart,
+    onDragEnd,
   }: {
     children: React.ReactNode;
     onDragStart?: (e: { active: { id: string } }) => void;
+    onDragEnd?: (e: { over: { id: string } | null }) => void;
   }) => {
     capturedOnDragStart = onDragStart ?? null;
+    capturedOnDragEnd = onDragEnd ?? null;
     return <div data-testid="dnd-context">{children}</div>;
   },
   DragOverlay: ({ children }: { children: React.ReactNode }) => <div data-testid="drag-overlay">{children}</div>,
@@ -130,6 +137,7 @@ function makeEncuadre(overrides: Partial<FunnelStages['INVITED'][0]> = {}) {
 
 function emptyStages(): FunnelStages {
   return {
+    COMPATIBLE: [],
     INVITED: [],
     INICIADO: [],
     PRE_SCREENING: [],
@@ -150,17 +158,18 @@ beforeEach(() => {
   droppableIds = [];
   draggableIds = [];
   capturedOnDragStart = null;
+  capturedOnDragEnd = null;
   vi.clearAllMocks();
 });
 
 // ── Visual Rendering ─────────────────────────────────────────────────────────
 
 describe('KanbanBoard — column rendering', () => {
-  it('renders all 8 columns', () => {
+  it('renders all 9 columns', () => {
     render(<KanbanBoard stages={emptyStages()} vacancyId="test-vacancy" onMove={noop} />);
 
     const expectedColumns = [
-      'INVITED', 'INICIADO', 'PRE_SCREENING', 'COMPLETED',
+      'COMPATIBLE', 'INVITED', 'INICIADO', 'PRE_SCREENING', 'COMPLETED',
       'CONFIRMED', 'SELECTED', 'QUICK_RESPONSE_TEAM', 'REJECTED',
     ];
 
@@ -169,14 +178,14 @@ describe('KanbanBoard — column rendering', () => {
     }
   });
 
-  it('renders columns in correct order (INVITED → INICIADO → PRE_SCREENING → COMPLETED → CONFIRMED → SELECTED → QUICK_RESPONSE_TEAM → REJECTED)', () => {
+  it('renders columns in correct order (COMPATIBLE → INVITED → INICIADO → PRE_SCREENING → COMPLETED → CONFIRMED → SELECTED → QUICK_RESPONSE_TEAM → REJECTED)', () => {
     render(<KanbanBoard stages={emptyStages()} vacancyId="test-vacancy" onMove={noop} />);
 
     const columns = screen.getAllByTestId(/^kanban-column-[A-Z_]+$/);
     const ids = columns.map((el) => el.getAttribute('data-testid')!.replace('kanban-column-', ''));
 
     expect(ids).toEqual([
-      'INVITED', 'INICIADO', 'PRE_SCREENING', 'COMPLETED',
+      'COMPATIBLE', 'INVITED', 'INICIADO', 'PRE_SCREENING', 'COMPLETED',
       'CONFIRMED', 'SELECTED', 'QUICK_RESPONSE_TEAM', 'REJECTED',
     ]);
   });
@@ -324,6 +333,39 @@ describe('KanbanBoard — drag & drop rules', () => {
   });
 });
 
+// ── P20b: o board não envia PUT de auto-movimento (DX-5.16) ────────────────
+// Achado do P20: `closestCenter` (dnd-kit) resolve o drop sobre uma coluna
+// `droppable:false` (ex.: Compatíveis) para a coluna HABILITADA de centro mais
+// próximo, que pode ser a própria origem — o drop "vira" um PUT INVITED→INVITED.
+// `handleDrop` (KanbanBoard.tsx) agora corta ANTES de qualquer regra do funil
+// quando `fromColumnId === toColumnId`. `capturedOnDragEnd` simula o `over` do
+// dnd-kit real (mockado só no primitive, o shell/handleDrop rodam de verdade).
+describe('KanbanBoard — não envia PUT de auto-movimento (DX-5.16)', () => {
+  it('over resolvido para a própria coluna de origem: onMove NÃO é chamado', () => {
+    const stages = emptyStages();
+    stages.INVITED = [makeEncuadre({ id: 'enc-self', encuadreId: 'enc-self-id' })];
+
+    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} />);
+
+    act(() => capturedOnDragStart!({ active: { id: 'enc-self' } }));
+    act(() => capturedOnDragEnd!({ over: { id: 'INVITED' } }));
+
+    expect(noop).not.toHaveBeenCalled();
+  });
+
+  it('controle positivo: over numa coluna droppable DIFERENTE da origem chama onMove', () => {
+    const stages = emptyStages();
+    stages.REJECTED = [makeEncuadre({ id: 'enc-cross', encuadreId: 'enc-cross-id' })];
+
+    render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} />);
+
+    act(() => capturedOnDragStart!({ active: { id: 'enc-cross' } }));
+    act(() => capturedOnDragEnd!({ over: { id: 'INVITED' } }));
+
+    expect(noop).toHaveBeenCalledWith('enc-cross-id', 'INVITED', undefined, undefined, undefined);
+  });
+});
+
 // ── Edge Cases ───────────────────────────────────────────────────────────────
 
 describe('KanbanBoard — edge cases', () => {
@@ -331,7 +373,7 @@ describe('KanbanBoard — edge cases', () => {
     render(<KanbanBoard stages={emptyStages()} vacancyId="test-vacancy" onMove={noop} />);
 
     const columns = screen.getAllByTestId(/^kanban-column-[A-Z_]+$/);
-    expect(columns).toHaveLength(8);
+    expect(columns).toHaveLength(9);
   });
 
   it('renders multiple cards across different Talentum columns', () => {

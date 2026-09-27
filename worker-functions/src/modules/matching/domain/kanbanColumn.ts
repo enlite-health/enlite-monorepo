@@ -13,6 +13,7 @@
  * the caller, not here.
  */
 export type KanbanColumn =
+  | 'COMPATIBLE'
   | 'INVITED'
   | 'BLOQUEADO'
   | 'INICIADO'
@@ -67,6 +68,7 @@ export function isMatchedNotInvited(
  */
 const KANBAN_COLUMN_ADVANCEMENT: readonly KanbanColumn[] = [
   'REJECTED',
+  'COMPATIBLE', // candidato do match, sem convite — Fase 5
   'INVITED',
   'INICIADO',
   'PRE_SCREENING',
@@ -105,11 +107,17 @@ export function mostAdvancedColumn(a: KanbanColumn, b: KanbanColumn): KanbanColu
  * Derives the Kanban column for a WJA row from its funnel stage + source.
  * Mirrors the classification chain in WJAFunnelController.getEncuadreFunnel.
  *
- * @param stage  worker_job_applications.application_funnel_stage (nullable)
- * @param source worker_job_applications.source (nullable) — 'manual' means the worker
- *               clicked postularse (→ INICIADO), otherwise it's an auto-invite (→ INVITED)
+ * @param stage      worker_job_applications.application_funnel_stage (nullable)
+ * @param source     worker_job_applications.source (nullable) — 'manual' means the worker
+ *                   clicked postularse (→ INICIADO), otherwise it's an auto-invite (→ INVITED)
+ * @param messagedAt worker_job_applications.messaged_at — obrigatório: decide Compatíveis × Invitados, D432
  */
-export function deriveKanbanColumn(stage: string | null, source: string | null): KanbanColumn {
+export function deriveKanbanColumn(
+  stage: string | null,
+  source: string | null,
+  messagedAt: string | Date | null,
+): KanbanColumn {
+  if (isMatchedNotInvited(stage, source, messagedAt)) return 'COMPATIBLE';
   if (stage === 'SELECTED') return 'SELECTED';
   if (stage === 'QUICK_RESPONSE_TEAM') return 'QUICK_RESPONSE_TEAM';
   if (stage === 'REJECTED') return 'REJECTED';
@@ -152,8 +160,7 @@ export function tallyKanbanColumns(rows: readonly KanbanTallyRow[]): FunnelColum
       counts[KANBAN_COLUMN_BLOCKED as keyof FunnelColumnCounts] += r.n;
       continue;
     }
-    if (isMatchedNotInvited(r.stage, r.source, r.messaged ? 'sent' : null)) continue;
-    counts[deriveKanbanColumn(r.stage, r.source) as keyof FunnelColumnCounts] += r.n;
+    counts[deriveKanbanColumn(r.stage, r.source, r.messaged ? 'sent' : null) as keyof FunnelColumnCounts] += r.n;
   }
   return counts;
 }
@@ -164,17 +171,22 @@ export function tallyKanbanColumns(rows: readonly KanbanTallyRow[]): FunnelColum
  * IN_PROGRESS mora dentro de PRE_SCREENING no quadro; COMPLETED/QUALIFIED/IN_DOUBT já
  * chegam colapsados em COMPLETED por `deriveKanbanColumn`. BLOQUEADO fica de fora — não
  * tem posição própria no quadro (vira card em REJECTED, D433).
+ * 9 colunas; Compatíveis é derivada, destino proibido — DX-5.5.
  */
 export const VACANCY_BOARD_COLUMNS = [
-  'INVITED', 'INICIADO', 'PRE_SCREENING', 'COMPLETED', 'CONFIRMED', 'SELECTED', 'QUICK_RESPONSE_TEAM', 'REJECTED',
+  'COMPATIBLE', 'INVITED', 'INICIADO', 'PRE_SCREENING', 'COMPLETED', 'CONFIRMED', 'SELECTED', 'QUICK_RESPONSE_TEAM', 'REJECTED',
 ] as const satisfies readonly KanbanColumn[];
 
 /**
  * Posição no quadro; IN_PROGRESS mora na coluna PRE_SCREENING (como no front,
  * funnelTabsConfig.ts:21) — não tem posição própria em `VACANCY_BOARD_COLUMNS`.
  */
-export function boardPosition(stage: string | null, source: string | null): number {
-  const column = deriveKanbanColumn(stage, source);
+export function boardPosition(
+  stage: string | null,
+  source: string | null,
+  messagedAt: string | Date | null,
+): number {
+  const column = deriveKanbanColumn(stage, source, messagedAt);
   const boardColumn = column === 'IN_PROGRESS' ? 'PRE_SCREENING' : column;
   return VACANCY_BOARD_COLUMNS.indexOf(boardColumn as (typeof VACANCY_BOARD_COLUMNS)[number]);
 }

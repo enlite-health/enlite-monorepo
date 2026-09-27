@@ -623,4 +623,144 @@ describe('WJAFunnelController — moveEncuadre', () => {
       expect(mockQuery.mock.calls.some(([sql]) => typeof sql === 'string' && sql.includes('domain_events'))).toBe(false);
     });
   });
+
+  /**
+   * Fase 5 (DX-5.5/DX-5.6, D432): Compatíveis é coluna DERIVADA (candidato do match nunca
+   * mensageado) — nunca um destino de arrasto de verdade. Contrato do controller: 422
+   * `COMPATIBLE_READ_ONLY` para entrar (ANTES de qualquer query) e para sair rumo a
+   * Invitados sem ter sido mensageado (dentro da transação, com `messaged_at` da origem);
+   * as demais saídas de Compatíveis seguem a regra de motivo de sempre (Fase 4).
+   */
+  describe('Fase 5 — Compatíveis é read-only', () => {
+    it('targetStage COMPATIBLE → 422 COMPATIBLE_READ_ONLY (ENTER) e NENHUMA query é enviada', async () => {
+      const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'COMPATIBLE' });
+      await controller.moveEncuadre(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(422);
+      expect(res.json).toHaveBeenCalledWith({
+        success: false,
+        error: 'compatible_read_only',
+        code: 'COMPATIBLE_READ_ONLY',
+        reason: 'ENTER',
+      });
+      expect(mockQuery).not.toHaveBeenCalled();
+    });
+
+    it('origem Compatíveis (INVITED/system, messaged_at nulo) → INVITED por arrasto → 422 COMPATIBLE_READ_ONLY (INVITE_BY_SEND), nenhum INSERT', async () => {
+      mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [{ worker_id: 'w-1', job_posting_id: 'jp-1' }] });
+      mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
+      mockQuery.mockResolvedValueOnce({
+        rows: [{ application_funnel_stage: 'INVITED', source: 'system', messaged_at: null }],
+      });
+
+      const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'INVITED' });
+      await controller.moveEncuadre(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(422);
+      expect(res.json).toHaveBeenCalledWith({
+        success: false,
+        error: 'compatible_read_only',
+        code: 'COMPATIBLE_READ_ONLY',
+        reason: 'INVITE_BY_SEND',
+      });
+      // Exatamente 3 queries (SELECT encuadre + eligibility + etapa anterior) — nem o
+      // upsert em worker_job_applications nem o INSERT em domain_events rodam.
+      expect(mockQuery).toHaveBeenCalledTimes(3);
+      expect(mockQuery.mock.calls.some(([sql]) => typeof sql === 'string' && sql.includes('INSERT'))).toBe(false);
+    });
+
+    /**
+     * DX-5.17 (achado 🟡-1 do gate parcial 1): a origem não precisa estar em Compatíveis
+     * (INVITED) hoje — mesmo já tendo saído para Rejeitados, um card `source='system'` que
+     * nunca foi mensageado ainda é candidato do match; arrastar de volta para Invitados
+     * continua exigindo o envio, não o arrasto.
+     */
+    it('origem REJECTED/system, messaged_at nulo (voltou de Rejeitados sem nunca ter sido mensageado) → INVITED por arrasto → 422 COMPATIBLE_READ_ONLY (INVITE_BY_SEND), nenhum INSERT', async () => {
+      mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [{ worker_id: 'w-1', job_posting_id: 'jp-1' }] });
+      mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
+      mockQuery.mockResolvedValueOnce({
+        rows: [{ application_funnel_stage: 'REJECTED', source: 'system', messaged_at: null }],
+      });
+
+      const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'INVITED' });
+      await controller.moveEncuadre(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(422);
+      expect(res.json).toHaveBeenCalledWith({
+        success: false,
+        error: 'compatible_read_only',
+        code: 'COMPATIBLE_READ_ONLY',
+        reason: 'INVITE_BY_SEND',
+      });
+      expect(mockQuery).toHaveBeenCalledTimes(3);
+      expect(mockQuery.mock.calls.some(([sql]) => typeof sql === 'string' && sql.includes('INSERT'))).toBe(false);
+    });
+
+    it('origem Compatíveis → REJECTED com reasonCategory DISTANCE → 200 (saída para Rejeitados segue a regra de sempre)', async () => {
+      mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [{ worker_id: 'w-1', job_posting_id: 'jp-1' }] });
+      mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
+      mockQuery.mockResolvedValueOnce({
+        rows: [{ application_funnel_stage: 'INVITED', source: 'system', messaged_at: null }],
+      });
+      mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [] }); // upsert wja
+      mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [] }); // UPDATE encuadres resultado=RECHAZADO
+
+      const [req, res] = mockReqRes(
+        { id: 'e1' },
+        { targetStage: 'REJECTED', reasonCategory: 'DISTANCE' },
+      );
+      await controller.moveEncuadre(req, res);
+
+      expect(res.json).toHaveBeenCalledWith({
+        success: true,
+        data: { encuadreId: 'e1', targetStage: 'REJECTED' },
+      });
+    });
+
+    it('origem Compatíveis → CONFIRMED sem motivo → 422 MOVE_REASON_REQUIRED (JUMP) — Compatíveis conta como posição 0', async () => {
+      mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [{ worker_id: 'w-1', job_posting_id: 'jp-1' }] });
+      mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
+      mockQuery.mockResolvedValueOnce({
+        rows: [{ application_funnel_stage: 'INVITED', source: 'system', messaged_at: null }],
+      });
+
+      const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'CONFIRMED' });
+      await controller.moveEncuadre(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(422);
+      expect(res.json).toHaveBeenCalledWith({
+        success: false,
+        error: 'move_reason_required',
+        code: 'MOVE_REASON_REQUIRED',
+        reason: 'JUMP',
+      });
+      expect(mockQuery).toHaveBeenCalledTimes(3);
+      expect(mockQuery.mock.calls.some(([sql]) => typeof sql === 'string' && sql.includes('INSERT'))).toBe(false);
+    });
+
+    it('origem Invitados de verdade (messaged_at preenchido) → INVITED → 200 como hoje (não é Compatíveis)', async () => {
+      mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [{ worker_id: 'w-1', job_posting_id: 'jp-1' }] });
+      mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
+      mockQuery.mockResolvedValueOnce({
+        rows: [{ application_funnel_stage: 'INVITED', source: 'system', messaged_at: '2026-01-05T12:00:00Z' }],
+      });
+      mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [] }); // upsert wja (mesma etapa: sem evento novo)
+
+      const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'INVITED' });
+      await controller.moveEncuadre(req, res);
+
+      expect(res.json).toHaveBeenCalledWith({
+        success: true,
+        data: { encuadreId: 'e1', targetStage: 'INVITED' },
+      });
+    });
+
+    it('targetStage XYZ (valor fora do catálogo) → 400, inalterado pela Fase 5', async () => {
+      const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'XYZ' });
+      await controller.moveEncuadre(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(mockQuery).not.toHaveBeenCalled();
+    });
+  });
 });

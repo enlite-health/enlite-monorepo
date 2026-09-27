@@ -226,6 +226,7 @@ export class WorkerApplicationRepository {
          wja.job_posting_id,
          wja.application_funnel_stage AS funnel_stage,
          wja.source,
+         wja.messaged_at,
          jp.case_number,
          jp.vacancy_number,
          jp.status AS vacancy_status,
@@ -266,6 +267,7 @@ export class WorkerApplicationRepository {
       kanbanStage: deriveKanbanColumn(
         (r.funnel_stage as string | null) ?? null,
         (r.source as string | null) ?? null,
+        (r.messaged_at as string | Date | null) ?? null,
       ),
       resultado: (r.resultado as string | null) ?? null,
       interviewDate: (r.interview_date as string | null) ?? null,

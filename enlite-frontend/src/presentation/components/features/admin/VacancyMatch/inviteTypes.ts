@@ -6,7 +6,11 @@ export interface InviteTarget {
   messagedAt: string | null;
 }
 
-export function funnelRowToInviteTarget(row: FunnelTableRow): InviteTarget {
+/**
+ * Só chamadores que já filtraram `workerId !== null` (linha redigida de Compatíveis,
+ * DX-5.7, `Funnel.ts:19-20` — não se aplica ao bucket INVITED que este alvo serve).
+ */
+export function funnelRowToInviteTarget(row: FunnelTableRow & { workerId: string }): InviteTarget {
   return {
     workerId: row.workerId,
     workerName: row.workerName ?? row.workerId,

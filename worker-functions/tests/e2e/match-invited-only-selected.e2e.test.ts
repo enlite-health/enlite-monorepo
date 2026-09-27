@@ -111,4 +111,20 @@ describe('GET /api/admin/vacancies/:id/funnel — Invitados só conta convites r
     // Métrica correta: total de cards visíveis = 1 (não 3).
     expect(res.data.data.totalEncuadres).toBe(1);
   });
+
+  it('Fase 5: os 2 candidatos nunca enviados estão em COMPATIBLE', async () => {
+    const res = await api.get(
+      `/api/admin/vacancies/${vacancyId}/funnel`,
+      { headers: { Authorization: `Bearer ${adminToken}` } },
+    );
+    expect(res.status).toBe(200);
+
+    const stages = res.data.data.stages as Record<string, Array<Record<string, unknown>>>;
+    const compatibleWorkerIds = (stages.COMPATIBLE ?? []).map((c) => c.workerId as string);
+
+    expect(compatibleWorkerIds).toContain(workerIds[0]); // 'not-a'
+    expect(compatibleWorkerIds).toContain(workerIds[1]); // 'not-b'
+    expect(compatibleWorkerIds).not.toContain(workerIds[2]); // 'sent'
+    expect(Object.keys(stages)[0]).toBe('COMPATIBLE');
+  });
 });

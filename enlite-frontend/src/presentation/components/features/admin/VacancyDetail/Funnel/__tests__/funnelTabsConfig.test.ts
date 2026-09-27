@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { VACANCY_FUNNEL_COLUMNS, FUNNEL_TABS, columnItems, columnCount } from '../funnelTabsConfig';
 
 describe('funnelTabsConfig', () => {
-  it('VACANCY_FUNNEL_COLUMNS segue a ordem literal do quadro B (D433)', () => {
+  it('VACANCY_FUNNEL_COLUMNS segue a ordem literal do quadro B (D433), Compatíveis (Fase 5) na frente', () => {
     expect(VACANCY_FUNNEL_COLUMNS.map((c) => c.id)).toEqual([
+      'COMPATIBLE',
       'INVITED',
       'INICIADO',
       'PRE_SCREENING',
@@ -21,6 +22,13 @@ describe('funnelTabsConfig', () => {
     expect(quickResponseTeam.color).toBe('bg-teal-500');
   });
 
+  it('COMPATIBLE (Fase 5, DX-5.9) é derivada do match, só leitura', () => {
+    const compatible = VACANCY_FUNNEL_COLUMNS.find((c) => c.id === 'COMPATIBLE')!;
+    expect(compatible.droppable).toBe(false);
+    expect(compatible.color).toBe('bg-slate-400');
+    expect(FUNNEL_TABS[1].key).toBe('COMPATIBLE');
+  });
+
   it('columnCount soma PRE_SCREENING + IN_PROGRESS', () => {
     const preScreening = VACANCY_FUNNEL_COLUMNS.find((c) => c.id === 'PRE_SCREENING')!;
     expect(columnCount(preScreening, { PRE_SCREENING: 1, IN_PROGRESS: 1 })).toBe(2);
@@ -32,9 +40,10 @@ describe('funnelTabsConfig', () => {
     expect(items).toEqual(['a', 'b']);
   });
 
-  it('FUNNEL_TABS segue a ordem da DX-2.6', () => {
+  it('FUNNEL_TABS segue a ordem da DX-2.6, Compatíveis (Fase 5) logo após Todos', () => {
     expect(FUNNEL_TABS.map((t) => t.key)).toEqual([
       'ALL',
+      'COMPATIBLE',
       'INVITED',
       'INICIADO',
       'PRE_SCREENING',
