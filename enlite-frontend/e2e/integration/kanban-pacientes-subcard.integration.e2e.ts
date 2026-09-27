@@ -99,7 +99,6 @@ test.describe('kanban de pacientes — subcard (fase 8) @integration', () => {
       expect(domDepois).toBe(apiDepois);
       expect(itinDepois.body.data.services[0].cobertas).toBe(4);
 
-      // eslint-disable-next-line no-console
       console.log('[8.1]', 'DOM antes', domAntes, 'API antes', apiAntes, 'DOM depois', domDepois, 'API depois', apiDepois);
 
       const card = page.getByTestId(`patient-kanban-card-${patientId}`);
@@ -168,7 +167,6 @@ test.describe('kanban de pacientes — subcard (fase 8) @integration', () => {
       await vacancyLink.click();
       await page.waitForURL(new RegExp(`/admin/vacancies/${vacancyId}(/|$)`));
       const finalUrl = page.url();
-      // eslint-disable-next-line no-console
       console.log('[8.1]', 'com-vacante URL final', finalUrl);
       expect(finalUrl).toMatch(new RegExp(`/admin/vacancies/${vacancyId}(/|$)`));
     } finally {
