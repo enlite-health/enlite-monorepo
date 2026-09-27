@@ -7,7 +7,7 @@ import {
   FunnelBucket,
   WhatsAppStatus,
 } from '../domain/FunnelTableRow';
-import { cellsOfRequest, projectWorkerFields } from '@modules/identity/permissions';
+import { cellsOfRequest, projectWorkerFields, podeVerCandidatoDoMatch, NOME_REDIGIDO } from '@modules/identity/permissions';
 import {
   POSTULATED_STAGES_SET,
   PRE_SELECTED_STAGES_SET,
@@ -15,7 +15,6 @@ import {
 } from '../domain/applicationFunnelStages';
 import {
   deriveKanbanColumn,
-  isMatchedNotInvited,
   tallyKanbanColumns,
   emptyFunnelColumnCounts,
   KANBAN_COLUMN_BLOCKED,
@@ -138,6 +137,49 @@ export class GetFunnelTableUseCase {
   }
 
   private async mapRow(raw: FunnelTableRawRow, cells: string[] | null): Promise<FunnelTableRow> {
+    // kanbanColumn calculado PRIMEIRO (DX-5.1/DX-5.7): tentativa negada =
+    // KANBAN_COLUMN_BLOCKED (REJECTED, D433); o resto segue deriveKanbanColumn,
+    // que agora devolve COMPATIBLE para o candidato do match nunca mensageado.
+    // É essa coluna que decide, logo abaixo, se a projeção (e o KMS) rodam.
+    const kanbanColumn: Exclude<KanbanColumn, 'BLOQUEADO'> = raw.is_blocked
+      ? (KANBAN_COLUMN_BLOCKED as Exclude<KanbanColumn, 'BLOQUEADO'>)
+      : (deriveKanbanColumn(raw.funnel_stage, raw.source, raw.messaged_at) as Exclude<KanbanColumn, 'BLOQUEADO'>);
+
+    const ir = raw.interview_response ?? null;
+    const accepted =
+      ir === 'confirmed' ? true :
+      ir === 'declined'  ? false :
+      null;
+
+    const camposComuns = {
+      invitedAt: raw.invited_at,
+      funnelStage: raw.funnel_stage ?? null,
+      whatsappStatus: deriveWhatsAppStatus(raw),
+      whatsappLastDispatchedAt: raw.wbdl_dispatched_at ?? null,
+      accepted,
+      interviewResponse: ir,
+      registrationComplete: raw.worker_status === 'REGISTERED',
+      contactNotesCount: Number(raw.contact_notes_count ?? 0),
+      selfAppliedAt: raw.self_applied_at ?? null,
+      kanbanColumn,
+      isBlocked: raw.is_blocked,
+      distanceKm: raw.distance_km == null ? null : Number(raw.distance_km),
+    };
+
+    // DX-5.7: Compatíveis sem `match:read` — pula projectWorkerFields (zero KMS,
+    // a prova do espião) e devolve o card opaco, mesma redação de hoje.
+    if (kanbanColumn === 'COMPATIBLE' && !podeVerCandidatoDoMatch(cells)) {
+      return {
+        id: raw.id,
+        workerId: null,
+        workerName: NOME_REDIGIDO,
+        workerEmail: null,
+        workerPhone: null,
+        workerAvatarUrl: null,
+        ...camposComuns,
+      };
+    }
+
     // ⚠️ `worker_raw_name` entra como `rawName` NA PROJEÇÃO, e não como
     // fallback aqui fora: é texto claro, e um `|| raw.worker_raw_name` depois
     // da projeção devolveria o nome de todo card legado sem tocar o KMS — sem o
@@ -152,42 +194,14 @@ export class GetFunnelTableUseCase {
       profilePhotoUrlEncrypted: raw.profile_photo_url_encrypted ?? null,
     }, this.encryption);
 
-    const workerName = visivel.name ?? null;
-
-    const ir = raw.interview_response ?? null;
-    const accepted =
-      ir === 'confirmed' ? true :
-      ir === 'declined'  ? false :
-      null;
-
-    // Mesma classificação do Kanban da vaga (SSOT em kanbanColumn.ts): tentativa
-    // negada = KANBAN_COLUMN_BLOCKED (REJECTED, D433); match candidate nunca
-    // mensageado fica de fora do board (null); o resto segue deriveKanbanColumn.
-    const kanbanColumn: Exclude<KanbanColumn, 'BLOQUEADO'> | null = raw.is_blocked
-      ? (KANBAN_COLUMN_BLOCKED as Exclude<KanbanColumn, 'BLOQUEADO'>)
-      : isMatchedNotInvited(raw.funnel_stage, raw.source, raw.messaged_at)
-        ? null
-        : (deriveKanbanColumn(raw.funnel_stage, raw.source) as Exclude<KanbanColumn, 'BLOQUEADO'>);
-
     return {
       id: raw.id,
       workerId: raw.worker_id,
-      workerName,
+      workerName: visivel.name ?? null,
       workerEmail: visivel.email ?? null,
       workerPhone: visivel.phone ?? null,
       workerAvatarUrl: visivel.profilePhotoUrl ?? null,
-      invitedAt: raw.invited_at,
-      funnelStage: raw.funnel_stage ?? null,
-      whatsappStatus: deriveWhatsAppStatus(raw),
-      whatsappLastDispatchedAt: raw.wbdl_dispatched_at ?? null,
-      accepted,
-      interviewResponse: ir,
-      registrationComplete: raw.worker_status === 'REGISTERED',
-      contactNotesCount: Number(raw.contact_notes_count ?? 0),
-      selfAppliedAt: raw.self_applied_at ?? null,
-      kanbanColumn,
-      isBlocked: raw.is_blocked,
-      distanceKm: raw.distance_km == null ? null : Number(raw.distance_km),
+      ...camposComuns,
     };
   }
 
