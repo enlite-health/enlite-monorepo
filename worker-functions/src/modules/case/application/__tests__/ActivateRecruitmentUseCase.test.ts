@@ -139,7 +139,7 @@ const READY_SERVICE = {
 describe('ActivateRecruitmentUseCase', () => {
   beforeEach(() => jest.clearAllMocks());
 
-  it('201 feliz — paciente no funil (ADMISSION): cria a vaga e move para SEARCHING (statusChanged:true)', async () => {
+  it('201 feliz — paciente no funil (ADMISSION): cria a vaga e NÃO move (o lançamento move, D434)', async () => {
     const { promise } = run({
       patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular' },
       serviceRow: READY_SERVICE,
@@ -147,7 +147,7 @@ describe('ActivateRecruitmentUseCase', () => {
       insertedId: 'vac-42',
     });
     const result = await promise;
-    expect(result).toEqual({ vacancyId: 'vac-42', patientStatus: 'SEARCHING', statusChanged: true });
+    expect(result).toEqual({ vacancyId: 'vac-42', patientStatus: 'ADMISSION', statusChanged: false });
     expect(mockBuildInsertParams).toHaveBeenCalledWith(
       expect.objectContaining({
         patient_id: PATIENT_ID,
@@ -184,14 +184,33 @@ describe('ActivateRecruitmentUseCase', () => {
     expect(result).toEqual({ vacancyId: 'vac-1', patientStatus: 'ACTIVE', statusChanged: false });
   });
 
-  it('SOLICITANTE também é funil: vira SEARCHING (SUP-20 — ativa sem admissão nenhuma)', async () => {
+  it('SOLICITANTE também é funil: cria a vaga e NÃO move (o lançamento move, D434)', async () => {
     const { promise } = run({
       patientRow: { id: PATIENT_ID, status: 'SOLICITANTE', case_number: 100, insurance_informed: 'Particular' },
       serviceRow: READY_SERVICE,
     });
     const result = await promise;
-    expect(result.patientStatus).toBe('SEARCHING');
-    expect(result.statusChanged).toBe(true);
+    expect(result.patientStatus).toBe('SOLICITANTE');
+    expect(result.statusChanged).toBe(false);
+  });
+
+  it('DX-6.11 (i) — nenhum cenário feliz manda SQL que mova o paciente (nem UPDATE patients, nem app.change_source)', async () => {
+    const scenarios: DispatchOpts[] = [
+      { patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular' }, serviceRow: READY_SERVICE, vacancyNumber: 900, insertedId: 'vac-900' },
+      { patientRow: { id: PATIENT_ID, status: 'SOLICITANTE', case_number: 100, insurance_informed: 'Particular' }, serviceRow: READY_SERVICE, vacancyNumber: 901, insertedId: 'vac-901' },
+      { patientRow: { id: PATIENT_ID, status: 'ACTIVE', case_number: 100, insurance_informed: 'Particular' }, serviceRow: READY_SERVICE, vacancyNumber: 902, insertedId: 'vac-902' },
+    ];
+    for (const scenario of scenarios) {
+      const { promise, client } = run(scenario);
+      await promise;
+      const sqlStrings = (client.query as jest.Mock).mock.calls.map(
+        ([sql]: [unknown]) => (typeof sql === 'string' ? sql : ''),
+      );
+      for (const sql of sqlStrings) {
+        expect(sql).not.toMatch(/UPDATE\s+patients/i);
+        expect(sql).not.toContain('app.change_source');
+      }
+    }
   });
 
   it('404 — paciente inexistente (ou soft-deletado)', async () => {
@@ -482,7 +501,7 @@ describe('ActivateRecruitmentUseCase', () => {
       });
 
       const result = await promise;
-      expect(result).toEqual({ vacancyId: 'vac-43', patientStatus: 'SEARCHING', statusChanged: true });
+      expect(result).toEqual({ vacancyId: 'vac-43', patientStatus: 'ADMISSION', statusChanged: false });
     });
   });
 

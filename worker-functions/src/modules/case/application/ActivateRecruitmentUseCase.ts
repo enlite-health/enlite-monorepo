@@ -18,7 +18,6 @@ import {
 } from "../domain/PatientCompleteness";
 import { vacancyRangeForProviderAgeBand } from "../domain/ProviderAgeBandMapping";
 import type { ProviderAgeBand } from "../domain/enums/ContractedService";
-import { ADMISSION_FUNNEL_STATUSES } from "../domain/enums/PatientStatus";
 import { formatCaseTitle } from "@shared/utils/caseNumberFormat";
 
 /** Paciente inexistente (ou soft-deletado). O controller mapeia para 404. */
@@ -81,11 +80,10 @@ export interface ActivateRecruitmentResult {
  * Efeitos em UMA transação: `SELECT … FOR UPDATE` do paciente e do serviço (trava a mesma corrida
  * que o antecessor travava); gate `RECRUITMENT_BLOCKING_CODES`; 409 se já há vaga viva do
  * serviço; 1 INSERT em `job_postings` via `buildInsertQuery/buildInsertParams` (mesmo caminho de
- * `POST /api/admin/vacancies` — nunca SQL duplicado); se o paciente está no funil de admissão
- * (SOLICITANTE/ADMISSION/PENDING_ADMISSION), `UPDATE patients SET status='SEARCHING'` sob
- * `app.change_source='activate_recruitment'`. Fora do funil (já ACTIVE, ON_HOLD, etc.) o status
- * do paciente NÃO muda — ativar recrutamento de um 2º serviço de um paciente já ACTIVE não deve
- * regredir o status dele.
+ * `POST /api/admin/vacancies` — nunca SQL duplicado). NÃO move o paciente — o paciente sai de
+ * Admissão no LANÇAMENTO (envio à Talentum), invariante 7, D434; ver `VacancyLaunchHook`. O
+ * status do paciente aqui é só ecoado no retorno (`patientStatus` = o status atual,
+ * `statusChanged: false` sempre).
  *
  * NÃO emite `vacancy.created` — a vaga nasce rascunho (`is_draft` default true, `status`
  * 'PENDING_ACTIVATION') para a equipe revisar e publicar (fluxo existente), igual ao
@@ -297,23 +295,8 @@ export class ActivateRecruitmentUseCase {
       actorLabel: "activate_recruitment",
     });
 
-    const isFunnel = (ADMISSION_FUNNEL_STATUSES as readonly string[]).includes(
-      status,
-    );
-    let patientStatus = status;
-    let statusChanged = false;
-    if (isFunnel) {
-      await client.query("SELECT set_config('app.change_source', $1, true)", [
-        "activate_recruitment",
-      ]);
-      await client.query(
-        `UPDATE patients SET status = 'SEARCHING', updated_at = NOW() WHERE id = $1`,
-        [patientId],
-      );
-      patientStatus = "SEARCHING";
-      statusChanged = true;
-    }
-
-    return { vacancyId, patientStatus, statusChanged };
+    // DX-6.6 — a criação NÃO move mais o paciente. O paciente sai de Admissão no LANÇAMENTO
+    // (envio à Talentum), não na criação do rascunho: ver `VacancyLaunchHook`.
+    return { vacancyId, patientStatus: status, statusChanged: false };
   }
 }
