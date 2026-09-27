@@ -64,6 +64,7 @@ interface FunnelEncuadre {
 }
 
 export interface FunnelStages {
+  COMPATIBLE: FunnelEncuadre[];
   INVITED: FunnelEncuadre[];
   INICIADO: FunnelEncuadre[];
   PRE_SCREENING: FunnelEncuadre[];

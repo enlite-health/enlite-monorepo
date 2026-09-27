@@ -12,6 +12,7 @@ describe('VacanciesTable - Integration Test - GARANTIA DE RENDERIZAÇÃO', () =>
         priority: 'URGENT',
         diasAberto: '05',
         stageCounts: {
+          COMPATIBLE: 6,
           INVITED: 32,
           INICIADO: 9,
           PRE_SCREENING: 5,
@@ -34,6 +35,7 @@ describe('VacanciesTable - Integration Test - GARANTIA DE RENDERIZAÇÃO', () =>
         priority: 'NORMAL',
         diasAberto: '03',
         stageCounts: {
+          COMPATIBLE: 8,
           INVITED: 16,
           INICIADO: 41,
           PRE_SCREENING: 18,
@@ -66,7 +68,8 @@ describe('VacanciesTable - Integration Test - GARANTIA DE RENDERIZAÇÃO', () =>
     expect(screen.getByText('admin.vacancies.priorityOptions.urgent')).toBeVisible();
     expect(screen.getByText('admin.vacancies.priorityOptions.normal')).toBeVisible();
 
-    // GARANTIA 4: Dados numéricos visíveis (stageCounts das 8 colunas, Fase 4: +QUICK_RESPONSE_TEAM, + postulados/faltantes)
+    // GARANTIA 4: Dados numéricos visíveis (stageCounts das 9 colunas, Fase 5: +COMPATIBLE, + postulados/faltantes)
+    expect(screen.getByText('06')).toBeVisible();
     expect(screen.getByText('32')).toBeVisible();
     expect(screen.getByText('09')).toBeVisible();
     expect(screen.getByText('05')).toBeVisible();
