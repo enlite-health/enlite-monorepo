@@ -281,4 +281,57 @@ describe('TalentumApiClient — paginacao', () => {
       await expect(client.listPrescreenings()).rejects.toThrow('HTTP 500');
     });
   });
+
+  // ── Base URL por env (DX-6.8 / P2) ────────────────────────────
+
+  describe('talentumBaseUrl', () => {
+    const ENV_KEY = 'TALENTUM_API_BASE_URL';
+    const originalEnv = process.env[ENV_KEY];
+
+    afterEach(() => {
+      if (originalEnv === undefined) {
+        delete process.env[ENV_KEY];
+      } else {
+        process.env[ENV_KEY] = originalEnv;
+      }
+    });
+
+    it('sem a env, a 1a URL do fetch (login) usa o host de producao', async () => {
+      delete process.env[ENV_KEY];
+      mockFetch.mockResolvedValueOnce(makeLoginResponse());
+      mockFetch.mockResolvedValueOnce(makeListResponse([], 0));
+
+      await client.listPrescreenings();
+
+      const loginUrl = mockFetch.mock.calls[0][0] as string;
+      expect(loginUrl).toBe('https://api.production.talentum.chat/auth/login');
+    });
+
+    it('com a env setada, login e request vao ao host do stub', async () => {
+      process.env[ENV_KEY] = 'http://stub.local:9914';
+      mockFetch.mockResolvedValueOnce(makeLoginResponse());
+      mockFetch.mockResolvedValueOnce(makeListResponse([], 0));
+
+      await client.createPrescreening({
+        title: 't',
+        description: 'd',
+      } as never);
+
+      const loginUrl = mockFetch.mock.calls[0][0] as string;
+      const requestUrl = mockFetch.mock.calls[1][0] as string;
+      expect(loginUrl).toBe('http://stub.local:9914/auth/login');
+      expect(requestUrl).toBe('http://stub.local:9914/pre-screening/projects');
+    });
+
+    it('env vazia ou só com espaços cai no default', async () => {
+      process.env[ENV_KEY] = '   ';
+      mockFetch.mockResolvedValueOnce(makeLoginResponse());
+      mockFetch.mockResolvedValueOnce(makeListResponse([], 0));
+
+      await client.listPrescreenings();
+
+      const loginUrl = mockFetch.mock.calls[0][0] as string;
+      expect(loginUrl).toBe('https://api.production.talentum.chat/auth/login');
+    });
+  });
 });
