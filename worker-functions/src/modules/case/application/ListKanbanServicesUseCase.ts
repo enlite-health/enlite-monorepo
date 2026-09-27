@@ -41,14 +41,17 @@ export class ListKanbanServicesUseCase {
     const patients = rows.map((row) => {
       const asOf = operationDateOf(row.country, now);
       const coverages = buildServiceCoverages(row, asOf);
-      const services: KanbanServiceSummary[] = coverages.map((coverage) => {
-        const service = row.services.find((s) => s.id === coverage.contractedServiceId);
+      // `buildServiceCoverages` devolve 1 item por serviço, na MESMA ordem de `row.services`
+      // (`itineraryCoverage.ts` — `rows.services.map(...)`) — casamento por índice, sem `find`
+      // O(n²) nem fallback (achado #4 do gate parcial da Fase 8).
+      const services: KanbanServiceSummary[] = coverages.map((coverage, index) => {
+        const service = row.services[index];
         return {
           contractedServiceId: coverage.contractedServiceId,
-          serviceCode: service?.serviceCode ?? '',
+          serviceCode: service.serviceCode,
           contratadas: coverage.contratadas,
           cobertas: coverage.cobertas,
-          liveVacancyId: service?.liveVacancyId ?? null,
+          liveVacancyId: service.liveVacancyId,
         };
       });
       return { patientId: row.patientId, asOf, services };

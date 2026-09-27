@@ -166,11 +166,12 @@ describe('GET /api/admin/patients/kanban/services — agregado do subcard do Kan
         [workerId, jobPostingId],
       )
     ).rows[0].id;
-    const validFrom = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    // `valid_from` pela data do BANCO, nunca do relógio do runner (o CI roda em UTC) — molde
+    // `patient-itinerary-schema.e2e.test.ts` / helper da Fase 7 (BRIEF-COMUM regra 7, achado #3).
     await pool.query(
       `INSERT INTO patient_itinerary_assignment (slot_id, worker_id, application_id, valid_from, status, created_by, updated_by)
-       VALUES ($1, $2, $3, $4, 'ACTIVE', $5, $5)`,
-      [slotId, workerId, applicationId, validFrom, TASK_PREFIX],
+       VALUES ($1, $2, $3, (now() AT TIME ZONE 'America/Argentina/Buenos_Aires')::date - 7, 'ACTIVE', $4, $4)`,
+      [slotId, workerId, applicationId, TASK_PREFIX],
     );
     return { workerId, jobPostingId, applicationId };
   }

@@ -1,6 +1,7 @@
 import { Pool } from 'pg';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import type { ContractedServiceDetail } from './PatientContractedServiceRepository';
+import { liveVacancySelect } from './liveVacancySql';
 
 /**
  * ContractedServiceDetailMapper — a SUBÁRVORE de serviços contratados da ficha do paciente.
@@ -38,14 +39,9 @@ async function fetchContractedServiceChildren(pool: Pool, serviceIds: string[]) 
     ),
     // Spec 018, PR-6: mesma condição do 409 de `ActivateRecruitmentUseCase` — vaga viva do
     // serviço. Uma linha por serviço (LIMIT via DISTINCT ON) — nunca conta duas vagas do mesmo
-    // serviço (não deveria existir, mas o mapper não assume).
-    pool.query(
-      `SELECT DISTINCT ON (contracted_service_id) contracted_service_id, id
-         FROM job_postings
-        WHERE contracted_service_id = ANY($1::uuid[]) AND deleted_at IS NULL
-        ORDER BY contracted_service_id, created_at ASC`,
-      [serviceIds],
-    ),
+    // serviço (não deveria existir, mas o mapper não assume). SQL de `liveVacancySql.ts` — fonte
+    // única com `PatientKanbanServicesReader.ts` (achado #5 do gate parcial da Fase 8).
+    pool.query(liveVacancySelect('jp.contracted_service_id = ANY($1::uuid[])'), [serviceIds]),
   ]);
   return { devices: devices.rows, providers: providers.rows, liveVacancies: liveVacancies.rows };
 }

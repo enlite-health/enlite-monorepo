@@ -3,8 +3,9 @@
  *
  * `readKanbanServices` roda TUDO dentro de `inPatientTransaction` (RLS de país; memória
  * `connect-cru-sem-actor-context-da-500`): UMA consulta só, no client da transação — serviço ativo
- * + a MESMA junção de vaga viva da ficha (`ContractedServiceDetailMapper.ts:42-48`, `DISTINCT ON`
- * por serviço, mais antiga) + slot + alocação. O pool é pego DENTRO da função (nada no construtor).
+ * + a MESMA junção de vaga viva da ficha, agora fonte única em `liveVacancySql.ts`
+ * (`ContractedServiceDetailMapper.ts` reusa o mesmo fragmento — achado #5 do gate parcial da Fase
+ * 8) + slot + alocação. O pool é pego DENTRO da função (nada no construtor).
  *
  * Datas/horas saem do banco como TEXTO (`to_char`) — mesma regra da fase 7 (o driver `pg`
  * converteria `date`/`time` em `Date` à meia-noite LOCAL do processo).
@@ -15,6 +16,7 @@
 import type { PoolClient } from 'pg';
 import { inPatientTransaction } from '../application/patientTransaction';
 import type { ItinerarySlotRow } from './PatientItineraryReader';
+import { liveVacancySelect } from './liveVacancySql';
 
 export interface KanbanServiceRow {
   id: string;
@@ -67,10 +69,7 @@ export class PatientKanbanServicesReader {
            JOIN patients p ON p.id = pcs.patient_id AND p.deleted_at IS NULL
           WHERE pcs.active AND ($1::text IS NULL OR p.country = $1)
        ), live AS (
-         SELECT DISTINCT ON (jp.contracted_service_id) jp.contracted_service_id, jp.id
-           FROM job_postings jp JOIN svc ON svc.id = jp.contracted_service_id
-          WHERE jp.deleted_at IS NULL
-          ORDER BY jp.contracted_service_id, jp.created_at ASC
+         ${liveVacancySelect('jp.contracted_service_id IN (SELECT id FROM svc)')}
        )
        SELECT svc.patient_id, svc.country, svc.id AS service_id, svc.service_code, svc.weekly_hours, svc.authorized_hours,
               live.id AS live_vacancy_id,
