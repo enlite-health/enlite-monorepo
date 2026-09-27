@@ -2,12 +2,17 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { Rocket, ExternalLink } from 'lucide-react';
 import { Text } from '@presentation/components/atoms/Text';
+import { useActionGate } from '@presentation/hooks/useCellAccess';
 import type { PatientKanbanServiceSummary } from '@domain/entities/PatientDetail';
 
 interface Props {
   patientId: string;
   services?: PatientKanbanServiceSummary[];
 }
+
+/** Ícone de ação do par (foguete/"ver vacante") — mesma classe nos dois ramos (G2, achado 6). */
+const ICON_ACTION_CLASS =
+  'text-primary hover:text-primary/70 transition-colors p-0.5 rounded focus:outline-none focus:ring-2 focus:ring-primary inline-flex items-center';
 
 /**
  * Subcards do card do Kanban de pacientes (fase 8, DX-8.7): uma linha por serviço
@@ -19,6 +24,12 @@ interface Props {
 export function PatientKanbanSubcards({ patientId, services }: Props): JSX.Element | null {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  // Regra do Gabriel (12/09, reusada da ficha — ServicosContratadosCard.tsx:74-78): o foguete de
+  // ativar exige `patient_services:update` E `vacancy:update` JUNTAS. Mesmo hook, mesma decisão —
+  // sem as duas células, sem foguete (G2, achado 1).
+  const { allowed: podeEscreverServico } = useActionGate('patient_services', 'update');
+  const { allowed: podeEscreverVaga } = useActionGate('vacancy', 'update');
+  const podeAtivar = podeEscreverServico && podeEscreverVaga;
 
   if (!services?.length) return null;
 
@@ -44,6 +55,7 @@ export function PatientKanbanSubcards({ patientId, services }: Props): JSX.Eleme
             data-testid="patient-kanban-subcard"
             data-service-id={service.contractedServiceId}
             className="flex items-center justify-between gap-2 min-w-0"
+            role="group"
             title={pairAria}
             aria-label={pairAria}
           >
@@ -71,23 +83,25 @@ export function PatientKanbanSubcards({ patientId, services }: Props): JSX.Eleme
                     service: serviceLabel,
                   })}
                   data-testid="patient-kanban-subcard-vacancy"
-                  className="text-primary hover:text-primary/70 transition-colors p-0.5 rounded focus:outline-none focus:ring-2 focus:ring-primary inline-flex items-center"
+                  className={ICON_ACTION_CLASS}
                 >
                   <ExternalLink className="w-3.5 h-3.5" strokeWidth={2} />
                 </a>
               ) : (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    navigate(`/admin/patients/${patientId}`);
-                  }}
-                  aria-label={t('admin.patients.kanban.subcard.openToActivate', { service: serviceLabel })}
-                  data-testid="patient-kanban-subcard-rocket"
-                  className="text-primary hover:text-primary/70 transition-colors p-0.5 rounded focus:outline-none focus:ring-2 focus:ring-primary inline-flex items-center"
-                >
-                  <Rocket className="w-3.5 h-3.5" strokeWidth={2} />
-                </button>
+                podeAtivar && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigate(`/admin/patients/${patientId}`);
+                    }}
+                    aria-label={t('admin.patients.kanban.subcard.openToActivate', { service: serviceLabel })}
+                    data-testid="patient-kanban-subcard-rocket"
+                    className={ICON_ACTION_CLASS}
+                  >
+                    <Rocket className="w-3.5 h-3.5" strokeWidth={2} />
+                  </button>
+                )
               )}
             </div>
           </div>

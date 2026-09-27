@@ -430,12 +430,21 @@ export async function publishOnTalentumPage(page: Page, vacancyId: string): Prom
 }
 
 /**
+ * Abre `/admin/patients/kanban` e espera o board renderizar (regra 10: sem `fill()`, nenhum
+ * aqui). Base de `readPatientKanbanColumn` abaixo e do `openPatientKanban` de
+ * `kanban-subcard-e2e-helper.ts` (G2, achado 7 — as mesmas 2 linhas não se copiam duas vezes).
+ */
+export async function openPatientKanbanBoard(page: Page): Promise<void> {
+  await page.goto('/admin/patients/kanban');
+  await expect(page.locator('[data-testid="patient-kanban-board"]')).toBeVisible({ timeout: 20_000 });
+}
+
+/**
  * Id da coluna `kanban-column-*` que contém `patient-kanban-card-<p>` (mesma seleção de
  * `kanban-pacientes.integration.e2e.ts:110-111` / P1), depois de `scrollIntoViewIfNeeded`.
  */
 export async function readPatientKanbanColumn(page: Page, patientId: string): Promise<string> {
-  await page.goto('/admin/patients/kanban');
-  await expect(page.locator('[data-testid="patient-kanban-board"]')).toBeVisible({ timeout: 20_000 });
+  await openPatientKanbanBoard(page);
   const card = page.getByTestId(`patient-kanban-card-${patientId}`);
   await expect(card).toBeVisible({ timeout: 15_000 });
   await card.scrollIntoViewIfNeeded();

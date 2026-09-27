@@ -5,13 +5,15 @@
  * pacientes. Invariante 3 ("o subcard só MOSTRA"): nenhum clique aqui pode disparar
  * `updatePatientStatus`/`activateRecruitment` — o foguete só NAVEGA para a ficha (DX-8.8).
  */
-import { describe, it, expect, beforeAll, vi } from 'vitest';
+import { describe, it, expect, beforeAll, afterEach, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import esJson from '@infrastructure/i18n/locales/es.json';
 import ptBRJson from '@infrastructure/i18n/locales/pt-BR.json';
+import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
+import type { AuthzContract } from '@domain/entities/Authz';
 import { PatientKanbanSubcards } from '../PatientKanbanSubcards';
 import type { PatientKanbanServiceSummary } from '@domain/entities/PatientDetail';
 
@@ -114,6 +116,11 @@ describe('PatientKanbanSubcards (es)', () => {
     );
   });
 
+  it('a linha do par tem role="group" (G2, achado 10 — aria-label num div sem role é ignorado pelo AT)', () => {
+    renderSubcards([service()]);
+    expect(screen.getByTestId('patient-kanban-subcard')).toHaveAttribute('role', 'group');
+  });
+
   it('nenhuma cor literal (hex/rgba) no DOM renderizado', () => {
     const { container } = renderSubcards([service({ liveVacancyId: 'v-9' }), service({ contractedServiceId: 's-2', liveVacancyId: null })]);
     expect(container.innerHTML).not.toMatch(/#[0-9a-fA-F]{3,8}\b|rgba?\(/);
@@ -127,5 +134,41 @@ describe('PatientKanbanSubcards (pt-BR)', () => {
     renderSubcards([service({ serviceCode: 'AT', cobertas: 4, contratadas: { weekly: 20, authorized: 20 } })]);
     expect(screen.getByTestId('patient-kanban-subcard-pair')).toHaveTextContent('4/20');
     expect(screen.getByTestId('patient-kanban-subcard')).toHaveTextContent('Acompanhante Terapêutico');
+  });
+});
+
+// ── G2 (achado 1) — o foguete segue a MESMA regra da ficha (ServicosContratadosCard.tsx:74-78):
+// só aparece com `patient_services:update` E `vacancy:update` JUNTAS. Mesmo molde de
+// `comEnforcement` de PatientSupportNetworkEditDrawer.test.tsx (PR-8b rodada B). ──────────────
+function comEnforcement(permissions: string[]) {
+  useAdminAuthStore.setState({
+    authzStatus: 'ready',
+    authz: {
+      uid: 'u', tenantId: 't', status: 'ACTIVE', permissions, countries: [], groups: [], features: {}, enforcement: 'on',
+    } as AuthzContract,
+  });
+}
+
+describe('PatientKanbanSubcards — gate do foguete (patient_services:update + vacancy:update)', () => {
+  beforeAll(() => { i18n.changeLanguage('es'); });
+  afterEach(() => { useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' }); });
+
+  it('com as duas células → foguete aparece', () => {
+    comEnforcement(['patient_services:update', 'vacancy:update']);
+    renderSubcards([service({ liveVacancyId: null })]);
+    expect(screen.getByTestId('patient-kanban-subcard-rocket')).toBeInTheDocument();
+  });
+
+  it('sem as células (enforcement on, permissions vazio) → sem foguete, só nome · par', () => {
+    comEnforcement([]);
+    renderSubcards([service({ liveVacancyId: null })]);
+    expect(screen.queryByTestId('patient-kanban-subcard-rocket')).toBeNull();
+    expect(screen.getByTestId('patient-kanban-subcard-pair')).toBeInTheDocument();
+  });
+
+  it('só uma das duas células (patient_services:update sem vacancy:update) → sem foguete', () => {
+    comEnforcement(['patient_services:update']);
+    renderSubcards([service({ liveVacancyId: null })]);
+    expect(screen.queryByTestId('patient-kanban-subcard-rocket')).toBeNull();
   });
 });

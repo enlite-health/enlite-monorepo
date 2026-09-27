@@ -7,19 +7,19 @@
  * de `GET /patients/:id/itinerary` (o par do subcard vem do itinerário, e só dele —
  * DX-8.17) e contar as requisições de dados por carga do board (DX-8.14, "sem N+1").
  *
- * Reusa sem copiar: `ItineraryResponseDto`/`readItineraryApi` (itinerario-e2e-helper.ts).
+ * Reusa sem copiar: `ItineraryResponseDto`/`readItineraryApi` (itinerario-e2e-helper.ts),
+ * `openPatientKanbanBoard` (lancamento-e2e-helper.ts — G2, achado 7: as mesmas 2 linhas de
+ * `readPatientKanbanColumn` não se repetem aqui).
  * Nenhum host/porta literal aqui — este helper nunca fala com a API diretamente (quem
  * lê é `readItineraryApi`, de outro helper); nenhum `throw` no import (o CI carrega
  * todos os specs antes do `--grep`).
  */
 import { expect, type Page } from '@playwright/test';
 import type { ItineraryResponseDto } from './itinerario-e2e-helper';
+import { openPatientKanbanBoard } from './lancamento-e2e-helper';
 
-/** `/admin/patients/kanban` → espera o board renderizar (regra 10: sem `fill()`, nenhum aqui). */
-export async function openPatientKanban(page: Page): Promise<void> {
-  await page.goto('/admin/patients/kanban');
-  await expect(page.locator('[data-testid="patient-kanban-board"]')).toBeVisible({ timeout: 20_000 });
-}
+/** `/admin/patients/kanban` → espera o board renderizar. Alias de `openPatientKanbanBoard`. */
+export const openPatientKanban = openPatientKanbanBoard;
 
 /**
  * Texto do par `X/Y` do subcard de `serviceId` — lido por `data-testid`, nunca por
