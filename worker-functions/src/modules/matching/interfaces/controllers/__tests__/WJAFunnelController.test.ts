@@ -147,8 +147,9 @@ describe('WJAFunnelController', () => {
 
       const { stages } = response.data;
 
-      // 9 colunas no kanban (migration 230 + D433 + Fase 4)
-      expect(Object.keys(stages)).toHaveLength(9);
+      // 10 colunas no kanban (migration 230 + D433 + Fase 4 + Fase 5/D432: COMPATIBLE)
+      expect(Object.keys(stages)).toHaveLength(10);
+      expect(Object.keys(stages)[0]).toBe('COMPATIBLE');
 
       // NULL → INVITED (coluna de auto-invite / sem source)
       expect(stages.INVITED).toHaveLength(2); // e1 (null stage) + e2 (INVITED+system)
@@ -202,7 +203,7 @@ describe('WJAFunnelController', () => {
       expect(stages.REJECTED[0].id).toBe('e10');
     });
 
-    it('AC2 (86ajb48v1): system match never messaged NÃO conta em Invitados (métrica falsa)', async () => {
+    it('AC2 (86ajb48v1): system match never messaged NÃO conta em Invitados — aparece em Compatíveis (Fase 5/D432)', async () => {
       // Rodar o match persiste TODOS os top-N como INVITED/system. Só um envio
       // real (messaged_at) vira convite. Aqui: 3 matches system, só 1 enviado.
       mockQuery.mockResolvedValueOnce({
@@ -225,7 +226,12 @@ describe('WJAFunnelController', () => {
       expect(invitedIds).toEqual(['sent']);
       // manual continua indo pra INICIADO (não é system, não é filtrado)
       expect((data.stages.INICIADO as unknown[]).length).toBe(1);
-      // totalEncuadres reflete só os cards visíveis (exclui os 2 match candidates)
+      // Fase 5 (D432): os 2 match candidates não somem — aparecem em Compatíveis
+      // (cells=null, engine não decidiu → nome aberto, D113).
+      expect(data.stages.COMPATIBLE).toHaveLength(2);
+      const compatibleIds = (data.stages.COMPATIBLE as Array<{ id: string }>).map(e => e.id);
+      expect(compatibleIds).toEqual(['m1', 'm2']);
+      // totalEncuadres continua sem os compatíveis (D437 — o subtítulo não muda)
       expect(data.totalEncuadres).toBe(2);
     });
 
@@ -450,7 +456,7 @@ describe('WJAFunnelController', () => {
       expect(items.find(c => c.id === 'wja-4')!.workerName).toBe('Worker sem identificação');
     });
 
-    it('retorna 9 stages vazios quando não há encuadres nem bloqueados (migration 230 + D433 + Fase 4)', async () => {
+    it('retorna 10 stages vazios quando não há encuadres nem bloqueados (migration 230 + D433 + Fase 4 + Fase 5/D432)', async () => {
       mockQuery.mockResolvedValueOnce({ rows: [] });
 
       const [req, res] = mockReqRes({ id: 'jp-empty' });
@@ -459,8 +465,8 @@ describe('WJAFunnelController', () => {
       const response = (res.json as jest.Mock).mock.calls[0][0];
       expect(response.success).toBe(true);
       expect(response.data.totalEncuadres).toBe(0);
-      // 9 colunas: INVITED, INICIADO, PRE_SCREENING, IN_PROGRESS, COMPLETED, CONFIRMED, SELECTED, QUICK_RESPONSE_TEAM, REJECTED
-      expect(Object.keys(response.data.stages)).toHaveLength(9);
+      // 10 colunas: COMPATIBLE, INVITED, INICIADO, PRE_SCREENING, IN_PROGRESS, COMPLETED, CONFIRMED, SELECTED, QUICK_RESPONSE_TEAM, REJECTED
+      expect(Object.keys(response.data.stages)).toHaveLength(10);
       Object.values(response.data.stages).forEach((stage: any) => {
         expect(stage).toHaveLength(0);
       });
