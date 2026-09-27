@@ -33,8 +33,10 @@ import {
   useLancamentoStaff,
   seedLaunchablePatient,
 } from '../helpers/lancamento-e2e-helper';
+import type { SeedLaunchablePatientResult } from '../helpers/lancamento-e2e-helper';
 import {
   activateRecruitmentViaApi,
+  createServiceViaApi,
   readItineraryApi,
   seedAssignment,
   cleanupItinerary,
@@ -42,6 +44,7 @@ import {
 import { insertTestWorker, cleanupTestWorker } from '../helpers/db-test-helper';
 import { insertWJA, cleanupWJAAndEncuadre } from '../helpers/wja-test-helper';
 import { openPatientKanban, readSubcardPair, pairFromItinerary } from '../helpers/kanban-subcard-e2e-helper';
+import { collectDataRequests } from '../helpers/kanban-subcard-e2e-helper';
 
 const MOCK_ADMIN_USER = mockAdminUserFor('subcard');
 
@@ -171,6 +174,100 @@ test.describe('kanban de pacientes — subcard (fase 8) @integration', () => {
     } finally {
       cleanupItinerary(patientId);
       seed.cleanup();
+    }
+  });
+
+  // ── critério 4: um card por paciente, mesmo com 2 serviços — 2 subcards no
+  //    MESMO card, nenhum duplicado em outro card/coluna (DX-8.11) ────────────
+  test('kanban-paciente-card-unico', async ({ page, request }) => {
+    const seed = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -53.77, lng: -67.77 });
+    const { patientId, serviceId: serviceId1, addressId } = seed;
+    const serviceId2 = await createServiceViaApi(request, patientId, { addressId });
+
+    try {
+      await loginAs(page, MOCK_ADMIN_USER);
+      await openPatientKanban(page);
+
+      // O `getByTestId` casa o valor EXATO: `-open`/`-contact` etc. não entram.
+      const card = page.getByTestId(`patient-kanban-card-${patientId}`);
+      await expect(card).toHaveCount(1);
+      await card.scrollIntoViewIfNeeded();
+
+      const subcardsNoCard = card.getByTestId('patient-kanban-subcard');
+      await expect(subcardsNoCard).toHaveCount(2);
+
+      for (const sid of [serviceId1, serviceId2]) {
+        await expect(
+          page.locator(`[data-testid="patient-kanban-subcard"][data-service-id="${sid}"]`),
+        ).toHaveCount(1);
+      }
+
+      console.log('[8.4]', 'cards', await card.count(), 'subcards', await subcardsNoCard.count());
+    } finally {
+      cleanupItinerary(patientId);
+      seed.cleanup();
+    }
+  });
+
+  // ── critérios 5 e 6: sem N+1 (1 listagem + 1 agregado por carga do board,
+  //    mesmo com 20 pacientes) e nada de clínico no agregado (DX-8.13, DX-8.14) ──
+  test('kanban-paciente-sem-n-mais-1', async ({ page, request }) => {
+    test.setTimeout(180_000);
+    const seeds: SeedLaunchablePatientResult[] = [];
+    for (let i = 0; i < 20; i++) {
+      seeds.push(await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -54.0 - i * 0.001, lng: -67.9 }));
+    }
+
+    try {
+      await loginAs(page, MOCK_ADMIN_USER);
+
+      // Registrado ANTES do `goto` do board (DX-8.14).
+      const reqs = collectDataRequests(page);
+      const listWaiter = page.waitForResponse((r) => r.request().method() === 'GET' && /\/api\/admin\/patients\?/.test(r.url()));
+      const aggWaiter = page.waitForResponse((r) => r.request().method() === 'GET' && /\/api\/admin\/patients\/kanban\/services/.test(r.url()));
+
+      await openPatientKanban(page);
+      const [listResponse, aggResponse] = await Promise.all([listWaiter, aggWaiter]);
+
+      // Só mede depois que os 20 subcards estão visíveis (valida com 20 cards de
+      // serviço na tela — o board não pagina).
+      for (const s of seeds) {
+        await expect(
+          page.locator(`[data-testid="patient-kanban-subcard"][data-service-id="${s.serviceId}"]`),
+        ).toHaveCount(1);
+      }
+
+      const all = reqs();
+      console.log('[8.6]', all);
+      const listCount = all.filter((r) => r === 'GET /api/admin/patients').length;
+      const aggCount = all.filter((r) => r === 'GET /api/admin/patients/kanban/services').length;
+      const byIdCount = all.filter((r) => /^GET \/api\/admin\/patients\/[0-9a-f-]{36}$/.test(r)).length;
+      expect(listCount).toBe(1);
+      expect(aggCount).toBe(1);
+      expect(byIdCount).toBe(0);
+      expect(all.length).toBeLessThanOrEqual(2);
+
+      const aggBody = await aggResponse.json();
+      const aggText = JSON.stringify(aggBody);
+      const aggClinicalHits = (aggText.match(/diagnos|clinic/gi) ?? []).length;
+      const aggServiceCodeHits = (aggText.match(/serviceCode/g) ?? []).length;
+      console.log('[8.5] agregado', aggClinicalHits, aggServiceCodeHits);
+      expect(aggClinicalHits).toBe(0);
+      expect(aggServiceCodeHits).toBeGreaterThan(0);
+
+      const listBody = await listResponse.json();
+      const listText = JSON.stringify(listBody);
+      const listClinicalHits = (listText.match(/diagnos|clinic/gi) ?? []).length;
+      const listCaseNumberHits = (listText.match(/caseNumber/g) ?? []).length;
+      console.log('[8.5] listagem', listClinicalHits, 'caseNumber', listCaseNumberHits);
+      // Sem asserção que reprove pelo clínico da listagem (dado pré-existente,
+      // fora do escopo da fase — Q-8.1); só o controle de que a leitura funciona.
+      expect(listCaseNumberHits).toBeGreaterThan(0);
+    } finally {
+      for (const s of seeds) {
+        cleanupItinerary(s.patientId);
+        s.cleanup();
+      }
     }
   });
 });
