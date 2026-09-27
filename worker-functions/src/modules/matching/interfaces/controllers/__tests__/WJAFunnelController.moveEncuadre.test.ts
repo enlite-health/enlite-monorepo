@@ -669,6 +669,33 @@ describe('WJAFunnelController — moveEncuadre', () => {
       expect(mockQuery.mock.calls.some(([sql]) => typeof sql === 'string' && sql.includes('INSERT'))).toBe(false);
     });
 
+    /**
+     * DX-5.17 (achado 🟡-1 do gate parcial 1): a origem não precisa estar em Compatíveis
+     * (INVITED) hoje — mesmo já tendo saído para Rejeitados, um card `source='system'` que
+     * nunca foi mensageado ainda é candidato do match; arrastar de volta para Invitados
+     * continua exigindo o envio, não o arrasto.
+     */
+    it('origem REJECTED/system, messaged_at nulo (voltou de Rejeitados sem nunca ter sido mensageado) → INVITED por arrasto → 422 COMPATIBLE_READ_ONLY (INVITE_BY_SEND), nenhum INSERT', async () => {
+      mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [{ worker_id: 'w-1', job_posting_id: 'jp-1' }] });
+      mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
+      mockQuery.mockResolvedValueOnce({
+        rows: [{ application_funnel_stage: 'REJECTED', source: 'system', messaged_at: null }],
+      });
+
+      const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'INVITED' });
+      await controller.moveEncuadre(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(422);
+      expect(res.json).toHaveBeenCalledWith({
+        success: false,
+        error: 'compatible_read_only',
+        code: 'COMPATIBLE_READ_ONLY',
+        reason: 'INVITE_BY_SEND',
+      });
+      expect(mockQuery).toHaveBeenCalledTimes(3);
+      expect(mockQuery.mock.calls.some(([sql]) => typeof sql === 'string' && sql.includes('INSERT'))).toBe(false);
+    });
+
     it('origem Compatíveis → REJECTED com reasonCategory DISTANCE → 200 (saída para Rejeitados segue a regra de sempre)', async () => {
       mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [{ worker_id: 'w-1', job_posting_id: 'jp-1' }] });
       mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
