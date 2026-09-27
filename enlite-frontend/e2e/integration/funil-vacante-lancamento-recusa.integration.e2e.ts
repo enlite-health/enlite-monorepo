@@ -49,8 +49,6 @@ import { runSQL } from '../helpers/patient-detail-a-helper';
 import { tokenFor } from '../helpers/abac-stack-helper';
 import { cleanupTestWorker } from '../helpers/db-test-helper';
 
-const BACKEND_URL = backendUrl();
-
 const MOCK_ADMIN_USER = mockAdminUserFor('recusa');
 
 /** `is_draft`/`talentum_project_id` da vaga — prova de que a recusa não gravou nada (critério 7). */
@@ -107,7 +105,7 @@ test.describe('funil-vacante lancamento recusa @integration', () => {
       expect(draftState.isDraft, 'is_draft continua true depois da recusa').toBe('t');
       expect(draftState.talentumProjectId, 'talentum_project_id continua nulo depois da recusa').toBeNull();
 
-      const statusAfterReject = await readPatientStatusApi(request, BACKEND_URL, token, patient.patientId);
+      const statusAfterReject = await readPatientStatusApi(request, backendUrl(), token, patient.patientId);
       expect(statusAfterReject, 'paciente continua ADMISSION depois da recusa').toBe('ADMISSION');
 
       const trailAfterReject = countLaunchTrail(patient.patientId);
@@ -156,7 +154,7 @@ test.describe('funil-vacante lancamento recusa @integration', () => {
       expect(secondRes.status(), 'POST /publish-talentum com stub.mode=accept (2º clique, mesma tela)').toBe(200);
       await expect(page).toHaveURL(new RegExp(`/admin/vacancies/${vacancyId}$`), { timeout: 15_000 });
 
-      const statusAfterAccept = await readPatientStatusApi(request, BACKEND_URL, token, patient.patientId);
+      const statusAfterAccept = await readPatientStatusApi(request, backendUrl(), token, patient.patientId);
       expect(statusAfterAccept, 'paciente SEARCHING depois do lançamento aceito').toBe('SEARCHING');
 
       const trailAfterAccept = countLaunchTrail(patient.patientId);

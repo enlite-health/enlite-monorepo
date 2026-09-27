@@ -23,19 +23,15 @@ import { seedMockStaff, cleanupMockStaff } from './vacancy-notes-e2e-helper';
 
 /**
  * URL do backend (E2E-F6/CI sempre setam `E2E_BACKEND_URL`) — nunca host/porta literal (G2).
- * Ausente, lança erro claro em vez de cair num host padrão silencioso.
+ * Mesmo fallback dos irmãos (`funil-vacante.integration.e2e.ts:37`, `abac-stack-helper.ts`):
+ * `?? 'http://localhost:8080'`, a api do CI. Lido DENTRO das funções que o usam — nunca no topo
+ * do módulo/import: `const X = backendUrl()` de import quebrou a COLETA inteira do Playwright
+ * (o projeto `integration` carrega todos os specs antes do `--grep`), derrubando 3 jobs do CI
+ * que não setam a env (B1, `evidencias/fase-6/veredito-fecho.md`). Nenhum `throw` aqui.
  */
 export function backendUrl(): string {
-  const url = process.env.E2E_BACKEND_URL;
-  if (!url) {
-    throw new Error(
-      'lancamento-e2e-helper: E2E_BACKEND_URL não setada — defina antes de rodar (ver E2E-F6 no BRIEF-COMUM.md)',
-    );
-  }
-  return url;
+  return process.env.E2E_BACKEND_URL ?? 'http://localhost:8080';
 }
-
-const BACKEND_URL = backendUrl();
 
 /** Staff interno só para autenticar as chamadas de API deste helper (nunca exposto ao teste). */
 const MOCK_STAFF: MockUser = {
@@ -276,7 +272,7 @@ export async function seedLaunchablePatient(
   }
 
   const token = tokenFor(MOCK_STAFF);
-  const svcRes = await request.post(`${BACKEND_URL}/api/admin/patients/${patientId}/contracted-services`, {
+  const svcRes = await request.post(`${backendUrl()}/api/admin/patients/${patientId}/contracted-services`, {
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     data: {
       serviceCode: 'AT',
@@ -449,9 +445,10 @@ export async function launchViaApi(
   vacancyId: string,
 ): Promise<number> {
   const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+  const url = backendUrl();
 
   const prescreeningRes = await request.post(
-    `${BACKEND_URL}/api/admin/vacancies/${vacancyId}/prescreening-config`,
+    `${url}/api/admin/vacancies/${vacancyId}/prescreening-config`,
     {
       headers,
       data: {
@@ -476,7 +473,7 @@ export async function launchViaApi(
     );
   }
 
-  const descRes = await request.put(`${BACKEND_URL}/api/admin/vacancies/${vacancyId}/talentum-description`, {
+  const descRes = await request.put(`${url}/api/admin/vacancies/${vacancyId}/talentum-description`, {
     headers,
     data: { description: 'Descripción de prueba — lanzamiento Fase 6.' },
   });
@@ -486,7 +483,7 @@ export async function launchViaApi(
     );
   }
 
-  const publishRes = await request.post(`${BACKEND_URL}/api/admin/vacancies/${vacancyId}/publish-talentum`, {
+  const publishRes = await request.post(`${url}/api/admin/vacancies/${vacancyId}/publish-talentum`, {
     headers,
   });
   return publishRes.status();

@@ -49,8 +49,6 @@ import { tokenFor } from '../helpers/abac-stack-helper';
 import { runSQL } from '../helpers/patient-detail-a-helper';
 import { cleanupTestWorker } from '../helpers/db-test-helper';
 
-const BACKEND_URL = backendUrl();
-const API_HOST = new URL(BACKEND_URL).host;
 // Canal real — critério 5 (DX-6.9/Q-EX-6.5): o navegador NUNCA fala com nenhum destes hosts
 // (quem fala com a Talentum é o backend, via stub). Testa só o HOSTNAME (não a URL inteira —
 // a própria API tem rotas como `/workers/sync-talentum`, memória de `funil-vacante-motivo`).
@@ -111,7 +109,7 @@ test.describe('funil-vacante lancamento @integration', () => {
       await completeDraftViaWizard(page, vacancyId);
 
       // (3) Antes do clique em "Publicar en Talentum".
-      const statusBefore = await readPatientStatusApi(request, BACKEND_URL, token, patient.patientId);
+      const statusBefore = await readPatientStatusApi(request, backendUrl(), token, patient.patientId);
       expect(statusBefore, 'status antes do publish').toBe('ADMISSION');
       const trailBefore = countLaunchTrail(patient.patientId);
       expect(trailBefore, 'trilha vacancy_launch antes do publish').toBe(0);
@@ -122,7 +120,7 @@ test.describe('funil-vacante lancamento @integration', () => {
       await expect(page).toHaveURL(new RegExp(`/admin/vacancies/${vacancyId}$`), { timeout: 15_000 });
 
       // ── Critério 4: o lançamento move ADMISSION → SEARCHING ──────────────────────
-      const statusAfter = await readPatientStatusApi(request, BACKEND_URL, token, patient.patientId);
+      const statusAfter = await readPatientStatusApi(request, backendUrl(), token, patient.patientId);
       expect(statusAfter, 'status depois do publish').toBe('SEARCHING');
 
       const trailAfter = countLaunchTrail(patient.patientId);
@@ -179,8 +177,9 @@ test.describe('funil-vacante lancamento @integration', () => {
       expect(outboundW2.domainEvents, 'domain_events de W2 desde t0').toBe(0);
       expect(outboundW2.stageMessageLog, 'funnel_stage_message_log de W2 desde t0').toBe(0);
 
+      const apiHost = new URL(backendUrl()).host;
       const forbiddenCount = requestUrls.filter((u) => FORBIDDEN_HOSTS.test(new URL(u).host)).length;
-      const localCount = requestUrls.filter((u) => new URL(u).host === API_HOST).length;
+      const localCount = requestUrls.filter((u) => new URL(u).host === apiHost).length;
       expect(forbiddenCount, 'requests do navegador a canal real (twilio/whatsapp/facebook/periskope/talentum.chat/groq/generativelanguage)').toBe(0);
       expect(localCount, 'controle positivo: requests à própria API').toBeGreaterThan(0);
 
@@ -203,7 +202,7 @@ test.describe('funil-vacante lancamento @integration', () => {
       });
 
       // ── Critério 8: arrasto Compatíveis → Equipe de Resposta Rápida (JUMP, DX-5.6) ──
-      const s0 = await readPatientStatusApi(request, BACKEND_URL, token, patient.patientId);
+      const s0 = await readPatientStatusApi(request, backendUrl(), token, patient.patientId);
       expect(s0, 'status antes do arrasto no quadro B').toBe('SEARCHING');
 
       const w1Card = page.locator(`[data-testid="kanban-draggable-${w1WjaId}"]`);
@@ -229,7 +228,7 @@ test.describe('funil-vacante lancamento @integration', () => {
         page.locator(`[data-testid="kanban-column-QUICK_RESPONSE_TEAM"] [data-testid="kanban-card-${w1WjaId}"]`),
       ).toBeVisible({ timeout: 10_000 });
 
-      const sAfterMove = await readPatientStatusApi(request, BACKEND_URL, token, patient.patientId);
+      const sAfterMove = await readPatientStatusApi(request, backendUrl(), token, patient.patientId);
       expect(sAfterMove, 'status do paciente não muda com o arrasto no quadro B').toBe(s0);
 
       const trailAfterMove = countLaunchTrail(patient.patientId);

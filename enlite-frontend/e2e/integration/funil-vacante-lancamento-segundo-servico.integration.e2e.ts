@@ -51,8 +51,6 @@ import { readFunnelApi } from '../helpers/compativeis-e2e-helper';
 import { tokenFor } from '../helpers/abac-stack-helper';
 import { cleanupTestWorker } from '../helpers/db-test-helper';
 
-const BACKEND_URL = backendUrl();
-
 const MOCK_ADMIN_USER = mockAdminUserFor('2svc');
 
 test.describe('funil-vacante lancamento segundo servico @integration', () => {
@@ -79,7 +77,7 @@ test.describe('funil-vacante lancamento segundo servico @integration', () => {
       await loginAndMockAi(page, MOCK_ADMIN_USER);
 
       // (0) Paciente já ACTIVE ANTES do foguete — "Não faça: semear o ACTIVE por UPDATE depois".
-      const statusBeforeFoguete = await readPatientStatusApi(request, BACKEND_URL, token, patient.patientId);
+      const statusBeforeFoguete = await readPatientStatusApi(request, backendUrl(), token, patient.patientId);
       expect(statusBeforeFoguete, 'paciente já ACTIVE antes do foguete do 2º serviço').toBe('ACTIVE');
 
       // (1) Foguete pela ficha — 2º serviço (o único que o helper cria) de um paciente já ativo.
@@ -89,7 +87,7 @@ test.describe('funil-vacante lancamento segundo servico @integration', () => {
       await completeDraftViaWizard(page, vacancyId);
 
       // (3) Antes do clique em "Publicar en Talentum".
-      const statusBeforePublish = await readPatientStatusApi(request, BACKEND_URL, token, patient.patientId);
+      const statusBeforePublish = await readPatientStatusApi(request, backendUrl(), token, patient.patientId);
       expect(statusBeforePublish, 'status antes do publish').toBe('ACTIVE');
 
       // (4) Publicar en Talentum — nunca mockado, vai ao backend → stub (porta 9914).
@@ -98,7 +96,7 @@ test.describe('funil-vacante lancamento segundo servico @integration', () => {
       await expect(page).toHaveURL(new RegExp(`/admin/vacancies/${vacancyId}$`), { timeout: 15_000 });
 
       // ── Critério 6: o paciente ACTIVE NÃO regride ────────────────────────────────
-      const statusAfter = await readPatientStatusApi(request, BACKEND_URL, token, patient.patientId);
+      const statusAfter = await readPatientStatusApi(request, backendUrl(), token, patient.patientId);
       expect(statusAfter, 'status depois do publish — não regride').toBe('ACTIVE');
 
       const trailAfter = countLaunchTrail(patient.patientId);

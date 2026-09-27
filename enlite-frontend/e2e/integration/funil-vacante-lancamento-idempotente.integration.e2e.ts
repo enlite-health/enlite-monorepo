@@ -55,8 +55,6 @@ import { runSQL } from '../helpers/patient-detail-a-helper';
 import { tokenFor } from '../helpers/abac-stack-helper';
 import { cleanupTestWorker } from '../helpers/db-test-helper';
 
-const BACKEND_URL = backendUrl();
-
 const MOCK_ADMIN_USER = mockAdminUserFor('idemp');
 
 /** `is_draft` da vaga — prova de que o despublicar gravou o estado (critério 9). */
@@ -94,7 +92,7 @@ test.describe('funil-vacante lancamento idempotente @integration', () => {
       expect(publishStatus, 'POST /publish-talentum (1º lançamento)').toBe(200);
       await expect(page).toHaveURL(new RegExp(`/admin/vacancies/${vacancyId}$`), { timeout: 15_000 });
 
-      const statusAfterLaunch = await readPatientStatusApi(request, BACKEND_URL, token, patient.patientId);
+      const statusAfterLaunch = await readPatientStatusApi(request, backendUrl(), token, patient.patientId);
       expect(statusAfterLaunch, 'paciente SEARCHING depois do 1º lançamento').toBe('SEARCHING');
 
       const trailAfterLaunch = countLaunchTrail(patient.patientId);
@@ -184,7 +182,7 @@ test.describe('funil-vacante lancamento idempotente @integration', () => {
       const isDraftAfterUnpublish = readIsDraft(vacancyId);
       expect(isDraftAfterUnpublish, 'is_draft = t depois do despublicar').toBe('t');
 
-      const statusAfterUnpublish = await readPatientStatusApi(request, BACKEND_URL, token, patient.patientId);
+      const statusAfterUnpublish = await readPatientStatusApi(request, backendUrl(), token, patient.patientId);
       expect(
         statusAfterUnpublish,
         'paciente continua SEARCHING depois do despublicar (o gancho não roda no unpublish)',
