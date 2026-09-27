@@ -1,5 +1,8 @@
 import {
   requiredMoveReason,
+  compatibleMoveRefusal,
+  CompatibleReadOnlyError,
+  COMPATIBLE_COLUMN,
   isAllowedMoveReason,
   ALL_MOVE_REASONS,
   MOVE_REASONS_BY_KIND,
@@ -23,34 +26,38 @@ import { REJECTION_REASON_CATEGORIES } from '../Encuadre';
  * para se calcular.
  */
 describe('requiredMoveReason', () => {
+  // Fase 5: MoveOrigin ganha `messagedAt` (obrigatório). As origens da Fase 4 são todas
+  // mensageadas (SENT) — com source ≠ 'system' o valor não muda a coluna; os rótulos
+  // "posição N" ganham +1 porque Compatíveis entrou na posição 0 (deslocamento uniforme).
+  const SENT = '2026-09-01T00:00:00Z';
   const ORIGINS: ReadonlyArray<{ label: string; from: MoveOrigin | null }> = [
-    { label: 'nula (candidatura nova) — posição 0, como INVITED', from: null },
-    { label: 'INVITED (auto-invite) — posição 0', from: { stage: 'INVITED', source: 'talentum' } },
-    { label: 'INVITED+manual (INICIADO) — posição 1', from: { stage: 'INVITED', source: 'manual' } },
-    { label: 'PRE_SCREENING — posição 2', from: { stage: 'PRE_SCREENING', source: 'talentum' } },
-    { label: 'IN_PROGRESS — posição 2 (mesma de PRE_SCREENING)', from: { stage: 'IN_PROGRESS', source: 'talentum' } },
-    { label: 'COMPLETED — posição 3', from: { stage: 'COMPLETED', source: 'talentum' } },
-    { label: 'QUALIFIED — posição 3 (colapsa em COMPLETED)', from: { stage: 'QUALIFIED', source: 'talentum' } },
-    { label: 'IN_DOUBT — posição 3 (colapsa em COMPLETED)', from: { stage: 'IN_DOUBT', source: 'talentum' } },
-    { label: 'CONFIRMED — posição 4', from: { stage: 'CONFIRMED', source: 'talentum' } },
-    { label: 'SELECTED — posição 5', from: { stage: 'SELECTED', source: 'talentum' } },
-    { label: 'QUICK_RESPONSE_TEAM — posição 6', from: { stage: 'QUICK_RESPONSE_TEAM', source: 'talentum' } },
-    { label: 'REJECTED — posição 7', from: { stage: 'REJECTED', source: 'talentum' } },
+    { label: 'nula (candidatura nova) — posição 1, como INVITED', from: null },
+    { label: 'INVITED (auto-invite) — posição 1', from: { stage: 'INVITED', source: 'talentum', messagedAt: SENT } },
+    { label: 'INVITED+manual (INICIADO) — posição 2', from: { stage: 'INVITED', source: 'manual', messagedAt: SENT } },
+    { label: 'PRE_SCREENING — posição 3', from: { stage: 'PRE_SCREENING', source: 'talentum', messagedAt: SENT } },
+    { label: 'IN_PROGRESS — posição 3 (mesma de PRE_SCREENING)', from: { stage: 'IN_PROGRESS', source: 'talentum', messagedAt: SENT } },
+    { label: 'COMPLETED — posição 4', from: { stage: 'COMPLETED', source: 'talentum', messagedAt: SENT } },
+    { label: 'QUALIFIED — posição 4 (colapsa em COMPLETED)', from: { stage: 'QUALIFIED', source: 'talentum', messagedAt: SENT } },
+    { label: 'IN_DOUBT — posição 4 (colapsa em COMPLETED)', from: { stage: 'IN_DOUBT', source: 'talentum', messagedAt: SENT } },
+    { label: 'CONFIRMED — posição 5', from: { stage: 'CONFIRMED', source: 'talentum', messagedAt: SENT } },
+    { label: 'SELECTED — posição 6', from: { stage: 'SELECTED', source: 'talentum', messagedAt: SENT } },
+    { label: 'QUICK_RESPONSE_TEAM — posição 7', from: { stage: 'QUICK_RESPONSE_TEAM', source: 'talentum', messagedAt: SENT } },
+    { label: 'REJECTED — posição 8', from: { stage: 'REJECTED', source: 'talentum', messagedAt: SENT } },
   ];
 
   // Destinos droppable que a API aceita (execucao/fase-4.md:429), na ordem em que
   // aparecem nas colunas da matriz EXPECTED abaixo.
   const DESTINATIONS = [
-    'INVITED', // posição 0
-    'PRE_SCREENING', // posição 2
-    'IN_PROGRESS', // posição 2
-    'COMPLETED', // posição 3
-    'QUALIFIED', // posição 3
-    'IN_DOUBT', // posição 3
-    'CONFIRMED', // posição 4
-    'SELECTED', // posição 5
-    'REJECTED', // posição 7
-    'QUICK_RESPONSE_TEAM', // posição 6
+    'INVITED', // posição 1
+    'PRE_SCREENING', // posição 3
+    'IN_PROGRESS', // posição 3
+    'COMPLETED', // posição 4
+    'QUALIFIED', // posição 4
+    'IN_DOUBT', // posição 4
+    'CONFIRMED', // posição 5
+    'SELECTED', // posição 6
+    'REJECTED', // posição 8
+    'QUICK_RESPONSE_TEAM', // posição 7
   ] as const;
 
   const J: MoveReasonKind = 'JUMP';
@@ -93,46 +100,46 @@ describe('requiredMoveReason', () => {
   // que o comportamento fique nomeado no relatório de teste.
   describe('os 4 casos de salto nomeados na Q-4.1', () => {
     it('Invitados → Confirmados = JUMP', () => {
-      expect(requiredMoveReason({ stage: 'INVITED', source: 'talentum' }, 'CONFIRMED')).toBe('JUMP');
+      expect(requiredMoveReason({ stage: 'INVITED', source: 'talentum', messagedAt: SENT }, 'CONFIRMED')).toBe('JUMP');
     });
 
     it('Iniciados → Confirmados = JUMP', () => {
-      expect(requiredMoveReason({ stage: 'INVITED', source: 'manual' }, 'CONFIRMED')).toBe('JUMP');
+      expect(requiredMoveReason({ stage: 'INVITED', source: 'manual', messagedAt: SENT }, 'CONFIRMED')).toBe('JUMP');
     });
 
     it('Completado → Seleccionados = JUMP', () => {
-      expect(requiredMoveReason({ stage: 'COMPLETED', source: 'talentum' }, 'SELECTED')).toBe('JUMP');
+      expect(requiredMoveReason({ stage: 'COMPLETED', source: 'talentum', messagedAt: SENT }, 'SELECTED')).toBe('JUMP');
     });
 
     it('Confirmados → Equipo de Respuesta Rápida = JUMP', () => {
-      expect(requiredMoveReason({ stage: 'CONFIRMED', source: 'talentum' }, 'QUICK_RESPONSE_TEAM')).toBe('JUMP');
+      expect(requiredMoveReason({ stage: 'CONFIRMED', source: 'talentum', messagedAt: SENT }, 'QUICK_RESPONSE_TEAM')).toBe('JUMP');
     });
   });
 
   // Os que a fase NÃO pede motivo, nomeados (execucao/fase-4.md:106-107).
   describe('os que NÃO pedem motivo, nomeados', () => {
     it('Confirmados → Seleccionados = null (só 1 posição à frente, não é salto)', () => {
-      expect(requiredMoveReason({ stage: 'CONFIRMED', source: 'talentum' }, 'SELECTED')).toBeNull();
+      expect(requiredMoveReason({ stage: 'CONFIRMED', source: 'talentum', messagedAt: SENT }, 'SELECTED')).toBeNull();
     });
 
     it('Seleccionados → Equipo de Respuesta Rápida = null (só 1 posição à frente, não é salto)', () => {
-      expect(requiredMoveReason({ stage: 'SELECTED', source: 'talentum' }, 'QUICK_RESPONSE_TEAM')).toBeNull();
+      expect(requiredMoveReason({ stage: 'SELECTED', source: 'talentum', messagedAt: SENT }, 'QUICK_RESPONSE_TEAM')).toBeNull();
     });
 
     it('todo recuo = null, por maior que seja a distância (ex.: REJECTED-like far-forward não se aplica a recuo; aqui SELECTED → INVITED)', () => {
-      expect(requiredMoveReason({ stage: 'SELECTED', source: 'talentum' }, 'INVITED')).toBeNull();
-      expect(requiredMoveReason({ stage: 'QUICK_RESPONSE_TEAM', source: 'talentum' }, 'PRE_SCREENING')).toBeNull();
+      expect(requiredMoveReason({ stage: 'SELECTED', source: 'talentum', messagedAt: SENT }, 'INVITED')).toBeNull();
+      expect(requiredMoveReason({ stage: 'QUICK_RESPONSE_TEAM', source: 'talentum', messagedAt: SENT }, 'PRE_SCREENING')).toBeNull();
     });
 
     it('etapa igual = null, mesmo com fontes diferentes (a comparação é só pelo stage)', () => {
-      expect(requiredMoveReason({ stage: 'INVITED', source: 'talentum' }, 'INVITED')).toBeNull();
-      expect(requiredMoveReason({ stage: 'INVITED', source: 'manual' }, 'INVITED')).toBeNull();
-      expect(requiredMoveReason({ stage: 'REJECTED', source: 'talentum' }, 'REJECTED')).toBeNull();
+      expect(requiredMoveReason({ stage: 'INVITED', source: 'talentum', messagedAt: SENT }, 'INVITED')).toBeNull();
+      expect(requiredMoveReason({ stage: 'INVITED', source: 'manual', messagedAt: SENT }, 'INVITED')).toBeNull();
+      expect(requiredMoveReason({ stage: 'REJECTED', source: 'talentum', messagedAt: SENT }, 'REJECTED')).toBeNull();
     });
   });
 
   it('origem REJECTED para REJECTED (recategorizar) não exige motivo — o comportamento de hoje fica intacto', () => {
-    expect(requiredMoveReason({ stage: 'REJECTED', source: 'talentum' }, 'REJECTED')).toBeNull();
+    expect(requiredMoveReason({ stage: 'REJECTED', source: 'talentum', messagedAt: SENT }, 'REJECTED')).toBeNull();
   });
 });
 
@@ -231,5 +238,107 @@ describe('MoveReasonRequiredError / MoveReasonInvalidError', () => {
     expect(invalid.kind).toBe('ENTER_REJECTED');
     expect(invalid.name).toBe('MoveReasonInvalidError');
     expect(invalid).toBeInstanceOf(Error);
+  });
+});
+
+/**
+ * Fase 5 (DX-5.5/DX-5.6): a origem Compatíveis — candidato do match nunca mensageado
+ * (INVITED/system, messaged_at nulo) — está na posição 0 do quadro B. Esperados
+ * ESCRITOS À MÃO a partir da regra da DX-4.6 com a posição deslocada: nenhuma célula
+ * chama requiredMoveReason/boardPosition/deriveKanbanColumn para se calcular.
+ */
+describe('Fase 5 — origem Compatíveis e a recusa de entrar/convidar sem envio', () => {
+  const SENT = '2026-09-01T00:00:00Z';
+  const COMPATIVEL: MoveOrigin = { stage: 'INVITED', source: 'system', messagedAt: null };
+  const CONVIDADO_DO_MATCH: MoveOrigin = { stage: 'INVITED', source: 'system', messagedAt: SENT };
+
+  describe('requiredMoveReason com origem Compatíveis (posição 0)', () => {
+    const CASES: ReadonlyArray<[string, MoveReasonKind | null]> = [
+      ['INVITED', null], // etapa igual (INVITED sobre INVITED) — quem recusa é compatibleMoveRefusal
+      ['PRE_SCREENING', 'JUMP'], // 0 → 3
+      ['IN_PROGRESS', 'JUMP'], // 0 → 3
+      ['COMPLETED', 'JUMP'], // 0 → 4
+      ['QUALIFIED', 'JUMP'], // 0 → 4
+      ['IN_DOUBT', 'JUMP'], // 0 → 4
+      ['CONFIRMED', 'JUMP'], // 0 → 5
+      ['SELECTED', 'JUMP'], // 0 → 6
+      ['QUICK_RESPONSE_TEAM', 'JUMP'], // 0 → 7
+      ['REJECTED', 'ENTER_REJECTED'],
+    ];
+    for (const [toStage, expected] of CASES) {
+      it(`Compatíveis → ${toStage} = ${expected ?? 'null (sem motivo)'}`, () => {
+        expect(requiredMoveReason(COMPATIVEL, toStage)).toBe(expected);
+      });
+    }
+
+    it('origem convidada pelo match (messagedAt preenchido) → INVITED = null, → CONFIRMED = JUMP (posição 1, como Invitados)', () => {
+      expect(requiredMoveReason(CONVIDADO_DO_MATCH, 'INVITED')).toBeNull();
+      expect(requiredMoveReason(CONVIDADO_DO_MATCH, 'PRE_SCREENING')).toBe('JUMP'); // 1 → 3
+      expect(requiredMoveReason(CONVIDADO_DO_MATCH, 'CONFIRMED')).toBe('JUMP');
+    });
+  });
+
+  describe('compatibleMoveRefusal — recusa quando deve', () => {
+    it('destino COMPATIBLE = ENTER, de qualquer origem (inclusive nula)', () => {
+      expect(compatibleMoveRefusal(null, 'COMPATIBLE')).toBe('ENTER');
+      expect(compatibleMoveRefusal(COMPATIVEL, 'COMPATIBLE')).toBe('ENTER');
+      expect(compatibleMoveRefusal(CONVIDADO_DO_MATCH, 'COMPATIBLE')).toBe('ENTER');
+      expect(compatibleMoveRefusal({ stage: 'INVITED', source: 'manual', messagedAt: null }, 'COMPATIBLE')).toBe('ENTER');
+      expect(compatibleMoveRefusal({ stage: 'SELECTED', source: 'talentum', messagedAt: SENT }, 'COMPATIBLE')).toBe('ENTER');
+      expect(compatibleMoveRefusal({ stage: 'REJECTED', source: 'system', messagedAt: null }, 'COMPATIBLE')).toBe('ENTER');
+    });
+
+    it('Compatíveis → INVITED = INVITE_BY_SEND (convidar é o envio, não o arrasto)', () => {
+      expect(compatibleMoveRefusal(COMPATIVEL, 'INVITED')).toBe('INVITE_BY_SEND');
+    });
+
+    it('COMPATIBLE_COLUMN é o literal da coluna derivada', () => {
+      expect(COMPATIBLE_COLUMN).toBe('COMPATIBLE');
+    });
+  });
+
+  describe('compatibleMoveRefusal — null quando não deve', () => {
+    it('Compatíveis → REJECTED = null (e requiredMoveReason = ENTER_REJECTED)', () => {
+      expect(compatibleMoveRefusal(COMPATIVEL, 'REJECTED')).toBeNull();
+      expect(requiredMoveReason(COMPATIVEL, 'REJECTED')).toBe('ENTER_REJECTED');
+    });
+
+    it('Compatíveis → CONFIRMED = null (e requiredMoveReason = JUMP)', () => {
+      expect(compatibleMoveRefusal(COMPATIVEL, 'CONFIRMED')).toBeNull();
+      expect(requiredMoveReason(COMPATIVEL, 'CONFIRMED')).toBe('JUMP');
+    });
+
+    it('Compatíveis → as demais etapas que a API aceita = null', () => {
+      for (const toStage of ['PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED', 'QUALIFIED', 'IN_DOUBT', 'SELECTED', 'QUICK_RESPONSE_TEAM']) {
+        expect(compatibleMoveRefusal(COMPATIVEL, toStage)).toBeNull();
+      }
+    });
+
+    it('origem convidada (messagedAt preenchido) → INVITED = null nas duas funções', () => {
+      expect(compatibleMoveRefusal(CONVIDADO_DO_MATCH, 'INVITED')).toBeNull();
+      expect(requiredMoveReason(CONVIDADO_DO_MATCH, 'INVITED')).toBeNull();
+    });
+
+    it('origem nula (candidatura nova) → INVITED = null (não é origem Compatíveis)', () => {
+      expect(compatibleMoveRefusal(null, 'INVITED')).toBeNull();
+    });
+
+    it('INVITED/manual sem envio (Iniciados) → INVITED = null (só source=system é candidato do match)', () => {
+      expect(compatibleMoveRefusal({ stage: 'INVITED', source: 'manual', messagedAt: null }, 'INVITED')).toBeNull();
+    });
+
+    it('REJECTED/system sem envio → INVITED = null na recusa (o rejeitado não é Compatíveis) e LEAVE_REJECTED no motivo', () => {
+      const rejeitadoDoMatch: MoveOrigin = { stage: 'REJECTED', source: 'system', messagedAt: null };
+      expect(compatibleMoveRefusal(rejeitadoDoMatch, 'INVITED')).toBeNull();
+      expect(requiredMoveReason(rejeitadoDoMatch, 'INVITED')).toBe('LEAVE_REJECTED');
+    });
+  });
+
+  it('CompatibleReadOnlyError carrega o reason e um nome de classe distinto (o controller monta o 422)', () => {
+    const enter = new CompatibleReadOnlyError('ENTER');
+    expect(enter.reason).toBe('ENTER');
+    expect(enter.name).toBe('CompatibleReadOnlyError');
+    expect(enter).toBeInstanceOf(Error);
+    expect(new CompatibleReadOnlyError('INVITE_BY_SEND').reason).toBe('INVITE_BY_SEND');
   });
 });
