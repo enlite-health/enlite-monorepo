@@ -130,6 +130,7 @@ function makeEncuadre(overrides: Partial<FunnelStages['INVITED'][0]> = {}) {
 
 function emptyStages(): FunnelStages {
   return {
+    COMPATIBLE: [],
     INVITED: [],
     INICIADO: [],
     PRE_SCREENING: [],
@@ -156,11 +157,11 @@ beforeEach(() => {
 // ── Visual Rendering ─────────────────────────────────────────────────────────
 
 describe('KanbanBoard — column rendering', () => {
-  it('renders all 8 columns', () => {
+  it('renders all 9 columns', () => {
     render(<KanbanBoard stages={emptyStages()} vacancyId="test-vacancy" onMove={noop} />);
 
     const expectedColumns = [
-      'INVITED', 'INICIADO', 'PRE_SCREENING', 'COMPLETED',
+      'COMPATIBLE', 'INVITED', 'INICIADO', 'PRE_SCREENING', 'COMPLETED',
       'CONFIRMED', 'SELECTED', 'QUICK_RESPONSE_TEAM', 'REJECTED',
     ];
 
@@ -169,14 +170,14 @@ describe('KanbanBoard — column rendering', () => {
     }
   });
 
-  it('renders columns in correct order (INVITED → INICIADO → PRE_SCREENING → COMPLETED → CONFIRMED → SELECTED → QUICK_RESPONSE_TEAM → REJECTED)', () => {
+  it('renders columns in correct order (COMPATIBLE → INVITED → INICIADO → PRE_SCREENING → COMPLETED → CONFIRMED → SELECTED → QUICK_RESPONSE_TEAM → REJECTED)', () => {
     render(<KanbanBoard stages={emptyStages()} vacancyId="test-vacancy" onMove={noop} />);
 
     const columns = screen.getAllByTestId(/^kanban-column-[A-Z_]+$/);
     const ids = columns.map((el) => el.getAttribute('data-testid')!.replace('kanban-column-', ''));
 
     expect(ids).toEqual([
-      'INVITED', 'INICIADO', 'PRE_SCREENING', 'COMPLETED',
+      'COMPATIBLE', 'INVITED', 'INICIADO', 'PRE_SCREENING', 'COMPLETED',
       'CONFIRMED', 'SELECTED', 'QUICK_RESPONSE_TEAM', 'REJECTED',
     ]);
   });
@@ -331,7 +332,7 @@ describe('KanbanBoard — edge cases', () => {
     render(<KanbanBoard stages={emptyStages()} vacancyId="test-vacancy" onMove={noop} />);
 
     const columns = screen.getAllByTestId(/^kanban-column-[A-Z_]+$/);
-    expect(columns).toHaveLength(8);
+    expect(columns).toHaveLength(9);
   });
 
   it('renders multiple cards across different Talentum columns', () => {
