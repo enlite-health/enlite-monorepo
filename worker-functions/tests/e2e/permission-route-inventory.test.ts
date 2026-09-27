@@ -380,6 +380,7 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'POST /api/admin/anacare-hours/shifts/:shiftId/contest → anacare_hours:validate',
         'POST /api/admin/anacare-hours/sync → anacare_hours:validate',
         'GET /api/admin/patients/:id/itinerary → patient_services:read', // cadeia Fase 7 — leitura do itinerário (D433/D434)
+        'GET /api/admin/patients/kanban/services → patient_services:read', // cadeia Fase 8 — agregado do subcard (Plano B)
       ].sort(),
     );
   });

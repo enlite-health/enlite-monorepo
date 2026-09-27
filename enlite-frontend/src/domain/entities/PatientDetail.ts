@@ -17,7 +17,7 @@ export type { InsuranceProvider } from './PatientCoverage';
 export type { PatientCoverageEmergencyContact, PatientCoverageEmergencyContactInput, CoverageEmergencyContactKind } from './PatientCoverage';
 import type { PatientCoverageEmergencyContact } from './PatientCoverage';
 export type { PatientAddressLogisticsPayload } from './PatientAddress';
-export type { PatientKanbanItem, PatientFunnelData } from './PatientLifecycle';
+export type { PatientKanbanItem, PatientKanbanServiceSummary, PatientFunnelData } from './PatientLifecycle';
 // Só os 2 tipos que algum consumidor importa DAQUI (o resto — payloads de escrita, enums —
 // vem direto de `PatientContractedService.ts`; reexportar tudo aqui estourava o teto de 400).
 export type { PatientContractedServiceDetail, PatientContractedServiceProvider } from './PatientContractedService';

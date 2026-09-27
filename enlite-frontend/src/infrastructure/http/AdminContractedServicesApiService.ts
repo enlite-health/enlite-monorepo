@@ -12,6 +12,7 @@ import type {
   AssociateProviderBody,
   UpdateProviderBody,
 } from '@domain/entities/PatientContractedService';
+import type { PatientKanbanServiceSummary } from '@domain/entities/PatientLifecycle';
 
 export class ContractedServiceApiError extends Error {
   readonly status: number;
@@ -143,6 +144,20 @@ class AdminContractedServicesApiServiceClass {
       `/api/admin/patients/${patientId}/contracted-services/${serviceId}/activate-recruitment`,
     );
   }
+
+  /**
+   * GET /api/admin/patients/kanban/services — agregado do subcard do Kanban (fase 8, Plano B,
+   * DX-8.1). Uma chamada por carga do board, nunca uma por card. `country` reusa o mesmo filtro
+   * da listagem — omitido, o backend devolve todos os países que a RLS deixa ver.
+   */
+  async listKanbanServices(
+    country?: string,
+  ): Promise<KanbanServicesResult> {
+    return this.request<KanbanServicesResult>(
+      'GET',
+      `/api/admin/patients/kanban/services${country ? `?country=${encodeURIComponent(country)}` : ''}`,
+    );
+  }
 }
 
 /** Result of POST /:id/contracted-services/:sid/activate-recruitment. */
@@ -150,6 +165,11 @@ export interface ActivateRecruitmentResult {
   vacancyId: string;
   patientStatus: string;
   statusChanged: boolean;
+}
+
+/** Result of GET /api/admin/patients/kanban/services (fase 8, DX-8.1/8.5). */
+export interface KanbanServicesResult {
+  patients: Array<{ patientId: string; asOf: string; services: PatientKanbanServiceSummary[] }>;
 }
 
 export const AdminContractedServicesApiService = new AdminContractedServicesApiServiceClass();

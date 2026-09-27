@@ -22,6 +22,21 @@ export interface PatientStatusHistoryEntry {
   at: string; // ISO
 }
 
+/**
+ * Uma linha do subcard do Kanban (fase 8, DX-8.1/8.5): um serviço contratado ativo do
+ * paciente, com o par `cobertas`/`contratadas` (ambos do agregado `GET
+ * /patients/kanban/services`, nunca calculado no cliente) e o sinal de vaga viva.
+ */
+export interface PatientKanbanServiceSummary {
+  contractedServiceId: string;
+  serviceCode: string;
+  contratadas: { weekly: number | null; authorized: number | null };
+  /** Horas cobertas do itinerário (mesma conta do detalhe, `computeServiceCoverage`). */
+  cobertas: number;
+  /** Vaga viva (a mesma condição do `liveVacancyId` da ficha) — presente = já existe vacante. */
+  liveVacancyId: string | null;
+}
+
 /** Row shape used by the patient kanban board (grouped by status). */
 export interface PatientKanbanItem {
   id: string;
@@ -32,6 +47,11 @@ export interface PatientKanbanItem {
   status: string | null;
   /** Funil de admissão (spec 012): SOLICITANTE | ADMISSION | PENDING_ADMISSION | DONE — a coluna do board. */
   admissionStatus: string;
+  /**
+   * Serviços contratados ativos, do agregado do subcard (fase 8, DX-8.9). `undefined` = o
+   * agregado ainda não carregou (ou falhou); `[]` = carregou e o paciente não tem serviço ativo.
+   */
+  services?: PatientKanbanServiceSummary[];
   // Fase 4 — rastreabilidade / SLA (aditivo; opcional para não quebrar fixtures).
   /** ISO string of when the patient entered the current status column. */
   stageEnteredAt?: string | null;

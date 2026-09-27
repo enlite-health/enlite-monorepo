@@ -10,6 +10,7 @@ import { AdminPatientAddressesController } from '../controllers/AdminPatientAddr
 import { AdminInsuranceProvidersController } from '../controllers/AdminInsuranceProvidersController';
 import { AdminPatientContractedServicesController } from '../controllers/AdminPatientContractedServicesController';
 import { AdminPatientItineraryController } from '../controllers/AdminPatientItineraryController';
+import { AdminPatientKanbanServicesController } from '../controllers/AdminPatientKanbanServicesController';
 import { AdminPatientDiagnosesController } from '@modules/diagnosis/interfaces/controllers/AdminPatientDiagnosesController';
 import { AdminTerminologySearchController } from '@modules/terminology/interfaces/controllers/AdminTerminologySearchController';
 import { AdminPatientContactRowsController } from '../controllers/AdminPatientContactRowsController';
@@ -78,6 +79,8 @@ export function createAdminPatientsRoutes(
   // banco (o pool só é pego dentro de `readPatientItinerary`), então nenhum teste que constrói o
   // factory sem os 15º-em-diante argumentos precisa de `DATABASE_URL`.
   itineraryController: AdminPatientItineraryController = new AdminPatientItineraryController(),
+  // Agregado do subcard (fase 8, DX-8.1) — default, mesmo molde; o construtor não abre banco.
+  kanbanServicesController: AdminPatientKanbanServicesController = new AdminPatientKanbanServicesController(),
 ): Router {
   const router = Router();
   const staffOnly = authMiddleware.requireStaff();
@@ -152,6 +155,11 @@ export function createAdminPatientsRoutes(
   // Pontos do mapa de pacientes (REQ-04, DEC-14). POST com corpo (lex C2: coordenada fora da URL). ESTÁTICA: antes de /patients/:id.
   router.post('/patients/map', staffOnly, perm.require('patient_address', 'read'), countryScope, (req: Request, res: Response) =>
     mapController.getMapPoints(req, res),
+  );
+
+  // Agregado do subcard do Kanban (fase 8, Plano B): 1 chamada por carga do board. ESTÁTICA, antes de /patients/:id.
+  router.get('/patients/kanban/services', staffOnly, perm.require('patient_services', 'read'), countryScope, (req: Request, res: Response) =>
+    kanbanServicesController.list(req, res),
   );
 
   router.get('/patients', staffOnly, perm.require('patient', 'read'), countryScope, (req: Request, res: Response) =>
