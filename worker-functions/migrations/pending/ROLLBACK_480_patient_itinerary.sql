@@ -19,8 +19,10 @@
 
 DO $$
 BEGIN
-  IF (SELECT count(*) FROM patient_itinerary_assignment) > 0 THEN
-    RAISE EXCEPTION 'há alocação — o rollback apagaria quem cuida de quem';
+  IF to_regclass('patient_itinerary_assignment') IS NOT NULL THEN
+    IF (SELECT count(*) FROM patient_itinerary_assignment) > 0 THEN
+      RAISE EXCEPTION 'há alocação — o rollback apagaria quem cuida de quem';
+    END IF;
   END IF;
 END $$;
 

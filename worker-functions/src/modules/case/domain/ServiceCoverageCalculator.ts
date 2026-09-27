@@ -19,12 +19,19 @@ import { slotMinutes } from './ItinerarySchedule';
  */
 export type ServiceWeeklyCoveredHours = number & { readonly __unit: 'service-weekly-covered-hours' };
 
-export type ServiceCoverageAssignmentStatus = 'ACTIVE' | 'ENDED' | 'CANCELLED';
+/**
+ * Fonte única do conjunto fechado de status da alocação (achado #2 do gate parcial da fase 7):
+ * o CHECK `pia_status_check` da migration 480 e as 3 declarações TS (domínio, infra, zod)
+ * divergiam. `PatientItineraryReader` (infra) e `itinerarySchemas` (interfaces) importam daqui —
+ * infra e interfaces podem depender do domínio, nunca o contrário.
+ */
+export const ITINERARY_ASSIGNMENT_STATUSES = ['ACTIVE', 'ENDED', 'CANCELLED'] as const;
+export type ItineraryAssignmentStatus = (typeof ITINERARY_ASSIGNMENT_STATUSES)[number];
 
 export interface ServiceCoverageAssignment {
   validFrom: string;
   validTo: string | null;
-  status: ServiceCoverageAssignmentStatus;
+  status: ItineraryAssignmentStatus;
 }
 
 export interface ServiceCoverageSlot {

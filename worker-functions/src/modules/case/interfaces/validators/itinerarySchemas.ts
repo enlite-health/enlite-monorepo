@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ITINERARY_ASSIGNMENT_STATUSES } from '../../domain/ServiceCoverageCalculator';
 
 /**
  * itinerarySchemas — o contrato publicado da leitura do itinerário (fase 7, DX-7.8).
@@ -10,7 +11,7 @@ import { z } from 'zod';
 
 const ISO_DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
-export const itineraryAssignmentStatusSchema = z.enum(['ACTIVE', 'ENDED', 'CANCELLED']);
+export const itineraryAssignmentStatusSchema = z.enum(ITINERARY_ASSIGNMENT_STATUSES);
 
 export const patientItineraryAssignmentSchema = z.object({
   workerId: z.string().uuid(),
