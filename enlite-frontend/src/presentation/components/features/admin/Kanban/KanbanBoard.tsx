@@ -202,8 +202,17 @@ export function KanbanBoard({ stages, vacancyId, onMove, onPromoteBlocked, onRes
    * Drop numa coluna que aceita: o shell já filtrou coluna inválida. Aqui só
    * fica a regra do funil — card órfão (sem encuadre) não move, e REJECTED /
    * SELECTED abrem modal em vez de mover direto.
+   *
+   * P20b (DX-5.16): `closestCenter` (dnd-kit) resolve o drop sobre uma coluna
+   * `droppable:false` (ex.: Compatíveis) para a coluna HABILITADA de centro mais
+   * próximo — que pode ser a própria coluna de origem (achado do P20). O shell
+   * já entrega `fromColumnId` pronto para essa checagem (ver KanbanBoardShell,
+   * doc de `onDrop`); solto sobre a própria origem é sempre no-op aqui, nenhum
+   * `PUT` sai.
    */
-  function handleDrop({ item, toColumnId }: KanbanDropEvent<FunnelCard>) {
+  function handleDrop({ item, fromColumnId, toColumnId }: KanbanDropEvent<FunnelCard>) {
+    if (fromColumnId === toColumnId) return;
+
     const encuadreId = item.encuadreId;
     // Órfão já é drag-disabled no card; o guard evita request por estado velho.
     if (!encuadreId) return;
