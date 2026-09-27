@@ -106,7 +106,7 @@ export class GetFunnelByWorkerUseCase {
       // Candidato de match salvo pelo algoritmo e nunca mensageado não é convite.
       if (isMatchedNotInvited(row.stage, row.source, row.messaged_at)) continue;
 
-      const column = deriveKanbanColumn(row.stage, row.source);
+      const column = deriveKanbanColumn(row.stage, row.source, row.messaged_at);
 
       let bucket = workersPorColuna.get(column);
       if (!bucket) {
