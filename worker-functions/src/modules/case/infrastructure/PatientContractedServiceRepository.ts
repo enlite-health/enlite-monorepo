@@ -15,6 +15,7 @@ import {
   ContractedServiceProviderRepository,
   type ContractedServiceProviderDetail,
 } from './ContractedServiceProviderRepository';
+import { syncItinerarySlots } from './PatientItinerarySlotSync';
 
 /**
  * Slot de horário do encuadre — o MESMO formato que `scheduleToJsonb` persiste em
@@ -166,6 +167,9 @@ export class PatientContractedServiceRepository {
 
   constructor(
     private readonly providerRepo: ContractedServiceProviderRepository = new ContractedServiceProviderRepository(),
+    /** Injeção só para o unitário (`PatientItinerarySlotSync.test.ts`, DX-7.5); os call sites de
+     * produção não mudam — o default é a derivação real. */
+    private readonly syncSlots: typeof syncItinerarySlots = syncItinerarySlots,
   ) {}
 
   private get pool(): Pool {
@@ -292,6 +296,12 @@ export class PatientContractedServiceRepository {
         if (input.deviceTypeCodes && input.deviceTypeCodes.length > 0) {
           await this.replaceDevices(serviceId, input.deviceTypeCodes, cli);
         }
+        // DX-7.5: a derivação roda na MESMA transação, só quando o corpo manda `schedule`
+        // (chave ausente = nada a sincronizar). Falhar aqui desfaz o INSERT acima (uma
+        // transação só; nada de slot sem serviço nem serviço com slot velho).
+        if (input.schedule !== undefined) {
+          await this.syncSlots(cli, serviceId, input.schedule ?? null, input.actorUid);
+        }
         const sel = await cli.query<ServiceRow>('SELECT * FROM patient_contracted_services WHERE id = $1', [serviceId]);
         return sel.rows[0];
       });
@@ -337,6 +347,11 @@ export class PatientContractedServiceRepository {
           const res = await cli.query(`UPDATE patient_contracted_services SET ${sets.join(', ')} WHERE id = $1`, params);
           // Linha inexistente → ROLLBACK (o `replaceDevices` acima pode já ter escrito) e null.
           if ((res.rowCount ?? 0) === 0) throw SERVICE_ROW_MISSING;
+        }
+        // DX-7.5: mesma régua do `create` — só quando o corpo manda `schedule` (Merge Patch:
+        // chave ausente não sincroniza nada).
+        if (patch.schedule !== undefined) {
+          await this.syncSlots(cli, serviceId, patch.schedule ?? null, patch.actorUid);
         }
         const sel = await cli.query<ServiceRow>('SELECT * FROM patient_contracted_services WHERE id = $1', [serviceId]);
         return sel.rows[0] ?? null;

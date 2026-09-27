@@ -140,6 +140,59 @@ describe('PatientContractedServiceRepository', () => {
     expect(upd.params.slice(1, 3)).toEqual([null, null]);
   });
 
+  // ── DX-7.5: a derivação de slots roda na MESMA transação, injetada como jest.fn() ──────────
+  it('create: schedule presente → syncSlots injetado 1× com (cli, serviceId, schedule, actorUid), ANTES do SELECT * de releitura', async () => {
+    const { cli, chamadas } = cliente();
+    const syncSlots = jest.fn(async () => {
+      chamadas.push({ sql: 'SYNC_SLOTS', params: [] });
+      return { upserted: 1, deactivated: 0 };
+    });
+    mockConnect.mockResolvedValue(cli);
+    const repo = new PatientContractedServiceRepository(fakeProviderRepo(), syncSlots);
+    const schedule = [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }];
+    await repo.create({ patientId: 'pat-1', serviceCode: 'AT', schedule, actorUid: 'uid-1' });
+    expect(syncSlots).toHaveBeenCalledTimes(1);
+    expect(syncSlots).toHaveBeenCalledWith(cli, 'svc-1', schedule, 'uid-1');
+    const syncIdx = chamadas.findIndex((c) => c.sql === 'SYNC_SLOTS');
+    const selectIdx = chamadas.findIndex((c) => /^SELECT \* FROM patient_contracted_services WHERE id/.test(c.sql));
+    expect(syncIdx).toBeGreaterThanOrEqual(0);
+    expect(selectIdx).toBeGreaterThan(syncIdx);
+  });
+
+  it('create: sem schedule (chave ausente) → syncSlots NUNCA chamado', async () => {
+    const { cli } = cliente();
+    const syncSlots = jest.fn();
+    mockConnect.mockResolvedValue(cli);
+    const repo = new PatientContractedServiceRepository(fakeProviderRepo(), syncSlots);
+    await repo.create({ patientId: 'pat-1', serviceCode: 'AT', actorUid: 'uid-1' });
+    expect(syncSlots).not.toHaveBeenCalled();
+  });
+
+  it('update: schedule: null (limpar horário) → syncSlots injetado 1× com null', async () => {
+    const { cli, chamadas } = cliente();
+    const syncSlots = jest.fn(async () => {
+      chamadas.push({ sql: 'SYNC_SLOTS', params: [] });
+      return { upserted: 0, deactivated: 3 };
+    });
+    mockConnect.mockResolvedValue(cli);
+    const repo = new PatientContractedServiceRepository(fakeProviderRepo(), syncSlots);
+    await repo.update('svc-1', { schedule: null, actorUid: 'uid-2' });
+    expect(syncSlots).toHaveBeenCalledTimes(1);
+    expect(syncSlots).toHaveBeenCalledWith(cli, 'svc-1', null, 'uid-2');
+    const syncIdx = chamadas.findIndex((c) => c.sql === 'SYNC_SLOTS');
+    const selectIdx = chamadas.findIndex((c) => /^SELECT \* FROM patient_contracted_services WHERE id/.test(c.sql));
+    expect(selectIdx).toBeGreaterThan(syncIdx);
+  });
+
+  it('update: sem a chave schedule (Merge Patch não toca) → syncSlots NUNCA chamado', async () => {
+    const { cli } = cliente();
+    const syncSlots = jest.fn();
+    mockConnect.mockResolvedValue(cli);
+    const repo = new PatientContractedServiceRepository(fakeProviderRepo(), syncSlots);
+    await repo.update('svc-1', { weeklyHours: 25, actorUid: 'uid-2' });
+    expect(syncSlots).not.toHaveBeenCalled();
+  });
+
   it('create/update: FK composta violada (address_id de OUTRO paciente, 23503 em pcs_address_same_patient_fk) → AddressNotOfPatientError, ROLLBACK', async () => {
     const fk = Object.assign(new Error('violates foreign key'), { code: '23503', constraint: 'pcs_address_same_patient_fk' });
     for (const op of ['create', 'update'] as const) {
