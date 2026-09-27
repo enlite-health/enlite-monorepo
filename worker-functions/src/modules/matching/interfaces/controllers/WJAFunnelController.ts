@@ -12,7 +12,7 @@ import {
 } from '../../domain/WorkerApplicationEligibility';
 import { BlockedApplicationQueryRepository } from '../../infrastructure/BlockedApplicationQueryRepository';
 import { BlockedApplicationRepository } from '../../infrastructure/BlockedApplicationRepository';
-import { deriveKanbanColumn, isMatchedNotInvited, KANBAN_COLUMN_BLOCKED } from '../../domain/kanbanColumn';
+import { deriveKanbanColumn, KANBAN_COLUMN_BLOCKED, KanbanColumn } from '../../domain/kanbanColumn';
 import {
   interviewScheduleSchema,
   interviewDatetimeSql,
@@ -20,7 +20,7 @@ import {
   INTERVIEW_TIME_RESOLVED_SQL,
 } from '../../domain/interviewSchedule';
 import { REJECTION_REASON_CATEGORIES } from '../../domain/Encuadre';
-import { cellsOfRequest, projectWorkerFields, NOME_REDIGIDO } from '@modules/identity/permissions';
+import { cellsOfRequest, projectWorkerFields, NOME_REDIGIDO, podeVerCandidatoDoMatch } from '@modules/identity/permissions';
 import { emitirTrilhaDeContato } from '@shared/audit/contactAccessFromRequest';
 import { RESEND_COOLDOWN_HOURS, resendCooldownUntilSql } from '../../../notification/application/VacancyInviteGuard';
 import { PubSubClient } from '@shared/events/PubSubClient';
@@ -177,6 +177,7 @@ export class WJAFunnelController {
       // Migration 230: INITIATED removido → PRE_SCREENING + INICIADO adicionados
       // Feature BLOQUEADO: tentativas negadas (dispensadas ou não) → Rejeitados, D433
       const stages: Record<string, unknown[]> = {
+        COMPATIBLE: [], // Fase 5 (D432): candidato do match nunca mensageado
         INVITED: [],
         INICIADO: [],       // INVITED+source='manual' — postulação real, não-bloqueada
         PRE_SCREENING: [],  // Antigo INITIATED — entrou no formulário Talentum
@@ -197,7 +198,23 @@ export class WJAFunnelController {
 
       // Decrypt WJA names + blocked worker names em paralelo no controller (não no repo)
       const [visiveisWja, decryptedBlockedNames] = await Promise.all([
-        Promise.all(result.rows.map(async (row): Promise<{ name: string; phone: string | null }> => {
+        Promise.all(result.rows.map(async (row): Promise<{
+          name: string;
+          phone: string | null;
+          column: KanbanColumn;
+          matchRedigido: boolean;
+        }> => {
+          // Fase 5 (D432): a coluna decide ANTES da projeção — Compatíveis sem
+          // `match:read` nem chama projectWorkerFields (zero KMS), mesmo padrão
+          // do F2/C3 pra worker_contact:read.
+          const column = deriveKanbanColumn(
+            row.funnel_stage as string | null,
+            row.source as string | null,
+            row.messaged_at as string | Date | null,
+          );
+          if (column === 'COMPATIBLE' && !podeVerCandidatoDoMatch(cells)) {
+            return { name: NOME_REDIGIDO, phone: null, column, matchRedigido: true };
+          }
           // O TELEFONE entra aqui junto do nome. Ele já vem em texto claro do
           // SQL (COALESCE(w.phone, e.worker_raw_phone)) e por isso não custa
           // KMS nenhum — se ficasse fora da projeção, sairia redigindo o nome e
@@ -212,7 +229,7 @@ export class WJAFunnelController {
           const wid = row.worker_id as string | null;
           const name = visivel.name
             ?? (wid ? `Worker #${wid.slice(-8)}` : 'Worker sem identificação');
-          return { name, phone: visivel.phone ?? null };
+          return { name, phone: visivel.phone ?? null, column, matchRedigido: false };
         })),
         Promise.all(blockedAttempts.map(async (ba): Promise<{ name: string | null; phone: string | null }> => {
           if (!ba.workerId) return { name: null, phone: null };
@@ -246,21 +263,21 @@ export class WJAFunnelController {
       for (let i = 0; i < result.rows.length; i++) {
         const row = result.rows[i];
         const stage = row.funnel_stage as string | null;
-        const source = row.source as string | null;
+        const { column, matchRedigido } = visiveisWja[i];
 
-        // AC2 (86ajb48v1): a system match that was never messaged is a match
-        // candidate, not an invitation — running a match writes ALL top-N as
-        // INVITED/system, so keeping them here inflates "Invitados". They live
-        // only in the match modal until a real send sets messaged_at.
-        if (isMatchedNotInvited(stage, source, row.messaged_at as string | Date | null)) {
-          continue;
+        // Fase 5 (D432): Compatíveis (candidato do match nunca mensageado) entra
+        // no quadro, mas não conta em "N encuadres" (o subtítulo continua sendo
+        // só os WJAs de verdade — D437).
+        if (column !== 'COMPATIBLE') {
+          classifiedCount++;
         }
-        classifiedCount++;
 
         const item = {
           id: row.id,
-          encuadreId: row.encuadre_id ?? null,
-          workerId: row.worker_id ?? null,
+          // Compatíveis sem `match:read`: sem encuadreId (sem arrasto, sem menu,
+          // sem notas) e sem workerId (nada foi revelado — DX-5.7).
+          encuadreId: matchRedigido ? null : (row.encuadre_id ?? null),
+          workerId: matchRedigido ? null : (row.worker_id ?? null),
           workerName: visiveisWja[i].name,
           workerPhone: visiveisWja[i].phone,
           occupation: row.occupation_raw,
@@ -292,9 +309,11 @@ export class WJAFunnelController {
             : null,
         };
 
-        // Classificação 100% baseada em (stage, source) — SSOT em deriveKanbanColumn
-        // (domain/kanbanColumn.ts), compartilhado com a aba de encuadre do worker-detail.
-        stages[deriveKanbanColumn(stage, source)].push(item);
+        // Classificação 100% baseada em (stage, source, messagedAt) — SSOT em
+        // deriveKanbanColumn (domain/kanbanColumn.ts), compartilhado com a aba de
+        // encuadre do worker-detail. `column` já foi calculada acima, junto da
+        // projeção (a coluna decide se o nome pode sair).
+        stages[column].push(item);
       }
 
       // Merge blocked attempt cards. Tentativas negadas (dispensadas ou não) →
@@ -347,7 +366,7 @@ export class WJAFunnelController {
         success: true,
         data: {
           stages,
-          totalEncuadres: classifiedCount, // WJAs shown on the board (excludes matched-not-invited system rows)
+          totalEncuadres: classifiedCount, // cards do funil, SEM os de Compatíveis (subtítulo do quadro)
         },
       });
     } catch (error) {
