@@ -1764,6 +1764,7 @@
     },
     "kanban": {
       "columns": {
+        "COMPATIBLE": "Compatibles",
         "INVITED": "Invitados",
         "BLOQUEADO": "Bloqueados",
         "IN_PROGRESS": "En Progreso",
@@ -2390,6 +2391,8 @@
           "totalEncuadres": "encuadres totales",
           "refresh": "Actualizar",
           "moveErrorTitle": "No se pudo mover el encuadre",
+          "compatibleReadOnlyTitle": "No se puede mover a Invitados",
+          "compatibleReadOnlyInviteBySend": "Para invitar, enviá el mensaje desde la tarjeta.",
           "workerNotEligibleTitle": "Worker con registro incompleto",
           "workerEligibilityReason": {
             "registration_incomplete": "El worker todavía no completó su registro o no envió todos los documentos obligatorios. Solicítale completar el perfil antes de avanzar en el embudo.",

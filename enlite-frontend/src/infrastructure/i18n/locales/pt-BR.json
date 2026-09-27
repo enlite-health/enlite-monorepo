@@ -1764,6 +1764,7 @@
     },
     "kanban": {
       "columns": {
+        "COMPATIBLE": "Compatíveis",
         "INVITED": "Convidados",
         "BLOQUEADO": "Bloqueados",
         "IN_PROGRESS": "Em Progresso",
@@ -2374,6 +2375,8 @@
           "totalEncuadres": "encuadres totais",
           "refresh": "Atualizar",
           "moveErrorTitle": "Não foi possível mover o encuadre",
+          "compatibleReadOnlyTitle": "Não é possível mover para Convidados",
+          "compatibleReadOnlyInviteBySend": "Para convidar, envie a mensagem pela tarjeta.",
           "workerNotEligibleTitle": "Worker com cadastro incompleto",
           "workerEligibilityReason": {
             "registration_incomplete": "O worker ainda não completou o cadastro ou não enviou todos os documentos obrigatórios. Peça ao worker pra completar o perfil antes de avançar no funil.",
