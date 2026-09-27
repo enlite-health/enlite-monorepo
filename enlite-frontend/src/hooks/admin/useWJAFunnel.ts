@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { ApiError } from '@infrastructure/http/ApiError';
 import type { EncuadreRole } from '@domain/entities/EncuadreRole';
+import { MOVE_REASON_REQUIRED } from '@domain/entities/MoveReason';
 
 export interface MoveEncuadreError {
   message: string;
@@ -70,6 +71,7 @@ export interface FunnelStages {
   COMPLETED: FunnelEncuadre[];
   CONFIRMED: FunnelEncuadre[];
   SELECTED: FunnelEncuadre[];
+  QUICK_RESPONSE_TEAM: FunnelEncuadre[];
   REJECTED: FunnelEncuadre[];
 }
 
@@ -113,7 +115,7 @@ export function useWJAFunnel(vacancyId: string | undefined) {
   const moveEncuadre = useCallback(async (
     encuadreId: string,
     targetStage: string,
-    rejectionReasonCategory?: string,
+    reasonCategory?: string,
     role?: EncuadreRole,
     /** Data/hora da entrevista ao agendar. Ausente = "ainda não sei" (válido). */
     schedule?: { interviewDate: string; interviewTime: string; interviewMeetLink?: string },
@@ -121,15 +123,19 @@ export function useWJAFunnel(vacancyId: string | undefined) {
     try {
       await AdminApiService.moveEncuadre(encuadreId, {
         targetStage,
-        rejectionReasonCategory,
+        reasonCategory,
         role,
         ...schedule,
       });
       await fetchFunnel();
       return null;
     } catch (err) {
-      console.error('Failed to move encuadre:', err);
       if (err instanceof ApiError) {
+        // 422 MOVE_REASON_REQUIRED é fluxo esperado (DX-4.6/DX-4.10): o board abre o diálogo
+        // do motivo em vez de logar erro.
+        if (err.code !== MOVE_REASON_REQUIRED) {
+          console.error('Failed to move encuadre:', err);
+        }
         return {
           message: err.message,
           code: err.code,
@@ -137,6 +143,7 @@ export function useWJAFunnel(vacancyId: string | undefined) {
           workerStatus: err.workerStatus,
         };
       }
+      console.error('Failed to move encuadre:', err);
       return {
         message: err instanceof Error ? err.message : 'Erro desconhecido',
       };

@@ -316,7 +316,7 @@ class AdminApiServiceClass {
     encuadreId: string,
     data: {
       targetStage: string;
-      rejectionReasonCategory?: string;
+      reasonCategory?: string;
       rejectionReason?: string;
       role?: 'TITULAR' | 'RAPID_RESPONSE';
       /** Data (YYYY-MM-DD) e hora (HH:MM) locais da operação; o servidor converte o fuso. */

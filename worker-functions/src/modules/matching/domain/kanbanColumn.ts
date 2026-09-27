@@ -21,6 +21,7 @@ export type KanbanColumn =
   | 'COMPLETED'
   | 'CONFIRMED'
   | 'SELECTED'
+  | 'QUICK_RESPONSE_TEAM'
   | 'REJECTED';
 
 /** Column for a blocked postulation attempt — Rejeitados (D433: 'Bloqueados não existe; bloqueado vai para Rejeitados'). */
@@ -73,6 +74,7 @@ const KANBAN_COLUMN_ADVANCEMENT: readonly KanbanColumn[] = [
   'COMPLETED',
   'CONFIRMED',
   'SELECTED',
+  'QUICK_RESPONSE_TEAM', // entrada do quadro C, invariante 1 (Fase 4) — mais avançada que SELECTED
 ];
 
 /**
@@ -109,6 +111,7 @@ export function mostAdvancedColumn(a: KanbanColumn, b: KanbanColumn): KanbanColu
  */
 export function deriveKanbanColumn(stage: string | null, source: string | null): KanbanColumn {
   if (stage === 'SELECTED') return 'SELECTED';
+  if (stage === 'QUICK_RESPONSE_TEAM') return 'QUICK_RESPONSE_TEAM';
   if (stage === 'REJECTED') return 'REJECTED';
   if (stage === 'CONFIRMED') return 'CONFIRMED';
   if (stage !== null && ['COMPLETED', 'QUALIFIED', 'IN_DOUBT'].includes(stage)) return 'COMPLETED';
@@ -153,4 +156,25 @@ export function tallyKanbanColumns(rows: readonly KanbanTallyRow[]): FunnelColum
     counts[deriveKanbanColumn(r.stage, r.source) as keyof FunnelColumnCounts] += r.n;
   }
   return counts;
+}
+
+/**
+ * Ordem que o operador vê no quadro B (funil de candidatura); base do "salto" (DX-4.5,
+ * execucao/fase-4.md) — espelha `VACANCY_FUNNEL_COLUMNS` do front (funnelTabsConfig.ts).
+ * IN_PROGRESS mora dentro de PRE_SCREENING no quadro; COMPLETED/QUALIFIED/IN_DOUBT já
+ * chegam colapsados em COMPLETED por `deriveKanbanColumn`. BLOQUEADO fica de fora — não
+ * tem posição própria no quadro (vira card em REJECTED, D433).
+ */
+export const VACANCY_BOARD_COLUMNS = [
+  'INVITED', 'INICIADO', 'PRE_SCREENING', 'COMPLETED', 'CONFIRMED', 'SELECTED', 'QUICK_RESPONSE_TEAM', 'REJECTED',
+] as const satisfies readonly KanbanColumn[];
+
+/**
+ * Posição no quadro; IN_PROGRESS mora na coluna PRE_SCREENING (como no front,
+ * funnelTabsConfig.ts:21) — não tem posição própria em `VACANCY_BOARD_COLUMNS`.
+ */
+export function boardPosition(stage: string | null, source: string | null): number {
+  const column = deriveKanbanColumn(stage, source);
+  const boardColumn = column === 'IN_PROGRESS' ? 'PRE_SCREENING' : column;
+  return VACANCY_BOARD_COLUMNS.indexOf(boardColumn as (typeof VACANCY_BOARD_COLUMNS)[number]);
 }

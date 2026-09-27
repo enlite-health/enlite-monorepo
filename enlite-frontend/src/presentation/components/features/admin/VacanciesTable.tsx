@@ -23,7 +23,7 @@ export interface VacancyRow {
   status: string;
   priority: VacancyPriority | null;
   diasAberto: string;
-  /** As 7 contagens do funil (DX-2.7), recorte do board — vêm prontas do backend (stageCounts). */
+  /** As 8 contagens do funil (DX-2.7, Fase 4: +QUICK_RESPONSE_TEAM), recorte do board — vêm prontas do backend (stageCounts). */
   stageCounts: Record<string, number>;
   postulados: string;
   faltantes: string;

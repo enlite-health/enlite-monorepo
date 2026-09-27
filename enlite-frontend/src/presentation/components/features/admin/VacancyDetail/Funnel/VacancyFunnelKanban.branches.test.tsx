@@ -158,6 +158,23 @@ describe('VacancyFunnelKanban — branches', () => {
     expect(screen.getByText('Falha ao mover o encuadre')).toBeInTheDocument();
   });
 
+  // Fase 4 (DX-4.6/DX-4.10): 422 MOVE_REASON_REQUIRED é fluxo esperado — o KanbanBoard já
+  // abre o diálogo do motivo, então o banner âmbar do topo NÃO deve aparecer.
+  it('moveError code=MOVE_REASON_REQUIRED: NÃO mostra o banner (o board já abre o diálogo do motivo)', async () => {
+    mockState = withBoardData();
+    moveEncuadre.mockResolvedValue({
+      message: 'move_reason_required',
+      code: 'MOVE_REASON_REQUIRED',
+      reason: 'JUMP',
+    });
+    render(<VacancyFunnelKanban vacancyId="vac-1" />);
+
+    fireEvent.click(screen.getByTestId('fake-move'));
+
+    await waitFor(() => expect(moveEncuadre).toHaveBeenCalled());
+    expect(screen.queryByTestId('kanban-move-error')).not.toBeInTheDocument();
+  });
+
   // D300 — o handler traduz o motivo do backend para a frase que a recrutadora lê.
   // O valor volta para o CARD (não para o banner do topo): a ação é de uma tarjeta,
   // e o erro tem de aparecer onde ela clicou.

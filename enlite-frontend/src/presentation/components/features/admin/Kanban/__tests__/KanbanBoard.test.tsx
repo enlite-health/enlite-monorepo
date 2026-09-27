@@ -137,6 +137,7 @@ function emptyStages(): FunnelStages {
     COMPLETED: [],
     CONFIRMED: [],
     SELECTED: [],
+    QUICK_RESPONSE_TEAM: [],
     REJECTED: [],
   };
 }
@@ -155,12 +156,12 @@ beforeEach(() => {
 // ── Visual Rendering ─────────────────────────────────────────────────────────
 
 describe('KanbanBoard — column rendering', () => {
-  it('renders all 7 columns', () => {
+  it('renders all 8 columns', () => {
     render(<KanbanBoard stages={emptyStages()} vacancyId="test-vacancy" onMove={noop} />);
 
     const expectedColumns = [
       'INVITED', 'INICIADO', 'PRE_SCREENING', 'COMPLETED',
-      'CONFIRMED', 'SELECTED', 'REJECTED',
+      'CONFIRMED', 'SELECTED', 'QUICK_RESPONSE_TEAM', 'REJECTED',
     ];
 
     for (const id of expectedColumns) {
@@ -168,7 +169,7 @@ describe('KanbanBoard — column rendering', () => {
     }
   });
 
-  it('renders columns in correct order (INVITED → INICIADO → PRE_SCREENING → COMPLETED → CONFIRMED → SELECTED → REJECTED)', () => {
+  it('renders columns in correct order (INVITED → INICIADO → PRE_SCREENING → COMPLETED → CONFIRMED → SELECTED → QUICK_RESPONSE_TEAM → REJECTED)', () => {
     render(<KanbanBoard stages={emptyStages()} vacancyId="test-vacancy" onMove={noop} />);
 
     const columns = screen.getAllByTestId(/^kanban-column-[A-Z_]+$/);
@@ -176,7 +177,7 @@ describe('KanbanBoard — column rendering', () => {
 
     expect(ids).toEqual([
       'INVITED', 'INICIADO', 'PRE_SCREENING', 'COMPLETED',
-      'CONFIRMED', 'SELECTED', 'REJECTED',
+      'CONFIRMED', 'SELECTED', 'QUICK_RESPONSE_TEAM', 'REJECTED',
     ]);
   });
 
@@ -330,7 +331,7 @@ describe('KanbanBoard — edge cases', () => {
     render(<KanbanBoard stages={emptyStages()} vacancyId="test-vacancy" onMove={noop} />);
 
     const columns = screen.getAllByTestId(/^kanban-column-[A-Z_]+$/);
-    expect(columns).toHaveLength(7);
+    expect(columns).toHaveLength(8);
   });
 
   it('renders multiple cards across different Talentum columns', () => {
@@ -627,7 +628,8 @@ describe('KanbanBoard — menu "Mover a…"', () => {
     fireEvent.click(screen.getByTestId('move-to-button'));
     fireEvent.click(screen.getByTestId('move-to-option-INVITED'));
 
-    expect(onMove).toHaveBeenCalledWith('enc-42', 'INVITED');
+    // Fase 4 (DX-4.6): o `move()` interno sempre repassa os 5 argumentos a onMove.
+    expect(onMove).toHaveBeenCalledWith('enc-42', 'INVITED', undefined, undefined, undefined);
   });
 
   /**
@@ -699,7 +701,7 @@ describe('KanbanBoard — menu "Mover a…"', () => {
     fireEvent.click(within(screen.getByTestId('role-option-rapid-response')).getByRole('radio'));
     fireEvent.click(screen.getByTestId('role-confirm'));
 
-    expect(onMove).toHaveBeenCalledWith('enc-99', 'SELECTED', undefined, 'RAPID_RESPONSE');
+    expect(onMove).toHaveBeenCalledWith('enc-99', 'SELECTED', undefined, 'RAPID_RESPONSE', undefined);
   });
 
   it('card de tentativa negada não tem reject-button nem undismiss-button (Rechazar/Voltar saíram do card, DX-2.9)', () => {
@@ -794,7 +796,7 @@ describe('KanbanBoard — "Rechazar" num card com encuadreId (não bloqueado)', 
     fireEvent.click(within(screen.getByTestId('rejection-option-worker-declined')).getByRole('radio'));
     fireEvent.click(screen.getByTestId('rejection-confirm'));
 
-    expect(onMove).toHaveBeenCalledWith('enc-rej', 'REJECTED', 'WORKER_DECLINED');
+    expect(onMove).toHaveBeenCalledWith('enc-rej', 'REJECTED', 'WORKER_DECLINED', undefined, undefined);
   });
 });
 

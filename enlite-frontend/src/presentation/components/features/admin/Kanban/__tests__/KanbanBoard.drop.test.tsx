@@ -78,14 +78,15 @@ describe('KanbanBoard — handleDrop', () => {
     drop(card(), 'REJECTED');
     expect(onMove).not.toHaveBeenCalled();
     fireEvent.click(screen.getByTestId('rejection-submit'));
-    await waitFor(() => expect(onMove).toHaveBeenCalledWith('uuid-1', 'REJECTED', 'NO_SHOW'));
+    // Fase 4 (DX-4.6): o `move()` interno sempre repassa os 5 argumentos a onMove.
+    await waitFor(() => expect(onMove).toHaveBeenCalledWith('uuid-1', 'REJECTED', 'NO_SHOW', undefined, undefined));
   });
 
   it('SELECTED asks the role first, then moves with it', async () => {
     renderBoard(card());
     drop(card(), 'SELECTED');
     fireEvent.click(screen.getByTestId('role-submit'));
-    await waitFor(() => expect(onMove).toHaveBeenCalledWith('uuid-1', 'SELECTED', undefined, 'TITULAR'));
+    await waitFor(() => expect(onMove).toHaveBeenCalledWith('uuid-1', 'SELECTED', undefined, 'TITULAR', undefined));
   });
 
   it('CONFIRMED asks the interview date first; "ainda não sei" moves without schedule', async () => {
@@ -98,6 +99,6 @@ describe('KanbanBoard — handleDrop', () => {
   it('any other column moves directly', () => {
     renderBoard(card());
     drop(card(), 'INVITED');
-    expect(onMove).toHaveBeenCalledWith('uuid-1', 'INVITED');
+    expect(onMove).toHaveBeenCalledWith('uuid-1', 'INVITED', undefined, undefined, undefined);
   });
 });

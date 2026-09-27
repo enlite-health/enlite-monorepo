@@ -17,7 +17,8 @@ const nonNegNumber = z.number().nonnegative();
  * Contagem por coluna do Kanban. As chaves são os ids de coluna de
  * `deriveKanbanColumn` (domain/kanbanColumn.ts) — deliberadamente NÃO rótulos
  * traduzidos: o id é o contrato, a tradução é da tela. BLOQUEADO fica de fora
- * (vem de worker_blocked_applications, não tem WJA).
+ * (vem de worker_blocked_applications, não tem WJA). QUICK_RESPONSE_TEAM: a coluna
+ * nova da Fase 4 entra no contrato; a tela a exibe depois (D437).
  */
 const funnelColumnCountsSchema = z.object({
   INVITED: nonNegInt,
@@ -27,6 +28,7 @@ const funnelColumnCountsSchema = z.object({
   COMPLETED: nonNegInt,
   CONFIRMED: nonNegInt,
   SELECTED: nonNegInt,
+  QUICK_RESPONSE_TEAM: nonNegInt,
   REJECTED: nonNegInt,
 });
 

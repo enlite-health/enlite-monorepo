@@ -267,6 +267,7 @@ test.describe('lista de vacantes e anotações @integration', () => {
       'vacancies-col-COMPLETED',
       'vacancies-col-CONFIRMED',
       'vacancies-col-SELECTED',
+      'vacancies-col-QUICK_RESPONSE_TEAM',
       'vacancies-col-REJECTED',
       'vacancies-col-applicants',
       'vacancies-col-missing',

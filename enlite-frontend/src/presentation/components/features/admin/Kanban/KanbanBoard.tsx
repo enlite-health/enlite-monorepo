@@ -11,6 +11,7 @@ import { VACANCY_FUNNEL_COLUMNS, columnItems } from '@presentation/components/fe
 import { compareByDistanceKm } from '@domain/value-objects/candidateDistance';
 import { useActionGate } from '@presentation/hooks/useCellAccess';
 import type { EncuadreRole } from '@domain/entities/EncuadreRole';
+import { MOVE_REASON_OPTIONS, MOVE_REASON_REQUIRED, isMoveReasonKind } from '@domain/entities/MoveReason';
 import type { PresentationInviteResult } from '@infrastructure/http/AdminPresentationInviteApiService';
 import { usePresentationInviteLast } from '@hooks/admin/usePresentationInviteLast';
 import type { PresentationInviteState } from './KanbanCardPresentationInvite';
@@ -21,7 +22,7 @@ interface KanbanBoardProps {
   onMove: (
     encuadreId: string,
     targetStage: string,
-    rejectionReasonCategory?: string,
+    reasonCategory?: string,
     role?: EncuadreRole,
     /** Data/hora da entrevista ao mover para CONFIRMED. Ausente = "ainda não sei". */
     schedule?: InterviewSchedule,
@@ -93,6 +94,18 @@ export function KanbanBoard({ stages, vacancyId, onMove, onPromoteBlocked, onRes
   const [showRoleSelect, setShowRoleSelect] = useState<{ encuadreId: string } | null>(null);
   const [showScheduleSelect, setShowScheduleSelect] = useState<{ encuadreId: string } | null>(null);
   /**
+   * Fase 4 (DX-4.6/DX-4.10): a API recusou o `move` (422 `MOVE_REASON_REQUIRED`) por salto ou
+   * saída de Rejeitados — guarda o movimento pendente (com papel/agendamento, se houver) e abre
+   * o diálogo do motivo. O front nunca decide "o que é salto"; só reage ao 422.
+   */
+  const [pendingReason, setPendingReason] = useState<{
+    kind: 'JUMP' | 'LEAVE_REJECTED';
+    encuadreId: string;
+    targetStage: string;
+    role?: EncuadreRole;
+    schedule?: InterviewSchedule;
+  } | null>(null);
+  /**
    * Worker cujo modal de comentários (contact notes) está aberto. Chaveado
    * por workerId (não wjaId): o histórico é o MESMO em todas as colunas —
    * inclusive BLOQUEADO — e não zera quando o card é promovido.
@@ -157,6 +170,35 @@ export function KanbanBoard({ stages, vacancyId, onMove, onPromoteBlocked, onRes
   }));
 
   /**
+   * Ponto único de chamada da API (DX-4.6/DX-4.10): se ela recusar com 422
+   * `MOVE_REASON_REQUIRED` por salto ou saída de Rejeitados, guarda o movimento pendente
+   * (mesmos argumentos) e abre o diálogo do motivo — a regra de "o que é salto" mora só
+   * na API, o front nunca reimplementa. Entrar em Rejeitados continua perguntando ANTES
+   * (`handleDrop`), então `ENTER_REJECTED` nunca chega aqui pelo fluxo normal.
+   */
+  async function move(
+    encuadreId: string,
+    targetStage: string,
+    reasonCategory?: string,
+    role?: EncuadreRole,
+    schedule?: InterviewSchedule,
+  ): Promise<MoveEncuadreError | null> {
+    const result = await onMove(encuadreId, targetStage, reasonCategory, role, schedule);
+    if (result?.code === MOVE_REASON_REQUIRED && isMoveReasonKind(result.reason) && result.reason !== 'ENTER_REJECTED') {
+      setPendingReason({ kind: result.reason, encuadreId, targetStage, role, schedule });
+    }
+    return result;
+  }
+
+  /** Confirmar o diálogo do motivo: reenvia o MESMO movimento pendente, agora com a categoria. */
+  function handleMoveReasonSubmit(category: string) {
+    if (!pendingReason) return;
+    const { encuadreId, targetStage, role, schedule } = pendingReason;
+    setPendingReason(null);
+    void move(encuadreId, targetStage, category, role, schedule);
+  }
+
+  /**
    * Drop numa coluna que aceita: o shell já filtrou coluna inválida. Aqui só
    * fica a regra do funil — card órfão (sem encuadre) não move, e REJECTED /
    * SELECTED abrem modal em vez de mover direto.
@@ -180,7 +222,7 @@ export function KanbanBoard({ stages, vacancyId, onMove, onPromoteBlocked, onRes
       setShowScheduleSelect({ encuadreId });
       return;
     }
-    void onMove(encuadreId, toColumnId);
+    void move(encuadreId, toColumnId);
   }
 
   async function handleScheduleSubmit(
@@ -189,18 +231,18 @@ export function KanbanBoard({ stages, vacancyId, onMove, onPromoteBlocked, onRes
   ) {
     setShowScheduleSelect(null);
     // schedule=null → "ainda não sei": move mesmo assim, sem inventar horário.
-    await onMove(encuadreId, 'CONFIRMED', undefined, undefined, schedule ?? undefined);
+    await move(encuadreId, 'CONFIRMED', undefined, undefined, schedule ?? undefined);
   }
 
 
   async function handleRejectionSubmit(target: { encuadreId: string }, category: string) {
     setShowRejectionSelect(null);
-    await onMove(target.encuadreId, 'REJECTED', category);
+    await move(target.encuadreId, 'REJECTED', category);
   }
 
   async function handleRoleSubmit(encuadreId: string, role: EncuadreRole) {
     setShowRoleSelect(null);
-    await onMove(encuadreId, 'SELECTED', undefined, role);
+    await move(encuadreId, 'SELECTED', undefined, role);
   }
 
   /**
@@ -217,7 +259,7 @@ export function KanbanBoard({ stages, vacancyId, onMove, onPromoteBlocked, onRes
       setShowScheduleSelect({ encuadreId });
       return;
     }
-    void onMove(encuadreId, target);
+    void move(encuadreId, target);
   }
 
   return (
@@ -299,6 +341,23 @@ export function KanbanBoard({ stages, vacancyId, onMove, onPromoteBlocked, onRes
         <InterviewScheduleSelect
           onSubmit={(schedule) => handleScheduleSubmit(showScheduleSelect.encuadreId, schedule)}
           onCancel={() => setShowScheduleSelect(null)}
+        />
+      )}
+
+      {pendingReason && (
+        <RejectionReasonSelect
+          options={MOVE_REASON_OPTIONS[pendingReason.kind]}
+          titleKey={
+            pendingReason.kind === 'JUMP'
+              ? 'admin.kanban.moveReasonModal.titleJump'
+              : 'admin.kanban.moveReasonModal.titleLeaveRejected'
+          }
+          optionKeyPrefix="admin.kanban.moveReasonOptions"
+          confirmKey="admin.kanban.moveReasonModal.confirm"
+          cancelKey="admin.kanban.moveReasonModal.cancel"
+          testIdPrefix="move-reason"
+          onSubmit={handleMoveReasonSubmit}
+          onCancel={() => setPendingReason(null)}
         />
       )}
 

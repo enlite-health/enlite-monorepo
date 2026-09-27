@@ -10,8 +10,15 @@ describe('funnelTabsConfig', () => {
       'COMPLETED',
       'CONFIRMED',
       'SELECTED',
+      'QUICK_RESPONSE_TEAM',
       'REJECTED',
     ]);
+  });
+
+  it('QUICK_RESPONSE_TEAM (Fase 4, DX-4.12) é droppable e sem cor literal', () => {
+    const quickResponseTeam = VACANCY_FUNNEL_COLUMNS.find((c) => c.id === 'QUICK_RESPONSE_TEAM')!;
+    expect(quickResponseTeam.droppable).toBe(true);
+    expect(quickResponseTeam.color).toBe('bg-teal-500');
   });
 
   it('columnCount soma PRE_SCREENING + IN_PROGRESS', () => {
@@ -34,6 +41,7 @@ describe('funnelTabsConfig', () => {
       'COMPLETED',
       'CONFIRMED',
       'SELECTED',
+      'QUICK_RESPONSE_TEAM',
       'REJECTED',
       'POSTULATED',
       'PRE_SELECTED',

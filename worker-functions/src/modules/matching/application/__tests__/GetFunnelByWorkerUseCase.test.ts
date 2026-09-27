@@ -113,7 +113,7 @@ describe('GetFunnelByWorkerUseCase', () => {
     expect(result.total).toBe(0);
     expect(result.porEtapa).toEqual({
       INVITED: 0, INICIADO: 0, PRE_SCREENING: 0, IN_PROGRESS: 0,
-      COMPLETED: 0, CONFIRMED: 0, SELECTED: 0, REJECTED: 0,
+      COMPLETED: 0, CONFIRMED: 0, SELECTED: 0, QUICK_RESPONSE_TEAM: 0, REJECTED: 0,
     });
     expect(result.consolidado).toEqual(result.porEtapa);
   });

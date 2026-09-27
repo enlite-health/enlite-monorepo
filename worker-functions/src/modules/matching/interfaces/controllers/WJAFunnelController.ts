@@ -24,8 +24,14 @@ import { cellsOfRequest, projectWorkerFields, NOME_REDIGIDO } from '@modules/ide
 import { emitirTrilhaDeContato } from '@shared/audit/contactAccessFromRequest';
 import { RESEND_COOLDOWN_HOURS, resendCooldownUntilSql } from '../../../notification/application/VacancyInviteGuard';
 import { PubSubClient } from '@shared/events/PubSubClient';
-import { emitFunnelStageEvent, FUNNEL_STAGES, isFunnelStage } from '../../application/FunnelStageEventEmitter';
+import { emitFunnelStageEvent, isFunnelStage, MOVABLE_FUNNEL_STAGES, isMovableFunnelStage } from '../../application/FunnelStageEventEmitter';
 import { candidateDistanceKmSql } from '../../infrastructure/candidateDistanceSql';
+import {
+  requiredMoveReason,
+  isAllowedMoveReason,
+  MoveReasonRequiredError,
+  MoveReasonInvalidError,
+} from '../../domain/moveReason';
 
 /**
  * Papel opcional ao mover para SELECTED (feature "Equipe Armada").
@@ -178,6 +184,7 @@ export class WJAFunnelController {
         COMPLETED: [],      // agrupa COMPLETED + QUALIFIED + IN_DOUBT (tag diferencia)
         CONFIRMED: [],
         SELECTED: [],
+        QUICK_RESPONSE_TEAM: [], // Fase 4 (D430) — destino do arrasto manual, entrada do quadro C
         REJECTED: [],
       };
 
@@ -356,7 +363,7 @@ export class WJAFunnelController {
    * Moves encuadre to a new Kanban column by updating application_funnel_stage.
    * Also syncs encuadre.resultado for terminal states (SELECTED/REJECTED).
    *
-   * Body: { targetStage, rejectionReasonCategory?, rejectionReason?, role?,
+   * Body: { targetStage, reasonCategory?, rejectionReason?, role?,
    *         interviewDate?, interviewTime?, interviewMeetLink? }
    *
    * Migration 230: INITIATED replaced by PRE_SCREENING in validStages.
@@ -368,11 +375,19 @@ export class WJAFunnelController {
    * lembrete de 5min e marcação de falta nunca dispararam (0 execuções cada). Ambas são
    * OPCIONAIS: "ainda não sei" é caminho válido (design D4), porque bloquear o movimento
    * faria a recrutadora inventar horário para destravar o card.
+   *
+   * Fase 4 (D430/D434, invariante 11): salto de etapa e entrar/sair de Rejeitados exigem
+   * `reasonCategory` — a regra mora em `WF/domain/moveReason.ts` (requiredMoveReason),
+   * este método só chama. Sem motivo ou motivo fora da lista do tipo → 422
+   * (MOVE_REASON_REQUIRED / MOVE_REASON_INVALID) DENTRO da transação, antes de qualquer
+   * escrita — a checagem roda antes do upsert, então nada é gravado quando recusa.
+   * `targetStage` aceita QUICK_RESPONSE_TEAM (MOVABLE_FUNNEL_STAGES) — é movível mas não
+   * mensageável (DX-4.7): `emitFunnelStageEvent` só roda para as etapas de `isFunnelStage`.
    */
   async moveEncuadre(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      const { targetStage, rejectionReasonCategory, rejectionReason, role } = req.body;
+      const { targetStage, reasonCategory, rejectionReason, role } = req.body;
 
       const schedule = interviewScheduleSchema.safeParse({
         interviewDate: req.body?.interviewDate ?? undefined,
@@ -387,8 +402,8 @@ export class WJAFunnelController {
         return;
       }
 
-      if (!isFunnelStage(targetStage)) {
-        res.status(400).json({ success: false, error: `targetStage must be one of: ${FUNNEL_STAGES.join(', ')}` });
+      if (!isMovableFunnelStage(targetStage)) {
+        res.status(400).json({ success: false, error: `targetStage must be one of: ${MOVABLE_FUNNEL_STAGES.join(', ')}` });
         return;
       }
 
@@ -460,11 +475,33 @@ export class WJAFunnelController {
       const actorUid = ((req as any).user as { uid?: string } | undefined)?.uid ?? null;
       let stageEventId: string | null = null;
       await withActorContext(this.db, async (client) => {
-        const prev = await client.query<{ application_funnel_stage: string | null }>(
-          `SELECT application_funnel_stage FROM worker_job_applications WHERE worker_id = $1 AND job_posting_id = $2`,
+        const prev = await client.query<{ application_funnel_stage: string | null; source: string | null }>(
+          `SELECT application_funnel_stage, source FROM worker_job_applications WHERE worker_id = $1 AND job_posting_id = $2`,
           [workerId, jobPostingId],
         );
         const previousStage = prev.rows[0]?.application_funnel_stage ?? null;
+        const previousSource = prev.rows[0]?.source ?? null;
+
+        // Fase 4 (DX-4.6): a checagem roda DENTRO da transação, ANTES do upsert —
+        // se recusar, o catch externo faz ROLLBACK (actorContext.ts) e nada é escrito.
+        const moveReasonKind = requiredMoveReason(
+          prev.rows[0] ? { stage: previousStage, source: previousSource } : null,
+          targetStage,
+        );
+        if (moveReasonKind) {
+          if (reasonCategory === undefined || reasonCategory === null) {
+            throw new MoveReasonRequiredError(moveReasonKind);
+          }
+          if (!isAllowedMoveReason(moveReasonKind, reasonCategory)) {
+            throw new MoveReasonInvalidError(moveReasonKind);
+          }
+          // Lido pelo gatilho da trilha (migration 478, NULLIF) — carimba o motivo na
+          // MESMA transação, antes do upsert. Interceptado pelo poolMockSupport nos
+          // unit tests (regex de controle de transação): não é observável por mock,
+          // só no e2e com banco real.
+          await client.query(`SELECT set_config('app.move_reason', $1, true)`, [reasonCategory]);
+        }
+
         await client.query(
           `INSERT INTO worker_job_applications (
              worker_id, job_posting_id, application_funnel_stage, source,
@@ -504,13 +541,17 @@ export class WJAFunnelController {
                rejection_reason = COALESCE($3, rejection_reason),
                updated_at = NOW()
              WHERE id = $1`,
-            [id, rejectionReasonCategory ?? null, rejectionReason ?? null],
+            [id, reasonCategory ?? null, rejectionReason ?? null],
           );
         }
 
-        stageEventId = await emitFunnelStageEvent(client, {
-          workerId, jobPostingId, previousStage, targetStage, actorUid, source: 'kanban',
-        });
+        // DX-4.7: QUICK_RESPONSE_TEAM é movível mas não vira evento (sem mensagem
+        // de propósito) — só as etapas de FUNNEL_STAGES emitem.
+        stageEventId = isFunnelStage(targetStage)
+          ? await emitFunnelStageEvent(client, {
+              workerId, jobPostingId, previousStage, targetStage, actorUid, source: 'kanban',
+            })
+          : null;
       });
 
       // Depois do COMMIT: o evento já está gravado (pending); a publicação só
@@ -525,6 +566,27 @@ export class WJAFunnelController {
 
       res.json({ success: true, data: { encuadreId: id, targetStage } });
     } catch (error) {
+      // Fase 4 (DX-4.6): as duas classes de motivo viram 422 — checadas ANTES do
+      // catch genérico. A transação já fez ROLLBACK (withActorContext) quando o
+      // erro saiu do bloco acima; nada foi escrito.
+      if (error instanceof MoveReasonRequiredError) {
+        res.status(422).json({
+          success: false,
+          error: 'move_reason_required',
+          code: 'MOVE_REASON_REQUIRED',
+          reason: error.kind,
+        });
+        return;
+      }
+      if (error instanceof MoveReasonInvalidError) {
+        res.status(422).json({
+          success: false,
+          error: 'move_reason_invalid',
+          code: 'MOVE_REASON_INVALID',
+          reason: error.kind,
+        });
+        return;
+      }
       const message = error instanceof Error ? error.message : 'Unknown error';
       const status = message.includes('not found') ? 404 : 500;
       res.status(status).json({ success: false, error: message });
