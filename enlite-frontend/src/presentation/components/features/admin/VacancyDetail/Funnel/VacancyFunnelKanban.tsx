@@ -5,7 +5,7 @@ import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 import { KanbanBoard } from '@presentation/components/features/admin/Kanban/KanbanBoard';
 import { useWJAFunnel, MoveEncuadreError } from '@hooks/admin/useWJAFunnel';
-import { MOVE_REASON_REQUIRED } from '@domain/entities/MoveReason';
+import { MOVE_REASON_REQUIRED, COMPATIBLE_READ_ONLY } from '@domain/entities/MoveReason';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { InviteBlockedError, blockedReasonMessage } from '@infrastructure/http/AdminMessagingApiService';
 import type { EncuadreRole } from '@domain/entities/EncuadreRole';
@@ -132,9 +132,11 @@ export function VacancyFunnelKanban({
                 ? t('admin.vacancyDetail.funnelView.kanban.workerNotEligibleTitle', {
                     defaultValue: 'No se puede mover este worker',
                   })
-                : t('admin.vacancyDetail.funnelView.kanban.moveErrorTitle', {
-                    defaultValue: 'No se pudo mover el encuadre',
-                  })}
+                : moveError.code === COMPATIBLE_READ_ONLY
+                  ? t('admin.vacancyDetail.funnelView.kanban.compatibleReadOnlyTitle')
+                  : t('admin.vacancyDetail.funnelView.kanban.moveErrorTitle', {
+                      defaultValue: 'No se pudo mover el encuadre',
+                    })}
             </Text>
             <Text size="sm" color="inherit" className="text-amber-800 mt-1">
               {moveError.code === 'WORKER_NOT_ELIGIBLE'
@@ -143,7 +145,9 @@ export function VacancyFunnelKanban({
                       ? `Worker no apto (status=${moveError.workerStatus}). Cadastro o documentos incompletos.`
                       : 'Worker no apto. Verifique cadastro y documentos.',
                   })
-                : moveError.message}
+                : moveError.code === COMPATIBLE_READ_ONLY
+                  ? t('admin.vacancyDetail.funnelView.kanban.compatibleReadOnlyInviteBySend')
+                  : moveError.message}
             </Text>
           </div>
           <button
