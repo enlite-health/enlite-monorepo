@@ -74,8 +74,11 @@ export type CompatibleRefusal = 'ENTER' | 'INVITE_BY_SEND';
  * (`source === 'system'`, `messaged_at` nulo) — voltava para Invitados com 200 e reaparecia
  * em Compatíveis (reentrada indireta, o "200 que não muda o que diz" que a DX-5.6 quis
  * fechar). A recusa agora olha só `source`/`messagedAt` da origem, qualquer que seja a
- * etapa atual: `toStage === 'INVITED' && from.source === 'system' && from.messagedAt ===
- * null`. Origem `null` (candidatura nova) continua `null` — nunca é candidato do match.
+ * etapa atual: `toStage === 'INVITED' && from.source === 'system' && from.messagedAt ==
+ * null` (G5, achado 🟡 novo 3 do gate fecho: `== null` cobre `null` E `undefined`, igual a
+ * `isMatchedNotInvited` em `kanbanColumn.ts` — a comparação estrita deixava passar
+ * `messagedAt: undefined` e a recusa não disparava). Origem `null` (candidatura nova)
+ * continua `null` — nunca é candidato do match.
  * `from.source !== 'system'` ou `messagedAt` presente → `null` (Invitado de verdade). As
  * demais saídas de Compatíveis seguem `requiredMoveReason` (Rejeitados com motivo de
  * rejeição; salto com motivo de salto). Roda ANTES de `requiredMoveReason`: para
@@ -84,7 +87,7 @@ export type CompatibleRefusal = 'ENTER' | 'INVITE_BY_SEND';
  */
 export function compatibleMoveRefusal(from: MoveOrigin | null, toStage: string): CompatibleRefusal | null {
   if (toStage === COMPATIBLE_COLUMN) return 'ENTER';
-  if (from !== null && toStage === 'INVITED' && from.source === 'system' && from.messagedAt === null) {
+  if (from !== null && toStage === 'INVITED' && from.source === 'system' && from.messagedAt == null) {
     return 'INVITE_BY_SEND';
   }
   return null;

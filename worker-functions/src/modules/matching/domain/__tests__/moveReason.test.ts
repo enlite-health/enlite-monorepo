@@ -365,6 +365,19 @@ describe('Fase 5 — origem Compatíveis e a recusa de entrar/convidar sem envio
     });
   });
 
+  /**
+   * G5 (achado 🟡 novo 3 do gate fecho): `compatibleMoveRefusal` comparava `messagedAt ===
+   * null` (estrito) enquanto `isMatchedNotInvited` (kanbanColumn.ts:49) usa `== null` — com
+   * `messagedAt: undefined` a recusa não disparava e o card voltava a Compatíveis em silêncio.
+   */
+  describe('G5 — messagedAt undefined é tratado como ausente, igual a null', () => {
+    it('REJECTED/system/messagedAt undefined → INVITED = INVITE_BY_SEND (mesmo comportamento de messagedAt null)', () => {
+      expect(
+        compatibleMoveRefusal({ stage: 'REJECTED', source: 'system', messagedAt: undefined as any }, 'INVITED'),
+      ).toBe('INVITE_BY_SEND');
+    });
+  });
+
   it('CompatibleReadOnlyError carrega o reason e um nome de classe distinto (o controller monta o 422)', () => {
     const enter = new CompatibleReadOnlyError('ENTER');
     expect(enter.reason).toBe('ENTER');
