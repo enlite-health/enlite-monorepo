@@ -102,6 +102,18 @@ describe('VacancyLaunchHook.onVacancyLaunched', () => {
     expect(outcome.patient).toBe('no_patient');
   });
 
+  it('vaga COM patient_id mas o LEFT JOIN em patients voltou vazio (RLS escondeu/registro sumiu) → patient: patient_not_visible, moveStatus 0×, warn com jobPostingId+patientId (achado A5)', async () => {
+    dbTarget({ patient_id: PID, status: null, lat: '-34.6', lng: '-58.4' });
+    const outcome = await onVacancyLaunched(JOB_ID, deps());
+    expect(moveStatus).not.toHaveBeenCalled();
+    expect(outcome.patient).toBe('patient_not_visible');
+    expect(functions.logger.warn).toHaveBeenCalledWith(
+      'vacancy_launch.patient_not_visible',
+      { jobPostingId: JOB_ID, patientId: PID },
+    );
+    expect(runMatch).toHaveBeenCalledTimes(1);
+  });
+
   it('vaga inexistente/rascunho (0 linhas) → no_target, match: skipped_no_target, nenhuma chamada', async () => {
     dbTarget(null);
     const outcome = await onVacancyLaunched(JOB_ID, deps());
