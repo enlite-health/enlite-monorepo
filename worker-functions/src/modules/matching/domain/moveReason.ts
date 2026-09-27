@@ -1,5 +1,5 @@
 import { REJECTION_REASON_CATEGORIES } from './Encuadre';
-import { boardPosition } from './kanbanColumn';
+import { boardPosition, deriveKanbanColumn } from './kanbanColumn';
 
 /**
  * Motivo do arrasto no quadro B (funil de candidatura) que pula etapa, entra em
@@ -44,10 +44,54 @@ export const ALL_MOVE_REASONS: readonly string[] = Array.from(
   new Set<string>([...JUMP_REASONS, ...REJECTION_REASON_CATEGORIES, ...LEAVE_REJECTED_REASONS]),
 );
 
-/** Etapa e fonte da candidatura ANTES do arrasto. `null` = nunca houve candidatura para essa vaga. */
+/**
+ * Etapa, fonte e envio da candidatura ANTES do arrasto. `null` = nunca houve candidatura
+ * para essa vaga. `messagedAt` é obrigatório (Fase 5, DX-5.1): sem ele a origem não sabe
+ * se o card está em Compatíveis (candidato do match nunca mensageado) ou em Invitados.
+ */
 export interface MoveOrigin {
   stage: string | null;
   source: string | null;
+  messagedAt: string | Date | null;
+}
+
+/** O id da coluna derivada Compatíveis (Fase 5, D432) — NÃO é valor de `application_funnel_stage`. */
+export const COMPATIBLE_COLUMN = 'COMPATIBLE' as const;
+
+/**
+ * Por que o arrasto envolvendo Compatíveis é recusado (422 `COMPATIBLE_READ_ONLY`):
+ *   - `ENTER`: destino Compatíveis — a coluna nasce só do match, nunca de arrasto (DX-5.5);
+ *   - `INVITE_BY_SEND`: origem Compatíveis e destino Invitados — virar convidado é ter
+ *     sido mensageado (`messaged_at`, D432); arrasto não envia nada (DX-5.6).
+ */
+export type CompatibleRefusal = 'ENTER' | 'INVITE_BY_SEND';
+
+/**
+ * DX-5.5/5.6: entrar em Compatíveis nunca; sair para Invitados só pelo envio (messaged_at).
+ * As demais saídas de Compatíveis seguem `requiredMoveReason` (Rejeitados com motivo de
+ * rejeição; salto com motivo de salto). Roda ANTES de `requiredMoveReason`: para
+ * Compatíveis → Invitados aquela devolve `null` (etapa igual, INVITED sobre INVITED), e o
+ * upsert seria um 200 que não muda nada — o card voltaria a Compatíveis.
+ * `from` nulo (sem candidatura) nunca é origem Compatíveis.
+ */
+export function compatibleMoveRefusal(from: MoveOrigin | null, toStage: string): CompatibleRefusal | null {
+  if (toStage === COMPATIBLE_COLUMN) return 'ENTER';
+  if (
+    from !== null &&
+    toStage === 'INVITED' &&
+    deriveKanbanColumn(from.stage, from.source, from.messagedAt) === COMPATIBLE_COLUMN
+  ) {
+    return 'INVITE_BY_SEND';
+  }
+  return null;
+}
+
+/** 422 `COMPATIBLE_READ_ONLY` — o arrasto entra em Compatíveis ou tenta convidar sem envio. */
+export class CompatibleReadOnlyError extends Error {
+  constructor(readonly reason: CompatibleRefusal) {
+    super(`compatible column is read-only: ${reason}`);
+    this.name = 'CompatibleReadOnlyError';
+  }
 }
 
 /**
@@ -61,16 +105,21 @@ export interface MoveOrigin {
  *      (`kanbanColumn.ts:VACANCY_BOARD_COLUMNS`/`boardPosition`) → `JUMP`
  *      (recuo de qualquer tamanho não conta — só avanço);
  *   5. senão → `null`.
- * `from` nulo (candidatura nova) equivale a `{stage: null, source: null}` — a MESMA
- * posição de fallback que `deriveKanbanColumn` dá a um par stage/source desconhecido:
- * INVITED, posição 0.
+ * `from` nulo (candidatura nova) equivale a `{stage: null, source: null, messagedAt: null}` —
+ * a MESMA posição de fallback que `deriveKanbanColumn` dá a um par stage/source
+ * desconhecido: INVITED, posição 1 (Compatíveis é a 0, Fase 5). A origem Compatíveis
+ * (INVITED/system sem `messaged_at`) fica na posição 0, e o deslocamento é uniforme: todo
+ * par origem × destino da Fase 4 mantém o mesmo tipo. O destino é posicionado com
+ * `source`/`messagedAt` nulos — nunca cai em Compatíveis (entrar lá é recusado antes, por
+ * `compatibleMoveRefusal`).
  */
 export function requiredMoveReason(from: MoveOrigin | null, toStage: string): MoveReasonKind | null {
-  const origin = from ?? { stage: null, source: null };
+  const origin: MoveOrigin = from ?? { stage: null, source: null, messagedAt: null };
   if (origin.stage === toStage) return null;
   if (origin.stage === 'REJECTED') return 'LEAVE_REJECTED';
   if (toStage === 'REJECTED') return 'ENTER_REJECTED';
-  const jumped = boardPosition(toStage, null) - boardPosition(origin.stage, origin.source) > 1;
+  const jumped =
+    boardPosition(toStage, null, null) - boardPosition(origin.stage, origin.source, origin.messagedAt) > 1;
   return jumped ? 'JUMP' : null;
 }
 
