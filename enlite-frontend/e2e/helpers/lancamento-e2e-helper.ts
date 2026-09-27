@@ -15,12 +15,27 @@
  */
 import * as http from 'node:http';
 import { randomUUID } from 'node:crypto';
-import { expect, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { insertTestPatient, insertTestWorker } from './db-test-helper';
 import { runSQL, cleanupPatientDeep } from './patient-detail-a-helper';
-import { tokenFor, type MockUser } from './abac-stack-helper';
+import { tokenFor, loginAs, type MockUser } from './abac-stack-helper';
+import { seedMockStaff, cleanupMockStaff } from './vacancy-notes-e2e-helper';
 
-const BACKEND_URL = process.env.E2E_BACKEND_URL ?? 'http://localhost:8080';
+/**
+ * URL do backend (E2E-F6/CI sempre setam `E2E_BACKEND_URL`) — nunca host/porta literal (G2).
+ * Ausente, lança erro claro em vez de cair num host padrão silencioso.
+ */
+export function backendUrl(): string {
+  const url = process.env.E2E_BACKEND_URL;
+  if (!url) {
+    throw new Error(
+      'lancamento-e2e-helper: E2E_BACKEND_URL não setada — defina antes de rodar (ver E2E-F6 no BRIEF-COMUM.md)',
+    );
+  }
+  return url;
+}
+
+const BACKEND_URL = backendUrl();
 
 /** Staff interno só para autenticar as chamadas de API deste helper (nunca exposto ao teste). */
 const MOCK_STAFF: MockUser = {
@@ -172,6 +187,53 @@ export async function mockGenerateAiContent(page: Page): Promise<void> {
       }),
     });
   });
+}
+
+// ── Boilerplate comum aos 5 specs de lançamento (G2: DRY, sem mudar asserção) ───────
+
+/** `FunnelStageItem` do corpo de `GET /funnel` — mesmo shape repetido nos specs de lançamento. */
+export interface FunnelStageItem {
+  id: string;
+  workerId?: string | null;
+}
+
+/** Viewport/locale/timezone padrão dos specs que passam por `/talentum` (es-AR, Buenos Aires). */
+export const LANCAMENTO_VIEWPORT_ES_AR = {
+  viewport: { width: 1366, height: 768 },
+  locale: 'es-AR',
+  timezoneId: 'America/Argentina/Buenos_Aires',
+} as const;
+
+/** Staff admin isolado por spec — mesmo shape de `MOCK_STAFF` acima, uid/email próprios por `slug`. */
+export function mockAdminUserFor(slug: string): MockUser {
+  return {
+    uid: `e2e-int-admin-lancamento-${slug}-f6`,
+    email: `admin.lancamento.${slug}.f6@e2e.test`,
+    role: 'admin',
+    country: 'AR',
+  };
+}
+
+/** `beforeAll`/`afterAll` do staff mock do spec — mesmo par `seedMockStaff`/`cleanupMockStaff` repetido nos 5. */
+export function useLancamentoStaff(user: MockUser, label: string): void {
+  test.beforeAll(() => {
+    seedMockStaff(user, label);
+  });
+  test.afterAll(() => {
+    cleanupMockStaff(user);
+  });
+}
+
+/**
+ * Login + mock do `/generate-ai-content` NA ORDEM CERTA: `mockGenerateAiContent` tem de vir
+ * DEPOIS do `loginAs` — `swapToken` (registrado por `loginAs`, `abac-stack-helper.ts:134`) vence
+ * rotas registradas antes dele, então instalar o mock antes do login manda `/generate-ai-content`
+ * para a API real (medido: 400 "Prompt document ID não configurado"). Molde original em
+ * `funil-vacante-lancamento.integration.e2e.ts` (P12).
+ */
+export async function loginAndMockAi(page: Page, user: MockUser): Promise<void> {
+  await loginAs(page, user);
+  await mockGenerateAiContent(page);
 }
 
 // ── Semente do paciente lançável ─────────────────────────────────────────────────

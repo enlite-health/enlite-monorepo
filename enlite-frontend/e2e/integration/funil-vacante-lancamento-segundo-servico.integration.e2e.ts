@@ -32,7 +32,6 @@
 import { test, expect } from '@playwright/test';
 import {
   startTalentumStub,
-  mockGenerateAiContent,
   seedLaunchablePatient,
   seedWorkersNear,
   clickFoguete,
@@ -40,41 +39,27 @@ import {
   publishOnTalentumPage,
   readPatientKanbanColumn,
   countLaunchTrail,
+  backendUrl,
+  mockAdminUserFor,
+  useLancamentoStaff,
+  loginAndMockAi,
+  LANCAMENTO_VIEWPORT_ES_AR,
+  type FunnelStageItem,
 } from '../helpers/lancamento-e2e-helper';
 import { readPatientStatusApi } from '../helpers/funnel-move-e2e-helper';
 import { readFunnelApi } from '../helpers/compativeis-e2e-helper';
-import { loginAs, tokenFor, type MockUser } from '../helpers/abac-stack-helper';
-import { seedMockStaff, cleanupMockStaff } from '../helpers/vacancy-notes-e2e-helper';
+import { tokenFor } from '../helpers/abac-stack-helper';
 import { cleanupTestWorker } from '../helpers/db-test-helper';
 
-const BACKEND_URL = process.env.E2E_BACKEND_URL ?? 'http://localhost:8080';
+const BACKEND_URL = backendUrl();
 
-const MOCK_ADMIN_USER: MockUser = {
-  uid: 'e2e-int-admin-lancamento-2svc-f6',
-  email: 'admin.lancamento.2svc.f6@e2e.test',
-  role: 'admin',
-  country: 'AR',
-};
-
-interface FunnelStageItem {
-  id: string;
-  workerId?: string | null;
-}
+const MOCK_ADMIN_USER = mockAdminUserFor('2svc');
 
 test.describe('funil-vacante lancamento segundo servico @integration', () => {
-  test.use({
-    viewport: { width: 1366, height: 768 },
-    locale: 'es-AR',
-    timezoneId: 'America/Argentina/Buenos_Aires',
-  });
+  test.use(LANCAMENTO_VIEWPORT_ES_AR);
   test.setTimeout(120_000);
 
-  test.beforeAll(() => {
-    seedMockStaff(MOCK_ADMIN_USER, 'E2E Lancamento 2o Servico F6');
-  });
-  test.afterAll(() => {
-    cleanupMockStaff(MOCK_ADMIN_USER);
-  });
+  useLancamentoStaff(MOCK_ADMIN_USER, 'E2E Lancamento 2o Servico F6');
 
   test('lancamento-segundo-servico-nao-regride', async ({ page, request }) => {
     // Coordenada própria do arquivo (DX-6.9) — a mesma que o texto do passo dá.
@@ -88,11 +73,10 @@ test.describe('funil-vacante lancamento segundo servico @integration', () => {
     const [w] = seedWorkersNear(LAT, LNG, 1);
 
     try {
-      await loginAs(page, MOCK_ADMIN_USER);
       // DEPOIS do login — mesma ordem e mesmo motivo do P12 (`swapToken` resolve antes de
       // qualquer rota registrada mais cedo; instalar antes do login faria `/generate-ai-content`
-      // ir à API real).
-      await mockGenerateAiContent(page);
+      // ir à API real). `loginAndMockAi` (helper, G2) encapsula essa ordem.
+      await loginAndMockAi(page, MOCK_ADMIN_USER);
 
       // (0) Paciente já ACTIVE ANTES do foguete — "Não faça: semear o ACTIVE por UPDATE depois".
       const statusBeforeFoguete = await readPatientStatusApi(request, BACKEND_URL, token, patient.patientId);

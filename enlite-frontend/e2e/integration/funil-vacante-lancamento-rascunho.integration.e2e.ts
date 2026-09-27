@@ -21,23 +21,20 @@ import {
   seedLaunchablePatient,
   clickFoguete,
   readPatientKanbanColumn,
+  backendUrl,
+  mockAdminUserFor,
+  useLancamentoStaff,
 } from '../helpers/lancamento-e2e-helper';
 import { readPatientStatusApi } from '../helpers/funnel-move-e2e-helper';
 import { readFunnelApi } from '../helpers/compativeis-e2e-helper';
-import { loginAs, tokenFor, type MockUser } from '../helpers/abac-stack-helper';
+import { loginAs, tokenFor } from '../helpers/abac-stack-helper';
 import { insertTestPatient, cleanupTestPatient } from '../helpers/db-test-helper';
 import { runSQL } from '../helpers/patient-detail-a-helper';
 import { dndKitDrag } from '../helpers/dndKitDrag';
-import { seedMockStaff, cleanupMockStaff } from '../helpers/vacancy-notes-e2e-helper';
 
-const BACKEND_URL = process.env.E2E_BACKEND_URL ?? 'http://localhost:8080';
+const BACKEND_URL = backendUrl();
 
-const MOCK_ADMIN_USER: MockUser = {
-  uid: 'e2e-int-admin-lancamento-rascunho-f6',
-  email: 'admin.lancamento.rascunho.f6@e2e.test',
-  role: 'admin',
-  country: 'AR',
-};
+const MOCK_ADMIN_USER = mockAdminUserFor('rascunho');
 
 /** Conta TODAS as linhas de `patient_status_history` do paciente (não filtra `change_source`). */
 function countHistory(patientId: string): number {
@@ -51,12 +48,7 @@ test.describe('funil-vacante lancamento rascunho @integration', () => {
   // `loginAs` faz login de verdade (Firebase Auth Emulator interceptado, mas o profile vai ao
   // backend REAL) — sem a linha em `users`, o profile falha e a tela empurra de volta pro
   // login (molde `_prints-antes-fase-6...ts` P1, `beforeAll`).
-  test.beforeAll(() => {
-    seedMockStaff(MOCK_ADMIN_USER, 'E2E Lancamento Rascunho F6');
-  });
-  test.afterAll(() => {
-    cleanupMockStaff(MOCK_ADMIN_USER);
-  });
+  useLancamentoStaff(MOCK_ADMIN_USER, 'E2E Lancamento Rascunho F6');
 
   // ── (1) o foguete NÃO move o paciente (critério 3) ──────────────────────────────
   test('lancamento-rascunho-nao-move', async ({ page, request }) => {

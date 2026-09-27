@@ -28,7 +28,6 @@
 import { test, expect } from '@playwright/test';
 import {
   startTalentumStub,
-  mockGenerateAiContent,
   seedLaunchablePatient,
   seedWorkersNear,
   clickFoguete,
@@ -36,33 +35,28 @@ import {
   publishOnTalentumPage,
   readPatientKanbanColumn,
   countLaunchTrail,
+  backendUrl,
+  mockAdminUserFor,
+  useLancamentoStaff,
+  loginAndMockAi,
+  LANCAMENTO_VIEWPORT_ES_AR,
+  type FunnelStageItem,
 } from '../helpers/lancamento-e2e-helper';
 import { readPatientStatusApi, countOutboundSince, chooseReasonInModal } from '../helpers/funnel-move-e2e-helper';
 import { readFunnelApi, switchToKanban, gotoVacancyDetail, readStageCount } from '../helpers/compativeis-e2e-helper';
 import { dndKitDrag } from '../helpers/dndKitDrag';
-import { loginAs, tokenFor, type MockUser } from '../helpers/abac-stack-helper';
-import { seedMockStaff, cleanupMockStaff } from '../helpers/vacancy-notes-e2e-helper';
+import { tokenFor } from '../helpers/abac-stack-helper';
 import { runSQL } from '../helpers/patient-detail-a-helper';
 import { cleanupTestWorker } from '../helpers/db-test-helper';
 
-const BACKEND_URL = process.env.E2E_BACKEND_URL ?? 'http://localhost:8080';
+const BACKEND_URL = backendUrl();
 const API_HOST = new URL(BACKEND_URL).host;
 // Canal real — critério 5 (DX-6.9/Q-EX-6.5): o navegador NUNCA fala com nenhum destes hosts
 // (quem fala com a Talentum é o backend, via stub). Testa só o HOSTNAME (não a URL inteira —
 // a própria API tem rotas como `/workers/sync-talentum`, memória de `funil-vacante-motivo`).
 const FORBIDDEN_HOSTS = /twilio|whatsapp|facebook|periskope|talentum\.chat|groq|generativelanguage/i;
 
-const MOCK_ADMIN_USER: MockUser = {
-  uid: 'e2e-int-admin-lancamento-move-f6',
-  email: 'admin.lancamento.move.f6@e2e.test',
-  role: 'admin',
-  country: 'AR',
-};
-
-interface FunnelStageItem {
-  id: string;
-  workerId?: string | null;
-}
+const MOCK_ADMIN_USER = mockAdminUserFor('move');
 
 /** Última linha da trilha `vacancy_launch` do paciente — `old_value`/`new_value` (critério 4). */
 function readLaunchTrailRow(patientId: string): { oldValue: string | null; newValue: string } | null {
@@ -76,19 +70,10 @@ function readLaunchTrailRow(patientId: string): { oldValue: string | null; newVa
 }
 
 test.describe('funil-vacante lancamento @integration', () => {
-  test.use({
-    viewport: { width: 1366, height: 768 },
-    locale: 'es-AR',
-    timezoneId: 'America/Argentina/Buenos_Aires',
-  });
+  test.use(LANCAMENTO_VIEWPORT_ES_AR);
   test.setTimeout(120_000);
 
-  test.beforeAll(() => {
-    seedMockStaff(MOCK_ADMIN_USER, 'E2E Lancamento Move F6');
-  });
-  test.afterAll(() => {
-    cleanupMockStaff(MOCK_ADMIN_USER);
-  });
+  useLancamentoStaff(MOCK_ADMIN_USER, 'E2E Lancamento Move F6');
 
   test('lancamento-move-para-busqueda', async ({ page, request }) => {
     // Coordenada própria do arquivo (DX-6.9) — distinta de P1/P10/P11/P24 e dos outros e2e do grupo.
@@ -102,7 +87,6 @@ test.describe('funil-vacante lancamento @integration', () => {
     const [w1, w2] = seedWorkersNear(LAT, LNG, 2);
 
     try {
-      await loginAs(page, MOCK_ADMIN_USER);
       // DEPOIS do login, não antes: `loginAs` registra `page.route('**/api/**', swapToken)`
       // (abac-stack-helper.ts:134) com `route.continue()` — Playwright resolve rotas que casam
       // a MESMA URL na ordem INVERSA de registro (a última registrada é tentada primeiro); como
@@ -112,8 +96,8 @@ test.describe('funil-vacante lancamento @integration', () => {
       // login") — essa nota do plano cobre só o timing de NAVEGAÇÃO (instalar antes de qualquer
       // `page.goto`, para não perder a 1ª chamada), não a prioridade de rotas do Playwright: os
       // dois requisitos só coexistem registrando depois do login (que já não navega mais até o
-      // foguete) e antes do clique no foguete.
-      await mockGenerateAiContent(page);
+      // foguete) e antes do clique no foguete. `loginAndMockAi` (helper, G2) encapsula essa ordem.
+      await loginAndMockAi(page, MOCK_ADMIN_USER);
 
       // "desde o login": só requests do navegador a partir daqui entram na contagem do critério 5.
       const requestUrls: string[] = [];
