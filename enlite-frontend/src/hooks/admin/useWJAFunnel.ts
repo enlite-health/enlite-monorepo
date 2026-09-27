@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { ApiError } from '@infrastructure/http/ApiError';
 import type { EncuadreRole } from '@domain/entities/EncuadreRole';
-import { MOVE_REASON_REQUIRED } from '@domain/entities/MoveReason';
+import { MOVE_REASON_REQUIRED, COMPATIBLE_READ_ONLY } from '@domain/entities/MoveReason';
 
 export interface MoveEncuadreError {
   message: string;
@@ -132,9 +132,10 @@ export function useWJAFunnel(vacancyId: string | undefined) {
       return null;
     } catch (err) {
       if (err instanceof ApiError) {
-        // 422 MOVE_REASON_REQUIRED é fluxo esperado (DX-4.6/DX-4.10): o board abre o diálogo
-        // do motivo em vez de logar erro.
-        if (err.code !== MOVE_REASON_REQUIRED) {
+        // 422 MOVE_REASON_REQUIRED (DX-4.6/DX-4.10) e COMPATIBLE_READ_ONLY (DX-5.6) são fluxo
+        // esperado — o board abre o diálogo do motivo, ou o banner âmbar explica a recusa;
+        // nenhum dos dois é falha de sistema.
+        if (err.code !== MOVE_REASON_REQUIRED && err.code !== COMPATIBLE_READ_ONLY) {
           console.error('Failed to move encuadre:', err);
         }
         return {
