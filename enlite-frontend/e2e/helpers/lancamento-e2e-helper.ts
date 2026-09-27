@@ -232,6 +232,42 @@ export async function loginAndMockAi(page: Page, user: MockUser): Promise<void> 
   await mockGenerateAiContent(page);
 }
 
+// ── POST .../contracted-services (fonte única — G2: DRY entre seedLaunchablePatient e
+//    o e2e de itinerário, `itinerario-e2e-helper.ts`) ────────────────────────────────
+
+export interface ContractedServiceBody {
+  serviceCode: 'AT' | 'CAREGIVER' | 'NURSE' | 'KINESIOLOGIST' | 'PSYCHOLOGIST';
+  providersNeeded: number;
+  weeklyHours: number;
+  careLocation: string;
+  addressId: string;
+  schedule?: Array<{ dayOfWeek: number; startTime: string; endTime: string }>;
+}
+
+/**
+ * `POST /patients/:id/contracted-services` — MESMO POST que `seedLaunchablePatient` fazia
+ * inline (mesma URL, headers, corpo e leitura de `data.id`); reusado também por
+ * `itinerario-e2e-helper.ts` (`createServiceViaApi`, G2). `token` fica a cargo do chamador
+ * (cada helper autentica com o próprio `MockUser` — molde `launchViaApi` acima).
+ */
+export async function postContractedServiceViaApi(
+  request: APIRequestContext,
+  token: string,
+  patientId: string,
+  body: ContractedServiceBody,
+): Promise<string> {
+  const res = await request.post(`${backendUrl()}/api/admin/patients/${patientId}/contracted-services`, {
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    data: body,
+  });
+  if (!res.ok()) {
+    throw new Error(
+      `postContractedServiceViaApi: POST contracted-services falhou ${res.status()}: ${await res.text()}`,
+    );
+  }
+  return ((await res.json()) as { data: { id: string } }).data.id;
+}
+
 // ── Semente do paciente lançável ─────────────────────────────────────────────────
 
 export interface SeedLaunchablePatientOpts {
@@ -272,23 +308,14 @@ export async function seedLaunchablePatient(
   }
 
   const token = tokenFor(MOCK_STAFF);
-  const svcRes = await request.post(`${backendUrl()}/api/admin/patients/${patientId}/contracted-services`, {
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    data: {
-      serviceCode: 'AT',
-      providersNeeded: 1,
-      weeklyHours: 20,
-      careLocation: 'HOME',
-      addressId,
-      schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }],
-    },
+  const serviceId = await postContractedServiceViaApi(request, token, patientId, {
+    serviceCode: 'AT',
+    providersNeeded: 1,
+    weeklyHours: 20,
+    careLocation: 'HOME',
+    addressId,
+    schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }],
   });
-  if (!svcRes.ok()) {
-    throw new Error(
-      `seedLaunchablePatient: POST contracted-services falhou ${svcRes.status()}: ${await svcRes.text()}`,
-    );
-  }
-  const serviceId = ((await svcRes.json()) as { data: { id: string } }).data.id;
 
   const cleanup = (): void => {
     cleanupPatientDeep(patientId);

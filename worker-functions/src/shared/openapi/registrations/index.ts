@@ -11,6 +11,7 @@ import './adminInterviewSlots';
 import './adminMatching';
 import './adminMessaging';
 import './adminPatients';
+import './adminPatientItinerary';
 import './adminRecruitment';
 import './adminSetup';
 import './adminSocialLinks';
