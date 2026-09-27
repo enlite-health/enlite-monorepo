@@ -136,7 +136,7 @@ describe('Estado do paciente v2 — transições, motivo, Historial (spec 012 US
     expect(g.data.data).toMatchObject({ status: 'ACTIVE', admissionStatus: 'DONE', onHoldReason: null, onHoldNote: null, serviceStartDate: null });
   });
 
-  it('6. Migration 428: funil→ACTIVE direto é 422 nas TRÊS origens; dentro do funil continua livre; ACTIVE de verdade só via SEARCHING (activate-recruitment)', async () => {
+  it('6. Migration 428: funil→ACTIVE direto é 422 nas TRÊS origens; dentro do funil continua livre; ACTIVE de verdade só via SEARCHING (lançamento da vaga)', async () => {
     // 6a. SOLICITANTE → ACTIVE direto (lead2, nunca tocado por outro teste) — bloqueado.
     let r = await api.put(`/api/admin/patients/${lead2}/status`, { status: 'ACTIVE', changeSource: 'kanban' }, asAdmin);
     expect(r.status).toBe(422);
@@ -180,14 +180,29 @@ describe('Estado do paciente v2 — transições, motivo, Historial (spec 012 US
     expect(row).toEqual({ status: 'PENDING_ADMISSION', admission_status: 'PENDING_ADMISSION' });
 
     // 6f. Caminho real: COVERAGE informada (endereço/horário do serviço já vêm do beforeAll) →
-    // activate-recruitment move para SEARCHING → PUT /status ACTIVE (SEARCHING → ACTIVE
-    // continua no catálogo 315, a 428 nunca tocou essa linha).
+    // activate-recruitment cria a vaga em rascunho e NÃO move o paciente (DX-6.6) — quem move
+    // o funil para SEARCHING é o lançamento à Talentum (D434), coberto por
+    // `funil-vacante-lancamento` (Playwright + stub), fora do alcance deste teste. PUT /status
+    // funil → SEARCHING pelo Kanban é 422 (a guarda da DX-6.4). Daqui em diante semeamos
+    // SEARCHING por SQL só para continuar cobrindo SEARCHING → ACTIVE (catálogo 315, a 428
+    // nunca tocou essa linha).
     await pool.query(`UPDATE patients SET health_insurance_name = 'Particular' WHERE id = $1`, [lead]);
     const activated = await api.post(`/api/admin/patients/${lead}/contracted-services/${leadServiceId}/activate-recruitment`, {}, asAdmin);
     expect(activated.status).toBe(201);
-    expect(activated.data.data.patientStatus).toBe('SEARCHING');
+    expect(activated.data.data.patientStatus).toBe('PENDING_ADMISSION');
     row = (await pool.query(`SELECT status, admission_status FROM patients WHERE id = $1`, [lead])).rows[0];
-    expect(row).toEqual({ status: 'SEARCHING', admission_status: 'DONE' });
+    expect(row).toEqual({ status: 'PENDING_ADMISSION', admission_status: 'PENDING_ADMISSION' });
+
+    // guarda da DX-6.4: só o lançamento (changeSource 'vacancy_launch') pode usar funil → SEARCHING.
+    r = await api.put(`/api/admin/patients/${lead}/status`, { status: 'SEARCHING', changeSource: 'kanban' }, asAdmin);
+    expect(r.status).toBe(422);
+    expect(r.data).toMatchObject({
+      success: false,
+      code: 'PATIENT_STATUS_TRANSITION_NOT_ALLOWED',
+      details: { from: 'PENDING_ADMISSION', to: 'SEARCHING' },
+    });
+
+    await pool.query(`UPDATE patients SET status = 'SEARCHING' WHERE id = $1`, [lead]);
 
     expect((await api.put(`/api/admin/patients/${lead}/status`, { status: 'ACTIVE', changeSource: 'kanban' }, asAdmin)).status).toBe(200);
     row = (await pool.query(`SELECT status, admission_status FROM patients WHERE id = $1`, [lead])).rows[0];
