@@ -150,7 +150,7 @@ export {
 } from './application/StartGroupSimulationUseCase';
 export { SyncCountryFeaturesUseCase } from './application/SyncCountryFeaturesUseCase';
 export { SyncPermissionCatalogUseCase } from './application/SyncPermissionCatalogUseCase';
-export { projectWorkerFields, ProjecaoSemDecryptorError, NOME_REDIGIDO, CELL_WORKER_READ, CELL_WORKER_CONTACT_READ, CELL_WORKER_PII_READ, CELL_WORKER_DISABLE } from './application/projectWorkerFields';
+export { projectWorkerFields, ProjecaoSemDecryptorError, NOME_REDIGIDO, CELL_WORKER_READ, CELL_WORKER_CONTACT_READ, CELL_WORKER_PII_READ, CELL_WORKER_DISABLE, CELL_MATCH_READ, podeVerCandidatoDoMatch } from './application/projectWorkerFields';
 export type { WorkerRow, ProjectedWorker, Decryptor } from './application/projectWorkerFields';
 export { cellsOfRequest } from './application/cellsOfRequest';
 export { CELL_DESCRIPTION } from './domain/PermissionCell';

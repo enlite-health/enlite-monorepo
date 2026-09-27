@@ -104,6 +104,17 @@ export const CELL_WORKER_CONTACT_READ = cellKey('worker_contact', 'read');
 export const CELL_WORKER_PII_READ = cellKey('worker_pii', 'read');
 export const CELL_WORKER_DISABLE = cellKey('worker', 'disable');
 
+/** A célula do candidato do match — o mesmo literal que a rota exige (`adminVacanciesRoutes.ts:128`). */
+export const CELL_MATCH_READ = cellKey('match', 'read');
+
+/**
+ * Compatíveis (Fase 5) mostra QUEM deu match — é o dado de `match:read` (F43).
+ * `null` = engine não decidiu → como hoje (D113). Nunca `?? []`.
+ */
+export function podeVerCandidatoDoMatch(cells: string[] | null): boolean {
+  return cells === null || cells.includes(CELL_MATCH_READ);
+}
+
 /**
  * Nome que a tela mostra quando o ator não tem a célula de contato. NÃO é erro
  * e não é vazio: vazio some da tela e a pessoa acha que o cadastro está furado.
