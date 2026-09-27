@@ -22,6 +22,7 @@ import type { AdminPatientAddressesController } from '../../controllers/AdminPat
 import type { AdminInsuranceProvidersController } from '../../controllers/AdminInsuranceProvidersController';
 import type { AdminPatientContractedServicesController } from '../../controllers/AdminPatientContractedServicesController';
 import type { AdminPatientItineraryController } from '../../controllers/AdminPatientItineraryController';
+import type { AdminPatientKanbanServicesController } from '../../controllers/AdminPatientKanbanServicesController';
 import type { AdminPatientDiagnosesController } from '@modules/diagnosis/interfaces/controllers/AdminPatientDiagnosesController';
 import type { AdminTerminologySearchController } from '@modules/terminology/interfaces/controllers/AdminTerminologySearchController';
 import type { AdminPatientContactRowsController } from '../../controllers/AdminPatientContactRowsController';
@@ -68,6 +69,9 @@ const ESPERADO: Record<string, string | null> = {
   'GET /patients/stats': 'patient:read',
   'GET /patients/funnel': 'patient:read',
   'GET /patients/chat-map': 'patient:read',
+  // Agregado do subcard do Kanban (fase 8, Plano B, DX-8.1): mesma célula do itinerário — a
+  // resposta carrega weekly/authorized (DX-8.2).
+  'GET /patients/kanban/services': 'patient_services:read',
   // Mapa de pacientes (REQ-04): POST com corpo, leitura.
   'POST /patients/map': 'patient_address:read',
   'GET /patients': 'patient:read',
@@ -192,6 +196,8 @@ function pecas() {
   // Fase 7 (DX-7.11, A-contrato): dublê só para o `build()` não construir o controller real
   // (que abriria banco na leitura, DX-7.6) — é o molde do arquivo para o 15º argumento.
   const itinerary = { get: responde('itinerary.get') } as unknown as AdminPatientItineraryController;
+  // Fase 8 (DX-8.16, A-contrato): mesmo molde, 16º argumento — agregado do subcard do Kanban.
+  const kanbanServices = { list: responde('kanbanServices.list') } as unknown as AdminPatientKanbanServicesController;
   const terminology = { search: responde('terminology.search') } as unknown as AdminTerminologySearchController;
   const contactRows = {
     createResponsible: responde('rows.createResponsible'),
@@ -217,7 +223,7 @@ function pecas() {
 
   return {
     controller, chatIds, chatRoles, map, addresses, insurance, contracted, diagnoses, terminology, contactRows,
-    externalContacts, emergencyContact, itinerary,
+    externalContacts, emergencyContact, itinerary, kanbanServices,
     auth: authDouble(), permissions: permissionsDouble(),
   };
 }
@@ -228,7 +234,7 @@ function build() {
   return createAdminPatientsRoutes(
     p.controller, p.auth, p.permissions, p.chatIds, p.chatRoles,
     p.map, p.addresses, p.insurance, p.contracted, p.diagnoses, p.terminology, p.contactRows,
-    p.externalContacts, p.emergencyContact, p.itinerary,
+    p.externalContacts, p.emergencyContact, p.itinerary, p.kanbanServices,
   );
 }
 
@@ -247,21 +253,22 @@ describe('createAdminPatientsRoutes', () => {
     expect(declarado).toEqual(ESPERADO);
   });
 
-  it('a família declara exatamente 55 rotas — 45 do PR-1 (39 de antes/D286 + o 410 de support-network + as 6 por linha) + activate-recruitment (PR-6) + as 3 da equipe tratante (PR-5) + as 5 do PR-2 (contatos externos + marca de emergência) + itinerário (fase 7)', () => {
-    expect(scanExpressRouter(build())).toHaveLength(55);
+  it('a família declara exatamente 56 rotas — 45 do PR-1 (39 de antes/D286 + o 410 de support-network + as 6 por linha) + activate-recruitment (PR-6) + as 3 da equipe tratante (PR-5) + as 5 do PR-2 (contatos externos + marca de emergência) + itinerário (fase 7) + agregado do Kanban (fase 8)', () => {
+    expect(scanExpressRouter(build())).toHaveLength(56);
   });
 
   it('a família é `admin.patients` — o nome que PERMISSION_ENFORCED_ROUTES liga', () => {
     expect(ADMIN_PATIENTS_FAMILY).toBe('admin.patients');
   });
 
-  it('sem o 12º/13º/14º/15º argumento (contactRowsController/externalContacts/emergencyContact/itineraryController omitidos), o factory usa os DEFAULTS', () => {
+  it('sem o 12º/13º/14º/15º/16º argumento (contactRowsController/externalContacts/emergencyContact/itineraryController/kanbanServicesController omitidos), o factory usa os DEFAULTS', () => {
     // Os defaults `new AdminPatientContactRowsController()` / `new AdminPatientExternalContactsController()` /
     // `new AdminPatientEmergencyContactController()` constroem os repositórios reais, que pegam o
     // pool de `DatabaseConnection.getInstance()` NA CONSTRUÇÃO (não é preguiçoso como o comentário
     // do factory presumia) — precisa de config de banco só para o `new` não estourar; nenhuma
-    // query roda neste teste. `AdminPatientItineraryController` default NÃO precisa disso: o pool só
-    // é pego dentro de `readPatientItinerary` (DX-7.6), nunca no construtor.
+    // query roda neste teste. `AdminPatientItineraryController`/`AdminPatientKanbanServicesController`
+    // default NÃO precisam disso: o pool só é pego dentro do reader/use case (DX-7.6/DX-8.4), nunca
+    // no construtor.
     const antes = process.env.DATABASE_URL;
     process.env.DATABASE_URL = 'postgresql://user:pass@localhost:5432/db';
     try {
@@ -269,9 +276,9 @@ describe('createAdminPatientsRoutes', () => {
       const router = createAdminPatientsRoutes(
         p.controller, p.auth, p.permissions, p.chatIds, p.chatRoles,
         p.map, p.addresses, p.insurance, p.contracted, p.diagnoses, p.terminology,
-        // 12º/13º/14º/15º omitidos de propósito
+        // 12º/13º/14º/15º/16º omitidos de propósito
       );
-      expect(scanExpressRouter(router)).toHaveLength(55);
+      expect(scanExpressRouter(router)).toHaveLength(56);
     } finally {
       if (antes === undefined) delete process.env.DATABASE_URL; else process.env.DATABASE_URL = antes;
     }
@@ -323,6 +330,7 @@ describe('createAdminPatientsRoutes', () => {
     ['get', '/api/admin/catalogs/insurance-providers', 'providers.list'],
     ['post', '/api/admin/catalogs/insurance-providers', 'providers.create'],
     ['post', '/api/admin/patients/map', 'getMapPoints'],
+    ['get', '/api/admin/patients/kanban/services', 'kanbanServices.list'],
     ['get', '/api/admin/patients/abc-123/status-history', 'getPatientStatusHistory'],
     ['patch', '/api/admin/patients/abc-123/addresses/addr-1', 'updatePatientAddress'],
     ['get', '/api/admin/patients/abc-123/contracted-services', 'cs.list'],

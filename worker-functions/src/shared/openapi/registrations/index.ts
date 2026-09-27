@@ -12,6 +12,7 @@ import './adminMatching';
 import './adminMessaging';
 import './adminPatients';
 import './adminPatientItinerary';
+import './adminPatientKanbanServices';
 import './adminRecruitment';
 import './adminSetup';
 import './adminSocialLinks';
