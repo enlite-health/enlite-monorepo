@@ -52,12 +52,11 @@ export interface GetServiceTeamResult {
   vacancyId: string | null;
   /**
    * Data LOCAL do país do paciente usada para decidir vigência (DX-13.4/13.5, Fase 13) — sempre
-   * populada por `buildServiceTeamResult`. OPCIONAL no tipo (não no runtime) porque fixtures de
-   * controllers de OUTRAS fases (`AdminServiceTeamController.test.ts`, DX-13.17 — e
-   * `AdminItineraryWriteController.test.ts`, Fase 11, fora da lista da DX-13.17) constroem
-   * `GetServiceTeamResult` sem esse campo; exigi-lo quebraria TSC-F13 fora do escopo deste passo.
+   * populada por `buildServiceTeamResult`. Obrigatório no tipo desde o P18 (pendência do P9 fechada
+   * aqui): as fixtures `team()` de `AdminServiceTeamController.test.ts` (DX-13.17) e
+   * `AdminItineraryWriteController.test.ts` (Fase 11) ganharam o campo.
    */
-  asOf?: string;
+  asOf: string;
   selected: ServiceTeamMember[];
   inService: ServiceTeamMember[];
   rejected: ServiceTeamMember[];

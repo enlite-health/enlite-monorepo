@@ -33,3 +33,20 @@ export type ItinerarySlotBody = z.infer<typeof itinerarySlotBodySchema>;
 export const itineraryAllocationBodySchema = z.object({ workerId: z.string().uuid() });
 
 export type ItineraryAllocationBody = z.infer<typeof itineraryAllocationBodySchema>;
+
+// ── Substituição pontual (Fase 13, DX-13.8) ──────────────────────────────────────────────────
+
+export const itineraryAbsenceParamsSchema = itineraryServiceParamsSchema.extend({ absenceId: z.string().uuid() });
+
+export const itineraryAbsenceBodySchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  substituteWorkerId: z.string().uuid().optional(),
+});
+
+export type ItineraryAbsenceBody = z.infer<typeof itineraryAbsenceBodySchema>;
+
+// A chave é OBRIGATÓRIA e o `null` é explícito — corpo sem a chave é 400 (memória
+// `vazio-ambiguo-nao-e-informacao-de-ausencia`: "tirar o substituto" ≠ "não mexi no substituto").
+export const itinerarySubstituteBodySchema = z.object({ substituteWorkerId: z.union([z.string().uuid(), z.null()]) });
+
+export type ItinerarySubstituteBody = z.infer<typeof itinerarySubstituteBodySchema>;
