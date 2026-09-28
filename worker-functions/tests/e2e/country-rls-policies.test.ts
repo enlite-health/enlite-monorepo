@@ -58,6 +58,20 @@ describe('RLS por país — policies de patients e satélites (banco real)', () 
     csrWorker: 'ee270000-0a00-000c-0001-000000000001',
     csrMarkAR: 'ee270000-0a00-000d-0001-000000000001',
     csrMarkBR: 'ee270000-0a00-000d-0002-000000000001',
+    // Fase 11, P4 (DX-11.3, DX-11.14) — montado segue o pai; a trava enxerga através da RLS
+    // (SECURITY DEFINER) — mesmo IDS, mesmo prefixo do arquivo.
+    itin11ServiceAR: 'ee270000-0a00-000e-0001-000000000001',
+    itin11ServiceBR: 'ee270000-0a00-000e-0002-000000000001',
+    itin11JobAR: 'ee270000-0a00-000f-0001-000000000001',
+    itin11JobBR: 'ee270000-0a00-000f-0002-000000000001',
+    itin11Worker: 'ee270000-0a00-0010-0001-000000000001',
+    itin11WjaAR: 'ee270000-0a00-0011-0001-000000000001',
+    itin11WjaBR: 'ee270000-0a00-0011-0002-000000000001',
+    itin11SlotAR: 'ee270000-0a00-0012-0001-000000000001',
+    itin11SlotBR: 'ee270000-0a00-0012-0002-000000000001',
+    itin11AssignmentBR: 'ee270000-0a00-0013-0002-000000000001',
+    itin11AssemblyAR: 'ee270000-0a00-0014-0001-000000000001',
+    itin11AssemblyBR: 'ee270000-0a00-0014-0002-000000000001',
   };
 
   async function cleanup(p: Pool): Promise<void> {
@@ -567,6 +581,134 @@ describe('RLS por país — policies de patients e satélites (banco real)', () 
           );
         }),
       ).rejects.toThrow(/new row violates row-level security policy/);
+    });
+  });
+
+  /**
+   * Fase 11, P4 (DX-11.3, DX-11.14) — `patient_itinerary_assembly` (o montado) segue o pai pela
+   * mesma cadeia de RLS que os satélites (413/429/480/CSR): a policy não olha country da própria
+   * linha, olha visibilidade de `patients` diretamente. E a trava de sobreposição
+   * (`fn_patient_itinerary_assignment_no_overlap`, `SECURITY DEFINER`) enxerga através da RLS: um
+   * prestador já alocado num slot do paciente BR (semente como dono) tem a trava acionada mesmo
+   * quando quem tenta a 2ª alocação é staff AR, que normalmente não vê nada de BR — sem
+   * `SECURITY DEFINER` a trava consultaria como o chamador e falharia ABERTA (deixaria passar).
+   * `beforeAll`/`afterAll` próprios, como dono (`pool`), com ids novos no mesmo `IDS` (prefixo do
+   * arquivo) — a semente de cima e os casos existentes não mudam.
+   */
+  describe('montado (Fase 11): patient_itinerary_assembly segue o pai; a trava enxerga através da RLS', () => {
+    const CREATED_BY = 'rls-e2e-itin11';
+
+    beforeAll(async () => {
+      // 1 serviço por paciente de teste (AR/BR), reusando os endereços já semeados acima.
+      await pool.query(
+        `INSERT INTO patient_contracted_services (id, patient_id, service_code, address_id, country, created_by, updated_by)
+         VALUES ($1, $2, 'AT', $3, 'AR', $4, $4), ($5, $6, 'AT', $7, 'BR', $4, $4)`,
+        [
+          IDS.itin11ServiceAR,
+          IDS.patientAR,
+          IDS.addressAR,
+          CREATED_BY,
+          IDS.itin11ServiceBR,
+          IDS.patientBR,
+          IDS.addressBR,
+        ],
+      );
+
+      // 1 vaga por serviço.
+      await pool.query(
+        `INSERT INTO job_postings (id, title, contracted_service_id, patient_id, country)
+         VALUES ($1, 'rls-e2e-itin11-vaga-ar', $2, $3, 'AR'), ($4, 'rls-e2e-itin11-vaga-br', $5, $6, 'BR')`,
+        [IDS.itin11JobAR, IDS.itin11ServiceAR, IDS.patientAR, IDS.itin11JobBR, IDS.itin11ServiceBR, IDS.patientBR],
+      );
+
+      // 1 worker só, candidato às DUAS vagas (a trava é por worker — precisa do mesmo prestador
+      // dos dois lados para provar que ela olha além do país do chamador).
+      await pool.query(
+        `INSERT INTO workers (id, auth_uid, email, country) VALUES ($1, 'rls-e2e-itin11-w1', 'rls-e2e-itin11-w1@e2e.local', 'AR')`,
+        [IDS.itin11Worker],
+      );
+      await pool.query(
+        `INSERT INTO worker_job_applications (id, worker_id, job_posting_id, application_funnel_stage, source)
+         VALUES ($1, $2, $3, 'INVITED', 'import'), ($4, $2, $5, 'INVITED', 'import')`,
+        [IDS.itin11WjaAR, IDS.itin11Worker, IDS.itin11JobAR, IDS.itin11WjaBR, IDS.itin11JobBR],
+      );
+
+      // 1 slot por serviço (endereços diferentes — AR e BR nunca são o mesmo endereço — a 30min de
+      // folga entre o fim do BR e o início do AR, abaixo da folga mínima de 60min).
+      await pool.query(
+        `INSERT INTO patient_itinerary_slot (id, contracted_service_id, weekday, start_time, end_time, created_by, updated_by)
+         VALUES ($1, $2, 3, '09:30', '10:30', $3, $3), ($4, $5, 3, '08:00', '09:00', $3, $3)`,
+        [IDS.itin11SlotAR, IDS.itin11ServiceAR, CREATED_BY, IDS.itin11SlotBR, IDS.itin11ServiceBR],
+      );
+
+      // 1 alocação ACTIVE só no slot BR (a AR fica para o `6k`, que tenta inserir e espera 23P01).
+      await pool.query(
+        `INSERT INTO patient_itinerary_assignment (id, slot_id, worker_id, application_id, valid_from, created_by, updated_by)
+         VALUES ($1, $2, $3, $4, '2026-01-01', $5, $5)`,
+        [IDS.itin11AssignmentBR, IDS.itin11SlotBR, IDS.itin11Worker, IDS.itin11WjaBR, CREATED_BY],
+      );
+
+      // 1 montado em cada paciente.
+      await pool.query(
+        `INSERT INTO patient_itinerary_assembly (id, patient_id, assembled_by) VALUES ($1, $2, $3), ($4, $5, $3)`,
+        [IDS.itin11AssemblyAR, IDS.patientAR, CREATED_BY, IDS.itin11AssemblyBR, IDS.patientBR],
+      );
+    });
+
+    afterAll(async () => {
+      // Ordem: alocações → montados → WJA → vagas → worker, ANTES do cleanup externo (mesma razão
+      // dos describes acima: job_postings → patients é NO ACTION, e o cleanup externo apaga
+      // patient_addresses antes de patients — pcs_address_same_patient_fk recusaria a linha
+      // enquanto o serviço ainda a referenciar). O 6k pode ter deixado uma 2ª alocação no slot AR
+      // se algum dia a trava regredir — o filtro por slot cobre esse caso também.
+      await pool.query(`DELETE FROM patient_itinerary_assignment WHERE slot_id = ANY($1)`, [
+        [IDS.itin11SlotAR, IDS.itin11SlotBR],
+      ]);
+      await pool.query(`DELETE FROM patient_itinerary_assembly WHERE id = ANY($1)`, [
+        [IDS.itin11AssemblyAR, IDS.itin11AssemblyBR],
+      ]);
+      await pool.query(`DELETE FROM worker_job_applications WHERE id = ANY($1)`, [
+        [IDS.itin11WjaAR, IDS.itin11WjaBR],
+      ]);
+      await pool.query(`DELETE FROM job_postings WHERE id = ANY($1)`, [[IDS.itin11JobAR, IDS.itin11JobBR]]);
+      await pool.query(`DELETE FROM workers WHERE id = $1`, [IDS.itin11Worker]);
+      await pool.query(`DELETE FROM patient_contracted_services WHERE id = ANY($1)`, [
+        [IDS.itin11ServiceAR, IDS.itin11ServiceBR],
+      ]);
+    });
+
+    it('6i. o montado segue o pai: staff AR vê só o montado do paciente AR', async () => {
+      const rows = await asRole('app_runtime', { userCountry: 'AR', userUid: STAFF_UID }, async (c) => {
+        const res = await c.query(`SELECT id FROM patient_itinerary_assembly WHERE id = ANY($1)`, [
+          [IDS.itin11AssemblyAR, IDS.itin11AssemblyBR],
+        ]);
+        return res.rows;
+      });
+      expect(rows).toHaveLength(1);
+      expect(rows[0].id).toBe(IDS.itin11AssemblyAR);
+    });
+
+    it('6j. staff AR não INSERE montado do paciente BR', async () => {
+      await expect(
+        asRole('app_runtime', { userCountry: 'AR', userUid: STAFF_UID }, async (c) => {
+          await c.query(`INSERT INTO patient_itinerary_assembly (patient_id, assembled_by, country) VALUES ($1, $2, 'AR')`, [
+            IDS.patientBR,
+            CREATED_BY,
+          ]);
+        }),
+      ).rejects.toThrow(/new row violates row-level security policy/);
+    });
+
+    it('6k. a trava enxerga através da RLS: staff AR não vê o paciente BR, mas a alocação sobreposta do mesmo worker cai em 23P01', async () => {
+      await expect(
+        asRole('app_runtime', { userCountry: 'AR', userUid: STAFF_UID }, async (c) => {
+          await c.query(
+            `INSERT INTO patient_itinerary_assignment (slot_id, worker_id, application_id, valid_from, created_by, updated_by)
+             VALUES ($1, $2, $3, '2026-01-01', $4, $4)`,
+            [IDS.itin11SlotAR, IDS.itin11Worker, IDS.itin11WjaAR, CREATED_BY],
+          );
+        }),
+      ).rejects.toMatchObject({ code: '23P01' });
     });
   });
 });
