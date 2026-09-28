@@ -35,39 +35,9 @@ import {
   readServiceTeamApi, postServiceTeamAction, countMarks, openContractedServiceTab, selectServiceRow,
   cleanupQuadroC,
 } from '../helpers/quadro-c-e2e-helper';
+import { extractUuid, insertSecondAddress } from '../helpers/itinerario-escrita-e2e-helper';
 
 const STAFF = mockAdminUserFor('quadro-c');
-
-/**
- * `seedAssignment` (itinerario-e2e-helper.ts, irmão pré-existente, não tocado por este passo)
- * devolve o `runSQL` cru de `patient-detail-a-helper.ts`: `psql -tAc "INSERT … RETURNING id"`
- * neste container imprime a tupla E o tag de comando ("INSERT 0 1") na MESMA saída — medido, achado
- * fora do passo (ver LISTA do retorno de P24). Os únicos consumidores anteriores descartavam o
- * retorno; extrai só o UUID aqui, sem tocar o helper irmão (regra 3 do brief).
- */
-function extractUuid(raw: string): string {
-  const found = raw.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)?.[0];
-  if (!found) throw new Error(`extractUuid: nenhum uuid na saída do psql (semente falhou?): ${raw}`);
-  return found;
-}
-
-/**
- * 2º endereço do paciente (`quadro-c-por-servico`, critério 13) — SQL direto: nenhum helper de
- * API grava endereço nesta pasta ainda (a rota `POST /patients/:patientId/addresses`,
- * `adminPatientsRoutes.ts:184`, não tem wrapper de e2e — DX-10.13 permite SQL quando a rota não
- * serve, listado aqui). Molde do INSERT: `localizaciones-abac-principal-tipo...ts:204-206`
- * (`address_type = NULL` — lista fechada pelo zod da API, não pelo CHECK do banco).
- */
-function insertSecondAddress(patientId: string): string {
-  return extractUuid(
-    runSQL(
-      `INSERT INTO patient_addresses (patient_id, is_default, address_type, address_formatted, address_raw, ` +
-        `lat, lng, display_order, source, created_at, updated_at) VALUES ('${patientId}', false, NULL, ` +
-        `'Av. Santa Fe 2000, CABA, AR', 'Av. Santa Fe 2000, CABA', -34.595, -58.393, 2, 'manual', NOW(), NOW()) ` +
-        `RETURNING id`,
-    ),
-  );
-}
 
 test.describe('quadro-c @integration', () => {
   test.use(LANCAMENTO_VIEWPORT_ES_AR);
