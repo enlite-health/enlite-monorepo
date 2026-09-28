@@ -82,15 +82,19 @@ function DeactivatedBadge() {
   const { t } = useTranslation();
   return (
     <span
-      // Conserto de dívida (gate): `gray-800` (#737373, sobrescrito neste tema) com
-      // `gray-300` (#EEEEEE, também sobrescrito) mede ~4,09:1 — abaixo do 4,5:1 AA
-      // pleno. `gray-900` NÃO é sobrescrito em tailwind.config.js (fica no default
-      // do Tailwind, #111827) — contra o mesmo `gray-300` mede ~15,29:1 (fórmula WCAG
-      // sRGB→linear→luminância relativa→razão), acima até do AAA (7:1).
-      className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-gray-300 text-gray-900"
+      // Conserto (gate): a escala `gray-*` deste tema é de MARCA — `gray-500` aqui é
+      // `rgba(217,217,217,0.5)`, translúcida, e o dot media ~1,10:1 sobre `gray-300`
+      // (praticamente invisível). Alinhado ao gêmeo de prestadores (`WorkersTable.tsx`):
+      // `slate-100`/`slate-500`/`slate-700`, escala PADRÃO do Tailwind (não sobrescrita
+      // em tailwind.config.js, sólida — sem alpha). Hex reais lidos de
+      // `tailwindcss/colors.js` (v3.4.1): slate-100 #f1f5f9, slate-500 #64748b,
+      // slate-700 #334155. Contraste (fórmula WCAG sRGB→linear→luminância relativa→razão):
+      // texto slate-700/slate-100 → 9,45:1 (acima do AAA 7:1); dot slate-500/slate-100 →
+      // 4,34:1 (acima do mínimo 3:1 para elemento gráfico).
+      className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700"
       title={t('admin.patients.statusBadge.deactivated')}
     >
-      <span className="w-1.5 h-1.5 rounded-full bg-gray-500" />
+      <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
       <Text as="span" size="xs" weight="medium" color="inherit">
         {t('admin.patients.statusBadge.deactivated')}
       </Text>
