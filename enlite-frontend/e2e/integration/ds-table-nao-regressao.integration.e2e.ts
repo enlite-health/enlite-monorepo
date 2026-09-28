@@ -268,4 +268,211 @@ test.describe('ds-table-nao-regressao', () => {
     await expectNoSelectedRow(page);
     await maybeScreenshot(page, 't15-paciente-historial');
   });
+
+  // ── t16-t30 (P5) ───────────────────────────────────────────────────────────────────────────
+
+  test('ds-table-nao-regressao t16-mensajes-por-etapa', async ({ page }) => {
+    await loginAs(page, DS_TABLE_STAFF);
+    await page.goto('/admin/mensajes-por-etapa');
+    // A tabela monta sempre (DX-9.6: FunnelStageMessagesPage.tsx:104), sem depender da massa.
+    const table = page.getByTestId('fsm-table');
+    await expect(table).toBeVisible();
+    await expect(table.locator('tbody tr').first()).toBeVisible();
+    await waitFontsReady(page);
+    await expectNoSelectedRow(page);
+    await maybeScreenshot(page, 't16-mensajes-por-etapa');
+  });
+
+  test('ds-table-nao-regressao t17-intentos-bloqueados', async ({ page }) => {
+    await loginAs(page, DS_TABLE_STAFF);
+    await page.goto('/admin/recruitment/blocked-attempts');
+    const content = page.getByTestId('blocked-content');
+    await expect(content).toBeVisible();
+    await expect(content.locator('table tbody tr').first()).toBeVisible();
+    await waitFontsReady(page);
+    await expectNoSelectedRow(page);
+    await maybeScreenshot(page, 't17-intentos-bloqueados');
+  });
+
+  test('ds-table-nao-regressao t18-direcciones-pendientes', async ({ page }) => {
+    await loginAs(page, DS_TABLE_STAFF);
+    await page.goto('/admin/vacancies/pending-address-review');
+    // PendingAddressReviewPage.tsx não tem data-testid de container ao redor da tabela.
+    await expect(page.locator('table tbody tr').first()).toBeVisible();
+    await waitFontsReady(page);
+    await expectNoSelectedRow(page);
+    await maybeScreenshot(page, 't18-direcciones-pendientes');
+  });
+
+  test('ds-table-nao-regressao t19-dedup-cola', async ({ page }) => {
+    await loginAs(page, DS_TABLE_STAFF);
+    await page.goto('/admin/dedup');
+    // Aba default já é "Fila" (DedupCenterPageInner, `activeTab` inicial 'queue') — sem clique.
+    const content = page.getByTestId('dedup-content');
+    await expect(content).toBeVisible();
+    await expect(content.locator('table tbody tr').first()).toBeVisible();
+    await waitFontsReady(page);
+    await expectNoSelectedRow(page);
+    await maybeScreenshot(page, 't19-dedup-cola');
+  });
+
+  test('ds-table-nao-regressao t20-dedup-importados', async ({ page }) => {
+    await loginAs(page, DS_TABLE_STAFF);
+    await page.goto('/admin/dedup');
+    // Aba por clique real (DedupTabs.tsx — botão puro, rótulo 'Importados' via i18n).
+    await page.getByRole('button', { name: 'Importados', exact: true }).click();
+    const content = page.getByTestId('imported-content');
+    await expect(content).toBeVisible();
+    await expect(content.locator('table tbody tr').first()).toBeVisible();
+    await waitFontsReady(page);
+    await expectNoSelectedRow(page);
+    await maybeScreenshot(page, 't20-dedup-importados');
+  });
+
+  test('ds-table-nao-regressao t21-dedup-historial', async ({ page }) => {
+    await loginAs(page, DS_TABLE_STAFF);
+    await page.goto('/admin/dedup');
+    await page.getByRole('button', { name: 'Historial', exact: true }).click();
+    const container = page.getByTestId('history-table-container');
+    await expect(container).toBeVisible();
+    await expect(container.locator('table tbody tr').first()).toBeVisible();
+    await waitFontsReady(page);
+    await expectNoSelectedRow(page);
+    await maybeScreenshot(page, 't21-dedup-historial');
+  });
+
+  test('ds-table-nao-regressao t22-catalogo-objetivos', async ({ page }) => {
+    await loginAs(page, DS_TABLE_STAFF);
+    await page.goto('/admin/catalogos/objetivos-especificos');
+    const container = page.getByTestId('therapeutic-catalog-table');
+    await expect(container).toBeVisible();
+    await expect(container.locator('table tbody tr').first()).toBeVisible();
+    await waitFontsReady(page);
+    await expectNoSelectedRow(page);
+    await maybeScreenshot(page, 't22-catalogo-objetivos');
+  });
+
+  test('ds-table-nao-regressao t23-tags', async ({ page }) => {
+    await loginAs(page, DS_TABLE_STAFF);
+    await page.goto('/admin/tags');
+    // TagCatalogPage.tsx não tem data-testid de container ao redor da tabela.
+    await expect(page.locator('table tbody tr').first()).toBeVisible();
+    await waitFontsReady(page);
+    await expectNoSelectedRow(page);
+    await maybeScreenshot(page, 't23-tags');
+  });
+
+  test('ds-table-nao-regressao t24-roles-chat', async ({ page }) => {
+    await loginAs(page, DS_TABLE_STAFF);
+    await page.goto('/admin/patient-chat-roles');
+    const container = page.getByTestId('chat-roles-table');
+    await expect(container).toBeVisible();
+    await expect(container.locator('table tbody tr').first()).toBeVisible();
+    await waitFontsReady(page);
+    await expectNoSelectedRow(page);
+    await maybeScreenshot(page, 't24-roles-chat');
+  });
+
+  test('ds-table-nao-regressao t25-plantillas', async ({ page }) => {
+    await loginAs(page, DS_TABLE_STAFF);
+    await page.goto('/admin/plantillas');
+    const table = page.getByTestId('tc-table');
+    await expect(table).toBeVisible();
+    await expect(table.locator('tbody tr').first()).toBeVisible();
+    await waitFontsReady(page);
+    await expectNoSelectedRow(page);
+    await maybeScreenshot(page, 't25-plantillas');
+  });
+
+  test('ds-table-nao-regressao t26-dashboard', async ({ page }) => {
+    await loginAs(page, DS_TABLE_STAFF);
+    await page.goto('/admin/dashboard');
+    // VAZIO por infra (medido 27/09, fora do escopo de codar aqui): `ManagementDashboardApiService`
+    // chama `${getBaseURL()}/analytics/dashboard/management` — SEM o segmento `/api/` que
+    // `installAuthInterceptors` troca pelo token mock (`page.route('**/api/**', swapToken)`,
+    // abac-stack-helper.ts:134). A requisição sai com o idToken fake do Firebase, e o backend
+    // recusa (`MockAuthMiddleware`, "Invalid credentials") — `data` nunca chega e `mgmt-content`/
+    // `ZoneAnalyticsSection` não montam nesta stack. O spec pré-existente
+    // `management-dashboard-visual.e2e.ts` já contorna isso mockando o endpoint via `page.route`
+    // — proibido aqui (BRIEF-COMUM critério 10: "nenhum page.route").
+    const errorNode = page.getByTestId('mgmt-error');
+    await expect(errorNode).toBeVisible();
+    test.info().annotations.push({
+      type: 'vazio',
+      description: 'GET /analytics/dashboard/management não casa o glob **/api/** do installAuthInterceptors — "Invalid credentials" (MockAuthMiddleware); ZoneAnalyticsSection nunca monta nesta stack sem page.route (proibido). Achado, não corrigido aqui.',
+    });
+    await waitFontsReady(page);
+    await expectNoSelectedRow(page);
+    await maybeScreenshot(page, 't26-dashboard');
+  });
+
+  test('ds-table-nao-regressao t27-usuarios', async ({ page }) => {
+    await loginAs(page, DS_TABLE_STAFF);
+    // Achado (medido 27/09, fora do escopo de codar aqui): a DX-9.6 previa a rota `/admin/users`,
+    // mas `AdminUsersPage` é a rota INDEX de `/admin` (App.tsx:238) — não existe
+    // `<Route path="users">`. `loginAs` já pousa em `/admin` (abac-stack-helper.ts:159); o `goto`
+    // explícito abaixo é só paridade de forma com os demais testes.
+    await page.goto('/admin');
+    await expect(page.getByTestId('admin-users-header')).toBeVisible();
+    await expect(page.locator('table tbody tr').first()).toBeVisible();
+    await waitFontsReady(page);
+    await expectNoSelectedRow(page);
+    await maybeScreenshot(page, 't27-usuarios');
+  });
+
+  test('ds-table-nao-regressao t28-acceso-grupos', async ({ page }) => {
+    await loginAs(page, DS_TABLE_STAFF);
+    await page.goto('/admin/access');
+    // VAZIO por acesso (medido 27/09, fora do escopo de codar aqui): `AccessGate` usa
+    // `useCellAccess` DIRETO (useCellAccess.ts:31-42) — fail-CLOSED SEMPRE, sem o bypass "engine
+    // off" que `useContainerAccess`/`useActionGate` têm (D268/D286). O staff fixo da massa
+    // (`DS_TABLE_STAFF`) não está em nenhum `iam.user_groups` com `permission_management:read` —
+    // só ganharia entrando num grupo com essa célula (molde:
+    // admin-access-panel.integration.e2e.ts:263-272), fora do escopo do P5 (spec só, sem tocar no
+    // helper da massa do P3). `AccessGate.tsx:26` redireciona `/admin/access` para `/admin` — a
+    // MESMA tela do t27 (confirmado por navegação real, não suposição).
+    await expect(page).toHaveURL(/\/admin\/?$/);
+    await expect(page.getByTestId('admin-users-header')).toBeVisible();
+    test.info().annotations.push({
+      type: 'vazio',
+      description: 'permission_management:read ausente para o staff fixo da massa — AccessGate (fail-closed sempre, useCellAccess) redireciona /admin/access para /admin. Achado, não corrigido aqui (fora do escopo do P5).',
+    });
+    await waitFontsReady(page);
+    await expectNoSelectedRow(page);
+    await maybeScreenshot(page, 't28-acceso-grupos');
+  });
+
+  test('ds-table-nao-regressao t29-acceso-features', async ({ page }) => {
+    await loginAs(page, DS_TABLE_STAFF);
+    await page.goto('/admin/access/features');
+    // VAZIO por acesso — mesmo achado do t28 (CountryFeaturesPage também é envolvida por
+    // `AccessGate`, mesma célula `permission_management`); confirmado por navegação real.
+    await expect(page).toHaveURL(/\/admin\/?$/);
+    await expect(page.getByTestId('admin-users-header')).toBeVisible();
+    test.info().annotations.push({
+      type: 'vazio',
+      description: 'permission_management:read ausente para o staff fixo da massa — AccessGate redireciona /admin/access/features para /admin. Mesmo achado do t28, não corrigido aqui.',
+    });
+    await waitFontsReady(page);
+    await expectNoSelectedRow(page);
+    await maybeScreenshot(page, 't29-acceso-features');
+  });
+
+  test('ds-table-nao-regressao t30-acceso-auditoria', async ({ page }) => {
+    await loginAs(page, DS_TABLE_STAFF);
+    await page.goto('/admin/access/audit');
+    // VAZIO por acesso — mesmo achado do t28 (PermissionHistoryPage também é envolvida por
+    // `AccessGate`, mesma célula `permission_management`); confirmado por navegação real.
+    // `data-clarity-mask` (PermissionHistoryPage.tsx:134) é irrelevante nesta stack — Clarity só
+    // roda em PRD (memória clarity-so-roda-em-prd) — e nunca chega a montar aqui.
+    await expect(page).toHaveURL(/\/admin\/?$/);
+    await expect(page.getByTestId('admin-users-header')).toBeVisible();
+    test.info().annotations.push({
+      type: 'vazio',
+      description: 'permission_management:read ausente para o staff fixo da massa — AccessGate redireciona /admin/access/audit para /admin. Mesmo achado do t28, não corrigido aqui.',
+    });
+    await waitFontsReady(page);
+    await expectNoSelectedRow(page);
+    await maybeScreenshot(page, 't30-acceso-auditoria');
+  });
 });
