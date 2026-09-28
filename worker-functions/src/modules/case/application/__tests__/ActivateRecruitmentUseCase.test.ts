@@ -297,6 +297,28 @@ describe('ActivateRecruitmentUseCase', () => {
     });
   });
 
+  // Hotfix gate-cobertura-verificada-vacante (28/09): a cobertura verificada satisfaz SÓ
+  // COVERAGE — endereço e horário do serviço continuam com sua própria régua, no gate REAL
+  // (POST .../activate-recruitment), não só no domínio isolado.
+  it('422 — cobertura verificada ativa NÃO dispensa SERVICE_ADDRESS/SERVICE_SCHEDULE', async () => {
+    const { promise } = run({
+      patientRow: {
+        id: PATIENT_ID,
+        status: 'ADMISSION',
+        case_number: 100,
+        insurance_informed: null,
+        has_verified_active_coverage: true,
+      },
+      serviceRow: { ...READY_SERVICE, live_address_id: null, schedule: null },
+    });
+    await expect(promise).rejects.toBeInstanceOf(RecruitmentNotReadyError);
+    await expect(promise).rejects.toMatchObject({
+      missing: ['SERVICE_ADDRESS', 'SERVICE_SCHEDULE'],
+      patientId: PATIENT_ID,
+      serviceId: SERVICE_ID,
+    });
+  });
+
   it('franja etária ausente (provider_age_band null) → age_range null/null (fallback), não estoura', async () => {
     const { promise } = run({
       patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular' },
