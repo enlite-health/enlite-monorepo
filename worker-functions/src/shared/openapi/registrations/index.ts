@@ -13,6 +13,7 @@ import './adminMessaging';
 import './adminPatients';
 import './adminPatientItinerary';
 import './adminPatientKanbanServices';
+import './adminServiceTeam';
 import './adminRecruitment';
 import './adminSetup';
 import './adminSocialLinks';
