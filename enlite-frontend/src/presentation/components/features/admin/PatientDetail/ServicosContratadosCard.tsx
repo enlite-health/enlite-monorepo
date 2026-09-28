@@ -20,6 +20,7 @@ import { recruitmentMissingCodes } from '@domain/entities/PatientCompleteness';
 import { runActivateRecruitmentClick } from './activateRecruitmentClick';
 import { PatientContractedServicesEditDrawer, type ContractedServiceTarget } from './edit/PatientContractedServicesEditDrawer';
 import { ContractedServiceDetailDrawer } from './ContractedServiceDetailDrawer';
+import { ServiceTeamSection } from './ServiceTeamSection';
 import { contractedServiceScheduleText } from './contractedServiceScheduleText';
 import { useAutoOpenDrawer, type DrawerFocusRequest } from '@hooks/admin/useAutoOpenDrawer';
 
@@ -107,6 +108,8 @@ function ServiceRow({
   service,
   addresses,
   insuranceInformed,
+  isCurrent,
+  onSelect,
   onOpen,
   onEdit,
   onActivated,
@@ -117,6 +120,9 @@ function ServiceRow({
   service: PatientContractedServiceDetail;
   addresses: PatientAddressDetail[];
   insuranceInformed: string | null;
+  /** Linha escolhida para o quadro C (DX-10.9) — realce do átomo, nunca `bg-*` aqui. */
+  isCurrent: boolean;
+  onSelect: (service: PatientContractedServiceDetail) => void;
   onOpen: (service: PatientContractedServiceDetail) => void;
   onEdit: (service: PatientContractedServiceDetail) => void;
   onActivated: () => void;
@@ -132,7 +138,8 @@ function ServiceRow({
     <TableRow
       data-testid={`contracted-service-row-${service.id}`}
       className={service.active ? '' : 'opacity-60'}
-      onClick={() => onOpen(service)}
+      selected={isCurrent}
+      onClick={() => { onSelect(service); onOpen(service); }}
     >
       <TableCell unwrapped>
         {service.deviceTypes.length > 0
@@ -242,10 +249,27 @@ export function ServicosContratadosCard({ patient, onSaved, focusRequest }: Serv
   const { t } = useTranslation();
   const [editing, setEditing] = useState<ContractedServiceTarget | null>(null);
   const [selected, setSelected] = useState<PatientContractedServiceDetail | null>(null);
+  // Quadro C (DX-10.9): a linha ESCOLHIDA para o encuadre — o `selected` acima é o do DRAWER, um
+  // conceito diferente (drawer continua abrindo no mesmo clique, sem mudança). `selectionNonce`
+  // incrementa em TODO clique, inclusive re-clicar a mesma linha — é assim que o operador
+  // "atualiza" o quadro C sem recarregar a página (DX-10.8, critérios 2 e 15).
+  const [selectedServiceId, setSelectedServiceId] = useState<string | null>(null);
+  const [selectionNonce, setSelectionNonce] = useState(0);
   // D269/D286: as TRÊS portas para o PATCH (+ Nuevo, lápis da linha, "Editar" do detalhe) seguem a
   // mesma célula — o gate do sync main→stage (08/09) achou a terceira aberta.
   const { allowed: podeEditar } = useActionGate('patient_services', 'update');
   const services = patient.contractedServices;
+  const currentService = services.find((s) => s.id === selectedServiceId) ?? null;
+  // A MESMA busca do endereço que a linha usa (ServiceRow, addresses.find por addressId) — o
+  // título do quadro C nunca chama outra fonte (DX-10.10 (1)).
+  const currentAddress = currentService
+    ? (patient.addresses ?? []).find((a) => a.id === currentService.addressId) ?? null
+    : null;
+
+  function handleSelectService(service: PatientContractedServiceDetail): void {
+    setSelectedServiceId(service.id);
+    setSelectionNonce((n) => n + 1);
+  }
   // Checklist "falta serviço" → formulário de um serviço NOVO.
   useAutoOpenDrawer(focusRequest, 'CONTRACTED_SERVICE', () => setEditing({ kind: 'new' }));
   // Migration 330: "falta endereço no serviço" → abre o PRIMEIRO serviço ativo sem endereço vivo
@@ -332,6 +356,8 @@ export function ServicosContratadosCard({ patient, onSaved, focusRequest }: Serv
                 service={svc}
                 addresses={patient.addresses ?? []}
                 insuranceInformed={patient.insuranceInformed}
+                isCurrent={svc.id === selectedServiceId}
+                onSelect={handleSelectService}
                 onOpen={setSelected}
                 onEdit={(s) => setEditing({ kind: 'edit', serviceId: s.id })}
                 onActivated={() => onSaved?.()}
@@ -342,6 +368,13 @@ export function ServicosContratadosCard({ patient, onSaved, focusRequest }: Serv
           )}
         </TableBody>
       </Table>
+
+      <ServiceTeamSection
+        patientId={patient.id}
+        service={currentService}
+        address={currentAddress}
+        selectionNonce={selectionNonce}
+      />
     </div>
   );
 }

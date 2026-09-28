@@ -13,6 +13,7 @@ import type {
   UpdateProviderBody,
 } from '@domain/entities/PatientContractedService';
 import type { PatientKanbanServiceSummary } from '@domain/entities/PatientLifecycle';
+import type { ServiceTeam } from '@domain/entities/ServiceTeam';
 
 export class ContractedServiceApiError extends Error {
   readonly status: number;
@@ -156,6 +157,53 @@ class AdminContractedServicesApiServiceClass {
     return this.request<KanbanServicesResult>(
       'GET',
       `/api/admin/patients/kanban/services${country ? `?country=${encodeURIComponent(country)}` : ''}`,
+    );
+  }
+
+  /**
+   * GET /api/admin/patients/:id/contracted-services/:sid/team — o time do quadro C, CALCULADO
+   * (DX-10.7). Uma chamada por seleção de linha, nunca por card/coluna (o hook governa isso).
+   */
+  async getServiceTeam(patientId: string, serviceId: string): Promise<ServiceTeam> {
+    return this.request<ServiceTeam>(
+      'GET',
+      `/api/admin/patients/${patientId}/contracted-services/${serviceId}/team`,
+    );
+  }
+
+  /**
+   * POST .../team/reject — grava a marca de rejeição; devolve o time já recalculado (0 GET
+   * extra). `reasonCategory` ausente é 422 `SERVICE_TEAM_REASON_REQUIRED` — regra da API, o
+   * cliente só encaminha (invariante 10, critério 8).
+   */
+  async rejectServiceTeamMember(
+    patientId: string,
+    serviceId: string,
+    workerId: string,
+    reasonCategory?: string,
+  ): Promise<ServiceTeam> {
+    return this.request<ServiceTeam>(
+      'POST',
+      `/api/admin/patients/${patientId}/contracted-services/${serviceId}/team/reject`,
+      { workerId, reasonCategory },
+    );
+  }
+
+  /**
+   * POST .../team/revert — reverte a rejeição (a tabela é o log: grava `reverted_*`, nunca
+   * `DELETE`); devolve o time recalculado. `reasonCategory` ausente é 422
+   * `SERVICE_TEAM_REASON_REQUIRED` (invariante 11 — motivo nos dois sentidos).
+   */
+  async revertServiceTeamMember(
+    patientId: string,
+    serviceId: string,
+    workerId: string,
+    reasonCategory?: string,
+  ): Promise<ServiceTeam> {
+    return this.request<ServiceTeam>(
+      'POST',
+      `/api/admin/patients/${patientId}/contracted-services/${serviceId}/team/revert`,
+      { workerId, reasonCategory },
     );
   }
 }

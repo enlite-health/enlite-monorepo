@@ -48,6 +48,23 @@ vi.mock('@infrastructure/http/AdminContractedServicesApiService', async (importO
 const mockShowToast = vi.fn();
 vi.mock('@presentation/hooks/useToast', () => ({ useToast: () => mockShowToast }));
 
+// Quadro C (Fase 10, DX-10.15 A-contrato): dublê — sem ele a seção chamaria `useServiceTeam` real
+// (FirebaseAuthService + fetch). Nenhuma asserção EXISTENTE deste arquivo muda; o dublê só expõe,
+// via testid, o que este card passou (service/selectionNonce) para os testes novos do P22.
+const mockServiceTeamSectionCalls = vi.fn();
+vi.mock('../ServiceTeamSection', () => ({
+  ServiceTeamSection: (props: { patientId: string; service: { id: string } | null; address: unknown; selectionNonce: number }) => {
+    mockServiceTeamSectionCalls(props);
+    return (
+      <div
+        data-testid="service-team-section-stub"
+        data-service-id={props.service?.id ?? ''}
+        data-nonce={props.selectionNonce}
+      />
+    );
+  },
+}));
+
 beforeAll(async () => {
   await i18n.use(initReactI18next).init({
     lng: 'es',
@@ -574,5 +591,55 @@ describe('🔴 D113 — patient.addresses redigido (null) não quebra o card', (
     ).not.toThrow();
 
     expect(screen.getByTestId('patient-contracted-services-edit-drawer').getAttribute('data-target')).toBe('edit:svc-1');
+  });
+});
+
+// Quadro C (Fase 10, P22, DX-10.9): a tabela ESCOLHE. `selected` é a prop do átomo (Table.tsx,
+// Fase 9) — nenhum ternário de classe nem `bg-*` novo no TableRow (critério 21): a seleção é a prop `selected` do átomo. `ServiceTeamSection` é dublê
+// (topo do arquivo) — os testes abaixo provam o que o CARD passa para ela, não o que ela renderiza.
+describe('Quadro C (DX-10.9): clique na linha seleciona E abre o detalhe, como hoje', () => {
+  const svc2: PatientContractedServiceDetail = { ...SERVICE, id: 'svc-2', serviceCode: 'CAREGIVER' };
+
+  it('sem clique: nenhuma linha selecionada; a seção recebe service=null (sem seleção inicial)', () => {
+    const patient = { ...patientDetailFixture, contractedServices: [SERVICE, svc2] };
+    render(<ServicosContratadosCard patient={patient} />);
+
+    expect(screen.getByTestId('contracted-service-row-svc-1').getAttribute('aria-selected')).toBeNull();
+    expect(screen.getByTestId('contracted-service-row-svc-2').getAttribute('aria-selected')).toBeNull();
+    expect(screen.getByTestId('service-team-section-stub').getAttribute('data-service-id')).toBe('');
+  });
+
+  it('clique na linha 2: aria-selected="true" SÓ nela; a seção recebe o serviço 2', () => {
+    const patient = { ...patientDetailFixture, contractedServices: [SERVICE, svc2] };
+    render(<ServicosContratadosCard patient={patient} />);
+
+    fireEvent.click(screen.getByTestId('contracted-service-row-svc-2'));
+
+    expect(screen.getByTestId('contracted-service-row-svc-2').getAttribute('aria-selected')).toBe('true');
+    expect(screen.getByTestId('contracted-service-row-svc-1').getAttribute('aria-selected')).toBeNull();
+    expect(screen.getByTestId('service-team-section-stub').getAttribute('data-service-id')).toBe('svc-2');
+  });
+
+  it('clicar de novo NA MESMA linha incrementa o selectionNonce (é como o operador "atualiza" o quadro C, DX-10.8)', () => {
+    const patient = { ...patientDetailFixture, contractedServices: [SERVICE] };
+    render(<ServicosContratadosCard patient={patient} />);
+
+    fireEvent.click(screen.getByTestId('contracted-service-row-svc-1'));
+    const nonceApos1 = Number(screen.getByTestId('service-team-section-stub').getAttribute('data-nonce'));
+
+    fireEvent.click(screen.getByTestId('contracted-service-row-svc-1'));
+    const nonceApos2 = Number(screen.getByTestId('service-team-section-stub').getAttribute('data-nonce'));
+
+    expect(nonceApos2).toBe(nonceApos1 + 1);
+  });
+
+  it('o drawer de detalhe continua abrindo no MESMO clique que seleciona a linha (o teste que já provava isso roda sem mudança)', () => {
+    const patient = { ...patientDetailFixture, contractedServices: [SERVICE] };
+    render(<ServicosContratadosCard patient={patient} />);
+
+    fireEvent.click(screen.getByTestId('contracted-service-row-svc-1'));
+
+    expect(screen.getByTestId('contracted-service-detail-drawer')).toBeTruthy();
+    expect(screen.getByTestId('contracted-service-row-svc-1').getAttribute('aria-selected')).toBe('true');
   });
 });

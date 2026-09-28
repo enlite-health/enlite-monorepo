@@ -31,6 +31,8 @@ import {
   AdminPatientContractedServicesController,
   AdminTherapeuticProjectsController,
   createAdminTherapeuticProjectsRoutes,
+  AdminServiceTeamController,
+  createAdminServiceTeamRoutes,
   createAdminPatientsRoutes,
   PublicLeadsController,
   createAdminPatientPhotoRoutes,
@@ -532,6 +534,9 @@ app.use(
   '/api/admin',
   createAdminTherapeuticProjectsRoutes(new AdminTherapeuticProjectsController(), authMiddleware, permissionMiddleware),
 );
+
+// ========== Quadro C — time do serviço contratado (cadeia Fase 10) ==========
+app.use('/api/admin', createAdminServiceTeamRoutes(new AdminServiceTeamController(), authMiddleware, permissionMiddleware));
 
 // ========== Conferência de horas do Ana Care (spec anacare-conferencia-de-horas, fase 1) ==========
 app.use(
