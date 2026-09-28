@@ -2,7 +2,7 @@
  * kanban-pacientes-substituicao.integration.e2e.ts @integration — Fase 13 (cadeia-paciente-vacante-itinerario),
  * DX-13.15.
  *
- * 1 spec, 7 títulos (API + tela), datas SEMPRE do banco (DATA-F13, nunca o relógio do runner).
+ * 1 spec, 9 títulos (API + tela), datas SEMPRE do banco (DATA-F13, nunca o relógio do runner).
  *
  * Nome do ARQUIVO: sem tocar `pr-gate.yml` — o caminho casa `kanban-pacientes` já presente no
  * `grep:` do job padrão (`pr-gate.yml:142`), o mesmo fallback das Fases 10/11. Os títulos dos
@@ -150,20 +150,25 @@ test.describe('substituicao @integration', () => {
         { dayOfWeek: 1, startTime: '12:30', endTime: '16:00' },
       ],
     });
-    // Z: 1 serviço, 2 faixas (T3 na 1ª, T4 na 2ª) — "2º slot" do texto do passo é a 2ª faixa da
-    // MESMA vaga QUICK_RESPONSE_TEAM (vZ), não um 2º serviço.
+    // Critério 8 isolado (gate parcial, G1-9): o 3º caso só pode conflitar com a 1ª SUBSTITUIÇÃO,
+    // nunca com a alocação semanal de W (X, segunda 08-12). 1ª substituição: 2º serviço de Y
+    // (endereço Y), segunda 13-16 — folga EXATA contra X → aceita. 2ª substituição: serviço de Z
+    // (endereço Z, 3º serviço), segunda 14-17 — cruza a 1ª (14-16); contra X (termina 12) sobram
+    // 2h de folga, então só o ramo das substituições da função de conflito a recusa.
+    const sY2 = await createServiceViaApi(request, seedY.patientId, {
+      addressId: seedY.addressId,
+      schedule: [{ dayOfWeek: 1, startTime: '13:00', endTime: '16:00' }],
+    });
     const seedZ = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.63, lng: -58.43 });
     const sZ = await createServiceViaApi(request, seedZ.patientId, {
       addressId: seedZ.addressId,
-      schedule: [
-        { dayOfWeek: 1, startTime: '13:00', endTime: '16:00' },
-        { dayOfWeek: 1, startTime: '14:00', endTime: '17:00' },
-      ],
+      schedule: [{ dayOfWeek: 1, startTime: '14:00', endTime: '17:00' }],
     });
 
     const token = tokenFor(ITINERARIO_STAFF);
     const vX = await activateRecruitmentViaApi(request, seedX.patientId, seedX.serviceId);
     const vY = await activateRecruitmentViaApi(request, seedY.patientId, sY);
+    const vY2 = await activateRecruitmentViaApi(request, seedY.patientId, sY2);
     const vZ = await activateRecruitmentViaApi(request, seedZ.patientId, sZ);
 
     const itinX = await readItineraryApi(request, seedX.patientId);
@@ -172,27 +177,27 @@ test.describe('substituicao @integration', () => {
     const svcY = itinY.body.data?.services.find((s) => s.contractedServiceId === sY);
     const slotY1000 = svcY?.slots.find((sl) => sl.startTime === '10:00')?.id;
     const slotY1230 = svcY?.slots.find((sl) => sl.startTime === '12:30')?.id;
+    const slotY2 = itinY.body.data?.services.find((s) => s.contractedServiceId === sY2)?.slots[0]?.id;
     const itinZ = await readItineraryApi(request, seedZ.patientId);
-    const svcZ = itinZ.body.data?.services.find((s) => s.contractedServiceId === sZ);
-    const slotZ1300 = svcZ?.slots.find((sl) => sl.startTime === '13:00')?.id;
-    const slotZ1400 = svcZ?.slots.find((sl) => sl.startTime === '14:00')?.id;
-    if (!slotX || !slotY1000 || !slotY1230 || !slotZ1300 || !slotZ1400) {
+    const slotZ = itinZ.body.data?.services.find((s) => s.contractedServiceId === sZ)?.slots[0]?.id;
+    if (!slotX || !slotY1000 || !slotY1230 || !slotY2 || !slotZ) {
       throw new Error('substituicao-sobreposicao-recusa: slot ausente na semente');
     }
 
-    const w = insertTestWorker({ occupation: 'AT' }); // substituto candidato às 3 vagas
+    const w = insertTestWorker({ occupation: 'AT' }); // substituto candidato às 4 vagas
     const t2a = insertTestWorker({ occupation: 'AT' }); // titular de Y 10-14 (2 titulares — as 2 faixas de Y se sobrepõem entre si)
     const t2b = insertTestWorker({ occupation: 'AT' }); // titular de Y 12:30-16
-    const t3 = insertTestWorker({ occupation: 'AT' }); // titular de Z 13-16
+    const t3 = insertTestWorker({ occupation: 'AT' }); // titular do 2º serviço de Y 13-16
     const t4 = insertTestWorker({ occupation: 'AT' }); // titular de Z 14-17
     const d = nextWeekdaySql(1);
     try {
       insertWJA({ workerId: w, jobPostingId: vX, funnelStage: 'QUICK_RESPONSE_TEAM' });
       insertWJA({ workerId: w, jobPostingId: vY, funnelStage: 'QUICK_RESPONSE_TEAM' });
+      insertWJA({ workerId: w, jobPostingId: vY2, funnelStage: 'QUICK_RESPONSE_TEAM' });
       insertWJA({ workerId: w, jobPostingId: vZ, funnelStage: 'QUICK_RESPONSE_TEAM' });
       insertWJA({ workerId: t2a, jobPostingId: vY, funnelStage: 'QUICK_RESPONSE_TEAM' });
       insertWJA({ workerId: t2b, jobPostingId: vY, funnelStage: 'QUICK_RESPONSE_TEAM' });
-      insertWJA({ workerId: t3, jobPostingId: vZ, funnelStage: 'QUICK_RESPONSE_TEAM' });
+      insertWJA({ workerId: t3, jobPostingId: vY2, funnelStage: 'QUICK_RESPONSE_TEAM' });
       insertWJA({ workerId: t4, jobPostingId: vZ, funnelStage: 'QUICK_RESPONSE_TEAM' });
 
       // W fica alocado SEMANALMENTE em X (08-12) — a mesma sobreposição/folga da Fase 11, agora via ausência.
@@ -224,20 +229,21 @@ test.describe('substituicao @integration', () => {
       expect(rGap.body.minGapMinutes).not.toBeNull();
       expect(rGap.body.minGapMinutes).not.toBeUndefined();
 
-      // W substitui T3 em Z 13-16 — aceita, folga suficiente de X (08-12, gap 60min).
-      const allocT3 = await allocateApi(request, token, seedZ.patientId, sZ, slotZ1300, { workerId: t3 });
+      // 1ª substituição: W substitui T3 no 2º serviço de Y, 13-16 — aceita (folga exata contra X 08-12).
+      const allocT3 = await allocateApi(request, token, seedY.patientId, sY2, slotY2, { workerId: t3 });
       expect(allocT3.status).toBe(201);
       const allocIdT3 = (allocT3.body.data as AllocateData | undefined)?.allocationId;
       if (!allocIdT3) throw new Error('substituicao-sobreposicao-recusa: alocação de T3 sem id');
-      const absT3 = await registerAbsenceApi(request, token, seedZ.patientId, sZ, allocIdT3, { date: d });
+      const absT3 = await registerAbsenceApi(request, token, seedY.patientId, sY2, allocIdT3, { date: d });
       expect(absT3.status).toBe(201);
       const absIdT3 = absT3.body.data?.absenceId;
       if (!absIdT3) throw new Error('substituicao-sobreposicao-recusa: ausência de T3 sem id');
-      const rAccept = await setAbsenceSubstituteApi(request, token, seedZ.patientId, sZ, absIdT3, { substituteWorkerId: w });
+      const rAccept = await setAbsenceSubstituteApi(request, token, seedY.patientId, sY2, absIdT3, { substituteWorkerId: w });
       expect(rAccept.status).toBe(200);
 
-      // T4 na 2ª faixa de Z (14-17) cruza a substituição recém-aceita de W em 13-16 — 409.
-      const allocT4 = await allocateApi(request, token, seedZ.patientId, sZ, slotZ1400, { workerId: t4 });
+      // 2ª substituição: T4 em Z (14-17) cruza SÓ a 1ª substituição de W (13-16) — 409; contra a
+      // alocação semanal de W em X (08-12) há 2h de folga.
+      const allocT4 = await allocateApi(request, token, seedZ.patientId, sZ, slotZ, { workerId: t4 });
       expect(allocT4.status).toBe(201);
       const allocIdT4 = (allocT4.body.data as AllocateData | undefined)?.allocationId;
       if (!allocIdT4) throw new Error('substituicao-sobreposicao-recusa: alocação de T4 sem id');
@@ -257,10 +263,11 @@ test.describe('substituicao @integration', () => {
       cleanupSubstituicao(seedZ.patientId);
       cleanupWJAAndEncuadre(w, vX);
       cleanupWJAAndEncuadre(w, vY);
+      cleanupWJAAndEncuadre(w, vY2);
       cleanupWJAAndEncuadre(w, vZ);
       cleanupWJAAndEncuadre(t2a, vY);
       cleanupWJAAndEncuadre(t2b, vY);
-      cleanupWJAAndEncuadre(t3, vZ);
+      cleanupWJAAndEncuadre(t3, vY2);
       cleanupWJAAndEncuadre(t4, vZ);
       cleanupTestWorker(w);
       cleanupTestWorker(t2a);
@@ -440,6 +447,154 @@ test.describe('substituicao @integration', () => {
       }
 
       console.log('[13.4]', wRow?.substitutionDates, tInService);
+    } finally {
+      cleanupSubstituicao(seed.patientId);
+      cleanupWJAAndEncuadre(t, v);
+      cleanupWJAAndEncuadre(w, v);
+      cleanupTestWorker(t);
+      cleanupTestWorker(w);
+      seed.cleanup();
+    }
+  });
+
+  test('substituicao-tela-conflito', async ({ page, request }) => {
+    const seed = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.6, lng: -58.4 });
+    // Outro paciente (outro endereço), mesmo horário semanal (segunda 08-12): W fica alocado lá.
+    const seedW = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.65, lng: -58.45 });
+    const token = tokenFor(ITINERARIO_STAFF);
+    const v = await activateRecruitmentViaApi(request, seed.patientId, seed.serviceId);
+    const vW = await activateRecruitmentViaApi(request, seedW.patientId, seedW.serviceId);
+    const itin = await readItineraryApi(request, seed.patientId);
+    const slotId = itin.body.data?.services.find((s) => s.contractedServiceId === seed.serviceId)?.slots[0]?.id;
+    const itinW = await readItineraryApi(request, seedW.patientId);
+    const slotW = itinW.body.data?.services.find((s) => s.contractedServiceId === seedW.serviceId)?.slots[0]?.id;
+    if (!slotId || !slotW) throw new Error('substituicao-tela-conflito: slot ausente na semente');
+
+    const t = insertTestWorker({ occupation: 'AT' }); // titular
+    const w = insertTestWorker({ occupation: 'AT' }); // Selecionado aqui, alocado semanalmente no outro paciente
+    const d = nextWeekdaySql(1);
+    const countAbsences = (allocationId: string): number => Number(
+      runSQL(`SELECT count(*) FROM patient_itinerary_absence WHERE assignment_id = '${allocationId}'`),
+    );
+    try {
+      insertWJA({ workerId: t, jobPostingId: v, funnelStage: 'QUICK_RESPONSE_TEAM' });
+      insertWJA({ workerId: w, jobPostingId: v, funnelStage: 'QUICK_RESPONSE_TEAM' });
+      insertWJA({ workerId: w, jobPostingId: vW, funnelStage: 'QUICK_RESPONSE_TEAM' });
+      const allocT = await allocateApi(request, token, seed.patientId, seed.serviceId, slotId, { workerId: t });
+      expect(allocT.status).toBe(201);
+      const allocationId = (allocT.body.data as AllocateData | undefined)?.allocationId;
+      if (!allocationId) throw new Error('substituicao-tela-conflito: alocação do titular sem allocationId');
+      const allocW = await allocateApi(request, token, seedW.patientId, seedW.serviceId, slotW, { workerId: w });
+      expect(allocW.status).toBe(201);
+
+      const teamBefore = await readServiceTeamApi(request, seed.patientId, seed.serviceId);
+      const wLabel = (teamBefore.body.data?.selected ?? []).find((m) => m.workerId === w)?.displayName;
+      if (!wLabel) throw new Error('substituicao-tela-conflito: W sem displayName entre os Selecionados');
+      const before = countAbsences(allocationId);
+
+      await loginAs(page, STAFF);
+      await openServiceTeamOf(page, seed.patientId, seed.serviceId);
+      await page.getByTestId(`service-team-substitute-${t}`).click();
+      await expect(page.getByTestId('substitution-modal')).toBeVisible();
+      await page.getByTestId('substitution-date').selectOption(d);
+      await page.getByTestId('substitution-worker').click();
+      await page.getByPlaceholder('Buscar...').pressSequentially(wLabel.slice(-10), { delay: 20 });
+      await page.getByRole('option', { name: wLabel }).click();
+
+      const [conflictRes] = await Promise.all([
+        page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith('/absences')),
+        page.getByTestId('substitution-confirm').click(),
+      ]);
+      const conflictBody = (await conflictRes.json().catch(() => ({}))) as { code?: string };
+      expect(conflictRes.status()).toBe(409);
+      expect(conflictBody.code).toBe('ITINERARY_OVERLAP');
+      await expect(page.getByTestId('quadro-c-acao-erro')).toBeVisible();
+      const after = countAbsences(allocationId);
+      expect(after).toBe(before);
+
+      // Controle positivo da contagem: a MESMA faixa/data "sin reemplazo" grava — a contagem vê a escrita.
+      await page.getByTestId(`service-team-substitute-${t}`).click();
+      await page.getByTestId('substitution-date').selectOption(d);
+      await Promise.all([
+        page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith('/absences') && r.ok()),
+        page.getByTestId('substitution-confirm').click(),
+      ]);
+      const control = countAbsences(allocationId);
+
+      console.log('[13.tela-conflito]', conflictRes.status(), conflictBody.code, before, after, control);
+      expect(control).toBe(before + 1);
+    } finally {
+      cleanupSubstituicao(seed.patientId);
+      cleanupSubstituicao(seedW.patientId);
+      cleanupWJAAndEncuadre(t, v);
+      cleanupWJAAndEncuadre(w, v);
+      cleanupWJAAndEncuadre(w, vW);
+      cleanupTestWorker(t);
+      cleanupTestWorker(w);
+      seed.cleanup();
+      seedW.cleanup();
+    }
+  });
+
+  test('substituicao-tela-sin-reemplazo', async ({ page, request }) => {
+    const seed = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.6, lng: -58.4 });
+    const token = tokenFor(ITINERARIO_STAFF);
+    const v = await activateRecruitmentViaApi(request, seed.patientId, seed.serviceId);
+    const itin = await readItineraryApi(request, seed.patientId);
+    const slotId = itin.body.data?.services.find((s) => s.contractedServiceId === seed.serviceId)?.slots[0]?.id;
+    if (!slotId) throw new Error('substituicao-tela-sin-reemplazo: slot ausente na semente');
+
+    const t = insertTestWorker({ occupation: 'AT' }); // titular
+    const w = insertTestWorker({ occupation: 'AT' }); // Selecionado — oferecido no modal, mas NÃO escolhido
+    const d = nextWeekdaySql(1);
+    try {
+      insertWJA({ workerId: t, jobPostingId: v, funnelStage: 'QUICK_RESPONSE_TEAM' });
+      insertWJA({ workerId: w, jobPostingId: v, funnelStage: 'QUICK_RESPONSE_TEAM' });
+      const allocT = await allocateApi(request, token, seed.patientId, seed.serviceId, slotId, { workerId: t });
+      expect(allocT.status).toBe(201);
+      const allocationId = (allocT.body.data as AllocateData | undefined)?.allocationId;
+      if (!allocationId) throw new Error('substituicao-tela-sin-reemplazo: alocação do titular sem allocationId');
+
+      await loginAs(page, STAFF);
+      await openServiceTeamOf(page, seed.patientId, seed.serviceId);
+      await expect(page.getByTestId(`service-team-card-${t}`)).toBeVisible();
+      const chips = page.getByTestId('quadro-c-board').getByTestId('card-datas-substituicao');
+      const chipsBefore = await chips.count();
+
+      await page.getByTestId(`service-team-substitute-${t}`).click();
+      await expect(page.getByTestId('substitution-modal')).toBeVisible();
+      // Falta a data (escolha obrigatória) → confirmar desabilitado; o substituto já nasce "sin reemplazo".
+      await expect(page.getByTestId('substitution-confirm')).toBeDisabled();
+      await page.getByTestId('substitution-date').selectOption(d);
+      await expect(page.getByTestId('substitution-confirm')).toBeEnabled();
+
+      const [postRes] = await Promise.all([
+        page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith('/absences') && r.ok()),
+        page.waitForResponse((r) => r.request().method() === 'GET' && r.url().includes('/contracted-services/') && r.url().endsWith('/team') && r.ok()),
+        page.getByTestId('substitution-confirm').click(),
+      ]);
+      const postPayload = (postRes.request().postDataJSON() ?? {}) as Record<string, unknown>;
+      const hasSubstituteKey = Object.prototype.hasOwnProperty.call(postPayload, 'substituteWorkerId');
+
+      await expect(page.getByTestId(`service-team-card-${t}`)).toBeVisible();
+      await expect(chips).toHaveCount(chipsBefore);
+      const openWithoutSubstitute = Number(runSQL(
+        `SELECT count(*) FROM patient_itinerary_absence WHERE assignment_id = '${allocationId}' ` +
+          `AND cancelled_at IS NULL AND substitute_worker_id IS NULL`,
+      ));
+
+      const itinAfter = await readItineraryApi(request, seed.patientId);
+      const alerts = (itinAfter.body.data as unknown as ItineraryBodyF13 | undefined)?.alerts ?? [];
+
+      console.log(
+        '[13.tela-sin-reemplazo]', postRes.status(), hasSubstituteKey, chipsBefore, await chips.count(),
+        openWithoutSubstitute, alerts.length,
+      );
+      expect(hasSubstituteKey).toBe(false);
+      expect(openWithoutSubstitute).toBe(1);
+      expect(alerts.length).toBe(1);
+      expect(alerts[0]?.serviceId).toBe(seed.serviceId);
+      expect(alerts[0]?.date).toBe(d);
     } finally {
       cleanupSubstituicao(seed.patientId);
       cleanupWJAAndEncuadre(t, v);
