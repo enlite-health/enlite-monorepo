@@ -62,8 +62,16 @@ const LOOKS_LIKE_SLUG = /^caso/i;
  * ⚠️ Consequência deliberada: link antigo para vaga já fechada passa a devolver **404** em vez
  * de renderizar a vaga. É a resposta certa — vaga fechada não é conteúdo público —, e é
  * visível para quem clicar, não silenciosa.
+ *
+ * `STATUS_PUBLICAVEL` continua sendo "candidatável" (o feed usa a mesma lista, sem DE_BAJA —
+ * D179 continua valendo). `DE_BAJA` é um caso à parte (change baja-vacante-por-servico): a
+ * PÁGINA da vaga (link direto, este endpoint) precisa continuar servindo — 200, mostrando
+ * "desativada" — mesmo depois do serviço contratado dar baixa; só o FEED e a candidatura
+ * somem. `STATUS_DETALHE_PUBLICO` é a lista que este endpoint usa para não dar 404; o payload
+ * carrega `is_disabled` calculado a partir do status para a tela decidir o que renderizar.
  */
 const STATUS_PUBLICAVEL = ['ACTIVE', 'SEARCHING', 'SEARCHING_REPLACEMENT', 'RAPID_RESPONSE'];
+const STATUS_DETALHE_PUBLICO = [...STATUS_PUBLICAVEL, 'DE_BAJA'];
 
 export class PublicVacancyController {
   private readonly db = DatabaseConnection.getInstance().getPool();
@@ -89,13 +97,22 @@ export class PublicVacancyController {
       // O placeholder da lista de status vem DEPOIS dos parâmetros de identificação, cujo
       // número muda entre slug (2) e uuid (1) — por isso é calculado, não chumbado.
       const statusParam = `$${params.length + 1}`;
-      params.push(STATUS_PUBLICAVEL);
+      params.push(STATUS_DETALHE_PUBLICO);
       const identificacao = isSlug
         ? 'jp.case_number = $1 AND jp.vacancy_number = $2'
         : 'jp.id = $1';
+      // Cinto de segurança (change baja-vacante-por-servico), mesmo predicado do feed
+      // (`PublicJobsQueryBuilder`): se o serviço ligado está inativo mas o status da vaga NÃO
+      // é DE_BAJA (divergência — status não sincronizado a tempo), a vaga não é tratada como
+      // publicável mesmo assim — cai no 404, como qualquer vaga não-publicável. DE_BAJA em si
+      // é sempre servido (é exatamente o estado que este endpoint passou a mostrar).
       const whereClause =
         `${identificacao} AND jp.deleted_at IS NULL ` +
-        `AND jp.is_draft = false AND jp.status = ANY(${statusParam}::text[])`;
+        `AND jp.is_draft = false AND jp.status = ANY(${statusParam}::text[]) ` +
+        `AND (jp.status = 'DE_BAJA' OR NOT EXISTS (
+               SELECT 1 FROM patient_contracted_services pcs
+                WHERE pcs.id = jp.contracted_service_id AND pcs.active = false
+             ))`;
 
       const result = await this.db.query(
         `
@@ -162,6 +179,11 @@ export class PublicVacancyController {
         vacancy_number:         row.vacancy_number,
         title:                  row.title,
         status:                 row.status,
+        // Change baja-vacante-por-servico: DE_BAJA é o único status que este endpoint serve
+        // sem ser "candidatável" (STATUS_PUBLICAVEL) — a tela usa este campo para não oferecer
+        // candidatura e mostrar o badge de desativada, em vez de inferir a partir de `status`
+        // cru (a mesma lista PERMISSÃO acima: decidir aqui, não deixar a tela adivinhar).
+        is_disabled:            row.status === 'DE_BAJA',
         service_type:           row.service_type,
         required_professions:   row.required_professions,
         required_sex:           row.required_sex,

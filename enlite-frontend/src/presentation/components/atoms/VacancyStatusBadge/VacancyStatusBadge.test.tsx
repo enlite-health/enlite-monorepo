@@ -79,6 +79,18 @@ describe('VacancyStatusBadge — CLOSED', () => {
   });
 });
 
+describe('VacancyStatusBadge — DE_BAJA (change baja-vacante-por-servico)', () => {
+  it('renders with correct i18n key', () => {
+    render(<VacancyStatusBadge status="DE_BAJA" />);
+    expect(screen.getByText('admin.vacancyDetail.statusBadge.DE_BAJA')).toBeInTheDocument();
+  });
+
+  it('has bg-gray-800 class (mesmo tom de inativo do CLOSED/SUSPENDED)', () => {
+    render(<VacancyStatusBadge status="DE_BAJA" />);
+    expect(screen.getByText('admin.vacancyDetail.statusBadge.DE_BAJA').className).toContain('bg-gray-800');
+  });
+});
+
 describe('VacancyStatusBadge — ADMISSION', () => {
   it('has bg-cyan-focus class', () => {
     render(<VacancyStatusBadge status="ADMISSION" />);
