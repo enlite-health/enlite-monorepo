@@ -390,25 +390,32 @@ test.describe('ds-table-nao-regressao', () => {
     // chamam `/analytics/dashboard/*` — SEM o segmento `/api/` que `installAuthInterceptors` troca
     // pelo token mock (glob `**/api/**`, abac-stack-helper.ts, sem parâmetro de padrão de URL).
     // Injeta o MESMO Authorization que o `loginAs` já injeta nas outras rotas — não é mock de
-    // resposta, a request e a resposta seguem reais.
+    // resposta, a request e a resposta seguem reais (fix de auth, não de dado).
     await page.route('**/analytics/**', async (route) => {
       await route.continue({ headers: { ...route.request().headers(), authorization: `Bearer ${tokenFor(DS_TABLE_STAFF)}` } });
     });
-    await page.goto('/admin/dashboard');
-    // VAZIO por dado — CAMADA NOVA descoberta ao corrigir o auth acima (medido 27/09): com o
-    // Authorization correto, o backend responde de verdade e devolve 403 `COUNTRY_SCOPE_REQUIRED`
-    // (`resolveCountryScope.ts:135-136`, "Sua conta não tem país concedido por nenhum grupo") —
-    // `DS_TABLE_STAFF` não está em nenhum grupo com `iam.group_country_scopes`. O grupo `DS Tabla
-    // — acceso F9` criado nesta massa (P3.1, achado 2) só tem a célula `permission_management:read`,
-    // sem escopo de país — deliberado: dar país exigiria um INSERT novo em `group_country_scopes`,
-    // fora do que o P3.1 foi autorizado a semear (só a célula de acesso para t28/t29/t30). Reportado
-    // em LISTA no retorno, não corrigido aqui.
-    const errorNode = page.getByTestId('mgmt-error');
-    await expect(errorNode).toBeVisible();
-    test.info().annotations.push({
-      type: 'vazio',
-      description: '403 COUNTRY_SCOPE_REQUIRED (resolveCountryScope.ts) — DS_TABLE_STAFF sem iam.group_country_scopes; exigiria massa nova fora do escopo autorizado do P3.1 (achado, LISTA).',
-    });
+    // P3.2: com o escopo de país (AR) semeado em `iam.group_country_scopes` pela massa
+    // (`ds-table-massa-helper.ts`, `ensureDsTableMassa`), `resolveCountryScope.ts` já não
+    // devolve 403 — a rota responde de verdade. `waitForResponse` prova que a requisição real
+    // (não interceptada por mock de resposta) voltou 200 antes de afirmar a tabela.
+    const [mgmtResponse] = await Promise.all([
+      page.waitForResponse(
+        (resp) => resp.url().includes('/analytics/dashboard/management') && resp.status() === 200,
+      ),
+      page.goto('/admin/dashboard'),
+    ]);
+    expect(mgmtResponse.status()).toBe(200);
+    await expect(page.getByTestId('mgmt-content')).toBeVisible();
+    // Tabela real do `ZoneAnalyticsSection` (consumidor do átomo `Table`, DX-9.6/t26): a linha
+    // com 6 `td` (zone/patients/workersMale/workersFemale/demand/availability) só existe quando
+    // `data.zones` tem pelo menos 1 zona — o empty-state renderiza 1 `td` com `colSpan={6}`
+    // (`ZoneAnalyticsSection.tsx:134-140`), então contar as células distingue tabela montada de
+    // estado vazio sem depender do texto i18n.
+    const zoneSection = page.getByTestId('mgmt-zone-analytics');
+    await expect(zoneSection).toBeVisible();
+    const zoneRows = zoneSection.locator('table tbody tr');
+    await expect(zoneRows.first()).toBeVisible();
+    await expect(zoneRows.first().locator('td')).toHaveCount(6);
     await waitFontsReady(page);
     await expectNoSelectedRow(page);
     await maybeScreenshot(page, 't26-dashboard');

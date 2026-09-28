@@ -21,7 +21,13 @@
  * vaga, publicação (Talentum), colisão de telefone (dedup fila), `name_trgm_bidx` compartilhado
  * (dedup importados), auditoria de merge (dedup histórico), tentativa bloqueada, tag, feature
  * de país e mudança de permissão (auditoria de acesso) — cada um por tabela, listado no
- * `P3.md`.
+ * `P3.md`. P3.1 (achado 2) somou o **grupo de acesso** (`iam.permission_groups` +
+ * `group_permissions` + `user_groups`, célula `permission_management:read`, constante
+ * `ACCESS_GROUP_NAME`) para t28/t29/t30 (`AccessGate` fail-closed sempre). P3.2 soma o
+ * **escopo de país** do MESMO grupo (`iam.group_country_scopes`, país `AR`) — sem ele
+ * `resolveCountryScope.ts:135-136` devolve 403 `COUNTRY_SCOPE_REQUIRED` em toda rota
+ * `/analytics/dashboard/*` (t26), já que essa rota NUNCA é gated pelo `enforcement` genérico
+ * (roda sempre, para todo staff — rule do próprio `resolveCountryScope`).
  *
  * Dados 100% SINTÉTICOS, prefixo `DS Tabla` (rule 6): nenhum nome/telefone/e-mail usa
  * `Date.now()`/`new Date()` — toda identidade é FIXA e literal, o que também é o que permite a
@@ -380,10 +386,18 @@ async function seedMassa(request: APIRequestContext): Promise<DsTableMassa> {
 export async function ensureDsTableMassa(request: APIRequestContext): Promise<DsTableMassa> {
   void backendUrl(); // força a leitura dentro da função (nunca em const de módulo) — sem uso direto aqui, o insert via API já lê a env.
   const existingPatientId = runSQL(`SELECT id FROM patients WHERE case_number = ${CASE_MARKER} LIMIT 1`);
-  if (existingPatientId) {
-    return rereadMassa(existingPatientId);
-  }
-  return seedMassa(request);
+  const massa = existingPatientId ? rereadMassa(existingPatientId) : await seedMassa(request);
+  // P3.2 (achado 1 do P3.1/P5): escopo de país (AR) do grupo do staff fixo, sem o qual
+  // `resolveCountryScope.ts:135-136` devolve 403 `COUNTRY_SCOPE_REQUIRED` em toda rota
+  // `/analytics/dashboard/*` (t26). Roda em TODA chamada (seed ou releitura) — `ON CONFLICT`
+  // idempotente contra o índice parcial `uq_group_country_scopes_live` (group_id, country) WHERE
+  // revoked_at IS NULL — nunca duplica.
+  runSQL(
+    `INSERT INTO iam.group_country_scopes (group_id, country, granted_by, reason)
+     VALUES ('${massa.accessGroupId}', 'AR', '${DS_TABLE_STAFF.uid}', 'DS Tabla — e2e Fase 9 (ds-table-nao-regressao, P3.2)')
+     ON CONFLICT (group_id, country) WHERE revoked_at IS NULL DO NOTHING`,
+  );
+  return massa;
 }
 
 /**
@@ -438,6 +452,10 @@ export function cleanupDsTableMassa(m: DsTableMassa): void {
   runSQL(`DELETE FROM iam.country_features WHERE country = 'AR' AND feature_key = 'screen:ds-table-massa-f9'`);
   runSQL(`DELETE FROM iam.permission_group_changes WHERE reason = 'DS Tabla — e2e Fase 9 (ds-table-nao-regressao)'`);
   try {
+    // P3.2: escopo de país cai por CASCADE ao apagar o grupo (FK `group_country_scopes_group_id_fkey
+    // ... ON DELETE CASCADE`), mas o DELETE explícito segue a MESMA convenção dos irmãos (ordem
+    // FK-safe explícita, nunca depender do cascade silenciosamente).
+    runSQL(`DELETE FROM iam.group_country_scopes WHERE group_id = '${m.accessGroupId}'`);
     runSQL(`DELETE FROM iam.user_groups WHERE user_id = '${m.staff.uid}' AND group_id = '${m.accessGroupId}'`);
     runSQL(`DELETE FROM iam.group_permissions WHERE group_id = '${m.accessGroupId}'`);
     runSQL(`DELETE FROM iam.permission_groups WHERE id = '${m.accessGroupId}'`);
