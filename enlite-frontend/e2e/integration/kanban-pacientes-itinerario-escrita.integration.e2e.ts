@@ -32,7 +32,8 @@ import { readServiceTeamApi, postServiceTeamAction } from '../helpers/quadro-c-e
 import { runSQL } from '../helpers/patient-detail-a-helper';
 import {
   allocationOptionsApi, allocateApi, endAllocationApi, cleanupItineraryWrite, patientStatus,
-  insertSecondAddress, countActiveAllocations,
+  insertSecondAddress, countActiveAllocations, postSlotApi, patchSlotApi, endSlotApi, assembleApi,
+  insertServiceNoAddressSql, extractUuid,
 } from '../helpers/itinerario-escrita-e2e-helper';
 
 interface AllocationOptionRow { workerId: string }
@@ -397,6 +398,179 @@ test.describe('itinerario-escrita @integration', () => {
       cleanupItineraryWrite(seed.patientId);
       cleanupWJAAndEncuadre(w, v1);
       cleanupWJAAndEncuadre(w, v2);
+      cleanupTestWorker(w);
+      seed.cleanup();
+    }
+  });
+
+  test('itinerario-montado-incompleto', async ({ request }) => {
+    const seed = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.6, lng: -58.4 });
+    const addressB = insertSecondAddress(seed.patientId);
+    // `activate-recruitment` exige SERVICE_SCHEDULE (regra de fase anterior) — S2 nasce COM 1 faixa
+    // só para poder ativar a vaga, e o slot único é encerrado logo abaixo: vaga viva SEM slot ativo
+    // é o cenário do critério 15 (serviço sem slot não é "serviço sem schedule nunca criado").
+    const s2 = await createServiceViaApi(request, seed.patientId, {
+      addressId: addressB, schedule: [{ dayOfWeek: 5, startTime: '09:00', endTime: '11:00' }],
+    });
+    const token = tokenFor(ITINERARIO_STAFF);
+    await activateRecruitmentViaApi(request, seed.patientId, seed.serviceId);
+    await activateRecruitmentViaApi(request, seed.patientId, s2);
+
+    const itinS2 = await readItineraryApi(request, seed.patientId);
+    const s2SlotId = itinS2.body.data?.services.find((s) => s.contractedServiceId === s2)?.slots[0]?.id;
+    if (!s2SlotId) throw new Error('itinerario-montado-incompleto: slot inicial de S2 não encontrado');
+    const endInitial = await endSlotApi(request, token, seed.patientId, s2, s2SlotId);
+    expect(endInitial.status).toBe(200);
+
+    try {
+      const before = await assembleApi(request, token, seed.patientId);
+      expect(before.status).toBe(422);
+      expect(before.body.code).toBe('SERVICE_WITHOUT_SLOT');
+      const missing = (before.body.services as Array<{ serviceId: string }> | undefined) ?? [];
+      const missingIds = missing.map((m) => m.serviceId);
+      expect(missingIds).toContain(s2);
+      expect(missingIds).not.toContain(seed.serviceId);
+
+      const slot = await postSlotApi(request, token, seed.patientId, s2, {
+        weekday: 5, startTime: '09:00', endTime: '11:00',
+      });
+      expect(slot.status).toBe(201);
+
+      const after = await assembleApi(request, token, seed.patientId);
+      expect(after.status).toBe(201);
+      const montadoCount = Number(
+        runSQL(`SELECT count(*) FROM patient_itinerary_assembly WHERE patient_id = '${seed.patientId}'`),
+      );
+
+      console.log('[11.15]', before.status, missingIds, after.status, montadoCount);
+      expect(montadoCount).toBe(1);
+    } finally {
+      cleanupItineraryWrite(seed.patientId);
+      seed.cleanup();
+    }
+  });
+
+  test('itinerario-slot-cria-edita-encerra', async ({ request }) => {
+    const seed = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.6, lng: -58.4 });
+    const token = tokenFor(ITINERARIO_STAFF);
+    const v = await activateRecruitmentViaApi(request, seed.patientId, seed.serviceId);
+    const w = insertTestWorker({ occupation: 'AT' });
+    try {
+      insertWJA({ workerId: w, jobPostingId: v, funnelStage: 'QUICK_RESPONSE_TEAM' });
+
+      const create = await postSlotApi(request, token, seed.patientId, seed.serviceId, {
+        weekday: 3, startTime: '14:00', endTime: '18:00',
+      });
+      expect(create.status).toBe(201);
+      const createdId = (create.body.data as { id?: string } | undefined)?.id;
+      if (!createdId) throw new Error('itinerario-slot-cria-edita-encerra: slot criado sem id');
+
+      const itinAfterCreate = await readItineraryApi(request, seed.patientId);
+      const svcAfterCreate = itinAfterCreate.body.data?.services.find(
+        (s) => s.contractedServiceId === seed.serviceId,
+      );
+      const foundCreated = svcAfterCreate?.slots.find((sl) => sl.id === createdId);
+      expect(foundCreated?.active).toBe(true);
+
+      const duplicate = await postSlotApi(request, token, seed.patientId, seed.serviceId, {
+        weekday: 3, startTime: '14:00', endTime: '18:00',
+      });
+      expect(duplicate.status).toBe(409);
+      expect(duplicate.body.code).toBe('SLOT_ALREADY_EXISTS');
+
+      const patch = await patchSlotApi(request, token, seed.patientId, seed.serviceId, createdId, {
+        weekday: 3, startTime: '16:00', endTime: '20:00',
+      });
+      expect(patch.status).toBe(200);
+      const patchedId = (patch.body.data as { id?: string } | undefined)?.id;
+      if (!patchedId) throw new Error('itinerario-slot-cria-edita-encerra: slot editado sem id');
+
+      const oldActive = runSQL(
+        `SELECT active::text FROM patient_itinerary_slot WHERE contracted_service_id = '${seed.serviceId}' ` +
+          `AND weekday = 3 AND start_time = '14:00'`,
+      );
+      const newActive = runSQL(`SELECT active::text FROM patient_itinerary_slot WHERE id = '${patchedId}'`);
+      expect(oldActive).toBe('false');
+      expect(newActive).toBe('true');
+
+      const alloc = await allocateApi(request, token, seed.patientId, seed.serviceId, patchedId, { workerId: w });
+      expect(alloc.status).toBe(201);
+      const allocationId = (alloc.body.data as { allocationId?: string } | undefined)?.allocationId;
+      if (!allocationId) throw new Error('itinerario-slot-cria-edita-encerra: alocação sem id');
+
+      const patchBlocked = await patchSlotApi(request, token, seed.patientId, seed.serviceId, patchedId, {
+        weekday: 3, startTime: '17:00', endTime: '21:00',
+      });
+      expect(patchBlocked.status).toBe(422);
+      expect(patchBlocked.body.code).toBe('SLOT_HAS_ACTIVE_ALLOCATION');
+
+      const endBlocked = await endSlotApi(request, token, seed.patientId, seed.serviceId, patchedId);
+      expect(endBlocked.status).toBe(422);
+      expect(endBlocked.body.code).toBe('SLOT_HAS_ACTIVE_ALLOCATION');
+
+      const endAlloc = await endAllocationApi(request, token, seed.patientId, seed.serviceId, allocationId);
+      expect(endAlloc.status).toBe(200);
+
+      const endSlot = await endSlotApi(request, token, seed.patientId, seed.serviceId, patchedId);
+      expect(endSlot.status).toBe(200);
+
+      const endedActive = runSQL(`SELECT active::text FROM patient_itinerary_slot WHERE id = '${patchedId}'`);
+      const scheduleText = runSQL(
+        `SELECT schedule::text FROM patient_contracted_services WHERE id = '${seed.serviceId}'`,
+      );
+
+      console.log(
+        '[11.slot]', create.status, duplicate.status, patch.status, oldActive, newActive, alloc.status,
+        patchBlocked.status, endBlocked.status, endAlloc.status, endSlot.status, endedActive,
+      );
+      expect(endedActive).toBe('false');
+      expect(scheduleText).not.toContain('16:00');
+    } finally {
+      cleanupItineraryWrite(seed.patientId);
+      cleanupWJAAndEncuadre(w, v);
+      cleanupTestWorker(w);
+      seed.cleanup();
+    }
+  });
+
+  test('itinerario-slot-sem-endereco', async ({ request }) => {
+    const seed = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.6, lng: -58.4 });
+    const token = tokenFor(ITINERARIO_STAFF);
+    const serviceNoAddr = insertServiceNoAddressSql(seed.patientId);
+    const w = insertTestWorker({ occupation: 'AT' });
+    try {
+      const create = await postSlotApi(request, token, seed.patientId, serviceNoAddr, {
+        weekday: 4, startTime: '09:00', endTime: '11:00',
+      });
+      expect(create.status).toBe(422);
+      expect(create.body.code).toBe('SERVICE_WITHOUT_ADDRESS');
+
+      const slotId = extractUuid(
+        runSQL(
+          `INSERT INTO patient_itinerary_slot (contracted_service_id, weekday, start_time, end_time, created_by, updated_by) ` +
+            `VALUES ('${serviceNoAddr}', 4, '09:00', '11:00', 'e2e-itinerario-p27', 'e2e-itinerario-p27') RETURNING id`,
+        ),
+      );
+
+      const patch = await patchSlotApi(request, token, seed.patientId, serviceNoAddr, slotId, {
+        weekday: 4, startTime: '10:00', endTime: '12:00',
+      });
+      const end = await endSlotApi(request, token, seed.patientId, serviceNoAddr, slotId);
+      const alloc = await allocateApi(request, token, seed.patientId, serviceNoAddr, slotId, { workerId: w });
+
+      console.log(
+        '[11.addr]', create.status, create.body.code, patch.status, patch.body.code, end.status,
+        end.body.code, alloc.status, alloc.body.code,
+      );
+
+      expect(patch.status).toBe(422);
+      expect(patch.body.code).toBe('SERVICE_WITHOUT_ADDRESS');
+      expect(end.status).toBe(422);
+      expect(end.body.code).toBe('SERVICE_WITHOUT_ADDRESS');
+      expect(alloc.status).toBe(422);
+      expect(alloc.body.code).toBe('SERVICE_WITHOUT_ADDRESS');
+    } finally {
+      cleanupItineraryWrite(seed.patientId);
       cleanupTestWorker(w);
       seed.cleanup();
     }
