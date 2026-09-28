@@ -60,7 +60,7 @@ export interface ServiceCoverage {
 }
 
 /** Vigente: ACTIVE e `asOf` dentro de `[validFrom, validTo]` — `validTo` é inclusivo (último dia trabalhado). */
-function isVigente(assignment: ServiceCoverageAssignment, asOf: string): boolean {
+export function isVigente(assignment: ServiceCoverageAssignment, asOf: string): boolean {
   return (
     assignment.status === 'ACTIVE' &&
     assignment.validFrom <= asOf &&
