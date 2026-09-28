@@ -7,7 +7,7 @@
  * do banco, `pis_time_order`/`pis_weekday_range`, é a 3ª).
  */
 
-const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+export const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 export interface ScheduleEntry {
   dayOfWeek: number;
