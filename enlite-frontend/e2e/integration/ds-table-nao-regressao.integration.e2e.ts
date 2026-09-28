@@ -16,13 +16,19 @@
  * com o motivo em `test.info().annotations`) → (ii) `tr[aria-selected]` conta 0 (o lado desligado
  * na tela real, nenhum consumidor passa a prop até a Fase 10) → (só com `PRINT_DIR`) screenshot.
  *
- * Q-9.4 (P6-fix-3, orquestrador): o print sai em DUAS imagens — `<slug>.png` (página inteira,
- * contexto para humanos) e `<slug>.table.png` (recorte no `boundingBox()` do MESMO locator que a
- * asserção (i) já usa para provar "tabela montada" — o `<table>` do consumidor, ou o container do
- * átomo quando a tela é VAZIO e não há `<table>` nenhum — com 8px de margem). O critério 7 (CMP-F9,
- * `AE=0`) passa a rodar sobre `*.table.png` (o objeto do critério é o átomo nos consumidores, não a
- * página inteira); a página inteira segue fotografada e comparada com `-fuzz 5%` só como informação
- * (antialiasing aleatório fora da tabela, ver `CH/evidencias/fase-9/mascaras.md` §Q-9.4).
+ * Q-9.4 (P6-fix-3, orquestrador): o print sai em DUAS imagens — `<slug>.png` (página inteira) e
+ * `<slug>.table.png` (recorte, via `target.screenshot()` nativo do Playwright — P11-fix — no MESMO
+ * locator que a asserção (i) já usa para provar "tabela montada": o `<table>` do consumidor, ou o
+ * container do átomo quando a tela é VAZIO e não há `<table>` nenhum).
+ *
+ * Q-9.4 segunda decisão (P11-fix-2, orquestrador, 28/09): o critério 7 literal do `fase-9.md`
+ * (`for p in antes/*.png; do compare … "depois/$(basename "$p")" …; done`) roda sobre a PÁGINA
+ * INTEIRA (`<slug>.png`), não o recorte — o recorte `<slug>.table.png` segue fotografado e
+ * comparado só como evidência SUPLEMENTAR. Motivo: um jitter residual de ~1px em `box.y` do alvo,
+ * sem causa raiz localizada entre invocações separadas do `npx playwright test` (diagnóstico denso
+ * em `P11-fix.md`), pode deixar o recorte apertado ≠ 0 mesmo quando a página inteira — que contém o
+ * mesmo pixel de conteúdo com folga ao redor — fecha idêntica. Ver `CH/evidencias/fase-9/mascaras.md`
+ * §Q-9.4.
  */
 import { test, expect, type Page, type Locator } from '@playwright/test';
 import { loginAs, tokenFor } from '../helpers/abac-stack-helper';
@@ -49,43 +55,45 @@ test.describe('ds-table-nao-regressao', () => {
     }
   });
 
+  // P11-fix (Hipótese B, mantida como melhoria defensiva mesmo não sendo a causa confirmada do
+  // jitter de `t06`): relógio congelado ANTES de qualquer navegação — fecha uma classe de risco
+  // real (algum nó não localizado usando `new Date()`/`Date.now()` no lado do browser), regra 8 do
+  // BRIEF-COMUM. Data fixa arbitrária, fora de qualquer janela de expiração da massa sintética.
+  test.beforeEach(async ({ page }) => {
+    await page.clock.setFixedTime(new Date('2026-01-14T10:00:00-03:00'));
+  });
+
   /** Espera fontes carregadas antes do print — critério 12 do BRIEF-COMUM. */
   async function waitFontsReady(page: Page): Promise<void> {
     await page.evaluate(() => document.fonts.ready);
   }
 
   /**
-   * Q-9.4: boundingBox do alvo (o `<table>` do consumidor, ou o container do átomo quando a tela é
-   * VAZIO e não há tabela) com 8px de margem, clampado às dimensões reais do documento (não ao
-   * viewport 1366x768 fixo — algumas telas podem crescer por scroll).
-   */
-  async function clipForTarget(page: Page, target: Locator): Promise<{ x: number; y: number; width: number; height: number }> {
-    const box = await target.boundingBox();
-    if (!box) throw new Error('Q-9.4: alvo do recorte sem boundingBox (não visível)');
-    const margin = 8;
-    const doc = await page.evaluate(() => ({
-      width: document.documentElement.scrollWidth,
-      height: document.documentElement.scrollHeight,
-    }));
-    const x = Math.max(0, box.x - margin);
-    const y = Math.max(0, box.y - margin);
-    const width = Math.min(doc.width, box.x + box.width + margin) - x;
-    const height = Math.min(doc.height, box.y + box.height + margin) - y;
-    return { x, y, width, height };
-  }
-
-  /**
    * `PRINT_DIR` lido DENTRO do teste (rule 11) — screenshot só quando existe (critério 12).
-   * Q-9.4: sempre duas imagens — página inteira (`<slug>.png`) e o recorte do alvo (`<slug>.table.png`,
-   * o `<table>` do consumidor ou o container do átomo em telas VAZIO) — `target` é o MESMO locator que
-   * a asserção (i) do teste já usa para provar "tabela montada"/"vazio visível". **`scrollIntoViewIfNeeded`
-   * antes de medir:** o shell do admin tem sidebar/header fixos e o painel de conteúdo rola por dentro
-   * (`<main class="… overflow-y-auto">`, não o documento) — `document.documentElement.scrollHeight`
-   * fica preso ao viewport (768) e o `fullPage: true` do Playwright NÃO enxerga esse scroll interno
-   * (medido: `t03-prestadores` tem `<table>` em `y=812.5`, fora do range 0-768, e o PNG `fullPage`
-   * sai com 768px de altura mesmo assim — a tabela dessas telas fica abaixo da dobra do painel).
-   * `scrollIntoViewIfNeeded()` rola o painel interno até o alvo ficar visível ANTES de medir e
-   * fotografar — nas telas onde o alvo já está visível é no-op (nenhuma mudança de comportamento).
+   * Q-9.4 (P6-fix-3): sempre duas imagens — página inteira (`<slug>.png`) e o recorte do alvo
+   * (`<slug>.table.png`, o `<table>` do consumidor ou o container do átomo em telas VAZIO) —
+   * `target` é o MESMO locator que a asserção (i) do teste já usa para provar "tabela
+   * montada"/"vazio visível". **`scrollIntoViewIfNeeded` antes de medir:** o shell do admin tem
+   * sidebar/header fixos e o painel de conteúdo rola por dentro (`<main class="… overflow-y-auto">`,
+   * não o documento) — `document.documentElement.scrollHeight` fica preso ao viewport (768) e o
+   * `fullPage: true` do Playwright NÃO enxerga esse scroll interno (medido: `t03-prestadores` tem
+   * `<table>` em `y=812.5`, fora do range 0-768, e o PNG `fullPage` sai com 768px de altura mesmo
+   * assim — a tabela dessas telas fica abaixo da dobra do painel). `scrollIntoViewIfNeeded()` rola
+   * o painel interno até o alvo ficar visível ANTES de medir e fotografar — nas telas onde o alvo já
+   * está visível é no-op (nenhuma mudança de comportamento).
+   *
+   * P11-fix (Hipótese A, CONFIRMADA e mantida — `mascaras.md` §Q-9.4 segunda decisão): o recorte
+   * `.table.png` fotografa com `target.screenshot()` NATIVO do Playwright em vez do `clip` manual
+   * calculado a partir de `boundingBox()` + margem + clamp em `document.documentElement.scrollHeight`
+   * (que ficava preso a 768 pelo scroll interno do `<main>` e vazava jitter de `box.y` 1:1 para a
+   * altura do PNG). `target.screenshot()` resolve seu próprio recorte internamente, sem o clamp —
+   * elimina essa classe de bug de instrumento. Mesmo assim, um jitter residual de ~1px em `box.y`
+   * entre invocações separadas do `npx playwright test` (nunca dentro da mesma invocação) persiste
+   * sem causa raiz localizada (diagnóstico denso em `P11-fix.md`, Parte 2.4) — por isso o critério 7
+   * (CMP-F9, `AE=0`) passa a rodar sobre a PÁGINA INTEIRA (`<slug>.png`, decisão do orquestrador
+   * Q-9.4 de 28/09), e o recorte `<slug>.table.png` segue gerado e comparado só como evidência
+   * SUPLEMENTAR (a página inteira idêntica prova que a diferença do recorte não é pixel de
+   * conteúdo, e sim origem do recorte deslocada em ~1px).
    */
   async function maybeScreenshot(page: Page, slug: string, target: Locator): Promise<void> {
     const dir = process.env.PRINT_DIR;
@@ -94,9 +102,9 @@ test.describe('ds-table-nao-regressao', () => {
     // Duplo rAF: garante que o browser pintou pelo menos um frame com fontes prontas antes de medir
     // e fotografar — reduz corrida entre `document.fonts.ready` (resolve no load da fonte, não no
     // paint) e o rasterizador de texto (a classe de instabilidade de subpixel do Chromium/macOS que
-    // o P6/P6-fix/P6-fix-2 mediram: 4/30, 4/30, 2/30 telas aleatórias).
+    // o P6/P6-fix/P6-fix-2 mediram: 4/30, 4/30, 2/30 telas aleatórias). Roda ANTES das duas fotos —
+    // inclusive antes do `target.screenshot()` nativo, que lê `boundingBox()` internamente.
     await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-    const clip = await clipForTarget(page, target);
     // `mascaras.md` §Q-9.4: o Firebase SDK injeta um `<p style="position:fixed;bottom:0">` de aviso
     // do emulador (`firebase-auth-compat.js`, função `d()`) de forma intermitente (após a 1ª chamada
     // de auth) — sem classe/testid, texto fixo. Não é produto nem a tabela; sobrepõe o rodapé da tela
@@ -104,7 +112,7 @@ test.describe('ds-table-nao-regressao', () => {
     // rodapé, atrás do modal). Mask, não recorte — o critério 12 permite ("nunca a tabela inteira").
     const emulatorBanner = page.locator('p', { hasText: 'Running in emulator mode' });
     await page.screenshot({ path: `${dir}/${slug}.png`, fullPage: true, animations: 'disabled', caret: 'hide', mask: [emulatorBanner] });
-    await page.screenshot({ path: `${dir}/${slug}.table.png`, clip, animations: 'disabled', caret: 'hide', mask: [emulatorBanner] });
+    await target.screenshot({ path: `${dir}/${slug}.table.png`, animations: 'disabled', caret: 'hide', mask: [emulatorBanner] });
   }
 
   /** Critério (ii) da DX-9.8: nenhum consumidor da tela real fica com `aria-selected`. */
