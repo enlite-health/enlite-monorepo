@@ -9,7 +9,7 @@
  */
 import { PatientKanbanServicesReader, type KanbanServicesRows } from '../infrastructure/PatientKanbanServicesReader';
 import { operationDateOf, buildServiceCoverages } from './itineraryCoverage';
-import { uncoveredDayAlerts } from '../domain/itineraryAlerts';
+import { uncoveredDayAlerts, uncoveredDayCount } from '../domain/itineraryAlerts';
 
 export interface KanbanServiceSummary {
   contractedServiceId: string;
@@ -56,7 +56,8 @@ export class ListKanbanServicesUseCase {
           contratadas: coverage.contratadas,
           cobertas: coverage.cobertas,
           liveVacancyId: service.liveVacancyId,
-          uncoveredDays: uncoveredDayAlerts(absencesDoServico, asOf).length,
+          // L2: DIAS, não alertas — dedupe por `date` (2 faixas descobertas no mesmo dia = 1 dia).
+          uncoveredDays: uncoveredDayCount(uncoveredDayAlerts(absencesDoServico, asOf)),
         };
       });
       return { patientId: row.patientId, asOf, services };

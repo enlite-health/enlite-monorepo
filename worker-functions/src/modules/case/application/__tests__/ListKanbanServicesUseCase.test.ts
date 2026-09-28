@@ -129,6 +129,32 @@ describe('ListKanbanServicesUseCase', () => {
     expect(s2ComAusencia.cobertas).toBe(s2SemAusencia.cobertas);
   });
 
+  it('achado L2 (veredito parcial-1): 2 faixas descobertas no MESMO dia do MESMO serviço → uncoveredDays 1, não 2', async () => {
+    const asOf = new Date('2026-09-27T15:00:00Z'); // asOf AR = 2026-09-27
+    const rows: KanbanServicesRows[] = [
+      {
+        patientId: 'p-1',
+        country: 'AR',
+        services: [{ id: 'svc-1', serviceCode: 'AT', weeklyHours: 20, authorizedHours: null, liveVacancyId: null }],
+        slots: [
+          {
+            id: 's1', contractedServiceId: 'svc-1', weekday: 1, startTime: '08:00', endTime: '12:00', active: true,
+            assignmentId: 'asg-1', workerId: 'w-1', applicationId: 'wja-1', validFrom: '2026-09-01', validTo: null, status: 'ACTIVE',
+          },
+        ],
+        uncoveredAbsences: [
+          { serviceId: 'svc-1', date: '2026-09-28', startTime: '08:00', endTime: '10:00' }, // faixa 1, mesmo dia
+          { serviceId: 'svc-1', date: '2026-09-28', startTime: '14:00', endTime: '16:00' }, // faixa 2, mesmo dia
+        ],
+      },
+    ];
+    const useCase = new ListKanbanServicesUseCase(readerWith(rows));
+
+    const result = await useCase.execute('AR', asOf);
+
+    expect(result.patients[0].services[0].uncoveredDays).toBe(1);
+  });
+
   it('mesmo `now`, paciente BR e AR: asOf pelo fuso de CADA país (countryToTimezone, nunca o relógio do processo)', async () => {
     const rows: KanbanServicesRows[] = [
       { patientId: 'p-ar', country: 'AR', services: [], slots: [] },

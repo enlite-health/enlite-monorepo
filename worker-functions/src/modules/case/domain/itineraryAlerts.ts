@@ -47,3 +47,13 @@ export function uncoveredDayAlerts(
     return 0;
   });
 }
+
+/**
+ * Achado L2 (veredito parcial-1): `alerts.length` conta ALERTAS (chave `date|start|service|end`) —
+ * 2 faixas descobertas no MESMO dia do MESMO serviço davam `uncoveredDays: 2`, embora seja 1 dia
+ * sem cobertura. `alerts[]` do itinerário NÃO muda (continua 1 item por faixa); só a CONTAGEM do
+ * Kanban deduplica por `date`.
+ */
+export function uncoveredDayCount(alerts: readonly UncoveredDayAlert[]): number {
+  return new Set(alerts.map((a) => a.date)).size;
+}
