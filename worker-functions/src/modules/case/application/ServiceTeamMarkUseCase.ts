@@ -19,8 +19,6 @@
  */
 import type { PoolClient } from 'pg';
 import { inPatientTransaction } from './patientTransaction';
-import { operationDateOf } from './itineraryCoverage';
-import { deriveServiceTeam } from '../domain/deriveServiceTeam';
 import {
   isAllowedServiceTeamReason,
   ServiceTeamReasonRequiredError,
@@ -30,7 +28,7 @@ import {
 import { ServiceTeamReader, type ServiceTeamRows } from '../infrastructure/ServiceTeamReader';
 import { ServiceTeamMarkWriter } from '../infrastructure/ServiceTeamMarkWriter';
 import { ServiceTeamNotFoundError, type GetServiceTeamResult } from './GetServiceTeamUseCase';
-import { projectServiceTeamDisplayNames, buildServiceTeamResult } from './serviceTeamPresentation';
+import { deriveServiceTeamFromRows, projectServiceTeamDisplayNames, buildServiceTeamResult } from './serviceTeamPresentation';
 import { type Decryptor } from '@modules/identity/permissions';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 
@@ -221,14 +219,6 @@ export class ServiceTeamMarkUseCase {
   }
 
   private deriveTeam(row: ServiceTeamRows, now: Date) {
-    const asOf = operationDateOf(row.country, now);
-    return deriveServiceTeam({
-      serviceId: row.serviceId,
-      liveVacancyId: row.liveVacancyId,
-      asOf,
-      candidacies: row.candidacies,
-      assignments: row.assignments,
-      marks: row.marks,
-    });
+    return deriveServiceTeamFromRows(row, now);
   }
 }
