@@ -19,6 +19,10 @@ export const patientItineraryAssignmentSchema = z.object({
   validFrom: z.string().regex(ISO_DATE_REGEX),
   validTo: z.string().regex(ISO_DATE_REGEX).nullable(),
   status: itineraryAssignmentStatusSchema,
+  // Fase 12 (DX-12.5 (6)): o id da alocação e o nome do prestador — `null` fora de vigência ou sem
+  // `worker_contact:read`.
+  allocationId: z.string().uuid(),
+  displayName: z.string().nullable(),
 });
 
 export const patientItinerarySlotSchema = z.object({

@@ -80,6 +80,8 @@ describe('PatientItineraryReader', () => {
               valid_from: '2026-09-01',
               valid_to: null,
               status: 'ACTIVE',
+              first_name_encrypted: 'enc-first',
+              last_name_encrypted: 'enc-last',
             },
           ],
           rowCount: 1,
@@ -107,6 +109,8 @@ describe('PatientItineraryReader', () => {
           validFrom: '2026-09-01',
           validTo: null,
           status: 'ACTIVE',
+          firstNameEncrypted: 'enc-first',
+          lastNameEncrypted: 'enc-last',
         },
       ],
       uncoveredAbsences: [{ serviceId: 'svc-1', date: '2026-10-05', startTime: '08:00', endTime: '12:00' }],
@@ -126,7 +130,37 @@ describe('PatientItineraryReader', () => {
     expect(uncoveredQuery?.sql).toMatch(/pcs\.patient_id = \$1/);
     expect(uncoveredQuery?.sql).toMatch(/pcs\.active/);
     expect(uncoveredQuery?.sql).toMatch(/to_char\(ab\.on_date/);
-    expect(c.every((x) => !/contracted_service_providers|first_name|last_name|phone/i.test(x.sql))).toBe(true);
+    expect(c.every((x) => !/contracted_service_providers|phone/i.test(x.sql))).toBe(true);
+    expect(slotsQuery?.sql).toMatch(/w\.first_name_encrypted/);
+    expect(slotsQuery?.sql).toMatch(/LEFT JOIN workers w ON w\.id = a\.worker_id/);
+  });
+
+  it('[12.7] slot sem alocação (LEFT JOIN) → a linha vem, com os 2 cifrados null', async () => {
+    queryImpl = async (sql) => {
+      if (/FROM patients/.test(sql)) return { rows: [{ id: PID, country: 'AR' }], rowCount: 1 };
+      if (/FROM patient_contracted_services/.test(sql)) {
+        return { rows: [{ id: 'svc-1', weekly_hours: null, authorized_hours: null }], rowCount: 1 };
+      }
+      if (/FROM patient_itinerary_slot/.test(sql)) {
+        return {
+          rows: [
+            {
+              id: 'slot-1', contracted_service_id: 'svc-1', weekday: 2, start_time: '08:00', end_time: '12:00', active: true,
+              assignment_id: null, worker_id: null, application_id: null, valid_from: null, valid_to: null, status: null,
+              first_name_encrypted: null, last_name_encrypted: null,
+            },
+          ],
+          rowCount: 1,
+        };
+      }
+      return { rows: [], rowCount: 0 };
+    };
+
+    const result = await reader.readPatientItinerary(PID);
+
+    console.log('[12.7]', 'slots', result?.slots.length);
+    expect(result?.slots).toHaveLength(1);
+    expect(result?.slots[0]).toMatchObject({ assignmentId: null, firstNameEncrypted: null, lastNameEncrypted: null });
   });
 
   it('gate parcial #1: a ausência descoberta só conta sobre alocação ACTIVE e vigente na data (fragmento único absenceSql)', async () => {
