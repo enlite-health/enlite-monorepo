@@ -96,6 +96,7 @@ describe('GetServiceTeamUseCase', () => {
     const result = await useCase.execute({ patientId: 'p-1', serviceId: 's-1', cells: null, now: NOW });
 
     expect(result.inService).toEqual([]);
+    expect(result.asOf).toBe('2026-09-27');
   });
 
   it('cells com worker_contact:read → displayName preenchido', async () => {

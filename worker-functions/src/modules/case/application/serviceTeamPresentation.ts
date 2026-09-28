@@ -26,17 +26,24 @@ import { projectWorkerFields, NOME_REDIGIDO, type Decryptor } from '@modules/ide
  * `GetServiceTeamUseCase.execute` (`:80-88`) e no `deriveTeam` privado de `ServiceTeamMarkUseCase`
  * (`:223-233`); os dois passam a chamar esta função (P9), mesmo comportamento, mesma contagem de
  * teste. `asOf` é a data LOCAL do PAÍS do paciente (`operationDateOf`), nunca o relógio do processo.
+ *
+ * DX-13.4 (Fase 13): devolve o time COM `asOf` anexado (`DeriveServiceTeamResult & { asOf }`) — a
+ * MESMA `asOf` já calculada aqui, para `buildServiceTeamResult` devolver no `GetServiceTeamResult`
+ * sem recalcular. `row.substitutions ?? []` — o leitor da Fase 10 (dublês de teste sem o campo)
+ * segue compilando.
  */
-export function deriveServiceTeamFromRows(row: ServiceTeamRows, now: Date): DeriveServiceTeamResult {
+export function deriveServiceTeamFromRows(row: ServiceTeamRows, now: Date): DeriveServiceTeamResult & { asOf: string } {
   const asOf = operationDateOf(row.country, now);
-  return deriveServiceTeam({
+  const team = deriveServiceTeam({
     serviceId: row.serviceId,
     liveVacancyId: row.liveVacancyId,
     asOf,
     candidacies: row.candidacies,
     assignments: row.assignments,
     marks: row.marks,
+    substitutions: row.substitutions ?? [],
   });
+  return { ...team, asOf };
 }
 
 interface WorkerNameSource {
@@ -63,7 +70,7 @@ export async function projectServiceTeamDisplayNames(
   ]);
 
   const sourceByWorkerId = new Map<string, WorkerNameSource>();
-  for (const list of [row.candidacies, row.assignments, row.marks]) {
+  for (const list of [row.candidacies, row.assignments, row.marks, row.substitutions ?? []]) {
     for (const entry of list) {
       if (!neededWorkerIds.has(entry.workerId) || sourceByWorkerId.has(entry.workerId)) continue;
       sourceByWorkerId.set(entry.workerId, {
@@ -88,14 +95,26 @@ export async function projectServiceTeamDisplayNames(
   return new Map(projected);
 }
 
+/**
+ * `entry` pode ser um `DeriveServiceTeamSelectedEntry` (sem `allocations`/`substitutionDates`) ou um
+ * `DeriveServiceTeamInServiceEntry` (com os 2 opcionais, DX-13.5) — os dois cabem neste tipo largo;
+ * as chaves só saem no `ServiceTeamMember` quando o time derivado as trouxe.
+ */
 function toMember(
-  entry: { workerId: string; vacancyId: string },
+  entry: {
+    workerId: string;
+    vacancyId: string;
+    allocations?: { allocationId: string; weekday: number; startTime: string; endTime: string }[];
+    substitutionDates?: string[];
+  },
   displayNameByWorkerId: Map<string, string | null>,
 ): ServiceTeamMember {
   return {
     workerId: entry.workerId,
     displayName: displayNameByWorkerId.get(entry.workerId) ?? null,
     vacancyId: entry.vacancyId,
+    ...(entry.allocations ? { allocations: entry.allocations } : {}),
+    ...(entry.substitutionDates ? { substitutionDates: entry.substitutionDates } : {}),
   };
 }
 
@@ -103,16 +122,18 @@ function toMember(
  * Monta o `GetServiceTeamResult` a partir do time derivado — a MESMA forma no GET
  * (`GetServiceTeamUseCase.execute`) e no recálculo pós-escrita (`ServiceTeamMarkUseCase.recompute`).
  * `rejected` usa a vaga VIVA do serviço (`row.liveVacancyId`) — `deriveServiceTeam` não carrega
- * vaga para quem está rejeitado, a marca não é por candidatura.
+ * vaga para quem está rejeitado, a marca não é por candidatura. `asOf` (DX-13.4/13.5, Fase 13) vem
+ * do `team` — a MESMA data já calculada em `deriveServiceTeamFromRows`, nunca recalculada aqui.
  */
 export function buildServiceTeamResult(
   row: Pick<ServiceTeamRows, 'serviceId' | 'liveVacancyId'>,
-  team: DeriveServiceTeamResult,
+  team: DeriveServiceTeamResult & { asOf: string },
   displayNameByWorkerId: Map<string, string | null>,
 ): GetServiceTeamResult {
   return {
     serviceId: row.serviceId,
     vacancyId: row.liveVacancyId,
+    asOf: team.asOf,
     selected: team.selected.map((entry) => toMember(entry, displayNameByWorkerId)),
     inService: team.inService.map((entry) => toMember(entry, displayNameByWorkerId)),
     rejected: team.rejected.map((entry) => ({

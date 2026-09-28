@@ -39,11 +39,13 @@ function rowComHistorico(): ServiceTeamRows {
 }
 
 /** O time DERIVADO correspondente a `rowComHistorico()` — `w-historico` fica de fora das 3. */
-function teamDerivado(): DeriveServiceTeamResult {
+const TEAM_DERIVADO_ASOF = '2026-09-28';
+function teamDerivado(): DeriveServiceTeamResult & { asOf: string } {
   return {
     selected: [{ workerId: 'w-selected', vacancyId: 'v-live' }],
     inService: [{ workerId: 'w-inservice', vacancyId: 'v-old' }],
     rejected: [{ workerId: 'w-rejected', reasonCategory: 'OTHER' }],
+    asOf: TEAM_DERIVADO_ASOF,
   };
 }
 
@@ -116,6 +118,7 @@ describe('buildServiceTeamResult', () => {
 
     expect(result.serviceId).toBe('s-1');
     expect(result.vacancyId).toBe('v-live');
+    expect(result.asOf).toBe(TEAM_DERIVADO_ASOF);
     expect(result.selected).toEqual([{ workerId: 'w-selected', displayName: 'Selected', vacancyId: 'v-live' }]);
     expect(result.inService).toEqual([{ workerId: 'w-inservice', displayName: 'InService', vacancyId: 'v-old' }]);
     expect(result.rejected).toEqual([{ workerId: 'w-rejected', displayName: 'Rejected', vacancyId: 'v-live', reasonCategory: 'OTHER' }]);
@@ -163,9 +166,10 @@ describe('deriveServiceTeamFromRows', () => {
 
     expect(result.inService).toEqual([]);
     expect(result.selected).toEqual([{ workerId: 'w1', vacancyId: 'v-live' }]);
+    expect(result.asOf).toBe(ASOF_AR);
   });
 
-  it('as 3 listas batem exatamente com deriveServiceTeam chamada à mão, com o MESMO asOf', () => {
+  it('as 3 listas batem exatamente com deriveServiceTeam chamada à mão, com o MESMO asOf (DX-13.4: asOf agora vai anexado ao resultado)', () => {
     const row = rowComAlocacaoFutura();
     const esperado = deriveServiceTeam({
       serviceId: row.serviceId,
@@ -174,8 +178,9 @@ describe('deriveServiceTeamFromRows', () => {
       candidacies: row.candidacies,
       assignments: row.assignments,
       marks: row.marks,
+      substitutions: row.substitutions ?? [],
     });
 
-    expect(deriveServiceTeamFromRows(row, NOW)).toEqual(esperado);
+    expect(deriveServiceTeamFromRows(row, NOW)).toEqual({ ...esperado, asOf: ASOF_AR });
   });
 });

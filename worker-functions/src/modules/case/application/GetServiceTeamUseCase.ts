@@ -41,11 +41,23 @@ export interface ServiceTeamMember {
   displayName: string | null;
   vacancyId: string | null;
   reasonCategory?: string;
+  /** Só em `inService`, só quem é titular com horário conhecido (DX-13.5, Fase 13). */
+  allocations?: { allocationId: string; weekday: number; startTime: string; endTime: string }[];
+  /** Só em `inService`, só quem substitui — datas vigentes, ordem crescente (DX-13.3, Fase 13). */
+  substitutionDates?: string[];
 }
 
 export interface GetServiceTeamResult {
   serviceId: string;
   vacancyId: string | null;
+  /**
+   * Data LOCAL do país do paciente usada para decidir vigência (DX-13.4/13.5, Fase 13) — sempre
+   * populada por `buildServiceTeamResult`. OPCIONAL no tipo (não no runtime) porque fixtures de
+   * controllers de OUTRAS fases (`AdminServiceTeamController.test.ts`, DX-13.17 — e
+   * `AdminItineraryWriteController.test.ts`, Fase 11, fora da lista da DX-13.17) constroem
+   * `GetServiceTeamResult` sem esse campo; exigi-lo quebraria TSC-F13 fora do escopo deste passo.
+   */
+  asOf?: string;
   selected: ServiceTeamMember[];
   inService: ServiceTeamMember[];
   rejected: ServiceTeamMember[];
