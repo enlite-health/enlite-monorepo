@@ -117,4 +117,31 @@ describe('recruitmentMissingCodes (gate de "Activar reclutamiento", espelha RECR
     expect(recruitmentMissingCodes({ serviceHasAddress: false, serviceHasSchedule: false, insuranceInformed: null }))
       .toEqual([...RECRUITMENT_BLOCKING_CODES]);
   });
+
+  // Hotfix gate-cobertura-verificada-vacante (28/09): paciente com cobertura VERIFICADA válida
+  // (patient_insurance_verified, provider ativo) mas sem o legado — o foguete ficava desabilitado
+  // com tooltip "Falta: COVERAGE" mesmo tendo cobertura válida pelo caminho novo.
+  it('só legado preenchido → COVERAGE não falta (regressão do comportamento atual)', () => {
+    expect(
+      recruitmentMissingCodes({ serviceHasAddress: true, serviceHasSchedule: true, insuranceInformed: 'Particular', hasVerifiedActiveCoverage: false }),
+    ).toEqual([]);
+  });
+
+  it('só cobertura verificada válida (sem legado) → COVERAGE não falta — é o caso do bug', () => {
+    expect(
+      recruitmentMissingCodes({ serviceHasAddress: true, serviceHasSchedule: true, insuranceInformed: null, hasVerifiedActiveCoverage: true }),
+    ).toEqual([]);
+  });
+
+  it('nenhuma das duas → COVERAGE continua faltando', () => {
+    expect(
+      recruitmentMissingCodes({ serviceHasAddress: true, serviceHasSchedule: true, insuranceInformed: null, hasVerifiedActiveCoverage: false }),
+    ).toEqual(['COVERAGE']);
+  });
+
+  it('SERVICE_ADDRESS/SERVICE_SCHEDULE continuam bloqueando mesmo com COVERAGE ok pela cobertura verificada', () => {
+    expect(
+      recruitmentMissingCodes({ serviceHasAddress: false, serviceHasSchedule: false, insuranceInformed: null, hasVerifiedActiveCoverage: true }),
+    ).toEqual(['SERVICE_ADDRESS', 'SERVICE_SCHEDULE']);
+  });
 });
