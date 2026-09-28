@@ -18,7 +18,8 @@
  */
 import { test, expect } from '@playwright/test';
 import {
-  seedLaunchablePatient, mockAdminUserFor, useLancamentoStaff, LANCAMENTO_VIEWPORT_ES_AR,
+  seedLaunchablePatient, mockAdminUserFor, useLancamentoStaff, LANCAMENTO_VIEWPORT_ES_AR, backendUrl,
+  readPatientKanbanColumn,
 } from '../helpers/lancamento-e2e-helper';
 import {
   activateRecruitmentViaApi, readItineraryApi, createServiceViaApi, ITINERARIO_STAFF,
@@ -32,8 +33,8 @@ import {
   allocateApi, seedServiceWithLiveVacancySql, cleanupItineraryWrite, patientStatus,
 } from '../helpers/itinerario-escrita-e2e-helper';
 import {
-  registerAbsenceApi, setAbsenceSubstituteApi, cancelAbsenceApi, nextWeekdaySql, countOpenAbsences,
-  openServiceTeamOf, cleanupSubstituicao,
+  registerAbsenceApi, setAbsenceSubstituteApi, cancelAbsenceApi, nextWeekdaySql, pastWeekdaySql,
+  insertPastAbsenceSql, countOpenAbsences, openServiceTeamOf, cleanupSubstituicao,
 } from '../helpers/substituicao-e2e-helper';
 
 interface AllocateData { allocationId: string }
@@ -43,6 +44,10 @@ interface AllocateData { allocationId: string }
  * nova, só os 2 campos que a DX-13.11 acrescenta ao membro `inService`). */
 interface ServiceTeamMemberF13 { workerId: string; substitutionDates?: string[] }
 interface ServiceTeamDataF13 { inService: ServiceTeamMemberF13[] }
+/** `alerts[]` (DX-13.9) — o helper de leitura da Fase 7 (`ItineraryResponseDto`) ainda não tipa este
+ * campo (não editado nesta fase, regra 3 do brief); `[k: string]: unknown` no `body` cobre o cast. */
+interface AlertDto { serviceId: string; date: string; startTime: string; endTime: string }
+interface ItineraryBodyF13 { services: unknown[]; alerts?: AlertDto[] }
 
 const STAFF = mockAdminUserFor('substituicao');
 
@@ -545,6 +550,120 @@ test.describe('substituicao @integration', () => {
 
       console.log('[13.12]', rejectBlocked.status, rejectBlocked.body.code, cancel.status, rejectAfterCancel.status, rejectedIds);
       expect(rejectedIds).toContain(w);
+    } finally {
+      cleanupSubstituicao(seed.patientId);
+      cleanupWJAAndEncuadre(t, v);
+      cleanupWJAAndEncuadre(w, v);
+      cleanupTestWorker(t);
+      cleanupTestWorker(w);
+      seed.cleanup();
+    }
+  });
+
+  test('substituicao-alerta', async ({ page, request }) => {
+    const hosts: string[] = [];
+    page.on('request', (r) => hosts.push(new URL(r.url()).host));
+
+    const seed = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.6, lng: -58.4 });
+    const token = tokenFor(ITINERARIO_STAFF);
+    const v = await activateRecruitmentViaApi(request, seed.patientId, seed.serviceId);
+    const itin = await readItineraryApi(request, seed.patientId);
+    const svc = itin.body.data?.services.find((s) => s.contractedServiceId === seed.serviceId);
+    const slotId = svc?.slots[0]?.id;
+    if (!slotId) throw new Error('substituicao-alerta: slot ausente na semente');
+
+    const t = insertTestWorker({ occupation: 'AT' }); // titular
+    const w = insertTestWorker({ occupation: 'AT' }); // ERR — substituto
+    const d = nextWeekdaySql(1);
+    try {
+      insertWJA({ workerId: t, jobPostingId: v, funnelStage: 'QUICK_RESPONSE_TEAM' });
+      insertWJA({ workerId: w, jobPostingId: v, funnelStage: 'QUICK_RESPONSE_TEAM' });
+      const allocT = await allocateApi(request, token, seed.patientId, seed.serviceId, slotId, { workerId: t });
+      expect(allocT.status).toBe(201);
+      const allocationId = (allocT.body.data as AllocateData | undefined)?.allocationId;
+      if (!allocationId) throw new Error('substituicao-alerta: alocação sem allocationId');
+
+      const absence = await registerAbsenceApi(request, token, seed.patientId, seed.serviceId, allocationId, { date: d });
+      expect(absence.status).toBe(201);
+      const absenceId = absence.body.data?.absenceId;
+      if (!absenceId) throw new Error('substituicao-alerta: ausência sem absenceId');
+
+      const itinAlerta = await readItineraryApi(request, seed.patientId);
+      const alertsBody = itinAlerta.body.data as unknown as ItineraryBodyF13 | undefined;
+      const alerts1 = alertsBody?.alerts ?? [];
+      expect(alerts1.length).toBe(1);
+      expect(alerts1[0]?.serviceId).toBe(seed.serviceId);
+      expect(alerts1[0]?.date).toBe(d);
+
+      // Critério 13: sem clínico/diagnóstico no corpo, sem o nome do titular (lido do banco — o
+      // dado é sintético, nunca colado no log; só a CONTAGEM sai) — controle positivo dos dois.
+      const itinJson = JSON.stringify(itinAlerta.body);
+      const clinicMatches = (itinJson.match(/diagnos|clinic/gi) ?? []).length;
+      const clinicControl = JSON.stringify({ diagnosis: 'x clinico' }).match(/diagnos|clinic/gi)?.length ?? 0;
+      const tFirstName = runSQL(
+        `SELECT convert_from(decode(first_name_encrypted, 'base64'), 'UTF8') FROM workers WHERE id = '${t}'`,
+      );
+      const tLastName = runSQL(
+        `SELECT convert_from(decode(last_name_encrypted, 'base64'), 'UTF8') FROM workers WHERE id = '${t}'`,
+      );
+      const nameLeaks = (tFirstName && itinJson.includes(tFirstName) ? 1 : 0)
+        + (tLastName && itinJson.includes(tLastName) ? 1 : 0);
+      const serviceIdMatches = itinJson.match(/serviceId/g)?.length ?? 0;
+
+      await loginAs(page, STAFF);
+      const columnBefore = await readPatientKanbanColumn(page, seed.patientId);
+      const subcardAlert = page.getByTestId(`patient-kanban-card-${seed.patientId}`).getByTestId('subcard-alerta-dia-descoberto');
+      await expect(subcardAlert).toHaveCount(1);
+
+      const printDir = process.env.PRINT_DIR;
+      if (printDir) {
+        await page.evaluate(() => document.fonts.ready);
+        await page.screenshot({
+          path: `${printDir}/kanban-subcard.png`, fullPage: false, animations: 'disabled', caret: 'hide',
+        });
+      }
+
+      const sub = await setAbsenceSubstituteApi(request, token, seed.patientId, seed.serviceId, absenceId, { substituteWorkerId: w });
+      expect(sub.status).toBe(200);
+      const itinAfterSub = await readItineraryApi(request, seed.patientId);
+      const alertsAfterSub = (itinAfterSub.body.data as unknown as ItineraryBodyF13 | undefined)?.alerts ?? [];
+      expect(alertsAfterSub.length).toBe(0);
+
+      const columnAfter = await readPatientKanbanColumn(page, seed.patientId);
+      const subcardAlertAfter = page.getByTestId(`patient-kanban-card-${seed.patientId}`).getByTestId('subcard-alerta-dia-descoberto');
+      await expect(subcardAlertAfter).toHaveCount(0);
+      expect(columnAfter).toBe(columnBefore);
+
+      // Critério 10, Q-EX-13.3: ausência em data PASSADA nasce por SQL (a API a recusa por desenho);
+      // sem substituto, mas `date < asOf` → não entra em `alerts`. A alocação nasceu HOJE (segunda,
+      // `allocateApi`) — recua o `valid_from` 14 dias por SQL (a trigger da 483 exige a data dentro
+      // da vigência, `piab_fora_da_vigencia`) para a segunda passada caber na janela; a alocação em
+      // si segue sendo a da API da Fase 11 (só a vigência é ajustada, não recriada).
+      const dPast = pastWeekdaySql(1);
+      runSQL(`UPDATE patient_itinerary_assignment SET valid_from = valid_from - interval '14 day' WHERE id = '${allocationId}'`);
+      insertPastAbsenceSql(allocationId, dPast);
+      const itinAfterPast = await readItineraryApi(request, seed.patientId);
+      const alertsAfterPast = (itinAfterPast.body.data as unknown as ItineraryBodyF13 | undefined)?.alerts ?? [];
+      expect(alertsAfterPast.length).toBe(0);
+
+      // Critério 15: nenhum host de canal externo — controle positivo é o host da própria API.
+      const externalHosts = hosts.filter((h) => /twilio|whatsapp|wa\.me|periskope|talentum/i.test(h));
+      const apiHost = new URL(backendUrl()).host;
+      const apiHostHits = hosts.filter((h) => h === apiHost).length;
+
+      console.log(
+        '[13.10]', alerts1.length, alertsAfterSub.length, alertsAfterPast.length,
+        '[13.11]', columnBefore, columnAfter,
+        '[13.13]', clinicMatches, clinicControl, nameLeaks, serviceIdMatches,
+        '[13.15]', externalHosts.length, apiHostHits,
+      );
+
+      expect(clinicMatches).toBe(0);
+      expect(clinicControl).toBeGreaterThan(0);
+      expect(nameLeaks).toBe(0);
+      expect(serviceIdMatches).toBeGreaterThanOrEqual(1);
+      expect(externalHosts.length).toBe(0);
+      expect(apiHostHits).toBeGreaterThan(0);
     } finally {
       cleanupSubstituicao(seed.patientId);
       cleanupWJAAndEncuadre(t, v);
