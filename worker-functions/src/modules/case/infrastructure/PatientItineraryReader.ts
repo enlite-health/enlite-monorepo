@@ -45,10 +45,20 @@ export interface ItinerarySlotRow {
   status: ItineraryAssignmentStatus | null;
 }
 
+/** Uma ausência sem substituto (a candidata a "dia descoberto" — DX-13.9). Sem `workerId`/nome. */
+export interface ItineraryUncoveredAbsenceRow {
+  serviceId: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+}
+
 export interface ItineraryRows {
   country: string;
   services: ItineraryServiceRow[];
   slots: ItinerarySlotRow[];
+  /** Opcional: nasce só na Fase 13. Sem filtro de vigência aqui — `uncoveredDayAlerts` decide (caso de uso). */
+  uncoveredAbsences?: ItineraryUncoveredAbsenceRow[];
 }
 
 interface PatientCountryRow {
@@ -75,6 +85,13 @@ interface SlotJoinRow {
   valid_from: string | null;
   valid_to: string | null;
   status: ItineraryAssignmentStatus | null;
+}
+
+interface UncoveredAbsenceJoinRow {
+  contracted_service_id: string;
+  on_date: string;
+  start_time: string;
+  end_time: string;
 }
 
 export class PatientItineraryReader {
@@ -117,6 +134,24 @@ export class PatientItineraryReader {
       [patientId],
     );
 
+    // Ausência sem substituto (DX-13.9): sem filtro de data aqui — `uncoveredDayAlerts` (caso de
+    // uso) decide `date >= asOf`. Nenhuma coluna de nome/telefone; `ab.substitute_worker_id IS NULL`
+    // exclui quem já tem substituto (coberto, não é alerta).
+    const uncoveredRes = await client.query<UncoveredAbsenceJoinRow>(
+      `SELECT s.contracted_service_id,
+              to_char(ab.on_date, 'YYYY-MM-DD') AS on_date,
+              to_char(s.start_time, 'HH24:MI') AS start_time,
+              to_char(s.end_time, 'HH24:MI') AS end_time
+         FROM patient_itinerary_absence ab
+         JOIN patient_itinerary_assignment a ON a.id = ab.assignment_id
+         JOIN patient_itinerary_slot s ON s.id = a.slot_id
+         JOIN patient_contracted_services pcs ON pcs.id = s.contracted_service_id
+        WHERE pcs.patient_id = $1 AND pcs.active
+          AND ab.cancelled_at IS NULL AND ab.substitute_worker_id IS NULL
+        ORDER BY ab.on_date, s.start_time, s.contracted_service_id`,
+      [patientId],
+    );
+
     return {
       country,
       services: servicesRes.rows.map((r) => ({
@@ -137,6 +172,12 @@ export class PatientItineraryReader {
         validFrom: r.valid_from,
         validTo: r.valid_to,
         status: r.status,
+      })),
+      uncoveredAbsences: uncoveredRes.rows.map((r) => ({
+        serviceId: r.contracted_service_id,
+        date: r.on_date,
+        startTime: r.start_time,
+        endTime: r.end_time,
       })),
     };
   }
