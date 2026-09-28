@@ -17,7 +17,7 @@
  * na tela real, nenhum consumidor passa a prop até a Fase 10) → (só com `PRINT_DIR`) screenshot.
  */
 import { test, expect, type Page } from '@playwright/test';
-import { loginAs } from '../helpers/abac-stack-helper';
+import { loginAs, tokenFor } from '../helpers/abac-stack-helper';
 import { ensureDsTableMassa, cleanupDsTableMassa, DS_TABLE_STAFF, type DsTableMassa } from '../helpers/ds-table-massa-helper';
 
 test.describe('ds-table-nao-regressao', () => {
@@ -386,20 +386,28 @@ test.describe('ds-table-nao-regressao', () => {
 
   test('ds-table-nao-regressao t26-dashboard', async ({ page }) => {
     await loginAs(page, DS_TABLE_STAFF);
+    // P3.1 (achado 1 do P5, auth corrigido): `ManagementDashboardApiService`/`ZoneAnalyticsApiService`
+    // chamam `/analytics/dashboard/*` — SEM o segmento `/api/` que `installAuthInterceptors` troca
+    // pelo token mock (glob `**/api/**`, abac-stack-helper.ts, sem parâmetro de padrão de URL).
+    // Injeta o MESMO Authorization que o `loginAs` já injeta nas outras rotas — não é mock de
+    // resposta, a request e a resposta seguem reais.
+    await page.route('**/analytics/**', async (route) => {
+      await route.continue({ headers: { ...route.request().headers(), authorization: `Bearer ${tokenFor(DS_TABLE_STAFF)}` } });
+    });
     await page.goto('/admin/dashboard');
-    // VAZIO por infra (medido 27/09, fora do escopo de codar aqui): `ManagementDashboardApiService`
-    // chama `${getBaseURL()}/analytics/dashboard/management` — SEM o segmento `/api/` que
-    // `installAuthInterceptors` troca pelo token mock (`page.route('**/api/**', swapToken)`,
-    // abac-stack-helper.ts:134). A requisição sai com o idToken fake do Firebase, e o backend
-    // recusa (`MockAuthMiddleware`, "Invalid credentials") — `data` nunca chega e `mgmt-content`/
-    // `ZoneAnalyticsSection` não montam nesta stack. O spec pré-existente
-    // `management-dashboard-visual.e2e.ts` já contorna isso mockando o endpoint via `page.route`
-    // — proibido aqui (BRIEF-COMUM critério 10: "nenhum page.route").
+    // VAZIO por dado — CAMADA NOVA descoberta ao corrigir o auth acima (medido 27/09): com o
+    // Authorization correto, o backend responde de verdade e devolve 403 `COUNTRY_SCOPE_REQUIRED`
+    // (`resolveCountryScope.ts:135-136`, "Sua conta não tem país concedido por nenhum grupo") —
+    // `DS_TABLE_STAFF` não está em nenhum grupo com `iam.group_country_scopes`. O grupo `DS Tabla
+    // — acceso F9` criado nesta massa (P3.1, achado 2) só tem a célula `permission_management:read`,
+    // sem escopo de país — deliberado: dar país exigiria um INSERT novo em `group_country_scopes`,
+    // fora do que o P3.1 foi autorizado a semear (só a célula de acesso para t28/t29/t30). Reportado
+    // em LISTA no retorno, não corrigido aqui.
     const errorNode = page.getByTestId('mgmt-error');
     await expect(errorNode).toBeVisible();
     test.info().annotations.push({
       type: 'vazio',
-      description: 'GET /analytics/dashboard/management não casa o glob **/api/** do installAuthInterceptors — "Invalid credentials" (MockAuthMiddleware); ZoneAnalyticsSection nunca monta nesta stack sem page.route (proibido). Achado, não corrigido aqui.',
+      description: '403 COUNTRY_SCOPE_REQUIRED (resolveCountryScope.ts) — DS_TABLE_STAFF sem iam.group_country_scopes; exigiria massa nova fora do escopo autorizado do P3.1 (achado, LISTA).',
     });
     await waitFontsReady(page);
     await expectNoSelectedRow(page);
@@ -423,20 +431,11 @@ test.describe('ds-table-nao-regressao', () => {
   test('ds-table-nao-regressao t28-acceso-grupos', async ({ page }) => {
     await loginAs(page, DS_TABLE_STAFF);
     await page.goto('/admin/access');
-    // VAZIO por acesso (medido 27/09, fora do escopo de codar aqui): `AccessGate` usa
-    // `useCellAccess` DIRETO (useCellAccess.ts:31-42) — fail-CLOSED SEMPRE, sem o bypass "engine
-    // off" que `useContainerAccess`/`useActionGate` têm (D268/D286). O staff fixo da massa
-    // (`DS_TABLE_STAFF`) não está em nenhum `iam.user_groups` com `permission_management:read` —
-    // só ganharia entrando num grupo com essa célula (molde:
-    // admin-access-panel.integration.e2e.ts:263-272), fora do escopo do P5 (spec só, sem tocar no
-    // helper da massa do P3). `AccessGate.tsx:26` redireciona `/admin/access` para `/admin` — a
-    // MESMA tela do t27 (confirmado por navegação real, não suposição).
-    await expect(page).toHaveURL(/\/admin\/?$/);
-    await expect(page.getByTestId('admin-users-header')).toBeVisible();
-    test.info().annotations.push({
-      type: 'vazio',
-      description: 'permission_management:read ausente para o staff fixo da massa — AccessGate (fail-closed sempre, useCellAccess) redireciona /admin/access para /admin. Achado, não corrigido aqui (fora do escopo do P5).',
-    });
+    // P3.1 (achado 2 do P5, corrigido): staff fixo agora está no grupo `DS Tabla — acceso F9`
+    // (`permission_management:read`, semeado em `ensureDsTableMassa`) — `AccessGate` monta o
+    // painel de verdade em vez de redirecionar para `/admin`.
+    await expect(page.getByTestId('access-groups-header')).toBeVisible();
+    await expect(page.locator('table tbody tr').first()).toBeVisible();
     await waitFontsReady(page);
     await expectNoSelectedRow(page);
     await maybeScreenshot(page, 't28-acceso-grupos');
@@ -445,14 +444,9 @@ test.describe('ds-table-nao-regressao', () => {
   test('ds-table-nao-regressao t29-acceso-features', async ({ page }) => {
     await loginAs(page, DS_TABLE_STAFF);
     await page.goto('/admin/access/features');
-    // VAZIO por acesso — mesmo achado do t28 (CountryFeaturesPage também é envolvida por
-    // `AccessGate`, mesma célula `permission_management`); confirmado por navegação real.
-    await expect(page).toHaveURL(/\/admin\/?$/);
-    await expect(page.getByTestId('admin-users-header')).toBeVisible();
-    test.info().annotations.push({
-      type: 'vazio',
-      description: 'permission_management:read ausente para o staff fixo da massa — AccessGate redireciona /admin/access/features para /admin. Mesmo achado do t28, não corrigido aqui.',
-    });
+    // P3.1 (achado 2 do P5, corrigido) — mesmo grupo do t28 dá acesso a esta rota também.
+    await expect(page).toHaveURL(/\/admin\/access\/features\/?$/);
+    await expect(page.locator('table tbody tr').first()).toBeVisible();
     await waitFontsReady(page);
     await expectNoSelectedRow(page);
     await maybeScreenshot(page, 't29-acceso-features');
@@ -461,16 +455,11 @@ test.describe('ds-table-nao-regressao', () => {
   test('ds-table-nao-regressao t30-acceso-auditoria', async ({ page }) => {
     await loginAs(page, DS_TABLE_STAFF);
     await page.goto('/admin/access/audit');
-    // VAZIO por acesso — mesmo achado do t28 (PermissionHistoryPage também é envolvida por
-    // `AccessGate`, mesma célula `permission_management`); confirmado por navegação real.
+    // P3.1 (achado 2 do P5, corrigido) — mesmo grupo do t28 dá acesso a esta rota também.
     // `data-clarity-mask` (PermissionHistoryPage.tsx:134) é irrelevante nesta stack — Clarity só
     // roda em PRD (memória clarity-so-roda-em-prd) — e nunca chega a montar aqui.
-    await expect(page).toHaveURL(/\/admin\/?$/);
-    await expect(page.getByTestId('admin-users-header')).toBeVisible();
-    test.info().annotations.push({
-      type: 'vazio',
-      description: 'permission_management:read ausente para o staff fixo da massa — AccessGate redireciona /admin/access/audit para /admin. Mesmo achado do t28, não corrigido aqui.',
-    });
+    await expect(page).toHaveURL(/\/admin\/access\/audit\/?$/);
+    await expect(page.locator('table tbody tr').first()).toBeVisible();
     await waitFontsReady(page);
     await expectNoSelectedRow(page);
     await maybeScreenshot(page, 't30-acceso-auditoria');

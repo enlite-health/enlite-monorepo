@@ -36,11 +36,16 @@ import { insertWJA, cleanupWJAAndEncuadre } from './wja-test-helper';
 import { postContractedServiceViaApi, backendUrl } from './lancamento-e2e-helper';
 import { seedMockStaff, cleanupMockStaff } from './vacancy-notes-e2e-helper';
 import { runSQL } from './patient-detail-a-helper';
-import { tokenFor, type MockUser } from './abac-stack-helper';
+import { tokenFor, ABAC_TENANT, type MockUser } from './abac-stack-helper';
 
 // ── Marcador e identidade fixa (rule 6/8: sintético, sem Date.now/new Date) ─────────────────
 const CASE_MARKER = 909009;
 const CASE_MARKER_PENDING_REVIEW = 909010;
+
+/** P3.1 (achado 2 do P5) — grupo sintético que dá `permission_management:read` ao staff fixo,
+ * para t28/t29/t30 (AccessGate fail-closed sempre — useCellAccess direto, sem bypass de
+ * enforcement). */
+const ACCESS_GROUP_NAME = 'DS Tabla — acceso F9';
 
 export const DS_TABLE_STAFF: MockUser = {
   uid: 'e2e-int-admin-ds-table-f9',
@@ -69,6 +74,7 @@ export interface DsTableMassa {
   mergeSurvivorId: string;
   mergeAbsorbedId: string;
   tagId: string;
+  accessGroupId: string;
 }
 
 // ── Releitura (marcador já existe — nenhum INSERT) ──────────────────────────────────────────
@@ -108,6 +114,9 @@ function rereadMassa(patientId: string): DsTableMassa {
   const mergeAbsorbedId = findWorkerByNameAny('DS Tabla', 'WorkerMergeAbsorbed');
   const dedupPhoneNormalized = runSQL(`SELECT phone_normalized FROM workers WHERE id = '${dedupWorkerAId}'`);
   const tagId = runSQL(`SELECT id FROM worker_tag_catalog WHERE name = 'DS Tabla' LIMIT 1`);
+  const accessGroupId = runSQL(
+    `SELECT id FROM iam.permission_groups WHERE tenant_id = '${ABAC_TENANT}' AND name = '${ACCESS_GROUP_NAME}'`,
+  );
 
   return {
     staff: DS_TABLE_STAFF,
@@ -127,6 +136,7 @@ function rereadMassa(patientId: string): DsTableMassa {
     mergeSurvivorId,
     mergeAbsorbedId,
     tagId,
+    accessGroupId,
   };
 }
 
@@ -311,6 +321,33 @@ async function seedMassa(request: APIRequestContext): Promise<DsTableMassa> {
     `INSERT INTO iam.permission_group_changes (group_id, permission_id, op, changed_by, changed_at, reason) VALUES ('${anyGroupId}', '${anyPermissionId}', 'add', '${DS_TABLE_STAFF.uid}', now() - interval '3 days', 'DS Tabla — e2e Fase 9 (ds-table-nao-regressao)')`,
   );
 
+  // Grupo de acesso (t28/t29/t30 — P3.1, achado 2 do P5): dá `permission_management:read` ao
+  // staff fixo, sem o qual `AccessGate` (fail-closed sempre) redireciona /admin/access* para /admin.
+  let accessGroupId = runSQL(
+    `INSERT INTO iam.permission_groups (tenant_id, name, description, created_by)
+     VALUES ('${ABAC_TENANT}', '${ACCESS_GROUP_NAME}', 'grupo sintetico e2e Fase 9 (ds-table-nao-regressao)', '${DS_TABLE_STAFF.uid}')
+     ON CONFLICT (tenant_id, name) DO NOTHING RETURNING id`,
+  )
+    .split('\n')[0]
+    .trim();
+  if (!accessGroupId) {
+    accessGroupId = runSQL(
+      `SELECT id FROM iam.permission_groups WHERE tenant_id='${ABAC_TENANT}' AND name='${ACCESS_GROUP_NAME}'`,
+    )
+      .split('\n')[0]
+      .trim();
+  }
+  runSQL(
+    `INSERT INTO iam.group_permissions (group_id, permission_id)
+     SELECT '${accessGroupId}', id FROM iam.permissions WHERE resource='permission_management' AND action='read'
+     ON CONFLICT (group_id, permission_id) DO NOTHING`,
+  );
+  runSQL(
+    `INSERT INTO iam.user_groups (user_id, group_id, tenant_id)
+     VALUES ('${DS_TABLE_STAFF.uid}', '${accessGroupId}', '${ABAC_TENANT}')
+     ON CONFLICT (user_id, group_id) WHERE removed_at IS NULL DO NOTHING`,
+  );
+
   return {
     staff: DS_TABLE_STAFF,
     patientId,
@@ -329,6 +366,7 @@ async function seedMassa(request: APIRequestContext): Promise<DsTableMassa> {
     mergeSurvivorId,
     mergeAbsorbedId,
     tagId,
+    accessGroupId,
   };
 }
 
@@ -399,5 +437,12 @@ export function cleanupDsTableMassa(m: DsTableMassa): void {
   runSQL(`DELETE FROM worker_tag_catalog WHERE id = '${m.tagId}'`);
   runSQL(`DELETE FROM iam.country_features WHERE country = 'AR' AND feature_key = 'screen:ds-table-massa-f9'`);
   runSQL(`DELETE FROM iam.permission_group_changes WHERE reason = 'DS Tabla — e2e Fase 9 (ds-table-nao-regressao)'`);
+  try {
+    runSQL(`DELETE FROM iam.user_groups WHERE user_id = '${m.staff.uid}' AND group_id = '${m.accessGroupId}'`);
+    runSQL(`DELETE FROM iam.group_permissions WHERE group_id = '${m.accessGroupId}'`);
+    runSQL(`DELETE FROM iam.permission_groups WHERE id = '${m.accessGroupId}'`);
+  } catch (err) {
+    console.error('[cleanup] grupo de acesso (P3.1) falhou (seguindo)', err);
+  }
   cleanupMockStaff(m.staff);
 }
