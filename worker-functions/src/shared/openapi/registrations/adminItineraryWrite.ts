@@ -30,8 +30,10 @@ const commonErrors = {
   },
   409: {
     description:
-      'Sobreposição de horário — a trava é do banco; a resposta traz os dois horários e, quando o conflito é entre ' +
-      'endereços diferentes, a folga mínima.',
+      'Dois códigos possíveis. `ITINERARY_OVERLAP`: sobreposição de horário na ALOCAÇÃO — a trava é do banco; a ' +
+      'resposta traz os dois horários e, quando o conflito é entre endereços diferentes, a folga mínima. ' +
+      '`SLOT_ALREADY_EXISTS`: a chave (dia/horário) já está ativa em outro slot do mesmo serviço — devolvido tanto ' +
+      'ao CRIAR quanto ao EDITAR (PATCH) um slot.',
     content: { 'application/json': { schema: ErrorResponseSchema } },
   },
   422: {

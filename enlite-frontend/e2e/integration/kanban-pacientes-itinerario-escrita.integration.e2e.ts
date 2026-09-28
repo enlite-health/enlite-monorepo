@@ -508,6 +508,38 @@ test.describe('itinerario-escrita @integration', () => {
       expect(duplicate.status).toBe(409);
       expect(duplicate.body.code).toBe('SLOT_ALREADY_EXISTS');
 
+      // Gate fecho N4: o mesmo 409 SLOT_ALREADY_EXISTS agora também no PATCH — um 2º slot ativo
+      // (B, dia diferente) tenta migrar pela chave que A já ocupa. Nenhum dos dois muda de estado.
+      const slotB = await postSlotApi(request, token, seed.patientId, seed.serviceId, {
+        weekday: 5, startTime: '09:00', endTime: '11:00',
+      });
+      expect(slotB.status).toBe(201);
+      const slotBId = (slotB.body.data as { id?: string } | undefined)?.id;
+      if (!slotBId) throw new Error('itinerario-slot-cria-edita-encerra: slot B sem id');
+
+      const patchCollision = await patchSlotApi(request, token, seed.patientId, seed.serviceId, slotBId, {
+        weekday: 3, startTime: '14:00', endTime: '18:00',
+      });
+      console.log('[11.slot-colisao]', patchCollision.status, patchCollision.body.code);
+      expect(patchCollision.status).toBe(409);
+      expect(patchCollision.body.code).toBe('SLOT_ALREADY_EXISTS');
+
+      const itinAfterCollision = await readItineraryApi(request, seed.patientId);
+      const svcAfterCollision = itinAfterCollision.body.data?.services.find(
+        (s) => s.contractedServiceId === seed.serviceId,
+      );
+      const slotAAfterCollision = svcAfterCollision?.slots.find((sl) => sl.id === createdId);
+      const slotBAfterCollision = svcAfterCollision?.slots.find((sl) => sl.id === slotBId);
+      expect(slotAAfterCollision?.active).toBe(true);
+      expect(slotAAfterCollision).toMatchObject({ weekday: 3, startTime: '14:00', endTime: '18:00' });
+      expect(slotBAfterCollision?.active).toBe(true);
+      expect(slotBAfterCollision).toMatchObject({ weekday: 5, startTime: '09:00', endTime: '11:00' });
+      const scheduleAfterCollision = runSQL(
+        `SELECT schedule::text FROM patient_contracted_services WHERE id = '${seed.serviceId}'`,
+      );
+      expect(scheduleAfterCollision).toContain('14:00');
+      expect(scheduleAfterCollision).toContain('09:00');
+
       const patch = await patchSlotApi(request, token, seed.patientId, seed.serviceId, createdId, {
         weekday: 3, startTime: '16:00', endTime: '20:00',
       });
