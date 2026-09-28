@@ -8,16 +8,17 @@
 -- grava linha nova — nunca reescreve a anterior. Sem DELETE, sem UPDATE (log
 -- append-only; o GRANT abaixo só dá SELECT/INSERT).
 --
--- ── Por que um gatilho, e não `EXCLUDE USING gist` ───────────────────────────
--- `btree_gist` não está instalada na stage (medido no Passo 0, passo-0.md:185-196) —
--- instalar extensão em produção é decisão à parte, fora do escopo desta fase. E a
--- folga não é uma regra de exclusão simples: ela só se aplica ENTRE ENDEREÇOS
--- DIFERENTES (`endereço_a <> endereço_b`); no MESMO endereço as faixas só não podem
--- se sobrepor. Um `EXCLUDE` não expressa essa condição — precisaria de dois
--- predicados de exclusão distintos, um deles dependente de uma junção (o endereço
--- vem de `patient_contracted_services`, não da própria linha). Um gatilho
--- `BEFORE INSERT OR UPDATE` + `pg_advisory_xact_lock` (padrão já em uso, 279:83)
--- resolve os dois casos com uma função só.
+-- ── Por que gatilho e não restrição de exclusão por índice gist ──────────────
+-- A stage não tem a extensão de btree para gist instalada (medido no Passo 0,
+-- passo-0.md:185-196) — instalar extensão em produção é decisão à parte, fora
+-- do escopo desta fase. E a folga depende do endereço: ela só se aplica ENTRE
+-- ENDEREÇOS DIFERENTES (`endereço_a <> endereço_b`); no MESMO endereço as
+-- faixas só não podem se sobrepor. Uma restrição de exclusão por índice não
+-- expressa essa condição — precisaria de dois predicados distintos, um deles
+-- dependente de uma junção (o endereço vem de `patient_contracted_services`,
+-- não da própria linha). Um gatilho `BEFORE INSERT OR UPDATE` +
+-- `pg_advisory_xact_lock` (padrão já em uso, 279:83) resolve os dois casos com
+-- uma função só.
 --
 -- ── Extensível pela Fase 13 ───────────────────────────────────────────────────
 -- O filtro de vigência da trava já é por INTERVALO DE DATAS (`valid_from`/`valid_to`
