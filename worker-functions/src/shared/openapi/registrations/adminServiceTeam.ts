@@ -26,8 +26,11 @@ registry.registerPath({
   tags: ['Admin · Patients'],
   summary: 'Time do quadro C (Servicio Contratado): calculado; a única coisa gravada é a marca de rejeição; nunca adiciona prestador',
   description:
-    'Calculado a partir da vaga viva do serviço, do itinerário e das marcas de rejeição — nunca ' +
-    'grava. `selected`/`inService`/`rejected`, um mesmo prestador nunca em duas listas.',
+    'Calculado a partir da vaga viva do serviço, do itinerário, das marcas de rejeição e das ausências com ' +
+    'substituto (Fase 13) — nunca grava. `selected`/`inService`/`rejected`, um mesmo prestador nunca em duas ' +
+    'listas. A resposta traz `asOf` (a data LOCAL do país do paciente usada para decidir vigência); em ' +
+    '`inService`, o titular vem com `allocations` (id/dia/horário da alocação) e quem substitui vem com ' +
+    '`substitutionDates` (as datas vigentes, ordem crescente).',
   security: [{ firebaseAuth: [] }],
   request: { params: serviceTeamParams },
   responses: serviceTeamResponses,
