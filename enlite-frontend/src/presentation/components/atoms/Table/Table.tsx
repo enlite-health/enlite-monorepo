@@ -72,6 +72,8 @@ interface TableRowProps extends HTMLAttributes<HTMLTableRowElement> {
   children: ReactNode;
   /** Aplica cursor-pointer + hover. Default: true se onClick presente. */
   clickable?: boolean;
+  /** Linha selecionada: realce do tema + aria-selected="true". Default: false — sem a prop, o <tr> é o de antes, byte a byte. */
+  selected?: boolean;
 }
 
 export function TableRow({
@@ -79,19 +81,25 @@ export function TableRow({
   className = '',
   onClick,
   clickable,
+  selected = false,
   ...rest
 }: TableRowProps): JSX.Element {
   const isClickable = clickable ?? !!onClick;
   const classes = [
     'border-b border-gray-600 last:border-0',
-    isClickable ? 'cursor-pointer hover:bg-slate-50 transition-colors' : '',
+    isClickable
+      ? selected
+        ? 'cursor-pointer transition-colors'
+        : 'cursor-pointer hover:bg-slate-50 transition-colors'
+      : '',
+    selected ? 'bg-primary/5' : '',
     className,
   ]
     .filter(Boolean)
     .join(' ');
 
   return (
-    <tr {...rest} className={classes} onClick={onClick}>
+    <tr {...rest} {...(selected ? { 'aria-selected': true } : {})} className={classes} onClick={onClick}>
       {children}
     </tr>
   );
