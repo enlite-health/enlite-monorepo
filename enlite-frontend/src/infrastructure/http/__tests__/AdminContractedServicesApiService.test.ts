@@ -307,4 +307,90 @@ describe('AdminContractedServicesApiService', () => {
       AdminContractedServicesApiService.cancelAbsence(PATIENT_ID, SERVICE_ID, ABSENCE_ID),
     ).rejects.toMatchObject({ name: 'ContractedServiceApiError', status: 404, code: 'NOT_FOUND' });
   });
+
+  describe('itinerário (Fase 12, DX-12.6)', () => {
+    const SLOT_ID = 'sl1';
+    const WORKER_ID = 'w1';
+    const OVERLAP_BODY = {
+      success: false,
+      error: 'conflito de horário',
+      code: 'ITINERARY_OVERLAP',
+      existing: { serviceId: 's9', weekday: 1, startTime: '08:00', endTime: '12:00' },
+      requested: { serviceId: SERVICE_ID, weekday: 1, startTime: '10:00', endTime: '14:00' },
+      sameAddress: false,
+      minGapMinutes: 45,
+    };
+
+    it('getItinerary: GET em /patients/:id/itinerary, devolve o itinerário', async () => {
+      const data = { patientId: PATIENT_ID, asOf: '2026-10-07', services: [], alerts: [] };
+      const f = mockFetch({ success: true, data });
+      const out = await AdminContractedServicesApiService.getItinerary(PATIENT_ID);
+      expect(out).toEqual(data);
+      const [url, init] = f.mock.calls[0] as [string, RequestInit];
+      expect(url).toMatch(new RegExp(`/api/admin/patients/${PATIENT_ID}/itinerary$`));
+      expect(init.method).toBe('GET');
+      expect(init.body).toBeUndefined();
+    });
+
+    it('getAllocationOptions: GET em /:sid/allocation-options, devolve { serviceId, vacancyId, options }', async () => {
+      const data = { serviceId: SERVICE_ID, vacancyId: 'v1', options: [{ workerId: WORKER_ID, displayName: null, vacancyId: 'v1' }] };
+      const f = mockFetch({ success: true, data });
+      const out = await AdminContractedServicesApiService.getAllocationOptions(PATIENT_ID, SERVICE_ID);
+      expect(out).toEqual(data);
+      const [url, init] = f.mock.calls[0] as [string, RequestInit];
+      expect(url).toMatch(new RegExp(`/api/admin/patients/${PATIENT_ID}/contracted-services/${SERVICE_ID}/allocation-options$`));
+      expect(init.method).toBe('GET');
+      expect(init.body).toBeUndefined();
+    });
+
+    it('allocate: POST em /itinerary/slots/:slotId/allocations com { workerId }', async () => {
+      const data = { allocationId: 'al1', slotId: SLOT_ID, workerId: WORKER_ID, applicationId: 'a1', validFrom: '2026-10-07', status: 'ACTIVE' };
+      const f = mockFetch({ success: true, data }, 201);
+      const out = await AdminContractedServicesApiService.allocate(PATIENT_ID, SERVICE_ID, SLOT_ID, WORKER_ID);
+      expect(out).toEqual(data);
+      const [url, init] = f.mock.calls[0] as [string, RequestInit];
+      expect(url).toMatch(
+        new RegExp(`/api/admin/patients/${PATIENT_ID}/contracted-services/${SERVICE_ID}/itinerary/slots/${SLOT_ID}/allocations$`),
+      );
+      expect(init.method).toBe('POST');
+      expect(JSON.parse(init.body as string)).toEqual({ workerId: WORKER_ID });
+    });
+
+    it('allocate: 409 ITINERARY_OVERLAP com existing/requested → err.overlap preenchido com os 4 campos da API', async () => {
+      mockFetch(OVERLAP_BODY, 409);
+      const err = await AdminContractedServicesApiService.allocate(PATIENT_ID, SERVICE_ID, SLOT_ID, WORKER_ID).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(ContractedServiceApiError);
+      const apiErr = err as ContractedServiceApiError;
+      expect(apiErr.status).toBe(409);
+      expect(apiErr.code).toBe('ITINERARY_OVERLAP');
+      expect(apiErr.overlap).toEqual({
+        existing: OVERLAP_BODY.existing,
+        requested: OVERLAP_BODY.requested,
+        sameAddress: false,
+        minGapMinutes: 45,
+      });
+    });
+
+    it('allocate: 409 com minGapMinutes null (mesmo endereço) → overlap.minGapMinutes null', async () => {
+      mockFetch({ ...OVERLAP_BODY, sameAddress: true, minGapMinutes: null }, 409);
+      const err = (await AdminContractedServicesApiService.allocate(PATIENT_ID, SERVICE_ID, SLOT_ID, WORKER_ID).catch((e: unknown) => e)) as ContractedServiceApiError;
+      expect(err.overlap).toMatchObject({ sameAddress: true, minGapMinutes: null });
+    });
+
+    it('allocate: 422 sem existing/requested → err.overlap undefined, err.code preenchido', async () => {
+      mockFetch({ success: false, error: 'já alocado', code: 'ALREADY_ALLOCATED_IN_SLOT' }, 422);
+      const err = (await AdminContractedServicesApiService.allocate(PATIENT_ID, SERVICE_ID, SLOT_ID, WORKER_ID).catch((e: unknown) => e)) as ContractedServiceApiError;
+      expect(err).toBeInstanceOf(ContractedServiceApiError);
+      expect(err.status).toBe(422);
+      expect(err.code).toBe('ALREADY_ALLOCATED_IN_SLOT');
+      expect(err.overlap).toBeUndefined();
+    });
+
+    it('ContractedServiceApiError sem os campos de conflito (só code/details) → overlap undefined', () => {
+      const err = new ContractedServiceApiError('x', 422, { code: 'C', details: { slotId: 'sl1' } });
+      expect(err.code).toBe('C');
+      expect(err.details).toEqual({ slotId: 'sl1' });
+      expect(err.overlap).toBeUndefined();
+    });
+  });
 });
