@@ -21,7 +21,14 @@ const CreateVacancyBody = z.object({
 });
 
 const UpdateVacancyBody = z.object({
-  status: z.enum(['SEARCHING', 'SEARCHING_REPLACEMENT', 'RAPID_RESPONSE', 'PENDING_ACTIVATION', 'ACTIVE', 'SUSPENDED', 'CLOSED']).optional().openapi({
+  // Nota (change baja-vacante-por-servico): `DE_BAJA` entrou no CHECK de `job_postings.status`
+  // (migration 483) e por isso entra aqui — mas é estado GERADO pelo gatilho de
+  // `PatientContractedServiceRepository.update` (baja/reativação do serviço contratado ligado),
+  // nunca escrito por este endpoint em produção. Documentado por completude do enum, não como
+  // convite ao admin setar manualmente. ⚠️ Este `z.enum` só documenta (OpenAPI) — a rota real
+  // (`VacancyCrudController.update`) trata `status` como string livre, sem validar contra ele
+  // (achado pré-existente, fora do escopo desta change: `ON_HOLD` já estava faltando aqui antes).
+  status: z.enum(['SEARCHING', 'SEARCHING_REPLACEMENT', 'RAPID_RESPONSE', 'PENDING_ACTIVATION', 'ACTIVE', 'SUSPENDED', 'CLOSED', 'DE_BAJA']).optional().openapi({
     description: 'Novo status da vaga.',
     example: 'SEARCHING',
   }),

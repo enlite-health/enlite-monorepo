@@ -53,6 +53,7 @@ function cliente(responses: Record<string, unknown> = {}) {
     if (/^DELETE FROM contracted_service_devices/.test(sql)) return { rows: [], rowCount: 0 };
     if (/^INSERT INTO contracted_service_devices/.test(sql)) return { rows: [], rowCount: 0 };
     if (/^UPDATE patient_contracted_services SET/.test(sql)) return { rows: [], rowCount: responses.updateRowCount ?? 1 };
+    if (/^UPDATE job_postings/.test(sql)) return { rows: [], rowCount: responses.jobPostingsUpdateRowCount ?? 1 };
     if (/csd\.device_type/.test(sql)) return { rows: [], rowCount: 0 };
     return { rows: [], rowCount: 0 };
   });
@@ -213,6 +214,54 @@ describe('PatientContractedServiceRepository', () => {
     await repo.update('svc-1', { active: true, actorUid: 'uid-2' });
     const upd = chamadas.find((c) => /^UPDATE patient_contracted_services SET/.test(c.sql));
     expect(upd?.sql).toContain('ended_at = NULL');
+  });
+
+  // ── Gatilho: baja/reativação da vaga ligada (change baja-vacante-por-servico) ────────────────
+  // Molde do teste acima (`active:true`/`active:false` no PCS) — mesma transação (`cliente()`
+  // devolve UM client mockado, então "mesma transação" é provado por os dois UPDATEs saírem do
+  // MESMO objeto `cli`, nunca de `mockPoolQuery`). Isolamento real entre serviços é prova de
+  // banco de verdade — fica no e2e (`patient-contracted-services.e2e.test.ts`); aqui provamos
+  // que o SQL disparado é escopado por `contracted_service_id = $1` com o `serviceId` do PATCH.
+
+  it('update: active:false baixa a(s) vaga(s) ligada(s) — grava status_before_baja e status=DE_BAJA, escopado ao serviço e a vagas vivas e ainda não baixadas', async () => {
+    const { cli, chamadas } = cliente();
+    mockConnect.mockResolvedValue(cli);
+    const repo = new PatientContractedServiceRepository(fakeProviderRepo());
+    await repo.update('svc-1', { active: false, actorUid: 'uid-2' });
+    const jobUpd = chamadas.find((c) => /^UPDATE job_postings/.test(c.sql));
+    expect(jobUpd).toBeDefined();
+    expect(jobUpd?.sql).toContain('status_before_baja = status');
+    expect(jobUpd?.sql).toContain(`status = 'DE_BAJA'`);
+    expect(jobUpd?.sql).toContain('contracted_service_id = $1');
+    expect(jobUpd?.sql).toContain('deleted_at IS NULL');
+    expect(jobUpd?.sql).toContain(`status != 'DE_BAJA'`); // vaga já DE_BAJA: não sobrescreve status_before_baja de novo
+    expect(jobUpd?.params).toEqual(['svc-1']);
+    // A prova de "mesma transação": os dois UPDATEs (PCS e job_postings) saem do MESMO `cli` de
+    // `withActorContext`/`connect()`, nunca do pool solto (`mockPoolQuery` só serve o SELECT final).
+    expect(cli.query).toHaveBeenCalled();
+  });
+
+  it('update: active:true reativa — restaura status = COALESCE(status_before_baja, SEARCHING) e limpa status_before_baja, só em vagas DE_BAJA (repositório aceita as 2 direções; o schema HTTP só permite false — ver comentário do método)', async () => {
+    const { cli, chamadas } = cliente();
+    mockConnect.mockResolvedValue(cli);
+    const repo = new PatientContractedServiceRepository(fakeProviderRepo());
+    await repo.update('svc-1', { active: true, actorUid: 'uid-2' });
+    const jobUpd = chamadas.find((c) => /^UPDATE job_postings/.test(c.sql));
+    expect(jobUpd).toBeDefined();
+    expect(jobUpd?.sql).toContain(`status = COALESCE(status_before_baja, 'SEARCHING')`);
+    expect(jobUpd?.sql).toContain('status_before_baja = NULL');
+    expect(jobUpd?.sql).toContain('contracted_service_id = $1');
+    expect(jobUpd?.sql).toContain(`status = 'DE_BAJA'`); // só restaura o que estava DE_BAJA
+    expect(jobUpd?.params).toEqual(['svc-1']);
+  });
+
+  it('update: PATCH sem `active` (outro campo qualquer) NÃO dispara UPDATE em job_postings — gatilho só na transição de active', async () => {
+    const { cli, chamadas } = cliente();
+    mockConnect.mockResolvedValue(cli);
+    const repo = new PatientContractedServiceRepository(fakeProviderRepo());
+    await repo.update('svc-1', { weeklyHours: 30, actorUid: 'uid-2' });
+    const jobUpd = chamadas.find((c) => /^UPDATE job_postings/.test(c.sql));
+    expect(jobUpd).toBeUndefined();
   });
 
   it('update: deviceTypeCodes presente substitui o conjunto (mesmo sem outros campos)', async () => {

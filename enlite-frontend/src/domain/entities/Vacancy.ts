@@ -33,6 +33,10 @@ export interface PublicVacancyDetail {
   vacancy_number: number;
   title: string;
   status: string;
+  /** Change baja-vacante-por-servico: `true` quando `status === 'DE_BAJA'` (serviço contratado
+   *  ligado deu baixa) — a tela usa este campo para não oferecer candidatura, em vez de
+   *  comparar `status` contra a string crua. */
+  is_disabled: boolean;
   required_professions: string[];
   required_sex: string | null;
   age_range_min: number | null;
