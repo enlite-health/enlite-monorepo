@@ -391,6 +391,54 @@ describe('AdminWorkersController — listWorkers', () => {
     expect(sql).toContain("w.status = 'INCOMPLETE_REGISTER'");
   });
 
+  // ── Checkbox "Mostrar desactivados" (D-2026-09-28) ─────────────────────────
+
+  it('sem include_deactivated: SQL exclui DISABLED (comportamento atual, default preservado)', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [{ total: '0' }] });
+    mockQuery.mockResolvedValueOnce({ rows: [] });
+    const [req, res] = mockReqRes({}, {} as any);
+
+    await controller.listWorkers(req, res);
+
+    const sql = mockQuery.mock.calls[0][0];
+    expect(sql).toContain("COALESCE(w.status, '') <> 'DISABLED'");
+  });
+
+  it('include_deactivated=true: SQL NÃO exclui DISABLED — os 3 status entram juntos', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [{ total: '0' }] });
+    mockQuery.mockResolvedValueOnce({ rows: [] });
+    const [req, res] = mockReqRes({}, { include_deactivated: 'true' } as any);
+
+    await controller.listWorkers(req, res);
+
+    const sql = mockQuery.mock.calls[0][0];
+    expect(sql).not.toContain("<> 'DISABLED'");
+  });
+
+  it('include_deactivated=true + search por email: encontra worker DISABLED (mesmo WHERE, sem exclude)', async () => {
+    mockQuery.mockResolvedValueOnce({ rows: [{ total: '1' }] });
+    mockQuery.mockResolvedValueOnce({ rows: [makeListRow({ status: 'DISABLED', email: 'baixa@example.com' })] });
+    const [req, res] = mockReqRes({}, { include_deactivated: 'true', search: 'baixa@example.com' } as any);
+
+    await controller.listWorkers(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    const sql = mockQuery.mock.calls[0][0];
+    expect(sql).not.toContain("<> 'DISABLED'");
+    expect(sql).toContain('w.email ILIKE');
+    const body = (res.json as jest.Mock).mock.calls[0][0];
+    expect(body.data[0].status).toBe('DISABLED');
+  });
+
+  it('valor inválido de include_deactivated → 400 (não silencia, mesmo padrão do docs_validated)', async () => {
+    const [req, res] = mockReqRes({}, { include_deactivated: 'yes' } as any);
+
+    await controller.listWorkers(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(mockQuery).not.toHaveBeenCalled();
+  });
+
   it('aplica filtro docs_validated=all_validated', async () => {
     mockQuery.mockResolvedValueOnce({ rows: [{ total: '0' }] });
     mockQuery.mockResolvedValueOnce({ rows: [] });

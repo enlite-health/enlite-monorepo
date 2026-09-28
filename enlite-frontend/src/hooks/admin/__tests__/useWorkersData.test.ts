@@ -132,4 +132,31 @@ describe('useWorkersData', () => {
 
     await waitFor(() => expect(listSpy).toHaveBeenCalledWith({ docs_complete: 'incomplete' }));
   });
+
+  // ── Checkbox "Mostrar desactivados" (D-2026-09-28) ─────────────────────────
+
+  it('passes include_deactivated filter to listWorkers', async () => {
+    const listSpy = vi.spyOn(AdminApiService, 'listWorkers').mockResolvedValue({ data: [], total: 0 });
+
+    renderHook(() => useWorkersData({ include_deactivated: 'true' }));
+
+    await waitFor(() => {
+      expect(listSpy).toHaveBeenCalledWith({ include_deactivated: 'true' });
+    });
+  });
+
+  it('refetches when include_deactivated filter changes (checkbox marcado/desmarcado)', async () => {
+    const listSpy = vi.spyOn(AdminApiService, 'listWorkers').mockResolvedValue({ data: [], total: 0 });
+
+    const { rerender } = renderHook(
+      ({ filters }) => useWorkersData(filters),
+      { initialProps: { filters: {} as { include_deactivated?: string } } },
+    );
+
+    await waitFor(() => expect(listSpy).toHaveBeenCalledWith({}));
+
+    rerender({ filters: { include_deactivated: 'true' } });
+
+    await waitFor(() => expect(listSpy).toHaveBeenCalledWith({ include_deactivated: 'true' }));
+  });
 });

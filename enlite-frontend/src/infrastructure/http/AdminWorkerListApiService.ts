@@ -19,6 +19,14 @@ export interface WorkerListFilters {
   search?: string;
   case_id?: string;
   tag_ids?: string;
+  /**
+   * Checkbox "Mostrar desactivados" (D-2026-09-28). Opt-in: ausente/'false' mantém
+   * o default do backend (exclui `status = 'DISABLED'`, comportamento atual —
+   * inclusive no mapa e no MCP `worker_search`, que não passam isto). Diferente de
+   * um filtro `status=DISABLED` — que trocaria a lista para SÓ desativados — isto
+   * ADICIONA os desativados aos demais status já visíveis.
+   */
+  include_deactivated?: string;
   limit?: string;
   offset?: string;
   // profile filters

@@ -67,6 +67,47 @@ describe('buildWorkerListWhereClause — statuses (lista)', () => {
   });
 });
 
+// ── Checkbox "Mostrar desactivados" (D-2026-09-28) ──────────────────────────────
+//
+// Opt-in, e só vale quando `status`/`statuses` NÃO vieram — esses dois já mandam
+// sobre o exclude da casa (regra escrita acima), então `include_deactivated`
+// nunca precisa competir com eles.
+
+describe('buildWorkerListWhereClause — include_deactivated (checkbox "Mostrar desactivados")', () => {
+  it('ausente → comportamento de hoje: exclude de DISABLED entra', () => {
+    const { whereClause, params } = buildWorkerListWhereClause({ ...PAGE });
+    expect(whereClause).toContain("COALESCE(w.status, '') <> 'DISABLED'");
+    // Nenhum param novo consumido — o exclude é uma cláusula literal, não $N.
+    expect(params).toEqual([]);
+  });
+
+  it("'false' explícito → mesmo comportamento do ausente (exclude entra)", () => {
+    const { whereClause } = buildWorkerListWhereClause({ ...PAGE, include_deactivated: 'false' });
+    expect(whereClause).toContain("COALESCE(w.status, '') <> 'DISABLED'");
+  });
+
+  it("'true' → exclude de DISABLED NÃO entra (os 3 status aparecem juntos)", () => {
+    const { whereClause, paramIndex } = buildWorkerListWhereClause({ ...PAGE, include_deactivated: 'true' });
+    expect(whereClause).not.toContain("<> 'DISABLED'");
+    expect(statusMentions(whereClause)).toBe(0);
+    // Não consome parâmetro — é a ausência de uma cláusula, não um $N novo.
+    expect(paramIndex).toBe(1);
+  });
+
+  it("status explícito MANDA sobre include_deactivated='true' (ex.: status=REGISTERED continua só REGISTERED)", () => {
+    const { whereClause, params } = buildWorkerListWhereClause({ ...PAGE, status: 'REGISTERED', include_deactivated: 'true' });
+    expect(whereClause).toContain('w.status = $1');
+    expect(whereClause).not.toContain("<> 'DISABLED'");
+    expect(params).toEqual(['REGISTERED']);
+  });
+
+  it("statuses (lista, usada pelo mapa) também MANDA sobre include_deactivated='true'", () => {
+    const { whereClause, params } = buildWorkerListWhereClause({ ...PAGE, statuses: ['REGISTERED'], include_deactivated: 'true' });
+    expect(whereClause).toContain('w.status = ANY($1::text[])');
+    expect(params).toEqual([['REGISTERED']]);
+  });
+});
+
 describe('locationMatchSql — o predicado compartilhado por EXISTS (lista) e LATERAL (mapa)', () => {
   it('chave exata: coluna primária OU work_zone, no alias pedido', () => {
     const params: unknown[] = [];

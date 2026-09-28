@@ -2992,6 +2992,7 @@
         "tags": "Etiquetas",
         "tagsPlaceholder": "Filtrar por etiqueta...",
         "tagsAll": "Todas",
+        "showDeactivated": "Mostrar desativados",
         "profile": {
           "allOption": "Todos",
           "clear": "Limpar filtros",
@@ -3043,6 +3044,9 @@
         "submitted": "Enviado",
         "under_review": "Em análise",
         "approved": "Aprovado"
+      },
+      "statusBadge": {
+        "deactivated": "Desativado"
       },
       "stats": {
         "today": "Cadastros Hoje",
