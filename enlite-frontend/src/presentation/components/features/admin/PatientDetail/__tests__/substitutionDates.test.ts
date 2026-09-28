@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { nextDatesOfWeekday } from '../substitutionDates';
+import { weekdayName } from '../substitutionDates';
 
 describe('nextDatesOfWeekday — as datas oferecidas para "Sustituir un día" (Fase 13, DX-13.13)', () => {
   afterEach(() => {
@@ -40,5 +41,19 @@ describe('nextDatesOfWeekday — as datas oferecidas para "Sustituir un día" (F
     const nowSpy = vi.spyOn(Date, 'now');
     nextDatesOfWeekday('2026-09-28', 1, 8);
     expect(nowSpy).toHaveBeenCalledTimes(0);
+  });
+});
+
+describe('weekdayName — nome do dia da semana, fonte única (Fase 12, DX-12.12 (i))', () => {
+  it('0 em es → domingo', () => {
+    expect(weekdayName(0, 'es')).toBe('domingo');
+  });
+
+  it('1 em pt-BR → segunda-feira', () => {
+    expect(weekdayName(1, 'pt-BR')).toBe('segunda-feira');
+  });
+
+  it('6 em es → sábado', () => {
+    expect(weekdayName(6, 'es')).toBe('sábado');
   });
 });

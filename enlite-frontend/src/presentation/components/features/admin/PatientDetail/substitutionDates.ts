@@ -29,3 +29,17 @@ export function formatDDMM(dateIso: string): string {
   const [, month, day] = dateIso.split('-');
   return `${day}/${month}`;
 }
+
+/**
+ * Referência UTC de um domingo (2023-01-01) para nomear o dia da semana sem criar chave de i18n
+ * (`weekday` 0=domingo…6=sábado, a mesma convenção do `dayOfWeek`/`nextDatesOfWeekday`). Fonte
+ * única (Fase 12, DX-12.12 (i)): o modal "Sustituir un día" e o itinerário importam daqui. Só o NOME do dia (`Intl`, locale do idioma ativo) — nunca a
+ * data em si, que vem sempre de `nextDatesOfWeekday`.
+ */
+export const WEEKDAY_REFERENCE_UTC_MS = Date.UTC(2023, 0, 1);
+
+export function weekdayName(weekday: number, language: string): string {
+  const locale = language.startsWith('pt') ? 'pt-BR' : 'es-AR';
+  const ms = WEEKDAY_REFERENCE_UTC_MS + weekday * 24 * 60 * 60 * 1000;
+  return new Intl.DateTimeFormat(locale, { weekday: 'long', timeZone: 'UTC' }).format(new Date(ms));
+}
