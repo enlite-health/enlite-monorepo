@@ -31,7 +31,7 @@
  * §Q-9.4.
  */
 import { test, expect, type Page, type Locator } from '@playwright/test';
-import { loginAs, tokenFor } from '../helpers/abac-stack-helper';
+import { loginAs } from '../helpers/abac-stack-helper';
 import { ensureDsTableMassa, cleanupDsTableMassa, DS_TABLE_STAFF, type DsTableMassa } from '../helpers/ds-table-massa-helper';
 
 test.describe('ds-table-nao-regressao', () => {
@@ -49,8 +49,10 @@ test.describe('ds-table-nao-regressao', () => {
   });
 
   test.afterAll(() => {
-    // `process.env` lido DENTRO do hook (nunca em const de módulo) — rule 11 do BRIEF-COMUM.
-    if (process.env.DS_TABLE_MASSA_KEEP !== '1') {
+    // Gate parcial #6: `massa` fica `undefined` se o `beforeAll` (ensureDsTableMassa) lançou —
+    // chamar `cleanupDsTableMassa(undefined)` derrubaria com TypeError somado ao erro original e
+    // não limparia nada do seed parcial. `process.env` lido DENTRO do hook (rule 11 do BRIEF-COMUM).
+    if (massa && process.env.DS_TABLE_MASSA_KEEP !== '1') {
       cleanupDsTableMassa(massa);
     }
   });
@@ -451,14 +453,10 @@ test.describe('ds-table-nao-regressao', () => {
 
   test('ds-table-nao-regressao t26-dashboard', async ({ page }) => {
     await loginAs(page, DS_TABLE_STAFF);
-    // P3.1 (achado 1 do P5, auth corrigido): `ManagementDashboardApiService`/`ZoneAnalyticsApiService`
-    // chamam `/analytics/dashboard/*` — SEM o segmento `/api/` que `installAuthInterceptors` troca
-    // pelo token mock (glob `**/api/**`, abac-stack-helper.ts, sem parâmetro de padrão de URL).
-    // Injeta o MESMO Authorization que o `loginAs` já injeta nas outras rotas — não é mock de
-    // resposta, a request e a resposta seguem reais (fix de auth, não de dado).
-    await page.route('**/analytics/**', async (route) => {
-      await route.continue({ headers: { ...route.request().headers(), authorization: `Bearer ${tokenFor(DS_TABLE_STAFF)}` } });
-    });
+    // P3.1 (achado 1 do P5) / gate parcial #1: `ManagementDashboardApiService`/`ZoneAnalyticsApiService`
+    // chamam `/analytics/dashboard/*` — SEM o segmento `/api/` que o padrão principal troca pelo
+    // token mock. `installAuthInterceptors` (abac-stack-helper.ts, já instalado pelo `loginAs` acima)
+    // agora também intercepta `**/analytics/**` com o MESMO swap de auth — nenhuma interceptação local neste spec.
     // P3.2: com o escopo de país (AR) semeado em `iam.group_country_scopes` pela massa
     // (`ds-table-massa-helper.ts`, `ensureDsTableMassa`), `resolveCountryScope.ts` já não
     // devolve 403 — a rota responde de verdade. `waitForResponse` prova que a requisição real

@@ -102,12 +102,30 @@ function findWorkerByNameAny(firstName: string, lastName: string): string {
   return out;
 }
 
+/** Gate parcial #6: `runSQL` devolve `''` quando a linha não existe — sem esta checagem o campo
+ * seguiria como string vazia e o teste falharia LONGE da causa (ex.: navegação para uma rota com
+ * id vazio). Mensagem nomeia a coluna/tabela para achar a causa direto. */
+function mustField(value: string, label: string): string {
+  if (!value) throw new Error(`ds-table-massa: "${label}" vazio na releitura — massa parcial (seed anterior deve ter falhado no meio)`);
+  return value;
+}
+
 function rereadMassa(patientId: string): DsTableMassa {
-  const addressId = runSQL(`SELECT id FROM patient_addresses WHERE patient_id = '${patientId}' ORDER BY created_at LIMIT 1`);
-  const serviceId = runSQL(`SELECT id FROM patient_contracted_services WHERE patient_id = '${patientId}' ORDER BY created_at LIMIT 1`);
-  const vacancyId = runSQL(`SELECT id FROM job_postings WHERE patient_id = '${patientId}' AND case_number = ${CASE_MARKER} LIMIT 1`);
-  const vacancyPendingReviewId = runSQL(
-    `SELECT id FROM job_postings WHERE patient_id = '${patientId}' AND case_number = ${CASE_MARKER_PENDING_REVIEW} LIMIT 1`,
+  const addressId = mustField(
+    runSQL(`SELECT id FROM patient_addresses WHERE patient_id = '${patientId}' ORDER BY created_at LIMIT 1`),
+    'addressId (patient_addresses)',
+  );
+  const serviceId = mustField(
+    runSQL(`SELECT id FROM patient_contracted_services WHERE patient_id = '${patientId}' ORDER BY created_at LIMIT 1`),
+    'serviceId (patient_contracted_services)',
+  );
+  const vacancyId = mustField(
+    runSQL(`SELECT id FROM job_postings WHERE patient_id = '${patientId}' AND case_number = ${CASE_MARKER} LIMIT 1`),
+    'vacancyId (job_postings)',
+  );
+  const vacancyPendingReviewId = mustField(
+    runSQL(`SELECT id FROM job_postings WHERE patient_id = '${patientId}' AND case_number = ${CASE_MARKER_PENDING_REVIEW} LIMIT 1`),
+    'vacancyPendingReviewId (job_postings)',
   );
   const workerFunnelId = findWorkerByName('DS Tabla', 'WorkerFunnel');
   const workerMatchId = findWorkerByName('DS Tabla', 'WorkerMatch');
@@ -118,10 +136,14 @@ function rereadMassa(patientId: string): DsTableMassa {
   const importedGhostWorkerId = findWorkerByName('DS Tabla', 'WorkerImportadoGhost');
   const mergeSurvivorId = findWorkerByNameAny('DS Tabla', 'WorkerMergeSurvivor');
   const mergeAbsorbedId = findWorkerByNameAny('DS Tabla', 'WorkerMergeAbsorbed');
-  const dedupPhoneNormalized = runSQL(`SELECT phone_normalized FROM workers WHERE id = '${dedupWorkerAId}'`);
-  const tagId = runSQL(`SELECT id FROM worker_tag_catalog WHERE name = 'DS Tabla' LIMIT 1`);
-  const accessGroupId = runSQL(
-    `SELECT id FROM iam.permission_groups WHERE tenant_id = '${ABAC_TENANT}' AND name = '${ACCESS_GROUP_NAME}'`,
+  const dedupPhoneNormalized = mustField(
+    runSQL(`SELECT phone_normalized FROM workers WHERE id = '${dedupWorkerAId}'`),
+    'dedupPhoneNormalized (workers.phone_normalized)',
+  );
+  const tagId = mustField(runSQL(`SELECT id FROM worker_tag_catalog WHERE name = 'DS Tabla' LIMIT 1`), 'tagId (worker_tag_catalog)');
+  const accessGroupId = mustField(
+    runSQL(`SELECT id FROM iam.permission_groups WHERE tenant_id = '${ABAC_TENANT}' AND name = '${ACCESS_GROUP_NAME}'`),
+    'accessGroupId (iam.permission_groups)',
   );
 
   return {
@@ -165,7 +187,10 @@ async function seedMassa(request: APIRequestContext): Promise<DsTableMassa> {
     insuranceInformed: 'OSDE',
   });
   if (!addressId) throw new Error('ds-table-massa: paciente sem addressId');
-  runSQL(`UPDATE patients SET case_number = ${CASE_MARKER} WHERE id = '${patientId}'`);
+  // Gate parcial #6: o marcador (`case_number`) só é gravado no FIM desta função (ver `return`
+  // abaixo) — gravá-lo aqui, cedo, faria uma `ensureDsTableMassa` concorrente/seguinte encontrar
+  // o marcador e cair em `rereadMassa` sobre uma massa PARCIAL (seed morreu no meio), lendo ids
+  // vazios de tabelas ainda não semeadas.
   // Trigger `fn_log_patient_status_change` grava a transição — `updated_at`/`created_at` da
   // linha de histórico saem do NOW() do Postgres; sem conta de data no runner (rule 8).
   runSQL(`UPDATE patients SET status = 'ACTIVE', updated_at = now() - interval '3 days' WHERE id = '${patientId}'`);
@@ -353,6 +378,10 @@ async function seedMassa(request: APIRequestContext): Promise<DsTableMassa> {
      VALUES ('${DS_TABLE_STAFF.uid}', '${accessGroupId}', '${ABAC_TENANT}')
      ON CONFLICT (user_id, group_id) WHERE removed_at IS NULL DO NOTHING`,
   );
+
+  // Gate parcial #6: marcador gravado por ÚLTIMO — só depois que TODA a massa acima existe.
+  // `ensureDsTableMassa` só decide "já existe, só relê" a partir deste UPDATE.
+  runSQL(`UPDATE patients SET case_number = ${CASE_MARKER} WHERE id = '${patientId}'`);
 
   return {
     staff: DS_TABLE_STAFF,
