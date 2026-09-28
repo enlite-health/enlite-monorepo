@@ -15,7 +15,8 @@ registry.registerPath({
     '`patient_itinerary_assignment`). `cobertas` em horas/semana; `contratadas.authorized` não ' +
     'declara período (é copiado, nunca calculado). Sem backfill: serviço cujo horário não foi ' +
     'salvo depois da migration 480 aparece com `slots: []`. `alerts: [{ serviceId, date, ' +
-    'startTime, endTime }]` (fase 13): ausência sem substituto, data ≥ hoje (Buenos Aires); sem nome.',
+    'startTime, endTime }]` (fase 13): ausência sem substituto, data ≥ hoje (Buenos Aires); sem nome. ' +
+    'Fase 12: cada alocação traz `allocationId` e `displayName` (só vigente; `null` sem `worker_contact:read`).',
   security: [{ firebaseAuth: [] }],
   request: { params: z.object({ id: UuidParam }) },
   responses: {
