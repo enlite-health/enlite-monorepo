@@ -442,6 +442,11 @@ describe('PatientQueryRepository.list', () => {
     // de `effectiveCaseNumber` (job_postings, subquery independente) e não conta.
     const patientsDeletedAtClauses = sql.match(/(?<!j)p\.deleted_at IS NULL/g) ?? [];
     expect(patientsDeletedAtClauses).toHaveLength(1);
+    // Conserto de dívida (gate, commit d19d70ed): a projeção não tinha guarda —
+    // apagando `deleted_at AS "deletedAt"` do SELECT, os 86 testes seguiam
+    // verdes. Sem isto o WHERE pode estar certo e o payload sair sem o campo
+    // que o badge da tela lê.
+    expect(sql).toMatch(/deleted_at\s+AS "deletedAt"/);
   });
 
   it('a20. include_deactivated="false" explícito → param false, mesma condição SQL do ausente (a19)', async () => {

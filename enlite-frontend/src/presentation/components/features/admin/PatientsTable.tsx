@@ -82,7 +82,13 @@ function DeactivatedBadge() {
   const { t } = useTranslation();
   return (
     <span
-      className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-gray-200 text-gray-700"
+      // Conserto de dívida (gate, commit d19d70ed): `bg-gray-200 text-gray-700` media
+      // ~1,91:1 — `gray-700` deste tema é rgba(115,115,115,0.5) translúcido, então o
+      // texto se dilui quase até sumir sobre o fundo claro. `gray-800` (#737373) é
+      // sólido: com `gray-300` (#EEEEEE) mede ~4,09:1 (calculado via fórmula WCAG
+      // sRGB→luminância relativa) — abaixo do 4,5:1 AA pleno para texto normal, mas
+      // bem acima do defeito original.
+      className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-gray-300 text-gray-800"
       title={t('admin.patients.statusBadge.deactivated')}
     >
       <span className="w-1.5 h-1.5 rounded-full bg-gray-500" />
