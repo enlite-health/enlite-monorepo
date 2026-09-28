@@ -70,6 +70,7 @@ describe('SCREEN_REGISTRY — paridade com o catálogo do back', () => {
       'interview:write',
       'patient:write',
       'patient_clinical:write',
+      'patient_itinerary:update',
       'patient_service_team:update',
       'prescreening:write',
       'recruitment:create',

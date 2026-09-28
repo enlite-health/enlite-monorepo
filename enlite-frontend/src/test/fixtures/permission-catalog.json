@@ -67,6 +67,7 @@
     "patient_identity:create",
     "patient_identity:read",
     "patient_identity:update",
+    "patient_itinerary:update",
     "patient_service_team:update",
     "patient_services:create",
     "patient_services:read",

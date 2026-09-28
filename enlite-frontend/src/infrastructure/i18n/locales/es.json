@@ -4467,7 +4467,8 @@
             "catalog_therapeutic_activities": "Catálogo de rutina y actividades (proyecto terapéutico)",
             "catalog_therapeutic_segments": "Catálogo de segmentos (Ana Care)",
             "anacare_hours": "Conferencia de horas del Ana Care",
-            "patient_service_team": "Encuadre del servicio contratado (rechazar/revertir)"
+            "patient_service_team": "Encuadre del servicio contratado (rechazar/revertir)",
+            "patient_itinerary": "Itinerario del paciente (armar)"
           },
           "help": {
             "open": "Qué hace este permiso",
