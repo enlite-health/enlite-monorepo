@@ -264,3 +264,159 @@ describe('deriveServiceTeam', () => {
     expect(result.rejected).toEqual([]);
   });
 });
+
+/**
+ * deriveServiceTeam com datas de substituição — Fase 13, DX-13.3 (P7). `substitutions` é OPCIONAL
+ * (critério "sem substitutions → saída idêntica à de hoje", provado pelas 15 casos acima que
+ * continuam verdes sem tocar a chave). Datas comparadas como STRING `YYYY-MM-DD`, nunca `Date`.
+ */
+describe('deriveServiceTeam — quem substitui num dia (DX-13.3)', () => {
+  const SERVICE_ID = 'service-1';
+  const OTHER_SERVICE_ID = 'service-2';
+  const VACANCY_ID = 'vacancy-1';
+  const TITULAR_VACANCY = 'vacancy-titular';
+  const ASOF = '2026-09-28';
+
+  it('(16) substitui no dia de hoje (date = asOf) → substituto em inService com substitutionDates, fora de selected; titular também em inService', () => {
+    const result = deriveServiceTeam({
+      serviceId: SERVICE_ID,
+      liveVacancyId: VACANCY_ID,
+      asOf: ASOF,
+      candidacies: [],
+      assignments: [
+        { workerId: 'titular', serviceId: SERVICE_ID, vacancyId: TITULAR_VACANCY, validFrom: '2026-01-01', validTo: null, status: 'ACTIVE' },
+      ],
+      marks: [],
+      substitutions: [{ workerId: 'substituto', serviceId: SERVICE_ID, vacancyId: VACANCY_ID, date: ASOF }],
+    });
+    expect(result.inService).toEqual([
+      { workerId: 'titular', vacancyId: TITULAR_VACANCY },
+      { workerId: 'substituto', vacancyId: VACANCY_ID, substitutionDates: [ASOF] },
+    ]);
+    expect(result.selected).toEqual([]);
+  });
+
+  it('(17) substitui numa data já passada (date = asOf − 1 como string) → substituto em Selecionado, fora de inService', () => {
+    const ontem = '2026-09-27';
+    const result = deriveServiceTeam({
+      serviceId: SERVICE_ID,
+      liveVacancyId: VACANCY_ID,
+      asOf: ASOF,
+      candidacies: [{ workerId: 'substituto', vacancyId: VACANCY_ID, stage: SERVICE_TEAM_ENTRY_STAGE }],
+      assignments: [],
+      marks: [],
+      substitutions: [{ workerId: 'substituto', serviceId: SERVICE_ID, vacancyId: VACANCY_ID, date: ontem }],
+    });
+    expect(result.inService).toEqual([]);
+    expect(result.selected).toEqual([{ workerId: 'substituto', vacancyId: VACANCY_ID }]);
+  });
+
+  it('(18) duas datas futuras de quem substitui, fora de ordem → substitutionDates ordenadas, sem repetição', () => {
+    const result = deriveServiceTeam({
+      serviceId: SERVICE_ID,
+      liveVacancyId: VACANCY_ID,
+      asOf: ASOF,
+      candidacies: [],
+      assignments: [],
+      marks: [],
+      substitutions: [
+        { workerId: 'substituto', serviceId: SERVICE_ID, vacancyId: VACANCY_ID, date: '2026-10-05' },
+        { workerId: 'substituto', serviceId: SERVICE_ID, vacancyId: VACANCY_ID, date: '2026-09-29' },
+        { workerId: 'substituto', serviceId: SERVICE_ID, vacancyId: VACANCY_ID, date: '2026-10-05' },
+      ],
+    });
+    expect(result.inService).toEqual([
+      { workerId: 'substituto', vacancyId: VACANCY_ID, substitutionDates: ['2026-09-29', '2026-10-05'] },
+    ]);
+  });
+
+  it('(19) substitui em OUTRO serviço → ignorada', () => {
+    const result = deriveServiceTeam({
+      serviceId: SERVICE_ID,
+      liveVacancyId: VACANCY_ID,
+      asOf: ASOF,
+      candidacies: [],
+      assignments: [],
+      marks: [],
+      substitutions: [{ workerId: 'substituto', serviceId: OTHER_SERVICE_ID, vacancyId: VACANCY_ID, date: ASOF }],
+    });
+    expect(result.inService).toEqual([]);
+  });
+
+  it('(20) quem é titular E substitui outra alocação do MESMO serviço → uma entrada com allocations e substitutionDates', () => {
+    const result = deriveServiceTeam({
+      serviceId: SERVICE_ID,
+      liveVacancyId: VACANCY_ID,
+      asOf: ASOF,
+      candidacies: [],
+      assignments: [
+        {
+          workerId: 'w1',
+          serviceId: SERVICE_ID,
+          vacancyId: TITULAR_VACANCY,
+          validFrom: '2026-01-01',
+          validTo: null,
+          status: 'ACTIVE',
+          allocationId: 'alloc-1',
+          weekday: 1,
+          startTime: '08:00',
+          endTime: '12:00',
+        },
+      ],
+      marks: [],
+      substitutions: [{ workerId: 'w1', serviceId: SERVICE_ID, vacancyId: VACANCY_ID, date: ASOF }],
+    });
+    expect(result.inService).toEqual([
+      {
+        workerId: 'w1',
+        vacancyId: TITULAR_VACANCY,
+        allocations: [{ allocationId: 'alloc-1', weekday: 1, startTime: '08:00', endTime: '12:00' }],
+        substitutionDates: [ASOF],
+      },
+    ]);
+  });
+
+  it('(21) quem substitui e tem marca de rejeição ativa → fica em inService (alocado > rejeitado), fora de rejected', () => {
+    const result = deriveServiceTeam({
+      serviceId: SERVICE_ID,
+      liveVacancyId: VACANCY_ID,
+      asOf: ASOF,
+      candidacies: [],
+      assignments: [],
+      marks: [{ workerId: 'substituto', serviceId: SERVICE_ID, rejectReasonCategory: 'OTHER' }],
+      substitutions: [{ workerId: 'substituto', serviceId: SERVICE_ID, vacancyId: VACANCY_ID, date: ASOF }],
+    });
+    expect(result.inService).toEqual([{ workerId: 'substituto', vacancyId: VACANCY_ID, substitutionDates: [ASOF] }]);
+    expect(result.rejected).toEqual([]);
+  });
+
+  it('(22) allocations só aparece quando allocationId está presente na alocação do titular', () => {
+    const result = deriveServiceTeam({
+      serviceId: SERVICE_ID,
+      liveVacancyId: VACANCY_ID,
+      asOf: ASOF,
+      candidacies: [],
+      assignments: [
+        { workerId: 'w1', serviceId: SERVICE_ID, vacancyId: TITULAR_VACANCY, validFrom: '2026-01-01', validTo: null, status: 'ACTIVE' },
+      ],
+      marks: [],
+    });
+    expect(result.inService).toEqual([{ workerId: 'w1', vacancyId: TITULAR_VACANCY }]);
+    expect('allocations' in result.inService[0]).toBe(false);
+    expect('substitutionDates' in result.inService[0]).toBe(false);
+  });
+
+  it('(23) sem substitutions (campo ausente) → saída idêntica à de hoje — os casos vivos da Fase 10 não mudam', () => {
+    const result = deriveServiceTeam({
+      serviceId: SERVICE_ID,
+      liveVacancyId: VACANCY_ID,
+      asOf: ASOF,
+      candidacies: [{ workerId: 'w1', vacancyId: VACANCY_ID, stage: SERVICE_TEAM_ENTRY_STAGE }],
+      assignments: [],
+      marks: [],
+    });
+    expect(result.selected).toEqual([{ workerId: 'w1', vacancyId: VACANCY_ID }]);
+    expect(result.inService).toEqual([]);
+    expect(result.rejected).toEqual([]);
+  });
+});
