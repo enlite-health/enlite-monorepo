@@ -70,7 +70,6 @@ describe('SCREEN_REGISTRY — paridade com o catálogo do back', () => {
       'interview:write',
       'patient:write',
       'patient_clinical:write',
-      'patient_itinerary:update',
       'patient_service_team:update',
       'prescreening:write',
       'recruitment:create',
@@ -123,7 +122,8 @@ describe('screensByCell / containersOfTab / screenById', () => {
     expect(containersOfTab(s, 'supportNetwork').map((c) => c.resource)).toEqual(['patient_family', 'patient_chat']);
     // D293: o valor-hora é container próprio (célula de DADO), na mesma aba do serviço.
     expect(containersOfTab(s, 'contractedService').map((c) => c.resource)).toEqual(['patient_coverage', 'patient_address', 'patient_services', 'patient_contract_value']);
-    expect(s.tabs).toEqual(['clinicalData', 'supportNetwork', 'contractedService', 'vacancies', 'history']);
+    expect(s.tabs).toEqual(['clinicalData', 'supportNetwork', 'contractedService', 'vacancies', 'itinerary', 'history']);
+    expect(containersOfTab(s, 'itinerary').map((c) => c.resource)).toEqual(['patient_services', 'patient_itinerary']);
     expect(containersOfTab(s, 'vacancies').map((c) => c.resource)).toEqual(['vacancy']);
     expect(containersOfTab(s, 'history').map((c) => c.resource)).toEqual(['patient']);
     // o operacional (cabeçalho + histórico) é UMA linha: nada de célula solta no nível da tela
