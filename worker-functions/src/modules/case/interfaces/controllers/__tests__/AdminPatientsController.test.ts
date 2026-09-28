@@ -718,6 +718,54 @@ describe('AdminPatientsController.listPatients — caseNumber', () => {
     });
   });
 
+  describe('Cenário 15 — checkbox "Mostrar desactivados" (D-2026-09-28)', () => {
+    it('include_deactivated="true" no query string chega ao repo.list como parsed.data.include_deactivated', async () => {
+      mockList.mockResolvedValue({ rows: [], total: 0 });
+
+      const [req, res] = mockReqResWithQuery({ include_deactivated: 'true' });
+      await controller.listPatients(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(mockList).toHaveBeenCalledWith(
+        expect.objectContaining({ include_deactivated: 'true' }),
+        expect.anything(),
+      );
+    });
+
+    it('sem o param no query string, repo.list recebe include_deactivated=undefined (default do schema: opt-in)', async () => {
+      mockList.mockResolvedValue({ rows: [], total: 0 });
+
+      const [req, res] = mockReqResWithQuery({});
+      await controller.listPatients(req, res);
+
+      // Zod `.optional()` OMITE a chave (não grava `undefined` explícito) — objectContaining
+      // com valor `undefined` não casa chave ausente, por isso a leitura direta do arg.
+      const forwardedFilters = mockList.mock.calls[0][0];
+      expect(forwardedFilters.include_deactivated).toBeUndefined();
+    });
+
+    it('deletedAt do paciente desativado chega no payload publicado (badge da tela depende disto)', async () => {
+      const deletedAt = new Date('2026-08-01T12:00:00Z');
+      mockList.mockResolvedValue({ rows: [{ ...baseRow, deletedAt }], total: 1 });
+
+      const [req, res] = mockReqResWithQuery({ include_deactivated: 'true' });
+      await controller.listPatients(req, res);
+
+      const row = (res as any).json.mock.calls[0][0].data[0];
+      expect(row.deletedAt).toEqual(deletedAt);
+    });
+
+    it('paciente ativo (deletedAt ausente na linha) publica deletedAt=null', async () => {
+      mockList.mockResolvedValue({ rows: [{ ...baseRow }], total: 1 });
+
+      const [req, res] = mockReqResWithQuery({});
+      await controller.listPatients(req, res);
+
+      const row = (res as any).json.mock.calls[0][0].data[0];
+      expect(row.deletedAt).toBeNull();
+    });
+  });
+
   describe('Cenário 13 — contrato D1.1 (spec 014): `missing` NUNCA na lista, só booleano', () => {
     it('a linha da lista tem needsAttention (booleano) e attentionReasons (enum), e NÃO tem `completeness`/`missing`', async () => {
       mockList.mockResolvedValue({ rows: [{ ...baseRow, needsAttention: true, attentionReasons: ['NO_CONTACT_CHANNEL'] }], total: 1 });

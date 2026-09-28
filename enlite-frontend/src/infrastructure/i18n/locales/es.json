@@ -3452,6 +3452,7 @@
         "MODERATE": "Moderada",
         "MILD": "Leve"
       },
+      "showDeactivatedLabel": "Mostrar desactivados",
       "clearFilters": "Limpiar",
       "pagination": "{{start}}–{{end}} de {{total}}",
       "previousPage": "Página anterior",
@@ -3472,7 +3473,8 @@
       },
       "statusBadge": {
         "complete": "OK",
-        "needsAttention": "Atención"
+        "needsAttention": "Atención",
+        "deactivated": "Desactivado"
       },
       "stats": {
         "total": "Total de pacientes",

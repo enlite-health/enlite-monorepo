@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { Search, X } from 'lucide-react';
 import { Select, SelectOption } from '@presentation/components/atoms/Select';
+import { Checkbox } from '@presentation/components/atoms/Checkbox';
 import { useActionGate } from '@presentation/hooks/useCellAccess';
 
 interface PatientFiltersProps {
@@ -24,6 +25,9 @@ interface PatientFiltersProps {
   selectedCountry?: string;
   onCountryChange?: (value: string) => void;
   countryOptions?: SelectOption[];
+  /** Checkbox "Mostrar desactivados" (D-2026-09-28). */
+  showDeactivated: boolean;
+  onShowDeactivatedChange: (value: boolean) => void;
 }
 
 export function PatientFilters({
@@ -46,6 +50,8 @@ export function PatientFilters({
   selectedCountry,
   onCountryChange,
   countryOptions,
+  showDeactivated,
+  onShowDeactivatedChange,
 }: PatientFiltersProps): JSX.Element {
   const { t } = useTranslation();
 
@@ -53,7 +59,7 @@ export function PatientFilters({
   const showReasonFilter = selectedAttention === 'needs_attention';
   const hasActiveFilters =
     searchValue || codeValue || selectedAttention || selectedSpecialty || selectedDependency
-    || selectedCountry;
+    || selectedCountry || showDeactivated;
 
   const handleClearAll = () => {
     onSearchChange('');
@@ -63,6 +69,7 @@ export function PatientFilters({
     onSpecialtyChange('');
     onDependencyChange('');
     onCountryChange?.('');
+    onShowDeactivatedChange(false);
   };
 
   // lex 08/09 (oráculo por célula): o servidor recusa `search` sem `patient_identity:read` e os filtros
@@ -185,6 +192,16 @@ export function PatientFilters({
           />
         </div>
         )}
+
+        {/* Checkbox "Mostrar desactivados" (D-2026-09-28) */}
+        <div className="flex items-center h-[42px]" data-testid="filter-show-deactivated">
+          <Checkbox
+            id="filter-show-deactivated-input"
+            label={t('admin.patients.showDeactivatedLabel')}
+            checked={showDeactivated}
+            onChange={(e) => onShowDeactivatedChange(e.target.checked)}
+          />
+        </div>
 
         {/* Clear filters */}
         {hasActiveFilters && (

@@ -29,6 +29,8 @@ export interface PatientRow {
   needsAttention: boolean;
   attentionReasons: string[];
   createdAt: string | null;
+  /** Checkbox "Mostrar desactivados" (D-2026-09-28). `null` = paciente ativo. */
+  deletedAt?: string | null;
 }
 
 interface PatientsTableProps {
@@ -65,6 +67,27 @@ function StatusBadge({ needsAttention, reasons }: { needsAttention: boolean; rea
       <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
       <Text as="span" size="xs" weight="medium" color="inherit">
         {t('admin.patients.statusBadge.needsAttention')}
+      </Text>
+    </span>
+  );
+}
+
+/**
+ * Badge do checkbox "Mostrar desactivados" (D-2026-09-28) — mesmo molde do
+ * `StatusBadge` acima (pill + dot), cor neutra (gray) porque isto não é um
+ * estado de completude clínica, é soft-delete (`patients.deleted_at`). Some
+ * a régua de completude no lugar: um paciente desativado não é "accionable".
+ */
+function DeactivatedBadge() {
+  const { t } = useTranslation();
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-gray-200 text-gray-700"
+      title={t('admin.patients.statusBadge.deactivated')}
+    >
+      <span className="w-1.5 h-1.5 rounded-full bg-gray-500" />
+      <Text as="span" size="xs" weight="medium" color="inherit">
+        {t('admin.patients.statusBadge.deactivated')}
       </Text>
     </span>
   );
@@ -241,10 +264,16 @@ export function PatientsTable({ patients, onRowClick }: PatientsTableProps): JSX
                     </Text>
                   </TableCell>
                   <TableCell unwrapped className="whitespace-nowrap">
-                    <StatusBadge
-                      needsAttention={row.needsAttention}
-                      reasons={row.attentionReasons}
-                    />
+                    {row.deletedAt ? (
+                      <span data-testid={`patient-row-${row.id}-deactivated-badge`}>
+                        <DeactivatedBadge />
+                      </span>
+                    ) : (
+                      <StatusBadge
+                        needsAttention={row.needsAttention}
+                        reasons={row.attentionReasons}
+                      />
+                    )}
                   </TableCell>
                 </TableRow>
               );

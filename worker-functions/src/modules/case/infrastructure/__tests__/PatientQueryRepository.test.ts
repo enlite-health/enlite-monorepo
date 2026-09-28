@@ -63,6 +63,8 @@ function baseListRow(overrides: Record<string, unknown> = {}) {
     caseNumber: '766',
     createdAt: new Date('2025-01-01T00:00:00Z'),
     updatedAt: new Date('2025-06-01T00:00:00Z'),
+    // Checkbox "Mostrar desactivados" (D-2026-09-28): default = paciente ativo.
+    deletedAt: null,
     stageEnteredAt: new Date('2025-01-02T00:00:00Z').toISOString(),
     total_count: '1',
     // QA-caça rodada 1, item conserto 1 (D1.1/D255): insumos do checklist, EXISTS/booleanos —
@@ -119,8 +121,9 @@ describe('PatientQueryRepository.list', () => {
     expect(sql).toContain('FROM patients p');
     // $1 search (trimmed), $2 needsAttention bool, $3 attentionReason,
     // $4 clinicalSpecialty, $5 dependencyLevel, $6 caseNumber, $7 country,
-    // $8 reads.family (o ramo do nome do responsável), $9 limit, $10 offset.
-    expect(params).toEqual(['Ana', true, 'MISSING_INFO', 'ASD', 'MILD', '766', 'AR', true, 20, 0]);
+    // $8 reads.family (o ramo do nome do responsável), $9 limit, $10 offset,
+    // $11 include_deactivated (checkbox "Mostrar desactivados" — ausente aqui → false).
+    expect(params).toEqual(['Ana', true, 'MISSING_INFO', 'ASD', 'MILD', '766', 'AR', true, 20, 0, false]);
     // lex 08/09: o ramo do responsável é gated pelo parâmetro, não por string SQL montada.
     expect(sql).toMatch(/\$8::boolean AND EXISTS \(\s*SELECT 1 FROM patient_responsibles/);
   });
@@ -401,6 +404,67 @@ describe('PatientQueryRepository.list', () => {
     // list() continua UMA query — nenhum await extra por paciente (a KMSEncryptionService não é
     // chamada por este caminho: nenhum dos insumos do checklist é PII cifrada).
     expect(mockPoolQuery).toHaveBeenCalledTimes(1);
+  });
+
+  // ── Checkbox "Mostrar desactivados" (D-2026-09-28) ───────────────────────────
+  //
+  // O mock do pool não executa SQL de verdade — não há Postgres aqui para provar
+  // "a linha volta"/"a linha não volta" rodando a query. A prova possível neste
+  // arquivo (mesmo molde do a17 acima, que também prova por padrão de SQL) é:
+  // (1) o parâmetro que decide o filtro tem o valor certo na posição certa, e
+  // (2) a condição WHERE é literalmente o OR que faz esse parâmetro valer — nunca
+  // um `AND p.deleted_at IS NULL` incondicional. Se alguém reverter a linha do
+  // WHERE para incondicional, o teste a19 (regex abaixo) MORRE, porque a condição
+  // some do SQL.
+
+  it('a18. include_deactivated ausente → param false (default exclui deleted_at, igual hoje)', async () => {
+    mockPoolQuery.mockResolvedValueOnce({ rows: [] });
+    const repo = new PatientQueryRepository();
+
+    await repo.list(baseFilters());
+    const [, params] = mockPoolQuery.mock.calls[0];
+    expect(params[10]).toBe(false);
+  });
+
+  it('a19. include_deactivated="true" → param true, e o WHERE usa o OR parametrizado (nunca `AND p.deleted_at IS NULL` incondicional)', async () => {
+    mockPoolQuery.mockResolvedValueOnce({ rows: [] });
+    const repo = new PatientQueryRepository();
+
+    await repo.list(baseFilters({ include_deactivated: 'true' }));
+    const [sql, params] = mockPoolQuery.mock.calls[0];
+    expect(params[10]).toBe(true);
+    // A condição TEM de ser o OR parametrizado — regex ancorada no `$11` (a posição
+    // real do param nesta query) e no `OR p.deleted_at IS NULL` ao lado.
+    expect(sql).toMatch(/AND \(\$11::boolean IS TRUE OR p\.deleted_at IS NULL\)/);
+    // Não pode sobrar um filtro incondicional em paralelo (ex.: um segundo
+    // `AND p.deleted_at IS NULL` esquecido em outro lugar da query). Ancorado em
+    // `p.deleted_at` especificamente — `jp.deleted_at IS NULL` aparece 2x dentro
+    // de `effectiveCaseNumber` (job_postings, subquery independente) e não conta.
+    const patientsDeletedAtClauses = sql.match(/(?<!j)p\.deleted_at IS NULL/g) ?? [];
+    expect(patientsDeletedAtClauses).toHaveLength(1);
+  });
+
+  it('a20. include_deactivated="false" explícito → param false, mesma condição SQL do ausente (a19)', async () => {
+    mockPoolQuery.mockResolvedValueOnce({ rows: [] });
+    const repo = new PatientQueryRepository();
+
+    await repo.list(baseFilters({ include_deactivated: 'false' }));
+    const [sql, params] = mockPoolQuery.mock.calls[0];
+    expect(params[10]).toBe(false);
+    expect(sql).toMatch(/AND \(\$11::boolean IS TRUE OR p\.deleted_at IS NULL\)/);
+  });
+
+  it('a21. deletedAt sai no payload mapeado da linha (Date da coluna → campo `deletedAt`; ausente → null)', async () => {
+    const deletedAt = new Date('2026-08-01T12:00:00Z');
+    mockPoolQuery.mockResolvedValueOnce({ rows: [baseListRow({ deletedAt })] });
+    const repo = new PatientQueryRepository();
+
+    const { rows } = await repo.list(baseFilters({ include_deactivated: 'true' }));
+    expect(rows[0].deletedAt).toBe(deletedAt);
+
+    mockPoolQuery.mockResolvedValueOnce({ rows: [baseListRow()] });
+    const { rows: rowsAtivo } = await repo.list(baseFilters());
+    expect(rowsAtivo[0].deletedAt).toBeNull();
   });
 });
 
