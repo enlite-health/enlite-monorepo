@@ -75,6 +75,9 @@ export const RESOURCE_CATEGORY: Readonly<Record<string, PermissionCategory>> = {
   // Spec `anacare-conferencia-de-horas`, fase 1 (D344/D345): célula PRÓPRIA, fora de qualquer
   // grupo padrão — vizinho de paciente (turnos/horas do Ana Care), não um container da ficha.
   anacare_hours: 'Pacientes',
+  // Cadeia Fase 10 (DX-10.1): rejeitar/reverter no quadro C (Servicio Contratado). Recurso novo
+  // com ação de domínio (`update`, nunca `write` — ressalva (b')); não entra em SPLIT_RESOURCES.
+  patient_service_team: 'Pacientes',
   recruitment: 'Recrutamento',
   talentum: 'Recrutamento',
   prescreening: 'Recrutamento',
@@ -333,6 +336,12 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
   'anacare_hours:validate':
     'Validar um turno, validar em lote e contestar (com motivo e nota opcional) na conferência '
     + 'de horas do Ana Care. Exige também anacare_hours:read para ver o que está validando.',
+
+  // ── Cadeia Fase 10 (DX-10.1) — quadro C (Servicio Contratado): recurso novo, ação de domínio.
+  'patient_service_team:update':
+    'Rejeitar e reverter a rejeição de um prestador no quadro de ENCUADRE de um serviço '
+    + 'contratado (sempre com motivo de lista fechada). Não aloca nem desaloca, não move a '
+    + 'candidatura na vaga e não adiciona prestador.',
 
   // ── Spec 024 (D1/D401, 21/09) — o catálogo de Etiquetas é DADO diferente do perfil do
   //    prestador: `tag:*` sai de `worker:*`. Atribuir/remover etiqueta DE UM prestador
