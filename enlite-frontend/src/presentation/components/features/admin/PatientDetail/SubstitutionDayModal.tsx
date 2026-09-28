@@ -4,7 +4,7 @@ import { Heading } from '@presentation/components/atoms/Heading';
 import { Button } from '@presentation/components/atoms/Button';
 import { Select, type SelectOption } from '@presentation/components/atoms/Select';
 import { SearchableSelect } from '@presentation/components/molecules/SearchableSelect/SearchableSelect';
-import { nextDatesOfWeekday } from './substitutionDates';
+import { nextDatesOfWeekday, formatDDMM } from './substitutionDates';
 import type { ServiceTeamAllocation, ServiceTeamMember } from '@domain/entities/ServiceTeam';
 
 interface SubstitutionDayModalProps {
@@ -33,11 +33,6 @@ function weekdayName(weekday: number, language: string): string {
   const locale = language.startsWith('pt') ? 'pt-BR' : 'es-AR';
   const ms = WEEKDAY_REFERENCE_UTC_MS + weekday * 24 * 60 * 60 * 1000;
   return new Intl.DateTimeFormat(locale, { weekday: 'long', timeZone: 'UTC' }).format(new Date(ms));
-}
-
-function formatDDMM(dateIso: string): string {
-  const [, month, day] = dateIso.split('-');
-  return `${day}/${month}`;
 }
 
 /**

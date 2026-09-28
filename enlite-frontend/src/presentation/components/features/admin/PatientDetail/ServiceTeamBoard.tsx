@@ -5,6 +5,7 @@ import { ActionButton } from '@presentation/components/features/access';
 import { KanbanBoardShell, type KanbanColumnSpec } from '@presentation/components/features/admin/Kanban/KanbanBoardShell';
 import { RejectionReasonSelect } from '@presentation/components/features/admin/Kanban/RejectionReasonSelect';
 import { SubstitutionDayModal } from './SubstitutionDayModal';
+import { formatDDMM } from './substitutionDates';
 import {
   SERVICE_TEAM_COLUMN_IDS,
   SERVICE_TEAM_REJECT_REASONS,
@@ -20,12 +21,6 @@ interface ServiceTeamBoardProps {
   onRevert: (workerId: string, reasonCategory: string) => void;
   onSubstitute: (allocationId: string, date: string, substituteWorkerId: string | null) => void;
   actionError: string | null;
-}
-
-/** `YYYY-MM-DD` → `DD/MM` (mesma conta de `SubstitutionDayModal.tsx`; sem `Date` do driver). */
-function formatDDMM(dateIso: string): string {
-  const [, month, day] = dateIso.split('-');
-  return `${day}/${month}`;
 }
 
 /** Cor do marcador de cada coluna, só por TOKEN do tema (critério 15/27). */

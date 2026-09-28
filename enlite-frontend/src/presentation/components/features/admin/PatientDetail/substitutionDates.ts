@@ -20,3 +20,12 @@ export function nextDatesOfWeekday(asOf: string, weekday: number, count: number)
   }
   return dates;
 }
+
+/**
+ * `YYYY-MM-DD` → `DD/MM` — fonte única (era duplicada em `SubstitutionDayModal.tsx` e
+ * `ServiceTeamBoard.tsx`, G1-6). Só `split`, nunca `Date` do driver.
+ */
+export function formatDDMM(dateIso: string): string {
+  const [, month, day] = dateIso.split('-');
+  return `${day}/${month}`;
+}
