@@ -15,8 +15,16 @@
  * a tela pronta → `document.fonts.ready` → (i) tabela montada (massa) OU nó de vazio visível (VAZIO,
  * com o motivo em `test.info().annotations`) → (ii) `tr[aria-selected]` conta 0 (o lado desligado
  * na tela real, nenhum consumidor passa a prop até a Fase 10) → (só com `PRINT_DIR`) screenshot.
+ *
+ * Q-9.4 (P6-fix-3, orquestrador): o print sai em DUAS imagens — `<slug>.png` (página inteira,
+ * contexto para humanos) e `<slug>.table.png` (recorte no `boundingBox()` do MESMO locator que a
+ * asserção (i) já usa para provar "tabela montada" — o `<table>` do consumidor, ou o container do
+ * átomo quando a tela é VAZIO e não há `<table>` nenhum — com 8px de margem). O critério 7 (CMP-F9,
+ * `AE=0`) passa a rodar sobre `*.table.png` (o objeto do critério é o átomo nos consumidores, não a
+ * página inteira); a página inteira segue fotografada e comparada com `-fuzz 5%` só como informação
+ * (antialiasing aleatório fora da tabela, ver `CH/evidencias/fase-9/mascaras.md` §Q-9.4).
  */
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page, type Locator } from '@playwright/test';
 import { loginAs, tokenFor } from '../helpers/abac-stack-helper';
 import { ensureDsTableMassa, cleanupDsTableMassa, DS_TABLE_STAFF, type DsTableMassa } from '../helpers/ds-table-massa-helper';
 
@@ -46,11 +54,57 @@ test.describe('ds-table-nao-regressao', () => {
     await page.evaluate(() => document.fonts.ready);
   }
 
-  /** `PRINT_DIR` lido DENTRO do teste (rule 11) — screenshot só quando existe (critério 12). */
-  async function maybeScreenshot(page: Page, slug: string): Promise<void> {
+  /**
+   * Q-9.4: boundingBox do alvo (o `<table>` do consumidor, ou o container do átomo quando a tela é
+   * VAZIO e não há tabela) com 8px de margem, clampado às dimensões reais do documento (não ao
+   * viewport 1366x768 fixo — algumas telas podem crescer por scroll).
+   */
+  async function clipForTarget(page: Page, target: Locator): Promise<{ x: number; y: number; width: number; height: number }> {
+    const box = await target.boundingBox();
+    if (!box) throw new Error('Q-9.4: alvo do recorte sem boundingBox (não visível)');
+    const margin = 8;
+    const doc = await page.evaluate(() => ({
+      width: document.documentElement.scrollWidth,
+      height: document.documentElement.scrollHeight,
+    }));
+    const x = Math.max(0, box.x - margin);
+    const y = Math.max(0, box.y - margin);
+    const width = Math.min(doc.width, box.x + box.width + margin) - x;
+    const height = Math.min(doc.height, box.y + box.height + margin) - y;
+    return { x, y, width, height };
+  }
+
+  /**
+   * `PRINT_DIR` lido DENTRO do teste (rule 11) — screenshot só quando existe (critério 12).
+   * Q-9.4: sempre duas imagens — página inteira (`<slug>.png`) e o recorte do alvo (`<slug>.table.png`,
+   * o `<table>` do consumidor ou o container do átomo em telas VAZIO) — `target` é o MESMO locator que
+   * a asserção (i) do teste já usa para provar "tabela montada"/"vazio visível". **`scrollIntoViewIfNeeded`
+   * antes de medir:** o shell do admin tem sidebar/header fixos e o painel de conteúdo rola por dentro
+   * (`<main class="… overflow-y-auto">`, não o documento) — `document.documentElement.scrollHeight`
+   * fica preso ao viewport (768) e o `fullPage: true` do Playwright NÃO enxerga esse scroll interno
+   * (medido: `t03-prestadores` tem `<table>` em `y=812.5`, fora do range 0-768, e o PNG `fullPage`
+   * sai com 768px de altura mesmo assim — a tabela dessas telas fica abaixo da dobra do painel).
+   * `scrollIntoViewIfNeeded()` rola o painel interno até o alvo ficar visível ANTES de medir e
+   * fotografar — nas telas onde o alvo já está visível é no-op (nenhuma mudança de comportamento).
+   */
+  async function maybeScreenshot(page: Page, slug: string, target: Locator): Promise<void> {
     const dir = process.env.PRINT_DIR;
     if (!dir) return;
-    await page.screenshot({ path: `${dir}/${slug}.png`, fullPage: true, animations: 'disabled', caret: 'hide' });
+    await target.scrollIntoViewIfNeeded();
+    // Duplo rAF: garante que o browser pintou pelo menos um frame com fontes prontas antes de medir
+    // e fotografar — reduz corrida entre `document.fonts.ready` (resolve no load da fonte, não no
+    // paint) e o rasterizador de texto (a classe de instabilidade de subpixel do Chromium/macOS que
+    // o P6/P6-fix/P6-fix-2 mediram: 4/30, 4/30, 2/30 telas aleatórias).
+    await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    const clip = await clipForTarget(page, target);
+    // `mascaras.md` §Q-9.4: o Firebase SDK injeta um `<p style="position:fixed;bottom:0">` de aviso
+    // do emulador (`firebase-auth-compat.js`, função `d()`) de forma intermitente (após a 1ª chamada
+    // de auth) — sem classe/testid, texto fixo. Não é produto nem a tabela; sobrepõe o rodapé da tela
+    // e foi o nó que o A1×A2 acusou em `t06-vacante-match` (a encuadres table do funil fica perto do
+    // rodapé, atrás do modal). Mask, não recorte — o critério 12 permite ("nunca a tabela inteira").
+    const emulatorBanner = page.locator('p', { hasText: 'Running in emulator mode' });
+    await page.screenshot({ path: `${dir}/${slug}.png`, fullPage: true, animations: 'disabled', caret: 'hide', mask: [emulatorBanner] });
+    await page.screenshot({ path: `${dir}/${slug}.table.png`, clip, animations: 'disabled', caret: 'hide', mask: [emulatorBanner] });
   }
 
   /** Critério (ii) da DX-9.8: nenhum consumidor da tela real fica com `aria-selected`. */
@@ -74,7 +128,7 @@ test.describe('ds-table-nao-regressao', () => {
     });
     await waitFontsReady(page);
     await expectNoSelectedRow(page);
-    await maybeScreenshot(page, 't01-anacare-horas');
+    await maybeScreenshot(page, 't01-anacare-horas', errorNode);
   });
 
   test('ds-table-nao-regressao t02-anacare-horas-paciente', async ({ page }) => {
@@ -90,7 +144,7 @@ test.describe('ds-table-nao-regressao', () => {
     });
     await waitFontsReady(page);
     await expectNoSelectedRow(page);
-    await maybeScreenshot(page, 't02-anacare-horas-paciente');
+    await maybeScreenshot(page, 't02-anacare-horas-paciente', errorNode);
   });
 
   test('ds-table-nao-regressao t03-prestadores', async ({ page }) => {
@@ -99,7 +153,7 @@ test.describe('ds-table-nao-regressao', () => {
     await expect(page.locator('table tbody tr').first()).toBeVisible();
     await waitFontsReady(page);
     await expectNoSelectedRow(page);
-    await maybeScreenshot(page, 't03-prestadores');
+    await maybeScreenshot(page, 't03-prestadores', page.locator('table').first());
   });
 
   test('ds-table-nao-regressao t04-prestador-ficha', async ({ page }) => {
@@ -114,7 +168,7 @@ test.describe('ds-table-nao-regressao', () => {
     await expect(card.locator('table tbody tr').first()).toBeVisible();
     await waitFontsReady(page);
     await expectNoSelectedRow(page);
-    await maybeScreenshot(page, 't04-prestador-ficha');
+    await maybeScreenshot(page, 't04-prestador-ficha', card.locator('table').first());
   });
 
   test('ds-table-nao-regressao t05-vacante-encuadres', async ({ page }) => {
@@ -126,7 +180,7 @@ test.describe('ds-table-nao-regressao', () => {
     await expect(funnel.locator('table tbody tr').first()).toBeVisible();
     await waitFontsReady(page);
     await expectNoSelectedRow(page);
-    await maybeScreenshot(page, 't05-vacante-encuadres');
+    await maybeScreenshot(page, 't05-vacante-encuadres', funnel.locator('table').first());
   });
 
   test('ds-table-nao-regressao t06-vacante-match', async ({ page }) => {
@@ -149,7 +203,7 @@ test.describe('ds-table-nao-regressao', () => {
     });
     await waitFontsReady(page);
     await expectNoSelectedRow(page);
-    await maybeScreenshot(page, 't06-vacante-match');
+    await maybeScreenshot(page, 't06-vacante-match', page.locator('table').first());
   });
 
   test('ds-table-nao-regressao t07-vacante-talentum', async ({ page }) => {
@@ -162,7 +216,7 @@ test.describe('ds-table-nao-regressao', () => {
     await expect(page.locator('table tbody tr').first()).toBeVisible();
     await waitFontsReady(page);
     await expectNoSelectedRow(page);
-    await maybeScreenshot(page, 't07-vacante-talentum');
+    await maybeScreenshot(page, 't07-vacante-talentum', page.locator('table').first());
   });
 
   test('ds-table-nao-regressao t08-vacante-notas', async ({ page }) => {
@@ -174,7 +228,7 @@ test.describe('ds-table-nao-regressao', () => {
     await expect(panel.locator('table tbody tr').first()).toBeVisible();
     await waitFontsReady(page);
     await expectNoSelectedRow(page);
-    await maybeScreenshot(page, 't08-vacante-notas');
+    await maybeScreenshot(page, 't08-vacante-notas', panel.locator('table').first());
   });
 
   test('ds-table-nao-regressao t09-pacientes', async ({ page }) => {
@@ -183,7 +237,7 @@ test.describe('ds-table-nao-regressao', () => {
     await expect(page.locator('table tbody tr').first()).toBeVisible();
     await waitFontsReady(page);
     await expectNoSelectedRow(page);
-    await maybeScreenshot(page, 't09-pacientes');
+    await maybeScreenshot(page, 't09-pacientes', page.locator('table').first());
   });
 
   test('ds-table-nao-regressao t10-vacantes', async ({ page }) => {
@@ -192,7 +246,7 @@ test.describe('ds-table-nao-regressao', () => {
     await expect(page.locator('table tbody tr').first()).toBeVisible();
     await waitFontsReady(page);
     await expectNoSelectedRow(page);
-    await maybeScreenshot(page, 't10-vacantes');
+    await maybeScreenshot(page, 't10-vacantes', page.locator('table').first());
   });
 
   test('ds-table-nao-regressao t11-reclutamiento', async ({ page }) => {
@@ -214,7 +268,10 @@ test.describe('ds-table-nao-regressao', () => {
     });
     await waitFontsReady(page);
     await expectNoSelectedRow(page);
-    await maybeScreenshot(page, 't11-reclutamiento');
+    // Q-9.4: `ActiveCasesTable` no ramo vazio (cases.length === 0) não renderiza `<table>` nenhum
+    // (`ActiveCasesTable.tsx:108-116`, só um `<div>` com o texto `noCase`) — sem alvo de tabela para
+    // recortar, o fallback é o container do átomo mais próximo já provado visível: a heading da página.
+    await maybeScreenshot(page, 't11-reclutamiento', heading);
   });
 
   test('ds-table-nao-regressao t12-paciente-clinico', async ({ page }) => {
@@ -228,7 +285,7 @@ test.describe('ds-table-nao-regressao', () => {
     await expect(projeto.locator('table tbody tr').first()).toBeVisible();
     await waitFontsReady(page);
     await expectNoSelectedRow(page);
-    await maybeScreenshot(page, 't12-paciente-clinico');
+    await maybeScreenshot(page, 't12-paciente-clinico', projeto.locator('table').first());
   });
 
   test('ds-table-nao-regressao t13-paciente-red', async ({ page }) => {
@@ -242,7 +299,7 @@ test.describe('ds-table-nao-regressao', () => {
     await expect(familiares.locator('table tbody tr').first()).toBeVisible();
     await waitFontsReady(page);
     await expectNoSelectedRow(page);
-    await maybeScreenshot(page, 't13-paciente-red');
+    await maybeScreenshot(page, 't13-paciente-red', familiares.locator('table').first());
   });
 
   test('ds-table-nao-regressao t14-paciente-servicio', async ({ page }) => {
@@ -254,7 +311,7 @@ test.describe('ds-table-nao-regressao', () => {
     await expect(localizacoes.locator('table tbody tr').first()).toBeVisible();
     await waitFontsReady(page);
     await expectNoSelectedRow(page);
-    await maybeScreenshot(page, 't14-paciente-servicio');
+    await maybeScreenshot(page, 't14-paciente-servicio', localizacoes.locator('table').first());
   });
 
   test('ds-table-nao-regressao t15-paciente-historial', async ({ page }) => {
@@ -266,7 +323,7 @@ test.describe('ds-table-nao-regressao', () => {
     await expect(historyCard.locator('table tbody tr').first()).toBeVisible();
     await waitFontsReady(page);
     await expectNoSelectedRow(page);
-    await maybeScreenshot(page, 't15-paciente-historial');
+    await maybeScreenshot(page, 't15-paciente-historial', historyCard.locator('table').first());
   });
 
   // ── t16-t30 (P5) ───────────────────────────────────────────────────────────────────────────
@@ -280,7 +337,7 @@ test.describe('ds-table-nao-regressao', () => {
     await expect(table.locator('tbody tr').first()).toBeVisible();
     await waitFontsReady(page);
     await expectNoSelectedRow(page);
-    await maybeScreenshot(page, 't16-mensajes-por-etapa');
+    await maybeScreenshot(page, 't16-mensajes-por-etapa', table);
   });
 
   test('ds-table-nao-regressao t17-intentos-bloqueados', async ({ page }) => {
@@ -291,7 +348,7 @@ test.describe('ds-table-nao-regressao', () => {
     await expect(content.locator('table tbody tr').first()).toBeVisible();
     await waitFontsReady(page);
     await expectNoSelectedRow(page);
-    await maybeScreenshot(page, 't17-intentos-bloqueados');
+    await maybeScreenshot(page, 't17-intentos-bloqueados', content.locator('table').first());
   });
 
   test('ds-table-nao-regressao t18-direcciones-pendientes', async ({ page }) => {
@@ -301,7 +358,7 @@ test.describe('ds-table-nao-regressao', () => {
     await expect(page.locator('table tbody tr').first()).toBeVisible();
     await waitFontsReady(page);
     await expectNoSelectedRow(page);
-    await maybeScreenshot(page, 't18-direcciones-pendientes');
+    await maybeScreenshot(page, 't18-direcciones-pendientes', page.locator('table').first());
   });
 
   test('ds-table-nao-regressao t19-dedup-cola', async ({ page }) => {
@@ -313,7 +370,7 @@ test.describe('ds-table-nao-regressao', () => {
     await expect(content.locator('table tbody tr').first()).toBeVisible();
     await waitFontsReady(page);
     await expectNoSelectedRow(page);
-    await maybeScreenshot(page, 't19-dedup-cola');
+    await maybeScreenshot(page, 't19-dedup-cola', content.locator('table').first());
   });
 
   test('ds-table-nao-regressao t20-dedup-importados', async ({ page }) => {
@@ -326,7 +383,7 @@ test.describe('ds-table-nao-regressao', () => {
     await expect(content.locator('table tbody tr').first()).toBeVisible();
     await waitFontsReady(page);
     await expectNoSelectedRow(page);
-    await maybeScreenshot(page, 't20-dedup-importados');
+    await maybeScreenshot(page, 't20-dedup-importados', content.locator('table').first());
   });
 
   test('ds-table-nao-regressao t21-dedup-historial', async ({ page }) => {
@@ -338,7 +395,7 @@ test.describe('ds-table-nao-regressao', () => {
     await expect(container.locator('table tbody tr').first()).toBeVisible();
     await waitFontsReady(page);
     await expectNoSelectedRow(page);
-    await maybeScreenshot(page, 't21-dedup-historial');
+    await maybeScreenshot(page, 't21-dedup-historial', container.locator('table').first());
   });
 
   test('ds-table-nao-regressao t22-catalogo-objetivos', async ({ page }) => {
@@ -349,7 +406,7 @@ test.describe('ds-table-nao-regressao', () => {
     await expect(container.locator('table tbody tr').first()).toBeVisible();
     await waitFontsReady(page);
     await expectNoSelectedRow(page);
-    await maybeScreenshot(page, 't22-catalogo-objetivos');
+    await maybeScreenshot(page, 't22-catalogo-objetivos', container.locator('table').first());
   });
 
   test('ds-table-nao-regressao t23-tags', async ({ page }) => {
@@ -359,7 +416,7 @@ test.describe('ds-table-nao-regressao', () => {
     await expect(page.locator('table tbody tr').first()).toBeVisible();
     await waitFontsReady(page);
     await expectNoSelectedRow(page);
-    await maybeScreenshot(page, 't23-tags');
+    await maybeScreenshot(page, 't23-tags', page.locator('table').first());
   });
 
   test('ds-table-nao-regressao t24-roles-chat', async ({ page }) => {
@@ -370,7 +427,7 @@ test.describe('ds-table-nao-regressao', () => {
     await expect(container.locator('table tbody tr').first()).toBeVisible();
     await waitFontsReady(page);
     await expectNoSelectedRow(page);
-    await maybeScreenshot(page, 't24-roles-chat');
+    await maybeScreenshot(page, 't24-roles-chat', container.locator('table').first());
   });
 
   test('ds-table-nao-regressao t25-plantillas', async ({ page }) => {
@@ -381,7 +438,7 @@ test.describe('ds-table-nao-regressao', () => {
     await expect(table.locator('tbody tr').first()).toBeVisible();
     await waitFontsReady(page);
     await expectNoSelectedRow(page);
-    await maybeScreenshot(page, 't25-plantillas');
+    await maybeScreenshot(page, 't25-plantillas', table);
   });
 
   test('ds-table-nao-regressao t26-dashboard', async ({ page }) => {
@@ -418,7 +475,7 @@ test.describe('ds-table-nao-regressao', () => {
     await expect(zoneRows.first().locator('td')).toHaveCount(6);
     await waitFontsReady(page);
     await expectNoSelectedRow(page);
-    await maybeScreenshot(page, 't26-dashboard');
+    await maybeScreenshot(page, 't26-dashboard', zoneSection.locator('table').first());
   });
 
   test('ds-table-nao-regressao t27-usuarios', async ({ page }) => {
@@ -432,7 +489,7 @@ test.describe('ds-table-nao-regressao', () => {
     await expect(page.locator('table tbody tr').first()).toBeVisible();
     await waitFontsReady(page);
     await expectNoSelectedRow(page);
-    await maybeScreenshot(page, 't27-usuarios');
+    await maybeScreenshot(page, 't27-usuarios', page.locator('table').first());
   });
 
   test('ds-table-nao-regressao t28-acceso-grupos', async ({ page }) => {
@@ -445,7 +502,7 @@ test.describe('ds-table-nao-regressao', () => {
     await expect(page.locator('table tbody tr').first()).toBeVisible();
     await waitFontsReady(page);
     await expectNoSelectedRow(page);
-    await maybeScreenshot(page, 't28-acceso-grupos');
+    await maybeScreenshot(page, 't28-acceso-grupos', page.locator('table').first());
   });
 
   test('ds-table-nao-regressao t29-acceso-features', async ({ page }) => {
@@ -456,7 +513,7 @@ test.describe('ds-table-nao-regressao', () => {
     await expect(page.locator('table tbody tr').first()).toBeVisible();
     await waitFontsReady(page);
     await expectNoSelectedRow(page);
-    await maybeScreenshot(page, 't29-acceso-features');
+    await maybeScreenshot(page, 't29-acceso-features', page.locator('table').first());
   });
 
   test('ds-table-nao-regressao t30-acceso-auditoria', async ({ page }) => {
@@ -469,6 +526,6 @@ test.describe('ds-table-nao-regressao', () => {
     await expect(page.locator('table tbody tr').first()).toBeVisible();
     await waitFontsReady(page);
     await expectNoSelectedRow(page);
-    await maybeScreenshot(page, 't30-acceso-auditoria');
+    await maybeScreenshot(page, 't30-acceso-auditoria', page.locator('table').first());
   });
 });
