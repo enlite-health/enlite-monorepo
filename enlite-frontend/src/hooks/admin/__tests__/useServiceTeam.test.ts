@@ -353,6 +353,85 @@ describe('useServiceTeam', () => {
     expect(result.current.actionError).toBeNull();
   });
 
+  // N4 do gate fecho: o POST do `substitute` usa a MESMA régua de erro de `reject`/`revert`
+  // (`applyActionError`) — os 2 ramos que faltavam.
+  it('substitute: 403 no POST → status forbidden, 0 GET extra', async () => {
+    getServiceTeam.mockResolvedValueOnce(team('s1'));
+    registerAbsence.mockRejectedValueOnce(new ContractedServiceApiError('proibido', 403));
+    const { result } = renderHook(() => useServiceTeam('p1', 's1', 0));
+    await waitFor(() => expect(result.current.status).toBe('ok'));
+    getServiceTeam.mockClear();
+
+    await act(async () => {
+      await result.current.substitute('a1', '2026-10-05', 'w2');
+    });
+
+    expect(result.current.status).toBe('forbidden');
+    expect(result.current.actionError).toBeNull();
+    expect(result.current.refreshError).toBe(false);
+    expect(getServiceTeam).not.toHaveBeenCalled();
+  });
+
+  it('substitute: erro genérico no POST (sem code) → status error, 0 GET extra', async () => {
+    getServiceTeam.mockResolvedValueOnce(team('s1'));
+    registerAbsence.mockRejectedValueOnce(new Error('rede'));
+    const { result } = renderHook(() => useServiceTeam('p1', 's1', 0));
+    await waitFor(() => expect(result.current.status).toBe('ok'));
+    getServiceTeam.mockClear();
+
+    await act(async () => {
+      await result.current.substitute('a1', '2026-10-05', 'w2');
+    });
+
+    expect(result.current.status).toBe('error');
+    expect(result.current.actionError).toBeNull();
+    expect(result.current.refreshError).toBe(false);
+    expect(getServiceTeam).not.toHaveBeenCalled();
+  });
+
+  // N3 do gate fecho: o refresh falho não é silêncio — `refreshError` avisa, o time de antes fica.
+  it('substitute: POST ok + GET de refresh falho → refreshError true e o time anterior mantido; a próxima requisição zera', async () => {
+    const teamAntes = team('s1', 'v-antes');
+    getServiceTeam.mockResolvedValueOnce(teamAntes);
+    registerAbsence.mockResolvedValueOnce({ absenceId: 'ab1', allocationId: 'a1', date: '2026-10-05', substituteWorkerId: 'w2', status: 'OPEN' });
+    const { result, rerender } = renderHook(({ nonce }) => useServiceTeam('p1', 's1', nonce), {
+      initialProps: { nonce: 0 },
+    });
+    await waitFor(() => expect(result.current.status).toBe('ok'));
+    expect(result.current.refreshError).toBe(false);
+
+    getServiceTeam.mockRejectedValueOnce(new Error('network down'));
+    await act(async () => {
+      await result.current.substitute('a1', '2026-10-05', 'w2');
+    });
+
+    expect(result.current.refreshError).toBe(true);
+    expect(result.current.team).toEqual(teamAntes);
+    expect(result.current.status).toBe('ok');
+    expect(result.current.actionError).toBeNull();
+
+    // re-clique da linha (GET novo) zera o aviso
+    getServiceTeam.mockResolvedValueOnce(team('s1', 'v-depois'));
+    rerender({ nonce: 1 });
+    await waitFor(() => expect(result.current.team).toEqual(team('s1', 'v-depois')));
+    expect(result.current.refreshError).toBe(false);
+  });
+
+  it('substitute ok: refreshError continua false', async () => {
+    getServiceTeam.mockResolvedValueOnce(team('s1'));
+    registerAbsence.mockResolvedValueOnce({ absenceId: 'ab1', allocationId: 'a1', date: '2026-10-05', substituteWorkerId: 'w2', status: 'OPEN' });
+    const { result } = renderHook(() => useServiceTeam('p1', 's1', 0));
+    await waitFor(() => expect(result.current.status).toBe('ok'));
+    getServiceTeam.mockResolvedValueOnce(team('s1', 'v-novo'));
+
+    await act(async () => {
+      await result.current.substitute('a1', '2026-10-05', 'w2');
+    });
+
+    expect(result.current.team).toEqual(team('s1', 'v-novo'));
+    expect(result.current.refreshError).toBe(false);
+  });
+
   it('resposta atrasada de uma ação velha (substitute) não pinta: a mesma guarda de requestIdRef vale para ela', async () => {
     getServiceTeam.mockResolvedValueOnce(team('s1'));
     const { result, rerender } = renderHook(({ nonce }) => useServiceTeam('p1', 's1', nonce), {

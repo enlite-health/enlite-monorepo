@@ -79,6 +79,7 @@ function mockHook(partial: Partial<UseServiceTeamResult>): void {
     revert: vi.fn(),
     substitute: vi.fn(),
     actionError: null,
+    refreshError: false,
     ...partial,
   });
 }
@@ -146,6 +147,26 @@ describe('ServiceTeamSection — vazios, título do dado da linha, erro', () => 
     expect(screen.getByTestId('quadro-c-acao-erro').textContent).toBe(
       'Quitá al prestador del itinerario antes de rechazarlo.',
     );
+  });
+
+  it('N3 do gate fecho: refreshError → "quadro-c-refresh-erro" (role=alert, text-red-600) com o texto i18n, e o board continua', () => {
+    mockHook({ status: 'ok', team: TEAM, refreshError: true });
+    const { container } = render(
+      <ServiceTeamSection patientId="p1" service={SERVICE} address={ADDRESS_HOME} selectionNonce={0} />,
+    );
+    const aviso = screen.getByTestId('quadro-c-refresh-erro');
+    expect(aviso.getAttribute('role')).toBe('alert');
+    expect(aviso.className).toContain('text-red-600');
+    expect(aviso.textContent).toBe(
+      'La sustitución se guardó, pero no fue posible actualizar el cuadro. Recargá la página.',
+    );
+    expect(container.querySelectorAll('[data-testid^="kanban-column-"]:not([data-testid$="-count"])').length).toBe(3);
+  });
+
+  it('refreshError false: sem "quadro-c-refresh-erro"', () => {
+    mockHook({ status: 'ok', team: TEAM });
+    render(<ServiceTeamSection patientId="p1" service={SERVICE} address={ADDRESS_HOME} selectionNonce={0} />);
+    expect(screen.queryByTestId('quadro-c-refresh-erro')).toBeNull();
   });
 
   it('o hook é chamado com o serviceId da linha e o selectionNonce recebido — nunca busca de novo por conta própria', () => {

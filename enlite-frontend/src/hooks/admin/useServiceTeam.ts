@@ -11,6 +11,28 @@ export interface UseServiceTeamResult {
   revert: (workerId: string, reasonCategory?: string) => Promise<void>;
   substitute: (allocationId: string, date: string, substituteWorkerId: string | null) => Promise<void>;
   actionError: string | null;
+  /** N3 do gate fecho: a ação gravou, mas o GET de refresh falhou — o quadro mostra o time de antes
+   * e a seção avisa ("recargá la página"). Zera a cada requisição nova (GET ou ação). */
+  refreshError: boolean;
+}
+
+type ApplyErrorSetters = {
+  setStatus: (s: ServiceTeamStatus) => void;
+  setActionError: (code: string | null) => void;
+};
+
+/** A régua ÚNICA de erro das ações do quadro C (N4 do gate fecho — `reject`/`revert` e o POST do
+ * `substitute`): 403 → forbidden; código conhecido (422/409) → `actionError` = code; resto → error. */
+function applyActionError(err: unknown, { setStatus, setActionError }: ApplyErrorSetters): void {
+  if (err instanceof ContractedServiceApiError && err.status === 403) {
+    setStatus('forbidden');
+    return;
+  }
+  if (err instanceof ContractedServiceApiError && err.code) {
+    setActionError(err.code);
+    return;
+  }
+  setStatus('error');
 }
 
 /**
@@ -35,6 +57,7 @@ export function useServiceTeam(
   const [team, setTeam] = useState<ServiceTeam | null>(null);
   const [status, setStatus] = useState<ServiceTeamStatus>('idle');
   const [actionError, setActionError] = useState<string | null>(null);
+  const [refreshError, setRefreshError] = useState(false);
   const requestIdRef = useRef(0);
 
   useEffect(() => {
@@ -43,12 +66,14 @@ export function useServiceTeam(
       setTeam(null);
       setStatus('idle');
       setActionError(null);
+      setRefreshError(false);
       return;
     }
     const requestId = ++requestIdRef.current;
     setTeam(null);
     setStatus('loading');
     setActionError(null);
+    setRefreshError(false);
     AdminContractedServicesApiService.getServiceTeam(patientId, serviceId)
       .then((result) => {
         if (requestIdRef.current !== requestId) return; // resposta de uma requisição anterior (mesma linha ou outra)
@@ -71,6 +96,7 @@ export function useServiceTeam(
       const targetServiceId = serviceId;
       const requestId = ++requestIdRef.current;
       setActionError(null);
+      setRefreshError(false);
       try {
         const result = await call(targetServiceId);
         if (requestIdRef.current !== requestId) return; // requisição mais nova (GET ou ação) já começou
@@ -78,15 +104,7 @@ export function useServiceTeam(
         setStatus('ok');
       } catch (err) {
         if (requestIdRef.current !== requestId) return;
-        if (err instanceof ContractedServiceApiError && err.status === 403) {
-          setStatus('forbidden');
-          return;
-        }
-        if (err instanceof ContractedServiceApiError && err.code) {
-          setActionError(err.code);
-          return;
-        }
-        setStatus('error');
+        applyActionError(err, { setStatus, setActionError });
       }
     },
     [serviceId],
@@ -113,8 +131,8 @@ export function useServiceTeam(
    * Achado C3 (veredito parcial-1): o GET de refresh é tratado À PARTE do POST — a ausência já foi
    * gravada quando ele roda, então uma falha SÓ dele não pode derrubar o quadro inteiro (`runAction`
    * trataria qualquer erro do `call()` como erro geral e zeraria `status`). POST com erro segue a
-   * MESMA régua de `reject`/`revert` (403 → forbidden; código conhecido → `actionError`; resto →
-   * error); GET com erro NÃO mexe em `team`/`status` — o quadro fica com o dado de antes da escrita.
+   * MESMA régua de `reject`/`revert` (`applyActionError`); GET com erro NÃO mexe em `team`/`status`
+   * — o quadro fica com o dado de antes da escrita e `refreshError` fica `true`.
    */
   const substitute = useCallback(
     async (allocationId: string, date: string, substituteWorkerId: string | null) => {
@@ -122,6 +140,7 @@ export function useServiceTeam(
       const targetServiceId = serviceId;
       const requestId = ++requestIdRef.current;
       setActionError(null);
+      setRefreshError(false);
       try {
         await AdminContractedServicesApiService.registerAbsence(patientId, targetServiceId, allocationId, {
           date,
@@ -129,15 +148,7 @@ export function useServiceTeam(
         });
       } catch (err) {
         if (requestIdRef.current !== requestId) return;
-        if (err instanceof ContractedServiceApiError && err.status === 403) {
-          setStatus('forbidden');
-          return;
-        }
-        if (err instanceof ContractedServiceApiError && err.code) {
-          setActionError(err.code);
-          return;
-        }
-        setStatus('error');
+        applyActionError(err, { setStatus, setActionError });
         return;
       }
       try {
@@ -148,10 +159,14 @@ export function useServiceTeam(
       } catch {
         // GET de refresh falhou depois de um POST que já teve sucesso (C3): o quadro segue com o
         // time atual — nunca `setStatus('error')` aqui, senão o board some por um refresh que falhou.
+        // N3 do gate fecho: não é silêncio — `refreshError` avisa que a gravação valeu e o quadro
+        // está velho (o operador recarrega em vez de repetir e tomar 409).
+        if (requestIdRef.current !== requestId) return;
+        setRefreshError(true);
       }
     },
     [patientId, serviceId],
   );
 
-  return { team, status, reject, revert, substitute, actionError };
+  return { team, status, reject, revert, substitute, actionError, refreshError };
 }

@@ -2,7 +2,7 @@
  * kanban-pacientes-substituicao.integration.e2e.ts @integration — Fase 13 (cadeia-paciente-vacante-itinerario),
  * DX-13.15.
  *
- * 1 spec, 9 títulos (API + tela), datas SEMPRE do banco (DATA-F13, nunca o relógio do runner).
+ * 1 spec, 10 títulos (API + tela), datas SEMPRE do banco (DATA-F13, nunca o relógio do runner).
  *
  * Nome do ARQUIVO: sem tocar `pr-gate.yml` — o caminho casa `kanban-pacientes` já presente no
  * `grep:` do job padrão (`pr-gate.yml:142`), o mesmo fallback das Fases 10/11. Os títulos dos
@@ -30,7 +30,7 @@ import { tokenFor, loginAs } from '../helpers/abac-stack-helper';
 import { runSQL } from '../helpers/patient-detail-a-helper';
 import { postServiceTeamAction, readServiceTeamApi } from '../helpers/quadro-c-e2e-helper';
 import {
-  allocateApi, seedServiceWithLiveVacancySql, cleanupItineraryWrite, patientStatus,
+  allocateApi, endAllocationApi, seedServiceWithLiveVacancySql, cleanupItineraryWrite, patientStatus,
 } from '../helpers/itinerario-escrita-e2e-helper';
 import {
   registerAbsenceApi, setAbsenceSubstituteApi, cancelAbsenceApi, nextWeekdaySql, pastWeekdaySql,
@@ -387,7 +387,7 @@ test.describe('substituicao @integration', () => {
     }
   });
 
-  test('substituicao-em-atendimento-com-datas', async ({ page, request }) => {
+  test('substituicao-em-atendimento-com-datas', async ({ page, request }, testInfo) => {
     const seed = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.6, lng: -58.4 });
     const token = tokenFor(ITINERARIO_STAFF);
     const v = await activateRecruitmentViaApi(request, seed.patientId, seed.serviceId);
@@ -445,6 +445,15 @@ test.describe('substituicao @integration', () => {
           path: `${printDir}/quadro-c-em-atendimento.png`, animations: 'disabled', caret: 'hide',
         });
       }
+
+      // N2 do gate fecho: baseline visual da seção com as datas (molde `kanban-pacientes-quadro-c`
+      // `quadro-c-selecao`); máscara SÓ nos nomes dos cards (sintéticos, mudam a cada semente).
+      await page.evaluate(() => document.fonts.ready);
+      const secao = page.getByTestId('quadro-c-secao');
+      await expect(secao).toHaveScreenshot(`${testInfo.project.name}-quadro-c-substituicao-datas.png`, {
+        maxDiffPixelRatio: 0.05,
+        mask: [secao.locator('[data-testid^="service-team-card-"] > span:first-child')],
+      });
 
       console.log('[13.4]', wRow?.substitutionDates, tInService);
     } finally {
@@ -715,6 +724,62 @@ test.describe('substituicao @integration', () => {
     }
   });
 
+  // N6 do gate fecho: `/cancel` sobre alocação ENCERRADA pela rota HTTP (antes do G1 dava 500);
+  // o banco já prova o mesmo caso (`[13.27]`), aqui é o caminho de API sem mock.
+  test('substituicao-cancelar-apos-encerrar', async ({ request }) => {
+    const seed = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.6, lng: -58.4 });
+    const token = tokenFor(ITINERARIO_STAFF);
+    const v = await activateRecruitmentViaApi(request, seed.patientId, seed.serviceId);
+    const itin = await readItineraryApi(request, seed.patientId);
+    const svc = itin.body.data?.services.find((s) => s.contractedServiceId === seed.serviceId);
+    const slotId = svc?.slots[0]?.id;
+    if (!slotId) throw new Error('substituicao-cancelar-apos-encerrar: slot ausente na semente');
+
+    const t = insertTestWorker({ occupation: 'AT' }); // titular
+    const w = insertTestWorker({ occupation: 'AT' }); // substituto
+    const d = nextWeekdaySql(1);
+    try {
+      insertWJA({ workerId: t, jobPostingId: v, funnelStage: 'QUICK_RESPONSE_TEAM' });
+      insertWJA({ workerId: w, jobPostingId: v, funnelStage: 'QUICK_RESPONSE_TEAM' });
+      const allocT = await allocateApi(request, token, seed.patientId, seed.serviceId, slotId, { workerId: t });
+      expect(allocT.status).toBe(201);
+      const allocationId = (allocT.body.data as AllocateData | undefined)?.allocationId;
+      if (!allocationId) throw new Error('substituicao-cancelar-apos-encerrar: alocação sem allocationId');
+
+      const absence = await registerAbsenceApi(request, token, seed.patientId, seed.serviceId, allocationId, {
+        date: d, substituteWorkerId: w,
+      });
+      expect(absence.status).toBe(201);
+      const absenceId = absence.body.data?.absenceId;
+      if (!absenceId) throw new Error('substituicao-cancelar-apos-encerrar: ausência sem absenceId');
+      const openBefore = countOpenAbsences(allocationId);
+
+      const end = await endAllocationApi(request, token, seed.patientId, seed.serviceId, allocationId);
+      expect(end.status).toBe(200);
+
+      const cancel = await cancelAbsenceApi(request, token, seed.patientId, seed.serviceId, absenceId);
+      expect(cancel.status).toBe(200);
+      expect(cancel.body.data?.status).toBe('CANCELLED');
+      const openAfter = countOpenAbsences(allocationId);
+
+      const itinAfter = await readItineraryApi(request, seed.patientId);
+      const alertsAfter = (itinAfter.body.data as unknown as ItineraryBodyF13 | undefined)?.alerts ?? [];
+      const alertsOnDate = alertsAfter.filter((a) => a.date === d).length;
+
+      console.log('[13.cancel-encerrada]', end.status, cancel.status, cancel.body.data?.status, openBefore, openAfter, alertsOnDate);
+      expect(openBefore).toBe(1);
+      expect(openAfter).toBe(0);
+      expect(alertsOnDate).toBe(0);
+    } finally {
+      cleanupSubstituicao(seed.patientId);
+      cleanupWJAAndEncuadre(t, v);
+      cleanupWJAAndEncuadre(w, v);
+      cleanupTestWorker(t);
+      cleanupTestWorker(w);
+      seed.cleanup();
+    }
+  });
+
   test('substituicao-alerta', async ({ page, request }) => {
     const hosts: string[] = [];
     page.on('request', (r) => hosts.push(new URL(r.url()).host));
@@ -800,6 +865,16 @@ test.describe('substituicao @integration', () => {
       const itinAfterPast = await readItineraryApi(request, seed.patientId);
       const alertsAfterPast = (itinAfterPast.body.data as unknown as ItineraryBodyF13 | undefined)?.alerts ?? [];
       expect(alertsAfterPast.length).toBe(0);
+
+      // N1 do gate fecho: o MESMO estado pela TELA — o Kanban recarregado (agregado novo, `r.ok()`)
+      // não acende o sinal para a ausência passada; controle positivo: o `toHaveCount(1)` acima.
+      const [kanbanAfterPast] = await Promise.all([
+        page.waitForResponse((r) => r.request().method() === 'GET' && r.url().includes('/api/admin/patients/kanban/services') && r.ok()),
+        readPatientKanbanColumn(page, seed.patientId),
+      ]);
+      const subcardAlertPast = page.getByTestId(`patient-kanban-card-${seed.patientId}`).getByTestId('subcard-alerta-dia-descoberto');
+      await expect(subcardAlertPast).toHaveCount(0);
+      console.log('[13.10-tela-passada]', kanbanAfterPast.status(), alertsAfterPast.length, await subcardAlertPast.count());
 
       // Critério 15: nenhum host de canal externo — controle positivo é o host da própria API.
       const externalHosts = hosts.filter((h) => /twilio|whatsapp|wa\.me|periskope|talentum/i.test(h));

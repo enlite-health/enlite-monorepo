@@ -3763,6 +3763,7 @@
           "emptySelection": "Escolha um serviço da tabela para ver o encuadre.",
           "noVacancy": "Este serviço ainda não tem vaga: não há quem encuadrar.",
           "loadError": "Não foi possível carregar o encuadre deste serviço.",
+          "refreshError": "A substituição foi salva, mas não foi possível atualizar o quadro. Recarregue a página.",
           "unnamedWorker": "Prestador sem nome · {{shortId}}",
           "columns": {
             "SELECTED_FOR_SERVICE": "Selecionado",
