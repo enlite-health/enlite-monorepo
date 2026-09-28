@@ -51,6 +51,13 @@ describe('RLS por país — policies de patients e satélites (banco real)', () 
     slotBR: 'ee270000-0a00-0009-0002-000000000001',
     assignmentAR: 'ee270000-0a00-000a-0001-000000000001',
     assignmentBR: 'ee270000-0a00-000a-0002-000000000001',
+    // Fase 10, P4 (contracted_service_rejections: a marca do quadro C segue o pai) — mesmo IDS,
+    // mesmo prefixo do arquivo.
+    csrServiceAR: 'ee270000-0a00-000b-0001-000000000001',
+    csrServiceBR: 'ee270000-0a00-000b-0002-000000000001',
+    csrWorker: 'ee270000-0a00-000c-0001-000000000001',
+    csrMarkAR: 'ee270000-0a00-000d-0001-000000000001',
+    csrMarkBR: 'ee270000-0a00-000d-0002-000000000001',
   };
 
   async function cleanup(p: Pool): Promise<void> {
@@ -481,6 +488,82 @@ describe('RLS por país — policies de patients e satélites (banco real)', () 
             `INSERT INTO patient_itinerary_slot (contracted_service_id, weekday, start_time, end_time, country, created_by, updated_by)
              VALUES ($1, 6, '07:00', '08:00', 'AR', $2, $2)`,
             [IDS.serviceBR, CREATED_BY],
+          );
+        }),
+      ).rejects.toThrow(/new row violates row-level security policy/);
+    });
+  });
+
+  /**
+   * Fase 10, P4 (DX-10.2, DX-10.14) — `contracted_service_rejections` (a marca do quadro C) segue
+   * o pai pela mesma cadeia de RLS que os satélites (413/429/480): a policy não olha country da
+   * própria linha, olha visibilidade de `patient_contracted_services` (que por sua vez segue
+   * `patients`). `beforeAll`/`afterAll` próprios, como dono (`pool`), com ids novos no mesmo `IDS`
+   * (prefixo do arquivo) — a semente de cima e os casos existentes não mudam.
+   */
+  describe('marca do quadro C (Fase 10): contracted_service_rejections segue o pai', () => {
+    const CREATED_BY = 'rls-e2e-csr';
+
+    beforeAll(async () => {
+      // 1 serviço por paciente de teste (AR/BR), reusando os endereços já semeados acima.
+      await pool.query(
+        `INSERT INTO patient_contracted_services (id, patient_id, service_code, address_id, country, created_by, updated_by)
+         VALUES ($1, $2, 'AT', $3, 'AR', $4, $4), ($5, $6, 'AT', $7, 'BR', $4, $4)`,
+        [IDS.csrServiceAR, IDS.patientAR, IDS.addressAR, CREATED_BY, IDS.csrServiceBR, IDS.patientBR, IDS.addressBR],
+      );
+
+      // 1 worker, com 1 marca por serviço.
+      await pool.query(
+        `INSERT INTO workers (id, auth_uid, email, country) VALUES ($1, 'rls-e2e-csr-w1', 'rls-e2e-csr-w1@e2e.local', 'AR')`,
+        [IDS.csrWorker],
+      );
+      await pool.query(
+        `INSERT INTO contracted_service_rejections (id, service_id, worker_id, rejected_by, reject_reason_category, created_by, updated_by)
+         VALUES ($1, $2, $3, $4, 'OTHER', $4, $4), ($5, $6, $3, $4, 'OTHER', $4, $4)`,
+        [IDS.csrMarkAR, IDS.csrServiceAR, IDS.csrWorker, CREATED_BY, IDS.csrMarkBR, IDS.csrServiceBR],
+      );
+    });
+
+    afterAll(async () => {
+      // Ordem: marcas → worker, ANTES do cleanup externo (que apaga os pacientes; mesma razão do
+      // describe do itinerário acima: o cleanup externo apaga `patient_addresses` ANTES de
+      // `patients`, e `pcs_address_same_patient_fk` recusaria a linha enquanto o serviço a referenciar).
+      await pool.query(`DELETE FROM contracted_service_rejections WHERE id = ANY($1)`, [[IDS.csrMarkAR, IDS.csrMarkBR]]);
+      await pool.query(`DELETE FROM workers WHERE id = $1`, [IDS.csrWorker]);
+      await pool.query(`DELETE FROM patient_contracted_services WHERE id = ANY($1)`, [[IDS.csrServiceAR, IDS.csrServiceBR]]);
+    });
+
+    it('6f. a marca segue o pai: staff AR vê só a marca do serviço AR', async () => {
+      const rows = await asRole('app_runtime', { userCountry: 'AR', userUid: STAFF_UID }, async (c) => {
+        const res = await c.query(`SELECT id FROM contracted_service_rejections WHERE id = ANY($1)`, [
+          [IDS.csrMarkAR, IDS.csrMarkBR],
+        ]);
+        return res.rows;
+      });
+      expect(rows).toHaveLength(1);
+      expect(rows[0].id).toBe(IDS.csrMarkAR);
+    });
+
+    it('6g. a marca com role de sistema + contexto vê as duas', async () => {
+      const rows = await asRole('app_system', { systemContext: 'job:e2e-rls-proof' }, async (c) => {
+        const res = await c.query(`SELECT id FROM contracted_service_rejections WHERE id = ANY($1)`, [
+          [IDS.csrMarkAR, IDS.csrMarkBR],
+        ]);
+        return res.rows;
+      });
+      expect(rows).toHaveLength(2);
+    });
+
+    it('6h. staff AR não INSERE marca no serviço BR', async () => {
+      // `country` explícito (não-NULL) — mesma técnica do 6e acima: sem isso, o trigger de país
+      // tentaria herdar de `csrServiceBR`, essa própria leitura já cairia na RLS de
+      // `patient_contracted_services` (que segue `patients`) e mascararia qual policy bloqueou.
+      await expect(
+        asRole('app_runtime', { userCountry: 'AR', userUid: STAFF_UID }, async (c) => {
+          await c.query(
+            `INSERT INTO contracted_service_rejections (service_id, worker_id, rejected_by, reject_reason_category, country, created_by, updated_by)
+             VALUES ($1, $2, $3, 'OTHER', 'AR', $3, $3)`,
+            [IDS.csrServiceBR, IDS.csrWorker, CREATED_BY],
           );
         }),
       ).rejects.toThrow(/new row violates row-level security policy/);
