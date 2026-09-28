@@ -384,6 +384,13 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'GET /api/admin/patients/:id/contracted-services/:sid/team → patient_services:read', // cadeia Fase 10 — quadro C (calculado)
         'POST /api/admin/patients/:id/contracted-services/:sid/team/reject → patient_service_team:update',
         'POST /api/admin/patients/:id/contracted-services/:sid/team/revert → patient_service_team:update',
+        'GET /api/admin/patients/:id/contracted-services/:sid/allocation-options → patient_services:read', // cadeia Fase 11 — escritores do itinerário
+        'POST /api/admin/patients/:id/contracted-services/:sid/itinerary/slots → patient_itinerary:update',
+        'PATCH /api/admin/patients/:id/contracted-services/:sid/itinerary/slots/:slotId → patient_itinerary:update',
+        'POST /api/admin/patients/:id/contracted-services/:sid/itinerary/slots/:slotId/end → patient_itinerary:update',
+        'POST /api/admin/patients/:id/contracted-services/:sid/itinerary/slots/:slotId/allocations → patient_itinerary:update',
+        'POST /api/admin/patients/:id/contracted-services/:sid/itinerary/allocations/:allocationId/end → patient_itinerary:update',
+        'POST /api/admin/patients/:id/itinerary/assemble → patient_itinerary:update',
       ].sort(),
     );
   });
