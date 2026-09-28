@@ -1,7 +1,12 @@
 import { Request, Response } from 'express';
 import { z } from 'zod';
 import { reportError } from '@shared/logging';
-import { GetPatientItineraryUseCase, PatientNotFoundForItineraryError } from '../../application/GetPatientItineraryUseCase';
+import { emitirTrilhaDeContato } from '@shared/audit/contactAccessFromRequest';
+import {
+  GetPatientItineraryUseCase,
+  PatientNotFoundForItineraryError,
+  type PatientItineraryResult,
+} from '../../application/GetPatientItineraryUseCase';
 
 const patientParamsSchema = z.object({ id: z.string().uuid() });
 
@@ -14,8 +19,11 @@ const patientParamsSchema = z.object({ id: z.string().uuid() });
  * `weeklyHours`/`authorizedHours` (rotulados `contratadas.weekly`/`.authorized`) que hoje só saem
  * por essa célula (`adminPatientsRoutes.ts:240`, GET .../contracted-services) — sob `patient:read`
  * a rota abriria esses números a quem hoje não os lê (memória `vazamento-existente-nao-e-regua`).
- * Sem `logResourceAccess`: o corpo não devolve nome/telefone do paciente nem do prestador — só
- * ids, horas, datas e status —, a mesma régua do GET irmão de serviços contratados.
+ * Sem log de acesso a recurso do paciente: o corpo não devolve nome/telefone do paciente, nem telefone do prestador.
+ * Fase 12 (DX-12.5 (5)): cada alocação traz `allocationId` e `displayName` — o nome do prestador SÓ
+ * de alocação vigente, projetado por `worker_contact:read` (`req.permissionCells`, decidido antes
+ * do KMS) e, quando atravessa, gravado na trilha de contato (`emitirTrilhaDeContato`) — a mesma
+ * régua do quadro C e das opções de alocação.
  */
 export class AdminPatientItineraryController {
   constructor(private readonly useCase: GetPatientItineraryUseCase = new GetPatientItineraryUseCase()) {}
@@ -28,7 +36,8 @@ export class AdminPatientItineraryController {
       return;
     }
     try {
-      const data = await this.useCase.execute(params.data.id);
+      const data = await this.useCase.execute(params.data.id, new Date(), req.permissionCells ?? null);
+      emitirTrilhaDeContato(req, this.namedWorkerIds(data));
       res.status(200).json({ success: true, data });
     } catch (err: unknown) {
       if (err instanceof PatientNotFoundForItineraryError) {
@@ -39,5 +48,15 @@ export class AdminPatientItineraryController {
       reportError(e, { source: 'AdminPatientItineraryController:get', patientId: params.data.id });
       res.status(500).json({ success: false, error: 'Failed to get patient itinerary' });
     }
+  }
+
+  /** Os `workerId` distintos das alocações cujo `displayName` saiu NÃO-nulo — só esses entram na trilha. */
+  private namedWorkerIds(data: PatientItineraryResult): string[] {
+    const ids = data.services.flatMap((service) =>
+      service.slots.flatMap((slot) =>
+        slot.assignments.filter((assignment) => assignment.displayName !== null).map((assignment) => assignment.workerId),
+      ),
+    );
+    return [...new Set(ids)];
   }
 }

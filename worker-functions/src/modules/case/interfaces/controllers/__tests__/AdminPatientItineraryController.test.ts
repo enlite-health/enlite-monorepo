@@ -3,11 +3,13 @@
  * derivação, RLS) é o e2e (P8-P10). Aqui cobrimos validação/erro e o contrato publicado.
  */
 jest.mock('@shared/logging', () => ({ reportError: jest.fn() }));
+jest.mock('@shared/audit/contactAccessFromRequest', () => ({ emitirTrilhaDeContato: jest.fn() }));
 
 import { AdminPatientItineraryController } from '../AdminPatientItineraryController';
 import { PatientNotFoundForItineraryError } from '../../../application/GetPatientItineraryUseCase';
 import { patientItineraryResponseSchema } from '../../validators/itinerarySchemas';
 import { reportError } from '@shared/logging';
+import { emitirTrilhaDeContato } from '@shared/audit/contactAccessFromRequest';
 import type { Response } from 'express';
 
 const PATIENT_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
@@ -15,6 +17,9 @@ const SERVICE_ID = 'bbbbbbbb-bbbb-cccc-dddd-eeeeeeeeeeee';
 const SLOT_ID = 'cccccccc-bbbb-cccc-dddd-eeeeeeeeeeee';
 const WORKER_ID = 'dddddddd-bbbb-cccc-dddd-eeeeeeeeeeee';
 const APPLICATION_ID = 'eeeeeeee-bbbb-cccc-dddd-eeeeeeeeeeee';
+const ALLOCATION_ID = 'ffffffff-bbbb-cccc-dddd-eeeeeeeeeeee';
+const OLD_ALLOCATION_ID = 'ffffffff-aaaa-cccc-dddd-eeeeeeeeeeee';
+const OLD_WORKER_ID = 'dddddddd-aaaa-cccc-dddd-eeeeeeeeeeee';
 
 function mockReq(overrides: Record<string, unknown> = {}) {
   return { params: {}, ...overrides } as never;
@@ -48,6 +53,8 @@ const FELIZ = {
               validFrom: '2026-09-01',
               validTo: null,
               status: 'ACTIVE' as const,
+              allocationId: ALLOCATION_ID,
+              displayName: 'Nombre Qa' as string | null,
             },
           ],
         },
@@ -135,7 +142,70 @@ describe('AdminPatientItineraryController', () => {
       expect(res.status).toHaveBeenCalledWith(200);
       const body = res.json.mock.calls[0][0];
       expect(() => patientItineraryResponseSchema.parse(body.data)).not.toThrow();
-      expect(chavesProibidas(body, /name|phone/i)).toEqual([]);
+      // A-contrato (DX-12.16): o nome do prestador vigente passa a sair (`displayName`); telefone, nunca.
+      expect(chavesProibidas(body, /phone/i)).toEqual([]);
+      expect(body.data.services[0].slots[0].assignments[0].displayName).toBe('Nombre Qa');
+    });
+
+    it('[12.10] passa id, relógio e as células ao caso de uso; a trilha recebe só os workerId com nome', async () => {
+      const comHistorico = {
+        ...FELIZ,
+        services: [
+          {
+            ...FELIZ.services[0],
+            slots: [
+              {
+                ...FELIZ.services[0].slots[0],
+                assignments: [
+                  {
+                    workerId: OLD_WORKER_ID, applicationId: APPLICATION_ID, validFrom: '2026-01-01', validTo: '2026-06-30',
+                    status: 'ENDED' as const, allocationId: OLD_ALLOCATION_ID, displayName: null,
+                  },
+                  ...FELIZ.services[0].slots[0].assignments,
+                ],
+              },
+              { ...FELIZ.services[0].slots[0], id: SERVICE_ID },
+            ],
+          },
+        ],
+      };
+      const useCase = { execute: jest.fn().mockResolvedValue(comHistorico) };
+      const controller = new AdminPatientItineraryController(useCase as never);
+      const res = mockRes();
+      const req = mockReq({ params: { id: PATIENT_ID }, permissionCells: ['patient_services:read', 'worker_contact:read'] });
+
+      await controller.get(req, res);
+
+      console.log('[12.10]', 'status', res.status.mock.calls[0][0], 'trilha', (emitirTrilhaDeContato as jest.Mock).mock.calls[0][1].length);
+      expect(useCase.execute).toHaveBeenCalledWith(PATIENT_ID, expect.any(Date), ['patient_services:read', 'worker_contact:read']);
+      expect(emitirTrilhaDeContato).toHaveBeenCalledTimes(1);
+      expect(emitirTrilhaDeContato).toHaveBeenCalledWith(req, [WORKER_ID]);
+      expect(res.status).toHaveBeenCalledWith(200);
+    });
+
+    it('[12.10] sem req.permissionCells (engine OFF) → cells null; nenhum nome → trilha com lista vazia', async () => {
+      const semNome = {
+        ...FELIZ,
+        services: [
+          {
+            ...FELIZ.services[0],
+            slots: [
+              {
+                ...FELIZ.services[0].slots[0],
+                assignments: [{ ...FELIZ.services[0].slots[0].assignments[0], displayName: null }],
+              },
+            ],
+          },
+        ],
+      };
+      const useCase = { execute: jest.fn().mockResolvedValue(semNome) };
+      const controller = new AdminPatientItineraryController(useCase as never);
+      const res = mockRes();
+
+      await controller.get(mockReq({ params: { id: PATIENT_ID } }), res);
+
+      expect(useCase.execute).toHaveBeenCalledWith(PATIENT_ID, expect.any(Date), null);
+      expect((emitirTrilhaDeContato as jest.Mock).mock.calls[0][1]).toEqual([]);
     });
   });
 });
