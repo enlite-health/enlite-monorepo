@@ -24,7 +24,7 @@ interface ServiceTeamSectionProps {
 export function ServiceTeamSection({ patientId, service, address, selectionNonce }: ServiceTeamSectionProps): JSX.Element {
   const { t } = useTranslation();
   const tc = (key: string, options?: Record<string, unknown>) => t(`admin.patients.detail.serviceTeam.${key}`, options);
-  const { team, status, reject, revert, actionError } = useServiceTeam(patientId, service?.id ?? null, selectionNonce);
+  const { team, status, reject, revert, substitute, actionError } = useServiceTeam(patientId, service?.id ?? null, selectionNonce);
 
   if (!service) {
     return (
@@ -62,7 +62,7 @@ export function ServiceTeamSection({ patientId, service, address, selectionNonce
               {tc('noVacancy')}
             </Text>
           ) : (
-            <ServiceTeamBoard team={team} onReject={reject} onRevert={revert} actionError={actionError} />
+            <ServiceTeamBoard team={team} onReject={reject} onRevert={revert} onSubstitute={substitute} actionError={actionError} />
           )}
         </>
       )}
