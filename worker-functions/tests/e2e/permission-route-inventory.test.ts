@@ -391,6 +391,9 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'POST /api/admin/patients/:id/contracted-services/:sid/itinerary/slots/:slotId/allocations → patient_itinerary:update',
         'POST /api/admin/patients/:id/contracted-services/:sid/itinerary/allocations/:allocationId/end → patient_itinerary:update',
         'POST /api/admin/patients/:id/itinerary/assemble → patient_itinerary:update',
+        'POST /api/admin/patients/:id/contracted-services/:sid/itinerary/allocations/:allocationId/absences → patient_itinerary:update', // cadeia Fase 13 — substituição pontual
+        'PATCH /api/admin/patients/:id/contracted-services/:sid/itinerary/absences/:absenceId/substitute → patient_itinerary:update',
+        'POST /api/admin/patients/:id/contracted-services/:sid/itinerary/absences/:absenceId/cancel → patient_itinerary:update',
       ].sort(),
     );
   });
