@@ -38,8 +38,24 @@ export type ItineraryAllocationBody = z.infer<typeof itineraryAllocationBodySche
 
 export const itineraryAbsenceParamsSchema = itineraryServiceParamsSchema.extend({ absenceId: z.string().uuid() });
 
+// Achado C2 (veredito parcial-1): `date` só com regex deixava passar calendário inexistente
+// (ex.: `2026-02-31`) — o `$2::date` do Postgres rejeitava (22008) e virava 500 genérico em vez de
+// 400. Round-trip em `Date.UTC` (mesmo padrão de `isValidIsoBirthDate.ts:25-32`, sem a restrição
+// "não-futura" — ausência é sempre futura ou passada, controlada pelo caso de uso, nunca aqui).
+function isRealCalendarDate(value: string): boolean {
+  const [yearStr, monthStr, dayStr] = value.split('-');
+  const year = Number(yearStr);
+  const month = Number(monthStr);
+  const day = Number(dayStr);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
+
 export const itineraryAbsenceBodySchema = z.object({
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .refine(isRealCalendarDate, { message: 'date must be a real calendar date' }),
   substituteWorkerId: z.string().uuid().optional(),
 });
 
