@@ -227,6 +227,13 @@ export interface PatientDetail {
    * (`source: 'admin_manual'`). Opcional: API anterior a esta rodada não manda o campo.
    */
   insuranceVerifiedEntries?: Array<{ code: string; source: string }>;
+  /**
+   * Hotfix gate-cobertura-verificada-vacante (28/09): ≥1 cobertura verificada
+   * (`insuranceVerifiedCodes`) com provider ATIVO no catálogo — alimenta `recruitmentMissingCodes`
+   * (gate do foguete "Activar reclutamiento") junto do legado `insuranceInformed`. Opcional: API
+   * anterior a este hotfix não manda o campo; ausência trata como `false` (mesma régua do legado).
+   */
+  hasVerifiedActiveCoverage?: boolean;
   /** Dispositivos — códigos de `device_types` (mig 307), ordem do catálogo. */
   deviceTypes: string[];
   needsAttention: boolean;

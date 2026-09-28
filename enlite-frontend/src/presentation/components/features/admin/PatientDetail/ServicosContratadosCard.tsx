@@ -107,6 +107,7 @@ function ServiceRow({
   service,
   addresses,
   insuranceInformed,
+  hasVerifiedActiveCoverage,
   onOpen,
   onEdit,
   onActivated,
@@ -117,6 +118,8 @@ function ServiceRow({
   service: PatientContractedServiceDetail;
   addresses: PatientAddressDetail[];
   insuranceInformed: string | null;
+  /** Hotfix gate-cobertura-verificada-vacante (28/09) — ver `PatientDetail.hasVerifiedActiveCoverage`. */
+  hasVerifiedActiveCoverage?: boolean;
   onOpen: (service: PatientContractedServiceDetail) => void;
   onEdit: (service: PatientContractedServiceDetail) => void;
   onActivated: () => void;
@@ -215,6 +218,7 @@ function ServiceRow({
                 serviceHasAddress: addresses.some((a) => a.id === service.addressId),
                 serviceHasSchedule: Array.isArray(service.schedule) && service.schedule.length > 0,
                 insuranceInformed,
+                hasVerifiedActiveCoverage,
               })}
               onActivated={onActivated}
               t={t}
@@ -332,6 +336,7 @@ export function ServicosContratadosCard({ patient, onSaved, focusRequest }: Serv
                 service={svc}
                 addresses={patient.addresses ?? []}
                 insuranceInformed={patient.insuranceInformed}
+                hasVerifiedActiveCoverage={patient.hasVerifiedActiveCoverage}
                 onOpen={setSelected}
                 onEdit={(s) => setEditing({ kind: 'edit', serviceId: s.id })}
                 onActivated={() => onSaved?.()}
