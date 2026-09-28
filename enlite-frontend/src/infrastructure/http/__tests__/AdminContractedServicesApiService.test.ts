@@ -160,4 +160,66 @@ describe('AdminContractedServicesApiService', () => {
       status: 403,
     });
   });
+
+  // Quadro C (DX-10.7/10.8): o time é CALCULADO — GET/reject/revert devolvem o mesmo formato
+  // `{ serviceId, vacancyId, selected, inService, rejected }`, nunca uma lista própria de membros.
+  const TEAM = {
+    serviceId: SERVICE_ID,
+    vacancyId: 'v1',
+    selected: [{ workerId: 'w1', displayName: 'Fulano', vacancyId: 'v1' }],
+    inService: [],
+    rejected: [],
+  };
+
+  it('getServiceTeam: GET em /:sid/team, devolve o time', async () => {
+    const f = mockFetch({ success: true, data: TEAM });
+    const out = await AdminContractedServicesApiService.getServiceTeam(PATIENT_ID, SERVICE_ID);
+    expect(out).toEqual(TEAM);
+    const [url, init] = f.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain(`/api/admin/patients/${PATIENT_ID}/contracted-services/${SERVICE_ID}/team`);
+    expect(init.method).toBe('GET');
+  });
+
+  it('rejectServiceTeamMember: POST em /:sid/team/reject com { workerId, reasonCategory }, devolve o time recalculado', async () => {
+    const rejected = { ...TEAM, selected: [], rejected: [{ workerId: 'w1', displayName: 'Fulano', vacancyId: 'v1', reasonCategory: 'INDISPONIBILIDADE_DE_HORARIO' }] };
+    const f = mockFetch({ success: true, data: rejected });
+    const out = await AdminContractedServicesApiService.rejectServiceTeamMember(PATIENT_ID, SERVICE_ID, 'w1', 'INDISPONIBILIDADE_DE_HORARIO');
+    expect(out).toEqual(rejected);
+    const [url, init] = f.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain(`/contracted-services/${SERVICE_ID}/team/reject`);
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual({ workerId: 'w1', reasonCategory: 'INDISPONIBILIDADE_DE_HORARIO' });
+  });
+
+  it('revertServiceTeamMember: POST em /:sid/team/revert com { workerId, reasonCategory }, devolve o time recalculado', async () => {
+    const f = mockFetch({ success: true, data: TEAM });
+    const out = await AdminContractedServicesApiService.revertServiceTeamMember(PATIENT_ID, SERVICE_ID, 'w1', 'REAVALIACAO');
+    expect(out).toEqual(TEAM);
+    const [url, init] = f.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain(`/contracted-services/${SERVICE_ID}/team/revert`);
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual({ workerId: 'w1', reasonCategory: 'REAVALIACAO' });
+  });
+
+  it('rejectServiceTeamMember: 422 SERVICE_TEAM_REASON_REQUIRED vira ContractedServiceApiError com status 422 e o code', async () => {
+    mockFetch({ success: false, error: 'falta motivo', code: 'SERVICE_TEAM_REASON_REQUIRED' }, 422);
+    await expect(
+      AdminContractedServicesApiService.rejectServiceTeamMember(PATIENT_ID, SERVICE_ID, 'w1'),
+    ).rejects.toMatchObject({ name: 'ContractedServiceApiError', status: 422, code: 'SERVICE_TEAM_REASON_REQUIRED' });
+  });
+
+  it('revertServiceTeamMember: 422 SERVICE_TEAM_REASON_REQUIRED vira ContractedServiceApiError com status 422 e o code', async () => {
+    mockFetch({ success: false, error: 'falta motivo', code: 'SERVICE_TEAM_REASON_REQUIRED' }, 422);
+    await expect(
+      AdminContractedServicesApiService.revertServiceTeamMember(PATIENT_ID, SERVICE_ID, 'w1'),
+    ).rejects.toMatchObject({ name: 'ContractedServiceApiError', status: 422, code: 'SERVICE_TEAM_REASON_REQUIRED' });
+  });
+
+  it('getServiceTeam: 403 vira ContractedServiceApiError com status 403', async () => {
+    mockFetch({ success: false, error: 'sem célula' }, 403);
+    await expect(AdminContractedServicesApiService.getServiceTeam(PATIENT_ID, SERVICE_ID)).rejects.toMatchObject({
+      name: 'ContractedServiceApiError',
+      status: 403,
+    });
+  });
 });
