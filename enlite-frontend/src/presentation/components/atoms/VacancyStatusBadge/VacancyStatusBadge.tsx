@@ -58,6 +58,15 @@ const STATUS_CONFIG: Record<string, BadgeConfig> = {
     bgClass: 'bg-gray-800',
     textClass: WHITE,
   },
+  // Change baja-vacante-por-servico: vaga desativada porque o serviço contratado ligado deu
+  // baixa (migration 483). Mesmo tom visual de CLOSED/SUSPENDED (inativo) — cor própria só
+  // para não confundir com "encerrada" na leitura do admin, que ainda distingue as duas causas
+  // pelo texto.
+  DE_BAJA: {
+    labelKey: 'admin.vacancyDetail.statusBadge.DE_BAJA',
+    bgClass: 'bg-gray-800',
+    textClass: WHITE,
+  },
   // ── Patient-level status surfaced on the same badge ───────────────────────
   ADMISSION: {
     labelKey: 'admin.vacancyDetail.statusBadge.ADMISSION',

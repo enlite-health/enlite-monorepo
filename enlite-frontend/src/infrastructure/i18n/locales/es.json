@@ -2605,6 +2605,7 @@
         "ON_HOLD": "En espera",
         "SUSPENDED": "Suspendido",
         "CLOSED": "Cerrado",
+        "DE_BAJA": "Dada de baja",
         "ADMISSION": "Admisión"
       },
       "caseCard": {
@@ -5523,6 +5524,7 @@
     "therapeuticCompanions": "Acompañantes Terapéuticos",
     "postularse": "Postularse",
     "postularseUnavailable": "Esta vacante aún no está disponible para postulación.",
+    "postularseDisabled": "Esta vacante fue dada de baja y ya no acepta postulaciones.",
     "statusActive": "Activo",
     "availableFor": "Disponible para:",
     "sexLabels": {

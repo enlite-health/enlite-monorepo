@@ -28,6 +28,8 @@ export function buildPublicJobsWhere(filters: PublicJobsFilters): WhereClauseRes
   }
 
   // ── Fixed base conditions ────────────────────────────────────────────────────
+  // `ACTIVE_STATUSES` já é allow-list: um status novo (ex: DE_BAJA, change
+  // baja-vacante-por-servico) desaparece do feed sem precisar tocar aqui.
   conditions.push(`jp.status IN ${ACTIVE_STATUSES}`);
   conditions.push(`jp.deleted_at IS NULL`);
   conditions.push(`jp.is_draft = false`);
@@ -35,6 +37,15 @@ export function buildPublicJobsWhere(filters: PublicJobsFilters): WhereClauseRes
   // Vaga de teste/QA (job_postings.is_test) NUNCA vaza no feed público — mesmo se postada
   // ACTIVE + is_draft=false + com short link 'site'. Guarda de segurança (follow-up #2).
   conditions.push(`jp.is_test = false`);
+  // Cinto de segurança (change baja-vacante-por-servico): serviço contratado dado de baixa
+  // desativa a vaga via UPDATE síncrono na mesma transação (PatientContractedServiceRepository).
+  // Se algum caminho algum dia divergir (status não atualizado a tempo), esta EXISTS impede a
+  // vaga de vazar no feed mesmo assim — não depende só de `jp.status`. `contracted_service_id
+  // IS NULL` (vaga órfã, fora de escopo) não casa nenhuma linha de `patient_contracted_services`
+  // → NOT EXISTS é sempre true → não exclui vaga órfã, como pedido.
+  conditions.push(
+    `NOT EXISTS (SELECT 1 FROM patient_contracted_services pcs WHERE pcs.id = jp.contracted_service_id AND pcs.active = false)`,
+  );
 
   // ── country (always present — default 'AR') ──────────────────────────────────
   conditions.push(`jp.country = ${push(filters.country)}`);
