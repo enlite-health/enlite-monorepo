@@ -45,7 +45,7 @@ export function ServiceTeamSection({ patientId, service, address, selectionNonce
       {status === 'loading' && <TableSkeleton />}
 
       {status === 'error' && (
-        <Text data-testid="quadro-c-erro" size="sm" color="inherit" className="text-red-600">
+        <Text data-testid="quadro-c-erro" size="sm" color="inherit" className="text-cancelled">
           {tc('loadError')}
         </Text>
       )}

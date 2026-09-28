@@ -523,6 +523,20 @@ test.describe('quadro-c @integration', () => {
       await expect(page.getByTestId(`service-team-card-${w1}`)).toBeVisible();
       await expect(page.getByTestId(`service-team-card-${w2}`)).toBeVisible();
       await expect(page.getByTestId(`service-team-card-${w3}`)).toBeVisible();
+
+      // P26b (pixel-check DIV-12/DIV-13): a coluna Rechazado (3ª) não pode sair cortada da área
+      // do card — o botão "Revertir" de w3 precisa estar inteiro dentro de `quadro-c-secao`.
+      const revertW3 = page.getByTestId(`service-team-revert-${w3}`);
+      await revertW3.scrollIntoViewIfNeeded();
+      await expect(revertW3).toBeInViewport();
+      const secaoBox = await page.getByTestId('quadro-c-secao').boundingBox();
+      const revertBox = await revertW3.boundingBox();
+      if (!secaoBox || !revertBox) {
+        throw new Error('quadro-c-selecao: boundingBox ausente para conferir o corte da coluna Rechazado');
+      }
+      expect(revertBox.x).toBeGreaterThanOrEqual(secaoBox.x);
+      expect(revertBox.x + revertBox.width).toBeLessThanOrEqual(secaoBox.x + secaoBox.width);
+
       if (printDir) {
         await page.evaluate(() => document.fonts.ready);
         await page.screenshot({

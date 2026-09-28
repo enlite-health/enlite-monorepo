@@ -77,7 +77,7 @@ export function ServiceTeamBoard({ team, onReject, onRevert, actionError }: Serv
         getItemId={(member) => member.workerId}
         isDragDisabled={() => true}
         onDrop={() => {}}
-        columnWidthClass="w-[280px]"
+        columnWidthClass="w-[250px]"
         renderCard={(member, columnId) => (
           <div
             data-testid={`service-team-card-${member.workerId}`}
@@ -126,7 +126,7 @@ export function ServiceTeamBoard({ team, onReject, onRevert, actionError }: Serv
           as="span"
           size="sm"
           color="inherit"
-          className="text-amber-700"
+          className="text-cancelled"
           data-testid="quadro-c-acao-erro"
         >
           {t(
