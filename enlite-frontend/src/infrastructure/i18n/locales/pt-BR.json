@@ -3755,6 +3755,51 @@
           "activateRecruitmentError": "Não foi possível ativar o recrutamento",
           "activateRecruitmentAlreadyRecruiting": "Este serviço já tem uma vaga em andamento"
         },
+        "serviceTeam": {
+          "title": "Encuadre · {{service}} · {{address}}",
+          "noAddress": "sem endereço",
+          "emptySelection": "Escolha um serviço da tabela para ver o encuadre.",
+          "noVacancy": "Este serviço ainda não tem vaga: não há quem encuadrar.",
+          "loadError": "Não foi possível carregar o encuadre deste serviço.",
+          "unnamedWorker": "Prestador sem nome · {{shortId}}",
+          "columns": {
+            "SELECTED_FOR_SERVICE": "Selecionado",
+            "IN_SERVICE": "Em atendimento",
+            "REJECTED_FOR_SERVICE": "Rejeitado"
+          },
+          "rejectButton": "Rejeitar",
+          "revertButton": "Reverter",
+          "rejectModal": {
+            "title": "Motivo da rejeição",
+            "confirm": "Rejeitar",
+            "cancel": "Cancelar"
+          },
+          "revertModal": {
+            "title": "Motivo da reversão",
+            "confirm": "Reverter",
+            "cancel": "Cancelar"
+          },
+          "rejectOptions": {
+            "PERFIL_INADEQUADO_AO_SERVICO": "Perfil inadequado ao serviço",
+            "INDISPONIBILIDADE_DE_HORARIO": "Indisponibilidade de horário",
+            "DESISTENCIA_DO_PRESTADOR": "O prestador desistiu",
+            "OTHER": "Outro"
+          },
+          "revertOptions": {
+            "REAVALIACAO": "Reavaliação",
+            "REJEITADO_POR_ENGANO": "Rejeitado por engano",
+            "OTHER": "Outro"
+          },
+          "actionErrors": {
+            "SERVICE_TEAM_WORKER_ALLOCATED": "Remova o prestador do itinerário antes de rejeitá-lo.",
+            "SERVICE_TEAM_REASON_REQUIRED": "Escolha um motivo para continuar.",
+            "SERVICE_TEAM_REASON_INVALID": "Esse motivo não é válido.",
+            "SERVICE_TEAM_NOT_SELECTED": "Este prestador não está mais em Selecionados.",
+            "SERVICE_TEAM_NOT_REJECTED": "Este prestador não está em Rejeitados.",
+            "SERVICE_TEAM_ALREADY_REJECTED": "Este prestador já está rejeitado.",
+            "generic": "Não foi possível concluir a ação. Tente de novo."
+          }
+        },
         "matchingCard": {
           "title": "Enquadre Terapêutico",
           "paymentTerm": "Prazo de pagamento",
@@ -4342,7 +4387,8 @@
             "catalog_therapeutic_objectives": "Catálogo de objetivos específicos (projeto terapêutico)",
             "catalog_therapeutic_activities": "Catálogo de rotina e atividades (projeto terapêutico)",
             "catalog_therapeutic_segments": "Catálogo de segmentos (Ana Care)",
-            "anacare_hours": "Conferência de horas do Ana Care"
+            "anacare_hours": "Conferência de horas do Ana Care",
+            "patient_service_team": "Encuadre do serviço contratado (rejeitar/reverter)"
           },
           "help": {
             "open": "O que esta permissão faz",
