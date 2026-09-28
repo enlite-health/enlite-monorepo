@@ -138,6 +138,14 @@ export interface RecruitmentReadinessInput {
   serviceHasSchedule: boolean;
   /** `insurance_informed`/`health_insurance_name` do PACIENTE — mesma fonte do checklist geral. */
   insuranceInformed: string | null;
+  /**
+   * Hotfix gate-cobertura-verificada-vacante (28/09): o paciente tem ≥1 linha em
+   * `patient_insurance_verified` cujo `insurance_providers.active = true` (medido em produção:
+   * caminho NOVO da cobertura, catálogo de 33 opções — migration 305/311/312). Opcional (default
+   * `false`) para não quebrar os chamadores existentes que só conheciam o legado. `COVERAGE`
+   * agora é satisfeito pelo legado OU por esta cobertura verificada — nunca os dois exigidos.
+   */
+  hasVerifiedActiveCoverage?: boolean;
 }
 
 export interface RecruitmentReadinessResult {
@@ -152,7 +160,9 @@ export function computeRecruitmentReadiness(
   const missing: Array<(typeof RECRUITMENT_BLOCKING_CODES)[number]> = [];
   if (!input.serviceHasAddress) missing.push('SERVICE_ADDRESS');
   if (!input.serviceHasSchedule) missing.push('SERVICE_SCHEDULE');
-  if (isPlaceholderCoverageValue(input.insuranceInformed)) missing.push('COVERAGE');
+  if (isPlaceholderCoverageValue(input.insuranceInformed) && !input.hasVerifiedActiveCoverage) {
+    missing.push('COVERAGE');
+  }
   return { missing, ready: missing.length === 0 };
 }
 

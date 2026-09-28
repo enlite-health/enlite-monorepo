@@ -65,6 +65,7 @@ const mockPatient: PatientDetailRow = {
   serviceStartDate: null,
   insuranceVerifiedCodes: [],
   insuranceVerifiedEntries: [],
+  hasVerifiedActiveCoverage: false,
   deviceTypes: [],
   needsAttention: false,
   attentionReasons: [],

@@ -539,6 +539,39 @@ describe('ServicosContratadosCard — ícone de ativação de recrutamento por s
     fireEvent.click(btn);
     expect(mockActivateRecruitment).not.toHaveBeenCalled();
   });
+
+  // Hotfix gate-cobertura-verificada-vacante (28/09): paciente com cobertura VERIFICADA válida
+  // (patient_insurance_verified, provider ativo) e SEM o legado insuranceInformed — o foguete
+  // ficava desabilitado com tooltip "Falta: COVERAGE" mesmo com cobertura válida em produção.
+  it('sem legado (insuranceInformed null) mas com cobertura verificada ativa: foguete HABILITADO — é o caso do bug', () => {
+    const patient = { ...READY_PATIENT, insuranceInformed: null, hasVerifiedActiveCoverage: true };
+    render(<ServicosContratadosCard patient={patient} />);
+
+    const btn = screen.getByTestId('contracted-service-activate-recruitment-svc-1');
+    expect(btn).not.toBeDisabled();
+    expect(btn.getAttribute('title')).toBeFalsy();
+  });
+
+  it('sem legado E sem cobertura verificada ativa: foguete continua desabilitado com COVERAGE no tooltip (regressão)', () => {
+    const patient = { ...READY_PATIENT, insuranceInformed: null, hasVerifiedActiveCoverage: false };
+    render(<ServicosContratadosCard patient={patient} />);
+
+    const btn = screen.getByTestId('contracted-service-activate-recruitment-svc-1');
+    expect(btn).toBeDisabled();
+    expect(btn.getAttribute('title')).toBeTruthy();
+    fireEvent.click(btn);
+    expect(mockActivateRecruitment).not.toHaveBeenCalled();
+  });
+
+  it('cobertura verificada ativa NÃO dispensa SERVICE_ADDRESS: continua desabilitado (os outros códigos ficam intactos)', () => {
+    const semEndereco = { ...READY_SERVICE, addressId: null };
+    const patient = { ...READY_PATIENT, insuranceInformed: null, hasVerifiedActiveCoverage: true, contractedServices: [semEndereco] };
+    render(<ServicosContratadosCard patient={patient} />);
+
+    const btn = screen.getByTestId('contracted-service-activate-recruitment-svc-1');
+    expect(btn).toBeDisabled();
+    expect(btn.getAttribute('title')).toBeTruthy();
+  });
 });
 
 // ── D113 — `patient.addresses` redigido (null): este card é gated por `patient_services`, não

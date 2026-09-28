@@ -49,6 +49,8 @@ interface DispatchOpts {
     status: string;
     case_number: number | null;
     insurance_informed?: string | null;
+    /** Hotfix gate-cobertura-verificada-vacante (28/09) — default false (mesma régua do legado). */
+    has_verified_active_coverage?: boolean;
   } | null;
   serviceRow?: {
     id: string;
@@ -79,8 +81,17 @@ function makeClient(opts: DispatchOpts) {
     }
     if (sql.includes('FROM patients') && sql.includes('FOR UPDATE')) {
       if (!opts.patientRow) return { rowCount: 0, rows: [] };
-      const { id, status, case_number, insurance_informed } = opts.patientRow;
-      return { rowCount: 1, rows: [{ id, status, case_number, insurance_informed: insurance_informed ?? null }] };
+      const { id, status, case_number, insurance_informed, has_verified_active_coverage } = opts.patientRow;
+      return {
+        rowCount: 1,
+        rows: [{
+          id,
+          status,
+          case_number,
+          insurance_informed: insurance_informed ?? null,
+          has_verified_active_coverage: has_verified_active_coverage ?? false,
+        }],
+      };
     }
     if (sql.includes('FROM patient_contracted_services pcs') && sql.includes('FOR UPDATE OF pcs')) {
       if (!opts.serviceRow) return { rowCount: 0, rows: [] };
@@ -234,6 +245,40 @@ describe('ActivateRecruitmentUseCase', () => {
   it('422 — COVERAGE: placeholder (FR-122) conta como ausente; "Particular" (FR-121) passa', async () => {
     const { promise } = run({
       patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: '0' },
+      serviceRow: READY_SERVICE,
+    });
+    await expect(promise).rejects.toMatchObject({ missing: ['COVERAGE'] });
+  });
+
+  // Hotfix gate-cobertura-verificada-vacante (28/09): paciente com cobertura VERIFICADA válida
+  // (patient_insurance_verified, provider ativo) e SEM o legado — o gate real (POST
+  // .../activate-recruitment) tinha de parar de recusar com 422 PATIENT_NOT_READY.
+  it('201 — sem legado (insuranceInformed null) mas com cobertura verificada ativa: cria a vaga — é o caso do bug', async () => {
+    const { promise } = run({
+      patientRow: {
+        id: PATIENT_ID,
+        status: 'ADMISSION',
+        case_number: 100,
+        insurance_informed: null,
+        has_verified_active_coverage: true,
+      },
+      serviceRow: READY_SERVICE,
+      vacancyNumber: 900,
+      insertedId: 'vac-cobertura-verificada',
+    });
+    const result = await promise;
+    expect(result.vacancyId).toBe('vac-cobertura-verificada');
+  });
+
+  it('422 — sem legado E sem cobertura verificada ativa: COVERAGE continua faltando (regressão)', async () => {
+    const { promise } = run({
+      patientRow: {
+        id: PATIENT_ID,
+        status: 'ADMISSION',
+        case_number: 100,
+        insurance_informed: null,
+        has_verified_active_coverage: false,
+      },
       serviceRow: READY_SERVICE,
     });
     await expect(promise).rejects.toMatchObject({ missing: ['COVERAGE'] });

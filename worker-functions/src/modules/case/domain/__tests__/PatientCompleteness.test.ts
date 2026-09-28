@@ -509,4 +509,36 @@ describe('computeRecruitmentReadiness (RECRUITMENT_BLOCKING_CODES — gate de ac
       computeRecruitmentReadiness({ serviceHasAddress: false, serviceHasSchedule: false, insuranceInformed: null }),
     ).toEqual({ missing: ['SERVICE_ADDRESS', 'SERVICE_SCHEDULE', 'COVERAGE'], ready: false });
   });
+
+  // Hotfix gate-cobertura-verificada-vacante (28/09): paciente com cobertura VERIFICADA válida
+  // (patient_insurance_verified, provider ativo) mas sem o legado insuranceInformed — o foguete
+  // ficava desabilitado e o clique morria em 422 PATIENT_NOT_READY em produção.
+  it('só legado (insuranceInformed) preenchido → COVERAGE não falta (regressão do comportamento atual)', () => {
+    expect(
+      computeRecruitmentReadiness({ ...READY, hasVerifiedActiveCoverage: false }),
+    ).toEqual({ missing: [], ready: true });
+  });
+
+  it('só cobertura verificada válida (sem legado) → COVERAGE não falta — é o caso do bug', () => {
+    expect(
+      computeRecruitmentReadiness({ ...READY, insuranceInformed: null, hasVerifiedActiveCoverage: true }),
+    ).toEqual({ missing: [], ready: true });
+  });
+
+  it('nenhuma das duas (legado ausente e sem cobertura verificada) → COVERAGE continua faltando', () => {
+    expect(
+      computeRecruitmentReadiness({ ...READY, insuranceInformed: null, hasVerifiedActiveCoverage: false }),
+    ).toEqual({ missing: ['COVERAGE'], ready: false });
+  });
+
+  it('SERVICE_ADDRESS/SERVICE_SCHEDULE continuam bloqueando mesmo com COVERAGE satisfeito pela verificada', () => {
+    expect(
+      computeRecruitmentReadiness({
+        serviceHasAddress: false,
+        serviceHasSchedule: false,
+        insuranceInformed: null,
+        hasVerifiedActiveCoverage: true,
+      }),
+    ).toEqual({ missing: ['SERVICE_ADDRESS', 'SERVICE_SCHEDULE'], ready: false });
+  });
 });
