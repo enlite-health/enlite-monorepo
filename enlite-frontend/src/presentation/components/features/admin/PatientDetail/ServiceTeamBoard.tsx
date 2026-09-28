@@ -4,6 +4,7 @@ import { Text } from '@presentation/components/atoms/Text';
 import { ActionButton } from '@presentation/components/features/access';
 import { KanbanBoardShell, type KanbanColumnSpec } from '@presentation/components/features/admin/Kanban/KanbanBoardShell';
 import { RejectionReasonSelect } from '@presentation/components/features/admin/Kanban/RejectionReasonSelect';
+import { SubstitutionDayModal } from './SubstitutionDayModal';
 import {
   SERVICE_TEAM_COLUMN_IDS,
   SERVICE_TEAM_REJECT_REASONS,
@@ -17,7 +18,14 @@ interface ServiceTeamBoardProps {
   team: ServiceTeam;
   onReject: (workerId: string, reasonCategory: string) => void;
   onRevert: (workerId: string, reasonCategory: string) => void;
+  onSubstitute: (allocationId: string, date: string, substituteWorkerId: string | null) => void;
   actionError: string | null;
+}
+
+/** `YYYY-MM-DD` → `DD/MM` (mesma conta de `SubstitutionDayModal.tsx`; sem `Date` do driver). */
+function formatDDMM(dateIso: string): string {
+  const [, month, day] = dateIso.split('-');
+  return `${day}/${month}`;
 }
 
 /** Cor do marcador de cada coluna, só por TOKEN do tema (critério 15/27). */
@@ -46,9 +54,10 @@ interface PendingReason {
  * (mecânica das colunas) e `RejectionReasonSelect` (o mesmo modal de motivo do quadro B,
  * generalizado na Fase 4, DX-4.10) — nenhum hook de permissão novo, o gate é o `ActionButton`.
  */
-export function ServiceTeamBoard({ team, onReject, onRevert, actionError }: ServiceTeamBoardProps): JSX.Element {
+export function ServiceTeamBoard({ team, onReject, onRevert, onSubstitute, actionError }: ServiceTeamBoardProps): JSX.Element {
   const { t } = useTranslation();
   const [pending, setPending] = useState<PendingReason | null>(null);
+  const [substitutionMember, setSubstitutionMember] = useState<ServiceTeamMember | null>(null);
 
   const columns: KanbanColumnSpec[] = SERVICE_TEAM_COLUMN_IDS.map((id) => ({
     id,
@@ -92,7 +101,40 @@ export function ServiceTeamBoard({ team, onReject, onRevert, actionError }: Serv
                 {t(`admin.patients.detail.serviceTeam.rejectOptions.${member.reasonCategory}`, member.reasonCategory)}
               </Text>
             )}
-            {/* Invariante 10: Em Atendimento não tem botão — a API recusa de qualquer jeito. */}
+            {columnId === 'IN_SERVICE' && member.substitutionDates && member.substitutionDates.length > 0 && (
+              <div data-testid="card-datas-substituicao" className="flex flex-wrap items-center gap-1">
+                <Text as="span" size="xs" color="secondary">
+                  {t('admin.patients.detail.serviceTeam.substitution.label')}
+                </Text>
+                {member.substitutionDates.map((date) => (
+                  <Text
+                    key={date}
+                    as="span"
+                    size="xs"
+                    weight="medium"
+                    color="primary"
+                    className="rounded-full border border-gray-600 px-2"
+                    aria-label={date}
+                  >
+                    {t('admin.patients.detail.serviceTeam.substitution.dateChip', { date: formatDDMM(date) })}
+                  </Text>
+                ))}
+              </div>
+            )}
+            {/* Invariante 10: Em Atendimento não tem botão de REJEITAR — a API recusa de qualquer jeito
+                (a Fase 13 dá a Em Atendimento o botão de SUBSTITUIR, abaixo — outra ação, outra célula). */}
+            {columnId === 'IN_SERVICE' && member.allocations && member.allocations.length > 0 && (
+              <ActionButton
+                resource="patient_itinerary"
+                action="update"
+                variant="outline"
+                size="sm"
+                onClick={() => setSubstitutionMember(member)}
+                data-testid={`service-team-substitute-${member.workerId}`}
+              >
+                {t('admin.patients.detail.serviceTeam.substituteButton')}
+              </ActionButton>
+            )}
             {columnId === 'SELECTED_FOR_SERVICE' && (
               <ActionButton
                 resource="patient_service_team"
@@ -147,6 +189,19 @@ export function ServiceTeamBoard({ team, onReject, onRevert, actionError }: Serv
           testIdPrefix={`service-team-${pending.kind}`}
           onSubmit={handleReasonSubmit}
           onCancel={() => setPending(null)}
+        />
+      )}
+
+      {substitutionMember && (
+        <SubstitutionDayModal
+          allocations={substitutionMember.allocations ?? []}
+          selected={team.selected}
+          asOf={team.asOf}
+          onSubmit={(allocationId, date, substituteWorkerId) => {
+            onSubstitute(allocationId, date, substituteWorkerId);
+            setSubstitutionMember(null);
+          }}
+          onCancel={() => setSubstitutionMember(null)}
         />
       )}
     </>
