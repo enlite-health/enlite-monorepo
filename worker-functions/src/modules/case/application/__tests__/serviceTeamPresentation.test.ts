@@ -4,9 +4,9 @@
  * reject/revert) agora chamam — este arquivo prova o módulo isoladamente, sem duplicar os testes
  * de comportamento de domínio que já vivem em `GetServiceTeamUseCase.test.ts`/`ServiceTeamMarkUseCase.test.ts`.
  */
-import { projectServiceTeamDisplayNames, buildServiceTeamResult } from '../serviceTeamPresentation';
+import { projectServiceTeamDisplayNames, buildServiceTeamResult, deriveServiceTeamFromRows } from '../serviceTeamPresentation';
 import type { ServiceTeamRows } from '../../infrastructure/ServiceTeamReader';
-import type { DeriveServiceTeamResult } from '../../domain/deriveServiceTeam';
+import { deriveServiceTeam, SERVICE_TEAM_ENTRY_STAGE, type DeriveServiceTeamResult } from '../../domain/deriveServiceTeam';
 import { CELL_WORKER_CONTACT_READ, type Decryptor } from '@modules/identity/permissions';
 
 function kmsSpy(): { kms: Decryptor; decrypt: jest.Mock } {
@@ -128,5 +128,54 @@ describe('buildServiceTeamResult', () => {
     expect(result.rejected[0].displayName).toBeNull();
     expect(result.vacancyId).toBeNull();
     expect(result.rejected[0].vacancyId).toBeNull();
+  });
+});
+
+/**
+ * deriveServiceTeamFromRows — P8, DX-11.6: a fonte única do mapeamento `row → deriveServiceTeam`,
+ * que `GetServiceTeamUseCase`/`ServiceTeamMarkUseCase` duplicavam. `asOf` vem de `operationDateOf`
+ * (data LOCAL do país do paciente, nunca o relógio do processo) — o mesmo caso do P8 da Fase 10:
+ * `now = 2026-09-28T02:30:00Z` em AR (UTC-3) é ainda 27/09 local, então uma alocação que só começa
+ * em 28/09 NÃO conta como vigente.
+ */
+describe('deriveServiceTeamFromRows', () => {
+  const NOW = new Date('2026-09-28T02:30:00Z');
+  const ASOF_AR = '2026-09-27'; // NOW em America/Argentina/Buenos_Aires (UTC-3)
+
+  function rowComAlocacaoFutura(): ServiceTeamRows {
+    return {
+      serviceId: 's-1',
+      country: 'AR',
+      liveVacancyId: 'v-live',
+      candidacies: [
+        { workerId: 'w1', vacancyId: 'v-live', stage: SERVICE_TEAM_ENTRY_STAGE, firstNameEncrypted: null, lastNameEncrypted: null },
+      ],
+      assignments: [
+        { workerId: 'w1', serviceId: 's-1', vacancyId: 'v-live', validFrom: '2026-09-28', validTo: null, status: 'ACTIVE', firstNameEncrypted: null, lastNameEncrypted: null },
+      ],
+      marks: [],
+    };
+  }
+
+  it('asOf é a data LOCAL do país (AR) — alocação que só começa "hoje" em UTC ainda não é vigente, worker segue em selected', () => {
+    const row = rowComAlocacaoFutura();
+    const result = deriveServiceTeamFromRows(row, NOW);
+
+    expect(result.inService).toEqual([]);
+    expect(result.selected).toEqual([{ workerId: 'w1', vacancyId: 'v-live' }]);
+  });
+
+  it('as 3 listas batem exatamente com deriveServiceTeam chamada à mão, com o MESMO asOf', () => {
+    const row = rowComAlocacaoFutura();
+    const esperado = deriveServiceTeam({
+      serviceId: row.serviceId,
+      liveVacancyId: row.liveVacancyId,
+      asOf: ASOF_AR,
+      candidacies: row.candidacies,
+      assignments: row.assignments,
+      marks: row.marks,
+    });
+
+    expect(deriveServiceTeamFromRows(row, NOW)).toEqual(esperado);
   });
 });
