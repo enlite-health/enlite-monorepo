@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { Rocket, ExternalLink } from 'lucide-react';
+import { Rocket, ExternalLink, AlertTriangle } from 'lucide-react';
 import { Text } from '@presentation/components/atoms/Text';
 import { useCanActivateRecruitment } from '@presentation/hooks/useCellAccess';
 import type { PatientKanbanServiceSummary } from '@domain/entities/PatientDetail';
@@ -61,6 +61,16 @@ export function PatientKanbanSubcards({ patientId, services }: Props): JSX.Eleme
               {serviceLabel}
             </Text>
             <div className="flex items-center gap-1 shrink-0">
+              {service.uncoveredDays ? (
+                <span
+                  data-testid="subcard-alerta-dia-descoberto"
+                  role="img"
+                  aria-label={t('admin.patients.kanban.subcard.uncoveredDayAria', { count: service.uncoveredDays })}
+                  className="text-cancelled inline-flex"
+                >
+                  <AlertTriangle className="w-3.5 h-3.5" strokeWidth={2} />
+                </span>
+              ) : null}
               <Text
                 as="span"
                 size="xs"
