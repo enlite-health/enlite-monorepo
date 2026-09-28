@@ -222,4 +222,89 @@ describe('AdminContractedServicesApiService', () => {
       status: 403,
     });
   });
+
+  // Substituição pontual (Fase 13, DX-13.7/13.8/13.11): 3 ações sobre a ausência, cada uma 1
+  // método = 1 chamada; nenhuma delas traz nome/dado do prestador na resposta.
+  const ALLOCATION_ID = 'a1';
+  const ABSENCE_ID = 'ab1';
+  const ABSENCE_OPEN = { absenceId: ABSENCE_ID, allocationId: ALLOCATION_ID, date: '2026-10-05', substituteWorkerId: 'w2', status: 'OPEN' as const };
+
+  it('registerAbsence: POST em /itinerary/allocations/:allocationId/absences com { date, substituteWorkerId }', async () => {
+    const f = mockFetch({ success: true, data: ABSENCE_OPEN }, 201);
+    const out = await AdminContractedServicesApiService.registerAbsence(PATIENT_ID, SERVICE_ID, ALLOCATION_ID, {
+      date: '2026-10-05',
+      substituteWorkerId: 'w2',
+    });
+    expect(out).toEqual(ABSENCE_OPEN);
+    const [url, init] = f.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain(
+      `/api/admin/patients/${PATIENT_ID}/contracted-services/${SERVICE_ID}/itinerary/allocations/${ALLOCATION_ID}/absences`,
+    );
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual({ date: '2026-10-05', substituteWorkerId: 'w2' });
+  });
+
+  it('registerAbsence: sem substituteWorkerId — corpo sem a chave (dia sem cobertura)', async () => {
+    const f = mockFetch({ success: true, data: { ...ABSENCE_OPEN, substituteWorkerId: null } }, 201);
+    await AdminContractedServicesApiService.registerAbsence(PATIENT_ID, SERVICE_ID, ALLOCATION_ID, { date: '2026-10-05' });
+    const [, init] = f.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toEqual({ date: '2026-10-05' });
+  });
+
+  it('registerAbsence: 422 NOT_SELECTED_FOR_SERVICE vira ContractedServiceApiError com o code', async () => {
+    mockFetch({ success: false, error: 'não selecionado', code: 'NOT_SELECTED_FOR_SERVICE' }, 422);
+    await expect(
+      AdminContractedServicesApiService.registerAbsence(PATIENT_ID, SERVICE_ID, ALLOCATION_ID, { date: '2026-10-05' }),
+    ).rejects.toMatchObject({ name: 'ContractedServiceApiError', status: 422, code: 'NOT_SELECTED_FOR_SERVICE' });
+  });
+
+  it('registerAbsence: 409 ITINERARY_OVERLAP vira ContractedServiceApiError com o code', async () => {
+    mockFetch({ success: false, error: 'conflito', code: 'ITINERARY_OVERLAP' }, 409);
+    await expect(
+      AdminContractedServicesApiService.registerAbsence(PATIENT_ID, SERVICE_ID, ALLOCATION_ID, { date: '2026-10-05', substituteWorkerId: 'w2' }),
+    ).rejects.toMatchObject({ name: 'ContractedServiceApiError', status: 409, code: 'ITINERARY_OVERLAP' });
+  });
+
+  it('setAbsenceSubstitute: PATCH em /itinerary/absences/:absenceId/substitute com { substituteWorkerId }', async () => {
+    const f = mockFetch({ success: true, data: ABSENCE_OPEN });
+    const out = await AdminContractedServicesApiService.setAbsenceSubstitute(PATIENT_ID, SERVICE_ID, ABSENCE_ID, 'w2');
+    expect(out).toEqual(ABSENCE_OPEN);
+    const [url, init] = f.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain(`/itinerary/absences/${ABSENCE_ID}/substitute`);
+    expect(init.method).toBe('PATCH');
+    expect(JSON.parse(init.body as string)).toEqual({ substituteWorkerId: 'w2' });
+  });
+
+  it('setAbsenceSubstitute: null TIRA o substituto — o corpo leva a chave com null, nunca omitida', async () => {
+    const f = mockFetch({ success: true, data: { ...ABSENCE_OPEN, substituteWorkerId: null } });
+    await AdminContractedServicesApiService.setAbsenceSubstitute(PATIENT_ID, SERVICE_ID, ABSENCE_ID, null);
+    const [, init] = f.mock.calls[0] as [string, RequestInit];
+    const parsed = JSON.parse(init.body as string);
+    expect(parsed).toHaveProperty('substituteWorkerId', null);
+    expect(Object.keys(parsed)).toEqual(['substituteWorkerId']);
+  });
+
+  it('setAbsenceSubstitute: 422 ABSENCE_CANCELLED vira ContractedServiceApiError com o code', async () => {
+    mockFetch({ success: false, error: 'ausência cancelada', code: 'ABSENCE_CANCELLED' }, 422);
+    await expect(
+      AdminContractedServicesApiService.setAbsenceSubstitute(PATIENT_ID, SERVICE_ID, ABSENCE_ID, 'w2'),
+    ).rejects.toMatchObject({ name: 'ContractedServiceApiError', status: 422, code: 'ABSENCE_CANCELLED' });
+  });
+
+  it('cancelAbsence: POST em /itinerary/absences/:absenceId/cancel, sem corpo', async () => {
+    const f = mockFetch({ success: true, data: { ...ABSENCE_OPEN, status: 'CANCELLED' } });
+    const out = await AdminContractedServicesApiService.cancelAbsence(PATIENT_ID, SERVICE_ID, ABSENCE_ID);
+    expect(out).toEqual({ ...ABSENCE_OPEN, status: 'CANCELLED' });
+    const [url, init] = f.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain(`/itinerary/absences/${ABSENCE_ID}/cancel`);
+    expect(init.method).toBe('POST');
+    expect(init.body).toBeUndefined();
+  });
+
+  it('cancelAbsence: 404 NOT_FOUND vira ContractedServiceApiError com status 404', async () => {
+    mockFetch({ success: false, error: 'não encontrada', code: 'NOT_FOUND' }, 404);
+    await expect(
+      AdminContractedServicesApiService.cancelAbsence(PATIENT_ID, SERVICE_ID, ABSENCE_ID),
+    ).rejects.toMatchObject({ name: 'ContractedServiceApiError', status: 404, code: 'NOT_FOUND' });
+  });
 });
