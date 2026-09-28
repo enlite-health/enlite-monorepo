@@ -15,7 +15,7 @@
  */
 import type { PoolClient } from 'pg';
 import { inPatientTransaction } from '../application/patientTransaction';
-import type { ItinerarySlotRow } from './PatientItineraryReader';
+import type { ItinerarySlotRow, ItineraryUncoveredAbsenceRow } from './PatientItineraryReader';
 import { liveVacancySelect } from './liveVacancySql';
 
 export interface KanbanServiceRow {
@@ -32,6 +32,8 @@ export interface KanbanServicesRows {
   country: string;
   services: KanbanServiceRow[];
   slots: ItinerarySlotRow[];
+  /** Opcional: nasce só na Fase 13; ausente quando o paciente não tem nenhuma ausência sem substituto (DX-13.10). */
+  uncoveredAbsences?: ItineraryUncoveredAbsenceRow[];
 }
 
 interface KanbanJoinRow {
@@ -53,6 +55,14 @@ interface KanbanJoinRow {
   valid_from: string | null;
   valid_to: string | null;
   status: ItinerarySlotRow['status'];
+}
+
+interface UncoveredAbsenceJoinRow {
+  patient_id: string;
+  contracted_service_id: string;
+  on_date: string;
+  start_time: string;
+  end_time: string;
 }
 
 export class PatientKanbanServicesReader {
@@ -118,6 +128,38 @@ export class PatientKanbanServicesReader {
         });
       }
     }
+
+    // 2ª query, DX-13.10: 1 query a mais para TODOS os pacientes do filtro — nunca por card (sem
+    // N+1). `ab.on_date >= CURRENT_DATE - 1` é SUPERCONJUNTO (a data de Buenos Aires nunca é menor
+    // que a UTC − 1); só poda histórico — quem decide vigência é `uncoveredDayAlerts` com o `asOf`
+    // do país (caso de uso). Nenhuma coluna de nome/telefone.
+    const absencesRes = await client.query<UncoveredAbsenceJoinRow>(
+      `SELECT pcs.patient_id, s.contracted_service_id,
+              to_char(ab.on_date, 'YYYY-MM-DD') AS on_date,
+              to_char(s.start_time, 'HH24:MI') AS start_time,
+              to_char(s.end_time, 'HH24:MI') AS end_time
+         FROM patient_itinerary_absence ab
+         JOIN patient_itinerary_assignment a ON a.id = ab.assignment_id
+         JOIN patient_itinerary_slot s ON s.id = a.slot_id
+         JOIN patient_contracted_services pcs ON pcs.id = s.contracted_service_id
+         JOIN patients p ON p.id = pcs.patient_id AND p.deleted_at IS NULL
+        WHERE pcs.active AND ($1::text IS NULL OR p.country = $1)
+          AND ab.cancelled_at IS NULL AND ab.substitute_worker_id IS NULL
+          AND ab.on_date >= CURRENT_DATE - 1
+        ORDER BY pcs.patient_id, ab.on_date, s.start_time, s.contracted_service_id`,
+      [country],
+    );
+    for (const r of absencesRes.rows) {
+      const patient = byPatient.get(r.patient_id);
+      if (!patient) continue; // defensivo: o mesmo filtro de país/ativo da 1ª query
+      (patient.uncoveredAbsences ??= []).push({
+        serviceId: r.contracted_service_id,
+        date: r.on_date,
+        startTime: r.start_time,
+        endTime: r.end_time,
+      });
+    }
+
     return Array.from(byPatient.values());
   }
 }

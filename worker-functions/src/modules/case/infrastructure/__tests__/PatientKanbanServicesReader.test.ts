@@ -28,6 +28,7 @@ import { PatientKanbanServicesReader } from '../PatientKanbanServicesReader';
 const calls = (): Array<{ sql: string; params?: unknown[] }> =>
   mockClient.query.mock.calls.map(([sql, params]) => ({ sql: String(sql), params }));
 const svcCalls = () => calls().filter((c) => /WITH svc AS/.test(c.sql));
+const absenceCalls = () => calls().filter((c) => /FROM patient_itinerary_absence/.test(c.sql));
 
 describe('PatientKanbanServicesReader', () => {
   let reader: PatientKanbanServicesReader;
@@ -37,28 +38,46 @@ describe('PatientKanbanServicesReader', () => {
     reader = new PatientKanbanServicesReader();
   });
 
-  it('UMA query dentro da transação (BEGIN…COMMIT), chamada exatamente 1×; o pool cru não recebe query', async () => {
+  it('EXATAMENTE 2 queries dentro da transação (BEGIN…COMMIT) — 1 a mais para TODOS os pacientes, sem N+1; o pool cru não recebe query', async () => {
     queryImpl = async () => ({ rows: [], rowCount: 0 });
 
     await reader.readKanbanServices('AR');
 
     expect(svcCalls()).toHaveLength(1);
+    expect(absenceCalls()).toHaveLength(1);
     const c = calls();
+    expect(c).toHaveLength(4); // BEGIN, svc, absence, COMMIT — sem N+1
     expect(c[0].sql).toBe('BEGIN');
     expect(c[c.length - 1].sql).toBe('COMMIT');
     expect(rawPoolQuery).not.toHaveBeenCalled();
   });
 
-  it('parâmetro: [null] sem país, [\'AR\'] com país', async () => {
+  it('parâmetro: [null] sem país, [\'AR\'] com país (nas 2 queries)', async () => {
     queryImpl = async () => ({ rows: [], rowCount: 0 });
 
     await reader.readKanbanServices(null);
     expect(svcCalls()[0].params).toEqual([null]);
+    expect(absenceCalls()[0].params).toEqual([null]);
 
     jest.clearAllMocks();
     queryImpl = async () => ({ rows: [], rowCount: 0 });
     await reader.readKanbanServices('AR');
     expect(svcCalls()[0].params).toEqual(['AR']);
+    expect(absenceCalls()[0].params).toEqual(['AR']);
+  });
+
+  it('a query de ausência tem o filtro de país, ab.cancelled_at IS NULL, ab.substitute_worker_id IS NULL, ab.on_date >= CURRENT_DATE - 1; nenhuma coluna de nome/telefone', async () => {
+    queryImpl = async () => ({ rows: [], rowCount: 0 });
+
+    await reader.readKanbanServices('AR');
+
+    const sql = absenceCalls()[0].sql;
+    expect(sql).toMatch(/\(\$1::text IS NULL OR p\.country = \$1\)/);
+    expect(sql).toMatch(/ab\.cancelled_at IS NULL/);
+    expect(sql).toMatch(/ab\.substitute_worker_id IS NULL/);
+    expect(sql).toMatch(/ab\.on_date >= CURRENT_DATE - 1/);
+    expect(sql).toMatch(/pcs\.active/);
+    expect(/contracted_service_providers|first_name|last_name|phone|diagnosis|address/i.test(sql)).toBe(false);
   });
 
   it('a SQL contém a junção da vaga viva e as guardas de ativo/soft-delete; nenhuma coluna de PII/clínico', async () => {
@@ -76,8 +95,8 @@ describe('PatientKanbanServicesReader', () => {
     expect(/contracted_service_providers|first_name|last_name|phone|diagnosis|address/i.test(sql)).toBe(false);
   });
 
-  it('agrupa por paciente: 2 pacientes (um com 2 serviços — um deles sem slot —, outro com 1 sem slot); live_vacancy_id NULL e weekly_hours string convertem', async () => {
-    queryImpl = async () => ({
+  it('agrupa por paciente: 2 pacientes (um com 2 serviços — um deles sem slot —, outro com 1 sem slot); live_vacancy_id NULL e weekly_hours string convertem; uncoveredAbsences distribuído por patient_id (o sem ausência fica SEM a chave)', async () => {
+    const svcRows = {
       rows: [
         // Paciente 1 (AR), serviço s1: 1 slot com alocação vigente.
         {
@@ -144,7 +163,17 @@ describe('PatientKanbanServicesReader', () => {
         },
       ],
       rowCount: 3,
-    });
+    };
+    queryImpl = async (sql) => {
+      if (/FROM patient_itinerary_absence/.test(sql)) {
+        // Só p-1 tem ausência sem substituto; p-2 fica sem a chave.
+        return {
+          rows: [{ patient_id: 'p-1', contracted_service_id: 's1', on_date: '2026-10-05', start_time: '08:00', end_time: '12:00' }],
+          rowCount: 1,
+        };
+      }
+      return svcRows;
+    };
 
     const result = await reader.readKanbanServices(null);
 
@@ -169,5 +198,10 @@ describe('PatientKanbanServicesReader', () => {
       { id: 's3', serviceCode: 'AT', weeklyHours: 15, authorizedHours: null, liveVacancyId: null },
     ]);
     expect(p2!.slots).toHaveLength(0);
+
+    expect(p1!.uncoveredAbsences).toEqual([
+      { serviceId: 's1', date: '2026-10-05', startTime: '08:00', endTime: '12:00' },
+    ]);
+    expect(Object.prototype.hasOwnProperty.call(p2!, 'uncoveredAbsences')).toBe(false);
   });
 });
