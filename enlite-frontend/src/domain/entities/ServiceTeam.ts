@@ -7,29 +7,60 @@
  */
 
 /**
+ * Uma faixa (slot) semanal alocada ao titular — de onde a Fase 13 oferece "Sustituir un día"
+ * (a API calcula; o front só lista o que veio em `member.allocations`).
+ */
+export interface ServiceTeamAllocation {
+  allocationId: string;
+  weekday: number;
+  startTime: string;
+  endTime: string;
+}
+
+/**
  * Uma linha do time. `displayName` vem `null` quando o ator não tem a célula de nome do
  * prestador (projeção KMS, DX-10.6) — a tela mostra "sin nombre" nesse caso, nunca o `workerId`.
  * `vacancyId` é a vaga (job_posting) da candidatura/alocação DESTE prestador, não a do serviço.
  * `reasonCategory` só vem preenchido em `rejected` (a categoria gravada na marca ativa).
+ * `allocations`/`substitutionDates` (Fase 13) só vêm em `inService` — as faixas semanais do
+ * titular e as datas em que ELE é o substituído (a API calcula; nenhuma conta no front).
  */
 export interface ServiceTeamMember {
   workerId: string;
   displayName: string | null;
   vacancyId: string | null;
   reasonCategory?: string;
+  allocations?: ServiceTeamAllocation[];
+  substitutionDates?: string[];
 }
 
 /**
  * GET /api/admin/patients/:id/contracted-services/:sid/team (DX-10.7). `vacancyId` aqui é a vaga
  * VIVA do serviço (fonte única, `liveVacancySql`) — `null` sem recrutamento ativo (critério "sem
  * vaga"). POST .../team/reject e .../team/revert devolvem o mesmo formato, já recalculado.
+ * `asOf` (Fase 13) é a data de operação usada para derivar o time — vem SEMPRE da API
+ * (`operationDateOf`), nunca do relógio do navegador.
  */
 export interface ServiceTeam {
   serviceId: string;
   vacancyId: string | null;
+  asOf: string;
   selected: ServiceTeamMember[];
   inService: ServiceTeamMember[];
   rejected: ServiceTeamMember[];
+}
+
+/**
+ * Resultado de POST .../absences, PATCH .../absences/:id/substitute e POST .../absences/:id/cancel
+ * (DX-13.7) — nunca traz nome/dado do prestador; o time atualizado vem por um GET separado
+ * (`useServiceTeam.substitute`, DX-13.11).
+ */
+export interface ItineraryAbsenceResult {
+  absenceId: string;
+  allocationId: string;
+  date: string;
+  substituteWorkerId: string | null;
+  status: 'OPEN' | 'CANCELLED';
 }
 
 /** As 3 colunas do quadro C, na ordem em que a tela renderiza. */

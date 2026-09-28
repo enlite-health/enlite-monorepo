@@ -24,7 +24,7 @@ interface ServiceTeamSectionProps {
 export function ServiceTeamSection({ patientId, service, address, selectionNonce }: ServiceTeamSectionProps): JSX.Element {
   const { t } = useTranslation();
   const tc = (key: string, options?: Record<string, unknown>) => t(`admin.patients.detail.serviceTeam.${key}`, options);
-  const { team, status, reject, revert, actionError } = useServiceTeam(patientId, service?.id ?? null, selectionNonce);
+  const { team, status, reject, revert, substitute, actionError, refreshError } = useServiceTeam(patientId, service?.id ?? null, selectionNonce);
 
   if (!service) {
     return (
@@ -57,12 +57,17 @@ export function ServiceTeamSection({ patientId, service, address, selectionNonce
           <Heading level={2} as="h4" weight="semibold" color="primary" data-testid="quadro-c-titulo">
             {tc('title', { service: serviceLabel, address: addressLabel })}
           </Heading>
+          {refreshError && (
+            <Text data-testid="quadro-c-refresh-erro" size="sm" role="alert" color="inherit" className="text-red-600">
+              {tc('refreshError')}
+            </Text>
+          )}
           {team.vacancyId === null ? (
             <Text data-testid="quadro-c-sem-vaga" size="sm" color="secondary">
               {tc('noVacancy')}
             </Text>
           ) : (
-            <ServiceTeamBoard team={team} onReject={reject} onRevert={revert} actionError={actionError} />
+            <ServiceTeamBoard team={team} onReject={reject} onRevert={revert} onSubstitute={substitute} actionError={actionError} />
           )}
         </>
       )}

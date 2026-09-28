@@ -35,6 +35,8 @@ export interface PatientKanbanServiceSummary {
   cobertas: number;
   /** Vaga viva (a mesma condição do `liveVacancyId` da ficha) — presente = já existe vacante. */
   liveVacancyId: string | null;
+  /** Dias sem cobertura do serviço, a partir de hoje (Fase 13, `uncoveredDayAlerts` na API — nunca calculado no cliente). Opcional: fixtures vivas seguem válidas. */
+  uncoveredDays?: number;
 }
 
 /** Row shape used by the patient kanban board (grouped by status). */

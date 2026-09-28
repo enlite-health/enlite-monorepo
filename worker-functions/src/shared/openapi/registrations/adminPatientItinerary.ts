@@ -14,7 +14,8 @@ registry.registerPath({
     'Horas cobertas por serviço contratado, do itinerário semanal (`patient_itinerary_slot` + ' +
     '`patient_itinerary_assignment`). `cobertas` em horas/semana; `contratadas.authorized` não ' +
     'declara período (é copiado, nunca calculado). Sem backfill: serviço cujo horário não foi ' +
-    'salvo depois da migration 480 aparece com `slots: []`.',
+    'salvo depois da migration 480 aparece com `slots: []`. `alerts: [{ serviceId, date, ' +
+    'startTime, endTime }]` (fase 13): ausência sem substituto, data ≥ hoje (Buenos Aires); sem nome.',
   security: [{ firebaseAuth: [] }],
   request: { params: z.object({ id: UuidParam }) },
   responses: {

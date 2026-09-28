@@ -4,7 +4,7 @@
  * este teste cobre só a RENDERIZAÇÃO por estado, não a busca em si (que tem suíte própria).
  */
 import { describe, it, expect, beforeAll, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import esJson from '@infrastructure/i18n/locales/es.json';
@@ -65,6 +65,7 @@ const ADDRESS_HOME = { ...patientDetailFixture.addresses[0], id: 'addr-home', ad
 const TEAM: ServiceTeam = {
   serviceId: 'svc-1',
   vacancyId: 'vac-1',
+  asOf: '2026-09-28',
   selected: [{ workerId: 'w1', displayName: 'Ana Fixture', vacancyId: null }],
   inService: [],
   rejected: [],
@@ -76,7 +77,9 @@ function mockHook(partial: Partial<UseServiceTeamResult>): void {
     status: 'idle',
     reject: vi.fn(),
     revert: vi.fn(),
+    substitute: vi.fn(),
     actionError: null,
+    refreshError: false,
     ...partial,
   });
 }
@@ -146,9 +149,56 @@ describe('ServiceTeamSection — vazios, título do dado da linha, erro', () => 
     );
   });
 
+  it('N3 do gate fecho: refreshError → "quadro-c-refresh-erro" (role=alert, text-red-600) com o texto i18n, e o board continua', () => {
+    mockHook({ status: 'ok', team: TEAM, refreshError: true });
+    const { container } = render(
+      <ServiceTeamSection patientId="p1" service={SERVICE} address={ADDRESS_HOME} selectionNonce={0} />,
+    );
+    const aviso = screen.getByTestId('quadro-c-refresh-erro');
+    expect(aviso.getAttribute('role')).toBe('alert');
+    expect(aviso.className).toContain('text-red-600');
+    expect(aviso.textContent).toBe(
+      'La sustitución se guardó, pero no fue posible actualizar el cuadro. Recargá la página.',
+    );
+    expect(container.querySelectorAll('[data-testid^="kanban-column-"]:not([data-testid$="-count"])').length).toBe(3);
+  });
+
+  it('refreshError false: sem "quadro-c-refresh-erro"', () => {
+    mockHook({ status: 'ok', team: TEAM });
+    render(<ServiceTeamSection patientId="p1" service={SERVICE} address={ADDRESS_HOME} selectionNonce={0} />);
+    expect(screen.queryByTestId('quadro-c-refresh-erro')).toBeNull();
+  });
+
   it('o hook é chamado com o serviceId da linha e o selectionNonce recebido — nunca busca de novo por conta própria', () => {
     mockHook({ status: 'ok', team: TEAM });
     render(<ServiceTeamSection patientId="p9" service={SERVICE} address={ADDRESS_HOME} selectionNonce={7} />);
     expect(mockUseServiceTeam).toHaveBeenCalledWith('p9', 'svc-1', 7);
+  });
+
+  it('P32: `onSubstitute` do ServiceTeamBoard é o `substitute` do hook — confirmar o modal chama a função do hook', () => {
+    const substitute = vi.fn();
+    const teamWithTitular: ServiceTeam = {
+      ...TEAM,
+      inService: [
+        {
+          workerId: 'w-titular',
+          displayName: 'Fio Fixture',
+          vacancyId: 'vac-1',
+          allocations: [{ allocationId: 'a1', weekday: 1, startTime: '08:00', endTime: '10:00' }],
+        },
+      ],
+    };
+    mockHook({ status: 'ok', team: teamWithTitular, substitute });
+    render(<ServiceTeamSection patientId="p1" service={SERVICE} address={ADDRESS_HOME} selectionNonce={0} />);
+
+    fireEvent.click(screen.getByTestId('service-team-substitute-w-titular'));
+    const dateSelect = screen.getByTestId('substitution-date') as HTMLSelectElement;
+    const firstDate = dateSelect.querySelectorAll('option')[1].getAttribute('value');
+    fireEvent.change(dateSelect, { target: { value: firstDate } });
+    fireEvent.click(screen.getByTestId('substitution-confirm'));
+
+    expect(substitute).toHaveBeenCalledTimes(1);
+    expect(substitute.mock.calls[0][0]).toBe('a1');
+    expect(substitute.mock.calls[0][1]).toBe(firstDate);
   });
 });

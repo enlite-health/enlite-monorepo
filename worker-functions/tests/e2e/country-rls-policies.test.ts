@@ -72,6 +72,25 @@ describe('RLS por país — policies de patients e satélites (banco real)', () 
     itin11AssignmentBR: 'ee270000-0a00-0013-0002-000000000001',
     itin11AssemblyAR: 'ee270000-0a00-0014-0001-000000000001',
     itin11AssemblyBR: 'ee270000-0a00-0014-0002-000000000001',
+    // Fase 13, P5 (DX-13.16, casos 6l/6m/6n) — a ausência segue o pai; a trava por data enxerga
+    // através da RLS — mesmo IDS, mesmo prefixo do arquivo.
+    absSvcAR: 'ee270000-0a00-0015-0001-000000000001',
+    absSvcBR: 'ee270000-0a00-0015-0002-000000000001',
+    absJobAR: 'ee270000-0a00-0016-0001-000000000001',
+    absJobBR: 'ee270000-0a00-0016-0002-000000000001',
+    absTitularAR: 'ee270000-0a00-0017-0001-000000000001',
+    absTitularBR: 'ee270000-0a00-0017-0002-000000000001',
+    absSubstitute: 'ee270000-0a00-0017-0003-000000000001',
+    absWjaTitularAR: 'ee270000-0a00-0018-0001-000000000001',
+    absWjaTitularBR: 'ee270000-0a00-0018-0002-000000000001',
+    absWjaSubAR: 'ee270000-0a00-0018-0003-000000000001',
+    absWjaSubBR: 'ee270000-0a00-0018-0004-000000000001',
+    absSlotAR: 'ee270000-0a00-0019-0001-000000000001',
+    absSlotBR: 'ee270000-0a00-0019-0002-000000000001',
+    absAssignmentAR: 'ee270000-0a00-001a-0001-000000000001',
+    absAssignmentBR: 'ee270000-0a00-001a-0002-000000000001',
+    absSeedAR: 'ee270000-0a00-001b-0001-000000000001',
+    absSeedBR: 'ee270000-0a00-001b-0002-000000000001',
   };
 
   async function cleanup(p: Pool): Promise<void> {
@@ -706,6 +725,178 @@ describe('RLS por país — policies de patients e satélites (banco real)', () 
             `INSERT INTO patient_itinerary_assignment (slot_id, worker_id, application_id, valid_from, created_by, updated_by)
              VALUES ($1, $2, $3, '2026-01-01', $4, $4)`,
             [IDS.itin11SlotAR, IDS.itin11Worker, IDS.itin11WjaAR, CREATED_BY],
+          );
+        }),
+      ).rejects.toMatchObject({ code: '23P01' });
+    });
+  });
+
+  /**
+   * Ausência (Fase 13, P5, DX-13.16 casos 6l/6m/6n): `patient_itinerary_absence` segue o pai (a
+   * mesma policy `patient_itinerary_absence_follow_assignment`, 484) e a trava por data
+   * (`fn_patient_itinerary_absence_no_overlap`, `SECURITY DEFINER`) enxerga através da RLS —
+   * espelha exatamente o 6k acima, mas na tabela nova. `beforeAll`/`afterAll` próprios, como dono
+   * (`pool`), com ids novos no mesmo `IDS` — a semente de cima e os casos existentes não mudam.
+   *
+   * Dois titulares (um por país) — não o mesmo worker nos dois lados: se o mesmo worker
+   * segurasse as duas alocações semanais, elas teriam de não colidir ENTRE SI (mesmo endereço/
+   * gap), e a comparação que a trava faz para a SUBSTITUIÇÃO usa exatamente os mesmos dois slots
+   * — ou seja, "titular seguro nos dois" e "substituição cruza" são mutuamente exclusivos para o
+   * MESMO worker (confirmado por experimento direto via psql antes de escrever este teste). O
+   * elemento que atravessa a fronteira de país é o SUBSTITUTO (W), não o titular — é ele quem
+   * prova o `SECURITY DEFINER` no 6n, do jeito que o 6k provou para a alocação semanal.
+   */
+  describe('ausência (Fase 13): patient_itinerary_absence segue o pai; a trava por data enxerga através da RLS', () => {
+    const CREATED_BY = 'rls-e2e-abs13';
+    let dateD = '';
+    let dateD2 = '';
+
+    beforeAll(async () => {
+      const nextMondayRes = await pool.query<{ d: string }>(
+        `SELECT to_char(g::date,'YYYY-MM-DD') AS d
+           FROM (SELECT (now() AT TIME ZONE 'America/Argentina/Buenos_Aires')::date AS t) x,
+                generate_series(x.t + 1, x.t + 7, interval '1 day') g
+          WHERE extract(dow FROM g) = 1`,
+      );
+      dateD = nextMondayRes.rows[0].d;
+      const dateD2Res = await pool.query<{ d: string }>(`SELECT to_char($1::date + 7, 'YYYY-MM-DD') AS d`, [dateD]);
+      dateD2 = dateD2Res.rows[0].d;
+
+      // 1 serviço por paciente de teste (AR/BR), reusando os endereços já semeados acima.
+      await pool.query(
+        `INSERT INTO patient_contracted_services (id, patient_id, service_code, address_id, country, created_by, updated_by)
+         VALUES ($1, $2, 'AT', $3, 'AR', $4, $4), ($5, $6, 'AT', $7, 'BR', $4, $4)`,
+        [IDS.absSvcAR, IDS.patientAR, IDS.addressAR, CREATED_BY, IDS.absSvcBR, IDS.patientBR, IDS.addressBR],
+      );
+
+      // 1 vaga por serviço.
+      await pool.query(
+        `INSERT INTO job_postings (id, title, contracted_service_id, patient_id, country)
+         VALUES ($1, 'rls-e2e-abs13-vaga-ar', $2, $3, 'AR'), ($4, 'rls-e2e-abs13-vaga-br', $5, $6, 'BR')`,
+        [IDS.absJobAR, IDS.absSvcAR, IDS.patientAR, IDS.absJobBR, IDS.absSvcBR, IDS.patientBR],
+      );
+
+      // 2 titulares (um por país) + 1 substituto W, candidato às DUAS vagas.
+      await pool.query(
+        `INSERT INTO workers (id, auth_uid, email, country) VALUES
+           ($1, 'rls-e2e-abs13-tar', 'rls-e2e-abs13-tar@e2e.local', 'AR'),
+           ($2, 'rls-e2e-abs13-tbr', 'rls-e2e-abs13-tbr@e2e.local', 'AR'),
+           ($3, 'rls-e2e-abs13-w', 'rls-e2e-abs13-w@e2e.local', 'AR')`,
+        [IDS.absTitularAR, IDS.absTitularBR, IDS.absSubstitute],
+      );
+      await pool.query(
+        `INSERT INTO worker_job_applications (id, worker_id, job_posting_id, application_funnel_stage, source)
+         VALUES
+           ($1, $2, $3, 'INVITED', 'import'),
+           ($4, $5, $6, 'INVITED', 'import'),
+           ($7, $8, $3, 'INVITED', 'import'),
+           ($9, $8, $6, 'INVITED', 'import')`,
+        [
+          IDS.absWjaTitularAR,
+          IDS.absTitularAR,
+          IDS.absJobAR,
+          IDS.absWjaTitularBR,
+          IDS.absTitularBR,
+          IDS.absJobBR,
+          IDS.absWjaSubAR,
+          IDS.absSubstitute,
+          IDS.absWjaSubBR,
+        ],
+      );
+
+      // 1 slot por serviço, segunda, endereços diferentes (AR/BR nunca são o mesmo endereço) e
+      // apenas 15min de folga entre os dois — abaixo da folga mínima de 60min.
+      await pool.query(
+        `INSERT INTO patient_itinerary_slot (id, contracted_service_id, weekday, start_time, end_time, created_by, updated_by)
+         VALUES ($1, $2, 1, '09:00', '10:00', $3, $3), ($4, $5, 1, '09:15', '10:15', $3, $3)`,
+        [IDS.absSlotAR, IDS.absSvcAR, CREATED_BY, IDS.absSlotBR, IDS.absSvcBR],
+      );
+
+      // 1 alocação semanal por titular.
+      await pool.query(
+        `INSERT INTO patient_itinerary_assignment (id, slot_id, worker_id, application_id, valid_from, created_by, updated_by)
+         VALUES ($1, $2, $3, $4, '2026-01-01', $5, $5), ($6, $7, $8, $9, '2026-01-01', $5, $5)`,
+        [
+          IDS.absAssignmentAR,
+          IDS.absSlotAR,
+          IDS.absTitularAR,
+          IDS.absWjaTitularAR,
+          CREATED_BY,
+          IDS.absAssignmentBR,
+          IDS.absSlotBR,
+          IDS.absTitularBR,
+          IDS.absWjaTitularBR,
+        ],
+      );
+
+      // ausência SEM substituto no paciente AR em D2 (só para o 6l — não interage com a trava do
+      // 6n, que usa a data D noutra alocação).
+      await pool.query(
+        `INSERT INTO patient_itinerary_absence (id, assignment_id, on_date, created_by, updated_by)
+         VALUES ($1, $2, $3, $4, $4)`,
+        [IDS.absSeedAR, IDS.absAssignmentAR, dateD2, CREATED_BY],
+      );
+      // ausência do paciente BR em D, COM substituto W — a semente "como dono" do 6n.
+      await pool.query(
+        `INSERT INTO patient_itinerary_absence (id, assignment_id, on_date, substitute_worker_id, substitute_application_id, created_by, updated_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $6)`,
+        [IDS.absSeedBR, IDS.absAssignmentBR, dateD, IDS.absSubstitute, IDS.absWjaSubBR, CREATED_BY],
+      );
+    });
+
+    afterAll(async () => {
+      // ausências → alocações → WJA → vagas → worker → serviços, ANTES do cleanup externo (mesma
+      // razão dos describes acima: job_postings → patients é NO ACTION, e o cleanup externo apaga
+      // patient_addresses antes de patients). O 6n pode ter deixado uma 2ª ausência aberta no
+      // assignmentAR se a trava regredir — o filtro por assignment cobre esse caso também.
+      await pool.query(`DELETE FROM patient_itinerary_absence WHERE assignment_id = ANY($1)`, [
+        [IDS.absAssignmentAR, IDS.absAssignmentBR],
+      ]);
+      await pool.query(`DELETE FROM patient_itinerary_assignment WHERE id = ANY($1)`, [
+        [IDS.absAssignmentAR, IDS.absAssignmentBR],
+      ]);
+      await pool.query(`DELETE FROM worker_job_applications WHERE id = ANY($1)`, [
+        [IDS.absWjaTitularAR, IDS.absWjaTitularBR, IDS.absWjaSubAR, IDS.absWjaSubBR],
+      ]);
+      await pool.query(`DELETE FROM job_postings WHERE id = ANY($1)`, [[IDS.absJobAR, IDS.absJobBR]]);
+      await pool.query(`DELETE FROM workers WHERE id = ANY($1)`, [
+        [IDS.absTitularAR, IDS.absTitularBR, IDS.absSubstitute],
+      ]);
+      await pool.query(`DELETE FROM patient_contracted_services WHERE id = ANY($1)`, [
+        [IDS.absSvcAR, IDS.absSvcBR],
+      ]);
+    });
+
+    it('6l. a ausência segue o pai: staff AR vê só a ausência do paciente AR', async () => {
+      const rows = await asRole('app_runtime', { userCountry: 'AR', userUid: STAFF_UID }, async (c) => {
+        const res = await c.query(`SELECT id FROM patient_itinerary_absence WHERE id = ANY($1)`, [
+          [IDS.absSeedAR, IDS.absSeedBR],
+        ]);
+        return res.rows;
+      });
+      expect(rows).toHaveLength(1);
+      expect(rows[0].id).toBe(IDS.absSeedAR);
+    });
+
+    it('6m. staff AR não INSERE ausência em alocação de paciente BR (RLS)', async () => {
+      await expect(
+        asRole('app_runtime', { userCountry: 'AR', userUid: STAFF_UID }, async (c) => {
+          await c.query(
+            `INSERT INTO patient_itinerary_absence (assignment_id, on_date, created_by, updated_by)
+             VALUES ($1, $2, $3, $3)`,
+            [IDS.absAssignmentBR, dateD2, STAFF_UID],
+          );
+        }),
+      ).rejects.toThrow(/new row violates row-level security policy/);
+    });
+
+    it('6n. a trava por data enxerga através da RLS: staff AR não vê o paciente BR, mas a substituição sobreposta do mesmo W cai em 23P01', async () => {
+      await expect(
+        asRole('app_runtime', { userCountry: 'AR', userUid: STAFF_UID }, async (c) => {
+          await c.query(
+            `INSERT INTO patient_itinerary_absence (assignment_id, on_date, substitute_worker_id, substitute_application_id, created_by, updated_by)
+             VALUES ($1, $2, $3, $4, $5, $5)`,
+            [IDS.absAssignmentAR, dateD, IDS.absSubstitute, IDS.absWjaSubAR, STAFF_UID],
           );
         }),
       ).rejects.toMatchObject({ code: '23P01' });

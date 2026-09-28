@@ -9,6 +9,7 @@
  */
 import { PatientKanbanServicesReader, type KanbanServicesRows } from '../infrastructure/PatientKanbanServicesReader';
 import { operationDateOf, buildServiceCoverages } from './itineraryCoverage';
+import { uncoveredDayAlerts, uncoveredDayCount } from '../domain/itineraryAlerts';
 
 export interface KanbanServiceSummary {
   contractedServiceId: string;
@@ -16,6 +17,8 @@ export interface KanbanServiceSummary {
   contratadas: { weekly: number | null; authorized: number | null };
   cobertas: number;
   liveVacancyId: string | null;
+  /** DX-13.10: quantos dias vigentes (`date >= asOf`) o serviço tem ausência sem substituto. Leitura — nada de A muda. */
+  uncoveredDays: number;
 }
 
 export interface KanbanPatientServices {
@@ -46,12 +49,15 @@ export class ListKanbanServicesUseCase {
       // O(n²) nem fallback (achado #4 do gate parcial da Fase 8).
       const services: KanbanServiceSummary[] = coverages.map((coverage, index) => {
         const service = row.services[index];
+        const absencesDoServico = (row.uncoveredAbsences ?? []).filter((a) => a.serviceId === service.id);
         return {
           contractedServiceId: coverage.contractedServiceId,
           serviceCode: service.serviceCode,
           contratadas: coverage.contratadas,
           cobertas: coverage.cobertas,
           liveVacancyId: service.liveVacancyId,
+          // L2: DIAS, não alertas — dedupe por `date` (2 faixas descobertas no mesmo dia = 1 dia).
+          uncoveredDays: uncoveredDayCount(uncoveredDayAlerts(absencesDoServico, asOf)),
         };
       });
       return { patientId: row.patientId, asOf, services };

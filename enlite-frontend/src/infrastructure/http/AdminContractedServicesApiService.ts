@@ -13,7 +13,7 @@ import type {
   UpdateProviderBody,
 } from '@domain/entities/PatientContractedService';
 import type { PatientKanbanServiceSummary } from '@domain/entities/PatientLifecycle';
-import type { ServiceTeam } from '@domain/entities/ServiceTeam';
+import type { ItineraryAbsenceResult, ServiceTeam } from '@domain/entities/ServiceTeam';
 
 export class ContractedServiceApiError extends Error {
   readonly status: number;
@@ -168,6 +168,55 @@ class AdminContractedServicesApiServiceClass {
     return this.request<ServiceTeam>(
       'GET',
       `/api/admin/patients/${patientId}/contracted-services/${serviceId}/team`,
+    );
+  }
+
+  /**
+   * POST .../itinerary/allocations/:allocationId/absences (DX-13.7/13.8) — registra a ausência
+   * pontual do titular naquela faixa/data; `substituteWorkerId` omitido = sem substituto (dia
+   * fica como alerta). 201 quando criada; 404/422/409 viram `ContractedServiceApiError` (o
+   * `code` diz qual: `NOT_SELECTED_FOR_SERVICE`, `SUBSTITUTE_IS_TITULAR`, `ITINERARY_OVERLAP`, …).
+   */
+  async registerAbsence(
+    patientId: string,
+    serviceId: string,
+    allocationId: string,
+    body: { date: string; substituteWorkerId?: string },
+  ): Promise<ItineraryAbsenceResult> {
+    return this.request<ItineraryAbsenceResult>(
+      'POST',
+      `/api/admin/patients/${patientId}/contracted-services/${serviceId}/itinerary/allocations/${allocationId}/absences`,
+      body,
+    );
+  }
+
+  /**
+   * PATCH .../itinerary/absences/:absenceId/substitute (DX-13.7/13.8) — troca ou TIRA o
+   * substituto. A chave `substituteWorkerId` é sempre enviada (nunca omitida): `null` explícito
+   * tira o substituto (memória `vazio-ambiguo-nao-e-informacao-de-ausencia` — corpo sem a chave
+   * seria 400 no backend).
+   */
+  async setAbsenceSubstitute(
+    patientId: string,
+    serviceId: string,
+    absenceId: string,
+    substituteWorkerId: string | null,
+  ): Promise<ItineraryAbsenceResult> {
+    return this.request<ItineraryAbsenceResult>(
+      'PATCH',
+      `/api/admin/patients/${patientId}/contracted-services/${serviceId}/itinerary/absences/${absenceId}/substitute`,
+      { substituteWorkerId },
+    );
+  }
+
+  /**
+   * POST .../itinerary/absences/:absenceId/cancel (DX-13.7/13.8) — cancela a ausência (log,
+   * nunca `DELETE`); 422 `ABSENCE_CANCELLED` se já cancelada.
+   */
+  async cancelAbsence(patientId: string, serviceId: string, absenceId: string): Promise<ItineraryAbsenceResult> {
+    return this.request<ItineraryAbsenceResult>(
+      'POST',
+      `/api/admin/patients/${patientId}/contracted-services/${serviceId}/itinerary/absences/${absenceId}/cancel`,
     );
   }
 

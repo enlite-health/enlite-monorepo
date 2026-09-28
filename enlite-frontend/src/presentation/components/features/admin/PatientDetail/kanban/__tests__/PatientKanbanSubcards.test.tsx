@@ -6,7 +6,7 @@
  * `updatePatientStatus`/`activateRecruitment` — o foguete só NAVEGA para a ficha (DX-8.8).
  */
 import { describe, it, expect, beforeAll, afterEach, vi } from 'vitest';
-import { render, screen, cleanup } from '@testing-library/react';
+import { render, screen, cleanup, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
@@ -124,6 +124,54 @@ describe('PatientKanbanSubcards (es)', () => {
   it('nenhuma cor literal (hex/rgba) no DOM renderizado', () => {
     const { container } = renderSubcards([service({ liveVacancyId: 'v-9' }), service({ contractedServiceId: 's-2', liveVacancyId: null })]);
     expect(container.innerHTML).not.toMatch(/#[0-9a-fA-F]{3,8}\b|rgba?\(/);
+  });
+
+  describe('DX-13.14 — sinal de dia sem cobertura', () => {
+    it('uncoveredDays: 2 → "subcard-alerta-dia-descoberto" 1 vez, com o aria-label plural', () => {
+      renderSubcards([service({ uncoveredDays: 2 })]);
+      const alerts = screen.getAllByTestId('subcard-alerta-dia-descoberto');
+      expect(alerts).toHaveLength(1);
+      expect(alerts[0]).toHaveAttribute('aria-label', '2 días sin cobertura');
+    });
+
+    it('uncoveredDays: 1 → aria-label singular', () => {
+      renderSubcards([service({ uncoveredDays: 1 })]);
+      expect(screen.getByTestId('subcard-alerta-dia-descoberto')).toHaveAttribute('aria-label', '1 día sin cobertura');
+    });
+
+    it('uncoveredDays: 0 → nenhum sinal', () => {
+      renderSubcards([service({ uncoveredDays: 0 })]);
+      expect(screen.queryByTestId('subcard-alerta-dia-descoberto')).toBeNull();
+    });
+
+    it('uncoveredDays ausente → nenhum sinal', () => {
+      renderSubcards([service()]);
+      expect(screen.queryByTestId('subcard-alerta-dia-descoberto')).toBeNull();
+    });
+
+    it('clicar no ícone não navega nem chama nada (invariante 3: o subcard só MOSTRA)', () => {
+      mockNavigate.mockClear();
+      const onCardClick = vi.fn();
+      render(
+        <MemoryRouter>
+          <div onClick={onCardClick}>
+            <PatientKanbanSubcards patientId="p-1" services={[service({ uncoveredDays: 2 })]} />
+          </div>
+        </MemoryRouter>,
+      );
+      fireEvent.click(screen.getByTestId('subcard-alerta-dia-descoberto'));
+      expect(mockNavigate).not.toHaveBeenCalled();
+      // o clique borbulha normalmente (nenhum stopPropagation no ícone) — só não dispara ação própria.
+      expect(onCardClick).toHaveBeenCalledTimes(1);
+    });
+
+    it('o par cobertas/contratadas é o MESMO com e sem o sinal', () => {
+      renderSubcards([service({ uncoveredDays: 0, cobertas: 4, contratadas: { weekly: 20, authorized: 20 } })]);
+      expect(screen.getByTestId('patient-kanban-subcard-pair')).toHaveTextContent('4/20');
+      cleanup();
+      renderSubcards([service({ uncoveredDays: 3, cobertas: 4, contratadas: { weekly: 20, authorized: 20 } })]);
+      expect(screen.getByTestId('patient-kanban-subcard-pair')).toHaveTextContent('4/20');
+    });
   });
 });
 

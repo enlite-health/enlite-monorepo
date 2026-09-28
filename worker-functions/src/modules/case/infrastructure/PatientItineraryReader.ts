@@ -17,6 +17,7 @@
 import type { PoolClient } from 'pg';
 import { inPatientTransaction } from '../application/patientTransaction';
 import type { ItineraryAssignmentStatus } from '../domain/ServiceCoverageCalculator';
+import { uncoveredAbsenceSelect } from './absenceSql';
 
 export type { ItineraryAssignmentStatus };
 
@@ -45,10 +46,20 @@ export interface ItinerarySlotRow {
   status: ItineraryAssignmentStatus | null;
 }
 
+/** Uma ausência sem substituto (a candidata a "dia descoberto" — DX-13.9). Sem `workerId`/nome. */
+export interface ItineraryUncoveredAbsenceRow {
+  serviceId: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+}
+
 export interface ItineraryRows {
   country: string;
   services: ItineraryServiceRow[];
   slots: ItinerarySlotRow[];
+  /** Opcional: nasce só na Fase 13. Sem filtro de vigência aqui — `uncoveredDayAlerts` decide (caso de uso). */
+  uncoveredAbsences?: ItineraryUncoveredAbsenceRow[];
 }
 
 interface PatientCountryRow {
@@ -75,6 +86,13 @@ interface SlotJoinRow {
   valid_from: string | null;
   valid_to: string | null;
   status: ItineraryAssignmentStatus | null;
+}
+
+interface UncoveredAbsenceJoinRow {
+  contracted_service_id: string;
+  on_date: string;
+  start_time: string;
+  end_time: string;
 }
 
 export class PatientItineraryReader {
@@ -117,6 +135,15 @@ export class PatientItineraryReader {
       [patientId],
     );
 
+    // Ausência sem substituto (DX-13.9): sem filtro de data aqui — `uncoveredDayAlerts` (caso de
+    // uso) decide `date >= asOf`. Nenhuma coluna de nome/telefone; `ab.substitute_worker_id IS NULL`
+    // exclui quem já tem substituto (coberto, não é alerta). Fragmento único em `absenceSql.ts`
+    // (só conta ausência sobre alocação ACTIVE e vigente na data — gate parcial #1).
+    const uncoveredRes = await client.query<UncoveredAbsenceJoinRow>(
+      uncoveredAbsenceSelect('pcs.patient_id = $1 AND pcs.active'),
+      [patientId],
+    );
+
     return {
       country,
       services: servicesRes.rows.map((r) => ({
@@ -137,6 +164,12 @@ export class PatientItineraryReader {
         validFrom: r.valid_from,
         validTo: r.valid_to,
         status: r.status,
+      })),
+      uncoveredAbsences: uncoveredRes.rows.map((r) => ({
+        serviceId: r.contracted_service_id,
+        date: r.on_date,
+        startTime: r.start_time,
+        endTime: r.end_time,
       })),
     };
   }

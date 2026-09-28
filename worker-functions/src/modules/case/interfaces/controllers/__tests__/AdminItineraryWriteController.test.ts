@@ -57,6 +57,7 @@ function team(overrides: Partial<GetServiceTeamResult> = {}): GetServiceTeamResu
   return {
     serviceId: SERVICE_ID,
     vacancyId: 'vac-1',
+    asOf: '2026-09-28',
     selected: [{ workerId: WORKER_ID, displayName: 'Maria Perez', vacancyId: 'vac-1' }],
     inService: [{ workerId: 'w-in-service', displayName: 'Someone', vacancyId: 'vac-1' }],
     rejected: [{ workerId: 'w-redigido', displayName: null, vacancyId: 'vac-1', reasonCategory: 'OTHER' }],

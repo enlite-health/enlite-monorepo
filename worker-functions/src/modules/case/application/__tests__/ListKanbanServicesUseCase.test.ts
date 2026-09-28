@@ -55,6 +55,7 @@ describe('ListKanbanServicesUseCase', () => {
       contratadas: { weekly: 20, authorized: null },
       cobertas: 4,
       liveVacancyId: 'v',
+      uncoveredDays: 0,
     });
     expect(result.patients[0].services[1].cobertas).toBe(0);
   });
@@ -78,6 +79,80 @@ describe('ListKanbanServicesUseCase', () => {
     const result = await useCase.execute('AR', new Date('2026-09-27T15:00:00Z'));
 
     expect(result.patients[0].services[0].cobertas).toBe(0);
+  });
+
+  it('uncoveredDays: 2 ausências futuras do serviço S1 e 1 passada → S1 2, S2 0; cobertas IGUAL com ou sem ausência', async () => {
+    const asOf = new Date('2026-09-27T15:00:00Z'); // asOf AR = 2026-09-27
+    const baseRows: KanbanServicesRows[] = [
+      {
+        patientId: 'p-1',
+        country: 'AR',
+        services: [
+          { id: 'svc-1', serviceCode: 'AT', weeklyHours: 20, authorizedHours: null, liveVacancyId: null },
+          { id: 'svc-2', serviceCode: 'FA', weeklyHours: 10, authorizedHours: null, liveVacancyId: null },
+        ],
+        slots: [
+          {
+            id: 's1', contractedServiceId: 'svc-1', weekday: 1, startTime: '08:00', endTime: '12:00', active: true,
+            assignmentId: 'asg-1', workerId: 'w-1', applicationId: 'wja-1', validFrom: '2026-09-01', validTo: null, status: 'ACTIVE',
+          },
+        ],
+      },
+    ];
+
+    const semAusencia = new ListKanbanServicesUseCase(readerWith(baseRows));
+    const resultSemAusencia = await semAusencia.execute('AR', asOf);
+
+    const comAusencia = new ListKanbanServicesUseCase(
+      readerWith([
+        {
+          ...baseRows[0],
+          uncoveredAbsences: [
+            { serviceId: 'svc-1', date: '2026-09-27', startTime: '08:00', endTime: '12:00' }, // hoje, futura/vigente
+            { serviceId: 'svc-1', date: '2026-09-28', startTime: '08:00', endTime: '12:00' }, // futura
+            { serviceId: 'svc-1', date: '2026-09-26', startTime: '08:00', endTime: '12:00' }, // passada — não conta
+          ],
+        },
+      ]),
+    );
+    const resultComAusencia = await comAusencia.execute('AR', asOf);
+
+    const s1SemAusencia = resultSemAusencia.patients[0].services.find((s) => s.contractedServiceId === 'svc-1')!;
+    const s2SemAusencia = resultSemAusencia.patients[0].services.find((s) => s.contractedServiceId === 'svc-2')!;
+    const s1ComAusencia = resultComAusencia.patients[0].services.find((s) => s.contractedServiceId === 'svc-1')!;
+    const s2ComAusencia = resultComAusencia.patients[0].services.find((s) => s.contractedServiceId === 'svc-2')!;
+
+    expect(s1SemAusencia.uncoveredDays).toBe(0);
+    expect(s1ComAusencia.uncoveredDays).toBe(2);
+    expect(s2ComAusencia.uncoveredDays).toBe(0);
+    expect(s1ComAusencia.cobertas).toBe(s1SemAusencia.cobertas);
+    expect(s2ComAusencia.cobertas).toBe(s2SemAusencia.cobertas);
+  });
+
+  it('achado L2 (veredito parcial-1): 2 faixas descobertas no MESMO dia do MESMO serviço → uncoveredDays 1, não 2', async () => {
+    const asOf = new Date('2026-09-27T15:00:00Z'); // asOf AR = 2026-09-27
+    const rows: KanbanServicesRows[] = [
+      {
+        patientId: 'p-1',
+        country: 'AR',
+        services: [{ id: 'svc-1', serviceCode: 'AT', weeklyHours: 20, authorizedHours: null, liveVacancyId: null }],
+        slots: [
+          {
+            id: 's1', contractedServiceId: 'svc-1', weekday: 1, startTime: '08:00', endTime: '12:00', active: true,
+            assignmentId: 'asg-1', workerId: 'w-1', applicationId: 'wja-1', validFrom: '2026-09-01', validTo: null, status: 'ACTIVE',
+          },
+        ],
+        uncoveredAbsences: [
+          { serviceId: 'svc-1', date: '2026-09-28', startTime: '08:00', endTime: '10:00' }, // faixa 1, mesmo dia
+          { serviceId: 'svc-1', date: '2026-09-28', startTime: '14:00', endTime: '16:00' }, // faixa 2, mesmo dia
+        ],
+      },
+    ];
+    const useCase = new ListKanbanServicesUseCase(readerWith(rows));
+
+    const result = await useCase.execute('AR', asOf);
+
+    expect(result.patients[0].services[0].uncoveredDays).toBe(1);
   });
 
   it('mesmo `now`, paciente BR e AR: asOf pelo fuso de CADA país (countryToTimezone, nunca o relógio do processo)', async () => {

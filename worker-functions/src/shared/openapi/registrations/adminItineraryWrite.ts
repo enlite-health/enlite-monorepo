@@ -2,15 +2,17 @@ import { registry, z } from '../registry';
 import { ErrorResponseSchema, OkMessage } from '../schemas/common';
 
 /**
- * Registro OpenAPI dos 7 escritores do itinerário — Fase 11, DX-11.9. Arquivo PRÓPRIO (mesma razão
- * do quadro C e do agregado do Kanban: `adminPatients.ts` já tem 436 linhas > 400 — regra do
- * CLAUDE.md do monorepo). A trava de sobreposição é do banco; 409 traz os dois horários e, entre
- * endereços, a folga; não move o paciente.
+ * Registro OpenAPI dos 10 escritores do itinerário — Fase 11 (7, DX-11.9) + Fase 13 (3, DX-13.8: a
+ * substituição pontual). Arquivo PRÓPRIO (mesma razão do quadro C e do agregado do Kanban:
+ * `adminPatients.ts` já tem 436 linhas > 400 — regra do CLAUDE.md do monorepo). A trava de
+ * sobreposição é do banco; 409 traz os dois horários e, entre endereços, a folga; não move o
+ * paciente.
  */
 const serviceParams = z.object({ id: z.string().uuid(), sid: z.string().uuid() });
 const slotParams = serviceParams.extend({ slotId: z.string().uuid() });
 const allocationParams = serviceParams.extend({ allocationId: z.string().uuid() });
 const patientParams = z.object({ id: z.string().uuid() });
+const substituteParams = serviceParams.extend({ absenceId: z.string().uuid() });
 
 const slotBody = z.object({
   weekday: z.number().int().min(0).max(6),
@@ -19,6 +21,13 @@ const slotBody = z.object({
 });
 
 const allocationBody = z.object({ workerId: z.string().uuid() });
+
+const absenceBody = z.object({
+  date: z.string(),
+  substituteWorkerId: z.string().uuid().optional(),
+});
+
+const substituteBody = z.object({ substituteWorkerId: z.string().uuid().nullable() });
 
 const commonErrors = {
   400: { description: 'params/body inválidos.', content: { 'application/json': { schema: ErrorResponseSchema } } },
@@ -59,6 +68,46 @@ const actionResponses = {
   200: { description: 'Atualizado.', content: { 'application/json': { schema: OkMessage } } },
   ...commonErrors,
 } as const;
+
+// ── Substituição pontual (Fase 13, DX-13.8) ──────────────────────────────────────────────────
+const absenceErrors = {
+  400: commonErrors[400],
+  401: commonErrors[401],
+  403: commonErrors[403],
+  404: {
+    description: 'Alocação ou ausência inexistente, de outro paciente, ou fora da RLS.',
+    content: { 'application/json': { schema: ErrorResponseSchema } },
+  },
+  409: {
+    description:
+      'Dois códigos possíveis. `ITINERARY_OVERLAP`: a data do substituto colide com outra alocação/ausência dele — ' +
+      'a trava é do banco; a resposta traz os dois horários e, entre endereços, a folga mínima. ' +
+      '`ABSENCE_ALREADY_EXISTS`: já há uma ausência aberta nesta alocação/data.',
+    content: { 'application/json': { schema: ErrorResponseSchema } },
+  },
+  422: {
+    description:
+      'Alocação não ativa, prestador fora de Selecionado (C) do serviço, data passada, ausência já cancelada, ' +
+      'data fora da vigência da alocação, data fora do dia da semana do slot, ou o substituto é o próprio titular.',
+    content: { 'application/json': { schema: ErrorResponseSchema } },
+  },
+  500: commonErrors[500],
+} as const;
+
+const absenceCreateResponses = {
+  201: { description: 'Registrada.', content: { 'application/json': { schema: OkMessage } } },
+  ...absenceErrors,
+} as const;
+
+const absenceActionResponses = {
+  200: { description: 'Atualizada.', content: { 'application/json': { schema: OkMessage } } },
+  ...absenceErrors,
+} as const;
+
+/** As 3 descrições repetem o texto literal pedido no plano — a ausência é sempre a mesma operação. */
+const ABSENCE_DESCRIPTION =
+  'Registra a ausência do titular num dia (sem motivo: pode ser clínico); substituto opcional, de Selecionado (C); ' +
+  'a trava por data é do banco; não move o paciente nem as horas.';
 
 registry.registerPath({
   method: 'get',
@@ -144,4 +193,37 @@ registry.registerPath({
   security: [{ firebaseAuth: [] }],
   request: { params: patientParams },
   responses: createResponses,
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/admin/patients/{id}/contracted-services/{sid}/itinerary/allocations/{allocationId}/absences',
+  tags: ['Admin · Patients'],
+  summary: 'Registrar a ausência pontual do titular num dia, com substituto opcional (Fase 13)',
+  description: ABSENCE_DESCRIPTION,
+  security: [{ firebaseAuth: [] }],
+  request: { params: allocationParams, body: { content: { 'application/json': { schema: absenceBody } } } },
+  responses: absenceCreateResponses,
+});
+
+registry.registerPath({
+  method: 'patch',
+  path: '/api/admin/patients/{id}/contracted-services/{sid}/itinerary/absences/{absenceId}/substitute',
+  tags: ['Admin · Patients'],
+  summary: 'Pôr ou tirar o substituto de uma ausência pontual (Fase 13)',
+  description: `${ABSENCE_DESCRIPTION} \`substituteWorkerId: null\` tira o substituto — o dia volta a ser alerta; a chave é obrigatória no corpo.`,
+  security: [{ firebaseAuth: [] }],
+  request: { params: substituteParams, body: { content: { 'application/json': { schema: substituteBody } } } },
+  responses: absenceActionResponses,
+});
+
+registry.registerPath({
+  method: 'post',
+  path: '/api/admin/patients/{id}/contracted-services/{sid}/itinerary/absences/{absenceId}/cancel',
+  tags: ['Admin · Patients'],
+  summary: 'Cancelar uma ausência pontual (Fase 13)',
+  description: `${ABSENCE_DESCRIPTION} Cancelar é escrever \`cancelled_at\` — a linha nunca é removida.`,
+  security: [{ firebaseAuth: [] }],
+  request: { params: substituteParams },
+  responses: absenceActionResponses,
 });

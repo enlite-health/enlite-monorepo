@@ -105,6 +105,41 @@ describe('GetPatientItineraryUseCase', () => {
     ]);
   });
 
+  it('alerts: a ausência de HOJE entra, a de ONTEM sai (asOf AR); cobertas IGUAL com ou sem ausência (mesma linha de services)', async () => {
+    const baseRows: ItineraryRows = {
+      country: 'AR',
+      services: [{ id: 'svc-a', weeklyHours: 20, authorizedHours: null }],
+      slots: [
+        {
+          id: 's1', contractedServiceId: 'svc-a', weekday: 1, startTime: '08:00', endTime: '12:00', active: true,
+          assignmentId: 'asg-1', workerId: 'w-1', applicationId: 'wja-1', validFrom: '2026-09-01', validTo: null, status: 'ACTIVE',
+        },
+      ],
+    };
+    const now = new Date('2026-09-27T15:00:00Z'); // asOf AR = 2026-09-27
+
+    const semAusencia = new GetPatientItineraryUseCase(readerWith(baseRows));
+    const resultSemAusencia = await semAusencia.execute(PID, now);
+
+    const comAusencia = new GetPatientItineraryUseCase(
+      readerWith({
+        ...baseRows,
+        uncoveredAbsences: [
+          { serviceId: 'svc-a', date: '2026-09-27', startTime: '08:00', endTime: '12:00' }, // hoje
+          { serviceId: 'svc-a', date: '2026-09-26', startTime: '08:00', endTime: '12:00' }, // ontem
+        ],
+      }),
+    );
+    const resultComAusencia = await comAusencia.execute(PID, now);
+
+    expect(resultSemAusencia.alerts).toEqual([]);
+    expect(resultComAusencia.alerts).toEqual([
+      { serviceId: 'svc-a', date: '2026-09-27', startTime: '08:00', endTime: '12:00' },
+    ]);
+    expect(resultComAusencia.services[0].cobertas).toBe(resultSemAusencia.services[0].cobertas);
+    expect(resultComAusencia.services).toEqual(resultSemAusencia.services);
+  });
+
   it('leitor devolve null → PatientNotFoundForItineraryError com o patientId', async () => {
     const useCase = new GetPatientItineraryUseCase(readerWith(null));
 

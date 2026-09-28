@@ -148,6 +148,7 @@ describe('ServiceTeamMarkUseCase', () => {
       reasonCategory: 'OTHER',
       actorUid: 'staff:u-1',
       cells: null,
+      now: new Date('2026-09-28T02:30:00Z'), // AR (UTC-3) = 2026-09-27 local
     });
 
     expect(insertRejection).toHaveBeenCalledTimes(1);
@@ -163,6 +164,7 @@ describe('ServiceTeamMarkUseCase', () => {
     expect(result.rejected).toEqual([{ workerId: 'w-1', displayName: 'Ana', vacancyId: 'v-live', reasonCategory: 'OTHER' }]);
     expect(result.selected).toEqual([]);
     expect(result.inService).toEqual([]);
+    expect(result.asOf).toBe('2026-09-27');
   });
 
   it('reject: 23505 do uq_csr_active_pair (corrida do escritor) → ServiceTeamAlreadyRejectedError', async () => {
