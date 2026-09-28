@@ -9,6 +9,7 @@
  */
 import { PatientItineraryReader, type ItineraryRows, type ItineraryAssignmentStatus } from '../infrastructure/PatientItineraryReader';
 import { operationDateOf, buildServiceCoverages } from './itineraryCoverage';
+import { uncoveredDayAlerts } from '../domain/itineraryAlerts';
 
 /** Reader devolveu `null` (paciente inexistente/soft-deletado/outro país). O controller mapeia para 404. */
 export class PatientNotFoundForItineraryError extends Error {
@@ -42,10 +43,19 @@ export interface PatientItineraryService {
   slots: PatientItinerarySlot[];
 }
 
+/** Ausência sem substituto, `date >= asOf` — a mesma regra do Kanban (DX-13.9/13.10). Sem `workerId`/nome. */
+export interface PatientItineraryAlert {
+  serviceId: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+}
+
 export interface PatientItineraryResult {
   patientId: string;
   asOf: string;
   services: PatientItineraryService[];
+  alerts: PatientItineraryAlert[];
 }
 
 export interface PatientItineraryReaderPort {
@@ -61,7 +71,8 @@ export class GetPatientItineraryUseCase {
 
     const asOf = operationDateOf(rows.country, now);
     const services = buildServiceCoverages(rows, asOf);
+    const alerts = uncoveredDayAlerts(rows.uncoveredAbsences ?? [], asOf);
 
-    return { patientId, asOf, services };
+    return { patientId, asOf, services, alerts };
   }
 }
