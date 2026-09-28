@@ -733,7 +733,7 @@ describe('RLS por país — policies de patients e satélites (banco real)', () 
 
   /**
    * Ausência (Fase 13, P5, DX-13.16 casos 6l/6m/6n): `patient_itinerary_absence` segue o pai (a
-   * mesma policy `patient_itinerary_absence_follow_assignment`, 483) e a trava por data
+   * mesma policy `patient_itinerary_absence_follow_assignment`, 484) e a trava por data
    * (`fn_patient_itinerary_absence_no_overlap`, `SECURITY DEFINER`) enxerga através da RLS —
    * espelha exatamente o 6k acima, mas na tabela nova. `beforeAll`/`afterAll` próprios, como dono
    * (`pool`), com ids novos no mesmo `IDS` — a semente de cima e os casos existentes não mudam.

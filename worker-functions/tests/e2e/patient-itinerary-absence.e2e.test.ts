@@ -4,7 +4,7 @@
  * Prova, contra Postgres real, a tabela `patient_itinerary_absence`, a validação
  * (`fn_patient_itinerary_absence_validate`) e a trava por data (`itinerary_worker_conflict`,
  * `fn_patient_itinerary_assignment_no_overlap`, `fn_patient_itinerary_absence_no_overlap`) da
- * migration 483 (DX-13.1, DX-13.2 — parte fora da RLS; os casos de RLS `6l/6m/6n` ficam em
+ * migration 484 (DX-13.1, DX-13.2 — parte fora da RLS; os casos de RLS `6l/6m/6n` ficam em
  * `country-rls-policies.test.ts`, P5).
  *
  * Semente (beforeAll, como dono): 3 pacientes AR (endereços X, Y, Z), 1 serviço por endereço
@@ -45,7 +45,7 @@ async function expectPgError(query: Promise<unknown>): Promise<PgErrorLike> {
   return caught;
 }
 
-describe('ausência, validação e trava por data — migration 483 @integration', () => {
+describe('ausência, validação e trava por data — migration 484 @integration', () => {
   let pool: Pool;
   let seq = 0;
   const nextLabel = (kind: string): string => `${kind}${++seq}`;

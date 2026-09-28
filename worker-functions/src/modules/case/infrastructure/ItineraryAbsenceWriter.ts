@@ -102,7 +102,7 @@ export class ItineraryAbsenceWriter {
     return res.rowCount ?? 0;
   }
 
-  /** Cancela escrevendo `cancelled_at` — nunca remove a linha (o banco recusa a remoção direta, 483). `cancelled_at IS NULL` no WHERE. */
+  /** Cancela escrevendo `cancelled_at` — nunca remove a linha (o banco recusa a remoção direta, 484). `cancelled_at IS NULL` no WHERE. */
   async cancelAbsence(client: PoolClient, id: string, actorUid: string): Promise<number> {
     const res = await client.query(
       `UPDATE patient_itinerary_absence

@@ -5,7 +5,7 @@
  * `liveAbsencePredicate` é a condição de "ausência que conta": não cancelada E sobre alocação do
  * titular `ACTIVE` e vigente NA DATA da ausência. Ausência presa numa alocação encerrada/cancelada
  * (ou fora da vigência dela) deixa de gerar alerta, chip e trava — a MESMA condição do ramo da
- * substituição em `itinerary_worker_conflict()` (migration 483).
+ * substituição em `itinerary_worker_conflict()` (migration 484).
  *
  * `uncoveredAbsenceSelect` é a consulta de "ausência descoberta" (sem substituto) que antes tinha
  * 2 cópias (`PatientItineraryReader.ts` e `PatientKanbanServicesReader.ts` — achado D2 do mesmo

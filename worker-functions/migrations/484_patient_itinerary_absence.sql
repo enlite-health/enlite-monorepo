@@ -1,4 +1,4 @@
--- 483 — a ausência pontual do titular: a tabela, a validação e a trava por data na MESMA
+-- 484 — a ausência pontual do titular: a tabela, a validação e a trava por data na MESMA
 -- função da trava semanal (cadeia-paciente-vacante-itinerario, Fase 13; DX-13.1, DX-13.2;
 -- D434 invariantes 4/5/9/10).
 --
@@ -31,7 +31,7 @@
 -- Idempotente (2×): `IF NOT EXISTS` / `DROP … IF EXISTS` / `CREATE OR REPLACE` antes de cada
 -- objeto. Sem `BEGIN/COMMIT` próprio (molde 482/481/480).
 --
--- Rollback: `migrations/pending/ROLLBACK_483_patient_itinerary_absence.sql` (trava de dado:
+-- Rollback: `migrations/pending/ROLLBACK_484_patient_itinerary_absence.sql` (trava de dado:
 -- recusa se houver ausência registrada; restaura fn_patient_itinerary_assignment_no_overlap()
 -- ao corpo literal da 482; rodar ANTES do
 -- `ROLLBACK_482_patient_itinerary_assembly_and_overlap.sql`).
@@ -203,7 +203,7 @@ COMMENT ON TABLE patient_itinerary_absence IS
   '(Fase 7) nem move o paciente (Fase 15) — é só o alerta e a trava de sobreposição do '
   'substituto. Q-S1 (padrão): ausência sem substituto existe — é o alerta. Q-S2 (padrão): o '
   'titular ausente continua bloqueando o horário dele. Sem DELETE (cancelar é UPDATE '
-  'cancelled_at). Rollback: migrations/pending/ROLLBACK_483_patient_itinerary_absence.sql.';
+  'cancelled_at). Rollback: migrations/pending/ROLLBACK_484_patient_itinerary_absence.sql.';
 COMMENT ON COLUMN patient_itinerary_absence.country IS
   'Herdado de patient_itinerary_assignment.country por trigger (etapa 1/3). NOT NULL (etapa '
   '2/3) + CHECK AR/BR (etapa 3/3).';

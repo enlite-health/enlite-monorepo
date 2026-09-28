@@ -1,7 +1,7 @@
--- ROLLBACK_483_patient_itinerary_absence.sql — par de rollback da migration 483
+-- ROLLBACK_484_patient_itinerary_absence.sql — par de rollback da migration 484
 -- (a ausência pontual do titular, a validação e a trava por data; DX-13.1, DX-13.2).
 --
--- QUANDO USAR: regressão detectada depois do deploy da 483 — decisão de reverter a ausência e
+-- QUANDO USAR: regressão detectada depois do deploy da 484 — decisão de reverter a ausência e
 -- a extensão da trava de sobreposição antes de um fix mais específico ficar pronto.
 --
 -- Por que mora em `migrations/pending/`, sem número: mesma razão do ROLLBACK_482 —
@@ -18,7 +18,7 @@
 -- literal da 482 é a MESMA que o `ROLLBACK_482` depois apaga.
 --
 -- Como rodar (reversão manual e intencional, nunca automática):
---   ./scripts/run-migration-prod.sh worker-functions/migrations/pending/ROLLBACK_483_patient_itinerary_absence.sql
+--   ./scripts/run-migration-prod.sh worker-functions/migrations/pending/ROLLBACK_484_patient_itinerary_absence.sql
 
 DO $$
 BEGIN
