@@ -506,4 +506,25 @@ describe('ItineraryAbsenceUseCase.cancel', () => {
 
     await expect(useCase.cancel({ patientId: 'p-1', serviceId: 's-1', absenceId: 'abs-1', actorUid: 'u-1' })).rejects.toThrow(AbsenceCancelledError);
   });
+
+  describe('gate parcial #1: erro de validação do banco no cancelAbsence vira erro de domínio (nunca 500)', () => {
+    const cancelWith = (rejection: unknown) => {
+      const writer = writerStub({ findAbsence: jest.fn().mockResolvedValue(OPEN_ABSENCE), cancelAbsence: jest.fn().mockRejectedValue(rejection) });
+      const useCase = new ItineraryAbsenceUseCase({ readWith: jest.fn() }, writer, allocationWriterStub(), runInTransactionStub());
+      return useCase.cancel({ patientId: 'p-1', serviceId: 's-1', absenceId: 'abs-1', actorUid: 'u-1' });
+    };
+
+    it('23514 piab_fora_da_vigencia → AbsenceOutsideAllocationError', async () => {
+      await expect(cancelWith(pgError('23514', { message: 'piab_fora_da_vigencia' }))).rejects.toThrow(AbsenceOutsideAllocationError);
+    });
+
+    it('23514 piab_cancelada (corrida) → AbsenceCancelledError, o MESMO 409 de "já cancelada"', async () => {
+      await expect(cancelWith(pgError('23514', { message: 'piab_cancelada' }))).rejects.toThrow(AbsenceCancelledError);
+    });
+
+    it('erro desconhecido → relança o ORIGINAL', async () => {
+      const original = pgError('23514', { message: 'some_other_check' });
+      await expect(cancelWith(original)).rejects.toBe(original);
+    });
+  });
 });

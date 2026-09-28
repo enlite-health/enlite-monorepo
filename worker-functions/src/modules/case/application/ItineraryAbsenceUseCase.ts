@@ -279,8 +279,19 @@ export class ItineraryAbsenceUseCase {
       // `cancelled_at IS NULL` no WHERE (`ItineraryAbsenceWriter.ts:13-14`): `rowCount === 0` é a
       // MESMA corrida que `setSubstitute` já trata (linha 258-259) — reusa o MESMO
       // `AbsenceCancelledError`, nunca uma 2ª classe de erro para o mesmo caso.
-      const rowCount = await this.writer.cancelAbsence(client, absenceId, actorUid);
-      if (rowCount === 0) throw new AbsenceCancelledError(absenceId);
+      // Gate parcial #1: erro de validação do banco vira erro de domínio (nunca 500) — o mesmo
+      // decodificador de `register`/`setSubstitute`; `piab_cancelada` é a mesma corrida do
+      // `rowCount === 0` (já cancelada → o MESMO `AbsenceCancelledError`).
+      try {
+        const rowCount = await this.writer.cancelAbsence(client, absenceId, actorUid);
+        if (rowCount === 0) throw new AbsenceCancelledError(absenceId);
+      } catch (err) {
+        if (err instanceof AbsenceCancelledError) throw err;
+        const e = err as { code?: string; message?: string };
+        if (e.code === '23514' && e.message === 'piab_cancelada') throw new AbsenceCancelledError(absenceId);
+        const mapped = absenceErrorFromPg(err, absence.allocationId, absence.date);
+        throw mapped ?? err;
+      }
 
       return { absenceId, allocationId: absence.allocationId, date: absence.date, substituteWorkerId: absence.substituteWorkerId, status: 'CANCELLED' as const };
     });

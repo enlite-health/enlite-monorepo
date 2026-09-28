@@ -23,6 +23,7 @@
 import type { PoolClient } from 'pg';
 import { inPatientTransaction } from '../application/patientTransaction';
 import { liveVacancySelect } from './liveVacancySql';
+import { liveAbsencePredicate } from './absenceSql';
 import { excludeDisabledWorkersSql } from '@shared/database/activeWorkerFilter';
 import { SERVICE_TEAM_ENTRY_STAGE } from '../domain/deriveServiceTeam';
 import type { ItineraryAssignmentStatus } from '../domain/ServiceCoverageCalculator';
@@ -173,7 +174,7 @@ export class ServiceTeamReader {
            JOIN patient_itinerary_slot s ON s.id = a.slot_id AND s.contracted_service_id = $2
            JOIN worker_job_applications wja ON wja.id = ab.substitute_application_id
            JOIN workers w ON w.id = ab.substitute_worker_id
-          WHERE ab.cancelled_at IS NULL AND ab.substitute_worker_id IS NOT NULL
+          WHERE ${liveAbsencePredicate('ab', 'a')} AND ab.substitute_worker_id IS NOT NULL
        )
        SELECT svc.id AS service_id, svc.country, (SELECT id FROM live) AS live_vacancy_id,
               COALESCE((SELECT json_agg(cand) FROM cand), '[]'::json) AS candidacies,

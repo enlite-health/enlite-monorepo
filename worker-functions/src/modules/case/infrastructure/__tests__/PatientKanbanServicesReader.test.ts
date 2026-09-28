@@ -204,4 +204,17 @@ describe('PatientKanbanServicesReader', () => {
     ]);
     expect(Object.prototype.hasOwnProperty.call(p2!, 'uncoveredAbsences')).toBe(false);
   });
+
+  it('gate parcial #1: a ausência descoberta só conta sobre alocação ACTIVE e vigente na data (o MESMO fragmento do itinerário)', async () => {
+    queryImpl = async () => ({ rows: [], rowCount: 0 });
+
+    await reader.readKanbanServices('AR');
+
+    const sql = absenceCalls()[0].sql;
+    expect(sql).toMatch(/ab\.cancelled_at IS NULL/);
+    expect(sql).toMatch(/a\.status = 'ACTIVE'/);
+    expect(sql).toMatch(/a\.valid_from <= ab\.on_date/);
+    expect(sql).toMatch(/\(a\.valid_to IS NULL OR a\.valid_to >= ab\.on_date\)/);
+    expect(sql).toMatch(/JOIN patients p ON p\.id = pcs\.patient_id AND p\.deleted_at IS NULL/);
+  });
 });

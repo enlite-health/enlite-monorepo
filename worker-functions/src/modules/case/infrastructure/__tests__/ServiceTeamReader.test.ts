@@ -183,4 +183,17 @@ describe('ServiceTeamReader', () => {
       ],
     });
   });
+
+  it('gate parcial #1: o CTE subs só conta substituição sobre alocação do titular ACTIVE e vigente na data', async () => {
+    queryImpl = async () => ({ rows: [], rowCount: 0 });
+
+    await reader.read('p-1', 's-1');
+
+    const sql = svcCalls()[0].sql;
+    expect(sql).toMatch(/ab\.cancelled_at IS NULL/);
+    expect(sql).toMatch(/a\.status = 'ACTIVE'/);
+    expect(sql).toMatch(/a\.valid_from <= ab\.on_date/);
+    expect(sql).toMatch(/\(a\.valid_to IS NULL OR a\.valid_to >= ab\.on_date\)/);
+    expect(sql).toMatch(/ab\.substitute_worker_id IS NOT NULL/);
+  });
 });

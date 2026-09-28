@@ -17,6 +17,7 @@ import type { PoolClient } from 'pg';
 import { inPatientTransaction } from '../application/patientTransaction';
 import type { ItinerarySlotRow, ItineraryUncoveredAbsenceRow } from './PatientItineraryReader';
 import { liveVacancySelect } from './liveVacancySql';
+import { uncoveredAbsenceSelect } from './absenceSql';
 
 export interface KanbanServiceRow {
   id: string;
@@ -133,20 +134,13 @@ export class PatientKanbanServicesReader {
     // N+1). `ab.on_date >= CURRENT_DATE - 1` é SUPERCONJUNTO (a data de Buenos Aires nunca é menor
     // que a UTC − 1); só poda histórico — quem decide vigência é `uncoveredDayAlerts` com o `asOf`
     // do país (caso de uso). Nenhuma coluna de nome/telefone.
+    // Fragmento único em `absenceSql.ts` (só conta ausência sobre alocação ACTIVE e vigente na
+    // data — gate parcial #1).
     const absencesRes = await client.query<UncoveredAbsenceJoinRow>(
-      `SELECT pcs.patient_id, s.contracted_service_id,
-              to_char(ab.on_date, 'YYYY-MM-DD') AS on_date,
-              to_char(s.start_time, 'HH24:MI') AS start_time,
-              to_char(s.end_time, 'HH24:MI') AS end_time
-         FROM patient_itinerary_absence ab
-         JOIN patient_itinerary_assignment a ON a.id = ab.assignment_id
-         JOIN patient_itinerary_slot s ON s.id = a.slot_id
-         JOIN patient_contracted_services pcs ON pcs.id = s.contracted_service_id
-         JOIN patients p ON p.id = pcs.patient_id AND p.deleted_at IS NULL
-        WHERE pcs.active AND ($1::text IS NULL OR p.country = $1)
-          AND ab.cancelled_at IS NULL AND ab.substitute_worker_id IS NULL
-          AND ab.on_date >= CURRENT_DATE - 1
-        ORDER BY pcs.patient_id, ab.on_date, s.start_time, s.contracted_service_id`,
+      uncoveredAbsenceSelect(
+        'pcs.active AND ($1::text IS NULL OR p.country = $1) AND ab.on_date >= CURRENT_DATE - 1',
+        'JOIN patients p ON p.id = pcs.patient_id AND p.deleted_at IS NULL',
+      ),
       [country],
     );
     for (const r of absencesRes.rows) {

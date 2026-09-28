@@ -88,6 +88,16 @@ BEGIN
     IF OLD.cancelled_at IS NOT NULL THEN
       RAISE EXCEPTION 'piab_cancelada' USING ERRCODE = '23514';
     END IF;
+
+    -- Gate parcial #1: cancelar é SEMPRE permitido — mesmo quando a alocação do titular já foi
+    -- encerrada/cancelada ou a data saiu da vigência. Vale só para o UPDATE que muda
+    -- exclusivamente cancelled_at/cancelled_by/updated_by/updated_at (e de fato cancela);
+    -- qualquer outra mudança segue para a validação completa abaixo.
+    IF NEW.cancelled_at IS NOT NULL
+       AND (to_jsonb(NEW) - ARRAY['cancelled_at', 'cancelled_by', 'updated_by', 'updated_at'])
+         = (to_jsonb(OLD) - ARRAY['cancelled_at', 'cancelled_by', 'updated_by', 'updated_at']) THEN
+      RETURN NEW;
+    END IF;
   END IF;
 
   -- deferências às constraints nativas (molde 480:167-182): esta trigger roda BEFORE ROW,
@@ -248,7 +258,9 @@ AS $$
 
       UNION ALL
 
-      -- ramo da substituição: ausências não canceladas em que o prestador é SUBSTITUTO.
+      -- ramo da substituição: ausências não canceladas em que o prestador é SUBSTITUTO, só
+      -- sobre alocação do titular ACTIVE e vigente NA DATA da ausência (gate parcial #1 — a
+      -- ausência sobre alocação encerrada não bloqueia mais ninguém).
       SELECT s3.contracted_service_id AS service_id, s3.weekday, s3.start_time, s3.end_time,
              pcs3.address_id AS address_id
         FROM patient_itinerary_absence ab
@@ -257,6 +269,9 @@ AS $$
         JOIN patient_contracted_services pcs3 ON pcs3.id = s3.contracted_service_id
         WHERE ab.substitute_worker_id = p_worker
           AND ab.cancelled_at IS NULL
+          AND a3.status = 'ACTIVE'
+          AND a3.valid_from <= ab.on_date
+          AND (a3.valid_to IS NULL OR a3.valid_to >= ab.on_date)
           AND ab.id IS DISTINCT FROM p_ignore_absence
           AND ab.on_date BETWEEN p_from AND COALESCE(p_to, 'infinity'::date)
           AND extract(dow FROM ab.on_date) = p_weekday

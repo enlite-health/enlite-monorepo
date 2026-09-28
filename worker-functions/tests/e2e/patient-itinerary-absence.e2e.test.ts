@@ -733,4 +733,83 @@ describe('ausência, validação e trava por data — migration 483 @integration
     );
     expect(open.rows[0].n).toBe(1);
   });
+
+  // ── gate parcial #1: ausência sobre alocação do titular ENCERRADA ─────────────────────────
+  // Monta, por teste (sem estado compartilhado entre `it`), um substituto W numa ausência FUTURA
+  // (nextMonday) do titular A e depois ENCERRA a alocação de A antes dessa data (valid_to =
+  // pastMonday) — o mesmo efeito do `end` da Fase 11.
+  async function absenceOnEndedAllocation(label: string) {
+    const w = await mkWorkerWithWja(jobX, `${label}-sub`);
+    const titularA = await mkWorkerWithWja(jobX, `${label}-titularA`);
+    const assignmentA = (
+      await insertAssignment(slotCrossA, titularA.workerId, titularA.wjaId, '2026-01-01')
+    ).rows[0].id;
+    const absence = (
+      await insertAbsence(assignmentA, nextMonday, { substituteWorkerId: w.workerId, substituteApplicationId: w.wjaId })
+    ).rows[0].id;
+    await pool.query(
+      `UPDATE patient_itinerary_assignment SET status = 'ENDED', valid_to = $2, updated_by = $3 WHERE id = $1`,
+      [assignmentA, pastMonday, TASK_PREFIX],
+    );
+    return { w, absence };
+  }
+
+  it('[13.26] alocação do titular ENCERRADA com ausência futura → a substituição dela NÃO bloqueia o substituto noutra substituição na mesma data/horário', async () => {
+    console.log('[13.26]', 'gate #1 — ausência sobre alocação encerrada não trava');
+    const { w } = await absenceOnEndedAllocation('w-26');
+    const subAppB = await addWja(w.workerId, jobY);
+    const titularB = await mkWorkerWithWja(jobY, 'w-26-titularB');
+    const assignmentB = (
+      await insertAssignment(slotCrossB, titularB.workerId, titularB.wjaId, '2026-01-01')
+    ).rows[0].id;
+    const r = await insertAbsence(assignmentB, nextMonday, {
+      substituteWorkerId: w.workerId,
+      substituteApplicationId: subAppB,
+    });
+    expect(r.rows[0].id).toBeTruthy();
+  });
+
+  it('[13.27] cancelar a ausência sobre alocação ENCERRADA → aceito (cancelled_at gravado)', async () => {
+    console.log('[13.27]', 'gate #1 — cancelar sempre permitido');
+    const { absence } = await absenceOnEndedAllocation('w-27');
+    const r = await pool.query(
+      `UPDATE patient_itinerary_absence
+          SET cancelled_at = now(), cancelled_by = $2, updated_by = $2, updated_at = now()
+        WHERE id = $1 AND cancelled_at IS NULL`,
+      [absence, TASK_PREFIX],
+    );
+    expect(r.rowCount).toBe(1);
+    const after = await pool.query<{ cancelled: string }>(
+      `SELECT (cancelled_at IS NOT NULL)::text AS cancelled FROM patient_itinerary_absence WHERE id = $1`,
+      [absence],
+    );
+    expect(after.rows[0].cancelled).toBe('true');
+  });
+
+  it('[13.28] outro UPDATE na ausência sobre alocação ENCERRADA (tirar o substituto, com ou sem cancelar junto) → 23514 piab_fora_da_vigencia', async () => {
+    console.log('[13.28]', 'gate #1 — só o cancelamento puro passa');
+    const { absence } = await absenceOnEndedAllocation('w-28');
+    const err = await expectPgError(
+      pool.query(
+        `UPDATE patient_itinerary_absence
+            SET substitute_worker_id = NULL, substitute_application_id = NULL, updated_by = $2
+          WHERE id = $1`,
+        [absence, TASK_PREFIX],
+      ),
+    );
+    expect(err.code).toBe('23514');
+    expect(err.message).toContain('piab_fora_da_vigencia');
+
+    const errCombined = await expectPgError(
+      pool.query(
+        `UPDATE patient_itinerary_absence
+            SET substitute_worker_id = NULL, substitute_application_id = NULL,
+                cancelled_at = now(), cancelled_by = $2, updated_by = $2
+          WHERE id = $1`,
+        [absence, TASK_PREFIX],
+      ),
+    );
+    expect(errCombined.code).toBe('23514');
+    expect(errCombined.message).toContain('piab_fora_da_vigencia');
+  });
 });

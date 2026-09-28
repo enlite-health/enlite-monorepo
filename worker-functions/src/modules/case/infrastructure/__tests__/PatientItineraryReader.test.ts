@@ -128,4 +128,20 @@ describe('PatientItineraryReader', () => {
     expect(uncoveredQuery?.sql).toMatch(/to_char\(ab\.on_date/);
     expect(c.every((x) => !/contracted_service_providers|first_name|last_name|phone/i.test(x.sql))).toBe(true);
   });
+
+  it('gate parcial #1: a ausência descoberta só conta sobre alocação ACTIVE e vigente na data (fragmento único absenceSql)', async () => {
+    queryImpl = async (sql) => {
+      if (/FROM patients/.test(sql)) return { rows: [{ id: PID, country: 'AR' }], rowCount: 1 };
+      return { rows: [], rowCount: 0 };
+    };
+
+    await reader.readPatientItinerary(PID);
+
+    const sql = calls().find((x) => /FROM patient_itinerary_absence/.test(x.sql))?.sql ?? '';
+    expect(sql).toMatch(/ab\.cancelled_at IS NULL/);
+    expect(sql).toMatch(/a\.status = 'ACTIVE'/);
+    expect(sql).toMatch(/a\.valid_from <= ab\.on_date/);
+    expect(sql).toMatch(/\(a\.valid_to IS NULL OR a\.valid_to >= ab\.on_date\)/);
+    expect(sql).toMatch(/ab\.substitute_worker_id IS NULL/);
+  });
 });
