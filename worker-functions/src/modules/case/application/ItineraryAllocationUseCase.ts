@@ -12,6 +12,10 @@
  * processo fora do parâmetro injetável (DX-11.8). Nenhuma escrita em `patients` (critério 14 — a
  * derivação do paciente é da Fase 15, invariante 3) nem no cadastro de prestadores do legado ou no
  * card de atendimento antigo (Fase 14).
+ *
+ * "Slot não encontrado" é `SlotNotFoundError`, IMPORTADO de `ItinerarySlotWriteUseCase.ts` — fonte
+ * única com `update`/`end` de slot (era uma 2ª classe própria aqui, `ItinerarySlotNotFoundError`,
+ * mesma semântica e mesmo 404; consolidado no gate parcial #10).
  */
 import type { PoolClient } from 'pg';
 import { inPatientTransaction } from './patientTransaction';
@@ -27,19 +31,7 @@ import {
 import { deriveServiceTeamFromRows } from './serviceTeamPresentation';
 import { canAllocate } from '../domain/itineraryAllocationGate';
 import { fromPgError, type PgOverlapLikeError } from '../domain/itineraryOverlap';
-import { ServiceWithoutAddressError, SlotInactiveError } from './ItinerarySlotWriteUseCase';
-
-/** Slot inexistente, ou não pertence a este serviço/paciente — o controller mapeia para 404. */
-export class ItinerarySlotNotFoundError extends Error {
-  constructor(
-    readonly patientId: string,
-    readonly serviceId: string,
-    readonly slotId: string,
-  ) {
-    super(`Itinerary slot not found for allocation: ${slotId} (serviceId=${serviceId}, patientId=${patientId})`);
-    this.name = 'ItinerarySlotNotFoundError';
-  }
-}
+import { ServiceWithoutAddressError, SlotInactiveError, SlotNotFoundError } from './ItinerarySlotWriteUseCase';
 
 /** Nem Selecionado (C), nem Em Atendimento+candidato no mesmo slot (o gate `canAllocate`, DX-11.6). */
 export class NotSelectedForServiceError extends Error {
@@ -148,12 +140,12 @@ export class ItineraryAllocationUseCase {
     const { patientId, serviceId, slotId, workerId, actorUid, now = new Date() } = input;
     return this.runInTransaction(async (client) => {
       const slot = await this.writer.findSlotForAllocation(client, patientId, serviceId, slotId);
-      if (slot === null) throw new ItinerarySlotNotFoundError(patientId, serviceId, slotId);
+      if (slot === null) throw new SlotNotFoundError(serviceId, slotId);
       if (slot.addressId === null) throw new ServiceWithoutAddressError(serviceId);
       if (!slot.active) throw new SlotInactiveError(serviceId, slotId);
 
       const row = await this.reader.readWith(client, patientId, serviceId);
-      if (row === null) throw new ItinerarySlotNotFoundError(patientId, serviceId, slotId);
+      if (row === null) throw new SlotNotFoundError(serviceId, slotId);
 
       const team = deriveServiceTeamFromRows(row, now);
       const candidacyIds = new Set(row.candidacies.map((c) => c.workerId));

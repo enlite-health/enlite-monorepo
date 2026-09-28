@@ -2,7 +2,8 @@
  * ItinerarySlotWriteUseCase — Fase 11, DX-11.5 (caso de uso). Criar/editar/encerrar slot, tudo em
  * `inPatientTransaction` (molde `ServiceTeamMarkUseCase.ts`): serviço inexistente/de outro
  * paciente/inativo → `ItineraryServiceNotFoundError`; sem endereço → `ServiceWithoutAddressError`
- * (invariante 8, nas TRÊS ações); a chave já ATIVA no serviço (`create`) → `SlotAlreadyExistsError`;
+ * (invariante 8, nas TRÊS ações); a chave já ATIVA no serviço (`create`, e `update` para a chave de
+ * OUTRO slot) → `SlotAlreadyExistsError`;
  * slot inexistente/de outro serviço (`update`/`end`) → `SlotNotFoundError`; inativo →
  * `SlotInactiveError`; com alocação `ACTIVE` vigente em `hoje` → `SlotHasActiveAllocationError`
  * ("encerre a alocação primeiro" — editar/encerrar por baixo de alguém alocado mudaria o
@@ -163,6 +164,15 @@ export class ItinerarySlotWriteUseCase {
       const newKey: ItinerarySlotKey = { weekday, startTime, endTime };
       // Toda entrada da chave VELHA sai; as outras ficam intactas (scheduleToSlots dedupa o resto).
       const withoutOld = (service.schedule ?? []).filter((e) => !sameKey({ weekday: e.dayOfWeek, startTime: e.startTime, endTime: e.endTime }, oldKey));
+
+      // A chave NOVA já ativa em OUTRO slot do mesmo serviço → mesmo erro do `create` (SLOT_ALREADY_EXISTS):
+      // sem esta trava, `scheduleToSlots` dedupava as duas entradas em silêncio e a resposta 200 devolvia o
+      // OUTRO slot (que pode ter alocação viva de outro prestador) — nenhum sinal de que A desativou.
+      const remainingActiveKeys = scheduleToSlots(withoutOld);
+      if (remainingActiveKeys.some((k) => sameKey(k, newKey))) {
+        throw new SlotAlreadyExistsError(serviceId, newKey);
+      }
+
       const nextSchedule: ScheduleEntry[] = [...withoutOld, { dayOfWeek: weekday, startTime, endTime }];
 
       await this.writer.writeSchedule(client, serviceId, nextSchedule, actorUid);

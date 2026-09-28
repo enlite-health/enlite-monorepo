@@ -14,7 +14,6 @@ import {
 } from '../../application/ItinerarySlotWriteUseCase';
 import {
   ItineraryAllocationUseCase,
-  ItinerarySlotNotFoundError,
   NotSelectedForServiceError,
   AlreadyAllocatedInSlotError,
   AllocationNotFoundError,
@@ -225,13 +224,13 @@ export class AdminItineraryWriteController {
   }
 
   private handleError(err: unknown, res: Response, method: string, patientId: string, serviceId?: string): void {
-    // Os 4 "não encontrado" da DX-11.10, mais `SlotNotFoundError` (update/end de slot inexistente,
-    // `ItinerarySlotWriteUseCase`) e `ServiceTeamNotFoundError` (`allocationOptions`, reuso do
+    // Os 4 "não encontrado" da DX-11.10, mais `SlotNotFoundError` (update/end/allocate de slot
+    // inexistente — fonte única em `ItinerarySlotWriteUseCase`, também usada pelo
+    // `ItineraryAllocationUseCase`) e `ServiceTeamNotFoundError` (`allocationOptions`, reuso do
     // `GetServiceTeamUseCase` da Fase 10) — mesma família 404, DESVIO documentado no retorno do passo.
     if (
       err instanceof ItineraryServiceNotFoundError ||
       err instanceof SlotNotFoundError ||
-      err instanceof ItinerarySlotNotFoundError ||
       err instanceof AllocationNotFoundError ||
       err instanceof ItineraryPatientNotFoundError ||
       err instanceof ServiceTeamNotFoundError

@@ -6,7 +6,6 @@
  */
 import {
   ItineraryAllocationUseCase,
-  ItinerarySlotNotFoundError,
   NotSelectedForServiceError,
   AlreadyAllocatedInSlotError,
   AllocationNotFoundError,
@@ -14,7 +13,7 @@ import {
   type ItineraryAllocationReaderPort,
   type ItineraryAllocationWriterPort,
 } from '../ItineraryAllocationUseCase';
-import { ServiceWithoutAddressError, SlotInactiveError } from '../ItinerarySlotWriteUseCase';
+import { ServiceWithoutAddressError, SlotInactiveError, SlotNotFoundError } from '../ItinerarySlotWriteUseCase';
 import { ItineraryOverlapError } from '../../domain/itineraryOverlap';
 import type { ServiceTeamRows } from '../../infrastructure/ServiceTeamReader';
 
@@ -66,14 +65,14 @@ function pgError(code: string, extra: Record<string, unknown> = {}) {
 }
 
 describe('ItineraryAllocationUseCase.allocate', () => {
-  it('slot null → ItinerarySlotNotFoundError (404); 0 leitura do time', async () => {
+  it('slot null → SlotNotFoundError (404); 0 leitura do time', async () => {
     const reader: ItineraryAllocationReaderPort = { readWith: jest.fn() };
     const writer = writerStub({ findSlotForAllocation: jest.fn().mockResolvedValue(null) });
     const useCase = new ItineraryAllocationUseCase(reader, writer, runInTransactionStub());
 
     await expect(
       useCase.allocate({ patientId: 'p-1', serviceId: 's-1', slotId: 'slot-1', workerId: 'w-1', actorUid: 'u-1' }),
-    ).rejects.toThrow(ItinerarySlotNotFoundError);
+    ).rejects.toThrow(SlotNotFoundError);
 
     expect(reader.readWith).not.toHaveBeenCalled();
     expect(writer.insertAllocation).not.toHaveBeenCalled();
@@ -107,14 +106,14 @@ describe('ItineraryAllocationUseCase.allocate', () => {
     expect(reader.readWith).not.toHaveBeenCalled();
   });
 
-  it('serviço/paciente some entre o slot e o leitor → ItinerarySlotNotFoundError (defensivo)', async () => {
+  it('serviço/paciente some entre o slot e o leitor → SlotNotFoundError (defensivo)', async () => {
     const reader: ItineraryAllocationReaderPort = { readWith: jest.fn().mockResolvedValue(null) };
     const writer = writerStub({ findSlotForAllocation: jest.fn().mockResolvedValue(ACTIVE_SLOT) });
     const useCase = new ItineraryAllocationUseCase(reader, writer, runInTransactionStub());
 
     await expect(
       useCase.allocate({ patientId: 'p-1', serviceId: 's-1', slotId: 'slot-1', workerId: 'w-1', actorUid: 'u-1' }),
-    ).rejects.toThrow(ItinerarySlotNotFoundError);
+    ).rejects.toThrow(SlotNotFoundError);
   });
 
   it('não elegível (fora de Selecionado e de Em Atendimento+candidato) → NotSelectedForServiceError; 0 insert', async () => {

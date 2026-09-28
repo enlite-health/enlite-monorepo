@@ -187,11 +187,17 @@ test.describe('itinerario-celula sob engine ligado @integration', () => {
       );
 
       expect(rPost.status, 'POST slot sem patient_itinerary:update').toBe(403);
+      expect(rPost.body.code, 'POST slot: code do 403').toBe('missing_cell');
       expect(rPatch.status, 'PATCH slot sem patient_itinerary:update').toBe(403);
+      expect(rPatch.body.code, 'PATCH slot: code do 403').toBe('missing_cell');
       expect(rEnd.status, 'POST slot/end sem patient_itinerary:update').toBe(403);
+      expect(rEnd.body.code, 'POST slot/end: code do 403').toBe('missing_cell');
       expect(rAlloc.status, 'POST allocation sem patient_itinerary:update').toBe(403);
+      expect(rAlloc.body.code, 'POST allocation: code do 403').toBe('missing_cell');
       expect(rEndAlloc.status, 'POST allocation/end sem patient_itinerary:update').toBe(403);
+      expect(rEndAlloc.body.code, 'POST allocation/end: code do 403').toBe('missing_cell');
       expect(rAssemble.status, 'POST assemble sem patient_itinerary:update').toBe(403);
+      expect(rAssemble.body.code, 'POST assemble: code do 403').toBe('missing_cell');
       expect(rControl.status, 'GET allocation-options com patient_services:read').toBe(200);
 
       const slotsAfter = scalar(

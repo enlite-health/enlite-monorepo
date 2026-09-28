@@ -16,6 +16,10 @@ export const itinerarySlotParamsSchema = itineraryServiceParamsSchema.extend({ s
 
 export const itineraryAllocationParamsSchema = itineraryServiceParamsSchema.extend({ allocationId: z.string().uuid() });
 
+// NÃO reusa `scheduleSlotSchema` (`contractedServiceSchemas.ts:19-26`): a forma NÃO é idêntica — o
+// campo do dia aqui é `weekday` (nome do body desta rota, DX-11.10), lá é `dayOfWeek`; e lá é
+// `.strict()`, aqui não. Gate parcial #10 (D2): renomear um dos dois mudaria contrato externo já
+// publicado (OpenAPI desta rota ou do form de serviço) — fora do escopo deste achado.
 export const itinerarySlotBodySchema = z
   .object({
     weekday: z.number().int().min(0).max(6),

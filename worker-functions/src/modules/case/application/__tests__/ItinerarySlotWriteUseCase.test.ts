@@ -161,6 +161,50 @@ describe('ItinerarySlotWriteUseCase', () => {
       expect(writer.writeSchedule).not.toHaveBeenCalled();
     });
 
+    it('chave nova já ativa em OUTRO slot do mesmo serviço → SlotAlreadyExistsError; 0 writeSchedule', async () => {
+      const service: ServiceForWrite = {
+        id: 's-1',
+        addressId: 'addr-1',
+        schedule: [
+          { dayOfWeek: 2, startTime: '08:00', endTime: '10:00' }, // OLD_SLOT (o que está sendo editado)
+          { dayOfWeek: 4, startTime: '14:00', endTime: '16:00' }, // outro slot ATIVO — é a chave alvo do update
+        ],
+        country: 'AR',
+      };
+      const writer = writerStub({
+        findServiceForWrite: jest.fn().mockResolvedValue(service),
+        findSlot: jest.fn().mockResolvedValue(OLD_SLOT),
+        slotHasActiveAllocation: jest.fn().mockResolvedValue(false),
+      });
+      const useCase = new ItinerarySlotWriteUseCase(writer, runInTransactionStub());
+
+      await expect(
+        useCase.update({ patientId: 'p-1', serviceId: 's-1', slotId: 'slot-1', weekday: 4, startTime: '14:00', endTime: '16:00', actorUid: 'u-1' }),
+      ).rejects.toThrow(SlotAlreadyExistsError);
+      expect(writer.writeSchedule).not.toHaveBeenCalled();
+    });
+
+    it('chave nova IGUAL à velha (sem mudança de horário) → não é SlotAlreadyExistsError; grava normal', async () => {
+      const service: ServiceForWrite = {
+        id: 's-1',
+        addressId: 'addr-1',
+        schedule: [{ dayOfWeek: 2, startTime: '08:00', endTime: '10:00' }],
+        country: 'AR',
+      };
+      const writer = writerStub({
+        findServiceForWrite: jest.fn().mockResolvedValue(service),
+        findSlot: jest.fn().mockResolvedValue(OLD_SLOT),
+        slotHasActiveAllocation: jest.fn().mockResolvedValue(false),
+        writeSchedule: jest.fn().mockResolvedValue(undefined),
+        findSlotByKey: jest.fn().mockResolvedValue(OLD_SLOT),
+      });
+      const useCase = new ItinerarySlotWriteUseCase(writer, runInTransactionStub());
+
+      await useCase.update({ patientId: 'p-1', serviceId: 's-1', slotId: 'slot-1', weekday: 2, startTime: '08:00', endTime: '10:00', actorUid: 'u-1' });
+
+      expect(writer.writeSchedule).toHaveBeenCalledTimes(1);
+    });
+
     it('feliz → toda entrada da chave velha trocada pela nova; as outras entradas intactas', async () => {
       const service: ServiceForWrite = {
         id: 's-1',

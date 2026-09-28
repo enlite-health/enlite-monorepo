@@ -333,10 +333,13 @@ test.describe('itinerario-escrita @integration', () => {
     }
 
     const w = insertTestWorker({ occupation: 'AT' });
+    const w2 = insertTestWorker({ occupation: 'AT' }); // critério 9 literal: mesmo endereço X, encostado (12:00) — aceita
     try {
       insertWJA({ workerId: w, jobPostingId: v1, funnelStage: 'QUICK_RESPONSE_TEAM' });
       insertWJA({ workerId: w, jobPostingId: v2, funnelStage: 'QUICK_RESPONSE_TEAM' });
       insertWJA({ workerId: w, jobPostingId: v3, funnelStage: 'QUICK_RESPONSE_TEAM' });
+      insertWJA({ workerId: w2, jobPostingId: v1, funnelStage: 'QUICK_RESPONSE_TEAM' });
+      insertWJA({ workerId: w2, jobPostingId: v3, funnelStage: 'QUICK_RESPONSE_TEAM' });
 
       const r1 = await allocateApi(request, token, seedX.patientId, seedX.serviceId, slot1, { workerId: w });
       const r2 = await allocateApi(request, token, seedY.patientId, s2, slot2Mon, { workerId: w });
@@ -350,13 +353,35 @@ test.describe('itinerario-escrita @integration', () => {
       expect(r3.status).toBe(201);
       expect(r4.status).toBe(201);
       expect(activeCount).toBe(4);
+
+      // Critério 9, caso literal (o worker W2 encosta duas faixas no MESMO endereço X: 08-12 em S1
+      // termina exatamente onde 12-16 em S3 começa — sem folga exigida, porque a folga só vale
+      // ENTRE endereços diferentes). Não reusa slot1/slot3 do worker W (acima) — outro prestador no
+      // mesmo slot pode (uq_pia_open_pair é por par slot+worker); e S3 ganha uma 2ª faixa própria.
+      const slot3Encostado = await postSlotApi(request, token, seedX.patientId, s3, {
+        weekday: 1, startTime: '12:00', endTime: '16:00',
+      });
+      expect(slot3Encostado.status).toBe(201);
+      const slot3EncostadoId = (slot3Encostado.body.data as { id?: string } | undefined)?.id;
+      if (!slot3EncostadoId) throw new Error('itinerario-folga-aceita: slot encostado de S3 sem id');
+
+      const r5 = await allocateApi(request, token, seedX.patientId, seedX.serviceId, slot1, { workerId: w2 });
+      const r6 = await allocateApi(request, token, seedX.patientId, s3, slot3EncostadoId, { workerId: w2 });
+      const activeCountW2 = countActiveAllocations(w2);
+      console.log('[11.9-encostado]', r5.status, r6.status, activeCountW2);
+      expect(r5.status).toBe(201);
+      expect(r6.status).toBe(201);
+      expect(activeCountW2).toBe(2);
     } finally {
       cleanupItineraryWrite(seedX.patientId);
       cleanupItineraryWrite(seedY.patientId);
       cleanupWJAAndEncuadre(w, v1);
       cleanupWJAAndEncuadre(w, v2);
       cleanupWJAAndEncuadre(w, v3);
+      cleanupWJAAndEncuadre(w2, v1);
+      cleanupWJAAndEncuadre(w2, v3);
       cleanupTestWorker(w);
+      cleanupTestWorker(w2);
       seedX.cleanup();
       seedY.cleanup();
     }
@@ -392,7 +417,12 @@ test.describe('itinerario-escrita @integration', () => {
 
       const activeCount = countActiveAllocations(w);
       console.log('[11.12]', res1.status, res2.status, activeCount);
-      expect([res1.status, res2.status]).toEqual([201, 409]);
+      // Promise.all não garante ordem: quem pega o pg_advisory_xact_lock primeiro varia entre
+      // rodadas. A asserção é sobre o CONJUNTO ordenado (sort), nunca por posição — e o 409 é lido
+      // da resposta que de fato o devolveu, não de um índice fixo.
+      expect([res1.status, res2.status].sort((a, b) => a - b)).toEqual([201, 409]);
+      const conflicted = res1.status === 409 ? res1 : res2;
+      expect(conflicted.body.code).toBe('ITINERARY_OVERLAP');
       expect(activeCount).toBe(1);
     } finally {
       cleanupItineraryWrite(seed.patientId);

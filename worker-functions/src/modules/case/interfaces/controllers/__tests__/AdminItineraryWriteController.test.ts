@@ -25,7 +25,6 @@ import {
 } from '../../../application/ItinerarySlotWriteUseCase';
 import {
   ItineraryAllocationUseCase,
-  ItinerarySlotNotFoundError,
   NotSelectedForServiceError,
   AlreadyAllocatedInSlotError,
   AllocationNotFoundError,
@@ -271,7 +270,7 @@ describe('AdminItineraryWriteController', () => {
     });
 
     it.each([
-      [new ItinerarySlotNotFoundError(PATIENT_ID, SERVICE_ID, SLOT_ID), 404, { success: false, code: 'NOT_FOUND' }],
+      [new SlotNotFoundError(SERVICE_ID, SLOT_ID), 404, { success: false, code: 'NOT_FOUND' }],
       [new NotSelectedForServiceError(PATIENT_ID, SERVICE_ID, WORKER_ID), 422, { success: false, code: 'NOT_SELECTED_FOR_SERVICE', error: 'não está em Selecionado do serviço' }],
       [new AlreadyAllocatedInSlotError(SLOT_ID, WORKER_ID), 422, { success: false, code: 'ALREADY_ALLOCATED_IN_SLOT' }],
     ])('%p → status %i', async (err, status, body) => {
