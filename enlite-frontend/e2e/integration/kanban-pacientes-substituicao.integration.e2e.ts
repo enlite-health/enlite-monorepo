@@ -25,18 +25,24 @@ import {
 } from '../helpers/itinerario-e2e-helper';
 import { insertTestWorker, cleanupTestWorker } from '../helpers/db-test-helper';
 import { insertWJA, cleanupWJAAndEncuadre } from '../helpers/wja-test-helper';
-import { tokenFor } from '../helpers/abac-stack-helper';
+import { tokenFor, loginAs } from '../helpers/abac-stack-helper';
 import { runSQL } from '../helpers/patient-detail-a-helper';
-import { postServiceTeamAction } from '../helpers/quadro-c-e2e-helper';
+import { postServiceTeamAction, readServiceTeamApi } from '../helpers/quadro-c-e2e-helper';
 import {
-  allocateApi, seedServiceWithLiveVacancySql, cleanupItineraryWrite,
+  allocateApi, seedServiceWithLiveVacancySql, cleanupItineraryWrite, patientStatus,
 } from '../helpers/itinerario-escrita-e2e-helper';
 import {
-  registerAbsenceApi, setAbsenceSubstituteApi, nextWeekdaySql, countOpenAbsences,
-  cleanupSubstituicao,
+  registerAbsenceApi, setAbsenceSubstituteApi, cancelAbsenceApi, nextWeekdaySql, countOpenAbsences,
+  openServiceTeamOf, cleanupSubstituicao,
 } from '../helpers/substituicao-e2e-helper';
 
 interface AllocateData { allocationId: string }
+
+/** Só os campos novos da Fase 13 que `ServiceTeamDto` (Fase 10) ainda não tipa — o `body` real dos
+ * DTOs tem `[k: string]: unknown` no result cru, então o cast é seguro (nenhuma asserção estrutural
+ * nova, só os 2 campos que a DX-13.11 acrescenta ao membro `inService`). */
+interface ServiceTeamMemberF13 { workerId: string; substitutionDates?: string[] }
+interface ServiceTeamDataF13 { inService: ServiceTeamMemberF13[] }
 
 const STAFF = mockAdminUserFor('substituicao');
 
@@ -366,6 +372,186 @@ test.describe('substituicao @integration', () => {
       cleanupTestWorker(t3);
       seedX.cleanup();
       seedY.cleanup();
+    }
+  });
+
+  test('substituicao-em-atendimento-com-datas', async ({ page, request }) => {
+    const seed = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.6, lng: -58.4 });
+    const token = tokenFor(ITINERARIO_STAFF);
+    const v = await activateRecruitmentViaApi(request, seed.patientId, seed.serviceId);
+    const itin = await readItineraryApi(request, seed.patientId);
+    const svc = itin.body.data?.services.find((s) => s.contractedServiceId === seed.serviceId);
+    const slotId = svc?.slots[0]?.id;
+    if (!slotId) throw new Error('substituicao-em-atendimento-com-datas: slot ausente na semente');
+
+    const t = insertTestWorker({ occupation: 'AT' }); // titular
+    const w = insertTestWorker({ occupation: 'AT' }); // ERR — Selecionado, candidato a substituto
+    const d = nextWeekdaySql(1);
+    try {
+      insertWJA({ workerId: t, jobPostingId: v, funnelStage: 'QUICK_RESPONSE_TEAM' });
+      insertWJA({ workerId: w, jobPostingId: v, funnelStage: 'QUICK_RESPONSE_TEAM' });
+      const allocT = await allocateApi(request, token, seed.patientId, seed.serviceId, slotId, { workerId: t });
+      expect(allocT.status).toBe(201);
+
+      // O `SearchableSelect` filtra pelo RÓTULO visível (`displayName`), não pelo `workerId` — lê o
+      // nome sintético (`insertTestWorker`, sem PII) que a API devolve, pra digitar um trecho único.
+      const teamBefore = await readServiceTeamApi(request, seed.patientId, seed.serviceId);
+      const wLabel = (teamBefore.body.data?.selected ?? []).find((m) => m.workerId === w)?.displayName;
+      if (!wLabel) throw new Error('substituicao-em-atendimento-com-datas: W sem displayName no time');
+
+      await loginAs(page, STAFF);
+      await openServiceTeamOf(page, seed.patientId, seed.serviceId);
+      await page.getByTestId(`service-team-substitute-${t}`).click();
+      await expect(page.getByTestId('substitution-modal')).toBeVisible();
+      await page.getByTestId('substitution-date').selectOption(d);
+      await page.getByTestId('substitution-worker').click();
+      await page.getByPlaceholder('Buscar...').pressSequentially(wLabel.slice(-10), { delay: 20 });
+      await page.getByRole('option', { name: wLabel }).click();
+
+      const printDir = process.env.PRINT_DIR;
+      await Promise.all([
+        page.waitForResponse((r) => r.request().method() === 'GET' && r.url().includes('/contracted-services/') && r.url().endsWith('/team') && r.ok()),
+        page.getByTestId('substitution-confirm').click(),
+      ]);
+
+      const after = await readServiceTeamApi(request, seed.patientId, seed.serviceId);
+      const afterInService = (after.body.data as unknown as ServiceTeamDataF13 | undefined)?.inService ?? [];
+      const wRow = afterInService.find((m) => m.workerId === w);
+      const tInService = afterInService.some((m) => m.workerId === t);
+      expect(wRow?.substitutionDates).toEqual([d]);
+      expect(tInService).toBe(true);
+
+      const chip = page.getByTestId(`service-team-card-${w}`).getByTestId('card-datas-substituicao');
+      await expect(chip).toHaveCount(1);
+      const chipText = (await chip.innerText()).trim();
+      const [, month, day] = d.split('-');
+      expect(chipText).toContain(`${day}/${month}`);
+
+      if (printDir) {
+        await page.evaluate(() => document.fonts.ready);
+        await page.locator('[data-testid="quadro-c-secao"]').screenshot({
+          path: `${printDir}/quadro-c-em-atendimento.png`, animations: 'disabled', caret: 'hide',
+        });
+      }
+
+      console.log('[13.4]', wRow?.substitutionDates, tInService);
+    } finally {
+      cleanupSubstituicao(seed.patientId);
+      cleanupWJAAndEncuadre(t, v);
+      cleanupWJAAndEncuadre(w, v);
+      cleanupTestWorker(t);
+      cleanupTestWorker(w);
+      seed.cleanup();
+    }
+  });
+
+  test('substituicao-nao-move', async ({ request }) => {
+    const seed = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.6, lng: -58.4 });
+    const token = tokenFor(ITINERARIO_STAFF);
+    const v = await activateRecruitmentViaApi(request, seed.patientId, seed.serviceId);
+    const itin = await readItineraryApi(request, seed.patientId);
+    const svc = itin.body.data?.services.find((s) => s.contractedServiceId === seed.serviceId);
+    const slotId = svc?.slots[0]?.id;
+    if (!slotId) throw new Error('substituicao-nao-move: slot ausente na semente');
+
+    const t = insertTestWorker({ occupation: 'AT' });
+    const w = insertTestWorker({ occupation: 'AT' });
+    const d = nextWeekdaySql(1);
+
+    async function leitura(): Promise<string> {
+      const itinAgora = await readItineraryApi(request, seed.patientId);
+      const cobertas = itinAgora.body.data?.services.find((s) => s.contractedServiceId === seed.serviceId)?.cobertas;
+      return JSON.stringify({ cobertas, status: patientStatus(seed.patientId) });
+    }
+
+    try {
+      insertWJA({ workerId: t, jobPostingId: v, funnelStage: 'QUICK_RESPONSE_TEAM' });
+      insertWJA({ workerId: w, jobPostingId: v, funnelStage: 'QUICK_RESPONSE_TEAM' });
+      const allocT = await allocateApi(request, token, seed.patientId, seed.serviceId, slotId, { workerId: t });
+      expect(allocT.status).toBe(201);
+      const allocationId = (allocT.body.data as AllocateData | undefined)?.allocationId;
+      if (!allocationId) throw new Error('substituicao-nao-move: alocação sem allocationId');
+
+      const leitura0 = await leitura();
+
+      const absence = await registerAbsenceApi(request, token, seed.patientId, seed.serviceId, allocationId, { date: d });
+      expect(absence.status).toBe(201);
+      const absenceId = absence.body.data?.absenceId;
+      if (!absenceId) throw new Error('substituicao-nao-move: ausência sem absenceId');
+      const leitura1 = await leitura();
+
+      const sub = await setAbsenceSubstituteApi(request, token, seed.patientId, seed.serviceId, absenceId, { substituteWorkerId: w });
+      expect(sub.status).toBe(200);
+      const leitura2 = await leitura();
+
+      const cancel = await cancelAbsenceApi(request, token, seed.patientId, seed.serviceId, absenceId);
+      expect(cancel.status).toBe(200);
+      const leitura3 = await leitura();
+
+      const leituras = [leitura0, leitura1, leitura2, leitura3];
+      console.log('[13.9]', leituras);
+      expect(new Set(leituras).size).toBe(1);
+    } finally {
+      cleanupSubstituicao(seed.patientId);
+      cleanupWJAAndEncuadre(t, v);
+      cleanupWJAAndEncuadre(w, v);
+      cleanupTestWorker(t);
+      cleanupTestWorker(w);
+      seed.cleanup();
+    }
+  });
+
+  test('substituicao-rejeitar-exige-cancelar', async ({ request }) => {
+    const seed = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.6, lng: -58.4 });
+    const token = tokenFor(ITINERARIO_STAFF);
+    const v = await activateRecruitmentViaApi(request, seed.patientId, seed.serviceId);
+    const itin = await readItineraryApi(request, seed.patientId);
+    const svc = itin.body.data?.services.find((s) => s.contractedServiceId === seed.serviceId);
+    const slotId = svc?.slots[0]?.id;
+    if (!slotId) throw new Error('substituicao-rejeitar-exige-cancelar: slot ausente na semente');
+
+    const t = insertTestWorker({ occupation: 'AT' });
+    const w = insertTestWorker({ occupation: 'AT' });
+    const d = nextWeekdaySql(1);
+    try {
+      insertWJA({ workerId: t, jobPostingId: v, funnelStage: 'QUICK_RESPONSE_TEAM' });
+      insertWJA({ workerId: w, jobPostingId: v, funnelStage: 'QUICK_RESPONSE_TEAM' });
+      const allocT = await allocateApi(request, token, seed.patientId, seed.serviceId, slotId, { workerId: t });
+      expect(allocT.status).toBe(201);
+      const allocationId = (allocT.body.data as AllocateData | undefined)?.allocationId;
+      if (!allocationId) throw new Error('substituicao-rejeitar-exige-cancelar: alocação sem allocationId');
+
+      const absence = await registerAbsenceApi(request, token, seed.patientId, seed.serviceId, allocationId, { date: d });
+      expect(absence.status).toBe(201);
+      const absenceId = absence.body.data?.absenceId;
+      if (!absenceId) throw new Error('substituicao-rejeitar-exige-cancelar: ausência sem absenceId');
+      const sub = await setAbsenceSubstituteApi(request, token, seed.patientId, seed.serviceId, absenceId, { substituteWorkerId: w });
+      expect(sub.status).toBe(200);
+
+      const rejectBlocked = await postServiceTeamAction(request, seed.patientId, seed.serviceId, 'reject', {
+        workerId: w, reasonCategory: 'DESISTENCIA_DO_PRESTADOR',
+      });
+      expect(rejectBlocked.status).toBe(422);
+      expect(rejectBlocked.body.code).toBe('SERVICE_TEAM_WORKER_ALLOCATED');
+
+      const cancel = await cancelAbsenceApi(request, token, seed.patientId, seed.serviceId, absenceId);
+      expect(cancel.status).toBe(200);
+
+      const rejectAfterCancel = await postServiceTeamAction(request, seed.patientId, seed.serviceId, 'reject', {
+        workerId: w, reasonCategory: 'DESISTENCIA_DO_PRESTADOR',
+      });
+      expect(rejectAfterCancel.status).toBe(200);
+      const rejectedIds = (rejectAfterCancel.body.data?.rejected ?? []).map((m) => m.workerId);
+
+      console.log('[13.12]', rejectBlocked.status, rejectBlocked.body.code, cancel.status, rejectAfterCancel.status, rejectedIds);
+      expect(rejectedIds).toContain(w);
+    } finally {
+      cleanupSubstituicao(seed.patientId);
+      cleanupWJAAndEncuadre(t, v);
+      cleanupWJAAndEncuadre(w, v);
+      cleanupTestWorker(t);
+      cleanupTestWorker(w);
+      seed.cleanup();
     }
   });
 });
