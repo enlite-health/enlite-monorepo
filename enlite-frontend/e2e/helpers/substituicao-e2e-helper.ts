@@ -130,7 +130,7 @@ export function pastWeekdaySql(dow: number): string {
 
 /**
  * Semeia a ausência em data PASSADA direto em `patient_itinerary_absence` (critério 10) — a API
- * a recusa por desenho (`AbsenceDateInPastError`, DX-13.7); os gatilhos da migration 483 validam
+ * a recusa por desenho (`AbsenceDateInPastError`, DX-13.7); os gatilhos da migration 484 validam
  * igual. `date` vem de `pastWeekdaySql`, nunca do relógio do runner. Sem substituto (o CHECK
  * `(substitute_worker_id IS NULL) = (substitute_application_id IS NULL)` aceita os dois NULL).
  */

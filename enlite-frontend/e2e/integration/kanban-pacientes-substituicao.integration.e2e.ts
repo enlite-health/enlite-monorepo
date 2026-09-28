@@ -791,7 +791,7 @@ test.describe('substituicao @integration', () => {
 
       // Critério 10, Q-EX-13.3: ausência em data PASSADA nasce por SQL (a API a recusa por desenho);
       // sem substituto, mas `date < asOf` → não entra em `alerts`. A alocação nasceu HOJE (segunda,
-      // `allocateApi`) — recua o `valid_from` 14 dias por SQL (a trigger da 483 exige a data dentro
+      // `allocateApi`) — recua o `valid_from` 14 dias por SQL (a trigger da 484 exige a data dentro
       // da vigência, `piab_fora_da_vigencia`) para a segunda passada caber na janela; a alocação em
       // si segue sendo a da API da Fase 11 (só a vigência é ajustada, não recriada).
       const dPast = pastWeekdaySql(1);
