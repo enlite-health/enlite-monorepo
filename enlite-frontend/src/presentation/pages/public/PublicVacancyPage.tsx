@@ -88,20 +88,31 @@ function VacancyCaseCard({
           </div>
         )}
 
-        {/* Botão Postularse */}
-        <Button
-          variant="primary"
-          size="sm"
-          fullWidth
-          onClick={onPostularse}
-          isLoading={isLoading}
-          disabled={!vacancy.talentum_whatsapp_url}
-        >
-          {t('publicVacancy.postularse')}
-        </Button>
+        {/* Botão Postularse — change baja-vacante-por-servico: vaga DE_BAJA (serviço contratado
+            ligado deu baixa) nunca oferece candidatura, mesmo que talentum_whatsapp_url ainda
+            esteja preenchido (o link não deve ser usado depois da baixa). */}
+        {!vacancy.is_disabled && (
+          <Button
+            variant="primary"
+            size="sm"
+            fullWidth
+            onClick={onPostularse}
+            isLoading={isLoading}
+            disabled={!vacancy.talentum_whatsapp_url}
+          >
+            {t('publicVacancy.postularse')}
+          </Button>
+        )}
 
-        {/* Mensagem quando postulação indisponível */}
-        {!vacancy.talentum_whatsapp_url && (
+        {/* Mensagem quando a vaga foi dada de baja — prioridade sobre "ainda não disponível" */}
+        {vacancy.is_disabled && (
+          <Text size="xs" color="muted" className="text-center">
+            {t('publicVacancy.postularseDisabled')}
+          </Text>
+        )}
+
+        {/* Mensagem quando postulação indisponível (vaga ainda ativa, só falta o link) */}
+        {!vacancy.is_disabled && !vacancy.talentum_whatsapp_url && (
           <Text size="xs" color="muted" className="text-center">
             {t('publicVacancy.postularseUnavailable')}
           </Text>

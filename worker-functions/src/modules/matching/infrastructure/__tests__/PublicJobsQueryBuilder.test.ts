@@ -126,6 +126,27 @@ describe('buildPublicJobsWhere', () => {
     expect(params).toEqual(['AR', 'CABA', 'FEMALE']);
   });
 
+  // Cinto de segurança (change baja-vacante-por-servico): vaga não vaza no feed se o serviço
+  // ligado estiver inativo, mesmo que `jp.status` não tenha sido atualizado a tempo — não
+  // depende só de DE_BAJA estar fora de ACTIVE_STATUSES (allow-list, já cobre o caso normal).
+  it('exclui por EXISTS quando o serviço contratado ligado está inativo (cinto de segurança, independente de status)', () => {
+    const { whereClause } = buildPublicJobsWhere({ country: 'AR' });
+
+    expect(whereClause).toContain('NOT EXISTS');
+    expect(whereClause).toContain('FROM patient_contracted_services pcs');
+    expect(whereClause).toContain('pcs.id = jp.contracted_service_id');
+    expect(whereClause).toContain('pcs.active = false');
+  });
+
+  // A EXISTS não usa placeholder — não pode empurrar a numeração dos filtros opcionais.
+  it('a EXISTS do cinto de segurança não consome placeholder — numeração dos filtros opcionais não muda', () => {
+    const { whereClause, params } = buildPublicJobsWhere({ country: 'AR', state: 'CABA' });
+
+    expect(whereClause).toContain('jp.country = $1');
+    expect(whereClause).toContain('pa.state ILIKE $2');
+    expect(params).toEqual(['AR', 'CABA']);
+  });
+
   it('params length matches the highest placeholder number used', () => {
     const { whereClause, params } = buildPublicJobsWhere({
       country: 'BR',

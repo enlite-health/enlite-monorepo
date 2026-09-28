@@ -313,11 +313,34 @@ export class PatientContractedServiceRepository {
   }
 
   /**
+   * Baja/reativação da vaga ligada ao serviço (change baja-vacante-por-servico): some do
+   * WordPress/prestador, mas a página pública segue servindo "desativada". Mesmo `cli` do
+   * `update` chamador — falha aqui desfaz o UPDATE do serviço junto. `false` → grava
+   * `status_before_baja` e vira `DE_BAJA` (vagas vivas, ainda não `DE_BAJA` — idempotente).
+   * `true` → restaura `COALESCE(status_before_baja, 'SEARCHING')` (só vagas em `DE_BAJA`).
+   * `undefined` → no-op. Vaga órfã (sem `contracted_service_id`) fica fora pelo WHERE.
+   */
+  private async applyVacancyBajaGatilho(cli: PoolClient, serviceId: string, active: boolean | undefined): Promise<void> {
+    if (active === false) {
+      await cli.query(
+        `UPDATE job_postings SET status_before_baja = status, status = 'DE_BAJA'
+          WHERE contracted_service_id = $1 AND deleted_at IS NULL AND status != 'DE_BAJA'`,
+        [serviceId],
+      );
+    } else if (active === true) {
+      await cli.query(
+        `UPDATE job_postings SET status = COALESCE(status_before_baja, 'SEARCHING'), status_before_baja = NULL
+          WHERE contracted_service_id = $1 AND deleted_at IS NULL AND status = 'DE_BAJA'`,
+        [serviceId],
+      );
+    }
+  }
+
+  /**
    * Atualização PARCIAL (Merge Patch, molde `PatientClinicalRepository`): chave ausente não
-   * toca a coluna. `active:false` grava `ended_at=NOW()` (baixa, C-a.4); `active` nunca volta a
-   * `true` por este caminho (reabrir não existe — o CHECK `pcs_active_ended_coerente` também
-   * bloquearia `active:true` com `ended_at` preexistente sem limpar a data, então o controller
-   * nunca envia essa combinação).
+   * toca a coluna. `active:false` grava `ended_at=NOW()` (baixa, C-a.4); o schema HTTP só
+   * aceita `false` (reabrir não existe, lex C-a.4) — o repositório aceita as duas direções
+   * porque `applyVacancyBajaGatilho` acima precisa da simetria.
    */
   async update(serviceId: string, patch: ContractedServiceWriteInput): Promise<ContractedServiceDetail | null> {
     try {
@@ -348,6 +371,7 @@ export class PatientContractedServiceRepository {
           // Linha inexistente → ROLLBACK (o `replaceDevices` acima pode já ter escrito) e null.
           if ((res.rowCount ?? 0) === 0) throw SERVICE_ROW_MISSING;
         }
+        await this.applyVacancyBajaGatilho(cli, serviceId, patch.active);
         // DX-7.5: mesma régua do `create` — só quando o corpo manda `schedule` (Merge Patch:
         // chave ausente não sincroniza nada).
         if (patch.schedule !== undefined) {
