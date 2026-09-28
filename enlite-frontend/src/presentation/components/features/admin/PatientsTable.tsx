@@ -29,6 +29,8 @@ export interface PatientRow {
   needsAttention: boolean;
   attentionReasons: string[];
   createdAt: string | null;
+  /** Checkbox "Mostrar desactivados" (D-2026-09-28). `null` = paciente ativo. */
+  deletedAt?: string | null;
 }
 
 interface PatientsTableProps {
@@ -65,6 +67,36 @@ function StatusBadge({ needsAttention, reasons }: { needsAttention: boolean; rea
       <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
       <Text as="span" size="xs" weight="medium" color="inherit">
         {t('admin.patients.statusBadge.needsAttention')}
+      </Text>
+    </span>
+  );
+}
+
+/**
+ * Badge do checkbox "Mostrar desactivados" (D-2026-09-28) — mesmo molde do
+ * `StatusBadge` acima (pill + dot), cor neutra (gray) porque isto não é um
+ * estado de completude clínica, é soft-delete (`patients.deleted_at`). Some
+ * a régua de completude no lugar: um paciente desativado não é "accionable".
+ */
+function DeactivatedBadge() {
+  const { t } = useTranslation();
+  return (
+    <span
+      // Conserto (gate): a escala `gray-*` deste tema é de MARCA — `gray-500` aqui é
+      // `rgba(217,217,217,0.5)`, translúcida, e o dot media ~1,10:1 sobre `gray-300`
+      // (praticamente invisível). Alinhado ao gêmeo de prestadores (`WorkersTable.tsx`):
+      // `slate-100`/`slate-500`/`slate-700`, escala PADRÃO do Tailwind (não sobrescrita
+      // em tailwind.config.js, sólida — sem alpha). Hex reais lidos de
+      // `tailwindcss/colors.js` (v3.4.1): slate-100 #f1f5f9, slate-500 #64748b,
+      // slate-700 #334155. Contraste (fórmula WCAG sRGB→linear→luminância relativa→razão):
+      // texto slate-700/slate-100 → 9,45:1 (acima do AAA 7:1); dot slate-500/slate-100 →
+      // 4,34:1 (acima do mínimo 3:1 para elemento gráfico).
+      className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700"
+      title={t('admin.patients.statusBadge.deactivated')}
+    >
+      <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+      <Text as="span" size="xs" weight="medium" color="inherit">
+        {t('admin.patients.statusBadge.deactivated')}
       </Text>
     </span>
   );
@@ -241,10 +273,16 @@ export function PatientsTable({ patients, onRowClick }: PatientsTableProps): JSX
                     </Text>
                   </TableCell>
                   <TableCell unwrapped className="whitespace-nowrap">
-                    <StatusBadge
-                      needsAttention={row.needsAttention}
-                      reasons={row.attentionReasons}
-                    />
+                    {row.deletedAt ? (
+                      <span data-testid={`patient-row-${row.id}-deactivated-badge`}>
+                        <DeactivatedBadge />
+                      </span>
+                    ) : (
+                      <StatusBadge
+                        needsAttention={row.needsAttention}
+                        reasons={row.attentionReasons}
+                      />
+                    )}
                   </TableCell>
                 </TableRow>
               );

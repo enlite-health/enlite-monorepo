@@ -200,3 +200,22 @@ describe('PatientsTable — o que já existia continua', () => {
     expect(container.textContent).toContain('—');
   });
 });
+
+// ── Checkbox "Mostrar desactivados" (D-2026-09-28) — badge na coluna Estado ───
+
+describe('PatientsTable — badge "Desactivado" (checkbox "Mostrar desactivados")', () => {
+  it('deletedAt preenchido → badge "Desactivado", NÃO o StatusBadge de completude', () => {
+    render(<PatientsTable patients={[row({ deletedAt: '2026-08-01T12:00:00.000Z', needsAttention: true, attentionReasons: ['MISSING_INFO'] })]} />);
+    expect(screen.getByTestId('patient-row-p1-deactivated-badge')).toBeInTheDocument();
+    expect(screen.getByText('Desactivado')).toBeInTheDocument();
+    // O badge de completude (OK/Atención) some — desativado não é "accionable".
+    expect(screen.queryByText('Atención')).toBeNull();
+    expect(screen.queryByText('OK')).toBeNull();
+  });
+
+  it('deletedAt null/ausente → StatusBadge normal, sem o badge "Desactivado"', () => {
+    render(<PatientsTable patients={[row({ deletedAt: null, needsAttention: false })]} />);
+    expect(screen.queryByTestId('patient-row-p1-deactivated-badge')).toBeNull();
+    expect(screen.getByText('OK')).toBeInTheDocument();
+  });
+});

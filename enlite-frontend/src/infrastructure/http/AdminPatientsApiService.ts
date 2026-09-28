@@ -68,6 +68,13 @@ export interface PatientListFilters {
   case_number?: string;
   /** Fase 4 — country scope: 'AR' | 'BR' (omit for all). */
   country?: string;
+  /**
+   * Checkbox "Mostrar desactivados" (D-2026-09-28). Opt-in: ausente/'false' mantém o
+   * default (esconde `deleted_at IS NOT NULL`) — inclusive em `listPatientsForKanban`,
+   * que reusa `listPatients` sem passar isto, de propósito (o Kanban não pode ganhar
+   * pacientes fantasma).
+   */
+  include_deactivated?: string;
   limit?: string;
   offset?: string;
 }

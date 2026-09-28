@@ -79,6 +79,15 @@ export interface WorkerListFilters {
    * Ignorado quando vazio. Tem precedência sobre `status` (singular).
    */
   statuses?: string[];
+  /**
+   * Checkbox "Mostrar desactivados" (D-2026-09-28). Opt-in: só vale quando
+   * `status`/`statuses` NÃO vieram (esses dois já mandam sobre o exclude da
+   * casa — ver bloco `status` abaixo). `'true'` pula o
+   * `excludeDisabledWorkersSql`, então os 3 status (incluindo DISABLED)
+   * aparecem juntos — diferente de `status=DISABLED`, que troca a lista para
+   * SÓ desativados.
+   */
+  include_deactivated?: string;
   limit: string;
   offset: string;
 }
@@ -186,6 +195,11 @@ export function buildWorkerListWhereClause(filters: WorkerListFilters): WorkerLi
     whereClause += ` AND w.status = $${paramIndex}`;
     params.push(filters.status.trim());
     paramIndex++;
+  } else if (filters.include_deactivated === 'true') {
+    // Checkbox "Mostrar desactivados" (D-2026-09-28): sem filtro de status
+    // explícito, o admin pediu para ver os 3 status juntos — não aplica o
+    // exclude da casa. Mesmo WHERE da busca (email/nome/telefone), então
+    // buscar por email de um DISABLED só acha com o checkbox marcado.
   } else {
     whereClause += ` AND ${excludeDisabledWorkersSql('w')}`;
   }

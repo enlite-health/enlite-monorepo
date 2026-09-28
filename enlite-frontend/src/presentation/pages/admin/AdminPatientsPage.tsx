@@ -40,6 +40,7 @@ export function AdminPatientsPage(): JSX.Element {
   const [selectedSpecialty, setSelectedSpecialty] = useState('');
   const [selectedDependency, setSelectedDependency] = useState('');
   const [selectedCountry, setSelectedCountry] = useState('');
+  const [showDeactivated, setShowDeactivated] = useState(false);
   const [itemsPerPage, setItemsPerPage] = useState('20');
   const [currentPage, setCurrentPage] = useState(1);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -70,6 +71,7 @@ export function AdminPatientsPage(): JSX.Element {
   const handleSpecialtyChange = (v: string) => { setSelectedSpecialty(v); setCurrentPage(1); };
   const handleDependencyChange = (v: string) => { setSelectedDependency(v); setCurrentPage(1); };
   const handleCountryChange = (v: string) => { setSelectedCountry(v); setCurrentPage(1); };
+  const handleShowDeactivatedChange = (v: boolean) => { setShowDeactivated(v); setCurrentPage(1); };
   const handleItemsPerPageChange = (v: string) => { setItemsPerPage(v); setCurrentPage(1); };
 
   const filters = useMemo(() => {
@@ -83,6 +85,9 @@ export function AdminPatientsPage(): JSX.Element {
       dependency_level: selectedDependency || undefined,
       case_number: debouncedCode || undefined,
       country: selectedCountry || undefined,
+      // Opt-in (D-2026-09-28): só manda o param quando marcado — ausente mantém o
+      // default do backend (esconde deleted_at), igual a hoje.
+      include_deactivated: showDeactivated ? 'true' : undefined,
       limit: itemsPerPage,
       offset: String((currentPage - 1) * parseInt(itemsPerPage)),
     };
@@ -94,6 +99,7 @@ export function AdminPatientsPage(): JSX.Element {
     selectedSpecialty,
     selectedDependency,
     selectedCountry,
+    showDeactivated,
     itemsPerPage,
     currentPage,
   ]);
@@ -116,6 +122,7 @@ export function AdminPatientsPage(): JSX.Element {
         needsAttention: p.needsAttention ?? false,
         attentionReasons: p.attentionReasons ?? [],
         createdAt: p.createdAt ?? null,
+        deletedAt: p.deletedAt ?? null,
       })),
     [rawPatients],
   );
@@ -203,6 +210,8 @@ export function AdminPatientsPage(): JSX.Element {
           selectedCountry={selectedCountry}
           onCountryChange={handleCountryChange}
           countryOptions={countryOptions}
+          showDeactivated={showDeactivated}
+          onShowDeactivatedChange={handleShowDeactivatedChange}
         />
 
         {error ? (

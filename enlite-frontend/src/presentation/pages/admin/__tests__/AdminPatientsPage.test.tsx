@@ -66,6 +66,12 @@ vi.mock('@presentation/components/features/admin/PatientFilters', () => ({
       <button data-testid="f-dependencia" onClick={() => p.onDependencyChange('SEVERE')}>d</button>
       <button data-testid="f-pais" onClick={() => p.onCountryChange('AR')}>p</button>
       <span data-testid="f-motivo-atual">{p.selectedReason}</span>
+      <input
+        type="checkbox"
+        data-testid="f-desactivados"
+        checked={p.showDeactivated}
+        onChange={(e) => p.onShowDeactivatedChange(e.target.checked)}
+      />
     </div>
   ),
 }));
@@ -146,6 +152,8 @@ describe('AdminPatientsPage — o que chega da API vira linha', () => {
       id: 'y', firstName: '', lastName: '', responsibleName: null, documentType: null,
       documentNumber: null, caseNumber: null, dependencyLevel: null, clinicalSpecialty: null,
       serviceType: [], needsAttention: false, attentionReasons: [], createdAt: null,
+      // Checkbox "Mostrar desactivados" (D-2026-09-28): default = paciente ativo.
+      deletedAt: null,
     });
   });
 
@@ -171,7 +179,7 @@ describe('AdminPatientsPage — filtro vira parâmetro', () => {
     expect(ultimosFiltros()).toEqual({
       search: undefined, needs_attention: undefined, attention_reason: undefined,
       clinical_specialty: undefined, dependency_level: undefined, case_number: undefined,
-      country: undefined, limit: '20', offset: '0',
+      country: undefined, include_deactivated: undefined, limit: '20', offset: '0',
     });
   });
 
@@ -216,6 +224,18 @@ describe('AdminPatientsPage — filtro vira parâmetro', () => {
     await u.click(screen.getByTestId('f-dependencia'));
     await u.click(screen.getByTestId('f-pais'));
     expect(ultimosFiltros()).toMatchObject({ clinical_specialty: 'ASD', dependency_level: 'SEVERE', country: 'AR' });
+  });
+
+  it('checkbox "Mostrar desactivados" (D-2026-09-28): opt-in — marcado manda include_deactivated="true", desmarcar de novo tira o param (não manda "false")', async () => {
+    render(<AdminPatientsPage />);
+    const u = user();
+    expect(ultimosFiltros().include_deactivated).toBeUndefined();
+
+    await u.click(screen.getByTestId('f-desactivados'));
+    expect(ultimosFiltros().include_deactivated).toBe('true');
+
+    await u.click(screen.getByTestId('f-desactivados'));
+    expect(ultimosFiltros().include_deactivated).toBeUndefined();
   });
 });
 

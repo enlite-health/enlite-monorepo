@@ -16,6 +16,16 @@ export interface SearchWorkersParams {
   profession?: string;
   sex?: string;
   language?: string;
+  /**
+   * Opt-in do MCP `worker.search` (decisão do Gabriel, 28/09): ausente/`false`
+   * mantém o comportamento atual — exclui DISABLED (`excludeDisabledWorkersSql`,
+   * via `buildWorkerListWhereClause`). `true` soma os DISABLED aos demais status,
+   * MESMO molde/precedência do checkbox "Mostrar desactivados" do painel
+   * (commit b7eeea14, `AdminWorkersListHelpers.ts`) — `status` explícito continua
+   * mandando. Não exposto para a Luz decidir sozinha: só o schema MCP declara
+   * (`WorkerSearchCapability`); a Luz não é instruída a usá-lo.
+   */
+  includeDeactivated?: boolean;
   limit: number;
   offset: number;
 }
@@ -61,6 +71,9 @@ export class SearchWorkersUseCase {
     let { whereClause, params: sqlParams, paramIndex } = buildWorkerListWhereClause({
       ...(params.profession !== undefined ? { profession: params.profession } : {}),
       ...(params.status !== undefined ? { status: params.status } : {}),
+      ...(params.includeDeactivated !== undefined
+        ? { include_deactivated: params.includeDeactivated ? 'true' : 'false' }
+        : {}),
       limit: String(limit),
       offset: String(offset),
     });

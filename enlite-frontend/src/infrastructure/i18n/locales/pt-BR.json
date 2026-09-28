@@ -2992,6 +2992,7 @@
         "tags": "Etiquetas",
         "tagsPlaceholder": "Filtrar por etiqueta...",
         "tagsAll": "Todas",
+        "showDeactivated": "Mostrar desativados",
         "profile": {
           "allOption": "Todos",
           "clear": "Limpar filtros",
@@ -3043,6 +3044,9 @@
         "submitted": "Enviado",
         "under_review": "Em análise",
         "approved": "Aprovado"
+      },
+      "statusBadge": {
+        "deactivated": "Desativado"
       },
       "stats": {
         "today": "Cadastros Hoje",
@@ -3373,6 +3377,7 @@
         "MODERATE": "Moderada",
         "MILD": "Leve"
       },
+      "showDeactivatedLabel": "Mostrar desativados",
       "clearFilters": "Limpar",
       "pagination": "{{start}}–{{end}} de {{total}}",
       "previousPage": "Página anterior",
@@ -3393,7 +3398,8 @@
       },
       "statusBadge": {
         "complete": "OK",
-        "needsAttention": "Atenção"
+        "needsAttention": "Atenção",
+        "deactivated": "Desativado"
       },
       "stats": {
         "total": "Total de pacientes",

@@ -108,6 +108,62 @@ describe('SearchWorkersUseCase', () => {
     expect(result.workers[0].name).toBe('ana@test.com');
   });
 
+  it('sem includeDeactivated: SQL exclui DISABLED (comportamento atual, idêntico ao da Luz)', async () => {
+    const { useCase, query } = makeDeps();
+    query
+      .mockResolvedValueOnce({ rows: [{ total: '1' }] })
+      .mockResolvedValueOnce({ rows: [ROW] });
+
+    await useCase.execute({ limit: 10, offset: 0 });
+
+    const [sql] = query.mock.calls[0] as [string, unknown[]];
+    expect(sql).toContain(`COALESCE(w.status, '') <> 'DISABLED'`);
+  });
+
+  it('includeDeactivated=true: SQL NÃO exclui DISABLED (opt-in do MCP worker.search)', async () => {
+    const { useCase, query } = makeDeps();
+    query
+      .mockResolvedValueOnce({ rows: [{ total: '1' }] })
+      .mockResolvedValueOnce({ rows: [ROW] });
+
+    await useCase.execute({ includeDeactivated: true, limit: 10, offset: 0 });
+
+    const [sql] = query.mock.calls[0] as [string, unknown[]];
+    expect(sql).not.toContain(`COALESCE(w.status, '') <> 'DISABLED'`);
+  });
+
+  it('includeDeactivated ausente vs includeDeactivated=false: WHERE byte-a-byte idêntico (opt-in real, não default disfarçado)', async () => {
+    const { useCase: useCaseAbsent, query: queryAbsent } = makeDeps();
+    queryAbsent
+      .mockResolvedValueOnce({ rows: [{ total: '1' }] })
+      .mockResolvedValueOnce({ rows: [ROW] });
+    await useCaseAbsent.execute({ limit: 10, offset: 0 });
+    const [sqlAbsent] = queryAbsent.mock.calls[0] as [string, unknown[]];
+
+    const { useCase: useCaseFalse, query: queryFalse } = makeDeps();
+    queryFalse
+      .mockResolvedValueOnce({ rows: [{ total: '1' }] })
+      .mockResolvedValueOnce({ rows: [ROW] });
+    await useCaseFalse.execute({ includeDeactivated: false, limit: 10, offset: 0 });
+    const [sqlFalse] = queryFalse.mock.calls[0] as [string, unknown[]];
+
+    expect(sqlFalse).toBe(sqlAbsent);
+  });
+
+  it('status explícito manda sobre includeDeactivated=true (mesma precedência do commit b7eeea14)', async () => {
+    const { useCase, query } = makeDeps();
+    query
+      .mockResolvedValueOnce({ rows: [{ total: '1' }] })
+      .mockResolvedValueOnce({ rows: [ROW] });
+
+    await useCase.execute({ status: 'REGISTERED', includeDeactivated: true, limit: 10, offset: 0 });
+
+    const [sql, params] = query.mock.calls[0] as [string, unknown[]];
+    expect(sql).toContain('w.status = $');
+    expect(params).toContain('REGISTERED');
+    expect(sql).not.toContain(`COALESCE(w.status, '') <> 'DISABLED'`);
+  });
+
   it('nunca expõe phone/dados encriptados no item retornado', async () => {
     const { useCase, query } = makeDeps();
     query
