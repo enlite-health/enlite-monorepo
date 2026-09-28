@@ -19,7 +19,8 @@ import type { ServiceTeamRows } from '../infrastructure/ServiceTeamReader';
 import { deriveServiceTeam, type DeriveServiceTeamResult } from '../domain/deriveServiceTeam';
 import type { GetServiceTeamResult, ServiceTeamMember } from './GetServiceTeamUseCase';
 import { operationDateOf } from './itineraryCoverage';
-import { projectWorkerFields, NOME_REDIGIDO, type Decryptor } from '@modules/identity/permissions';
+import type { Decryptor } from '@modules/identity/permissions';
+import { projectWorkerDisplayNames, type WorkerNameSource } from './workerDisplayNames';
 
 /**
  * `row → deriveServiceTeam` numa fonte só (DX-11.6, P8) — antes duplicado em
@@ -44,11 +45,6 @@ export function deriveServiceTeamFromRows(row: ServiceTeamRows, now: Date): Deri
     substitutions: row.substitutions ?? [],
   });
   return { ...team, asOf };
-}
-
-interface WorkerNameSource {
-  firstNameEncrypted: string | null;
-  lastNameEncrypted: string | null;
 }
 
 /**
@@ -80,19 +76,7 @@ export async function projectServiceTeamDisplayNames(
     }
   }
 
-  const projected = await Promise.all(
-    [...sourceByWorkerId.entries()].map(async ([workerId, source]) => {
-      const result = await projectWorkerFields(
-        cells,
-        { firstNameEncrypted: source.firstNameEncrypted, lastNameEncrypted: source.lastNameEncrypted, phone: null },
-        kms,
-      );
-      const displayName = result.name && result.name !== NOME_REDIGIDO ? result.name : null;
-      return [workerId, displayName] as const;
-    }),
-  );
-
-  return new Map(projected);
+  return projectWorkerDisplayNames(sourceByWorkerId, cells, kms);
 }
 
 /**
