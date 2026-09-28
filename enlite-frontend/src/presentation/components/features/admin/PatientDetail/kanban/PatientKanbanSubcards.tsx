@@ -4,6 +4,7 @@ import { Rocket, ExternalLink, AlertTriangle } from 'lucide-react';
 import { Text } from '@presentation/components/atoms/Text';
 import { useCanActivateRecruitment } from '@presentation/hooks/useCellAccess';
 import type { PatientKanbanServiceSummary } from '@domain/entities/PatientDetail';
+import { coverageHoursPair } from '@domain/entities/PatientItinerary';
 
 interface Props {
   patientId: string;
@@ -41,7 +42,7 @@ export function PatientKanbanSubcards({ patientId, services }: Props): JSX.Eleme
           service.serviceCode,
         );
         const contracted = service.contratadas.weekly;
-        const pairText = `${service.cobertas}/${contracted ?? '—'}`;
+        const pairText = coverageHoursPair(service.cobertas, contracted);
         const pairAria = t('admin.patients.kanban.subcard.pairAria', {
           covered: service.cobertas,
           contracted: contracted ?? '—',
