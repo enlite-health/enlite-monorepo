@@ -3277,7 +3277,9 @@
           "weeklyUnit": "h/sem",
           "pairAria": "{{covered}} de {{contracted}} horas semanais cobertas",
           "openToActivate": "Abrir ficha para ativar {{service}}",
-          "loadError": "Não foi possível carregar os serviços dos pacientes."
+          "loadError": "Não foi possível carregar os serviços dos pacientes.",
+          "uncoveredDayAria_one": "{{count}} dia sem cobertura",
+          "uncoveredDayAria_other": "{{count}} dias sem cobertura"
         }
       },
       "countryLabel": "País",
@@ -3769,6 +3771,7 @@
           },
           "rejectButton": "Rejeitar",
           "revertButton": "Reverter",
+          "substituteButton": "Substituir num dia",
           "rejectModal": {
             "title": "Motivo da rejeição",
             "confirm": "Rejeitar",
@@ -3790,6 +3793,17 @@
             "REJEITADO_POR_ENGANO": "Rejeitado por engano",
             "OTHER": "Outro"
           },
+          "substitution": {
+            "title": "Substituir num dia",
+            "slot": "Faixa",
+            "date": "Data",
+            "worker": "Substituto",
+            "noSubstitute": "Sem substituto (dia sem cobertura)",
+            "confirm": "Confirmar",
+            "cancel": "Cancelar",
+            "dateChip": "{{date}}",
+            "label": "Substituição"
+          },
           "actionErrors": {
             "SERVICE_TEAM_WORKER_ALLOCATED": "Remova o prestador do itinerário antes de rejeitá-lo.",
             "SERVICE_TEAM_REASON_REQUIRED": "Escolha um motivo para continuar.",
@@ -3797,6 +3811,15 @@
             "SERVICE_TEAM_NOT_SELECTED": "Este prestador não está mais em Selecionados.",
             "SERVICE_TEAM_NOT_REJECTED": "Este prestador não está em Rejeitados.",
             "SERVICE_TEAM_ALREADY_REJECTED": "Este prestador já está rejeitado.",
+            "NOT_SELECTED_FOR_SERVICE": "Este prestador não está em Selecionados.",
+            "SUBSTITUTE_IS_TITULAR": "O substituto não pode ser o próprio titular.",
+            "ITINERARY_OVERLAP": "Esse horário se sobrepõe a outra alocação do substituto.",
+            "ABSENCE_ALREADY_EXISTS": "Já existe uma ausência registrada para essa data.",
+            "ABSENCE_DATE_IN_PAST": "Não é possível registrar uma ausência em data passada.",
+            "ABSENCE_WEEKDAY_MISMATCH": "A data escolhida não corresponde ao dia da faixa.",
+            "ABSENCE_OUTSIDE_ALLOCATION": "A data está fora do período da alocação.",
+            "ABSENCE_CANCELLED": "Essa ausência já foi cancelada.",
+            "ALLOCATION_NOT_ACTIVE": "Essa faixa não está mais ativa.",
             "generic": "Não foi possível concluir a ação. Tente de novo."
           }
         },
