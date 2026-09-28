@@ -166,6 +166,44 @@ describe('useServiceTeam', () => {
     expect(result.current.team).toEqual(reverted);
   });
 
+  it('N3: ação pendente + re-clique da MESMA linha — a resposta da ação chega DEPOIS do GET novo e é descartada; o estado fica com o do GET', async () => {
+    getServiceTeam.mockResolvedValueOnce(team('s1'));
+    const { result, rerender } = renderHook(({ nonce }) => useServiceTeam('p1', 's1', nonce), {
+      initialProps: { nonce: 0 },
+    });
+    await waitFor(() => expect(result.current.status).toBe('ok'));
+
+    const actionDeferred = deferred<ServiceTeam>();
+    rejectServiceTeamMember.mockImplementationOnce(() => actionDeferred.promise);
+    const newGet = deferred<ServiceTeam>();
+    getServiceTeam.mockImplementationOnce(() => newGet.promise);
+
+    let actionPromise!: Promise<void>;
+    act(() => {
+      actionPromise = result.current.reject('w1', 'OTHER');
+    });
+    // re-clique da MESMA linha antes da ação responder — dispara um GET novo (requestId mais recente).
+    rerender({ nonce: 1 });
+    expect(getServiceTeam).toHaveBeenCalledTimes(2);
+
+    // o GET novo (mais recente) responde primeiro.
+    const getTeam = team('s1', 'v-get-novo');
+    await act(async () => {
+      newGet.resolve(getTeam);
+      await newGet.promise;
+    });
+    await waitFor(() => expect(result.current.status).toBe('ok'));
+    expect(result.current.team).toEqual(getTeam);
+
+    // a resposta da AÇÃO (requisição mais velha) chega depois — é descartada, não pinta por cima do GET.
+    const actionTeam = team('s1', 'v-acao-velha');
+    await act(async () => {
+      actionDeferred.resolve(actionTeam);
+      await actionPromise;
+    });
+    expect(result.current.team).toEqual(getTeam);
+  });
+
   it('422 na ação: actionError = SERVICE_TEAM_WORKER_ALLOCATED', async () => {
     getServiceTeam.mockResolvedValueOnce(team('s1'));
     rejectServiceTeamMember.mockRejectedValueOnce(

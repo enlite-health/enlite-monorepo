@@ -6,10 +6,12 @@
  */
 jest.mock('@shared/logging', () => ({ reportError: jest.fn(), logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() } }));
 jest.mock('@shared/audit/contactAccessFromRequest', () => ({ emitirTrilhaDeContato: jest.fn() }));
+jest.mock('@modules/identity', () => ({ AuthMiddleware: { getAuthContext: jest.fn() } }));
 
 import { Request, Response } from 'express';
 import { reportError } from '@shared/logging';
 import { emitirTrilhaDeContato } from '@shared/audit/contactAccessFromRequest';
+import { AuthMiddleware } from '@modules/identity';
 import { AdminServiceTeamController } from '../AdminServiceTeamController';
 import { GetServiceTeamUseCase, ServiceTeamNotFoundError, type GetServiceTeamResult } from '../../../application/GetServiceTeamUseCase';
 import {
@@ -26,19 +28,21 @@ const SERVICE_ID = '22222222-2222-2222-2222-222222222222';
 const WORKER_ID = '33333333-3333-3333-3333-333333333333';
 
 /**
- * `user` default `{ uid: 'staff-1' }` — a maioria dos testes de reject/revert quer exercitar OUTRA
+ * `actorId` default `'staff-1'` — a maioria dos testes de reject/revert quer exercitar OUTRA
  * coisa (motivo, mapeamento de erro, forma) e não a autenticação; passar `null` pede o cenário SEM
- * ator (achado #9: sem `req.user?.uid`, a ação responde 401, nunca grava `'unknown'`).
+ * ator (achado #9/N5: sem `AuthMiddleware.getAuthContext(req)?.principal.id`, a ação responde 401,
+ * nunca grava `'unknown'`). Molde do ator: `AdminPatientContractedServicesController.test.ts:39`
+ * (`AuthMiddleware.getAuthContext` mockado, nunca `req.user`).
  */
 function reqRes(
   params: Record<string, unknown> = {},
   body: Record<string, unknown> = {},
-  user: { uid: string } | null = { uid: 'staff-1' },
+  actorId: string | null = 'staff-1',
 ): [Request, Response] {
   const json = jest.fn().mockReturnThis();
   const status = jest.fn().mockReturnValue({ json });
   const req = { params, body, query: {} } as unknown as Request;
-  if (user) (req as unknown as { user: { uid: string } }).user = user;
+  (AuthMiddleware.getAuthContext as jest.Mock).mockReturnValue(actorId ? { principal: { id: actorId } } : undefined);
   return [req, { json, status } as unknown as Response];
 }
 
@@ -141,10 +145,9 @@ describe('AdminServiceTeamController', () => {
       expect((res as unknown as { json: jest.Mock }).json).toHaveBeenCalledWith({ success: false, code: 'SERVICE_TEAM_REASON_REQUIRED' });
     });
 
-    it('feliz reject → 200 { success: true, data }, actorUid do req.user, e a trilha filtra o redigido', async () => {
+    it('feliz reject → 200 { success: true, data }, actorUid do AuthMiddleware.getAuthContext, e a trilha filtra o redigido', async () => {
       markUseCase.reject.mockResolvedValueOnce(team());
       const [req, res] = reqRes({ id: PATIENT_ID, sid: SERVICE_ID }, { workerId: WORKER_ID, reasonCategory: 'OTHER' });
-      (req as unknown as { user?: { uid: string } }).user = { uid: 'staff-1' };
       await ctrl.reject(req, res);
       expect(res.status).toHaveBeenCalledWith(200);
       expect((res as unknown as { json: jest.Mock }).json).toHaveBeenCalledWith({ success: true, data: team() });
@@ -159,7 +162,7 @@ describe('AdminServiceTeamController', () => {
       expect(emitirTrilhaDeContato).toHaveBeenCalledWith(req, [WORKER_ID]);
     });
 
-    it('feliz revert → 200 { success: true, data }, actorUid do req.user', async () => {
+    it('feliz revert → 200 { success: true, data }, actorUid do AuthMiddleware.getAuthContext', async () => {
       markUseCase.revert.mockResolvedValueOnce(team());
       const [req, res] = reqRes({ id: PATIENT_ID, sid: SERVICE_ID }, { workerId: WORKER_ID, reasonCategory: 'REAVALIACAO' });
       await ctrl.revert(req, res);
@@ -167,7 +170,7 @@ describe('AdminServiceTeamController', () => {
       expect(markUseCase.revert).toHaveBeenCalledWith(expect.objectContaining({ actorUid: 'staff-1' }));
     });
 
-    it('achado #9: sem req.user?.uid → 401 UNAUTHENTICATED, o caso de uso NUNCA roda (nunca grava actorUid "unknown" na auditoria)', async () => {
+    it('achado #9: sem AuthMiddleware.getAuthContext(req) → 401 UNAUTHENTICATED, o caso de uso NUNCA roda (nunca grava actorUid "unknown" na auditoria)', async () => {
       const [req, res] = reqRes({ id: PATIENT_ID, sid: SERVICE_ID }, { workerId: WORKER_ID, reasonCategory: 'OTHER' }, null);
       await ctrl.reject(req, res);
       expect(res.status).toHaveBeenCalledWith(401);
@@ -175,7 +178,7 @@ describe('AdminServiceTeamController', () => {
       expect(markUseCase.reject).not.toHaveBeenCalled();
     });
 
-    it('achado #9: o mesmo vale para revert — sem req.user?.uid → 401, 0 chamada ao caso de uso', async () => {
+    it('achado #9: o mesmo vale para revert — sem AuthMiddleware.getAuthContext(req) → 401, 0 chamada ao caso de uso', async () => {
       const [req, res] = reqRes({ id: PATIENT_ID, sid: SERVICE_ID }, { workerId: WORKER_ID, reasonCategory: 'REAVALIACAO' }, null);
       await ctrl.revert(req, res);
       expect(res.status).toHaveBeenCalledWith(401);

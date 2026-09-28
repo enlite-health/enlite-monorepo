@@ -137,11 +137,14 @@ test.describe('quadro-c @integration', () => {
       // Sem `page.reload()` — re-clica a linha pra atualizar o quadro C (`selectionNonce`, DX-10.8).
       // Espera a resposta do GET /team da re-seleção ANTES de medir — sem isso o `toHaveCount(0)`
       // pode passar ANTES do fetch responder (o clique zera `team` no estado antes da resposta
-      // chegar), provando o "zero" errado (achado 2 do veredito, gate parcial G1-e).
+      // chegar), provando o "zero" errado (achado 2 do veredito, gate parcial G1-e). `r.ok()` +
+      // método GET: um 500 no `/team` não pode mais passar o zero como se fosse "rejeitado de
+      // verdade" (N2 do gate fecho — o zero também acontece quando a tela some por erro).
       await Promise.all([
-        page.waitForResponse((r) => r.url().includes('/contracted-services/') && r.url().endsWith('/team')),
+        page.waitForResponse((r) => r.request().method() === 'GET' && r.url().includes('/contracted-services/') && r.url().endsWith('/team') && r.ok()),
         selectServiceRow(page, seed.serviceId),
       ]);
+      await expect(page.getByTestId('kanban-column-SELECTED_FOR_SERVICE')).toBeVisible();
       await expect(page.getByTestId(`service-team-card-${workerId}`)).toHaveCount(0);
 
       const apiAfter = await readServiceTeamApi(request, seed.patientId, seed.serviceId);
@@ -315,12 +318,14 @@ test.describe('quadro-c @integration', () => {
     }
   });
 
-  test('quadro-c-reverter-exige-motivo', async ({ request }) => {
+  test('quadro-c-reverter-exige-motivo', async ({ page, request }) => {
     const seed = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.6, lng: -58.4 });
     const vacancyId = await activateRecruitmentViaApi(request, seed.patientId, seed.serviceId);
     const workerId = insertTestWorker({ occupation: 'AT' });
+    const workerUi = insertTestWorker({ occupation: 'AT' });
     try {
       insertWJA({ workerId, jobPostingId: vacancyId, funnelStage: 'QUICK_RESPONSE_TEAM' });
+      insertWJA({ workerId: workerUi, jobPostingId: vacancyId, funnelStage: 'QUICK_RESPONSE_TEAM' });
       const rejected = await postServiceTeamAction(request, seed.patientId, seed.serviceId, 'reject', {
         workerId, reasonCategory: 'OTHER',
       });
@@ -352,10 +357,37 @@ test.describe('quadro-c @integration', () => {
       expect(revertedAtFilled).toBe('true');
       expect(revertedByFilled).toBe('true');
       expect((withReason.body.data?.selected ?? []).map((m) => m.workerId)).toContain(workerId);
+
+      // Também pela tela (N4 do gate fecho — molde: o trecho de "Rechazar" pela tela em
+      // `quadro-c-rejeitar-exige-motivo`): worker rejeitado por fixture (API) → clique real em
+      // "Revertir" → modal → confirmar desabilitado sem escolha → escolher → confirmar → card em
+      // Seleccionado + 0 marca ativa.
+      const rejectedUi = await postServiceTeamAction(request, seed.patientId, seed.serviceId, 'reject', {
+        workerId: workerUi, reasonCategory: 'OTHER',
+      });
+      expect(rejectedUi.status).toBe(200);
+
+      await loginAs(page, STAFF);
+      await openContractedServiceTab(page, seed.patientId);
+      await selectServiceRow(page, seed.serviceId);
+      await expect(
+        page.getByTestId('kanban-column-REJECTED_FOR_SERVICE').getByTestId(`service-team-card-${workerUi}`),
+      ).toBeVisible();
+      await page.getByTestId(`service-team-revert-${workerUi}`).click();
+      await expect(page.getByTestId('service-team-revert-modal')).toBeVisible();
+      const confirmBtn = page.getByTestId('service-team-revert-confirm');
+      await expect(confirmBtn).toBeDisabled();
+      await chooseReasonInModal(page, 'service-team-revert', 'REAVALIACAO');
+      await expect(
+        page.getByTestId('kanban-column-SELECTED_FOR_SERVICE').getByTestId(`service-team-card-${workerUi}`),
+      ).toHaveCount(1);
+      expect(countMarks(seed.serviceId, workerUi, { active: true })).toBe(0);
     } finally {
       cleanupQuadroC(seed.patientId);
       cleanupWJAAndEncuadre(workerId, vacancyId);
+      cleanupWJAAndEncuadre(workerUi, vacancyId);
       cleanupTestWorker(workerId);
+      cleanupTestWorker(workerUi);
       seed.cleanup();
     }
   });
@@ -463,11 +495,13 @@ test.describe('quadro-c @integration', () => {
       await loginAs(page, STAFF);
       await openContractedServiceTab(page, seed.patientId);
       // Espera a resposta do GET /team do serviço `s2` ANTES de medir — mesma régua de
-      // `quadro-c-rechazado-na-vaga-some` (o zero não pode passar antes do fetch responder).
+      // `quadro-c-rechazado-na-vaga-some` (o zero não pode passar antes do fetch responder, nem
+      // quando o fetch falha: `r.ok()` + GET, N2 do gate fecho).
       await Promise.all([
-        page.waitForResponse((r) => r.url().includes('/contracted-services/') && r.url().endsWith('/team')),
+        page.waitForResponse((r) => r.request().method() === 'GET' && r.url().includes('/contracted-services/') && r.url().endsWith('/team') && r.ok()),
         selectServiceRow(page, s2),
       ]);
+      await expect(page.getByTestId('kanban-column-SELECTED_FOR_SERVICE')).toBeVisible();
       await expect(page.getByTestId(`service-team-card-${workerId}`)).toHaveCount(0);
     } finally {
       cleanupQuadroC(seed.patientId);

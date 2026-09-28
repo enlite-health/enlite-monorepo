@@ -18,11 +18,13 @@ export interface UseServiceTeamResult {
  * e 15). `reject`/`revert` gravam a marca e recebem o time já recalculado na resposta — nunca um
  * refetch depois da ação (0 GET extra).
  *
- * Guarda por REQUISIÇÃO (gate parcial #8, achado C3 do veredito): `requestIdRef` incrementa a CADA
- * fetch (troca de linha OU re-clique da mesma linha) e só a resposta cuja requisição é a mais
- * recente pinta o estado. Guardar só pelo `serviceId` (como antes) não distingue duas requisições
- * do MESMO serviço — um re-clique rápido cuja 1ª resposta chega DEPOIS da 2ª sobrescreveria o
- * estado com o dado velho, porque o `serviceId` das duas é igual.
+ * Guarda por REQUISIÇÃO (gate parcial #8, achado C3 do veredito; estendida ao N3 do gate fecho):
+ * `requestIdRef` incrementa a CADA requisição — GET (troca de linha OU re-clique da mesma linha)
+ * OU ação (`reject`/`revert`) — e só a resposta cuja requisição é a mais recente pinta o estado.
+ * Guardar só pelo `serviceId` (como antes, e como as ações faziam até o N3) não distingue duas
+ * requisições do MESMO serviço — um re-clique rápido cuja 1ª resposta chega DEPOIS da 2ª (seja
+ * GET×GET, seja ação×GET) sobrescreveria o estado com o dado velho, porque o `serviceId` das duas
+ * é igual.
  */
 export function useServiceTeam(
   patientId: string,
@@ -32,20 +34,17 @@ export function useServiceTeam(
   const [team, setTeam] = useState<ServiceTeam | null>(null);
   const [status, setStatus] = useState<ServiceTeamStatus>('idle');
   const [actionError, setActionError] = useState<string | null>(null);
-  const currentServiceIdRef = useRef<string | null>(null);
   const requestIdRef = useRef(0);
 
   useEffect(() => {
     if (!serviceId) {
       requestIdRef.current += 1;
-      currentServiceIdRef.current = null;
       setTeam(null);
       setStatus('idle');
       setActionError(null);
       return;
     }
     const requestId = ++requestIdRef.current;
-    currentServiceIdRef.current = serviceId;
     setTeam(null);
     setStatus('loading');
     setActionError(null);
@@ -61,19 +60,23 @@ export function useServiceTeam(
       });
   }, [patientId, serviceId, selectionNonce]);
 
-  /** `reject`/`revert` compartilham a régua de erro (403 → forbidden; 422/409 → actionError = code; outro → error). */
+  /** `reject`/`revert` compartilham a régua de erro (403 → forbidden; 422/409 → actionError = code;
+   * outro → error) e a MESMA guarda de requisição do GET (`requestIdRef`, N3 do gate fecho): a
+   * resposta de uma ação só pinta o estado se nenhuma requisição mais nova — GET ou outra ação —
+   * começou depois dela. */
   const runAction = useCallback(
     async (call: (sid: string) => Promise<ServiceTeam>) => {
       if (!serviceId) return;
       const targetServiceId = serviceId;
+      const requestId = ++requestIdRef.current;
       setActionError(null);
       try {
         const result = await call(targetServiceId);
-        if (currentServiceIdRef.current !== targetServiceId) return; // trocou de linha durante a ação
+        if (requestIdRef.current !== requestId) return; // requisição mais nova (GET ou ação) já começou
         setTeam(result);
         setStatus('ok');
       } catch (err) {
-        if (currentServiceIdRef.current !== targetServiceId) return;
+        if (requestIdRef.current !== requestId) return;
         if (err instanceof ContractedServiceApiError && err.status === 403) {
           setStatus('forbidden');
           return;

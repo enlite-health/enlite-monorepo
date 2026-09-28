@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { reportError } from '@shared/logging';
+import { AuthMiddleware } from '@modules/identity';
 import { emitirTrilhaDeContato } from '@shared/audit/contactAccessFromRequest';
 import { GetServiceTeamUseCase, ServiceTeamNotFoundError, type GetServiceTeamResult } from '../../application/GetServiceTeamUseCase';
 import {
@@ -75,8 +76,10 @@ export class AdminServiceTeamController {
     }
     // `rejected_by`/`reverted_by` são coluna de auditoria NOT NULL — gravar 'unknown' nela some com
     // a autoria em vez de falhar (achado #9 do gate). Ator ausente é erro de AUTENTICAÇÃO, não uma
-    // forma alternativa de rodar a ação.
-    const actorUid = req.user?.uid;
+    // forma alternativa de rodar a ação. Molde do ator: `AdminPatientContractedServicesController.ts:50`
+    // (`AuthMiddleware.getAuthContext(req)?.principal.id`) — SEM o `?? 'unknown'` do irmão: aqui a
+    // ausência é 401, nunca um autor fantasma (N5 do gate fecho).
+    const actorUid = AuthMiddleware.getAuthContext(req)?.principal.id;
     if (!actorUid) {
       res.status(401).json({ success: false, code: 'UNAUTHENTICATED' });
       return;

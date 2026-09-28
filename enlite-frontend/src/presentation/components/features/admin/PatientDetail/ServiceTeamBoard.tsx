@@ -125,8 +125,9 @@ export function ServiceTeamBoard({ team, onReject, onRevert, actionError }: Serv
         <Text
           as="span"
           size="sm"
+          role="alert"
           color="inherit"
-          className="text-cancelled"
+          className="text-red-600"
           data-testid="quadro-c-acao-erro"
         >
           {t(
