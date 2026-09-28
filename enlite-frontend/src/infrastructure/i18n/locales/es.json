@@ -3892,11 +3892,11 @@
             "SERVICE_TEAM_ALREADY_REJECTED": "Este prestador ya está rechazado.",
             "NOT_SELECTED_FOR_SERVICE": "Este prestador no está en Seleccionados.",
             "SUBSTITUTE_IS_TITULAR": "El sustituto no puede ser el mismo titular.",
-            "ITINERARY_OVERLAP": "Ese horario se superpone con otra alocación del sustituto.",
+            "ITINERARY_OVERLAP": "Ese horario se superpone con otra asignación del sustituto.",
             "ABSENCE_ALREADY_EXISTS": "Ya existe una ausencia registrada para esa fecha.",
             "ABSENCE_DATE_IN_PAST": "No se puede registrar una ausencia en una fecha pasada.",
             "ABSENCE_WEEKDAY_MISMATCH": "La fecha elegida no corresponde al día de la franja.",
-            "ABSENCE_OUTSIDE_ALLOCATION": "La fecha está fuera del período de la alocación.",
+            "ABSENCE_OUTSIDE_ALLOCATION": "La fecha está fuera del período de la asignación.",
             "ABSENCE_CANCELLED": "Esta ausencia ya fue cancelada.",
             "ALLOCATION_NOT_ACTIVE": "Esa franja ya no está activa.",
             "generic": "No se pudo completar la acción. Intentá de nuevo."
