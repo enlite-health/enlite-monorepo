@@ -498,4 +498,12 @@ describe('ItineraryAbsenceUseCase.cancel', () => {
     expect((writer.findAbsence as jest.Mock).mock.calls[0][0]).toBe(FAKE_CLIENT);
     expect((writer.cancelAbsence as jest.Mock).mock.calls[0][0]).toBe(FAKE_CLIENT);
   });
+
+  it('achado C4 (veredito parcial-1): rowCount 0 no cancelAbsence (corrida: cancelou entre o findAbsence e o UPDATE) → AbsenceCancelledError, MESMO padrão do setSubstitute', async () => {
+    const writer = writerStub({ findAbsence: jest.fn().mockResolvedValue(OPEN_ABSENCE), cancelAbsence: jest.fn().mockResolvedValue(0) });
+    const allocationWriter = allocationWriterStub();
+    const useCase = new ItineraryAbsenceUseCase({ readWith: jest.fn() }, writer, allocationWriter, runInTransactionStub());
+
+    await expect(useCase.cancel({ patientId: 'p-1', serviceId: 's-1', absenceId: 'abs-1', actorUid: 'u-1' })).rejects.toThrow(AbsenceCancelledError);
+  });
 });

@@ -274,7 +274,13 @@ export class ItineraryAbsenceUseCase {
       if (absence === null) throw new AbsenceNotFoundError(patientId, serviceId, absenceId);
       if (absence.cancelled) throw new AbsenceCancelledError(absenceId);
 
-      await this.writer.cancelAbsence(client, absenceId, actorUid);
+      // Achado C4 (veredito parcial-1): `rowCount` do UPDATE era ignorado — uma corrida de 2
+      // cancelamentos concorrentes devolvia 200 CANCELLED nos dois. `cancelAbsence` tem
+      // `cancelled_at IS NULL` no WHERE (`ItineraryAbsenceWriter.ts:13-14`): `rowCount === 0` é a
+      // MESMA corrida que `setSubstitute` já trata (linha 258-259) — reusa o MESMO
+      // `AbsenceCancelledError`, nunca uma 2ª classe de erro para o mesmo caso.
+      const rowCount = await this.writer.cancelAbsence(client, absenceId, actorUid);
+      if (rowCount === 0) throw new AbsenceCancelledError(absenceId);
 
       return { absenceId, allocationId: absence.allocationId, date: absence.date, substituteWorkerId: absence.substituteWorkerId, status: 'CANCELLED' as const };
     });
