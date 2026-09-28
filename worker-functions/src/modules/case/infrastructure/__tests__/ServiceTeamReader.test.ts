@@ -71,6 +71,21 @@ describe('ServiceTeamReader', () => {
     expect(/contracted_service_providers|encuadres|phone|diagnos|address/i.test(sql)).toBe(false);
   });
 
+  it('DX-13.5: o CTE subs — patient_itinerary_absence, cancelled_at IS NULL, substitute_worker_id IS NOT NULL, contracted_service_id = $2, to_char da data e a.id AS allocation_id no alloc; ainda 1 client.query', async () => {
+    queryImpl = async () => ({ rows: [], rowCount: 0 });
+
+    await reader.read('p-1', 's-1');
+
+    const sql = svcCalls()[0].sql;
+    expect(sql).toMatch(/patient_itinerary_absence/);
+    expect(sql).toMatch(/ab\.cancelled_at IS NULL/);
+    expect(sql).toMatch(/ab\.substitute_worker_id IS NOT NULL/);
+    expect(sql).toMatch(/s\.contracted_service_id = \$2/);
+    expect(sql).toMatch(/to_char\(ab\.on_date/);
+    expect(sql).toMatch(/a\.id AS allocation_id/);
+    expect(svcCalls()).toHaveLength(1);
+  });
+
   it('0 linhas → null', async () => {
     queryImpl = async () => ({ rows: [], rowCount: 0 });
 
@@ -79,7 +94,7 @@ describe('ServiceTeamReader', () => {
     expect(result).toBeNull();
   });
 
-  it('1 linha → as 3 listas mapeadas (json → camelCase); live_vacancy_id NULL → null', async () => {
+  it('1 linha → as listas mapeadas (json → camelCase), inclusive o horário da alocação e as substituições (DX-13.5); live_vacancy_id NULL → null', async () => {
     queryImpl = async () => ({
       rows: [
         {
@@ -105,6 +120,10 @@ describe('ServiceTeamReader', () => {
               status: 'ACTIVE',
               first_name_encrypted: 'enc-first-2',
               last_name_encrypted: 'enc-last-2',
+              allocation_id: 'alloc-2',
+              weekday: 1,
+              start_time: '08:00',
+              end_time: '12:00',
             },
           ],
           marks: [
@@ -114,6 +133,16 @@ describe('ServiceTeamReader', () => {
               reject_reason_category: 'OTHER',
               first_name_encrypted: 'enc-first-3',
               last_name_encrypted: 'enc-last-3',
+            },
+          ],
+          substitutions: [
+            {
+              worker_id: 'w-4',
+              service_id: 's-1',
+              vacancy_id: 'v-2',
+              date: '2026-10-05',
+              first_name_encrypted: 'enc-first-4',
+              last_name_encrypted: 'enc-last-4',
             },
           ],
         },
@@ -140,10 +169,17 @@ describe('ServiceTeamReader', () => {
           status: 'ACTIVE',
           firstNameEncrypted: 'enc-first-2',
           lastNameEncrypted: 'enc-last-2',
+          allocationId: 'alloc-2',
+          weekday: 1,
+          startTime: '08:00',
+          endTime: '12:00',
         },
       ],
       marks: [
         { workerId: 'w-3', serviceId: 's-1', rejectReasonCategory: 'OTHER', firstNameEncrypted: 'enc-first-3', lastNameEncrypted: 'enc-last-3' },
+      ],
+      substitutions: [
+        { workerId: 'w-4', serviceId: 's-1', vacancyId: 'v-2', date: '2026-10-05', firstNameEncrypted: 'enc-first-4', lastNameEncrypted: 'enc-last-4' },
       ],
     });
   });
