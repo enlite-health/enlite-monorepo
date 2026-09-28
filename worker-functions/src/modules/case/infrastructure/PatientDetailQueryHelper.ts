@@ -117,7 +117,7 @@ const PATIENT_DETAIL_SQL = `
     -- Hotfix gate-cobertura-verificada-vacante (28/09): mesmo critério "provider ativo" que
     -- ActivateRecruitmentUseCase usa no gate real — o checklist da tela não pode divergir do 422.
     EXISTS (SELECT 1 FROM patient_insurance_verified piv
-              JOIN insurance_providers ip ON ip.code = piv.provider_code AND ip.active
+              JOIN insurance_providers ip ON ip.code = piv.provider_code
              WHERE piv.patient_id = p.id)
                              AS "hasVerifiedActiveCoverage",
     COALESCE((SELECT array_agg(pdt.device_type ORDER BY d.sort_order, d.code)

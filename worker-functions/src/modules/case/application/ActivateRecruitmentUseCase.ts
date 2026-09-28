@@ -142,7 +142,7 @@ export class ActivateRecruitmentUseCase {
                 -- ativo" medido em produção antes deste hotfix.
                 EXISTS (
                   SELECT 1 FROM patient_insurance_verified piv
-                  JOIN insurance_providers ip ON ip.code = piv.provider_code AND ip.active
+                  JOIN insurance_providers ip ON ip.code = piv.provider_code
                   WHERE piv.patient_id = patients.id
                 ) AS has_verified_active_coverage
            FROM patients
