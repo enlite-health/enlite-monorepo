@@ -34,7 +34,7 @@ describe('itinerary_min_gap_minutes() — a folga mora num lugar só (DX-11.4)',
     );
     expect(fnMatch).not.toBeNull();
     const literal = fnMatch![1];
-    // o critério 11 exige o inteiro ESCRITO como está no banco — nunca 3600 nem 60 * 60.
+    // o critério 11 exige o inteiro escrito como está no banco — nunca o equivalente em segundos nem um produto.
     expect(literal).toBe('60');
     expect(Number(literal)).toBe(60);
   });

@@ -91,7 +91,7 @@ describe('ItinerarySlotWriter', () => {
     expect(slot).toEqual({ id: 'slot-2', weekday: 1, startTime: '08:00', endTime: '12:00', active: true });
   });
 
-  it('nenhuma SQL nomeia job_postings/worker_job_applications/encuadres/contracted_service_providers; patient_contracted_services aparece ≥ 2×', async () => {
+  it('nenhuma SQL toca vaga, candidatura, a tabela antiga de candidatura/entrevista nem a alocação antiga; patient_contracted_services aparece ≥ 2×', async () => {
     const client = clientStub([{ id: 's-1', address_id: 'a-1', schedule: null, country: 'AR' }]);
     const sync = jest.fn().mockResolvedValue({ upserted: 0, deactivated: 0 });
     const writer = new ItinerarySlotWriter(sync);
