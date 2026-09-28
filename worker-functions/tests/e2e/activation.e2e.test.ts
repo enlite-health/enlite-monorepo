@@ -27,6 +27,11 @@ describe('Ativação de recrutamento por serviço (spec 018, PR-6) @integration'
   const api = createApiClient();
   let pool: Pool;
   let asAdmin: { headers: { Authorization: string } };
+  // Hotfix gate-cobertura-verificada-vacante (28/09): provider PRÓPRIO deste arquivo, criado
+  // INATIVO por SQL direto (o POST /catalogs/insurance-providers só cria active=true — mesma
+  // convenção de patient-coverage-catalog.e2e.test.ts, mas aqui não há endpoint de baixa).
+  // 'OSDE' (catálogo seed, migration 311) cobre o caso ATIVO — nenhum teste do repo o desativa.
+  const COVERAGE_INACTIVE_CODE = `E2E_INA_${Date.now().toString(36).toUpperCase()}`;
 
   async function criarPacienteDeFunil(opts: {
     tag: string;
@@ -49,6 +54,14 @@ describe('Ativação de recrutamento por serviço (spec 018, PR-6) @integration'
       [TAG],
     );
     await pool.query(`DELETE FROM patients WHERE clickup_task_id LIKE $1`, [TAG]);
+    // 305: patient_insurance_verified tem FK ON DELETE CASCADE de patients — some junto.
+    // O provider é INDEPENDENTE do paciente (catálogo global), por isso limpo à parte.
+    await pool.query(`DELETE FROM insurance_providers WHERE code = $1`, [COVERAGE_INACTIVE_CODE]);
+    await pool.query(
+      `INSERT INTO insurance_providers (code, active, retired_at, sort_order)
+       SELECT $1, false, NOW(), COALESCE(MAX(sort_order), 0) + 1 FROM insurance_providers`,
+      [COVERAGE_INACTIVE_CODE],
+    );
   });
 
   afterAll(async () => {
@@ -57,6 +70,7 @@ describe('Ativação de recrutamento por serviço (spec 018, PR-6) @integration'
       [TAG],
     );
     await pool.query(`DELETE FROM patients WHERE clickup_task_id LIKE $1`, [TAG]);
+    await pool.query(`DELETE FROM insurance_providers WHERE code = $1`, [COVERAGE_INACTIVE_CODE]);
     await pool.end();
   });
 
@@ -172,5 +186,135 @@ describe('Ativação de recrutamento por serviço (spec 018, PR-6) @integration'
       `SELECT status FROM patients WHERE id = $1`, [patientId],
     );
     expect(patient.status).toBe('PENDING_ADMISSION');
+  });
+
+  // Hotfix gate-cobertura-verificada-vacante (28/09): os 3 casos abaixo provam
+  // `has_verified_active_coverage` (ActivateRecruitmentUseCase.ts:145 e
+  // PatientDetailQueryHelper.ts:120) — SQL que, sem estes casos, nenhum teste executa contra
+  // Postgres real (os unitários recebem o booleano já pronto via mock).
+
+  it('ALTERNATIVO 3: só cobertura VERIFICADA (legado vazio, patient_insurance_verified com provider ativo) → activate-recruitment ACEITA', async () => {
+    const patientId = await criarPacienteDeFunil({
+      tag: 'activation-e2e-coverage-verified',
+      caseNumber: 991004,
+      coverage: null, // legado (health_insurance_name) fica AUSENTE de propósito: só a cobertura verificada sustenta o gate
+    });
+
+    const addr = await api.post(
+      `/api/admin/patients/${patientId}/addresses`,
+      { address_formatted: 'Av. Cobertura Verificada 100', address_type: 'primary' },
+      asAdmin,
+    );
+    const addressId = addr.data.data.id as string;
+    const svc = await api.post(
+      `/api/admin/patients/${patientId}/contracted-services`,
+      { serviceCode: 'AT', addressId, schedule: JSON.parse(HORARIO) },
+      asAdmin,
+    );
+    expect(svc.status).toBe(201);
+    const serviceId = svc.data.data.id as string;
+
+    // 'OSDE' é do catálogo seed (migration 311), active=true — nenhum teste do repo o desativa.
+    await pool.query(
+      `INSERT INTO patient_insurance_verified (patient_id, ordinal, raw_label, provider_code, source)
+       VALUES ($1, 1, 'OSDE', 'OSDE', 'admin_manual')`,
+      [patientId],
+    );
+
+    const r = await api.post(
+      `/api/admin/patients/${patientId}/contracted-services/${serviceId}/activate-recruitment`,
+      {},
+      asAdmin,
+    );
+    expect(r.status).toBe(201);
+    expect(r.data.success).toBe(true);
+    expect(typeof r.data.data.vacancyId).toBe('string');
+
+    const { rows: [vacancy] } = await pool.query<{ contracted_service_id: string }>(
+      `SELECT contracted_service_id FROM job_postings WHERE id = $1`,
+      [r.data.data.vacancyId],
+    );
+    expect(vacancy.contracted_service_id).toBe(serviceId);
+  });
+
+  it('ALTERNATIVO 4: sem cobertura nenhuma (legado vazio, nenhuma linha em patient_insurance_verified) → 422 com COVERAGE e não cria vaga', async () => {
+    const patientId = await criarPacienteDeFunil({
+      tag: 'activation-e2e-coverage-missing',
+      caseNumber: 991005,
+      coverage: null,
+    });
+
+    const addr = await api.post(
+      `/api/admin/patients/${patientId}/addresses`,
+      { address_formatted: 'Av. Sin Cobertura 200', address_type: 'primary' },
+      asAdmin,
+    );
+    const addressId = addr.data.data.id as string;
+    const svc = await api.post(
+      `/api/admin/patients/${patientId}/contracted-services`,
+      { serviceCode: 'AT', addressId, schedule: JSON.parse(HORARIO) },
+      asAdmin,
+    );
+    expect(svc.status).toBe(201);
+    const serviceId = svc.data.data.id as string;
+
+    // De propósito: nenhuma linha em patient_insurance_verified para este paciente.
+    const r = await api.post(
+      `/api/admin/patients/${patientId}/contracted-services/${serviceId}/activate-recruitment`,
+      {},
+      asAdmin,
+    );
+    expect(r.status).toBe(422);
+    expect(r.data.code).toBe('PATIENT_NOT_READY');
+    expect(r.data.details.missing).toContain('COVERAGE');
+    expect(r.data.details.missing).not.toContain('SERVICE_ADDRESS');
+    expect(r.data.details.missing).not.toContain('SERVICE_SCHEDULE');
+
+    const { rows: [n] } = await pool.query<{ n: string }>(
+      'SELECT COUNT(*) AS n FROM job_postings WHERE patient_id = $1', [patientId],
+    );
+    expect(Number(n.n)).toBe(0);
+  });
+
+  it('ALTERNATIVO 5: cobertura verificada com provider INATIVO (AND ip.active) → 422 com COVERAGE — mata a cláusula sem ela', async () => {
+    const patientId = await criarPacienteDeFunil({
+      tag: 'activation-e2e-coverage-inactive-provider',
+      caseNumber: 991006,
+      coverage: null,
+    });
+
+    const addr = await api.post(
+      `/api/admin/patients/${patientId}/addresses`,
+      { address_formatted: 'Av. Provider Inactivo 300', address_type: 'primary' },
+      asAdmin,
+    );
+    const addressId = addr.data.data.id as string;
+    const svc = await api.post(
+      `/api/admin/patients/${patientId}/contracted-services`,
+      { serviceCode: 'AT', addressId, schedule: JSON.parse(HORARIO) },
+      asAdmin,
+    );
+    expect(svc.status).toBe(201);
+    const serviceId = svc.data.data.id as string;
+
+    await pool.query(
+      `INSERT INTO patient_insurance_verified (patient_id, ordinal, raw_label, provider_code, source)
+       VALUES ($1, 1, $2, $2, 'admin_manual')`,
+      [patientId, COVERAGE_INACTIVE_CODE],
+    );
+
+    const r = await api.post(
+      `/api/admin/patients/${patientId}/contracted-services/${serviceId}/activate-recruitment`,
+      {},
+      asAdmin,
+    );
+    expect(r.status).toBe(422);
+    expect(r.data.code).toBe('PATIENT_NOT_READY');
+    expect(r.data.details.missing).toContain('COVERAGE');
+
+    const { rows: [n] } = await pool.query<{ n: string }>(
+      'SELECT COUNT(*) AS n FROM job_postings WHERE patient_id = $1', [patientId],
+    );
+    expect(Number(n.n)).toBe(0);
   });
 });

@@ -132,9 +132,19 @@ export class ActivateRecruitmentUseCase {
       status: string;
       case_number: number | null;
       insurance_informed: string | null;
+      has_verified_active_coverage: boolean;
     }>(
       `SELECT id, status, case_number,
-                COALESCE(insurance_informed, health_insurance_name) AS insurance_informed
+                COALESCE(insurance_informed, health_insurance_name) AS insurance_informed,
+                -- Hotfix gate-cobertura-verificada-vacante (28/09): caminho NOVO da cobertura
+                -- (patient_insurance_verified, migration 305/312) — o gate deixa de conhecer só
+                -- o legado insurance_informed/health_insurance_name. Mesmo critério "provider
+                -- ativo" medido em produção antes deste hotfix.
+                EXISTS (
+                  SELECT 1 FROM patient_insurance_verified piv
+                  JOIN insurance_providers ip ON ip.code = piv.provider_code AND ip.active
+                  WHERE piv.patient_id = patients.id
+                ) AS has_verified_active_coverage
            FROM patients
           WHERE id = $1 AND deleted_at IS NULL
           FOR UPDATE`,
@@ -143,7 +153,7 @@ export class ActivateRecruitmentUseCase {
     if ((patientRes.rowCount ?? 0) === 0) {
       throw new PatientNotFoundForRecruitmentError(patientId);
     }
-    const { status, case_number, insurance_informed } = patientRes.rows[0];
+    const { status, case_number, insurance_informed, has_verified_active_coverage } = patientRes.rows[0];
 
     const serviceRes = await client.query<{
       id: string;
@@ -181,6 +191,7 @@ export class ActivateRecruitmentUseCase {
       serviceHasAddress: service.live_address_id != null,
       serviceHasSchedule: hasSchedule,
       insuranceInformed: insurance_informed,
+      hasVerifiedActiveCoverage: has_verified_active_coverage,
     });
     if (!ready) {
       throw new RecruitmentNotReadyError(patientId, serviceId, missing);
