@@ -22,7 +22,9 @@ import { test, expect } from '@playwright/test';
 import {
   seedLaunchablePatient, mockAdminUserFor, useLancamentoStaff, LANCAMENTO_VIEWPORT_ES_AR,
 } from '../helpers/lancamento-e2e-helper';
-import { activateRecruitmentViaApi, readItineraryApi, ITINERARIO_STAFF } from '../helpers/itinerario-e2e-helper';
+import {
+  activateRecruitmentViaApi, readItineraryApi, createServiceViaApi, ITINERARIO_STAFF,
+} from '../helpers/itinerario-e2e-helper';
 import { insertTestWorker, cleanupTestWorker } from '../helpers/db-test-helper';
 import { insertWJA, getWjaByWorkerAndJob, cleanupWJAAndEncuadre } from '../helpers/wja-test-helper';
 import { tokenFor } from '../helpers/abac-stack-helper';
@@ -30,6 +32,7 @@ import { readServiceTeamApi, postServiceTeamAction } from '../helpers/quadro-c-e
 import { runSQL } from '../helpers/patient-detail-a-helper';
 import {
   allocationOptionsApi, allocateApi, endAllocationApi, cleanupItineraryWrite, patientStatus,
+  insertSecondAddress, countActiveAllocations,
 } from '../helpers/itinerario-escrita-e2e-helper';
 
 interface AllocationOptionRow { workerId: string }
@@ -164,6 +167,236 @@ test.describe('itinerario-escrita @integration', () => {
     } finally {
       cleanupItineraryWrite(seed.patientId);
       cleanupWJAAndEncuadre(w, v);
+      cleanupTestWorker(w);
+      seed.cleanup();
+    }
+  });
+
+  test('itinerario-sobreposicao-recusa', async ({ request }) => {
+    const seedX = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.6, lng: -58.4 });
+    const addressB = insertSecondAddress(seedX.patientId);
+    const s2 = await createServiceViaApi(request, seedX.patientId, {
+      addressId: addressB, schedule: [{ dayOfWeek: 1, startTime: '10:00', endTime: '14:00' }],
+    });
+    const seedY = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.61, lng: -58.41 });
+    const sY = await createServiceViaApi(request, seedY.patientId, {
+      addressId: seedY.addressId, schedule: [{ dayOfWeek: 1, startTime: '10:00', endTime: '14:00' }],
+    });
+
+    const token = tokenFor(ITINERARIO_STAFF);
+    const v1 = await activateRecruitmentViaApi(request, seedX.patientId, seedX.serviceId);
+    const v2 = await activateRecruitmentViaApi(request, seedX.patientId, s2);
+    const vY = await activateRecruitmentViaApi(request, seedY.patientId, sY);
+
+    const itinX = await readItineraryApi(request, seedX.patientId);
+    const slot1 = itinX.body.data?.services.find((s) => s.contractedServiceId === seedX.serviceId)?.slots[0]?.id;
+    const slot2 = itinX.body.data?.services.find((s) => s.contractedServiceId === s2)?.slots[0]?.id;
+    const itinY = await readItineraryApi(request, seedY.patientId);
+    const slotY = itinY.body.data?.services.find((s) => s.contractedServiceId === sY)?.slots[0]?.id;
+    if (!slot1 || !slot2 || !slotY) {
+      throw new Error('itinerario-sobreposicao-recusa: slot ausente na semente');
+    }
+
+    const w = insertTestWorker({ occupation: 'AT' });
+    try {
+      insertWJA({ workerId: w, jobPostingId: v1, funnelStage: 'QUICK_RESPONSE_TEAM' });
+      insertWJA({ workerId: w, jobPostingId: v2, funnelStage: 'QUICK_RESPONSE_TEAM' });
+      insertWJA({ workerId: w, jobPostingId: vY, funnelStage: 'QUICK_RESPONSE_TEAM' });
+
+      const r1 = await allocateApi(request, token, seedX.patientId, seedX.serviceId, slot1, { workerId: w });
+      expect(r1.status).toBe(201);
+      const r2 = await allocateApi(request, token, seedX.patientId, s2, slot2, { workerId: w });
+      const r3 = await allocateApi(request, token, seedY.patientId, sY, slotY, { workerId: w });
+      expect(r2.status).toBe(409);
+      expect(r3.status).toBe(409);
+      expect(String(r2.body.error ?? '')).toContain('08:00-12:00');
+      expect(String(r2.body.error ?? '')).toContain('10:00-14:00');
+      expect(String(r3.body.error ?? '')).toContain('08:00-12:00');
+      expect(String(r3.body.error ?? '')).toContain('10:00-14:00');
+
+      const activeCount = countActiveAllocations(w);
+
+      // Critério 16: nenhum termo clínico nos corpos dos 409 — controle Q-EX-11.6 prova que o grep
+      // acharia se existisse (string de teste, sem dado real).
+      const joined = `${JSON.stringify(r2.body)} ${JSON.stringify(r3.body)}`;
+      const clinicMatches = (joined.match(/diagnos|clinic/gi) ?? []).length;
+      const controlText = 'diagnostico clinico de control (Q-EX-11.6)';
+      const controlMatches = (controlText.match(/diagnos|clinic/gi) ?? []).length;
+
+      // Nome do paciente Y (lido só para comparar, nunca colado no log — só a contagem sai).
+      const yName = runSQL(`SELECT first_name || ' ' || last_name FROM patients WHERE id = '${seedY.patientId}'`);
+      const nameLeaks = yName ? joined.split(yName).length - 1 : 0;
+
+      console.log('[11.7]', r1.status, r2.status, r3.status, activeCount);
+      console.log('[11.16]', clinicMatches, controlMatches, nameLeaks);
+
+      expect(activeCount).toBe(1);
+      expect(clinicMatches).toBe(0);
+      expect(controlMatches).toBeGreaterThan(0);
+      expect(nameLeaks).toBe(0);
+    } finally {
+      cleanupItineraryWrite(seedX.patientId);
+      cleanupItineraryWrite(seedY.patientId);
+      cleanupWJAAndEncuadre(w, v1);
+      cleanupWJAAndEncuadre(w, v2);
+      cleanupWJAAndEncuadre(w, vY);
+      cleanupTestWorker(w);
+      seedX.cleanup();
+      seedY.cleanup();
+    }
+  });
+
+  test('itinerario-folga-recusa', async ({ request }) => {
+    const seedX = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.6, lng: -58.4 });
+    const seedY = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.62, lng: -58.42 });
+    const sY = await createServiceViaApi(request, seedY.patientId, {
+      addressId: seedY.addressId,
+      schedule: [
+        { dayOfWeek: 1, startTime: '12:30', endTime: '16:00' },
+        { dayOfWeek: 1, startTime: '12:00', endTime: '16:00' },
+      ],
+    });
+
+    const token = tokenFor(ITINERARIO_STAFF);
+    const v1 = await activateRecruitmentViaApi(request, seedX.patientId, seedX.serviceId);
+    const vY = await activateRecruitmentViaApi(request, seedY.patientId, sY);
+
+    const itinX = await readItineraryApi(request, seedX.patientId);
+    const slot1 = itinX.body.data?.services.find((s) => s.contractedServiceId === seedX.serviceId)?.slots[0]?.id;
+    const itinY = await readItineraryApi(request, seedY.patientId);
+    const svcY = itinY.body.data?.services.find((s) => s.contractedServiceId === sY);
+    const slotY1230 = svcY?.slots.find((sl) => sl.startTime === '12:30')?.id;
+    const slotY1200 = svcY?.slots.find((sl) => sl.startTime === '12:00')?.id;
+    if (!slot1 || !slotY1230 || !slotY1200) {
+      throw new Error('itinerario-folga-recusa: slot ausente na semente');
+    }
+
+    const w = insertTestWorker({ occupation: 'AT' });
+    try {
+      insertWJA({ workerId: w, jobPostingId: v1, funnelStage: 'QUICK_RESPONSE_TEAM' });
+      insertWJA({ workerId: w, jobPostingId: vY, funnelStage: 'QUICK_RESPONSE_TEAM' });
+
+      const r1 = await allocateApi(request, token, seedX.patientId, seedX.serviceId, slot1, { workerId: w });
+      expect(r1.status).toBe(201);
+
+      const r2 = await allocateApi(request, token, seedY.patientId, sY, slotY1230, { workerId: w });
+      expect(r2.status).toBe(409);
+      expect(r2.body.minGapMinutes).not.toBeNull();
+      expect(r2.body.minGapMinutes).not.toBeUndefined();
+
+      const r3 = await allocateApi(request, token, seedY.patientId, sY, slotY1200, { workerId: w });
+      expect(r3.status).toBe(409);
+
+      const activeCount = countActiveAllocations(w);
+      console.log('[11.8]', r1.status, r2.status, r2.body.minGapMinutes, r3.status, activeCount);
+      expect(activeCount).toBe(1);
+    } finally {
+      cleanupItineraryWrite(seedX.patientId);
+      cleanupItineraryWrite(seedY.patientId);
+      cleanupWJAAndEncuadre(w, v1);
+      cleanupWJAAndEncuadre(w, vY);
+      cleanupTestWorker(w);
+      seedX.cleanup();
+      seedY.cleanup();
+    }
+  });
+
+  test('itinerario-folga-aceita', async ({ request }) => {
+    const seedX = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.6, lng: -58.4 });
+    const seedY = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.63, lng: -58.43 });
+    const s3 = await createServiceViaApi(request, seedX.patientId, {
+      addressId: seedX.addressId, schedule: [{ dayOfWeek: 1, startTime: '17:00', endTime: '20:00' }],
+    });
+    const s2 = await createServiceViaApi(request, seedY.patientId, {
+      addressId: seedY.addressId,
+      schedule: [
+        { dayOfWeek: 1, startTime: '13:00', endTime: '16:00' },
+        { dayOfWeek: 2, startTime: '08:00', endTime: '12:00' },
+      ],
+    });
+
+    const token = tokenFor(ITINERARIO_STAFF);
+    const v1 = await activateRecruitmentViaApi(request, seedX.patientId, seedX.serviceId);
+    const v3 = await activateRecruitmentViaApi(request, seedX.patientId, s3);
+    const v2 = await activateRecruitmentViaApi(request, seedY.patientId, s2);
+
+    const itinX = await readItineraryApi(request, seedX.patientId);
+    const slot1 = itinX.body.data?.services.find((s) => s.contractedServiceId === seedX.serviceId)?.slots[0]?.id;
+    const slot3 = itinX.body.data?.services.find((s) => s.contractedServiceId === s3)?.slots[0]?.id;
+    const itinY = await readItineraryApi(request, seedY.patientId);
+    const svc2 = itinY.body.data?.services.find((s) => s.contractedServiceId === s2);
+    const slot2Mon = svc2?.slots.find((sl) => sl.weekday === 1)?.id;
+    const slot2Tue = svc2?.slots.find((sl) => sl.weekday === 2)?.id;
+    if (!slot1 || !slot3 || !slot2Mon || !slot2Tue) {
+      throw new Error('itinerario-folga-aceita: slot ausente na semente');
+    }
+
+    const w = insertTestWorker({ occupation: 'AT' });
+    try {
+      insertWJA({ workerId: w, jobPostingId: v1, funnelStage: 'QUICK_RESPONSE_TEAM' });
+      insertWJA({ workerId: w, jobPostingId: v2, funnelStage: 'QUICK_RESPONSE_TEAM' });
+      insertWJA({ workerId: w, jobPostingId: v3, funnelStage: 'QUICK_RESPONSE_TEAM' });
+
+      const r1 = await allocateApi(request, token, seedX.patientId, seedX.serviceId, slot1, { workerId: w });
+      const r2 = await allocateApi(request, token, seedY.patientId, s2, slot2Mon, { workerId: w });
+      const r3 = await allocateApi(request, token, seedX.patientId, s3, slot3, { workerId: w });
+      const r4 = await allocateApi(request, token, seedY.patientId, s2, slot2Tue, { workerId: w });
+
+      const activeCount = countActiveAllocations(w);
+      console.log('[11.9]', r1.status, r2.status, r3.status, r4.status, activeCount);
+      expect(r1.status).toBe(201);
+      expect(r2.status).toBe(201);
+      expect(r3.status).toBe(201);
+      expect(r4.status).toBe(201);
+      expect(activeCount).toBe(4);
+    } finally {
+      cleanupItineraryWrite(seedX.patientId);
+      cleanupItineraryWrite(seedY.patientId);
+      cleanupWJAAndEncuadre(w, v1);
+      cleanupWJAAndEncuadre(w, v2);
+      cleanupWJAAndEncuadre(w, v3);
+      cleanupTestWorker(w);
+      seedX.cleanup();
+      seedY.cleanup();
+    }
+  });
+
+  test('itinerario-sobreposicao-concorrente', async ({ request }) => {
+    const seed = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.6, lng: -58.4 });
+    const addressB = insertSecondAddress(seed.patientId);
+    const s2 = await createServiceViaApi(request, seed.patientId, {
+      addressId: addressB, schedule: [{ dayOfWeek: 1, startTime: '10:00', endTime: '14:00' }],
+    });
+
+    const token = tokenFor(ITINERARIO_STAFF);
+    const v1 = await activateRecruitmentViaApi(request, seed.patientId, seed.serviceId);
+    const v2 = await activateRecruitmentViaApi(request, seed.patientId, s2);
+
+    const itin = await readItineraryApi(request, seed.patientId);
+    const slot1 = itin.body.data?.services.find((s) => s.contractedServiceId === seed.serviceId)?.slots[0]?.id;
+    const slot2 = itin.body.data?.services.find((s) => s.contractedServiceId === s2)?.slots[0]?.id;
+    if (!slot1 || !slot2) {
+      throw new Error('itinerario-sobreposicao-concorrente: slot ausente na semente');
+    }
+
+    const w = insertTestWorker({ occupation: 'AT' });
+    try {
+      insertWJA({ workerId: w, jobPostingId: v1, funnelStage: 'QUICK_RESPONSE_TEAM' });
+      insertWJA({ workerId: w, jobPostingId: v2, funnelStage: 'QUICK_RESPONSE_TEAM' });
+
+      const [res1, res2] = await Promise.all([
+        allocateApi(request, token, seed.patientId, seed.serviceId, slot1, { workerId: w }),
+        allocateApi(request, token, seed.patientId, s2, slot2, { workerId: w }),
+      ]);
+
+      const activeCount = countActiveAllocations(w);
+      console.log('[11.12]', res1.status, res2.status, activeCount);
+      expect([res1.status, res2.status]).toEqual([201, 409]);
+      expect(activeCount).toBe(1);
+    } finally {
+      cleanupItineraryWrite(seed.patientId);
+      cleanupWJAAndEncuadre(w, v1);
+      cleanupWJAAndEncuadre(w, v2);
       cleanupTestWorker(w);
       seed.cleanup();
     }
