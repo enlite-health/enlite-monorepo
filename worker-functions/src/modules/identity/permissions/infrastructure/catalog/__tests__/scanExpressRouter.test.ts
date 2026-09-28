@@ -383,6 +383,9 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       // cadeia Fase 10 (28/09) — quadro C: TEM rota própria (adminServiceTeamRoutes.ts, POST
       // …/team/reject|revert), mas o fixture deste teste não a declara — mesma classe de dashboard_zones:read/worker_address:read.
       'patient_service_team:update',
+      // cadeia Fase 11 (28/09) — itinerário: TEM rota própria (adminItineraryWriteRoutes.ts), mas
+      // o fixture deste teste não a declara — mesma classe de patient_service_team:update acima.
+      'patient_itinerary:update',
       // Spec 024 (D1/D2/D401, 21/09): DECLARADAS por rota real em `adminWorkerRoutes.ts`
       // (`tag:*`) e `recruitmentRoutes.ts` (`recruitment_blocked:read`) — o fixture de 2 rotas
       // deste teste não as declara, por isso aparecem aqui como as demais células de rota real

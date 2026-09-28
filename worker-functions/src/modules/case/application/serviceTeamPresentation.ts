@@ -16,9 +16,28 @@
  * em série (`for (... await ...)`), presos DENTRO da transação no POST.
  */
 import type { ServiceTeamRows } from '../infrastructure/ServiceTeamReader';
-import type { DeriveServiceTeamResult } from '../domain/deriveServiceTeam';
+import { deriveServiceTeam, type DeriveServiceTeamResult } from '../domain/deriveServiceTeam';
 import type { GetServiceTeamResult, ServiceTeamMember } from './GetServiceTeamUseCase';
+import { operationDateOf } from './itineraryCoverage';
 import { projectWorkerFields, NOME_REDIGIDO, type Decryptor } from '@modules/identity/permissions';
+
+/**
+ * `row → deriveServiceTeam` numa fonte só (DX-11.6, P8) — antes duplicado em
+ * `GetServiceTeamUseCase.execute` (`:80-88`) e no `deriveTeam` privado de `ServiceTeamMarkUseCase`
+ * (`:223-233`); os dois passam a chamar esta função (P9), mesmo comportamento, mesma contagem de
+ * teste. `asOf` é a data LOCAL do PAÍS do paciente (`operationDateOf`), nunca o relógio do processo.
+ */
+export function deriveServiceTeamFromRows(row: ServiceTeamRows, now: Date): DeriveServiceTeamResult {
+  const asOf = operationDateOf(row.country, now);
+  return deriveServiceTeam({
+    serviceId: row.serviceId,
+    liveVacancyId: row.liveVacancyId,
+    asOf,
+    candidacies: row.candidacies,
+    assignments: row.assignments,
+    marks: row.marks,
+  });
+}
 
 interface WorkerNameSource {
   firstNameEncrypted: string | null;

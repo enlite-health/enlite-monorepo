@@ -21,9 +21,7 @@
  * `phone: null` e só o `name` projetado é lido de volta.
  */
 import { ServiceTeamReader, type ServiceTeamRows } from '../infrastructure/ServiceTeamReader';
-import { deriveServiceTeam } from '../domain/deriveServiceTeam';
-import { operationDateOf } from './itineraryCoverage';
-import { projectServiceTeamDisplayNames, buildServiceTeamResult } from './serviceTeamPresentation';
+import { deriveServiceTeamFromRows, projectServiceTeamDisplayNames, buildServiceTeamResult } from './serviceTeamPresentation';
 import { type Decryptor } from '@modules/identity/permissions';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 
@@ -77,15 +75,7 @@ export class GetServiceTeamUseCase {
     const row = await this.reader.read(patientId, serviceId);
     if (row === null) throw new ServiceTeamNotFoundError(patientId, serviceId);
 
-    const asOf = operationDateOf(row.country, now);
-    const team = deriveServiceTeam({
-      serviceId: row.serviceId,
-      liveVacancyId: row.liveVacancyId,
-      asOf,
-      candidacies: row.candidacies,
-      assignments: row.assignments,
-      marks: row.marks,
-    });
+    const team = deriveServiceTeamFromRows(row, now);
 
     const displayNameByWorkerId = await projectServiceTeamDisplayNames(row, team, cells, this.kms);
 

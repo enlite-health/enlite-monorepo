@@ -78,6 +78,9 @@ export const RESOURCE_CATEGORY: Readonly<Record<string, PermissionCategory>> = {
   // Cadeia Fase 10 (DX-10.1): rejeitar/reverter no quadro C (Servicio Contratado). Recurso novo
   // com ação de domínio (`update`, nunca `write` — ressalva (b')); não entra em SPLIT_RESOURCES.
   patient_service_team: 'Pacientes',
+  // Fase 11 (DX-11.1): montar o itinerário (slots, alocações, montado). Recurso novo com ação de
+  // domínio (`update`, nunca `write` — mesma ressalva da Fase 10); não entra em SPLIT_RESOURCES.
+  patient_itinerary: 'Pacientes',
   recruitment: 'Recrutamento',
   talentum: 'Recrutamento',
   prescreening: 'Recrutamento',
@@ -342,6 +345,14 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
     'Rejeitar e reverter a rejeição de um prestador no quadro de ENCUADRE de um serviço '
     + 'contratado (sempre com motivo de lista fechada). Não aloca nem desaloca, não move a '
     + 'candidatura na vaga e não adiciona prestador.',
+
+  // ── Fase 11 (DX-11.1) — montar o itinerário do paciente: faixas semanais, alocação/desalocação
+  //    de prestador em Selecionado (C), e a marca de montado.
+  'patient_itinerary:update':
+    'Montar o itinerário do paciente: criar, editar e encerrar faixas semanais de um serviço '
+    + 'contratado, alocar e encerrar a alocação de um prestador que está em Selecionado (C) '
+    + 'daquele serviço, e marcar o itinerário como montado. Não move o paciente de coluna nem '
+    + 'rejeita prestador.',
 
   // ── Spec 024 (D1/D401, 21/09) — o catálogo de Etiquetas é DADO diferente do perfil do
   //    prestador: `tag:*` sai de `worker:*`. Atribuir/remover etiqueta DE UM prestador
