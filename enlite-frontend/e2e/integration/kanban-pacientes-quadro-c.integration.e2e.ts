@@ -1,5 +1,5 @@
 /**
- * quadro-c.integration.e2e.ts @integration — Fase 10 (cadeia-paciente-vacante-itinerario), DX-10.13.
+ * kanban-pacientes-quadro-c.integration.e2e.ts @integration — Fase 10 (cadeia-paciente-vacante-itinerario), DX-10.13.
  *
  * Front real (Vite) + API real (rebuildada da worktree) + Postgres real. Zero mock de dado —
  * `page.route` só é instalado DEPOIS do `loginAs` (nenhum previsto aqui). Semente por API real
@@ -11,13 +11,19 @@
  * `quadro-c-sem-adicionar`, `quadro-c-so-err-alimenta`, `quadro-c-rejeitar-alocado-422`,
  * `quadro-c-rejeitar-exige-motivo`, `quadro-c-reverter-exige-motivo`, `quadro-c-rejeitar-nao-mexe-em-b`,
  * `quadro-c-por-servico`, `quadro-c-selecao`, `quadro-c-sem-vaga`.
+ *
+ * Nome do ARQUIVO (P26, DX-10.13 "CI"): sem o "pode" do Gabriel para `pr-gate.yml` nesta sessão
+ * (Q-10.4 — e `pr-gate.yml` é intocável em qualquer passo salvo o P27, regra 3 do brief), aplica o
+ * fallback já documentado no plano: o caminho `kanban-pacientes-quadro-c...` casa o termo
+ * `kanban-pacientes` que já está no `grep:` do job padrão (`pr-gate.yml:142`) — os títulos dos
+ * testes continuam `quadro-c-…`, os `--grep` dos critérios valem igual.
  */
 import { test, expect } from '@playwright/test';
 import {
   seedLaunchablePatient, mockAdminUserFor, useLancamentoStaff, LANCAMENTO_VIEWPORT_ES_AR, backendUrl,
 } from '../helpers/lancamento-e2e-helper';
 import {
-  activateRecruitmentViaApi, readItineraryApi, seedAssignment, ITINERARIO_STAFF,
+  activateRecruitmentViaApi, readItineraryApi, seedAssignment, createServiceViaApi, ITINERARIO_STAFF,
 } from '../helpers/itinerario-e2e-helper';
 import { insertTestWorker, cleanupTestWorker } from '../helpers/db-test-helper';
 import { insertWJA, upsertEncuadre, getWjaByWorkerAndJob, cleanupWJAAndEncuadre } from '../helpers/wja-test-helper';
@@ -41,6 +47,24 @@ const STAFF = mockAdminUserFor('quadro-c');
  */
 function extractUuid(raw: string): string {
   return raw.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)?.[0] ?? raw;
+}
+
+/**
+ * 2º endereço do paciente (`quadro-c-por-servico`, critério 13) — SQL direto: nenhum helper de
+ * API grava endereço nesta pasta ainda (a rota `POST /patients/:patientId/addresses`,
+ * `adminPatientsRoutes.ts:184`, não tem wrapper de e2e — DX-10.13 permite SQL quando a rota não
+ * serve, listado aqui). Molde do INSERT: `localizaciones-abac-principal-tipo...ts:204-206`
+ * (`address_type = NULL` — lista fechada pelo zod da API, não pelo CHECK do banco).
+ */
+function insertSecondAddress(patientId: string): string {
+  return extractUuid(
+    runSQL(
+      `INSERT INTO patient_addresses (patient_id, is_default, address_type, address_formatted, address_raw, ` +
+        `lat, lng, display_order, source, created_at, updated_at) VALUES ('${patientId}', false, NULL, ` +
+        `'Av. Santa Fe 2000, CABA, AR', 'Av. Santa Fe 2000, CABA', -34.595, -58.393, 2, 'manual', NOW(), NOW()) ` +
+        `RETURNING id`,
+    ),
+  );
 }
 
 test.describe('quadro-c @integration', () => {
@@ -350,6 +374,196 @@ test.describe('quadro-c @integration', () => {
       cleanupWJAAndEncuadre(workerId, vacancyId);
       cleanupTestWorker(workerId);
       seed.cleanup();
+    }
+  });
+
+  test('quadro-c-sem-vaga', async ({ page, request }) => {
+    const seed = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.6, lng: -58.4 });
+    try {
+      await loginAs(page, STAFF);
+      await openContractedServiceTab(page, seed.patientId);
+      await selectServiceRow(page, seed.serviceId);
+      await expect(page.getByTestId('quadro-c-sem-vaga')).toBeVisible();
+      await expect(page.locator('[data-testid^="kanban-column-"]')).toHaveCount(0);
+
+      const api = await readServiceTeamApi(request, seed.patientId, seed.serviceId);
+      console.log('[10.19]', api.status, api.body.data?.vacancyId);
+      expect(api.body.data?.vacancyId ?? null).toBeNull();
+    } finally {
+      cleanupQuadroC(seed.patientId);
+      seed.cleanup();
+    }
+  });
+
+  test('quadro-c-sem-adicionar', async ({ page, request }) => {
+    const seed = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.6, lng: -58.4 });
+    try {
+      await loginAs(page, STAFF);
+      await openContractedServiceTab(page, seed.patientId);
+
+      const dentro = page.getByTestId('quadro-c-secao').getByRole('button', { name: /adicionar|agregar|añadir|nuevo/i });
+      await expect(dentro).toHaveCount(0);
+
+      const fora = page.getByTestId('servicos-contratados-card').getByRole('button', {
+        name: /adicionar|agregar|añadir|nuevo/i,
+      });
+      // `.count()` só para o log — a asserção de fato é o `toBeVisible` abaixo, que espera com retry.
+      const foraCount = await fora.count();
+      console.log('[10.5]', 0, foraCount);
+      await expect(fora.first()).toBeVisible();
+    } finally {
+      cleanupQuadroC(seed.patientId);
+      seed.cleanup();
+    }
+  });
+
+  test('quadro-c-por-servico', async ({ page, request }) => {
+    const seed = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.6, lng: -58.4 });
+    const address2Id = insertSecondAddress(seed.patientId);
+    const s2 = await createServiceViaApi(request, seed.patientId, { addressId: address2Id, schedule: [{ dayOfWeek: 2, startTime: '09:00', endTime: '13:00' }] });
+    const v1 = await activateRecruitmentViaApi(request, seed.patientId, seed.serviceId);
+    await activateRecruitmentViaApi(request, seed.patientId, s2);
+    const workerId = insertTestWorker({ occupation: 'AT' });
+    try {
+      insertWJA({ workerId, jobPostingId: v1, funnelStage: 'QUICK_RESPONSE_TEAM' });
+
+      const apiS1 = await readServiceTeamApi(request, seed.patientId, seed.serviceId);
+      const apiS2 = await readServiceTeamApi(request, seed.patientId, s2);
+      const s1Ids = [
+        ...(apiS1.body.data?.selected ?? []), ...(apiS1.body.data?.inService ?? []), ...(apiS1.body.data?.rejected ?? []),
+      ].map((m) => m.workerId);
+      const s2Ids = [
+        ...(apiS2.body.data?.selected ?? []), ...(apiS2.body.data?.inService ?? []), ...(apiS2.body.data?.rejected ?? []),
+      ].map((m) => m.workerId);
+      console.log('[10.13]', s1Ids, s2Ids);
+      expect(s1Ids).toContain(workerId);
+      expect(s2Ids).not.toContain(workerId);
+
+      await loginAs(page, STAFF);
+      await openContractedServiceTab(page, seed.patientId);
+      await selectServiceRow(page, s2);
+      await expect(page.getByTestId(`service-team-card-${workerId}`)).toHaveCount(0);
+    } finally {
+      cleanupQuadroC(seed.patientId);
+      cleanupWJAAndEncuadre(workerId, v1);
+      cleanupTestWorker(workerId);
+      seed.cleanup();
+    }
+  });
+
+  test('quadro-c-selecao', async ({ page, request }, testInfo) => {
+    const seed = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.6, lng: -58.4 });
+    const v1 = await activateRecruitmentViaApi(request, seed.patientId, seed.serviceId);
+    const s2 = await createServiceViaApi(request, seed.patientId, { addressId: seed.addressId, schedule: [{ dayOfWeek: 2, startTime: '09:00', endTime: '13:00' }] });
+    await activateRecruitmentViaApi(request, seed.patientId, s2);
+    const w1 = insertTestWorker({ occupation: 'AT' }); // ERR/selected
+    const w2 = insertTestWorker({ occupation: 'AT' }); // alocado/inService
+    const w3 = insertTestWorker({ occupation: 'AT' }); // rejeitado
+    const keep = process.env.QUADRO_C_KEEP === '1';
+    try {
+      insertWJA({ workerId: w1, jobPostingId: v1, funnelStage: 'QUICK_RESPONSE_TEAM' });
+      const wjaW2 = insertWJA({ workerId: w2, jobPostingId: v1, funnelStage: 'QUICK_RESPONSE_TEAM' });
+      insertWJA({ workerId: w3, jobPostingId: v1, funnelStage: 'QUICK_RESPONSE_TEAM' });
+      const rejectW3 = await postServiceTeamAction(request, seed.patientId, seed.serviceId, 'reject', {
+        workerId: w3, reasonCategory: 'OTHER',
+      });
+      expect(rejectW3.status).toBe(200);
+
+      const itin = await readItineraryApi(request, seed.patientId);
+      const svc = itin.body.data?.services.find((s) => s.contractedServiceId === seed.serviceId);
+      const slotId = svc?.slots[0]?.id;
+      if (!slotId) throw new Error('quadro-c-selecao: slot do serviço não encontrado no itinerário');
+      seedAssignment({ slotId, workerId: w2, applicationId: wjaW2, validFromDaysAgo: 5, status: 'ACTIVE' });
+
+      await loginAs(page, STAFF);
+      await openContractedServiceTab(page, seed.patientId);
+      const printDir = process.env.PRINT_DIR;
+
+      // Sem seleção: 0 colunas.
+      await expect(page.getByTestId('quadro-c-sem-selecao')).toBeVisible();
+      await expect(page.locator('[data-testid^="kanban-column-"]')).toHaveCount(0);
+      if (printDir) {
+        await page.evaluate(() => document.fonts.ready);
+        await page.screenshot({
+          path: `${printDir}/quadro-c-sem-selecao.png`, fullPage: false, animations: 'disabled', caret: 'hide',
+        });
+      }
+
+      // s1 selecionado: 3 colunas, 1 card em cada (ERR, alocado, rejeitado).
+      await selectServiceRow(page, seed.serviceId);
+      await expect(page.getByTestId('kanban-column-SELECTED_FOR_SERVICE')).toHaveCount(1);
+      await expect(page.getByTestId('kanban-column-IN_SERVICE')).toHaveCount(1);
+      await expect(page.getByTestId('kanban-column-REJECTED_FOR_SERVICE')).toHaveCount(1);
+      await expect(page.getByTestId(`service-team-card-${w1}`)).toBeVisible();
+      await expect(page.getByTestId(`service-team-card-${w2}`)).toBeVisible();
+      await expect(page.getByTestId(`service-team-card-${w3}`)).toBeVisible();
+      if (printDir) {
+        await page.evaluate(() => document.fonts.ready);
+        await page.screenshot({
+          path: `${printDir}/quadro-c-tres-colunas.png`, fullPage: false, animations: 'disabled', caret: 'hide',
+          mask: [
+            page.getByTestId(`service-team-card-${w1}`), page.getByTestId(`service-team-card-${w2}`),
+            page.getByTestId(`service-team-card-${w3}`),
+          ],
+        });
+      }
+
+      // Motivo aberto (Rechazar em w1, ainda selecionado) — print, depois cancela (não altera dado).
+      await page.getByTestId(`service-team-reject-${w1}`).click();
+      await expect(page.getByTestId('service-team-reject-modal')).toBeVisible();
+      if (printDir) {
+        await page.evaluate(() => document.fonts.ready);
+        await page.screenshot({
+          path: `${printDir}/quadro-c-motivo.png`, fullPage: false, animations: 'disabled', caret: 'hide',
+        });
+      }
+      await page.getByTestId('service-team-reject-cancel').click();
+      await expect(page.getByTestId('service-team-reject-modal')).toHaveCount(0);
+
+      // s2 selecionado: título/endereço lidos do DOM da linha 2, realce medido, seção com 1 baseline.
+      const row2 = page.getByTestId(`contracted-service-row-${s2}`);
+      const row1 = page.getByTestId(`contracted-service-row-${seed.serviceId}`);
+      const serviceLabel2 = ((await row2.locator('td').nth(1).innerText()) ?? '').trim();
+      const addressLabel2 = ((await page.getByTestId(`contracted-service-address-${s2}`).innerText().catch(() => '')) ?? '').trim();
+
+      await selectServiceRow(page, s2);
+      const titulo = page.getByTestId('quadro-c-titulo');
+      await expect(titulo).toBeVisible();
+      const tituloText = (await titulo.innerText()).trim();
+      expect(tituloText).toContain(serviceLabel2);
+      if (addressLabel2) expect(tituloText).toContain(addressLabel2);
+
+      await expect(row2).toHaveAttribute('aria-selected', 'true');
+      await expect(row1).not.toHaveAttribute('aria-selected', 'true');
+      const [selBg, naoBg] = await Promise.all([
+        row2.evaluate((el) => getComputedStyle(el).backgroundColor),
+        row1.evaluate((el) => getComputedStyle(el).backgroundColor),
+      ]);
+      console.log('[10.18] realce', { sel: selBg, nao: naoBg });
+      expect(selBg).not.toBe(naoBg);
+
+      await expect(page.getByTestId('servicos-contratados-card').getByTestId('quadro-c-secao')).toHaveCount(1);
+
+      await page.evaluate(() => document.fonts.ready);
+      await expect(page.getByTestId('quadro-c-secao')).toHaveScreenshot(`${testInfo.project.name}-quadro-c-selecao.png`, {
+        maxDiffPixelRatio: 0.05,
+        mask: [titulo],
+      });
+
+      if (keep) {
+        console.log('[quadro-c-selecao] patientId mantido (QUADRO_C_KEEP=1):', seed.patientId);
+      }
+    } finally {
+      if (!keep) {
+        cleanupQuadroC(seed.patientId);
+        cleanupWJAAndEncuadre(w1, v1);
+        cleanupWJAAndEncuadre(w2, v1);
+        cleanupWJAAndEncuadre(w3, v1);
+        cleanupTestWorker(w1);
+        cleanupTestWorker(w2);
+        cleanupTestWorker(w3);
+        seed.cleanup();
+      }
     }
   });
 });
