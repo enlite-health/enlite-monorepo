@@ -331,6 +331,28 @@ describe('useServiceTeam', () => {
     expect(result.current.actionError).toBe('ITINERARY_OVERLAP');
   });
 
+  // achado C3 (veredito parcial-1): POST ok + GET de refresh falho não pode apagar o quadro —
+  // a ausência já foi gravada; só a resposta do GET some, o `team`/`status` ficam como estavam.
+  it('substitute: POST ok + GET de refresh falho → team/status NÃO mudam (o quadro não cai)', async () => {
+    const teamAntes = team('s1', 'v-antes');
+    getServiceTeam.mockResolvedValueOnce(teamAntes);
+    registerAbsence.mockResolvedValueOnce({ absenceId: 'ab1', allocationId: 'a1', date: '2026-10-05', substituteWorkerId: 'w2', status: 'OPEN' });
+    const { result } = renderHook(() => useServiceTeam('p1', 's1', 0));
+    await waitFor(() => expect(result.current.status).toBe('ok'));
+    expect(result.current.team).toEqual(teamAntes);
+
+    getServiceTeam.mockRejectedValueOnce(new Error('network down'));
+
+    await act(async () => {
+      await result.current.substitute('a1', '2026-10-05', 'w2');
+    });
+
+    expect(registerAbsence).toHaveBeenCalledWith('p1', 's1', 'a1', { date: '2026-10-05', substituteWorkerId: 'w2' });
+    expect(result.current.status).toBe('ok');
+    expect(result.current.team).toEqual(teamAntes);
+    expect(result.current.actionError).toBeNull();
+  });
+
   it('resposta atrasada de uma ação velha (substitute) não pinta: a mesma guarda de requestIdRef vale para ela', async () => {
     getServiceTeam.mockResolvedValueOnce(team('s1'));
     const { result, rerender } = renderHook(({ nonce }) => useServiceTeam('p1', 's1', nonce), {

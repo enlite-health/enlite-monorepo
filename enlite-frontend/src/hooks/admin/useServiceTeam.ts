@@ -109,17 +109,48 @@ export function useServiceTeam(
    * (a resposta do POST não traz o time — `reject`/`revert` seguem com 0 GET extra, só esta ação
    * tem o GET a mais). `substituteWorkerId: null` = "Sin reemplazo" (Q-S1) — a chave sai OMITIDA
    * do corpo do registro (dia fica como alerta; ausente ≠ o `null` explícito do PATCH substitute).
+   *
+   * Achado C3 (veredito parcial-1): o GET de refresh é tratado À PARTE do POST — a ausência já foi
+   * gravada quando ele roda, então uma falha SÓ dele não pode derrubar o quadro inteiro (`runAction`
+   * trataria qualquer erro do `call()` como erro geral e zeraria `status`). POST com erro segue a
+   * MESMA régua de `reject`/`revert` (403 → forbidden; código conhecido → `actionError`; resto →
+   * error); GET com erro NÃO mexe em `team`/`status` — o quadro fica com o dado de antes da escrita.
    */
   const substitute = useCallback(
-    (allocationId: string, date: string, substituteWorkerId: string | null) =>
-      runAction(async (sid) => {
-        await AdminContractedServicesApiService.registerAbsence(patientId, sid, allocationId, {
+    async (allocationId: string, date: string, substituteWorkerId: string | null) => {
+      if (!serviceId) return;
+      const targetServiceId = serviceId;
+      const requestId = ++requestIdRef.current;
+      setActionError(null);
+      try {
+        await AdminContractedServicesApiService.registerAbsence(patientId, targetServiceId, allocationId, {
           date,
           ...(substituteWorkerId ? { substituteWorkerId } : {}),
         });
-        return AdminContractedServicesApiService.getServiceTeam(patientId, sid);
-      }),
-    [patientId, runAction],
+      } catch (err) {
+        if (requestIdRef.current !== requestId) return;
+        if (err instanceof ContractedServiceApiError && err.status === 403) {
+          setStatus('forbidden');
+          return;
+        }
+        if (err instanceof ContractedServiceApiError && err.code) {
+          setActionError(err.code);
+          return;
+        }
+        setStatus('error');
+        return;
+      }
+      try {
+        const result = await AdminContractedServicesApiService.getServiceTeam(patientId, targetServiceId);
+        if (requestIdRef.current !== requestId) return;
+        setTeam(result);
+        setStatus('ok');
+      } catch {
+        // GET de refresh falhou depois de um POST que já teve sucesso (C3): o quadro segue com o
+        // time atual — nunca `setStatus('error')` aqui, senão o board some por um refresh que falhou.
+      }
+    },
+    [patientId, serviceId],
   );
 
   return { team, status, reject, revert, substitute, actionError };
