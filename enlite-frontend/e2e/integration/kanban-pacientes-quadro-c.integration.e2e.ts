@@ -46,7 +46,9 @@ const STAFF = mockAdminUserFor('quadro-c');
  * retorno; extrai só o UUID aqui, sem tocar o helper irmão (regra 3 do brief).
  */
 function extractUuid(raw: string): string {
-  return raw.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)?.[0] ?? raw;
+  const found = raw.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)?.[0];
+  if (!found) throw new Error(`extractUuid: nenhum uuid na saída do psql (semente falhou?): ${raw}`);
+  return found;
 }
 
 /**
@@ -133,7 +135,13 @@ test.describe('quadro-c @integration', () => {
       expect(move.status).toBe(200);
 
       // Sem `page.reload()` — re-clica a linha pra atualizar o quadro C (`selectionNonce`, DX-10.8).
-      await selectServiceRow(page, seed.serviceId);
+      // Espera a resposta do GET /team da re-seleção ANTES de medir — sem isso o `toHaveCount(0)`
+      // pode passar ANTES do fetch responder (o clique zera `team` no estado antes da resposta
+      // chegar), provando o "zero" errado (achado 2 do veredito, gate parcial G1-e).
+      await Promise.all([
+        page.waitForResponse((r) => r.url().includes('/contracted-services/') && r.url().endsWith('/team')),
+        selectServiceRow(page, seed.serviceId),
+      ]);
       await expect(page.getByTestId(`service-team-card-${workerId}`)).toHaveCount(0);
 
       const apiAfter = await readServiceTeamApi(request, seed.patientId, seed.serviceId);
@@ -397,9 +405,20 @@ test.describe('quadro-c @integration', () => {
 
   test('quadro-c-sem-adicionar', async ({ page, request }) => {
     const seed = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.6, lng: -58.4 });
+    const vacancyId = await activateRecruitmentViaApi(request, seed.patientId, seed.serviceId);
+    const workerId = insertTestWorker({ occupation: 'AT' });
     try {
+      // Achado 2 do veredito: medir "0 botões dentro da seção" SEM serviço selecionado passaria com
+      // um "Adicionar" dentro do quadro (a seção só mostra o texto de convite, o board nem monta).
+      // Seleciona um serviço COM vaga e candidato — o board (3 colunas) precisa estar de pé antes
+      // da contagem valer alguma coisa.
+      insertWJA({ workerId, jobPostingId: vacancyId, funnelStage: 'QUICK_RESPONSE_TEAM' });
+
       await loginAs(page, STAFF);
       await openContractedServiceTab(page, seed.patientId);
+      await selectServiceRow(page, seed.serviceId);
+      await expect(page.getByTestId('kanban-column-SELECTED_FOR_SERVICE')).toBeVisible();
+      await expect(page.getByTestId(`service-team-card-${workerId}`)).toBeVisible();
 
       const dentro = page.getByTestId('quadro-c-secao').getByRole('button', { name: /adicionar|agregar|añadir|nuevo/i });
       await expect(dentro).toHaveCount(0);
@@ -413,6 +432,8 @@ test.describe('quadro-c @integration', () => {
       await expect(fora.first()).toBeVisible();
     } finally {
       cleanupQuadroC(seed.patientId);
+      cleanupWJAAndEncuadre(workerId, vacancyId);
+      cleanupTestWorker(workerId);
       seed.cleanup();
     }
   });
@@ -441,7 +462,12 @@ test.describe('quadro-c @integration', () => {
 
       await loginAs(page, STAFF);
       await openContractedServiceTab(page, seed.patientId);
-      await selectServiceRow(page, s2);
+      // Espera a resposta do GET /team do serviço `s2` ANTES de medir — mesma régua de
+      // `quadro-c-rechazado-na-vaga-some` (o zero não pode passar antes do fetch responder).
+      await Promise.all([
+        page.waitForResponse((r) => r.url().includes('/contracted-services/') && r.url().endsWith('/team')),
+        selectServiceRow(page, s2),
+      ]);
       await expect(page.getByTestId(`service-team-card-${workerId}`)).toHaveCount(0);
     } finally {
       cleanupQuadroC(seed.patientId);
@@ -524,14 +550,19 @@ test.describe('quadro-c @integration', () => {
       const row2 = page.getByTestId(`contracted-service-row-${s2}`);
       const row1 = page.getByTestId(`contracted-service-row-${seed.serviceId}`);
       const serviceLabel2 = ((await row2.locator('td').nth(1).innerText()) ?? '').trim();
-      const addressLabel2 = ((await page.getByTestId(`contracted-service-address-${s2}`).innerText().catch(() => '')) ?? '').trim();
+      // Sem `.catch()`: se a semente do 2º endereço falhar, o teste quebra AQUI, com o testid que
+      // faltou — nunca pula a asserção em silêncio (achado 2 do veredito).
+      const addressLabel2 = (await page.getByTestId(`contracted-service-address-${s2}`).innerText()).trim();
+      if (!addressLabel2) {
+        throw new Error('quadro-c-selecao: contracted-service-address veio vazio — a semente do 2º endereço falhou');
+      }
 
       await selectServiceRow(page, s2);
       const titulo = page.getByTestId('quadro-c-titulo');
       await expect(titulo).toBeVisible();
       const tituloText = (await titulo.innerText()).trim();
       expect(tituloText).toContain(serviceLabel2);
-      if (addressLabel2) expect(tituloText).toContain(addressLabel2);
+      expect(tituloText).toContain(addressLabel2);
 
       await expect(row2).toHaveAttribute('aria-selected', 'true');
       await expect(row1).not.toHaveAttribute('aria-selected', 'true');

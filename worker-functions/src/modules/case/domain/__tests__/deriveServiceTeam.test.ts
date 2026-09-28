@@ -211,4 +211,56 @@ describe('deriveServiceTeam', () => {
     expect(result.rejected).toHaveLength(1);
     expect(result.selected).toHaveLength(1);
   });
+
+  /**
+   * Gate parcial #1 (achado 1 do veredito): o (8) só provava a interseção TRIPLA
+   * (selected ∩ inService ∩ rejected), que a sabotagem A (remover `!rejectedWorkerIds.has` de
+   * `deriveServiceTeam.ts:~108`) não derruba — o caso real da operação é o PAR "candidato que
+   * virou rejeitado", não a tripla. Os três `it(` abaixo cobrem os pares nomeados no gate.
+   */
+  it('(13) PAR: candidato em QUICK_RESPONSE_TEAM + marca ativa (não alocado) → só em rejected, nunca em selected', () => {
+    const result = deriveServiceTeam({
+      serviceId: SERVICE_ID,
+      liveVacancyId: VACANCY_ID,
+      asOf: ASOF,
+      candidacies: [{ workerId: 'w1', vacancyId: VACANCY_ID, stage: SERVICE_TEAM_ENTRY_STAGE }],
+      assignments: [],
+      marks: [{ workerId: 'w1', serviceId: SERVICE_ID, rejectReasonCategory: 'OTHER' }],
+    });
+    expect(result.rejected).toEqual([{ workerId: 'w1', reasonCategory: 'OTHER' }]);
+    expect(result.selected).toEqual([]);
+    expect(result.inService).toEqual([]);
+  });
+
+  it('(14) PAR: candidato + alocado vigente (sem marca) → só em inService, nunca em selected', () => {
+    const result = deriveServiceTeam({
+      serviceId: SERVICE_ID,
+      liveVacancyId: VACANCY_ID,
+      asOf: ASOF,
+      candidacies: [{ workerId: 'w1', vacancyId: VACANCY_ID, stage: SERVICE_TEAM_ENTRY_STAGE }],
+      assignments: [
+        { workerId: 'w1', serviceId: SERVICE_ID, vacancyId: VACANCY_ID, validFrom: '2026-09-01', validTo: null, status: 'ACTIVE' },
+      ],
+      marks: [],
+    });
+    expect(result.inService).toEqual([{ workerId: 'w1', vacancyId: VACANCY_ID }]);
+    expect(result.selected).toEqual([]);
+    expect(result.rejected).toEqual([]);
+  });
+
+  it('(15) PAR: alocado vigente + marcado (sem candidatura) → só em inService, nunca em rejected', () => {
+    const result = deriveServiceTeam({
+      serviceId: SERVICE_ID,
+      liveVacancyId: VACANCY_ID,
+      asOf: ASOF,
+      candidacies: [],
+      assignments: [
+        { workerId: 'w1', serviceId: SERVICE_ID, vacancyId: VACANCY_ID, validFrom: '2026-09-01', validTo: null, status: 'ACTIVE' },
+      ],
+      marks: [{ workerId: 'w1', serviceId: SERVICE_ID, rejectReasonCategory: 'OTHER' }],
+    });
+    expect(result.inService).toEqual([{ workerId: 'w1', vacancyId: VACANCY_ID }]);
+    expect(result.selected).toEqual([]);
+    expect(result.rejected).toEqual([]);
+  });
 });

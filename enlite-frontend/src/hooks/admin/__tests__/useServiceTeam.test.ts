@@ -80,6 +80,34 @@ describe('useServiceTeam', () => {
     await waitFor(() => expect(getServiceTeam).toHaveBeenCalledTimes(2));
   });
 
+  it('gate parcial #8: duas seleções da MESMA linha (nonce muda) — a 1ª resposta chegando DEPOIS da 2ª não sobrescreve, o estado fica com o time da 2ª', async () => {
+    const first = deferred<ServiceTeam>();
+    const second = deferred<ServiceTeam>();
+    getServiceTeam.mockImplementationOnce(() => first.promise).mockImplementationOnce(() => second.promise);
+    const { result, rerender } = renderHook(({ nonce }) => useServiceTeam('p1', 's1', nonce), {
+      initialProps: { nonce: 0 },
+    });
+    rerender({ nonce: 1 });
+    expect(getServiceTeam).toHaveBeenCalledTimes(2);
+
+    // a 2ª requisição (a mais recente) resolve primeiro.
+    const secondTeam = team('s1', 'v2');
+    await act(async () => {
+      second.resolve(secondTeam);
+      await second.promise;
+    });
+    await waitFor(() => expect(result.current.status).toBe('ok'));
+    expect(result.current.team).toEqual(secondTeam);
+
+    // a resposta ATRASADA da 1ª requisição (mesmo serviceId!) chega depois — é descartada.
+    const firstTeam = team('s1', 'v1');
+    await act(async () => {
+      first.resolve(firstTeam);
+      await first.promise;
+    });
+    expect(result.current.team).toEqual(secondTeam);
+  });
+
   it('troca de serviço com a resposta antiga chegando depois: o estado fica com o time do serviço corrente', async () => {
     const first = deferred<ServiceTeam>();
     const second = deferred<ServiceTeam>();

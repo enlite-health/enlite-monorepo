@@ -25,10 +25,21 @@ const PATIENT_ID = '11111111-1111-1111-1111-111111111111';
 const SERVICE_ID = '22222222-2222-2222-2222-222222222222';
 const WORKER_ID = '33333333-3333-3333-3333-333333333333';
 
-function reqRes(params: Record<string, unknown> = {}, body: Record<string, unknown> = {}): [Request, Response] {
+/**
+ * `user` default `{ uid: 'staff-1' }` — a maioria dos testes de reject/revert quer exercitar OUTRA
+ * coisa (motivo, mapeamento de erro, forma) e não a autenticação; passar `null` pede o cenário SEM
+ * ator (achado #9: sem `req.user?.uid`, a ação responde 401, nunca grava `'unknown'`).
+ */
+function reqRes(
+  params: Record<string, unknown> = {},
+  body: Record<string, unknown> = {},
+  user: { uid: string } | null = { uid: 'staff-1' },
+): [Request, Response] {
   const json = jest.fn().mockReturnThis();
   const status = jest.fn().mockReturnValue({ json });
-  return [{ params, body, query: {} } as unknown as Request, { json, status } as unknown as Response];
+  const req = { params, body, query: {} } as unknown as Request;
+  if (user) (req as unknown as { user: { uid: string } }).user = user;
+  return [req, { json, status } as unknown as Response];
 }
 
 function team(overrides: Partial<GetServiceTeamResult> = {}): GetServiceTeamResult {
@@ -148,12 +159,28 @@ describe('AdminServiceTeamController', () => {
       expect(emitirTrilhaDeContato).toHaveBeenCalledWith(req, [WORKER_ID]);
     });
 
-    it('feliz revert → 200 { success: true, data }; sem req.user, actorUid vira "unknown"', async () => {
+    it('feliz revert → 200 { success: true, data }, actorUid do req.user', async () => {
       markUseCase.revert.mockResolvedValueOnce(team());
       const [req, res] = reqRes({ id: PATIENT_ID, sid: SERVICE_ID }, { workerId: WORKER_ID, reasonCategory: 'REAVALIACAO' });
       await ctrl.revert(req, res);
       expect(res.status).toHaveBeenCalledWith(200);
-      expect(markUseCase.revert).toHaveBeenCalledWith(expect.objectContaining({ actorUid: 'unknown' }));
+      expect(markUseCase.revert).toHaveBeenCalledWith(expect.objectContaining({ actorUid: 'staff-1' }));
+    });
+
+    it('achado #9: sem req.user?.uid → 401 UNAUTHENTICATED, o caso de uso NUNCA roda (nunca grava actorUid "unknown" na auditoria)', async () => {
+      const [req, res] = reqRes({ id: PATIENT_ID, sid: SERVICE_ID }, { workerId: WORKER_ID, reasonCategory: 'OTHER' }, null);
+      await ctrl.reject(req, res);
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect((res as unknown as { json: jest.Mock }).json).toHaveBeenCalledWith({ success: false, code: 'UNAUTHENTICATED' });
+      expect(markUseCase.reject).not.toHaveBeenCalled();
+    });
+
+    it('achado #9: o mesmo vale para revert — sem req.user?.uid → 401, 0 chamada ao caso de uso', async () => {
+      const [req, res] = reqRes({ id: PATIENT_ID, sid: SERVICE_ID }, { workerId: WORKER_ID, reasonCategory: 'REAVALIACAO' }, null);
+      await ctrl.revert(req, res);
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect((res as unknown as { json: jest.Mock }).json).toHaveBeenCalledWith({ success: false, code: 'UNAUTHENTICATED' });
+      expect(markUseCase.revert).not.toHaveBeenCalled();
     });
   });
 

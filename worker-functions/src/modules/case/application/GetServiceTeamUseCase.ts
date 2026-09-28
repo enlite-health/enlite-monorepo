@@ -23,7 +23,8 @@
 import { ServiceTeamReader, type ServiceTeamRows } from '../infrastructure/ServiceTeamReader';
 import { deriveServiceTeam } from '../domain/deriveServiceTeam';
 import { operationDateOf } from './itineraryCoverage';
-import { projectWorkerFields, NOME_REDIGIDO, type Decryptor } from '@modules/identity/permissions';
+import { projectServiceTeamDisplayNames, buildServiceTeamResult } from './serviceTeamPresentation';
+import { type Decryptor } from '@modules/identity/permissions';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 
 /** Serviço inexistente, de outro paciente, ou fora da RLS. O controller mapeia para 404. */
@@ -64,11 +65,6 @@ export interface ServiceTeamReaderPort {
   read(patientId: string, serviceId: string): Promise<ServiceTeamRows | null>;
 }
 
-interface WorkerNameSource {
-  firstNameEncrypted: string | null;
-  lastNameEncrypted: string | null;
-}
-
 export class GetServiceTeamUseCase {
   constructor(
     private readonly reader: ServiceTeamReaderPort = new ServiceTeamReader(),
@@ -91,56 +87,8 @@ export class GetServiceTeamUseCase {
       marks: row.marks,
     });
 
-    const displayNameByWorkerId = await this.projectDisplayNames(row, cells);
+    const displayNameByWorkerId = await projectServiceTeamDisplayNames(row, team, cells, this.kms);
 
-    return {
-      serviceId: row.serviceId,
-      vacancyId: row.liveVacancyId,
-      selected: team.selected.map((entry) => ({
-        workerId: entry.workerId,
-        displayName: displayNameByWorkerId.get(entry.workerId) ?? null,
-        vacancyId: entry.vacancyId,
-      })),
-      inService: team.inService.map((entry) => ({
-        workerId: entry.workerId,
-        displayName: displayNameByWorkerId.get(entry.workerId) ?? null,
-        vacancyId: entry.vacancyId,
-      })),
-      rejected: team.rejected.map((entry) => ({
-        workerId: entry.workerId,
-        displayName: displayNameByWorkerId.get(entry.workerId) ?? null,
-        vacancyId: row.liveVacancyId,
-        reasonCategory: entry.reasonCategory,
-      })),
-    };
-  }
-
-  /** UMA projeção por `workerId` distinto das 3 listas — nunca 2× o mesmo prestador. */
-  private async projectDisplayNames(
-    row: ServiceTeamRows,
-    cells: string[] | null,
-  ): Promise<Map<string, string | null>> {
-    const sourceByWorkerId = new Map<string, WorkerNameSource>();
-    for (const list of [row.candidacies, row.assignments, row.marks]) {
-      for (const entry of list) {
-        if (sourceByWorkerId.has(entry.workerId)) continue;
-        sourceByWorkerId.set(entry.workerId, {
-          firstNameEncrypted: entry.firstNameEncrypted,
-          lastNameEncrypted: entry.lastNameEncrypted,
-        });
-      }
-    }
-
-    const displayNameByWorkerId = new Map<string, string | null>();
-    for (const [workerId, source] of sourceByWorkerId) {
-      const projected = await projectWorkerFields(
-        cells,
-        { firstNameEncrypted: source.firstNameEncrypted, lastNameEncrypted: source.lastNameEncrypted, phone: null },
-        this.kms,
-      );
-      const displayName = projected.name && projected.name !== NOME_REDIGIDO ? projected.name : null;
-      displayNameByWorkerId.set(workerId, displayName);
-    }
-    return displayNameByWorkerId;
+    return buildServiceTeamResult(row, team, displayNameByWorkerId);
   }
 }

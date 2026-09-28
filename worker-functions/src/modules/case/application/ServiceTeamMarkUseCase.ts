@@ -30,7 +30,8 @@ import {
 import { ServiceTeamReader, type ServiceTeamRows } from '../infrastructure/ServiceTeamReader';
 import { ServiceTeamMarkWriter } from '../infrastructure/ServiceTeamMarkWriter';
 import { ServiceTeamNotFoundError, type GetServiceTeamResult } from './GetServiceTeamUseCase';
-import { projectWorkerFields, NOME_REDIGIDO, type Decryptor } from '@modules/identity/permissions';
+import { projectServiceTeamDisplayNames, buildServiceTeamResult } from './serviceTeamPresentation';
+import { type Decryptor } from '@modules/identity/permissions';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 
 /** Rejeitar prestador Em Atendimento (invariante 10) — o controller mapeia para 422 `SERVICE_TEAM_WORKER_ALLOCATED`. */
@@ -112,11 +113,6 @@ export interface ServiceTeamMarkWriterPort {
 }
 
 type TransactionRunner = <T>(fn: (client: PoolClient) => Promise<T>) => Promise<T>;
-
-interface WorkerNameSource {
-  firstNameEncrypted: string | null;
-  lastNameEncrypted: string | null;
-}
 
 export class ServiceTeamMarkUseCase {
   constructor(
@@ -219,28 +215,9 @@ export class ServiceTeamMarkUseCase {
     if (row === null) throw new ServiceTeamNotFoundError(patientId, serviceId);
 
     const team = this.deriveTeam(row, now);
-    const displayNameByWorkerId = await this.projectDisplayNames(row, cells);
+    const displayNameByWorkerId = await projectServiceTeamDisplayNames(row, team, cells, this.kms);
 
-    return {
-      serviceId: row.serviceId,
-      vacancyId: row.liveVacancyId,
-      selected: team.selected.map((entry) => ({
-        workerId: entry.workerId,
-        displayName: displayNameByWorkerId.get(entry.workerId) ?? null,
-        vacancyId: entry.vacancyId,
-      })),
-      inService: team.inService.map((entry) => ({
-        workerId: entry.workerId,
-        displayName: displayNameByWorkerId.get(entry.workerId) ?? null,
-        vacancyId: entry.vacancyId,
-      })),
-      rejected: team.rejected.map((entry) => ({
-        workerId: entry.workerId,
-        displayName: displayNameByWorkerId.get(entry.workerId) ?? null,
-        vacancyId: row.liveVacancyId,
-        reasonCategory: entry.reasonCategory,
-      })),
-    };
+    return buildServiceTeamResult(row, team, displayNameByWorkerId);
   }
 
   private deriveTeam(row: ServiceTeamRows, now: Date) {
@@ -253,31 +230,5 @@ export class ServiceTeamMarkUseCase {
       assignments: row.assignments,
       marks: row.marks,
     });
-  }
-
-  /** UMA projeção por `workerId` distinto das 3 listas — mesmo critério do GET (`GetServiceTeamUseCase`). */
-  private async projectDisplayNames(row: ServiceTeamRows, cells: string[] | null): Promise<Map<string, string | null>> {
-    const sourceByWorkerId = new Map<string, WorkerNameSource>();
-    for (const list of [row.candidacies, row.assignments, row.marks]) {
-      for (const entry of list) {
-        if (sourceByWorkerId.has(entry.workerId)) continue;
-        sourceByWorkerId.set(entry.workerId, {
-          firstNameEncrypted: entry.firstNameEncrypted,
-          lastNameEncrypted: entry.lastNameEncrypted,
-        });
-      }
-    }
-
-    const displayNameByWorkerId = new Map<string, string | null>();
-    for (const [workerId, source] of sourceByWorkerId) {
-      const projected = await projectWorkerFields(
-        cells,
-        { firstNameEncrypted: source.firstNameEncrypted, lastNameEncrypted: source.lastNameEncrypted, phone: null },
-        this.kms,
-      );
-      const displayName = projected.name && projected.name !== NOME_REDIGIDO ? projected.name : null;
-      displayNameByWorkerId.set(workerId, displayName);
-    }
-    return displayNameByWorkerId;
   }
 }

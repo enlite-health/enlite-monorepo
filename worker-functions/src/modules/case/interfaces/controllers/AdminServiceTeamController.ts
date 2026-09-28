@@ -73,9 +73,16 @@ export class AdminServiceTeamController {
       res.status(400).json({ success: false, error: 'Invalid body' });
       return;
     }
+    // `rejected_by`/`reverted_by` são coluna de auditoria NOT NULL — gravar 'unknown' nela some com
+    // a autoria em vez de falhar (achado #9 do gate). Ator ausente é erro de AUTENTICAÇÃO, não uma
+    // forma alternativa de rodar a ação.
+    const actorUid = req.user?.uid;
+    if (!actorUid) {
+      res.status(401).json({ success: false, code: 'UNAUTHENTICATED' });
+      return;
+    }
     const { id: patientId, sid: serviceId } = params.data;
     const { workerId, reasonCategory } = body.data;
-    const actorUid = req.user?.uid ?? 'unknown';
 
     try {
       const input = { patientId, serviceId, workerId, reasonCategory, actorUid, cells: req.permissionCells ?? null };

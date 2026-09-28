@@ -16,9 +16,13 @@ export interface UseServiceTeamResult {
  * Quadro C (DX-10.8): 1 GET por seleção de linha. `selectionNonce` muda a cada clique — inclusive
  * re-clicar a MESMA linha, que é como o operador "atualiza" C sem recarregar a página (critérios 2
  * e 15). `reject`/`revert` gravam a marca e recebem o time já recalculado na resposta — nunca um
- * refetch depois da ação (0 GET extra). Resposta atrasada de uma seleção anterior é descartada
- * pelo `serviceId` CORRENTE (`currentServiceIdRef`) — trocar de linha rápido não pinta o time
- * errado.
+ * refetch depois da ação (0 GET extra).
+ *
+ * Guarda por REQUISIÇÃO (gate parcial #8, achado C3 do veredito): `requestIdRef` incrementa a CADA
+ * fetch (troca de linha OU re-clique da mesma linha) e só a resposta cuja requisição é a mais
+ * recente pinta o estado. Guardar só pelo `serviceId` (como antes) não distingue duas requisições
+ * do MESMO serviço — um re-clique rápido cuja 1ª resposta chega DEPOIS da 2ª sobrescreveria o
+ * estado com o dado velho, porque o `serviceId` das duas é igual.
  */
 export function useServiceTeam(
   patientId: string,
@@ -29,27 +33,30 @@ export function useServiceTeam(
   const [status, setStatus] = useState<ServiceTeamStatus>('idle');
   const [actionError, setActionError] = useState<string | null>(null);
   const currentServiceIdRef = useRef<string | null>(null);
+  const requestIdRef = useRef(0);
 
   useEffect(() => {
     if (!serviceId) {
+      requestIdRef.current += 1;
       currentServiceIdRef.current = null;
       setTeam(null);
       setStatus('idle');
       setActionError(null);
       return;
     }
+    const requestId = ++requestIdRef.current;
     currentServiceIdRef.current = serviceId;
     setTeam(null);
     setStatus('loading');
     setActionError(null);
     AdminContractedServicesApiService.getServiceTeam(patientId, serviceId)
       .then((result) => {
-        if (currentServiceIdRef.current !== serviceId) return; // resposta atrasada de outra linha
+        if (requestIdRef.current !== requestId) return; // resposta de uma requisição anterior (mesma linha ou outra)
         setTeam(result);
         setStatus('ok');
       })
       .catch((err: unknown) => {
-        if (currentServiceIdRef.current !== serviceId) return;
+        if (requestIdRef.current !== requestId) return;
         setStatus(err instanceof ContractedServiceApiError && err.status === 403 ? 'forbidden' : 'error');
       });
   }, [patientId, serviceId, selectionNonce]);
