@@ -9,6 +9,7 @@ export interface UseServiceTeamResult {
   status: ServiceTeamStatus;
   reject: (workerId: string, reasonCategory?: string) => Promise<void>;
   revert: (workerId: string, reasonCategory?: string) => Promise<void>;
+  substitute: (allocationId: string, date: string, substituteWorkerId: string | null) => Promise<void>;
   actionError: string | null;
 }
 
@@ -103,5 +104,23 @@ export function useServiceTeam(
     [patientId, runAction],
   );
 
-  return { team, status, reject, revert, actionError };
+  /**
+   * "Sustituir un día" (DX-13.11/13.13): registra a ausência e, em sucesso, refaz 1 GET do time
+   * (a resposta do POST não traz o time — `reject`/`revert` seguem com 0 GET extra, só esta ação
+   * tem o GET a mais). `substituteWorkerId: null` = "Sin reemplazo" (Q-S1) — a chave sai OMITIDA
+   * do corpo do registro (dia fica como alerta; ausente ≠ o `null` explícito do PATCH substitute).
+   */
+  const substitute = useCallback(
+    (allocationId: string, date: string, substituteWorkerId: string | null) =>
+      runAction(async (sid) => {
+        await AdminContractedServicesApiService.registerAbsence(patientId, sid, allocationId, {
+          date,
+          ...(substituteWorkerId ? { substituteWorkerId } : {}),
+        });
+        return AdminContractedServicesApiService.getServiceTeam(patientId, sid);
+      }),
+    [patientId, runAction],
+  );
+
+  return { team, status, reject, revert, substitute, actionError };
 }

@@ -8,6 +8,7 @@ import { renderHook, act, waitFor } from '@testing-library/react';
 const getServiceTeam = vi.fn();
 const rejectServiceTeamMember = vi.fn();
 const revertServiceTeamMember = vi.fn();
+const registerAbsence = vi.fn();
 
 // Molde de mock do cliente: usePatientKanban.test.ts:16-18.
 vi.mock('@infrastructure/http/AdminContractedServicesApiService', () => ({
@@ -15,6 +16,7 @@ vi.mock('@infrastructure/http/AdminContractedServicesApiService', () => ({
     getServiceTeam: (...a: unknown[]) => getServiceTeam(...a),
     rejectServiceTeamMember: (...a: unknown[]) => rejectServiceTeamMember(...a),
     revertServiceTeamMember: (...a: unknown[]) => revertServiceTeamMember(...a),
+    registerAbsence: (...a: unknown[]) => registerAbsence(...a),
   },
   ContractedServiceApiError: class ContractedServiceApiError extends Error {
     readonly status: number;
@@ -32,8 +34,8 @@ import { useServiceTeam } from '../useServiceTeam';
 import { ContractedServiceApiError } from '@infrastructure/http/AdminContractedServicesApiService';
 import type { ServiceTeam } from '@domain/entities/ServiceTeam';
 
-function team(serviceId: string, vacancyId: string | null = null): ServiceTeam {
-  return { serviceId, vacancyId, selected: [], inService: [], rejected: [] };
+function team(serviceId: string, vacancyId: string | null = null, asOf = '2026-09-28'): ServiceTeam {
+  return { serviceId, vacancyId, asOf, selected: [], inService: [], rejected: [] };
 }
 
 function deferred<T>() {
@@ -51,6 +53,7 @@ describe('useServiceTeam', () => {
     getServiceTeam.mockReset();
     rejectServiceTeamMember.mockReset();
     revertServiceTeamMember.mockReset();
+    registerAbsence.mockReset();
   });
 
   it('serviceId null: idle, 0 chamadas', () => {
@@ -262,5 +265,108 @@ describe('useServiceTeam', () => {
     });
     expect(rejectServiceTeamMember).not.toHaveBeenCalled();
     expect(revertServiceTeamMember).not.toHaveBeenCalled();
+  });
+
+  // substitute (DX-13.11): a ÚNICA ação que refaz 1 GET depois de gravar — a resposta do POST
+  // não traz o time.
+  it('substitute ok: 1 POST + 1 GET (depois do inicial), o time novo no estado', async () => {
+    getServiceTeam.mockResolvedValueOnce(team('s1'));
+    registerAbsence.mockResolvedValueOnce({ absenceId: 'ab1', allocationId: 'a1', date: '2026-10-05', substituteWorkerId: 'w2', status: 'OPEN' });
+    const { result } = renderHook(() => useServiceTeam('p1', 's1', 0));
+    await waitFor(() => expect(result.current.status).toBe('ok'));
+    getServiceTeam.mockClear();
+    const afterSubstitute = team('s1', null, '2026-09-28');
+    getServiceTeam.mockResolvedValueOnce(afterSubstitute);
+
+    await act(async () => {
+      await result.current.substitute('a1', '2026-10-05', 'w2');
+    });
+
+    expect(registerAbsence).toHaveBeenCalledWith('p1', 's1', 'a1', { date: '2026-10-05', substituteWorkerId: 'w2' });
+    expect(getServiceTeam).toHaveBeenCalledTimes(1);
+    expect(getServiceTeam).toHaveBeenCalledWith('p1', 's1');
+    expect(result.current.team).toEqual(afterSubstitute);
+    expect(result.current.status).toBe('ok');
+  });
+
+  it('substitute com substituteWorkerId null: registerAbsence recebe o corpo SEM a chave (dia sem cobertura)', async () => {
+    getServiceTeam.mockResolvedValueOnce(team('s1'));
+    registerAbsence.mockResolvedValueOnce({ absenceId: 'ab1', allocationId: 'a1', date: '2026-10-05', substituteWorkerId: null, status: 'OPEN' });
+    const { result } = renderHook(() => useServiceTeam('p1', 's1', 0));
+    await waitFor(() => expect(result.current.status).toBe('ok'));
+    getServiceTeam.mockResolvedValueOnce(team('s1'));
+
+    await act(async () => {
+      await result.current.substitute('a1', '2026-10-05', null);
+    });
+
+    expect(registerAbsence).toHaveBeenCalledWith('p1', 's1', 'a1', { date: '2026-10-05' });
+  });
+
+  it('substitute: 422 NOT_SELECTED_FOR_SERVICE → actionError = o code, 0 GET extra', async () => {
+    getServiceTeam.mockResolvedValueOnce(team('s1'));
+    registerAbsence.mockRejectedValueOnce(new ContractedServiceApiError('não selecionado', 422, { code: 'NOT_SELECTED_FOR_SERVICE' }));
+    const { result } = renderHook(() => useServiceTeam('p1', 's1', 0));
+    await waitFor(() => expect(result.current.status).toBe('ok'));
+    getServiceTeam.mockClear();
+
+    await act(async () => {
+      await result.current.substitute('a1', '2026-10-05', 'w2');
+    });
+
+    expect(result.current.actionError).toBe('NOT_SELECTED_FOR_SERVICE');
+    expect(getServiceTeam).not.toHaveBeenCalled();
+  });
+
+  it('substitute: 409 → actionError = ITINERARY_OVERLAP', async () => {
+    getServiceTeam.mockResolvedValueOnce(team('s1'));
+    registerAbsence.mockRejectedValueOnce(new ContractedServiceApiError('conflito', 409, { code: 'ITINERARY_OVERLAP' }));
+    const { result } = renderHook(() => useServiceTeam('p1', 's1', 0));
+    await waitFor(() => expect(result.current.status).toBe('ok'));
+
+    await act(async () => {
+      await result.current.substitute('a1', '2026-10-05', 'w2');
+    });
+
+    expect(result.current.actionError).toBe('ITINERARY_OVERLAP');
+  });
+
+  it('resposta atrasada de uma ação velha (substitute) não pinta: a mesma guarda de requestIdRef vale para ela', async () => {
+    getServiceTeam.mockResolvedValueOnce(team('s1'));
+    const { result, rerender } = renderHook(({ nonce }) => useServiceTeam('p1', 's1', nonce), {
+      initialProps: { nonce: 0 },
+    });
+    await waitFor(() => expect(result.current.status).toBe('ok'));
+
+    const registerDeferred = deferred<{ absenceId: string; allocationId: string; date: string; substituteWorkerId: string | null; status: 'OPEN' | 'CANCELLED' }>();
+    registerAbsence.mockImplementationOnce(() => registerDeferred.promise);
+    const newGet = deferred<ServiceTeam>();
+    getServiceTeam.mockImplementationOnce(() => newGet.promise);
+
+    let substitutePromise!: Promise<void>;
+    act(() => {
+      substitutePromise = result.current.substitute('a1', '2026-10-05', 'w2');
+    });
+    // re-clique da MESMA linha antes da ação responder — dispara um GET novo (requestId mais recente).
+    rerender({ nonce: 1 });
+    expect(getServiceTeam).toHaveBeenCalledTimes(2);
+
+    const getTeam = team('s1', 'v-get-novo');
+    await act(async () => {
+      newGet.resolve(getTeam);
+      await newGet.promise;
+    });
+    await waitFor(() => expect(result.current.status).toBe('ok'));
+    expect(result.current.team).toEqual(getTeam);
+
+    // a ação (mais velha) resolve depois: seu `call()` ainda faz o GET próprio dela (3ª chamada),
+    // mas a guarda de requestId descarta a resposta — não pinta por cima do time mais recente.
+    getServiceTeam.mockResolvedValueOnce(team('s1', 'v-acao-velha'));
+    await act(async () => {
+      registerDeferred.resolve({ absenceId: 'ab1', allocationId: 'a1', date: '2026-10-05', substituteWorkerId: 'w2', status: 'OPEN' });
+      await substitutePromise;
+    });
+    expect(getServiceTeam).toHaveBeenCalledTimes(3);
+    expect(result.current.team).toEqual(getTeam);
   });
 });
