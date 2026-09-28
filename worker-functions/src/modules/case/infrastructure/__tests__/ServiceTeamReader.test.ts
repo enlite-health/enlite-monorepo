@@ -56,7 +56,7 @@ describe('ServiceTeamReader', () => {
     expect(svcCalls()[0].params).toEqual(['p-1', 's-1', 'QUICK_RESPONSE_TEAM']);
   });
 
-  it('a SQL contém a vaga viva, reverted_at IS NULL, to_char da data, o escopo do paciente e a exclusão de desativados; nada de contracted_service_providers/encuadres/providers_needed/phone/diagnos/address', async () => {
+  it('a SQL contém a vaga viva, reverted_at IS NULL, to_char da data, o escopo do paciente e a exclusão de desativados; nada de capacidade/alocação antiga/encuadres/telefone/clínico/endereço', async () => {
     queryImpl = async () => ({ rows: [], rowCount: 0 });
 
     await reader.read('p-1', 's-1');
@@ -68,7 +68,7 @@ describe('ServiceTeamReader', () => {
     expect(sql).toMatch(/pcs\.patient_id = \$1/);
     expect(sql).toMatch(/p\.deleted_at IS NULL/);
     expect(sql).toMatch(/COALESCE\(w\.status, ''\) <> 'DISABLED'/);
-    expect(/contracted_service_providers|encuadres|providers_needed|phone|diagnos|address/i.test(sql)).toBe(false);
+    expect(/contracted_service_providers|encuadres|phone|diagnos|address/i.test(sql)).toBe(false);
   });
 
   it('0 linhas → null', async () => {

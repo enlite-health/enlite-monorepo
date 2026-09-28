@@ -595,7 +595,7 @@ describe('🔴 D113 — patient.addresses redigido (null) não quebra o card', (
 });
 
 // Quadro C (Fase 10, P22, DX-10.9): a tabela ESCOLHE. `selected` é a prop do átomo (Table.tsx,
-// Fase 9) — nenhum `isSelected ? '`/`bg-*` novo aqui (critério 21). `ServiceTeamSection` é dublê
+// Fase 9) — nenhum ternário de classe nem `bg-*` novo no TableRow (critério 21): a seleção é a prop `selected` do átomo. `ServiceTeamSection` é dublê
 // (topo do arquivo) — os testes abaixo provam o que o CARD passa para ela, não o que ela renderiza.
 describe('Quadro C (DX-10.9): clique na linha seleciona E abre o detalhe, como hoje', () => {
   const svc2: PatientContractedServiceDetail = { ...SERVICE, id: 'svc-2', serviceCode: 'CAREGIVER' };
