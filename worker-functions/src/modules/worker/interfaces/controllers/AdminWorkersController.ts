@@ -36,6 +36,15 @@ const ListWorkersQuerySchema = z.object({
    * pelo strip do zod, então o filtro nunca teve efeito (achado por e2e, 05/08).
    */
   status: z.enum(['REGISTERED', 'INCOMPLETE_REGISTER', 'DISABLED']).optional(),
+  /**
+   * Checkbox "Mostrar desactivados" da tela de prestadores (D-2026-09-28).
+   * Opt-in: ausente/'false' mantém o default (exclui DISABLED, comportamento
+   * atual). Diferente de `status=DISABLED` — que troca a lista para SÓ
+   * desativados — isto ADICIONA os DISABLED aos demais status já visíveis.
+   * Ignorado quando `status`/`statuses` vem explícito (o filtro explícito já
+   * manda, ver `buildWorkerListWhereClause`).
+   */
+  include_deactivated: z.enum(['true', 'false']).optional(),
   platform: z.string().optional(),
   docs_complete: z.string().optional(),
   docs_validated: DocsValidatedEnum.optional(),

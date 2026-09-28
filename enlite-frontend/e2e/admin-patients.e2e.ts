@@ -269,6 +269,41 @@ test.describe('AdminPatientsPage', () => {
     expect(capturedUrl).toContain('dependency_level=SEVERE');
   });
 
+  test('checkbox "Mostrar desactivados" (D-2026-09-28): marcado envia include_deactivated=true; desmarcar tira o parâmetro', async ({ page }) => {
+    await seedAdminAndLogin(page);
+
+    let capturedUrl = '';
+    await page.route('**/api/admin/patients*', (route) => {
+      capturedUrl = route.request().url();
+      route.fulfill({ status: 200, contentType: 'application/json', body: mockPatientsList() });
+    });
+    await mockStatsAfterListMock(page);
+
+    await page.goto('/admin/patients');
+    await expect(page.locator('text=Alomon, Francisco').first()).toBeVisible({ timeout: 15000 });
+
+    // Ausente por default (opt-in) — sem isto o teste passaria mesmo se o checkbox
+    // sempre mandasse o param, mascarando a regressão que o card do Kanban teme.
+    expect(capturedUrl).not.toContain('include_deactivated');
+
+    const showDeactivatedCheckbox = page.locator('[data-testid="filter-show-deactivated"] input[type="checkbox"]');
+    await showDeactivatedCheckbox.click();
+
+    await page.waitForResponse(
+      (resp) =>
+        resp.url().includes('/api/admin/patients') &&
+        resp.url().includes('include_deactivated=true'),
+    );
+    expect(capturedUrl).toContain('include_deactivated=true');
+
+    await showDeactivatedCheckbox.click();
+
+    await page.waitForResponse(
+      (resp) => resp.url().includes('/api/admin/patients') && !resp.url().includes('include_deactivated'),
+    );
+    expect(capturedUrl).not.toContain('include_deactivated');
+  });
+
   test('paginação envia offset correto na segunda página', async ({ page }) => {
     await seedAdminAndLogin(page);
 

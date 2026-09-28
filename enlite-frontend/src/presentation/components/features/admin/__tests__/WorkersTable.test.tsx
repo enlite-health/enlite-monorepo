@@ -33,4 +33,23 @@ describe('WorkersTable', () => {
     const cell = screen.getByText('admin.workers.noWorkers').closest('td');
     expect(cell?.getAttribute('colspan')).toBe('7');
   });
+
+  // ── Checkbox "Mostrar desactivados" (D-2026-09-28) — badge na coluna Documentación ──
+
+  it('status="DISABLED" → badge "Desactivado", NÃO o DocsStatusBadge de documentação', () => {
+    const disabled = { ...row('d'), status: 'DISABLED', documentsComplete: true, documentsStatus: 'approved' };
+    render(<WorkersTable workers={[disabled]} />);
+    expect(screen.getByTestId('worker-row-d-deactivated-badge')).toBeInTheDocument();
+    expect(screen.getByText('admin.workers.statusBadge.deactivated')).toBeInTheDocument();
+    // O badge de documentação (verde/vermelho) some — desativado não é "accionable".
+    // `documentsComplete: true` faria o DocsStatusBadge renderizar a chave `complete`.
+    expect(screen.queryByText('admin.workers.docsStatus.complete')).toBeNull();
+  });
+
+  it('status ausente/REGISTERED/INCOMPLETE_REGISTER → sem o badge "Desactivado"', () => {
+    const registered = { ...row('r'), status: 'REGISTERED' };
+    render(<WorkersTable workers={[registered]} />);
+    expect(screen.queryByTestId('worker-row-r-deactivated-badge')).toBeNull();
+    expect(screen.queryByText('admin.workers.statusBadge.deactivated')).toBeNull();
+  });
 });

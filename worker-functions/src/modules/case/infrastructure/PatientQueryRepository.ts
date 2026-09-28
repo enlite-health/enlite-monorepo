@@ -102,6 +102,14 @@ export class PatientQueryRepository {
     params.push(filters.offset);
     const offsetIdx = i++;
 
+    // $11 include_deactivated (checkbox "Mostrar desactivados"): pushed por ÚLTIMO,
+    // de propósito — todo o resto da numeração acima ($1-$10, inclusive os comentários
+    // que citam índice literal) fica intocado. Opt-in: ausente/'false' → false → o
+    // default continua excluindo deleted_at (comportamento atual, Kanban incluso).
+    const includeDeactivatedBool = filters.include_deactivated === 'true';
+    params.push(includeDeactivatedBool);
+    const includeDeactivatedIdx = i++;
+
     // Effective case_number: patients.case_number when populated, otherwise
     // fall back to the MAX case_number across this patient's active vagas.
     const effectiveCaseNumber = `
@@ -168,6 +176,10 @@ export class PatientQueryRepository {
                                AS "hasActiveServiceWithoutSchedule",
         created_at             AS "createdAt",
         updated_at             AS "updatedAt",
+        -- Checkbox "Mostrar desactivados": só sai não-null quando include_deactivated=true
+        -- trouxe a linha (o WHERE abaixo já barra deleted_at≠NULL no default). A tela usa
+        -- isto para o badge — nunca esconde o soft-delete, só decide se ele entra na lista.
+        deleted_at             AS "deletedAt",
         -- SLA (Fase 4): quando o paciente entrou no status ATUAL. MAX(created_at)
         -- do histórico para new_value = status atual; fallback = created_at do
         -- paciente (legado sem histórico / status recém-atribuído).
@@ -229,7 +241,9 @@ export class PatientQueryRepository {
         AND ($${caseNumberIdx}::text IS NULL
           OR CAST((${effectiveCaseNumber}) AS TEXT) ILIKE '%' || $${caseNumberIdx} || '%')
         AND ($${countryIdx}::text IS NULL OR p.country = $${countryIdx})
-        AND p.deleted_at IS NULL
+        -- Checkbox "Mostrar desactivados" (opt-in, D-2026-09-28): default continua
+        -- excluindo o soft-delete — só $${includeDeactivatedIdx}=true relaxa o filtro.
+        AND ($${includeDeactivatedIdx}::boolean IS TRUE OR p.deleted_at IS NULL)
       ORDER BY created_at DESC
       LIMIT $${limitIdx} OFFSET $${offsetIdx}
     `;
@@ -297,6 +311,7 @@ export class PatientQueryRepository {
         caseNumber: row.caseNumber != null ? parseInt(row.caseNumber as unknown as string, 10) : null,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
+        deletedAt: (row.deletedAt as Date | null) ?? null,
         stageEnteredAt: sla.stageEnteredAt,
         hoursInStage: sla.hoursInStage,
         slaThresholdHours: sla.slaThresholdHours,

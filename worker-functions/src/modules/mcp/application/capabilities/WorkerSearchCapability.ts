@@ -20,6 +20,13 @@ const ArgsShape = {
     .describe('CSV of professions: AT, CAREGIVER, NURSE, KINESIOLOGIST, PSYCHOLOGIST'),
   sex: z.string().optional(),
   language: z.string().optional(),
+  includeDeactivated: z
+    .boolean()
+    .optional()
+    .describe(
+      'Include deactivated (DISABLED) workers in the results. Default false: deactivated ' +
+        'workers are excluded unless this is true, or status/statuses already filters explicitly.',
+    ),
   limit: z.number().int().min(1).max(50).optional().describe('Page size (default 20, max 50)'),
   offset: z.number().int().min(0).optional(),
 };

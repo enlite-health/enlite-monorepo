@@ -30,4 +30,19 @@ describe('WorkerSearchCapability', () => {
     await expect(cap.execute({ limit: 51 })).rejects.toThrow();
     await expect(cap.execute({ search: 'ab' })).rejects.toThrow();
   });
+
+  it('includeDeactivated no schema: propaga true para o use case', async () => {
+    const { cap, useCase } = makeCap();
+    await cap.execute({ includeDeactivated: true });
+    expect(useCase.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ includeDeactivated: true }),
+    );
+  });
+
+  it('sem includeDeactivated: use case recebe undefined (default preservado, não vira false forçado)', async () => {
+    const { cap, useCase } = makeCap();
+    await cap.execute({});
+    const callArg = (useCase.execute as jest.Mock).mock.calls[0][0];
+    expect(callArg.includeDeactivated).toBeUndefined();
+  });
 });

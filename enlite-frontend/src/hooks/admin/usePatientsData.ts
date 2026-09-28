@@ -9,6 +9,8 @@ export interface UsePatientsDataFilters {
   dependency_level?: string;
   case_number?: string;
   country?: string;
+  /** Checkbox "Mostrar desactivados" (D-2026-09-28) — mesmo shape de `PatientListFilters`. */
+  include_deactivated?: string;
   limit?: string;
   offset?: string;
 }
@@ -63,6 +65,7 @@ export function usePatientsData(filters?: UsePatientsDataFilters) {
     filters?.dependency_level,
     filters?.case_number,
     filters?.country,
+    filters?.include_deactivated,
     filters?.limit,
     filters?.offset,
     refreshKey,

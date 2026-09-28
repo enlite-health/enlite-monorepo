@@ -16,6 +16,12 @@ import { CLINICAL_SPECIALTIES } from '../../domain/enums/ClinicalSpecialty';
 export const adminPatientsListSchema = z.object({
   search: z.string().optional(),
   needs_attention: z.enum(['true', 'false']).optional(),
+  /**
+   * Checkbox "Mostrar desactivados" da tela de pacientes. Opt-in: ausente/'false'
+   * mantém o default (esconder `deleted_at IS NOT NULL`, comportamento atual).
+   * Mesmo padrão de `needs_attention` — string 'true'/'false' coerced no repo.
+   */
+  include_deactivated: z.enum(['true', 'false']).optional(),
   attention_reason: z.string().optional(),
   clinical_specialty: z.enum(CLINICAL_SPECIALTIES as [string, ...string[]]).optional(),
   dependency_level: z.enum(DEPENDENCY_LEVELS as [string, ...string[]]).optional(),

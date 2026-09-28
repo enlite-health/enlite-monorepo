@@ -23,6 +23,8 @@ export interface WorkerRow {
   documentsStatus: string;
   platform: string;
   createdAt: string;
+  /** Checkbox "Mostrar desactivados" (D-2026-09-28). `'DISABLED'` = baixa de conta. */
+  status?: string;
 }
 
 interface WorkersTableProps {
@@ -43,6 +45,31 @@ const COLUMNS = [
 function formatDate(iso: string, locale: string): string {
   if (!iso) return '—';
   return new Date(iso).toLocaleDateString(resolveDateLocale(locale), SHORT_DATE_OPTIONS);
+}
+
+/**
+ * Badge do checkbox "Mostrar desactivados" (D-2026-09-28) — mesmo molde do
+ * `DocsStatusBadge` (pill + dot). `slate-100`/`slate-700` (escala PADRÃO do
+ * Tailwind, não a `gray-*` deste tema — `gray-100..800` aqui são cores de marca
+ * customizadas e ALGUMAS são translúcidas, ex. `gray-700` = rgba(115,115,115,.5);
+ * usar uma delas como texto sólido foi o que causou o badge de baixo contraste
+ * na tela de pacientes). Contraste medido (fórmula WCAG, sRGB→luminância
+ * relativa): slate-100 `#F1F5F9` × slate-700 `#334155` → ~9,45:1, acima do
+ * mínimo 4,5:1 AA para texto normal.
+ */
+function DeactivatedBadge() {
+  const { t } = useTranslation();
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700"
+      title={t('admin.workers.statusBadge.deactivated')}
+    >
+      <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+      <Text as="span" size="xs" weight="medium" color="inherit">
+        {t('admin.workers.statusBadge.deactivated')}
+      </Text>
+    </span>
+  );
 }
 
 export function WorkersTable({ workers, onRowClick, renderAction }: WorkersTableProps): JSX.Element {
@@ -94,7 +121,13 @@ export function WorkersTable({ workers, onRowClick, renderAction }: WorkersTable
                   {row.casesCount}
                 </TableCell>
                 <TableCell unwrapped className="whitespace-nowrap">
-                  <DocsStatusBadge complete={row.documentsComplete} status={row.documentsStatus} />
+                  {row.status === 'DISABLED' ? (
+                    <span data-testid={`worker-row-${row.id}-deactivated-badge`}>
+                      <DeactivatedBadge />
+                    </span>
+                  ) : (
+                    <DocsStatusBadge complete={row.documentsComplete} status={row.documentsStatus} />
+                  )}
                 </TableCell>
                 <TableCell weight="medium" className="whitespace-nowrap hidden md:table-cell">
                   {formatDate(row.createdAt, i18n.language)}
