@@ -1,4 +1,5 @@
 import * as functions from 'firebase-functions';
+import type { PoolClient } from 'pg';
 import { inPatientTransaction } from './patientTransaction';
 import { isPatientStatus, isClinicalPatientStatus, isLaunchOnlyTransition, type PatientStatus } from '../domain/enums/PatientStatus';
 import type { OnHoldReason } from '../domain/enums/OnHoldReason';
@@ -81,11 +82,16 @@ export interface MoveStatusOptions {
  *     que o trigger da 254 grava em patient_status_history (a coluna "origem" do Historial);
  *   - `on_hold_note` NUNCA entra no log (lex C7.1-b) nem na history (C7.3).
  * Never touches `origin` (a native patient stays native).
+ *
+ * `txClient` (cadeia Fase 15): quando vem, a transição roda NA transação de quem chama (a
+ * derivação, dentro do escritor do itinerário) — sem `BEGIN`/`COMMIT` próprio; `withActorContext`
+ * reusaria o client fixado na request e comitaria no meio. Sem ele, a transação própria de sempre.
  */
 export async function movePatientStatus(
   patientId: string,
   status: PatientStatus,
   opts: MoveStatusOptions,
+  txClient?: PoolClient,
 ): Promise<{ id: string; status: PatientStatus }> {
   if (!isPatientStatus(status)) {
     throw new Error(`Invalid patient status: ${String(status)}`);
@@ -95,7 +101,7 @@ export async function movePatientStatus(
     throw new OnHoldReasonRequiredError();
   }
 
-  return inPatientTransaction(async (client) => {
+  const body = async (client: PoolClient): Promise<{ id: string; status: PatientStatus }> => {
     const current = await client.query<{ status: string | null }>(
       'SELECT status FROM patients WHERE id = $1 AND deleted_at IS NULL FOR UPDATE',
       [patientId],
@@ -166,5 +172,6 @@ export async function movePatientStatus(
       patientId, from, to: status, onHoldReason: goingOnHold ? opts.onHoldReason : null, changeSource: opts.changeSource,
     });
     return { id: patientId, status };
-  });
+  };
+  return txClient ? body(txClient) : inPatientTransaction(body);
 }

@@ -352,3 +352,50 @@ describe('PatientService.moveStatus v2', () => {
     expect(c[c.length - 1].sql).toBe('ROLLBACK');
   });
 });
+
+// ─── cadeia Fase 15 (DX-15.4): `movePatientStatus` no client da transação de quem chama ───
+import { movePatientStatus, PatientStatusNotReadyError } from '../PatientStatusWriter';
+import type { PoolClient } from 'pg';
+
+describe('movePatientStatus com o client de quem chama (cadeia Fase 15)', () => {
+  beforeEach(() => { jest.clearAllMocks(); });
+
+  /** Client da transação do escritor: responde pelo MESMO `db(...)`, mas NÃO é o do pool. */
+  const txClientFalso = () => {
+    const q = jest.fn(async (sql: string, params?: unknown[]) => queryImpl(sql, params));
+    return { client: { query: q } as unknown as PoolClient, sqls: () => q.mock.calls.map(([sql, params]) => ({ sql: String(sql), params })) };
+  };
+
+  it('com client: toda query roda nele, nenhum BEGIN/COMMIT/ROLLBACK, o pool não é tocado, set_config com system e o UPDATE', async () => {
+    db('SEARCHING', [['SEARCHING', 'REPLACEMENT']]);
+    const { client, sqls } = txClientFalso();
+    const r = await movePatientStatus(PID, 'REPLACEMENT', { changeSource: 'system' }, client);
+    expect(r).toEqual({ id: PID, status: 'REPLACEMENT' });
+    const c = sqls();
+    expect(c.some((x) => /^(BEGIN|COMMIT|ROLLBACK)$/.test(x.sql))).toBe(false);
+    expect(mockGetClient).toHaveBeenCalledTimes(0);
+    expect(mockClient.query).toHaveBeenCalledTimes(0);
+    expect(c.find((x) => /set_config\('app\.change_source'/.test(x.sql))?.params).toEqual(['system']);
+    expect(c.find((x) => /^UPDATE patients/.test(x.sql))?.params).toEqual([PID, 'REPLACEMENT', null, null]);
+    expect(c[0].sql).toMatch(/FOR UPDATE/);
+  });
+
+  it('com client + completude faltando: PatientStatusNotReadyError, nenhum UPDATE, nenhum controle de transação', async () => {
+    db('ACTIVE', [['ACTIVE', 'SEARCHING']], { services_without_schedule_count: '1' });
+    const { client, sqls } = txClientFalso();
+    await expect(movePatientStatus(PID, 'SEARCHING', { changeSource: 'system' }, client)).rejects.toBeInstanceOf(PatientStatusNotReadyError);
+    const c = sqls();
+    expect(c.some((x) => /^UPDATE patients/.test(x.sql))).toBe(false);
+    expect(c.some((x) => /^(BEGIN|COMMIT|ROLLBACK)$/.test(x.sql))).toBe(false);
+    expect(mockGetClient).toHaveBeenCalledTimes(0);
+  });
+
+  it('sem client: o caminho de sempre (transação própria no pool, BEGIN … COMMIT)', async () => {
+    db('SEARCHING', [['SEARCHING', 'REPLACEMENT']]);
+    await movePatientStatus(PID, 'REPLACEMENT', { changeSource: 'system' });
+    expect(mockGetClient).toHaveBeenCalledTimes(1);
+    const c = calls();
+    expect(c[0].sql).toBe('BEGIN');
+    expect(c[c.length - 1].sql).toBe('COMMIT');
+  });
+});
