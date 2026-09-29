@@ -20,6 +20,7 @@ import {
   ServiceAlreadyRecruitingError,
   RecruitmentNotReadyError,
 } from '../../application/ActivateRecruitmentUseCase';
+import { vacancyActorFromRequest } from '../../../matching/interfaces/controllers/vacancyCrudAuditHelpers';
 
 const patientParamsSchema = z.object({ id: z.string().uuid() });
 const serviceParamsSchema = z.object({ id: z.string().uuid(), sid: z.string().uuid() });
@@ -168,7 +169,11 @@ export class AdminPatientContractedServicesController {
       return;
     }
     try {
-      const result = await this.activateRecruitmentUseCase.execute(params.data.id, params.data.sid);
+      const result = await this.activateRecruitmentUseCase.execute(
+        params.data.id,
+        params.data.sid,
+        vacancyActorFromRequest(req, 'activate_recruitment'),
+      );
       res.status(201).json({
         success: true,
         data: {

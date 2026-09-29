@@ -8,7 +8,10 @@ import {
   type VacancyInsertParams,
   type SourceLockedField,
 } from "@modules/matching";
-import { auditVacancyCreated } from "../../matching/interfaces/controllers/vacancyCrudAuditHelpers";
+import {
+  auditVacancyCreated,
+  type HumanActor,
+} from "../../matching/interfaces/controllers/vacancyCrudAuditHelpers";
 import {
   computeRecruitmentReadiness,
   type RECRUITMENT_BLOCKING_CODES,
@@ -92,11 +95,12 @@ export class ActivateRecruitmentUseCase {
   async execute(
     patientId: string,
     serviceId: string,
+    actor?: HumanActor,
   ): Promise<ActivateRecruitmentResult> {
     const startMs = Date.now();
     try {
       const result = await inPatientTransaction((client) =>
-        this.runInTransaction(client, patientId, serviceId),
+        this.runInTransaction(client, patientId, serviceId, actor),
       );
       functions.logger.info("activate_recruitment.completed", {
         patientId,
@@ -128,6 +132,7 @@ export class ActivateRecruitmentUseCase {
     client: PoolClient,
     patientId: string,
     serviceId: string,
+    actor?: HumanActor,
   ): Promise<ActivateRecruitmentResult> {
     const patientRes = await client.query<{
       id: string;
@@ -276,13 +281,17 @@ export class ActivateRecruitmentUseCase {
     );
     const vacancyId = insRes.rows[0].id;
 
-    // T018 (spec 027, US2) — trilha de auditoria da vaga criada pelo SISTEMA
-    // (nenhum humano no painel apertou "criar"). `auditVacancyCreated` grava
-    // dentro de um SAVEPOINT (logEventSafe) e NUNCA relança — a mesma garantia
+    // T018 (spec 027, US2) — trilha de auditoria da vaga criada. O ator vem do
+    // CONTROLLER (`vacancyActorFromRequest`, spec 029) quando há um operador
+    // humano apertando o botão no painel; `SYSTEM`/`actorUserId: null` é só o
+    // fallback de uma chamada interna sem request HTTP (nenhum caller assim
+    // existe hoje — `AdminPatientContractedServicesController.activateRecruitment`
+    // é o único caminho de produção, e ele sempre passa o actor). `auditVacancyCreated`
+    // grava dentro de um SAVEPOINT (logEventSafe) e NUNCA relança — a mesma garantia
     // best-effort do fluxo manual (VacancyCrudController.createVacancy): falha
     // de auditoria não pode derrubar a vaga que acabou de ser inserida nesta
     // MESMA transação.
-    await auditVacancyCreated(client, vacancyId, insRes.rows[0], {
+    await auditVacancyCreated(client, vacancyId, insRes.rows[0], actor ?? {
       actorUserId: null,
       actorType: "SYSTEM",
       actorLabel: "activate_recruitment",

@@ -15,7 +15,9 @@
  */
 
 import type { Pool, PoolClient } from 'pg';
+import type { Request } from 'express';
 import type { AuditActorType } from '@shared/audit/types';
+import { loggingAls } from '@shared/logging';
 import {
   JobPostingAuditRepository,
 } from '../../infrastructure/JobPostingAuditRepository';
@@ -47,6 +49,31 @@ export interface HumanActor {
   actorType: AuditActorType;
   actorLabel: string;
   traceId?: string | null;
+}
+
+/**
+ * Deriva o `HumanActor` de uma request autenticada (achado da conferência de
+ * `activate-recruitment`, spec 029): `AuthMiddleware` grava `req.user.uid` com o
+ * MESMO valor de `getAuthContext(req)?.principal.id` — quem clicou o botão. Sem
+ * isto, o caminho de `ActivateRecruitmentUseCase` sempre gravava
+ * `actor_type=SYSTEM`/`actor_user_id=null`, mesmo tendo um operador humano no
+ * painel apertando o botão.
+ *
+ * `actorType` cai para `'SYSTEM'` só quando NÃO há `uid` na request (chamada
+ * interna, sem operador) — com `uid`, é sempre `'HUMAN'`. `extractHumanActor`
+ * (abaixo) ignora este campo e força `'HUMAN'` sempre, porque os 3 call sites
+ * dele são todos do painel administrativo.
+ */
+export function vacancyActorFromRequest(req: Request, actorLabel: string): HumanActor {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const user = (req as any).user as { uid?: string } | undefined;
+  const actorUserId = user?.uid ?? null;
+  return {
+    actorUserId,
+    actorType: actorUserId ? 'HUMAN' : 'SYSTEM',
+    actorLabel,
+    traceId: loggingAls.getStore()?.traceId ?? null,
+  };
 }
 
 // ─── createVacancy audit ─────────────────────────────────────────────────────

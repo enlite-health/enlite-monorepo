@@ -39,6 +39,7 @@ import {
   ServiceAlreadyRecruitingError,
   RecruitmentNotReadyError,
 } from '../ActivateRecruitmentUseCase';
+import type { HumanActor } from '../../../matching/interfaces/controllers/vacancyCrudAuditHelpers';
 
 const PATIENT_ID = 'p-1';
 const SERVICE_ID = 's-1';
@@ -120,11 +121,11 @@ function makeClient(opts: DispatchOpts) {
   return { query };
 }
 
-function run(opts: DispatchOpts) {
+function run(opts: DispatchOpts, actor?: HumanActor) {
   const client = makeClient(opts);
   mockInPatientTransaction.mockImplementationOnce((fn: (c: unknown) => unknown) => fn(client));
   const useCase = new ActivateRecruitmentUseCase();
-  return { promise: useCase.execute(PATIENT_ID, SERVICE_ID), client };
+  return { promise: useCase.execute(PATIENT_ID, SERVICE_ID, actor), client };
 }
 
 const READY_SERVICE = {
@@ -408,7 +409,10 @@ describe('ActivateRecruitmentUseCase', () => {
   // ── T019 (spec 027, US2) — trilha de auditoria da vaga criada pelo SISTEMA ──
 
   describe('audit — vaga criada pelo sistema (T018)', () => {
-    it('audit. INSERT do audit log leva event_type=CREATED, actor_type=SYSTEM, actor_label=activate_recruitment', async () => {
+    // spec 029 — sem `actor` (3º parâmetro ausente), o fallback SYSTEM/null continua
+    // gravando exatamente como antes desta mudança (nenhum caller de produção usa
+    // este ramo hoje, mas o piso de 100% branches exige a prova).
+    it('SEM ator (3º parâmetro ausente) — fallback: actor_user_id=null, actor_type=SYSTEM, actor_label=activate_recruitment', async () => {
       const { promise, client } = run({
         patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular' },
         serviceRow: READY_SERVICE,
@@ -430,6 +434,42 @@ describe('ActivateRecruitmentUseCase', () => {
       expect(values[4]).toBeNull();           // actor_user_id
       expect(values[5]).toBe('SYSTEM');       // actor_type
       expect(values[6]).toBe('activate_recruitment'); // actor_label
+    });
+
+    // spec 029 — o achado: o botão "ativar recrutamento" gravava SYSTEM/null mesmo
+    // com um operador humano autenticado. Agora o CONTROLLER passa o actor (uid da
+    // request) como 3º parâmetro, e o use case grava ele em vez do fallback.
+    it('COM ator (3º parâmetro presente) — grava actor_user_id/actor_type/actor_label/trace_id do CONTROLLER, não o fallback SYSTEM', async () => {
+      const actor: HumanActor = {
+        actorUserId: 'uid-123',
+        actorType: 'HUMAN',
+        actorLabel: 'activate_recruitment',
+        traceId: 'tr-1',
+      };
+      const { promise, client } = run(
+        {
+          patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular' },
+          serviceRow: READY_SERVICE,
+          vacancyNumber: 502,
+          insertedId: 'vac-44',
+        },
+        actor,
+      );
+      const result = await promise;
+      expect(result.vacancyId).toBe('vac-44');
+
+      const auditCall = (client.query as jest.Mock).mock.calls.find(
+        ([sql]: [string]) => typeof sql === 'string' && sql.includes('INSERT INTO job_posting_audit_log'),
+      );
+      expect(auditCall).toBeDefined();
+      const [, values] = auditCall as [string, unknown[]];
+      // Mesma ordem posicional de BaseAuditLogRepository.logEvent (ver teste acima).
+      expect(values[0]).toBe('vac-44');      // job_posting_id
+      expect(values[1]).toBe('CREATED');     // event_type
+      expect(values[4]).toBe('uid-123');     // actor_user_id — NÃO null
+      expect(values[5]).toBe('HUMAN');       // actor_type — NÃO SYSTEM
+      expect(values[6]).toBe('activate_recruitment'); // actor_label
+      expect(values[7]).toBe('tr-1');        // trace_id
     });
 
     it('audit throws. auditoria lança dentro do SAVEPOINT → a vaga é criada MESMO ASSIM (best-effort, nunca derruba)', async () => {

@@ -7,7 +7,11 @@
 jest.mock('@modules/identity', () => ({
   AuthMiddleware: { getAuthContext: jest.fn() },
 }));
-jest.mock('@shared/logging', () => ({ reportError: jest.fn() }));
+// spec 029 — `loggingAls` entrou no mock porque `vacancyActorFromRequest` (chamado pelo novo
+// 3º argumento de `activateRecruitment`) importa `loggingAls` de `@shared/logging`; sem ele
+// aqui, `loggingAls` fica `undefined` e `.getStore()` lança — TODO teste de `activateRecruitment`
+// cai em 500 (visto no RED: "Cannot read properties of undefined").
+jest.mock('@shared/logging', () => ({ reportError: jest.fn(), loggingAls: { getStore: jest.fn().mockReturnValue(undefined) } }));
 
 import { AdminPatientContractedServicesController } from '../AdminPatientContractedServicesController';
 import { DeviceTypeUnknownError } from '../../../infrastructure/PatientDeviceTypeRepository';
@@ -482,13 +486,51 @@ describe('AdminPatientContractedServicesController', () => {
       const useCase = { execute: jest.fn().mockResolvedValue({ vacancyId: 'vac-1', patientStatus: 'SEARCHING', statusChanged: true }) };
       const controller = new AdminPatientContractedServicesController({} as never, {} as never, useCase as never);
       const res = mockRes();
-      await controller.activateRecruitment(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID } }), res);
-      expect(useCase.execute).toHaveBeenCalledWith(PATIENT_ID, SERVICE_ID);
+      await controller.activateRecruitment(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, user: { uid: 'staff-uid-1', roles: ['admin'] } }), res);
+      expect(useCase.execute).toHaveBeenCalledWith(
+        PATIENT_ID,
+        SERVICE_ID,
+        expect.objectContaining({ actorUserId: 'staff-uid-1', actorType: 'HUMAN', actorLabel: 'activate_recruitment' }),
+      );
       expect(res.status).toHaveBeenCalledWith(201);
       expect(res.json).toHaveBeenCalledWith({
         success: true,
         data: { vacancyId: 'vac-1', patientStatus: 'SEARCHING', statusChanged: true },
       });
+    });
+
+    // spec 029 — achado: o botão gravava SYSTEM/actor_user_id null mesmo com operador humano
+    // autenticado. Prova por posição do argumento (`mock.calls[0][2]`), igualdade exata com o
+    // uid do req autenticado — não só "truthy" ou "não nulo".
+    it('spec 029 — 3º argumento de execute() é o HumanActor derivado do uid autenticado da request (mock.calls[0][2])', async () => {
+      const useCase = { execute: jest.fn().mockResolvedValue({ vacancyId: 'vac-2', patientStatus: 'ADMISSION', statusChanged: false }) };
+      const controller = new AdminPatientContractedServicesController({} as never, {} as never, useCase as never);
+      const res = mockRes();
+      const authenticatedUid = 'staff-uid-autenticado-2';
+      await controller.activateRecruitment(
+        mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, user: { uid: authenticatedUid, roles: ['admin'] } }),
+        res,
+      );
+      const actorArg = useCase.execute.mock.calls[0][2];
+      expect(actorArg.actorUserId).toBe(authenticatedUid);
+      expect(actorArg.actorType).toBe('HUMAN');
+      expect(actorArg.actorLabel).toBe('activate_recruitment');
+    });
+
+    // spec 029 — sem uid na request (chamada sem operador identificável): NÃO usa
+    // `actorUid()` (que teria fallback 'unknown' e poluiria a coluna) — vira SYSTEM/null,
+    // igual ao comportamento anterior a esta mudança.
+    it('spec 029 — request sem user.uid → 3º argumento cai para SYSTEM/actorUserId null (nunca "unknown")', async () => {
+      const useCase = { execute: jest.fn().mockResolvedValue({ vacancyId: 'vac-3', patientStatus: 'ADMISSION', statusChanged: false }) };
+      const controller = new AdminPatientContractedServicesController({} as never, {} as never, useCase as never);
+      const res = mockRes();
+      await controller.activateRecruitment(
+        mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, user: { roles: ['admin'] } }),
+        res,
+      );
+      const actorArg = useCase.execute.mock.calls[0][2];
+      expect(actorArg.actorUserId).toBeNull();
+      expect(actorArg.actorType).toBe('SYSTEM');
     });
 
     it('404 quando o paciente não existe', async () => {
