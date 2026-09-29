@@ -20,6 +20,7 @@ import { insertTestPatient, cleanupTestPatient } from '../helpers/db-test-helper
 import { runSQL } from '../helpers/patient-detail-a-helper';
 import { loginComoHumano } from '../helpers/login-humano';
 import { dndKitDrag } from '../helpers/dndKitDrag';
+import { confirmKanbanSuspensionExit } from '../helpers/kanban-suspension-exit-helper';
 
 const STAFF_EMAIL = `e2e.486kanban.${Date.now()}@enlite.health`;
 const STAMP = Date.now().toString().slice(-6);
@@ -53,13 +54,10 @@ test.describe('Kanban — saída de SUSPENDED pede motivo no arrasto (decisão d
       await expect(dialogo).toBeVisible();
       expect(runSQL(`SELECT status FROM patients WHERE id = '${patientId}'`).trim()).toBe('SUSPENDED');
 
-      // escolhe o motivo — `selectOption` é a forma canônica para `<select>` nesta suíte
-      // (mesmo convênio de `servico-horario-obrigatorio-humano.e2e.ts`, nunca fill/evaluate).
-      const select = page.getByTestId('kanban-suspension-exit-reason');
-      await select.selectOption('RESUMED_SERVICE');
-      await page.getByTestId('kanban-suspension-confirm').click();
+      // escolhe o motivo e confirma — helper compartilhado com `kanban-pacientes.integration.e2e.ts`
+      // (zero duplicação, mesmo `selectOption` canônico desta suíte, nunca fill/evaluate).
+      await confirmKanbanSuspensionExit(page, 'RESUMED_SERVICE');
 
-      await expect(dialogo).toBeHidden({ timeout: 15_000 });
       // o card saiu da coluna Suspendido e está em Búsqueda.
       await expect(page.locator('[data-testid="kanban-column-SUSPENDED"]').locator(`[data-testid="kanban-draggable-${patientId}"]`)).toHaveCount(0);
       await expect(page.locator('[data-testid="kanban-column-SEARCHING"]').locator(`[data-testid="kanban-draggable-${patientId}"]`)).toBeVisible({ timeout: 15_000 });
