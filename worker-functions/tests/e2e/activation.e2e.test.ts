@@ -46,13 +46,17 @@ describe('Ativação de recrutamento por serviço (spec 018, PR-6) @integration'
     // O uid precisa existir em `users` por causa da FK de `job_posting_audit_log.actor_user_id`
     // (mesma convenção de `vacancy-audit-log.e2e.test.ts`) — sem isto, `logEventSafe` (SAVEPOINT
     // best-effort) engole a violação de FK em silêncio e a linha do audit nunca é gravada.
+    // Semeia DEPOIS de `staffAuth` resolver: com o emulador de pé, o uid EFETIVO é o
+    // localId do emulador (`asAdmin.uid`), não o literal pedido — semear o literal faz a FK
+    // aceitar um uid que ninguém apresenta, e a violação real (uid do token) é engolida em
+    // silêncio pelo SAVEPOINT best-effort acima.
+    asAdmin = await staffAuth('activation-e2e-admin', 'admin');
     await pool.query(
       `INSERT INTO users (firebase_uid, email, display_name, role)
        VALUES ($1, $2, $3, 'admin')
        ON CONFLICT (firebase_uid) DO NOTHING`,
-      ['activation-e2e-admin', 'activation-e2e-admin@e2e.local', 'Activation E2E Admin'],
+      [asAdmin.uid, 'activation-e2e-admin@e2e.local', 'Activation E2E Admin'],
     );
-    asAdmin = await staffAuth('activation-e2e-admin', 'admin');
     await pool.query(
       `DELETE FROM job_postings WHERE patient_id IN (SELECT id FROM patients WHERE clickup_task_id LIKE $1)`,
       [TAG],
