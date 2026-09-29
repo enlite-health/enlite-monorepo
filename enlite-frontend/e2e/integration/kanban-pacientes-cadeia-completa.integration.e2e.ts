@@ -25,19 +25,27 @@
  * é a única leitura do relógio do runner (exceção declarada no plano, molde do lançamento); o resto das datas vem
  * do banco. Nada é importado do que a Fase 15 criou (DX-16.9).
  */
-import { test, expect } from '@playwright/test';
+import { test, expect, type Response } from '@playwright/test';
 import {
   startTalentumStub, clickFoguete, completeDraftViaWizard, publishOnTalentumPage, readPatientKanbanColumn,
   countLaunchTrail, backendUrl, mockAdminUserFor, useLancamentoStaff, loginAndMockAi, LANCAMENTO_VIEWPORT_ES_AR,
   type FunnelStageItem,
 } from '../helpers/lancamento-e2e-helper';
-import { readPatientStatusApi, countOutboundSince } from '../helpers/funnel-move-e2e-helper';
+import {
+  readPatientStatusApi, countOutboundSince, readTrail, countTrail, putMove, chooseReasonInModal,
+} from '../helpers/funnel-move-e2e-helper';
 import { readFunnelApi, gotoVacancyDetail, switchToKanban } from '../helpers/compativeis-e2e-helper';
 import { readItineraryApi } from '../helpers/itinerario-e2e-helper';
 import { tokenFor } from '../helpers/abac-stack-helper';
 import { runSQL } from '../helpers/patient-detail-a-helper';
+import { insertWJA, upsertEncuadre, getWjaByWorkerAndJob } from '../helpers/wja-test-helper';
+import { dndKitDrag } from '../helpers/dndKitDrag';
 import {
-  seedCadeia, countPatients, residueByIds, cleanupCadeia, collectRequests,
+  readServiceTeamApi, postServiceTeamAction, countMarks, selectServiceRow,
+} from '../helpers/quadro-c-e2e-helper';
+import { openServiceTeamOf } from '../helpers/substituicao-e2e-helper';
+import {
+  seedCadeia, seedRoleWorkers, countPatients, residueByIds, cleanupCadeia, collectRequests,
   type CadeiaPatientX, type CadeiaPatientWithVacancy,
 } from '../helpers/cadeia-completa-e2e-helper';
 
@@ -135,6 +143,127 @@ test.describe('cadeia-completa @integration', () => {
         const outM = countOutboundSince(m, t0);
         expect(outM).toEqual({ domainEvents: 0, stageMessageLog: 0, outbox: 0 });
         console.log('[16.p3]', v, publishStatus, status, trail, column, wjaM, creates, outM);
+      });
+
+      // Os workers de papel nascem DEPOIS do publish (o match já rodou; o upsert dele não sobrescreve estágio).
+      const { wa, wb, wc, ws } = seedRoleWorkers();
+      workerIds.push(wa, wb, wc, ws);
+      for (const w of [wa, wb, wc, ws]) workerVacancyPairs.push({ workerId: w, vacancyId: v });
+      // Invitados = INVITED/system COM `messaged_at` (INVITED/manual é a coluna Iniciado; INVITED/system sem envio é
+      // candidato do match) — mesma semente de `seedVacancyWithCards` (funnel-move-e2e-helper.ts).
+      const wjaA = insertWJA({ workerId: wa, jobPostingId: v, funnelStage: 'INVITED', source: 'system' });
+      runSQL(`UPDATE worker_job_applications SET messaged_at = NOW() WHERE id = '${wjaA}'`);
+      insertWJA({ workerId: wb, jobPostingId: v, funnelStage: 'SELECTED' });
+      insertWJA({ workerId: wc, jobPostingId: v, funnelStage: 'QUICK_RESPONSE_TEAM' });
+      insertWJA({ workerId: ws, jobPostingId: v, funnelStage: 'QUICK_RESPONSE_TEAM' });
+      const isMovePut = (r: Response): boolean => r.request().method() === 'PUT' && /\/move$/.test(r.url());
+
+      await test.step('passo 4 — quadro B pela tela: Invitados (por semente — convidar é canal real) direto para Equipe de Resposta Rápida com motivo e trilha; Rejeitados sem motivo recusado e com motivo aceito; X não muda (invariantes 5, 11 e 3)', async () => {
+        const statusBefore = await readPatientStatusApi(request, backendUrl(), token, X.patientId);
+        const trailBeforeA = countTrail(wjaA);
+        await gotoVacancyDetail(page, v);
+        await switchToKanban(page, v);
+        await expect(
+          page.locator(`[data-testid="kanban-column-INVITED"] [data-testid="kanban-card-${wjaA}"]`),
+        ).toBeVisible({ timeout: 15_000 });
+
+        // Salto Invitados → Equipe de Resposta Rápida: o 1º PUT pede motivo (422), o 2º leva a categoria.
+        const [firstPut] = await Promise.all([
+          page.waitForResponse(isMovePut),
+          dndKitDrag(page, page.locator(`[data-testid="kanban-draggable-${wjaA}"]`), page.locator('[data-testid="kanban-column-QUICK_RESPONSE_TEAM"]')),
+        ]);
+        expect(firstPut.status()).toBe(422);
+        const moveReasonModal = page.getByTestId('move-reason-modal');
+        await expect(moveReasonModal).toBeVisible();
+        const [secondPut] = await Promise.all([
+          page.waitForResponse(isMovePut),
+          chooseReasonInModal(page, 'move-reason', 'ENCUADRE_ANTECIPADO'),
+        ]);
+        expect(secondPut.ok(), `2º PUT ${secondPut.status()}`).toBe(true);
+        await expect(moveReasonModal).toHaveCount(0);
+        await expect(
+          page.locator(`[data-testid="kanban-column-QUICK_RESPONSE_TEAM"] [data-testid="kanban-card-${wjaA}"]`),
+        ).toBeVisible({ timeout: 10_000 });
+        const trailA = readTrail(wjaA);
+        expect(trailA.length).toBe(trailBeforeA + 1);
+        const lastA = trailA[trailA.length - 1];
+        expect(lastA.oldValue).toBe('INVITED');
+        expect(lastA.newValue).toBe('QUICK_RESPONSE_TEAM');
+        expect(lastA.changedBy).toBe(`staff:${STAFF.uid}`);
+        expect(new Date(lastA.createdAt).getTime()).toBeGreaterThanOrEqual(t0.getTime());
+        expect(lastA.reasonCategory).toBe('ENCUADRE_ANTECIPADO');
+
+        // M a Rejeitados SEM motivo — pela API (molde `funil-rejeitar-exige-motivo`): 422, M fica em Compatíveis.
+        // (Compatíveis é a coluna do INVITED/system sem envio — o estágio gravado não muda, e M segue na coluna.)
+        const stageMBefore = getWjaByWorkerAndJob(m, v)?.funnelStage;
+        const encuadreM = upsertEncuadre({ workerId: m, jobPostingId: v });
+        const noReason = await putMove(request, backendUrl(), token, encuadreM, { targetStage: 'REJECTED' });
+        const noReasonBody = noReason.body as { code?: string; reason?: string };
+        expect(noReason.status).toBe(422);
+        expect(noReasonBody.code).toBe('MOVE_REASON_REQUIRED');
+        expect(noReasonBody.reason).toBe('ENTER_REJECTED');
+        expect(getWjaByWorkerAndJob(m, v)?.funnelStage).toBe(stageMBefore);
+        const funnelAfterNoReason = (await readFunnelApi(request, token, v)) as { stages?: Record<string, FunnelStageItem[]> };
+        expect((funnelAfterNoReason.stages?.COMPATIBLE ?? []).some((it) => it.workerId === m)).toBe(true);
+
+        // M a Rejeitados pela TELA: o modal abre antes de qualquer PUT e não confirma sem categoria.
+        await dndKitDrag(page, page.locator(`[data-testid="kanban-draggable-${wjaM}"]`), page.locator('[data-testid="kanban-column-REJECTED"]'));
+        const rejectionModal = page.getByTestId('rejection-modal');
+        await expect(rejectionModal).toBeVisible();
+        await expect(page.getByTestId('rejection-confirm')).toBeDisabled();
+        const [rejectPut] = await Promise.all([
+          page.waitForResponse(isMovePut),
+          chooseReasonInModal(page, 'rejection', 'DISTANCE'),
+        ]);
+        expect(rejectPut.ok(), `PUT Rejeitados ${rejectPut.status()}`).toBe(true);
+        await expect(rejectionModal).toHaveCount(0);
+        const trailM = readTrail(wjaM);
+        const lastM = trailM[trailM.length - 1];
+        expect(lastM.newValue).toBe('REJECTED');
+        expect(lastM.reasonCategory).toBe('DISTANCE');
+
+        const statusAfter = await readPatientStatusApi(request, backendUrl(), token, X.patientId);
+        expect(statusBefore).toBe('SEARCHING');
+        expect(statusAfter).toBe(statusBefore);
+        console.log('[16.p4]', wjaA, firstPut.status(), secondPut.status(), lastA.oldValue, lastA.newValue, lastA.reasonCategory,
+          'sem-motivo-via-api', noReason.status, noReasonBody.code, noReasonBody.reason,
+          'tela', rejectPut.status(), lastM.newValue, lastM.reasonCategory, statusBefore, statusAfter);
+      });
+
+      await test.step('passo 5 — quadro C pela tela: WA em Selecionado, só-Selecionados-de-B fora, C do serviço 2 vazio, rejeitar em C com motivo não mexe em B nem em X (invariantes 1, 8, 6, 11 e 3)', async () => {
+        await openServiceTeamOf(page, X.patientId, X.service1Id);
+        const selected = page.getByTestId('kanban-column-SELECTED_FOR_SERVICE');
+        for (const w of [wa, wc, ws]) await expect(selected.getByTestId(`service-team-card-${w}`)).toHaveCount(1);
+        for (const w of [wb, m]) await expect(page.getByTestId(`service-team-card-${w}`)).toHaveCount(0);
+
+        await selectServiceRow(page, X.service2Id);
+        await expect(page.getByTestId('quadro-c-sem-vaga')).toBeVisible();
+        await expect(page.locator('[data-testid^="kanban-column-"]')).toHaveCount(0);
+        const teamS2 = await readServiceTeamApi(request, X.patientId, X.service2Id);
+        expect(teamS2.body.data?.vacancyId ?? null).toBeNull();
+
+        await selectServiceRow(page, X.service1Id);
+        await expect(selected.getByTestId(`service-team-card-${wc}`)).toHaveCount(1);
+        // Rejeitar em C SEM motivo — pela API (molde `quadro-c-rejeitar-exige-motivo`): 422, nenhuma marca.
+        const noReason = await postServiceTeamAction(request, X.patientId, X.service1Id, 'reject', { workerId: wc });
+        expect(noReason.status).toBe(422);
+        expect(noReason.body.code).toBe('SERVICE_TEAM_REASON_REQUIRED');
+        expect(countMarks(X.service1Id, wc)).toBe(0);
+
+        await page.getByTestId(`service-team-reject-${wc}`).click();
+        await expect(page.getByTestId('service-team-reject-confirm')).toBeDisabled();
+        await chooseReasonInModal(page, 'service-team-reject', 'DESISTENCIA_DO_PRESTADOR');
+        await expect(
+          page.getByTestId('kanban-column-REJECTED_FOR_SERVICE').getByTestId(`service-team-card-${wc}`),
+        ).toBeVisible({ timeout: 10_000 });
+        const marks = countMarks(X.service1Id, wc, { active: true });
+        expect(marks).toBe(1);
+        const stageWc = getWjaByWorkerAndJob(wc, v)?.funnelStage;
+        expect(stageWc).toBe('QUICK_RESPONSE_TEAM');
+        const status = await readPatientStatusApi(request, backendUrl(), token, X.patientId);
+        expect(status).toBe('SEARCHING');
+        console.log('[16.p5]', X.service1Id, X.service2Id, teamS2.body.data?.vacancyId ?? null,
+          'sem-motivo-via-api', noReason.status, noReason.body.code, 'tela', marks, stageWc, status);
       });
     } finally {
       await test.step('passo 11 — desmontar tudo o que criou, na ordem das fases (resíduo 0 por id; invariantes 1 a 11 sem sobra)', async () => {
