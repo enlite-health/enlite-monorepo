@@ -107,7 +107,7 @@ export function ServiceTeamBoard({ patientId, serviceId, team, onReject, onRever
             tabIndex={0}
             onClick={() => setOpenProvider({ member, columnId: columnId as ServiceTeamColumnId })}
             onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setOpenProvider({ member, columnId: columnId as ServiceTeamColumnId }); }}
-            className="bg-white rounded-lg border border-gray-600 p-3 flex flex-col gap-2 cursor-pointer hover:border-primary transition-colors"
+            className="bg-[#f7f7f7] rounded-[8px] border border-[#d9d9d9] px-4 py-2.5 flex flex-col gap-2 cursor-pointer hover:border-primary transition-colors"
           >
             <Text as="span" size="sm" weight="medium">
               {workerLabel(t, member.workerId, member.displayName)}
@@ -228,8 +228,8 @@ export function ServiceTeamBoard({ patientId, serviceId, team, onReject, onRever
           member={openProvider.member}
           columnId={openProvider.columnId}
           onClose={() => setOpenProvider(null)}
-          onRequestReject={() => { setOpenProvider(null); setPending({ kind: 'reject', workerId: openProvider.member.workerId }); }}
-          onRequestRevert={() => { setOpenProvider(null); setPending({ kind: 'revert', workerId: openProvider.member.workerId }); }}
+          onReject={onReject}
+          onRevert={onRevert}
         />
       )}
     </>

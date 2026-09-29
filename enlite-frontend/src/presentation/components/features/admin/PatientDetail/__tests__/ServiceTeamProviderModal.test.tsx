@@ -1,12 +1,13 @@
 /**
- * ServiceTeamProviderModal — modal do prestador (Figma, rodada 2, decisão D). `useServiceTeamContact`
- * é dublê — a busca/gravação real tem suíte própria (`useServiceTeamContact` é fino o bastante pra
- * não precisar de teste próprio; a API client é testada por contrato). Aqui cobre: renderização por
- * status, "Guardar" chama `register` com os campos certos, "Estado" delega pro pai (nunca decide
- * sozinho), Historial lista as linhas.
+ * ServiceTeamProviderModal — modal do prestador (Figma 11340:76413/76619, rodada 3).
+ * `useServiceTeamContact` é dublê — a busca/gravação real tem suíte própria. Aqui cobre:
+ * renderização por status, "Prestador de servicio" como campo com borda só-leitura, "Estado" como
+ * SELECT com aplicação DIFERIDA (só ao "Guardar" — escolher a ação+motivo sozinho NÃO chama
+ * onReject/onRevert), WhatsApp condicional a `contact.phone`, Historial, fechar por Esc/overlay
+ * (sem X).
  */
 import { describe, it, expect, beforeAll, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import esJson from '@infrastructure/i18n/locales/es.json';
@@ -45,44 +46,46 @@ function mockHook(partial: Partial<UseServiceTeamContactResult>): { register: Re
   return { register };
 }
 
+function renderModal(overrides: Partial<Parameters<typeof ServiceTeamProviderModal>[0]> = {}) {
+  const onClose = vi.fn();
+  const onReject = vi.fn();
+  const onRevert = vi.fn();
+  render(
+    <ServiceTeamProviderModal
+      patientId="p-1" serviceId="svc-1" member={MEMBER} columnId="SELECTED_FOR_SERVICE"
+      onClose={onClose} onReject={onReject} onRevert={onRevert}
+      {...overrides}
+    />,
+  );
+  return { onClose, onReject, onRevert };
+}
+
 describe('ServiceTeamProviderModal', () => {
-  it('nome/telefone vêm do contact (já projetado pela API) — o modal nunca decide célula', () => {
+  it('nome vem do contact (já projetado pela API); "Prestador de servicio" é campo com borda, só-leitura', () => {
     mockHook({
       status: 'ok',
       contact: { workerId: 'w-1', displayName: 'Marcel Araújo', phone: '+5511900000000', history: [] },
     });
-    render(
-      <ServiceTeamProviderModal
-        patientId="p-1" serviceId="svc-1" member={MEMBER} columnId="SELECTED_FOR_SERVICE"
-        onClose={vi.fn()} onRequestReject={vi.fn()} onRequestRevert={vi.fn()}
-      />,
-    );
+    renderModal();
 
     expect(screen.getByTestId('service-team-provider-modal-name')).toHaveTextContent('Marcel Araújo');
     expect(screen.getByTestId('service-team-provider-modal-phone')).toHaveTextContent('+5511900000000');
-    expect(screen.getByTestId('service-team-provider-modal-provider-field')).toHaveTextContent('Marcel Araújo');
+    const providerField = screen.getByTestId('service-team-provider-modal-provider-field') as HTMLInputElement;
+    expect(providerField.tagName).toBe('INPUT');
+    expect(providerField).toBeDisabled();
+    expect(providerField.value).toBe('Marcel Araújo');
   });
 
-  it('sem telefone (célula ausente, contact.phone null): sem link de WhatsApp, sem quebrar', () => {
+  it('sem telefone (célula ausente, contact.phone null): sem linha de WhatsApp, sem quebrar', () => {
     mockHook({ status: 'ok', contact: { workerId: 'w-1', displayName: 'Contato restrito', phone: null, history: [] } });
-    render(
-      <ServiceTeamProviderModal
-        patientId="p-1" serviceId="svc-1" member={MEMBER} columnId="SELECTED_FOR_SERVICE"
-        onClose={vi.fn()} onRequestReject={vi.fn()} onRequestRevert={vi.fn()}
-      />,
-    );
+    renderModal();
 
     expect(screen.queryByTestId('service-team-provider-modal-phone')).not.toBeInTheDocument();
   });
 
   it('"Guardar" chama register com contacted/eventDate/note; note vazia vira null (nunca string vazia gravada)', () => {
     const { register } = mockHook({ status: 'ok', contact: { workerId: 'w-1', displayName: 'Marcel', phone: null, history: [] } });
-    render(
-      <ServiceTeamProviderModal
-        patientId="p-1" serviceId="svc-1" member={MEMBER} columnId="SELECTED_FOR_SERVICE"
-        onClose={vi.fn()} onRequestReject={vi.fn()} onRequestRevert={vi.fn()}
-      />,
-    );
+    renderModal();
 
     fireEvent.click(screen.getByTestId('service-team-provider-modal-contacted'));
     fireEvent.change(screen.getByTestId('service-team-provider-modal-contacted'), { target: { value: 'YES' } });
@@ -97,12 +100,7 @@ describe('ServiceTeamProviderModal', () => {
 
   it('note preenchida: texto exato vai pro register (nunca truncado/alterado)', () => {
     const { register } = mockHook({ status: 'ok', contact: { workerId: 'w-1', displayName: 'Marcel', phone: null, history: [] } });
-    render(
-      <ServiceTeamProviderModal
-        patientId="p-1" serviceId="svc-1" member={MEMBER} columnId="SELECTED_FOR_SERVICE"
-        onClose={vi.fn()} onRequestReject={vi.fn()} onRequestRevert={vi.fn()}
-      />,
-    );
+    renderModal();
 
     const noteField = screen.getByTestId('service-team-provider-modal-note');
     fireEvent.click(noteField);
@@ -112,47 +110,63 @@ describe('ServiceTeamProviderModal', () => {
     expect(register.mock.calls[0][0].note).toBe('Ligou, sem resposta ainda');
   });
 
-  it('Estado em SELECTED_FOR_SERVICE: mostra botão Rechazar que delega pro pai (onRequestReject) — o modal não chama a API de rejeitar sozinho', () => {
+  it('Estado em SELECTED_FOR_SERVICE: escolher Rechazar SÓ abre o motivo — onReject NÃO é chamado antes de Guardar', () => {
     mockHook({ status: 'ok', contact: { workerId: 'w-1', displayName: 'Marcel', phone: null, history: [] } });
-    const onRequestReject = vi.fn();
-    render(
-      <ServiceTeamProviderModal
-        patientId="p-1" serviceId="svc-1" member={MEMBER} columnId="SELECTED_FOR_SERVICE"
-        onClose={vi.fn()} onRequestReject={onRequestReject} onRequestRevert={vi.fn()}
-      />,
-    );
+    const { onReject } = renderModal({ columnId: 'SELECTED_FOR_SERVICE' });
 
-    expect(screen.queryByTestId('service-team-provider-modal-revert')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('service-team-provider-modal-reject'));
-    expect(onRequestReject).toHaveBeenCalledTimes(1);
+    fireEvent.change(screen.getByTestId('service-team-provider-modal-status'), { target: { value: 'REJECT' } });
+    expect(screen.getByTestId('service-team-provider-modal-reject-modal')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('service-team-provider-modal-reject-option-other'));
+    fireEvent.click(screen.getByTestId('service-team-provider-modal-reject-confirm'));
+
+    expect(screen.queryByTestId('service-team-provider-modal-reject-modal')).not.toBeInTheDocument();
+    expect(onReject).not.toHaveBeenCalled();
   });
 
-  it('Estado em REJECTED_FOR_SERVICE: mostra botão Revertir, delega pro pai (onRequestRevert)', () => {
+  it('Estado: motivo capturado + "Guardar" DISPARA onReject com o motivo e fecha o painel', async () => {
     mockHook({ status: 'ok', contact: { workerId: 'w-1', displayName: 'Marcel', phone: null, history: [] } });
-    const onRequestRevert = vi.fn();
-    render(
-      <ServiceTeamProviderModal
-        patientId="p-1" serviceId="svc-1" member={MEMBER} columnId="REJECTED_FOR_SERVICE"
-        onClose={vi.fn()} onRequestReject={vi.fn()} onRequestRevert={onRequestRevert}
-      />,
-    );
+    const { onReject, onClose } = renderModal({ columnId: 'SELECTED_FOR_SERVICE' });
 
-    expect(screen.queryByTestId('service-team-provider-modal-reject')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('service-team-provider-modal-revert'));
-    expect(onRequestRevert).toHaveBeenCalledTimes(1);
+    fireEvent.change(screen.getByTestId('service-team-provider-modal-status'), { target: { value: 'REJECT' } });
+    fireEvent.click(screen.getByTestId('service-team-provider-modal-reject-option-other'));
+    fireEvent.click(screen.getByTestId('service-team-provider-modal-reject-confirm'));
+    expect(onReject).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTestId('service-team-provider-modal-save'));
+
+    expect(onReject).toHaveBeenCalledTimes(1);
+    expect(onReject).toHaveBeenCalledWith('w-1', 'OTHER');
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
   });
 
-  it('Estado em IN_SERVICE: nenhuma ação (invariante 10 — não dá pra rejeitar quem está alocado)', () => {
+  it('Estado em REJECTED_FOR_SERVICE: a ação é Revertir; motivo+Guardar dispara onRevert', async () => {
     mockHook({ status: 'ok', contact: { workerId: 'w-1', displayName: 'Marcel', phone: null, history: [] } });
-    render(
-      <ServiceTeamProviderModal
-        patientId="p-1" serviceId="svc-1" member={MEMBER} columnId="IN_SERVICE"
-        onClose={vi.fn()} onRequestReject={vi.fn()} onRequestRevert={vi.fn()}
-      />,
-    );
+    const { onRevert } = renderModal({ columnId: 'REJECTED_FOR_SERVICE' });
 
-    expect(screen.queryByTestId('service-team-provider-modal-reject')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('service-team-provider-modal-revert')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByTestId('service-team-provider-modal-status'), { target: { value: 'REVERT' } });
+    expect(screen.getByTestId('service-team-provider-modal-revert-modal')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('service-team-provider-modal-revert-option-other'));
+    fireEvent.click(screen.getByTestId('service-team-provider-modal-revert-confirm'));
+    fireEvent.click(screen.getByTestId('service-team-provider-modal-save'));
+
+    expect(onRevert).toHaveBeenCalledWith('w-1', 'OTHER');
+    await waitFor(() => expect(onRevert).toHaveBeenCalledTimes(1));
+  });
+
+  it('Estado em IN_SERVICE: select desabilitado, sem ação disponível (invariante 10)', () => {
+    mockHook({ status: 'ok', contact: { workerId: 'w-1', displayName: 'Marcel', phone: null, history: [] } });
+    renderModal({ columnId: 'IN_SERVICE' });
+
+    expect(screen.getByTestId('service-team-provider-modal-status')).toBeDisabled();
+  });
+
+  it('sem ação pendente: "Guardar" grava o contato mas NÃO fecha o painel (Historial acabou de ganhar linha)', () => {
+    mockHook({ status: 'ok', contact: { workerId: 'w-1', displayName: 'Marcel', phone: null, history: [] } });
+    const { onClose } = renderModal();
+
+    fireEvent.click(screen.getByTestId('service-team-provider-modal-save'));
+
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it('Historial: uma linha por registro (FECHA/NOTA/RESPUESTA); vazio mostra o texto de "sem registros"', () => {
@@ -163,12 +177,7 @@ describe('ServiceTeamProviderModal', () => {
         history: [{ id: 'c-1', contacted: true, eventDate: '2026-09-20', note: 'Confirmou', createdAt: '2026-09-20T10:00:00Z' }],
       },
     });
-    render(
-      <ServiceTeamProviderModal
-        patientId="p-1" serviceId="svc-1" member={MEMBER} columnId="SELECTED_FOR_SERVICE"
-        onClose={vi.fn()} onRequestReject={vi.fn()} onRequestRevert={vi.fn()}
-      />,
-    );
+    renderModal();
 
     expect(screen.getByTestId('service-team-provider-modal-history-row-c-1')).toHaveTextContent('Confirmou');
     expect(screen.queryByTestId('service-team-provider-modal-history-empty')).not.toBeInTheDocument();
@@ -182,12 +191,7 @@ describe('ServiceTeamProviderModal', () => {
         history: [{ id: 'c-1', contacted: true, eventDate: '2026-09-29', note: 'x', createdAt: '2026-09-29T10:00:00Z' }],
       },
     });
-    render(
-      <ServiceTeamProviderModal
-        patientId="p-1" serviceId="svc-1" member={MEMBER} columnId="SELECTED_FOR_SERVICE"
-        onClose={vi.fn()} onRequestReject={vi.fn()} onRequestRevert={vi.fn()}
-      />,
-    );
+    renderModal();
 
     expect(screen.getByTestId('service-team-provider-modal-history-row-c-1')).toHaveTextContent('29/09/2026');
     expect(screen.getByTestId('service-team-provider-modal-history-row-c-1')).not.toHaveTextContent('28/09/2026');
@@ -195,40 +199,44 @@ describe('ServiceTeamProviderModal', () => {
 
   it('Historial vazio: mostra o texto de "sin registros"', () => {
     mockHook({ status: 'ok', contact: { workerId: 'w-1', displayName: 'Marcel', phone: null, history: [] } });
-    render(
-      <ServiceTeamProviderModal
-        patientId="p-1" serviceId="svc-1" member={MEMBER} columnId="SELECTED_FOR_SERVICE"
-        onClose={vi.fn()} onRequestReject={vi.fn()} onRequestRevert={vi.fn()}
-      />,
-    );
+    renderModal();
 
     expect(screen.getByTestId('service-team-provider-modal-history-empty')).toBeInTheDocument();
   });
 
   it('erro ao carregar: mensagem de erro (role=alert), sem quebrar e sem "sin registros" nem linhas fantasma', () => {
     mockHook({ status: 'error', contact: null });
-    render(
-      <ServiceTeamProviderModal
-        patientId="p-1" serviceId="svc-1" member={MEMBER} columnId="SELECTED_FOR_SERVICE"
-        onClose={vi.fn()} onRequestReject={vi.fn()} onRequestRevert={vi.fn()}
-      />,
-    );
+    renderModal();
 
     expect(screen.getByRole('alert')).toHaveTextContent('No se pudo cargar el historial de contacto.');
     expect(screen.queryByTestId('service-team-provider-modal-history-empty')).not.toBeInTheDocument();
   });
 
-  it('fechar: onClose chamado pelo botão de fechar', () => {
+  it('fechar: onClose chamado ao clicar no overlay (sem X — o Figma não tem)', () => {
     mockHook({ status: 'ok', contact: { workerId: 'w-1', displayName: 'Marcel', phone: null, history: [] } });
-    const onClose = vi.fn();
-    render(
-      <ServiceTeamProviderModal
-        patientId="p-1" serviceId="svc-1" member={MEMBER} columnId="SELECTED_FOR_SERVICE"
-        onClose={onClose} onRequestReject={vi.fn()} onRequestRevert={vi.fn()}
-      />,
-    );
+    const { onClose } = renderModal();
 
-    fireEvent.click(screen.getByTestId('service-team-provider-modal-close'));
+    expect(screen.queryByTestId('service-team-provider-modal-close')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('service-team-provider-modal-backdrop'));
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('fechar: onClose chamado ao apertar Esc', () => {
+    mockHook({ status: 'ok', contact: { workerId: 'w-1', displayName: 'Marcel', phone: null, history: [] } });
+    const { onClose } = renderModal();
+
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('painel lateral: âncora à direita, altura cheia, cantos arredondados só à esquerda (molde do drawer de detalhe)', () => {
+    mockHook({ status: 'ok', contact: { workerId: 'w-1', displayName: 'Marcel', phone: null, history: [] } });
+    renderModal();
+
+    const panel = screen.getByTestId('service-team-provider-modal');
+    expect(panel.className).toContain('right-0');
+    expect(panel.className).toContain('h-screen');
+    expect(panel.className).toContain('rounded-tl-[32px]');
+    expect(panel.className).toContain('rounded-bl-[32px]');
   });
 });

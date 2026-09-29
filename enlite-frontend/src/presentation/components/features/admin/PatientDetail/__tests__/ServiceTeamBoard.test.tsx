@@ -13,16 +13,16 @@ import { expectNoRawEnumLeaks } from '../../../../../../test/rawEnumLeakGuard';
 import { ServiceTeamBoard } from '../ServiceTeamBoard';
 import type { ServiceTeam } from '@domain/entities/ServiceTeam';
 
-/** Dublê (rodada 2, decisão D): o que ELE renderiza tem suíte própria (`ServiceTeamProviderModal.test.tsx`); aqui só se prova QUANDO ele abre e o que o board passou. */
+/** Dublê (rodada 3): o que ELE renderiza tem suíte própria (`ServiceTeamProviderModal.test.tsx`); aqui só se prova QUANDO ele abre e o que o board passou — `onReject`/`onRevert` chegam DIRETO (rodada 3: o modal aplica ele mesmo, sem round-trip pelo `pending` do board). */
 const mockProviderModalCalls = vi.fn();
 vi.mock('../ServiceTeamProviderModal', () => ({
-  ServiceTeamProviderModal: (props: { member: { workerId: string }; columnId: string; onClose: () => void; onRequestReject: () => void; onRequestRevert: () => void }) => {
+  ServiceTeamProviderModal: (props: { member: { workerId: string }; columnId: string; onClose: () => void; onReject: (w: string, r: string) => void; onRevert: (w: string, r: string) => void }) => {
     mockProviderModalCalls(props);
     return (
       <div data-testid="service-team-provider-modal-stub" data-worker-id={props.member.workerId} data-column-id={props.columnId}>
         <button type="button" data-testid="stub-close" onClick={props.onClose}>close</button>
-        <button type="button" data-testid="stub-request-reject" onClick={props.onRequestReject}>reject</button>
-        <button type="button" data-testid="stub-request-revert" onClick={props.onRequestRevert}>revert</button>
+        <button type="button" data-testid="stub-reject" onClick={() => props.onReject(props.member.workerId, 'OTHER')}>reject</button>
+        <button type="button" data-testid="stub-revert" onClick={() => props.onRevert(props.member.workerId, 'OTHER')}>revert</button>
       </div>
     );
   },
@@ -278,24 +278,28 @@ describe('ServiceTeamBoard — 3 colunas calculadas, sem arrasto, motivo obrigat
       expect(screen.queryByTestId('service-team-provider-modal-stub')).not.toBeInTheDocument();
     });
 
-    it('onRequestReject do modal: fecha o modal E abre o MESMO modal de motivo que o botão do card abriria (nenhuma ação nova)', () => {
-      render(<ServiceTeamBoard patientId="p1" serviceId="svc-1" team={TEAM} onReject={vi.fn()} onRevert={vi.fn()} onSubstitute={vi.fn()} actionError={null} />);
+    it('onReject do modal chega DIRETO da prop do board (rodada 3: o modal aplica ele mesmo, sem passar pelo `pending`/RejectionReasonSelect do board)', () => {
+      const onReject = vi.fn();
+      render(<ServiceTeamBoard patientId="p1" serviceId="svc-1" team={TEAM} onReject={onReject} onRevert={vi.fn()} onSubstitute={vi.fn()} actionError={null} />);
       fireEvent.click(screen.getByTestId('service-team-card-w1'));
-      fireEvent.click(screen.getByTestId('stub-request-reject'));
+      fireEvent.click(screen.getByTestId('stub-reject'));
 
-      expect(screen.queryByTestId('service-team-provider-modal-stub')).not.toBeInTheDocument();
-      expect(screen.getByTestId('service-team-reject-modal')).toBeTruthy();
+      expect(onReject).toHaveBeenCalledWith('w1', 'OTHER');
+      // O board não abre o SEU PRÓPRIO RejectionReasonSelect nesse caminho — quem captura o
+      // motivo agora é o modal (suíte própria).
+      expect(screen.queryByTestId('service-team-reject-modal')).not.toBeInTheDocument();
     });
 
-    it('onRequestRevert do modal, a partir de um card Rejeitado: fecha o modal e abre o modal de motivo de REVERTER', () => {
-      render(<ServiceTeamBoard patientId="p1" serviceId="svc-1" team={TEAM} onReject={vi.fn()} onRevert={vi.fn()} onSubstitute={vi.fn()} actionError={null} />);
+    it('onRevert do modal, a partir de um card Rejeitado: chega DIRETO da prop do board', () => {
+      const onRevert = vi.fn();
+      render(<ServiceTeamBoard patientId="p1" serviceId="svc-1" team={TEAM} onReject={vi.fn()} onRevert={onRevert} onSubstitute={vi.fn()} actionError={null} />);
       fireEvent.click(screen.getByTestId('service-team-card-w3'));
       expect(screen.getByTestId('service-team-provider-modal-stub').getAttribute('data-column-id')).toBe('REJECTED_FOR_SERVICE');
 
-      fireEvent.click(screen.getByTestId('stub-request-revert'));
+      fireEvent.click(screen.getByTestId('stub-revert'));
 
-      expect(screen.queryByTestId('service-team-provider-modal-stub')).not.toBeInTheDocument();
-      expect(screen.getByTestId('service-team-revert-modal')).toBeTruthy();
+      expect(onRevert).toHaveBeenCalledWith('w3', 'OTHER');
+      expect(screen.queryByTestId('service-team-revert-modal')).not.toBeInTheDocument();
     });
   });
 });

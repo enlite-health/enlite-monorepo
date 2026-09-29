@@ -1,12 +1,17 @@
 /**
  * service-team-provider-modal-screen.integration.e2e.ts @integration — modal do prestador na
- * TELA (quadro C, rodada 2, decisão D). Front real (Vite) + API real + Postgres real, sem mock.
+ * TELA (quadro C, rodada 3, Figma 11340:76413/76619). Front real (Vite) + API real + Postgres
+ * real, sem mock.
  *
  * Feliz: abre a aba Encuadre, seleciona o serviço, clica no CARD do prestador (não no botão) →
- * modal abre com nome/telefone, registra um contato (click + keyboard.type, nunca fill — memória
- * `e2e-humano-nao-e-fill`) → Historial mostra a linha.
- * Alternativo: "Rechazar" pelo modal move o card para a coluna Rechazado (a MESMA ação do botão
- * do card — o modal só delega, nunca decide sozinho).
+ * painel lateral abre com nome + WhatsApp (telefone sintético semeado), registra um contato
+ * (click + keyboard.type, nunca fill — memória `e2e-humano-nao-e-fill`) → Historial mostra a
+ * linha. Fecha por Esc (sem X — o Figma não tem).
+ *
+ * Alternativo: "Estado" é um SELECT. Escolher "Rechazar" abre o motivo (mesmo `RejectionReasonSelect`
+ * de sempre), mas escolher motivo SOZINHO não aplica nada — nenhuma chamada a .../team/reject e o
+ * card continua em Selecionado. Só "Guardar" aplica: dispara o reject E fecha o painel (o card
+ * muda de coluna, o `columnId` do painel fica obsoleto).
  */
 import { test, expect } from '@playwright/test';
 import { seedLaunchablePatient, mockAdminUserFor, useLancamentoStaff, LANCAMENTO_VIEWPORT_ES_AR } from '../helpers/lancamento-e2e-helper';
@@ -17,15 +22,16 @@ import { loginAs } from '../helpers/abac-stack-helper';
 import { openEncuadreTab, selectServiceRow, cleanupQuadroC, cleanupServiceTeamContactLog } from '../helpers/quadro-c-e2e-helper';
 
 const STAFF = mockAdminUserFor('contact-modal-screen');
+const SYNTHETIC_PHONE = '+5491155501234';
 
 test.describe('service-team-provider-modal-screen @integration', () => {
   test.use(LANCAMENTO_VIEWPORT_ES_AR);
   useLancamentoStaff(STAFF, 'E2E Contact Modal');
 
-  test('feliz — abre pelo card, registra contato com click+type, Historial mostra a linha', async ({ page, request }) => {
+  test('feliz — abre pelo card, mostra WhatsApp, registra contato com click+type, Historial mostra a linha, fecha por Esc', async ({ page, request }) => {
     const seed = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.6, lng: -58.4 });
     const vacancyId = await activateRecruitmentViaApi(request, seed.patientId, seed.serviceId);
-    const workerId = insertTestWorker({ occupation: 'AT' });
+    const workerId = insertTestWorker({ occupation: 'AT', whatsappPhone: SYNTHETIC_PHONE });
     try {
       insertWJA({ workerId, jobPostingId: vacancyId, funnelStage: 'QUICK_RESPONSE_TEAM' });
 
@@ -43,6 +49,20 @@ test.describe('service-team-provider-modal-screen @integration', () => {
       await page.getByTestId(`service-team-card-${workerId}`).click();
       await expect(page.getByTestId('service-team-provider-modal')).toBeVisible({ timeout: 15_000 });
       await expect(page.getByTestId('service-team-provider-modal-name')).not.toBeEmpty();
+
+      // WhatsApp: telefone sintético semeado + célula worker_contact:read (STAFF admin mock tem
+      // todas as células) — a linha aparece com o número projetado.
+      await expect(page.getByTestId('service-team-provider-modal-phone')).toBeVisible();
+      await expect(page.getByTestId('service-team-provider-modal-phone')).toContainText(SYNTHETIC_PHONE);
+
+      // "Prestador de servicio": campo com borda, só-leitura.
+      await expect(page.getByTestId('service-team-provider-modal-provider-field')).toBeVisible();
+      await expect(page.getByTestId('service-team-provider-modal-provider-field')).toBeDisabled();
+
+      if (printDir) {
+        await page.evaluate(() => document.fonts.ready);
+        await page.getByTestId('service-team-provider-modal').screenshot({ path: `${printDir}/service-team-provider-modal-aberto.png`, animations: 'disabled', caret: 'hide' });
+      }
 
       // Contacto efectuado: Sí (select nativo — click + keyboard, sem fill).
       const contactedSelect = page.getByTestId('service-team-provider-modal-contacted');
@@ -65,12 +85,11 @@ test.describe('service-team-provider-modal-screen @integration', () => {
       await expect(historyRow).toContainText('Confirmou disponibilidad para el caso');
       await expect(historyRow).toContainText('Sí');
 
-      if (printDir) {
-        await page.evaluate(() => document.fonts.ready);
-        await page.getByTestId('service-team-provider-modal').screenshot({ path: `${printDir}/service-team-provider-modal.png`, animations: 'disabled', caret: 'hide' });
-      }
+      // Sem ação pendente no Estado: Guardar grava o contato e NÃO fecha o painel.
+      await expect(page.getByTestId('service-team-provider-modal')).toBeVisible();
 
-      await page.getByTestId('service-team-provider-modal-close').click();
+      // Fecha por Esc — não há X no Figma.
+      await page.keyboard.press('Escape');
       await expect(page.getByTestId('service-team-provider-modal')).not.toBeVisible();
     } finally {
       cleanupServiceTeamContactLog(seed.serviceId);
@@ -81,7 +100,7 @@ test.describe('service-team-provider-modal-screen @integration', () => {
     }
   });
 
-  test('alternativo — "Rechazar" pelo modal move o card pra Rechazado (delega pro MESMO fluxo do botão)', async ({ page, request }) => {
+  test('alternativo — Estado=Rechazar+motivo NÃO aplica nada; só "Guardar" dispara o reject e move o card', async ({ page, request }) => {
     const seed = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.6, lng: -58.4 });
     const vacancyId = await activateRecruitmentViaApi(request, seed.patientId, seed.serviceId);
     const workerId = insertTestWorker({ occupation: 'AT' });
@@ -93,21 +112,45 @@ test.describe('service-team-provider-modal-screen @integration', () => {
       await selectServiceRow(page, seed.serviceId);
       await expect(page.getByTestId('kanban-column-SELECTED_FOR_SERVICE').getByTestId(`service-team-card-${workerId}`)).toBeVisible({ timeout: 15_000 });
 
+      let rejectFiredBeforeGuardar = false;
+      page.on('request', (r) => {
+        if (r.method() === 'POST' && /\/team\/reject$/.test(r.url())) rejectFiredBeforeGuardar = true;
+      });
+
       await page.getByTestId(`service-team-card-${workerId}`).click();
       await expect(page.getByTestId('service-team-provider-modal')).toBeVisible({ timeout: 15_000 });
 
-      await page.getByTestId('service-team-provider-modal-reject').click();
-      // O modal fecha e o modal de MOTIVO (o mesmo do botão do card) abre.
-      await expect(page.getByTestId('service-team-provider-modal')).not.toBeVisible();
-      await expect(page.getByTestId('service-team-reject-modal')).toBeVisible({ timeout: 10_000 });
+      // Estado: select, não botão. Escolher "Rechazar" abre o motivo (MESMO diálogo de sempre).
+      const estado = page.getByTestId('service-team-provider-modal-status');
+      await estado.click();
+      await estado.selectOption('REJECT');
+      await expect(page.getByTestId('service-team-provider-modal-reject-modal')).toBeVisible({ timeout: 10_000 });
 
+      await page.getByTestId('service-team-provider-modal-reject-option-other').click();
+      await page.getByTestId('service-team-provider-modal-reject-confirm').click();
+
+      // Motivo capturado: o modal de motivo fecha, o painel do prestador CONTINUA aberto, o
+      // select de Estado mostra "Rechazar" escolhido — mas nada foi aplicado ainda.
+      await expect(page.getByTestId('service-team-provider-modal-reject-modal')).not.toBeVisible();
+      await expect(page.getByTestId('service-team-provider-modal')).toBeVisible();
+      expect(rejectFiredBeforeGuardar).toBe(false);
+      await expect(page.getByTestId('kanban-column-SELECTED_FOR_SERVICE').getByTestId(`service-team-card-${workerId}`)).toBeVisible();
+
+      const printDir = process.env.PRINT_DIR;
+      if (printDir) {
+        await page.evaluate(() => document.fonts.ready);
+        await page.getByTestId('service-team-provider-modal').screenshot({ path: `${printDir}/service-team-provider-modal-rechazar-selecionado.png`, animations: 'disabled', caret: 'hide' });
+      }
+
+      // Só "Guardar" aplica: dispara o reject E fecha o painel (o card muda de coluna).
       const rejected = page.waitForResponse(
         (r) => r.request().method() === 'POST' && /\/team\/reject$/.test(r.url()) && r.ok(),
       );
-      await page.getByTestId('service-team-reject-option-other').click();
-      await page.getByTestId('service-team-reject-confirm').click();
+      await page.getByTestId('service-team-provider-modal-save').click();
       await rejected;
+      expect(rejectFiredBeforeGuardar).toBe(true);
 
+      await expect(page.getByTestId('service-team-provider-modal')).not.toBeVisible();
       await expect(page.getByTestId('kanban-column-REJECTED_FOR_SERVICE').getByTestId(`service-team-card-${workerId}`)).toBeVisible({ timeout: 15_000 });
       await expect(page.getByTestId('kanban-column-SELECTED_FOR_SERVICE').getByTestId(`service-team-card-${workerId}`)).toHaveCount(0);
     } finally {
