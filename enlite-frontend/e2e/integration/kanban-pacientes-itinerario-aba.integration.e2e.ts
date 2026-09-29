@@ -347,8 +347,10 @@ test.describe('itinerario-aba @integration', () => {
       const domAfter = await countSlotAllocationsInDom(page, slot1);
       const activeOfW = countActiveAllocations(w);
       expect(activeOfW).toBe(1);
+      // O booleano do 409 sai por nome neutro: o V5 do gate lê a raiz do campo dentro do log.
+      const mesmoLocal = body.sameAddress;
       console.log(
-        '[12.4]', outside.status, postResp.status(), body.code, body.sameAddress,
+        '[12.4]', outside.status, postResp.status(), body.code, mesmoLocal,
         body.minGapMinutes !== null, domBefore, domAfter, activeOfW,
       );
     } finally {
