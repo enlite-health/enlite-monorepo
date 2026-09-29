@@ -16,6 +16,11 @@ import { reportError } from '@shared/logging';
 import { excludeDisabledWorkersSql } from '@shared/database/activeWorkerFilter';
 import { cellsOfRequest, projectWorkerFields, ProjecaoSemDecryptorError } from '@modules/identity/permissions';
 import { canSearchVacanciesByPatientName, projectPatientInVacancy } from '../../application/patientInVacancyProjection';
+import { loadVacancyPatientDiagnoses } from '../../application/vacancyPatientDiagnoses';
+import { PatientDiagnosisService } from '@modules/diagnosis/application/PatientDiagnosisService';
+import { PostgresPatientDiagnosisRepository } from '@modules/diagnosis/infrastructure/PostgresPatientDiagnosisRepository';
+import { DiagnosisSource } from '@modules/diagnosis/domain/DiagnosisSource';
+import { createTerminologyPort } from '@modules/terminology/infrastructure/TerminologyPortFactory';
 
 /**
  * Decryptor da rota `GET /vacancies/:id`: os campos de prestador aqui já vêm em
@@ -48,9 +53,27 @@ const SEM_KMS = {
 
 export class VacanciesController {
   private db: Pool;
+  /**
+   * Mesmo desenho C7 de `AdminPatientsController`: construído SOB DEMANDA, nunca no construtor —
+   * `createTerminologyPort` lança síncrono quando `TERMINOLOGY_ADAPTER` é inválido, e isso não pode
+   * derrubar `new VacanciesController()` no boot por causa de uma env var que só a busca de
+   * diagnóstico usa.
+   */
+  private readonly diagnosisServiceOverride: PatientDiagnosisService | undefined;
+  private diagnosisServiceMemo: PatientDiagnosisService | undefined;
 
-  constructor() {
+  constructor(diagnosisService?: PatientDiagnosisService) {
     this.db = DatabaseConnection.getInstance().getPool();
+    this.diagnosisServiceOverride = diagnosisService;
+  }
+
+  private getDiagnosisService(): PatientDiagnosisService {
+    if (this.diagnosisServiceOverride) return this.diagnosisServiceOverride;
+    this.diagnosisServiceMemo ??= new PatientDiagnosisService(
+      createTerminologyPort(process.env),
+      new PostgresPatientDiagnosisRepository(DiagnosisSource.PANEL),
+    );
+    return this.diagnosisServiceMemo;
   }
 
   async listVacancies(req: Request, res: Response): Promise<void> {
@@ -178,10 +201,15 @@ export class VacanciesController {
   /**
    * `GET /api/admin/vacancies/:id`
    *
-   * ⚠️ Esta rota NÃO devolve o diagnóstico do paciente (C1 do veredito do `lex`):
-   * texto clínico livre não sai sob `vacancy:read`. Guarda de regressão em
-   * `__tests__/diagnosticoForaDaVaga.test.ts`, que assere a QUERY — não a
-   * resposta, porque apagar o campo depois do `SELECT` é esconder da tela.
+   * ⚠️ A query PRINCIPAL desta rota continua sem tocar diagnóstico (C1 do veredito do `lex`):
+   * texto clínico livre não entra no `SELECT` de `job_postings`/`patients`. Guarda de regressão em
+   * `__tests__/diagnosticoForaDaVaga.test.ts`, que assere a QUERY — não a resposta, porque apagar o
+   * campo depois do `SELECT` é esconder da tela.
+   *
+   * O CID-11 estruturado (`diagnoses[]`/`diagnosesUnavailable`) chega por uma SEGUNDA chamada,
+   * separada — `loadVacancyPatientDiagnoses` → `PatientDiagnosisService` — sob `patient_clinical:read`
+   * (a MESMA célula que já governa `dependency_level` aqui, `patientInVacancyProjection.ts`). Nunca
+   * copiado para `job_postings`: lido na hora, a cada abertura da vaga.
    *
    * Os encuadres embutidos passam por `projectWorkerFields` (F2/C3): nome e
    * telefone do prestador saem daqui em texto claro do `json_agg`, então a prova
@@ -288,11 +316,24 @@ export class VacanciesController {
       // D286 fase 2: nome, endereço (com zona/cidade/bairro) e nível de dependência do PACIENTE
       // seguem a célula do paciente (identidade, endereço, clínica), não a da vaga — a mesma chave
       // que vale na ficha dele e no mapa (`lex` fase 2, P3 e condição 7).
+      //
+      // CID-11 estruturado: SEGUNDA chamada, fora da query principal (ver JSDoc do método acima).
+      // `patient_id` vem de `jp.*` — não da tabela `patients` (a allow-list de `p.` desta rota
+      // não muda). Vaga sem paciente vinculado → `[]`, nunca indisponível.
+      const { diagnoses, diagnosesUnavailable } = await loadVacancyPatientDiagnoses(
+        this.getDiagnosisService(),
+        (row.patient_id as string | null | undefined) ?? null,
+        cells,
+        'VacanciesController:getVacancyById:diagnoses',
+      );
+
       const normalized = projectPatientInVacancy({
         ...row,
         encuadres,
         schedule: normalizeSchedule(row.schedule),
         locked_fields: lockedFields,
+        diagnoses,
+        diagnosesUnavailable,
       }, cells);
 
       // Observe-only contract check: log shape drift without breaking requests.

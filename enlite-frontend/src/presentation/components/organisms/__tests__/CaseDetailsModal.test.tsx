@@ -14,7 +14,19 @@ describe('CaseDetailsModal', () => {
       case_number: 442,
       clickup_status: 'BUSQUEDA',
       clickup_priority: 'URGENTE',
-      diagnosis: 'TEA',
+      // Patología estruturada (CID-11). O texto livre `diagnosis` foi aposentado
+      // pela D284; a vaga/caso passou a ler `diagnoses[]` do paciente.
+      diagnoses: [
+        {
+          id: 'dx-1',
+          uri: 'http://id.who.int/icd/entity/444444',
+          title: 'Trastorno del espectro autista',
+          isPrimary: true,
+          source: 'PANEL',
+          active: true,
+        },
+      ],
+      diagnosesUnavailable: false,
       patient_zone: 'Palermo'
     },
     metrics: {
@@ -49,7 +61,11 @@ describe('CaseDetailsModal', () => {
 
     expect(screen.getByText('BUSQUEDA')).toBeInTheDocument();
     expect(screen.getByText('URGENTE')).toBeInTheDocument();
-    expect(screen.getByText('TEA')).toBeInTheDocument();
+    expect(screen.getByTestId('case-details-patologias')).toHaveTextContent(
+      'Trastorno del espectro autista',
+    );
+    // REQ-21: o código/URI do CID nunca chega ao DOM.
+    expect(screen.queryByText(/id\.who\.int/)).toBeNull();
     expect(screen.getByText('Palermo')).toBeInTheDocument();
   });
 

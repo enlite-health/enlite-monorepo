@@ -55,7 +55,8 @@ const caseProps = {
 const professionProps = {
   profession: 'AT',
   requiredSex: 'BOTH',
-  diagnosis: null,
+  diagnoses: [],
+  diagnosesUnavailable: false,
   talentumDescription: null,
   ageRangeMin: null,
   ageRangeMax: null,
