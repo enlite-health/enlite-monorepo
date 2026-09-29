@@ -3,15 +3,12 @@ import { z } from 'zod';
 import { reportError } from '@shared/logging';
 import { AuthMiddleware } from '@modules/identity';
 import { PatientContractedServiceRepository, type ContractedServiceDetail } from '../../infrastructure/PatientContractedServiceRepository';
-import { ContractedServiceProviderRepository, ProviderAlreadyActiveError } from '../../infrastructure/ContractedServiceProviderRepository';
 import { DeviceTypeUnknownError } from '../../infrastructure/PatientDeviceTypeRepository';
 import { AddressNotOfPatientError } from '../../infrastructure/PatientContractedServiceRepository';
 import { SlotHasActiveAllocationError } from '../../application/ItinerarySlotWriteUseCase';
 import {
   createContractedServiceSchema,
   updateContractedServiceSchema,
-  associateProviderSchema,
-  updateProviderSchema,
 } from '../validators/contractedServiceSchemas';
 import { hourlyValueActorOf, projectContractedServiceForActor, canReadHourlyValue, bodyWritesHourlyValue } from '../../application/contractedServiceHourlyValueAccess';
 import {
@@ -25,14 +22,12 @@ import { vacancyActorFromRequest } from '../../../matching/interfaces/controller
 
 const patientParamsSchema = z.object({ id: z.string().uuid() });
 const serviceParamsSchema = z.object({ id: z.string().uuid(), sid: z.string().uuid() });
-const providerParamsSchema = z.object({ id: z.string().uuid(), sid: z.string().uuid(), pid: z.string().uuid() });
 
 /**
  * AdminPatientContractedServicesController — CRUD do serviço contratado (spec 013, bloco C).
  *
  *   GET/POST   /api/admin/patients/:id/contracted-services
  *   PATCH      /api/admin/patients/:id/contracted-services/:sid          (sem DELETE — lex C-a.4)
- *   POST/PATCH /api/admin/patients/:id/contracted-services/:sid/providers[/:pid]
  *
  * `hourlyValue` é redigido para quem não é admin (lex C-c.4) no ÚNICO ponto:
  * `projectContractedServiceForActor`. `professionalProfile` NUNCA entra em log/erro (lex C-b1) —
@@ -41,7 +36,6 @@ const providerParamsSchema = z.object({ id: z.string().uuid(), sid: z.string().u
 export class AdminPatientContractedServicesController {
   constructor(
     private readonly repo: PatientContractedServiceRepository = new PatientContractedServiceRepository(),
-    private readonly providerRepo: ContractedServiceProviderRepository = new ContractedServiceProviderRepository(),
     private readonly activateRecruitmentUseCase: ActivateRecruitmentUseCase = new ActivateRecruitmentUseCase(),
   ) {}
 
@@ -210,81 +204,6 @@ export class AdminPatientContractedServicesController {
       const e = err instanceof Error ? err : new Error(String(err));
       reportError(e, { source: 'AdminPatientContractedServicesController:activateRecruitment', patientId: params.data.id, serviceId: params.data.sid });
       res.status(500).json({ success: false, error: 'Failed to activate recruitment' });
-    }
-  }
-
-  /** POST /api/admin/patients/:id/contracted-services/:sid/providers */
-  async associateProvider(req: Request, res: Response): Promise<void> {
-    const params = serviceParamsSchema.safeParse(req.params);
-    if (!params.success) {
-      res.status(400).json({ success: false, error: 'Invalid params' });
-      return;
-    }
-    const body = associateProviderSchema.safeParse(req.body);
-    if (!body.success) {
-      res.status(400).json({ success: false, error: 'Invalid body', details: { fields: Object.keys(body.error.flatten().fieldErrors) } });
-      return;
-    }
-    try {
-      const service = await this.repo.findById(params.data.sid);
-      if (!service || service.patientId !== params.data.id) {
-        res.status(404).json({ success: false, error: 'Contracted service not found' });
-        return;
-      }
-      const created = await this.providerRepo.associate({
-        serviceId: params.data.sid,
-        workerId: body.data.workerId,
-        weeklyHours: body.data.weeklyHours,
-        country: service.country as 'AR' | 'BR',
-        actorUid: this.actorUid(req),
-      });
-      res.status(201).json({ success: true, data: created });
-    } catch (err: unknown) {
-      if (err instanceof ProviderAlreadyActiveError) {
-        res.status(409).json({ success: false, error: 'Worker already actively allocated to this service', code: err.code });
-        return;
-      }
-      const e = err instanceof Error ? err : new Error(String(err));
-      reportError(e, { source: 'AdminPatientContractedServicesController:associateProvider', serviceId: params.data.sid });
-      res.status(500).json({ success: false, error: 'Failed to associate provider' });
-    }
-  }
-
-  /** PATCH /api/admin/patients/:id/contracted-services/:sid/providers/:pid */
-  async updateProvider(req: Request, res: Response): Promise<void> {
-    const params = providerParamsSchema.safeParse(req.params);
-    if (!params.success) {
-      res.status(400).json({ success: false, error: 'Invalid params' });
-      return;
-    }
-    const body = updateProviderSchema.safeParse(req.body);
-    if (!body.success) {
-      res.status(400).json({ success: false, error: 'Invalid body', details: { fields: Object.keys(body.error.flatten().fieldErrors) } });
-      return;
-    }
-    try {
-      const service = await this.repo.findById(params.data.sid);
-      if (!service || service.patientId !== params.data.id) {
-        res.status(404).json({ success: false, error: 'Contracted service not found' });
-        return;
-      }
-      const provider = service.providers.find((p) => p.id === params.data.pid);
-      if (!provider) {
-        res.status(404).json({ success: false, error: 'Provider allocation not found' });
-        return;
-      }
-      const updated = await this.providerRepo.update(params.data.pid, { ...body.data, actorUid: this.actorUid(req) });
-      // `null` = a linha sumiu entre a leitura e a escrita. 200 com `data: null` mente para um
-      // cliente que tipa o campo como não-nulo — o irmão `update` do serviço já devolve 404.
-      if (!updated) {
-        res.status(404).json({ success: false, error: 'Provider allocation not found' });
-        return;
-      }
-      res.status(200).json({ success: true, data: updated });
-    } catch (err: unknown) {
-      const e = err instanceof Error ? err : new Error(String(err));
-      reportError(e, { source: 'AdminPatientContractedServicesController:updateProvider', providerId: params.data.pid });
-      res.status(500).json({ success: false, error: 'Failed to update provider allocation' });
     }
   }
 }
