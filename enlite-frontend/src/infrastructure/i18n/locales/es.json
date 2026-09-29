@@ -3978,6 +3978,7 @@
             "selectPlaceholder": "Seleccionar",
             "noOptions": "No hay prestadores en Seleccionado para este servicio.",
             "preselectedTitle": "Prestadores disponibles - Preseleccionados",
+            "viewProfile": "Ver perfil del prestador",
             "urgentSearchTitle": "Búsqueda de urgencia - Complementar",
             "urgentSearchNoSource": "Sin fuente de datos para los contadores por radio en este ambiente — invitá directamente desde la vacante.",
             "goToVacancy": "Ir a la vacante",

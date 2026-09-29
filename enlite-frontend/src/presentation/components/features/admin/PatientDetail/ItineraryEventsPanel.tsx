@@ -89,7 +89,7 @@ export function ItineraryEventsPanel({
     // `organisms/Card` não repassa `data-*` (átomo intocável, molde `ItineraryDayCard`): o testid
     // mora no invólucro.
     <div data-testid="itinerario-eventos-painel">
-    <Card rounded="lg" className="border-2 border-gray-600 p-6 flex flex-col gap-5">
+    <Card rounded="lg" className="border-2 border-gray-600 !rounded-[20px] p-6 flex flex-col gap-5">
       <div className="flex items-center justify-between">
         <div>
           <Heading level={2} as="h3" weight="semibold" color="secondary">
@@ -105,11 +105,12 @@ export function ItineraryEventsPanel({
       </div>
 
       <div className="flex gap-3">
-        <div className="flex flex-col gap-1 flex-1">
+        <div className="flex flex-col gap-1 flex-1 min-w-0">
           <Text as="span" weight="semibold" color="secondary">
             {te('filterStart')}
           </Text>
           <Input
+            inputSize="compact"
             type="date"
             value={filters.from}
             onChange={(e) => setFilters({ ...filters, from: e.target.value })}
@@ -117,11 +118,12 @@ export function ItineraryEventsPanel({
             data-testid="itinerario-eventos-filtro-inicio"
           />
         </div>
-        <div className="flex flex-col gap-1 flex-1">
+        <div className="flex flex-col gap-1 flex-1 min-w-0">
           <Text as="span" weight="semibold" color="secondary">
             {te('filterEnd')}
           </Text>
           <Input
+            inputSize="compact"
             type="date"
             value={filters.to}
             onChange={(e) => setFilters({ ...filters, to: e.target.value })}
@@ -136,6 +138,7 @@ export function ItineraryEventsPanel({
           {te('filterLocation')}
         </Text>
         <Select
+          inputSize="compact"
           data-testid="itinerario-eventos-filtro-localizacao"
           options={[...servicesById.entries()].map(([id, v]) => ({ value: id, label: v.addressLabel }))}
           value={locationFilter}
@@ -149,6 +152,7 @@ export function ItineraryEventsPanel({
           {te('filterWorker')}
         </Text>
         <Select
+          inputSize="compact"
           data-testid="itinerario-eventos-filtro-prestador"
           options={workerOptionsFromEvents}
           value={workerFilter}

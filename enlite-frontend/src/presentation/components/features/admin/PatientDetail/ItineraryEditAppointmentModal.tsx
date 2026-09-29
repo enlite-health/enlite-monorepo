@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
+import { Eye } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { Label } from '@presentation/components/atoms/Label';
 import { Input } from '@presentation/components/atoms/Input';
-import { Select } from '@presentation/components/atoms/Select';
+import { SearchableSelect } from '@presentation/components/molecules/SearchableSelect/SearchableSelect';
 import { ActionButton } from '@presentation/components/features/access';
 import { Button } from '@presentation/components/atoms/Button';
 import type { ServiceTeamMember } from '@domain/entities/ServiceTeam';
@@ -75,28 +76,29 @@ export function ItineraryEditAppointmentModal({
 
         <div className="flex flex-col gap-1">
           <Label>{tm('weekday')}</Label>
-          <Input value={weekdayName(slot.weekday, i18n.language)} disabled readOnly className="capitalize" data-testid="itinerario-editar-dia" />
+          <Input inputSize="compact" value={weekdayName(slot.weekday, i18n.language)} disabled readOnly className="capitalize" data-testid="itinerario-editar-dia" />
         </div>
 
         <div className="flex flex-col gap-1">
           <Label>{tm('schedule')}</Label>
-          <Input value={`${slot.startTime} - ${slot.endTime}`} disabled readOnly data-testid="itinerario-editar-horario" />
+          <Input inputSize="compact" value={`${slot.startTime} - ${slot.endTime}`} disabled readOnly data-testid="itinerario-editar-horario" />
         </div>
 
         <div className="flex flex-col gap-1">
           <Label>{tm('entryAddress')}</Label>
-          <Input value={addressLabel} disabled readOnly data-testid="itinerario-editar-endereco" />
+          <Input inputSize="compact" value={addressLabel} disabled readOnly data-testid="itinerario-editar-endereco" />
         </div>
 
         <div className="flex flex-col gap-1">
-          <Label>{tm('assignWorker')}</Label>
-          <Select
+          <SearchableSelect
             data-testid="itinerario-editar-prestador"
             options={workerOptions}
             value={workerId}
-            onValueChange={setWorkerId}
+            onChange={setWorkerId}
             disabled={options === null}
+            label={tm('assignWorker')}
             placeholder={tm('selectPlaceholder')}
+            emptyMessage={tm('noOptions')}
           />
           {options !== null && options.length === 0 && (
             <Text size="xs" color="secondary" data-testid="itinerario-editar-sem-opcoes">
@@ -112,20 +114,47 @@ export function ItineraryEditAppointmentModal({
             </Text>
             <div className="grid grid-cols-2 gap-2" data-testid="itinerario-editar-preselecionados">
               {options.map((member) => (
-                <button
+                <div
                   key={member.workerId}
-                  type="button"
-                  onClick={() => setWorkerId(member.workerId)}
                   data-testid={`itinerario-editar-card-${member.workerId}`}
-                  className={`flex items-center gap-2 rounded-lg border p-2 text-left ${
+                  className={`flex items-center gap-2 rounded-lg border p-2 ${
                     workerId === member.workerId ? 'border-primary bg-primary/5' : 'border-gray-600'
                   }`}
                 >
-                  <span className="size-8 rounded-full bg-gray-300 shrink-0" aria-hidden="true" />
-                  <Text as="span" size="sm" weight="medium" color="primary">
-                    {workerLabel(t, member.workerId, member.displayName)}
-                  </Text>
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => setWorkerId(member.workerId)}
+                    data-testid={`itinerario-editar-selecionar-${member.workerId}`}
+                    className="flex items-center gap-2 flex-1 min-w-0 text-left"
+                  >
+                    <span className="size-8 rounded-full bg-gray-300 shrink-0" aria-hidden="true" />
+                    <span className="flex flex-col min-w-0">
+                      <Text as="span" size="sm" weight="medium" color="primary" className="truncate">
+                        {workerLabel(t, member.workerId, member.displayName)}
+                      </Text>
+                      {member.occupation && (
+                        <Text
+                          as="span"
+                          size="xs"
+                          color="secondary"
+                          data-testid={`itinerario-editar-ocupacao-${member.workerId}`}
+                        >
+                          {t(`admin.patients.detail.contractedServicesCard.serviceTypes.${member.occupation}`, member.occupation)}
+                        </Text>
+                      )}
+                    </span>
+                  </button>
+                  <Link
+                    to={`/admin/workers/${member.workerId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    data-testid={`itinerario-editar-ver-perfil-${member.workerId}`}
+                    title={tm('viewProfile')}
+                    className="shrink-0 text-primary"
+                  >
+                    <Eye size={16} aria-hidden="true" />
+                  </Link>
+                </div>
               ))}
             </div>
           </div>

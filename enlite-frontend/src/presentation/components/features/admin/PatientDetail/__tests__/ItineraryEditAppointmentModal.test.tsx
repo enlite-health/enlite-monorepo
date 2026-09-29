@@ -4,7 +4,7 @@
  * contadores de "Búsqueda de urgencia" NUNCA aparecem sem fonte (D445.7) — só o link/aviso.
  */
 import { describe, it, expect, beforeAll, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
@@ -74,21 +74,46 @@ describe('ItineraryEditAppointmentModal', () => {
   it('Guardar fica desabilitado sem prestador escolhido; escolher habilita e chama onSubmit(workerId)', () => {
     const { onSubmit } = renderModal();
     expect(screen.getByTestId('itinerario-editar-guardar')).toBeDisabled();
-    fireEvent.change(screen.getByTestId('itinerario-editar-prestador'), { target: { value: 'w-1' } });
+    fireEvent.click(screen.getByTestId('itinerario-editar-prestador'));
+    fireEvent.click(within(screen.getByRole('listbox')).getByText('Dana Fixture'));
     expect(screen.getByTestId('itinerario-editar-guardar')).not.toBeDisabled();
     fireEvent.click(screen.getByTestId('itinerario-editar-guardar'));
     expect(onSubmit).toHaveBeenCalledWith('w-1');
   });
 
-  it('currentWorkerId pré-seleciona o select e o card correspondente', () => {
+  it('currentWorkerId pré-seleciona o select (mostra o nome) e o card correspondente', () => {
     renderModal({ currentWorkerId: 'w-2' });
-    expect(screen.getByTestId('itinerario-editar-prestador')).toHaveValue('w-2');
+    expect(screen.getByTestId('itinerario-editar-prestador')).toHaveTextContent('Elio Fixture');
   });
 
   it('clicar num card de "Preseleccionados" escolhe o prestador', () => {
     renderModal();
-    fireEvent.click(screen.getByTestId('itinerario-editar-card-w-2'));
-    expect(screen.getByTestId('itinerario-editar-prestador')).toHaveValue('w-2');
+    fireEvent.click(screen.getByTestId('itinerario-editar-selecionar-w-2'));
+    expect(screen.getByTestId('itinerario-editar-prestador')).toHaveTextContent('Elio Fixture');
+  });
+
+  it('D445 (rodada 2): ocupação aparece sob o nome quando presente (mesma chave i18n de serviceTypes)', () => {
+    renderModal({
+      options: [{ workerId: 'w-1', displayName: 'Dana Fixture', vacancyId: 'vac-1', occupation: 'CAREGIVER' }],
+    });
+    expect(screen.getByTestId('itinerario-editar-ocupacao-w-1')).toHaveTextContent(
+      i18n.t('admin.patients.detail.contractedServicesCard.serviceTypes.CAREGIVER'),
+    );
+  });
+
+  it('D445 (rodada 2): sem occupation cadastrada, o card não mostra a linha de ocupação', () => {
+    renderModal({ options: [{ workerId: 'w-1', displayName: 'Dana Fixture', vacancyId: 'vac-1', occupation: null }] });
+    expect(screen.queryByTestId('itinerario-editar-ocupacao-w-1')).toBeNull();
+  });
+
+  it('D445 (rodada 2): o ícone de "ver perfil" abre /admin/workers/:id em nova aba, sem mudar o select', () => {
+    renderModal();
+    const link = screen.getByTestId('itinerario-editar-ver-perfil-w-2');
+    expect(link.getAttribute('href')).toBe('/admin/workers/w-2');
+    expect(link.getAttribute('target')).toBe('_blank');
+    expect(link.getAttribute('rel')).toContain('noopener');
+    fireEvent.click(link);
+    expect(screen.getByTestId('itinerario-editar-prestador')).not.toHaveTextContent('Elio Fixture');
   });
 
   it('D445.7: sem fonte para os contadores de raio — NUNCA inventa números, mostra o aviso "sem fonte" e o link para a vaga', () => {

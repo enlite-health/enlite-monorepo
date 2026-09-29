@@ -135,6 +135,7 @@ export function SubstitutionDayModal({
         )}
 
         <Select
+          inputSize="compact"
           data-testid="substitution-slot"
           options={slotOptions}
           value={allocationId}
@@ -143,6 +144,7 @@ export function SubstitutionDayModal({
         />
 
         <Select
+          inputSize="compact"
           data-testid="substitution-date"
           options={dateOptions}
           value={date}

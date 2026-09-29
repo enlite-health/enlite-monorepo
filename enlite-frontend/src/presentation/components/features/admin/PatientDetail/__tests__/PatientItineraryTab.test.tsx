@@ -160,7 +160,8 @@ describe('PatientItineraryTab — a aba do itinerário (D445)', () => {
     const modal = screen.getByTestId('itinerario-editar-modal');
     await waitFor(() => expect(within(modal).getByTestId('itinerario-editar-prestador')).toBeEnabled());
 
-    fireEvent.change(within(modal).getByTestId('itinerario-editar-prestador'), { target: { value: 'w-opt-1' } });
+    fireEvent.click(within(modal).getByTestId('itinerario-editar-prestador'));
+    fireEvent.click(within(screen.getByRole('listbox')).getByText('Dana Fixture'));
     fireEvent.click(screen.getByTestId('itinerario-editar-guardar'));
     expect(allocate).toHaveBeenCalledTimes(1);
     expect(allocate).toHaveBeenCalledWith('svc-2', 'slot-2', 'w-opt-1');

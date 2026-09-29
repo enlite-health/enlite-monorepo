@@ -348,18 +348,18 @@ test.describe('cadeia-completa @integration', () => {
        * `listed` = nº de opções esperado na lista aberta (o `SearchableSelect` abre com 1 linha de placeholder a mais).
        */
       const allocateOnScreen = async (slotId: string, label: string, listed?: number): Promise<Response> => {
-        await page.getByTestId(`itinerario-slot-asignar-${slotId}`).click();
-        const modal = page.getByTestId('itinerario-alocar-modal');
+        await page.getByTestId(`itinerario-slot-editar-${slotId}`).click();
+        const modal = page.getByTestId('itinerario-editar-modal');
         await expect(modal).toBeVisible();
-        await modal.getByTestId('itinerario-alocar-prestador').click();
+        await modal.getByTestId('itinerario-editar-prestador').click();
         if (listed !== undefined) await expect(modal.getByRole('option')).toHaveCount(listed + 1);
-        const search = modal.getByRole('textbox');
+        const search = modal.getByPlaceholder('Buscar...');
         await search.click();
         await search.pressSequentially(label, { delay: 20 });
         await modal.getByRole('option', { name: label }).click();
         const [postResp] = await Promise.all([
           page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith(`/slots/${slotId}/allocations`)),
-          modal.getByTestId('itinerario-alocar-confirmar').click(),
+          modal.getByTestId('itinerario-editar-guardar').click(),
         ]);
         return postResp;
       };

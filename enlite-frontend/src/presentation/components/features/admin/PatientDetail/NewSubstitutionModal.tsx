@@ -68,6 +68,7 @@ export function NewSubstitutionModal({
             {tn('title')}
           </Heading>
           <Select
+          inputSize="compact"
             data-testid="itinerario-novo-servico"
             options={services.map((s) => ({ value: s.serviceId, label: s.label }))}
             value={serviceId}

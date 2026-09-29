@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
+import { Card } from '@presentation/components/organisms/Card';
 import { DetailSkeleton } from '@presentation/components/ui/skeletons';
 import { AdminContractedServicesApiService } from '@infrastructure/http/AdminContractedServicesApiService';
 import { usePatientItinerary, type ItineraryActionError } from '@hooks/admin/usePatientItinerary';
@@ -211,7 +212,8 @@ export function PatientItineraryTab({ patient }: PatientItineraryTabProps): JSX.
           />
         </div>
 
-        <div className="flex-1 min-w-0 flex flex-col gap-4">
+        <div className="flex-1 min-w-0" data-testid="itinerario-agenda-coluna">
+          <Card rounded="lg" className="border-2 border-gray-600 !rounded-[20px] p-6 flex flex-col gap-4">
           <Heading level={2} as="h3" weight="semibold" color="secondary">
             {ti('scheduleColumnTitle')}
           </Heading>
@@ -230,6 +232,7 @@ export function PatientItineraryTab({ patient }: PatientItineraryTabProps): JSX.
               />
             );
           })}
+          </Card>
         </div>
       </div>
 
