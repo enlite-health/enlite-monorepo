@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { PatientApiError } from '@infrastructure/http/AdminPatientsApiService';
 import type { PatientDetail, UpdatePatientStatusPayload } from '@domain/entities/PatientDetail';
-import { CLINICAL_PATIENT_STATUSES, ON_HOLD_REASONS, SUSPENSION_EXIT_REASONS } from '@domain/entities/patientEnums';
+import { CLINICAL_PATIENT_STATUSES, ON_HOLD_REASONS } from '@domain/entities/patientEnums';
 import { Button } from '@presentation/components/atoms/Button';
 import { Text } from '@presentation/components/atoms/Text';
 import { Textarea } from '@presentation/components/atoms/Textarea';
@@ -11,6 +11,7 @@ import { FormField } from '@presentation/components/molecules/FormField';
 import { buttonClasses } from '@presentation/components/atoms/Button/buttonClasses';
 import { ChevronDown } from 'lucide-react';
 import { SelectField, type SelectOption } from '@presentation/components/molecules/SelectField';
+import { SuspensionExitReasonSelect } from './SuspensionExitReasonSelect';
 
 interface Props {
   patient: PatientDetail;
@@ -55,7 +56,6 @@ export function PatientStatusControl({ patient, onSaved }: Props): JSX.Element |
 
   const statusOptions: SelectOption[] = CLINICAL_PATIENT_STATUSES.map((s) => ({ value: s, label: t(`admin.patients.statusOptions.${s}`, s) }));
   const reasonOptions: SelectOption[] = ON_HOLD_REASONS.map((r) => ({ value: r, label: t(`admin.patients.onHoldReasonOptions.${r}`, r) }));
-  const exitReasonOptions: SelectOption[] = SUSPENSION_EXIT_REASONS.map((r) => ({ value: r, label: t(`admin.patients.suspensionExitReasonOptions.${r}`, r) }));
   const label = (s: string) => t(`admin.patients.statusOptions.${s}`, s);
 
   const handleSave = async (): Promise<void> => {
@@ -174,17 +174,7 @@ export function PatientStatusControl({ patient, onSaved }: Props): JSX.Element |
         </>
       )}
       {leavingSuspended && (
-        <FormField label={ts('suspensionExitReason')} htmlFor="patient-status-exit-reason" required>
-          <SelectField
-            id="patient-status-exit-reason"
-            inputSize="compact"
-            options={exitReasonOptions}
-            placeholder={t('admin.patients.editDrawer.unset')}
-            value={exitReason}
-            onChange={(v) => setExitReason(v)}
-            data-testid="patient-status-exit-reason"
-          />
-        </FormField>
+        <SuspensionExitReasonSelect id="patient-status-exit-reason" value={exitReason} onChange={setExitReason} />
       )}
       {error && <Text size="sm" className="text-red-600" data-testid="patient-status-error">{error}</Text>}
     </div>
