@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AdminContractedServicesApiService, ContractedServiceApiError } from '@infrastructure/http/AdminContractedServicesApiService';
+import { AdminContractedServicesApiService } from '@infrastructure/http/AdminContractedServicesApiService';
 import type { ItineraryOverlapDetail, PatientItinerary } from '@domain/entities/PatientItinerary';
 import type { ServiceTeamMember } from '@domain/entities/ServiceTeam';
+import { classifyActionError, isForbiddenError } from './contractedServiceActionError';
 
 export type PatientItineraryStatus = 'idle' | 'loading' | 'ok' | 'forbidden' | 'error';
 
@@ -24,10 +25,6 @@ export interface UsePatientItineraryResult {
   actionError: ItineraryActionError | null;
   /** A ação chegou na API, mas o GET de refresh falhou — a aba mostra o itinerário de antes e avisa. */
   refreshError: boolean;
-}
-
-function isForbidden(err: unknown): boolean {
-  return err instanceof ContractedServiceApiError && err.status === 403;
 }
 
 /**
@@ -61,7 +58,7 @@ export function usePatientItinerary(patientId: string): UsePatientItineraryResul
       })
       .catch((err: unknown) => {
         if (requestIdRef.current !== requestId) return;
-        setStatus(isForbidden(err) ? 'forbidden' : 'error');
+        setStatus(isForbiddenError(err) ? 'forbidden' : 'error');
       });
   }, [patientId]);
 
@@ -71,7 +68,7 @@ export function usePatientItinerary(patientId: string): UsePatientItineraryResul
         const { options } = await AdminContractedServicesApiService.getAllocationOptions(patientId, serviceId);
         return { status: 'ok', options };
       } catch (err) {
-        return { status: isForbidden(err) ? 'forbidden' : 'error' };
+        return { status: isForbiddenError(err) ? 'forbidden' : 'error' };
       }
     },
     [patientId],
@@ -86,15 +83,14 @@ export function usePatientItinerary(patientId: string): UsePatientItineraryResul
         await AdminContractedServicesApiService.allocate(patientId, serviceId, slotId, workerId);
       } catch (err) {
         if (requestIdRef.current !== requestId) return;
-        if (isForbidden(err)) {
-          setStatus('forbidden');
+        // A régua ÚNICA das ações do serviço contratado (a mesma do `useServiceTeam`).
+        const classified = classifyActionError(err);
+        if (classified.kind !== 'coded') {
+          setStatus(classified.kind);
           return;
         }
-        if (!(err instanceof ContractedServiceApiError && err.code)) {
-          setStatus('error');
-          return;
-        }
-        setActionError(err.overlap ? { code: err.code, overlap: err.overlap } : { code: err.code });
+        const { code, error } = classified;
+        setActionError(error.overlap ? { code, overlap: error.overlap } : { code });
       }
       try {
         const result = await AdminContractedServicesApiService.getItinerary(patientId);
