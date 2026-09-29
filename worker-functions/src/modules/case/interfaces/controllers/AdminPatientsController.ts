@@ -269,8 +269,10 @@ export class AdminPatientsController {
       logger.info({ msg: 'patient_affiliate_id.write', uid: AuthMiddleware.getAuthContext(req)?.principal.id ?? null, patientId: id, section });
     }
     // Spec 018 PR-3 (lex #2b-8/#2c, molde do trecho acima): trilha de escrita de gênero/idiomas
-    // SEM VALOR — só os NOMES dos campos escritos (M1-1: uid não aparece na tela, mas fica na
-    // trilha, como affiliateId).
+    // SEM VALOR — só os NOMES dos campos escritos. O uid grava e é exibido na Historial (coluna
+    // Autor, D444) — aviso M1-1 aos colaboradores segue pendente (dono Gabriel/Marcel); cláusula
+    // (c) da política de staff access vale (proibido usar a trilha para avaliação de
+    // desempenho/disciplina/dimensionamento).
     {
       const bodyKeys = bodyResult.data as Record<string, unknown>;
       const genderOrLanguageFields = (['gender', 'languages'] as const).filter((f) => f in bodyKeys);

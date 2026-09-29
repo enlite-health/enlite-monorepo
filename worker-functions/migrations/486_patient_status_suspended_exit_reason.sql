@@ -2,8 +2,11 @@
 --   a. 3 transições que faltavam no catálogo para o paciente Suspendido poder ir para
 --      Búsqueda/Reemplazo/En espera (ACTIVE/ALTA/DISCHARGED já saíam de SUSPENDED desde 315/473).
 --   b. `patient_status_history` ganha `reason` (motivo fechado, CHECK — SuspensionExitReason,
---      domain/enums) e `actor_uid` (quem mudou, decisão do Gabriel 29/09/2026 — substitui o "sem
---      quem" da 254/C7.2; aviso M1-1 ainda pendente). Os dois NULL por padrão: histórico anterior
+--      domain/enums) e `actor_uid` (quem mudou, decisão do Gabriel 29/09/2026 — D444): substitui
+--      o "sem quem" da 254/C7.2, grava e exibe o firebase uid (só o ID, nunca nome) na Historial —
+--      aviso M1-1 aos colaboradores segue pendente (dono Gabriel/Marcel); cláusula (c) da política
+--      de staff access vale (proibido usar a trilha para avaliação de
+--      desempenho/disciplina/dimensionamento). Os dois NULL por padrão: histórico anterior
 --      e mudança de SISTEMA (derivação, VacancyLaunchHook) continuam sem ator; motivo só é gravado
 --      ao SAIR de SUSPENDED manualmente (PatientStatusWriter valida antes do UPDATE).
 --   c. Os dois triggers da 254/255 passam a ler `app.status_reason` e `app.actor_uid` (mesmo
@@ -40,10 +43,12 @@ COMMENT ON COLUMN patient_status_history.reason IS
   'texto livre (texto clínico não entra na trilha). NULL em toda mudança que não seja sair de '
   'SUSPENDED manualmente (admin_panel/kanban). Migration 486.';
 COMMENT ON COLUMN patient_status_history.actor_uid IS
-  'Firebase uid de quem mudou o status via HTTP (decisão do Gabriel 29/09/2026 — substitui o '
-  '"sem quem" de C7.2, migration 254; aviso M1-1 ainda pendente). NULL para mudança de SISTEMA '
-  '(derivação por horas, VacancyLaunchHook). Nunca logado (Cloud Logging) — só viaja por '
-  'set_config na transação. Migration 486.';
+  'Firebase uid de quem mudou o status via HTTP (decisão do Gabriel 29/09/2026 — D444): substitui '
+  'o "sem quem" de C7.2, migration 254; grava e EXIBE o uid (só o ID, nunca nome) na Historial — '
+  'aviso M1-1 aos colaboradores segue pendente (dono Gabriel/Marcel); cláusula (c) da política de '
+  'staff access vale (proibido usar a trilha para avaliação de desempenho/disciplina/dimensionamento). '
+  'NULL para mudança de SISTEMA (derivação por horas, VacancyLaunchHook). Nunca logado (Cloud '
+  'Logging) — só viaja por set_config na transação. Migration 486.';
 
 -- ── c. triggers (254 AFTER UPDATE OF status, 255 AFTER INSERT) ─────────────────────────────────
 CREATE OR REPLACE FUNCTION fn_log_patient_status_change()

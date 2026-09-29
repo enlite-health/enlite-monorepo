@@ -5,9 +5,11 @@
  * no INSERT). Devolve QUANDO / DE → PARA / ORIGEM (`change_source`, o `app.change_source` da
  * transação que mudou o status: 'admin_panel', 'kanban', 'insert', 'backfill', 'migration-314'…).
  *
- * `actor_uid` (decisão do Gabriel 29/09/2026 — migration 486): substitui o "sem quem" de C7.2;
- * o aviso M1-1 (uid não aparece na tela, mas fica na trilha) ainda pendente. `reason` (mesma
- * migration): motivo fechado de SAÍDA de SUSPENDED (SuspensionExitReason) — NULL nas demais
+ * `actor_uid` (decisão do Gabriel 29/09/2026 — D444, migration 486): substitui o "sem quem" de
+ * C7.2; grava e EXIBE o firebase uid (só o ID, nunca nome) na aba Historial (coluna Autor). O
+ * aviso M1-1 aos colaboradores segue pendente (dono Gabriel/Marcel); cláusula (c) da política de
+ * staff access vale — proibido usar a trilha para avaliação de desempenho/disciplina/dimensionamento.
+ * `reason` (mesma migration): motivo fechado de SAÍDA de SUSPENDED (SuspensionExitReason) — NULL nas demais
  * mudanças. Ambos podem vir NULL (histórico anterior à 486, ou mudança de SISTEMA sem ator).
  * ⚠️ `on_hold_note` NUNCA está aqui (lex C7.3): a trilha é append-only e viraria arquivo clínico.
  */
