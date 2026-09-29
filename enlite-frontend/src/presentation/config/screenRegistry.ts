@@ -87,7 +87,7 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
   {
     id: 'patients.detail',
     route: '/admin/patients/:id',
-    tabs: ['clinicalData', 'supportNetwork', 'contractedService', 'vacancies', 'itinerary', 'history'],
+    tabs: ['clinicalData', 'supportNetwork', 'contractedService', 'vacancies', 'encuadre', 'itinerary', 'history'],
     containers: [
       c('identity', 'patient_identity', ['read', 'create', 'update']),
       c('clinical', 'patient_clinical', ['read', 'create', 'update'], 'clinicalData'),
@@ -102,9 +102,11 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
       c('chat', 'patient_chat', ['read', 'create', 'update'], 'supportNetwork'),
       c('coverage', 'patient_coverage', ['read', 'create', 'update'], 'contractedService'),
       c('address', 'patient_address', ['read', 'create', 'update'], 'contractedService'),
-      // A aba Matching saiu (decisão do Gabriel 05/09, na main): o encuadre É o serviço contratado
-      // completo, que vive só na aba Serviço contratado — uma célula, uma aba.
-      c('services', 'patient_services', ['read', 'create', 'update'], 'contractedService', 'itinerary'),
+      // 29/09: a aba "Encuadre" volta (com conteúdo real desta vez — o quadro C, que sai da aba
+      // "Servicio Contratado") e usa a MESMA célula do container `services` — decisão do Gabriel
+      // "sem célula ABAC nova": o container que já lê o serviço contratado é o mesmo que lê o
+      // encuadre daquele serviço, então só ganha mais uma aba na lista, nenhuma célula nasce.
+      c('services', 'patient_services', ['read', 'create', 'update'], 'contractedService', 'itinerary', 'encuadre'),
       // O VALOR-HORA do serviço contratado é dado próprio (era "só admin" por papel; D293): quem
       // tem `patient_services:read` vê o serviço, mas o preço só sai com esta célula.
       c('contractValue', 'patient_contract_value', ['read'], 'contractedService'),

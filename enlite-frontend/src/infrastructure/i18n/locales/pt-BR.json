@@ -3415,11 +3415,16 @@
           "supportNetwork": "Rede de Apoio",
           "contractedService": "Serviço Contratado",
           "vacancies": "Vagas",
+          "encuadre": "Enquadre",
           "itinerary": "Itinerário",
           "financialData": "Dados Financeiros",
           "matching": "Enquadre",
           "appointments": "Agendamentos",
           "history": "Histórico"
+        },
+        "encuadreTab": {
+          "weeklyHours": "Horas semanais",
+          "capacity": "Capacidade"
         },
         "comingSoon": "Em breve",
         "noData": "Sem dados cadastrados",

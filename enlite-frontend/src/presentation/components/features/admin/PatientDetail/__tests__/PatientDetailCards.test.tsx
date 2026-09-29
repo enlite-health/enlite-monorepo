@@ -850,21 +850,22 @@ describe('RelatoriosAtendimentosCard', () => {
 describe('PatientProfileTabs', () => {
   // Spec 014 US-D2: "Dados Financeiros" e "Agendamentos" SAÍRAM do tab bar — só tinham o
   // placeholder genérico "Em breve" atrás, nenhum card real (decisão Gabriel 03/09, item 9).
-  // 05/09 (decisão do Gabriel): "Enquadre" também saiu — era a tabela de serviços duplicada +
-  // placeholder; o encuadre do paciente É o serviço contratado (endereço + horário).
-  it('renders the 6 tabs with real content — "Dados Financeiros"/"Agendamentos"/"Enquadre" não existem mais', () => {
+  // 05/09 (decisão do Gabriel): a antiga "Enquadre" saiu — era a tabela de serviços duplicada +
+  // placeholder, sem quadro nenhum atrás. 29/09: "Enquadre" VOLTA, desta vez com conteúdo real (o
+  // quadro C, `EncuadreTab.tsx`) — não é a mesma aba, então volta a aparecer aqui.
+  it('renders the 7 tabs with real content — "Dados Financeiros"/"Agendamentos" não existem mais; "Enquadre" voltou (29/09)', () => {
     const onTabChange = vi.fn();
     render(<PatientProfileTabs activeTab="clinicalData" onTabChange={onTabChange} />);
     expect(screen.getByText('Dados Clínicos')).toBeInTheDocument();
     expect(screen.getByText('Rede de Apoio')).toBeInTheDocument();
     expect(screen.getByText('Serviço Contratado')).toBeInTheDocument();
     expect(screen.getByText('Vagas')).toBeInTheDocument();
+    expect(screen.getByText('Enquadre')).toBeInTheDocument();
     expect(screen.getByText('Itinerário')).toBeInTheDocument();
     expect(screen.getByText('Histórico')).toBeInTheDocument();
     expect(screen.queryByText('Dados Financeiros')).not.toBeInTheDocument();
     expect(screen.queryByText('Agendamentos')).not.toBeInTheDocument();
-    expect(screen.queryByText('Enquadre')).not.toBeInTheDocument();
-    expect(screen.getAllByRole('button')).toHaveLength(6);
+    expect(screen.getAllByRole('button')).toHaveLength(7);
   });
 
   it('active tab has primary background class', () => {

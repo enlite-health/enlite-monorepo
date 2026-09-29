@@ -3494,11 +3494,16 @@
           "supportNetwork": "Red de Apoyo",
           "contractedService": "Servicio Contratado",
           "vacancies": "Vacantes",
+          "encuadre": "Encuadre",
           "itinerary": "Itinerario",
           "financialData": "Datos Financieros",
           "matching": "Encuadre",
           "appointments": "Agendamientos",
           "history": "Historial"
+        },
+        "encuadreTab": {
+          "weeklyHours": "Horas semanales",
+          "capacity": "Capacidad"
         },
         "comingSoon": "Próximamente",
         "noData": "Sin datos cargados",
