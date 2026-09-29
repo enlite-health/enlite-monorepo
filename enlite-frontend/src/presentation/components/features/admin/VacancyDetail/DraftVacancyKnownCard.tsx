@@ -5,6 +5,8 @@ import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { DraftVacancyScheduleGrid } from './DraftVacancyScheduleGrid';
 import type { NormalizedSchedule } from './draftVacancySchedule';
+import type { PatientDiagnosisDetail } from '@domain/entities/PatientDetail';
+import { diagnosisDisplayState } from '@domain/entities/diagnosisDisplay';
 
 /**
  * Par rótulo/valor LOCAL a este card — não o `FieldPair` de `PatientDetail/FieldPairs.tsx`
@@ -57,6 +59,12 @@ interface DraftVacancyKnownCardProps {
   isDefaultSalary: boolean;
   publicationLabel: string;
   patientId: string | null;
+  /** Patología estruturada do paciente (CID-11, lida na hora — nunca copiada para a vaga).
+   *  `null` = ator sem a célula `patient_clinical:read` — distinto de `[]` (spec cid-na-vacante,
+   *  mesmo contrato de `VacancyProfessionCard`/`VacancyFormLeftColumn`). */
+  diagnoses: PatientDiagnosisDetail[] | null;
+  /** Bulkhead (C4): catálogo de terminologia falhou ao ler — distinto de "sem diagnóstico". */
+  diagnosesUnavailable: boolean;
 }
 
 export function DraftVacancyKnownCard({
@@ -74,6 +82,8 @@ export function DraftVacancyKnownCard({
   isDefaultSalary,
   publicationLabel,
   patientId,
+  diagnoses,
+  diagnosesUnavailable,
 }: DraftVacancyKnownCardProps) {
   const { t } = useTranslation();
 
@@ -95,6 +105,69 @@ export function DraftVacancyKnownCard({
             )
           }
         />
+        {/* Patología (spec cid-na-vacante): mesmo contrato de 3 estados de
+            `VacancyProfessionCard`/`VacancyFormLeftColumn` — `diagnosisDisplayState` decide,
+            este card só desenha. REQ-21: só o título, nunca código/grupo/release/uri do CID. */}
+        <div className="flex flex-col min-w-0 sm:col-span-2">
+          <Text as="span" size="2xs" color="primary" className="uppercase tracking-wide">
+            {t('admin.patients.detail.diagnosisCard.patologies')}
+          </Text>
+          {(() => {
+            const state = diagnosisDisplayState(diagnoses, diagnosesUnavailable);
+            if (state.kind === 'unavailable') {
+              return (
+                <Text
+                  as="span"
+                  size="sm"
+                  weight="medium"
+                  className="!text-red-600 break-words"
+                  data-testid="draft-vacancy-patologias-unavailable"
+                >
+                  {t('admin.patients.detail.diagnosisCard.patologiesUnavailable')}
+                </Text>
+              );
+            }
+            if (state.kind === 'noPermission') {
+              return (
+                <Text
+                  as="span"
+                  size="sm"
+                  weight="medium"
+                  color="secondary"
+                  className="break-words"
+                  data-testid="draft-vacancy-patologias-no-permission"
+                >
+                  {t('admin.patients.detail.diagnosisCard.patologiesNoPermission')}
+                </Text>
+              );
+            }
+            if (state.kind === 'empty') {
+              return (
+                <Text
+                  as="span"
+                  size="sm"
+                  weight="medium"
+                  color="tertiary"
+                  data-testid="draft-vacancy-patologias-empty"
+                >
+                  —
+                </Text>
+              );
+            }
+            return (
+              <Text
+                as="span"
+                size="sm"
+                weight="medium"
+                color="tertiary"
+                className="break-words"
+                data-testid="draft-vacancy-patologias"
+              >
+                {state.diagnoses.map((d) => d.title).join(', ')}
+              </Text>
+            );
+          })()}
+        </div>
         <Pair label={t('admin.draftVacancy.fields.service')} value={serviceDisplayValue} />
         <Pair label={t('admin.draftVacancy.fields.providersNeeded')} value={providersNeeded ?? emptyValue} />
         <Pair
