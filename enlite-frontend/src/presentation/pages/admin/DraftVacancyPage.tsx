@@ -79,6 +79,24 @@ export default function DraftVacancyPage() {
   const hasAddressCell = useContainerAccess('patient_address').visible;
   const hasClinicalCell = useContainerAccess('patient_clinical').visible;
 
+  // Patología (spec cid-na-vacante): mesmo contrato de 3 estados dos outros pontos que já
+  // mostram diagnóstico na vaga (`VacancyProfessionCard`/`VacancyFormLeftColumn`, D181/D113).
+  // `null` quando falta a célula `patient_clinical:read` — nunca "[]" (colapsaria em "sem
+  // permissão" com "sem diagnóstico"). `patient` ainda pode não ter chegado (2ª leitura
+  // assíncrona) — `diagnosesUnavailable` só reflete o bulkhead do catálogo (C4), não essa
+  // corrida; o card mostra "—" no instante entre o GET da vaga e o GET do paciente, mesmo
+  // comportamento já aceito hoje pelo campo "Servicio" logo abaixo.
+  //
+  // ⚠️ Mas quando a 2ª leitura FALHA (`patientLoadFailed`), "—" passaria a significar "este
+  // paciente não tem diagnóstico" — a mentira exata que esta feature existe para impedir.
+  // Por isso a falha do GET do paciente também marca indisponível AQUI. O efeito é local a
+  // este bloco: `patientLoadFailed` segue mandando só no campo "Servicio" e no título, sem
+  // mudança de semântica para eles.
+  const diagnosesForCard = hasClinicalCell ? (patient?.diagnoses ?? []) : null;
+  const diagnosesUnavailableForCard = hasClinicalCell
+    ? (patient?.diagnosesUnavailable ?? false) || patientLoadFailed
+    : false;
+
   if (isLoading) return <DetailSkeleton />;
 
   if (error || !vacancy) {
@@ -296,6 +314,8 @@ export default function DraftVacancyPage() {
             isDefaultSalary={isDefaultSalary}
             publicationLabel={createdLabel ?? emptyValue}
             patientId={vacancy.patient_id}
+            diagnoses={diagnosesForCard}
+            diagnosesUnavailable={diagnosesUnavailableForCard}
           />
         </ContainerGate>
 
