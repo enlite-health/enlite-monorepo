@@ -49,7 +49,6 @@ describe('migration 486 — saída de SUSPENDED com motivo + actor_uid (banco re
 
   it('(a) as 3 transições de saída de SUSPENDED estão no catálogo', async () => {
     const liberadas = await contarTransicoes(pool);
-    console.log('[486]', { liberadas });
     expect(liberadas).toBe(3);
   });
 
@@ -128,7 +127,6 @@ describe('migration 486 — saída de SUSPENDED com motivo + actor_uid (banco re
       await client.query('ROLLBACK');
       const liberadasDepoisDoRollback = await contarTransicoes(pool);
       const colunasDepoisDoRollback = await temColunas(pool);
-      console.log('[486]', { liberadasDepoisDoDown, colunasDepoisDoDown, liberadasDepoisDoRollback, colunasDepoisDoRollback });
       expect(liberadasDepoisDoDown).toBe(0);
       expect(colunasDepoisDoDown).toBe(false);
       expect(liberadasDepoisDoRollback).toBe(3);
@@ -169,7 +167,6 @@ describe('migration 486 — saída de SUSPENDED com motivo + actor_uid (banco re
       await client.query('ROLLBACK TO SAVEPOINT antes_do_down');
       const colunasComTrava = await temColunas(client);
       await client.query('ROLLBACK');
-      console.log('[486]', { recusou: erro !== null, colunasComTrava });
       expect(String((erro as Error | null)?.message)).toContain('reason/actor_uid preenchido');
       expect(colunasComTrava).toBe(true);
       expect(await temColunas(pool)).toBe(true);
