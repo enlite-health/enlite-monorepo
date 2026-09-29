@@ -76,7 +76,7 @@ export function DiagnosticoCard({ patient, onSaved, focusRequest }: DiagnosticoC
   // US-B4: dispositivos por catálogo, traduzidos. US-B8: "Tipos de patologías - ICHOM" /
   // "Especialidad" saíram do card (o segmento é máscara do projeto terapêutico, não da admissão).
   const devices = (patient.deviceTypes ?? []).map((d) => t(`admin.patients.deviceTypeOptions.${d}`, d));
-  const patologias = sortDiagnosesForCard(patient.diagnoses);
+  const patologias = sortDiagnosesForCard(patient.diagnoses ?? []);
 
   return (
     <div data-testid="diagnostico-card" className="bg-white rounded-card border-[1.5px] border-gray-700 p-6 sm:px-8 sm:py-10 flex flex-col gap-4">

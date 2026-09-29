@@ -350,7 +350,7 @@ export function VacancyFormSection({
           control={control}
           errors={errors}
           patientSelected={patientSelected}
-          diagnoses={patientDetail?.diagnoses ?? []}
+          diagnoses={patientDetail ? patientDetail.diagnoses : []}
           diagnosesUnavailable={patientDetail?.diagnosesUnavailable ?? false}
           patientName={
             [patientDetail?.firstName, patientDetail?.lastName]
