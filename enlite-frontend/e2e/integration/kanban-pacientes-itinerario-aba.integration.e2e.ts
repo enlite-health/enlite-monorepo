@@ -24,12 +24,23 @@ import {
 import { insertTestWorker, cleanupTestWorker } from '../helpers/db-test-helper';
 import { insertWJA, cleanupWJAAndEncuadre } from '../helpers/wja-test-helper';
 import { tokenFor, loginAs } from '../helpers/abac-stack-helper';
-import { selectServiceRow } from '../helpers/quadro-c-e2e-helper';
-import { allocationOptionsApi, cleanupItineraryWrite } from '../helpers/itinerario-escrita-e2e-helper';
+import { runSQL } from '../helpers/patient-detail-a-helper';
+import { selectServiceRow, postServiceTeamAction, readServiceTeamApi } from '../helpers/quadro-c-e2e-helper';
+import {
+  allocationOptionsApi, allocateApi, countActiveAllocations, cleanupItineraryWrite,
+} from '../helpers/itinerario-escrita-e2e-helper';
 import { openItineraryTab, slotAllocationsInDom, countSlotAllocationsInDom } from '../helpers/itinerario-aba-e2e-helper';
 
 interface OptionDto { workerId: string; displayName: string | null }
 interface OptionsData { options: OptionDto[] }
+interface OverlapSideDto { serviceId: string; weekday: number; startTime: string; endTime: string }
+interface OverlapBody {
+  code?: string;
+  existing?: OverlapSideDto;
+  requested?: OverlapSideDto;
+  sameAddress?: boolean;
+  minGapMinutes?: number | null;
+}
 
 const STAFF = mockAdminUserFor('itinerario-aba');
 const CLINICAL = /diagnos|clinic/gi;
@@ -206,6 +217,148 @@ test.describe('itinerario-aba @integration', () => {
     } finally {
       cleanupItineraryWrite(seed.patientId);
       seed.cleanup();
+    }
+  });
+
+  test('itinerario-opcoes-sao-selecionado-c', async ({ page, request }) => {
+    const seed = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.6, lng: -58.4 });
+    const token = tokenFor(ITINERARIO_STAFF);
+    const v = await activateRecruitmentViaApi(request, seed.patientId, seed.serviceId);
+    const suffix = Math.random().toString(36).slice(2, 8);
+    const w1 = insertTestWorker({ occupation: 'AT', firstName: `WItinSel${suffix}` }); // ERR — Selecionado (C)
+    const w2 = insertTestWorker({ occupation: 'AT', firstName: `WItinSelB${suffix}` }); // SELECTED — só Selecionado de B
+    const w3 = insertTestWorker({ occupation: 'AT', firstName: `WItinRej${suffix}` }); // ERR + rejeitado — Rejeitado (C)
+    try {
+      insertWJA({ workerId: w1, jobPostingId: v, funnelStage: 'QUICK_RESPONSE_TEAM' });
+      insertWJA({ workerId: w2, jobPostingId: v, funnelStage: 'SELECTED' });
+      insertWJA({ workerId: w3, jobPostingId: v, funnelStage: 'QUICK_RESPONSE_TEAM' });
+      const reject = await postServiceTeamAction(request, seed.patientId, seed.serviceId, 'reject', {
+        workerId: w3, reasonCategory: 'INDISPONIBILIDADE_DE_HORARIO',
+      });
+      expect(reject.status).toBe(200);
+
+      const itin = await readItineraryApi(request, seed.patientId);
+      const slotId = itin.body.data?.services.find((s) => s.contractedServiceId === seed.serviceId)?.slots[0]?.id;
+      if (!slotId) throw new Error('itinerario-opcoes-sao-selecionado-c: slot ausente na semente');
+
+      const opts = await allocationOptionsApi(request, token, seed.patientId, seed.serviceId);
+      expect(opts.status).toBe(200);
+      const options = (opts.body.data as OptionsData | undefined)?.options ?? [];
+      const n = options.length;
+      expect(n).toBe(1);
+      expect(options.map((o) => o.workerId)).toEqual([w1]);
+
+      // Rótulos lidos da API (quadro C) e, para W2 — que o quadro C não lista —, do nome sintético no
+      // banco (passthrough base64 do KMS de teste); nunca colados no log, só contagens.
+      const team = await readServiceTeamApi(request, seed.patientId, seed.serviceId);
+      expect(team.status).toBe(200);
+      const w1Label = team.body.data?.selected.find((m) => m.workerId === w1)?.displayName;
+      const w3Label = team.body.data?.rejected.find((m) => m.workerId === w3)?.displayName;
+      const w2First = runSQL(`SELECT convert_from(decode(first_name_encrypted, 'base64'), 'UTF8') FROM workers WHERE id = '${w2}'`);
+      if (!w1Label || !w3Label || !w2First) throw new Error('itinerario-opcoes-sao-selecionado-c: rótulo ausente');
+      const w2InTeam = [...(team.body.data?.selected ?? []), ...(team.body.data?.inService ?? [])].some((m) => m.workerId === w2);
+      expect(w2InTeam).toBe(false);
+
+      await loginAs(page, STAFF);
+      await openItineraryTab(page, seed.patientId);
+      await page.getByTestId(`itinerario-slot-asignar-${slotId}`).click();
+      const modal = page.getByTestId('itinerario-alocar-modal');
+      await expect(modal).toBeVisible();
+      await modal.getByTestId('itinerario-alocar-prestador').click();
+
+      // O `SearchableSelect` abre com 1 linha de valor vazio (o placeholder) antes das opções.
+      const listed = modal.getByRole('option');
+      await expect(listed).toHaveCount(n + 1);
+      await expect(listed.nth(0)).toHaveAttribute('aria-selected', 'true');
+      await expect(modal.getByRole('option', { name: w1Label })).toHaveCount(1);
+      const w2Listed = modal.getByRole('option', { name: new RegExp(w2First) });
+      const w3Listed = modal.getByRole('option', { name: w3Label });
+      await expect(w2Listed).toHaveCount(0);
+      await expect(w3Listed).toHaveCount(0);
+      console.log('[12.3]', n, (await listed.count()) - 1, await w2Listed.count(), await w3Listed.count(), reject.status);
+    } finally {
+      cleanupItineraryWrite(seed.patientId);
+      cleanupWJAAndEncuadre(w1, v);
+      cleanupWJAAndEncuadre(w2, v);
+      cleanupWJAAndEncuadre(w3, v);
+      cleanupTestWorker(w1);
+      cleanupTestWorker(w2);
+      cleanupTestWorker(w3);
+      seed.cleanup();
+    }
+  });
+
+  test('itinerario-sobreposicao-dita', async ({ page, request }) => {
+    const seed1 = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.6, lng: -58.4 });
+    const seed2 = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.55, lng: -58.46 });
+    const token = tokenFor(ITINERARIO_STAFF);
+    const v1 = await activateRecruitmentViaApi(request, seed1.patientId, seed1.serviceId);
+    const v2 = await activateRecruitmentViaApi(request, seed2.patientId, seed2.serviceId);
+    const w = insertTestWorker({ occupation: 'AT' });
+    try {
+      insertWJA({ workerId: w, jobPostingId: v1, funnelStage: 'QUICK_RESPONSE_TEAM' });
+      insertWJA({ workerId: w, jobPostingId: v2, funnelStage: 'QUICK_RESPONSE_TEAM' });
+      const itin1 = await readItineraryApi(request, seed1.patientId);
+      const itin2 = await readItineraryApi(request, seed2.patientId);
+      const slot1 = itin1.body.data?.services.find((s) => s.contractedServiceId === seed1.serviceId)?.slots[0]?.id;
+      const slot2 = itin2.body.data?.services.find((s) => s.contractedServiceId === seed2.serviceId)?.slots[0]?.id;
+      if (!slot1 || !slot2) throw new Error('itinerario-sobreposicao-dita: slot ausente na semente');
+
+      // A alocação "de fora" pela API da Fase 11: W passa a atender o 2º paciente no mesmo horário.
+      const outside = await allocateApi(request, token, seed2.patientId, seed2.serviceId, slot2, { workerId: w });
+      expect(outside.status).toBe(201);
+
+      const opts = await allocationOptionsApi(request, token, seed1.patientId, seed1.serviceId);
+      const wLabel = (opts.body.data as OptionsData | undefined)?.options.find((o) => o.workerId === w)?.displayName;
+      if (!wLabel) throw new Error('itinerario-sobreposicao-dita: W sem displayName nas opções');
+
+      await loginAs(page, STAFF);
+      await openItineraryTab(page, seed1.patientId);
+      await expect(slotAllocationsInDom(page, slot1)).toHaveCount(0);
+      const domBefore = await countSlotAllocationsInDom(page, slot1);
+
+      await page.getByTestId(`itinerario-slot-asignar-${slot1}`).click();
+      const modal = page.getByTestId('itinerario-alocar-modal');
+      await expect(modal).toBeVisible();
+      await modal.getByTestId('itinerario-alocar-prestador').click();
+      await modal.getByRole('textbox').click();
+      await page.keyboard.type(wLabel.slice(-10), { delay: 20 });
+      await modal.getByRole('option', { name: wLabel }).click();
+      const [postResp] = await Promise.all([
+        page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith(`/slots/${slot1}/allocations`)),
+        modal.getByTestId('itinerario-alocar-confirmar').click(),
+      ]);
+      expect(postResp.status()).toBe(409);
+      const body = (await postResp.json()) as OverlapBody;
+      expect(body.code).toBe('ITINERARY_OVERLAP');
+      if (!body.existing || !body.requested) throw new Error('itinerario-sobreposicao-dita: 409 sem existing/requested');
+      expect(body.minGapMinutes).not.toBeNull();
+
+      // A recusa é DITA: os 2 horários e a folga, todos lidos do corpo do 409.
+      const erro = page.getByTestId('itinerario-sobreposicao-erro');
+      await expect(erro).toBeVisible();
+      await expect(erro).toContainText(`${body.existing.startTime}-${body.existing.endTime}`);
+      await expect(erro).toContainText(`${body.requested.startTime}-${body.requested.endTime}`);
+      await expect(erro).toContainText(String(body.minGapMinutes));
+
+      // Nada nasceu: o DOM do slot continua vazio e W só tem a alocação do 2º paciente.
+      await expect(slotAllocationsInDom(page, slot1)).toHaveCount(0);
+      await expect(page.getByTestId(`itinerario-slot-asignar-${slot1}`)).toBeVisible();
+      const domAfter = await countSlotAllocationsInDom(page, slot1);
+      const activeOfW = countActiveAllocations(w);
+      expect(activeOfW).toBe(1);
+      console.log(
+        '[12.4]', outside.status, postResp.status(), body.code, body.sameAddress,
+        body.minGapMinutes !== null, domBefore, domAfter, activeOfW,
+      );
+    } finally {
+      cleanupItineraryWrite(seed1.patientId);
+      cleanupItineraryWrite(seed2.patientId);
+      cleanupWJAAndEncuadre(w, v1);
+      cleanupWJAAndEncuadre(w, v2);
+      cleanupTestWorker(w);
+      seed1.cleanup();
+      seed2.cleanup();
     }
   });
 });
