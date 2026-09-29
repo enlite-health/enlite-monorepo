@@ -67,6 +67,13 @@ describe('Serviço contratado — entidade própria (spec 013, bloco C) @integra
     workerId = worker.rows[0].id;
   });
 
+  /** A alocação antiga só nasce por SQL como dono desde a Fase 14 (a escrita saiu da API). */
+  const seedLegacyProvider = async (serviceId: string): Promise<{ id: string; country: string }> =>
+    (await pool.query<{ id: string; country: string }>(
+      "INSERT INTO contracted_service_providers (service_id, worker_id, weekly_hours, created_by, updated_by) VALUES ($1,$2,10,'e2e','e2e') RETURNING id, country",
+      [serviceId, workerId],
+    )).rows[0];
+
   afterAll(async () => {
     // job_postings referencia patients (NO ACTION) e contracted_service_id (RESTRICT) — sai
     // primeiro, ou o DELETE de patients aborta (mesma ordem do purge real, PatientTestFixtureService).
@@ -193,10 +200,7 @@ describe('Serviço contratado — entidade própria (spec 013, bloco C) @integra
     const svcId = svc.data.data.id as string;
     expect(svc.data.data.country).toBe('BR');
 
-    const { rows: [legacy] } = await pool.query<{ id: string; country: string }>(
-      "INSERT INTO contracted_service_providers (service_id, worker_id, weekly_hours, created_by, updated_by) VALUES ($1,$2,10,'e2e','e2e') RETURNING id, country",
-      [svcId, workerId],
-    );
+    const legacy = await seedLegacyProvider(svcId);
     expect(legacy.country).toBe('BR'); // worker é AR — country vem do serviço (trigger)
 
     const list = await api.get(`/api/admin/patients/${patientBR}/contracted-services`, asAdmin);
@@ -221,10 +225,7 @@ describe('Serviço contratado — entidade própria (spec 013, bloco C) @integra
     )).rows[0].id;
     const svc = await api.post(`/api/admin/patients/${testPatient}/contracted-services`, { serviceCode: 'AT', deviceTypeCodes: ['HOME'] }, asAdmin);
     const svcId = svc.data.data.id as string;
-    await pool.query(
-      "INSERT INTO contracted_service_providers (service_id, worker_id, weekly_hours, created_by, updated_by) VALUES ($1,$2,10,'e2e','e2e') RETURNING id, country",
-      [svcId, workerId],
-    );
+    await seedLegacyProvider(svcId);
 
     expect((await pool.query(`SELECT count(*)::int AS n FROM patient_contracted_services WHERE patient_id = $1`, [testPatient])).rows[0].n).toBe(1);
     expect((await pool.query(`SELECT count(*)::int AS n FROM contracted_service_devices WHERE service_id = $1`, [svcId])).rows[0].n).toBe(1);
