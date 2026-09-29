@@ -3344,9 +3344,15 @@
         "contactOfResponsible": "Contacto del responsable",
         "responsible": "Responsable",
         "dragHint": "Arrastrá una tarjeta para cambiar el estado del paciente.",
+        "suspensionExitDialog": {
+          "title": "Motivo de salida de Suspendido",
+          "body": "{{name}} va a pasar de Suspendido a {{target}}. Elegí el motivo de salida.",
+          "confirm": "Confirmar y mover"
+        },
         "moveErrorCodes": {
           "PATIENT_STATUS_TRANSITION_NOT_ALLOWED": "Ese cambio de estado no está permitido.",
           "ON_HOLD_REASON_REQUIRED": "Para poner en espera hace falta indicar el motivo.",
+          "SUSPENSION_EXIT_REASON_REQUIRED": "Hace falta indicar el motivo de salida de Suspendido.",
           "PATIENT_STATUS_NOT_READY": "No se puede mover: faltan datos obligatorios en la ficha.",
           "KANBAN_ACTIVATION_MOVED_TO_SERVICE": "Para activar, usá \"Activar reclutamiento\" en el servicio contratado de la ficha del paciente."
         },
@@ -4099,6 +4105,13 @@
         "INSURER": "Obra social",
         "OTHER": "Otro"
       },
+      "suspensionExitReasonOptions": {
+        "RESUMED_SERVICE": "Retomó el servicio (fin de vacaciones/internación)",
+        "FAMILY_REQUESTED": "La familia pidió retomar",
+        "NEEDS_NEW_WORKER": "Necesita nuevo prestador",
+        "WRONG_STATUS": "Estado cargado por error",
+        "OTHER": "Otro"
+      },
       "deviceTypeOptions": {
         "HOME": "Domiciliario",
         "SCHOOL": "Escolar",
@@ -4115,6 +4128,8 @@
         "noteRedacted": "No tenés permiso para ver la nota.",
         "transitionNotAllowed": "Transición no permitida: {{from}} → {{to}}",
         "reasonRequired": "Indicá el motivo de la espera",
+        "suspensionExitReason": "Motivo de salida",
+        "suspensionExitReasonRequired": "Indicá el motivo de salida de Suspendido",
         "error": "No se pudo cambiar el estado",
         "sources": {
           "admin_panel": "Panel",
@@ -4130,6 +4145,8 @@
           "from": "De",
           "to": "A",
           "source": "Origen",
+          "reason": "Motivo",
+          "actor": "Autor",
           "error": "No se pudo cargar el historial"
         },
         "notReady": "No se puede pasar a {{status}}: falta {{items}}.",
