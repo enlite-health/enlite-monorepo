@@ -60,6 +60,9 @@ const NOT_SELECTED_ROW: ServiceTeamRows = {
 
 const ACTIVE_SLOT = { slotId: 'slot-1', active: true, addressId: 'addr-1' };
 
+/** Dublê da derivação do estado (cadeia Fase 15, DX-15.15): os casos da Fase 11 não medem a derivação. */
+const semDerivacao = { run: jest.fn(async () => 'unchanged' as const) };
+
 function pgError(code: string, extra: Record<string, unknown> = {}) {
   return Object.assign(new Error('db error'), { code, ...extra });
 }
@@ -68,7 +71,7 @@ describe('ItineraryAllocationUseCase.allocate', () => {
   it('slot null → SlotNotFoundError (404); 0 leitura do time', async () => {
     const reader: ItineraryAllocationReaderPort = { readWith: jest.fn() };
     const writer = writerStub({ findSlotForAllocation: jest.fn().mockResolvedValue(null) });
-    const useCase = new ItineraryAllocationUseCase(reader, writer, runInTransactionStub());
+    const useCase = new ItineraryAllocationUseCase(reader, writer, runInTransactionStub(), semDerivacao);
 
     await expect(
       useCase.allocate({ patientId: 'p-1', serviceId: 's-1', slotId: 'slot-1', workerId: 'w-1', actorUid: 'u-1' }),
@@ -83,7 +86,7 @@ describe('ItineraryAllocationUseCase.allocate', () => {
     const writer = writerStub({
       findSlotForAllocation: jest.fn().mockResolvedValue({ slotId: 'slot-1', active: true, addressId: null }),
     });
-    const useCase = new ItineraryAllocationUseCase(reader, writer, runInTransactionStub());
+    const useCase = new ItineraryAllocationUseCase(reader, writer, runInTransactionStub(), semDerivacao);
 
     await expect(
       useCase.allocate({ patientId: 'p-1', serviceId: 's-1', slotId: 'slot-1', workerId: 'w-1', actorUid: 'u-1' }),
@@ -97,7 +100,7 @@ describe('ItineraryAllocationUseCase.allocate', () => {
     const writer = writerStub({
       findSlotForAllocation: jest.fn().mockResolvedValue({ slotId: 'slot-1', active: false, addressId: 'addr-1' }),
     });
-    const useCase = new ItineraryAllocationUseCase(reader, writer, runInTransactionStub());
+    const useCase = new ItineraryAllocationUseCase(reader, writer, runInTransactionStub(), semDerivacao);
 
     await expect(
       useCase.allocate({ patientId: 'p-1', serviceId: 's-1', slotId: 'slot-1', workerId: 'w-1', actorUid: 'u-1' }),
@@ -109,7 +112,7 @@ describe('ItineraryAllocationUseCase.allocate', () => {
   it('serviço/paciente some entre o slot e o leitor → SlotNotFoundError (defensivo)', async () => {
     const reader: ItineraryAllocationReaderPort = { readWith: jest.fn().mockResolvedValue(null) };
     const writer = writerStub({ findSlotForAllocation: jest.fn().mockResolvedValue(ACTIVE_SLOT) });
-    const useCase = new ItineraryAllocationUseCase(reader, writer, runInTransactionStub());
+    const useCase = new ItineraryAllocationUseCase(reader, writer, runInTransactionStub(), semDerivacao);
 
     await expect(
       useCase.allocate({ patientId: 'p-1', serviceId: 's-1', slotId: 'slot-1', workerId: 'w-1', actorUid: 'u-1' }),
@@ -119,7 +122,7 @@ describe('ItineraryAllocationUseCase.allocate', () => {
   it('não elegível (fora de Selecionado e de Em Atendimento+candidato) → NotSelectedForServiceError; 0 insert', async () => {
     const reader: ItineraryAllocationReaderPort = { readWith: jest.fn().mockResolvedValue(NOT_SELECTED_ROW) };
     const writer = writerStub({ findSlotForAllocation: jest.fn().mockResolvedValue(ACTIVE_SLOT) });
-    const useCase = new ItineraryAllocationUseCase(reader, writer, runInTransactionStub());
+    const useCase = new ItineraryAllocationUseCase(reader, writer, runInTransactionStub(), semDerivacao);
 
     await expect(
       useCase.allocate({ patientId: 'p-1', serviceId: 's-1', slotId: 'slot-1', workerId: 'w-1', actorUid: 'u-1' }),
@@ -134,7 +137,7 @@ describe('ItineraryAllocationUseCase.allocate', () => {
       findSlotForAllocation: jest.fn().mockResolvedValue(ACTIVE_SLOT),
       findApplicationId: jest.fn().mockResolvedValue(null),
     });
-    const useCase = new ItineraryAllocationUseCase(reader, writer, runInTransactionStub());
+    const useCase = new ItineraryAllocationUseCase(reader, writer, runInTransactionStub(), semDerivacao);
 
     await expect(
       useCase.allocate({ patientId: 'p-1', serviceId: 's-1', slotId: 'slot-1', workerId: 'w-1', actorUid: 'u-1' }),
@@ -147,7 +150,7 @@ describe('ItineraryAllocationUseCase.allocate', () => {
     const row: ServiceTeamRows = { ...SELECTED_ROW, liveVacancyId: null };
     const reader: ItineraryAllocationReaderPort = { readWith: jest.fn().mockResolvedValue(row) };
     const writer = writerStub({ findSlotForAllocation: jest.fn().mockResolvedValue(ACTIVE_SLOT) });
-    const useCase = new ItineraryAllocationUseCase(reader, writer, runInTransactionStub());
+    const useCase = new ItineraryAllocationUseCase(reader, writer, runInTransactionStub(), semDerivacao);
 
     await expect(
       useCase.allocate({ patientId: 'p-1', serviceId: 's-1', slotId: 'slot-1', workerId: 'w-1', actorUid: 'u-1' }),
@@ -175,7 +178,7 @@ describe('ItineraryAllocationUseCase.allocate', () => {
       findApplicationId: jest.fn().mockResolvedValue('wja-1'),
       insertAllocation: jest.fn().mockRejectedValue(pgError('23P01', { message: 'itinerary_overlap', detail })),
     });
-    const useCase = new ItineraryAllocationUseCase(reader, writer, runInTransactionStub());
+    const useCase = new ItineraryAllocationUseCase(reader, writer, runInTransactionStub(), semDerivacao);
 
     const err = await useCase
       .allocate({ patientId: 'p-1', serviceId: 's-1', slotId: 'slot-1', workerId: 'w-1', actorUid: 'u-1' })
@@ -193,7 +196,7 @@ describe('ItineraryAllocationUseCase.allocate', () => {
       findApplicationId: jest.fn().mockResolvedValue('wja-1'),
       insertAllocation: jest.fn().mockRejectedValue(pgError('23505', { constraint: 'uq_pia_open_pair' })),
     });
-    const useCase = new ItineraryAllocationUseCase(reader, writer, runInTransactionStub());
+    const useCase = new ItineraryAllocationUseCase(reader, writer, runInTransactionStub(), semDerivacao);
 
     await expect(
       useCase.allocate({ patientId: 'p-1', serviceId: 's-1', slotId: 'slot-1', workerId: 'w-1', actorUid: 'u-1' }),
@@ -208,7 +211,7 @@ describe('ItineraryAllocationUseCase.allocate', () => {
       findApplicationId: jest.fn().mockResolvedValue('wja-1'),
       insertAllocation: jest.fn().mockRejectedValue(original),
     });
-    const useCase = new ItineraryAllocationUseCase(reader, writer, runInTransactionStub());
+    const useCase = new ItineraryAllocationUseCase(reader, writer, runInTransactionStub(), semDerivacao);
 
     const err = await useCase
       .allocate({ patientId: 'p-1', serviceId: 's-1', slotId: 'slot-1', workerId: 'w-1', actorUid: 'u-1' })
@@ -224,7 +227,7 @@ describe('ItineraryAllocationUseCase.allocate', () => {
       findApplicationId: jest.fn().mockResolvedValue('wja-1'),
       insertAllocation: jest.fn().mockResolvedValue({ id: 'alloc-1', validFrom: '2026-09-28' }),
     });
-    const useCase = new ItineraryAllocationUseCase(reader, writer, runInTransactionStub());
+    const useCase = new ItineraryAllocationUseCase(reader, writer, runInTransactionStub(), semDerivacao);
     // meio-dia em Buenos Aires (America/Argentina/Buenos_Aires, UTC-3) — sem ambiguidade de fuso.
     const now = new Date('2026-09-28T15:00:00Z');
 
@@ -256,7 +259,7 @@ describe('ItineraryAllocationUseCase.end', () => {
   it('alocação inexistente → AllocationNotFoundError (404)', async () => {
     const reader: ItineraryAllocationReaderPort = { readWith: jest.fn() };
     const writer = writerStub({ findAllocation: jest.fn().mockResolvedValue(null) });
-    const useCase = new ItineraryAllocationUseCase(reader, writer, runInTransactionStub());
+    const useCase = new ItineraryAllocationUseCase(reader, writer, runInTransactionStub(), semDerivacao);
 
     await expect(
       useCase.end({ patientId: 'p-1', serviceId: 's-1', allocationId: 'alloc-1', actorUid: 'u-1' }),
@@ -270,7 +273,7 @@ describe('ItineraryAllocationUseCase.end', () => {
     const writer = writerStub({
       findAllocation: jest.fn().mockResolvedValue({ id: 'alloc-1', status: 'ENDED', validFrom: '2026-01-01' }),
     });
-    const useCase = new ItineraryAllocationUseCase(reader, writer, runInTransactionStub());
+    const useCase = new ItineraryAllocationUseCase(reader, writer, runInTransactionStub(), semDerivacao);
 
     await expect(
       useCase.end({ patientId: 'p-1', serviceId: 's-1', allocationId: 'alloc-1', actorUid: 'u-1' }),
@@ -286,7 +289,7 @@ describe('ItineraryAllocationUseCase.end', () => {
       findAllocation: jest.fn().mockResolvedValue({ id: 'alloc-1', status: 'ACTIVE', validFrom: '2026-09-01' }),
       endAllocation: jest.fn().mockResolvedValue(1),
     });
-    const useCase = new ItineraryAllocationUseCase(reader, writer, runInTransactionStub());
+    const useCase = new ItineraryAllocationUseCase(reader, writer, runInTransactionStub(), semDerivacao);
     const now = new Date('2026-09-28T15:00:00Z');
 
     const result = await useCase.end({ patientId: 'p-1', serviceId: 's-1', allocationId: 'alloc-1', actorUid: 'u-1', now });
@@ -304,7 +307,7 @@ describe('ItineraryAllocationUseCase.end', () => {
       findAllocation: jest.fn().mockResolvedValue({ id: 'alloc-1', status: 'ACTIVE', validFrom: '2026-09-01' }),
       endAllocation: jest.fn().mockResolvedValue(0),
     });
-    const useCase = new ItineraryAllocationUseCase(reader, writer, runInTransactionStub());
+    const useCase = new ItineraryAllocationUseCase(reader, writer, runInTransactionStub(), semDerivacao);
 
     await expect(
       useCase.end({ patientId: 'p-1', serviceId: 's-1', allocationId: 'alloc-1', actorUid: 'u-1' }),
@@ -316,12 +319,83 @@ describe('ItineraryAllocationUseCase.end', () => {
     const writer = writerStub({
       findAllocation: jest.fn().mockResolvedValue({ id: 'alloc-1', status: 'ACTIVE', validFrom: '2026-09-01' }),
     });
-    const useCase = new ItineraryAllocationUseCase(reader, writer, runInTransactionStub());
+    const useCase = new ItineraryAllocationUseCase(reader, writer, runInTransactionStub(), semDerivacao);
 
     await expect(
       useCase.end({ patientId: 'p-1', serviceId: 's-1', allocationId: 'alloc-1', actorUid: 'u-1' }),
     ).rejects.toThrow(AllocationNotFoundError);
 
     expect(writer.endAllocation).not.toHaveBeenCalled();
+  });
+});
+
+describe('ItineraryAllocationUseCase — a derivação do estado do paciente (cadeia Fase 15)', () => {
+  const ALLOC_INPUT = { patientId: 'p-1', serviceId: 's-1', slotId: 'slot-1', workerId: 'w-1', actorUid: 'u-1' };
+  const END_INPUT = { patientId: 'p-1', serviceId: 's-1', allocationId: 'alloc-1', actorUid: 'u-1' };
+  const derivacao = () => ({ run: jest.fn(async () => 'moved' as const) });
+  const writerFeliz = (overrides: Partial<ItineraryAllocationWriterPort> = {}) => writerStub({
+    findSlotForAllocation: jest.fn().mockResolvedValue(ACTIVE_SLOT),
+    findApplicationId: jest.fn().mockResolvedValue('wja-1'),
+    insertAllocation: jest.fn().mockResolvedValue({ id: 'alloc-1', validFrom: '2026-09-28' }),
+    findAllocation: jest.fn().mockResolvedValue({ id: 'alloc-1', status: 'ACTIVE', validFrom: '2026-09-01' }),
+    endAllocation: jest.fn().mockResolvedValue(1),
+    ...overrides,
+  });
+
+  it('allocate: deriva 1× com o MESMO client do runInTransaction, o patientId e o now — DEPOIS do insertAllocation', async () => {
+    const reader: ItineraryAllocationReaderPort = { readWith: jest.fn().mockResolvedValue(SELECTED_ROW) };
+    const writer = writerFeliz();
+    const derivation = derivacao();
+    const now = new Date('2026-09-28T15:00:00Z');
+    await new ItineraryAllocationUseCase(reader, writer, runInTransactionStub(), derivation).allocate({ ...ALLOC_INPUT, now });
+
+    expect(derivation.run).toHaveBeenCalledTimes(1);
+    const [client, patientId, quando] = derivation.run.mock.calls[0] as unknown as [unknown, string, Date];
+    expect(client).toBe(FAKE_CLIENT);
+    expect(patientId).toBe('p-1');
+    expect(quando).toBe(now);
+    expect((writer.insertAllocation as jest.Mock).mock.invocationCallOrder[0]).toBeLessThan(derivation.run.mock.invocationCallOrder[0]);
+  });
+
+  it('allocate: insert falha (23P01 / 23505 do par aberto) → a derivação não roda', async () => {
+    for (const erro of [pgError('23P01', { message: 'itinerary_overlap', detail: '{}' }), pgError('23505', { constraint: 'uq_pia_open_pair' })]) {
+      const reader: ItineraryAllocationReaderPort = { readWith: jest.fn().mockResolvedValue(SELECTED_ROW) };
+      const derivation = derivacao();
+      const writer = writerFeliz({ insertAllocation: jest.fn().mockRejectedValue(erro) });
+      await expect(new ItineraryAllocationUseCase(reader, writer, runInTransactionStub(), derivation).allocate(ALLOC_INPUT)).rejects.toBeDefined();
+      expect(derivation.run).not.toHaveBeenCalled();
+    }
+  });
+
+  it('allocate: erro de banco DA derivação sai CRU (não vira AlreadyAllocatedInSlotError) — ela está fora do try do insert', async () => {
+    const reader: ItineraryAllocationReaderPort = { readWith: jest.fn().mockResolvedValue(SELECTED_ROW) };
+    const original = pgError('23505', { constraint: 'uq_pia_open_pair' });
+    const derivation = { run: jest.fn(async () => { throw original; }) };
+    const err = await new ItineraryAllocationUseCase(reader, writerFeliz(), runInTransactionStub(), derivation)
+      .allocate(ALLOC_INPUT)
+      .catch((e) => e);
+    expect(err).toBe(original);
+    expect(err).not.toBeInstanceOf(AlreadyAllocatedInSlotError);
+  });
+
+  it('end: deriva 1× com o MESMO client, o patientId e o now — DEPOIS do endAllocation', async () => {
+    const reader: ItineraryAllocationReaderPort = { readWith: jest.fn().mockResolvedValue(SELECTED_ROW) };
+    const writer = writerFeliz();
+    const derivation = derivacao();
+    const now = new Date('2026-09-28T15:00:00Z');
+    await new ItineraryAllocationUseCase(reader, writer, runInTransactionStub(), derivation).end({ ...END_INPUT, now });
+
+    expect(derivation.run).toHaveBeenCalledTimes(1);
+    expect(derivation.run.mock.calls[0]).toEqual([FAKE_CLIENT, 'p-1', now]);
+    expect((derivation.run.mock.calls[0] as unknown[])[0]).toBe(FAKE_CLIENT);
+    expect((writer.endAllocation as jest.Mock).mock.invocationCallOrder[0]).toBeLessThan(derivation.run.mock.invocationCallOrder[0]);
+  });
+
+  it('end: rowCount 0 (corrida) → a derivação não roda', async () => {
+    const reader: ItineraryAllocationReaderPort = { readWith: jest.fn().mockResolvedValue(SELECTED_ROW) };
+    const derivation = derivacao();
+    const writer = writerFeliz({ endAllocation: jest.fn().mockResolvedValue(0) });
+    await expect(new ItineraryAllocationUseCase(reader, writer, runInTransactionStub(), derivation).end(END_INPUT)).rejects.toThrow(AllocationNotActiveError);
+    expect(derivation.run).not.toHaveBeenCalled();
   });
 });
