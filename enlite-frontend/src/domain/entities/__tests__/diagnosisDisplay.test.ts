@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { sortDiagnosesForCard } from '../diagnosisDisplay';
+import { sortDiagnosesForCard, diagnosisDisplayState } from '../diagnosisDisplay';
 import type { PatientDiagnosisDetail } from '../PatientDetail';
 
 function d(over: Partial<PatientDiagnosisDetail>): PatientDiagnosisDetail {
@@ -61,5 +61,48 @@ describe('sortDiagnosesForCard', () => {
     const input = [d({ id: 'a' })];
     sortDiagnosesForCard(input);
     expect(input).toHaveLength(1);
+  });
+});
+
+// ── diagnosisDisplayState ───────────────────────────────────────────────────
+// Os três estados existem porque colapsá-los faz a tela MENTIR sobre o paciente:
+// "não consegui ler" virando "não tem diagnóstico" é o defeito que isto impede.
+describe('diagnosisDisplayState', () => {
+  const dx = (over: Partial<PatientDiagnosisDetail> = {}): PatientDiagnosisDetail => ({
+    id: 'dx-1',
+    uri: 'http://id.who.int/icd/entity/111111',
+    title: 'Hipertensión esencial',
+    isPrimary: true,
+    source: 'PANEL',
+    active: true,
+    ...over,
+  });
+
+  it('lista os ativos, principal primeiro', () => {
+    const state = diagnosisDisplayState(
+      [dx({ id: 'b', title: 'Asma', isPrimary: false }), dx({ id: 'a' })],
+      false,
+    );
+    expect(state.kind).toBe('list');
+    if (state.kind !== 'list') throw new Error('esperava list');
+    expect(state.diagnoses.map((d) => d.id)).toEqual(['a', 'b']);
+  });
+
+  it('array vazio é "empty"', () => {
+    expect(diagnosisDisplayState([], false).kind).toBe('empty');
+  });
+
+  it('null é "noPermission" — NUNCA "empty"', () => {
+    expect(diagnosisDisplayState(null, false).kind).toBe('noPermission');
+  });
+
+  it('unavailable tem precedência sobre tudo', () => {
+    expect(diagnosisDisplayState(null, true).kind).toBe('unavailable');
+    expect(diagnosisDisplayState([], true).kind).toBe('unavailable');
+    expect(diagnosisDisplayState([dx()], true).kind).toBe('unavailable');
+  });
+
+  it('diagnóstico inativo não aparece', () => {
+    expect(diagnosisDisplayState([dx({ active: false })], false).kind).toBe('empty');
   });
 });

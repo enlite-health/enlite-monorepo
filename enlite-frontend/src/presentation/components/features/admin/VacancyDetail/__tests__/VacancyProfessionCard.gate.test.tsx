@@ -9,7 +9,8 @@ vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => k
 const defaultProps = {
   profession: 'AT',
   requiredSex: 'F',
-  diagnosis: 'TEA',
+  diagnoses: [],
+  diagnosesUnavailable: false,
   talentumDescription: 'Se busca AT con experiencia en TEA.',
   ageRangeMin: 25,
   ageRangeMax: 45,
