@@ -1,12 +1,6 @@
 import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
-import { cellsOfRequest } from '@modules/identity/permissions';
-import { loadVacancyPatientDiagnoses } from '../../application/vacancyPatientDiagnoses';
-import { PatientDiagnosisService } from '@modules/diagnosis/application/PatientDiagnosisService';
-import { PostgresPatientDiagnosisRepository } from '@modules/diagnosis/infrastructure/PostgresPatientDiagnosisRepository';
-import { DiagnosisSource } from '@modules/diagnosis/domain/DiagnosisSource';
-import { createTerminologyPort } from '@modules/terminology/infrastructure/TerminologyPortFactory';
 
 /**
  * RecruitmentAnalyticsController
@@ -21,27 +15,9 @@ import { createTerminologyPort } from '@modules/terminology/infrastructure/Termi
  */
 export class RecruitmentAnalyticsController {
   private db: Pool;
-  /**
-   * Mesmo desenho C7 de `AdminPatientsController`/`VacanciesController`: construído SOB DEMANDA,
-   * nunca no construtor — `createTerminologyPort` lança síncrono quando `TERMINOLOGY_ADAPTER` é
-   * inválido, e isso não pode derrubar `new RecruitmentAnalyticsController()` no boot por causa de
-   * uma env var que só a busca de diagnóstico usa.
-   */
-  private readonly diagnosisServiceOverride: PatientDiagnosisService | undefined;
-  private diagnosisServiceMemo: PatientDiagnosisService | undefined;
 
-  constructor(diagnosisService?: PatientDiagnosisService) {
+  constructor() {
     this.db = DatabaseConnection.getInstance().getPool();
-    this.diagnosisServiceOverride = diagnosisService;
-  }
-
-  private getDiagnosisService(): PatientDiagnosisService {
-    if (this.diagnosisServiceOverride) return this.diagnosisServiceOverride;
-    this.diagnosisServiceMemo ??= new PatientDiagnosisService(
-      createTerminologyPort(process.env),
-      new PostgresPatientDiagnosisRepository(DiagnosisSource.PANEL),
-    );
-    return this.diagnosisServiceMemo;
   }
 
   /**
@@ -122,12 +98,6 @@ export class RecruitmentAnalyticsController {
    * GET /api/admin/recruitment/case/:caseNumber
    *
    * Retorna análise detalhada de um caso — pode incluir múltiplas vacantes (jp.*).
-   *
-   * ⚠️ Irmã de `VacanciesController.getVacancyById` (C1 do veredito do `lex`): a `caseQuery`
-   * PRINCIPAL não toca texto clínico livre — guarda de regressão em
-   * `__tests__/diagnosticoForaDaVaga.test.ts`. O CID-11 estruturado (`diagnoses[]`/
-   * `diagnosesUnavailable`, dentro de `caseInfo`) chega por uma SEGUNDA chamada, separada —
-   * `loadVacancyPatientDiagnoses` — sob `patient_clinical:read`, a mesma célula de `dependency_level`.
    */
   async getCaseAnalysis(req: Request, res: Response): Promise<void> {
     try {
@@ -218,19 +188,8 @@ export class RecruitmentAnalyticsController {
         return;
       }
 
-      // CID-11 estruturado: SEGUNDA chamada, fora da `caseQuery` principal (ver JSDoc do método
-      // acima). `patient_id` vem de `jp.*` — não da tabela `patients` (a allow-list de `p.` desta
-      // rota não muda). Caso sem paciente vinculado → `[]`, nunca indisponível.
-      const cells = cellsOfRequest(req);
-      const { diagnoses, diagnosesUnavailable } = await loadVacancyPatientDiagnoses(
-        this.getDiagnosisService(),
-        (caseData.rows[0].patient_id as string | null | undefined) ?? null,
-        cells,
-        'RecruitmentAnalyticsController:getCaseAnalysis:diagnoses',
-      );
-
       const analysis = {
-        caseInfo: { ...caseData.rows[0], diagnoses, diagnosesUnavailable },
+        caseInfo: caseData.rows[0],
         publicationsByChannel: publications.rows.map(row => ({
           channel: row.channel || 'Desconocido',
           count: parseInt(row.count),
