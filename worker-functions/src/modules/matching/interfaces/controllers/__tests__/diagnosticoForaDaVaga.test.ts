@@ -26,6 +26,7 @@ jest.mock('@shared/database/DatabaseConnection', () => ({
 import { Request, Response } from 'express';
 import { VacanciesController } from '../VacanciesController';
 import { RecruitmentAnalyticsController } from '../RecruitmentAnalyticsController';
+import { buildListVacanciesQuery } from '../vacancyListHelpers';
 import { TEXTO_CLINICO, esperaSemVazamentoClinico } from '../../../__tests__/guardaVazamentoClinico';
 
 /**
@@ -223,5 +224,33 @@ describe('C1 — o diagnóstico do paciente não é sequer BUSCADO', () => {
     expect(colunasDePacientes()).toEqual(
       new Set(['first_name', 'last_name', 'dependency_level', 'zone_neighborhood', 'id']),
     );
+  });
+
+  /**
+   * A ROTA DE LISTA (`GET /api/admin/vacancies`) é o 3º ponto que embute o paciente — e o único
+   * que NÃO passa pelo bulkhead de `loadVacancyPatientDiagnoses` (ela não lista diagnóstico
+   * nenhum hoje). `buildListVacanciesQuery` já é allow-list explícita de `p.` (só
+   * `zone_neighborhood`/`first_name`/`last_name`, usados na busca por nome — D286 lex P5) e por
+   * isso NÃO vaza — mas é função pura sem mock de banco, então a guarda aqui é direto sobre a
+   * STRING da query, no mesmo molde de `colunasDePacientes()` acima: um `p.*`/`to_jsonb(p)`
+   * futuro (ou uma coluna nova adicionada sem allow-list) passaria mudo se a régua fosse só sobre
+   * a resposta.
+   */
+  it('🔴 lista de vagas (buildListVacanciesQuery): a allow-list de `p.` continua fechada — um `p.*` futuro não passaria mudo', () => {
+    const { baseQuery } = buildListVacanciesQuery({ search: 'qualquer', limit: '10', offset: '0' });
+    const colunasDaLista = new Set([...baseQuery.matchAll(/\bp\.([a-z_]+)/gi)].map((m) => m[1]));
+
+    // Positivo: apagar o SELECT/filtro por nome reprova aqui.
+    expect(baseQuery).toMatch(/p\.zone_neighborhood as patient_zone/);
+    expect(baseQuery).toMatch(/p\.first_name as patient_first_name/);
+
+    // Nenhuma projeção anônima sobre `patients` — a mesma classe de furo do `p.*`/`to_jsonb(p)`
+    // que `colunasDePacientes()` já guarda nas duas rotas de detalhe.
+    expect(baseQuery).not.toMatch(/to_jsonb\s*\(\s*p\b|row_to_json\s*\(\s*p\b|\bp\.\*/i);
+    // Conjunto EXATO — `id` vem só do `LEFT JOIN patients p ON jp.patient_id = p.id` (mesmo
+    // artefato do JOIN que `colunasDePacientes()` acima também inclui), não de uma coluna
+    // projetada nova. Fora ele, a lista de hoje não precisa de mais nada do paciente além das
+    // 3 usadas para exibir/buscar por nome e zona.
+    expect(colunasDaLista).toEqual(new Set(['zone_neighborhood', 'first_name', 'last_name', 'id']));
   });
 });
