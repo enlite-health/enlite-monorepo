@@ -218,4 +218,33 @@ describe('PatientStatusControl', () => {
     expect(ring!.className).toMatch(/focus-within:ring-2/);
     expect(ring!.className).toMatch(/focus-within:ring-primary/);
   });
+
+  // ── Saída de SUSPENDED com motivo (decisão do Gabriel 29/09/2026, migration 486) ──────────────
+  it('SUSPENDED → outro estado abre o select de motivo de saída (obrigatório); Guardar travado sem motivo; envia suspensionExitReason', async () => {
+    const onSaved = vi.fn();
+    render(<PatientStatusControl patient={{ ...active, status: 'SUSPENDED' }} onSaved={onSaved} />);
+    fireEvent.change(screen.getByTestId('patient-status-select'), { target: { value: 'SEARCHING' } });
+    const exitReason = screen.getByTestId('patient-status-exit-reason') as HTMLSelectElement;
+    expect([...exitReason.options].map((o) => o.value)).toEqual(['', 'RESUMED_SERVICE', 'FAMILY_REQUESTED', 'NEEDS_NEW_WORKER', 'WRONG_STATUS', 'OTHER']);
+    expect(screen.getByTestId('patient-status-save')).toBeDisabled();
+    fireEvent.change(exitReason, { target: { value: 'RESUMED_SERVICE' } });
+    expect(screen.getByTestId('patient-status-save')).not.toBeDisabled();
+    fireEvent.click(screen.getByTestId('patient-status-save'));
+    await waitFor(() => expect(updatePatientStatus).toHaveBeenCalledWith(active.id, { status: 'SEARCHING', suspensionExitReason: 'RESUMED_SERVICE' }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalled());
+  });
+
+  it('SUSPENDED sem sair (reenviar o mesmo estado) NÃO abre o select de motivo', () => {
+    render(<PatientStatusControl patient={{ ...active, status: 'SUSPENDED' }} onSaved={vi.fn()} />);
+    expect(screen.queryByTestId('patient-status-exit-reason')).not.toBeInTheDocument();
+  });
+
+  it('422 SUSPENSION_EXIT_REASON_REQUIRED → mensagem própria', async () => {
+    updatePatientStatus.mockRejectedValueOnce(new PatientApiError('nope', 422, { code: 'SUSPENSION_EXIT_REASON_REQUIRED' }));
+    render(<PatientStatusControl patient={{ ...active, status: 'SUSPENDED' }} onSaved={vi.fn()} />);
+    fireEvent.change(screen.getByTestId('patient-status-select'), { target: { value: 'REPLACEMENT' } });
+    fireEvent.change(screen.getByTestId('patient-status-exit-reason'), { target: { value: 'OTHER' } });
+    fireEvent.click(screen.getByTestId('patient-status-save'));
+    await waitFor(() => expect(screen.getByTestId('patient-status-error')).toHaveTextContent('Informe o motivo de saída de Suspenso'));
+  });
 });

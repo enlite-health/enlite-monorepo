@@ -28,7 +28,7 @@ jest.mock('firebase-functions', () => ({ logger: { info: jest.fn(), warn: jest.f
 
 import * as functions from 'firebase-functions';
 import { PatientService } from '../PatientService';
-import { PatientStatusTransitionError, OnHoldReasonRequiredError } from '../PatientStatusWriter';
+import { PatientStatusTransitionError, OnHoldReasonRequiredError, SuspensionExitReasonRequiredError } from '../PatientStatusWriter';
 
 const PID = '11111111-1111-4111-8111-111111111111';
 const calls = (): Array<{ sql: string; params?: unknown[] }> =>
@@ -276,5 +276,66 @@ describe('PatientService.moveStatus v2', () => {
     expect(c.some((x) => /patient_status_transitions/.test(x.sql))).toBe(true);
     expect(c.some((x) => /^UPDATE patients/.test(x.sql))).toBe(false);
     expect(c[c.length - 1].sql).toBe('ROLLBACK');
+  });
+
+  // ── Saída de SUSPENDED com motivo (migration 486, decisão do Gabriel 29/09/2026) ──────────────
+  describe('saída de SUSPENDED com motivo', () => {
+    it('SUSPENDED → SEARCHING sem motivo (admin_panel) → SuspensionExitReasonRequiredError, ROLLBACK, nenhum UPDATE', async () => {
+      db('SUSPENDED', [['SUSPENDED', 'SEARCHING']]);
+      await expect(service.moveStatus(PID, 'SEARCHING', { changeSource: 'admin_panel' })).rejects.toBeInstanceOf(SuspensionExitReasonRequiredError);
+      const c = calls();
+      expect(c.some((x) => /^UPDATE patients/.test(x.sql))).toBe(false);
+      expect(c[c.length - 1].sql).toBe('ROLLBACK');
+    });
+
+    it('SUSPENDED → REPLACEMENT sem motivo (kanban) → idem', async () => {
+      db('SUSPENDED', [['SUSPENDED', 'REPLACEMENT']]);
+      await expect(service.moveStatus(PID, 'REPLACEMENT', { changeSource: 'kanban' })).rejects.toBeInstanceOf(SuspensionExitReasonRequiredError);
+    });
+
+    it('SUSPENDED → SEARCHING com motivo: grava, set_config(app.status_reason) e set_config(app.actor_uid) na transação', async () => {
+      db('SUSPENDED', [['SUSPENDED', 'SEARCHING']]);
+      const r = await service.moveStatus(PID, 'SEARCHING', {
+        changeSource: 'admin_panel', suspensionExitReason: 'RESUMED_SERVICE', actorUid: 'uid-123',
+      });
+      expect(r).toEqual({ id: PID, status: 'SEARCHING' });
+      const c = calls();
+      expect(c.find((x) => /set_config\('app\.status_reason'/.test(x.sql))?.params).toEqual(['RESUMED_SERVICE']);
+      expect(c.find((x) => /set_config\('app\.actor_uid'/.test(x.sql))?.params).toEqual(['uid-123']);
+      expect(c.find((x) => /^UPDATE patients/.test(x.sql))).toBeDefined();
+    });
+
+    it('sem actorUid (chamada de sistema) → set_config(app.actor_uid) recebe string vazia (NULLIF vira NULL na history)', async () => {
+      db('SUSPENDED', [['SUSPENDED', 'ON_HOLD']]);
+      await service.moveStatus(PID, 'ON_HOLD', { changeSource: 'admin_panel', suspensionExitReason: 'OTHER', onHoldReason: 'SCHOOL' });
+      const c = calls();
+      expect(c.find((x) => /set_config\('app\.actor_uid'/.test(x.sql))?.params).toEqual(['']);
+    });
+
+    it('reenviar o MESMO status (SUSPENDED → SUSPENDED) não exige motivo', async () => {
+      db('SUSPENDED', []);
+      await expect(service.moveStatus(PID, 'SUSPENDED', { changeSource: 'admin_panel' })).resolves.toEqual({ id: PID, status: 'SUSPENDED' });
+    });
+
+    it('motivo mandado FORA da saída de SUSPENDED é ignorado na trilha (set_config(app.status_reason) vazio)', async () => {
+      db('ACTIVE', [['ACTIVE', 'ON_HOLD']]);
+      await service.moveStatus(PID, 'ON_HOLD', {
+        changeSource: 'admin_panel', onHoldReason: 'SCHOOL', suspensionExitReason: 'OTHER' as never,
+      });
+      const c = calls();
+      expect(c.find((x) => /set_config\('app\.status_reason'/.test(x.sql))?.params).toEqual(['']);
+    });
+
+    it('changeSource system nunca exige motivo, mesmo saindo de SUSPENDED (a derivação nunca chama isto hoje, mas a guarda não depende disso)', async () => {
+      db('SUSPENDED', [['SUSPENDED', 'ACTIVE']]);
+      await expect(service.moveStatus(PID, 'ACTIVE', { changeSource: 'system' })).resolves.toEqual({ id: PID, status: 'ACTIVE' });
+    });
+
+    it('a FSM é consultada ANTES da exigência de motivo — transição inexistente diz "não existe", não "falta motivo"', async () => {
+      db('SUSPENDED', []);
+      await expect(service.moveStatus(PID, 'SEARCHING', { changeSource: 'admin_panel' })).rejects.toMatchObject({
+        code: 'PATIENT_STATUS_TRANSITION_NOT_ALLOWED',
+      });
+    });
   });
 });

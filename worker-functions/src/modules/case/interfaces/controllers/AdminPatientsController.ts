@@ -34,6 +34,7 @@ import {
   PatientStatusTransitionError,
   OnHoldReasonRequiredError,
   PatientStatusNotReadyError,
+  SuspensionExitReasonRequiredError,
 } from '../../application/PatientStatusWriter';
 import { DeviceTypeUnknownError } from '../../infrastructure/PatientDeviceTypeRepository';
 import { InsuranceProviderUnknownError } from '../../infrastructure/PatientInsuranceVerifiedRepository';
@@ -268,8 +269,10 @@ export class AdminPatientsController {
       logger.info({ msg: 'patient_affiliate_id.write', uid: AuthMiddleware.getAuthContext(req)?.principal.id ?? null, patientId: id, section });
     }
     // Spec 018 PR-3 (lex #2b-8/#2c, molde do trecho acima): trilha de escrita de gênero/idiomas
-    // SEM VALOR — só os NOMES dos campos escritos (M1-1: uid não aparece na tela, mas fica na
-    // trilha, como affiliateId).
+    // SEM VALOR — só os NOMES dos campos escritos. O uid grava e é exibido na Historial (coluna
+    // Autor, D444) — aviso M1-1 aos colaboradores segue pendente (dono Gabriel/Marcel); cláusula
+    // (c) da política de staff access vale (proibido usar a trilha para avaliação de
+    // desempenho/disciplina/dimensionamento).
     {
       const bodyKeys = bodyResult.data as Record<string, unknown>;
       const genderOrLanguageFields = (['gender', 'languages'] as const).filter((f) => f in bodyKeys);
@@ -344,7 +347,7 @@ export class AdminPatientsController {
     }
 
     const { id } = paramsResult.data;
-    const { status, onHoldReason, onHoldNote, changeSource } = bodyResult.data;
+    const { status, onHoldReason, onHoldNote, changeSource, suspensionExitReason } = bodyResult.data;
 
     // A guarda dispara pela CHAVE PRESENTE, não pelo valor não-nulo: `onHoldNote: null` é
     // ESCRITA (apaga a nota) e a `patient_status_history` não guarda segunda cópia — barrar só
@@ -358,11 +361,17 @@ export class AdminPatientsController {
     }
 
     try {
+      // Autoria (decisão do Gabriel 29/09/2026): o uid do staff vai para a MESMA transação do
+      // PUT, mesmo molde de `updatePatientSection` acima. `undefined` quando o request não tem
+      // contexto de auth (chamada de sistema não passa por esta rota HTTP — só existe aqui).
+      const actorUid = AuthMiddleware.getAuthContext(req)?.principal.id;
       const result = await this.patientService.moveStatus(id, status as PatientStatus, {
         // Chave ausente → `undefined` → o serviço NÃO toca a coluna (ver MoveStatusOptions).
         onHoldNote: onHoldNoteInBody ? (onHoldNote ?? null) : undefined,
         onHoldReason: (onHoldReason ?? null) as import('../../domain/enums/OnHoldReason').OnHoldReason | null,
         changeSource: changeSource ?? 'admin_panel',
+        suspensionExitReason: suspensionExitReason as import('../../domain/enums/SuspensionExitReason').SuspensionExitReason | null | undefined,
+        actorUid,
       });
       res.status(200).json({ success: true, data: { id: result.id, status: result.status } });
     } catch (err: unknown) {
@@ -371,6 +380,10 @@ export class AdminPatientsController {
         return;
       }
       if (err instanceof OnHoldReasonRequiredError) {
+        res.status(422).json({ success: false, error: err.message, code: err.code });
+        return;
+      }
+      if (err instanceof SuspensionExitReasonRequiredError) {
         res.status(422).json({ success: false, error: err.message, code: err.code });
         return;
       }
@@ -401,8 +414,8 @@ export class AdminPatientsController {
 
   /**
    * GET /api/admin/patients/:id/status-history — a aba Historial (spec 012, US-B7).
-   * Quando / de → para / origem. SEM ator (lex C7.2) e SEM `on_hold_note` (C7.3): a tabela
-   * (254) não os tem, de propósito.
+   * Quando / de → para / origem / motivo / autor (migration 486, decisão do Gabriel 29/09/2026 —
+   * substitui o "sem quem" de C7.2). SEM `on_hold_note` (C7.3): a tabela nunca guarda texto clínico.
    */
   async getPatientStatusHistory(req: Request, res: Response): Promise<void> {
     const parsed = adminPatientParamsSchema.safeParse(req.params);
