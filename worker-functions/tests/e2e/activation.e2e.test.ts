@@ -17,7 +17,7 @@
  */
 import { Pool } from 'pg';
 import { createApiClient, waitForBackend } from './helpers';
-import { staffAuth } from './helpers/staffAuth';
+import { staffAuth, type StaffAuth } from './helpers/staffAuth';
 
 const DATABASE_URL = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL ?? '';
 const TAG = 'activation-e2e-%';
@@ -26,7 +26,7 @@ const HORARIO = '[{"dayOfWeek":1,"startTime":"08:00","endTime":"12:00"}]';
 describe('Ativação de recrutamento por serviço (spec 018, PR-6) @integration', () => {
   const api = createApiClient();
   let pool: Pool;
-  let asAdmin: { headers: { Authorization: string } };
+  let asAdmin: StaffAuth;
 
   async function criarPacienteDeFunil(opts: {
     tag: string;
@@ -42,8 +42,21 @@ describe('Ativação de recrutamento por serviço (spec 018, PR-6) @integration'
 
   beforeAll(async () => {
     await waitForBackend(api);
-    asAdmin = await staffAuth('activation-e2e-admin', 'admin');
     pool = new Pool({ connectionString: DATABASE_URL });
+    // O uid precisa existir em `users` por causa da FK de `job_posting_audit_log.actor_user_id`
+    // (mesma convenção de `vacancy-audit-log.e2e.test.ts`) — sem isto, `logEventSafe` (SAVEPOINT
+    // best-effort) engole a violação de FK em silêncio e a linha do audit nunca é gravada.
+    // Semeia DEPOIS de `staffAuth` resolver: com o emulador de pé, o uid EFETIVO é o
+    // localId do emulador (`asAdmin.uid`), não o literal pedido — semear o literal faz a FK
+    // aceitar um uid que ninguém apresenta, e a violação real (uid do token) é engolida em
+    // silêncio pelo SAVEPOINT best-effort acima.
+    asAdmin = await staffAuth('activation-e2e-admin', 'admin');
+    await pool.query(
+      `INSERT INTO users (firebase_uid, email, display_name, role)
+       VALUES ($1, $2, $3, 'admin')
+       ON CONFLICT (firebase_uid) DO NOTHING`,
+      [asAdmin.uid, 'activation-e2e-admin@e2e.local', 'Activation E2E Admin'],
+    );
     await pool.query(
       `DELETE FROM job_postings WHERE patient_id IN (SELECT id FROM patients WHERE clickup_task_id LIKE $1)`,
       [TAG],
@@ -113,6 +126,24 @@ describe('Ativação de recrutamento por serviço (spec 018, PR-6) @integration'
       `SELECT status FROM patients WHERE id = $1`, [patientId],
     );
     expect(patient.status).toBe('PENDING_ADMISSION');
+
+    // spec 029 — achado: o botão "ativar recrutamento" gravava `job_posting_audit_log` com
+    // `actor_type=SYSTEM`/`actor_user_id` NULO, mesmo com um operador humano (asAdmin) autenticado
+    // clicando. Prova por IGUALDADE com o uid que `staffAuth` produziu de verdade — não só
+    // "não nulo" — porque um `actor_user_id` de OUTRO uid também passaria num assert fraco.
+    const { rows: [audit] } = await pool.query<{
+      actor_user_id: string | null;
+      actor_type: string;
+      actor_label: string;
+    }>(
+      `SELECT actor_user_id, actor_type, actor_label FROM job_posting_audit_log
+        WHERE job_posting_id = $1 AND event_type = 'CREATED'`,
+      [r.data.data.vacancyId],
+    );
+    expect(audit).toBeDefined();
+    expect(audit.actor_user_id).toBe(asAdmin.uid);
+    expect(audit.actor_type).toBe('HUMAN');
+    expect(audit.actor_label).toBe('activate_recruitment');
   });
 
   it('ALTERNATIVO 1: POST /patients/:id/activate (rota antiga, paciente inteiro) → 410 Gone', async () => {
