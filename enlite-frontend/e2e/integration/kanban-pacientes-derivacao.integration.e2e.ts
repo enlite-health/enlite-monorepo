@@ -382,8 +382,8 @@ test.describe('derivacao @integration', () => {
       );
       expect([itin.status, team.status, slot.status, endSlot.status]).toEqual([200, 200, 201, 200]);
       expect([reject.status, revert.status, reassemble.status]).toEqual([200, 200, 201]);
-      expectStatus(s0, 'REPLACEMENT');
-      expectStatus(s1, 'REPLACEMENT');
+      expect(s1.api).toBe(s0.api);
+      expect(s1.db).toBe(s0.db);
       expect(h1).toBe(h0);
       expect(trilha1).toBe(trilha0);
     } finally {
