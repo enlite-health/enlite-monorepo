@@ -1,26 +1,31 @@
 /**
- * AiPromptController — leitura e escrita dos prompts de IA editáveis (spec 029, T012).
+ * AiPromptController — leitura e escrita dos prompts de IA editáveis (spec 029, T012/T019b).
  *
- * Cobre só os três manipuladores desta fase (contrato `contracts/admin-ai-prompts.md`):
- *   GET  /api/admin/ai-prompts        → `list`
- *   GET  /api/admin/ai-prompts/{slug} → `get`
- *   PUT  /api/admin/ai-prompts/{slug} → `update`
+ * Cobre quatro manipuladores (contrato `contracts/admin-ai-prompts.md`):
+ *   GET  /api/admin/ai-prompts             → `list`
+ *   GET  /api/admin/ai-prompts/{slug}      → `get`
+ *   PUT  /api/admin/ai-prompts/{slug}      → `update`
+ *   POST /api/admin/ai-prompts/{slug}/undo → `undo`
  *
- * As sub-rotas de desfazer a última alteração, restaurar uma versão arbitrária e pré-visualizar
- * são de fases posteriores (T019b e Fase 5) — não entram aqui.
+ * A sub-rota de restaurar uma versão arbitrária e a de pré-visualizar são de fases posteriores
+ * (Fase 4 e Fase 5) — não entram aqui.
  *
- * Zero lógica de negócio: `GetAiPromptUseCase` e `UpdateAiPromptUseCase` (T009/T010) já decidem
- * tudo. Este arquivo só faz HTTP — parse de entrada, checagem de célula, código de resposta.
+ * Zero lógica de negócio: `GetAiPromptUseCase`, `UpdateAiPromptUseCase` (T009/T010) e
+ * `UndoAiPromptUseCase` (T019b) já decidem tudo. Este arquivo só faz HTTP — parse de entrada,
+ * checagem de célula, código de resposta.
  *
  * 🔒 Célula (`ai_prompt:read`/`ai_prompt:update`), verificada AQUI, e não só na rota (T013): mesmo
  * padrão de `AdminTherapeuticProjectsController` (lex C7) — `cellsOfRequest(req)` +
  * `req.permissionCells`, nunca reimplementado. `cells === null` deixa passar (D113: engine ainda
  * não decidiu para esta família/rota — não é "sem célula nenhuma", que seria `[]`).
  *
+ * `undo` exige `ai_prompt:update` — a MESMA célula de quem salvou (contrato: "a mesma de quem
+ * salvou"), nunca `ai_prompt:restore` (essa é só da Fase 5, para o alvo arbitrário).
+ *
  * Slug fora do conjunto fechado (`AI_PROMPT_SLUGS`) é **404, nunca 400** — o contrato manda (o
  * recurso é que não existe). Por isso `get` delega a decisão inteira a `GetAiPromptUseCase.execute`
- * (que já colapsa "identificador desconhecido" e "sem linha" no mesmo `found:false`), e `update`
- * confere com `isAiPromptSlug` antes de chamar `UpdateAiPromptUseCase`, que exige o tipo estreito
+ * (que já colapsa "identificador desconhecido" e "sem linha" no mesmo `found:false`), e `update`/
+ * `undo` conferem com `isAiPromptSlug` antes de chamar o caso de uso, que exige o tipo estreito
  * `AiPromptSlug` e não aceita string crua.
  */
 
@@ -29,9 +34,10 @@ import { cellsOfRequest } from '@modules/identity/permissions';
 import { reportError, loggingAls } from '@shared/logging';
 import { GetAiPromptUseCase } from '../../application/GetAiPromptUseCase';
 import { UpdateAiPromptUseCase, type UpdateAiPromptActor } from '../../application/UpdateAiPromptUseCase';
+import { UndoAiPromptUseCase } from '../../application/UndoAiPromptUseCase';
 import type { AiPrompt } from '../../infrastructure/AiPromptRepository';
 import { isAiPromptSlug } from '../../domain/AiPromptSlug';
-import { updateAiPromptBodySchema } from '../validators/aiPromptSchemas';
+import { updateAiPromptBodySchema, undoAiPromptBodySchema } from '../validators/aiPromptSchemas';
 
 const AI_PROMPT_READ_CELL = 'ai_prompt:read';
 const AI_PROMPT_UPDATE_CELL = 'ai_prompt:update';
@@ -80,6 +86,7 @@ export class AiPromptController {
   constructor(
     private readonly getUseCase: GetAiPromptUseCase = new GetAiPromptUseCase(),
     private readonly updateUseCase: UpdateAiPromptUseCase = new UpdateAiPromptUseCase(),
+    private readonly undoUseCase: UndoAiPromptUseCase = new UndoAiPromptUseCase(),
   ) {}
 
   /** `GET /api/admin/ai-prompts` — os três registros, com conteúdo (sem paginação: cerimônia inútil). */
@@ -171,6 +178,61 @@ export class AiPromptController {
       const e = error instanceof Error ? error : new Error(String(error));
       reportError(e, { source: 'AiPromptController:update' });
       res.status(500).json({ success: false, error: 'Failed to update ai prompt' });
+    }
+  }
+
+  /**
+   * `POST /api/admin/ai-prompts/{slug}/undo` — desfaz a última alteração, um passo, sem alvo
+   * (T019b). Exige a MESMA célula de `update` (`ai_prompt:update`) — nunca `ai_prompt:restore`.
+   */
+  async undo(req: Request, res: Response): Promise<void> {
+    try {
+      const parsed = undoAiPromptBodySchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        res.status(400).json({ success: false, error: 'Invalid body', details: parsed.error.flatten() });
+        return;
+      }
+
+      if (!canUpdateAiPrompt(cellsOfRequest(req))) {
+        res.status(403).json({ success: false, error: 'Forbidden', details: { cell: AI_PROMPT_UPDATE_CELL } });
+        return;
+      }
+
+      const slugParam = req.params.slug;
+      if (!isAiPromptSlug(slugParam)) {
+        res.status(404).json({ success: false, error: 'ai_prompt_nao_encontrado' });
+        return;
+      }
+
+      const actor = actorFromRequest(req);
+      const result = await this.undoUseCase.execute(
+        { slug: slugParam, expectedVersion: parsed.data.version },
+        actor,
+      );
+
+      switch (result.outcome) {
+        case 'restored':
+          res.status(200).json({ data: toApiPrompt(result.prompt) });
+          return;
+        case 'not_found':
+          res.status(404).json({ success: false, error: 'ai_prompt_nao_encontrado' });
+          return;
+        case 'conflict':
+          res.status(409).json({
+            success: false,
+            error: 'version_conflict',
+            currentVersion: result.currentVersion,
+            updatedBy: result.updatedBy,
+          });
+          return;
+        case 'no_previous_version':
+          res.status(422).json({ success: false, error: 'sem_versao_anterior' });
+          return;
+      }
+    } catch (error: unknown) {
+      const e = error instanceof Error ? error : new Error(String(error));
+      reportError(e, { source: 'AiPromptController:undo' });
+      res.status(500).json({ success: false, error: 'Failed to undo ai prompt' });
     }
   }
 }

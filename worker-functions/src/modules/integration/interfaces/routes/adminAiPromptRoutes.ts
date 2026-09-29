@@ -1,12 +1,13 @@
 /**
- * adminAiPromptRoutes — /api/admin/ai-prompts/* (spec 029, T013)
+ * adminAiPromptRoutes — /api/admin/ai-prompts/* (spec 029, T013/T019b)
  *
- * Monta só os três manipuladores que `AiPromptController` (T012) já implementa nesta fase:
- *   GET  /ai-prompts        → list
- *   GET  /ai-prompts/{slug} → get
- *   PUT  /ai-prompts/{slug} → update
+ * Monta os quatro manipuladores que `AiPromptController` (T012/T019b) já implementa:
+ *   GET  /ai-prompts             → list
+ *   GET  /ai-prompts/{slug}      → get
+ *   PUT  /ai-prompts/{slug}      → update
+ *   POST /ai-prompts/{slug}/undo → undo
  *
- * `undo`, `restore` e `preview` são de fases posteriores (T019b / Fase 5) — não entram aqui.
+ * `restore` e `preview` são de fases posteriores (Fase 4 / Fase 5) — não entram aqui.
  *
  * Mesmo mecanismo de `adminIntegrationsRoutes.ts` (vizinho neste diretório, mesmo módulo
  * `integration`): reusa `ADMIN_INTEGRATIONS_FAMILY` — não há necessidade de família nova só para
@@ -59,6 +60,17 @@ export function createAdminAiPromptRoutes(
     staffOnly,
     perm.require('ai_prompt', 'update', { untilEnforced: 'admin' }),
     (req: Request, res: Response) => controller.update(req, res),
+  );
+
+  /**
+   * POST /api/admin/ai-prompts/{slug}/undo — desfaz a última alteração, um passo, sem alvo (T019b).
+   * MESMA célula de `update` (`ai_prompt:update`) — nunca `ai_prompt:restore`, que é da Fase 5.
+   */
+  router.post(
+    '/ai-prompts/:slug/undo',
+    staffOnly,
+    perm.require('ai_prompt', 'update', { untilEnforced: 'admin' }),
+    (req: Request, res: Response) => controller.undo(req, res),
   );
 
   return router;
