@@ -42,6 +42,7 @@ export function AdminWorkersPage(): JSX.Element {
   const [selectedValidationStatus, setSelectedValidationStatus] = useState('');
   const [selectedCaseId, setSelectedCaseId] = useState('');
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
+  const [showDeactivated, setShowDeactivated] = useState(false);
   const [tagOptions, setTagOptions] = useState<WorkerTag[]>([]);
   const [isTagsLoading, setIsTagsLoading] = useState(false);
   const [itemsPerPage, setItemsPerPage] = useState('20');
@@ -95,6 +96,7 @@ export function AdminWorkersPage(): JSX.Element {
   const handleItemsPerPageChange = (v: string) => { setItemsPerPage(v); setCurrentPage(1); };
   const handleCaseChange = (v: string) => { setSelectedCaseId(v); setCurrentPage(1); };
   const handleTagIdsChange = (ids: string[]) => { setSelectedTagIds(ids); setCurrentPage(1); };
+  const handleShowDeactivatedChange = (v: boolean) => { setShowDeactivated(v); setCurrentPage(1); };
   const handleProfileFiltersChange = useCallback((updates: Partial<WorkerProfileFilters>) => {
     setProfileFilters((prev) => ({ ...prev, ...updates }));
     setCurrentPage(1);
@@ -107,6 +109,9 @@ export function AdminWorkersPage(): JSX.Element {
       docs_validated: selectedValidationStatus as 'all_validated' | 'pending_validation' | undefined || undefined,
       case_id: selectedCaseId || undefined,
       tag_ids: selectedTagIds.length > 0 ? selectedTagIds.join(',') : undefined,
+      // Opt-in (D-2026-09-28): só manda o param quando marcado — ausente mantém o
+      // default do backend (exclui DISABLED), igual a hoje.
+      include_deactivated: showDeactivated ? 'true' : undefined,
       limit: itemsPerPage,
       offset: String((currentPage - 1) * parseInt(itemsPerPage)),
       // profile filters — omit when empty
@@ -122,7 +127,7 @@ export function AdminWorkersPage(): JSX.Element {
     }),
     [
       debouncedSearch, selectedDocsStatus, selectedValidationStatus,
-      selectedCaseId, selectedTagIds, itemsPerPage, currentPage,
+      selectedCaseId, selectedTagIds, showDeactivated, itemsPerPage, currentPage,
       profileFilters,
     ],
   );
@@ -170,6 +175,10 @@ export function AdminWorkersPage(): JSX.Element {
           documentsStatus: (row.documentsStatus ?? 'pending') as string,
           platform: (row.platform ?? '') as string,
           createdAt: (row.createdAt ?? '') as string,
+          // Checkbox "Mostrar desactivados" (D-2026-09-28): a tabela usa isto para
+          // o badge — o campo já sai da API (não é novo, `status` sempre existiu
+          // no payload da lista, só não era consumido pela tela até agora).
+          status: (row.status ?? '') as string,
         };
       }),
     [rawWorkers],
@@ -291,6 +300,8 @@ export function AdminWorkersPage(): JSX.Element {
           selectedTagIds={selectedTagIds}
           onTagIdsChange={handleTagIdsChange}
           isTagsLoading={isTagsLoading}
+          showDeactivated={showDeactivated}
+          onShowDeactivatedChange={handleShowDeactivatedChange}
           profileFilters={profileFilters}
           onProfileFiltersChange={handleProfileFiltersChange}
           stateOptions={stateOptions}

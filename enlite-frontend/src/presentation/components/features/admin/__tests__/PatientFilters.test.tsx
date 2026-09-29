@@ -28,6 +28,7 @@ function montar(over: Partial<React.ComponentProps<typeof PatientFilters>> = {})
     selectedSpecialty: '', onSpecialtyChange: vi.fn(),
     selectedDependency: '', onDependencyChange: vi.fn(),
     attentionOptions: [], reasonOptions: [], specialtyOptions: [{ value: 'NEUROLOGICAL', label: 'Neuro' }], dependencyOptions: [{ value: 'MILD', label: 'Leve' }],
+    showDeactivated: false, onShowDeactivatedChange: vi.fn(),
     ...over,
   };
   render(<PatientFilters {...props} />);
@@ -100,5 +101,31 @@ describe('PatientFilters — oráculo por célula', () => {
     expect(select.value).toBe('');
     fireEvent.change(select, { target: { value: 'BR' } });
     expect(props.onCountryChange).toHaveBeenCalledWith('BR');
+  });
+
+  // ── Checkbox "Mostrar desactivados" (D-2026-09-28) ─────────────────────────
+
+  it('checkbox "Mostrar desactivados" renderiza desmarcado por padrão e dispara onShowDeactivatedChange(true) ao clicar', () => {
+    const props = montar();
+    const checkboxWrapper = screen.getByTestId('filter-show-deactivated');
+    const input = checkboxWrapper.querySelector('input[type="checkbox"]') as HTMLInputElement;
+    expect(input).toBeInTheDocument();
+    expect(input.checked).toBe(false);
+
+    fireEvent.click(input);
+    expect(props.onShowDeactivatedChange).toHaveBeenCalledWith(true);
+  });
+
+  it('showDeactivated=true renderiza o checkbox marcado e conta como filtro ativo ("limpar" aparece, mesmo sem mais nada selecionado)', () => {
+    montar({ showDeactivated: true });
+    const input = screen.getByTestId('filter-show-deactivated').querySelector('input[type="checkbox"]') as HTMLInputElement;
+    expect(input.checked).toBe(true);
+    expect(screen.getByText('admin.patients.clearFilters')).toBeInTheDocument();
+  });
+
+  it('"limpar" com showDeactivated=true também chama onShowDeactivatedChange(false)', () => {
+    const props = montar({ showDeactivated: true });
+    fireEvent.click(screen.getByText('admin.patients.clearFilters'));
+    expect(props.onShowDeactivatedChange).toHaveBeenCalledWith(false);
   });
 });

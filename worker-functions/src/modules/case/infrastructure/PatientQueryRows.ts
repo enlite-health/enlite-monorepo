@@ -235,6 +235,12 @@ export interface PatientListRow {
   caseNumber: number | null;
   createdAt: Date;
   updatedAt: Date;
+  /**
+   * Soft-delete (checkbox "Mostrar desactivados", D-2026-09-28). `null` = paciente ativo.
+   * A lista só devolve linhas com isto preenchido quando `include_deactivated=true` foi
+   * pedido — o WHERE de `list()` continua excluindo por default (Kanban incluso).
+   */
+  deletedAt: Date | null;
   // ── SLA de inatividade (Fase 4, aditivo) ─────────────────────────────────
   /** Instante em que o paciente entrou no status atual (ISO), ou null. */
   stageEnteredAt: string | null;

@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { Search, X } from 'lucide-react';
 import { Select, SelectOption } from '@presentation/components/atoms/Select';
+import { Checkbox } from '@presentation/components/atoms/Checkbox';
 import { SearchableSelect, SearchableSelectOption } from '@presentation/components/molecules/SearchableSelect/SearchableSelect';
 import { WorkerTagMultiSelect } from './WorkerTagMultiSelect';
 import { AdminWorkerProfileFilters } from './AdminWorkerProfileFilters';
@@ -33,6 +34,9 @@ interface WorkerFiltersProps {
   cityOptions: SelectOption[];
   experienceTypeOptions: SelectOption[];
   preferredTypeOptions: SelectOption[];
+  /** Checkbox "Mostrar desactivados" (D-2026-09-28). */
+  showDeactivated: boolean;
+  onShowDeactivatedChange: (value: boolean) => void;
 }
 
 export function WorkerFilters({
@@ -58,6 +62,8 @@ export function WorkerFilters({
   cityOptions,
   experienceTypeOptions,
   preferredTypeOptions,
+  showDeactivated,
+  onShowDeactivatedChange,
 }: WorkerFiltersProps): JSX.Element {
   const { t } = useTranslation();
 
@@ -78,7 +84,8 @@ export function WorkerFilters({
     selectedValidationStatus ||
     selectedCaseId ||
     selectedTagIds.length > 0 ||
-    hasProfileFilter;
+    hasProfileFilter ||
+    showDeactivated;
 
   const handleClearAll = () => {
     onSearchChange('');
@@ -86,6 +93,7 @@ export function WorkerFilters({
     onValidationStatusChange('');
     onCaseChange('');
     onTagIdsChange([]);
+    onShowDeactivatedChange(false);
     onProfileFiltersChange({
       profession: '',
       preferredAgeRange: '',
@@ -173,6 +181,16 @@ export function WorkerFilters({
             selectedIds={selectedTagIds}
             onChange={onTagIdsChange}
             disabled={isTagsLoading}
+          />
+        </div>
+
+        {/* Checkbox "Mostrar desactivados" (D-2026-09-28) */}
+        <div className="flex items-center h-[42px]" data-testid="filter-show-deactivated">
+          <Checkbox
+            id="filter-show-deactivated-input"
+            label={t('admin.workers.filters.showDeactivated')}
+            checked={showDeactivated}
+            onChange={(e) => onShowDeactivatedChange(e.target.checked)}
           />
         </div>
 

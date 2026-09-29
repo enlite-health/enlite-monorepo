@@ -47,6 +47,7 @@ export function useWorkersData(filters?: WorkerListFilters) {
     filters?.search,
     filters?.case_id,
     filters?.tag_ids,
+    filters?.include_deactivated,
     filters?.limit,
     filters?.offset,
     filters?.profession,

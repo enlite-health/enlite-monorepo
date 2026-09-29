@@ -56,6 +56,10 @@ function toAdminPatientListItemRaw(row: PatientListRow) {
     caseNumber: row.caseNumber,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
+    // Checkbox "Mostrar desactivados" (D-2026-09-28): lifecycle metadata igual a
+    // `status`/`caseNumber` acima — não é PII nem clínico, então não entra em
+    // nenhum container do LIST_FIELDS (patientContainerAccess.ts); sempre visível.
+    deletedAt: row.deletedAt ?? null,
     // SLA de inatividade (Fase 4) — o kanban lê isto. Aditivo.
     stageEnteredAt: row.stageEnteredAt ?? null,
     hoursInStage: row.hoursInStage ?? null,
