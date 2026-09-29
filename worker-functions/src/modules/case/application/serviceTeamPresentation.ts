@@ -92,6 +92,7 @@ function toMember(
     substitutionDates?: string[];
   },
   displayNameByWorkerId: Map<string, string | null>,
+  occupationByWorkerId: Map<string, string | null>,
 ): ServiceTeamMember {
   return {
     workerId: entry.workerId,
@@ -99,7 +100,20 @@ function toMember(
     vacancyId: entry.vacancyId,
     ...(entry.allocations ? { allocations: entry.allocations } : {}),
     ...(entry.substitutionDates ? { substitutionDates: entry.substitutionDates } : {}),
+    ...(occupationByWorkerId.has(entry.workerId) ? { occupation: occupationByWorkerId.get(entry.workerId) ?? null } : {}),
   };
+}
+
+/**
+ * `workerId → occupation` só de `row.candidacies` (D445, rodada 2) — é de lá que `selected` sai
+ * (`deriveServiceTeam`), e é coluna PLANA (sem KMS, sem célula — `worker:read`, nível base).
+ */
+function occupationMap(row: Pick<ServiceTeamRows, 'candidacies'>): Map<string, string | null> {
+  const map = new Map<string, string | null>();
+  for (const c of row.candidacies) {
+    if (!map.has(c.workerId)) map.set(c.workerId, c.occupation ?? null);
+  }
+  return map;
 }
 
 /**
@@ -110,16 +124,17 @@ function toMember(
  * do `team` — a MESMA data já calculada em `deriveServiceTeamFromRows`, nunca recalculada aqui.
  */
 export function buildServiceTeamResult(
-  row: Pick<ServiceTeamRows, 'serviceId' | 'liveVacancyId'>,
+  row: Pick<ServiceTeamRows, 'serviceId' | 'liveVacancyId' | 'candidacies'>,
   team: DeriveServiceTeamResult & { asOf: string },
   displayNameByWorkerId: Map<string, string | null>,
 ): GetServiceTeamResult {
+  const occupationByWorkerId = occupationMap(row);
   return {
     serviceId: row.serviceId,
     vacancyId: row.liveVacancyId,
     asOf: team.asOf,
-    selected: team.selected.map((entry) => toMember(entry, displayNameByWorkerId)),
-    inService: team.inService.map((entry) => toMember(entry, displayNameByWorkerId)),
+    selected: team.selected.map((entry) => toMember(entry, displayNameByWorkerId, occupationByWorkerId)),
+    inService: team.inService.map((entry) => toMember(entry, displayNameByWorkerId, occupationByWorkerId)),
     rejected: team.rejected.map((entry) => ({
       workerId: entry.workerId,
       displayName: displayNameByWorkerId.get(entry.workerId) ?? null,

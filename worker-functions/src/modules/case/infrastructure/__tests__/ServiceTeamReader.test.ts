@@ -184,6 +184,38 @@ describe('ServiceTeamReader', () => {
     });
   });
 
+  it('D445 (rodada 2): o CTE cand seleciona `w.occupation` (coluna plana), e o leitor mapeia para `occupation` camelCase', async () => {
+    queryImpl = async () => ({
+      rows: [
+        {
+          service_id: 's-1',
+          country: 'AR',
+          live_vacancy_id: 'v-live',
+          candidacies: [
+            {
+              worker_id: 'w-1',
+              vacancy_id: 'v-live',
+              stage: 'QUICK_RESPONSE_TEAM',
+              first_name_encrypted: null,
+              last_name_encrypted: null,
+              occupation: 'CAREGIVER',
+            },
+          ],
+          assignments: [],
+          marks: [],
+          substitutions: [],
+        },
+      ],
+      rowCount: 1,
+    });
+
+    const result = await reader.read('p-1', 's-1');
+
+    expect(result?.candidacies[0].occupation).toBe('CAREGIVER');
+    const sql = svcCalls()[0].sql;
+    expect(sql).toMatch(/w\.occupation/);
+  });
+
   it('gate parcial #1: o CTE subs só conta substituição sobre alocação do titular ACTIVE e vigente na data', async () => {
     queryImpl = async () => ({ rows: [], rowCount: 0 });
 

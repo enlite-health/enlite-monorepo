@@ -45,6 +45,14 @@ export interface ServiceTeamMember {
   allocations?: { allocationId: string; weekday: number; startTime: string; endTime: string }[];
   /** Só em `inService`, só quem substitui — datas vigentes, ordem crescente (DX-13.3, Fase 13). */
   substitutionDates?: string[];
+  /**
+   * D445 (rodada 2, ABERTA #1 resolvida) — `workers.occupation`, coluna PLANA (nunca cifrada);
+   * `projectWorkerFields.ts` já a devolve no nível `worker:read`, ANTES de qualquer célula de
+   * contato/PII ("nada que identifique a pessoa") — por isso não precisa de KMS nem de célula
+   * nova aqui. Só em `selected` (é o que "Preseleccionados" do modal de itinerário usa); `null`
+   * quando o worker não tem ocupação cadastrada.
+   */
+  occupation?: string | null;
 }
 
 export interface GetServiceTeamResult {
