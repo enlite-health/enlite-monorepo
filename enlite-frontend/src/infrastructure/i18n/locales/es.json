@@ -5584,6 +5584,9 @@
     "aiPrompts": {
       "title": "Prompts de IA",
       "description": "Editá el texto que la IA usa en cada situación. Los cambios valen para lo que la plataforma genere de ahora en más — no reescriben nada que ya fue enviado.",
+      "loading": "Cargando los prompts…",
+      "loadError": "No se pudieron cargar los prompts.",
+      "readOnlyNotice": "Solo lectura: podés ver el contenido, pero no guardarlo.",
       "tabs": {
         "vacancyDescription": "Descripción de vacante",
         "prescreeningAt": "Preselección — Acompañante Terapéutico",
