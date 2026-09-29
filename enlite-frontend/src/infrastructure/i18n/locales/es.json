@@ -4024,6 +4024,13 @@
         "INSURER": "Obra social",
         "OTHER": "Otro"
       },
+      "suspensionExitReasonOptions": {
+        "RESUMED_SERVICE": "Retomó el servicio (fin de vacaciones/internación)",
+        "FAMILY_REQUESTED": "La familia pidió retomar",
+        "NEEDS_NEW_WORKER": "Necesita nuevo prestador",
+        "WRONG_STATUS": "Estado cargado por error",
+        "OTHER": "Otro"
+      },
       "deviceTypeOptions": {
         "HOME": "Domiciliario",
         "SCHOOL": "Escolar",
@@ -4040,6 +4047,8 @@
         "noteRedacted": "No tenés permiso para ver la nota.",
         "transitionNotAllowed": "Transición no permitida: {{from}} → {{to}}",
         "reasonRequired": "Indicá el motivo de la espera",
+        "suspensionExitReason": "Motivo de salida",
+        "suspensionExitReasonRequired": "Indicá el motivo de salida de Suspendido",
         "error": "No se pudo cambiar el estado",
         "sources": {
           "admin_panel": "Panel",
@@ -4055,6 +4064,8 @@
           "from": "De",
           "to": "A",
           "source": "Origen",
+          "reason": "Motivo",
+          "actor": "Autor",
           "error": "No se pudo cargar el historial"
         },
         "notReady": "No se puede pasar a {{status}}: falta {{items}}.",

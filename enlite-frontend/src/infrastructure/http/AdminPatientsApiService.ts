@@ -321,8 +321,9 @@ export class AdminPatientsApiServiceClass {
 
   /**
    * PUT /api/admin/patients/:id/status — Kanban (funil) e select da ficha (estado v2, spec 012).
-   * Aceita a string legada ou o payload com motivo/nota/origem. 422 com `code`
-   * (PATIENT_STATUS_TRANSITION_NOT_ALLOWED / ON_HOLD_REASON_REQUIRED) sai como PatientApiError.
+   * Aceita a string legada ou o payload com motivo/nota/origem/motivo de saída. 422 com `code`
+   * (PATIENT_STATUS_TRANSITION_NOT_ALLOWED / ON_HOLD_REASON_REQUIRED /
+   * SUSPENSION_EXIT_REASON_REQUIRED, migration 486) sai como PatientApiError.
    */
   async updatePatientStatus(id: string, status: string | UpdatePatientStatusPayload): Promise<UpdatePatientStatusResult> {
     const body: UpdatePatientStatusPayload = typeof status === 'string' ? { status } : status;

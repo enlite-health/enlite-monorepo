@@ -1,6 +1,7 @@
 /**
- * PatientStatusHistoryCard — a aba Historial (spec 012, US-B7): quando / de → para / origem,
- * lendo GET /patients/:id/status-history. Sem "quem" (lex C7.2) e nunca a nota (C7.3).
+ * PatientStatusHistoryCard — a aba Historial (spec 012, US-B7): quando / de → para / origem /
+ * motivo / autor, lendo GET /patients/:id/status-history. Motivo e autor entraram na migration
+ * 486 (decisão do Gabriel 29/09/2026) — substitui o "sem quem" de C7.2. Nunca a nota (C7.3).
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
@@ -27,32 +28,39 @@ import { PatientStatusHistoryCard } from '../PatientStatusHistoryCard';
 describe('PatientStatusHistoryCard', () => {
   beforeEach(() => getPatientStatusHistory.mockReset());
 
-  it('lista quando / de→para / origem, traduzindo estados e origem; sem coluna de ator', async () => {
+  it('lista quando / de→para / origem / motivo / autor, traduzindo estados, origem e motivo', async () => {
     getPatientStatusHistory.mockResolvedValue([
-      { from: 'ACTIVE', to: 'ON_HOLD', source: 'admin_panel', at: '2026-09-03T14:00:00.000Z' },
-      { from: null, to: 'ACTIVE', source: 'insert', at: '2026-09-01T10:00:00.000Z' },
+      { from: 'SUSPENDED', to: 'SEARCHING', source: 'admin_panel', at: '2026-09-03T14:00:00.000Z', reason: 'RESUMED_SERVICE', actorUid: 'uid-abc123' },
+      { from: null, to: 'ACTIVE', source: 'insert', at: '2026-09-01T10:00:00.000Z', reason: null, actorUid: null },
     ]);
     render(<PatientStatusHistoryCard patientId="p1" />);
     await waitFor(() => expect(screen.getByTestId('status-history-row-0')).toBeInTheDocument());
     expect(getPatientStatusHistory).toHaveBeenCalledWith('p1');
     const row0 = screen.getByTestId('status-history-row-0');
-    expect(row0).toHaveTextContent('Ativo');
-    expect(row0).toHaveTextContent('Em espera');
+    expect(row0).toHaveTextContent('Suspenso');
+    expect(row0).toHaveTextContent('Busca');
     expect(row0).toHaveTextContent('Painel');
+    expect(row0).toHaveTextContent('Retomou o serviço (fim de férias/internação)');
+    expect(row0).toHaveTextContent('uid-abc123');
     const row1 = screen.getByTestId('status-history-row-1');
-    expect(row1).toHaveTextContent('—');
+    expect(row1).toHaveTextContent('—'); // from nulo
     expect(row1).toHaveTextContent('Criação');
-    expect(screen.queryByText(/quem|ator|uid/i)).not.toBeInTheDocument();
+    expect(screen.getByTestId('status-history-reason-1')).toHaveTextContent('—');
+    expect(screen.getByTestId('status-history-actor-1')).toHaveTextContent('—');
     expect(screen.getByText('Quando')).toBeInTheDocument();
+    expect(screen.getByText('Motivo')).toBeInTheDocument();
+    expect(screen.getByText('Autor')).toBeInTheDocument();
   });
 
-  it('origem desconhecida cai no valor cru; estado desconhecido idem', async () => {
-    getPatientStatusHistory.mockResolvedValue([{ from: 'FOO', to: 'BAR', source: 'migration-314', at: '2026-09-03T14:00:00.000Z' }]);
+  it('origem desconhecida cai no valor cru; estado e motivo desconhecidos idem', async () => {
+    getPatientStatusHistory.mockResolvedValue([{ from: 'FOO', to: 'BAR', source: 'migration-314', at: '2026-09-03T14:00:00.000Z', reason: 'MOTIVO_CRU', actorUid: 'uid-xyz' }]);
     render(<PatientStatusHistoryCard patientId="p1" />);
     const row = await screen.findByTestId('status-history-row-0');
     expect(row).toHaveTextContent('FOO');
     expect(row).toHaveTextContent('BAR');
     expect(row).toHaveTextContent('migration-314');
+    expect(row).toHaveTextContent('MOTIVO_CRU');
+    expect(row).toHaveTextContent('uid-xyz');
   });
 
   it('vazio → "sem dados"; erro → mensagem', async () => {

@@ -7,7 +7,8 @@
  *      admission_status continua DONE (trigger 313);
  *   2. transição PROIBIDA (ON_HOLD → REPLACEMENT, fora do seed da 315) → 422 com código de enum;
  *   3. ON_HOLD sem motivo → 422 ON_HOLD_REASON_REQUIRED;
- *   4. GET /status-history: quando / de→para / origem, SEM ator e SEM on_hold_note (lex C7.2/C7.3);
+ *   4. GET /status-history: quando / de→para / origem / motivo / autor (migration 486, decisão do
+ *      Gabriel 29/09/2026), SEM on_hold_note (C7.3);
  *   5. sair de ON_HOLD limpa motivo e nota (nenhuma segunda cópia);
  *   6. Migration 428 (spec 018 PR-6, ADR-5): funil→ACTIVE direto (SOLICITANTE, ADMISSION,
  *      PENDING_ADMISSION) passa a ser 422 PATIENT_STATUS_TRANSITION_NOT_ALLOWED — a ativação
@@ -18,11 +19,14 @@
  *      depois `PUT /status` SEARCHING → ACTIVE, que o catálogo 315 nunca removeu;
  *   7. DISCHARGED/SUSPENDED não apagam linha nenhuma (lex C7.4): contagem antes/depois;
  *   8. a ficha (GET /:id) devolve admissionStatus/onHoldReason/onHoldNote; a nota nunca vai ao log
- *      do banco (patient_status_history não a tem).
+ *      do banco (patient_status_history não a tem);
+ *   9. SUSPENDED → SEARCHING sem motivo: 422 SUSPENSION_EXIT_REASON_REQUIRED, nada muda; com
+ *      motivo: 200, history com reason + actor_uid preenchidos (migration 486); SUSPENDED →
+ *      REPLACEMENT e → ON_HOLD (com onHoldReason também) aceitos.
  */
 import { Pool } from 'pg';
 import { createApiClient, waitForBackend } from './helpers';
-import { staffAuth } from './helpers/staffAuth';
+import { staffAuth, type StaffAuth } from './helpers/staffAuth';
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
 const UID = 'ps-v2-admin-uid';
@@ -30,7 +34,9 @@ const NOTE = 'La obra social no autorizó — nota clínica e2e 3b7d';
 
 describe('Estado do paciente v2 — transições, motivo, Historial (spec 012 US-B7) @integration', () => {
   const api = createApiClient();
-  let asAdmin: { headers: { Authorization: string } };
+  // `asAdmin.uid` (não o `UID` pedido): com o emulador de pé, o uid EFETIVO é o localId dele —
+  // ver comentário de `staffAuth`. É esse que `PatientStatusWriter` grava em `actor_uid`.
+  let asAdmin: StaffAuth;
   let pool: Pool;
   let active = '';
   let lead = '';
@@ -114,17 +120,17 @@ describe('Estado do paciente v2 — transições, motivo, Historial (spec 012 US
     expect((await api.put(`/api/admin/patients/${active}/status`, { status: 'DISCONTINUED' }, asAdmin)).status).toBe(400);
   });
 
-  it('4. GET /status-history: quando / de→para / origem — sem ator, sem nota', async () => {
+  it('4. GET /status-history: quando / de→para / origem / motivo / autor — sem nota', async () => {
     const r = await api.get(`/api/admin/patients/${active}/status-history`, asAdmin);
     expect(r.status).toBe(200);
     const h = r.data.data.history as Array<Record<string, unknown>>;
-    expect(h[0]).toMatchObject({ from: 'ACTIVE', to: 'ON_HOLD', source: 'admin_panel' });
+    // migration 486: mudança via HTTP grava o autor; não é saída de SUSPENDED → reason null.
+    expect(h[0]).toMatchObject({ from: 'ACTIVE', to: 'ON_HOLD', source: 'admin_panel', reason: null, actorUid: asAdmin.uid });
     expect(typeof h[0].at).toBe('string');
-    // a linha inicial do INSERT (trigger 255) está lá também
-    expect(h[h.length - 1]).toMatchObject({ from: null, to: 'ACTIVE', source: 'insert' });
+    // a linha inicial do INSERT (trigger 255) está lá também — sem ator (mudança de sistema).
+    expect(h[h.length - 1]).toMatchObject({ from: null, to: 'ACTIVE', source: 'insert', reason: null, actorUid: null });
     const raw = JSON.stringify(r.data);
     expect(raw).not.toContain(NOTE);
-    expect(raw).not.toMatch(/actor|uid/i);
   });
 
   it('5. ON_HOLD → ACTIVE limpa motivo e nota; ficha devolve os campos v2', async () => {
@@ -200,7 +206,10 @@ describe('Estado do paciente v2 — transições, motivo, Historial (spec 012 US
     const count = async () => Number((await pool.query(`SELECT count(*) AS n FROM patients WHERE clickup_task_id LIKE 'ps-v2-e2e-%'`)).rows[0].n);
     const before = await count();
     expect((await api.put(`/api/admin/patients/${lead}/status`, { status: 'SUSPENDED' }, asAdmin)).status).toBe(200);
-    expect((await api.put(`/api/admin/patients/${lead}/status`, { status: 'DISCHARGED' }, asAdmin)).status).toBe(200);
+    // Migration 486 (decisão do Gabriel 29/09/2026): SAIR de SUSPENDED manualmente exige motivo
+    // — DISCHARGED não é exceção (o writer não distingue o alvo). Sem o `suspensionExitReason`
+    // aqui, este teste vermelho foi o que ACUSOU a régua nova (achado deste fecho).
+    expect((await api.put(`/api/admin/patients/${lead}/status`, { status: 'DISCHARGED', suspensionExitReason: 'WRONG_STATUS' }, asAdmin)).status).toBe(200);
     expect(await count()).toBe(before);
     expect((await pool.query(`SELECT deleted_at FROM patients WHERE id = $1`, [lead])).rows[0].deleted_at).toBeNull();
     // resgate (#REGRA-07): DISCHARGED → ACTIVE está no seed
@@ -212,5 +221,51 @@ describe('Estado do paciente v2 — transições, motivo, Historial (spec 012 US
     expect(r.status).toBe(200);
     const mine = (r.data.data as Array<{ id: string; admissionStatus: string }>).filter((p) => p.id === active || p.id === lead);
     expect(mine.map((p) => p.admissionStatus)).toEqual(['DONE', 'DONE']);
+  });
+
+  // ── 9. Saída de SUSPENDED com motivo (migration 486, decisão do Gabriel 29/09/2026) ────────────
+  it('9. SUSPENDED → SEARCHING sem motivo: 422; com motivo: 200 + history com reason/actor_uid; REPLACEMENT e ON_HOLD também aceitos', async () => {
+    // `active` está em ACTIVE (teste 5 devolveu) — leva a SUSPENDED primeiro.
+    expect((await api.put(`/api/admin/patients/${active}/status`, { status: 'SUSPENDED' }, asAdmin)).status).toBe(200);
+
+    // 9a. sem motivo → 422, nada muda.
+    let r = await api.put(`/api/admin/patients/${active}/status`, { status: 'SEARCHING' }, asAdmin);
+    expect(r.status).toBe(422);
+    expect(r.data.code).toBe('SUSPENSION_EXIT_REASON_REQUIRED');
+    expect((await pool.query(`SELECT status FROM patients WHERE id = $1`, [active])).rows[0].status).toBe('SUSPENDED');
+
+    // 9b. motivo fora do enum → 400 (zod).
+    expect((await api.put(`/api/admin/patients/${active}/status`, { status: 'SEARCHING', suspensionExitReason: 'PORQUE_SI' }, asAdmin)).status).toBe(400);
+
+    // 9c. com motivo → 200; banco e history com reason + actor_uid.
+    r = await api.put(`/api/admin/patients/${active}/status`, { status: 'SEARCHING', suspensionExitReason: 'RESUMED_SERVICE' }, asAdmin);
+    expect(r.status).toBe(200);
+    const hist = (await api.get(`/api/admin/patients/${active}/status-history`, asAdmin)).data.data.history as Array<Record<string, unknown>>;
+    expect(hist[0]).toMatchObject({
+      from: 'SUSPENDED', to: 'SEARCHING', source: 'admin_panel', reason: 'RESUMED_SERVICE', actorUid: asAdmin.uid,
+    });
+
+    // 9d. SUSPENDED → REPLACEMENT com motivo. `active` está em SEARCHING (9c) e o catálogo (315)
+    // não tem `SEARCHING → SUSPENDED` direto (só ACTIVE/REPLACEMENT entram em SUSPENDED) —
+    // detour por ACTIVE (catálogo 315 + checklist já satisfeito desde o beforeAll) para voltar
+    // a SUSPENDED sem inventar uma transição que a 315 nunca abriu.
+    expect((await api.put(`/api/admin/patients/${active}/status`, { status: 'ACTIVE' }, asAdmin)).status).toBe(200);
+    expect((await api.put(`/api/admin/patients/${active}/status`, { status: 'SUSPENDED' }, asAdmin)).status).toBe(200);
+    r = await api.put(`/api/admin/patients/${active}/status`, { status: 'REPLACEMENT', suspensionExitReason: 'NEEDS_NEW_WORKER' }, asAdmin);
+    expect(r.status).toBe(200);
+
+    // 9e. SUSPENDED → ON_HOLD exige OS DOIS motivos (onHoldReason continua obrigatório).
+    expect((await api.put(`/api/admin/patients/${active}/status`, { status: 'SUSPENDED' }, asAdmin)).status).toBe(200);
+    r = await api.put(`/api/admin/patients/${active}/status`, { status: 'ON_HOLD', suspensionExitReason: 'OTHER' }, asAdmin);
+    expect(r.status).toBe(422);
+    expect(r.data.code).toBe('ON_HOLD_REASON_REQUIRED');
+    r = await api.put(`/api/admin/patients/${active}/status`, { status: 'ON_HOLD', onHoldReason: 'SCHOOL' }, asAdmin);
+    expect(r.status).toBe(422);
+    expect(r.data.code).toBe('SUSPENSION_EXIT_REASON_REQUIRED');
+    r = await api.put(`/api/admin/patients/${active}/status`, { status: 'ON_HOLD', onHoldReason: 'SCHOOL', suspensionExitReason: 'OTHER' }, asAdmin);
+    expect(r.status).toBe(200);
+
+    // resgate: devolve `active` para ACTIVE (não afeta outro teste — este é o último do arquivo).
+    expect((await api.put(`/api/admin/patients/${active}/status`, { status: 'ACTIVE' }, asAdmin)).status).toBe(200);
   });
 });
