@@ -121,7 +121,18 @@ describe('ContractedServiceFormRow', () => {
     expect((screen.getByTestId('svc-providersNeeded-1') as HTMLInputElement).value).toBe('2');
     expect((screen.getByTestId('svc-profile-1') as HTMLTextAreaElement).value).toBe('perfil sintético');
     expect((screen.getByTestId('svc-providerAgeBand-1') as HTMLSelectElement).value).toBe('AGE_30_45');
+    expect(screen.queryByTestId('providers-section-s1')).toBeNull();
+  });
+
+  it('modo EXISTENTE com linha antiga → a seção só leitura aparece', () => {
+    const legacy = {
+      id: 'p1', serviceId: 's1', workerId: 'w1', workerName: null, weeklyHours: 10, active: true, endedAt: null,
+      country: 'AR', createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z',
+    };
+    render(<ContractedServiceFormRow patientId="pat1" addresses={ADDRESSES} service={{ ...SERVICE, providers: [legacy] }} index={1} onSaved={vi.fn()} />);
     expect(screen.getByTestId('providers-section-s1')).toBeTruthy();
+    expect(screen.getByTestId('provider-row-p1')).toBeTruthy();
+    expect(screen.queryByTestId('provider-associate-s1')).toBeNull();
   });
 
   it('modo EXISTENTE: editar um campo e salvar chama updateContractedService (PATCH) com o serviceId', async () => {

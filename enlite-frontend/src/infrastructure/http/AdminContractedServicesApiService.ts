@@ -6,11 +6,8 @@
 import { FirebaseAuthService } from '@infrastructure/services/FirebaseAuthService';
 import type {
   PatientContractedServiceDetail,
-  PatientContractedServiceProvider,
   CreateContractedServiceBody,
   UpdateContractedServiceBody,
-  AssociateProviderBody,
-  UpdateProviderBody,
 } from '@domain/entities/PatientContractedService';
 import type { PatientKanbanServiceSummary } from '@domain/entities/PatientLifecycle';
 import type { ItineraryAbsenceResult, ServiceTeam, ServiceTeamMember } from '@domain/entities/ServiceTeam';
@@ -118,33 +115,6 @@ class AdminContractedServicesApiServiceClass {
     return this.request<PatientContractedServiceDetail>(
       'PATCH',
       `/api/admin/patients/${patientId}/contracted-services/${serviceId}`,
-      body,
-    );
-  }
-
-  /** POST /api/admin/patients/:id/contracted-services/:sid/providers — associa worker existente. */
-  async associateProvider(
-    patientId: string,
-    serviceId: string,
-    body: AssociateProviderBody,
-  ): Promise<PatientContractedServiceProvider> {
-    return this.request<PatientContractedServiceProvider>(
-      'POST',
-      `/api/admin/patients/${patientId}/contracted-services/${serviceId}/providers`,
-      body,
-    );
-  }
-
-  /** PATCH .../providers/:pid — weeklyHours e/ou baixa (active:false, sem DELETE — lex C-e.2). */
-  async updateProvider(
-    patientId: string,
-    serviceId: string,
-    providerId: string,
-    body: UpdateProviderBody,
-  ): Promise<PatientContractedServiceProvider> {
-    return this.request<PatientContractedServiceProvider>(
-      'PATCH',
-      `/api/admin/patients/${patientId}/contracted-services/${serviceId}/providers/${providerId}`,
       body,
     );
   }

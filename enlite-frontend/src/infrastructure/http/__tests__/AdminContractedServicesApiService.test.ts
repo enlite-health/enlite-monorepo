@@ -21,7 +21,6 @@ function mockFetch(payload: unknown, status = 200, contentType = 'application/js
 
 const PATIENT_ID = 'p1';
 const SERVICE_ID = 's1';
-const PROVIDER_ID = 'pr1';
 
 describe('AdminContractedServicesApiService', () => {
   beforeEach(() => { vi.clearAllMocks(); });
@@ -54,24 +53,6 @@ describe('AdminContractedServicesApiService', () => {
     expect(init.method).toBe('PATCH');
   });
 
-  it('associateProvider: POST em /:sid/providers', async () => {
-    const f = mockFetch({ success: true, data: { id: PROVIDER_ID, workerId: 'w1' } });
-    const out = await AdminContractedServicesApiService.associateProvider(PATIENT_ID, SERVICE_ID, { workerId: 'w1' });
-    expect(out).toEqual({ id: PROVIDER_ID, workerId: 'w1' });
-    const [url, init] = f.mock.calls[0] as [string, RequestInit];
-    expect(url).toContain(`/contracted-services/${SERVICE_ID}/providers`);
-    expect(init.method).toBe('POST');
-  });
-
-  it('updateProvider: PATCH em /:sid/providers/:pid — sem DELETE (lex C-e.2)', async () => {
-    const f = mockFetch({ success: true, data: { id: PROVIDER_ID, active: false } });
-    const out = await AdminContractedServicesApiService.updateProvider(PATIENT_ID, SERVICE_ID, PROVIDER_ID, { active: false });
-    expect(out).toEqual({ id: PROVIDER_ID, active: false });
-    const [url, init] = f.mock.calls[0] as [string, RequestInit];
-    expect(url).toContain(`/providers/${PROVIDER_ID}`);
-    expect(init.method).toBe('PATCH');
-  });
-
   it('activateRecruitment: POST em /:sid/activate-recruitment, sem corpo — 201 com vacancyId/patientStatus/statusChanged', async () => {
     const f = mockFetch({ success: true, data: { vacancyId: 'v1', patientStatus: 'SEARCHING', statusChanged: true } }, 201);
     const out = await AdminContractedServicesApiService.activateRecruitment(PATIENT_ID, SERVICE_ID);
@@ -97,13 +78,13 @@ describe('AdminContractedServicesApiService', () => {
   });
 
   it('erro do backend (success:false) vira ContractedServiceApiError com status/code/details', async () => {
-    mockFetch({ success: false, error: 'Worker already actively allocated to this service', code: 'PROVIDER_ALREADY_ACTIVE' }, 409);
+    mockFetch({ success: false, error: 'conflito', code: 'SERVICE_CONFLICT' }, 409);
     await expect(
-      AdminContractedServicesApiService.associateProvider(PATIENT_ID, SERVICE_ID, { workerId: 'w1' }),
+      AdminContractedServicesApiService.updateContractedService(PATIENT_ID, SERVICE_ID, { active: false }),
     ).rejects.toMatchObject({
       name: 'ContractedServiceApiError',
       status: 409,
-      code: 'PROVIDER_ALREADY_ACTIVE',
+      code: 'SERVICE_CONFLICT',
     });
   });
 

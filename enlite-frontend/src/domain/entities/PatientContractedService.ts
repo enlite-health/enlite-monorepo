@@ -147,14 +147,3 @@ export type UpdateContractedServiceBody = Omit<CreateContractedServiceBody, 'ser
   /** Só `false` é caminho válido (baixa) — não existe reabrir por este endpoint. */
   active?: false;
 };
-
-export interface AssociateProviderBody {
-  workerId: string;
-  weeklyHours?: number | null;
-}
-
-export interface UpdateProviderBody {
-  weeklyHours?: number | null;
-  /** Só `false` (baixa) — reassociar é um novo POST. */
-  active?: false;
-}
