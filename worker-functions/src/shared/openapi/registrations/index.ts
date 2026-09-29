@@ -14,6 +14,7 @@ import './adminPatients';
 import './adminPatientItinerary';
 import './adminPatientKanbanServices';
 import './adminServiceTeam';
+import './adminServiceTeamContact';
 import './adminItineraryWrite';
 import './adminRecruitment';
 import './adminSetup';

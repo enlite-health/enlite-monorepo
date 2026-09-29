@@ -13,8 +13,13 @@
  * `LIMIT 1` sem `ORDER BY` — pode devolver uma vaga qualquer, não a mais antiga), NÃO entra aqui —
  * ver LISTA do retorno G1.
  */
+/**
+ * `required_sex` (rodada 2, decisão A — coluna SEXO da aba Encuadre, DIV-3): a mesma vaga viva já
+ * selecionada aqui, só mais uma coluna — nenhuma query nova, nenhum join novo. Chamador que não
+ * usa o campo (`PatientKanbanServicesReader.ts`) simplesmente ignora a coluna extra no resultado.
+ */
 export function liveVacancySelect(whereExtra: string): string {
-  return `SELECT DISTINCT ON (jp.contracted_service_id) jp.contracted_service_id, jp.id
+  return `SELECT DISTINCT ON (jp.contracted_service_id) jp.contracted_service_id, jp.id, jp.required_sex
             FROM job_postings jp
            WHERE jp.deleted_at IS NULL AND ${whereExtra}
            ORDER BY jp.contracted_service_id, jp.created_at ASC`;

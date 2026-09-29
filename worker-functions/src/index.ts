@@ -33,6 +33,8 @@ import {
   createAdminTherapeuticProjectsRoutes,
   AdminServiceTeamController,
   createAdminServiceTeamRoutes,
+  AdminServiceTeamContactController,
+  createAdminServiceTeamContactRoutes,
   AdminItineraryWriteController,
   createAdminItineraryWriteRoutes,
   createAdminPatientsRoutes,
@@ -539,6 +541,7 @@ app.use(
 
 // ========== Quadro C — time do serviço contratado (cadeia Fase 10) ==========
 app.use('/api/admin', createAdminServiceTeamRoutes(new AdminServiceTeamController(), authMiddleware, permissionMiddleware));
+app.use('/api/admin', createAdminServiceTeamContactRoutes(new AdminServiceTeamContactController(), authMiddleware, permissionMiddleware));
 
 // ========== Itinerário — escritores (cadeia Fase 11) ==========
 app.use('/api/admin', createAdminItineraryWriteRoutes(new AdminItineraryWriteController(), authMiddleware, permissionMiddleware));

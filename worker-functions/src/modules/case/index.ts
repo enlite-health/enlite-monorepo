@@ -231,6 +231,8 @@ export { createAdminTherapeuticProjectsRoutes } from './interfaces/routes/adminT
 // Cadeia Fase 10 (DX-10.7): quadro C (Servicio Contratado).
 export { AdminServiceTeamController } from './interfaces/controllers/AdminServiceTeamController';
 export { createAdminServiceTeamRoutes } from './interfaces/routes/adminServiceTeamRoutes';
+export { AdminServiceTeamContactController } from './interfaces/controllers/AdminServiceTeamContactController';
+export { createAdminServiceTeamContactRoutes } from './interfaces/routes/adminServiceTeamContactRoutes';
 // Cadeia Fase 11 (DX-11.9): os 7 escritores do itinerário.
 export { AdminItineraryWriteController } from './interfaces/controllers/AdminItineraryWriteController';
 export { createAdminItineraryWriteRoutes } from './interfaces/routes/adminItineraryWriteRoutes';
