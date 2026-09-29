@@ -42,7 +42,7 @@ function Harness(props: { diagnoses: PatientDiagnosisDetail[] | null; diagnosesU
       control={control}
       errors={errors}
       patientSelected
-      diagnoses={props.diagnoses as PatientDiagnosisDetail[]}
+      diagnoses={props.diagnoses}
       diagnosesUnavailable={props.diagnosesUnavailable ?? false}
       patientName="Paciente QA"
       selectedCaseNumber={1234}
@@ -65,6 +65,12 @@ describe('VacancyFormLeftColumn — patología', () => {
     render(<Harness diagnoses={[dx()]} />);
     expect(screen.queryByText(/id\.who\.int/)).toBeNull();
     expect(screen.queryByText(/6A02/)).toBeNull();
+  });
+
+  it('ator SEM permissão clínica vê o aviso, NUNCA "—"', () => {
+    render(<Harness diagnoses={null} />);
+    expect(screen.getByTestId('vacancy-form-patologia-no-permission')).toBeInTheDocument();
+    expect(screen.queryByTestId('vacancy-form-patologia-empty')).toBeNull();
   });
 
   it('sem diagnóstico mostra "—"', () => {
