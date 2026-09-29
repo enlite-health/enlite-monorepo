@@ -12,7 +12,7 @@
  * Reusa sem copiar: `backendUrl()` (`lancamento-e2e-helper.ts:32-34`, mesmo fallback do CI dos
  * irmãos, lida DENTRO das funções — nunca no topo do módulo, o Playwright carrega todos os specs
  * antes do `--grep`), `runSQL` (`patient-detail-a-helper.ts:9`), `extractUuid`
- * (`itinerario-escrita-e2e-helper.ts:171`), `openContractedServiceTab`/`selectServiceRow`
+ * (`itinerario-escrita-e2e-helper.ts:171`), `openEncuadreTab`/`selectServiceRow`
  * (`quadro-c-e2e-helper.ts:111,128`), `cleanupItineraryWrite` (`itinerario-escrita-e2e-helper.ts:259`).
  * Nenhum host/porta literal, nenhum `throw` no import, nenhum `fill()`, nenhuma conta de data no
  * relógio do processo — sempre lida do Postgres (DATA-F13).
@@ -21,7 +21,7 @@ import { type APIRequestContext, type Page } from '@playwright/test';
 import { backendUrl } from './lancamento-e2e-helper';
 import { runSQL } from './patient-detail-a-helper';
 import { extractUuid, cleanupItineraryWrite } from './itinerario-escrita-e2e-helper';
-import { openContractedServiceTab, selectServiceRow } from './quadro-c-e2e-helper';
+import { openEncuadreTab, selectServiceRow } from './quadro-c-e2e-helper';
 
 export interface AbsenceApiResult<T = unknown> {
   status: number;
@@ -155,11 +155,11 @@ export function countOpenAbsences(allocationId: string): number {
 // ── Tela: quadro C do serviço ────────────────────────────────────────────────────────
 
 /**
- * Ficha do paciente → aba "Servicio Contratado" → linha do serviço — composição de
- * `openContractedServiceTab` + `selectServiceRow` (`quadro-c-e2e-helper.ts:111,128`), não cópia.
+ * Ficha do paciente → aba "Encuadre" (29/09: saiu de "Servicio Contratado") → linha do serviço —
+ * composição de `openEncuadreTab` + `selectServiceRow` (`quadro-c-e2e-helper.ts`), não cópia.
  */
 export async function openServiceTeamOf(page: Page, patientId: string, serviceId: string): Promise<void> {
-  await openContractedServiceTab(page, patientId);
+  await openEncuadreTab(page, patientId);
   await selectServiceRow(page, serviceId);
 }
 

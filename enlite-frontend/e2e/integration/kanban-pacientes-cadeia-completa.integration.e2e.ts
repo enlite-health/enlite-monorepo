@@ -46,7 +46,7 @@ import { runSQL } from '../helpers/patient-detail-a-helper';
 import { insertWJA, upsertEncuadre, getWjaByWorkerAndJob } from '../helpers/wja-test-helper';
 import { dndKitDrag } from '../helpers/dndKitDrag';
 import {
-  readServiceTeamApi, postServiceTeamAction, countMarks, selectServiceRow,
+  readServiceTeamApi, postServiceTeamAction, countMarks, selectServiceRow, openEncuadreTab,
 } from '../helpers/quadro-c-e2e-helper';
 import { openServiceTeamOf, nextWeekdaySql } from '../helpers/substituicao-e2e-helper';
 import {
@@ -392,8 +392,8 @@ test.describe('cadeia-completa @integration', () => {
         expect(allocationId).not.toBe('');
         await expect(page.getByTestId(`itinerario-slot-prestador-${slot1.id}-${wa}`)).toBeVisible({ timeout: 15_000 });
 
-        await page.getByTestId('patient-profile-tabs').getByRole('button', { name: 'Servicio Contratado' }).click();
-        await expect(page.getByTestId('servicos-contratados-card')).toBeVisible({ timeout: 15_000 });
+        // 29/09: o quadro C saiu de "Servicio Contratado" — a aba certa agora é "Encuadre".
+        await openEncuadreTab(page, X.patientId);
         await selectServiceRow(page, X.service1Id);
         await expect(page.getByTestId('kanban-column-IN_SERVICE').getByTestId(`service-team-card-${wa}`)).toHaveCount(1);
         await expect(page.getByTestId('kanban-column-SELECTED_FOR_SERVICE').getByTestId(`service-team-card-${wa}`)).toHaveCount(0);

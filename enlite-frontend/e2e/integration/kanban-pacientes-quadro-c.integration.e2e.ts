@@ -32,7 +32,7 @@ import { collectDataRequests } from '../helpers/kanban-subcard-e2e-helper';
 import { tokenFor, loginAs } from '../helpers/abac-stack-helper';
 import { runSQL } from '../helpers/patient-detail-a-helper';
 import {
-  readServiceTeamApi, postServiceTeamAction, countMarks, openContractedServiceTab, selectServiceRow,
+  readServiceTeamApi, postServiceTeamAction, countMarks, openEncuadreTab, selectServiceRow,
   cleanupQuadroC,
 } from '../helpers/quadro-c-e2e-helper';
 import { extractUuid, insertSecondAddress } from '../helpers/itinerario-escrita-e2e-helper';
@@ -87,7 +87,7 @@ test.describe('quadro-c @integration', () => {
 
       const reqs = collectDataRequests(page);
       await loginAs(page, STAFF);
-      await openContractedServiceTab(page, seed.patientId);
+      await openEncuadreTab(page, seed.patientId);
       const detailPattern = new RegExp(`GET /api/admin/patients/${seed.patientId}$`);
       const detailReqsAfterLoad = reqs().filter((r) => detailPattern.test(r)).length;
       await selectServiceRow(page, seed.serviceId);
@@ -161,7 +161,7 @@ test.describe('quadro-c @integration', () => {
       );
 
       await loginAs(page, STAFF);
-      await openContractedServiceTab(page, seed.patientId);
+      await openEncuadreTab(page, seed.patientId);
       await selectServiceRow(page, seed.serviceId);
       await expect(
         page.getByTestId('kanban-column-IN_SERVICE').getByTestId(`service-team-card-${workerId}`),
@@ -269,7 +269,7 @@ test.describe('quadro-c @integration', () => {
 
       // Também pela tela: "Rechazar" → modal → confirmar desabilitado sem escolha → escolher → confirmar.
       await loginAs(page, STAFF);
-      await openContractedServiceTab(page, seed.patientId);
+      await openEncuadreTab(page, seed.patientId);
       await selectServiceRow(page, seed.serviceId);
       await page.getByTestId(`service-team-reject-${workerUi}`).click();
       const confirmBtn = page.getByTestId('service-team-reject-confirm');
@@ -338,7 +338,7 @@ test.describe('quadro-c @integration', () => {
       expect(rejectedUi.status).toBe(200);
 
       await loginAs(page, STAFF);
-      await openContractedServiceTab(page, seed.patientId);
+      await openEncuadreTab(page, seed.patientId);
       await selectServiceRow(page, seed.serviceId);
       await expect(
         page.getByTestId('kanban-column-REJECTED_FOR_SERVICE').getByTestId(`service-team-card-${workerUi}`),
@@ -391,7 +391,7 @@ test.describe('quadro-c @integration', () => {
     const seed = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.6, lng: -58.4 });
     try {
       await loginAs(page, STAFF);
-      await openContractedServiceTab(page, seed.patientId);
+      await openEncuadreTab(page, seed.patientId);
       await selectServiceRow(page, seed.serviceId);
       await expect(page.getByTestId('quadro-c-sem-vaga')).toBeVisible();
       await expect(page.locator('[data-testid^="kanban-column-"]')).toHaveCount(0);
@@ -417,7 +417,7 @@ test.describe('quadro-c @integration', () => {
       insertWJA({ workerId, jobPostingId: vacancyId, funnelStage: 'QUICK_RESPONSE_TEAM' });
 
       await loginAs(page, STAFF);
-      await openContractedServiceTab(page, seed.patientId);
+      await openEncuadreTab(page, seed.patientId);
       await selectServiceRow(page, seed.serviceId);
       await expect(page.getByTestId('kanban-column-SELECTED_FOR_SERVICE')).toBeVisible();
       await expect(page.getByTestId(`service-team-card-${workerId}`)).toBeVisible();
@@ -425,6 +425,12 @@ test.describe('quadro-c @integration', () => {
       const dentro = page.getByTestId('quadro-c-secao').getByRole('button', { name: /adicionar|agregar|añadir|nuevo/i });
       await expect(dentro).toHaveCount(0);
 
+      // Controle positivo (achado 2 do veredito): prova que a contagem zero acima não é um locator
+      // quebrado — em ALGUM lugar da ficha um botão "add" real EXISTE e o mesmo padrão de regex o
+      // encontra. 29/09: "servicos-contratados-card" saiu da aba "Encuadre" (foi para "Servicio
+      // Contratado", que é outra aba, não montada aqui) — o controle passa a trocar de aba antes de
+      // medir, em vez de procurar dentro de um card que não está no DOM.
+      await page.getByTestId('patient-profile-tabs').getByRole('button', { name: 'Servicio Contratado' }).click();
       const fora = page.getByTestId('servicos-contratados-card').getByRole('button', {
         name: /adicionar|agregar|añadir|nuevo/i,
       });
@@ -463,7 +469,7 @@ test.describe('quadro-c @integration', () => {
       expect(s2Ids).not.toContain(workerId);
 
       await loginAs(page, STAFF);
-      await openContractedServiceTab(page, seed.patientId);
+      await openEncuadreTab(page, seed.patientId);
       // Espera a resposta do GET /team do serviço `s2` ANTES de medir — mesma régua de
       // `quadro-c-rechazado-na-vaga-some` (o zero não pode passar antes do fetch responder, nem
       // quando o fetch falha: `r.ok()` + GET, N2 do gate fecho).
@@ -506,7 +512,7 @@ test.describe('quadro-c @integration', () => {
       seedAssignment({ slotId, workerId: w2, applicationId: wjaW2, validFromDaysAgo: 5, status: 'ACTIVE' });
 
       await loginAs(page, STAFF);
-      await openContractedServiceTab(page, seed.patientId);
+      await openEncuadreTab(page, seed.patientId);
       const printDir = process.env.PRINT_DIR;
 
       // Sem seleção: 0 colunas.
@@ -565,12 +571,15 @@ test.describe('quadro-c @integration', () => {
       await expect(page.getByTestId('service-team-reject-modal')).toHaveCount(0);
 
       // s2 selecionado: título/endereço lidos do DOM da linha 2, realce medido, seção com 1 baseline.
-      const row2 = page.getByTestId(`contracted-service-row-${s2}`);
-      const row1 = page.getByTestId(`contracted-service-row-${seed.serviceId}`);
+      // 29/09: linha e testid de endereço são os da tabela SELETORA da aba "Encuadre"
+      // (`encuadre-service-row-*`/`encuadre-service-address-*`, EncuadreTab.tsx) — a tabela de
+      // "Servicio Contratado" (`contracted-service-row-*`) é outra aba, não montada aqui.
+      const row2 = page.getByTestId(`encuadre-service-row-${s2}`);
+      const row1 = page.getByTestId(`encuadre-service-row-${seed.serviceId}`);
       const serviceLabel2 = ((await row2.locator('td').nth(1).innerText()) ?? '').trim();
       // Sem `.catch()`: se a semente do 2º endereço falhar, o teste quebra AQUI, com o testid que
       // faltou — nunca pula a asserção em silêncio (achado 2 do veredito).
-      const addressLabel2 = (await page.getByTestId(`contracted-service-address-${s2}`).innerText()).trim();
+      const addressLabel2 = (await page.getByTestId(`encuadre-service-address-${s2}`).innerText()).trim();
       if (!addressLabel2) {
         throw new Error('quadro-c-selecao: contracted-service-address veio vazio — a semente do 2º endereço falhou');
       }
@@ -591,7 +600,9 @@ test.describe('quadro-c @integration', () => {
       console.log('[10.18] realce', { sel: selBg, nao: naoBg });
       expect(selBg).not.toBe(naoBg);
 
-      await expect(page.getByTestId('servicos-contratados-card').getByTestId('quadro-c-secao')).toHaveCount(1);
+      // 29/09: `quadro-c-secao` mora agora dentro de `encuadre-tab` (EncuadreTab.tsx), não mais
+      // dentro de `servicos-contratados-card`.
+      await expect(page.getByTestId('encuadre-tab').getByTestId('quadro-c-secao')).toHaveCount(1);
 
       await page.evaluate(() => document.fonts.ready);
       await expect(page.getByTestId('quadro-c-secao')).toHaveScreenshot(`${testInfo.project.name}-quadro-c-selecao.png`, {

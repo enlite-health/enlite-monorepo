@@ -25,7 +25,7 @@ import { insertTestWorker, cleanupTestWorker } from '../helpers/db-test-helper';
 import { insertWJA, cleanupWJAAndEncuadre } from '../helpers/wja-test-helper';
 import { tokenFor, loginAs } from '../helpers/abac-stack-helper';
 import { runSQL } from '../helpers/patient-detail-a-helper';
-import { selectServiceRow, postServiceTeamAction, readServiceTeamApi } from '../helpers/quadro-c-e2e-helper';
+import { openEncuadreTab, selectServiceRow, postServiceTeamAction, readServiceTeamApi } from '../helpers/quadro-c-e2e-helper';
 import {
   allocationOptionsApi, allocateApi, countActiveAllocations, cleanupItineraryWrite,
 } from '../helpers/itinerario-escrita-e2e-helper';
@@ -150,8 +150,8 @@ test.describe('itinerario-aba @integration', () => {
       });
 
       // Critério 5: o prestador alocado aparece em Em Atendimento no quadro C.
-      await page.getByTestId('patient-profile-tabs').getByRole('button', { name: 'Servicio Contratado' }).click();
-      await expect(page.getByTestId('servicos-contratados-card')).toBeVisible({ timeout: 15_000 });
+      // 29/09: o quadro C saiu de "Servicio Contratado" — a aba certa agora é "Encuadre".
+      await openEncuadreTab(page, seed.patientId);
       await selectServiceRow(page, seed.serviceId);
       const inService = page.getByTestId('kanban-column-IN_SERVICE').getByTestId(`service-team-card-${w}`);
       await expect(inService).toHaveCount(1);
