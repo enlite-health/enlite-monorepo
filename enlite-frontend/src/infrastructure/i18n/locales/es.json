@@ -5589,6 +5589,10 @@
         "prescreeningAt": "Preselección — Acompañante Terapéutico",
         "prescreeningCaregiver": "Preselección — Cuidador"
       },
+      "editor": {
+        "charCount": "{{count}} caracteres",
+        "lastEditedBy": "Última edición: {{date}} · {{name}}"
+      },
       "actions": {
         "save": "Guardar",
         "saving": "Guardando…",
