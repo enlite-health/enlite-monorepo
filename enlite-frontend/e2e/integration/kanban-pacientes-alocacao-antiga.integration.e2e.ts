@@ -13,17 +13,20 @@
  * 'QUICK_RESPONSE_TEAM')` (Selecionado C). `finally` por teste, na ordem da DX-14.15: linha antiga →
  * itinerário → WJA/vaga → workers → paciente.
  */
+import { readFileSync } from 'fs';
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import {
   seedLaunchablePatient, mockAdminUserFor, useLancamentoStaff, LANCAMENTO_VIEWPORT_ES_AR,
   type SeedLaunchablePatientResult,
 } from '../helpers/lancamento-e2e-helper';
-import { activateRecruitmentViaApi, readItineraryApi, ITINERARIO_STAFF } from '../helpers/itinerario-e2e-helper';
+import {
+  activateRecruitmentViaApi, readItineraryApi, createServiceViaApi, ITINERARIO_STAFF,
+} from '../helpers/itinerario-e2e-helper';
 import { insertTestWorker, cleanupTestWorker } from '../helpers/db-test-helper';
 import { insertWJA, cleanupWJAAndEncuadre } from '../helpers/wja-test-helper';
-import { tokenFor } from '../helpers/abac-stack-helper';
+import { tokenFor, loginAs } from '../helpers/abac-stack-helper';
 import { runSQL } from '../helpers/patient-detail-a-helper';
-import { readServiceTeamApi } from '../helpers/quadro-c-e2e-helper';
+import { readServiceTeamApi, openContractedServiceTab } from '../helpers/quadro-c-e2e-helper';
 import {
   allocationOptionsApi, allocateApi, countActiveAllocations, cleanupItineraryWrite,
 } from '../helpers/itinerario-escrita-e2e-helper';
@@ -162,6 +165,69 @@ test.describe('alocacao-antiga @integration', () => {
       expect(w2InService).toBe(0);
       expect(countLegacyAllocations(serviceId)).toBe(1);
       console.log('[14.4]', { cobertasAntes, cobertasDepois, w2InService, w1InService });
+    } finally {
+      cleanupAlocacaoAntiga(s);
+    }
+  });
+
+  test('alocacao-antiga-so-leitura', async ({ page, request }) => {
+    const s = await seedAlocacaoAntiga(request);
+    const { patientId, serviceId: s1, addressId } = s.seed;
+    try {
+      const s2 = await createServiceViaApi(request, patientId, { addressId });
+      const legacyId = seedLegacyAllocationSql(s1, s.w2, 10);
+      expect(countLegacyAllocations(s1)).toBe(1);
+      expect(countLegacyAllocations(s2)).toBe(0);
+
+      const editDrawer = JSON.parse(readFileSync('src/infrastructure/i18n/locales/es.json', 'utf8')).admin.patients.editDrawer;
+      const legacyTitle: string = editDrawer.legacyProvidersTitle;
+      const drawerTitle: string = editDrawer.editServiceTitle;
+      const closeLabel: string = editDrawer.close;
+
+      // Critério 5: no drawer de EDIÇÃO do serviço com linha antiga, a seção é só leitura e rotulada.
+      await loginAs(page, STAFF);
+      await openContractedServiceTab(page, patientId);
+      await page.getByTestId(`contracted-service-edit-${s1}`).click();
+      const dialog = page.getByRole('dialog', { name: drawerTitle });
+      await expect(dialog).toBeVisible({ timeout: 15_000 });
+      const secao = page.getByTestId(`providers-section-${s1}`);
+      await expect(secao).toBeVisible({ timeout: 15_000 });
+      await expect(secao).toContainText(legacyTitle);
+      await expect(page.getByTestId(`provider-row-${legacyId}`)).toHaveCount(1);
+      const acoes = [
+        page.getByTestId(`provider-associate-${s1}`),
+        page.getByTestId(`provider-search-${s1}`),
+        page.getByTestId(`provider-deactivate-${legacyId}`),
+        page.getByTestId(`provider-weekly-hours-${s1}`),
+      ];
+      for (const a of acoes) await expect(a).toHaveCount(0);
+      await expect(secao.locator('button, input')).toHaveCount(0);
+
+      await secao.scrollIntoViewIfNeeded();
+      await page.evaluate(() => document.fonts.ready);
+      const printDir = process.env.PRINT_DIR;
+      if (printDir) {
+        await secao.screenshot({ path: `${printDir}/secao-com-linha.png`, animations: 'disabled', caret: 'hide' });
+        await page.screenshot({ path: `${printDir}/drawer.png`, fullPage: false, animations: 'disabled', caret: 'hide' });
+      }
+      await expect(secao).toHaveScreenshot('alocacao-antiga-so-leitura.png', {
+        mask: [page.locator('[data-testid^="provider-row-"]')],
+        maxDiffPixelRatio: 0.05,
+      });
+
+      // Serviço SEM linha antiga: a tela carrega o formulário e a seção não existe.
+      await dialog.getByRole('button', { name: closeLabel }).click();
+      await expect(page.getByRole('dialog', { name: drawerTitle })).toHaveCount(0);
+      await openContractedServiceTab(page, patientId);
+      await page.getByTestId(`contracted-service-edit-${s2}`).click();
+      await expect(page.getByTestId(`contracted-service-form-${s2}`)).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId(`providers-section-${s2}`)).toHaveCount(0);
+      await expect(page.locator('[data-testid^="providers-section-"]')).toHaveCount(0);
+      if (printDir) {
+        await page.evaluate(() => document.fonts.ready);
+        await page.screenshot({ path: `${printDir}/drawer-sem-linha.png`, fullPage: false, animations: 'disabled', caret: 'hide' });
+      }
+      console.log('[14.5]', { secaoS1: 1, linhas: 1, acoes: 0, secaoS2: 0 });
     } finally {
       cleanupAlocacaoAntiga(s);
     }
