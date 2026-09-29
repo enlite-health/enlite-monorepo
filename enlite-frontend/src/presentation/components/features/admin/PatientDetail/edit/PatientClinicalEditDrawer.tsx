@@ -233,7 +233,7 @@ export function PatientClinicalEditDrawer({ patient, onClose, onSaved }: Props):
             <SectionTitle id="pce-section-pathology">{te('clinicalSections.pathology')}</SectionTitle>
             <DiagnosisAssignmentSection
               patientId={patient.id}
-              initialDiagnoses={patient.diagnoses}
+              initialDiagnoses={patient.diagnoses ?? []}
               onChanged={() => { diagnosesChangedRef.current = true; }}
               ariaLabelledBy="pce-section-pathology"
             />

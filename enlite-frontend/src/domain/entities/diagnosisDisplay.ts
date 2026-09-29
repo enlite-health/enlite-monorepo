@@ -45,11 +45,15 @@ export type DiagnosisDisplayState =
   | { kind: 'list'; diagnoses: PatientDiagnosisDetail[] };
 
 export function diagnosisDisplayState(
-  diagnoses: readonly PatientDiagnosisDetail[] | null,
+  diagnoses: readonly PatientDiagnosisDetail[] | null | undefined,
   diagnosesUnavailable: boolean,
 ): DiagnosisDisplayState {
   if (diagnosesUnavailable) return { kind: 'unavailable' };
-  if (diagnoses === null) return { kind: 'noPermission' };
+  // `== null` cobre null E undefined de propósito: `null` é "sem a célula clínica", e `undefined`
+  // é "o campo nem veio no payload" (contrato mais velho, fixture antiga). Os dois caem no lado
+  // SEGURO — nunca em `empty`, que afirmaria "este paciente não tem diagnóstico". Tratar ausência
+  // como vazio é exatamente a mentira que este helper existe para impedir.
+  if (diagnoses == null) return { kind: 'noPermission' };
   const sorted = sortDiagnosesForCard(diagnoses as PatientDiagnosisDetail[]);
   return sorted.length === 0 ? { kind: 'empty' } : { kind: 'list', diagnoses: sorted };
 }

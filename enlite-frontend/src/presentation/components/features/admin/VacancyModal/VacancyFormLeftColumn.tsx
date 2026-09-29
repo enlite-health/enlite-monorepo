@@ -42,12 +42,17 @@ export interface VacancyFormLeftColumnProps {
   errors: FieldErrors<VacancyFormData>;
   patientSelected: boolean;
   /**
-   * Patología estruturada do paciente (spec 016 F2 → cid-na-vacante). Vem SEMPRE array aqui —
-   * `getPatientById` (`PatientDetail.diagnoses`) não modela "sem permissão" como `null`, ao
-   * contrário do contrato de vaga/caso (D-A). Read-only e FORA do payload da vaga
-   * (`buildVacancyPayload` não persiste diagnóstico).
+   * Patología estruturada do paciente (spec 016 F2 → cid-na-vacante).
+   *
+   * ⚠️ `null` = ator SEM a célula `patient_clinical:read`. `getPatientById` **modela sim** esse
+   * caso como `null` (`AdminPatientsController`: `diagnoses = null` quando falta a célula) —
+   * medido por curl contra a stage. Um comentário anterior afirmava o contrário, e o `?? []` que
+   * ele justificava colapsava "sem permissão" em "sem diagnóstico": a tela dizia que o paciente
+   * não tem diagnóstico para quem apenas não podia vê-lo.
+   *
+   * Read-only e FORA do payload da vaga (`buildVacancyPayload` não persiste diagnóstico).
    */
-  diagnoses: PatientDiagnosisDetail[];
+  diagnoses: PatientDiagnosisDetail[] | null;
   /** Bulkhead (C4): catálogo de terminologia falhou ao ler — distinto de "sem diagnóstico". */
   diagnosesUnavailable: boolean;
   patientName: string | null;
