@@ -3240,9 +3240,15 @@
         "contactOfResponsible": "Contato do responsável",
         "responsible": "Responsável",
         "dragHint": "Arraste um cartão para mudar o estado do paciente.",
+        "suspensionExitDialog": {
+          "title": "Motivo de saída de Suspenso",
+          "body": "{{name}} vai passar de Suspenso para {{target}}. Escolha o motivo de saída.",
+          "confirm": "Confirmar e mover"
+        },
         "moveErrorCodes": {
           "PATIENT_STATUS_TRANSITION_NOT_ALLOWED": "Essa mudança de estado não é permitida.",
           "ON_HOLD_REASON_REQUIRED": "Para colocar em espera é preciso indicar o motivo.",
+          "SUSPENSION_EXIT_REASON_REQUIRED": "É preciso indicar o motivo de saída de Suspenso.",
           "PATIENT_STATUS_NOT_READY": "Não é possível mover: faltam dados obrigatórios na ficha.",
           "KANBAN_ACTIVATION_MOVED_TO_SERVICE": "Para ativar, use \"Ativar recrutamento\" no serviço contratado da ficha do paciente."
         },

@@ -119,6 +119,14 @@ export function usePatientKanban(country?: string) {
   const moveStatus = useCallback(async (
     patientId: string,
     targetStatus: PatientKanbanStatus,
+    /**
+     * Motivo de SAÍDA de SUSPENDED (decisão do Gabriel 29/09/2026, 2ª rodada — migration 486):
+     * o board (`PatientKanbanBoard`) só chama `moveStatus` com isto preenchido DEPOIS que o
+     * `SuspensionExitReasonDialog` confirma — o board nunca chama `moveStatus` direto quando a
+     * origem é SUSPENDED, então este parâmetro chega aqui já validado pela UI (o servidor
+     * confere de novo, 422 se faltar).
+     */
+    opts?: { suspensionExitReason?: string },
   ): Promise<PatientKanbanMoveError | null> => {
     const previous = groupsRef.current;
     // find the card in any column
@@ -146,7 +154,11 @@ export function usePatientKanban(country?: string) {
     }
 
     try {
-      await AdminApiService.updatePatientStatus(patientId, { status: targetStatus, changeSource: 'kanban' });
+      await AdminApiService.updatePatientStatus(patientId, {
+        status: targetStatus,
+        changeSource: 'kanban',
+        ...(opts?.suspensionExitReason ? { suspensionExitReason: opts.suspensionExitReason } : {}),
+      });
       return null;
     } catch (err) {
       setGroups(previous);
