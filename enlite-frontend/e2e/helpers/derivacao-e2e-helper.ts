@@ -191,11 +191,16 @@ export async function coveredHours(request: APIRequestContext, patientId: string
   return (itin.body.data?.services ?? []).reduce((acc, s) => acc + s.cobertas, 0);
 }
 
-/** Linhas de `patient_status_history` do paciente com `change_source = 'system'` (molde `countLaunchTrail`). */
-export function countSystemTrail(patientId: string): number {
+/** Linhas de `patient_status_history` do paciente com o `change_source` dado (molde `countLaunchTrail`). */
+export function countTrailBySource(patientId: string, source: string): number {
   return Number(
     runSQL(
-      `SELECT count(*) FROM patient_status_history WHERE patient_id = '${patientId}' AND change_source = 'system'`,
-    ),
+      `SELECT count(*) FROM patient_status_history WHERE patient_id = '${patientId}' AND change_source = '${source}'`,
+    ).trim(),
   );
+}
+
+/** A trilha da derivação: `change_source = 'system'`. */
+export function countSystemTrail(patientId: string): number {
+  return countTrailBySource(patientId, 'system');
 }
