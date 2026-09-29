@@ -2,7 +2,7 @@
  * patient-status-suspendido-saida-motivo.integration.e2e.ts @integration
  *
  * PONTA A PONTA SEM MOCK: navegador real → worker-functions real (Docker) → Postgres real →
- * Firebase Auth EMULATOR real (`loginComoHumano`: click + `keyboard.type`, régua humana D287).
+ * auth pelo mock do stack de CI (`loginComoStaffMock`: click + `keyboard.type`; token `mock_*`, padrão kanban-pacientes).
  *
  * O que prova (migration 486, decisão do Gabriel 29/09/2026 — D444): sair de SUSPENDED por
  * admin_panel/kanban exige motivo fechado (SuspensionExitReason), e a trilha grava motivo + o
@@ -19,21 +19,18 @@
  * 'ON_HOLD')` só reprova quando existe SERVIÇO ATIVO sem horário (PatientQueryRepository) — um
  * paciente sem serviço contratado nenhum passa vazio, e por isso a semente não monta um.
  *
- * Pré-requisitos: stack `docker compose … up -d postgres firebase-emulator api` (worker-functions)
- * + `pnpm dev` (enlite-frontend) com VITE_FIREBASE_AUTH_EMULATOR=http://localhost:9099.
+ * Pré-requisitos: stack `docker compose … up -d postgres api` com USE_MOCK_AUTH=true (worker-functions)
+ * + `pnpm dev` (enlite-frontend).
  */
 
 import { test, expect } from '@playwright/test';
 import { insertTestPatient, cleanupTestPatient } from '../helpers/db-test-helper';
 import { runSQL } from '../helpers/patient-detail-a-helper';
-import { loginComoHumano } from '../helpers/login-humano';
+import { loginComoStaffMock } from '../helpers/login-mock-staff';
+import type { MockUser } from '../helpers/abac-stack-helper';
 
-const STAFF_EMAIL = `e2e.486.${Date.now()}@enlite.health`;
+const STAFF: MockUser = { uid: 'e2e-int-admin-486-ficha', email: 'admin.486.ficha@e2e.test', role: 'admin', country: 'AR' };
 const STAMP = Date.now().toString().slice(-6);
-
-function actorUidOf(): string {
-  return runSQL(`SELECT firebase_uid FROM users WHERE email = '${STAFF_EMAIL}'`).trim();
-}
 
 test.use({ viewport: { width: 1600, height: 1000 }, video: 'on' });
 
@@ -41,15 +38,11 @@ test.describe('Saída de SUSPENDED com motivo (migration 486, decisão do Gabrie
   test.describe.configure({ mode: 'serial' });
   test.setTimeout(180_000);
 
-  test.afterAll(() => {
-    runSQL(`DELETE FROM users WHERE email = '${STAFF_EMAIL}'`);
-  });
-
   test('feliz: Suspendido → Búsqueda com motivo — Historial mostra o motivo e o autor', async ({ page }) => {
     const { patientId } = insertTestPatient({ status: 'SUSPENDED', firstName: 'D486Feliz', lastName: `Paciente${STAMP}` });
     try {
-      await loginComoHumano(page, STAFF_EMAIL, 'E2E D486');
-      const actorUid = actorUidOf();
+      await loginComoStaffMock(page, STAFF, 'E2E D486');
+      const actorUid = STAFF.uid; // principal.id do token mock (AuthMiddleware.ts:156-157)
       await page.goto(`/admin/patients/${patientId}`);
 
       const select = page.getByTestId('patient-status-select');
@@ -98,7 +91,7 @@ test.describe('Saída de SUSPENDED com motivo (migration 486, decisão do Gabrie
         putChamado = true;
         return route.continue();
       });
-      await loginComoHumano(page, STAFF_EMAIL, 'E2E D486');
+      await loginComoStaffMock(page, STAFF, 'E2E D486');
       await page.goto(`/admin/patients/${patientId}`);
 
       const select = page.getByTestId('patient-status-select');
@@ -122,7 +115,7 @@ test.describe('Saída de SUSPENDED com motivo (migration 486, decisão do Gabrie
   test('alt2: Suspendido → En espera exige OS DOIS motivos (espera + saída) — só habilita com os dois', async ({ page }) => {
     const { patientId } = insertTestPatient({ status: 'SUSPENDED', firstName: 'D486Alt2', lastName: `Paciente${STAMP}` });
     try {
-      await loginComoHumano(page, STAFF_EMAIL, 'E2E D486');
+      await loginComoStaffMock(page, STAFF, 'E2E D486');
       await page.goto(`/admin/patients/${patientId}`);
 
       const select = page.getByTestId('patient-status-select');
