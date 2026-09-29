@@ -112,7 +112,7 @@ import { createClaimRoutes } from '@modules/auth/interfaces/routes/claimRoutes';
 import { AccountLinkController } from '@modules/account-link/AccountLinkController';
 import { createAccountLinkRoutes } from '@modules/account-link/accountLinkRoutes';
 import { registerAdminMaintenanceRoutes } from './bootstrap/registerAdminMaintenanceRoutes';
-import { createAdminIntegrationsRoutes } from '@modules/integration';
+import { createAdminIntegrationsRoutes, createAdminAiPromptRoutes, AiPromptController } from '@modules/integration';
 import { createStageMessageHandler } from './shared/events/handlers/StageMessageHandler';
 import { FUNNEL_STAGES, funnelStageEventName } from './modules/matching/application/FunnelStageEventEmitter';
 import { FunnelStageMessagesController } from './modules/matching/interfaces/controllers/FunnelStageMessagesController';
@@ -563,6 +563,9 @@ registerAdminMaintenanceRoutes(app, authMiddleware, permissionMiddleware);
 
 // ========== Admin Integrations (AnaCare mirror etc.) ==========
 app.use('/api/admin', createAdminIntegrationsRoutes(authMiddleware, permissionMiddleware));
+
+// ========== Admin AI Prompts (spec 029, T013 — list/get/update; undo/restore/preview são de fases posteriores) ==========
+app.use('/api/admin', createAdminAiPromptRoutes(new AiPromptController(), authMiddleware, permissionMiddleware));
 
 // ========== Worker Context (triage-service / MCP internal) ==========
 app.use('/api/admin', createWorkerContextRoutes(workerContextController, authMiddleware, permissionMiddleware));
