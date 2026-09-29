@@ -20,9 +20,15 @@
 -- perde dado — recusa (contagem no PR, OK do Gabriel antes). As 3 linhas de transição só saem se
 -- nenhum paciente foi movido por elas (mesmo molde da ROLLBACK_485).
 
+-- A trava só faz sentido enquanto a COLUNA existe: rodar o down 2× (idempotência, provada pelo
+-- e2e da migration) já apagou `reason`/`actor_uid` na 1ª — consultá-las de novo seria "column
+-- reason does not exist", não ausência de dado (achado do próprio e2e, migration 486-correção).
 DO $$
 BEGIN
-  IF to_regclass('patient_status_history') IS NOT NULL THEN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+     WHERE table_name = 'patient_status_history' AND column_name IN ('reason', 'actor_uid')
+  ) THEN
     IF (SELECT count(*) FROM patient_status_history WHERE reason IS NOT NULL OR actor_uid IS NOT NULL) > 0 THEN
       RAISE EXCEPTION 'há linha de patient_status_history com reason/actor_uid preenchido — dropar as colunas perde dado (contagem no PR, OK do Gabriel antes)';
     END IF;

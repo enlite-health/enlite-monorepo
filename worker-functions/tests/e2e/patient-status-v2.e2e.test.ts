@@ -221,7 +221,10 @@ describe('Estado do paciente v2 — transições, motivo, Historial (spec 012 US
     const count = async () => Number((await pool.query(`SELECT count(*) AS n FROM patients WHERE clickup_task_id LIKE 'ps-v2-e2e-%'`)).rows[0].n);
     const before = await count();
     expect((await api.put(`/api/admin/patients/${lead}/status`, { status: 'SUSPENDED' }, asAdmin)).status).toBe(200);
-    expect((await api.put(`/api/admin/patients/${lead}/status`, { status: 'DISCHARGED' }, asAdmin)).status).toBe(200);
+    // Migration 486 (decisão do Gabriel 29/09/2026): SAIR de SUSPENDED manualmente exige motivo
+    // — DISCHARGED não é exceção (o writer não distingue o alvo). Sem o `suspensionExitReason`
+    // aqui, este teste vermelho foi o que ACUSOU a régua nova (achado deste fecho).
+    expect((await api.put(`/api/admin/patients/${lead}/status`, { status: 'DISCHARGED', suspensionExitReason: 'WRONG_STATUS' }, asAdmin)).status).toBe(200);
     expect(await count()).toBe(before);
     expect((await pool.query(`SELECT deleted_at FROM patients WHERE id = $1`, [lead])).rows[0].deleted_at).toBeNull();
     // resgate (#REGRA-07): DISCHARGED → ACTIVE está no seed
@@ -257,7 +260,11 @@ describe('Estado do paciente v2 — transições, motivo, Historial (spec 012 US
       from: 'SUSPENDED', to: 'SEARCHING', source: 'admin_panel', reason: 'RESUMED_SERVICE', actorUid: asAdmin.uid,
     });
 
-    // 9d. SUSPENDED → REPLACEMENT com motivo.
+    // 9d. SUSPENDED → REPLACEMENT com motivo. `active` está em SEARCHING (9c) e o catálogo (315)
+    // não tem `SEARCHING → SUSPENDED` direto (só ACTIVE/REPLACEMENT entram em SUSPENDED) —
+    // detour por ACTIVE (catálogo 315 + checklist já satisfeito desde o beforeAll) para voltar
+    // a SUSPENDED sem inventar uma transição que a 315/473/485 nunca abriram.
+    expect((await api.put(`/api/admin/patients/${active}/status`, { status: 'ACTIVE' }, asAdmin)).status).toBe(200);
     expect((await api.put(`/api/admin/patients/${active}/status`, { status: 'SUSPENDED' }, asAdmin)).status).toBe(200);
     r = await api.put(`/api/admin/patients/${active}/status`, { status: 'REPLACEMENT', suspensionExitReason: 'NEEDS_NEW_WORKER' }, asAdmin);
     expect(r.status).toBe(200);

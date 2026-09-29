@@ -89,8 +89,13 @@ describe('migration 486 — saída de SUSPENDED com motivo + actor_uid (banco re
       await client.query("SELECT set_config('app.status_reason', 'RESUMED_SERVICE', true)");
       await client.query("SELECT set_config('app.actor_uid', 'uid-e2e-486', true)");
       await client.query(`UPDATE patients SET status = 'SEARCHING' WHERE id = $1`, [rows[0].id]);
+      // `created_at DESC` não desempata: `NOW()` é congelado no início da TRANSAÇÃO (mesmo
+      // valor para a linha do INSERT-trigger e a do UPDATE-trigger, ambos na mesma transação) —
+      // medido: a 1ª versão deste teste pegava a linha ERRADA por sorte de empate. Filtrar pela
+      // TRANSIÇÃO (old_value/new_value), única nesta chamada, é o que realmente identifica a linha.
       const { rows: hist } = await client.query(
-        `SELECT reason, actor_uid FROM patient_status_history WHERE patient_id = $1 ORDER BY created_at DESC LIMIT 1`,
+        `SELECT reason, actor_uid FROM patient_status_history
+          WHERE patient_id = $1 AND old_value = 'SUSPENDED' AND new_value = 'SEARCHING'`,
         [rows[0].id],
       );
       expect(hist[0]).toEqual({ reason: 'RESUMED_SERVICE', actor_uid: 'uid-e2e-486' });
@@ -101,7 +106,8 @@ describe('migration 486 — saída de SUSPENDED com motivo + actor_uid (banco re
       await client.query("SELECT set_config('app.actor_uid', '', true)");
       await client.query(`UPDATE patients SET status = 'ACTIVE' WHERE id = $1`, [rows[0].id]);
       const { rows: hist2 } = await client.query(
-        `SELECT reason, actor_uid FROM patient_status_history WHERE patient_id = $1 ORDER BY created_at DESC LIMIT 1`,
+        `SELECT reason, actor_uid FROM patient_status_history
+          WHERE patient_id = $1 AND old_value = 'SEARCHING' AND new_value = 'ACTIVE'`,
         [rows[0].id],
       );
       expect(hist2[0]).toEqual({ reason: null, actor_uid: null });
