@@ -83,6 +83,7 @@ const SERVICO: PatientContractedServiceDetail = {
   providerAgeBand: null,
   addressId: null,
   liveVacancyId: null,
+  requiredSex: null,
   schedule: null,
   active: true,
   endedAt: null,

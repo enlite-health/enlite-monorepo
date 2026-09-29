@@ -189,6 +189,7 @@
       "guardShift": "MORNING",
       "providerAgeBand": "AGE_30_45",
       "liveVacancyId": null,
+      "requiredSex": null,
       "active": true,
       "endedAt": null,
       "country": "AR",

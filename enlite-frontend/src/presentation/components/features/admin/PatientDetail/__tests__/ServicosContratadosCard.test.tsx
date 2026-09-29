@@ -78,6 +78,7 @@ const SERVICE: PatientContractedServiceDetail = {
   addressId: null,
   schedule: null,
   liveVacancyId: null,
+  requiredSex: null,
   active: true,
   endedAt: null,
   country: 'AR',
@@ -194,6 +195,7 @@ describe('ServicosContratadosCard — tabela no molde do Figma (05/09) + #PEND-0
       addressId: null,
       schedule: null,
       liveVacancyId: null,
+      requiredSex: null,
       active: false, endedAt: '2026-09-02T00:00:00Z', country: 'AR', deviceTypes: [], providers: [],
       createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z',
     };
@@ -402,6 +404,7 @@ describe('ServicosContratadosCard — ícone de ativação de recrutamento por s
     addressId: 'addr-home',
     schedule: SCHEDULE,
     liveVacancyId: null,
+    requiredSex: null,
   };
   const READY_PATIENT = {
     ...patientDetailFixture,

@@ -41,6 +41,7 @@ const SERVICE: PatientContractedServiceDetail = {
   providerAgeBand: 'AGE_30_45',
   addressId: null,
   liveVacancyId: null,
+  requiredSex: null,
   schedule: null,
   active: true, endedAt: null, country: 'AR', deviceTypes: ['HOME'], providers: [],
   createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z',

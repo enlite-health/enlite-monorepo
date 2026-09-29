@@ -61,6 +61,7 @@ const SERVICE: PatientContractedServiceDetail = {
   addressId: 'addr1',
   schedule: [{ dayOfWeek: 1, startTime: '09:00', endTime: '13:00' }],
   liveVacancyId: null,
+  requiredSex: null,
   active: true,
   endedAt: null,
   country: 'BR',
@@ -124,20 +125,22 @@ describe('EncuadreTab — seletor de serviço + bloco de detalhes com fonte', ()
     expect(screen.queryByTestId('contracted-service-detail-drawer')).not.toBeInTheDocument();
   });
 
-  it('bloco de detalhes: mostra Horas semanales e Capacidad (campos COM fonte); some quando nada está selecionado', () => {
+  it('bloco de detalhes (rodada 2, decisão A/DIV-9): agrupamento "Detalles del Encuadre" (Horas semanales) + "Capacidad" (Cantidad de profesionales), igual ao Figma', () => {
     const patient = { ...patientDetailFixture, contractedServices: [SERVICE] };
     render(<EncuadreTab patient={patient} />);
 
     fireEvent.click(screen.getByTestId('encuadre-service-row-svc-1'));
 
     const detalhes = screen.getByTestId('encuadre-detalhes');
+    expect(detalhes).toHaveTextContent('Detalles del Encuadre');
     expect(detalhes).toHaveTextContent('Horas semanales');
     expect(detalhes).toHaveTextContent('20');
     expect(detalhes).toHaveTextContent('Capacidad');
+    expect(detalhes).toHaveTextContent('Cantidad de profesionales');
     expect(detalhes).toHaveTextContent('2');
-    // Figma pede também "Plazo de pago" e "Valor líquido/hora" — SEM fonte no backend
-    // (`payment_term_days`/`net_hourly_rate` nunca populados, ver comentário de `EncuadreTab.tsx`)
-    // e por isso NÃO aparecem — nada de rótulo com "—" fingindo que o dado existe.
+    // Figma pede também "Plazo de pago" e "Valor líquido/hora" — FORA por decisão do Gabriel
+    // (decisão C, rodada 2: "financeiro decide depois"), sem fonte no backend hoje
+    // (`payment_term_days`/`net_hourly_rate` nunca populados, ver comentário de `EncuadreTab.tsx`).
     expect(detalhes).not.toHaveTextContent('Plazo de pago');
     expect(detalhes).not.toHaveTextContent('líquido');
   });
@@ -153,12 +156,36 @@ describe('EncuadreTab — seletor de serviço + bloco de detalhes com fonte', ()
     expect(detalhes.textContent).toContain('—');
   });
 
-  it('sem coluna SEXO (sem fonte no backend) e sem ações de editar/ativar (isso é só da outra aba)', () => {
+  it('coluna SEXO (rodada 2, decisão A/DIV-3): mostra o sexo requerido da vaga viva traduzido; null vira "—"', () => {
+    const comSexo = { ...SERVICE, requiredSex: 'FEMALE' };
+    const patient = { ...patientDetailFixture, contractedServices: [comSexo, SVC2] };
+    render(<EncuadreTab patient={patient} />);
+
+    expect(screen.getByTestId('encuadre-service-sex-svc-1')).toHaveTextContent('Mujer');
+    expect(screen.getByTestId('encuadre-service-sex-svc-2')).toHaveTextContent('—');
+  });
+
+  it('ícone OLHO (rodada 2, decisão B): abre o MESMO drawer de "Servicio Contratado" em modo LEITURA (sem botão Editar); PASTA e "Novo" continuam fora', () => {
     const patient = { ...patientDetailFixture, contractedServices: [SERVICE] };
     render(<EncuadreTab patient={patient} />);
 
+    expect(screen.queryByTestId('contracted-service-detail-drawer')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('encuadre-service-view-svc-1'));
+    expect(screen.getByTestId('contracted-service-detail-drawer')).toBeInTheDocument();
+    expect(screen.queryByTestId('contracted-service-detail-edit')).not.toBeInTheDocument();
+
     expect(screen.queryByTestId('contracted-service-edit-svc-1')).not.toBeInTheDocument();
     expect(screen.queryByTestId('contracted-service-activate-recruitment-svc-1')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('new-service-btn')).not.toBeInTheDocument();
+  });
+
+  it('clicar o ícone OLHO não seleciona a linha para o quadro C (stopPropagation)', () => {
+    const patient = { ...patientDetailFixture, contractedServices: [SERVICE] };
+    render(<EncuadreTab patient={patient} />);
+
+    fireEvent.click(screen.getByTestId('encuadre-service-view-svc-1'));
+
+    expect(screen.getByTestId('encuadre-service-row-svc-1').getAttribute('aria-selected')).toBeNull();
   });
 
   it('sem enum cru na tela (guard de i18n)', () => {

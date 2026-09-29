@@ -3502,8 +3502,17 @@
           "history": "Historial"
         },
         "encuadreTab": {
+          "tableSex": "Sexo",
+          "sexOptions": {
+            "MALE": "Varón",
+            "FEMALE": "Mujer",
+            "BOTH": "Indistinto"
+          },
+          "viewServiceAria": "Ver detalle de {{service}}",
+          "detailsGroupTitle": "Detalles del Encuadre",
           "weeklyHours": "Horas semanales",
-          "capacity": "Capacidad"
+          "capacityGroupTitle": "Capacidad",
+          "professionalsCount": "Cantidad de profesionales"
         },
         "comingSoon": "Próximamente",
         "noData": "Sin datos cargados",
@@ -3845,7 +3854,7 @@
           "activateRecruitmentAlreadyRecruiting": "Este servicio ya tiene una vacante en curso"
         },
         "serviceTeam": {
-          "title": "Encuadre · {{service}} · {{address}}",
+          "title": "Encuadre Terapéutico: {{local}}",
           "noAddress": "sin dirección",
           "emptySelection": "Elegí un servicio de la tabla para ver su encuadre.",
           "noVacancy": "Este servicio todavía no tiene vacante: no hay a quién encuadrar.",
@@ -3856,6 +3865,11 @@
             "SELECTED_FOR_SERVICE": "Seleccionado",
             "IN_SERVICE": "En atención",
             "REJECTED_FOR_SERVICE": "Rechazado"
+          },
+          "columnInfo": {
+            "SELECTED_FOR_SERVICE": "Está en Equipo de Respuesta Rápida de la vacante y todavía no fue asignado al itinerario.",
+            "IN_SERVICE": "Está asignado al itinerario de este servicio — sus horas cuentan como cubiertas.",
+            "REJECTED_FOR_SERVICE": "Fue rechazado para este servicio, con motivo. Se puede revertir."
           },
           "rejectButton": "Rechazar",
           "revertButton": "Revertir",
@@ -3910,6 +3924,26 @@
             "ALLOCATION_NOT_ACTIVE": "Esa franja ya no está activa.",
             "generic": "No se pudo completar la acción. Intentá de nuevo."
           }
+        },
+        "serviceTeamModal": {
+          "close": "Cerrar",
+          "providerField": "Prestador de servicio",
+          "contactedLabel": "Contacto efectuado",
+          "contactedYes": "Sí",
+          "contactedNo": "No",
+          "statusLabel": "Estado",
+          "eventDateLabel": "Fecha del evento",
+          "noteLabel": "Notas",
+          "notePlaceholder": "Notas…",
+          "save": "Guardar",
+          "saveError": "No se pudo guardar el contacto. Intentá de nuevo.",
+          "historyTitle": "Historial",
+          "loading": "Cargando…",
+          "loadError": "No se pudo cargar el historial de contacto.",
+          "historyEmpty": "Sin registros de contacto.",
+          "historyDate": "FECHA",
+          "historyNote": "NOTA",
+          "historyResponse": "RESPUESTA"
         },
         "itinerary": {
           "hoursPair": "Horas cubiertas/contratadas: {{pair}}",

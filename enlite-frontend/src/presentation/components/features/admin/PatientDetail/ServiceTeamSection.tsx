@@ -36,9 +36,15 @@ export function ServiceTeamSection({ patientId, service, address, selectionNonce
     );
   }
 
-  // O MESMO rótulo que a linha mostra (`serviceTypes.<code>`) — nunca outra fonte.
-  const serviceLabel = t(`admin.patients.detail.contractedServicesCard.serviceTypes.${service.serviceCode}`, service.serviceCode);
-  const addressLabel = address ? patientAddressLabel(address) : tc('noAddress');
+  // Rodada 2 (decisão A, DIV-6): título "Enquadre Terapêutico: <local>" no formato do Figma — o
+  // MESMO rótulo `careLocationOptions.<code>` que a tabela seletora da aba mostra, nunca outra
+  // fonte. `address` (a prop) segue existindo — usado só se `careLocation` vier vazio (serviço
+  // sem local informado, mas com endereço vinculado).
+  const localLabel = service.careLocation
+    ? t(`admin.patients.detail.contractedServicesCard.careLocationOptions.${service.careLocation}`, service.careLocation)
+    : address
+      ? patientAddressLabel(address)
+      : tc('noAddress');
 
   return (
     <div data-testid="quadro-c-secao" className="flex flex-col gap-3">
@@ -55,7 +61,7 @@ export function ServiceTeamSection({ patientId, service, address, selectionNonce
       {status === 'ok' && team && (
         <>
           <Heading level={2} as="h4" weight="semibold" color="primary" data-testid="quadro-c-titulo">
-            {tc('title', { service: serviceLabel, address: addressLabel })}
+            {tc('title', { local: localLabel })}
           </Heading>
           {refreshError && (
             <Text data-testid="quadro-c-refresh-erro" size="sm" role="alert" color="inherit" className="text-red-600">
@@ -67,7 +73,15 @@ export function ServiceTeamSection({ patientId, service, address, selectionNonce
               {tc('noVacancy')}
             </Text>
           ) : (
-            <ServiceTeamBoard team={team} onReject={reject} onRevert={revert} onSubstitute={substitute} actionError={actionError} />
+            <ServiceTeamBoard
+              patientId={patientId}
+              serviceId={service.id}
+              team={team}
+              onReject={reject}
+              onRevert={revert}
+              onSubstitute={substitute}
+              actionError={actionError}
+            />
           )}
         </>
       )}

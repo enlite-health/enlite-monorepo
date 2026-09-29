@@ -86,3 +86,34 @@ export const SERVICE_TEAM_REJECT_REASONS = [
 export const SERVICE_TEAM_REVERT_REASONS = ['REAVALIACAO', 'REJEITADO_POR_ENGANO', 'OTHER'] as const;
 
 export type ServiceTeamReasonKind = 'REJECT' | 'REVERT';
+
+/**
+ * Modal do prestador (Figma, rodada 2, decisão D) — o "Historial" (FECHA/NOTA/RESPUESTA): uma
+ * linha por "Guardar", append-only (migration 488, nunca editada). `contacted` é a RESPUESTA.
+ */
+export interface ServiceTeamContactHistoryEntry {
+  id: string;
+  contacted: boolean;
+  eventDate: string;
+  note: string | null;
+  createdAt: string;
+}
+
+/**
+ * GET/POST .../team/:workerId/contact. `phone`/`displayName` já vêm PROJETADOS pela célula
+ * `worker_contact:read` (o mesmo portão que já protege o nome no quadro C) — `null` sem a célula,
+ * nunca erro; o front NUNCA decide quem vê o quê, só renderiza o que a API mandou.
+ */
+export interface ServiceTeamContact {
+  workerId: string;
+  displayName: string | null;
+  phone: string | null;
+  history: ServiceTeamContactHistoryEntry[];
+}
+
+/** Body de POST .../team/:workerId/contact — `note` é texto livre (Notas), opcional. */
+export interface RegisterServiceTeamContactBody {
+  contacted: boolean;
+  eventDate: string;
+  note: string | null;
+}
