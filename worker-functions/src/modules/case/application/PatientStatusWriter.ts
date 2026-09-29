@@ -3,6 +3,7 @@ import type { PoolClient } from 'pg';
 import { inPatientTransaction } from './patientTransaction';
 import { isPatientStatus, isClinicalPatientStatus, isLaunchOnlyTransition, type PatientStatus } from '../domain/enums/PatientStatus';
 import type { OnHoldReason } from '../domain/enums/OnHoldReason';
+import type { SuspensionExitReason } from '../domain/enums/SuspensionExitReason';
 import { blockingCodesForStatusChange } from '../domain/PatientCompleteness';
 import { loadPatientCompleteness } from '../infrastructure/PatientCompletenessLoader';
 
@@ -54,6 +55,19 @@ export class OnHoldReasonRequiredError extends Error {
   }
 }
 
+/**
+ * Saída MANUAL de SUSPENDED sem motivo (decisão do Gabriel 29/09/2026) — o controller devolve
+ * 422. Mesmo padrão de `OnHoldReasonRequiredError`: motivo fechado (SuspensionExitReason), sem
+ * texto livre, que a trilha (`patient_status_history.reason`, migration 486) grava via set_config.
+ */
+export class SuspensionExitReasonRequiredError extends Error {
+  readonly code = 'SUSPENSION_EXIT_REASON_REQUIRED';
+  constructor() {
+    super('suspensionExitReason is required when leaving SUSPENDED manually');
+    this.name = 'SuspensionExitReasonRequiredError';
+  }
+}
+
 export interface MoveStatusOptions {
   onHoldReason?: OnHoldReason | null;
   /**
@@ -68,6 +82,20 @@ export interface MoveStatusOptions {
   onHoldNote?: string | null;
   /** Vira `change_source` em patient_status_history (trigger 254, via app.change_source). */
   changeSource: 'admin_panel' | 'kanban' | 'activate' | 'system' | 'vacancy_launch'; // só o VacancyLaunchHook; o zod da rota HTTP não aceita
+  /**
+   * Motivo de SAÍDA de SUSPENDED (decisão do Gabriel 29/09/2026) — exigido só quando `from`
+   * (lido dentro da transação) é SUSPENDED, o alvo é outro e `changeSource` é MANUAL
+   * (admin_panel/kanban); ausente nesse caso → SuspensionExitReasonRequiredError. Fora desse
+   * caso o valor é ignorado (não grava motivo solto), mesmo padrão de `onHoldReason` ao SAIR de
+   * ON_HOLD. Vira `patient_status_history.reason` (migration 486) via `app.status_reason`.
+   */
+  suspensionExitReason?: SuspensionExitReason | null;
+  /**
+   * Firebase uid de quem pediu a mudança via HTTP (decisão do Gabriel 29/09/2026). Ausente em
+   * chamada de SISTEMA (derivação, VacancyLaunchHook) — a history fica sem ator, como sempre foi.
+   * NUNCA logado (nem `functions.logger.info` abaixo) — só viaja por `app.actor_uid`.
+   */
+  actorUid?: string | null;
 }
 
 /**
@@ -130,6 +158,22 @@ export async function movePatientStatus(
       }
     }
 
+    // Saída MANUAL de SUSPENDED exige motivo (decisão do Gabriel 29/09/2026). Roda DEPOIS da FSM
+    // (mesma ordem do bloco de completude logo abaixo, e pelo mesmo motivo: uma transição que nem
+    // existe diz "não existe", não "falta motivo") e SÓ para admin_panel/kanban — chamada de
+    // SISTEMA (derivação, vacancy_launch) nunca sai de SUSPENDED hoje (é um estado MANUAL,
+    // `derivarEstadoPaciente`), mas a guarda não depende disso: se algum dia sair, é system e não
+    // pede motivo, do mesmo jeito que `changeSource: 'system'` nunca disparou OnHoldReasonRequiredError.
+    const leavingSuspendedManually =
+      from === 'SUSPENDED' && status !== 'SUSPENDED' &&
+      (opts.changeSource === 'admin_panel' || opts.changeSource === 'kanban');
+    if (leavingSuspendedManually && !opts.suspensionExitReason) {
+      throw new SuspensionExitReasonRequiredError();
+    }
+    // Motivo mandado fora da saída de SUSPENDED é IGNORADO na trilha (não grava motivo solto) —
+    // mesmo padrão de `onHoldReason`, que a UPDATE abaixo zera quando `status !== 'ON_HOLD'`.
+    const statusReasonToRecord = from === 'SUSPENDED' && status !== 'SUSPENDED' ? (opts.suspensionExitReason ?? null) : null;
+
     // Pré-condição de COMPLETUDE (decisão do Gabriel 07/09). Roda DEPOIS da FSM de propósito:
     // uma transição que nem existe deve dizer "não existe", não "falta horário".
     //
@@ -163,13 +207,21 @@ export async function movePatientStatus(
     }
 
     await client.query("SELECT set_config('app.change_source', $1, true)", [opts.changeSource]);
+    // Motivo de saída de SUSPENDED e ator: mesmo molde do change_source acima, GUCs próprios que
+    // os triggers da 254/255 leem via NULLIF(…, '') — string vazia = ausente = NULL na history
+    // (migration 486). Duas queries próprias (não uma combinada) para não mudar o formato que os
+    // testes já conferem em `set_config('app.change_source'`.
+    await client.query("SELECT set_config('app.status_reason', $1, true)", [statusReasonToRecord ?? '']);
+    await client.query("SELECT set_config('app.actor_uid', $1, true)", [opts.actorUid ?? '']);
     await client.query(
       `UPDATE patients SET ${sets.join(', ')}, updated_at = NOW() WHERE id = $1`,
       values,
     );
-    // Trilha SEM a nota: from/to/motivo/origem. O texto é clínico restrito (D211.2).
+    // Trilha SEM a nota: from/to/motivo/origem. O texto é clínico restrito (D211.2). NUNCA o
+    // actorUid (nem aqui) — ele só viaja pelo set_config acima, direto para a history.
     functions.logger.info('patient_status.moved', {
       patientId, from, to: status, onHoldReason: goingOnHold ? opts.onHoldReason : null, changeSource: opts.changeSource,
+      suspensionExitReason: statusReasonToRecord,
     });
     return { id: patientId, status };
   };
