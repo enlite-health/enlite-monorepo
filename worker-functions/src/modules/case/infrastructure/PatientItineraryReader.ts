@@ -11,8 +11,9 @@
  * `Date` à meia-noite LOCAL do processo, e o fuso do Cloud Run não é o do teste nem o do usuário
  * (a conversão certa é `GetPatientItineraryUseCase` + `localParts`).
  *
- * Nenhuma coluna de nome/telefone; nenhuma leitura da tabela de alocação antiga — a alocação
- * antiga não entra na conta nova (critério 11).
+ * Nome só CIFRADO, só da alocação (quem decifra é o caso de uso, com a célula — Fase 12, DX-12.5);
+ * nenhum telefone; nenhuma leitura da tabela de alocação antiga — a alocação antiga não entra na
+ * conta nova (critério 11).
  */
 import type { PoolClient } from 'pg';
 import { inPatientTransaction } from '../application/patientTransaction';
@@ -44,6 +45,12 @@ export interface ItinerarySlotRow {
   validFrom: string | null;
   validTo: string | null;
   status: ItineraryAssignmentStatus | null;
+  /**
+   * Fase 12 (DX-12.5 (1)): o nome CIFRADO do prestador da alocação (`null` sem alocação). OPCIONAIS —
+   * o agregado do Kanban (`PatientKanbanServicesReader`) usa o mesmo tipo e não lê nome.
+   */
+  firstNameEncrypted?: string | null;
+  lastNameEncrypted?: string | null;
 }
 
 /** Uma ausência sem substituto (a candidata a "dia descoberto" — DX-13.9). Sem `workerId`/nome. */
@@ -86,6 +93,8 @@ interface SlotJoinRow {
   valid_from: string | null;
   valid_to: string | null;
   status: ItineraryAssignmentStatus | null;
+  first_name_encrypted: string | null;
+  last_name_encrypted: string | null;
 }
 
 interface UncoveredAbsenceJoinRow {
@@ -126,10 +135,12 @@ export class PatientItineraryReader {
               a.id AS assignment_id, a.worker_id, a.application_id,
               to_char(a.valid_from, 'YYYY-MM-DD') AS valid_from,
               to_char(a.valid_to, 'YYYY-MM-DD') AS valid_to,
-              a.status
+              a.status,
+              w.first_name_encrypted, w.last_name_encrypted
          FROM patient_itinerary_slot s
          JOIN patient_contracted_services pcs ON pcs.id = s.contracted_service_id
          LEFT JOIN patient_itinerary_assignment a ON a.slot_id = s.id
+         LEFT JOIN workers w ON w.id = a.worker_id
         WHERE pcs.patient_id = $1 AND pcs.active
         ORDER BY s.contracted_service_id, s.weekday, s.start_time, a.valid_from`,
       [patientId],
@@ -164,6 +175,8 @@ export class PatientItineraryReader {
         validFrom: r.valid_from,
         validTo: r.valid_to,
         status: r.status,
+        firstNameEncrypted: r.first_name_encrypted,
+        lastNameEncrypted: r.last_name_encrypted,
       })),
       uncoveredAbsences: uncoveredRes.rows.map((r) => ({
         serviceId: r.contracted_service_id,

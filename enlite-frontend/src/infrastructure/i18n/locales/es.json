@@ -3500,6 +3500,7 @@
           "supportNetwork": "Red de Apoyo",
           "contractedService": "Servicio Contratado",
           "vacancies": "Vacantes",
+          "itinerary": "Itinerario",
           "financialData": "Datos Financieros",
           "matching": "Encuadre",
           "appointments": "Agendamientos",
@@ -3908,6 +3909,31 @@
             "ABSENCE_CANCELLED": "Esta ausencia ya fue cancelada.",
             "ALLOCATION_NOT_ACTIVE": "Esa franja ya no está activa.",
             "generic": "No se pudo completar la acción. Intentá de nuevo."
+          }
+        },
+        "itinerary": {
+          "hoursPair": "Horas cubiertas/contratadas: {{pair}}",
+          "noServices": "Este paciente no tiene servicios contratados activos.",
+          "emptyDay": "Sin atención",
+          "assign": "Asignar prestador",
+          "modal": {
+            "title": "Asignar prestador · {{day}} {{start}} - {{end}}",
+            "worker": "Prestador seleccionado",
+            "noOptions": "No hay prestadores en Seleccionado para este servicio.",
+            "confirm": "Asignar",
+            "cancel": "Cancelar"
+          },
+          "overlap": "Conflicto de horario: el prestador ya atiende {{existing}} y el pedido es {{requested}}.",
+          "overlapGap": "Entre direcciones distintas se exige un intervalo de {{minutes}} min.",
+          "loadError": "No se pudo cargar el itinerario de este paciente.",
+          "refreshError": "La asignación se procesó, pero no fue posible actualizar el itinerario. Recargá la página.",
+          "actionErrors": {
+            "NOT_SELECTED_FOR_SERVICE": "Este prestador ya no está en Seleccionado para este servicio.",
+            "ALREADY_ALLOCATED_IN_SLOT": "Este prestador ya está asignado a esta franja.",
+            "SLOT_INACTIVE": "Esta franja ya no está activa.",
+            "SERVICE_WITHOUT_ADDRESS": "Este servicio no tiene dirección cargada.",
+            "NOT_FOUND": "No se encontró la franja o el servicio.",
+            "generic": "No se pudo asignar el prestador."
           }
         },
         "matchingCard": {
@@ -4867,6 +4893,7 @@
             "services": "Servicio contratado",
             "contractValue": "Valor hora del servicio contratado",
             "vacancies": "Vacantes del paciente",
+            "itinerary": "Itinerario del paciente (asignar)",
             "operational": "Estado, activación e historial",
             "therapeuticProject": "Proyecto terapéutico"
           }

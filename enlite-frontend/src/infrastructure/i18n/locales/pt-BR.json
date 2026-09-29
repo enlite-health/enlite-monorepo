@@ -3421,6 +3421,7 @@
           "supportNetwork": "Rede de Apoio",
           "contractedService": "Serviço Contratado",
           "vacancies": "Vagas",
+          "itinerary": "Itinerário",
           "financialData": "Dados Financeiros",
           "matching": "Enquadre",
           "appointments": "Agendamentos",
@@ -3829,6 +3830,31 @@
             "ABSENCE_CANCELLED": "Essa ausência já foi cancelada.",
             "ALLOCATION_NOT_ACTIVE": "Essa faixa não está mais ativa.",
             "generic": "Não foi possível concluir a ação. Tente de novo."
+          }
+        },
+        "itinerary": {
+          "hoursPair": "Horas cobertas/contratadas: {{pair}}",
+          "noServices": "Este paciente não tem serviços contratados ativos.",
+          "emptyDay": "Sem atendimento",
+          "assign": "Atribuir prestador",
+          "modal": {
+            "title": "Atribuir prestador · {{day}} {{start}} - {{end}}",
+            "worker": "Prestador selecionado",
+            "noOptions": "Não há prestadores em Selecionado para este serviço.",
+            "confirm": "Atribuir",
+            "cancel": "Cancelar"
+          },
+          "overlap": "Conflito de horário: o prestador já atende {{existing}} e o pedido é {{requested}}.",
+          "overlapGap": "Entre endereços diferentes exige-se um intervalo de {{minutes}} min.",
+          "loadError": "Não foi possível carregar o itinerário deste paciente.",
+          "refreshError": "A atribuição foi processada, mas não foi possível atualizar o itinerário. Recarregue a página.",
+          "actionErrors": {
+            "NOT_SELECTED_FOR_SERVICE": "Este prestador não está mais em Selecionado para este serviço.",
+            "ALREADY_ALLOCATED_IN_SLOT": "Este prestador já está atribuído a esta faixa.",
+            "SLOT_INACTIVE": "Esta faixa não está mais ativa.",
+            "SERVICE_WITHOUT_ADDRESS": "Este serviço não tem endereço cadastrado.",
+            "NOT_FOUND": "A faixa ou o serviço não foi encontrado.",
+            "generic": "Não foi possível atribuir o prestador."
           }
         },
         "matchingCard": {
@@ -4788,6 +4814,7 @@
             "services": "Serviço contratado",
             "contractValue": "Valor-hora do serviço contratado",
             "vacancies": "Vagas do paciente",
+            "itinerary": "Itinerário do paciente (atribuir)",
             "operational": "Status, ativação e histórico",
             "therapeuticProject": "Projeto terapêutico"
           }

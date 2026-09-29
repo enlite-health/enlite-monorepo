@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AdminContractedServicesApiService, ContractedServiceApiError } from '@infrastructure/http/AdminContractedServicesApiService';
 import type { ServiceTeam } from '@domain/entities/ServiceTeam';
+import { classifyActionError } from './contractedServiceActionError';
 
 export type ServiceTeamStatus = 'idle' | 'loading' | 'ok' | 'forbidden' | 'error';
 
@@ -21,18 +22,13 @@ type ApplyErrorSetters = {
   setActionError: (code: string | null) => void;
 };
 
-/** A régua ÚNICA de erro das ações do quadro C (N4 do gate fecho — `reject`/`revert` e o POST do
- * `substitute`): 403 → forbidden; código conhecido (422/409) → `actionError` = code; resto → error. */
+/** Erro das ações do quadro C (N4 do gate fecho — `reject`/`revert` e o POST do `substitute`) pela
+ * régua ÚNICA `classifyActionError`: 403 → forbidden; código conhecido (422/409) → `actionError` =
+ * code; resto → error. */
 function applyActionError(err: unknown, { setStatus, setActionError }: ApplyErrorSetters): void {
-  if (err instanceof ContractedServiceApiError && err.status === 403) {
-    setStatus('forbidden');
-    return;
-  }
-  if (err instanceof ContractedServiceApiError && err.code) {
-    setActionError(err.code);
-    return;
-  }
-  setStatus('error');
+  const classified = classifyActionError(err);
+  if (classified.kind === 'coded') setActionError(classified.code);
+  else setStatus(classified.kind);
 }
 
 /**

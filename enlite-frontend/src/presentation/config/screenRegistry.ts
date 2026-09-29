@@ -87,7 +87,7 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
   {
     id: 'patients.detail',
     route: '/admin/patients/:id',
-    tabs: ['clinicalData', 'supportNetwork', 'contractedService', 'vacancies', 'history'],
+    tabs: ['clinicalData', 'supportNetwork', 'contractedService', 'vacancies', 'itinerary', 'history'],
     containers: [
       c('identity', 'patient_identity', ['read', 'create', 'update']),
       c('clinical', 'patient_clinical', ['read', 'create', 'update'], 'clinicalData'),
@@ -104,10 +104,12 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
       c('address', 'patient_address', ['read', 'create', 'update'], 'contractedService'),
       // A aba Matching saiu (decisão do Gabriel 05/09, na main): o encuadre É o serviço contratado
       // completo, que vive só na aba Serviço contratado — uma célula, uma aba.
-      c('services', 'patient_services', ['read', 'create', 'update'], 'contractedService'),
+      c('services', 'patient_services', ['read', 'create', 'update'], 'contractedService', 'itinerary'),
       // O VALOR-HORA do serviço contratado é dado próprio (era "só admin" por papel; D293): quem
       // tem `patient_services:read` vê o serviço, mas o preço só sai com esta célula.
       c('contractValue', 'patient_contract_value', ['read'], 'contractedService'),
+      // cadeia Fase 12 (D442): a ação de alocar; a leitura é `patient_services:read`.
+      c('itinerary', 'patient_itinerary', ['update'], 'itinerary'),
       c('vacancies', 'vacancy', ['read'], 'vacancies'),
       // O operacional da tela numa linha só: cabeçalho (status, ativar, completude) e a aba de
       // histórico — mesmo recurso `patient`, uma célula de leitura e uma de escrita.

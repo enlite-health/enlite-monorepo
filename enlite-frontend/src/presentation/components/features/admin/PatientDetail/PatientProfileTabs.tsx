@@ -18,6 +18,7 @@ const TAB_I18N_KEYS: Record<PatientTab, string> = {
   supportNetwork: 'admin.patients.detail.tabs.supportNetwork',
   contractedService: 'admin.patients.detail.tabs.contractedService',
   vacancies: 'admin.patients.detail.tabs.vacancies',
+  itinerary: 'admin.patients.detail.tabs.itinerary',
   history: 'admin.patients.detail.tabs.history',
 };
 
@@ -26,13 +27,13 @@ export function PatientProfileTabs({ activeTab, onTabChange, visibleTabs }: Pati
   const tabs = visibleTabs ? PATIENT_TABS.filter((tab) => visibleTabs.includes(tab)) : PATIENT_TABS;
 
   return (
-    <div className="flex items-center gap-4 flex-wrap overflow-x-auto" data-testid="patient-profile-tabs">
+    <div className="flex items-center gap-3 overflow-x-auto" data-testid="patient-profile-tabs">
       {tabs.map((tab) => (
         <button
           key={tab}
           onClick={() => onTabChange(tab)}
           className={`
-            px-5 py-2 rounded-card font-lexend text-base font-medium transition-all whitespace-nowrap
+            px-4 py-2 rounded-card font-lexend text-base font-medium transition-all whitespace-nowrap
             ${
               activeTab === tab
                 ? 'bg-primary text-white shadow-[0px_4px_20px_0px_rgba(0,0,0,0.4)]'

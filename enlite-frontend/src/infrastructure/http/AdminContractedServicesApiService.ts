@@ -13,19 +13,30 @@ import type {
   UpdateProviderBody,
 } from '@domain/entities/PatientContractedService';
 import type { PatientKanbanServiceSummary } from '@domain/entities/PatientLifecycle';
-import type { ItineraryAbsenceResult, ServiceTeam } from '@domain/entities/ServiceTeam';
+import type { ItineraryAbsenceResult, ServiceTeam, ServiceTeamMember } from '@domain/entities/ServiceTeam';
+import type { ItineraryOverlapDetail, PatientItinerary } from '@domain/entities/PatientItinerary';
 
 export class ContractedServiceApiError extends Error {
   readonly status: number;
   readonly code?: string;
   readonly details?: Record<string, unknown>;
+  /** Só no 409 `ITINERARY_OVERLAP` (Fase 12, DX-12.6): os 2 horários em conflito, vindos da API. */
+  readonly overlap?: ItineraryOverlapDetail;
 
-  constructor(message: string, status: number, body?: { code?: string; details?: Record<string, unknown> }) {
+  constructor(message: string, status: number, body?: Partial<Omit<ApiErrorResponse, 'success' | 'error'>>) {
     super(message);
     this.name = 'ContractedServiceApiError';
     this.status = status;
     this.code = body?.code;
     this.details = body?.details;
+    if (body?.existing && body.requested) {
+      this.overlap = {
+        existing: body.existing,
+        requested: body.requested,
+        sameAddress: body.sameAddress ?? false,
+        minGapMinutes: body.minGapMinutes ?? null,
+      };
+    }
   }
 }
 
@@ -38,6 +49,11 @@ interface ApiErrorResponse {
   error: string;
   code?: string;
   details?: Record<string, unknown>;
+  /** Corpo do 409 `ITINERARY_OVERLAP` (`AdminItineraryWriteController`) — campos no topo do corpo. */
+  existing?: ItineraryOverlapDetail['existing'];
+  requested?: ItineraryOverlapDetail['requested'];
+  sameAddress?: boolean;
+  minGapMinutes?: number | null;
 }
 type ApiResponse<T> = ApiSuccessResponse<T> | ApiErrorResponse;
 
@@ -172,6 +188,39 @@ class AdminContractedServicesApiServiceClass {
   }
 
   /**
+   * GET /api/admin/patients/:id/itinerary (Fase 12, DX-12.6) — o itinerário do paciente: serviços,
+   * slots e alocações com `allocationId`/`displayName`. Uma chamada por montagem da aba.
+   */
+  async getItinerary(patientId: string): Promise<PatientItinerary> {
+    return this.request<PatientItinerary>('GET', `/api/admin/patients/${patientId}/itinerary`);
+  }
+
+  /** GET .../contracted-services/:sid/allocation-options — os selecionados do serviço, alocáveis. */
+  async getAllocationOptions(patientId: string, serviceId: string): Promise<AllocationOptionsResult> {
+    return this.request<AllocationOptionsResult>(
+      'GET',
+      `/api/admin/patients/${patientId}/contracted-services/${serviceId}/allocation-options`,
+    );
+  }
+
+  /**
+   * POST .../itinerary/slots/:slotId/allocations — aloca o prestador no slot. 201 com a alocação;
+   * 409 `ITINERARY_OVERLAP` traz `err.overlap` (os 2 horários); 422 vira `err.code`.
+   */
+  async allocate(
+    patientId: string,
+    serviceId: string,
+    slotId: string,
+    workerId: string,
+  ): Promise<ItineraryAllocationResult> {
+    return this.request<ItineraryAllocationResult>(
+      'POST',
+      `/api/admin/patients/${patientId}/contracted-services/${serviceId}/itinerary/slots/${slotId}/allocations`,
+      { workerId },
+    );
+  }
+
+  /**
    * POST .../itinerary/allocations/:allocationId/absences (DX-13.7/13.8) — registra a ausência
    * pontual do titular naquela faixa/data; `substituteWorkerId` omitido = sem substituto (dia
    * fica como alerta). 201 quando criada; 404/422/409 viram `ContractedServiceApiError` (o
@@ -267,6 +316,23 @@ export interface ActivateRecruitmentResult {
 /** Result of GET /api/admin/patients/kanban/services (fase 8, DX-8.1/8.5). */
 export interface KanbanServicesResult {
   patients: Array<{ patientId: string; asOf: string; services: PatientKanbanServiceSummary[] }>;
+}
+
+/** Result of GET .../contracted-services/:sid/allocation-options (Fase 11/12). */
+export interface AllocationOptionsResult {
+  serviceId: string;
+  vacancyId: string | null;
+  options: ServiceTeamMember[];
+}
+
+/** Result of POST .../itinerary/slots/:slotId/allocations (201). */
+export interface ItineraryAllocationResult {
+  allocationId: string;
+  slotId: string;
+  workerId: string;
+  applicationId: string;
+  validFrom: string;
+  status: 'ACTIVE';
 }
 
 export const AdminContractedServicesApiService = new AdminContractedServicesApiServiceClass();

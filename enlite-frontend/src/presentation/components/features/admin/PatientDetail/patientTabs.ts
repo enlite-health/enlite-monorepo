@@ -4,12 +4,14 @@
 // 05/09 (decisão do Gabriel, veio da main no sync de 08/09): "Encuadre/Matching" também sai — era a MESMA
 // tabela de serviços contratados duplicada + um card "Próximamente". O encuadre do paciente É o serviço
 // contratado completo (endereço + horário, migration 330), e vive na aba "Servicio Contratado".
+// D442 (28/09): 'Itinerario' entra como 5ª de 6 — tem conteúdo real (D431): a grade semanal por serviço e a alocação.
 // Fora do componente (react-refresh): a página e o registro de telas importam a lista.
 export type PatientTab =
   | 'clinicalData'
   | 'supportNetwork'
   | 'contractedService'
   | 'vacancies'
+  | 'itinerary'
   | 'history';
 
 
@@ -18,5 +20,6 @@ export const PATIENT_TABS: readonly PatientTab[] = [
   'supportNetwork',
   'contractedService',
   'vacancies',
+  'itinerary',
   'history',
 ];

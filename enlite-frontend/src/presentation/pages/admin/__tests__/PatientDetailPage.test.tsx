@@ -36,6 +36,10 @@ vi.mock('@presentation/components/features/admin/PatientDetail/ProjetoTerapeutic
 // cobria: `onSaved` refetcha ficha E vagas (a vaga nasce da ativação).
 vi.mock('@presentation/components/features/admin/PatientDetail/ServicosContratadosCard', () => ({ ServicosContratadosCard: (p: { onSaved?: () => void }) => <button data-testid="services-saved-stub" onClick={() => p.onSaved?.()}>services</button> }));
 vi.mock('@presentation/components/features/admin/PatientDetail/PatientStatusControl', () => ({ PatientStatusControl: (p: { onSaved: () => void }) => <button data-testid="status-stub" onClick={p.onSaved}>status</button> }));
+// Fase 12 (D442): a aba "Itinerário" — o hook é o ÚNICO I/O da aba; aqui ele devolve 0 serviços (estado vazio com testid próprio).
+vi.mock('@hooks/admin/usePatientItinerary', () => ({
+  usePatientItinerary: () => ({ itinerary: { services: [] }, status: 'ok', loadOptions: vi.fn(), allocate: vi.fn(), actionError: null, refreshError: false }),
+}));
 vi.mock('@infrastructure/http/AdminApiService', () => ({ AdminApiService: { updatePatientSection: vi.fn(), listInsuranceProviders: vi.fn().mockResolvedValue([]) } }));
 
 import PatientDetailPage from '../PatientDetailPage';
@@ -244,7 +248,7 @@ describe('PatientDetailPage — D286: abas e cards por container', () => {
   it('serviços contratados: com ela, Serviço Contratado existe (Enquadre saiu em 05/09); Dados Clínicos não', () => {
     comCelulas(['patient:read', 'patient_services:read'], 'on');
     render(<PatientDetailPage />);
-    expect(abasNaTela()).toEqual(['Serviço Contratado', 'Histórico']);
+    expect(abasNaTela()).toEqual(['Serviço Contratado', 'Itinerário', 'Histórico']);
     expect(screen.queryByTestId('edit-coverage-btn')).not.toBeInTheDocument();
   });
 
@@ -265,10 +269,27 @@ describe('PatientDetailPage — D286: abas e cards por container', () => {
     expect(screen.queryByTestId('familiares-card')).not.toBeInTheDocument();
   });
 
+  it('Fase 12 (D442): só patient_itinerary:update → a aba Itinerário existe (container próprio), mas o conteúdo NÃO (gate de patient_services)', () => {
+    comCelulas(['patient:read', 'patient_itinerary:update'], 'on');
+    render(<PatientDetailPage />);
+    expect(abasNaTela()).toEqual(['Itinerário', 'Histórico']);
+    expect(screen.queryByTestId('itinerario-sem-servicos')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('itinerario-erro')).not.toBeInTheDocument();
+  });
+
+  it('Fase 12 (D442): engine OFF, clicar Itinerário (5ª de 6) monta a aba do itinerário', () => {
+    comCelulas([], 'off');
+    render(<PatientDetailPage />);
+    expect(abasNaTela()[4]).toBe('Itinerário');
+    expect(screen.queryByTestId('itinerario-sem-servicos')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText('Itinerário'));
+    expect(screen.getByTestId('itinerario-sem-servicos')).toBeInTheDocument();
+  });
+
   it('enforcement OFF: tudo como antes, mesmo sem célula nenhuma (as células novas nascem sem grupo)', () => {
     comCelulas([], 'off');
     render(<PatientDetailPage />);
-    expect(abasNaTela()).toHaveLength(5);
+    expect(abasNaTela()).toHaveLength(6);
     fireEvent.click(screen.getByText('Rede de Apoio'));
     expect(screen.getByTestId('familiares-card')).toBeInTheDocument();
   });

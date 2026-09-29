@@ -16,6 +16,8 @@ jest.mock('@shared/logging', () => ({ reportError: jest.fn(), loggingAls: { getS
 import { AdminPatientContractedServicesController } from '../AdminPatientContractedServicesController';
 import { DeviceTypeUnknownError } from '../../../infrastructure/PatientDeviceTypeRepository';
 import { AddressNotOfPatientError } from '../../../infrastructure/PatientContractedServiceRepository';
+import { SlotHasActiveAllocationError } from '../../../application/ItinerarySlotWriteUseCase';
+import { reportError } from '@shared/logging';
 import { ProviderAlreadyActiveError } from '../../../infrastructure/ContractedServiceProviderRepository';
 import { AuthMiddleware } from '@modules/identity';
 import type { Response } from 'express';
@@ -217,6 +219,19 @@ describe('AdminPatientContractedServicesController', () => {
       await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { addressId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' } }), res);
       expect(res.status).toHaveBeenCalledWith(422);
       expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'ADDRESS_NOT_OF_PATIENT' }));
+    });
+
+    it('422 SLOT_HAS_ACTIVE_ALLOCATION nomeando o slot quando o sync recusa desativar slot alocado (D442)', async () => {
+      const repo = { findById: jest.fn().mockResolvedValue(SERVICE), update: jest.fn().mockRejectedValue(new SlotHasActiveAllocationError('svc', 'slot-1')) };
+      const controller = new AdminPatientContractedServicesController(repo as never, {} as never);
+      const res = mockRes();
+      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { schedule: null } }), res);
+      expect(res.status).toHaveBeenCalledWith(422);
+      expect(res.json).toHaveBeenCalledWith(
+        expect.objectContaining({ success: false, code: 'SLOT_HAS_ACTIVE_ALLOCATION', details: { slotId: 'slot-1' } }),
+      );
+      expect(reportError).not.toHaveBeenCalled();
+      console.log('[12.P4]', 'status', res.status.mock.calls[0][0], 'code', res.json.mock.calls[0][0].code);
     });
 
     it('200 quando atualiza com sucesso', async () => {

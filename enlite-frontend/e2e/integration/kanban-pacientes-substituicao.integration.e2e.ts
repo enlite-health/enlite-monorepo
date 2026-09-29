@@ -826,8 +826,13 @@ test.describe('substituicao @integration', () => {
       const tLastName = runSQL(
         `SELECT convert_from(decode(last_name_encrypted, 'base64'), 'UTF8') FROM workers WHERE id = '${t}'`,
       );
-      const nameLeaks = (tFirstName && itinJson.includes(tFirstName) ? 1 : 0)
-        + (tLastName && itinJson.includes(tLastName) ? 1 : 0);
+      // D442/DX-12.5: o nome mora só na alocação vigente (`assignments[].displayName`); o bloco `alerts` segue sem nome.
+      const alertsJson = JSON.stringify(alerts1);
+      const nameLeaks = (tFirstName && alertsJson.includes(tFirstName) ? 1 : 0)
+        + (tLastName && alertsJson.includes(tLastName) ? 1 : 0);
+      const assignmentNames = ((alertsBody?.services ?? []) as Array<{ slots?: Array<{ assignments?: Array<{ displayName?: string | null }> }> }>)
+        .flatMap((s) => s.slots ?? []).flatMap((sl) => sl.assignments ?? [])
+        .filter((a) => !!tFirstName && (a.displayName ?? '').includes(tFirstName)).length;
       const serviceIdMatches = itinJson.match(/serviceId/g)?.length ?? 0;
 
       await loginAs(page, STAFF);
@@ -884,13 +889,14 @@ test.describe('substituicao @integration', () => {
       console.log(
         '[13.10]', alerts1.length, alertsAfterSub.length, alertsAfterPast.length,
         '[13.11]', columnBefore, columnAfter,
-        '[13.13]', clinicMatches, clinicControl, nameLeaks, serviceIdMatches,
+        '[13.13]', clinicMatches, clinicControl, nameLeaks, assignmentNames, serviceIdMatches,
         '[13.15]', externalHosts.length, apiHostHits,
       );
 
       expect(clinicMatches).toBe(0);
       expect(clinicControl).toBeGreaterThan(0);
       expect(nameLeaks).toBe(0);
+      expect(assignmentNames).toBeGreaterThanOrEqual(1);
       expect(serviceIdMatches).toBeGreaterThanOrEqual(1);
       expect(externalHosts.length).toBe(0);
       expect(apiHostHits).toBeGreaterThan(0);

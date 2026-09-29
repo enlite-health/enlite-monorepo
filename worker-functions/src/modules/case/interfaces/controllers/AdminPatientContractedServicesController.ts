@@ -6,6 +6,7 @@ import { PatientContractedServiceRepository, type ContractedServiceDetail } from
 import { ContractedServiceProviderRepository, ProviderAlreadyActiveError } from '../../infrastructure/ContractedServiceProviderRepository';
 import { DeviceTypeUnknownError } from '../../infrastructure/PatientDeviceTypeRepository';
 import { AddressNotOfPatientError } from '../../infrastructure/PatientContractedServiceRepository';
+import { SlotHasActiveAllocationError } from '../../application/ItinerarySlotWriteUseCase';
 import {
   createContractedServiceSchema,
   updateContractedServiceSchema,
@@ -150,6 +151,12 @@ export class AdminPatientContractedServicesController {
       // catálogo de dispositivos; nunca 500.
       if (err instanceof AddressNotOfPatientError) {
         res.status(422).json({ success: false, error: 'addressId does not belong to this patient', code: err.code, details: { addressId: err.addressId } });
+        return;
+      }
+      // D442 (Fase 12): o sync recusou desativar slot com alocação vigente — 422 nomeando o slot,
+      // o MESMO código da rota do itinerário; a transação inteira desfez.
+      if (err instanceof SlotHasActiveAllocationError) {
+        res.status(422).json({ success: false, error: 'itinerary slot has an active allocation — end it first', code: 'SLOT_HAS_ACTIVE_ALLOCATION', details: { slotId: err.slotId } });
         return;
       }
       const e = err instanceof Error ? err : new Error(String(err));

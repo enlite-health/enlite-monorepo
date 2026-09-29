@@ -6,10 +6,20 @@
  * operação do paciente — `localParts(now, countryToTimezone(country))`, nunca `new Intl…` novo
  * nem o relógio UTC do processo — porque a vigência da alocação compara datas por fuso do país,
  * não por instante.
+ *
+ * Fase 12 (DX-12.5 (4)): cada alocação sai com `allocationId` e `displayName` — o nome só de
+ * alocação VIGENTE em `asOf` (`workerIdsToName`), projetado pela fonte única
+ * `projectWorkerDisplayNames` (célula `worker_contact:read`, decidida antes do KMS) e pareado por
+ * `withAssignmentIdentity` DEPOIS de `buildServiceCoverages` (a conta não muda). `cells === null` =
+ * engine OFF (comportamento de hoje: o nome aparece).
  */
 import { PatientItineraryReader, type ItineraryRows, type ItineraryAssignmentStatus } from '../infrastructure/PatientItineraryReader';
 import { operationDateOf, buildServiceCoverages } from './itineraryCoverage';
 import { uncoveredDayAlerts } from '../domain/itineraryAlerts';
+import { withAssignmentIdentity, workerIdsToName, type PatientItineraryServiceView } from './itineraryAssignmentView';
+import { projectWorkerDisplayNames } from './workerDisplayNames';
+import { type Decryptor } from '@modules/identity/permissions';
+import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 
 /** Reader devolveu `null` (paciente inexistente/soft-deletado/outro país). O controller mapeia para 404. */
 export class PatientNotFoundForItineraryError extends Error {
@@ -54,7 +64,7 @@ export interface PatientItineraryAlert {
 export interface PatientItineraryResult {
   patientId: string;
   asOf: string;
-  services: PatientItineraryService[];
+  services: PatientItineraryServiceView[];
   alerts: PatientItineraryAlert[];
 }
 
@@ -63,14 +73,19 @@ export interface PatientItineraryReaderPort {
 }
 
 export class GetPatientItineraryUseCase {
-  constructor(private readonly reader: PatientItineraryReaderPort = new PatientItineraryReader()) {}
+  constructor(
+    private readonly reader: PatientItineraryReaderPort = new PatientItineraryReader(),
+    private readonly kms: Decryptor = new KMSEncryptionService(),
+  ) {}
 
-  async execute(patientId: string, now: Date = new Date()): Promise<PatientItineraryResult> {
+  async execute(patientId: string, now: Date = new Date(), cells: string[] | null = null): Promise<PatientItineraryResult> {
     const rows = await this.reader.readPatientItinerary(patientId);
     if (rows === null) throw new PatientNotFoundForItineraryError(patientId);
 
     const asOf = operationDateOf(rows.country, now);
-    const services = buildServiceCoverages(rows, asOf);
+    const coverages = buildServiceCoverages(rows, asOf);
+    const displayNameByWorkerId = await projectWorkerDisplayNames(workerIdsToName(rows.slots, coverages, asOf), cells, this.kms);
+    const services = withAssignmentIdentity(coverages, rows.slots, asOf, displayNameByWorkerId);
     const alerts = uncoveredDayAlerts(rows.uncoveredAbsences ?? [], asOf);
 
     return { patientId, asOf, services, alerts };

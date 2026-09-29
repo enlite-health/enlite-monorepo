@@ -4,8 +4,9 @@ import { Heading } from '@presentation/components/atoms/Heading';
 import { Button } from '@presentation/components/atoms/Button';
 import { Select, type SelectOption } from '@presentation/components/atoms/Select';
 import { SearchableSelect } from '@presentation/components/molecules/SearchableSelect/SearchableSelect';
-import { nextDatesOfWeekday, formatDDMM } from './substitutionDates';
+import { nextDatesOfWeekday, formatDDMM, weekdayName } from './substitutionDates';
 import type { ServiceTeamAllocation, ServiceTeamMember } from '@domain/entities/ServiceTeam';
+import { workerLabel } from './workerLabel';
 
 interface SubstitutionDayModalProps {
   allocations: ServiceTeamAllocation[];
@@ -20,20 +21,6 @@ const DATES_COUNT = 8;
 
 /** Valor sentinela da opção "sin reemplazo" no `SearchableSelect` — nunca vaza para `onSubmit` (vira `null`). */
 const NO_SUBSTITUTE_VALUE = '__NO_SUBSTITUTE__';
-
-/**
- * Referência UTC de um domingo (2023-01-01) para nomear o dia da semana sem criar chave de i18n
- * nova fora do bloco fechado no P30 (`weekday` 0=domingo…6=sábado, a mesma convenção do
- * `dayOfWeek`/`nextDatesOfWeekday`). Só o NOME do dia (`Intl`, locale do idioma ativo) — nunca a
- * data em si, que vem sempre de `nextDatesOfWeekday`.
- */
-const WEEKDAY_REFERENCE_UTC_MS = Date.UTC(2023, 0, 1);
-
-function weekdayName(weekday: number, language: string): string {
-  const locale = language.startsWith('pt') ? 'pt-BR' : 'es-AR';
-  const ms = WEEKDAY_REFERENCE_UTC_MS + weekday * 24 * 60 * 60 * 1000;
-  return new Intl.DateTimeFormat(locale, { weekday: 'long', timeZone: 'UTC' }).format(new Date(ms));
-}
 
 /**
  * DX-13.13 — o modal "Sustituir un día", aberto pelo botão no card do titular em `IN_SERVICE`.
@@ -69,7 +56,7 @@ export function SubstitutionDayModal({
     { value: NO_SUBSTITUTE_VALUE, label: t('admin.patients.detail.serviceTeam.substitution.noSubstitute') },
     ...selected.map((member) => ({
       value: member.workerId,
-      label: member.displayName ?? t('admin.patients.detail.serviceTeam.unnamedWorker', { shortId: member.workerId.slice(-8) }),
+      label: workerLabel(t, member.workerId, member.displayName),
     })),
   ];
 
