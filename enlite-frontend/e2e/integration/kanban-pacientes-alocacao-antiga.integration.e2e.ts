@@ -47,25 +47,42 @@ interface AlocacaoAntigaSeed {
   w2: string;
 }
 
-/** Semente comum: paciente lançável + vaga do serviço + W1 (Selecionado C) e W2 (sem candidatura). */
-async function seedAlocacaoAntiga(request: APIRequestContext): Promise<AlocacaoAntigaSeed> {
+/**
+ * Semente comum: paciente lançável + vaga do serviço + W1 (Selecionado C) e W2 (sem candidatura).
+ * Preenche `into` passo a passo e roda DENTRO do `try` do teste: se falhar no meio, o `finally`
+ * limpa o que já nasceu.
+ */
+async function seedAlocacaoAntiga(
+  request: APIRequestContext,
+  into: Partial<AlocacaoAntigaSeed>,
+): Promise<AlocacaoAntigaSeed> {
   const seed = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.6, lng: -58.4 });
+  into.seed = seed;
   const vacancyId = await activateRecruitmentViaApi(request, seed.patientId, seed.serviceId);
+  into.vacancyId = vacancyId;
   const w1 = insertTestWorker({ occupation: 'AT' });
+  into.w1 = w1;
   const w2 = insertTestWorker({ occupation: 'AT' });
+  into.w2 = w2;
   insertWJA({ workerId: w1, jobPostingId: vacancyId, funnelStage: 'QUICK_RESPONSE_TEAM' });
   return { seed, vacancyId, w1, w2 };
 }
 
-/** Limpeza na ordem da DX-14.15 (a linha antiga ANTES do worker: `worker_id` sem `ON DELETE`). */
-function cleanupAlocacaoAntiga(s: AlocacaoAntigaSeed): void {
-  cleanupLegacyAllocations(s.seed.serviceId);
-  cleanupItineraryWrite(s.seed.patientId);
-  cleanupWJAAndEncuadre(s.w1, s.vacancyId);
-  cleanupWJAAndEncuadre(s.w2, s.vacancyId);
-  cleanupTestWorker(s.w1);
-  cleanupTestWorker(s.w2);
-  s.seed.cleanup();
+/**
+ * Limpeza na ordem da DX-14.15 (a linha antiga ANTES do worker: `worker_id` sem `ON DELETE`).
+ * Aceita a semente parcial: os helpers de limpeza ignoram id vazio.
+ */
+function cleanupAlocacaoAntiga(s: Partial<AlocacaoAntigaSeed>): void {
+  const w1 = s.w1 ?? '';
+  const w2 = s.w2 ?? '';
+  const vacancyId = s.vacancyId ?? '';
+  cleanupLegacyAllocations(s.seed?.serviceId ?? '');
+  cleanupItineraryWrite(s.seed?.patientId ?? '');
+  cleanupWJAAndEncuadre(w1, vacancyId);
+  cleanupWJAAndEncuadre(w2, vacancyId);
+  if (w1) cleanupTestWorker(w1);
+  if (w2) cleanupTestWorker(w2);
+  s.seed?.cleanup();
 }
 
 /** Duração em horas de um slot a partir do `HH:MM` que a rota devolve (nenhuma data envolvida). */
@@ -82,10 +99,11 @@ test.describe('alocacao-antiga @integration', () => {
   useLancamentoStaff(STAFF, 'E2E Alocacao Antiga');
 
   test('alocacao-antiga-fechada', async ({ request }) => {
-    const s = await seedAlocacaoAntiga(request);
-    const { patientId, serviceId } = s.seed;
+    const semeado: Partial<AlocacaoAntigaSeed> = {};
     const token = tokenFor(ITINERARIO_STAFF);
     try {
+      const s = await seedAlocacaoAntiga(request, semeado);
+      const { patientId, serviceId } = s.seed;
       // Critério 2: a porta antiga recusa (404) e a contagem da tabela não muda.
       const legacyId = seedLegacyAllocationSql(serviceId, s.w2, 10);
       const antes = countLegacyAllocations(serviceId);
@@ -118,15 +136,16 @@ test.describe('alocacao-antiga @integration', () => {
       expect(ativas).toBe(1);
       console.log('[14.3]', { status: alloc.status, ativas });
     } finally {
-      cleanupAlocacaoAntiga(s);
+      cleanupAlocacaoAntiga(semeado);
     }
   });
 
   test('alocacao-antiga-nao-conta', async ({ request }) => {
-    const s = await seedAlocacaoAntiga(request);
-    const { patientId, serviceId } = s.seed;
+    const semeado: Partial<AlocacaoAntigaSeed> = {};
     const token = tokenFor(ITINERARIO_STAFF);
     try {
+      const s = await seedAlocacaoAntiga(request, semeado);
+      const { patientId, serviceId } = s.seed;
       seedLegacyAllocationSql(serviceId, s.w2, 20);
       expect(countLegacyAllocations(serviceId)).toBe(1);
 
@@ -166,14 +185,15 @@ test.describe('alocacao-antiga @integration', () => {
       expect(countLegacyAllocations(serviceId)).toBe(1);
       console.log('[14.4]', { cobertasAntes, cobertasDepois, w2InService, w1InService });
     } finally {
-      cleanupAlocacaoAntiga(s);
+      cleanupAlocacaoAntiga(semeado);
     }
   });
 
   test('alocacao-antiga-so-leitura', async ({ page, request }) => {
-    const s = await seedAlocacaoAntiga(request);
-    const { patientId, serviceId: s1, addressId } = s.seed;
+    const semeado: Partial<AlocacaoAntigaSeed> = {};
     try {
+      const s = await seedAlocacaoAntiga(request, semeado);
+      const { patientId, serviceId: s1, addressId } = s.seed;
       const s2 = await createServiceViaApi(request, patientId, { addressId });
       const legacyId = seedLegacyAllocationSql(s1, s.w2, 10);
       expect(countLegacyAllocations(s1)).toBe(1);
@@ -194,14 +214,19 @@ test.describe('alocacao-antiga @integration', () => {
       await expect(secao).toBeVisible({ timeout: 15_000 });
       await expect(secao).toContainText(legacyTitle);
       await expect(page.getByTestId(`provider-row-${legacyId}`)).toHaveCount(1);
-      const acoes = [
+      const acoesLocs = [
         page.getByTestId(`provider-associate-${s1}`),
         page.getByTestId(`provider-search-${s1}`),
         page.getByTestId(`provider-deactivate-${legacyId}`),
         page.getByTestId(`provider-weekly-hours-${s1}`),
+        secao.locator('button, input'),
       ];
-      for (const a of acoes) await expect(a).toHaveCount(0);
-      await expect(secao.locator('button, input')).toHaveCount(0);
+      for (const a of acoesLocs) await expect(a).toHaveCount(0);
+      // Valores MEDIDOS na tela (depois das asserções com retry) para o marcador [14.5].
+      const secaoS1 = await secao.count();
+      const linhas = await page.getByTestId(`provider-row-${legacyId}`).count();
+      let acoes = 0;
+      for (const a of acoesLocs) acoes += await a.count();
 
       await secao.scrollIntoViewIfNeeded();
       await page.evaluate(() => document.fonts.ready);
@@ -223,13 +248,14 @@ test.describe('alocacao-antiga @integration', () => {
       await expect(page.getByTestId(`contracted-service-form-${s2}`)).toBeVisible({ timeout: 15_000 });
       await expect(page.getByTestId(`providers-section-${s2}`)).toHaveCount(0);
       await expect(page.locator('[data-testid^="providers-section-"]')).toHaveCount(0);
+      const secaoS2 = await page.getByTestId(`providers-section-${s2}`).count();
       if (printDir) {
         await page.evaluate(() => document.fonts.ready);
         await page.screenshot({ path: `${printDir}/drawer-sem-linha.png`, fullPage: false, animations: 'disabled', caret: 'hide' });
       }
-      console.log('[14.5]', { secaoS1: 1, linhas: 1, acoes: 0, secaoS2: 0 });
+      console.log('[14.5]', { secaoS1, linhas, acoes, secaoS2 });
     } finally {
-      cleanupAlocacaoAntiga(s);
+      cleanupAlocacaoAntiga(semeado);
     }
   });
 });
