@@ -47,10 +47,12 @@ describe('ContractedServiceProvidersSection (só leitura)', () => {
     expect(ended).toContain('Dado de baja');
   });
 
-  it('sem nome cai no workerId; sem horas mostra —', () => {
-    render(<ContractedServiceProvidersSection serviceId="s1" providers={[ENDED]} />);
+  it('sem nome cai no rótulo único do prestador (workerLabel: 8 últimos do id); sem horas mostra —', () => {
+    const noName = { ...ENDED, workerId: 'aaaaaaaa-0000-4000-8000-00001234abcd' };
+    render(<ContractedServiceProvidersSection serviceId="s1" providers={[noName]} />);
     const row = screen.getByTestId('provider-row-p2').textContent ?? '';
-    expect(row).toContain('w2');
+    expect(row).toContain('Prestador sin nombre · 1234abcd');
+    expect(row).not.toContain(noName.workerId);
     expect(row).toContain('—h/sem');
   });
 
