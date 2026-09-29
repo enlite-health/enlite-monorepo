@@ -9,9 +9,10 @@
  * `deriveServiceTeamFromRows` (P8/P9) — nenhuma 2ª definição de Selecionado.
  *
  * `validFrom`/`hoje` sempre por `operationDateOf(row.country, now)` — nunca `Date`/`now()` do
- * processo fora do parâmetro injetável (DX-11.8). Nenhuma escrita em `patients` (critério 14 — a
- * derivação do paciente é da Fase 15, invariante 3) nem no cadastro de prestadores do legado ou no
- * card de atendimento antigo (Fase 14).
+ * processo fora do parâmetro injetável (DX-11.8). O estado do paciente só muda pela derivação
+ * (cadeia Fase 15, DX-15.12): `derivation.run` no MESMO client, como a ÚLTIMA escrita da transação e
+ * FORA do `try/catch` do insert (um erro de banco dela não pode virar 409 falso). Nenhuma escrita no
+ * cadastro de prestadores do legado nem no card de atendimento antigo (Fase 14).
  *
  * "Slot não encontrado" é `SlotNotFoundError`, IMPORTADO de `ItinerarySlotWriteUseCase.ts` — fonte
  * única com `update`/`end` de slot (era uma 2ª classe própria aqui, `ItinerarySlotNotFoundError`,
@@ -20,6 +21,7 @@
 import type { PoolClient } from 'pg';
 import { inPatientTransaction } from './patientTransaction';
 import { operationDateOf } from './itineraryCoverage';
+import { PatientStatusDerivation, type PatientStatusDerivationPort } from './PatientStatusDerivation';
 import { ServiceTeamReader, type ServiceTeamRows } from '../infrastructure/ServiceTeamReader';
 import {
   ItineraryAllocationWriter,
@@ -134,6 +136,7 @@ export class ItineraryAllocationUseCase {
     private readonly reader: ItineraryAllocationReaderPort = new ServiceTeamReader(),
     private readonly writer: ItineraryAllocationWriterPort = new ItineraryAllocationWriter(),
     private readonly runInTransaction: TransactionRunner = inPatientTransaction,
+    private readonly derivation: PatientStatusDerivationPort = new PatientStatusDerivation(),
   ) {}
 
   async allocate(input: ItineraryAllocateInput): Promise<ItineraryAllocationResult> {
@@ -157,26 +160,28 @@ export class ItineraryAllocationUseCase {
 
       const validFrom = operationDateOf(row.country, now);
 
+      let inserted: InsertedAllocation;
       try {
-        const inserted = await this.writer.insertAllocation(client, { slotId, workerId, applicationId, validFrom, actorUid });
-        return {
-          allocationId: inserted.id,
-          slotId,
-          workerId,
-          applicationId,
-          validFrom: inserted.validFrom,
-          status: 'ACTIVE' as const,
-        };
+        inserted = await this.writer.insertAllocation(client, { slotId, workerId, applicationId, validFrom, actorUid });
       } catch (err) {
         const overlap = fromPgError(err as PgOverlapLikeError);
         if (overlap !== null) throw overlap;
         if (isOpenPairConflict(err)) throw new AlreadyAllocatedInSlotError(slotId, workerId);
         throw err;
       }
+      await this.derivation.run(client, patientId, now);
+      return {
+        allocationId: inserted.id,
+        slotId,
+        workerId,
+        applicationId,
+        validFrom: inserted.validFrom,
+        status: 'ACTIVE' as const,
+      };
     });
   }
 
-  /** Encerrar devolve o prestador a Selecionado POR DERIVAÇÃO (`isVigente` para de contar `ENDED`) — nenhuma outra escrita. */
+  /** Encerrar devolve o prestador a Selecionado POR DERIVAÇÃO (`isVigente` para de contar `ENDED`); depois, a derivação do estado do paciente na mesma transação. */
   async end(input: ItineraryEndInput): Promise<ItineraryEndResult> {
     const { patientId, serviceId, allocationId, actorUid, now = new Date() } = input;
     return this.runInTransaction(async (client) => {
@@ -190,6 +195,7 @@ export class ItineraryAllocationUseCase {
       const today = operationDateOf(row.country, now);
       const rowCount = await this.writer.endAllocation(client, allocation.id, today, actorUid);
       if (rowCount === 0) throw new AllocationNotActiveError(allocationId);
+      await this.derivation.run(client, patientId, now);
 
       return { allocationId: allocation.id, status: 'ENDED' as const, validTo: today };
     });

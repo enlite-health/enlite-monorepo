@@ -311,6 +311,28 @@ module.exports = {
       functions: 100,
       lines: 100,
     },
+    // Cadeia Fase 15 (DX-15.6): a regra de horas que deriva o estado do paciente no quadro A —
+    // cada guarda é a única barreira do seu caso; regressão aqui move paciente manual ou do funil.
+    'src/modules/case/domain/derivarEstadoPaciente.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    // Cadeia Fase 15 (gate fecho G-C3): quem lê, conta e move pela regra acima, na transação do
+    // escritor — o ramo da recusa de completude e o da flag desligada não podem ficar sem teste.
+    'src/modules/case/application/PatientStatusDerivation.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
+    'src/modules/case/infrastructure/PatientStatusDerivationReader.ts': {
+      statements: 100,
+      branches: 100,
+      functions: 100,
+      lines: 100,
+    },
     // Decisão do Gabriel 07/09 (D298): carrega os contadores do checklist DENTRO da transação que
     // já segurou a linha do paciente — é o insumo da guarda que recusa a mudança de status. Nasceu
     // fora deste piso e o gate `revisao-pr` reprovou (85,71% stmts, 0% branches: o ramo

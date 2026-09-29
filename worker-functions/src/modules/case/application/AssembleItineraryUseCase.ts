@@ -1,8 +1,9 @@
 /**
  * AssembleItineraryUseCase — Fase 11, DX-11.8 (caso de uso). "Está montado" = existe linha em
  * `patient_itinerary_assembly` (migration 482, log append-only) — marcar de novo grava linha
- * nova, nunca reescreve a anterior. Não move o paciente (invariante 3, Fase 15) — nenhuma escrita
- * em `patients`.
+ * nova, nunca reescreve a anterior. Marcar montado DERIVA o estado do paciente na hora (cadeia
+ * Fase 15, DX-15.10/DX-15.12): `derivation.run` no MESMO client, depois do `insertAssembly`, como a
+ * ÚLTIMA escrita da transação — o estado só muda por ela.
  *
  * Ordem (molde `ServiceTeamMarkUseCase.ts`, reader/writer/transação injetados): paciente fora da
  * RLS/inexistente → `ItineraryPatientNotFoundError` (404); 0 serviço com vaga viva →
@@ -12,6 +13,7 @@
  */
 import type { PoolClient } from 'pg';
 import { inPatientTransaction } from './patientTransaction';
+import { PatientStatusDerivation, type PatientStatusDerivationPort } from './PatientStatusDerivation';
 import {
   ItineraryAssemblyWriter,
   type ServiceMissingSlot,
@@ -56,6 +58,8 @@ type TransactionRunner = <T>(fn: (client: PoolClient) => Promise<T>) => Promise<
 export interface AssembleItineraryInput {
   patientId: string;
   actorUid: string;
+  /** Relógio injetável da derivação (data de operação do país); default = agora. */
+  now?: Date;
 }
 
 export interface AssembleItineraryResult {
@@ -67,10 +71,11 @@ export class AssembleItineraryUseCase {
   constructor(
     private readonly writer: ItineraryAssemblyWriterPort = new ItineraryAssemblyWriter(),
     private readonly runInTransaction: TransactionRunner = inPatientTransaction,
+    private readonly derivation: PatientStatusDerivationPort = new PatientStatusDerivation(),
   ) {}
 
   async execute(input: AssembleItineraryInput): Promise<AssembleItineraryResult> {
-    const { patientId, actorUid } = input;
+    const { patientId, actorUid, now = new Date() } = input;
     return this.runInTransaction(async (client) => {
       const exists = await this.writer.patientExists(client, patientId);
       if (!exists) throw new ItineraryPatientNotFoundError(patientId);
@@ -80,6 +85,7 @@ export class AssembleItineraryUseCase {
       if (services.length > 0) throw new ServiceWithoutSlotError(services);
 
       const inserted = await this.writer.insertAssembly(client, patientId, actorUid);
+      await this.derivation.run(client, patientId, now);
       return { patientId, assembledAt: inserted.assembledAt };
     });
   }

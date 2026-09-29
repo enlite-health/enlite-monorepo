@@ -1,4 +1,5 @@
 import { isEnvFlagOn } from '../envFlag';
+import { isEnvFlagOff } from '../envFlag';
 
 describe('isEnvFlagOn', () => {
   it('só a string exata `true` liga', () => {
@@ -20,5 +21,30 @@ describe('isEnvFlagOn', () => {
     expect(isEnvFlagOn('__ENV_FLAG_TESTE__')).toBe(true);
     delete process.env.__ENV_FLAG_TESTE__;
     expect(isEnvFlagOn('__ENV_FLAG_TESTE__')).toBe(false);
+  });
+});
+
+// Cadeia Fase 15 (DX-15.5): flag de PADRÃO LIGADO — só o literal `off` desliga.
+describe('isEnvFlagOff', () => {
+  it('só a string exata `off` desliga', () => {
+    expect(isEnvFlagOff('X', { X: 'off' })).toBe(true);
+  });
+
+  it.each(['', 'false', 'OFF', '0', 'true', 'on', 'Off', ' off '])('%p não desliga', (valor) => {
+    expect(isEnvFlagOff('X', { X: valor })).toBe(false);
+  });
+
+  it('env ausente não desliga (o padrão é ligado)', () => {
+    expect(isEnvFlagOff('X', {})).toBe(false);
+  });
+
+  it('sem env explícito, lê o process.env', () => {
+    process.env.__ENV_FLAG_OFF_TESTE__ = 'off';
+    try {
+      expect(isEnvFlagOff('__ENV_FLAG_OFF_TESTE__')).toBe(true);
+    } finally {
+      delete process.env.__ENV_FLAG_OFF_TESTE__;
+    }
+    expect(isEnvFlagOff('__ENV_FLAG_OFF_TESTE__')).toBe(false);
   });
 });
