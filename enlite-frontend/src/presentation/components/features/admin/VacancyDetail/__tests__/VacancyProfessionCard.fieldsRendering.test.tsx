@@ -37,7 +37,8 @@ beforeAll(async () => {
 const caso774Props = {
   profession: 'AT',
   requiredSex: 'F',
-  diagnosis: null,
+  diagnoses: [],
+  diagnosesUnavailable: false,
   talentumDescription: null,
   ageRangeMin: null,
   ageRangeMax: null,

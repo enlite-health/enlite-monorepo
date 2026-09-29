@@ -24,7 +24,19 @@ vi.mock('@infrastructure/http/AdminApiService', () => ({
       id: 'pat-smoke-1',
       firstName: 'Lucía',
       lastName: 'Fernández',
-      diagnosis: 'TEA leve',
+      // Patología estruturada (CID-11). O texto livre `diagnosis` saiu da tela na D284;
+      // a vaga passou a ler `diagnoses[]` do paciente.
+      diagnoses: [
+        {
+          id: 'dx-hidr-1',
+          uri: 'http://id.who.int/icd/entity/111111',
+          title: 'Trastorno del desarrollo intelectual leve',
+          isPrimary: true,
+          source: 'PANEL',
+          active: true,
+        },
+      ],
+      diagnosesUnavailable: false,
       dependencyLevel: 'SEVERE',
       serviceType: ['AT'],
       cityLocality: 'CABA',
@@ -121,7 +133,9 @@ describe('CreateVacancyPage — patient hydration smoke', () => {
     expect(await screen.findByText('Lucía Fernández')).toBeInTheDocument();
 
     //  - Diagnosis (read-only)
-    expect(await screen.findByText('TEA leve')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Trastorno del desarrollo intelectual leve'),
+    ).toBeInTheDocument();
 
     //  - Dependency level → translated via i18n key (mock returns the key)
     expect(

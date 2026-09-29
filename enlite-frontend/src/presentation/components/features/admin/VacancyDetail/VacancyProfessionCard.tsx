@@ -3,6 +3,8 @@ import { Check, Pencil } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { useActionGate } from '@presentation/hooks/useCellAccess';
+import type { PatientDiagnosisDetail } from '@domain/entities/PatientDetail';
+import { diagnosisDisplayState } from '@domain/entities/diagnosisDisplay';
 
 type WeekdayKey =
   | 'sunday'
@@ -117,7 +119,11 @@ function CharacteristicRow({ label, value, placeholder }: CharacteristicRowProps
 interface VacancyProfessionCardProps {
   profession: string | null;
   requiredSex: string | null;
-  diagnosis: string | null;
+  /** Patología estruturada do paciente, lida na hora (nunca copiada para a vaga).
+   *  `null` = ator sem a célula `patient_clinical:read` — distinto de `[]`. */
+  diagnoses: PatientDiagnosisDetail[] | null;
+  /** Bulkhead: a leitura do diagnóstico falhou — não é "sem diagnóstico". */
+  diagnosesUnavailable: boolean;
   talentumDescription: string | null;
   ageRangeMin: number | null;
   ageRangeMax: number | null;
@@ -132,7 +138,8 @@ interface VacancyProfessionCardProps {
 export function VacancyProfessionCard({
   profession,
   requiredSex,
-  diagnosis,
+  diagnoses,
+  diagnosesUnavailable,
   talentumDescription,
   ageRangeMin,
   ageRangeMax,
@@ -208,9 +215,36 @@ export function VacancyProfessionCard({
         <Text as="span" size="base" color="secondary">
           {t('admin.vacancyDetail.professionCard.diagnosis')}
         </Text>
-        <Text as="span" size="base" color="primary" weight="medium">
-          {diagnosis ?? '—'}
-        </Text>
+        {(() => {
+          // REQ-21: só o título, nunca o código do CID.
+          const state = diagnosisDisplayState(diagnoses, diagnosesUnavailable);
+          if (state.kind === 'unavailable') {
+            return (
+              <Text as="span" size="base" weight="medium" className="!text-red-600" data-testid="vacancy-profession-patologia-unavailable">
+                {t('admin.patients.detail.diagnosisCard.patologiesUnavailable')}
+              </Text>
+            );
+          }
+          if (state.kind === 'noPermission') {
+            return (
+              <Text as="span" size="base" color="secondary" weight="medium" data-testid="vacancy-profession-patologia-no-permission">
+                {t('admin.patients.detail.diagnosisCard.patologiesNoPermission')}
+              </Text>
+            );
+          }
+          if (state.kind === 'empty') {
+            return (
+              <Text as="span" size="base" color="primary" weight="medium" data-testid="vacancy-profession-patologia-empty">
+                —
+              </Text>
+            );
+          }
+          return (
+            <Text as="span" size="base" color="primary" weight="medium" data-testid="vacancy-profession-patologias">
+              {state.diagnoses.map((d) => d.title).join(', ')}
+            </Text>
+          );
+        })()}
       </div>
 
       {(talentumDescription || (onEditDescription && podeEditarDescricao)) && (

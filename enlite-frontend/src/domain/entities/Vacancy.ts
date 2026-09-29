@@ -107,6 +107,12 @@ export interface AdminVacancyDetail {
   published_at: string | null;
   closes_at: string | null;
   talentum_description: string | null;
+  /** Patología estruturada do paciente, LIDA na hora via patient_id — nunca copiada para
+   *  `job_postings` (migration 039 tirou a coluna de propósito). `null` = ator sem a célula
+   *  `patient_clinical:read`; `[]` = paciente sem diagnóstico. REQ-21: só título, sem código. */
+  diagnoses?: import('./PatientDetail').PatientDiagnosisDetail[] | null;
+  /** Bulkhead: a leitura do diagnóstico falhou — distinto de "sem diagnóstico". */
+  diagnosesUnavailable?: boolean;
   talentum_project_id: string | null;
   talentum_whatsapp_url: string | null;
   talentum_slug: string | null;

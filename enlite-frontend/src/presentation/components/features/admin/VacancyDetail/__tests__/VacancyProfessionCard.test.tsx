@@ -9,7 +9,8 @@ vi.mock('react-i18next', () => ({
 const defaultProps = {
   profession: 'AT',
   requiredSex: 'F',
-  diagnosis: 'TEA',
+  diagnoses: [],
+  diagnosesUnavailable: false,
   talentumDescription: null,
   ageRangeMin: 25,
   ageRangeMax: 45,
@@ -66,14 +67,57 @@ describe('VacancyProfessionCard — fields', () => {
     ).toBeInTheDocument();
   });
 
-  it('renders diagnosis value', () => {
-    renderCard();
-    expect(screen.getByText('TEA')).toBeInTheDocument();
+  // ── Patología (CID-11 lido do paciente, nunca copiado para a vaga) ─────────
+  // Os três estados são distintos de propósito: "não carregou" jamais pode se
+  // disfarçar de "não tem" — a tela mentiria sobre o paciente.
+
+  const dx = (over = {}) => ({
+    id: 'dx-1',
+    uri: 'http://id.who.int/icd/entity/999999',
+    title: 'Trastorno del ritmo circadiano',
+    isPrimary: true,
+    source: 'PANEL',
+    active: true,
+    ...over,
   });
 
-  it('renders "—" for diagnosis when it is null', () => {
-    renderCard({ diagnosis: null });
-    expect(screen.getByText('admin.vacancyDetail.professionCard.diagnosis').parentElement).toHaveTextContent('—');
+  it('lista os títulos das patologías', () => {
+    renderCard({
+      diagnoses: [dx(), dx({ id: 'dx-2', title: 'Hipertensión esencial', isPrimary: false })],
+    });
+    expect(screen.getByTestId('vacancy-profession-patologias')).toHaveTextContent(
+      'Trastorno del ritmo circadiano',
+    );
+    expect(screen.getByTestId('vacancy-profession-patologias')).toHaveTextContent(
+      'Hipertensión esencial',
+    );
+  });
+
+  it('NUNCA mostra o código do CID — só o título (REQ-21)', () => {
+    renderCard({
+      diagnoses: [dx({ title: 'Trastorno del ritmo circadiano' })],
+    });
+    // O tipo do front nem carrega o código; esta régua morre se alguém o acrescentar
+    // e resolver renderizá-lo junto.
+    expect(screen.queryByText(/6A02/)).toBeNull();
+    expect(screen.queryByText(/http:\/\/id\.who\.int/)).toBeNull();
+  });
+
+  it('sem diagnóstico registrado mostra "—"', () => {
+    renderCard({ diagnoses: [] });
+    expect(screen.getByTestId('vacancy-profession-patologia-empty')).toHaveTextContent('—');
+  });
+
+  it('ator sem permissão clínica NÃO vê "—", vê o aviso de permissão', () => {
+    renderCard({ diagnoses: null });
+    expect(screen.getByTestId('vacancy-profession-patologia-no-permission')).toBeInTheDocument();
+    expect(screen.queryByTestId('vacancy-profession-patologia-empty')).toBeNull();
+  });
+
+  it('falha de leitura avisa, em vez de fingir que não há diagnóstico', () => {
+    renderCard({ diagnoses: [], diagnosesUnavailable: true });
+    expect(screen.getByTestId('vacancy-profession-patologia-unavailable')).toBeInTheDocument();
+    expect(screen.queryByTestId('vacancy-profession-patologia-empty')).toBeNull();
   });
 
   it('renders "—" for requiredSex when it is null', () => {

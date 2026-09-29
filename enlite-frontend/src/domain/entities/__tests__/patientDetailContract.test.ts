@@ -89,8 +89,13 @@ describe('contrato PatientDetail — fixture capturada da API real', () => {
   it('C5 (QA-caça, spec 016 F2): diagnoses[] chega na projeção REQ-21 (sem code/chapter/release) e diagnosesUnavailable:false quando o backend leu normalmente', () => {
     const p = patientDetailContractSchema.parse(fixture);
     expect(p.diagnosesUnavailable).toBe(false);
-    expect(p.diagnoses).toHaveLength(1);
-    expect(p.diagnoses[0]).toEqual({
+    // `diagnoses` é `T[] | null` (achado do gate revisao-pr, spec cid-na-vacante: `null` = sem
+    // `patient_clinical:read`) — a fixture deste paciente sintético TEM a célula, então é
+    // sempre array; a guarda é só para o `tsc` estreitar o tipo, não um caso novo do contrato.
+    const diagnoses = p.diagnoses;
+    if (!diagnoses) throw new Error('fixture esperada com diagnoses não-nulo (paciente com célula clínica)');
+    expect(diagnoses).toHaveLength(1);
+    expect(diagnoses[0]).toEqual({
       id: expect.any(String),
       uri: 'http://id.who.int/icd/release/11/2026-01/mms/437815624/unspecified',
       title: 'Trastorno del espectro autista, sin especificación',
@@ -99,7 +104,7 @@ describe('contrato PatientDetail — fixture capturada da API real', () => {
       active: true,
     });
     // Régua POSITIVA (REQ-21): nenhuma chave de vocabulário em NENHUM diagnóstico da fixture.
-    for (const key of Object.keys(p.diagnoses[0])) {
+    for (const key of Object.keys(diagnoses[0])) {
       expect(['code', 'chapter', 'release', 'conceptCode', 'conceptGroup', 'catalogRelease']).not.toContain(key);
     }
   });

@@ -585,13 +585,18 @@ jobs:
       # usa token mock simples, sem linha em `users` — sob engine ligado bate
       # em 403 `account_not_active` em qualquer rota `admin.patients`
       # (medido). Vive no job padrão (`pr-gate.yml`, engine OFF).
+      # `cid-na-vacante-tela` ENTROU aqui, e NÃO no job padrão, por uma razão medida: 3 dos seus
+      # 7 casos afirmam que o ator SEM `patient_clinical:read` vê o aviso de permissão em vez do
+      # diagnóstico. Com o engine OFF do job padrão, `cells===null` devolve o dado e esses 3 casos
+      # ficariam verdes sem medir nada — teatro de cobertura no ponto exato que protege o paciente.
+      # Usa `abac-stack-helper` (usuário REAL em `users`), então herda este runner e este Vite.
       - name: Teste de integração — simulação de grupo de acesso + completar-vacante (fases 2-3)
         working-directory: enlite-frontend
         env:
           CI: 'true'
           ABAC_API_URL: http://localhost:8080
           ABAC_TEST_DB_URL: postgresql://enlite_admin:enlite_password@localhost:5433/enlite_e2e
-        run: npx playwright test --project=integration --ignore-snapshots --grep "group-simulation|draft-vacancy-page|draft-vacancy-choice"
+        run: npx playwright test --project=integration --ignore-snapshots --grep "group-simulation|draft-vacancy-page|draft-vacancy-choice|cid-na-vacante-tela"
 
       - name: Relatório (só quando falha)
         if: failure()

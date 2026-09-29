@@ -79,6 +79,29 @@ export default function DraftVacancyPage() {
   const hasAddressCell = useContainerAccess('patient_address').visible;
   const hasClinicalCell = useContainerAccess('patient_clinical').visible;
 
+  // Patología (spec cid-na-vacante): mesmo contrato de 3 estados dos outros pontos que já
+  // mostram diagnóstico na vaga (`VacancyProfessionCard`/`VacancyFormLeftColumn`, D181/D113).
+  //
+  // ⚠️ Achado do gate `revisao-pr` (fecho): a versão anterior RE-DECIDIA a permissão aqui no
+  // cliente (`hasClinicalCell ? (patient?.diagnoses ?? []) : null`) — a única das 4 telas que
+  // fazia isso; as outras confiam no que o servidor mandou. Se `useContainerAccess` e o
+  // backend discordassem (cache de `/v1/me/authz` desatualizado, por exemplo),
+  // `hasClinicalCell=true` fazia o `?? []` colapsar um `null` REAL do servidor (sem
+  // `patient_clinical:read`, `AdminPatientsController.ts`) em "sem diagnóstico" — a mentira
+  // exata que esta feature existe para impedir (D286).
+  //
+  // Agora o campo só reflete o que `GET /api/admin/patients/:id` mandou: `patient.diagnoses`
+  // já é `null` quando falta a célula (tipo ajustado em `PatientDetail.ts`). Enquanto a 2ª
+  // leitura assíncrona não chegou (`patient` ainda `null`), o card mostra "—" (`[]`) — mesma
+  // janela já aceita hoje pelo campo "Servicio" logo abaixo; não é decisão de permissão, é a
+  // ausência momentânea do dado.
+  //
+  // Quando a 2ª leitura FALHA (`patientLoadFailed`), "—" passaria a significar "este paciente
+  // não tem diagnóstico" — por isso a falha também marca indisponível aqui. Efeito local a
+  // este bloco: `patientLoadFailed` segue mandando só no campo "Servicio" e no título.
+  const diagnosesForCard = patient ? patient.diagnoses : [];
+  const diagnosesUnavailableForCard = (patient?.diagnosesUnavailable ?? false) || patientLoadFailed;
+
   if (isLoading) return <DetailSkeleton />;
 
   if (error || !vacancy) {
@@ -296,6 +319,8 @@ export default function DraftVacancyPage() {
             isDefaultSalary={isDefaultSalary}
             publicationLabel={createdLabel ?? emptyValue}
             patientId={vacancy.patient_id}
+            diagnoses={diagnosesForCard}
+            diagnosesUnavailable={diagnosesUnavailableForCard}
           />
         </ContainerGate>
 
