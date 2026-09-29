@@ -149,3 +149,72 @@ export function cleanupQuadroC(patientId: string): void {
   );
   cleanupItinerary(patientId);
 }
+
+// ── Modal do prestador (rodada 2, decisão D) — GET/POST .../team/:workerId/contact ───────────
+
+export interface ServiceTeamContactHistoryEntryDto {
+  id: string;
+  contacted: boolean;
+  eventDate: string;
+  note: string | null;
+  createdAt: string;
+}
+
+export interface ServiceTeamContactDto {
+  workerId: string;
+  displayName: string | null;
+  phone: string | null;
+  history: ServiceTeamContactHistoryEntryDto[];
+}
+
+export interface ServiceTeamContactApiResult {
+  status: number;
+  body: { success: boolean; data?: ServiceTeamContactDto; error?: string; code?: string };
+}
+
+/** `GET .../team/:workerId/contact` — cru, sem mock. `token` explícito para testar sem-célula/cross-tenant. */
+export async function getServiceTeamContactApi(
+  request: APIRequestContext,
+  patientId: string,
+  serviceId: string,
+  workerId: string,
+  token: string,
+): Promise<ServiceTeamContactApiResult> {
+  const res = await request.get(
+    `${backendUrl()}/api/admin/patients/${patientId}/contracted-services/${serviceId}/team/${workerId}/contact`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  const status = res.status();
+  const body = (await res.json().catch(() => ({ success: false }))) as ServiceTeamContactApiResult['body'];
+  return { status, body };
+}
+
+export interface PostServiceTeamContactBody {
+  contacted: boolean;
+  eventDate: string;
+  note: string | null;
+}
+
+/** `POST .../team/:workerId/contact` — cru, sem mock. Cada chamada cria linha NOVA (append-only). */
+export async function postServiceTeamContactApi(
+  request: APIRequestContext,
+  patientId: string,
+  serviceId: string,
+  workerId: string,
+  token: string,
+  body: PostServiceTeamContactBody,
+): Promise<ServiceTeamContactApiResult> {
+  const res = await request.post(
+    `${backendUrl()}/api/admin/patients/${patientId}/contracted-services/${serviceId}/team/${workerId}/contact`,
+    { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, data: body },
+  );
+  const status = res.status();
+  const responseBody = (await res.json().catch(() => ({ success: false }))) as ServiceTeamContactApiResult['body'];
+  return { status, body: responseBody };
+}
+
+/** Limpa `service_team_contact_log` por `service_id` — nunca por título (mesmo molde de `cleanupQuadroC`). */
+export function cleanupServiceTeamContactLog(serviceId: string): void {
+  if (!serviceId) return;
+  runSQL(`DELETE FROM service_team_contact_log WHERE service_id = '${serviceId}'`);
+}

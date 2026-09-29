@@ -570,13 +570,15 @@ test.describe('quadro-c @integration', () => {
       await page.getByTestId('service-team-reject-cancel').click();
       await expect(page.getByTestId('service-team-reject-modal')).toHaveCount(0);
 
-      // s2 selecionado: título/endereço lidos do DOM da linha 2, realce medido, seção com 1 baseline.
-      // 29/09: linha e testid de endereço são os da tabela SELETORA da aba "Encuadre"
+      // s2 selecionado: título lido do DOM da linha 2, realce medido, seção com 1 baseline.
+      // 29/09 (rodada 1): linha e testid de endereço são os da tabela SELETORA da aba "Encuadre"
       // (`encuadre-service-row-*`/`encuadre-service-address-*`, EncuadreTab.tsx) — a tabela de
       // "Servicio Contratado" (`contracted-service-row-*`) é outra aba, não montada aqui.
+      // 29/09 (rodada 2, decisão A/DIV-6): o título passou a ser "Encuadre Terapéutico: <local>" —
+      // `createServiceViaApi` (`itinerario-e2e-helper.ts:142`) grava `careLocation: 'HOME'` sempre,
+      // então o título usa `careLocationOptions.HOME` ("Domicilio"), não mais o endereço.
       const row2 = page.getByTestId(`encuadre-service-row-${s2}`);
       const row1 = page.getByTestId(`encuadre-service-row-${seed.serviceId}`);
-      const serviceLabel2 = ((await row2.locator('td').nth(1).innerText()) ?? '').trim();
       // Sem `.catch()`: se a semente do 2º endereço falhar, o teste quebra AQUI, com o testid que
       // faltou — nunca pula a asserção em silêncio (achado 2 do veredito).
       const addressLabel2 = (await page.getByTestId(`encuadre-service-address-${s2}`).innerText()).trim();
@@ -588,8 +590,7 @@ test.describe('quadro-c @integration', () => {
       const titulo = page.getByTestId('quadro-c-titulo');
       await expect(titulo).toBeVisible();
       const tituloText = (await titulo.innerText()).trim();
-      expect(tituloText).toContain(serviceLabel2);
-      expect(tituloText).toContain(addressLabel2);
+      expect(tituloText).toBe('Encuadre Terapéutico: Domicilio');
 
       await expect(row2).toHaveAttribute('aria-selected', 'true');
       await expect(row1).not.toHaveAttribute('aria-selected', 'true');
