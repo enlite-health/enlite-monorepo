@@ -2,7 +2,7 @@
  * kanban-pacientes-derivacao.integration.e2e.ts @integration — Fase 15
  * (cadeia-paciente-vacante-itinerario), DX-15.13.
  *
- * Front NÃO entra — só API real (Playwright `request`) + Postgres real, zero `page.*`: a fase é
+ * Front NÃO entra — só API real (Playwright `request`) + Postgres real, nenhuma chamada de tela: a fase é
  * backend puro (a alocação no itinerário deriva o status do paciente, na mesma transação). Semente
  * por SQL só do que não é da fase (paciente com status inicial, worker, candidatura) e pela API
  * real do resto (`derivacao-e2e-helper.ts`); toda escrita DESTA fase (alocar, encerrar, montar,
@@ -21,9 +21,15 @@
  */
 import { test, expect } from '@playwright/test';
 import {
-  mockAdminUserFor, useLancamentoStaff, LANCAMENTO_VIEWPORT_ES_AR,
+  backendUrl, mockAdminUserFor, useLancamentoStaff, LANCAMENTO_VIEWPORT_ES_AR,
 } from '../helpers/lancamento-e2e-helper';
 import { assembleApi, endAllocationApi } from '../helpers/itinerario-escrita-e2e-helper';
+import { putMove } from '../helpers/funnel-move-e2e-helper';
+import { upsertEncuadre } from '../helpers/wja-test-helper';
+import { readServiceTeamApi, postServiceTeamAction } from '../helpers/quadro-c-e2e-helper';
+import {
+  registerAbsenceApi, setAbsenceSubstituteApi, nextWeekdaySql,
+} from '../helpers/substituicao-e2e-helper';
 import {
   seedDerivablePatient, selectedWorker, allocateWorker, readStatusBoth, coveredHours,
   countSystemTrail, derivacaoToken, type DerivableServiceSpec, type StatusReading,
@@ -171,6 +177,165 @@ test.describe('derivacao @integration', () => {
       );
       expectStatus(s, 'REPLACEMENT');
       expect(h).toBe(8);
+    } finally {
+      seed.cleanup();
+    }
+  });
+
+  test('derivacao-selecionar-nao-move', async ({ request }) => {
+    const seed = await seedDerivablePatient(request, { status: 'SEARCHING', services: [OITO_HORAS] });
+    try {
+      const token = derivacaoToken();
+      const [svc] = seed.services;
+      const w = selectedWorker(seed, svc.vacancyId, 'SELECTED');
+      const cardId = upsertEncuadre({ workerId: w, jobPostingId: svc.vacancyId });
+
+      expect((await assembleApi(request, token, seed.patientId)).status).toBe(201);
+      const s0 = await readStatusBoth(request, seed.patientId);
+      const trilha0 = countSystemTrail(seed.patientId);
+
+      // O arrasto do quadro B é feito PELA API (`PUT /encuadres/:id/move`), sem tela.
+      const toTeam = await putMove(request, backendUrl(), token, cardId, { targetStage: 'QUICK_RESPONSE_TEAM' });
+      expect(toTeam.status).toBe(200);
+      const team = await readServiceTeamApi(request, seed.patientId, svc.serviceId);
+      const selecionados = (team.body.data?.selected ?? []).map((m) => m.workerId);
+      const s1 = await readStatusBoth(request, seed.patientId);
+
+      const toRejected = await putMove(request, backendUrl(), token, cardId, {
+        targetStage: 'REJECTED', reasonCategory: 'DISTANCE',
+      });
+      expect(toRejected.status).toBe(200);
+      const s2 = await readStatusBoth(request, seed.patientId);
+      const trilha = countSystemTrail(seed.patientId);
+
+      console.log(
+        '[15.10]', seed.patientId, 'arrasto=API putMove',
+        `SELECTED→QUICK_RESPONSE_TEAM=${toTeam.status}`, `em_C=${selecionados.includes(w)}`,
+        `→REJECTED(DISTANCE)=${toRejected.status}`,
+        'leituras', s0.api, s0.db, s1.api, s1.db, s2.api, s2.db, `trilha_system=${trilha0}→${trilha}`,
+      );
+      expect(selecionados).toContain(w);
+      expectStatus(s0, 'SEARCHING');
+      expectStatus(s1, 'SEARCHING');
+      expectStatus(s2, 'SEARCHING');
+      expect(trilha0).toBe(0);
+      expect(trilha).toBe(0);
+    } finally {
+      seed.cleanup();
+    }
+  });
+
+  test('derivacao-c-nao-move', async ({ request }) => {
+    const seed = await seedDerivablePatient(request, { status: 'SEARCHING', services: [OITO_HORAS] });
+    try {
+      const token = derivacaoToken();
+      const [svc] = seed.services;
+      const w1 = selectedWorker(seed, svc.vacancyId);
+      const w2 = selectedWorker(seed, svc.vacancyId);
+
+      expect((await assembleApi(request, token, seed.patientId)).status).toBe(201);
+      const a1 = await allocateWorker(request, seed.patientId, svc.serviceId, svc.slotIds[0], w1);
+      expect(a1.status).toBe(201);
+      const s0 = await readStatusBoth(request, seed.patientId);
+      const h0 = await coveredHours(request, seed.patientId);
+      const trilha0 = countSystemTrail(seed.patientId);
+
+      const reject = await postServiceTeamAction(request, seed.patientId, svc.serviceId, 'reject', {
+        workerId: w2, reasonCategory: 'INDISPONIBILIDADE_DE_HORARIO',
+      });
+      expect(reject.status).toBe(200);
+      const s1 = await readStatusBoth(request, seed.patientId);
+      const h1 = await coveredHours(request, seed.patientId);
+      const revert = await postServiceTeamAction(request, seed.patientId, svc.serviceId, 'revert', {
+        workerId: w2, reasonCategory: 'REAVALIACAO',
+      });
+      expect(revert.status).toBe(200);
+      const s2 = await readStatusBoth(request, seed.patientId);
+      const h2 = await coveredHours(request, seed.patientId);
+      const trilha1 = countSystemTrail(seed.patientId);
+
+      console.log(
+        '[15.11]', seed.patientId, `reject=${reject.status}`, `revert=${revert.status}`,
+        'leituras', s0.api, s0.db, s1.api, s1.db, s2.api, s2.db,
+        `cobertas=${h0}/${h1}/${h2}`, `trilha_system=${trilha0}→${trilha1}`,
+      );
+      expectStatus(s0, 'REPLACEMENT');
+      expectStatus(s1, 'REPLACEMENT');
+      expectStatus(s2, 'REPLACEMENT');
+      expect([h0, h1, h2]).toEqual([4, 4, 4]);
+      expect(trilha1).toBe(trilha0);
+
+      const rejectAllocated = await postServiceTeamAction(request, seed.patientId, svc.serviceId, 'reject', {
+        workerId: w1, reasonCategory: 'DESISTENCIA_DO_PRESTADOR',
+      });
+      const s3 = await readStatusBoth(request, seed.patientId);
+      const h3 = await coveredHours(request, seed.patientId);
+      const trilha2 = countSystemTrail(seed.patientId);
+
+      console.log(
+        '[15.12]', seed.patientId, `reject_alocado=${rejectAllocated.status}`, rejectAllocated.body.code,
+        'antes', s2.api, s2.db, `cobertas=${h2}`, 'depois', s3.api, s3.db, `cobertas=${h3}`,
+        `trilha_system=${trilha1}→${trilha2}`,
+      );
+      expect(rejectAllocated.status).toBe(422);
+      expect(rejectAllocated.body.code).toBe('SERVICE_TEAM_WORKER_ALLOCATED');
+      expectStatus(s3, 'REPLACEMENT');
+      expect(h3).toBe(h2);
+      expect(trilha2).toBe(trilha1);
+    } finally {
+      seed.cleanup();
+    }
+  });
+
+  test('derivacao-substituicao-nao-move', async ({ request }) => {
+    const seed = await seedDerivablePatient(request, {
+      status: 'SEARCHING',
+      services: [{ weeklyHours: 4, schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }] }],
+    });
+    try {
+      const token = derivacaoToken();
+      const [svc] = seed.services;
+      const w1 = selectedWorker(seed, svc.vacancyId);
+      const w2 = selectedWorker(seed, svc.vacancyId);
+
+      expect((await assembleApi(request, token, seed.patientId)).status).toBe(201);
+      const a1 = await allocateWorker(request, seed.patientId, svc.serviceId, svc.slotIds[0], w1);
+      expect(a1.status).toBe(201);
+      if (!a1.allocationId) throw new Error('derivacao-substituicao-nao-move: alocação sem id');
+      const s1 = await readStatusBoth(request, seed.patientId);
+      const h1 = await coveredHours(request, seed.patientId);
+      const trilha1 = countSystemTrail(seed.patientId);
+
+      const d = nextWeekdaySql(1);
+      const absence = await registerAbsenceApi(request, token, seed.patientId, svc.serviceId, a1.allocationId, { date: d });
+      expect(absence.status).toBe(201);
+      const absenceId = absence.body.data?.absenceId;
+      if (!absenceId) throw new Error('derivacao-substituicao-nao-move: ausência sem absenceId');
+      expect((await assembleApi(request, token, seed.patientId)).status).toBe(201);
+      const s2 = await readStatusBoth(request, seed.patientId);
+      const h2 = await coveredHours(request, seed.patientId);
+
+      const sub = await setAbsenceSubstituteApi(request, token, seed.patientId, svc.serviceId, absenceId, {
+        substituteWorkerId: w2,
+      });
+      expect(sub.status).toBe(200);
+      expect((await assembleApi(request, token, seed.patientId)).status).toBe(201);
+      const s3 = await readStatusBoth(request, seed.patientId);
+      const h3 = await coveredHours(request, seed.patientId);
+      const trilha3 = countSystemTrail(seed.patientId);
+
+      console.log(
+        '[15.13]', seed.patientId, `ausencia=${absence.status}`, `substituto=${sub.status}`,
+        'leitura1', s1.api, s1.db, `cobertas=${h1}`,
+        'leitura2(sem substituto)', s2.api, s2.db, `cobertas=${h2}`,
+        'leitura3(com substituto)', s3.api, s3.db, `cobertas=${h3}`,
+        `trilha_system=${trilha1}→${trilha3}`,
+      );
+      expectStatus(s1, 'ACTIVE');
+      expectStatus(s2, 'ACTIVE');
+      expectStatus(s3, 'ACTIVE');
+      expect([h1, h2, h3]).toEqual([4, 4, 4]);
+      expect(trilha3).toBe(trilha1);
     } finally {
       seed.cleanup();
     }
