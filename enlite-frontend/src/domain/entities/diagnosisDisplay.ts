@@ -27,3 +27,29 @@ export function sortDiagnosesForCard(diagnoses: PatientDiagnosisDetail[]): Patie
       return a.title.localeCompare(b.title);
     });
 }
+
+/**
+ * diagnosisDisplayState — a MESMA decisão de estado (spec cid-na-vacante), reusada pelos 3
+ * pontos que passaram a mostrar patología na vaga/caso (`VacancyFormLeftColumn`,
+ * `VacancyProfessionCard`, `CaseDetailsModal`). Cada chamador mantém seu próprio markup/i18n —
+ * isto só decide QUAL estado é, não como ele se desenha.
+ *
+ * `null` = ator sem permissão clínica (a API projetou o dado fora, D113): NUNCA vira "vazio".
+ * `diagnosesUnavailable` tem precedência — é falha de leitura do catálogo (bulkhead C4), distinta
+ * de "sem diagnóstico" (`[]`) e de "sem permissão" (`null`).
+ */
+export type DiagnosisDisplayState =
+  | { kind: 'unavailable' }
+  | { kind: 'noPermission' }
+  | { kind: 'empty' }
+  | { kind: 'list'; diagnoses: PatientDiagnosisDetail[] };
+
+export function diagnosisDisplayState(
+  diagnoses: readonly PatientDiagnosisDetail[] | null,
+  diagnosesUnavailable: boolean,
+): DiagnosisDisplayState {
+  if (diagnosesUnavailable) return { kind: 'unavailable' };
+  if (diagnoses === null) return { kind: 'noPermission' };
+  const sorted = sortDiagnosesForCard(diagnoses as PatientDiagnosisDetail[]);
+  return sorted.length === 0 ? { kind: 'empty' } : { kind: 'list', diagnoses: sorted };
+}

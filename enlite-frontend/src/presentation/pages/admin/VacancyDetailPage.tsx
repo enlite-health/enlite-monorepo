@@ -213,10 +213,11 @@ export default function VacancyDetailPage() {
               : null
           }
           requiredSex={vacancy.required_sex ?? null}
-          // C1 do `lex`: a API não devolve mais o diagnóstico. O campo fica na
-          // tela mostrando `—` de propósito — sumir a linha esconderia que existe
-          // um dado ali que esta tela deixou de poder ver.
-          diagnosis={null}
+          // A API voltou a devolver a patología (lida do paciente por `patient_id`, sem
+          // copiar coluna). Os três estados chegam distintos: `null` = sem a célula
+          // `patient_clinical:read`, `[]` = sem diagnóstico, `diagnosesUnavailable` = falhou.
+          diagnoses={vacancy.diagnoses ?? null}
+          diagnosesUnavailable={vacancy.diagnosesUnavailable ?? false}
           talentumDescription={vacancy.talentum_description ?? null}
           ageRangeMin={vacancy.age_range_min ?? null}
           ageRangeMax={vacancy.age_range_max ?? null}

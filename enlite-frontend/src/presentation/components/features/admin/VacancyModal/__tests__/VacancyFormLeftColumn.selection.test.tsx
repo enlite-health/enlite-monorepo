@@ -44,7 +44,8 @@ function Harness({ selectCase }: { selectCase: (caseNumber: number, patientId: s
       control={control}
       errors={errors}
       patientSelected={false}
-      diagnosis={null}
+      diagnoses={[]}
+      diagnosesUnavailable={false}
       patientName={null}
       selectedCaseNumber={null}
       selectedPatientId={null}

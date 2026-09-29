@@ -18,6 +18,8 @@ import { Search, Loader2 } from 'lucide-react';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import type { CaseOption } from '@hooks/admin/useVacancyModalFlow';
 import { formatCaseNumber } from '@domain/value-objects/caseNumberFormat';
+import type { PatientDiagnosisDetail } from '@domain/entities/PatientDetail';
+import { diagnosisDisplayState } from '@domain/entities/diagnosisDisplay';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { FormField } from '@presentation/components/molecules/FormField/FormField';
 import { SelectField } from '@presentation/components/molecules/SelectField/SelectField';
@@ -39,7 +41,15 @@ export interface VacancyFormLeftColumnProps {
   control: Control<VacancyFormData>;
   errors: FieldErrors<VacancyFormData>;
   patientSelected: boolean;
-  diagnosis: string | null;
+  /**
+   * Patología estruturada do paciente (spec 016 F2 → cid-na-vacante). Vem SEMPRE array aqui —
+   * `getPatientById` (`PatientDetail.diagnoses`) não modela "sem permissão" como `null`, ao
+   * contrário do contrato de vaga/caso (D-A). Read-only e FORA do payload da vaga
+   * (`buildVacancyPayload` não persiste diagnóstico).
+   */
+  diagnoses: PatientDiagnosisDetail[];
+  /** Bulkhead (C4): catálogo de terminologia falhou ao ler — distinto de "sem diagnóstico". */
+  diagnosesUnavailable: boolean;
   patientName: string | null;
   selectedCaseNumber: number | null;
   selectedPatientId: string | null;
@@ -61,7 +71,8 @@ export function VacancyFormLeftColumn({
   control,
   errors,
   patientSelected,
-  diagnosis,
+  diagnoses,
+  diagnosesUnavailable,
   patientName,
   selectedCaseNumber,
   selectedPatientId,
@@ -262,7 +273,37 @@ export function VacancyFormLeftColumn({
         <FormField label={tp('diagnosticHypothesis')}>
           <div className="relative">
             <div className={`min-h-[112px] h-auto w-full px-4 py-3 text-base font-medium text-gray-600 border-[1.5px] border-[#D9D9D9] rounded-[10px] bg-white cursor-default flex items-start pr-12`}>
-              <span>{diagnosis ?? '—'}</span>
+              {(() => {
+                // REQ-21: SÓ o título, nunca o código do CID. `diagnosisDisplayState` mantém os
+                // três estados distintos — "não carregou" nunca se disfarça de "não tem".
+                const state = diagnosisDisplayState(diagnoses, diagnosesUnavailable);
+                if (state.kind === 'unavailable') {
+                  return (
+                    <span className="text-red-600" data-testid="vacancy-form-patologia-unavailable">
+                      {t('admin.patients.detail.diagnosisCard.patologiesUnavailable')}
+                    </span>
+                  );
+                }
+                if (state.kind === 'noPermission') {
+                  return (
+                    <span data-testid="vacancy-form-patologia-no-permission">
+                      {t('admin.patients.detail.diagnosisCard.patologiesNoPermission')}
+                    </span>
+                  );
+                }
+                if (state.kind === 'empty') {
+                  return <span data-testid="vacancy-form-patologia-empty">—</span>;
+                }
+                return (
+                  <ul className="flex flex-col gap-1" data-testid="vacancy-form-patologias">
+                    {state.diagnoses.map((d) => (
+                      <li key={d.id} data-testid={`vacancy-form-patologia-${d.id}`}>
+                        {d.title}
+                      </li>
+                    ))}
+                  </ul>
+                );
+              })()}
             </div>
             <Search className="absolute right-4 top-3 w-4 h-4 text-gray-400 pointer-events-none" />
           </div>
