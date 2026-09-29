@@ -12,6 +12,7 @@
  *
  * Nenhuma coluna de nome, telefone, diagnóstico ou endereço; nenhuma leitura de
  * `contracted_service_providers`.
+ * `readForPatientWith`: a mesma leitura, 1 paciente, no client da transação do escritor — cadeia Fase 15.
  */
 import type { PoolClient } from 'pg';
 import { inPatientTransaction } from '../application/patientTransaction';
@@ -72,13 +73,22 @@ export class PatientKanbanServicesReader {
     return inPatientTransaction((client) => this.run(client, country));
   }
 
-  private async run(client: PoolClient, country: 'AR' | 'BR' | null): Promise<KanbanServicesRows[]> {
+  /** Um paciente só, no client recebido (sem transação própria); `null` quando ele não tem serviço ativo. */
+  async readForPatientWith(client: PoolClient, patientId: string): Promise<KanbanServicesRows | null> {
+    return (await this.run(client, null, patientId))[0] ?? null;
+  }
+
+  private async run(
+    client: PoolClient,
+    country: 'AR' | 'BR' | null,
+    patientId: string | null = null,
+  ): Promise<KanbanServicesRows[]> {
     const res = await client.query<KanbanJoinRow>(
       `WITH svc AS (
          SELECT pcs.id, pcs.patient_id, pcs.service_code, pcs.weekly_hours, pcs.authorized_hours, pcs.created_at, p.country
            FROM patient_contracted_services pcs
            JOIN patients p ON p.id = pcs.patient_id AND p.deleted_at IS NULL
-          WHERE pcs.active AND ($1::text IS NULL OR p.country = $1)
+          WHERE pcs.active AND ($1::text IS NULL OR p.country = $1) AND ($2::uuid IS NULL OR p.id = $2)
        ), live AS (
          ${liveVacancySelect('jp.contracted_service_id IN (SELECT id FROM svc)')}
        )
@@ -92,7 +102,7 @@ export class PatientKanbanServicesReader {
          LEFT JOIN patient_itinerary_slot s ON s.contracted_service_id = svc.id
          LEFT JOIN patient_itinerary_assignment a ON a.slot_id = s.id
         ORDER BY svc.patient_id, svc.created_at, svc.id, s.weekday, s.start_time, a.valid_from`,
-      [country],
+      [country, patientId],
     );
 
     const byPatient = new Map<string, KanbanServicesRows>();
@@ -139,9 +149,9 @@ export class PatientKanbanServicesReader {
     const absencesRes = await client.query<UncoveredAbsenceJoinRow>(
       uncoveredAbsenceSelect(
         'pcs.active AND ($1::text IS NULL OR p.country = $1) AND ab.on_date >= CURRENT_DATE - 1',
-        'JOIN patients p ON p.id = pcs.patient_id AND p.deleted_at IS NULL',
+        'JOIN patients p ON p.id = pcs.patient_id AND p.deleted_at IS NULL AND ($2::uuid IS NULL OR p.id = $2)',
       ),
-      [country],
+      [country, patientId],
     );
     for (const r of absencesRes.rows) {
       const patient = byPatient.get(r.patient_id);

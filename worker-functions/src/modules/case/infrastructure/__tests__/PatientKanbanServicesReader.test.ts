@@ -56,14 +56,14 @@ describe('PatientKanbanServicesReader', () => {
     queryImpl = async () => ({ rows: [], rowCount: 0 });
 
     await reader.readKanbanServices(null);
-    expect(svcCalls()[0].params).toEqual([null]);
-    expect(absenceCalls()[0].params).toEqual([null]);
+    expect(svcCalls()[0].params).toEqual([null, null]);
+    expect(absenceCalls()[0].params).toEqual([null, null]);
 
     jest.clearAllMocks();
     queryImpl = async () => ({ rows: [], rowCount: 0 });
     await reader.readKanbanServices('AR');
-    expect(svcCalls()[0].params).toEqual(['AR']);
-    expect(absenceCalls()[0].params).toEqual(['AR']);
+    expect(svcCalls()[0].params).toEqual(['AR', null]);
+    expect(absenceCalls()[0].params).toEqual(['AR', null]);
   });
 
   it('a query de ausência tem o filtro de país, ab.cancelled_at IS NULL, ab.substitute_worker_id IS NULL, ab.on_date >= CURRENT_DATE - 1; nenhuma coluna de nome/telefone', async () => {
@@ -216,5 +216,50 @@ describe('PatientKanbanServicesReader', () => {
     expect(sql).toMatch(/a\.valid_from <= ab\.on_date/);
     expect(sql).toMatch(/\(a\.valid_to IS NULL OR a\.valid_to >= ab\.on_date\)/);
     expect(sql).toMatch(/JOIN patients p ON p\.id = pcs\.patient_id AND p\.deleted_at IS NULL/);
+  });
+
+  describe('readForPatientWith (cadeia Fase 15)', () => {
+    const PID = '22222222-2222-4222-8222-222222222222';
+    const txCalls = (q: jest.Mock) => q.mock.calls.map(([sql, params]) => ({ sql: String(sql), params }));
+
+    it('roda no client recebido (sem BEGIN/COMMIT, sem pool), com o patientId no $2 das DUAS queries, e devolve o agrupamento do paciente', async () => {
+      const q = jest.fn(async (sql: string) => {
+        if (/WITH svc AS/.test(sql)) {
+          return {
+            rows: [{
+              patient_id: PID, country: 'AR', service_id: 's1', service_code: 'AT', weekly_hours: '8', authorized_hours: null,
+              live_vacancy_id: 'v1', slot_id: null, weekday: null, start_time: null, end_time: null, active: null,
+              assignment_id: null, worker_id: null, application_id: null, valid_from: null, valid_to: null, status: null,
+            }],
+            rowCount: 1,
+          };
+        }
+        return { rows: [], rowCount: 0 };
+      });
+      const client = { query: q } as unknown as import('pg').PoolClient;
+
+      const r = await reader.readForPatientWith(client, PID);
+
+      expect(r).toEqual({
+        patientId: PID, country: 'AR', slots: [],
+        services: [{ id: 's1', serviceCode: 'AT', weeklyHours: 8, authorizedHours: null, liveVacancyId: 'v1' }],
+      });
+      const c = txCalls(q);
+      expect(c).toHaveLength(2);
+      expect(c.some((x) => /^(BEGIN|COMMIT|ROLLBACK)$/.test(x.sql))).toBe(false);
+      expect(c[0].sql).toMatch(/\(\$2::uuid IS NULL OR p\.id = \$2\)/);
+      expect(c[1].sql).toMatch(/\(\$2::uuid IS NULL OR p\.id = \$2\)/);
+      expect(c[0].params).toEqual([null, PID]);
+      expect(c[1].params).toEqual([null, PID]);
+      expect(mockConnect).not.toHaveBeenCalled();
+      expect(mockClient.query).not.toHaveBeenCalled();
+      expect(rawPoolQuery).not.toHaveBeenCalled();
+    });
+
+    it('sem linha → null', async () => {
+      const q = jest.fn(async () => ({ rows: [], rowCount: 0 }));
+      const client = { query: q } as unknown as import('pg').PoolClient;
+      await expect(reader.readForPatientWith(client, PID)).resolves.toBeNull();
+    });
   });
 });
