@@ -17,7 +17,7 @@ import { AdminItineraryAbsenceController } from '../controllers/AdminItineraryAb
  * em closure (memória `celula-em-closure-nao-entra-no-catalogo`). Sem `countryScope` (a RLS decide,
  * como as irmãs por `:id`); sem `logResourceAccess` — a trilha de contato é a do
  * `AdminItineraryWriteController` (`emitirTrilhaDeContato`, DX-11.10; a ausência não tem trilha —
- * nenhum nome sai dela). Exatamente 1 `router.get(`, 2 `router.patch(`, 7 `router.post(`, 0
+ * nenhum nome sai dela). Exatamente 1 `router.get(`, 2 `router.patch(`, 8 `router.post(`, 0
  * `router.put|delete(`.
  */
 export function createAdminItineraryWriteRoutes(
@@ -65,6 +65,12 @@ export function createAdminItineraryWriteRoutes(
     staffOnly,
     perm.require('patient_itinerary', 'update'),
     (req: Request, res: Response) => controller.endAllocation(req, res),
+  );
+  router.post(
+    '/patients/:id/contracted-services/:sid/itinerary/allocations/:allocationId/replace',
+    staffOnly,
+    perm.require('patient_itinerary', 'update'),
+    (req: Request, res: Response) => controller.replace(req, res),
   );
   router.post(
     '/patients/:id/itinerary/assemble',

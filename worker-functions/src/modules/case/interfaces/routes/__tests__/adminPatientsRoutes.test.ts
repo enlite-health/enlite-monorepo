@@ -100,6 +100,9 @@ const ESPERADO: Record<string, string | null> = {
   // Itinerário — leitura (fase 7, DX-7.7, Q-7.3): mesma célula do GET de serviços contratados,
   // porque a resposta carrega os mesmos weeklyHours/authorizedHours.
   'GET /patients/:id/itinerary': 'patient_services:read',
+  // D445.3 — "Próximos eventos/Substitución": a MESMA célula do GET acima, é a mesma leitura
+  // expandida no tempo.
+  'GET /patients/:id/itinerary/events': 'patient_services:read',
   'GET /patients/:id/diagnoses': 'patient_clinical:read',
   'POST /patients/:id/diagnoses': 'patient_clinical:create',
   'PATCH /patients/:id/diagnoses/:did': 'patient_clinical:update',
@@ -191,7 +194,7 @@ function pecas() {
   } as unknown as AdminPatientDiagnosesController;
   // Fase 7 (DX-7.11, A-contrato): dublê só para o `build()` não construir o controller real
   // (que abriria banco na leitura, DX-7.6) — é o molde do arquivo para o 15º argumento.
-  const itinerary = { get: responde('itinerary.get') } as unknown as AdminPatientItineraryController;
+  const itinerary = { get: responde('itinerary.get'), events: responde('itinerary.events') } as unknown as AdminPatientItineraryController;
   // Fase 8 (DX-8.16, A-contrato): mesmo molde, 16º argumento — agregado do subcard do Kanban.
   const kanbanServices = { list: responde('kanbanServices.list') } as unknown as AdminPatientKanbanServicesController;
   const terminology = { search: responde('terminology.search') } as unknown as AdminTerminologySearchController;
@@ -250,7 +253,7 @@ describe('createAdminPatientsRoutes', () => {
   });
 
   it('a família declara exatamente 54 rotas — 45 do PR-1 (39 de antes/D286 + o 410 de support-network + as 6 por linha) + activate-recruitment (PR-6) + as 3 da equipe tratante (PR-5) + as 5 do PR-2 (contatos externos + marca de emergência) + itinerário (fase 7) + agregado do Kanban (fase 8) − as 2 da alocação antiga (fase 14)', () => {
-    expect(scanExpressRouter(build())).toHaveLength(54);
+    expect(scanExpressRouter(build())).toHaveLength(55);
   });
 
   it('a família é `admin.patients` — o nome que PERMISSION_ENFORCED_ROUTES liga', () => {
@@ -274,7 +277,7 @@ describe('createAdminPatientsRoutes', () => {
         p.map, p.addresses, p.insurance, p.contracted, p.diagnoses, p.terminology,
         // 12º/13º/14º/15º/16º omitidos de propósito
       );
-      expect(scanExpressRouter(router)).toHaveLength(54);
+      expect(scanExpressRouter(router)).toHaveLength(55);
     } finally {
       if (antes === undefined) delete process.env.DATABASE_URL; else process.env.DATABASE_URL = antes;
     }
@@ -333,6 +336,7 @@ describe('createAdminPatientsRoutes', () => {
     ['post', '/api/admin/patients/abc-123/contracted-services', 'cs.create'],
     ['patch', '/api/admin/patients/abc-123/contracted-services/s1', 'cs.update'],
     ['get', '/api/admin/patients/abc-123/itinerary', 'itinerary.get'],
+    ['get', '/api/admin/patients/abc-123/itinerary/events?from=2026-09-01&to=2026-09-07', 'itinerary.events'],
     ['get', '/api/admin/patients/abc-123/diagnoses', 'diag.list'],
     ['post', '/api/admin/patients/abc-123/diagnoses', 'diag.create'],
     ['patch', '/api/admin/patients/abc-123/diagnoses/d1', 'diag.update'],

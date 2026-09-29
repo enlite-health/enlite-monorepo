@@ -18,6 +18,7 @@ import {
   AlreadyAllocatedInSlotError,
   AllocationNotFoundError,
   AllocationNotActiveError,
+  ReplacementDateInPastError,
 } from '../../application/ItineraryAllocationUseCase';
 import {
   AssembleItineraryUseCase,
@@ -33,6 +34,7 @@ import {
   itineraryAllocationParamsSchema,
   itinerarySlotBodySchema,
   itineraryAllocationBodySchema,
+  itineraryReplaceBodySchema,
 } from '../validators/itineraryWriteSchemas';
 
 /**
@@ -190,6 +192,36 @@ export class AdminItineraryWriteController {
     }
   }
 
+  /** POST .../itinerary/allocations/:allocationId/replace (D445.5 — reemplazo permanente) */
+  async replace(req: Request, res: Response): Promise<void> {
+    const params = itineraryAllocationParamsSchema.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ success: false, error: 'Invalid params' });
+      return;
+    }
+    const body = itineraryReplaceBodySchema.safeParse(req.body);
+    if (!body.success) {
+      res.status(400).json({ success: false, error: 'Invalid body' });
+      return;
+    }
+    const actorUid = this.requireActor(req, res);
+    if (actorUid === null) return;
+    const { id: patientId, sid: serviceId, allocationId } = params.data;
+    try {
+      const result = await this.allocationUseCase.replace({
+        patientId,
+        serviceId,
+        allocationId,
+        newWorkerId: body.data.newWorkerId,
+        fromDate: body.data.fromDate,
+        actorUid,
+      });
+      res.status(200).json({ success: true, data: result });
+    } catch (err: unknown) {
+      this.handleError(err, res, 'replace', patientId, serviceId);
+    }
+  }
+
   /** POST /patients/:id/itinerary/assemble */
   async assemble(req: Request, res: Response): Promise<void> {
     const params = itineraryPatientParamsSchema.safeParse(req.params);
@@ -276,6 +308,10 @@ export class AdminItineraryWriteController {
     }
     if (err instanceof AllocationNotActiveError) {
       res.status(422).json({ success: false, code: 'ALLOCATION_NOT_ACTIVE' });
+      return;
+    }
+    if (err instanceof ReplacementDateInPastError) {
+      res.status(422).json({ success: false, code: 'REPLACEMENT_DATE_IN_PAST' });
       return;
     }
     if (err instanceof NoServiceWithVacancyError) {

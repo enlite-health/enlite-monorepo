@@ -66,3 +66,15 @@ export type ItineraryAbsenceBody = z.infer<typeof itineraryAbsenceBodySchema>;
 export const itinerarySubstituteBodySchema = z.object({ substituteWorkerId: z.union([z.string().uuid(), z.null()]) });
 
 export type ItinerarySubstituteBody = z.infer<typeof itinerarySubstituteBodySchema>;
+
+// ── Reemplazo permanente (D445.5) ────────────────────────────────────────────────────────────
+
+export const itineraryReplaceBodySchema = z.object({
+  newWorkerId: z.string().uuid(),
+  fromDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .refine(isRealCalendarDate, { message: 'fromDate must be a real calendar date' }),
+});
+
+export type ItineraryReplaceBody = z.infer<typeof itineraryReplaceBodySchema>;

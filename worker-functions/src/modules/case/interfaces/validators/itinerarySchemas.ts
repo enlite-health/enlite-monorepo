@@ -51,3 +51,26 @@ export const patientItineraryResponseSchema = z.object({
 });
 
 export type PatientItineraryResponse = z.infer<typeof patientItineraryResponseSchema>;
+
+// ── GET .../itinerary/events (D445.3) ────────────────────────────────────────────────────────
+
+/** Round-trip em `Date.UTC` (molde `itineraryWriteSchemas.ts:isRealCalendarDate`) — recusa calendário inexistente (ex.: `2026-02-31`). */
+function isRealCalendarDateQuery(value: string): boolean {
+  const [yearStr, monthStr, dayStr] = value.split('-');
+  const year = Number(yearStr);
+  const month = Number(monthStr);
+  const day = Number(dayStr);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
+
+const isoDateQuerySchema = z.string().regex(ISO_DATE_REGEX).refine(isRealCalendarDateQuery, { message: 'must be a real calendar date' });
+
+export const itineraryEventsQuerySchema = z.object({
+  from: isoDateQuerySchema,
+  to: isoDateQuerySchema,
+  serviceId: z.string().uuid().optional(),
+  workerId: z.string().uuid().optional(),
+});
+
+export type ItineraryEventsQuery = z.infer<typeof itineraryEventsQuerySchema>;

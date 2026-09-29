@@ -27,6 +27,7 @@ const ESPERADO: Record<string, string> = {
   'POST /patients/:id/contracted-services/:sid/itinerary/slots/:slotId/end': ITINERARY_UPDATE,
   'POST /patients/:id/contracted-services/:sid/itinerary/slots/:slotId/allocations': ITINERARY_UPDATE,
   'POST /patients/:id/contracted-services/:sid/itinerary/allocations/:allocationId/end': ITINERARY_UPDATE,
+  'POST /patients/:id/contracted-services/:sid/itinerary/allocations/:allocationId/replace': ITINERARY_UPDATE,
   'POST /patients/:id/itinerary/assemble': ITINERARY_UPDATE,
   'POST /patients/:id/contracted-services/:sid/itinerary/allocations/:allocationId/absences': ITINERARY_UPDATE,
   'PATCH /patients/:id/contracted-services/:sid/itinerary/absences/:absenceId/substitute': ITINERARY_UPDATE,
@@ -44,6 +45,7 @@ function controllerDuble(): AdminItineraryWriteController {
     endSlot: responde('endSlot'),
     allocate: responde('allocate'),
     endAllocation: responde('endAllocation'),
+    replace: responde('replace'),
     assemble: responde('assemble'),
   } as unknown as AdminItineraryWriteController;
 }
@@ -83,15 +85,15 @@ describe('createAdminItineraryWriteRoutes', () => {
     expect(declarado).toEqual(ESPERADO);
   });
 
-  it('são exatamente 10 rotas: 1 leitura + 9 escritas (6 da Fase 11 + 3 da ausência, Fase 13)', () => {
-    expect(scanExpressRouter(build())).toHaveLength(10);
+  it('são exatamente 11 rotas: 1 leitura + 10 escritas (6 da Fase 11 + 3 da ausência, Fase 13 + 1 do reemplazo permanente, D445.5)', () => {
+    expect(scanExpressRouter(build())).toHaveLength(11);
   });
 
-  it('critério: exatamente 1 `router.get(`, 2 `router.patch(`, 7 `router.post(` — nenhum put/delete', () => {
+  it('critério: exatamente 1 `router.get(`, 2 `router.patch(`, 8 `router.post(` — nenhum put/delete', () => {
     const rotas = scanExpressRouter(build());
     expect(rotas.filter((r) => r.method === 'GET')).toHaveLength(1);
     expect(rotas.filter((r) => r.method === 'PATCH')).toHaveLength(2);
-    expect(rotas.filter((r) => r.method === 'POST')).toHaveLength(7);
+    expect(rotas.filter((r) => r.method === 'POST')).toHaveLength(8);
     expect(rotas.map((r) => r.method)).not.toContain('PUT');
     expect(rotas.map((r) => r.method)).not.toContain('DELETE');
   });
@@ -115,6 +117,7 @@ describe('createAdminItineraryWriteRoutes', () => {
     ['post', '/api/admin/patients/abc-123/contracted-services/svc-1/itinerary/slots/slot-1/end', 'endSlot'],
     ['post', '/api/admin/patients/abc-123/contracted-services/svc-1/itinerary/slots/slot-1/allocations', 'allocate'],
     ['post', '/api/admin/patients/abc-123/contracted-services/svc-1/itinerary/allocations/alloc-1/end', 'endAllocation'],
+    ['post', '/api/admin/patients/abc-123/contracted-services/svc-1/itinerary/allocations/alloc-1/replace', 'replace'],
     ['post', '/api/admin/patients/abc-123/itinerary/assemble', 'assemble'],
     ['post', '/api/admin/patients/abc-123/contracted-services/svc-1/itinerary/allocations/alloc-1/absences', 'register'],
     ['patch', '/api/admin/patients/abc-123/contracted-services/svc-1/itinerary/absences/abs-1/substitute', 'setSubstitute'],

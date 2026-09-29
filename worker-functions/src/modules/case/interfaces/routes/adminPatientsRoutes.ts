@@ -282,6 +282,15 @@ export function createAdminPatientsRoutes(
     itineraryController.get(req, res),
   );
 
+  // D445.3 — "Próximos eventos/Substituição": leitura calculada, faixa × datas. MESMA célula do
+  // GET acima (`patient_services:read`) — é a mesma leitura do itinerário, só expandida no tempo.
+  router.get(
+    '/patients/:id/itinerary/events',
+    staffOnly,
+    perm.require('patient_services', 'read'),
+    (req: Request, res: Response) => itineraryController.events(req, res),
+  );
+
   // ── Diagnóstico estruturado, CID-11 (spec 016 F2, D263) ────────────────────
   // Literais ANTES do PATCH dinâmico /:id/:section — 'diagnoses' seria capturado como :section
   // e barrado pelo whitelist. Sem DELETE físico: baixa é PATCH { active: false }.
