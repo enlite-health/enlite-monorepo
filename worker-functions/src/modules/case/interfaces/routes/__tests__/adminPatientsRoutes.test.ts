@@ -97,8 +97,6 @@ const ESPERADO: Record<string, string | null> = {
   'GET /patients/:id/contracted-services': 'patient_services:read',
   'POST /patients/:id/contracted-services': 'patient_services:create',
   'PATCH /patients/:id/contracted-services/:sid': 'patient_services:update',
-  'POST /patients/:id/contracted-services/:sid/providers': 'patient_services:update',
-  'PATCH /patients/:id/contracted-services/:sid/providers/:pid': 'patient_services:update',
   // Itinerário — leitura (fase 7, DX-7.7, Q-7.3): mesma célula do GET de serviços contratados,
   // porque a resposta carrega os mesmos weeklyHours/authorizedHours.
   'GET /patients/:id/itinerary': 'patient_services:read',
@@ -185,8 +183,6 @@ function pecas() {
     create: responde('cs.create'),
     update: responde('cs.update'),
     activateRecruitment: responde('cs.activateRecruitment'),
-    associateProvider: responde('cs.associateProvider'),
-    updateProvider: responde('cs.updateProvider'),
   } as unknown as AdminPatientContractedServicesController;
   const diagnoses = {
     list: responde('diag.list'),
@@ -253,8 +249,8 @@ describe('createAdminPatientsRoutes', () => {
     expect(declarado).toEqual(ESPERADO);
   });
 
-  it('a família declara exatamente 56 rotas — 45 do PR-1 (39 de antes/D286 + o 410 de support-network + as 6 por linha) + activate-recruitment (PR-6) + as 3 da equipe tratante (PR-5) + as 5 do PR-2 (contatos externos + marca de emergência) + itinerário (fase 7) + agregado do Kanban (fase 8)', () => {
-    expect(scanExpressRouter(build())).toHaveLength(56);
+  it('a família declara exatamente 54 rotas — 45 do PR-1 (39 de antes/D286 + o 410 de support-network + as 6 por linha) + activate-recruitment (PR-6) + as 3 da equipe tratante (PR-5) + as 5 do PR-2 (contatos externos + marca de emergência) + itinerário (fase 7) + agregado do Kanban (fase 8) − as 2 da alocação antiga (fase 14)', () => {
+    expect(scanExpressRouter(build())).toHaveLength(54);
   });
 
   it('a família é `admin.patients` — o nome que PERMISSION_ENFORCED_ROUTES liga', () => {
@@ -278,7 +274,7 @@ describe('createAdminPatientsRoutes', () => {
         p.map, p.addresses, p.insurance, p.contracted, p.diagnoses, p.terminology,
         // 12º/13º/14º/15º/16º omitidos de propósito
       );
-      expect(scanExpressRouter(router)).toHaveLength(56);
+      expect(scanExpressRouter(router)).toHaveLength(54);
     } finally {
       if (antes === undefined) delete process.env.DATABASE_URL; else process.env.DATABASE_URL = antes;
     }
@@ -336,8 +332,6 @@ describe('createAdminPatientsRoutes', () => {
     ['get', '/api/admin/patients/abc-123/contracted-services', 'cs.list'],
     ['post', '/api/admin/patients/abc-123/contracted-services', 'cs.create'],
     ['patch', '/api/admin/patients/abc-123/contracted-services/s1', 'cs.update'],
-    ['post', '/api/admin/patients/abc-123/contracted-services/s1/providers', 'cs.associateProvider'],
-    ['patch', '/api/admin/patients/abc-123/contracted-services/s1/providers/p1', 'cs.updateProvider'],
     ['get', '/api/admin/patients/abc-123/itinerary', 'itinerary.get'],
     ['get', '/api/admin/patients/abc-123/diagnoses', 'diag.list'],
     ['post', '/api/admin/patients/abc-123/diagnoses', 'diag.create'],
@@ -365,6 +359,20 @@ describe('createAdminPatientsRoutes', () => {
     const res = await request(app)[metodo](caminho).expect(200);
 
     expect(res.body.m).toBe(esperado);
+  });
+
+  // Fase 14 (DX-14.1): a escrita da alocação antiga saiu do router — 404, não 410, nenhum handler.
+  it.each([
+    ['post', '/api/admin/patients/abc-123/contracted-services/s1/providers'],
+    ['patch', '/api/admin/patients/abc-123/contracted-services/s1/providers/p1'],
+  ] as const)('%s %s → 404 (a rota da alocação antiga não existe mais)', async (metodo, caminho) => {
+    const app = express();
+    app.use(express.json());
+    app.use('/api/admin', build());
+
+    const res = await request(app)[metodo](caminho).send({ active: false }).expect(404);
+
+    expect(res.body.m).toBeUndefined();
   });
 
   // Os dois casos de captura que o cabeçalho do router chama de contrato:

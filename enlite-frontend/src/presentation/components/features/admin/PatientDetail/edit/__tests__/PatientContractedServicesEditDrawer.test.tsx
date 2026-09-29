@@ -18,8 +18,6 @@ vi.mock('@infrastructure/http/AdminContractedServicesApiService', () => ({
     listContractedServices: (...a: unknown[]) => mockList(...a),
     createContractedService: vi.fn(),
     updateContractedService: vi.fn(),
-    associateProvider: vi.fn(),
-    updateProvider: vi.fn(),
   },
 }));
 vi.mock('@infrastructure/http/AdminApiService', () => ({

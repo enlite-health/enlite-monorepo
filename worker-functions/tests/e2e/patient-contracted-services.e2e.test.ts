@@ -11,8 +11,9 @@
  *   5. `patients.service_type[]` vira DERIVADO assim que existe 1 serviço ativo — e o espelho
  *      ClickUp (`PATCH .../service`) para de escrever enquanto isso (FR-C1); volta a escrever
  *      quando o serviço é desativado.
- *   6. Prestador: country herda do SERVIÇO (⇒ paciente), não do worker (C-e.1); duplicar par
- *      ATIVO → 409; baixa + reassociar cria linha NOVA, histórico preservado (C-e.2).
+ *   6. Alocação antiga (histórico, Fase 14): a linha nasce por SQL; country herda do SERVIÇO
+ *      (⇒ paciente), não do worker, por trigger (C-e.1); o GET a lista; POST/PATCH …/providers → 404
+ *      e nada escrito (a escrita saiu — DX-14.1).
  *   7. `hourlyValue` redigido para recruiter/community_manager, cru para admin (C-c.4) — no
  *      GET da lista E no GET /patients/:id embutido.
  *   8. Guarda de posse: :sid de outro paciente → 404 (nunca edita cross-patient).
@@ -65,6 +66,13 @@ describe('Serviço contratado — entidade própria (spec 013, bloco C) @integra
     );
     workerId = worker.rows[0].id;
   });
+
+  /** A alocação antiga só nasce por SQL como dono desde a Fase 14 (a escrita saiu da API). */
+  const seedLegacyProvider = async (serviceId: string): Promise<{ id: string; country: string }> =>
+    (await pool.query<{ id: string; country: string }>(
+      "INSERT INTO contracted_service_providers (service_id, worker_id, weekly_hours, created_by, updated_by) VALUES ($1,$2,10,'e2e','e2e') RETURNING id, country",
+      [serviceId, workerId],
+    )).rows[0];
 
   afterAll(async () => {
     // job_postings referencia patients (NO ACTION) e contracted_service_id (RESTRICT) — sai
@@ -187,31 +195,26 @@ describe('Serviço contratado — entidade própria (spec 013, bloco C) @integra
     expect(reopen.status).toBe(400); // z.literal(false) recusa `true`
   });
 
-  it('6. prestador: country herda do SERVIÇO (não do worker); duplicar ATIVO → 409; baixa + reassociar preserva histórico', async () => {
+  it('6. alocação antiga (histórico): country herda do SERVIÇO por trigger; o GET a lista; POST/PATCH /providers → 404 e nada escrito', async () => {
     const svc = await api.post(`/api/admin/patients/${patientBR}/contracted-services`, { serviceCode: 'AT' }, asAdmin);
     const svcId = svc.data.data.id as string;
     expect(svc.data.data.country).toBe('BR');
 
-    const assoc = await api.post(`/api/admin/patients/${patientBR}/contracted-services/${svcId}/providers`, { workerId, weeklyHours: 10 }, asAdmin);
-    expect(assoc.status).toBe(201);
-    expect(assoc.data.data).toMatchObject({ workerId, weeklyHours: 10, active: true, country: 'BR' }); // worker é AR — country vem do serviço
+    const legacy = await seedLegacyProvider(svcId);
+    expect(legacy.country).toBe('BR'); // worker é AR — country vem do serviço (trigger)
 
-    const dup = await api.post(`/api/admin/patients/${patientBR}/contracted-services/${svcId}/providers`, { workerId }, asAdmin);
-    expect(dup.status).toBe(409);
-    expect(dup.data.code).toBe('PROVIDER_ALREADY_ACTIVE');
+    const list = await api.get(`/api/admin/patients/${patientBR}/contracted-services`, asAdmin);
+    expect(list.status).toBe(200);
+    const listed = (list.data.data.services as Array<{ id: string; providers: unknown[] }>).find((s) => s.id === svcId);
+    expect(listed?.providers).toMatchObject([{ workerId, weeklyHours: 10, active: true, country: 'BR' }]);
 
-    const providerId = assoc.data.data.id as string;
-    const off = await api.patch(`/api/admin/patients/${patientBR}/contracted-services/${svcId}/providers/${providerId}`, { active: false }, asAdmin);
-    expect(off.status).toBe(200);
-    expect(off.data.data.active).toBe(false);
-    expect(off.data.data.endedAt).toBeTruthy();
+    const post = await api.post(`/api/admin/patients/${patientBR}/contracted-services/${svcId}/providers`, { workerId, weeklyHours: 5 }, asAdmin);
+    expect(post.status).toBe(404);
+    const patch = await api.patch(`/api/admin/patients/${patientBR}/contracted-services/${svcId}/providers/${legacy.id}`, { active: false }, asAdmin);
+    expect(patch.status).toBe(404);
 
-    const reassoc = await api.post(`/api/admin/patients/${patientBR}/contracted-services/${svcId}/providers`, { workerId, weeklyHours: 5 }, asAdmin);
-    expect(reassoc.status).toBe(201);
-    expect(reassoc.data.data.id).not.toBe(providerId); // linha NOVA, não reabertura
-
-    const { rows: history } = await pool.query(`SELECT active FROM contracted_service_providers WHERE service_id = $1 ORDER BY created_at`, [svcId]);
-    expect(history).toEqual([{ active: false }, { active: true }]); // histórico preservado
+    const { rows: after } = await pool.query(`SELECT count(*)::int AS n, bool_and(active) AS active FROM contracted_service_providers WHERE service_id = $1`, [svcId]);
+    expect(after).toEqual([{ n: 1, active: true }]); // nada escrito
   });
 
   it('9. purge do paciente de teste leva as 3 tabelas (D248)', async () => {
@@ -222,7 +225,7 @@ describe('Serviço contratado — entidade própria (spec 013, bloco C) @integra
     )).rows[0].id;
     const svc = await api.post(`/api/admin/patients/${testPatient}/contracted-services`, { serviceCode: 'AT', deviceTypeCodes: ['HOME'] }, asAdmin);
     const svcId = svc.data.data.id as string;
-    await api.post(`/api/admin/patients/${testPatient}/contracted-services/${svcId}/providers`, { workerId }, asAdmin);
+    await seedLegacyProvider(svcId);
 
     expect((await pool.query(`SELECT count(*)::int AS n FROM patient_contracted_services WHERE patient_id = $1`, [testPatient])).rows[0].n).toBe(1);
     expect((await pool.query(`SELECT count(*)::int AS n FROM contracted_service_devices WHERE service_id = $1`, [svcId])).rows[0].n).toBe(1);

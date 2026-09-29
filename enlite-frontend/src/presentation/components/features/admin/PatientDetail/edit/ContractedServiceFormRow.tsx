@@ -389,7 +389,7 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
       </div>
 
       {!isNew && (
-        <ContractedServiceProvidersSection patientId={patientId} serviceId={service.id} providers={service.providers} onChanged={onSaved} />
+        <ContractedServiceProvidersSection serviceId={service.id} providers={service.providers} />
       )}
     </div>
   );

@@ -1,11 +1,7 @@
 /**
- * ContractedServiceProviderRepository — prestador(es) alocado(s) num serviço contratado
- * (migration 319, spec 013, lex C-e).
- *
- * Sem rota DELETE (C-e.2): baixa é `active=false` + `ended_at`. Reassociar o MESMO
- * (serviço, worker) depois de uma baixa cria linha NOVA — o índice único parcial
- * (`uq_contracted_service_providers_active_pair`) só impede duas linhas ATIVAS ao mesmo tempo;
- * histórico de alocações passadas fica intacto.
+ * ContractedServiceProviderRepository — leitura do histórico da alocação anterior ao itinerário
+ * (migration 319, spec 013, lex C-e). Desde a Fase 14 nenhuma rota escreve aqui: a alocação
+ * nova é pela aba do itinerário; as linhas antigas só são lidas (ficha do serviço).
  */
 import type { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
@@ -23,36 +19,6 @@ export interface ContractedServiceProviderDetail {
   country: string;
   createdAt: string;
   updatedAt: string;
-}
-
-export interface AssociateProviderInput {
-  serviceId: string;
-  workerId: string;
-  weeklyHours?: number | null;
-  country?: 'AR' | 'BR' | null;
-  actorUid: string;
-}
-
-export interface UpdateProviderInput {
-  weeklyHours?: number | null;
-  /** Só `false` é um caminho válido (baixa) — o controller nunca envia `true` (C-e.2). */
-  active?: boolean;
-  actorUid: string;
-}
-
-export class ProviderAlreadyActiveError extends Error {
-  readonly code = 'PROVIDER_ALREADY_ACTIVE';
-  constructor(
-    readonly serviceId: string,
-    readonly workerId: string,
-  ) {
-    super(`Worker ${workerId} already actively allocated to service ${serviceId}`);
-    this.name = 'ProviderAlreadyActiveError';
-  }
-}
-
-function isUniqueViolation(err: unknown): boolean {
-  return typeof err === 'object' && err !== null && (err as { code?: string }).code === '23505';
 }
 
 interface ProviderRow {
@@ -116,85 +82,5 @@ export class ContractedServiceProviderRepository {
       [serviceId],
     );
     return this.decorate(rows);
-  }
-
-  /** Associa um worker existente ao serviço. Duplicar um par ATIVO → ProviderAlreadyActiveError. */
-  async associate(input: AssociateProviderInput): Promise<ContractedServiceProviderDetail> {
-    let inserted: { id: string };
-    try {
-      const ins = await this.pool.query<{ id: string }>(
-        `INSERT INTO contracted_service_providers
-           (service_id, worker_id, weekly_hours, country, created_by, updated_by)
-         VALUES ($1, $2, $3, $4, $5, $5)
-         RETURNING id`,
-        [input.serviceId, input.workerId, input.weeklyHours ?? null, input.country ?? null, input.actorUid],
-      );
-      inserted = ins.rows[0];
-    } catch (err) {
-      if (isUniqueViolation(err)) throw new ProviderAlreadyActiveError(input.serviceId, input.workerId);
-      throw err;
-    }
-    const [detail] = await this.decorate(
-      (
-        await this.pool.query<ProviderRow>(
-          `SELECT csp.id, csp.service_id, csp.worker_id, csp.weekly_hours, csp.active, csp.ended_at,
-                  csp.country, csp.created_at, csp.updated_at,
-                  w.first_name_encrypted, w.last_name_encrypted
-             FROM contracted_service_providers csp
-             JOIN workers w ON w.id = csp.worker_id
-            WHERE csp.id = $1`,
-          [inserted.id],
-        )
-      ).rows,
-    );
-    return detail;
-  }
-
-  /** `weeklyHours` e/ou baixa (`active:false` → grava `ended_at`). Nunca reabre (C-e.2). */
-  async update(providerId: string, patch: UpdateProviderInput): Promise<ContractedServiceProviderDetail | null> {
-    const sets: string[] = [];
-    const params: unknown[] = [providerId];
-    if (patch.weeklyHours !== undefined) {
-      params.push(patch.weeklyHours);
-      sets.push(`weekly_hours = $${params.length}`);
-    }
-    if (patch.active !== undefined) {
-      params.push(patch.active);
-      sets.push(`active = $${params.length}`);
-      sets.push(patch.active ? 'ended_at = NULL' : 'ended_at = NOW()');
-    }
-    if (sets.length === 0) {
-      const existing = await this.pool.query<ProviderRow>(
-        `SELECT csp.id, csp.service_id, csp.worker_id, csp.weekly_hours, csp.active, csp.ended_at,
-                csp.country, csp.created_at, csp.updated_at,
-                w.first_name_encrypted, w.last_name_encrypted
-           FROM contracted_service_providers csp
-           JOIN workers w ON w.id = csp.worker_id
-          WHERE csp.id = $1`,
-        [providerId],
-      );
-      if (existing.rows.length === 0) return null;
-      const [detail] = await this.decorate(existing.rows);
-      return detail;
-    }
-    params.push(patch.actorUid);
-    sets.push(`updated_by = $${params.length}`);
-    sets.push('updated_at = NOW()');
-    const { rows } = await this.pool.query<{ id: string }>(
-      `UPDATE contracted_service_providers SET ${sets.join(', ')} WHERE id = $1 RETURNING id`,
-      params,
-    );
-    if (rows.length === 0) return null;
-    const full = await this.pool.query<ProviderRow>(
-      `SELECT csp.id, csp.service_id, csp.worker_id, csp.weekly_hours, csp.active, csp.ended_at,
-              csp.country, csp.created_at, csp.updated_at,
-              w.first_name_encrypted, w.last_name_encrypted
-         FROM contracted_service_providers csp
-         JOIN workers w ON w.id = csp.worker_id
-        WHERE csp.id = $1`,
-      [providerId],
-    );
-    const [detail] = await this.decorate(full.rows);
-    return detail ?? null;
   }
 }

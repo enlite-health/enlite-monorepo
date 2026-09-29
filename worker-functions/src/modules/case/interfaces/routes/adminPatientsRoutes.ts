@@ -272,12 +272,6 @@ export function createAdminPatientsRoutes(
     logResourceAccess('patient', 'activate_recruitment'),
     (req: Request, res: Response) => contractedServicesController.activateRecruitment(req, res),
   );
-  router.post('/patients/:id/contracted-services/:sid/providers', staffOnly, perm.require('patient_services', 'update'), (req: Request, res: Response) =>
-    contractedServicesController.associateProvider(req, res),
-  );
-  router.patch('/patients/:id/contracted-services/:sid/providers/:pid', staffOnly, perm.require('patient_services', 'update'), (req: Request, res: Response) =>
-    contractedServicesController.updateProvider(req, res),
-  );
 
   // ── Itinerário — leitura (fase 7, DX-7.6/7.7/D433/D434) ────────────────────
   // Sob `patient_services:read` (Q-7.3, padrão fixado na DX-7.7): a resposta carrega os mesmos

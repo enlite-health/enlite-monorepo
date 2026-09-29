@@ -89,20 +89,3 @@ export const updateContractedServiceSchema = z
   })
   .strict();
 export type UpdateContractedServiceBody = z.infer<typeof updateContractedServiceSchema>;
-
-export const associateProviderSchema = z
-  .object({
-    workerId: z.string().uuid(),
-    weeklyHours: z.number().nonnegative().nullable().optional(),
-  })
-  .strict();
-export type AssociateProviderBody = z.infer<typeof associateProviderSchema>;
-
-export const updateProviderSchema = z
-  .object({
-    weeklyHours: z.number().nonnegative().nullable().optional(),
-    // Só `false` (baixa, lex C-e.2) — reassociar cria linha nova via POST.
-    active: z.literal(false).optional(),
-  })
-  .strict();
-export type UpdateProviderBody = z.infer<typeof updateProviderSchema>;
