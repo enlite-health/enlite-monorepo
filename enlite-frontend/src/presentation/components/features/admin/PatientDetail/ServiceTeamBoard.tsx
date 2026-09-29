@@ -6,6 +6,7 @@ import { KanbanBoardShell, type KanbanColumnSpec } from '@presentation/component
 import { RejectionReasonSelect } from '@presentation/components/features/admin/Kanban/RejectionReasonSelect';
 import { SubstitutionDayModal } from './SubstitutionDayModal';
 import { formatDDMM } from './substitutionDates';
+import { workerLabel } from './workerLabel';
 import {
   SERVICE_TEAM_COLUMN_IDS,
   SERVICE_TEAM_REJECT_REASONS,
@@ -88,8 +89,7 @@ export function ServiceTeamBoard({ team, onReject, onRevert, onSubstitute, actio
             className="bg-white rounded-lg border border-gray-600 p-3 flex flex-col gap-2"
           >
             <Text as="span" size="sm" weight="medium">
-              {member.displayName
-                ?? t('admin.patients.detail.serviceTeam.unnamedWorker', { shortId: member.workerId.slice(-8) })}
+              {workerLabel(t, member.workerId, member.displayName)}
             </Text>
             {columnId === 'REJECTED_FOR_SERVICE' && member.reasonCategory && (
               <Text as="span" size="xs" color="secondary">

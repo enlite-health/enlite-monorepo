@@ -6,6 +6,7 @@ import { Button } from '@presentation/components/atoms/Button';
 import { SearchableSelect } from '@presentation/components/molecules/SearchableSelect/SearchableSelect';
 import type { ServiceTeamMember } from '@domain/entities/ServiceTeam';
 import { weekdayName } from './substitutionDates';
+import { workerLabel } from './workerLabel';
 
 interface AllocateSlotModalProps {
   slot: { weekday: number; startTime: string; endTime: string };
@@ -28,7 +29,7 @@ export function AllocateSlotModal({ slot, options, onSubmit, onCancel }: Allocat
 
   const workerOptions = (options ?? []).map((member) => ({
     value: member.workerId,
-    label: member.displayName ?? t('admin.patients.detail.serviceTeam.unnamedWorker', { shortId: member.workerId.slice(-8) }),
+    label: workerLabel(t, member.workerId, member.displayName),
   }));
 
   return (

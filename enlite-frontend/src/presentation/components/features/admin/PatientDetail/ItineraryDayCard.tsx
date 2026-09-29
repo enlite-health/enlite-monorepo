@@ -4,6 +4,7 @@ import { Text } from '@presentation/components/atoms/Text';
 import { ActionButton } from '@presentation/components/features/access/ActionButton';
 import { isVigenteAt, type PatientItinerarySlot } from '@domain/entities/PatientItinerary';
 import { weekdayName } from './substitutionDates';
+import { workerLabel } from './workerLabel';
 
 interface ItineraryDayCardProps {
   serviceId: string;
@@ -66,7 +67,7 @@ export function ItineraryDayCard({ serviceId, weekday, slots, asOf, onAssign }: 
                   color="primary"
                   data-testid={`itinerario-slot-prestador-${slot.id}-${a.workerId}`}
                 >
-                  {a.displayName ?? t('admin.patients.detail.serviceTeam.unnamedWorker', { shortId: a.workerId.slice(-8) })}
+                  {workerLabel(t, a.workerId, a.displayName)}
                 </Text>
               ))}
               {covering.length === 0 && (

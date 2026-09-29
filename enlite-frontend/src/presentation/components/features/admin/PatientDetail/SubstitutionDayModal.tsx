@@ -6,6 +6,7 @@ import { Select, type SelectOption } from '@presentation/components/atoms/Select
 import { SearchableSelect } from '@presentation/components/molecules/SearchableSelect/SearchableSelect';
 import { nextDatesOfWeekday, formatDDMM, weekdayName } from './substitutionDates';
 import type { ServiceTeamAllocation, ServiceTeamMember } from '@domain/entities/ServiceTeam';
+import { workerLabel } from './workerLabel';
 
 interface SubstitutionDayModalProps {
   allocations: ServiceTeamAllocation[];
@@ -55,7 +56,7 @@ export function SubstitutionDayModal({
     { value: NO_SUBSTITUTE_VALUE, label: t('admin.patients.detail.serviceTeam.substitution.noSubstitute') },
     ...selected.map((member) => ({
       value: member.workerId,
-      label: member.displayName ?? t('admin.patients.detail.serviceTeam.unnamedWorker', { shortId: member.workerId.slice(-8) }),
+      label: workerLabel(t, member.workerId, member.displayName),
     })),
   ];
 
