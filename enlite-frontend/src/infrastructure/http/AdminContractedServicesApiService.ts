@@ -17,7 +17,7 @@ import type {
   ServiceTeamContact,
   RegisterServiceTeamContactBody,
 } from '@domain/entities/ServiceTeam';
-import type { ItineraryOverlapDetail, PatientItinerary } from '@domain/entities/PatientItinerary';
+import type { ItineraryOverlapDetail, PatientItinerary, PatientItineraryEventsResult } from '@domain/entities/PatientItinerary';
 
 export class ContractedServiceApiError extends Error {
   readonly status: number;
@@ -169,6 +169,43 @@ class AdminContractedServicesApiServiceClass {
    */
   async getItinerary(patientId: string): Promise<PatientItinerary> {
     return this.request<PatientItinerary>('GET', `/api/admin/patients/${patientId}/itinerary`);
+  }
+
+  /**
+   * GET .../itinerary/events?from&to&serviceId&workerId (D445.3) — "Próximos eventos/Substitución":
+   * faixa × datas com alocação vigente e ausência sobreposta. `serviceId`/`workerId` filtram;
+   * omitidos, traz o patient inteiro. 400 `ITINERARY_EVENTS_RANGE_INVALID` quando o intervalo
+   * excede o teto do backend — o chamador decide como reagir (nunca intervalo maior que 62 dias).
+   */
+  async getItineraryEvents(
+    patientId: string,
+    from: string,
+    to: string,
+    filters: { serviceId?: string; workerId?: string } = {},
+  ): Promise<PatientItineraryEventsResult> {
+    const params = new URLSearchParams({ from, to });
+    if (filters.serviceId) params.set('serviceId', filters.serviceId);
+    if (filters.workerId) params.set('workerId', filters.workerId);
+    return this.request<PatientItineraryEventsResult>('GET', `/api/admin/patients/${patientId}/itinerary/events?${params.toString()}`);
+  }
+
+  /**
+   * POST .../itinerary/allocations/:allocationId/replace (D445.5) — reemplazo permanente: encerra
+   * o titular em D-1 e cria o novo a partir de `fromDate`, 1 transação. 409 `ITINERARY_OVERLAP` /
+   * 422 `REPLACEMENT_DATE_IN_PAST`/`NOT_SELECTED_FOR_SERVICE` viram `ContractedServiceApiError`.
+   */
+  async replaceAllocation(
+    patientId: string,
+    serviceId: string,
+    allocationId: string,
+    newWorkerId: string,
+    fromDate: string,
+  ): Promise<ItineraryReplaceResult> {
+    return this.request<ItineraryReplaceResult>(
+      'POST',
+      `/api/admin/patients/${patientId}/contracted-services/${serviceId}/itinerary/allocations/${allocationId}/replace`,
+      { newWorkerId, fromDate },
+    );
   }
 
   /** GET .../contracted-services/:sid/allocation-options — os selecionados do serviço, alocáveis. */
@@ -336,6 +373,16 @@ export interface ItineraryAllocationResult {
   slotId: string;
   workerId: string;
   applicationId: string;
+  validFrom: string;
+  status: 'ACTIVE';
+}
+
+/** Result of POST .../itinerary/allocations/:allocationId/replace (200, D445.5). */
+export interface ItineraryReplaceResult {
+  endedAllocationId: string;
+  endedValidTo: string;
+  newAllocationId: string;
+  newWorkerId: string;
   validFrom: string;
   status: 'ACTIVE';
 }

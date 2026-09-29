@@ -125,4 +125,90 @@ describe('SubstitutionDayModal — faixa, data e substituto em cascata', () => {
     fireEvent.click(screen.getByTestId('substitution-cancel'));
     expect(onCancel).toHaveBeenCalledTimes(1);
   });
+
+  it('aviso Ana Care sempre visível (padrão D445)', () => {
+    render(<SubstitutionDayModal allocations={ONE_SLOT} selected={SELECTED} asOf={ASOF} onSubmit={vi.fn()} onCancel={vi.fn()} />);
+    expect(screen.getByTestId('substitution-anacare-notice')).toBeTruthy();
+  });
+
+  it('sem onSubmitPermanent: nenhum toggle de modo aparece (comportamento intocado do ServiceTeamBoard)', () => {
+    render(<SubstitutionDayModal allocations={ONE_SLOT} selected={SELECTED} asOf={ASOF} onSubmit={vi.fn()} onCancel={vi.fn()} />);
+    expect(screen.queryByTestId('substitution-mode')).toBeNull();
+  });
+});
+
+describe('SubstitutionDayModal — modo Entero (D445.5, reemplazo permanente)', () => {
+  it('com onSubmitPermanent: o toggle aparece, começa em Complementar', () => {
+    render(
+      <SubstitutionDayModal
+        allocations={ONE_SLOT}
+        selected={SELECTED}
+        asOf={ASOF}
+        onSubmit={vi.fn()}
+        onSubmitPermanent={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    expect((screen.getByTestId('substitution-mode-complementary') as HTMLInputElement).checked).toBe(true);
+  });
+
+  it('no modo Entero, "sin reemplazo" some da lista de substitutos', () => {
+    render(
+      <SubstitutionDayModal
+        allocations={ONE_SLOT}
+        selected={SELECTED}
+        asOf={ASOF}
+        onSubmit={vi.fn()}
+        onSubmitPermanent={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByTestId('substitution-mode-permanent'));
+    fireEvent.click(screen.getByTestId('substitution-worker'));
+    const listbox = within(screen.getByRole('listbox'));
+    expect(listbox.queryByText('Sin reemplazo (día sin cobertura)')).toBeNull();
+    expect(listbox.getByText('Dana Fixture')).toBeTruthy();
+  });
+
+  it('confirmar no modo Entero chama onSubmitPermanent(allocationId, workerId, date) — nunca onSubmit', () => {
+    const onSubmit = vi.fn();
+    const onSubmitPermanent = vi.fn();
+    render(
+      <SubstitutionDayModal
+        allocations={ONE_SLOT}
+        selected={SELECTED}
+        asOf={ASOF}
+        onSubmit={onSubmit}
+        onSubmitPermanent={onSubmitPermanent}
+        onCancel={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByTestId('substitution-mode-permanent'));
+    const firstDate = nextDatesOfWeekday(ASOF, 1, 8)[0];
+    fireEvent.change(dateSelect(), { target: { value: firstDate } });
+
+    fireEvent.click(screen.getByTestId('substitution-worker'));
+    fireEvent.click(within(screen.getByRole('listbox')).getByText('Dana Fixture'));
+
+    fireEvent.click(screen.getByTestId('substitution-confirm'));
+    expect(onSubmitPermanent).toHaveBeenCalledWith('alloc-1', 'w-sel-1', firstDate);
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it('modo Entero sem substituto escolhido: confirmar fica desabilitado', () => {
+    render(
+      <SubstitutionDayModal
+        allocations={ONE_SLOT}
+        selected={SELECTED}
+        asOf={ASOF}
+        onSubmit={vi.fn()}
+        onSubmitPermanent={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByTestId('substitution-mode-permanent'));
+    const firstDate = nextDatesOfWeekday(ASOF, 1, 8)[0];
+    fireEvent.change(dateSelect(), { target: { value: firstDate } });
+    expect((screen.getByTestId('substitution-confirm') as HTMLButtonElement).disabled).toBe(true);
+  });
 });

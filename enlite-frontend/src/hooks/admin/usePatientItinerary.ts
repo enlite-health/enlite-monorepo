@@ -25,6 +25,12 @@ export interface UsePatientItineraryResult {
   actionError: ItineraryActionError | null;
   /** A ação chegou na API, mas o GET de refresh falhou — a aba mostra o itinerário de antes e avisa. */
   refreshError: boolean;
+  /**
+   * D445.4/D445.5: refaz o GET depois de uma escrita que NÃO passou por `allocate` (ausência,
+   * troca/cancelamento de substituto, reemplazo permanente) — o mesmo padrão de refetch, exposto
+   * para quem escreve fora deste hook.
+   */
+  refresh: () => void;
 }
 
 /**
@@ -107,5 +113,20 @@ export function usePatientItinerary(patientId: string): UsePatientItineraryResul
     [patientId],
   );
 
-  return { itinerary, status, loadOptions, allocate, actionError, refreshError };
+  const refresh = useCallback(() => {
+    const requestId = ++requestIdRef.current;
+    setRefreshError(false);
+    AdminContractedServicesApiService.getItinerary(patientId)
+      .then((result) => {
+        if (requestIdRef.current !== requestId) return;
+        setItinerary(result);
+        setStatus('ok');
+      })
+      .catch(() => {
+        if (requestIdRef.current !== requestId) return;
+        setRefreshError(true);
+      });
+  }, [patientId]);
+
+  return { itinerary, status, loadOptions, allocate, actionError, refreshError, refresh };
 }

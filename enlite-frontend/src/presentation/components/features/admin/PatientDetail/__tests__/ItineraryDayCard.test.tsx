@@ -1,7 +1,9 @@
 /**
- * ItineraryDayCard — Fase 12, DX-12.7/12.10/12.11. O card de um dia da agenda: vazio com testid
- * próprio, chip do horário, quem cobre em `asOf` e "Asignar prestador" só no slot sem vigente
- * (gateado por `patient_itinerary:update` quando o engine está ligado). i18n real (es).
+ * ItineraryDayCard — D445.2 (nó Figma 11340:76163). O card de um dia da agenda: expansível/
+ * colapsável (aberto por padrão quando há faixa ativa), o chip de horário em DUAS linhas, o
+ * endereço do serviço, quem cobre em `asOf` (ou "Sin asignar"), e a linha inteira clicável abre
+ * "Editar agendamiento" — gateado por `patient_itinerary:update` (D269: sem a célula, SOME o
+ * clique/swap, o dado continua visível). i18n real (es).
  */
 import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
@@ -30,6 +32,7 @@ beforeEach(() => {
 });
 
 const ASOF = '2026-09-28';
+const ADDRESS = 'Rua Augusta, 975 - São Paulo/SP';
 
 function assignment(over: Partial<PatientItineraryAssignment> = {}): PatientItineraryAssignment {
   return {
@@ -48,9 +51,9 @@ function slot(over: Partial<PatientItinerarySlot> = {}): PatientItinerarySlot {
   return { id: 'slot-1', weekday: 1, startTime: '08:00', endTime: '12:00', active: true, assignments: [], ...over };
 }
 
-function renderCard(slots: PatientItinerarySlot[], onAssign = vi.fn()) {
-  const utils = render(<ItineraryDayCard serviceId="svc-1" weekday={1} slots={slots} asOf={ASOF} onAssign={onAssign} />);
-  return { ...utils, onAssign };
+function renderCard(slots: PatientItinerarySlot[], onEditSlot = vi.fn()) {
+  const utils = render(<ItineraryDayCard serviceId="svc-1" weekday={1} slots={slots} asOf={ASOF} addressLabel={ADDRESS} onEditSlot={onEditSlot} />);
+  return { ...utils, onEditSlot };
 }
 
 function comEnforcement(permissions: string[]) {
@@ -62,30 +65,32 @@ function comEnforcement(permissions: string[]) {
   });
 }
 
-describe('ItineraryDayCard — o card de um dia da agenda', () => {
-  it('dia sem slot → testid de vazio e o texto "Sin atención", com o nome do dia', () => {
+describe('ItineraryDayCard — o card de um dia da agenda (D445.2)', () => {
+  it('dia sem slot → testid de vazio e o texto "Sin atención", com o nome do dia, sem toggle', () => {
     const { container } = renderCard([]);
     expect(screen.getByTestId('itinerario-dia-vazio-svc-1-1')).toHaveTextContent('Sin atención');
     expect(screen.getByTestId('itinerario-dia-svc-1-1')).toHaveTextContent('lunes');
-    expect(screen.queryByTestId('itinerario-slot-asignar-slot-1')).toBeNull();
+    expect(screen.queryByTestId('itinerario-dia-toggle-svc-1-1')?.querySelector('svg')).toBeNull();
     expectNoRawEnumLeaks(container);
   });
 
-  it('slot ativo sem vigente → chip "HH:MM - HH:MM" e "Asignar prestador" (engine OFF → visível)', () => {
-    const { onAssign } = renderCard([slot()]);
-    expect(screen.getByTestId('itinerario-slot-horario-slot-1')).toHaveTextContent('08:00 - 12:00');
-    const btn = screen.getByTestId('itinerario-slot-asignar-slot-1');
-    expect(btn).toHaveTextContent('Asignar prestador');
+  it('slot ativo sem vigente → chip com as DUAS linhas (início/fim) e "Sin asignar"; clicar chama onEditSlot', () => {
+    const { onEditSlot } = renderCard([slot()]);
+    const horario = screen.getByTestId('itinerario-slot-horario-slot-1');
+    expect(horario).toHaveTextContent('08:00');
+    expect(horario).toHaveTextContent('12:00');
+    expect(screen.getByTestId('itinerario-slot-sem-prestador-slot-1')).toHaveTextContent('Sin asignar');
     expect(screen.queryByTestId('itinerario-dia-vazio-svc-1-1')).toBeNull();
-    fireEvent.click(btn);
-    expect(onAssign).toHaveBeenCalledTimes(1);
-    expect(onAssign).toHaveBeenCalledWith('slot-1');
+    fireEvent.click(screen.getByTestId('itinerario-slot-editar-slot-1'));
+    expect(onEditSlot).toHaveBeenCalledTimes(1);
+    expect(onEditSlot).toHaveBeenCalledWith('slot-1');
   });
 
-  it('slot com vigente → o nome e SEM o botão', () => {
-    renderCard([slot({ assignments: [assignment()] })]);
+  it('slot com vigente → o nome, o endereço, e clicar chama onEditSlot também', () => {
+    const { onEditSlot } = renderCard([slot({ assignments: [assignment()] })]);
     expect(screen.getByTestId('itinerario-slot-prestador-slot-1-worker-0000-aaaa1111')).toHaveTextContent('Ana Fixture');
-    expect(screen.queryByTestId('itinerario-slot-asignar-slot-1')).toBeNull();
+    fireEvent.click(screen.getByTestId('itinerario-slot-editar-slot-1'));
+    expect(onEditSlot).toHaveBeenCalledWith('slot-1');
   });
 
   it('vigente sem nome (sem a célula) → "Prestador sin nombre · <8 últimos>"', () => {
@@ -95,15 +100,15 @@ describe('ItineraryDayCard — o card de um dia da agenda', () => {
     );
   });
 
-  it('alocação ENDED não cobre → o botão aparece e o nome não', () => {
+  it('alocação ENDED não cobre → "Sin asignar"', () => {
     renderCard([slot({ assignments: [assignment({ status: 'ENDED', validTo: '2026-09-20' })] })]);
     expect(screen.queryByTestId('itinerario-slot-prestador-slot-1-worker-0000-aaaa1111')).toBeNull();
-    expect(screen.getByTestId('itinerario-slot-asignar-slot-1')).toBeInTheDocument();
+    expect(screen.getByTestId('itinerario-slot-sem-prestador-slot-1')).toBeInTheDocument();
   });
 
   it('alocação que só começa depois de asOf não cobre', () => {
     renderCard([slot({ assignments: [assignment({ validFrom: '2026-09-29' })] })]);
-    expect(screen.getByTestId('itinerario-slot-asignar-slot-1')).toBeInTheDocument();
+    expect(screen.getByTestId('itinerario-slot-sem-prestador-slot-1')).toBeInTheDocument();
   });
 
   it('slot active: false não aparece — o dia vira vazio', () => {
@@ -112,16 +117,28 @@ describe('ItineraryDayCard — o card de um dia da agenda', () => {
     expect(screen.getByTestId('itinerario-dia-vazio-svc-1-1')).toBeInTheDocument();
   });
 
-  it('enforcement on SEM patient_itinerary:update → o botão some (0)', () => {
-    comEnforcement(['patient_services:read']);
+  it('toggle colapsa e esconde as faixas', () => {
     renderCard([slot()]);
-    expect(screen.queryAllByTestId('itinerario-slot-asignar-slot-1')).toHaveLength(0);
+    expect(screen.getByTestId('itinerario-slot-editar-slot-1')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('itinerario-dia-toggle-svc-1-1'));
+    expect(screen.queryByTestId('itinerario-slot-editar-slot-1')).toBeNull();
+    fireEvent.click(screen.getByTestId('itinerario-dia-toggle-svc-1-1'));
+    expect(screen.getByTestId('itinerario-slot-editar-slot-1')).toBeInTheDocument();
   });
 
-  it('enforcement on COM patient_itinerary:update → o botão aparece (1)', () => {
+  it('enforcement on SEM patient_itinerary:update → a faixa fica SÓ LEITURA (sem clique/swap), mas o dado continua visível', () => {
+    comEnforcement(['patient_services:read']);
+    renderCard([slot({ assignments: [assignment()] })]);
+    expect(screen.queryByTestId('itinerario-slot-editar-slot-1')).toBeNull();
+    const readOnly = screen.getByTestId('itinerario-slot-somente-leitura-slot-1');
+    expect(readOnly.tagName).toBe('DIV');
+    expect(readOnly).toHaveTextContent('Ana Fixture');
+  });
+
+  it('enforcement on COM patient_itinerary:update → a faixa é clicável', () => {
     comEnforcement(['patient_services:read', 'patient_itinerary:update']);
     renderCard([slot()]);
-    expect(screen.queryAllByTestId('itinerario-slot-asignar-slot-1')).toHaveLength(1);
+    expect(screen.getByTestId('itinerario-slot-editar-slot-1').tagName).toBe('BUTTON');
   });
 
   it('o card vem de organisms/Card (rounded-2xl do átomo) e nenhuma classe tem cor literal', () => {

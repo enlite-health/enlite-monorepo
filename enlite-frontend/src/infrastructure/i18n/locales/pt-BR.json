@@ -3832,7 +3832,10 @@
             "confirm": "Confirmar",
             "cancel": "Cancelar",
             "dateChip": "{{date}}",
-            "label": "Substituição"
+            "label": "Substituição",
+            "modeComplementary": "Complementar (só esse dia)",
+            "modePermanent": "Inteiro (substituição permanente)",
+            "anaCareNotice": "Lembre de lançar esta mudança à mão no Ana Care — não é enviado automaticamente."
           },
           "actionErrors": {
             "SERVICE_TEAM_WORKER_ALLOCATED": "Remova o prestador do itinerário antes de rejeitá-lo.",
@@ -3878,6 +3881,7 @@
           "noServices": "Este paciente não tem serviços contratados ativos.",
           "emptyDay": "Sem atendimento",
           "assign": "Atribuir prestador",
+          "unassigned": "Sem atribuição",
           "modal": {
             "title": "Atribuir prestador · {{day}} {{start}} - {{end}}",
             "worker": "Prestador selecionado",
@@ -3885,10 +3889,56 @@
             "confirm": "Atribuir",
             "cancel": "Cancelar"
           },
+          "editModal": {
+            "title": "Editar agendamento",
+            "save": "Salvar",
+            "weekday": "Dia da semana",
+            "schedule": "Horário do agendamento",
+            "entryAddress": "Endereço de entrada",
+            "assignWorker": "Atribuir prestador",
+            "selectPlaceholder": "Selecionar",
+            "noOptions": "Não há prestadores em Selecionado para este serviço.",
+            "preselectedTitle": "Prestadores disponíveis - Pré-selecionados",
+            "urgentSearchTitle": "Busca de urgência - Complementar",
+            "urgentSearchNoSource": "Sem fonte de dados para os contadores por raio neste ambiente — convide diretamente pela vaga.",
+            "goToVacancy": "Ir para a vaga",
+            "noVacancy": "Este serviço não tem uma vaga ativa.",
+            "anaCareNotice": "Lembre de lançar esta mudança à mão no Ana Care — não é enviado automaticamente.",
+            "cancel": "Fechar"
+          },
           "overlap": "Conflito de horário: o prestador já atende {{existing}} e o pedido é {{requested}}.",
           "overlapGap": "Entre endereços diferentes exige-se um intervalo de {{minutes}} min.",
           "loadError": "Não foi possível carregar o itinerário deste paciente.",
           "refreshError": "A atribuição foi processada, mas não foi possível atualizar o itinerário. Recarregue a página.",
+          "scheduleColumnTitle": "Agenda de Atendimentos",
+          "eventsPanel": {
+            "title": "Próximos eventos /",
+            "titleSecondLine": "Substituição",
+            "newButton": "Novo",
+            "filterStart": "Início",
+            "filterEnd": "Fim",
+            "filterLocation": "Localização",
+            "filterLocationPlaceholder": "Todas",
+            "filterWorker": "Prestador",
+            "filterWorkerPlaceholder": "Todos",
+            "empty": "Não há eventos no intervalo escolhido.",
+            "loadError": "Não foi possível carregar os próximos eventos.",
+            "rangeError": "O intervalo escolhido é grande demais (máximo 62 dias).",
+            "dateLabel": "{{date}} ({{weekday}})",
+            "statusSubstituted": "Substituído",
+            "statusUncovered": "Sem cobertura",
+            "uncoveredLabel": "Sem cobertura",
+            "noSubstitute": "Sem substituto (dia sem cobertura)",
+            "changeSubstitute": "Trocar substituto",
+            "cancelSubstitution": "Cancelar"
+          },
+          "newSubstitutionModal": {
+            "title": "Nova substituição",
+            "servicePlaceholder": "Escolha o serviço",
+            "cancel": "Cancelar",
+            "loadOptionsError": "Não foi possível carregar os prestadores selecionados deste serviço.",
+            "submitError": "Não foi possível salvar a substituição. Tente novamente."
+          },
           "actionErrors": {
             "NOT_SELECTED_FOR_SERVICE": "Este prestador não está mais em Selecionado para este serviço.",
             "ALREADY_ALLOCATED_IN_SLOT": "Este prestador já está atribuído a esta faixa.",
