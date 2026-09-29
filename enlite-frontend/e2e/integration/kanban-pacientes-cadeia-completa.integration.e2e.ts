@@ -29,7 +29,7 @@ import { test, expect, type Response } from '@playwright/test';
 import {
   startTalentumStub, clickFoguete, completeDraftViaWizard, publishOnTalentumPage, readPatientKanbanColumn,
   countLaunchTrail, backendUrl, mockAdminUserFor, useLancamentoStaff, loginAndMockAi, LANCAMENTO_VIEWPORT_ES_AR,
-  openPatientKanbanBoard, type FunnelStageItem,
+  openPatientKanbanBoard, launchViaApi, type FunnelStageItem,
 } from '../helpers/lancamento-e2e-helper';
 import {
   readPatientStatusApi, countOutboundSince, readTrail, countTrail, putMove, chooseReasonInModal,
@@ -50,7 +50,7 @@ import {
 } from '../helpers/quadro-c-e2e-helper';
 import { openServiceTeamOf, nextWeekdaySql } from '../helpers/substituicao-e2e-helper';
 import {
-  seedCadeia, seedRoleWorkers, countPatients, residueByIds, cleanupCadeia, collectRequests, readKanbanState,
+  seedCadeia, seedRoleWorkers, seedPatientZ, seedMarkedWorker, countPatients, residueByIds, cleanupCadeia, collectRequests, readKanbanState,
   lastStatusChangeSource, printPath, type CadeiaPatientX, type CadeiaPatientWithVacancy,
 } from '../helpers/cadeia-completa-e2e-helper';
 
@@ -64,6 +64,8 @@ interface InServiceF13 { workerId: string; substitutionDates?: string[] }
 
 /** M entra UMA vez numa etapa de `FUNNEL_STAGES` (Rejeitados, passo 4) → 1 `domain_events` sem consumidor (mapa ⚠1). */
 const M_FUNNEL_STAGE_ENTRIES = 1;
+/** WZ entra UMA vez em Selecionados (etapa de `FUNNEL_STAGES`) → 1 `domain_events`, sem outbox nem log de mensagem. */
+const WZ_FUNNEL_STAGE_ENTRIES = 1;
 
 function itineraryData(res: ReadItineraryResult): ItineraryResponseDto {
   if (res.status !== 200 || !res.body.data) throw new Error(`GET itinerary ${res.status}`);
@@ -71,6 +73,44 @@ function itineraryData(res: ReadItineraryResult): ItineraryResponseDto {
 }
 
 const idList = (ids: string[]): string => (ids.length ? ids.map((id) => `'${id}'`).join(',') : 'NULL');
+
+interface CadeiaIds {
+  patientIds: string[];
+  workerIds: string[];
+  workerVacancyPairs: Array<{ workerId: string; vacancyId: string }>;
+  seeds: Array<{ cleanup: () => void }>;
+}
+
+const countEventsOf = (ids: CadeiaIds): number => Number(
+  runSQL(
+    `SELECT count(*) FROM domain_events WHERE payload->>'workerId' IN (${idList(ids.workerIds)}) ` +
+      `OR payload->>'patientId' IN (${idList(ids.patientIds)})`,
+  ),
+);
+
+/**
+ * Desmonte por id (DX-16.7): controle ANTES (pacientes = nº de ids), `cleanupCadeia` na ordem da regra 13, os
+ * `domain_events` dos ids (mapa ⚠3, molde `account-link-real`), resíduo 0 e `count(*) patients` = o do início.
+ */
+function teardownById(ids: CadeiaIds, pre: number, marker: string): void {
+  const control = residueByIds(ids);
+  const events = countEventsOf(ids);
+  cleanupCadeia(ids);
+  runSQL(
+    `DELETE FROM domain_events WHERE payload->>'workerId' IN (${idList(ids.workerIds)}) ` +
+      `OR payload->>'patientId' IN (${idList(ids.patientIds)})`,
+  );
+  const residue = residueByIds(ids);
+  const eventsAfter = countEventsOf(ids);
+  const post = countPatients();
+  console.log(marker, control, events, residue, eventsAfter);
+  console.log('[16.5]', pre, post, control.patients, residue.patients);
+  console.log('[16.6]', residue.workers, residue.wja, residue.assignments, eventsAfter);
+  expect(control.patients).toBe(ids.patientIds.length);
+  expect(residue).toEqual({ patients: 0, workers: 0, wja: 0, assignments: 0 });
+  expect(eventsAfter).toBe(0);
+  expect(post).toBe(pre);
+}
 
 test.describe('cadeia-completa @integration', () => {
   test.use({ ...LANCAMENTO_VIEWPORT_ES_AR, deviceScaleFactor: 1 });
@@ -488,34 +528,108 @@ test.describe('cadeia-completa @integration', () => {
       expect(creates).toBe(1);
     } finally {
       await test.step('passo 11 — desmontar tudo o que criou, na ordem das fases (resíduo 0 por id; invariantes 1 a 11 sem sobra)', async () => {
-        const control = residueByIds({ patientIds, workerIds });
-        const events = Number(
-          runSQL(
-            `SELECT count(*) FROM domain_events WHERE payload->>'workerId' IN (${idList(workerIds)}) ` +
-              `OR payload->>'patientId' IN (${idList(patientIds)})`,
-          ),
-        );
-        cleanupCadeia({ patientIds, workerVacancyPairs, workerIds, seeds });
-        runSQL(
-          `DELETE FROM domain_events WHERE payload->>'workerId' IN (${idList(workerIds)}) ` +
-            `OR payload->>'patientId' IN (${idList(patientIds)})`,
-        );
-        const residue = residueByIds({ patientIds, workerIds });
-        const eventsAfter = Number(
-          runSQL(
-            `SELECT count(*) FROM domain_events WHERE payload->>'workerId' IN (${idList(workerIds)}) ` +
-              `OR payload->>'patientId' IN (${idList(patientIds)})`,
-          ),
-        );
-        const post = countPatients();
-        console.log('[16.p11]', control, events, residue, eventsAfter);
-        console.log('[16.5]', pre, post, control.patients, residue.patients);
-        console.log('[16.6]', residue.workers, residue.wja, residue.assignments, eventsAfter);
-        expect(control.patients).toBe(patientIds.length);
-        expect(residue).toEqual({ patients: 0, workers: 0, wja: 0, assignments: 0 });
-        expect(eventsAfter).toBe(0);
-        expect(post).toBe(pre);
+        teardownById({ patientIds, workerIds, workerVacancyPairs, seeds }, pre, '[16.p11]');
       });
+      await stub.close();
+    }
+  });
+
+  test('cadeia-completa-silencio — selecionado não é alocado', async ({ page, request }) => {
+    const token = tokenFor(STAFF);
+    const pre = countPatients();
+    const tally = collectRequests(page);
+    const stub = await startTalentumStub();
+    const ids: CadeiaIds = { patientIds: [], workerIds: [], workerVacancyPairs: [], seeds: [] };
+
+    try {
+      // Z já lançado (a vaga existe de verdade → SEARCHING) e MONTADO: a derivação poderia mover — o silêncio só
+      // vale com ela armada. O lançamento é pela API (molde `launchViaApi`); a Talentum vai ao stub.
+      const z = await seedPatientZ(request);
+      ids.patientIds.push(z.patientId);
+      ids.seeds.push(z);
+      const launched = await launchViaApi(request, token, z.vacancyId);
+      expect(launched).toBe(200);
+      expect(await readPatientStatusApi(request, backendUrl(), token, z.patientId)).toBe('SEARCHING');
+      const assembled = await assembleApi(request, token, z.patientId);
+      expect(assembled.status, `assemble ${assembled.status}`).toBeLessThan(300);
+      // WZ nasce DEPOIS do lançamento (fora do match), em Confirmado.
+      const wz = seedMarkedWorker('WZ');
+      ids.workerIds.push(wz);
+      ids.workerVacancyPairs.push({ workerId: wz, vacancyId: z.vacancyId });
+      const wjaZ = insertWJA({ workerId: wz, jobPostingId: z.vacancyId, funnelStage: 'CONFIRMED' });
+      // Card sem encuadre não arrasta (`KanbanBoard.tsx` `isDragDisabled`) — mesma semente de `seedVacancyWithCards`.
+      upsertEncuadre({ workerId: wz, jobPostingId: z.vacancyId });
+
+      await loginAndMockAi(page, STAFF);
+      const t0 = new Date(); // o corte do `countOutboundSince` de WZ — a mesma exceção declarada do 1º teste
+
+      const columnBefore = await readPatientKanbanColumn(page, z.patientId);
+      const pairBefore = await readSubcardPair(page, z.serviceId);
+      let putStatus = 0;
+
+      await test.step('silencio 1 — levar WZ pela tela de Confirmado a Selecionados de B, sem Equipe de Resposta Rápida e sem alocação (invariantes 1 e 3)', async () => {
+        await gotoVacancyDetail(page, z.vacancyId);
+        await switchToKanban(page, z.vacancyId);
+        await expect(
+          page.locator(`[data-testid="kanban-column-CONFIRMED"] [data-testid="kanban-card-${wjaZ}"]`),
+        ).toBeVisible({ timeout: 15_000 });
+        // Confirmado é a 6ª coluna: fora da viewport de 1366 (medido: x = 1766) — o `dndKitDrag` mede a ORIGEM sem rolar.
+        const sourceZ = page.locator(`[data-testid="kanban-draggable-${wjaZ}"]`);
+        await sourceZ.scrollIntoViewIfNeeded();
+        await dndKitDrag(page, sourceZ, page.locator('[data-testid="kanban-column-SELECTED"]'));
+        // Entrar em Selecionados abre o diálogo de PAPEL antes do PUT (não é motivo — molde `kanban-fase2-full-flow`).
+        const roleModal = page.getByTestId('role-modal');
+        await expect(roleModal).toBeVisible({ timeout: 10_000 });
+        await page.getByTestId('role-option-titular').getByRole('radio').click();
+        const [put] = await Promise.all([
+          page.waitForResponse((r) => r.request().method() === 'PUT' && /\/move$/.test(r.url())),
+          page.getByTestId('role-confirm').click(),
+        ]);
+        await expect(roleModal).toHaveCount(0);
+        putStatus = put.status();
+        expect(put.ok(), `PUT Confirmado → Selecionados ${putStatus}`).toBe(true);
+        await expect(
+          page.locator(`[data-testid="kanban-column-SELECTED"] [data-testid="kanban-card-${wjaZ}"]`),
+        ).toBeVisible({ timeout: 10_000 });
+        expect(getWjaByWorkerAndJob(wz, z.vacancyId)?.funnelStage).toBe('SELECTED');
+      });
+
+      await test.step('silencio 2 — nada move em A e nada entra em C (invariantes 3, 1 e 2)', async () => {
+        const state = await readKanbanState(page, z.patientId, z.serviceId);
+        expect(columnBefore).toBe('SEARCHING');
+        expect(state).toEqual({ column: columnBefore, pair: pairBefore });
+        const source = lastStatusChangeSource(z.patientId);
+        expect(source).toBe('vacancy_launch');
+        const systemTrail = Number(
+          runSQL(`SELECT count(*) FROM patient_status_history WHERE patient_id = '${z.patientId}' AND change_source = 'system'`),
+        );
+        expect(systemTrail).toBe(0);
+
+        const team = await readServiceTeamApi(request, z.patientId, z.serviceId);
+        expect(team.status).toBe(200);
+        const inTeam = [...(team.body.data?.selected ?? []), ...(team.body.data?.inService ?? [])].some((mm) => mm.workerId === wz);
+        expect(inTeam).toBe(false);
+        await openServiceTeamOf(page, z.patientId, z.serviceId);
+        await expect(page.getByTestId('quadro-c-secao')).toBeVisible();
+        await expect(page.getByTestId(`service-team-card-${wz}`)).toHaveCount(0);
+        const opts = await allocationOptionsApi(request, token, z.patientId, z.serviceId);
+        expect(opts.status).toBe(200);
+        const optionIds = ((opts.body.data as { options: OptionDto[] } | undefined)?.options ?? []).map((o) => o.workerId);
+        expect(optionIds).not.toContain(wz);
+
+        const net = tally();
+        const outWz = countOutboundSince(wz, t0);
+        const creates = stub.calls.filter((c) => c.method === 'POST' && c.path === '/pre-screening/projects').length;
+        expect(net.forbidden).toEqual([]);
+        expect(net.apiHits).toBeGreaterThan(0);
+        expect(outWz).toEqual({ domainEvents: WZ_FUNNEL_STAGE_ENTRIES, stageMessageLog: 0, outbox: 0 });
+        expect(creates).toBe(1);
+        console.log('[16.4-silencio]', z.patientId, launched, assembled.status, putStatus, columnBefore, state.column,
+          pairBefore, state.pair, source, systemTrail, inTeam, optionIds.length,
+          net.forbidden.length, net.apiHits, net.observedHits, outWz, creates);
+      });
+    } finally {
+      teardownById(ids, pre, '[16.silencio-desmonte]');
       await stub.close();
     }
   });
