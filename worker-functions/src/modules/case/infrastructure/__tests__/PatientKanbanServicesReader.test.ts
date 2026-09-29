@@ -222,7 +222,7 @@ describe('PatientKanbanServicesReader', () => {
     const PID = '22222222-2222-4222-8222-222222222222';
     const txCalls = (q: jest.Mock) => q.mock.calls.map(([sql, params]) => ({ sql: String(sql), params }));
 
-    it('roda no client recebido (sem BEGIN/COMMIT, sem pool), com o patientId no $2 das DUAS queries, e devolve o agrupamento do paciente', async () => {
+    it('roda no client recebido (sem BEGIN/COMMIT, sem pool), UMA query só (sem a das ausências) com o patientId no $2, e devolve o agrupamento do paciente', async () => {
       const q = jest.fn(async (sql: string) => {
         if (/WITH svc AS/.test(sql)) {
           return {
@@ -245,12 +245,12 @@ describe('PatientKanbanServicesReader', () => {
         services: [{ id: 's1', serviceCode: 'AT', weeklyHours: 8, authorizedHours: null, liveVacancyId: 'v1' }],
       });
       const c = txCalls(q);
-      expect(c).toHaveLength(2);
+      expect(c).toHaveLength(1);
+      expect(c.some((x) => /FROM patient_itinerary_absence/.test(x.sql))).toBe(false);
+      expect(r).not.toHaveProperty('uncoveredAbsences');
       expect(c.some((x) => /^(BEGIN|COMMIT|ROLLBACK)$/.test(x.sql))).toBe(false);
       expect(c[0].sql).toMatch(/\(\$2::uuid IS NULL OR p\.id = \$2\)/);
-      expect(c[1].sql).toMatch(/\(\$2::uuid IS NULL OR p\.id = \$2\)/);
       expect(c[0].params).toEqual([null, PID]);
-      expect(c[1].params).toEqual([null, PID]);
       expect(mockConnect).not.toHaveBeenCalled();
       expect(mockClient.query).not.toHaveBeenCalled();
       expect(rawPoolQuery).not.toHaveBeenCalled();

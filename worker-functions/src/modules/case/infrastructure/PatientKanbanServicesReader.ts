@@ -12,7 +12,8 @@
  *
  * Nenhuma coluna de nome, telefone, diagnóstico ou endereço; nenhuma leitura de
  * `contracted_service_providers`.
- * `readForPatientWith`: a mesma leitura, 1 paciente, no client da transação do escritor — cadeia Fase 15.
+ * `readForPatientWith`: a mesma leitura, 1 paciente, no client da transação do escritor, sem a query
+ * das ausências — cadeia Fase 15.
  */
 import type { PoolClient } from 'pg';
 import { inPatientTransaction } from '../application/patientTransaction';
@@ -73,15 +74,19 @@ export class PatientKanbanServicesReader {
     return inPatientTransaction((client) => this.run(client, country));
   }
 
-  /** Um paciente só, no client recebido (sem transação própria); `null` quando ele não tem serviço ativo. */
+  /**
+   * Um paciente só, no client recebido (sem transação própria); `null` quando ele não tem serviço ativo.
+   * SEM a 2ª query (ausências): a derivação não as lê — a ausência datada nunca entra na conta.
+   */
   async readForPatientWith(client: PoolClient, patientId: string): Promise<KanbanServicesRows | null> {
-    return (await this.run(client, null, patientId))[0] ?? null;
+    return (await this.run(client, null, patientId, false))[0] ?? null;
   }
 
   private async run(
     client: PoolClient,
     country: 'AR' | 'BR' | null,
     patientId: string | null = null,
+    withAbsences = true,
   ): Promise<KanbanServicesRows[]> {
     const res = await client.query<KanbanJoinRow>(
       `WITH svc AS (
@@ -139,6 +144,7 @@ export class PatientKanbanServicesReader {
         });
       }
     }
+    if (!withAbsences) return Array.from(byPatient.values());
 
     // 2ª query, DX-13.10: 1 query a mais para TODOS os pacientes do filtro — nunca por card (sem
     // N+1). `ab.on_date >= CURRENT_DATE - 1` é SUPERCONJUNTO (a data de Buenos Aires nunca é menor
