@@ -16,6 +16,7 @@ import {
   auditVacancyUpdated,
   auditVacancyDeleted,
   createWithPatientUpdate,
+  vacancyActorFromRequest,
   type HumanActor,
 } from './vacancyCrudAuditHelpers';
 import { EnsureVacancyShortLinkUseCase } from '../../application/EnsureVacancyShortLinkUseCase';
@@ -71,16 +72,16 @@ async function tryPurgeShortLinks(pool: Pool, vacancyId: string): Promise<void> 
   }
 }
 
-/** Extracts the HumanActor from an authenticated admin request. */
+/**
+ * Extracts the HumanActor from an authenticated admin request.
+ *
+ * Delega para `vacancyActorFromRequest` (spec 029) preservando o comportamento
+ * de sempre: os 3 call sites deste helper são todos do painel administrativo,
+ * então `actorType` é sempre `'HUMAN'` aqui — mesmo quando a request não tem
+ * `uid` (fica `actorUserId: null`, mas o TIPO continua `'HUMAN'`, como sempre foi).
+ */
 function extractHumanActor(req: Request): HumanActor {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const user = (req as any).user as { uid?: string } | undefined;
-  return {
-    actorUserId: user?.uid ?? null,
-    actorType: 'HUMAN',
-    actorLabel: 'admin_panel',
-    traceId: loggingAls.getStore()?.traceId ?? null,
-  };
+  return { ...vacancyActorFromRequest(req, 'admin_panel'), actorType: 'HUMAN' };
 }
 
 /**

@@ -64,11 +64,22 @@ const mockAuditVacancyUpdated = jest.fn().mockResolvedValue(undefined);
 const mockAuditVacancyDeleted = jest.fn().mockResolvedValue(undefined);
 const mockCreateWithPatientUpdate = jest.fn();
 
+const mockVacancyActorFromRequest = jest.fn((req: any, actorLabel: string) => ({
+  actorUserId: req?.user?.uid ?? null,
+  actorType: req?.user?.uid ? 'HUMAN' : 'SYSTEM',
+  actorLabel,
+  traceId: null,
+}));
 jest.mock('../vacancyCrudAuditHelpers', () => ({
   auditVacancyCreated: (...args: any[]) => (mockAuditVacancyCreated as any)(...args),
   auditVacancyUpdated: (...args: any[]) => (mockAuditVacancyUpdated as any)(...args),
   auditVacancyDeleted: (...args: any[]) => (mockAuditVacancyDeleted as any)(...args),
   createWithPatientUpdate: (...args: any[]) => (mockCreateWithPatientUpdate as any)(...args),
+  // spec 029 — `extractHumanActor` (SUT) passa a delegar para esta função nova.
+  // Mock replica o shape real (`vacancyActorFromRequest`, vacancyCrudAuditHelpers.ts):
+  // deriva de `req.user.uid`, sem o qual TODO teste deste arquivo quebraria (o
+  // helper é chamado nos 3 call sites de createVacancy/updateVacancy/deleteVacancy).
+  vacancyActorFromRequest: (...args: any[]) => (mockVacancyActorFromRequest as any)(...args),
 }));
 
 const mockEnsureExecute = jest.fn().mockResolvedValue(undefined);
