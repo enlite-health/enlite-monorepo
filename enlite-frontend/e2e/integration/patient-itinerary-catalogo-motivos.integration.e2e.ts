@@ -73,9 +73,12 @@ test.describe('patient-itinerary — catálogo de motivos de saída: um HUMANO a
   test.beforeAll(() => {
     limpar();
     expect(ativos(), 'a carga inicial traz os 4 motivos ativos').toBeGreaterThanOrEqual(4);
+    // O login mock só entra se a conta existir em `users` como admin ativo (senão: "Acesso negado" na tela de login).
+    runSQL(`INSERT INTO users (firebase_uid, email, display_name, role, is_active, email_verified, status) VALUES ('${ADMIN.uid}', '${ADMIN.email}', 'E2E Motivos', 'admin', true, true, 'ACTIVE') ON CONFLICT (firebase_uid) DO NOTHING`);
   });
   test.afterAll(() => {
     limpar();
+    runSQL(`DELETE FROM users WHERE firebase_uid = '${ADMIN.uid}'`);
   });
 
   test('FELIZ: menu → orientação → cria "Cambio de disponibilidad" → desativa "Otro"; a tela == GET …/options', async ({ page }) => {
