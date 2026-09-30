@@ -392,6 +392,8 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       // acima (mesmo padrão de `anacare_hours:*`).
       'tag:read', 'tag:create', 'tag:update', 'tag:delete',
       'recruitment_blocked:read',
+      // Spec 029 (prompts de IA): descrição em CELL_DESCRIPTION; a rota real é adminAiPromptRoutes.
+      'ai_prompt:read', 'ai_prompt:update',
     ]);
   });
 

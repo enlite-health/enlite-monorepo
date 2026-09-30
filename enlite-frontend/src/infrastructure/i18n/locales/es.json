@@ -4498,6 +4498,7 @@
             "worker_address": "Dirección del prestador: línea, coordenada, radio",
             "worker_document": "Documentos",
             "tag": "Catálogo de etiquetas",
+            "ai_prompt": "Prompts de IA",
             "vacancy": "Vacantes",
             "funnel": "Embudo",
             "interview": "Entrevistas",
@@ -4937,6 +4938,9 @@
         },
         "tags": {
           "label": "Etiquetas"
+        },
+        "integration.aiPrompts": {
+          "label": "Prompts de IA"
         },
         "vacancies.list": {
           "label": "Vacantes: Lista"

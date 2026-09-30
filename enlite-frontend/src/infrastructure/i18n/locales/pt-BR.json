@@ -4419,6 +4419,7 @@
             "worker_address": "Endereço do prestador: linha, coordenada, raio",
             "worker_document": "Documentos do prestador",
             "tag": "Catálogo de etiquetas",
+            "ai_prompt": "Prompts de IA",
             "vacancy": "Vagas",
             "funnel": "Funil",
             "interview": "Entrevistas",
@@ -4858,6 +4859,9 @@
         },
         "tags": {
           "label": "Etiquetas"
+        },
+        "integration.aiPrompts": {
+          "label": "Prompts de IA"
         },
         "vacancies.list": {
           "label": "Vagas: Lista"
