@@ -1,6 +1,7 @@
 import { Calendar } from 'lucide-react';
 import { Text } from '@presentation/components/atoms/Text';
 import { inputWrapperClasses } from '@presentation/components/atoms/Input/inputClasses';
+import { formatDdMmYyyy } from './ddMmDate';
 
 interface DdMmDateInputProps {
   /** Data pura `YYYY-MM-DD`. */
@@ -9,12 +10,6 @@ interface DdMmDateInputProps {
   ariaLabel: string;
   /** Vai para o `<input type="date">` transparente por cima (é nele que o teste digita/muda). */
   'data-testid'?: string;
-}
-
-/** `YYYY-MM-DD` → `dd/mm/aaaa` pelos componentes da STRING (nunca por `Date`: UTC rola o dia). */
-export function formatDdMmYyyy(dateIso: string): string {
-  const [year, month, day] = dateIso.split('-');
-  return year && month && day ? `${day}/${month}/${year}` : '';
 }
 
 /**

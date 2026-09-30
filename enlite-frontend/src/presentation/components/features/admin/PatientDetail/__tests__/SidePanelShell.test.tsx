@@ -9,7 +9,8 @@ import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import esJson from '@infrastructure/i18n/locales/es.json';
 import { SidePanelShell } from '../SidePanelShell';
-import { DdMmDateInput, formatDdMmYyyy } from '../DdMmDateInput';
+import { DdMmDateInput } from '../DdMmDateInput';
+import { formatDdMmYyyy } from '../ddMmDate';
 import { SubstitutionDayModal } from '../SubstitutionDayModal';
 
 beforeAll(async () => {
