@@ -137,4 +137,18 @@ describe('useSendComprobanteToAxonico', () => {
     await waitFor(() => expect(result.current.result?.numeroComprobante).toBe('C-2'));
     expect(enviarComprobante).toHaveBeenCalledTimes(2);
   });
+
+  it('NEGATIVO — erro do serviço expõe o `code` (AxonicoComprobanteServiceError) em errorCode; erro genérico deixa errorCode null', async () => {
+    enviarComprobante.mockRejectedValueOnce(new AxonicoComprobanteServiceError('PacienteSemDniError', 'guard 0'));
+    const { result } = renderHook(() => useSendComprobanteToAxonico(service));
+
+    act(() => result.current.send(COMMAND));
+    await waitFor(() => expect(result.current.status).toBe('error'));
+    expect(result.current.errorCode).toBe('PacienteSemDniError');
+
+    enviarComprobante.mockRejectedValueOnce(new Error('rede caiu'));
+    act(() => result.current.send(COMMAND));
+    await waitFor(() => expect(result.current.error).toBe('rede caiu'));
+    expect(result.current.errorCode).toBeNull();
+  });
 });

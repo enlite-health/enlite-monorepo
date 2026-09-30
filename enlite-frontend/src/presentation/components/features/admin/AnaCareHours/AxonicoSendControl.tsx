@@ -55,6 +55,8 @@ interface AxonicoSendControlProps {
   onSent?: () => void;
 }
 
+const SEM_DNI_ERROR_CODE = 'PacienteSemDniError';
+
 const REASON_ORDER: AxonicoBlockReason[] = ['notValidated', 'missingCheckInOut', 'fractionalHours', 'missingDocument'];
 
 export function AxonicoSendControl({
@@ -70,10 +72,13 @@ export function AxonicoSendControl({
   onSent,
 }: AxonicoSendControlProps): JSX.Element {
   const { t } = useTranslation();
-  const { status, result, error, send } = useSendComprobanteToAxonico(service);
+  const { status, result, error, errorCode, send } = useSendComprobanteToAxonico(service);
   const { status: registerStatus, errorCode: registerErrorCode, register } = useRegisterAnaCarePatientDocument(patientDocumentService);
   const [isDocumentModalOpen, setIsDocumentModalOpen] = useState(false);
   const [pendingDocumentNumber, setPendingDocumentNumber] = useState<string | null>(null);
+  // Defesa (422 do guard 0 do backend): o DNI chegou inválido ao envio apesar da elegibilidade do cliente
+  // — o remédio é o MESMO modal de registro, nunca a mensagem crua do use case.
+  const isSemDniError = status === 'error' && errorCode === SEM_DNI_ERROR_CODE;
   const isSending = status === 'sending';
   const isRegistering = registerStatus === 'registering';
   const missingDocument = eligibility.reasons.includes('missingDocument');
@@ -91,6 +96,10 @@ export function AxonicoSendControl({
     setPendingDocumentNumber(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [registerStatus, pendingDocumentNumber]);
+
+  useEffect(() => {
+    if (isSemDniError) setIsDocumentModalOpen(true);
+  }, [isSemDniError]);
 
   function handleSendClick(): void {
     if (missingDocument) {
@@ -183,7 +192,12 @@ export function AxonicoSendControl({
             {t(`admin.anacareHours.dayGroup.axonico.reasons.${reason}`)}
           </Text>
         ))}
-      {status === 'error' && error && (
+      {isSemDniError && (
+        <Text size="xs" className="!text-amber-700" data-testid={`anacare-hours-axonico-reason-missingDocument-${date}`}>
+          {t('admin.anacareHours.dayGroup.axonico.reasons.missingDocument')}
+        </Text>
+      )}
+      {status === 'error' && error && !isSemDniError && (
         <Text size="xs" className="!text-red-600" data-testid={`anacare-hours-day-send-error-${date}`}>
           {error}
         </Text>
