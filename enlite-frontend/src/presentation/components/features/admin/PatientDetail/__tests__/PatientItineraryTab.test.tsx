@@ -42,6 +42,7 @@ const mockRegisterAbsence = vi.fn();
 const mockReplaceAllocation = vi.fn();
 const mockSetAbsenceSubstitute = vi.fn();
 const mockCancelAbsence = vi.fn();
+const mockEndAllocation = vi.fn();
 vi.mock('@infrastructure/http/AdminContractedServicesApiService', () => ({
   AdminContractedServicesApiService: {
     getAllocationOptions: (...args: unknown[]) => mockGetAllocationOptions(...args),
@@ -50,6 +51,7 @@ vi.mock('@infrastructure/http/AdminContractedServicesApiService', () => ({
     replaceAllocation: (...args: unknown[]) => mockReplaceAllocation(...args),
     setAbsenceSubstitute: (...args: unknown[]) => mockSetAbsenceSubstitute(...args),
     cancelAbsence: (...args: unknown[]) => mockCancelAbsence(...args),
+    endAllocation: (...args: unknown[]) => mockEndAllocation(...args),
   },
   ContractedServiceApiError: class ContractedServiceApiError extends Error {},
 }));
@@ -126,6 +128,7 @@ beforeEach(() => {
   mockReplaceAllocation.mockReset();
   mockSetAbsenceSubstitute.mockReset();
   mockCancelAbsence.mockReset();
+  mockEndAllocation.mockReset();
 });
 
 describe('PatientItineraryTab — a aba do itinerário (D445)', () => {
@@ -286,5 +289,80 @@ describe('PatientItineraryTab — a aba do itinerário (D445)', () => {
     expect(mockRegisterAbsence.mock.calls[0][1]).toBe('svc-1');
     expect(mockRegisterAbsence.mock.calls[0][3]).toMatchObject({ reasonCategory: 'NOVO_DO_ADMIN' });
     expect(refresh).toHaveBeenCalled();
+  });
+
+  describe('Fase 4 — "Quitar del itinerario"', () => {
+    const WITH_TITULAR: PatientItinerary = {
+      ...ITINERARY,
+      services: [
+        {
+          ...ITINERARY.services[0],
+          slots: [
+            {
+              ...ITINERARY.services[0].slots[0],
+              assignments: [
+                { workerId: 'w-titular', applicationId: 'app-1', validFrom: '2026-09-01', validTo: null, status: 'ACTIVE', allocationId: 'alloc-1', displayName: 'Ana Fixture' },
+              ],
+            },
+          ],
+        },
+        ITINERARY.services[1],
+      ],
+    };
+
+    async function openQuitarPanel() {
+      fireEvent.click(screen.getByTestId('itinerario-slot-editar-slot-1'));
+      fireEvent.click(await screen.findByTestId('itinerario-quitar-w-titular'));
+      fireEvent.change(screen.getByTestId('itinerario-quitar-motivo'), { target: { value: 'NOVO_DO_ADMIN' } });
+    }
+
+    it('confirmar chama endAllocation(paciente, serviço, alocação, { motivo, destino }), faz refresh + recarrega os eventos e fecha o modal', async () => {
+      mockEndAllocation.mockResolvedValue({ allocationId: 'alloc-1', status: 'ENDED', validTo: '2026-09-28', destination: 'RESERVE' });
+      mockUsePatientItinerary.mockReturnValue(hookState({ itinerary: WITH_TITULAR }));
+      renderTab();
+      await waitFor(() => expect(mockGetItineraryEvents).toHaveBeenCalledTimes(1));
+      await openQuitarPanel();
+      fireEvent.click(screen.getByTestId('itinerario-quitar-destino-RESERVE'));
+      fireEvent.click(screen.getByTestId('itinerario-quitar-confirmar'));
+
+      await waitFor(() => expect(mockEndAllocation).toHaveBeenCalledTimes(1));
+      expect(mockEndAllocation).toHaveBeenCalledWith(PATIENT.id, 'svc-1', 'alloc-1', { reasonCategory: 'NOVO_DO_ADMIN', destination: 'RESERVE' });
+      expect(refresh).toHaveBeenCalled();
+      await waitFor(() => expect(mockGetItineraryEvents.mock.calls.length).toBeGreaterThan(1));
+      await waitFor(() => expect(screen.queryByTestId('itinerario-editar-modal')).toBeNull());
+      expect(screen.queryByTestId('itinerario-quitar-painel')).toBeNull();
+    });
+
+    it('422 por CÓDIGO: agendamento → mensagem de produto no painel (sem id cru) e o painel continua aberto', async () => {
+      mockEndAllocation.mockRejectedValue(Object.assign(new Error('x'), { code: 'SERVICE_TEAM_WORKER_ALLOCATED', status: 422 }));
+      mockUsePatientItinerary.mockReturnValue(hookState({ itinerary: WITH_TITULAR }));
+      renderTab();
+      await openQuitarPanel();
+      fireEvent.click(screen.getByTestId('itinerario-quitar-destino-LEAVE_SERVICE'));
+      fireEvent.click(screen.getByTestId('itinerario-quitar-confirmar'));
+
+      const erro = await screen.findByTestId('itinerario-quitar-erro');
+      expect(erro).toHaveTextContent('tiene atenciones agendadas; cancele antes');
+      expect(erro.textContent).not.toMatch(/w-titular|alloc-1|svc-1|SERVICE_TEAM_WORKER_ALLOCATED/);
+      expect(screen.getByTestId('itinerario-quitar-painel')).toBeInTheDocument();
+    });
+
+    it('erro sem código conhecido cai na mensagem genérica do painel', async () => {
+      mockEndAllocation.mockRejectedValue(new Error('rede'));
+      mockUsePatientItinerary.mockReturnValue(hookState({ itinerary: WITH_TITULAR }));
+      renderTab();
+      await openQuitarPanel();
+      fireEvent.click(screen.getByTestId('itinerario-quitar-destino-RESERVE'));
+      fireEvent.click(screen.getByTestId('itinerario-quitar-confirmar'));
+      expect(await screen.findByTestId('itinerario-quitar-erro')).toHaveTextContent('No se pudo quitar al prestador del itinerario');
+    });
+
+    it('faixa sem prestador vigente: nenhuma ação de quitar', async () => {
+      mockUsePatientItinerary.mockReturnValue(hookState());
+      renderTab();
+      fireEvent.click(screen.getByTestId('itinerario-slot-editar-slot-1'));
+      await screen.findByTestId('itinerario-editar-modal');
+      expect(screen.queryByTestId('itinerario-quitar-w-titular')).toBeNull();
+    });
   });
 });

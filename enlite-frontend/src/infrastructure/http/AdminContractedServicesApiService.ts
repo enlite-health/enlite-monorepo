@@ -12,6 +12,8 @@ import type {
 import type { PatientKanbanServiceSummary } from '@domain/entities/PatientLifecycle';
 import type {
   ItineraryAbsenceResult,
+  ItineraryRemoveResult,
+  ExitDestination,
   ServiceTeam,
   ServiceTeamMember,
   ServiceTeamContact,
@@ -239,6 +241,25 @@ class AdminContractedServicesApiServiceClass {
       'POST',
       `/api/admin/patients/${patientId}/contracted-services/${serviceId}/itinerary/slots/${slotId}/allocations`,
       { workerId },
+    );
+  }
+
+  /**
+   * POST .../itinerary/allocations/:allocationId/end (Fase 4, C6) — tira o prestador do itinerário com
+   * motivo (código do catálogo) e destino (`RESERVE` segue como reserva; `LEAVE_SERVICE` sai do encuadre
+   * do serviço). 422 vira `ContractedServiceApiError` com o `code` (`REASON_REQUIRED`, `REASON_INVALID`,
+   * `DESTINATION_REQUIRED`, `ALLOCATION_NOT_ACTIVE`, `SERVICE_TEAM_WORKER_ALLOCATED` …).
+   */
+  async endAllocation(
+    patientId: string,
+    serviceId: string,
+    allocationId: string,
+    body: { reasonCategory: string; destination: ExitDestination },
+  ): Promise<ItineraryRemoveResult> {
+    return this.request<ItineraryRemoveResult>(
+      'POST',
+      `/api/admin/patients/${patientId}/contracted-services/${serviceId}/itinerary/allocations/${allocationId}/end`,
+      body,
     );
   }
 
