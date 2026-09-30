@@ -11,7 +11,7 @@
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import type { AnaCareShiftsSource, SourceShiftDTO } from '../domain/AnaCareShiftsSource';
 import type { PatientMonthSyncRepository, SyncRunRepository } from '../domain/AnaCareHoursSyncPorts';
-import { AnaCarePatientDocumentRepository, AxonicoLancamentoRepository, type IAnaCarePatientDocumentRepository, type IAxonicoLancamentoRepository } from '@modules/integration';
+import { AnaCarePatientDocumentRepository, AxonicoLancamentoRepository, normalizeAndValidateDocumentNumber, type IAnaCarePatientDocumentRepository, type IAxonicoLancamentoRepository } from '@modules/integration';
 import { ShiftHoursValidationRepository, ShiftAlreadyValidatedError } from '../infrastructure/ShiftHoursValidationRepository';
 import { WorkerLinkRepository } from '../infrastructure/WorkerLinkRepository';
 import { AnaCarePatientMonthRepository } from '../infrastructure/AnaCarePatientMonthRepository';
@@ -46,6 +46,11 @@ export function isValidMonth(month: string): boolean {
 
 export function periodMonthDate(month: string): string {
   return `${month}-01`;
+}
+
+/** Documento da fonte utilizável = passa na MESMA regra do guard 0 do Axonico (única dona: `normalizeAndValidateDocumentNumber`). */
+function hasValidSourceDocument(s: SourceShiftDTO): boolean {
+  return normalizeAndValidateDocumentNumber(s.patientDocumentNumber).valid;
 }
 
 export class AnaCareHoursService {
@@ -132,11 +137,14 @@ export class AnaCareHoursService {
         const patientName = joinSourceName(s.patientFirstName, s.patientLastName);
         const nurseName = canReadProviderName ? joinSourceName(s.nurseFirstName, s.nurseLastName) : undefined;
         const registered = registeredDocuments.get(s.anaCarePatientId);
+        // Registrado vence só quando a fonte NÃO tem documento utilizável (ausente OU inválido —
+        // 'null', fora de 7/8 dígitos); com registrado ausente, o da fonte segue (nada a substituir).
+        const useRegistered = registered !== undefined && !hasValidSourceDocument(s);
         const patientDocumentType = canReadPatientDocument
-          ? s.patientDocumentType ?? registered?.documentType ?? undefined
+          ? (useRegistered ? registered.documentType : s.patientDocumentType) ?? undefined
           : undefined;
         const patientDocumentNumber = canReadPatientDocument
-          ? s.patientDocumentNumber ?? registered?.documentNumber ?? undefined
+          ? (useRegistered ? registered.documentNumber : s.patientDocumentNumber) ?? undefined
           : undefined;
         return {
           shift,
@@ -165,7 +173,7 @@ export class AnaCareHoursService {
   ): Promise<Map<string, { documentType: string | null; documentNumber: string }>> {
     const missingIds = [
       ...new Set(
-        sourceShifts.filter((s) => !s.patientDocumentNumber).map((s) => s.anaCarePatientId),
+        sourceShifts.filter((s) => !hasValidSourceDocument(s)).map((s) => s.anaCarePatientId),
       ),
     ];
     if (missingIds.length === 0) return new Map();

@@ -18,6 +18,7 @@ export type {
   AxonicoLancamentoStatus,
   InsertAxonicoLancamentoParams,
 } from './domain/IAxonicoLancamentoRepository';
+export { normalizeAndValidateDocumentNumber } from './domain/documentNumber';
 
 // Ports
 export type { IWebhookPartnerRepository } from './ports/IWebhookPartnerRepository';
