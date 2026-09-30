@@ -6,7 +6,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { AxonicoSendControl } from './AxonicoSendControl';
-import type { AxonicoComprobanteService, EnviarComprobanteAxonicoResult } from './AxonicoComprobanteService';
+import { AxonicoComprobanteServiceError, type AxonicoComprobanteService, type EnviarComprobanteAxonicoResult } from './AxonicoComprobanteService';
 import type { AnaCarePatientDocumentService, RegisterAnaCarePatientDocumentResult } from './AnaCarePatientDocumentService';
 import { AnaCarePatientDocumentServiceError } from './AnaCarePatientDocumentService';
 import type { AxonicoBlockReason } from './selectors';
@@ -195,6 +195,49 @@ describe('AxonicoSendControl — modal de documento', () => {
         'admin.anacareHours.dayGroup.axonico.documentModal.errorInvalid',
       ),
     );
+  });
+
+  it('NEGATIVO (defesa) — envio volta 422 PacienteSemDniError: abre o modal de documento em vez de mostrar a mensagem crua', async () => {
+    const enviarComprobante = vi.fn().mockRejectedValue(
+      new AxonicoComprobanteServiceError('PacienteSemDniError', '[LancarPrestacaoAxonicoUseCase] guard 0 — documentNumber inválido'),
+    );
+    render(
+      <AxonicoSendControl
+        date="2026-08-14"
+        service={makeAxonicoService({ enviarComprobante })}
+        patientDocumentService={makePatientDocumentService()}
+        anaCarePatientId="ac-paciente-1"
+        eligibility={eligibility([])}
+        command={{ ...COMMAND, documentNumber: '30111222' }}
+        disableActions={false}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('anacare-hours-send-day-2026-08-14'));
+
+    await waitFor(() => expect(screen.getByTestId('anacare-hours-axonico-document-modal')).toBeInTheDocument());
+    expect(screen.queryByTestId('anacare-hours-day-send-error-2026-08-14')).not.toBeInTheDocument();
+    expect(screen.queryByText(/guard 0/)).not.toBeInTheDocument();
+  });
+
+  it('NEGATIVO — outros erros do envio mantêm a mensagem e NÃO abrem o modal', async () => {
+    const enviarComprobante = vi.fn().mockRejectedValue(new AxonicoComprobanteServiceError('AxonicoTetoExcedidoError', 'Teto excedido.'));
+    render(
+      <AxonicoSendControl
+        date="2026-08-14"
+        service={makeAxonicoService({ enviarComprobante })}
+        patientDocumentService={makePatientDocumentService()}
+        anaCarePatientId="ac-paciente-1"
+        eligibility={eligibility([])}
+        command={{ ...COMMAND, documentNumber: '30111222' }}
+        disableActions={false}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('anacare-hours-send-day-2026-08-14'));
+
+    await waitFor(() => expect(screen.getByTestId('anacare-hours-day-send-error-2026-08-14')).toHaveTextContent('Teto excedido.'));
+    expect(screen.queryByTestId('anacare-hours-axonico-document-modal')).not.toBeInTheDocument();
   });
 
   it('NEGATIVO — cancelar o modal fecha sem registrar nem enviar', () => {
