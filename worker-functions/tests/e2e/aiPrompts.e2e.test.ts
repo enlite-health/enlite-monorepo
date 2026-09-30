@@ -37,12 +37,27 @@ describe('Prompts de IA editáveis — API (spec 029, T014) @integration', () =>
   let asAdmin: StaffAuth;
   let asRecruiter: StaffAuth;
   let pool: Pool;
+  // Estado ENCONTRADO (seed da migration 491: linhas + trilha). Este teste apaga as linhas reais
+  // (o CHECK da tabela fecha os slugs, não há slug próprio) — então restaura no afterAll.
+  let capturedPrompts: unknown[] = [];
+  let capturedAudit: unknown[] = [];
 
   beforeAll(async () => {
     await waitForBackend(api);
     asAdmin = await staffAuth('aiprompt-admin', 'admin');
     asRecruiter = await staffAuth('aiprompt-recruiter', 'recruiter');
     pool = new Pool({ connectionString: DATABASE_URL });
+
+    capturedPrompts = (
+      await pool.query(`SELECT to_jsonb(p) AS r FROM ai_prompts p WHERE slug IN ($1, $2)`, [SLUG, OTHER_SLUG])
+    ).rows.map((x) => x.r);
+    capturedAudit = (
+      await pool.query(
+        `SELECT to_jsonb(a) AS r FROM ai_prompt_audit_log a
+          WHERE prompt_id IN (SELECT id FROM ai_prompts WHERE slug IN ($1, $2))`,
+        [SLUG, OTHER_SLUG],
+      )
+    ).rows.map((x) => x.r);
 
     await pool.query(
       `DELETE FROM ai_prompt_audit_log WHERE prompt_id IN (SELECT id FROM ai_prompts WHERE slug IN ($1, $2))`,
@@ -67,6 +82,18 @@ describe('Prompts de IA editáveis — API (spec 029, T014) @integration', () =>
       [SLUG, OTHER_SLUG],
     );
     await pool.query(`DELETE FROM ai_prompts WHERE slug IN ($1, $2)`, [SLUG, OTHER_SLUG]);
+    // Devolve o banco como encontrado: linhas (mesmo id) e depois a trilha que o cascade levou.
+    for (const r of capturedPrompts) {
+      await pool.query(`INSERT INTO ai_prompts SELECT * FROM jsonb_populate_record(NULL::ai_prompts, $1::jsonb)`, [
+        JSON.stringify(r),
+      ]);
+    }
+    for (const r of capturedAudit) {
+      await pool.query(
+        `INSERT INTO ai_prompt_audit_log SELECT * FROM jsonb_populate_record(NULL::ai_prompt_audit_log, $1::jsonb)`,
+        [JSON.stringify(r)],
+      );
+    }
     await pool.end();
   });
 

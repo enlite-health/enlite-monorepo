@@ -149,7 +149,10 @@ describe('Pré-triagem sem Drive — a fonte do prompt é só a tabela (spec 029
       expect(envLines.length).toBeGreaterThan(5); // controle: o `env` devolveu algo de verdade
       expect(envLines.filter((l) => /^PROMPT_DOC_ID|^[A-Z0-9_]*DRIVE[A-Z0-9_]*=/i.test(l))).toEqual([]);
       // a interceptação do Vertex precisa estar de pé, senão "custo zero" não está provado.
-      expect(envLines.some((l) => /^NODE_OPTIONS=.*vertexInterceptPreload\.js/.test(l))).toBe(true);
+      // Provado pelo EFEITO, não pela env: o compose define NODE_OPTIONS inline no `sh -c`, só para
+      // o processo filho (`npm start`); `docker exec env` lê o `sh` e nunca a veria. O preload
+      // imprime esta linha ao carregar — sem o preload, ela não existe no log.
+      expect(apiContainerLogs()).toContain('[VERTEX-STUB] preload ativo');
 
       // 2) a tabela é a fonte: marcador único gravado em ai_prompts.body.
       const marker = `T052-MARKER-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
