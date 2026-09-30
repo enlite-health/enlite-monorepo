@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Calendar } from 'lucide-react';
 import whatsappIcon from '../../../../../assets/icons/whatsapp.svg';
@@ -15,6 +15,7 @@ import {
 import { RejectionReasonSelect } from '@presentation/components/features/admin/Kanban/RejectionReasonSelect';
 import { useServiceTeamContact } from '@hooks/admin/useServiceTeamContact';
 import { workerLabel } from './workerLabel';
+import { SidePanelShell } from './SidePanelShell';
 import {
   SERVICE_TEAM_REJECT_REASONS,
   SERVICE_TEAM_REVERT_REASONS,
@@ -65,8 +66,8 @@ type PendingAction = { kind: 'reject' | 'revert'; reasonCategory: string };
 
 /**
  * Modal do prestador (Figma nó 11340:76413/76619, rodada 3): painel LATERAL ancorado à direita,
- * altura cheia, cantos arredondados só à esquerda (mesmo molde do `ContractedServiceDetailDrawer`)
- * — sem X, fecha por overlay/Esc. O topo é do PACIENTE (D447.3): nome e WhatsApp
+ * altura cheia, cantos arredondados só à esquerda — casca `SidePanelShell` (a mesma do itinerário);
+ * sem X, fecha por overlay/Esc (com a animação de 300 ms da casca). O topo é do PACIENTE (D447.3): nome e WhatsApp
  * vêm da ficha já carregada, sob a MESMA célula do card de identidade (`patient_identity:read`); sem
  * o telefone, a linha some. O prestador aparece só no campo "Prestador de servicio" (nome projetado
  * pela API, `worker_contact:read`) — o telefone dele não viaja mais.
@@ -92,15 +93,6 @@ export function ServiceTeamProviderModal({
   const [note, setNote] = useState('');
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
   const [reasonPromptKind, setReasonPromptKind] = useState<'reject' | 'revert' | null>(null);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const name = contact?.displayName ?? workerLabel(t, member.workerId, member.displayName);
   const patientName = patientHeader?.name?.trim() || null;
@@ -145,141 +137,128 @@ export function ServiceTeamProviderModal({
 
   return (
     <>
-      <div
-        className="fixed inset-0 bg-black/50 z-40"
-        onClick={onClose}
-        data-testid="service-team-provider-modal-backdrop"
-      />
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={patientName ?? name}
-        className="fixed top-0 right-0 h-screen z-50 w-full max-w-xl bg-white shadow-2xl rounded-tl-[32px] rounded-bl-[32px] flex flex-col"
-        data-testid="service-team-provider-modal"
-      >
-        <div className="flex-1 overflow-y-auto pl-12 pr-6 py-10 flex flex-col gap-6">
-          <div className="flex items-center justify-between w-full gap-4">
-            {patientName && (
-              <Heading level={1} as="h2" weight="semibold" color="primary" data-testid="service-team-provider-modal-name">
-                {patientName}
-              </Heading>
-            )}
-            <Button variant="primary" size="md" className="ml-auto" onClick={() => void handleSave()} disabled={saving} data-testid="service-team-provider-modal-save">
-              {tm('save')}
-            </Button>
-          </div>
-
-          {waHref && (
-            <a
-              href={waHref}
-              target="_blank"
-              rel="noreferrer"
-              className="flex gap-1 items-center text-primary -mt-4"
-              data-testid="service-team-provider-modal-phone"
-            >
-              <img src={whatsappIcon} alt="" aria-hidden="true" width={20} height={20} className="shrink-0" />
-              <Text as="span" size="base" weight="medium" color="inherit">{patientPhone}</Text>
-            </a>
+      <SidePanelShell ariaLabel={patientName ?? name} onClose={onClose} testId="service-team-provider-modal">
+        <div className="flex items-center justify-between w-full gap-4">
+          {patientName && (
+            <Heading level={1} as="h2" weight="semibold" color="primary" data-testid="service-team-provider-modal-name">
+              {patientName}
+            </Heading>
           )}
+          <Button variant="primary" size="md" className="ml-auto" onClick={() => void handleSave()} disabled={saving} data-testid="service-team-provider-modal-save">
+            {tm('save')}
+          </Button>
+        </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="flex flex-col gap-1">
-              <Text size="xs" color="secondary" weight="semibold">{tm('providerField')}</Text>
-              <Input value={name} disabled readOnly inputSize="compact" data-testid="service-team-provider-modal-provider-field" />
-            </div>
-            <div className="flex flex-col gap-1">
-              <Text size="xs" color="secondary" weight="semibold">{tm('contactedLabel')}</Text>
-              <Select
-                inputSize="compact"
-                data-testid="service-team-provider-modal-contacted"
-                value={contacted}
-                onValueChange={(v) => setContacted(v as 'YES' | 'NO')}
-                options={[
-                  { value: 'YES', label: tm('contactedYes') },
-                  { value: 'NO', label: tm('contactedNo') },
-                ]}
-              />
-            </div>
-          </div>
+        {waHref && (
+          <a
+            href={waHref}
+            target="_blank"
+            rel="noreferrer"
+            className="flex gap-1 items-center text-primary -mt-4"
+            data-testid="service-team-provider-modal-phone"
+          >
+            <img src={whatsappIcon} alt="" aria-hidden="true" width={20} height={20} className="shrink-0" />
+            <Text as="span" size="base" weight="medium" color="inherit">{patientPhone}</Text>
+          </a>
+        )}
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="flex flex-col gap-1">
-              <Text size="xs" color="secondary" weight="semibold">{tm('statusLabel')}</Text>
-              <Select
-                inputSize="compact"
-                data-testid="service-team-provider-modal-status"
-                value={estadoValue}
-                onValueChange={handleEstadoChange}
-                disabled={!actionKind}
-                options={estadoOptions}
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <Text size="xs" color="secondary" weight="semibold">{tm('eventDateLabel')}</Text>
-              <div className={`${inputWrapperClasses({ size: 'compact' })} justify-between relative`}>
-                <Text as="span" size="sm" weight="medium" color="inherit" data-testid="service-team-provider-modal-event-date-text">
-                  {formatEventDate(eventDate)}
-                </Text>
-                <Calendar className="w-[22px] h-[22px] text-[#737373] shrink-0 pointer-events-none" aria-hidden="true" />
-                <input
-                  type="date"
-                  lang="es-AR"
-                  value={eventDate}
-                  onChange={(e) => setEventDate(e.target.value)}
-                  aria-label={tm('eventDateLabel')}
-                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                  data-testid="service-team-provider-modal-event-date-input"
-                />
-              </div>
-            </div>
-          </div>
-
+        <div className="grid grid-cols-2 gap-4">
           <div className="flex flex-col gap-1">
-            <Text size="xs" color="secondary" weight="semibold">{tm('noteLabel')}</Text>
-            <Textarea
+            <Text size="xs" color="secondary" weight="semibold">{tm('providerField')}</Text>
+            <Input value={name} disabled readOnly inputSize="compact" data-testid="service-team-provider-modal-provider-field" />
+          </div>
+          <div className="flex flex-col gap-1">
+            <Text size="xs" color="secondary" weight="semibold">{tm('contactedLabel')}</Text>
+            <Select
               inputSize="compact"
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder={tm('notePlaceholder')}
-              rows={3}
-              data-testid="service-team-provider-modal-note"
+              data-testid="service-team-provider-modal-contacted"
+              value={contacted}
+              onValueChange={(v) => setContacted(v as 'YES' | 'NO')}
+              options={[
+                { value: 'YES', label: tm('contactedYes') },
+                { value: 'NO', label: tm('contactedNo') },
+              ]}
             />
           </div>
+        </div>
 
-          {saveError && (
-            <Text size="sm" role="alert" className="text-red-600" data-testid="service-team-provider-modal-save-error">
-              {tm('saveError')}
-            </Text>
-          )}
-
-          <div className="border-t border-gray-600 pt-4">
-            <Text size="sm" color="secondary" weight="medium" className="mb-2">{tm('historyTitle')}</Text>
-            {status === 'loading' && <Text size="sm" color="secondary">{tm('loading')}</Text>}
-            {status === 'error' && <Text size="sm" role="alert" className="text-red-600">{tm('loadError')}</Text>}
-            {status === 'ok' && (contact?.history.length ?? 0) === 0 && (
-              <Text size="sm" color="secondary" data-testid="service-team-provider-modal-history-empty">{tm('historyEmpty')}</Text>
-            )}
-            {status === 'ok' && (contact?.history.length ?? 0) > 0 && (
-              <Table>
-                <TableHeader>
-                  <TableHead>{tm('historyDate')}</TableHead>
-                  <TableHead>{tm('historyNote')}</TableHead>
-                  <TableHead>{tm('historyResponse')}</TableHead>
-                </TableHeader>
-                <TableBody>
-                  {contact!.history.map((entry) => (
-                    <TableRow key={entry.id} data-testid={`service-team-provider-modal-history-row-${entry.id}`}>
-                      <TableCell>{formatEventDate(entry.eventDate)}</TableCell>
-                      <TableCell>{entry.note ?? '—'}</TableCell>
-                      <TableCell>{entry.contacted ? tm('contactedYes') : tm('contactedNo')}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
+        <div className="grid grid-cols-2 gap-4">
+          <div className="flex flex-col gap-1">
+            <Text size="xs" color="secondary" weight="semibold">{tm('statusLabel')}</Text>
+            <Select
+              inputSize="compact"
+              data-testid="service-team-provider-modal-status"
+              value={estadoValue}
+              onValueChange={handleEstadoChange}
+              disabled={!actionKind}
+              options={estadoOptions}
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <Text size="xs" color="secondary" weight="semibold">{tm('eventDateLabel')}</Text>
+            <div className={`${inputWrapperClasses({ size: 'compact' })} justify-between relative`}>
+              <Text as="span" size="sm" weight="medium" color="inherit" data-testid="service-team-provider-modal-event-date-text">
+                {formatEventDate(eventDate)}
+              </Text>
+              <Calendar className="w-[22px] h-[22px] text-[#737373] shrink-0 pointer-events-none" aria-hidden="true" />
+              <input
+                type="date"
+                lang="es-AR"
+                value={eventDate}
+                onChange={(e) => setEventDate(e.target.value)}
+                aria-label={tm('eventDateLabel')}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                data-testid="service-team-provider-modal-event-date-input"
+              />
+            </div>
           </div>
         </div>
-      </div>
+
+        <div className="flex flex-col gap-1">
+          <Text size="xs" color="secondary" weight="semibold">{tm('noteLabel')}</Text>
+          <Textarea
+            inputSize="compact"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder={tm('notePlaceholder')}
+            rows={3}
+            data-testid="service-team-provider-modal-note"
+          />
+        </div>
+
+        {saveError && (
+          <Text size="sm" role="alert" className="text-red-600" data-testid="service-team-provider-modal-save-error">
+            {tm('saveError')}
+          </Text>
+        )}
+
+        <div className="border-t border-gray-600 pt-4">
+          <Text size="sm" color="secondary" weight="medium" className="mb-2">{tm('historyTitle')}</Text>
+          {status === 'loading' && <Text size="sm" color="secondary">{tm('loading')}</Text>}
+          {status === 'error' && <Text size="sm" role="alert" className="text-red-600">{tm('loadError')}</Text>}
+          {status === 'ok' && (contact?.history.length ?? 0) === 0 && (
+            <Text size="sm" color="secondary" data-testid="service-team-provider-modal-history-empty">{tm('historyEmpty')}</Text>
+          )}
+          {status === 'ok' && (contact?.history.length ?? 0) > 0 && (
+            <Table>
+              <TableHeader>
+                <TableHead>{tm('historyDate')}</TableHead>
+                <TableHead>{tm('historyNote')}</TableHead>
+                <TableHead>{tm('historyResponse')}</TableHead>
+              </TableHeader>
+              <TableBody>
+                {contact!.history.map((entry) => (
+                  <TableRow key={entry.id} data-testid={`service-team-provider-modal-history-row-${entry.id}`}>
+                    <TableCell>{formatEventDate(entry.eventDate)}</TableCell>
+                    <TableCell>{entry.note ?? '—'}</TableCell>
+                    <TableCell>{entry.contacted ? tm('contactedYes') : tm('contactedNo')}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </div>
+      </SidePanelShell>
 
       {reasonPromptKind && (
         <RejectionReasonSelect

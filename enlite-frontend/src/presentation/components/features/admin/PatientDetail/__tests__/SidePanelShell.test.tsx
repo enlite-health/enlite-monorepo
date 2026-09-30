@@ -4,7 +4,7 @@
  * (SubstitutionDayModal `panel`) tem título + Confirmar na mesma linha e nenhum botão Cancelar.
  */
 import { describe, it, expect, beforeAll, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import esJson from '@infrastructure/i18n/locales/es.json';
@@ -38,18 +38,26 @@ describe('SidePanelShell', () => {
     expect(panel.className).not.toMatch(/rounded-tr|rounded-br/);
   });
 
-  it('Esc e overlay chamam onClose (após a animação); não há botão X', async () => {
-    const onClose = vi.fn();
-    render(
-      <SidePanelShell ariaLabel="x" onClose={onClose} testId="painel">
-        <p>conteúdo</p>
-      </SidePanelShell>,
-    );
-    expect(screen.queryByRole('button')).toBeNull();
-    fireEvent.keyDown(window, { key: 'Escape' });
-    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
-    fireEvent.click(screen.getByTestId('painel-backdrop'));
-    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(2));
+  it('Esc e overlay chamam onClose (após a animação de 300 ms); não há botão X', () => {
+    vi.useFakeTimers();
+    try {
+      const onClose = vi.fn();
+      render(
+        <SidePanelShell ariaLabel="x" onClose={onClose} testId="painel">
+          <p>conteúdo</p>
+        </SidePanelShell>,
+      );
+      expect(screen.queryByRole('button')).toBeNull();
+      fireEvent.keyDown(window, { key: 'Escape' });
+      expect(onClose).not.toHaveBeenCalled();
+      act(() => { vi.advanceTimersByTime(300); });
+      expect(onClose).toHaveBeenCalledTimes(1);
+      fireEvent.click(screen.getByTestId('painel-backdrop'));
+      act(() => { vi.advanceTimersByTime(300); });
+      expect(onClose).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

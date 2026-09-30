@@ -13,9 +13,9 @@ const CLOSE_MS = 300;
 /**
  * Casca do painel LATERAL da ficha do paciente (Figma 11340:76377): ancorado à direita, altura
  * cheia, cantos arredondados só à esquerda, overlay, sem X — fecha por overlay/Esc. Mesmo molde
- * (classes e animação de 300 ms) do `ContractedServiceDetailDrawer` e do painel do prestador do
- * encuadre, que ainda o trazem inline; esta casca é o ponto único para o itinerário, e quem
- * quiser pode migrar os outros para ela sem mudar visual. O conteúdo decide o próprio cabeçalho
+ * (classes e animação de 300 ms) do `ContractedServiceDetailDrawer`, que ainda o traz inline;
+ * esta casca é o ponto único dos DOIS consumidores — o itinerário e o painel do prestador do
+ * Encuadre (`ServiceTeamProviderModal`) — e quem quiser pode migrar os outros para ela sem mudar visual. O conteúdo decide o próprio cabeçalho
  * (título + ação à direita na mesma linha).
  */
 export function SidePanelShell({ ariaLabel, onClose, testId, children }: SidePanelShellProps): JSX.Element {
