@@ -26,6 +26,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { Pool } from 'pg';
 import { AI_PROMPT_SLUGS, isAiPromptSlug, type AiPromptSlug } from '../src/modules/integration/domain/AiPromptSlug';
+import { normalizar } from './extrair-prompts-do-drive';
 import { DESCRIPTION_SYSTEM_PROMPT } from '../src/modules/integration/infrastructure/talentumDescriptionHelpers';
 
 /**
@@ -58,7 +59,8 @@ function lerArgumentos(argv: string[]): { slug: AiPromptSlug; origemPath: string
 
 function resolverOrigem(slug: AiPromptSlug, origemPath: string | null): { texto: string; rotulo: string } {
   if (origemPath) {
-    return { texto: readFileSync(origemPath, 'utf8'), rotulo: `arquivo (${origemPath})` };
+    // Mesma normalização canônica da extração (BOM → CRLF em LF → trim): origem e banco comparam iguais.
+    return { texto: normalizar(readFileSync(origemPath, 'utf8')), rotulo: `arquivo normalizado (${origemPath})` };
   }
   const constante = CODE_CONSTANTS[slug];
   if (constante !== undefined) {
