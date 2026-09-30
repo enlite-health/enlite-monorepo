@@ -9,18 +9,23 @@
  *   2. "Perfil Profesional Sugerido:" — ideal candidate profile
  *   3. "El Marco de Acompanamiento:" — fixed institutional text
  *
- * Uses an inline system prompt (not the Drive doc the parser uses): the doc
- * mixes prescreening/WordPress instructions and the "Regla #7" mutual-exclusion
+ * System prompt is NOT the Drive doc the parser uses (that doc mixes
+ * prescreening/WordPress instructions and the "Regla #7" mutual-exclusion
  * filter that refuses generation on AT/CUIDADOR mismatches — both irrelevant
- * (and harmful) for the programmatic description flow.
+ * and harmful for this flow). It is read from `ai_prompts` (slug
+ * `VACANCY_DESCRIPTION`, spec 029 T018) via `AiPromptRepository` — editable
+ * from the admin screen, no redeploy needed. Seeded by migration 487 with the
+ * content that used to live in the `DESCRIPTION_SYSTEM_PROMPT` constant
+ * (`talentumDescriptionHelpers.ts`); that constant is now unused here and
+ * stays until Fase 4 (T051a) removes it together with the Drive provider.
  */
 
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { generateContentVertex } from './vertex-gemini';
+import { AiPromptRepository } from './AiPromptRepository';
 import {
   DESCRIPTION_RESPONSE_SCHEMA,
-  DESCRIPTION_SYSTEM_PROMPT,
   formatZoneForPrompt,
   MARCO_TEXT,
   REFUSAL_MARKER,
@@ -76,11 +81,13 @@ export class TalentumDescriptionService {
   private db: Pool;
   private model: string;
   private auditRepo: JobPostingAuditRepository;
+  private promptRepo: AiPromptRepository;
 
   constructor(modelOverride?: string) {
     this.db = DatabaseConnection.getInstance().getPool();
     this.model = modelOverride ?? process.env.GEMINI_MODEL ?? 'gemini-2.5-pro';
     this.auditRepo = new JobPostingAuditRepository();
+    this.promptRepo = new AiPromptRepository();
   }
 
   /**
@@ -254,12 +261,21 @@ Datos de la vacante:
 - Salario: ${input.salaryText || 'A convenir'}
 - Día de pago: ${input.paymentDay || 'No especificado'}`;
 
+    // Lido da tabela a cada chamada (sem cache — T019 prova isso): o texto
+    // vem de `ai_prompts.body` para o slug VACANCY_DESCRIPTION, editável pela
+    // tela sem redeploy. Ausência de linha não tem fallback para a constante
+    // antiga — a falha visível para esse caso é objeto da T019a.
+    const prompt = await this.promptRepo.findActiveBySlug('VACANCY_DESCRIPTION');
+    if (!prompt) {
+      throw new Error('AiPrompt not found: VACANCY_DESCRIPTION');
+    }
+
     // 2.5-pro spends thinking tokens within maxOutputTokens; 4096 leaves
     // ~3.5k for thinking and still fits ~500 tokens of JSON output.
     const response = await generateContentVertex(
       this.model,
       {
-        systemInstruction: { parts: [{ text: DESCRIPTION_SYSTEM_PROMPT }] },
+        systemInstruction: { parts: [{ text: prompt.body }] },
         contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
         generationConfig: {
           temperature: 0.3,

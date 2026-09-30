@@ -209,6 +209,11 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
   // com as quatro células Ver/Criar/Editar/Deletar.
   { id: 'tags', route: '/admin/tags', cells: ['tag:read', 'tag:create', 'tag:update', 'tag:delete'] },
 
+  // Prompts de IA (spec 029): o texto de instrução que o modelo recebe. Células PRÓPRIAS
+  // (`ai_prompt:*`), as mesmas que `adminAiPromptRoutes` cobra no backend — `restore` é da Fase 5
+  // e por isso não entra aqui ainda: o menu não anuncia o que a tela ainda não faz.
+  { id: 'integration.aiPrompts', route: '/admin/prompts-ia', cells: ['ai_prompt:read', 'ai_prompt:update'] },
+
   // ── Ana Care ───────────────────────────────────────────────────────────────────────────────
   // Fase 1 da conferência de horas (D344, 15/09/2026) — duas células PRÓPRIAS, fora de qualquer
   // grupo padrão: `anacare_hours:read` (turnos, horas, origem, status — sem nome e sem nota) e

@@ -1319,7 +1319,8 @@
       "templateCatalog": "Modelos",
       "templateDrafts": "Registrar mensagem",
       "catalogObjectives": "Objetivos específicos",
-      "catalogActivities": "Rotina e atividades"
+      "catalogActivities": "Rotina e atividades",
+      "aiPrompts": "Prompts de IA"
     },
     "dedup": {
       "title": "Central de Duplicatas",
@@ -4457,6 +4458,7 @@
             "worker_address": "Endereço do prestador: linha, coordenada, raio",
             "worker_document": "Documentos do prestador",
             "tag": "Catálogo de etiquetas",
+            "ai_prompt": "Prompts de IA",
             "vacancy": "Vagas",
             "funnel": "Funil",
             "interview": "Entrevistas",
@@ -4896,6 +4898,9 @@
         },
         "tags": {
           "label": "Etiquetas"
+        },
+        "integration.aiPrompts": {
+          "label": "Prompts de IA"
         },
         "vacancies.list": {
           "label": "Vagas: Lista"
@@ -5556,6 +5561,37 @@
       "errors": {
         "duplicate": "Já existe uma opção ativa com esse texto.",
         "invalidLabel": "O texto não pode ter dados de uma pessoa (e-mail, documento, telefone) nem passar de 200 caracteres."
+      }
+    },
+    "aiPrompts": {
+      "title": "Prompts de IA",
+      "description": "Edite o texto que a IA usa em cada situação. As mudanças valem para o que a plataforma gerar dali em diante — não reescrevem nada que já foi enviado.",
+      "loading": "Carregando os prompts…",
+      "loadError": "Não foi possível carregar os prompts.",
+      "readOnlyNotice": "Somente leitura: você pode ver o conteúdo, mas não salvá-lo.",
+      "tabs": {
+        "vacancyDescription": "Descrição de vaga",
+        "prescreeningAt": "Pré-seleção — Acompanhante Terapêutico",
+        "prescreeningCaregiver": "Pré-seleção — Cuidador"
+      },
+      "editor": {
+        "charCount": "{{count}} caracteres",
+        "lastEditedBy": "Última edição: {{date}} · {{name}}"
+      },
+      "actions": {
+        "save": "Salvar",
+        "saving": "Salvando…",
+        "undo": "Desfazer última alteração",
+        "undoConfirm": "Desfazer a última alteração? O texto volta para a versão anterior.",
+        "undoUnavailable": "Não há uma versão anterior para desfazer."
+      },
+      "errors": {
+        "emptyBody": "O texto não pode ficar vazio.",
+        "versionConflict": "Outra pessoa ({{updatedBy}}) já salvou uma mudança neste prompt. Recarregue para ver a versão atual antes de salvar de novo."
+      },
+      "preview": {
+        "notice": "Isto é uma simulação com um caso de exemplo — nada é salvo, e nenhum dado real de paciente ou vaga é usado.",
+        "cta": "Simular com este texto"
       }
     }
   },

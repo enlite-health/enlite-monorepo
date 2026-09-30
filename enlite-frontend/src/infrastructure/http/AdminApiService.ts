@@ -62,6 +62,23 @@ import { withTransientRetry } from './retryTransient';
 export interface RecurringMeetSlot { weekday: number; time: string; link: string }
 export { ApiError } from './ApiError';
 
+/**
+ * `AiPromptSlug` (spec 029) — os três identificadores fechados de prompt de IA editável, espelho
+ * de `AI_PROMPT_SLUGS`/`AiPromptSlug` do backend (`worker-functions/src/modules/integration/
+ * domain/AiPromptSlug.ts`). Tipo novo só nasce quando o backend alargar a união — nunca só aqui.
+ */
+export type AiPromptSlug = 'VACANCY_DESCRIPTION' | 'PRESCREENING_AT' | 'PRESCREENING_CAREGIVER';
+
+/** Formato de registro do contrato `contracts/admin-ai-prompts.md` (list/get/update/undo). */
+export interface AiPrompt {
+  slug: AiPromptSlug;
+  body: string;
+  version: number;
+  updatedBy: string | null;
+  updatedAt: string;
+  isActive: boolean;
+}
+
 class AdminApiServiceClass {
   private readonly authService = new FirebaseAuthService();
   private readonly baseURL: string;
@@ -438,6 +455,37 @@ class AdminApiServiceClass {
     return this.request<{ questions: any[]; faq: any[] }>(
       'POST', `/api/admin/vacancies/${vacancyId}/prescreening-config`, data,
     );
+  }
+
+  // ========== AI Prompts (spec 029) ==========
+  // Contrato: `specs/029-prompts-ia-editaveis/contracts/admin-ai-prompts.md`.
+  // `restore` (permissão `ai_prompt:restore`, versão arbitrária) e `preview` são de fases
+  // posteriores — não entram aqui (T023/T024 em diante).
+
+  /** `GET /api/admin/ai-prompts` — lista os três prompts, com conteúdo (sem paginação). */
+  async listAiPrompts(): Promise<AiPrompt[]> {
+    return this.request<AiPrompt[]>('GET', '/api/admin/ai-prompts');
+  }
+
+  /** `GET /api/admin/ai-prompts/{slug}` — um prompt. 404 se o slug não é do conjunto fechado. */
+  async getAiPrompt(slug: AiPromptSlug): Promise<AiPrompt> {
+    return this.request<AiPrompt>('GET', `/api/admin/ai-prompts/${slug}`);
+  }
+
+  /**
+   * `PUT /api/admin/ai-prompts/{slug}` — grava conteúdo novo com lock otimista (`version`).
+   * 409 quando a `version` enviada diverge da atual: nada é gravado.
+   */
+  async updateAiPrompt(slug: AiPromptSlug, body: string, version: number): Promise<AiPrompt> {
+    return this.request<AiPrompt>('PUT', `/api/admin/ai-prompts/${slug}`, { body, version });
+  }
+
+  /**
+   * `POST /api/admin/ai-prompts/{slug}/undo` — desfaz a última alteração, um passo, sem alvo
+   * (não recebe qual versão restaurar: é sempre a imediatamente anterior). 422 sem versão anterior.
+   */
+  async undoAiPrompt(slug: AiPromptSlug, version: number): Promise<AiPrompt> {
+    return this.request<AiPrompt>('POST', `/api/admin/ai-prompts/${slug}/undo`, { version });
   }
 
   // ========== Worker Document methods — delegated to AdminWorkerDocsApiService ==========
