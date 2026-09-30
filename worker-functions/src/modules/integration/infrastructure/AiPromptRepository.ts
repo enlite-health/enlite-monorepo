@@ -71,9 +71,31 @@ export class AiPromptRepository {
     return this.poolMemo;
   }
 
+  /**
+   * Leitura de ADMINISTRAÇÃO: devolve a linha mesmo desativada (`is_active = false`).
+   * É o que a tela de edição precisa — um prompt desligado tem de continuar visível e
+   * editável, senão não haveria como religá-lo.
+   *
+   * ⚠️ Quem vai MANDAR o conteúdo ao modelo deve usar `findActiveBySlug`, não este.
+   */
   async findBySlug(slug: AiPromptSlug): Promise<AiPrompt | null> {
     const res = await this.pool.query<AiPromptRow>(
       `SELECT ${SELECT_COLUMNS} FROM ai_prompts WHERE slug = $1`,
+      [slug],
+    );
+    return res.rows[0] ? toEntity(res.rows[0]) : null;
+  }
+
+  /**
+   * Leitura de SERVIÇO: devolve `null` quando a linha não existe **ou** está desativada.
+   * É o que dá efeito real à coluna `is_active` — sem isto, desmarcar um prompt não o
+   * desliga, e o texto continua indo ao modelo em silêncio.
+   *
+   * Mesma convenção do irmão `MessageTemplateRepository.findBySlug`.
+   */
+  async findActiveBySlug(slug: AiPromptSlug): Promise<AiPrompt | null> {
+    const res = await this.pool.query<AiPromptRow>(
+      `SELECT ${SELECT_COLUMNS} FROM ai_prompts WHERE slug = $1 AND is_active = true`,
       [slug],
     );
     return res.rows[0] ? toEntity(res.rows[0]) : null;

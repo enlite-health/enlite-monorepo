@@ -29,12 +29,13 @@ jest.mock('@shared/database/DatabaseConnection', () => ({
 }));
 
 // T018: o serviço agora lê o system prompt de `ai_prompts` via
-// AiPromptRepository.findBySlug, não mais da constante DESCRIPTION_SYSTEM_PROMPT.
+// AiPromptRepository.findActiveBySlug (leitura de serviço — respeita `is_active`),
+// não mais da constante DESCRIPTION_SYSTEM_PROMPT.
 // O dublê é a própria classe (jest.mock do módulo) — nunca bate no Pool acima.
-const mockFindBySlug = jest.fn();
+const mockFindActiveBySlug = jest.fn();
 jest.mock('../../../src/modules/integration/infrastructure/AiPromptRepository', () => ({
   AiPromptRepository: jest.fn().mockImplementation(() => ({
-    findBySlug: mockFindBySlug,
+    findActiveBySlug: mockFindActiveBySlug,
   })),
 }));
 
@@ -74,8 +75,8 @@ beforeEach(() => {
   // Default: ai_prompts tem a linha VACANCY_DESCRIPTION com o MESMO conteúdo que a
   // constante antiga (migration 487 semeia byte a byte) — mantém as asserções
   // pré-existentes de conteúdo do systemInstruction válidas sem tocar nelas.
-  mockFindBySlug.mockReset();
-  mockFindBySlug.mockResolvedValue({
+  mockFindActiveBySlug.mockReset();
+  mockFindActiveBySlug.mockResolvedValue({
     slug: 'VACANCY_DESCRIPTION',
     body: DESCRIPTION_SYSTEM_PROMPT,
     version: 1,
@@ -397,7 +398,7 @@ describe('TalentumDescriptionService', () => {
 
     it('reads the system prompt from ai_prompts (VACANCY_DESCRIPTION) and uses the CURRENT row content, not the old constant (T018)', async () => {
       const customBody = 'PROMPT EDITADO PELA TELA — CONTEUDO NOVO, DIFERENTE DA CONSTANTE ANTIGA.';
-      mockFindBySlug.mockResolvedValueOnce({
+      mockFindActiveBySlug.mockResolvedValueOnce({
         slug: 'VACANCY_DESCRIPTION',
         body: customBody,
         version: 7,
@@ -413,7 +414,7 @@ describe('TalentumDescriptionService', () => {
       const service = createService();
       await service.generateDescription('job-prompt-from-table');
 
-      expect(mockFindBySlug).toHaveBeenCalledWith('VACANCY_DESCRIPTION');
+      expect(mockFindActiveBySlug).toHaveBeenCalledWith('VACANCY_DESCRIPTION');
 
       const body = JSON.parse(mockFetch.mock.calls[0][1].body);
       const sysText = body.systemInstruction.parts[0].text as string;
@@ -426,7 +427,7 @@ describe('TalentumDescriptionService', () => {
     });
 
     it('throws when the VACANCY_DESCRIPTION row is missing, without falling back to the old constant (documents current behavior — T019a proves the full contract)', async () => {
-      mockFindBySlug.mockResolvedValueOnce(null);
+      mockFindActiveBySlug.mockResolvedValueOnce(null);
       mockQuery.mockResolvedValueOnce({ rows: [makeVacancyRow()] });
 
       const service = createService();

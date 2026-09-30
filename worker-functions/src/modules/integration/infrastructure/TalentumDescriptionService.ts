@@ -265,7 +265,7 @@ Datos de la vacante:
     // vem de `ai_prompts.body` para o slug VACANCY_DESCRIPTION, editável pela
     // tela sem redeploy. Ausência de linha não tem fallback para a constante
     // antiga — a falha visível para esse caso é objeto da T019a.
-    const prompt = await this.promptRepo.findBySlug('VACANCY_DESCRIPTION');
+    const prompt = await this.promptRepo.findActiveBySlug('VACANCY_DESCRIPTION');
     if (!prompt) {
       throw new Error('AiPrompt not found: VACANCY_DESCRIPTION');
     }

@@ -6,14 +6,18 @@
  * constante `DESCRIPTION_SYSTEM_PROMPT` e o provider do Drive continuam no código até a Fase 6 —
  * princípio VI — então a ausência de fallback precisa ser PROVADA, não presumida).
  *
- * "Ausente" aqui é literal, não `is_active = false`: `AiPromptRepository.findBySlug` (lido em
- * `src/modules/integration/infrastructure/AiPromptRepository.ts`) faz
- * `SELECT ... FROM ai_prompts WHERE slug = $1` — SEM filtro por `is_active`. Isso significa que
- * marcar a linha como inativa NÃO teria efeito nenhum no caminho de geração hoje (achado
- * registrado na LISTA do relatório desta tarefa, nenhum conserto aplicado — fora do escopo
- * aprovado). A única forma de simular ausência que o código realmente enxerga é a linha não
- * existir — por isso este teste faz DELETE, restaurado por completo (linha + trilha de auditoria)
- * no `afterAll`, que roda incondicionalmente mesmo se a asserção falhar.
+ * "Ausente" aqui é `is_active = false`, como o texto da tarefa manda. O caminho de geração lê por
+ * `AiPromptRepository.findActiveBySlug` (`src/modules/integration/infrastructure/AiPromptRepository.ts`),
+ * que faz `SELECT ... WHERE slug = $1 AND is_active = true` — então desmarcar a linha realmente
+ * desliga o prompt, e é isso que este teste exercita.
+ *
+ * (Histórico: até 29/09 o serviço lia por `findBySlug`, SEM filtro por `is_active`, e desativar não
+ * tinha efeito nenhum — este teste precisava fazer DELETE para simular ausência. O `findActiveBySlug`
+ * foi criado por decisão do Gabriel nessa data, e o teste voltou à desativação.)
+ *
+ * O `afterAll` restaura a linha por completo (conteúdo + `is_active` + trilha de auditoria), roda
+ * incondicionalmente mesmo se a asserção falhar, e é idempotente — restaura tanto de uma
+ * desativação quanto de uma linha apagada.
  *
  * COMO O MODELO É INTERCEPTADO: mesmo mecanismo de `aiPromptNoCache.e2e.test.ts` — ver cabeçalho
  * de `tests/e2e/vertexInterceptPreload.js`. Aqui ele cumpre um papel extra: os itens 2 e 3 do
@@ -85,9 +89,9 @@ describe('Instrução ausente falha de forma visível, sem recorrer à fonte ant
     }
     capturedPrompt = row.rows[0];
 
-    // Captura a trilha de auditoria ANTES de deletar: o DELETE da linha-mãe cascateia
-    // (`ai_prompt_audit_log.prompt_id REFERENCES ai_prompts(id) ON DELETE CASCADE`) e apagaria
-    // esses eventos junto — reinseridos byte a byte no afterAll, mesmos ids e created_at.
+    // Captura a trilha de auditoria: a desativação não a toca, mas o afterAll reinsere byte a byte
+    // (mesmos ids e created_at, `ON CONFLICT DO NOTHING`) para que a restauração também funcione
+    // se a linha-mãe tiver sido apagada — `ai_prompt_audit_log.prompt_id` cascateia no DELETE.
     const audit = await pool.query<CapturedAuditRow>(
       `SELECT id, prompt_id, event_type, field_name, changes, actor_user_id, actor_type, actor_label, trace_id, created_at
        FROM ai_prompt_audit_log WHERE prompt_id = $1 ORDER BY created_at ASC`,
@@ -147,8 +151,8 @@ describe('Instrução ausente falha de forma visível, sem recorrer à fonte ant
     await pool.end();
   });
 
-  it('sem a linha VACANCY_DESCRIPTION: erro explícito, nunca 200, nunca chama o modelo, nomeia o identificador que faltou', async () => {
-    await pool.query(`DELETE FROM ai_prompts WHERE id = $1`, [capturedPrompt.id]);
+  it('com VACANCY_DESCRIPTION desativado: erro explícito, nunca 200, nunca chama o modelo, nomeia o identificador que faltou', async () => {
+    await pool.query(`UPDATE ai_prompts SET is_active = false WHERE id = $1`, [capturedPrompt.id]);
 
     const logsBaseline = dockerLogs();
     const r = await api.post(
