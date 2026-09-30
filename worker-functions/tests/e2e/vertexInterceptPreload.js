@@ -1,7 +1,7 @@
 /**
  * vertexInterceptPreload.js — spec 029, T019/T019a.
  *
- * Carregado DENTRO do container `prompts029-api` via `NODE_OPTIONS=--require`, só durante a
+ * Carregado DENTRO do container da API via `NODE_OPTIONS=--require`, montado pelo `docker-compose.test.yml`, só durante a
  * janela de medição destas duas tarefas (nunca em produção nem no compose padrão do e2e).
  *
  * Por quê isto existe: `vertex-gemini.ts` não tem NENHUMA variável de ambiente para trocar o
@@ -29,7 +29,7 @@
  *      esperado, falha ruidosamente em vez de vazar uma chamada real.
  *
  * Toda interceptação é logada com o prefixo `[VERTEX-STUB]`, visível via
- * `docker logs prompts029-api` — é a prova que os testes leem para conferir o que foi "enviado ao
+ * `docker logs <container da API>` (resolvido por `helpers/apiContainer.ts`) — é a prova que os testes leem para conferir o que foi "enviado ao
  * modelo", e a prova de que nenhuma chamada real saiu (a contagem aqui é o teto: se o stub nunca
  * logou uma interceptação para uma requisição, o Gemini/Vertex nunca foi tocado nela).
  */

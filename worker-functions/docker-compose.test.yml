@@ -66,12 +66,25 @@ services:
       - enlite-network
 
   api:
+    # `NODE_OPTIONS` só no `npm start`, nunca nos dois scripts antes dele: o preload substitui
+    # `GoogleAuth` e `global.fetch`, e a geração da credencial falsa do GCS e as migrations não
+    # devem correr com isso no caminho.
     command: >
-      sh -c "node scripts/generate-fake-gcs-sa.js && node scripts/run-migrations-docker.js && npm start"
+      sh -c "node scripts/generate-fake-gcs-sa.js && node scripts/run-migrations-docker.js &&
+      NODE_OPTIONS=--require=/app/vertexInterceptPreload.js npm start"
     volumes:
       - ./migrations:/app/migrations
       - ./scripts/run-migrations-docker.js:/app/scripts/run-migrations-docker.js
       - ./scripts/generate-fake-gcs-sa.js:/app/scripts/generate-fake-gcs-sa.js
+      # Canal do MODELO declaradamente ausente, pela mesma razão do SENDGRID_API_KEY abaixo:
+      # `vertex-gemini.ts` é o único cliente externo sem env var para o endereço (Periskope,
+      # Axonico e Talentum têm `*_BASE_URL`), então não dá para apontá-lo a um stub por
+      # configuração. Este preload substitui `GoogleAuth` (nunca toca o metadata server) e
+      # `global.fetch` para `aiplatform.googleapis.com`, devolvendo resposta sintética e logando
+      # `[VERTEX-STUB]`. Vale para TODA a stack de teste, não só para os e2e da spec 029: nenhum
+      # e2e deve alcançar o Vertex de verdade. Antes disto a montagem vivia num override de
+      # compose FORA do git, então no CI a interceptação simplesmente não existia.
+      - ./tests/e2e/vertexInterceptPreload.js:/app/vertexInterceptPreload.js
     environment:
       NODE_ENV: test
       USE_MOCK_AUTH: "true"

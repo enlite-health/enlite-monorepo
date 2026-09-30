@@ -26,20 +26,17 @@
  * pelo código HTTP — exatamente o que o aviso da tarefa exige.
  */
 import { Pool } from 'pg';
-import { execSync } from 'child_process';
 import { createApiClient, waitForBackend } from './helpers';
 import { staffAuth, type StaffAuth } from './helpers/staffAuth';
+import { apiContainerLogs } from './helpers/apiContainer';
 
 const DATABASE_URL =
   process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5529/enlite_e2e';
 process.env.DATABASE_URL = DATABASE_URL;
 
 const SLUG = 'VACANCY_DESCRIPTION';
-const CONTAINER = 'prompts029-api';
 
-function dockerLogs(): string {
-  return execSync(`docker logs ${CONTAINER}`, { maxBuffer: 1024 * 1024 * 80 }).toString();
-}
+const dockerLogs = apiContainerLogs;
 
 interface CapturedPromptRow {
   id: string;

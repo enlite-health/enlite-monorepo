@@ -13,13 +13,15 @@
  * COMO O MODELO É INTERCEPTADO (leia primeiro `tests/e2e/vertexInterceptPreload.js`):
  * `vertex-gemini.ts` não tem NENHUMA env var para trocar o host do Vertex (hardcoded
  * `aiplatform.googleapis.com`) — diferente do Periskope/Axonico/Talentum, que já têm `*_BASE_URL`.
- * Por isso a interceptação acontece DENTRO do container `prompts029-api`, via
- * `NODE_OPTIONS=--require /app/vertexInterceptPreload.js` (montado pelo compose override desta
- * sessão): esse preload substitui `google-auth-library`.GoogleAuth (nunca toca o metadata server
+ * Por isso a interceptação acontece DENTRO do container da API, via
+ * `NODE_OPTIONS=--require=/app/vertexInterceptPreload.js`, montado pelo `docker-compose.test.yml`
+ * VERSIONADO (antes vivia num override fora do git, e por isso no CI a interceptação não existia
+ * — ver o comentário do volume lá): esse preload substitui `google-auth-library`.GoogleAuth (nunca toca o metadata server
  * real) e `global.fetch` para qualquer URL `aiplatform.googleapis.com` (nunca sai à rede — uma
  * resposta sintética é devolvida na hora, construída a partir do próprio `systemInstruction`
  * recebido). Cada interceptação é logada com o prefixo `[VERTEX-STUB]`, visível via
- * `docker logs prompts029-api` — é isso que este teste lê para provar o que foi "enviado ao
+ * `docker logs <container da API>` (resolvido por `helpers/apiContainer.ts`, sem nome fixo — o
+ * nome muda com o projeto do compose) — é isso que este teste lê para provar o que foi "enviado ao
  * modelo": não há outro jeito de ler o `systemInstruction` de fora do processo da API sem alterar
  * `src/` (proibido nesta tarefa).
  *
@@ -28,22 +30,19 @@
  * `IGUAIS` depois deste arquivo rodar.
  */
 import { Pool } from 'pg';
-import { execSync } from 'child_process';
 import { createApiClient, waitForBackend } from './helpers';
 import { staffAuth, type StaffAuth } from './helpers/staffAuth';
+import { apiContainerLogs } from './helpers/apiContainer';
 
 const DATABASE_URL =
   process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5529/enlite_e2e';
 process.env.DATABASE_URL = DATABASE_URL;
 
 const SLUG = 'VACANCY_DESCRIPTION';
-const CONTAINER = 'prompts029-api';
 
 /** `docker logs` do container da API — é o único jeito de ver o que o preload interceptou (o
  *  processo que fala com o "modelo" roda DENTRO do container, não no processo deste teste). */
-function dockerLogs(): string {
-  return execSync(`docker logs ${CONTAINER}`, { maxBuffer: 1024 * 1024 * 80 }).toString();
-}
+const dockerLogs = apiContainerLogs;
 
 function randomMarker(tag: string): string {
   return `T019-MARKER-${tag}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
