@@ -16,7 +16,7 @@
 import fs from 'fs';
 import path from 'path';
 import { Pool } from 'pg';
-import { montarAppDeFamilia, tokenMock, grupoComCelulas, limparIamFixtures, TENANT_E2E, type AppDeFamilia } from './helpers/permissionFamilyHarness';
+import { montarAppDeFamilia, tokenMock, grupoComCelulas, limparIamFixtures, garantirCelula, TENANT_E2E, type AppDeFamilia } from './helpers/permissionFamilyHarness';
 
 const DATABASE_URL =
   process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
@@ -34,6 +34,7 @@ const CARGA_INICIAL: ReadonlyArray<readonly [string, string]> = [
 describe('change itinerario-trocas — catálogo de motivos de saída (492): API sob engine de permissão', () => {
   let pool: Pool;
   let app: AppDeFamilia;
+  let donaDeServicosRead = false;
 
   const U = { admin: 'ser492-admin', leitor: 'ser492-leitor' };
   const GRUPOS = { admin: 'SER492 Admin do catálogo', leitor: 'SER492 Só serviços' };
@@ -52,6 +53,11 @@ describe('change itinerario-trocas — catálogo de motivos de saída (492): API
   async function limpar(): Promise<void> {
     await limparIamFixtures(pool, { uids: Object.values(U), grupos: Object.values(GRUPOS) });
     await pool.query(`DELETE FROM service_exit_reasons WHERE label LIKE $1`, [`${PREFIXO}%`]);
+    // `patient_services:read` só entra no catálogo com o sync ligado; se este teste a criou, apaga (não deixa célula extra para as outras suítes).
+    if (donaDeServicosRead) {
+      await pool.query(`DELETE FROM iam.permissions WHERE resource = 'patient_services' AND action = 'read'`);
+      donaDeServicosRead = false;
+    }
   }
 
   beforeAll(async () => {
@@ -63,8 +69,10 @@ describe('change itinerario-trocas — catálogo de motivos de saída (492): API
          ($2, 'ser492-leitor@e2e.local', 'Leitor Serviços', 'admin', 'ACTIVE', true, $3)`,
       [U.admin, U.leitor, TENANT_E2E],
     );
-    // `grupoComCelulas` FALHA ALTO se a célula não existe em iam.permissions: é a prova de que a
-    // 492 semeou as 3 células (não há `garantirCelula` aqui de propósito).
+    // `patient_services:read` nasce do sync do catálogo (não da 492): garante-a como as suítes irmãs.
+    // As 3 células de `catalog_service_exit_reasons` NÃO são garantidas aqui de propósito:
+    // `grupoComCelulas` FALHA ALTO se a 492 não as semeou — é a prova.
+    donaDeServicosRead = (await garantirCelula(pool, { resource: 'patient_services', action: 'read', category: 'Pacientes' })).criada;
     await grupoComCelulas(pool, {
       nome: GRUPOS.admin, uid: U.admin,
       celulas: [
