@@ -16,6 +16,14 @@
  * processo) — a mesma fonte de `ItineraryAllocationUseCase`/`GetServiceTeamUseCase`. `team` sai de
  * `deriveServiceTeamFromRows` (nunca `deriveServiceTeam` direto — 2ª definição proibida).
  *
+ * Motivo (change itinerario-trocas-motivos-e-figma, Fase 2, D3/D4-C4): `register` exige
+ * `reasonCategory` — o `code` de um item ATIVO do catálogo `service_exit_reasons`. Ausente →
+ * `ServiceExitReasonRequiredError` ANTES do banco; inexistente/inativo → `ServiceExitReasonInvalidError`
+ * conferido dentro da transação, ANTES de qualquer escrita (o controller mapeia os dois para 422).
+ * Depois grava a ausência e, NO MESMO client e NESTA ordem (ausência → registro), o registro `ABSENCE` em
+ * `patient_itinerary_change_log` (`outgoing` = titular da alocação, `incoming` = substituto ou nulo,
+ * `effective_date` = a data, `absence_id`). Se o registro falhar, a transação inteira desfaz a ausência.
+ *
  * Nenhuma escrita na tabela do paciente, em `contracted_service_rejections`, na alocação antiga do
  * card de atendimento (Fase 14) ou em `worker_job_applications` (só leitura, via
  * `allocationWriter.findApplicationId`, REUSADO). A ausência não move nada fora dela mesma
@@ -27,6 +35,9 @@ import { operationDateOf } from './itineraryCoverage';
 import { ServiceTeamReader, type ServiceTeamRows } from '../infrastructure/ServiceTeamReader';
 import { ItineraryAbsenceWriter, type InsertAbsenceInput, type InsertedAbsence, type AbsenceRow } from '../infrastructure/ItineraryAbsenceWriter';
 import { ItineraryAllocationWriter, type AllocationRow } from '../infrastructure/ItineraryAllocationWriter';
+import { ItineraryChangeLogWriter, type InsertItineraryChangeInput } from '../infrastructure/ItineraryChangeLogWriter';
+import { ServiceExitReasonReader, type ServiceExitReasonOption } from '../infrastructure/ServiceExitReasonReader';
+import { ServiceExitReasonRequiredError, ServiceExitReasonInvalidError } from '../domain/serviceExitReason';
 import { deriveServiceTeamFromRows } from './serviceTeamPresentation';
 import { canAllocate } from '../domain/itineraryAllocationGate';
 import { fromPgError, type PgOverlapLikeError } from '../domain/itineraryOverlap';
@@ -129,6 +140,16 @@ export interface ItineraryAbsenceAllocationPort {
   findApplicationId(client: PoolClient, workerId: string, vacancyId: string): Promise<string | null>;
 }
 
+/** Catálogo de motivos de saída (migration 492) — só o que o `register` precisa. */
+export interface ItineraryAbsenceReasonCatalogPort {
+  findActiveByCode(client: PoolClient, code: string): Promise<ServiceExitReasonOption | null>;
+}
+
+/** Registro de trocas (migration 494) — só o `insert`. */
+export interface ItineraryAbsenceChangeLogPort {
+  insert(client: PoolClient, input: InsertItineraryChangeInput): Promise<{ id: string }>;
+}
+
 type TransactionRunner = <T>(fn: (client: PoolClient) => Promise<T>) => Promise<T>;
 
 export interface ItineraryAbsenceRegisterInput {
@@ -137,6 +158,8 @@ export interface ItineraryAbsenceRegisterInput {
   allocationId: string;
   date: string;
   substituteWorkerId?: string | null;
+  /** `code` de um item ATIVO do catálogo de motivos de saída; `unknown` porque a borda deixa a ausência chegar ao caso de uso (422, não 400). */
+  reasonCategory?: unknown;
   actorUid: string;
   now?: Date;
 }
@@ -188,6 +211,8 @@ export class ItineraryAbsenceUseCase {
     private readonly writer: ItineraryAbsenceWriterPort = new ItineraryAbsenceWriter(),
     private readonly allocationWriter: ItineraryAbsenceAllocationPort = new ItineraryAllocationWriter(),
     private readonly runInTransaction: TransactionRunner = inPatientTransaction,
+    private readonly reasonCatalog: ItineraryAbsenceReasonCatalogPort = new ServiceExitReasonReader(),
+    private readonly changeLog: ItineraryAbsenceChangeLogPort = new ItineraryChangeLogWriter(),
   ) {}
 
   /** Só o gate + `findApplicationId` quando HÁ substituto — sem substituto, os 2 campos gravam `null`. */
@@ -212,7 +237,9 @@ export class ItineraryAbsenceUseCase {
   }
 
   async register(input: ItineraryAbsenceRegisterInput): Promise<ItineraryAbsenceResult> {
-    const { patientId, serviceId, allocationId, date, substituteWorkerId = null, actorUid, now = new Date() } = input;
+    const { patientId, serviceId, allocationId, date, substituteWorkerId = null, reasonCategory, actorUid, now = new Date() } = input;
+    if (reasonCategory === undefined || reasonCategory === null || reasonCategory === '') throw new ServiceExitReasonRequiredError();
+    if (typeof reasonCategory !== 'string') throw new ServiceExitReasonInvalidError();
     return this.runInTransaction(async (client) => {
       const allocation = await this.allocationWriter.findAllocation(client, patientId, serviceId, allocationId);
       if (allocation === null) throw new AllocationNotFoundError(patientId, serviceId, allocationId);
@@ -227,13 +254,31 @@ export class ItineraryAbsenceUseCase {
       const substituteApplicationId =
         substituteWorkerId === null ? null : await this.substituteApplicationFor(client, patientId, serviceId, row, substituteWorkerId, now);
 
+      // Motivo do catálogo (ativo), conferido ANTES de qualquer escrita.
+      if ((await this.reasonCatalog.findActiveByCode(client, reasonCategory)) === null) throw new ServiceExitReasonInvalidError();
+      if (!allocation.workerId) throw new Error(`allocation without titular worker: ${allocationId}`);
+
+      let inserted: InsertedAbsence;
       try {
-        const inserted = await this.writer.insertAbsence(client, { allocationId, date, substituteWorkerId, substituteApplicationId, actorUid });
-        return { absenceId: inserted.id, allocationId, date: inserted.date, substituteWorkerId, status: 'OPEN' as const };
+        inserted = await this.writer.insertAbsence(client, { allocationId, date, substituteWorkerId, substituteApplicationId, actorUid });
       } catch (err) {
         const mapped = absenceErrorFromPg(err, allocationId, date);
         throw mapped ?? err;
       }
+      // Registro da troca: MESMO client, DEPOIS da ausência, fora do try/catch de decodificação (um erro
+      // aqui não é erro de ausência; sobe cru e a transação desfaz a ausência junto).
+      await this.changeLog.insert(client, {
+        serviceId,
+        kind: 'ABSENCE',
+        outgoingWorkerId: allocation.workerId,
+        incomingWorkerId: substituteWorkerId,
+        assignmentId: allocationId,
+        absenceId: inserted.id,
+        effectiveDate: inserted.date,
+        reasonCode: reasonCategory,
+        actorUid,
+      });
+      return { absenceId: inserted.id, allocationId, date: inserted.date, substituteWorkerId, status: 'OPEN' as const };
     });
   }
 

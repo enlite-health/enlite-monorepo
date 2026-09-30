@@ -57,6 +57,10 @@ export const itineraryAbsenceBodySchema = z.object({
     .regex(/^\d{4}-\d{2}-\d{2}$/)
     .refine(isRealCalendarDate, { message: 'date must be a real calendar date' }),
   substituteWorkerId: z.string().uuid().optional(),
+  // Motivo (Fase 2, C4): obrigatório, mas AUSENTE/vazio não pode virar 400 da borda — é 422 REASON_REQUIRED do caso
+  // de uso (mesmo molde de `serviceTeamSchemas.ts`, `reasonCategory` nullish). O zod garante só a FORMA (string);
+  // que o código exista e esteja ATIVO no catálogo é do caso de uso (422 REASON_INVALID).
+  reasonCategory: z.string().nullish(),
 });
 
 export type ItineraryAbsenceBody = z.infer<typeof itineraryAbsenceBodySchema>;

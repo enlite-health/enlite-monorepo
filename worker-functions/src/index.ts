@@ -37,6 +37,8 @@ import {
   createAdminServiceTeamContactRoutes,
   AdminItineraryWriteController,
   createAdminItineraryWriteRoutes,
+  AdminItineraryChangesController,
+  createAdminItineraryChangesRoutes,
   createAdminPatientsRoutes,
   PublicLeadsController,
   createAdminPatientPhotoRoutes,
@@ -545,6 +547,7 @@ app.use('/api/admin', createAdminServiceTeamContactRoutes(new AdminServiceTeamCo
 
 // ========== Itinerário — escritores (cadeia Fase 11) ==========
 app.use('/api/admin', createAdminItineraryWriteRoutes(new AdminItineraryWriteController(), authMiddleware, permissionMiddleware));
+app.use('/api/admin', createAdminItineraryChangesRoutes(new AdminItineraryChangesController(), authMiddleware, permissionMiddleware));
 
 // ========== Conferência de horas do Ana Care (spec anacare-conferencia-de-horas, fase 1) ==========
 app.use(

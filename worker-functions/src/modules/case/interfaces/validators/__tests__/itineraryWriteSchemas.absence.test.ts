@@ -39,3 +39,23 @@ describe('itineraryAbsenceBodySchema.date', () => {
     expect(itineraryAbsenceBodySchema.safeParse({ date: '2026-02-29' }).success).toBe(false);
   });
 });
+
+describe('itineraryAbsenceBodySchema.reasonCategory (Fase 2, C4)', () => {
+  it('string presente → aceita e devolve o código', () => {
+    const r = itineraryAbsenceBodySchema.safeParse({ date: '2026-09-28', reasonCategory: 'OTHER' });
+    expect(r.success).toBe(true);
+    if (r.success) expect(r.data.reasonCategory).toBe('OTHER');
+  });
+
+  it.each([[undefined], [null], ['']])(
+    'ausente/nulo/vazio (%p) NÃO é 400 da borda — passa o parse e o caso de uso responde 422 REASON_REQUIRED',
+    (reasonCategory) => {
+      const r = itineraryAbsenceBodySchema.safeParse({ date: '2026-09-28', reasonCategory });
+      expect(r.success).toBe(true);
+    },
+  );
+
+  it('tipo errado (número) → falha de parse (forma)', () => {
+    expect(itineraryAbsenceBodySchema.safeParse({ date: '2026-09-28', reasonCategory: 42 }).success).toBe(false);
+  });
+});

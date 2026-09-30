@@ -119,6 +119,9 @@ describe('GET .../itinerary/events e POST .../allocations/:id/replace — API re
     // molde que insere direto por SQL; por isso o filtro é pelo SERVIÇO (via slot), não por autor.
     // `patient_itinerary_absence.assignment_id` é `ON DELETE CASCADE` (migration 484) — apagar a
     // alocação já leva a ausência junto, sem passo à parte.
+    // O registro de trocas (494) referencia alocação/ausência/prestador sem cascata e é append-only para
+    // a app — o dono do banco o apaga ANTES (Fase 2).
+    await pool.query(`DELETE FROM patient_itinerary_change_log WHERE contracted_service_id = $1`, [serviceId]);
     await pool.query(
       `DELETE FROM patient_itinerary_assignment a
          USING patient_itinerary_slot s
@@ -174,10 +177,20 @@ describe('GET .../itinerary/events e POST .../allocations/:id/replace — API re
     const substituto = workerIdOf('substituto');
     const absenceRes = await api.post(
       `/api/admin/patients/${patientId}/contracted-services/${serviceId}/itinerary/allocations/${allocationId}/absences`,
-      { date: nextMonday, substituteWorkerId: substituto },
+      { date: nextMonday, substituteWorkerId: substituto, reasonCategory: 'OTHER' },
       { headers: asAdmin.headers },
     );
     expect(absenceRes.status).toBe(201);
+
+    // Fase 2 (C4/C9): a substituição de um dia deixou 1 registro ABSENCE com o motivo e a ausência ligada.
+    const changesRes = await api.get(
+      `/api/admin/patients/${patientId}/contracted-services/${serviceId}/itinerary/changes`,
+      { headers: asAdmin.headers },
+    );
+    expect(changesRes.status).toBe(200);
+    const changes = changesRes.data.data.changes as Array<{ kind: string; reasonCode: string; reasonLabel: string | null; outgoingWorkerId: string; incomingWorkerId: string | null; effectiveDate: string }>;
+    expect(changes).toHaveLength(1);
+    expect(changes[0]).toMatchObject({ kind: 'ABSENCE', reasonCode: 'OTHER', reasonLabel: 'Otro', outgoingWorkerId: titular, incomingWorkerId: substituto, effectiveDate: nextMonday });
 
     const eventsAfterAbsence = await api.get(
       `/api/admin/patients/${patientId}/itinerary/events?from=${nextMonday}&to=${nextMonday}`,
@@ -201,6 +214,45 @@ describe('GET .../itinerary/events e POST .../allocations/:id/replace — API re
       { headers: asAdmin.headers },
     );
     expect((eventsAfterCancel.data.data.events as EventView[])[0].status).toBe('covered');
+  });
+
+  it('Fase 2: registrar ausência SEM motivo → 422 REASON_REQUIRED; motivo inexistente → 422 REASON_INVALID; 0 linhas novas em ausência e em registro', async () => {
+    const titular = workerIdOf('titular');
+    const slotSemMotivo = (
+      await pool.query<{ id: string }>(
+        `INSERT INTO patient_itinerary_slot (contracted_service_id, weekday, start_time, end_time, created_by, updated_by)
+         VALUES ($1, 1, '17:00', '18:00', $2, $2) RETURNING id`,
+        [serviceId, TASK_PREFIX],
+      )
+    ).rows[0].id;
+    const allocRes = await api.post(
+      `/api/admin/patients/${patientId}/contracted-services/${serviceId}/itinerary/slots/${slotSemMotivo}/allocations`,
+      { workerId: titular },
+      { headers: asAdmin.headers },
+    );
+    expect(allocRes.status).toBe(201);
+    const allocationId = allocRes.data.data.allocationId as string;
+
+    const contar = async () =>
+      (
+        await pool.query<{ absences: number; logs: number }>(
+          `SELECT (SELECT count(*)::int FROM patient_itinerary_absence WHERE assignment_id = $1) AS absences,
+                  (SELECT count(*)::int FROM patient_itinerary_change_log WHERE contracted_service_id = $2) AS logs`,
+          [allocationId, serviceId],
+        )
+      ).rows[0];
+    const antes = await contar();
+    const url = `/api/admin/patients/${patientId}/contracted-services/${serviceId}/itinerary/allocations/${allocationId}/absences`;
+
+    const semMotivo = await api.post(url, { date: nextMonday }, { headers: asAdmin.headers });
+    expect(semMotivo.status).toBe(422);
+    expect(semMotivo.data.code).toBe('REASON_REQUIRED');
+
+    const inexistente = await api.post(url, { date: nextMonday, reasonCategory: 'MOTIVO_QUE_NAO_EXISTE' }, { headers: asAdmin.headers });
+    expect(inexistente.status).toBe(422);
+    expect(inexistente.data.code).toBe('REASON_INVALID');
+
+    expect(await contar()).toEqual(antes);
   });
 
   it('alternativo 1: intervalo maior que 62 dias → 400 ITINERARY_EVENTS_RANGE_INVALID', async () => {

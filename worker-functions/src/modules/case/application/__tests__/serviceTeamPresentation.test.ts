@@ -124,6 +124,24 @@ describe('buildServiceTeamResult', () => {
     expect(result.rejected).toEqual([{ workerId: 'w-rejected', displayName: 'Rejected', vacancyId: 'v-live', reasonCategory: 'OTHER' }]);
   });
 
+  it('Fase 2 (D2): rótulo do catálogo em `row.marks` vira `reasonLabel` no rejeitado; sem rótulo, a chave nem existe (a tela cai em reasonCategory)', () => {
+    const nomes = new Map<string, string | null>([['w-rejected', 'Rejected']]);
+    const comRotulo = buildServiceTeamResult(
+      {
+        serviceId: 's-1',
+        liveVacancyId: 'v-live',
+        candidacies: [],
+        marks: [{ workerId: 'w-rejected', serviceId: 's-1', rejectReasonCategory: 'OTHER', rejectReasonLabel: 'Otro', firstNameEncrypted: null, lastNameEncrypted: null }],
+      },
+      teamDerivado(),
+      nomes,
+    );
+    expect(comRotulo.rejected[0].reasonLabel).toBe('Otro');
+
+    const semRotulo = buildServiceTeamResult({ serviceId: 's-1', liveVacancyId: 'v-live', candidacies: [], marks: [] }, teamDerivado(), nomes);
+    expect(semRotulo.rejected[0]).not.toHaveProperty('reasonLabel');
+  });
+
   it('workerId ausente no mapa de nomes → displayName null (`?? null`, nunca undefined)', () => {
     const result = buildServiceTeamResult({ serviceId: 's-1', liveVacancyId: null, candidacies: [] }, teamDerivado(), new Map());
     expect(result.selected[0].displayName).toBeNull();

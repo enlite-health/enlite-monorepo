@@ -45,6 +45,8 @@ export interface AllocationRow {
   validFrom: string;
   /** D445.5 (reemplazo permanente): o slot da alocação encerrada é o MESMO slot da nova. Opcional — só `findAllocation` preenche; molde aditivo, sem quebrar os chamadores antigos. */
   slotId?: string;
+  /** O prestador titular da alocação (registro de trocas, Fase 2: `outgoing_worker_id`). Opcional pelo mesmo motivo de `slotId` — só `findAllocation` preenche. */
+  workerId?: string;
 }
 
 export class ItineraryAllocationWriter {
@@ -96,8 +98,8 @@ export class ItineraryAllocationWriter {
     serviceId: string,
     allocationId: string,
   ): Promise<AllocationRow | null> {
-    const res = await client.query<{ id: string; status: ItineraryAssignmentStatus; valid_from: string; slot_id: string }>(
-      `SELECT a.id, a.status, to_char(a.valid_from,'YYYY-MM-DD') AS valid_from, a.slot_id
+    const res = await client.query<{ id: string; status: ItineraryAssignmentStatus; valid_from: string; slot_id: string; worker_id: string }>(
+      `SELECT a.id, a.status, to_char(a.valid_from,'YYYY-MM-DD') AS valid_from, a.slot_id, a.worker_id
          FROM patient_itinerary_assignment a
          JOIN patient_itinerary_slot s ON s.id = a.slot_id
          JOIN patient_contracted_services pcs ON pcs.id = s.contracted_service_id
@@ -106,7 +108,7 @@ export class ItineraryAllocationWriter {
     );
     if (res.rowCount === 0) return null;
     const row = res.rows[0];
-    return { id: row.id, status: row.status, validFrom: row.valid_from, slotId: row.slot_id };
+    return { id: row.id, status: row.status, validFrom: row.valid_from, slotId: row.slot_id, workerId: row.worker_id };
   }
 
   /** `GREATEST(valid_from, hoje)`: o fim nunca fica antes do início. Só bate `status = 'ACTIVE'`. */
