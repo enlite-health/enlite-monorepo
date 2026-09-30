@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { reportError } from '@shared/logging';
 import { AuthMiddleware } from '@modules/identity';
+import { NOME_REDIGIDO } from '@modules/identity/permissions';
 import { emitirTrilhaDeContato } from '@shared/audit/contactAccessFromRequest';
 import {
   GetServiceTeamContactUseCase,
@@ -23,7 +24,7 @@ import { serviceTeamContactParamsSchema, serviceTeamContactBodySchema } from '..
  *
  * ⚠️ `note` (Notas) NUNCA entra em `reportError` nem em qualquer log — só ids e o nome do método.
  * `emitirTrilhaDeContato` sai quando o telefone SAIU de verdade (mesma régua do quadro C: só
- * quem teve `displayName` não-nulo, aqui equivalente a "o ator tinha worker_contact:read").
+ * quem teve nome REAL projetado (nem nulo nem `NOME_REDIGIDO`), aqui equivalente a "o ator tinha worker_contact:read").
  */
 export class AdminServiceTeamContactController {
   constructor(
@@ -82,9 +83,13 @@ export class AdminServiceTeamContactController {
     }
   }
 
-  /** Trilha de contato (C6) — quando o nome do prestador SAIU (`displayName` não-nulo). */
+  /**
+   * Trilha de contato (C6) — só quando o nome REAL do prestador saiu. Sem `worker_contact:read` o caso
+   * de uso devolve `NOME_REDIGIDO` (não-nulo), que NÃO é acesso a contato; mesmo critério de
+   * `workerDisplayNames.projectWorkerDisplayNames` (o redigido vale como "não saiu").
+   */
   private emitTrail(req: Request, result: ServiceTeamContactResult): void {
-    if (result.displayName !== null) {
+    if (result.displayName !== null && result.displayName !== NOME_REDIGIDO) {
       emitirTrilhaDeContato(req, [result.workerId]);
     }
   }
