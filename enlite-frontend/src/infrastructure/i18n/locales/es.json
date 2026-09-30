@@ -1319,7 +1319,8 @@
       "templateCatalog": "Plantillas",
       "templateDrafts": "Registrar mensaje",
       "catalogObjectives": "Objetivos específicos",
-      "catalogActivities": "Rutina y actividades"
+      "catalogActivities": "Rutina y actividades",
+      "aiPrompts": "Prompts de IA"
     },
     "dedup": {
       "title": "Centro de Duplicados",

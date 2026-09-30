@@ -1319,7 +1319,8 @@
       "templateCatalog": "Modelos",
       "templateDrafts": "Registrar mensagem",
       "catalogObjectives": "Objetivos específicos",
-      "catalogActivities": "Rotina e atividades"
+      "catalogActivities": "Rotina e atividades",
+      "aiPrompts": "Prompts de IA"
     },
     "dedup": {
       "title": "Central de Duplicatas",
