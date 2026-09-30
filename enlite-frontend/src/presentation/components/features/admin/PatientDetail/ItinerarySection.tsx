@@ -10,10 +10,12 @@ interface ItinerarySectionProps {
   service: PatientItineraryService;
   /** Código do serviço (o GET do itinerário não traz) — resolvido pela aba em `patient.contractedServices`. */
   serviceCode: string;
+  /** Endereço do serviço (D445.6: só entrada) — resolvido pela aba em `patient.addresses`. */
+  addressLabel: string;
   asOf: string;
   /** Erro da última ação NESTE serviço (a aba só passa o do serviço em que a ação foi feita). */
   actionError: ItineraryActionError | null;
-  onAssign: (slotId: string) => void;
+  onEditSlot: (slotId: string) => void;
 }
 
 /** 0 = domingo … 6 = sábado — a ordem do nó (Domingo → Sábado). */
@@ -26,7 +28,7 @@ const WEEKDAYS = [0, 1, 2, 3, 4, 5, 6];
  * `minGapMinutes`, a folga — o número vem sempre da API) e os 7 cards de dia. Só desenha: o estado
  * mora na aba.
  */
-export function ItinerarySection({ service, serviceCode, asOf, actionError, onAssign }: ItinerarySectionProps): JSX.Element {
+export function ItinerarySection({ service, serviceCode, addressLabel, asOf, actionError, onEditSlot }: ItinerarySectionProps): JSX.Element {
   const { t, i18n } = useTranslation();
   const ti = (key: string, opts?: Record<string, unknown>) => t(`admin.patients.detail.itinerary.${key}`, opts);
   const serviceId = service.contractedServiceId;
@@ -63,7 +65,8 @@ export function ItinerarySection({ service, serviceCode, asOf, actionError, onAs
             weekday={weekday}
             slots={service.slots.filter((slot) => slot.weekday === weekday)}
             asOf={asOf}
-            onAssign={onAssign}
+            addressLabel={addressLabel}
+            onEditSlot={onEditSlot}
           />
         ))}
       </div>

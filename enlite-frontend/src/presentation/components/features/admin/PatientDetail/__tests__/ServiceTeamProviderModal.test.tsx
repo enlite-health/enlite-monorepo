@@ -7,7 +7,7 @@
  * (sem X).
  */
 import { describe, it, expect, beforeAll, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import esJson from '@infrastructure/i18n/locales/es.json';
@@ -227,21 +227,51 @@ describe('ServiceTeamProviderModal', () => {
     expect(screen.queryByTestId('service-team-provider-modal-history-empty')).not.toBeInTheDocument();
   });
 
-  it('fechar: onClose chamado ao clicar no overlay (sem X — o Figma não tem)', () => {
-    mockHook({ status: 'ok', contact: { workerId: 'w-1', displayName: 'Marcel', history: [] } });
-    const { onClose } = renderModal();
+  it('fechar: onClose chamado ao clicar no overlay, após a animação de 300 ms (sem X — o Figma não tem)', () => {
+    vi.useFakeTimers();
+    try {
+      mockHook({ status: 'ok', contact: { workerId: 'w-1', displayName: 'Marcel', history: [] } });
+      const { onClose } = renderModal();
 
-    expect(screen.queryByTestId('service-team-provider-modal-close')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('service-team-provider-modal-backdrop'));
-    expect(onClose).toHaveBeenCalledTimes(1);
+      expect(screen.queryByTestId('service-team-provider-modal-close')).not.toBeInTheDocument();
+      fireEvent.click(screen.getByTestId('service-team-provider-modal-backdrop'));
+      act(() => { vi.advanceTimersByTime(300); });
+      expect(onClose).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
-  it('fechar: onClose chamado ao apertar Esc', () => {
-    mockHook({ status: 'ok', contact: { workerId: 'w-1', displayName: 'Marcel', history: [] } });
-    const { onClose } = renderModal();
+  it('fechar: onClose chamado ao apertar Esc, após a animação de 300 ms', () => {
+    vi.useFakeTimers();
+    try {
+      mockHook({ status: 'ok', contact: { workerId: 'w-1', displayName: 'Marcel', history: [] } });
+      const { onClose } = renderModal();
 
-    fireEvent.keyDown(window, { key: 'Escape' });
-    expect(onClose).toHaveBeenCalledTimes(1);
+      fireEvent.keyDown(window, { key: 'Escape' });
+      act(() => { vi.advanceTimersByTime(300); });
+      expect(onClose).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('Esc no painel do Encuadre (casca única): NÃO fecha antes da animação e fecha UMA vez só depois dela', () => {
+    vi.useFakeTimers();
+    try {
+      mockHook({ status: 'ok', contact: { workerId: 'w-1', displayName: 'Marcel', history: [] } });
+      const { onClose } = renderModal();
+
+      fireEvent.keyDown(window, { key: 'Escape' });
+      act(() => { vi.advanceTimersByTime(299); });
+      expect(onClose).not.toHaveBeenCalled();
+      act(() => { vi.advanceTimersByTime(1); });
+      expect(onClose).toHaveBeenCalledTimes(1);
+      act(() => { vi.advanceTimersByTime(1000); });
+      expect(onClose).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('painel lateral: âncora à direita, altura cheia, cantos arredondados só à esquerda (molde do drawer de detalhe)', () => {

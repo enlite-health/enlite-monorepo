@@ -114,7 +114,7 @@ describe('buildServiceTeamResult', () => {
       ['w-inservice', 'InService'],
       ['w-rejected', 'Rejected'],
     ]);
-    const result = buildServiceTeamResult({ serviceId: 's-1', liveVacancyId: 'v-live' }, teamDerivado(), displayNameByWorkerId);
+    const result = buildServiceTeamResult({ serviceId: 's-1', liveVacancyId: 'v-live', candidacies: [] }, teamDerivado(), displayNameByWorkerId);
 
     expect(result.serviceId).toBe('s-1');
     expect(result.vacancyId).toBe('v-live');
@@ -125,12 +125,39 @@ describe('buildServiceTeamResult', () => {
   });
 
   it('workerId ausente no mapa de nomes → displayName null (`?? null`, nunca undefined)', () => {
-    const result = buildServiceTeamResult({ serviceId: 's-1', liveVacancyId: null }, teamDerivado(), new Map());
+    const result = buildServiceTeamResult({ serviceId: 's-1', liveVacancyId: null, candidacies: [] }, teamDerivado(), new Map());
     expect(result.selected[0].displayName).toBeNull();
     expect(result.inService[0].displayName).toBeNull();
     expect(result.rejected[0].displayName).toBeNull();
     expect(result.vacancyId).toBeNull();
     expect(result.rejected[0].vacancyId).toBeNull();
+  });
+
+  it('D445 (rodada 2): occupation de `row.candidacies` entra em `selected`, SEM KMS (coluna plana, sem célula)', () => {
+    const displayNameByWorkerId = new Map<string, string | null>([['w-selected', 'Selected']]);
+    const row = {
+      serviceId: 's-1',
+      liveVacancyId: 'v-live',
+      candidacies: [{ workerId: 'w-selected', vacancyId: 'v-live', stage: 'QUICK_RESPONSE_TEAM', firstNameEncrypted: null, lastNameEncrypted: null, occupation: 'CAREGIVER' }],
+    };
+    const result = buildServiceTeamResult(row, teamDerivado(), displayNameByWorkerId);
+    expect(result.selected[0].occupation).toBe('CAREGIVER');
+  });
+
+  it('D445 (rodada 2): worker sem occupation cadastrada → `occupation: null`, nunca `undefined` na chave', () => {
+    const row = {
+      serviceId: 's-1',
+      liveVacancyId: 'v-live',
+      candidacies: [{ workerId: 'w-selected', vacancyId: 'v-live', stage: 'QUICK_RESPONSE_TEAM', firstNameEncrypted: null, lastNameEncrypted: null, occupation: null }],
+    };
+    const result = buildServiceTeamResult(row, teamDerivado(), new Map());
+    expect(result.selected[0].occupation).toBeNull();
+    expect('occupation' in result.selected[0]).toBe(true);
+  });
+
+  it('D445 (rodada 2): candidacies vazio (dublê antigo) → `selected` sai SEM a chave occupation', () => {
+    const result = buildServiceTeamResult({ serviceId: 's-1', liveVacancyId: 'v-live', candidacies: [] }, teamDerivado(), new Map());
+    expect('occupation' in result.selected[0]).toBe(false);
   });
 });
 

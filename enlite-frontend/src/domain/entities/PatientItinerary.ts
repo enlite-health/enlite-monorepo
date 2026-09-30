@@ -84,3 +84,33 @@ export function isVigenteAt(assignment: PatientItineraryAssignment, asOf: string
 export function coverageHoursPair(cobertas: number, weekly: number | null): string {
   return `${cobertas}/${weekly ?? '—'}`;
 }
+
+// ── "Próximos eventos/Substituição" (D445.3) — GET .../itinerary/events ─────────────────────
+
+export type ItineraryEventStatus = 'covered' | 'substituted' | 'uncovered';
+
+/** Uma ocorrência (faixa × data) — espelho do `PatientItineraryEventView` do backend (D445.3). */
+export interface PatientItineraryEvent {
+  date: string;
+  weekday: number;
+  serviceId: string;
+  slotId: string;
+  assignmentId: string;
+  startTime: string;
+  endTime: string;
+  titularWorkerId: string;
+  titularDisplayName: string | null;
+  status: ItineraryEventStatus;
+  workerId: string | null;
+  workerDisplayName: string | null;
+  substituteWorkerId: string | null;
+  substituteDisplayName: string | null;
+  absenceId: string | null;
+}
+
+export interface PatientItineraryEventsResult {
+  patientId: string;
+  from: string;
+  to: string;
+  events: PatientItineraryEvent[];
+}

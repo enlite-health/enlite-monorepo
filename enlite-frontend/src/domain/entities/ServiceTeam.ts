@@ -32,6 +32,13 @@ export interface ServiceTeamMember {
   reasonCategory?: string;
   allocations?: ServiceTeamAllocation[];
   substitutionDates?: string[];
+  /**
+   * D445 (rodada 2) — `workers.occupation`, coluna PLANA (sem KMS, sem célula de contato/PII: já
+   * sai no nível base `worker:read` de `projectWorkerFields.ts`). Só em `selected` (é o que
+   * "Preseleccionados" do modal de itinerário usa); mesmo vocabulário de `SERVICE_CODES` — o
+   * rótulo é `serviceTypes.<code>`, a MESMA chave i18n do quadro de serviços contratados.
+   */
+  occupation?: string | null;
 }
 
 /**

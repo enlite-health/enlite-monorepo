@@ -104,18 +104,18 @@ test.describe('itinerario-aba @integration', () => {
       await expect(slotAllocationsInDom(page, slotId)).toHaveCount(0);
 
       // Alocar pela TELA.
-      await page.getByTestId(`itinerario-slot-asignar-${slotId}`).click();
-      const modal = page.getByTestId('itinerario-alocar-modal');
+      await page.getByTestId(`itinerario-slot-editar-${slotId}`).click();
+      const modal = page.getByTestId('itinerario-editar-modal');
       await expect(modal).toBeVisible();
-      await modal.getByTestId('itinerario-alocar-prestador').click();
-      const search = modal.getByRole('textbox');
+      await modal.getByTestId('itinerario-editar-prestador').click();
+      const search = modal.getByPlaceholder('Buscar...');
       await search.click();
       await page.keyboard.type(wLabel.slice(-10), { delay: 20 });
       await modal.getByRole('option', { name: wLabel }).click();
       const [itinAfterResp, postResp] = await Promise.all([
         page.waitForResponse((r) => r.request().method() === 'GET' && /\/itinerary(\?|$)/.test(r.url()) && r.status() === 200),
         page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith(`/slots/${slotId}/allocations`)),
-        modal.getByTestId('itinerario-alocar-confirmar').click(),
+        modal.getByTestId('itinerario-editar-guardar').click(),
       ]);
       expect(postResp.status()).toBe(201);
 
@@ -130,7 +130,9 @@ test.describe('itinerario-aba @integration', () => {
       await expect(par).toContainText(expectedPair(svcAfter.cobertas, svcAfter.contratadas.weekly));
       await expect(page.getByTestId(`itinerario-slot-prestador-${slotId}-${w}`)).toBeVisible();
       await expect(slotAllocationsInDom(page, slotId)).toHaveCount(1);
-      await expect(page.getByTestId(`itinerario-slot-asignar-${slotId}`)).toHaveCount(0);
+      // D445.3 (rodada 2): a faixa continua clicável mesmo coberta — "Editar agendamiento" também
+      // serve para TROCAR quem cobre, não só para alocar; o testid NÃO some mais (molde antigo).
+      await expect(page.getByTestId(`itinerario-slot-editar-${slotId}`)).toBeVisible();
       const domCount = await countSlotAllocationsInDom(page, slotId);
       console.log('[12.1]', postResp.status(), itinAfterResp.status(), svcBefore.cobertas, svcAfter.cobertas, svcAfter.contratadas.weekly, vigentes.length, domCount);
       console.log('[12.10]', await tabButtons.count(), 5);
@@ -261,13 +263,14 @@ test.describe('itinerario-aba @integration', () => {
 
       await loginAs(page, STAFF);
       await openItineraryTab(page, seed.patientId);
-      await page.getByTestId(`itinerario-slot-asignar-${slotId}`).click();
-      const modal = page.getByTestId('itinerario-alocar-modal');
+      await page.getByTestId(`itinerario-slot-editar-${slotId}`).click();
+      const modal = page.getByTestId('itinerario-editar-modal');
       await expect(modal).toBeVisible();
-      await modal.getByTestId('itinerario-alocar-prestador').click();
+      await modal.getByTestId('itinerario-editar-prestador').click();
 
       // O `SearchableSelect` abre com 1 linha de valor vazio (o placeholder) antes das opções.
-      const listed = modal.getByRole('option');
+      // A lista do SearchableSelect (o `<select>` desabilitado de "Día de la semana" também tem `option`).
+      const listed = modal.getByRole('listbox').getByRole('option');
       await expect(listed).toHaveCount(n + 1);
       await expect(listed.nth(0)).toHaveAttribute('aria-selected', 'true');
       await expect(modal.getByRole('option', { name: w1Label })).toHaveCount(1);
@@ -317,16 +320,16 @@ test.describe('itinerario-aba @integration', () => {
       await expect(slotAllocationsInDom(page, slot1)).toHaveCount(0);
       const domBefore = await countSlotAllocationsInDom(page, slot1);
 
-      await page.getByTestId(`itinerario-slot-asignar-${slot1}`).click();
-      const modal = page.getByTestId('itinerario-alocar-modal');
+      await page.getByTestId(`itinerario-slot-editar-${slot1}`).click();
+      const modal = page.getByTestId('itinerario-editar-modal');
       await expect(modal).toBeVisible();
-      await modal.getByTestId('itinerario-alocar-prestador').click();
-      await modal.getByRole('textbox').click();
+      await modal.getByTestId('itinerario-editar-prestador').click();
+      await modal.getByPlaceholder('Buscar...').click();
       await page.keyboard.type(wLabel.slice(-10), { delay: 20 });
       await modal.getByRole('option', { name: wLabel }).click();
       const [postResp] = await Promise.all([
         page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith(`/slots/${slot1}/allocations`)),
-        modal.getByTestId('itinerario-alocar-confirmar').click(),
+        modal.getByTestId('itinerario-editar-guardar').click(),
       ]);
       expect(postResp.status()).toBe(409);
       const body = (await postResp.json()) as OverlapBody;
@@ -343,7 +346,7 @@ test.describe('itinerario-aba @integration', () => {
 
       // Nada nasceu: o DOM do slot continua vazio e W só tem a alocação do 2º paciente.
       await expect(slotAllocationsInDom(page, slot1)).toHaveCount(0);
-      await expect(page.getByTestId(`itinerario-slot-asignar-${slot1}`)).toBeVisible();
+      await expect(page.getByTestId(`itinerario-slot-editar-${slot1}`)).toBeVisible();
       const domAfter = await countSlotAllocationsInDom(page, slot1);
       const activeOfW = countActiveAllocations(w);
       expect(activeOfW).toBe(1);

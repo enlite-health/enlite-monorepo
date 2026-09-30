@@ -125,6 +125,19 @@ describe('ItineraryAllocationWriter', () => {
     expect(rowCount).toBe(0);
   });
 
+  it('scheduleAllocationEnd: define SÓ o valid_to (inclusivo) e NUNCA muda o status — segue ACTIVE, vigente até o último dia', async () => {
+    const client = clientStub({ rows: [], rowCount: 1 });
+
+    const rowCount = await writer.scheduleAllocationEnd(client as never, 'alloc-1', '2026-09-29', 'staff:u-1');
+
+    const [sql, params] = client.query.mock.calls[0];
+    expect(String(sql)).toMatch(/valid_to = GREATEST\(valid_from, \$2::date\)/);
+    expect(String(sql)).not.toMatch(/SET[^W]*status\s*=/i);
+    expect(String(sql)).toMatch(/WHERE id = \$1 AND status = 'ACTIVE'/);
+    expect(params).toEqual(['alloc-1', '2026-09-29', 'staff:u-1']);
+    expect(rowCount).toBe(1);
+  });
+
   it('nenhuma SQL nomeia a tabela do paciente, o cadastro do legado ou o card antigo; só patient_itinerary_assignment (≥ 2×)', async () => {
     const client = clientStub({ rows: [{ id: 'x', active: true, address_id: null, valid_from: '2026-09-28', status: 'ACTIVE' }], rowCount: 1 });
 

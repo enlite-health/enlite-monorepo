@@ -106,7 +106,7 @@ test.describe('itinerario-aba-sem-celula sob engine ligado @integration', () => 
         page.getByTestId('patient-profile-tabs').getByRole('button', { name: ITINERARY_TAB_LABEL }),
       ).toBeVisible();
       await expect(page.getByTestId(`itinerario-slot-horario-${slotId}`)).toBeVisible();
-      const semActions = page.getByTestId(/^itinerario-slot-asignar-/);
+      const semActions = page.getByTestId(/^itinerario-slot-editar-/);
       await expect(semActions).toHaveCount(0);
       const semCount = await semActions.count();
 
@@ -117,7 +117,7 @@ test.describe('itinerario-aba-sem-celula sob engine ligado @integration', () => 
         await loginAs(pageCom, STAFF_COM);
         await openItineraryTab(pageCom, patientId);
         await expect(pageCom.getByTestId(`itinerario-slot-horario-${slotId}`)).toBeVisible();
-        const comActions = pageCom.getByTestId(/^itinerario-slot-asignar-/);
+        const comActions = pageCom.getByTestId(/^itinerario-slot-editar-/);
         await expect(comActions).toHaveCount(1);
         const comCount = await comActions.count();
         console.log('[12.6]', semCount, comCount, com.elapsedMs >= 0, sem.elapsedMs >= 0);

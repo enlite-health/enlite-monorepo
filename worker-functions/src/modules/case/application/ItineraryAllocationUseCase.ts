@@ -33,6 +33,7 @@ import {
 import { deriveServiceTeamFromRows } from './serviceTeamPresentation';
 import { canAllocate } from '../domain/itineraryAllocationGate';
 import { fromPgError, type PgOverlapLikeError } from '../domain/itineraryOverlap';
+import { addDaysToDateString } from '../domain/itineraryEvents';
 import { ServiceWithoutAddressError, SlotInactiveError, SlotNotFoundError } from './ItinerarySlotWriteUseCase';
 
 /** Nem Selecionado (C), nem Em Atendimento+candidato no mesmo slot (o gate `canAllocate`, DX-11.6). */
@@ -88,6 +89,8 @@ export interface ItineraryAllocationWriterPort {
   insertAllocation(client: PoolClient, input: InsertAllocationInput): Promise<InsertedAllocation>;
   findAllocation(client: PoolClient, patientId: string, serviceId: string, allocationId: string): Promise<AllocationRow | null>;
   endAllocation(client: PoolClient, id: string, today: string, actorUid: string): Promise<number>;
+  /** D445.5: agenda o FIM (`valid_to`) sem mudar o `status` — a alocação segue `ACTIVE`, vigente até o último dia. */
+  scheduleAllocationEnd(client: PoolClient, id: string, lastDay: string, actorUid: string): Promise<number>;
 }
 
 type TransactionRunner = <T>(fn: (client: PoolClient) => Promise<T>) => Promise<T>;
@@ -122,6 +125,39 @@ export interface ItineraryEndResult {
   allocationId: string;
   status: 'ENDED';
   validTo: string;
+}
+
+// ── D445.5 — reemplazo permanente ──────────────────────────────────────────────────────────
+
+export interface ItineraryReplaceInput {
+  patientId: string;
+  serviceId: string;
+  allocationId: string;
+  newWorkerId: string;
+  /** `YYYY-MM-DD` — a alocação antiga encerra em D-1, a nova começa em D. */
+  fromDate: string;
+  actorUid: string;
+  now?: Date;
+}
+
+export interface ItineraryReplaceResult {
+  endedAllocationId: string;
+  endedValidTo: string;
+  newAllocationId: string;
+  newWorkerId: string;
+  validFrom: string;
+  status: 'ACTIVE';
+}
+
+/** A data de início do reemplazo é anterior a hoje (data de operação do país) — a passada é sempre recusada. */
+export class ReplacementDateInPastError extends Error {
+  constructor(
+    readonly allocationId: string,
+    readonly fromDate: string,
+  ) {
+    super(`Replacement fromDate is in the past: ${fromDate} (allocationId=${allocationId})`);
+    this.name = 'ReplacementDateInPastError';
+  }
 }
 
 /** O 23505 que é a corrida do índice `uq_pia_open_pair` — e só ele (molde `isActiveRejectionConflict`). */
@@ -198,6 +234,69 @@ export class ItineraryAllocationUseCase {
       await this.derivation.run(client, patientId, now);
 
       return { allocationId: allocation.id, status: 'ENDED' as const, validTo: today };
+    });
+  }
+
+  /**
+   * D445.5 — "reemplazo permanente": na MESMA transação, encerra a alocação do titular em D-1 e
+   * cria a nova a partir de D, no MESMO slot. Reusa os writers de `end`/`allocate` — nenhuma SQL
+   * nova. O gate de Selecionado (C) e o gatilho de conflito/sobreposição do banco continuam
+   * valendo para o `newWorkerId` (a nova alocação passa pelo MESMO `insertAllocation` que
+   * `allocate` usa); um 409/422 na 2ª perna desfaz a 1ª (rollback da transação inteira —
+   * `inPatientTransaction`/`withActorContext`).
+   */
+  async replace(input: ItineraryReplaceInput): Promise<ItineraryReplaceResult> {
+    const { patientId, serviceId, allocationId, newWorkerId, fromDate, actorUid, now = new Date() } = input;
+    return this.runInTransaction(async (client) => {
+      const allocation = await this.writer.findAllocation(client, patientId, serviceId, allocationId);
+      if (allocation === null) throw new AllocationNotFoundError(patientId, serviceId, allocationId);
+      if (allocation.status !== 'ACTIVE') throw new AllocationNotActiveError(allocationId);
+      if (allocation.slotId === undefined) throw new AllocationNotFoundError(patientId, serviceId, allocationId);
+
+      const row = await this.reader.readWith(client, patientId, serviceId);
+      if (row === null) throw new AllocationNotFoundError(patientId, serviceId, allocationId);
+
+      const today = operationDateOf(row.country, now);
+      if (fromDate < today) throw new ReplacementDateInPastError(allocationId, fromDate);
+
+      const team = deriveServiceTeamFromRows(row, now);
+      const candidacyIds = new Set(row.candidacies.map((c) => c.workerId));
+      if (!canAllocate(team, candidacyIds, newWorkerId)) throw new NotSelectedForServiceError(patientId, serviceId, newWorkerId);
+      if (row.liveVacancyId === null) throw new NotSelectedForServiceError(patientId, serviceId, newWorkerId);
+      const applicationId = await this.writer.findApplicationId(client, newWorkerId, row.liveVacancyId);
+      if (applicationId === null) throw new NotSelectedForServiceError(patientId, serviceId, newWorkerId);
+
+      // (i) agenda o fim do titular em D-1 (`GREATEST(valid_from, D-1)`, nunca antes do início).
+      // NÃO usa `endAllocation`: aquele grava `status='ENDED'`, e toda leitura de vigência
+      // (`isVigenteAt`, horas cobertas, estado do paciente, eventos, conflito 482/484) exige
+      // `ACTIVE` — com `ENDED` + `valid_to` FUTURO o titular sairia HOJE. O titular fica `ACTIVE`
+      // com `valid_to = D-1`: trabalha até D-1, e o novo entra em D.
+      const dMinus1 = addDaysToDateString(fromDate, -1);
+      const endRowCount = await this.writer.scheduleAllocationEnd(client, allocation.id, dMinus1, actorUid);
+      if (endRowCount === 0) throw new AllocationNotActiveError(allocationId);
+
+      // (ii) cria a nova a partir de D, no MESMO slot — a 482/484 já libera porque o titular
+      // encerrou ANTES de D (sem sobreposição consigo mesmo).
+      let inserted: InsertedAllocation;
+      try {
+        inserted = await this.writer.insertAllocation(client, { slotId: allocation.slotId, workerId: newWorkerId, applicationId, validFrom: fromDate, actorUid });
+      } catch (err) {
+        const overlap = fromPgError(err as PgOverlapLikeError);
+        if (overlap !== null) throw overlap;
+        if (isOpenPairConflict(err)) throw new AlreadyAllocatedInSlotError(allocation.slotId, newWorkerId);
+        throw err;
+      }
+
+      await this.derivation.run(client, patientId, now);
+
+      return {
+        endedAllocationId: allocation.id,
+        endedValidTo: dMinus1,
+        newAllocationId: inserted.id,
+        newWorkerId,
+        validFrom: inserted.validFrom,
+        status: 'ACTIVE' as const,
+      };
     });
   }
 }

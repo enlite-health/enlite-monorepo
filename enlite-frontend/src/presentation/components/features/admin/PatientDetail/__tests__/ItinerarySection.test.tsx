@@ -45,11 +45,19 @@ function overlapOf(minGapMinutes: number | null): ItineraryOverlapDetail {
 }
 
 function renderSection(props: Partial<Parameters<typeof ItinerarySection>[0]> = {}) {
-  const onAssign = vi.fn();
+  const onEditSlot = vi.fn();
   const utils = render(
-    <ItinerarySection service={SERVICE} serviceCode="AT" asOf={ASOF} actionError={null} onAssign={onAssign} {...props} />,
+    <ItinerarySection
+      service={SERVICE}
+      serviceCode="AT"
+      addressLabel="Rua Augusta, 975"
+      asOf={ASOF}
+      actionError={null}
+      onEditSlot={onEditSlot}
+      {...props}
+    />,
   );
-  return { ...utils, onAssign };
+  return { ...utils, onEditSlot };
 }
 
 describe('ItinerarySection — a agenda de um serviço', () => {
@@ -80,10 +88,10 @@ describe('ItinerarySection — a agenda de um serviço', () => {
     expect(screen.getByTestId('itinerario-servico-par-svc-1')).toHaveTextContent('Horas cubiertas/contratadas: 4/—');
   });
 
-  it('clicar "Asignar" num dia repassa o slotId', () => {
-    const { onAssign } = renderSection();
-    fireEvent.click(screen.getByTestId('itinerario-slot-asignar-slot-wed'));
-    expect(onAssign).toHaveBeenCalledWith('slot-wed');
+  it('clicar numa faixa repassa o slotId (D445.3: a linha inteira abre "Editar agendamiento")', () => {
+    const { onEditSlot } = renderSection();
+    fireEvent.click(screen.getByTestId('itinerario-slot-editar-slot-wed'));
+    expect(onEditSlot).toHaveBeenCalledWith('slot-wed');
   });
 
   it('409 com folga → os 2 horários e a folga com o número VINDO do erro', () => {

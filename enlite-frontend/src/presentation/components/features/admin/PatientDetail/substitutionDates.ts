@@ -31,6 +31,20 @@ export function formatDDMM(dateIso: string): string {
 }
 
 /**
+ * `YYYY-MM-DD` + N dias — espelho do `addDaysToDateString` do backend
+ * (`worker-functions/.../domain/itineraryEvents.ts`), só `Date.UTC` (D445.3: o default do filtro
+ * "Fin" do painel de eventos parte de `asOf`, nunca do relógio do navegador).
+ */
+export function addDaysToDate(dateIso: string, days: number): string {
+  const [year, month, day] = dateIso.split('-').map(Number);
+  const next = new Date(Date.UTC(year, month - 1, day + days));
+  const y = next.getUTCFullYear();
+  const m = String(next.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(next.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+/**
  * Referência UTC de um domingo (2023-01-01) para nomear o dia da semana sem criar chave de i18n
  * (`weekday` 0=domingo…6=sábado, a mesma convenção do `dayOfWeek`/`nextDatesOfWeekday`). Fonte
  * única (Fase 12, DX-12.12 (i)): o modal "Sustituir un día" e o itinerário importam daqui. Só o NOME do dia (`Intl`, locale do idioma ativo) — nunca a

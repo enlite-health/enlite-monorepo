@@ -7,6 +7,13 @@ import {
   PatientNotFoundForItineraryError,
   type PatientItineraryResult,
 } from '../../application/GetPatientItineraryUseCase';
+import {
+  GetPatientItineraryEventsUseCase,
+  PatientNotFoundForItineraryEventsError,
+  ItineraryEventsRangeInvalidError,
+  type PatientItineraryEventsResult,
+} from '../../application/GetPatientItineraryEventsUseCase';
+import { itineraryEventsQuerySchema } from '../validators/itinerarySchemas';
 
 const patientParamsSchema = z.object({ id: z.string().uuid() });
 
@@ -26,7 +33,10 @@ const patientParamsSchema = z.object({ id: z.string().uuid() });
  * régua do quadro C e das opções de alocação.
  */
 export class AdminPatientItineraryController {
-  constructor(private readonly useCase: GetPatientItineraryUseCase = new GetPatientItineraryUseCase()) {}
+  constructor(
+    private readonly useCase: GetPatientItineraryUseCase = new GetPatientItineraryUseCase(),
+    private readonly eventsUseCase: GetPatientItineraryEventsUseCase = new GetPatientItineraryEventsUseCase(),
+  ) {}
 
   /** GET /api/admin/patients/:id/itinerary */
   async get(req: Request, res: Response): Promise<void> {
@@ -48,6 +58,49 @@ export class AdminPatientItineraryController {
       reportError(e, { source: 'AdminPatientItineraryController:get', patientId: params.data.id });
       res.status(500).json({ success: false, error: 'Failed to get patient itinerary' });
     }
+  }
+
+  /** GET /api/admin/patients/:id/itinerary/events?from&to&serviceId&workerId (D445.3). */
+  async events(req: Request, res: Response): Promise<void> {
+    const params = patientParamsSchema.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ success: false, error: 'Invalid params' });
+      return;
+    }
+    const query = itineraryEventsQuerySchema.safeParse(req.query);
+    if (!query.success) {
+      res.status(400).json({ success: false, error: 'Invalid query' });
+      return;
+    }
+    const { id: patientId } = params.data;
+    try {
+      const data = await this.eventsUseCase.execute({ patientId, ...query.data, cells: req.permissionCells ?? null });
+      emitirTrilhaDeContato(req, this.namedEventWorkerIds(data));
+      res.status(200).json({ success: true, data });
+    } catch (err: unknown) {
+      if (err instanceof PatientNotFoundForItineraryEventsError) {
+        res.status(404).json({ success: false, code: 'NOT_FOUND' });
+        return;
+      }
+      if (err instanceof ItineraryEventsRangeInvalidError) {
+        res.status(400).json({ success: false, code: 'ITINERARY_EVENTS_RANGE_INVALID' });
+        return;
+      }
+      const e = err instanceof Error ? err : new Error(String(err));
+      reportError(e, { source: 'AdminPatientItineraryController:events', patientId });
+      res.status(500).json({ success: false, error: 'Failed to get patient itinerary events' });
+    }
+  }
+
+  /** Os `workerId` distintos com nome NÃO-nulo (titular ou substituto) — só esses entram na trilha. */
+  private namedEventWorkerIds(data: PatientItineraryEventsResult): string[] {
+    const ids = data.events.flatMap((event) => {
+      const list: string[] = [];
+      if (event.titularDisplayName !== null) list.push(event.titularWorkerId);
+      if (event.substituteDisplayName !== null && event.substituteWorkerId) list.push(event.substituteWorkerId);
+      return list;
+    });
+    return [...new Set(ids)];
   }
 
   /** Os `workerId` distintos das alocações cujo `displayName` saiu NÃO-nulo — só esses entram na trilha. */

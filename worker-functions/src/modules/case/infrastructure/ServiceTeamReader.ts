@@ -34,6 +34,12 @@ export interface ServiceTeamCandidacyRow {
   stage: string;
   firstNameEncrypted: string | null;
   lastNameEncrypted: string | null;
+  /**
+   * `workers.occupation` — coluna plana, sem KMS (D445, rodada 2). OPCIONAL pelo MESMO motivo de
+   * `allocationId`/`weekday` em `ServiceTeamAssignmentRow` acima (DX-13.5): os dublês/fixtures dos
+   * testes vivos de outras fases seguem compilando sem tocar neste passo.
+   */
+  occupation?: string | null;
 }
 
 export interface ServiceTeamAssignmentRow {
@@ -91,6 +97,7 @@ interface CandJson {
   stage: string;
   first_name_encrypted: string | null;
   last_name_encrypted: string | null;
+  occupation: string | null;
 }
 
 interface AllocJson {
@@ -150,7 +157,7 @@ export class ServiceTeamReader {
          ${liveVacancySelect('jp.contracted_service_id = $2')}
        ), cand AS (
          SELECT wja.worker_id, wja.job_posting_id AS vacancy_id, wja.application_funnel_stage AS stage,
-                w.first_name_encrypted, w.last_name_encrypted
+                w.first_name_encrypted, w.last_name_encrypted, w.occupation
            FROM worker_job_applications wja JOIN live ON live.id = wja.job_posting_id JOIN workers w ON w.id = wja.worker_id
           WHERE wja.application_funnel_stage = $3 AND ${excludeDisabledWorkersSql('w')}
        ), alloc AS (
@@ -198,6 +205,7 @@ export class ServiceTeamReader {
         stage: c.stage,
         firstNameEncrypted: c.first_name_encrypted,
         lastNameEncrypted: c.last_name_encrypted,
+        occupation: c.occupation,
       })),
       assignments: row.assignments.map((a) => ({
         workerId: a.worker_id,
