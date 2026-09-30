@@ -30,7 +30,7 @@ vi.mock('../components/features/admin/AdminProtectedRoute', () => ({
   AdminProtectedRoute: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
-// ⚠️ O caminho tem de ser o que o `App.tsx` IMPORTA, não um parecido. Até 30/09/2026 este mock
+// ⚠️ O caminho tem de ser o que o `App.tsx` IMPORTA, não um parecido. Até 29/09/2026 este mock
 // apontava para `../components/features/admin/AdminLayout`, que NÃO EXISTE (o real é
 // `templates/AdminLayout/AdminLayout`). `vi.mock` de caminho inexistente não reclama: o mock
 // simplesmente não pega, o `AdminLayout` de verdade monta, `useAdminAuth` estoura

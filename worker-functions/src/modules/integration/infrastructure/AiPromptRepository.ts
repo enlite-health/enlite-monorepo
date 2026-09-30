@@ -1,5 +1,5 @@
 /**
- * AiPromptRepository — acesso a `ai_prompts` (migration 485, spec 029 T007).
+ * AiPromptRepository — acesso a `ai_prompts` (migration 487, spec 029 T007).
  *
  * Mesmo padrão dos vizinhos de `integration/infrastructure` (`PatientReadRepository`,
  * `AxonicoLancamentoRepository`): `pg` puro, sem ORM, getter lazy memoizado para o Pool
