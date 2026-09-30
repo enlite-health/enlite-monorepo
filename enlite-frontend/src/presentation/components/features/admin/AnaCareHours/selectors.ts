@@ -467,12 +467,22 @@ export interface AxonicoDayEligibility {
 const WHOLE_HOUR_EPSILON = 1e-6;
 
 /**
+ * Espelho EXATO do guard 0 do backend (`normalizeAndValidateDocumentNumber`,
+ * `worker-functions/src/modules/integration/domain/documentNumber.ts`): tira espaço, ponto e traço e
+ * exige 7 ou 8 dígitos. Ausente, vazio, 'null', 'undefined' e fora de 7/8 dígitos → inválido.
+ */
+export function isValidDocumentNumber(raw: string | null | undefined): boolean {
+  if (typeof raw !== 'string') return false;
+  return /^\d{7,8}$/.test(raw.trim().replace(/[\s.-]/g, ''));
+}
+
+/**
  * As 4 condições do envio ao Axonico (decisão do Gabriel, 19/09, ver brief da tarefa):
  *  1. todos os turnos do dia VALIDADOS;
  *  2. todos os turnos do dia com check-in E check-out (`hoursActual !== null`) — turno sem par
  *     vale 0 h no total exibido (D344), então mandar o dia faturaria menos do que foi trabalhado;
  *  3. o total do dia é hora CHEIA (inteiro) — nunca arredondar;
- *  4. `documentNumber` do paciente presente.
+ *  4. `documentNumber` do paciente presente E válido (`isValidDocumentNumber`).
  * Único dono do cálculo — `DayGroup` só lê `eligible`/`reasons` e formata. Independente de
  * `dayHoursSummary` (que serve o cabeçalho) porque as regras de elegibilidade do envio são mais
  * estritas: turno sem check-in aqui BLOQUEIA (`missingCheckInOut`), não só zera o total.
@@ -487,7 +497,7 @@ export function axonicoDayEligibility(
   if (!shifts.every((s) => s.hoursActual !== null)) reasons.push('missingCheckInOut');
   const total = totalHours(shifts, sinCheckinHoursMode);
   if (Math.abs(total - Math.round(total)) >= WHOLE_HOUR_EPSILON) reasons.push('fractionalHours');
-  if (!documentNumber) reasons.push('missingDocument');
+  if (!isValidDocumentNumber(documentNumber)) reasons.push('missingDocument');
   return { eligible: reasons.length === 0, reasons };
 }
 
