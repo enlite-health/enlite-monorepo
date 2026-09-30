@@ -82,7 +82,7 @@ describe('AiPromptController', () => {
       await ctrl({ list }).list(mockReq({ permissionCells: ['ai_prompt:read'] }), res);
 
       expect(res.status).toHaveBeenCalledWith(200);
-      expect(corpoDaResposta(res)).toEqual({ data: [PROMPT_NO_FORMATO_DO_CONTRATO] });
+      expect(corpoDaResposta(res)).toEqual({ success: true, data: [PROMPT_NO_FORMATO_DO_CONTRATO] });
     });
 
     it('cells = null (D113, engine não decidiu) libera a listagem', async () => {
@@ -143,7 +143,7 @@ describe('AiPromptController', () => {
 
       expect(execute).toHaveBeenCalledWith('VACANCY_DESCRIPTION');
       expect(res.status).toHaveBeenCalledWith(200);
-      expect(corpoDaResposta(res)).toEqual({ data: PROMPT_NO_FORMATO_DO_CONTRATO });
+      expect(corpoDaResposta(res)).toEqual({ success: true, data: PROMPT_NO_FORMATO_DO_CONTRATO });
     });
 
     it('404: slug desconhecido ou sem linha — o use case colapsa os dois em found:false', async () => {
@@ -233,6 +233,7 @@ describe('AiPromptController', () => {
       );
       expect(res.status).toHaveBeenCalledWith(200);
       expect(corpoDaResposta(res)).toEqual({
+        success: true,
         data: { slug: 'VACANCY_DESCRIPTION', body: 'Texto novo.', version: 8, updatedBy: 'uid-abc', updatedAt: PROMPT.updatedAt, isActive: true },
       });
     });
@@ -505,6 +506,7 @@ describe('AiPromptController', () => {
       );
       expect(res.status).toHaveBeenCalledWith(200);
       expect(corpoDaResposta(res)).toEqual({
+        success: true,
         data: {
           slug: 'VACANCY_DESCRIPTION',
           body: 'Texto antigo (o que volta a valer).',
