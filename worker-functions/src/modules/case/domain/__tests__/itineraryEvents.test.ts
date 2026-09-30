@@ -136,4 +136,21 @@ describe.each(['UTC', 'Asia/Tokyo'])('itineraryEvents (TZ=%s)', (tz) => {
     const events = expandItineraryEvents([late, early], [], '2026-09-27', '2026-09-27');
     expect(events.map((e) => e.startTime)).toEqual(['07:00', '18:00']);
   });
+
+  it('reemplazo permanente (D445.5): titular ACTIVE com valid_to=D-1 trabalha até D-1 e o novo entra em D — nenhuma data fica descoberta', () => {
+    const titular = assignment({ assignmentId: 'a-tit', workerId: 'w-titular', validTo: '2026-10-03' });
+    const novo = assignment({ assignmentId: 'a-novo', workerId: 'w-novo', validFrom: '2026-10-04' });
+    const events = expandItineraryEvents([titular, novo], [], '2026-09-27', '2026-10-11');
+    expect(events.map((e) => [e.date, e.workerId])).toEqual([
+      ['2026-09-27', 'w-titular'],
+      ['2026-10-04', 'w-novo'],
+      ['2026-10-11', 'w-novo'],
+    ]);
+  });
+
+  it('contraste: o mesmo titular gravado como ENDED (o defeito anterior) some de TODAS as datas, inclusive as anteriores a D', () => {
+    const titular = assignment({ assignmentId: 'a-tit', workerId: 'w-titular', validTo: '2026-10-03', status: 'ENDED' });
+    const events = expandItineraryEvents([titular], [], '2026-09-27', '2026-10-03');
+    expect(events).toHaveLength(0);
+  });
 });

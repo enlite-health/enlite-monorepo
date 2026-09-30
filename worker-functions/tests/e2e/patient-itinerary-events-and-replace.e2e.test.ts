@@ -233,6 +233,21 @@ describe('GET .../itinerary/events e POST .../allocations/:id/replace — API re
     expect(allocRes.status).toBe(201);
     const allocationId = allocRes.data.data.allocationId as string;
 
+    // Foto ANTES do reemplazo (hoje < D): agenda, horas cobertas e estado do paciente.
+    interface ItineraryView {
+      asOf: string;
+      services: { contractedServiceId: string; cobertas: number; slots: { id: string; assignments: { workerId: string; status: string; validFrom: string; validTo: string | null }[] }[] }[];
+    }
+    const snapshot = async () => {
+      const itin = await api.get(`/api/admin/patients/${patientId}/itinerary`, { headers: asAdmin.headers });
+      expect(itin.status).toBe(200);
+      const view = itin.data.data as ItineraryView;
+      const svc = view.services.find((x) => x.contractedServiceId === serviceId)!;
+      const status = (await pool.query<{ status: string }>(`SELECT status FROM patients WHERE id = $1`, [patientId])).rows[0].status;
+      return { view, svc, cobertas: svc.cobertas, status };
+    };
+    const antes = await snapshot();
+
     const novoTitular = workerIdOf('novoTitular');
     const replaceRes = await api.post(
       `/api/admin/patients/${patientId}/contracted-services/${serviceId}/itinerary/allocations/${allocationId}/replace`,
@@ -241,6 +256,23 @@ describe('GET .../itinerary/events e POST .../allocations/:id/replace — API re
     );
     expect(replaceRes.status).toBe(200);
     expect(replaceRes.data.data.newWorkerId).toBe(novoTitular);
+
+    // HOJE (< D) nada muda: o titular segue VIGENTE na agenda (ACTIVE, valid_to = D-1), as horas
+    // cobertas e o estado do paciente são os MESMOS de antes do reemplazo.
+    const depois = await snapshot();
+    const slotDepois = depois.svc.slots.find((sl) => sl.id === slot2)!;
+    const linhaTitular = slotDepois.assignments.find((a) => a.workerId === titular)!;
+    expect(linhaTitular.status).toBe('ACTIVE'); // NÃO 'ENDED' — o defeito anterior
+    const dMenos1 = new Date(Date.UTC(Number(secondMonday.slice(0, 4)), Number(secondMonday.slice(5, 7)) - 1, Number(secondMonday.slice(8, 10)) - 1)).toISOString().slice(0, 10);
+    expect(linhaTitular.validTo).toBe(dMenos1);
+    expect(linhaTitular.validFrom <= depois.view.asOf && depois.view.asOf <= linhaTitular.validTo!).toBe(true); // vigente HOJE
+    expect(depois.cobertas).toBe(antes.cobertas);
+    expect(depois.status).toBe(antes.status);
+    // e o novo entra na agenda como ACTIVE desde D (não vigente hoje).
+    const linhaNovo = slotDepois.assignments.find((a) => a.workerId === novoTitular)!;
+    expect(linhaNovo.status).toBe('ACTIVE');
+    expect(linhaNovo.validFrom).toBe(secondMonday);
+    expect(linhaNovo.validTo).toBeNull();
 
     // Antes de D (nextMonday): ainda o titular original.
     const beforeD = await api.get(`/api/admin/patients/${patientId}/itinerary/events?from=${nextMonday}&to=${nextMonday}`, {

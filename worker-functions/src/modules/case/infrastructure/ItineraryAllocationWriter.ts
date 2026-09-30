@@ -119,4 +119,19 @@ export class ItineraryAllocationWriter {
     );
     return res.rowCount ?? 0;
   }
+
+  /**
+   * Reemplazo permanente (D445.5): só define o `valid_to` (inclusivo — último dia trabalhado) e
+   * deixa o `status` em `ACTIVE`: para toda data <= `lastDay` a alocação continua vigente. Só bate
+   * `status = 'ACTIVE'`; `GREATEST(valid_from, …)` mantém `pia_valid_range`.
+   */
+  async scheduleAllocationEnd(client: PoolClient, id: string, lastDay: string, actorUid: string): Promise<number> {
+    const res = await client.query(
+      `UPDATE patient_itinerary_assignment
+          SET valid_to = GREATEST(valid_from, $2::date), updated_by = $3, updated_at = now()
+        WHERE id = $1 AND status = 'ACTIVE'`,
+      [id, lastDay, actorUid],
+    );
+    return res.rowCount ?? 0;
+  }
 }

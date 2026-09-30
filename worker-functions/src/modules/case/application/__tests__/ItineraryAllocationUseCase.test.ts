@@ -35,6 +35,7 @@ function writerStub(overrides: Partial<ItineraryAllocationWriterPort> = {}): Iti
     insertAllocation: jest.fn(),
     findAllocation: jest.fn(),
     endAllocation: jest.fn(),
+    scheduleAllocationEnd: jest.fn(),
     ...overrides,
   };
 }
@@ -429,7 +430,7 @@ describe('ItineraryAllocationUseCase.replace (D445.5 — reemplazo permanente)',
     const now = new Date('2026-10-15T15:00:00Z'); // depois do fromDate pedido (2026-09-30)
 
     await expect(useCase.replace({ ...REPLACE_INPUT, now })).rejects.toThrow(ReplacementDateInPastError);
-    expect(writer.endAllocation).not.toHaveBeenCalled();
+    expect(writer.scheduleAllocationEnd).not.toHaveBeenCalled();
   });
 
   it('novo prestador fora de Selecionado (C) → NotSelectedForServiceError, sem encerrar o titular', async () => {
@@ -438,14 +439,14 @@ describe('ItineraryAllocationUseCase.replace (D445.5 — reemplazo permanente)',
     const useCase = new ItineraryAllocationUseCase(reader, writer, runInTransactionStub(), semDerivacao);
 
     await expect(useCase.replace(REPLACE_INPUT)).rejects.toThrow(NotSelectedForServiceError);
-    expect(writer.endAllocation).not.toHaveBeenCalled();
+    expect(writer.scheduleAllocationEnd).not.toHaveBeenCalled();
   });
 
   it('feliz: encerra o titular em D-1 e cria o novo a partir de D, no MESMO slot, 1 só transação', async () => {
     const reader: ItineraryAllocationReaderPort = { readWith: jest.fn().mockResolvedValue(SELECTED_ROW) };
     const writer = writerStub({
       findAllocation: jest.fn().mockResolvedValue(ACTIVE_ALLOCATION_WITH_SLOT),
-      endAllocation: jest.fn().mockResolvedValue(1),
+      scheduleAllocationEnd: jest.fn().mockResolvedValue(1),
       findApplicationId: jest.fn().mockResolvedValue('wja-1'),
       insertAllocation: jest.fn().mockResolvedValue({ id: 'alloc-2', validFrom: '2026-09-30' }),
     });
@@ -457,7 +458,10 @@ describe('ItineraryAllocationUseCase.replace (D445.5 — reemplazo permanente)',
     const result = await useCase.replace({ ...REPLACE_INPUT, now });
 
     expect(runInTransaction).toHaveBeenCalledTimes(1); // 1 SÓ transação — a régua do teste feliz
-    expect(writer.endAllocation).toHaveBeenCalledWith(FAKE_CLIENT, 'alloc-1', '2026-09-29', 'u-1'); // D-1 de 2026-09-30
+    expect(writer.scheduleAllocationEnd).toHaveBeenCalledWith(FAKE_CLIENT, 'alloc-1', '2026-09-29', 'u-1'); // D-1 de 2026-09-30
+    // O titular NÃO é `ENDED`: `endAllocation` grava `status='ENDED'` e as leituras de vigência só contam `ACTIVE` —
+    // o titular sairia HOJE, antes de D. Ele fica `ACTIVE` com `valid_to = D-1`.
+    expect(writer.endAllocation).not.toHaveBeenCalled();
     expect(writer.insertAllocation).toHaveBeenCalledWith(FAKE_CLIENT, {
       slotId: 'slot-1',
       workerId: 'w-1',
@@ -475,7 +479,7 @@ describe('ItineraryAllocationUseCase.replace (D445.5 — reemplazo permanente)',
     });
     expect(derivation.run).toHaveBeenCalledTimes(1);
     // end ANTES de insert ANTES da derivação — a ordem da 1 transação.
-    expect((writer.endAllocation as jest.Mock).mock.invocationCallOrder[0]).toBeLessThan(
+    expect((writer.scheduleAllocationEnd as jest.Mock).mock.invocationCallOrder[0]).toBeLessThan(
       (writer.insertAllocation as jest.Mock).mock.invocationCallOrder[0],
     );
     expect((writer.insertAllocation as jest.Mock).mock.invocationCallOrder[0]).toBeLessThan(derivation.run.mock.invocationCallOrder[0]);
@@ -485,7 +489,7 @@ describe('ItineraryAllocationUseCase.replace (D445.5 — reemplazo permanente)',
     const reader: ItineraryAllocationReaderPort = { readWith: jest.fn().mockResolvedValue(SELECTED_ROW) };
     const writer = writerStub({
       findAllocation: jest.fn().mockResolvedValue(ACTIVE_ALLOCATION_WITH_SLOT),
-      endAllocation: jest.fn().mockResolvedValue(1),
+      scheduleAllocationEnd: jest.fn().mockResolvedValue(1),
       findApplicationId: jest.fn().mockResolvedValue('wja-1'),
       insertAllocation: jest.fn().mockRejectedValue(pgError('23P01', { message: 'itinerary_overlap', detail: '{}' })),
     });

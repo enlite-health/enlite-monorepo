@@ -89,6 +89,8 @@ export interface ItineraryAllocationWriterPort {
   insertAllocation(client: PoolClient, input: InsertAllocationInput): Promise<InsertedAllocation>;
   findAllocation(client: PoolClient, patientId: string, serviceId: string, allocationId: string): Promise<AllocationRow | null>;
   endAllocation(client: PoolClient, id: string, today: string, actorUid: string): Promise<number>;
+  /** D445.5: agenda o FIM (`valid_to`) sem mudar o `status` — a alocação segue `ACTIVE`, vigente até o último dia. */
+  scheduleAllocationEnd(client: PoolClient, id: string, lastDay: string, actorUid: string): Promise<number>;
 }
 
 type TransactionRunner = <T>(fn: (client: PoolClient) => Promise<T>) => Promise<T>;
@@ -264,10 +266,13 @@ export class ItineraryAllocationUseCase {
       const applicationId = await this.writer.findApplicationId(client, newWorkerId, row.liveVacancyId);
       if (applicationId === null) throw new NotSelectedForServiceError(patientId, serviceId, newWorkerId);
 
-      // (i) encerra o titular em D-1 (`GREATEST(valid_from, D-1)` — o `endAllocation` já garante
-      // que o fim nunca fica antes do início, molde `end` acima).
+      // (i) agenda o fim do titular em D-1 (`GREATEST(valid_from, D-1)`, nunca antes do início).
+      // NÃO usa `endAllocation`: aquele grava `status='ENDED'`, e toda leitura de vigência
+      // (`isVigenteAt`, horas cobertas, estado do paciente, eventos, conflito 482/484) exige
+      // `ACTIVE` — com `ENDED` + `valid_to` FUTURO o titular sairia HOJE. O titular fica `ACTIVE`
+      // com `valid_to = D-1`: trabalha até D-1, e o novo entra em D.
       const dMinus1 = addDaysToDateString(fromDate, -1);
-      const endRowCount = await this.writer.endAllocation(client, allocation.id, dMinus1, actorUid);
+      const endRowCount = await this.writer.scheduleAllocationEnd(client, allocation.id, dMinus1, actorUid);
       if (endRowCount === 0) throw new AllocationNotActiveError(allocationId);
 
       // (ii) cria a nova a partir de D, no MESMO slot — a 482/484 já libera porque o titular

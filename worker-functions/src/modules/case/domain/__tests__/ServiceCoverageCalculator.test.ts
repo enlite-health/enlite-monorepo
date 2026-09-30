@@ -36,6 +36,30 @@ const FATO06_WEEKEND_SLOTS: ServiceCoverageSlot[] = [6, 0].map((weekday) => ({
 const FATO06_SLOTS: ServiceCoverageSlot[] = [...FATO06_WEEKDAY_SLOTS, ...FATO06_WEEKEND_SLOTS];
 
 describe('computeServiceCoverage', () => {
+  it('reemplazo permanente: titular ACTIVE com validTo=D-1 + novo desde D — cobertas iguais antes de D, e depois de D o slot conta uma vez', () => {
+    const slots: ServiceCoverageSlot[] = [
+      {
+        weekday: 1,
+        startTime: '08:00',
+        endTime: '12:00',
+        active: true,
+        assignments: [
+          { validFrom: '2026-09-01', validTo: '2026-10-04', status: 'ACTIVE' },
+          { validFrom: '2026-10-05', validTo: null, status: 'ACTIVE' },
+        ],
+      },
+    ];
+    const cobertasAt = (asOf: string) => computeServiceCoverage({ contractedHours: { weekly: 20, authorized: null }, slots, asOf }).cobertas;
+    expect(cobertasAt('2026-09-29')).toBe(4); // antes de D: o titular cobre
+    expect(cobertasAt('2026-10-04')).toBe(4); // D-1: ainda o titular
+    expect(cobertasAt('2026-10-05')).toBe(4); // D: o novo cobre, o slot conta UMA vez
+    // contraste: o titular gravado como ENDED (defeito anterior) zerava HOJE
+    const ended: ServiceCoverageSlot[] = [
+      { ...slots[0], assignments: [{ validFrom: '2026-09-01', validTo: '2026-10-04', status: 'ENDED' }, slots[0].assignments[1]] },
+    ];
+    expect(computeServiceCoverage({ contractedHours: { weekly: 20, authorized: null }, slots: ended, asOf: '2026-09-29' }).cobertas).toBe(0);
+  });
+
   it('FATO-06: 120 contratadas / 60 cobertas', () => {
     const result = computeServiceCoverage({
       contractedHours: { weekly: 120, authorized: null },
