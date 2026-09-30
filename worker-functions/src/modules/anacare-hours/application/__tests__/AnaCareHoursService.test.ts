@@ -596,6 +596,63 @@ describe('AnaCareHoursService', () => {
         expect(patientDocuments.findByPatientId).not.toHaveBeenCalled();
       });
 
+      it.each(['null', '123', '12.345'])(
+        "fonte com documento INVÁLIDO ('%s') + registrado válido → usa o REGISTRADO (tipo e número)",
+        async (invalido) => {
+          const patientDocuments = mockPatientDocuments({ findByPatientId: jest.fn().mockResolvedValue(REGISTERED) });
+          const shiftInvalido: SourceShiftDTO = { ...SHIFT_A, patientDocumentType: 'OTRO', patientDocumentNumber: invalido };
+          const service = new AnaCareHoursService(
+            new StubSource([shiftInvalido]),
+            mockRepo(),
+            new KMSEncryptionService(),
+            undefined,
+            undefined,
+            patientDocuments,
+          );
+
+          const patient = await service.getPatientMonth('2026-09', 'AC-PAT-0', false, false, true);
+
+          expect(patient?.documentType).toBe('DNI');
+          expect(patient?.documentNumber).toBe('40111222');
+          expect(patientDocuments.findByPatientId).toHaveBeenCalledWith('AC-PAT-0');
+        },
+      );
+
+      it('fonte com documento INVÁLIDO e SEM registro → mantém o da fonte (nada a substituir, nunca quebra)', async () => {
+        const patientDocuments = mockPatientDocuments({ findByPatientId: jest.fn().mockResolvedValue(null) });
+        const shiftInvalido: SourceShiftDTO = { ...SHIFT_A, patientDocumentType: 'DNI', patientDocumentNumber: 'null' };
+        const service = new AnaCareHoursService(
+          new StubSource([shiftInvalido]),
+          mockRepo(),
+          new KMSEncryptionService(),
+          undefined,
+          undefined,
+          patientDocuments,
+        );
+
+        const patient = await service.getPatientMonth('2026-09', 'AC-PAT-0', false, false, true);
+
+        expect(patient?.documentNumber).toBe('null');
+      });
+
+      it('fonte com documento VÁLIDO formatado (30.999.888) + registrado → a fonte continua mandando', async () => {
+        const patientDocuments = mockPatientDocuments({ findByPatientId: jest.fn().mockResolvedValue(REGISTERED) });
+        const shiftFormatado: SourceShiftDTO = { ...SHIFT_A, patientDocumentNumber: '30.999.888' };
+        const service = new AnaCareHoursService(
+          new StubSource([shiftFormatado]),
+          mockRepo(),
+          new KMSEncryptionService(),
+          undefined,
+          undefined,
+          patientDocuments,
+        );
+
+        const patient = await service.getPatientMonth('2026-09', 'AC-PAT-0', false, false, true);
+
+        expect(patient?.documentNumber).toBe('30.999.888');
+        expect(patientDocuments.findByPatientId).not.toHaveBeenCalled();
+      });
+
       it('fonte SEM documento e SEM registro → documento ausente (undefined), nunca quebra', async () => {
         const patientDocuments = mockPatientDocuments({ findByPatientId: jest.fn().mockResolvedValue(null) });
         const service = new AnaCareHoursService(

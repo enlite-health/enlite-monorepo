@@ -432,6 +432,24 @@ describe('axonicoDayEligibility', () => {
     expect(result.reasons).toEqual(['missingDocument']);
   });
 
+  it.each(['null', '12.345', '123', '123456789', 'undefined', 'abc1234'])(
+    "NEGATIVO — motivo missingDocument quando documentNumber é INVÁLIDO ('%s'), espelho do guard 0 do backend",
+    (invalido) => {
+      const result = axonicoDayEligibility([validado({ id: 's1' })], invalido);
+      expect(result.eligible).toBe(false);
+      expect(result.reasons).toEqual(['missingDocument']);
+    },
+  );
+
+  it.each(['12.345.678', '30 111 222', '30-111-222', '1234567', '  30111222  '])(
+    "POSITIVO — documentNumber VÁLIDO ('%s') após normalizar (7/8 dígitos) não marca missingDocument",
+    (valido) => {
+      const result = axonicoDayEligibility([validado({ id: 's1' })], valido);
+      expect(result.reasons).not.toContain('missingDocument');
+      expect(result.eligible).toBe(true);
+    },
+  );
+
   it('NEGATIVO — mais de um motivo pode estar presente ao mesmo tempo (nunca só o primeiro)', () => {
     const result = axonicoDayEligibility([makeShift({ id: 's1', status: 'pendiente', hoursActual: null, actualStart: null, actualEnd: null })], undefined);
     expect(result.eligible).toBe(false);
