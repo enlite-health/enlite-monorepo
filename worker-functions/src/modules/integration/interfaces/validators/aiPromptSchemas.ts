@@ -58,3 +58,24 @@ export const previewAiPromptBodySchema = z
   })
   .strict();
 export type PreviewAiPromptBody = z.infer<typeof previewAiPromptBodySchema>;
+
+/**
+ * `POST /api/admin/ai-prompts/simulate-vacancy` — simula a criação de uma vacante com os prompts em
+ * edição (T071). Cada corpo é opcional (ausente = prompt salvo); se vier, não pode ser vazio.
+ * Slug desconhecido em `bodies` é 400 (`.strict()`).
+ */
+const simulateBodySchema = z.string().trim().min(1, { message: 'body must not be empty or whitespace' });
+export const simulateVacancyBodySchema = z
+  .object({
+    jobPostingId: z.string().uuid({ message: 'jobPostingId must be a UUID' }),
+    bodies: z
+      .object({
+        VACANCY_DESCRIPTION: simulateBodySchema.optional(),
+        PRESCREENING_AT: simulateBodySchema.optional(),
+        PRESCREENING_CAREGIVER: simulateBodySchema.optional(),
+      })
+      .strict()
+      .default({}),
+  })
+  .strict();
+export type SimulateVacancyBody = z.infer<typeof simulateVacancyBodySchema>;

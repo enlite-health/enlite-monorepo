@@ -158,27 +158,31 @@ describe('AiPromptEditor', () => {
     expect(items[0]).toHaveTextContent('primeiro');
   });
 
-  it('painel de simulação: ausente na leitura, presente ao editar e simula com o texto EM EDIÇÃO', async () => {
-    vi.mocked(AdminApiService.previewAiPrompt).mockResolvedValue({
-      jobPostingId: '11111111-1111-4111-8111-111111111111',
-      slug: 'VACANCY_DESCRIPTION',
-      generated: 'saída simulada',
-    });
+  it('não tem mais painel de simulação dentro da aba (o simulador vive fora das abas, na página)', async () => {
     render(<AiPromptEditor prompt={fakePrompt()} />);
-    expect(screen.queryByTestId('ai-prompt-preview-panel')).not.toBeInTheDocument();
     await editar();
-    fireEvent.change(screen.getByTestId('ai-prompt-editor-textarea'), { target: { value: 'texto novo não salvo' } });
-    fireEvent.change(await screen.findByTestId('ai-prompt-preview-case'), {
-      target: { value: '11111111-1111-4111-8111-111111111111' },
-    });
-    fireEvent.click(screen.getByTestId('ai-prompt-preview-run'));
-    expect(await screen.findByTestId('ai-prompt-preview-generated')).toHaveTextContent('saída simulada');
-    expect(AdminApiService.previewAiPrompt).toHaveBeenCalledWith(
-      'VACANCY_DESCRIPTION',
-      'texto novo não salvo',
-      '11111111-1111-4111-8111-111111111111',
-    );
+    expect(screen.queryByTestId('ai-prompt-preview-panel')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('ai-prompt-preview-run')).not.toBeInTheDocument();
+  });
+
+  it('onDraftChange devolve o texto em edição (rascunho não salvo), e o texto salvo ao cancelar', async () => {
+    const onDraftChange = vi.fn();
+    render(<AiPromptEditor prompt={fakePrompt()} onDraftChange={onDraftChange} />);
+    expect(onDraftChange).toHaveBeenLastCalledWith('VACANCY_DESCRIPTION', 'Texto original do prompt.');
+    await editar();
+    fireEvent.change(screen.getByTestId('ai-prompt-editor-textarea'), { target: { value: 'rascunho novo' } });
+    expect(onDraftChange).toHaveBeenLastCalledWith('VACANCY_DESCRIPTION', 'rascunho novo');
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+    expect(onDraftChange).toHaveBeenLastCalledWith('VACANCY_DESCRIPTION', 'Texto original do prompt.');
     expect(updateAiPrompt()).not.toHaveBeenCalled();
+  });
+
+  it('initialDraft: monta já em edição com o rascunho; sem ele, monta em leitura com o salvo', () => {
+    const a = render(<AiPromptEditor prompt={fakePrompt()} initialDraft="rascunho antigo" />);
+    expect(screen.getByTestId('ai-prompt-editor-textarea')).toHaveValue('rascunho antigo');
+    a.unmount();
+    render(<AiPromptEditor prompt={fakePrompt()} />);
+    expect(screen.getByTestId('ai-prompt-editor-reader')).toHaveTextContent('Texto original do prompt.');
   });
 
   it('cancelar descarta o rascunho e volta ao modo leitura', async () => {

@@ -85,5 +85,16 @@ export function createAdminAiPromptRoutes(
     (req: Request, res: Response) => controller.preview(req, res),
   );
 
+  /**
+   * POST /api/admin/ai-prompts/simulate-vacancy — simula a criação de uma vacante com os prompts em
+   * edição, sem gravar (T071). Mesma célula do `preview`: `ai_prompt:update`.
+   */
+  router.post(
+    '/ai-prompts/simulate-vacancy',
+    staffOnly,
+    perm.require('ai_prompt', 'update', { untilEnforced: 'admin' }),
+    (req: Request, res: Response) => controller.simulateVacancy(req, res),
+  );
+
   return router;
 }
