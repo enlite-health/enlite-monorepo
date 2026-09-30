@@ -12,6 +12,8 @@ export interface UseSendComprobanteToAxonicoResult {
   status: SendComprobanteStatus;
   result: EnviarComprobanteAxonicoResult | null;
   error: string | null;
+  /** `code` do `AxonicoComprobanteServiceError` (ex. 'PacienteSemDniError'); null em erro genérico/sem erro. */
+  errorCode: string | null;
   send: (command: EnviarComprobanteAxonicoCommand) => void;
 }
 
@@ -28,6 +30,7 @@ export function useSendComprobanteToAxonico(service: AxonicoComprobanteService):
   const [status, setStatus] = useState<SendComprobanteStatus>('idle');
   const [result, setResult] = useState<EnviarComprobanteAxonicoResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [errorCode, setErrorCode] = useState<string | null>(null);
   const inFlightRef = useRef(false);
 
   const send = useCallback(
@@ -36,6 +39,7 @@ export function useSendComprobanteToAxonico(service: AxonicoComprobanteService):
       inFlightRef.current = true;
       setStatus('sending');
       setError(null);
+      setErrorCode(null);
       setResult(null);
 
       service
@@ -47,6 +51,7 @@ export function useSendComprobanteToAxonico(service: AxonicoComprobanteService):
         .catch((err) => {
           const message = err instanceof AxonicoComprobanteServiceError || err instanceof Error ? err.message : 'No se pudo enviar la prestación.';
           setError(message);
+          setErrorCode(err instanceof AxonicoComprobanteServiceError ? err.code : null);
           setStatus('error');
         })
         .finally(() => {
@@ -56,5 +61,5 @@ export function useSendComprobanteToAxonico(service: AxonicoComprobanteService):
     [service],
   );
 
-  return { status, result, error, send };
+  return { status, result, error, errorCode, send };
 }
