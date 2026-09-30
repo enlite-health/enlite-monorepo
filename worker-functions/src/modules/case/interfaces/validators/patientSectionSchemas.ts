@@ -6,6 +6,7 @@ import { PATIENT_LANGUAGES } from '../../domain/enums/PatientLanguage';
 import { DEPENDENCY_LEVELS } from '../../domain/enums/DependencyLevel';
 import { PATIENT_STATUSES } from '../../domain/enums/PatientStatus';
 import { ON_HOLD_REASONS } from '../../domain/enums/OnHoldReason';
+import { SUSPENSION_EXIT_REASONS } from '../../domain/enums/SuspensionExitReason';
 import { RELATIONSHIPS } from '../../domain/enums/Relationship';
 import { PROFESSIONS } from '@modules/worker';
 import { isPlaceholderCoverageValue } from '../../domain/PatientCompleteness';
@@ -176,5 +177,11 @@ export const patientStatusSchema = z
     onHoldNote: z.string().max(ON_HOLD_NOTE_MAX).nullable().optional(),
     /** Origem da mudança → `change_source` na history (Historial). Default: admin_panel. */
     changeSource: z.enum(['admin_panel', 'kanban']).optional(),
+    /**
+     * Motivo de SAÍDA de SUSPENDED (decisão do Gabriel 29/09/2026) — obrigatório só quando o
+     * paciente ESTÁ em SUSPENDED e o alvo é outro (validado no serviço, que conhece o estado
+     * atual); ignorado fora desse caso. Sem texto livre — catálogo fechado.
+     */
+    suspensionExitReason: z.enum(SUSPENSION_EXIT_REASONS as unknown as [string, ...string[]]).nullable().optional(),
   })
   .strict();

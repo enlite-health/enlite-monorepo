@@ -28,6 +28,15 @@ export type PatientStatus = (typeof PATIENT_STATUSES)[number];
 export const ON_HOLD_REASONS = ['SCHOOL', 'INSURER', 'OTHER'] as const;
 export type OnHoldReason = (typeof ON_HOLD_REASONS)[number];
 
+/**
+ * Motivo de SAÍDA de SUSPENDED (decisão do Gabriel 29/09/2026). Catálogo fechado, SEM texto
+ * livre — a trilha (`patient_status_history.reason`, migration 486) nunca guarda texto clínico.
+ */
+export const SUSPENSION_EXIT_REASONS = [
+  'RESUMED_SERVICE', 'FAMILY_REQUESTED', 'NEEDS_NEW_WORKER', 'WRONG_STATUS', 'OTHER',
+] as const;
+export type SuspensionExitReason = (typeof SUSPENSION_EXIT_REASONS)[number];
+
 /** `patients.admission_status` (migration 313) — a coluna do Kanban; DONE = "Activo". */
 export const ADMISSION_STATUSES = ['SOLICITANTE', 'ADMISSION', 'PENDING_ADMISSION', 'DONE'] as const;
 export type AdmissionStatus = (typeof ADMISSION_STATUSES)[number];

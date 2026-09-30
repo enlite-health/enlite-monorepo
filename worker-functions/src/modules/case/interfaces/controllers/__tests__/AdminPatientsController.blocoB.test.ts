@@ -32,6 +32,7 @@ import {
   PatientStatusTransitionError,
   OnHoldReasonRequiredError,
   PatientStatusNotReadyError,
+  SuspensionExitReasonRequiredError,
 } from '../../../application/PatientStatusWriter';
 import { DeviceTypeUnknownError } from '../../../infrastructure/PatientDeviceTypeRepository';
 import { InsuranceProviderUnknownError } from '../../../infrastructure/PatientInsuranceVerifiedRepository';
@@ -145,6 +146,31 @@ describe('AdminPatientsController — bloco B', () => {
         details: { to: 'ACTIVE', missing: ['ADDRESS', 'SERVICE_SCHEDULE'] },
       });
       expect(reportError).not.toHaveBeenCalled();
+    });
+
+    it('SUSPENSION_EXIT_REASON_REQUIRED → 422 com o código (migration 486, decisão do Gabriel 29/09/2026)', async () => {
+      const moveStatus = jest.fn().mockRejectedValueOnce(new SuspensionExitReasonRequiredError());
+      const ctrl = makeController({ moveStatus });
+      const [req, res] = reqRes({ id: ID }, { status: 'SEARCHING' });
+      await ctrl.updatePatientStatus(req, res);
+      expect(res.status).toHaveBeenCalledWith(422);
+      expect(bodyOf(res).code).toBe('SUSPENSION_EXIT_REASON_REQUIRED');
+      expect(reportError).not.toHaveBeenCalled();
+    });
+
+    it('suspensionExitReason e o uid autenticado viajam ao serviço', async () => {
+      const moveStatus = jest.fn().mockResolvedValue({ id: ID, status: 'SEARCHING' });
+      const ctrl = makeController({ moveStatus });
+      const [req, res] = reqRes(
+        { id: ID },
+        { status: 'SEARCHING', suspensionExitReason: 'RESUMED_SERVICE' },
+        { authContext: { principal: { id: 'uid-staff-1' } } },
+      );
+      await ctrl.updatePatientStatus(req, res);
+      expect(moveStatus).toHaveBeenCalledWith(ID, 'SEARCHING', {
+        onHoldReason: null, changeSource: 'admin_panel', suspensionExitReason: 'RESUMED_SERVICE', actorUid: 'uid-staff-1',
+      });
+      expect(res.status).toHaveBeenCalledWith(200);
     });
 
     it('body fora do schema (DISCONTINUED, changeSource estranho) → 400', async () => {

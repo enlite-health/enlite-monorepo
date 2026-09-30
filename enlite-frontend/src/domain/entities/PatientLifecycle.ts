@@ -12,14 +12,23 @@ export interface UpdatePatientStatusPayload {
   onHoldNote?: string | null;
   /** Origem da mudança → coluna "origem" do Historial. */
   changeSource?: 'admin_panel' | 'kanban';
+  /**
+   * Motivo de SAÍDA de SUSPENDED (decisão do Gabriel 29/09/2026) — obrigatório quando o paciente
+   * ESTÁ em SUSPENDED e o alvo é outro; ignorado fora desse caso. Catálogo fechado, sem texto livre.
+   */
+  suspensionExitReason?: string | null;
 }
 
-/** Uma linha de GET /api/admin/patients/:id/status-history — sem ator (lex C7.2), sem nota (C7.3). */
+/** Uma linha de GET /api/admin/patients/:id/status-history — sem nota clínica (C7.3). */
 export interface PatientStatusHistoryEntry {
   from: string | null;
   to: string;
   source: string | null;
   at: string; // ISO
+  /** Motivo de saída de SUSPENDED (migration 486) — NULL fora desse caso. */
+  reason: string | null;
+  /** Firebase uid de quem mudou via HTTP (decisão do Gabriel 29/09/2026, migration 486) — NULL para mudança de sistema. */
+  actorUid: string | null;
 }
 
 /**

@@ -21,9 +21,11 @@ function formatWhen(iso: string): string {
 }
 
 /**
- * A aba Historial (spec 012, US-B7): QUANDO / DE → PARA / ORIGEM, de `patient_status_history`.
- * Sem "quem" (lex C7.2 — depende do aviso M1-1) e nunca a nota de espera (C7.3). Estado e
- * origem são enums: traduzidos, com fallback no valor cru.
+ * A aba Historial (spec 012, US-B7): QUANDO / DE → PARA / ORIGEM / MOTIVO / AUTOR, de
+ * `patient_status_history`. Motivo e autor entraram na migration 486 (decisão do Gabriel
+ * 29/09/2026) — substitui o "sem quem" de C7.2 (aviso M1-1 ainda pendente). Nunca a nota de
+ * espera (C7.3): a trilha não guarda texto clínico. Estado, origem e motivo são enums:
+ * traduzidos, com fallback no valor cru; autor é o uid CRU (sem tradução — não é vocabulário).
  */
 export function PatientStatusHistoryCard({ patientId }: Props): JSX.Element {
   const { t } = useTranslation();
@@ -42,6 +44,8 @@ export function PatientStatusHistoryCard({ patientId }: Props): JSX.Element {
 
   const status = (s: string | null) => (s ? t(`admin.patients.statusOptions.${s}`, s) : '—');
   const source = (s: string | null) => (s ? t(`admin.patients.status.sources.${s}`, s) : '—');
+  const reasonLabel = (r: string | null) => (r ? t(`admin.patients.suspensionExitReasonOptions.${r}`, r) : '—');
+  const actor = (uid: string | null) => uid ?? '—';
 
   return (
     <div
@@ -60,6 +64,8 @@ export function PatientStatusHistoryCard({ patientId }: Props): JSX.Element {
             <TableHead>{th('from')}</TableHead>
             <TableHead>{th('to')}</TableHead>
             <TableHead>{th('source')}</TableHead>
+            <TableHead>{th('reason')}</TableHead>
+            <TableHead>{th('actor')}</TableHead>
           </TableHeader>
           <TableBody>
             {rows.map((r, i) => (
@@ -68,6 +74,8 @@ export function PatientStatusHistoryCard({ patientId }: Props): JSX.Element {
                 <TableCell>{status(r.from)}</TableCell>
                 <TableCell weight="medium">{status(r.to)}</TableCell>
                 <TableCell>{source(r.source)}</TableCell>
+                <TableCell data-testid={`status-history-reason-${i}`}>{reasonLabel(r.reason)}</TableCell>
+                <TableCell data-testid={`status-history-actor-${i}`}>{actor(r.actorUid)}</TableCell>
               </TableRow>
             ))}
           </TableBody>
