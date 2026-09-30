@@ -1,7 +1,7 @@
--- ROLLBACK_488_service_team_contact_log.sql — par de rollback da migration 488
+-- ROLLBACK_490_service_team_contact_log.sql — par de rollback da migration 490
 -- (quadro C — encuadre: registro de contato com o prestador, modal do Figma rodada 2).
 --
--- QUANDO USAR: regressão detectada depois do deploy da 488 — decisão de reverter a estrutura do
+-- QUANDO USAR: regressão detectada depois do deploy da 490 — decisão de reverter a estrutura do
 -- histórico de contato antes de um fix mais específico ficar pronto.
 --
 -- Mora em `migrations/pending/` pelo mesmo motivo da ROLLBACK_481 (`run-migrations-docker.js` só
@@ -12,7 +12,7 @@
 -- recusa.
 --
 -- Como rodar (reversão manual e intencional, nunca automática):
---   ./scripts/run-migration-prod.sh worker-functions/migrations/pending/ROLLBACK_488_service_team_contact_log.sql
+--   ./scripts/run-migration-prod.sh worker-functions/migrations/pending/ROLLBACK_490_service_team_contact_log.sql
 
 DO $$
 BEGIN

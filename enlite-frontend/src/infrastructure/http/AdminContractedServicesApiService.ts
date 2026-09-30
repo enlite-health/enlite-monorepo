@@ -283,7 +283,7 @@ class AdminContractedServicesApiServiceClass {
 
   /**
    * GET .../team/:workerId/contact — modal do prestador (rodada 2, decisão D): nome/telefone
-   * projetados (célula `worker_contact:read`) + histórico de contato (migration 488). 404 quando
+   * projetados (célula `worker_contact:read`) + histórico de contato (migration 490). 404 quando
    * o serviço não existe/é de outro paciente/está fora da RLS, OU o prestador nunca foi deste time.
    */
   async getServiceTeamContact(patientId: string, serviceId: string, workerId: string): Promise<ServiceTeamContact> {

@@ -1,11 +1,11 @@
 /**
  * ServiceTeamContactLogRepository — quadro C (Servicio Contratado), modal do prestador (Figma,
- * rodada 2, decisão D). Lê/grava `service_team_contact_log` (migration 488) e busca os campos
+ * rodada 2, decisão D). Lê/grava `service_team_contact_log` (migration 490) e busca os campos
  * cifrados do prestador que o modal precisa projetar (nome/telefone, via `projectWorkerFields`,
  * chamado pelo use case — este arquivo só entrega a linha CIFRADA, nunca decripta).
  *
  * Append-only (molde 481): `insert` sempre cria linha nova; não há `update`/`delete` aqui — a
- * tabela não concede esses privilégios ao app (REVOKE na 488).
+ * tabela não concede esses privilégios ao app (REVOKE na 490).
  */
 import type { PoolClient } from 'pg';
 

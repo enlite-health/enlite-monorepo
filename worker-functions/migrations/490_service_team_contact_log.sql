@@ -1,4 +1,4 @@
--- 488 — quadro C (encuadre): `service_team_contact_log`, o registro de CONTATO com o prestador
+-- 490 — quadro C (encuadre): `service_team_contact_log`, o registro de CONTATO com o prestador
 -- por serviço contratado (aba "Encuadre" conforme Figma, rodada 2, decisão D do brief — modal do
 -- prestador; 29/09/2026). Molde: `481_contracted_service_rejections.sql` (RLS/country/sem DELETE)
 -- e `484_patient_itinerary_absence.sql` (trilha de autoria).
@@ -18,7 +18,7 @@
 --
 -- ── Sem DELETE, país por trigger, RLS segue o serviço (molde 481) ────────────
 -- Idempotente (2×). Sem BEGIN/COMMIT próprio (molde 481/484/480).
--- Rollback: migrations/pending/ROLLBACK_488_service_team_contact_log.sql (recusa se houver linha).
+-- Rollback: migrations/pending/ROLLBACK_490_service_team_contact_log.sql (recusa se houver linha).
 
 CREATE TABLE IF NOT EXISTS service_team_contact_log (
   id                UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -77,7 +77,7 @@ COMMENT ON TABLE service_team_contact_log IS
   '(FECHA/NOTA/RESPUESTA) do modal do prestador (Figma, rodada 2). Append-only: cada "Guardar" cria '
   'linha nova, nunca UPDATE. note é texto livre e nunca sai em log. Não decide coluna do quadro C '
   '(Rechazar/Revertir continuam em contracted_service_rejections, D432). Rollback: '
-  'migrations/pending/ROLLBACK_488_service_team_contact_log.sql.';
+  'migrations/pending/ROLLBACK_490_service_team_contact_log.sql.';
 COMMENT ON COLUMN service_team_contact_log.note IS
   'Texto livre (Notas) — NUNCA logar (nem logger.info/error, nem mensagem de erro). Ley 25.326/LGPD.';
 COMMENT ON COLUMN service_team_contact_log.country IS

@@ -89,7 +89,7 @@ export type ServiceTeamReasonKind = 'REJECT' | 'REVERT';
 
 /**
  * Modal do prestador (Figma, rodada 2, decisão D) — o "Historial" (FECHA/NOTA/RESPUESTA): uma
- * linha por "Guardar", append-only (migration 488, nunca editada). `contacted` é a RESPUESTA.
+ * linha por "Guardar", append-only (migration 490, nunca editada). `contacted` é a RESPUESTA.
  */
 export interface ServiceTeamContactHistoryEntry {
   id: string;
