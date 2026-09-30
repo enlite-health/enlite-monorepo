@@ -1320,6 +1320,7 @@
       "templateDrafts": "Registrar mensaje",
       "catalogObjectives": "Objetivos específicos",
       "catalogActivities": "Rutina y actividades",
+      "catalogServiceExitReasons": "Motivos de salida",
       "aiPrompts": "Prompts de IA"
     },
     "dedup": {
@@ -4626,6 +4627,7 @@
             "patient_therapeutic_project": "Proyecto terapéutico: versiones, objetivos y actividades",
             "catalog_therapeutic_objectives": "Catálogo de objetivos específicos (proyecto terapéutico)",
             "catalog_therapeutic_activities": "Catálogo de rutina y actividades (proyecto terapéutico)",
+            "catalog_service_exit_reasons": "Catálogo de motivos de salida del servicio",
             "catalog_therapeutic_segments": "Catálogo de segmentos (Ana Care)",
             "anacare_hours": "Conferencia de horas del Ana Care",
             "patient_service_team": "Encuadre del servicio contratado (rechazar/revertir)",
@@ -5094,6 +5096,9 @@
         },
         "patients.catalogActivities": {
           "label": "Pacientes: Catálogo de rutina y actividades"
+        },
+        "patients.catalogServiceExitReasons": {
+          "label": "Pacientes: Catálogo de motivos de salida"
         }
       }
     },
@@ -5665,6 +5670,11 @@
         "activities": {
           "title": "Rutina y actividades del proyecto terapéutico",
           "subtitle": "Las opciones de \"Rutina y Actividades\" del proyecto terapéutico. Se editan acá, sin deploy. Desactivar no borra: las versiones antiguas guardan el texto que tenían."
+        },
+        "serviceExitReasons": {
+          "title": "Motivos de salida",
+          "subtitle": "Las opciones que el equipo elige al registrar la salida de un prestador de un servicio. Se editan acá, sin deploy. Desactivar no borra: los registros anteriores guardan el motivo que tenían.",
+          "guidance": "Categorías genéricas, sin datos de salud."
         }
       },
       "newItem": "Nueva opción",

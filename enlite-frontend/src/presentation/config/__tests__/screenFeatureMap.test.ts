@@ -46,6 +46,8 @@ const ROTAS_SEM_CHAVE_SCREEN = new Set([
   'mapa', 'mensajes-por-etapa', 'plantillas', 'plantillas/registrar', 'plantillas/:slug', 'invitacion-presentacion',
   // Spec 017: os 3 catálogos do projeto terapêutico — gateados pela célula própria de cada um, não por país.
   'catalogos/objetivos-especificos', 'catalogos/actividades',
+  // Fase 1 itinerario-trocas: motivos de saída do serviço — célula própria (`catalog_service_exit_reasons:read`).
+  'catalogos/motivos-de-salida',
   // Spec 029: prompts de IA — gateada pela célula própria (`ai_prompt:read`), não por país; mesmo caso
   // de tags/plantillas/catálogos acima (tela de configuração global, sem chave `screen:*` no manifest).
   'prompts-ia',

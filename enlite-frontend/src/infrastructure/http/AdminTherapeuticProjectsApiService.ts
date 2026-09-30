@@ -6,7 +6,8 @@ import { FirebaseAuthService } from '@infrastructure/services/FirebaseAuthServic
 import type {
   CreateTherapeuticProjectBody,
   TherapeuticCatalogItem,
-  TherapeuticCatalogKind,
+  AdminCatalogKind,
+  ServiceExitReasonOption,
   TherapeuticFieldClass,
   TherapeuticProjectVersion,
 } from '@domain/entities/TherapeuticProject';
@@ -100,20 +101,26 @@ class AdminTherapeuticProjectsApiServiceClass {
   }
 
   /** GET /api/admin/therapeutic-catalogs/<kind> */
-  async listCatalog(kind: TherapeuticCatalogKind, opts: { includeInactive?: boolean } = {}): Promise<TherapeuticCatalogItem[]> {
+  async listCatalog(kind: AdminCatalogKind, opts: { includeInactive?: boolean } = {}): Promise<TherapeuticCatalogItem[]> {
     const qs = opts.includeInactive ? '?includeInactive=true' : '';
-    const { items } = await this.request<{ kind: TherapeuticCatalogKind; items: TherapeuticCatalogItem[] }>('GET', `/api/admin/therapeutic-catalogs/${kind}${qs}`);
+    const { items } = await this.request<{ kind: AdminCatalogKind; items: TherapeuticCatalogItem[] }>('GET', `/api/admin/therapeutic-catalogs/${kind}${qs}`);
+    return items;
+  }
+
+  /** GET /api/admin/therapeutic-catalogs/service-exit-reasons/options — só ativos; sob `patient_services:read`. */
+  async listServiceExitReasonOptions(): Promise<ServiceExitReasonOption[]> {
+    const { items } = await this.request<{ items: ServiceExitReasonOption[] }>('GET', '/api/admin/therapeutic-catalogs/service-exit-reasons/options');
     return items;
   }
 
   /** POST /api/admin/therapeutic-catalogs/<kind> */
-  async createCatalogItem(kind: TherapeuticCatalogKind, body: { label: string; sortOrder?: number }): Promise<TherapeuticCatalogItem> {
+  async createCatalogItem(kind: AdminCatalogKind, body: { label: string; sortOrder?: number }): Promise<TherapeuticCatalogItem> {
     return this.request<TherapeuticCatalogItem>('POST', `/api/admin/therapeutic-catalogs/${kind}`, body);
   }
 
   /** PATCH /api/admin/therapeutic-catalogs/<kind>/:itemId — Merge Patch; sem DELETE (soft delete por `active`). */
   async updateCatalogItem(
-    kind: TherapeuticCatalogKind,
+    kind: AdminCatalogKind,
     itemId: string,
     body: { label?: string; sortOrder?: number; active?: boolean },
   ): Promise<TherapeuticCatalogItem> {

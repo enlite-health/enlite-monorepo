@@ -217,6 +217,33 @@ describe('AdminTherapeuticProjectsApiService — os 3 catálogos (D299, lex C19)
     expect(chamada(f)[0]).toBe(`${BASE}/api/admin/therapeutic-catalogs/activities`);
   });
 
+  it('listCatalog(service-exit-reasons): GET na rota do kind novo, com o `code` do item', async () => {
+    const f = mockFetch({ success: true, data: { kind: 'service-exit-reasons', items: [{ id: ITEM_ID, code: 'OTHER', label: 'Otro' }] } });
+    const out = await AdminTherapeuticProjectsApiService.listCatalog('service-exit-reasons', { includeInactive: true });
+    expect(out).toEqual([{ id: ITEM_ID, code: 'OTHER', label: 'Otro' }]);
+    expect(chamada(f)[0]).toBe(`${BASE}/api/admin/therapeutic-catalogs/service-exit-reasons?includeInactive=true`);
+  });
+
+  it('listServiceExitReasonOptions: GET em …/service-exit-reasons/options, devolve `items` do envelope', async () => {
+    const f = mockFetch({ success: true, data: { items: [{ code: 'OTHER', label: 'Otro' }] } });
+    const out = await AdminTherapeuticProjectsApiService.listServiceExitReasonOptions();
+    expect(out).toEqual([{ code: 'OTHER', label: 'Otro' }]);
+    const [url, init] = chamada(f);
+    expect(url).toBe(`${BASE}/api/admin/therapeutic-catalogs/service-exit-reasons/options`);
+    expect(init.method).toBe('GET');
+  });
+
+  it('createCatalogItem/updateCatalogItem aceitam o kind service-exit-reasons (POST e PATCH na rota nova)', async () => {
+    const f = mockFetch({ success: true, data: { id: ITEM_ID } });
+    await AdminTherapeuticProjectsApiService.createCatalogItem('service-exit-reasons', { label: 'Cambio de disponibilidad' });
+    expect(chamada(f)[0]).toBe(`${BASE}/api/admin/therapeutic-catalogs/service-exit-reasons`);
+    expect(chamada(f)[1].method).toBe('POST');
+    const g = mockFetch({ success: true, data: { id: ITEM_ID } });
+    await AdminTherapeuticProjectsApiService.updateCatalogItem('service-exit-reasons', ITEM_ID, { active: false });
+    expect(chamada(g)[0]).toBe(`${BASE}/api/admin/therapeutic-catalogs/service-exit-reasons/${ITEM_ID}`);
+    expect(chamada(g)[1].method).toBe('PATCH');
+  });
+
   it('createCatalogItem: POST na rota do kind com label e sortOrder', async () => {
     const f = mockFetch({ success: true, data: { id: ITEM_ID, label: 'Nova', sortOrder: 3 } });
     const out = await AdminTherapeuticProjectsApiService.createCatalogItem('activities', { label: 'Nova', sortOrder: 3 });
