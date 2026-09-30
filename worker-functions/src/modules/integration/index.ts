@@ -10,6 +10,7 @@ export type { WorkerMirrorRecord, WorkerMirrorAddress } from './domain/WorkerMir
 export type { WorkerMirrorProvider, WorkerMirrorUpsertResult } from './domain/WorkerMirrorProvider';
 export type { IAnaCareApiClient, AnaCareNursePayload, AnaCareNurse, AnaCareNurseType, AnaCareHiringType, AnaCarePagedResponse, AnaCareNurseBulkItem, AnaCareNurseBulkPayload } from './domain/IAnaCareApiClient';
 export type { IAnaCarePatientDocumentRepository, AnaCarePatientDocumentRecord, InsertAnaCarePatientDocumentParams } from './domain/IAnaCarePatientDocumentRepository';
+export { normalizeAndValidateDocumentNumber } from './domain/documentNumber';
 
 // Ports
 export type { IWebhookPartnerRepository } from './ports/IWebhookPartnerRepository';
