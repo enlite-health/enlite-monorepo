@@ -20,6 +20,12 @@ import { AiPromptController } from '../AiPromptController';
 import { GetAiPromptUseCase, type GetAiPromptOutput } from '../../../application/GetAiPromptUseCase';
 import { UpdateAiPromptUseCase, type UpdateAiPromptResult } from '../../../application/UpdateAiPromptUseCase';
 import { UndoAiPromptUseCase, type UndoAiPromptResult } from '../../../application/UndoAiPromptUseCase';
+import {
+  PreviewAiPromptUseCase,
+  PreviewEmptyBodyError,
+  JobPostingNotFoundError,
+} from '../../../application/PreviewAiPromptUseCase';
+import { GeminiApiError } from '../../../infrastructure/gemini-fetch';
 import type { AiPrompt } from '../../../infrastructure/AiPromptRepository';
 
 // ── Helpers ───────────────────────────────────────────────────────
@@ -42,11 +48,13 @@ function ctrl(
   get: Partial<GetAiPromptUseCase> = {},
   update: Partial<UpdateAiPromptUseCase> = {},
   undo: Partial<UndoAiPromptUseCase> = {},
+  preview: Partial<PreviewAiPromptUseCase> = {},
 ): AiPromptController {
   const getUseCase = { execute: jest.fn(), list: jest.fn(), ...get } as unknown as GetAiPromptUseCase;
   const updateUseCase = { execute: jest.fn(), ...update } as unknown as UpdateAiPromptUseCase;
   const undoUseCase = { execute: jest.fn(), ...undo } as unknown as UndoAiPromptUseCase;
-  return new AiPromptController(getUseCase, updateUseCase, undoUseCase);
+  const previewUseCase = { execute: jest.fn(), ...preview } as unknown as PreviewAiPromptUseCase;
+  return new AiPromptController(getUseCase, updateUseCase, undoUseCase, previewUseCase);
 }
 
 const PROMPT: AiPrompt = {
@@ -730,6 +738,138 @@ describe('AiPromptController', () => {
     });
   });
 
+  describe('preview — POST /api/admin/ai-prompts/{slug}/preview (T033)', () => {
+    const JOB_ID = '3f2b1c9e-8d4a-4e6b-9a1f-0c5d7e2a4b61';
+    const OUTPUT = { jobPostingId: JOB_ID, slug: 'VACANCY_DESCRIPTION', generated: 'texto gerado' };
+    const reqPreview = (over: Record<string, unknown> = {}) =>
+      mockReq({
+        params: { slug: 'VACANCY_DESCRIPTION' },
+        body: { body: 'texto em edição', jobPostingId: JOB_ID },
+        permissionCells: ['ai_prompt:update'],
+        ...over,
+      });
+
+    it('200: corpo é EXATAMENTE { success: true, data: { jobPostingId, slug, generated } } — a junta com request() do front', async () => {
+      const execute = jest.fn().mockResolvedValue(OUTPUT);
+      const res = mockRes();
+
+      await ctrl({}, {}, {}, { execute }).preview(reqPreview(), res);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      const corpo = corpoDaResposta(res);
+      expect(corpo.success).toBe(true);
+      expect(corpo).toEqual({ success: true, data: OUTPUT });
+      expect(execute).toHaveBeenCalledWith({
+        slug: 'VACANCY_DESCRIPTION', body: 'texto em edição', jobPostingId: JOB_ID,
+      });
+    });
+
+    it('400: body só com espaços — não chama o use case', async () => {
+      const execute = jest.fn();
+      const res = mockRes();
+      await ctrl({}, {}, {}, { execute }).preview(reqPreview({ body: { body: '   ', jobPostingId: JOB_ID } }), res);
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(corpoDaResposta(res)).toEqual(expect.objectContaining({ success: false }));
+      expect(execute).not.toHaveBeenCalled();
+    });
+
+    it('400: body ausente', async () => {
+      const execute = jest.fn();
+      const res = mockRes();
+      await ctrl({}, {}, {}, { execute }).preview(reqPreview({ body: { jobPostingId: JOB_ID } }), res);
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(execute).not.toHaveBeenCalled();
+    });
+
+    it('400: jobPostingId ausente', async () => {
+      const execute = jest.fn();
+      const res = mockRes();
+      await ctrl({}, {}, {}, { execute }).preview(reqPreview({ body: { body: 'x' } }), res);
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(execute).not.toHaveBeenCalled();
+    });
+
+    it('400: jobPostingId que não é UUID', async () => {
+      const execute = jest.fn();
+      const res = mockRes();
+      await ctrl({}, {}, {}, { execute }).preview(reqPreview({ body: { body: 'x', jobPostingId: 'abc' } }), res);
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(execute).not.toHaveBeenCalled();
+    });
+
+    it('400: PreviewEmptyBodyError vinda do use case (defesa redundante)', async () => {
+      const execute = jest.fn().mockRejectedValue(new PreviewEmptyBodyError());
+      const res = mockRes();
+      await ctrl({}, {}, {}, { execute }).preview(reqPreview(), res);
+      expect(res.status).toHaveBeenCalledWith(400);
+    });
+
+    it('403 sem `ai_prompt:update` (só `read` não basta): não chama o use case', async () => {
+      const execute = jest.fn();
+      const res = mockRes();
+      await ctrl({}, {}, {}, { execute }).preview(reqPreview({ permissionCells: ['ai_prompt:read'] }), res);
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(corpoDaResposta(res)).toEqual(
+        expect.objectContaining({ success: false, details: { cell: 'ai_prompt:update' } }),
+      );
+      expect(execute).not.toHaveBeenCalled();
+    });
+
+    it('cells = null (D113) libera', async () => {
+      const execute = jest.fn().mockResolvedValue(OUTPUT);
+      const res = mockRes();
+      await ctrl({}, {}, {}, { execute }).preview(reqPreview({ permissionCells: undefined }), res);
+      expect(res.status).toHaveBeenCalledWith(200);
+    });
+
+    it('404: slug fora do conjunto fechado (não 400)', async () => {
+      const execute = jest.fn();
+      const res = mockRes();
+      await ctrl({}, {}, {}, { execute }).preview(reqPreview({ params: { slug: 'NAO_EXISTE' } }), res);
+      expect(res.status).toHaveBeenCalledWith(404);
+      expect(execute).not.toHaveBeenCalled();
+    });
+
+    it('404: caso inexistente (JobPostingNotFoundError)', async () => {
+      const execute = jest.fn().mockRejectedValue(new JobPostingNotFoundError(JOB_ID));
+      const res = mockRes();
+      await ctrl({}, {}, {}, { execute }).preview(reqPreview(), res);
+      expect(res.status).toHaveBeenCalledWith(404);
+      expect(corpoDaResposta(res)).toEqual(expect.objectContaining({ success: false }));
+    });
+
+    it('503: modelo indisponível (GeminiApiError) — sem chamar Vertex de verdade', async () => {
+      const execute = jest.fn().mockRejectedValue(new GeminiApiError(503, 'unavailable'));
+      const res = mockRes();
+      await ctrl({}, {}, {}, { execute }).preview(reqPreview(), res);
+      expect(res.status).toHaveBeenCalledWith(503);
+      expect(corpoDaResposta(res)).toEqual({ success: false, error: 'modelo_indisponivel' });
+    });
+
+    it('503: sem token ADC do Vertex (erro dublado no use case)', async () => {
+      const execute = jest.fn().mockRejectedValue(new Error('Vertex AI: could not obtain an ADC access token'));
+      const res = mockRes();
+      await ctrl({}, {}, {}, { execute }).preview(reqPreview(), res);
+      expect(res.status).toHaveBeenCalledWith(503);
+    });
+
+    it('500: erro inesperado — reporta', async () => {
+      const execute = jest.fn().mockRejectedValue(new Error('boom'));
+      const res = mockRes();
+      await ctrl({}, {}, {}, { execute }).preview(reqPreview(), res);
+      expect(res.status).toHaveBeenCalledWith(500);
+      expect(reportError).toHaveBeenCalled();
+    });
+
+    it('500: lançamento que NÃO é Error vira Error antes de reportar', async () => {
+      const execute = jest.fn().mockRejectedValue('crua');
+      const res = mockRes();
+      await ctrl({}, {}, {}, { execute }).preview(reqPreview(), res);
+      expect(res.status).toHaveBeenCalledWith(500);
+      expect((reportError as jest.Mock).mock.calls[0][0]).toBeInstanceOf(Error);
+    });
+  });
+
   describe('Construtor sem use cases injetados (linhas 81-83)', () => {
     // Mesmo motivo do teste equivalente em UpdateAiPromptUseCase.test.ts: o default do 3º
     // parâmetro de UpdateAiPromptUseCase/UndoAiPromptUseCase chama
@@ -750,11 +890,14 @@ describe('AiPromptController', () => {
       process.env.DATABASE_URL = 'postgres://fake-para-teste-de-construtor/db';
 
       const controller = new AiPromptController();
-      const internals = controller as unknown as { getUseCase: unknown; updateUseCase: unknown; undoUseCase: unknown };
+      const internals = controller as unknown as {
+        getUseCase: unknown; updateUseCase: unknown; undoUseCase: unknown; previewUseCase: unknown;
+      };
 
       expect(internals.getUseCase).toBeInstanceOf(GetAiPromptUseCase);
       expect(internals.updateUseCase).toBeInstanceOf(UpdateAiPromptUseCase);
       expect(internals.undoUseCase).toBeInstanceOf(UndoAiPromptUseCase);
+      expect(internals.previewUseCase).toBeInstanceOf(PreviewAiPromptUseCase);
     });
   });
 });

@@ -594,13 +594,23 @@ jobs:
       # diagnóstico. Com o engine OFF do job padrão, `cells===null` devolve o dado e esses 3 casos
       # ficariam verdes sem medir nada — teatro de cobertura no ponto exato que protege o paciente.
       # Usa `abac-stack-helper` (usuário REAL em `users`), então herda este runner e este Vite.
+      # `ai-prompts-humano` ENTROU (spec 029, T035): o humano lê/edita/simula/guarda/desfaz em
+      # `/admin/prompts-ia`. Precisa do engine ligado com `admin.integrations` enforçada — as rotas
+      # `/ai-prompts` usam `untilEnforced: 'admin'` e só checam a célula `ai_prompt:*` de verdade
+      # com a família ligada; o job padrão (engine OFF, sem `iam.rollout_state`) faria o spec falhar
+      # em `pollAuthz`/403. REUSO deste job, sem override novo: as 12 famílias de
+      # `docker-compose.group-simulation.yml` já incluem `admin.integrations` e `admin.vacancies`
+      # (lista de vacantes do seletor de caso), e `CATALOG_SYNC` já está ligado. O modelo NUNCA é o
+      # real: `docker-compose.test.yml` (base, versionado) carrega `vertexInterceptPreload.js` na API,
+      # e o próprio spec reprova se a contagem de `[VERTEX-STUB]` não subir. O spec lê o log do
+      # container achando-o pela porta 8080 publicada — sem nome fixo.
       - name: Teste de integração — simulação de grupo de acesso + completar-vacante (fases 2-3)
         working-directory: enlite-frontend
         env:
           CI: 'true'
           ABAC_API_URL: http://localhost:8080
           ABAC_TEST_DB_URL: postgresql://enlite_admin:enlite_password@localhost:5433/enlite_e2e
-        run: npx playwright test --project=integration --ignore-snapshots --grep "group-simulation|draft-vacancy-page|draft-vacancy-choice|vacante-anotacao-sem-celula|funil-compativeis-sem-celula|cid-na-vacante-tela|service-team-provider-modal-sem-celula|service-team-contact-api|encuadre-tab-sem-celula"
+        run: npx playwright test --project=integration --ignore-snapshots --grep "group-simulation|draft-vacancy-page|draft-vacancy-choice|vacante-anotacao-sem-celula|funil-compativeis-sem-celula|cid-na-vacante-tela|service-team-provider-modal-sem-celula|service-team-contact-api|encuadre-tab-sem-celula|ai-prompts-humano"
 
       - name: Relatório (só quando falha)
         if: failure()

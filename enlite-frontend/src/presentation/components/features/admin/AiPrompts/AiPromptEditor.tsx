@@ -24,13 +24,15 @@
  * (mesma regra que `UndoAiPromptUseCase` aplica no servidor). Botão só existe (D269, hide) para
  * quem tem `ai_prompt:update` — mesma célula de salvar (contrato).
  */
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import ReactMarkdown from 'react-markdown';
 import { useTranslation } from 'react-i18next';
 import { resolveDateLocale, SHORT_DATE_OPTIONS } from '@presentation/utils/dateLocale';
 import { useActionGate } from '@presentation/hooks/useCellAccess';
 import { Textarea } from '@presentation/components/atoms/Textarea';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
+import { AiPromptPreviewPanel } from './AiPromptPreviewPanel';
 import { AdminApiService, ApiError, type AiPrompt, type AiPromptSlug } from '@infrastructure/http/AdminApiService';
 
 interface AiPromptEditorProps {
@@ -57,21 +59,29 @@ export function AiPromptEditor({ prompt, onSaved }: AiPromptEditorProps) {
 
   const [current, setCurrent] = useState<AiPrompt>(prompt);
   const [body, setBody] = useState(prompt.body);
-
-  // Reseta o rascunho SÓ quando o slug muda (troca de aba) — depois disso o estado é próprio:
-  // salvar/desfazer atualizam `current`/`body` localmente, sem esperar o pai re-renderizar.
-  useEffect(() => {
-    setCurrent(prompt);
-    setBody(prompt.body);
-    setSaveError(null);
-    setUndoError(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prompt.slug]);
+  const [editing, setEditing] = useState(false);
 
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [undoing, setUndoing] = useState(false);
   const [undoError, setUndoError] = useState<string | null>(null);
+
+  // Reseta o rascunho SÓ quando o slug muda (troca de aba) — depois disso o estado é próprio:
+  // salvar/desfazer atualizam `current`/`body` localmente, sem esperar o pai re-renderizar.
+  // Feito DURANTE o render (padrão "ajustar estado quando a prop muda" da doc do React), não em
+  // `useEffect`: um efeito com `[prompt.slug]` também roda na MONTAGEM e, se o clique em "Editar"
+  // chegasse antes dos efeitos passivos esvaziarem, o `setEditing(false)` do efeito vinha atrás do
+  // `setEditing(true)` do clique e jogava o usuário de volta para leitura. Sem efeito, a montagem
+  // não reseta nada e só uma troca real de slug reseta.
+  const [seenSlug, setSeenSlug] = useState(prompt.slug);
+  if (seenSlug !== prompt.slug) {
+    setSeenSlug(prompt.slug);
+    setCurrent(prompt);
+    setBody(prompt.body);
+    setEditing(false);
+    setSaveError(null);
+    setUndoError(null);
+  }
 
   const charCount = body.length;
   // Não desabilita por texto vazio: o clique precisa CHEGAR em `handleSave` pra mostrar
@@ -94,6 +104,12 @@ export function AiPromptEditor({ prompt, onSaved }: AiPromptEditorProps) {
     }
   };
 
+  const handleCancel = (): void => {
+    setBody(current.body);
+    setSaveError(null);
+    setEditing(false);
+  };
+
   const handleSave = async (): Promise<void> => {
     if (body.trim().length === 0) {
       setSaveError(ec('emptyBody'));
@@ -105,6 +121,7 @@ export function AiPromptEditor({ prompt, onSaved }: AiPromptEditorProps) {
       const updated = await AdminApiService.updateAiPrompt(current.slug, body, current.version);
       setCurrent(updated);
       setBody(updated.body);
+      setEditing(false);
       onSaved?.(updated);
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
@@ -145,14 +162,25 @@ export function AiPromptEditor({ prompt, onSaved }: AiPromptEditorProps) {
 
   return (
     <div className="flex flex-col gap-2" data-testid="ai-prompt-editor">
-      <Textarea
-        value={body}
-        onChange={(e) => setBody(e.target.value)}
-        resize="vertical"
-        rows={16}
-        aria-label={t('admin.aiPrompts.title')}
-        data-testid="ai-prompt-editor-textarea"
-      />
+      {editing ? (
+        <Textarea
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+          resize="vertical"
+          rows={16}
+          aria-label={t('admin.aiPrompts.title')}
+          data-testid="ai-prompt-editor-textarea"
+        />
+      ) : (
+        <div
+          className="prose prose-sm max-w-none rounded border border-gray-300 p-3 [&_ol]:list-decimal [&_ol]:pl-6 [&_ul]:list-disc [&_ul]:pl-6"
+          data-testid="ai-prompt-editor-reader"
+        >
+          <ReactMarkdown>{body}</ReactMarkdown>
+        </div>
+      )}
+
+      {editing && <AiPromptPreviewPanel slug={current.slug} body={body} />}
 
       <div className="flex justify-between items-center">
         {current.updatedAt ? (
@@ -177,9 +205,22 @@ export function AiPromptEditor({ prompt, onSaved }: AiPromptEditorProps) {
       )}
 
       <div className="flex items-center gap-3">
-        <Button onClick={handleSave} disabled={!canSave}>
-          {saving ? ac('saving') : ac('save')}
-        </Button>
+        {editing ? (
+          <>
+            <Button onClick={handleSave} disabled={!canSave}>
+              {saving ? ac('saving') : ac('save')}
+            </Button>
+            <Button variant="outline" onClick={handleCancel} disabled={saving}>
+              {ac('cancel')}
+            </Button>
+          </>
+        ) : (
+          updateGate.allowed && (
+            <Button variant="outline" onClick={() => setEditing(true)}>
+              {ac('edit')}
+            </Button>
+          )
+        )}
 
         {updateGate.allowed && (
           <div className="flex flex-col gap-1">

@@ -79,6 +79,13 @@ export interface AiPrompt {
   isActive: boolean;
 }
 
+/** Resposta de `/preview` (contrato `admin-ai-prompts.md`). */
+export interface AiPromptPreview {
+  jobPostingId: string;
+  slug: AiPromptSlug;
+  generated: string;
+}
+
 class AdminApiServiceClass {
   private readonly authService = new FirebaseAuthService();
   private readonly baseURL: string;
@@ -459,8 +466,7 @@ class AdminApiServiceClass {
 
   // ========== AI Prompts (spec 029) ==========
   // Contrato: `specs/029-prompts-ia-editaveis/contracts/admin-ai-prompts.md`.
-  // `restore` (permissão `ai_prompt:restore`, versão arbitrária) e `preview` são de fases
-  // posteriores — não entram aqui (T023/T024 em diante).
+  // `restore` (permissão `ai_prompt:restore`, versão arbitrária) é de fase posterior — não entra aqui.
 
   /** `GET /api/admin/ai-prompts` — lista os três prompts, com conteúdo (sem paginação). */
   async listAiPrompts(): Promise<AiPrompt[]> {
@@ -486,6 +492,15 @@ class AdminApiServiceClass {
    */
   async undoAiPrompt(slug: AiPromptSlug, version: number): Promise<AiPrompt> {
     return this.request<AiPrompt>('POST', `/api/admin/ai-prompts/${slug}/undo`, { version });
+  }
+
+  /**
+   * `POST /api/admin/ai-prompts/{slug}/preview` — gera, com o texto EM EDIÇÃO e um caso real, o que
+   * aquele prompt produziria. Não grava e não publica nada. `generated` é sempre string (para os
+   * slugs de preselección, o JSON serializado). 503 quando o modelo está indisponível.
+   */
+  async previewAiPrompt(slug: AiPromptSlug, body: string, jobPostingId: string): Promise<AiPromptPreview> {
+    return this.request<AiPromptPreview>('POST', `/api/admin/ai-prompts/${slug}/preview`, { body, jobPostingId });
   }
 
   // ========== Worker Document methods — delegated to AdminWorkerDocsApiService ==========

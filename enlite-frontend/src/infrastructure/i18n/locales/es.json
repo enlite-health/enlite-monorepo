@@ -5726,6 +5726,8 @@
       },
       "actions": {
         "save": "Guardar",
+        "edit": "Editar",
+        "cancel": "Cancelar",
         "saving": "Guardando…",
         "undo": "Deshacer último cambio",
         "undoConfirm": "¿Deshacer el último cambio? El texto vuelve a la versión anterior.",
@@ -5736,8 +5738,17 @@
         "versionConflict": "Otra persona ({{updatedBy}}) ya guardó un cambio en este prompt. Recargá para ver la versión actual antes de volver a guardar."
       },
       "preview": {
-        "notice": "Esto es una simulación con un caso de ejemplo — no se guarda nada, y no se usa ningún dato real de pacientes o vacantes.",
-        "cta": "Simular con este texto"
+        "notice": "SIMULACIÓN — lo que ves abajo es solo una vista previa con el texto que estás editando. No se guardó nada y no se envió nada a Talentum ni a nadie.",
+        "cta": "Simular con este texto",
+        "title": "Simular con un caso real",
+        "caseLabel": "Caso",
+        "casePlaceholder": "Elegí un caso…",
+        "casesLoading": "Cargando los casos…",
+        "casesError": "No se pudieron cargar los casos.",
+        "loading": "Generando la simulación…",
+        "resultTitle": "Resultado de la simulación",
+        "error": "No se pudo generar la simulación. El texto que estás editando se conservó; probá de nuevo en unos instantes.",
+        "errorUnavailable": "El modelo de IA no está disponible en este momento. El texto que estás editando se conservó; probá de nuevo en unos instantes."
       }
     }
   },
