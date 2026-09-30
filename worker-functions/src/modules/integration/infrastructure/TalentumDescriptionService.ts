@@ -68,6 +68,14 @@ export interface GenerateDescriptionInput {
   paymentDay?: string;
 }
 
+/** Caso inexistente — tipado para o chamador (ex.: preview) traduzir em 404. Mensagem inalterada. */
+export class JobPostingNotFoundError extends Error {
+  constructor(jobPostingId: string) {
+    super(`Job posting ${jobPostingId} not found`);
+    this.name = 'JobPostingNotFoundError';
+  }
+}
+
 export interface GeneratedDescription {
   title: string;
   description: string;
@@ -117,7 +125,7 @@ export class TalentumDescriptionService {
     );
 
     if (result.rows.length === 0) {
-      throw new Error(`Job posting ${jobPostingId} not found`);
+      throw new JobPostingNotFoundError(jobPostingId);
     }
 
     const row = result.rows[0];
@@ -152,8 +160,23 @@ export class TalentumDescriptionService {
    */
   async generateDescriptionPreview(jobPostingId: string): Promise<GeneratedDescription> {
     console.log(`[TalentumDesc] Generating description preview for job_posting ${jobPostingId}`);
+    return this.composeDescription(jobPostingId);
+  }
+
+  /**
+   * Lê o caso, monta o payload e chama o modelo — SEM gravar nada. É a parte de
+   * `generateDescription` que vai até produzir o texto (spec 029 T030).
+   *
+   * @param promptBodyOverride - Quando fornecido, é o corpo do prompt de sistema e a tabela
+   *   `ai_prompts` NÃO é consultada (preview de texto ainda não salvo). Omitido = comportamento
+   *   de sempre (`findActiveBySlug`).
+   */
+  async composeDescription(
+    jobPostingId: string,
+    promptBodyOverride?: string,
+  ): Promise<GeneratedDescription> {
     const input = await this.loadInput(jobPostingId);
-    const llmText = await this.callGemini(input);
+    const llmText = await this.callGemini(input, promptBodyOverride);
     const fullDescription = `${llmText.trim()}\n\n${MARCO_TEXT}`;
     return { title: input.title, description: fullDescription };
   }
@@ -172,9 +195,8 @@ export class TalentumDescriptionService {
     actor?: DescriptionAuditActor,
   ): Promise<GeneratedDescription> {
     console.log(`[TalentumDesc] Generating description for job_posting ${jobPostingId}`);
-    const input = await this.loadInput(jobPostingId);
-    const llmText = await this.callGemini(input);
-    const fullDescription = `${llmText.trim()}\n\n${MARCO_TEXT}`;
+    const composed = await this.composeDescription(jobPostingId);
+    const fullDescription = composed.description;
 
     // CA-3.6: persist in job_postings.talentum_description + audit UPDATED
     const client = await this.db.connect();
@@ -207,7 +229,7 @@ export class TalentumDescriptionService {
     }
     console.log(`[TalentumDesc] Description saved for job_posting ${jobPostingId}`);
 
-    return { title: input.title, description: fullDescription };
+    return { title: composed.title, description: fullDescription };
   }
 
   private formatSchedule(schedule?: Array<{ dayOfWeek: number; startTime: string; endTime: string }>): string {
@@ -225,7 +247,10 @@ export class TalentumDescriptionService {
     return 'No especificado';
   }
 
-  private async callGemini(input: GenerateDescriptionInput): Promise<string> {
+  private async callGemini(
+    input: GenerateDescriptionInput,
+    promptBodyOverride?: string,
+  ): Promise<string> {
     const profession = input.requiredProfessions.length > 0
       ? input.requiredProfessions.join(', ')
       : 'No especificado';
@@ -265,9 +290,15 @@ Datos de la vacante:
     // vem de `ai_prompts.body` para o slug VACANCY_DESCRIPTION, editável pela
     // tela sem redeploy. Ausência de linha não tem fallback para a constante
     // antiga — a falha visível para esse caso é objeto da T019a.
-    const prompt = await this.promptRepo.findActiveBySlug('VACANCY_DESCRIPTION');
-    if (!prompt) {
-      throw new Error('AiPrompt not found: VACANCY_DESCRIPTION');
+    let promptBody: string;
+    if (promptBodyOverride !== undefined) {
+      promptBody = promptBodyOverride;
+    } else {
+      const prompt = await this.promptRepo.findActiveBySlug('VACANCY_DESCRIPTION');
+      if (!prompt) {
+        throw new Error('AiPrompt not found: VACANCY_DESCRIPTION');
+      }
+      promptBody = prompt.body;
     }
 
     // 2.5-pro spends thinking tokens within maxOutputTokens; 4096 leaves
@@ -275,7 +306,7 @@ Datos de la vacante:
     const response = await generateContentVertex(
       this.model,
       {
-        systemInstruction: { parts: [{ text: prompt.body }] },
+        systemInstruction: { parts: [{ text: promptBody }] },
         contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
         generationConfig: {
           temperature: 0.3,

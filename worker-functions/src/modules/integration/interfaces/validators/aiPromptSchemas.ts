@@ -47,14 +47,14 @@ export const restoreAiPromptBodySchema = z
 export type RestoreAiPromptBody = z.infer<typeof restoreAiPromptBodySchema>;
 
 /**
- * `POST /api/admin/ai-prompts/{slug}/preview` — gera exemplo sem salvar. `scenarioId` é um dos
- * cenários fictícios versionados no código (fora do escopo desta tarefa validar contra a lista;
- * T011 cobre só o schema de FORMA — conferir a lista fechada é do controlador/caso de uso).
+ * `POST /api/admin/ai-prompts/{slug}/preview` — gera exemplo sem salvar, para um CASO REAL
+ * (decisão de 30/09: `jobPostingId`, não mais `scenarioId` fictício). Zod valida só FORMA; que o
+ * caso exista (404) é do caso de uso.
  */
 export const previewAiPromptBodySchema = z
   .object({
     body: z.string().trim().min(1, { message: 'body must not be empty or whitespace' }),
-    scenarioId: z.string().min(1, { message: 'scenarioId must not be empty' }),
+    jobPostingId: z.string().uuid({ message: 'jobPostingId must be a UUID' }),
   })
   .strict();
 export type PreviewAiPromptBody = z.infer<typeof previewAiPromptBodySchema>;

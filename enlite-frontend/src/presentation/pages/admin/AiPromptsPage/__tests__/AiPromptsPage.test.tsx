@@ -99,6 +99,9 @@ describe('AiPromptsPage — acesso de ESCRITA (ai_prompt:update)', () => {
 
   it('mostra as três abas e o editor completo da aba ativa (primeira, VACANCY_DESCRIPTION)', async () => {
     render(<AiPromptsPage />);
+    // O editor abre em modo leitura; o textarea só existe depois do "Editar".
+    expect(await screen.findByTestId('ai-prompt-editor-reader')).toHaveTextContent('Texto da descrição de vaga.');
+    fireEvent.click(screen.getByRole('button', { name: 'Editar' }));
     expect(await screen.findByTestId('ai-prompt-editor-textarea')).toHaveValue('Texto da descrição de vaga.');
     expect(screen.getByTestId('ai-prompt-tab-VACANCY_DESCRIPTION')).toBeInTheDocument();
     expect(screen.getByTestId('ai-prompt-tab-PRESCREENING_AT')).toBeInTheDocument();
@@ -108,19 +111,21 @@ describe('AiPromptsPage — acesso de ESCRITA (ai_prompt:update)', () => {
     expect(screen.queryByTestId('ai-prompts-read-only-notice')).not.toBeInTheDocument();
   });
 
-  it('trocar de aba troca o prompt mostrado no editor', async () => {
+  it('trocar de aba troca o prompt mostrado no editor (cada aba abre em modo leitura)', async () => {
     render(<AiPromptsPage />);
-    await screen.findByTestId('ai-prompt-editor-textarea');
+    expect(await screen.findByTestId('ai-prompt-editor-reader')).toHaveTextContent('Texto da descrição de vaga.');
 
     fireEvent.click(screen.getByTestId('ai-prompt-tab-PRESCREENING_AT'));
     await waitFor(() => {
-      expect(screen.getByTestId('ai-prompt-editor-textarea')).toHaveValue('Texto da pré-seleção de AT.');
+      expect(screen.getByTestId('ai-prompt-editor-reader')).toHaveTextContent('Texto da pré-seleção de AT.');
     });
+    expect(screen.queryByTestId('ai-prompt-editor-textarea')).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId('ai-prompt-tab-PRESCREENING_CAREGIVER'));
     await waitFor(() => {
-      expect(screen.getByTestId('ai-prompt-editor-textarea')).toHaveValue('Texto da pré-seleção de cuidador.');
+      expect(screen.getByTestId('ai-prompt-editor-reader')).toHaveTextContent('Texto da pré-seleção de cuidador.');
     });
+    expect(screen.queryByTestId('ai-prompt-editor-textarea')).not.toBeInTheDocument();
   });
 });
 

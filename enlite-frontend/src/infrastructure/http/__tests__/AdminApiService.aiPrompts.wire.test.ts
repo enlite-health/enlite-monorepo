@@ -62,4 +62,26 @@ describe('AdminApiService x AiPromptController — corpo real de 200 (sem dublar
     stubFetch(200, { data: [PROMPT_NO_FORMATO_DO_BACKEND] });
     await expect(AdminApiService.listAiPrompts()).rejects.toBeDefined();
   });
+
+  it('previewAiPrompt resolve para o `data` do 200 { success: true, data }', async () => {
+    const data = {
+      jobPostingId: '11111111-1111-4111-8111-111111111111',
+      slug: 'PRESCREENING_AT',
+      generated: '{"questions":[{"q":"..."}],"faq":[]}',
+    };
+    const fetchMock = stubFetch(200, { success: true, data });
+    await expect(
+      AdminApiService.previewAiPrompt('PRESCREENING_AT', 'texto em edição', data.jobPostingId),
+    ).resolves.toEqual(data);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain('/api/admin/ai-prompts/PRESCREENING_AT/preview');
+    expect(JSON.parse(init.body)).toEqual({ body: 'texto em edição', jobPostingId: data.jobPostingId });
+  });
+
+  it('previewAiPrompt rejeita no 503 { success: false } — a tela preserva o texto em edição', async () => {
+    stubFetch(503, { success: false, error: 'model_unavailable' });
+    await expect(
+      AdminApiService.previewAiPrompt('VACANCY_DESCRIPTION', 'texto', '11111111-1111-4111-8111-111111111111'),
+    ).rejects.toMatchObject({ status: 503 });
+  });
 });

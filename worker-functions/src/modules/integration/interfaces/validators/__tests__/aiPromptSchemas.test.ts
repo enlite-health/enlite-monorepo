@@ -53,11 +53,13 @@ describe('aiPromptSchemas — a borda (spec 029)', () => {
     expect(restoreAiPromptBodySchema.safeParse({ auditId: UUID, version: 7.5 }).success).toBe(false);
   });
 
-  it('🔒 preview body: recusa vazio e só espaços em branco; exige scenarioId', () => {
-    expect(previewAiPromptBodySchema.safeParse({ body: 'texto em edição', scenarioId: 'AT_NIGHT_SHIFT' }).success).toBe(true);
-    expect(previewAiPromptBodySchema.safeParse({ body: '   ', scenarioId: 'AT_NIGHT_SHIFT' }).success).toBe(false);
-    expect(previewAiPromptBodySchema.safeParse({ body: '', scenarioId: 'AT_NIGHT_SHIFT' }).success).toBe(false);
-    expect(previewAiPromptBodySchema.safeParse({ body: 'x', scenarioId: '' }).success).toBe(false);
+  it('🔒 preview body: recusa vazio e só espaços; exige jobPostingId UUID (caso real, não scenarioId)', () => {
+    const uuid = '3f2b1c9e-8d4a-4e6b-9a1f-0c5d7e2a4b61';
+    expect(previewAiPromptBodySchema.safeParse({ body: 'texto em edição', jobPostingId: uuid }).success).toBe(true);
+    expect(previewAiPromptBodySchema.safeParse({ body: '   ', jobPostingId: uuid }).success).toBe(false);
+    expect(previewAiPromptBodySchema.safeParse({ body: '', jobPostingId: uuid }).success).toBe(false);
+    expect(previewAiPromptBodySchema.safeParse({ body: 'x', jobPostingId: 'nao-e-uuid' }).success).toBe(false);
     expect(previewAiPromptBodySchema.safeParse({ body: 'x' }).success).toBe(false);
+    expect(previewAiPromptBodySchema.safeParse({ body: 'x', scenarioId: 'AT_NIGHT_SHIFT' }).success).toBe(false);
   });
 });

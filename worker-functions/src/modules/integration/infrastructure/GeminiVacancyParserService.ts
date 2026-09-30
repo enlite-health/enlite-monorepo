@@ -93,13 +93,14 @@ export class GeminiVacancyParserService {
   async parseFromText(
     text: string,
     workerType: WorkerType,
+    promptBodyOverride?: string,
   ): Promise<ParsedVacancyResult> {
     console.log(
       `[GeminiParser] Parsing vacancy text, workerType=${workerType}, len=${text.length}`,
     );
 
     const userParts = [{ text }];
-    return this.callGeminiAndParse(userParts, workerType);
+    return this.callGeminiAndParse(userParts, workerType, promptBodyOverride);
   }
 
   async parseFromPdf(
@@ -150,6 +151,7 @@ export class GeminiVacancyParserService {
       state?: string | null;
     },
     workerType: WorkerType = 'AT',
+    promptBodyOverride?: string,
   ): Promise<ParsedVacancyResult> {
     const days = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
     const scheduleText =
@@ -181,7 +183,7 @@ export class GeminiVacancyParserService {
       .filter(Boolean)
       .join('\n');
 
-    return this.parseFromText(text, workerType);
+    return this.parseFromText(text, workerType, promptBodyOverride);
   }
 
   async parseFromTalentumDescription(
@@ -194,8 +196,9 @@ export class GeminiVacancyParserService {
   private async callGeminiAndParse(
     userParts: Array<Record<string, any>>,
     workerType: WorkerType,
+    promptBodyOverride?: string,
   ): Promise<ParsedVacancyResult> {
-    const systemPrompt = await this.buildSystemPrompt(workerType);
+    const systemPrompt = await this.buildSystemPrompt(workerType, promptBodyOverride);
 
     const response = await generateContentVertex(
       this.model,
@@ -279,7 +282,14 @@ export class GeminiVacancyParserService {
     return parsed;
   }
 
-  private async buildSystemPrompt(workerType: WorkerType): Promise<string> {
+  private async buildSystemPrompt(
+    workerType: WorkerType,
+    promptBodyOverride?: string,
+  ): Promise<string> {
+    // Override (preview de prompt não salvo, spec 029 T030): usa o texto recebido e NÃO consulta a tabela.
+    if (promptBodyOverride !== undefined) {
+      return promptBodyOverride + '\n\n' + JSON_OUTPUT_INSTRUCTIONS;
+    }
     const slug: AiPromptSlug =
       workerType === 'AT' ? 'PRESCREENING_AT' : 'PRESCREENING_CAREGIVER';
 

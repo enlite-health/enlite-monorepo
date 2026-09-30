@@ -30,6 +30,8 @@ vi.mock('@infrastructure/http/AdminApiService', async (importOriginal) => {
       getAiPrompt: vi.fn(),
       updateAiPrompt: vi.fn(),
       undoAiPrompt: vi.fn(),
+      listVacancies: vi.fn(),
+      previewAiPrompt: vi.fn(),
     },
   };
 });
@@ -80,12 +82,23 @@ function deferred<T>(): { promise: Promise<T>; resolve: (v: T) => void; reject: 
   return { promise, resolve, reject };
 }
 
+/** O prompt abre em modo leitura; o textarea só existe depois do "Editar". Espera o botão e o textarea (sem corrida com o render). */
+const editar = async () => {
+  fireEvent.click(await screen.findByRole('button', { name: 'Editar' }));
+  await screen.findByTestId('ai-prompt-editor-textarea');
+};
+
 const getAiPrompt = () => vi.mocked(AdminApiService.getAiPrompt);
 const updateAiPrompt = () => vi.mocked(AdminApiService.updateAiPrompt);
 const undoAiPrompt = () => vi.mocked(AdminApiService.undoAiPrompt);
 
 describe('AiPromptEditor', () => {
   beforeEach(() => {
+    vi.mocked(AdminApiService.listVacancies).mockReset().mockResolvedValue({
+      data: [{ id: '11111111-1111-4111-8111-111111111111', caso: 'Caso 101', isDraft: false }],
+      total: 1,
+    });
+    vi.mocked(AdminApiService.previewAiPrompt).mockReset();
     getAiPrompt().mockReset();
     updateAiPrompt().mockReset();
     undoAiPrompt().mockReset();
@@ -95,8 +108,9 @@ describe('AiPromptEditor', () => {
 
   // ─── Render básico ────────────────────────────────────────────────────────
 
-  it('mostra o texto do prompt, o contador e a autoria da versão atual', () => {
+  it('mostra o texto do prompt, o contador e a autoria da versão atual', async () => {
     render(<AiPromptEditor prompt={fakePrompt({ body: 'abc', updatedBy: 'Ana Julieta' })} />);
+    await editar();
     expect(screen.getByTestId('ai-prompt-editor-textarea')).toHaveValue('abc');
     expect(screen.getByTestId('ai-prompt-editor-counter').textContent).toBe('3 caracteres');
     expect(screen.getByTestId('ai-prompt-editor-author').textContent).toContain('Ana Julieta');
@@ -117,6 +131,80 @@ describe('AiPromptEditor', () => {
     expect(screen.getByTestId('ai-prompt-editor-author')).toHaveTextContent('nao-e-uma-data');
   });
 
+  // ─── Modo leitura × edição (T028a) ───────────────────────────────────────
+
+  it('abre em modo leitura: sem textarea no documento', () => {
+    render(<AiPromptEditor prompt={fakePrompt()} />);
+    expect(screen.queryByTestId('ai-prompt-editor-textarea')).not.toBeInTheDocument();
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
+    expect(screen.getByTestId('ai-prompt-editor-reader')).toHaveTextContent('Texto original do prompt.');
+  });
+
+  it('clicar em "Editar" mostra o textarea com o Markdown cru', async () => {
+    const cru = '# Título\n\n1. primeiro\n2. segundo';
+    render(<AiPromptEditor prompt={fakePrompt({ body: cru })} />);
+    await editar();
+    expect(screen.getByTestId('ai-prompt-editor-textarea')).toHaveValue(cru);
+  });
+
+  it('lista numerada em Markdown vira <ol> com <li> no modo leitura', () => {
+    render(<AiPromptEditor prompt={fakePrompt({ body: '1. primeiro\n2. segundo' })} />);
+    const list = screen.getByRole('list');
+    expect(list.tagName).toBe('OL');
+    const items = screen.getAllByRole('listitem');
+    expect(items).toHaveLength(2);
+    expect(items[0].tagName).toBe('LI');
+    expect(items[0]).toHaveTextContent('primeiro');
+  });
+
+  it('painel de simulação: ausente na leitura, presente ao editar e simula com o texto EM EDIÇÃO', async () => {
+    vi.mocked(AdminApiService.previewAiPrompt).mockResolvedValue({
+      jobPostingId: '11111111-1111-4111-8111-111111111111',
+      slug: 'VACANCY_DESCRIPTION',
+      generated: 'saída simulada',
+    });
+    render(<AiPromptEditor prompt={fakePrompt()} />);
+    expect(screen.queryByTestId('ai-prompt-preview-panel')).not.toBeInTheDocument();
+    await editar();
+    fireEvent.change(screen.getByTestId('ai-prompt-editor-textarea'), { target: { value: 'texto novo não salvo' } });
+    fireEvent.change(await screen.findByTestId('ai-prompt-preview-case'), {
+      target: { value: '11111111-1111-4111-8111-111111111111' },
+    });
+    fireEvent.click(screen.getByTestId('ai-prompt-preview-run'));
+    expect(await screen.findByTestId('ai-prompt-preview-generated')).toHaveTextContent('saída simulada');
+    expect(AdminApiService.previewAiPrompt).toHaveBeenCalledWith(
+      'VACANCY_DESCRIPTION',
+      'texto novo não salvo',
+      '11111111-1111-4111-8111-111111111111',
+    );
+    expect(updateAiPrompt()).not.toHaveBeenCalled();
+  });
+
+  it('cancelar descarta o rascunho e volta ao modo leitura', async () => {
+    render(<AiPromptEditor prompt={fakePrompt()} />);
+    await editar();
+    fireEvent.change(screen.getByTestId('ai-prompt-editor-textarea'), { target: { value: 'rascunho' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+    expect(await screen.findByTestId('ai-prompt-editor-reader')).toHaveTextContent('Texto original do prompt.');
+    expect(screen.queryByTestId('ai-prompt-editor-textarea')).not.toBeInTheDocument();
+  });
+
+  it('salvar com sucesso volta ao modo leitura', async () => {
+    updateAiPrompt().mockResolvedValue(fakePrompt({ version: 4, body: 'Novo.' }));
+    render(<AiPromptEditor prompt={fakePrompt()} />);
+    await editar();
+    fireEvent.change(screen.getByTestId('ai-prompt-editor-textarea'), { target: { value: 'Novo.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
+    await waitFor(() => expect(screen.queryByTestId('ai-prompt-editor-textarea')).not.toBeInTheDocument());
+    expect(screen.getByTestId('ai-prompt-editor-reader')).toHaveTextContent('Novo.');
+  });
+
+  it('sem ai_prompt:update: não há botão Editar', () => {
+    comEnforcement(['ai_prompt:read']);
+    render(<AiPromptEditor prompt={fakePrompt()} />);
+    expect(screen.queryByRole('button', { name: 'Editar' })).not.toBeInTheDocument();
+  });
+
   // ─── Salvar ───────────────────────────────────────────────────────────────
 
   it('salvar: sucesso grava o texto novo e avisa o pai via onSaved', async () => {
@@ -126,6 +214,7 @@ describe('AiPromptEditor', () => {
     updateAiPrompt().mockReturnValue(saved.promise);
 
     render(<AiPromptEditor prompt={prompt} onSaved={onSaved} />);
+    await editar();
     fireEvent.change(screen.getByTestId('ai-prompt-editor-textarea'), { target: { value: 'Texto novo do prompt.' } });
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
 
@@ -133,7 +222,9 @@ describe('AiPromptEditor', () => {
     expect(await screen.findByRole('button', { name: 'Salvando…' })).toBeDisabled();
 
     saved.resolve(fakePrompt({ version: 4, body: 'Texto novo do prompt.', updatedBy: 'uid-quem-salvou' }));
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Salvar' })).toBeEnabled());
+    // Terminado o salvamento, o componente volta ao modo leitura (botão "Editar", sem "Salvar").
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Editar' })).toBeEnabled());
+    expect(screen.queryByRole('button', { name: 'Salvar' })).not.toBeInTheDocument();
 
     expect(updateAiPrompt()).toHaveBeenCalledWith('VACANCY_DESCRIPTION', 'Texto novo do prompt.', 3);
     expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ version: 4 }));
@@ -142,6 +233,7 @@ describe('AiPromptEditor', () => {
 
   it('salvar: texto vazio mostra o erro e NÃO chama a API', async () => {
     render(<AiPromptEditor prompt={fakePrompt()} />);
+    await editar();
     fireEvent.change(screen.getByTestId('ai-prompt-editor-textarea'), { target: { value: '   ' } });
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
 
@@ -155,6 +247,7 @@ describe('AiPromptEditor', () => {
     getAiPrompt().mockResolvedValue(fakePrompt({ version: 5, updatedBy: 'Fulana', body: 'Texto original do prompt.' }));
 
     render(<AiPromptEditor prompt={prompt} />);
+    await editar();
     fireEvent.change(screen.getByTestId('ai-prompt-editor-textarea'), { target: { value: 'Meu rascunho não salvo.' } });
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
 
@@ -169,6 +262,7 @@ describe('AiPromptEditor', () => {
     getAiPrompt().mockRejectedValue(new Error('rede caiu'));
 
     render(<AiPromptEditor prompt={fakePrompt()} />);
+    await editar();
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
 
     const error = await screen.findByTestId('ai-prompt-editor-save-error');
@@ -180,6 +274,7 @@ describe('AiPromptEditor', () => {
     getAiPrompt().mockResolvedValue(fakePrompt({ version: 9, updatedBy: null }));
 
     render(<AiPromptEditor prompt={fakePrompt()} />);
+    await editar();
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
 
     const error = await screen.findByTestId('ai-prompt-editor-save-error');
@@ -189,6 +284,7 @@ describe('AiPromptEditor', () => {
   it('salvar: erro genérico (Error) mostra a mensagem do erro', async () => {
     updateAiPrompt().mockRejectedValue(new Error('o servidor caiu'));
     render(<AiPromptEditor prompt={fakePrompt()} />);
+    await editar();
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
     expect(await screen.findByTestId('ai-prompt-editor-save-error')).toHaveTextContent('o servidor caiu');
   });
@@ -196,6 +292,7 @@ describe('AiPromptEditor', () => {
   it('salvar: erro que não é instância de Error cai na mensagem padrão', async () => {
     updateAiPrompt().mockRejectedValue('falha crua, sem Error');
     render(<AiPromptEditor prompt={fakePrompt()} />);
+    await editar();
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
     expect(await screen.findByTestId('ai-prompt-editor-save-error')).toHaveTextContent('O texto não pode ficar vazio.');
   });
@@ -209,11 +306,12 @@ describe('AiPromptEditor', () => {
     undoAiPrompt().mockReturnValue(undone.promise);
 
     render(<AiPromptEditor prompt={prompt} onSaved={onSaved} />);
+    await editar();
     fireEvent.click(screen.getByRole('button', { name: 'Desfazer última alteração' }));
 
     expect(window.confirm).toHaveBeenCalledWith('Desfazer a última alteração? O texto volta para a versão anterior.');
     // Em voo: botão de desfazer fica desabilitado (branch `undoing=true`).
-    expect(screen.getByRole('button', { name: 'Desfazer última alteração' })).toBeDisabled();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Desfazer última alteração' })).toBeDisabled());
 
     undone.resolve(fakePrompt({ version: 3, body: 'Texto anterior, de volta.' }));
     await waitFor(() => expect(screen.getByTestId('ai-prompt-editor-textarea')).toHaveValue('Texto anterior, de volta.'));
@@ -250,6 +348,7 @@ describe('AiPromptEditor', () => {
     getAiPrompt().mockResolvedValue(fakePrompt({ version: 6, updatedBy: 'Beltrana', body: 'Texto mais novo no servidor.' }));
 
     render(<AiPromptEditor prompt={prompt} />);
+    await editar();
     // Sem editar o textarea: body === current.body — o conflito reconfere e ATUALIZA o rascunho.
     fireEvent.click(screen.getByRole('button', { name: 'Desfazer última alteração' }));
 
