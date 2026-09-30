@@ -166,7 +166,8 @@ describe('Pré-triagem sem Drive — a fonte do prompt é só a tabela (spec 029
 
       const delta = apiContainerLogs().slice(before.length);
       expect(delta).toContain('[VERTEX-STUB] intercepted call');
-      expect(delta).toContain(JSON.stringify(marker));
+      // Ancorada no campo e sem a aspa de fechamento: o serviço anexa o bloco de formato depois do marcador.
+      expect(delta).toContain(`systemInstruction=${JSON.stringify(marker).slice(0, -1)}`);
       // 3) custo zero: toda chamada ao modelo foi barrada no preload; nada foi bloqueado como inesperado.
       expect(delta).toContain('NO REAL NETWORK CALL LEFT THIS PROCESS');
       expect(delta).not.toContain('[VERTEX-STUB] BLOCKED');

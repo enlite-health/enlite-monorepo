@@ -117,7 +117,9 @@ describe('Pré-triagem ignora o Drive — o texto usado é o da tabela (spec 029
 
     const delta = await generate();
     expect(delta).toContain('[VERTEX-STUB] intercepted call');
-    expect(delta).toContain(JSON.stringify(marker));
+    // Ancorada em `systemInstruction="`: o serviço anexa o bloco de formato depois do marcador, então a aspa
+    // de fechamento não vem logo após ele — `JSON.stringify(marker)` (2 aspas) nunca casaria.
+    expect(delta).toContain(`systemInstruction="${asLogged(marker)}`);
     expect(delta).toContain('NO REAL NETWORK CALL LEFT THIS PROCESS');
     expect(delta).not.toContain('[VERTEX-STUB] BLOCKED');
     // O Doc segue existindo, inalterado — e nada dele chega ao modelo.
