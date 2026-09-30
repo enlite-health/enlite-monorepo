@@ -37,6 +37,7 @@ const ESPERADO: Record<string, string> = {
   'PUT /ai-prompts/:slug': AI_PROMPT_UPDATE,
   'POST /ai-prompts/:slug/undo': AI_PROMPT_UPDATE,
   'POST /ai-prompts/:slug/preview': AI_PROMPT_UPDATE,
+  'POST /ai-prompts/simulate-vacancy': AI_PROMPT_UPDATE, // T071
 };
 
 /** Cada handler devolve o próprio nome — é o que identifica quem foi chamado (e com que params). */
@@ -49,6 +50,7 @@ function controllerDuble(): AiPromptController {
     update: responde('update'),
     undo: responde('undo'),
     preview: responde('preview'),
+    simulateVacancy: responde('simulateVacancy'),
   } as unknown as AiPromptController;
 }
 
@@ -66,7 +68,7 @@ describe('createAdminAiPromptRoutes', () => {
     expect(undeclaredRoutes(scanExpressRouter(build()), () => true)).toEqual([]);
   });
 
-  it('cada uma das 5 rotas declara a célula do mapa (T013/T019b)', () => {
+  it('cada uma das 6 rotas declara a célula do mapa (T013/T019b)', () => {
     const declarado = Object.fromEntries(
       scanExpressRouter(build()).map((route) => [
         `${route.method} ${route.path}`,
@@ -76,15 +78,15 @@ describe('createAdminAiPromptRoutes', () => {
     expect(declarado).toEqual(ESPERADO);
   });
 
-  it('são exatamente 5 rotas: 2 leituras (list/get) + 3 escritas (update/undo/preview) — restore é de fase posterior', () => {
-    expect(scanExpressRouter(build())).toHaveLength(5);
+  it('são exatamente 6 rotas: 2 leituras (list/get) + 4 escritas (update/undo/preview/simulate-vacancy) — restore é de fase posterior', () => {
+    expect(scanExpressRouter(build())).toHaveLength(6);
   });
 
-  it('exatamente 2 `router.get(`, 1 `router.put(` e 2 `router.post(` — nenhum patch/delete', () => {
+  it('exatamente 2 `router.get(`, 1 `router.put(` e 3 `router.post(` — nenhum patch/delete', () => {
     const rotas = scanExpressRouter(build());
     expect(rotas.filter((r) => r.method === 'GET')).toHaveLength(2);
     expect(rotas.filter((r) => r.method === 'PUT')).toHaveLength(1);
-    expect(rotas.filter((r) => r.method === 'POST')).toHaveLength(2);
+    expect(rotas.filter((r) => r.method === 'POST')).toHaveLength(3);
     expect(rotas.map((r) => r.method)).not.toContain('PATCH');
     expect(rotas.map((r) => r.method)).not.toContain('DELETE');
   });
@@ -96,6 +98,7 @@ describe('createAdminAiPromptRoutes', () => {
     ['put', '/api/admin/ai-prompts/VACANCY_DESCRIPTION', 'update', 'VACANCY_DESCRIPTION'],
     ['post', '/api/admin/ai-prompts/VACANCY_DESCRIPTION/undo', 'undo', 'VACANCY_DESCRIPTION'],
     ['post', '/api/admin/ai-prompts/PRESCREENING_AT/preview', 'preview', 'PRESCREENING_AT'],
+    ['post', '/api/admin/ai-prompts/simulate-vacancy', 'simulateVacancy', undefined],
   ] as const)('%s %s → %s', async (metodo, caminho, esperado, slugEsperado) => {
     const res = await request(app())
       [metodo](caminho)

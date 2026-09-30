@@ -40,6 +40,7 @@ import {
   PreviewEmptyBodyError,
   JobPostingNotFoundError,
 } from '../../application/PreviewAiPromptUseCase';
+import { SimulateVacancyAiUseCase } from '../../application/SimulateVacancyAiUseCase';
 import { GeminiApiError } from '../../infrastructure/gemini-fetch';
 import type { AiPrompt } from '../../infrastructure/AiPromptRepository';
 import { isAiPromptSlug } from '../../domain/AiPromptSlug';
@@ -47,6 +48,7 @@ import {
   updateAiPromptBodySchema,
   undoAiPromptBodySchema,
   previewAiPromptBodySchema,
+  simulateVacancyBodySchema,
 } from '../validators/aiPromptSchemas';
 
 const AI_PROMPT_READ_CELL = 'ai_prompt:read';
@@ -98,6 +100,7 @@ export class AiPromptController {
     private readonly updateUseCase: UpdateAiPromptUseCase = new UpdateAiPromptUseCase(),
     private readonly undoUseCase: UndoAiPromptUseCase = new UndoAiPromptUseCase(),
     private readonly previewUseCase: PreviewAiPromptUseCase = new PreviewAiPromptUseCase(),
+    private readonly simulateUseCase: SimulateVacancyAiUseCase = new SimulateVacancyAiUseCase(),
   ) {}
 
   /** `GET /api/admin/ai-prompts` — os três registros, com conteúdo (sem paginação: cerimônia inútil). */
@@ -294,6 +297,41 @@ export class AiPromptController {
       }
       reportError(e, { source: 'AiPromptController:preview' });
       res.status(500).json({ success: false, error: 'Failed to preview ai prompt' });
+    }
+  }
+
+  /**
+   * `POST /api/admin/ai-prompts/simulate-vacancy` — simula a criação de uma vacante com os prompts
+   * em edição (T071), sem gravar nada. Mesma célula do `preview` (`ai_prompt:update`).
+   */
+  async simulateVacancy(req: Request, res: Response): Promise<void> {
+    try {
+      const parsed = simulateVacancyBodySchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        res.status(400).json({ success: false, error: 'Invalid body', details: parsed.error.flatten() });
+        return;
+      }
+
+      if (!canUpdateAiPrompt(cellsOfRequest(req))) {
+        res.status(403).json({ success: false, error: 'Forbidden', details: { cell: AI_PROMPT_UPDATE_CELL } });
+        return;
+      }
+
+      const result = await this.simulateUseCase.execute(parsed.data);
+      res.status(200).json({ success: true, data: result });
+    } catch (error: unknown) {
+      if (error instanceof JobPostingNotFoundError) {
+        res.status(404).json({ success: false, error: 'caso_nao_encontrado' });
+        return;
+      }
+      const e = error instanceof Error ? error : new Error(String(error));
+      if (e instanceof GeminiApiError || e.message.startsWith('Vertex AI:')) {
+        reportError(e, { source: 'AiPromptController:simulateVacancy' });
+        res.status(503).json({ success: false, error: 'modelo_indisponivel' });
+        return;
+      }
+      reportError(e, { source: 'AiPromptController:simulateVacancy' });
+      res.status(500).json({ success: false, error: 'Failed to simulate vacancy' });
     }
   }
 }
