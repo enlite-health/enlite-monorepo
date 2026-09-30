@@ -3991,7 +3991,20 @@
             "goToVacancy": "Ir a la vacante",
             "noVacancy": "Este servicio no tiene una vacante activa.",
             "anaCareNotice": "Recordá cargar este cambio a mano en Ana Care — no se envía automáticamente.",
+            "removeFromItinerary": "Quitar del itinerario",
             "cancel": "Cerrar"
+          },
+          "removePanel": {
+            "title": "Quitar del itinerario",
+            "worker": "Prestador: {{worker}}",
+            "reason": "Motivo",
+            "confirm": "Confirmar",
+            "submitError": "No se pudo quitar al prestador del itinerario. Probá de nuevo."
+          },
+          "exitDestination": {
+            "label": "Destino",
+            "RESERVE": "Sigue como reserva",
+            "LEAVE_SERVICE": "Sale del encuadre de este servicio"
           },
           "overlap": "Conflicto de horario: el prestador ya atiende {{existing}} y el pedido es {{requested}}.",
           "overlapGap": "Entre direcciones distintas se exige un intervalo de {{minutes}} min.",
@@ -4027,6 +4040,12 @@
             "submitError": "No se pudo guardar la sustitución. Probá de nuevo."
           },
           "actionErrors": {
+            "REASON_REQUIRED": "Elegí un motivo para continuar.",
+            "REASON_INVALID": "Ese motivo no es válido.",
+            "DESTINATION_REQUIRED": "Elegí el destino del prestador.",
+            "SERVICE_TEAM_WORKER_ALLOCATED": "Este prestador tiene atenciones agendadas; cancele antes de sacarlo del encuadre.",
+            "SERVICE_TEAM_NOT_SELECTED": "Este prestador ya no está en Seleccionados.",
+            "SERVICE_TEAM_ALREADY_REJECTED": "Este prestador ya está rechazado.",
             "NOT_SELECTED_FOR_SERVICE": "Este prestador ya no está en Seleccionado para este servicio.",
             "ALREADY_ALLOCATED_IN_SLOT": "Este prestador ya está asignado a esta franja.",
             "SLOT_INACTIVE": "Esta franja ya no está activa.",

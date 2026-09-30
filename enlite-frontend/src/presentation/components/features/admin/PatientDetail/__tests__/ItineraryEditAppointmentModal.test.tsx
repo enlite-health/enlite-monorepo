@@ -12,6 +12,10 @@ import esJson from '@infrastructure/i18n/locales/es.json';
 import ptBRJson from '@infrastructure/i18n/locales/pt-BR.json';
 import { ItineraryEditAppointmentModal } from '../ItineraryEditAppointmentModal';
 
+vi.mock('@hooks/admin/useServiceExitReasonOptions', () => ({
+  useServiceExitReasonOptions: () => ({ options: [{ code: 'OTHER', label: 'Otro' }], status: 'ok' }),
+}));
+
 beforeAll(async () => {
   await i18n.use(initReactI18next).init({
     lng: 'es',
@@ -163,5 +167,48 @@ describe('ItineraryEditAppointmentModal', () => {
     const { onCancel } = renderModal();
     fireEvent.click(screen.getByTestId('itinerario-editar-modal-backdrop'));
     await waitFor(() => expect(onCancel).toHaveBeenCalledTimes(1));
+  });
+
+  describe('Fase 4 — "Quitar del itinerario"', () => {
+    it('com prestador atual e onRemove: o botão do prestador atual aparece; o painel só abre ao clicar', () => {
+      renderModal({ currentWorkerId: 'w-2', onRemove: vi.fn() });
+      expect(screen.queryByTestId('itinerario-quitar-painel')).toBeNull();
+      fireEvent.click(screen.getByTestId('itinerario-quitar-w-2'));
+      const panel = screen.getByTestId('itinerario-quitar-painel');
+      expect(panel).toBeInTheDocument();
+      // irmão do modal, não filho (o `transform` do modal prenderia o `fixed` do painel)
+      expect(screen.getByTestId('itinerario-editar-modal').contains(panel)).toBe(false);
+      expect(screen.getByTestId('itinerario-quitar-prestador')).toHaveTextContent('Elio Fixture');
+    });
+
+    it('só o prestador ATUAL da faixa tem o botão (nenhum outro Selecionado)', () => {
+      renderModal({ currentWorkerId: 'w-2', onRemove: vi.fn() });
+      expect(screen.getByTestId('itinerario-quitar-w-2')).toBeInTheDocument();
+      expect(screen.queryByTestId('itinerario-quitar-w-1')).toBeNull();
+    });
+
+    it('sem prestador atual, ou sem onRemove: não há ação de quitar', () => {
+      const { unmount } = renderModal({ currentWorkerId: null, onRemove: vi.fn() });
+      expect(screen.queryByTestId('itinerario-quitar-w-2')).toBeNull();
+      unmount();
+      renderModal({ currentWorkerId: 'w-2' });
+      expect(screen.queryByTestId('itinerario-quitar-w-2')).toBeNull();
+    });
+
+    it('prestador atual fora da lista de opções (Em Atendimento): o rótulo cai no fallback com o fim do id, sem lançar', () => {
+      renderModal({ currentWorkerId: 'w-12345678-fim', options: [], onRemove: vi.fn() });
+      fireEvent.click(screen.getByTestId('itinerario-quitar-w-12345678-fim'));
+      expect(screen.getByTestId('itinerario-quitar-prestador').textContent).toContain('5678-fim');
+    });
+
+    it('confirmar no painel chama onRemove(motivo, destino)', () => {
+      const onRemove = vi.fn();
+      renderModal({ currentWorkerId: 'w-2', onRemove });
+      fireEvent.click(screen.getByTestId('itinerario-quitar-w-2'));
+      fireEvent.change(screen.getByTestId('itinerario-quitar-motivo'), { target: { value: 'OTHER' } });
+      fireEvent.click(screen.getByTestId('itinerario-quitar-destino-RESERVE'));
+      fireEvent.click(screen.getByTestId('itinerario-quitar-confirmar'));
+      expect(onRemove).toHaveBeenCalledWith('OTHER', 'RESERVE');
+    });
   });
 });
