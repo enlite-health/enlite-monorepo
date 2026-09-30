@@ -13,6 +13,9 @@ jest.mock('@modules/identity', () => ({
   AuthMiddleware: { getAuthContext: jest.fn() },
 }));
 jest.mock('@shared/logging', () => ({ reportError: jest.fn() }));
+jest.mock('@shared/database/DatabaseConnection', () => ({
+  DatabaseConnection: { getInstance: jest.fn().mockReturnValue({ getPool: jest.fn().mockReturnValue({ pool: 'fake' }) }) },
+}));
 // Só para a prova de memoização/lazy do getter `coverageContacts` (sem tocar o pool de verdade):
 // o resto do arquivo passa o 4º repo por injeção e nunca deixa este mock ser instanciado.
 jest.mock('../../../infrastructure/PatientCoverageEmergencyContactRepository', () => ({
@@ -756,6 +759,28 @@ describe('AdminTherapeuticProjectsController', () => {
       await ctrl({}, catalogs).listCatalog('activities', mockReq(), res);
       expect(res.status).toHaveBeenCalledWith(500);
       expect((reportError as jest.Mock).mock.calls[0][0].message).toBe('rejeição crua');
+    });
+  });
+
+  describe('listServiceExitReasonOptions (492)', () => {
+    const exitCtrl = (reader: Record<string, unknown>) =>
+      new AdminTherapeuticProjectsController({} as never, {} as never, stubContacts() as never, stubCoverageContacts() as never, reader as never);
+
+    it('200 com `{ items: [{ code, label }] }` vindo só dos ativos (o reader é quem filtra `active`)', async () => {
+      const reader = { listActiveOptions: jest.fn().mockResolvedValue([{ code: 'OTHER', label: 'Otro' }]) };
+      const res = mockRes();
+      await exitCtrl(reader).listServiceExitReasonOptions(mockReq(), res);
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(reader.listActiveOptions).toHaveBeenCalledWith({ pool: 'fake' });
+      expect(corpoDaResposta(res)).toEqual({ success: true, data: { items: [{ code: 'OTHER', label: 'Otro' }] } });
+    });
+
+    it('500 quando o reader lança', async () => {
+      const reader = { listActiveOptions: jest.fn().mockRejectedValue(new Error('boom')) };
+      const res = mockRes();
+      await exitCtrl(reader).listServiceExitReasonOptions(mockReq(), res);
+      expect(res.status).toHaveBeenCalledWith(500);
+      expect(reportError).toHaveBeenCalledWith(expect.any(Error), { source: 'AdminTherapeuticProjectsController:listServiceExitReasonOptions' });
     });
   });
 

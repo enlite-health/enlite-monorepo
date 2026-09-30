@@ -97,6 +97,17 @@ describe('TherapeuticCatalogRepository', () => {
       expect(THERAPEUTIC_CATALOG_TABLE[kind]).toBe(tabela);
     });
 
+    it('kind `service-exit-reasons` (492) resolve a tabela nova; `code` só aparece quando a linha tem a coluna', async () => {
+      mockPoolQuery.mockResolvedValue({ rows: [{ ...ROW, code: 'OTHER' }] });
+      const itens = await new TherapeuticCatalogRepository().list('service-exit-reasons');
+      expect(mockPoolQuery.mock.calls[0][0]).toContain('FROM service_exit_reasons');
+      expect(itens[0]).toMatchObject({ id: 'item-1', code: 'OTHER' });
+      mockPoolQuery.mockResolvedValue({ rows: [ROW] });
+      const semCode = await new TherapeuticCatalogRepository().list('activities');
+      expect(semCode[0]).not.toHaveProperty('code');
+      expect(semCode[0]).not.toHaveProperty('segmentId');
+    });
+
     it('o pool é memoizado: duas chamadas, um único getPool()', async () => {
       mockPoolQuery.mockResolvedValue({ rows: [] });
       const repo = new TherapeuticCatalogRepository();

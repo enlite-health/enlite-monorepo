@@ -62,7 +62,7 @@ describe('PermissionCell', () => {
 
 // ── spec 018, PR-8b (ADR-2/SUP-30): split write → create+update ────────────────
 describe('SPLIT_RESOURCES / isSplitResource', () => {
-  it('tem exatamente os 18 recursos com write LITERAL na rota + os 4 por variável (22 no total)', () => {
+  it('tem exatamente os 18 recursos com write LITERAL na rota + os 5 por variável (23 no total)', () => {
     // 18 literais: `git grep -n "perm\.require([^)]*'write'" -- worker-functions/src | grep -v __tests__`
     // menos `permission_management` (medido 15/09, 93 hits — excluir por CAMINHO `__tests__`,
     // nunca por substring "test" na linha, que corta `/workers/:id/test-flag` e
@@ -78,10 +78,10 @@ describe('SPLIT_RESOURCES / isSplitResource', () => {
     ];
     const porVariavel = [
       'patient_therapeutic_project', 'catalog_therapeutic_objectives',
-      'catalog_therapeutic_activities', 'catalog_therapeutic_segments',
+      'catalog_therapeutic_activities', 'catalog_therapeutic_segments', 'catalog_service_exit_reasons',
     ];
     expect([...SPLIT_RESOURCES].sort()).toEqual([...literais, ...porVariavel].sort());
-    expect(SPLIT_RESOURCES.size).toBe(22);
+    expect(SPLIT_RESOURCES.size).toBe(23);
   });
 
   it('permission_management NUNCA é recurso splitado — é a única rota que continua sob write', () => {
@@ -93,7 +93,7 @@ describe('SPLIT_RESOURCES / isSplitResource', () => {
     expect(CELL_DESCRIPTION['worker:create']).toBeUndefined();
   });
 
-  it('cada um dos 22 recursos splitados tem CELL_DESCRIPTION para create E update', () => {
+  it('cada um dos 23 recursos splitados tem CELL_DESCRIPTION para create E update', () => {
     for (const resource of SPLIT_RESOURCES) {
       expect(CELL_DESCRIPTION[cellKey(resource, 'create')]?.trim().length ?? 0).toBeGreaterThan(0);
       expect(CELL_DESCRIPTION[cellKey(resource, 'update')]?.trim().length ?? 0).toBeGreaterThan(0);

@@ -344,6 +344,8 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       // explícitos abaixo.
       'catalog_therapeutic_objectives:read',
       'catalog_therapeutic_activities:read',
+      // Motivos de saída (492): mesma família, célula literal própria.
+      'catalog_service_exit_reasons:read',
       // US-17 (spec 018, PR-7, migration 430) — catálogo dos segmentos da Ana Care, mesmo molde.
       'catalog_therapeutic_segments:read',
       // spec 018, PR-8b (ADR-2/SUP-30): split write→create+update dos recursos. Nesta rodada
@@ -364,6 +366,7 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       'patient_therapeutic_project:create', 'patient_therapeutic_project:update',
       'catalog_therapeutic_objectives:create', 'catalog_therapeutic_objectives:update',
       'catalog_therapeutic_activities:create', 'catalog_therapeutic_activities:update',
+      'catalog_service_exit_reasons:create', 'catalog_service_exit_reasons:update',
       'catalog_therapeutic_segments:create', 'catalog_therapeutic_segments:update',
       'user_management:create', 'user_management:update',
       'vacancy:create', 'vacancy:update',

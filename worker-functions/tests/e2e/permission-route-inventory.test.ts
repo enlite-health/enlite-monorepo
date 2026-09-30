@@ -369,6 +369,11 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'GET /api/admin/therapeutic-catalogs/segments → catalog_therapeutic_segments:read',
         'POST /api/admin/therapeutic-catalogs/segments → catalog_therapeutic_segments:create',
         'PATCH /api/admin/therapeutic-catalogs/segments/:itemId → catalog_therapeutic_segments:update',
+        // Motivos de saída (migration 492) — kind fora do laço terapêutico, célula literal própria.
+        'GET /api/admin/therapeutic-catalogs/service-exit-reasons → catalog_service_exit_reasons:read',
+        'POST /api/admin/therapeutic-catalogs/service-exit-reasons → catalog_service_exit_reasons:create',
+        'PATCH /api/admin/therapeutic-catalogs/service-exit-reasons/:itemId → catalog_service_exit_reasons:update',
+        'GET /api/admin/therapeutic-catalogs/service-exit-reasons/options → patient_services:read',
         // anacare-conferencia-de-horas, fase 1 (migration 437) — `anacare_hours:read` para ver
         // turno/horas/origem/status, `:validate` para validar (em lote), validar 1 turno e contestar.
         'GET /api/admin/anacare-hours/months/:month → anacare_hours:read',

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { containsLikelyPersonalData } from '@modules/identity/permissions';
-import { CONTACT_REF_KINDS, THERAPEUTIC_CATALOG_KINDS, THERAPEUTIC_MODALITIES, type TherapeuticCatalogKind } from '../../domain/TherapeuticProject';
+import { CONTACT_REF_KINDS, THERAPEUTIC_CATALOG_KINDS, THERAPEUTIC_MODALITIES } from '../../domain/TherapeuticProject';
+import type { AdminCatalogKind } from '../../domain/serviceExitReason';
 
 /** Teto de contatos/equipe por versão — espelha o `.max(20)` do contrato (lex #7, migration 429). */
 export const THERAPEUTIC_CONTACT_REFS_MAX = 20;
@@ -131,12 +132,15 @@ const updateCatalogItemWithSegmentSchema = z
 export type CreateCatalogItemBody = z.infer<typeof createCatalogItemWithSegmentSchema>;
 export type UpdateCatalogItemBody = z.infer<typeof updateCatalogItemWithSegmentSchema>;
 
+/** Só objetivos e atividades têm `segment_id` (430); `segments` e o catálogo de motivos de saída (492) não. */
+const kindHasSegment = (kind: AdminCatalogKind): boolean => kind === 'specific-objectives' || kind === 'activities';
+
 /** Schema de CRIAÇÃO pelo `kind` da rota (célula literal, D299.3) — só objetivos/atividades aceitam `segmentId`. */
-export function createCatalogItemSchemaFor(kind: TherapeuticCatalogKind): typeof createCatalogItemSchema | typeof createCatalogItemWithSegmentSchema {
-  return kind === 'segments' ? createCatalogItemSchema : createCatalogItemWithSegmentSchema;
+export function createCatalogItemSchemaFor(kind: AdminCatalogKind): typeof createCatalogItemSchema | typeof createCatalogItemWithSegmentSchema {
+  return kindHasSegment(kind) ? createCatalogItemWithSegmentSchema : createCatalogItemSchema;
 }
 
 /** Schema de PATCH pelo `kind` da rota — mesma régua do de criação. */
-export function updateCatalogItemSchemaFor(kind: TherapeuticCatalogKind): typeof updateCatalogItemSchema | typeof updateCatalogItemWithSegmentSchema {
-  return kind === 'segments' ? updateCatalogItemSchema : updateCatalogItemWithSegmentSchema;
+export function updateCatalogItemSchemaFor(kind: AdminCatalogKind): typeof updateCatalogItemSchema | typeof updateCatalogItemWithSegmentSchema {
+  return kindHasSegment(kind) ? updateCatalogItemWithSegmentSchema : updateCatalogItemSchema;
 }

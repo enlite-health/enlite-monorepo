@@ -35,7 +35,9 @@ import {
   createCatalogItemSchemaFor,
   updateCatalogItemSchemaFor,
 } from '../validators/therapeuticProjectSchemas';
-import type { TherapeuticCatalogKind } from '../../domain/TherapeuticProject';
+import type { AdminCatalogKind } from '../../domain/serviceExitReason';
+import { ServiceExitReasonReader } from '../../infrastructure/ServiceExitReasonReader';
+import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { THERAPEUTIC_FIELD_CLASS } from '../../domain/TherapeuticProject';
 import { DiagnosisUnknownError } from '../../application/pathologySegments';
 import { TerminologyUnavailableError } from '@modules/terminology/domain/UnavailableTerminology';
@@ -78,6 +80,7 @@ export class AdminTherapeuticProjectsController {
     // Injetado LAZY (molde das outras 3 acima): construir aqui em cima tocaria o pool no
     // construtor sem repo (PatientCoverageEmergencyContactRepository NÃO tem getter preguiçoso).
     private readonly coverageContactsInjected?: PatientCoverageEmergencyContactRepository,
+    private readonly serviceExitReasons: ServiceExitReasonReader = new ServiceExitReasonReader(),
   ) {}
 
   private coverageContactsMemo?: PatientCoverageEmergencyContactRepository;
@@ -297,7 +300,7 @@ export class AdminTherapeuticProjectsController {
   // ── Catálogos ───────────────────────────────────────────────────────────────────────────
 
   /** GET /therapeutic-catalogs/<kind>?includeInactive=true — o `kind` vem da ROTA (célula literal), não de param. */
-  async listCatalog(kind: TherapeuticCatalogKind, req: Request, res: Response): Promise<void> {
+  async listCatalog(kind: AdminCatalogKind, req: Request, res: Response): Promise<void> {
     try {
       const items = await this.catalogs.list(kind, { includeInactive: req.query.includeInactive === 'true' });
       res.status(200).json({ success: true, data: { kind, items } });
@@ -308,8 +311,20 @@ export class AdminTherapeuticProjectsController {
     }
   }
 
+  /** GET /therapeutic-catalogs/service-exit-reasons/options — só ativos, para quem registra a troca (patient_services:read). */
+  async listServiceExitReasonOptions(_req: Request, res: Response): Promise<void> {
+    try {
+      const items = await this.serviceExitReasons.listActiveOptions(DatabaseConnection.getInstance().getPool());
+      res.status(200).json({ success: true, data: { items } });
+    } catch (err: unknown) {
+      const e = err instanceof Error ? err : new Error(String(err));
+      reportError(e, { source: 'AdminTherapeuticProjectsController:listServiceExitReasonOptions' });
+      res.status(500).json({ success: false, error: 'Failed to list service exit reason options' });
+    }
+  }
+
   /** POST /therapeutic-catalogs/<kind> — `segmentId` (430) só entra no corpo de objetivos/atividades (schema por `kind`). */
-  async createCatalogItem(kind: TherapeuticCatalogKind, req: Request, res: Response): Promise<void> {
+  async createCatalogItem(kind: AdminCatalogKind, req: Request, res: Response): Promise<void> {
     const body = createCatalogItemSchemaFor(kind).safeParse(req.body);
     if (!body.success) {
       invalidBody(res, body.error);
@@ -335,7 +350,7 @@ export class AdminTherapeuticProjectsController {
   }
 
   /** PATCH /therapeutic-catalogs/<kind>/:itemId */
-  async updateCatalogItem(kind: TherapeuticCatalogKind, req: Request, res: Response): Promise<void> {
+  async updateCatalogItem(kind: AdminCatalogKind, req: Request, res: Response): Promise<void> {
     const params = catalogItemParamsSchema.safeParse(req.params);
     if (!params.success) {
       res.status(400).json({ success: false, error: 'Invalid params' });
