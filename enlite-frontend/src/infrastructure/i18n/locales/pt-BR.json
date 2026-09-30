@@ -5638,6 +5638,8 @@
       },
       "actions": {
         "save": "Salvar",
+        "edit": "Editar",
+        "cancel": "Cancelar",
         "saving": "Salvando…",
         "undo": "Desfazer última alteração",
         "undoConfirm": "Desfazer a última alteração? O texto volta para a versão anterior.",
@@ -5648,8 +5650,17 @@
         "versionConflict": "Outra pessoa ({{updatedBy}}) já salvou uma mudança neste prompt. Recarregue para ver a versão atual antes de salvar de novo."
       },
       "preview": {
-        "notice": "Isto é uma simulação com um caso de exemplo — nada é salvo, e nenhum dado real de paciente ou vaga é usado.",
-        "cta": "Simular com este texto"
+        "notice": "SIMULAÇÃO — o que você vê abaixo é apenas uma prévia com o texto que você está editando. Nada foi salvo e nada foi enviado ao Talentum nem a ninguém.",
+        "cta": "Simular com este texto",
+        "title": "Simular com um caso real",
+        "caseLabel": "Caso",
+        "casePlaceholder": "Escolha um caso…",
+        "casesLoading": "Carregando os casos…",
+        "casesError": "Não foi possível carregar os casos.",
+        "loading": "Gerando a simulação…",
+        "resultTitle": "Resultado da simulação",
+        "error": "Não foi possível gerar a simulação. O texto que você está editando foi preservado; tente de novo em instantes.",
+        "errorUnavailable": "O modelo de IA está indisponível no momento. O texto que você está editando foi preservado; tente de novo em instantes."
       }
     }
   },

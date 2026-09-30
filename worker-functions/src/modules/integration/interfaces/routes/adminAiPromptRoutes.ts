@@ -1,13 +1,14 @@
 /**
  * adminAiPromptRoutes — /api/admin/ai-prompts/* (spec 029, T013/T019b)
  *
- * Monta os quatro manipuladores que `AiPromptController` (T012/T019b) já implementa:
+ * Monta os cinco manipuladores que `AiPromptController` (T012/T019b/T033) já implementa:
  *   GET  /ai-prompts             → list
  *   GET  /ai-prompts/{slug}      → get
  *   PUT  /ai-prompts/{slug}      → update
  *   POST /ai-prompts/{slug}/undo → undo
+ *   POST /ai-prompts/{slug}/preview → preview (T033; `ai_prompt:update`, não `read`)
  *
- * `restore` e `preview` são de fases posteriores (Fase 4 / Fase 5) — não entram aqui.
+ * `restore` é de fase posterior (Fase 5) — não entra aqui.
  *
  * Mesmo mecanismo de `adminIntegrationsRoutes.ts` (vizinho neste diretório, mesmo módulo
  * `integration`): reusa `ADMIN_INTEGRATIONS_FAMILY` — não há necessidade de família nova só para
@@ -71,6 +72,17 @@ export function createAdminAiPromptRoutes(
     staffOnly,
     perm.require('ai_prompt', 'update', { untilEnforced: 'admin' }),
     (req: Request, res: Response) => controller.undo(req, res),
+  );
+
+  /**
+   * POST /api/admin/ai-prompts/{slug}/preview — exemplo com o texto em edição, caso real, sem gravar
+   * (T033). Exige `ai_prompt:update`: é operação de quem edita, não de quem só lê.
+   */
+  router.post(
+    '/ai-prompts/:slug/preview',
+    staffOnly,
+    perm.require('ai_prompt', 'update', { untilEnforced: 'admin' }),
+    (req: Request, res: Response) => controller.preview(req, res),
   );
 
   return router;

@@ -1,14 +1,14 @@
 /**
  * AiPromptController — leitura e escrita dos prompts de IA editáveis (spec 029, T012/T019b).
  *
- * Cobre quatro manipuladores (contrato `contracts/admin-ai-prompts.md`):
+ * Cobre cinco manipuladores (contrato `contracts/admin-ai-prompts.md`):
  *   GET  /api/admin/ai-prompts             → `list`
  *   GET  /api/admin/ai-prompts/{slug}      → `get`
  *   PUT  /api/admin/ai-prompts/{slug}      → `update`
  *   POST /api/admin/ai-prompts/{slug}/undo → `undo`
+ *   POST /api/admin/ai-prompts/{slug}/preview → `preview` (T033; exige `ai_prompt:update`)
  *
- * A sub-rota de restaurar uma versão arbitrária e a de pré-visualizar são de fases posteriores
- * (Fase 4 e Fase 5) — não entram aqui.
+ * A sub-rota de restaurar uma versão arbitrária é de fase posterior (Fase 5) — não entra aqui.
  *
  * Zero lógica de negócio: `GetAiPromptUseCase`, `UpdateAiPromptUseCase` (T009/T010) e
  * `UndoAiPromptUseCase` (T019b) já decidem tudo. Este arquivo só faz HTTP — parse de entrada,
@@ -35,9 +35,19 @@ import { reportError, loggingAls } from '@shared/logging';
 import { GetAiPromptUseCase } from '../../application/GetAiPromptUseCase';
 import { UpdateAiPromptUseCase, type UpdateAiPromptActor } from '../../application/UpdateAiPromptUseCase';
 import { UndoAiPromptUseCase } from '../../application/UndoAiPromptUseCase';
+import {
+  PreviewAiPromptUseCase,
+  PreviewEmptyBodyError,
+  JobPostingNotFoundError,
+} from '../../application/PreviewAiPromptUseCase';
+import { GeminiApiError } from '../../infrastructure/gemini-fetch';
 import type { AiPrompt } from '../../infrastructure/AiPromptRepository';
 import { isAiPromptSlug } from '../../domain/AiPromptSlug';
-import { updateAiPromptBodySchema, undoAiPromptBodySchema } from '../validators/aiPromptSchemas';
+import {
+  updateAiPromptBodySchema,
+  undoAiPromptBodySchema,
+  previewAiPromptBodySchema,
+} from '../validators/aiPromptSchemas';
 
 const AI_PROMPT_READ_CELL = 'ai_prompt:read';
 const AI_PROMPT_UPDATE_CELL = 'ai_prompt:update';
@@ -87,6 +97,7 @@ export class AiPromptController {
     private readonly getUseCase: GetAiPromptUseCase = new GetAiPromptUseCase(),
     private readonly updateUseCase: UpdateAiPromptUseCase = new UpdateAiPromptUseCase(),
     private readonly undoUseCase: UndoAiPromptUseCase = new UndoAiPromptUseCase(),
+    private readonly previewUseCase: PreviewAiPromptUseCase = new PreviewAiPromptUseCase(),
   ) {}
 
   /** `GET /api/admin/ai-prompts` — os três registros, com conteúdo (sem paginação: cerimônia inútil). */
@@ -233,6 +244,56 @@ export class AiPromptController {
       const e = error instanceof Error ? error : new Error(String(error));
       reportError(e, { source: 'AiPromptController:undo' });
       res.status(500).json({ success: false, error: 'Failed to undo ai prompt' });
+    }
+  }
+
+  /**
+   * `POST /api/admin/ai-prompts/{slug}/preview` — gera um exemplo com o texto em edição para um
+   * caso REAL, sem gravar nada (T033). Exige `ai_prompt:update` (operação de quem edita).
+   * Modelo indisponível (`GeminiApiError` ou sem token ADC do Vertex) é 503.
+   */
+  async preview(req: Request, res: Response): Promise<void> {
+    try {
+      const parsed = previewAiPromptBodySchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        res.status(400).json({ success: false, error: 'Invalid body', details: parsed.error.flatten() });
+        return;
+      }
+
+      if (!canUpdateAiPrompt(cellsOfRequest(req))) {
+        res.status(403).json({ success: false, error: 'Forbidden', details: { cell: AI_PROMPT_UPDATE_CELL } });
+        return;
+      }
+
+      const slugParam = req.params.slug;
+      if (!isAiPromptSlug(slugParam)) {
+        res.status(404).json({ success: false, error: 'ai_prompt_nao_encontrado' });
+        return;
+      }
+
+      const result = await this.previewUseCase.execute({
+        slug: slugParam,
+        body: parsed.data.body,
+        jobPostingId: parsed.data.jobPostingId,
+      });
+      res.status(200).json({ success: true, data: result });
+    } catch (error: unknown) {
+      if (error instanceof PreviewEmptyBodyError) {
+        res.status(400).json({ success: false, error: 'body_vazio' });
+        return;
+      }
+      if (error instanceof JobPostingNotFoundError) {
+        res.status(404).json({ success: false, error: 'caso_nao_encontrado' });
+        return;
+      }
+      const e = error instanceof Error ? error : new Error(String(error));
+      if (e instanceof GeminiApiError || e.message.startsWith('Vertex AI:')) {
+        reportError(e, { source: 'AiPromptController:preview' });
+        res.status(503).json({ success: false, error: 'modelo_indisponivel' });
+        return;
+      }
+      reportError(e, { source: 'AiPromptController:preview' });
+      res.status(500).json({ success: false, error: 'Failed to preview ai prompt' });
     }
   }
 }
