@@ -31,8 +31,9 @@ import { PageContainer } from '@presentation/components/atoms/PageContainer';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { Textarea } from '@presentation/components/atoms/Textarea';
-import { AdminApiService, type AiPrompt } from '@infrastructure/http/AdminApiService';
+import { AdminApiService, type AiPrompt, type AiPromptBodies, type AiPromptSlug } from '@infrastructure/http/AdminApiService';
 import { AiPromptEditor } from '@presentation/components/features/admin/AiPrompts/AiPromptEditor';
+import { VacancySimulationSection } from '@presentation/components/features/admin/AiPrompts/VacancySimulationSection';
 import { AI_PROMPT_TABS, AI_PROMPT_TAB_I18N_KEYS, type AiPromptTab } from './aiPromptTabs';
 
 // Mesmo par de classes do `DedupTabs.tsx` — não existe atom `Tabs` no painel (comentário original:
@@ -84,6 +85,36 @@ export function AiPromptsPage(): JSX.Element | null {
     setPrompts((prev) => prev.map((p) => (p.slug === updated.slug ? updated : p)));
   }, []);
 
+  // Texto que está no editor, por aba, rascunho incluído (T073/T073a). Vive aqui porque (1) o
+  // simulador de vacante fica FORA das abas e (2) o editor é desmontado a cada troca de aba — o
+  // rascunho precisa sobreviver a isso. O valor guardado é o que o editor REPORTOU por último; o que
+  // conta como "não salvo" é DERIVADO (difere do `prompts`): assim Guardar/Desfazer limpam o
+  // rascunho sozinhos, sem ninguém precisar lembrar de apagá-lo.
+  const [drafts, setDrafts] = useState<AiPromptBodies>({});
+  const handleDraftChange = useCallback((slug: AiPromptSlug, body: string) => {
+    setDrafts((prev) => (prev[slug] === body ? prev : { ...prev, [slug]: body }));
+  }, []);
+
+  const unsaved = useMemo<AiPromptBodies>(() => {
+    const out: AiPromptBodies = {};
+    for (const p of prompts) {
+      const draft = drafts[p.slug];
+      if (draft !== undefined && draft !== p.body) out[p.slug] = draft;
+    }
+    return out;
+  }, [prompts, drafts]);
+
+  // O que o simulador envia: todos os rascunhos não salvos e não vazios (corpo vazio é 400 no
+  // backend). O resto o backend lê do prompt salvo.
+  const simulationBodies = useMemo<AiPromptBodies>(() => {
+    const out: AiPromptBodies = {};
+    for (const slug of AI_PROMPT_TABS) {
+      const draft = unsaved[slug];
+      if (draft !== undefined && draft.trim().length > 0) out[slug] = draft;
+    }
+    return out;
+  }, [unsaved]);
+
   const currentPrompt = useMemo(
     () => prompts.find((p) => p.slug === activeTab) ?? null,
     [prompts, activeTab],
@@ -111,6 +142,16 @@ export function AiPromptsPage(): JSX.Element | null {
               data-testid={`ai-prompt-tab-${tab}`}
             >
               {t(AI_PROMPT_TAB_I18N_KEYS[tab])}
+              {unsaved[tab] !== undefined && (
+                <span
+                  className="ml-2 text-amber-500"
+                  title={tc('unsavedTab')}
+                  aria-label={tc('unsavedTab')}
+                  data-testid={`ai-prompt-tab-unsaved-${tab}`}
+                >
+                  ●
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -137,7 +178,13 @@ export function AiPromptsPage(): JSX.Element | null {
 
       {!isLoading && !loadError && currentPrompt && (
         access.level === 'write' ? (
-          <AiPromptEditor key={currentPrompt.slug} prompt={currentPrompt} onSaved={handleSaved} />
+          <AiPromptEditor
+            key={currentPrompt.slug}
+            prompt={currentPrompt}
+            initialDraft={unsaved[currentPrompt.slug]}
+            onSaved={handleSaved}
+            onDraftChange={handleDraftChange}
+          />
         ) : (
           <div className="flex flex-col gap-2" data-testid="ai-prompt-readonly">
             <Textarea
@@ -150,6 +197,10 @@ export function AiPromptsPage(): JSX.Element | null {
             />
           </div>
         )
+      )}
+
+      {access.level === 'write' && !isLoading && !loadError && (
+        <VacancySimulationSection bodies={simulationBodies} />
       )}
     </PageContainer>
   );

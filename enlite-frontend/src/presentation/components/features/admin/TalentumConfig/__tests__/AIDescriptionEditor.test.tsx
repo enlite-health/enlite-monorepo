@@ -60,3 +60,23 @@ describe('AIDescriptionEditor', () => {
     expect(counter.className).not.toContain('text-red-500');
   });
 });
+
+describe('AIDescriptionEditor — readOnly e default', () => {
+  it('sem a prop (como o wizard usa): textarea editável e botão Guardar visível', () => {
+    render(<AIDescriptionEditor value="x" onChange={vi.fn()} onSave={vi.fn()} />);
+    expect(screen.getByRole('textbox')).not.toHaveAttribute('readonly');
+    expect(screen.getByRole('button')).toBeInTheDocument();
+    expect(screen.getByText('admin.talentumConfig.descriptionEditor.helper')).toBeInTheDocument();
+    expect(screen.getByText('1/4000')).toBeInTheDocument();
+  });
+
+  it('readOnly: textarea não editável, sem botão Guardar, valor continua visível', () => {
+    render(<AIDescriptionEditor value="x" onChange={vi.fn()} onSave={vi.fn()} readOnly />);
+    expect(screen.getByRole('textbox')).toHaveAttribute('readonly');
+    expect(screen.getByRole('textbox')).toHaveValue('x');
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(screen.queryByText('admin.talentumConfig.descriptionEditor.helper')).not.toBeInTheDocument();
+    expect(screen.queryByText('1/4000')).not.toBeInTheDocument();
+  });
+});
+

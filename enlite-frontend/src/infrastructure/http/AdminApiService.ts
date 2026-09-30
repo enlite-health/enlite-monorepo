@@ -86,6 +86,30 @@ export interface AiPromptPreview {
   generated: string;
 }
 
+/** Corpos em edição enviados à simulação; ausente = o backend usa o prompt salvo. */
+export type AiPromptBodies = Partial<Record<AiPromptSlug, string>>;
+
+/** Resposta de `POST /api/admin/ai-prompts/simulate-vacancy` (contrato `admin-ai-prompts.md`). */
+export interface AiVacancySimulation {
+  description: string;
+  prescreening: {
+    questions: Array<{
+      question: string;
+      responseType: string[];
+      desiredResponse: string;
+      weight: number;
+      required: boolean;
+      analyzed: boolean;
+      earlyStoppage: boolean;
+    }>;
+    faq: Array<{ question: string; answer: string }>;
+  };
+  /** O backend escolhe o prescreening pela VAGA, não pelo slug recebido. */
+  workerType: 'AT' | 'CUIDADOR';
+  /** Os dois prompts de fato exercitados. */
+  usedSlugs: AiPromptSlug[];
+}
+
 class AdminApiServiceClass {
   private readonly authService = new FirebaseAuthService();
   private readonly baseURL: string;
@@ -501,6 +525,15 @@ class AdminApiServiceClass {
    */
   async previewAiPrompt(slug: AiPromptSlug, body: string, jobPostingId: string): Promise<AiPromptPreview> {
     return this.request<AiPromptPreview>('POST', `/api/admin/ai-prompts/${slug}/preview`, { body, jobPostingId });
+  }
+
+  /**
+   * `POST /api/admin/ai-prompts/simulate-vacancy` — simula a CRIAÇÃO de uma vacante (descrição +
+   * pré-seleção) com os textos em edição. Não grava, não publica. Pode levar dezenas de segundos
+   * (até 3 chamadas ao modelo). 503 quando o modelo está indisponível; 404 se o caso não existe.
+   */
+  async simulateVacancyCreation(jobPostingId: string, bodies: AiPromptBodies): Promise<AiVacancySimulation> {
+    return this.request<AiVacancySimulation>('POST', '/api/admin/ai-prompts/simulate-vacancy', { jobPostingId, bodies });
   }
 
   // ========== Worker Document methods — delegated to AdminWorkerDocsApiService ==========

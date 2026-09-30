@@ -30,6 +30,8 @@ export interface FaqItem {
 interface PrescreeningStepProps {
   initialQuestions: PrescreeningQuestion[];
   initialFaq: FaqItem[];
+  /** Read-only mode (simulation): no add/remove buttons, controls not editable. Default false. */
+  readOnly?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -65,10 +67,11 @@ interface QuestionCardProps {
   onChange: (updated: PrescreeningQuestion) => void;
   onDelete: () => void;
   errors: Record<string, string>;
+  readOnly: boolean;
 }
 
 function QuestionCard({
-  question, index, expanded, onToggleExpanded, onChange, onDelete, errors,
+  question, index, expanded, onToggleExpanded, onChange, onDelete, errors, readOnly,
 }: QuestionCardProps) {
   const { t } = useTranslation();
   const ps = 'admin.vacancyDetail.prescreening';
@@ -95,10 +98,12 @@ function QuestionCard({
         <span className="text-sm font-semibold text-slate-700">
           {t(`${ps}.questionLabel`, { n: index + 1 })}
         </span>
-        <button type="button" onClick={onDelete}
-          className="text-slate-400 hover:text-red-500 transition-colors">
-          <Trash2 className="w-4 h-4" />
-        </button>
+        {!readOnly && (
+          <button type="button" onClick={onDelete}
+            className="text-slate-400 hover:text-red-500 transition-colors">
+            <Trash2 className="w-4 h-4" />
+          </button>
+        )}
       </div>
 
       <div className="flex flex-col gap-1">
@@ -110,6 +115,7 @@ function QuestionCard({
             <label key={type} className="flex items-center gap-2 cursor-pointer text-sm text-slate-700">
               <input type="checkbox" checked={(question.responseType ?? []).includes(type)}
                 onChange={() => toggleResponseType(type)}
+                disabled={readOnly}
                 className="rounded border-slate-300" />
               {type === 'text' ? t(`${ps}.text`) : t(`${ps}.audio`)}
             </label>
@@ -123,6 +129,7 @@ function QuestionCard({
         </label>
         <textarea rows={2} value={question.question}
           onChange={(e) => onChange({ ...question, question: e.target.value })}
+          readOnly={readOnly}
           placeholder={t(`${ps}.questionPlaceholder`)}
           className={`${fieldCls(!!errors.question)} resize-none`} />
         {errors.question && <span className="text-xs text-red-500">{errors.question}</span>}
@@ -134,6 +141,7 @@ function QuestionCard({
         </label>
         <textarea rows={2} value={question.desiredResponse}
           onChange={(e) => onChange({ ...question, desiredResponse: e.target.value })}
+          readOnly={readOnly}
           placeholder={t(`${ps}.desiredResponsePlaceholder`)}
           className={`${fieldCls(!!errors.desiredResponse)} resize-none`} />
         {errors.desiredResponse && <span className="text-xs text-red-500">{errors.desiredResponse}</span>}
@@ -145,6 +153,7 @@ function QuestionCard({
         </label>
         <input type="number" min={1} max={10} value={question.weight}
           onChange={(e) => onChange({ ...question, weight: Number(e.target.value) })}
+          readOnly={readOnly}
           className={`w-24 ${fieldCls(!!errors.weight)}`} />
         {errors.weight && <span className="text-xs text-red-500">{errors.weight}</span>}
       </div>
@@ -161,6 +170,7 @@ function QuestionCard({
             <label key={key} className="flex items-center gap-2 cursor-pointer text-sm text-slate-700">
               <input type="checkbox" checked={question[key] as boolean}
                 onChange={(e) => onChange({ ...question, [key]: e.target.checked })}
+                disabled={readOnly}
                 className="rounded border-slate-300" />
               {label}
             </label>
@@ -176,8 +186,8 @@ function QuestionCard({
 // ---------------------------------------------------------------------------
 
 function FaqCard({
-  item, index, onDelete, onChange,
-}: { item: FaqItem; index: number; onDelete: () => void; onChange: (f: keyof FaqItem, v: string) => void }) {
+  item, index, onDelete, onChange, readOnly,
+}: { item: FaqItem; index: number; onDelete: () => void; onChange: (f: keyof FaqItem, v: string) => void; readOnly: boolean }) {
   const { t } = useTranslation();
   const ps = 'admin.vacancyDetail.prescreening';
   const baseCls = 'border border-[#D9D9D9] rounded-lg px-3 py-2 text-sm text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-primary/30';
@@ -185,10 +195,12 @@ function FaqCard({
     <div className="border border-slate-200 rounded-xl p-4 flex flex-col gap-3">
       <div className="flex items-center justify-between">
         <span className="text-sm font-semibold text-slate-700">FAQ {index + 1}</span>
-        <button type="button" onClick={onDelete}
-          className="text-slate-400 hover:text-red-500 transition-colors">
-          <Trash2 className="w-4 h-4" />
-        </button>
+        {!readOnly && (
+          <button type="button" onClick={onDelete}
+            className="text-slate-400 hover:text-red-500 transition-colors">
+            <Trash2 className="w-4 h-4" />
+          </button>
+        )}
       </div>
       <div className="flex flex-col gap-1">
         <label className="text-xs font-medium text-slate-500 uppercase tracking-wide">
@@ -196,6 +208,7 @@ function FaqCard({
         </label>
         <input type="text" value={item.question}
           onChange={(e) => onChange('question', e.target.value)}
+          readOnly={readOnly}
           placeholder={t(`${ps}.faqQuestionPlaceholder`)} className={baseCls} />
       </div>
       <div className="flex flex-col gap-1">
@@ -204,6 +217,7 @@ function FaqCard({
         </label>
         <textarea rows={2} value={item.answer}
           onChange={(e) => onChange('answer', e.target.value)}
+          readOnly={readOnly}
           placeholder={t(`${ps}.faqAnswerPlaceholder`)} className={`${baseCls} resize-none`} />
       </div>
     </div>
@@ -215,7 +229,7 @@ function FaqCard({
 // ---------------------------------------------------------------------------
 
 export function PrescreeningStep({
-  initialQuestions, initialFaq,
+  initialQuestions, initialFaq, readOnly = false,
 }: PrescreeningStepProps) {
   const { t } = useTranslation();
   const ps = 'admin.vacancyDetail.prescreening';
@@ -272,12 +286,14 @@ export function PrescreeningStep({
             onToggleExpanded={() => toggleAdvanced(i)}
             onChange={(u) => updateQuestion(i, u)}
             onDelete={() => removeQuestion(i)}
-            errors={{}} />
+            errors={{}} readOnly={readOnly} />
         ))}
-        <Button type="button" variant="outline" size="sm" onClick={addQuestion}
-          className="flex items-center gap-2 w-fit">
-          <Plus className="w-4 h-4" />{t(`${ps}.addQuestion`)}
-        </Button>
+        {!readOnly && (
+          <Button type="button" variant="outline" size="sm" onClick={addQuestion}
+            className="flex items-center gap-2 w-fit">
+            <Plus className="w-4 h-4" />{t(`${ps}.addQuestion`)}
+          </Button>
+        )}
       </div>
 
       <hr className="border-slate-100" />
@@ -290,13 +306,15 @@ export function PrescreeningStep({
         {faq.map((item, i) => (
           <FaqCard key={i} item={item} index={i}
             onDelete={() => setFaq((p) => p.filter((_, j) => j !== i))}
-            onChange={(f, v) => updateFaq(i, f, v)} />
+            onChange={(f, v) => updateFaq(i, f, v)} readOnly={readOnly} />
         ))}
-        <Button type="button" variant="outline" size="sm"
-          onClick={() => setFaq((p) => [...p, { question: '', answer: '' }])}
-          className="flex items-center gap-2 w-fit">
-          <Plus className="w-4 h-4" />{t(`${ps}.addFaq`)}
-        </Button>
+        {!readOnly && (
+          <Button type="button" variant="outline" size="sm"
+            onClick={() => setFaq((p) => [...p, { question: '', answer: '' }])}
+            className="flex items-center gap-2 w-fit">
+            <Plus className="w-4 h-4" />{t(`${ps}.addFaq`)}
+          </Button>
+        )}
       </div>
       </div>
     </div>

@@ -34,6 +34,8 @@ vi.mock('@infrastructure/http/AdminApiService', async (importOriginal) => {
       getAiPrompt: vi.fn(),
       updateAiPrompt: vi.fn(),
       undoAiPrompt: vi.fn(),
+      listVacancies: vi.fn(),
+      simulateVacancyCreation: vi.fn(),
     },
   };
 });
@@ -89,6 +91,11 @@ beforeEach(() => {
   vi.mocked(AdminApiService.getAiPrompt).mockReset();
   vi.mocked(AdminApiService.updateAiPrompt).mockReset();
   vi.mocked(AdminApiService.undoAiPrompt).mockReset();
+  vi.mocked(AdminApiService.simulateVacancyCreation).mockReset();
+  vi.mocked(AdminApiService.listVacancies).mockReset().mockResolvedValue({
+    data: [{ id: '11111111-1111-4111-8111-111111111111', caso: 'Caso 101', isDraft: false }],
+    total: 1,
+  });
 });
 
 describe('AiPromptsPage — acesso de ESCRITA (ai_prompt:update)', () => {
@@ -126,6 +133,161 @@ describe('AiPromptsPage — acesso de ESCRITA (ai_prompt:update)', () => {
       expect(screen.getByTestId('ai-prompt-editor-reader')).toHaveTextContent('Texto da pré-seleção de cuidador.');
     });
     expect(screen.queryByTestId('ai-prompt-editor-textarea')).not.toBeInTheDocument();
+  });
+});
+
+describe('AiPromptsPage — simulador de vacante FORA das abas (T073)', () => {
+  const CASE_ID = '11111111-1111-4111-8111-111111111111';
+  const simulacao = {
+    description: 'desc', prescreening: { questions: [], faq: [] }, workerType: 'AT' as const,
+    usedSlugs: ['VACANCY_DESCRIPTION', 'PRESCREENING_AT'] as AiPrompt['slug'][],
+  };
+  const simular = async () => {
+    fireEvent.change(await screen.findByTestId('vacancy-simulation-case'), { target: { value: CASE_ID } });
+    fireEvent.click(screen.getByTestId('vacancy-simulation-run'));
+    await screen.findByTestId('vacancy-simulation-result');
+  };
+
+  beforeEach(() => {
+    comContrato(['ai_prompt:read', 'ai_prompt:update']);
+    listAiPrompts().mockResolvedValue(fakePrompts());
+    vi.mocked(AdminApiService.simulateVacancyCreation).mockResolvedValue(simulacao);
+  });
+
+  it('existe em qualquer aba e fica fora do painel de abas', async () => {
+    render(<AiPromptsPage />);
+    const secao = await screen.findByTestId('vacancy-simulation-section');
+    expect(screen.getByRole('tablist')).not.toContainElement(secao);
+    fireEvent.click(screen.getByTestId('ai-prompt-tab-PRESCREENING_CAREGIVER'));
+    expect(await screen.findByTestId('vacancy-simulation-section')).toBeInTheDocument();
+  });
+
+  it('sem edição, nada é enviado em `bodies` (o backend usa o salvo)', async () => {
+    render(<AiPromptsPage />);
+    await simular();
+    expect(AdminApiService.simulateVacancyCreation).toHaveBeenCalledWith(CASE_ID, {});
+  });
+
+  it('o texto em edição (rascunho NÃO salvo) sobe do editor e chega ao simulador', async () => {
+    render(<AiPromptsPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar' }));
+    fireEvent.change(await screen.findByTestId('ai-prompt-editor-textarea'), { target: { value: 'rascunho novo da descrição' } });
+    await simular();
+    expect(AdminApiService.simulateVacancyCreation).toHaveBeenCalledWith(CASE_ID, {
+      VACANCY_DESCRIPTION: 'rascunho novo da descrição',
+    });
+    expect(AdminApiService.updateAiPrompt).not.toHaveBeenCalled();
+  });
+
+  const editarEDigitar = async (texto: string) => {
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar' }));
+    fireEvent.change(await screen.findByTestId('ai-prompt-editor-textarea'), { target: { value: texto } });
+  };
+  const irPara = async (tab: string, textoSalvo: string) => {
+    fireEvent.click(screen.getByTestId(`ai-prompt-tab-${tab}`));
+    await waitFor(() => {
+      expect(screen.getByTestId('ai-prompt-editor-reader')).toHaveTextContent(textoSalvo);
+    });
+  };
+
+  it('VAI E VOLTA: editar A sem salvar, ir para B e voltar para A mostra o RASCUNHO, não o salvo', async () => {
+    render(<AiPromptsPage />);
+    await editarEDigitar('rascunho da descrição');
+    await irPara('PRESCREENING_AT', 'Texto da pré-seleção de AT.');
+    fireEvent.click(screen.getByTestId('ai-prompt-tab-VACANCY_DESCRIPTION'));
+    expect(await screen.findByTestId('ai-prompt-editor-textarea')).toHaveValue('rascunho da descrição');
+    expect(screen.queryByTestId('ai-prompt-editor-reader')).not.toBeInTheDocument();
+    expect(AdminApiService.updateAiPrompt).not.toHaveBeenCalled();
+  });
+
+  it('a aba com rascunho não salvo é marcada SEM entrar nela; a sem rascunho não é', async () => {
+    render(<AiPromptsPage />);
+    expect(screen.queryByTestId('ai-prompt-tab-unsaved-VACANCY_DESCRIPTION')).not.toBeInTheDocument();
+    await editarEDigitar('rascunho da descrição');
+    expect(screen.getByTestId('ai-prompt-tab-unsaved-VACANCY_DESCRIPTION')).toHaveAttribute('title', 'Alterações não salvas');
+    await irPara('PRESCREENING_AT', 'Texto da pré-seleção de AT.');
+    expect(screen.getByTestId('ai-prompt-tab-unsaved-VACANCY_DESCRIPTION')).toBeInTheDocument();
+    expect(screen.queryByTestId('ai-prompt-tab-unsaved-PRESCREENING_AT')).not.toBeInTheDocument();
+  });
+
+  it('DOIS RASCUNHOS AO MESMO TEMPO: o `bodies` enviado ao AdminApiService contém os dois', async () => {
+    render(<AiPromptsPage />);
+    await editarEDigitar('rascunho da descrição');
+    await irPara('PRESCREENING_AT', 'Texto da pré-seleção de AT.');
+    await editarEDigitar('rascunho do AT');
+    await simular();
+    expect(AdminApiService.simulateVacancyCreation).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(AdminApiService.simulateVacancyCreation).mock.calls[0]).toEqual([
+      CASE_ID,
+      { VACANCY_DESCRIPTION: 'rascunho da descrição', PRESCREENING_AT: 'rascunho do AT' },
+    ]);
+  });
+
+  it('GUARDAR LIMPA: salvar A, trocar e voltar mostra o salvo, sem rascunho nem marca pendurados', async () => {
+    vi.mocked(AdminApiService.updateAiPrompt).mockResolvedValue(
+      fakePrompts({ VACANCY_DESCRIPTION: { body: 'texto guardado', version: 4 } })[0],
+    );
+    render(<AiPromptsPage />);
+    await editarEDigitar('texto guardado');
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
+    await waitFor(() => expect(screen.getByTestId('ai-prompt-editor-reader')).toHaveTextContent('texto guardado'));
+    expect(screen.queryByTestId('ai-prompt-tab-unsaved-VACANCY_DESCRIPTION')).not.toBeInTheDocument();
+    await irPara('PRESCREENING_AT', 'Texto da pré-seleção de AT.');
+    fireEvent.click(screen.getByTestId('ai-prompt-tab-VACANCY_DESCRIPTION'));
+    expect(await screen.findByTestId('ai-prompt-editor-reader')).toHaveTextContent('texto guardado');
+    expect(screen.queryByTestId('ai-prompt-editor-textarea')).not.toBeInTheDocument();
+    await simular();
+    expect(AdminApiService.simulateVacancyCreation).toHaveBeenCalledWith(CASE_ID, {});
+  });
+
+  it('DESFAZER não ressuscita o rascunho: após desfazer, voltar à aba mostra o texto restaurado', async () => {
+    listAiPrompts().mockResolvedValue(fakePrompts()); // VACANCY_DESCRIPTION está na versão 3 (desfazível)
+    vi.mocked(AdminApiService.undoAiPrompt).mockResolvedValue(
+      fakePrompts({ VACANCY_DESCRIPTION: { body: 'texto restaurado', version: 4 } })[0],
+    );
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+    render(<AiPromptsPage />);
+    await editarEDigitar('rascunho que não deve voltar');
+    fireEvent.click(screen.getByRole('button', { name: 'Desfazer última alteração' }));
+    await waitFor(() => expect(screen.getByTestId('ai-prompt-editor-textarea')).toHaveValue('texto restaurado'));
+    expect(screen.queryByTestId('ai-prompt-tab-unsaved-VACANCY_DESCRIPTION')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('ai-prompt-tab-PRESCREENING_AT'));
+    await screen.findByTestId('ai-prompt-editor-reader');
+    fireEvent.click(screen.getByTestId('ai-prompt-tab-VACANCY_DESCRIPTION'));
+    expect(await screen.findByTestId('ai-prompt-editor-reader')).toHaveTextContent('texto restaurado');
+    expect(screen.queryByText('rascunho que não deve voltar')).not.toBeInTheDocument();
+  });
+
+  it('409 ao salvar: o rascunho é PRESERVADO (nem a marca nem o texto somem) e volta ao reabrir a aba', async () => {
+    const { ApiError } = await import('@infrastructure/http/AdminApiService');
+    vi.mocked(AdminApiService.updateAiPrompt).mockRejectedValue(new ApiError({ success: false, error: 'conflict' } as never, 409));
+    vi.mocked(AdminApiService.getAiPrompt).mockResolvedValue(
+      fakePrompts({ VACANCY_DESCRIPTION: { body: 'texto do outro', version: 4, updatedBy: 'uid-outro' } })[0],
+    );
+    render(<AiPromptsPage />);
+    await editarEDigitar('meu rascunho em conflito');
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
+    expect(await screen.findByTestId('ai-prompt-editor-save-error')).toHaveTextContent('uid-outro');
+    expect(screen.getByTestId('ai-prompt-editor-textarea')).toHaveValue('meu rascunho em conflito');
+    expect(screen.getByTestId('ai-prompt-tab-unsaved-VACANCY_DESCRIPTION')).toBeInTheDocument();
+    await irPara('PRESCREENING_AT', 'Texto da pré-seleção de AT.');
+    fireEvent.click(screen.getByTestId('ai-prompt-tab-VACANCY_DESCRIPTION'));
+    expect(await screen.findByTestId('ai-prompt-editor-textarea')).toHaveValue('meu rascunho em conflito');
+  });
+
+  it('rascunho em branco não é enviado (corpo vazio é 400 no backend)', async () => {
+    render(<AiPromptsPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar' }));
+    fireEvent.change(await screen.findByTestId('ai-prompt-editor-textarea'), { target: { value: '   ' } });
+    await simular();
+    expect(AdminApiService.simulateVacancyCreation).toHaveBeenCalledWith(CASE_ID, {});
+  });
+
+  it('somente leitura: o simulador não aparece', async () => {
+    comContrato(['ai_prompt:read']);
+    render(<AiPromptsPage />);
+    await screen.findByTestId('ai-prompt-readonly-textarea');
+    expect(screen.queryByTestId('vacancy-simulation-section')).not.toBeInTheDocument();
   });
 });
 

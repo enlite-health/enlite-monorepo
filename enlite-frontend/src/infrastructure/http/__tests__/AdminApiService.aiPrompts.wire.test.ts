@@ -85,3 +85,46 @@ describe('AdminApiService x AiPromptController — corpo real de 200 (sem dublar
     ).rejects.toMatchObject({ status: 503 });
   });
 });
+
+describe('AdminApiService x AiPromptController.simulateVacancy — corpo real de 200 (sem dublar request)', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const CASE = '11111111-1111-4111-8111-111111111111';
+  // Literal que `SimulateVacancyAiUseCase` + `AiPromptController.simulateVacancy` produzem no 200.
+  const SIMULACAO_NO_FORMATO_DO_BACKEND = {
+    description: 'Descrição gerada',
+    prescreening: {
+      questions: [
+        { question: 'Q1', responseType: ['text', 'audio'], desiredResponse: 'R', weight: 5, required: true, analyzed: true, earlyStoppage: false },
+      ],
+      faq: [{ question: 'P', answer: 'R' }],
+    },
+    workerType: 'AT',
+    usedSlugs: ['VACANCY_DESCRIPTION', 'PRESCREENING_AT'],
+  };
+
+  it('simulateVacancyCreation resolve para o `data` do 200 { success: true, data } e envia jobPostingId + bodies', async () => {
+    const fetchMock = stubFetch(200, { success: true, data: SIMULACAO_NO_FORMATO_DO_BACKEND });
+    await expect(
+      AdminApiService.simulateVacancyCreation(CASE, { PRESCREENING_AT: 'texto em edição' }),
+    ).resolves.toEqual(SIMULACAO_NO_FORMATO_DO_BACKEND);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(String(url)).toContain('/api/admin/ai-prompts/simulate-vacancy');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body)).toEqual({ jobPostingId: CASE, bodies: { PRESCREENING_AT: 'texto em edição' } });
+  });
+
+  it('o corpo SEM `success` (o defeito medido na stage) lança — a regressão é detectável', async () => {
+    stubFetch(200, { data: SIMULACAO_NO_FORMATO_DO_BACKEND });
+    await expect(AdminApiService.simulateVacancyCreation(CASE, {})).rejects.toBeDefined();
+  });
+
+  it('503 e 404 rejeitam com o status (a tela distingue os dois)', async () => {
+    stubFetch(503, { success: false, error: 'modelo_indisponivel' });
+    await expect(AdminApiService.simulateVacancyCreation(CASE, {})).rejects.toMatchObject({ status: 503 });
+    stubFetch(404, { success: false, error: 'caso_nao_encontrado' });
+    await expect(AdminApiService.simulateVacancyCreation(CASE, {})).rejects.toMatchObject({ status: 404 });
+  });
+});

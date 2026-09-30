@@ -5661,7 +5661,27 @@
         "resultTitle": "Resultado da simulação",
         "error": "Não foi possível gerar a simulação. O texto que você está editando foi preservado; tente de novo em instantes.",
         "errorUnavailable": "O modelo de IA está indisponível no momento. O texto que você está editando foi preservado; tente de novo em instantes."
-      }
+      },
+      "simulation": {
+        "title": "Simular criação de vaga",
+        "description": "A criação de uma vaga usa os três textos juntos. Escolha um caso real e veja como ficaria, com o texto que está nos editores agora (mesmo sem salvar). É só uma simulação: nada é criado nem publicado.",
+        "caseLabel": "Caso",
+        "casePlaceholder": "Escolha um caso…",
+        "casesLoading": "Carregando os casos…",
+        "casesError": "Não foi possível carregar os casos.",
+        "noCases": "Não há casos disponíveis para simular.",
+        "cta": "Simular criação",
+        "running": "Simulando… pode levar dezenas de segundos.",
+        "error": "Não foi possível gerar a simulação. Os textos dos editores foram preservados; tente de novo em instantes.",
+        "errorUnavailable": "O modelo de IA está indisponível no momento. Os textos dos editores foram preservados; tente de novo em instantes.",
+        "errorNotFound": "O caso escolhido não existe mais. Escolha outro.",
+        "notice": "SIMULAÇÃO — nada foi salvo, nenhuma vaga foi criada e nada foi enviado ao Talentum nem a ninguém. Reflete os textos que estavam nos editores no momento de simular.",
+        "usedTitle": "Prompts que foram exercitados",
+        "notExercised": "O seu texto de «{{label}}» NÃO entrou nesta simulação: a vaga escolhida usa o prompt de «{{used}}». Para testá-lo, escolha uma vaga desse tipo.",
+        "notExercisedDetail": "Não houve erro: a simulação simplesmente não usou esse texto.",
+        "resultEmptyDescription": "O modelo não devolveu descrição."
+      },
+      "unsavedTab": "Alterações não salvas"
     }
   },
   "publicVacancy": {

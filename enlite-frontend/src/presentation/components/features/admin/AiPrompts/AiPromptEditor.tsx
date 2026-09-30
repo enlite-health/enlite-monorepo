@@ -24,7 +24,7 @@
  * (mesma regra que `UndoAiPromptUseCase` aplica no servidor). Botão só existe (D269, hide) para
  * quem tem `ai_prompt:update` — mesma célula de salvar (contrato).
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { useTranslation } from 'react-i18next';
 import { resolveDateLocale, SHORT_DATE_OPTIONS } from '@presentation/utils/dateLocale';
@@ -32,13 +32,22 @@ import { useActionGate } from '@presentation/hooks/useCellAccess';
 import { Textarea } from '@presentation/components/atoms/Textarea';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
-import { AiPromptPreviewPanel } from './AiPromptPreviewPanel';
 import { AdminApiService, ApiError, type AiPrompt, type AiPromptSlug } from '@infrastructure/http/AdminApiService';
 
 interface AiPromptEditorProps {
   prompt: AiPrompt;
   /** Notifica o pai depois de salvar/desfazer com sucesso — não é de onde vem o estado. */
   onSaved?: (updated: AiPrompt) => void;
+  /**
+   * Devolve ao pai o texto que está no editor AGORA (rascunho não salvo incluído), a cada mudança —
+   * é como o simulador de vacante (fora das abas) usa o que está sendo editado (spec 029, T073).
+   */
+  onDraftChange?: (slug: AiPromptSlug, body: string) => void;
+  /**
+   * Rascunho não salvo de uma visita anterior a esta aba (o pai o guarda quando o editor é
+   * desmontado). Só vale na MONTAGEM — semeia `body` e abre já em edição; nenhum efeito o reaplica.
+   */
+  initialDraft?: string;
 }
 
 /** "28/09/2026, 14:35" no fuso e na língua de quem olha — mesmo formato de `ClinicalLongText.tsx`. */
@@ -48,7 +57,7 @@ function formatDateTime(iso: string, locale: string): string {
   return d.toLocaleString(resolveDateLocale(locale), { ...SHORT_DATE_OPTIONS, hour: '2-digit', minute: '2-digit' });
 }
 
-export function AiPromptEditor({ prompt, onSaved }: AiPromptEditorProps) {
+export function AiPromptEditor({ prompt, onSaved, onDraftChange, initialDraft }: AiPromptEditorProps) {
   const { t, i18n } = useTranslation();
   const ac = (k: string, o?: Record<string, unknown>) => t(`admin.aiPrompts.actions.${k}`, o);
   const ec = (k: string, o?: Record<string, unknown>) => t(`admin.aiPrompts.errors.${k}`, o);
@@ -58,8 +67,10 @@ export function AiPromptEditor({ prompt, onSaved }: AiPromptEditorProps) {
   const updateGate = useActionGate('ai_prompt', 'update');
 
   const [current, setCurrent] = useState<AiPrompt>(prompt);
-  const [body, setBody] = useState(prompt.body);
-  const [editing, setEditing] = useState(false);
+  // Semeado SÓ no `useState` inicial, nunca em efeito: um efeito que reescrevesse `editing` na
+  // montagem já derrubou o clique em "Editar" (o `setEditing(false)` do efeito vencia o clique).
+  const [body, setBody] = useState(initialDraft ?? prompt.body);
+  const [editing, setEditing] = useState(initialDraft !== undefined);
 
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -82,6 +93,11 @@ export function AiPromptEditor({ prompt, onSaved }: AiPromptEditorProps) {
     setSaveError(null);
     setUndoError(null);
   }
+
+  // Um único ponto de saída do rascunho: cobre digitar, cancelar, salvar, desfazer e o refresh do 409.
+  useEffect(() => {
+    onDraftChange?.(current.slug, body);
+  }, [onDraftChange, current.slug, body]);
 
   const charCount = body.length;
   // Não desabilita por texto vazio: o clique precisa CHEGAR em `handleSave` pra mostrar
@@ -179,8 +195,6 @@ export function AiPromptEditor({ prompt, onSaved }: AiPromptEditorProps) {
           <ReactMarkdown>{body}</ReactMarkdown>
         </div>
       )}
-
-      {editing && <AiPromptPreviewPanel slug={current.slug} body={body} />}
 
       <div className="flex justify-between items-center">
         {current.updatedAt ? (
