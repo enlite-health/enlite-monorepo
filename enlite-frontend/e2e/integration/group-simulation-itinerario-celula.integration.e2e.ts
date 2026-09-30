@@ -38,11 +38,15 @@
 import { test, expect } from '@playwright/test';
 import { insertTestPatient, insertTestWorker, cleanupTestPatient, cleanupTestWorker } from '../helpers/db-test-helper';
 import { insertWJA, cleanupWJAAndEncuadre } from '../helpers/wja-test-helper';
-import { tokenFor, seedStaffInGroup, cleanupStaffAndGroup, grantCell, scalar, type MockUser } from '../helpers/abac-stack-helper';
+import {
+  tokenFor, seedStaffInGroup, cleanupStaffAndGroup, grantCell, scalar, loginAs, pollAuthz, type MockUser,
+} from '../helpers/abac-stack-helper';
 import {
   postSlotApi, patchSlotApi, endSlotApi, allocateApi, endAllocationApi, assembleApi,
   allocationOptionsApi, seedServiceWithLiveVacancySql, cleanupItineraryWrite,
 } from '../helpers/itinerario-escrita-e2e-helper';
+import { LANCAMENTO_VIEWPORT_ES_AR } from '../helpers/lancamento-e2e-helper';
+import { openItineraryTab } from '../helpers/itinerario-aba-e2e-helper';
 
 const RUN_ID = `${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
 
@@ -72,6 +76,10 @@ test.describe('itinerario-celula sob engine ligado @integration', () => {
     }));
     grantCell(groupComId, 'patient_services', 'read');
     grantCell(groupComId, 'patient_itinerary', 'update');
+    // Fase 3 (controle positivo de TELA): abrir a ficha pede também estas 2 leituras (as READ_CELLS do
+    // `itinerario-aba-sem-celula`). Só o COM as ganha; o SEM segue só com `patient_services:read`.
+    grantCell(groupComId, 'patient', 'read');
+    grantCell(groupComId, 'patient_identity', 'read');
 
     ({ groupId: groupSemId } = seedStaffInGroup({
       uid: SEM_UID, email: SEM_EMAIL, groupName: `Itin SEM ${RUN_ID}`, country: 'AR',
@@ -221,6 +229,34 @@ test.describe('itinerario-celula sob engine ligado @integration', () => {
       cleanupWJAAndEncuadre(workerId2, vacancyId);
       cleanupTestWorker(workerId);
       cleanupTestWorker(workerId2);
+      cleanupTestPatient(patientId);
+    }
+  });
+
+  test('itinerario-celula-botao-montar', async ({ page, request }) => {
+    // Fase 3: controle positivo de TELA do "Itinerario listo" — COM (patient_itinerary:update) vê o botão,
+    // count 1, num paciente NÃO montado. O 0 do SEM está em `group-simulation-itinerario-aba-sem-celula`.
+    const { patientId, addressId } = insertTestPatient({
+      withAddress: true, insuranceInformed: 'OSDE', firstName: 'ItinCelulaBotao', lastName: `Seed-${RUN_ID}`,
+    });
+    const { serviceId } = seedServiceWithLiveVacancySql(patientId, addressId!);
+    try {
+      const com = await pollAuthz(
+        request, STAFF_COM,
+        (b: { enforcement?: string; permissions?: string[] }) =>
+          b?.enforcement === 'on' && Array.isArray(b?.permissions) && b.permissions.includes('patient_itinerary:update'),
+      );
+      expect(com.body?.enforcement, 'COM: engine ligado no contrato').toBe('on');
+      expect(scalar(`select count(*) from patient_itinerary_assembly where patient_id = '${patientId}'`)).toBe('0');
+      expect(serviceId).toBeTruthy();
+
+      await page.setViewportSize(LANCAMENTO_VIEWPORT_ES_AR.viewport);
+      await loginAs(page, STAFF_COM);
+      await openItineraryTab(page, patientId);
+      await expect(page.getByTestId('itinerario-montar')).toHaveCount(1);
+      await expect(page.getByTestId('itinerario-montado')).toHaveCount(0);
+    } finally {
+      cleanupItineraryWrite(patientId);
       cleanupTestPatient(patientId);
     }
   });
