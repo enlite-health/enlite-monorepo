@@ -1,4 +1,4 @@
--- Migration 487: permissão `ai_prompt` (read, update, restore) — spec 029
+-- Migration 488: permissão `ai_prompt` (read, update, restore) — spec 029
 --
 -- POR QUÊ explícito, não sync: a sincronização automática do catálogo de permissões está
 -- DESLIGADA em produção (fatos-medidos.md §9 da spec 029). Sem esta migration inserindo as

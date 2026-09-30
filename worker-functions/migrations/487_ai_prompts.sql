@@ -1,4 +1,4 @@
--- Migration 486: ai_prompts + ai_prompt_audit_log (spec 029 — prompts de IA editáveis)
+-- Migration 487: ai_prompts + ai_prompt_audit_log (spec 029 — prompts de IA editáveis)
 --
 -- CONTEXTO: hoje os textos enviados ao modelo (descrição de vaga no Talentum, perguntas de
 -- prescreening de AT e de Cuidador) vivem em constante de código ou documento do Google Drive —
