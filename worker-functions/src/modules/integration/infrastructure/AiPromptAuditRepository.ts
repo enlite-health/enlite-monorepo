@@ -51,10 +51,10 @@ export interface LogAiPromptEventParams {
   eventType: AiPromptEventType;
   /** `{ before, after }` com o conteúdo INTEGRAL de `body` — não a diferença (data-model.md D3). */
   changes: AuditChangesPayload;
-  /** firebase_uid de quem executou a ação. Obrigatório quando actorType === 'HUMAN' (CHECK da 485). */
+  /** firebase_uid de quem executou a ação. Obrigatório quando actorType === 'HUMAN' (CHECK da 486). */
   actorUserId?: string | null;
   actorType: AuditActorType;
-  /** Obrigatório quando actorType !== 'HUMAN' (CHECK da 485). Ex.: 'migration-485-seed'. */
+  /** Obrigatório quando actorType !== 'HUMAN' (CHECK da 486). Ex.: 'migration-485-seed'. */
   actorLabel?: string | null;
   traceId?: string | null;
 }

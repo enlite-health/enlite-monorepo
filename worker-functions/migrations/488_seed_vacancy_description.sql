@@ -1,4 +1,4 @@
--- Migration 487: seed VACANCY_DESCRIPTION (spec 029 — prompts de IA editáveis, Fase 3 T016)
+-- Migration 488: seed VACANCY_DESCRIPTION (spec 029 — prompts de IA editáveis, Fase 3 T016)
 --
 -- Semeia a linha de ai_prompts para VACANCY_DESCRIPTION com o conteúdo ATUAL da constante
 -- DESCRIPTION_SYSTEM_PROMPT (src/modules/integration/infrastructure/talentumDescriptionHelpers.ts:58-74),
@@ -9,7 +9,7 @@
 -- deploy. Sem BEGIN/COMMIT, sem DROP.
 --
 -- Ator da semeadura: SYSTEM / 'migration-487-seed'. Não há usuário humano no seed; a tabela
--- ai_prompt_audit_log (migrations/485_ai_prompts.sql) exige, por CHECK, que actor_type <> 'HUMAN'
+-- ai_prompt_audit_log (migrations/486_ai_prompts.sql) exige, por CHECK, que actor_type <> 'HUMAN'
 -- venha com actor_label preenchido (e permite actor_user_id NULL nesse caso) — 'SYSTEM' +
 -- 'migration-487-seed' satisfaz exatamente essa regra. O evento CREATED só é gravado quando a
 -- linha é de fato inserida: a CTE `inserted` fica vazia em conflito, então a trilha nunca duplica
