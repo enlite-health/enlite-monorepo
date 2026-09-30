@@ -394,9 +394,10 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'POST /api/admin/patients/:id/contracted-services/:sid/itinerary/allocations/:allocationId/absences → patient_itinerary:update', // cadeia Fase 13 — substituição pontual
         'PATCH /api/admin/patients/:id/contracted-services/:sid/itinerary/absences/:absenceId/substitute → patient_itinerary:update',
         'POST /api/admin/patients/:id/contracted-services/:sid/itinerary/absences/:absenceId/cancel → patient_itinerary:update',
-        // spec 029 (prompts de IA editáveis) — as 4 rotas de `ai-prompts`.
+        // spec 029 (prompts de IA editáveis) — as 5 rotas de `ai-prompts`.
         'GET /api/admin/ai-prompts → ai_prompt:read',
         'GET /api/admin/ai-prompts/:slug → ai_prompt:read',
+        'POST /api/admin/ai-prompts/:slug/preview → ai_prompt:update',
         'POST /api/admin/ai-prompts/:slug/undo → ai_prompt:update',
         'PUT /api/admin/ai-prompts/:slug → ai_prompt:update',
       ].sort(),

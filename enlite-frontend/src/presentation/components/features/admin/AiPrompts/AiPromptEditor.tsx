@@ -24,7 +24,7 @@
  * (mesma regra que `UndoAiPromptUseCase` aplica no servidor). Botão só existe (D269, hide) para
  * quem tem `ai_prompt:update` — mesma célula de salvar (contrato).
  */
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { useTranslation } from 'react-i18next';
 import { resolveDateLocale, SHORT_DATE_OPTIONS } from '@presentation/utils/dateLocale';
@@ -61,21 +61,27 @@ export function AiPromptEditor({ prompt, onSaved }: AiPromptEditorProps) {
   const [body, setBody] = useState(prompt.body);
   const [editing, setEditing] = useState(false);
 
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [undoing, setUndoing] = useState(false);
+  const [undoError, setUndoError] = useState<string | null>(null);
+
   // Reseta o rascunho SÓ quando o slug muda (troca de aba) — depois disso o estado é próprio:
   // salvar/desfazer atualizam `current`/`body` localmente, sem esperar o pai re-renderizar.
-  useEffect(() => {
+  // Feito DURANTE o render (padrão "ajustar estado quando a prop muda" da doc do React), não em
+  // `useEffect`: um efeito com `[prompt.slug]` também roda na MONTAGEM e, se o clique em "Editar"
+  // chegasse antes dos efeitos passivos esvaziarem, o `setEditing(false)` do efeito vinha atrás do
+  // `setEditing(true)` do clique e jogava o usuário de volta para leitura. Sem efeito, a montagem
+  // não reseta nada e só uma troca real de slug reseta.
+  const [seenSlug, setSeenSlug] = useState(prompt.slug);
+  if (seenSlug !== prompt.slug) {
+    setSeenSlug(prompt.slug);
     setCurrent(prompt);
     setBody(prompt.body);
     setEditing(false);
     setSaveError(null);
     setUndoError(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [prompt.slug]);
-
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [undoing, setUndoing] = useState(false);
-  const [undoError, setUndoError] = useState<string | null>(null);
+  }
 
   const charCount = body.length;
   // Não desabilita por texto vazio: o clique precisa CHEGAR em `handleSave` pra mostrar

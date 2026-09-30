@@ -12,6 +12,7 @@
  * `ContractedServiceApiError`).
  */
 import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
+import { useLayoutEffect } from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
@@ -380,5 +381,29 @@ describe('AiPromptEditor', () => {
     expect(await screen.findByTestId('ai-prompt-editor-undo-error')).toHaveTextContent(
       'Não há uma versão anterior para desfazer.',
     );
+  });
+
+  // Causa-raiz do 1-em-5 visto em `AiPromptsPage.test.tsx`: o efeito de "reset por slug" também roda
+  // na MONTAGEM. Um clique em "Editar" dado depois do commit e ANTES dos efeitos passivos
+  // esvaziarem enfileira `setEditing(true)`, e o efeito de montagem enfileira `setEditing(false)`
+  // atrás dele — o usuário volta para leitura e perde o clique. Na tela real e no CI isso depende
+  // de o agendador do React rodar o commit e os passivos no mesmo laço ou em laços separados
+  // (timing). Aqui o clique sai de um `useLayoutEffect` irmão, que roda DENTRO do commit, antes de
+  // qualquer passivo: a ordem fica determinística, sem `sleep` nem dependência da ordem dos testes.
+  it('clicar em "Editar" antes dos efeitos passivos da montagem entra em edição e FICA', async () => {
+    function ClicaEmEditarNoCommit(): null {
+      useLayoutEffect(() => {
+        const btn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Editar');
+        btn?.click();
+      }, []);
+      return null;
+    }
+    render(
+      <>
+        <AiPromptEditor prompt={fakePrompt()} />
+        <ClicaEmEditarNoCommit />
+      </>,
+    );
+    expect(await screen.findByTestId('ai-prompt-editor-textarea')).toHaveValue('Texto original do prompt.');
   });
 });
