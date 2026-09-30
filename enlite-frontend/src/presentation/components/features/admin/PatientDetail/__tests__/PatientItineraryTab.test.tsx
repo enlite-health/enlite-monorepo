@@ -19,6 +19,18 @@ import { PatientItineraryTab } from '../PatientItineraryTab';
 import { patientDetailFixture } from './patientDetailFixture';
 import { nextDatesOfWeekday } from '../substitutionDates';
 
+// Catálogo de motivos de saída (Fase 2): o diálogo de motivo lê `useServiceExitReasonOptions`; aqui um catálogo fixo.
+vi.mock('@hooks/admin/useServiceExitReasonOptions', () => ({
+  useServiceExitReasonOptions: () => ({
+    options: [
+      { code: 'OTHER', label: 'Otro' },
+      { code: 'NOVO_DO_ADMIN', label: 'Cambio de disponibilidad' },
+    ],
+    status: 'ok',
+  }),
+}));
+
+
 const mockUsePatientItinerary = vi.fn<[string], UsePatientItineraryResult>();
 vi.mock('@hooks/admin/usePatientItinerary', () => ({
   usePatientItinerary: (patientId: string) => mockUsePatientItinerary(patientId),
@@ -252,10 +264,12 @@ describe('PatientItineraryTab — a aba do itinerário (D445)', () => {
 
     const firstDate = nextDatesOfWeekday(ITINERARY.asOf, 1, 8)[0];
     fireEvent.change(screen.getByTestId('substitution-date'), { target: { value: firstDate } });
+    fireEvent.change(screen.getByTestId('substitution-reason'), { target: { value: 'NOVO_DO_ADMIN' } });
     fireEvent.click(screen.getByTestId('substitution-confirm'));
 
     await waitFor(() => expect(mockRegisterAbsence).toHaveBeenCalledTimes(1));
     expect(mockRegisterAbsence.mock.calls[0][1]).toBe('svc-1');
+    expect(mockRegisterAbsence.mock.calls[0][3]).toMatchObject({ reasonCategory: 'NOVO_DO_ADMIN' });
     expect(refresh).toHaveBeenCalled();
   });
 });

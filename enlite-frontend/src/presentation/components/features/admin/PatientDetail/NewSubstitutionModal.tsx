@@ -18,7 +18,7 @@ interface NewSubstitutionModalProps {
   services: NewSubstitutionServiceOption[];
   asOf: string;
   loadOptions: (serviceId: string) => Promise<AllocationOptionsLoad>;
-  onSubmitComplementary: (serviceId: string, allocationId: string, date: string, substituteWorkerId: string | null) => void;
+  onSubmitComplementary: (serviceId: string, allocationId: string, date: string, substituteWorkerId: string | null, reasonCategory: string) => void;
   onSubmitPermanent: (serviceId: string, allocationId: string, newWorkerId: string, fromDate: string) => void;
   onCancel: () => void;
 }
@@ -97,8 +97,8 @@ export function NewSubstitutionModal({
       allocations={service.allocations}
       selected={options ?? []}
       asOf={asOf}
-      onSubmit={(allocationId, date, substituteWorkerId) =>
-        onSubmitComplementary(service.serviceId, allocationId, date, substituteWorkerId)
+      onSubmit={(allocationId, date, substituteWorkerId, reasonCategory) =>
+        onSubmitComplementary(service.serviceId, allocationId, date, substituteWorkerId, reasonCategory)
       }
       onSubmitPermanent={(allocationId, newWorkerId, fromDate) => onSubmitPermanent(service.serviceId, allocationId, newWorkerId, fromDate)}
       onCancel={onCancel}

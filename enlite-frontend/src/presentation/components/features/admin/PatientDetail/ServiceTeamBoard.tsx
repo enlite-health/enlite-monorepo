@@ -6,12 +6,12 @@ import { ActionButton } from '@presentation/components/features/access';
 import { KanbanBoardShell, type KanbanColumnSpec } from '@presentation/components/features/admin/Kanban/KanbanBoardShell';
 import { RejectionReasonSelect } from '@presentation/components/features/admin/Kanban/RejectionReasonSelect';
 import { SubstitutionDayModal } from './SubstitutionDayModal';
+import { CatalogRejectionSelect } from './CatalogRejectionSelect';
 import { ServiceTeamProviderModal, type ServiceTeamPatientHeader } from './ServiceTeamProviderModal';
 import { formatDDMM } from './substitutionDates';
 import { workerLabel } from './workerLabel';
 import {
   SERVICE_TEAM_COLUMN_IDS,
-  SERVICE_TEAM_REJECT_REASONS,
   SERVICE_TEAM_REVERT_REASONS,
   type ServiceTeam,
   type ServiceTeamMember,
@@ -25,7 +25,7 @@ interface ServiceTeamBoardProps {
   team: ServiceTeam;
   onReject: (workerId: string, reasonCategory: string) => void;
   onRevert: (workerId: string, reasonCategory: string) => void;
-  onSubstitute: (allocationId: string, date: string, substituteWorkerId: string | null) => void;
+  onSubstitute: (allocationId: string, date: string, substituteWorkerId: string | null, reasonCategory: string) => void;
   actionError: string | null;
 }
 
@@ -115,7 +115,7 @@ export function ServiceTeamBoard({ patientId, patientHeader, serviceId, team, on
             </Text>
             {columnId === 'REJECTED_FOR_SERVICE' && member.reasonCategory && (
               <Text as="span" size="xs" color="secondary">
-                {t(`admin.patients.detail.serviceTeam.rejectOptions.${member.reasonCategory}`, member.reasonCategory)}
+                {member.reasonLabel ?? member.reasonCategory}
               </Text>
             )}
             {columnId === 'IN_SERVICE' && member.substitutionDates && member.substitutionDates.length > 0 && (
@@ -196,14 +196,25 @@ export function ServiceTeamBoard({ patientId, patientHeader, serviceId, team, on
         </Text>
       )}
 
-      {pending && (
+      {pending && pending.kind === 'reject' && (
+        <CatalogRejectionSelect
+          titleKey="admin.patients.detail.serviceTeam.rejectModal.title"
+          confirmKey="admin.patients.detail.serviceTeam.rejectModal.confirm"
+          cancelKey="admin.patients.detail.serviceTeam.rejectModal.cancel"
+          testIdPrefix="service-team-reject"
+          onSubmit={handleReasonSubmit}
+          onCancel={() => setPending(null)}
+        />
+      )}
+
+      {pending && pending.kind === 'revert' && (
         <RejectionReasonSelect
-          options={pending.kind === 'reject' ? SERVICE_TEAM_REJECT_REASONS : SERVICE_TEAM_REVERT_REASONS}
-          titleKey={`admin.patients.detail.serviceTeam.${pending.kind}Modal.title`}
-          optionKeyPrefix={`admin.patients.detail.serviceTeam.${pending.kind}Options`}
-          confirmKey={`admin.patients.detail.serviceTeam.${pending.kind}Modal.confirm`}
-          cancelKey={`admin.patients.detail.serviceTeam.${pending.kind}Modal.cancel`}
-          testIdPrefix={`service-team-${pending.kind}`}
+          options={SERVICE_TEAM_REVERT_REASONS}
+          titleKey="admin.patients.detail.serviceTeam.revertModal.title"
+          optionKeyPrefix="admin.patients.detail.serviceTeam.revertOptions"
+          confirmKey="admin.patients.detail.serviceTeam.revertModal.confirm"
+          cancelKey="admin.patients.detail.serviceTeam.revertModal.cancel"
+          testIdPrefix="service-team-revert"
           onSubmit={handleReasonSubmit}
           onCancel={() => setPending(null)}
         />
@@ -214,8 +225,8 @@ export function ServiceTeamBoard({ patientId, patientHeader, serviceId, team, on
           allocations={substitutionMember.allocations ?? []}
           selected={team.selected}
           asOf={team.asOf}
-          onSubmit={(allocationId, date, substituteWorkerId) => {
-            onSubstitute(allocationId, date, substituteWorkerId);
+          onSubmit={(allocationId, date, substituteWorkerId, reasonCategory) => {
+            onSubstitute(allocationId, date, substituteWorkerId, reasonCategory);
             setSubstitutionMember(null);
           }}
           onCancel={() => setSubstitutionMember(null)}

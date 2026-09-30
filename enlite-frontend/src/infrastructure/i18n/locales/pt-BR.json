@@ -3813,12 +3813,6 @@
             "confirm": "Reverter",
             "cancel": "Cancelar"
           },
-          "rejectOptions": {
-            "PERFIL_INADEQUADO_AO_SERVICO": "Perfil inadequado ao serviço",
-            "INDISPONIBILIDADE_DE_HORARIO": "Indisponibilidade de horário",
-            "DESISTENCIA_DO_PRESTADOR": "O prestador desistiu",
-            "OTHER": "Outro"
-          },
           "revertOptions": {
             "REAVALIACAO": "Reavaliação",
             "REJEITADO_POR_ENGANO": "Rejeitado por engano",
@@ -3836,6 +3830,9 @@
             "label": "Substituição",
             "modeComplementary": "Complementar (só esse dia)",
             "modePermanent": "Inteiro (substituição permanente)",
+            "reason": "Motivo",
+            "reasonPlaceholder": "Motivo da troca",
+            "reasonLoadError": "Não foi possível carregar os motivos.",
             "anaCareNotice": "Lembre de lançar esta mudança à mão no Ana Care — não é enviado automaticamente."
           },
           "actionErrors": {

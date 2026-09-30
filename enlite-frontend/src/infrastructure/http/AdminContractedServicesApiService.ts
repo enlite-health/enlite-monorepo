@@ -243,7 +243,7 @@ class AdminContractedServicesApiServiceClass {
     patientId: string,
     serviceId: string,
     allocationId: string,
-    body: { date: string; substituteWorkerId?: string },
+    body: { date: string; substituteWorkerId?: string; reasonCategory: string },
   ): Promise<ItineraryAbsenceResult> {
     return this.request<ItineraryAbsenceResult>(
       'POST',

@@ -30,6 +30,8 @@ export interface ServiceTeamMember {
   displayName: string | null;
   vacancyId: string | null;
   reasonCategory?: string;
+  /** Só em `rejected`: rótulo do motivo no catálogo de motivos de saída (Fase 2); a tela mostra `reasonLabel ?? reasonCategory`. */
+  reasonLabel?: string;
   allocations?: ServiceTeamAllocation[];
   substitutionDates?: string[];
   /**
@@ -76,20 +78,14 @@ export const SERVICE_TEAM_COLUMN_IDS = ['SELECTED_FOR_SERVICE', 'IN_SERVICE', 'R
 export type ServiceTeamColumnId = (typeof SERVICE_TEAM_COLUMN_IDS)[number];
 
 /**
- * Espelho de `SERVICE_TEAM_REJECT_REASONS`/`SERVICE_TEAM_REVERT_REASONS`
- * (`CASE/domain/serviceTeamReason.ts`, DX-10.2) — catálogo de RÓTULO para o modal de motivo
+ * Espelho de `SERVICE_TEAM_REVERT_REASONS`
+ * (`CASE/domain/serviceTeamReason.ts`, DX-10.2) — catálogo de RÓTULO para o modal de motivo de REVERTER (o de
+ * REJEITAR é o catálogo de motivos de saída, vindo de `useServiceExitReasonOptions`, Fase 2)
  * (molde `MoveReason.ts:26-45`). O front nunca decide QUANDO motivo é obrigatório; só reage ao
  * 422 `SERVICE_TEAM_REASON_REQUIRED`/`SERVICE_TEAM_REASON_INVALID` que a API devolve (invariantes
  * 10/11). A lista de reverter coincide hoje com `LEAVE_REJECTED_REASONS` — decisão (invariante 6):
  * não são a mesma constante.
  */
-export const SERVICE_TEAM_REJECT_REASONS = [
-  'PERFIL_INADEQUADO_AO_SERVICO',
-  'INDISPONIBILIDADE_DE_HORARIO',
-  'DESISTENCIA_DO_PRESTADOR',
-  'OTHER',
-] as const;
-
 export const SERVICE_TEAM_REVERT_REASONS = ['REAVALIACAO', 'REJEITADO_POR_ENGANO', 'OTHER'] as const;
 
 export type ServiceTeamReasonKind = 'REJECT' | 'REVERT';

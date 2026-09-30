@@ -3892,12 +3892,6 @@
             "confirm": "Revertir",
             "cancel": "Cancelar"
           },
-          "rejectOptions": {
-            "PERFIL_INADEQUADO_AO_SERVICO": "Perfil no adecuado al servicio",
-            "INDISPONIBILIDADE_DE_HORARIO": "Sin disponibilidad horaria",
-            "DESISTENCIA_DO_PRESTADOR": "El prestador desistió",
-            "OTHER": "Otro"
-          },
           "revertOptions": {
             "REAVALIACAO": "Reevaluación",
             "REJEITADO_POR_ENGANO": "Rechazado por error",
@@ -3915,6 +3909,9 @@
             "label": "Reemplazo",
             "modeComplementary": "Complementar (solo ese día)",
             "modePermanent": "Entero (reemplazo permanente)",
+            "reason": "Motivo",
+            "reasonPlaceholder": "Motivo del cambio",
+            "reasonLoadError": "No se pudieron cargar los motivos.",
             "anaCareNotice": "Recordá cargar este cambio a mano en Ana Care — no se envía automáticamente."
           },
           "actionErrors": {

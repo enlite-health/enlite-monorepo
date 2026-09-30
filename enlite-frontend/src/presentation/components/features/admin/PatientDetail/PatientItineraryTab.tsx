@@ -141,12 +141,13 @@ export function PatientItineraryTab({ patient }: PatientItineraryTabProps): JSX.
     void allocate(serviceId, slot.id, workerId);
   }
 
-  async function submitComplementary(serviceId: string, allocationId: string, date: string, substituteWorkerId: string | null): Promise<void> {
+  async function submitComplementary(serviceId: string, allocationId: string, date: string, substituteWorkerId: string | null, reasonCategory: string): Promise<void> {
     setNewSubstitutionError(null);
     try {
       await AdminContractedServicesApiService.registerAbsence(patient.id, serviceId, allocationId, {
         date,
         substituteWorkerId: substituteWorkerId ?? undefined,
+        reasonCategory,
       });
       setShowNew(false);
     } catch {
@@ -254,7 +255,7 @@ export function PatientItineraryTab({ patient }: PatientItineraryTabProps): JSX.
             services={newSubstitutionServices}
             asOf={itinerary.asOf}
             loadOptions={loadOptions}
-            onSubmitComplementary={(sid, aid, date, wid) => void submitComplementary(sid, aid, date, wid)}
+            onSubmitComplementary={(sid, aid, date, wid, reason) => void submitComplementary(sid, aid, date, wid, reason)}
             onSubmitPermanent={(sid, aid, wid, date) => void submitPermanent(sid, aid, wid, date)}
             onCancel={() => {
               setShowNew(false);
