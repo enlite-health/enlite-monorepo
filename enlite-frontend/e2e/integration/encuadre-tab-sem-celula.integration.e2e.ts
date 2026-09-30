@@ -18,7 +18,7 @@
 import { test, expect } from '@playwright/test';
 import { insertTestPatient, cleanupTestPatient } from '../helpers/db-test-helper';
 import {
-  tokenFor, seedStaffInGroup, cleanupStaffAndGroup, grantCell, loginAs, pollAuthz, type MockUser,
+  seedStaffInGroup, cleanupStaffAndGroup, grantCell, loginAs, pollAuthz, type MockUser,
 } from '../helpers/abac-stack-helper';
 import { LANCAMENTO_VIEWPORT_ES_AR } from '../helpers/lancamento-e2e-helper';
 
