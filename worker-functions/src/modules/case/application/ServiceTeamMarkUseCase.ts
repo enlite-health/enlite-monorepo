@@ -1,9 +1,13 @@
 /**
  * ServiceTeamMarkUseCase — quadro C (Servicio Contratado), Fase 10, DX-10.6 (2).
  *
- * `reject` e `revert`: a ordem é a régua da sabotagem — motivo ausente/fora da lista fechada do
- * `kind` SEMPRE antes do banco (`ServiceTeamReasonRequiredError`/`ServiceTeamReasonInvalidError`,
- * `serviceTeamReason.ts`); só depois abre `inPatientTransaction`. Dentro da transação: lê o time
+ * `reject` e `revert`: a ordem é a régua da sabotagem — motivo ausente SEMPRE antes do banco
+ * (`ServiceTeamReasonRequiredError`, `serviceTeamReason.ts`). REVERT: motivo fora da lista fechada
+ * também antes do banco (`ServiceTeamReasonInvalidError`). REJECT (change itinerario-trocas-motivos-e-figma,
+ * Fase 2, D2): a lista é o CATÁLOGO `service_exit_reasons` — o código tem de existir e estar ATIVO,
+ * conferido (`ServiceExitReasonReader.findActiveByCode`) DENTRO da transação e ANTES de qualquer
+ * leitura/escrita do time; inexistente/inativo → o mesmo `ServiceTeamReasonInvalidError` (422 de
+ * hoje). Só depois abre `inPatientTransaction`. Dentro da transação: lê o time
  * pelo MESMO leitor do GET, no MESMO client (`ServiceTeamReader.readWith`); serviço inexistente/
  * de outro paciente → `ServiceTeamNotFoundError` (mesma classe do GET — 404); rejeitar quem está
  * `inService` → `ServiceTeamWorkerAllocatedError` (invariante 10, "remova do itinerário
@@ -20,13 +24,14 @@
 import type { PoolClient } from 'pg';
 import { inPatientTransaction } from './patientTransaction';
 import {
-  isAllowedServiceTeamReason,
+  isAllowedServiceTeamRevertReason,
   ServiceTeamReasonRequiredError,
   ServiceTeamReasonInvalidError,
   type ServiceTeamReasonKind,
 } from '../domain/serviceTeamReason';
 import { ServiceTeamReader, type ServiceTeamRows } from '../infrastructure/ServiceTeamReader';
 import { ServiceTeamMarkWriter } from '../infrastructure/ServiceTeamMarkWriter';
+import { ServiceExitReasonReader, type ServiceExitReasonOption } from '../infrastructure/ServiceExitReasonReader';
 import { ServiceTeamNotFoundError, type GetServiceTeamResult } from './GetServiceTeamUseCase';
 import { deriveServiceTeamFromRows, projectServiceTeamDisplayNames, buildServiceTeamResult } from './serviceTeamPresentation';
 import { type Decryptor } from '@modules/identity/permissions';
@@ -110,6 +115,11 @@ export interface ServiceTeamMarkWriterPort {
   ): Promise<number>;
 }
 
+/** Consulta ao catálogo de motivos de saída (migration 492) — só o que o REJECT precisa. */
+export interface ServiceTeamReasonCatalogPort {
+  findActiveByCode(client: PoolClient, code: string): Promise<ServiceExitReasonOption | null>;
+}
+
 type TransactionRunner = <T>(fn: (client: PoolClient) => Promise<T>) => Promise<T>;
 
 export class ServiceTeamMarkUseCase {
@@ -118,6 +128,7 @@ export class ServiceTeamMarkUseCase {
     private readonly writer: ServiceTeamMarkWriterPort = new ServiceTeamMarkWriter(),
     private readonly kms: Decryptor = new KMSEncryptionService(),
     private readonly runInTransaction: TransactionRunner = inPatientTransaction,
+    private readonly reasonCatalog: ServiceTeamReasonCatalogPort = new ServiceExitReasonReader(),
   ) {}
 
   async reject(input: ServiceTeamMarkInput): Promise<GetServiceTeamResult> {
@@ -134,7 +145,9 @@ export class ServiceTeamMarkUseCase {
     if (reasonCategory === undefined || reasonCategory === null || reasonCategory === '') {
       throw new ServiceTeamReasonRequiredError(kind);
     }
-    if (!isAllowedServiceTeamReason(kind, reasonCategory)) {
+    if (kind === 'REJECT') {
+      if (typeof reasonCategory !== 'string') throw new ServiceTeamReasonInvalidError(kind);
+    } else if (!isAllowedServiceTeamRevertReason(reasonCategory)) {
       throw new ServiceTeamReasonInvalidError(kind);
     }
     const category = reasonCategory as string;
@@ -156,6 +169,11 @@ export class ServiceTeamMarkUseCase {
     cells: string[] | null,
     now: Date,
   ): Promise<GetServiceTeamResult> {
+    // D2: o motivo de rejeitar é o do catálogo (ativo) — antes de qualquer leitura/escrita do time.
+    if ((await this.reasonCatalog.findActiveByCode(client, category)) === null) {
+      throw new ServiceTeamReasonInvalidError('REJECT');
+    }
+
     const row = await this.reader.readWith(client, patientId, serviceId);
     if (row === null) throw new ServiceTeamNotFoundError(patientId, serviceId);
 

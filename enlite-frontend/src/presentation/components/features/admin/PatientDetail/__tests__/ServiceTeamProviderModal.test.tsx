@@ -16,6 +16,18 @@ import { ServiceTeamProviderModal } from '../ServiceTeamProviderModal';
 import type { UseServiceTeamContactResult } from '@hooks/admin/useServiceTeamContact';
 import type { ServiceTeamMember } from '@domain/entities/ServiceTeam';
 
+// Catálogo de motivos de saída (Fase 2): o diálogo de motivo lê `useServiceExitReasonOptions`; aqui um catálogo fixo.
+vi.mock('@hooks/admin/useServiceExitReasonOptions', () => ({
+  useServiceExitReasonOptions: () => ({
+    options: [
+      { code: 'OTHER', label: 'Otro' },
+      { code: 'NOVO_DO_ADMIN', label: 'Cambio de disponibilidad' },
+    ],
+    status: 'ok',
+  }),
+}));
+
+
 const mockUseServiceTeamContact = vi.fn<[], UseServiceTeamContactResult>();
 vi.mock('@hooks/admin/useServiceTeamContact', () => ({
   useServiceTeamContact: (...args: unknown[]) => mockUseServiceTeamContact(...(args as [])),

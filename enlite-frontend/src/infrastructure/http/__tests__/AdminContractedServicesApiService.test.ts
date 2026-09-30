@@ -215,6 +215,7 @@ describe('AdminContractedServicesApiService', () => {
     const out = await AdminContractedServicesApiService.registerAbsence(PATIENT_ID, SERVICE_ID, ALLOCATION_ID, {
       date: '2026-10-05',
       substituteWorkerId: 'w2',
+      reasonCategory: 'OTHER',
     });
     expect(out).toEqual(ABSENCE_OPEN);
     const [url, init] = f.mock.calls[0] as [string, RequestInit];
@@ -222,27 +223,27 @@ describe('AdminContractedServicesApiService', () => {
       `/api/admin/patients/${PATIENT_ID}/contracted-services/${SERVICE_ID}/itinerary/allocations/${ALLOCATION_ID}/absences`,
     );
     expect(init.method).toBe('POST');
-    expect(JSON.parse(init.body as string)).toEqual({ date: '2026-10-05', substituteWorkerId: 'w2' });
+    expect(JSON.parse(init.body as string)).toEqual({ date: '2026-10-05', substituteWorkerId: 'w2', reasonCategory: 'OTHER' });
   });
 
   it('registerAbsence: sem substituteWorkerId — corpo sem a chave (dia sem cobertura)', async () => {
     const f = mockFetch({ success: true, data: { ...ABSENCE_OPEN, substituteWorkerId: null } }, 201);
-    await AdminContractedServicesApiService.registerAbsence(PATIENT_ID, SERVICE_ID, ALLOCATION_ID, { date: '2026-10-05' });
+    await AdminContractedServicesApiService.registerAbsence(PATIENT_ID, SERVICE_ID, ALLOCATION_ID, { date: '2026-10-05', reasonCategory: 'OTHER' });
     const [, init] = f.mock.calls[0] as [string, RequestInit];
-    expect(JSON.parse(init.body as string)).toEqual({ date: '2026-10-05' });
+    expect(JSON.parse(init.body as string)).toEqual({ date: '2026-10-05', reasonCategory: 'OTHER' });
   });
 
   it('registerAbsence: 422 NOT_SELECTED_FOR_SERVICE vira ContractedServiceApiError com o code', async () => {
     mockFetch({ success: false, error: 'não selecionado', code: 'NOT_SELECTED_FOR_SERVICE' }, 422);
     await expect(
-      AdminContractedServicesApiService.registerAbsence(PATIENT_ID, SERVICE_ID, ALLOCATION_ID, { date: '2026-10-05' }),
+      AdminContractedServicesApiService.registerAbsence(PATIENT_ID, SERVICE_ID, ALLOCATION_ID, { date: '2026-10-05', reasonCategory: 'OTHER' }),
     ).rejects.toMatchObject({ name: 'ContractedServiceApiError', status: 422, code: 'NOT_SELECTED_FOR_SERVICE' });
   });
 
   it('registerAbsence: 409 ITINERARY_OVERLAP vira ContractedServiceApiError com o code', async () => {
     mockFetch({ success: false, error: 'conflito', code: 'ITINERARY_OVERLAP' }, 409);
     await expect(
-      AdminContractedServicesApiService.registerAbsence(PATIENT_ID, SERVICE_ID, ALLOCATION_ID, { date: '2026-10-05', substituteWorkerId: 'w2' }),
+      AdminContractedServicesApiService.registerAbsence(PATIENT_ID, SERVICE_ID, ALLOCATION_ID, { date: '2026-10-05', substituteWorkerId: 'w2', reasonCategory: 'OTHER' }),
     ).rejects.toMatchObject({ name: 'ContractedServiceApiError', status: 409, code: 'ITINERARY_OVERLAP' });
   });
 

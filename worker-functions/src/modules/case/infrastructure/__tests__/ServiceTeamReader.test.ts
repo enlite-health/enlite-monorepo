@@ -228,4 +228,32 @@ describe('ServiceTeamReader', () => {
     expect(sql).toMatch(/\(a\.valid_to IS NULL OR a\.valid_to >= ab\.on_date\)/);
     expect(sql).toMatch(/ab\.substitute_worker_id IS NOT NULL/);
   });
+
+  it('Fase 2 (D2): o CTE marks faz LEFT JOIN no catálogo `service_exit_reasons` por `code`, e o leitor mapeia o rótulo para `rejectReasonLabel`', async () => {
+    queryImpl = async () => ({
+      rows: [
+        {
+          service_id: 's-1',
+          country: 'AR',
+          live_vacancy_id: 'v-live',
+          candidacies: [],
+          assignments: [],
+          marks: [
+            { worker_id: 'w-3', service_id: 's-1', reject_reason_category: 'NOVO', reject_reason_label: 'Cambio de disponibilidad', first_name_encrypted: null, last_name_encrypted: null },
+            { worker_id: 'w-4', service_id: 's-1', reject_reason_category: 'OTHER', reject_reason_label: null, first_name_encrypted: null, last_name_encrypted: null },
+          ],
+          substitutions: [],
+        },
+      ],
+      rowCount: 1,
+    });
+
+    const result = await reader.read('p-1', 's-1');
+
+    expect(svcCalls()[0].sql).toMatch(/LEFT JOIN service_exit_reasons ser ON ser\.code = r\.reject_reason_category/);
+    expect(result?.marks.map((m) => [m.workerId, m.rejectReasonCategory, m.rejectReasonLabel])).toEqual([
+      ['w-3', 'NOVO', 'Cambio de disponibilidad'],
+      ['w-4', 'OTHER', null],
+    ]);
+  });
 });

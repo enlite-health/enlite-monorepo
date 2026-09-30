@@ -23,6 +23,7 @@ import {
 } from '../../../application/ItineraryAbsenceUseCase';
 import { AllocationNotFoundError, AllocationNotActiveError, NotSelectedForServiceError } from '../../../application/ItineraryAllocationUseCase';
 import { ItineraryOverlapError } from '../../../domain/itineraryOverlap';
+import { ServiceExitReasonRequiredError, ServiceExitReasonInvalidError } from '../../../domain/serviceExitReason';
 
 const PATIENT_ID = '11111111-1111-1111-1111-111111111111';
 const SERVICE_ID = '22222222-2222-2222-2222-222222222222';
@@ -76,7 +77,7 @@ describe('AdminItineraryAbsenceController', () => {
     it('feliz → 201 { success:true, data }, chama o caso de uso com o ator', async () => {
       const result = { absenceId: ABSENCE_ID, allocationId: ALLOCATION_ID, date: '2026-09-28', substituteWorkerId: null, status: 'OPEN' as const };
       useCase.register.mockResolvedValueOnce(result);
-      const [req, res] = reqRes({ id: PATIENT_ID, sid: SERVICE_ID, allocationId: ALLOCATION_ID }, { date: '2026-09-28' });
+      const [req, res] = reqRes({ id: PATIENT_ID, sid: SERVICE_ID, allocationId: ALLOCATION_ID }, { date: '2026-09-28', reasonCategory: 'OTHER' });
       await ctrl.register(req, res);
       expect(res.status).toHaveBeenCalledWith(201);
       expect(jsonOf(res)).toHaveBeenCalledWith({ success: true, data: result });
@@ -86,6 +87,7 @@ describe('AdminItineraryAbsenceController', () => {
         allocationId: ALLOCATION_ID,
         date: '2026-09-28',
         substituteWorkerId: undefined,
+        reasonCategory: 'OTHER',
         actorUid: 'staff-1',
       });
     });
@@ -93,7 +95,7 @@ describe('AdminItineraryAbsenceController', () => {
     it('feliz com substituto → chama o caso de uso com substituteWorkerId', async () => {
       const result = { absenceId: ABSENCE_ID, allocationId: ALLOCATION_ID, date: '2026-09-28', substituteWorkerId: WORKER_ID, status: 'OPEN' as const };
       useCase.register.mockResolvedValueOnce(result);
-      const [req, res] = reqRes({ id: PATIENT_ID, sid: SERVICE_ID, allocationId: ALLOCATION_ID }, { date: '2026-09-28', substituteWorkerId: WORKER_ID });
+      const [req, res] = reqRes({ id: PATIENT_ID, sid: SERVICE_ID, allocationId: ALLOCATION_ID }, { date: '2026-09-28', substituteWorkerId: WORKER_ID, reasonCategory: 'OTHER' });
       await ctrl.register(req, res);
       expect(res.status).toHaveBeenCalledWith(201);
       expect(useCase.register).toHaveBeenCalledWith(expect.objectContaining({ substituteWorkerId: WORKER_ID }));
@@ -108,6 +110,8 @@ describe('AdminItineraryAbsenceController', () => {
       [new AbsenceWeekdayMismatchError(ALLOCATION_ID, '2026-09-28'), 422, { success: false, code: 'ABSENCE_WEEKDAY_MISMATCH' }],
       [new AbsenceOutsideAllocationError(ALLOCATION_ID, '2026-09-28'), 422, { success: false, code: 'ABSENCE_OUTSIDE_ALLOCATION' }],
       [new SubstituteIsTitularError(ALLOCATION_ID, '2026-09-28'), 422, { success: false, code: 'SUBSTITUTE_IS_TITULAR' }],
+      [new ServiceExitReasonRequiredError(), 422, { success: false, code: 'REASON_REQUIRED' }],
+      [new ServiceExitReasonInvalidError(), 422, { success: false, code: 'REASON_INVALID' }],
     ])('%p → status %i', async (err, status, body) => {
       useCase.register.mockRejectedValueOnce(err);
       const [req, res] = reqRes({ id: PATIENT_ID, sid: SERVICE_ID, allocationId: ALLOCATION_ID }, { date: '2026-09-28' });

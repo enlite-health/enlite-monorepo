@@ -2,7 +2,8 @@
  * contracted-service-rejections-schema.e2e.test.ts @integration — cadeia-paciente-vacante-itinerario, Fase 10, P3
  *
  * Prova, contra Postgres real, as regras escritas na migration 481 (DX-10.2, DX-10.14):
- *   - `reject_reason_category` NOT NULL / lista fechada (csr_reject_reason_check).
+ *   - `reject_reason_category` NOT NULL / FK para o catálogo `service_exit_reasons(code)` (csr_reject_reason_fk,
+ *     migration 493 — antes era o CHECK de 4 códigos, csr_reject_reason_check, da 481).
  *   - reversão: `reverted_at` exige `revert_reason_category` (csr_revert_has_reason), motivo de
  *     reversão de lista fechada (csr_revert_reason_check), `reverted_at` exige `reverted_by`
  *     (csr_revert_has_actor).
@@ -148,7 +149,7 @@ describe('contracted_service_rejections — regras do banco (migration 481) @int
     expect(err.column).toBe('reject_reason_category');
   });
 
-  it('(b) reject_reason_category fora da lista → 23514 csr_reject_reason_check', async () => {
+  it('(b) reject_reason_category com código inexistente no catálogo → 23503 csr_reject_reason_fk (era o CHECK da 481)', async () => {
     const err = await expectPgError(
       pool.query(
         `INSERT INTO contracted_service_rejections (service_id, worker_id, rejected_by, reject_reason_category, created_by, updated_by)
@@ -156,8 +157,40 @@ describe('contracted_service_rejections — regras do banco (migration 481) @int
         [service1, worker2, TASK_PREFIX],
       ),
     );
-    expect(err.code).toBe('23514');
-    expect(err.constraint).toBe('csr_reject_reason_check');
+    expect(err.code).toBe('23503');
+    expect(err.constraint).toBe('csr_reject_reason_fk');
+  });
+
+  it('(b2) só a FK ficou: o CHECK antigo de rejeitar saiu, o de reverter FICA', async () => {
+    const r = await pool.query<{ conname: string }>(
+      `SELECT conname FROM pg_constraint
+        WHERE conrelid = 'contracted_service_rejections'::regclass AND conname IN ('csr_reject_reason_check', 'csr_reject_reason_fk', 'csr_revert_reason_check')
+        ORDER BY conname`,
+    );
+    expect(r.rows.map((row) => row.conname)).toEqual(['csr_reject_reason_fk', 'csr_revert_reason_check']);
+  });
+
+  it('(b3) código criado pelo admin no catálogo (não é um dos 4 antigos) é aceito pela FK', async () => {
+    const code = `${TASK_PREFIX}motivo`;
+    await pool.query(
+      `INSERT INTO service_exit_reasons (code, label) VALUES ($1, $2)`,
+      [code, `${TASK_PREFIX}Cambio de disponibilidad`],
+    );
+    try {
+      const ins = await pool.query<{ id: string }>(
+        `INSERT INTO contracted_service_rejections (service_id, worker_id, rejected_by, reject_reason_category, created_by, updated_by)
+         VALUES ($1, $2, $3, $4, $3, $3) RETURNING id`,
+        [service1, worker2, TASK_PREFIX, code],
+      );
+      expect(ins.rows[0].id).toBeTruthy();
+      // desativar o item NÃO apaga nem invalida a marca (a FK só confere existência)
+      await pool.query(`UPDATE service_exit_reasons SET active = false, deactivated_at = now() WHERE code = $1`, [code]);
+      const still = await pool.query<{ n: number }>(`SELECT count(*)::int AS n FROM contracted_service_rejections WHERE id = $1`, [ins.rows[0].id]);
+      expect(still.rows[0].n).toBe(1);
+    } finally {
+      await pool.query(`DELETE FROM contracted_service_rejections WHERE rejected_by = $1 AND reject_reason_category = $2`, [TASK_PREFIX, code]);
+      await pool.query(`DELETE FROM service_exit_reasons WHERE code = $1`, [code]);
+    }
   });
 
   // ── (c)-(e) reversão ────────────────────────────────────────────────────────

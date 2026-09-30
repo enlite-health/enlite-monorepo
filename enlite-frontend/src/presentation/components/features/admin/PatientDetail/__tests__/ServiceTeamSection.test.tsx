@@ -16,6 +16,18 @@ import type { PatientContractedServiceDetail } from '@domain/entities/PatientDet
 import type { ServiceTeam } from '@domain/entities/ServiceTeam';
 import type { UseServiceTeamResult } from '@hooks/admin/useServiceTeam';
 
+// Catálogo de motivos de saída (Fase 2): o diálogo de motivo lê `useServiceExitReasonOptions`; aqui um catálogo fixo.
+vi.mock('@hooks/admin/useServiceExitReasonOptions', () => ({
+  useServiceExitReasonOptions: () => ({
+    options: [
+      { code: 'OTHER', label: 'Otro' },
+      { code: 'NOVO_DO_ADMIN', label: 'Cambio de disponibilidad' },
+    ],
+    status: 'ok',
+  }),
+}));
+
+
 const mockUseServiceTeam = vi.fn<[], UseServiceTeamResult>();
 vi.mock('@hooks/admin/useServiceTeam', () => ({
   useServiceTeam: (...args: unknown[]) => mockUseServiceTeam(...(args as [])),
@@ -200,9 +212,11 @@ describe('ServiceTeamSection — vazios, título do dado da linha, erro', () => 
     const dateSelect = screen.getByTestId('substitution-date') as HTMLSelectElement;
     const firstDate = dateSelect.querySelectorAll('option')[1].getAttribute('value');
     fireEvent.change(dateSelect, { target: { value: firstDate } });
+    fireEvent.change(screen.getByTestId('substitution-reason') as HTMLSelectElement, { target: { value: 'OTHER' } });
     fireEvent.click(screen.getByTestId('substitution-confirm'));
 
     expect(substitute).toHaveBeenCalledTimes(1);
+    expect(substitute.mock.calls[0][3]).toBe('OTHER');
     expect(substitute.mock.calls[0][0]).toBe('a1');
     expect(substitute.mock.calls[0][1]).toBe(firstDate);
   });

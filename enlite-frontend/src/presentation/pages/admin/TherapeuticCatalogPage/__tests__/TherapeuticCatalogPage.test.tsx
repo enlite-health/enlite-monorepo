@@ -16,7 +16,7 @@ import type { AuthzContract } from '@domain/entities/Authz';
 import type { TherapeuticCatalogItem, TherapeuticCatalogKind } from '@domain/entities/TherapeuticProject';
 
 // Esta tela administra só objetivos/atividades — `segments` não tem tela própria (task 7.7, fora do escopo).
-type ManagedCatalogKind = Exclude<TherapeuticCatalogKind, 'segments'>;
+type ManagedCatalogKind = Exclude<TherapeuticCatalogKind, 'segments'> | 'service-exit-reasons';
 
 const translations = ptBR as Record<string, any>;
 
@@ -94,12 +94,22 @@ describe('TherapeuticCatalogPage — os 3 catálogos, uma tela cada (D299, decis
   it.each([
     ['specific-objectives', COPY.kinds.specificObjectives],
     ['activities', COPY.kinds.activities],
+    ['service-exit-reasons', COPY.kinds.serviceExitReasons],
   ] as const)('kind %s: título e subtítulo próprios', async (kind, copy) => {
     await renderPage(kind);
     // ⚠️ `getByRole` e não o `data-testid` do código: o atom `Heading` NÃO repassa `data-*`
     // (medido em 08/09) — o `data-testid="therapeutic-catalog-title"` da página é inerte.
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(copy.title);
     expect(screen.getByText(copy.subtitle)).toBeInTheDocument();
+  });
+
+  it('motivos de saída: mostra a orientação "sem dado de saúde" (catalog-guidance); os outros kinds não', async () => {
+    const { unmount } = await renderPage('service-exit-reasons');
+    expect(screen.getByTestId('catalog-guidance')).toHaveTextContent('Categorias genéricas, sem dado de saúde.');
+    expect(listCatalog).toHaveBeenCalledWith('service-exit-reasons', { includeInactive: true });
+    unmount();
+    await renderPage('activities');
+    expect(screen.queryByTestId('catalog-guidance')).toBeNull();
   });
 
   it('pede o catálogo COM inativos — quem administra precisa ver o desligado para reativar', async () => {
@@ -313,6 +323,7 @@ describe('TherapeuticCatalogPage — trava de rota pela célula de leitura (D286
   it.each([
     ['specific-objectives', 'catalog_therapeutic_objectives'],
     ['activities', 'catalog_therapeutic_activities'],
+    ['service-exit-reasons', 'catalog_service_exit_reasons'],
   ] as const)('engine ON com %s:read não redireciona', async (kind, resource) => {
     comEnforcement([`${resource}:read`], 'on');
     render(<TherapeuticCatalogPage kind={kind} />);
@@ -350,6 +361,7 @@ describe('TherapeuticCatalogPage — write-gate das ações (D269)', () => {
   it.each([
     ['specific-objectives', 'catalog_therapeutic_objectives'],
     ['activities', 'catalog_therapeutic_activities'],
+    ['service-exit-reasons', 'catalog_service_exit_reasons'],
   ] as const)('engine ON com %s:create + :update (PR-8b) — as ações existem', async (kind, resource) => {
     comEnforcement([`${resource}:read`, `${resource}:create`, `${resource}:update`], 'on');
     render(<TherapeuticCatalogPage kind={kind} />);
@@ -367,6 +379,14 @@ describe('TherapeuticCatalogPage — write-gate das ações (D269)', () => {
 
     expect(screen.queryByTestId('therapeutic-catalog-edit-ativa')).not.toBeInTheDocument();
     expect(screen.queryByTestId('therapeutic-catalog-new-btn')).not.toBeInTheDocument();
+  });
+
+  it('🔴 motivos de saída: só :read (ou a escrita de OUTRO catálogo) esconde as ações — o gate é catalog_service_exit_reasons:update', async () => {
+    comEnforcement(['catalog_service_exit_reasons:read', 'catalog_therapeutic_activities:update'], 'on');
+    render(<TherapeuticCatalogPage kind="service-exit-reasons" />);
+    await screen.findByTestId('therapeutic-catalog-table');
+    expect(screen.queryByTestId('therapeutic-catalog-edit-ativa')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('therapeutic-catalog-toggle-ativa')).not.toBeInTheDocument();
   });
 
   it('engine OFF (ou contrato ausente): tudo existe mesmo sem célula', async () => {

@@ -16,7 +16,10 @@ import {
   type ItineraryAbsenceReaderPort,
   type ItineraryAbsenceWriterPort,
   type ItineraryAbsenceAllocationPort,
+  type ItineraryAbsenceReasonCatalogPort,
+  type ItineraryAbsenceChangeLogPort,
 } from '../ItineraryAbsenceUseCase';
+import { ServiceExitReasonRequiredError, ServiceExitReasonInvalidError } from '../../domain/serviceExitReason';
 import { NotSelectedForServiceError, AllocationNotFoundError, AllocationNotActiveError } from '../ItineraryAllocationUseCase';
 import { ItineraryOverlapError } from '../../domain/itineraryOverlap';
 import type { ServiceTeamRows } from '../../infrastructure/ServiceTeamReader';
@@ -38,6 +41,17 @@ function writerStub(overrides: Partial<ItineraryAbsenceWriterPort> = {}): Itiner
     cancelAbsence: jest.fn(),
     ...overrides,
   };
+}
+
+/** Catálogo dublê: só os códigos listados existem e estão ativos. */
+function catalogStub(active: string[] = ['OTHER']): ItineraryAbsenceReasonCatalogPort & { findActiveByCode: jest.Mock } {
+  return {
+    findActiveByCode: jest.fn(async (_client: unknown, code: string) => (active.includes(code) ? { code, label: code } : null)),
+  };
+}
+
+function changeLogStub(overrides: Partial<ItineraryAbsenceChangeLogPort> = {}): ItineraryAbsenceChangeLogPort & { insert: jest.Mock } {
+  return { insert: jest.fn().mockResolvedValue({ id: 'log-1' }), ...overrides } as ItineraryAbsenceChangeLogPort & { insert: jest.Mock };
 }
 
 function allocationWriterStub(overrides: Partial<ItineraryAbsenceAllocationPort> = {}): ItineraryAbsenceAllocationPort {
@@ -80,7 +94,7 @@ const IN_SERVICE_CANDIDATE_ROW: ServiceTeamRows = {
   substitutions: [],
 };
 
-const ACTIVE_ALLOCATION = { id: 'alloc-1', status: 'ACTIVE' as const, validFrom: '2026-01-01' };
+const ACTIVE_ALLOCATION = { id: 'alloc-1', status: 'ACTIVE' as const, validFrom: '2026-01-01', workerId: 'w-titular' };
 const ENDED_ALLOCATION = { id: 'alloc-1', status: 'ENDED' as const, validFrom: '2026-01-01' };
 
 const OPEN_ABSENCE = { id: 'abs-1', allocationId: 'alloc-1', date: '2026-09-28', substituteWorkerId: null, cancelled: false };
@@ -95,10 +109,10 @@ describe('ItineraryAbsenceUseCase.register', () => {
     const reader: ItineraryAbsenceReaderPort = { readWith: jest.fn() };
     const writer = writerStub();
     const allocationWriter = allocationWriterStub({ findAllocation: jest.fn().mockResolvedValue(null) });
-    const useCase = new ItineraryAbsenceUseCase(reader, writer, allocationWriter, runInTransactionStub());
+    const useCase = new ItineraryAbsenceUseCase(reader, writer, allocationWriter, runInTransactionStub(), catalogStub(), changeLogStub());
 
     await expect(
-      useCase.register({ patientId: 'p-1', serviceId: 's-1', allocationId: 'alloc-1', date: '2026-09-28', actorUid: 'u-1' }),
+      useCase.register({ patientId: 'p-1', serviceId: 's-1', allocationId: 'alloc-1', date: '2026-09-28', reasonCategory: 'OTHER', actorUid: 'u-1' }),
     ).rejects.toThrow(AllocationNotFoundError);
 
     expect(reader.readWith).not.toHaveBeenCalled();
@@ -109,10 +123,10 @@ describe('ItineraryAbsenceUseCase.register', () => {
     const reader: ItineraryAbsenceReaderPort = { readWith: jest.fn() };
     const writer = writerStub();
     const allocationWriter = allocationWriterStub({ findAllocation: jest.fn().mockResolvedValue(ENDED_ALLOCATION) });
-    const useCase = new ItineraryAbsenceUseCase(reader, writer, allocationWriter, runInTransactionStub());
+    const useCase = new ItineraryAbsenceUseCase(reader, writer, allocationWriter, runInTransactionStub(), catalogStub(), changeLogStub());
 
     await expect(
-      useCase.register({ patientId: 'p-1', serviceId: 's-1', allocationId: 'alloc-1', date: '2026-09-28', actorUid: 'u-1' }),
+      useCase.register({ patientId: 'p-1', serviceId: 's-1', allocationId: 'alloc-1', date: '2026-09-28', reasonCategory: 'OTHER', actorUid: 'u-1' }),
     ).rejects.toThrow(AllocationNotActiveError);
 
     expect(reader.readWith).not.toHaveBeenCalled();
@@ -122,10 +136,10 @@ describe('ItineraryAbsenceUseCase.register', () => {
     const reader: ItineraryAbsenceReaderPort = { readWith: jest.fn().mockResolvedValue(null) };
     const writer = writerStub();
     const allocationWriter = allocationWriterStub({ findAllocation: jest.fn().mockResolvedValue(ACTIVE_ALLOCATION) });
-    const useCase = new ItineraryAbsenceUseCase(reader, writer, allocationWriter, runInTransactionStub());
+    const useCase = new ItineraryAbsenceUseCase(reader, writer, allocationWriter, runInTransactionStub(), catalogStub(), changeLogStub());
 
     await expect(
-      useCase.register({ patientId: 'p-1', serviceId: 's-1', allocationId: 'alloc-1', date: '2026-09-28', actorUid: 'u-1' }),
+      useCase.register({ patientId: 'p-1', serviceId: 's-1', allocationId: 'alloc-1', date: '2026-09-28', reasonCategory: 'OTHER', actorUid: 'u-1' }),
     ).rejects.toThrow(AllocationNotFoundError);
   });
 
@@ -133,11 +147,11 @@ describe('ItineraryAbsenceUseCase.register', () => {
     const reader: ItineraryAbsenceReaderPort = { readWith: jest.fn().mockResolvedValue(SELECTED_ROW) };
     const writer = writerStub();
     const allocationWriter = allocationWriterStub({ findAllocation: jest.fn().mockResolvedValue(ACTIVE_ALLOCATION) });
-    const useCase = new ItineraryAbsenceUseCase(reader, writer, allocationWriter, runInTransactionStub());
+    const useCase = new ItineraryAbsenceUseCase(reader, writer, allocationWriter, runInTransactionStub(), catalogStub(), changeLogStub());
     const now = new Date('2026-09-28T15:00:00Z'); // meio-dia em Buenos Aires (UTC-3), asOf = 2026-09-28
 
     await expect(
-      useCase.register({ patientId: 'p-1', serviceId: 's-1', allocationId: 'alloc-1', date: '2026-09-27', actorUid: 'u-1', now }),
+      useCase.register({ patientId: 'p-1', serviceId: 's-1', allocationId: 'alloc-1', date: '2026-09-27', reasonCategory: 'OTHER', actorUid: 'u-1', now }),
     ).rejects.toThrow(AbsenceDateInPastError);
 
     expect(writer.insertAbsence).not.toHaveBeenCalled();
@@ -147,11 +161,11 @@ describe('ItineraryAbsenceUseCase.register', () => {
     const reader: ItineraryAbsenceReaderPort = { readWith: jest.fn().mockResolvedValue(SELECTED_ROW) };
     const writer = writerStub({ insertAbsence: jest.fn().mockResolvedValue({ id: 'abs-1', date: '2026-09-28' }) });
     const allocationWriter = allocationWriterStub({ findAllocation: jest.fn().mockResolvedValue(ACTIVE_ALLOCATION) });
-    const useCase = new ItineraryAbsenceUseCase(reader, writer, allocationWriter, runInTransactionStub());
+    const useCase = new ItineraryAbsenceUseCase(reader, writer, allocationWriter, runInTransactionStub(), catalogStub(), changeLogStub());
     // 2026-09-29T02:30:00Z = 2026-09-28 23:30 em Buenos Aires (UTC-3) — asOf de BA é 2026-09-28, não 2026-09-29 (UTC).
     const now = new Date('2026-09-29T02:30:00Z');
 
-    const result = await useCase.register({ patientId: 'p-1', serviceId: 's-1', allocationId: 'alloc-1', date: '2026-09-28', actorUid: 'u-1', now });
+    const result = await useCase.register({ patientId: 'p-1', serviceId: 's-1', allocationId: 'alloc-1', date: '2026-09-28', reasonCategory: 'OTHER', actorUid: 'u-1', now });
 
     expect(result.status).toBe('OPEN');
     expect(writer.insertAbsence).toHaveBeenCalledTimes(1);
@@ -161,10 +175,10 @@ describe('ItineraryAbsenceUseCase.register', () => {
     const reader: ItineraryAbsenceReaderPort = { readWith: jest.fn().mockResolvedValue(SELECTED_ROW) };
     const writer = writerStub({ insertAbsence: jest.fn().mockResolvedValue({ id: 'abs-1', date: '2026-09-28' }) });
     const allocationWriter = allocationWriterStub({ findAllocation: jest.fn().mockResolvedValue(ACTIVE_ALLOCATION) });
-    const useCase = new ItineraryAbsenceUseCase(reader, writer, allocationWriter, runInTransactionStub());
+    const useCase = new ItineraryAbsenceUseCase(reader, writer, allocationWriter, runInTransactionStub(), catalogStub(), changeLogStub());
     const now = new Date('2026-09-28T15:00:00Z');
 
-    await useCase.register({ patientId: 'p-1', serviceId: 's-1', allocationId: 'alloc-1', date: '2026-09-28', actorUid: 'u-1', now });
+    await useCase.register({ patientId: 'p-1', serviceId: 's-1', allocationId: 'alloc-1', date: '2026-09-28', reasonCategory: 'OTHER', actorUid: 'u-1', now });
 
     expect(allocationWriter.findApplicationId).not.toHaveBeenCalled();
     expect(writer.insertAbsence).toHaveBeenCalledWith(FAKE_CLIENT, {
@@ -183,10 +197,10 @@ describe('ItineraryAbsenceUseCase.register', () => {
       findAllocation: jest.fn().mockResolvedValue(ACTIVE_ALLOCATION),
       findApplicationId: jest.fn().mockResolvedValue('wja-sub'),
     });
-    const useCase = new ItineraryAbsenceUseCase(reader, writer, allocationWriter, runInTransactionStub());
+    const useCase = new ItineraryAbsenceUseCase(reader, writer, allocationWriter, runInTransactionStub(), catalogStub(), changeLogStub());
     const now = new Date('2026-09-28T15:00:00Z');
 
-    await useCase.register({ patientId: 'p-1', serviceId: 's-1', allocationId: 'alloc-1', date: '2026-09-28', substituteWorkerId: 'w-sub', actorUid: 'u-1', now });
+    await useCase.register({ patientId: 'p-1', serviceId: 's-1', allocationId: 'alloc-1', date: '2026-09-28', substituteWorkerId: 'w-sub', reasonCategory: 'OTHER', actorUid: 'u-1', now });
 
     expect(writer.insertAbsence).toHaveBeenCalledWith(FAKE_CLIENT, {
       allocationId: 'alloc-1',
@@ -204,7 +218,7 @@ describe('ItineraryAbsenceUseCase.register', () => {
       findAllocation: jest.fn().mockResolvedValue(ACTIVE_ALLOCATION),
       findApplicationId: jest.fn().mockResolvedValue('wja-sub'),
     });
-    const useCase = new ItineraryAbsenceUseCase(reader, writer, allocationWriter, runInTransactionStub());
+    const useCase = new ItineraryAbsenceUseCase(reader, writer, allocationWriter, runInTransactionStub(), catalogStub(), changeLogStub());
     const now = new Date('2026-09-28T15:00:00Z');
 
     const result = await useCase.register({
@@ -213,7 +227,7 @@ describe('ItineraryAbsenceUseCase.register', () => {
       allocationId: 'alloc-1',
       date: '2026-09-28',
       substituteWorkerId: 'w-sub',
-      actorUid: 'u-1',
+      reasonCategory: 'OTHER', actorUid: 'u-1',
       now,
     });
 
@@ -224,11 +238,11 @@ describe('ItineraryAbsenceUseCase.register', () => {
     const reader: ItineraryAbsenceReaderPort = { readWith: jest.fn().mockResolvedValue(NOT_SELECTED_ROW) };
     const writer = writerStub();
     const allocationWriter = allocationWriterStub({ findAllocation: jest.fn().mockResolvedValue(ACTIVE_ALLOCATION) });
-    const useCase = new ItineraryAbsenceUseCase(reader, writer, allocationWriter, runInTransactionStub());
+    const useCase = new ItineraryAbsenceUseCase(reader, writer, allocationWriter, runInTransactionStub(), catalogStub(), changeLogStub());
     const now = new Date('2026-09-28T15:00:00Z');
 
     await expect(
-      useCase.register({ patientId: 'p-1', serviceId: 's-1', allocationId: 'alloc-1', date: '2026-09-28', substituteWorkerId: 'w-sub', actorUid: 'u-1', now }),
+      useCase.register({ patientId: 'p-1', serviceId: 's-1', allocationId: 'alloc-1', date: '2026-09-28', substituteWorkerId: 'w-sub', reasonCategory: 'OTHER', actorUid: 'u-1', now }),
     ).rejects.toThrow(NotSelectedForServiceError);
 
     expect(writer.insertAbsence).not.toHaveBeenCalled();
@@ -239,11 +253,11 @@ describe('ItineraryAbsenceUseCase.register', () => {
     const reader: ItineraryAbsenceReaderPort = { readWith: jest.fn().mockResolvedValue(row) };
     const writer = writerStub();
     const allocationWriter = allocationWriterStub({ findAllocation: jest.fn().mockResolvedValue(ACTIVE_ALLOCATION) });
-    const useCase = new ItineraryAbsenceUseCase(reader, writer, allocationWriter, runInTransactionStub());
+    const useCase = new ItineraryAbsenceUseCase(reader, writer, allocationWriter, runInTransactionStub(), catalogStub(), changeLogStub());
     const now = new Date('2026-09-28T15:00:00Z');
 
     await expect(
-      useCase.register({ patientId: 'p-1', serviceId: 's-1', allocationId: 'alloc-1', date: '2026-09-28', substituteWorkerId: 'w-sub', actorUid: 'u-1', now }),
+      useCase.register({ patientId: 'p-1', serviceId: 's-1', allocationId: 'alloc-1', date: '2026-09-28', substituteWorkerId: 'w-sub', reasonCategory: 'OTHER', actorUid: 'u-1', now }),
     ).rejects.toThrow(NotSelectedForServiceError);
 
     expect(allocationWriter.findApplicationId).not.toHaveBeenCalled();
@@ -265,10 +279,10 @@ describe('ItineraryAbsenceUseCase.register', () => {
     });
     const writer = writerStub({ insertAbsence: jest.fn().mockRejectedValue(pgError('23P01', { message: 'itinerary_overlap', detail })) });
     const allocationWriter = allocationWriterStub({ findAllocation: jest.fn().mockResolvedValue(ACTIVE_ALLOCATION) });
-    const useCase = new ItineraryAbsenceUseCase(reader, writer, allocationWriter, runInTransactionStub());
+    const useCase = new ItineraryAbsenceUseCase(reader, writer, allocationWriter, runInTransactionStub(), catalogStub(), changeLogStub());
     const now = new Date('2026-09-28T15:00:00Z');
 
-    const err = await useCase.register({ patientId: 'p-1', serviceId: 's-1', allocationId: 'alloc-1', date: '2026-09-28', actorUid: 'u-1', now }).catch((e) => e);
+    const err = await useCase.register({ patientId: 'p-1', serviceId: 's-1', allocationId: 'alloc-1', date: '2026-09-28', reasonCategory: 'OTHER', actorUid: 'u-1', now }).catch((e) => e);
 
     expect(err).toBeInstanceOf(ItineraryOverlapError);
     expect((err as InstanceType<typeof ItineraryOverlapError>).existing.serviceId).toBe('s-old');
@@ -278,11 +292,11 @@ describe('ItineraryAbsenceUseCase.register', () => {
     const reader: ItineraryAbsenceReaderPort = { readWith: jest.fn().mockResolvedValue(SELECTED_ROW) };
     const writer = writerStub({ insertAbsence: jest.fn().mockRejectedValue(pgError('23505', { constraint: 'uq_piab_open' })) });
     const allocationWriter = allocationWriterStub({ findAllocation: jest.fn().mockResolvedValue(ACTIVE_ALLOCATION) });
-    const useCase = new ItineraryAbsenceUseCase(reader, writer, allocationWriter, runInTransactionStub());
+    const useCase = new ItineraryAbsenceUseCase(reader, writer, allocationWriter, runInTransactionStub(), catalogStub(), changeLogStub());
     const now = new Date('2026-09-28T15:00:00Z');
 
     await expect(
-      useCase.register({ patientId: 'p-1', serviceId: 's-1', allocationId: 'alloc-1', date: '2026-09-28', actorUid: 'u-1', now }),
+      useCase.register({ patientId: 'p-1', serviceId: 's-1', allocationId: 'alloc-1', date: '2026-09-28', reasonCategory: 'OTHER', actorUid: 'u-1', now }),
     ).rejects.toThrow(AbsenceAlreadyExistsError);
   });
 
@@ -294,11 +308,11 @@ describe('ItineraryAbsenceUseCase.register', () => {
     const reader: ItineraryAbsenceReaderPort = { readWith: jest.fn().mockResolvedValue(SELECTED_ROW) };
     const writer = writerStub({ insertAbsence: jest.fn().mockRejectedValue(pgError('23514', { message })) });
     const allocationWriter = allocationWriterStub({ findAllocation: jest.fn().mockResolvedValue(ACTIVE_ALLOCATION) });
-    const useCase = new ItineraryAbsenceUseCase(reader, writer, allocationWriter, runInTransactionStub());
+    const useCase = new ItineraryAbsenceUseCase(reader, writer, allocationWriter, runInTransactionStub(), catalogStub(), changeLogStub());
     const now = new Date('2026-09-28T15:00:00Z');
 
     await expect(
-      useCase.register({ patientId: 'p-1', serviceId: 's-1', allocationId: 'alloc-1', date: '2026-09-28', actorUid: 'u-1', now }),
+      useCase.register({ patientId: 'p-1', serviceId: 's-1', allocationId: 'alloc-1', date: '2026-09-28', reasonCategory: 'OTHER', actorUid: 'u-1', now }),
     ).rejects.toThrow(ErrorClass);
   });
 
@@ -307,10 +321,10 @@ describe('ItineraryAbsenceUseCase.register', () => {
     const original = pgError('23505', { constraint: 'some_other_constraint' });
     const writer = writerStub({ insertAbsence: jest.fn().mockRejectedValue(original) });
     const allocationWriter = allocationWriterStub({ findAllocation: jest.fn().mockResolvedValue(ACTIVE_ALLOCATION) });
-    const useCase = new ItineraryAbsenceUseCase(reader, writer, allocationWriter, runInTransactionStub());
+    const useCase = new ItineraryAbsenceUseCase(reader, writer, allocationWriter, runInTransactionStub(), catalogStub(), changeLogStub());
     const now = new Date('2026-09-28T15:00:00Z');
 
-    const err = await useCase.register({ patientId: 'p-1', serviceId: 's-1', allocationId: 'alloc-1', date: '2026-09-28', actorUid: 'u-1', now }).catch((e) => e);
+    const err = await useCase.register({ patientId: 'p-1', serviceId: 's-1', allocationId: 'alloc-1', date: '2026-09-28', reasonCategory: 'OTHER', actorUid: 'u-1', now }).catch((e) => e);
 
     expect(err).toBe(original);
   });
@@ -320,10 +334,10 @@ describe('ItineraryAbsenceUseCase.register', () => {
     const original = pgError('23514', { message: 'some_other_check' });
     const writer = writerStub({ insertAbsence: jest.fn().mockRejectedValue(original) });
     const allocationWriter = allocationWriterStub({ findAllocation: jest.fn().mockResolvedValue(ACTIVE_ALLOCATION) });
-    const useCase = new ItineraryAbsenceUseCase(reader, writer, allocationWriter, runInTransactionStub());
+    const useCase = new ItineraryAbsenceUseCase(reader, writer, allocationWriter, runInTransactionStub(), catalogStub(), changeLogStub());
     const now = new Date('2026-09-28T15:00:00Z');
 
-    const err = await useCase.register({ patientId: 'p-1', serviceId: 's-1', allocationId: 'alloc-1', date: '2026-09-28', actorUid: 'u-1', now }).catch((e) => e);
+    const err = await useCase.register({ patientId: 'p-1', serviceId: 's-1', allocationId: 'alloc-1', date: '2026-09-28', reasonCategory: 'OTHER', actorUid: 'u-1', now }).catch((e) => e);
 
     expect(err).toBe(original);
   });
@@ -332,14 +346,117 @@ describe('ItineraryAbsenceUseCase.register', () => {
     const reader: ItineraryAbsenceReaderPort = { readWith: jest.fn().mockResolvedValue(SELECTED_ROW) };
     const writer = writerStub({ insertAbsence: jest.fn().mockResolvedValue({ id: 'abs-1', date: '2026-09-28' }) });
     const allocationWriter = allocationWriterStub({ findAllocation: jest.fn().mockResolvedValue(ACTIVE_ALLOCATION) });
-    const useCase = new ItineraryAbsenceUseCase(reader, writer, allocationWriter, runInTransactionStub());
+    const useCase = new ItineraryAbsenceUseCase(reader, writer, allocationWriter, runInTransactionStub(), catalogStub(), changeLogStub());
     const now = new Date('2026-09-28T15:00:00Z');
 
-    await useCase.register({ patientId: 'p-1', serviceId: 's-1', allocationId: 'alloc-1', date: '2026-09-28', actorUid: 'u-1', now });
+    await useCase.register({ patientId: 'p-1', serviceId: 's-1', allocationId: 'alloc-1', date: '2026-09-28', reasonCategory: 'OTHER', actorUid: 'u-1', now });
 
     expect((allocationWriter.findAllocation as jest.Mock).mock.calls[0][0]).toBe(FAKE_CLIENT);
     expect((reader.readWith as jest.Mock).mock.calls[0][0]).toBe(FAKE_CLIENT);
     expect((writer.insertAbsence as jest.Mock).mock.calls[0][0]).toBe(FAKE_CLIENT);
+  });
+});
+
+describe('ItineraryAbsenceUseCase.register — motivo e registro da troca (itinerario-trocas Fase 2)', () => {
+  const NOW = new Date('2026-09-28T15:00:00Z');
+  const BASE = { patientId: 'p-1', serviceId: 's-1', allocationId: 'alloc-1', date: '2026-09-28', actorUid: 'u-1', now: NOW };
+
+  function build(opts: { catalog?: ReturnType<typeof catalogStub>; changeLog?: ReturnType<typeof changeLogStub>; order?: string[] } = {}) {
+    const order = opts.order ?? [];
+    const reader: ItineraryAbsenceReaderPort = { readWith: jest.fn().mockResolvedValue(SELECTED_ROW) };
+    const writer = writerStub({
+      insertAbsence: jest.fn(async () => {
+        order.push('absence');
+        return { id: 'abs-1', date: '2026-09-28' };
+      }),
+    });
+    const allocationWriter = allocationWriterStub({
+      findAllocation: jest.fn().mockResolvedValue(ACTIVE_ALLOCATION),
+      findApplicationId: jest.fn().mockResolvedValue('wja-sub'),
+    });
+    const catalog = opts.catalog ?? catalogStub();
+    const changeLog =
+      opts.changeLog ??
+      changeLogStub({
+        insert: jest.fn(async () => {
+          order.push('log');
+          return { id: 'log-1' };
+        }),
+      });
+    const runInTransaction = runInTransactionStub();
+    const useCase = new ItineraryAbsenceUseCase(reader, writer, allocationWriter, runInTransaction, catalog, changeLog);
+    return { useCase, writer, catalog, changeLog, runInTransaction, reader };
+  }
+
+  it.each([[undefined], [null], ['']])('motivo %p → ServiceExitReasonRequiredError ANTES do banco (0 transação, 0 escrita)', async (reason) => {
+    const { useCase, writer, changeLog, runInTransaction } = build();
+
+    await expect(useCase.register({ ...BASE, reasonCategory: reason })).rejects.toThrow(ServiceExitReasonRequiredError);
+
+    expect(runInTransaction).not.toHaveBeenCalled();
+    expect(writer.insertAbsence).not.toHaveBeenCalled();
+    expect(changeLog.insert).not.toHaveBeenCalled();
+  });
+
+  it('motivo não-string → ServiceExitReasonInvalidError ANTES do banco', async () => {
+    const { useCase, runInTransaction } = build();
+    await expect(useCase.register({ ...BASE, reasonCategory: 42 })).rejects.toThrow(ServiceExitReasonInvalidError);
+    expect(runInTransaction).not.toHaveBeenCalled();
+  });
+
+  it('código inexistente/inativo no catálogo → ServiceExitReasonInvalidError; 0 ausência, 0 registro', async () => {
+    const { useCase, writer, changeLog, catalog } = build({ catalog: catalogStub([]) });
+
+    await expect(useCase.register({ ...BASE, reasonCategory: 'DESATIVADO' })).rejects.toThrow(ServiceExitReasonInvalidError);
+
+    expect(catalog.findActiveByCode).toHaveBeenCalledWith(FAKE_CLIENT, 'DESATIVADO');
+    expect(writer.insertAbsence).not.toHaveBeenCalled();
+    expect(changeLog.insert).not.toHaveBeenCalled();
+  });
+
+  it('com motivo: grava a ausência e DEPOIS o registro ABSENCE, no MESMO client (outgoing = titular, incoming = substituto)', async () => {
+    const order: string[] = [];
+    const { useCase, changeLog } = build({ order });
+
+    await useCase.register({ ...BASE, substituteWorkerId: 'w-sub', reasonCategory: 'OTHER' });
+
+    expect(order).toEqual(['absence', 'log']);
+    expect(changeLog.insert).toHaveBeenCalledTimes(1);
+    expect(changeLog.insert).toHaveBeenCalledWith(FAKE_CLIENT, {
+      serviceId: 's-1',
+      kind: 'ABSENCE',
+      outgoingWorkerId: 'w-titular',
+      incomingWorkerId: 'w-sub',
+      assignmentId: 'alloc-1',
+      absenceId: 'abs-1',
+      effectiveDate: '2026-09-28',
+      reasonCode: 'OTHER',
+      actorUid: 'u-1',
+    });
+  });
+
+  it('sem substituto: o registro ABSENCE leva incoming nulo', async () => {
+    const { useCase, changeLog } = build();
+    await useCase.register({ ...BASE, reasonCategory: 'OTHER' });
+    expect(changeLog.insert).toHaveBeenCalledWith(FAKE_CLIENT, expect.objectContaining({ incomingWorkerId: null }));
+  });
+
+  it('falha ao gravar o registro sobe CRU (a transação desfaz a ausência) — não vira erro de ausência', async () => {
+    const boom = pgError('23503', { constraint: 'patient_itinerary_change_log_reason_code_fkey' });
+    const { useCase } = build({ changeLog: changeLogStub({ insert: jest.fn().mockRejectedValue(boom) }) });
+
+    const err = await useCase.register({ ...BASE, reasonCategory: 'OTHER' }).catch((e) => e);
+
+    expect(err).toBe(boom);
+  });
+
+  it('falha na ausência (23505) → 0 registro (a ordem é ausência → registro)', async () => {
+    const { useCase, writer, changeLog } = build();
+    (writer.insertAbsence as jest.Mock).mockRejectedValue(pgError('23505', { constraint: 'uq_piab_open' }));
+
+    await expect(useCase.register({ ...BASE, reasonCategory: 'OTHER' })).rejects.toThrow(AbsenceAlreadyExistsError);
+
+    expect(changeLog.insert).not.toHaveBeenCalled();
   });
 });
 

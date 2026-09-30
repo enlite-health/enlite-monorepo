@@ -11,7 +11,7 @@
  * fonte única `liveVacancySql.ts` — a MESMA da ficha e do Kanban), `cand` (candidatos da vaga viva
  * na etapa `SERVICE_TEAM_ENTRY_STAGE`, constante do domínio — nunca literal aqui), `alloc`
  * (alocações do itinerário, `to_char` para as datas — regra da Fase 7), `marks` (marcas ATIVAS de
- * `contracted_service_rejections` — `reverted_at IS NULL` é filtro do leitor), `subs` (DX-13.5,
+ * `contracted_service_rejections` — `reverted_at IS NULL` é filtro do leitor; `LEFT JOIN service_exit_reasons` só para o rótulo), `subs` (DX-13.5,
  * Fase 13: ausências COM substituto, `patient_itinerary_absence.cancelled_at IS NULL AND
  * substitute_worker_id IS NOT NULL` — SEM filtro de data, quem decide vigência é a derivação com
  * `asOf`, DX-13.3). 0 linhas → serviço inexistente, de outro paciente, ou fora da RLS → `null` (o
@@ -66,6 +66,8 @@ export interface ServiceTeamMarkRow {
   workerId: string;
   serviceId: string;
   rejectReasonCategory: string;
+  /** Rótulo do catálogo `service_exit_reasons` (LEFT JOIN por `code`, Fase 2 D2); `null` se o código não está no catálogo. OPCIONAL pelo mesmo motivo dos dublês de outras fases. */
+  rejectReasonLabel?: string | null;
   firstNameEncrypted: string | null;
   lastNameEncrypted: string | null;
 }
@@ -119,6 +121,7 @@ interface MarkJson {
   worker_id: string;
   service_id: string;
   reject_reason_category: string;
+  reject_reason_label: string | null;
   first_name_encrypted: string | null;
   last_name_encrypted: string | null;
 }
@@ -170,8 +173,10 @@ export class ServiceTeamReader {
            JOIN worker_job_applications wja ON wja.id = a.application_id
            JOIN workers w ON w.id = a.worker_id
        ), marks AS (
-         SELECT r.worker_id, r.service_id, r.reject_reason_category, w.first_name_encrypted, w.last_name_encrypted
+         SELECT r.worker_id, r.service_id, r.reject_reason_category, ser.label AS reject_reason_label,
+                w.first_name_encrypted, w.last_name_encrypted
            FROM contracted_service_rejections r JOIN workers w ON w.id = r.worker_id
+           LEFT JOIN service_exit_reasons ser ON ser.code = r.reject_reason_category
           WHERE r.service_id = $2 AND r.reverted_at IS NULL
        ), subs AS (
          SELECT ab.substitute_worker_id AS worker_id, s.contracted_service_id AS service_id, wja.job_posting_id AS vacancy_id,
@@ -225,6 +230,7 @@ export class ServiceTeamReader {
         workerId: m.worker_id,
         serviceId: m.service_id,
         rejectReasonCategory: m.reject_reason_category,
+        rejectReasonLabel: m.reject_reason_label,
         firstNameEncrypted: m.first_name_encrypted,
         lastNameEncrypted: m.last_name_encrypted,
       })),

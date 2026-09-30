@@ -433,6 +433,19 @@ describe('S3 — Seeds: tenant Enlite, 43 permissions, 5 grupos (1 de sistema + 
     expect(set.has('worker:update')).toBe(true);
   });
 
+  it('migration 492: as 3 células de catalog_service_exit_reasons existem e o Acesso Master as recebe', async () => {
+    const cells = await pool.query<{ action: string }>(
+      `SELECT action FROM permissions WHERE resource = 'catalog_service_exit_reasons' ORDER BY action`,
+    );
+    expect(cells.rows.map((r) => r.action)).toEqual(['create', 'read', 'update']);
+    const grants = await pool.query<{ group_id: string }>(
+      `SELECT DISTINCT gp.group_id FROM group_permissions gp
+         JOIN permissions p ON p.id = gp.permission_id
+        WHERE p.resource = 'catalog_service_exit_reasons'`,
+    );
+    expect(grants.rows.map((r) => r.group_id)).toContain(GROUP_MASTER);
+  });
+
   it('5 grupos do seed existem: só o Acesso Master é de SISTEMA; Super Admin, Recrutador, Community Manager e Financeiro são CUSTOMIZÁVEIS (mig 432 + mig 454, D285/FR-701)', async () => {
     // A F11 caiu (D285, 05/09): não é mais "grupos validados por migration" —
     // só as 4 contas do Acesso Master ficam fixas. A mig 432 (PR-8a) tirou

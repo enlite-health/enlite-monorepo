@@ -111,4 +111,15 @@ describe('therapeuticProjectSchemas — a borda (spec 017)', () => {
     // `segments` continua aceitando o corpo comum, sem o campo.
     expect(createCatalogItemSchemaFor('segments').safeParse({ label: 'Salud mental' }).success).toBe(true);
   });
+  it('motivos de saída (492): kind novo NÃO aceita `segmentId` (400) e o rótulo passa pela mesma guarda de dado pessoal', () => {
+    const UUID_SEG = '22222222-2222-4222-8222-222222222222';
+    const kind = 'service-exit-reasons' as const;
+    expect(createCatalogItemSchemaFor(kind).safeParse({ label: 'Cambio de disponibilidad' }).success).toBe(true);
+    expect(createCatalogItemSchemaFor(kind).safeParse({ label: 'Cambio', segmentId: UUID_SEG }).success).toBe(false);
+    expect(updateCatalogItemSchemaFor(kind).safeParse({ segmentId: UUID_SEG }).success).toBe(false);
+    expect(updateCatalogItemSchemaFor(kind).safeParse({ active: false }).success).toBe(true);
+    expect(createCatalogItemSchemaFor(kind).safeParse({ label: 'fulano@example.com' }).success).toBe(false);
+    // O kind novo NÃO é catálogo terapêutico: o schema do domínio clínico continua recusando.
+    expect(catalogKindSchema.safeParse(kind).success).toBe(false);
+  });
 });

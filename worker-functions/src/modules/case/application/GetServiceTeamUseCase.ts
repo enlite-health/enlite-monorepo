@@ -41,6 +41,8 @@ export interface ServiceTeamMember {
   displayName: string | null;
   vacancyId: string | null;
   reasonCategory?: string;
+  /** Só em `rejected`: rótulo do motivo no catálogo `service_exit_reasons` (Fase 2 D2); ausente quando o código não está no catálogo. */
+  reasonLabel?: string;
   /** Só em `inService`, só quem é titular com horário conhecido (DX-13.5, Fase 13). */
   allocations?: { allocationId: string; weekday: number; startTime: string; endTime: string }[];
   /** Só em `inService`, só quem substitui — datas vigentes, ordem crescente (DX-13.3, Fase 13). */

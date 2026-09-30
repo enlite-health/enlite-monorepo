@@ -236,6 +236,9 @@ export { createAdminServiceTeamContactRoutes } from './interfaces/routes/adminSe
 // Cadeia Fase 11 (DX-11.9): os 7 escritores do itinerário.
 export { AdminItineraryWriteController } from './interfaces/controllers/AdminItineraryWriteController';
 export { createAdminItineraryWriteRoutes } from './interfaces/routes/adminItineraryWriteRoutes';
+// Itinerário-trocas Fase 2 (C9): leitura do registro de trocas.
+export { AdminItineraryChangesController } from './interfaces/controllers/AdminItineraryChangesController';
+export { createAdminItineraryChangesRoutes } from './interfaces/routes/adminItineraryChangesRoutes';
 export { AdminPatientChatIdsController } from './interfaces/controllers/AdminPatientChatIdsController';
 export { AdminPatientChatRolesController } from './interfaces/controllers/AdminPatientChatRolesController';
 export { patientChatIdsSchema, patientChatMapQuerySchema, chatGroupsQuerySchema } from './interfaces/validators/patientChatIdsSchema';

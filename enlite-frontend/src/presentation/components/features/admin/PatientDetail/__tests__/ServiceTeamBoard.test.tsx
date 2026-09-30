@@ -13,6 +13,20 @@ import { expectNoRawEnumLeaks } from '../../../../../../test/rawEnumLeakGuard';
 import { ServiceTeamBoard } from '../ServiceTeamBoard';
 import type { ServiceTeam } from '@domain/entities/ServiceTeam';
 
+// Catálogo de motivos de saída (Fase 2): o diálogo de motivo lê `useServiceExitReasonOptions`; aqui um catálogo fixo.
+vi.mock('@hooks/admin/useServiceExitReasonOptions', () => ({
+  useServiceExitReasonOptions: () => ({
+    options: [
+      { code: 'PERFIL_INADEQUADO_AO_SERVICO', label: 'Perfil no adecuado al servicio' },
+      { code: 'INDISPONIBILIDADE_DE_HORARIO', label: 'Sin disponibilidad horaria' },
+      { code: 'NOVO_DO_ADMIN', label: 'Cambio de disponibilidad' },
+      { code: 'OTHER', label: 'Otro' },
+    ],
+    status: 'ok',
+  }),
+}));
+
+
 /** Dublê (rodada 3): o que ELE renderiza tem suíte própria (`ServiceTeamProviderModal.test.tsx`); aqui só se prova QUANDO ele abre e o que o board passou — `onReject`/`onRevert` chegam DIRETO (rodada 3: o modal aplica ele mesmo, sem round-trip pelo `pending` do board). */
 const mockProviderModalCalls = vi.fn();
 vi.mock('../ServiceTeamProviderModal', () => ({
@@ -54,7 +68,7 @@ const TEAM: ServiceTeam = {
     { workerId: 'w2', displayName: 'Beto Fixture', vacancyId: 'vac-1' },
   ],
   rejected: [
-    { workerId: 'w3', displayName: 'Caco Fixture', vacancyId: null, reasonCategory: 'DESISTENCIA_DO_PRESTADOR' },
+    { workerId: 'w3', displayName: 'Caco Fixture', vacancyId: null, reasonCategory: 'DESISTENCIA_DO_PRESTADOR', reasonLabel: 'El prestador desistió' },
   ],
 };
 
@@ -105,6 +119,12 @@ describe('ServiceTeamBoard — 3 colunas calculadas, sem arrasto, motivo obrigat
     expect(card.textContent).toContain(shortId);
   });
 
+  it('Rejeitado sem reasonLabel (código fora do catálogo) cai no reasonCategory — nunca fica vazio', () => {
+    const team: ServiceTeam = { ...TEAM, rejected: [{ workerId: 'w3', displayName: 'Caco Fixture', vacancyId: null, reasonCategory: 'CODIGO_SEM_ROTULO' }] };
+    render(<ServiceTeamBoard patientId="p1" serviceId="svc-1" team={team} onReject={vi.fn()} onRevert={vi.fn()} onSubstitute={vi.fn()} actionError={null} />);
+    expect(screen.getByTestId('service-team-card-w3').textContent).toContain('CODIGO_SEM_ROTULO');
+  });
+
   it('Rejeitado mostra o motivo TRADUZIDO, nunca o enum cru', () => {
     render(<ServiceTeamBoard patientId="p1" serviceId="svc-1" team={TEAM} onReject={vi.fn()} onRevert={vi.fn()} onSubstitute={vi.fn()} actionError={null} />);
     const card = screen.getByTestId('service-team-card-w3');
@@ -112,7 +132,7 @@ describe('ServiceTeamBoard — 3 colunas calculadas, sem arrasto, motivo obrigat
     expect(card.textContent).not.toContain('DESISTENCIA_DO_PRESTADOR');
   });
 
-  it('clique em "Rechazar" abre o modal com as 4 opções; confirmar desabilitado sem escolha; escolha + confirmar chama onReject', () => {
+  it('clique em "Rechazar" abre o modal com as opções DO CATÁLOGO (incluindo a criada pelo admin); confirmar desabilitado sem escolha; escolha + confirmar chama onReject', () => {
     const onReject = vi.fn();
     render(<ServiceTeamBoard patientId="p1" serviceId="svc-1" team={TEAM} onReject={onReject} onRevert={vi.fn()} onSubstitute={vi.fn()} actionError={null} />);
     fireEvent.click(screen.getByTestId('service-team-reject-w1'));
@@ -121,8 +141,8 @@ describe('ServiceTeamBoard — 3 colunas calculadas, sem arrasto, motivo obrigat
     expect(modal).toBeTruthy();
     expect(screen.getByTestId('service-team-reject-option-perfil-inadequado-ao-servico')).toBeTruthy();
     expect(screen.getByTestId('service-team-reject-option-indisponibilidade-de-horario')).toBeTruthy();
-    expect(screen.getByTestId('service-team-reject-option-desistencia-do-prestador')).toBeTruthy();
     expect(screen.getByTestId('service-team-reject-option-other')).toBeTruthy();
+    expect(screen.getByTestId('service-team-reject-option-novo-do-admin').textContent).toContain('Cambio de disponibilidad');
 
     const confirm = screen.getByTestId('service-team-reject-confirm') as HTMLButtonElement;
     expect(confirm.disabled).toBe(true);
@@ -241,9 +261,11 @@ describe('ServiceTeamBoard — 3 colunas calculadas, sem arrasto, motivo obrigat
       fireEvent.change(screen.getByTestId('substitution-date') as HTMLSelectElement, {
         target: { value: (screen.getByTestId('substitution-date') as HTMLSelectElement).querySelectorAll('option')[1].getAttribute('value') },
       });
+      fireEvent.change(screen.getByTestId('substitution-reason') as HTMLSelectElement, { target: { value: 'OTHER' } });
       fireEvent.click(screen.getByTestId('substitution-confirm'));
 
       expect(onSubstitute).toHaveBeenCalledTimes(1);
+      expect(onSubstitute.mock.calls[0][3]).toBe('OTHER');
       expect(onSubstitute.mock.calls[0][0]).toBe('a1');
       expect(onSubstitute.mock.calls[0][2]).toBeNull();
       expect(screen.queryByTestId('substitution-modal')).toBeNull();

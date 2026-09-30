@@ -124,11 +124,16 @@ function occupationMap(row: Pick<ServiceTeamRows, 'candidacies'>): Map<string, s
  * do `team` — a MESMA data já calculada em `deriveServiceTeamFromRows`, nunca recalculada aqui.
  */
 export function buildServiceTeamResult(
-  row: Pick<ServiceTeamRows, 'serviceId' | 'liveVacancyId' | 'candidacies'>,
+  row: Pick<ServiceTeamRows, 'serviceId' | 'liveVacancyId' | 'candidacies'> & Partial<Pick<ServiceTeamRows, 'marks'>>,
   team: DeriveServiceTeamResult & { asOf: string },
   displayNameByWorkerId: Map<string, string | null>,
 ): GetServiceTeamResult {
   const occupationByWorkerId = occupationMap(row);
+  // Rótulo do catálogo do motivo de rejeitar (Fase 2 D2): a tela mostra `reasonLabel ?? reasonCategory`.
+  const reasonLabelByWorkerId = new Map<string, string>();
+  for (const mark of row.marks ?? []) {
+    if (mark.rejectReasonLabel) reasonLabelByWorkerId.set(mark.workerId, mark.rejectReasonLabel);
+  }
   return {
     serviceId: row.serviceId,
     vacancyId: row.liveVacancyId,
@@ -140,6 +145,7 @@ export function buildServiceTeamResult(
       displayName: displayNameByWorkerId.get(entry.workerId) ?? null,
       vacancyId: row.liveVacancyId,
       reasonCategory: entry.reasonCategory,
+      ...(reasonLabelByWorkerId.has(entry.workerId) ? { reasonLabel: reasonLabelByWorkerId.get(entry.workerId) } : {}),
     })),
   };
 }

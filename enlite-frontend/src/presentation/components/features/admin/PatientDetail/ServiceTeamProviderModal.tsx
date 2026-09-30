@@ -12,12 +12,12 @@ import { Textarea } from '@presentation/components/atoms/Textarea';
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from '@presentation/components/atoms/Table';
+import { CatalogRejectionSelect } from './CatalogRejectionSelect';
 import { RejectionReasonSelect } from '@presentation/components/features/admin/Kanban/RejectionReasonSelect';
 import { useServiceTeamContact } from '@hooks/admin/useServiceTeamContact';
 import { workerLabel } from './workerLabel';
 import { SidePanelShell } from './SidePanelShell';
 import {
-  SERVICE_TEAM_REJECT_REASONS,
   SERVICE_TEAM_REVERT_REASONS,
   type ServiceTeamMember,
   type ServiceTeamColumnId,
@@ -260,14 +260,25 @@ export function ServiceTeamProviderModal({
         </div>
       </SidePanelShell>
 
-      {reasonPromptKind && (
+      {reasonPromptKind === 'reject' && (
+        <CatalogRejectionSelect
+          titleKey="admin.patients.detail.serviceTeam.rejectModal.title"
+          confirmKey="admin.patients.detail.serviceTeam.rejectModal.confirm"
+          cancelKey="admin.patients.detail.serviceTeam.rejectModal.cancel"
+          testIdPrefix="service-team-provider-modal-reject"
+          onSubmit={handleReasonSubmit}
+          onCancel={() => setReasonPromptKind(null)}
+        />
+      )}
+
+      {reasonPromptKind === 'revert' && (
         <RejectionReasonSelect
-          options={reasonPromptKind === 'reject' ? SERVICE_TEAM_REJECT_REASONS : SERVICE_TEAM_REVERT_REASONS}
-          titleKey={`admin.patients.detail.serviceTeam.${reasonPromptKind}Modal.title`}
-          optionKeyPrefix={`admin.patients.detail.serviceTeam.${reasonPromptKind}Options`}
-          confirmKey={`admin.patients.detail.serviceTeam.${reasonPromptKind}Modal.confirm`}
-          cancelKey={`admin.patients.detail.serviceTeam.${reasonPromptKind}Modal.cancel`}
-          testIdPrefix={`service-team-provider-modal-${reasonPromptKind}`}
+          options={SERVICE_TEAM_REVERT_REASONS}
+          titleKey="admin.patients.detail.serviceTeam.revertModal.title"
+          optionKeyPrefix="admin.patients.detail.serviceTeam.revertOptions"
+          confirmKey="admin.patients.detail.serviceTeam.revertModal.confirm"
+          cancelKey="admin.patients.detail.serviceTeam.revertModal.cancel"
+          testIdPrefix="service-team-provider-modal-revert"
           onSubmit={handleReasonSubmit}
           onCancel={() => setReasonPromptKind(null)}
         />

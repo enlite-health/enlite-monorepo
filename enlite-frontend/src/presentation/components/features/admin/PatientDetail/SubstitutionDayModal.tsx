@@ -8,13 +8,14 @@ import { SearchableSelect } from '@presentation/components/molecules/SearchableS
 import { nextDatesOfWeekday, formatDDMM, weekdayName } from './substitutionDates';
 import type { ServiceTeamAllocation, ServiceTeamMember } from '@domain/entities/ServiceTeam';
 import { workerLabel } from './workerLabel';
+import { ExitReasonSelect } from './ExitReasonSelect';
 import { SidePanelShell } from './SidePanelShell';
 
 interface SubstitutionDayModalProps {
   allocations: ServiceTeamAllocation[];
   selected: ServiceTeamMember[];
   asOf: string;
-  onSubmit: (allocationId: string, date: string, substituteWorkerId: string | null) => void;
+  onSubmit: (allocationId: string, date: string, substituteWorkerId: string | null, reasonCategory: string) => void;
   onCancel: () => void;
   /**
    * D445.5 (reemplazo permanente) — SÓ presente quando o chamador oferece o modo "Entero". Sem
@@ -63,6 +64,7 @@ export function SubstitutionDayModal({
   const [date, setDate] = useState('');
   const [substituteWorkerId, setSubstituteWorkerId] = useState(NO_SUBSTITUTE_VALUE);
   const [mode, setMode] = useState<SubstitutionMode>('COMPLEMENTARY');
+  const [reasonCategory, setReasonCategory] = useState('');
 
   const allocation = allocations.find((a) => a.allocationId === allocationId) ?? null;
   const isPermanent = mode === 'PERMANENT' && onSubmitPermanent !== undefined;
@@ -101,10 +103,12 @@ export function SubstitutionDayModal({
       onSubmitPermanent?.(allocationId, substituteWorkerId, date);
       return;
     }
-    onSubmit(allocationId, date, substituteWorkerId === NO_SUBSTITUTE_VALUE ? null : substituteWorkerId);
+    if (!reasonCategory) return;
+    onSubmit(allocationId, date, substituteWorkerId === NO_SUBSTITUTE_VALUE ? null : substituteWorkerId, reasonCategory);
   }
 
-  const canConfirm = Boolean(allocationId && date && (!isPermanent || substituteWorkerId));
+  // O motivo é obrigatório só no modo de um dia; o modo "Entero" ganha o campo na Fase 6 (precisa de destino).
+  const canConfirm = Boolean(allocationId && date && (isPermanent ? substituteWorkerId : reasonCategory));
 
   const title = t('admin.patients.detail.serviceTeam.substitution.title');
   const confirmLabel = t('admin.patients.detail.serviceTeam.substitution.confirm');
@@ -167,6 +171,8 @@ export function SubstitutionDayModal({
         onChange={setSubstituteWorkerId}
         label={t('admin.patients.detail.serviceTeam.substitution.worker')}
       />
+
+      {!isPermanent && <ExitReasonSelect value={reasonCategory} onChange={setReasonCategory} data-testid="substitution-reason" />}
 
       <Text as="p" size="xs" color="secondary" data-testid="substitution-anacare-notice">
         {t('admin.patients.detail.serviceTeam.substitution.anaCareNotice')}

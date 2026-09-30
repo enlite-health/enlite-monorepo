@@ -369,6 +369,11 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'GET /api/admin/therapeutic-catalogs/segments → catalog_therapeutic_segments:read',
         'POST /api/admin/therapeutic-catalogs/segments → catalog_therapeutic_segments:create',
         'PATCH /api/admin/therapeutic-catalogs/segments/:itemId → catalog_therapeutic_segments:update',
+        // Motivos de saída (migration 492) — kind fora do laço terapêutico, célula literal própria.
+        'GET /api/admin/therapeutic-catalogs/service-exit-reasons → catalog_service_exit_reasons:read',
+        'POST /api/admin/therapeutic-catalogs/service-exit-reasons → catalog_service_exit_reasons:create',
+        'PATCH /api/admin/therapeutic-catalogs/service-exit-reasons/:itemId → catalog_service_exit_reasons:update',
+        'GET /api/admin/therapeutic-catalogs/service-exit-reasons/options → patient_services:read',
         // anacare-conferencia-de-horas, fase 1 (migration 437) — `anacare_hours:read` para ver
         // turno/horas/origem/status, `:validate` para validar (em lote), validar 1 turno e contestar.
         'GET /api/admin/anacare-hours/months/:month → anacare_hours:read',
@@ -379,6 +384,7 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'POST /api/admin/anacare-hours/sync → anacare_hours:validate',
         'GET /api/admin/patients/:id/itinerary → patient_services:read', // cadeia Fase 7 — leitura do itinerário (D433/D434)
         'GET /api/admin/patients/:id/itinerary/events → patient_services:read', // D445.3 — "Próximos eventos/Substituição", leitura calculada
+        'GET /api/admin/patients/:id/contracted-services/:sid/itinerary/changes → patient_services:read', // itinerario-trocas Fase 2 (C9) — registro de trocas, leitura
         'GET /api/admin/patients/kanban/services → patient_services:read', // cadeia Fase 8 — agregado do subcard (Plano B)
         'GET /api/admin/patients/:id/contracted-services/:sid/team → patient_services:read', // cadeia Fase 10 — quadro C (calculado)
         'POST /api/admin/patients/:id/contracted-services/:sid/team/reject → patient_service_team:update',

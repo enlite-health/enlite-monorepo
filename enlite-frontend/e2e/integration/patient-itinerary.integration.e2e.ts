@@ -163,6 +163,8 @@ test.describe('Aba Itinerario — full stack, sem mock @integration', () => {
     const chosenDate = await page.getByTestId('substitution-date').inputValue();
     await page.getByTestId('substitution-worker').click();
     await page.getByRole('listbox').getByText(seed.names.free).click();
+    // Fase 2: a substituição de um dia pede o motivo (catálogo; 'Otro' = OTHER, da carga inicial).
+    await page.getByTestId('substitution-reason').selectOption('OTHER');
     await page.getByTestId('substitution-confirm').click();
 
     await expect(page.getByTestId('substitution-modal')).toHaveCount(0, { timeout: 10_000 });

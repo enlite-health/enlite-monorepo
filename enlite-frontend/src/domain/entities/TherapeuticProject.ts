@@ -28,6 +28,8 @@ export interface CatalogSnapshotItem {
 export interface TherapeuticCatalogSnapshotItem extends CatalogSnapshotItem {
   segmentId?: string | null;
   segmentLabel?: string | null;
+  /** Só o catálogo de motivos de saída tem: identificador estável que as marcas referenciam. */
+  code?: string;
 }
 
 export const THERAPEUTIC_MODALITIES = ['IN_PERSON', 'ONLINE', 'HYBRID'] as const;
@@ -135,6 +137,21 @@ export const THERAPEUTIC_CATALOG_RESOURCE: Readonly<Record<TherapeuticCatalogKin
   activities: 'catalog_therapeutic_activities',
   segments: 'catalog_therapeutic_segments',
 };
+
+/**
+ * Catálogo de motivos de saída do serviço (change itinerario-trocas-motivos-e-figma, D1): usa o mesmo
+ * mecanismo dos catálogos, mas FICA FORA de `TherapeuticCatalogKind`/`THERAPEUTIC_CATALOG_KINDS` — o projeto
+ * terapêutico e a tela dele nunca o veem.
+ */
+export const SERVICE_EXIT_REASON_KIND = 'service-exit-reasons';
+export const SERVICE_EXIT_REASON_RESOURCE = 'catalog_service_exit_reasons';
+export type AdminCatalogKind = TherapeuticCatalogKind | typeof SERVICE_EXIT_REASON_KIND;
+
+/** Opção de motivo para quem registra uma troca (GET …/service-exit-reasons/options). */
+export interface ServiceExitReasonOption {
+  code: string;
+  label: string;
+}
 
 export interface TherapeuticCatalogItem {
   id: string;

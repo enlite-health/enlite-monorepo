@@ -416,6 +416,7 @@ test.describe('substituicao @integration', () => {
       await page.getByTestId(`service-team-substitute-${t}`).click();
       await expect(page.getByTestId('substitution-modal')).toBeVisible();
       await page.getByTestId('substitution-date').selectOption(d);
+      await page.getByTestId('substitution-reason').selectOption('OTHER');
       await page.getByTestId('substitution-worker').click();
       await page.getByPlaceholder('Buscar...').pressSequentially(wLabel.slice(-10), { delay: 20 });
       await page.getByRole('option', { name: wLabel }).click();
@@ -506,6 +507,7 @@ test.describe('substituicao @integration', () => {
       await page.getByTestId(`service-team-substitute-${t}`).click();
       await expect(page.getByTestId('substitution-modal')).toBeVisible();
       await page.getByTestId('substitution-date').selectOption(d);
+      await page.getByTestId('substitution-reason').selectOption('OTHER');
       await page.getByTestId('substitution-worker').click();
       await page.getByPlaceholder('Buscar...').pressSequentially(wLabel.slice(-10), { delay: 20 });
       await page.getByRole('option', { name: wLabel }).click();
@@ -524,6 +526,7 @@ test.describe('substituicao @integration', () => {
       // Controle positivo da contagem: a MESMA faixa/data "sin reemplazo" grava — a contagem vê a escrita.
       await page.getByTestId(`service-team-substitute-${t}`).click();
       await page.getByTestId('substitution-date').selectOption(d);
+      await page.getByTestId('substitution-reason').selectOption('OTHER');
       await Promise.all([
         page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith('/absences') && r.ok()),
         page.getByTestId('substitution-confirm').click(),
@@ -575,6 +578,9 @@ test.describe('substituicao @integration', () => {
       // Falta a data (escolha obrigatória) → confirmar desabilitado; o substituto já nasce "sin reemplazo".
       await expect(page.getByTestId('substitution-confirm')).toBeDisabled();
       await page.getByTestId('substitution-date').selectOption(d);
+      // Fase 2: sem motivo, Confirmar continua desabilitado — o motivo (catálogo) é obrigatório.
+      await expect(page.getByTestId('substitution-confirm')).toBeDisabled();
+      await page.getByTestId('substitution-reason').selectOption('OTHER');
       await expect(page.getByTestId('substitution-confirm')).toBeEnabled();
 
       const [postRes] = await Promise.all([

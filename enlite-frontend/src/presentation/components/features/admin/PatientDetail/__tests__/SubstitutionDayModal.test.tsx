@@ -12,6 +12,18 @@ import { SubstitutionDayModal } from '../SubstitutionDayModal';
 import { nextDatesOfWeekday } from '../substitutionDates';
 import type { ServiceTeamAllocation, ServiceTeamMember } from '@domain/entities/ServiceTeam';
 
+// Catálogo de motivos de saída (Fase 2): o diálogo de motivo lê `useServiceExitReasonOptions`; aqui um catálogo fixo.
+vi.mock('@hooks/admin/useServiceExitReasonOptions', () => ({
+  useServiceExitReasonOptions: () => ({
+    options: [
+      { code: 'OTHER', label: 'Otro' },
+      { code: 'NOVO_DO_ADMIN', label: 'Cambio de disponibilidad' },
+    ],
+    status: 'ok',
+  }),
+}));
+
+
 beforeAll(async () => {
   await i18n.use(initReactI18next).init({
     lng: 'es',
@@ -35,6 +47,10 @@ const SELECTED: ServiceTeamMember[] = [
   { workerId: 'w-sel-1', displayName: 'Dana Fixture', vacancyId: null },
   { workerId: 'w-sel-2', displayName: 'Elio Fixture', vacancyId: null },
 ];
+
+function reasonSelect(): HTMLSelectElement {
+  return screen.getByTestId('substitution-reason') as HTMLSelectElement;
+}
 
 function slotSelect(): HTMLSelectElement {
   return screen.getByTestId('substitution-slot') as HTMLSelectElement;
@@ -64,7 +80,31 @@ describe('SubstitutionDayModal — faixa, data e substituto em cascata', () => {
     expect(confirm.disabled).toBe(true); // ainda falta a data
 
     fireEvent.change(dateSelect(), { target: { value: nextDatesOfWeekday(ASOF, 1, 8)[0] } });
+    expect(confirm.disabled).toBe(true); // ainda falta o motivo (Fase 2)
+
+    fireEvent.change(reasonSelect(), { target: { value: 'OTHER' } });
     expect(confirm.disabled).toBe(false);
+  });
+
+  it('motivo: lista os motivos do catálogo; sem motivo, Confirmar fica desabilitado e onSubmit não sai', () => {
+    const onSubmit = vi.fn();
+    render(<SubstitutionDayModal allocations={ONE_SLOT} selected={SELECTED} asOf={ASOF} onSubmit={onSubmit} onCancel={vi.fn()} />);
+    const values = Array.from(reasonSelect().options).map((o) => o.value).filter(Boolean);
+    expect(values).toEqual(['OTHER', 'NOVO_DO_ADMIN']);
+    fireEvent.change(dateSelect(), { target: { value: nextDatesOfWeekday(ASOF, 1, 8)[0] } });
+    const confirm = screen.getByTestId('substitution-confirm') as HTMLButtonElement;
+    expect(confirm.disabled).toBe(true);
+    fireEvent.click(confirm);
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it('modo Entero não mostra o campo de motivo (ganha na Fase 6)', () => {
+    render(
+      <SubstitutionDayModal allocations={ONE_SLOT} selected={SELECTED} asOf={ASOF} onSubmit={vi.fn()} onSubmitPermanent={vi.fn()} onCancel={vi.fn()} />,
+    );
+    expect(screen.getByTestId('substitution-reason')).toBeTruthy();
+    fireEvent.click(screen.getByTestId('substitution-mode-permanent'));
+    expect(screen.queryByTestId('substitution-reason')).toBeNull();
   });
 
   it('as 8 datas do Select batem com nextDatesOfWeekday', () => {
@@ -102,8 +142,9 @@ describe('SubstitutionDayModal — faixa, data e substituto em cascata', () => {
     render(<SubstitutionDayModal allocations={ONE_SLOT} selected={SELECTED} asOf={ASOF} onSubmit={onSubmit} onCancel={vi.fn()} />);
     const firstDate = nextDatesOfWeekday(ASOF, 1, 8)[0];
     fireEvent.change(dateSelect(), { target: { value: firstDate } });
+    fireEvent.change(reasonSelect(), { target: { value: 'OTHER' } });
     fireEvent.click(screen.getByTestId('substitution-confirm'));
-    expect(onSubmit).toHaveBeenCalledWith('alloc-1', firstDate, null);
+    expect(onSubmit).toHaveBeenCalledWith('alloc-1', firstDate, null, 'OTHER');
   });
 
   it('escolher um substituto e confirmar chama onSubmit com o workerId', () => {
@@ -114,9 +155,10 @@ describe('SubstitutionDayModal — faixa, data e substituto em cascata', () => {
 
     fireEvent.click(screen.getByTestId('substitution-worker'));
     fireEvent.click(within(screen.getByRole('listbox')).getByText('Dana Fixture'));
+    fireEvent.change(reasonSelect(), { target: { value: 'NOVO_DO_ADMIN' } });
 
     fireEvent.click(screen.getByTestId('substitution-confirm'));
-    expect(onSubmit).toHaveBeenCalledWith('alloc-1', firstDate, 'w-sel-1');
+    expect(onSubmit).toHaveBeenCalledWith('alloc-1', firstDate, 'w-sel-1', 'NOVO_DO_ADMIN');
   });
 
   it('"substitution-cancel" chama onCancel', () => {

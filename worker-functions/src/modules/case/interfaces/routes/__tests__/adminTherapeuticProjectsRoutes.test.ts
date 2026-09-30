@@ -60,6 +60,11 @@ const ESPERADO: Record<string, string> = {
   'GET /therapeutic-catalogs/segments': 'catalog_therapeutic_segments:read',
   'POST /therapeutic-catalogs/segments': 'catalog_therapeutic_segments:create',
   'PATCH /therapeutic-catalogs/segments/:itemId': 'catalog_therapeutic_segments:update',
+  // Motivos de saída (492) — kind fora do laço terapêutico, célula literal própria; `/options` lê sob patient_services:read.
+  'GET /therapeutic-catalogs/service-exit-reasons': 'catalog_service_exit_reasons:read',
+  'POST /therapeutic-catalogs/service-exit-reasons': 'catalog_service_exit_reasons:create',
+  'PATCH /therapeutic-catalogs/service-exit-reasons/:itemId': 'catalog_service_exit_reasons:update',
+  'GET /therapeutic-catalogs/service-exit-reasons/options': 'patient_services:read',
 };
 
 /** Cada handler devolve o próprio nome — é o que identifica quem foi chamado (e com que kind). */
@@ -76,6 +81,7 @@ function controllerDuble(): AdminTherapeuticProjectsController {
     listCatalog: respondeCatalogo('listCatalog'),
     createCatalogItem: respondeCatalogo('createCatalogItem'),
     updateCatalogItem: respondeCatalogo('updateCatalogItem'),
+    listServiceExitReasonOptions: responde('listServiceExitReasonOptions'),
   } as unknown as AdminTherapeuticProjectsController;
 }
 
@@ -104,7 +110,7 @@ describe('createAdminTherapeuticProjectsRoutes', () => {
     expect(undeclaredRoutes(scanExpressRouter(build()), () => true)).toEqual([]);
   });
 
-  it('cada uma das 13 rotas declara a célula do mapa (D299.3)', () => {
+  it('cada uma das 17 rotas declara a célula do mapa (D299.3)', () => {
     const declarado = Object.fromEntries(
       scanExpressRouter(build()).map((route) => [
         `${route.method} ${route.path}`,
@@ -114,8 +120,8 @@ describe('createAdminTherapeuticProjectsRoutes', () => {
     expect(declarado).toEqual(ESPERADO);
   });
 
-  it('são exatamente 13 rotas: 4 do projeto + 3 catálogos × 3 verbos (tipo de patologia não é catálogo)', () => {
-    expect(scanExpressRouter(build())).toHaveLength(13);
+  it('são exatamente 17 rotas: 4 do projeto + 3 catálogos × 3 verbos + motivos de saída (3 + options)', () => {
+    expect(scanExpressRouter(build())).toHaveLength(17);
   });
 
   it('não existe DELETE em lugar nenhum — versão é imutável (lex C5) e catálogo é baixa lógica', () => {
@@ -156,6 +162,10 @@ describe('createAdminTherapeuticProjectsRoutes', () => {
     ['get', '/api/admin/therapeutic-catalogs/segments', 'listCatalog'],
     ['post', '/api/admin/therapeutic-catalogs/segments', 'createCatalogItem'],
     ['patch', '/api/admin/therapeutic-catalogs/segments/i-1', 'updateCatalogItem'],
+    ['get', '/api/admin/therapeutic-catalogs/service-exit-reasons', 'listCatalog'],
+    ['post', '/api/admin/therapeutic-catalogs/service-exit-reasons', 'createCatalogItem'],
+    ['patch', '/api/admin/therapeutic-catalogs/service-exit-reasons/i-1', 'updateCatalogItem'],
+    ['get', '/api/admin/therapeutic-catalogs/service-exit-reasons/options', 'listServiceExitReasonOptions'],
   ] as const)('%s %s → %s', async (metodo, caminho, esperado) => {
     const res = await request(app())[metodo](caminho).expect(200);
     expect(res.body.m).toBe(esperado);
@@ -165,13 +175,14 @@ describe('createAdminTherapeuticProjectsRoutes', () => {
     ['specific-objectives'],
     ['activities'],
     ['segments'],
+    ['service-exit-reasons'],
   ])('o kind `%s` chega ao controller pela ROTA, não por param do cliente', async (kind) => {
     const res = await request(app()).get(`/api/admin/therapeutic-catalogs/${kind}`).expect(200);
     expect(res.body.kind).toBe(kind);
   });
 
   describe('trilha (lex C9/C13: só nomes de container)', () => {
-    it('as 4 rotas do projeto gravam trilha de `patient`; as 9 de catálogo NÃO gravam nenhuma', async () => {
+    it('as 4 rotas do projeto gravam trilha de `patient`; as de catálogo NÃO gravam nenhuma', async () => {
       await request(app()).get('/api/admin/patients/abc-123/therapeutic-projects').expect(200);
       await request(app()).get('/api/admin/therapeutic-catalogs/activities').expect(200);
       await request(app()).post('/api/admin/therapeutic-catalogs/activities').send({ label: 'x' }).expect(200);

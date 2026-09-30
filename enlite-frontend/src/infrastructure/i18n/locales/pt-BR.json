@@ -1320,6 +1320,7 @@
       "templateDrafts": "Registrar mensagem",
       "catalogObjectives": "Objetivos específicos",
       "catalogActivities": "Rotina e atividades",
+      "catalogServiceExitReasons": "Motivos de saída",
       "aiPrompts": "Prompts de IA"
     },
     "dedup": {
@@ -3812,12 +3813,6 @@
             "confirm": "Reverter",
             "cancel": "Cancelar"
           },
-          "rejectOptions": {
-            "PERFIL_INADEQUADO_AO_SERVICO": "Perfil inadequado ao serviço",
-            "INDISPONIBILIDADE_DE_HORARIO": "Indisponibilidade de horário",
-            "DESISTENCIA_DO_PRESTADOR": "O prestador desistiu",
-            "OTHER": "Outro"
-          },
           "revertOptions": {
             "REAVALIACAO": "Reavaliação",
             "REJEITADO_POR_ENGANO": "Rejeitado por engano",
@@ -3835,6 +3830,9 @@
             "label": "Substituição",
             "modeComplementary": "Complementar (só esse dia)",
             "modePermanent": "Inteiro (substituição permanente)",
+            "reason": "Motivo",
+            "reasonPlaceholder": "Motivo da troca",
+            "reasonLoadError": "Não foi possível carregar os motivos.",
             "anaCareNotice": "Lembre de lançar esta mudança à mão no Ana Care — não é enviado automaticamente."
           },
           "actionErrors": {
@@ -4547,6 +4545,7 @@
             "patient_therapeutic_project": "Projeto terapêutico: versões, objetivos e atividades",
             "catalog_therapeutic_objectives": "Catálogo de objetivos específicos (projeto terapêutico)",
             "catalog_therapeutic_activities": "Catálogo de rotina e atividades (projeto terapêutico)",
+            "catalog_service_exit_reasons": "Catálogo de motivos de saída do serviço",
             "catalog_therapeutic_segments": "Catálogo de segmentos (Ana Care)",
             "anacare_hours": "Conferência de horas do Ana Care",
             "patient_service_team": "Encuadre do serviço contratado (rejeitar/reverter)",
@@ -5015,6 +5014,9 @@
         },
         "patients.catalogActivities": {
           "label": "Pacientes: Catálogo de rotina e atividades"
+        },
+        "patients.catalogServiceExitReasons": {
+          "label": "Pacientes: Catálogo de motivos de saída"
         }
       }
     },
@@ -5586,6 +5588,11 @@
         "activities": {
           "title": "Rotina e atividades do projeto terapêutico",
           "subtitle": "As opções de \"Rutina y Actividades\" do projeto terapêutico. Editadas aqui, sem deploy. Desativar não apaga: versões antigas guardam o texto que tinham."
+        },
+        "serviceExitReasons": {
+          "title": "Motivos de saída",
+          "subtitle": "As opções que a equipe escolhe ao registrar a saída de um prestador de um serviço. Editadas aqui, sem deploy. Desativar não apaga: registros anteriores guardam o motivo que tinham.",
+          "guidance": "Categorias genéricas, sem dado de saúde."
         }
       },
       "newItem": "Nova opção",

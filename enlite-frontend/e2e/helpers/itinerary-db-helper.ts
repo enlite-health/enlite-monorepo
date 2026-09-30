@@ -230,6 +230,11 @@ export function readOpenAbsences(seed: ItinerarySeed): { onDate: string; substit
 export function cleanupItinerary(seed: ItinerarySeed): void {
   // Por PREFIXO (não só `seed.patientId`/`seed.serviceId`): `seedConflictForSubstitute` cria um 2º
   // paciente/serviço próprios (`${TASK_PREFIX}p2`), fora do `seed` original.
+  // O registro de trocas (migration 494) referencia alocação/ausência/prestador sem cascata: sai PRIMEIRO.
+  runSQL(`
+    DELETE FROM patient_itinerary_change_log l USING patient_contracted_services pcs
+     WHERE l.contracted_service_id = pcs.id AND pcs.created_by = '${TASK_PREFIX}'
+  `);
   runSQL(`
     DELETE FROM patient_itinerary_assignment a USING patient_itinerary_slot s, patient_contracted_services pcs
      WHERE a.slot_id = s.id AND s.contracted_service_id = pcs.id AND pcs.created_by = '${TASK_PREFIX}'

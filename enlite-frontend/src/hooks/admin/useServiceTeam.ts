@@ -10,7 +10,7 @@ export interface UseServiceTeamResult {
   status: ServiceTeamStatus;
   reject: (workerId: string, reasonCategory?: string) => Promise<void>;
   revert: (workerId: string, reasonCategory?: string) => Promise<void>;
-  substitute: (allocationId: string, date: string, substituteWorkerId: string | null) => Promise<void>;
+  substitute: (allocationId: string, date: string, substituteWorkerId: string | null, reasonCategory: string) => Promise<void>;
   actionError: string | null;
   /** N3 do gate fecho: a ação gravou, mas o GET de refresh falhou — o quadro mostra o time de antes
    * e a seção avisa ("recargá la página"). Zera a cada requisição nova (GET ou ação). */
@@ -131,7 +131,7 @@ export function useServiceTeam(
    * — o quadro fica com o dado de antes da escrita e `refreshError` fica `true`.
    */
   const substitute = useCallback(
-    async (allocationId: string, date: string, substituteWorkerId: string | null) => {
+    async (allocationId: string, date: string, substituteWorkerId: string | null, reasonCategory: string) => {
       if (!serviceId) return;
       const targetServiceId = serviceId;
       const requestId = ++requestIdRef.current;
@@ -141,6 +141,7 @@ export function useServiceTeam(
         await AdminContractedServicesApiService.registerAbsence(patientId, targetServiceId, allocationId, {
           date,
           ...(substituteWorkerId ? { substituteWorkerId } : {}),
+          reasonCategory,
         });
       } catch (err) {
         if (requestIdRef.current !== requestId) return;

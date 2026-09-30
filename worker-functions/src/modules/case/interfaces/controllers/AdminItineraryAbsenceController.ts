@@ -3,6 +3,7 @@ import { reportError } from '@shared/logging';
 import { AuthMiddleware } from '@modules/identity';
 import { ItineraryAbsenceUseCase, AbsenceNotFoundError, AbsenceCancelledError, AbsenceDateInPastError, AbsenceAlreadyExistsError, AbsenceWeekdayMismatchError, AbsenceOutsideAllocationError, SubstituteIsTitularError } from '../../application/ItineraryAbsenceUseCase';
 import { AllocationNotFoundError, AllocationNotActiveError, NotSelectedForServiceError } from '../../application/ItineraryAllocationUseCase';
+import { ServiceExitReasonRequiredError, ServiceExitReasonInvalidError } from '../../domain/serviceExitReason';
 import { ItineraryOverlapError, overlapMessage } from '../../domain/itineraryOverlap';
 import { itineraryAllocationParamsSchema, itineraryAbsenceParamsSchema, itineraryAbsenceBodySchema, itinerarySubstituteBodySchema } from '../validators/itineraryWriteSchemas';
 
@@ -46,6 +47,7 @@ export class AdminItineraryAbsenceController {
         allocationId,
         date: body.data.date,
         substituteWorkerId: body.data.substituteWorkerId,
+        reasonCategory: body.data.reasonCategory,
         actorUid,
       });
       res.status(201).json({ success: true, data: result });
@@ -114,6 +116,14 @@ export class AdminItineraryAbsenceController {
   private handleError(err: unknown, res: Response, method: string, patientId: string, serviceId: string): void {
     if (err instanceof AllocationNotFoundError || err instanceof AbsenceNotFoundError) {
       res.status(404).json({ success: false, code: 'NOT_FOUND' });
+      return;
+    }
+    if (err instanceof ServiceExitReasonRequiredError) {
+      res.status(422).json({ success: false, code: 'REASON_REQUIRED' });
+      return;
+    }
+    if (err instanceof ServiceExitReasonInvalidError) {
+      res.status(422).json({ success: false, code: 'REASON_INVALID' });
       return;
     }
     if (err instanceof AllocationNotActiveError) {

@@ -279,10 +279,10 @@ describe('useServiceTeam', () => {
     getServiceTeam.mockResolvedValueOnce(afterSubstitute);
 
     await act(async () => {
-      await result.current.substitute('a1', '2026-10-05', 'w2');
+      await result.current.substitute('a1', '2026-10-05', 'w2', 'OTHER');
     });
 
-    expect(registerAbsence).toHaveBeenCalledWith('p1', 's1', 'a1', { date: '2026-10-05', substituteWorkerId: 'w2' });
+    expect(registerAbsence).toHaveBeenCalledWith('p1', 's1', 'a1', { date: '2026-10-05', substituteWorkerId: 'w2', reasonCategory: 'OTHER' });
     expect(getServiceTeam).toHaveBeenCalledTimes(1);
     expect(getServiceTeam).toHaveBeenCalledWith('p1', 's1');
     expect(result.current.team).toEqual(afterSubstitute);
@@ -297,10 +297,10 @@ describe('useServiceTeam', () => {
     getServiceTeam.mockResolvedValueOnce(team('s1'));
 
     await act(async () => {
-      await result.current.substitute('a1', '2026-10-05', null);
+      await result.current.substitute('a1', '2026-10-05', null, 'OTHER');
     });
 
-    expect(registerAbsence).toHaveBeenCalledWith('p1', 's1', 'a1', { date: '2026-10-05' });
+    expect(registerAbsence).toHaveBeenCalledWith('p1', 's1', 'a1', { date: '2026-10-05', reasonCategory: 'OTHER' });
   });
 
   it('substitute: 422 NOT_SELECTED_FOR_SERVICE → actionError = o code, 0 GET extra', async () => {
@@ -311,7 +311,7 @@ describe('useServiceTeam', () => {
     getServiceTeam.mockClear();
 
     await act(async () => {
-      await result.current.substitute('a1', '2026-10-05', 'w2');
+      await result.current.substitute('a1', '2026-10-05', 'w2', 'OTHER');
     });
 
     expect(result.current.actionError).toBe('NOT_SELECTED_FOR_SERVICE');
@@ -325,7 +325,7 @@ describe('useServiceTeam', () => {
     await waitFor(() => expect(result.current.status).toBe('ok'));
 
     await act(async () => {
-      await result.current.substitute('a1', '2026-10-05', 'w2');
+      await result.current.substitute('a1', '2026-10-05', 'w2', 'OTHER');
     });
 
     expect(result.current.actionError).toBe('ITINERARY_OVERLAP');
@@ -344,10 +344,10 @@ describe('useServiceTeam', () => {
     getServiceTeam.mockRejectedValueOnce(new Error('network down'));
 
     await act(async () => {
-      await result.current.substitute('a1', '2026-10-05', 'w2');
+      await result.current.substitute('a1', '2026-10-05', 'w2', 'OTHER');
     });
 
-    expect(registerAbsence).toHaveBeenCalledWith('p1', 's1', 'a1', { date: '2026-10-05', substituteWorkerId: 'w2' });
+    expect(registerAbsence).toHaveBeenCalledWith('p1', 's1', 'a1', { date: '2026-10-05', substituteWorkerId: 'w2', reasonCategory: 'OTHER' });
     expect(result.current.status).toBe('ok');
     expect(result.current.team).toEqual(teamAntes);
     expect(result.current.actionError).toBeNull();
@@ -363,7 +363,7 @@ describe('useServiceTeam', () => {
     getServiceTeam.mockClear();
 
     await act(async () => {
-      await result.current.substitute('a1', '2026-10-05', 'w2');
+      await result.current.substitute('a1', '2026-10-05', 'w2', 'OTHER');
     });
 
     expect(result.current.status).toBe('forbidden');
@@ -380,7 +380,7 @@ describe('useServiceTeam', () => {
     getServiceTeam.mockClear();
 
     await act(async () => {
-      await result.current.substitute('a1', '2026-10-05', 'w2');
+      await result.current.substitute('a1', '2026-10-05', 'w2', 'OTHER');
     });
 
     expect(result.current.status).toBe('error');
@@ -402,7 +402,7 @@ describe('useServiceTeam', () => {
 
     getServiceTeam.mockRejectedValueOnce(new Error('network down'));
     await act(async () => {
-      await result.current.substitute('a1', '2026-10-05', 'w2');
+      await result.current.substitute('a1', '2026-10-05', 'w2', 'OTHER');
     });
 
     expect(result.current.refreshError).toBe(true);
@@ -425,7 +425,7 @@ describe('useServiceTeam', () => {
     getServiceTeam.mockResolvedValueOnce(team('s1', 'v-novo'));
 
     await act(async () => {
-      await result.current.substitute('a1', '2026-10-05', 'w2');
+      await result.current.substitute('a1', '2026-10-05', 'w2', 'OTHER');
     });
 
     expect(result.current.team).toEqual(team('s1', 'v-novo'));
@@ -446,7 +446,7 @@ describe('useServiceTeam', () => {
 
     let substitutePromise!: Promise<void>;
     act(() => {
-      substitutePromise = result.current.substitute('a1', '2026-10-05', 'w2');
+      substitutePromise = result.current.substitute('a1', '2026-10-05', 'w2', 'OTHER');
     });
     // re-clique da MESMA linha antes da ação responder — dispara um GET novo (requestId mais recente).
     rerender({ nonce: 1 });
