@@ -206,6 +206,8 @@ test.describe('alocacao-antiga @integration', () => {
 
       // Critério 5: no drawer de EDIÇÃO do serviço com linha antiga, a seção é só leitura e rotulada.
       await loginAs(page, STAFF);
+      // A edição do serviço (drawer com providers-section) mora na aba "Servicio Contratado";
+      // só o quadro C saiu para "Encuadre" (29/09).
       await openContractedServiceTab(page, patientId);
       await page.getByTestId(`contracted-service-edit-${s1}`).click();
       const dialog = page.getByRole('dialog', { name: drawerTitle });
@@ -243,6 +245,8 @@ test.describe('alocacao-antiga @integration', () => {
       // Serviço SEM linha antiga: a tela carrega o formulário e a seção não existe.
       await dialog.getByRole('button', { name: closeLabel }).click();
       await expect(page.getByRole('dialog', { name: drawerTitle })).toHaveCount(0);
+      // A edição do serviço (drawer com providers-section) mora na aba "Servicio Contratado";
+      // só o quadro C saiu para "Encuadre" (29/09).
       await openContractedServiceTab(page, patientId);
       await page.getByTestId(`contracted-service-edit-${s2}`).click();
       await expect(page.getByTestId(`contracted-service-form-${s2}`)).toBeVisible({ timeout: 15_000 });

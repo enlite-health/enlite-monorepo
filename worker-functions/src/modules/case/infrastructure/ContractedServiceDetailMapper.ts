@@ -54,6 +54,8 @@ export async function mapContractedServices(
   const ids = serviceRows.map((r) => r.id);
   const { devices, providers, liveVacancies } = await fetchContractedServiceChildren(pool, ids);
   const liveVacancyByService = new Map(liveVacancies.map((v) => [v.contracted_service_id, v.id as string]));
+  // Rodada 2 (decisão A, DIV-3): sexo requerido da vaga viva — coluna SEXO da aba Encuadre.
+  const requiredSexByService = new Map(liveVacancies.map((v) => [v.contracted_service_id, (v.required_sex as string | null) ?? null]));
   const decryptedProviders = await Promise.all(
     providers.map(async (p) => {
       const [first, last] = await Promise.all([enc.decrypt(p.first_name_encrypted ?? ''), enc.decrypt(p.last_name_encrypted ?? '')]);
@@ -95,6 +97,7 @@ export async function mapContractedServices(
     addressId: r.address_id,
     schedule: r.schedule,
     liveVacancyId: liveVacancyByService.get(r.id) ?? null,
+    requiredSex: requiredSexByService.get(r.id) ?? null,
     active: r.active,
     endedAt: r.ended_at,
     country: r.country,

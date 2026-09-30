@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Info } from 'lucide-react';
 import { Text } from '@presentation/components/atoms/Text';
 import { ActionButton } from '@presentation/components/features/access';
 import { KanbanBoardShell, type KanbanColumnSpec } from '@presentation/components/features/admin/Kanban/KanbanBoardShell';
 import { RejectionReasonSelect } from '@presentation/components/features/admin/Kanban/RejectionReasonSelect';
 import { SubstitutionDayModal } from './SubstitutionDayModal';
+import { ServiceTeamProviderModal, type ServiceTeamPatientHeader } from './ServiceTeamProviderModal';
 import { formatDDMM } from './substitutionDates';
 import { workerLabel } from './workerLabel';
 import {
@@ -17,6 +19,9 @@ import {
 } from '@domain/entities/ServiceTeam';
 
 interface ServiceTeamBoardProps {
+  patientId: string;
+  patientHeader?: ServiceTeamPatientHeader;
+  serviceId: string;
   team: ServiceTeam;
   onReject: (workerId: string, reasonCategory: string) => void;
   onRevert: (workerId: string, reasonCategory: string) => void;
@@ -50,16 +55,29 @@ interface PendingReason {
  * (mecânica das colunas) e `RejectionReasonSelect` (o mesmo modal de motivo do quadro B,
  * generalizado na Fase 4, DX-4.10) — nenhum hook de permissão novo, o gate é o `ActionButton`.
  */
-export function ServiceTeamBoard({ team, onReject, onRevert, onSubstitute, actionError }: ServiceTeamBoardProps): JSX.Element {
+export function ServiceTeamBoard({ patientId, patientHeader, serviceId, team, onReject, onRevert, onSubstitute, actionError }: ServiceTeamBoardProps): JSX.Element {
   const { t } = useTranslation();
   const [pending, setPending] = useState<PendingReason | null>(null);
   const [substitutionMember, setSubstitutionMember] = useState<ServiceTeamMember | null>(null);
+  /** Modal do prestador (decisão D, rodada 2) — abre ao clicar no CARD, não nos botões dele. */
+  const [openProvider, setOpenProvider] = useState<{ member: ServiceTeamMember; columnId: ServiceTeamColumnId } | null>(null);
 
   const columns: KanbanColumnSpec[] = SERVICE_TEAM_COLUMN_IDS.map((id) => ({
     id,
     title: t(`admin.patients.detail.serviceTeam.columns.${id}`),
     color: COLUMN_COLOR[id],
     droppable: false,
+    // Ícone "i" (Figma 11340:76576, rodada 2) — tooltip nativo do browser explica a régua
+    // CALCULADA de cada coluna (D432/D433), sem componente de tooltip novo.
+    headerIcon: (
+      <Info
+        className="w-3.5 h-3.5 text-gray-600 shrink-0"
+        aria-hidden="true"
+        data-testid={`quadro-c-column-info-${id}`}
+      >
+        <title>{t(`admin.patients.detail.serviceTeam.columnInfo.${id}`)}</title>
+      </Info>
+    ),
   }));
 
   function itemsOf(columnId: string): ServiceTeamMember[] {
@@ -86,7 +104,11 @@ export function ServiceTeamBoard({ team, onReject, onRevert, onSubstitute, actio
         renderCard={(member, columnId) => (
           <div
             data-testid={`service-team-card-${member.workerId}`}
-            className="bg-white rounded-lg border border-gray-600 p-3 flex flex-col gap-2"
+            role="button"
+            tabIndex={0}
+            onClick={() => setOpenProvider({ member, columnId: columnId as ServiceTeamColumnId })}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setOpenProvider({ member, columnId: columnId as ServiceTeamColumnId }); }}
+            className="bg-[#f7f7f7] rounded-[8px] border border-[#d9d9d9] px-4 py-2.5 flex flex-col gap-2 cursor-pointer hover:border-primary transition-colors"
           >
             <Text as="span" size="sm" weight="medium">
               {workerLabel(t, member.workerId, member.displayName)}
@@ -124,7 +146,7 @@ export function ServiceTeamBoard({ team, onReject, onRevert, onSubstitute, actio
                 action="update"
                 variant="outline"
                 size="sm"
-                onClick={() => setSubstitutionMember(member)}
+                onClick={(e) => { e.stopPropagation(); setSubstitutionMember(member); }}
                 data-testid={`service-team-substitute-${member.workerId}`}
               >
                 {t('admin.patients.detail.serviceTeam.substituteButton')}
@@ -136,7 +158,7 @@ export function ServiceTeamBoard({ team, onReject, onRevert, onSubstitute, actio
                 action="update"
                 variant="outline"
                 size="sm"
-                onClick={() => setPending({ kind: 'reject', workerId: member.workerId })}
+                onClick={(e) => { e.stopPropagation(); setPending({ kind: 'reject', workerId: member.workerId }); }}
                 data-testid={`service-team-reject-${member.workerId}`}
               >
                 {t('admin.patients.detail.serviceTeam.rejectButton')}
@@ -148,7 +170,7 @@ export function ServiceTeamBoard({ team, onReject, onRevert, onSubstitute, actio
                 action="update"
                 variant="outline"
                 size="sm"
-                onClick={() => setPending({ kind: 'revert', workerId: member.workerId })}
+                onClick={(e) => { e.stopPropagation(); setPending({ kind: 'revert', workerId: member.workerId }); }}
                 data-testid={`service-team-revert-${member.workerId}`}
               >
                 {t('admin.patients.detail.serviceTeam.revertButton')}
@@ -197,6 +219,19 @@ export function ServiceTeamBoard({ team, onReject, onRevert, onSubstitute, actio
             setSubstitutionMember(null);
           }}
           onCancel={() => setSubstitutionMember(null)}
+        />
+      )}
+
+      {openProvider && (
+        <ServiceTeamProviderModal
+          patientId={patientId}
+          patientHeader={patientHeader}
+          serviceId={serviceId}
+          member={openProvider.member}
+          columnId={openProvider.columnId}
+          onClose={() => setOpenProvider(null)}
+          onReject={onReject}
+          onRevert={onRevert}
         />
       )}
     </>

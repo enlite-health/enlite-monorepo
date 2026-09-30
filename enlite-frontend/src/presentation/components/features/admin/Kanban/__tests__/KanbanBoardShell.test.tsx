@@ -251,3 +251,16 @@ describe('KanbanBoardShell — overlay de arrasto', () => {
     expect(screen.getByTestId('drag-overlay')).toBeEmptyDOMElement();
   });
 });
+
+describe('KanbanBoardShell — headerIcon (rodada 2, quadro C): repassa col.headerIcon pra CADA KanbanColumn', () => {
+  it('coluna sem headerIcon: nada extra; coluna com headerIcon: repassado ao cabeçalho', () => {
+    const columnsWithIcon: KanbanColumnSpec[] = [
+      { id: 'TODO', title: 'A fazer', color: 'bg-slate-400', droppable: true },
+      { id: 'DOING', title: 'Fazendo', color: 'bg-blue-400', droppable: false, headerIcon: <span data-testid="icon-doing">i</span> },
+    ];
+    renderShell({ columns: columnsWithIcon, itemsOf: (id) => (id === 'TODO' ? [] : []) });
+
+    expect(screen.queryByTestId('icon-todo')).not.toBeInTheDocument();
+    expect(screen.getByTestId('icon-doing')).toBeInTheDocument();
+  });
+});

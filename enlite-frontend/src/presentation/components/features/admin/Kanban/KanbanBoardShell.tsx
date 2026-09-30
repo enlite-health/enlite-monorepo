@@ -15,6 +15,12 @@ export interface KanbanColumnSpec {
   droppable?: boolean;
   /** Cabeçalho em tom de alerta (vermelho) — coluna que pede ação do operador. */
   alert?: boolean;
+  /**
+   * Ícone "i" ao lado do título (Figma nó 11340:76576 — quadro C, rodada 2). Opcional: board que
+   * não passa mantém o cabeçalho como sempre foi (Kanban A/B intocados). `title` do `<span>` é o
+   * texto explicativo — tooltip nativo do browser, sem componente novo.
+   */
+  headerIcon?: ReactNode;
 }
 
 /** O que o board de negócio recebe quando um card é solto numa coluna válida. */
@@ -172,6 +178,7 @@ export function KanbanBoardShell<T>({
               color={col.color}
               droppable={col.droppable !== false}
               alert={col.alert}
+              headerIcon={col.headerIcon}
               dragActive={activeId !== null}
               collapsed={collapsed.has(col.id)}
               onToggleCollapse={collapseStorageKey ? () => toggle(col.id) : undefined}

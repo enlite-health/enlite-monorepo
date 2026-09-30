@@ -113,6 +113,9 @@ export interface PatientContractedServiceDetail {
   schedule: ContractedServiceScheduleSlot[] | null;
   /** Spec 018, PR-6: vaga viva deste serviço — `null` habilita "Activar reclutamiento". */
   liveVacancyId: string | null;
+  /** Sexo requerido da vaga viva (`job_postings.required_sex`) — aba Encuadre, coluna SEXO (Figma,
+   *  rodada 2, decisão A). `null` sem vaga viva OU vaga sem o campo informado. */
+  requiredSex: string | null;
   active: boolean;
   endedAt: string | null;
   country: string;

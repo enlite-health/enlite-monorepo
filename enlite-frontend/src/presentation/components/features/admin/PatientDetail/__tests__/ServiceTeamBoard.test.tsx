@@ -13,6 +13,21 @@ import { expectNoRawEnumLeaks } from '../../../../../../test/rawEnumLeakGuard';
 import { ServiceTeamBoard } from '../ServiceTeamBoard';
 import type { ServiceTeam } from '@domain/entities/ServiceTeam';
 
+/** Dublê (rodada 3): o que ELE renderiza tem suíte própria (`ServiceTeamProviderModal.test.tsx`); aqui só se prova QUANDO ele abre e o que o board passou — `onReject`/`onRevert` chegam DIRETO (rodada 3: o modal aplica ele mesmo, sem round-trip pelo `pending` do board). */
+const mockProviderModalCalls = vi.fn();
+vi.mock('../ServiceTeamProviderModal', () => ({
+  ServiceTeamProviderModal: (props: { member: { workerId: string }; columnId: string; onClose: () => void; onReject: (w: string, r: string) => void; onRevert: (w: string, r: string) => void }) => {
+    mockProviderModalCalls(props);
+    return (
+      <div data-testid="service-team-provider-modal-stub" data-worker-id={props.member.workerId} data-column-id={props.columnId}>
+        <button type="button" data-testid="stub-close" onClick={props.onClose}>close</button>
+        <button type="button" data-testid="stub-reject" onClick={() => props.onReject(props.member.workerId, 'OTHER')}>reject</button>
+        <button type="button" data-testid="stub-revert" onClick={() => props.onRevert(props.member.workerId, 'OTHER')}>revert</button>
+      </div>
+    );
+  },
+}));
+
 beforeAll(async () => {
   await i18n.use(initReactI18next).init({
     lng: 'es',
@@ -45,21 +60,30 @@ const TEAM: ServiceTeam = {
 
 describe('ServiceTeamBoard — 3 colunas calculadas, sem arrasto, motivo obrigatório', () => {
   it('3 colunas com as contagens certas', () => {
-    render(<ServiceTeamBoard team={TEAM} onReject={vi.fn()} onRevert={vi.fn()} onSubstitute={vi.fn()} actionError={null} />);
+    render(<ServiceTeamBoard patientId="p1" serviceId="svc-1" team={TEAM} onReject={vi.fn()} onRevert={vi.fn()} onSubstitute={vi.fn()} actionError={null} />);
     expect(screen.getByTestId('kanban-column-SELECTED_FOR_SERVICE-count').textContent).toBe('2');
     expect(screen.getByTestId('kanban-column-IN_SERVICE-count').textContent).toBe('1');
     expect(screen.getByTestId('kanban-column-REJECTED_FOR_SERVICE-count').textContent).toBe('1');
   });
 
+  it('ícone "i" (rodada 2, Figma 11340:76576) nas 3 colunas, com o texto explicativo no tooltip nativo (<title> do SVG)', () => {
+    render(<ServiceTeamBoard patientId="p1" serviceId="svc-1" team={TEAM} onReject={vi.fn()} onRevert={vi.fn()} onSubstitute={vi.fn()} actionError={null} />);
+    for (const id of ['SELECTED_FOR_SERVICE', 'IN_SERVICE', 'REJECTED_FOR_SERVICE']) {
+      const icon = screen.getByTestId(`quadro-c-column-info-${id}`);
+      expect(icon).toBeTruthy();
+      expect(icon.querySelector('title')?.textContent).toBeTruthy();
+    }
+  });
+
   it('um card por worker, nas três colunas', () => {
-    render(<ServiceTeamBoard team={TEAM} onReject={vi.fn()} onRevert={vi.fn()} onSubstitute={vi.fn()} actionError={null} />);
+    render(<ServiceTeamBoard patientId="p1" serviceId="svc-1" team={TEAM} onReject={vi.fn()} onRevert={vi.fn()} onSubstitute={vi.fn()} actionError={null} />);
     expect(screen.getByTestId('service-team-card-w1').textContent).toContain('Ana Fixture');
     expect(screen.getByTestId('service-team-card-w2').textContent).toContain('Beto Fixture');
     expect(screen.getByTestId('service-team-card-w3').textContent).toContain('Caco Fixture');
   });
 
   it('"Rechazar" só em Selecionado, "Revertir" só em Rejeitado, Em Atendimento sem botão de rejeitar (sem allocations, também sem botão de substituir)', () => {
-    const { container } = render(<ServiceTeamBoard team={TEAM} onReject={vi.fn()} onRevert={vi.fn()} onSubstitute={vi.fn()} actionError={null} />);
+    const { container } = render(<ServiceTeamBoard patientId="p1" serviceId="svc-1" team={TEAM} onReject={vi.fn()} onRevert={vi.fn()} onSubstitute={vi.fn()} actionError={null} />);
     expect(screen.getByTestId('service-team-reject-w1')).toBeTruthy();
     expect(screen.queryByTestId('service-team-revert-w1')).toBeNull();
 
@@ -74,7 +98,7 @@ describe('ServiceTeamBoard — 3 colunas calculadas, sem arrasto, motivo obrigat
   });
 
   it('displayName null mostra "sin nombre" com o final do workerId', () => {
-    render(<ServiceTeamBoard team={TEAM} onReject={vi.fn()} onRevert={vi.fn()} onSubstitute={vi.fn()} actionError={null} />);
+    render(<ServiceTeamBoard patientId="p1" serviceId="svc-1" team={TEAM} onReject={vi.fn()} onRevert={vi.fn()} onSubstitute={vi.fn()} actionError={null} />);
     const shortId = NONAME_WORKER_ID.slice(-8);
     const card = screen.getByTestId(`service-team-card-${NONAME_WORKER_ID}`);
     expect(card.textContent).toContain('sin nombre');
@@ -82,7 +106,7 @@ describe('ServiceTeamBoard — 3 colunas calculadas, sem arrasto, motivo obrigat
   });
 
   it('Rejeitado mostra o motivo TRADUZIDO, nunca o enum cru', () => {
-    render(<ServiceTeamBoard team={TEAM} onReject={vi.fn()} onRevert={vi.fn()} onSubstitute={vi.fn()} actionError={null} />);
+    render(<ServiceTeamBoard patientId="p1" serviceId="svc-1" team={TEAM} onReject={vi.fn()} onRevert={vi.fn()} onSubstitute={vi.fn()} actionError={null} />);
     const card = screen.getByTestId('service-team-card-w3');
     expect(card.textContent).toContain('El prestador desistió');
     expect(card.textContent).not.toContain('DESISTENCIA_DO_PRESTADOR');
@@ -90,7 +114,7 @@ describe('ServiceTeamBoard — 3 colunas calculadas, sem arrasto, motivo obrigat
 
   it('clique em "Rechazar" abre o modal com as 4 opções; confirmar desabilitado sem escolha; escolha + confirmar chama onReject', () => {
     const onReject = vi.fn();
-    render(<ServiceTeamBoard team={TEAM} onReject={onReject} onRevert={vi.fn()} onSubstitute={vi.fn()} actionError={null} />);
+    render(<ServiceTeamBoard patientId="p1" serviceId="svc-1" team={TEAM} onReject={onReject} onRevert={vi.fn()} onSubstitute={vi.fn()} actionError={null} />);
     fireEvent.click(screen.getByTestId('service-team-reject-w1'));
 
     const modal = screen.getByTestId('service-team-reject-modal');
@@ -112,7 +136,7 @@ describe('ServiceTeamBoard — 3 colunas calculadas, sem arrasto, motivo obrigat
 
   it('clique em "Revertir" abre o modal com as 3 opções; escolha + confirmar chama onRevert', () => {
     const onRevert = vi.fn();
-    render(<ServiceTeamBoard team={TEAM} onReject={vi.fn()} onRevert={onRevert} onSubstitute={vi.fn()} actionError={null} />);
+    render(<ServiceTeamBoard patientId="p1" serviceId="svc-1" team={TEAM} onReject={vi.fn()} onRevert={onRevert} onSubstitute={vi.fn()} actionError={null} />);
     fireEvent.click(screen.getByTestId('service-team-revert-w3'));
 
     expect(screen.getByTestId('service-team-revert-modal')).toBeTruthy();
@@ -127,23 +151,23 @@ describe('ServiceTeamBoard — 3 colunas calculadas, sem arrasto, motivo obrigat
   });
 
   it('erro da ação: aparece traduzido pelo código', () => {
-    render(<ServiceTeamBoard team={TEAM} onReject={vi.fn()} onRevert={vi.fn()} onSubstitute={vi.fn()} actionError="SERVICE_TEAM_WORKER_ALLOCATED" />);
+    render(<ServiceTeamBoard patientId="p1" serviceId="svc-1" team={TEAM} onReject={vi.fn()} onRevert={vi.fn()} onSubstitute={vi.fn()} actionError="SERVICE_TEAM_WORKER_ALLOCATED" />);
     expect(screen.getByTestId('quadro-c-acao-erro').textContent).toBe('Quitá al prestador del itinerario antes de rechazarlo.');
   });
 
   it('sem erro: nenhum "quadro-c-acao-erro" na tela', () => {
-    render(<ServiceTeamBoard team={TEAM} onReject={vi.fn()} onRevert={vi.fn()} onSubstitute={vi.fn()} actionError={null} />);
+    render(<ServiceTeamBoard patientId="p1" serviceId="svc-1" team={TEAM} onReject={vi.fn()} onRevert={vi.fn()} onSubstitute={vi.fn()} actionError={null} />);
     expect(screen.queryByTestId('quadro-c-acao-erro')).toBeNull();
   });
 
   it('nenhum botão de "adicionar" (invariante 1 — o time é calculado, nunca criado à mão)', () => {
-    render(<ServiceTeamBoard team={TEAM} onReject={vi.fn()} onRevert={vi.fn()} onSubstitute={vi.fn()} actionError={null} />);
+    render(<ServiceTeamBoard patientId="p1" serviceId="svc-1" team={TEAM} onReject={vi.fn()} onRevert={vi.fn()} onSubstitute={vi.fn()} actionError={null} />);
     const nomes = screen.getAllByRole('button').map((b) => b.textContent ?? '');
     for (const nome of nomes) expect(nome).not.toMatch(/adicionar|agregar|añadir|nuevo/i);
   });
 
   it('sem arrasto: nenhum card com aria-roledescription="draggable" habilitado (é o que o dnd-kit atribui a um item arrastável)', () => {
-    const { container } = render(<ServiceTeamBoard team={TEAM} onReject={vi.fn()} onRevert={vi.fn()} onSubstitute={vi.fn()} actionError={null} />);
+    const { container } = render(<ServiceTeamBoard patientId="p1" serviceId="svc-1" team={TEAM} onReject={vi.fn()} onRevert={vi.fn()} onSubstitute={vi.fn()} actionError={null} />);
     expect(container.querySelectorAll('[aria-roledescription="draggable"]').length).toBe(0);
     const draggableWrapper = screen.getByTestId('kanban-draggable-w1');
     expect(draggableWrapper.getAttribute('data-drag-disabled')).toBe('true');
@@ -157,7 +181,7 @@ describe('ServiceTeamBoard — 3 colunas calculadas, sem arrasto, motivo obrigat
           { workerId: 'w-titular', displayName: 'Fio Fixture', vacancyId: 'vac-1', allocations: [{ allocationId: 'a1', weekday: 1, startTime: '08:00', endTime: '10:00' }] },
         ],
       };
-      render(<ServiceTeamBoard team={team} onReject={vi.fn()} onRevert={vi.fn()} onSubstitute={vi.fn()} actionError={null} />);
+      render(<ServiceTeamBoard patientId="p1" serviceId="svc-1" team={team} onReject={vi.fn()} onRevert={vi.fn()} onSubstitute={vi.fn()} actionError={null} />);
       expect(screen.getByTestId('service-team-substitute-w-titular')).toBeTruthy();
       expect(screen.queryByTestId('card-datas-substituicao')).toBeNull();
     });
@@ -169,7 +193,7 @@ describe('ServiceTeamBoard — 3 colunas calculadas, sem arrasto, motivo obrigat
           { workerId: 'w-substituto', displayName: 'Gui Fixture', vacancyId: null, substitutionDates: ['2026-10-05', '2026-10-12'] },
         ],
       };
-      render(<ServiceTeamBoard team={team} onReject={vi.fn()} onRevert={vi.fn()} onSubstitute={vi.fn()} actionError={null} />);
+      render(<ServiceTeamBoard patientId="p1" serviceId="svc-1" team={team} onReject={vi.fn()} onRevert={vi.fn()} onSubstitute={vi.fn()} actionError={null} />);
       expect(screen.queryByTestId('service-team-substitute-w-substituto')).toBeNull();
       expect(screen.getAllByTestId('card-datas-substituicao').length).toBe(1);
       const card = screen.getByTestId('service-team-card-w-substituto');
@@ -190,13 +214,13 @@ describe('ServiceTeamBoard — 3 colunas calculadas, sem arrasto, motivo obrigat
           },
         ],
       };
-      render(<ServiceTeamBoard team={team} onReject={vi.fn()} onRevert={vi.fn()} onSubstitute={vi.fn()} actionError={null} />);
+      render(<ServiceTeamBoard patientId="p1" serviceId="svc-1" team={team} onReject={vi.fn()} onRevert={vi.fn()} onSubstitute={vi.fn()} actionError={null} />);
       expect(screen.getByTestId('service-team-substitute-w-ambos')).toBeTruthy();
       expect(screen.getAllByTestId('card-datas-substituicao').length).toBe(1);
     });
 
     it('Selecionado/Rejeitado: nem botão de substituir nem datas, mesmo se o dado viesse preenchido', () => {
-      render(<ServiceTeamBoard team={TEAM} onReject={vi.fn()} onRevert={vi.fn()} onSubstitute={vi.fn()} actionError={null} />);
+      render(<ServiceTeamBoard patientId="p1" serviceId="svc-1" team={TEAM} onReject={vi.fn()} onRevert={vi.fn()} onSubstitute={vi.fn()} actionError={null} />);
       expect(screen.queryByTestId('service-team-substitute-w1')).toBeNull();
       expect(screen.queryByTestId('service-team-substitute-w3')).toBeNull();
       expect(screen.queryByTestId('card-datas-substituicao')).toBeNull();
@@ -210,7 +234,7 @@ describe('ServiceTeamBoard — 3 colunas calculadas, sem arrasto, motivo obrigat
           { workerId: 'w-titular', displayName: 'Fio Fixture', vacancyId: 'vac-1', allocations: [{ allocationId: 'a1', weekday: 1, startTime: '08:00', endTime: '10:00' }] },
         ],
       };
-      render(<ServiceTeamBoard team={team} onReject={vi.fn()} onRevert={vi.fn()} onSubstitute={onSubstitute} actionError={null} />);
+      render(<ServiceTeamBoard patientId="p1" serviceId="svc-1" team={team} onReject={vi.fn()} onRevert={vi.fn()} onSubstitute={onSubstitute} actionError={null} />);
       fireEvent.click(screen.getByTestId('service-team-substitute-w-titular'));
       expect(screen.getByTestId('substitution-modal')).toBeTruthy();
 
@@ -223,6 +247,59 @@ describe('ServiceTeamBoard — 3 colunas calculadas, sem arrasto, motivo obrigat
       expect(onSubstitute.mock.calls[0][0]).toBe('a1');
       expect(onSubstitute.mock.calls[0][2]).toBeNull();
       expect(screen.queryByTestId('substitution-modal')).toBeNull();
+    });
+  });
+
+  describe('modal do prestador (rodada 2, decisão D): abre no CARD, nunca nos botões', () => {
+    it('clicar no CARD (fora dos botões) abre o modal com o member/columnId certos', () => {
+      render(<ServiceTeamBoard patientId="p1" serviceId="svc-1" team={TEAM} onReject={vi.fn()} onRevert={vi.fn()} onSubstitute={vi.fn()} actionError={null} />);
+
+      expect(screen.queryByTestId('service-team-provider-modal-stub')).not.toBeInTheDocument();
+      fireEvent.click(screen.getByTestId('service-team-card-w1'));
+
+      const modal = screen.getByTestId('service-team-provider-modal-stub');
+      expect(modal.getAttribute('data-worker-id')).toBe('w1');
+      expect(modal.getAttribute('data-column-id')).toBe('SELECTED_FOR_SERVICE');
+    });
+
+    it('clicar "Rechazar" no card NÃO abre o modal (stopPropagation) — só a ação do botão dispara', () => {
+      render(<ServiceTeamBoard patientId="p1" serviceId="svc-1" team={TEAM} onReject={vi.fn()} onRevert={vi.fn()} onSubstitute={vi.fn()} actionError={null} />);
+
+      fireEvent.click(screen.getByTestId('service-team-reject-w1'));
+
+      expect(screen.queryByTestId('service-team-provider-modal-stub')).not.toBeInTheDocument();
+      expect(screen.getByTestId('service-team-reject-modal')).toBeTruthy();
+    });
+
+    it('onClose do modal fecha (some o stub)', () => {
+      render(<ServiceTeamBoard patientId="p1" serviceId="svc-1" team={TEAM} onReject={vi.fn()} onRevert={vi.fn()} onSubstitute={vi.fn()} actionError={null} />);
+      fireEvent.click(screen.getByTestId('service-team-card-w1'));
+      fireEvent.click(screen.getByTestId('stub-close'));
+      expect(screen.queryByTestId('service-team-provider-modal-stub')).not.toBeInTheDocument();
+    });
+
+    it('onReject do modal chega DIRETO da prop do board (rodada 3: o modal aplica ele mesmo, sem passar pelo `pending`/RejectionReasonSelect do board)', () => {
+      const onReject = vi.fn();
+      render(<ServiceTeamBoard patientId="p1" serviceId="svc-1" team={TEAM} onReject={onReject} onRevert={vi.fn()} onSubstitute={vi.fn()} actionError={null} />);
+      fireEvent.click(screen.getByTestId('service-team-card-w1'));
+      fireEvent.click(screen.getByTestId('stub-reject'));
+
+      expect(onReject).toHaveBeenCalledWith('w1', 'OTHER');
+      // O board não abre o SEU PRÓPRIO RejectionReasonSelect nesse caminho — quem captura o
+      // motivo agora é o modal (suíte própria).
+      expect(screen.queryByTestId('service-team-reject-modal')).not.toBeInTheDocument();
+    });
+
+    it('onRevert do modal, a partir de um card Rejeitado: chega DIRETO da prop do board', () => {
+      const onRevert = vi.fn();
+      render(<ServiceTeamBoard patientId="p1" serviceId="svc-1" team={TEAM} onReject={vi.fn()} onRevert={onRevert} onSubstitute={vi.fn()} actionError={null} />);
+      fireEvent.click(screen.getByTestId('service-team-card-w3'));
+      expect(screen.getByTestId('service-team-provider-modal-stub').getAttribute('data-column-id')).toBe('REJECTED_FOR_SERVICE');
+
+      fireEvent.click(screen.getByTestId('stub-revert'));
+
+      expect(onRevert).toHaveBeenCalledWith('w3', 'OTHER');
+      expect(screen.queryByTestId('service-team-revert-modal')).not.toBeInTheDocument();
     });
   });
 });

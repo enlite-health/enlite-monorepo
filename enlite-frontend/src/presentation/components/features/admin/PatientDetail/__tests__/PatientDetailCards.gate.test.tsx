@@ -26,6 +26,7 @@ const SERVICO: PatientContractedServiceDetail = {
   providerAgeBand: 'AGE_30_45',
   addressId: null,
   liveVacancyId: null,
+  requiredSex: null,
   schedule: null,
   active: true,
   endedAt: null,

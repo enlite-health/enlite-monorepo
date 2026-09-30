@@ -8,7 +8,7 @@
  *
  * Reusa sem copiar: `backendUrl()` (`lancamento-e2e-helper.ts:32`, mesmo fallback do CI dos
  * irmãos, lida DENTRO das funções — nunca no topo do módulo, o Playwright carrega todos os specs
- * antes do `--grep`); molde de navegação `openContractedServiceTab` (`quadro-c-e2e-helper.ts:111-121`).
+ * antes do `--grep`); molde de navegação `openEncuadreTab` (`quadro-c-e2e-helper.ts:111-121`).
  * A aba é um `<button>` sem `role="tab"` (DX-12.3) — achada por `getByRole('button', { name })`.
  * Nenhum host/porta literal, nenhum `throw` no import, nenhum preenchimento programático de campo.
  */

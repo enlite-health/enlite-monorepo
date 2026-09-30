@@ -70,6 +70,9 @@ export interface ContractedServiceDetail {
   schedule: ContractedServiceScheduleSlot[] | null;
   /** Vaga viva deste serviço (spec 018, PR-6) — null = ainda pode ativar recrutamento. */
   liveVacancyId: string | null;
+  /** Sexo requerido da vaga viva (`job_postings.required_sex`) — aba Encuadre, coluna SEXO (Figma,
+   *  rodada 2, decisão A). `null` sem vaga viva OU vaga sem o campo informado; o front mostra "—". */
+  requiredSex: string | null;
   active: boolean;
   endedAt: string | null;
   country: string;
@@ -191,13 +194,14 @@ export class PatientContractedServiceRepository {
     // Ver vacante)" — a MESMA condição do 409 de `ActivateRecruitmentUseCase`
     // (`contracted_service_id = :sid AND deleted_at IS NULL`), lida aqui para a ficha exibir sem
     // reimplementar o critério.
-    const liveVacancy = await cli.query<{ id: string }>(
-      `SELECT id FROM job_postings WHERE contracted_service_id = $1 AND deleted_at IS NULL LIMIT 1`,
+    const liveVacancy = await cli.query<{ id: string; required_sex: string | null }>(
+      `SELECT id, required_sex FROM job_postings WHERE contracted_service_id = $1 AND deleted_at IS NULL LIMIT 1`,
       [row.id],
     );
     return {
       id: row.id,
       liveVacancyId: liveVacancy.rows[0]?.id ?? null,
+      requiredSex: liveVacancy.rows[0]?.required_sex ?? null,
       patientId: row.patient_id,
       serviceCode: row.service_code,
       professionalProfile: row.professional_profile,

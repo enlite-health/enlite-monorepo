@@ -233,6 +233,12 @@ export interface InsertTestWorkerOpts {
   lng?: number | null;
   /** Defaults to REGISTERED — the only status that passes the matchmaking SQL. */
   status?: 'REGISTERED' | 'INCOMPLETE_REGISTER' | 'DISABLED';
+  /**
+   * `whatsapp_phone_encrypted` (rodada 3, modal do prestador quadro C) — SINTÉTICO, base64 do
+   * texto claro (mesma convenção de `enc()` abaixo). `null`/omitido = coluna fica NULL, e a linha
+   * do WhatsApp no modal desaparece (é o caso que prova a célula `worker_contact:read` funciona).
+   */
+  whatsappPhone?: string | null;
 }
 
 /**
@@ -251,6 +257,7 @@ export function insertTestWorker(opts: InsertTestWorkerOpts = {}): string {
     lat = null,
     lng = null,
     status = 'REGISTERED',
+    whatsappPhone = null,
   } = opts;
 
   const enc = (v: string | null) =>
@@ -262,7 +269,7 @@ export function insertTestWorker(opts: InsertTestWorkerOpts = {}): string {
   runSQL(`
     INSERT INTO workers (
       auth_uid, email, phone, status, country, occupation,
-      first_name_encrypted, last_name_encrypted, sex_encrypted,
+      first_name_encrypted, last_name_encrypted, sex_encrypted, whatsapp_phone_encrypted,
       created_at, updated_at
     ) VALUES (
       '${authUid}',
@@ -274,6 +281,7 @@ export function insertTestWorker(opts: InsertTestWorkerOpts = {}): string {
       ${enc(firstName)},
       ${enc(lastName)},
       ${enc(sex)},
+      ${enc(whatsappPhone)},
       NOW(), NOW()
     )
   `);

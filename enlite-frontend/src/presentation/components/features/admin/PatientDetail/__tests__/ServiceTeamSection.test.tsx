@@ -51,6 +51,7 @@ const SERVICE: PatientContractedServiceDetail = {
   addressId: 'addr-home',
   schedule: null,
   liveVacancyId: null,
+  requiredSex: null,
   active: true,
   endedAt: null,
   country: 'AR',
@@ -104,24 +105,28 @@ describe('ServiceTeamSection — vazios, título do dado da linha, erro', () => 
     expect(container.querySelectorAll('[data-testid^="kanban-column-"]:not([data-testid$="-count"])').length).toBe(0);
   });
 
-  it('ok: título = "Encuadre · <rótulo da linha> · <endereço>" e 3 colunas', () => {
+  it('ok: título = "Encuadre Terapéutico: <local>" (rodada 2, decisão A/DIV-6) — o MESMO rótulo careLocationOptions da tabela seletora; e 3 colunas', () => {
     mockHook({ status: 'ok', team: TEAM });
     const { container } = render(
       <ServiceTeamSection patientId="p1" service={SERVICE} address={ADDRESS_HOME} selectionNonce={0} />,
     );
-    expect(screen.getByTestId('quadro-c-titulo').textContent).toBe(
-      'Encuadre · Acompañante Terapéutico · Rua Augusta, 975 - Centro',
-    );
+    expect(screen.getByTestId('quadro-c-titulo').textContent).toBe('Encuadre Terapéutico: Domicilio');
     expect(container.querySelectorAll('[data-testid^="kanban-column-"]:not([data-testid$="-count"])').length).toBe(3);
     expectNoRawEnumLeaks(container);
   });
 
-  it('ok sem endereço vinculado: título usa o rótulo "sin dirección"', () => {
+  it('careLocation null + endereço presente: título cai no endereço (fallback)', () => {
     mockHook({ status: 'ok', team: TEAM });
-    render(<ServiceTeamSection patientId="p1" service={SERVICE} address={null} selectionNonce={0} />);
+    render(<ServiceTeamSection patientId="p1" service={{ ...SERVICE, careLocation: null }} address={ADDRESS_HOME} selectionNonce={0} />);
     expect(screen.getByTestId('quadro-c-titulo').textContent).toBe(
-      'Encuadre · Acompañante Terapéutico · sin dirección',
+      'Encuadre Terapéutico: Rua Augusta, 975 - Centro',
     );
+  });
+
+  it('careLocation null + sem endereço vinculado: título usa o rótulo "sin dirección"', () => {
+    mockHook({ status: 'ok', team: TEAM });
+    render(<ServiceTeamSection patientId="p1" service={{ ...SERVICE, careLocation: null }} address={null} selectionNonce={0} />);
+    expect(screen.getByTestId('quadro-c-titulo').textContent).toBe('Encuadre Terapéutico: sin dirección');
   });
 
   it('error: "quadro-c-erro"', () => {

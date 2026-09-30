@@ -10,7 +10,13 @@ import type {
   UpdateContractedServiceBody,
 } from '@domain/entities/PatientContractedService';
 import type { PatientKanbanServiceSummary } from '@domain/entities/PatientLifecycle';
-import type { ItineraryAbsenceResult, ServiceTeam, ServiceTeamMember } from '@domain/entities/ServiceTeam';
+import type {
+  ItineraryAbsenceResult,
+  ServiceTeam,
+  ServiceTeamMember,
+  ServiceTeamContact,
+  RegisterServiceTeamContactBody,
+} from '@domain/entities/ServiceTeam';
 import type { ItineraryOverlapDetail, PatientItinerary } from '@domain/entities/PatientItinerary';
 
 export class ContractedServiceApiError extends Error {
@@ -272,6 +278,35 @@ class AdminContractedServicesApiServiceClass {
       'POST',
       `/api/admin/patients/${patientId}/contracted-services/${serviceId}/team/revert`,
       { workerId, reasonCategory },
+    );
+  }
+
+  /**
+   * GET .../team/:workerId/contact — modal do prestador (rodada 2, decisão D): nome/telefone
+   * projetados (célula `worker_contact:read`) + histórico de contato (migration 490). 404 quando
+   * o serviço não existe/é de outro paciente/está fora da RLS, OU o prestador nunca foi deste time.
+   */
+  async getServiceTeamContact(patientId: string, serviceId: string, workerId: string): Promise<ServiceTeamContact> {
+    return this.request<ServiceTeamContact>(
+      'GET',
+      `/api/admin/patients/${patientId}/contracted-services/${serviceId}/team/${workerId}/contact`,
+    );
+  }
+
+  /**
+   * POST .../team/:workerId/contact — grava um registro de contato (linha NOVA, append-only,
+   * nunca reescreve as anteriores); devolve o histórico já recalculado (0 GET extra).
+   */
+  async registerServiceTeamContact(
+    patientId: string,
+    serviceId: string,
+    workerId: string,
+    body: RegisterServiceTeamContactBody,
+  ): Promise<ServiceTeamContact> {
+    return this.request<ServiceTeamContact>(
+      'POST',
+      `/api/admin/patients/${patientId}/contracted-services/${serviceId}/team/${workerId}/contact`,
+      body,
     );
   }
 }

@@ -149,6 +149,7 @@ const contractedServiceSchema = z
       .nullable(),
     // Spec 018, PR-6: vaga viva deste serviço (null = pode ativar recrutamento; "Ver vacante" senão).
     liveVacancyId: z.string().nullable(),
+    requiredSex: z.string().nullable(),
     active: z.boolean(),
     endedAt: isoDate.nullable(),
     country: z.string(),

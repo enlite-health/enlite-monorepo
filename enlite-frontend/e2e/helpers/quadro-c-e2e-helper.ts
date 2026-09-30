@@ -103,10 +103,10 @@ export function countMarks(serviceId: string, workerId: string, opts: { active?:
 }
 
 /**
- * Ficha do paciente → clique real na aba `contractedService` (`PD/PatientProfileTabs.tsx:19`) →
- * espera o card renderizar. Molde `clickFoguete` (lancamento-e2e-helper.ts:354-378), sem o
- * `realClick` por `evaluate` — os irmãos que só clicam a aba usam `.click()` direto (achado: a
- * maioria dos specs @integration desta pasta, ex. `admission-b-campos...ts:154`).
+ * Ficha do paciente → clique real na aba "Servicio Contratado" → espera o card de serviços. A
+ * EDIÇÃO do serviço (drawer com `providers-section`) continua morando aqui; só o quadro C saiu
+ * para a aba "Encuadre" (`openEncuadreTab`). Faz o `goto` — quem só clica a aba, sem navegar,
+ * cai na tela de login/home (foi o timeout de `alocacao-antiga-so-leitura`).
  */
 export async function openContractedServiceTab(page: Page, patientId: string): Promise<void> {
   const isDetail = new RegExp(`/api/admin/patients/${patientId}(\\?|$)`);
@@ -121,22 +121,38 @@ export async function openContractedServiceTab(page: Page, patientId: string): P
 }
 
 /**
- * Clica a linha do serviço (seleciona o quadro C **e** abre o drawer de detalhe, DX-10.9) e fecha
- * o drawer pelo testid `contracted-service-detail-close` (`ContractedServiceDetailDrawer.tsx:110`)
- * — o quadro C continua selecionado, só o drawer sai do caminho das asserções da seção.
+ * Ficha do paciente → clique real na aba `encuadre` (`PD/PatientProfileTabs.tsx`) → espera o
+ * root da aba renderizar. Molde `clickFoguete` (lancamento-e2e-helper.ts:354-378), sem o
+ * `realClick` por `evaluate` — os irmãos que só clicam a aba usam `.click()` direto (achado: a
+ * maioria dos specs @integration desta pasta, ex. `admission-b-campos...ts:154`).
+ *
+ * 29/09: renomeado de `openEncuadreTab` — o quadro C (que este helper existe para
+ * alcançar) SAIU da aba "Servicio Contratado" e vive agora na aba "Encuadre" (`EncuadreTab.tsx`).
+ */
+export async function openEncuadreTab(page: Page, patientId: string): Promise<void> {
+  const isDetail = new RegExp(`/api/admin/patients/${patientId}(\\?|$)`);
+  const detailLoaded = page
+    .waitForResponse((r) => r.request().method() === 'GET' && isDetail.test(r.url()), { timeout: 20_000 })
+    .catch(() => null);
+  await page.goto(`/admin/patients/${patientId}`);
+  await detailLoaded;
+  await expect(page.getByTestId('patient-profile-tabs')).toBeVisible({ timeout: 15_000 });
+  await page.getByTestId('patient-profile-tabs').getByRole('button', { name: 'Encuadre' }).click();
+  await expect(page.getByTestId('encuadre-tab')).toBeVisible({ timeout: 15_000 });
+}
+
+/**
+ * Clica a linha do serviço no SELETOR da aba "Encuadre" (`encuadre-service-row-<id>`) — seleciona
+ * o quadro C daquele serviço. 29/09: diferente da linha da aba "Servicio Contratado", esta NÃO
+ * abre drawer nenhum (a edição do serviço continua só na outra aba) — não há mais o passo de
+ * fechar `contracted-service-detail-close` que existia quando a seleção e o drawer eram o MESMO
+ * clique (DX-10.9, código antigo).
  */
 export async function selectServiceRow(page: Page, serviceId: string): Promise<void> {
-  const row = page.getByTestId(`contracted-service-row-${serviceId}`);
+  const row = page.getByTestId(`encuadre-service-row-${serviceId}`);
   await expect(row).toBeVisible({ timeout: 15_000 });
   await row.click();
-  const closeBtn = page.getByTestId('contracted-service-detail-close');
-  await expect(closeBtn).toBeVisible({ timeout: 15_000 });
-  await closeBtn.click();
-  // O drawer some da tela em `CLOSE_MS` (300 ms, `ContractedServiceDetailDrawer.tsx:19,54`) e só
-  // DESMONTA (`selected` vira `null` no pai) depois desse timer — sem esperar o unmount, uma
-  // re-seleção da MESMA linha logo em seguida cai no meio da animação (o `key={selected.id}` não
-  // muda, o componente não remonta) e o botão de fechar fica "detached", achado do P24.
-  await expect(closeBtn).not.toBeAttached({ timeout: 2_000 });
+  await expect(row).toHaveAttribute('aria-selected', 'true', { timeout: 5_000 });
 }
 
 /**
@@ -150,4 +166,72 @@ export function cleanupQuadroC(patientId: string): void {
     `DELETE FROM contracted_service_rejections WHERE service_id IN (SELECT id FROM patient_contracted_services WHERE patient_id = '${patientId}')`,
   );
   cleanupItinerary(patientId);
+}
+
+// ── Modal do prestador (rodada 2, decisão D) — GET/POST .../team/:workerId/contact ───────────
+
+export interface ServiceTeamContactHistoryEntryDto {
+  id: string;
+  contacted: boolean;
+  eventDate: string;
+  note: string | null;
+  createdAt: string;
+}
+
+export interface ServiceTeamContactDto {
+  workerId: string;
+  displayName: string | null;
+  history: ServiceTeamContactHistoryEntryDto[];
+}
+
+export interface ServiceTeamContactApiResult {
+  status: number;
+  body: { success: boolean; data?: ServiceTeamContactDto; error?: string; code?: string };
+}
+
+/** `GET .../team/:workerId/contact` — cru, sem mock. `token` explícito para testar sem-célula/cross-tenant. */
+export async function getServiceTeamContactApi(
+  request: APIRequestContext,
+  patientId: string,
+  serviceId: string,
+  workerId: string,
+  token: string,
+): Promise<ServiceTeamContactApiResult> {
+  const res = await request.get(
+    `${backendUrl()}/api/admin/patients/${patientId}/contracted-services/${serviceId}/team/${workerId}/contact`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  const status = res.status();
+  const body = (await res.json().catch(() => ({ success: false }))) as ServiceTeamContactApiResult['body'];
+  return { status, body };
+}
+
+export interface PostServiceTeamContactBody {
+  contacted: boolean;
+  eventDate: string;
+  note: string | null;
+}
+
+/** `POST .../team/:workerId/contact` — cru, sem mock. Cada chamada cria linha NOVA (append-only). */
+export async function postServiceTeamContactApi(
+  request: APIRequestContext,
+  patientId: string,
+  serviceId: string,
+  workerId: string,
+  token: string,
+  body: PostServiceTeamContactBody,
+): Promise<ServiceTeamContactApiResult> {
+  const res = await request.post(
+    `${backendUrl()}/api/admin/patients/${patientId}/contracted-services/${serviceId}/team/${workerId}/contact`,
+    { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, data: body },
+  );
+  const status = res.status();
+  const responseBody = (await res.json().catch(() => ({ success: false }))) as ServiceTeamContactApiResult['body'];
+  return { status, body: responseBody };
+}
+
+/** Limpa `service_team_contact_log` por `service_id` — nunca por título (mesmo molde de `cleanupQuadroC`). */
+export function cleanupServiceTeamContactLog(serviceId: string): void {
+  if (!serviceId) return;
+  runSQL(`DELETE FROM service_team_contact_log WHERE service_id = '${serviceId}'`);
 }
