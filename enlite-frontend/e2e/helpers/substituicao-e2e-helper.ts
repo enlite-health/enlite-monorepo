@@ -56,9 +56,11 @@ export async function registerAbsenceApi(
   allocationId: string,
   body: AbsenceWriteBody,
 ): Promise<AbsenceApiResult<AbsenceDto>> {
+  // Fase 2 (itinerario-trocas): o motivo é obrigatório na API. 'OTHER' é a carga inicial do catálogo; quem quer provar a
+  // AUSÊNCIA de motivo passa `reasonCategory: undefined` explícito (o spread abaixo deixa o dele vencer).
   const res = await request.post(
     `${backendUrl()}/api/admin/patients/${patientId}/contracted-services/${serviceId}/itinerary/allocations/${allocationId}/absences`,
-    { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, data: body },
+    { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, data: { reasonCategory: 'OTHER', ...body } },
   );
   const status = res.status();
   const responseBody = (await res.json().catch(() => ({ success: false }))) as AbsenceApiResult<AbsenceDto>['body'];
@@ -174,6 +176,11 @@ export async function openServiceTeamOf(page: Page, patientId: string, serviceId
  */
 export function cleanupSubstituicao(patientId: string): void {
   if (!patientId) return;
+  // O registro de trocas (494) aponta para a ausência sem cascata: sai ANTES dela.
+  runSQL(
+    `DELETE FROM patient_itinerary_change_log WHERE contracted_service_id IN (` +
+      `SELECT id FROM patient_contracted_services WHERE patient_id = '${patientId}')`,
+  );
   runSQL(
     `DELETE FROM patient_itinerary_absence WHERE assignment_id IN (` +
       `SELECT pia.id FROM patient_itinerary_assignment pia ` +

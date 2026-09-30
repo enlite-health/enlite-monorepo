@@ -470,6 +470,7 @@ test.describe('cadeia-completa @integration', () => {
         await page.getByTestId(`service-team-substitute-${wa}`).click();
         await expect(page.getByTestId('substitution-modal')).toBeVisible();
         await page.getByTestId('substitution-date').selectOption(d);
+        await page.getByTestId('substitution-reason').selectOption('OTHER');
         await page.getByTestId('substitution-worker').click();
         await page.getByPlaceholder('Buscar...').pressSequentially(wsLabel, { delay: 20 });
         await page.getByRole('option', { name: wsLabel }).click();

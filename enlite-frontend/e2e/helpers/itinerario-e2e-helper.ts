@@ -190,6 +190,11 @@ export function seedAssignment(opts: SeedAssignmentOpts): string {
  */
 export function cleanupItinerary(patientId: string): void {
   if (!patientId) return;
+  // O registro de trocas (migration 494) referencia alocação/ausência/prestador sem cascata: sai PRIMEIRO.
+  runSQL(
+    `DELETE FROM patient_itinerary_change_log WHERE contracted_service_id IN (` +
+      `SELECT id FROM patient_contracted_services WHERE patient_id = '${patientId}')`,
+  );
   runSQL(
     `DELETE FROM patient_itinerary_assignment WHERE slot_id IN (` +
       `SELECT pis.id FROM patient_itinerary_slot pis ` +
