@@ -18,6 +18,7 @@ import {
   EXTERNAL_CONTACT_RELATION_CODES,
   PATIENT_GENDERS,
   PATIENT_LANGUAGES,
+  SUSPENSION_EXIT_REASONS,
 } from '@domain/entities/patientEnums';
 import {
   SERVICE_CODES,
@@ -106,6 +107,11 @@ const PATIENT_ENUM_GROUPS: Array<[string, readonly string[]]> = [
   // faltavam ON_HOLD/SEARCHING/REPLACEMENT e sobrava DISCONTINUED (saiu do vocabulário, migration
   // 314). A fonte viva é a mesma PATIENT_STATUSES do resto da ficha, não uma lista própria do mapa.
   ['admin.map.patientStatus', PATIENT_STATUSES],
+  // Decisão do Gabriel 29/09/2026 (migration 486): motivo de saída de SUSPENDED. Vai no FIM do
+  // array, de propósito — o teste de "eco do enum cru" abaixo usa `.slice(0, 5)` sobre ESTE
+  // array; inserir mais cedo deslocaria a janela e tiraria `relationshipOptions` do check sem
+  // ninguém notar.
+  ['admin.patients.suspensionExitReasonOptions', SUSPENSION_EXIT_REASONS],
 ];
 
 describe.each([

@@ -229,7 +229,9 @@ export const patientDetailContractSchema = z
     // Spec 016 F2 (D263), C5 — diagnóstico estruturado (REQ-21: sem code/chapter/release, só
     // {id,uri,title,isPrimary,source,active}). Bulkhead do backend (C4): `diagnosesUnavailable`
     // distingue "paciente sem diagnóstico" ([], false) de "não consegui ler" ([], true).
-    diagnoses: z.array(diagnosisPublicViewSchema),
+    // `null` = ator sem `patient_clinical:read` (D113/D286) — DraftVacancyPage.tsx colapsava
+    // esse null em `[]` decidindo permissão de novo no cliente (achado do gate revisao-pr).
+    diagnoses: z.array(diagnosisPublicViewSchema).nullable(),
     diagnosesUnavailable: z.boolean(),
     lastCaseNumber: z.number().nullable().optional(),
     createdAt: isoDate,

@@ -11,6 +11,7 @@ import { FormField } from '@presentation/components/molecules/FormField';
 import { buttonClasses } from '@presentation/components/atoms/Button/buttonClasses';
 import { ChevronDown } from 'lucide-react';
 import { SelectField, type SelectOption } from '@presentation/components/molecules/SelectField';
+import { SuspensionExitReasonSelect } from './SuspensionExitReasonSelect';
 
 interface Props {
   patient: PatientDetail;
@@ -39,14 +40,19 @@ export function PatientStatusControl({ patient, onSaved }: Props): JSX.Element |
   const [status, setStatus] = useState<string>(current);
   const [reason, setReason] = useState<string>(patient.onHoldReason ?? '');
   const [note, setNote] = useState<string>(patient.onHoldNote ?? '');
+  const [exitReason, setExitReason] = useState<string>('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   if (patient.admissionStatus !== 'DONE') return null;
 
   const goingOnHold = status === 'ON_HOLD';
+  // Saída de SUSPENDED (decisão do Gabriel 29/09/2026): o paciente ESTÁ suspenso e o alvo é
+  // outro — motivo obrigatório, catálogo fechado, sem texto livre (a trilha nunca guarda texto
+  // clínico). Mesmo molde de `goingOnHold`, espelhado no servidor (PatientStatusWriter).
+  const leavingSuspended = current === 'SUSPENDED' && status !== current;
   const changed = status !== current || (goingOnHold && (reason !== (patient.onHoldReason ?? '') || note !== (patient.onHoldNote ?? '')));
-  const canSave = changed && (!goingOnHold || reason !== '') && !busy;
+  const canSave = changed && (!goingOnHold || reason !== '') && (!leavingSuspended || exitReason !== '') && !busy;
 
   const statusOptions: SelectOption[] = CLINICAL_PATIENT_STATUSES.map((s) => ({ value: s, label: t(`admin.patients.statusOptions.${s}`, s) }));
   const reasonOptions: SelectOption[] = ON_HOLD_REASONS.map((r) => ({ value: r, label: t(`admin.patients.onHoldReasonOptions.${r}`, r) }));
@@ -64,6 +70,7 @@ export function PatientStatusControl({ patient, onSaved }: Props): JSX.Element |
       // (hourlyValue). O textarea nasce vazio e desabilitado — não há valor real para preservar.
       if (!patient.onHoldNoteRedacted) payload.onHoldNote = note.trim() ? note : null;
     }
+    if (leavingSuspended) payload.suspensionExitReason = exitReason;
     try {
       await AdminApiService.updatePatientStatus(patient.id, payload);
       onSaved();
@@ -73,6 +80,8 @@ export function PatientStatusControl({ patient, onSaved }: Props): JSX.Element |
         setError(ts('transitionNotAllowed', { from: label(d.from ?? current), to: label(d.to ?? status) }));
       } else if (err instanceof PatientApiError && err.code === 'ON_HOLD_REASON_REQUIRED') {
         setError(ts('reasonRequired'));
+      } else if (err instanceof PatientApiError && err.code === 'SUSPENSION_EXIT_REASON_REQUIRED') {
+        setError(ts('suspensionExitReasonRequired'));
       } else if (err instanceof PatientApiError && err.code === 'PATIENT_STATUS_NOT_READY') {
         // Decisão do Gabriel 07/09: nomeia o que falta com as MESMAS chaves do checklist da
         // ficha — o operador lê o mesmo vocabulário aqui e no bloco de completude acima.
@@ -163,6 +172,9 @@ export function PatientStatusControl({ patient, onSaved }: Props): JSX.Element |
             </div>
           </FormField>
         </>
+      )}
+      {leavingSuspended && (
+        <SuspensionExitReasonSelect id="patient-status-exit-reason" value={exitReason} onChange={setExitReason} />
       )}
       {error && <Text size="sm" className="text-red-600" data-testid="patient-status-error">{error}</Text>}
     </div>

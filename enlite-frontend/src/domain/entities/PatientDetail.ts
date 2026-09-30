@@ -263,9 +263,13 @@ export interface PatientDetail {
    * Diagnóstico estruturado (spec 016 F2, D263 · correção C5). Bulkhead do backend (C4): uma
    * falha ao ler o catálogo de terminologia NUNCA derruba a ficha inteira — `diagnoses` vem
    * `[]` e `diagnosesUnavailable: true` diz que é "não consegui ler", não "paciente sem
-   * diagnóstico" (que é `[]` + `false`). NÃO construir tela sobre isto ainda — é a F3.
+   * diagnóstico" (que é `[]` + `false`).
+   * `null` = o ator não tem `patient_clinical:read` (D113/D286) — mesma convenção de
+   * `externalContacts`/`coverageEmergencyContacts` acima; NUNCA `[]`, que diria "sem
+   * diagnóstico" (achado do gate `revisao-pr`, spec cid-na-vacante: `DraftVacancyPage`
+   * colapsava esse `null` em `[]` decidindo a permissão de novo no cliente).
    */
-  diagnoses: PatientDiagnosisDetail[];
+  diagnoses: PatientDiagnosisDetail[] | null;
   diagnosesUnavailable: boolean;
   lastCaseNumber?: number | null;
   createdAt: string; // ISO string
