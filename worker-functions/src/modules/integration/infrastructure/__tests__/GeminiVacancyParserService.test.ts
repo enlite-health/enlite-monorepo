@@ -438,20 +438,6 @@ describe('GeminiVacancyParserService', () => {
       expect(systemPrompt).toContain('BODY<PRESCREENING_AT>');
     });
 
-    it('AT lê o slug PRESCREENING_AT e CUIDADOR lê PRESCREENING_CAREGIVER (findActiveBySlug)', async () => {
-      mockFetch.mockResolvedValue(makeGeminiResponse(makeFullParseOutput()));
-      await service.parseFromText('texto', 'AT');
-      const t1 = JSON.parse(mockFetch.mock.calls[0][1].body).systemInstruction.parts[0].text;
-      mockFetch.mockClear();
-      await service.parseFromText('texto', 'CUIDADOR');
-      const t2 = JSON.parse(mockFetch.mock.calls[0][1].body).systemInstruction.parts[0].text;
-
-      expect(mockFindActiveBySlug).toHaveBeenNthCalledWith(1, 'PRESCREENING_AT');
-      expect(mockFindActiveBySlug).toHaveBeenNthCalledWith(2, 'PRESCREENING_CAREGIVER');
-      expect(t1).toContain('BODY<PRESCREENING_AT>');
-      expect(t2).toContain('BODY<PRESCREENING_CAREGIVER>');
-    });
-
     it('deve lancar erro quando Gemini retorna HTTP error apos esgotar retries', async () => {
       // 500 is transient — fetchGeminiWithRetry retries up to MAX_ATTEMPTS (5) then throws.
       mockFetch.mockResolvedValue({
@@ -561,6 +547,20 @@ describe('GeminiVacancyParserService', () => {
       expect(url).toContain('models/gemini-test');
       expect(url).not.toContain('key=');
       expect(init.headers.Authorization).toBe('Bearer test-access-token');
+    });
+
+    it('AT lê o slug PRESCREENING_AT e CUIDADOR lê PRESCREENING_CAREGIVER (findActiveBySlug)', async () => {
+      mockFetch.mockResolvedValue(makeGeminiResponse(makeFullParseOutput()));
+      await service.parseFromText('texto', 'AT');
+      const t1 = JSON.parse(mockFetch.mock.calls[0][1].body).systemInstruction.parts[0].text;
+      mockFetch.mockClear();
+      await service.parseFromText('texto', 'CUIDADOR');
+      const t2 = JSON.parse(mockFetch.mock.calls[0][1].body).systemInstruction.parts[0].text;
+
+      expect(mockFindActiveBySlug).toHaveBeenNthCalledWith(1, 'PRESCREENING_AT');
+      expect(mockFindActiveBySlug).toHaveBeenNthCalledWith(2, 'PRESCREENING_CAREGIVER');
+      expect(t1).toContain('BODY<PRESCREENING_AT>');
+      expect(t2).toContain('BODY<PRESCREENING_CAREGIVER>');
     });
   });
 
