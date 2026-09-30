@@ -82,3 +82,15 @@ export const itineraryReplaceBodySchema = z.object({
 });
 
 export type ItineraryReplaceBody = z.infer<typeof itineraryReplaceBodySchema>;
+
+// ── Tirar do itinerário com motivo e destino (Fase 4, C6) ────────────────────────────────────
+
+// Motivo e destino: AUSENTES não podem virar 400 da borda — são 422 `REASON_REQUIRED` / `DESTINATION_REQUIRED` do
+// caso de uso (mesmo molde de `itineraryAbsenceBodySchema`). O zod garante só a FORMA (string); que o motivo exista
+// e esteja ATIVO no catálogo, e que o destino seja RESERVE|LEAVE_SERVICE, é do caso de uso.
+export const itineraryEndBodySchema = z.object({
+  reasonCategory: z.string().nullish(),
+  destination: z.string().nullish(),
+});
+
+export type ItineraryEndBody = z.infer<typeof itineraryEndBodySchema>;

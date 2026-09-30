@@ -127,6 +127,11 @@ export interface ItineraryEndResult {
   validTo: string;
 }
 
+/** `end` + o que o composto precisa (prestador titular da alocação encerrada). */
+export interface ItineraryEndWithResult extends ItineraryEndResult {
+  workerId: string | null;
+}
+
 // ── D445.5 — reemplazo permanente ──────────────────────────────────────────────────────────
 
 export interface ItineraryReplaceInput {
@@ -219,22 +224,30 @@ export class ItineraryAllocationUseCase {
 
   /** Encerrar devolve o prestador a Selecionado POR DERIVAÇÃO (`isVigente` para de contar `ENDED`); depois, a derivação do estado do paciente na mesma transação. */
   async end(input: ItineraryEndInput): Promise<ItineraryEndResult> {
+    const { allocationId, status, validTo } = await this.runInTransaction((client) => this.endWith(client, input, { derive: true }));
+    return { allocationId, status, validTo };
+  }
+
+  /**
+   * Corpo de `end` no client recebido (change itinerario-trocas-motivos-e-figma, Fase 4, D4): quem compõe
+   * (tirar com destino) abre UMA transação, chama com `derive: false` e roda a derivação por último.
+   * Devolve também o prestador titular (`workerId`) para o registro de trocas de quem compõe.
+   */
+  async endWith(client: PoolClient, input: ItineraryEndInput, opts: { derive: boolean }): Promise<ItineraryEndWithResult> {
     const { patientId, serviceId, allocationId, actorUid, now = new Date() } = input;
-    return this.runInTransaction(async (client) => {
-      const allocation = await this.writer.findAllocation(client, patientId, serviceId, allocationId);
-      if (allocation === null) throw new AllocationNotFoundError(patientId, serviceId, allocationId);
-      if (allocation.status !== 'ACTIVE') throw new AllocationNotActiveError(allocationId);
+    const allocation = await this.writer.findAllocation(client, patientId, serviceId, allocationId);
+    if (allocation === null) throw new AllocationNotFoundError(patientId, serviceId, allocationId);
+    if (allocation.status !== 'ACTIVE') throw new AllocationNotActiveError(allocationId);
 
-      const row = await this.reader.readWith(client, patientId, serviceId);
-      if (row === null) throw new AllocationNotFoundError(patientId, serviceId, allocationId);
+    const row = await this.reader.readWith(client, patientId, serviceId);
+    if (row === null) throw new AllocationNotFoundError(patientId, serviceId, allocationId);
 
-      const today = operationDateOf(row.country, now);
-      const rowCount = await this.writer.endAllocation(client, allocation.id, today, actorUid);
-      if (rowCount === 0) throw new AllocationNotActiveError(allocationId);
-      await this.derivation.run(client, patientId, now);
+    const today = operationDateOf(row.country, now);
+    const rowCount = await this.writer.endAllocation(client, allocation.id, today, actorUid);
+    if (rowCount === 0) throw new AllocationNotActiveError(allocationId);
+    if (opts.derive) await this.derivation.run(client, patientId, now);
 
-      return { allocationId: allocation.id, status: 'ENDED' as const, validTo: today };
-    });
+    return { allocationId: allocation.id, status: 'ENDED' as const, validTo: today, workerId: allocation.workerId ?? null };
   }
 
   /**

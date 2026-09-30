@@ -36,6 +36,9 @@ import {
   NoServiceWithVacancyError,
   ServiceWithoutSlotError,
 } from '../../../application/AssembleItineraryUseCase';
+import { RemoveFromItineraryUseCase } from '../../../application/RemoveFromItineraryUseCase';
+import { ServiceTeamWorkerAllocatedError } from '../../../application/ServiceTeamMarkUseCase';
+import { ServiceExitReasonRequiredError, ServiceExitReasonInvalidError, DestinationRequiredError } from '../../../domain/serviceExitReason';
 import { ItineraryOverlapError } from '../../../domain/itineraryOverlap';
 
 const PATIENT_ID = '11111111-1111-1111-1111-111111111111';
@@ -74,11 +77,13 @@ describe('AdminItineraryWriteController', () => {
   const slotUseCase = { create: jest.fn(), update: jest.fn(), end: jest.fn() };
   const allocationUseCase = { allocate: jest.fn(), end: jest.fn() };
   const assemblyUseCase = { execute: jest.fn() };
+  const removeUseCase = { execute: jest.fn() };
   const ctrl = new AdminItineraryWriteController(
     teamUseCase as unknown as GetServiceTeamUseCase,
     slotUseCase as unknown as ItinerarySlotWriteUseCase,
     allocationUseCase as unknown as ItineraryAllocationUseCase,
     assemblyUseCase as unknown as AssembleItineraryUseCase,
+    removeUseCase as unknown as RemoveFromItineraryUseCase,
   );
   beforeEach(() => jest.clearAllMocks());
 
@@ -310,36 +315,69 @@ describe('AdminItineraryWriteController', () => {
     });
   });
 
-  describe('endAllocation (POST .../itinerary/allocations/:allocationId/end)', () => {
+  describe('endAllocation (POST .../itinerary/allocations/:allocationId/end) — tirar com motivo e destino (Fase 4)', () => {
+    const PARAMS = { id: PATIENT_ID, sid: SERVICE_ID, allocationId: ALLOCATION_ID };
+    const BODY = { reasonCategory: 'DESISTENCIA_DO_PRESTADOR', destination: 'RESERVE' };
+
     it('params inválidos → 400', async () => {
       const [req, res] = reqRes({ id: PATIENT_ID, sid: SERVICE_ID });
       await ctrl.endAllocation(req, res);
       expect(res.status).toHaveBeenCalledWith(400);
-      expect(allocationUseCase.end).not.toHaveBeenCalled();
+      expect(removeUseCase.execute).not.toHaveBeenCalled();
     });
     it('sem ator → 401', async () => {
-      const [req, res] = reqRes({ id: PATIENT_ID, sid: SERVICE_ID, allocationId: ALLOCATION_ID }, {}, null);
+      const [req, res] = reqRes(PARAMS, BODY, null);
       await ctrl.endAllocation(req, res);
       expect(res.status).toHaveBeenCalledWith(401);
-      expect(allocationUseCase.end).not.toHaveBeenCalled();
+      expect(removeUseCase.execute).not.toHaveBeenCalled();
+    });
+    it('corpo com motivo de tipo errado → 400 (forma), o caso de uso não roda', async () => {
+      const [req, res] = reqRes(PARAMS, { reasonCategory: 5, destination: 'RESERVE' });
+      await ctrl.endAllocation(req, res);
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(removeUseCase.execute).not.toHaveBeenCalled();
     });
 
-    it('feliz → 200 { success:true, data }', async () => {
-      const result = { allocationId: ALLOCATION_ID, status: 'ENDED' as const, validTo: '2026-09-28' };
-      allocationUseCase.end.mockResolvedValueOnce(result);
-      const [req, res] = reqRes({ id: PATIENT_ID, sid: SERVICE_ID, allocationId: ALLOCATION_ID });
+    it('feliz → 200 { success:true, data }; o caso de uso recebe motivo e destino; o `end` antigo NÃO é chamado', async () => {
+      const result = { allocationId: ALLOCATION_ID, status: 'ENDED' as const, validTo: '2026-09-28', destination: 'RESERVE' as const };
+      removeUseCase.execute.mockResolvedValueOnce(result);
+      const [req, res] = reqRes(PARAMS, BODY);
       await ctrl.endAllocation(req, res);
       expect(res.status).toHaveBeenCalledWith(200);
       expect(jsonOf(res)).toHaveBeenCalledWith({ success: true, data: result });
-      expect(allocationUseCase.end).toHaveBeenCalledWith({ patientId: PATIENT_ID, serviceId: SERVICE_ID, allocationId: ALLOCATION_ID, actorUid: 'staff-1' });
+      expect(removeUseCase.execute).toHaveBeenCalledWith({
+        patientId: PATIENT_ID,
+        serviceId: SERVICE_ID,
+        allocationId: ALLOCATION_ID,
+        reasonCategory: 'DESISTENCIA_DO_PRESTADOR',
+        destination: 'RESERVE',
+        actorUid: 'staff-1',
+      });
+      expect(allocationUseCase.end).not.toHaveBeenCalled();
+    });
+
+    it('corpo ausente → o caso de uso recebe motivo/destino `undefined` (quem responde 422 é ele)', async () => {
+      removeUseCase.execute.mockRejectedValueOnce(new ServiceExitReasonRequiredError());
+      const [req, res] = reqRes(PARAMS, {});
+      await ctrl.endAllocation(req, res);
+      expect(removeUseCase.execute).toHaveBeenCalledWith(expect.objectContaining({ reasonCategory: undefined, destination: undefined }));
+      expect(res.status).toHaveBeenCalledWith(422);
     });
 
     it.each([
       [new AllocationNotFoundError(PATIENT_ID, SERVICE_ID, ALLOCATION_ID), 404, { success: false, code: 'NOT_FOUND' }],
       [new AllocationNotActiveError(ALLOCATION_ID), 422, { success: false, code: 'ALLOCATION_NOT_ACTIVE' }],
+      [new ServiceExitReasonRequiredError(), 422, { success: false, code: 'REASON_REQUIRED' }],
+      [new ServiceExitReasonInvalidError(), 422, { success: false, code: 'REASON_INVALID' }],
+      [new DestinationRequiredError(), 422, { success: false, code: 'DESTINATION_REQUIRED' }],
+      [
+        new ServiceTeamWorkerAllocatedError(PATIENT_ID, SERVICE_ID, WORKER_ID),
+        422,
+        { success: false, code: 'SERVICE_TEAM_WORKER_ALLOCATED', error: 'tiene atenciones agendadas; cancele antes' },
+      ],
     ])('%p → status %i', async (err, status, body) => {
-      allocationUseCase.end.mockRejectedValueOnce(err);
-      const [req, res] = reqRes({ id: PATIENT_ID, sid: SERVICE_ID, allocationId: ALLOCATION_ID });
+      removeUseCase.execute.mockRejectedValueOnce(err);
+      const [req, res] = reqRes(PARAMS, BODY);
       await ctrl.endAllocation(req, res);
       expect(res.status).toHaveBeenCalledWith(status);
       expect(jsonOf(res)).toHaveBeenCalledWith(body);

@@ -27,6 +27,11 @@ const absenceBody = z.object({
   substituteWorkerId: z.string().uuid().optional(),
 });
 
+const endBody = z.object({
+  reasonCategory: z.string().describe('`code` de um item ATIVO do catálogo de motivos de saída.'),
+  destination: z.enum(['RESERVE', 'LEAVE_SERVICE']).describe('`RESERVE`: segue como reserva (Selecionado). `LEAVE_SERVICE`: sai do encuadre deste serviço (marca de rejeição com o mesmo motivo).'),
+});
+
 const substituteBody = z.object({ substituteWorkerId: z.string().uuid().nullable() });
 
 const commonErrors = {
@@ -175,10 +180,15 @@ registry.registerPath({
   method: 'post',
   path: '/api/admin/patients/{id}/contracted-services/{sid}/itinerary/allocations/{allocationId}/end',
   tags: ['Admin · Patients'],
-  summary: 'Encerrar uma alocação ativa do itinerário',
-  description: 'Encerrar devolve o prestador a Selecionado (C) POR DERIVAÇÃO — nenhuma marca de rejeição é gravada, nada move o paciente.',
+  summary: 'Tirar um prestador do itinerário, com motivo e destino (Fase 4)',
+  description:
+    'Corpo obrigatório `{ reasonCategory, destination }`. Numa só transação: encerra a alocação (o prestador volta a ' +
+    'Selecionado por derivação), grava o registro de trocas (`REMOVE`) e, com `LEAVE_SERVICE`, a marca de rejeição com o ' +
+    'mesmo motivo; depois deriva o estado do paciente. `RESERVE` não grava marca. 422: `REASON_REQUIRED`, ' +
+    '`REASON_INVALID`, `DESTINATION_REQUIRED`, `ALLOCATION_NOT_ACTIVE` e `SERVICE_TEAM_WORKER_ALLOCATED` (`LEAVE_SERVICE` ' +
+    'de quem tem atenciones agendadas: nada é gravado).',
   security: [{ firebaseAuth: [] }],
-  request: { params: allocationParams },
+  request: { params: allocationParams, body: { content: { 'application/json': { schema: endBody } } } },
   responses: actionResponses,
 });
 
