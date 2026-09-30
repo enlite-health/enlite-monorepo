@@ -30,7 +30,13 @@ vi.mock('../components/features/admin/AdminProtectedRoute', () => ({
   AdminProtectedRoute: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
-vi.mock('../components/features/admin/AdminLayout', () => ({
+// ⚠️ O caminho tem de ser o que o `App.tsx` IMPORTA, não um parecido. Até 30/09/2026 este mock
+// apontava para `../components/features/admin/AdminLayout`, que NÃO EXISTE (o real é
+// `templates/AdminLayout/AdminLayout`). `vi.mock` de caminho inexistente não reclama: o mock
+// simplesmente não pega, o `AdminLayout` de verdade monta, `useAdminAuth` estoura
+// "Firebase Auth not initialized" e o `AdminErrorBoundary` troca a tela. O teste virou corrida
+// entre o `waitFor` e o boundary — passou no CI uma vez e falhou na seguinte, sem nada mudar.
+vi.mock('../components/templates/AdminLayout/AdminLayout', () => ({
   AdminLayout: () => <Outlet />,
 }));
 
@@ -47,5 +53,10 @@ describe('rota de prompts de IA', () => {
     await waitFor(() => {
       expect(screen.getByTestId('pagina-prompts-ia')).toBeInTheDocument();
     });
+
+    // Trava contra o defeito acima voltar em silêncio: se algum mock deixar de pegar, o
+    // `AdminErrorBoundary` assume e mostra este título. Sem esta asserção, a falha volta a ser
+    // uma corrida que às vezes o teste ganha.
+    expect(screen.queryByText('No pudimos cargar esta página')).not.toBeInTheDocument();
   });
 });
