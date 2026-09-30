@@ -25,10 +25,10 @@ registry.registerPath({
   method: 'get',
   path: '/api/admin/patients/{id}/contracted-services/{sid}/team/{workerId}/contact',
   tags: ['Admin · Patients'],
-  summary: 'Modal do prestador: nome/telefone (projetado) + histórico de contato do par serviço×prestador',
+  summary: 'Modal do prestador: nome (projetado) + histórico de contato do par serviço×prestador',
   description:
-    'Telefone só sai com `worker_contact:read` (a mesma célula que já protege o nome no quadro C) — ' +
-    'sem ela, `phone` vem `null`, nunca erro. O histórico é o log de contato (migration 488), ' +
+    'O nome só sai com `worker_contact:read` (a mesma célula que já protege o nome no quadro C) — ' +
+    'sem ela vem o rótulo redigido, nunca erro. O telefone do prestador não faz parte do contrato (D447.3). O histórico é o log de contato (migration 488), ' +
     'append-only: uma linha por "Guardar" do modal.',
   security: [{ firebaseAuth: [] }],
   request: { params: serviceTeamContactParams },

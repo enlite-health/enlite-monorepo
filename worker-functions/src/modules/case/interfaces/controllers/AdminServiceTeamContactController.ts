@@ -82,9 +82,9 @@ export class AdminServiceTeamContactController {
     }
   }
 
-  /** Trilha de contato (C6) — só quando o telefone SAIU (displayName/phone não-nulos = célula presente). */
+  /** Trilha de contato (C6) — quando o nome do prestador SAIU (`displayName` não-nulo). */
   private emitTrail(req: Request, result: ServiceTeamContactResult): void {
-    if (result.displayName !== null || result.phone !== null) {
+    if (result.displayName !== null) {
       emitirTrilhaDeContato(req, [result.workerId]);
     }
   }

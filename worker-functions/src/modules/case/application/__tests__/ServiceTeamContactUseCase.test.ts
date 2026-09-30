@@ -52,7 +52,7 @@ function contactRepoStub(opts: { history?: ServiceTeamContactLogRow[]; workerRow
     listForPair: jest.fn().mockResolvedValue(opts.history ?? []),
     insert: jest.fn().mockResolvedValue(undefined),
     getWorkerContactRow: jest.fn().mockResolvedValue(
-      opts.workerRow ?? { id: 'w-1', firstNameEncrypted: 'enc:Marcel', lastNameEncrypted: 'enc:Araujo', whatsappPhoneEncrypted: 'enc:+5511900000000' },
+      opts.workerRow ?? { id: 'w-1', firstNameEncrypted: 'enc:Marcel', lastNameEncrypted: 'enc:Araujo' },
     ),
   };
 }
@@ -91,11 +91,11 @@ describe('GetServiceTeamContactUseCase', () => {
 
     expect(result.workerId).toBe('w-1');
     expect(result.displayName).toBe('Marcel Araujo');
-    expect(result.phone).toBe('+5511900000000');
+    expect(result).not.toHaveProperty('phone');
     expect(result.history).toEqual([{ id: 'c-1', contacted: true, eventDate: '2026-09-29', note: 'Confirmou', createdAt: '2026-09-29T10:00:00Z' }]);
   });
 
-  it('worker no time SEM worker_contact:read → displayName redigido ("Contato restrito", NOME_REDIGIDO), phone null; KMS nunca chamado (C3)', async () => {
+  it('worker no time SEM worker_contact:read → displayName redigido ("Contato restrito", NOME_REDIGIDO); KMS nunca chamado (C3)', async () => {
     const reader = readerStub(ROW_WITH_SELECTED);
     const contactRepo = contactRepoStub();
     const { kms, decrypt } = kmsSpy();
@@ -104,19 +104,21 @@ describe('GetServiceTeamContactUseCase', () => {
     const result = await useCase.execute({ patientId: 'p-1', serviceId: 's-1', workerId: 'w-1', cells: [] });
 
     expect(result.displayName).toBe(NOME_REDIGIDO);
-    expect(result.phone).toBeNull();
     expect(decrypt).not.toHaveBeenCalled();
   });
 
-  it('COM worker_contact:read (cells inclui a célula) → telefone sai', async () => {
+  it('D447.3: COM worker_contact:read o telefone do prestador NÃO sai e NUNCA é descriptografado (só nome)', async () => {
     const reader = readerStub(ROW_WITH_SELECTED);
     const contactRepo = contactRepoStub();
-    const { kms } = kmsSpy();
+    const { kms, decrypt } = kmsSpy();
     const useCase = new GetServiceTeamContactUseCase(reader, contactRepo, kms, runInTransactionStub());
 
     const result = await useCase.execute({ patientId: 'p-1', serviceId: 's-1', workerId: 'w-1', cells: [CELL_WORKER_CONTACT_READ] });
 
-    expect(result.phone).toBe('+5511900000000');
+    expect(result.displayName).toBe('Marcel Araujo');
+    expect(JSON.stringify(result)).not.toMatch(/phone|5511900000000/i);
+    expect(decrypt).toHaveBeenCalled(); // prova que o espião funciona: os nomes foram descriptografados
+    expect(decrypt.mock.calls.flat().join('|')).not.toMatch(/\+55/);
   });
 });
 
@@ -151,7 +153,7 @@ describe('RegisterServiceTeamContactUseCase', () => {
       serviceId: 's-1', workerId: 'w-1', contacted: true, eventDate: '2026-09-29', note: 'Ligou e confirmou', actorUid: 'staff:u-1',
     });
     expect(result.history).toHaveLength(1);
-    expect(result.phone).toBe('+5511900000000');
+    expect(result).not.toHaveProperty('phone');
   });
 
   it('note null é aceito e repassado como null pro insert (Notas é opcional)', async () => {

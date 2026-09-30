@@ -7,10 +7,10 @@
  *    reject/revert).
  *  - alternativo 2: `workerId` que nunca fez parte do time do serviço → 404 (não distingue de
  *    "serviço inexistente" — mesma régua do GET .../team).
- *  - alternativo 3 (rodada 3): `phone` só vem preenchido com `worker_contact:read`. `STAFF_COM`
- *    tem `patient_service_team:update` mas NÃO essa célula — GET dele devolve `phone: null` mesmo
- *    com telefone sintético semeado. `STAFF_WA` tem SÓ `worker_contact:read` — GET dele devolve o
- *    telefone (a célula decide ANTES do KMS, C3).
+ *  - alternativo 3 (D447.3): o TELEFONE DO PRESTADOR saiu do contrato — nenhuma resposta tem a
+ *    chave `phone`, com ou sem `worker_contact:read`, mesmo com telefone sintético semeado. O que a
+ *    célula decide é o NOME: `STAFF_COM` (sem a célula) recebe o rótulo redigido; `STAFF_WA` (SÓ
+ *    `worker_contact:read`) recebe o nome real (a célula decide ANTES do KMS, C3).
  *
  * Semente 100% por SQL (`insertTestPatient`/`seedServiceWithLiveVacancySql`/`insertWJA`), NUNCA
  * pela API de lançamento: `seedLaunchablePatient`/`activateRecruitmentViaApi` autenticam com
@@ -109,14 +109,19 @@ test.describe('service-team-contact-api sob engine ligado @integration', () => {
       const before = await getServiceTeamContactApi(request, patientId, serviceId, workerId, comToken);
       expect(before.status).toBe(200);
       expect(before.body.data?.history ?? []).toHaveLength(0);
-      // Alternativo 3a: COM tem patient_service_team:update mas NÃO worker_contact:read — telefone
-      // sai NULL mesmo com o sintético semeado (a célula, não a ação, decide).
-      expect(before.body.data?.phone ?? null).toBeNull();
+      // Alternativo 3a (D447.3): COM não tem worker_contact:read — sem `phone` no contrato e o
+      // nome vem redigido.
+      expect(before.body.data).not.toHaveProperty('phone');
+      expect(JSON.stringify(before.body)).not.toContain(SYNTHETIC_PHONE);
 
-      // Alternativo 3b: WA tem SÓ worker_contact:read — telefone projetado aparece.
+      // Alternativo 3b: WA tem SÓ worker_contact:read — o NOME real aparece; o telefone segue fora
+      // do contrato (o painel é focado no paciente).
       const waGet = await getServiceTeamContactApi(request, patientId, serviceId, workerId, waToken);
       expect(waGet.status).toBe(200);
-      expect(waGet.body.data?.phone).toBe(SYNTHETIC_PHONE);
+      expect(waGet.body.data).not.toHaveProperty('phone');
+      expect(JSON.stringify(waGet.body)).not.toContain(SYNTHETIC_PHONE);
+      expect(waGet.body.data?.displayName).toBeTruthy();
+      expect(waGet.body.data?.displayName).not.toBe(before.body.data?.displayName);
 
       const posted = await postServiceTeamContactApi(request, patientId, serviceId, workerId, comToken, {
         contacted: true, eventDate: '2026-09-29', note: 'Ligou e confirmou interesse',

@@ -3,7 +3,7 @@
  * 2, decisão D do brief). Dois casos de uso, um arquivo (molde `GetServiceTeamUseCase` +
  * `ServiceTeamMarkUseCase`, que também compartilham módulo/leitor):
  *
- *   `GetServiceTeamContactUseCase`  — nome/telefone do prestador (projetados) + histórico.
+ *   `GetServiceTeamContactUseCase`  — nome do prestador (projetado) + histórico.
  *   `RegisterServiceTeamContactUseCase` — grava um registro de contato (linha NOVA, nunca update)
  *                                          e devolve o mesmo formato, recalculado.
  *
@@ -13,9 +13,10 @@
  * paciente, fora da RLS, OU prestador que nunca fez parte deste time → `ServiceTeamContactNotFoundError`
  * (404) — não distingue os três (não vaza existência, mesmo molde do `ServiceTeamNotFoundError`).
  *
- * Telefone: a célula decide ANTES do KMS (C3) — `projectWorkerFields` com
- * `whatsappPhoneEncrypted` faz a mesma projeção que já protege o nome no quadro C
- * (`worker_contact:read`); sem a célula, `phone`/`whatsappPhone` saem `null` (nunca erro).
+ * Nome: a célula decide ANTES do KMS (C3) — `projectWorkerFields` faz a mesma projeção que já
+ * protege o nome no quadro C (`worker_contact:read`); sem a célula, sai o rótulo redigido (nunca
+ * erro). D447.3: o painel é focado no PACIENTE, então o telefone do prestador NÃO viaja mais neste
+ * contrato — nem é lido do banco nem descriptografado (não sobra dado de contato sem uso).
  *
  * `note` (Notas) NUNCA entra em `reportError`/log — nem aqui, nem no controller: os únicos dados
  * logados por este módulo são ids e o resultado da operação.
@@ -68,8 +69,6 @@ export interface ServiceTeamContactHistoryEntry {
 export interface ServiceTeamContactResult {
   workerId: string;
   displayName: string | null;
-  /** `null` sem `worker_contact:read` (C3) — nunca erro. */
-  phone: string | null;
   history: ServiceTeamContactHistoryEntry[];
 }
 
@@ -124,7 +123,7 @@ async function projectContact(
   workerId: string,
   cells: string[] | null,
   kms: Decryptor,
-): Promise<{ displayName: string | null; phone: string | null }> {
+): Promise<{ displayName: string | null }> {
   const workerRow = await contactRepo.getWorkerContactRow(client, workerId);
   const projected = await projectWorkerFields(
     cells,
@@ -132,11 +131,10 @@ async function projectContact(
       id: workerId,
       firstNameEncrypted: workerRow?.firstNameEncrypted ?? null,
       lastNameEncrypted: workerRow?.lastNameEncrypted ?? null,
-      whatsappPhoneEncrypted: workerRow?.whatsappPhoneEncrypted ?? null,
     },
     kms,
   );
-  return { displayName: projected.name ?? null, phone: projected.whatsappPhone ?? null };
+  return { displayName: projected.name ?? null };
 }
 
 function toEntry(row: ServiceTeamContactLogRow): ServiceTeamContactHistoryEntry {
@@ -156,11 +154,11 @@ export class GetServiceTeamContactUseCase {
 
     return this.runInTransaction(async (client) => {
       await loadAuthorizedRow(client, this.reader, patientId, serviceId, workerId, now);
-      const [{ displayName, phone }, historyRows] = await Promise.all([
+      const [{ displayName }, historyRows] = await Promise.all([
         projectContact(this.contactRepo, client, workerId, cells, this.kms),
         this.contactRepo.listForPair(client, serviceId, workerId),
       ]);
-      return { workerId, displayName, phone, history: historyRows.map(toEntry) };
+      return { workerId, displayName, history: historyRows.map(toEntry) };
     });
   }
 }
@@ -179,11 +177,11 @@ export class RegisterServiceTeamContactUseCase {
     return this.runInTransaction(async (client) => {
       await loadAuthorizedRow(client, this.reader, patientId, serviceId, workerId, now);
       await this.contactRepo.insert(client, { serviceId, workerId, contacted, eventDate, note, actorUid });
-      const [{ displayName, phone }, historyRows] = await Promise.all([
+      const [{ displayName }, historyRows] = await Promise.all([
         projectContact(this.contactRepo, client, workerId, cells, this.kms),
         this.contactRepo.listForPair(client, serviceId, workerId),
       ]);
-      return { workerId, displayName, phone, history: historyRows.map(toEntry) };
+      return { workerId, displayName, history: historyRows.map(toEntry) };
     });
   }
 }

@@ -64,18 +64,19 @@ describe('ServiceTeamContactLogRepository', () => {
     expect(params[4]).toBeNull();
   });
 
-  it('getWorkerContactRow: 1 query, SELECT em workers por id; devolve os 3 campos cifrados', async () => {
+  it('getWorkerContactRow: 1 query, SELECT em workers por id; devolve só id + nome cifrado (sem telefone, D447.3)', async () => {
     const client = clientStub([
-      { id: 'w-1', first_name_encrypted: 'enc:Marcel', last_name_encrypted: 'enc:Araujo', whatsapp_phone_encrypted: 'enc:+5511900000000' },
+      { id: 'w-1', first_name_encrypted: 'enc:Marcel', last_name_encrypted: 'enc:Araujo' },
     ]);
 
     const result = await repo.getWorkerContactRow(client as never, 'w-1');
 
     const [sql, params] = client.query.mock.calls[0];
     expect(String(sql)).toMatch(/FROM workers WHERE id = \$1/);
+    expect(String(sql)).not.toMatch(/phone/i);
     expect(params).toEqual(['w-1']);
     expect(result).toEqual({
-      id: 'w-1', firstNameEncrypted: 'enc:Marcel', lastNameEncrypted: 'enc:Araujo', whatsappPhoneEncrypted: 'enc:+5511900000000',
+      id: 'w-1', firstNameEncrypted: 'enc:Marcel', lastNameEncrypted: 'enc:Araujo',
     });
   });
 

@@ -163,7 +163,6 @@ export interface ServiceTeamContactHistoryEntryDto {
 export interface ServiceTeamContactDto {
   workerId: string;
   displayName: string | null;
-  phone: string | null;
   history: ServiceTeamContactHistoryEntryDto[];
 }
 

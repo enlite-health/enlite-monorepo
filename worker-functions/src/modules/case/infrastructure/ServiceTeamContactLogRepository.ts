@@ -33,7 +33,6 @@ export interface WorkerContactRow {
   id: string;
   firstNameEncrypted: string | null;
   lastNameEncrypted: string | null;
-  whatsappPhoneEncrypted: string | null;
 }
 
 interface ContactLogSqlRow {
@@ -89,9 +88,8 @@ export class ServiceTeamContactLogRepository {
       id: string;
       first_name_encrypted: string | null;
       last_name_encrypted: string | null;
-      whatsapp_phone_encrypted: string | null;
     }>(
-      `SELECT id, first_name_encrypted, last_name_encrypted, whatsapp_phone_encrypted
+      `SELECT id, first_name_encrypted, last_name_encrypted
          FROM workers WHERE id = $1`,
       [workerId],
     );
@@ -101,7 +99,6 @@ export class ServiceTeamContactLogRepository {
       id: row.id,
       firstNameEncrypted: row.first_name_encrypted,
       lastNameEncrypted: row.last_name_encrypted,
-      whatsappPhoneEncrypted: row.whatsapp_phone_encrypted,
     };
   }
 }
