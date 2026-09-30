@@ -36,6 +36,8 @@ export interface ItinerarySeed {
   permanentWorkerId: string;
   /** Substituto SEM conflito — o do caminho feliz (o `substituteWorkerId` colide de propósito, alternativo 1). */
   freeSubstituteWorkerId: string;
+  /** Nome de tela de cada worker sintético (`<Nome> <Sobrenome>`). */
+  names: { titular: string; substitute: string; permanent: string; free: string };
   /** Próxima segunda-feira (weekday=1) — calculada NO BANCO, nunca no runner Node. */
   nextMonday: string;
 }
@@ -43,11 +45,14 @@ export interface ItinerarySeed {
 const RUN = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const TASK_PREFIX = `itin-pw-${RUN}-`;
 
-function mkWorker(label: string, jobId: string): string {
+/** Nomes sintéticos (massa de teste) — com KMS desligado no stack local o "cifrado" é base64 puro. */
+const enc = (v: string): string => Buffer.from(v, 'utf8').toString('base64');
+
+function mkWorker(label: string, jobId: string, firstName: string, lastName: string, occupation: string): string {
   const authUid = `${TASK_PREFIX}${label}`;
   runSQL(`
     INSERT INTO workers (auth_uid, email, country, first_name_encrypted, last_name_encrypted, occupation)
-    VALUES ('${authUid}', '${authUid}@e2e.local', 'AR', NULL, NULL, 'CAREGIVER')
+    VALUES ('${authUid}', '${authUid}@e2e.local', 'AR', '${enc(firstName)}', '${enc(lastName)}', '${occupation}')
   `);
   const workerId = firstLine(runSQL(`SELECT id FROM workers WHERE auth_uid = '${authUid}'`));
   runSQL(`
@@ -95,10 +100,10 @@ export function seedItinerary(): ItinerarySeed {
     runSQL(`SELECT id FROM patient_itinerary_slot WHERE contracted_service_id = '${serviceId}' LIMIT 1`),
   );
 
-  const titularWorkerId = mkWorker('titular', jobId);
-  const substituteWorkerId = mkWorker('substituto', jobId);
-  const permanentWorkerId = mkWorker('permanente', jobId);
-  const freeSubstituteWorkerId = mkWorker('livre', jobId);
+  const titularWorkerId = mkWorker('titular', jobId, 'Alberto', 'Marquez', 'CAREGIVER');
+  const substituteWorkerId = mkWorker('substituto', jobId, 'Ana', 'Joulie', 'AT');
+  const permanentWorkerId = mkWorker('permanente', jobId, 'Marcel', 'Araujo', 'AT');
+  const freeSubstituteWorkerId = mkWorker('livre', jobId, 'Paula', 'Antonia', 'CAREGIVER');
 
   const nextMonday = firstLine(
     runSQL(`
@@ -112,7 +117,7 @@ export function seedItinerary(): ItinerarySeed {
     `),
   );
 
-  return { patientId, serviceId, jobId, slotId, addressLabel: addressFormatted, titularWorkerId, substituteWorkerId, permanentWorkerId, freeSubstituteWorkerId, nextMonday };
+  return { patientId, serviceId, jobId, slotId, addressLabel: addressFormatted, titularWorkerId, substituteWorkerId, permanentWorkerId, freeSubstituteWorkerId, nextMonday, names: { titular: 'Alberto Marquez', substitute: 'Ana Joulie', permanent: 'Marcel Araujo', free: 'Paula Antonia' } };
 }
 
 /** Aloca o titular no slot direto por SQL (equivalente ao POST .../allocations, mais rápido no seed). */

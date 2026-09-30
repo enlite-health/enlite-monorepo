@@ -18,19 +18,18 @@ interface ItineraryDayCardProps {
   asOf: string;
   /** Endereço do serviço (D445.6: só o de ENTRADA — "endereço de saída" está fora). */
   addressLabel: string;
-  /** Clicar na faixa abre o modal "Editar agendamiento" (D445.2) — com ou sem prestador vigente. */
+  /** Clicar na faixa abre o modal "Editar agendamiento" (D445.3) — com ou sem prestador vigente. */
   onEditSlot: (slotId: string) => void;
 }
 
 /**
- * Card de um dia da "Agenda de Atendimentos" (D445.2; nó Figma 11340-76163): título = nome do
+ * Card de um dia da "Agenda de Atendimentos" (D445.3; nó Figma 11340-76163): título = nome do
  * dia, expansível/colapsável (padrão: aberto quando há faixa ativa, fechado quando não há — o
  * MESMO padrão do print do Figma, onde só "Domingo" chega aberto). Por faixa ativa, UMA linha
- * horizontal (o "adicionais" do Figma — badge, endereço e prestador lado a lado, `flex-wrap` só
- * no responsivo estreito): o chip de horário em DUAS linhas (`09:00` sobre `13:00`), o endereço
+ * horizontal (o "adicionais" do Figma — badge, endereço e prestador lado a lado, endereço e prestador dividem a largura e quebram o texto (nunca a linha)): o chip de horário em DUAS linhas (`09:00` sobre `13:00`), o endereço
  * de ENTRADA do serviço com ícone (D445.6: sem a 2ª linha de "endereço de saída"/"Regular-Fin de
  * semana" que o Figma tinha ali), o prestador vigente (ou "Sin asignar") com ícone, e o ícone ⇄
- * — a linha inteira é clicável e abre "Editar agendamiento" (D445.2), estado atribuído ou não.
+ * — a linha inteira é clicável e abre "Editar agendamiento" (D445.3), estado atribuído ou não.
  */
 export function ItineraryDayCard({ serviceId, weekday, slots, asOf, addressLabel, onEditSlot }: ItineraryDayCardProps): JSX.Element {
   const { t, i18n } = useTranslation();
@@ -79,19 +78,20 @@ export function ItineraryDayCard({ serviceId, weekday, slots, asOf, addressLabel
                     {slot.endTime}
                   </Text>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex items-center gap-2 min-w-0 flex-1">
                   <MapPin size={16} className="text-primary shrink-0" />
-                  <Text as="span" size="sm" weight="medium" color="primary">
+                  <Text as="span" size="sm" weight="medium" color="primary" className="break-words min-w-0">
                     {addressLabel}
                   </Text>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 min-w-0 flex-1">
                   <User size={16} className="text-primary shrink-0" />
                   <Text
                     as="span"
                     size="sm"
                     weight="medium"
                     color="primary"
+                    className="break-words min-w-0"
                     data-testid={covering ? `itinerario-slot-prestador-${slot.id}-${covering.workerId}` : `itinerario-slot-sem-prestador-${slot.id}`}
                   >
                     {covering ? workerLabel(t, covering.workerId, covering.displayName) : ti('unassigned')}
@@ -103,7 +103,7 @@ export function ItineraryDayCard({ serviceId, weekday, slots, asOf, addressLabel
 
             if (!canEdit) {
               return (
-                <div key={slot.id} data-testid={`itinerario-slot-somente-leitura-${slot.id}`} className="flex flex-wrap items-center gap-3 w-full p-2 -m-2">
+                <div key={slot.id} data-testid={`itinerario-slot-somente-leitura-${slot.id}`} className="flex items-center gap-3 w-full p-2 -m-2">
                   {rowContent}
                 </div>
               );
@@ -115,7 +115,7 @@ export function ItineraryDayCard({ serviceId, weekday, slots, asOf, addressLabel
                 type="button"
                 onClick={() => onEditSlot(slot.id)}
                 data-testid={`itinerario-slot-editar-${slot.id}`}
-                className="flex flex-wrap items-center gap-3 w-full text-left rounded-lg hover:bg-gray-300/40 p-2 -m-2"
+                className="flex items-center gap-3 w-full text-left rounded-lg hover:bg-gray-300/40 p-2 -m-2"
               >
                 {rowContent}
               </button>

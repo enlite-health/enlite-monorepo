@@ -1,5 +1,5 @@
 /**
- * ItineraryDayCard — D445.2 (nó Figma 11340:76163). O card de um dia da agenda: expansível/
+ * ItineraryDayCard — D445.3 (nó Figma 11340:76163). O card de um dia da agenda: expansível/
  * colapsável (aberto por padrão quando há faixa ativa), o chip de horário em DUAS linhas, o
  * endereço do serviço, quem cobre em `asOf` (ou "Sin asignar"), e a linha inteira clicável abre
  * "Editar agendamiento" — gateado por `patient_itinerary:update` (D269: sem a célula, SOME o
@@ -65,13 +65,22 @@ function comEnforcement(permissions: string[]) {
   });
 }
 
-describe('ItineraryDayCard — o card de um dia da agenda (D445.2)', () => {
+describe('ItineraryDayCard — o card de um dia da agenda (D445.3)', () => {
   it('dia sem slot → testid de vazio e o texto "Sin atención", com o nome do dia, sem toggle', () => {
     const { container } = renderCard([]);
     expect(screen.getByTestId('itinerario-dia-vazio-svc-1-1')).toHaveTextContent('Sin atención');
     expect(screen.getByTestId('itinerario-dia-svc-1-1')).toHaveTextContent('lunes');
     expect(screen.queryByTestId('itinerario-dia-toggle-svc-1-1')?.querySelector('svg')).toBeNull();
     expectNoRawEnumLeaks(container);
+  });
+
+  it('Figma: badge | endereço | prestador | ⇄ na MESMA linha (sem quebra de linha)', () => {
+    renderCard([slot({ assignments: [assignment()] })]);
+    const row = screen.getByTestId('itinerario-slot-editar-slot-1');
+    expect(row.className).not.toContain('flex-wrap');
+    expect(row).toContainElement(screen.getByTestId('itinerario-slot-horario-slot-1'));
+    expect(row).toContainElement(screen.getByTestId('itinerario-slot-prestador-slot-1-worker-0000-aaaa1111'));
+    expect(row).toHaveTextContent(ADDRESS);
   });
 
   it('slot ativo sem vigente → chip com as DUAS linhas (início/fim) e "Sin asignar"; clicar chama onEditSlot', () => {

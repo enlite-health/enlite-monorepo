@@ -130,7 +130,7 @@ test.describe('itinerario-aba @integration', () => {
       await expect(par).toContainText(expectedPair(svcAfter.cobertas, svcAfter.contratadas.weekly));
       await expect(page.getByTestId(`itinerario-slot-prestador-${slotId}-${w}`)).toBeVisible();
       await expect(slotAllocationsInDom(page, slotId)).toHaveCount(1);
-      // D445.2 (rodada 2): a faixa continua clicável mesmo coberta — "Editar agendamiento" também
+      // D445.3 (rodada 2): a faixa continua clicável mesmo coberta — "Editar agendamiento" também
       // serve para TROCAR quem cobre, não só para alocar; o testid NÃO some mais (molde antigo).
       await expect(page.getByTestId(`itinerario-slot-editar-${slotId}`)).toBeVisible();
       const domCount = await countSlotAllocationsInDom(page, slotId);
@@ -269,7 +269,8 @@ test.describe('itinerario-aba @integration', () => {
       await modal.getByTestId('itinerario-editar-prestador').click();
 
       // O `SearchableSelect` abre com 1 linha de valor vazio (o placeholder) antes das opções.
-      const listed = modal.getByRole('option');
+      // A lista do SearchableSelect (o `<select>` desabilitado de "Día de la semana" também tem `option`).
+      const listed = modal.getByRole('listbox').getByRole('option');
       await expect(listed).toHaveCount(n + 1);
       await expect(listed.nth(0)).toHaveAttribute('aria-selected', 'true');
       await expect(modal.getByRole('option', { name: w1Label })).toHaveCount(1);

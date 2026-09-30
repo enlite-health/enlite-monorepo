@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Heading } from '@presentation/components/atoms/Heading';
+import { Text } from '@presentation/components/atoms/Text';
 import { Select } from '@presentation/components/atoms/Select';
-import { Button } from '@presentation/components/atoms/Button';
 import type { ServiceTeamAllocation, ServiceTeamMember } from '@domain/entities/ServiceTeam';
 import type { AllocationOptionsLoad } from '@hooks/admin/usePatientItinerary';
 import { SubstitutionDayModal } from './SubstitutionDayModal';
+import { SidePanelShell } from './SidePanelShell';
 
 export interface NewSubstitutionServiceOption {
   serviceId: string;
@@ -62,40 +63,32 @@ export function NewSubstitutionModal({
 
   if (!service) {
     return (
-      <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" data-testid="itinerario-novo-modal">
-        <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl flex flex-col gap-4">
-          <Heading level={3} className="text-primary">
-            {tn('title')}
-          </Heading>
-          <Select
+      <SidePanelShell ariaLabel={tn('title')} onClose={onCancel} testId="itinerario-novo-modal">
+        <Heading level={1} as="h2" weight="semibold" color="primary">
+          {tn('title')}
+        </Heading>
+        <Select
           inputSize="compact"
-            data-testid="itinerario-novo-servico"
-            options={services.map((s) => ({ value: s.serviceId, label: s.label }))}
-            value={serviceId}
-            onValueChange={setServiceId}
-            placeholder={tn('servicePlaceholder')}
-          />
-          <Button variant="outline" size="sm" onClick={onCancel} data-testid="itinerario-novo-cancelar">
-            {tn('cancel')}
-          </Button>
-        </div>
-      </div>
+          data-testid="itinerario-novo-servico"
+          options={services.map((s) => ({ value: s.serviceId, label: s.label }))}
+          value={serviceId}
+          onValueChange={setServiceId}
+          placeholder={tn('servicePlaceholder')}
+        />
+      </SidePanelShell>
     );
   }
 
   if (loadFailed) {
     return (
-      <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" data-testid="itinerario-novo-modal">
-        <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl flex flex-col gap-4">
-          <Heading level={3} className="text-primary">
-            {tn('title')}
-          </Heading>
-          <p data-testid="itinerario-novo-erro">{tn('loadOptionsError')}</p>
-          <Button variant="outline" size="sm" onClick={onCancel} data-testid="itinerario-novo-cancelar">
-            {tn('cancel')}
-          </Button>
-        </div>
-      </div>
+      <SidePanelShell ariaLabel={tn('title')} onClose={onCancel} testId="itinerario-novo-modal">
+        <Heading level={1} as="h2" weight="semibold" color="primary">
+          {tn('title')}
+        </Heading>
+        <Text size="sm" role="alert" color="inherit" className="text-red-600" data-testid="itinerario-novo-erro">
+          {tn('loadOptionsError')}
+        </Text>
+      </SidePanelShell>
     );
   }
 
@@ -104,9 +97,12 @@ export function NewSubstitutionModal({
       allocations={service.allocations}
       selected={options ?? []}
       asOf={asOf}
-      onSubmit={(allocationId, date, substituteWorkerId) => onSubmitComplementary(service.serviceId, allocationId, date, substituteWorkerId)}
+      onSubmit={(allocationId, date, substituteWorkerId) =>
+        onSubmitComplementary(service.serviceId, allocationId, date, substituteWorkerId)
+      }
       onSubmitPermanent={(allocationId, newWorkerId, fromDate) => onSubmitPermanent(service.serviceId, allocationId, newWorkerId, fromDate)}
       onCancel={onCancel}
+      panel
     />
   );
 }

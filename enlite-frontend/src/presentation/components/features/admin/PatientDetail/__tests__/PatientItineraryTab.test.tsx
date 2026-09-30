@@ -168,12 +168,12 @@ describe('PatientItineraryTab — a aba do itinerário (D445)', () => {
     expect(screen.queryByTestId('itinerario-editar-modal')).toBeNull();
   });
 
-  it('cancelar fecha o modal sem allocate', async () => {
+  it('Esc fecha o painel sem allocate', async () => {
     mockUsePatientItinerary.mockReturnValue(hookState());
     renderTab();
     fireEvent.click(screen.getByTestId('itinerario-slot-editar-slot-1'));
-    fireEvent.click(screen.getByTestId('itinerario-editar-cancelar'));
-    expect(screen.queryByTestId('itinerario-editar-modal')).toBeNull();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByTestId('itinerario-editar-modal')).toBeNull());
     expect(allocate).not.toHaveBeenCalled();
   });
 

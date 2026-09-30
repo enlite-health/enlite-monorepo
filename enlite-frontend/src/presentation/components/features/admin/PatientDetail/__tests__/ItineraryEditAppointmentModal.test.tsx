@@ -1,10 +1,10 @@
 /**
- * ItineraryEditAppointmentModal — D445.2 (nós Figma 11340:76269/76377/76652). "Día de la semana"
+ * ItineraryEditAppointmentModal — D445.3 (nós Figma 11340:76269/76377/76652). "Día de la semana"
  * e "Horario" desabilitados (chave imutável); "Dirección de entrada" só leitura (D445.6); os
  * contadores de "Búsqueda de urgencia" NUNCA aparecem sem fonte (D445.7) — só o link/aviso.
  */
 import { describe, it, expect, beforeAll, vi } from 'vitest';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen, fireEvent, within, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
@@ -52,14 +52,16 @@ describe('ItineraryEditAppointmentModal', () => {
   it('"Día de la semana" e "Horario" ficam DESABILITADOS (chave imutável)', () => {
     renderModal();
     expect(screen.getByTestId('itinerario-editar-dia')).toBeDisabled();
-    expect(screen.getByTestId('itinerario-editar-dia')).toHaveValue('lunes');
+    // Figma: "Día de la semana" é um SELECT desabilitado (com seta); "Horario" um input.
+    expect(screen.getByTestId('itinerario-editar-dia').tagName).toBe('SELECT');
+    expect(screen.getByTestId('itinerario-editar-dia')).toHaveDisplayValue('lunes');
     expect(screen.getByTestId('itinerario-editar-horario')).toBeDisabled();
     expect(screen.getByTestId('itinerario-editar-horario')).toHaveValue('08:00 - 12:00');
   });
 
   it('"Dirección de entrada" é só leitura, com o endereço do serviço', () => {
     renderModal();
-    expect(screen.getByTestId('itinerario-editar-endereco')).toBeDisabled();
+    expect(screen.getByTestId('itinerario-editar-endereco')).toHaveAttribute('readonly');
     expect(screen.getByTestId('itinerario-editar-endereco')).toHaveValue('Rua Augusta, 975');
   });
 
@@ -146,9 +148,16 @@ describe('ItineraryEditAppointmentModal', () => {
     expect(screen.getByTestId('itinerario-editar-sem-opcoes')).toBeInTheDocument();
   });
 
-  it('Cerrar chama onCancel', () => {
+  it('não há botão "Cerrar": Esc fecha o painel (onCancel após a animação)', async () => {
     const { onCancel } = renderModal();
-    fireEvent.click(screen.getByTestId('itinerario-editar-cancelar'));
-    expect(onCancel).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('itinerario-editar-cancelar')).toBeNull();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    await waitFor(() => expect(onCancel).toHaveBeenCalledTimes(1));
+  });
+
+  it('clicar no overlay fecha o painel', async () => {
+    const { onCancel } = renderModal();
+    fireEvent.click(screen.getByTestId('itinerario-editar-modal-backdrop'));
+    await waitFor(() => expect(onCancel).toHaveBeenCalledTimes(1));
   });
 });

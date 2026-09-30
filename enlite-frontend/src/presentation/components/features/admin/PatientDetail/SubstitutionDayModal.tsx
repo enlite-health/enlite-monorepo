@@ -8,6 +8,7 @@ import { SearchableSelect } from '@presentation/components/molecules/SearchableS
 import { nextDatesOfWeekday, formatDDMM, weekdayName } from './substitutionDates';
 import type { ServiceTeamAllocation, ServiceTeamMember } from '@domain/entities/ServiceTeam';
 import { workerLabel } from './workerLabel';
+import { SidePanelShell } from './SidePanelShell';
 
 interface SubstitutionDayModalProps {
   allocations: ServiceTeamAllocation[];
@@ -21,6 +22,12 @@ interface SubstitutionDayModalProps {
    * continua sendo só "Sustituir un día" (complementar), zero mudança visual ali.
    */
   onSubmitPermanent?: (allocationId: string, newWorkerId: string, fromDate: string) => void;
+  /**
+   * Renderiza como PAINEL LATERAL (`SidePanelShell`: título + "Confirmar" na mesma linha, sem
+   * botão Cancelar — fecha por overlay/Esc). É o "Nuevo +" da aba Itinerario; o `ServiceTeamBoard`
+   * não passa e segue com o diálogo central de sempre.
+   */
+  panel?: boolean;
 }
 
 /** Quantas próximas datas o `Select` oferece (DX-13.13) — sempre por `nextDatesOfWeekday`. */
@@ -49,6 +56,7 @@ export function SubstitutionDayModal({
   onSubmit,
   onCancel,
   onSubmitPermanent,
+  panel = false,
 }: SubstitutionDayModalProps): JSX.Element {
   const { t, i18n } = useTranslation();
   const [allocationId, setAllocationId] = useState(allocations.length === 1 ? allocations[0].allocationId : '');
@@ -98,92 +106,105 @@ export function SubstitutionDayModal({
 
   const canConfirm = Boolean(allocationId && date && (!isPermanent || substituteWorkerId));
 
+  const title = t('admin.patients.detail.serviceTeam.substitution.title');
+  const confirmLabel = t('admin.patients.detail.serviceTeam.substitution.confirm');
+
+  const modeToggle = onSubmitPermanent ? (
+    <div data-testid="substitution-mode" className="flex gap-4">
+      <label className="flex items-center gap-2">
+        <input
+          type="radio"
+          name="substitution-mode"
+          checked={mode === 'COMPLEMENTARY'}
+          onChange={() => handleModeChange('COMPLEMENTARY')}
+          data-testid="substitution-mode-complementary"
+        />
+        <Text as="span" size="sm">
+          {t('admin.patients.detail.serviceTeam.substitution.modeComplementary')}
+        </Text>
+      </label>
+      <label className="flex items-center gap-2">
+        <input
+          type="radio"
+          name="substitution-mode"
+          checked={mode === 'PERMANENT'}
+          onChange={() => handleModeChange('PERMANENT')}
+          data-testid="substitution-mode-permanent"
+        />
+        <Text as="span" size="sm">
+          {t('admin.patients.detail.serviceTeam.substitution.modePermanent')}
+        </Text>
+      </label>
+    </div>
+  ) : null;
+
+  const fields = (
+    <>
+      <Select
+        inputSize="compact"
+        data-testid="substitution-slot"
+        options={slotOptions}
+        value={allocationId}
+        onValueChange={handleSlotChange}
+        placeholder={t('admin.patients.detail.serviceTeam.substitution.slot')}
+      />
+
+      <Select
+        inputSize="compact"
+        data-testid="substitution-date"
+        options={dateOptions}
+        value={date}
+        onValueChange={setDate}
+        disabled={!allocation}
+        placeholder={t('admin.patients.detail.serviceTeam.substitution.date')}
+      />
+
+      <SearchableSelect
+        data-testid="substitution-worker"
+        inputSize="compact"
+        options={workerOptions}
+        value={substituteWorkerId}
+        onChange={setSubstituteWorkerId}
+        label={t('admin.patients.detail.serviceTeam.substitution.worker')}
+      />
+
+      <Text as="p" size="xs" color="secondary" data-testid="substitution-anacare-notice">
+        {t('admin.patients.detail.serviceTeam.substitution.anaCareNotice')}
+      </Text>
+    </>
+  );
+
+  if (panel) {
+    return (
+      <SidePanelShell ariaLabel={title} onClose={onCancel} testId="substitution-modal">
+        <div className="flex items-center justify-between w-full">
+          <Heading level={1} as="h2" weight="semibold" color="primary">
+            {title}
+          </Heading>
+          <Button variant="primary" size="md" className="w-[160px]" onClick={handleConfirm} disabled={!canConfirm} data-testid="substitution-confirm">
+            {confirmLabel}
+          </Button>
+        </div>
+        {modeToggle}
+        {fields}
+      </SidePanelShell>
+    );
+  }
+
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50" data-testid="substitution-modal">
       <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl flex flex-col gap-4">
         <Heading level={3} className="text-primary">
-          {t('admin.patients.detail.serviceTeam.substitution.title')}
+          {title}
         </Heading>
-
-        {onSubmitPermanent && (
-          <div data-testid="substitution-mode" className="flex gap-4">
-            <label className="flex items-center gap-2">
-              <input
-                type="radio"
-                name="substitution-mode"
-                checked={mode === 'COMPLEMENTARY'}
-                onChange={() => handleModeChange('COMPLEMENTARY')}
-                data-testid="substitution-mode-complementary"
-              />
-              <Text as="span" size="sm">
-                {t('admin.patients.detail.serviceTeam.substitution.modeComplementary')}
-              </Text>
-            </label>
-            <label className="flex items-center gap-2">
-              <input
-                type="radio"
-                name="substitution-mode"
-                checked={mode === 'PERMANENT'}
-                onChange={() => handleModeChange('PERMANENT')}
-                data-testid="substitution-mode-permanent"
-              />
-              <Text as="span" size="sm">
-                {t('admin.patients.detail.serviceTeam.substitution.modePermanent')}
-              </Text>
-            </label>
-          </div>
-        )}
-
-        <Select
-          inputSize="compact"
-          data-testid="substitution-slot"
-          options={slotOptions}
-          value={allocationId}
-          onValueChange={handleSlotChange}
-          placeholder={t('admin.patients.detail.serviceTeam.substitution.slot')}
-        />
-
-        <Select
-          inputSize="compact"
-          data-testid="substitution-date"
-          options={dateOptions}
-          value={date}
-          onValueChange={setDate}
-          disabled={!allocation}
-          placeholder={t('admin.patients.detail.serviceTeam.substitution.date')}
-        />
-
-        <SearchableSelect
-          data-testid="substitution-worker"
-          options={workerOptions}
-          value={substituteWorkerId}
-          onChange={setSubstituteWorkerId}
-          label={t('admin.patients.detail.serviceTeam.substitution.worker')}
-        />
-
-        <Text as="p" size="xs" color="secondary" data-testid="substitution-anacare-notice">
-          {t('admin.patients.detail.serviceTeam.substitution.anaCareNotice')}
-        </Text>
-
+        {modeToggle}
+        {fields}
         <div className="flex gap-3">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onCancel}
-            className="flex-1"
-            data-testid="substitution-cancel"
-          >
+          <Button variant="outline" size="sm" onClick={onCancel} className="flex-1" data-testid="substitution-cancel">
             {t('admin.patients.detail.serviceTeam.substitution.cancel')}
           </Button>
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={handleConfirm}
-            disabled={!canConfirm}
-            className="flex-1"
-            data-testid="substitution-confirm"
-          >
-            {t('admin.patients.detail.serviceTeam.substitution.confirm')}
+          <Button variant="primary" size="sm" onClick={handleConfirm} disabled={!canConfirm} className="flex-1" data-testid="substitution-confirm">
+            {confirmLabel}
           </Button>
         </div>
       </div>

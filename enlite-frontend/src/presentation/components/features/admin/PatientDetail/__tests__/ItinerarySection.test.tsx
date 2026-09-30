@@ -88,7 +88,7 @@ describe('ItinerarySection — a agenda de um serviço', () => {
     expect(screen.getByTestId('itinerario-servico-par-svc-1')).toHaveTextContent('Horas cubiertas/contratadas: 4/—');
   });
 
-  it('clicar numa faixa repassa o slotId (D445.2: a linha inteira abre "Editar agendamiento")', () => {
+  it('clicar numa faixa repassa o slotId (D445.3: a linha inteira abre "Editar agendamiento")', () => {
     const { onEditSlot } = renderSection();
     fireEvent.click(screen.getByTestId('itinerario-slot-editar-slot-wed'));
     expect(onEditSlot).toHaveBeenCalledWith('slot-wed');

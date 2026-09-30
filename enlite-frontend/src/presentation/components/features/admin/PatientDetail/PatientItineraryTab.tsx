@@ -31,9 +31,9 @@ const OPTIONS_LOAD_FAILED: ItineraryActionError = { code: 'OPTIONS_LOAD_FAILED' 
 /**
  * Aba "Itinerario" da ficha do paciente (D445 — layout de 2 colunas conforme o Figma, nó
  * 11340:76163). Coluna direita: "Agenda de Atenciones" — uma `ItinerarySection` por serviço
- * (D445.2). Coluna esquerda: "Próximos eventos/Substitución" (D445.3), com "Nuevo +" (D445.4) e
+ * (D445.3). Coluna esquerda: "Próximos eventos/Substitución" (D445.3), com "Nuevo +" (D445.4) e
  * reemplazo permanente (D445.5). A escrita de alocação continua sendo SÓ pelo modal "Editar
- * agendamiento" (D445.2) — o mesmo `allocate` da Fase 12; ausência/substituto/reemplazo usam as
+ * agendamiento" (D445.3) — o mesmo `allocate` da Fase 12; ausência/substituto/reemplazo usam as
  * rotas da Fase 13 e a D445.5, direto pelo `AdminContractedServicesApiService` (o hook do
  * itinerário cobre só a leitura + `allocate`).
  */
@@ -214,24 +214,24 @@ export function PatientItineraryTab({ patient }: PatientItineraryTabProps): JSX.
 
         <div className="flex-1 min-w-0" data-testid="itinerario-agenda-coluna">
           <Card rounded="lg" className="border-2 border-gray-600 !rounded-[20px] p-6 flex flex-col gap-4">
-          <Heading level={2} as="h3" weight="semibold" color="secondary">
-            {ti('scheduleColumnTitle')}
-          </Heading>
-          {itinerary.services.map((service) => {
-            const serviceId = service.contractedServiceId;
-            const isActed = actedServiceId === serviceId;
-            return (
-              <ItinerarySection
-                key={serviceId}
-                service={service}
-                serviceCode={codeById.get(serviceId) ?? ''}
-                addressLabel={servicesById.get(serviceId)?.addressLabel ?? ''}
-                asOf={itinerary.asOf}
-                actionError={isActed ? (editOptionsFailed ? OPTIONS_LOAD_FAILED : actionError) : null}
-                onEditSlot={(slotId) => openEdit(serviceId, slotId)}
-              />
-            );
-          })}
+            <Heading level={1} as="h3" weight="semibold" color="secondary">
+              {ti('scheduleColumnTitle')}
+            </Heading>
+            {itinerary.services.map((service) => {
+              const serviceId = service.contractedServiceId;
+              const isActed = actedServiceId === serviceId;
+              return (
+                <ItinerarySection
+                  key={serviceId}
+                  service={service}
+                  serviceCode={codeById.get(serviceId) ?? ''}
+                  addressLabel={servicesById.get(serviceId)?.addressLabel ?? ''}
+                  asOf={itinerary.asOf}
+                  actionError={isActed ? (editOptionsFailed ? OPTIONS_LOAD_FAILED : actionError) : null}
+                  onEditSlot={(slotId) => openEdit(serviceId, slotId)}
+                />
+              );
+            })}
           </Card>
         </div>
       </div>

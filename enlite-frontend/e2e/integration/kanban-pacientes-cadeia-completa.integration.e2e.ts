@@ -352,7 +352,7 @@ test.describe('cadeia-completa @integration', () => {
         const modal = page.getByTestId('itinerario-editar-modal');
         await expect(modal).toBeVisible();
         await modal.getByTestId('itinerario-editar-prestador').click();
-        if (listed !== undefined) await expect(modal.getByRole('option')).toHaveCount(listed + 1);
+        if (listed !== undefined) await expect(modal.getByRole('listbox').getByRole('option')).toHaveCount(listed + 1);
         const search = modal.getByPlaceholder('Buscar...');
         await search.click();
         await search.pressSequentially(label, { delay: 20 });
