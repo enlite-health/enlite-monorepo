@@ -3956,6 +3956,15 @@
           "historyResponse": "RESPOSTA"
         },
         "itinerary": {
+          "assemble": {
+            "label": "Itinerário pronto",
+            "assembledSince": "Itinerário pronto desde {{date}}",
+            "errors": {
+              "NO_SERVICE_WITH_VACANCY": "Não há nenhum serviço com vaga viva: não é possível marcar o itinerário como pronto.",
+              "SERVICE_WITHOUT_SLOT": "Há um serviço com vaga viva que ainda não tem faixas de horário. Cadastre os horários e tente de novo.",
+              "generic": "Não foi possível marcar o itinerário como pronto. Tente de novo."
+            }
+          },
           "hoursPair": "Horas cobertas/contratadas: {{pair}}",
           "noServices": "Este paciente não tem serviços contratados ativos.",
           "emptyDay": "Sem atendimento",

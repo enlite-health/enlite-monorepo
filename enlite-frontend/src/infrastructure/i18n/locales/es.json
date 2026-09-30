@@ -4035,6 +4035,15 @@
           "historyResponse": "RESPUESTA"
         },
         "itinerary": {
+          "assemble": {
+            "label": "Itinerario listo",
+            "assembledSince": "Itinerario listo desde {{date}}",
+            "errors": {
+              "NO_SERVICE_WITH_VACANCY": "No hay ningún servicio con vacante viva: no se puede marcar el itinerario como listo.",
+              "SERVICE_WITHOUT_SLOT": "Hay un servicio con vacante viva que todavía no tiene franjas horarias. Cargá los horarios y probá de nuevo.",
+              "generic": "No se pudo marcar el itinerario como listo. Probá de nuevo."
+            }
+          },
           "hoursPair": "Horas cubiertas/contratadas: {{pair}}",
           "noServices": "Este paciente no tiene servicios contratados activos.",
           "emptyDay": "Sin atención",
