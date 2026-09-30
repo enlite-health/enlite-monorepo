@@ -34,6 +34,7 @@ function mockRes(): Response & { status: jest.Mock; json: jest.Mock } {
 const FELIZ = {
   patientId: PATIENT_ID,
   asOf: '2026-09-27',
+  assembledAt: null as string | null,
   services: [
     {
       contractedServiceId: SERVICE_ID,
@@ -145,6 +146,26 @@ describe('AdminPatientItineraryController', () => {
       // A-contrato (DX-12.16): o nome do prestador vigente passa a sair (`displayName`); telefone, nunca.
       expect(chavesProibidas(body, /phone/i)).toEqual([]);
       expect(body.data.services[0].slots[0].assignments[0].displayName).toBe('Nombre Qa');
+    });
+
+    it('[Fase 3] o corpo carrega assembledAt: null sem montagem e a data ISO com montagem; sem o campo o contrato recusa', async () => {
+      const respostaCom = async (assembledAt: string | null) => {
+        const useCase = { execute: jest.fn().mockResolvedValue({ ...FELIZ, assembledAt }) };
+        const res = mockRes();
+        await new AdminPatientItineraryController(useCase as never).get(mockReq({ params: { id: PATIENT_ID } }), res);
+        return res.json.mock.calls[0][0].data;
+      };
+
+      const semMontagem = await respostaCom(null);
+      expect(semMontagem.assembledAt).toBeNull();
+      expect(patientItineraryResponseSchema.parse(semMontagem).assembledAt).toBeNull();
+
+      const montado = await respostaCom('2026-09-30T18:05:09.123Z');
+      expect(montado.assembledAt).toBe('2026-09-30T18:05:09.123Z');
+      expect(patientItineraryResponseSchema.parse(montado).assembledAt).toBe('2026-09-30T18:05:09.123Z');
+
+      const { assembledAt: _omitido, ...semCampo } = FELIZ;
+      expect(() => patientItineraryResponseSchema.parse(semCampo)).toThrow();
     });
 
     it('[12.10] passa id, relógio e as células ao caso de uso; a trilha recebe só os workerId com nome', async () => {
