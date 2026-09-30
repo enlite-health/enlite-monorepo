@@ -4,7 +4,9 @@
  * real, sem mock.
  *
  * Feliz: abre a aba Encuadre, seleciona o serviço, clica no CARD do prestador (não no botão) →
- * painel lateral abre com nome + WhatsApp (telefone sintético semeado), registra um contato
+ * painel lateral abre com o NOME e o WhatsApp do PACIENTE no topo (D447.3; telefone sintético
+ * semeado no paciente, mesma projeção do card de identidade), o prestador só no campo "Prestador de
+ * servicio", registra um contato
  * (click + keyboard.type, nunca fill — memória `e2e-humano-nao-e-fill`) → Historial mostra a
  * linha. Fecha por Esc (sem X — o Figma não tem).
  *
@@ -19,10 +21,12 @@ import { activateRecruitmentViaApi } from '../helpers/itinerario-e2e-helper';
 import { insertTestWorker, cleanupTestWorker } from '../helpers/db-test-helper';
 import { insertWJA, cleanupWJAAndEncuadre } from '../helpers/wja-test-helper';
 import { loginAs } from '../helpers/abac-stack-helper';
+import { runSQL } from '../helpers/patient-detail-a-helper';
 import { openEncuadreTab, selectServiceRow, cleanupQuadroC, cleanupServiceTeamContactLog } from '../helpers/quadro-c-e2e-helper';
 
 const STAFF = mockAdminUserFor('contact-modal-screen');
-const SYNTHETIC_PHONE = '+5491155501234';
+const PATIENT_PHONE = '+5491155501234';
+const WORKER_PHONE = '+5491155509876'; // do PRESTADOR: NÃO pode aparecer em lugar nenhum do painel
 
 test.describe('service-team-provider-modal-screen @integration', () => {
   test.use(LANCAMENTO_VIEWPORT_ES_AR);
@@ -31,12 +35,15 @@ test.describe('service-team-provider-modal-screen @integration', () => {
   test('feliz — abre pelo card, mostra WhatsApp, registra contato com click+type, Historial mostra a linha, fecha por Esc', async ({ page, request }) => {
     const seed = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.6, lng: -58.4 });
     const vacancyId = await activateRecruitmentViaApi(request, seed.patientId, seed.serviceId);
-    const workerId = insertTestWorker({ occupation: 'AT', whatsappPhone: SYNTHETIC_PHONE });
+    const workerId = insertTestWorker({ occupation: 'AT', whatsappPhone: WORKER_PHONE });
+    runSQL(`UPDATE patients SET phone_whatsapp = '${PATIENT_PHONE}' WHERE id = '${seed.patientId}'`);
     try {
       insertWJA({ workerId, jobPostingId: vacancyId, funnelStage: 'QUICK_RESPONSE_TEAM' });
 
       await loginAs(page, STAFF);
       await openEncuadreTab(page, seed.patientId);
+      const pageTitle = (await page.locator('h1').first().innerText()).trim();
+      expect(pageTitle).toContain('IntegTest');
       await selectServiceRow(page, seed.serviceId);
       await expect(page.getByTestId(`service-team-card-${workerId}`)).toBeVisible({ timeout: 15_000 });
 
@@ -48,16 +55,27 @@ test.describe('service-team-provider-modal-screen @integration', () => {
 
       await page.getByTestId(`service-team-card-${workerId}`).click();
       await expect(page.getByTestId('service-team-provider-modal')).toBeVisible({ timeout: 15_000 });
-      await expect(page.getByTestId('service-team-provider-modal-name')).not.toBeEmpty();
 
-      // WhatsApp: telefone sintético semeado + célula worker_contact:read (STAFF admin mock tem
-      // todas as células) — a linha aparece com o número projetado.
-      await expect(page.getByTestId('service-team-provider-modal-phone')).toBeVisible();
-      await expect(page.getByTestId('service-team-provider-modal-phone')).toContainText(SYNTHETIC_PHONE);
+      // D447.3 — topo = NOME do PACIENTE (o mesmo do título da ficha), nunca o do prestador.
+      await expect(page.getByTestId('service-team-provider-modal-name')).toHaveText(pageTitle);
+      // WhatsApp DO PACIENTE (telefone sintético semeado no paciente; STAFF admin mock tem
+      // patient_identity:read), com o ícone À ESQUERDA do número.
+      const phoneLink = page.getByTestId('service-team-provider-modal-phone');
+      await expect(phoneLink).toBeVisible();
+      await expect(phoneLink).toContainText(PATIENT_PHONE);
+      await expect(phoneLink.locator('img').first()).toBeVisible();
+      const iconBox = await phoneLink.locator('img').first().boundingBox();
+      const textBox = await phoneLink.locator('span').first().boundingBox();
+      expect(iconBox!.x + iconBox!.width).toBeLessThanOrEqual(textBox!.x + 1);
+      // O telefone do PRESTADOR não viaja nem aparece no painel.
+      await expect(page.getByTestId('service-team-provider-modal')).not.toContainText(WORKER_PHONE);
 
-      // "Prestador de servicio": campo com borda, só-leitura.
-      await expect(page.getByTestId('service-team-provider-modal-provider-field')).toBeVisible();
-      await expect(page.getByTestId('service-team-provider-modal-provider-field')).toBeDisabled();
+      // "Prestador de servicio": campo com borda, só-leitura, com o nome do PRESTADOR.
+      const providerField = page.getByTestId('service-team-provider-modal-provider-field');
+      await expect(providerField).toBeVisible();
+      await expect(providerField).toBeDisabled();
+      expect((await providerField.inputValue()).trim()).not.toBe('');
+      expect(await providerField.inputValue()).not.toBe(pageTitle);
 
       if (printDir) {
         await page.evaluate(() => document.fonts.ready);

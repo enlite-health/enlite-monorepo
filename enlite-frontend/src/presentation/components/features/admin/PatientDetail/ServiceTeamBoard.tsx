@@ -6,7 +6,7 @@ import { ActionButton } from '@presentation/components/features/access';
 import { KanbanBoardShell, type KanbanColumnSpec } from '@presentation/components/features/admin/Kanban/KanbanBoardShell';
 import { RejectionReasonSelect } from '@presentation/components/features/admin/Kanban/RejectionReasonSelect';
 import { SubstitutionDayModal } from './SubstitutionDayModal';
-import { ServiceTeamProviderModal } from './ServiceTeamProviderModal';
+import { ServiceTeamProviderModal, type ServiceTeamPatientHeader } from './ServiceTeamProviderModal';
 import { formatDDMM } from './substitutionDates';
 import { workerLabel } from './workerLabel';
 import {
@@ -20,6 +20,7 @@ import {
 
 interface ServiceTeamBoardProps {
   patientId: string;
+  patientHeader?: ServiceTeamPatientHeader;
   serviceId: string;
   team: ServiceTeam;
   onReject: (workerId: string, reasonCategory: string) => void;
@@ -54,7 +55,7 @@ interface PendingReason {
  * (mecânica das colunas) e `RejectionReasonSelect` (o mesmo modal de motivo do quadro B,
  * generalizado na Fase 4, DX-4.10) — nenhum hook de permissão novo, o gate é o `ActionButton`.
  */
-export function ServiceTeamBoard({ patientId, serviceId, team, onReject, onRevert, onSubstitute, actionError }: ServiceTeamBoardProps): JSX.Element {
+export function ServiceTeamBoard({ patientId, patientHeader, serviceId, team, onReject, onRevert, onSubstitute, actionError }: ServiceTeamBoardProps): JSX.Element {
   const { t } = useTranslation();
   const [pending, setPending] = useState<PendingReason | null>(null);
   const [substitutionMember, setSubstitutionMember] = useState<ServiceTeamMember | null>(null);
@@ -224,6 +225,7 @@ export function ServiceTeamBoard({ patientId, serviceId, team, onReject, onRever
       {openProvider && (
         <ServiceTeamProviderModal
           patientId={patientId}
+          patientHeader={patientHeader}
           serviceId={serviceId}
           member={openProvider.member}
           columnId={openProvider.columnId}

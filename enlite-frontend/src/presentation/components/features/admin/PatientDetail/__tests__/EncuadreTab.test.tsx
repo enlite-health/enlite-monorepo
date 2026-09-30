@@ -74,6 +74,19 @@ const SERVICE: PatientContractedServiceDetail = {
 const SVC2: PatientContractedServiceDetail = { ...SERVICE, id: 'svc-2', serviceCode: 'CAREGIVER', weeklyHours: 30, providersNeeded: 1 };
 
 describe('EncuadreTab — seletor de serviço + bloco de detalhes com fonte', () => {
+  it('D447.3: entrega ao painel o nome e o WhatsApp do paciente DA FICHA (mesma projeção do card de identidade); ficha redigida → null', () => {
+    const patient = { ...patientDetailFixture, firstName: 'Paciente', lastName: 'Sintético', phoneWhatsapp: '+5511900000000', contractedServices: [SERVICE] };
+    const { unmount } = render(<EncuadreTab patient={patient} />);
+    expect(mockServiceTeamSectionCalls).toHaveBeenLastCalledWith(
+      expect.objectContaining({ patientHeader: { name: 'Paciente Sintético', phone: '+5511900000000' } }),
+    );
+    unmount();
+    render(<EncuadreTab patient={{ ...patient, firstName: null, lastName: null, phoneWhatsapp: null }} />);
+    expect(mockServiceTeamSectionCalls).toHaveBeenLastCalledWith(
+      expect.objectContaining({ patientHeader: { name: null, phone: null } }),
+    );
+  });
+
   it('sem serviços: empty state, não quebra', () => {
     const patient = { ...patientDetailFixture, contractedServices: [] };
     render(<EncuadreTab patient={patient} />);

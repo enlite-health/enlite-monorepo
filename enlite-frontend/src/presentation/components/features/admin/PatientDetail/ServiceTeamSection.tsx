@@ -6,9 +6,11 @@ import { useServiceTeam } from '@hooks/admin/useServiceTeam';
 import { patientAddressLabel } from '@domain/entities/PatientContractedService';
 import type { PatientAddressDetail, PatientContractedServiceDetail } from '@domain/entities/PatientDetail';
 import { ServiceTeamBoard } from './ServiceTeamBoard';
+import type { ServiceTeamPatientHeader } from './ServiceTeamProviderModal';
 
 interface ServiceTeamSectionProps {
   patientId: string;
+  patientHeader?: ServiceTeamPatientHeader;
   service: PatientContractedServiceDetail | null;
   address: PatientAddressDetail | null;
   selectionNonce: number;
@@ -21,7 +23,7 @@ interface ServiceTeamSectionProps {
  * critério "lido do dado da linha, nunca de outra chamada"); este componente só busca o TIME
  * (via `useServiceTeam`, P18) e o renderiza (via `ServiceTeamBoard`, P20).
  */
-export function ServiceTeamSection({ patientId, service, address, selectionNonce }: ServiceTeamSectionProps): JSX.Element {
+export function ServiceTeamSection({ patientId, patientHeader, service, address, selectionNonce }: ServiceTeamSectionProps): JSX.Element {
   const { t } = useTranslation();
   const tc = (key: string, options?: Record<string, unknown>) => t(`admin.patients.detail.serviceTeam.${key}`, options);
   const { team, status, reject, revert, substitute, actionError, refreshError } = useServiceTeam(patientId, service?.id ?? null, selectionNonce);
@@ -75,6 +77,7 @@ export function ServiceTeamSection({ patientId, service, address, selectionNonce
           ) : (
             <ServiceTeamBoard
               patientId={patientId}
+              patientHeader={patientHeader}
               serviceId={service.id}
               team={team}
               onReject={reject}

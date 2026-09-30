@@ -52,6 +52,14 @@ export function EncuadreTab({ patient }: EncuadreTabProps): JSX.Element {
   const [selectionNonce, setSelectionNonce] = useState(0);
   const [viewingService, setViewingService] = useState<PatientContractedServiceDetail | null>(null);
 
+  // D447.3: o painel do prestador abre focado no PACIENTE. Nome e WhatsApp vêm da ficha JÁ
+  // carregada — a mesma projeção do card de identidade (`patient_identity:read`; sem a célula o
+  // backend manda `null` e a parte some no painel).
+  const patientHeader = {
+    name: [patient.firstName, patient.lastName].filter(Boolean).join(' ') || null,
+    phone: patient.phoneWhatsapp,
+  };
+
   const services = patient.contractedServices;
   const currentService = services.find((s) => s.id === selectedServiceId) ?? null;
   const currentAddress = currentService
@@ -200,6 +208,7 @@ export function EncuadreTab({ patient }: EncuadreTabProps): JSX.Element {
 
       <ServiceTeamSection
         patientId={patient.id}
+        patientHeader={patientHeader}
         service={currentService}
         address={currentAddress}
         selectionNonce={selectionNonce}

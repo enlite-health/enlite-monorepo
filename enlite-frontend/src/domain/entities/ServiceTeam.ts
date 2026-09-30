@@ -100,14 +100,14 @@ export interface ServiceTeamContactHistoryEntry {
 }
 
 /**
- * GET/POST .../team/:workerId/contact. `phone`/`displayName` já vêm PROJETADOS pela célula
- * `worker_contact:read` (o mesmo portão que já protege o nome no quadro C) — `null` sem a célula,
- * nunca erro; o front NUNCA decide quem vê o quê, só renderiza o que a API mandou.
+ * GET/POST .../team/:workerId/contact. `displayName` já vem PROJETADO pela célula
+ * `worker_contact:read` (o mesmo portão que já protege o nome no quadro C) — rótulo redigido sem a
+ * célula, nunca erro; o front NUNCA decide quem vê o quê, só renderiza o que a API mandou. O
+ * telefone do prestador não faz parte do contrato (D447.3: o painel é focado no paciente).
  */
 export interface ServiceTeamContact {
   workerId: string;
   displayName: string | null;
-  phone: string | null;
   history: ServiceTeamContactHistoryEntry[];
 }
 

@@ -3,7 +3,7 @@
  * `useServiceTeamContact` é dublê — a busca/gravação real tem suíte própria. Aqui cobre:
  * renderização por status, "Prestador de servicio" como campo com borda só-leitura, "Estado" como
  * SELECT com aplicação DIFERIDA (só ao "Guardar" — escolher a ação+motivo sozinho NÃO chama
- * onReject/onRevert), WhatsApp condicional a `contact.phone`, Historial, fechar por Esc/overlay
+ * onReject/onRevert), topo do PACIENTE (nome + WhatsApp condicional à célula), Historial, fechar por Esc/overlay
  * (sem X).
  */
 import { describe, it, expect, beforeAll, vi } from 'vitest';
@@ -61,30 +61,45 @@ function renderModal(overrides: Partial<Parameters<typeof ServiceTeamProviderMod
 }
 
 describe('ServiceTeamProviderModal', () => {
-  it('nome vem do contact (já projetado pela API); "Prestador de servicio" é campo com borda, só-leitura', () => {
+  it('D447.3: topo = NOME e WhatsApp do PACIENTE (da ficha), com o ícone à esquerda; o prestador só no campo "Prestador de servicio", sem telefone', () => {
     mockHook({
       status: 'ok',
-      contact: { workerId: 'w-1', displayName: 'Marcel Araújo', phone: '+5511900000000', history: [] },
+      contact: { workerId: 'w-1', displayName: 'Marcel Araújo', history: [] },
     });
-    renderModal();
+    renderModal({ patientHeader: { name: 'Paciente Sintético Silva', phone: '+5511900000000' } });
 
-    expect(screen.getByTestId('service-team-provider-modal-name')).toHaveTextContent('Marcel Araújo');
-    expect(screen.getByTestId('service-team-provider-modal-phone')).toHaveTextContent('+5511900000000');
+    expect(screen.getByTestId('service-team-provider-modal-name')).toHaveTextContent('Paciente Sintético Silva');
+    const phone = screen.getByTestId('service-team-provider-modal-phone');
+    expect(phone).toHaveTextContent('+5511900000000');
+    expect(phone).toHaveAttribute('href', 'https://wa.me/5511900000000');
+    expect(phone.querySelector('img')).not.toBeNull();
+    expect(phone.firstElementChild?.tagName).toBe('IMG'); // ícone à ESQUERDA do número
+    expect(screen.getByTestId('service-team-provider-modal-name')).not.toHaveTextContent('Marcel');
     const providerField = screen.getByTestId('service-team-provider-modal-provider-field') as HTMLInputElement;
     expect(providerField.tagName).toBe('INPUT');
     expect(providerField).toBeDisabled();
     expect(providerField.value).toBe('Marcel Araújo');
   });
 
-  it('sem telefone (célula ausente, contact.phone null): sem linha de WhatsApp, sem quebrar', () => {
-    mockHook({ status: 'ok', contact: { workerId: 'w-1', displayName: 'Contato restrito', phone: null, history: [] } });
+  it('sem a célula do paciente (phone null): a linha do WhatsApp SOME e nada do prestador ocupa o lugar', () => {
+    mockHook({ status: 'ok', contact: { workerId: 'w-1', displayName: 'Marcel Araújo', history: [] } });
+    renderModal({ patientHeader: { name: 'Paciente Sintético Silva', phone: null } });
+
+    expect(screen.queryByTestId('service-team-provider-modal-phone')).not.toBeInTheDocument();
+    expect(screen.getByTestId('service-team-provider-modal-name')).toHaveTextContent('Paciente Sintético Silva');
+  });
+
+  it('sem patientHeader (ficha redigida): sem nome de paciente e sem WhatsApp, painel abre normalmente', () => {
+    mockHook({ status: 'ok', contact: { workerId: 'w-1', displayName: 'Marcel Araújo', history: [] } });
     renderModal();
 
     expect(screen.queryByTestId('service-team-provider-modal-phone')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('service-team-provider-modal-name')).not.toBeInTheDocument();
+    expect(screen.getByTestId('service-team-provider-modal-save')).toBeInTheDocument();
   });
 
   it('"Guardar" chama register com contacted/eventDate/note; note vazia vira null (nunca string vazia gravada)', () => {
-    const { register } = mockHook({ status: 'ok', contact: { workerId: 'w-1', displayName: 'Marcel', phone: null, history: [] } });
+    const { register } = mockHook({ status: 'ok', contact: { workerId: 'w-1', displayName: 'Marcel', history: [] } });
     renderModal();
 
     fireEvent.click(screen.getByTestId('service-team-provider-modal-contacted'));
@@ -99,7 +114,7 @@ describe('ServiceTeamProviderModal', () => {
   });
 
   it('note preenchida: texto exato vai pro register (nunca truncado/alterado)', () => {
-    const { register } = mockHook({ status: 'ok', contact: { workerId: 'w-1', displayName: 'Marcel', phone: null, history: [] } });
+    const { register } = mockHook({ status: 'ok', contact: { workerId: 'w-1', displayName: 'Marcel', history: [] } });
     renderModal();
 
     const noteField = screen.getByTestId('service-team-provider-modal-note');
@@ -111,7 +126,7 @@ describe('ServiceTeamProviderModal', () => {
   });
 
   it('Estado em SELECTED_FOR_SERVICE: escolher Rechazar SÓ abre o motivo — onReject NÃO é chamado antes de Guardar', () => {
-    mockHook({ status: 'ok', contact: { workerId: 'w-1', displayName: 'Marcel', phone: null, history: [] } });
+    mockHook({ status: 'ok', contact: { workerId: 'w-1', displayName: 'Marcel', history: [] } });
     const { onReject } = renderModal({ columnId: 'SELECTED_FOR_SERVICE' });
 
     fireEvent.change(screen.getByTestId('service-team-provider-modal-status'), { target: { value: 'REJECT' } });
@@ -124,7 +139,7 @@ describe('ServiceTeamProviderModal', () => {
   });
 
   it('Estado: motivo capturado + "Guardar" DISPARA onReject com o motivo e fecha o painel', async () => {
-    mockHook({ status: 'ok', contact: { workerId: 'w-1', displayName: 'Marcel', phone: null, history: [] } });
+    mockHook({ status: 'ok', contact: { workerId: 'w-1', displayName: 'Marcel', history: [] } });
     const { onReject, onClose } = renderModal({ columnId: 'SELECTED_FOR_SERVICE' });
 
     fireEvent.change(screen.getByTestId('service-team-provider-modal-status'), { target: { value: 'REJECT' } });
@@ -140,7 +155,7 @@ describe('ServiceTeamProviderModal', () => {
   });
 
   it('Estado em REJECTED_FOR_SERVICE: a ação é Revertir; motivo+Guardar dispara onRevert', async () => {
-    mockHook({ status: 'ok', contact: { workerId: 'w-1', displayName: 'Marcel', phone: null, history: [] } });
+    mockHook({ status: 'ok', contact: { workerId: 'w-1', displayName: 'Marcel', history: [] } });
     const { onRevert } = renderModal({ columnId: 'REJECTED_FOR_SERVICE' });
 
     fireEvent.change(screen.getByTestId('service-team-provider-modal-status'), { target: { value: 'REVERT' } });
@@ -154,14 +169,14 @@ describe('ServiceTeamProviderModal', () => {
   });
 
   it('Estado em IN_SERVICE: select desabilitado, sem ação disponível (invariante 10)', () => {
-    mockHook({ status: 'ok', contact: { workerId: 'w-1', displayName: 'Marcel', phone: null, history: [] } });
+    mockHook({ status: 'ok', contact: { workerId: 'w-1', displayName: 'Marcel', history: [] } });
     renderModal({ columnId: 'IN_SERVICE' });
 
     expect(screen.getByTestId('service-team-provider-modal-status')).toBeDisabled();
   });
 
   it('sem ação pendente: "Guardar" grava o contato mas NÃO fecha o painel (Historial acabou de ganhar linha)', () => {
-    mockHook({ status: 'ok', contact: { workerId: 'w-1', displayName: 'Marcel', phone: null, history: [] } });
+    mockHook({ status: 'ok', contact: { workerId: 'w-1', displayName: 'Marcel', history: [] } });
     const { onClose } = renderModal();
 
     fireEvent.click(screen.getByTestId('service-team-provider-modal-save'));
@@ -173,7 +188,7 @@ describe('ServiceTeamProviderModal', () => {
     mockHook({
       status: 'ok',
       contact: {
-        workerId: 'w-1', displayName: 'Marcel', phone: null,
+        workerId: 'w-1', displayName: 'Marcel',
         history: [{ id: 'c-1', contacted: true, eventDate: '2026-09-20', note: 'Confirmou', createdAt: '2026-09-20T10:00:00Z' }],
       },
     });
@@ -187,7 +202,7 @@ describe('ServiceTeamProviderModal', () => {
     mockHook({
       status: 'ok',
       contact: {
-        workerId: 'w-1', displayName: 'Marcel', phone: null,
+        workerId: 'w-1', displayName: 'Marcel',
         history: [{ id: 'c-1', contacted: true, eventDate: '2026-09-29', note: 'x', createdAt: '2026-09-29T10:00:00Z' }],
       },
     });
@@ -198,7 +213,7 @@ describe('ServiceTeamProviderModal', () => {
   });
 
   it('Historial vazio: mostra o texto de "sin registros"', () => {
-    mockHook({ status: 'ok', contact: { workerId: 'w-1', displayName: 'Marcel', phone: null, history: [] } });
+    mockHook({ status: 'ok', contact: { workerId: 'w-1', displayName: 'Marcel', history: [] } });
     renderModal();
 
     expect(screen.getByTestId('service-team-provider-modal-history-empty')).toBeInTheDocument();
@@ -213,7 +228,7 @@ describe('ServiceTeamProviderModal', () => {
   });
 
   it('fechar: onClose chamado ao clicar no overlay (sem X — o Figma não tem)', () => {
-    mockHook({ status: 'ok', contact: { workerId: 'w-1', displayName: 'Marcel', phone: null, history: [] } });
+    mockHook({ status: 'ok', contact: { workerId: 'w-1', displayName: 'Marcel', history: [] } });
     const { onClose } = renderModal();
 
     expect(screen.queryByTestId('service-team-provider-modal-close')).not.toBeInTheDocument();
@@ -222,7 +237,7 @@ describe('ServiceTeamProviderModal', () => {
   });
 
   it('fechar: onClose chamado ao apertar Esc', () => {
-    mockHook({ status: 'ok', contact: { workerId: 'w-1', displayName: 'Marcel', phone: null, history: [] } });
+    mockHook({ status: 'ok', contact: { workerId: 'w-1', displayName: 'Marcel', history: [] } });
     const { onClose } = renderModal();
 
     fireEvent.keyDown(window, { key: 'Escape' });
@@ -230,7 +245,7 @@ describe('ServiceTeamProviderModal', () => {
   });
 
   it('painel lateral: âncora à direita, altura cheia, cantos arredondados só à esquerda (molde do drawer de detalhe)', () => {
-    mockHook({ status: 'ok', contact: { workerId: 'w-1', displayName: 'Marcel', phone: null, history: [] } });
+    mockHook({ status: 'ok', contact: { workerId: 'w-1', displayName: 'Marcel', history: [] } });
     renderModal();
 
     const panel = screen.getByTestId('service-team-provider-modal');

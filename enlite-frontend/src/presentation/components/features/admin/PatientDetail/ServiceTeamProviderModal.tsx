@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Calendar } from 'lucide-react';
+import whatsappIcon from '../../../../../assets/icons/whatsapp.svg';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
@@ -21,8 +22,20 @@ import {
   type ServiceTeamColumnId,
 } from '@domain/entities/ServiceTeam';
 
+/**
+ * Cabeçalho do painel (D447.3): o PACIENTE, não o prestador. Vem da ficha JÁ carregada (a mesma
+ * resposta que alimenta o card de identidade) — o painel não busca nada. `null` = a ficha veio
+ * redigida (sem `patient_identity:read`, D113): a parte correspondente some.
+ */
+export interface ServiceTeamPatientHeader {
+  name: string | null;
+  phone: string | null;
+}
+
 interface ServiceTeamProviderModalProps {
   patientId: string;
+  /** Nome e WhatsApp do PACIENTE (topo do painel). Ausente = tudo redigido. */
+  patientHeader?: ServiceTeamPatientHeader;
   serviceId: string;
   member: ServiceTeamMember;
   columnId: ServiceTeamColumnId;
@@ -53,8 +66,10 @@ type PendingAction = { kind: 'reject' | 'revert'; reasonCategory: string };
 /**
  * Modal do prestador (Figma nó 11340:76413/76619, rodada 3): painel LATERAL ancorado à direita,
  * altura cheia, cantos arredondados só à esquerda (mesmo molde do `ContractedServiceDetailDrawer`)
- * — sem X, fecha por overlay/Esc. Nome/telefone vêm projetados pela API (`worker_contact:read`);
- * a linha do WhatsApp só existe quando `contact.phone` não é `null`.
+ * — sem X, fecha por overlay/Esc. O topo é do PACIENTE (D447.3): nome e WhatsApp
+ * vêm da ficha já carregada, sob a MESMA célula do card de identidade (`patient_identity:read`); sem
+ * o telefone, a linha some. O prestador aparece só no campo "Prestador de servicio" (nome projetado
+ * pela API, `worker_contact:read`) — o telefone dele não viaja mais.
  *
  * "Estado" é um SELECT com no máximo 2 opções (D446): o estado atual (sempre) e, quando a coluna
  * permite, a ação (Rechazar em Selecionado/En atención, Revertir em Rechazado — `IN_SERVICE` não
@@ -65,7 +80,7 @@ type PendingAction = { kind: 'reject' | 'revert'; reasonCategory: string };
  * painel quando havia uma ação pendente (o card muda de coluna e este `columnId` fica obsoleto).
  */
 export function ServiceTeamProviderModal({
-  patientId, serviceId, member, columnId, onClose, onReject, onRevert,
+  patientId, patientHeader, serviceId, member, columnId, onClose, onReject, onRevert,
 }: ServiceTeamProviderModalProps): JSX.Element {
   const { t } = useTranslation();
   const tm = (key: string, options?: Record<string, unknown>) => t(`admin.patients.detail.serviceTeamModal.${key}`, options);
@@ -88,7 +103,9 @@ export function ServiceTeamProviderModal({
   }, []);
 
   const name = contact?.displayName ?? workerLabel(t, member.workerId, member.displayName);
-  const waHref = contact?.phone ? `https://wa.me/${contact.phone.replace(/\D/g, '')}` : null;
+  const patientName = patientHeader?.name?.trim() || null;
+  const patientPhone = patientHeader?.phone?.trim() || null;
+  const waHref = patientPhone ? `https://wa.me/${patientPhone.replace(/\D/g, '')}` : null;
 
   /** A ação permitida NESTA coluna (D446) — `null` em `IN_SERVICE`, que não tem porta lateral. */
   const actionKind: 'reject' | 'revert' | null =
@@ -136,16 +153,18 @@ export function ServiceTeamProviderModal({
       <div
         role="dialog"
         aria-modal="true"
-        aria-label={name}
+        aria-label={patientName ?? name}
         className="fixed top-0 right-0 h-screen z-50 w-full max-w-xl bg-white shadow-2xl rounded-tl-[32px] rounded-bl-[32px] flex flex-col"
         data-testid="service-team-provider-modal"
       >
         <div className="flex-1 overflow-y-auto pl-12 pr-6 py-10 flex flex-col gap-6">
-          <div className="flex items-center justify-between w-full">
-            <Heading level={1} as="h2" weight="semibold" color="primary" data-testid="service-team-provider-modal-name">
-              {name}
-            </Heading>
-            <Button variant="primary" size="md" onClick={() => void handleSave()} disabled={saving} data-testid="service-team-provider-modal-save">
+          <div className="flex items-center justify-between w-full gap-4">
+            {patientName && (
+              <Heading level={1} as="h2" weight="semibold" color="primary" data-testid="service-team-provider-modal-name">
+                {patientName}
+              </Heading>
+            )}
+            <Button variant="primary" size="md" className="ml-auto" onClick={() => void handleSave()} disabled={saving} data-testid="service-team-provider-modal-save">
               {tm('save')}
             </Button>
           </div>
@@ -158,7 +177,8 @@ export function ServiceTeamProviderModal({
               className="flex gap-1 items-center text-primary -mt-4"
               data-testid="service-team-provider-modal-phone"
             >
-              <Text as="span" size="sm" weight="medium" color="inherit">{contact?.phone}</Text>
+              <img src={whatsappIcon} alt="" aria-hidden="true" width={20} height={20} className="shrink-0" />
+              <Text as="span" size="base" weight="medium" color="inherit">{patientPhone}</Text>
             </a>
           )}
 

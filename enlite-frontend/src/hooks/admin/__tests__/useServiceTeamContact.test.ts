@@ -30,7 +30,7 @@ import { ContractedServiceApiError } from '@infrastructure/http/AdminContractedS
 import type { ServiceTeamContact } from '@domain/entities/ServiceTeam';
 
 function contact(workerId: string, history: ServiceTeamContact['history'] = []): ServiceTeamContact {
-  return { workerId, displayName: 'Fixture', phone: '+5511900000000', history };
+  return { workerId, displayName: 'Fixture', history };
 }
 
 function deferred<T>() {
