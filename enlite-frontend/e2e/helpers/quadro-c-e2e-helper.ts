@@ -103,6 +103,24 @@ export function countMarks(serviceId: string, workerId: string, opts: { active?:
 }
 
 /**
+ * Ficha do paciente → clique real na aba "Servicio Contratado" → espera o card de serviços. A
+ * EDIÇÃO do serviço (drawer com `providers-section`) continua morando aqui; só o quadro C saiu
+ * para a aba "Encuadre" (`openEncuadreTab`). Faz o `goto` — quem só clica a aba, sem navegar,
+ * cai na tela de login/home (foi o timeout de `alocacao-antiga-so-leitura`).
+ */
+export async function openContractedServiceTab(page: Page, patientId: string): Promise<void> {
+  const isDetail = new RegExp(`/api/admin/patients/${patientId}(\\?|$)`);
+  const detailLoaded = page
+    .waitForResponse((r) => r.request().method() === 'GET' && isDetail.test(r.url()), { timeout: 20_000 })
+    .catch(() => null);
+  await page.goto(`/admin/patients/${patientId}`);
+  await detailLoaded;
+  await expect(page.getByTestId('patient-profile-tabs')).toBeVisible({ timeout: 15_000 });
+  await page.getByTestId('patient-profile-tabs').getByRole('button', { name: 'Servicio Contratado' }).click();
+  await expect(page.getByTestId('servicos-contratados-card')).toBeVisible({ timeout: 15_000 });
+}
+
+/**
  * Ficha do paciente → clique real na aba `encuadre` (`PD/PatientProfileTabs.tsx`) → espera o
  * root da aba renderizar. Molde `clickFoguete` (lancamento-e2e-helper.ts:354-378), sem o
  * `realClick` por `evaluate` — os irmãos que só clicam a aba usam `.click()` direto (achado: a

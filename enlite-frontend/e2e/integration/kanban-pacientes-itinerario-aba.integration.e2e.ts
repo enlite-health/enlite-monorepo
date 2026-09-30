@@ -94,10 +94,10 @@ test.describe('itinerario-aba @integration', () => {
       await loginAs(page, STAFF);
       await openItineraryTab(page, seed.patientId);
 
-      // Critério 10: 6 abas, o Itinerario é o 5º (índice 4).
+      // Critério 10: 7 abas (29/09: Encuadre entra entre Vacantes e Itinerario), o Itinerario é o 6º (índice 5).
       const tabButtons = page.getByTestId('patient-profile-tabs').getByRole('button');
-      await expect(tabButtons).toHaveCount(6);
-      await expect(tabButtons.nth(4)).toHaveText('Itinerario');
+      await expect(tabButtons).toHaveCount(7);
+      await expect(tabButtons.nth(5)).toHaveText('Itinerario');
 
       const par = page.getByTestId(`itinerario-servico-par-${seed.serviceId}`);
       await expect(par).toContainText(expectedPair(svcBefore.cobertas, svcBefore.contratadas.weekly));
@@ -133,7 +133,7 @@ test.describe('itinerario-aba @integration', () => {
       await expect(page.getByTestId(`itinerario-slot-asignar-${slotId}`)).toHaveCount(0);
       const domCount = await countSlotAllocationsInDom(page, slotId);
       console.log('[12.1]', postResp.status(), itinAfterResp.status(), svcBefore.cobertas, svcAfter.cobertas, svcAfter.contratadas.weekly, vigentes.length, domCount);
-      console.log('[12.10]', await tabButtons.count(), 4);
+      console.log('[12.10]', await tabButtons.count(), 5);
 
       // Prints DEPOIS (DX-12.17) e baseline da seção com o slot coberto.
       await page.evaluate(() => document.fonts.ready);

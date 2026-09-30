@@ -26,7 +26,7 @@ import { insertTestWorker, cleanupTestWorker } from '../helpers/db-test-helper';
 import { insertWJA, cleanupWJAAndEncuadre } from '../helpers/wja-test-helper';
 import { tokenFor, loginAs } from '../helpers/abac-stack-helper';
 import { runSQL } from '../helpers/patient-detail-a-helper';
-import { readServiceTeamApi } from '../helpers/quadro-c-e2e-helper';
+import { readServiceTeamApi, openContractedServiceTab } from '../helpers/quadro-c-e2e-helper';
 import {
   allocationOptionsApi, allocateApi, countActiveAllocations, cleanupItineraryWrite,
 } from '../helpers/itinerario-escrita-e2e-helper';
@@ -206,10 +206,9 @@ test.describe('alocacao-antiga @integration', () => {
 
       // Critério 5: no drawer de EDIÇÃO do serviço com linha antiga, a seção é só leitura e rotulada.
       await loginAs(page, STAFF);
-      // A edição do serviço (drawer com providers-section) mora na aba "Servicio Contratado",
-      // não em "Encuadre" (29/09: o quadro C saiu de lá, o drawer de edição não).
-      await page.getByTestId('patient-profile-tabs').getByRole('button', { name: 'Servicio Contratado' }).click();
-      await expect(page.getByTestId('servicos-contratados-card')).toBeVisible({ timeout: 15_000 });
+      // A edição do serviço (drawer com providers-section) mora na aba "Servicio Contratado";
+      // só o quadro C saiu para "Encuadre" (29/09).
+      await openContractedServiceTab(page, patientId);
       await page.getByTestId(`contracted-service-edit-${s1}`).click();
       const dialog = page.getByRole('dialog', { name: drawerTitle });
       await expect(dialog).toBeVisible({ timeout: 15_000 });
@@ -246,10 +245,9 @@ test.describe('alocacao-antiga @integration', () => {
       // Serviço SEM linha antiga: a tela carrega o formulário e a seção não existe.
       await dialog.getByRole('button', { name: closeLabel }).click();
       await expect(page.getByRole('dialog', { name: drawerTitle })).toHaveCount(0);
-      // A edição do serviço (drawer com providers-section) mora na aba "Servicio Contratado",
-      // não em "Encuadre" (29/09: o quadro C saiu de lá, o drawer de edição não).
-      await page.getByTestId('patient-profile-tabs').getByRole('button', { name: 'Servicio Contratado' }).click();
-      await expect(page.getByTestId('servicos-contratados-card')).toBeVisible({ timeout: 15_000 });
+      // A edição do serviço (drawer com providers-section) mora na aba "Servicio Contratado";
+      // só o quadro C saiu para "Encuadre" (29/09).
+      await openContractedServiceTab(page, patientId);
       await page.getByTestId(`contracted-service-edit-${s2}`).click();
       await expect(page.getByTestId(`contracted-service-form-${s2}`)).toBeVisible({ timeout: 15_000 });
       await expect(page.getByTestId(`providers-section-${s2}`)).toHaveCount(0);
