@@ -70,7 +70,7 @@ export function PatientItineraryTab({ patient }: PatientItineraryTabProps): JSX.
   }
 
   const codeById = new Map(patient.contractedServices.map((s) => [s.id, s.serviceCode]));
-  const addressById = new Map(patient.addresses.map((a) => [a.id, a]));
+  const addressById = new Map((patient.addresses ?? []).map((a) => [a.id, a]));
   const servicesById = new Map(
     patient.contractedServices.map((s) => [
       s.id,

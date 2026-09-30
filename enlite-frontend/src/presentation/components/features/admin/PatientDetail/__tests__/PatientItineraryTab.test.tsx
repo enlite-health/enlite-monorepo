@@ -145,6 +145,19 @@ describe('PatientItineraryTab — a aba do itinerário (D445)', () => {
     await waitFor(() => expect(mockGetItineraryEvents).toHaveBeenCalled());
   });
 
+  it('ABAC sem célula de endereço (addresses: null) → a aba renderiza, sem lançar', async () => {
+    mockUsePatientItinerary.mockReturnValue(hookState());
+    const semEnderecos = { ...PATIENT, addresses: null } as unknown as PatientDetail;
+    render(
+      <MemoryRouter>
+        <PatientItineraryTab patient={semEnderecos} />
+      </MemoryRouter>,
+    );
+    expect(screen.getByTestId('itinerario-aba')).toBeInTheDocument();
+    expect(screen.getByTestId('itinerario-servico-svc-1')).toBeInTheDocument();
+    await waitFor(() => expect(mockGetItineraryEvents).toHaveBeenCalled());
+  });
+
   it('refreshError → itinerario-refresh-erro', () => {
     mockUsePatientItinerary.mockReturnValue(hookState({ refreshError: true }));
     renderTab();
