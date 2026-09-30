@@ -79,6 +79,7 @@ const ITINERARY: PatientItinerary = {
   patientId: PATIENT.id,
   asOf: '2026-09-28',
   alerts: [],
+  assembledAt: null,
   services: [
     {
       contractedServiceId: 'svc-1',
@@ -140,6 +141,20 @@ describe('PatientItineraryTab — a aba do itinerário (D445)', () => {
     mockUsePatientItinerary.mockReturnValue(hookState({ itinerary: null, status }));
     renderTab();
     expect(screen.getByTestId('itinerario-erro')).toHaveAttribute('role', 'alert');
+  });
+
+  it('Fase 3: "Itinerario listo" entra no TOPO, ACIMA de itinerario-colunas; montado troca o botão pelo texto', () => {
+    mockUsePatientItinerary.mockReturnValue(hookState());
+    const { unmount } = renderTab();
+    const botao = screen.getByTestId('itinerario-montar');
+    const colunas = screen.getByTestId('itinerario-colunas');
+    expect(botao.compareDocumentPosition(colunas) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    unmount();
+
+    mockUsePatientItinerary.mockReturnValue(hookState({ itinerary: { ...ITINERARY, assembledAt: '2026-09-30T18:00:00.000Z' } }));
+    renderTab();
+    expect(screen.queryByTestId('itinerario-montar')).toBeNull();
+    expect(screen.getByTestId('itinerario-montado')).toHaveTextContent('Itinerario listo desde 30/09');
   });
 
   it('sem serviços → itinerario-sem-servicos', () => {

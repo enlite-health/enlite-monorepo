@@ -11,6 +11,7 @@ import { patientAddressLabel } from '@domain/entities/PatientContractedService';
 import { isVigenteAt } from '@domain/entities/PatientItinerary';
 import type { ServiceTeamAllocation, ServiceTeamMember } from '@domain/entities/ServiceTeam';
 import { ItinerarySection } from './ItinerarySection';
+import { AssembleItineraryButton } from './AssembleItineraryButton';
 import { ItineraryEditAppointmentModal } from './ItineraryEditAppointmentModal';
 import { ItineraryEventsPanel } from './ItineraryEventsPanel';
 import { NewSubstitutionModal, type NewSubstitutionServiceOption } from './NewSubstitutionModal';
@@ -198,6 +199,8 @@ export function PatientItineraryTab({ patient }: PatientItineraryTabProps): JSX.
           {ti('refreshError')}
         </Text>
       )}
+
+      <AssembleItineraryButton patientId={patient.id} assembledAt={itinerary.assembledAt} onAssembled={refresh} />
 
       <div className="flex gap-5 items-start" data-testid="itinerario-colunas">
         <div className="flex-1 min-w-0">

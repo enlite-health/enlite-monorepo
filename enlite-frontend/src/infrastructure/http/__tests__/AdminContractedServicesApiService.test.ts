@@ -314,6 +314,20 @@ describe('AdminContractedServicesApiService', () => {
       expect(init.body).toBeUndefined();
     });
 
+    it('assembleItinerary: POST em /patients/:id/itinerary/assemble sem corpo; 422 vira ContractedServiceApiError com code', async () => {
+      const data = { patientId: PATIENT_ID, assembledAt: '2026-09-30T18:00:00.000Z' };
+      const f = mockFetch({ success: true, data }, 201);
+      const out = await AdminContractedServicesApiService.assembleItinerary(PATIENT_ID);
+      expect(out).toEqual(data);
+      const [url, init] = f.mock.calls[0] as [string, RequestInit];
+      expect(url).toMatch(new RegExp(`/api/admin/patients/${PATIENT_ID}/itinerary/assemble$`));
+      expect(init.method).toBe('POST');
+      expect(init.body).toBeUndefined();
+
+      mockFetch({ success: false, code: 'SERVICE_WITHOUT_SLOT', services: [] }, 422);
+      await expect(AdminContractedServicesApiService.assembleItinerary(PATIENT_ID)).rejects.toMatchObject({ status: 422, code: 'SERVICE_WITHOUT_SLOT' });
+    });
+
     it('getAllocationOptions: GET em /:sid/allocation-options, devolve { serviceId, vacancyId, options }', async () => {
       const data = { serviceId: SERVICE_ID, vacancyId: 'v1', options: [{ workerId: WORKER_ID, displayName: null, vacancyId: 'v1' }] };
       const f = mockFetch({ success: true, data });
