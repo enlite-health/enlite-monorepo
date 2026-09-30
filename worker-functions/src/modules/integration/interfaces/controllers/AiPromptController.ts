@@ -97,7 +97,7 @@ export class AiPromptController {
         return;
       }
       const prompts = await this.getUseCase.list();
-      res.status(200).json({ data: prompts.map(toApiPrompt) });
+      res.status(200).json({ success: true, data: prompts.map(toApiPrompt) });
     } catch (error: unknown) {
       const e = error instanceof Error ? error : new Error(String(error));
       reportError(e, { source: 'AiPromptController:list' });
@@ -117,7 +117,7 @@ export class AiPromptController {
         res.status(404).json({ success: false, error: 'ai_prompt_nao_encontrado' });
         return;
       }
-      res.status(200).json({ data: toApiPrompt(result.prompt) });
+      res.status(200).json({ success: true, data: toApiPrompt(result.prompt) });
     } catch (error: unknown) {
       const e = error instanceof Error ? error : new Error(String(error));
       reportError(e, { source: 'AiPromptController:get' });
@@ -156,7 +156,7 @@ export class AiPromptController {
 
       switch (result.outcome) {
         case 'updated':
-          res.status(200).json({ data: toApiPrompt(result.prompt) });
+          res.status(200).json({ success: true, data: toApiPrompt(result.prompt) });
           return;
         case 'invalid':
           // Defesa redundante: `updateAiPromptBodySchema` (`.trim().min(1)`) já barra isto antes.
@@ -212,7 +212,7 @@ export class AiPromptController {
 
       switch (result.outcome) {
         case 'restored':
-          res.status(200).json({ data: toApiPrompt(result.prompt) });
+          res.status(200).json({ success: true, data: toApiPrompt(result.prompt) });
           return;
         case 'not_found':
           res.status(404).json({ success: false, error: 'ai_prompt_nao_encontrado' });

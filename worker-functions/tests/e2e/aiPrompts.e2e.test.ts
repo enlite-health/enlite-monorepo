@@ -73,6 +73,7 @@ describe('Prompts de IA editáveis — API (spec 029, T014) @integration', () =>
   it('1. listar: GET /api/admin/ai-prompts devolve os prompts semeados, com conteúdo', async () => {
     const r = await api.get('/api/admin/ai-prompts', asAdmin);
     expect(r.status).toBe(200);
+    expect(r.data.success).toBe(true);
     const bySlug = Object.fromEntries(
       (r.data.data as Array<{ slug: string }>).map((p) => [p.slug, p]),
     );
@@ -83,6 +84,7 @@ describe('Prompts de IA editáveis — API (spec 029, T014) @integration', () =>
   it('2. ler um: GET /api/admin/ai-prompts/{slug} devolve o registro único', async () => {
     const r = await api.get(`/api/admin/ai-prompts/${SLUG}`, asAdmin);
     expect(r.status).toBe(200);
+    expect(r.data.success).toBe(true);
     expect(r.data.data).toMatchObject({ slug: SLUG, body: BODY_ORIGINAL, version: 1 });
   });
 
@@ -90,6 +92,7 @@ describe('Prompts de IA editáveis — API (spec 029, T014) @integration', () =>
     const novoBody = 'Conteúdo gravado pelo T014 — versão 2';
     const r = await api.put(`/api/admin/ai-prompts/${SLUG}`, { body: novoBody, version: 1 }, asAdmin);
     expect(r.status).toBe(200);
+    expect(r.data.success).toBe(true);
     expect(r.data.data).toMatchObject({ slug: SLUG, body: novoBody, version: 2 });
 
     const { rows } = await pool.query<{ body: string; version: number }>(
