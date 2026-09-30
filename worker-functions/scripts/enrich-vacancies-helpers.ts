@@ -325,8 +325,10 @@ type GeminiResult = { vacancy: Awaited<ReturnType<GeminiVacancyParserService['pa
 
 /**
  * Calls gemini.parseFromTalentumDescription with exponential-backoff retry on 429/500/503.
- * Uses the inline-prompt variant (not parseFromText, which requires PROMPT_DOC_ID_* env vars
- * pointing at Google Docs — unavailable in offline/CI environments).
+ * Uses the inline-prompt variant (parseFromTalentumDescription) instead of parseFromText.
+ * parseFromText also works offline now (it reads the pre-screening prompts from the `ai_prompts`
+ * table via findActiveBySlug, no Google Docs/PROMPT_DOC_ID_* needed), but it requires a live DB
+ * and active prompt rows; this helper deliberately avoids both.
  *
  * The _workerType parameter is accepted but unused (kept for API compatibility with callers
  * that still want to classify AT vs CUIDADOR). Returns null after MAX_RETRIES failures.

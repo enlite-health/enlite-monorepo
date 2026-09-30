@@ -28,7 +28,6 @@ export {
   retryMissingFields,
 } from './infrastructure/GeminiVacancyParserHelpers';
 export { GoogleApiKeyValidator } from './infrastructure/GoogleApiKeyValidator';
-export { GoogleDocsPromptProvider } from './infrastructure/GoogleDocsPromptProvider';
 export { ClickUpFieldResolver } from './infrastructure/clickup/ClickUpFieldResolver';
 export type { ClickUpFieldResolverOptions } from './infrastructure/clickup/ClickUpFieldResolver';
 export type { ClickUpTask, ClickUpTaskCustomField } from './infrastructure/clickup/ClickUpTask';

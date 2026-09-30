@@ -31,15 +31,20 @@ jest.mock('google-auth-library', () => ({
   })),
 }));
 
-// Mock do GoogleDocsPromptProvider para evitar chamadas ao Google Drive
-jest.mock('../GoogleDocsPromptProvider', () => ({
-  GoogleDocsPromptProvider: jest.fn().mockImplementation(() => ({
-    getPrompt: jest.fn().mockResolvedValue('Prompt template para AT/CUIDADOR'),
-    clearCache: jest.fn(),
+// Dublê do AiPromptRepository (leitura de serviço): nunca bate no banco
+const mockFindActiveBySlug = jest.fn();
+jest.mock('../AiPromptRepository', () => ({
+  AiPromptRepository: jest.fn().mockImplementation(() => ({
+    findActiveBySlug: (...args: unknown[]) => mockFindActiveBySlug(...args),
   })),
 }));
 
 import { GeminiVacancyParserService } from '../GeminiVacancyParserService';
+
+function fakePrompt(slug: string, body: string) {
+  return { slug, body, version: 1, isActive: true, createdBy: 't', updatedBy: 't', createdAt: '', updatedAt: '' };
+}
+
 
 // ── Helpers ──────────────────────────────────────────────────────
 
@@ -135,6 +140,10 @@ describe('GeminiVacancyParserService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    mockFindActiveBySlug.mockReset();
+    mockFindActiveBySlug.mockImplementation(async (slug: string) =>
+      fakePrompt(slug, 'BODY<' + slug + '>'),
+    );
     jest.spyOn(console, 'log').mockImplementation();
     jest.spyOn(console, 'warn').mockImplementation();
     jest.spyOn(console, 'error').mockImplementation();
@@ -426,7 +435,7 @@ describe('GeminiVacancyParserService', () => {
       const fetchBody = JSON.parse(mockFetch.mock.calls[0][1].body);
       const systemPrompt = fetchBody.systemInstruction.parts[0].text;
       expect(systemPrompt).toContain('FORMATO DE RESPUESTA OBLIGATORIO');
-      expect(systemPrompt).toContain('Prompt template para AT/CUIDADOR');
+      expect(systemPrompt).toContain('BODY<PRESCREENING_AT>');
     });
 
     it('deve lancar erro quando Gemini retorna HTTP error apos esgotar retries', async () => {
@@ -539,6 +548,20 @@ describe('GeminiVacancyParserService', () => {
       expect(url).not.toContain('key=');
       expect(init.headers.Authorization).toBe('Bearer test-access-token');
     });
+
+    it('AT lê o slug PRESCREENING_AT e CUIDADOR lê PRESCREENING_CAREGIVER (findActiveBySlug)', async () => {
+      mockFetch.mockResolvedValue(makeGeminiResponse(makeFullParseOutput()));
+      await service.parseFromText('texto', 'AT');
+      const t1 = JSON.parse(mockFetch.mock.calls[0][1].body).systemInstruction.parts[0].text;
+      mockFetch.mockClear();
+      await service.parseFromText('texto', 'CUIDADOR');
+      const t2 = JSON.parse(mockFetch.mock.calls[0][1].body).systemInstruction.parts[0].text;
+
+      expect(mockFindActiveBySlug).toHaveBeenNthCalledWith(1, 'PRESCREENING_AT');
+      expect(mockFindActiveBySlug).toHaveBeenNthCalledWith(2, 'PRESCREENING_CAREGIVER');
+      expect(t1).toContain('BODY<PRESCREENING_AT>');
+      expect(t2).toContain('BODY<PRESCREENING_CAREGIVER>');
+    });
   });
 
   // ── buildSystemPrompt ────────────────────────────────────────
@@ -561,7 +584,17 @@ describe('GeminiVacancyParserService', () => {
 
       const fetchBody = JSON.parse(mockFetch.mock.calls[0][1].body);
       const systemPrompt = fetchBody.systemInstruction.parts[0].text;
-      expect(systemPrompt).toContain('Prompt template para AT/CUIDADOR');
+      expect(systemPrompt).toContain('BODY<PRESCREENING_AT>');
+    });
+
+    it('prompt ausente/desativado falha nomeando o slug, sem chamar o modelo e sem fallback (FR-031)', async () => {
+      mockFindActiveBySlug.mockResolvedValue(null);
+
+      await expect(service.parseFromText('texto', 'AT')).rejects.toThrow('AiPrompt not found: PRESCREENING_AT');
+      await expect(service.parseFromText('texto', 'CUIDADOR')).rejects.toThrow(
+        'AiPrompt not found: PRESCREENING_CAREGIVER',
+      );
+      expect(mockFetch).not.toHaveBeenCalled();
     });
   });
 

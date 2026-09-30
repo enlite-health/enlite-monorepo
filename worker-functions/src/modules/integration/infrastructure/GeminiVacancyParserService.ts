@@ -17,7 +17,8 @@ import {
   VACANCY_RESPONSE_SCHEMA,
   JSON_OUTPUT_INSTRUCTIONS,
 } from './gemini-vacancy-constants';
-import { GoogleDocsPromptProvider } from './GoogleDocsPromptProvider';
+import { AiPromptRepository } from './AiPromptRepository';
+import type { AiPromptSlug } from '../domain/AiPromptSlug';
 import { normalizePrescreeningResponseType } from '@shared/utils/normalizePrescreeningResponseType';
 import {
   parseFromTalentumDescriptionHelper,
@@ -82,11 +83,11 @@ export type WorkerType = 'AT' | 'CUIDADOR';
 
 export class GeminiVacancyParserService {
   private model: string;
-  private promptProvider: GoogleDocsPromptProvider;
+  private promptRepo: AiPromptRepository;
 
   constructor(modelOverride?: string) {
     this.model = modelOverride ?? process.env.GEMINI_MODEL ?? 'gemini-2.5-pro';
-    this.promptProvider = new GoogleDocsPromptProvider();
+    this.promptRepo = new AiPromptRepository();
   }
 
   async parseFromText(
@@ -279,13 +280,15 @@ export class GeminiVacancyParserService {
   }
 
   private async buildSystemPrompt(workerType: WorkerType): Promise<string> {
-    const docId =
-      workerType === 'AT'
-        ? process.env.PROMPT_DOC_ID_AT ?? ''
-        : process.env.PROMPT_DOC_ID_CUIDADOR ?? '';
+    const slug: AiPromptSlug =
+      workerType === 'AT' ? 'PRESCREENING_AT' : 'PRESCREENING_CAREGIVER';
 
-    const fileContent = await this.promptProvider.getPrompt(docId);
+    // Leitura de SERVIÇO (respeita is_active), sem cache e sem fallback (FR-031).
+    const prompt = await this.promptRepo.findActiveBySlug(slug);
+    if (!prompt) {
+      throw new Error(`AiPrompt not found: ${slug}`);
+    }
 
-    return fileContent + '\n\n' + JSON_OUTPUT_INSTRUCTIONS;
+    return prompt.body + '\n\n' + JSON_OUTPUT_INSTRUCTIONS;
   }
 }

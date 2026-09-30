@@ -15,9 +15,9 @@
  * and harmful for this flow). It is read from `ai_prompts` (slug
  * `VACANCY_DESCRIPTION`, spec 029 T018) via `AiPromptRepository` — editable
  * from the admin screen, no redeploy needed. Seeded by migration 487 with the
- * content that used to live in the `DESCRIPTION_SYSTEM_PROMPT` constant
- * (`talentumDescriptionHelpers.ts`); that constant is now unused here and
- * stays until Fase 4 (T051a) removes it together with the Drive provider.
+ * content that used to live as an inline constant in
+ * `talentumDescriptionHelpers.ts` (removed in T051a, together with the Drive
+ * provider).
  */
 
 import { Pool } from 'pg';
