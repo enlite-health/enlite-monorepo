@@ -2,9 +2,10 @@
  * aiPromptAusenteFalhaVisivel.e2e.test.ts @integration — spec 029 (prompts de IA editáveis),
  * T019a (FR-031).
  *
- * Prova que instrução ausente falha de forma VISÍVEL, sem cair de volta na fonte antiga (a
- * constante `DESCRIPTION_SYSTEM_PROMPT` e o provider do Drive continuam no código até a Fase 6 —
- * princípio VI — então a ausência de fallback precisa ser PROVADA, não presumida).
+ * Prova que instrução ausente falha de forma VISÍVEL, sem cair de volta na fonte antiga (histórico:
+ * a constante `DESCRIPTION_SYSTEM_PROMPT` e o `GoogleDocsPromptProvider` do Drive ficaram no código
+ * até o corte da Fase 6 (T051/T051a) e já foram APAGADOS — a ausência de fallback continua sendo
+ * PROVADA por este teste, não presumida).
  *
  * "Ausente" aqui é `is_active = false`, como o texto da tarefa manda. O caminho de geração lê por
  * `AiPromptRepository.findActiveBySlug` (`src/modules/integration/infrastructure/AiPromptRepository.ts`),

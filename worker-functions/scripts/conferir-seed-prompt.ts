@@ -3,11 +3,12 @@
  *
  * Prova que `ai_prompts.body` para um slug é IDÊNTICO, byte a byte, à origem canônica desse
  * prompt (spec 029, T017/T050):
- *   - `VACANCY_DESCRIPTION` → a constante `DESCRIPTION_SYSTEM_PROMPT` do código
- *     (`talentumDescriptionHelpers.ts`), importada diretamente — nunca transcrita à mão aqui,
- *     para não reintroduzir o mesmo risco de divergência que este script existe para pegar.
- *   - `PRESCREENING_AT` / `PRESCREENING_CAREGIVER` não têm constante de código (vêm do Drive,
- *     T047/T049) — exigem `--origem <arquivo>` com o texto extraído.
+ *   - `VACANCY_DESCRIPTION` → (histórico) a constante `DESCRIPTION_SYSTEM_PROMPT` de
+ *     `talentumDescriptionHelpers.ts`, importada diretamente; ESSA CONSTANTE FOI APAGADA no corte
+ *     T051. Hoje `CODE_CONSTANTS` está vazio: qualquer slug sem `--origem` falha com erro
+ *     explicando isso; para conferir `VACANCY_DESCRIPTION` passe `--origem <arquivo>`.
+ *   - `PRESCREENING_AT` / `PRESCREENING_CAREGIVER` nunca tiveram constante de código (vieram do
+ *     Drive, T047/T049) — exigem `--origem <arquivo>` com o texto extraído.
  *
  * Por que resumo criptográfico (SHA-256) em vez de comparar string e dizer só "igual/diferente":
  * é o que o aceite de T017/T050 pede ("imprime os dois resumos"), e permite colar em evidência
@@ -27,7 +28,6 @@ import { readFileSync } from 'node:fs';
 import { Pool } from 'pg';
 import { AI_PROMPT_SLUGS, isAiPromptSlug, type AiPromptSlug } from '../src/modules/integration/domain/AiPromptSlug';
 import { normalizar } from './extrair-prompts-do-drive';
-import { DESCRIPTION_SYSTEM_PROMPT } from '../src/modules/integration/infrastructure/talentumDescriptionHelpers';
 
 /**
  * Origem canônica de cada slug que ainda vive em constante de código. Os demais (hoje,
@@ -35,7 +35,6 @@ import { DESCRIPTION_SYSTEM_PROMPT } from '../src/modules/integration/infrastruc
  * `--origem` porque a fonte deles é um documento do Drive, não algo importável.
  */
 const CODE_CONSTANTS: Partial<Record<AiPromptSlug, string>> = {
-  VACANCY_DESCRIPTION: DESCRIPTION_SYSTEM_PROMPT,
 };
 
 function sha256(texto: string): string {

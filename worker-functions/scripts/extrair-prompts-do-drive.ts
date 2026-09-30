@@ -3,8 +3,9 @@
  *
  * Exporta os dois prompts de preselección (hoje em Google Docs) para arquivos de texto, para
  * que a migration de seed (T049) e a conferência do banco (T050, conferir-seed-prompt.ts)
- * partam do MESMO texto. Mesmo caminho do `GoogleDocsPromptProvider`: export `text/plain`
- * da Drive API, escopo `drive.readonly`.
+ * partam do MESMO texto. Mesmo caminho que o antigo `GoogleDocsPromptProvider` usava (apagado no
+ * corte T051a; hoje o serviço lê de `ai_prompts`): export `text/plain` da Drive API, escopo
+ * `drive.readonly`. Script mantido como registro/ferramenta de conferência da origem no Drive.
  *
  * Uso:
  *   npx tsx scripts/extrair-prompts-do-drive.ts --out /tmp/prompts-drive/ --min-chars 500 \
