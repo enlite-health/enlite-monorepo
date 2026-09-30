@@ -13,6 +13,7 @@ import {
   seedConflictForSubstitute,
   readAssignments,
   readOpenAbsences,
+  readPatientStatus,
   cleanupItinerary,
   type ItinerarySeed,
 } from '../helpers/itinerary-db-helper';
@@ -158,7 +159,7 @@ test.describe('Aba Itinerario — full stack, sem mock @integration', () => {
       })
       .toBe(viewport.width);
     expect((await page.getByTestId('substitution-modal').boundingBox())!.height).toBe(viewport.height);
-    await page.getByTestId('substitution-date').selectOption({ index: 1 });
+    await page.getByTestId('substitution-date').selectOption({ index: 2 })  // 2ª segunda: a 1ª fica intacta (o alternativo 2 a usa como "antes de D");
     const chosenDate = await page.getByTestId('substitution-date').inputValue();
     await page.getByTestId('substitution-worker').click();
     await page.getByRole('listbox').getByText(seed.names.free).click();
@@ -202,19 +203,27 @@ test.describe('Aba Itinerario — full stack, sem mock @integration', () => {
     await loginAsAdmin(page);
     await openItinerarioTab(page, seed.patientId);
 
+    // ANTES: horas cobertas (texto do par cobertas/contratadas) e estado do paciente.
+    const parLocator = page.getByTestId(`itinerario-servico-par-${seed.serviceId}`);
+    await expect(page.getByTestId(`itinerario-slot-prestador-${seed.slotId}-${seed.titularWorkerId}`)).toBeVisible();
+    const parAntes = await parLocator.innerText();
+    const statusAntes = readPatientStatus(seed);
     await page.getByTestId('itinerario-novo-btn').click();
     await expect(page.getByTestId('substitution-slot')).toBeVisible({ timeout: 10_000 });
     await page.getByTestId('substitution-mode-permanent').click();
-    await page.getByTestId('substitution-date').selectOption({ index: 1 });
+    await page.getByTestId('substitution-date').selectOption({ index: 2 });
     const fromDate = await page.getByTestId('substitution-date').inputValue();
     await page.getByTestId('substitution-worker').click();
     await page.getByRole('listbox').getByText(seed.names.permanent).click();
     await page.getByTestId('substitution-confirm').click();
 
     await expect(page.getByTestId('substitution-modal')).toHaveCount(0, { timeout: 10_000 });
-    // NÃO se afirma aqui que a agenda de HOJE ainda mostra o titular: o backend grava `status='ENDED'`
-    // com `valid_to` FUTURO (D-1) e a leitura (`isVigenteAt`) exige `status='ACTIVE'`, então a faixa
-    // vira "Sin asignar" já hoje. Achado da rodada 3, na LISTA do fecho — não é o que este teste prova.
+    // A agenda (asOf = hoje < D): a faixa AINDA mostra o titular — ele trabalha até D-1.
+    await expect(page.getByTestId(`itinerario-slot-prestador-${seed.slotId}-${seed.titularWorkerId}`)).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId(`itinerario-slot-sem-prestador-${seed.slotId}`)).toHaveCount(0);
+    // Horas cobertas e estado do paciente: IGUAIS antes e depois (hoje < D).
+    await expect(parLocator).toHaveText(parAntes);
+    expect(readPatientStatus(seed)).toBe(statusAntes);
     // Prova de banco: o titular encerra em D-1 e o novo entra em D, ambos no mesmo slot.
     await expect
       .poll(() => readAssignments(seed).find((a) => a.workerId === seed.permanentWorkerId)?.validFrom, { timeout: 10_000 })
@@ -222,11 +231,15 @@ test.describe('Aba Itinerario — full stack, sem mock @integration', () => {
     const rows = readAssignments(seed);
     const titular = rows.find((a) => a.workerId === seed.titularWorkerId);
     const novo = rows.find((a) => a.workerId === seed.permanentWorkerId);
-    expect(titular?.status).toBe('ENDED');
+    expect(titular?.status).toBe('ACTIVE'); // NÃO 'ENDED': com ENDED + valid_to futuro o titular sairia hoje
     expect(titular?.validTo).not.toBeNull();
     expect(titular!.validTo! < fromDate).toBe(true);
     expect(novo?.status).toBe('ACTIVE');
     expect(novo?.validTo).toBeNull();
+    // Na tela (próximos eventos): antes de D (1ª segunda) o TITULAR; a partir de D o NOVO.
+    await expect(
+      page.locator(`[data-testid^="itinerario-evento-prestador-"][data-testid$="-${seed.nextMonday}"]`).first(),
+    ).toContainText(seed.names.titular, { timeout: 10_000 });
     // Na tela: o evento de D mostra o NOVO prestador.
     await expect(
       page.locator(`[data-testid^="itinerario-evento-prestador-"][data-testid$="-${fromDate}"]`).first(),

@@ -57,6 +57,8 @@ describe('ItineraryEditAppointmentModal', () => {
     expect(screen.getByTestId('itinerario-editar-dia')).toHaveDisplayValue('lunes');
     expect(screen.getByTestId('itinerario-editar-horario')).toBeDisabled();
     expect(screen.getByTestId('itinerario-editar-horario')).toHaveValue('08:00 - 12:00');
+    // Figma: o VALOR também fica no cinza de desabilitado (#d9d9d9), não só o rótulo.
+    expect(screen.getByTestId('itinerario-editar-horario').className).toContain('!text-[#d9d9d9]');
   });
 
   it('"Dirección de entrada" é só leitura, com o endereço do serviço', () => {
@@ -120,7 +122,9 @@ describe('ItineraryEditAppointmentModal', () => {
 
   it('D445.7: sem fonte para os contadores de raio — NUNCA inventa números, mostra o aviso "sem fonte" e o link para a vaga', () => {
     renderModal();
-    expect(screen.getByTestId('itinerario-editar-sem-fonte-contadores')).toBeInTheDocument();
+    expect(screen.getByTestId('itinerario-editar-sem-fonte-contadores')).toHaveTextContent('Invitá prestadores de la zona desde la vacante.');
+    // texto de PRODUTO: nada de vocabulário técnico na tela do usuário
+    expect(screen.queryByText(/fuente de datos|ambiente|contadores/i)).toBeNull();
     expect(screen.queryByText(/Trabajadores Seleccionados|Selecionados na região/i)).toBeNull();
     expect(screen.queryByText(/Trabajadores.*perfil|perfil de enquadre/i)).toBeNull();
     const link = screen.getByTestId('itinerario-editar-link-vaga');

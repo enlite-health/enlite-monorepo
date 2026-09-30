@@ -60,7 +60,9 @@ export function ItineraryEditAppointmentModal({
   const disabledLabel = `${fieldLabel} !text-[#d9d9d9]`;
   // Disabled do Figma: fundo branco, borda e texto #d9d9d9 (o do atom é fundo cinza e texto #737373).
   const disabledField =
-    '!bg-white [&_input]:!bg-white [&_input]:!text-[#d9d9d9] [&_select]:!text-[#d9d9d9] [&_svg]:!text-[#d9d9d9] [&_input]:cursor-not-allowed';
+    '!bg-white [&_select]:!text-[#d9d9d9] [&_svg]:!text-[#d9d9d9]';
+  // O `Input` sem ícones recebe o `className` NO PRÓPRIO <input> (não num wrapper): sem `[&_input]`.
+  const disabledInput = '!bg-white !text-[#d9d9d9] cursor-not-allowed';
 
   return (
     <SidePanelShell ariaLabel={tm('title')} onClose={onCancel} testId="itinerario-editar-modal">
@@ -101,7 +103,7 @@ export function ItineraryEditAppointmentModal({
           value={`${slot.startTime} - ${slot.endTime}`}
           disabled
           readOnly
-          className={disabledField}
+          className={disabledInput}
           data-testid="itinerario-editar-horario"
         />
       </div>

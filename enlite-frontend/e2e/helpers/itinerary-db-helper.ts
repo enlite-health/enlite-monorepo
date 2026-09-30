@@ -182,6 +182,11 @@ export function seedConflictForSubstitute(seed: ItinerarySeed): void {
 }
 
 
+/** Estado do paciente (`patients.status`) — prova de banco de que o reemplazo não o mexe hoje. */
+export function readPatientStatus(seed: ItinerarySeed): string {
+  return firstLine(runSQL(`SELECT status FROM patients WHERE id = '${seed.patientId}'`));
+}
+
 export interface AssignmentRow {
   workerId: string;
   validFrom: string;
