@@ -36,8 +36,8 @@ describe('change itinerario-trocas — catálogo de motivos de saída (492): API
   let app: AppDeFamilia;
   let donaDeServicosRead = false;
 
-  const U = { admin: 'ser492-admin', leitor: 'ser492-leitor' };
-  const GRUPOS = { admin: 'SER492 Admin do catálogo', leitor: 'SER492 Só serviços' };
+  const U = { admin: 'ser492-admin', leitor: 'ser492-leitor', outraCelula: 'ser492-outra' };
+  const GRUPOS = { admin: 'SER492 Admin do catálogo', leitor: 'SER492 Só serviços', outraCelula: 'SER492 Só atividades' };
   const envAnterior: Record<string, string | undefined> = {};
   const setEnv = (k: string, v: string): void => { envAnterior[k] = process.env[k]; process.env[k] = v; };
 
@@ -53,6 +53,7 @@ describe('change itinerario-trocas — catálogo de motivos de saída (492): API
   async function limpar(): Promise<void> {
     await limparIamFixtures(pool, { uids: Object.values(U), grupos: Object.values(GRUPOS) });
     await pool.query(`DELETE FROM service_exit_reasons WHERE label LIKE $1`, [`${PREFIXO}%`]);
+    await pool.query(`DELETE FROM therapeutic_activities WHERE label LIKE $1`, [`${PREFIXO}%`]);
     // `patient_services:read` só entra no catálogo com o sync ligado; se este teste a criou, apaga (não deixa célula extra para as outras suítes).
     if (donaDeServicosRead) {
       await pool.query(`DELETE FROM iam.permissions WHERE resource = 'patient_services' AND action = 'read'`);
@@ -66,8 +67,9 @@ describe('change itinerario-trocas — catálogo de motivos de saída (492): API
     await pool.query(
       `INSERT INTO users (firebase_uid, email, display_name, role, status, is_active, tenant_id) VALUES
          ($1, 'ser492-admin@e2e.local', 'Admin Catálogo', 'admin', 'ACTIVE', true, $3),
-         ($2, 'ser492-leitor@e2e.local', 'Leitor Serviços', 'admin', 'ACTIVE', true, $3)`,
-      [U.admin, U.leitor, TENANT_E2E],
+         ($2, 'ser492-leitor@e2e.local', 'Leitor Serviços', 'admin', 'ACTIVE', true, $3),
+         ($4, 'ser492-outra@e2e.local', 'Outra célula', 'admin', 'ACTIVE', true, $3)`,
+      [U.admin, U.leitor, TENANT_E2E, U.outraCelula],
     );
     // `patient_services:read` nasce do sync do catálogo (não da 492): garante-a como as suítes irmãs.
     // As 3 células de `catalog_service_exit_reasons` NÃO são garantidas aqui de propósito:
@@ -81,6 +83,8 @@ describe('change itinerario-trocas — catálogo de motivos de saída (492): API
       ],
     });
     await grupoComCelulas(pool, { nome: GRUPOS.leitor, uid: U.leitor, celulas: [['patient_services', 'read']] });
+    // Caso 6: TEM a célula de OUTRO catálogo (a que uma troca de célula na rota poria no lugar) e NÃO a do catálogo de motivos.
+    await grupoComCelulas(pool, { nome: GRUPOS.outraCelula, uid: U.outraCelula, celulas: [['catalog_therapeutic_activities', 'create']] });
 
     setEnv('USE_MOCK_AUTH', 'true');
     setEnv('PERMISSION_ENGINE_ENABLED', 'true');
@@ -171,8 +175,12 @@ describe('change itinerario-trocas — catálogo de motivos de saída (492): API
     expect(items.length).toBeGreaterThanOrEqual(5);
   });
 
-  it('6. sem a célula `catalog_service_exit_reasons:create` → 403 no POST, e nada é criado', async () => {
-    const r = await chamar('POST', BASE, U.leitor, { label: `${PREFIXO}Sem permissão` });
+  it('6. sem a célula `catalog_service_exit_reasons:create` → 403 no POST, e nada é criado (mesmo com a célula de OUTRO catálogo)', async () => {
+    // Controle: a célula que este usuário tem VALE — cria em /activities. Sem isto o 403 abaixo poderia ser por outro motivo.
+    const controle = await chamar('POST', '/api/admin/therapeutic-catalogs/activities', U.outraCelula, { label: `${PREFIXO}Controle atividade` });
+    expect(controle.status).toBe(201);
+
+    const r = await chamar('POST', BASE, U.outraCelula, { label: `${PREFIXO}Sem permissão` });
     expect(r.status).toBe(403);
     const db = await pool.query(`SELECT 1 FROM service_exit_reasons WHERE label = $1`, [`${PREFIXO}Sem permissão`]);
     expect(db.rowCount).toBe(0);
