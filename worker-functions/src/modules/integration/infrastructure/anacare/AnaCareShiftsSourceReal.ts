@@ -19,10 +19,10 @@ export class AnaCareShiftsSourceReal implements AnaCareShiftsSource {
 
   /** `month` (conceito de domínio da porta) → `from`/`to` ANTES de chamar o cliente, que só fala em faixa de datas. */
   async listShifts(params: ListShiftsParams): Promise<ListShiftsResult> {
-    const { minDate, maxDate } = monthToDateRange(params.month);
+    const { minDate, maxDateExclusive } = monthToDateRange(params.month);
     return this.client.listShifts({
       from: minDate,
-      to: maxDate,
+      to: maxDateExclusive,
       patientId: params.patientId,
       reservationId: params.reservationId,
     });
