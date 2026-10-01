@@ -154,6 +154,7 @@ jobs:
             VERTEX_LOCATION=global
             ENCUADRE_WEEKLY_CAPACITY=36
             ANACARE_HOURS_SOURCE=fake
+            ADMISSION_CALENDAR_SOURCE=fake
             ANACARE_DIRECTORY_MIN_ABSOLUTE=226
           secrets: |
             DB_PASSWORD=enlite-runtime-db-password:latest
