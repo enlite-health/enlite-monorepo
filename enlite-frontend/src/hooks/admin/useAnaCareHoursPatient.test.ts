@@ -245,4 +245,34 @@ describe('useAnaCareHoursPatient — vários meses (spec 037)', () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     expect(monthsCalled(getPatientMonth)).toEqual(['2026-09']);
   });
+  it('(h) falha SÓ do retrato do mês da URL: os turnos seguem "ok" (não vira falha de turnos) e `error` traz o texto do próprio retrato', async () => {
+    const { service, getRetratoStatus } = multiMonthService({ '2026-08': patientWith(shift('a', '2026-08-31')), '2026-09': patientWith(shift('b', '2026-09-01')) });
+    getRetratoStatus.mockImplementation(async (month: string) => {
+      if (month === '2026-09') throw new Error('retrato fora do ar');
+      return RETRATO;
+    });
+    const { result, rerender } = renderHook(({ months, rm }) => useAnaCareHoursPatient(service, '90000', months, rm), { initialProps: { months: ['2026-08'], rm: '2026-08' } });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    rerender({ months: ['2026-08', '2026-09'], rm: '2026-09' });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.monthStates['2026-09']).toEqual({ state: 'ok', error: null });
+    expect(result.current.error).toBe('retrato fora do ar');
+  });
+
+  it('(i) o retrato exibido é SEMPRE o do mês da URL: enquanto o do mês novo não chegou, não há snapshot (carregando), nunca o retrato de outro mês', async () => {
+    const velho = { ...RETRATO, stale: true, snapshotState: 'velho' as const };
+    let resolveSep: (v: typeof RETRATO) => void = () => {};
+    const { service, getRetratoStatus } = multiMonthService({ '2026-08': patientWith(shift('a', '2026-08-31')), '2026-09': patientWith(shift('b', '2026-09-01')) });
+    getRetratoStatus.mockImplementation((month: string) => (month === '2026-08' ? Promise.resolve(velho) : new Promise((r) => { resolveSep = r; })));
+    const { result, rerender } = renderHook(({ months, rm }) => useAnaCareHoursPatient(service, '90000', months, rm), { initialProps: { months: ['2026-08'], rm: '2026-08' } });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.snapshot?.snapshotState).toBe('velho');
+    rerender({ months: ['2026-08', '2026-09'], rm: '2026-09' });
+    await waitFor(() => expect(result.current.monthStates['2026-09']?.state).toBe('ok'));
+    expect(result.current.snapshot).toBeNull();
+    expect(result.current.isLoading).toBe(true);
+    await act(async () => resolveSep({ ...RETRATO, snapshotState: 'fresco' }));
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.snapshot).toMatchObject({ month: '2026-09', snapshotState: 'fresco' });
+  });
 });
