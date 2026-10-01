@@ -396,12 +396,12 @@ describe('AnaCareSessionClient — filtro de universo D340 no cliente (2.1)', ()
       rateLimiter: new AnaCareRateLimiter({ minIntervalMs: 0, now, sleep }),
     });
 
-    await client.listShifts({ from: '2026-09-01', to: '2026-09-30' });
+    await client.listShifts({ from: '2026-09-01', to: '2026-10-01' });
 
     expect(urlsCalled).toHaveLength(1);
     const parsed = new URL(urlsCalled[0]);
     expect(parsed.searchParams.get('min_date')).toBe('2026-09-01');
-    expect(parsed.searchParams.get('max_date')).toBe('2026-09-30');
+    expect(parsed.searchParams.get('max_date')).toBe('2026-10-01');
     expect(parsed.searchParams.get('month')).toBeNull();
   });
 
