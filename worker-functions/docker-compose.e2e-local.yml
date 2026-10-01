@@ -1,0 +1,18 @@
+# Override SÓ do `scripts/stack-e2e-local.sh` (item 19 da spec 038). Não entra no CI.
+#
+# O que faz: dá nomes de container e tag de imagem por PROJETO (`e2e-<worktree>`), porque
+# `container_name: enlite-postgres` / `enlite-api` fixos nos compose base fazem duas worktrees
+# se destruírem mutuamente. As PORTAS ficam as do CI (5433, 8080, 54443, 9099...).
+# Exige a variável E2E_PROJECT (o script a exporta); sem ela o compose falha alto.
+services:
+  postgres:
+    container_name: ${E2E_PROJECT:?E2E_PROJECT obrigatória}-postgres
+  fake-gcs:
+    container_name: ${E2E_PROJECT:?E2E_PROJECT obrigatória}-fake-gcs
+  firebase-emulator:
+    container_name: ${E2E_PROJECT:?E2E_PROJECT obrigatória}-firebase
+  api:
+    container_name: ${E2E_PROJECT:?E2E_PROJECT obrigatória}-api
+    # Tag própria: a imagem da API é DESTA worktree (armadilha 2). Sem `image:` o compose
+    # nomeia `<projeto>-api` igual, mas deixar explícito permite provar o build.
+    image: ${E2E_PROJECT:?E2E_PROJECT obrigatória}-api:local
