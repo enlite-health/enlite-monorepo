@@ -1320,6 +1320,7 @@
       "templateDrafts": "Registrar mensaje",
       "catalogObjectives": "Objetivos específicos",
       "catalogActivities": "Rutina y actividades",
+      "catalogSegments": "Segmentos (Ana Care)",
       "catalogServiceExitReasons": "Motivos de salida",
       "aiPrompts": "Prompts de IA"
     },
@@ -3656,6 +3657,7 @@
         "therapeuticProjectCard": {
           "title": "Proyecto Terapéutico",
           "cid": "Hipótesis Diagnóstica - CID",
+          "segment": "Segmento (Ana Care)",
           "hypothesis": "Hipótesis",
           "currentClinicalContext": "Contexto Clínico actual",
           "generalObjective": "Objetivo General",
@@ -4168,9 +4170,9 @@
             "ptpContactInactive": "Uno de los contactos elegidos ya no está activo. Volvé a elegir."
           },
           "modalityPlaceholder": "Elegí la modalidad",
-          "segmentFilter": "Filtrar por segmento",
-          "segmentFilterPlaceholder": "Todos los segmentos",
-          "segmentFilterAll": "Todos los segmentos",
+          "segment": "Segmento (Ana Care)",
+          "segmentPlaceholder": "Elegí el segmento",
+          "segmentEmpty": "No hay segmentos activos — pedí al administrador del catálogo",
           "responsibles": "Responsables",
           "externalContacts": "Contactos externos",
           "coverageContacts": "Contactos de la cobertura",
@@ -5094,6 +5096,9 @@
         "patients.catalogActivities": {
           "label": "Pacientes: Catálogo de rutina y actividades"
         },
+        "patients.catalogSegments": {
+          "label": "Pacientes: Catálogo de segmentos (Ana Care)"
+        },
         "patients.catalogServiceExitReasons": {
           "label": "Pacientes: Catálogo de motivos de salida"
         }
@@ -5668,6 +5673,10 @@
           "title": "Rutina y actividades del proyecto terapéutico",
           "subtitle": "Las opciones de \"Rutina y Actividades\" del proyecto terapéutico. Se editan acá, sin deploy. Desactivar no borra: las versiones antiguas guardan el texto que tenían."
         },
+        "segments": {
+          "title": "Segmentos del proyecto terapéutico (Ana Care)",
+          "subtitle": "Los segmentos que el equipo elige para encuadrar el proyecto terapéutico de cada paciente (los de la planilla de Ana Care). Se editan acá, sin deploy. Desactivar no borra: las versiones antiguas del proyecto guardan el texto que tenían."
+        },
         "serviceExitReasons": {
           "title": "Motivos de salida",
           "subtitle": "Las opciones que el equipo elige al registrar la salida de un prestador de un servicio. Se editan acá, sin deploy. Desactivar no borra: los registros anteriores guardan el motivo que tenían.",
@@ -5684,6 +5693,7 @@
       "table": {
         "order": "Orden",
         "label": "Texto",
+        "segment": "Segmento",
         "status": "Estado",
         "actions": "Acciones"
       },
@@ -5692,6 +5702,10 @@
         "labelHelp": "En español, como va a salir en el PDF. Sin datos de ninguna persona.",
         "sortOrder": "Orden",
         "sortOrderHelp": "Posición en la lista (menor primero). Vacío = al final.",
+        "segment": "Segmento (Ana Care)",
+        "segmentNone": "Sin segmento",
+        "segmentHelp": "Opcional. En el proyecto terapéutico, las opciones del segmento elegido aparecen primero.",
+        "segmentInactive": "{{label}} (inactivo)",
         "save": "Guardar",
         "saving": "Guardando…"
       },

@@ -46,6 +46,7 @@ describe('spec 018 PR-7 — projeto terapêutico pós-D328: API sob engine de pe
   let serviceId: string;
   let objectiveIds: string[];
   let activityIds: string[];
+  let ptiSegmentId: string;
   let externalContactId: string;
   /** Ativo, mas do OUTRO paciente — 23503 (FK 429) tem de virar 404, não 500 (task do Gabriel, 14/09). */
   let externalContactDeOutroPacienteId: string;
@@ -147,6 +148,9 @@ describe('spec 018 PR-7 — projeto terapêutico pós-D328: API sob engine de pe
     ...over,
   });
 
+  // 030: `mode:'new'` leva `segmentId` (MACRO, obrigatório) de um segmento SEMEADO (495); `versionBody` é o corpo do `edit`.
+  const newVersionBody = (over: Record<string, unknown> = {}) => ({ ...versionBody(), segmentId: ptiSegmentId, ...over });
+
   // PR-8b (A3, achado A2): o comentário anterior (`limparCelulas`) estava CORRETO até a migration
   // 435 — mas 435 passou a seedar `create`/`update` (e a manter `write`, SUP-31) para estes
   // recursos DE FORMA PERMANENTE, no catálogo global; e `patient_family`/`patient_coverage`/
@@ -219,6 +223,8 @@ describe('spec 018 PR-7 — projeto terapêutico pós-D328: API sob engine de pe
     )).rows[0].id;
     objectiveIds = (await pool.query<{ id: string }>(`SELECT id FROM therapeutic_specific_objectives WHERE active ORDER BY sort_order`)).rows.map((r) => r.id);
     activityIds = (await pool.query<{ id: string }>(`SELECT id FROM therapeutic_activities WHERE active ORDER BY sort_order`)).rows.map((r) => r.id);
+    // 030: o segmento vem do seed 495 (nunca criado aqui) — se a tabela estiver vazia o beforeAll falha alto.
+    ptiSegmentId = (await pool.query<{ id: string }>(`SELECT id FROM therapeutic_segments WHERE active AND created_by = 'seed:495' ORDER BY sort_order LIMIT 1`)).rows[0].id;
     externalContactId = (await pool.query<{ id: string }>(
       `INSERT INTO patient_external_contacts (patient_id, relation, name, phone_encrypted, created_by)
        VALUES ($1, 'NEIGHBOR', 'Vizinha Sintética PR7', $2, 'e2e-018pr7') RETURNING id`,
@@ -293,7 +299,7 @@ describe('spec 018 PR-7 — projeto terapêutico pós-D328: API sob engine de pe
 
   it('1. D328 (contract §Sem versão automática): editar/desativar contato referenciado e trocar affiliateId NÃO criam versão', async () => {
     const antes = await contarVersoes();
-    const criado = await chamar('POST', BASE(), U.completa, { mode: 'new', version: versionBody({ contactRefs: [{ kind: 'EXTERNAL', id: externalContactId }] }) });
+    const criado = await chamar('POST', BASE(), U.completa, { mode: 'new', version: newVersionBody({ contactRefs: [{ kind: 'EXTERNAL', id: externalContactId }] }) });
     expect(criado.status).toBe(201);
     v10 = criado.body.data.id;
     expect(await contarVersoes()).toBe(antes + 1);
@@ -324,7 +330,7 @@ describe('spec 018 PR-7 — projeto terapêutico pós-D328: API sob engine de pe
 
   it('2. `mode:edit` com `fromVersionId` que deixou de ser vigente → 409 `ptp_not_current`', async () => {
     // V.1.0 (`v10`) ainda é a única — cria V.2.0 e torna V.1.0 não-vigente.
-    const novo = await chamar('POST', BASE(), U.completa, { mode: 'new', version: versionBody() });
+    const novo = await chamar('POST', BASE(), U.completa, { mode: 'new', version: newVersionBody() });
     expect(novo.status).toBe(201);
     v20 = novo.body.data.id;
 
@@ -437,7 +443,7 @@ describe('spec 018 PR-7 — projeto terapêutico pós-D328: API sob engine de pe
 
     const versao = await chamar('POST', BASE(), U.completa, {
       mode: 'new',
-      version: versionBody({ specificObjectiveIds: [objetivoComSegmentoId, ...objectiveIds.slice(0, 1)] }),
+      version: newVersionBody({ specificObjectiveIds: [objetivoComSegmentoId, ...objectiveIds.slice(0, 1)] }),
     });
     expect(versao.status).toBe(201);
     const vid = versao.body.data.id;
@@ -474,7 +480,7 @@ describe('spec 018 PR-7 — projeto terapêutico pós-D328: API sob engine de pe
       [PATIENT, cifrar('+54 11 0000-0009')],
     )).rows[0].id;
 
-    const criado = await chamar('POST', BASE(), U.completa, { mode: 'new', version: versionBody({ contactRefs: [{ kind: 'EXTERNAL', id: contatoAtivo }] }) });
+    const criado = await chamar('POST', BASE(), U.completa, { mode: 'new', version: newVersionBody({ contactRefs: [{ kind: 'EXTERNAL', id: contatoAtivo }] }) });
     expect(criado.status).toBe(201);
     const vidMajor = criado.body.data.id;
 
@@ -520,7 +526,7 @@ describe('spec 018 PR-7 — projeto terapêutico pós-D328: API sob engine de pe
       [PATIENT, cifrar('+54 11 0000-0011')],
     )).rows[0].id;
 
-    const criado = await chamar('POST', BASE(), U.completa, { mode: 'new', version: versionBody({ contactRefs: [{ kind: 'EXTERNAL', id: contatoAtivo }] }) });
+    const criado = await chamar('POST', BASE(), U.completa, { mode: 'new', version: newVersionBody({ contactRefs: [{ kind: 'EXTERNAL', id: contatoAtivo }] }) });
     expect(criado.status).toBe(201);
     const vid = criado.body.data.id;
 

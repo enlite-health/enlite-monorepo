@@ -14,26 +14,34 @@ import { Heading } from '@presentation/components/atoms/Heading';
 import { Label } from '@presentation/components/atoms/Label';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
+import { Select } from '@presentation/components/atoms/Select';
 import { catalogRefusalMessage } from './catalogRefusalMessage';
+import { segmentSelectOptions } from './catalogSegment';
 
 export interface CatalogItemFormData {
   label: string;
   sortOrder?: number;
+  /** Só quando o campo existe E mudou; `null` limpa o vínculo (spec 030). */
+  segmentId?: string | null;
 }
 
 interface Props {
   item: TherapeuticCatalogItem | null;
+  /** Segmentos (inclui inativos) — `null`/ausente = sem célula de segmentos ou catálogo sem vínculo: o campo some. */
+  segments?: TherapeuticCatalogItem[] | null;
   onSave: (data: CatalogItemFormData) => Promise<void>;
   onClose: () => void;
 }
 
 
-export function TherapeuticCatalogFormModal({ item, onSave, onClose }: Props): JSX.Element {
+export function TherapeuticCatalogFormModal({ item, segments = null, onSave, onClose }: Props): JSX.Element {
   const { t } = useTranslation();
   const tr = (k: string, o?: Record<string, unknown>) => t(`admin.therapeuticCatalog.${k}`, o ?? {});
   const isEdit = item !== null;
   const [label, setLabel] = useState(item?.label ?? '');
   const [sortOrder, setSortOrder] = useState(item ? String(item.sortOrder) : '');
+  const initialSegmentId = item?.segmentId ?? '';
+  const [segmentId, setSegmentId] = useState(initialSegmentId);
   const [isLoading, setIsLoading] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [show, setShow] = useState(false);
@@ -54,7 +62,13 @@ export function TherapeuticCatalogFormModal({ item, onSave, onClose }: Props): J
     setSaveError('');
     try {
       const order = sortOrder.trim() === '' ? undefined : Number(sortOrder);
-      await onSave({ label: trimmed, ...(order !== undefined && Number.isFinite(order) ? { sortOrder: order } : {}) });
+      // `segmentId` só viaja se o campo existe E mudou: reenviar um vínculo inativo seria recusado (422).
+      const segmentChanged = segments !== null && segmentId !== initialSegmentId;
+      await onSave({
+        label: trimmed,
+        ...(order !== undefined && Number.isFinite(order) ? { sortOrder: order } : {}),
+        ...(segmentChanged ? { segmentId: segmentId || null } : {}),
+      });
     } catch (err: unknown) {
       setSaveError(catalogRefusalMessage(err, t));
     } finally {
@@ -108,6 +122,22 @@ export function TherapeuticCatalogFormModal({ item, onSave, onClose }: Props): J
             />
             <Text size="xs" color="muted" className="mt-1">{tr('form.sortOrderHelp')}</Text>
           </div>
+          {segments !== null && (
+            <div>
+              <Label htmlFor="therapeutic-catalog-segment">{tr('form.segment')}</Label>
+              <Select
+                id="therapeutic-catalog-segment"
+                value={segmentId}
+                onValueChange={setSegmentId}
+                options={[
+                  { value: '', label: tr('form.segmentNone') },
+                  ...segmentSelectOptions(segments, segmentId, (l) => tr('form.segmentInactive', { label: l })),
+                ]}
+                data-testid="therapeutic-catalog-segment-select"
+              />
+              <Text size="xs" color="muted" className="mt-1">{tr('form.segmentHelp')}</Text>
+            </div>
+          )}
           {saveError && (
             <div className="border border-red-300 bg-red-50 rounded-lg px-4 py-3" role="alert" data-testid="therapeutic-catalog-form-error">
               <Text size="sm" className="text-red-700">{saveError}</Text>

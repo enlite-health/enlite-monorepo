@@ -48,6 +48,8 @@ const ROTAS_SEM_CHAVE_SCREEN = new Set([
   'catalogos/objetivos-especificos', 'catalogos/actividades',
   // Fase 1 itinerario-trocas: motivos de saída do serviço — célula própria (`catalog_service_exit_reasons:read`).
   'catalogos/motivos-de-salida',
+  // Spec 030 (F1): segmentos Ana Care — célula própria (`catalog_therapeutic_segments:read`), mesmo caso dos catálogos acima.
+  'catalogos/segmentos',
   // Spec 029: prompts de IA — gateada pela célula própria (`ai_prompt:read`), não por país; mesmo caso
   // de tags/plantillas/catálogos acima (tela de configuração global, sem chave `screen:*` no manifest).
   'prompts-ia',

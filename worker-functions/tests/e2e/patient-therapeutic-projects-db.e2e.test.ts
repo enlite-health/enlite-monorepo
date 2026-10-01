@@ -224,4 +224,46 @@ describe('416 — projeto terapêutico versionado e imutável (banco real)', () 
     expect((await admin.query(`SELECT contracted_service_code FROM patient_therapeutic_projects WHERE id = $1`, [depois.id])).rows[0].contracted_service_code).toBe('AT');
     await admin.query(`UPDATE patient_contracted_services SET service_code = 'CAREGIVER' WHERE id = $1`, [serviceId]);
   });
+
+  describe('496 — segmento Ana Care congelado na versão (spec 030, lex C1)', () => {
+    const SEGMENTO = JSON.stringify({ id: '22222222-2222-4222-8222-222222222222', label: 'Segmento sintético e2e' });
+
+    it('030 — UPDATE da coluna `segment` é recusado pelo trigger de imutabilidade (ptp_imutavel, 55000)', async () => {
+      const v = await insertVersion({ segment: SEGMENTO });
+      await expect(admin.query(`UPDATE patient_therapeutic_projects SET segment = '{"id":"x","label":"outro"}'::jsonb WHERE id = $1`, [v.id]))
+        .rejects.toMatchObject({ code: '55000', message: expect.stringMatching(/ptp_imutavel/) });
+      await expect(admin.query(`UPDATE patient_therapeutic_projects SET segment = NULL WHERE id = $1`, [v.id]))
+        .rejects.toThrow(/ptp_imutavel/);
+      // versão ANTERIOR à 496 (segment NULL) também não ganha segmento depois: não se retroalimenta
+      const antiga = await insertVersion({ minor: 1 });
+      await expect(admin.query(`UPDATE patient_therapeutic_projects SET segment = $2::jsonb WHERE id = $1`, [antiga.id, SEGMENTO]))
+        .rejects.toThrow(/ptp_imutavel/);
+    });
+
+    it('030 — o UPDATE de `annulled_*` segue passando numa linha COM segmento (a recriação da função não quebrou a anulação)', async () => {
+      const v = await insertVersion({ segment: SEGMENTO });
+      await admin.query(
+        `UPDATE patient_therapeutic_projects SET annulled_at = NOW(), annulled_by = 'e2e-416-uid', annul_reason = 'erro de digitação' WHERE id = $1`,
+        [v.id],
+      );
+      const row = await admin.query(`SELECT annulled_by, segment FROM patient_therapeutic_projects WHERE id = $1`, [v.id]);
+      expect(row.rows[0].annulled_by).toBe('e2e-416-uid');
+      expect(row.rows[0].segment).toEqual(JSON.parse(SEGMENTO));
+    });
+
+    it('030 — `segment` que não é objeto `{id,label}` (array vazio, objeto sem label) é recusado pelo CHECK `ptp_segment_check`', async () => {
+      await expect(insertVersion({ segment: '[]' })).rejects.toThrow(/ptp_segment_check/);
+      await expect(insertVersion({ segment: '{"id":"x"}' })).rejects.toThrow(/ptp_segment_check/);
+      const ok = await insertVersion({ major: 5, segment: SEGMENTO });
+      expect(ok.id).toBeTruthy();
+    });
+
+    it('030 — a coluna `segment` é JSONB e `is_nullable = YES` (NULL = versão anterior à 496)', async () => {
+      const col = await admin.query<{ is_nullable: string; data_type: string }>(
+        `SELECT is_nullable, data_type FROM information_schema.columns
+          WHERE table_name = 'patient_therapeutic_projects' AND column_name = 'segment'`,
+      );
+      expect(col.rows).toEqual([{ is_nullable: 'YES', data_type: 'jsonb' }]);
+    });
+  });
 });

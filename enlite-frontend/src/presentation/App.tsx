@@ -280,6 +280,7 @@ export function App() {
           {/* Spec 017: uma TELA por catálogo do projeto terapêutico (célula própria cada); sem `screen:*` no manifest, como patient-chat-roles. */}
           <Route path="catalogos/objetivos-especificos" element={<TherapeuticCatalogPage kind="specific-objectives" />} />
           <Route path="catalogos/actividades" element={<TherapeuticCatalogPage kind="activities" />} />
+          <Route path="catalogos/segmentos" element={<TherapeuticCatalogPage kind="segments" />} />
           <Route path="catalogos/motivos-de-salida" element={<TherapeuticCatalogPage kind="service-exit-reasons" />} />
           <Route path="invitacion-presentacion" element={<PresentationInvitePage />} />
           <Route path="dedup" element={<DedupCenterPage />} />

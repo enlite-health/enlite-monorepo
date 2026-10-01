@@ -72,6 +72,11 @@ describe('THERAPEUTIC_FIELD_CLASS — modality é MICRO (D328/SUP-24)', () => {
     expect(THERAPEUTIC_FIELD_CLASS.MICRO).toContain('careTeamIds');
   });
 
+  it('030 — segmentId é MACRO (só muda com "Nuevo", como o CID) e nunca MICRO', () => {
+    expect(THERAPEUTIC_FIELD_CLASS.MACRO).toContain('segmentId');
+    expect(THERAPEUTIC_FIELD_CLASS.MICRO).not.toContain('segmentId');
+  });
+
   it('MACRO e MICRO não se sobrepõem', () => {
     const macro = new Set(THERAPEUTIC_FIELD_CLASS.MACRO);
     const overlap = THERAPEUTIC_FIELD_CLASS.MICRO.filter((f) => macro.has(f as never));
