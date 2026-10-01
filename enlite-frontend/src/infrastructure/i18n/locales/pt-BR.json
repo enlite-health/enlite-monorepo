@@ -1326,7 +1326,8 @@
       "templateCatalog": "Modelos",
       "templateDrafts": "Registrar mensagem",
       "catalogObjectives": "Objetivos específicos",
-      "catalogActivities": "Rotina e atividades"
+      "catalogActivities": "Rotina e atividades",
+      "catalogSegments": "Segmentos (Ana Care)"
     },
     "dedup": {
       "title": "Central de Duplicatas",
@@ -3510,6 +3511,7 @@
         "therapeuticProjectCard": {
           "title": "Projeto Terapêutico",
           "cid": "Hipótese Diagnóstica - CID",
+          "segment": "Segmento (Ana Care)",
           "hypothesis": "Hipótese",
           "currentClinicalContext": "Contexto Clínico atual",
           "generalObjective": "Objetivo Geral",
@@ -3857,9 +3859,9 @@
             "ptpContactInactive": "Um dos contatos escolhidos já não está ativo. Escolha de novo."
           },
           "modalityPlaceholder": "Escolha a modalidade",
-          "segmentFilter": "Filtrar por segmento",
-          "segmentFilterPlaceholder": "Todos os segmentos",
-          "segmentFilterAll": "Todos os segmentos",
+          "segment": "Segmento (Ana Care)",
+          "segmentPlaceholder": "Escolha o segmento",
+          "segmentEmpty": "Não há segmentos ativos — peça ao administrador do catálogo",
           "responsibles": "Responsáveis",
           "externalContacts": "Contatos externos",
           "coverageContacts": "Contatos da cobertura",
@@ -4841,6 +4843,9 @@
         },
         "patients.catalogActivities": {
           "label": "Pacientes: Catálogo de rotina e atividades"
+        },
+        "patients.catalogSegments": {
+          "label": "Pacientes: Catálogo de segmentos (Ana Care)"
         }
       }
     },
@@ -5411,6 +5416,10 @@
         "activities": {
           "title": "Rotina e atividades do projeto terapêutico",
           "subtitle": "As opções de \"Rutina y Actividades\" do projeto terapêutico. Editadas aqui, sem deploy. Desativar não apaga: versões antigas guardam o texto que tinham."
+        },
+        "segments": {
+          "title": "Segmentos do projeto terapêutico (Ana Care)",
+          "subtitle": "Os segmentos que a equipe escolhe para enquadrar o projeto terapêutico de cada paciente (os da planilha da Ana Care). Editados aqui, sem deploy. Desativar não apaga: versões antigas do projeto guardam o texto que tinham."
         }
       },
       "newItem": "Nova opção",
@@ -5423,6 +5432,7 @@
       "table": {
         "order": "Ordem",
         "label": "Texto",
+        "segment": "Segmento",
         "status": "Estado",
         "actions": "Ações"
       },
@@ -5431,6 +5441,10 @@
         "labelHelp": "Em espanhol, como vai sair no PDF. Sem dados de nenhuma pessoa.",
         "sortOrder": "Ordem",
         "sortOrderHelp": "Posição na lista (menor primeiro). Vazio = no fim.",
+        "segment": "Segmento (Ana Care)",
+        "segmentNone": "Sem segmento",
+        "segmentHelp": "Opcional. No projeto terapêutico, as opções do segmento escolhido aparecem primeiro.",
+        "segmentInactive": "{{label}} (inactivo)",
         "save": "Salvar",
         "saving": "Salvando…"
       },

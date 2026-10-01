@@ -59,9 +59,6 @@ describe('SCREEN_REGISTRY — paridade com o catálogo do back', () => {
       // explícitos onde existem.
       'analytics:export',
       'analytics:read',
-      'catalog_therapeutic_segments:create',
-      'catalog_therapeutic_segments:read',
-      'catalog_therapeutic_segments:update',
       'funnel:write',
       'interview:create',
       'interview:delete',

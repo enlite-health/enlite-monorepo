@@ -8,6 +8,7 @@ import {
   versionLabel,
   currentVersionOf,
   macroFieldsChanged,
+  type CatalogSnapshotItem,
   type ContactRef,
   type PathologySegment,
   type TherapeuticCatalogSnapshotItem,
@@ -36,6 +37,8 @@ interface VersionRow {
   specific_objectives: TherapeuticCatalogSnapshotItem[];
   activities: TherapeuticCatalogSnapshotItem[];
   pathology_types: PathologySegment[];
+  /** `NULL` em versão anterior à 496 (spec 030). */
+  segment: CatalogSnapshotItem | null;
   start_date: string;
   end_date: string;
   annulled_at: string | null;
@@ -63,8 +66,11 @@ export interface TherapeuticProjectVersionInput {
   careTeamIds: string[];
 }
 
+/** `mode:'new'` carrega o `segmentId` (MACRO, spec 030) — o `{id,label}` é congelado AQUI, do catálogo ativo. */
+export type NewTherapeuticProjectVersionInput = TherapeuticProjectVersionInput & { segmentId: string };
+
 export type CreateVersionCommand =
-  | { mode: 'new'; patientId: string; actorUid: string; version: TherapeuticProjectVersionInput }
+  | { mode: 'new'; patientId: string; actorUid: string; version: NewTherapeuticProjectVersionInput }
   | { mode: 'edit'; patientId: string; actorUid: string; fromVersionId: string; version: TherapeuticProjectVersionInput };
 
 /** A versão de origem do "Editar" não existe neste paciente (ou está anulada). */
@@ -179,6 +185,7 @@ function toVersion(r: VersionRow): TherapeuticProjectVersion {
     specificObjectives: r.specific_objectives,
     activities: r.activities,
     pathologyTypes: r.pathology_types,
+    segment: r.segment ?? null,
     startDate: isoDate(r.start_date),
     endDate: isoDate(r.end_date),
     annulledAt: isoTs(r.annulled_at),
@@ -243,8 +250,12 @@ export class TherapeuticProjectRepository {
 
         let number: { major: number; minor: number };
         let editedFrom: string | null = null;
+        // Segmento (030): `new` congela o do catálogo ATIVO; `edit` COPIA o da origem (MACRO não muda;
+        // origem anterior à 496 → `null`).
+        let segment: CatalogSnapshotItem | null;
         if (cmd.mode === 'new') {
           number = nextMajor(existing);
+          segment = await this.catalogs.snapshotSegment(cmd.version.segmentId, cli);
         } else {
           const source = existing.find((v) => v.id === cmd.fromVersionId && v.annulledAt === null);
           if (!source) throw new SourceVersionNotFoundError();
@@ -274,6 +285,7 @@ export class TherapeuticProjectRepository {
           if (changedMacro.length > 0) throw new MacroFieldsLockedError(changedMacro);
           number = nextMinorOf(existing, source.major);
           editedFrom = source.id;
+          segment = source.segment;
         }
 
         // Snapshot montado AQUI, do catálogo (lex C19): o cliente manda ids, a versão congela texto.
@@ -288,14 +300,15 @@ export class TherapeuticProjectRepository {
           `INSERT INTO patient_therapeutic_projects
              (patient_id, major, minor, edited_from_version_id, contracted_service_id, diagnoses,
               clinical_context, general_objective, specific_objectives, activities, pathology_types,
-              start_date, end_date, created_by, modality)
-           VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9::jsonb, $10::jsonb, $11::jsonb, $12, $13, $14, $15)
+              start_date, end_date, created_by, modality, segment)
+           VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9::jsonb, $10::jsonb, $11::jsonb, $12, $13, $14, $15, $16::jsonb)
            RETURNING id`,
           [
             cmd.patientId, number.major, number.minor, editedFrom, cmd.version.contractedServiceId,
             JSON.stringify(cmd.version.diagnoses), cmd.version.clinicalContext, cmd.version.generalObjective,
             JSON.stringify(specificObjectives), JSON.stringify(activities), JSON.stringify(pathologyTypes),
             cmd.version.startDate, cmd.version.endDate, cmd.actorUid, cmd.version.modality,
+            segment === null ? null : JSON.stringify(segment),
           ],
         );
         // SUP-26: a ligação só nasce NESTA transação, com a versão já gravada — nunca "adicionar

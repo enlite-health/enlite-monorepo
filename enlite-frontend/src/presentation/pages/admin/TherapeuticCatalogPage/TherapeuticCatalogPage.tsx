@@ -1,6 +1,6 @@
 /**
  * TherapeuticCatalogPage — administração de UM catálogo do projeto terapêutico (spec 017, D299):
- * objetivos específicos e rotina e atividades (o tipo de patologia NÃO é catálogo: deriva do CID-11, D303).
+ * objetivos específicos, rotina e atividades e segmentos Ana Care (spec 030) (o tipo de patologia NÃO é catálogo: deriva do CID-11, D303).
  * Uma TELA por lista e uma célula por lista (decisão do Gabriel, 08/09) — o componente é o mesmo, parametrizado por `kind`;
  * a rota, a célula e o título mudam.
  *
@@ -15,8 +15,8 @@ import { ListChecks, Edit2, Plus } from 'lucide-react';
 import { AdminTherapeuticProjectsApiService } from '@infrastructure/http/AdminTherapeuticProjectsApiService';
 import {
   THERAPEUTIC_CATALOG_RESOURCE,
-  type TherapeuticCatalogItem,
   type TherapeuticCatalogKind,
+  type TherapeuticCatalogItem,
 } from '@domain/entities/TherapeuticProject';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
@@ -27,13 +27,10 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@
 import { TableSkeleton } from '@presentation/components/ui/skeletons';
 import { TherapeuticCatalogFormModal, type CatalogItemFormData } from './TherapeuticCatalogFormModal';
 import { catalogRefusalMessage } from './catalogRefusalMessage';
+import { segmentDisplayLabel } from './catalogSegment';
 
-/**
- * Esta tela administra só objetivos/atividades — `segments` (US-17, migration 430) é catálogo
- * GLOBAL sem tela própria ainda (fora do escopo da task 7.7); por isso o `kind` aqui é um
- * subconjunto de `TherapeuticCatalogKind`, não o tipo inteiro.
- */
-type ManagedCatalogKind = Exclude<TherapeuticCatalogKind, 'segments'>;
+/** Catálogos que esta tela administra: os 3 do projeto terapêutico (inclui `segments`, spec 030). */
+type ManagedCatalogKind = TherapeuticCatalogKind;
 
 interface Props {
   kind: ManagedCatalogKind;
@@ -43,6 +40,7 @@ interface Props {
 const KIND_KEY: Readonly<Record<ManagedCatalogKind, string>> = {
   'specific-objectives': 'specificObjectives',
   activities: 'activities',
+  segments: 'segments',
 };
 
 export function TherapeuticCatalogPage({ kind }: Props): JSX.Element {
@@ -62,10 +60,15 @@ export function TherapeuticCatalogPage({ kind }: Props): JSX.Element {
   const writeGates = {
     'specific-objectives': useActionGate('catalog_therapeutic_objectives', 'update'),
     activities: useActionGate('catalog_therapeutic_activities', 'update'),
+    segments: useActionGate('catalog_therapeutic_segments', 'update'),
   } as const;
   const writeGate = writeGates[kind];
 
   const [items, setItems] = useState<TherapeuticCatalogItem[]>([]);
+  // Segmentos (spec 030): só objetivos/atividades se vinculam; `null` = sem célula (403) ou catálogo sem vínculo.
+  const [segments, setSegments] = useState<TherapeuticCatalogItem[] | null>(null);
+  const hasSegmentLink = kind === 'specific-objectives' || kind === 'activities';
+  const inactiveSegment = (label: string) => tr('form.segmentInactive', { label });
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -76,13 +79,20 @@ export function TherapeuticCatalogPage({ kind }: Props): JSX.Element {
       setIsLoading(true);
       setLoadError(null);
       // includeInactive: quem administra precisa ver o que está desligado para poder reativar.
-      setItems(await AdminTherapeuticProjectsApiService.listCatalog(kind, { includeInactive: true }));
+      const [itemsRes, segmentsRes] = await Promise.allSettled([
+        AdminTherapeuticProjectsApiService.listCatalog(kind, { includeInactive: true }),
+        hasSegmentLink ? AdminTherapeuticProjectsApiService.listCatalog('segments', { includeInactive: true }) : Promise.resolve(null),
+      ]);
+      if (itemsRes.status === 'rejected') throw itemsRes.reason;
+      setItems(itemsRes.value);
+      // 403 (sem `catalog_therapeutic_segments:read`) ou qualquer falha → sem campo e sem coluna; o resto da tela segue.
+      setSegments(segmentsRes.status === 'fulfilled' ? segmentsRes.value : null);
     } catch (err: unknown) {
       setLoadError(err instanceof Error ? err.message : String(err));
     } finally {
       setIsLoading(false);
     }
-  }, [kind]);
+  }, [kind, hasSegmentLink]);
 
   useEffect(() => { fetchItems(); }, [fetchItems]);
 
@@ -152,6 +162,7 @@ export function TherapeuticCatalogPage({ kind }: Props): JSX.Element {
             <TableHeader>
               <TableHead>{tr('table.order')}</TableHead>
               <TableHead>{tr('table.label')}</TableHead>
+              {segments !== null && <TableHead>{tr('table.segment')}</TableHead>}
               <TableHead>{tr('table.status')}</TableHead>
               <TableHead align="right">{tr('table.actions')}</TableHead>
             </TableHeader>
@@ -164,6 +175,13 @@ export function TherapeuticCatalogPage({ kind }: Props): JSX.Element {
                   <TableCell unwrapped>
                     <Text as="span" size="sm" color={item.active ? 'primary' : 'muted'} data-testid={`therapeutic-catalog-label-${item.id}`}>{item.label}</Text>
                   </TableCell>
+                  {segments !== null && (
+                    <TableCell unwrapped>
+                      <Text as="span" size="sm" color="muted" data-testid={`therapeutic-catalog-segment-${item.id}`}>
+                        {segmentDisplayLabel(segments, item.segmentId, inactiveSegment) ?? '—'}
+                      </Text>
+                    </TableCell>
+                  )}
                   <TableCell unwrapped>
                     <span
                       className={`inline-flex px-2.5 py-1 rounded-full text-xs font-medium ${item.active ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'}`}
@@ -206,6 +224,7 @@ export function TherapeuticCatalogPage({ kind }: Props): JSX.Element {
       {formModal.open && (
         <TherapeuticCatalogFormModal
           item={formModal.item}
+          segments={segments}
           onSave={handleFormSave}
           onClose={() => setFormModal({ open: false, item: null })}
         />

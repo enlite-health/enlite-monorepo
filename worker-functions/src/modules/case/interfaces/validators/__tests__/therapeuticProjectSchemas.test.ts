@@ -22,9 +22,12 @@ const version = {
   endDate: '2026-12-31',
 };
 
+// 030: `mode:'new'` leva `segmentId` (MACRO); `version` (sem a chave) é o corpo do `mode:'edit'`.
+const newVersion = { ...version, segmentId: UUID };
+
 describe('therapeuticProjectSchemas — a borda (spec 017)', () => {
   it('Novo e Editar: discriminado por mode; edit exige fromVersionId', () => {
-    expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version }).success).toBe(true);
+    expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: newVersion }).success).toBe(true);
     expect(createTherapeuticProjectSchema.safeParse({ mode: 'edit', fromVersionId: UUID, version }).success).toBe(true);
     expect(createTherapeuticProjectSchema.safeParse({ mode: 'edit', version }).success).toBe(false);
     expect(createTherapeuticProjectSchema.safeParse({ mode: 'novo', version }).success).toBe(false);
@@ -32,42 +35,78 @@ describe('therapeuticProjectSchemas — a borda (spec 017)', () => {
 
   it('modalidade (D301, Ana 08/09): obrigatória e fechada em IN_PERSON | ONLINE | HYBRID', () => {
     for (const modality of ['IN_PERSON', 'ONLINE', 'HYBRID']) {
-      expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...version, modality } }).success).toBe(true);
+      expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...newVersion, modality } }).success).toBe(true);
     }
-    const { modality: _m, ...semModalidade } = version;
+    const { modality: _m, ...semModalidade } = newVersion;
     expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: semModalidade }).success).toBe(false);
-    expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...version, modality: 'presencial' } }).success).toBe(false);
-    expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...version, modality: null } }).success).toBe(false);
+    expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...newVersion, modality: 'presencial' } }).success).toBe(false);
+    expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...newVersion, modality: null } }).success).toBe(false);
   });
 
   it('🔒 major/minor/patientId/country NÃO entram pelo corpo (.strict())', () => {
     for (const extra of [{ major: 3 }, { minor: 1 }, { patientId: UUID }, { country: 'BR' }]) {
-      expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...version, ...extra } }).success).toBe(false);
+      expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...newVersion, ...extra } }).success).toBe(false);
     }
-    expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version, major: 3 }).success).toBe(false);
+    expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: newVersion, major: 3 }).success).toBe(false);
   });
 
   it('teto 4000 nos dois textos clínicos (lex C6) e listas não vazias', () => {
-    expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...version, clinicalContext: 'x'.repeat(THERAPEUTIC_TEXT_MAX) } }).success).toBe(true);
-    expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...version, clinicalContext: 'x'.repeat(THERAPEUTIC_TEXT_MAX + 1) } }).success).toBe(false);
-    expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...version, generalObjective: '   ' } }).success).toBe(false);
+    expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...newVersion, clinicalContext: 'x'.repeat(THERAPEUTIC_TEXT_MAX) } }).success).toBe(true);
+    expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...newVersion, clinicalContext: 'x'.repeat(THERAPEUTIC_TEXT_MAX + 1) } }).success).toBe(false);
+    expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...newVersion, generalObjective: '   ' } }).success).toBe(false);
     // `pathologyTypeIds` (campo antigo do catálogo) é recusado pela borda `.strict()`: o segmento deriva do CID-11 no servidor.
-    expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...version, pathologyTypeIds: [UUID] } }).success).toBe(false);
+    expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...newVersion, pathologyTypeIds: [UUID] } }).success).toBe(false);
     for (const key of ['diagnoses', 'specificObjectiveIds', 'activityIds'] as const) {
-      expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...version, [key]: [] } }).success).toBe(false);
+      expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...newVersion, [key]: [] } }).success).toBe(false);
     }
   });
 
   it('prazo: endDate antes de startDate → inválido; formato ISO obrigatório', () => {
-    expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...version, endDate: '2026-08-31' } }).success).toBe(false);
-    expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...version, startDate: '01/09/2026' } }).success).toBe(false);
+    expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...newVersion, endDate: '2026-08-31' } }).success).toBe(false);
+    expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...newVersion, startDate: '01/09/2026' } }).success).toBe(false);
   });
 
   it('diagnóstico é snapshot estrito {uri, code?, title} — campo a mais é recusado (lex C19); code é opcional (REQ-21)', () => {
     const diag = { ...version.diagnoses[0], note: 'texto livre' };
-    expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...version, diagnoses: [diag] } }).success).toBe(false);
-    expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...version, diagnoses: [{ uri: 'u', title: 't' }] } }).success).toBe(true);
-    expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...version, diagnoses: [{ uri: 'u', code: '', title: 't' }] } }).success).toBe(true);
+    expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...newVersion, diagnoses: [diag] } }).success).toBe(false);
+    expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...newVersion, diagnoses: [{ uri: 'u', title: 't' }] } }).success).toBe(true);
+    expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...newVersion, diagnoses: [{ uri: 'u', code: '', title: 't' }] } }).success).toBe(true);
+  });
+
+  describe('030 — segmentId (MACRO): obrigatório no Novo, proibido no Editar, snapshot nunca do cliente (lex C4)', () => {
+    it('030 — new sem segmentId → inválido (400)', () => {
+      expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version }).success).toBe(false);
+    });
+
+    it('030 — new com segment:{id,label} do cliente → inválido (o rótulo é do servidor)', () => {
+      expect(
+        createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...version, segment: { id: UUID, label: 'x' } } }).success,
+      ).toBe(false);
+      expect(
+        createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...newVersion, segment: { id: UUID, label: 'x' } } }).success,
+      ).toBe(false);
+    });
+
+    it('030 — new com segmentId que não é uuid, ou chave extra → inválido', () => {
+      expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...version, segmentId: 'x' } }).success).toBe(false);
+      expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...newVersion, segmentLabel: 'x' } }).success).toBe(false);
+    });
+
+    it('030 — edit com segmentId → inválido (MACRO só muda com "Nuevo")', () => {
+      expect(
+        createTherapeuticProjectSchema.safeParse({ mode: 'edit', fromVersionId: UUID, version: { ...version, segmentId: UUID } }).success,
+      ).toBe(false);
+    });
+
+    it('030 — edit sem segmentId → válido', () => {
+      expect(createTherapeuticProjectSchema.safeParse({ mode: 'edit', fromVersionId: UUID, version }).success).toBe(true);
+    });
+
+    it('030 — new válido (com segmentId uuid) → válido e o dado carrega o segmentId', () => {
+      const r = createTherapeuticProjectSchema.safeParse({ mode: 'new', version: newVersion });
+      expect(r.success).toBe(true);
+      if (r.success && r.data.mode === 'new') expect((r.data.version as { segmentId?: string }).segmentId).toBe(UUID);
+    });
   });
 
   it('anulação: motivo obrigatório, ≤200, sem e-mail nem documento (lex C5/C18)', () => {

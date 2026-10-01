@@ -108,12 +108,12 @@ const item = (id: string, label: string): TherapeuticCatalogItem => ({
 const CATALOGOS: TherapeuticCatalogs = {
   'specific-objectives': [item('so1', 'Objetivo 1'), item('so2', 'Objetivo 2')],
   activities: [item('ac1', 'Atividade 1')],
-  segments: [],
+  segments: [item('seg-A', 'Segmento A'), item('seg-B', 'Segmento B')],
 };
 
 // Espelho de `THERAPEUTIC_FIELD_CLASS` do backend — dono único da lista MACRO×MICRO (task 7.7).
 const FIELD_CLASS: TherapeuticFieldClass = {
-  macro: ['contractedServiceId', 'diagnoses', 'clinicalContext', 'generalObjective', 'specificObjectiveIds', 'activityIds'],
+  macro: ['contractedServiceId', 'diagnoses', 'clinicalContext', 'generalObjective', 'specificObjectiveIds', 'activityIds', 'segmentId'],
   micro: ['startDate', 'endDate', 'modality', 'contactRefs', 'careTeamIds'],
 };
 /** Variante SEM macro nenhum — isola o comportamento do `optionsOf` (merge catálogo+snapshot) do gate de lock. */
@@ -209,6 +209,7 @@ function alternarNoMulti(id: string, label: string): void {
 
 function preencherTudo(): void {
   fireEvent.change(screen.getByTestId('tp-modality'), { target: { value: 'HYBRID' } });
+  fireEvent.change(screen.getByTestId('tp-segment'), { target: { value: 'seg-A' } });
   fireEvent.click(screen.getByTestId('icd-pick-a'));
   fireEvent.change(screen.getByTestId('tp-clinicalContext'), { target: { value: '  contexto clínico  ' } });
   fireEvent.change(screen.getByTestId('tp-generalObjective'), { target: { value: '  objetivo geral  ' } });
@@ -414,6 +415,7 @@ describe('submissão', () => {
       generalObjective: 'objetivo geral',
       specificObjectiveIds: ['so1'],
       activityIds: ['ac1'],
+      segmentId: 'seg-A',
       startDate: '2026-09-01',
       endDate: '2026-12-01',
       contactRefs: [],
@@ -741,48 +743,104 @@ describe('contatos por seleção (task 7.7): responsáveis, externos, cobertura,
   });
 });
 
-// ── Filtro de segmento (US-17) — escondido com catálogo vazio ──────────────
+// ── Segmento (Ana Care) — spec 030, FR-007 ─────────────────────────────────
 
-describe('filtro de segmento (US-17, PR-7)', () => {
-  it('catálogo `segments` vazio (default): o filtro não aparece', () => {
+describe('campo "Segmento (Ana Care)" (spec 030)', () => {
+  const catalogoComVinculos = (): TherapeuticCatalogs => ({
+    'specific-objectives': [
+      { ...item('so1', 'Objetivo 1'), segmentId: 'seg-A' },
+      { ...item('so2', 'Objetivo 2'), segmentId: 'seg-B' },
+      item('so3', 'Objetivo sem vínculo'),
+    ],
+    activities: [item('ac1', 'Atividade 1')],
+    segments: [item('seg-A', 'Segmento A'), item('seg-B', 'Segmento B')],
+  });
+
+  it('ordem no DOM: CID → segmento → objetivos', () => {
     montar();
 
-    expect(screen.queryByTestId('tp-segment-filter')).not.toBeInTheDocument();
+    const cid = screen.getByTestId('tp-diagnoses');
+    const seg = screen.getByTestId('tp-segment');
+    const objetivos = document.getElementById('tp-specificObjectives')!;
+    expect(cid.compareDocumentPosition(seg) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(seg.compareDocumentPosition(objetivos) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByLabelText(tf('segment'), { exact: false })).toBe(seg);
+    // O filtro só-UI antigo não existe mais: o segmento escolhido o substitui.
+    expect(screen.queryByTestId(['tp', 'segment', 'filter'].join('-'))).not.toBeInTheDocument();
   });
 
-  it('catálogo `segments` com itens: o filtro aparece e filtra as opções dos 2 multi-selects', () => {
-    montar({
-      patientDiagnoses: [],
-      catalogs: {
-        'specific-objectives': [
-          { ...item('so1', 'Objetivo 1'), segmentId: 'seg-A' },
-          { ...item('so2', 'Objetivo 2'), segmentId: 'seg-B' },
-        ],
-        activities: [item('ac1', 'Atividade 1')],
-        segments: [item('seg-A', 'Segmento A'), item('seg-B', 'Segmento B')],
-      },
-    });
+  it('obrigatório em "Nuevo": tudo preenchido menos o segmento trava "Salvar"; escolher destrava e vai no corpo', () => {
+    montar({ patientDiagnoses: [] });
+    preencherTudo();
+    fireEvent.change(screen.getByTestId('tp-segment'), { target: { value: '' } });
+    expect(salvar().disabled).toBe(true);
 
-    expect(screen.getByTestId('tp-segment-filter')).toBeInTheDocument();
-    fireEvent.change(screen.getByTestId('tp-segment-filter'), { target: { value: 'seg-A' } });
+    fireEvent.change(screen.getByTestId('tp-segment'), { target: { value: 'seg-B' } });
+    expect(salvar().disabled).toBe(false);
+    fireEvent.click(salvar());
 
-    const lista = listaDoMulti('tp-specificObjectives');
-    expect(within(lista).getByText('Objetivo 1')).toBeInTheDocument();
-    expect(within(lista).queryByText('Objetivo 2')).not.toBeInTheDocument();
+    expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ segmentId: 'seg-B' }));
   });
 
-  it('item já escolhido continua na lista mesmo filtrado por outro segmento (mesma régua do `optionsOf`)', () => {
-    montar({
-      from: { ...VERSAO, specificObjectives: [{ id: 'so2', label: 'Objetivo 2', segmentId: 'seg-B' }] },
-      fieldClass: FIELD_CLASS_SEM_MACRO,
-      catalogs: {
-        'specific-objectives': [{ ...item('so1', 'Objetivo 1'), segmentId: 'seg-A' }],
-        activities: [item('ac1', 'Atividade 1')],
-        segments: [item('seg-A', 'Segmento A'), item('seg-B', 'Segmento B')],
-      },
-    });
+  it('travado em "Editar": TEXTO com o rótulo congelado da origem (nunca select), e o salvar não exige escolha', () => {
+    montar({ from: { ...VERSAO, segment: { id: 'seg-A', label: 'Segmento A' } } });
 
-    fireEvent.change(screen.getByTestId('tp-segment-filter'), { target: { value: 'seg-A' } });
+    expect(screen.getByTestId('tp-segment-locked')).toHaveTextContent('Segmento A');
+    expect(screen.queryByTestId('tp-segment')).not.toBeInTheDocument();
+    expect(salvar().disabled).toBe(false);
+  });
+
+  it('travado em "Editar" numa versão anterior à 496 (`segment: null` sem marcador): mostra "—"', () => {
+    montar({ from: { ...VERSAO, segment: null } });
+
+    expect(screen.getByTestId('tp-segment-locked')).toHaveTextContent('—');
+  });
+
+  it('catálogo vazio/403: mensagem "No hay segmentos activos" e "Salvar" bloqueado em "Nuevo"', () => {
+    montar({ patientDiagnoses: [], catalogs: { ...CATALOGOS, segments: [] } });
+    fireEvent.change(screen.getByTestId('tp-modality'), { target: { value: 'HYBRID' } });
+    fireEvent.click(screen.getByTestId('icd-pick-a'));
+    fireEvent.change(screen.getByTestId('tp-clinicalContext'), { target: { value: 'x' } });
+    fireEvent.change(screen.getByTestId('tp-generalObjective'), { target: { value: 'y' } });
+    alternarNoMulti('tp-specificObjectives', 'Objetivo 1');
+    alternarNoMulti('tp-activities', 'Atividade 1');
+    fireEvent.change(screen.getByTestId('tp-endDate'), { target: { value: '2099-12-01' } });
+
+    expect(screen.getByTestId('tp-segment-empty')).toHaveTextContent(tf('segmentEmpty'));
+    expect(salvar().disabled).toBe(true);
+  });
+
+  it('sem `patient_clinical:read` na origem (redigido): texto de redigido não editável, nunca "—" nem select', () => {
+    montar({ from: { ...VERSAO, segment: null, redacted: { clinical: true } } });
+
+    expect(screen.getByTestId('tp-segment-locked')).toHaveTextContent(tc('redacted'));
+    expect(screen.queryByTestId('tp-segment')).not.toBeInTheDocument();
+    expect(salvar().disabled).toBe(true);
+  });
+
+  it('C8: select e texto travado levam `data-clarity-mask`', () => {
+    const { unmount } = montar();
+    expect(screen.getByTestId('tp-segment')).toHaveAttribute('data-clarity-mask', 'True');
+    unmount();
+    montar({ from: { ...VERSAO, segment: { id: 'seg-A', label: 'Segmento A' } } });
+    expect(screen.getByTestId('tp-segment-locked')).toHaveAttribute('data-clarity-mask', 'True');
+  });
+
+  it('o segmento escolhido filtra objetivos: os dele primeiro, os sem vínculo depois, o de outro segmento fora', () => {
+    montar({ patientDiagnoses: [], catalogs: catalogoComVinculos() });
+
+    fireEvent.change(screen.getByTestId('tp-segment'), { target: { value: 'seg-A' } });
+
+    const opcoes = Array.from(listaDoMulti('tp-specificObjectives').querySelectorAll('li')).map((li) => li.textContent);
+    expect(opcoes).toEqual(['Objetivo 1', 'Objetivo sem vínculo']);
+  });
+
+  it('item já escolhido continua na lista mesmo depois de trocar para outro segmento', () => {
+    montar({ patientDiagnoses: [], catalogs: catalogoComVinculos() });
+    fireEvent.change(screen.getByTestId('tp-segment'), { target: { value: 'seg-B' } });
+    alternarNoMulti('tp-specificObjectives', 'Objetivo 2');
+
+    fireEvent.change(screen.getByTestId('tp-segment'), { target: { value: 'seg-A' } });
 
     expect(within(listaDoMulti('tp-specificObjectives')).getByText('Objetivo 2')).toBeInTheDocument();
   });
