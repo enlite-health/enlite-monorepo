@@ -3,6 +3,7 @@ import {
   allShiftsOf,
   axonicoDayEligibility,
   blockReason,
+  clampSelectedDate,
   currentMonthIso,
   DISPLAY_TIME_ZONE,
   filterPatients,
@@ -10,8 +11,16 @@ import {
   formatMonthLabel,
   formatSourceRange,
   formatSourceTime,
+  initialSelectedDate,
   isShiftSelectable,
+  lastDayOfMonthIso,
+  mergePatientMonths,
+  monthOfDate,
   monthOptionsUntilNow,
+  monthsOfWeek,
+  navigableDateRange,
+  parseMonthParam,
+  shiftsOfMonth,
   originCounts,
   patientDisplayName,
   pendingOriginBreakdown,
@@ -662,5 +671,96 @@ describe('formatDateTime', () => {
 
   it('POSITIVO — hora de Buenos Aires (-03), independente do fuso do processo/navegador', () => {
     expect(formatDateTime('2026-09-15T02:30:00Z')).toBe('14/09/2026, 11:30 p. m.');
+  });
+});
+
+// ── Spec 037 — mês na URL e meses da semana ──────────────────────────────────────────────────────
+const NOW_OCT = new Date('2026-10-01T12:00:00-03:00');
+
+describe('parseMonthParam', () => {
+  it.each(['2026-08', '2026-09', '2026-10'])('aceita %s (entre o piso e o mês corrente)', (raw) => {
+    expect(parseMonthParam(raw, NOW_OCT)).toBe(raw);
+  });
+  it.each([
+    ['2026-07', 'antes do piso'],
+    ['2025-12', 'ano anterior'],
+    ['2026-11', 'mês futuro'],
+    ['abc', 'texto'],
+    ['2026-9', 'sem zero à esquerda'],
+    ['2026-13', 'mês 13'],
+    ['2026-00', 'mês 00'],
+    ['', 'vazio'],
+    [null, 'null'],
+    [undefined, 'undefined'],
+    ['2026-09-01', 'data completa'],
+  ])('%s (%s) cai no mês corrente', (raw, _motivo) => {
+    expect(parseMonthParam(raw as string | null | undefined, NOW_OCT)).toBe('2026-10');
+  });
+});
+
+describe('monthOfDate / lastDayOfMonthIso / navigableDateRange / clampSelectedDate / initialSelectedDate', () => {
+  it('monthOfDate corta o dia', () => expect(monthOfDate('2026-09-30')).toBe('2026-09'));
+  it('lastDayOfMonthIso: 30 dias em setembro, 31 em outubro', () => {
+    expect(lastDayOfMonthIso('2026-09')).toBe('2026-09-30');
+    expect(lastDayOfMonthIso('2026-10')).toBe('2026-10-31');
+  });
+  it('navigableDateRange vai de 2026-08-01 ao último dia do mês corrente', () => {
+    expect(navigableDateRange(NOW_OCT)).toEqual({ min: '2026-08-01', max: '2026-10-31' });
+  });
+  it('clampSelectedDate prende nos dois limites e deixa passar o que está dentro', () => {
+    expect(clampSelectedDate('2026-07-15', NOW_OCT)).toBe('2026-08-01');
+    expect(clampSelectedDate('2026-12-01', NOW_OCT)).toBe('2026-10-31');
+    expect(clampSelectedDate('2026-09-07', NOW_OCT)).toBe('2026-09-07');
+  });
+  it('initialSelectedDate: hoje se o mês é o corrente; senão dia 1 do mês', () => {
+    expect(initialSelectedDate('2026-10', NOW_OCT)).toBe('2026-10-01');
+    expect(initialSelectedDate('2026-09', NOW_OCT)).toBe('2026-09-01');
+  });
+});
+
+describe('monthsOfWeek', () => {
+  it('semana dentro de um mês → 1 mês', () => expect(monthsOfWeek('2026-09-09', NOW_OCT)).toEqual(['2026-09']));
+  it('semana 28/09–04/10 cruza meses → [setembro, outubro], a partir de qualquer dia dela', () => {
+    expect(monthsOfWeek('2026-09-30', NOW_OCT)).toEqual(['2026-09', '2026-10']);
+    expect(monthsOfWeek('2026-10-04', NOW_OCT)).toEqual(['2026-09', '2026-10']);
+  });
+  it('semana 27/07–02/08: os dias de julho são descartados — só agosto, julho NUNCA é pedido', () => {
+    expect(monthsOfWeek('2026-08-01', NOW_OCT)).toEqual(['2026-08']);
+  });
+  it('semana que passa do mês corrente: os dias do mês futuro são descartados', () => {
+    // 26/10–01/11: novembro está depois do teto (mês corrente = outubro)
+    expect(monthsOfWeek('2026-10-28', NOW_OCT)).toEqual(['2026-10']);
+  });
+});
+
+describe('shiftsOfMonth', () => {
+  it('só os turnos do mês pedido', () => {
+    const shifts = [makeShift({ id: 'a', date: '2026-09-30' }), makeShift({ id: 'b', date: '2026-10-01' })];
+    expect(shiftsOfMonth(shifts, '2026-09').map((s) => s.id)).toEqual(['a']);
+  });
+});
+
+describe('mergePatientMonths', () => {
+  const provider = (id: string, shifts: AnaCareShift[]): AnaCareProvider => ({ anaCareId: id, linked: true, shifts });
+  const patient = (providers: AnaCareProvider[]): AnaCarePatient => ({ anaCareId: '90000', linked: true, name: 'Lucía', providers });
+  it('une os turnos do mesmo prestador entre meses, na ordem recebida', () => {
+    const merged = mergePatientMonths([
+      patient([provider('p1', [makeShift({ id: 'a', date: '2026-09-30' })])]),
+      patient([provider('p1', [makeShift({ id: 'b', date: '2026-10-01' })]), provider('p2', [makeShift({ id: 'c', date: '2026-10-02' })])]),
+    ]);
+    expect(merged?.providers.map((p) => [p.anaCareId, p.shifts.map((s) => s.id)])).toEqual([
+      ['p1', ['a', 'b']],
+      ['p2', ['c']],
+    ]);
+  });
+  it('mês null (paciente sem turnos) não entra; todos null → null', () => {
+    expect(mergePatientMonths([null, patient([provider('p1', [makeShift({ id: 'a' })])])])?.providers).toHaveLength(1);
+    expect(mergePatientMonths([null, null])).toBeNull();
+    expect(mergePatientMonths([])).toBeNull();
+  });
+  it('não muta os objetos recebidos', () => {
+    const first = patient([provider('p1', [makeShift({ id: 'a' })])]);
+    mergePatientMonths([first, patient([provider('p1', [makeShift({ id: 'b' })])])]);
+    expect(first.providers[0].shifts).toHaveLength(1);
   });
 });

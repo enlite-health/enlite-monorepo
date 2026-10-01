@@ -2,32 +2,34 @@
  * Detalhe do paciente — conferência de horas do Ana Care (V1). Resumo no topo + grupos por DIA
  * (ver `DayGroup`) — o eixo deixou de ser o PRESTADOR (decisão do Gabriel, 16/09: agrupar por
  * prestador põe o prestador no centro, e pra saber o que aconteceu com o paciente num dia era
- * preciso varrer todos os prestadores). Navegação semana a semana roda EM MEMÓRIA — o mês inteiro
- * já veio numa chamada só (`useAnaCareHoursPatient`), nenhum clique de navegação busca de novo; só
- * o botão "Actualizar" refaz a chamada (via `onRefresh`, ligado pelo `AnaCareHoursDetailContainer`
- * ao `refetch` do hook).
+ * preciso varrer todos os prestadores). Spec 037 (01/10): a navegação por semana/data BUSCA o mês que
+ * falta (como paginação) — a data selecionada e os meses da semana vivem em `useWeekNavigation`, a
+ * busca em `useAnaCareHoursPatient`; esta página só recebe a navegação (`weekNav`) e o estado de cada
+ * mês (`weekMonthStates`). "Actualizar" refaz todos os meses carregados (`onRefresh`).
  *
  * Adaptado de `repos/infra/_worktrees/proto-anacare-horas/.../AnaCareHoursDetailPage.tsx`:
  *  - `blockReasonMode` passa a nascer `'corto'` (1.5a, D344) — antes era `'largo'`. O banner
  *    grande do topo continua SEMPRE com o texto longo (`blockReason(snapshot, 'largo')`,
  *    hardcoded, comportamento intocado — só o motivo POR DIA mudou de padrão).
  *  - `onContestShift` ganha o parâmetro `reason` (1.5b) — assinatura antes era `(shildId, note)`.
- *  - card do resumo do mês (ajuste 16/09, ainda aberto na época): rotulado explicitamente
- *    "Horas totales del mes" — a tabela abaixo mostra a SEMANA, e antes o rótulo não distinguia
- *    os dois; agora que o mês vem inteiro numa chamada, o agregado do mês é correto e barato,
- *    então resolvemos por RÓTULO, sem mudar o número nem o layout.
+ *  - card do resumo do mês (ajuste 16/09): rotulado com o NOME do mês da data selecionada
+ *    ("Horas totales de septiembre 2026", spec 037) — total, progresso e origens somam só os
+ *    turnos desse mês, mesmo quando a semana mostrada tem dias do mês vizinho.
  */
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ArrowLeft, Calendar, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
+import { ArrowLeft, RefreshCw } from 'lucide-react';
 import { PageContainer } from '@presentation/components/atoms/PageContainer';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
-import { Input } from '@presentation/components/atoms/Input';
 import { ProgressBar } from '@presentation/components/atoms/ProgressBar';
 import { AlertBanner } from '@presentation/components/organisms/Alert/AlertBanner';
 import { OriginLegend } from './OriginLegend';
+import { AnaCareHoursWeekNavigator } from './AnaCareHoursWeekNavigator';
+import { AnaCareHoursWeekNotice } from './AnaCareHoursWeekNotice';
+import type { WeekNavigation } from '@hooks/admin/useWeekNavigation';
+import type { MonthStatus } from '@hooks/admin/useAnaCareHoursPatient';
 import { DayGroup } from './DayGroup';
 import { ValidateBatchModal } from './ValidateBatchModal';
 import { ContestModal } from './ContestModal';
@@ -35,18 +37,18 @@ import type { AxonicoComprobanteService } from './AxonicoComprobanteService';
 import type { AnaCarePatientDocumentService } from './AnaCarePatientDocumentService';
 import type { AnaCareHoursPatientSnapshot, AnaCareShift, ContestReason } from './types';
 import {
-  addDaysIso,
   allShiftsOf,
   blockReason,
+  formatMonthLabel,
   groupShiftsByDayInWeek,
+  monthOfDate,
   originCounts,
   patientDisplayName,
   pendingSelectionStateOf,
   selectionSummary,
   shouldShowStatusBanner,
-  startOfWeekMonday,
+  shiftsOfMonth,
   statusBannerKind,
-  todayIsoLocal,
   totalHours,
   validationProgress,
   type BlockReasonMode,
@@ -57,6 +59,12 @@ interface AnaCareHoursDetailPageProps {
   snapshot: AnaCareHoursPatientSnapshot;
   patientId: string;
   onBack: () => void;
+  /** Data selecionada + semana mostrada (spec 037) — o dono é `useWeekNavigation`, chamado por quem também escolhe os meses a buscar. */
+  weekNav: WeekNavigation;
+  /** Estado da busca de cada mês da semana; mês ausente = carregado. `error` NUNCA vira "sin turnos". */
+  weekMonthStates?: Record<string, MonthStatus>;
+  /** "Reintentar" de um mês que falhou. */
+  onRetryMonth?: (month: string) => void;
   /** Serviço do envio ao Axonico (botão "Enviar" de cada dia) — injetado de cima, mesmo padrão de `service`. */
   axonicoService: AxonicoComprobanteService;
   /** Serviço do registro de documento do paciente (modal aberto quando falta DNI, 19/09) — injetado de cima, mesmo padrão de `axonicoService`. */
@@ -87,6 +95,9 @@ export function AnaCareHoursDetailPage({
   snapshot,
   patientId,
   onBack,
+  weekNav,
+  weekMonthStates = {},
+  onRetryMonth,
   axonicoService,
   patientDocumentService,
   initialContestShiftId = null,
@@ -99,7 +110,7 @@ export function AnaCareHoursDetailPage({
   blockReasonMode = 'corto',
   disableActionsReason,
 }: AnaCareHoursDetailPageProps): JSX.Element {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const patient = snapshot.patients.find((p) => p.anaCareId === patientId);
   const [contestShiftId, setContestShiftId] = useState<string | null>(initialContestShiftId);
   const [selectedShiftIds, setSelectedShiftIds] = useState<Set<string>>(new Set());
@@ -113,23 +124,20 @@ export function AnaCareHoursDetailPage({
   const [isValidatingBatch, setIsValidatingBatch] = useState(false);
 
   const shifts = useMemo(() => (patient ? allShiftsOf(patient) : []), [patient]);
-  const progress = useMemo(() => validationProgress(shifts), [shifts]);
-  const origins = useMemo(() => originCounts(shifts), [shifts]);
-  const hours = useMemo(() => totalHours(shifts, sinCheckinHoursMode), [shifts, sinCheckinHoursMode]);
+  // Resumo (total, progresso, origens) = mês da DATA SELECIONADA, não a soma dos meses carregados.
+  const summaryMonth = monthOfDate(weekNav.selectedDate);
+  const monthShifts = useMemo(() => shiftsOfMonth(shifts, summaryMonth), [shifts, summaryMonth]);
+  const progress = useMemo(() => validationProgress(monthShifts), [monthShifts]);
+  const origins = useMemo(() => originCounts(monthShifts), [monthShifts]);
+  const hours = useMemo(() => totalHours(monthShifts, sinCheckinHoursMode), [monthShifts, sinCheckinHoursMode]);
   const selectedShifts = useMemo(() => shifts.filter((s) => selectedShiftIds.has(s.id)), [shifts, selectedShiftIds]);
   const selectionStats = useMemo(() => selectionSummary(selectedShifts, sinCheckinHoursMode), [selectedShifts, sinCheckinHoursMode]);
   const isSelectionBarVisible = selectionStats.count > 0;
 
-  // Navegação semana a semana (decisão do Gabriel, 18/09) — abre na semana de HOJE se o mês
-  // exibido (`snapshot.month`, YYYY-MM) contém a data de hoje; senão abre na primeira semana do
-  // mês exibido. NUNCA busca de novo: o mês inteiro já está em `snapshot` (uma chamada só, ver
-  // `useAnaCareHoursPatient`), então trocar de semana só filtra em memória via `groupShiftsByDayInWeek`.
-  const todayIso = todayIsoLocal();
-  const [weekStart, setWeekStart] = useState<string | null>(null);
-  const effectiveWeekStart =
-    weekStart ?? startOfWeekMonday(snapshot.month === todayIso.slice(0, 7) ? todayIso : `${snapshot.month}-01`);
-  const weekEnd = addDaysIso(effectiveWeekStart, 6);
-  const dayGroups = useMemo(() => (patient ? groupShiftsByDayInWeek(patient, effectiveWeekStart) : []), [patient, effectiveWeekStart]);
+  // Semana da data selecionada (`weekNav`, spec 037): os meses que ela precisa já foram pedidos por
+  // quem criou `weekNav`; aqui só se agrupa o que chegou.
+  const dayGroups = useMemo(() => (patient ? groupShiftsByDayInWeek(patient, weekNav.weekStart) : []), [patient, weekNav.weekStart]);
+  const weekStates = weekNav.months.map((month) => ({ month, status: weekMonthStates[month] ?? ({ state: 'ok', error: null } as MonthStatus) }));
 
   const selectionBarRef = useRef<HTMLDivElement>(null);
   const [selectionBarHeight, setSelectionBarHeight] = useState(0);
@@ -301,37 +309,7 @@ export function AnaCareHoursDetailPage({
           )}
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <Text size="sm" color="muted" data-testid="anacare-hours-week-label">
-            {t('admin.anacareHours.detail.weekLabel', { start: formatWeekRangeDate(effectiveWeekStart), end: formatWeekRangeDate(weekEnd) })}
-          </Text>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => setWeekStart(addDaysIso(effectiveWeekStart, -7))} data-testid="anacare-hours-week-prev">
-              <span className="inline-flex items-center gap-1">
-                <ChevronLeft className="w-4 h-4" />
-                {t('admin.anacareHours.detail.weekPrev')}
-              </span>
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => setWeekStart(addDaysIso(effectiveWeekStart, 7))} data-testid="anacare-hours-week-next">
-              <span className="inline-flex items-center gap-1">
-                {t('admin.anacareHours.detail.weekNext')}
-                <ChevronRight className="w-4 h-4" />
-              </span>
-            </Button>
-            <Input
-              type="date"
-              inputSize="compact"
-              className="!w-auto"
-              leftIcon={<Calendar className="w-4 h-4 text-gray-600" />}
-              value={effectiveWeekStart}
-              onChange={(e) => {
-                if (e.target.value) setWeekStart(startOfWeekMonday(e.target.value));
-              }}
-              aria-label={t('admin.anacareHours.detail.weekPickerAriaLabel')}
-              data-testid="anacare-hours-week-datepicker"
-            />
-          </div>
-        </div>
+        <AnaCareHoursWeekNavigator nav={weekNav} />
 
         {/* D5 (cobertura, 15/09) + F2: `alertMessage` NUNCA é undefined aqui — os 3 ramos novos
             (`naoConstruido`/`desconhecido`/`parcial`) sempre traduzem uma chave própria, e o ramo
@@ -343,7 +321,7 @@ export function AnaCareHoursDetailPage({
         <div className="border border-gray-600 rounded-xl p-5 flex flex-wrap items-center justify-between gap-6">
           <div>
             <Text size="xs" color="muted">
-              {t('admin.anacareHours.detail.totalHoursLabel')}
+              {t('admin.anacareHours.detail.totalHoursLabel', { month: formatMonthLabel(summaryMonth, i18n.language) })}
             </Text>
             <Heading level={2}>{hours.toFixed(1)} h</Heading>
           </div>
@@ -363,11 +341,7 @@ export function AnaCareHoursDetailPage({
         </div>
 
         <div className="flex flex-col gap-4">
-          {dayGroups.length === 0 && (
-            <Text color="muted" data-testid="anacare-hours-week-empty">
-              {t('admin.anacareHours.detail.weekEmpty')}
-            </Text>
-          )}
+          <AnaCareHoursWeekNotice states={weekStates} hasShifts={dayGroups.length > 0} onRetryMonth={onRetryMonth} />
           {dayGroups.map((day) => (
             <DayGroup
               key={day.date}
@@ -456,11 +430,4 @@ function OriginCountPill({ label, count, tone }: { label: string; count: number;
       </Text>
     </div>
   );
-}
-
-/** "1 de septiembre" — es-AR, usado no rótulo "semana de X a Y". */
-function formatWeekRangeDate(isoDate: string): string {
-  const [y, m, d] = isoDate.split('-').map(Number);
-  const date = new Date(Date.UTC(y, m - 1, d));
-  return new Intl.DateTimeFormat('es-AR', { day: 'numeric', month: 'long', timeZone: 'UTC' }).format(date);
 }
