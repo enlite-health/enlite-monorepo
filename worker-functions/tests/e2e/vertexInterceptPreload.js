@@ -70,16 +70,54 @@ global.fetch = async function fetchStub(url, init) {
     console.log(`[VERTEX-STUB] intercepted call #${interceptCount} — NO REAL NETWORK CALL LEFT THIS PROCESS. url=${urlStr}`);
     console.log(`[VERTEX-STUB] systemInstruction=${JSON.stringify(sysText)}`);
 
+    // spec 029 T074: falha FORÇADA do modelo, para o e2e de tela provar o 503 sem mockar rede nem
+    // derrubar a stack. Só dispara quando o texto do prompt em edição (que a pessoa digita na tela e
+    // que chega aqui como systemInstruction) contém o marcador abaixo. Status 400 = não transitório:
+    // `gemini-fetch` não faz retry e lança `GeminiApiError`, que o controller traduz em 503.
+    if (sysText.includes('[E2E-MODEL-DOWN]')) {
+      console.log('[VERTEX-STUB] FORCED FAILURE (marker [E2E-MODEL-DOWN]) — status 400 devolvido, nenhuma rede.');
+      return {
+        ok: false,
+        status: 400,
+        json: async () => ({ error: { message: 'stub: modelo indisponivel (e2e T074)' } }),
+        text: async () => 'stub: modelo indisponivel (e2e T074)',
+      };
+    }
+
+    // spec 029 T071: o prompt de PRESCREENING carrega as instruções de saída com a chave
+    // "prescreening" e espera OUTRO formato de resposta que o da descrição (propuesta/perfil). Sem este
+    // ramo a simulação de vacante inteira (descrição + prescreening) não tem como ser exercida sem mock.
+    // O ramo da descrição (T019/T019a) fica byte a byte como era.
+    const isPrescreening = sysText.includes('"prescreening"');
+    const textPayload = isPrescreening
+      ? {
+          vacancy: {
+            title: 'Caso stub', case_number: 1, required_professions: ['AT'], required_sex: 'BOTH',
+            age_range_min: 20, age_range_max: 60, required_experience: 'sem exigência',
+            worker_attributes: 'atributos', schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }],
+            work_schedule: 'part-time', providers_needed: 1, salary_text: 'a combinar', payment_day: '5',
+            daily_obs: null, status: 'SEARCHING',
+          },
+          prescreening: {
+            questions: [{
+              question: 'Pergunta sintética (stub e2e T071)?', responseType: ['text', 'audio'],
+              desiredResponse: 'resposta', weight: 5, required: true, analyzed: true, earlyStoppage: false,
+            }],
+            faq: [{ question: 'FAQ sintética (stub e2e T071)?', answer: 'Resposta sintética.' }],
+          },
+        }
+      : {
+          propuesta: 'Resumen objetivo del caso (stub e2e T019/T019a, sem chamada real).',
+          perfilProfesional: 'Perfil sugerido (stub e2e T019/T019a, sem chamada real).',
+        };
+
     const responsePayload = {
       candidates: [
         {
           content: {
             parts: [
               {
-                text: JSON.stringify({
-                  propuesta: 'Resumen objetivo del caso (stub e2e T019/T019a, sem chamada real).',
-                  perfilProfesional: 'Perfil sugerido (stub e2e T019/T019a, sem chamada real).',
-                }),
+                text: JSON.stringify(textPayload),
               },
             ],
           },

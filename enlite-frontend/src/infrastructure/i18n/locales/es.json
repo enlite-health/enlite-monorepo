@@ -5768,7 +5768,27 @@
         "resultTitle": "Resultado de la simulación",
         "error": "No se pudo generar la simulación. El texto que estás editando se conservó; probá de nuevo en unos instantes.",
         "errorUnavailable": "El modelo de IA no está disponible en este momento. El texto que estás editando se conservó; probá de nuevo en unos instantes."
-      }
+      },
+      "simulation": {
+        "title": "Simular creación de vacante",
+        "description": "La creación de una vacante usa los tres textos juntos. Elegí un caso real y mirá cómo quedaría, con el texto que tenés en los editores ahora (aunque no esté guardado). Es solo una simulación: no se crea ni se publica nada.",
+        "caseLabel": "Caso",
+        "casePlaceholder": "Elegí un caso…",
+        "casesLoading": "Cargando los casos…",
+        "casesError": "No se pudieron cargar los casos.",
+        "noCases": "No hay casos disponibles para simular.",
+        "cta": "Simular creación",
+        "running": "Simulando… puede tardar decenas de segundos.",
+        "error": "No se pudo generar la simulación. Los textos de los editores se conservaron; probá de nuevo en unos instantes.",
+        "errorUnavailable": "El modelo de IA no está disponible en este momento. Los textos de los editores se conservaron; probá de nuevo en unos instantes.",
+        "errorNotFound": "El caso elegido ya no existe. Elegí otro.",
+        "notice": "SIMULACIÓN — nada se guardó, no se creó ninguna vacante y no se envió nada a Talentum ni a nadie. Refleja los textos que estaban en los editores al momento de simular.",
+        "usedTitle": "Prompts que se ejercitaron",
+        "notExercised": "Tu texto de «{{label}}» NO entró en esta simulación: la vacante elegida usa el prompt de «{{used}}». Para probarlo, elegí una vacante de ese tipo.",
+        "notExercisedDetail": "No hubo error: la simulación simplemente no usó ese texto.",
+        "resultEmptyDescription": "El modelo no devolvió descripción."
+      },
+      "unsavedTab": "Cambios sin guardar"
     }
   },
   "publicVacancy": {

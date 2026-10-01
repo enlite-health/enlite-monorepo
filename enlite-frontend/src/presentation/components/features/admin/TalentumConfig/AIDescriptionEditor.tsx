@@ -22,6 +22,8 @@ interface Props {
   /** true when the last save also propagated the edit to a published Talentum project. */
   propagated?: boolean;
   saveError?: string | null;
+  /** Read-only mode (simulation): textarea not editable, save block hidden. Default false. */
+  readOnly?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -36,6 +38,7 @@ export function AIDescriptionEditor({
   saved = false,
   propagated = false,
   saveError = null,
+  readOnly = false,
 }: Props) {
   const { t } = useTranslation();
   const tc = (k: string) => t(`admin.talentumConfig.descriptionEditor.${k}`);
@@ -61,26 +64,29 @@ export function AIDescriptionEditor({
         <textarea
           value={value}
           onChange={handleChange}
+          readOnly={readOnly}
           placeholder={tc('placeholder')}
           className="w-full h-[300px] resize-none outline-none font-['Lexend'] font-medium text-[18px] text-[#737373] leading-[1.5] bg-transparent placeholder:text-[#d9d9d9]"
           aria-label={tc('label')}
         />
       </div>
 
-      {/* Footer */}
-      <div className="flex justify-between items-center">
-        <span className="font-['Lexend'] text-[12px] text-[#737373]">
-          {tc('helper')}
-        </span>
-        <span
-          className={`font-['Lexend'] text-[12px] ${charCount >= MAX_CHARS ? 'text-red-500' : 'text-[#737373]'}`}
-        >
-          {charCount}/{MAX_CHARS}
-        </span>
-      </div>
+      {/* Footer (hint + counter only make sense while editable) */}
+      {!readOnly && (
+        <div className="flex justify-between items-center">
+          <span className="font-['Lexend'] text-[12px] text-[#737373]">
+            {tc('helper')}
+          </span>
+          <span
+            className={`font-['Lexend'] text-[12px] ${charCount >= MAX_CHARS ? 'text-red-500' : 'text-[#737373]'}`}
+          >
+            {charCount}/{MAX_CHARS}
+          </span>
+        </div>
+      )}
 
       {/* Save action */}
-      {onSave && (
+      {onSave && !readOnly && (
         <div className="flex items-center gap-3 mt-1">
           <Button variant="outline" size="sm" onClick={onSave} disabled={!canSave}>
             {isSaving ? (
