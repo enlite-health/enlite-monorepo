@@ -265,15 +265,19 @@ export class AnaCareSessionClient {
   }
 
   /**
-   * Turnos na faixa `[from, to]` (`YYYY-MM-DD`, inclusive), já filtrados pelo universo D340 e
+   * Turnos na faixa `[from, to)` (`YYYY-MM-DD`; `from` inclusive, `to` EXCLUSIVO — `max_date` do
+   * Ana Care é exclusivo, medido 01/10/2026), já filtrados pelo universo D340 e
    * minimizados na borda.
    *
    * `month` é campo do OBJETO turno no payload (uma das 67 chaves), não parâmetro de filtro do
    * backend — `?month=YYYY-MM` é ignorado em silêncio e devolve o universo inteiro (medido ao
    * vivo 16/09: `?month=2026-08` deu `count=882776`, praticamente todas as 39 agências). O
    * backend aceita `min_date`/`max_date` (medido no mesmo dia: `count=3483` para uma janela de 7
-   * dias) — por isso este cliente só fala em faixa de datas; quem só tem um mês (a porta de
-   * domínio `AnaCareShiftsSource`, que mantém `month` como conceito legítimo) traduz com
+   * dias). `max_date` é EXCLUSIVO (medido 01/10/2026: 01/09–30/09 = 17024 turnos; 01/09–01/10 =
+   * 17665; 30/09–30/09 = 0; 30/09–01/10 = 641), e o servidor compara pelo DIA LOCAL (`-06:00`) do
+   * `start` (início previsto): um turno que começa 30/09 22:00 -06:00 cai em setembro. Por isso
+   * `to` de um mês inteiro é o 1º dia do mês seguinte. Este cliente só fala em faixa de datas;
+   * quem só tem um mês (a porta de domínio `AnaCareShiftsSource`, que mantém `month` como conceito legítimo) traduz com
    * `monthToDateRange` ANTES de chamar aqui — não é responsabilidade do cliente.
    *
    * `patient_id` nunca funcionou como filtro no servidor (ignorado em silêncio, medido 17/09) —
@@ -414,19 +418,21 @@ function isEnliteUniverseShift(raw: RawAnaCareShift): boolean {
 }
 
 /**
- * `YYYY-MM` → 1º e último dia do mês, em `YYYY-MM-DD` (UTC, sem depender de fuso local).
- * Último dia via `new Date(Date.UTC(year, month, 0))` — dia 0 do mês seguinte é o último dia
- * do mês pedido, e cobre corretamente 28/29 (fevereiro, incl. bissexto)/30/31 dias.
+ * `YYYY-MM` → `{ minDate, maxDateExclusive }` em `YYYY-MM-DD` (UTC, sem depender de fuso local):
+ * 1º dia do mês e 1º dia do mês SEGUINTE. O `max_date` do Ana Care é EXCLUSIVO (medido 01/10/2026),
+ * então o último dia do mês só entra se a janela terminar no dia seguinte. `Date.UTC(year,
+ * monthIndex, 1)` com `monthIndex` 1-12 (= mês seguinte, 0-based) vira o ano em dezembro.
+ * O servidor compara `min_date <= dia_local(start) < max_date`, com o dia local em `-06:00`
+ * (medido 01/10/2026: 01/09–30/09 = 17024 turnos; 01/09–01/10 = 17665; 30/09–30/09 = 0;
+ * 30/09–01/10 = 641). Um turno 30/09 22:00 -06:00 cai em setembro.
  */
-export function monthToDateRange(month: string): { minDate: string; maxDate: string } {
+export function monthToDateRange(month: string): { minDate: string; maxDateExclusive: string } {
   const [yearStr, monthStr] = month.split('-');
-  const year = Number(yearStr);
-  const monthIndex = Number(monthStr); // 1-12, e serve direto de "mês seguinte" 0-based p/ Date.UTC
-  const lastDay = new Date(Date.UTC(year, monthIndex, 0)).getUTCDate();
+  const next = new Date(Date.UTC(Number(yearStr), Number(monthStr), 1));
   const pad = (n: number) => String(n).padStart(2, '0');
   return {
     minDate: `${yearStr}-${monthStr}-01`,
-    maxDate: `${yearStr}-${monthStr}-${pad(lastDay)}`,
+    maxDateExclusive: `${next.getUTCFullYear()}-${pad(next.getUTCMonth() + 1)}-01`,
   };
 }
 

@@ -35,13 +35,13 @@ describe('AnaCareShiftsSourceReal', () => {
     expect(result).toEqual({ shifts: [fakeDto()], skipped: { noProvider: 0, noPatient: 0 } });
     expect(listShifts).toHaveBeenCalledWith({
       from: '2026-09-01',
-      to: '2026-09-30',
+      to: '2026-10-01',
       patientId: undefined,
       reservationId: undefined,
     });
   });
 
-  it('listShifts traduz `month` para `from`/`to` (1º e último dia do mês) ANTES de chamar o cliente — bug medido 16/09: `?month=` não filtra no servidor (count=882776 vs count=3483 com min_date/max_date)', async () => {
+  it('listShifts traduz `month` para `from`/`to` (1º dia do mês e 1º do seguinte, fim EXCLUSIVO) ANTES de chamar o cliente — bug medido 16/09: `?month=` não filtra no servidor (count=882776 vs count=3483 com min_date/max_date)', async () => {
     const listShifts = jest.fn().mockResolvedValue({ shifts: [], skipped: { noProvider: 0, noPatient: 0 } });
     const client = { listShifts, getRawShift: jest.fn(), circuitBreakerOpen: false } as unknown as AnaCareSessionClient;
     const source = new AnaCareShiftsSourceReal(client);
@@ -50,9 +50,9 @@ describe('AnaCareShiftsSourceReal', () => {
     await source.listShifts({ month: '2028-02' }); // fevereiro 2028 (bissexto) — 29 dias
     await source.listShifts({ month: '2026-01' }); // janeiro — 31 dias
 
-    expect(listShifts.mock.calls[0][0]).toMatchObject({ from: '2026-02-01', to: '2026-02-28' });
-    expect(listShifts.mock.calls[1][0]).toMatchObject({ from: '2028-02-01', to: '2028-02-29' });
-    expect(listShifts.mock.calls[2][0]).toMatchObject({ from: '2026-01-01', to: '2026-01-31' });
+    expect(listShifts.mock.calls[0][0]).toMatchObject({ from: '2026-02-01', to: '2026-03-01' });
+    expect(listShifts.mock.calls[1][0]).toMatchObject({ from: '2028-02-01', to: '2028-03-01' });
+    expect(listShifts.mock.calls[2][0]).toMatchObject({ from: '2026-01-01', to: '2026-02-01' });
   });
 
   it('listShifts repassa patientId e reservationId ao cliente junto com a faixa traduzida', async () => {
@@ -64,7 +64,7 @@ describe('AnaCareShiftsSourceReal', () => {
 
     expect(listShifts).toHaveBeenCalledWith({
       from: '2026-09-01',
-      to: '2026-09-30',
+      to: '2026-10-01',
       patientId: '42',
       reservationId: '99',
     });
