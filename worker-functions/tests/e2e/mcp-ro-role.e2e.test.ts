@@ -334,6 +334,22 @@ describe('Role enlite_mcp_ro — SELECT por coluna em patients (D216) @integrati
     }
   });
 
+  it('030 — C6: a coluna `segment` de patient_therapeutic_projects NÃO é legível por enlite_mcp_ro (nem por coluna, nem herdada da tabela) — com controle positivo', async () => {
+    const lePorColuna = async (): Promise<boolean> =>
+      (await admin.query<{ t: boolean }>(
+        `SELECT has_column_privilege('enlite_mcp_ro', 'public.patient_therapeutic_projects', 'segment', 'SELECT') AS t`,
+      )).rows[0].t;
+    expect(await lePorColuna()).toBe(false);
+    // controle positivo (D157): o instrumento enxerga um GRANT de verdade; o REVOKE fecha de novo
+    await admin.query('GRANT SELECT (segment) ON public.patient_therapeutic_projects TO enlite_mcp_ro');
+    try {
+      expect(await lePorColuna()).toBe(true);
+    } finally {
+      await admin.query('REVOKE SELECT (segment) ON public.patient_therapeutic_projects FROM enlite_mcp_ro');
+    }
+    expect(await lePorColuna()).toBe(false);
+  });
+
   it('CONTROLE POSITIVO (D157): GRANT da coluna reabre a leitura; REVOKE fecha de novo', async () => {
     await admin.query('GRANT SELECT (diagnosis) ON public.patients TO enlite_mcp_ro');
     try {

@@ -46,6 +46,8 @@ const ROTAS_SEM_CHAVE_SCREEN = new Set([
   'mapa', 'mensajes-por-etapa', 'plantillas', 'plantillas/registrar', 'plantillas/:slug', 'invitacion-presentacion',
   // Spec 017: os 3 catálogos do projeto terapêutico — gateados pela célula própria de cada um, não por país.
   'catalogos/objetivos-especificos', 'catalogos/actividades',
+  // Spec 030 (F1): segmentos Ana Care — célula própria (`catalog_therapeutic_segments:read`), mesmo caso dos catálogos acima.
+  'catalogos/segmentos',
 ]);
 
 /** Todo `href: '...'` literal declarado em `adminNavigation.tsx` (baseItems + adminItems + accessItems). */

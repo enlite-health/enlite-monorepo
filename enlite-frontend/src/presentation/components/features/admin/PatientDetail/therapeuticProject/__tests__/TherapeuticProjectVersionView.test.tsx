@@ -309,3 +309,38 @@ describe('contatos resolvidos (task 7.7)', () => {
     expect(texto).toContain(ptBR.admin.patients.detail.therapeuticProjectCard.redacted);
   });
 });
+
+// ── Segmento (Ana Care) — spec 030, FR-008 ───────────────────────────────────
+
+describe('linha "Segmento (Ana Care)" (spec 030)', () => {
+  const ROTULO = ptBR.admin.patients.detail.therapeuticProjectCard.segment;
+
+  it('mostra o rótulo do segmento congelado na versão, logo abaixo da linha do CID', () => {
+    montar({ segment: { id: 'seg-1', label: 'Segmento sintético X' } });
+
+    const linha = screen.getByTestId('tpv-segment');
+    expect(linha).toHaveTextContent(ROTULO);
+    expect(linha).toHaveTextContent('Segmento sintético X');
+    expect(screen.getByTestId('tpv-cid').nextElementSibling).toBe(linha);
+  });
+
+  it('`redacted.clinical` (segmento `null` por redação): rótulo de redigido, nunca "—" nem o segmento', () => {
+    montar({ redacted: { clinical: true }, segment: null });
+
+    expect(screen.getByTestId('tpv-segment')).toHaveTextContent(REDIGIDO);
+    expect(screen.getByTestId('tpv-segment')).not.toHaveTextContent('—');
+  });
+
+  it('versão anterior à 496 (`segment: null` SEM marcador): "—"', () => {
+    montar({ segment: null });
+
+    expect(screen.getByTestId('tpv-segment')).toHaveTextContent('—');
+    expect(screen.getByTestId('tpv-segment')).not.toHaveTextContent(REDIGIDO);
+  });
+
+  it('C8: `data-clarity-mask` em [data-testid=tpv-segment]', () => {
+    montar({ segment: { id: 'seg-1', label: 'Segmento sintético X' } });
+
+    expect(document.querySelector('[data-testid="tpv-segment"]')?.getAttribute('data-clarity-mask')).toBe('True');
+  });
+});

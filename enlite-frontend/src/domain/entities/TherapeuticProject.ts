@@ -78,6 +78,12 @@ export interface TherapeuticProjectVersion {
    * (DEC-09): sai no PDF, não é campo da tela.
    */
   pathologyTypes: CatalogSnapshotItem[] | null;
+  /**
+   * "Segmento (Ana Care)" (migration 496, spec 030) — `{id,label}` CONGELADO na versão, escolhido
+   * no "Nuevo". Dado clínico: `null` + `redacted.clinical` sem `patient_clinical:read`; `null` SEM
+   * marcador = versão anterior à 496 (a tela mostra "—"). `undefined` só em resposta antiga do cache.
+   */
+  segment?: CatalogSnapshotItem | null;
   startDate: string;
   endDate: string;
   annulledAt: string | null;
@@ -103,6 +109,8 @@ export interface TherapeuticProjectVersionBody {
   generalObjective: string;
   specificObjectiveIds: string[];
   activityIds: string[];
+  /** Só no `mode:'new'` (obrigatório lá); o `mode:'edit'` NÃO manda a chave — o servidor herda da origem (spec 030). */
+  segmentId?: string;
   startDate: string;
   endDate: string;
   contactRefs: ContactRef[];

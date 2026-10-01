@@ -107,7 +107,7 @@ class AdminTherapeuticProjectsApiServiceClass {
   }
 
   /** POST /api/admin/therapeutic-catalogs/<kind> */
-  async createCatalogItem(kind: TherapeuticCatalogKind, body: { label: string; sortOrder?: number }): Promise<TherapeuticCatalogItem> {
+  async createCatalogItem(kind: TherapeuticCatalogKind, body: { label: string; sortOrder?: number; segmentId?: string | null }): Promise<TherapeuticCatalogItem> {
     return this.request<TherapeuticCatalogItem>('POST', `/api/admin/therapeutic-catalogs/${kind}`, body);
   }
 
@@ -115,7 +115,7 @@ class AdminTherapeuticProjectsApiServiceClass {
   async updateCatalogItem(
     kind: TherapeuticCatalogKind,
     itemId: string,
-    body: { label?: string; sortOrder?: number; active?: boolean },
+    body: { label?: string; sortOrder?: number; active?: boolean; segmentId?: string | null },
   ): Promise<TherapeuticCatalogItem> {
     return this.request<TherapeuticCatalogItem>('PATCH', `/api/admin/therapeutic-catalogs/${kind}/${itemId}`, body);
   }

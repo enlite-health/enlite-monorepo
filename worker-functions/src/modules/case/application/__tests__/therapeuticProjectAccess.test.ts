@@ -51,6 +51,7 @@ function versao(over: Partial<TherapeuticProjectVersion> = {}): TherapeuticProje
     specificObjectives: [{ id: 'o-1', label: 'Vínculo terapéutico', segmentId: 'seg-1', segmentLabel: 'Salud mental' }],
     activities: [{ id: 'a-1', label: 'Acompañamiento escolar', segmentId: 'seg-1', segmentLabel: 'Salud mental' }],
     pathologyTypes: [{ id: '06', label: 'Trastornos mentales, del comportamiento y del neurodesarrollo' }],
+    segment: { id: 'seg-ana-1', label: 'AT para Pacientes con TEA' },
     startDate: '2026-01-01',
     endDate: '2026-06-30',
     annulledAt: null,
@@ -194,6 +195,36 @@ describe('projectTherapeuticVersionForActor', () => {
     const out = projectTherapeuticVersionForActor(cheia, ['patient_services:read']) as unknown as Record<string, unknown>;
     const zerados = Object.keys(out).filter((k) => out[k] === null && (cheia as unknown as Record<string, unknown>)[k] !== null);
     expect(zerados.sort()).toEqual([...THERAPEUTIC_CLINICAL_FIELDS].sort());
+  });
+
+  describe('030 — segmento (C2: dado clínico, dono único é esta projeção)', () => {
+    it('030 — com `patient_clinical:read` devolve o `{id,label}` e NÃO levanta o marcador clínico', () => {
+      const out = projectTherapeuticVersionForActor(versao(), [PATIENT_CLINICAL_READ_CELL, PATIENT_SERVICES_READ_CELL]);
+      expect(out.segment).toEqual({ id: 'seg-ana-1', label: 'AT para Pacientes con TEA' });
+      expect(out.redacted).toBeUndefined();
+    });
+
+    it('030 — sem a célula: `segment: null` + `redacted.clinical = true`, e o rótulo some do objeto inteiro', () => {
+      const out = projectTherapeuticVersionForActor(versao(), [PROJETO_READ]);
+      expect(out.segment).toBeNull();
+      expect(out.redacted?.clinical).toBe(true);
+      expect(JSON.stringify(out)).not.toContain('AT para Pacientes con TEA');
+      expect(JSON.stringify(out)).not.toContain('seg-ana-1');
+    });
+
+    it('030 — versão ANTERIOR à 496 (segment null) com a célula: `null` SEM marcador (ausência histórica ≠ redação)', () => {
+      const out = projectTherapeuticVersionForActor(versao({ segment: null }), [PATIENT_CLINICAL_READ_CELL, PATIENT_SERVICES_READ_CELL]);
+      expect(out.segment).toBeNull();
+      expect(out.redacted).toBeUndefined();
+    });
+
+    it('030 — `cells = null` (engine não decidiu, D113) → o segmento passa', () => {
+      expect(projectTherapeuticVersionForActor(versao(), null).segment).toEqual({ id: 'seg-ana-1', label: 'AT para Pacientes con TEA' });
+    });
+
+    it('030 — `THERAPEUTIC_CLINICAL_FIELDS` inclui `segment`', () => {
+      expect(THERAPEUTIC_CLINICAL_FIELDS).toContain('segment');
+    });
   });
 
   it('lex C8: o marcador é CONSTANTE — versão com e sem conteúdo clínico dão a MESMA resposta', () => {

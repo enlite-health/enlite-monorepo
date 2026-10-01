@@ -3,6 +3,7 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { withActorContext } from '@shared/database/actorContext';
 import {
   THERAPEUTIC_CATALOG_TABLE,
+  type CatalogSnapshotItem,
   type TherapeuticCatalogKind,
   type TherapeuticCatalogSnapshotItem,
 } from '../domain/TherapeuticProject';
@@ -115,6 +116,20 @@ export class TherapeuticCatalogRepository {
     const missing = unique.filter((id) => !found.has(id));
     if (missing.length > 0) throw new CatalogItemsUnknownError(kind, missing);
     return res.rows.map((r) => ({ id: r.id, label: r.label, segmentId: r.segment_id, segmentLabel: r.segment_label }));
+  }
+
+  /**
+   * O segmento que a versão do PTI congela (spec 030, lex C4): `{ id, label }` do segmento ATIVO,
+   * lido DENTRO da transação do INSERT (molde de `snapshotOf`). Inativo/inexistente →
+   * `CatalogSegmentInvalidError`, que NÃO carrega o id (o 422 não o ecoa — C3/C7).
+   */
+  async snapshotSegment(id: string, cli: Pool | PoolClient = this.pool): Promise<CatalogSnapshotItem> {
+    const res = await cli.query<{ id: string; label: string }>(
+      `SELECT id, label FROM ${this.table('segments')} WHERE active AND id = $1`,
+      [id],
+    );
+    if (res.rows.length === 0) throw new CatalogSegmentInvalidError();
+    return { id: res.rows[0].id, label: res.rows[0].label };
   }
 
   /**

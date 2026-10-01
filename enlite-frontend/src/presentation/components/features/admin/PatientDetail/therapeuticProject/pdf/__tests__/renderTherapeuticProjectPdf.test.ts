@@ -33,6 +33,7 @@ const version: TherapeuticProjectVersion = {
   specificObjectives: [{ id: 'o1', label: 'Favorecer la prevención de escaras (test).' }],
   activities: [{ id: 'a1', label: 'Realizar cambios posturales frecuentes (test).' }],
   pathologyTypes: [{ id: 'pt1', label: 'Trastornos psicóticos' }],
+  segment: { id: 'seg-1', label: 'SEGMENTO-ANACARE-SINTETICO' },
   startDate: '2026-09-01',
   endDate: '2026-12-31',
   annulledAt: null,
@@ -296,5 +297,41 @@ describe('PDF do projeto terapêutico — bytes reais, texto extraído (spec 017
     expect(text).toContain('Noviembre 2026 a febrero 2027');
     expect(pdfFileName(fullInput)).toBe('proyecto-terapeutico-caso-12345-V_1_2.pdf');
     expect(pdfFileName(fullInput)).not.toContain('SINTETICO');
+  });
+
+  // ── Segmento (Ana Care) — spec 030, lex C5 ────────────────────────────────
+
+  it('🔒 spec 030 C5 — com a célula clínica: "Segmento (Ana Care)" + o rótulo congelado estão no PDF, depois de "Tipo de patología (segmento)" (que não mudou)', async () => {
+    const { text } = await texto(fullInput);
+    expect(text).toContain('Segmento (Ana Care): SEGMENTO-ANACARE-SINTETICO');
+    expect(text.indexOf('Tipo de patología (segmento): Trastornos psicóticos')).toBeGreaterThan(-1);
+    expect(text.indexOf('Segmento (Ana Care)')).toBeGreaterThan(text.indexOf('Tipo de patología (segmento)'));
+  });
+
+  it('🔒 spec 030 C5 — sem `patient_clinical:read`: o rótulo do segmento NÃO está no texto e o rótulo de seção redigida está', async () => {
+    const { text } = await texto({ ...fullInput, version: { ...version, segment: null, clinicalContext: null, generalObjective: null, diagnoses: null, redacted: { clinical: true } } });
+    expect(text).not.toContain('SEGMENTO-ANACARE-SINTETICO');
+    expect(text).not.toContain('Segmento (Ana Care)');
+    expect(text).toContain(PDF_LABELS.sectionRedacted);
+  });
+
+  it('🔒 spec 030 C5 — o marcador sozinho redige mesmo com o segmento PRESENTE no objeto, e `segment` ausente (`undefined`) também redige', async () => {
+    const comMarcador = await texto({ ...fullInput, version: { ...version, redacted: { clinical: true } } });
+    expect(comMarcador.text).not.toContain('SEGMENTO-ANACARE-SINTETICO');
+    const { segment: _fora, ...semChave } = version;
+    const semSegmento = await texto({ ...fullInput, version: semChave as TherapeuticProjectVersion });
+    expect(semSegmento.text).not.toContain('Segmento (Ana Care)');
+  });
+
+  it('spec 030 — versão anterior à 496 (`segment: null` SEM marcador): imprime "Segmento (Ana Care): —"', async () => {
+    const { text } = await texto({ ...fullInput, version: { ...version, segment: null } });
+    expect(text).toContain('Segmento (Ana Care): —');
+  });
+
+  it('spec 030 C5/C11 — gerar o PDF com segmento: zero `http(s)` (só `data:` em memória)', async () => {
+    fetchSpy.mockClear();
+    await texto(fullInput);
+    const externas = fetchSpy.mock.calls.map((c) => String(c[0])).filter((u) => /^https?:/i.test(u));
+    expect(externas).toEqual([]);
   });
 });

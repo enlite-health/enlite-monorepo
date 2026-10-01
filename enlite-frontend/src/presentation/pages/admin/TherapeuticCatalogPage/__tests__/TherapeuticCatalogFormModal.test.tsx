@@ -280,6 +280,68 @@ describe('TherapeuticCatalogFormModal — fechar', () => {
   });
 });
 
+// ── Spec 030 (F4) — vínculo OPCIONAL de segmento (objetivo/atividade) ───────────────────────────────
+
+describe('TherapeuticCatalogFormModal — segmento opcional (spec 030)', () => {
+  const SEG_A = item({ id: 'seg-a', label: 'AT para Pacientes con TEA', sortOrder: 1 });
+  const SEG_B = item({ id: 'seg-b', label: 'AT para Salud Mental', sortOrder: 2 });
+  const SEG_OFF = item({ id: 'seg-off', label: 'Segmento viejo', sortOrder: 3, active: false });
+  const segmentoSelect = () => screen.getByTestId('therapeutic-catalog-segment-select') as HTMLSelectElement;
+
+  async function renderComSegmentos(alvo: TherapeuticCatalogItem | null, segments: TherapeuticCatalogItem[] | null) {
+    const utils = render(<TherapeuticCatalogFormModal item={alvo} segments={segments} onSave={onSave} onClose={onClose} />);
+    await waitFor(() => expect(utils.container.querySelector('form')).toHaveClass('translate-x-0'));
+    return utils;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    onSave.mockResolvedValue(undefined);
+  });
+
+  it('com a lista de segmentos o campo "Segmento" aparece e oferece "sem segmento" + os ATIVOS', async () => {
+    await renderComSegmentos(null, [SEG_A, SEG_B, SEG_OFF]);
+    expect(screen.getByLabelText(COPY.form.segment)).toBe(segmentoSelect());
+    const rotulos = Array.from(segmentoSelect().options).map((o) => o.textContent);
+    expect(rotulos).toEqual([COPY.form.segmentNone, SEG_A.label, SEG_B.label]);
+    expect(segmentoSelect()).toHaveValue('');
+  });
+
+  it('`null` (conta sem a célula de segmentos) esconde o campo, e o resto salva sem `segmentId`', async () => {
+    await renderComSegmentos(null, null);
+    expect(screen.queryByTestId('therapeutic-catalog-segment-select')).toBeNull();
+    fireEvent.change(textoInput(), { target: { value: 'Aseo personal' } });
+    fireEvent.click(salvar());
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ label: 'Aseo personal' }));
+    expect(Object.keys(onSave.mock.calls[0][0])).not.toContain('segmentId');
+  });
+
+  it('vínculo a segmento INATIVO aparece como "<rótulo> (inactivo)" e pode ser limpo (`segmentId: null`)', async () => {
+    await renderComSegmentos(item({ segmentId: 'seg-off' }), [SEG_A, SEG_OFF]);
+    expect(segmentoSelect()).toHaveValue('seg-off');
+    expect(screen.getByRole('option', { name: 'Segmento viejo (inactivo)' })).toBeInTheDocument();
+
+    fireEvent.change(segmentoSelect(), { target: { value: '' } });
+    fireEvent.click(salvar());
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ label: 'Mejorar autonomía', sortOrder: 7, segmentId: null }));
+  });
+
+  it('submit envia o `segmentId` escolhido; sem mexer no campo NÃO envia (o inativo vinculado não é re-mandado)', async () => {
+    const primeira = await renderComSegmentos(null, [SEG_A, SEG_B]);
+    fireEvent.change(textoInput(), { target: { value: 'Aseo personal' } });
+    fireEvent.change(segmentoSelect(), { target: { value: 'seg-b' } });
+    fireEvent.click(salvar());
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ label: 'Aseo personal', segmentId: 'seg-b' }));
+
+    onSave.mockClear();
+    primeira.unmount();
+    const { unmount } = await renderComSegmentos(item({ segmentId: 'seg-off', label: 'Otro' }), [SEG_OFF]);
+    fireEvent.click(screen.getByTestId('therapeutic-catalog-form-save'));
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith({ label: 'Otro', sortOrder: 7 }));
+    unmount();
+  });
+});
+
 describe('catalogRefusalMessage — a recusa em frase de tela', () => {
   it('409 → duplicado; 400 → dado pessoal (lex C18)', () => {
     expect(catalogRefusalMessage({ status: 409 }, t)).toBe(COPY.errors.duplicate);
