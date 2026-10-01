@@ -324,7 +324,7 @@ test.describe('Conferência de horas do Ana Care — E2E real @integration', () 
     await expect(linha).toContainText('Sin vínculo · ID AC-PAT-6');
     await print(page, 'lista.png');
     await linha.click();
-    await expect(page).toHaveURL(/\/admin\/anacare\/horas\/AC-PAT-6$/);
+    await expect(page).toHaveURL(/\/admin\/anacare\/horas\/AC-PAT-6(\?month=\d{4}-\d{2})?$/);
     await expect(page.getByRole('heading', { name: 'Sin vínculo · ID AC-PAT-6' })).toBeVisible({ timeout: 15_000 });
     await print(page, 'detalhe.png');
 
@@ -486,7 +486,7 @@ test.describe('Conferência de horas do Ana Care — E2E real @integration', () 
     const linha = page.getByTestId('anacare-hours-patient-row-AC-PAT-6');
     await expect(linha).toBeVisible({ timeout: 15_000 });
     await linha.click();
-    await expect(page).toHaveURL(/\/admin\/anacare\/horas\/AC-PAT-6$/);
+    await expect(page).toHaveURL(/\/admin\/anacare\/horas\/AC-PAT-6(\?month=\d{4}-\d{2})?$/);
     await expect(page.getByRole('heading', { name: 'Sin vínculo · ID AC-PAT-6' })).toBeVisible({ timeout: 15_000 });
     await criarNavegadorDeSemana(page).irPara(DATE_SIN_CHECKIN);
 

@@ -495,7 +495,7 @@ test.describe('Feedback visual do sync — Horas Ana Care — E2E real @integrat
     const linha = page.getByTestId(`anacare-hours-patient-row-${PATIENT_ID}`);
     await expect(linha).toBeVisible({ timeout: 15_000 });
     await linha.click();
-    await expect(page).toHaveURL(new RegExp(`/admin/anacare/horas/${PATIENT_ID}$`));
+    await expect(page).toHaveURL(new RegExp(`/admin/anacare/horas/${PATIENT_ID}(\\?month=\\d{4}-\\d{2})?$`));
 
     // Regressão (task 6.2) — 1ª carga (sem snapshot ainda) continua mostrando a tela de loading de
     // página inteira como antes; ela já se foi por aqui (detailCallCount===1, sem atraso — ver stub).
