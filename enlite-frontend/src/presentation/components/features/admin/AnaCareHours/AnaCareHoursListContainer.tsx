@@ -20,6 +20,8 @@ interface AnaCareHoursListContainerProps {
   service: AnaCareHoursService;
   onOpenPatient: (patientId: string) => void;
   initialMonth?: string;
+  /** Avisado quando o seletor de mês muda — a página-rota grava `?month` (spec 037). */
+  onMonthChange?: (month: string) => void;
   sinCheckinHoursMode?: SinCheckinHoursMode;
 }
 
@@ -30,6 +32,7 @@ export function AnaCareHoursListContainer({
   // usava o mês anterior) — nunca cravado em código; `initialMonth` continua aceitando override
   // explícito (harness/teste).
   initialMonth = currentMonthIso(),
+  onMonthChange,
   sinCheckinHoursMode,
 }: AnaCareHoursListContainerProps): JSX.Element {
   const { t } = useTranslation();
@@ -68,7 +71,10 @@ export function AnaCareHoursListContainer({
     <AnaCareHoursListPage
       snapshot={snapshot}
       onOpenPatient={onOpenPatient}
-      onMonthChange={setMonth}
+      onMonthChange={(next) => {
+        setMonth(next);
+        onMonthChange?.(next);
+      }}
       // `month` (este `useState`, não `snapshot.month`) é a fonte da verdade do mês — o MESMO que
       // alimenta `useAnaCareHoursSync` linha acima. Enquanto `snapshot` ainda é do mês anterior
       // (fetch em voo), `isLoadingSelectedMonth` avisa a página para não misturar os dois.

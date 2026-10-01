@@ -722,7 +722,7 @@
       "detail": {
         "back": "Volver",
         "patientNotFound": "Paciente no encontrado en el retrato de {{month}}.",
-        "totalHoursLabel": "Horas totales del mes",
+        "totalHoursLabel": "Horas totales de {{month}}",
         "validationLabel": "Validación — {{validated}}/{{total}}",
         "validationContestedSuffix_one": " · {{count}} contestado",
         "validationContestedSuffix_other": " · {{count}} contestados",
@@ -732,7 +732,10 @@
         "weekPrev": "Semana anterior",
         "weekNext": "Próxima semana",
         "weekEmpty": "Sin turnos registrados esta semana.",
-        "weekPickerAriaLabel": "Ir a la semana de una fecha"
+        "weekPickerAriaLabel": "Ir a la semana de una fecha",
+        "weekLoading": "Cargando los turnos de la semana…",
+        "weekMonthError": "No se pudieron cargar los turnos de {{month}}; faltan esos días de la semana.",
+        "weekRetry": "Reintentar"
       },
       "dayGroup": {
         "selectAllPendingAriaLabel": "Seleccionar todos los turnos pendientes del {{date}}",

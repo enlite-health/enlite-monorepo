@@ -1,57 +1,133 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { AnaCareHoursServiceError, type AnaCareHoursService } from '@presentation/components/features/admin/AnaCareHours/AnaCareHoursService';
+import { mergePatientMonths, parseMonthParam } from '@presentation/components/features/admin/AnaCareHours/selectors';
 import type { AnaCareHoursPatientSnapshot, AnaCarePatient, AnaCareRetratoStatus } from '@presentation/components/features/admin/AnaCareHours/types';
 
+/** Estado da busca de UM mês do paciente — `error` nunca é lido como "sem turnos". */
+export interface MonthStatus {
+  state: 'loading' | 'ok' | 'error';
+  error: string | null;
+}
+
+interface Entry<T> {
+  state: MonthStatus['state'];
+  value: T | null;
+  error: string | null;
+}
+
+function describeError(err: unknown): string {
+  if (err instanceof AnaCareHoursServiceError && err.code === 'FONTE_NAO_CONFIGURADA') return 'FONTE_NAO_CONFIGURADA';
+  return err instanceof Error ? err.message : 'No se pudo cargar el paciente.';
+}
+
+/** Só `YYYY-MM` entre o piso e o mês corrente chega ao backend (a validação do `?month` é a mesma). */
+function isFetchableMonth(month: string): boolean {
+  return parseMonthParam(month) === month;
+}
+
 /**
- * Mesmo padrão de `usePatientsData`. Busca o paciente E o estado do retrato em paralelo
- * (`Promise.all`) e monta um `AnaCareHoursPatientSnapshot` "de 1 paciente só" — a forma que
- * `AnaCareHoursDetailPage` já espera (F6.3: tipo próprio, separado de `AnaCareMonthSnapshot` da
- * LISTA, que deixou de carregar turnos). Portado de `repos/infra/_worktrees/proto-anacare-horas/
- * .../hooks/admin/useAnaCareHoursPatient.ts` — mesma adaptação de erro 503 do irmão
- * `useAnaCareHoursMonth` (ver comentário lá).
+ * Detalhe do paciente "como paginação" (spec 037): busca SÓ os meses pedidos em `months` que ainda
+ * não estão no cache da visita (`Map` por mês, vive enquanto o hook vive; trocar de paciente zera).
+ * A falha de um mês não derruba nem apaga os outros — vira `monthStates[mês].state === 'error'`,
+ * nunca um mês vazio. O retrato (`getRetratoStatus`, snapshot completo do mês) só é pedido para o mês
+ * da URL (`retratoMonth`). `refetch` refaz todos os meses carregados; `retryMonth` refaz um só.
+ * Monta um `AnaCareHoursPatientSnapshot` "de 1 paciente só" com os meses unidos (`mergePatientMonths`).
  */
-export function useAnaCareHoursPatient(service: AnaCareHoursService, month: string, patientId: string) {
-  const [patient, setPatient] = useState<AnaCarePatient | null>(null);
-  const [retrato, setRetrato] = useState<AnaCareRetratoStatus | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [refreshKey, setRefreshKey] = useState(0);
+export function useAnaCareHoursPatient(service: AnaCareHoursService, patientId: string, months: string[], retratoMonth: string) {
+  const [entries, setEntries] = useState<Record<string, Entry<AnaCarePatient | null>>>({});
+  const [retratos, setRetratos] = useState<Record<string, Entry<AnaCareRetratoStatus>>>({});
+  const [pending, setPending] = useState(0);
+  const generation = useRef(0);
+  const requested = useRef<Set<string>>(new Set());
 
-  const refetch = useCallback(() => setRefreshKey((k) => k + 1), []);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function fetchData(): Promise<void> {
+  const loadPatient = useCallback(
+    async (month: string): Promise<void> => {
+      const gen = generation.current;
+      requested.current.add(`p:${month}`);
+      setEntries((prev) => (prev[month]?.state === 'ok' ? prev : { ...prev, [month]: { state: 'loading', value: prev[month]?.value ?? null, error: null } }));
+      setPending((n) => n + 1);
       try {
-        setIsLoading(true);
-        setError(null);
-        const [patientResult, retratoResult] = await Promise.all([service.getPatientMonth(month, patientId), service.getRetratoStatus(month)]);
-        if (!cancelled) {
-          setPatient(patientResult);
-          setRetrato(retratoResult);
-        }
+        const patient = await service.getPatientMonth(month, patientId);
+        if (gen === generation.current) setEntries((prev) => ({ ...prev, [month]: { state: 'ok', value: patient, error: null } }));
       } catch (err: unknown) {
-        if (cancelled) return;
-        if (err instanceof AnaCareHoursServiceError && err.code === 'FONTE_NAO_CONFIGURADA') {
-          setError('FONTE_NAO_CONFIGURADA');
-        } else {
-          setError(err instanceof Error ? err.message : 'No se pudo cargar el paciente.');
-        }
+        if (gen === generation.current) setEntries((prev) => ({ ...prev, [month]: { state: 'error', value: prev[month]?.value ?? null, error: describeError(err) } }));
       } finally {
-        if (!cancelled) setIsLoading(false);
+        if (gen === generation.current) setPending((n) => n - 1);
       }
-    }
+    },
+    [service, patientId],
+  );
 
-    fetchData();
-    return () => {
-      cancelled = true;
-    };
-  }, [service, month, patientId, refreshKey]);
+  const loadRetrato = useCallback(
+    async (month: string): Promise<void> => {
+      const gen = generation.current;
+      requested.current.add(`r:${month}`);
+      setRetratos((prev) => (prev[month]?.state === 'ok' ? prev : { ...prev, [month]: { state: 'loading', value: prev[month]?.value ?? null, error: null } }));
+      setPending((n) => n + 1);
+      try {
+        const retrato = await service.getRetratoStatus(month);
+        if (gen === generation.current) setRetratos((prev) => ({ ...prev, [month]: { state: 'ok', value: retrato, error: null } }));
+      } catch (err: unknown) {
+        if (gen === generation.current) setRetratos((prev) => ({ ...prev, [month]: { state: 'error', value: prev[month]?.value ?? null, error: describeError(err) } }));
+      } finally {
+        if (gen === generation.current) setPending((n) => n - 1);
+      }
+    },
+    [service],
+  );
+
+  // Trocar de paciente (ou de serviço) zera o cache da visita; respostas em voo da visita anterior são descartadas.
+  useEffect(() => {
+    generation.current += 1;
+    requested.current = new Set();
+    setEntries({});
+    setRetratos({});
+    setPending(0);
+  }, [service, patientId]);
+
+  const monthsKey = months.filter(isFetchableMonth).join(',');
+  useEffect(() => {
+    for (const month of monthsKey.split(',').filter(Boolean)) {
+      if (!requested.current.has(`p:${month}`)) void loadPatient(month);
+    }
+    if (isFetchableMonth(retratoMonth) && !requested.current.has(`r:${retratoMonth}`)) void loadRetrato(retratoMonth);
+  }, [loadPatient, loadRetrato, monthsKey, retratoMonth]);
+
+  /** "Actualizar" e as ações de escrita: refaz TODOS os meses atualmente carregados, não só o da URL. */
+  const refetch = useCallback(() => {
+    for (const key of Array.from(requested.current)) {
+      const month = key.slice(2);
+      if (key.startsWith('p:')) void loadPatient(month);
+      else void loadRetrato(month);
+    }
+  }, [loadPatient, loadRetrato]);
+
+  /** "Reintentar" de um mês que falhou — refaz só esse mês (e o retrato, se foi ele quem falhou). */
+  const retryMonth = useCallback(
+    (month: string) => {
+      void loadPatient(month);
+      if (retratos[month]?.state === 'error') void loadRetrato(month);
+    },
+    [loadPatient, loadRetrato, retratos],
+  );
+
+  const monthStates: Record<string, MonthStatus> = {};
+  for (const month of monthsKey.split(',').filter(Boolean)) {
+    const entry = entries[month];
+    const retratoEntry = month === retratoMonth ? retratos[month] : undefined;
+    if (entry?.state === 'error') monthStates[month] = { state: 'error', error: entry.error };
+    else if (retratoEntry?.state === 'error') monthStates[month] = { state: 'error', error: retratoEntry.error };
+    else monthStates[month] = { state: entry?.state ?? 'loading', error: null };
+  }
+
+  const loadedMonths = Object.keys(entries).sort();
+  const patient = mergePatientMonths(loadedMonths.map((m) => entries[m].value));
+  const retratoKeys = Object.keys(retratos).filter((m) => retratos[m].value !== null);
+  const retrato = retratos[retratoMonth]?.value ?? (retratoKeys.length > 0 ? retratos[retratoKeys.sort().reverse()[0]].value : null);
 
   const snapshot: AnaCareHoursPatientSnapshot | null = retrato
     ? {
-        month,
+        month: retratoMonth,
         updatedAt: retrato.updatedAt,
         stale: retrato.stale,
         // Item 3 (conserto, 17/09): `AnaCareRetratoStatus` agora carrega `snapshotState` — não
@@ -66,5 +142,14 @@ export function useAnaCareHoursPatient(service: AnaCareHoursService, month: stri
       }
     : null;
 
-  return { patient, snapshot, isLoading, error, refetch };
+  // Erro de TELA INTEIRA só na 1ª carga (nada para mostrar ainda). Depois disso, a falha de um mês é
+  // inline (`monthStates`) — os dias dos outros meses nunca somem em silêncio.
+  const hasData = snapshot !== null && loadedMonths.some((m) => entries[m].state === 'ok');
+  const firstLoadError = entries[retratoMonth]?.state === 'error' ? entries[retratoMonth].error : retratos[retratoMonth]?.state === 'error' ? retratos[retratoMonth].error : null;
+  const error = hasData ? null : firstLoadError;
+  // 1ª carga ainda não assentou (o mês da URL e o retrato dele ainda não responderam) — evita um quadro "vazio" antes da busca começar.
+  const firstLoadSettled = [entries[retratoMonth], retratos[retratoMonth]].every((e) => e !== undefined && e.state !== 'loading');
+  const isLoading = pending > 0 || !firstLoadSettled;
+
+  return { patient, snapshot, isLoading, error, refetch, retryMonth, monthStates };
 }

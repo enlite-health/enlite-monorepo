@@ -9,15 +9,16 @@
  *  - célula `anacare_hours:validate` (D344) — sem ela, `useActionGate` desabilita
  *    validar/validar-lote/contestar com o motivo visível (mesmo padrão de `useActionGate`/
  *    `ActionButton`, D269 — fail-open só quando o engine ABAC está OFF).
- *  - `onRefresh={refetch}` (16/09) — o botão "Actualizar" do detalhe refaz a MESMA busca do mês
- *    (`useAnaCareHoursPatient` já busca o mês inteiro numa chamada só); navegar de semana NÃO
- *    passa por aqui, é filtro em memória dentro de `AnaCareHoursDetailPage`.
+ *  - `onRefresh={refetch}` (16/09) — o botão "Actualizar" do detalhe refaz a busca de TODOS os meses
+ *    carregados (spec 037). Navegar de semana busca o mês que falta: este container liga
+ *    `useWeekNavigation` (data selecionada → meses da semana) a `useAnaCareHoursPatient` (cache por mês).
  */
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { PageContainer } from '@presentation/components/atoms/PageContainer';
 import { Text } from '@presentation/components/atoms/Text';
 import { useAnaCareHoursPatient } from '@hooks/admin/useAnaCareHoursPatient';
+import { useWeekNavigation } from '@hooks/admin/useWeekNavigation';
 import { useActionGate } from '@presentation/hooks/useCellAccess';
 import { AnaCareHoursDetailPage } from './AnaCareHoursDetailPage';
 import { AnaCareHoursServiceError, type AnaCareHoursService } from './AnaCareHoursService';
@@ -33,6 +34,8 @@ interface AnaCareHoursDetailContainerProps {
   /** Serviço do registro de documento do paciente (modal do DNI, 19/09) — só REPASSADO, mesmo padrão de `axonicoService`. */
   patientDocumentService: AnaCarePatientDocumentService;
   month: string;
+  /** Chamado (com `replace`, pela página-rota) quando a data selecionada muda de mês — o `?month` da URL acompanha. */
+  onMonthChange?: (month: string) => void;
   patientId: string;
   onBack: () => void;
   sinCheckinHoursMode?: SinCheckinHoursMode;
@@ -44,13 +47,15 @@ export function AnaCareHoursDetailContainer({
   axonicoService,
   patientDocumentService,
   month,
+  onMonthChange,
   patientId,
   onBack,
   sinCheckinHoursMode,
   blockReasonMode,
 }: AnaCareHoursDetailContainerProps): JSX.Element {
   const { t } = useTranslation();
-  const { snapshot, isLoading, error, refetch } = useAnaCareHoursPatient(service, month, patientId);
+  const weekNav = useWeekNavigation(month, onMonthChange);
+  const { snapshot, isLoading, error, refetch, retryMonth, monthStates } = useAnaCareHoursPatient(service, patientId, weekNav.months, month);
   const [actionError, setActionError] = useState<string | null>(null);
   const validateGate = useActionGate('anacare_hours', 'validate');
 
@@ -148,6 +153,9 @@ export function AnaCareHoursDetailContainer({
         snapshot={snapshot}
         patientId={patientId}
         onBack={onBack}
+        weekNav={weekNav}
+        weekMonthStates={monthStates}
+        onRetryMonth={retryMonth}
         axonicoService={axonicoService}
         patientDocumentService={patientDocumentService}
         onValidateShift={handleValidateShift}

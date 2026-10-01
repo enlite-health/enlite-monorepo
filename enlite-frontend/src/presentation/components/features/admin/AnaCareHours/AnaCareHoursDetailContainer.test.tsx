@@ -22,6 +22,7 @@ vi.mock('react-i18next', () => ({
       if (typeof opts === 'string') return opts;
       return opts ? key.concat('|', Object.entries(opts).map(([k, v]) => `${k}=${v}`).join(',')) : key;
     },
+    i18n: { language: 'es' },
   }),
 }));
 
