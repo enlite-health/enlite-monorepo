@@ -79,4 +79,9 @@ describe('AdminLayout', () => {
     renderLayout();
     expect(screen.getByTestId('sidebar-user')).toHaveTextContent('Admin');
   });
+
+  // Presença (spec 022, Rodada 2, 22/09): o heartbeat SAIU deste componente — agora mora em
+  // `AdminProtectedRoute` (ver `AdminProtectedRoute.test.tsx`, describe "presença"), porque
+  // `AdminLayout` não é mais o único lugar que precisa contar como "staff com sessão ativa"
+  // (o painel de authz-loading/welcome-no-group nunca chega a montar este componente).
 });

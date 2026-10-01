@@ -38,7 +38,6 @@
 
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import { logger } from '@shared/logging';
-import { parseEnvList } from '@shared/utils/envList';
 import { isEnvFlagOn } from '@shared/utils/envFlag';
 import { currentDbContext } from '@shared/database/requestDbSession';
 import { PrincipalType } from '@modules/identity/domain/Auth';
@@ -47,6 +46,7 @@ import { sanitizeRoute } from '@shared/database/dbSessionMiddleware';
 import {
   cellKey,
   ENLITE_TENANT_ID,
+  isPermissionFamilyEnforced,
   markPermissionHandler,
   type PermissionClient,
   type PermissionDecision,
@@ -158,11 +158,14 @@ export class PermissionMiddleware {
   private buildGuard(family: string, resource: string, action: string, options: RequireOptions): RequestHandler {
     const { description, untilEnforced } = options;
     const guard: RequestHandler = async (req, res, next) => {
-      if (!isEnvFlagOn('PERMISSION_ENGINE_ENABLED', this.env)) {
-        return this.passUntilEnforced(req, res, next, untilEnforced);
-      }
-      if (!this.isFamilyEnforced(family)) {
-        this.logPendingFamily(family, resource, action);
+      // `isPermissionFamilyEnforced` (item 5b da change 022-ux-mencao-e-notificacao, F22)
+      // combina as DUAS alavancas — comportamento IDÊNTICO às duas checagens que existiam aqui
+      // separadas; o log de "família pendente" só faz sentido quando o ENGINE já está ligado
+      // (senão a família nem chegou a ser avaliada), por isso ainda distingue as duas causas.
+      if (!isPermissionFamilyEnforced(family, this.env)) {
+        if (isEnvFlagOn('PERMISSION_ENGINE_ENABLED', this.env)) {
+          this.logPendingFamily(family, resource, action);
+        }
         return this.passUntilEnforced(req, res, next, untilEnforced);
       }
 
@@ -226,10 +229,6 @@ export class PermissionMiddleware {
     };
 
     return markPermissionHandler(guard, { resource, action, description: description ?? null });
-  }
-
-  private isFamilyEnforced(family: string): boolean {
-    return parseEnvList(this.env.PERMISSION_ENFORCED_ROUTES).includes(family);
   }
 
   /**

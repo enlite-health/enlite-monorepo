@@ -9,8 +9,9 @@
  *   · `patient_clinical:read`             — o que é TEXTO CLÍNICO ou diagnóstico: `clinicalContext`,
  *                                            `generalObjective`, `diagnoses` e `pathologyTypes` (o
  *                                            tipo de patologia é o CAPÍTULO CID-11 derivado dos
- *                                            diagnósticos — `06` sozinho revela saúde mental, OP-18).
- *                                            Sem ela, esses quatro saem `null` e o marcador
+ *                                            diagnósticos — `06` sozinho revela saúde mental, OP-18) e
+ *                                            `segment` (segmento Ana Care congelado na versão, spec 030).
+ *                                            Sem ela, esses cinco saem `null` e o marcador
  *                                            `redacted.clinical = true` sai SEMPRE (constante).
  * Escrita: `patient_therapeutic_project:write` E `patient_clinical:write` (o corpo carrega texto
  * clínico) — o middleware exige a primeira; a segunda é conferida aqui, com 403 nomeando a célula.
@@ -30,7 +31,7 @@ export const PATIENT_FAMILY_READ_CELL = patientContainerCell('family', 'read');
 export const PATIENT_COVERAGE_READ_CELL = patientContainerCell('coverage', 'read');
 export const PATIENT_CARE_TEAM_READ_CELL = patientContainerCell('careTeam', 'read');
 
-const CLINICAL_FIELDS = ['clinicalContext', 'generalObjective', 'diagnoses', 'pathologyTypes'] as const;
+const CLINICAL_FIELDS = ['clinicalContext', 'generalObjective', 'diagnoses', 'pathologyTypes', 'segment'] as const;
 
 export type ProjectedTherapeuticVersion = Omit<TherapeuticProjectVersion, 'clinicalContext' | 'generalObjective' | 'diagnoses' | 'pathologyTypes' | 'contractedServiceCode' | 'createdBy' | 'annulledBy'> & {
   clinicalContext: string | null;
@@ -71,7 +72,7 @@ export function projectTherapeuticVersionForActor(
   const servicos = canReadTherapeuticServices(cells);
   if (clinica && servicos) return rest;
   const redacted: { clinical?: true; services?: true } = {};
-  // Os QUATRO campos clínicos zerados num literal só — `CLINICAL_FIELDS` é a lista que o teste confere
+  // Os CINCO campos clínicos zerados num literal só — `CLINICAL_FIELDS` é a lista que o teste confere
   // contra este literal, para campo novo não entrar em um lado e não no outro.
   const clinico = clinica
     ? {}
@@ -80,6 +81,8 @@ export function projectTherapeuticVersionForActor(
         generalObjective: null,
         diagnoses: null,
         pathologyTypes: null,
+        // spec 030 (lex C2): o segmento Ana Care da versão é dado clínico — mesma régua dos diagnósticos.
+        segment: null,
         // lex-pr7 C3(b)/D303: segmento (430) dentro de cada item de objetivo/atividade é dado
         // clínico — mesma régua de `pathologyTypes`. Só o segmento some; o item (id/label) fica.
         specificObjectives: redactSegmentOf(rest.specificObjectives),

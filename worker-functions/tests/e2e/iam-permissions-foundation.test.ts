@@ -355,15 +355,35 @@ describe('IAM — fundação do painel de grupos (migrations 274-280, banco real
       expect(scope.rows[0].granted_by).toBe(U.gestor);
       const member = await pool.query(`SELECT assigned_by FROM iam.user_groups WHERE group_id = $1 AND user_id = $2 AND removed_at IS NULL`, [newGroupId, U.ana]);
       expect(member.rows[0].assigned_by).toBe(U.gestor);
-      const changes = await pool.query(`SELECT op, changed_by FROM iam.permission_group_changes WHERE group_id = $1`, [newGroupId]);
+      // migration 469 (spec 022 R4): `iam.create_group` (chamado 2 linhas acima) já concede a
+      // este grupo as 3 células `own_*` do catálogo (own_notifications:read/update,
+      // own_presence:update — mig 464/466) direto em `group_permissions`, sem trilha própria.
+      // `set_group_permissions` é REPLACE TOTAL, mas a migration 470 (Rodada 5, achado A5 do
+      // gate revisao-pr da Rodada 4) protege a família `own_*` desse REPLACE: ao gravar só as 3
+      // células de vacancy, as 3 `own_*` PERMANECEM no grupo e NÃO entram na trilha como
+      // 'remove' — só os 3 'add' de vacancy aparecem (antes da 470 seriam 6 linhas, com 3
+      // 'remove' fantasma; ver cabeçalho da migration 470).
+      const OWN_PREFIX_BASELINE = 3;
+      const changes = await pool.query<{ op: string; changed_by: string; resource: string }>(
+        `SELECT c.op, c.changed_by, p.resource
+           FROM iam.permission_group_changes c
+           JOIN iam.permissions p ON p.id = c.permission_id
+          WHERE c.group_id = $1`,
+        [newGroupId],
+      );
+      const ownRemoves = changes.rows.filter((r) => r.resource.startsWith('own_') && r.op === 'remove');
+      const vacancyAdds = changes.rows.filter((r) => !r.resource.startsWith('own_'));
+      expect(changes.rows).toHaveLength(3); // só os 3 'add' de vacancy — mig 470 barra o 'remove' fantasma de own_*
+      expect(ownRemoves).toHaveLength(0); // as OWN_PREFIX_BASELINE own_* NÃO saem mais do grupo (mig 470)
       // 3 linhas, não 2: `set_group_permissions` grava uma linha por permission_id do diff, e a
       // troca de `vacancy:write` (1 célula) por `vacancy:create`+`vacancy:update` (2 células,
       // migration 453) soma 3 ids no total (read+create+update), não 2 (read+write).
-      expect(changes.rows).toEqual([
-        { op: 'add', changed_by: U.gestor },
-        { op: 'add', changed_by: U.gestor },
-        { op: 'add', changed_by: U.gestor },
-      ]);
+      expect(vacancyAdds).toHaveLength(3);
+      expect(vacancyAdds.every((r) => r.op === 'add' && r.changed_by === U.gestor)).toBe(true);
+      // own_* continuam em group_permissions — confirmado porque o teste seguinte assume este
+      // estado de partida ao mexer só na trilha de erro (célula inválida não grava nada a mais).
+      const cellCount = await pool.query(`SELECT count(*)::int n FROM iam.group_permissions WHERE group_id = $1`, [newGroupId]);
+      expect(cellCount.rows[0].n).toBe(OWN_PREFIX_BASELINE + 3);
       const ana = await eff(U.ana);
       expect(ana.c).toEqual(expect.arrayContaining(['AR', 'BR']));
     });

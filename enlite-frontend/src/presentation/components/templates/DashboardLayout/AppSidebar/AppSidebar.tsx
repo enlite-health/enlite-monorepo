@@ -4,6 +4,7 @@ import { NavItem } from '@presentation/components/shared/NavItem';
 import { NavSection, type NavSectionItem } from '@presentation/components/shared/NavSection';
 import { SidebarFooter } from '@presentation/components/shared/SidebarFooter';
 import { Text } from '@presentation/components/atoms/Text';
+import { NotificationBell } from '@presentation/components/features/notifications/NotificationBell';
 
 export interface AppSidebarNavItem {
   icon: ReactNode;
@@ -71,6 +72,13 @@ export const AppSidebar = ({
           </svg>
         </button>
       </div>
+
+      {/* Sino de notificações (item 4, change 022-ux-mencao-e-notificacao, F17/F18) — 1º item da
+          sidebar, ACIMA de `navItems`, SEMPRE montado (expandido ou recolhido — antes desmontava
+          e o poll parava junto ao recolher). Global de staff (`own_notifications:*` nasce
+          concedida a TODO staff, D-07), não uma rota de navegação — por isso nunca entra na lista
+          `navItems`, igual antes. */}
+      <NotificationBell isCollapsed={isCollapsed} />
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-2">

@@ -33,6 +33,7 @@ describe('spec 017 — projeto terapêutico: API sob engine de permissão (HTTP 
   let serviceOutroId: string;
   let objectiveIds: string[];
   let activityIds: string[];
+  let ptiSegmentId: string;
 
   const U = {
     completa: 'pt017-completa',
@@ -132,6 +133,9 @@ describe('spec 017 — projeto terapêutico: API sob engine de permissão (HTTP 
     ...over,
   });
 
+  // 030: `mode:'new'` leva `segmentId` (MACRO, obrigatório) de um segmento SEMEADO (495); `versionBody` é o corpo do `edit`.
+  const newVersionBody = (over: Record<string, unknown> = {}) => ({ ...versionBody(), segmentId: ptiSegmentId, ...over });
+
   // PR-8b (A3, achado da rodada A2): as células de CELULAS são do CATÁLOGO compartilhado —
   // `create`/`update` nascem seedadas de forma permanente pela migration 435 para os 23 recursos
   // splitados, e as demais (`read`/`export`, `patient_clinical:*`) já existiam antes deste teste
@@ -185,6 +189,8 @@ describe('spec 017 — projeto terapêutico: API sob engine de permissão (HTTP 
     )).rows[0].id;
     objectiveIds = (await pool.query<{ id: string }>(`SELECT id FROM therapeutic_specific_objectives WHERE active ORDER BY sort_order`)).rows.map((r) => r.id);
     activityIds = (await pool.query<{ id: string }>(`SELECT id FROM therapeutic_activities WHERE active ORDER BY sort_order`)).rows.map((r) => r.id);
+    // 030: o segmento vem do seed 495 (nunca criado aqui) — se a tabela estiver vazia o beforeAll falha alto.
+    ptiSegmentId = (await pool.query<{ id: string }>(`SELECT id FROM therapeutic_segments WHERE active AND created_by = 'seed:495' ORDER BY sort_order LIMIT 1`)).rows[0].id;
     await semearCid();
 
     setEnv('USE_MOCK_AUTH', 'true');
@@ -217,7 +223,7 @@ describe('spec 017 — projeto terapêutico: API sob engine de permissão (HTTP 
   const created: Record<string, string> = {};
 
   it('1. new → V.1.0 com autor por NOME (nunca uid), snapshot dos catálogos com texto', async () => {
-    const r = await chamar('POST', BASE(), U.completa, { mode: 'new', version: versionBody() });
+    const r = await chamar('POST', BASE(), U.completa, { mode: 'new', version: newVersionBody() });
     expect(r.status).toBe(201);
     expect(r.body.data).toMatchObject({ major: 1, minor: 0, version: 'V.1.0', createdByName: 'Ana Sintética', editedFromVersionId: null, modality: 'IN_PERSON', contractedServiceCode: 'CAREGIVER' });
     // D301.3a: a modalidade fica na linha (417) — e o trigger de imutabilidade a protege como as demais.
@@ -255,7 +261,7 @@ describe('spec 017 — projeto terapêutico: API sob engine de permissão (HTTP 
     expect(stale.body).toMatchObject({ code: 'ptp_not_current' });
     // "new" nasce sempre — SUP-25 REJEITADA (D328): não há versão automática, mas o operador
     // pode criar uma major nova a qualquer momento; a partir daí a 1.x também fica trancada.
-    const v20 = await chamar('POST', BASE(), U.completa, { mode: 'new', version: versionBody() });
+    const v20 = await chamar('POST', BASE(), U.completa, { mode: 'new', version: newVersionBody() });
     expect(v20.status).toBe(201);
     expect(v20.body.data).toMatchObject({ version: 'V.2.0' });
     created['2.0'] = v20.body.data.id;
@@ -297,10 +303,10 @@ describe('spec 017 — projeto terapêutico: API sob engine de permissão (HTTP 
   });
 
   it('5. 🔒 escrita: sem patient_clinical:write → 403 nomeando a célula; sem a célula do projeto → missing_cell; operacional → 403', async () => {
-    const semClinica = await chamar('POST', BASE(), U.semClinica, { mode: 'new', version: versionBody() });
+    const semClinica = await chamar('POST', BASE(), U.semClinica, { mode: 'new', version: newVersionBody() });
     expect(semClinica.status).toBe(403);
     expect(semClinica.body).toEqual({ success: false, error: 'Forbidden', details: { cell: 'patient_clinical:write' } });
-    const soLeitura = await chamar('POST', BASE(), U.soProjeto, { mode: 'new', version: versionBody() });
+    const soLeitura = await chamar('POST', BASE(), U.soProjeto, { mode: 'new', version: newVersionBody() });
     expect(soLeitura.status).toBe(403);
     expect(soLeitura.body).toMatchObject({ code: 'missing_cell' });
     const operacional = await chamar('GET', BASE(), U.operacional);
@@ -310,16 +316,16 @@ describe('spec 017 — projeto terapêutico: API sob engine de permissão (HTTP 
   });
 
   it('6. serviço de OUTRO paciente → 422 e nada gravado; corpo com major → 400 (só nomes de campo)', async () => {
-    const r = await chamar('POST', BASE(), U.completa, { mode: 'new', version: versionBody({ contractedServiceId: serviceOutroId }) });
+    const r = await chamar('POST', BASE(), U.completa, { mode: 'new', version: newVersionBody({ contractedServiceId: serviceOutroId }) });
     expect(r.status).toBe(422);
     expect(r.body).toMatchObject({ code: 'service_not_of_patient' });
-    const bad = await chamar('POST', BASE(), U.completa, { mode: 'new', version: versionBody({ major: 9 }) });
+    const bad = await chamar('POST', BASE(), U.completa, { mode: 'new', version: newVersionBody({ major: 9 }) });
     expect(bad.status).toBe(400);
     expect(JSON.stringify(bad.body)).not.toContain('Síntesis sintética');
     // D301.3a: modalidade obrigatória e fechada — sem ela ou fora do enum, 400.
-    const { modality: _m, ...semModalidade } = versionBody();
+    const { modality: _m, ...semModalidade } = newVersionBody();
     expect((await chamar('POST', BASE(), U.completa, { mode: 'new', version: semModalidade })).status).toBe(400);
-    expect((await chamar('POST', BASE(), U.completa, { mode: 'new', version: versionBody({ modality: 'presencial' }) })).status).toBe(400);
+    expect((await chamar('POST', BASE(), U.completa, { mode: 'new', version: newVersionBody({ modality: 'presencial' }) })).status).toBe(400);
     const total = await pool.query(`SELECT count(*)::int AS n FROM patient_therapeutic_projects WHERE patient_id = $1`, [PATIENT]);
     expect(total.rows[0].n).toBe(4);
   });
@@ -361,7 +367,7 @@ describe('spec 017 — projeto terapêutico: API sob engine de permissão (HTTP 
     const listaToda = await chamar('GET', `${path}?includeInactive=true`, U.catalogo);
     expect(listaToda.body.data.items.some((i: { id: string }) => i.id === novo.body.data.id)).toBe(true);
     // Snapshot com id desativado → 422 e nada gravado (lex C19).
-    const r = await chamar('POST', BASE(), U.completa, { mode: 'new', version: versionBody({ specificObjectiveIds: [novo.body.data.id] }) });
+    const r = await chamar('POST', BASE(), U.completa, { mode: 'new', version: newVersionBody({ specificObjectiveIds: [novo.body.data.id] }) });
     expect(r.status).toBe(422);
     expect(r.body).toMatchObject({ code: 'catalog_items_unknown', details: { kind: 'specific-objectives', ids: [novo.body.data.id] } });
     // A leitura do catálogo de atividades exige a SUA célula: o grupo do catálogo só tem objetivos.
@@ -371,17 +377,17 @@ describe('spec 017 — projeto terapêutico: API sob engine de permissão (HTTP 
 
   it('8b. tipo de patologia vem do CID-11: 2 diagnósticos de capítulos distintos → 2 capítulos ordenados; `pathologyTypeIds` → 400; CID sumido → 422 e nada gravado; rota do catálogo → 404', async () => {
     const antes = (await pool.query<{ n: number }>(`SELECT count(*)::int AS n FROM patient_therapeutic_projects WHERE patient_id = $1`, [PATIENT])).rows[0].n;
-    const dois = await chamar('POST', BASE(), U.completa, { mode: 'new', version: versionBody({ diagnoses: [
+    const dois = await chamar('POST', BASE(), U.completa, { mode: 'new', version: newVersionBody({ diagnoses: [
       { uri: URI_EPI, title: 'Epilepsia e2e' }, { uri: URI_TEA, title: 'TEA e2e' }, { uri: URI_TEA, title: 'TEA e2e repetido' },
     ] }) });
     expect(dois.status).toBe(201);
     expect(dois.body.data.pathologyTypes).toEqual([{ id: CAP06.code, label: CAP06.title }, { id: CAP08.code, label: CAP08.title }]);
     // O campo antigo é recusado pela borda `.strict()` — o cliente não escolhe o segmento.
-    const antigo = await chamar('POST', BASE(), U.completa, { mode: 'new', version: { ...versionBody(), pathologyTypeIds: ['11111111-1111-4111-8111-111111111111'] } });
+    const antigo = await chamar('POST', BASE(), U.completa, { mode: 'new', version: { ...newVersionBody(), pathologyTypeIds: ['11111111-1111-4111-8111-111111111111'] } });
     expect(antigo.status).toBe(400);
     expect(JSON.stringify(antigo.body)).not.toContain('Síntesis');
     // CID que não resolve no release corrente → 422 tipado, sem a URI no corpo nem linha gravada.
-    const sumido = await chamar('POST', BASE(), U.completa, { mode: 'new', version: versionBody({ diagnoses: [{ uri: URI_SUMIDA, title: 'Sumido' }] }) });
+    const sumido = await chamar('POST', BASE(), U.completa, { mode: 'new', version: newVersionBody({ diagnoses: [{ uri: URI_SUMIDA, title: 'Sumido' }] }) });
     expect(sumido.status).toBe(422);
     expect(sumido.body).toMatchObject({ code: 'ptp_diagnosis_unknown' });
     expect(JSON.stringify(sumido.body)).not.toContain(URI_SUMIDA);
@@ -412,5 +418,83 @@ describe('spec 017 — projeto terapêutico: API sob engine de permissão (HTTP 
     expect(rows.some((r) => r.operator_uid === U.soProjeto && r.action === 'read_project:therapeuticProject' && r.resource_id === PATIENT)).toBe(true);
     expect(rows.some((r) => r.operator_uid === U.completa && r.action === 'export_pdf:therapeuticProject+clinical+services')).toBe(true);
     expect(JSON.stringify(rows)).not.toContain('Síntesis');
+  });
+
+  describe('030 — segmento Ana Care na versão (C2, C3, C4)', () => {
+    let seg: { id: string; label: string };
+    let inativoId: string;
+    let vigente030: string;
+    const textoDe = async (caminho: string, uid: string): Promise<string> =>
+      (await fetch(`${app.url}${caminho}`, { headers: { Authorization: tokenMock(uid) } })).text();
+
+    beforeAll(async () => {
+      seg = (await pool.query<{ id: string; label: string }>(`SELECT id, label FROM therapeutic_segments WHERE id = $1`, [ptiSegmentId])).rows[0];
+      inativoId = (await pool.query<{ id: string }>(
+        `INSERT INTO therapeutic_segments (label, sort_order, active, deactivated_at, created_by, updated_by)
+         VALUES ('E2E 030 Segmento inativo', 9999, false, NOW(), 'e2e-030', 'e2e-030') RETURNING id`,
+      )).rows[0].id;
+    });
+    afterAll(async () => {
+      await pool.query(`DELETE FROM therapeutic_segments WHERE label LIKE 'E2E 030 %'`);
+    });
+
+    it('030 — a: new com `segmentId` → 201 e `segment` = `{id,label}` do CATÁLOGO, congelado na linha', async () => {
+      const r = await chamar('POST', BASE(), U.completa, { mode: 'new', version: newVersionBody() });
+      expect(r.status).toBe(201);
+      expect(r.body.data.segment).toEqual({ id: seg.id, label: seg.label });
+      const linha = await pool.query(`SELECT segment FROM patient_therapeutic_projects WHERE id = $1`, [r.body.data.id]);
+      expect(linha.rows[0].segment).toEqual({ id: seg.id, label: seg.label });
+      vigente030 = r.body.data.id;
+    });
+
+    it('030 — b: new sem `segmentId` → 400 só com NOMES de campo, e nada gravado', async () => {
+      const antes = (await pool.query<{ n: number }>(`SELECT count(*)::int AS n FROM patient_therapeutic_projects WHERE patient_id = $1`, [PATIENT])).rows[0].n;
+      const r = await chamar('POST', BASE(), U.completa, { mode: 'new', version: versionBody() });
+      expect(r.status).toBe(400);
+      expect(r.body.details.fields).toEqual(['version']);
+      const depois = (await pool.query<{ n: number }>(`SELECT count(*)::int AS n FROM patient_therapeutic_projects WHERE patient_id = $1`, [PATIENT])).rows[0].n;
+      expect(depois).toBe(antes);
+    });
+
+    it('030 — c: segmento INATIVO → 422 `catalog_segment_invalid`, o corpo inteiro não contém o id enviado e nada é gravado', async () => {
+      const antes = (await pool.query<{ n: number }>(`SELECT count(*)::int AS n FROM patient_therapeutic_projects WHERE patient_id = $1`, [PATIENT])).rows[0].n;
+      const r = await chamar('POST', BASE(), U.completa, { mode: 'new', version: newVersionBody({ segmentId: inativoId }) });
+      expect(r.status).toBe(422);
+      expect(r.body).toEqual({ success: false, error: 'Unknown or inactive segment', code: 'catalog_segment_invalid' });
+      expect(JSON.stringify(r.body)).not.toContain(inativoId);
+      const depois = (await pool.query<{ n: number }>(`SELECT count(*)::int AS n FROM patient_therapeutic_projects WHERE patient_id = $1`, [PATIENT])).rows[0].n;
+      expect(depois).toBe(antes);
+    });
+
+    it('030 — d: com `segmentId` mas sem `patient_clinical:write` → 403 nomeando a célula, nada gravado', async () => {
+      const antes = (await pool.query<{ n: number }>(`SELECT count(*)::int AS n FROM patient_therapeutic_projects WHERE patient_id = $1`, [PATIENT])).rows[0].n;
+      const r = await chamar('POST', BASE(), U.semClinica, { mode: 'new', version: newVersionBody() });
+      expect(r.status).toBe(403);
+      expect(r.body.details).toEqual({ cell: 'patient_clinical:write' });
+      expect(JSON.stringify(r.body)).not.toContain(ptiSegmentId);
+      const depois = (await pool.query<{ n: number }>(`SELECT count(*)::int AS n FROM patient_therapeutic_projects WHERE patient_id = $1`, [PATIENT])).rows[0].n;
+      expect(depois).toBe(antes);
+    });
+
+    it('030 — e: só `patient_therapeutic_project:read` → `segment:null` + `redacted.clinical:true`; a resposta inteira (res.text) não contém o rótulo semeado', async () => {
+      const um = await chamar('GET', `${BASE()}/${vigente030}`, U.soProjeto);
+      expect(um.status).toBe(200);
+      expect(um.body.data.segment).toBeNull();
+      expect(um.body.data.redacted.clinical).toBe(true);
+      // controle positivo: quem tem a célula vê o rótulo (o teste de ausência só vale se o texto EXISTE no dado)
+      expect(await textoDe(`${BASE()}/${vigente030}`, U.completa)).toContain(seg.label);
+      expect(await textoDe(`${BASE()}/${vigente030}`, U.soProjeto)).not.toContain(seg.label);
+      expect(await textoDe(BASE(), U.soProjeto)).not.toContain(seg.label);
+      expect(await textoDe(BASE(), U.soProjeto)).not.toContain(seg.id);
+    });
+
+    it('030 — f: edit HERDA o `segment` da origem; edit com `segmentId` → 400 (MACRO só muda com "Nuevo")', async () => {
+      const ed = await chamar('POST', BASE(), U.completa, { mode: 'edit', fromVersionId: vigente030, version: versionBody({ modality: 'ONLINE' }) });
+      expect(ed.status).toBe(201);
+      expect(ed.body.data.segment).toEqual({ id: seg.id, label: seg.label });
+      expect((await pool.query(`SELECT segment FROM patient_therapeutic_projects WHERE id = $1`, [ed.body.data.id])).rows[0].segment).toEqual({ id: seg.id, label: seg.label });
+      const comSegmento = await chamar('POST', BASE(), U.completa, { mode: 'edit', fromVersionId: ed.body.data.id, version: { ...versionBody(), segmentId: ptiSegmentId } });
+      expect(comSegmento.status).toBe(400);
+    });
   });
 });

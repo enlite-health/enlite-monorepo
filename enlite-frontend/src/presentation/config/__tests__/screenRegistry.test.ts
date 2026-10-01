@@ -59,15 +59,22 @@ describe('SCREEN_REGISTRY — paridade com o catálogo do back', () => {
       // explícitos onde existem.
       'analytics:export',
       'analytics:read',
-      'catalog_therapeutic_segments:create',
-      'catalog_therapeutic_segments:read',
-      'catalog_therapeutic_segments:update',
       'funnel:write',
       'interview:create',
       'interview:delete',
       'interview:read',
       'interview:update',
       'interview:write',
+      // Spec 022, Bloco 4 (D-22, citação literal): `own_notifications:*` não tem tela própria
+      // no registry (o sino não é uma rota de `App.tsx`, e o teste do registry exige `route`
+      // existente) — fica SEM entrada dedicada por desenho do próprio mecanismo, mesmo
+      // tratamento já dado a `staff_directory:read` logo abaixo.
+      'own_notifications:read',
+      'own_notifications:update',
+      // Spec 022, Rodada 2 (migrations 465/466): `own_presence:update` é o heartbeat de presença
+      // (popup de menção estilo ClickUp) — MESMA categoria de `own_notifications:*` acima, sem
+      // rota própria em `App.tsx` por desenho (não é uma tela, é uma chamada de fundo).
+      'own_presence:update',
       'patient:write',
       'patient_clinical:write',
       'patient_service_team:update',
@@ -75,6 +82,7 @@ describe('SCREEN_REGISTRY — paridade com o catálogo do back', () => {
       'recruitment:create',
       'recruitment:update',
       'recruitment:write',
+      'staff_directory:read',
       'talentum:write',
       'test_fixtures:execute',
       'upload:read',

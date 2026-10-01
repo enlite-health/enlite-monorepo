@@ -17,6 +17,10 @@
       "motivo": "D116: purga de paciente de TESTE (DELETE /patients/:id, só is_test) — ferramenta do monitoramento sintético (e2e-prod), sem botão no painel por desenho."
     },
     {
+      "cell": "patient_conversation:delete",
+      "motivo": "Spec 022 (chat interno por paciente) FR-005/FR-008 — soft delete de mensagem pelo autor. Célula chega no Bloco 1 (catálogo/migrations); o botão de apagar mensagem no painel é Bloco 2 desta mesma spec (grep: nenhum useHasCell/ActionButton/Gated/useCellAccess com 'patient_conversation' em src/, só o registro em screenRegistry.ts:103)."
+    },
+    {
       "cell": "recruitment:write",
       "motivo": "D269 — única rota (POST calculate-reemplazos) é servida por ReemplazosButton/useReemplazosCalculator, componentes que NÃO estão montados em página nenhuma (código órfão). Gate entra quando o botão for montado."
     },

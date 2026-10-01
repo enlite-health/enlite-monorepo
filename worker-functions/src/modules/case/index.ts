@@ -144,6 +144,11 @@ export type {
 } from './domain/PatientCompleteness';
 
 // Infrastructure (exposed for explicit consumers like backfill scripts)
+// `PatientObjectStorageBase` (spec 018, PR-4) é a base de storage de objeto compartilhada — spec
+// 022, Bloco 3, reusa via este barrel (`ConversationAttachmentStorage extends
+// PatientObjectStorageBase`) em vez de import profundo em `infrastructure/`, que quebraria a
+// fronteira de módulo (mesmo princípio documentado em `resolveConversationForPatient.ts`).
+export { PatientObjectStorageBase, READ_URL_TTL_SECONDS } from './infrastructure/PatientObjectStorageBase';
 export { PatientIdentityRepository } from './infrastructure/PatientIdentityRepository';
 export { PatientClinicalRepository } from './infrastructure/PatientClinicalRepository';
 export { PatientResponsibleRepository } from './infrastructure/PatientResponsibleRepository';

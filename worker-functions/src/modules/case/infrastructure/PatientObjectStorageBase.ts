@@ -75,12 +75,22 @@ export abstract class PatientObjectStorageBase {
     }
   }
 
-  /** URL v4 de LEITURA, 300s. Chamar só depois de checar a célula — este método não checa nada. */
-  async getReadSignedUrl(objectPath: string): Promise<string> {
+  /**
+   * URL v4 de LEITURA, 300s. Chamar só depois de checar a célula — este método não checa nada.
+   *
+   * `options.responseDisposition` (spec 022, Bloco 3, T315): força o navegador a baixar o objeto
+   * com um nome de arquivo escolhido pelo servidor, em vez de abrir inline — usado pelo download
+   * de anexo de conversa (`ConversationAttachmentStorage`), que precisa entregar o NOME ORIGINAL
+   * decifrado (`stored_files.original_name_encrypted`), nunca o UUID do objeto no bucket. Opcional
+   * e aditivo — `PatientPhotoStorage` (foto inline no navegador) não passa a opção e mantém o
+   * comportamento de sempre.
+   */
+  async getReadSignedUrl(objectPath: string, options?: { responseDisposition?: string }): Promise<string> {
     const [url] = await this.bucket().file(objectPath).getSignedUrl({
       version: 'v4',
       action: 'read',
       expires: Date.now() + READ_URL_TTL_SECONDS * 1000,
+      ...(options?.responseDisposition ? { responseDisposition: options.responseDisposition } : {}),
     });
     return url;
   }

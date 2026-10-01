@@ -140,6 +140,25 @@ describe('iam-config export/import (D208)', () => {
     expect(depois.groups.find((g) => g.name === G.cfg)?.cells).toEqual(['vacancy:read', 'worker:read']);
     expect(depois.groups.find((g) => g.name === G.novo)).toMatchObject({ countries: ['BR'], members: [email(U.semCelula)] });
     expect(depois.countryFeatures).toContainEqual({ country: 'AR', featureKey: 'screen:cfg-e2e', enabled: false, config: { motivo: 'e2e' } });
+
+    // R5 (migration 470, spec 022): G.novo nasceu por `iam.create_group` (via applyOp do
+    // `create_group`), que a migration 469 fez conceder as own_* AUTOMATICAMENTE na criação —
+    // conferência por SQL (não pelo snapshot) de que o grupo tem as own_* MAIS a célula
+    // DECLARADA no JSON ('worker:read'), as duas coisas ao mesmo tempo.
+    const celulasNovo = await admin.query<{ chave: string }>(
+      `SELECT p.resource || ':' || p.action AS chave
+         FROM iam.group_permissions gp
+         JOIN iam.permissions p ON p.id = gp.permission_id
+         JOIN iam.permission_groups g ON g.id = gp.group_id
+        WHERE g.name = $1
+        ORDER BY 1`,
+      [G.novo],
+    );
+    const chavesNovo = celulasNovo.rows.map((r) => r.chave);
+    expect(chavesNovo).toEqual(
+      expect.arrayContaining(['own_notifications:read', 'own_notifications:update', 'own_presence:update', 'worker:read']),
+    );
+    expect(chavesNovo.filter((c) => c.startsWith('own_')).length).toBe(3);
     // a TRILHA nasceu da 279: autoria = ator, reason = a nossa
     const t = await trilha(G.cfg);
     expect(t).toEqual([{ op: 'add', changed_by: U.gestor, reason: 'e2e import' }]);
@@ -150,7 +169,11 @@ describe('iam-config export/import (D208)', () => {
     const feat = await admin.query(`SELECT f.source, c.reason, c.changed_by FROM iam.country_features f JOIN iam.country_feature_changes c USING (country, feature_key) WHERE f.feature_key = 'screen:cfg-e2e'`);
     expect(feat.rows[0]).toMatchObject({ source: 'override', reason: 'e2e import', changed_by: U.gestor });
 
-    // 2ª execução do MESMO JSON → 0 ops
+    // 2ª execução do MESMO JSON → 0 ops. Antes de R5, isto FALHAVA: `desired` (linha 127) nunca
+    // declarou as own_* de G.novo, mas `estadoAlvo()` releria o alvo já com elas (concedidas
+    // pela 469 dentro do `applyOp('create_group')` acima) — sem o filtro de comparação de R5
+    // em `planIamConfigImport`, o diff via um `set_permissions` fantasma para "remover" own_*
+    // que a 470 nem deixaria remover. Com R5, own_* fica fora da comparação dos dois lados.
     const p2 = plan.planIamConfigImport(desired, await estadoAlvo());
     expect(p2.ops).toEqual([]);
   });

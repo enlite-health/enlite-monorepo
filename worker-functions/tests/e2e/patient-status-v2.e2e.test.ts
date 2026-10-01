@@ -19,7 +19,7 @@
  *      depois `PUT /status` SEARCHING → ACTIVE, que o catálogo 315 nunca removeu;
  *   7. DISCHARGED/SUSPENDED não apagam linha nenhuma (lex C7.4): contagem antes/depois;
  *   8. a ficha (GET /:id) devolve admissionStatus/onHoldReason/onHoldNote; a nota nunca vai ao log
- *      do banco (patient_status_history não a tem).
+ *      do banco (patient_status_history não a tem);
  *   9. SUSPENDED → SEARCHING sem motivo: 422 SUSPENSION_EXIT_REASON_REQUIRED, nada muda; com
  *      motivo: 200, history com reason + actor_uid preenchidos (migration 486); SUSPENDED →
  *      REPLACEMENT e → ON_HOLD (com onHoldReason também) aceitos.

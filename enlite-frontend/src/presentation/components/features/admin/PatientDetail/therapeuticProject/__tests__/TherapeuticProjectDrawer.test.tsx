@@ -182,7 +182,7 @@ let cliqueNoAncora: MockInstance<[], void>;
 // Espelho de `THERAPEUTIC_FIELD_CLASS` (task 7.7) — o teste do form cobre o comportamento do
 // campo travado; aqui só precisa de uma lista não-vazia para o form renderizar o modo travado.
 const FIELD_CLASS = {
-  macro: ['contractedServiceId', 'diagnoses', 'clinicalContext', 'generalObjective', 'specificObjectiveIds', 'activityIds'],
+  macro: ['contractedServiceId', 'diagnoses', 'clinicalContext', 'generalObjective', 'specificObjectiveIds', 'activityIds', 'segmentId'],
   micro: ['startDate', 'endDate', 'modality', 'contactRefs', 'careTeamIds'],
 };
 
@@ -499,6 +499,7 @@ describe('salvar — `new` cria a major seguinte, `edit` a minor da origem', () 
     await esperarFormulario();
 
     fireEvent.change(screen.getByTestId('tp-modality'), { target: { value: 'IN_PERSON' } });
+    fireEvent.change(screen.getByTestId('tp-segment'), { target: { value: 'segments-1' } });
     fireEvent.change(screen.getByTestId('tp-clinicalContext'), { target: { value: 'contexto novo' } });
     fireEvent.change(screen.getByTestId('tp-generalObjective'), { target: { value: 'objetivo novo' } });
     alternarNoMulti('tp-specificObjectives', 'Rótulo specific-objectives');
@@ -518,6 +519,7 @@ describe('salvar — `new` cria a major seguinte, `edit` a minor da origem', () 
         generalObjective: 'objetivo novo',
         specificObjectiveIds: ['specific-objectives-1'],
         activityIds: ['activities-1'],
+        segmentId: 'segments-1',
         startDate: '2026-09-01',
         endDate: '2026-12-01',
         contactRefs: [],
@@ -527,6 +529,31 @@ describe('salvar — `new` cria a major seguinte, `edit` a minor da origem', () 
     expect(onSaved).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId('therapeutic-project-drawer').getAttribute('data-mode')).toBe('view');
     expect(screen.getByTestId('therapeutic-project-subtitle')).toHaveTextContent('V.1.1 - Criado por: Gabriel QA');
+  });
+
+  it('spec 030 — `edit` NÃO manda a chave `segmentId` (o servidor herda o segmento da origem), mesmo com a origem tendo segmento', async () => {
+    catalogosOk();
+    mockCreateVersion.mockResolvedValue(CRIADA);
+    montar({ mode: 'edit', version: { ...VERSAO, segment: { id: 'segments-1', label: 'Rótulo segments' } } });
+    await esperarFormulario();
+    expect(screen.getByTestId('tp-segment-locked')).toHaveTextContent('Rótulo segments');
+
+    await act(async () => { fireEvent.click(screen.getByTestId('tp-save')); });
+
+    const corpo = mockCreateVersion.mock.calls[0][1] as { mode: string; version: Record<string, unknown> };
+    expect(corpo.mode).toBe('edit');
+    expect(Object.keys(corpo.version)).not.toContain('segmentId');
+  });
+
+  it('spec 030 — `new` sem escolher segmento não chama a API (o form trava antes)', async () => {
+    catalogosOk();
+    montar({ mode: 'new' });
+    await esperarFormulario();
+
+    expect((screen.getByTestId('tp-save') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.submit(screen.getByTestId('therapeutic-project-form'));
+
+    expect(mockCreateVersion).not.toHaveBeenCalled();
   });
 
   it('`edit`: manda `mode: edit` com o `fromVersionId` da origem', async () => {

@@ -51,6 +51,8 @@ const ROTAS_SEM_CHAVE_SCREEN = new Set([
   // Spec 029: prompts de IA — gateada pela célula própria (`ai_prompt:read`), não por país; mesmo caso
   // de tags/plantillas/catálogos acima (tela de configuração global, sem chave `screen:*` no manifest).
   'prompts-ia',
+  // Spec 030 (F1): segmentos Ana Care — célula própria (`catalog_therapeutic_segments:read`), mesmo caso dos catálogos acima.
+  'catalogos/segmentos',
 ]);
 
 /** Todo `href: '...'` literal declarado em `adminNavigation.tsx` (baseItems + adminItems + accessItems). */

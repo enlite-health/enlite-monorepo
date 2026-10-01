@@ -3,6 +3,7 @@ import multer from 'multer';
 import { AuthMiddleware, type PermissionMiddleware } from '@modules/identity';
 import { ADMIN_PATIENTS_FAMILY } from '@modules/identity/permissions';
 import { logResourceAccess } from '@shared/audit/resourceAccessLog';
+import { withMulterErrorAsJson } from '@shared/http/withMulterErrorAsJson';
 import { AdminPatientPhotoController } from '../controllers/AdminPatientPhotoController';
 import { MAX_PHOTO_BYTES } from '../../infrastructure/PatientPhotoProcessor';
 
@@ -22,21 +23,6 @@ import { MAX_PHOTO_BYTES } from '../../infrastructure/PatientPhotoProcessor';
  * processor; 413 do multer chega antes do use case rodar.
  */
 const uploadPhoto = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_PHOTO_BYTES } });
-
-/** multer devolve 413 puro (sem JSON) quando o arquivo estoura o limite — normaliza a resposta. */
-function withMulterErrorAsJson(mw: ReturnType<typeof multer>) {
-  return (fieldName: string) => (req: Request, res: Response, next: (err?: unknown) => void) => {
-    mw.single(fieldName)(req, res, (err: unknown) => {
-      if (err) {
-        const code = (err as { code?: string })?.code;
-        if (code === 'LIMIT_FILE_SIZE') { res.status(413).json({ success: false, error: 'Arquivo excede o limite', code: 'FILE_TOO_LARGE' }); return; }
-        res.status(400).json({ success: false, error: 'Falha no upload multipart' });
-        return;
-      }
-      next();
-    });
-  };
-}
 
 export function createAdminPatientPhotoRoutes(
   authMiddleware: AuthMiddleware,

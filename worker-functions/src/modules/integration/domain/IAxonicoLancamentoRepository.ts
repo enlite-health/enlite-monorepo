@@ -23,6 +23,15 @@
  * `LancarPrestacaoAxonicoUseCase` — o `patientReadPort` saiu deste fluxo). `patientId` vira
  * `string | null` — migration 446 tornou a coluna NULLABLE — e hoje toda tentativa grava `null`
  * até o vínculo paciente↔Ana Care existir de verdade.
+ *
+ * CORREÇÃO (24/09/2026, change `axonico-envio-rastreavel`): `sent_by` (migration 473) — depois de
+ * "Enviar" com sucesso, a tela só sabia "está enviado" por ESTADO LOCAL do hook
+ * (`useSendComprobanteToAxonico.ts`); ao recarregar, nada persistido dizia "enviado" nem "por
+ * quem". `insert` agora grava `sentBy` em TODA tentativa (enviado/duplicado/erro), mesmo molde de
+ * `ShiftHoursValidationRepository.validate` (`validatedBy`). `findSentByDocumentAndMonth` é a
+ * leitura nova que `AnaCareHoursService.getPatientMonth` usa para anexar `axonico` a cada dia —
+ * junta com `users` (JOIN, mesmo padrão de `ShiftHoursValidationRepository.getByShiftIds`) para
+ * devolver o `display_name` de quem enviou, não só o uid cru.
  */
 import type { EnliteServiceType } from './EnliteServiceType';
 
@@ -44,6 +53,8 @@ export interface AxonicoLancamentoRecord {
   codAutorizacion: string | null;
   status: AxonicoLancamentoStatus;
   errorMessage: string | null;
+  /** uid (`users.firebase_uid`) de quem disparou esta tentativa (migration 473). `null` = linha gravada antes desta migration. */
+  sentBy: string | null;
   createdAt: Date;
 }
 
@@ -60,6 +71,21 @@ export interface InsertAxonicoLancamentoParams {
   codAutorizacion: string | null;
   status: AxonicoLancamentoStatus;
   errorMessage: string | null;
+  /** uid (`users.firebase_uid`) de quem disparou esta tentativa — SEMPRE presente (guard de 401 no controller garante isso antes do use case rodar). */
+  sentBy: string;
+}
+
+/** Uma tentativa `status='enviado'` já gravada, com o `display_name` de quem enviou resolvido via JOIN — usada por `findSentByDocumentAndMonth` (`AnaCareHoursService.getPatientMonth`, item "Por: <nome> · <data>"). */
+export interface AxonicoLancamentoSentRecord {
+  /** `service_date` da tabela — data (`YYYY-MM-DD`) — chave de casamento com `AnaCareShift.date`. */
+  serviceDate: string;
+  numeroComprobante: string;
+  codAutorizacion: string;
+  createdAt: Date;
+  /** uid de quem enviou — `null` só é possível para linhas gravadas antes da migration 473. */
+  sentBy: string | null;
+  /** `users.display_name` resolvido via JOIN — `null` quando `sentBy` é `null`, ou quando o `users` correspondente não tem `display_name`. */
+  sentByName: string | null;
 }
 
 export interface IAxonicoLancamentoRepository {
@@ -82,4 +108,18 @@ export interface IAxonicoLancamentoRepository {
    * propositalmente: é essa violação que prova, em teste, que o dedupe local é real.
    */
   insert(params: InsertAxonicoLancamentoParams): Promise<AxonicoLancamentoRecord>;
+
+  /**
+   * Tentativas `status='enviado'` para `(documentNumber, serviceType)` dentro do mês de
+   * `monthStart` (`'YYYY-MM-01'`) — usada por `AnaCareHoursService.getPatientMonth` para anexar
+   * `axonico` a cada dia (casamento por `serviceDate`). JOIN com `users` para trazer o
+   * `display_name` de quem enviou (`sentByName`), mesmo padrão de
+   * `ShiftHoursValidationRepository.getByShiftIds`. Vazio = nenhum lançamento `enviado` no mês
+   * (nunca lançado, ou paciente sem `documentNumber` — o chamador não invoca este método nesse caso).
+   */
+  findSentByDocumentAndMonth(
+    documentNumber: string,
+    serviceType: EnliteServiceType,
+    monthStart: string,
+  ): Promise<AxonicoLancamentoSentRecord[]>;
 }

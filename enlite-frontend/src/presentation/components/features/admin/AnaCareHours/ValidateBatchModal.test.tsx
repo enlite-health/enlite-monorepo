@@ -48,4 +48,22 @@ describe('ValidateBatchModal', () => {
     render(<ValidateBatchModal shifts={[]} onConfirm={vi.fn()} onCancel={vi.fn()} />);
     expect(screen.getByTestId('anacare-hours-batch-modal')).toBeInTheDocument();
   });
+
+  // change `anacare-horas-validando-prd` (26/09): feedback visual do "Confirmar" enquanto o
+  // `onValidateBatch` do container está em voo (ver `AnaCareHoursDetailPage` — quem passa `isValidating`).
+  it('POSITIVO — isValidating=true: "Confirmar" mostra "Validando…", disabled e aria-busy', () => {
+    render(<ValidateBatchModal shifts={[makeShift()]} onConfirm={vi.fn()} onCancel={vi.fn()} isValidating />);
+    const confirmBtn = screen.getByTestId('anacare-hours-batch-modal-confirm');
+    expect(confirmBtn).toHaveTextContent('admin.anacareHours.batchModal.validating');
+    expect(confirmBtn).toBeDisabled();
+    expect(confirmBtn).toHaveAttribute('aria-busy', 'true');
+  });
+
+  it('NEGATIVO — isValidating ausente (default false): "Confirmar" continua "Validar pendentes", habilitado', () => {
+    render(<ValidateBatchModal shifts={[makeShift()]} onConfirm={vi.fn()} onCancel={vi.fn()} />);
+    const confirmBtn = screen.getByTestId('anacare-hours-batch-modal-confirm');
+    expect(confirmBtn).toHaveTextContent('admin.anacareHours.batchModal.confirm');
+    expect(confirmBtn).not.toBeDisabled();
+    expect(confirmBtn).toHaveAttribute('aria-busy', 'false');
+  });
 });

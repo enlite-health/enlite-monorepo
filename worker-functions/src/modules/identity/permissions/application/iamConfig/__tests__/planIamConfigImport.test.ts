@@ -192,4 +192,101 @@ describe('planIamConfigImport', () => {
     expect(plan.errors).toEqual([{ code: 'archived_group_name_conflict', detail: "grupo 'Financeiro' existe arquivado no alvo — desarquivar ou renomear" }]);
     expect(plan.ops.some((o) => o.kind === 'create_group')).toBe(false);
   });
+
+  // R5 (change 022-ux-mencao-e-notificacao, migration 470, decisão do Gabriel 22/09): a
+  // migration 470 tornou as células `own_*` não-removíveis por `iam.set_group_permissions`
+  // (REPLACE TOTAL protege a família). Um plano que ainda compara `own_*` nos dois lados
+  // aponta `set_permissions` para algo que o aplicador NUNCA escreve — o dry-run deixaria de
+  // significar "não falta nada" (grupo criado pela 469 já nasce com `own_*`; um `iam-config.json`
+  // que nunca marcou essas células voltaria a divergir do alvo para sempre). O EXPORT continua
+  // listando `own_*` (auditoria, hash) — só a COMPARAÇÃO do planner ignora o prefixo.
+  describe('R5: células own_* são ignoradas NA COMPARAÇÃO (não no export/hash) — migration 470', () => {
+    const catalogComOwn = new Set([
+      'permission_management:write',
+      'worker:read',
+      'worker:update',
+      'vacancy:read',
+      'vacancy:create',
+      'vacancy:update',
+      'own_notifications:read',
+      'own_presence:update',
+    ]);
+
+    it('(a) alvo tem own_*, JSON não tem → 0 ops, 0 erros', () => {
+      const desired = base();
+      const cur = base();
+      cur.groups[1].cells = ['worker:read', 'own_notifications:read'];
+      const plan = planIamConfigImport(desired, target(cur, { catalog: catalogComOwn }));
+      expect(plan.errors).toEqual([]);
+      expect(plan.ops).toEqual([]);
+    });
+
+    it('(b) JSON tem own_*, alvo não tem → 0 ops, 0 erros', () => {
+      const desired = base();
+      desired.groups[1].cells = ['worker:read', 'own_notifications:read'];
+      const plan = planIamConfigImport(desired, target(base(), { catalog: catalogComOwn }));
+      expect(plan.errors).toEqual([]);
+      expect(plan.ops).toEqual([]);
+    });
+
+    it('(c) célula NÃO-own presente no alvo e ausente do JSON CONTINUA gerando set_permissions, com a lista reduzida', () => {
+      const desired = base();
+      desired.groups[1].cells = ['own_notifications:read']; // perdeu worker:read
+      const cur = base();
+      cur.groups[1].cells = ['worker:read', 'own_notifications:read']; // alvo ainda tem os dois
+      const plan = planIamConfigImport(desired, target(cur, { catalog: catalogComOwn }));
+      expect(plan.errors).toEqual([]);
+      expect(plan.ops).toEqual([{ kind: 'set_permissions', group: 'Recrutador', cells: ['own_notifications:read'] }]);
+    });
+
+    it('(d) célula que só PARECE own (`ownership:read`, `owner:update`) é reconciliada NORMALMENTE — o prefixo exige o underscore', () => {
+      const catalogParecidoOwn = new Set([...catalogComOwn, 'ownership:read', 'owner:update']);
+      const desired = base();
+      desired.groups[1].cells = ['worker:read', 'ownership:read'];
+      const cur = base();
+      cur.groups[1].cells = ['worker:read', 'owner:update'];
+      const plan = planIamConfigImport(desired, target(cur, { catalog: catalogParecidoOwn }));
+      expect(plan.errors).toEqual([]);
+      // ordem alfabética do normalizeSnapshot: 'ownership:read' < 'worker:read'
+      expect(plan.ops).toEqual([{ kind: 'set_permissions', group: 'Recrutador', cells: ['ownership:read', 'worker:read'] }]);
+    });
+
+    it('(e) grupo criado pelo import: na 2ª leitura o alvo JÁ TEM own_* (auto-concedidas por iam.create_group, 469) + a célula declarada — replanejar não gera set_permissions extra (idempotência pós-criação, espelha o e2e)', () => {
+      const desired = base({
+        groups: [...base().groups, { name: 'Financeiro', description: 'x', isSystem: false, cells: ['vacancy:read'], countries: [], members: [] }],
+      });
+      // O ALVO logo após a 1ª execução: `iam.create_group` (469) já concedeu own_*, e o
+      // `set_permissions` do próprio plano já aplicou a célula declarada — exatamente o que
+      // `estadoAlvo()` releria do banco real antes da 2ª chamada (e2e: idempotência export→
+      // import→export).
+      const alvoDepoisDaCriacao = base({
+        groups: [
+          ...base().groups,
+          {
+            name: 'Financeiro',
+            description: 'x',
+            isSystem: false,
+            cells: ['own_notifications:read', 'own_presence:update', 'vacancy:read'],
+            countries: [],
+            members: [],
+          },
+        ],
+      });
+      const plan = planIamConfigImport(desired, target(alvoDepoisDaCriacao, { catalog: catalogComOwn }));
+      expect(plan.errors).toEqual([]);
+      expect(plan.ops).toEqual([]); // nem create_group (grupo já existe) nem set_permissions (own_* fora da comparação)
+    });
+
+    it('(e2) grupo NOVO (ainda ausente do alvo) continua gerando create_group + set_permissions só com a célula declarada — sem regressão na criação', () => {
+      const desired = base({
+        groups: [...base().groups, { name: 'Financeiro', description: 'x', isSystem: false, cells: ['vacancy:read'], countries: [], members: [] }],
+      });
+      const plan = planIamConfigImport(desired, target(base(), { catalog: catalogComOwn }));
+      expect(plan.errors).toEqual([]);
+      expect(plan.ops).toEqual([
+        { kind: 'create_group', group: 'Financeiro', description: 'x' },
+        { kind: 'set_permissions', group: 'Financeiro', cells: ['vacancy:read'] },
+      ]);
+    });
+  });
 });

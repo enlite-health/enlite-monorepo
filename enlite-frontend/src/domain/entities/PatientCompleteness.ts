@@ -75,6 +75,14 @@ export interface RecruitmentReadinessInput {
   serviceHasAddress: boolean;
   serviceHasSchedule: boolean;
   insuranceInformed: string | null;
+  /**
+   * Hotfix gate-cobertura-verificada-vacante (28/09): mesmo campo do backend
+   * (`worker-functions/.../PatientCompleteness.ts`) — o paciente tem cobertura verificada com
+   * provider ATIVO no catálogo (`patient.hasVerifiedActiveCoverage`). Opcional (default
+   * `false`) para não quebrar chamadores existentes que só conheciam o legado. `COVERAGE` é
+   * satisfeito pelo legado OU por esta cobertura verificada — nunca os dois exigidos.
+   */
+  hasVerifiedActiveCoverage?: boolean;
 }
 
 /** Códigos que faltam para ESTE serviço poder ativar recrutamento — vazio = pronto. */
@@ -84,7 +92,9 @@ export function recruitmentMissingCodes(
   const missing: Array<(typeof RECRUITMENT_BLOCKING_CODES)[number]> = [];
   if (!input.serviceHasAddress) missing.push('SERVICE_ADDRESS');
   if (!input.serviceHasSchedule) missing.push('SERVICE_SCHEDULE');
-  if (isPlaceholderCoverageValue(input.insuranceInformed)) missing.push('COVERAGE');
+  if (isPlaceholderCoverageValue(input.insuranceInformed) && !input.hasVerifiedActiveCoverage) {
+    missing.push('COVERAGE');
+  }
   return missing;
 }
 

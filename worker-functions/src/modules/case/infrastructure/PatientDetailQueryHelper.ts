@@ -114,6 +114,12 @@ const PATIENT_DETAIL_SQL = `
                         JOIN insurance_providers ip ON ip.code = piv.provider_code
                        WHERE piv.patient_id = p.id AND piv.provider_code IS NOT NULL) x), '[]'::jsonb)
                              AS "insuranceVerifiedEntries",
+    -- Hotfix gate-cobertura-verificada-vacante (28/09): mesmo critério "provider ativo" que
+    -- ActivateRecruitmentUseCase usa no gate real — o checklist da tela não pode divergir do 422.
+    EXISTS (SELECT 1 FROM patient_insurance_verified piv
+              JOIN insurance_providers ip ON ip.code = piv.provider_code AND ip.active
+             WHERE piv.patient_id = p.id)
+                             AS "hasVerifiedActiveCoverage",
     COALESCE((SELECT array_agg(pdt.device_type ORDER BY d.sort_order, d.code)
                 FROM patient_device_types pdt
                 JOIN device_types d ON d.code = pdt.device_type
@@ -414,6 +420,7 @@ export async function fetchPatientDetail(
     serviceStartDate: p.serviceStartDate ?? null,
     insuranceVerifiedCodes: p.insuranceVerifiedCodes ?? [],
     insuranceVerifiedEntries: p.insuranceVerifiedEntries ?? [],
+    hasVerifiedActiveCoverage: p.hasVerifiedActiveCoverage ?? false,
     deviceTypes: p.deviceTypes ?? [],
     needsAttention: p.needsAttention,
     attentionReasons: p.attentionReasons ?? [],
