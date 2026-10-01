@@ -437,8 +437,9 @@ describe('ItineraryAllocationUseCase.replace (D445.5 — reemplazo permanente)',
     const reader: ItineraryAllocationReaderPort = { readWith: jest.fn().mockResolvedValue(NOT_SELECTED_ROW) };
     const writer = writerStub({ findAllocation: jest.fn().mockResolvedValue(ACTIVE_ALLOCATION_WITH_SLOT) });
     const useCase = new ItineraryAllocationUseCase(reader, writer, runInTransactionStub(), semDerivacao);
+    const now = new Date('2026-09-25T12:00:00Z'); // relógio fixo: fromDate (2026-09-30) é futuro, o gate de data não dispara antes
 
-    await expect(useCase.replace(REPLACE_INPUT)).rejects.toThrow(NotSelectedForServiceError);
+    await expect(useCase.replace({ ...REPLACE_INPUT, now })).rejects.toThrow(NotSelectedForServiceError);
     expect(writer.scheduleAllocationEnd).not.toHaveBeenCalled();
   });
 
