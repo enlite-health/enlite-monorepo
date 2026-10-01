@@ -284,7 +284,32 @@ export function sumBusyMinutesInWeek(
 
 // ─── Service (I/O contra Google Calendar) ──────────────────────────────────────
 
-export class AdmissionCalendarService {
+/**
+ * Porta da agenda de admissão: o que `AdmissionSchedulingService` e
+ * `PatientTestFixtureService` consomem. A implementação é escolhida por
+ * `createAdmissionCalendar` (env `ADMISSION_CALENDAR_SOURCE`).
+ */
+export interface AdmissionCalendarPort {
+  getBusyIntervals(
+    calendarId: string,
+    impersonateEmail: string,
+    fromISO: string,
+    toISO: string,
+    timezone?: string,
+  ): Promise<BusyInterval[]>;
+  getCalendarTimezone(calendarId: string, impersonateEmail: string): Promise<string | null>;
+  getFreeBusyByCalendar(
+    calendarIds: string[],
+    impersonateEmail: string,
+    fromISO: string,
+    toISO: string,
+    timezone?: string,
+  ): Promise<CalendarBusyResult[]>;
+  createEventWithMeet(params: CreateEventParams): Promise<{ eventId: string; meetLink: string }>;
+  deleteEvent(calendarId: string, eventId: string, impersonateEmail: string): Promise<void>;
+}
+
+export class AdmissionCalendarService implements AdmissionCalendarPort {
   private token(hostEmail: string): Promise<string | null> {
     return getAccessToken(hostEmail, hostEmail);
   }

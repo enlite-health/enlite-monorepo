@@ -2,10 +2,8 @@ import type { Pool, PoolClient } from 'pg';
 import * as functions from 'firebase-functions';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { withActorContext } from '@shared/database/actorContext';
-import {
-  AdmissionCalendarService,
-  admissionCalendarService,
-} from '../../matching/infrastructure/AdmissionCalendarService';
+import type { AdmissionCalendarPort } from '../../matching/infrastructure/AdmissionCalendarService';
+import { admissionCalendar } from '../../matching/infrastructure/AdmissionCalendarFactory';
 import {
   getAdmissionCountryConfig,
   type AdmissionCountry,
@@ -129,7 +127,7 @@ interface AppointmentRow {
 export class PatientTestFixtureService {
   constructor(
     private readonly db: Pool = DatabaseConnection.getInstance().getPool(),
-    private readonly calendar: AdmissionCalendarService = admissionCalendarService,
+    private readonly calendar: AdmissionCalendarPort = admissionCalendar,
     private readonly impersonateEmail: string = process.env.ADMISSION_IMPERSONATE_EMAIL ||
       'enlite@enlite.health',
     // spec 018, PR-4 (task 4.8): FÁBRICA, não instância — `PatientPhotoStorage` lança no `new` sem

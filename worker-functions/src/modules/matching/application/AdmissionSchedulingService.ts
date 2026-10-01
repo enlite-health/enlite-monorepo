@@ -3,12 +3,12 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { logger } from '@shared/logging';
 import {
-  AdmissionCalendarService,
-  admissionCalendarService,
+  AdmissionCalendarPort,
   BusyInterval,
   computeFreeSlots,
   sumBusyMinutesInWeek,
 } from '../infrastructure/AdmissionCalendarService';
+import { admissionCalendar } from '../infrastructure/AdmissionCalendarFactory';
 import {
   InterviewHost,
   InterviewHostRepository,
@@ -126,7 +126,7 @@ const READ_HORIZON_DAYS = 21;
  */
 export class AdmissionSchedulingService {
   constructor(
-    private readonly calendar: AdmissionCalendarService = admissionCalendarService,
+    private readonly calendar: AdmissionCalendarPort = admissionCalendar,
     private readonly notifier: AdmissionNotifier = new LoggingAdmissionNotifier(),
     private readonly encryption: KMSEncryptionService = new KMSEncryptionService(),
     private readonly impersonateEmail: string = process.env.ADMISSION_IMPERSONATE_EMAIL ||
