@@ -110,7 +110,7 @@ export function VacancySimulationSection({ bodies }: VacancySimulationSectionPro
     <section className="flex flex-col gap-4 mt-10 pt-6 border-t border-gray-300" data-testid="vacancy-simulation-section">
       <div>
         <Heading level={2} weight="semibold" color="primary">{sc('title')}</Heading>
-        <Text size="sm" color="muted" as="p">{sc('description')}</Text>
+        <Text size="sm" color="muted" as="p" className="max-w-3xl">{sc('description')}</Text>
       </div>
 
       {casesState === 'loading' && (
@@ -129,14 +129,17 @@ export function VacancySimulationSection({ bodies }: VacancySimulationSectionPro
           aria-label={sc('caseLabel')}
           options={cases}
           placeholder={sc('casePlaceholder')}
+          inputSize="dense"
+          className="max-w-3xl"
           value={jobPostingId}
           onValueChange={setJobPostingId}
           data-testid="vacancy-simulation-case"
         />
       )}
 
-      <div>
+      <div className="max-w-3xl">
         <Button
+          size="sm"
           variant="outline"
           onClick={handleRun}
           disabled={running || jobPostingId === ''}

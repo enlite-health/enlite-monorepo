@@ -126,7 +126,7 @@ export function AiPromptsPage(): JSX.Element | null {
     <PageContainer>
       <div className="mb-6">
         <Heading level={1} weight="semibold" color="primary">{tc('title')}</Heading>
-        <Text size="sm" color="muted" as="p">{tc('description')}</Text>
+        <Text size="sm" color="muted" as="p" className="max-w-3xl">{tc('description')}</Text>
       </div>
 
       <div className="mb-4" role="tablist" aria-label={tc('title')}>
@@ -186,12 +186,13 @@ export function AiPromptsPage(): JSX.Element | null {
             onDraftChange={handleDraftChange}
           />
         ) : (
-          <div className="flex flex-col gap-2" data-testid="ai-prompt-readonly">
+          <div className="flex flex-col gap-2 max-w-3xl" data-testid="ai-prompt-readonly">
             <Textarea
               value={currentPrompt.body}
               readOnly
               resize="vertical"
               rows={16}
+              inputSize="dense"
               aria-label={tc('title')}
               data-testid="ai-prompt-readonly-textarea"
             />
