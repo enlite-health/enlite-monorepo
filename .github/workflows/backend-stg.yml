@@ -119,6 +119,9 @@ jobs:
           # foi exatamente assim que o ensaio de rollback 1.R falhou em 14/08 (revert
           # tirou a flag do YAML, a revisão nasceu com enlite_app + flag herdada e o
           # assert de boot recusou). Rollback só funciona com overwrite.
+          # Stage não chama API real de terceiro (D458): sem Twilio, SendGrid, Groq, Google Maps,
+          # Google Calendar (impersonate) nem credencial do Ana Care; ANACARE_HOURS_SOURCE=fake.
+          # Com `overwrite`, tirar a chave daqui a remove da revisão.
           env_vars_update_strategy: overwrite
           secrets_update_strategy: overwrite
           env_vars: |
@@ -139,14 +142,10 @@ jobs:
             DB_POOL_MAX=3
             DB_SYSTEM_POOL_MAX=1
             USE_KMS_ENCRYPTION=false
-            TWILIO_ACCOUNT_SID=${{ secrets.TWILIO_ACCOUNT_SID }}
-            TWILIO_WHATSAPP_NUMBER=${{ secrets.TWILIO_WHATSAPP_NUMBER }}
             TWILIO_STATUS_CALLBACK_URL=https://worker-functions-vtf37eainq-tl.a.run.app/api/webhooks/twilio/status
             TWILIO_INBOUND_WEBHOOK_URL=https://worker-functions-vtf37eainq-tl.a.run.app/api/webhooks/twilio/inbound
-            GOOGLE_CALENDAR_IMPERSONATE_EMAIL=enlite@enlite.health
             GOOGLE_CALENDAR_ID=primary
             GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
-            GOOGLE_MAPS_API_KEY=${{ secrets.GOOGLE_MAPS_API_KEY }}
             EMAIL_FROM=enlite-stg@enlite.health
             CLOUD_RUN_SERVICE_URL=${{ secrets.CLOUD_RUN_SERVICE_URL }}
             CLOUD_TASKS_QUEUE_LOCATION=southamerica-east1
@@ -154,18 +153,13 @@ jobs:
             GEMINI_MODEL_FAST=gemini-2.5-flash
             VERTEX_LOCATION=global
             ENCUADRE_WEEKLY_CAPACITY=36
-            ANACARE_HOURS_SOURCE=real
+            ANACARE_HOURS_SOURCE=fake
             ANACARE_DIRECTORY_MIN_ABSOLUTE=226
           secrets: |
             DB_PASSWORD=enlite-runtime-db-password:latest
             DB_SYSTEM_PASSWORD=enlite-system-db-password:latest
             DB_MIGRATION_PASSWORD=enlite-ar-db-password:latest
-            GROQ_API_KEY=groq-api-key:latest
-            TWILIO_AUTH_TOKEN=twilio-auth-token:latest
             INTERNAL_TOKEN_SECRET=internal-token-secret:latest
-            SENDGRID_API_KEY=sendgrid-api-key:latest
-            ANACARE_USERNAME=anacare-username:latest
-            ANACARE_PASS=anacare-pass:latest
           flags: >-
             --allow-unauthenticated
             --service-account=enlite-functions-sa@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com
