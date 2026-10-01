@@ -25,12 +25,13 @@
  * quem tem `ai_prompt:update` — mesma célula de salvar (contrato).
  */
 import { useEffect, useState } from 'react';
-import ReactMarkdown from 'react-markdown';
+import ReactMarkdown, { type Components } from 'react-markdown';
 import { useTranslation } from 'react-i18next';
 import { resolveDateLocale, SHORT_DATE_OPTIONS } from '@presentation/utils/dateLocale';
 import { useActionGate } from '@presentation/hooks/useCellAccess';
 import { Textarea } from '@presentation/components/atoms/Textarea';
 import { Text } from '@presentation/components/atoms/Text';
+import { Heading } from '@presentation/components/atoms/Heading';
 import { Button } from '@presentation/components/atoms/Button';
 import { AdminApiService, ApiError, type AiPrompt, type AiPromptSlug } from '@infrastructure/http/AdminApiService';
 
@@ -49,6 +50,18 @@ interface AiPromptEditorProps {
    */
   initialDraft?: string;
 }
+
+/**
+ * Hierarquia do leitor: `@tailwindcss/typography` não está instalado (a classe `prose` é inerte),
+ * então `#`/`##` do prompt são mapeados aos atoms do painel. `Text` não tem `as="li"`: o item de
+ * lista mantém o `<li>` nativo e o texto vai em `<Text as="div">` dentro dele.
+ */
+const readerComponents: Components = {
+  h1: ({ children }) => <Heading level={3} weight="semibold" color="primary">{children}</Heading>,
+  h2: ({ children }) => <Heading level={4} weight="semibold" color="primary">{children}</Heading>,
+  p: ({ children }) => <Text size="sm" color="tertiary">{children}</Text>,
+  li: ({ children }) => <li className="text-sm"><Text as="div" size="sm" color="tertiary">{children}</Text></li>,
+};
 
 /** "28/09/2026, 14:35" no fuso e na língua de quem olha — mesmo formato de `ClinicalLongText.tsx`. */
 function formatDateTime(iso: string, locale: string): string {
@@ -177,22 +190,23 @@ export function AiPromptEditor({ prompt, onSaved, onDraftChange, initialDraft }:
   };
 
   return (
-    <div className="flex flex-col gap-2" data-testid="ai-prompt-editor">
+    <div className="flex flex-col gap-2 max-w-3xl" data-testid="ai-prompt-editor">
       {editing ? (
         <Textarea
           value={body}
           onChange={(e) => setBody(e.target.value)}
           resize="vertical"
           rows={16}
+          inputSize="dense"
           aria-label={t('admin.aiPrompts.title')}
           data-testid="ai-prompt-editor-textarea"
         />
       ) : (
         <div
-          className="prose prose-sm max-w-none rounded border border-gray-300 p-3 [&_ol]:list-decimal [&_ol]:pl-6 [&_ul]:list-disc [&_ul]:pl-6"
+          className="flex flex-col gap-2 rounded border border-gray-300 p-3 [&_ol]:list-decimal [&_ol]:pl-6 [&_ul]:list-disc [&_ul]:pl-6"
           data-testid="ai-prompt-editor-reader"
         >
-          <ReactMarkdown>{body}</ReactMarkdown>
+          <ReactMarkdown components={readerComponents}>{body}</ReactMarkdown>
         </div>
       )}
 
@@ -221,16 +235,16 @@ export function AiPromptEditor({ prompt, onSaved, onDraftChange, initialDraft }:
       <div className="flex items-center gap-3">
         {editing ? (
           <>
-            <Button onClick={handleSave} disabled={!canSave}>
+            <Button size="sm" onClick={handleSave} disabled={!canSave}>
               {saving ? ac('saving') : ac('save')}
             </Button>
-            <Button variant="outline" onClick={handleCancel} disabled={saving}>
+            <Button size="sm" variant="outline" onClick={handleCancel} disabled={saving}>
               {ac('cancel')}
             </Button>
           </>
         ) : (
           updateGate.allowed && (
-            <Button variant="outline" onClick={() => setEditing(true)}>
+            <Button size="sm" variant="outline" onClick={() => setEditing(true)}>
               {ac('edit')}
             </Button>
           )
@@ -238,7 +252,7 @@ export function AiPromptEditor({ prompt, onSaved, onDraftChange, initialDraft }:
 
         {updateGate.allowed && (
           <div className="flex flex-col gap-1">
-            <Button variant="outline" onClick={handleUndo} disabled={!canUndo}>
+            <Button size="sm" variant="outline" onClick={handleUndo} disabled={!canUndo}>
               {ac('undo')}
             </Button>
             {current.version <= 1 && (
