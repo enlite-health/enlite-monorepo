@@ -12,6 +12,8 @@ import type {
 import type { PatientKanbanServiceSummary } from '@domain/entities/PatientLifecycle';
 import type {
   ItineraryAbsenceResult,
+  ItineraryRemoveResult,
+  ExitDestination,
   ServiceTeam,
   ServiceTeamMember,
   ServiceTeamContact,
@@ -172,6 +174,15 @@ class AdminContractedServicesApiServiceClass {
   }
 
   /**
+   * POST /api/admin/patients/:id/itinerary/assemble (Fase 3, C8) — "Itinerario listo": grava a
+   * montagem (log append-only) e roda a derivação. 201 com a linha gravada; 422
+   * `NO_SERVICE_WITH_VACANCY`/`SERVICE_WITHOUT_SLOT` viram `ContractedServiceApiError` (`err.code`).
+   */
+  async assembleItinerary(patientId: string): Promise<ItineraryAssembleResult> {
+    return this.request<ItineraryAssembleResult>('POST', `/api/admin/patients/${patientId}/itinerary/assemble`);
+  }
+
+  /**
    * GET .../itinerary/events?from&to&serviceId&workerId (D445.3) — "Próximos eventos/Substitución":
    * faixa × datas com alocação vigente e ausência sobreposta. `serviceId`/`workerId` filtram;
    * omitidos, traz o patient inteiro. 400 `ITINERARY_EVENTS_RANGE_INVALID` quando o intervalo
@@ -230,6 +241,25 @@ class AdminContractedServicesApiServiceClass {
       'POST',
       `/api/admin/patients/${patientId}/contracted-services/${serviceId}/itinerary/slots/${slotId}/allocations`,
       { workerId },
+    );
+  }
+
+  /**
+   * POST .../itinerary/allocations/:allocationId/end (Fase 4, C6) — tira o prestador do itinerário com
+   * motivo (código do catálogo) e destino (`RESERVE` segue como reserva; `LEAVE_SERVICE` sai do encuadre
+   * do serviço). 422 vira `ContractedServiceApiError` com o `code` (`REASON_REQUIRED`, `REASON_INVALID`,
+   * `DESTINATION_REQUIRED`, `ALLOCATION_NOT_ACTIVE`, `SERVICE_TEAM_WORKER_ALLOCATED` …).
+   */
+  async endAllocation(
+    patientId: string,
+    serviceId: string,
+    allocationId: string,
+    body: { reasonCategory: string; destination: ExitDestination },
+  ): Promise<ItineraryRemoveResult> {
+    return this.request<ItineraryRemoveResult>(
+      'POST',
+      `/api/admin/patients/${patientId}/contracted-services/${serviceId}/itinerary/allocations/${allocationId}/end`,
+      body,
     );
   }
 
@@ -365,6 +395,12 @@ export interface AllocationOptionsResult {
   serviceId: string;
   vacancyId: string | null;
   options: ServiceTeamMember[];
+}
+
+/** Result of POST .../itinerary/assemble (201) — o front só usa o sucesso e refaz o GET do itinerário. */
+export interface ItineraryAssembleResult {
+  patientId: string;
+  assembledAt: string;
 }
 
 /** Result of POST .../itinerary/slots/:slotId/allocations (201). */

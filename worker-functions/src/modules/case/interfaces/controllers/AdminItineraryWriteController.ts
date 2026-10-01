@@ -26,6 +26,14 @@ import {
   NoServiceWithVacancyError,
   ServiceWithoutSlotError,
 } from '../../application/AssembleItineraryUseCase';
+import { RemoveFromItineraryUseCase } from '../../application/RemoveFromItineraryUseCase';
+import {
+  ServiceTeamWorkerAllocatedError,
+  ServiceTeamNotSelectedError,
+  ServiceTeamAlreadyRejectedError,
+} from '../../application/ServiceTeamMarkUseCase';
+import { ServiceTeamReasonRequiredError, ServiceTeamReasonInvalidError } from '../../domain/serviceTeamReason';
+import { ServiceExitReasonRequiredError, ServiceExitReasonInvalidError, DestinationRequiredError } from '../../domain/serviceExitReason';
 import { ItineraryOverlapError, overlapMessage } from '../../domain/itineraryOverlap';
 import {
   itineraryPatientParamsSchema,
@@ -35,6 +43,7 @@ import {
   itinerarySlotBodySchema,
   itineraryAllocationBodySchema,
   itineraryReplaceBodySchema,
+  itineraryEndBodySchema,
 } from '../validators/itineraryWriteSchemas';
 
 /**
@@ -62,6 +71,7 @@ export class AdminItineraryWriteController {
     private readonly slotUseCase: ItinerarySlotWriteUseCase = new ItinerarySlotWriteUseCase(),
     private readonly allocationUseCase: ItineraryAllocationUseCase = new ItineraryAllocationUseCase(),
     private readonly assemblyUseCase: AssembleItineraryUseCase = new AssembleItineraryUseCase(),
+    private readonly removeUseCase: RemoveFromItineraryUseCase = new RemoveFromItineraryUseCase(),
   ) {}
 
   /** GET .../contracted-services/:sid/allocation-options */
@@ -181,11 +191,24 @@ export class AdminItineraryWriteController {
       res.status(400).json({ success: false, error: 'Invalid params' });
       return;
     }
+    // Motivo/destino ausentes NÃO são 400: chegam ao caso de uso e saem 422 (REASON_REQUIRED/DESTINATION_REQUIRED).
+    const body = itineraryEndBodySchema.safeParse(req.body ?? {});
+    if (!body.success) {
+      res.status(400).json({ success: false, error: 'Invalid body' });
+      return;
+    }
     const actorUid = this.requireActor(req, res);
     if (actorUid === null) return;
     const { id: patientId, sid: serviceId, allocationId } = params.data;
     try {
-      const result = await this.allocationUseCase.end({ patientId, serviceId, allocationId, actorUid });
+      const result = await this.removeUseCase.execute({
+        patientId,
+        serviceId,
+        allocationId,
+        reasonCategory: body.data.reasonCategory,
+        destination: body.data.destination,
+        actorUid,
+      });
       res.status(200).json({ success: true, data: result });
     } catch (err: unknown) {
       this.handleError(err, res, 'endAllocation', patientId, serviceId);
@@ -304,6 +327,31 @@ export class AdminItineraryWriteController {
         sameAddress: err.sameAddress,
         minGapMinutes: err.minGapMinutes,
       });
+      return;
+    }
+    if (err instanceof ServiceExitReasonRequiredError || err instanceof ServiceTeamReasonRequiredError) {
+      res.status(422).json({ success: false, code: 'REASON_REQUIRED' });
+      return;
+    }
+    if (err instanceof ServiceExitReasonInvalidError || err instanceof ServiceTeamReasonInvalidError) {
+      res.status(422).json({ success: false, code: 'REASON_INVALID' });
+      return;
+    }
+    if (err instanceof DestinationRequiredError) {
+      res.status(422).json({ success: false, code: 'DESTINATION_REQUIRED' });
+      return;
+    }
+    // `LEAVE_SERVICE` de quem tem agendamento: o `rejectWith` recusa e a transação inteira desfaz (Fase 4; a Fase 8 troca por aviso).
+    if (err instanceof ServiceTeamWorkerAllocatedError) {
+      res.status(422).json({ success: false, code: 'SERVICE_TEAM_WORKER_ALLOCATED', error: 'tiene atenciones agendadas; cancele antes' });
+      return;
+    }
+    if (err instanceof ServiceTeamNotSelectedError) {
+      res.status(422).json({ success: false, code: 'SERVICE_TEAM_NOT_SELECTED' });
+      return;
+    }
+    if (err instanceof ServiceTeamAlreadyRejectedError) {
+      res.status(409).json({ success: false, code: 'SERVICE_TEAM_ALREADY_REJECTED' });
       return;
     }
     if (err instanceof AllocationNotActiveError) {

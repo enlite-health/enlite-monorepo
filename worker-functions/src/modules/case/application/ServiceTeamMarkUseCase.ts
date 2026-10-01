@@ -135,13 +135,34 @@ export class ServiceTeamMarkUseCase {
     return this.mark('REJECT', input);
   }
 
+  /**
+   * Corpo de `reject` no client recebido (change itinerario-trocas-motivos-e-figma, Fase 4, D4): quem
+   * compõe (tirar com destino) abre a transação e chama aqui. Mesmas validações de `reject`, mesma
+   * escrita; a rejeição não deriva o estado do paciente (quem compõe roda a derivação por último).
+   */
+  async rejectWith(client: PoolClient, input: ServiceTeamMarkInput): Promise<GetServiceTeamResult> {
+    const { patientId, serviceId, workerId, reasonCategory, actorUid, cells, now = new Date() } = input;
+    const category = this.validateReason('REJECT', reasonCategory);
+    return this.runReject(client, patientId, serviceId, workerId, category, actorUid, cells, now);
+  }
+
   async revert(input: ServiceTeamMarkInput): Promise<GetServiceTeamResult> {
     return this.mark('REVERT', input);
   }
 
   private async mark(kind: ServiceTeamReasonKind, input: ServiceTeamMarkInput): Promise<GetServiceTeamResult> {
     const { patientId, serviceId, workerId, reasonCategory, actorUid, cells, now = new Date() } = input;
+    const category = this.validateReason(kind, reasonCategory);
 
+    return this.runInTransaction((client) =>
+      kind === 'REJECT'
+        ? this.runReject(client, patientId, serviceId, workerId, category, actorUid, cells, now)
+        : this.runRevert(client, patientId, serviceId, workerId, category, actorUid, cells, now),
+    );
+  }
+
+  /** Motivo ausente/fora da forma SEMPRE antes do banco (mesma régua de `mark` e `rejectWith`). */
+  private validateReason(kind: ServiceTeamReasonKind, reasonCategory: unknown): string {
     if (reasonCategory === undefined || reasonCategory === null || reasonCategory === '') {
       throw new ServiceTeamReasonRequiredError(kind);
     }
@@ -150,13 +171,7 @@ export class ServiceTeamMarkUseCase {
     } else if (!isAllowedServiceTeamRevertReason(reasonCategory)) {
       throw new ServiceTeamReasonInvalidError(kind);
     }
-    const category = reasonCategory as string;
-
-    return this.runInTransaction((client) =>
-      kind === 'REJECT'
-        ? this.runReject(client, patientId, serviceId, workerId, category, actorUid, cells, now)
-        : this.runRevert(client, patientId, serviceId, workerId, category, actorUid, cells, now),
-    );
+    return reasonCategory as string;
   }
 
   private async runReject(

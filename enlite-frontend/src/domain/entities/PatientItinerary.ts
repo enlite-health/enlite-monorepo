@@ -48,6 +48,8 @@ export interface PatientItinerary {
   asOf: string;
   services: PatientItineraryService[];
   alerts: PatientItineraryAlert[];
+  /** `max(assembled_at)` da montagem ("Itinerario listo"), ISO UTC; `null` = nunca montado (Fase 3, C8). */
+  assembledAt: string | null;
 }
 
 /** Um lado do conflito do 409 — só ids de serviço, dia e horário (nada de nome/endereço). */

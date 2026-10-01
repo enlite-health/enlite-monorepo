@@ -67,6 +67,11 @@ export interface ItineraryRows {
   slots: ItinerarySlotRow[];
   /** Opcional: nasce só na Fase 13. Sem filtro de vigência aqui — `uncoveredDayAlerts` decide (caso de uso). */
   uncoveredAbsences?: ItineraryUncoveredAbsenceRow[];
+  /**
+   * Fase 3 (C8): `max(assembled_at)` de `patient_itinerary_assembly` (482, log append-only), ISO UTC;
+   * `null` = nunca montado. Opcional — o agregado do Kanban reusa este tipo e não lê montagem.
+   */
+  assembledAt?: string | null;
 }
 
 interface PatientCountryRow {
@@ -95,6 +100,10 @@ interface SlotJoinRow {
   status: ItineraryAssignmentStatus | null;
   first_name_encrypted: string | null;
   last_name_encrypted: string | null;
+}
+
+interface AssembledAtRow {
+  assembled_at: string | null;
 }
 
 interface UncoveredAbsenceJoinRow {
@@ -155,6 +164,14 @@ export class PatientItineraryReader {
       [patientId],
     );
 
+    // Montagem (482): UMA linha, `max` → `null` sem montagem. Texto ISO UTC (nunca `Date` do driver).
+    const assembledRes = await client.query<AssembledAtRow>(
+      `SELECT to_char(max(assembled_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS assembled_at
+         FROM patient_itinerary_assembly
+        WHERE patient_id = $1`,
+      [patientId],
+    );
+
     return {
       country,
       services: servicesRes.rows.map((r) => ({
@@ -184,6 +201,7 @@ export class PatientItineraryReader {
         startTime: r.start_time,
         endTime: r.end_time,
       })),
+      assembledAt: assembledRes.rows[0]?.assembled_at ?? null,
     };
   }
 }

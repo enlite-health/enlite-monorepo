@@ -3875,6 +3875,15 @@
           "historyResponse": "RESPOSTA"
         },
         "itinerary": {
+          "assemble": {
+            "label": "Itinerário pronto",
+            "assembledSince": "Itinerário pronto desde {{date}}",
+            "errors": {
+              "NO_SERVICE_WITH_VACANCY": "Não há nenhum serviço com vaga viva: não é possível marcar o itinerário como pronto.",
+              "SERVICE_WITHOUT_SLOT": "Há um serviço com vaga viva que ainda não tem faixas de horário. Cadastre os horários e tente de novo.",
+              "generic": "Não foi possível marcar o itinerário como pronto. Tente de novo."
+            }
+          },
           "hoursPair": "Horas cobertas/contratadas: {{pair}}",
           "noServices": "Este paciente não tem serviços contratados ativos.",
           "emptyDay": "Sem atendimento",
@@ -3903,7 +3912,20 @@
             "goToVacancy": "Ir para a vaga",
             "noVacancy": "Este serviço não tem uma vaga ativa.",
             "anaCareNotice": "Lembre de lançar esta mudança à mão no Ana Care — não é enviado automaticamente.",
+            "removeFromItinerary": "Tirar do itinerário",
             "cancel": "Fechar"
+          },
+          "removePanel": {
+            "title": "Tirar do itinerário",
+            "worker": "Prestador: {{worker}}",
+            "reason": "Motivo",
+            "confirm": "Confirmar",
+            "submitError": "Não foi possível tirar o prestador do itinerário. Tente novamente."
+          },
+          "exitDestination": {
+            "label": "Destino",
+            "RESERVE": "Continua como reserva",
+            "LEAVE_SERVICE": "Sai do encuadre deste serviço"
           },
           "overlap": "Conflito de horário: o prestador já atende {{existing}} e o pedido é {{requested}}.",
           "overlapGap": "Entre endereços diferentes exige-se um intervalo de {{minutes}} min.",
@@ -3939,6 +3961,12 @@
             "submitError": "Não foi possível salvar a substituição. Tente novamente."
           },
           "actionErrors": {
+            "REASON_REQUIRED": "Escolha um motivo para continuar.",
+            "REASON_INVALID": "Esse motivo não é válido.",
+            "DESTINATION_REQUIRED": "Escolha o destino do prestador.",
+            "SERVICE_TEAM_WORKER_ALLOCATED": "Este prestador tem atendimentos agendados; cancele antes de tirá-lo do encuadre.",
+            "SERVICE_TEAM_NOT_SELECTED": "Este prestador não está mais em Selecionados.",
+            "SERVICE_TEAM_ALREADY_REJECTED": "Este prestador já está rejeitado.",
             "NOT_SELECTED_FOR_SERVICE": "Este prestador não está mais em Selecionado para este serviço.",
             "ALREADY_ALLOCATED_IN_SLOT": "Este prestador já está atribuído a esta faixa.",
             "SLOT_INACTIVE": "Esta faixa não está mais ativa.",

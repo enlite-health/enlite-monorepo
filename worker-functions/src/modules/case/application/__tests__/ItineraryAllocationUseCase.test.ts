@@ -303,6 +303,40 @@ describe('ItineraryAllocationUseCase.end', () => {
     expect((reader.readWith as jest.Mock).mock.calls[0][0]).toBe(FAKE_CLIENT);
   });
 
+  it('endWith(derive:false) no client recebido: encerra, devolve o prestador titular e NÃO abre transação nem deriva (quem compõe deriva por último)', async () => {
+    const reader: ItineraryAllocationReaderPort = { readWith: jest.fn().mockResolvedValue(SELECTED_ROW) };
+    const writer = writerStub({
+      findAllocation: jest.fn().mockResolvedValue({ id: 'alloc-1', status: 'ACTIVE', validFrom: '2026-09-01', workerId: 'w-9' }),
+      endAllocation: jest.fn().mockResolvedValue(1),
+    });
+    const derivation = { run: jest.fn(async () => 'unchanged' as const) };
+    const runInTransaction = runInTransactionStub();
+    const useCase = new ItineraryAllocationUseCase(reader, writer, runInTransaction, derivation);
+    const now = new Date('2026-09-28T15:00:00Z');
+
+    const result = await useCase.endWith(FAKE_CLIENT, { patientId: 'p-1', serviceId: 's-1', allocationId: 'alloc-1', actorUid: 'u-1', now }, { derive: false });
+
+    expect(result).toEqual({ allocationId: 'alloc-1', status: 'ENDED', validTo: '2026-09-28', workerId: 'w-9' });
+    expect(runInTransaction).not.toHaveBeenCalled();
+    expect(derivation.run).not.toHaveBeenCalled();
+    expect(writer.endAllocation).toHaveBeenCalledWith(FAKE_CLIENT, 'alloc-1', '2026-09-28', 'u-1');
+  });
+
+  it('end público continua derivando (derive:true) e NÃO vaza o prestador no resultado', async () => {
+    const reader: ItineraryAllocationReaderPort = { readWith: jest.fn().mockResolvedValue(SELECTED_ROW) };
+    const writer = writerStub({
+      findAllocation: jest.fn().mockResolvedValue({ id: 'alloc-1', status: 'ACTIVE', validFrom: '2026-09-01', workerId: 'w-9' }),
+      endAllocation: jest.fn().mockResolvedValue(1),
+    });
+    const derivation = { run: jest.fn(async () => 'unchanged' as const) };
+    const useCase = new ItineraryAllocationUseCase(reader, writer, runInTransactionStub(), derivation);
+
+    const result = await useCase.end({ patientId: 'p-1', serviceId: 's-1', allocationId: 'alloc-1', actorUid: 'u-1', now: new Date('2026-09-28T15:00:00Z') });
+
+    expect(result).toEqual({ allocationId: 'alloc-1', status: 'ENDED', validTo: '2026-09-28' });
+    expect(derivation.run).toHaveBeenCalledTimes(1);
+  });
+
   it('rowCount 0 no endAllocation (corrida) → AllocationNotActiveError', async () => {
     const reader: ItineraryAllocationReaderPort = { readWith: jest.fn().mockResolvedValue(SELECTED_ROW) };
     const writer = writerStub({

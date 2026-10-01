@@ -130,18 +130,23 @@ export function allocateApi(
   );
 }
 
-/** `POST /patients/:id/contracted-services/:sid/itinerary/allocations/:allocationId/end`. */
+/**
+ * `POST /patients/:id/contracted-services/:sid/itinerary/allocations/:allocationId/end`. Desde a Fase 4 (change
+ * itinerario-trocas-motivos-e-figma) o corpo `{ reasonCategory, destination }` é obrigatório; o padrão é um motivo
+ * do catálogo (`OTHER`) e `RESERVE` (o prestador segue em Selecionado — o efeito do `end` de antes).
+ */
 export function endAllocationApi(
   request: APIRequestContext,
   token: string,
   patientId: string,
   serviceId: string,
   allocationId: string,
+  body: ItineraryWriteBody = { reasonCategory: 'OTHER', destination: 'RESERVE' },
 ): Promise<ItineraryWriteApiResult> {
   return callItineraryWriteApi(
     request, 'post',
     `/api/admin/patients/${patientId}/contracted-services/${serviceId}/itinerary/allocations/${allocationId}/end`,
-    token,
+    token, body,
   );
 }
 

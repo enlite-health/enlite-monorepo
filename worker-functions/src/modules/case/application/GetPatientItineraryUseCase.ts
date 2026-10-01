@@ -66,6 +66,8 @@ export interface PatientItineraryResult {
   asOf: string;
   services: PatientItineraryServiceView[];
   alerts: PatientItineraryAlert[];
+  /** `max(assembled_at)` da montagem (ISO UTC) ou `null` se nunca montado (Fase 3, C8). */
+  assembledAt: string | null;
 }
 
 export interface PatientItineraryReaderPort {
@@ -88,6 +90,6 @@ export class GetPatientItineraryUseCase {
     const services = withAssignmentIdentity(coverages, rows.slots, asOf, displayNameByWorkerId);
     const alerts = uncoveredDayAlerts(rows.uncoveredAbsences ?? [], asOf);
 
-    return { patientId, asOf, services, alerts };
+    return { patientId, asOf, services, alerts, assembledAt: rows.assembledAt ?? null };
   }
 }

@@ -92,6 +92,22 @@ const REJECTED_ROW: ServiceTeamRows = {
 };
 
 describe('ServiceTeamMarkUseCase', () => {
+  it('rejectWith no client recebido: grava a marca SEM abrir transação própria; mesma validação de motivo', async () => {
+    const reader: ServiceTeamMarkReaderPort = { readWith: jest.fn().mockResolvedValueOnce(SELECTED_ROW).mockResolvedValueOnce(REJECTED_ROW) };
+    const writer: ServiceTeamMarkWriterPort = { insertRejection: jest.fn(), revertRejection: jest.fn() };
+    const runInTransaction = runInTransactionStub();
+    const useCase = new ServiceTeamMarkUseCase(reader, writer, kmsSpy(), runInTransaction, catalogStub());
+
+    await useCase.rejectWith(FAKE_CLIENT, { patientId: 'p-1', serviceId: 's-1', workerId: 'w-1', reasonCategory: 'OTHER', actorUid: 'u-1', cells: null });
+
+    expect(runInTransaction).not.toHaveBeenCalled();
+    expect(writer.insertRejection).toHaveBeenCalledWith(FAKE_CLIENT, { serviceId: 's-1', workerId: 'w-1', category: 'OTHER', actorUid: 'u-1' });
+
+    await expect(
+      useCase.rejectWith(FAKE_CLIENT, { patientId: 'p-1', serviceId: 's-1', workerId: 'w-1', reasonCategory: '', actorUid: 'u-1', cells: null }),
+    ).rejects.toThrow(ServiceTeamReasonRequiredError);
+  });
+
   it('reject sem motivo → ServiceTeamReasonRequiredError; 0 chamadas ao leitor/escritor/transação', async () => {
     const reader: ServiceTeamMarkReaderPort = { readWith: jest.fn() };
     const writer: ServiceTeamMarkWriterPort = { insertRejection: jest.fn(), revertRejection: jest.fn() };

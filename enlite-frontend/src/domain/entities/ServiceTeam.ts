@@ -72,6 +72,17 @@ export interface ItineraryAbsenceResult {
   status: 'OPEN' | 'CANCELLED';
 }
 
+/** Destino de quem sai do itinerário (change itinerario-trocas-motivos-e-figma, Fase 4): segue como reserva ou sai do encuadre do serviço. */
+export type ExitDestination = 'RESERVE' | 'LEAVE_SERVICE';
+
+/** Resposta de `POST .../itinerary/allocations/:allocationId/end` (tirar do itinerário com motivo e destino). */
+export interface ItineraryRemoveResult {
+  allocationId: string;
+  status: 'ENDED';
+  validTo: string;
+  destination: ExitDestination;
+}
+
 /** As 3 colunas do quadro C, na ordem em que a tela renderiza. */
 export const SERVICE_TEAM_COLUMN_IDS = ['SELECTED_FOR_SERVICE', 'IN_SERVICE', 'REJECTED_FOR_SERVICE'] as const;
 
