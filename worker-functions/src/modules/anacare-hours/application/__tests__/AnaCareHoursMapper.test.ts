@@ -7,9 +7,6 @@ import type { IAnaCarePatientDocumentRepository } from '@modules/integration';
 /** Conclusão "sync terminou tudo" — usada nos testes de `buildSnapshot` que não são sobre a conclusão em si (fresco/velho), pra não cair em `desconhecido` por omissão. */
 const CONCLUSAO_COMPLETA: SyncRunConclusion = { status: 'done', reservationsTotal: 1, reservationsDone: 1 };
 
-/** Conclusão "sync terminou tudo" — usada nos testes de `buildSnapshot` que não são sobre a conclusão em si (fresco/velho), pra não cair em `desconhecido` por omissão. */
-const CONCLUSAO_COMPLETA: SyncRunConclusion = { status: 'done', reservationsTotal: 1, reservationsDone: 1 };
-
 // Previsto (`scheduledStart`→`scheduledEnd`) = 12h. Real (`actualStart`→`actualEnd`) = 11,8h —
 // mesmo padrão medido 17/09 contra a API real (paciente 9660: previsto 12,0 / real 11,8). O
 // propósito do fixture é NUNCA deixar previsto e real coincidirem, para que um `mapShift` que
