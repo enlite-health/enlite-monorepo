@@ -46,32 +46,44 @@ const diagnosisSchema = z
  * SERVIDOR a partir da tabela (lex C19), nunca vem do cliente. Sem `major`/`minor`: a numeração
  * é do domínio (`nextMajor`/`nextMinorOf`).
  */
-const versionBodySchema = z
-  .object({
-    contractedServiceId: z.string().uuid(),
-    modality: z.enum(THERAPEUTIC_MODALITIES),
-    diagnoses: z.array(diagnosisSchema).min(1).max(20),
-    clinicalContext: z.string().trim().min(1).max(THERAPEUTIC_TEXT_MAX),
-    generalObjective: z.string().trim().min(1).max(THERAPEUTIC_TEXT_MAX),
-    specificObjectiveIds: z.array(z.string().uuid()).min(1).max(50),
-    activityIds: z.array(z.string().uuid()).min(1).max(50),
-    // Sem `pathologyTypeIds`: o tipo de patologia deriva dos `diagnoses` no servidor (D163/D164).
-    startDate: z.string().regex(ISO_DATE),
-    endDate: z.string().regex(ISO_DATE),
-    // MICRO (D328/SUP-24): trocar a seleção de contato não pede versão nova nem trava em `mode:'edit'`.
-    contactRefs: z.array(contactRefSchema).max(THERAPEUTIC_CONTACT_REFS_MAX).optional().default([]),
-    careTeamIds: z.array(z.string().uuid()).max(THERAPEUTIC_CARE_TEAM_IDS_MAX).optional().default([]),
-  })
+const versionBodyShape = {
+  contractedServiceId: z.string().uuid(),
+  modality: z.enum(THERAPEUTIC_MODALITIES),
+  diagnoses: z.array(diagnosisSchema).min(1).max(20),
+  clinicalContext: z.string().trim().min(1).max(THERAPEUTIC_TEXT_MAX),
+  generalObjective: z.string().trim().min(1).max(THERAPEUTIC_TEXT_MAX),
+  specificObjectiveIds: z.array(z.string().uuid()).min(1).max(50),
+  activityIds: z.array(z.string().uuid()).min(1).max(50),
+  // Sem `pathologyTypeIds`: o tipo de patologia deriva dos `diagnoses` no servidor (D163/D164).
+  startDate: z.string().regex(ISO_DATE),
+  endDate: z.string().regex(ISO_DATE),
+  // MICRO (D328/SUP-24): trocar a seleção de contato não pede versão nova nem trava em `mode:'edit'`.
+  contactRefs: z.array(contactRefSchema).max(THERAPEUTIC_CONTACT_REFS_MAX).optional().default([]),
+  careTeamIds: z.array(z.string().uuid()).max(THERAPEUTIC_CARE_TEAM_IDS_MAX).optional().default([]),
+};
+
+const endNotBeforeStart = (b: { startDate: string; endDate: string }): boolean => b.endDate >= b.startDate;
+const END_NOT_BEFORE_START = { message: 'endDate must be on or after startDate', path: ['endDate'] };
+
+/** Corpo do "Editar": a forma-base, SEM `segmentId` — o segmento é MACRO (só muda com "Nuevo"). */
+const editVersionBodySchema = z.object(versionBodyShape).strict().refine(endNotBeforeStart, END_NOT_BEFORE_START);
+
+/**
+ * Corpo do "Novo": a forma-base + `segmentId` (spec 030, MACRO, obrigatório — lex C4). O cliente manda só o
+ * id; `{id,label}` é congelado no SERVIDOR a partir do catálogo ativo, e o `.strict()` recusa `segment:{…}`.
+ */
+const newVersionBodySchema = z
+  .object({ ...versionBodyShape, segmentId: z.string().uuid() })
   .strict()
-  .refine((b) => b.endDate >= b.startDate, { message: 'endDate must be on or after startDate', path: ['endDate'] });
+  .refine(endNotBeforeStart, END_NOT_BEFORE_START);
 
 /** `mode: 'new'` → major seguinte; `mode: 'edit'` → minor seguinte da versão de origem. */
 export const createTherapeuticProjectSchema = z.discriminatedUnion('mode', [
-  z.object({ mode: z.literal('new'), version: versionBodySchema }).strict(),
-  z.object({ mode: z.literal('edit'), fromVersionId: z.string().uuid(), version: versionBodySchema }).strict(),
+  z.object({ mode: z.literal('new'), version: newVersionBodySchema }).strict(),
+  z.object({ mode: z.literal('edit'), fromVersionId: z.string().uuid(), version: editVersionBodySchema }).strict(),
 ]);
 export type CreateTherapeuticProjectBody = z.infer<typeof createTherapeuticProjectSchema>;
-export type TherapeuticProjectVersionBody = z.infer<typeof versionBodySchema>;
+export type TherapeuticProjectVersionBody = z.infer<typeof editVersionBodySchema>;
 
 /** Anulação (lex C5): motivo curto, sem dado de pessoa — é rótulo administrativo, não texto clínico. */
 export const annulTherapeuticProjectSchema = z

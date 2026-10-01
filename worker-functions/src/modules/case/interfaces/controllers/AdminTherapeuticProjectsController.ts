@@ -256,6 +256,12 @@ export class AdminTherapeuticProjectsController {
         res.status(422).json({ success: false, error: 'Unknown or inactive catalog item(s)', code: err.code, details: { kind: err.kind, ids: err.ids } });
         return;
       }
+      // spec 030 (lex C3/C7): segmento inexistente/inativo — 422 SEM `details` e sem ecoar o id; só o tipo do
+      // erro sai (molde do catálogo, `createCatalogItem`), e nada de segmento vai ao `reportError`.
+      if (err instanceof CatalogSegmentInvalidError) {
+        res.status(422).json({ success: false, error: 'Unknown or inactive segment', code: err.code });
+        return;
+      }
       // Sem `details`: a URI é dado clínico — só o tipo do erro sai (T7 da terminologia).
       if (err instanceof DiagnosisUnknownError) {
         res.status(422).json({ success: false, error: 'Unknown diagnosis', code: err.code });

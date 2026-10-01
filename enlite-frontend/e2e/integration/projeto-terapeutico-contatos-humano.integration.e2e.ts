@@ -28,6 +28,7 @@ import { seedActivatablePatient, cleanupPatientDeep, runSQL } from '../helpers/p
 import {
   psql, scalar, safeSql, seedStaffInGroup, cleanupStaffAndGroup, grantCell, loginAs, tokenFor, ABAC_API_URL, ABAC_TENANT,
 } from '../helpers/abac-stack-helper';
+import { escolherSegmentoPeloTeclado, primeiroSegmento } from '../helpers/pti-segmento-helper';
 
 const RUN_ID = `${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
 const ICD_URI = `http://id.who.int/icd/entity/e2e-pr7-${RUN_ID}`;
@@ -176,6 +177,8 @@ test.describe('spec 018/PR-7 — projeto terapêutico: contatos por seleção, M
     await expect(page.getByTestId('tp-service')).toHaveValue(serviceId);
     await page.getByTestId('tp-modality').selectOption('HYBRID');
     await expect(page.getByTestId('tp-modality')).toHaveValue('HYBRID');
+    // spec 030: segmento obrigatório no "Nuevo" — pelo teclado.
+    await escolherSegmentoPeloTeclado(page, primeiroSegmento().label);
 
     const search = page.waitForResponse((r) => r.request().method() === 'GET' && /\/api\/admin\/terminology\/search/.test(r.url()));
     await page.getByTestId('tp-icd-input').click();
@@ -538,7 +541,7 @@ test.describe('spec 018/PR-7 — conserto 14/09: editar a vigente mantém contat
     // V1.0 por API — setup (mesmo molde do `alt 1`/`alt 3` do describe acima), com os 2 contatos.
     const criado = await request.post(`${ABAC_API_URL}/api/admin/patients/${seed.patientId}/therapeutic-projects`, {
       headers: auth(),
-      data: { mode: 'new', version: corpoBase() },
+      data: { mode: 'new', version: { ...corpoBase(), segmentId: primeiroSegmento().id } }, // spec 030: segmento obrigatório no "Nuevo"
     });
     expect(criado.status()).toBe(201);
     const bodyCriado = (await criado.json()) as { data: { id: string; version: string; createdAt: string } };
@@ -746,6 +749,7 @@ test.describe('spec 018/PR-7 — conserto 14/09: criar com 2 contatos e clicar E
 
     await expect(page.getByTestId('tp-service')).toHaveValue(serviceId);
     await page.getByTestId('tp-modality').selectOption('IN_PERSON');
+    await escolherSegmentoPeloTeclado(page, primeiroSegmento().label); // spec 030: obrigatório no "Nuevo"
 
     const search = page.waitForResponse((r) => r.request().method() === 'GET' && /\/api\/admin\/terminology\/search/.test(r.url()));
     await page.getByTestId('tp-icd-input').click();
@@ -884,7 +888,7 @@ test.describe('spec 018/PR-7 — conserto do gate: form abre SEM a célula de se
     safeSql(`DELETE FROM iam.permission_groups WHERE tenant_id = '${ABAC_TENANT}' AND name = 'PR7 SemSegments ${RUN_ID}'`);
   });
 
-  test('staff sem catalog_therapeutic_segments:read abre "Nuevo", vê objetivos/atividades, não vê o filtro de segmento, cria V1.0', async ({ page }) => {
+  test('staff sem catalog_therapeutic_segments:read abre "Nuevo", vê objetivos/atividades, vê o aviso de segmentos vazios e NÃO consegue salvar (segmento é obrigatório — spec 030)', async ({ page }) => {
     await loginAs(page, { uid, email, role: 'admin', country: 'AR' });
     await page.goto(`/admin/patients/${seed.patientId}`);
     const card = page.getByTestId('projeto-terapeutico-card');
@@ -899,9 +903,10 @@ test.describe('spec 018/PR-7 — conserto do gate: form abre SEM a célula de se
     await expect(page.getByTestId('therapeutic-project-catalogs-error')).toHaveCount(0);
     await expect(page.getByTestId('tp-save')).toBeDisabled();
 
-    // O filtro de segmento (catálogo vazio, task 7.7) fica escondido — mesma asserção do "vazio
-    // legítimo", agora com a causa sendo 403 por falta de célula, não catálogo global vazio.
-    await expect(page.getByTestId('tp-segment-filter')).toHaveCount(0);
+    // Spec 030: o segmento é obrigatório no "Nuevo" e o catálogo veio vazio por 403 (falta de célula):
+    // o campo mostra o aviso "No hay segmentos activos" em vez de uma lista vazia muda.
+    await expect(page.getByTestId('tp-segment')).toBeVisible();
+    await expect(page.getByTestId('tp-segment-empty')).toContainText('No hay segmentos activos');
 
     await expect(page.getByTestId('tp-service')).toHaveValue(serviceId);
     await page.getByTestId('tp-modality').selectOption('IN_PERSON');
@@ -927,10 +932,8 @@ test.describe('spec 018/PR-7 — conserto do gate: form abre SEM a célula de se
     await page.keyboard.type('12312026');
     await expect(page.locator('#tp-endDate')).toHaveValue('2026-12-31');
 
-    await expect(page.getByTestId('tp-save')).toBeEnabled();
-    const criado = page.waitForResponse((r) => r.request().method() === 'POST' && /\/therapeutic-projects$/.test(r.url()));
-    await page.getByTestId('tp-save').click();
-    const bodyCriado = (await (await criado).json()) as { data: { id: string; version: string } };
-    expect(bodyCriado.data.version).toBe('V.1.0');
+    // Tudo preenchido, menos o segmento (sem catálogo não há o que escolher): "Salvar" segue travado e nada é gravado.
+    await expect(page.getByTestId('tp-save')).toBeDisabled();
+    expect(Number(runSQL(`SELECT count(*) FROM patient_therapeutic_projects WHERE patient_id = '${seed.patientId}'`))).toBe(0);
   });
 });

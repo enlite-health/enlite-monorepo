@@ -111,8 +111,10 @@ export function TherapeuticProjectDrawer({ patient, target: initial, fieldClass,
     setSaving(true);
     setSaveError(null);
     try {
+      // Spec 030: o segmento é MACRO — "Editar" NÃO manda a chave (o servidor recusa com 400 e herda da origem).
+      const { segmentId: _herdado, ...bodySemSegmento } = body;
       const created = target.mode === 'edit'
-        ? await AdminTherapeuticProjectsApiService.createVersion(patient.id, { mode: 'edit', fromVersionId: target.version.id, version: body })
+        ? await AdminTherapeuticProjectsApiService.createVersion(patient.id, { mode: 'edit', fromVersionId: target.version.id, version: bodySemSegmento })
         : await AdminTherapeuticProjectsApiService.createVersion(patient.id, { mode: 'new', version: body });
       setDirty(false);
       onSaved();

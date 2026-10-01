@@ -43,6 +43,8 @@ export const PDF_LABELS = {
   coverageEmergencyContact: 'Emergencia de la cobertura médica',
   modality: 'Modalidad',
   pathologyType: 'Tipo de patología (segmento)',
+  /** Spec 030: segmento escolhido no PTI (catálogo da Ana Care). Não é a linha acima, que deriva do CID-11. */
+  segment: 'Segmento (Ana Care)',
   elaboratedBy: 'Proyecto elaborado por',
   implementationPeriod: 'Plazo de implementación',
   issueDate: 'Fecha de confección',

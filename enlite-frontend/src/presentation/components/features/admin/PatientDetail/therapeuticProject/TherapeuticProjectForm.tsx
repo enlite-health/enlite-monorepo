@@ -44,6 +44,8 @@ import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 import { ClinicalTextareaField } from '../edit/ClinicalTextareaField';
 import { IcdSearchCombobox } from '../edit/IcdSearchCombobox';
+import { TherapeuticProjectSegmentField } from './TherapeuticProjectSegmentField';
+import { segmentOptions } from './segmentOptions';
 
 interface Props {
   services: PatientContractedServiceDetail[];
@@ -156,8 +158,7 @@ export function TherapeuticProjectForm({
   const [coverageIds, setCoverageIds] = useState<string[]>(keptIdsOfKind(from, from?.contactRefs, 'COVERAGE'));
   const [careTeamIds, setCareTeamIds] = useState<string[]>(keptCareTeamIds(from));
   const removedInactiveContacts = removedInactiveByKind(from);
-  // Filtro de segmento (US-17) — só UI, nunca vai no corpo; escondido com catálogo vazio (contrato).
-  const [segmentFilter, setSegmentFilter] = useState('');
+  const [segmentId, setSegmentId] = useState(from?.segment?.id ?? ''); // spec 030: MACRO, escolhido só no "Nuevo"; filtra objetivos/atividades
 
   const touch = <T,>(setter: (v: T) => void) => (v: T) => { setter(v); onDirty(); };
 
@@ -170,6 +171,7 @@ export function TherapeuticProjectForm({
   if (generalObjective.trim().length === 0) errors.push('generalObjective');
   if (specificObjectiveIds.length === 0) errors.push('specificObjectives');
   if (activityIds.length === 0) errors.push('activities');
+  if (!isEditing && !segmentId) errors.push('segment');
   if (!startDate || !endDate || endDate < startDate) errors.push('dates');
   const canSave = errors.length === 0 && !saving && !clinicalRedacted;
 
@@ -178,16 +180,9 @@ export function TherapeuticProjectForm({
     touch(setDiagnoses)([...diagnoses, { uri: c.uri, title: c.title }]);
   };
 
-  const hasSegmentCatalog = catalogs.segments.length > 0;
-  const bySegment = (items: { id: string; label: string; segmentId?: string | null }[]) =>
-    segmentFilter ? items.filter((i) => i.segmentId === segmentFilter) : items;
-
-  /** Ids escolhidos que já não estão ativos no catálogo (versão antiga) continuam visíveis como opção. */
-  const optionsOf = (kind: 'specific-objectives' | 'activities', chosen: { id: string; label: string }[] | undefined) => {
-    const base = bySegment(catalogs[kind]).map((i) => ({ value: i.id, label: i.label }));
-    for (const c of chosen ?? []) if (!base.some((b) => b.value === c.id)) base.push({ value: c.id, label: c.label });
-    return base;
-  };
+  /** Escolhidos (da versão antiga, já desativados, ou fora do segmento atual) continuam visíveis como opção. */
+  const optionsOf = (kind: 'specific-objectives' | 'activities', chosen: { id: string; label: string }[] | undefined, picked: string[]) =>
+    segmentOptions(catalogs[kind], segmentId, [...(chosen ?? []), ...catalogs[kind].filter((i) => picked.includes(i.id))]);
 
   const contactOptionsOf = (items: { id: string; label: string }[]) => items.map((i) => ({ value: i.id, label: i.label }));
   /**
@@ -252,6 +247,7 @@ export function TherapeuticProjectForm({
           generalObjective: generalObjective.trim(),
           specificObjectiveIds,
           activityIds,
+          ...(segmentId ? { segmentId } : {}),
           startDate,
           endDate,
           contactRefs,
@@ -331,6 +327,9 @@ export function TherapeuticProjectForm({
             </ul>
           </div>
 
+          <TherapeuticProjectSegmentField segments={catalogs.segments} value={segmentId} onChange={touch(setSegmentId)}
+            locked={isMacroLocked('segmentId')} lockedSegment={from?.segment} redacted={clinicalRedacted} />
+
           {isMacroLocked('clinicalContext')
             ? <FormField label={tc('currentClinicalContext')} labelSize="compact">{lockedText(clinicalContext, 'tp-clinicalContext-locked')}</FormField>
             : (
@@ -345,30 +344,16 @@ export function TherapeuticProjectForm({
         </div>
 
         <div className="flex flex-col gap-6">
-          {hasSegmentCatalog && (
-            <FormField label={tf('segmentFilter')} htmlFor="tp-segment" labelSize="compact">
-              <Select
-                id="tp-segment"
-                inputSize="compact"
-                value={segmentFilter}
-                onValueChange={setSegmentFilter}
-                placeholder={tf('segmentFilterPlaceholder')}
-                options={[{ value: '', label: tf('segmentFilterAll') }, ...catalogs.segments.map((s) => ({ value: s.id, label: s.label }))]}
-                data-testid="tp-segment-filter"
-              />
-            </FormField>
-          )}
-
           <FormField label={tc('specificObjectives')} htmlFor="tp-specificObjectives" labelSize="compact" required={!isMacroLocked('specificObjectiveIds')}>
             {/* `isMacroLocked` só é `true` com `isEditing` (⇒ `from !== null`, checado ali em cima) — `from!` fecha o tipo sem reabrir um `?? []` de fato inatingível. */}
             {isMacroLocked('specificObjectiveIds')
               ? lockedList(from!.specificObjectives, 'tp-specificObjectives-locked')
-              : <MultiSelect id="tp-specificObjectives" options={optionsOf('specific-objectives', from?.specificObjectives)} value={specificObjectiveIds} onChange={touch(setSpecificObjectiveIds)} placeholder={tf('selectPlaceholder')} />}
+              : <MultiSelect id="tp-specificObjectives" options={optionsOf('specific-objectives', from?.specificObjectives, specificObjectiveIds)} value={specificObjectiveIds} onChange={touch(setSpecificObjectiveIds)} placeholder={tf('selectPlaceholder')} />}
           </FormField>
           <FormField label={tc('activitiesPlan')} htmlFor="tp-activities" labelSize="compact" required={!isMacroLocked('activityIds')}>
             {isMacroLocked('activityIds')
               ? lockedList(from!.activities, 'tp-activities-locked')
-              : <MultiSelect id="tp-activities" options={optionsOf('activities', from?.activities)} value={activityIds} onChange={touch(setActivityIds)} placeholder={tf('selectPlaceholder')} />}
+              : <MultiSelect id="tp-activities" options={optionsOf('activities', from?.activities, activityIds)} value={activityIds} onChange={touch(setActivityIds)} placeholder={tf('selectPlaceholder')} />}
           </FormField>
           {/* Sem "Tipo de patología": deriva dos CID-11 no servidor (Gabriel 08/09; D163/D164) — máscara invisível na tela (DEC-09). */}
           <div className="grid grid-cols-2 gap-4">

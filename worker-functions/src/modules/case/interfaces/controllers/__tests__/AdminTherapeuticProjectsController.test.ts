@@ -29,12 +29,14 @@ import { AdminTherapeuticProjectsController } from '../AdminTherapeuticProjectsC
 import { ServiceNotOfPatientError, SourceVersionNotFoundError, PatientNotFoundForProjectError } from '../../../infrastructure/TherapeuticProjectRepository';
 import { CatalogItemsUnknownError, CatalogLabelTakenError, CatalogSegmentInvalidError } from '../../../infrastructure/TherapeuticCatalogRepository';
 import { DiagnosisUnknownError } from '../../../application/pathologySegments';
+import { therapeuticTrailAction } from '../../../application/therapeuticProjectAccess';
 import { TerminologyUnavailableError } from '@modules/terminology/domain/UnavailableTerminology';
 
 const PATIENT_ID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
 const VERSION_ID = 'bbbbbbbb-bbbb-cccc-dddd-eeeeeeeeeeee';
 const SOURCE_ID = 'cccccccc-bbbb-cccc-dddd-eeeeeeeeeeee';
 const SERVICE_ID = 'dddddddd-bbbb-cccc-dddd-eeeeeeeeeeee';
+const SEGMENT_ID = '33333333-bbbb-cccc-dddd-eeeeeeeeeeee';
 const ITEM_ID = 'eeeeeeee-bbbb-cccc-dddd-eeeeeeeeeeee';
 const OBJ_ID = 'ffffffff-bbbb-cccc-dddd-eeeeeeeeeeee';
 const ACT_ID = '11111111-bbbb-cccc-dddd-eeeeeeeeeeee';
@@ -55,8 +57,12 @@ const CORPO_NOVO = {
     activityIds: [ACT_ID],
     startDate: '2026-01-01',
     endDate: '2026-06-30',
+    segmentId: SEGMENT_ID,
   },
 };
+
+/** O corpo do `mode:'edit'`: a mesma forma SEM `segmentId` (030: MACRO, só muda com "Nuevo"; o `.strict()` o recusa). */
+const { segmentId: _segmentIdDoNovo, ...VERSAO_DO_EDIT } = CORPO_NOVO.version;
 
 const VERSAO = {
   id: VERSION_ID,
@@ -74,6 +80,7 @@ const VERSAO = {
   specificObjectives: [{ id: OBJ_ID, label: 'Objetivo A' }],
   activities: [{ id: ACT_ID, label: 'Atividade A' }],
   pathologyTypes: [{ id: '06', label: 'Trastornos mentales, del comportamiento y del neurodesarrollo' }],
+  segment: { id: SEGMENT_ID, label: 'AT para Pacientes con TEA' },
   startDate: '2026-01-01',
   endDate: '2026-06-30',
   annulledAt: null,
@@ -171,7 +178,7 @@ describe('AdminTherapeuticProjectsController', () => {
       const res = mockRes();
       await ctrl(repo).list(mockReq({ params: { id: PATIENT_ID } }), res);
       expect(corpoDaResposta(res).data.fieldClass).toEqual({
-        macro: ['contractedServiceId', 'diagnoses', 'clinicalContext', 'generalObjective', 'specificObjectiveIds', 'activityIds'],
+        macro: ['contractedServiceId', 'diagnoses', 'clinicalContext', 'generalObjective', 'specificObjectiveIds', 'activityIds', 'segmentId'],
         micro: ['startDate', 'endDate', 'modality', 'contactRefs', 'careTeamIds'],
       });
     });
@@ -465,7 +472,7 @@ describe('AdminTherapeuticProjectsController', () => {
       const repo = { createVersion: jest.fn().mockRejectedValue(new VersionNotCurrentError()) };
       const res = mockRes();
       await ctrl(repo).create(
-        mockReq({ params: { id: PATIENT_ID }, body: { mode: 'edit', fromVersionId: SOURCE_ID, version: CORPO_NOVO.version }, permissionCells: ['patient_clinical:write'] }),
+        mockReq({ params: { id: PATIENT_ID }, body: { mode: 'edit', fromVersionId: SOURCE_ID, version: VERSAO_DO_EDIT }, permissionCells: ['patient_clinical:write'] }),
         res,
       );
       expect(res.status).toHaveBeenCalledWith(409);
@@ -477,7 +484,7 @@ describe('AdminTherapeuticProjectsController', () => {
       const repo = { createVersion: jest.fn().mockRejectedValue(new MacroFieldsLockedError(['clinicalContext', 'diagnoses'])) };
       const res = mockRes();
       await ctrl(repo).create(
-        mockReq({ params: { id: PATIENT_ID }, body: { mode: 'edit', fromVersionId: SOURCE_ID, version: CORPO_NOVO.version }, permissionCells: ['patient_clinical:write'] }),
+        mockReq({ params: { id: PATIENT_ID }, body: { mode: 'edit', fromVersionId: SOURCE_ID, version: VERSAO_DO_EDIT }, permissionCells: ['patient_clinical:write'] }),
         res,
       );
       expect(res.status).toHaveBeenCalledWith(422);
@@ -575,14 +582,72 @@ describe('AdminTherapeuticProjectsController', () => {
       expect(corpoDaResposta(res).data.version).toBe('V.1.0');
     });
 
+    describe('030 — segmento (lex C3, C7)', () => {
+      it('030 — o `segmentId` do corpo chega ao repositório no `new` (o `{id,label}` é do repositório, nunca do corpo)', async () => {
+        const repo = { createVersion: jest.fn().mockResolvedValue(VERSAO) };
+        const res = mockRes();
+        await ctrl(repo).create(
+          mockReq({ params: { id: PATIENT_ID }, body: CORPO_NOVO, permissionCells: ['patient_clinical:read', 'patient_clinical:write'] }),
+          res,
+        );
+        expect(res.status).toHaveBeenCalledWith(201);
+        expect(repo.createVersion.mock.calls[0][0].version.segmentId).toBe(SEGMENT_ID);
+        expect(corpoDaResposta(res).data.segment).toEqual({ id: SEGMENT_ID, label: 'AT para Pacientes con TEA' });
+      });
+
+      it('030 — 422 `catalog_segment_invalid` SEM `details`: o corpo inteiro não contém o uuid enviado, e não há reportError', async () => {
+        const repo = { createVersion: jest.fn().mockRejectedValue(new CatalogSegmentInvalidError()) };
+        const res = mockRes();
+        await ctrl(repo).create(mockReq({ params: { id: PATIENT_ID }, body: CORPO_NOVO, permissionCells: ['patient_clinical:write'] }), res);
+        expect(res.status).toHaveBeenCalledWith(422);
+        expect(corpoDaResposta(res)).toEqual({ success: false, error: 'Unknown or inactive segment', code: 'catalog_segment_invalid' });
+        expect(JSON.stringify(corpoDaResposta(res))).not.toContain(SEGMENT_ID);
+        expect(reportError).not.toHaveBeenCalled();
+      });
+
+      it('030 — 403 sem `patient_clinical:write` mesmo com `segmentId` válido: nomeia a célula e o repo nem é chamado', async () => {
+        const repo = { createVersion: jest.fn() };
+        const res = mockRes();
+        await ctrl(repo).create(
+          mockReq({ params: { id: PATIENT_ID }, body: CORPO_NOVO, permissionCells: ['patient_therapeutic_project:write'] }),
+          res,
+        );
+        expect(res.status).toHaveBeenCalledWith(403);
+        expect(corpoDaResposta(res)).toEqual({ success: false, error: 'Forbidden', details: { cell: 'patient_clinical:write' } });
+        expect(JSON.stringify(corpoDaResposta(res))).not.toContain(SEGMENT_ID);
+        expect(repo.createVersion).not.toHaveBeenCalled();
+      });
+
+      it('030 — sem `patient_clinical:read` a resposta do POST leva `segment: null` + marcador, e o rótulo não aparece na resposta inteira', async () => {
+        const repo = { createVersion: jest.fn().mockResolvedValue(VERSAO) };
+        const res = mockRes();
+        await ctrl(repo).create(mockReq({ params: { id: PATIENT_ID }, body: CORPO_NOVO, permissionCells: ['patient_clinical:write'] }), res);
+        expect(corpoDaResposta(res).data.segment).toBeNull();
+        expect(corpoDaResposta(res).data.redacted.clinical).toBe(true);
+        expect(JSON.stringify(corpoDaResposta(res))).not.toContain('AT para Pacientes con TEA');
+      });
+
+      it('030 — `logResourceAccess` só UUID: o POST escreve no `req` no máximo o campo de containers (nomes), nada de segmento', async () => {
+        const repo = { createVersion: jest.fn().mockResolvedValue(VERSAO) };
+        const req = mockReq({ params: { id: PATIENT_ID }, body: CORPO_NOVO, permissionCells: ['patient_clinical:read', 'patient_clinical:write'] });
+        const antes = Object.keys(req as object);
+        await ctrl(repo).create(req, mockRes());
+        const novas = Object.keys(req as object).filter((k) => !antes.includes(k));
+        expect(novas.filter((k) => k !== 'therapeuticContactContainers')).toEqual([]);
+        expect(JSON.stringify(req)).not.toContain('AT para Pacientes con TEA');
+        expect(therapeuticTrailAction('write_project', ['patient_clinical:read'], (req as never as { therapeuticContactContainers?: string[] }).therapeuticContactContainers ?? []))
+          .toMatch(/^write_project:[a-zA-Z_+]+$/);
+      });
+    });
+
     it('201 no `edit`: o `fromVersionId` do corpo chega ao repo', async () => {
       const repo = { createVersion: jest.fn().mockResolvedValue(VERSAO) };
       const res = mockRes();
-      const corpo = { mode: 'edit', fromVersionId: SOURCE_ID, version: CORPO_NOVO.version };
+      const corpo = { mode: 'edit', fromVersionId: SOURCE_ID, version: VERSAO_DO_EDIT };
       await ctrl(repo).create(mockReq({ params: { id: PATIENT_ID }, body: corpo }), res);
       expect(res.status).toHaveBeenCalledWith(201);
       expect(repo.createVersion).toHaveBeenCalledWith({
-        mode: 'edit', patientId: PATIENT_ID, actorUid: 'uid-1', fromVersionId: SOURCE_ID, version: { ...CORPO_NOVO.version, contactRefs: [], careTeamIds: [] },
+        mode: 'edit', patientId: PATIENT_ID, actorUid: 'uid-1', fromVersionId: SOURCE_ID, version: { ...VERSAO_DO_EDIT, contactRefs: [], careTeamIds: [] },
       });
     });
 
@@ -596,7 +661,7 @@ describe('AdminTherapeuticProjectsController', () => {
     it('404 quando a origem do "Editar" sumiu ou foi anulada (SourceVersionNotFoundError)', async () => {
       const repo = { createVersion: jest.fn().mockRejectedValue(new SourceVersionNotFoundError()) };
       const res = mockRes();
-      await ctrl(repo).create(mockReq({ params: { id: PATIENT_ID }, body: { mode: 'edit', fromVersionId: SOURCE_ID, version: CORPO_NOVO.version } }), res);
+      await ctrl(repo).create(mockReq({ params: { id: PATIENT_ID }, body: { mode: 'edit', fromVersionId: SOURCE_ID, version: VERSAO_DO_EDIT } }), res);
       expect(res.status).toHaveBeenCalledWith(404);
       expect(corpoDaResposta(res)).toMatchObject({ code: 'source_version_not_found' });
       expect(reportError).not.toHaveBeenCalled();
@@ -959,6 +1024,7 @@ describe('AdminTherapeuticProjectsController', () => {
   describe('lex-pr7 C7 — sentinela: nenhum dos 3 erros nomeados vaza o corpo para o log nem para a resposta', () => {
     const SENTINELA = 'SENTINELA-PR7-NAO-VAZA';
     const corpoComSentinela = { ...CORPO_NOVO, version: { ...CORPO_NOVO.version, clinicalContext: SENTINELA, generalObjective: SENTINELA } };
+    const versaoSentinelaEdit = { ...VERSAO_DO_EDIT, clinicalContext: SENTINELA, generalObjective: SENTINELA };
 
     const semSentinelaEmLugarNenhum = (res: ReturnType<typeof mockRes>): void => {
       // 1) nenhuma chamada do espião de log carrega a sentinela — nem no corpo, nem no contexto.
@@ -974,7 +1040,7 @@ describe('AdminTherapeuticProjectsController', () => {
       const repo = { createVersion: jest.fn().mockRejectedValue(new VersionNotCurrentError()) };
       const res = mockRes();
       await ctrl(repo).create(
-        mockReq({ params: { id: PATIENT_ID }, body: { mode: 'edit', fromVersionId: SOURCE_ID, version: corpoComSentinela.version }, permissionCells: ['patient_clinical:write'] }),
+        mockReq({ params: { id: PATIENT_ID }, body: { mode: 'edit', fromVersionId: SOURCE_ID, version: versaoSentinelaEdit }, permissionCells: ['patient_clinical:write'] }),
         res,
       );
       expect(res.status).toHaveBeenCalledWith(409);
@@ -987,7 +1053,7 @@ describe('AdminTherapeuticProjectsController', () => {
       const repo = { createVersion: jest.fn().mockRejectedValue(new MacroFieldsLockedError(['clinicalContext', 'generalObjective'])) };
       const res = mockRes();
       await ctrl(repo).create(
-        mockReq({ params: { id: PATIENT_ID }, body: { mode: 'edit', fromVersionId: SOURCE_ID, version: corpoComSentinela.version }, permissionCells: ['patient_clinical:write'] }),
+        mockReq({ params: { id: PATIENT_ID }, body: { mode: 'edit', fromVersionId: SOURCE_ID, version: versaoSentinelaEdit }, permissionCells: ['patient_clinical:write'] }),
         res,
       );
       expect(res.status).toHaveBeenCalledWith(422);

@@ -15,8 +15,7 @@ import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import type { AuthzContract } from '@domain/entities/Authz';
 import type { TherapeuticCatalogItem, TherapeuticCatalogKind } from '@domain/entities/TherapeuticProject';
 
-// Esta tela administra só objetivos/atividades — `segments` não tem tela própria (task 7.7, fora do escopo).
-type ManagedCatalogKind = Exclude<TherapeuticCatalogKind, 'segments'> | 'service-exit-reasons';
+type ManagedCatalogKind = TherapeuticCatalogKind | 'service-exit-reasons';
 
 const translations = ptBR as Record<string, any>;
 
@@ -48,6 +47,9 @@ const { TherapeuticCatalogPage } = await import('../TherapeuticCatalogPage');
 const TherapeuticCatalogPageDefault = (await import('../TherapeuticCatalogPage')).default;
 
 const COPY = ptBR.admin.therapeuticCatalog;
+
+/** Chamadas de `listCatalog` ao catálogo da própria tela (a carga dos segmentos, spec 030, não conta). */
+const itemListCalls = () => listCatalog.mock.calls.filter(([k]) => k !== 'segments');
 
 function item(over: Partial<TherapeuticCatalogItem> = {}): TherapeuticCatalogItem {
   return {
@@ -149,8 +151,10 @@ describe('TherapeuticCatalogPage — carregando, erro e vazio', () => {
   });
 
   it('enquanto carrega mostra o esqueleto, não uma tabela vazia', async () => {
-    let libera: (v: TherapeuticCatalogItem[]) => void = () => {};
-    listCatalog.mockImplementation(() => new Promise((r) => { libera = r; }));
+    // Uma promessa por chamada (a da lista e a dos segmentos): `libera` resolve todas.
+    const pendentes: Array<(v: TherapeuticCatalogItem[]) => void> = [];
+    const libera = (v: TherapeuticCatalogItem[]) => pendentes.forEach((r) => r(v));
+    listCatalog.mockImplementation(() => new Promise((r) => { pendentes.push(r); }));
     render(<TherapeuticCatalogPage kind="activities" />);
 
     expect(screen.getByRole('status')).toBeInTheDocument();
@@ -207,7 +211,7 @@ describe('TherapeuticCatalogPage — criar e renomear', () => {
 
     await waitFor(() => expect(createCatalogItem).toHaveBeenCalledWith('activities', { label: 'Nueva opción', sortOrder: 4 }));
     await waitFor(() => expect(screen.queryByTestId('therapeutic-catalog-form-modal')).toBeNull());
-    expect(listCatalog).toHaveBeenCalledTimes(2);
+    expect(itemListCalls()).toHaveLength(2);
     expect(updateCatalogItem).not.toHaveBeenCalled();
   });
 
@@ -222,7 +226,7 @@ describe('TherapeuticCatalogPage — criar e renomear', () => {
     // A ordem já preenchida na modal viaja junto — renomear não perde a posição da opção.
     await waitFor(() => expect(updateCatalogItem).toHaveBeenCalledWith('activities', 'ativa', { label: 'Autonomía en el hogar', sortOrder: 1 }));
     await waitFor(() => expect(screen.queryByTestId('therapeutic-catalog-form-modal')).toBeNull());
-    expect(listCatalog).toHaveBeenCalledTimes(2);
+    expect(itemListCalls()).toHaveLength(2);
     expect(createCatalogItem).not.toHaveBeenCalled();
   });
 
@@ -233,7 +237,7 @@ describe('TherapeuticCatalogPage — criar e renomear', () => {
 
     await waitFor(() => expect(screen.queryByTestId('therapeutic-catalog-form-modal')).toBeNull());
     expect(createCatalogItem).not.toHaveBeenCalled();
-    expect(listCatalog).toHaveBeenCalledTimes(1);
+    expect(itemListCalls()).toHaveLength(1);
   });
 
   it('a recusa do servidor ao salvar fica DENTRO da modal — a lista não recarrega', async () => {
@@ -245,7 +249,7 @@ describe('TherapeuticCatalogPage — criar e renomear', () => {
 
     expect(await screen.findByTestId('therapeutic-catalog-form-error')).toHaveTextContent(COPY.errors.duplicate);
     expect(screen.getByTestId('therapeutic-catalog-form-modal')).toBeInTheDocument();
-    expect(listCatalog).toHaveBeenCalledTimes(1);
+    expect(itemListCalls()).toHaveLength(1);
   });
 });
 
@@ -265,7 +269,7 @@ describe('TherapeuticCatalogPage — (des)ativar', () => {
 
     fireEvent.click(screen.getByTestId('therapeutic-catalog-toggle-inativa'));
     await waitFor(() => expect(updateCatalogItem).toHaveBeenCalledWith('specific-objectives', 'inativa', { active: true }));
-    await waitFor(() => expect(listCatalog).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(itemListCalls()).toHaveLength(3));
     expect(screen.queryByTestId('therapeutic-catalog-action-error')).toBeNull();
   });
 
@@ -281,7 +285,7 @@ describe('TherapeuticCatalogPage — (des)ativar', () => {
     // A linha continua na tela: a recusa não some com o dado.
     expect(screen.getByTestId('therapeutic-catalog-row-ativa')).toBeInTheDocument();
     // E não recarregou (o `fetchItems` do sucesso não roda).
-    expect(listCatalog).toHaveBeenCalledTimes(1);
+    expect(itemListCalls()).toHaveLength(1);
   });
 
   it('o banner de erro some quando a operação seguinte dá certo', async () => {
@@ -396,5 +400,134 @@ describe('TherapeuticCatalogPage — write-gate das ações (D269)', () => {
     expect(screen.getByTestId('therapeutic-catalog-new-btn')).toBeInTheDocument();
     expect(screen.getByTestId('therapeutic-catalog-edit-ativa')).toBeInTheDocument();
     expect(screen.getByTestId('therapeutic-catalog-toggle-ativa')).toBeInTheDocument();
+  });
+});
+
+// ── Spec 030 (F1) — `segments` ganha tela: o MESMO componente, `kind="segments"` ──────────────────
+
+describe('TherapeuticCatalogPage — kind segments (spec 030)', () => {
+  const SEG = item({ id: 'seg1', label: 'AT para Pacientes con TEA', sortOrder: 4 });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' });
+    listCatalog.mockResolvedValue([SEG]);
+    createCatalogItem.mockResolvedValue(SEG);
+  });
+
+  it('segments: lista o catálogo COM inativos, com título e subtítulo próprios', async () => {
+    await renderPage('segments');
+    expect(listCatalog).toHaveBeenCalledWith('segments', { includeInactive: true });
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(COPY.kinds.segments.title);
+    expect(screen.getByText(COPY.kinds.segments.subtitle)).toBeInTheDocument();
+    expect(screen.getByTestId('therapeutic-catalog-label-seg1')).toHaveTextContent('AT para Pacientes con TEA');
+  });
+
+  it('segments: cria pela modal — POST no kind segments e recarrega a lista', async () => {
+    await renderPage('segments');
+    fireEvent.click(screen.getByTestId('therapeutic-catalog-new-btn'));
+    fireEvent.change(screen.getByTestId('therapeutic-catalog-label-input'), { target: { value: 'Segmento nuevo' } });
+    fireEvent.click(screen.getByTestId('therapeutic-catalog-form-save'));
+
+    await waitFor(() => expect(createCatalogItem).toHaveBeenCalledWith('segments', { label: 'Segmento nuevo', sortOrder: undefined }));
+    await waitFor(() => expect(screen.queryByTestId('therapeutic-catalog-form-modal')).toBeNull());
+    expect(listCatalog).toHaveBeenCalledTimes(2);
+  });
+
+  it('segments: engine ON com :read abre a tela mas SEM ações; a escrita de OUTRO catálogo não as libera', async () => {
+    comEnforcement(['catalog_therapeutic_segments:read', 'catalog_therapeutic_activities:update'], 'on');
+    render(<TherapeuticCatalogPage kind="segments" />);
+    await screen.findByTestId('therapeutic-catalog-table');
+    expect(navigate).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('therapeutic-catalog-new-btn')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('therapeutic-catalog-edit-seg1')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('therapeutic-catalog-toggle-seg1')).not.toBeInTheDocument();
+  });
+
+  it('segments: engine ON com read+create+update — as ações existem; sem :read manda para /admin', async () => {
+    comEnforcement(['catalog_therapeutic_segments:read', 'catalog_therapeutic_segments:create', 'catalog_therapeutic_segments:update'], 'on');
+    const { unmount } = render(<TherapeuticCatalogPage kind="segments" />);
+    await screen.findByTestId('therapeutic-catalog-table');
+    expect(screen.getByTestId('therapeutic-catalog-new-btn')).toBeInTheDocument();
+    expect(screen.getByTestId('therapeutic-catalog-toggle-seg1')).toBeInTheDocument();
+    unmount();
+
+    comEnforcement([], 'on');
+    render(<TherapeuticCatalogPage kind="segments" />);
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith('/admin', { replace: true }));
+  });
+});
+
+// ── Spec 030 (F4) — coluna "Segmento" e o vínculo no objetivo/atividade ─────────────────────────────
+
+describe('TherapeuticCatalogPage — vínculo de segmento (spec 030, F4)', () => {
+  const SEG_ON = item({ id: 'seg-on', label: 'AT para Pacientes con TEA', sortOrder: 1 });
+  const SEG_OFF = item({ id: 'seg-off', label: 'Segmento viejo', sortOrder: 2, active: false });
+  const OBJ = item({ id: 'obj1', label: 'Mejorar autonomía', segmentId: 'seg-on' });
+  const OBJ_OFF = item({ id: 'obj2', label: 'Otro objetivo', sortOrder: 2, segmentId: 'seg-off' });
+  const OBJ_LIVRE = item({ id: 'obj3', label: 'Sin segmento', sortOrder: 3, segmentId: null });
+
+  function respondePorKind(segments: TherapeuticCatalogItem[] | Error) {
+    listCatalog.mockImplementation(async (kind: string) => {
+      if (kind !== 'segments') return [OBJ, OBJ_OFF, OBJ_LIVRE];
+      if (segments instanceof Error) throw segments;
+      return segments;
+    });
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' });
+    updateCatalogItem.mockResolvedValue(OBJ);
+    createCatalogItem.mockResolvedValue(OBJ);
+  });
+
+  it('coluna "Segmento": rótulo resolvido por id no front; "(inactivo)" no desligado; "—" sem vínculo', async () => {
+    respondePorKind([SEG_ON, SEG_OFF]);
+    await renderPage('specific-objectives');
+    expect(listCatalog).toHaveBeenCalledWith('segments', { includeInactive: true });
+    expect(screen.getByRole('columnheader', { name: COPY.table.segment })).toBeInTheDocument();
+    expect(screen.getByTestId('therapeutic-catalog-segment-obj1')).toHaveTextContent('AT para Pacientes con TEA');
+    expect(screen.getByTestId('therapeutic-catalog-segment-obj2')).toHaveTextContent('Segmento viejo (inactivo)');
+    expect(screen.getByTestId('therapeutic-catalog-segment-obj3')).toHaveTextContent('—');
+  });
+
+  it('403 na lista de segmentos (allSettled → null): a coluna e o campo SOMEM, a tela abre', async () => {
+    respondePorKind(Object.assign(new Error('forbidden'), { status: 403 }));
+    await renderPage('activities');
+    expect(screen.queryByRole('columnheader', { name: COPY.table.segment })).toBeNull();
+    expect(screen.queryByTestId('therapeutic-catalog-segment-obj1')).toBeNull();
+    fireEvent.click(screen.getByTestId('therapeutic-catalog-edit-obj1'));
+    expect(screen.queryByTestId('therapeutic-catalog-segment-select')).toBeNull();
+  });
+
+  it('PATCH leva `segmentId` (trocar) e `null` (limpar); POST leva o escolhido', async () => {
+    respondePorKind([SEG_ON, SEG_OFF]);
+    await renderPage('specific-objectives');
+
+    fireEvent.click(screen.getByTestId('therapeutic-catalog-edit-obj2'));
+    fireEvent.change(screen.getByTestId('therapeutic-catalog-segment-select'), { target: { value: '' } });
+    fireEvent.click(screen.getByTestId('therapeutic-catalog-form-save'));
+    await waitFor(() => expect(updateCatalogItem).toHaveBeenCalledWith('specific-objectives', 'obj2', { label: 'Otro objetivo', sortOrder: 2, segmentId: null }));
+    await waitFor(() => expect(screen.queryByTestId('therapeutic-catalog-form-modal')).toBeNull());
+
+    fireEvent.click(screen.getByTestId('therapeutic-catalog-new-btn'));
+    fireEvent.change(screen.getByTestId('therapeutic-catalog-label-input'), { target: { value: 'Nuevo objetivo' } });
+    fireEvent.change(screen.getByTestId('therapeutic-catalog-segment-select'), { target: { value: 'seg-on' } });
+    fireEvent.click(screen.getByTestId('therapeutic-catalog-form-save'));
+    await waitFor(() => expect(createCatalogItem).toHaveBeenCalledWith('specific-objectives', { label: 'Nuevo objetivo', segmentId: 'seg-on' }));
+  });
+
+  it('kind="segments" e motivos de saída: não carregam segmentos, sem coluna e sem campo na modal', async () => {
+    for (const kind of ['segments', 'service-exit-reasons'] as const) {
+      listCatalog.mockClear();
+      listCatalog.mockResolvedValue([SEG_ON]);
+      const { unmount } = await renderPage(kind);
+      expect(listCatalog).toHaveBeenCalledTimes(1);
+      expect(screen.queryByRole('columnheader', { name: COPY.table.segment })).toBeNull();
+      fireEvent.click(screen.getByTestId('therapeutic-catalog-new-btn'));
+      expect(screen.queryByTestId('therapeutic-catalog-segment-select')).toBeNull();
+      unmount();
+    }
   });
 });
