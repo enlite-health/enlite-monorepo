@@ -8,14 +8,17 @@
  *      o publish falha ANTES do commit (`PublishVacancyToTalentumUseCase.ts:159-179` roda antes
  *      da UPDATE de `:195-207` e do gancho pós-commit `:235-240`) — a vaga continua rascunho
  *      (`is_draft = true`, `talentum_project_id` nulo), o paciente continua `ADMISSION`, a
- *      trilha `vacancy_launch` fica em 0 e nenhum match roda (Compatíveis = 0). A tela mostra o
+ *      trilha `vacancy_launch` fica em 0. A tela mostra o
  *      erro (`publishError`, `TalentumConfigPage.tsx:134-138`) sem sair de `/talentum`. Controle:
  *      `stub.calls` tem o `POST /pre-screening/projects` — o backend TENTOU e o stub recusou (a
  *      recusa é do stub, no mesmo processo do teste, nunca de rede).
  *
  *   Alternativo, no MESMO teste: `stub.mode = 'accept'` e publicar de novo — mesmo botão, mesma
- *      tela, sem reload — → 200 → `SEARCHING`, trilha 1, Compatíveis >= 1 (a recusa não deixa
+ *      tela, sem reload — → 200 → `SEARCHING`, trilha 1 (a recusa não deixa
  *      estado que impeça o lançamento seguinte).
+ *
+ * Compatíveis (`stages.COMPATIBLE`) é da Fase 4, fora da rota (b) (D455): a asserção sai daqui e
+ * volta na rota (a).
  *
  * Único mock de navegador: `/generate-ai-content` (Gemini custaria) — instalado DEPOIS do login
  * (mesma ordem do P12/P13: `swapToken` do `loginAs` vence rotas registradas antes dele).
@@ -23,7 +26,7 @@
  * da Talentum (porta 9914, `startTalentumStub`, `stub.mode = 'reject'`).
  *
  * Helpers: `lancamento-e2e-helper.ts` (P4), `funnel-move-e2e-helper.ts` (P12),
- * `compativeis-e2e-helper.ts` (`readFunnelApi`), `patient-detail-a-helper.ts` (`runSQL`),
+ * `lancamento-leituras-helper.ts` (`readPatientStatusApi`), `patient-detail-a-helper.ts` (`runSQL`),
  * `abac-stack-helper.ts`/`vacancy-notes-e2e-helper.ts` (staff mock).
  */
 
@@ -41,10 +44,8 @@ import {
   useLancamentoStaff,
   loginAndMockAi,
   LANCAMENTO_VIEWPORT_ES_AR,
-  type FunnelStageItem,
 } from '../helpers/lancamento-e2e-helper';
 import { readPatientStatusApi } from '../helpers/lancamento-leituras-helper';
-import { readFunnelApi } from '../helpers/lancamento-leituras-helper';
 import { runSQL } from '../helpers/patient-detail-a-helper';
 import { tokenFor } from '../helpers/abac-stack-helper';
 import { cleanupTestWorker } from '../helpers/db-test-helper';
@@ -111,15 +112,6 @@ test.describe('funil-vacante lancamento recusa @integration', () => {
       const trailAfterReject = countLaunchTrail(patient.patientId);
       expect(trailAfterReject, 'trilha vacancy_launch continua 0 depois da recusa').toBe(0);
 
-      const funnelAfterReject = (await readFunnelApi(request, token, vacancyId)) as {
-        stages?: Record<string, FunnelStageItem[]>;
-      };
-      const compatibleAfterReject = funnelAfterReject.stages?.COMPATIBLE ?? [];
-      expect(
-        compatibleAfterReject.length,
-        'nenhum match rodou (a recusa é ANTES do commit e do gancho pós-commit)',
-      ).toBe(0);
-
       const createCallsAfterReject = stub.calls.filter(
         (c) => c.method === 'POST' && c.path === '/pre-screening/projects',
       ).length;
@@ -136,7 +128,6 @@ test.describe('funil-vacante lancamento recusa @integration', () => {
         draftState,
         statusAfterReject,
         trailAfterReject,
-        compatibleAfterReject: compatibleAfterReject.length,
         createCallsAfterReject,
       });
 
@@ -160,12 +151,6 @@ test.describe('funil-vacante lancamento recusa @integration', () => {
       const trailAfterAccept = countLaunchTrail(patient.patientId);
       expect(trailAfterAccept, 'trilha vacancy_launch = 1 depois do lançamento aceito').toBe(1);
 
-      const funnelAfterAccept = (await readFunnelApi(request, token, vacancyId)) as {
-        stages?: Record<string, FunnelStageItem[]>;
-      };
-      const compatibleAfterAccept = funnelAfterAccept.stages?.COMPATIBLE ?? [];
-      expect(compatibleAfterAccept.length, 'Compatíveis >= 1 depois do lançamento aceito').toBeGreaterThanOrEqual(1);
-
       console.log('[6.7] lancamento-talentum-recusa-nao-move (alternativo aceito)', {
         vacancyId,
         patientId: patient.patientId,
@@ -173,7 +158,6 @@ test.describe('funil-vacante lancamento recusa @integration', () => {
         secondPublishStatus: secondRes.status(),
         statusAfterAccept,
         trailAfterAccept,
-        compatibleAfterAccept: compatibleAfterAccept.length,
       });
     } finally {
       await stub.close();

@@ -9,9 +9,7 @@
  *      "Publicar en Talentum") desse 2º serviço NÃO regride o paciente — ele continua `ACTIVE`
  *      (API e coluna do Kanban do paciente), a trilha `vacancy_launch` fica em 0, e o gancho
  *      (`VacancyLaunchHook.movePatientIfInFunnel`) registra `patient: 'unchanged'` (fora do
- *      funil de Admissão — `isAdmissionFunnelStatus('ACTIVE')` é falso, DX-6.3). O match SEM
- *      convite roda igual (controle positivo de que o gancho rodou: sem ele "não moveu" seria
- *      indistinguível de "não rodou").
+ *      funil de Admissão — `isAdmissionFunnelStatus('ACTIVE')` é falso, DX-6.3).
  *
  * DX-6.3: `seedLaunchablePatient({ status: 'ACTIVE', ... })` cria pelo helper só UM serviço via
  * API (o que o foguete usa) — medido que basta: `ActivateRecruitmentUseCase` só lê a completude
@@ -20,12 +18,15 @@
  * 1º serviço adicional com horário + vaga fechada — o `status: 'ACTIVE'` já É o que representa
  * "serviço em atendimento" para o gancho (`movePatientIfInFunnel` só olha `target.patientStatus`).
  *
+ * Compatíveis (`stages.COMPATIBLE`, o controle positivo do match sem convite) é da Fase 4, fora da
+ * rota (b) (D455): a asserção sai daqui e volta na rota (a).
+ *
  * Único mock de navegador: `/generate-ai-content` (Gemini custaria) — instalado DEPOIS do login
  * (mesma ordem do P12: `swapToken` do `loginAs` vence rotas registradas antes dele).
  * `publish-talentum` NUNCA é mockado: vai ao backend, que vai ao stub da Talentum (porta 9914).
  *
  * Helpers: `lancamento-e2e-helper.ts` (P4), `funnel-move-e2e-helper.ts` (P12),
- * `compativeis-e2e-helper.ts` (`readFunnelApi`, Fase 5), `abac-stack-helper.ts`/
+ * `lancamento-leituras-helper.ts`, `abac-stack-helper.ts`/
  * `vacancy-notes-e2e-helper.ts` (staff mock).
  */
 
@@ -44,10 +45,8 @@ import {
   useLancamentoStaff,
   loginAndMockAi,
   LANCAMENTO_VIEWPORT_ES_AR,
-  type FunnelStageItem,
 } from '../helpers/lancamento-e2e-helper';
 import { readPatientStatusApi } from '../helpers/lancamento-leituras-helper';
-import { readFunnelApi } from '../helpers/lancamento-leituras-helper';
 import { tokenFor } from '../helpers/abac-stack-helper';
 import { cleanupTestWorker } from '../helpers/db-test-helper';
 
@@ -105,14 +104,6 @@ test.describe('funil-vacante lancamento segundo servico @integration', () => {
       const columnAfterLaunch = await readPatientKanbanColumn(page, patient.patientId);
       expect(columnAfterLaunch, 'coluna do Kanban do paciente continua ACTIVE').toBe('ACTIVE');
 
-      // ── Controle positivo de que o gancho RODOU (senão "não moveu" == "não rodou") ──
-      const funnel = (await readFunnelApi(request, token, vacancyId)) as {
-        stages?: Record<string, FunnelStageItem[]>;
-      };
-      const compatible = funnel.stages?.COMPATIBLE ?? [];
-      const wItem = compatible.find((it) => it.workerId === w);
-      expect(wItem, 'W pertence a stages.COMPATIBLE — o match sem convite rodou fora do funil').toBeTruthy();
-
       console.log('[6.6] lancamento-segundo-servico-nao-regride', {
         vacancyId,
         patientId: patient.patientId,
@@ -122,8 +113,6 @@ test.describe('funil-vacante lancamento segundo servico @integration', () => {
         statusAfter,
         trailAfter,
         columnAfterLaunch,
-        compatibleCount: compatible.length,
-        wjaId: wItem?.id ?? null,
       });
     } finally {
       await stub.close();
