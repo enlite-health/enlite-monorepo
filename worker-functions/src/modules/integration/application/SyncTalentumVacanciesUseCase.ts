@@ -25,6 +25,7 @@ import {
 import { normalizePrescreeningResponseType } from '@shared/utils/normalizePrescreeningResponseType';
 import { parseCaseTitleReference } from '@shared/utils/parseCaseTitleReference';
 import { formatCaseTitle } from '@shared/utils/caseNumberFormat';
+import { loadTalentumProjectDetail } from './loadTalentumProjectDetail';
 
 // ─────────────────────────────────────────────────────────────────
 // Types
@@ -220,28 +221,18 @@ export class SyncTalentumVacanciesUseCase {
   }
 
   /**
-   * Detalhe do projeto (publicId, link web, descrição, perguntas). `PHONE_CALL` e `/prescreening` 400
-   * devolvem o item da lista sem `publicId` (conta em `withoutWebLink`); qualquer outro erro propaga
-   * (o `execute` o registra no relatório sem abortar o sync).
+   * Detalhe do projeto (publicId, link web, descrição, perguntas) — regra compartilhada em
+   * `loadTalentumProjectDetail`. Sem link web (`PHONE_CALL`/400) conta em `withoutWebLink`; qualquer outro
+   * erro propaga (o `execute` o registra no relatório sem abortar o sync).
    */
   private async loadDetail(
     project: TalentumProject,
     talentumClient: TalentumApiClient,
     report: SyncReport,
   ): Promise<TalentumProject> {
-    if (project.type === 'PHONE_CALL') {
-      report.withoutWebLink++;
-      return project;
-    }
-    try {
-      return await talentumClient.getPrescreening(project.projectId);
-    } catch (err: unknown) {
-      if (err instanceof Error && err.message.includes('HTTP 400')) {
-        report.withoutWebLink++;
-        return project;
-      }
-      throw err;
-    }
+    const { project: detail, webLink } = await loadTalentumProjectDetail(project, talentumClient);
+    if (!webLink) report.withoutWebLink++;
+    return detail;
   }
 
   /**
