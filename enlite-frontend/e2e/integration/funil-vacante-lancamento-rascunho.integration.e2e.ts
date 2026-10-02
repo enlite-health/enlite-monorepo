@@ -25,8 +25,8 @@ import {
   mockAdminUserFor,
   useLancamentoStaff,
 } from '../helpers/lancamento-e2e-helper';
-import { readPatientStatusApi } from '../helpers/funnel-move-e2e-helper';
-import { readFunnelApi } from '../helpers/compativeis-e2e-helper';
+import { readPatientStatusApi } from '../helpers/lancamento-leituras-helper';
+import { readFunnelApi } from '../helpers/lancamento-leituras-helper';
 import { loginAs, tokenFor } from '../helpers/abac-stack-helper';
 import { insertTestPatient, cleanupTestPatient } from '../helpers/db-test-helper';
 import { runSQL } from '../helpers/patient-detail-a-helper';

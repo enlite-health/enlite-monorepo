@@ -46,8 +46,8 @@ import {
   LANCAMENTO_VIEWPORT_ES_AR,
   type FunnelStageItem,
 } from '../helpers/lancamento-e2e-helper';
-import { readPatientStatusApi } from '../helpers/funnel-move-e2e-helper';
-import { readFunnelApi } from '../helpers/compativeis-e2e-helper';
+import { readPatientStatusApi } from '../helpers/lancamento-leituras-helper';
+import { readFunnelApi } from '../helpers/lancamento-leituras-helper';
 import { tokenFor } from '../helpers/abac-stack-helper';
 import { cleanupTestWorker } from '../helpers/db-test-helper';
 

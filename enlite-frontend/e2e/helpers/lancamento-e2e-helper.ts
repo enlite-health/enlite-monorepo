@@ -19,7 +19,7 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 import { insertTestPatient, insertTestWorker } from './db-test-helper';
 import { runSQL, cleanupPatientDeep } from './patient-detail-a-helper';
 import { tokenFor, loginAs, type MockUser } from './abac-stack-helper';
-import { seedMockStaff, cleanupMockStaff } from './vacancy-notes-e2e-helper';
+import { seedMockStaff, cleanupMockStaff } from './lancamento-leituras-helper';
 
 /**
  * URL do backend (E2E-F6/CI sempre setam `E2E_BACKEND_URL`) — nunca host/porta literal (G2).
