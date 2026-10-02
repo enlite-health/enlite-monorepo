@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { AuthMiddleware, type PermissionMiddleware } from '@modules/identity';
 import { ADMIN_PATIENTS_FAMILY } from '@modules/identity/permissions';
+import { logResourceAccess } from '@shared/audit/resourceAccessLog';
 import { AnaCareHoursController } from '../controllers/AnaCareHoursController';
 
 /**
@@ -11,6 +12,8 @@ import { AnaCareHoursController } from '../controllers/AnaCareHoursController';
  * ver `PermissionCell.ts` `CELL_DESCRIPTION`):
  *   · `anacare_hours:read`     — turnos, horas, origem, status (sem nome, sem nota).
  *   · `anacare_hours:validate` — validar, validar em lote, contestar.
+ *   · `anacare_hours:export`   — exportar as horas de um paciente num período (xlsx, spec 032);
+ *                                a rota exige `read` E `export`.
  *
  * Família: reaproveita `admin.patients` (D344 não pede família PRÓPRIA — só célula própria; o
  * domínio é vizinho de paciente, mesmo molde do Projeto Terapêutico em
@@ -34,6 +37,17 @@ export function createAnaCareHoursRoutes(controller: AnaCareHoursController, aut
     staffOnly,
     perm.require('anacare_hours', 'read'),
     (req: Request, res: Response) => controller.getPatientMonth(req, res),
+  );
+  // Spec 032: chamadas LITERAIS (sem closure) — é assim que o catálogo de células enxerga `export`.
+  // Trilha: UMA linha por clique em `resource_access_log` (só 2xx), só com IDs/datas — nunca nome.
+  const exportTrail = (req: Request): string => `export_xlsx:ambos:${String(req.query.desde)}:${String(req.query.hasta)}`;
+  router.get(
+    '/anacare-hours/patients/:patientId/export',
+    staffOnly,
+    perm.require('anacare_hours', 'read'),
+    perm.require('anacare_hours', 'export'),
+    logResourceAccess('anacare_patient', exportTrail, (req) => req.params.patientId),
+    (req: Request, res: Response) => controller.exportPatientRange(req, res),
   );
   router.post(
     '/anacare-hours/shifts/validate-batch',
