@@ -150,6 +150,8 @@ export interface ActivateRecruitmentResult {
   vacancyId: string;
   patientStatus: string;
   statusChanged: boolean;
+  /** D469 — só presente quando a vaga nasceu mas o paciente NÃO saiu de Admisión (códigos do checklist). */
+  patientNotMoved?: { missing: string[] };
 }
 
 export const AdminContractedServicesApiService = new AdminContractedServicesApiServiceClass();

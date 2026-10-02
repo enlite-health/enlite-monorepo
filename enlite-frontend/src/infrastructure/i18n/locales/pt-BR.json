@@ -3806,6 +3806,7 @@
           "viewVacancyAria": "Ver vaga de {{service}}",
           "viewVacancy": "Ver vaga",
           "activateRecruitmentToast": "Vaga em rascunho criada",
+          "activateRecruitmentPatientNotMoved": "Vaga criada. O paciente continua em Admissão: falta {{items}} em um serviço ativo.",
           "activateRecruitmentError": "Não foi possível ativar o recrutamento",
           "activateRecruitmentAlreadyRecruiting": "Este serviço já tem uma vaga em andamento"
         },
@@ -4073,7 +4074,8 @@
           "insert": "Criação",
           "backfill": "Carga inicial",
           "activate": "Ativação",
-          "system": "Sistema"
+          "system": "Sistema",
+          "recruitment_activation": "Ativação do recrutamento"
         },
         "historyCard": {
           "title": "Histórico de estados",

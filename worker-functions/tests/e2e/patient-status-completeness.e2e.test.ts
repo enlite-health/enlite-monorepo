@@ -266,8 +266,12 @@ describe('Horário do serviço trava a mudança de status (07/09) @integration',
 
     const r = await api.post(`/api/admin/patients/${id}/contracted-services/${sid}/activate-recruitment`, {}, asAdmin);
     expect(r.status).toBe(201);
-    expect(r.data.data.patientStatus).toBe('PENDING_ADMISSION');
-    expect(r.data.data.statusChanged).toBe(false);
+    expect(r.data.data.patientStatus).toBe('SEARCHING');
+    expect(r.data.data.statusChanged).toBe(true);
+    const { rows: hist } = await pool.query<{ change_source: string }>(
+      'SELECT change_source FROM patient_status_history WHERE patient_id = $1 ORDER BY created_at DESC, id DESC LIMIT 1', [id],
+    );
+    expect(hist[0].change_source).toBe('recruitment_activation');
 
     const { rows } = await pool.query<{ schedule: unknown }>(
       'SELECT schedule FROM job_postings WHERE patient_id = $1', [id],
