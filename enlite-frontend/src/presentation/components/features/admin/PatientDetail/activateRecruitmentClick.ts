@@ -24,7 +24,7 @@ interface ActivateRecruitmentClickDeps {
   tc: (k: string, o?: Record<string, unknown>) => string;
   /** `t` cru — os códigos de `completeness.items.*` vivem fora do namespace do `tc`. */
   t: (k: string, o?: any) => string;
-  showToast: (message: string, kind: 'success' | 'error') => void;
+  showToast: (message: string, kind: 'success' | 'error' | 'warning') => void;
 }
 
 /**
@@ -39,8 +39,16 @@ export async function runActivateRecruitmentClick(deps: ActivateRecruitmentClick
   if (deps.missing.length > 0 || deps.busy) return;
   deps.setBusy(true);
   try {
-    await AdminContractedServicesApiService.activateRecruitment(deps.patientId, deps.serviceId);
-    deps.showToast(deps.tc('activateRecruitmentToast'), 'success');
+    const result = await AdminContractedServicesApiService.activateRecruitment(deps.patientId, deps.serviceId);
+    if (result?.patientNotMoved) {
+      // D469: a vaga nasceu, mas o paciente segue em Admisión — AVISO (não sucesso) com o que falta.
+      const items = result.patientNotMoved.missing
+        .map((code) => deps.t(`admin.patients.detail.completeness.items.${code}`, code))
+        .join(', ');
+      deps.showToast(deps.tc('activateRecruitmentPatientNotMoved', { items }), 'warning');
+    } else {
+      deps.showToast(deps.tc('activateRecruitmentToast'), 'success');
+    }
     deps.onActivated();
   } catch (err) {
     if (err instanceof ContractedServiceApiError && err.code === 'SERVICE_ALREADY_RECRUITING') {

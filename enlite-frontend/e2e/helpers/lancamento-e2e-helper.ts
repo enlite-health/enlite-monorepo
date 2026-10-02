@@ -232,6 +232,42 @@ export async function loginAndMockAi(page: Page, user: MockUser): Promise<void> 
   await mockGenerateAiContent(page);
 }
 
+// ── POST .../contracted-services (fonte única — G2: DRY entre seedLaunchablePatient e
+//    o e2e de itinerário, `itinerario-e2e-helper.ts`) ────────────────────────────────
+
+export interface ContractedServiceBody {
+  serviceCode: 'AT' | 'CAREGIVER' | 'NURSE' | 'KINESIOLOGIST' | 'PSYCHOLOGIST';
+  providersNeeded: number;
+  weeklyHours: number;
+  careLocation: string;
+  addressId: string;
+  schedule?: Array<{ dayOfWeek: number; startTime: string; endTime: string }>;
+}
+
+/**
+ * `POST /patients/:id/contracted-services` — MESMO POST que `seedLaunchablePatient` fazia
+ * inline (mesma URL, headers, corpo e leitura de `data.id`); reusado também por
+ * `itinerario-e2e-helper.ts` (`createServiceViaApi`, G2). `token` fica a cargo do chamador
+ * (cada helper autentica com o próprio `MockUser` — molde `launchViaApi` acima).
+ */
+export async function postContractedServiceViaApi(
+  request: APIRequestContext,
+  token: string,
+  patientId: string,
+  body: ContractedServiceBody,
+): Promise<string> {
+  const res = await request.post(`${backendUrl()}/api/admin/patients/${patientId}/contracted-services`, {
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    data: body,
+  });
+  if (!res.ok()) {
+    throw new Error(
+      `postContractedServiceViaApi: POST contracted-services falhou ${res.status()}: ${await res.text()}`,
+    );
+  }
+  return ((await res.json()) as { data: { id: string } }).data.id;
+}
+
 // ── Semente do paciente lançável ─────────────────────────────────────────────────
 
 export interface SeedLaunchablePatientOpts {
@@ -419,6 +455,16 @@ export async function readPatientKanbanColumn(page: Page, patientId: string): Pr
     return col?.getAttribute('data-testid') ?? null;
   });
   return columnTestId ? columnTestId.replace('kanban-column-', '') : 'NOT_FOUND';
+}
+
+/**
+ * D469 (02/10/2026): o foguete passou a mover o paciente do funil para Búsqueda. Os testes que
+ * provam o OUTRO caminho (o envio à Talentum move quem ainda estiver no funil — `VacancyLaunchHook`,
+ * `vacancy_launch`) ou que dependem do paciente parado em Admisión (derivação não toca o funil)
+ * devolvem o paciente ao funil por SQL (fixture; a trilha ganha uma linha sem `change_source`).
+ */
+export function devolverPacienteAoFunil(patientId: string, status = 'ADMISSION'): void {
+  runSQL(`UPDATE patients SET status = '${status}' WHERE id = '${patientId}'`);
 }
 
 // ── Trilha do lançamento ─────────────────────────────────────────────────────────────

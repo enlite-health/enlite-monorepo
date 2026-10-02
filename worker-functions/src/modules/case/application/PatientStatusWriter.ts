@@ -1,6 +1,7 @@
 import * as functions from 'firebase-functions';
+import type { PoolClient } from 'pg';
 import { inPatientTransaction } from './patientTransaction';
-import { isPatientStatus, isClinicalPatientStatus, isLaunchOnlyTransition, type PatientStatus } from '../domain/enums/PatientStatus';
+import { isPatientStatus, isClinicalPatientStatus, isFunnelToSearchingTransition, type PatientStatus } from '../domain/enums/PatientStatus';
 import type { OnHoldReason } from '../domain/enums/OnHoldReason';
 import type { SuspensionExitReason } from '../domain/enums/SuspensionExitReason';
 import { blockingCodesForStatusChange } from '../domain/PatientCompleteness';
@@ -67,6 +68,13 @@ export class SuspensionExitReasonRequiredError extends Error {
   }
 }
 
+/** Origens que podem tirar o paciente do funil de admissão para SEARCHING (D469). */
+const FUNNEL_TO_SEARCHING_SOURCES: ReadonlyArray<MoveStatusOptions['changeSource']> = [
+  'vacancy_launch',
+  'recruitment_activation',
+  'kanban',
+];
+
 export interface MoveStatusOptions {
   onHoldReason?: OnHoldReason | null;
   /**
@@ -80,7 +88,7 @@ export interface MoveStatusOptions {
    */
   onHoldNote?: string | null;
   /** Vira `change_source` em patient_status_history (trigger 254, via app.change_source). */
-  changeSource: 'admin_panel' | 'kanban' | 'activate' | 'system' | 'vacancy_launch'; // só o VacancyLaunchHook; o zod da rota HTTP não aceita
+  changeSource: 'admin_panel' | 'kanban' | 'activate' | 'system' | 'vacancy_launch' | 'recruitment_activation'; // vacancy_launch/recruitment_activation são internos: o zod da rota HTTP só aceita admin_panel/kanban
   /**
    * Motivo de SAÍDA de SUSPENDED (decisão do Gabriel 29/09/2026) — exigido só quando `from`
    * (lido dentro da transação) é SUSPENDED, o alvo é outro e `changeSource` é MANUAL
@@ -109,11 +117,16 @@ export interface MoveStatusOptions {
  *     que o trigger da 254 grava em patient_status_history (a coluna "origem" do Historial);
  *   - `on_hold_note` NUNCA entra no log (lex C7.1-b) nem na history (C7.3).
  * Never touches `origin` (a native patient stays native).
+ *
+ * `txClient` (cadeia Fase 15): quando vem, a transição roda NA transação de quem chama (a
+ * derivação, dentro do escritor do itinerário) — sem `BEGIN`/`COMMIT` próprio; `withActorContext`
+ * reusaria o client fixado na request e comitaria no meio. Sem ele, a transação própria de sempre.
  */
 export async function movePatientStatus(
   patientId: string,
   status: PatientStatus,
   opts: MoveStatusOptions,
+  txClient?: PoolClient,
 ): Promise<{ id: string; status: PatientStatus }> {
   if (!isPatientStatus(status)) {
     throw new Error(`Invalid patient status: ${String(status)}`);
@@ -123,7 +136,7 @@ export async function movePatientStatus(
     throw new OnHoldReasonRequiredError();
   }
 
-  return inPatientTransaction(async (client) => {
+  const body = async (client: PoolClient): Promise<{ id: string; status: PatientStatus }> => {
     const current = await client.query<{ status: string | null }>(
       'SELECT status FROM patients WHERE id = $1 AND deleted_at IS NULL FOR UPDATE',
       [patientId],
@@ -138,9 +151,10 @@ export async function movePatientStatus(
     // e o mesmo UPDATE ainda apagava motivo e nota. Movimento DENTRO do funil (as duas pontas
     // em SOLICITANTE/ADMISSION/PENDING_ADMISSION) continua livre, como sempre foi.
     if ((isClinicalPatientStatus(status) || isClinicalPatientStatus(from)) && from !== status) {
-      // Guarda da invariante 7 (D434, DX-6.4): a linha funil→SEARCHING existe no catálogo (479)
-      // só para o `VacancyLaunchHook` — Kanban e PUT /status continuam recusados com o 422 de hoje.
-      if (isLaunchOnlyTransition(from, status) && opts.changeSource !== 'vacancy_launch') {
+      // Guarda D469 (02/10/2026; antes D434/DX-6.4): funil→SEARCHING é ato intencional — foguete,
+      // envio à Talentum ou arrasto no Kanban. O PUT /status do select da ficha (admin_panel) e a
+      // derivação (system) continuam recusados com o 422.
+      if (isFunnelToSearchingTransition(from, status) && !FUNNEL_TO_SEARCHING_SOURCES.includes(opts.changeSource)) {
         throw new PatientStatusTransitionError(from, status);
       }
       const allowed = await client.query(
@@ -217,5 +231,6 @@ export async function movePatientStatus(
       suspensionExitReason: statusReasonToRecord,
     });
     return { id: patientId, status };
-  });
+  };
+  return txClient ? body(txClient) : inPatientTransaction(body);
 }

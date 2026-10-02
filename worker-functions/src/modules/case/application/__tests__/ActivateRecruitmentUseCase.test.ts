@@ -28,6 +28,12 @@ jest.mock('@modules/matching', () => {
   };
 });
 
+const mockMovePatientStatus = jest.fn(async (..._args: unknown[]) => ({}));
+jest.mock('../PatientStatusWriter', () => ({
+  ...jest.requireActual('../PatientStatusWriter'),
+  movePatientStatus: (...args: unknown[]) => mockMovePatientStatus(...args),
+}));
+
 jest.mock('firebase-functions', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
 }));
@@ -39,6 +45,7 @@ import {
   ServiceAlreadyRecruitingError,
   RecruitmentNotReadyError,
 } from '../ActivateRecruitmentUseCase';
+import { PatientStatusNotReadyError } from '../PatientStatusWriter';
 import type { HumanActor } from '../../../matching/interfaces/controllers/vacancyCrudAuditHelpers';
 
 const PATIENT_ID = 'p-1';
@@ -139,7 +146,7 @@ const READY_SERVICE = {
 describe('ActivateRecruitmentUseCase', () => {
   beforeEach(() => jest.clearAllMocks());
 
-  it('201 feliz — paciente no funil (ADMISSION): cria a vaga e NÃO move (o lançamento move, D434)', async () => {
+  it('201 feliz — paciente no funil (ADMISSION): cria a vaga e MOVE para SEARCHING (D469)', async () => {
     const { promise } = run({
       patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular' },
       serviceRow: READY_SERVICE,
@@ -147,7 +154,15 @@ describe('ActivateRecruitmentUseCase', () => {
       insertedId: 'vac-42',
     });
     const result = await promise;
-    expect(result).toEqual({ vacancyId: 'vac-42', patientStatus: 'ADMISSION', statusChanged: false });
+    expect(result).toEqual({ vacancyId: 'vac-42', patientStatus: 'SEARCHING', statusChanged: true });
+    expect(result).not.toHaveProperty('patientNotMoved');
+    expect(mockMovePatientStatus).toHaveBeenCalledTimes(1);
+    expect(mockMovePatientStatus).toHaveBeenCalledWith(
+      PATIENT_ID,
+      'SEARCHING',
+      { changeSource: 'recruitment_activation', actorUid: null },
+      expect.anything(), // o MESMO client da transação do foguete (sem 2ª transação)
+    );
     expect(mockBuildInsertParams).toHaveBeenCalledWith(
       expect.objectContaining({
         patient_id: PATIENT_ID,
@@ -184,20 +199,62 @@ describe('ActivateRecruitmentUseCase', () => {
     expect(result).toEqual({ vacancyId: 'vac-1', patientStatus: 'ACTIVE', statusChanged: false });
   });
 
-  it('SOLICITANTE também é funil: cria a vaga e NÃO move (o lançamento move, D434)', async () => {
+  it('SOLICITANTE e PENDING_ADMISSION também são funil: cria a vaga e MOVE para SEARCHING (D469)', async () => {
     const { promise } = run({
       patientRow: { id: PATIENT_ID, status: 'SOLICITANTE', case_number: 100, insurance_informed: 'Particular' },
       serviceRow: READY_SERVICE,
     });
     const result = await promise;
-    expect(result.patientStatus).toBe('SOLICITANTE');
-    expect(result.statusChanged).toBe(false);
+    expect(result.patientStatus).toBe('SEARCHING');
+    expect(result.statusChanged).toBe(true);
+    expect(mockMovePatientStatus).toHaveBeenCalledWith(PATIENT_ID, 'SEARCHING', expect.objectContaining({ changeSource: 'recruitment_activation' }), expect.anything());
+
+    mockMovePatientStatus.mockClear();
+    const second = run({
+      patientRow: { id: PATIENT_ID, status: 'PENDING_ADMISSION', case_number: 100, insurance_informed: 'Particular' },
+      serviceRow: READY_SERVICE,
+    });
+    await expect(second.promise).resolves.toMatchObject({ patientStatus: 'SEARCHING', statusChanged: true });
+    expect(mockMovePatientStatus).toHaveBeenCalledTimes(1);
   });
 
-  it('DX-6.11 (i) — nenhum cenário feliz manda SQL que mova o paciente (nem UPDATE patients, nem app.change_source)', async () => {
+  it('D469 — ator humano do controller vai como actorUid na trilha do paciente', async () => {
+    const { promise } = run(
+      { patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular' }, serviceRow: READY_SERVICE },
+      { actorUserId: 'uid-9', actorType: 'HUMAN', actorLabel: 'admin_panel' },
+    );
+    await promise;
+    expect(mockMovePatientStatus).toHaveBeenCalledWith(
+      PATIENT_ID, 'SEARCHING', { changeSource: 'recruitment_activation', actorUid: 'uid-9' }, expect.anything(),
+    );
+  });
+
+  it('D469 — completude do SEARCHING falha (outro serviço sem horário): a vaga é criada, o paciente NÃO move, sem erro', async () => {
+    mockMovePatientStatus.mockRejectedValueOnce(new PatientStatusNotReadyError('SEARCHING', ['SERVICE_SCHEDULE']));
+    const { promise } = run({
+      patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular' },
+      serviceRow: READY_SERVICE,
+      insertedId: 'vac-77',
+    });
+    await expect(promise).resolves.toEqual({
+      vacancyId: 'vac-77', patientStatus: 'ADMISSION', statusChanged: false,
+      patientNotMoved: { missing: ['SERVICE_SCHEDULE'] },
+    });
+  });
+
+  it('D469 — erro inesperado do movimento sobe (derruba a transação inteira, vaga incluída)', async () => {
+    mockMovePatientStatus.mockRejectedValueOnce(new Error('boom'));
+    const { promise } = run({
+      patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular' },
+      serviceRow: READY_SERVICE,
+    });
+    await expect(promise).rejects.toThrow('boom');
+  });
+
+  it('D469 — paciente FORA do funil (ACTIVE, ON_HOLD, SEARCHING…) não é movido: movePatientStatus nunca chamado', async () => {
     const scenarios: DispatchOpts[] = [
-      { patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular' }, serviceRow: READY_SERVICE, vacancyNumber: 900, insertedId: 'vac-900' },
-      { patientRow: { id: PATIENT_ID, status: 'SOLICITANTE', case_number: 100, insurance_informed: 'Particular' }, serviceRow: READY_SERVICE, vacancyNumber: 901, insertedId: 'vac-901' },
+      { patientRow: { id: PATIENT_ID, status: 'ON_HOLD', case_number: 100, insurance_informed: 'Particular' }, serviceRow: READY_SERVICE, vacancyNumber: 900, insertedId: 'vac-900' },
+      { patientRow: { id: PATIENT_ID, status: 'SEARCHING', case_number: 100, insurance_informed: 'Particular' }, serviceRow: READY_SERVICE, vacancyNumber: 901, insertedId: 'vac-901' },
       { patientRow: { id: PATIENT_ID, status: 'ACTIVE', case_number: 100, insurance_informed: 'Particular' }, serviceRow: READY_SERVICE, vacancyNumber: 902, insertedId: 'vac-902' },
     ];
     for (const scenario of scenarios) {
@@ -210,6 +267,7 @@ describe('ActivateRecruitmentUseCase', () => {
         expect(sql).not.toMatch(/UPDATE\s+patients/i);
         expect(sql).not.toContain('app.change_source');
       }
+      expect(mockMovePatientStatus).not.toHaveBeenCalled();
     }
   });
 
@@ -501,7 +559,7 @@ describe('ActivateRecruitmentUseCase', () => {
       });
 
       const result = await promise;
-      expect(result).toEqual({ vacancyId: 'vac-43', patientStatus: 'ADMISSION', statusChanged: false });
+      expect(result).toEqual({ vacancyId: 'vac-43', patientStatus: 'SEARCHING', statusChanged: true });
     });
   });
 
