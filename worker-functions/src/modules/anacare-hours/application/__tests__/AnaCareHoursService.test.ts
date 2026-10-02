@@ -990,6 +990,90 @@ describe('AnaCareHoursService', () => {
     });
   });
 
+  /**
+   * Spec 032 — leitura por intervalo (exportação do financeiro). Hasta INCLUSIVO na entrada; a
+   * porta recebe `toExclusive = hasta + 1 dia`. Nunca nota, nunca documento.
+   */
+  describe('getPatientRange (spec 032)', () => {
+    class RangeSource extends StubSource {
+      readonly rangeSpy = jest.fn();
+      constructor(private readonly rangeShifts: SourceShiftDTO[] = [SHIFT_A, SHIFT_SEM_CHECKIN]) {
+        super();
+        this.rangeSpy.mockImplementation(async (params: { patientId?: string }) => ({
+          shifts: this.rangeShifts.filter((s) => !params.patientId || s.anaCarePatientId === params.patientId),
+          skipped: { noProvider: 0, noPatient: 0 },
+        }));
+      }
+      listShiftsInRange(params: { from: string; toExclusive: string; patientId?: string }) {
+        return this.rangeSpy(params);
+      }
+    }
+
+    it('soma 1 dia ao Hasta (toExclusive) ao chamar a porta, repassando from e patientId', async () => {
+      const source = new RangeSource();
+      const service = new AnaCareHoursService(source, mockRepo());
+      await service.getPatientRange('2026-09-01', '2026-09-30', 'AC-PAT-0', { canReadProviderName: false });
+      expect(source.rangeSpy).toHaveBeenCalledTimes(1);
+      expect(source.rangeSpy).toHaveBeenCalledWith({ from: '2026-09-01', toExclusive: '2026-10-01', patientId: 'AC-PAT-0' });
+    });
+
+    it('Hasta no último dia do ano vira 1º de janeiro do ano seguinte (e fevereiro não bissexto vira 1º de março)', async () => {
+      const source = new RangeSource();
+      const service = new AnaCareHoursService(source, mockRepo());
+      await service.getPatientRange('2026-12-30', '2026-12-31', 'AC-PAT-0', { canReadProviderName: false });
+      await service.getPatientRange('2026-02-01', '2026-02-28', 'AC-PAT-0', { canReadProviderName: false });
+      expect(source.rangeSpy.mock.calls[0][0]).toMatchObject({ toExclusive: '2027-01-01' });
+      expect(source.rangeSpy.mock.calls[1][0]).toMatchObject({ toExclusive: '2026-03-01' });
+    });
+
+    it('nunca devolve documento nem decifra nota, mesmo com a fonte mandando o documento e o turno tendo nota cifrada', async () => {
+      const kms = new KMSEncryptionService();
+      const decrypt = jest.spyOn(kms, 'decrypt');
+      const patientDocuments = { findByPatientId: jest.fn().mockResolvedValue(null) } as unknown as IAnaCarePatientDocumentRepository;
+      const validations = mockRepo({
+        getByShiftIds: jest.fn().mockResolvedValue(new Map([['shift-a', { status: 'contestado', noteEncrypted: 'cifrada', contestReason: 'outro' } as unknown as ValidationRow]])),
+      });
+      const service = new AnaCareHoursService(new RangeSource(), validations, kms, undefined, undefined, patientDocuments);
+      const patient = await service.getPatientRange('2026-09-01', '2026-09-30', 'AC-PAT-0', { canReadProviderName: true });
+      expect(patient?.documentType).toBeUndefined();
+      expect(patient?.documentNumber).toBeUndefined();
+      expect(decrypt).not.toHaveBeenCalled();
+      expect(patientDocuments.findByPatientId).not.toHaveBeenCalled();
+      expect(JSON.stringify(patient)).not.toContain('cifrada');
+    });
+
+    it('canReadProviderName controla o nome do prestador (sem a flag, ausente)', async () => {
+      const service = new AnaCareHoursService(new RangeSource(), mockRepo());
+      const sem = await service.getPatientRange('2026-09-01', '2026-09-30', 'AC-PAT-0', { canReadProviderName: false });
+      const com = await service.getPatientRange('2026-09-01', '2026-09-30', 'AC-PAT-0', { canReadProviderName: true });
+      expect(sem?.providers[0].name).toBeUndefined();
+      expect(com?.providers[0].name).toBe('Rocío García QA');
+    });
+
+    it('fonte SEM listShiftsInRange → AnaCareHoursServiceError(FONTE_SEM_INTERVALO)', async () => {
+      const service = new AnaCareHoursService(new StubSource(), mockRepo());
+      await expect(service.getPatientRange('2026-09-01', '2026-09-30', 'AC-PAT-0', { canReadProviderName: false })).rejects.toMatchObject({
+        name: 'AnaCareHoursServiceError',
+        code: 'FONTE_SEM_INTERVALO',
+      });
+    });
+
+    it('0 turnos no período → null (definido: o chamador monta o arquivo "Sin turnos")', async () => {
+      const service = new AnaCareHoursService(new RangeSource([]), mockRepo());
+      expect(await service.getPatientRange('2026-09-10', '2026-09-20', 'AC-PAT-0', { canReadProviderName: false })).toBeNull();
+    });
+
+    it('getPatientMonth segue pela porta de mês: chama listShifts({month, patientId}) e NÃO listShiftsInRange', async () => {
+      const source = new RangeSource();
+      const listShifts = jest.spyOn(source, 'listShifts');
+      const service = new AnaCareHoursService(source, mockRepo());
+      const patient = await service.getPatientMonth('2026-09', 'AC-PAT-0', false);
+      expect(patient?.anaCareId).toBe('AC-PAT-0');
+      expect(listShifts).toHaveBeenCalledWith({ month: '2026-09', patientId: 'AC-PAT-0' });
+      expect(source.rangeSpy).not.toHaveBeenCalled();
+    });
+  });
+
   describe('validateShift', () => {
     it('turno sem check-in valida com 0h congeladas (D344)', async () => {
       const repo = mockRepo();
