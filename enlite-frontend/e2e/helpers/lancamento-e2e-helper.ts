@@ -421,6 +421,16 @@ export async function readPatientKanbanColumn(page: Page, patientId: string): Pr
   return columnTestId ? columnTestId.replace('kanban-column-', '') : 'NOT_FOUND';
 }
 
+/**
+ * D469 (02/10/2026): o foguete passou a mover o paciente do funil para Búsqueda. Os testes que
+ * provam o OUTRO caminho (o envio à Talentum move quem ainda estiver no funil — `VacancyLaunchHook`,
+ * `vacancy_launch`) ou que dependem do paciente parado em Admisión (derivação não toca o funil)
+ * devolvem o paciente ao funil por SQL (fixture; a trilha ganha uma linha sem `change_source`).
+ */
+export function devolverPacienteAoFunil(patientId: string, status = 'ADMISSION'): void {
+  runSQL(`UPDATE patients SET status = '${status}' WHERE id = '${patientId}'`);
+}
+
 // ── Trilha do lançamento ─────────────────────────────────────────────────────────────
 
 /** Conta `patient_status_history` do paciente com `change_source = 'vacancy_launch'`. */

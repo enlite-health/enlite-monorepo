@@ -4030,7 +4030,8 @@
           "insert": "Criação",
           "backfill": "Carga inicial",
           "activate": "Ativação",
-          "system": "Sistema"
+          "system": "Sistema",
+          "recruitment_activation": "Ativação do recrutamento"
         },
         "historyCard": {
           "title": "Histórico de estados",
