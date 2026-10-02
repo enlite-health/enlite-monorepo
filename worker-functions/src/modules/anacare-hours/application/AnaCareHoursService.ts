@@ -288,6 +288,25 @@ export class AnaCareHoursService {
   }
 
   /**
+   * Spec 032 (exportação): turnos de UM paciente em `[desde, hasta]` (Hasta INCLUSIVO) AO VIVO na
+   * fonte, numa única leitura por intervalo. Soma 1 dia ao Hasta (`toExclusive` da porta). Nunca
+   * lê nota nem documento (`canReadNote`/`canReadPatientDocument` fixos em `false`): o arquivo do
+   * financeiro não os carrega. Fonte sem `listShiftsInRange` → `FONTE_SEM_INTERVALO`. Sem turnos
+   * no período → `null` (o chamador monta o arquivo "Sin turnos en el período").
+   */
+  async getPatientRange(
+    desde: string,
+    hasta: string,
+    patientId: string,
+    flags: { canReadProviderName: boolean },
+  ): Promise<AnaCarePatient | null> {
+    if (!this.source.listShiftsInRange) throw new AnaCareHoursServiceError('FONTE_SEM_INTERVALO');
+    const { shifts: sourceShifts } = await this.source.listShiftsInRange({ from: desde, toExclusive: addOneDay(hasta), patientId });
+    const patients = await this.buildPatients(sourceShifts, false, flags.canReadProviderName, false);
+    return patients.find((p) => p.anaCareId === patientId) ?? null;
+  }
+
+  /**
    * Barato: só freshness do retrato + status da fonte — nunca lista nem mapeia o mês inteiro.
    *
    * Conserto 17/09 (passo 2): migrado do antigo repositório do retrato por turno (que ninguém mais
@@ -405,4 +424,11 @@ export class AnaCareHoursService {
       throw err;
     }
   }
+}
+
+/** `YYYY-MM-DD` + 1 dia (UTC puro, sem fuso) — Hasta inclusivo → `toExclusive` da porta. */
+function addOneDay(isoDate: string): string {
+  const d = new Date(`${isoDate}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
 }
