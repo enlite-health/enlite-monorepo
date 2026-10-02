@@ -197,6 +197,34 @@ describe('resolveAccessOrigin', () => {
   });
 });
 
+describe("resolveAccessOrigin — 'anacare_patient' (spec 032: sem tabela de país)", () => {
+  it('staff com país → same_country SEM consultar nada (o universo do Ana Care é o da Enlite AR)', async () => {
+    expect(await resolveAccessOrigin({ kind: 'staff', uid: 'u', country: 'AR' }, 'anacare_patient', 'AC-PAT-0')).toBe('same_country');
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it('staff sem país → group_grant, sem consultar', async () => {
+    expect(await resolveAccessOrigin({ kind: 'staff', uid: 'u' }, 'anacare_patient', 'AC-PAT-0')).toBe('group_grant');
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it('logResourceAccess grava resource_type anacare_patient, o id da fonte e a ação enumerada — sem SELECT de país', async () => {
+    const res = makeRes(200);
+    const req = { params: { patientId: 'AC-PAT-0' }, user: { uid: 'u-fin', roles: ['finance'] } } as unknown as Request;
+    loggingAls.run(
+      { traceId: 't', dbSession: { context: { kind: 'staff', uid: 'u-fin', country: 'AR' }, released: false } },
+      () => logResourceAccess('anacare_patient', 'export_xlsx:ambos:2026-09-01:2026-09-30', (r) => r.params.patientId)(req, res, jest.fn()),
+    );
+    res.emit('finish');
+    await flush();
+
+    const inserts = query.mock.calls.filter((c) => String(c[0]).includes('resource_access_log'));
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0][1]).toEqual(['u-fin', 'finance', 'anacare_patient', 'AC-PAT-0', 'export_xlsx:ambos:2026-09-01:2026-09-30', 'same_country']);
+    expect(query.mock.calls.some((c) => /FROM (patients|workers)/.test(String(c[0])))).toBe(false);
+  });
+});
+
 describe('recordResourceAccess', () => {
   it('engole o erro de gravação e loga (fail-safe)', async () => {
     query.mockRejectedValueOnce(new Error('append-only violado'));
