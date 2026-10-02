@@ -124,15 +124,17 @@ describe('ReconcileTalentumV2UseCase.plan', () => {
     expect(report.ambiguousIds).toEqual(['jp-a']);
   });
 
-  it('INVÁLIDA: slug > 20 caracteres ou publicId que não é UUID (a coluna recusaria)', async () => {
+  it('INVÁLIDA: slug > 255 caracteres (a coluna é VARCHAR(255); 255 passa) ou publicId que não é UUID (a coluna recusaria)', async () => {
     const { db, uc } = world([
-      { projectId: 'v2-1', title: 'a', publicId: PUB(1), slug: 'x'.repeat(21) },
+      { projectId: 'v2-1', title: 'a', publicId: PUB(1), slug: 'x'.repeat(256) },
       { projectId: 'v2-2', title: 'b', publicId: 'nao-e-uuid' },
+      { projectId: 'v2-3', title: 'c', publicId: PUB(3), slug: 'y'.repeat(255) },
     ]);
+    db.add({ id: 'jp-3', talentum_project_id: 'v1-3', talentum_public_id: PUB(3) });
     db.add({ id: 'jp-1', talentum_project_id: 'v1-1', talentum_public_id: PUB(1) });
     db.add({ id: 'jp-2', talentum_project_id: 'v1-2', title: 'b' });
     const { changes, report } = await uc.plan();
-    expect(changes).toEqual([]);
+    expect(changes.map((c) => c.jobPostingId)).toEqual(['jp-3']); // slug de 255 é aceito
     expect(report.invalidIds.sort()).toEqual(['jp-1', 'jp-2']);
     expect(report.invalid).toBe(2);
   });
