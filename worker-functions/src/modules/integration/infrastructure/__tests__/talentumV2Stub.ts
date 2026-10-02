@@ -4,7 +4,9 @@
  *   - `PATCH /projects/:id/prescreening` EXIGE `type` (400);
  *   - projeto nasce `DRAFT`; `POST /projects/:id/init` o leva a `IN_PROGRESS` (só então o link vive);
  *   - o item de `GET /projects` NÃO traz `publicId` (só `_id,name,status,type,myRole`), 12 por página;
- *   - 404 em projeto inexistente; 403 em projeto `VIEWER` para escrita.
+ *   - 404 em projeto inexistente; 403 em projeto `VIEWER` para escrita;
+ *   - `candidates` (12/página, `{candidates,total}`): traz telefone e NÃO traz e-mail; `ready-for-interview`
+ *     (só status `qualified`) traz e-mail. Candidato semeado SEMPRE sintético (nunca dado real).
  *
  * Um núcleo (`TalentumV2Stub.handle`) e dois adaptadores: `asFetch()` (unit, sem rede) e
  * `serve(port)` (e2e: o container da API aponta `TALENTUM_API_BASE_URL` para a porta do host).
@@ -32,6 +34,17 @@ export interface StubProject {
   questions: Array<Record<string, unknown>>;
   /** `true` → `GET /prescreening` responde 400 (projeto sem prescreening ativo). */
   prescreening400?: boolean;
+  candidates?: StubCandidate[];
+}
+
+export interface StubCandidate {
+  profileId: string;
+  firstName?: string;
+  lastName?: string;
+  phoneNumber?: string;
+  /** Só aparece em `ready-for-interview`. */
+  email?: string;
+  status?: 'qualified' | 'in_doubt' | 'in_progress';
 }
 
 export interface StubReply {
@@ -41,6 +54,11 @@ export interface StubReply {
 }
 
 const PAGE_SIZE = 12;
+
+function pageOf<T>(all: T[], query: URLSearchParams): T[] {
+  const page = Number(query.get('page') ?? '1');
+  return all.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+}
 
 export class TalentumV2Stub {
   readonly projects = new Map<string, StubProject>();
@@ -124,6 +142,15 @@ export class TalentumV2Stub {
           questions: proj.questions,
         },
       };
+    }
+
+    if (method === 'GET' && sub === '/prescreening/candidates') {
+      const all = proj.candidates ?? [];
+      return { status: 200, body: { candidates: pageOf(all, query).map(({ email: _omit, status, ...c }) => ({ ...c, status: { value: status ?? 'in_progress' } })), total: all.length } };
+    }
+    if (method === 'GET' && sub === '/ready-for-interview') {
+      const ready = (proj.candidates ?? []).filter((c) => c.status === 'qualified');
+      return { status: 200, body: { candidates: pageOf(ready, query).map(({ status: _omit, ...c }) => c), total: ready.length } };
     }
 
     // Escritas: conta VIEWER nunca escreve.

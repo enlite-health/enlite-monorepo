@@ -88,26 +88,6 @@ export interface TalentumCandidatesPage {
 }
 
 // ─────────────────────────────────────────────────────────────────
-// Dashboard types (GET /dashboard — candidate profiles, not projects)
-// ─────────────────────────────────────────────────────────────────
-
-export interface TalentumDashboardProfile {
-  _id: string;
-  firstName: string;
-  lastName: string;
-  fullName: string;
-  emails: Array<{ type: string; value: string }>;
-  phoneNumbers: Array<{ type: string; value: string; normalizedPhoneNumber?: string }>;
-  status: string;
-  projects: Array<{ projectId: string | null; title: string; active: boolean }>;
-}
-
-export interface TalentumDashboardResponse {
-  total: number;
-  profiles: TalentumDashboardProfile[];
-}
-
-// ─────────────────────────────────────────────────────────────────
 // Interface
 // ─────────────────────────────────────────────────────────────────
 
