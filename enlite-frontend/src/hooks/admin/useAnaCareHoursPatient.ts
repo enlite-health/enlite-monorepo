@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { AnaCareHoursServiceError, type AnaCareHoursService } from '@presentation/components/features/admin/AnaCareHours/AnaCareHoursService';
 import { mergePatientMonths, parseMonthParam } from '@presentation/components/features/admin/AnaCareHours/selectors';
-import type { AnaCareHoursPatientSnapshot, AnaCarePatient, AnaCareRetratoStatus } from '@presentation/components/features/admin/AnaCareHours/types';
+import type { AnaCareHoursPatientSnapshot, AnaCareListPatient, AnaCarePatient, AnaCareRetratoStatus } from '@presentation/components/features/admin/AnaCareHours/types';
 
 /** Estado da busca de UM mês do paciente — `error` nunca é lido como "sem turnos". */
 export interface MonthStatus {
@@ -19,6 +19,8 @@ function describeError(err: unknown): string {
   if (err instanceof AnaCareHoursServiceError && err.code === 'FONTE_NAO_CONFIGURADA') return 'FONTE_NAO_CONFIGURADA';
   return err instanceof Error ? err.message : 'No se pudo cargar el paciente.';
 }
+
+const NO_PATIENTS: AnaCareListPatient[] = [];
 
 /** Só `YYYY-MM` entre o piso e o mês corrente chega ao backend (a validação do `?month` é a mesma). */
 function isFetchableMonth(month: string): boolean {
@@ -124,6 +126,9 @@ export function useAnaCareHoursPatient(service: AnaCareHoursService, patientId: 
   // O retrato exibido é SEMPRE o do mês da URL; enquanto não chegou, é "carregando" (nunca o retrato de outro mês).
   const retrato = retratos[retratoMonth]?.value ?? null;
 
+  // Spec 032 — pacientes do retrato do mês da URL (o que a LISTA mostra) para o diálogo de exportação.
+  const monthPatients = retrato?.patients ?? NO_PATIENTS;
+
   const snapshot: AnaCareHoursPatientSnapshot | null = retrato
     ? {
         month: retratoMonth,
@@ -166,5 +171,5 @@ export function useAnaCareHoursPatient(service: AnaCareHoursService, patientId: 
   const firstLoadSettled = [entries[retratoMonth], retratos[retratoMonth]].every((e) => e !== undefined && e.state !== 'loading');
   const isLoading = pending > 0 || !firstLoadSettled;
 
-  return { patient, snapshot, provisionalSnapshot, isLoading, error, retratoError, retryRetrato, refetch, retryMonth, monthStates };
+  return { patient, monthPatients, snapshot, provisionalSnapshot, isLoading, error, retratoError, retryRetrato, refetch, retryMonth, monthStates };
 }

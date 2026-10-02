@@ -401,7 +401,7 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       // em `anacareHoursRoutes.ts` (`perm.require('anacare_hours', 'read'|'validate')`) — o
       // fixture de 2 rotas deste teste não as declara, por isso aparecem aqui como as demais
       // células de rota real acima (mesmo padrão de `patient_therapeutic_project:*` etc.).
-      'anacare_hours:read', 'anacare_hours:validate',
+      'anacare_hours:read', 'anacare_hours:validate', 'anacare_hours:export',
       // cadeia Fase 10 (28/09) — quadro C: TEM rota própria (adminServiceTeamRoutes.ts, POST
       // …/team/reject|revert), mas o fixture deste teste não a declara — mesma classe de dashboard_zones:read/worker_address:read.
       'patient_service_team:update',

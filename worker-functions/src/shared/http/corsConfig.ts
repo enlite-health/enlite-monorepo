@@ -36,6 +36,9 @@ export function buildCorsOptions(): CorsOptions {
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Partner-Key'],
+    // Spec 032: o navegador só lê este header em chamada cross-origin se ele for exposto. Propositalmente
+    // NÃO se expõe Content-Disposition (mudaria o nome do arquivo do export de workers).
+    exposedHeaders: ['X-Export-Filename'],
   };
 }
 

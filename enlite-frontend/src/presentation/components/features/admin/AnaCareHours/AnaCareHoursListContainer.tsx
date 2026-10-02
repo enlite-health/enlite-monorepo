@@ -14,6 +14,8 @@ import { useAnaCareHoursMonth } from '@hooks/admin/useAnaCareHoursMonth';
 import { useAnaCareHoursSync } from '@hooks/admin/useAnaCareHoursSync';
 import { AnaCareHoursListPage } from './AnaCareHoursListPage';
 import type { AnaCareHoursService } from './AnaCareHoursService';
+import { AnaCareHoursExportButton } from './AnaCareHoursExportButton';
+import type { AnaCareHoursExportService } from './AnaCareHoursExportService';
 import { currentMonthIso, type SinCheckinHoursMode } from './selectors';
 
 interface AnaCareHoursListContainerProps {
@@ -23,6 +25,8 @@ interface AnaCareHoursListContainerProps {
   /** Avisado quando o seletor de mês muda — a página-rota grava `?month` (spec 037). */
   onMonthChange?: (month: string) => void;
   sinCheckinHoursMode?: SinCheckinHoursMode;
+  /** Serviço da exportação (spec 032). Ausente = a lista não mostra o botão "Exportar". */
+  exportService?: AnaCareHoursExportService;
 }
 
 export function AnaCareHoursListContainer({
@@ -34,6 +38,7 @@ export function AnaCareHoursListContainer({
   initialMonth = currentMonthIso(),
   onMonthChange,
   sinCheckinHoursMode,
+  exportService,
 }: AnaCareHoursListContainerProps): JSX.Element {
   const { t } = useTranslation();
   const [month, setMonth] = useState(initialMonth);
@@ -82,6 +87,18 @@ export function AnaCareHoursListContainer({
       isLoadingSelectedMonth={snapshot.month !== month}
       sinCheckinHoursMode={sinCheckinHoursMode}
       sync={service.triggerSync ? sync : undefined}
+      exportAction={
+        exportService && (
+          // `key={month}`: o diálogo reabre sempre pré-preenchido com o mês selecionado.
+          <AnaCareHoursExportButton
+            key={month}
+            service={exportService}
+            patients={snapshot.patients}
+            initialMonth={month}
+            disabledReason={snapshot.month !== month ? t('admin.anacareHours.error.awaitingRetrato', { month }) : undefined}
+          />
+        )
+      }
     />
   );
 }

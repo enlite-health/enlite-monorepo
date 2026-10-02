@@ -130,6 +130,46 @@ describe('FakeAnaCareShiftsSource', () => {
     });
   });
 
+  describe('listShiftsInRange (spec 032)', () => {
+    const datas = (r: { shifts: Array<{ date: string }> }) => r.shifts.map((s) => s.date).sort();
+
+    it('intervalo 2026-09-05..2026-09-10 de AC-PAT-0 devolve os dias 05..09 (toExclusive EXCLUSIVO)', async () => {
+      const r = await new FakeAnaCareShiftsSource().listShiftsInRange!({ from: '2026-09-05', toExclusive: '2026-09-10', patientId: 'AC-PAT-0' });
+      expect(datas(r)).toEqual(['2026-09-05', '2026-09-06', '2026-09-07', '2026-09-08', '2026-09-09']);
+      expect(r.skipped).toEqual({ noProvider: 0, noPatient: 0 });
+    });
+
+    it('toExclusive é exclusivo: o turno do dia 09 fica de fora com toExclusive=2026-09-09', async () => {
+      const r = await new FakeAnaCareShiftsSource().listShiftsInRange!({ from: '2026-09-05', toExclusive: '2026-09-09', patientId: 'AC-PAT-0' });
+      expect(datas(r)).toEqual(['2026-09-05', '2026-09-06', '2026-09-07', '2026-09-08']);
+    });
+
+    it('from é inclusivo', async () => {
+      const r = await new FakeAnaCareShiftsSource().listShiftsInRange!({ from: '2026-09-30', toExclusive: '2026-10-01', patientId: 'AC-PAT-0' });
+      expect(r.shifts.map((s) => s.sourceShiftId)).toEqual(['FAKE-2026-09-0-1-4']);
+    });
+
+    it('intervalo que cruza o mês junta os dois meses', async () => {
+      const r = await new FakeAnaCareShiftsSource().listShiftsInRange!({ from: '2026-09-30', toExclusive: '2026-10-03', patientId: 'AC-PAT-0' });
+      expect(datas(r)).toEqual(['2026-09-30', '2026-10-01', '2026-10-02']);
+    });
+
+    it('patientId desconhecido → vazio', async () => {
+      const r = await new FakeAnaCareShiftsSource().listShiftsInRange!({ from: '2026-09-01', toExclusive: '2026-10-01', patientId: 'NAO-EXISTE' });
+      expect(r.shifts).toEqual([]);
+    });
+
+    it('sem patientId devolve todos os pacientes da janela (mesma massa de generateMonth)', async () => {
+      const r = await new FakeAnaCareShiftsSource().listShiftsInRange!({ from: '2026-09-01', toExclusive: '2026-10-01' });
+      expect(r.shifts).toHaveLength(100);
+    });
+
+    it('não altera a massa: listShifts({month}) continua devolvendo os mesmos 100 turnos', async () => {
+      const r = await new FakeAnaCareShiftsSource().listShifts({ month: '2026-09' });
+      expect(r.shifts).toEqual(FakeAnaCareShiftsSource.generateMonth('2026-09'));
+    });
+  });
+
   describe('getShift', () => {
     it('encontra o turno pelo id sintético (extrai o mês do próprio id)', async () => {
       const source = new FakeAnaCareShiftsSource();

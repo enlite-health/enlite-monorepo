@@ -14,6 +14,8 @@ import { Text } from '@presentation/components/atoms/Text';
 export interface ProviderFilterOption {
   value: string;
   label: string;
+  /** Texto extra que a busca também casa (ex.: o ID); só filtra, nunca é exibido. Ausente = só o rótulo. */
+  searchText?: string;
 }
 
 interface ProviderFilterComboboxProps {
@@ -23,6 +25,10 @@ interface ProviderFilterComboboxProps {
   onValueChange: (value: string) => void;
   placeholder: string;
   ariaLabel: string;
+  /** Texto do "nenhum resultado"; default = o do filtro de prestador da lista. */
+  noMatchLabel?: string;
+  /** Esconde a 1ª linha "todos" (que limpa a seleção). Default: aparece. */
+  hideAllOption?: boolean;
 }
 
 /** Ignora acento e maiúscula/minúscula — "garcía" casa "Garcia", "GARCÍA", etc. */
@@ -40,6 +46,8 @@ export function ProviderFilterCombobox({
   onValueChange,
   placeholder,
   ariaLabel,
+  noMatchLabel,
+  hideAllOption = false,
 }: ProviderFilterComboboxProps): JSX.Element {
   const { t } = useTranslation();
   const selectedOption = options.find((o) => o.value === value) ?? null;
@@ -69,7 +77,7 @@ export function ProviderFilterCombobox({
   }, [options, value]);
 
   const filteredOptions = query.trim()
-    ? options.filter((o) => normalize(o.label).includes(normalize(query.trim())))
+    ? options.filter((o) => normalize(o.searchText ?? o.label).includes(normalize(query.trim())))
     : options;
 
   function handleSelect(option: ProviderFilterOption | null): void {
@@ -133,6 +141,7 @@ export function ProviderFilterCombobox({
           className="absolute z-50 top-full mt-1 w-full border-[1.5px] border-gray-600 rounded-[10px] shadow-sm max-h-64 overflow-y-auto overscroll-contain bg-white"
           data-testid={`${id}-listbox`}
         >
+          {!hideAllOption && (
           <li
             role="option"
             aria-selected={value === ''}
@@ -145,10 +154,11 @@ export function ProviderFilterCombobox({
               {placeholder}
             </Text>
           </li>
+          )}
           {filteredOptions.length === 0 ? (
             <li className="px-4 py-2.5" data-testid={`${id}-no-match`}>
               <Text as="span" size="sm" color="secondary">
-                {t('admin.anacareHours.list.providerFilterNoMatch')}
+                {noMatchLabel ?? t('admin.anacareHours.list.providerFilterNoMatch')}
               </Text>
             </li>
           ) : (

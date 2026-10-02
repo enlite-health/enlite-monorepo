@@ -378,6 +378,8 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         // turno/horas/origem/status, `:validate` para validar (em lote), validar 1 turno e contestar.
         'GET /api/admin/anacare-hours/months/:month → anacare_hours:read',
         'GET /api/admin/anacare-hours/months/:month/patients/:patientId → anacare_hours:read',
+        // spec 032 (exportação do financeiro): leitura + export, chamadas literais encadeadas.
+        'GET /api/admin/anacare-hours/patients/:patientId/export → anacare_hours:read+anacare_hours:export',
         'POST /api/admin/anacare-hours/shifts/validate-batch → anacare_hours:validate',
         'POST /api/admin/anacare-hours/shifts/:shiftId/validate → anacare_hours:validate',
         'POST /api/admin/anacare-hours/shifts/:shiftId/contest → anacare_hours:validate',

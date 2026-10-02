@@ -225,6 +225,25 @@ describe('getRetratoStatus', () => {
     const status = await service.getRetratoStatus('2026-08');
     expect(status.snapshotState).toBe('nao_construido');
   });
+
+  it('POSITIVO — repassa `patients` do MESMO snapshot, com UM único GET (spec 032: zero GET novo)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { success: true, data: SNAPSHOT }));
+    globalThis.fetch = fetchMock;
+    const service = new AnaCareHoursHttpService();
+    const status = await service.getRetratoStatus('2026-08');
+    expect(status.patients).toEqual(SNAPSHOT.patients);
+    expect(status.patients).toHaveLength(2);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toContain('/api/admin/anacare-hours/months/2026-08');
+  });
+
+  it('NEGATIVO — snapshot sem `patients` no corpo: o campo fica ausente (nunca inventado)', async () => {
+    const { patients: _omit, ...semPacientes } = SNAPSHOT;
+    globalThis.fetch = vi.fn().mockResolvedValue(jsonResponse(200, { success: true, data: semPacientes }));
+    const service = new AnaCareHoursHttpService();
+    const status = await service.getRetratoStatus('2026-08');
+    expect(status.patients).toBeUndefined();
+  });
 });
 
 describe('validateShift', () => {

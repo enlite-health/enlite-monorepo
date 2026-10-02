@@ -62,6 +62,10 @@ export class AnaCareHoursServiceError extends Error {
     | 'NOTA_MUITO_LONGA'
     | 'FONTE_NAO_CONFIGURADA'
     | 'TURNO_NAO_ENCONTRADO'
+    // Spec 032 (exportação): fonte sem leitura por intervalo; pedido recusado (400); sem a célula (403).
+    | 'FONTE_SEM_INTERVALO'
+    | 'PEDIDO_INVALIDO'
+    | 'SEM_PERMISSAO'
     | 'DESCONHECIDO';
   constructor(code: AnaCareHoursServiceError['code'], message: string) {
     super(message);
@@ -161,6 +165,7 @@ export class FakeAnaCareHoursService implements AnaCareHoursService {
       // F2 (migration 457) — repassa tal qual o fixture montou (mesmo padrão dos outros campos).
       reservationsTotal: snapshot.reservationsTotal,
       reservationsDone: snapshot.reservationsDone,
+      patients: snapshot.patients.map(aggregatePatientForList),
     });
   }
 
