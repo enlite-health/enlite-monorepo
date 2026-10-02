@@ -3374,12 +3374,45 @@
         "tabs": {
           "clinicalData": "Dados Clínicos",
           "supportNetwork": "Rede de Apoio",
+          "documents": "Documentos",
           "contractedService": "Serviço Contratado",
           "vacancies": "Vagas",
           "financialData": "Dados Financeiros",
           "matching": "Enquadre",
           "appointments": "Agendamentos",
           "history": "Histórico"
+        },
+        "documentsTab": {
+          "title": "Documentos",
+          "labelPlaceholder": "Nome do documento (ex.: DNI frente)",
+          "labelAria": "Nome do documento",
+          "selectFile": "Selecionar arquivo (PDF, JPG, PNG, DOCX)",
+          "upload": "Enviar",
+          "uploading": "Enviando…",
+          "empty": "Não há documentos",
+          "loading": "Carregando...",
+          "loadError": "Não conseguimos carregar os documentos. Tente de novo.",
+          "originTab": "Enviado na ficha",
+          "originChat": "Enviado pelo chat",
+          "author": "Por {{name}}",
+          "unknownAuthor": "Autor desconhecido",
+          "untitled": "Documento sem nome",
+          "view": "Ver",
+          "viewError": "Não conseguimos abrir o documento. Tente de novo.",
+          "popupBlocked": "Seu navegador bloqueou a janela pop-up. Habilite pop-ups para ver o documento.",
+          "rename": "Renomear",
+          "renameInputLabel": "Novo nome do documento",
+          "renameEmpty": "O nome não pode ficar vazio",
+          "renameFailed": "Não conseguimos renomear o documento. Tente de novo.",
+          "invalidLabel": "O nome deve ter entre 1 e 255 caracteres",
+          "delete": "Excluir",
+          "deleteConfirmOpen": "Excluir «",
+          "deleteConfirmClose": "»?",
+          "deleteConfirmBody": "Esta ação não pode ser desfeita.",
+          "deleteConfirmCancel": "Cancelar",
+          "deleteConfirmYes": "Excluir",
+          "deleteConfirmBusy": "Excluindo…",
+          "deleteFailed": "Não conseguimos excluir o documento. Tente de novo."
         },
         "comingSoon": "Em breve",
         "noData": "Sem dados cadastrados",
@@ -3913,7 +3946,8 @@
               "download": "Baixar anexo",
               "downloadError": "Não conseguimos baixar o arquivo. Tente de novo.",
               "genericName": "Arquivo",
-              "popupBlocked": "Seu navegador bloqueou a janela pop-up. Habilite pop-ups para baixar o arquivo."
+              "popupBlocked": "Seu navegador bloqueou a janela pop-up. Habilite pop-ups para baixar o arquivo.",
+              "deleted": "Documento excluído"
             }
           },
           "composer": {
@@ -4385,7 +4419,8 @@
             "patient_conversation": "Conversa do paciente",
             "own_notifications": "Minhas notificações",
             "own_presence": "Minha presença online",
-            "staff_directory": "Diretório da equipe"
+            "staff_directory": "Diretório da equipe",
+            "patient_document": "Documentos do paciente"
           },
           "help": {
             "open": "O que esta permissão faz",
@@ -4755,7 +4790,8 @@
             "vacancies": "Vagas do paciente",
             "operational": "Status, ativação e histórico",
             "therapeuticProject": "Projeto terapêutico",
-            "conversation": "Conversa"
+            "conversation": "Conversa",
+            "documents": "Documentos"
           }
         },
         "patients.chatRoles": {
