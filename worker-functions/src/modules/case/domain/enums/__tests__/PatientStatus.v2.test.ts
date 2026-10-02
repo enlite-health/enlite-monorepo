@@ -5,15 +5,15 @@
  */
 import {
   PATIENT_STATUSES, CLINICAL_PATIENT_STATUSES, ADMISSION_FUNNEL_STATUSES,
-  isPatientStatus, isClinicalPatientStatus, isAdmissionFunnelStatus,
+  isPatientStatus, isClinicalPatientStatus, isAdmissionFunnelStatus, isLaunchOnlyTransition,
 } from '../PatientStatus';
 import { ON_HOLD_REASONS, isOnHoldReason } from '../OnHoldReason';
 import { ADMISSION_STATUSES, isAdmissionStatus } from '../AdmissionStatus';
 
 describe('PatientStatus v2', () => {
-  it('os seis estados clínicos são exatamente os da decisão 2', () => {
+  it('os sete estados clínicos são exatamente os da decisão 2', () => {
     expect([...CLINICAL_PATIENT_STATUSES].sort()).toEqual(
-      ['ACTIVE', 'DISCHARGED', 'ON_HOLD', 'REPLACEMENT', 'SEARCHING', 'SUSPENDED'],
+      ['ACTIVE', 'ALTA', 'DISCHARGED', 'ON_HOLD', 'REPLACEMENT', 'SEARCHING', 'SUSPENDED'],
     );
   });
 
@@ -27,6 +27,7 @@ describe('PatientStatus v2', () => {
     expect(isPatientStatus('ON_HOLD')).toBe(true);
     expect(isClinicalPatientStatus('ADMISSION')).toBe(false);
     expect(isClinicalPatientStatus('SEARCHING')).toBe(true);
+    expect(isClinicalPatientStatus('ALTA')).toBe(true);
     expect(isClinicalPatientStatus(42)).toBe(false);
   });
 
@@ -43,5 +44,11 @@ describe('PatientStatus v2', () => {
     expect(isAdmissionFunnelStatus('SOLICITANTE')).toBe(true);
     expect(isAdmissionFunnelStatus('ON_HOLD')).toBe(false);
     expect(isAdmissionFunnelStatus(null)).toBe(false);
+  });
+
+  it('isLaunchOnlyTransition (invariante 7, D434, DX-6.4): só funil → SEARCHING', () => {
+    expect(isLaunchOnlyTransition('ADMISSION', 'SEARCHING')).toBe(true);
+    expect(isLaunchOnlyTransition('ON_HOLD', 'SEARCHING')).toBe(false);
+    expect(isLaunchOnlyTransition('ADMISSION', 'ACTIVE')).toBe(false);
   });
 });

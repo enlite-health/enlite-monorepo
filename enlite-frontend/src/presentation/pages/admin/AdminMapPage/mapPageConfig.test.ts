@@ -88,9 +88,9 @@ describe('mapPageConfig', () => {
     const w = legendEntries(t, 'workers');
     expect(w.map((e) => e.label)).toEqual(['Documentación completa', 'Registro incompleto', 'Dado de baja']);
     const p = legendEntries(t, 'patients');
-    // QA 🟡4: status v2 — 9 status, 8 cores (ADMISSION/PENDING_ADMISSION dividem 1; os demais,
-    // inclusive ON_HOLD/SEARCHING/REPLACEMENT novos, têm cor própria).
-    expect(p).toHaveLength(8);
+    // QA 🟡4: status v2 — 10 status, 9 cores (ADMISSION/PENDING_ADMISSION dividem 1; os demais,
+    // inclusive ON_HOLD/SEARCHING/REPLACEMENT e ALTA (D430, cadeia Fase 1), têm cor própria).
+    expect(p).toHaveLength(9);
     expect(p.map((e) => e.color)).toEqual([...new Set(p.map((e) => e.color))]);
     expect(p.find((e) => e.label.includes('/'))?.label).toBe('En admisión / Esperando financiero');
   });

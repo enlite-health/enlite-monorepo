@@ -43,6 +43,7 @@ const STATUS_COLORS: Record<string, string> = {
   SEARCHING: 'bg-sky-100 text-sky-700',
   REPLACEMENT: 'bg-indigo-100 text-indigo-700',
   SUSPENDED: 'bg-orange-100 text-orange-700',
+  ALTA: 'bg-teal-100 text-teal-700',
   DISCHARGED: 'bg-gray-100 text-gray-600',
 };
 

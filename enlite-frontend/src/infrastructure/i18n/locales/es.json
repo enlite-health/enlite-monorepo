@@ -3308,14 +3308,26 @@
           "ADMISSION": "Admisión",
           "PENDING_ADMISSION": "Esperando financiero",
           "ACTIVE": "Activo",
-          "DONE": "Activo"
+          "DONE": "Activo",
+          "SEARCHING": "Búsqueda",
+          "REPLACEMENT": "Reemplazos",
+          "ON_HOLD": "En espera",
+          "SUSPENDED": "Suspendido temporalmente",
+          "ALTA": "Alta",
+          "DISCHARGED": "Baja"
         },
         "contactOfResponsible": "Contacto del responsable",
         "responsible": "Responsable",
         "dragHint": "Arrastrá una tarjeta para cambiar el estado del paciente.",
+        "suspensionExitDialog": {
+          "title": "Motivo de salida de Suspendido",
+          "body": "{{name}} va a pasar de Suspendido a {{target}}. Elegí el motivo de salida.",
+          "confirm": "Confirmar y mover"
+        },
         "moveErrorCodes": {
           "PATIENT_STATUS_TRANSITION_NOT_ALLOWED": "Ese cambio de estado no está permitido.",
           "ON_HOLD_REASON_REQUIRED": "Para poner en espera hace falta indicar el motivo.",
+          "SUSPENSION_EXIT_REASON_REQUIRED": "Hace falta indicar el motivo de salida de Suspendido.",
           "PATIENT_STATUS_NOT_READY": "No se puede mover: faltan datos obligatorios en la ficha.",
           "KANBAN_ACTIVATION_MOVED_TO_SERVICE": "Para activar, usá \"Activar reclutamiento\" en el servicio contratado de la ficha del paciente."
         },
@@ -4057,6 +4069,7 @@
         "SEARCHING": "Búsqueda",
         "REPLACEMENT": "Reemplazo",
         "SUSPENDED": "Suspendido",
+        "ALTA": "Alta",
         "DISCHARGED": "Baja"
       },
       "onHoldReasonOptions": {
@@ -5145,7 +5158,8 @@
         "SEARCHING": "Búsqueda",
         "REPLACEMENT": "Reemplazo",
         "SUSPENDED": "Suspendido",
-        "DISCHARGED": "Alta"
+        "ALTA": "Alta",
+        "DISCHARGED": "Baja"
       },
       "onlyOpenVacancies": "Solo con vacantes abiertas",
       "openVacancies": "{{count}} vacante(s) abierta(s)",

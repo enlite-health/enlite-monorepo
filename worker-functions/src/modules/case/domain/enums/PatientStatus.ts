@@ -29,6 +29,7 @@ export type ClinicalPatientStatus =
   | 'SEARCHING'    // búsqueda de prestador
   | 'REPLACEMENT'  // reemplazo de prestador
   | 'SUSPENDED'    // suspensão (internação/viagem)
+  | 'ALTA'         // alta — manual, D430; única saída: DISCHARGED (D437)
   | 'DISCHARGED';  // baja
 
 export type PatientStatus = AdmissionFunnelStatus | ClinicalPatientStatus;
@@ -45,6 +46,7 @@ export const CLINICAL_PATIENT_STATUSES: readonly ClinicalPatientStatus[] = [
   'SEARCHING',
   'REPLACEMENT',
   'SUSPENDED',
+  'ALTA',
   'DISCHARGED',
 ] as const;
 
@@ -63,4 +65,12 @@ export function isClinicalPatientStatus(value: unknown): value is ClinicalPatien
 
 export function isAdmissionFunnelStatus(value: unknown): value is AdmissionFunnelStatus {
   return typeof value === 'string' && (ADMISSION_FUNNEL_STATUSES as readonly string[]).includes(value);
+}
+
+/**
+ * Invariante 7 (D434): sair do funil de admissão para Búsqueda é ato do LANÇAMENTO da vaga, não
+ * do Kanban nem do PUT /status — a linha existe no catálogo (479) só para o gancho.
+ */
+export function isLaunchOnlyTransition(from: unknown, to: unknown): boolean {
+  return isAdmissionFunnelStatus(from) && to === 'SEARCHING';
 }

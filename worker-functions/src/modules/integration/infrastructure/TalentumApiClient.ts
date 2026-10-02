@@ -25,8 +25,17 @@ import type {
 // Constants
 // ─────────────────────────────────────────────────────────────────
 
-const BASE_URL = 'https://api.production.talentum.chat';
+const DEFAULT_TALENTUM_BASE_URL = 'https://api.production.talentum.chat';
 const ORIGIN = 'https://www.talentum.chat';
+
+/**
+ * Resolve a base URL da Talentum a cada chamada (nunca no load do módulo — o
+ * jest troca a env entre casos). e2e aponta para o stub local — `docker-compose.test.yml`;
+ * produção/stage não setam a env → host de produção, como sempre.
+ */
+function talentumBaseUrl(): string {
+  return process.env.TALENTUM_API_BASE_URL?.trim() || DEFAULT_TALENTUM_BASE_URL;
+}
 
 // RSA-2048 public key used by Talentum to receive encrypted passwords.
 const RSA_PUBLIC_KEY_B64 =
@@ -155,7 +164,7 @@ export class TalentumApiClient implements ITalentumApiClient {
    * or expired.
    */
   private async login(): Promise<void> {
-    const res = await fetch(`${BASE_URL}/auth/login`, {
+    const res = await fetch(`${talentumBaseUrl()}/auth/login`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -236,7 +245,7 @@ export class TalentumApiClient implements ITalentumApiClient {
       headers['Content-Type'] = 'application/json';
     }
 
-    const res = await fetch(`${BASE_URL}${path}`, {
+    const res = await fetch(`${talentumBaseUrl()}${path}`, {
       method,
       headers,
       body: body !== undefined ? JSON.stringify(body) : undefined,

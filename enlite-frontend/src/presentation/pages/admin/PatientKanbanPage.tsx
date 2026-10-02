@@ -77,8 +77,8 @@ export function PatientKanbanPage(): JSX.Element {
       ) : (
         <PatientKanbanBoard
           groups={groups}
-          onMove={async (patientId, target) => {
-            const err = await moveStatus(patientId, target);
+          onMove={async (patientId, target, opts) => {
+            const err = await moveStatus(patientId, target, opts);
             if (err) {
               // Spec 014 (US-D5, lex D5.1): `err.code` é um CÓDIGO de enum quando o backend manda
               // um (PatientApiError.code) — traduz com i18n; nunca eco de campo do paciente, nunca
