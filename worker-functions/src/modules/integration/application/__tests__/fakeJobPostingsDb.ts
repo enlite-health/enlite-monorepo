@@ -81,13 +81,16 @@ export class FakeJobPostingsDb {
     if (sql.includes('WHERE talentum_public_id = $1')) {
       return { rows: this.pick(this.vacancies.filter((v) => v.talentum_public_id === params[0] && !v.deleted_at)) };
     }
-    if (sql.includes('WHERE title = $1')) {
+    if (sql.includes('starts_with(left(title')) {
       return {
-        rows: this.pick(
-          this.vacancies.filter(
-            (v) => v.title === params[0] && !v.deleted_at && (v.talentum_public_id === null || v.talentum_public_id === params[1]),
-          ),
-        ),
+        rows: this.vacancies
+          .filter(
+            (v) =>
+              v.title.slice(0, 50).startsWith(String(params[0])) &&
+              !v.deleted_at &&
+              (v.talentum_public_id === null || v.talentum_public_id === params[1]),
+          )
+          .map((v) => ({ ...this.pick([v])[0], title: v.title })),
       };
     }
     if (sql.includes('WHERE vacancy_number = $1')) {

@@ -17,7 +17,7 @@
 
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
-import { TalentumApiClient } from '../infrastructure/TalentumApiClient';
+import { TalentumApiClient, TALENTUM_PROJECT_NAME_MAX, toV2ProjectName } from '../infrastructure/TalentumApiClient';
 import type { TalentumProject, TalentumQuestionWithId } from '../domain/ITalentumApiClient';
 import {
   JobPostingAuditRepository,
@@ -149,11 +149,15 @@ export class SyncTalentumVacanciesUseCase {
     }
 
     if (!existing) {
-      const byTitle = await this.db.query(
-        `SELECT id, talentum_project_id FROM job_postings
-         WHERE title = $1 AND deleted_at IS NULL AND (talentum_public_id IS NULL OR talentum_public_id = $2)`,
+      // Mesma regra da reconciliação (ReconcileTalentumV2UseCase): a v2 grava o nome cortado em 50, então a
+      // vaga liga quando `toV2ProjectName(título da vaga) === título do projeto`. O SQL só estreita pelo prefixo;
+      // quem decide a igualdade é a função compartilhada.
+      const candidates = await this.db.query(
+        `SELECT id, talentum_project_id, title FROM job_postings
+         WHERE starts_with(left(title, ${TALENTUM_PROJECT_NAME_MAX}), $1) AND deleted_at IS NULL AND (talentum_public_id IS NULL OR talentum_public_id = $2)`,
         [project.title, source.publicId || null],
       );
+      const byTitle = { rows: candidates.rows.filter((r: { title: string }) => toV2ProjectName(r.title ?? '') === project.title) };
       if (byTitle.rows.length > 1) {
         report.duplicateTitles.push({ projectId: project.projectId, title: project.title, matches: byTitle.rows.length });
         return;

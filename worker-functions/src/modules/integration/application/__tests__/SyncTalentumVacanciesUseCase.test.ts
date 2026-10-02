@@ -30,6 +30,7 @@ jest.mock('@shared/database/DatabaseConnection', () => ({
 const mockListAllPrescreenings = jest.fn();
 const mockGetPrescreening = jest.fn();
 jest.mock('../../infrastructure/TalentumApiClient', () => ({
+  ...jest.requireActual('../../infrastructure/TalentumApiClient'),
   TalentumApiClient: {
     create: jest.fn().mockImplementation(async () => ({
       listAllPrescreenings: mockListAllPrescreenings,
@@ -171,6 +172,18 @@ describe('SyncTalentumVacanciesUseCase (API v2)', () => {
       expect(report).toMatchObject({ updated: 1, created: 0, linkedByTitle: 1 });
       expect(mockFake.vacancies[0].talentum_project_id).toBe('proj-8');
       expect(mockFake.vacancies[0].talentum_public_id).toBe('pub-proj-8');
+    });
+
+    it('vaga com título > 50 liga pelo título cortado em 50 (mesma regra da reconciliação)', async () => {
+      const longo = 'EN 10#1 ' + 'x'.repeat(60);
+      mockFake.add({ id: 'jp-long', title: longo });
+      givenProjects(listItem('proj-long', longo.slice(0, 50)));
+
+      const report = await useCase.execute();
+
+      expect(report).toMatchObject({ updated: 1, created: 0, linkedByTitle: 1 });
+      expect(mockFake.vacancies).toHaveLength(1);
+      expect(mockFake.vacancies[0].talentum_project_id).toBe('proj-long');
     });
 
     it('título que casa com 2 vagas: relata a duplicata e NÃO liga nem cria nada', async () => {
