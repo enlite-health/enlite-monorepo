@@ -65,6 +65,10 @@ const imageAttachment: ConversationMessageAttachment = {
   fileId: 'file-img', contentType: 'image/png', sizeBytes: 2048, originalName: 'foto-ferida.png',
 };
 
+const deletedAttachment: ConversationMessageAttachment = {
+  fileId: 'file-gone', contentType: 'application/pdf', sizeBytes: 4096, originalName: null, deleted: true,
+};
+
 describe('MessageAttachments', () => {
   beforeEach(() => {
     getConversationAttachmentUrl.mockReset();
@@ -80,6 +84,44 @@ describe('MessageAttachments', () => {
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
+  });
+
+  describe('spec 031 — documento excluído pela aba "Documentos"', () => {
+    it('mostra só "Documento excluído": sem link, sem nome, sem botão e sem pedir URL', () => {
+      render(<MessageAttachments patientId="p1" attachments={[deletedAttachment]} />);
+      const box = screen.getByTestId('message-attachment-deleted-file-gone');
+      expect(box).toHaveTextContent('Documento excluído');
+      expect(box.querySelector('a, button')).toBeNull();
+      expect(screen.queryByRole('button')).not.toBeInTheDocument();
+      expect(screen.queryByRole('link')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('message-attachment-file-gone')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('message-attachments-files')).not.toBeInTheDocument();
+      expect(document.body.textContent).not.toContain('.pdf');
+      expect(getConversationAttachmentUrl).not.toHaveBeenCalled();
+    });
+
+    it('convive com anexos vivos da mesma mensagem: o vivo segue clicável, o excluído vira o rótulo', () => {
+      render(<MessageAttachments patientId="p1" attachments={[pdfAttachment, deletedAttachment]} />);
+      expect(screen.getByTestId('message-attachment-file-pdf')).toHaveTextContent('receita-medica-set-2026.pdf');
+      expect(screen.getByTestId('message-attachment-deleted-file-gone')).toBeInTheDocument();
+      expect(screen.getAllByRole('button')).toHaveLength(1);
+    });
+
+    it('deleted: false (ou ausente) NÃO muda nada — anexo normal', () => {
+      render(<MessageAttachments patientId="p1" attachments={[{ ...pdfAttachment, deleted: false }]} />);
+      expect(screen.getByTestId('message-attachment-file-pdf')).toBeInTheDocument();
+      expect(screen.queryByTestId('message-attachments-deleted')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('IMAGEM sem IntersectionObserver (defesa do navegador)', () => {
+    it('sem a API, a miniatura não fica escondida para sempre: pede a URL de uma vez', async () => {
+      vi.stubGlobal('IntersectionObserver', undefined);
+      getConversationAttachmentUrl.mockResolvedValue({ url: 'https://signed.example/img.png', expiresInSeconds: 300 });
+      render(<MessageAttachments patientId="p1" attachments={[imageAttachment]} />);
+      await waitFor(() => expect(getConversationAttachmentUrl).toHaveBeenCalledWith('p1', 'file-img'));
+      expect(await screen.findByTestId('message-attachment-image-file-img')).toHaveAttribute('src', 'https://signed.example/img.png');
+    });
   });
 
   describe('PDF/DOCX — chip com nome truncado + tamanho', () => {
@@ -152,6 +194,17 @@ describe('MessageAttachments', () => {
       // carga de subresource do PRÓPRIO browser (fora do `fetch` do app), que não exige CORS —
       // é exatamente por isso que troca o approach antigo (`fetch→blob→objectURL`, que exigia).
       expect(global.fetch).not.toHaveBeenCalled();
+    });
+
+    it('botão de baixar sobre a miniatura (hover) abre a aba de download do anexo', async () => {
+      getConversationAttachmentUrl.mockResolvedValue({ url: 'https://signed.example/img', expiresInSeconds: 300 });
+      const openSpy = vi.spyOn(window, 'open').mockReturnValue({ opener: null, location: { href: '' }, closed: false, close: vi.fn() } as unknown as Window);
+      render(<MessageAttachments patientId="p1" attachments={[imageAttachment]} />);
+      triggerIntersect(true);
+      fireEvent.click(await screen.findByTestId('message-attachment-download-file-img'));
+      expect(openSpy).toHaveBeenCalledWith('', '_blank');
+      await waitFor(() => expect(getConversationAttachmentUrl).toHaveBeenCalledTimes(2));
+      openSpy.mockRestore();
     });
 
     it('nome do arquivo aparece embaixo da miniatura', async () => {

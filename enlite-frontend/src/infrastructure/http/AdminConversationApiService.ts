@@ -26,6 +26,11 @@ export interface ConversationMessageAttachment {
    * `null` (gate 21/09, achado A5): uma falha ISOLADA de KMS ao decifrar ESTE anexo — o backend
    * não derruba a listagem inteira por causa de um nome; a UI cai no rótulo genérico + extensão. */
   originalName: string | null;
+  /** Spec 031 (D463): o documento foi EXCLUÍDO pela aba "Documentos". O servidor devolve o anexo
+   * sem nome (`originalName: null`) e a URL dele é 404 — a UI mostra "Documento eliminado" e nada
+   * mais (sem link, sem nome). O servidor sempre envia; opcional aqui só para não quebrar fixture antiga
+   * (ausente = não apagado). */
+  deleted?: boolean;
 }
 
 export interface ConversationMessage {
