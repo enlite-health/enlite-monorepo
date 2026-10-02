@@ -28,6 +28,7 @@ import { readFunnelApi } from '../helpers/lancamento-leituras-helper';
 import { loginAs, tokenFor } from '../helpers/abac-stack-helper';
 import { insertTestPatient, cleanupTestPatient } from '../helpers/db-test-helper';
 import { runSQL } from '../helpers/patient-detail-a-helper';
+import { lastStatusChangeSource } from '../helpers/cadeia-completa-e2e-helper';
 import { dndKitDrag } from '../helpers/dndKitDrag';
 
 const MOCK_ADMIN_USER = mockAdminUserFor('rascunho');
@@ -35,13 +36,6 @@ const MOCK_ADMIN_USER = mockAdminUserFor('rascunho');
 /** Conta TODAS as linhas de `patient_status_history` do paciente (não filtra `change_source`). */
 function countHistory(patientId: string): number {
   return Number(runSQL(`SELECT count(*) FROM patient_status_history WHERE patient_id = '${patientId}'`).trim());
-}
-
-/** `change_source` da última linha de `patient_status_history` do paciente. */
-function lastSource(patientId: string): string {
-  return runSQL(
-    `SELECT change_source FROM patient_status_history WHERE patient_id = '${patientId}' ORDER BY created_at DESC, id DESC LIMIT 1`,
-  ).trim();
 }
 
 test.describe('funil-vacante lancamento rascunho @integration', () => {
@@ -92,7 +86,7 @@ test.describe('funil-vacante lancamento rascunho @integration', () => {
 
       const h1 = countHistory(patient.patientId);
       expect(h1, 'trilha do paciente ganhou exatamente 1 linha (o movimento do foguete)').toBe(h0 + 1);
-      expect(lastSource(patient.patientId), 'change_source da linha do foguete').toBe('recruitment_activation');
+      expect(lastStatusChangeSource(patient.patientId), 'change_source da linha do foguete').toBe('recruitment_activation');
 
       expect(stub.calls.length, 'chamadas ao stub da Talentum').toBe(0);
 
@@ -148,7 +142,7 @@ test.describe('funil-vacante lancamento rascunho @integration', () => {
       expect(columnAfter, 'coluna depois do arrasto').toBe('SEARCHING');
       const statusAfter = await readPatientStatusApi(request, backendUrl(), token, patientId);
       expect(statusAfter, 'status depois do arrasto').toBe('SEARCHING');
-      expect(lastSource(patientId), 'change_source do arrasto').toBe('kanban');
+      expect(lastStatusChangeSource(patientId), 'change_source do arrasto').toBe('kanban');
 
       // Controle negativo: o MESMO par pelo select da ficha (`admin_panel`) continua recusado.
       const refused = await request.put(`${backendUrl()}/api/admin/patients/${controlId}/status`, {
