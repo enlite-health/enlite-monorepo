@@ -41,10 +41,9 @@ export interface CreatePrescreeningResult {
 }
 
 /**
- * Corpo do UPDATE in-place (PUT /pre-screening/projects/:id). Edita um projeto já
- * publicado SEM recriar — preserva projectId, whatsappUrl e slug (provado contra a
- * Talentum real: PUT 204, links intactos). Diferente do create: NÃO aceita `type`
- * no top-level, e cada pergunta pode carregar `questionId` (mantém a identidade).
+ * Corpo do UPDATE in-place (v2: `PATCH /projects/:id/prescreening` + `PUT .../job-description`). Edita um
+ * projeto já publicado SEM recriar — preserva projectId, link web e slug. Cada pergunta pode carregar
+ * `questionId` (mantém a identidade). `faq` é aceito por compatibilidade e IGNORADO (a v2 não tem FAQ).
  */
 export interface UpdatePrescreeningInput {
   title: string;

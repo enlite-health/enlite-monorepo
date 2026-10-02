@@ -45,14 +45,14 @@ describe('getVacancyTalentumStatus', () => {
     const db = makeDb([{ talentum_project_id: 'proj-1' }]);
     mockGetPrescreening.mockResolvedValueOnce({
       projectId: 'proj-1',
-      whatsappUrl: 'https://wa.me/xyz',
+      whatsappUrl: 'https://www.v2.talentum.chat/public/pre-screening/pub-1/chat',
     });
     const result = await getVacancyTalentumStatus(db as never, 'vac-1');
     expect(result).toEqual({
       kind: 'ok',
       published: true,
       exists: true,
-      whatsappUrl: 'https://wa.me/xyz',
+      whatsappUrl: 'https://www.v2.talentum.chat/public/pre-screening/pub-1/chat',
       audioEnabled: false,
     });
     expect(mockGetPrescreening).toHaveBeenCalledWith('proj-1');
@@ -62,7 +62,7 @@ describe('getVacancyTalentumStatus', () => {
     const db = makeDb([{ talentum_project_id: 'proj-1' }]);
     mockGetPrescreening.mockResolvedValueOnce({
       projectId: 'proj-1',
-      whatsappUrl: 'https://wa.me/xyz',
+      whatsappUrl: 'https://www.v2.talentum.chat/public/pre-screening/pub-1/chat',
       questions: [
         { responseType: ['text', 'audio'] },
         { responseType: ['audio', 'text'] },
@@ -76,7 +76,7 @@ describe('getVacancyTalentumStatus', () => {
     const db = makeDb([{ talentum_project_id: 'proj-1' }]);
     mockGetPrescreening.mockResolvedValueOnce({
       projectId: 'proj-1',
-      whatsappUrl: 'https://wa.me/xyz',
+      whatsappUrl: 'https://www.v2.talentum.chat/public/pre-screening/pub-1/chat',
       questions: [
         { responseType: ['text', 'audio'] },
         { responseType: ['text'] }, // artefato da IA — áudio desativado
@@ -89,7 +89,7 @@ describe('getVacancyTalentumStatus', () => {
   it('projectId presente + GET 404 do Talentum → published=true, exists=false (não é erro)', async () => {
     const db = makeDb([{ talentum_project_id: 'proj-deleted' }]);
     mockGetPrescreening.mockRejectedValueOnce(
-      new Error('[TalentumApiClient] GET /pre-screening/projects/proj-deleted — HTTP 404: Not Found'),
+      new Error('[TalentumApiClient] GET /projects/proj-deleted — HTTP 404: Not Found'),
     );
     const result = await getVacancyTalentumStatus(db as never, 'vac-1');
     expect(result).toEqual({ kind: 'ok', published: true, exists: false });
@@ -98,10 +98,24 @@ describe('getVacancyTalentumStatus', () => {
   it('erro não-404 do Talentum → kind=error com a mensagem', async () => {
     const db = makeDb([{ talentum_project_id: 'proj-1' }]);
     mockGetPrescreening.mockRejectedValueOnce(
-      new Error('[TalentumApiClient] GET /pre-screening/projects/proj-1 — HTTP 500: Internal Server Error'),
+      new Error('[TalentumApiClient] GET /projects/proj-1 — HTTP 500: Internal Server Error'),
     );
     const result = await getVacancyTalentumStatus(db as never, 'vac-1');
     expect(result.kind).toBe('error');
     expect((result as { message: string }).message).toContain('HTTP 500');
+  });
+
+  it('perguntas sem responseType (campo ausente) → audioEnabled=false, sem lançar', async () => {
+    const db = makeDb([{ talentum_project_id: 'proj-1' }]);
+    mockGetPrescreening.mockResolvedValueOnce({ projectId: 'proj-1', questions: [{ question: 'sem tipo' }] });
+    const result = await getVacancyTalentumStatus(db as never, 'vac-1');
+    expect(result).toMatchObject({ kind: 'ok', exists: true, audioEnabled: false });
+  });
+
+  it('rejeição que não é Error → kind=error com a string', async () => {
+    const db = makeDb([{ talentum_project_id: 'proj-1' }]);
+    mockGetPrescreening.mockRejectedValueOnce('queda de rede');
+    const result = await getVacancyTalentumStatus(db as never, 'vac-1');
+    expect(result).toEqual({ kind: 'error', message: 'queda de rede' });
   });
 });

@@ -13,6 +13,8 @@ import {
   DEFAULT_TALENTUM_BASE_URL,
   TALENTUM_ORIGIN,
   buildPublicPrescreeningUrl,
+  toV2ProjectName,
+  TALENTUM_PROJECT_NAME_MAX,
 } from '../TalentumApiClient';
 import type { TalentumQuestionWithId } from '../../domain/ITalentumApiClient';
 
@@ -223,6 +225,25 @@ describe('TalentumApiClient (API v2)', () => {
         campaigns: 'MANUAL',
         prescreening: true,
       });
+    });
+
+    it('name > 50 caracteres: o POST /projects e o título do PATCH vão cortados em 50 (a v2 devolve 400 acima disso)', async () => {
+      mockHappyCreate();
+      const longTitle = 'EN 123#4 - Acompañante terapéutico para paciente con TEA nivel 2 en Recoleta';
+      expect(longTitle.length).toBeGreaterThan(50);
+
+      await client.createPrescreening({ title: longTitle, description: 'd', questions: [QUESTION] });
+
+      expect(body(1).name.length).toBeLessThanOrEqual(TALENTUM_PROJECT_NAME_MAX);
+      expect(body(1).name).toBe(longTitle.slice(0, 50).trimEnd());
+      expect(body(2).title).toBe(body(1).name);
+    });
+
+    it('toV2ProjectName: título curto passa intacto; corte determinístico sem espaço na ponta', () => {
+      expect(toV2ProjectName('EN 1#1')).toBe('EN 1#1');
+      expect(toV2ProjectName('x'.repeat(50))).toBe('x'.repeat(50));
+      expect(toV2ProjectName('x'.repeat(49) + ' yyy')).toBe('x'.repeat(49));
+      expect(toV2ProjectName('x'.repeat(80))).toHaveLength(50);
     });
 
     it('PATCH manda tipo WEB, perguntas mapeadas (desiredResponse→idealResponse, vazios) e webForm', async () => {
@@ -472,6 +493,16 @@ describe('TalentumApiClient (API v2)', () => {
       });
       expect(body(2)).toEqual({ text: 'nueva' });
       expect(JSON.stringify(call(1)[1].body)).not.toContain('"faq"');
+    });
+
+    it('título > 50 caracteres também é cortado no PATCH de edição', async () => {
+      mockFetch.mockResolvedValueOnce(loginRes());
+      mockFetch.mockResolvedValueOnce(res(204));
+      mockFetch.mockResolvedValueOnce(res(200, { text: 'n', truncated: false }));
+
+      await client.updatePrescreening('proj-1', { title: 'y'.repeat(70), description: 'n', questions: [q] });
+
+      expect(body(1).title).toHaveLength(50);
     });
 
     it('pergunta sem questionId não envia a chave', async () => {
