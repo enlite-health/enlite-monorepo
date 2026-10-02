@@ -447,8 +447,8 @@ describe('ConversationRepository', () => {
       expect(attachmentsParams).toEqual([['m1', 'm2']]);
 
       expect(out.find((m) => m.id === 'm1')?.attachments).toEqual([
-        { fileId: 'f1', contentType: 'application/pdf', sizeBytes: 1024, originalName: 'plain:enc:doc-um.pdf' },
-        { fileId: 'f2', contentType: 'image/png', sizeBytes: 2048, originalName: 'plain:enc:foto-dois.png' },
+        { fileId: 'f1', contentType: 'application/pdf', sizeBytes: 1024, originalName: 'plain:enc:doc-um.pdf', deleted: false },
+        { fileId: 'f2', contentType: 'image/png', sizeBytes: 2048, originalName: 'plain:enc:foto-dois.png', deleted: false },
       ]);
       expect(out.find((m) => m.id === 'm2')?.attachments).toEqual([]);
     });
@@ -496,8 +496,8 @@ describe('ConversationRepository', () => {
 
       // a listagem NÃO rejeita (não derruba a request inteira) — o anexo que falhou vira originalName: null.
       expect(out.find((m) => m.id === 'm1')?.attachments).toEqual([
-        { fileId: 'f1', contentType: 'application/pdf', sizeBytes: 1024, originalName: 'plain:enc:doc-ok.pdf' },
-        { fileId: 'f2', contentType: 'image/png', sizeBytes: 2048, originalName: null },
+        { fileId: 'f1', contentType: 'application/pdf', sizeBytes: 1024, originalName: 'plain:enc:doc-ok.pdf', deleted: false },
+        { fileId: 'f2', contentType: 'image/png', sizeBytes: 2048, originalName: null, deleted: false },
       ]);
 
       // a falha É reportada — mas SEM o nome (o nome é exatamente o que não temos: nunca decifrou).
@@ -548,8 +548,8 @@ describe('ConversationRepository', () => {
       const [, attachmentsParams] = query.mock.calls[2];
       expect(attachmentsParams).toEqual([['r1', 'r2']]);
       const r1 = out.find((r) => r.id === 'r1');
-      expect(r1?.attachments).toEqual([{ fileId: 'f9', contentType: 'application/pdf', sizeBytes: 512, originalName: 'plain:enc:laudo.pdf' }]);
-      expect(Object.keys(r1?.attachments[0] ?? {}).sort()).toEqual(['contentType', 'fileId', 'originalName', 'sizeBytes']);
+      expect(r1?.attachments).toEqual([{ fileId: 'f9', contentType: 'application/pdf', sizeBytes: 512, originalName: 'plain:enc:laudo.pdf', deleted: false }]);
+      expect(Object.keys(r1?.attachments[0] ?? {}).sort()).toEqual(['contentType', 'deleted', 'fileId', 'originalName', 'sizeBytes']);
       expect(out.find((r) => r.id === 'r2')?.attachments).toEqual([]);
     });
 
@@ -567,7 +567,7 @@ describe('ConversationRepository', () => {
       expect(attachmentsSql).toContain('JOIN conversation_messages cm ON cm.id = cma.message_id AND cm.deleted_at IS NULL');
     });
 
-    it('🔒 achado B5 do gate fecho: a query de anexos filtra sf.deleted_at IS NULL — arquivo apagado (stored_files.deleted_at) nunca sai na listagem, mesmo anexado a mensagem viva', async () => {
+    it('🔒 spec 031 (D463): a query NÃO filtra mais sf.deleted_at — arquivo apagado volta com `deleted` calculado de stored_files.deleted_at (a mensagem mostra "documento eliminado"); mensagem apagada segue filtrada', async () => {
       const query = jest
         .fn()
         .mockResolvedValueOnce({ rows: [topRow({ id: 'm1' })] })
@@ -578,7 +578,35 @@ describe('ConversationRepository', () => {
       await repo.listTopMessages(CONVERSATION_ID, null, 50);
 
       const [attachmentsSql] = query.mock.calls[2];
-      expect(attachmentsSql).toContain('sf.deleted_at IS NULL');
+      expect(attachmentsSql).not.toContain('sf.deleted_at IS NULL');
+      expect(attachmentsSql).toContain('sf.deleted_at IS NOT NULL AS "deleted"');
+      expect(attachmentsSql).toContain('cm.deleted_at IS NULL'); // mensagem apagada continua escondida
+    });
+
+    it('🔒 spec 031 (D463): anexo de arquivo APAGADO sai com `deleted: true`, SEM nome — e o KMS nem é chamado para ele (não há nome a decifrar nem a vazar)', async () => {
+      const query = jest
+        .fn()
+        .mockResolvedValueOnce({ rows: [topRow({ id: 'm1' })] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({
+          rows: [
+            { messageId: 'm1', fileId: 'f-vivo', contentType: 'application/pdf', sizeBytes: 10, originalNameEncrypted: 'enc:vivo.pdf', deleted: false },
+            { messageId: 'm1', fileId: 'f-morto', contentType: 'image/png', sizeBytes: 20, originalNameEncrypted: 'enc:morto.png', deleted: true },
+          ],
+        });
+      const repo = new ConversationRepository(poolWith(query));
+      mockDecrypt.mockClear();
+
+      const [out] = await repo.listTopMessages(CONVERSATION_ID, null, 50);
+
+      expect(out.attachments).toEqual([
+        { fileId: 'f-vivo', contentType: 'application/pdf', sizeBytes: 10, originalName: 'plain:enc:vivo.pdf', deleted: false },
+        { fileId: 'f-morto', contentType: 'image/png', sizeBytes: 20, originalName: null, deleted: true },
+      ]);
+      // decifrou o corpo da mensagem (1) + o nome do anexo VIVO (1) — nunca o do apagado
+      const decryptedArgs = mockDecrypt.mock.calls.map(([v]) => v);
+      expect(decryptedArgs).not.toContain('enc:morto.png');
+      expect(JSON.stringify(out)).not.toContain('morto.png');
     });
   });
 

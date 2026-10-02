@@ -79,9 +79,9 @@ describe('GET .../conversation e GET .../replies — attachments populado (achad
     expect(message).toBeDefined();
     expect(message.attachments).toHaveLength(1);
     // 🔒 achado T-nome-anexo (ajustes de UI): a listagem agora TAMBÉM devolve `originalName`
-    // decifrado — antes só saía no download. forma EXATA do contrato, sem campo extra vazando.
-    expect(message.attachments[0]).toEqual({ fileId, contentType: 'application/pdf', sizeBytes: PDF_BYTES.length, originalName: 'doc.pdf' });
-    expect(Object.keys(message.attachments[0]).sort()).toEqual(['contentType', 'fileId', 'originalName', 'sizeBytes']);
+    // decifrado — antes só saía no download. forma EXATA do contrato, sem campo extra vazando (`deleted` entrou na spec 031 — D463).
+    expect(message.attachments[0]).toEqual({ fileId, contentType: 'application/pdf', sizeBytes: PDF_BYTES.length, originalName: 'doc.pdf', deleted: false });
+    expect(Object.keys(message.attachments[0]).sort()).toEqual(['contentType', 'deleted', 'fileId', 'originalName', 'sizeBytes']);
   });
 
   it('2. mensagem sem anexo, na MESMA conversa que tem mensagem com anexo: attachments: [] (agregação não vaza entre mensagens)', async () => {
@@ -103,14 +103,14 @@ describe('GET .../conversation e GET .../replies — attachments populado (achad
 
     const conversationA = await getConversation(fixture, fixture.patient);
     const messageA = conversationA.body.data.messages.find((m: { id: string }) => m.id === postA.body.data.id);
-    expect(messageA.attachments).toEqual([{ fileId: uploadA.body.data.fileId, contentType: 'application/pdf', sizeBytes: PDF_BYTES.length, originalName: 'a.pdf' }]);
+    expect(messageA.attachments).toEqual([{ fileId: uploadA.body.data.fileId, contentType: 'application/pdf', sizeBytes: PDF_BYTES.length, originalName: 'a.pdf', deleted: false }]);
     // o fileId de B nunca aparece em NENHUMA mensagem da conversa de A.
     const todosAnexosDeA = conversationA.body.data.messages.flatMap((m: { attachments: Array<{ fileId: string }> }) => m.attachments.map((a) => a.fileId));
     expect(todosAnexosDeA).not.toContain(uploadB.body.data.fileId);
 
     const conversationB = await getConversation(fixture, fixture.patientOutro);
     const messageB = conversationB.body.data.messages.find((m: { id: string }) => m.id === postB.body.data.id);
-    expect(messageB.attachments).toEqual([{ fileId: uploadB.body.data.fileId, contentType: 'application/pdf', sizeBytes: PDF_BYTES.length, originalName: 'b.pdf' }]);
+    expect(messageB.attachments).toEqual([{ fileId: uploadB.body.data.fileId, contentType: 'application/pdf', sizeBytes: PDF_BYTES.length, originalName: 'b.pdf', deleted: false }]);
     const todosAnexosDeB = conversationB.body.data.messages.flatMap((m: { attachments: Array<{ fileId: string }> }) => m.attachments.map((a) => a.fileId));
     expect(todosAnexosDeB).not.toContain(uploadA.body.data.fileId);
   });
@@ -126,6 +126,6 @@ describe('GET .../conversation e GET .../replies — attachments populado (achad
     const repliesRes = await getReplies(fixture, fixture.patient, rootId);
     expect(repliesRes.status).toBe(200);
     const reply = repliesRes.body.data.messages.find((m: { id: string }) => m.id === replyRes.body.data.id);
-    expect(reply.attachments).toEqual([{ fileId: uploadReply.body.data.fileId, contentType: 'application/pdf', sizeBytes: PDF_BYTES.length, originalName: 'reply.pdf' }]);
+    expect(reply.attachments).toEqual([{ fileId: uploadReply.body.data.fileId, contentType: 'application/pdf', sizeBytes: PDF_BYTES.length, originalName: 'reply.pdf', deleted: false }]);
   });
 });

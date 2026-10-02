@@ -68,8 +68,15 @@ export interface AttachmentRow {
   contentType: string;
   sizeBytes: number;
   /** `null` (achado A5 do gate 21/09): falha ISOLADA de KMS ao decifrar ESTE nome — nunca derruba
-   *  a listagem inteira (ver `fetchAttachmentsByMessageIds`). A UI cai num rótulo genérico. */
+   *  a listagem inteira (ver `fetchAttachmentsByMessageIds`). A UI cai num rótulo genérico.
+   *  Também `null` quando `deleted` (spec 031): arquivo apagado não tem nome a mostrar. */
   originalName: string | null;
+  /**
+   * Spec 031 (D463): o documento foi EXCLUÍDO pela aba "Documentos" → `stored_files.deleted_at` marcado.
+   * A mensagem segue na conversa e a UI mostra "documento eliminado" no lugar do anexo. O nome nunca
+   * é decifrado nem devolvido nesse caso. A rota de URL do anexo apagado responde 404.
+   */
+  deleted: boolean;
 }
 
 /**
@@ -155,6 +162,8 @@ interface RawAttachmentRow {
   contentType: string;
   sizeBytes: number;
   originalNameEncrypted: string | null;
+  /** `stored_files.deleted_at IS NOT NULL` (spec 031). Ausente em mock antigo = não apagado. */
+  deleted?: boolean;
 }
 
 export class ConversationRepository {
@@ -301,9 +310,11 @@ export class ConversationRepository {
    * já esconde visualmente (`!message.deletedAt && <MessageAttachments .../>`), mas o dado
    * chegava ao cliente mesmo assim; defesa em profundidade no SERVIDOR, nunca só na UI.
    *
-   * 🔒 `sf.deleted_at IS NULL` (achado B5 do gate fecho, 21/09): mesma defesa para o próprio
-   * arquivo (`stored_files.deleted_at`, migration 460) — nenhum fluxo hoje marca essa coluna,
-   * mas sem o filtro um arquivo apagado no futuro continuaria aparecendo na listagem.
+   * 🔒 Arquivo apagado (spec 031, D463 — SUBSTITUI o filtro `sf.deleted_at IS NULL` do achado B5 de
+   * 21/09): a aba "Documentos" marca `stored_files.deleted_at` ao excluir um documento que veio do
+   * chat. O anexo NÃO some da mensagem: volta com `deleted: true`, sem nome (o KMS nem é chamado
+   * para ele) — a UI mostra "documento eliminado". Quem baixa continua barrado: a rota de URL do
+   * anexo filtra `sf.deleted_at IS NULL` (404).
    */
   private async fetchAttachmentsByMessageIds(
     messageIds: string[],
@@ -317,9 +328,10 @@ export class ConversationRepository {
               sf.id AS "fileId",
               sf.content_type AS "contentType",
               sf.size_bytes AS "sizeBytes",
-              sf.original_name_encrypted AS "originalNameEncrypted"
+              sf.original_name_encrypted AS "originalNameEncrypted",
+              sf.deleted_at IS NOT NULL AS "deleted"
          FROM conversation_message_attachments cma
-         JOIN stored_files sf ON sf.id = cma.file_id AND sf.deleted_at IS NULL
+         JOIN stored_files sf ON sf.id = cma.file_id
          JOIN conversation_messages cm ON cm.id = cma.message_id AND cm.deleted_at IS NULL
         WHERE cma.message_id = ANY($1::uuid[])
         ORDER BY cma.message_id, sf.created_at`,
@@ -340,6 +352,7 @@ export class ConversationRepository {
     // uma falha vira `null` (a UI cai num rótulo genérico + extensão) e é reportada — SEM o nome,
     // que é exatamente o dado que nunca chegou a decifrar (nada de PII no log).
     const originalNames = await mapWithConcurrency(rows, DECRYPT_CONCURRENCY_LIMIT, async (row) => {
+      if (row.deleted === true) return null; // arquivo apagado: nada a decifrar, nada a vazar
       try {
         return await this.encryptionService.decrypt(row.originalNameEncrypted);
       } catch (error) {
@@ -359,6 +372,7 @@ export class ConversationRepository {
         contentType: row.contentType,
         sizeBytes: row.sizeBytes,
         originalName: originalNames[i],
+        deleted: row.deleted === true,
       };
       const existing = attachmentsByMessageId.get(row.messageId);
       if (existing) existing.push(entry);
