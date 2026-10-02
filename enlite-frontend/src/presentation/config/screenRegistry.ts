@@ -87,7 +87,7 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
   {
     id: 'patients.detail',
     route: '/admin/patients/:id',
-    tabs: ['clinicalData', 'supportNetwork', 'contractedService', 'vacancies', 'encuadre', 'itinerary', 'history'],
+    tabs: ['clinicalData', 'supportNetwork', 'documents', 'contractedService', 'vacancies', 'encuadre', 'itinerary', 'history'],
     containers: [
       c('identity', 'patient_identity', ['read', 'create', 'update']),
       c('clinical', 'patient_clinical', ['read', 'create', 'update'], 'clinicalData'),
@@ -101,6 +101,9 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
       c('family', 'patient_family', ['read', 'create', 'update'], 'supportNetwork'),
       c('chat', 'patient_chat', ['read', 'create', 'update'], 'supportNetwork'),
       c('conversation', 'patient_conversation', ['read', 'create', 'update', 'delete']),
+      // Spec 031 (D463): a aba "Documentos" — subir, ver, renomear e excluir. A leitura é desta célula e
+      // NÃO da `patient_conversation:read`, mesmo para o anexo vindo do chat (Q11).
+      c('documents', 'patient_document', ['read', 'create', 'update', 'delete'], 'documents'),
       c('coverage', 'patient_coverage', ['read', 'create', 'update'], 'contractedService'),
       c('address', 'patient_address', ['read', 'create', 'update'], 'contractedService'),
       // 29/09: a aba "Encuadre" volta (com conteúdo real desta vez — o quadro C, que sai da aba

@@ -94,10 +94,11 @@ test.describe('itinerario-aba @integration', () => {
       await loginAs(page, STAFF);
       await openItineraryTab(page, seed.patientId);
 
-      // Critério 10: 7 abas (29/09: Encuadre entra entre Vacantes e Itinerario), o Itinerario é o 6º (índice 5).
+      // Critério 10: 8 abas (29/09: Encuadre entra entre Vacantes e Itinerario; 02/10, spec 031: Documentos
+      // entra logo depois de Red de Apoyo), o Itinerario é o 7º (índice 6).
       const tabButtons = page.getByTestId('patient-profile-tabs').getByRole('button');
-      await expect(tabButtons).toHaveCount(7);
-      await expect(tabButtons.nth(5)).toHaveText('Itinerario');
+      await expect(tabButtons).toHaveCount(8);
+      await expect(tabButtons.nth(6)).toHaveText('Itinerario');
 
       const par = page.getByTestId(`itinerario-servico-par-${seed.serviceId}`);
       await expect(par).toContainText(expectedPair(svcBefore.cobertas, svcBefore.contratadas.weekly));
