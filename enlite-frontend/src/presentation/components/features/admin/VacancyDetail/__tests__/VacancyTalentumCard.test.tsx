@@ -3,6 +3,7 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { VacancyTalentumCard } from '../VacancyTalentumCard';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
+import es from '@infrastructure/i18n/locales/es.json';
 import type { AuthzContract } from '@domain/entities/Authz';
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (k: string) => k }) }));
@@ -151,5 +152,23 @@ describe('VacancyTalentumCard', () => {
     vi.mocked(AdminApiService.getPrescreeningConfig).mockResolvedValue({ questions: [], faq: [] });
     render(<VacancyTalentumCard {...baseProps} />);
     await waitFor(() => expect(screen.getByRole('switch')).toBeDisabled());
+  });
+});
+
+// spec 040 T4.1: a v2 devolve link WEB de pré-seleção, não de bot WhatsApp — o texto vem do es.json real
+describe('VacancyTalentumCard — rótulos do link v2 (spec 040 T4.1)', () => {
+  it('es.json: o rótulo e o título do botão falam "link", não "WhatsApp"', () => {
+    const tc = (es as any).admin.vacancyDetail.talentumCard as Record<string, string>;
+    expect(tc.whatsappLink).toBe('Link de preselección web');
+    expect(tc.openWhatsApp).toBe('Abrir link');
+  });
+
+  it('publicado: o card usa as chaves whatsappLink/openWhatsApp (as que o es.json troca) e abre a URL v2', async () => {
+    vi.mocked(AdminApiService.getPrescreeningConfig).mockResolvedValue({ questions: [{ q: 1 }], faq: [] });
+    const url = 'https://v2.talentum.chat/public/pre-screening/abc';
+    render(<VacancyTalentumCard {...baseProps} talentumProjectId="p1" talentumWhatsappUrl={url} />);
+    await waitFor(() => expect(AdminApiService.getPrescreeningConfig).toHaveBeenCalled());
+    expect(screen.getByText('admin.vacancyDetail.talentumCard.whatsappLink')).toBeInTheDocument();
+    expect(screen.getByTitle('admin.vacancyDetail.talentumCard.openWhatsApp')).toHaveAttribute('href', url);
   });
 });

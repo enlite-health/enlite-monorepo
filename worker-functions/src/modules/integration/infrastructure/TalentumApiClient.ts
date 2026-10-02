@@ -1,5 +1,10 @@
 /**
- * TalentumApiClient — infrastructure service for the Talentum.chat outbound API.
+ * TalentumApiClient — infrastructure service for the Talentum.chat outbound API (v2).
+ *
+ * Spec 040: a conta da Enlite migrou para a API v2 (`api.v2.talentum.chat`, Origin
+ * `www.v2.talentum.chat`) em 01/10/2026; a API antiga responde 403. A interface
+ * `ITalentumApiClient` foi mantida: o `projectId` é o `_id` do projeto v2, o link de
+ * candidatura agora é uma página WEB derivada do `publicId` (não há mais bot WhatsApp).
  *
  * Auth strategy: RSA-OAEP encrypted password → cookie-based session (tl_auth + tl_refresh).
  * Token lifetime: server issues ~3h tokens; we refresh 10 000 s before expiry as a safety margin.
@@ -17,21 +22,42 @@ import type {
   UpdatePrescreeningInput,
   ListPrescreeningsOpts,
   TalentumProject,
-  TalentumDashboardProfile,
-  TalentumDashboardResponse,
+  TalentumQuestion,
+  TalentumQuestionWithId,
+  TalentumCandidatesPage,
 } from '../domain/ITalentumApiClient';
 
 // ─────────────────────────────────────────────────────────────────
 // Constants
 // ─────────────────────────────────────────────────────────────────
 
-const DEFAULT_TALENTUM_BASE_URL = 'https://api.production.talentum.chat';
-const ORIGIN = 'https://www.talentum.chat';
+export const DEFAULT_TALENTUM_BASE_URL = 'https://api.v2.talentum.chat';
+export const TALENTUM_ORIGIN = 'https://www.v2.talentum.chat';
+const ORIGIN = TALENTUM_ORIGIN;
+
+/**
+ * Link público (página web) do pré-screening, derivado do `publicId` — a v2 não devolve
+ * campo de URL. Padrão extraído do bundle do front v2 (`public/pre-screening/:id/chat`).
+ */
+export function buildPublicPrescreeningUrl(publicId: string): string {
+  return `${TALENTUM_ORIGIN}/public/pre-screening/${publicId}/chat`;
+}
+
+/** `POST /projects` rejeita `name` > 50 caracteres (400 na v2 real, spec 040 §P5). */
+export const TALENTUM_PROJECT_NAME_MAX = 50;
+
+/**
+ * Título de vaga → nome/título aceito pela v2: corta de forma determinística em 50 caracteres
+ * (e tira o espaço que sobrar na ponta). Títulos curtos passam intactos.
+ */
+export function toV2ProjectName(title: string): string {
+  return title.slice(0, TALENTUM_PROJECT_NAME_MAX).trimEnd();
+}
 
 /**
  * Resolve a base URL da Talentum a cada chamada (nunca no load do módulo — o
  * jest troca a env entre casos). e2e aponta para o stub local — `docker-compose.test.yml`;
- * produção/stage não setam a env → host de produção, como sempre.
+ * produção/stage não setam a env → host v2 de produção.
  */
 function talentumBaseUrl(): string {
   return process.env.TALENTUM_API_BASE_URL?.trim() || DEFAULT_TALENTUM_BASE_URL;
@@ -56,6 +82,38 @@ interface AuthSession {
   tlRefresh: string;
   /** Epoch ms at which the session should be considered expired and refreshed. */
   expiresAt: number;
+}
+
+function errorHint(status: number): string {
+  if (status === 404) return ' (projeto não existe na Talentum v2; rode a reconciliação)';
+  if (status === 403) return ' (sem permissão neste projeto da Talentum v2 — conta VIEWER)';
+  return '';
+}
+
+/** Pergunta do domínio → corpo v2 (`desiredResponse`→`idealResponse`; campos sem equivalente vão vazios). */
+function toV2Question(q: TalentumQuestion & { questionId?: string }) {
+  return {
+    question: q.question,
+    type: 'text' as const,
+    responseType: q.responseType,
+    idealResponse: q.desiredResponse,
+    acceptableResponse: '',
+    redFlags: '',
+    validation: '',
+    weight: q.weight,
+    required: q.required,
+    analyzed: q.analyzed,
+    earlyStoppage: q.earlyStoppage,
+    ...(q.questionId ? { questionId: q.questionId } : {}),
+  };
+}
+
+interface V2ProjectListItem {
+  _id: string;
+  name: string;
+  status?: string;
+  type?: string;
+  myRole?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -227,11 +285,12 @@ export class TalentumApiClient implements ITalentumApiClient {
 
   /**
    * Generic request helper. Handles auth, serialisation, and error propagation.
-   * Returns parsed JSON for GET/POST and void for DELETE (CA-1.7: always includes
-   * response body in error messages for easier debugging).
+   * Always includes the response body in error messages (CA-1.7). Erros mantêm o formato
+   * `... — HTTP <status>: ...` porque os use cases casam por `HTTP 403` / `HTTP 404`;
+   * 404 e 403 em `/projects/:id…` ganham uma frase que os torna distinguíveis.
    */
   private async request<T>(
-    method: 'GET' | 'POST' | 'PUT' | 'DELETE',
+    method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
     path: string,
     body?: unknown
   ): Promise<T> {
@@ -241,7 +300,7 @@ export class TalentumApiClient implements ITalentumApiClient {
       Origin: ORIGIN,
       Cookie: cookie,
     };
-    if (method === 'POST' || method === 'PUT') {
+    if (body !== undefined) {
       headers['Content-Type'] = 'application/json';
     }
 
@@ -254,12 +313,12 @@ export class TalentumApiClient implements ITalentumApiClient {
     if (!res.ok) {
       const errorBody = await res.text();
       throw new Error(
-        `[TalentumApiClient] ${method} ${path} — HTTP ${res.status}: ${errorBody}`
+        `[TalentumApiClient] ${method} ${path} — HTTP ${res.status}: ${errorBody}${errorHint(res.status)}`
       );
     }
 
-    // DELETE e PUT (204 No Content) não devolvem corpo.
-    if (method === 'DELETE' || method === 'PUT' || res.status === 204) {
+    // DELETE e 204 (PATCH) não devolvem corpo.
+    if (method === 'DELETE' || res.status === 204) {
       return undefined as unknown as T;
     }
 
@@ -268,49 +327,121 @@ export class TalentumApiClient implements ITalentumApiClient {
 
   // ── ITalentumApiClient implementation ───────────────────────────
 
+  /**
+   * Cria o projeto v2: POST /projects → PATCH /prescreening (WEB + perguntas) → PUT job-description
+   * → complete-submodule PRESCREENING → POST /init (DRAFT → IN_PROGRESS, link vivo), e relê o prescreening para obter o `publicId`. Em qualquer falha DEPOIS do POST apaga o projeto
+   * recém-criado (nunca deixa órfão na Talentum) e relança o erro original.
+   * `input.faq` é IGNORADO: a v2 não tem FAQ (decisão (g) — a FAQ fica só no nosso banco).
+   */
   async createPrescreening(input: CreatePrescreeningInput): Promise<CreatePrescreeningResult> {
-    return this.request<CreatePrescreeningResult>('POST', '/pre-screening/projects', {
-      ...input,
-      type: 'WHATSAPP',
-      askForCv: input.askForCv ?? false,
-      cvRequired: input.cvRequired ?? false,
-      linkedinRequired: input.linkedinRequired ?? false,
+    const { projectId } = await this.request<{ projectId: string }>('POST', '/projects', {
+      name: toV2ProjectName(input.title),
+      type: 'FULL',
+      campaigns: 'MANUAL',
+      prescreening: true,
     });
-  }
 
-  async getPrescreening(projectId: string): Promise<TalentumProject> {
-    return this.request<TalentumProject>('GET', `/pre-screening/projects/${projectId}`);
+    try {
+      await this.request<void>('PATCH', `/projects/${projectId}/prescreening`, {
+        title: toV2ProjectName(input.title),
+        type: 'WEB',
+        showJobDescription: true,
+        askForCv: input.askForCv ?? false,
+        cvRequired: input.cvRequired ?? false,
+        askCuit: false,
+        language: 'spanish',
+        webForm: { askEmail: true, askPhone: true },
+        questions: input.questions.map(toV2Question),
+      });
+      await this.request<unknown>('PUT', `/projects/${projectId}/prescreening/job-description`, {
+        text: input.description,
+      });
+      // Publica: completa o submódulo (como o wizard) e `init` tira o projeto de DRAFT → IN_PROGRESS.
+      // Sem o `init` o link público fica "Enlace no válido" (provado na v2 real, spec 040 §P5). Projeto
+      // sem fonte de candidatos nem campanha: o `init` só torna o link acessível, não contata ninguém.
+      await this.request<void>('POST', `/projects/${projectId}/complete-submodule`, { submodule: 'PRESCREENING' });
+      await this.request<void>('POST', `/projects/${projectId}/init`);
+      const prescreening = await this.request<{ publicId: string }>('GET', `/projects/${projectId}/prescreening`);
+      return { projectId, publicId: prescreening.publicId };
+    } catch (err) {
+      await this.deletePrescreening(projectId).catch((delErr: unknown) => {
+        console.error(
+          `[TalentumApiClient] rollback FALHOU — projeto órfão na Talentum v2: ${projectId} (${
+            delErr instanceof Error ? delErr.message : String(delErr)
+          })`,
+        );
+      });
+      throw err;
+    }
   }
 
   /**
-   * Edita um projeto in-place (PUT → 204). Preserva projectId/whatsappUrl/slug.
-   * O schema do PUT difere do create: SEM `type` no top-level, COM `type:'text'`
-   * por pergunta (provado contra a Talentum real). `questionId` mantém a identidade
-   * das perguntas existentes.
+   * Compõe `GET /projects/:id` (nome, status) + `GET /projects/:id/prescreening` (publicId, perguntas,
+   * descrição em `jobDescription.text`). `whatsappUrl` leva o LINK WEB derivado do `publicId` (o nome do
+   * campo fica por compatibilidade — decisão (a)). `faq` é sempre [] (a v2 não tem).
    */
-  async updatePrescreening(projectId: string, input: UpdatePrescreeningInput): Promise<void> {
-    await this.request<void>('PUT', `/pre-screening/projects/${projectId}`, {
-      title: input.title,
-      description: input.description,
-      faq: input.faq ?? [],
-      questions: input.questions.map((q) => ({
+  async getPrescreening(projectId: string): Promise<TalentumProject> {
+    const { project } = await this.request<{ project: V2ProjectListItem }>('GET', `/projects/${projectId}`);
+    const p = await this.request<{
+      publicId: string;
+      slug: string;
+      active: boolean;
+      timestamp: string;
+      jobDescription?: { text: string };
+      questions?: Array<Omit<TalentumQuestionWithId, 'desiredResponse'> & { idealResponse: string }>;
+    }>('GET', `/projects/${projectId}/prescreening`);
+
+    return {
+      projectId,
+      publicId: p.publicId,
+      title: project.name,
+      description: p.jobDescription?.text ?? '',
+      whatsappUrl: buildPublicPrescreeningUrl(p.publicId),
+      slug: p.slug,
+      active: p.active,
+      timestamp: p.timestamp,
+      questions: (p.questions ?? []).map((q) => ({
+        questionId: q.questionId,
         question: q.question,
         type: 'text' as const,
         responseType: q.responseType,
-        desiredResponse: q.desiredResponse,
+        desiredResponse: q.idealResponse,
         weight: q.weight,
         required: q.required,
         analyzed: q.analyzed,
         earlyStoppage: q.earlyStoppage,
-        ...(q.questionId ? { questionId: q.questionId } : {}),
       })),
+      faq: [],
+      status: project.status,
+      type: project.type,
+      myRole: project.myRole,
+    };
+  }
+
+  /**
+   * Edita in-place: PATCH /prescreening (título + perguntas, `questionId` mantém a identidade) e
+   * PUT /prescreening/job-description (texto — o PATCH rejeita `jobDescription`). `faq` ignorado (g).
+   * O PATCH EXIGE `type` (400 "type must be one of: WHATSAPP, SMS, WEB" sem ele — provado na v2 real).
+   */
+  async updatePrescreening(projectId: string, input: UpdatePrescreeningInput): Promise<void> {
+    await this.request<void>('PATCH', `/projects/${projectId}/prescreening`, {
+      title: toV2ProjectName(input.title),
+      type: 'WEB',
+      questions: input.questions.map(toV2Question),
+    });
+    await this.request<unknown>('PUT', `/projects/${projectId}/prescreening/job-description`, {
+      text: input.description,
     });
   }
 
   async deletePrescreening(projectId: string): Promise<void> {
-    return this.request<void>('DELETE', `/pre-screening/projects/${projectId}`);
+    return this.request<void>('DELETE', `/projects/${projectId}`);
   }
 
+  /**
+   * Uma página de `GET /projects` (12 por página). O item da lista NÃO traz `publicId`,
+   * descrição nem perguntas: vêm vazios (use `getPrescreening` para o detalhe).
+   */
   async listPrescreenings(
     opts?: ListPrescreeningsOpts,
   ): Promise<{ projects: TalentumProject[]; count: number }> {
@@ -318,48 +449,58 @@ export class TalentumApiClient implements ITalentumApiClient {
     if (opts?.page != null) params.set('page', String(opts.page));
     if (opts?.onlyOwnedByUser != null) params.set('onlyOwnedByUser', String(opts.onlyOwnedByUser));
     const qs = params.toString();
-    const path = `/pre-screening/projects${qs ? `?${qs}` : ''}`;
-    return this.request<{ projects: TalentumProject[]; count: number }>('GET', path);
+    const { projects, count } = await this.request<{ projects: V2ProjectListItem[]; count: number }>(
+      'GET',
+      `/projects${qs ? `?${qs}` : ''}`,
+    );
+
+    return {
+      count,
+      projects: projects.map((item) => ({
+        projectId: item._id,
+        publicId: '',
+        title: item.name,
+        description: '',
+        whatsappUrl: '',
+        slug: '',
+        active: item.status === 'IN_PROGRESS',
+        timestamp: '',
+        questions: [],
+        faq: [],
+        status: item.status,
+        type: item.type,
+        myRole: item.myRole,
+      })),
+    };
   }
 
+  /** Percorre as páginas até alcançar `count` (ou até uma página vazia). */
   async listAllPrescreenings(): Promise<TalentumProject[]> {
     const all: TalentumProject[] = [];
     let page = 1;
 
     // eslint-disable-next-line no-constant-condition
     while (true) {
-      const { projects } = await this.listPrescreenings({
-        page,
-        onlyOwnedByUser: false,
-      });
+      const { projects, count } = await this.listPrescreenings({ page, onlyOwnedByUser: false });
       if (projects.length === 0) break;
       all.push(...projects);
+      if (all.length >= count) break;
       page++;
     }
 
-    console.log(`[TalentumApiClient] listAllPrescreenings: fetched ${all.length} projects in ${page - 1} pages`);
+    console.log(`[TalentumApiClient] listAllPrescreenings: fetched ${all.length} projects in ${page} pages`);
     return all;
   }
 
-  // ── Dashboard (candidate profiles) ─────────────────────────────
+  // ── Candidatos (v2) ────────────────────────────────────────────
 
-  async listDashboardProfiles(page: number): Promise<TalentumDashboardResponse> {
-    return this.request<TalentumDashboardResponse>('GET', `/dashboard?page=${page}&type=TABLE`);
+  /** `GET /projects/:id/prescreening/candidates?page=N` — traz telefone, NÃO traz e-mail. */
+  async listCandidates(projectId: string, page: number): Promise<TalentumCandidatesPage> {
+    return this.request<TalentumCandidatesPage>('GET', `/projects/${projectId}/prescreening/candidates?page=${page}`);
   }
 
-  async listAllDashboardProfiles(): Promise<TalentumDashboardProfile[]> {
-    const all: TalentumDashboardProfile[] = [];
-    let page = 1;
-
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      const { profiles } = await this.listDashboardProfiles(page);
-      if (profiles.length === 0) break;
-      all.push(...profiles);
-      page++;
-    }
-
-    console.log(`[TalentumApiClient] listAllDashboardProfiles: fetched ${all.length} profiles in ${page - 1} pages`);
-    return all;
+  /** `GET /projects/:id/ready-for-interview?page=N` — só qualificados, mas com e-mail. */
+  async listReadyForInterview(projectId: string, page: number): Promise<TalentumCandidatesPage> {
+    return this.request<TalentumCandidatesPage>('GET', `/projects/${projectId}/ready-for-interview?page=${page}`);
   }
 }

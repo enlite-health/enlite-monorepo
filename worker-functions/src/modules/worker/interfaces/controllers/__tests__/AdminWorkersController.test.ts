@@ -592,6 +592,32 @@ describe('AdminWorkersController — listWorkers', () => {
       expect(body.data[0].name).toBe('John Snow');
     });
 
+    it('busca por nome com worker SEM e-mail (criado só com telefone pelo sync) não quebra e o encontra', async () => {
+      setupSearchRows([
+        makeListRow({ id: 'w-sem-email', email: null, first_name_encrypted: 'enc_Zulema', last_name_encrypted: 'enc_Sintetica' }),
+        makeJohnRow(),
+      ]);
+      const [req, res] = mockReqRes({}, { search: 'Zulema' } as any);
+
+      await controller.listWorkers(req, res);
+
+      expect(res.status).not.toHaveBeenCalledWith(500);
+      const body = (res.json as jest.Mock).mock.calls[0][0];
+      expect(body.success).toBe(true);
+      expect(body.data).toEqual([expect.objectContaining({ id: 'w-sem-email', name: 'Zulema Sintetica', email: null })]);
+    });
+
+    it('listagem: worker sem e-mail e sem nome → nome string vazia (não null) e e-mail null', async () => {
+      mockQuery.mockResolvedValueOnce({ rows: [{ total: '1' }] });
+      mockQuery.mockResolvedValueOnce({ rows: [makeListRow({ id: 'w-vazio', email: null, first_name_encrypted: null, last_name_encrypted: null })] });
+      const [req, res] = mockReqRes({}, {} as any);
+
+      await controller.listWorkers(req, res);
+
+      const body = (res.json as jest.Mock).mock.calls[0][0];
+      expect(body.data).toEqual([expect.objectContaining({ id: 'w-vazio', name: '', email: null })]);
+    });
+
     it('busca "Sn" (< 3 chars) — retorna 400', async () => {
       const [req, res] = mockReqRes({}, { search: 'Sn' } as any);
 

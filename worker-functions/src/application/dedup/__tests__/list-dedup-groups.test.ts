@@ -306,3 +306,50 @@ describe('ListDedupGroupsUseCase — múltiplos grupos', () => {
     expect(result.map(g => g.phone_normalized)).toContain(PHONE_B);
   });
 });
+
+// ── Worker sem e-mail (migration 499; spec 040 F3 rodada 2) ───────────────────
+
+describe('ListDedupGroupsUseCase — worker com e-mail NULL', () => {
+  it('2 workers sem e-mail e telefones DIFERENTES: 0 grupos e sem erro (NULL não é "o mesmo e-mail")', async () => {
+    // O agrupamento é por telefone (worker_phone_collisions): telefones diferentes não colidem.
+    const pool = makePool([{ rows: [] }]);
+    const result = await new ListDedupGroupsUseCase(pool as unknown as Pool).execute();
+
+    expect(result).toEqual([]);
+    expect(pool.query).toHaveBeenCalledTimes(1); // nada foi agrupado por e-mail
+  });
+
+  it('colisão de TELEFONE com um worker sem e-mail (uid talentum_) não derruba a listagem', async () => {
+    const pool = makePool([
+      { rows: [{ phone_normalized: PHONE_A, worker_ids: [ID1, ID2] }] },
+      { rows: [
+        rawWorkerRow({ id: ID1, auth_uid: 'FirebaseReal_a', email: 'real@example.com' }),
+        rawWorkerRow({ id: ID2, auth_uid: 'talentum_pf-1', email: null, completeness_score: 1 }),
+      ]},
+      { rows: [] }, // nomes
+    ]);
+
+    const result = await new ListDedupGroupsUseCase(pool as unknown as Pool).execute();
+
+    expect(result).toHaveLength(1);
+    const semEmail = result[0].accounts.find((a) => a.id === ID2)!;
+    expect(semEmail).toMatchObject({ email: '', is_imported: false, login_real: false });
+    expect(result[0].survivor_suggested_id).toBe(ID1);
+  });
+
+  it('dois sem e-mail com o MESMO telefone: agrupa por telefone, sem erro, mesmo com uid Firebase', async () => {
+    const pool = makePool([
+      { rows: [{ phone_normalized: PHONE_B, worker_ids: [ID1, ID2] }] },
+      { rows: [
+        rawWorkerRow({ id: ID1, auth_uid: 'FirebaseReal_x', email: null }),
+        rawWorkerRow({ id: ID2, auth_uid: 'talentum_pf-2', email: null }),
+      ]},
+      { rows: [] },
+    ]);
+
+    const result = await new ListDedupGroupsUseCase(pool as unknown as Pool).execute();
+
+    expect(result).toHaveLength(1);
+    expect(result[0].accounts.map((a) => a.email)).toEqual(['', '']);
+  });
+});

@@ -53,3 +53,13 @@ describe('WorkersTable', () => {
     expect(screen.queryByText('admin.workers.statusBadge.deactivated')).toBeNull();
   });
 });
+
+describe('WorkersTable — worker sem e-mail (spec 040 T4.0)', () => {
+  it('email nulo → "—" sob o nome, nunca o texto "null"', () => {
+    const semEmail = { ...row('n'), email: null } as unknown as WorkerRow;
+    render(<WorkersTable workers={[semEmail]} />);
+    const cell = screen.getByText('W n').closest('div') as HTMLElement;
+    expect(cell).toHaveTextContent('—');
+    expect(cell).not.toHaveTextContent('null');
+  });
+});

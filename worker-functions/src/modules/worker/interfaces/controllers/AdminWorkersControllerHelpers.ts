@@ -31,7 +31,8 @@ export function mapPlatformLabel(dataSources: string[]): string {
 export interface WorkerListItem {
   id: string;
   name: string;
-  email: string;
+  /** NULL quando o worker foi criado só com telefone (sync Talentum v2, migration 499). */
+  email: string | null;
   casesCount: number;
   documentsStatus: string;
   documentsComplete: boolean;

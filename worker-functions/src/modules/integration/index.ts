@@ -5,7 +5,7 @@
 
 // Domain
 export type { WebhookPartner, PartnerContext } from './domain/WebhookPartner';
-export type { ITalentumApiClient, TalentumQuestion, TalentumFaq, TalentumProject, TalentumQuestionWithId, TalentumDashboardProfile, TalentumDashboardResponse, CreatePrescreeningInput, CreatePrescreeningResult, ListPrescreeningsOpts } from './domain/ITalentumApiClient';
+export type { ITalentumApiClient, TalentumQuestion, TalentumFaq, TalentumProject, TalentumQuestionWithId, CreatePrescreeningInput, CreatePrescreeningResult, ListPrescreeningsOpts } from './domain/ITalentumApiClient';
 export type { WorkerMirrorRecord, WorkerMirrorAddress } from './domain/WorkerMirrorRecord';
 export type { WorkerMirrorProvider, WorkerMirrorUpsertResult } from './domain/WorkerMirrorProvider';
 export type { IAnaCareApiClient, AnaCareNursePayload, AnaCareNurse, AnaCareNurseType, AnaCareHiringType, AnaCarePagedResponse, AnaCareNurseBulkItem, AnaCareNurseBulkPayload } from './domain/IAnaCareApiClient';
@@ -72,8 +72,8 @@ export type { AuditActor } from './application/PublishVacancyToTalentumUseCase';
 export { SyncTalentumVacanciesUseCase } from './application/SyncTalentumVacanciesUseCase';
 export type { SyncReport } from './application/SyncTalentumVacanciesUseCase';
 export { UpdateTalentumDescriptionUseCase, UpdateDescriptionError } from './application/UpdateTalentumDescriptionUseCase';
-export { SyncTalentumWorkersUseCase } from './application/SyncTalentumWorkersUseCase';
-export type { WorkerSyncReport } from './application/SyncTalentumWorkersUseCase';
+export { SyncTalentumWorkersUseCase, parseSyncOptions } from './application/SyncTalentumWorkersUseCase';
+export type { WorkerSyncReport, WorkerSyncOptions } from './application/SyncTalentumWorkersUseCase';
 export { CreateJobPostingFromTalentumUseCase } from './application/CreateJobPostingFromTalentumUseCase';
 export type { CreateJobPostingFromTalentumInput, CreateJobPostingFromTalentumResult } from './application/CreateJobPostingFromTalentumUseCase';
 export { BackfillWorkerMirrorUseCase } from './application/BackfillWorkerMirrorUseCase';

@@ -21,6 +21,7 @@
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { TalentumApiClient } from '../infrastructure/TalentumApiClient';
+import { DEAD_PROJECT_MESSAGE, isDeadProjectError } from '../domain/talentumErrors';
 import {
   JobPostingAuditRepository,
   type AuditActorType,
@@ -106,6 +107,9 @@ export class UpdateTalentumDescriptionUseCase {
       try {
         project = await talentumClient.getPrescreening(vacancy.talentum_project_id);
       } catch (err: unknown) {
+        if (isDeadProjectError(err)) {
+          throw new UpdateDescriptionError(409, DEAD_PROJECT_MESSAGE);
+        }
         throw new UpdateDescriptionError(502, `Talentum API error (get): ${(err as Error).message}`);
       }
 
@@ -118,6 +122,9 @@ export class UpdateTalentumDescriptionUseCase {
         });
       } catch (err: unknown) {
         const msg = (err as Error).message;
+        if (isDeadProjectError(err)) {
+          throw new UpdateDescriptionError(409, DEAD_PROJECT_MESSAGE);
+        }
         // Achado em prod (27/07): o Talentum tem dono por projeto. Projetos criados
         // por OUTRA conta (recrutadora direto na UI, entram via sync inbound) são
         // legíveis mas NÃO graváveis pela nossa conta → PUT 403. Traduzimos para uma

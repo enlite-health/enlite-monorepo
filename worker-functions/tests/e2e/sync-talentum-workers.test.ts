@@ -13,12 +13,14 @@
  *   5. DB-level: fill missing data without overwriting existing
  *   6. DB-level: worker_job_applications + encuadres creation
  *
- * The full integration (Talentum Dashboard → DB) is covered by unit tests
- * with mocks in SyncTalentumWorkersUseCase.test.ts.
+ * The sync em si (Talentum v2 → DB, spec 040 F3) é provado na seção 7: o use case REAL roda neste
+ * processo contra um stub HTTP da v2 (nada sai para a rede) e o Postgres de verdade. A lógica fina fica
+ * nos unit tests de SyncTalentumWorkersUseCase.test.ts.
  */
 
 import { Pool } from 'pg';
 import { createApiClient, getMockToken, waitForBackend } from './helpers';
+import { TalentumV2Stub } from '../../src/modules/integration/infrastructure/__tests__/talentumV2Stub';
 
 const DATABASE_URL =
   process.env.DATABASE_URL ||
@@ -430,6 +432,146 @@ describe('Talentum Workers Sync API', () => {
       );
 
       expect(rows).toHaveLength(0);
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════
+  // 7. Sync v2 (spec 040 F3): use case REAL + stub da Talentum v2 + Postgres de verdade
+  // ═══════════════════════════════════════════════════════════════════
+
+  describe('Sync v2 — candidatos do projeto viram candidatos da vaga certa (stub + Postgres)', () => {
+    const STUB_PORT = Number(process.env.TALENTUM_STUB_PORT ?? 9914);
+    const CASE_A = 99911;
+    const CASE_B = 99912;
+    const PHONE_REGISTERED = '5491155550001'; // worker JÁ cadastrado (REGISTERED), com e-mail
+    const stub = new TalentumV2Stub();
+    let closeStub: () => Promise<void>;
+    let jpA: string;
+    let jpB: string;
+    let registeredId: string;
+    let useCase: { execute: (o?: object) => Promise<any> };
+    const envBackup = { ...process.env };
+
+    const count = async (sql: string, params: unknown[] = []) => (await pool.query(sql, params)).rows[0].n as number;
+
+    beforeAll(async () => {
+      closeStub = (await stub.serve(STUB_PORT)).close;
+      process.env.DATABASE_URL = DATABASE_URL;
+      process.env.TALENTUM_API_BASE_URL = `http://localhost:${STUB_PORT}`;
+      process.env.TALENTUM_API_EMAIL = 'stub-user-e2e-only';
+      process.env.TALENTUM_API_PASSWORD = 'stub-key-e2e-only';
+
+      jpA = (await pool.query(
+        `INSERT INTO job_postings (case_number, title, description, country, status, talentum_project_id)
+         VALUES ($1, 'EN 99911#1', '', 'AR', 'SEARCHING', 'e2e-v2-proj-A') RETURNING id`, [CASE_A],
+      )).rows[0].id;
+      jpB = (await pool.query(
+        `INSERT INTO job_postings (case_number, title, description, country, status, talentum_project_id)
+         VALUES ($1, 'EN 99912#1', '', 'AR', 'SEARCHING', 'e2e-v2-proj-B') RETURNING id`, [CASE_B],
+      )).rows[0].id;
+      registeredId = (await pool.query(
+        `INSERT INTO workers (auth_uid, email, phone, status, country)
+         VALUES ('e2e-v2-firebase-uid', 'e2e-v2-registered@test.com', $1, 'REGISTERED', 'AR') RETURNING id`, [PHONE_REGISTERED],
+      )).rows[0].id;
+
+      // A: 1 cadastrado (telefone no formato de 10 dígitos que a v2 devolve) + 2 NOVOS só com telefone, sem e-mail.
+      stub.seed({
+        _id: 'e2e-v2-proj-A', name: 'EN 99911#1', status: 'IN_PROGRESS',
+        candidates: [
+          { profileId: 'e2e-v2-pf-registered', firstName: 'Registrada', lastName: 'Sintetica', phoneNumber: '1155550001' },
+          { profileId: 'e2e-v2-pf-new-1', firstName: 'Nova', lastName: 'Um', phoneNumber: '1155550002' },
+          { profileId: 'e2e-v2-pf-new-2', firstName: 'Nova', lastName: 'Dois', phoneNumber: '1155550003' },
+        ],
+      });
+      // B: o MESMO cadastrado também está no projeto B (vaga B)
+      stub.seed({
+        _id: 'e2e-v2-proj-B', name: 'EN 99912#1', status: 'IN_PROGRESS',
+        candidates: [{ profileId: 'e2e-v2-pf-registered', firstName: 'Registrada', lastName: 'Sintetica', phoneNumber: '1155550001' }],
+      });
+      // C: projeto IN_PROGRESS SEM vaga nossa: ninguém dele pode virar worker
+      stub.seed({
+        _id: 'e2e-v2-proj-orfao', name: 'EN 99913#1', status: 'IN_PROGRESS',
+        candidates: [{ profileId: 'e2e-v2-pf-orfao', firstName: 'Orfa', lastName: 'Sem Vaga', phoneNumber: '1155550009' }],
+      });
+
+      const { SyncTalentumWorkersUseCase } = require('@modules/integration');
+      useCase = new SyncTalentumWorkersUseCase();
+    });
+
+    afterAll(async () => {
+      const ids = (await pool.query(`SELECT id FROM workers WHERE auth_uid LIKE 'talentum_e2e-v2-%' OR id = $1`, [registeredId])).rows.map((r) => r.id);
+      await pool.query('DELETE FROM encuadres WHERE worker_id = ANY($1)', [ids]).catch(() => {});
+      await pool.query('DELETE FROM worker_job_applications WHERE worker_id = ANY($1)', [ids]).catch(() => {});
+      await pool.query('DELETE FROM workers WHERE id = ANY($1)', [ids]).catch(() => {});
+      await pool.query('DELETE FROM job_postings WHERE id = ANY($1)', [[jpA, jpB]]).catch(() => {});
+      const { DatabaseConnection } = require('@shared/database/DatabaseConnection');
+      await DatabaseConnection.getInstance().close();
+      process.env = { ...envBackup };
+      if (closeStub) await closeStub();
+    });
+
+    it('schema (migration 499): workers.email é anulável e o UNIQUE continua valendo', async () => {
+      const col = await pool.query(
+        `SELECT is_nullable FROM information_schema.columns WHERE table_name = 'workers' AND column_name = 'email'`,
+      );
+      expect(col.rows[0].is_nullable).toBe('YES');
+
+      const ids: string[] = [];
+      try {
+        // vários NULL coexistem no UNIQUE...
+        for (const uid of ['e2e-v2-null-1', 'e2e-v2-null-2']) {
+          ids.push((await pool.query(`INSERT INTO workers (auth_uid, email, status, country) VALUES ($1, NULL, 'INCOMPLETE_REGISTER', 'AR') RETURNING id`, [uid])).rows[0].id);
+        }
+        expect(ids).toHaveLength(2);
+        // ...e e-mail repetido continua colidindo
+        await expect(
+          pool.query(`INSERT INTO workers (auth_uid, email, status, country) VALUES ('e2e-v2-dup', 'e2e-v2-registered@test.com', 'INCOMPLETE_REGISTER', 'AR')`),
+        ).rejects.toMatchObject({ code: '23505' });
+      } finally {
+        await pool.query('DELETE FROM workers WHERE id = ANY($1)', [ids]);
+      }
+    });
+
+    it('1ª execução: cadastrado vira candidato da vaga CERTA em cada projeto; novos nascem só com telefone (e-mail NULL); projeto sem vaga é ignorado', async () => {
+      const report = await useCase.execute();
+
+      expect(report).toMatchObject({ projects: 2, projectsWithoutVacancy: 1, errors: [], conflicts: [] });
+      // worker cadastrado → WJA INVITED na vaga A E na vaga B (uma por projeto)
+      const wja = (await pool.query(
+        `SELECT job_posting_id, application_funnel_stage, source FROM worker_job_applications WHERE worker_id = $1 ORDER BY job_posting_id`, [registeredId],
+      )).rows;
+      expect(wja.map((r) => r.job_posting_id).sort()).toEqual([jpA, jpB].sort());
+      expect(wja.every((r) => r.application_funnel_stage === 'INVITED' && r.source === 'talentum')).toBe(true);
+      expect(await count(`SELECT COUNT(*)::int AS n FROM workers WHERE phone = $1`, [PHONE_REGISTERED])).toBe(1); // sem duplicata
+      // novos: só telefone normalizado, e-mail NULL, INCOMPLETE_REGISTER
+      const created = (await pool.query(
+        `SELECT auth_uid, email, phone, status FROM workers WHERE auth_uid LIKE 'talentum_e2e-v2-pf-new-%' ORDER BY auth_uid`,
+      )).rows;
+      expect(created).toEqual([
+        { auth_uid: 'talentum_e2e-v2-pf-new-1', email: null, phone: '5491155550002', status: 'INCOMPLETE_REGISTER' },
+        { auth_uid: 'talentum_e2e-v2-pf-new-2', email: null, phone: '5491155550003', status: 'INCOMPLETE_REGISTER' },
+      ]);
+      // o projeto sem vaga nunca gerou worker
+      expect(await count(`SELECT COUNT(*)::int AS n FROM workers WHERE auth_uid = 'talentum_e2e-v2-pf-orfao' OR phone = '5491155550009'`)).toBe(0);
+      expect(stub.calls.every((c) => c.method === 'GET' || c.path === '/auth/login')).toBe(true); // 0 escritas na Talentum
+      expect(stub.calls.some((c) => c.path.includes('e2e-v2-proj-orfao'))).toBe(false);          // nem foi lido
+    });
+
+    it('2ª execução é IDEMPOTENTE: nada novo em workers, WJA nem encuadres', async () => {
+      const before = {
+        workers: await count(`SELECT COUNT(*)::int AS n FROM workers`),
+        wja: await count(`SELECT COUNT(*)::int AS n FROM worker_job_applications WHERE worker_id = $1`, [registeredId]),
+        enc: await count(`SELECT COUNT(*)::int AS n FROM encuadres WHERE worker_id = $1`, [registeredId]),
+      };
+
+      const report = await useCase.execute();
+
+      expect(report).toMatchObject({ created: 0, linked: 0, errors: [] });
+      expect(await count(`SELECT COUNT(*)::int AS n FROM workers`)).toBe(before.workers);
+      expect(await count(`SELECT COUNT(*)::int AS n FROM worker_job_applications WHERE worker_id = $1`, [registeredId])).toBe(before.wja);
+      expect(await count(`SELECT COUNT(*)::int AS n FROM encuadres WHERE worker_id = $1`, [registeredId])).toBe(before.enc);
+      expect(before.wja).toBe(2);
+      expect(before.enc).toBe(2);
     });
   });
 });

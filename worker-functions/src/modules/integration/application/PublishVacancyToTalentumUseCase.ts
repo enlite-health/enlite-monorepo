@@ -1,8 +1,9 @@
 /**
  * PublishVacancyToTalentumUseCase
  *
- * Orchestrates: generate description (Groq) → create prescreening (Talentum API)
- * → fetch whatsappUrl → save references in job_postings.
+ * Orchestrates: generate description (Groq) → create prescreening (Talentum API v2: o `create` já
+ * publica — complete-submodule + init) → fetch o link WEB (`https://www.v2.talentum.chat/public/pre-screening/<publicId>/chat`,
+ * gravado em `talentum_whatsapp_url`; nome do campo mantido, decisão (a)) → save references in job_postings.
  *
  * Also handles unpublishing (delete from Talentum + clear DB columns).
  *
@@ -19,7 +20,8 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { reportError } from '@shared/logging';
 import { TalentumDescriptionService } from '../infrastructure/TalentumDescriptionService';
 import { TalentumApiClient } from '../infrastructure/TalentumApiClient';
-import type { TalentumQuestion, TalentumFaq } from '../domain/ITalentumApiClient';
+import { DEAD_PROJECT_MESSAGE, isDeadProjectError } from '../domain/talentumErrors';
+import type { TalentumQuestion } from '../domain/ITalentumApiClient';
 import { normalizePrescreeningResponseType } from '@shared/utils/normalizePrescreeningResponseType';
 import {
   JobPostingAuditRepository,
@@ -75,9 +77,9 @@ export class PublishVacancyToTalentumUseCase {
    * Steps:
    *  1. Load vacancy + validate state
    *  2. Generate description via Groq if missing
-   *  3. Load prescreening questions + FAQ from DB
+   *  3. Load prescreening questions from DB (FAQ não vai: a v2 não tem — decisão (g))
    *  4. Create prescreening project on Talentum
-   *  5. GET the project to obtain whatsappUrl + slug
+   *  5. GET the project to obtain the web link (derivado do publicId, nunca wa.me) + slug
    *  6. Save references in job_postings (within transaction) + audit DRAFT_CHANGED
    */
   async publish(input: PublishInput, actor?: AuditActor): Promise<PublishOutput> {
@@ -142,18 +144,8 @@ export class PublishVacancyToTalentumUseCase {
       earlyStoppage: row.early_stoppage,
     }));
 
-    // Load FAQ (optional)
-    const faqResult = await this.db.query(
-      `SELECT question, answer
-       FROM job_posting_prescreening_faq
-       WHERE job_posting_id = $1
-       ORDER BY faq_order ASC`,
-      [jobPostingId],
-    );
-    const faq: TalentumFaq[] = faqResult.rows.map(row => ({
-      question: row.question,
-      answer: row.answer,
-    }));
+    // FAQ: a Talentum v2 não tem FAQ (spec 040, decisão (g)) — ela fica SÓ no nosso banco
+    // (`job_posting_prescreening_faq`); não é lida aqui nem enviada ao create.
 
     // 4. Create prescreening on Talentum
     let talentumClient: TalentumApiClient;
@@ -170,7 +162,6 @@ export class PublishVacancyToTalentumUseCase {
         title: vacancy.title ?? `Caso ${jobPostingId}`,
         description: description!,
         questions,
-        faq: faq.length > 0 ? faq : undefined,
       });
       projectId = createResult.projectId;
       publicId = createResult.publicId;
@@ -274,6 +265,10 @@ export class PublishVacancyToTalentumUseCase {
       const talentumClient = await TalentumApiClient.create();
       await talentumClient.deletePrescreening(talentumProjectId);
     } catch (err: unknown) {
+      // Spec 040: id gravado antes da migração para a v2 → 404. Erro claro, não um 502 mudo.
+      if (isDeadProjectError(err)) {
+        throw new PublishError(409, DEAD_PROJECT_MESSAGE);
+      }
       throw new PublishError(502, `Talentum API error (delete): ${(err as Error).message}`);
     }
 

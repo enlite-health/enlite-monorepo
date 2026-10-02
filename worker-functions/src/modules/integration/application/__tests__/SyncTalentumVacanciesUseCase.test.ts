@@ -1,36 +1,28 @@
 /**
- * SyncTalentumVacanciesUseCase.test.ts
+ * SyncTalentumVacanciesUseCase.test.ts — sync de vagas na Talentum API v2 (spec 040 / F2 / T2.4)
  *
- * Cobertura do use case de sync Talentum → Enlite (sem Gemini).
- *
- * Cenarios:
- *  1. Sync com vacante existente (update reference only)
- *  2. Sync com vacante nova (create)
- *  3. Titulo sem case_number
- *  4. Erro individual nao aborta sync dos demais
- *  5. Multiplos projects
- *  6. Salva referencia Talentum apos create/update
- *  7. Report retorna totais corretos
- *  8. Sync questions e FAQ
+ * O banco é FALSO e responde pelo SQL (`fakeJobPostingsDb.ts`); o cliente é um mock com os dois métodos
+ * que o use case usa (`listAllPrescreenings` e `getPrescreening`). Cenários:
+ *  1. projeto já ligado por talentum_project_id → skip SEM gastar GET; force → atualiza
+ *  2. liga por publicId quando o project_id gravado é o antigo (morto), por título exato 1:1, e reporta
+ *     duplicata de título (nada ligado nem criado); título só casa se a vaga não tem OUTRO publicId
+ *  3. legado: número do título (vacancy_number / case_number) e criação de vaga nova
+ *  4. PHONE_CALL e `/prescreening` 400: sem link web, liga/cria sem apagar o que já está gravado
+ *  5. a FAQ do banco NÃO é tocada (decisão (g)); perguntas são substituídas pelas da Talentum
+ *  6. erro de um projeto não aborta o sync; falha de INSERT/UPDATE dá ROLLBACK e vai para o relatório
  */
 
-// ── Mocks (antes dos imports) ────────────────────────────────────
+import { FakeJobPostingsDb } from './fakeJobPostingsDb';
 
-const mockQuery = jest.fn();
-const mockClientQuery = jest.fn();
-const mockClientRelease = jest.fn();
-const mockConnect = jest.fn().mockResolvedValue({
-  query: mockClientQuery,
-  release: mockClientRelease,
-});
+let mockFake: FakeJobPostingsDb;
 
 jest.mock('@shared/database/DatabaseConnection', () => ({
   DatabaseConnection: {
     getInstance: jest.fn().mockReturnValue({
-      getPool: jest.fn().mockReturnValue({
-        query: mockQuery,
-        connect: mockConnect,
-      }),
+      getPool: jest.fn().mockImplementation(() => ({
+        query: (...a: [string, unknown[]?]) => mockFake.query(...(a as [string, unknown[]])),
+        connect: () => mockFake.connect(),
+      })),
     }),
   },
 }));
@@ -38,53 +30,77 @@ jest.mock('@shared/database/DatabaseConnection', () => ({
 const mockListAllPrescreenings = jest.fn();
 const mockGetPrescreening = jest.fn();
 jest.mock('../../infrastructure/TalentumApiClient', () => ({
+  ...jest.requireActual('../../infrastructure/TalentumApiClient'),
   TalentumApiClient: {
-    create: jest.fn().mockResolvedValue({
+    create: jest.fn().mockImplementation(async () => ({
       listAllPrescreenings: mockListAllPrescreenings,
       getPrescreening: mockGetPrescreening,
-    }),
+    })),
   },
 }));
 
-// ── Imports ──────────────────────────────────────────────────────
-
-import { SyncTalentumVacanciesUseCase, SyncReport } from '../SyncTalentumVacanciesUseCase';
+import { SyncTalentumVacanciesUseCase, type SyncReport } from '../SyncTalentumVacanciesUseCase';
 import type { TalentumProject } from '../../domain/ITalentumApiClient';
 
 // ── Helpers ──────────────────────────────────────────────────────
 
-function makeTalentumProject(overrides: Partial<TalentumProject> = {}): TalentumProject {
+const WEB = (publicId: string) => `https://www.v2.talentum.chat/public/pre-screening/${publicId}/chat`;
+
+/** Item da LISTA da v2: só `_id,name,status,type,myRole` (sem publicId, descrição nem perguntas). */
+function listItem(projectId: string, title: string, over: Partial<TalentumProject> = {}): TalentumProject {
   return {
-    projectId: overrides.projectId ?? 'proj-1',
-    publicId: overrides.publicId ?? 'pub-1',
-    title: overrides.title ?? 'CASO 42 - AT Recoleta',
-    description: overrides.description ?? 'Descripcion de la Propuesta: paciente adulto...',
-    whatsappUrl: overrides.whatsappUrl ?? 'https://wa.me/talentum/proj-1',
-    slug: overrides.slug ?? 'caso-42-at-recoleta',
-    active: overrides.active ?? true,
-    timestamp: overrides.timestamp ?? '2025-01-15T10:00:00Z',
-    questions: overrides.questions ?? [
-      { questionId: 'q1', question: 'Tiene experiencia?', type: 'text' as const, responseType: ['text' as const], desiredResponse: 'Si', weight: 5, required: false, analyzed: true, earlyStoppage: false },
-    ],
-    faq: overrides.faq ?? [
-      { question: 'Cual es el horario?', answer: 'Lunes a viernes 9 a 17' },
-    ],
+    projectId,
+    publicId: '',
+    title,
+    description: '',
+    whatsappUrl: '',
+    slug: '',
+    active: true,
+    timestamp: '',
+    questions: [],
+    faq: [],
+    status: 'IN_PROGRESS',
+    type: 'FULL',
+    myRole: 'OWNER',
+    ...over,
   };
+}
+
+/** Detalhe composto por `getPrescreening` (GET /projects/:id + /prescreening). */
+function detail(item: TalentumProject, over: Partial<TalentumProject> = {}): TalentumProject {
+  return {
+    ...item,
+    publicId: `pub-${item.projectId}`,
+    description: 'Descripción del puesto',
+    whatsappUrl: WEB(`pub-${item.projectId}`),
+    slug: `slug-${item.projectId}`,
+    timestamp: '2026-10-01T10:00:00.000Z',
+    questions: [
+      { questionId: 'q1', question: '¿Experiencia?', type: 'text', responseType: ['text', 'audio'], desiredResponse: 'Sí', weight: 5, required: true, analyzed: true, earlyStoppage: false },
+    ],
+    ...over,
+  };
+}
+
+function givenProjects(...items: TalentumProject[]) {
+  mockListAllPrescreenings.mockResolvedValue(items);
+  mockGetPrescreening.mockImplementation(async (id: string) => detail(items.find((i) => i.projectId === id)!));
+}
+
+function emptyReport(): SyncReport {
+  return { total: 0, updated: 0, created: 0, skipped: 0, linkedByTitle: 0, withoutWebLink: 0, ignoredNotOurs: 0, duplicateTitles: [], errors: [] };
 }
 
 // ── Tests ────────────────────────────────────────────────────────
 
-describe('SyncTalentumVacanciesUseCase', () => {
+describe('SyncTalentumVacanciesUseCase (API v2)', () => {
   let useCase: SyncTalentumVacanciesUseCase;
 
   beforeEach(() => {
     jest.clearAllMocks();
     jest.spyOn(console, 'log').mockImplementation();
     jest.spyOn(console, 'error').mockImplementation();
-    mockQuery.mockResolvedValue({ rows: [] });
-    // Default: client queries (BEGIN, INSERT/UPDATE, audit SAVEPOINT, COMMIT) resolve safely.
-    mockClientQuery.mockResolvedValue({ rows: [] });
-    mockConnect.mockResolvedValue({ query: mockClientQuery, release: mockClientRelease });
+    mockFake = new FakeJobPostingsDb();
     useCase = new SyncTalentumVacanciesUseCase();
   });
 
@@ -92,292 +108,196 @@ describe('SyncTalentumVacanciesUseCase', () => {
     jest.restoreAllMocks();
   });
 
-  // ── 1. Sync com vacante existente ────────────────────────────
+  // ── 1. Já ligada ───────────────────────────────────────────────
 
-  describe('update vacante existente', () => {
-    it('deve atualizar referencia quando talentum_project_id ja existe no DB (com force=true)', async () => {
-      const project = makeTalentumProject({ projectId: 'proj-exist', title: 'CASO 10 - AT' });
-      mockListAllPrescreenings.mockResolvedValue([project]);
-
-      // Pool: SELECT talentum_project_id (found) + syncQuestions + syncFaq pool queries
-      // saveTalentumReference UPDATE now runs on client
-      mockQuery
-        .mockResolvedValueOnce({ rows: [{ id: 'jp-existing-1', talentum_project_id: 'proj-exist' }] }) // lookup
-        .mockResolvedValueOnce({ rows: [] }) // DELETE questions
-        .mockResolvedValueOnce({ rows: [] }) // INSERT question
-        .mockResolvedValueOnce({ rows: [] }) // DELETE faq
-        .mockResolvedValueOnce({ rows: [] }); // INSERT faq
-      // saveTalentumReference: BEGIN + UPDATE + logEventSafe (wasCreated=false audit) + COMMIT → all on client
-
-      const report = await useCase.execute({ force: true });
-
-      expect(report.updated).toBe(1);
-      expect(report.created).toBe(0);
-      expect(report.skipped).toBe(0);
-      expect(report.errors).toHaveLength(0);
-      expect(report.total).toBe(1);
-    });
-
-    it('deve skip sem chamar Gemini quando ja synced e force=false', async () => {
-      const project = makeTalentumProject({ projectId: 'proj-exist', title: 'CASO 10' });
-      mockListAllPrescreenings.mockResolvedValue([project]);
-
-      mockQuery
-        .mockResolvedValueOnce({ rows: [{ id: 'jp-1', talentum_project_id: 'proj-exist' }] });
+  describe('vaga já ligada por talentum_project_id', () => {
+    it('sem force: skip e NENHUM GET de detalhe na Talentum (economiza 2 GETs por projeto)', async () => {
+      mockFake.add({ id: 'jp-1', title: 'EN 1#1', talentum_project_id: 'proj-1' });
+      givenProjects(listItem('proj-1', 'EN 1#1'));
 
       const report = await useCase.execute({ force: false });
 
+      expect(report).toMatchObject({ total: 1, skipped: 1, updated: 0, created: 0 });
+      expect(mockGetPrescreening).not.toHaveBeenCalled();
+    });
+
+    it('force=true: relê o detalhe e atualiza link web, slug, descrição e perguntas', async () => {
+      mockFake.add({ id: 'jp-1', title: 'EN 1#1', talentum_project_id: 'proj-1' });
+      givenProjects(listItem('proj-1', 'EN 1#1'));
+
+      const report = await useCase.execute({ force: true });
+
+      expect(report).toMatchObject({ updated: 1, created: 0, skipped: 0 });
+      expect(mockFake.vacancies[0]).toMatchObject({
+        talentum_project_id: 'proj-1',
+        talentum_public_id: 'pub-proj-1',
+        talentum_whatsapp_url: WEB('pub-proj-1'),
+        talentum_slug: 'slug-proj-1',
+        talentum_description: 'Descripción del puesto',
+      });
+      expect(mockFake.questionsByVacancy.get('jp-1')).toBe(1);
+    });
+
+    it('chamada direta sem o 4º argumento (force) trata como false — já ligada é skip', async () => {
+      mockFake.add({ id: 'jp-1', title: 'EN 1#1', talentum_project_id: 'proj-1' });
+      const report = emptyReport();
+
+      await (useCase as any).processProject(listItem('proj-1', 'EN 1#1'), {} as never, report);
+
       expect(report.skipped).toBe(1);
-      expect(report.updated).toBe(0);
-      expect(report.created).toBe(0);
-    });
-
-    it('deve dar ROLLBACK e registrar o erro no report se o UPDATE de saveTalentumReference falhar (não é best-effort)', async () => {
-      const project = makeTalentumProject({ projectId: 'proj-ref-fail', title: 'CASO 400' });
-      mockListAllPrescreenings.mockResolvedValue([project]);
-
-      // Achado por talentum_project_id, mas com projectId DIFERENTE do atual — não é skip.
-      mockQuery
-        .mockResolvedValueOnce({ rows: [{ id: 'jp-ref-fail', talentum_project_id: 'other-proj' }] });
-      mockClientQuery
-        .mockResolvedValueOnce({})                              // BEGIN (saveTalentumReference)
-        .mockRejectedValueOnce(new Error('update ref failed'))  // UPDATE job_postings — falha
-        .mockResolvedValueOnce({});                              // ROLLBACK
-
-      const report = await useCase.execute();
-
-      expect(report.errors).toHaveLength(1);
-      expect(report.errors[0]).toEqual({
-        projectId: 'proj-ref-fail',
-        title: 'CASO 400',
-        error: 'update ref failed',
-      });
-      const rollbackCall = mockClientQuery.mock.calls.find((c: unknown[]) => c[0] === 'ROLLBACK');
-      expect(rollbackCall).toBeDefined();
     });
   });
 
-  // ── 2. Sync com vacante nova ─────────────────────────────────
+  // ── 2. Ligação por publicId / título ───────────────────────────
 
-  describe('criar vacante nova', () => {
-    it('deve criar vacancy quando talentum_project_id nao existe no DB', async () => {
-      const project = makeTalentumProject({ projectId: 'proj-new', title: 'CASO 100' });
-      mockListAllPrescreenings.mockResolvedValue([project]);
-
-      // Pool: SELECT talentum_project_id, SELECT case_number, SELECT nextval, syncQuestions/syncFaq
-      // INSERT is now on client (createFromSync), saveTalentumReference UPDATE also on client
-      mockQuery
-        .mockResolvedValueOnce({ rows: [] })    // lookup por talentum_project_id (not found)
-        .mockResolvedValueOnce({ rows: [] })    // lookup por case_number (not found)
-        .mockResolvedValueOnce({ rows: [{ vn: '42' }] }) // nextval
-        .mockResolvedValueOnce({ rows: [] })    // DELETE questions (syncQuestions)
-        .mockResolvedValueOnce({ rows: [] })    // INSERT question (syncQuestions)
-        .mockResolvedValueOnce({ rows: [] })    // DELETE faq (syncFaq)
-        .mockResolvedValueOnce({ rows: [] });   // INSERT faq (syncFaq)
-      // client handles: BEGIN + INSERT RETURNING id + logEventSafe + COMMIT (createFromSync)
-      mockClientQuery
-        .mockResolvedValueOnce({})                          // BEGIN (createFromSync)
-        .mockResolvedValueOnce({ rows: [{ id: 'jp-new-100' }] }) // INSERT RETURNING id
-        .mockResolvedValue({ rows: [] });                   // audit + COMMIT + saveTalentumReference txn
+  describe('ligação sem talentum_project_id', () => {
+    it('project_id gravado é o ANTIGO (morto): liga pelo publicId e repara o project_id', async () => {
+      mockFake.add({ id: 'jp-7', title: 'EN 7#1', talentum_project_id: 'id-antigo-v1', talentum_public_id: 'pub-proj-new', talentum_whatsapp_url: 'https://wa.me/antigo' });
+      givenProjects(listItem('proj-new', 'EN 7#1'));
 
       const report = await useCase.execute();
 
-      expect(report.created).toBe(1);
-      expect(report.updated).toBe(0);
+      expect(report).toMatchObject({ updated: 1, created: 0, linkedByTitle: 0 });
+      expect(mockFake.vacancies).toHaveLength(1);
+      expect(mockFake.vacancies[0].talentum_project_id).toBe('proj-new');
+      expect(mockFake.vacancies[0].talentum_whatsapp_url).toBe(WEB('pub-proj-new')); // wa.me antigo sai
     });
 
-    it('deve inserir com status SEARCHING e country AR', async () => {
-      const project = makeTalentumProject({ title: 'CASO 200' });
-      mockListAllPrescreenings.mockResolvedValue([project]);
-
-      mockQuery
-        .mockResolvedValueOnce({ rows: [] })    // lookup por talentum_project_id
-        .mockResolvedValueOnce({ rows: [] })    // lookup por case_number
-        .mockResolvedValueOnce({ rows: [{ vn: '10' }] }); // nextval
-      // INSERT now on client
-      mockClientQuery
-        .mockResolvedValueOnce({})                       // BEGIN
-        .mockResolvedValueOnce({ rows: [{ id: 'jp-200' }] }) // INSERT RETURNING id
-        .mockResolvedValue({ rows: [] });                // audit + COMMIT + saveTalentumReference txn
-
-      await useCase.execute();
-
-      // INSERT is on clientQuery (index 1 = after BEGIN)
-      const insertCall = mockClientQuery.mock.calls.find(
-        (c: unknown[]) => typeof c[0] === 'string' && (c[0] as string).includes('INSERT INTO job_postings'),
-      );
-      expect(insertCall).toBeDefined();
-      const sql = insertCall![0] as string;
-      expect(sql).toContain("'AR'");
-      expect(sql).toContain("'SEARCHING'");
-    });
-
-    it('deve gerar titulo "CASO {caseNumber}-{vacancyNumber}" no INSERT', async () => {
-      const project = makeTalentumProject({ title: 'CASO 55' });
-      mockListAllPrescreenings.mockResolvedValue([project]);
-
-      mockQuery
-        .mockResolvedValueOnce({ rows: [] })    // lookup por talentum_project_id
-        .mockResolvedValueOnce({ rows: [] })    // lookup por case_number
-        .mockResolvedValueOnce({ rows: [{ vn: '99' }] }); // nextval
-      mockClientQuery
-        .mockResolvedValueOnce({})                       // BEGIN
-        .mockResolvedValueOnce({ rows: [{ id: 'jp-55' }] }) // INSERT RETURNING id
-        .mockResolvedValue({ rows: [] });                // audit + COMMIT + saveTalentumReference txn
-
-      await useCase.execute();
-
-      // INSERT is on clientQuery
-      const insertCall = mockClientQuery.mock.calls.find(
-        (c: unknown[]) => typeof c[0] === 'string' && (c[0] as string).includes('INSERT INTO job_postings'),
-      );
-      expect(insertCall).toBeDefined();
-      const insertParams = insertCall![1] as unknown[];
-      expect(insertParams[0]).toBe(99);       // vacancy_number
-      expect(insertParams[1]).toBe(55);       // case_number
-      expect(insertParams[2]).toBe('CASO 55-99'); // title
-    });
-
-    it('deve gerar titulo "CASO EN{caseNumber}-{vacancyNumber}" no INSERT para case_number nativo (>=1000, migration 459)', async () => {
-      const project = makeTalentumProject({ title: 'CASO 1000' });
-      mockListAllPrescreenings.mockResolvedValue([project]);
-
-      mockQuery
-        .mockResolvedValueOnce({ rows: [] })    // lookup por talentum_project_id
-        .mockResolvedValueOnce({ rows: [] })    // lookup por case_number
-        .mockResolvedValueOnce({ rows: [{ vn: '1500' }] }); // nextval
-      mockClientQuery
-        .mockResolvedValueOnce({})                          // BEGIN
-        .mockResolvedValueOnce({ rows: [{ id: 'jp-1000' }] }) // INSERT RETURNING id
-        .mockResolvedValue({ rows: [] });                    // audit + COMMIT + saveTalentumReference txn
-
-      await useCase.execute();
-
-      // INSERT is on clientQuery
-      const insertCall = mockClientQuery.mock.calls.find(
-        (c: unknown[]) => typeof c[0] === 'string' && (c[0] as string).includes('INSERT INTO job_postings'),
-      );
-      expect(insertCall).toBeDefined();
-      const insertParams = insertCall![1] as unknown[];
-      expect(insertParams[0]).toBe(1500);          // vacancy_number
-      expect(insertParams[1]).toBe(1000);          // case_number
-      expect(insertParams[2]).toBe('CASO EN1000-1500'); // title
-    });
-
-    it('deve buscar por vacancy_number quando titulo é "CASO N-M" e talentum_project_id não bate (link com vacante do novo esquema)', async () => {
-      const project = makeTalentumProject({ projectId: 'proj-new-src', title: 'CASO 230-42' });
-      mockListAllPrescreenings.mockResolvedValue([project]);
-
-      mockQuery
-        .mockResolvedValueOnce({ rows: [] })  // lookup por talentum_project_id (not found)
-        .mockResolvedValueOnce({ rows: [{ id: 'jp-v42', talentum_project_id: null }] }); // lookup por vacancy_number=42 (found)
+    it('sem publicId no banco: liga pelo título EXATO 1:1 e conta em linkedByTitle', async () => {
+      mockFake.add({ id: 'jp-8', title: 'EN 8#1' });
+      givenProjects(listItem('proj-8', 'EN 8#1'));
 
       const report = await useCase.execute();
 
-      expect(report.updated).toBe(1);
-      expect(report.created).toBe(0);
-      expect(report.errors).toHaveLength(0);
-
-      const vacancyLookupCall = mockQuery.mock.calls[1];
-      expect(vacancyLookupCall[0]).toContain('vacancy_number = $1');
-      expect(vacancyLookupCall[1]).toEqual([42]);
+      expect(report).toMatchObject({ updated: 1, created: 0, linkedByTitle: 1 });
+      expect(mockFake.vacancies[0].talentum_project_id).toBe('proj-8');
+      expect(mockFake.vacancies[0].talentum_public_id).toBe('pub-proj-8');
     });
 
-    it('não encontra por vacancy_number ("CASO N-M" sem vacante correspondente) → cai no lookup por case_number e cria nova', async () => {
-      const project = makeTalentumProject({ projectId: 'proj-vac-miss', title: 'CASO 600-15' });
-      mockListAllPrescreenings.mockResolvedValue([project]);
-
-      mockQuery
-        .mockResolvedValueOnce({ rows: [] })              // lookup por talentum_project_id
-        .mockResolvedValueOnce({ rows: [] })              // lookup por vacancy_number=15 (not found)
-        .mockResolvedValueOnce({ rows: [] })              // lookup por case_number=600 (not found)
-        .mockResolvedValueOnce({ rows: [{ vn: '16' }] }); // nextval
-      mockClientQuery
-        .mockResolvedValueOnce({})                          // BEGIN
-        .mockResolvedValueOnce({ rows: [{ id: 'jp-600' }] }) // INSERT RETURNING id
-        .mockResolvedValue({ rows: [] });                   // audit + COMMIT + saveTalentumReference txn
+    it('vaga com título > 50 liga pelo título cortado em 50 (mesma regra da reconciliação)', async () => {
+      const longo = 'EN 10#1 ' + 'x'.repeat(60);
+      mockFake.add({ id: 'jp-long', title: longo });
+      givenProjects(listItem('proj-long', longo.slice(0, 50)));
 
       const report = await useCase.execute();
 
-      expect(report.created).toBe(1);
-      const vacancyLookupCall = mockQuery.mock.calls[1];
-      expect(vacancyLookupCall[1]).toEqual([15]);
-      const caseLookupCall = mockQuery.mock.calls[2];
-      expect(caseLookupCall[1]).toEqual([600]);
+      expect(report).toMatchObject({ updated: 1, created: 0, linkedByTitle: 1 });
+      expect(mockFake.vacancies).toHaveLength(1);
+      expect(mockFake.vacancies[0].talentum_project_id).toBe('proj-long');
     });
 
-    it('deve dar ROLLBACK e registrar o erro no report se o INSERT de createFromSync falhar (create não é best-effort)', async () => {
-      const project = makeTalentumProject({ projectId: 'proj-create-fail', title: 'CASO 300' });
-      mockListAllPrescreenings.mockResolvedValue([project]);
-
-      mockQuery
-        .mockResolvedValueOnce({ rows: [] })              // lookup por talentum_project_id
-        .mockResolvedValueOnce({ rows: [] })              // lookup por case_number
-        .mockResolvedValueOnce({ rows: [{ vn: '77' }] }); // nextval
-      mockClientQuery
-        .mockResolvedValueOnce({})                              // BEGIN (createFromSync)
-        .mockRejectedValueOnce(new Error('insert failed'))      // INSERT RETURNING id — falha
-        .mockResolvedValueOnce({});                              // ROLLBACK
+    it('título que casa com 2 vagas: relata a duplicata e NÃO liga nem cria nada', async () => {
+      mockFake.add({ id: 'jp-a', title: 'EN 9#1' });
+      mockFake.add({ id: 'jp-b', title: 'EN 9#1' });
+      givenProjects(listItem('proj-9', 'EN 9#1'));
 
       const report = await useCase.execute();
 
-      expect(report.errors).toHaveLength(1);
-      expect(report.errors[0]).toEqual({
-        projectId: 'proj-create-fail',
-        title: 'CASO 300',
-        error: 'insert failed',
-      });
-      const rollbackCall = mockClientQuery.mock.calls.find((c: unknown[]) => c[0] === 'ROLLBACK');
-      expect(rollbackCall).toBeDefined();
+      expect(report.duplicateTitles).toEqual([{ projectId: 'proj-9', title: 'EN 9#1', matches: 2 }]);
+      expect(report).toMatchObject({ updated: 0, created: 0, linkedByTitle: 0, errors: [] });
+      expect(mockFake.vacancies).toHaveLength(2);
+      expect(mockFake.vacancies.every((v) => v.talentum_project_id === null)).toBe(true);
+    });
+
+    it('vaga de MESMO título mas com OUTRO publicId não é ligada pelo título (cria nova)', async () => {
+      mockFake.add({ id: 'jp-x', title: 'Proyecto X', talentum_public_id: 'pub-de-outro-projeto' });
+      givenProjects(listItem('proj-x', 'Proyecto X'));
+
+      const report = await useCase.execute();
+
+      expect(report).toMatchObject({ created: 1, updated: 0, linkedByTitle: 0 });
+      expect(mockFake.vacancies.find((v) => v.id === 'jp-x')!.talentum_project_id).toBeNull();
     });
   });
 
-  // ── 3. Titulo sem case_number ────────────────────────────────
+  // ── 2b. T7.0: só vira vaga nova o projeto que é NOSSO ───────────
 
-  describe('titulo sem case_number', () => {
-    it('deve criar vacancy com case_number=null quando titulo nao tem CASO', async () => {
-      const project = makeTalentumProject({
-        projectId: 'proj-generic',
-        title: 'Proyecto generico sin numero',
-      });
-      mockListAllPrescreenings.mockResolvedValue([project]);
+  describe('projeto sem par: só cria se myRole === OWNER (spec 040 T7.0)', () => {
+    it('VIEWER sem par: 0 INSERT e conta em ignoredNotOurs', async () => {
+      givenProjects(listItem('proj-v', 'Proyecto ajeno', { myRole: 'VIEWER' }));
 
-      // Sem case_number → só lookup talentum_project_id (sem lookup case_number)
-      mockQuery
-        .mockResolvedValueOnce({ rows: [] })          // lookup por talentum_project_id (not found)
-        .mockResolvedValueOnce({ rows: [{ vn: '5' }] }); // nextval
-      mockClientQuery
-        .mockResolvedValueOnce({})                       // BEGIN (createFromSync)
-        .mockResolvedValueOnce({ rows: [{ id: 'jp-generic' }] }) // INSERT RETURNING id
-        .mockResolvedValue({ rows: [] });                // audit + COMMIT + saveTalentumReference txn
+      const report = await useCase.execute();
+
+      expect(report).toMatchObject({ total: 1, created: 0, updated: 0, ignoredNotOurs: 1, errors: [] });
+      expect(mockFake.vacancies).toHaveLength(0);
+    });
+
+    it('OWNER sem par: cria a vaga, como antes', async () => {
+      givenProjects(listItem('proj-o', 'Proyecto propio', { myRole: 'OWNER' }));
+
+      const report = await useCase.execute();
+
+      expect(report).toMatchObject({ created: 1, ignoredNotOurs: 0, errors: [] });
+      expect(mockFake.vacancies).toHaveLength(1);
+    });
+
+    it('VIEWER COM par (por publicId): continua ligando a vaga existente', async () => {
+      mockFake.add({ id: 'jp-1', title: 'antigo', talentum_project_id: 'id-v1', talentum_public_id: 'pub-proj-v' });
+      givenProjects(listItem('proj-v', 'Proyecto ajeno', { myRole: 'VIEWER' }));
+
+      const report = await useCase.execute();
+
+      expect(report).toMatchObject({ updated: 1, created: 0, ignoredNotOurs: 0 });
+      expect(mockFake.vacancies[0].talentum_project_id).toBe('proj-v');
+    });
+  });
+
+  // ── 3. Legado (número do título) e criação ─────────────────────
+
+  describe('número do título (legado) e vaga nova', () => {
+    it('"CASO N-M": liga pela vacancy_number M', async () => {
+      mockFake.add({ id: 'jp-v42', title: 'outro título', vacancy_number: 42 });
+      givenProjects(listItem('proj-1', 'CASO 230-42'));
+
+      const report = await useCase.execute();
+
+      expect(report).toMatchObject({ updated: 1, created: 0, errors: [] });
+      expect(mockFake.vacancies[0].talentum_project_id).toBe('proj-1');
+    });
+
+    it('"CASO N" sem vaga com o número: cai no case_number e liga a vaga do caso', async () => {
+      mockFake.add({ id: 'jp-c88', title: 'outro', case_number: 88 });
+      givenProjects(listItem('proj-1', 'caso 88 - AT')); // case-insensitive
+
+      const report = await useCase.execute();
+
+      expect(report).toMatchObject({ updated: 1, created: 0 });
+    });
+
+    it('"CASO N-M" sem vaga correspondente e sem caso: cria vaga nova (SEARCHING, AR)', async () => {
+      mockFake.nextVn = 99;
+      givenProjects(listItem('proj-1', 'CASO 55'));
+
+      const report = await useCase.execute();
+
+      expect(report).toMatchObject({ created: 1, updated: 0 });
+      expect(mockFake.vacancies[0]).toMatchObject({ title: 'CASO 55-99', vacancy_number: 99, case_number: 55, talentum_project_id: 'proj-1' });
+      const insert = mockFake.clientSql.find((q) => q.includes('INSERT INTO job_postings'))!;
+      expect(insert).toContain("'AR'");
+      expect(insert).toContain("'SEARCHING'");
+    });
+
+    it('case_number nativo (>= 1000) gera "CASO EN{caso}-{vaga}"', async () => {
+      mockFake.nextVn = 1500;
+      givenProjects(listItem('proj-1', 'CASO 1000'));
+
+      await useCase.execute();
+
+      expect(mockFake.vacancies[0].title).toBe('CASO EN1000-1500');
+    });
+
+    it('título sem número: cria "VACANTE {n}" com case_number null', async () => {
+      mockFake.nextVn = 5;
+      givenProjects(listItem('proj-1', 'Proyecto genérico sin número'));
 
       const report = await useCase.execute();
 
       expect(report.created).toBe(1);
-      expect(report.skipped).toBe(0);
-
-      // INSERT is on clientQuery — case_number=null e titulo "VACANTE {vn}"
-      const insertCall = mockClientQuery.mock.calls.find(
-        (c: unknown[]) => typeof c[0] === 'string' && (c[0] as string).includes('INSERT INTO job_postings'),
-      );
-      expect(insertCall).toBeDefined();
-      const insertParams = insertCall![1] as unknown[];
-      expect(insertParams[1]).toBeNull();        // case_number
-      expect(insertParams[2]).toBe('VACANTE 5'); // title
+      expect(mockFake.vacancies[0]).toMatchObject({ title: 'VACANTE 5', case_number: null });
     });
 
-    it('deve aceitar CASO case-insensitive', async () => {
-      const project = makeTalentumProject({ title: 'caso 88 - AT' });
-      mockListAllPrescreenings.mockResolvedValue([project]);
-
-      mockQuery
-        .mockResolvedValueOnce({ rows: [] })    // lookup por talentum_project_id
-        .mockResolvedValueOnce({ rows: [] })    // lookup por case_number
-        .mockResolvedValueOnce({ rows: [{ vn: '20' }] }); // nextval
-      mockClientQuery
-        .mockResolvedValueOnce({})                       // BEGIN
-        .mockResolvedValueOnce({ rows: [{ id: 'jp-88' }] }) // INSERT RETURNING id
-        .mockResolvedValue({ rows: [] });                // audit + COMMIT + saveTalentumReference txn
+    it('"CASO 600-15" sem vaga 15 nem caso 600 → cria nova', async () => {
+      givenProjects(listItem('proj-1', 'CASO 600-15'));
 
       const report = await useCase.execute();
 
@@ -385,340 +305,170 @@ describe('SyncTalentumVacanciesUseCase', () => {
     });
   });
 
-  // ── 4. Resiliencia a erros individuais ──────────────────────
+  // ── 4. Sem link web ────────────────────────────────────────────
 
-  describe('resiliencia a erros individuais', () => {
-    it('deve continuar sync quando um project falha', async () => {
-      const projects = [
-        makeTalentumProject({ projectId: 'proj-fail', title: 'CASO 1' }),
-        makeTalentumProject({ projectId: 'proj-ok', title: 'CASO 2' }),
-      ];
-      mockListAllPrescreenings.mockResolvedValue(projects);
+  describe('projeto sem link web (PHONE_CALL e /prescreening 400)', () => {
+    it('PHONE_CALL: não pede detalhe, conta withoutWebLink e cria SEM publicId nem link', async () => {
+      givenProjects(listItem('proj-tel', 'Llamada de prueba', { type: 'PHONE_CALL' }));
 
-      // proj-fail: lookup (not found) → case_number lookup (not found) → nextval fails
-      // proj-ok:   lookup (not found) → case_number lookup (not found) → nextval ok
-      mockQuery
-        .mockResolvedValueOnce({ rows: [] })              // proj-fail: SELECT talentum_project_id
-        .mockResolvedValueOnce({ rows: [] })              // proj-fail: SELECT case_number
-        .mockRejectedValueOnce(new Error('DB connection lost')) // proj-fail: nextval → error
-        .mockResolvedValueOnce({ rows: [] })              // proj-ok:   SELECT talentum_project_id
-        .mockResolvedValueOnce({ rows: [] })              // proj-ok:   SELECT case_number
-        .mockResolvedValueOnce({ rows: [{ vn: '1' }] })  // proj-ok:   nextval
-        // proj-ok: syncQuestions/syncFaq (default mockResolvedValue handles these)
-        ;
-      mockClientQuery
-        .mockResolvedValueOnce({})                          // BEGIN (proj-ok createFromSync)
-        .mockResolvedValueOnce({ rows: [{ id: 'jp-new-2' }] }) // INSERT RETURNING id
-        .mockResolvedValue({ rows: [] });                   // audit + COMMIT + saveTalentumReference txn
+      const report = await useCase.execute();
+
+      expect(mockGetPrescreening).not.toHaveBeenCalled();
+      expect(report).toMatchObject({ created: 1, withoutWebLink: 1, errors: [] });
+      expect(mockFake.vacancies[0]).toMatchObject({ talentum_project_id: 'proj-tel', talentum_public_id: null, talentum_whatsapp_url: null });
+    });
+
+    it('/prescreening 400: liga pelo título SEM apagar link e descrição já gravados', async () => {
+      mockFake.add({ id: 'jp-400', title: 'EN 4#1', talentum_whatsapp_url: WEB('pub-gravado'), talentum_description: 'texto gravado' });
+      mockListAllPrescreenings.mockResolvedValue([listItem('proj-400', 'EN 4#1')]);
+      mockGetPrescreening.mockRejectedValue(new Error('[TalentumApiClient] GET /projects/proj-400/prescreening — HTTP 400: {}'));
+
+      const report = await useCase.execute();
+
+      expect(report).toMatchObject({ updated: 1, withoutWebLink: 1, linkedByTitle: 1, errors: [] });
+      expect(mockFake.vacancies[0]).toMatchObject({
+        talentum_project_id: 'proj-400',
+        talentum_whatsapp_url: WEB('pub-gravado'),
+        talentum_description: 'texto gravado',
+      });
+    });
+
+    it('o UPDATE usa COALESCE nos campos que podem vir vazios (item da lista não traz link)', async () => {
+      givenProjects(listItem('proj-1', 'EN 1#1'));
+      await useCase.execute();
+      const update = mockFake.clientSql.find((q) => q.includes('UPDATE job_postings'))!;
+      for (const col of ['talentum_public_id', 'talentum_whatsapp_url', 'talentum_slug', 'talentum_published_at', 'talentum_description']) {
+        expect(update).toMatch(new RegExp(`${col}\\s*= COALESCE\\(`));
+      }
+    });
+
+    it('erro do detalhe que NÃO é 400 (ex.: 500) vai para o relatório e o sync segue', async () => {
+      mockListAllPrescreenings.mockResolvedValue([listItem('p-ruim', 'EN 1#1'), listItem('p-ok', 'EN 2#1')]);
+      mockGetPrescreening.mockImplementation(async (id: string) => {
+        if (id === 'p-ruim') throw new Error('[TalentumApiClient] GET /projects/p-ruim — HTTP 500: x');
+        return detail(listItem(id, 'EN 2#1'));
+      });
 
       const report = await useCase.execute();
 
       expect(report.total).toBe(2);
+      expect(report.errors).toEqual([{ projectId: 'p-ruim', title: 'EN 1#1', error: expect.stringContaining('HTTP 500') }]);
+      expect(report.created).toBe(1);
+    });
+
+    it('rejeição que não é Error também é relatada (e não derruba o sync)', async () => {
+      mockListAllPrescreenings.mockResolvedValue([listItem('p-1', 'EN 1#1')]);
+      mockGetPrescreening.mockRejectedValue('texto cru');
+
+      const report = await useCase.execute();
+
       expect(report.errors).toHaveLength(1);
-      expect(report.errors[0].projectId).toBe('proj-fail');
-    });
-
-    it('deve registrar projectId e title no erro', async () => {
-      const project = makeTalentumProject({
-        projectId: 'proj-x',
-        title: 'CASO 77 - fallido',
-      });
-      mockListAllPrescreenings.mockResolvedValue([project]);
-
-      mockQuery
-        .mockResolvedValueOnce({ rows: [] })  // lookup por talentum_project_id (not found)
-        .mockResolvedValueOnce({ rows: [] })  // lookup por case_number (not found)
-        .mockRejectedValueOnce(new Error('timeout')); // nextval fails
-
-      const report = await useCase.execute();
-
-      expect(report.errors[0]).toEqual({
-        projectId: 'proj-x',
-        title: 'CASO 77 - fallido',
-        error: 'timeout',
-      });
     });
   });
 
-  // ── 4b. Parametro `force` default (processProject) ──────────
-  //
-  // `execute()` sempre encaminha `force` já resolvido (`opts?.force ?? false`),
-  // então o valor DEFAULT do parâmetro de `processProject` nunca é exercitado
-  // pela API pública — chamada direta ao método privado é o único jeito de
-  // cobrir esse branch (cobertura 100% do ARQUIVO, não só do caminho público).
-  describe('parametro force default de processProject (branch não alcançável via execute())', () => {
-    it('chamada sem 4º argumento (force) trata como false — já synced é skip', async () => {
-      const project = makeTalentumProject({ projectId: 'proj-force-default', title: 'CASO 500' });
-      const report: SyncReport = { total: 0, updated: 0, created: 0, skipped: 0, errors: [] };
+  // ── 5. FAQ e perguntas ─────────────────────────────────────────
 
-      mockQuery
-        .mockResolvedValueOnce({ rows: [{ id: 'jp-500', talentum_project_id: 'proj-force-default' }] }); // já synced
+  describe('FAQ e perguntas', () => {
+    it('a FAQ do banco sobrevive a um sync com faq: [] (nenhuma SQL toca a tabela de FAQ)', async () => {
+      mockFake.add({ id: 'jp-1', title: 'EN 1#1', talentum_project_id: 'proj-1' });
+      mockFake.faq.set('jp-1', [{ question: 'q', answer: 'a' }]);
+      givenProjects(listItem('proj-1', 'EN 1#1'));
 
-      // needsDetail=false (project tem description+questions) → talentumClient nunca é usado.
-      await (useCase as any).processProject(project, {} as never, report);
+      await useCase.execute({ force: true });
 
-      expect(report.skipped).toBe(1);
-      expect(report.updated).toBe(0);
-      expect(report.created).toBe(0);
+      expect(mockFake.faqSql).toEqual([]);
+      expect(mockFake.faq.get('jp-1')).toHaveLength(1);
+    });
+
+    it('mesmo que o detalhe traga FAQ (forma legada), o sync NÃO a grava', async () => {
+      mockFake.add({ id: 'jp-1', title: 'EN 1#1', talentum_project_id: 'proj-1' });
+      mockListAllPrescreenings.mockResolvedValue([listItem('proj-1', 'EN 1#1')]);
+      mockGetPrescreening.mockResolvedValue(detail(listItem('proj-1', 'EN 1#1'), { faq: [{ question: 'x', answer: 'y' }] }));
+
+      await useCase.execute({ force: true });
+
+      expect(mockFake.faqSql).toEqual([]);
+    });
+
+    it('substitui as perguntas pelas da Talentum (DELETE + 1 INSERT por pergunta)', async () => {
+      mockFake.add({ id: 'jp-1', title: 'EN 1#1', talentum_project_id: 'proj-1' });
+      mockListAllPrescreenings.mockResolvedValue([listItem('proj-1', 'EN 1#1')]);
+      const q = (n: number) => ({ questionId: `q${n}`, question: `P${n}?`, type: 'text' as const, responseType: ['audio' as const], desiredResponse: 'x', weight: 3, required: false, analyzed: false, earlyStoppage: true });
+      mockGetPrescreening.mockResolvedValue(detail(listItem('proj-1', 'EN 1#1'), { questions: [q(1), q(2)] }));
+
+      await useCase.execute({ force: true });
+
+      expect(mockFake.questionsByVacancy.get('jp-1')).toBe(2);
+    });
+
+    it('sem perguntas no detalhe: não toca nas perguntas do banco', async () => {
+      mockFake.add({ id: 'jp-1', title: 'EN 1#1', talentum_project_id: 'proj-1' });
+      mockFake.questionsByVacancy.set('jp-1', 4);
+      mockListAllPrescreenings.mockResolvedValue([listItem('proj-1', 'EN 1#1')]);
+      mockGetPrescreening.mockResolvedValue(detail(listItem('proj-1', 'EN 1#1'), { questions: [] }));
+
+      await useCase.execute({ force: true });
+
+      expect(mockFake.questionsByVacancy.get('jp-1')).toBe(4);
     });
   });
 
-  // ── 5. Multiplos projects ───────────────────────────────────
+  // ── 6. Resiliência e relatório ─────────────────────────────────
 
-  describe('multiplos projects', () => {
-    it('deve processar todos os projects', async () => {
-      const projects = [
-        makeTalentumProject({ projectId: 'p1', title: 'CASO 1' }),
-        makeTalentumProject({ projectId: 'p2', title: 'CASO 2' }),
-        makeTalentumProject({ projectId: 'p3', title: 'CASO 3' }),
-      ];
-      mockListAllPrescreenings.mockResolvedValue(projects);
-
-      // Pool: each project: SELECT talentum_project_id, SELECT case_number, nextval
-      // INSERT is on client (createFromSync); syncQuestions/syncFaq use pool (default resolves)
-      mockQuery.mockImplementation((sql: string) => {
-        if (sql.includes('SELECT') && sql.includes('talentum_project_id')) {
-          return Promise.resolve({ rows: [] });
-        }
-        if (sql.includes('nextval')) return Promise.resolve({ rows: [{ vn: '1' }] });
-        // SELECT case_number and any other pool queries
-        return Promise.resolve({ rows: [] });
-      });
-      // Use mockImplementation on client to return the correct RETURNING row for INSERT,
-      // and safe defaults for everything else (BEGIN, SAVEPOINT, audit, RELEASE, COMMIT, UPDATE).
-      let insertCounter = 0;
-      mockClientQuery.mockImplementation((sql: unknown) => {
-        if (typeof sql === 'string' && sql.includes('INSERT INTO job_postings')) {
-          insertCounter++;
-          return Promise.resolve({ rows: [{ id: `jp-${insertCounter}` }] });
-        }
-        return Promise.resolve({ rows: [] });
-      });
+  describe('resiliência e relatório', () => {
+    it('um projeto que falha (nextval) não aborta os demais; erro leva projectId e título', async () => {
+      givenProjects(listItem('proj-fail', 'CASO 1'), listItem('proj-ok', 'CASO 2'));
+      mockFake.failOnce.set('nextval', new Error('DB connection lost'));
 
       const report = await useCase.execute();
 
-      expect(report.total).toBe(3);
-      expect(report.created).toBe(3);
+      expect(report.total).toBe(2);
+      expect(report.errors).toEqual([{ projectId: 'proj-fail', title: 'CASO 1', error: 'DB connection lost' }]);
+      expect(report.created).toBe(1);
     });
 
-    it('deve retornar total=0 quando nao ha projects', async () => {
+    it('INSERT de createFromSync falha → ROLLBACK e erro no relatório', async () => {
+      givenProjects(listItem('proj-1', 'CASO 300'));
+      mockFake.failOnce.set('INSERT INTO job_postings', new Error('insert failed'));
+
+      const report = await useCase.execute();
+
+      expect(report.errors).toEqual([{ projectId: 'proj-1', title: 'CASO 300', error: 'insert failed' }]);
+      expect(mockFake.clientSql).toContain('ROLLBACK');
+    });
+
+    it('UPDATE da referência falha → ROLLBACK e erro no relatório (não é best-effort)', async () => {
+      mockFake.add({ id: 'jp-1', title: 'EN 1#1', talentum_project_id: 'proj-velho' });
+      mockFake.vacancies[0].talentum_public_id = 'pub-proj-1';
+      givenProjects(listItem('proj-1', 'EN 1#1'));
+      mockFake.failOnce.set('SET talentum_project_id', new Error('update ref failed'));
+
+      const report = await useCase.execute();
+
+      expect(report.errors).toEqual([{ projectId: 'proj-1', title: 'EN 1#1', error: 'update ref failed' }]);
+      expect(mockFake.clientSql).toContain('ROLLBACK');
+    });
+
+    it('lista vazia: total 0 e nenhuma escrita', async () => {
       mockListAllPrescreenings.mockResolvedValue([]);
 
       const report = await useCase.execute();
 
-      expect(report.total).toBe(0);
-      expect(report.updated).toBe(0);
-      expect(report.created).toBe(0);
-      expect(report.skipped).toBe(0);
-      expect(report.errors).toHaveLength(0);
+      expect(report).toEqual(emptyReport());
+      expect(mockFake.clientSql).toEqual([]);
     });
-  });
 
-  // ── 6. Salva referencia Talentum ─────────────────────────────
-
-  describe('saveTalentumReference', () => {
-    it('deve salvar projectId, publicId, whatsappUrl, slug, timestamp e description', async () => {
-      const project = makeTalentumProject({
-        projectId: 'proj-ref',
-        publicId: 'pub-ref',
-        title: 'CASO 60',
-        description: 'Descripcion completa...',
-        whatsappUrl: 'https://wa.me/ref',
-        slug: 'caso-60-ref',
-        timestamp: '2025-06-01T12:00:00Z',
-      });
-      mockListAllPrescreenings.mockResolvedValue([project]);
-
-      // Pool: lookup talentum_project_id (not found), lookup case_number (not found), nextval
-      // INSERT + saveTalentumReference UPDATE + audits are now all on client
-      mockQuery
-        .mockResolvedValueOnce({ rows: [] })              // lookup por talentum_project_id (not found)
-        .mockResolvedValueOnce({ rows: [] })              // lookup por case_number (not found)
-        .mockResolvedValueOnce({ rows: [{ vn: '30' }] }); // nextval
-      mockClientQuery.mockImplementation((sql: unknown) => {
-        if (typeof sql === 'string' && sql.includes('INSERT INTO job_postings')) {
-          return Promise.resolve({ rows: [{ id: 'jp-60' }] });
-        }
-        return Promise.resolve({ rows: [] });
-      });
-
-      await useCase.execute();
-
-      // saveTalentumReference UPDATE runs on client, not pool
-      const refCall = mockClientQuery.mock.calls.find(
-        (call: unknown[]) => typeof call[0] === 'string' && (call[0] as string).includes('SET talentum_project_id'),
-      );
-      expect(refCall).toBeDefined();
-      const refParams = refCall![1] as unknown[];
-
-      expect(refParams[0]).toBe('proj-ref');
-      expect(refParams[1]).toBe('pub-ref');
-      expect(refParams[2]).toBe('https://wa.me/ref');
-      expect(refParams[3]).toBe('caso-60-ref');
-      expect(refParams[4]).toBe('2025-06-01T12:00:00Z');
-      expect(refParams[5]).toBe('Descripcion completa...');
-      expect(refParams[6]).toBe('jp-60');
-    });
-  });
-
-  // ── 7. Report completo ───────────────────────────────────────
-
-  describe('relatorio final', () => {
-    it('deve retornar skipped quando talentum_project_id ja synced (sem force)', async () => {
-      const projects = [
-        makeTalentumProject({ projectId: 'p-skip', title: 'CASO 1' }),
-        makeTalentumProject({ projectId: 'p-create', title: 'CASO 2' }),
-      ];
-      mockListAllPrescreenings.mockResolvedValue(projects);
-
-      // Pool: p-skip lookup (found=skip), p-create lookup (not found), case_number lookup, nextval
-      // INSERT + saveTalentumReference are on client
-      mockQuery.mockImplementation((sql: string, params?: unknown[]) => {
-        if (sql.includes('SELECT') && sql.includes('talentum_project_id') && params?.[0] === 'p-skip') {
-          return Promise.resolve({ rows: [{ id: 'jp-1', talentum_project_id: 'p-skip' }] });
-        }
-        if (sql.includes('SELECT') && sql.includes('talentum_project_id')) {
-          return Promise.resolve({ rows: [] }); // p-create: not found
-        }
-        if (sql.includes('nextval')) return Promise.resolve({ rows: [{ vn: '1' }] });
-        return Promise.resolve({ rows: [] }); // SELECT case_number, syncQuestions/FAQ pool queries
-      });
-      // Client: any INSERT RETURNING returns jp-new; all other calls safe (BEGIN, SAVEPOINT, etc.)
-      mockClientQuery.mockImplementation((sql: unknown) => {
-        if (typeof sql === 'string' && sql.includes('INSERT INTO job_postings')) {
-          return Promise.resolve({ rows: [{ id: 'jp-new' }] });
-        }
-        return Promise.resolve({ rows: [] });
-      });
+    it('mistura: skip + atualiza + cria + duplicata, com totais coerentes', async () => {
+      mockFake.add({ id: 'jp-1', title: 'EN 1#1', talentum_project_id: 'p1' });
+      mockFake.add({ id: 'jp-2', title: 'EN 2#1', talentum_project_id: 'velho-2', talentum_public_id: 'pub-p2' });
+      mockFake.add({ id: 'jp-d1', title: 'EN 4#1' });
+      mockFake.add({ id: 'jp-d2', title: 'EN 4#1' });
+      givenProjects(listItem('p1', 'EN 1#1'), listItem('p2', 'EN 2#1'), listItem('p3', 'Proyecto nuevo'), listItem('p4', 'EN 4#1'));
 
       const report = await useCase.execute();
 
-      expect(report.total).toBe(2);
-      expect(report.skipped).toBe(1);
-      expect(report.created).toBe(1);
-      expect(report.updated).toBe(0);
-    });
-
-    it('deve retornar updated quando force=true e talentum_project_id ja synced', async () => {
-      const projects = [
-        makeTalentumProject({ projectId: 'p-update', title: 'CASO 1' }),
-        makeTalentumProject({ projectId: 'p-create', title: 'CASO 2' }),
-      ];
-      mockListAllPrescreenings.mockResolvedValue(projects);
-
-      // Pool: p-update lookup (found=update path), p-create lookup (not found), case_number, nextval
-      // All INSERT + UPDATE saveTalentumReference are on client
-      mockQuery.mockImplementation((sql: string, params?: unknown[]) => {
-        if (sql.includes('SELECT') && sql.includes('talentum_project_id') && params?.[0] === 'p-update') {
-          return Promise.resolve({ rows: [{ id: 'jp-1', talentum_project_id: 'p-update' }] });
-        }
-        if (sql.includes('SELECT') && sql.includes('talentum_project_id')) {
-          return Promise.resolve({ rows: [] }); // p-create: not found
-        }
-        if (sql.includes('nextval')) return Promise.resolve({ rows: [{ vn: '1' }] });
-        return Promise.resolve({ rows: [] }); // SELECT case_number, syncQuestions/FAQ pool queries
-      });
-      // Client: any INSERT RETURNING returns jp-new; all other calls safe
-      mockClientQuery.mockImplementation((sql: unknown) => {
-        if (typeof sql === 'string' && sql.includes('INSERT INTO job_postings')) {
-          return Promise.resolve({ rows: [{ id: 'jp-new' }] });
-        }
-        return Promise.resolve({ rows: [] });
-      });
-
-      const report = await useCase.execute({ force: true });
-
-      expect(report.total).toBe(2);
-      expect(report.updated).toBe(1);
-      expect(report.created).toBe(1);
-      expect(report.skipped).toBe(0);
-    });
-  });
-
-  // ── 8. Sync questions e FAQ ─────────────────────────────────
-
-  describe('sync questions e FAQ', () => {
-    it('deve sincronizar questions e FAQ da Talentum', async () => {
-      const project = makeTalentumProject({
-        projectId: 'proj-q',
-        title: 'CASO 10',
-        questions: [
-          { questionId: 'q1', question: 'Pregunta 1?', type: 'text' as const, responseType: ['text' as const], desiredResponse: 'Si', weight: 5, required: true, analyzed: true, earlyStoppage: false },
-          { questionId: 'q2', question: 'Pregunta 2?', type: 'text' as const, responseType: ['audio' as const], desiredResponse: 'No', weight: 3, required: false, analyzed: false, earlyStoppage: true },
-        ],
-        faq: [
-          { question: 'FAQ 1?', answer: 'Respuesta 1' },
-        ],
-      });
-      mockListAllPrescreenings.mockResolvedValue([project]);
-
-      // Pool: lookup talentum_project_id, lookup case_number, nextval
-      // + syncQuestions/FAQ (DELETE+INSERT) still use pool
-      // INSERT job_posting + saveTalentumReference UPDATE are on client
-      mockQuery
-        .mockResolvedValueOnce({ rows: [] })         // lookup por talentum_project_id
-        .mockResolvedValueOnce({ rows: [] })         // lookup por case_number
-        .mockResolvedValueOnce({ rows: [{ vn: '1' }] }) // nextval
-        .mockResolvedValueOnce({ rows: [] })         // DELETE questions (syncQuestions)
-        .mockResolvedValueOnce({ rows: [] })         // INSERT question 1 (syncQuestions)
-        .mockResolvedValueOnce({ rows: [] })         // INSERT question 2 (syncQuestions)
-        .mockResolvedValueOnce({ rows: [] })         // DELETE faq (syncFaq)
-        .mockResolvedValueOnce({ rows: [] });        // INSERT faq 1 (syncFaq)
-      mockClientQuery
-        .mockResolvedValueOnce({})                              // BEGIN (createFromSync)
-        .mockResolvedValueOnce({ rows: [{ id: 'jp-q' }] })     // INSERT RETURNING id
-        .mockResolvedValue({ rows: [] });                       // audit + COMMIT + saveTalentumReference txn
-
-      await useCase.execute();
-
-      // syncQuestions/FAQ still use pool — assert via mockQuery
-      const deleteQCall = mockQuery.mock.calls.find(
-        (call: unknown[]) => typeof call[0] === 'string' && (call[0] as string).includes('DELETE FROM job_posting_prescreening_questions'),
-      );
-      expect(deleteQCall).toBeDefined();
-
-      const insertQCalls = mockQuery.mock.calls.filter(
-        (call: unknown[]) => typeof call[0] === 'string' && (call[0] as string).includes('INSERT INTO job_posting_prescreening_questions'),
-      );
-      expect(insertQCalls).toHaveLength(2);
-
-      // Verify DELETE + INSERT for FAQ
-      const deleteFaqCall = mockQuery.mock.calls.find(
-        (call: unknown[]) => typeof call[0] === 'string' && (call[0] as string).includes('DELETE FROM job_posting_prescreening_faq'),
-      );
-      expect(deleteFaqCall).toBeDefined();
-
-      const insertFaqCalls = mockQuery.mock.calls.filter(
-        (call: unknown[]) => typeof call[0] === 'string' && (call[0] as string).includes('INSERT INTO job_posting_prescreening_faq'),
-      );
-      expect(insertFaqCalls).toHaveLength(1);
-    });
-
-    it('deve pular sync de questions/FAQ quando nao existem', async () => {
-      const project = makeTalentumProject({
-        projectId: 'proj-no-q',
-        title: 'CASO 20',
-        questions: [],
-        faq: [],
-      });
-      mockListAllPrescreenings.mockResolvedValue([project]);
-
-      // Pool: lookup talentum_project_id, lookup case_number, nextval (no DELETE/INSERT since empty)
-      mockQuery
-        .mockResolvedValueOnce({ rows: [] })          // lookup talentum_project_id
-        .mockResolvedValueOnce({ rows: [] })          // lookup case_number
-        .mockResolvedValueOnce({ rows: [{ vn: '2' }] }); // nextval
-      mockClientQuery
-        .mockResolvedValueOnce({})                              // BEGIN (createFromSync)
-        .mockResolvedValueOnce({ rows: [{ id: 'jp-no-q' }] }) // INSERT RETURNING id
-        .mockResolvedValue({ rows: [] });                       // audit + COMMIT + saveTalentumReference txn
-
-      await useCase.execute();
-
-      const deleteQCalls = mockQuery.mock.calls.filter(
-        (call: unknown[]) => typeof call[0] === 'string' && (call[0] as string).includes('DELETE FROM job_posting_prescreening'),
-      );
-      expect(deleteQCalls).toHaveLength(0);
+      expect(report).toMatchObject({ total: 4, skipped: 1, updated: 1, created: 1, errors: [] });
+      expect(report.duplicateTitles).toHaveLength(1);
     });
   });
 });

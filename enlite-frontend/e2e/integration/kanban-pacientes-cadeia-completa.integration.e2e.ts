@@ -198,7 +198,7 @@ test.describe('cadeia-completa @integration', () => {
           page.locator(`[data-testid="kanban-column-COMPATIBLE"] [data-testid="kanban-card-${wjaM}"]`),
         ).toBeVisible({ timeout: 15_000 });
 
-        const creates = stub.calls.filter((c) => c.method === 'POST' && c.path === '/pre-screening/projects').length;
+        const creates = stub.calls.filter((c) => c.method === 'POST' && c.path === '/projects').length;
         expect(creates).toBe(1);
         const outM = countOutboundSince(m, t0);
         expect(outM).toEqual({ domainEvents: 0, stageMessageLog: 0, outbox: 0 });
@@ -519,7 +519,7 @@ test.describe('cadeia-completa @integration', () => {
         m: countOutboundSince(m, t0), wa: countOutboundSince(wa, t0), wb: countOutboundSince(wb, t0),
         wc: countOutboundSince(wc, t0), ws: countOutboundSince(ws, t0),
       };
-      const creates = stub.calls.filter((c) => c.method === 'POST' && c.path === '/pre-screening/projects').length;
+      const creates = stub.calls.filter((c) => c.method === 'POST' && c.path === '/projects').length;
       console.log('[16.7]', net.forbidden.length, net.apiHits, net.observedHits, outbound, creates);
       expect(net.forbidden).toEqual([]);
       expect(net.apiHits).toBeGreaterThan(0);
@@ -621,7 +621,7 @@ test.describe('cadeia-completa @integration', () => {
 
         const net = tally();
         const outWz = countOutboundSince(wz, t0);
-        const creates = stub.calls.filter((c) => c.method === 'POST' && c.path === '/pre-screening/projects').length;
+        const creates = stub.calls.filter((c) => c.method === 'POST' && c.path === '/projects').length;
         expect(net.forbidden).toEqual([]);
         expect(net.apiHits).toBeGreaterThan(0);
         expect(outWz).toEqual({ domainEvents: WZ_FUNNEL_STAGE_ENTRIES, stageMessageLog: 0, outbox: 0 });
