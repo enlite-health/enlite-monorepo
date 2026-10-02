@@ -1,8 +1,7 @@
 /**
  * VacancyLaunchHook — invariante 7 (D434): o LANÇAMENTO da vaga (envio à Talentum) tira o
- * paciente do funil de Admissão (funil → SEARCHING) e dispara o match SEM convite. Nunca lança
- * (DX-6.2): cada metade (mover/casar) tem try/catch próprio — uma falhar não impede a outra, e a
- * função sempre RESOLVE.
+ * paciente do funil de Admissão (funil → SEARCHING). Nesta rota (D466) o gancho NÃO roda o match —
+ * ele volta na rota (a) junto com Compatíveis. Nunca lança (DX-6.2): a função sempre RESOLVE.
  */
 let queryImpl: (sql: string, params?: unknown[]) => Promise<unknown> = async () => ({ rows: [], rowCount: 0 });
 const mockClient = {
@@ -25,14 +24,9 @@ jest.mock('@shared/logging', () => ({
 
 import * as functions from 'firebase-functions';
 import { reportError } from '@shared/logging';
-import {
-  onVacancyLaunched,
-  readLaunchTarget,
-  LAUNCH_MATCH_RADIUS_KM,
-  LAUNCH_MATCH_TOP_N,
-} from '../VacancyLaunchHook';
+import { onVacancyLaunched, readLaunchTarget } from '../VacancyLaunchHook';
 import { PatientStatusNotReadyError } from '../PatientStatusWriter';
-import type { MatchResult } from '../../../matching/infrastructure/MatchmakingService';
+import { MatchmakingService } from '../../../matching/infrastructure/MatchmakingService';
 
 const JOB_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const PID = '11111111-1111-4111-8111-111111111111';
@@ -52,26 +46,21 @@ function dbTarget(row: TargetRow | null) {
   };
 }
 
-function matchResult(n: number): MatchResult {
-  return {
-    jobPostingId: JOB_ID,
-    radiusKm: LAUNCH_MATCH_RADIUS_KM,
-    matchSummary: { hardFilteredCount: n, llmScoredCount: 0 },
-    candidates: Array.from({ length: n }, (_, i) => ({ workerId: `w${i}` })) as MatchResult['candidates'],
-  };
-}
-
 describe('VacancyLaunchHook.onVacancyLaunched', () => {
   let moveStatus: jest.Mock;
-  let runMatch: jest.Mock;
+  let matchSpy: jest.SpyInstance;
 
   beforeEach(() => {
     jest.clearAllMocks();
     moveStatus = jest.fn().mockResolvedValue({ id: PID, status: 'SEARCHING' });
-    runMatch = jest.fn().mockResolvedValue(matchResult(3));
+    matchSpy = jest.spyOn(MatchmakingService.prototype, 'matchWorkersForJob');
   });
 
-  const deps = () => ({ moveStatus, runMatch, readLaunchTarget });
+  afterEach(() => {
+    matchSpy.mockRestore();
+  });
+
+  const deps = () => ({ moveStatus, readLaunchTarget });
 
   it.each(['SOLICITANTE', 'ADMISSION', 'PENDING_ADMISSION'] as const)(
     'funil (%s) → 1 moveStatus(SEARCHING, { changeSource: vacancy_launch }), patient: moved',
@@ -85,13 +74,12 @@ describe('VacancyLaunchHook.onVacancyLaunched', () => {
   );
 
   it.each(['ACTIVE', 'SEARCHING'] as const)(
-    'fora do funil (%s) → 0 chamadas a moveStatus, patient: unchanged; o match roda igual',
+    'fora do funil (%s) → 0 chamadas a moveStatus, patient: unchanged',
     async (status) => {
       dbTarget({ patient_id: PID, status, lat: '-34.6', lng: '-58.4' });
       const outcome = await onVacancyLaunched(JOB_ID, deps());
       expect(moveStatus).not.toHaveBeenCalled();
       expect(outcome.patient).toBe('unchanged');
-      expect(runMatch).toHaveBeenCalledTimes(1);
     },
   );
 
@@ -111,43 +99,28 @@ describe('VacancyLaunchHook.onVacancyLaunched', () => {
       'vacancy_launch.patient_not_visible',
       { jobPostingId: JOB_ID, patientId: PID },
     );
-    expect(runMatch).toHaveBeenCalledTimes(1);
   });
 
-  it('vaga inexistente/rascunho (0 linhas) → no_target, match: skipped_no_target, nenhuma chamada', async () => {
+  it('vaga inexistente/rascunho (0 linhas) → no_target, nenhuma chamada', async () => {
     dbTarget(null);
     const outcome = await onVacancyLaunched(JOB_ID, deps());
-    expect(outcome).toEqual({ jobPostingId: JOB_ID, patient: 'no_target', match: 'skipped_no_target' });
+    expect(outcome).toEqual({ jobPostingId: JOB_ID, patient: 'no_target' });
     expect(moveStatus).not.toHaveBeenCalled();
-    expect(runMatch).not.toHaveBeenCalled();
   });
 
-  it('runMatch é chamado com o objeto exato {radiusKm:50, topN:200, includeIncompleteRegister:false, excludeWithActiveCases:false}', async () => {
+  it('NÃO chama o match (D466): alvo completo (paciente em Admisión + lat/lng) → matchWorkersForJob 0×', async () => {
     dbTarget({ patient_id: PID, status: 'ADMISSION', lat: '-34.6', lng: '-58.4' });
-    await onVacancyLaunched(JOB_ID, deps());
-    expect(runMatch).toHaveBeenCalledWith(JOB_ID, {
-      radiusKm: 50,
-      topN: 200,
-      includeIncompleteRegister: false,
-      excludeWithActiveCases: false,
-    });
-    expect(LAUNCH_MATCH_RADIUS_KM).toBe(50);
-    expect(LAUNCH_MATCH_TOP_N).toBe(200);
-  });
-
-  it('sem lat/lng → runMatch 0×, match: skipped_no_location', async () => {
-    dbTarget({ patient_id: PID, status: 'ADMISSION', lat: null, lng: null });
     const outcome = await onVacancyLaunched(JOB_ID, deps());
-    expect(runMatch).not.toHaveBeenCalled();
-    expect(outcome.match).toBe('skipped_no_location');
+    expect(outcome.patient).toBe('moved');
+    expect(outcome).not.toHaveProperty('match');
+    expect(matchSpy).not.toHaveBeenCalled();
   });
 
-  it('moveStatus lança PatientStatusNotReadyError → patient: not_ready, e o match roda IGUAL (1×)', async () => {
+  it('moveStatus lança PatientStatusNotReadyError → patient: not_ready', async () => {
     dbTarget({ patient_id: PID, status: 'ADMISSION', lat: '-34.6', lng: '-58.4' });
     moveStatus.mockRejectedValue(new PatientStatusNotReadyError('SEARCHING', ['SERVICE_SCHEDULE']));
     const outcome = await onVacancyLaunched(JOB_ID, deps());
     expect(outcome.patient).toBe('not_ready');
-    expect(runMatch).toHaveBeenCalledTimes(1);
     expect(functions.logger.warn).toHaveBeenCalledWith(
       'vacancy_launch.patient_not_moved',
       expect.objectContaining({
@@ -159,19 +132,11 @@ describe('VacancyLaunchHook.onVacancyLaunched', () => {
     );
   });
 
-  it('moveStatus lança Error genérico → patient: failed, runMatch 1×, a função RESOLVE (nunca lança)', async () => {
+  it('moveStatus lança Error genérico → patient: failed, a função RESOLVE (nunca lança)', async () => {
     dbTarget({ patient_id: PID, status: 'ADMISSION', lat: '-34.6', lng: '-58.4' });
     moveStatus.mockRejectedValue(new Error('boom-move'));
     await expect(onVacancyLaunched(JOB_ID, deps())).resolves.toMatchObject({ patient: 'failed' });
-    expect(runMatch).toHaveBeenCalledTimes(1);
     expect(reportError).toHaveBeenCalledWith(expect.any(Error), { source: 'VacancyLaunchHook:move' });
-  });
-
-  it('runMatch lança → match: failed, a função RESOLVE (nunca lança)', async () => {
-    dbTarget({ patient_id: PID, status: 'ADMISSION', lat: '-34.6', lng: '-58.4' });
-    runMatch.mockRejectedValue(new Error('boom-match'));
-    await expect(onVacancyLaunched(JOB_ID, deps())).resolves.toMatchObject({ patient: 'moved', match: 'failed' });
-    expect(reportError).toHaveBeenCalledWith(expect.any(Error), { source: 'VacancyLaunchHook:match' });
   });
 
   it('a leitura roda dentro do inPatientTransaction (BEGIN…COMMIT) e a SQL tem jp.is_draft = false', async () => {
@@ -186,7 +151,6 @@ describe('VacancyLaunchHook.onVacancyLaunched', () => {
   it('nenhum argumento de log contém nome/telefone — só ids e código de erro', async () => {
     dbTarget({ patient_id: PID, status: 'ADMISSION', lat: '-34.6', lng: '-58.4' });
     moveStatus.mockRejectedValue(new Error('boom'));
-    runMatch.mockRejectedValue(new Error('boom2'));
     await onVacancyLaunched(JOB_ID, deps());
     const loggedInfo = JSON.stringify((functions.logger.info as jest.Mock).mock.calls);
     const loggedWarn = JSON.stringify((functions.logger.warn as jest.Mock).mock.calls);

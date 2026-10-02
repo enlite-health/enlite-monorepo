@@ -11,7 +11,7 @@
  * If the audit INSERT fails, only the audit row is rolled back — the surrounding
  * transaction (UPDATE job_postings) is NOT affected and always commits.
  *
- * 7. Pós-commit: `onVacancyLaunched` (paciente do funil → Búsqueda; match sem convite).
+ * 7. Pós-commit: `onVacancyLaunched` (paciente do funil → Búsqueda).
  */
 
 import { Pool } from 'pg';

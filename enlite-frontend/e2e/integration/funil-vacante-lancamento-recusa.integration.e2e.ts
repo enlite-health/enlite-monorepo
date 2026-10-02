@@ -45,7 +45,7 @@ import {
   loginAndMockAi,
   LANCAMENTO_VIEWPORT_ES_AR,
 } from '../helpers/lancamento-e2e-helper';
-import { readPatientStatusApi } from '../helpers/lancamento-leituras-helper';
+import { readPatientStatusApi, countSystemInvitedApplications } from '../helpers/lancamento-leituras-helper';
 import { runSQL } from '../helpers/patient-detail-a-helper';
 import { tokenFor } from '../helpers/abac-stack-helper';
 import { cleanupTestWorker } from '../helpers/db-test-helper';
@@ -151,6 +151,12 @@ test.describe('funil-vacante lancamento recusa @integration', () => {
       const trailAfterAccept = countLaunchTrail(patient.patientId);
       expect(trailAfterAccept, 'trilha vacancy_launch = 1 depois do lançamento aceito').toBe(1);
 
+      // D466: nesta rota o lançamento só move o paciente — o match NÃO roda, então a vaga não
+      // ganha nenhuma linha INVITED/system (o convite automático pularia quem já tem linha).
+      // `w` foi semeado perto da coordenada: com o match religado ele seria gravado aqui.
+      const systemInvitedAfterAccept = countSystemInvitedApplications(vacancyId);
+      expect(systemInvitedAfterAccept, 'vaga tem 0 linhas INVITED/system depois do lançamento aceito').toBe(0);
+
       console.log('[6.7] lancamento-talentum-recusa-nao-move (alternativo aceito)', {
         vacancyId,
         patientId: patient.patientId,
@@ -158,6 +164,7 @@ test.describe('funil-vacante lancamento recusa @integration', () => {
         secondPublishStatus: secondRes.status(),
         statusAfterAccept,
         trailAfterAccept,
+        systemInvitedAfterAccept,
       });
     } finally {
       await stub.close();

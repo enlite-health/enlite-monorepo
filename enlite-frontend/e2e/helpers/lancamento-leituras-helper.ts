@@ -13,6 +13,19 @@ function backend(): string {
   return process.env.E2E_BACKEND_URL ?? 'http://localhost:8080';
 }
 
+/**
+ * Linhas `worker_job_applications` da vaga em `INVITED` com `source = 'system'` — o que o match
+ * (`MatchmakingService.matchWorkersForJob`) grava. Nesta rota o lançamento NÃO roda o match (D466),
+ * então deve ser 0.
+ */
+export function countSystemInvitedApplications(vacancyId: string): number {
+  return Number(
+    runSQL(
+      `SELECT COUNT(*) FROM worker_job_applications WHERE job_posting_id = '${vacancyId}' AND application_funnel_stage = 'INVITED' AND source = 'system'`,
+    ),
+  );
+}
+
 /** `GET /api/admin/patients/:id` — devolve só `status`. */
 export async function readPatientStatusApi(
   request: APIRequestContext,
