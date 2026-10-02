@@ -91,6 +91,8 @@ interface AnaCareHoursDetailPageProps {
   disableActionsReason?: string;
   /** Slot do botão "Exportar" (spec 032), montado pelo container. */
   exportAction?: ReactNode;
+  /** Slot do ícone "Cambiar de paciente" (spec 032, FR-006), montado pelo container ao lado do nome. */
+  patientSwitchAction?: ReactNode;
 }
 
 export function AnaCareHoursDetailPage({
@@ -112,6 +114,7 @@ export function AnaCareHoursDetailPage({
   blockReasonMode = 'corto',
   disableActionsReason,
   exportAction,
+  patientSwitchAction,
 }: AnaCareHoursDetailPageProps): JSX.Element {
   const { t, i18n } = useTranslation();
   const patient = snapshot.patients.find((p) => p.anaCareId === patientId);
@@ -285,7 +288,7 @@ export function AnaCareHoursDetailPage({
                 {t('admin.anacareHours.detail.back')}
               </span>
             </Button>
-            <Heading level={1}>{patientDisplayName(patient)}</Heading>
+            <Heading level={1}>{patientDisplayName(patient)}{patientSwitchAction}</Heading>
             {exportAction}
           </div>
           {onRefresh && (

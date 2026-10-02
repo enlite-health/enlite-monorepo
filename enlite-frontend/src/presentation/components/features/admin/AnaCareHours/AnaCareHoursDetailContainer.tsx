@@ -26,6 +26,7 @@ import { AnaCareHoursServiceError, type AnaCareHoursService } from './AnaCareHou
 import type { AxonicoComprobanteService } from './AxonicoComprobanteService';
 import type { AnaCarePatientDocumentService } from './AnaCarePatientDocumentService';
 import { AnaCareHoursExportButton } from './AnaCareHoursExportButton';
+import { AnaCareHoursPatientSwitch } from './AnaCareHoursPatientSwitch';
 import type { AnaCareHoursExportService } from './AnaCareHoursExportService';
 import type { AnaCareShift, ContestReason } from './types';
 import type { BlockReasonMode, SinCheckinHoursMode } from './selectors';
@@ -45,6 +46,8 @@ interface AnaCareHoursDetailContainerProps {
   blockReasonMode?: BlockReasonMode;
   /** Serviço da exportação (spec 032). Ausente = o detalhe não mostra o botão "Exportar". */
   exportService?: AnaCareHoursExportService;
+  /** Trocar de paciente (spec 032, FR-006): a página-rota navega para o outro mantendo `?month`. Ausente = o ícone não aparece. */
+  onSwitchPatient?: (patientId: string) => void;
 }
 
 export function AnaCareHoursDetailContainer({
@@ -58,6 +61,7 @@ export function AnaCareHoursDetailContainer({
   sinCheckinHoursMode,
   blockReasonMode,
   exportService,
+  onSwitchPatient,
 }: AnaCareHoursDetailContainerProps): JSX.Element {
   const { t } = useTranslation();
   const weekNav = useWeekNavigation(month, onMonthChange);
@@ -188,6 +192,7 @@ export function AnaCareHoursDetailContainer({
         isRefreshing={isLoading}
         sinCheckinHoursMode={sinCheckinHoursMode}
         blockReasonMode={blockReasonMode}
+        patientSwitchAction={onSwitchPatient && <AnaCareHoursPatientSwitch patients={monthPatients} currentPatientId={patientId} onSelect={onSwitchPatient} />}
         exportAction={
           exportService && (
             <AnaCareHoursExportButton
