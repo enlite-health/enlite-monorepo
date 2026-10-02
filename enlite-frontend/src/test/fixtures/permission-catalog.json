@@ -3,6 +3,7 @@
   "cells": [
     "ai_prompt:read",
     "ai_prompt:update",
+    "anacare_hours:export",
     "anacare_hours:read",
     "anacare_hours:validate",
     "analytics:export",

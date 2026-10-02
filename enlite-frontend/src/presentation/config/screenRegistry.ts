@@ -223,14 +223,16 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
   // ── Ana Care ───────────────────────────────────────────────────────────────────────────────
   // Fase 1 da conferência de horas (D344, 15/09/2026) — duas células PRÓPRIAS, fora de qualquer
   // grupo padrão: `anacare_hours:read` (turnos, horas, origem, status — sem nome e sem nota) e
-  // `anacare_hours:validate` (validar, validar em lote, contestar). Nome de paciente/prestador
+  // `anacare_hours:validate` (validar, validar em lote, contestar). Spec 032: `anacare_hours:export`
+  // (exportar as horas de um paciente num período, xlsx) — o botão "Exportar" existe na lista e no
+  // detalhe. Nome de paciente/prestador
   // continua cumulativo às células já existentes (`patient_identity:read`/`worker_contact:read`),
   // não repetido aqui — são dados de OUTRO titular, não desta tela.
-  { id: 'anacareHours.list', route: '/admin/anacare/horas', cells: ['anacare_hours:read'] },
+  { id: 'anacareHours.list', route: '/admin/anacare/horas', cells: ['anacare_hours:read', 'anacare_hours:export'] },
   {
     id: 'anacareHours.detail',
     route: '/admin/anacare/horas/:patientId',
-    cells: ['anacare_hours:read', 'anacare_hours:validate'],
+    cells: ['anacare_hours:read', 'anacare_hours:validate', 'anacare_hours:export'],
     containers: [
       // Lançar comprobante no Axonico (`AxonicoComprobanteHttpService.enviarComprobante` →
       // POST /api/admin/integrations/axonico/comprobante, `adminIntegrationsRoutes.ts:84`) e

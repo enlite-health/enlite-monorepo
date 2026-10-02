@@ -386,6 +386,10 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
   'anacare_hours:validate':
     'Validar um turno, validar em lote e contestar (com motivo e nota opcional) na conferência '
     + 'de horas do Ana Care. Exige também anacare_hours:read para ver o que está validando.',
+  'anacare_hours:export':
+    'Exportar em planilha (xlsx, abas Sintético e Analítico) as horas de um paciente num período, '
+    + 'para o financeiro. Exige também anacare_hours:read; o NOME do paciente no arquivo segue sob '
+    + 'patient_identity:read e o do prestador sob worker_contact:read (sem elas, sai "Sin vínculo · ID").',
 
   // ── Cadeia Fase 10 (DX-10.1) — quadro C (Servicio Contratado): recurso novo, ação de domínio.
   'patient_service_team:update':
