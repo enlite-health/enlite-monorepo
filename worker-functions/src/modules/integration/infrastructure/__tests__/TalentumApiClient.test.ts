@@ -644,21 +644,6 @@ describe('TalentumApiClient (API v2)', () => {
     });
   });
 
-  // ── dashboard (legado, substituído na F3) ───────────────────────
-
-  describe('dashboard (legado v1 — F3 substitui)', () => {
-    it('listDashboardProfiles e listAllDashboardProfiles seguem pelo mesmo host', async () => {
-      mockFetch.mockResolvedValueOnce(loginRes());
-      mockFetch.mockResolvedValueOnce(res(200, { total: 1, profiles: [{ _id: 'a' }] }));
-      mockFetch.mockResolvedValueOnce(res(200, { total: 1, profiles: [] }));
-
-      const all = await client.listAllDashboardProfiles();
-
-      expect(all).toHaveLength(1);
-      expect(url(1)).toBe(`${V2_HOST}/dashboard?page=1&type=TABLE`);
-    });
-  });
-
   // ── factories ───────────────────────────────────────────────────
 
   describe('static factories', () => {

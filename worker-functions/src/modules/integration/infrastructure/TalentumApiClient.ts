@@ -25,8 +25,6 @@ import type {
   TalentumQuestion,
   TalentumQuestionWithId,
   TalentumCandidatesPage,
-  TalentumDashboardProfile,
-  TalentumDashboardResponse,
 } from '../domain/ITalentumApiClient';
 
 // ─────────────────────────────────────────────────────────────────
@@ -504,27 +502,5 @@ export class TalentumApiClient implements ITalentumApiClient {
   /** `GET /projects/:id/ready-for-interview?page=N` — só qualificados, mas com e-mail. */
   async listReadyForInterview(projectId: string, page: number): Promise<TalentumCandidatesPage> {
     return this.request<TalentumCandidatesPage>('GET', `/projects/${projectId}/ready-for-interview?page=${page}`);
-  }
-
-  // ── Dashboard (candidate profiles) ─────────────────────────────
-
-  async listDashboardProfiles(page: number): Promise<TalentumDashboardResponse> {
-    return this.request<TalentumDashboardResponse>('GET', `/dashboard?page=${page}&type=TABLE`);
-  }
-
-  async listAllDashboardProfiles(): Promise<TalentumDashboardProfile[]> {
-    const all: TalentumDashboardProfile[] = [];
-    let page = 1;
-
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      const { profiles } = await this.listDashboardProfiles(page);
-      if (profiles.length === 0) break;
-      all.push(...profiles);
-      page++;
-    }
-
-    console.log(`[TalentumApiClient] listAllDashboardProfiles: fetched ${all.length} profiles in ${page - 1} pages`);
-    return all;
   }
 }
