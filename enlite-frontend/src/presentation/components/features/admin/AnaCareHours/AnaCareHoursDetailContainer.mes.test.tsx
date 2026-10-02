@@ -189,4 +189,57 @@ describe('AnaCareHoursDetailContainer — navegação por mês (spec 037)', () =
     await waitFor(() => expect(screen.queryByTestId('anacare-hours-retrato-error')).not.toBeInTheDocument());
     expect((screen.getByTestId('anacare-hours-week-datepicker') as HTMLInputElement).value).toBe('2026-10-06');
   });
+
+  const actionsOf = (id: string) => [`anacare-hours-select-shift-${id}`, `anacare-hours-validate-shift-${id}`, `anacare-hours-contest-shift-${id}`, 'anacare-hours-select-all-pending-day-2026-10-06'];
+
+  it('retrato de outubro PENDENTE: validar/contestar/selecionar ficam DESABILITADOS com o motivo visível; com retrato `fresco` real voltam (spec 037)', async () => {
+    const { service } = makeService({ '2026-09': patientOf(shift('a', '2026-09-29')), '2026-10': patientOf(shift('b', '2026-10-06')) });
+    let resolveOct: (v: unknown) => void = () => {};
+    const retrato = { updatedAt: '2026-10-01T08:00:00-03:00', stale: false, snapshotState: 'fresco', circuitBreakerOpen: false };
+    (service.getRetratoStatus as ReturnType<typeof vi.fn>).mockImplementation((m: string) => (m === '2026-10' ? new Promise((r) => { resolveOct = r; }) : Promise.resolve(retrato)));
+    function Harness(): JSX.Element {
+      const [month, setMonth] = useState('2026-09');
+      return <AnaCareHoursDetailContainer axonicoService={AXONICO} patientDocumentService={DOCUMENT} service={service} month={month} onMonthChange={setMonth} patientId="90000" onBack={vi.fn()} />;
+    }
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId('anacare-hours-week-datepicker')).toBeInTheDocument());
+    setDate('2026-09-29');
+    await waitFor(() => expect(screen.getByTestId('anacare-hours-validate-shift-a')).not.toBeDisabled());
+    fireEvent.click(screen.getByTestId('anacare-hours-week-next'));
+    await waitFor(() => expect(screen.getByTestId('anacare-hours-shift-row-b')).toBeInTheDocument());
+    for (const id of actionsOf('b')) expect(screen.getByTestId(id)).toBeDisabled();
+    expect(screen.getByTestId('anacare-hours-disable-reason-day-2026-10-06').textContent).toContain('awaitingRetrato');
+    expect(screen.getByTestId('anacare-hours-disable-reason-day-2026-10-06').textContent).toContain('2026-10');
+    await act(async () => resolveOct(retrato));
+    await waitFor(() => expect(screen.getByTestId('anacare-hours-validate-shift-b')).not.toBeDisabled());
+    for (const id of actionsOf('b')) expect(screen.getByTestId(id)).not.toBeDisabled();
+    expect(screen.queryByTestId('anacare-hours-disable-reason-day-2026-10-06')).not.toBeInTheDocument();
+  });
+
+  it('retrato de outubro REJEITA: ações continuam DESABILITADAS com o motivo, o erro inline com Reintentar continua; ao resolver `fresco` habilitam (spec 037)', async () => {
+    const { service } = makeService({ '2026-09': patientOf(shift('a', '2026-09-29')), '2026-10': patientOf(shift('b', '2026-10-06')) });
+    const retrato = { updatedAt: '2026-10-01T08:00:00-03:00', stale: false, snapshotState: 'fresco', circuitBreakerOpen: false };
+    let octFails = true;
+    (service.getRetratoStatus as ReturnType<typeof vi.fn>).mockImplementation(async (m: string) => {
+      if (m === '2026-10' && octFails) throw new Error('retrato de outubro fora do ar');
+      return retrato;
+    });
+    function Harness(): JSX.Element {
+      const [month, setMonth] = useState('2026-09');
+      return <AnaCareHoursDetailContainer axonicoService={AXONICO} patientDocumentService={DOCUMENT} service={service} month={month} onMonthChange={setMonth} patientId="90000" onBack={vi.fn()} />;
+    }
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId('anacare-hours-week-datepicker')).toBeInTheDocument());
+    setDate('2026-09-29');
+    await waitFor(() => expect(screen.getByTestId('anacare-hours-validate-shift-a')).not.toBeDisabled());
+    fireEvent.click(screen.getByTestId('anacare-hours-week-next'));
+    await waitFor(() => expect(screen.getByTestId('anacare-hours-retrato-error')).toBeInTheDocument());
+    expect(screen.getByTestId('anacare-hours-retrato-retry')).toBeInTheDocument();
+    for (const id of actionsOf('b')) expect(screen.getByTestId(id)).toBeDisabled();
+    expect(screen.getByTestId('anacare-hours-disable-reason-day-2026-10-06').textContent).toContain('awaitingRetrato');
+    octFails = false;
+    fireEvent.click(screen.getByTestId('anacare-hours-retrato-retry'));
+    await waitFor(() => expect(screen.getByTestId('anacare-hours-validate-shift-b')).not.toBeDisabled());
+    expect(screen.queryByTestId('anacare-hours-retrato-error')).not.toBeInTheDocument();
+  });
 });

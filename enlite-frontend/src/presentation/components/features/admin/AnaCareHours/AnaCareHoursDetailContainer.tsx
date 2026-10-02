@@ -183,7 +183,15 @@ export function AnaCareHoursDetailContainer({
         isRefreshing={isLoading}
         sinCheckinHoursMode={sinCheckinHoursMode}
         blockReasonMode={blockReasonMode}
-        disableActionsReason={validateGate.denied ? t('admin.anacareHours.error.noValidateCell') : undefined}
+        // Spec 037: sem retrato REAL do mês da URL (em voo ou com erro) a tela usa o placeholder `fresco`; ele NÃO
+        // pode liberar validar/contestar/enviar ao Axonico — `disableActions` (e o motivo) vêm daqui.
+        disableActionsReason={
+          validateGate.denied
+            ? t('admin.anacareHours.error.noValidateCell')
+            : retratoSnapshot === null
+              ? t('admin.anacareHours.error.awaitingRetrato', { month: snapshot.month })
+              : undefined
+        }
       />
     </>
   );

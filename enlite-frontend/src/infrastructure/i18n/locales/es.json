@@ -782,6 +782,7 @@
         "contestShift": "No se pudo contestar el turno.",
         "sourceNotConfigured": "La fuente de datos de Ana Care no está configurada. Contacte al equipo técnico.",
         "noValidateCell": "No tiene permiso para validar o contestar turnos.",
+        "awaitingRetrato": "Acciones deshabilitadas hasta cargar el estado de sincronización de {{month}}.",
         "byCode": {
           "RETRATO_DESATUALIZADO": "El retrato está desactualizado — la validación está deshabilitada hasta el próximo retrato.",
           "JA_VALIDADO": "Este turno ya fue validado — no puede reabrirse.",
