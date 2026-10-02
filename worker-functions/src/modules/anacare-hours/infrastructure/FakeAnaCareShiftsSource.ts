@@ -14,7 +14,7 @@
  * Ana Care real é lido ou referenciado.
  */
 
-import type { AnaCareRetratoSourceStatus, AnaCareShiftsSource, ListShiftsParams, ListShiftsResult, SourceShiftDTO } from '../domain/AnaCareShiftsSource';
+import type { AnaCareRetratoSourceStatus, AnaCareShiftsSource, ListShiftsInRangeParams, ListShiftsParams, ListShiftsResult, SourceShiftDTO } from '../domain/AnaCareShiftsSource';
 import { AnaCareSessionClient, AnaCareShiftsSourceReal } from '@modules/integration';
 import { reportError } from '@shared/logging';
 
@@ -69,11 +69,43 @@ function daysInMonth(year: number, month1to12: number): number {
   return new Date(Date.UTC(year, month1to12, 0)).getUTCDate();
 }
 
+/** Meses `YYYY-MM` que a janela `[from, toExclusive)` toca (ambos `YYYY-MM-DD`). */
+function monthsCovering(from: string, toExclusive: string): string[] {
+  const out: string[] = [];
+  let y = Number.parseInt(from.slice(0, 4), 10);
+  let m = Number.parseInt(from.slice(5, 7), 10);
+  const last = new Date(`${toExclusive}T00:00:00Z`);
+  last.setUTCDate(last.getUTCDate() - 1); // último dia incluído
+  const endKey = last.getUTCFullYear() * 12 + last.getUTCMonth();
+  while (y * 12 + (m - 1) <= endKey) {
+    out.push(`${y}-${pad2(m)}`);
+    m += 1;
+    if (m > 12) {
+      m = 1;
+      y += 1;
+    }
+  }
+  return out;
+}
+
 export class FakeAnaCareShiftsSource implements AnaCareShiftsSource {
   async listShifts(params: ListShiftsParams): Promise<ListShiftsResult> {
     const all = FakeAnaCareShiftsSource.generateMonth(params.month);
     // Massa 100% sintética — nunca gera turno sem paciente/prestador, então o descarte é sempre 0.
     const shifts = params.patientId ? all.filter((s) => s.anaCarePatientId === params.patientId) : all;
+    return { shifts, skipped: { noProvider: 0, noPatient: 0 } };
+  }
+
+  /**
+   * Spec 032: filtra a massa dos meses cobertos por `date ∈ [from, toExclusive)`. `generateMonth`
+   * (a massa) NÃO muda — o caminho `month` segue byte a byte igual.
+   */
+  async listShiftsInRange(params: ListShiftsInRangeParams): Promise<ListShiftsResult> {
+    const months = monthsCovering(params.from, params.toExclusive);
+    const all = months.flatMap((m) => FakeAnaCareShiftsSource.generateMonth(m));
+    const shifts = all.filter(
+      (s) => s.date >= params.from && s.date < params.toExclusive && (!params.patientId || s.anaCarePatientId === params.patientId),
+    );
     return { shifts, skipped: { noProvider: 0, noPatient: 0 } };
   }
 
