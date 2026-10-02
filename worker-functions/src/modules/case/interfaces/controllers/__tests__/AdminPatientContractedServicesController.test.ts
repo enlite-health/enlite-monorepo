@@ -503,7 +503,7 @@ describe('AdminPatientContractedServicesController', () => {
       const useCase = { execute: jest.fn().mockResolvedValue({
         vacancyId: 'vac-3', patientStatus: 'ADMISSION', statusChanged: false, patientNotMoved: { missing: ['SERVICE_SCHEDULE'] },
       }) };
-      const controller = new AdminPatientContractedServicesController({} as never, useCase as never);
+      const controller = new AdminPatientContractedServicesController({} as never, {} as never, useCase as never);
       const res = mockRes();
       await controller.activateRecruitment(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID } }), res);
       expect(res.status).toHaveBeenCalledWith(201);
