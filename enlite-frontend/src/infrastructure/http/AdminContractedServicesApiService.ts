@@ -353,6 +353,8 @@ export interface ActivateRecruitmentResult {
   vacancyId: string;
   patientStatus: string;
   statusChanged: boolean;
+  /** D469 — só presente quando a vaga nasceu mas o paciente NÃO saiu de Admisión (códigos do checklist). */
+  patientNotMoved?: { missing: string[] };
 }
 
 /** Result of GET /api/admin/patients/kanban/services (fase 8, DX-8.1/8.5). */

@@ -31,6 +31,7 @@ import {
   seedLaunchablePatient,
   seedWorkersNear,
   clickFoguete,
+  devolverPacienteAoFunil,
   completeDraftViaWizard,
   publishOnTalentumPage,
   readPatientKanbanColumn,
@@ -104,6 +105,8 @@ test.describe('funil-vacante lancamento @integration', () => {
 
       // (1) Foguete pela ficha.
       const vacancyId = await clickFoguete(page, patient.patientId, patient.serviceId);
+      // D469: o foguete já moveu o paciente; devolve ao funil para provar o gancho do ENVIO (vacancy_launch).
+      devolverPacienteAoFunil(patient.patientId);
 
       // (2) Borrador → wizard (profissão AT, salário, meet) → /talentum.
       await completeDraftViaWizard(page, vacancyId);

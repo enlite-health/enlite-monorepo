@@ -375,6 +375,20 @@ describe('AdminPatientContractedServicesController', () => {
       });
     });
 
+    it('D469 — 201 repassa patientNotMoved (só códigos) quando o paciente não moveu por completude', async () => {
+      const useCase = { execute: jest.fn().mockResolvedValue({
+        vacancyId: 'vac-3', patientStatus: 'ADMISSION', statusChanged: false, patientNotMoved: { missing: ['SERVICE_SCHEDULE'] },
+      }) };
+      const controller = new AdminPatientContractedServicesController({} as never, useCase as never);
+      const res = mockRes();
+      await controller.activateRecruitment(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID } }), res);
+      expect(res.status).toHaveBeenCalledWith(201);
+      expect(res.json).toHaveBeenCalledWith({
+        success: true,
+        data: { vacancyId: 'vac-3', patientStatus: 'ADMISSION', statusChanged: false, patientNotMoved: { missing: ['SERVICE_SCHEDULE'] } },
+      });
+    });
+
     // spec 029 — achado: o botão gravava SYSTEM/actor_user_id null mesmo com operador humano
     // autenticado. Prova por posição do argumento (`mock.calls[0][2]`), igualdade exata com o
     // uid do req autenticado — não só "truthy" ou "não nulo".
