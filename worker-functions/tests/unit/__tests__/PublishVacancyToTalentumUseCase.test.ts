@@ -562,12 +562,34 @@ describe('PublishVacancyToTalentumUseCase', () => {
       }
     });
 
-    it('projectId morto (DELETE 404 na v2) → 409 claro com "rode a reconciliação", sem limpar o banco', async () => {
+    it('projectId morto (DELETE 404 na v2) → trata como já despublicado: limpa talentum_* e resolve (spec 040)', async () => {
       mockPoolQuery.mockResolvedValueOnce({ rows: [{ talentum_project_id: 'proj-morto', is_draft: false }] });
       mockTalentumCreate.mockResolvedValue(makeTalentumClient());
       mockDeletePrescreening.mockRejectedValue(
         new Error('[TalentumApiClient] DELETE /projects/proj-morto — HTTP 404: {} (projeto não existe na Talentum v2; rode a reconciliação)'),
       );
+      mockClientQuery.mockReset();
+      mockClientQuery.mockResolvedValue({ rows: [] });
+
+      await expect(
+        new PublishVacancyToTalentumUseCase().unpublish({ jobPostingId: 'job-123' }),
+      ).resolves.toBeUndefined();
+
+      const updateCall = mockClientQuery.mock.calls.find(
+        (c: any[]) => typeof c[0] === 'string' && c[0].includes('talentum_project_id   = NULL'),
+      );
+      expect(updateCall).toBeDefined();
+      expect(updateCall![1]).toEqual(['job-123']);
+      expect(mockClientQuery).toHaveBeenCalledWith('COMMIT');
+    });
+
+    it.each([
+      ['403 (VIEWER)', 'HTTP 403: Forbidden'],
+      ['500', 'HTTP 500: Internal Server Error'],
+    ])('DELETE %s continua erro 502 e NÃO limpa o vínculo', async (_l, msg) => {
+      mockPoolQuery.mockResolvedValueOnce({ rows: [{ talentum_project_id: 'proj-X', is_draft: false }] });
+      mockTalentumCreate.mockResolvedValue(makeTalentumClient());
+      mockDeletePrescreening.mockRejectedValue(new Error(`[TalentumApiClient] DELETE /projects/proj-X — ${msg}`));
       mockClientQuery.mockClear();
 
       const err: any = await new PublishVacancyToTalentumUseCase()
@@ -575,8 +597,7 @@ describe('PublishVacancyToTalentumUseCase', () => {
         .catch((e) => e);
 
       expect(err).toBeInstanceOf(PublishError);
-      expect(err.statusCode).toBe(409);
-      expect(err.message).toContain('rode a reconciliação');
+      expect(err.statusCode).toBe(502);
       expect(mockClientQuery).not.toHaveBeenCalled();
     });
 

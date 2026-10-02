@@ -20,7 +20,7 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { reportError } from '@shared/logging';
 import { TalentumDescriptionService } from '../infrastructure/TalentumDescriptionService';
 import { TalentumApiClient } from '../infrastructure/TalentumApiClient';
-import { DEAD_PROJECT_MESSAGE, isDeadProjectError } from '../domain/talentumErrors';
+import { isDeadProjectError } from '../domain/talentumErrors';
 import type { TalentumQuestion } from '../domain/ITalentumApiClient';
 import { normalizePrescreeningResponseType } from '@shared/utils/normalizePrescreeningResponseType';
 import {
@@ -265,11 +265,11 @@ export class PublishVacancyToTalentumUseCase {
       const talentumClient = await TalentumApiClient.create();
       await talentumClient.deletePrescreening(talentumProjectId);
     } catch (err: unknown) {
-      // Spec 040: id gravado antes da migração para a v2 → 404. Erro claro, não um 502 mudo.
-      if (isDeadProjectError(err)) {
-        throw new PublishError(409, DEAD_PROJECT_MESSAGE);
+      // Spec 040: id gravado antes da migração para a v2 → 404 (o projeto já não existe lá).
+      // Já está despublicado: segue para limpar o vínculo abaixo em vez de prender a vaga.
+      if (!isDeadProjectError(err)) {
+        throw new PublishError(502, `Talentum API error (delete): ${(err as Error).message}`);
       }
-      throw new PublishError(502, `Talentum API error (delete): ${(err as Error).message}`);
     }
 
     // Clear columns + audit DRAFT_CHANGED (CA-4.5)
