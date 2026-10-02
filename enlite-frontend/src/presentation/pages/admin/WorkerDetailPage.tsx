@@ -18,7 +18,7 @@ export default function WorkerDetailPage() {
   // owns the authoritative fetch + loading/error states for the body.
   const { worker } = useWorkerDetail(id);
   const fullName = worker
-    ? [worker.firstName, worker.lastName].filter(Boolean).join(' ') || worker.email
+    ? [worker.firstName, worker.lastName].filter(Boolean).join(' ') || worker.email || '—'
     : '';
 
   const header = (
