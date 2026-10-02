@@ -319,8 +319,8 @@ export class TalentumApiClient implements ITalentumApiClient {
   // ── ITalentumApiClient implementation ───────────────────────────
 
   /**
-   * Cria o projeto v2: POST /projects → PATCH /prescreening (WEB + perguntas) → PUT job-description,
-   * e relê o prescreening para obter o `publicId`. Em qualquer falha DEPOIS do POST apaga o projeto
+   * Cria o projeto v2: POST /projects → PATCH /prescreening (WEB + perguntas) → PUT job-description
+   * → complete-submodule PRESCREENING → POST /init (DRAFT → IN_PROGRESS, link vivo), e relê o prescreening para obter o `publicId`. Em qualquer falha DEPOIS do POST apaga o projeto
    * recém-criado (nunca deixa órfão na Talentum) e relança o erro original.
    * `input.faq` é IGNORADO: a v2 não tem FAQ (decisão (g) — a FAQ fica só no nosso banco).
    */
@@ -347,6 +347,11 @@ export class TalentumApiClient implements ITalentumApiClient {
       await this.request<unknown>('PUT', `/projects/${projectId}/prescreening/job-description`, {
         text: input.description,
       });
+      // Publica: completa o submódulo (como o wizard) e `init` tira o projeto de DRAFT → IN_PROGRESS.
+      // Sem o `init` o link público fica "Enlace no válido" (provado na v2 real, spec 040 §P5). Projeto
+      // sem fonte de candidatos nem campanha: o `init` só torna o link acessível, não contata ninguém.
+      await this.request<void>('POST', `/projects/${projectId}/complete-submodule`, { submodule: 'PRESCREENING' });
+      await this.request<void>('POST', `/projects/${projectId}/init`);
       const prescreening = await this.request<{ publicId: string }>('GET', `/projects/${projectId}/prescreening`);
       return { projectId, publicId: prescreening.publicId };
     } catch (err) {

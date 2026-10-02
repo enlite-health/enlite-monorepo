@@ -186,10 +186,12 @@ describe('TalentumApiClient (API v2)', () => {
       mockFetch.mockResolvedValueOnce(res(201, { projectId: 'proj-1' })); // POST /projects
       mockFetch.mockResolvedValueOnce(res(204)); // PATCH prescreening
       mockFetch.mockResolvedValueOnce(res(200, { text: 'descripción', truncated: false })); // PUT job-description
+      mockFetch.mockResolvedValueOnce(res(204)); // POST complete-submodule
+      mockFetch.mockResolvedValueOnce(res(200)); // POST init
       mockFetch.mockResolvedValueOnce(res(200, PRESCREENING_V2)); // GET prescreening
     }
 
-    it('faz POST /projects → PATCH → PUT job-description → GET prescreening, nessa ordem', async () => {
+    it('faz POST /projects → PATCH → PUT job-description → complete-submodule → init → GET prescreening, nessa ordem', async () => {
       mockHappyCreate();
 
       const result = await client.createPrescreening({
@@ -200,11 +202,15 @@ describe('TalentumApiClient (API v2)', () => {
       });
 
       expect(result).toEqual({ projectId: 'proj-1', publicId: 'pub-uuid-1' });
-      expect(mockFetch).toHaveBeenCalledTimes(5);
+      expect(mockFetch).toHaveBeenCalledTimes(7);
       expect([method(1), url(1)]).toEqual(['POST', `${V2_HOST}/projects`]);
       expect([method(2), url(2)]).toEqual(['PATCH', `${V2_HOST}/projects/proj-1/prescreening`]);
       expect([method(3), url(3)]).toEqual(['PUT', `${V2_HOST}/projects/proj-1/prescreening/job-description`]);
-      expect([method(4), url(4)]).toEqual(['GET', `${V2_HOST}/projects/proj-1/prescreening`]);
+      expect([method(4), url(4)]).toEqual(['POST', `${V2_HOST}/projects/proj-1/complete-submodule`]);
+      expect(body(4)).toEqual({ submodule: 'PRESCREENING' });
+      // `init` é o que tira o projeto de DRAFT → IN_PROGRESS; sem ele o link público fica "Enlace no válido"
+      expect([method(5), url(5)]).toEqual(['POST', `${V2_HOST}/projects/proj-1/init`]);
+      expect([method(6), url(6)]).toEqual(['GET', `${V2_HOST}/projects/proj-1/prescreening`]);
     });
 
     it('POST /projects manda projeto FULL só de prescreening com o título', async () => {
@@ -275,7 +281,7 @@ describe('TalentumApiClient (API v2)', () => {
       });
 
       expect(body(3)).toEqual({ text: 'descripción' });
-      for (let i = 1; i <= 4; i++) {
+      for (let i = 1; i <= 6; i++) {
         expect(JSON.stringify(call(i)[1].body ?? '')).not.toContain('faq-secreta');
       }
     });
@@ -319,6 +325,22 @@ describe('TalentumApiClient (API v2)', () => {
       ).rejects.toThrow('PATCH /projects/proj-7/prescreening — HTTP 400');
 
       expect(console.error).toHaveBeenCalledWith(expect.stringContaining('proj-7'));
+    });
+
+    it('init falha → apaga o projeto (nunca deixa DRAFT órfão) e relança', async () => {
+      mockFetch.mockResolvedValueOnce(loginRes());
+      mockFetch.mockResolvedValueOnce(res(201, { projectId: 'proj-5' }));
+      mockFetch.mockResolvedValueOnce(res(204));
+      mockFetch.mockResolvedValueOnce(res(200, {}));
+      mockFetch.mockResolvedValueOnce(res(204));
+      mockFetch.mockResolvedValueOnce(res(400, undefined, 'cannot init'));
+      mockFetch.mockResolvedValueOnce(res(204)); // DELETE
+
+      await expect(
+        client.createPrescreening({ title: 't', description: 'd', questions: [] }),
+      ).rejects.toThrow('POST /projects/proj-5/init — HTTP 400');
+
+      expect([method(6), url(6)]).toEqual(['DELETE', `${V2_HOST}/projects/proj-5`]);
     });
 
     it('rollback que falha com valor não-Error (rede caiu) também é registrado', async () => {
