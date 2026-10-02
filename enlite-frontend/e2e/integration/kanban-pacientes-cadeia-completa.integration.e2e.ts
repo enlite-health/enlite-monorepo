@@ -164,26 +164,27 @@ test.describe('cadeia-completa @integration', () => {
         console.log('[16.p1]', X.patientId, services.length, distinctAddresses, column);
       });
 
-      await test.step('passo 2 — foguete no serviço 1 pela tela: a vaga nasce em rascunho e X continua em Admissão (invariante 7)', async () => {
+      await test.step('passo 2 — foguete no serviço 1 pela tela: a vaga nasce em rascunho e X vai a Búsqueda pelo foguete (D469)', async () => {
         v = await clickFoguete(page, X.patientId, X.service1Id);
         workerVacancyPairs.push({ workerId: m, vacancyId: v });
         const isDraft = runSQL(`SELECT is_draft::text FROM job_postings WHERE id = '${v}'`);
         expect(isDraft).toBe('true');
         const status = await readPatientStatusApi(request, backendUrl(), token, X.patientId);
-        expect(status).toBe('ADMISSION');
+        expect(status).toBe('SEARCHING');
+        expect(lastStatusChangeSource(X.patientId)).toBe('recruitment_activation');
         const trail = countLaunchTrail(X.patientId);
         expect(trail).toBe(0);
         console.log('[16.p2]', v, isDraft, status, trail);
       });
 
-      await test.step('passo 3 — completar e enviar à Talentum (stub) pela tela: X vai a Búsqueda e o match deposita em Compatíveis, sem convite (invariante 7)', async () => {
+      await test.step('passo 3 — completar e enviar à Talentum (stub) pela tela: X segue em Búsqueda (já movido pelo foguete, D469) e o match deposita em Compatíveis, sem convite', async () => {
         await completeDraftViaWizard(page, v);
         const publishStatus = await publishOnTalentumPage(page, v);
         expect(publishStatus).toBe(200);
         const status = await readPatientStatusApi(request, backendUrl(), token, X.patientId);
         expect(status).toBe('SEARCHING');
         const trail = countLaunchTrail(X.patientId);
-        expect(trail).toBe(1);
+        expect(trail).toBe(0); // o envio não move quem o foguete já moveu (idempotente)
         const column = await readPatientKanbanColumn(page, X.patientId);
         expect(column).toBe('SEARCHING');
 

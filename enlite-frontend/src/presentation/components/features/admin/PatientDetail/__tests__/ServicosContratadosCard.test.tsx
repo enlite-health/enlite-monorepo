@@ -509,6 +509,32 @@ describe('ServicosContratadosCard — ícone de ativação de recrutamento por s
   // `missing.length > 0 || busy` dentro de `runActivateRecruitmentClick` nunca vê `busy=true` por
   // um clique simulado (mesma armadilha do `runAssociateProvider` vizinho). Chamando a função
   // exportada direto, sem o DOM: prova que a guarda RECUSA quando `busy` já é true, sem invocar a API.
+  it('D469: foguete com patientNotMoved → toast de AVISO (warning) com o que falta, NÃO o de sucesso; onActivated roda', async () => {
+    mockActivateRecruitment.mockResolvedValueOnce({
+      vacancyId: 'vac-1', patientStatus: 'ADMISSION', statusChanged: false, patientNotMoved: { missing: ['SERVICE_SCHEDULE'] },
+    });
+    const onActivated = vi.fn();
+    await runActivateRecruitmentClick({
+      patientId: 'p1', serviceId: 'svc-1', missing: [], busy: false, setBusy: vi.fn(),
+      onActivated, tc: (k, o) => `${k}:${(o as { items?: string } | undefined)?.items ?? ''}`, t: (k) => `T(${k})`, showToast: mockShowToast,
+    });
+    expect(mockShowToast).toHaveBeenCalledTimes(1);
+    expect(mockShowToast).toHaveBeenCalledWith(
+      'activateRecruitmentPatientNotMoved:T(admin.patients.detail.completeness.items.SERVICE_SCHEDULE)', 'warning',
+    );
+    expect(onActivated).toHaveBeenCalledTimes(1);
+  });
+
+  it('D469: foguete sem patientNotMoved (caso feliz) → toast de SUCESSO, nunca warning', async () => {
+    mockActivateRecruitment.mockResolvedValueOnce({ vacancyId: 'vac-1', patientStatus: 'SEARCHING', statusChanged: true });
+    await runActivateRecruitmentClick({
+      patientId: 'p1', serviceId: 'svc-1', missing: [], busy: false, setBusy: vi.fn(),
+      onActivated: vi.fn(), tc: (k) => k, t: (k) => k, showToast: mockShowToast,
+    });
+    expect(mockShowToast).toHaveBeenCalledTimes(1);
+    expect(mockShowToast).toHaveBeenCalledWith('activateRecruitmentToast', 'success');
+  });
+
   it('runActivateRecruitmentClick: `busy=true` recusa direto (guarda testada sem depender do `disabled` do DOM)', async () => {
     const onActivated = vi.fn();
     const setBusy = vi.fn();
