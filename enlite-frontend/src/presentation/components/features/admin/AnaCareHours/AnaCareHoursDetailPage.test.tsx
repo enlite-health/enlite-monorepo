@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { AnaCareHoursDetailPage } from './AnaCareHoursDetailPage';
+import { AnaCareHoursDetailPageWithNav as AnaCareHoursDetailPage } from './AnaCareHoursDetailPage.testHarness';
 import type { AnaCareHoursPatientSnapshot } from './types';
 import type { AxonicoComprobanteService } from './AxonicoComprobanteService';
 import type { AnaCarePatientDocumentService } from './AnaCarePatientDocumentService';
@@ -20,7 +20,7 @@ class ResizeObserverStub {
 (globalThis as any).ResizeObserver = ResizeObserverStub;
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string, opts?: Record<string, unknown>) => (opts ? `${key}|${JSON.stringify(opts)}` : key) }),
+  useTranslation: () => ({ t: (key: string, opts?: Record<string, unknown>) => (opts ? `${key}|${JSON.stringify(opts)}` : key), i18n: { language: 'es' } }),
 }));
 
 function snapshot(overrides: Partial<AnaCareHoursPatientSnapshot> = {}): AnaCareHoursPatientSnapshot {
@@ -455,7 +455,7 @@ describe('AnaCareHoursDetailPage', () => {
     fireEvent.change(screen.getByTestId('anacare-hours-week-datepicker'), { target: { value: '' } });
     expect(screen.getByTestId('anacare-hours-week-label').textContent).toBe(labelBefore);
     // o caminho de valor PREENCHIDO continua navegando de verdade (contraste — não é só ausência de crash).
-    fireEvent.change(screen.getByTestId('anacare-hours-week-datepicker'), { target: { value: '2026-09-01' } });
+    fireEvent.change(screen.getByTestId('anacare-hours-week-datepicker'), { target: { value: '2026-08-24' } });
     expect(screen.getByTestId('anacare-hours-week-label').textContent).not.toBe(labelBefore);
   });
 
@@ -489,13 +489,13 @@ describe('AnaCareHoursDetailPage', () => {
     vi.setSystemTime(new Date('2026-09-18T12:00:00-03:00')); // sexta-feira
     render(<AnaCareHoursDetailPage axonicoService={AXONICO_SERVICE} patientDocumentService={PATIENT_DOCUMENT_SERVICE} snapshot={snapshot({ month: '2026-09' })} patientId="90000" onBack={vi.fn()} />);
     // segunda da semana de 18/09 é 14/09 — não é o turno mais antigo do paciente (que é 14/08).
-    expect(screen.getByTestId('anacare-hours-week-datepicker')).toHaveValue('2026-09-14');
+    expect(screen.getByTestId('anacare-hours-week-datepicker')).toHaveValue('2026-09-18'); // a DATA selecionada (hoje), não a segunda da semana
   });
 
   it('18/09 — POSITIVO: mês exibido NÃO contém hoje → semana inicial é a PRIMEIRA semana do mês', () => {
     vi.setSystemTime(new Date('2026-09-18T12:00:00-03:00')); // hoje é setembro, mês exibido é agosto
     render(<AnaCareHoursDetailPage axonicoService={AXONICO_SERVICE} patientDocumentService={PATIENT_DOCUMENT_SERVICE} snapshot={snapshot({ month: '2026-08' })} patientId="90000" onBack={vi.fn()} />);
-    // segunda da semana que contém 01/08 é 27/07 — não é a semana do turno mais antigo (10-16/08).
-    expect(screen.getByTestId('anacare-hours-week-datepicker')).toHaveValue('2026-07-27');
+    // data selecionada = dia 1 do mês exibido; a semana mostrada (27/07 a 02/08) é a que a contém.
+    expect(screen.getByTestId('anacare-hours-week-datepicker')).toHaveValue('2026-08-01');
   });
 });

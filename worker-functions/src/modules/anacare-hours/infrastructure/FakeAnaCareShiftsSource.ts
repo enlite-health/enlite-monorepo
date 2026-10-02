@@ -56,6 +56,15 @@ function pad2(n: number): string {
   return n < 10 ? `0${n}` : String(n);
 }
 
+/**
+ * Spec 037 (e2e da navegação do detalhe por mês, sem mock): a massa de setembro precisa de um
+ * paciente com turno em 30/09 E em 01..04/10 (a semana 28/09–04/10 cruza meses), e nenhum tinha —
+ * quem tem o dia 30 em setembro não tem 01..04 em outubro, e vice-versa. Move UM turno (o de
+ * `AC-PAT-0`, prestador 1, índice 4: `FAKE-2026-09-0-1-4`, que cairia no dia 10) para o dia 30.
+ * Mantém 100 turnos, a proporção 46/35/19, os ids e o determinismo; só muda a DATA desse turno.
+ */
+const RELOCATED_SHIFT = { sourceShiftId: 'FAKE-2026-09-0-1-4', day: 30 } as const;
+
 function daysInMonth(year: number, month1to12: number): number {
   return new Date(Date.UTC(year, month1to12, 0)).getUTCDate();
 }
@@ -100,7 +109,8 @@ export class FakeAnaCareShiftsSource implements AnaCareShiftsSource {
     for (let p = 0; p < PATIENTS_PER_MONTH; p += 1) {
       for (let pr = 0; pr < PROVIDERS_PER_PATIENT; pr += 1) {
         for (let s = 0; s < SHIFTS_PER_PROVIDER; s += 1) {
-          const day = (shiftIndex % dim) + 1;
+          const sourceShiftId = `FAKE-${month}-${p}-${pr}-${s}`;
+          const day = sourceShiftId === RELOCATED_SHIFT.sourceShiftId ? RELOCATED_SHIFT.day : (shiftIndex % dim) + 1;
           const dateStr = `${year}-${pad2(monthNum)}-${pad2(day)}`;
           const scheduledStart = `${dateStr}T08:00:00.000Z`;
           const scheduledEnd = `${dateStr}T12:00:00.000Z`;
@@ -136,7 +146,7 @@ export class FakeAnaCareShiftsSource implements AnaCareShiftsSource {
           }
 
           out.push({
-            sourceShiftId: `FAKE-${month}-${p}-${pr}-${s}`,
+            sourceShiftId,
             anaCarePatientId: `AC-PAT-${p}`,
             anaCareNurseId: `AC-NURSE-${p}-${pr}`,
             date: dateStr,

@@ -726,7 +726,7 @@
       "detail": {
         "back": "Voltar",
         "patientNotFound": "Paciente não encontrado no retrato de {{month}}.",
-        "totalHoursLabel": "Horas totais do mês",
+        "totalHoursLabel": "Horas totais de {{month}}",
         "validationLabel": "Validação — {{validated}}/{{total}}",
         "validationContestedSuffix_one": " · {{count}} contestado",
         "validationContestedSuffix_other": " · {{count}} contestados",
@@ -736,7 +736,10 @@
         "weekPrev": "Semana anterior",
         "weekNext": "Próxima semana",
         "weekEmpty": "Nenhum turno registrado nesta semana.",
-        "weekPickerAriaLabel": "Ir para a semana de uma data"
+        "weekPickerAriaLabel": "Ir para a semana de uma data",
+        "weekLoading": "Carregando os turnos da semana…",
+        "weekMonthError": "Não foi possível carregar os turnos de {{month}}; faltam esses dias da semana.",
+        "weekRetry": "Tentar novamente"
       },
       "dayGroup": {
         "selectAllPendingAriaLabel": "Selecionar todos os turnos pendentes do dia {{date}}",
@@ -779,6 +782,7 @@
         "contestShift": "Não foi possível contestar o turno.",
         "sourceNotConfigured": "A fonte de dados do Ana Care não está configurada. Contate o time técnico.",
         "noValidateCell": "Você não tem permissão para validar ou contestar turnos.",
+        "awaitingRetrato": "Ações desabilitadas até carregar o estado de sincronização de {{month}}.",
         "byCode": {
           "RETRATO_DESATUALIZADO": "O retrato está desatualizado — a validação está desabilitada até o próximo retrato.",
           "JA_VALIDADO": "Este turno já foi validado — não pode ser reaberto.",
