@@ -39,7 +39,7 @@ export function seedActivatablePatient(caseBase = 900000): { patientId: string; 
  * ordenado por hex. Sai como `ARRAY[decode(...,'hex')]::bytea[]` para não depender de barra
  * invertida atravessando shell → psql.
  */
-function nameTrgmBidxSql(first: string, last: string): string {
+export function nameTrgmBidxSql(first: string, last: string): string {
   const key = Buffer.alloc(32, 0x42);
   const normalized = `${first} ${last}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
   const padded = ` ${normalized} `;
