@@ -45,6 +45,20 @@ describe('AnaCareHoursPatientSwitch', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
+  it('POSITIVO — só o ícone: <button> sem classe de borda/fundo/padding, com SVG currentColor em em, DENTRO do Heading logo após o nome', () => {
+    render(<h1 data-testid="titulo">Lucía Fernández QA<AnaCareHoursPatientSwitch patients={PATIENTS} currentPatientId="AC-PAT-0" onSelect={vi.fn()} /></h1>);
+    const btn = icon();
+    expect(btn.tagName).toBe('BUTTON');
+    expect(btn).toHaveAttribute('type', 'button');
+    expect(btn.className).not.toMatch(/(^|\s)(border|bg-|p-|px-|py-|shadow)/);
+    const svg = btn.querySelector('svg')!;
+    expect(svg).toHaveAttribute('fill', 'currentColor');
+    expect(svg).toHaveAttribute('width', '0.8em');
+    expect(screen.getByTestId('titulo')).toContainElement(btn);
+    expect(screen.getByTestId('titulo').firstChild?.textContent).toBe('Lucía Fernández QA');
+    expect(screen.getByTestId('titulo').lastElementChild).toBe(btn);
+  });
+
   it('POSITIVO — clicar no ícone abre o modal com título, ajuda e o campo', async () => {
     const { user } = setup();
     await user.click(icon());

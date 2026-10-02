@@ -136,6 +136,8 @@ describe('ícone "Cambiar de paciente" — DETALHE (spec 032, FR-006)', () => {
     render(<AnaCareHoursDetailContainer service={service} axonicoService={AXONICO} patientDocumentService={DOC} onSwitchPatient={onSwitchPatient} month="2026-08" patientId="AC-PAT-0" onBack={vi.fn()} />);
     await waitFor(() => expect(screen.getByTestId('anacare-hours-patient-switch-button')).toBeInTheDocument());
     await waitFor(() => expect(getRetrato).toHaveBeenCalledTimes(1));
+    // O ícone mora DENTRO do <h1> do paciente, logo após o nome.
+    expect(screen.getByRole('heading', { level: 1 })).toContainElement(screen.getByTestId('anacare-hours-patient-switch-button'));
     await user.click(screen.getByTestId('anacare-hours-patient-switch-button'));
     await user.click(screen.getByTestId('anacare-hours-patient-switch-combobox'));
     expect(screen.queryByTestId('anacare-hours-patient-switch-combobox-option-AC-PAT-0')).toBeNull();

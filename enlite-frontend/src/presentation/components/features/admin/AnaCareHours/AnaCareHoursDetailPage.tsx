@@ -288,8 +288,7 @@ export function AnaCareHoursDetailPage({
                 {t('admin.anacareHours.detail.back')}
               </span>
             </Button>
-            <Heading level={1}>{patientDisplayName(patient)}</Heading>
-            {patientSwitchAction}
+            <Heading level={1}>{patientDisplayName(patient)}{patientSwitchAction}</Heading>
             {exportAction}
           </div>
           {onRefresh && (

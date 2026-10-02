@@ -1,16 +1,17 @@
 /**
- * "Cambiar de paciente" no detalhe de horas (spec 032, FR-006/P2): ícone ao lado do nome que abre um
+ * "Cambiar de paciente" no detalhe de horas (spec 032, FR-006/P2): ícone (montado DENTRO do Heading, logo
+ * após o nome) que abre um
  * modal com autocomplete. Opções = pacientes do retrato do mês que a LISTA já mostra (zero GET novo),
  * SEM o paciente atual. Escolher chama `onSelect(id)` (a página-rota navega mantendo `?month`) e fecha;
  * "Cancelar"/Esc fecham sem navegar. Casca no molde de `AnaCareHoursExportDialog`.
  */
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Repeat } from 'lucide-react';
 import { Button } from '@presentation/components/atoms/Button';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { patientSearchOptions } from './patientOptions';
+import { PatientSwapIcon } from './PatientSwapIcon';
 import { ProviderFilterCombobox } from './ProviderFilterCombobox';
 import type { AnaCareListPatient } from './types';
 
@@ -54,10 +55,11 @@ export function AnaCareHoursPatientSwitch({ patients, currentPatientId, onSelect
         onClick={() => setOpen(true)}
         aria-label={label}
         title={label}
-        className="inline-flex items-center justify-center w-9 h-9 rounded-lg text-gray-800 hover:bg-slate-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+        // Só o ícone: sem borda, fundo nem padding (o reset do Tailwind já zera o <button>); foco visível só no teclado.
+        className="ml-[0.35em] inline-flex items-center align-middle text-inherit rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
         data-testid="anacare-hours-patient-switch-button"
       >
-        <Repeat className="w-5 h-5" aria-hidden="true" />
+        <PatientSwapIcon />
       </button>
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" data-testid="anacare-hours-patient-switch-modal">
