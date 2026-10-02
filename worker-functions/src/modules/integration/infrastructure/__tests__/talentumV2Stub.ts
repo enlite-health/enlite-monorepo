@@ -176,7 +176,7 @@ export class TalentumV2Stub {
     if (method === 'POST' && sub === '/complete-submodule') return { status: 204 };
     if (method === 'POST' && sub === '/init') {
       proj.status = 'IN_PROGRESS';
-      return { status: 200, body: {} };
+      return { status: 200 }; // v2 real: 200 com corpo VAZIO (bodyLen 0, medido em prd)
     }
     return { status: 404, text: 'stub: rota não coberta' };
   }
@@ -190,8 +190,12 @@ export class TalentumV2Stub {
       return {
         ok: r.status >= 200 && r.status < 300,
         status: r.status,
-        json: async () => r.body,
-        text: async () => r.text ?? JSON.stringify(r.body ?? ''),
+        // sem corpo → `json()` rejeita e `text()` é '' (como o fetch real)
+        json: async () => {
+          if (r.body === undefined) throw new SyntaxError('Unexpected end of JSON input');
+          return r.body;
+        },
+        text: async () => r.text ?? (r.body === undefined ? '' : JSON.stringify(r.body)),
         headers: { getSetCookie: () => (isLogin ? ['tl_auth=stub-auth; Path=/', 'tl_refresh=stub-refresh; Path=/'] : []) },
       };
     }) as unknown as typeof fetch;
@@ -208,7 +212,7 @@ export class TalentumV2Stub {
         const headers: Record<string, string | string[]> = { 'Content-Type': 'application/json' };
         if ((req.url ?? '').startsWith('/auth/login')) headers['Set-Cookie'] = ['tl_auth=stub-auth', 'tl_refresh=stub-refresh'];
         res.writeHead(r.status, headers);
-        res.end(r.status === 204 ? undefined : (r.text ?? JSON.stringify(r.body ?? {})));
+        res.end(r.status === 204 || (r.body === undefined && r.text === undefined) ? undefined : (r.text ?? JSON.stringify(r.body)));
       });
     });
     return new Promise((resolve, reject) => {

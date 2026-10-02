@@ -147,8 +147,9 @@ export function startTalentumStub(): Promise<TalentumStub> {
           return;
         }
         if (method === 'POST' && sub === '/init') {
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end('{}');
+          // v2 real: 200 com corpo VAZIO (bodyLen 0, medido em prd)
+          res.writeHead(200);
+          res.end();
           return;
         }
         if (method === 'DELETE' && sub === '') {
