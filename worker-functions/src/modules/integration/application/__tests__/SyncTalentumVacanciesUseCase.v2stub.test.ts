@@ -78,7 +78,7 @@ describe('SyncTalentumVacanciesUseCase — custo e vagas criadas, medidos no stu
     process.env = { ...envBackup };
   });
 
-  it('468 projetos: 39 páginas + 2 GETs por projeto = 975 GETs; liga 312 por publicId, 20 por título e CRIA 136', async () => {
+  it('468 projetos: 39 páginas + 2 GETs por projeto = 975 GETs; liga 312 por publicId, 20 por título, CRIA 0 e ignora 136 VIEWER sem par (T7.0)', async () => {
     const report = await new SyncTalentumVacanciesUseCase().execute();
 
     const listGets = stub.calls.filter((c) => c.method === 'GET' && c.path === '/projects').length;
@@ -90,7 +90,8 @@ describe('SyncTalentumVacanciesUseCase — custo e vagas criadas, medidos no stu
       total: TOTAL,
       updated: BY_PUBLIC_ID + BY_TITLE_ONLY,
       linkedByTitle: BY_TITLE_ONLY,
-      created: TOTAL - BY_PUBLIC_ID - BY_TITLE_ONLY,
+      created: 0,
+      ignoredNotOurs: TOTAL - BY_PUBLIC_ID - BY_TITLE_ONLY,
       skipped: 0,
       withoutWebLink: 0,
       errors: [],
@@ -108,19 +109,20 @@ describe('SyncTalentumVacanciesUseCase — custo e vagas criadas, medidos no stu
 
     process.stdout.write(
       `\n[MEDIDO T2.4] GETs: lista=${listGets} projeto=${projectGets} prescreening=${prescreeningGets} total=${listGets + projectGets + prescreeningGets} ` +
-        `(+1 login) | vagas: total=${TOTAL} ligadas_publicId=${BY_PUBLIC_ID} ligadas_titulo=${BY_TITLE_ONLY} CRIADAS(sem par)=${report.created}\n`,
+        `(+1 login) | vagas: total=${TOTAL} ligadas_publicId=${BY_PUBLIC_ID} ligadas_titulo=${BY_TITLE_ONLY} CRIADAS(sem par)=${report.created} ignoradas_nao_nossas=${report.ignoredNotOurs}\n`,
     );
   });
 
-  it('2ª execução logo depois: tudo já ligado → só as 39 páginas da lista (0 GETs de detalhe), 0 criadas', async () => {
+  it('2ª execução logo depois: 332 ligadas = skip sem GET; as 136 ignoradas (VIEWER sem par) custam 2 GETs cada (272), 0 criadas', async () => {
     await new SyncTalentumVacanciesUseCase().execute();
     stub.calls.length = 0;
 
     const report = await new SyncTalentumVacanciesUseCase().execute();
 
     const detailGets = stub.calls.filter((c) => c.method === 'GET' && c.path !== '/projects').length;
-    expect(report).toMatchObject({ total: TOTAL, skipped: TOTAL, created: 0, updated: 0, errors: [] });
-    expect(detailGets).toBe(0);
+    const IGNORED = TOTAL - BY_PUBLIC_ID - BY_TITLE_ONLY;
+    expect(report).toMatchObject({ total: TOTAL, skipped: TOTAL - IGNORED, ignoredNotOurs: IGNORED, created: 0, updated: 0, errors: [] });
+    expect(detailGets).toBe(IGNORED * 2);
     expect(stub.calls.filter((c) => c.path === '/projects')).toHaveLength(39);
   });
 });
