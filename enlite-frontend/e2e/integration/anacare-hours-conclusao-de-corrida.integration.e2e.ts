@@ -563,7 +563,7 @@ test.describe('Banner de conclusão de corrida — Horas Ana Care — E2E real @
     const linha = page.getByTestId(`anacare-hours-patient-row-${PATIENT_CURRENT}`);
     await expect(linha).toBeVisible({ timeout: 15_000 });
     await linha.click();
-    await expect(page).toHaveURL(new RegExp(`/admin/anacare/horas/${PATIENT_CURRENT}$`));
+    await expect(page).toHaveURL(new RegExp(`/admin/anacare/horas/${PATIENT_CURRENT}(\\?month=\\d{4}-\\d{2})?$`));
 
     const titulo = page.getByText('Estado de la sincronización desconocido');
     await expect(titulo).toBeVisible({ timeout: 15_000 });
@@ -594,7 +594,7 @@ test.describe('Banner de conclusão de corrida — Horas Ana Care — E2E real @
     const linha = page.getByTestId(`anacare-hours-patient-row-${PATIENT_CURRENT}`);
     await expect(linha).toBeVisible({ timeout: 15_000 });
     await linha.click();
-    await expect(page).toHaveURL(new RegExp(`/admin/anacare/horas/${PATIENT_CURRENT}$`));
+    await expect(page).toHaveURL(new RegExp(`/admin/anacare/horas/${PATIENT_CURRENT}(\\?month=\\d{4}-\\d{2})?$`));
 
     const titulo = page.getByText('Sincronización incompleta');
     await expect(titulo).toBeVisible({ timeout: 15_000 });

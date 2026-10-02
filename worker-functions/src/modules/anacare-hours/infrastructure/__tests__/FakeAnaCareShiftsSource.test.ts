@@ -29,6 +29,20 @@ describe('FakeAnaCareShiftsSource', () => {
       expect({ app, webAdmin, semCheckin }).toEqual({ app: 46, webAdmin: 35, semCheckin: 19 });
     });
 
+    it('spec 037 — AC-PAT-0 tem 30/09 e 07/09 em setembro e 01/10 e 04/10 em outubro (semana 28/09–04/10 cruza meses), sem mudar total, proporção nem ids', () => {
+      const setembro = FakeAnaCareShiftsSource.generateMonth('2026-09');
+      const outubro = FakeAnaCareShiftsSource.generateMonth('2026-10');
+      const datasDe = (shifts: ReturnType<typeof FakeAnaCareShiftsSource.generateMonth>) => shifts.filter((s) => s.anaCarePatientId === 'AC-PAT-0').map((s) => s.date);
+      expect(datasDe(setembro)).toEqual(expect.arrayContaining(['2026-09-30', '2026-09-07']));
+      expect(datasDe(outubro)).toEqual(expect.arrayContaining(['2026-10-01', '2026-10-04']));
+      expect(setembro).toHaveLength(100);
+      const movido = setembro.find((s) => s.sourceShiftId === 'FAKE-2026-09-0-1-4');
+      expect(movido?.date).toBe('2026-09-30');
+      expect(new Set(setembro.map((s) => s.sourceShiftId)).size).toBe(100);
+      // só setembro muda: outubro mantém o turno de índice 9 no dia 10
+      expect(outubro.find((s) => s.sourceShiftId === 'FAKE-2026-10-0-1-4')?.date).toBe('2026-10-10');
+    });
+
     it('é determinístico — o mesmo mês gera os mesmos ids na mesma ordem', () => {
       const a = FakeAnaCareShiftsSource.generateMonth('2026-09').map((s) => s.sourceShiftId);
       const b = FakeAnaCareShiftsSource.generateMonth('2026-09').map((s) => s.sourceShiftId);
