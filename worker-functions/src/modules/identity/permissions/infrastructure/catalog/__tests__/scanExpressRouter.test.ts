@@ -364,6 +364,9 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       // por isso aparecem aqui como as demais células de rota real.
       'patient_conversation:read', 'patient_conversation:create',
       'patient_conversation:update', 'patient_conversation:delete',
+      // Spec 031 (02/10): aba "Documentos" — 4 células declaradas por rota real
+      // (`patientDocumentsRoutes.ts`); o fixture de 2 rotas deste teste não as declara.
+      'patient_document:read', 'patient_document:create', 'patient_document:update', 'patient_document:delete',
       'staff_directory:read',
       // Spec 022, Bloco 4 (fecho, 21/09): notificações in-app — `own_notifications:read|update`
       // (família `admin.users`). Mesma situação das 5 células acima: rota real existe

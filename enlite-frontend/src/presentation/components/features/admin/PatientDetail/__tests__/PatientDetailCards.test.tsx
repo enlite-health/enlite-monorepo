@@ -853,11 +853,12 @@ describe('PatientProfileTabs', () => {
   // 05/09 (decisão do Gabriel): a antiga "Enquadre" saiu — era a tabela de serviços duplicada +
   // placeholder, sem quadro nenhum atrás. 29/09: "Enquadre" VOLTA, desta vez com conteúdo real (o
   // quadro C, `EncuadreTab.tsx`) — não é a mesma aba, então volta a aparecer aqui.
-  it('renders the 7 tabs with real content — "Dados Financeiros"/"Agendamentos" não existem mais; "Enquadre" voltou (29/09)', () => {
+  it('renders the 8 tabs with real content — "Dados Financeiros"/"Agendamentos" não existem mais; "Enquadre" voltou (29/09)', () => {
     const onTabChange = vi.fn();
     render(<PatientProfileTabs activeTab="clinicalData" onTabChange={onTabChange} />);
     expect(screen.getByText('Dados Clínicos')).toBeInTheDocument();
     expect(screen.getByText('Rede de Apoio')).toBeInTheDocument();
+    expect(screen.getByText('Documentos')).toBeInTheDocument();
     expect(screen.getByText('Serviço Contratado')).toBeInTheDocument();
     expect(screen.getByText('Vagas')).toBeInTheDocument();
     expect(screen.getByText('Enquadre')).toBeInTheDocument();
@@ -865,7 +866,7 @@ describe('PatientProfileTabs', () => {
     expect(screen.getByText('Histórico')).toBeInTheDocument();
     expect(screen.queryByText('Dados Financeiros')).not.toBeInTheDocument();
     expect(screen.queryByText('Agendamentos')).not.toBeInTheDocument();
-    expect(screen.getAllByRole('button')).toHaveLength(7);
+    expect(screen.getAllByRole('button')).toHaveLength(8);
   });
 
   it('active tab has primary background class', () => {

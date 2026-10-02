@@ -16,6 +16,14 @@ const AttachmentDto = z.object({
   fileId: z.string().uuid(),
   contentType: z.string(),
   sizeBytes: z.number().int().nonnegative(),
+  originalName: z.string().nullable().openapi({
+    description: 'Nome original decifrado. `null` se a decifra falhou para este anexo OU se `deleted` (spec 031).',
+  }),
+  deleted: z.boolean().openapi({
+    description:
+      'Spec 031 (D463): `true` quando o documento foi excluído pela aba "Documentos" — o anexo continua na '
+      + 'mensagem, sem nome, e a UI mostra "documento eliminado". A rota de URL do anexo responde 404.',
+  }),
 });
 
 const ConversationMessageDto = z.object({

@@ -10,10 +10,13 @@
 // SAI da aba "Servicio Contratado" e passa a viver só aqui). Não é a mesma aba antiga: aquela
 // duplicava a tabela de serviços e não tinha quadro nenhum atrás.
 // D442 (28/09): 'Itinerario' entra tendo conteúdo real (D431): a grade semanal por serviço e a alocação.
+// Spec 031 (D463, 02/10): 'documents' entra DEPOIS de 'supportNetwork' — a aba dos documentos do paciente
+// (subidos na ficha ou enviados pelo chat), container próprio `patient_document`.
 // Fora do componente (react-refresh): a página e o registro de telas importam a lista.
 export type PatientTab =
   | 'clinicalData'
   | 'supportNetwork'
+  | 'documents'
   | 'contractedService'
   | 'vacancies'
   | 'encuadre'
@@ -24,6 +27,7 @@ export type PatientTab =
 export const PATIENT_TABS: readonly PatientTab[] = [
   'clinicalData',
   'supportNetwork',
+  'documents',
   'contractedService',
   'vacancies',
   'encuadre',

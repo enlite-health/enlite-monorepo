@@ -44,6 +44,7 @@ import {
   createAdminPatientPhotoRoutes,
 } from '@modules/case';
 import { createAdminConversationRoutes } from '@modules/conversation/interfaces/routes/adminConversationRoutes';
+import { createPatientDocumentsRoutes } from '@modules/patient-documents/interfaces/routes/patientDocumentsRoutes';
 import { createAdminNotificationRoutes } from '@modules/inapp-notification/interfaces/routes/adminNotificationRoutes';
 import { AdminPatientDiagnosesController } from '@modules/diagnosis/interfaces/controllers/AdminPatientDiagnosesController';
 import { AdminTerminologySearchController } from '@modules/terminology/interfaces/controllers/AdminTerminologySearchController';
@@ -547,6 +548,9 @@ app.use('/api/admin', createAdminPatientPhotoRoutes(authMiddleware, permissionMi
 
 // ========== Admin Patient Conversation (spec 022, Bloco 1) ==========
 app.use('/api/admin', createAdminConversationRoutes(authMiddleware, permissionMiddleware));
+
+// ========== Admin Patient Documents — aba "Documentos" (spec 031) ==========
+app.use('/api/admin', createPatientDocumentsRoutes(authMiddleware, permissionMiddleware));
 
 // ========== Admin Notifications / sino (spec 022, Bloco 4) ==========
 // `permissionsBoundary.permissions.client` — leitura CRUA do ABAC (D-13, revisado no fecho B5:
