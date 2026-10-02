@@ -264,4 +264,48 @@ test.describe('anacare-hours-detalhe-por-mes — o detalhe navega por mês @inte
       await expect(page.getByTestId('anacare-hours-week-datepicker')).toHaveValue(hoje);
     }
   });
+
+  // ── Spec 032 (FR-006/P2) — trocar de paciente sem sair do detalhe ──────────────────────────────
+  const OUTRO = 'AC-PAT-6';
+  const campoTroca = (page: Page) => page.getByTestId('anacare-hours-patient-switch-combobox');
+
+  test('FELIZ — trocar de paciente: ícone ao lado do nome, digitar parte do ID, escolher; a URL vira o outro paciente no MESMO ?month e a tela mostra o outro', async ({ page }) => {
+    await loginAs(page, LEITURA);
+    await page.goto(`/admin/anacare/horas/${PATIENT}?month=2026-09`);
+    await expect(page.getByRole('heading', { name: `Sin vínculo · ID ${PATIENT}` })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('anacare-hours-week-loading')).toHaveCount(0, { timeout: 15_000 });
+
+    await page.getByTestId('anacare-hours-patient-switch-button').click();
+    await expect(page.getByRole('dialog', { name: 'Cambiar de paciente' })).toBeVisible();
+    await campoTroca(page).click();
+    await expect(campoTroca(page)).toBeFocused();
+    await page.keyboard.type('PAT-6');
+    // O atual não é opção; o outro é.
+    await expect(page.getByTestId(`anacare-hours-patient-switch-combobox-option-${PATIENT}`)).toHaveCount(0);
+    const opcao = page.getByTestId(`anacare-hours-patient-switch-combobox-option-${OUTRO}`);
+    await expect(opcao).toBeVisible({ timeout: 15_000 });
+    await opcao.click();
+
+    await expect(page).toHaveURL(new RegExp(`/admin/anacare/horas/${OUTRO}\\?month=2026-09$`));
+    await expect(page.getByRole('heading', { name: `Sin vínculo · ID ${OUTRO}` })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('anacare-hours-patient-switch-modal')).toHaveCount(0);
+    await expect(rotuloTotal(page)).toHaveText('Horas totales de Septiembre 2026');
+  });
+
+  test('ALTERNATIVO — texto sem match mostra "Sin resultados"; Esc fecha o modal e o paciente atual continua na tela', async ({ page }) => {
+    await loginAs(page, LEITURA);
+    await page.goto(`/admin/anacare/horas/${PATIENT}?month=2026-09`);
+    await expect(page.getByRole('heading', { name: `Sin vínculo · ID ${PATIENT}` })).toBeVisible({ timeout: 15_000 });
+
+    await page.getByTestId('anacare-hours-patient-switch-button').click();
+    await campoTroca(page).click();
+    await expect(campoTroca(page)).toBeFocused();
+    await page.keyboard.type('zzzz-nada');
+    await expect(page.getByTestId('anacare-hours-patient-switch-combobox-no-match')).toHaveText('Sin resultados');
+    await page.keyboard.press('Escape');
+
+    await expect(page.getByTestId('anacare-hours-patient-switch-modal')).toHaveCount(0);
+    await expect(page).toHaveURL(new RegExp(`/admin/anacare/horas/${PATIENT}\\?month=2026-09$`));
+    await expect(page.getByRole('heading', { name: `Sin vínculo · ID ${PATIENT}` })).toBeVisible();
+  });
 });

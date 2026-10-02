@@ -15,7 +15,8 @@ import { AnaCareHoursServiceError } from './AnaCareHoursService';
 import type { AnaCareHoursExportService } from './AnaCareHoursExportService';
 import { MAX_EXPORT_DAYS, rangeDays } from './exportRange';
 import { ProviderFilterCombobox, type ProviderFilterOption } from './ProviderFilterCombobox';
-import { lastDayOfMonthIso, navigableDateRange, patientDisplayName } from './selectors';
+import { patientSearchOption, patientSearchOptions } from './patientOptions';
+import { lastDayOfMonthIso, navigableDateRange } from './selectors';
 import type { AnaCareListPatient } from './types';
 
 export interface AnaCareHoursExportDialogProps {
@@ -44,11 +45,11 @@ export function AnaCareHoursExportDialog({ service, patients, initialPatientId, 
   const bounds = navigableDateRange();
 
   const options = useMemo<ProviderFilterOption[]>(() => {
-    const list = patients.map((p) => ({ value: p.anaCareId, label: patientDisplayName(p) }));
+    const list = patientSearchOptions(patients);
     if (initialPatientId && !list.some((o) => o.value === initialPatientId)) {
-      list.unshift({ value: initialPatientId, label: patientDisplayName({ anaCareId: initialPatientId, name: initialPatientName }) });
+      list.unshift(patientSearchOption({ anaCareId: initialPatientId, name: initialPatientName }));
     }
-    return list.map((o) => ({ ...o, searchText: `${o.label} ${o.value}` }));
+    return list;
   }, [patients, initialPatientId, initialPatientName]);
 
   useEffect(() => {
