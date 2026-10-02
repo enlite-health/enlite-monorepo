@@ -388,6 +388,13 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'POST /api/admin/patients/:id/conversation/files → patient_conversation:create',
         'POST /api/admin/patients/:id/conversation/messages → patient_conversation:create',
         'PUT /api/admin/patients/:id/conversation/read-mark → patient_conversation:read',
+        // Aba "Documentos" do paciente (spec 031, `patientDocumentsRoutes.ts`) — família `admin.patients`,
+        // células NOVAS `patient_document:*` (migration 497).
+        'DELETE /api/admin/patients/:id/documents/:docId → patient_document:delete',
+        'GET /api/admin/patients/:id/documents → patient_document:read',
+        'GET /api/admin/patients/:id/documents/:docId/url → patient_document:read',
+        'PATCH /api/admin/patients/:id/documents/:docId → patient_document:update',
+        'POST /api/admin/patients/:id/documents → patient_document:create',
         // Diretório de staff (T127/T128, `adminStaffDirectoryRoutes.ts`) — família `admin.users`,
         // célula NOVA `staff_directory:read` (D-07, migration 463).
         'GET /api/admin/staff-directory → staff_directory:read',

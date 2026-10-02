@@ -44,6 +44,10 @@ vi.mock('@presentation/components/features/admin/PatientDetail/ProjetoTerapeutic
 // cobria: `onSaved` refetcha ficha E vagas (a vaga nasce da ativação).
 vi.mock('@presentation/components/features/admin/PatientDetail/ServicosContratadosCard', () => ({ ServicosContratadosCard: (p: { onSaved?: () => void }) => <button data-testid="services-saved-stub" onClick={() => p.onSaved?.()}>services</button> }));
 vi.mock('@presentation/components/features/admin/PatientDetail/PatientStatusControl', () => ({ PatientStatusControl: (p: { onSaved: () => void }) => <button data-testid="status-stub" onClick={p.onSaved}>status</button> }));
+// Spec 031: a aba "Documentos" tem hook + HTTP próprios (testados no próprio arquivo); aqui só a montagem.
+vi.mock('@presentation/components/features/admin/PatientDetail/documents/PatientDocumentsSection', () => ({
+  PatientDocumentsSection: (p: { patientId: string }) => <div data-testid="documents-section-stub">{p.patientId}</div>,
+}));
 vi.mock('@infrastructure/http/AdminApiService', () => ({ AdminApiService: { updatePatientSection: vi.fn(), listInsuranceProviders: vi.fn().mockResolvedValue([]) } }));
 // Defeito 1 (Rodada 2, medido em prd 21-22/09): captura o `focusRequest` que a página repassa,
 // sem depender do componente real (polling/HTTP) nem do gate de permissão.
@@ -280,10 +284,34 @@ describe('PatientDetailPage — D286: abas e cards por container', () => {
     expect(screen.queryByTestId('familiares-card')).not.toBeInTheDocument();
   });
 
+  it('spec 031: com patient_document:read a aba Documentos existe, vem logo depois da Rede de Apoio e monta a seção com o id do paciente', () => {
+    comCelulas(['patient:read', 'patient_document:read', 'patient_family:read'], 'on');
+    render(<PatientDetailPage />);
+    expect(abasNaTela()).toEqual(['Rede de Apoio', 'Documentos', 'Histórico']);
+    fireEvent.click(screen.getByText('Documentos'));
+    expect(screen.getByTestId('documents-section-stub')).toHaveTextContent(patientDetailFixture.id);
+    expect(screen.queryByTestId('familiares-card')).not.toBeInTheDocument();
+  });
+
+  it('spec 031: sem NENHUMA célula de patient_document a aba Documentos NÃO existe (e a seção nunca monta)', () => {
+    comCelulas(['patient:read', 'patient_family:read'], 'on');
+    render(<PatientDetailPage />);
+    expect(abasNaTela()).toEqual(['Rede de Apoio', 'Histórico']);
+    expect(screen.queryByTestId('documents-section-stub')).not.toBeInTheDocument();
+  });
+
+  it('spec 031: engine OFF, a aba Documentos aparece em 3º lugar (depois da Rede de Apoio) e monta a seção', () => {
+    comCelulas([], 'off');
+    render(<PatientDetailPage />);
+    expect(abasNaTela()[2]).toBe('Documentos');
+    fireEvent.click(screen.getByText('Documentos'));
+    expect(screen.getByTestId('documents-section-stub')).toBeInTheDocument();
+  });
+
   it('enforcement OFF: tudo como antes, mesmo sem célula nenhuma (as células novas nascem sem grupo)', () => {
     comCelulas([], 'off');
     render(<PatientDetailPage />);
-    expect(abasNaTela()).toHaveLength(5);
+    expect(abasNaTela()).toHaveLength(6);
     fireEvent.click(screen.getByText('Rede de Apoio'));
     expect(screen.getByTestId('familiares-card')).toBeInTheDocument();
   });

@@ -5,6 +5,7 @@
 import './health';
 import './adminAuth';
 import './adminConversation';
+import './adminPatientDocuments';
 import './adminDashboard';
 import './adminEncuadres';
 import './adminFunnel';

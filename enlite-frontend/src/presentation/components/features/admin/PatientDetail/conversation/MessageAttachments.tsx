@@ -19,7 +19,7 @@ import { useCallback, useEffect, useRef, useState, type JSX } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AdminConversationApiService, type ConversationMessageAttachment } from '@infrastructure/http/AdminConversationApiService';
 import { Text } from '@presentation/components/atoms/Text';
-import { Download } from 'lucide-react';
+import { Download, FileX } from 'lucide-react';
 import { iconComponentForContentType, extensionForContentType, formatFileSize, isImageContentType } from './attachmentIcon';
 
 /**
@@ -224,6 +224,23 @@ function FileChip({ attachment, onDownload }: FileChipProps): JSX.Element {
   );
 }
 
+/**
+ * Spec 031 (D463): o documento foi excluído pela aba "Documentos". O servidor devolve o anexo com
+ * `deleted: true`, sem nome e com URL 404 — então aqui só o rótulo: sem link, sem nome, sem botão.
+ */
+function DeletedAttachment({ attachment }: { attachment: ConversationMessageAttachment }): JSX.Element {
+  const { t } = useTranslation();
+  return (
+    <div
+      data-testid={`message-attachment-deleted-${attachment.fileId}`}
+      className="flex items-center gap-1.5 text-xs text-gray-800 italic border border-dashed border-gray-300 rounded-md px-2 py-1 self-start"
+    >
+      <FileX size={14} aria-hidden="true" className="flex-shrink-0" />
+      <span>{t('admin.patients.detail.conversation.thread.attachments.deleted', 'Documento eliminado')}</span>
+    </div>
+  );
+}
+
 export function MessageAttachments({
   patientId, attachments,
 }: { patientId: string; attachments: ConversationMessageAttachment[] }): JSX.Element | null {
@@ -231,8 +248,10 @@ export function MessageAttachments({
 
   if (attachments.length === 0) return null;
 
-  const images = attachments.filter((a) => isImageContentType(a.contentType));
-  const files = attachments.filter((a) => !isImageContentType(a.contentType));
+  const deletedOnes = attachments.filter((a) => a.deleted);
+  const live = attachments.filter((a) => !a.deleted);
+  const images = live.filter((a) => isImageContentType(a.contentType));
+  const files = live.filter((a) => !isImageContentType(a.contentType));
   const onDownload = (fileId: string): void => { void handleDownload(fileId); };
 
   return (
@@ -255,6 +274,13 @@ export function MessageAttachments({
         <div data-testid="message-attachments-files" className="flex flex-col gap-1">
           {files.map((attachment) => (
             <FileChip key={attachment.fileId} attachment={attachment} onDownload={onDownload} />
+          ))}
+        </div>
+      )}
+      {deletedOnes.length > 0 && (
+        <div data-testid="message-attachments-deleted" className="flex flex-col gap-1">
+          {deletedOnes.map((attachment) => (
+            <DeletedAttachment key={attachment.fileId} attachment={attachment} />
           ))}
         </div>
       )}

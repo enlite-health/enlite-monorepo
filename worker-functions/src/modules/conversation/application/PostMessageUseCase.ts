@@ -28,6 +28,7 @@ import { FanOutNotificationUseCase } from '@modules/inapp-notification/applicati
 import { ConversationRepository } from '../infrastructure/ConversationRepository';
 import { extractMentionedUids, MentionedUserNotFoundError } from '../domain/ConversationMention';
 import { messageBelongsToConversation } from '../domain/MessageThreadOwnership';
+import { PatientDocumentRepository } from '@modules/patient-documents/infrastructure/PatientDocumentRepository';
 import { MessageNotFoundError } from './EditMessageUseCase';
 
 export interface PostMessageParams {
@@ -99,6 +100,7 @@ export class PostMessageUseCase {
   constructor(
     private readonly repository: ConversationRepository = new ConversationRepository(),
     private readonly fanOutHook: PostMessageFanOutHook = new FanOutNotificationUseCase(),
+    private readonly patientDocuments: PatientDocumentRepository = new PatientDocumentRepository(),
   ) {}
 
   async execute(pool: Pool, params: PostMessageParams): Promise<PostMessageResult> {
@@ -120,6 +122,15 @@ export class PostMessageUseCase {
       }
       if (fileIds.length > 0) {
         await this.attachFiles(client, inserted.id, fileIds);
+        // Spec 031 (D456/D463, Q12): anexar no chat É criar o documento do paciente — MESMO client/
+        // transação, logo depois do vínculo. Falha aqui desfaz a mensagem inteira (withActorContext
+        // reverte): nunca anexo na conversa sem documento na lista.
+        await this.createPatientDocuments(client, {
+          conversationId,
+          messageId: inserted.id,
+          authorUid,
+          fileIds,
+        });
       }
 
       // Bloco 4 (T403): `patientId` só é preciso para o fan-out (notification_events.patient_id)
@@ -220,6 +231,17 @@ export class PostMessageUseCase {
     const ownedById = new Map(rows.map((r) => [r.id, r.owned]));
     const rejected = fileIds.find((id) => !ownedById.get(id));
     if (rejected) throw new AttachedFileNotFoundError(rejected);
+  }
+
+  private async createPatientDocuments(
+    client: PoolClient,
+    params: { conversationId: string; messageId: string; authorUid: string; fileIds: string[] },
+  ): Promise<void> {
+    const created = await this.patientDocuments.insertFromChatAttachments(params, client);
+    if (created !== params.fileIds.length) {
+      // Defesa: um documento por arquivo, sempre. Contagem diferente = lista fora de sincronia com o chat.
+      throw new Error(`patient_documents: criou ${created} de ${params.fileIds.length} documento(s) do anexo`);
+    }
   }
 
   private async attachFiles(client: PoolClient, messageId: string, fileIds: string[]): Promise<void> {
