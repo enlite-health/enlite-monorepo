@@ -19,7 +19,8 @@ const log = logger.child({ source: 'ListDedupGroupsUseCase' });
 
 interface RawWorkerRow {
   id: string;
-  email: string;
+  /** NULL: worker criado só com telefone (sync Talentum v2, migration 499). */
+  email: string | null;
   auth_uid: string;
   status: string;
   created_at: Date;
@@ -126,24 +127,26 @@ export class ListDedupGroupsUseCase {
   }
 
   private buildGroup(phoneNormalized: string, workers: RawWorkerRow[]): DedupGroup {
+    // E-mail NULL vira '' só para ler/exibir: não é e-mail "importado" nem entra em critério de e-mail.
+    const mail = (w: RawWorkerRow): string => w.email ?? '';
     const accounts: DedupWorkerAccount[] = workers.map(w => ({
       id: w.id,
-      email: w.email,
-      tier: classifyWorkerTier({ auth_uid: w.auth_uid, email: w.email }) as WorkerTier,
+      email: mail(w),
+      tier: classifyWorkerTier({ auth_uid: w.auth_uid, email: mail(w) }) as WorkerTier,
       status: w.status,
       created_at: w.created_at.toISOString(),
       updated_at: w.updated_at.toISOString(),
       wja_count: w.wja_count,
       docs_count: w.document_count,
       encuadres_count: w.encuadres_count,
-      login_real: !isSyntheticUid(w.auth_uid) && !w.email.toLowerCase().includes(IMPORT_EMAIL_SUFFIX),
+      login_real: !isSyntheticUid(w.auth_uid) && !mail(w).toLowerCase().includes(IMPORT_EMAIL_SUFFIX),
       auth_uid_prefix: extractPrefix(w.auth_uid),
-      is_imported: w.email.toLowerCase().includes(IMPORT_EMAIL_SUFFIX),
+      is_imported: mail(w).toLowerCase().includes(IMPORT_EMAIL_SUFFIX),
     }));
 
     // Determina survivor sugerido
-    const tier1 = workers.filter(w => classifyWorkerTier({ auth_uid: w.auth_uid, email: w.email }) === 1);
-    const tier2 = workers.filter(w => classifyWorkerTier({ auth_uid: w.auth_uid, email: w.email }) === 2);
+    const tier1 = workers.filter(w => classifyWorkerTier({ auth_uid: w.auth_uid, email: mail(w) }) === 1);
+    const tier2 = workers.filter(w => classifyWorkerTier({ auth_uid: w.auth_uid, email: mail(w) }) === 2);
 
     let survivorId: string | null = null;
     let survivorReason = '';
@@ -158,7 +161,7 @@ export class ListDedupGroupsUseCase {
       const best = selectMostComplete(tier2.map(w => ({
         id: w.id,
         auth_uid: w.auth_uid,
-        email: w.email,
+        email: mail(w),
         phone: null,
         phone_normalized: null,
         updated_at: w.updated_at,
@@ -175,7 +178,7 @@ export class ListDedupGroupsUseCase {
       const best = selectMostComplete(workers.map(w => ({
         id: w.id,
         auth_uid: w.auth_uid,
-        email: w.email,
+        email: mail(w),
         phone: null,
         phone_normalized: null,
         updated_at: w.updated_at,
