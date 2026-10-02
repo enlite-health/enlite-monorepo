@@ -87,7 +87,7 @@ function givenProjects(...items: TalentumProject[]) {
 }
 
 function emptyReport(): SyncReport {
-  return { total: 0, updated: 0, created: 0, skipped: 0, linkedByTitle: 0, withoutWebLink: 0, duplicateTitles: [], errors: [] };
+  return { total: 0, updated: 0, created: 0, skipped: 0, linkedByTitle: 0, withoutWebLink: 0, ignoredNotOurs: 0, duplicateTitles: [], errors: [] };
 }
 
 // ── Tests ────────────────────────────────────────────────────────
@@ -194,6 +194,38 @@ describe('SyncTalentumVacanciesUseCase (API v2)', () => {
 
       expect(report).toMatchObject({ created: 1, updated: 0, linkedByTitle: 0 });
       expect(mockFake.vacancies.find((v) => v.id === 'jp-x')!.talentum_project_id).toBeNull();
+    });
+  });
+
+  // ── 2b. T7.0: só vira vaga nova o projeto que é NOSSO ───────────
+
+  describe('projeto sem par: só cria se myRole === OWNER (spec 040 T7.0)', () => {
+    it('VIEWER sem par: 0 INSERT e conta em ignoredNotOurs', async () => {
+      givenProjects(listItem('proj-v', 'Proyecto ajeno', { myRole: 'VIEWER' }));
+
+      const report = await useCase.execute();
+
+      expect(report).toMatchObject({ total: 1, created: 0, updated: 0, ignoredNotOurs: 1, errors: [] });
+      expect(mockFake.vacancies).toHaveLength(0);
+    });
+
+    it('OWNER sem par: cria a vaga, como antes', async () => {
+      givenProjects(listItem('proj-o', 'Proyecto propio', { myRole: 'OWNER' }));
+
+      const report = await useCase.execute();
+
+      expect(report).toMatchObject({ created: 1, ignoredNotOurs: 0, errors: [] });
+      expect(mockFake.vacancies).toHaveLength(1);
+    });
+
+    it('VIEWER COM par (por publicId): continua ligando a vaga existente', async () => {
+      mockFake.add({ id: 'jp-1', title: 'antigo', talentum_project_id: 'id-v1', talentum_public_id: 'pub-proj-v' });
+      givenProjects(listItem('proj-v', 'Proyecto ajeno', { myRole: 'VIEWER' }));
+
+      const report = await useCase.execute();
+
+      expect(report).toMatchObject({ updated: 1, created: 0, ignoredNotOurs: 0 });
+      expect(mockFake.vacancies[0].talentum_project_id).toBe('proj-v');
     });
   });
 

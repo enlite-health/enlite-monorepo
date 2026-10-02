@@ -12,7 +12,7 @@
  *    projeto (2 GETs) para ligar por `publicId` (estável). Ordem de ligação: talentum_project_id →
  *    publicId → título EXATO 1:1 (duplicata → relatório, nada é ligado nem criado) → número do título
  *    (legado). Projeto `PHONE_CALL` ou com `/prescreening` 400 não tem link web: liga/cria sem apagar
- *    link/descrição existentes. A FAQ NÃO é tocada (a v2 não tem FAQ — decisão (g); fica só no banco).
+ *    link/descrição existentes. T7.0: projeto sem par só vira vaga nova se `myRole === 'OWNER'`. A FAQ NÃO é tocada (a v2 não tem FAQ — decisão (g); fica só no banco).
  */
 
 import { Pool } from 'pg';
@@ -40,6 +40,8 @@ export interface SyncReport {
   linkedByTitle: number;
   /** Projetos sem link web (tipo `PHONE_CALL` ou `/prescreening` 400): ligados/criados sem `publicId`. */
   withoutWebLink: number;
+  /** Projeto sem par que NÃO é nosso (`myRole` ≠ OWNER, ex. VIEWER): não cria vaga, só conta (T7.0). */
+  ignoredNotOurs: number;
   /** Título que casa com mais de uma vaga do banco: nada é ligado nem criado, só relatado. */
   duplicateTitles: Array<{
     projectId: string;
@@ -75,6 +77,7 @@ export class SyncTalentumVacanciesUseCase {
       skipped: 0,
       linkedByTitle: 0,
       withoutWebLink: 0,
+      ignoredNotOurs: 0,
       duplicateTitles: [],
       errors: [],
     };
@@ -103,7 +106,7 @@ export class SyncTalentumVacanciesUseCase {
     console.log(
       `[SyncTalentum] Done: total=${report.total} updated=${report.updated} ` +
       `created=${report.created} skipped=${report.skipped} linkedByTitle=${report.linkedByTitle} ` +
-      `withoutWebLink=${report.withoutWebLink} duplicateTitles=${report.duplicateTitles.length} errors=${report.errors.length}`,
+      `withoutWebLink=${report.withoutWebLink} ignoredNotOurs=${report.ignoredNotOurs} duplicateTitles=${report.duplicateTitles.length} errors=${report.errors.length}`,
     );
 
     return report;
@@ -192,6 +195,12 @@ export class SyncTalentumVacanciesUseCase {
       jobPostingId = existing.id;
       report.updated++;
     } else {
+      // T7.0 (decisão do Gabriel, 02/10): o sync NÃO cria vaga para projeto que não é nosso.
+      if (project.myRole !== 'OWNER') {
+        console.log(`[SyncTalentum] Ignorado "${project.title}" — sem par e myRole=${project.myRole ?? 'ausente'} (não é nosso)`);
+        report.ignoredNotOurs++;
+        return;
+      }
       jobPostingId = await this.createFromSync(caseNumber);
       report.created++;
       wasCreated = true;

@@ -138,6 +138,7 @@ describe('VacancyTalentumController — syncFromTalentum', () => {
         skipped: 1,
         linkedByTitle: 0,
         withoutWebLink: 0,
+        ignoredNotOurs: 0,
         duplicateTitles: [],
         errors: [{ projectId: 'p1', title: 'CASO 1', error: 'parse failed' }],
       };
@@ -162,6 +163,7 @@ describe('VacancyTalentumController — syncFromTalentum', () => {
         skipped: 0,
         linkedByTitle: 0,
         withoutWebLink: 0,
+        ignoredNotOurs: 0,
         duplicateTitles: [],
         errors: [],
       };
@@ -255,6 +257,7 @@ describe('VacancyTalentumController — syncFromTalentum', () => {
         skipped: 2,
         linkedByTitle: 0,
         withoutWebLink: 0,
+        ignoredNotOurs: 0,
         duplicateTitles: [],
         errors: [],
       };
