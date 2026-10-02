@@ -10,12 +10,22 @@ describe('VacanciesTable', () => {
       status: 'Esperando Ativação',
       priority: 'URGENT',
       diasAberto: '05',
-      convidados: '329',
+      stageCounts: {
+        COMPATIBLE: 6,
+        INVITED: 32,
+        INICIADO: 9,
+        PRE_SCREENING: 5,
+        COMPLETED: 3,
+        CONFIRMED: 43,
+        SELECTED: 27,
+        QUICK_RESPONSE_TEAM: 7,
+        REJECTED: 2,
+      },
       postulados: '115',
-      confirmados: '43',
-      selecionados: '27',
       faltantes: '00',
       isDraft: false,
+      lastActionAt: '2026-09-20T14:30:00.000Z',
+      daysWithoutDivulgation: 5,
     },
     {
       id: 'c83963ee-beaf-45f2-88a3-365147b0c205',
@@ -23,25 +33,43 @@ describe('VacanciesTable', () => {
       status: 'Esperando Ativação',
       priority: 'NORMAL',
       diasAberto: '03',
-      convidados: '164',
+      stageCounts: {
+        COMPATIBLE: 8,
+        INVITED: 16,
+        INICIADO: 41,
+        PRE_SCREENING: 18,
+        COMPLETED: 11,
+        CONFIRMED: 19,
+        SELECTED: 61,
+        QUICK_RESPONSE_TEAM: 4,
+        REJECTED: 10,
+      },
       postulados: '52',
-      confirmados: '09',
-      selecionados: '06',
-      faltantes: '00',
+      faltantes: '01',
       isDraft: false,
+      lastActionAt: null,
+      daysWithoutDivulgation: null,
     },
   ];
 
-  it('should render table headers (case, status, priority, invited, applicants, confirmed, selected, missing)', () => {
+  it('should render table headers (case, status, priority, as 9 colunas do funil, applicants, missing)', () => {
     render(<VacanciesTable vacancies={[]} />);
 
     expect(screen.getByText('admin.vacancies.table.case')).toBeInTheDocument();
     expect(screen.getByText('admin.vacancies.table.status')).toBeInTheDocument();
     expect(screen.getByText('admin.vacancies.table.priority')).toBeInTheDocument();
-    expect(screen.getByText('admin.vacancies.table.invited')).toBeInTheDocument();
+    expect(screen.getByText('admin.vacancies.table.lastAction')).toBeInTheDocument();
+    expect(screen.getByText('admin.vacancies.table.daysWithoutDivulgation')).toBeInTheDocument();
+    expect(screen.getByText('admin.kanban.columns.COMPATIBLE')).toBeInTheDocument();
+    expect(screen.getByText('admin.kanban.columns.INVITED')).toBeInTheDocument();
+    expect(screen.getByText('admin.kanban.columns.INICIADO')).toBeInTheDocument();
+    expect(screen.getByText('admin.kanban.columns.PRE_SCREENING')).toBeInTheDocument();
+    expect(screen.getByText('admin.kanban.columns.COMPLETED')).toBeInTheDocument();
+    expect(screen.getByText('admin.kanban.columns.CONFIRMED')).toBeInTheDocument();
+    expect(screen.getByText('admin.kanban.columns.SELECTED')).toBeInTheDocument();
+    expect(screen.getByText('admin.kanban.columns.QUICK_RESPONSE_TEAM')).toBeInTheDocument();
+    expect(screen.getByText('admin.kanban.columns.REJECTED')).toBeInTheDocument();
     expect(screen.getByText('admin.vacancies.table.applicants')).toBeInTheDocument();
-    expect(screen.getByText('admin.vacancies.table.confirmed')).toBeInTheDocument();
-    expect(screen.getByText('admin.vacancies.table.selected')).toBeInTheDocument();
     expect(screen.getByText('admin.vacancies.table.missing')).toBeInTheDocument();
   });
 
@@ -73,17 +101,43 @@ describe('VacanciesTable', () => {
     expect(screen.getByText('admin.vacancies.priorityOptions.normal')).toBeInTheDocument();
   });
 
-  it('should render numeric data fields', () => {
+  it('should render numeric data fields (stageCounts das 9 colunas, Fase 5: +COMPATIBLE, + postulados/faltantes)', () => {
     render(<VacanciesTable vacancies={realApiData} />);
 
-    expect(screen.getByText('329')).toBeInTheDocument();
-    expect(screen.getByText('115')).toBeInTheDocument();
+    // Caso 349: stageCounts padStart(2,'0')
+    expect(screen.getByText('06')).toBeInTheDocument();
+    expect(screen.getByText('32')).toBeInTheDocument();
+    expect(screen.getByText('09')).toBeInTheDocument();
+    expect(screen.getByText('05')).toBeInTheDocument();
+    expect(screen.getByText('03')).toBeInTheDocument();
     expect(screen.getByText('43')).toBeInTheDocument();
     expect(screen.getByText('27')).toBeInTheDocument();
-    expect(screen.getByText('164')).toBeInTheDocument();
+    expect(screen.getByText('07')).toBeInTheDocument();
+    expect(screen.getByText('02')).toBeInTheDocument();
+    expect(screen.getByText('115')).toBeInTheDocument();
+    expect(screen.getByText('00')).toBeInTheDocument();
+    // Caso 348
+    expect(screen.getByText('08')).toBeInTheDocument();
+    expect(screen.getByText('16')).toBeInTheDocument();
+    expect(screen.getByText('41')).toBeInTheDocument();
+    expect(screen.getByText('18')).toBeInTheDocument();
+    expect(screen.getByText('11')).toBeInTheDocument();
+    expect(screen.getByText('19')).toBeInTheDocument();
+    expect(screen.getByText('61')).toBeInTheDocument();
+    expect(screen.getByText('04')).toBeInTheDocument();
+    expect(screen.getByText('10')).toBeInTheDocument();
     expect(screen.getByText('52')).toBeInTheDocument();
-    expect(screen.getByText('09')).toBeInTheDocument();
-    expect(screen.getByText('06')).toBeInTheDocument();
+    expect(screen.getByText('01')).toBeInTheDocument();
+  });
+
+  it('soma columnCount de todos os sources da coluna (Pre Screening = PRE_SCREENING + IN_PROGRESS)', () => {
+    const withInProgress: VacancyRow[] = [
+      { ...realApiData[0], stageCounts: { PRE_SCREENING: 1, IN_PROGRESS: 1 } },
+    ];
+    render(<VacanciesTable vacancies={withInProgress} />);
+    expect(
+      screen.getByTestId(`vacancy-row-${withInProgress[0].id}-stage-PRE_SCREENING`),
+    ).toHaveTextContent('02');
   });
 
   it('should not render "no vacancies" message when data is provided', () => {
@@ -130,5 +184,72 @@ describe('VacanciesTable', () => {
     render(<VacanciesTable vacancies={realApiData} onRowClick={onRowClick} />);
     fireEvent.click(screen.getByText('Caso 349'));
     expect(onRowClick).toHaveBeenCalledWith('fd269cde-d8c9-4fdc-88a9-5b19ebcdb531', false);
+  });
+});
+
+// Colunas novas da Fase 3 (DX-3.5/DX-3.6/DX-3.7): última ação + dias sem divulgação.
+describe('VacanciesTable — última ação e dias sem divulgação (DX-3.5/DX-3.6)', () => {
+  const base: VacancyRow = {
+    id: 'vac-x',
+    caso: 'Caso X',
+    status: 'Activo',
+    priority: 'NORMAL',
+    diasAberto: '01',
+    stageCounts: {},
+    postulados: '0',
+    faltantes: '0',
+    isDraft: false,
+    lastActionAt: null,
+    daysWithoutDivulgation: null,
+  };
+
+  it('daysWithoutDivulgation: 5 → mostra "5" (sem padStart)', () => {
+    render(<VacanciesTable vacancies={[{ ...base, daysWithoutDivulgation: 5 }]} />);
+    expect(screen.getByTestId('vacancies-row-vac-x-days-without-divulgation')).toHaveTextContent('5');
+  });
+
+  it('daysWithoutDivulgation: null → a chave noDivulgationRecord, NUNCA "0"', () => {
+    render(<VacanciesTable vacancies={[{ ...base, daysWithoutDivulgation: null }]} />);
+    const cell = screen.getByTestId('vacancies-row-vac-x-days-without-divulgation');
+    expect(cell).toHaveTextContent('admin.vacancies.table.noDivulgationRecord');
+    expect(cell).not.toHaveTextContent('0');
+  });
+
+  it('lastActionAt: null → a chave noLastAction', () => {
+    render(<VacanciesTable vacancies={[{ ...base, lastActionAt: null }]} />);
+    expect(screen.getByTestId('vacancies-row-vac-x-last-action')).toHaveTextContent(
+      'admin.vacancies.table.noLastAction',
+    );
+  });
+
+  it('lastActionAt: com valor → formatDateTime, não a chave', () => {
+    render(<VacanciesTable vacancies={[{ ...base, lastActionAt: '2026-09-20T14:30:00.000Z' }]} />);
+    const cell = screen.getByTestId('vacancies-row-vac-x-last-action');
+    expect(cell).not.toHaveTextContent('admin.vacancies.table.noLastAction');
+    expect(cell.textContent).not.toBe('');
+  });
+
+  it('ordem dos vacancies-col-* = lista literal de 16 (tudo menos o olho; Fase 5: +COMPATIBLE)', () => {
+    render(<VacanciesTable vacancies={[base]} />);
+    const headers = screen.getAllByTestId(/^vacancies-col-/);
+    const ids = headers.map((el) => el.getAttribute('data-testid')!.replace('vacancies-col-', ''));
+    expect(ids).toEqual([
+      'case',
+      'status',
+      'priority',
+      'last-action',
+      'days-without-divulgation',
+      'COMPATIBLE',
+      'INVITED',
+      'INICIADO',
+      'PRE_SCREENING',
+      'COMPLETED',
+      'CONFIRMED',
+      'SELECTED',
+      'QUICK_RESPONSE_TEAM',
+      'REJECTED',
+      'applicants',
+      'missing',
+    ]);
   });
 });

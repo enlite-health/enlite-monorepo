@@ -20,8 +20,13 @@ import type { PoolClient } from 'pg';
  */
 
 /**
- * As 9 etapas do funil — fonte ÚNICA (tupla `as const` para o `z.enum` do
- * OpenAPI e a validação do moveEncuadre usarem a MESMA lista).
+ * As 9 etapas COM MENSAGEM — registra um `StageMessageHandler` por etapa
+ * (`src/index.ts:616`) e é a lista que a tela de plantillas edita
+ * (`FunnelStageMessagesController.ts`). `QUICK_RESPONSE_TEAM` (Fase 4, DX-4.7)
+ * fica de fora DE PROPÓSITO: é o destino do arrasto do quadro B que não vira
+ * evento de domínio nem aceita template — a guarda contra mensagem indevida é
+ * estrutural (esta lista + o CHECK de `funnel_stage_messages.stage`, migration
+ * 292), não um `if` espalhado pelo código.
  */
 export const FUNNEL_STAGES = [
   'INVITED', 'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED', 'QUALIFIED', 'IN_DOUBT', 'CONFIRMED', 'SELECTED', 'REJECTED',
@@ -31,6 +36,20 @@ export type FunnelStage = (typeof FUNNEL_STAGES)[number];
 
 export function isFunnelStage(value: unknown): value is FunnelStage {
   return typeof value === 'string' && (FUNNEL_STAGES as readonly string[]).includes(value);
+}
+
+/**
+ * As etapas que o arrasto do quadro B pode ter como DESTINO — `FUNNEL_STAGES`
+ * (com mensagem) + `QUICK_RESPONSE_TEAM` (sem mensagem, Fase 4). Usada pela
+ * validação de `moveEncuadre` e pelo `z.enum` de `targetStage` no OpenAPI
+ * (`adminEncuadres.ts`) — o card pode ir para lá, só não dispara evento/template.
+ */
+export const MOVABLE_FUNNEL_STAGES = [...FUNNEL_STAGES, 'QUICK_RESPONSE_TEAM'] as const;
+
+export type MovableFunnelStage = (typeof MOVABLE_FUNNEL_STAGES)[number];
+
+export function isMovableFunnelStage(value: unknown): value is MovableFunnelStage {
+  return typeof value === 'string' && (MOVABLE_FUNNEL_STAGES as readonly string[]).includes(value);
 }
 
 export function funnelStageEventName(stage: FunnelStage): string {

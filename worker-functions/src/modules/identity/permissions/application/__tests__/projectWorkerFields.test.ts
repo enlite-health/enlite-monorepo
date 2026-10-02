@@ -14,6 +14,8 @@ import {
   NOME_REDIGIDO,
   CELL_WORKER_CONTACT_READ,
   CELL_WORKER_PII_READ,
+  CELL_MATCH_READ,
+  podeVerCandidatoDoMatch,
   type WorkerRow,
   ProjecaoSemDecryptorError,
 } from '../projectWorkerFields';
@@ -229,6 +231,28 @@ describe('projectWorkerFields — a célula decide ANTES do KMS', () => {
       const projetada = await projectWorkerFields(null, linha, kmsCaiu);
 
       expect(projetada).toBeDefined();
+    });
+  });
+
+  describe('podeVerCandidatoDoMatch — a célula do candidato do match (DX-5.7)', () => {
+    it('`null` (engine não decidiu) vê — D113, nunca `?? []`', () => {
+      expect(podeVerCandidatoDoMatch(null)).toBe(true);
+    });
+
+    it('`[]` (ator conhecido, zero células) não vê', () => {
+      expect(podeVerCandidatoDoMatch([])).toBe(false);
+    });
+
+    it('células sem `match:read` não veem', () => {
+      expect(podeVerCandidatoDoMatch(['funnel:read', 'worker_contact:read'])).toBe(false);
+    });
+
+    it('com `match:read` vê', () => {
+      expect(podeVerCandidatoDoMatch(['match:read'])).toBe(true);
+    });
+
+    it('CELL_MATCH_READ é o literal que a rota exige (`adminVacanciesRoutes.ts:128`)', () => {
+      expect(CELL_MATCH_READ).toBe('match:read');
     });
   });
 });

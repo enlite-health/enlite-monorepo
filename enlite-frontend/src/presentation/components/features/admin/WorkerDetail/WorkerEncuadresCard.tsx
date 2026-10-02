@@ -21,14 +21,15 @@ interface WorkerEncuadresCardProps {
  * o operador reconheça o mesmo código de cor da ficha e do board.
  */
 const STAGE_COLORS: Record<WorkerEncuadreKanbanStage, string> = {
+  COMPATIBLE: 'bg-slate-100 text-slate-700',
   INVITED: 'bg-blue-100 text-blue-700',
-  BLOQUEADO: 'bg-red-100 text-red-700',
   INICIADO: 'bg-indigo-100 text-indigo-700',
   PRE_SCREENING: 'bg-violet-100 text-violet-700',
   IN_PROGRESS: 'bg-violet-100 text-violet-700',
   COMPLETED: 'bg-violet-100 text-violet-700',
   CONFIRMED: 'bg-cyan-100 text-cyan-700',
   SELECTED: 'bg-green-100 text-green-700',
+  QUICK_RESPONSE_TEAM: 'bg-teal-100 text-teal-700',
   REJECTED: 'bg-red-100 text-red-700',
 };
 

@@ -112,7 +112,7 @@ describe('Movimento de funil registra QUEM moveu', () => {
 
     const res = await api.put(
       `/api/admin/encuadres/${encuadreA}/move`,
-      { targetStage: 'QUALIFIED' },
+      { targetStage: 'QUALIFIED', reasonCategory: 'ENCUADRE_ANTECIPADO' },
       { headers: { Authorization: `Bearer ${token}` } },
     );
     expect(res.status).toBe(200);
@@ -129,7 +129,7 @@ describe('Movimento de funil registra QUEM moveu', () => {
 
     const res = await api.put(
       `/api/admin/encuadres/${encuadreB}/move`,
-      { targetStage: 'IN_DOUBT' },
+      { targetStage: 'IN_DOUBT', reasonCategory: 'ENCUADRE_ANTECIPADO' },
       { headers: { Authorization: `Bearer ${token}` } },
     );
     expect(res.status).toBe(200);

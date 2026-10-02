@@ -184,6 +184,18 @@ function buildFunnelTableResponse(bucket: string) {
     REJECTED: 0,
     WITHDREW: 0,
     ALL: 7,
+    // Contagem por coluna do quadro B (VacancyFunnelTabs → columnCount), coerente com
+    // o mock: só há rows5 (INVITED) e rows2 (POSTULATED, bucket que não é coluna do
+    // quadro); as demais colunas do quadro não têm linha nenhuma neste mock.
+    columns: {
+      INVITED: 5,
+      INICIADO: 0,
+      PRE_SCREENING: 0,
+      COMPLETED: 0,
+      CONFIRMED: 0,
+      SELECTED: 0,
+      REJECTED: 0,
+    },
   };
 
   // Campos novos da funnel-table (badge de registro + contador de notas):

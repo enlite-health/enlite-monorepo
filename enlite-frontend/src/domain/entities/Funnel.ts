@@ -16,7 +16,8 @@ export type WhatsappStatus =
 
 export interface FunnelTableRow {
   id: string;
-  workerId: string;
+  /** `null` na linha redigida de Compatíveis sem `match:read` (DX-5.7, D113). */
+  workerId: string | null;
   workerName: string | null;
   workerEmail: string | null;
   workerPhone: string | null;
@@ -35,6 +36,12 @@ export interface FunnelTableRow {
    * prova de desinteresse.
    */
   selfAppliedAt?: string | null;
+  /** Coluna derivada do Kanban (DX-2.2) para esta linha; null quando o backend não a calcula (bucket sem coluna). */
+  kanbanColumn: string | null;
+  /** true quando a linha é uma tentativa negada (worker_blocked_applications), não uma candidatura (WJA). */
+  isBlocked: boolean;
+  /** km do candidato até a vaga (DX-3.10); ausente/null = tentativa negada ou sem geocoding. */
+  distanceKm?: number | null;
 }
 
 export interface FunnelTableCounts {
@@ -44,6 +51,8 @@ export interface FunnelTableCounts {
   REJECTED: number;
   WITHDREW: number;
   ALL: number;
+  /** Contagem por coluna derivada do Kanban (DX-2.3), chaves = VacancyFunnelColumnId + 'IN_PROGRESS'. */
+  columns: Record<string, number>;
 }
 
 export interface FunnelTableData {

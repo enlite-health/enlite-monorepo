@@ -6,7 +6,7 @@
  * existing filters (search, status, priority), and absence of each filter.
  */
 
-import { buildListVacanciesQuery, ListVacanciesFilters } from '../vacancyListHelpers';
+import { buildListVacanciesQuery, ListVacanciesFilters, loadStageCounts, loadVacancyActivity } from '../vacancyListHelpers';
 
 // Minimal filters that satisfy the required fields
 function base(overrides: Partial<ListVacanciesFilters> = {}): ListVacanciesFilters {
@@ -226,5 +226,129 @@ describe('buildListVacanciesQuery — paramIndex sequencing', () => {
     expect(allParams[1]).toBe(20);           // $paramIndex (LIMIT)
     expect(allParams[2]).toBe(0);            // $paramIndex+1 (OFFSET)
     expect(paramIndex).toBe(2);
+  });
+});
+
+// ── loadStageCounts — uma consulta por página (não por vaga, critério 10) ───────
+
+describe('loadStageCounts', () => {
+  function makePool(rows: unknown[]) {
+    return { query: jest.fn().mockResolvedValue({ rows }) } as unknown as import('pg').Pool;
+  }
+
+  it('não chama query quando a lista de ids está vazia', async () => {
+    const pool = makePool([]);
+    const out = await loadStageCounts(pool, []);
+    expect(out.size).toBe(0);
+    expect((pool.query as jest.Mock)).not.toHaveBeenCalled();
+  });
+
+  it('chama query UMA vez, com [ids] e SQL contendo GROUP BY e UNION ALL', async () => {
+    const pool = makePool([]);
+    await loadStageCounts(pool, ['jp-a', 'jp-b']);
+    expect(pool.query).toHaveBeenCalledTimes(1);
+    const [sql, params] = (pool.query as jest.Mock).mock.calls[0];
+    expect(params).toEqual([['jp-a', 'jp-b']]);
+    expect(sql).toContain('GROUP BY');
+    expect(sql).toContain('UNION ALL');
+  });
+
+  it('agrupa INVITED/manual + IN_PROGRESS + 1 blocked em INICIADO:1, IN_PROGRESS:1, REJECTED:1', async () => {
+    const pool = makePool([
+      { id: 'jp-a', kind: 'wja', stage: 'INVITED', source: 'manual', messaged: false, n: 1 },
+      { id: 'jp-a', kind: 'wja', stage: 'IN_PROGRESS', source: 'talentum', messaged: true, n: 1 },
+      { id: 'jp-a', kind: 'blocked', stage: null, source: null, messaged: false, n: 1 },
+    ]);
+    const out = await loadStageCounts(pool, ['jp-a']);
+    const counts = out.get('jp-a')!;
+    expect(counts.INICIADO).toBe(1);
+    expect(counts.IN_PROGRESS).toBe(1);
+    expect(counts.REJECTED).toBe(1);
+  });
+
+  it('um id sem linha nenhuma devolve as 10 colunas zeradas (Fase 5: + COMPATIBLE)', async () => {
+    const pool = makePool([{ id: 'jp-a', kind: 'wja', stage: 'INVITED', source: 'manual', messaged: false, n: 1 }]);
+    const out = await loadStageCounts(pool, ['jp-a', 'jp-sem-linha']);
+    const counts = out.get('jp-sem-linha')!;
+    expect(Object.values(counts).every((n) => n === 0)).toBe(true);
+    expect(Object.keys(counts)).toEqual([
+      'REJECTED',
+      'COMPATIBLE',
+      'INVITED',
+      'INICIADO',
+      'PRE_SCREENING',
+      'IN_PROGRESS',
+      'COMPLETED',
+      'CONFIRMED',
+      'SELECTED',
+      'QUICK_RESPONSE_TEAM',
+    ]);
+  });
+});
+
+// ── faltantes vs. selecionados — DX-4.9, critério 11 (Fase 4) ───────────────────
+
+describe('buildListVacanciesQuery — faltantes usa SELECTED + QUICK_RESPONSE_TEAM; selecionados só SELECTED', () => {
+  it('a subquery de "faltantes" inclui QUICK_RESPONSE_TEAM; a de "selecionados" não', () => {
+    const { baseQuery } = buildListVacanciesQuery(base());
+
+    const selecionadosIdx = baseQuery.indexOf('as selecionados');
+    const selecionadosBlock = baseQuery.slice(0, selecionadosIdx);
+    expect(selecionadosBlock).toContain("application_funnel_stage IN ('SELECTED')");
+    expect(selecionadosBlock).not.toContain('QUICK_RESPONSE_TEAM');
+
+    const faltantesIdx = baseQuery.indexOf('as faltantes');
+    const faltantesBlock = baseQuery.slice(selecionadosIdx, faltantesIdx);
+    expect(faltantesBlock).toContain("application_funnel_stage IN ('SELECTED','QUICK_RESPONSE_TEAM')");
+  });
+
+  it('não toca a linha de providers_needed (critério 14)', () => {
+    const { baseQuery } = buildListVacanciesQuery(base());
+    expect(baseQuery).toContain('jp.providers_needed::INTEGER');
+  });
+});
+
+// ── loadVacancyActivity — última ação e dias sem divulgação (DX-3.4/3.5/3.6) ────
+
+describe('loadVacancyActivity', () => {
+  function makePool(rows: unknown[]) {
+    return { query: jest.fn().mockResolvedValue({ rows }) } as unknown as import('pg').Pool;
+  }
+
+  it('não chama query quando a lista de ids está vazia', async () => {
+    const pool = makePool([]);
+    const out = await loadVacancyActivity(pool, []);
+    expect(out.size).toBe(0);
+    expect((pool.query as jest.Mock)).not.toHaveBeenCalled();
+  });
+
+  it('chama query UMA vez, com [ids], e o SQL nunca usa updated_at (DX-3.5)', async () => {
+    const pool = makePool([]);
+    await loadVacancyActivity(pool, ['jp-a', 'jp-b']);
+    expect(pool.query).toHaveBeenCalledTimes(1);
+    const [sql, params] = (pool.query as jest.Mock).mock.calls[0];
+    expect(params).toEqual([['jp-a', 'jp-b']]);
+    expect(sql).toContain('= ANY($1::uuid[])');
+    expect(sql).toContain('job_posting_notes');
+    expect(sql).toContain('worker_job_application_stage_history');
+    expect(sql).toContain('talentum_published_at');
+    expect(sql).toContain("'DIVULGACAO'");
+    expect(sql).not.toMatch(/updated_at/);
+  });
+
+  it('mapeia Date → ISO e days_without_divulgation numérico; sem nenhuma fonte → null', async () => {
+    const pool = makePool([
+      { id: 'jp-a', last_action_at: new Date('2026-09-20T12:00:00Z'), days_without_divulgation: 5 },
+      { id: 'jp-b', last_action_at: null, days_without_divulgation: null },
+    ]);
+    const out = await loadVacancyActivity(pool, ['jp-a', 'jp-b']);
+    expect(out.get('jp-a')).toEqual({ lastActionAt: '2026-09-20T12:00:00.000Z', daysWithoutDivulgation: 5 });
+    expect(out.get('jp-b')).toEqual({ lastActionAt: null, daysWithoutDivulgation: null });
+  });
+
+  it('id sem linha nenhuma devolve os dois campos null', async () => {
+    const pool = makePool([{ id: 'jp-a', last_action_at: new Date('2026-09-20T12:00:00Z'), days_without_divulgation: 5 }]);
+    const out = await loadVacancyActivity(pool, ['jp-a', 'jp-sem-linha']);
+    expect(out.get('jp-sem-linha')).toEqual({ lastActionAt: null, daysWithoutDivulgation: null });
   });
 });

@@ -170,10 +170,10 @@ describe('WJAFunnelController — ramos de erro/decrypt do KMS e de negócio', (
       expect(mockKmsDecrypt).toHaveBeenCalledWith('corrupted-b');
 
       const { stages } = (res.json as jest.Mock).mock.calls[0][0].data;
-      expect(stages.BLOQUEADO).toHaveLength(1);
+      expect(stages.REJECTED).toHaveLength(1);
       // Ambos os decrypts falharam → name null (nunca undefined/crash)
-      expect(stages.BLOQUEADO[0].workerName).toBeNull();
-      expect(stages.BLOQUEADO[0].workerPhone).toBe('+5491199999');
+      expect(stages.REJECTED[0].workerName).toBeNull();
+      expect(stages.REJECTED[0].workerPhone).toBe('+5491199999');
     });
 
     it('bloqueado: worker referenciado não existe mais em `workers` (0 linhas) → name/phone null, sem chamar KMS', async () => {
@@ -198,8 +198,8 @@ describe('WJAFunnelController — ramos de erro/decrypt do KMS e de negócio', (
 
       expect(mockKmsDecrypt).not.toHaveBeenCalled();
       const { stages } = (res.json as jest.Mock).mock.calls[0][0].data;
-      expect(stages.BLOQUEADO[0].workerName).toBeNull();
-      expect(stages.BLOQUEADO[0].workerPhone).toBeNull();
+      expect(stages.REJECTED[0].workerName).toBeNull();
+      expect(stages.REJECTED[0].workerPhone).toBeNull();
     });
 
     it('bloqueado: first_name/last_name AUSENTES (não corrompidos, null mesmo) → ternário toma o ramo `null`, sem chamar KMS; phone ausente vira null', async () => {
@@ -225,8 +225,8 @@ describe('WJAFunnelController — ramos de erro/decrypt do KMS e de negócio', (
 
       expect(mockKmsDecrypt).not.toHaveBeenCalled();
       const { stages } = (res.json as jest.Mock).mock.calls[0][0].data;
-      expect(stages.BLOQUEADO[0].workerName).toBeNull();
-      expect(stages.BLOQUEADO[0].workerPhone).toBeNull();
+      expect(stages.REJECTED[0].workerName).toBeNull();
+      expect(stages.REJECTED[0].workerPhone).toBeNull();
     });
 
     it('catch geral com rejeição NÃO Error (ex.: listByVacancy rejeita string) → normalizado via new Error(String(error))', async () => {
@@ -270,7 +270,9 @@ describe('WJAFunnelController — ramos de erro/decrypt do KMS e de negócio', (
         rows: [{ worker_id: 'w-1', job_posting_id: 'jp-1' }],
       });
       mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
-      mockQuery.mockResolvedValueOnce({ rows: [] }); // etapa anterior (evento funnel_stage.*, PEND-14)
+      // etapa anterior: CONFIRMED (1 posição antes de SELECTED) — não é salto (Fase 4,
+      // DX-4.5), então não precisa de reasonCategory.
+      mockQuery.mockResolvedValueOnce({ rows: [{ application_funnel_stage: 'CONFIRMED', source: 'talentum' }] });
       mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [] }); // upsert wja
       mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [] }); // UPDATE encuadres resultado+role
       mockQuery.mockResolvedValueOnce({ rows: [{ id: 'ev-1' }] }); // INSERT domain_events (funnel_stage.selected)

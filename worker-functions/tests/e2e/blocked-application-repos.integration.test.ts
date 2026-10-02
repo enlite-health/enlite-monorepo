@@ -454,14 +454,14 @@ describe('Worker engagements por worker (banco real)', () => {
     expect(byVacancy.get(vManual)!.kanbanStage).toBe('INICIADO');
   });
 
-  it('listByWorker — blocked não-promovido vira BLOQUEADO; par que já é WJA é excluído (NOT EXISTS)', async () => {
+  it('listByWorker — blocked não-promovido vira REJECTED; par que já é WJA é excluído (NOT EXISTS)', async () => {
     const repo = new BlockedApplicationQueryRepository();
     const rows = await repo.listByWorker(engWorker);
 
     // vPre tem WJA → excluído; só vBlocked aparece.
     expect(rows).toHaveLength(1);
     expect(rows[0].jobPostingId).toBe(vBlocked);
-    expect(rows[0].kanbanStage).toBe('BLOQUEADO');
+    expect(rows[0].kanbanStage).toBe('REJECTED');
     expect(rows[0].isBlocked).toBe(true);
     expect(rows[0].caseNumber).toBe(88883);
     expect(rows[0].attemptCount).toBe(5);

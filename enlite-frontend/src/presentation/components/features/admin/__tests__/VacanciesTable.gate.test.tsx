@@ -4,7 +4,9 @@ import { VacanciesTable, VacancyRow } from '../VacanciesTable';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import type { AuthzContract } from '@domain/entities/Authz';
 
-vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (k: string) => k }) }));
+vi.mock('react-i18next', () => ({
+  useTranslation: () => ({ t: (k: string) => k, i18n: { language: 'es' } }),
+}));
 
 const draftRow: VacancyRow = {
   id: 'v1',
@@ -12,12 +14,12 @@ const draftRow: VacancyRow = {
   status: 'Esperando Ativação',
   priority: 'NORMAL',
   diasAberto: '01',
-  convidados: '1',
+  stageCounts: { INVITED: 1 },
   postulados: '1',
-  confirmados: '1',
-  selecionados: '1',
   faltantes: '1',
   isDraft: true,
+  lastActionAt: null,
+  daysWithoutDivulgation: null,
 };
 
 const publishedRow: VacancyRow = { ...draftRow, id: 'v2', isDraft: false };

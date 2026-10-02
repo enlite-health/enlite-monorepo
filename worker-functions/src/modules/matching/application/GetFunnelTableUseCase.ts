@@ -7,12 +7,20 @@ import {
   FunnelBucket,
   WhatsAppStatus,
 } from '../domain/FunnelTableRow';
-import { cellsOfRequest, projectWorkerFields } from '@modules/identity/permissions';
+import { cellsOfRequest, projectWorkerFields, podeVerCandidatoDoMatch, NOME_REDIGIDO } from '@modules/identity/permissions';
 import {
   POSTULATED_STAGES_SET,
   PRE_SELECTED_STAGES_SET,
   REJECTION_STAGES_SET,
 } from '../domain/applicationFunnelStages';
+import {
+  deriveKanbanColumn,
+  tallyKanbanColumns,
+  emptyFunnelColumnCounts,
+  KANBAN_COLUMN_BLOCKED,
+  type KanbanColumn,
+  type KanbanTallyRow,
+} from '../domain/kanbanColumn';
 
 // ── Bucket classification ────────────────────────────────────────────────────
 
@@ -84,20 +92,44 @@ export class GetFunnelTableUseCase {
     jobPostingId: string,
     bucket: FunnelBucket = 'ALL',
     cells: string[] | null = null,
+    columns: string[] | null = null,
   ): Promise<FunnelTableResult> {
-    const rawRows = await this.repo.fetchRawRows(jobPostingId);
+    const [rawRows, blockedRawRows] = await Promise.all([
+      this.repo.fetchRawRows(jobPostingId),
+      this.repo.fetchBlockedRawRows(jobPostingId),
+    ]);
 
-    // F2/C3: a projeção decide ANTES do KMS — ver projectWorkerFields.
-    const rows = await Promise.all(
-      rawRows.map(r => this.mapRow(r, cells)),
-    );
+    // F2/C3: a projeção decide ANTES do KMS — ver projectWorkerFields. A tentativa
+    // negada passa pela MESMA projeção (não pula o KMS por ser um caminho diferente).
+    const rows = await Promise.all(rawRows.map(r => this.mapRow(r, cells)));
+    const blockedRows = await Promise.all(blockedRawRows.map(r => this.mapRow(r, cells)));
 
-    // Build counts from ALL rows (regardless of bucket filter)
+    // Contagem por bucket: só WJA, igual a hoje (D437 — a Gestão à Vista não muda).
     const counts = this.buildCounts(rows);
+    // Contagem por coluna do Kanban (DX-2.6): WJA ∪ tentativa negada, MESMO SSOT do
+    // board (tallyKanbanColumns), a partir das linhas cruas (stage/source/messaged).
+    const wjaTallyRows: KanbanTallyRow[] = rawRows.map(r => ({
+      kind: 'wja',
+      stage: r.funnel_stage,
+      source: r.source,
+      messaged: r.messaged_at != null,
+      n: 1,
+    }));
+    const blockedTallyRows: KanbanTallyRow[] = blockedRawRows.map(() => ({
+      kind: 'blocked',
+      stage: null,
+      source: null,
+      messaged: false,
+      n: 1,
+    }));
+    counts.columns = tallyKanbanColumns([...wjaTallyRows, ...blockedTallyRows]);
 
-    // Apply optional bucket filter to returned rows
-    const filteredRows =
-      bucket === 'ALL'
+    // Com `columns`: filtra WJA ∪ bloqueadas pela coluna derivada (a tentativa negada
+    // só aparece quando o filtro inclui REJECTED). Sem `columns`: o filtro de bucket
+    // de hoje, só sobre WJA — bloqueadas nunca entram em `bucket=ALL`.
+    const filteredRows = columns
+      ? [...rows, ...blockedRows].filter(r => r.kanbanColumn != null && columns.includes(r.kanbanColumn))
+      : bucket === 'ALL'
         ? rows
         : rows.filter(r => classifyBucket(r) === bucket);
 
@@ -105,6 +137,49 @@ export class GetFunnelTableUseCase {
   }
 
   private async mapRow(raw: FunnelTableRawRow, cells: string[] | null): Promise<FunnelTableRow> {
+    // kanbanColumn calculado PRIMEIRO (DX-5.1/DX-5.7): tentativa negada =
+    // KANBAN_COLUMN_BLOCKED (REJECTED, D433); o resto segue deriveKanbanColumn,
+    // que agora devolve COMPATIBLE para o candidato do match nunca mensageado.
+    // É essa coluna que decide, logo abaixo, se a projeção (e o KMS) rodam.
+    const kanbanColumn: Exclude<KanbanColumn, 'BLOQUEADO'> = raw.is_blocked
+      ? (KANBAN_COLUMN_BLOCKED as Exclude<KanbanColumn, 'BLOQUEADO'>)
+      : (deriveKanbanColumn(raw.funnel_stage, raw.source, raw.messaged_at) as Exclude<KanbanColumn, 'BLOQUEADO'>);
+
+    const ir = raw.interview_response ?? null;
+    const accepted =
+      ir === 'confirmed' ? true :
+      ir === 'declined'  ? false :
+      null;
+
+    const camposComuns = {
+      invitedAt: raw.invited_at,
+      funnelStage: raw.funnel_stage ?? null,
+      whatsappStatus: deriveWhatsAppStatus(raw),
+      whatsappLastDispatchedAt: raw.wbdl_dispatched_at ?? null,
+      accepted,
+      interviewResponse: ir,
+      registrationComplete: raw.worker_status === 'REGISTERED',
+      contactNotesCount: Number(raw.contact_notes_count ?? 0),
+      selfAppliedAt: raw.self_applied_at ?? null,
+      kanbanColumn,
+      isBlocked: raw.is_blocked,
+      distanceKm: raw.distance_km == null ? null : Number(raw.distance_km),
+    };
+
+    // DX-5.7: Compatíveis sem `match:read` — pula projectWorkerFields (zero KMS,
+    // a prova do espião) e devolve o card opaco, mesma redação de hoje.
+    if (kanbanColumn === 'COMPATIBLE' && !podeVerCandidatoDoMatch(cells)) {
+      return {
+        id: raw.id,
+        workerId: null,
+        workerName: NOME_REDIGIDO,
+        workerEmail: null,
+        workerPhone: null,
+        workerAvatarUrl: null,
+        ...camposComuns,
+      };
+    }
+
     // ⚠️ `worker_raw_name` entra como `rawName` NA PROJEÇÃO, e não como
     // fallback aqui fora: é texto claro, e um `|| raw.worker_raw_name` depois
     // da projeção devolveria o nome de todo card legado sem tocar o KMS — sem o
@@ -119,30 +194,14 @@ export class GetFunnelTableUseCase {
       profilePhotoUrlEncrypted: raw.profile_photo_url_encrypted ?? null,
     }, this.encryption);
 
-    const workerName = visivel.name ?? null;
-
-    const ir = raw.interview_response ?? null;
-    const accepted =
-      ir === 'confirmed' ? true :
-      ir === 'declined'  ? false :
-      null;
-
     return {
       id: raw.id,
       workerId: raw.worker_id,
-      workerName,
+      workerName: visivel.name ?? null,
       workerEmail: visivel.email ?? null,
       workerPhone: visivel.phone ?? null,
       workerAvatarUrl: visivel.profilePhotoUrl ?? null,
-      invitedAt: raw.invited_at,
-      funnelStage: raw.funnel_stage ?? null,
-      whatsappStatus: deriveWhatsAppStatus(raw),
-      whatsappLastDispatchedAt: raw.wbdl_dispatched_at ?? null,
-      accepted,
-      interviewResponse: ir,
-      registrationComplete: raw.worker_status === 'REGISTERED',
-      contactNotesCount: Number(raw.contact_notes_count ?? 0),
-      selfAppliedAt: raw.self_applied_at ?? null,
+      ...camposComuns,
     };
   }
 
@@ -154,6 +213,7 @@ export class GetFunnelTableUseCase {
       REJECTED: 0,
       WITHDREW: 0,
       ALL: rows.length,
+      columns: emptyFunnelColumnCounts(),
     };
     for (const r of rows) {
       counts[classifyBucket(r)]++;

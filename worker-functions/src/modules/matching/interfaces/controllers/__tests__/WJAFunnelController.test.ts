@@ -112,13 +112,12 @@ describe('WJAFunnelController', () => {
 
   // ═══════════════════════════════════════════════════════════════════
   // getEncuadreFunnel — classificação por application_funnel_stage
-  // Migration 230 + feature BLOQUEADO: 9 colunas (INVITED, BLOQUEADO, INICIADO,
-  //                           PRE_SCREENING, IN_PROGRESS, COMPLETED, CONFIRMED,
-  //                           SELECTED, REJECTED)
+  // Migration 230 + D433 + Fase 4 (D430): 9 colunas (INVITED, INICIADO, PRE_SCREENING,
+  //   IN_PROGRESS, COMPLETED, CONFIRMED, SELECTED, QUICK_RESPONSE_TEAM, REJECTED)
   // ═══════════════════════════════════════════════════════════════════
 
   describe('getEncuadreFunnel', () => {
-    it('classifica encuadres nas 9 colunas por funnel_stage (migration 230 + BLOQUEADO)', async () => {
+    it('classifica encuadres nas 9 colunas por funnel_stage (migration 230 + D433 + Fase 4)', async () => {
       // Migration 230: INITIATED renomeado para PRE_SCREENING; INICIADO adicionado.
       // F3: NOT_QUALIFIED não existe mais em prod (migration 191 backfill → REJECTED)
       // F7.a: PLACED removido (migration 194 — 0 linhas em prod, sync F6 morta)
@@ -148,9 +147,9 @@ describe('WJAFunnelController', () => {
 
       const { stages } = response.data;
 
-      // 9 colunas no kanban (migration 230 + BLOQUEADO)
-      expect(Object.keys(stages)).toHaveLength(9);
-      expect(stages.BLOQUEADO).toHaveLength(0); // sem blocked attempts neste cenário
+      // 10 colunas no kanban (migration 230 + D433 + Fase 4 + Fase 5/D432: COMPATIBLE)
+      expect(Object.keys(stages)).toHaveLength(10);
+      expect(Object.keys(stages)[0]).toBe('COMPATIBLE');
 
       // NULL → INVITED (coluna de auto-invite / sem source)
       expect(stages.INVITED).toHaveLength(2); // e1 (null stage) + e2 (INVITED+system)
@@ -204,7 +203,7 @@ describe('WJAFunnelController', () => {
       expect(stages.REJECTED[0].id).toBe('e10');
     });
 
-    it('AC2 (86ajb48v1): system match never messaged NÃO conta em Invitados (métrica falsa)', async () => {
+    it('AC2 (86ajb48v1): system match never messaged NÃO conta em Invitados — aparece em Compatíveis (Fase 5/D432)', async () => {
       // Rodar o match persiste TODOS os top-N como INVITED/system. Só um envio
       // real (messaged_at) vira convite. Aqui: 3 matches system, só 1 enviado.
       mockQuery.mockResolvedValueOnce({
@@ -227,11 +226,16 @@ describe('WJAFunnelController', () => {
       expect(invitedIds).toEqual(['sent']);
       // manual continua indo pra INICIADO (não é system, não é filtrado)
       expect((data.stages.INICIADO as unknown[]).length).toBe(1);
-      // totalEncuadres reflete só os cards visíveis (exclui os 2 match candidates)
+      // Fase 5 (D432): os 2 match candidates não somem — aparecem em Compatíveis
+      // (cells=null, engine não decidiu → nome aberto, D113).
+      expect(data.stages.COMPATIBLE).toHaveLength(2);
+      const compatibleIds = (data.stages.COMPATIBLE as Array<{ id: string }>).map(e => e.id);
+      expect(compatibleIds).toEqual(['m1', 'm2']);
+      // totalEncuadres continua sem os compatíveis (D437 — o subtítulo não muda)
       expect(data.totalEncuadres).toBe(2);
     });
 
-    it('cards bloqueados aparecem em BLOQUEADO (não INICIADO) com isBlocked=true, workerPhone e contactNotesCount (migration 235)', async () => {
+    it('cards bloqueados aparecem em REJECTED (não INICIADO) com isBlocked=true, workerPhone e contactNotesCount (D433)', async () => {
       mockQuery.mockResolvedValueOnce({ rows: [] });
       mockListByVacancy.mockResolvedValue([
         {
@@ -254,10 +258,10 @@ describe('WJAFunnelController', () => {
       await controller.getEncuadreFunnel(req, res);
 
       const { stages } = (res.json as jest.Mock).mock.calls[0][0].data;
-      expect(stages.BLOQUEADO).toHaveLength(1);
+      expect(stages.REJECTED).toHaveLength(1);
       expect(stages.INICIADO).toHaveLength(0);
 
-      const card = stages.BLOQUEADO[0] as Record<string, unknown>;
+      const card = stages.REJECTED[0] as Record<string, unknown>;
       expect(card.id).toBe('ba-1');
       expect(card.isBlocked).toBe(true);
       expect(card.blockedReason).toBe('registration_incomplete');
@@ -272,7 +276,7 @@ describe('WJAFunnelController', () => {
       expect(card.workerPhone).toBe('+5491100000');
     });
 
-    it('card bloqueado com worker_not_found → workerName null, sem crash (coluna BLOQUEADO)', async () => {
+    it('card bloqueado com worker_not_found → workerName null, sem crash (coluna REJECTED)', async () => {
       mockQuery.mockResolvedValueOnce({ rows: [] });
       mockListByVacancy.mockResolvedValue([
         {
@@ -291,10 +295,10 @@ describe('WJAFunnelController', () => {
       await controller.getEncuadreFunnel(req, res);
 
       const { stages } = (res.json as jest.Mock).mock.calls[0][0].data;
-      expect(stages.BLOQUEADO).toHaveLength(1);
-      expect(stages.BLOQUEADO[0].workerName).toBeNull();
-      expect(stages.BLOQUEADO[0].workerPhone).toBeNull();
-      expect(stages.BLOQUEADO[0].isBlocked).toBe(true);
+      expect(stages.REJECTED).toHaveLength(1);
+      expect(stages.REJECTED[0].workerName).toBeNull();
+      expect(stages.REJECTED[0].workerPhone).toBeNull();
+      expect(stages.REJECTED[0].isBlocked).toBe(true);
     });
 
     it('bloqueado RECHAZADO (dismissedAt setado) vai para REJECTED como card de bloqueado, com motivo e isDismissed', async () => {
@@ -321,8 +325,6 @@ describe('WJAFunnelController', () => {
       await controller.getEncuadreFunnel(req, res);
 
       const { stages } = (res.json as jest.Mock).mock.calls[0][0].data;
-      // Sai de BLOQUEADO, aparece em REJECTED
-      expect(stages.BLOQUEADO).toHaveLength(0);
       expect(stages.REJECTED).toHaveLength(1);
       const card = stages.REJECTED[0] as Record<string, unknown>;
       expect(card.id).toBe('ba-dismissed');
@@ -332,10 +334,10 @@ describe('WJAFunnelController', () => {
       expect(card.rejectionReasonCategory).toBe('WORKER_DECLINED'); // badge de motivo
     });
 
-    it('dedup: bloqueado promovido some de BLOQUEADO e aparece como WJA real em INICIADO (NOT EXISTS no SQL)', async () => {
+    it('dedup: bloqueado promovido some de REJECTED e aparece como WJA real em INICIADO (NOT EXISTS no SQL)', async () => {
       // O dedup é implementado no SQL de listByVacancy via NOT EXISTS: uma linha
       // promovida (worker completou cadastro) já tem WJA real, então listByVacancy
-      // não a retorna mais — sai de BLOQUEADO e o card real aparece em INICIADO.
+      // não a retorna mais — sai de REJECTED e o card real aparece em INICIADO.
       mockQuery.mockResolvedValueOnce({
         rows: [makeRow({ id: 'e-wja', funnel_stage: 'INVITED', source: 'manual' })],
       });
@@ -345,7 +347,7 @@ describe('WJAFunnelController', () => {
       await controller.getEncuadreFunnel(req, res);
 
       const { stages } = (res.json as jest.Mock).mock.calls[0][0].data;
-      expect(stages.BLOQUEADO).toHaveLength(0);
+      expect(stages.REJECTED).toHaveLength(0);
       // Só o WJA manual aparece em INICIADO
       expect(stages.INICIADO).toHaveLength(1);
       expect(stages.INICIADO[0].id).toBe('e-wja');
@@ -454,7 +456,7 @@ describe('WJAFunnelController', () => {
       expect(items.find(c => c.id === 'wja-4')!.workerName).toBe('Worker sem identificação');
     });
 
-    it('retorna 9 stages vazios quando não há encuadres nem bloqueados (migration 230 + BLOQUEADO)', async () => {
+    it('retorna 10 stages vazios quando não há encuadres nem bloqueados (migration 230 + D433 + Fase 4 + Fase 5/D432)', async () => {
       mockQuery.mockResolvedValueOnce({ rows: [] });
 
       const [req, res] = mockReqRes({ id: 'jp-empty' });
@@ -463,14 +465,14 @@ describe('WJAFunnelController', () => {
       const response = (res.json as jest.Mock).mock.calls[0][0];
       expect(response.success).toBe(true);
       expect(response.data.totalEncuadres).toBe(0);
-      // 9 colunas: INVITED, BLOQUEADO, INICIADO, PRE_SCREENING, IN_PROGRESS, COMPLETED, CONFIRMED, SELECTED, REJECTED
-      expect(Object.keys(response.data.stages)).toHaveLength(9);
+      // 10 colunas: COMPATIBLE, INVITED, INICIADO, PRE_SCREENING, IN_PROGRESS, COMPLETED, CONFIRMED, SELECTED, QUICK_RESPONSE_TEAM, REJECTED
+      expect(Object.keys(response.data.stages)).toHaveLength(10);
       Object.values(response.data.stages).forEach((stage: any) => {
         expect(stage).toHaveLength(0);
       });
     });
 
-    it('stages contém BLOQUEADO e INICIADO, sem a chave INITIATED (migration 230 — INITIATED aposentado)', async () => {
+    it('stages não contém BLOQUEADO nem INITIATED (migration 230 + D433)', async () => {
       mockQuery.mockResolvedValueOnce({ rows: [] });
 
       const [req, res] = mockReqRes({ id: 'jp-001' });
@@ -478,7 +480,7 @@ describe('WJAFunnelController', () => {
 
       const { stages } = (res.json as jest.Mock).mock.calls[0][0].data;
       expect('INITIATED' in stages).toBe(false);
-      expect('BLOQUEADO' in stages).toBe(true);
+      expect('BLOQUEADO' in stages).toBe(false);
       expect('INICIADO' in stages).toBe(true);
       expect('PRE_SCREENING' in stages).toBe(true);
     });
@@ -521,6 +523,23 @@ describe('WJAFunnelController', () => {
       expect(stages.PRE_SCREENING).toHaveLength(2);
       expect(stages.PRE_SCREENING.find((e: any) => e.id === 'e1').acquisitionChannel).toBe('facebook');
       expect(stages.PRE_SCREENING.find((e: any) => e.id === 'e2').acquisitionChannel).toBeNull();
+    });
+
+    it('retorna distanceKm no item a partir de distance_km (DX-3.10); SQL usa a área viva mais próxima', async () => {
+      mockQuery.mockResolvedValueOnce({
+        rows: [
+          makeRow({ id: 'e1', funnel_stage: 'PRE_SCREENING', distance_km: 3.2 }),
+        ],
+      });
+
+      const [req, res] = mockReqRes({ id: 'jp-001' });
+      await controller.getEncuadreFunnel(req, res);
+
+      const { stages } = (res.json as jest.Mock).mock.calls[0][0].data;
+      expect(stages.PRE_SCREENING[0].distanceKm).toBe(3.2);
+
+      const sql: string = mockQuery.mock.calls[0][0];
+      expect(sql).toContain('worker_service_areas wsa_d');
     });
 
     it('retorna 500 em caso de erro no banco', async () => {

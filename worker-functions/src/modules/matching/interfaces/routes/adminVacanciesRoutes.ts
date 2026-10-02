@@ -7,6 +7,7 @@ import { VacancyMeetLinksController } from '../controllers/VacancyMeetLinksContr
 import { WJAFunnelController } from '../controllers/WJAFunnelController';
 import { WJAFunnelTableController } from '../controllers/WJAFunnelTableController';
 import { WJAContactNotesController } from '../controllers/WJAContactNotesController';
+import { VacancyNotesController } from '../controllers/VacancyNotesController';
 import { EncuadreDashboardController } from '../controllers/EncuadreDashboardController';
 import { VacancyCrudController } from '../controllers/VacancyCrudController';
 import { VacancySocialLinksController } from '../controllers/VacancySocialLinksController';
@@ -258,6 +259,23 @@ export function createAdminVacanciesRoutes(
     authMiddleware.requireStaff(),
     perm.require('funnel', 'update'),
     (req: Request, res: Response) => contactNotesController.delete(req, res),
+  );
+
+  // ── Vacancy Notes (VacancyNotesController) ────────────────────────────────────
+  // Anotação tipo CRM por vacante (DX-3.3, #DEC-31) — "o que o time fez com a
+  // vaga" (divulgação, contato, outro). Não editável, não apagável.
+  const vacancyNotesController = new VacancyNotesController();
+  router.get(
+    '/vacancies/:id/notes',
+    authMiddleware.requireStaff(),
+    perm.require('vacancy', 'read'),
+    (req: Request, res: Response) => vacancyNotesController.list(req, res),
+  );
+  router.post(
+    '/vacancies/:id/notes',
+    authMiddleware.requireStaff(),
+    perm.require('vacancy', 'update'),
+    (req: Request, res: Response) => vacancyNotesController.create(req, res),
   );
 
   // ── Delivery Status (WorkerVacancyDeliveryStatusController) ──────────────────

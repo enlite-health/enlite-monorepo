@@ -6,6 +6,8 @@
  * status and interview response, grouped into counted buckets.
  */
 
+import type { KanbanColumn, FunnelColumnCounts } from './kanbanColumn';
+
 export type WhatsAppStatus =
   | 'NOT_SENT'
   | 'SENT'
@@ -24,7 +26,8 @@ export type FunnelBucket =
 
 export interface FunnelTableRow {
   id: string;
-  workerId: string;
+  /** null quando COMPATIBLE sem `match:read` (DX-5.7) — card opaco, sem `workerId` para arrastar/notar. */
+  workerId: string | null;
   workerName: string | null;
   workerEmail: string | null;
   workerPhone: string | null;
@@ -43,6 +46,12 @@ export interface FunnelTableRow {
    * antigo sem carimbo não prova ausência de interesse).
    */
   selfAppliedAt: string | null;
+  /** Coluna do Kanban (D433: tentativa negada = REJECTED) — null quando fora do board (match candidate). */
+  kanbanColumn: Exclude<KanbanColumn, 'BLOQUEADO'> | null;
+  /** true quando a linha veio de worker_blocked_applications (fetchBlockedRawRows), não de WJA. */
+  isBlocked: boolean;
+  /** km até a vaga (DX-3.10); null = sem coordenada ou tentativa negada. */
+  distanceKm: number | null;
 }
 
 export interface FunnelTableCounts {
@@ -52,6 +61,8 @@ export interface FunnelTableCounts {
   REJECTED: number;
   WITHDREW: number;
   ALL: number;
+  /** As 8 contagens do Kanban, mesmo recorte do board — para as abas do modo lista (DX-2.6). */
+  columns: FunnelColumnCounts;
 }
 
 export interface FunnelTableResult {

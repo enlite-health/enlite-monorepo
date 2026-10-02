@@ -12,7 +12,7 @@ import {
 } from '../../domain/WorkerApplicationEligibility';
 import { BlockedApplicationQueryRepository } from '../../infrastructure/BlockedApplicationQueryRepository';
 import { BlockedApplicationRepository } from '../../infrastructure/BlockedApplicationRepository';
-import { deriveKanbanColumn, isMatchedNotInvited } from '../../domain/kanbanColumn';
+import { deriveKanbanColumn, KANBAN_COLUMN_BLOCKED, KanbanColumn } from '../../domain/kanbanColumn';
 import {
   interviewScheduleSchema,
   interviewDatetimeSql,
@@ -20,11 +20,21 @@ import {
   INTERVIEW_TIME_RESOLVED_SQL,
 } from '../../domain/interviewSchedule';
 import { REJECTION_REASON_CATEGORIES } from '../../domain/Encuadre';
-import { cellsOfRequest, projectWorkerFields, NOME_REDIGIDO } from '@modules/identity/permissions';
+import { cellsOfRequest, projectWorkerFields, NOME_REDIGIDO, podeVerCandidatoDoMatch } from '@modules/identity/permissions';
 import { emitirTrilhaDeContato } from '@shared/audit/contactAccessFromRequest';
 import { RESEND_COOLDOWN_HOURS, resendCooldownUntilSql } from '../../../notification/application/VacancyInviteGuard';
 import { PubSubClient } from '@shared/events/PubSubClient';
-import { emitFunnelStageEvent, FUNNEL_STAGES, isFunnelStage } from '../../application/FunnelStageEventEmitter';
+import { emitFunnelStageEvent, isFunnelStage, MOVABLE_FUNNEL_STAGES, isMovableFunnelStage } from '../../application/FunnelStageEventEmitter';
+import { candidateDistanceKmSql } from '../../infrastructure/candidateDistanceSql';
+import {
+  requiredMoveReason,
+  isAllowedMoveReason,
+  MoveReasonRequiredError,
+  MoveReasonInvalidError,
+  compatibleMoveRefusal,
+  CompatibleReadOnlyError,
+  type CompatibleRefusal,
+} from '../../domain/moveReason';
 
 /**
  * Papel opcional ao mover para SELECTED (feature "Equipe Armada").
@@ -33,6 +43,22 @@ import { emitFunnelStageEvent, FUNNEL_STAGES, isFunnelStage } from '../../applic
  */
 const encuadreRoleSchema = z.enum(['TITULAR', 'RAPID_RESPONSE']);
 
+/**
+ * 422 `COMPATIBLE_READ_ONLY` — corpo montado uma única vez (achado 🟡-7 do gate parcial 1:
+ * o mesmo objeto de 5 campos era escrito duas vezes em `moveEncuadre`, uma para a recusa
+ * de ENTRADA em Compatíveis — antes de qualquer query — e outra para a recusa de SAÍDA
+ * rumo a Invitados sem envio, capturada no catch de `CompatibleReadOnlyError`). Contrato
+ * da resposta inalterado: `{ success:false, error:'compatible_read_only',
+ * code:'COMPATIBLE_READ_ONLY', reason }`.
+ */
+function sendCompatibleReadOnly(res: Response, reason: CompatibleRefusal): void {
+  res.status(422).json({
+    success: false,
+    error: 'compatible_read_only',
+    code: 'COMPATIBLE_READ_ONLY',
+    reason,
+  });
+}
 
 /**
  * WJAFunnelController
@@ -52,10 +78,11 @@ const encuadreRoleSchema = z.enum(['TITULAR', 'RAPID_RESPONSE']);
  *   - PRE_SCREENING column added (Talentum entry point)
  *   - INICIADO column added: INVITED+source='manual' WJAs
  *
- * Feature BLOQUEADO (2026-07-03): worker_blocked_applications cards moved out of
- * INICIADO into their own BLOQUEADO column — INICIADO is now real WJAs only.
- * Promoted (worker completed registration) blocked attempts stop appearing here
- * and become real WJA cards in INICIADO (see PromoteBlockedApplicationsUseCase).
+ * Feature BLOQUEADO (2026-07-03): tentativas negadas (dispensadas ou não) →
+ * Rejeitados, D433 (worker_blocked_applications cards não promovidas caem em
+ * KANBAN_COLUMN_BLOCKED = REJECTED). Promoted (worker completed registration)
+ * blocked attempts stop appearing here and become real WJA cards in INICIADO
+ * (see PromoteBlockedApplicationsUseCase).
  */
 export class WJAFunnelController {
   private db: Pool;
@@ -81,7 +108,7 @@ export class WJAFunnelController {
    *
    * Columns (Migration 230 + feature BLOQUEADO):
    *   INVITED    — WJA stage=INVITED, source != 'manual' (auto-invite system)
-   *   BLOQUEADO  — worker_blocked_applications não promovidas (tentativa bloqueada)
+   *   REJECTED   — inclui tentativas negadas (dispensadas ou não) não promovidas, D433
    *   INICIADO   — WJA stage=INVITED + source='manual' (postulação real, não-bloqueada)
    *   PRE_SCREENING — WJA stage=PRE_SCREENING (antigo INITIATED)
    *   IN_PROGRESS, COMPLETED, CONFIRMED, SELECTED, REJECTED — inalterados
@@ -141,7 +168,8 @@ export class WJAFunnelController {
               FROM funnel_stage_message_log l
               WHERE l.worker_id = wja.worker_id AND l.job_posting_id = wja.job_posting_id AND l.status = 'queued'
               ORDER BY l.created_at DESC LIMIT 1) AS last_stage_message,
-             wsa.work_zone
+             wsa.work_zone,
+             ${candidateDistanceKmSql('wja.worker_id', 'wja.job_posting_id')} AS distance_km
            FROM worker_job_applications wja
            LEFT JOIN workers w ON w.id = wja.worker_id
            LEFT JOIN LATERAL (
@@ -166,16 +194,17 @@ export class WJAFunnelController {
 
       // Colunas do Kanban — classificação 100% baseada em application_funnel_stage
       // Migration 230: INITIATED removido → PRE_SCREENING + INICIADO adicionados
-      // Feature BLOQUEADO: worker_blocked_applications não promovidas ganham coluna própria
+      // Feature BLOQUEADO: tentativas negadas (dispensadas ou não) → Rejeitados, D433
       const stages: Record<string, unknown[]> = {
+        COMPATIBLE: [], // Fase 5 (D432): candidato do match nunca mensageado
         INVITED: [],
-        BLOQUEADO: [],      // worker_blocked_applications não promovidas (badge)
         INICIADO: [],       // INVITED+source='manual' — postulação real, não-bloqueada
         PRE_SCREENING: [],  // Antigo INITIATED — entrou no formulário Talentum
         IN_PROGRESS: [],
         COMPLETED: [],      // agrupa COMPLETED + QUALIFIED + IN_DOUBT (tag diferencia)
         CONFIRMED: [],
         SELECTED: [],
+        QUICK_RESPONSE_TEAM: [], // Fase 4 (D430) — destino do arrasto manual, entrada do quadro C
         REJECTED: [],
       };
 
@@ -188,7 +217,23 @@ export class WJAFunnelController {
 
       // Decrypt WJA names + blocked worker names em paralelo no controller (não no repo)
       const [visiveisWja, decryptedBlockedNames] = await Promise.all([
-        Promise.all(result.rows.map(async (row): Promise<{ name: string; phone: string | null }> => {
+        Promise.all(result.rows.map(async (row): Promise<{
+          name: string;
+          phone: string | null;
+          column: KanbanColumn;
+          matchRedigido: boolean;
+        }> => {
+          // Fase 5 (D432): a coluna decide ANTES da projeção — Compatíveis sem
+          // `match:read` nem chama projectWorkerFields (zero KMS), mesmo padrão
+          // do F2/C3 pra worker_contact:read.
+          const column = deriveKanbanColumn(
+            row.funnel_stage as string | null,
+            row.source as string | null,
+            row.messaged_at as string | Date | null,
+          );
+          if (column === 'COMPATIBLE' && !podeVerCandidatoDoMatch(cells)) {
+            return { name: NOME_REDIGIDO, phone: null, column, matchRedigido: true };
+          }
           // O TELEFONE entra aqui junto do nome. Ele já vem em texto claro do
           // SQL (COALESCE(w.phone, e.worker_raw_phone)) e por isso não custa
           // KMS nenhum — se ficasse fora da projeção, sairia redigindo o nome e
@@ -203,7 +248,7 @@ export class WJAFunnelController {
           const wid = row.worker_id as string | null;
           const name = visivel.name
             ?? (wid ? `Worker #${wid.slice(-8)}` : 'Worker sem identificação');
-          return { name, phone: visivel.phone ?? null };
+          return { name, phone: visivel.phone ?? null, column, matchRedigido: false };
         })),
         Promise.all(blockedAttempts.map(async (ba): Promise<{ name: string | null; phone: string | null }> => {
           if (!ba.workerId) return { name: null, phone: null };
@@ -237,21 +282,21 @@ export class WJAFunnelController {
       for (let i = 0; i < result.rows.length; i++) {
         const row = result.rows[i];
         const stage = row.funnel_stage as string | null;
-        const source = row.source as string | null;
+        const { column, matchRedigido } = visiveisWja[i];
 
-        // AC2 (86ajb48v1): a system match that was never messaged is a match
-        // candidate, not an invitation — running a match writes ALL top-N as
-        // INVITED/system, so keeping them here inflates "Invitados". They live
-        // only in the match modal until a real send sets messaged_at.
-        if (isMatchedNotInvited(stage, source, row.messaged_at as string | Date | null)) {
-          continue;
+        // Fase 5 (D432): Compatíveis (candidato do match nunca mensageado) entra
+        // no quadro, mas não conta em "N encuadres" (o subtítulo continua sendo
+        // só os WJAs de verdade — D437).
+        if (column !== 'COMPATIBLE') {
+          classifiedCount++;
         }
-        classifiedCount++;
 
         const item = {
           id: row.id,
-          encuadreId: row.encuadre_id ?? null,
-          workerId: row.worker_id ?? null,
+          // Compatíveis sem `match:read`: sem encuadreId (sem arrasto, sem menu,
+          // sem notas) e sem workerId (nada foi revelado — DX-5.7).
+          encuadreId: matchRedigido ? null : (row.encuadre_id ?? null),
+          workerId: matchRedigido ? null : (row.worker_id ?? null),
           workerName: visiveisWja[i].name,
           workerPhone: visiveisWja[i].phone,
           occupation: row.occupation_raw,
@@ -267,6 +312,7 @@ export class WJAFunnelController {
           acquisitionChannel: row.acquisition_channel ?? null,
           talentumStatus: row.talentum_status ?? null,
           workZone: row.work_zone,
+          distanceKm: row.distance_km == null ? null : Number(row.distance_km),
           redireccionamiento: row.redireccionamiento,
           internalStage: stage ?? null,
           contactNotesCount: Number(row.contact_notes_count ?? 0),
@@ -282,21 +328,24 @@ export class WJAFunnelController {
             : null,
         };
 
-        // Classificação 100% baseada em (stage, source) — SSOT em deriveKanbanColumn
-        // (domain/kanbanColumn.ts), compartilhado com a aba de encuadre do worker-detail.
-        stages[deriveKanbanColumn(stage, source)].push(item);
+        // Classificação 100% baseada em (stage, source, messagedAt) — SSOT em
+        // deriveKanbanColumn (domain/kanbanColumn.ts), compartilhado com a aba de
+        // encuadre do worker-detail. `column` já foi calculada acima, junto da
+        // projeção (a coluna decide se o nome pode sair).
+        stages[column].push(item);
       }
 
-      // Merge blocked attempt cards. Ativos → BLOQUEADO; "rechazados" (soft-dismiss,
-      // migration 250) → RECHAZADOS como card de bloqueado (não-arrastável, encuadreId
-      // null — coerente: um incompleto não pode ter WJA nem andar no funil). listByVacancy
-      // já faz NOT EXISTS contra worker_job_applications, então um bloqueado promovido vira
-      // WJA real e some daqui automaticamente.
+      // Merge blocked attempt cards. Tentativas negadas (dispensadas ou não) →
+      // Rejeitados, D433 (KANBAN_COLUMN_BLOCKED = REJECTED), como card de bloqueado
+      // (não-arrastável, encuadreId null — coerente: um incompleto não pode ter WJA
+      // nem andar no funil). listByVacancy já faz NOT EXISTS contra
+      // worker_job_applications, então um bloqueado promovido vira WJA real e some
+      // daqui automaticamente.
       for (let i = 0; i < blockedAttempts.length; i++) {
         const ba = blockedAttempts[i];
         const blockedWorker = decryptedBlockedNames[i];
         const isDismissed = ba.dismissedAt != null;
-        stages[isDismissed ? 'REJECTED' : 'BLOQUEADO'].push({
+        stages[KANBAN_COLUMN_BLOCKED].push({
           id: ba.id,
           encuadreId: null,
           workerId: ba.workerId ?? null,
@@ -316,6 +365,7 @@ export class WJAFunnelController {
           acquisitionChannel: ba.acquisitionChannel,
           talentumStatus: null,
           workZone: null,
+          distanceKm: null,
           redireccionamiento: null,
           internalStage: null,
           // Notas de contato escritas enquanto o card estava bloqueado
@@ -335,7 +385,7 @@ export class WJAFunnelController {
         success: true,
         data: {
           stages,
-          totalEncuadres: classifiedCount, // WJAs shown on the board (excludes matched-not-invited system rows)
+          totalEncuadres: classifiedCount, // cards do funil, SEM os de Compatíveis (subtítulo do quadro)
         },
       });
     } catch (error) {
@@ -351,7 +401,7 @@ export class WJAFunnelController {
    * Moves encuadre to a new Kanban column by updating application_funnel_stage.
    * Also syncs encuadre.resultado for terminal states (SELECTED/REJECTED).
    *
-   * Body: { targetStage, rejectionReasonCategory?, rejectionReason?, role?,
+   * Body: { targetStage, reasonCategory?, rejectionReason?, role?,
    *         interviewDate?, interviewTime?, interviewMeetLink? }
    *
    * Migration 230: INITIATED replaced by PRE_SCREENING in validStages.
@@ -363,11 +413,29 @@ export class WJAFunnelController {
    * lembrete de 5min e marcação de falta nunca dispararam (0 execuções cada). Ambas são
    * OPCIONAIS: "ainda não sei" é caminho válido (design D4), porque bloquear o movimento
    * faria a recrutadora inventar horário para destravar o card.
+   *
+   * Fase 4 (D430/D434, invariante 11): salto de etapa e entrar/sair de Rejeitados exigem
+   * `reasonCategory` — a regra mora em `WF/domain/moveReason.ts` (requiredMoveReason),
+   * este método só chama. Sem motivo ou motivo fora da lista do tipo → 422
+   * (MOVE_REASON_REQUIRED / MOVE_REASON_INVALID) DENTRO da transação, antes de qualquer
+   * escrita — a checagem roda antes do upsert, então nada é gravado quando recusa.
+   * `targetStage` aceita QUICK_RESPONSE_TEAM (MOVABLE_FUNNEL_STAGES) — é movível mas não
+   * mensageável (DX-4.7): `emitFunnelStageEvent` só roda para as etapas de `isFunnelStage`.
+   *
+   * Fase 5 (DX-5.5/DX-5.6, D432): Compatíveis é coluna DERIVADA (candidato do match nunca
+   * mensageado, `WF/domain/kanbanColumn.ts`) — nunca um valor de `application_funnel_stage`,
+   * então nunca é destino MOVÍVEL de verdade. `compatibleMoveRefusal` (`moveReason.ts`) recusa
+   * com 422 `COMPATIBLE_READ_ONLY`: entrar em Compatíveis (`targetStage === 'COMPATIBLE'`,
+   * checado ANTES de qualquer leitura de banco — nem chega a `isMovableFunnelStage`) e sair de
+   * Compatíveis para Invitados por arrasto (virar convidado é ter sido MENSAGEADO, não
+   * arrastado — checado DENTRO da transação, com `messaged_at` da origem, antes de
+   * `requiredMoveReason`). As demais saídas de Compatíveis (Rejeitados, salto) seguem a regra
+   * de motivo de sempre.
    */
   async moveEncuadre(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      const { targetStage, rejectionReasonCategory, rejectionReason, role } = req.body;
+      const { targetStage, reasonCategory, rejectionReason, role } = req.body;
 
       const schedule = interviewScheduleSchema.safeParse({
         interviewDate: req.body?.interviewDate ?? undefined,
@@ -382,8 +450,16 @@ export class WJAFunnelController {
         return;
       }
 
-      if (!isFunnelStage(targetStage)) {
-        res.status(400).json({ success: false, error: `targetStage must be one of: ${FUNNEL_STAGES.join(', ')}` });
+      // Fase 5 (DX-5.5): Compatíveis nunca é destino de arrasto — checado ANTES de
+      // isMovableFunnelStage e antes de qualquer leitura de banco (não é estágio, não há
+      // encuadre nem worker a buscar para recusar isto).
+      if (compatibleMoveRefusal(null, targetStage) === 'ENTER') {
+        sendCompatibleReadOnly(res, 'ENTER');
+        return;
+      }
+
+      if (!isMovableFunnelStage(targetStage)) {
+        res.status(400).json({ success: false, error: `targetStage must be one of: ${MOVABLE_FUNNEL_STAGES.join(', ')}` });
         return;
       }
 
@@ -455,11 +531,47 @@ export class WJAFunnelController {
       const actorUid = ((req as any).user as { uid?: string } | undefined)?.uid ?? null;
       let stageEventId: string | null = null;
       await withActorContext(this.db, async (client) => {
-        const prev = await client.query<{ application_funnel_stage: string | null }>(
-          `SELECT application_funnel_stage FROM worker_job_applications WHERE worker_id = $1 AND job_posting_id = $2`,
+        const prev = await client.query<{
+          application_funnel_stage: string | null;
+          source: string | null;
+          messaged_at: string | Date | null;
+        }>(
+          `SELECT application_funnel_stage, source, messaged_at FROM worker_job_applications WHERE worker_id = $1 AND job_posting_id = $2`,
           [workerId, jobPostingId],
         );
         const previousStage = prev.rows[0]?.application_funnel_stage ?? null;
+        const previousSource = prev.rows[0]?.source ?? null;
+        const previousMessagedAt = prev.rows[0]?.messaged_at ?? null;
+        const origin = prev.rows[0]
+          ? { stage: previousStage, source: previousSource, messagedAt: previousMessagedAt }
+          : null;
+
+        // Fase 5 (DX-5.6): sair de Compatíveis para Invitados por arrasto é recusado — virar
+        // convidado é ter sido MENSAGEADO (messaged_at), nunca arrastado. Roda ANTES de
+        // requiredMoveReason: para Compatíveis → Invitados aquela devolveria `null` (etapa
+        // igual, INVITED sobre INVITED) e o upsert seria um 200 que não muda nada.
+        const compatibleRefusal = compatibleMoveRefusal(origin, targetStage);
+        if (compatibleRefusal) {
+          throw new CompatibleReadOnlyError(compatibleRefusal);
+        }
+
+        // Fase 4 (DX-4.6): a checagem roda DENTRO da transação, ANTES do upsert —
+        // se recusar, o catch externo faz ROLLBACK (actorContext.ts) e nada é escrito.
+        const moveReasonKind = requiredMoveReason(origin, targetStage);
+        if (moveReasonKind) {
+          if (reasonCategory === undefined || reasonCategory === null) {
+            throw new MoveReasonRequiredError(moveReasonKind);
+          }
+          if (!isAllowedMoveReason(moveReasonKind, reasonCategory)) {
+            throw new MoveReasonInvalidError(moveReasonKind);
+          }
+          // Lido pelo gatilho da trilha (migration 478, NULLIF) — carimba o motivo na
+          // MESMA transação, antes do upsert. Interceptado pelo poolMockSupport nos
+          // unit tests (regex de controle de transação): não é observável por mock,
+          // só no e2e com banco real.
+          await client.query(`SELECT set_config('app.move_reason', $1, true)`, [reasonCategory]);
+        }
+
         await client.query(
           `INSERT INTO worker_job_applications (
              worker_id, job_posting_id, application_funnel_stage, source,
@@ -499,13 +611,17 @@ export class WJAFunnelController {
                rejection_reason = COALESCE($3, rejection_reason),
                updated_at = NOW()
              WHERE id = $1`,
-            [id, rejectionReasonCategory ?? null, rejectionReason ?? null],
+            [id, reasonCategory ?? null, rejectionReason ?? null],
           );
         }
 
-        stageEventId = await emitFunnelStageEvent(client, {
-          workerId, jobPostingId, previousStage, targetStage, actorUid, source: 'kanban',
-        });
+        // DX-4.7: QUICK_RESPONSE_TEAM é movível mas não vira evento (sem mensagem
+        // de propósito) — só as etapas de FUNNEL_STAGES emitem.
+        stageEventId = isFunnelStage(targetStage)
+          ? await emitFunnelStageEvent(client, {
+              workerId, jobPostingId, previousStage, targetStage, actorUid, source: 'kanban',
+            })
+          : null;
       });
 
       // Depois do COMMIT: o evento já está gravado (pending); a publicação só
@@ -520,6 +636,33 @@ export class WJAFunnelController {
 
       res.json({ success: true, data: { encuadreId: id, targetStage } });
     } catch (error) {
+      // Fase 5 (DX-5.6): sair de Compatíveis para Invitados por arrasto — 422 antes dos
+      // de motivo (a recusa da coluna derivada vem primeiro). ROLLBACK já rodou, nada escrito.
+      if (error instanceof CompatibleReadOnlyError) {
+        sendCompatibleReadOnly(res, error.reason);
+        return;
+      }
+      // Fase 4 (DX-4.6): as duas classes de motivo viram 422 — checadas ANTES do
+      // catch genérico. A transação já fez ROLLBACK (withActorContext) quando o
+      // erro saiu do bloco acima; nada foi escrito.
+      if (error instanceof MoveReasonRequiredError) {
+        res.status(422).json({
+          success: false,
+          error: 'move_reason_required',
+          code: 'MOVE_REASON_REQUIRED',
+          reason: error.kind,
+        });
+        return;
+      }
+      if (error instanceof MoveReasonInvalidError) {
+        res.status(422).json({
+          success: false,
+          error: 'move_reason_invalid',
+          code: 'MOVE_REASON_INVALID',
+          reason: error.kind,
+        });
+        return;
+      }
       const message = error instanceof Error ? error.message : 'Unknown error';
       const status = message.includes('not found') ? 404 : 500;
       res.status(status).json({ success: false, error: message });

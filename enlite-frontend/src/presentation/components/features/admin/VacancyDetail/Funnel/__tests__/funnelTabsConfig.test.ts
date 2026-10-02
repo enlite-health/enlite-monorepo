@@ -1,0 +1,69 @@
+import { describe, expect, it } from 'vitest';
+import { VACANCY_FUNNEL_COLUMNS, FUNNEL_TABS, columnItems, columnCount } from '../funnelTabsConfig';
+
+describe('funnelTabsConfig', () => {
+  it('VACANCY_FUNNEL_COLUMNS segue a ordem literal do quadro B (D433), Compatíveis (Fase 5) na frente', () => {
+    expect(VACANCY_FUNNEL_COLUMNS.map((c) => c.id)).toEqual([
+      'COMPATIBLE',
+      'INVITED',
+      'INICIADO',
+      'PRE_SCREENING',
+      'COMPLETED',
+      'CONFIRMED',
+      'SELECTED',
+      'QUICK_RESPONSE_TEAM',
+      'REJECTED',
+    ]);
+  });
+
+  it('QUICK_RESPONSE_TEAM (Fase 4, DX-4.12) é droppable e sem cor literal', () => {
+    const quickResponseTeam = VACANCY_FUNNEL_COLUMNS.find((c) => c.id === 'QUICK_RESPONSE_TEAM')!;
+    expect(quickResponseTeam.droppable).toBe(true);
+    expect(quickResponseTeam.color).toBe('bg-teal-500');
+  });
+
+  it('COMPATIBLE (Fase 5, DX-5.9) é derivada do match, só leitura', () => {
+    const compatible = VACANCY_FUNNEL_COLUMNS.find((c) => c.id === 'COMPATIBLE')!;
+    expect(compatible.droppable).toBe(false);
+    expect(compatible.color).toBe('bg-slate-400');
+    expect(FUNNEL_TABS[1].key).toBe('COMPATIBLE');
+  });
+
+  it('columnCount soma PRE_SCREENING + IN_PROGRESS', () => {
+    const preScreening = VACANCY_FUNNEL_COLUMNS.find((c) => c.id === 'PRE_SCREENING')!;
+    expect(columnCount(preScreening, { PRE_SCREENING: 1, IN_PROGRESS: 1 })).toBe(2);
+  });
+
+  it('columnItems concatena as duas fontes', () => {
+    const preScreening = VACANCY_FUNNEL_COLUMNS.find((c) => c.id === 'PRE_SCREENING')!;
+    const items = columnItems(preScreening, { PRE_SCREENING: ['a'], IN_PROGRESS: ['b'] });
+    expect(items).toEqual(['a', 'b']);
+  });
+
+  it('FUNNEL_TABS segue a ordem da DX-2.6, Compatíveis (Fase 5) logo após Todos', () => {
+    expect(FUNNEL_TABS.map((t) => t.key)).toEqual([
+      'ALL',
+      'COMPATIBLE',
+      'INVITED',
+      'INICIADO',
+      'PRE_SCREENING',
+      'COMPLETED',
+      'CONFIRMED',
+      'SELECTED',
+      'QUICK_RESPONSE_TEAM',
+      'REJECTED',
+      'POSTULATED',
+      'PRE_SELECTED',
+      'WITHDREW',
+    ]);
+  });
+
+  it('nenhum id de coluna é BLOQUEADO nem IN_PROGRESS', () => {
+    const ids = VACANCY_FUNNEL_COLUMNS.map((c) => c.id);
+    expect(ids).not.toContain('BLOQUEADO');
+    expect(ids).not.toContain('IN_PROGRESS');
+    const tabKeys = FUNNEL_TABS.map((t) => t.key);
+    expect(tabKeys).not.toContain('BLOQUEADO');
+    expect(tabKeys).not.toContain('IN_PROGRESS');
+  });
+});

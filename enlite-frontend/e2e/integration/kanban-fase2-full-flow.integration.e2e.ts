@@ -48,10 +48,13 @@ import {
   BACKEND_URL,
 } from '../helpers/talentumWebhookHelper';
 import { dndKitDrag } from '../helpers/dndKitDrag';
+// DX-4.17/A-contrato (achado R2, Fase 4): salto de coluna agora pede motivo (422 →
+// modal → 2xx) — reusa o helper da própria fase, não duplica a escolha de opção.
+import { chooseReasonInModal } from '../helpers/funnel-move-e2e-helper';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-const CONTAINER = 'enlite-postgres';
+const CONTAINER = process.env.E2E_PG_CONTAINER || 'enlite-postgres';
 const DB_USER = 'enlite_admin';
 const DB_NAME = 'enlite_e2e';
 
@@ -244,7 +247,7 @@ test.describe('Kanban Fase 2 — Fluxo Completo E2E @integration', () => {
     await openKanban(page, vacancyId);
 
     const colIds = [
-      'INVITED', 'BLOQUEADO', 'INICIADO', 'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED',
+      'INVITED', 'INICIADO', 'PRE_SCREENING', 'COMPLETED',
       'CONFIRMED', 'SELECTED', 'REJECTED',
     ];
 
@@ -359,16 +362,36 @@ test.describe('Kanban Fase 2 — Fluxo Completo E2E @integration', () => {
       pauseAfterUp: 600,
     });
 
+    // Mover para CONFIRMED sempre abre o diálogo de data da entrevista (pré-existente,
+    // 51e3ec19, DX-4.10 "Invitados → Confirmados abre a data da entrevista, e depois o
+    // motivo") — "Todavía no sé la fecha" dispara o 1º PUT (achado da P21, classe A).
+    const scheduleModal = page.getByTestId('interview-schedule-modal');
+    await expect(scheduleModal).toBeVisible({ timeout: 10_000 });
+    await page.getByTestId('interview-schedule-unknown').click();
+    await expect(scheduleModal).toHaveCount(0);
+
+    // DX-4.17/A-contrato (R2, Fase 4): INICIADO → CONFIRMED é salto (posições 1→4,
+    // DX-4.5) — o 1º PUT vem sem reasonCategory e recebe 422, o board abre o
+    // move-reason-modal; escolher a opção reenvia o PUT com reasonCategory (2xx).
+    const moveReasonModal = page.getByTestId('move-reason-modal');
+    await expect(moveReasonModal).toBeVisible({ timeout: 10_000 });
+    await chooseReasonInModal(page, 'move-reason', 'ENCUADRE_ANTECIPADO');
+    await expect(moveReasonModal).toHaveCount(0);
+
     await page.waitForTimeout(3_000);
     page.off('response', onResponse);
 
     // ── 6. Assertivas de rede ─────────────────────────────────────────────────
+    // DX-4.17/A-contrato: eram 1 PUT (2xx direto); agora são 2 (422 sem motivo +
+    // 2xx com reasonCategory) — mesmo padrão já previsto para o Path B.
     expect(
       capturedMoves.length,
-      `Path A: esperado exatamente 1 PUT /move. Capturado: ${capturedMoves.length}`,
-    ).toBe(1);
+      `Path A: esperado exatamente 2 PUT /move (422 + 2xx, DX-4.17). Capturado: ${capturedMoves.length}`,
+    ).toBe(2);
+    expect(capturedMoves[0].status, 'Path A: 1º PUT (sem motivo) deve ser 422').toBe(422);
 
-    const moveUrl = capturedMoves[0].url;
+    const lastMove = capturedMoves[capturedMoves.length - 1];
+    const moveUrl = lastMove.url;
     const encIdInUrl = moveUrl.split('/encuadres/')[1]?.split('/')[0] ?? '';
 
     expect(
@@ -377,8 +400,8 @@ test.describe('Kanban Fase 2 — Fluxo Completo E2E @integration', () => {
     ).toBe(encId);
 
     expect(
-      capturedMoves[0].status,
-      `PUT /move deve retornar 2xx. Status: ${capturedMoves[0].status}`,
+      lastMove.status,
+      `PUT /move deve retornar 2xx. Status: ${lastMove.status}`,
     ).toBeLessThan(300);
 
     // ── 7. DOM: card moveu de INICIADO para CONFIRMED ─────────────────────────
@@ -452,7 +475,7 @@ test.describe('Kanban Fase 2 — Fluxo Completo E2E @integration', () => {
     ).toHaveScreenshot('kanban-fase2-pathB-initiated.png', { maxDiffPixelRatio: 0.05 });
   });
 
-  test('F3b — Path B: webhook IN_PROGRESS — card migra para IN_PROGRESS', async ({ page, request }) => {
+  test('F3b — Path B: webhook IN_PROGRESS — card fica em Pre Screening (D433)', async ({ page, request }) => {
     await loginAsKanbanAdmin(page);
 
     expect(
@@ -469,7 +492,16 @@ test.describe('Kanban Fase 2 — Fluxo Completo E2E @integration', () => {
     ).toBe(200);
 
     const encId = await getEncuadreId(request, workerB_Id, vacancyId);
-    await waitForCardInStage(page, vacancyId, `kanban-card-${encId}`, 'IN_PROGRESS');
+    // Pre Screening une PRE_SCREENING + IN_PROGRESS (DX-2.1/DX-2.2): o card CONTINUA
+    // na coluna Pre Screening. Sem a conferência direta no banco, o passo do webhook
+    // deixaria de ser provado (o card já estava lá antes do webhook).
+    await waitForCardInStage(page, vacancyId, `kanban-card-${encId}`, 'PRE_SCREENING');
+    const stageAfterInProgress = runSQL(
+      `SELECT application_funnel_stage FROM worker_job_applications WHERE id = '${encId}'`,
+    );
+    if (!stageAfterInProgress.includes('IN_PROGRESS')) {
+      throw new Error(`[F3b] webhook IN_PROGRESS não persistiu no banco; estado atual: ${stageAfterInProgress}`);
+    }
 
     await expect(
       page.locator('[data-testid="kanban-board"]'),
@@ -548,7 +580,7 @@ test.describe('Kanban Fase 2 — Fluxo Completo E2E @integration', () => {
     });
     await page.waitForTimeout(300);
 
-    // Com 9 colunas (feature BLOQUEADO), COMPLETED e SELECTED ficam fora do
+    // Com 7 colunas (D433), COMPLETED e SELECTED ficam fora do
     // viewport 1920px em scrollLeft=0. Scroll horizontal do board até o fim
     // (mesma técnica de kanban-iniciado-blocked-columns K7) para que ambas as
     // bounding boxes fiquem dentro da área visível para o drag.
@@ -590,18 +622,38 @@ test.describe('Kanban Fase 2 — Fluxo Completo E2E @integration', () => {
     await page.mouse.up();
     await page.waitForTimeout(600);
 
+    // Mover para SELECTED sempre abre o diálogo de papel (pré-existente, 51e3ec19,
+    // DX-4.10 "Completado → Seleccionados, o papel, e depois o motivo") ANTES do PUT.
+    const roleModal = page.getByTestId('role-modal');
+    await expect(roleModal).toBeVisible({ timeout: 10_000 });
+    await page.getByTestId('role-option-titular').getByRole('radio').click();
+    await page.getByTestId('role-confirm').click();
+    await expect(roleModal).toHaveCount(0);
+
+    // DX-4.17/A-contrato (R2, Fase 4): COMPLETED → SELECTED é salto (posições 3→5,
+    // DX-4.5) — o 1º PUT vem sem reasonCategory e recebe 422, o board abre o
+    // move-reason-modal; escolher a opção reenvia o PUT com reasonCategory (2xx).
+    const moveReasonModalB = page.getByTestId('move-reason-modal');
+    await expect(moveReasonModalB).toBeVisible({ timeout: 10_000 });
+    await chooseReasonInModal(page, 'move-reason', 'ENCUADRE_ANTECIPADO');
+    await expect(moveReasonModalB).toHaveCount(0);
+
     await page.waitForTimeout(3_000);
     page.off('response', onRespF3d);
 
     // Validar rede: PUT usou encuadre.id (não wja.id)
+    // DX-4.17/A-contrato: eram 1 PUT (2xx direto); agora são 2 (422 sem motivo +
+    // 2xx com reasonCategory).
     expect(
       capturedMoves.length,
-      `Path B drag: esperado exatamente 1 PUT /move`,
-    ).toBe(1);
+      `Path B drag: esperado exatamente 2 PUT /move (422 + 2xx, DX-4.17)`,
+    ).toBe(2);
+    expect(capturedMoves[0].status, 'Path B: 1º PUT (sem motivo) deve ser 422').toBe(422);
 
-    const encIdInUrl = capturedMoves[0].url.split('/encuadres/')[1]?.split('/')[0] ?? '';
+    const lastMoveB = capturedMoves[capturedMoves.length - 1];
+    const encIdInUrl = lastMoveB.url.split('/encuadres/')[1]?.split('/')[0] ?? '';
     expect(encIdInUrl, `PUT deve usar encuadre.id (${realEncId})`).toBe(realEncId);
-    expect(capturedMoves[0].status, 'PUT /move status deve ser 2xx').toBeLessThan(300);
+    expect(lastMoveB.status, 'PUT /move status deve ser 2xx').toBeLessThan(300);
 
     // Reload + verificar SELECTED
     await page.reload();

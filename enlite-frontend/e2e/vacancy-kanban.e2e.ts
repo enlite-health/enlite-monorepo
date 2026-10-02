@@ -153,11 +153,10 @@ test.describe('VacancyKanbanPage', () => {
 
     await gotoVacancyKanban(page, MOCK_VACANCY_ID);
 
-    // São NOVE colunas, não seis. "Entrevistando" e "Pendientes" não existem mais e
-    // "Rechazados" virou "Perdidos" — o teste checava um funil que mudou. A fonte é
-    // COLUMN_CONFIG em KanbanBoard.tsx + admin.kanban.columns no es.json.
-    for (const titulo of ['Invitados', 'Bloqueados', 'Iniciados', 'Pre Screening',
-                          'En Progreso', 'Completado', 'Confirmados', 'Seleccionados', 'Perdidos']) {
+    // São 7 colunas (D433): sem Bloqueados e sem En Progreso. A fonte é
+    // VACANCY_FUNNEL_COLUMNS em funnelTabsConfig.ts + admin.kanban.columns no es.json.
+    for (const titulo of ['Invitados', 'Iniciados', 'Pre Screening',
+                          'Completado', 'Confirmados', 'Seleccionados', 'Rechazados']) {
       await expect(page.locator(`text=${titulo}`).first(), `coluna ${titulo}`)
         .toBeVisible({ timeout: 15000 });
     }
@@ -237,9 +236,9 @@ test.describe('VacancyKanbanPage', () => {
     await gotoVacancyKanban(page, MOCK_VACANCY_ID);
     await expect(page.locator('[data-testid="kanban-card-f1"]')).toBeVisible({ timeout: 15000 });
 
-    // Ids reais de COLUMN_CONFIG. INTERVIEWING e PENDING não existem mais.
-    const columnIds = ['INVITED', 'BLOQUEADO', 'INICIADO', 'PRE_SCREENING',
-                       'IN_PROGRESS', 'COMPLETED', 'CONFIRMED', 'SELECTED', 'REJECTED'];
+    // Ids reais de VACANCY_FUNNEL_COLUMNS. BLOQUEADO e IN_PROGRESS não existem mais como coluna própria.
+    const columnIds = ['INVITED', 'INICIADO', 'PRE_SCREENING',
+                       'COMPLETED', 'CONFIRMED', 'SELECTED', 'REJECTED'];
     for (const id of columnIds) {
       await expect(page.locator(`[data-testid="kanban-column-${id}"]`)).toBeAttached();
     }

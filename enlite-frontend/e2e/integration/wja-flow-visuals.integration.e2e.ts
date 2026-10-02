@@ -215,7 +215,9 @@ test.describe('WJA Flow Visuals @integration', () => {
 
   test('V1 — card INVITED system com match_score=87, sem badge acquisition_channel', async ({ page }) => {
     await loginAsKanbanAdmin(page);
-    await waitForCardInStage(page, vacancyId, `kanban-card-${wjaV1Id}`, 'INVITED');
+    // INVITED/system sem messaged_at = isMatchedNotInvited (DX-5.14): a SSOT devolve
+    // COMPATIBLE, não INVITED (candidato do match, ainda não convidado pelo envio).
+    await waitForCardInStage(page, vacancyId, `kanban-card-${wjaV1Id}`, 'COMPATIBLE');
 
     const card = page.locator(`[data-testid="kanban-card-${wjaV1Id}"]`);
 
@@ -225,9 +227,9 @@ test.describe('WJA Flow Visuals @integration', () => {
     // Sem badge de canal social (acquisition_channel=null → ACQUISITION_CHANNEL_STYLE não renderiza)
     await expect(card.locator('[data-testid="acquisition-channel-badge"]')).not.toBeVisible();
 
-    // Card na coluna correta
-    const invitedCol = page.locator('[data-testid="kanban-column-INVITED"]');
-    await expect(invitedCol.locator(`[data-testid="kanban-card-${wjaV1Id}"]`)).toBeVisible();
+    // Card na coluna correta (Compatíveis, DX-5.14)
+    const compatibleCol = page.locator('[data-testid="kanban-column-COMPATIBLE"]');
+    await expect(compatibleCol.locator(`[data-testid="kanban-card-${wjaV1Id}"]`)).toBeVisible();
 
     await page.waitForSelector('[data-testid="kanban-board"]', { state: 'visible' });
     await expect(card).toHaveScreenshot('wja-v1-invited-system-card.png', { maxDiffPixelRatio: 0.05 });

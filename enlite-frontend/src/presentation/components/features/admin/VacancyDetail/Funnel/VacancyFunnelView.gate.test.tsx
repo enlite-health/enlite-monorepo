@@ -10,7 +10,7 @@ import type { AuthzContract } from '@domain/entities/Authz';
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }));
 vi.mock('@hooks/admin/useVacancyFunnelTable', () => ({
-  useVacancyFunnelTable: () => ({ data: { rows: [], counts: { INVITED: 0, POSTULATED: 0, PRE_SELECTED: 0, REJECTED: 0, WITHDREW: 0, ALL: 0 } }, isLoading: false, error: null, refetch: vi.fn() }),
+  useVacancyFunnelTable: () => ({ data: { rows: [], counts: { INVITED: 0, POSTULATED: 0, PRE_SELECTED: 0, REJECTED: 0, WITHDREW: 0, ALL: 0, columns: {} } }, isLoading: false, error: null, refetch: vi.fn() }),
 }));
 vi.mock('@hooks/admin/useInvitedPendingCandidates', () => ({
   useInvitedPendingCandidates: () => ({ candidates: [], pendingCount: 2, isLoading: false, refetch: vi.fn() }),

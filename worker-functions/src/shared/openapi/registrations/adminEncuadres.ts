@@ -1,6 +1,7 @@
 import { registry, z } from '../registry';
 import { ErrorResponseSchema, OkMessage, UuidParam } from '../schemas/common';
-import { FUNNEL_STAGES } from '@modules/matching/application/FunnelStageEventEmitter';
+import { MOVABLE_FUNNEL_STAGES } from '@modules/matching/application/FunnelStageEventEmitter';
+import { ALL_MOVE_REASONS } from '@modules/matching/domain/moveReason';
 
 const EncuadreResultBody = z.object({
   resultado: z.enum(['PENDIENTE', 'SELECCIONADO', 'RECHAZADO', 'AT_NO_ACEPTA', 'REPROGRAMAR']).openapi({
@@ -15,18 +16,21 @@ const EncuadreResultBody = z.object({
 
 const EncuadreMoveBody = z.object({
   targetStage: z
-    .enum(FUNNEL_STAGES)
+    .enum(MOVABLE_FUNNEL_STAGES)
     .openapi({
-      description: 'Etapa de destino no funil (coluna do Kanban).',
+      description: 'Etapa de destino no funil (coluna do Kanban). Inclui QUICK_RESPONSE_TEAM (Fase 4) — movível, sem mensagem.',
       example: 'CONFIRMED',
     }),
   role: z.enum(['TITULAR', 'RAPID_RESPONSE']).optional().openapi({
     description: 'Papel do prestador. Só aceito ao mover para SELECTED.',
     example: 'TITULAR',
   }),
-  rejectionReasonCategory: z.string().optional().openapi({
-    description: 'Categoria do motivo. Usado ao mover para REJECTED.',
-  }),
+  reasonCategory: z
+    .enum(ALL_MOVE_REASONS as [string, ...string[]])
+    .optional()
+    .openapi({
+      description: 'Categoria do motivo do movimento — exigido no salto e ao entrar/sair de Rejeitados (422 sem ele).',
+    }),
   rejectionReason: z.string().optional().openapi({
     description: 'Motivo livre da rejeição.',
   }),
@@ -81,7 +85,9 @@ registry.registerPath({
     'Ao mover para CONFIRMED, aceita data e hora da entrevista — é o único ponto em que o ' +
     'sistema registra QUANDO a entrevista acontece, o que alimenta lembretes e marcação de falta. ' +
     'A descrição anterior ("transfere um encuadre de uma vaga para outra", body `jobPostingId`) ' +
-    'nunca correspondeu ao comportamento real desta rota.',
+    'nunca correspondeu ao comportamento real desta rota. Fase 4 (D430/D434): salto de etapa e ' +
+    'entrar/sair de Rejeitados exigem `reasonCategory` — sem ele, ou fora da lista do tipo de ' +
+    'motivo, a rota devolve 422.',
   security: [{ firebaseAuth: [] }],
   request: {
     params: z.object({ id: UuidParam }),
@@ -92,6 +98,12 @@ registry.registerPath({
     400: { description: 'Dados inválidos.', content: { 'application/json': { schema: ErrorResponseSchema } } },
     401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
     404: { description: 'Encuadre não encontrado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
+    422: {
+      description:
+        'Motivo do movimento ausente (MOVE_REASON_REQUIRED) ou fora da lista do tipo (MOVE_REASON_INVALID), ' +
+        'ou `COMPATIBLE_READ_ONLY` (Compatíveis é derivada do match).',
+      content: { 'application/json': { schema: ErrorResponseSchema } },
+    },
     500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
   },
 });

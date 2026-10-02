@@ -1,5 +1,12 @@
 import type { PoolClient } from 'pg';
-import { emitFunnelStageEvent, funnelStageEventName, FUNNEL_STAGES, isFunnelStage } from '../FunnelStageEventEmitter';
+import {
+  emitFunnelStageEvent,
+  funnelStageEventName,
+  FUNNEL_STAGES,
+  isFunnelStage,
+  MOVABLE_FUNNEL_STAGES,
+  isMovableFunnelStage,
+} from '../FunnelStageEventEmitter';
 
 describe('funnelStageEventName', () => {
   it('é funnel_stage.<etapa minúscula> — QUALIFIED bate com o evento do webhook da Talentum', () => {
@@ -13,6 +20,34 @@ describe('funnelStageEventName', () => {
     expect(isFunnelStage('qualified')).toBe(false);
     expect(isFunnelStage(undefined)).toBe(false);
     expect(isFunnelStage(42)).toBe(false);
+  });
+
+  /**
+   * Guarda da DX-4.7 (Fase 4): QUICK_RESPONSE_TEAM é movível mas NÃO tem mensagem —
+   * este teste morre se alguém acrescentar o estágio a FUNNEL_STAGES (o que ligaria
+   * um StageMessageHandler para ele e o abriria na tela de plantillas, o que a fase
+   * proíbe de propósito).
+   */
+  it('FUNNEL_STAGES NÃO contém QUICK_RESPONSE_TEAM (Fase 4, DX-4.7 — sem mensagem de propósito)', () => {
+    expect(FUNNEL_STAGES as readonly string[]).not.toContain('QUICK_RESPONSE_TEAM');
+    expect(isFunnelStage('QUICK_RESPONSE_TEAM')).toBe(false);
+  });
+});
+
+describe('MOVABLE_FUNNEL_STAGES / isMovableFunnelStage (Fase 4, DX-4.7)', () => {
+  it('é FUNNEL_STAGES + QUICK_RESPONSE_TEAM — 10 etapas', () => {
+    expect(MOVABLE_FUNNEL_STAGES).toHaveLength(10);
+    expect(MOVABLE_FUNNEL_STAGES).toEqual([...FUNNEL_STAGES, 'QUICK_RESPONSE_TEAM']);
+  });
+
+  it('isMovableFunnelStage aceita todas as 9 com mensagem + QUICK_RESPONSE_TEAM', () => {
+    for (const s of MOVABLE_FUNNEL_STAGES) expect(isMovableFunnelStage(s)).toBe(true);
+  });
+
+  it('isMovableFunnelStage recusa lixo (minúsculo, undefined, número)', () => {
+    expect(isMovableFunnelStage('quick_response_team')).toBe(false);
+    expect(isMovableFunnelStage(undefined)).toBe(false);
+    expect(isMovableFunnelStage(42)).toBe(false);
   });
 });
 

@@ -5,6 +5,7 @@ import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 import { KanbanBoard } from '@presentation/components/features/admin/Kanban/KanbanBoard';
 import { useWJAFunnel, MoveEncuadreError } from '@hooks/admin/useWJAFunnel';
+import { MOVE_REASON_REQUIRED, COMPATIBLE_READ_ONLY } from '@domain/entities/MoveReason';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { InviteBlockedError, blockedReasonMessage } from '@infrastructure/http/AdminMessagingApiService';
 import type { EncuadreRole } from '@domain/entities/EncuadreRole';
@@ -18,7 +19,7 @@ export function VacancyFunnelKanban({
   vacancyId,
 }: VacancyFunnelKanbanProps): JSX.Element {
   const { t } = useTranslation();
-  const { data, isLoading, error, refetch, moveEncuadre, rejectBlocked, unrejectBlocked, promoteBlocked } =
+  const { data, isLoading, error, refetch, moveEncuadre, promoteBlocked } =
     useWJAFunnel(vacancyId);
   const [moveError, setMoveError] = useState<MoveEncuadreError | null>(null);
 
@@ -32,12 +33,14 @@ export function VacancyFunnelKanban({
     async (
       encuadreId: string,
       targetStage: string,
-      rejectionReasonCategory?: string,
+      reasonCategory?: string,
       role?: EncuadreRole,
       schedule?: { interviewDate: string; interviewTime: string; interviewMeetLink?: string },
     ) => {
-      const err = await moveEncuadre(encuadreId, targetStage, rejectionReasonCategory, role, schedule);
-      setMoveError(err);
+      const err = await moveEncuadre(encuadreId, targetStage, reasonCategory, role, schedule);
+      // 422 MOVE_REASON_REQUIRED (DX-4.6/DX-4.10): o KanbanBoard já abre o diálogo do motivo —
+      // não é o banner de erro do topo (fluxo esperado, não falha de sistema).
+      setMoveError(err?.code === MOVE_REASON_REQUIRED ? null : err);
       return err;
     },
     [moveEncuadre],
@@ -56,15 +59,6 @@ export function VacancyFunnelKanban({
       return t(`admin.kanban.promoteError.${code}`, { defaultValue: t('admin.kanban.promoteError.unknown') });
     },
     [promoteBlocked, t],
-  );
-
-  const handleRejectBlocked = useCallback(
-    async (blockedId: string, rejectionReasonCategory: string) => {
-      const err = await rejectBlocked(blockedId, rejectionReasonCategory);
-      setMoveError(err);
-      return err;
-    },
-    [rejectBlocked],
   );
 
   /**
@@ -90,15 +84,6 @@ export function VacancyFunnelKanban({
   const handlePresentationInvite = useCallback(
     (workerId: string) => AdminPresentationInviteApiService.invite(workerId, 'kanban', vacancyId),
     [vacancyId],
-  );
-
-  const handleUnrejectBlocked = useCallback(
-    async (blockedId: string) => {
-      const err = await unrejectBlocked(blockedId);
-      setMoveError(err);
-      return err;
-    },
-    [unrejectBlocked],
   );
 
   return (
@@ -147,9 +132,11 @@ export function VacancyFunnelKanban({
                 ? t('admin.vacancyDetail.funnelView.kanban.workerNotEligibleTitle', {
                     defaultValue: 'No se puede mover este worker',
                   })
-                : t('admin.vacancyDetail.funnelView.kanban.moveErrorTitle', {
-                    defaultValue: 'No se pudo mover el encuadre',
-                  })}
+                : moveError.code === COMPATIBLE_READ_ONLY
+                  ? t('admin.vacancyDetail.funnelView.kanban.compatibleReadOnlyTitle')
+                  : t('admin.vacancyDetail.funnelView.kanban.moveErrorTitle', {
+                      defaultValue: 'No se pudo mover el encuadre',
+                    })}
             </Text>
             <Text size="sm" color="inherit" className="text-amber-800 mt-1">
               {moveError.code === 'WORKER_NOT_ELIGIBLE'
@@ -158,7 +145,9 @@ export function VacancyFunnelKanban({
                       ? `Worker no apto (status=${moveError.workerStatus}). Cadastro o documentos incompletos.`
                       : 'Worker no apto. Verifique cadastro y documentos.',
                   })
-                : moveError.message}
+                : moveError.code === COMPATIBLE_READ_ONLY
+                  ? t('admin.vacancyDetail.funnelView.kanban.compatibleReadOnlyInviteBySend')
+                  : moveError.message}
             </Text>
           </div>
           <button
@@ -185,9 +174,7 @@ export function VacancyFunnelKanban({
           stages={data.stages}
           vacancyId={vacancyId}
           onMove={handleMove}
-          onRejectBlocked={handleRejectBlocked}
           onPromoteBlocked={handlePromoteBlocked}
-          onUnrejectBlocked={handleUnrejectBlocked}
           onResendInvite={handleResendInvite}
           onPresentationInvite={handlePresentationInvite}
         />

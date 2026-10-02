@@ -201,7 +201,10 @@ test.describe('D224 — arrasto para QUALIFIED enfileira o convite e o guard is_
       .find((it) => it.workerId === workerId)!.encuadreId!;
 
     const moveRes = await adminCtx.put(`/api/admin/encuadres/${encuadreId}/move`, {
-      data: { targetStage: 'QUALIFIED' },
+      // INICIADO → QUALIFIED (Concluídos) salta mais de 1 posição do quadro B: a API exige o motivo
+      // (moveReason.ts: JUMP_REASONS, senão 422 MOVE_REASON_REQUIRED). Aqui o salto é só montagem do
+      // cenário (o fluxo sob teste é o convite), por isso API, não UI.
+      data: { targetStage: 'QUALIFIED', reasonCategory: 'ENCUADRE_ANTECIPADO' },
     });
     expect(moveRes.status(), 'PUT /encuadres/:id/move para QUALIFIED responde 200').toBe(200);
 

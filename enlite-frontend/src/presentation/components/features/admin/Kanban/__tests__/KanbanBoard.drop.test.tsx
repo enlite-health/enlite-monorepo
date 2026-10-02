@@ -53,18 +53,17 @@ function card(overrides: Partial<Card> = {}): Card {
   } as Card;
 }
 function stagesWith(c: Card): FunnelStages {
-  return { INVITED: [], BLOQUEADO: [], INICIADO: [], PRE_SCREENING: [], IN_PROGRESS: [], COMPLETED: [c], CONFIRMED: [], SELECTED: [], REJECTED: [] } as unknown as FunnelStages;
+  return { INVITED: [], INICIADO: [], PRE_SCREENING: [], IN_PROGRESS: [], COMPLETED: [c], CONFIRMED: [], SELECTED: [], REJECTED: [] } as unknown as FunnelStages;
 }
 const drop = (c: Card, to: string) =>
   act(() => { capturedOnDrop!({ item: c, itemId: c.id, fromColumnId: 'COMPLETED', toColumnId: to }); });
 
 describe('KanbanBoard — handleDrop', () => {
   const onMove = vi.fn().mockResolvedValue(null);
-  const noop = vi.fn().mockResolvedValue(null);
   beforeEach(() => { onMove.mockClear(); capturedOnDrop = null; });
 
   function renderBoard(c: Card) {
-    render(<KanbanBoard stages={stagesWith(c)} vacancyId="v-1" onMove={onMove} onRejectBlocked={noop} onUnrejectBlocked={noop} />);
+    render(<KanbanBoard stages={stagesWith(c)} vacancyId="v-1" onMove={onMove} />);
     expect(capturedOnDrop).not.toBeNull();
   }
 
@@ -79,14 +78,15 @@ describe('KanbanBoard — handleDrop', () => {
     drop(card(), 'REJECTED');
     expect(onMove).not.toHaveBeenCalled();
     fireEvent.click(screen.getByTestId('rejection-submit'));
-    await waitFor(() => expect(onMove).toHaveBeenCalledWith('uuid-1', 'REJECTED', 'NO_SHOW'));
+    // Fase 4 (DX-4.6): o `move()` interno sempre repassa os 5 argumentos a onMove.
+    await waitFor(() => expect(onMove).toHaveBeenCalledWith('uuid-1', 'REJECTED', 'NO_SHOW', undefined, undefined));
   });
 
   it('SELECTED asks the role first, then moves with it', async () => {
     renderBoard(card());
     drop(card(), 'SELECTED');
     fireEvent.click(screen.getByTestId('role-submit'));
-    await waitFor(() => expect(onMove).toHaveBeenCalledWith('uuid-1', 'SELECTED', undefined, 'TITULAR'));
+    await waitFor(() => expect(onMove).toHaveBeenCalledWith('uuid-1', 'SELECTED', undefined, 'TITULAR', undefined));
   });
 
   it('CONFIRMED asks the interview date first; "ainda não sei" moves without schedule', async () => {
@@ -99,6 +99,6 @@ describe('KanbanBoard — handleDrop', () => {
   it('any other column moves directly', () => {
     renderBoard(card());
     drop(card(), 'INVITED');
-    expect(onMove).toHaveBeenCalledWith('uuid-1', 'INVITED');
+    expect(onMove).toHaveBeenCalledWith('uuid-1', 'INVITED', undefined, undefined, undefined);
   });
 });

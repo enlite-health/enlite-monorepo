@@ -7,6 +7,7 @@
 
 import {
   CONFIRMED_KANBAN_STAGES,
+  FILLED_POSITION_STAGES,
   POSTULATED_STAGES,
   SELECTED_KANBAN_STAGES,
   toSqlInList,
@@ -16,8 +17,16 @@ import {
   parseDaysCsv,
   parseTimeHHMM,
 } from './vacancyScheduleFilter';
+import type { Pool } from 'pg';
 import { workerNotDisabledSql } from '@shared/database/activeWorkerFilter';
 import { INICIAIS_REDIGIDAS, patientNameIsRedacted } from '../../application/patientInVacancyProjection';
+import {
+  tallyKanbanColumns,
+  type KanbanTallyRow,
+  type FunnelColumnCounts,
+} from '../../domain/kanbanColumn';
+import { blockedNotPromotedSql } from '../../infrastructure/BlockedApplicationQueryRepository';
+import { OPERATION_TIMEZONE } from '../../domain/interviewSchedule';
 
 // ── Display mappers ────────────────────────────────────────────────────────────
 
@@ -49,6 +58,7 @@ const WORKER_ACTIVE_SQL = workerNotDisabledSql('wja.worker_id');
 const POSTULATED_SQL = toSqlInList(POSTULATED_STAGES);
 const CONFIRMED_KANBAN_SQL = toSqlInList(CONFIRMED_KANBAN_STAGES);
 const SELECTED_KANBAN_SQL = toSqlInList(SELECTED_KANBAN_STAGES);
+const FILLED_POSITION_SQL = toSqlInList(FILLED_POSITION_STAGES);
 
 const LIST_VACANCIES_BASE = `
   SELECT
@@ -97,9 +107,12 @@ const LIST_VACANCIES_BASE = `
       THEN GREATEST(
         -- quem deu baixa não ocupa a vaga: a posição volta a faltar
         jp.providers_needed::INTEGER - (
+          -- Fase 4 (DX-4.9, critério 11): SELECTED + QUICK_RESPONSE_TEAM ocupam a posição
+          -- da vaga; SELECTED_KANBAN_SQL (linha "selecionados" acima) fica intocado —
+          -- espelha só a coluna "Seleccionados" do Kanban, não "quem preenche a vaga".
           SELECT COUNT(*) FROM worker_job_applications wja
           WHERE wja.job_posting_id = jp.id
-            AND wja.application_funnel_stage IN (${SELECTED_KANBAN_SQL})
+            AND wja.application_funnel_stage IN (${FILLED_POSITION_SQL})
             AND ${WORKER_ACTIVE_SQL}
         ),
         0
@@ -239,6 +252,77 @@ export function buildListVacanciesQuery(filters: ListVacanciesFilters, opts: { s
   }
 
   return { baseQuery, params, paramIndex };
+}
+
+/**
+ * Contagem por coluna do Kanban para uma PÁGINA de vagas, numa consulta só (não
+ * uma por vaga — critério 10). UNION ALL de WJA (agrupada por stage/source/messaged)
+ * com tentativas negadas não promovidas (blockedNotPromotedSql), dobrado em JS por
+ * tallyKanbanColumns — o MESMO SSOT do Kanban da vaga (Passo 0 (a): não repetir a
+ * regra em SQL).
+ */
+export async function loadStageCounts(db: Pool, jobPostingIds: string[]): Promise<Map<string, FunnelColumnCounts>> {
+  const out = new Map<string, FunnelColumnCounts>();
+  if (jobPostingIds.length === 0) return out;
+  const { rows } = await db.query(
+    `SELECT wja.job_posting_id AS id, 'wja' AS kind, wja.application_funnel_stage AS stage, wja.source,
+            (wja.messaged_at IS NOT NULL) AS messaged, COUNT(*)::int AS n
+       FROM worker_job_applications wja
+      WHERE wja.job_posting_id = ANY($1::uuid[]) AND ${WORKER_ACTIVE_SQL}
+      GROUP BY 1, 2, 3, 4, 5
+     UNION ALL
+     SELECT wba.job_posting_id, 'blocked', NULL, NULL, false, COUNT(*)::int
+       FROM worker_blocked_applications wba
+      WHERE wba.job_posting_id = ANY($1::uuid[]) AND ${blockedNotPromotedSql('wba')}
+      GROUP BY 1`,
+    [jobPostingIds],
+  );
+  const byId = new Map<string, KanbanTallyRow[]>();
+  for (const r of rows) (byId.get(r.id) ?? byId.set(r.id, []).get(r.id)!).push(r);
+  for (const id of jobPostingIds) out.set(id, tallyKanbanColumns(byId.get(id) ?? []));
+  return out;
+}
+
+/**
+ * Última ação e dias sem divulgação para uma PÁGINA de vagas, numa consulta só
+ * (irmã de `loadStageCounts` — DX-3.4). `lastActionAt` = GREATEST(última nota,
+ * último movimento de funil de qualquer WJA da vaga, publicação na Talentum);
+ * NUNCA `updated_at` (DX-3.5 — sabotagem futura testada em P6). `daysWithoutDivulgation`
+ * conta só notas de categoria DIVULGACAO, em dias de calendário do fuso da operação
+ * (DX-3.6); sem nota → `null` (nunca `0`).
+ */
+export interface VacancyActivity {
+  lastActionAt: string | null;
+  daysWithoutDivulgation: number | null;
+}
+
+const TZ = OPERATION_TIMEZONE;
+
+export async function loadVacancyActivity(db: Pool, jobPostingIds: string[]): Promise<Map<string, VacancyActivity>> {
+  const out = new Map<string, VacancyActivity>();
+  if (jobPostingIds.length === 0) return out;
+  const { rows } = await db.query(
+    `SELECT jp.id,
+            GREATEST(
+              (SELECT MAX(n.occurred_at) FROM job_posting_notes n WHERE n.job_posting_id = jp.id),
+              (SELECT MAX(h.created_at) FROM worker_job_application_stage_history h
+                 JOIN worker_job_applications w ON w.id = h.application_id
+                WHERE w.job_posting_id = jp.id),
+              jp.talentum_published_at
+            ) AS last_action_at,
+            ((NOW() AT TIME ZONE '${TZ}')::date
+              - ((SELECT MAX(d.occurred_at) FROM job_posting_notes d
+                   WHERE d.job_posting_id = jp.id AND d.category = 'DIVULGACAO') AT TIME ZONE '${TZ}')::date
+            ) AS days_without_divulgation
+       FROM job_postings jp
+      WHERE jp.id = ANY($1::uuid[])`,
+    [jobPostingIds],
+  );
+  for (const r of rows) out.set(r.id, {
+    lastActionAt: r.last_action_at ? new Date(r.last_action_at).toISOString() : null,
+    daysWithoutDivulgation: r.days_without_divulgation == null ? null : Number(r.days_without_divulgation) });
+  for (const id of jobPostingIds) if (!out.has(id)) out.set(id, { lastActionAt: null, daysWithoutDivulgation: null });
+  return out;
 }
 
 // ── Row mapper ─────────────────────────────────────────────────────────────────

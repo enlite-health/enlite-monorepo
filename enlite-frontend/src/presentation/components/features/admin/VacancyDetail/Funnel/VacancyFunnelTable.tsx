@@ -8,7 +8,7 @@ import {
   TableHead,
 } from '@presentation/components/atoms/Table';
 import type { FunnelTableRow } from '@domain/entities/Funnel';
-import type { FunnelBucket } from '@domain/entities/Funnel';
+import { compareByDistanceKm } from '@domain/value-objects/candidateDistance';
 import { VacancyFunnelTableRow } from './VacancyFunnelTableRow';
 import { ContactNotesModal } from './ContactNotesModal';
 
@@ -16,7 +16,8 @@ interface VacancyFunnelTableProps {
   vacancyId: string;
   rows: FunnelTableRow[];
   isLoading: boolean;
-  activeBucket: FunnelBucket;
+  /** Rótulo já traduzido da aba ativa (View resolve via `t(activeTab.i18nKey)`), pro aria-label da tabela. */
+  activeTabLabel: string;
 }
 
 interface ActiveNotesModal {
@@ -28,7 +29,7 @@ export function VacancyFunnelTable({
   vacancyId,
   rows,
   isLoading,
-  activeBucket,
+  activeTabLabel,
 }: VacancyFunnelTableProps): JSX.Element {
   const { t } = useTranslation();
   const [activeNotes, setActiveNotes] = useState<ActiveNotesModal | null>(null);
@@ -52,6 +53,10 @@ export function VacancyFunnelTable({
     setActiveNotes({ workerId, workerName: row?.workerName ?? null });
   }
 
+  // Modo lista ordena por km crescente (DX-3.11) — mesmo comparador do Kanban e do match.
+  // `handleOpenNotes` acima continua procurando em `rows`, não em `orderedRows`.
+  const orderedRows = [...rows].sort(compareByDistanceKm);
+
   if (isLoading && rows.length === 0) {
     return (
       <div className="py-12 flex flex-col items-center gap-2">
@@ -74,7 +79,7 @@ export function VacancyFunnelTable({
     <>
       <Table
         role="table"
-        aria-label={`${t('admin.vacancyDetail.funnelTabs.' + activeBucket.toLowerCase().replace('_', ''))} funnel`}
+        aria-label={`${activeTabLabel} funnel`}
         className="border-collapse"
       >
         <TableHeader>
@@ -88,11 +93,11 @@ export function VacancyFunnelTable({
           ))}
         </TableHeader>
         <TableBody>
-          {rows.map((row, index) => (
+          {orderedRows.map((row, index) => (
             <VacancyFunnelTableRow
               key={row.id}
               row={row}
-              isLast={index === rows.length - 1}
+              isLast={index === orderedRows.length - 1}
               onOpenNotes={handleOpenNotes}
             />
           ))}

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { ApiError } from '@infrastructure/http/ApiError';
 import type { EncuadreRole } from '@domain/entities/EncuadreRole';
+import { MOVE_REASON_REQUIRED, COMPATIBLE_READ_ONLY } from '@domain/entities/MoveReason';
 
 export interface MoveEncuadreError {
   message: string;
@@ -32,6 +33,8 @@ interface FunnelEncuadre {
   matchScore: number | null;
   talentumStatus: string | null;
   workZone: string | null;
+  /** km do candidato até a vaga (DX-3.10); null = tentativa negada ou sem geocoding. Fase 3 ordena, não exibe. */
+  distanceKm?: number | null;
   redireccionamiento: string | null;
   acquisitionChannel?: string | null;
   internalStage?: string | null;
@@ -61,15 +64,15 @@ interface FunnelEncuadre {
 }
 
 export interface FunnelStages {
+  COMPATIBLE: FunnelEncuadre[];
   INVITED: FunnelEncuadre[];
-  /** Blocked postulation attempts (worker_blocked_applications) — no encuadreId, cards are drag-disabled */
-  BLOQUEADO: FunnelEncuadre[];
   INICIADO: FunnelEncuadre[];
   PRE_SCREENING: FunnelEncuadre[];
   IN_PROGRESS: FunnelEncuadre[];
   COMPLETED: FunnelEncuadre[];
   CONFIRMED: FunnelEncuadre[];
   SELECTED: FunnelEncuadre[];
+  QUICK_RESPONSE_TEAM: FunnelEncuadre[];
   REJECTED: FunnelEncuadre[];
 }
 
@@ -113,7 +116,7 @@ export function useWJAFunnel(vacancyId: string | undefined) {
   const moveEncuadre = useCallback(async (
     encuadreId: string,
     targetStage: string,
-    rejectionReasonCategory?: string,
+    reasonCategory?: string,
     role?: EncuadreRole,
     /** Data/hora da entrevista ao agendar. Ausente = "ainda não sei" (válido). */
     schedule?: { interviewDate: string; interviewTime: string; interviewMeetLink?: string },
@@ -121,15 +124,20 @@ export function useWJAFunnel(vacancyId: string | undefined) {
     try {
       await AdminApiService.moveEncuadre(encuadreId, {
         targetStage,
-        rejectionReasonCategory,
+        reasonCategory,
         role,
         ...schedule,
       });
       await fetchFunnel();
       return null;
     } catch (err) {
-      console.error('Failed to move encuadre:', err);
       if (err instanceof ApiError) {
+        // 422 MOVE_REASON_REQUIRED (DX-4.6/DX-4.10) e COMPATIBLE_READ_ONLY (DX-5.6) são fluxo
+        // esperado — o board abre o diálogo do motivo, ou o banner âmbar explica a recusa;
+        // nenhum dos dois é falha de sistema.
+        if (err.code !== MOVE_REASON_REQUIRED && err.code !== COMPATIBLE_READ_ONLY) {
+          console.error('Failed to move encuadre:', err);
+        }
         return {
           message: err.message,
           code: err.code,
@@ -137,6 +145,7 @@ export function useWJAFunnel(vacancyId: string | undefined) {
           workerStatus: err.workerStatus,
         };
       }
+      console.error('Failed to move encuadre:', err);
       return {
         message: err instanceof Error ? err.message : 'Erro desconhecido',
       };

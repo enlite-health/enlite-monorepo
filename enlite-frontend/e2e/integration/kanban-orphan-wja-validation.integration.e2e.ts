@@ -39,7 +39,7 @@ import {
 
 // ── DB helpers ─────────────────────────────────────────────────────────────────
 
-const CONTAINER = 'enlite-postgres';
+const CONTAINER = process.env.E2E_PG_CONTAINER || 'enlite-postgres';
 const DB_USER = 'enlite_admin';
 const DB_NAME = 'enlite_e2e';
 
@@ -179,12 +179,12 @@ test.describe('Kanban Orphan WJA Validation @integration', () => {
     await openKanban(page, vacancyId);
 
     const invited = await page.locator('[data-testid="kanban-column-INVITED-count"]').textContent();
+    // Pre Screening une PRE_SCREENING + IN_PROGRESS (DX-2.1/DX-2.2): a órfã PRE_SCREENING
+    // e a órfã IN_PROGRESS caem na mesma coluna, por isso o piso sobe para >= 2.
     const preScrCount = await page.locator('[data-testid="kanban-column-PRE_SCREENING-count"]').textContent();
-    const inProgress = await page.locator('[data-testid="kanban-column-IN_PROGRESS-count"]').textContent();
 
     expect(Number(invited), 'INVITED deve ter >= 1 card (órfã)').toBeGreaterThanOrEqual(1);
-    expect(Number(preScrCount), 'PRE_SCREENING deve ter >= 1 card (órfã)').toBeGreaterThanOrEqual(1);
-    expect(Number(inProgress), 'IN_PROGRESS deve ter >= 1 card (órfã)').toBeGreaterThanOrEqual(1);
+    expect(Number(preScrCount), 'PRE_SCREENING deve ter >= 2 cards (órfã PRE_SCREENING + órfã IN_PROGRESS)').toBeGreaterThanOrEqual(2);
 
     // DraggableCard deve existir pelo WJA id (card.id = wja.id)
     const orphanDraggable = page.locator(`[data-testid="kanban-draggable-${orphanWjaIdInvited}"]`);
@@ -385,13 +385,13 @@ test.describe('Kanban Orphan WJA Validation @integration', () => {
 
     const stages = body.data.stages;
     for (const stage of [
-      'INVITED', 'BLOQUEADO', 'INICIADO', 'PRE_SCREENING', 'IN_PROGRESS',
+      'INVITED', 'INICIADO', 'PRE_SCREENING', 'IN_PROGRESS',
       'COMPLETED', 'CONFIRMED', 'SELECTED', 'REJECTED',
     ]) {
       expect(stages, `Stage ${stage} deve estar presente`).toHaveProperty(stage);
     }
 
-    console.log('[Gate 5] Contrato da API OK — todos os 9 stages presentes, fix não quebrou estrutura');
+    console.log('[Gate 5] Contrato da API OK — todos os 8 stages presentes (backend continua com IN_PROGRESS, DX-2.2), fix não quebrou estrutura');
     console.log(`[Gate 5] Total cards: ${body.data.totalEncuadres}`);
   });
 });
