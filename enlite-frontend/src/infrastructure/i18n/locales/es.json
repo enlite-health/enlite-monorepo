@@ -3842,6 +3842,7 @@
           "viewVacancyAria": "Ver vacante de {{service}}",
           "viewVacancy": "Ver vacante",
           "activateRecruitmentToast": "Vacante en borrador creada",
+          "activateRecruitmentPatientNotMoved": "Vacante creada. El paciente sigue en Admisión: falta {{items}} en un servicio activo.",
           "activateRecruitmentError": "No se pudo activar el reclutamiento",
           "activateRecruitmentAlreadyRecruiting": "Este servicio ya tiene una vacante en curso"
         },

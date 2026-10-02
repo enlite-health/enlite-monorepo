@@ -17,7 +17,8 @@ function ToastItem({ toast }: { toast: Toast }): JSX.Element {
   }, [toast.id, dismissToast]);
 
   const isError = toast.type === 'error';
-  const Icon = isError ? AlertCircle : CheckCircle2;
+  const isWarning = toast.type === 'warning';
+  const Icon = isError || isWarning ? AlertCircle : CheckCircle2;
 
   return (
     <div
@@ -26,7 +27,9 @@ function ToastItem({ toast }: { toast: Toast }): JSX.Element {
       className={`flex items-center gap-2 px-4 py-3 rounded-input shadow-lg border ${
         isError
           ? 'bg-red-50 border-red-200 text-red-700'
-          : 'bg-green-50 border-green-200 text-green-700'
+          : isWarning
+            ? 'bg-amber-50 border-amber-200 text-amber-800'
+            : 'bg-green-50 border-green-200 text-green-700'
       }`}
     >
       <Icon className="w-4 h-4 shrink-0" />

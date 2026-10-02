@@ -180,6 +180,7 @@ export class AdminPatientContractedServicesController {
           vacancyId: result.vacancyId,
           patientStatus: result.patientStatus,
           statusChanged: result.statusChanged,
+          ...(result.patientNotMoved ? { patientNotMoved: result.patientNotMoved } : {}),
         },
       });
     } catch (err: unknown) {

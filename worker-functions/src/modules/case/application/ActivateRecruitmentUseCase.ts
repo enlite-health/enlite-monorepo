@@ -69,6 +69,11 @@ export interface ActivateRecruitmentResult {
   vacancyId: string;
   patientStatus: string;
   statusChanged: boolean;
+  /**
+   * D469 — aditivo e opcional: presente só quando o paciente estava no funil mas NÃO foi movido
+   * por falta de completude (a vaga nasceu mesmo assim). Só CÓDIGOS do checklist, nunca texto.
+   */
+  patientNotMoved?: { missing: string[] };
 }
 
 /**
@@ -315,7 +320,7 @@ export class ActivateRecruitmentUseCase {
       if (!(err instanceof PatientStatusNotReadyError)) throw err;
       // Outro serviço ativo sem horário: a vaga já foi criada (rascunho) e fica; o paciente não move.
       functions.logger.warn("activate_recruitment.patient_not_moved", { patientId, serviceId, missing: err.missing });
-      return { vacancyId, patientStatus: status, statusChanged: false };
+      return { vacancyId, patientStatus: status, statusChanged: false, patientNotMoved: { missing: [...err.missing] } };
     }
     return { vacancyId, patientStatus: "SEARCHING", statusChanged: true };
   }
