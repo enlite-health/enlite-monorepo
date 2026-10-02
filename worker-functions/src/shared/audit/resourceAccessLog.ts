@@ -26,14 +26,16 @@ import { currentDbContext, withSystemDbContext, type DbSessionContext } from '@s
 // `ResourceType` teve um 3º valor, 'patient_document' (spec 018, PR-4, D329; lex-pr4-documentos
 // #10): trilha de leitura da PROVA documental. Removido por completo junto com `patient_documents`
 // (fix/018-remover-documentos-consentimento) — sem call site, `patient_documents` não existe mais.
-export type ResourceType = 'patient' | 'worker';
+// Spec 032: 'anacare_patient' = paciente da FONTE Ana Care (id da fonte, não o uuid de `patients`) —
+// trilha da exportação de horas do financeiro. Sem tabela de país (ver `COUNTRY_SOURCE`).
+export type ResourceType = 'patient' | 'worker' | 'anacare_patient';
 export type AccessOrigin = 'same_country' | 'group_grant' | 'system';
 
 /** Rótulo único de contexto de sistema desta trilha (um por ciclo de gravação). */
 const SYSTEM_LABEL = 'job:resource-access-log';
 
 /** De onde sai o país do recurso, para classificar a origem do acesso. */
-const COUNTRY_SOURCE: Record<ResourceType, string> = {
+const COUNTRY_SOURCE: Partial<Record<ResourceType, string>> = {
   patient: 'SELECT country FROM patients WHERE id = $1',
   worker: 'SELECT country FROM workers WHERE id = $1',
 };
@@ -145,9 +147,14 @@ async function resolveAccessOriginUnderSystemContext(
 ): Promise<AccessOrigin> {
   if (!context.country) return 'group_grant';
 
+  // Recurso sem tabela de país (`anacare_patient`): o universo do Ana Care é o da Enlite AR (D340),
+  // então staff COM país é `same_country` — sem consulta.
+  const countrySql = COUNTRY_SOURCE[resourceType];
+  if (!countrySql) return 'same_country';
+
   try {
     const pool = DatabaseConnection.getInstance().getPool();
-    const result = await pool.query<{ country: string | null }>(COUNTRY_SOURCE[resourceType], [
+    const result = await pool.query<{ country: string | null }>(countrySql, [
       resourceId,
     ]);
     const country = result.rows[0]?.country;
