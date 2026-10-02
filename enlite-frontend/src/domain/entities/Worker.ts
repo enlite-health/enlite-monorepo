@@ -161,7 +161,7 @@ export interface WorkerServiceAreaUpdatePayload {
 
 export interface WorkerDetail {
   id: string;
-  email: string;
+  email: string | null;
   phone: string | null;
   whatsappPhone: string | null;
   country: string;

@@ -17,7 +17,7 @@ import { DocsStatusBadge } from '@presentation/components/atoms/DocsStatusBadge'
 export interface WorkerRow {
   id: string;
   name: string;
-  email: string;
+  email: string | null;
   casesCount: number;
   documentsComplete: boolean;
   documentsStatus: string;
@@ -113,7 +113,7 @@ export function WorkersTable({ workers, onRowClick, renderAction }: WorkersTable
                       {row.name}
                     </Text>
                     <Text as="span" size="xs" color="muted">
-                      {row.email}
+                      {row.email || '—'}
                     </Text>
                   </div>
                 </TableCell>

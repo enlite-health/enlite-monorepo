@@ -427,3 +427,22 @@ describe('WorkerDetailPage — error state', () => {
     expect(screen.queryByTestId('worker-encuadres-card')).not.toBeInTheDocument();
   });
 });
+
+// ── Worker sem e-mail (spec 040 T4.0: workers.email passou a ser anulável) ───────
+
+describe('WorkerDetailPage — worker sem e-mail e sem nome', () => {
+  it('o título não cai em e-mail nulo: mostra "—", nunca "null"', () => {
+    mockUseWorkerDetail.mockReturnValue({
+      worker: { ...MOCK_WORKER, firstName: null, lastName: null, email: null },
+      isLoading: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    render(<WorkerDetailPage />);
+
+    const heading = screen.getByRole('heading', { level: 1 });
+    expect(heading).toHaveTextContent('—');
+    expect(heading).not.toHaveTextContent('null');
+  });
+});

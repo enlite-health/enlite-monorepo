@@ -15,7 +15,7 @@ export type InitWorkerResponse =
 export interface WorkerProgressResponse {
   id: string;
   authUid: string;
-  email: string;
+  email: string | null;
   phone?: string;
   whatsappPhone?: string;
   lgpdConsentAt?: string;
@@ -87,7 +87,7 @@ export interface AvailabilitySlotResponse {
 /** Payload for POST /api/workers/init */
 export interface InitWorkerPayload {
   authUid: string;
-  email: string;
+  email: string | null;
   phone?: string;
   whatsappPhone?: string;
   lgpdOptIn?: boolean;
