@@ -3512,6 +3512,7 @@
         "tabs": {
           "clinicalData": "Datos Clínicos",
           "supportNetwork": "Red de Apoyo",
+          "documents": "Documentos",
           "contractedService": "Servicio Contratado",
           "vacancies": "Vacantes",
           "encuadre": "Encuadre",
@@ -3520,6 +3521,38 @@
           "matching": "Encuadre",
           "appointments": "Agendamientos",
           "history": "Historial"
+        },
+        "documentsTab": {
+          "title": "Documentos",
+          "labelPlaceholder": "Nombre del documento (ej: DNI frente)",
+          "labelAria": "Nombre del documento",
+          "selectFile": "Seleccionar archivo (PDF, JPG, PNG, DOCX)",
+          "upload": "Subir",
+          "uploading": "Subiendo…",
+          "empty": "No hay documentos",
+          "loading": "Cargando...",
+          "loadError": "No pudimos cargar los documentos. Probá de nuevo.",
+          "originTab": "Subido en la ficha",
+          "originChat": "Enviado por el chat",
+          "author": "Por {{name}}",
+          "unknownAuthor": "Autor desconocido",
+          "untitled": "Documento sin nombre",
+          "view": "Ver",
+          "viewError": "No pudimos abrir el documento. Probá de nuevo.",
+          "popupBlocked": "Tu navegador bloqueó la ventana emergente. Habilitá los pop-ups para ver el documento.",
+          "rename": "Renombrar",
+          "renameInputLabel": "Nuevo nombre del documento",
+          "renameEmpty": "El nombre no puede estar vacío",
+          "renameFailed": "No pudimos renombrar el documento. Probá de nuevo.",
+          "invalidLabel": "El nombre debe tener entre 1 y 255 caracteres",
+          "delete": "Eliminar",
+          "deleteConfirmOpen": "¿Eliminar «",
+          "deleteConfirmClose": "»?",
+          "deleteConfirmBody": "Esta acción no se puede deshacer.",
+          "deleteConfirmCancel": "Cancelar",
+          "deleteConfirmYes": "Eliminar",
+          "deleteConfirmBusy": "Eliminando…",
+          "deleteFailed": "No pudimos eliminar el documento. Probá de nuevo."
         },
         "encuadreTab": {
           "tableSex": "Sexo",
@@ -4231,7 +4264,8 @@
               "download": "Descargar adjunto",
               "downloadError": "No pudimos descargar el archivo. Probá de nuevo.",
               "genericName": "Archivo",
-              "popupBlocked": "Tu navegador bloqueó la ventana emergente. Habilitá los pop-ups para descargar el archivo."
+              "popupBlocked": "Tu navegador bloqueó la ventana emergente. Habilitá los pop-ups para descargar el archivo.",
+              "deleted": "Documento eliminado"
             }
           },
           "composer": {
@@ -4708,7 +4742,8 @@
             "own_presence": "Mi presencia en línea",
             "staff_directory": "Directorio del equipo",
             "patient_service_team": "Encuadre del servicio contratado (rechazar/revertir)",
-            "patient_itinerary": "Itinerario del paciente (armar)"
+            "patient_itinerary": "Itinerario del paciente (armar)",
+            "patient_document": "Documentos del paciente"
           },
           "help": {
             "open": "Qué hace este permiso",
@@ -5079,7 +5114,8 @@
             "itinerary": "Itinerario del paciente (asignar)",
             "operational": "Estado, activación e historial",
             "therapeuticProject": "Proyecto terapéutico",
-            "conversation": "Conversación"
+            "conversation": "Conversación",
+            "documents": "Documentos"
           }
         },
         "patients.chatRoles": {
