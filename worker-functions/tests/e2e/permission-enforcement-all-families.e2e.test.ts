@@ -207,6 +207,9 @@ describe('C1 — engine ligado com as 12 famílias de uma vez (HTTP real, banco 
     const { createAdminConversationRoutes } = await import(
       '../../src/modules/conversation/interfaces/routes/adminConversationRoutes'
     );
+    const { createPatientDocumentsRoutes } = await import(
+      '../../src/modules/patient-documents/interfaces/routes/patientDocumentsRoutes'
+    );
     const { createAdminNotificationRoutes } = await import(
       '../../src/modules/inapp-notification/interfaces/routes/adminNotificationRoutes'
     );
@@ -231,6 +234,7 @@ describe('C1 — engine ligado com as 12 famílias de uma vez (HTTP real, banco 
       createWorkerEncuadreRoutes,
       createAdminPatientsRoutes,
       createAdminConversationRoutes,
+      createPatientDocumentsRoutes,
       createAdminNotificationRoutes,
       createAdminUsersRoutes,
       createAdminStaffDirectoryRoutes,
@@ -281,6 +285,7 @@ describe('C1 — engine ligado com as 12 famílias de uma vez (HTTP real, banco 
       createWorkerEncuadreRoutes,
       createAdminPatientsRoutes,
       createAdminConversationRoutes,
+      createPatientDocumentsRoutes,
       createAdminNotificationRoutes,
       createAdminUsersRoutes,
       createAdminStaffDirectoryRoutes,
@@ -394,6 +399,15 @@ describe('C1 — engine ligado com as 12 famílias de uma vez (HTTP real, banco 
       'admin.patients',
       '/api/admin',
       createAdminConversationRoutes(auth, permissions),
+    );
+
+    // Spec 031 (02/10): `patient_document:*` (`patientDocumentsRoutes.ts`) — mesma família `admin.patients`,
+    // mesmo prefixo `/api/admin`, igual ao `src/index.ts` real. Sem este mount as 5 rotas de documento
+    // nunca aparecem na varredura viva desta família (falso verde).
+    montarFamilia(
+      'admin.patients',
+      '/api/admin',
+      createPatientDocumentsRoutes(auth, permissions, controllerStub('patientDocuments') as never),
     );
 
     // ── admin.permissions (use case REAL — leitura/escrita no banco isolado) ─
