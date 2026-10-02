@@ -24,6 +24,7 @@ import { ServicosContratadosCard } from '@presentation/components/features/admin
 import { PatientVacanciesCard } from '@presentation/components/features/admin/PatientDetail/PatientVacanciesCard';
 import { PatientChatIdsCard } from '@presentation/components/features/admin/PatientDetail/PatientChatIdsCard';
 import { PatientConversationHandle } from '@presentation/components/features/admin/PatientDetail/conversation/PatientConversationHandle';
+import { PatientDocumentsSection } from '@presentation/components/features/admin/PatientDetail/documents/PatientDocumentsSection';
 import { PatientStatusControl } from '@presentation/components/features/admin/PatientDetail/PatientStatusControl';
 import { PatientStatusHistoryCard } from '@presentation/components/features/admin/PatientDetail/PatientStatusHistoryCard';
 import { CompletenessChecklist } from '@presentation/components/features/admin/PatientDetail/CompletenessChecklist';
@@ -304,6 +305,12 @@ export default function PatientDetailPage() {
               <PatientChatIdsCard patient={patient} onSaved={refetch} />
             </ContainerGate>
           </>
+        )}
+        {/* Spec 031 (D463): documentos do paciente — container próprio, célula `patient_document:*`. */}
+        {shownTab === 'documents' && (
+          <ContainerGate resource="patient_document">
+            <PatientDocumentsSection patientId={patient.id} />
+          </ContainerGate>
         )}
         {shownTab === 'contractedService' && (
           <>
