@@ -67,6 +67,25 @@ export interface TalentumProject {
   timestamp: string;
   questions: TalentumQuestionWithId[];
   faq: TalentumFaq[];
+  /** v2: status do projeto (IN_PROGRESS, PAUSED...), tipo (FULL/ATS/PHONE_CALL) e papel da conta (OWNER/VIEWER). */
+  status?: string;
+  type?: string;
+  myRole?: string;
+}
+
+/** Candidato da v2 (`candidates` / `ready-for-interview`). Só `profileId` é garantido; nunca logar o resto. */
+export interface TalentumCandidate {
+  profileId: string;
+  firstName?: string;
+  lastName?: string;
+  phoneNumber?: string;
+  email?: string;
+  [key: string]: unknown;
+}
+
+export interface TalentumCandidatesPage {
+  candidates: TalentumCandidate[];
+  total: number;
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -119,4 +138,10 @@ export interface ITalentumApiClient {
 
   /** Iterate all pages and return every project. */
   listAllPrescreenings(): Promise<TalentumProject[]>;
+
+  /** v2: candidatos de um projeto (telefone, sem e-mail), 1 página. */
+  listCandidates(projectId: string, page: number): Promise<TalentumCandidatesPage>;
+
+  /** v2: qualificados do projeto (com e-mail), 1 página. */
+  listReadyForInterview(projectId: string, page: number): Promise<TalentumCandidatesPage>;
 }
