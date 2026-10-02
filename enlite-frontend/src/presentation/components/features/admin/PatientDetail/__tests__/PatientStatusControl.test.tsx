@@ -41,7 +41,7 @@ describe('PatientStatusControl', () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it('mostra os 7 estados clínicos traduzidos (ALTA entrou na migration 473, D430) com o atual selecionado; Guardar desabilitado sem mudança', () => {
+  it('mostra os 7 estados clínicos traduzidos (ALTA entrou na migration 498, D430) com o atual selecionado; Guardar desabilitado sem mudança', () => {
     render(<PatientStatusControl patient={active} onSaved={vi.fn()} />);
     const select = screen.getByTestId('patient-status-select') as HTMLSelectElement;
     expect(select.value).toBe('ACTIVE');
