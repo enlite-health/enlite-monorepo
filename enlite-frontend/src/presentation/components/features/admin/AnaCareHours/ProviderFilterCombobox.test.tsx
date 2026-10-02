@@ -154,4 +154,34 @@ describe('ProviderFilterCombobox', () => {
     rerender(<ProviderFilterCombobox id="combo" options={OPTIONS} value="p2" onValueChange={vi.fn()} placeholder="Todos" ariaLabel="Filtrar" />);
     expect(screen.getByTestId('combo')).toHaveValue('Gómez QA');
   });
+
+  describe('props opcionais (spec 032 — reuso pelo diálogo de exportação)', () => {
+    it('noMatchLabel substitui o texto de "nenhum prestador"', () => {
+      render(<ProviderFilterCombobox id="combo" options={OPTIONS} value="" onValueChange={vi.fn()} placeholder="Paciente" ariaLabel="Paciente" noMatchLabel="Ningún paciente" />);
+      fireEvent.change(screen.getByTestId('combo'), { target: { value: 'zzz' } });
+      expect(screen.getByTestId('combo-no-match')).toHaveTextContent('Ningún paciente');
+      expect(screen.queryByText('admin.anacareHours.list.providerFilterNoMatch')).not.toBeInTheDocument();
+    });
+
+    it('hideAllOption esconde a linha "todos" da listbox', () => {
+      render(<ProviderFilterCombobox id="combo" options={OPTIONS} value="" onValueChange={vi.fn()} placeholder="Paciente" ariaLabel="Paciente" hideAllOption />);
+      fireEvent.focus(screen.getByTestId('combo'));
+      expect(screen.queryByTestId('combo-option-all')).not.toBeInTheDocument();
+      expect(screen.getByTestId('combo-option-p1')).toBeInTheDocument();
+    });
+
+    it('option.searchText amplia o que a busca casa (ex.: o ID), sem mudar o rótulo exibido', () => {
+      const opts = [{ value: 'AC-PAT-1', label: 'Lucía QA', searchText: 'Lucía QA AC-PAT-1' }, { value: 'p2', label: 'Gómez QA' }];
+      render(<ProviderFilterCombobox id="combo" options={opts} value="" onValueChange={vi.fn()} placeholder="Paciente" ariaLabel="Paciente" />);
+      fireEvent.change(screen.getByTestId('combo'), { target: { value: 'ac-pat-1' } });
+      expect(screen.getByTestId('combo-option-AC-PAT-1')).toHaveTextContent('Lucía QA');
+      expect(screen.queryByTestId('combo-option-p2')).not.toBeInTheDocument();
+    });
+
+    it('searchText ausente: continua filtrando só pelo rótulo (comportamento atual)', () => {
+      render(<ProviderFilterCombobox id="combo" options={OPTIONS} value="" onValueChange={vi.fn()} placeholder="Todos" ariaLabel="Filtrar" />);
+      fireEvent.change(screen.getByTestId('combo'), { target: { value: 'p1' } });
+      expect(screen.getByTestId('combo-no-match')).toBeInTheDocument();
+    });
+  });
 });
