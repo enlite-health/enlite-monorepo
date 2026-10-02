@@ -21,7 +21,7 @@
  * Único mock de navegador: `/generate-ai-content` (Gemini custaria). `publish-talentum`
  * (POST) e o despublicar (DELETE no mesmo caminho) NUNCA são mockados: vão ao backend, que vai
  * ao stub da Talentum (porta 9914, `startTalentumStub`) — por isso `stub.calls` prova os 2
- * `POST /pre-screening/projects` (1º lançamento + republicação) e o 1 `DELETE` (despublicar).
+ * `POST /projects` (1º lançamento + republicação) e o 1 `DELETE` (despublicar).
  *
  * Helpers: `lancamento-e2e-helper.ts` (P4 — stub, seed do paciente lançável, caminho foguete→
  * wizard→publish), `funnel-move-e2e-helper.ts` (`readPatientStatusApi`, `chooseReasonInModal`),
@@ -192,7 +192,7 @@ test.describe('funil-vacante lancamento idempotente @integration', () => {
       expect(trailAfterUnpublish, 'trilha vacancy_launch continua 1 depois do despublicar').toBe(1);
 
       const deleteCallsToStub = stub.calls.filter(
-        (c) => c.method === 'DELETE' && /^\/pre-screening\/projects\/stub-proj-\d+$/.test(c.path),
+        (c) => c.method === 'DELETE' && /^\/projects\/stub-proj-\d+$/.test(c.path),
       ).length;
       expect(deleteCallsToStub, 'stub.calls tem o DELETE (o backend encaminhou o despublicar à Talentum)').toBe(1);
 
@@ -260,9 +260,9 @@ test.describe('funil-vacante lancamento idempotente @integration', () => {
       ).toBeVisible({ timeout: 10_000 });
 
       const createCallsToStub = stub.calls.filter(
-        (c) => c.method === 'POST' && c.path === '/pre-screening/projects',
+        (c) => c.method === 'POST' && c.path === '/projects',
       ).length;
-      expect(createCallsToStub, 'stub.calls com 2 POST /pre-screening/projects (1º lançamento + republicação)').toBe(2);
+      expect(createCallsToStub, 'stub.calls com 2 POST /projects (1º lançamento + republicação)').toBe(2);
       const totalDeleteCallsToStub = stub.calls.filter((c) => c.method === 'DELETE').length;
       expect(totalDeleteCallsToStub, 'stub.calls com 1 DELETE (só o despublicar)').toBe(1);
 

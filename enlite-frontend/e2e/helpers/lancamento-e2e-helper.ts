@@ -56,12 +56,13 @@ export interface TalentumStub {
 }
 
 /**
- * Stub da Talentum: aceita o ciclo `POST /auth/login` (cookies `tl_auth`+`tl_refresh`, os dois —
- * `TalentumApiClient.login()` exige ambos), `POST /pre-screening/projects` (cria), `GET
- * /pre-screening/projects/:id` (dá `whatsappUrl`/`slug`, os campos que `PublishVacancyToTalentumUseCase`
- * lê) e `DELETE /pre-screening/projects/:id`. Porta de `TALENTUM_STUB_PORT` (default 9914) — um
- * processo por vez (Playwright `--workers=1`, o stub é por processo). `stub.mode = 'reject'` faz o
- * PRÓXIMO `POST /pre-screening/projects` devolver 500 `{"error":"stub-reject"}` (critério 7,
+ * Stub da Talentum v2: aceita o ciclo `POST /auth/login` (cookies `tl_auth`+`tl_refresh`, os dois —
+ * `TalentumApiClient.login()` exige ambos), `POST /projects` (cria; devolve só `projectId`), e por projeto
+ * `GET /projects/:id/prescreening` (dá `publicId`/`slug`, os campos que `PublishVacancyToTalentumUseCase`
+ * lê para montar o link WEB), `PATCH /prescreening`, `PUT /prescreening/job-description`, `POST
+ * /complete-submodule`, `POST /init` e `DELETE /projects/:id`. Porta de `TALENTUM_STUB_PORT` (default
+ * 9914) — um processo por vez (Playwright `--workers=1`, o stub é por processo). `stub.mode = 'reject'`
+ * faz o PRÓXIMO `POST /projects` devolver 500 `{"error":"stub-reject"}` (critério 7,
  * DX-6.12). `calls` guarda só `{ method, path }` — nunca o corpo (a vaga leva título/descrição nele).
  */
 export function startTalentumStub(): Promise<TalentumStub> {
@@ -69,6 +70,7 @@ export function startTalentumStub(): Promise<TalentumStub> {
   const calls: TalentumStubCall[] = [];
   let mode: 'accept' | 'reject' = 'accept';
   let projectSeq = 0;
+  const publicIds = new Map<string, string>();
 
   const server = http.createServer((req, res) => {
     req.on('data', () => {
@@ -88,7 +90,7 @@ export function startTalentumStub(): Promise<TalentumStub> {
         return;
       }
 
-      if (method === 'POST' && path === '/pre-screening/projects') {
+      if (method === 'POST' && path === '/projects') {
         if (mode === 'reject') {
           res.writeHead(500, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: 'stub-reject' }));
@@ -97,25 +99,64 @@ export function startTalentumStub(): Promise<TalentumStub> {
         projectSeq += 1;
         // `talentum_public_id` é UUID no schema (migration 106) — publicId tem de ser um UUID de
         // verdade; só `projectId` (VARCHAR) precisa ser previsível para o GET/DELETE por caminho.
+        // v2: o POST devolve só `projectId`; o `publicId` vem do GET /projects/:id/prescreening.
+        const id = `stub-proj-${projectSeq}`;
+        publicIds.set(id, randomUUID());
         res.writeHead(201, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ projectId: `stub-proj-${projectSeq}`, publicId: randomUUID() }));
+        res.end(JSON.stringify({ projectId: id }));
         return;
       }
 
-      const getMatch = /^\/pre-screening\/projects\/stub-proj-(\d+)$/.exec(path);
-      if (method === 'GET' && getMatch) {
-        const n = getMatch[1];
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(
-          JSON.stringify({ whatsappUrl: `https://stub.talentum.invalid/wa/${n}`, slug: `stub-slug-${n}` }),
-        );
-        return;
-      }
-
-      if (method === 'DELETE' && /^\/pre-screening\/projects\/stub-proj-\d+$/.test(path)) {
-        res.writeHead(204);
-        res.end();
-        return;
+      const projMatch = /^\/projects\/(stub-proj-\d+)(\/.*)?$/.exec(path);
+      if (projMatch && publicIds.has(projMatch[1])) {
+        const id = projMatch[1];
+        const sub = projMatch[2] ?? '';
+        if (method === 'GET' && sub === '/prescreening') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(
+            JSON.stringify({
+              projectId: id,
+              title: id,
+              publicId: publicIds.get(id),
+              slug: `stub-slug-${id}`,
+              active: true,
+              jobDescription: { text: '', truncated: false },
+              questions: [],
+            }),
+          );
+          return;
+        }
+        if (method === 'GET' && sub === '') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ project: { _id: id, status: 'IN_PROGRESS', type: 'FULL', myRole: 'OWNER' } }));
+          return;
+        }
+        if (method === 'PATCH' && sub === '/prescreening') {
+          res.writeHead(204);
+          res.end();
+          return;
+        }
+        if (method === 'PUT' && sub === '/prescreening/job-description') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ text: '', truncated: false }));
+          return;
+        }
+        if (method === 'POST' && sub === '/complete-submodule') {
+          res.writeHead(204);
+          res.end();
+          return;
+        }
+        if (method === 'POST' && sub === '/init') {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end('{}');
+          return;
+        }
+        if (method === 'DELETE' && sub === '') {
+          publicIds.delete(id);
+          res.writeHead(204);
+          res.end();
+          return;
+        }
       }
 
       res.writeHead(405, { 'Content-Type': 'application/json' });

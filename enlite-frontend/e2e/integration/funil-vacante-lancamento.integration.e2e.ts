@@ -184,9 +184,9 @@ test.describe('funil-vacante lancamento @integration', () => {
       expect(localCount, 'controle positivo: requests à própria API').toBeGreaterThan(0);
 
       const talentumCreateCalls = stub.calls.filter(
-        (c) => c.method === 'POST' && c.path === '/pre-screening/projects',
+        (c) => c.method === 'POST' && c.path === '/projects',
       ).length;
-      expect(talentumCreateCalls, 'stub.calls POST /pre-screening/projects').toBe(1);
+      expect(talentumCreateCalls, 'stub.calls POST /projects').toBe(1);
 
       console.log('[6.5] lancamento-move-para-busqueda', {
         compatibleCount,
