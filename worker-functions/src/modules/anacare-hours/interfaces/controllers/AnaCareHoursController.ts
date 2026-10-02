@@ -8,6 +8,7 @@
  *   POST /shifts/:shiftId/validate            → 204 | 404 | 409 | validate
  *   POST /shifts/validate-batch               → 200 (por item) | 400 | validate
  *   POST /shifts/:shiftId/contest             → 204 | 400 | 404 | 409 | validate
+ *   GET  /patients/:patientId/export          → 200 xlsx | 400 | 503 | read + export (spec 032)
  *
  * Fail-closed: SEM `ANACARE_HOURS_SOURCE=fake`, todo endpoint responde 503
  * `ANACARE_SOURCE_NOT_CONFIGURED` — produção nunca serve dado falso por omissão (spec F1).
@@ -20,6 +21,8 @@ import { AuthMiddleware } from '@modules/identity';
 import { cellsOfRequest, cellKey, CELL_WORKER_CONTACT_READ } from '@modules/identity/permissions';
 import { createAnaCareSyncDependencies } from '../../infrastructure/AnaCareSyncDependenciesFactory';
 import { AnaCareHoursService } from '../../application/AnaCareHoursService';
+import { buildAnaCareHoursWorkbook } from '../../application/AnaCareHoursExportBuilder';
+import { sanitizeFilenamePart } from '../../application/sanitizeFilenamePart';
 import { AnaCareHoursServiceError } from '../../domain/AnaCareShift';
 import {
   monthParamsSchema,
@@ -28,6 +31,8 @@ import {
   shiftParamsSchema,
   validateBatchBodySchema,
   contestShiftBodySchema,
+  exportQuerySchema,
+  patientParamsSchema,
 } from '../validators/anacareHoursSchemas';
 
 const CLINICAL_READ_CELL = cellKey('patient_clinical', 'read');
@@ -45,7 +50,11 @@ const ERROR_STATUS: Record<string, number> = {
   JA_VALIDADO: 409,
   NOTA_MUITO_LONGA: 400,
   TURNO_NAO_ENCONTRADO: 404,
+  // Spec 032: a fonte não sabe ler por intervalo — indisponibilidade da fonte, não erro do pedido.
+  FONTE_SEM_INTERVALO: 503,
 };
+
+const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
 export class AnaCareHoursController {
   constructor(private readonly serviceFactory: () => AnaCareHoursService | null = () => AnaCareHoursController.defaultServiceFactory()) {}
@@ -93,6 +102,15 @@ export class AnaCareHoursController {
   /** Item 4 (18/09): documento do paciente só sai para quem tem `patient_identity:read`. */
   private canReadPatientDocument(req: Request): boolean {
     return (cellsOfRequest(req) ?? []).includes(PATIENT_IDENTITY_READ_CELL);
+  }
+
+  /**
+   * Spec 032 (D7): nome do PACIENTE no arquivo só para quem tem `patient_identity:read` — mesmo
+   * idioma de `canReadProviderName` (engine desligado, `cells === null`, não muda comportamento).
+   */
+  private canReadPatientName(req: Request): boolean {
+    const cells = cellsOfRequest(req);
+    return cells === null || cells.includes(PATIENT_IDENTITY_READ_CELL);
   }
 
   private requireService(res: Response): AnaCareHoursService | null {
@@ -210,6 +228,36 @@ export class AnaCareHoursController {
       res.status(204).send();
     } catch (err) {
       this.handleError(res, err, 'AnaCareHoursController:contestShift');
+    }
+  }
+
+  /**
+   * Spec 032 — exporta as horas de UM paciente num período (`desde`..`hasta`, inclusivo) em xlsx
+   * (Sintético + Analítico). Nunca devolve arquivo vazio em erro: erro da fonte vira 5xx com
+   * código. O nome do arquivo usa o MESMO rótulo do cabeçalho (nome com `patient_identity:read`,
+   * senão `Sin vínculo · ID <id>`), passado por `sanitizeFilenamePart` (ASCII).
+   */
+  async exportPatientRange(req: Request, res: Response): Promise<void> {
+    const params = patientParamsSchema.safeParse(req.params);
+    const query = exportQuerySchema.safeParse(req.query);
+    if (!params.success || !query.success) {
+      res.status(400).json({ success: false, error: 'Invalid params or query' });
+      return;
+    }
+    const service = this.requireService(res);
+    if (!service) return;
+    const { patientId } = params.data;
+    const { desde, hasta } = query.data;
+    try {
+      const patient = await service.getPatientRange(desde, hasta, patientId, { canReadProviderName: this.canReadProviderName(req) });
+      const patientLabel = this.canReadPatientName(req) && patient?.name ? patient.name : `Sin vínculo · ID ${patientId}`;
+      const file = buildAnaCareHoursWorkbook({ patient, patientLabel, desde, hasta, now: new Date() });
+      res.setHeader('Content-Type', XLSX_MIME);
+      res.setHeader('Content-Disposition', `attachment; filename="${sanitizeFilenamePart(patientLabel)}-${desde}-${hasta}.xlsx"`);
+      res.setHeader('Cache-Control', 'no-store');
+      res.status(200).send(file);
+    } catch (err) {
+      this.handleError(res, err, 'AnaCareHoursController:exportPatientRange');
     }
   }
 }
