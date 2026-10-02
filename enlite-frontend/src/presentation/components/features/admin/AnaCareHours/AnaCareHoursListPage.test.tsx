@@ -185,6 +185,21 @@ describe('AnaCareHoursListPage', () => {
     expect(screen.queryByText('admin.anacareHours.stale.title')).not.toBeInTheDocument();
   });
 
+  /**
+   * Ajuste visual (Gabriel, 02/10): o seletor de mês tinha 48px contra 32px dos botões `size="sm"`
+   * e a linha da direita não centralizava com o título. Este teste MORRE se o wrapper do select
+   * perder o `h-8` (mesma altura do botão sm) ou se a linha/cabeçalho voltarem para `items-end`.
+   */
+  it('POSITIVO — seletor de mês com a altura dos botões sm (h-8) e cabeçalho centralizado', () => {
+    render(<AnaCareHoursListPage snapshot={snapshot()} onOpenPatient={vi.fn()} />);
+    const wrapper = (screen.getByLabelText('admin.anacareHours.monthAriaLabel') as HTMLSelectElement).parentElement as HTMLElement;
+    expect(wrapper.className).toContain('!h-8');
+    const actions = screen.getByTestId('anacare-hours-header-actions');
+    expect(actions.className).toContain('items-start');
+    expect(actions.parentElement?.className).toContain('items-center');
+    expect(actions.parentElement?.className).not.toContain('items-end');
+  });
+
   it('POSITIVO — troca de mês chama onMonthChange', () => {
     const onMonthChange = vi.fn();
     render(<AnaCareHoursListPage snapshot={snapshot()} onOpenPatient={vi.fn()} onMonthChange={onMonthChange} />);

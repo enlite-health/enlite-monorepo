@@ -16,7 +16,7 @@
  *    ("Horas totales de septiembre 2026", spec 037) — total, progresso e origens somam só os
  *    turnos desse mês, mesmo quando a semana mostrada tem dias do mês vizinho.
  */
-import { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ArrowLeft, RefreshCw } from 'lucide-react';
 import { PageContainer } from '@presentation/components/atoms/PageContainer';
@@ -89,6 +89,10 @@ interface AnaCareHoursDetailPageProps {
   blockReasonMode?: BlockReasonMode;
   /** Célula `anacare_hours:validate` ausente (D344) — desabilita as MESMAS ações que o retrato desatualizado desabilita, com motivo visível (nunca botão morto em silêncio). */
   disableActionsReason?: string;
+  /** Slot do botão "Exportar" (spec 032), montado pelo container. */
+  exportAction?: ReactNode;
+  /** Slot do ícone "Cambiar de paciente" (spec 032, FR-006), montado pelo container ao lado do nome. */
+  patientSwitchAction?: ReactNode;
 }
 
 export function AnaCareHoursDetailPage({
@@ -109,6 +113,8 @@ export function AnaCareHoursDetailPage({
   sinCheckinHoursMode = 'zero',
   blockReasonMode = 'corto',
   disableActionsReason,
+  exportAction,
+  patientSwitchAction,
 }: AnaCareHoursDetailPageProps): JSX.Element {
   const { t, i18n } = useTranslation();
   const patient = snapshot.patients.find((p) => p.anaCareId === patientId);
@@ -282,7 +288,8 @@ export function AnaCareHoursDetailPage({
                 {t('admin.anacareHours.detail.back')}
               </span>
             </Button>
-            <Heading level={1}>{patientDisplayName(patient)}</Heading>
+            <Heading level={1}>{patientDisplayName(patient)}{patientSwitchAction}</Heading>
+            {exportAction}
           </div>
           {onRefresh && (
             // Requisito 4: `isLoading={false}` de propósito (mesmo padrão do botão de sync,

@@ -6,6 +6,7 @@
 import type {
   AnaCareShiftsSource,
   AnaCareRetratoSourceStatus,
+  ListShiftsInRangeParams,
   ListShiftsParams,
   ListShiftsResult,
   SourceShiftDTO,
@@ -26,6 +27,11 @@ export class AnaCareShiftsSourceReal implements AnaCareShiftsSource {
       patientId: params.patientId,
       reservationId: params.reservationId,
     });
+  }
+
+  /** Spec 032: o cliente já fala `[from, to)` (to EXCLUSIVO) — repassa direto, sem `monthToDateRange`. */
+  async listShiftsInRange(params: ListShiftsInRangeParams): Promise<ListShiftsResult> {
+    return this.client.listShifts({ from: params.from, to: params.toExclusive, patientId: params.patientId });
   }
 
   async getShift(sourceShiftId: string): Promise<SourceShiftDTO | null> {

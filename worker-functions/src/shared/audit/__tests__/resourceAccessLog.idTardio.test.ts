@@ -113,4 +113,16 @@ describe('C6 — trilha de rota que resolve o recurso dentro do handler', () => 
 
     expect(inserts()[0][1]).toEqual(['u-flor', 'recruiter', 'patient', 'pat-1', 'read_detail', expect.any(String)]);
   });
+
+  it("spec 032: 'anacare_patient' lê o id de `params.patientId` (não de `params.id`) e a linha não carrega nenhum nome", async () => {
+    const req = { params: { patientId: 'AC-PAT-0' }, user: { uid: 'u-fin', roles: ['finance'] } } as unknown as Request;
+    const res = makeRes(200);
+
+    logResourceAccess('anacare_patient', 'export_xlsx:ambos:2026-09-01:2026-09-30', (r) => r.params.patientId)(req, res, jest.fn());
+    res.emit('finish');
+    await flush();
+
+    expect(inserts()).toHaveLength(1);
+    expect(inserts()[0][1]).toEqual(['u-fin', 'finance', 'anacare_patient', 'AC-PAT-0', 'export_xlsx:ambos:2026-09-01:2026-09-30', expect.any(String)]);
+  });
 });

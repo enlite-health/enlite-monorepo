@@ -16,17 +16,20 @@ vi.mock('react-router-dom', () => ({
 vi.mock('@presentation/components/features/admin/AnaCareHours/AnaCareHoursDetailContainer', () => ({
   AnaCareHoursDetailContainer: ({
     onBack,
+    onSwitchPatient,
     onMonthChange,
     patientId,
     month,
   }: {
     onBack: () => void;
+    onSwitchPatient: (id: string) => void;
     onMonthChange: (m: string) => void;
     patientId: string;
     month: string;
   }) => (
     <div data-testid="stub-detail-container" data-patient-id={patientId} data-month={month}>
       <button data-testid="stub-back" onClick={onBack} />
+      <button data-testid="stub-switch" onClick={() => onSwitchPatient('AC-PAT-6')} />
       <button data-testid="stub-month" onClick={() => onMonthChange('2026-09')} />
     </div>
   ),
@@ -63,6 +66,14 @@ describe('AnaCareHoursPatientPage', () => {
     expect(screen.getByTestId('stub-detail-container')).toHaveAttribute('data-month', '2026-09');
     fireEvent.click(screen.getByTestId('stub-back'));
     expect(mockNavigate).toHaveBeenCalledWith('/admin/anacare/horas?month=2026-09');
+  });
+
+  it('POSITIVO — trocar de paciente navega para o outro NO MESMO ?month (spec 032, FR-006)', () => {
+    mockUseParams.mockReturnValue({ patientId: '90000' });
+    searchParamsRef.current = new URLSearchParams('month=2026-09');
+    render(<AnaCareHoursPatientPage />);
+    fireEvent.click(screen.getByTestId('stub-switch'));
+    expect(mockNavigate).toHaveBeenCalledWith('/admin/anacare/horas/AC-PAT-6?month=2026-09');
   });
 
   it('NEGATIVO — ?month inválido (abc, 2026-07, futuro) cai no mês corrente, sem erro', () => {

@@ -26,6 +26,25 @@ function fakeDto(overrides: Partial<SourceShiftDTO> = {}): SourceShiftDTO {
 }
 
 describe('AnaCareShiftsSourceReal', () => {
+  it('spec 032 — listShiftsInRange repassa from / to=toExclusive / patientId ao cliente SEM monthToDateRange', async () => {
+    const listShifts = jest.fn().mockResolvedValue({ shifts: [fakeDto()], skipped: { noProvider: 0, noPatient: 0 } });
+    const client = { listShifts, getRawShift: jest.fn(), circuitBreakerOpen: false } as unknown as AnaCareSessionClient;
+    const source = new AnaCareShiftsSourceReal(client);
+
+    const result = await source.listShiftsInRange({ from: '2026-09-15', toExclusive: '2026-10-01', patientId: '42' });
+
+    expect(result).toEqual({ shifts: [fakeDto()], skipped: { noProvider: 0, noPatient: 0 } });
+    expect(listShifts).toHaveBeenCalledTimes(1);
+    expect(listShifts).toHaveBeenCalledWith({ from: '2026-09-15', to: '2026-10-01', patientId: '42' });
+  });
+
+  it('spec 032 — listShiftsInRange sem patientId não inventa filtro', async () => {
+    const listShifts = jest.fn().mockResolvedValue({ shifts: [], skipped: { noProvider: 0, noPatient: 0 } });
+    const client = { listShifts, getRawShift: jest.fn(), circuitBreakerOpen: false } as unknown as AnaCareSessionClient;
+    await new AnaCareShiftsSourceReal(client).listShiftsInRange({ from: '2026-09-30', toExclusive: '2026-10-01' });
+    expect(listShifts).toHaveBeenCalledWith({ from: '2026-09-30', to: '2026-10-01', patientId: undefined });
+  });
+
   it('listShifts delega ao session client e devolve o DTO já minimizado', async () => {
     const listShifts = jest.fn().mockResolvedValue({ shifts: [fakeDto()], skipped: { noProvider: 0, noPatient: 0 } });
     const client = { listShifts, getRawShift: jest.fn(), circuitBreakerOpen: false } as unknown as AnaCareSessionClient;

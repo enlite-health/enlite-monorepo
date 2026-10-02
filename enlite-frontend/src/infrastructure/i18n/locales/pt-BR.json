@@ -732,6 +732,11 @@
         "validationContestedSuffix_other": " · {{count}} contestados",
         "loading": "Carregando…",
         "refreshAction": "Atualizar",
+        "patientSwitchLabel": "Trocar de paciente",
+        "patientSwitchTitle": "Trocar de paciente",
+        "patientSwitchPlaceholder": "Buscar por nome ou ID",
+        "patientSwitchNoMatch": "Sem resultados",
+        "patientSwitchCancel": "Cancelar",
         "weekLabel": "Semana de {{start}} a {{end}}",
         "weekPrev": "Semana anterior",
         "weekNext": "Próxima semana",
@@ -882,6 +887,35 @@
         "done": "Sincronização completa.",
         "deduped": "Já existe uma sincronização em andamento — não iniciamos outra.",
         "interrupted": "A sincronização de {{month}} foi interrompida ao trocar de mês — pode ser retomada."
+      },
+      "export": {
+        "button": "Exportar",
+        "title": "Exportar horas de um paciente",
+        "patientLabel": "Paciente",
+        "patientPlaceholder": "Buscar paciente por nome ou ID…",
+        "patientNoMatch": "Nenhum paciente corresponde à busca.",
+        "help": "Só aparecem os pacientes da lista do mês. Um paciente que não está na lista desse mês não aparece aqui.",
+        "noPatients": "Não há pacientes para escolher: o retrato do mês ainda não foi construído.",
+        "desde": "Desde",
+        "hasta": "Até",
+        "cancel": "Cancelar",
+        "confirm": "Exportar",
+        "exporting": "Exportando…",
+        "noCell": "Você não tem permissão para exportar as horas.",
+        "reason": {
+          "noPatient": "Escolha um paciente para exportar.",
+          "hastaBeforeDesde": "Revise as datas: «Até» não pode ser anterior a «Desde».",
+          "tooLong": "O período não pode passar de 62 dias."
+        },
+        "error": {
+          "byCode": {
+            "FONTE_NAO_CONFIGURADA": "A fonte de dados do Ana Care não está configurada. Fale com a equipe técnica.",
+            "FONTE_SEM_INTERVALO": "A fonte de dados do Ana Care não permite exportar por período. Fale com a equipe técnica.",
+            "PEDIDO_INVALIDO": "O período ou o paciente não são válidos. Revise os dados.",
+            "SEM_PERMISSAO": "Você não tem permissão para exportar as horas.",
+            "DESCONHECIDO": "Não foi possível exportar. Tente de novo em alguns segundos."
+          }
+        }
       }
     },
     "managementDashboard": {

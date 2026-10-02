@@ -212,6 +212,7 @@ export class AnaCareHoursHttpService implements AnaCareHoursService {
       // fingidos quando ausentes (o spread implícito de `undefined` não aparece no objeto).
       reservationsTotal: snapshot.reservationsTotal,
       reservationsDone: snapshot.reservationsDone,
+      patients: snapshot.patients,
     };
   }
 

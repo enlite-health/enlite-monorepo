@@ -5,7 +5,7 @@
  * social ou outro filtro (regra dura do brief). Nome só aparece se o paciente/prestador está
  * vinculado à nossa base — não vinculado mostra "Sin vínculo · ID Ana Care" (regra dura).
  */
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Search } from 'lucide-react';
 import { PageContainer } from '@presentation/components/atoms/PageContainer';
@@ -47,6 +47,8 @@ interface AnaCareHoursListPageProps {
   sinCheckinHoursMode?: SinCheckinHoursMode;
   /** Botão "Sincronizar" (F6.4) — ausente quando o serviço injetado não implementa `triggerSync` (o botão some, nunca fica morto). */
   sync?: UseAnaCareHoursSyncResult;
+  /** Slot do botão "Exportar" (spec 032) — montado pelo container, que tem o serviço; ausente = sem botão. */
+  exportAction?: ReactNode;
 }
 
 export function AnaCareHoursListPage({
@@ -59,6 +61,7 @@ export function AnaCareHoursListPage({
   initialSearch = '',
   sinCheckinHoursMode = 'zero',
   sync,
+  exportAction,
 }: AnaCareHoursListPageProps): JSX.Element {
   const { t, i18n } = useTranslation();
   const [search, setSearch] = useState(initialSearch);
@@ -106,23 +109,26 @@ export function AnaCareHoursListPage({
   return (
     <PageContainer>
       <div className="flex flex-col gap-6">
-        <div className="flex flex-wrap items-end justify-between gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <Heading level={1}>{t('admin.anacareHours.title')}</Heading>
             <Text size="xs" color="muted" className="mt-1">
               {t('admin.anacareHours.updatedAt', { datetime: formatDateTime(snapshot.updatedAt) })}
             </Text>
           </div>
-          <div className="flex items-end gap-3">
+          <div className="flex items-start gap-3" data-testid="anacare-hours-header-actions">
             <div className="w-48">
+              {/* Mesma altura dos botões `size="sm"` (h-8): override LOCAL no wrapper, o atom `Select` e o tamanho `compact` (usado em outras telas) ficam intocados. */}
               <Select
                 inputSize="compact"
+                className="!h-8 !py-0"
                 options={monthOptions}
                 value={displayedMonth}
                 onValueChange={(v) => onMonthChange?.(v)}
                 aria-label={t('admin.anacareHours.monthAriaLabel')}
               />
             </div>
+            {exportAction}
             {sync && (
               <AnaCareHoursSyncButton
                 status={sync.status}
