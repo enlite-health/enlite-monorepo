@@ -371,6 +371,10 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
   'anacare_hours:validate':
     'Validar um turno, validar em lote e contestar (com motivo e nota opcional) na conferência '
     + 'de horas do Ana Care. Exige também anacare_hours:read para ver o que está validando.',
+  'anacare_hours:export':
+    'Exportar em planilha (xlsx, abas Sintético e Analítico) as horas de um paciente num período, '
+    + 'para o financeiro. Exige também anacare_hours:read; o NOME do paciente no arquivo segue sob '
+    + 'patient_identity:read e o do prestador sob worker_contact:read (sem elas, sai "Sin vínculo · ID").',
 
   // ── Spec 024 (D1/D401, 21/09) — o catálogo de Etiquetas é DADO diferente do perfil do
   //    prestador: `tag:*` sai de `worker:*`. Atribuir/remover etiqueta DE UM prestador
