@@ -134,7 +134,8 @@ describe('getRetratoStatus', () => {
   it('POSITIVO — reflete stale/snapshotState/circuitBreakerOpen do snapshot', async () => {
     const service = makeService({ stale: true, snapshotState: 'velho', circuitBreakerOpen: true, updatedAt: '2026-09-13T00:00:00-03:00' });
     const status = await service.getRetratoStatus('2026-08');
-    expect(status).toEqual({ updatedAt: '2026-09-13T00:00:00-03:00', stale: true, snapshotState: 'velho', circuitBreakerOpen: true });
+    // Spec 032: o retrato do Fake também devolve `patients` (agregados) para o diálogo de exportação.
+    expect(status).toEqual({ updatedAt: '2026-09-13T00:00:00-03:00', stale: true, snapshotState: 'velho', circuitBreakerOpen: true, patients: expect.any(Array) });
   });
 
   it('POSITIVO — propaga snapshotState "nao_construido" sem colapsar em "velho" (item 3)', async () => {

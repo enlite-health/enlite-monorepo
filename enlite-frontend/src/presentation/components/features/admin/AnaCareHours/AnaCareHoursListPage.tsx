@@ -5,7 +5,7 @@
  * social ou outro filtro (regra dura do brief). Nome só aparece se o paciente/prestador está
  * vinculado à nossa base — não vinculado mostra "Sin vínculo · ID Ana Care" (regra dura).
  */
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Search } from 'lucide-react';
 import { PageContainer } from '@presentation/components/atoms/PageContainer';
@@ -47,6 +47,8 @@ interface AnaCareHoursListPageProps {
   sinCheckinHoursMode?: SinCheckinHoursMode;
   /** Botão "Sincronizar" (F6.4) — ausente quando o serviço injetado não implementa `triggerSync` (o botão some, nunca fica morto). */
   sync?: UseAnaCareHoursSyncResult;
+  /** Slot do botão "Exportar" (spec 032) — montado pelo container, que tem o serviço; ausente = sem botão. */
+  exportAction?: ReactNode;
 }
 
 export function AnaCareHoursListPage({
@@ -59,6 +61,7 @@ export function AnaCareHoursListPage({
   initialSearch = '',
   sinCheckinHoursMode = 'zero',
   sync,
+  exportAction,
 }: AnaCareHoursListPageProps): JSX.Element {
   const { t, i18n } = useTranslation();
   const [search, setSearch] = useState(initialSearch);
@@ -123,6 +126,7 @@ export function AnaCareHoursListPage({
                 aria-label={t('admin.anacareHours.monthAriaLabel')}
               />
             </div>
+            {exportAction}
             {sync && (
               <AnaCareHoursSyncButton
                 status={sync.status}

@@ -882,6 +882,35 @@
         "done": "Sincronización completa.",
         "deduped": "Ya hay una sincronización en curso — no se inició otra.",
         "interrupted": "La sincronización de {{month}} se interrumpió al cambiar de mes — se puede retomar."
+      },
+      "export": {
+        "button": "Exportar",
+        "title": "Exportar horas de un paciente",
+        "patientLabel": "Paciente",
+        "patientPlaceholder": "Buscar paciente por nombre o ID…",
+        "patientNoMatch": "Ningún paciente coincide con la búsqueda.",
+        "help": "Solo aparecen los pacientes de la lista del mes. Un paciente que no está en la lista de ese mes no aparece aquí.",
+        "noPatients": "No hay pacientes para elegir: el retrato del mes todavía no fue construido.",
+        "desde": "Desde",
+        "hasta": "Hasta",
+        "cancel": "Cancelar",
+        "confirm": "Exportar",
+        "exporting": "Exportando…",
+        "noCell": "No tiene permiso para exportar las horas.",
+        "reason": {
+          "noPatient": "Elija un paciente para exportar.",
+          "hastaBeforeDesde": "Revise las fechas: «Hasta» no puede ser anterior a «Desde».",
+          "tooLong": "El período no puede superar los 62 días."
+        },
+        "error": {
+          "byCode": {
+            "FONTE_NAO_CONFIGURADA": "La fuente de datos de Ana Care no está configurada. Contacte al equipo técnico.",
+            "FONTE_SEM_INTERVALO": "La fuente de datos de Ana Care no permite exportar por período. Contacte al equipo técnico.",
+            "PEDIDO_INVALIDO": "El período o el paciente no son válidos. Revise los datos.",
+            "SEM_PERMISSAO": "No tiene permiso para exportar las horas.",
+            "DESCONHECIDO": "No se pudo exportar. Probá de nuevo en unos segundos."
+          }
+        }
       }
     },
     "managementDashboard": {
