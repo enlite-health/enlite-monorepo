@@ -463,7 +463,7 @@ jobs:
         working-directory: enlite-frontend
         env:
           CI: 'true'
-        run: npx playwright test --project=integration --ignore-snapshots --grep "anacare-hours-conferencia|anacare-hours-axonico-envio|anacare-hours-sync-real.*(FELIZ|ALTERNATIVO 3)"
+        run: npx playwright test --project=integration --ignore-snapshots --grep "anacare-hours-conferencia|anacare-hours-axonico-envio|anacare-hours-detalhe-por-mes|anacare-hours-sync-real.*(FELIZ|ALTERNATIVO 3)"
 
       # ── Recria a API para o cenário de ERRO do sync (fail-closed do diretório) ──
       #

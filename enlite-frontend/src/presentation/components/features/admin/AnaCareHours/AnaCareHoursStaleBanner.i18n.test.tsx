@@ -21,7 +21,7 @@ import esJson from '@infrastructure/i18n/locales/es.json';
 import ptBRJson from '@infrastructure/i18n/locales/pt-BR.json';
 
 import { AnaCareHoursListPage } from './AnaCareHoursListPage';
-import { AnaCareHoursDetailPage } from './AnaCareHoursDetailPage';
+import { AnaCareHoursDetailPageWithNav as AnaCareHoursDetailPage } from './AnaCareHoursDetailPage.testHarness';
 import type { AnaCareMonthSnapshot, AnaCareHoursPatientSnapshot } from './types';
 import type { AxonicoComprobanteService } from './AxonicoComprobanteService';
 import type { AnaCarePatientDocumentService } from './AnaCarePatientDocumentService';

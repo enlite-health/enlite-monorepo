@@ -6,12 +6,12 @@
  * não há id interno resolvido nesta fase).
  */
 import { useMemo } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { AnaCareHoursDetailContainer } from '@presentation/components/features/admin/AnaCareHours/AnaCareHoursDetailContainer';
 import { AnaCareHoursHttpService } from '@presentation/components/features/admin/AnaCareHours/AnaCareHoursHttpService';
 import { AxonicoComprobanteHttpService } from '@presentation/components/features/admin/AnaCareHours/AxonicoComprobanteHttpService';
 import { AnaCarePatientDocumentHttpService } from '@presentation/components/features/admin/AnaCareHours/AnaCarePatientDocumentHttpService';
-import { currentMonthIso } from '@presentation/components/features/admin/AnaCareHours/selectors';
+import { parseMonthParam } from '@presentation/components/features/admin/AnaCareHours/selectors';
 
 export default function AnaCareHoursPatientPage(): JSX.Element | null {
   const navigate = useNavigate();
@@ -21,8 +21,9 @@ export default function AnaCareHoursPatientPage(): JSX.Element | null {
   const axonicoService = useMemo(() => new AxonicoComprobanteHttpService(), []);
   // Registro do documento do paciente (19/09) — serviço PRÓPRIO, domínio "integração com o Ana Care" (não Axonico, não `anacare-hours`).
   const patientDocumentService = useMemo(() => new AnaCarePatientDocumentHttpService(), []);
-  // Mês padrão = MÊS CORRENTE (decisão do Gabriel, 20/09/2026) — nunca cravado em código.
-  const month = useMemo(() => currentMonthIso(), []);
+  // Mês = `?month` da URL (spec 037), validado; ausente/inválido = MÊS CORRENTE (decisão do Gabriel, 20/09/2026) — nunca cravado em código.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const month = parseMonthParam(searchParams.get('month'));
 
   if (!patientId) return null;
 
@@ -33,7 +34,8 @@ export default function AnaCareHoursPatientPage(): JSX.Element | null {
       patientDocumentService={patientDocumentService}
       month={month}
       patientId={patientId}
-      onBack={() => navigate('/admin/anacare/horas')}
+      onMonthChange={(next) => setSearchParams({ month: next }, { replace: true })}
+      onBack={() => navigate(`/admin/anacare/horas?month=${month}`)}
     />
   );
 }

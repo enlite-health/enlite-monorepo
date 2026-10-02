@@ -37,6 +37,9 @@ export function todayIsoLocal(referenceDate: Date = new Date()): string {
   return `${year}-${month}-${day}`;
 }
 
+/** Primeiro mês com dado real do Ana Care — piso da lista, do `?month` e da navegação do detalhe (spec 037). */
+export const ANACARE_HOURS_FLOOR_MONTH = '2026-08';
+
 /**
  * Lista crescente de `YYYY-MM`, do piso (`floorMonthIso`, default `'2026-08'` — primeiro mês com
  * dado real do Ana Care) até o mês CORRENTE de `referenceDate`, inclusive — alimenta o seletor de
@@ -45,7 +48,7 @@ export function todayIsoLocal(referenceDate: Date = new Date()): string {
  * atrasado, ou piso mal configurado), devolve só o piso — nunca lista vazia, pra não deixar o
  * seletor sem opção nenhuma.
  */
-export function monthOptionsUntilNow(floorMonthIso = '2026-08', referenceDate: Date = new Date()): string[] {
+export function monthOptionsUntilNow(floorMonthIso = ANACARE_HOURS_FLOOR_MONTH, referenceDate: Date = new Date()): string[] {
   const current = currentMonthIso(referenceDate);
   const [floorYear, floorMonth] = floorMonthIso.split('-').map(Number);
   const [currentYear, currentMonth] = current.split('-').map(Number);
@@ -488,4 +491,90 @@ export function axonicoDayEligibility(
   if (Math.abs(total - Math.round(total)) >= WHOLE_HOUR_EPSILON) reasons.push('fractionalHours');
   if (!isValidDocumentNumber(documentNumber)) reasons.push('missingDocument');
   return { eligible: reasons.length === 0, reasons };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Spec 037 — mês na URL e navegação do detalhe por mês ("mês = página").
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Porta única de entrada do `?month` da URL: só `YYYY-MM` entre o piso (2026-08) e o mês corrente
+ * passa. Qualquer outra coisa (ausente, `abc`, `2026-9`, `2026-13`, `2026-07`, mês futuro) cai no mês
+ * corrente, sem erro — a string vinda de fora NUNCA vira chamada ao backend.
+ */
+export function parseMonthParam(raw: string | null | undefined, referenceDate: Date = new Date()): string {
+  const current = currentMonthIso(referenceDate);
+  if (typeof raw !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(raw)) return current;
+  if (raw < ANACARE_HOURS_FLOOR_MONTH || raw > current) return current;
+  return raw;
+}
+
+/** `YYYY-MM` de uma data `YYYY-MM-DD`. */
+export function monthOfDate(dateIso: string): string {
+  return dateIso.slice(0, 7);
+}
+
+/** Último dia (`YYYY-MM-DD`) de um mês `YYYY-MM`. */
+export function lastDayOfMonthIso(monthIso: string): string {
+  const [y, m] = monthIso.split('-').map(Number);
+  return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
+}
+
+/** Intervalo navegável do detalhe: de 01 do piso até o último dia do mês corrente (os limites da lista). */
+export function navigableDateRange(referenceDate: Date = new Date()): { min: string; max: string } {
+  return { min: `${ANACARE_HOURS_FLOOR_MONTH}-01`, max: lastDayOfMonthIso(currentMonthIso(referenceDate)) };
+}
+
+/** Prende uma data ao intervalo navegável. */
+export function clampSelectedDate(dateIso: string, referenceDate: Date = new Date()): string {
+  const { min, max } = navigableDateRange(referenceDate);
+  return dateIso < min ? min : dateIso > max ? max : dateIso;
+}
+
+/** Data com que o detalhe abre: hoje se o mês da página é o corrente; senão o dia 1 do mês. */
+export function initialSelectedDate(monthIso: string, referenceDate: Date = new Date()): string {
+  const today = todayIsoLocal(referenceDate);
+  return monthOfDate(today) === monthIso ? today : `${monthIso}-01`;
+}
+
+/**
+ * Meses (crescentes, sem repetir) dos 7 dias da semana (segunda a domingo) da data selecionada.
+ * Dias fora do intervalo navegável são descartados ANTES de calcular os meses — julho nunca é pedido.
+ */
+export function monthsOfWeek(selectedDate: string, referenceDate: Date = new Date()): string[] {
+  const { min, max } = navigableDateRange(referenceDate);
+  const monday = startOfWeekMonday(selectedDate);
+  const months: string[] = [];
+  for (let i = 0; i < 7; i += 1) {
+    const day = addDaysIso(monday, i);
+    if (day < min || day > max) continue;
+    const month = monthOfDate(day);
+    if (!months.includes(month)) months.push(month);
+  }
+  return months;
+}
+
+/** Só os turnos de um mês `YYYY-MM` (o total/progresso/origens do resumo seguem o mês da data selecionada). */
+export function shiftsOfMonth(shifts: AnaCareShift[], monthIso: string): AnaCareShift[] {
+  return shifts.filter((s) => s.date.startsWith(`${monthIso}-`));
+}
+
+/**
+ * Une os pedaços de um mesmo paciente vindos de meses diferentes num `AnaCarePatient` só (o
+ * contrato `AnaCareHoursPatientSnapshot` de 1 paciente fica preservado). Prestadores unidos por
+ * `anaCareId`, turnos na ordem dos meses recebidos. `null` (sem turnos naquele mês) não entra;
+ * todos `null` → `null`.
+ */
+export function mergePatientMonths(patients: Array<AnaCarePatient | null>): AnaCarePatient | null {
+  const present = patients.filter((p): p is AnaCarePatient => p !== null);
+  if (present.length === 0) return null;
+  const providers = new Map<string, AnaCareProvider>();
+  for (const patient of present) {
+    for (const provider of patient.providers) {
+      const known = providers.get(provider.anaCareId);
+      if (known) known.shifts = [...known.shifts, ...provider.shifts];
+      else providers.set(provider.anaCareId, { ...provider, shifts: [...provider.shifts] });
+    }
+  }
+  return { ...present[0], providers: Array.from(providers.values()) };
 }
