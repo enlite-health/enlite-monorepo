@@ -10,7 +10,7 @@
  *   (ii)  403 sem `anacare_hours:export` (só `read` não basta) e 200 com;
  *   (iv)  UMA linha em `resource_access_log` (`anacare_patient`, id da fonte, ação enumerada,
  *         operador = ator) e NENHUMA coluna com nome/`Sin vínculo`;
- *   cabeçalho `Sin vínculo · ID AC-PAT-0` e nome do arquivo `Sin_vinculo_ID_AC-PAT-0-…xlsx`;
+ *   cabeçalho `Sin vínculo · ID AC-PAT-0` e nome do arquivo `Sin_vinculo_ID_ACPAT0-…xlsx`;
  *   o turno do dia do Hasta (30/09, `FAKE-2026-09-0-1-4`) entra, e Hasta=29/09 o tira;
  *   400 para 63 dias; período sem turnos devolve o arquivo "Sin turnos en el período" (total 0) e
  *   a trilha É gravada.
@@ -172,7 +172,8 @@ describe('spec 032 F1 — exportação xlsx das horas (engine ligado, banco real
 
   it('sem patient_identity:read o cabeçalho é "Sin vínculo · ID AC-PAT-0" e o nome do arquivo usa o MESMO rótulo (ASCII)', async () => {
     const res = await baixar(urlExport(PATIENT, '2026-09-01', '2026-09-30'), U.exporta);
-    expect(res.headers.get('content-disposition')).toBe('attachment; filename="Sin_vinculo_ID_AC-PAT-0-2026-09-01-2026-09-30.xlsx"');
+    expect(res.headers.get('content-disposition')).toBe('attachment; filename="Sin_vinculo_ID_ACPAT0-2026-09-01-2026-09-30.xlsx"');
+    expect(res.headers.get('x-export-filename')).toBe('Sin_vinculo_ID_ACPAT0-2026-09-01-2026-09-30.xlsx');
     const { sintetico, analitico } = abas(res.buffer);
     expect(sintetico[0].slice(0, 2)).toEqual(['Paciente', 'Sin vínculo · ID AC-PAT-0']);
     expect(analitico[0].slice(0, 2)).toEqual(['Paciente', 'Sin vínculo · ID AC-PAT-0']);
@@ -205,7 +206,7 @@ describe('spec 032 F1 — exportação xlsx das horas (engine ligado, banco real
     expect(corpo(analitico)[0][0]).toBe('Sin turnos en el período');
     expect(corpo(sintetico).find((r) => r[0] === 'Total')!.slice(1, 5)).toEqual([0, 0, 0, 0]);
     expect(corpo(analitico).find((r) => r[0] === 'Total')![7]).toBe(0);
-    expect(res.headers.get('content-disposition')).toContain('Sin_vinculo_ID_AC-PAT-0-2026-09-10-2026-09-20.xlsx');
+    expect(res.headers.get('content-disposition')).toContain('Sin_vinculo_ID_ACPAT0-2026-09-10-2026-09-20.xlsx');
     expect(await linhasDeTrilha(U.exporta, acao)).toHaveLength(1);
   });
 });

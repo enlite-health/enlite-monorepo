@@ -254,6 +254,7 @@ describe('spec 032 F1 — exportação com a FONTE REAL (Ana Care falso de sess�
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toBe(XLSX_MIME);
     expect(res.headers.get('content-disposition')).toBe('attachment; filename="Paciente_Sintetico_QA-2026-09-01-2026-09-30.xlsx"');
+    expect(res.headers.get('x-export-filename')).toBe('Paciente_Sintetico_QA-2026-09-01-2026-09-30.xlsx');
     const { sintetico, analitico } = abas(res.buffer);
     expect(sintetico[0].slice(0, 2)).toEqual(['Paciente', NOME_PACIENTE]);
     expect(analitico[0].slice(0, 2)).toEqual(['Paciente', NOME_PACIENTE]);

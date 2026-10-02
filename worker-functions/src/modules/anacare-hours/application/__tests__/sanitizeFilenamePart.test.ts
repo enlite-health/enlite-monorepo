@@ -9,7 +9,7 @@ describe('sanitizeFilenamePart (spec 032)', () => {
     expect(sanitizeFilenamePart('Paciente Sintetico QA')).toBe('Paciente_Sintetico_QA');
   });
 
-  it('remove o que está fora de [A-Za-z0-9_-]', () => {
+  it('remove o que está fora de [A-Za-z0-9_]', () => {
     expect(sanitizeFilenamePart('Ana/María: "Test"?*<>|.xlsx')).toBe('AnaMaria_Testxlsx');
   });
 
@@ -26,11 +26,11 @@ describe('sanitizeFilenamePart (spec 032)', () => {
     expect(sanitizeFilenamePart('Sin vínculo · ID 9660')).toBe('Sin_vinculo_ID_9660');
   });
 
-  it('mantém o hífen do ID da fonte (AC-PAT-0) — o nome do arquivo legível do e2e', () => {
-    expect(sanitizeFilenamePart('Sin vínculo · ID AC-PAT-0')).toBe('Sin_vinculo_ID_AC-PAT-0');
+  it('o hífen SAI (FR-013): AC-PAT-0 → ACPAT0; o hífen só existe como separador entre as partes do nome do arquivo', () => {
+    expect(sanitizeFilenamePart('Sin vínculo · ID AC-PAT-0')).toBe('Sin_vinculo_ID_ACPAT0');
   });
 
-  it('apara hífen e _ nas pontas', () => {
+  it('hífen nas pontas some junto com os espaços', () => {
     expect(sanitizeFilenamePart('- Ana -')).toBe('Ana');
   });
 
@@ -47,6 +47,6 @@ describe('sanitizeFilenamePart (spec 032)', () => {
   });
 
   it('resultado é sempre ASCII seguro para cabeçalho HTTP', () => {
-    expect(sanitizeFilenamePart('Ñandú "Ç" ü ·\n\t"x"')).toMatch(/^[A-Za-z0-9_-]+$/);
+    expect(sanitizeFilenamePart('Ñandú "Ç" ü ·\n\t"x"')).toMatch(/^[A-Za-z0-9_]+$/);
   });
 });

@@ -253,7 +253,10 @@ export class AnaCareHoursController {
       const patientLabel = this.canReadPatientName(req) && patient?.name ? patient.name : `Sin vínculo · ID ${patientId}`;
       const file = buildAnaCareHoursWorkbook({ patient, patientLabel, desde, hasta, now: new Date() });
       res.setHeader('Content-Type', XLSX_MIME);
-      res.setHeader('Content-Disposition', `attachment; filename="${sanitizeFilenamePart(patientLabel)}-${desde}-${hasta}.xlsx"`);
+      const filename = `${sanitizeFilenamePart(patientLabel)}-${desde}-${hasta}.xlsx`;
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      // Cópia legível cross-origin (`exposedHeaders` do CORS expõe SÓ este; Content-Disposition não).
+      res.setHeader('X-Export-Filename', filename);
       res.setHeader('Cache-Control', 'no-store');
       res.status(200).send(file);
     } catch (err) {

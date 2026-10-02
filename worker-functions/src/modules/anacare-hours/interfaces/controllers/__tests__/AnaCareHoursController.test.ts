@@ -425,6 +425,8 @@ describe('AnaCareHoursController', () => {
       expect(headerOf(res, 'Content-Type')).toBe(XLSX_MIME);
       expect(headerOf(res, 'Content-Disposition')).toBe('attachment; filename="Paciente_Sintetico_QA-2026-09-01-2026-09-30.xlsx"');
       expect(headerOf(res, 'Content-Disposition')).toMatch(/^[\x20-\x7e]+$/);
+      expect(headerOf(res, 'X-Export-Filename')).toBe('Paciente_Sintetico_QA-2026-09-01-2026-09-30.xlsx');
+      expect(headerOf(res, 'Content-Disposition')).toBe(`attachment; filename="${headerOf(res, 'X-Export-Filename')}"`);
       expect(headerOf(res, 'Cache-Control')).toBe('no-store');
       expect(XLSX.read(sentBuffer(res), { type: 'buffer' }).SheetNames).toEqual(['Sintético', 'Analítico']);
       expect(textOf(sentBuffer(res))).toContain('Paciente Sintetico QA');
@@ -438,7 +440,7 @@ describe('AnaCareHoursController', () => {
         mockReq({ params: { patientId: 'AC-PAT-0' }, query: QUERY, permissionCells: ['anacare_hours:read', 'anacare_hours:export'] } as never),
         res,
       );
-      expect(headerOf(res, 'Content-Disposition')).toBe('attachment; filename="Sin_vinculo_ID_AC-PAT-0-2026-09-01-2026-09-30.xlsx"');
+      expect(headerOf(res, 'Content-Disposition')).toBe('attachment; filename="Sin_vinculo_ID_ACPAT0-2026-09-01-2026-09-30.xlsx"');
       const txt = textOf(sentBuffer(res));
       expect(txt).toContain('Sin vínculo · ID AC-PAT-0');
       expect(txt).not.toContain('Paciente Sintetico QA');
@@ -470,7 +472,7 @@ describe('AnaCareHoursController', () => {
       );
       expect(res.status).toHaveBeenCalledWith(200);
       expect(textOf(sentBuffer(res))).toContain('Sin turnos en el período');
-      expect(headerOf(res, 'Content-Disposition')).toContain('Sin_vinculo_ID_AC-PAT-0');
+      expect(headerOf(res, 'Content-Disposition')).toContain('Sin_vinculo_ID_ACPAT0');
     });
 
     it.each([
