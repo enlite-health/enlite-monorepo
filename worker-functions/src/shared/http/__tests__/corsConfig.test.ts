@@ -46,6 +46,8 @@ describe('corsConfig', () => {
     expect(o.credentials).toBe(true);
     expect(o.methods).toEqual(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS']);
     expect(o.allowedHeaders).toEqual(['Content-Type', 'Authorization', 'X-Partner-Key']);
+    // spec 032: SÓ o header do nome do arquivo da exportação; Content-Disposition NÃO é exposto (mudaria o export de workers).
+    expect(o.exposedHeaders).toEqual(['X-Export-Filename']);
   });
 
   it('corsMiddleware devolve um handler express', () => {
