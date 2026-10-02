@@ -89,6 +89,17 @@ export interface ListShiftsParams {
 }
 
 /**
+ * Spec 032 — leitura por INTERVALO de datas (exportação do financeiro). `toExclusive` é EXCLUSIVO
+ * (mesma semântica do `max_date` do Ana Care, medido 01/10/2026); quem tem um Hasta inclusivo soma
+ * 1 dia antes de chamar. `YYYY-MM-DD`.
+ */
+export interface ListShiftsInRangeParams {
+  from: string;
+  toExclusive: string;
+  patientId?: string;
+}
+
+/**
  * Turno cru sem paciente/prestador não é gravável (colunas NOT NULL, migration 437) e é
  * DESCARTADO na borda — nunca em silêncio (conserto 17/09, 500 medido: `raw.nurse === null` em
  * 15/3.421 turnos, 0,4%). `listShifts` devolve a contagem no MESMO objeto do resultado para que
@@ -119,6 +130,12 @@ export interface AnaCareRetratoSourceStatus {
  */
 export interface AnaCareShiftsSource {
   listShifts(params: ListShiftsParams): Promise<ListShiftsResult>;
+  /**
+   * Spec 032 — turnos em `[from, toExclusive)`, sem passar por mês. OPCIONAL de propósito (mesmo
+   * precedente de `triggerSync?`): os dublês de teste existentes não precisam implementá-lo; quem
+   * chama (`AnaCareHoursService.getPatientRange`) falha com `FONTE_SEM_INTERVALO` se ausente.
+   */
+  listShiftsInRange?(params: ListShiftsInRangeParams): Promise<ListShiftsResult>;
   /** Um turno por `sourceShiftId`, sem precisar do mês (validar/contestar não recebem mês no corpo). */
   getShift(sourceShiftId: string): Promise<SourceShiftDTO | null>;
   /**
