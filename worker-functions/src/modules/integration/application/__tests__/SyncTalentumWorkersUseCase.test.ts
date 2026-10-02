@@ -561,7 +561,8 @@ describe('SyncTalentumWorkersUseCase (v2)', () => {
     });
 
     it('instrumento: o detector ACUSA um log que vaza o telefone (controle positivo)', () => {
-      logger.info({ msg: `ligou ${PHONE_CANON}` });
+      const leaked = PHONE_CANON; // o que um log ruim carregaria
+      logger.info({ msg: `ligou ${leaked}` });
       expect(() => expectNoPii(allLogged())).toThrow();
     });
   });
