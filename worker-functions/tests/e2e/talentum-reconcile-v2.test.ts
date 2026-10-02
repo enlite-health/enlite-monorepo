@@ -91,6 +91,8 @@ describe('Reconciliação Talentum v2 — Postgres real + stub da v2 (sem mock)'
     stub.seed({ _id: 'v2-p4', name: 'DUPLICADO', publicId: PUB(4), slug: 'slug4' });
     stub.seed({ _id: 'v2-p5', name: 'EN 5#1', publicId: PUB(5), slug: 'slug5' });
     stub.seed({ _id: 'v2-p6', name: 'ORFAO', publicId: PUB(6), slug: 'slug6' });
+    // slug real da v2 (21..255 caracteres; regressão do bfd323e7: o limite errado era 20)
+    stub.seed({ _id: 'v2-p7', name: 'SLUG LONGO', publicId: PUB(7), slug: 'caso-483-at-para-pacientes-con-retraso-mental-leve-'.padEnd(120, 'z') });
 
     await jp('porPublicId', 'qualquer', { project: 'v1-1', pub: PUB(1), url: WA });
     await jp('porTitulo', 'EN 2#1', { project: 'v1-2', url: WA });
@@ -99,6 +101,7 @@ describe('Reconciliação Talentum v2 — Postgres real + stub da v2 (sem mock)'
     await jp('semParTitulo', 'NAO EXISTE NA V2', { project: 'v1-5' });
     await jp('jaCorreta', 'EN 5#1', { project: 'v2-p5', pub: PUB(5), slug: 'slug5', url: buildPublicPrescreeningUrl(PUB(5)) });
     await jp('livre', 'sem talentum');
+    await jp('slugLongo', 'x7', { project: 'v1-7', pub: PUB(7), url: WA });
   });
 
   afterAll(async () => {
@@ -117,7 +120,7 @@ describe('Reconciliação Talentum v2 — Postgres real + stub da v2 (sem mock)'
 
     expect(out()).toContain('default_transaction_read_only = on');
     expect(out()).toMatch(/prova read-only: CREATE TEMP TABLE reconcile_ro_probe\(i int\) -> cannot execute CREATE TABLE in a read-only transaction/);
-    expect(out()).toContain('ligadas por publicId: 1 · por título: 1 · sem par: 2 · ambíguas: 1 · inválidas: 0 · já corretas: 1');
+    expect(out()).toContain('ligadas por publicId: 2 · por título: 1 · sem par: 2 · ambíguas: 1 · inválidas: 0 · já corretas: 1');
     expect(out()).toContain('projetos v2 sem vaga par (o sync de vagas criaria, no máx.): 3'); // P3, P4 (ambíguo) e P6
     expect(out()).toContain(`ambíguas (job_posting_id): ${ids.ambigua}`);
     expect(out()).toContain(`wa.me antes: ${waBefore} · depois: ${waBefore}`);
@@ -126,7 +129,7 @@ describe('Reconciliação Talentum v2 — Postgres real + stub da v2 (sem mock)'
     expect(stub.calls.some((c) => c.method !== 'GET' && c.path !== '/auth/login')).toBe(false);
     // o CSV de rollback só carrega ids e valores antigos de talentum_* — nunca título
     const csv = files.get('/rb/dry.csv')!;
-    expect(csv.split('\n').filter(Boolean)).toHaveLength(1 + 2);
+    expect(csv.split('\n').filter(Boolean)).toHaveLength(1 + 3);
     expect(csv).not.toContain('EN 2#1');
     expect(csv).not.toContain('DUPLICADO');
   });
@@ -137,13 +140,16 @@ describe('Reconciliação Talentum v2 — Postgres real + stub da v2 (sem mock)'
 
     expect(await run(['--execute', '--csv-out', '/rb/exec.csv'])).toBe(0);
 
-    expect(out()).toContain('aplicadas: 2');
+    expect(out()).toContain('aplicadas: 3');
     expect(await row('porPublicId')).toEqual({ p: 'v2-p1', pub: PUB(1), slug: 'slug1', url: buildPublicPrescreeningUrl(PUB(1)) });
     expect(await row('porTitulo')).toEqual({ p: 'v2-p2', pub: PUB(2), slug: 'slug2', url: buildPublicPrescreeningUrl(PUB(2)) });
+    const longo = await row('slugLongo');
+    expect(longo.p).toBe('v2-p7');
+    expect(longo.slug!.length).toBe(120); // 21..255: o limite errado (20) o marcava inválido
     for (const [k, v] of Object.entries(untouched)) expect(await row(k)).toEqual(v);
     expect(await digest()).not.toBe(before);
     process.stdout.write(`[T5.2] md5 talentum_* ANTES do execute: ${before} · DEPOIS do execute: ${await digest()}\n`);
-    expect(out()).toContain('wa.me antes: 4 · depois: 2');
+    expect(out()).toContain('wa.me antes: 5 · depois: 2');
     files.set('/rb/before.digest', before);
   });
 
@@ -152,14 +158,14 @@ describe('Reconciliação Talentum v2 — Postgres real + stub da v2 (sem mock)'
     expect(await run(['--execute', '--csv-out', '/rb/exec2.csv'])).toBe(0);
     expect(out()).toContain('ligadas por publicId: 0 · por título: 0');
     expect(out()).toContain('aplicadas: 0');
-    expect(out()).toContain('já corretas: 3');
+    expect(out()).toContain('já corretas: 4');
     expect(await digest()).toBe(after1);
   });
 
   it('4) ROLLBACK a partir do CSV devolve o banco BYTE A BYTE ao estado anterior (NULL inclusive)', async () => {
     expect(await digest()).not.toBe(files.get('/rb/before.digest'));
     expect(await run(['--rollback', '/rb/exec.csv'])).toBe(0);
-    expect(out()).toContain('ROLLBACK: 2 vagas restauradas');
+    expect(out()).toContain('ROLLBACK: 3 vagas restauradas');
     expect(await digest()).toBe(files.get('/rb/before.digest'));
     process.stdout.write(`[T5.2] md5 talentum_* DEPOIS do rollback: ${await digest()} (esperado = ${files.get('/rb/before.digest')})\n`);
     expect(await row('porTitulo')).toEqual({ p: 'v1-2', pub: null, slug: null, url: WA });
@@ -172,7 +178,7 @@ describe('Reconciliação Talentum v2 — Postgres real + stub da v2 (sem mock)'
     const ambiguousLine = logs.find((l) => l.startsWith('ambíguas (job_posting_id):'))!;
     expect(ambiguousLine).toContain(ids.porPublicId); // a do publicId (projeto ocupado por `livre`) + a do DUPLICADO
     expect(ambiguousLine).toContain(ids.ambigua);
-    expect(out()).toContain('aplicadas: 1'); // só a de título (v2-p2)
+    expect(out()).toContain('aplicadas: 2'); // título (v2-p2) + slug longo
     expect(await row('porPublicId')).toMatchObject({ p: 'v1-1' });
     expect(await digest()).not.toBe(before);
   });
