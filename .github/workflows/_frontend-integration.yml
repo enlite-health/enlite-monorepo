@@ -530,7 +530,7 @@ jobs:
         working-directory: worker-functions
         run: |
           BASE="-f docker-compose.yml -f docker-compose.test.yml -f docker-compose.group-simulation.yml"
-          docker compose $BASE up -d postgres
+          docker compose $BASE up -d postgres fake-gcs
 
           espera() {
             for i in $(seq 1 60); do
@@ -565,6 +565,17 @@ jobs:
           # INSERT/UPDATE de `app_runtime`/`app_system` nesta tabela.
           docker compose $BASE exec -T postgres psql -U enlite_admin -d enlite_e2e -c \
             "INSERT INTO iam.rollout_state (key, value, note) VALUES ('permission_groups_migrated', 'done', 'ci:integration-e2e-group-simulation') ON CONFLICT (key) DO UPDATE SET value = 'done';"
+
+          # Spec 031 (aba Documentos): o `patient-documents-tab` sobe/baixa arquivo e o chat anexa PDF,
+          # então este job ganha o fake-gcs (mesmo molde do job `integration-e2e`) e o bucket de
+          # documentos (`PATIENT_DOCUMENTS_BUCKET`, em docker-compose.group-simulation.yml). O
+          # fake-gcs-server NÃO cria bucket sozinho — o POST explícito vem ANTES da api.
+          espera "fake-gcs" http://localhost:54443/storage/v1/b || {
+            docker compose $BASE logs fake-gcs | tail -50
+            exit 1
+          }
+          curl -sf -X POST http://localhost:54443/storage/v1/b -H 'Content-Type: application/json' \
+            -d '{"name":"enlite-patient-documents-ci"}' >/dev/null
 
           docker compose $BASE up -d api
           espera "api" http://localhost:8080/health || {
@@ -672,13 +683,17 @@ jobs:
       # real: `docker-compose.test.yml` (base, versionado) carrega `vertexInterceptPreload.js` na API,
       # e o próprio spec reprova se a contagem de `[VERTEX-STUB]` não subir. O spec lê o log do
       # container achando-o pela porta 8080 publicada — sem nome fixo.
+      # `patient-documents-tab` ENTROU (spec 031, aba "Documentos" da ficha): o cenário "conta sem célula
+      # `patient_document` não vê a aba" só mede com o engine ABAC ligado, e o spec sobe/baixa arquivo e anexa
+      # PDF no chat — por isso este job ganhou o fake-gcs + o bucket `enlite-patient-documents-ci` (passos
+      # acima) e `PATIENT_DOCUMENTS_BUCKET` em `docker-compose.group-simulation.yml`. Usa `abac-stack-helper`.
       - name: Teste de integração — simulação de grupo de acesso + completar-vacante (fases 2-3)
         working-directory: enlite-frontend
         env:
           CI: 'true'
           ABAC_API_URL: http://localhost:8080
           ABAC_TEST_DB_URL: postgresql://enlite_admin:enlite_password@localhost:5433/enlite_e2e
-        run: npx playwright test --project=integration --ignore-snapshots --grep "group-simulation|draft-vacancy-page|draft-vacancy-choice|vacante-anotacao-sem-celula|funil-compativeis-sem-celula|cid-na-vacante-tela|service-team-provider-modal-sem-celula|service-team-contact-api|encuadre-tab-sem-celula|ai-prompts-humano"
+        run: npx playwright test --project=integration --ignore-snapshots --grep "group-simulation|draft-vacancy-page|draft-vacancy-choice|vacante-anotacao-sem-celula|funil-compativeis-sem-celula|cid-na-vacante-tela|service-team-provider-modal-sem-celula|service-team-contact-api|encuadre-tab-sem-celula|ai-prompts-humano|patient-documents-tab"
 
       - name: Relatório (só quando falha)
         if: failure()
