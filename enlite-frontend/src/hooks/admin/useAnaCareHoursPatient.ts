@@ -142,12 +142,12 @@ export function useAnaCareHoursPatient(service: AnaCareHoursService, patientId: 
     : null;
 
   // Retrato do mês da URL ainda em voo, mas já há turnos `ok` na tela: a página NÃO pode desmontar (a data
-  // selecionada e os dias carregados ficam). Só o retrato é "desconhecido" — placeholder sem dado de outro mês;
+  // selecionada e os dias carregados ficam). O placeholder NÃO afirma estado de sync algum (`fresco` + `stale:false` = nenhum banner; valores neutros, não um retrato) e não usa dado de outro mês;
   // `snapshot` (acima) continua `null` até o retrato verdadeiro chegar.
   const retratoLoading = retrato === null && (retratos[retratoMonth] === undefined || retratos[retratoMonth].state === 'loading');
   const provisionalSnapshot: AnaCareHoursPatientSnapshot | null =
     retratoLoading && loadedMonths.some((m) => entries[m].state === 'ok')
-      ? { month: retratoMonth, updatedAt: '', stale: false, snapshotState: 'desconhecido', circuitBreakerOpen: false, patients: patient ? [patient] : [] }
+      ? { month: retratoMonth, updatedAt: '', stale: false, snapshotState: 'fresco', circuitBreakerOpen: false, patients: patient ? [patient] : [] }
       : null;
 
   // Erro de TELA INTEIRA só na 1ª carga (nada para mostrar ainda). Depois disso, a falha de um mês é

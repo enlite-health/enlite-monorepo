@@ -151,9 +151,13 @@ describe('AnaCareHoursDetailContainer — navegação por mês (spec 037)', () =
     await waitFor(() => expect((screen.getByTestId('anacare-hours-week-datepicker') as HTMLInputElement).value).toBe('2026-10-06'));
     expect(screen.queryByTestId('anacare-hours-detail-loading')).not.toBeInTheDocument();
     expect(screen.getByTestId('anacare-hours-week-datepicker')).toBeInTheDocument();
-    await act(async () => resolveOct(retrato));
+    // retrato em voo: a tela não afirma "estado desconhecido" (placeholder sem banner)
+    expect(screen.queryByText(/stale\.titleDesconhecido/)).not.toBeInTheDocument();
+    await act(async () => resolveOct({ ...retrato, snapshotState: 'desconhecido' }));
     await waitFor(() => expect(screen.getByTestId('anacare-hours-shift-row-b')).toBeInTheDocument());
     expect((screen.getByTestId('anacare-hours-week-datepicker') as HTMLInputElement).value).toBe('2026-10-06');
+    // com o retrato real `desconhecido` o banner aparece (não foi desligado de vez)
+    expect(screen.getByText(/stale\.titleDesconhecido/)).toBeInTheDocument();
     expect(screen.getByTestId('anacare-hours-week-label').textContent).toContain('"start":"5 de octubre","end":"11 de octubre"');
   });
 });
