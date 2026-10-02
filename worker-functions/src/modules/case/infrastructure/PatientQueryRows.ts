@@ -162,6 +162,15 @@ export interface PatientDetailRow {
    * multi-select). `insuranceVerifiedCodes` continua existindo, sem origem, para compat.
    */
   insuranceVerifiedEntries: Array<{ code: string; source: string }>;
+  /**
+   * Hotfix gate-cobertura-verificada-vacante (28/09): o paciente tem ≥1 linha em
+   * `patient_insurance_verified` cujo provider (`insurance_providers`) está ATIVO. Alimenta o
+   * gate de `RECRUITMENT_BLOCKING_CODES` no front (`recruitmentMissingCodes`) — a MESMA leitura
+   * que o backend usa em `ActivateRecruitmentUseCase`, para o checklist nunca divergir do 422
+   * real. Medido em produção: `insuranceVerifiedCodes` já listava a cobertura, mas nada no gate
+   * a lia — o foguete ficava desabilitado com cobertura verificada válida.
+   */
+  hasVerifiedActiveCoverage: boolean;
   /** Dispositivos (códigos de device_types, mig 307), ordem do catálogo. */
   deviceTypes: string[];
   needsAttention: boolean;

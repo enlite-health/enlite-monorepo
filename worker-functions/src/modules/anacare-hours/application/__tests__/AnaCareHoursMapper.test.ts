@@ -1,7 +1,8 @@
-import { mapShift, groupIntoPatients, buildSnapshot, computeActualHours, computeSnapshotState, joinSourceName, NO_SYNC_RUN_CONCLUSION } from '../AnaCareHoursMapper';
+import { mapShift, groupIntoPatients, buildSnapshot, computeActualHours, computeSnapshotState, joinSourceName, NO_SYNC_RUN_CONCLUSION, resolveDocumentNumberForAxonico } from '../AnaCareHoursMapper';
 import type { SourceShiftDTO } from '../../domain/AnaCareShiftsSource';
 import type { SyncRunConclusion } from '../../domain/AnaCareHoursSyncPorts';
 import type { ValidationRow } from '../../infrastructure/ShiftHoursValidationRepository';
+import type { IAnaCarePatientDocumentRepository } from '@modules/integration';
 
 /** Conclusão "sync terminou tudo" — usada nos testes de `buildSnapshot` que não são sobre a conclusão em si (fresco/velho), pra não cair em `desconhecido` por omissão. */
 const CONCLUSAO_COMPLETA: SyncRunConclusion = { status: 'done', reservationsTotal: 1, reservationsDone: 1 };
@@ -381,5 +382,63 @@ describe('computeSnapshotState — precedência fechada (proposal.md §Decisão 
 
   it('NO_SYNC_RUN_CONCLUSION exportado é o "desconhecido" canônico (status/contagens null)', () => {
     expect(NO_SYNC_RUN_CONCLUSION).toEqual({ status: null, reservationsTotal: null, reservationsDone: null });
+  });
+});
+
+/**
+ * R1 (achado do gate `revisao-pr`, 25/09/2026): chamando `resolveDocumentNumberForAxonico`
+ * DIRETO (sem passar por `AnaCareHoursService.getPatientMonth`) — o stub de fonte usado nos testes
+ * do serviço já filtra `listShifts({ patientId })` por paciente, então mascararia este bug. Aqui o
+ * array `sourceShifts` carrega turnos de DOIS pacientes de propósito, com o de OUTRO paciente
+ * vindo PRIMEIRO — sem o filtro por `anaCarePatientId`, o `.find` pegaria o documento errado.
+ */
+describe('resolveDocumentNumberForAxonico — R1 (chave do Axonico só do próprio paciente)', () => {
+  function mockPatientDocuments(overrides: Partial<jest.Mocked<IAnaCarePatientDocumentRepository>> = {}): jest.Mocked<IAnaCarePatientDocumentRepository> {
+    return {
+      findByPatientId: jest.fn().mockResolvedValue(null),
+      insert: jest.fn(),
+      ...overrides,
+    } as jest.Mocked<IAnaCarePatientDocumentRepository>;
+  }
+
+  const TURNO_OUTRO_PACIENTE: SourceShiftDTO = {
+    ...SOURCE,
+    sourceShiftId: 'FAKE-2026-09-OUTRO-0',
+    anaCarePatientId: 'AC-PAT-OUTRO',
+    patientDocumentType: 'DNI',
+    patientDocumentNumber: '11111111',
+  };
+
+  const TURNO_PACIENTE_CERTO: SourceShiftDTO = {
+    ...SOURCE,
+    sourceShiftId: 'FAKE-2026-09-CERTO-0',
+    anaCarePatientId: 'AC-PAT-CERTO',
+    patientDocumentType: 'DNI',
+    patientDocumentNumber: '99999999',
+  };
+
+  it('🔴 RÉGUA — turno de OUTRO paciente com documento vem ANTES na lista; o documento usado é o do paciente CERTO', async () => {
+    const sourceShifts = [TURNO_OUTRO_PACIENTE, TURNO_PACIENTE_CERTO];
+    const documentNumber = await resolveDocumentNumberForAxonico(sourceShifts, 'AC-PAT-CERTO', mockPatientDocuments());
+    expect(documentNumber).toBe('99999999');
+    expect(documentNumber).not.toBe('11111111');
+  });
+
+  it('sem turno do paciente certo com documento, cai no fallback do repositório registrado (mesmo com turno de outro paciente na lista)', async () => {
+    const patientDocuments = mockPatientDocuments({
+      findByPatientId: jest.fn().mockResolvedValue({
+        id: 'doc-1',
+        anaCarePatientId: 'AC-PAT-CERTO',
+        documentNumber: '40111222',
+        documentType: 'DNI',
+        registeredBy: 'uid-staff-1',
+        createdAt: new Date('2026-09-01T00:00:00Z'),
+        updatedAt: new Date('2026-09-01T00:00:00Z'),
+      }),
+    });
+    const sourceShifts = [TURNO_OUTRO_PACIENTE, { ...TURNO_PACIENTE_CERTO, patientDocumentNumber: null }];
+    const documentNumber = await resolveDocumentNumberForAxonico(sourceShifts, 'AC-PAT-CERTO', patientDocuments);
+    expect(documentNumber).toBe('40111222');
+    expect(patientDocuments.findByPatientId).toHaveBeenCalledWith('AC-PAT-CERTO');
   });
 });

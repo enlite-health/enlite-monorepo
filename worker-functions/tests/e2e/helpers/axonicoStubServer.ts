@@ -44,7 +44,7 @@ function readBody(req: http.IncomingMessage): Promise<Record<string, unknown>> {
 }
 
 /**
- * @param patients cadastro sintético DNI → historia_clinica/nro_afiliado (`doc_tipo: '0'` = DNI).
+ * @param patients cadastro sintético DNI → historia_clinica/nro_cobertura (`doc_tipo: '0'` = DNI).
  *   DNI ausente deste array → `paciente/filter` devolve lista vazia (paciente não encontrado).
  * @param cantidadMaxPrestacoes teto devolvido por `medicoParametroPortal/filter` — default alto
  *   o bastante para não bloquear os testes que não miram o guard 3 especificamente.
@@ -83,7 +83,22 @@ export async function startAxonicoStub(
         res.end(
           JSON.stringify({
             data: match
-              ? [{ historia_clinica: match.historiaClinica, coberturas: [{ nro_afiliado: match.nroCobertura }] }]
+              ? [
+                  {
+                    historia_clinica: match.historiaClinica,
+                    // `nro_cobertura` é o campo que o client usa (medido 24/09/2026); `nro_afiliado`
+                    // fica também presente para espelhar o formato real e provar que NÃO é essa a
+                    // fonte lida. `estado.descripcion: 'Activo'` — cobertura sem estado ativo não
+                    // é escolhida (ver `isCoberturaAtiva` em `AxonicoApiClient.ts`).
+                    coberturas: [
+                      {
+                        nro_cobertura: match.nroCobertura,
+                        nro_afiliado: `AFILIADO-${match.nroCobertura}`,
+                        estado: { descripcion: 'Activo' },
+                      },
+                    ],
+                  },
+                ]
               : [],
           }),
         );

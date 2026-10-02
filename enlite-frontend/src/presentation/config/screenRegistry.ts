@@ -100,6 +100,7 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
       c('therapeuticProject', 'patient_therapeutic_project', ['read', 'create', 'update', 'export'], 'clinicalData'),
       c('family', 'patient_family', ['read', 'create', 'update'], 'supportNetwork'),
       c('chat', 'patient_chat', ['read', 'create', 'update'], 'supportNetwork'),
+      c('conversation', 'patient_conversation', ['read', 'create', 'update', 'delete']),
       c('coverage', 'patient_coverage', ['read', 'create', 'update'], 'contractedService'),
       c('address', 'patient_address', ['read', 'create', 'update'], 'contractedService'),
       // 29/09: a aba "Encuadre" volta (com conteúdo real desta vez — o quadro C, que sai da aba
@@ -123,6 +124,7 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
   { id: 'patients.catalogObjectives', route: '/admin/catalogos/objetivos-especificos', cells: ['catalog_therapeutic_objectives:read', 'catalog_therapeutic_objectives:create', 'catalog_therapeutic_objectives:update'] },
   { id: 'patients.catalogActivities', route: '/admin/catalogos/actividades', cells: ['catalog_therapeutic_activities:read', 'catalog_therapeutic_activities:create', 'catalog_therapeutic_activities:update'] },
   { id: 'patients.catalogServiceExitReasons', route: '/admin/catalogos/motivos-de-salida', cells: ['catalog_service_exit_reasons:read', 'catalog_service_exit_reasons:create', 'catalog_service_exit_reasons:update'] },
+  { id: 'patients.catalogSegments', route: '/admin/catalogos/segmentos', cells: ['catalog_therapeutic_segments:read', 'catalog_therapeutic_segments:create', 'catalog_therapeutic_segments:update'] },
   {
     id: 'map',
     route: '/admin/mapa',

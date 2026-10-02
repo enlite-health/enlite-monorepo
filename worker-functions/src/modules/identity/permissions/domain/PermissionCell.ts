@@ -58,6 +58,7 @@ export const RESOURCE_CATEGORY: Readonly<Record<string, PermissionCategory>> = {
   patient_care_team: 'Pacientes',
   patient_family: 'Pacientes',
   patient_chat: 'Pacientes',
+  patient_conversation: 'Pacientes',
   patient_coverage: 'Pacientes',
   patient_address: 'Pacientes',
   patient_services: 'Pacientes',
@@ -106,6 +107,10 @@ export const RESOURCE_CATEGORY: Readonly<Record<string, PermissionCategory>> = {
   upload: 'Importação',
   user_management: 'Administração',
   permission_management: 'Administração',
+  staff_directory: 'Administração',
+  own_notifications: 'Administração',
+  // Change 022-ux-mencao-e-notificacao, Rodada 2 (R2-B): heartbeat de presença do painel admin.
+  own_presence: 'Administração',
 };
 
 /**
@@ -287,6 +292,28 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
   'patient_address:update': 'Editar um endereço existente do paciente.',
   'patient_chat:create': 'Vincular um novo grupo de WhatsApp do caso ao paciente.',
   'patient_chat:update': 'Trocar os IDs dos grupos de WhatsApp já vinculados ao caso.',
+  'patient_conversation:read':
+    'Ver o chat INTERNO da equipe SOBRE o paciente: histórico de mensagens, autores e timestamps. '
+    + 'O paciente NÃO participa nem vê essa conversa. Dado de saúde — base legal própria (Ley 25.326 art. 2).',
+  'patient_conversation:create':
+    'Postar mensagem (de topo ou resposta) no chat interno da equipe sobre o paciente (não é conversa COM o paciente).',
+  'patient_conversation:update':
+    'Editar a própria mensagem já enviada no chat interno da equipe sobre o paciente (retração, correção).',
+  'patient_conversation:delete':
+    'Apagar a própria mensagem do chat interno da equipe sobre o paciente (soft delete; nunca cascateia para a thread).',
+  'staff_directory:read':
+    'Buscar staff ativo por nome ou e-mail para o autocomplete de menção do chat interno do paciente. '
+    + 'Devolve apenas UID e nome de exibição — nunca e-mail, telefone ou papel (D-06).',
+  'own_notifications:read':
+    'Ver as PRÓPRIAS notificações do sino (menção/resposta no chat interno de paciente) e a contagem '
+    + 'de não lidas. Nasce concedida a TODO staff ativo (D-07) — nunca vê notificação de outro uid.',
+  'own_notifications:update':
+    'Marcar a(s) PRÓPRIA(s) notificação(ões) do sino como lida(s). Nasce concedida a TODO staff ativo '
+    + '(D-07) — nunca marca notificação de outro uid (isolamento entre destinatários, D-24).',
+  'own_presence:update':
+    'Marcar a PRÓPRIA presença como ativa (heartbeat do painel admin, a cada ~60s). Nasce '
+    + 'concedida a TODO staff ativo (mesma regra de own_notifications, D-07) — nunca grava '
+    + '`last_seen_at` de outro uid.',
   'patient_identity:create':
     'Cadastrar a identidade do paciente (nome, documento, nascimento, sexo, telefone, e-mail de '
     + 'contato) e subir a primeira foto/consentimento de imagem.',
@@ -505,6 +532,31 @@ export function parseCellKey(key: string): { resource: string; action: string } 
 
 export function isValidCellKey(key: string): boolean {
   return parseCellKey(key) !== null;
+}
+
+/**
+ * Prefixo canônico das células "sobre o PRÓPRIO usuário" (`own_*` — heartbeat de presença,
+ * marcar a própria notificação como lida), nunca acesso a dado de terceiro. Espelha, LITERAL,
+ * o filtro SQL `p.resource LIKE 'own\_%' ESCAPE '\'` das migrations 464/466/467/468/469/470
+ * (spec 022) — aplica-se ao RESOURCE (antes do `:`), nunca à chave inteira.
+ *
+ * ⚠️ É `own_` COM underscore, não `own`: `ownership:read` e `owner:update` NÃO são células
+ * `own_*` — só compartilham o prefixo textual "own", sem o boundary que o `_` marca no SQL
+ * (`ESCAPE '\'` força o `_` literal, não o wildcard de 1 caractere do LIKE).
+ * `ownCellsAutoGrantRuleDerivadaDoCatalogo.test.ts` prova que este literal não diverge do SQL.
+ */
+export const OWN_CELL_RESOURCE_PREFIX = 'own_';
+
+/**
+ * Célula `own_*` (ver `OWN_CELL_RESOURCE_PREFIX`) — migration 470 a tornou não-removível por
+ * `iam.set_group_permissions` (REPLACE TOTAL protege a família). `planIamConfigImport` usa
+ * este predicado para ignorá-las NA COMPARAÇÃO (não no export/hash): um diff que aponta o que
+ * o aplicador nunca escreve faria o plano nunca convergir.
+ */
+export function isOwnCell(key: string): boolean {
+  // `split(':', 1)[0]` sem ternário/branch: com ou sem ':' na string, o índice 0 sempre existe
+  // (é o próprio `key` inteiro quando não há ':'), então não há ramo para cobrir.
+  return key.split(':', 1)[0].startsWith(OWN_CELL_RESOURCE_PREFIX);
 }
 
 /**

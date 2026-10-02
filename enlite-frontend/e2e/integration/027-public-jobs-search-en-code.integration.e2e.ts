@@ -169,4 +169,14 @@ test.describe('@integration Home — busca da lista pública de vagas por códig
     await typeInSearch(page, 'EN999999999-nao-existe');
     await expect(page.getByText('No se encontraron vacantes', { exact: false })).toBeVisible({ timeout: 10_000 });
   });
+
+  // Gate `revisao-pr` MODO fecho, PR #512 — blocker 4/D354: `PublicVacancyPage`
+  // (rota `/vacantes/:id`, PÚBLICA — PublicVacancyController não exige auth) é uma
+  // das 7 superfícies sem e2e afirmando o `EN####` renderizado. `vacancyId` já vem
+  // do `seed()` acima (mesma vaga NATIVA usada pela busca) — só falta um `goto`
+  // direto e ler o texto da TELA, sem reconstruir jornada nenhuma.
+  test('feliz — página pública da vaga (/vacantes/:id) mostra o código EN da mesma vaga', async ({ page }) => {
+    await page.goto(`/vacantes/${vacancyId}`);
+    await expect(page.getByText(`EN${NATIVE_CASE}`, { exact: false })).toBeVisible({ timeout: 15_000 });
+  });
 });

@@ -18,9 +18,9 @@ interface Props {
   servicesRedacted?: boolean;
 }
 
-function Row({ label, children, testId }: { label: string; children: React.ReactNode; testId?: string }): JSX.Element {
+function Row({ label, children, testId, mask = false }: { label: string; children: React.ReactNode; testId?: string; mask?: boolean }): JSX.Element {
   return (
-    <div className="flex flex-col gap-0.5" data-testid={testId}>
+    <div className="flex flex-col gap-0.5" data-testid={testId} {...(mask ? { 'data-clarity-mask': 'True' } : {})}>
       <Text as="span" size="sm" weight="medium" color="secondary">{label}</Text>
       <div>{children}</div>
     </div>
@@ -77,6 +77,12 @@ export function TherapeuticProjectVersionView({ version: v, services, compact = 
           {redacted || v.diagnoses === null
             ? <Text as="span" size="sm" color="muted">{tc('redacted')}</Text>
             : <ListValue items={v.diagnoses.map((d) => ({ id: d.uri, label: d.title }))} />}
+        </Row>
+        {/* Spec 030: `redacted` (sem `patient_clinical:read`) ≠ `null` sem marcador (versão anterior à 496 → "—"). */}
+        <Row label={tc('segment')} testId="tpv-segment" mask>
+          {redacted
+            ? <Text as="span" size="sm" color="muted">{tc('redacted')}</Text>
+            : <Text as="span" size="sm" color="primary">{v.segment?.label ?? '—'}</Text>}
         </Row>
         <Row label={tc('service')} testId="tpv-service"><Text as="span" size="sm" color="primary">{serviceLabel}</Text></Row>
         <Row label={tc('modality')} testId="tpv-modality">

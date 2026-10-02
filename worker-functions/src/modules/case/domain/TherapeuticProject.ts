@@ -99,6 +99,12 @@ export interface TherapeuticProjectVersion {
   activities: TherapeuticCatalogSnapshotItem[];
   /** Derivado dos `diagnoses` (capítulos CID-11 distintos, ordenados por código). Ver `PathologySegment`. */
   pathologyTypes: PathologySegment[];
+  /**
+   * Segmento Ana Care congelado na versão (migration 496, spec 030) — `{id,label}` resolvido no
+   * servidor a partir do catálogo ATIVO. `null` só em versão anterior à 496 (imutável). Dado CLÍNICO:
+   * a projeção (`therapeuticProjectAccess.ts`) devolve `null` sem `patient_clinical:read`.
+   */
+  segment: CatalogSnapshotItem | null;
   startDate: string;
   endDate: string;
   annulledAt: string | null;
@@ -146,7 +152,7 @@ export type ResolvedTherapeuticContact =
  * seleção de contato não é reescrever o conteúdo clínico da versão.
  */
 export const THERAPEUTIC_FIELD_CLASS = {
-  MACRO: ['contractedServiceId', 'diagnoses', 'clinicalContext', 'generalObjective', 'specificObjectiveIds', 'activityIds'] as const,
+  MACRO: ['contractedServiceId', 'diagnoses', 'clinicalContext', 'generalObjective', 'specificObjectiveIds', 'activityIds', 'segmentId'] as const,
   MICRO: ['startDate', 'endDate', 'modality', 'contactRefs', 'careTeamIds'] as const,
 } as const;
 

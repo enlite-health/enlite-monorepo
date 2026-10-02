@@ -8,12 +8,24 @@
  * `AXONICO_BASE_URL` já aponta para `http://host.docker.internal:9912` (docker-compose.test.yml) —
  * o stub sobe NESTE processo (fora do container) na porta 9912, e o container da API alcança via
  * `host.docker.internal` (extra_hosts já configurado). O banco é real (enlite_e2e).
+ *
+ * change `axonico-envio-rastreavel` (24/09/2026, migration 473) — o describe
+ * "sent_by + GET .../anacare-hours" abaixo cruza este endpoint com
+ * `GET /api/admin/anacare-hours/months/:month/patients/:patientId`, que só responde (em vez de 503
+ * `ANACARE_SOURCE_NOT_CONFIGURED`) com `ANACARE_HOURS_SOURCE=fake` no container — env que
+ * `docker-compose.test.yml` sozinho NÃO seta (só `docker-compose.anacare-hours.yml` seta). Por
+ * isso a STACK deste arquivo, a partir de agora, é:
+ *   docker compose -f docker-compose.yml -f docker-compose.test.yml -f docker-compose.anacare-hours.yml \
+ *     up -d --build --no-deps postgres api
+ * Sem essa env, o describe novo pula com aviso explícito (nunca finge sucesso) — os describes
+ * antigos (POST do lançamento) não dependem dela e continuam valendo com a stack de sempre.
  */
 
 import { execFileSync } from 'child_process';
 import { Pool } from 'pg';
 import { createApiClient, getMockToken, waitForBackend, createPatientFixture } from './helpers';
 import { startAxonicoStub, type AxonicoStub } from './helpers/axonicoStubServer';
+import { garantirCelula, grupoComCelulas, limparIamFixtures, TENANT_E2E } from './helpers/permissionFamilyHarness';
 
 const DATABASE_URL =
   process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
@@ -78,6 +90,20 @@ describe('Axonico Lançamento API (F4)', () => {
 
     pool = new Pool({ connectionString: DATABASE_URL });
 
+    // change `axonico-envio-rastreavel` (24/09/2026, migration 473) — `sent_by` tem FK real para
+    // `users.firebase_uid`. MEDIDO ao rodar esta suíte contra a stack real: sem esta linha, TODO
+    // POST que chega a `submitComprobante` falha com 500 (`insert or update ... violates foreign
+    // key constraint "axonico_comprobante_lancamento_sent_by_fkey"`) — o comprovante É CRIADO no
+    // Axonico (fatura de verdade) e a gravação local falha, exatamente o caminho "FOI CRIADO mas
+    // não registramos" que `LancarPrestacaoAxonicoUseCase` já loga como ERROR. `adminToken` grava
+    // `sent_by` de verdade agora — sem uma linha em `users`, esta suíte inteira faturaria no stub
+    // sem nunca conseguir persistir. `ON CONFLICT DO NOTHING` — reentrância entre corridas.
+    await pool.query(
+      `INSERT INTO users (firebase_uid, email, display_name, role, is_active, status, tenant_id)
+       VALUES ('axonico-lancamento-admin', 'axonico-lancamento-admin@e2e.local', 'QA Axonico Lancamento Admin', 'admin', true, 'ACTIVE', '00000000-0000-0000-0000-000000000001')
+       ON CONFLICT (firebase_uid) DO NOTHING`,
+    );
+
     stub = await startAxonicoStub(
       [
         { dni: '30111111', historiaClinica: 'HC-001', nroCobertura: 'COB-001' },
@@ -96,6 +122,10 @@ describe('Axonico Lançamento API (F4)', () => {
       await pool.query(`DELETE FROM axonico_comprobante_lancamento WHERE patient_id = ANY($1::uuid[])`, [patientIds]).catch(() => {});
       await pool.query(`DELETE FROM patients WHERE id = ANY($1::uuid[])`, [patientIds]).catch(() => {});
     }
+    // `sent_by` (migration 473) referencia esta linha — apagar só DEPOIS de já ter limpado as
+    // tentativas acima (a FK bloquearia o DELETE de `users` enquanto alguma linha ainda apontasse pra cá).
+    await pool.query(`DELETE FROM axonico_comprobante_lancamento WHERE sent_by = 'axonico-lancamento-admin'`).catch(() => {});
+    await pool.query(`DELETE FROM users WHERE firebase_uid = 'axonico-lancamento-admin'`).catch(() => {});
     await pool.end().catch(() => {});
     await stub.close();
   });
@@ -157,6 +187,15 @@ describe('Axonico Lançamento API (F4)', () => {
       expect(stub.requestCounts.pacienteFilter).toBeGreaterThan(before.pacienteFilter);
       expect(stub.requestCounts.comprobantePut).toBeGreaterThan(before.comprobantePut);
       expect(stub.requestCounts.medicoParametroPortalFilter).toBeGreaterThan(before.medicoParametroPortalFilter);
+
+      // change `axonico-envio-rastreavel` (24/09/2026, migration 473) — `sent_by` gravado igual ao
+      // uid do TOKEN que disparou (nunca 'unknown', o controller exige uid via 401 ANTES do use
+      // case). `adminToken` foi emitido para `uid: 'axonico-lancamento-admin'` no `beforeAll`.
+      const row = await pool.query(
+        `SELECT sent_by FROM axonico_comprobante_lancamento WHERE document_number = '30111111' AND service_date = $1 ORDER BY id DESC LIMIT 1`,
+        [TODAY],
+      );
+      expect(row.rows[0].sent_by).toBe('axonico-lancamento-admin');
     });
   });
 
@@ -321,6 +360,204 @@ describe('Axonico Lançamento API (F4)', () => {
       expect(resultados[2].jaFaturado).toBe(true);
       expect(resultados[3].status).toBe('erro');
       expect(resultados[3].errorType).toBe('AxonicoUnmappedServiceTypeError');
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════
+  // change `axonico-envio-rastreavel` (24/09/2026, migration 473) — cruza o POST do lançamento
+  // com o GET de `anacare-hours` (`AnaCareHoursService.getPatientMonth`): depois de enviar, o dia
+  // tem que continuar "enviado" mesmo sem estado local nenhum (a leitura vem do banco). Requer
+  // `ANACARE_HOURS_SOURCE=fake` no container (ver comentário do cabeçalho do arquivo — stack tem
+  // de incluir `docker-compose.anacare-hours.yml`); sem essa env, o describe PULA com aviso
+  // explícito em vez de fingir sucesso (regra dura: contagem/sucesso zero nunca mascara "não medi").
+  // ═══════════════════════════════════════════════════════════════
+
+  describe('sent_by + GET anacare-hours — o dia continua "enviado" depois de recarregar', () => {
+    const GET_UID = 'axonico-get-anexo-admin';
+    const GET_EMAIL = 'axonico-get-anexo-admin@e2e.local';
+    const GRUPO_GET = 'Axonico GET anexo e2e';
+    const MONTH = '2026-09';
+    // Datas já usadas por OUTROS describes deste arquivo (para o mesmo (documentNumber='30222222'),
+    // que não colidiriam de qualquer forma por DNI diferente — mas o shift descoberto dinamicamente
+    // pode calhar numa destas datas, então filtramos por segurança).
+    const DATAS_RESERVADAS = new Set([TODAY, DATE_DUPLICADO_LOCAL, DATE_DNI_DUP, DATE_LOTE]);
+    const DNI_GET = '30222222'; // já cadastrado no stub (beforeAll do describe pai)
+
+    let getToken: string;
+    let anaCarePatientId: string | null = null;
+    let serviceDateEscolhida: string | null = null;
+    // A1 (achado do gate revisao-pr, 25/09/2026) precisa de uma SEGUNDA data livre — reusa o
+    // mesmo paciente/documento, mas com uid de POST diferente (sem linha em `users`), então não
+    // pode colidir com `serviceDateEscolhida` (dedupe local por documentNumber+serviceType+serviceDate).
+    let datasLivres: string[] = [];
+    let sourceIndisponivel = false;
+
+    beforeAll(async () => {
+      await pool.query(
+        `INSERT INTO users (firebase_uid, email, display_name, role, is_active, status, tenant_id)
+         VALUES ($1, $2, 'QA Axonico GET Anexo', 'admin', true, 'ACTIVE', $3)
+         ON CONFLICT (firebase_uid) DO NOTHING`,
+        [GET_UID, GET_EMAIL, TENANT_E2E],
+      );
+      await garantirCelula(pool, { resource: 'anacare_hours', action: 'read', category: 'Pacientes' });
+      await garantirCelula(pool, { resource: 'patient_identity', action: 'read', category: 'Pacientes' });
+      await grupoComCelulas(pool, {
+        nome: GRUPO_GET,
+        uid: GET_UID,
+        celulas: [
+          ['anacare_hours', 'read'],
+          ['patient_identity', 'read'],
+        ],
+      });
+      getToken = await getMockToken(api, { uid: GET_UID, email: GET_EMAIL, role: 'admin' });
+
+      // Descobre em runtime um (anaCarePatientId, serviceDate) real da massa FALSA — nunca cravado
+      // (a massa é gerada por `FakeAnaCareShiftsSource`, não é um fixture nosso). Sem
+      // `ANACARE_HOURS_SOURCE=fake` no container, a LISTA devolve 503 — sinalizamos e os `it`s
+      // abaixo pulam com `console.warn`, nunca fingindo sucesso.
+      const lista = await api.get(`/api/admin/anacare-hours/months/${MONTH}`, auth(getToken));
+      if (lista.status === 503) {
+        sourceIndisponivel = true;
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[NÃO RODADO] describe "sent_by + GET anacare-hours": GET /anacare-hours/months/${MONTH} devolveu 503 ` +
+            `(${JSON.stringify(lista.data)}) — o container não está com ANACARE_HOURS_SOURCE=fake. ` +
+            'Suba a stack com docker-compose.anacare-hours.yml (ver cabeçalho do arquivo) para rodar este describe.',
+        );
+        return;
+      }
+      if (lista.status !== 200 || !Array.isArray(lista.data?.data?.patients) || lista.data.data.patients.length === 0) {
+        sourceIndisponivel = true;
+        // eslint-disable-next-line no-console
+        console.warn(
+          `[NÃO RODADO] describe "sent_by + GET anacare-hours": GET da lista não devolveu pacientes (status=${lista.status}, body=${JSON.stringify(lista.data)}).`,
+        );
+        return;
+      }
+      const primeiroPacienteId = lista.data.data.patients[0].anaCareId as string;
+
+      const detalhe = await api.get(`/api/admin/anacare-hours/months/${MONTH}/patients/${primeiroPacienteId}`, auth(getToken));
+      if (detalhe.status !== 200) {
+        sourceIndisponivel = true;
+        // eslint-disable-next-line no-console
+        console.warn(`[NÃO RODADO] describe "sent_by + GET anacare-hours": GET do detalhe devolveu ${detalhe.status}.`);
+        return;
+      }
+      const todasAsDatas: string[] = (detalhe.data.data.providers as Array<{ shifts: Array<{ date: string }> }>)
+        .flatMap((p) => p.shifts.map((s) => s.date))
+        .filter((d) => d.startsWith(MONTH) && !DATAS_RESERVADAS.has(d));
+      if (todasAsDatas.length === 0) {
+        sourceIndisponivel = true;
+        // eslint-disable-next-line no-console
+        console.warn('[NÃO RODADO] describe "sent_by + GET anacare-hours": nenhuma data de turno livre (fora das datas reservadas) para o paciente sorteado.');
+        return;
+      }
+
+      anaCarePatientId = primeiroPacienteId;
+      serviceDateEscolhida = todasAsDatas[0];
+      datasLivres = todasAsDatas;
+
+      // Documento do paciente (fallback de item 5, migration 446) — sem isto,
+      // `patientDocumentNumber` sai ausente e `getPatientMonth` nem consulta o Axonico.
+      await pool.query(
+        `INSERT INTO ana_care_patient_document (ana_care_patient_id, document_number, document_type, registered_by)
+         VALUES ($1, $2, 'DNI', $3)
+         ON CONFLICT (ana_care_patient_id) DO UPDATE SET document_number = EXCLUDED.document_number`,
+        [anaCarePatientId, DNI_GET, GET_UID],
+      );
+    });
+
+    afterAll(async () => {
+      if (anaCarePatientId) {
+        await pool.query(`DELETE FROM ana_care_patient_document WHERE ana_care_patient_id = $1`, [anaCarePatientId]).catch(() => {});
+      }
+      // Lançamentos deste describe não passam por `patientComDni`/`semearDuplicadoLocal` (tracked
+      // por `patientIds`/`lancamentoIds` no afterAll de fora) — limpa por DNI_GET explicitamente,
+      // inclusive o gravado pelo uid A1 SEM linha em `users`.
+      await pool.query(`DELETE FROM axonico_comprobante_lancamento WHERE document_number = $1`, [DNI_GET]).catch(() => {});
+      await limparIamFixtures(pool, { uids: [GET_UID], grupos: [GRUPO_GET] });
+    });
+
+    it('após POST /integrations/axonico/comprobante, GET .../patients/:id devolve axonico.numeroComprobante e sentBy.displayName no dia certo', async () => {
+      if (sourceIndisponivel || !anaCarePatientId || !serviceDateEscolhida) {
+        // eslint-disable-next-line no-console
+        console.warn('[NÃO RODADO] teste pulado — ver aviso do beforeAll (ANACARE_HOURS_SOURCE ausente ou massa sem data livre).');
+        return;
+      }
+
+      const resPost = await api.post(
+        '/api/admin/integrations/axonico/comprobante',
+        { documentNumber: DNI_GET, serviceType: 'AT', serviceDate: serviceDateEscolhida, hours: 1 },
+        auth(adminToken),
+      );
+      expect(resPost.status).toBe(200);
+      expect(resPost.data.data.status).toBe('enviado');
+      const numeroComprobante = resPost.data.data.numeroComprobante as string;
+
+      const resGet = await api.get(`/api/admin/anacare-hours/months/${MONTH}/patients/${anaCarePatientId}`, auth(getToken));
+      expect(resGet.status).toBe(200);
+
+      const todosOsTurnos = (resGet.data.data.providers as Array<{ shifts: Array<{ date: string; axonico?: unknown }> }>).flatMap((p) => p.shifts);
+      const turnoDoDia = todosOsTurnos.find((s) => s.date === serviceDateEscolhida);
+      expect(turnoDoDia).toBeDefined();
+      expect(turnoDoDia?.axonico).toMatchObject({
+        status: 'enviado',
+        numeroComprobante,
+        sentBy: { uid: 'axonico-lancamento-admin' },
+      });
+      // `displayName` — só existe de verdade se o uid do POST (`axonico-lancamento-admin`) tiver
+      // linha em `users` com `display_name`; este arquivo não insere essa linha (o mock token não
+      // exige `users` pra autenticar) — então o valor esperado é `null` (JOIN não achou), NUNCA
+      // ausente/omitido (o campo `displayName` sempre existe dentro de `sentBy`).
+      const displayNameRow = await pool.query(`SELECT display_name FROM users WHERE firebase_uid = 'axonico-lancamento-admin'`);
+      const displayNameEsperado = displayNameRow.rows[0]?.display_name ?? null;
+      expect((turnoDoDia?.axonico as { sentBy: { displayName: string | null } }).sentBy.displayName).toBe(displayNameEsperado);
+    });
+
+    /**
+     * A1 (achado do gate `revisao-pr`, 25/09/2026) — PROVA CENTRAL da correção: o uid autenticado
+     * NÃO TEM linha em `users` (nunca inserida por este teste, de propósito). Antes da correção,
+     * `sent_by REFERENCES users(firebase_uid)` fazia o INSERT do `enviado` estourar 23503 NESTE
+     * EXATO cenário — DEPOIS do `PUT /api/comprobante` já ter faturado no stub — perdendo o
+     * registro local, o dedupe local e o "Enviado" da tela. Agora grava normalmente, e o GET
+     * devolve `sentBy: { uid, displayName: null }` (LEFT JOIN não achou), nunca 500, nunca omite o
+     * campo `displayName`.
+     */
+    it('A1 — uid autenticado SEM linha em users: POST grava sem erro (nunca 500), GET devolve sentBy.displayName=null', async () => {
+      if (sourceIndisponivel || !anaCarePatientId || !datasLivres[1]) {
+        // eslint-disable-next-line no-console
+        console.warn('[NÃO RODADO] teste A1 pulado — ver aviso do beforeAll (ANACARE_HOURS_SOURCE ausente ou massa sem segunda data livre).');
+        return;
+      }
+      const POST_UID_SEM_USERS = 'axonico-a1-uid-sem-linha-em-users';
+      const dataDoTeste = datasLivres[1];
+      const postToken = await getMockToken(api, { uid: POST_UID_SEM_USERS, email: `${POST_UID_SEM_USERS}@e2e.local`, role: 'admin' });
+
+      // Confirma a premissa do teste — sem isso a "prova" seria vazia.
+      const semUsersRow = await pool.query(`SELECT 1 FROM users WHERE firebase_uid = $1`, [POST_UID_SEM_USERS]);
+      expect(semUsersRow.rowCount).toBe(0);
+
+      const resPost = await api.post(
+        '/api/admin/integrations/axonico/comprobante',
+        { documentNumber: DNI_GET, serviceType: 'AT', serviceDate: dataDoTeste, hours: 1 },
+        auth(postToken),
+      );
+      expect(resPost.status).toBe(200); // achado A1: sem a correção, isto vinha 500 (FK 23503)
+      expect(resPost.data.data.status).toBe('enviado');
+
+      const rowNoBanco = await pool.query(
+        `SELECT sent_by FROM axonico_comprobante_lancamento WHERE document_number = $1 AND service_date = $2 ORDER BY id DESC LIMIT 1`,
+        [DNI_GET, dataDoTeste],
+      );
+      expect(rowNoBanco.rows[0].sent_by).toBe(POST_UID_SEM_USERS);
+
+      const resGet = await api.get(`/api/admin/anacare-hours/months/${MONTH}/patients/${anaCarePatientId}`, auth(getToken));
+      expect(resGet.status).toBe(200);
+      const todosOsTurnos = (resGet.data.data.providers as Array<{ shifts: Array<{ date: string; axonico?: { sentBy?: { uid: string; displayName: string | null } } }> }>).flatMap(
+        (p) => p.shifts,
+      );
+      const turnoDoDia = todosOsTurnos.find((s) => s.date === dataDoTeste);
+      expect(turnoDoDia?.axonico?.sentBy).toEqual({ uid: POST_UID_SEM_USERS, displayName: null });
     });
   });
 

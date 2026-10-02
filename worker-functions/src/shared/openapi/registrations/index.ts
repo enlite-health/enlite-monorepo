@@ -4,22 +4,26 @@
 
 import './health';
 import './adminAuth';
+import './adminConversation';
 import './adminDashboard';
 import './adminEncuadres';
 import './adminFunnel';
 import './adminInterviewSlots';
 import './adminMatching';
 import './adminMessaging';
+import './adminNotifications';
 import './adminPatients';
 import './adminPatientItinerary';
 import './adminPatientKanbanServices';
 import './adminServiceTeam';
 import './adminServiceTeamContact';
 import './adminItineraryWrite';
+import './adminPresence';
 import './adminRecruitment';
 import './adminSetup';
 import './adminSocialLinks';
 import './adminMeetLinks';
+import './adminStaffDirectory';
 import './adminTalentum';
 import './adminUsers';
 import './permissionsPanel';

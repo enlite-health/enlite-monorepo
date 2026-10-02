@@ -39,9 +39,25 @@ resource "google_storage_bucket_iam_member" "patient_photos_functions_sa" {
   member = module.sa_enlite_functions.member
 }
 
-# Documento (prova do consentimento) e consentimento de imagem — que tinham bucket próprio aqui
-# (`bucket_patient_documents`, spec 018 PR-4) — foram REMOVIDOS por completo
-# (fix/018-remover-documentos-consentimento). Nunca chegaram a `prd`; o bucket
-# `enlite-patient-documents-stg` sai por `terraform apply` na `stg` (destroy real do módulo, sem
-# dado a reconciliar — mesma trava desarmar→importar→alinhar não se aplica: não há recurso criado
-# à mão nem drift a fechar aqui, só a remoção do bloco).
+# spec 022 (chat interno por paciente), Bloco 3 — anexos de mensagem, agora também na stage (spec 035,
+# sync main → stage, resposta 1 do Gabriel em 01/10/2026). Mesmo desenho do bloco de prd
+# (`terraform/environments/prd/storage.tf`): SOUTHAMERICA-WEST1, sem CORS, acesso público bloqueado,
+# soft_delete_retention_days=0, force_destroy=false. Mesmo endereço e mesmo nome do bloco da spec 018
+# que `0b045728` tirou daqui SEM `apply`: o bucket (criado em 14/09) e o IAM member continuam no state
+# da stg (`gs://enlite-tf-state/stg`, serial 36, medido em 01/10) — por isso não há bloco `import`.
+# A diferença viva × HCL é o CORS (GET/HEAD) que o bucket ainda tem; `plan`/`apply` só na F4 da 035.
+module "bucket_patient_documents" {
+  source                      = "../../modules/storage"
+  name                        = "enlite-patient-documents-stg"
+  location                    = "SOUTHAMERICA-WEST1"
+  uniform_bucket_level_access = true
+  public_access_prevention    = "enforced"
+  soft_delete_retention_days  = 0
+  force_destroy               = false
+}
+
+resource "google_storage_bucket_iam_member" "patient_documents_functions_sa" {
+  bucket = module.bucket_patient_documents.name
+  role   = "roles/storage.objectAdmin"
+  member = module.sa_enlite_functions.member
+}

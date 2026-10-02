@@ -40,6 +40,29 @@ resource "google_storage_bucket_iam_member" "patient_photos_functions_sa" {
   member = module.sa_enlite_functions.member
 }
 
+# spec 022 (chat interno por paciente), Bloco 3 — anexos de mensagem (PDF/PNG/JPG/.docx). Recolocado
+# em prd por D-25: o módulo nasceu em `aac26926` e saiu em `4a27d1ed` ("PRD fora de escopo"); o HCL
+# abaixo é o bloco recuperado (`evidencias/hcl-bucket-removido.txt`), sem alteração de desenho.
+# Mesmo desenho do `bucket_patient_photos` ao lado: SOUTHAMERICA-WEST1, sem CORS (upload/download
+# sempre pelo servidor, nunca URL assinada de escrita no navegador), acesso público bloqueado,
+# soft_delete_retention_days=0 para a exclusão apagar de verdade (o módulo usa 7 por default),
+# sem versionamento e sem regra de lifecycle. `force_destroy = false` explícito: é dado de paciente.
+module "bucket_patient_documents" {
+  source                      = "../../modules/storage"
+  name                        = "enlite-patient-documents"
+  location                    = "SOUTHAMERICA-WEST1"
+  uniform_bucket_level_access = true
+  public_access_prevention    = "enforced"
+  soft_delete_retention_days  = 0
+  force_destroy               = false
+}
+
+resource "google_storage_bucket_iam_member" "patient_documents_functions_sa" {
+  bucket = module.bucket_patient_documents.name
+  role   = "roles/storage.objectAdmin"
+  member = module.sa_enlite_functions.member
+}
+
 # Buckets gerenciados pelo Google (NÃO declarados aqui):
 # - enlite-prd_cloudbuild                     → criado pelo Cloud Build
 # - run-sources-enlite-prd-southamerica-west1 → criado pelo Cloud Run pra source deploys

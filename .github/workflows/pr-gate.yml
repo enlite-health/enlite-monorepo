@@ -110,6 +110,13 @@ jobs:
       # atravessa as camadas do conserto da D302 (banco → API → tela). Guarda
       # que nenhum pipeline executa apodrece — foi o blocker B-A do gate.
       #
+      # PR #512, blocker 4/D354 — e2e de tela pro `EN####` (spec 027 fase 6): as 7
+      # superfícies ganharam asserção DENTRO dos 2 specs 027 já listados acima (login
+      # mock já provado neste job), sem precisar de arquivo novo no filtro.
+      # `patient-status-aguardando-financeiro` foi cogitado e DESCARTADO (não é seu):
+      # medido no run 36002913871 — falha no PRÓPRIO login (`expect(page).not.toHaveURL(/login/)`
+      # nunca sai de `/admin/login`), sem relação com case_number. Rot pré-existente de
+      # arquivo nunca executado neste job — fora de escopo do blocker 4, ver relatório.
       # `027-vacancy-case-select` FICA: o `--grep` do Playwright casa contra a
       # linha inteira do reporter (describe + título + CAMINHO do arquivo),
       # não só o título — `027-vacancy-case-select.integration.e2e.ts` casa

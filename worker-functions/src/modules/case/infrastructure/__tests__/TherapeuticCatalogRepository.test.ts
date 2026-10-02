@@ -171,6 +171,38 @@ describe('TherapeuticCatalogRepository', () => {
     });
   });
 
+  describe('snapshotSegment (030, lex C4: o servidor congela {id,label} do segmento ATIVO)', () => {
+    const SEG_ID = '9b1f3c1e-6a53-4d57-9a8e-0a1b2c3d4e5f';
+
+    it('030 — segmento ATIVO → `{ id, label }` do catálogo, lido pelo client da transação', async () => {
+      const { cli, chamadas } = cliente({ rows: [{ id: SEG_ID, label: 'AT para Pacientes con TEA' }] });
+      const snap = await new TherapeuticCatalogRepository().snapshotSegment(SEG_ID, cli as never);
+      expect(snap).toEqual({ id: SEG_ID, label: 'AT para Pacientes con TEA' });
+      expect(mockPoolQuery).not.toHaveBeenCalled();
+      expect(chamadas[0].sql).toContain('FROM therapeutic_segments');
+      expect(chamadas[0].sql).toContain('active');
+      expect(chamadas[0].params).toEqual([SEG_ID]);
+    });
+
+    it('030 — inativo ou inexistente (nenhuma linha) → `CatalogSegmentInvalidError` (o existente, code catalog_segment_invalid)', async () => {
+      const { cli } = cliente({ rows: [] });
+      const erro = await new TherapeuticCatalogRepository()
+        .snapshotSegment(SEG_ID, cli as never)
+        .then(() => { throw new Error('devia ter lançado'); }, (e: unknown) => e as CatalogSegmentInvalidError);
+      expect(erro).toBeInstanceOf(CatalogSegmentInvalidError);
+      expect(erro.code).toBe('catalog_segment_invalid');
+    });
+
+    it('030 — `err.message` e o objeto do erro NÃO carregam o uuid recebido (C3/C7: o 422 não ecoa o id)', async () => {
+      const { cli } = cliente({ rows: [] });
+      const erro = await new TherapeuticCatalogRepository()
+        .snapshotSegment(SEG_ID, cli as never)
+        .then(() => { throw new Error('devia ter lançado'); }, (e: unknown) => e as CatalogSegmentInvalidError);
+      expect(erro.message).not.toContain(SEG_ID);
+      expect(JSON.stringify(Object.getOwnPropertyNames(erro).map((k) => String((erro as never)[k])))).not.toContain(SEG_ID);
+    });
+  });
+
   describe('create', () => {
     it('com sortOrder → o valor vai como parâmetro; INSERT dentro da transação, COMMIT no fim', async () => {
       const { cli, chamadas } = cliente();

@@ -190,6 +190,10 @@ export function TherapeuticProjectPdfDocument({ input }: { input: TherapeuticPro
         {clinicalRedacted || v.pathologyTypes === null
           ? <Redacted />
           : <Field label={PDF_LABELS.pathologyType} value={v.pathologyTypes.map((p) => p.label).join(', ')} />}
+        {/* Spec 030 (lex C5): segmento escolhido no PTI — redigido na MESMA condição dos CID-11; `null` sem marcador = versão anterior à 496 → "—". */}
+        {clinicalRedacted || v.segment === undefined
+          ? <Redacted />
+          : <Field label={PDF_LABELS.segment} value={v.segment?.label} />}
 
         <SectionTitle>{PDF_SECTIONS.careTeam}</SectionTitle>
         {input.careTeam ? (input.careTeam.length === 0 ? <Text style={styles.paragraph}>{PDF_LABELS.notInformed}</Text> : input.careTeam.map((c, i) => <Bullet key={i}>{contactLine(c)}</Bullet>)) : <Redacted />}

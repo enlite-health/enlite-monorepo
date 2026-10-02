@@ -62,6 +62,20 @@ function jsonResponse(body: unknown, status = 200) {
     ok: status >= 200 && status < 300,
     status,
     json: () => Promise.resolve(body),
+    // `throwTypedError` lê o corpo de erro por `.text()` (24/09/2026 — corpo cru, nunca `.json()`
+    // direto, pra não perder corpo não-JSON). Mantém o MESMO corpo serializado, pra não divergir
+    // do que `json()` já devolvia.
+    text: () => Promise.resolve(JSON.stringify(body)),
+  } as Response;
+}
+
+/** Corpo de erro que NÃO é JSON — proxy/HTML de erro ou texto plano do Axonico. */
+function textResponse(rawBody: string, status: number) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    json: () => Promise.reject(new Error('corpo não é JSON')),
+    text: () => Promise.resolve(rawBody),
   } as Response;
 }
 
@@ -75,7 +89,10 @@ function loginResponse(overrides: { accessToken?: string; matricula?: string } =
 }
 
 function pacienteFilterResponse(
-  entries: Array<{ historia_clinica: string; coberturas: Array<{ nro_afiliado: string }> }>
+  entries: Array<{
+    historia_clinica: string;
+    coberturas: Array<{ nro_cobertura: string; nro_afiliado?: string; estado?: { descripcion: string } }>;
+  }>
 ) {
   return jsonResponse({ data: entries });
 }
@@ -419,18 +436,113 @@ describe('AxonicoApiClient — findPatientByDni', () => {
     expect(result).toBeNull();
   });
 
-  it('com match → historiaClinica e nroCobertura extraídos da 1ª cobertura', async () => {
+  it('com match → historiaClinica e nroCobertura extraídos da cobertura ativa no índice 0 (caso simples)', async () => {
     mockFetch.mockResolvedValueOnce(loginResponse());
     mockFetch.mockResolvedValueOnce(
       pacienteFilterResponse([
-        { historia_clinica: 'HC-123', coberturas: [{ nro_afiliado: 'AF-456' }] },
+        {
+          historia_clinica: 'HC-123',
+          coberturas: [{ nro_cobertura: '1', nro_afiliado: 'AF-456', estado: { descripcion: 'Activo' } }],
+        },
       ])
     );
 
     const client = makeClient();
     const result = await client.findPatientByDni('30712345');
 
-    expect(result).toEqual({ historiaClinica: 'HC-123', nroCobertura: 'AF-456' });
+    expect(result).toEqual({ historiaClinica: 'HC-123', nroCobertura: '1' });
+  });
+
+  it('4 coberturas (0-2 Baja, 3 Activo) → usa nro_cobertura (1 dígito) do índice 3, nunca o nro_afiliado (19 dígitos) nem o índice 0', async () => {
+    mockFetch.mockResolvedValueOnce(loginResponse());
+    mockFetch.mockResolvedValueOnce(
+      pacienteFilterResponse([
+        {
+          historia_clinica: 'HC-123',
+          coberturas: [
+            { nro_cobertura: '0', nro_afiliado: '1111111111111111110', estado: { descripcion: 'Baja' } },
+            { nro_cobertura: '1', nro_afiliado: '1111111111111111111', estado: { descripcion: 'Baja' } },
+            { nro_cobertura: '2', nro_afiliado: '1111111111111111112', estado: { descripcion: 'Baja' } },
+            { nro_cobertura: '3', nro_afiliado: '1111111111111111113', estado: { descripcion: 'Activo' } },
+          ],
+        },
+      ])
+    );
+
+    const client = makeClient();
+    const result = await client.findPatientByDni('30712345');
+
+    expect(result).toEqual({ historiaClinica: 'HC-123', nroCobertura: '3' });
+  });
+
+  it('estado.descripcion " ACTIVO " (caixa/espaço) → conta como ativa', async () => {
+    mockFetch.mockResolvedValueOnce(loginResponse());
+    mockFetch.mockResolvedValueOnce(
+      pacienteFilterResponse([
+        { historia_clinica: 'HC-123', coberturas: [{ nro_cobertura: '2', estado: { descripcion: ' ACTIVO ' } }] },
+      ])
+    );
+
+    const client = makeClient();
+    const result = await client.findPatientByDni('30712345');
+
+    expect(result).toEqual({ historiaClinica: 'HC-123', nroCobertura: '2' });
+  });
+
+  it('todas as coberturas Baja → null, sem cair para a [0]', async () => {
+    mockFetch.mockResolvedValueOnce(loginResponse());
+    mockFetch.mockResolvedValueOnce(
+      pacienteFilterResponse([
+        {
+          historia_clinica: 'HC-123',
+          coberturas: [
+            { nro_cobertura: '0', estado: { descripcion: 'Baja' } },
+            { nro_cobertura: '1', estado: { descripcion: 'Baja' } },
+          ],
+        },
+      ])
+    );
+
+    const client = makeClient();
+    const result = await client.findPatientByDni('30712345');
+
+    expect(result).toBeNull();
+    // Log sem PII (nunca os números de cobertura/afiliado) — só contagem e índice.
+    expect(mockLogger.info).toHaveBeenCalledWith(
+      expect.objectContaining({ coberturasTotal: 2, coberturaAtivaIndex: -1 }),
+    );
+    const logCall = mockLogger.info.mock.calls.find(([arg]) => 'coberturaAtivaIndex' in arg);
+    expect(JSON.stringify(logCall)).not.toMatch(/Baja/);
+  });
+
+  it('estado ausente em todas as coberturas → null, sem cair para a [0]', async () => {
+    mockFetch.mockResolvedValueOnce(loginResponse());
+    mockFetch.mockResolvedValueOnce(
+      pacienteFilterResponse([
+        { historia_clinica: 'HC-123', coberturas: [{ nro_cobertura: '0' }, { nro_cobertura: '1' }] },
+      ])
+    );
+
+    const client = makeClient();
+    const result = await client.findPatientByDni('30712345');
+
+    expect(result).toBeNull();
+  });
+
+  it('sem cobertura ativa → nenhuma chamada a comprobante/filter nem a PUT (findPatientByDni sozinho não faz essas chamadas; confirma que o resultado null não é seguido de nada)', async () => {
+    mockFetch.mockResolvedValueOnce(loginResponse());
+    mockFetch.mockResolvedValueOnce(
+      pacienteFilterResponse([
+        { historia_clinica: 'HC-123', coberturas: [{ nro_cobertura: '0', estado: { descripcion: 'Baja' } }] },
+      ])
+    );
+
+    const client = makeClient();
+    await client.findPatientByDni('30712345');
+
+    const chamadas = mockFetch.mock.calls.map(([url]) => String(url));
+    expect(chamadas.some((u) => u.includes('/api/comprobante'))).toBe(false);
+    expect(mockFetch).toHaveBeenCalledTimes(2); // login + paciente/filter, nada mais
   });
 
   it('doc_tipo enviado é sempre "0" (DNI), medido no corpo da requisição', async () => {
@@ -766,6 +878,112 @@ describe('AxonicoApiClient — erros tipados', () => {
       }),
     );
   });
+
+  // ── Corpo cru — corpo real do Axonico que não é `data.message` (24/09/2026) ──────────
+
+  it('400 com `message` na RAIZ (padrão Laravel, sem `data`) → mensagem chega na `AxonicoBusinessError` e no log (`axonicoBody`)', async () => {
+    mockFetch.mockResolvedValueOnce(loginResponse());
+    mockFetch.mockResolvedValueOnce(jsonResponse({ message: 'La fecha es inválida' }, 400));
+
+    const client = makeClient();
+    let caught: unknown;
+    try {
+      await client.submitComprobante({
+        historiaClinica: 'HC-123',
+        nroCobertura: 'AF-456',
+        serviceCodes: SERVICE_CODES,
+        serviceDate: SERVICE_DATE,
+        cantidad: 1,
+      });
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(AxonicoBusinessError);
+    expect((caught as Error).message).toContain('La fecha es inválida');
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 400,
+        axonicoMessage: 'La fecha es inválida',
+        axonicoBody: expect.stringContaining('La fecha es inválida'),
+      }),
+    );
+  });
+
+  it('400 com corpo TEXTO PLANO (não-JSON, ex. proxy) → mensagem chega com o texto cru', async () => {
+    mockFetch.mockResolvedValueOnce(loginResponse());
+    mockFetch.mockResolvedValueOnce(textResponse('Bad Request: campo X inválido', 400));
+
+    const client = makeClient();
+    let caught: unknown;
+    try {
+      await client.submitComprobante({
+        historiaClinica: 'HC-123',
+        nroCobertura: 'AF-456',
+        serviceCodes: SERVICE_CODES,
+        serviceDate: SERVICE_DATE,
+        cantidad: 1,
+      });
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(AxonicoBusinessError);
+    expect((caught as Error).message).toContain('Bad Request: campo X inválido');
+  });
+
+  it('400 com corpo VAZIO → mensagem termina em "HTTP 400" (fallback mudo preservado)', async () => {
+    mockFetch.mockResolvedValueOnce(loginResponse());
+    mockFetch.mockResolvedValueOnce(textResponse('', 400));
+
+    const client = makeClient();
+    let caught: unknown;
+    try {
+      await client.submitComprobante({
+        historiaClinica: 'HC-123',
+        nroCobertura: 'AF-456',
+        serviceCodes: SERVICE_CODES,
+        serviceDate: SERVICE_DATE,
+        cantidad: 1,
+      });
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(AxonicoBusinessError);
+    expect((caught as Error).message).toMatch(/HTTP 400$/);
+  });
+
+  it('400 com corpo contendo sequência de 6+ dígitos (DNI/historia/nro_afiliado) → REDIGIDO na mensagem e no `axonicoBody`, nunca em claro', async () => {
+    mockFetch.mockResolvedValueOnce(loginResponse());
+    mockFetch.mockResolvedValueOnce(textResponse('Paciente não encontrado: historia 12345678', 400));
+
+    const client = makeClient();
+    let caught: unknown;
+    try {
+      await client.submitComprobante({
+        historiaClinica: 'HC-123',
+        nroCobertura: 'AF-456',
+        serviceCodes: SERVICE_CODES,
+        serviceDate: SERVICE_DATE,
+        cantidad: 1,
+      });
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(AxonicoBusinessError);
+    expect((caught as Error).message).not.toContain('12345678');
+    expect((caught as Error).message).toContain('<redigido>');
+    expect(mockLogger.error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        axonicoMessage: expect.not.stringContaining('12345678'),
+        axonicoBody: expect.not.stringContaining('12345678'),
+      }),
+    );
+    const loggedCall = mockLogger.error.mock.calls.find(([f]: [{ axonicoBody?: string }]) => f.axonicoBody !== undefined);
+    expect(loggedCall?.[0].axonicoBody).toContain('<redigido>');
+  });
 });
 
 // ── Vocabulário: só a chave canônica em inglês (CAREGIVER) é válida ───
@@ -934,12 +1152,13 @@ describe('AxonicoApiClient — relógio default e parse defensivo de erro', () =
     expect(body.fecha).toMatch(/^10\/09\/2026 \d{2}:\d{2}:\d{2}$/);
   });
 
-  it('corpo de erro que não é JSON válido cai no fallback ({}) — ainda assim erro tipado', async () => {
+  it('leitura do corpo de erro falha (`.text()` rejeita) → cai no fallback mudo "HTTP 500", ainda assim erro tipado', async () => {
     mockFetch.mockResolvedValueOnce(loginResponse());
     mockFetch.mockResolvedValueOnce({
       ok: false,
       status: 500,
       json: () => Promise.reject(new Error('corpo não é JSON')),
+      text: () => Promise.reject(new Error('corpo não pôde ser lido')),
     } as unknown as Response);
 
     const client = makeClient();

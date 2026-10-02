@@ -1,5 +1,13 @@
 import { KeyManagementServiceClient } from '@google-cloud/kms';
 
+/**
+ * Limite de decifra KMS em paralelo (D-01 da spec 022) — acima disso estoura a cota da API.
+ * Compartilhado por `ConversationRepository` e `NotificationRepository` (G4, gate da change
+ * 022-ux-mencao-e-notificacao): as duas tinham o MESMO valor declarado em duas constantes locais
+ * — mesmo teto, duas fontes que podiam divergir em silêncio numa mudança futura.
+ */
+export const KMS_DECRYPT_CONCURRENCY_LIMIT = 10;
+
 export class KMSEncryptionService {
   private client: KeyManagementServiceClient | null;
   private keyName: string;

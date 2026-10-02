@@ -168,6 +168,18 @@ describe('AdminTherapeuticProjectsApiService — versões do projeto (URL exata)
     expect(enviado.version).not.toHaveProperty('minor');
   });
 
+  it('createVersion mode:new leva o `segmentId` no corpo da versão (spec 030) e mode:edit segue sem a chave', async () => {
+    const SEG = '11111111-1111-4111-8111-111111111111';
+    const novo: CreateTherapeuticProjectBody = { mode: 'new', version: { ...CORPO, segmentId: SEG } };
+    const f = mockFetch({ success: true, data: { id: VERSION_ID } });
+    await AdminTherapeuticProjectsApiService.createVersion(PATIENT_ID, novo);
+    expect(JSON.parse(chamada(f)[1].body as string).version.segmentId).toBe(SEG);
+    const edit: CreateTherapeuticProjectBody = { mode: 'edit', fromVersionId: VERSION_ID, version: CORPO };
+    const g = mockFetch({ success: true, data: { id: 'v2' } });
+    await AdminTherapeuticProjectsApiService.createVersion(PATIENT_ID, edit);
+    expect(JSON.parse(chamada(g)[1].body as string).version).not.toHaveProperty('segmentId');
+  });
+
   it('createVersion mode:edit leva o fromVersionId (a minor seguinte sai DAQUELA versão)', async () => {
     const body: CreateTherapeuticProjectBody = { mode: 'edit', fromVersionId: VERSION_ID, version: CORPO };
     const f = mockFetch({ success: true, data: { id: 'v2', version: 'V.1.1' } });

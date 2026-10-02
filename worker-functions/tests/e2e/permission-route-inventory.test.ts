@@ -409,6 +409,30 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'POST /api/admin/ai-prompts/:slug/undo → ai_prompt:update',
         'POST /api/admin/ai-prompts/simulate-vacancy → ai_prompt:update', // T071
         'PUT /api/admin/ai-prompts/:slug → ai_prompt:update',
+        // ── spec 022 (chat interno por paciente + anexos + sino de notificações) ──
+        // Conversa (Bloco 1/3, `adminConversationRoutes.ts`) — família `admin.patients`,
+        // célula NOVA `patient_conversation:*` (D-07, migration 463).
+        'DELETE /api/admin/patients/:id/conversation/messages/:mid → patient_conversation:delete',
+        'GET /api/admin/patients/:id/conversation → patient_conversation:read',
+        'GET /api/admin/patients/:id/conversation/files/:fileId/url → patient_conversation:read',
+        'GET /api/admin/patients/:id/conversation/messages/:mid/replies → patient_conversation:read',
+        'PATCH /api/admin/patients/:id/conversation/messages/:mid → patient_conversation:update',
+        'POST /api/admin/patients/:id/conversation/files → patient_conversation:create',
+        'POST /api/admin/patients/:id/conversation/messages → patient_conversation:create',
+        'PUT /api/admin/patients/:id/conversation/read-mark → patient_conversation:read',
+        // Diretório de staff (T127/T128, `adminStaffDirectoryRoutes.ts`) — família `admin.users`,
+        // célula NOVA `staff_directory:read` (D-07, migration 463).
+        'GET /api/admin/staff-directory → staff_directory:read',
+        // Sino de notificações (Bloco 4/T405, `adminNotificationRoutes.ts`) — família
+        // `admin.users`, célula NOVA `own_notifications:*`.
+        'GET /api/admin/notifications → own_notifications:read',
+        'GET /api/admin/notifications/unread-count → own_notifications:read',
+        'POST /api/admin/notifications/:id/read → own_notifications:update',
+        'POST /api/admin/notifications/read-all → own_notifications:update',
+        // Presença/heartbeat (Rodada 2/R2-B, `adminPresenceRoutes.ts`, src/index.ts:451) —
+        // família `admin.users`, célula NOVA `own_presence:update` (nasce concedida a todo
+        // staff, mesma regra de `own_notifications`, D-07; migration 466).
+        'POST /api/admin/me/presence → own_presence:update',
       ].sort(),
     );
   });

@@ -63,8 +63,15 @@ function makeRes(): FakeRes {
   return { res: { status, json } as unknown as Response, status, json };
 }
 
-function makeReq(body: unknown): Request {
-  return { body } as Request;
+const SENT_BY_UID = 'uid-axonico-controller-test';
+
+// `authContext` default = AUTENTICADO (uid = SENT_BY_UID) — mesmo padrão de
+// `AnaCareHoursController.test.ts` (`authContext: { principal: { id: 'uid-9' } }`). Passar `null`
+// explicitamente simula a sessão SEM uid (guard 401 novo, 24/09/2026) — não `undefined`: um
+// parâmetro default do JS dispara para `undefined` mesmo passado explicitamente, então `null` é o
+// único jeito de o chamador pedir "sem authContext" e realmente conseguir.
+function makeReq(body: unknown, authContext: { principal: { id: string } } | null = { principal: { id: SENT_BY_UID } }): Request {
+  return { body, authContext: authContext ?? undefined } as unknown as Request;
 }
 
 const VALID_BODY = {
@@ -144,7 +151,7 @@ describe('LancarPrestacaoAxonicoController.handle', () => {
     expect(status).toHaveBeenCalledWith(200);
     expect(json).toHaveBeenCalledWith({ success: true, data: result });
     // O schema não é `strict` — `patientId` é descartado, nunca repassado ao use case.
-    expect(mockExecute).toHaveBeenCalledWith(VALID_BODY);
+    expect(mockExecute).toHaveBeenCalledWith({ ...VALID_BODY, sentBy: SENT_BY_UID });
   });
 
   it('body ausente (undefined) → tratado como {} (branch req.body ?? {}), 400, use case não chamado', async () => {
@@ -168,7 +175,7 @@ describe('LancarPrestacaoAxonicoController.handle', () => {
 
     await makeController(mockExecute).handle(makeReq(VALID_BODY), res);
 
-    expect(mockExecute).toHaveBeenCalledWith(VALID_BODY);
+    expect(mockExecute).toHaveBeenCalledWith({ ...VALID_BODY, sentBy: SENT_BY_UID });
     expect(status).toHaveBeenCalledWith(200);
     expect(json).toHaveBeenCalledWith({ success: true, data: result });
   });
@@ -256,6 +263,7 @@ describe('LancarPrestacaoAxonicoController.handle', () => {
       codAutorizacion: 'AUT-EXISTENTE',
       status: 'enviado',
       errorMessage: null,
+      sentBy: SENT_BY_UID,
       createdAt: lancadoEm,
     };
     const conflictError = new AxonicoLancamentoConcorrenteError(
@@ -289,11 +297,36 @@ describe('LancarPrestacaoAxonicoController.handle', () => {
       expect.objectContaining({ errorType: 'AxonicoLancamentoConcorrenteError', httpStatus: 409 }),
     );
   });
+
+  // change `axonico-envio-rastreavel` (24/09/2026): quem disparou o envio passa a ser gravado
+  // (`sentBy`) — sem uid na sessão, a requisição é recusada ANTES de validar o corpo ou chamar o
+  // use case (um lançamento que fatura de verdade não pode ficar sem autor).
+  it('sem authContext (uid ausente na sessão) → 401, use case NUNCA chamado, corpo nem chega a ser validado', async () => {
+    const mockExecute = jest.fn();
+    const { res, status, json } = makeRes();
+
+    await makeController(mockExecute).handle(makeReq(VALID_BODY, null), res);
+
+    expect(status).toHaveBeenCalledWith(401);
+    expect(json).toHaveBeenCalledWith({ success: false, error: 'Unauthorized' });
+    expect(mockExecute).not.toHaveBeenCalled();
+  });
 });
 
 // ── handleLote ────────────────────────────────────────────────────
 
 describe('LancarPrestacaoAxonicoController.handleLote', () => {
+  it('sem authContext (uid ausente na sessão) → 401, use case NUNCA chamado, corpo nem chega a ser validado', async () => {
+    const mockExecute = jest.fn();
+    const { res, status, json } = makeRes();
+
+    await makeController(mockExecute).handleLote(makeReq({ itens: [VALID_BODY] }, null), res);
+
+    expect(status).toHaveBeenCalledWith(401);
+    expect(json).toHaveBeenCalledWith({ success: false, error: 'Unauthorized' });
+    expect(mockExecute).not.toHaveBeenCalled();
+  });
+
   it('body ausente (undefined) → tratado como {} (branch req.body ?? {}), 400', async () => {
     const mockExecute = jest.fn();
     const { res, status } = makeRes();
@@ -412,6 +445,7 @@ describe('LancarPrestacaoAxonicoController — mapError (por handle)', () => {
           codAutorizacion: 'AUT-X',
           status: 'enviado',
           errorMessage: null,
+          sentBy: SENT_BY_UID,
           createdAt: new Date('2026-09-18T00:00:00.000Z'),
         },
         { numeroComprobante: 'CMP-Y', codAutorizacion: 'AUT-Y' },

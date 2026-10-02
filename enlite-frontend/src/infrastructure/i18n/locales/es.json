@@ -109,7 +109,11 @@
       "selectedCount": "{{count}} seleccionados"
     },
     "yes": "Sí",
-    "no": "No"
+    "no": "No",
+    "presence": {
+      "online": "En línea",
+      "offline": "Desconectado"
+    }
   },
   "sidebar": {
     "expandMenu": "Expandir menú",
@@ -749,6 +753,7 @@
             "missingDocument": "Falta el documento del paciente"
           },
           "sentLabel": "Enviado — comprobante {{numero}}",
+          "sentBy": "Por: {{name}} · {{date}}",
           "duplicatedLabel": "Ya estaba facturado — comprobante {{numero}}",
           "duplicatedNoComprobanteLabel": "Ya fue facturado — número de comprobante no disponible",
           "documentModal": {
@@ -821,6 +826,7 @@
         },
         "validatedBy": "Validado por {{name}} · {{date}}",
         "validateAction": "Validar",
+        "validating": "Validando…",
         "contestAction": "Contestar",
         "note": "Nota: {{note}}",
         "noteRestricted": "Nota restringida",
@@ -834,6 +840,7 @@
         "description": "De estos turnos, {{sinCheckin}} son sin check-in y {{webAdmin}} fueron cargados desde web admin. Una vez validados, no pueden reabrirse.",
         "cancel": "Cancelar",
         "confirm": "Validar pendientes",
+        "validating": "Validando…",
         "titleSelection_one": "Validar {{count}} turno seleccionado — {{hours}} h",
         "titleSelection_other": "Validar {{count}} turnos seleccionados — {{hours}} h"
       },
@@ -1324,6 +1331,7 @@
       "templateDrafts": "Registrar mensaje",
       "catalogObjectives": "Objetivos específicos",
       "catalogActivities": "Rutina y actividades",
+      "catalogSegments": "Segmentos (Ana Care)",
       "catalogServiceExitReasons": "Motivos de salida",
       "aiPrompts": "Prompts de IA"
     },
@@ -3660,6 +3668,7 @@
         "therapeuticProjectCard": {
           "title": "Proyecto Terapéutico",
           "cid": "Hipótesis Diagnóstica - CID",
+          "segment": "Segmento (Ana Care)",
           "hypothesis": "Hipótesis",
           "currentClinicalContext": "Contexto Clínico actual",
           "generalObjective": "Objetivo General",
@@ -4172,13 +4181,76 @@
             "ptpContactInactive": "Uno de los contactos elegidos ya no está activo. Volvé a elegir."
           },
           "modalityPlaceholder": "Elegí la modalidad",
-          "segmentFilter": "Filtrar por segmento",
-          "segmentFilterPlaceholder": "Todos los segmentos",
-          "segmentFilterAll": "Todos los segmentos",
+          "segment": "Segmento (Ana Care)",
+          "segmentPlaceholder": "Elegí el segmento",
+          "segmentEmpty": "No hay segmentos activos — pedí al administrador del catálogo",
           "responsibles": "Responsables",
           "externalContacts": "Contactos externos",
           "coverageContacts": "Contactos de la cobertura",
           "careTeam": "Equipo tratante"
+        },
+        "conversation": {
+          "errors": {
+            "legacyDoc": "Formato .doc no es aceptado; guardá como .docx",
+            "fileTooLarge": "El archivo supera los 10 MB",
+            "unsupportedType": "Tipo de archivo no aceptado",
+            "maliciousContent": "El archivo fue rechazado por contener código activo o macros",
+            "mentionInvalid": "El usuario mencionado no existe",
+            "sendFailed": "No pudimos enviar el mensaje. Probá de nuevo.",
+            "sendForbidden": "No tenés permiso para enviar mensajes en esta conversación.",
+            "uploadFailed": "No pudimos subir el archivo. Probá de nuevo."
+          },
+          "handle": {
+            "label": "Mensajes",
+            "unread": "{{count}} sin leer"
+          },
+          "panel": {
+            "title": "Mensajes",
+            "loading": "Cargando mensajes…",
+            "empty": "Aún no hay mensajes",
+            "noAccess": "Sin acceso a este paciente",
+            "close": "Cerrar panel de mensajes",
+            "loadError": "No pudimos cargar los mensajes. Probá de nuevo.",
+            "retry": "Reintentar",
+            "readOnly": "Solo podés ver esta conversación",
+            "messageNotFound": "No pudimos encontrar este mensaje."
+          },
+          "thread": {
+            "replies_one": "1 respuesta",
+            "replies_other": "{{count}} respuestas",
+            "reply": "Responder",
+            "repliesBadge_one": "{{count}} respuesta",
+            "repliesBadge_other": "{{count}} respuestas",
+            "dateConnector": "a las",
+            "back": "Volver",
+            "deleted": "Mensaje eliminado",
+            "loading": "Cargando respuestas…",
+            "loadError": "No se pudieron cargar las respuestas",
+            "retry": "Reintentar",
+            "attachments": {
+              "download": "Descargar adjunto",
+              "downloadError": "No pudimos descargar el archivo. Probá de nuevo.",
+              "genericName": "Archivo",
+              "popupBlocked": "Tu navegador bloqueó la ventana emergente. Habilitá los pop-ups para descargar el archivo."
+            }
+          },
+          "composer": {
+            "placeholder": "Escribí un mensaje…",
+            "send": "Enviar",
+            "attach": "Adjuntar",
+            "discardConfirm": "¿Descartar el mensaje sin enviar?",
+            "discard": "Descartar",
+            "cancel": "Cancelar",
+            "attachments": {
+              "remove": "Quitar adjunto",
+              "uploading": "Subiendo…",
+              "max": "Máximo 5 archivos adjuntos"
+            },
+            "mentionDirectoryError": "No se pudo buscar. Probá escribir de nuevo.",
+            "mentionNoEligibleRecipients": "Nadie más tiene acceso a esta conversación",
+            "mentionListLabel": "Mencionar a alguien",
+            "mentionShowAll": "Mostrar todos"
+          }
         }
       },
       "statusOptions": {
@@ -4631,6 +4703,10 @@
             "catalog_service_exit_reasons": "Catálogo de motivos de salida del servicio",
             "catalog_therapeutic_segments": "Catálogo de segmentos (Ana Care)",
             "anacare_hours": "Conferencia de horas del Ana Care",
+            "patient_conversation": "Conversación del paciente",
+            "own_notifications": "Mis notificaciones",
+            "own_presence": "Mi presencia en línea",
+            "staff_directory": "Directorio del equipo",
             "patient_service_team": "Encuadre del servicio contratado (rechazar/revertir)",
             "patient_itinerary": "Itinerario del paciente (armar)"
           },
@@ -5002,7 +5078,8 @@
             "vacancies": "Vacantes del paciente",
             "itinerary": "Itinerario del paciente (asignar)",
             "operational": "Estado, activación e historial",
-            "therapeuticProject": "Proyecto terapéutico"
+            "therapeuticProject": "Proyecto terapéutico",
+            "conversation": "Conversación"
           }
         },
         "patients.chatRoles": {
@@ -5097,6 +5174,9 @@
         },
         "patients.catalogActivities": {
           "label": "Pacientes: Catálogo de rutina y actividades"
+        },
+        "patients.catalogSegments": {
+          "label": "Pacientes: Catálogo de segmentos (Ana Care)"
         },
         "patients.catalogServiceExitReasons": {
           "label": "Pacientes: Catálogo de motivos de salida"
@@ -5672,6 +5752,10 @@
           "title": "Rutina y actividades del proyecto terapéutico",
           "subtitle": "Las opciones de \"Rutina y Actividades\" del proyecto terapéutico. Se editan acá, sin deploy. Desactivar no borra: las versiones antiguas guardan el texto que tenían."
         },
+        "segments": {
+          "title": "Segmentos del proyecto terapéutico (Ana Care)",
+          "subtitle": "Los segmentos que el equipo elige para encuadrar el proyecto terapéutico de cada paciente (los de la planilla de Ana Care). Se editan acá, sin deploy. Desactivar no borra: las versiones antiguas del proyecto guardan el texto que tenían."
+        },
         "serviceExitReasons": {
           "title": "Motivos de salida",
           "subtitle": "Las opciones que el equipo elige al registrar la salida de un prestador de un servicio. Se editan acá, sin deploy. Desactivar no borra: los registros anteriores guardan el motivo que tenían.",
@@ -5688,6 +5772,7 @@
       "table": {
         "order": "Orden",
         "label": "Texto",
+        "segment": "Segmento",
         "status": "Estado",
         "actions": "Acciones"
       },
@@ -5696,6 +5781,10 @@
         "labelHelp": "En español, como va a salir en el PDF. Sin datos de ninguna persona.",
         "sortOrder": "Orden",
         "sortOrderHelp": "Posición en la lista (menor primero). Vacío = al final.",
+        "segment": "Segmento (Ana Care)",
+        "segmentNone": "Sin segmento",
+        "segmentHelp": "Opcional. En el proyecto terapéutico, las opciones del segmento elegido aparecen primero.",
+        "segmentInactive": "{{label}} (inactivo)",
         "save": "Guardar",
         "saving": "Guardando…"
       },
@@ -5703,6 +5792,24 @@
         "duplicate": "Ya existe una opción activa con ese texto.",
         "invalidLabel": "El texto no puede tener datos de una persona (e-mail, documento, teléfono) ni superar 200 caracteres."
       }
+    },
+    "notifications": {
+      "mentioned": "{{actor}} mencionó a vos en {{patient}}",
+      "replied": "{{actor}} respondió en la conversación de {{patient}}",
+      "generic": "{{actor}} tiene una actualización para vos",
+      "inPatient": "en {{patient}}",
+      "markAllRead": "Marcar todas como leídas",
+      "unknownPatient": "un paciente",
+      "bellLabel": "Notificaciones",
+      "unread": "{{count}} notificaciones sin leer",
+      "unreadItem": "No leída",
+      "panelTitle": "Notificaciones",
+      "loading": "Cargando notificaciones…",
+      "empty": "No tenés notificaciones",
+      "close": "Cerrar notificaciones",
+      "loadError": "No pudimos cargar tus notificaciones. Probá de nuevo.",
+      "retry": "Reintentar",
+      "markAllReadError": "No pudimos marcar todas como leídas. Probá de nuevo."
     },
     "aiPrompts": {
       "title": "Prompts de IA",

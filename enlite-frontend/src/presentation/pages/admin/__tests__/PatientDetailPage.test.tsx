@@ -20,7 +20,15 @@ function t(key: string, opts?: any): string {
 }
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t, i18n: { language: 'pt-BR' } }) }));
 const navigate = vi.fn();
-vi.mock('react-router-dom', () => ({ useParams: () => ({ id: 'p1' }), useNavigate: () => navigate }));
+// `useLocation` (Spec 022, Bloco 4, T413): seed opcional de `focusRequest` vindo do deep-link do
+// sino — default sem `state` nenhum (comportamento de sempre); testes do deep-link sobrescrevem
+// com `locationState.mockReturnValue`.
+const locationState = vi.fn(() => ({ state: null as { focusRequest?: { code: string; token: number } } | null }));
+vi.mock('react-router-dom', () => ({
+  useParams: () => ({ id: 'p1' }),
+  useNavigate: () => navigate,
+  useLocation: () => locationState(),
+}));
 const detail = { patient: null as unknown, isLoading: false, error: null as string | null, refetch: vi.fn() };
 const vac = { vacancies: [], isLoading: false, error: null, refetch: vi.fn() };
 vi.mock('@hooks/admin/usePatientDetail', () => ({ usePatientDetail: () => detail }));
@@ -41,11 +49,18 @@ vi.mock('@hooks/admin/usePatientItinerary', () => ({
   usePatientItinerary: () => ({ itinerary: { services: [] }, status: 'ok', loadOptions: vi.fn(), allocate: vi.fn(), actionError: null, refreshError: false }),
 }));
 vi.mock('@infrastructure/http/AdminApiService', () => ({ AdminApiService: { updatePatientSection: vi.fn(), listInsuranceProviders: vi.fn().mockResolvedValue([]) } }));
+// Defeito 1 (Rodada 2, medido em prd 21-22/09): captura o `focusRequest` que a página repassa,
+// sem depender do componente real (polling/HTTP) nem do gate de permissão.
+vi.mock('@presentation/components/features/admin/PatientDetail/conversation/PatientConversationHandle', () => ({
+  PatientConversationHandle: (p: { focusRequest?: { code: string; token: number } | null }) => (
+    <div data-testid="conversation-handle-stub">{p.focusRequest ? `${p.focusRequest.code}:${p.focusRequest.token}` : 'none'}</div>
+  ),
+}));
 
 import PatientDetailPage from '../PatientDetailPage';
 
 describe('PatientDetailPage', () => {
-  beforeEach(() => { detail.patient = { ...patientDetailFixture, admissionStatus: 'DONE', status: 'ACTIVE' }; detail.isLoading = false; detail.error = null; detail.refetch.mockReset(); vac.refetch.mockReset(); navigate.mockReset(); });
+  beforeEach(() => { detail.patient = { ...patientDetailFixture, admissionStatus: 'DONE', status: 'ACTIVE' }; detail.isLoading = false; detail.error = null; detail.refetch.mockReset(); vac.refetch.mockReset(); navigate.mockReset(); locationState.mockReturnValue({ state: null }); });
 
   it('carregando → skeleton', () => {
     detail.isLoading = true;
@@ -293,5 +308,72 @@ describe('PatientDetailPage — D286: abas e cards por container', () => {
     expect(abasNaTela()).toHaveLength(7);
     fireEvent.click(screen.getByText('Rede de Apoio'));
     expect(screen.getByTestId('familiares-card')).toBeInTheDocument();
+  });
+});
+
+describe('PatientDetailPage — deep-link do sino reage a location.state NOVO (Defeito 1, Rodada 2, medido em prd 21-22/09)', () => {
+  beforeEach(() => {
+    detail.patient = { ...patientDetailFixture, admissionStatus: 'DONE', status: 'ACTIVE' };
+    detail.isLoading = false;
+    detail.error = null;
+    navigate.mockReset();
+    locationState.mockReturnValue({ state: null });
+  });
+
+  it('1º clique (mount com state já presente): focusRequest chega ao handle na inicialização', () => {
+    locationState.mockReturnValue({ state: { focusRequest: { code: 'conversation', token: 111 } } });
+    render(<PatientDetailPage />);
+    expect(screen.getByTestId('conversation-handle-stub')).toHaveTextContent('conversation:111');
+  });
+
+  it('🔒 2º clique NA MESMA notificação com a página JÁ montada: token novo em location.state chega ao handle sem precisar desmontar/remontar', () => {
+    locationState.mockReturnValue({ state: { focusRequest: { code: 'conversation', token: 111 } } });
+    const { rerender } = render(<PatientDetailPage />);
+    expect(screen.getByTestId('conversation-handle-stub')).toHaveTextContent('conversation:111');
+
+    // Simula o 2º clique: `NotificationPanel` chama `navigate()` de novo, com um TOKEN NOVO, para
+    // a MESMA página (React Router não desmonta o componente — só location/state mudam). Antes do
+    // conserto, o `useState` com lazy initializer NUNCA relia isto de novo.
+    locationState.mockReturnValue({ state: { focusRequest: { code: 'conversation', token: 222 } } });
+    rerender(<PatientDetailPage />);
+
+    expect(screen.getByTestId('conversation-handle-stub')).toHaveTextContent('conversation:222');
+  });
+
+  it('troca MANUAL de aba não reabre o painel — nem com um location.state antigo ainda "pendurado" (regra antiga F3, preservada)', () => {
+    locationState.mockReturnValue({ state: { focusRequest: { code: 'conversation', token: 111 } } });
+    const { rerender } = render(<PatientDetailPage />);
+    expect(screen.getByTestId('conversation-handle-stub')).toHaveTextContent('conversation:111');
+
+    fireEvent.click(screen.getByText('Rede de Apoio'));
+    expect(screen.getByTestId('conversation-handle-stub')).toHaveTextContent('none');
+
+    // Re-render sem NENHUMA navegação nova (mesmo `location.state`, mesmo token 111) — o efeito
+    // NÃO deve reagir de novo (já processou este token) e reabrir o painel sozinho.
+    rerender(<PatientDetailPage />);
+    expect(screen.getByTestId('conversation-handle-stub')).toHaveTextContent('none');
+  });
+
+  it('🔒 GUARDA (gate revisao-pr, critério 8): mesma location RE-RENDERIZADA com objeto NOVO (mesmo token) não reabre o painel', () => {
+    // Diferença desta prova para a de cima: ali `locationState.mockReturnValue` devolve o MESMO
+    // objeto em toda chamada (mock simples), então o array de deps `[locationFocusRequest]` do
+    // `useEffect` nem muda de referência — o teste de cima passa mesmo SEM o guard de
+    // `lastLocationTokenRef`, porque o efeito não teria motivo pra rodar de novo. Na aplicação
+    // real, `useLocation()` do React Router RECRIA o objeto de location a cada render (mesmo
+    // path, mesmo state em VALOR) — é exatamente o caso que o guard existe para cobrir. Aqui se
+    // força esse caso: um objeto `focusRequest` NOVO (referência diferente), mas com o MESMO
+    // `token`, para provar que é o valor do token — não a referência do objeto — que decide.
+    locationState.mockReturnValue({ state: { focusRequest: { code: 'conversation', token: 111 } } });
+    const { rerender } = render(<PatientDetailPage />);
+    expect(screen.getByTestId('conversation-handle-stub')).toHaveTextContent('conversation:111');
+
+    fireEvent.click(screen.getByText('Rede de Apoio'));
+    expect(screen.getByTestId('conversation-handle-stub')).toHaveTextContent('none');
+
+    // Objeto NOVO (nova referência de `state` E de `focusRequest`), token IDÊNTICO (111) — simula
+    // o React Router recriando `location` numa re-renderização sem navegação nova de verdade.
+    locationState.mockReturnValue({ state: { focusRequest: { code: 'conversation', token: 111 } } });
+    rerender(<PatientDetailPage />);
+    expect(screen.getByTestId('conversation-handle-stub')).toHaveTextContent('none');
   });
 });

@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft, ChevronRight, LayoutGrid } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { DetailSkeleton } from '@presentation/components/ui/skeletons';
@@ -25,6 +25,7 @@ import { EncuadreTab } from '@presentation/components/features/admin/PatientDeta
 import { PatientVacanciesCard } from '@presentation/components/features/admin/PatientDetail/PatientVacanciesCard';
 import { PatientItineraryTab } from '@presentation/components/features/admin/PatientDetail/PatientItineraryTab';
 import { PatientChatIdsCard } from '@presentation/components/features/admin/PatientDetail/PatientChatIdsCard';
+import { PatientConversationHandle } from '@presentation/components/features/admin/PatientDetail/conversation/PatientConversationHandle';
 import { PatientStatusControl } from '@presentation/components/features/admin/PatientDetail/PatientStatusControl';
 import { PatientStatusHistoryCard } from '@presentation/components/features/admin/PatientDetail/PatientStatusHistoryCard';
 import { CompletenessChecklist } from '@presentation/components/features/admin/PatientDetail/CompletenessChecklist';
@@ -59,6 +60,7 @@ const COUNTRY_FLAG: Record<string, string> = {
 export default function PatientDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const { t } = useTranslation();
   const { patient, isLoading, error, refetch } = usePatientDetail(id);
   const { vacancies, isLoading: vacanciesLoading, error: vacanciesError, refetch: refetchVacancies } = usePatientVacancies(id);
@@ -72,7 +74,41 @@ export default function PatientDetailPage() {
   const shownTab: PatientTab | null = visibleTabs.includes(activeTab) ? activeTab : (visibleTabs[0] ?? null);
   // Spec 014 US-D1: pedido de foco do checklist — muda de aba E pede ao card certo (via
   // `useAutoOpenDrawer`) que abra seu próprio drawer, sem o pai conhecer o estado interno dele.
-  const [focusRequest, setFocusRequest] = useState<DrawerFocusRequest | null>(null);
+  //
+  // Spec 022, Bloco 4 (T413): o sino de notificações navega de OUTRA página (deep-link do
+  // `NotificationPanel`) — não pode chamar `setFocusRequest` direto (o estado nasce de novo a
+  // cada montagem desta página). O pedido viaja em `navigate(path, { state: { focusRequest } })`
+  // e é lido AQUI, na inicialização — só uma vez (lazy initializer do `useState`), nunca a cada
+  // re-render, senão reabriria o painel de conversa sozinho toda vez que o usuário trocasse de
+  // aba (mesma classe de bug documentada abaixo em `changeTab`, F3).
+  const [focusRequest, setFocusRequest] = useState<DrawerFocusRequest | null>(
+    () => (location.state as { focusRequest?: DrawerFocusRequest } | null)?.focusRequest ?? null,
+  );
+  /**
+   * 🔒 DEFEITO 1 (Rodada 2, medido em prd 21-22/09) — o `useState` acima só lê `location.state`
+   * na INICIALIZAÇÃO (lazy initializer, de propósito — ver comentário logo abaixo). Isso quebra o
+   * deep-link do sino quando a operadora JÁ ESTÁ na ficha do mesmo paciente e clica em OUTRA
+   * notificação (ou na mesma de novo): o React Router não desmonta esta página (mesma rota, só
+   * `location.state` muda) — o `useState` nunca vê o novo valor, e o painel nem abre nem realça a
+   * mensagem nova.
+   *
+   * Conserto: reage a um TOKEN NOVO em `location.state.focusRequest` mesmo com a página já
+   * montada — comparando por `token` (não por identidade do objeto, que `useLocation` também
+   * recria a cada navegação para o mesmo path). `lastLocationTokenRef` começa igual ao token que
+   * o lazy initializer já consumiu — o efeito não repete o MESMO pedido no primeiro render.
+   *
+   * NÃO reabre em troca MANUAL de aba (regra antiga F3, preservada): `changeTab` não mexe em
+   * `location`/`navigate`, então `location.state.focusRequest.token` continua o mesmo de antes —
+   * o efeito só dispara quando o SINO manda um token novo de verdade.
+   */
+  const locationFocusRequest = (location.state as { focusRequest?: DrawerFocusRequest } | null)?.focusRequest ?? null;
+  const lastLocationTokenRef = useRef<number | null>(locationFocusRequest?.token ?? null);
+  useEffect(() => {
+    if (!locationFocusRequest) return;
+    if (lastLocationTokenRef.current === locationFocusRequest.token) return;
+    lastLocationTokenRef.current = locationFocusRequest.token;
+    setFocusRequest(locationFocusRequest);
+  }, [locationFocusRequest]);
   const focusChecklistItem = (code: PatientCompletenessCode) => {
     setActiveTab(COMPLETENESS_TAB[code]);
     setFocusRequest({ code, token: Date.now() });
@@ -210,6 +246,14 @@ export default function PatientDetailPage() {
           <PatientIdentityCard patient={patient} onSaved={refetch} />
           <PatientGeneralInfoCard patient={patient} onSaved={refetch} />
         </div>
+      </ContainerGate>
+
+      {/* Handle do chat interno por paciente (spec 022, T210) — fixo na lateral, em TODA a
+          ficha (não é por aba: o registry não declara `tabs` para este container, decisão
+          fechada). `resource="patient_conversation"` — NÃO é o `patient_chat` (grupos de
+          WhatsApp/Periskope), célula diferente. */}
+      <ContainerGate resource="patient_conversation">
+        <PatientConversationHandle patientId={patient.id} focusRequest={focusRequest} />
       </ContainerGate>
 
       {/* Tab Navigation */}
