@@ -17,6 +17,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { PageContainer } from '@presentation/components/atoms/PageContainer';
 import { Text } from '@presentation/components/atoms/Text';
+import { Button } from '@presentation/components/atoms/Button';
 import { useAnaCareHoursPatient } from '@hooks/admin/useAnaCareHoursPatient';
 import { useWeekNavigation } from '@hooks/admin/useWeekNavigation';
 import { useActionGate } from '@presentation/hooks/useCellAccess';
@@ -55,7 +56,7 @@ export function AnaCareHoursDetailContainer({
 }: AnaCareHoursDetailContainerProps): JSX.Element {
   const { t } = useTranslation();
   const weekNav = useWeekNavigation(month, onMonthChange);
-  const { snapshot: retratoSnapshot, provisionalSnapshot, isLoading, error, refetch, retryMonth, monthStates } = useAnaCareHoursPatient(service, patientId, weekNav.months, month);
+  const { snapshot: retratoSnapshot, provisionalSnapshot, isLoading, error, retratoError, retryRetrato, refetch, retryMonth, monthStates } = useAnaCareHoursPatient(service, patientId, weekNav.months, month);
   const [actionError, setActionError] = useState<string | null>(null);
   const validateGate = useActionGate('anacare_hours', 'validate');
 
@@ -116,7 +117,7 @@ export function AnaCareHoursDetailContainer({
     }
   }
 
-  // Retrato do mês novo em voo: mantém a página montada com o placeholder `desconhecido` (nunca o retrato de outro mês).
+  // Retrato do mês novo em voo: mantém a página montada com o placeholder neutro (`fresco`, sem banner; nunca o retrato de outro mês).
   const snapshot = retratoSnapshot ?? provisionalSnapshot;
 
   if (isLoading && !snapshot) {
@@ -145,6 +146,14 @@ export function AnaCareHoursDetailContainer({
 
   return (
     <>
+      {retratoError && (
+        <div className="px-6 pt-4 flex flex-wrap items-center gap-3" data-testid="anacare-hours-retrato-error">
+          <Text className="!text-red-600">{retratoError === 'FONTE_NAO_CONFIGURADA' ? t('admin.anacareHours.error.sourceNotConfigured') : retratoError}</Text>
+          <Button variant="outline" size="sm" onClick={retryRetrato} data-testid="anacare-hours-retrato-retry">
+            {t('admin.anacareHours.detail.weekRetry')}
+          </Button>
+        </div>
+      )}
       {actionError && (
         <div className="px-6 pt-4">
           <Text className="!text-red-600" data-testid="anacare-hours-action-error">

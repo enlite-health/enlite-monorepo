@@ -144,22 +144,27 @@ export function useAnaCareHoursPatient(service: AnaCareHoursService, patientId: 
   // Retrato do mês da URL ainda em voo, mas já há turnos `ok` na tela: a página NÃO pode desmontar (a data
   // selecionada e os dias carregados ficam). O placeholder NÃO afirma estado de sync algum (`fresco` + `stale:false` = nenhum banner; valores neutros, não um retrato) e não usa dado de outro mês;
   // `snapshot` (acima) continua `null` até o retrato verdadeiro chegar.
-  const retratoLoading = retrato === null && (retratos[retratoMonth] === undefined || retratos[retratoMonth].state === 'loading');
+  // Vale para o retrato em voo E para o que falhou (a falha vira `retratoError` inline, com "Reintentar"); só não vale se ele resolveu `ok` sem forma.
+  const retratoPending = retrato === null && retratos[retratoMonth]?.state !== 'ok';
   const provisionalSnapshot: AnaCareHoursPatientSnapshot | null =
-    retratoLoading && loadedMonths.some((m) => entries[m].state === 'ok')
+    retratoPending && loadedMonths.some((m) => entries[m].state === 'ok')
       ? { month: retratoMonth, updatedAt: '', stale: false, snapshotState: 'fresco', circuitBreakerOpen: false, patients: patient ? [patient] : [] }
       : null;
 
   // Erro de TELA INTEIRA só na 1ª carga (nada para mostrar ainda). Depois disso, a falha de um mês é
   // inline (`monthStates`) — os dias dos outros meses nunca somem em silêncio.
-  const hasData = snapshot !== null && loadedMonths.some((m) => entries[m].state === 'ok');
+  const hasData = (snapshot !== null || provisionalSnapshot !== null) && loadedMonths.some((m) => entries[m].state === 'ok');
   const firstLoadError = entries[retratoMonth]?.state === 'error' ? entries[retratoMonth].error : retratos[retratoMonth]?.state === 'error' ? retratos[retratoMonth].error : null;
-  // Com dados na tela, só a falha do RETRATO do mês da URL sobe como `error` (texto próprio, como na stage); a de turnos é inline.
+  // A falha do RETRATO do mês da URL é inline (`retratoError`, texto próprio + `retryRetrato`), nunca "falha de turnos".
   const retratoError = retratos[retratoMonth]?.state === 'error' ? retratos[retratoMonth].error : null;
-  const error = hasData ? retratoError : firstLoadError;
+  const error = hasData ? null : firstLoadError;
+  /** "Reintentar" do retrato: refaz SÓ o retrato do mês da URL. */
+  const retryRetrato = () => {
+    if (isFetchableMonth(retratoMonth)) void loadRetrato(retratoMonth);
+  };
   // 1ª carga ainda não assentou (o mês da URL e o retrato dele ainda não responderam) — evita um quadro "vazio" antes da busca começar.
   const firstLoadSettled = [entries[retratoMonth], retratos[retratoMonth]].every((e) => e !== undefined && e.state !== 'loading');
   const isLoading = pending > 0 || !firstLoadSettled;
 
-  return { patient, snapshot, provisionalSnapshot, isLoading, error, refetch, retryMonth, monthStates };
+  return { patient, snapshot, provisionalSnapshot, isLoading, error, retratoError, retryRetrato, refetch, retryMonth, monthStates };
 }

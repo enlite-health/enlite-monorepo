@@ -256,7 +256,9 @@ describe('useAnaCareHoursPatient — vários meses (spec 037)', () => {
     rerender({ months: ['2026-08', '2026-09'], rm: '2026-09' });
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     expect(result.current.monthStates['2026-09']).toEqual({ state: 'ok', error: null });
-    expect(result.current.error).toBe('retrato fora do ar');
+    expect(result.current.error).toBeNull(); // sem tela inteira: há turnos
+    expect(result.current.retratoError).toBe('retrato fora do ar');
+    expect(result.current.provisionalSnapshot?.patients).toHaveLength(1);
   });
 
   it('(i) o retrato exibido é SEMPRE o do mês da URL: enquanto o do mês novo não chegou, não há snapshot (carregando), nunca o retrato de outro mês', async () => {
