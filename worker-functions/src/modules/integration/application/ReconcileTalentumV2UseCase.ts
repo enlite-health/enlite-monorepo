@@ -8,7 +8,7 @@
  *  2. sem `publicId`: por TÍTULO exato (já truncado em 50 como a v2 grava), SÓ se 1:1 — 1 projeto v2 com
  *     aquele nome E 1 vaga publicada com aquele título; reportado à parte ("por título", menos confiável);
  *  3. o resto vai a relatório SEM alterar: `noMatch` (sem par), `ambiguous` (mais de um candidato, ou o
- *     projeto já pertence a outra vaga) e `invalid` (slug > 20 / publicId não-UUID — a coluna recusaria).
+ *     projeto já pertence a outra vaga) e `invalid` (slug > 255 / publicId não-UUID — a coluna recusaria).
  *
  * `plan()` é SOMENTE LEITURA (lê a Talentum com GET e o banco com SELECT) — dry-run = `plan()`.
  * `applyReconcile()` e `restoreRollbackRows()` são as únicas escritas: UMA transação cada, com guarda otimista (a linha tem de estar como
@@ -84,7 +84,8 @@ interface Candidate {
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-const SLUG_MAX = 20;
+/** `talentum_slug` é VARCHAR(255) (migration 119; era 20 na 106 — slugs reais da v2 chegam a ~140). */
+const SLUG_MAX = 255;
 
 const VACANCIES_SQL = `SELECT id, title, deleted_at IS NOT NULL AS deleted, talentum_project_id,
        talentum_public_id::text AS talentum_public_id, talentum_whatsapp_url, talentum_slug
