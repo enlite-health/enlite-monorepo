@@ -45,6 +45,17 @@ export function buildPublicPrescreeningUrl(publicId: string): string {
   return `${TALENTUM_ORIGIN}/public/pre-screening/${publicId}/chat`;
 }
 
+/** `POST /projects` rejeita `name` > 50 caracteres (400 na v2 real, spec 040 §P5). */
+export const TALENTUM_PROJECT_NAME_MAX = 50;
+
+/**
+ * Título de vaga → nome/título aceito pela v2: corta de forma determinística em 50 caracteres
+ * (e tira o espaço que sobrar na ponta). Títulos curtos passam intactos.
+ */
+export function toV2ProjectName(title: string): string {
+  return title.slice(0, TALENTUM_PROJECT_NAME_MAX).trimEnd();
+}
+
 /**
  * Resolve a base URL da Talentum a cada chamada (nunca no load do módulo — o
  * jest troca a env entre casos). e2e aponta para o stub local — `docker-compose.test.yml`;
@@ -326,7 +337,7 @@ export class TalentumApiClient implements ITalentumApiClient {
    */
   async createPrescreening(input: CreatePrescreeningInput): Promise<CreatePrescreeningResult> {
     const { projectId } = await this.request<{ projectId: string }>('POST', '/projects', {
-      name: input.title,
+      name: toV2ProjectName(input.title),
       type: 'FULL',
       campaigns: 'MANUAL',
       prescreening: true,
@@ -334,7 +345,7 @@ export class TalentumApiClient implements ITalentumApiClient {
 
     try {
       await this.request<void>('PATCH', `/projects/${projectId}/prescreening`, {
-        title: input.title,
+        title: toV2ProjectName(input.title),
         type: 'WEB',
         showJobDescription: true,
         askForCv: input.askForCv ?? false,
@@ -416,7 +427,7 @@ export class TalentumApiClient implements ITalentumApiClient {
    */
   async updatePrescreening(projectId: string, input: UpdatePrescreeningInput): Promise<void> {
     await this.request<void>('PATCH', `/projects/${projectId}/prescreening`, {
-      title: input.title,
+      title: toV2ProjectName(input.title),
       type: 'WEB',
       questions: input.questions.map(toV2Question),
     });

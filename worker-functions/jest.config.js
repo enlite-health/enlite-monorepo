@@ -17,6 +17,10 @@ module.exports = {
     // o mede contra o piso de 100% pensado para o módulo em si — achado do PR #455 (quality-gate
     // vermelho: 92,94/79,12/97,96, medido; suíte inteira 646/646, 9543/9543 passando).
     '!src/modules/identity/permissions/domain/__tests__/permissionCatalogScan.ts',
+    // Stub em memória da Talentum v2 (spec 040): infra de teste (vive em `__tests__/`, não é `.test.ts`),
+    // usada por unit e e2e. Mesmo motivo do scanner acima — não é código de produção.
+    '!src/modules/integration/infrastructure/__tests__/talentumV2Stub.ts',
+    '!src/modules/integration/application/__tests__/fakeJobPostingsDb.ts',
     // O sync de templates ESCREVE em `message_templates` em produção. Ficava
     // fora do relatório inteiro — não por decisão, mas porque `scripts/` estava
     // fora dos `roots`: cobertura ali era 0% "por natureza", e piso nenhum

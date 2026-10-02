@@ -135,7 +135,7 @@ services:
       AXIONICO_PASSWORD: ${AXIONICO_PASSWORD:-stub-key-e2e-only}
       # Integração Talentum (cadeia Fase 6) — mesmo precedente do stub do
       # Periskope/Axonico: `TALENTUM_API_BASE_URL` aponta para o STUB local (porta 9914, medida livre em 27/09: 9911 Periskope, 9912 Axonico, 9913 AnaCare
-      # local), nunca para api.production.talentum.chat. Publicar cria projeto real na Talentum — o e2e nunca pode cair no default de produção. As
+      # local), nunca para api.v2.talentum.chat (default do cliente). Publicar cria projeto real na Talentum — o e2e nunca pode cair no default de produção. As
       # credenciais são FALSAS e existem só para `TalentumApiClient.create()` usar `fromEnv()` e não o Secret Manager; o stub aceita qualquer login.
       TALENTUM_API_BASE_URL: ${TALENTUM_API_BASE_URL:-http://host.docker.internal:9914}
       TALENTUM_API_EMAIL: ${TALENTUM_API_EMAIL:-stub-user-e2e-only}
