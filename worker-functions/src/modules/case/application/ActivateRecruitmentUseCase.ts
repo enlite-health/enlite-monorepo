@@ -18,6 +18,8 @@ import {
 } from "../domain/PatientCompleteness";
 import { vacancyRangeForProviderAgeBand } from "../domain/ProviderAgeBandMapping";
 import type { ProviderAgeBand } from "../domain/enums/ContractedService";
+import { ADMISSION_FUNNEL_STATUSES } from "../domain/enums/PatientStatus";
+import { movePatientStatus, PatientStatusNotReadyError } from "./PatientStatusWriter";
 import { formatCaseTitle } from "@shared/utils/caseNumberFormat";
 
 /** Paciente inexistente (ou soft-deletado). O controller mapeia para 404. */
@@ -80,10 +82,13 @@ export interface ActivateRecruitmentResult {
  * Efeitos em UMA transação: `SELECT … FOR UPDATE` do paciente e do serviço (trava a mesma corrida
  * que o antecessor travava); gate `RECRUITMENT_BLOCKING_CODES`; 409 se já há vaga viva do
  * serviço; 1 INSERT em `job_postings` via `buildInsertQuery/buildInsertParams` (mesmo caminho de
- * `POST /api/admin/vacancies` — nunca SQL duplicado). NÃO move o paciente — o paciente sai de
- * Admissão no LANÇAMENTO (envio à Talentum), invariante 7, D434; ver `VacancyLaunchHook`. O
- * status do paciente aqui é só ecoado no retorno (`patientStatus` = o status atual,
- * `statusChanged: false` sempre).
+ * `POST /api/admin/vacancies` — nunca SQL duplicado). D469 (02/10/2026, revê a D434): se o
+ * paciente está no funil de admissão (SOLICITANTE/ADMISSION/PENDING_ADMISSION), o foguete o move
+ * para SEARCHING por `movePatientStatus` (catálogo + trilha `change_source = 'recruitment_activation'`),
+ * NA MESMA transação (`txClient` — sem 2ª transação, sem deadlock no FOR UPDATE). Fora do funil
+ * (já ACTIVE, ON_HOLD, etc.) o status NÃO muda. Se a pré-condição de completude do SEARCHING
+ * (horário de TODO serviço ativo) falhar, a vaga é criada mesmo assim e o paciente fica onde está
+ * (`statusChanged: false`). O envio à Talentum (`VacancyLaunchHook`) continua movendo quem sobrar.
  *
  * NÃO emite `vacancy.created` — a vaga nasce rascunho (`is_draft` default true, `status`
  * 'PENDING_ACTIVATION') para a equipe revisar e publicar (fluxo existente), igual ao
@@ -295,8 +300,23 @@ export class ActivateRecruitmentUseCase {
       actorLabel: "activate_recruitment",
     });
 
-    // DX-6.6 — a criação NÃO move mais o paciente. O paciente sai de Admissão no LANÇAMENTO
-    // (envio à Talentum), não na criação do rascunho: ver `VacancyLaunchHook`.
-    return { vacancyId, patientStatus: status, statusChanged: false };
+    // D469 — o foguete volta a mover o paciente do funil para SEARCHING (revê DX-6.6/D434).
+    if (!(ADMISSION_FUNNEL_STATUSES as readonly string[]).includes(status)) {
+      return { vacancyId, patientStatus: status, statusChanged: false };
+    }
+    try {
+      await movePatientStatus(
+        patientId,
+        "SEARCHING",
+        { changeSource: "recruitment_activation", actorUid: actor?.actorUserId ?? null },
+        client,
+      );
+    } catch (err) {
+      if (!(err instanceof PatientStatusNotReadyError)) throw err;
+      // Outro serviço ativo sem horário: a vaga já foi criada (rascunho) e fica; o paciente não move.
+      functions.logger.warn("activate_recruitment.patient_not_moved", { patientId, serviceId, missing: err.missing });
+      return { vacancyId, patientStatus: status, statusChanged: false };
+    }
+    return { vacancyId, patientStatus: "SEARCHING", statusChanged: true };
   }
 }

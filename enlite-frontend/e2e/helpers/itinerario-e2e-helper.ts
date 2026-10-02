@@ -97,7 +97,12 @@ export async function activateRecruitmentViaApi(
   request: APIRequestContext,
   patientId: string,
   serviceId: string,
+  opts: { moverPaciente?: boolean } = {},
 ): Promise<string> {
+  // D469 (02/10/2026): o foguete move o paciente do funil para Búsqueda. Estes cenários testam
+  // itinerário/derivação/lançamento SEM essa virada (a derivação nunca toca o funil), então por
+  // padrão o status de antes volta por SQL; `moverPaciente: true` deixa o movimento valer.
+  const statusAntes = runSQL(`SELECT status FROM patients WHERE id = '${patientId}'`).trim();
   const token = tokenFor(ITINERARIO_STAFF);
   const res = await request.post(
     `${backendUrl()}/api/admin/patients/${patientId}/contracted-services/${serviceId}/activate-recruitment`,
@@ -111,6 +116,9 @@ export async function activateRecruitmentViaApi(
   const body = (await res.json()) as { data?: { vacancyId?: string } };
   const vacancyId = body.data?.vacancyId;
   if (!vacancyId) throw new Error('activateRecruitmentViaApi: resposta sem vacancyId');
+  if (!opts.moverPaciente && statusAntes) {
+    runSQL(`UPDATE patients SET status = '${statusAntes}' WHERE id = '${patientId}' AND status <> '${statusAntes}'`);
+  }
   return vacancyId;
 }
 

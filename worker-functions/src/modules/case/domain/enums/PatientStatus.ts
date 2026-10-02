@@ -69,9 +69,12 @@ export function isAdmissionFunnelStatus(value: unknown): value is AdmissionFunne
 }
 
 /**
- * Invariante 7 (D434): sair do funil de admissão para Búsqueda é ato do LANÇAMENTO da vaga, não
- * do Kanban nem do PUT /status — a linha existe no catálogo (479) só para o gancho.
+ * D469 (02/10/2026, revê a invariante 7/D434): sair do funil de admissão para Búsqueda é ato
+ * INTENCIONAL — o foguete (`recruitment_activation`), o envio à Talentum (`vacancy_launch`) ou o
+ * arrasto no Kanban do paciente (`kanban`). O PUT /status do select da ficha (`admin_panel`) e a
+ * derivação (`system`) continuam recusados. Quem decide é `isFunnelToSearchingTransition` + a lista
+ * `FUNNEL_TO_SEARCHING_SOURCES` no `PatientStatusWriter`; a linha existe no catálogo (479).
  */
-export function isLaunchOnlyTransition(from: unknown, to: unknown): boolean {
+export function isFunnelToSearchingTransition(from: unknown, to: unknown): boolean {
   return isAdmissionFunnelStatus(from) && to === 'SEARCHING';
 }

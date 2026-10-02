@@ -4365,7 +4365,8 @@
           "insert": "Creación",
           "backfill": "Carga inicial",
           "activate": "Activación",
-          "system": "Sistema"
+          "system": "Sistema",
+          "recruitment_activation": "Activación del reclutamiento"
         },
         "historyCard": {
           "title": "Historial de estados",

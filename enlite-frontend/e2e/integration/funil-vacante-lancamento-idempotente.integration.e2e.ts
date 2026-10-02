@@ -37,6 +37,7 @@ import {
   seedLaunchablePatient,
   seedWorkersNear,
   clickFoguete,
+  devolverPacienteAoFunil,
   completeDraftViaWizard,
   publishOnTalentumPage,
   countLaunchTrail,
@@ -86,6 +87,8 @@ test.describe('funil-vacante lancamento idempotente @integration', () => {
 
       // (1) Foguete → wizard (profissão AT, salário, meet) → /talentum → 1º lançamento.
       const vacancyId = await clickFoguete(page, patient.patientId, patient.serviceId);
+      // D469: o foguete já moveu o paciente; devolve ao funil para provar o gancho do ENVIO (vacancy_launch).
+      devolverPacienteAoFunil(patient.patientId);
       await completeDraftViaWizard(page, vacancyId);
 
       const publishStatus = await publishOnTalentumPage(page, vacancyId);
