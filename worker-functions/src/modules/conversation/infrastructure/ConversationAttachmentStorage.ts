@@ -43,9 +43,17 @@ export class ConversationAttachmentStorage extends PatientObjectStorageBase {
     return this.bucketName;
   }
 
-  /** Nome UUID (sem nome original, sem patient_id no caminho — mesma regra de `PatientPhotoStorage`). */
-  async uploadBuffer(buffer: Buffer, contentType: AllowedAttachmentContentType): Promise<ConversationAttachmentUploadResult> {
-    const objectPath = `${uuidv4()}.${EXTENSION_BY_CONTENT_TYPE[contentType]}`;
+  /**
+   * Nome UUID (sem nome original, sem patient_id no caminho — mesma regra de `PatientPhotoStorage`).
+   * `prefix` (spec 031): a aba "Documentos" sobe no MESMO bucket sob `patient-documents/<uuid>.<ext>`;
+   * omitido, o caminho é o de sempre (`<uuid>.<ext>` — anexo de chat).
+   */
+  async uploadBuffer(
+    buffer: Buffer,
+    contentType: AllowedAttachmentContentType,
+    prefix?: string,
+  ): Promise<ConversationAttachmentUploadResult> {
+    const objectPath = `${prefix ? `${prefix}/` : ''}${uuidv4()}.${EXTENSION_BY_CONTENT_TYPE[contentType]}`;
     const file = this.bucket().file(objectPath);
     await file.save(buffer, {
       resumable: false,

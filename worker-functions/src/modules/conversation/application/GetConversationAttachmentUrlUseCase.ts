@@ -62,7 +62,7 @@ function encodeRFC5987ValueChars(value: string): string {
  * espanhol/português. Agora manda os DOIS: `filename` ASCII de fallback (não-ASCII vira `_`, nunca
  * quebra clientes antigos que só leem esse parâmetro) + `filename*` com o nome real, percent-encoded.
  */
-function buildAttachmentContentDisposition(originalName: string): string {
+export function buildAttachmentContentDisposition(originalName: string): string {
   const sanitized = sanitizeFilenameForHeader(originalName);
   const asciiFallback = sanitized.replace(/[^\x20-\x7E]/g, '_');
   const encoded = encodeRFC5987ValueChars(sanitized);
