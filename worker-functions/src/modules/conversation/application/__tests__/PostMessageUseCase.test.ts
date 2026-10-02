@@ -83,6 +83,16 @@ function fileRejectedHandler(id: string): Handler {
   return (sql) => (sql.includes('FROM stored_files sf') ? { rows: [{ id, owned: false }] } : undefined);
 }
 
+/**
+ * ⚠️ Ordem: este handler vem ANTES de `filesOwnedHandler` nas listas — o `INSERT ... SELECT FROM stored_files sf`
+ * do documento casaria também com a substring do cruzamento de posse.
+ * Handler do documento do paciente (spec 031): anexar no chat cria UM `patient_documents` por arquivo,
+ * na mesma transação. Devolve `rowCount` = nº de arquivos (o que o INSERT ... SELECT produz de verdade).
+ */
+function patientDocumentsInsertHandler(rowCount: number): Handler {
+  return (sql) => (sql.includes('INSERT INTO patient_documents') ? { rows: [], rowCount } : undefined);
+}
+
 const POOL = {} as unknown as Pool;
 
 function runOn(client: PoolClient) {
@@ -264,7 +274,7 @@ describe('PostMessageUseCase', () => {
 
   describe('anexos — grava conversation_message_attachments quando há fileIds', () => {
     it('com fileIds: insere um par (message_id, file_id) por arquivo', async () => {
-      const { client, calls } = clientWith([insertMessageHandler(), filesOwnedHandler(['f1', 'f2'])]);
+      const { client, calls } = clientWith([patientDocumentsInsertHandler(2), insertMessageHandler(), filesOwnedHandler(['f1', 'f2'])]);
       runOn(client);
       const useCase = new PostMessageUseCase(new ConversationRepository(POOL));
 
@@ -420,6 +430,73 @@ describe('PostMessageUseCase', () => {
       await useCase.execute(POOL, { conversationId: 'c1', authorUid: 'staff:1', body: 'msg-1' });
 
       expect(calls.some((c) => c.sql.includes('INSERT INTO conversation_message_attachments'))).toBe(false);
+    });
+  });
+
+  describe('anexar no chat É criar documento do paciente (spec 031, D456/D463) — MESMO client, depois de attachFiles', () => {
+    it('com fileIds: UM INSERT em patient_documents no MESMO client, DEPOIS do vínculo mensagem↔arquivo, com autor e data do envio', async () => {
+      const { client, calls } = clientWith([patientDocumentsInsertHandler(2), insertMessageHandler('m-new'), filesOwnedHandler(['f1', 'f2'])]);
+      runOn(client);
+      const useCase = new PostMessageUseCase(new ConversationRepository(POOL));
+
+      await useCase.execute(POOL, { conversationId: 'c1', authorUid: 'staff:1', body: 'msg-1', fileIds: ['f1', 'f2'] });
+
+      const attachIdx = calls.findIndex((c) => c.sql.includes('INSERT INTO conversation_message_attachments'));
+      const docIdx = calls.findIndex((c) => c.sql.includes('INSERT INTO patient_documents'));
+      expect(attachIdx).toBeGreaterThanOrEqual(0);
+      expect(docIdx).toBeGreaterThan(attachIdx); // logo depois de attachFiles
+      expect(calls.filter((c) => c.sql.includes('INSERT INTO patient_documents'))).toHaveLength(1); // 1 statement p/ todos os arquivos
+      expect(calls[docIdx].params).toEqual(['c1', 'm-new', 'staff:1', ['f1', 'f2']]);
+      // a data do documento é a da MENSAGEM, lida no próprio INSERT ... SELECT (um Date de JS truncaria os µs)
+      expect(calls[docIdx].sql).toContain('m.created_at');
+      expect(mockWithActorContext).toHaveBeenCalledTimes(1); // uma transação só — nenhuma conexão à parte
+    });
+
+    it('o INSERT do documento NÃO decifra nada: o rótulo é o ciphertext do nome original copiado no SQL (nenhum nome em claro no caminho do chat)', async () => {
+      const { client, calls } = clientWith([patientDocumentsInsertHandler(1), insertMessageHandler(), filesOwnedHandler(['f1'])]);
+      runOn(client);
+      await new PostMessageUseCase(new ConversationRepository(POOL)).execute(POOL, {
+        conversationId: 'c1', authorUid: 'staff:1', body: 'msg-1', fileIds: ['f1'],
+      });
+      const docSql = calls.find((c) => c.sql.includes('INSERT INTO patient_documents'))!.sql;
+      expect(docSql).toContain('sf.original_name_encrypted');
+    });
+
+    it('nº de documentos criados ≠ nº de arquivos anexados → a mensagem inteira falha (nunca anexo na conversa sem documento na lista)', async () => {
+      const { client } = clientWith([patientDocumentsInsertHandler(1), insertMessageHandler(), filesOwnedHandler(['f1', 'f2'])]);
+      runOn(client);
+      await expect(
+        new PostMessageUseCase(new ConversationRepository(POOL)).execute(POOL, {
+          conversationId: 'c1', authorUid: 'staff:1', body: 'msg-1', fileIds: ['f1', 'f2'],
+        }),
+      ).rejects.toThrow(/patient_documents/);
+    });
+
+    it('falha do INSERT do documento propaga CRUA para o withActorContext (que dá ROLLBACK de mensagem + anexo) — e o fan-out não roda', async () => {
+      const boom = new Error('patient_documents caiu');
+      const fanOut: PostMessageFanOutHook = { execute: jest.fn(async () => undefined) };
+      const { client } = clientWith([
+        (sql) => {
+          if (!sql.includes('INSERT INTO patient_documents')) return undefined;
+          throw boom;
+        },
+        insertMessageHandler(),
+        filesOwnedHandler(['f1']),
+      ]);
+      runOn(client);
+      await expect(
+        new PostMessageUseCase(new ConversationRepository(POOL), fanOut).execute(POOL, {
+          conversationId: 'c1', authorUid: 'staff:1', body: 'msg-1', fileIds: ['f1'],
+        }),
+      ).rejects.toBe(boom);
+      expect(fanOut.execute).not.toHaveBeenCalled();
+    });
+
+    it('sem fileIds: não toca patient_documents', async () => {
+      const { client, calls } = clientWith([insertMessageHandler()]);
+      runOn(client);
+      await new PostMessageUseCase(new ConversationRepository(POOL)).execute(POOL, { conversationId: 'c1', authorUid: 'staff:1', body: 'msg-1' });
+      expect(calls.some((c) => c.sql.includes('patient_documents'))).toBe(false);
     });
   });
 
