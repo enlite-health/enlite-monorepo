@@ -322,7 +322,11 @@ export class TalentumApiClient implements ITalentumApiClient {
       return undefined as unknown as T;
     }
 
-    return res.json() as Promise<T>;
+    // A v2 responde 200 SEM corpo em alguns POST (ex.: `/init`, bodyLen 0): `res.json()` lançaria
+    // "Unexpected end of JSON input". Lê como texto e só parseia quando há corpo.
+    const text = await res.text();
+    if (text.trim() === '') return undefined as unknown as T;
+    return JSON.parse(text) as T;
   }
 
   // ── ITalentumApiClient implementation ───────────────────────────

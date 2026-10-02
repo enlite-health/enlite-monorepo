@@ -27,8 +27,12 @@ function res(status: number, body?: unknown, textBody = '') {
   return {
     ok: status >= 200 && status < 300,
     status,
-    json: () => Promise.resolve(body),
-    text: () => Promise.resolve(textBody),
+    // Realista: sem corpo, `json()` rejeita como o fetch real ("Unexpected end of JSON input").
+    json: () =>
+      body === undefined
+        ? Promise.reject(new SyntaxError('Unexpected end of JSON input'))
+        : Promise.resolve(body),
+    text: () => Promise.resolve(textBody || (body === undefined ? '' : JSON.stringify(body))),
     headers: { getSetCookie: () => [] as string[] },
   };
 }
@@ -542,6 +546,34 @@ describe('TalentumApiClient (API v2)', () => {
 
       await expect(client.deletePrescreening('proj-1')).resolves.toBeUndefined();
       expect([method(1), url(1)]).toEqual(['DELETE', `${V2_HOST}/projects/proj-1`]);
+    });
+  });
+
+  // ── corpo vazio (bug prd: POST /init responde 200 sem corpo) ─────
+
+  describe('resposta 200 com corpo vazio', () => {
+    it('createPrescreening: init 200 SEM corpo não lança nem faz rollback', async () => {
+      mockFetch.mockResolvedValueOnce(loginRes());
+      mockFetch.mockResolvedValueOnce(res(201, { projectId: 'proj-e' }));
+      mockFetch.mockResolvedValueOnce(res(204));
+      mockFetch.mockResolvedValueOnce(res(200, { text: 'd', truncated: false }));
+      mockFetch.mockResolvedValueOnce(res(204));
+      mockFetch.mockResolvedValueOnce(res(200)); // POST init: corpo vazio (v2 real, bodyLen 0)
+      mockFetch.mockResolvedValueOnce(res(200, PRESCREENING_V2));
+
+      const r = await client.createPrescreening({ title: 'EN 1#1', description: 'd', questions: [] });
+
+      expect(r.projectId).toBe('proj-e');
+      expect(mockFetch.mock.calls.some((c) => (c[1] as RequestInit).method === 'DELETE')).toBe(false);
+    });
+
+    it('request(): 200 com corpo vazio devolve undefined em qualquer método; 200 com JSON continua parseado', async () => {
+      mockFetch.mockResolvedValueOnce(loginRes());
+      mockFetch.mockResolvedValueOnce(res(200)); // GET sem corpo
+      await expect(client.listCandidates('p', 1)).resolves.toBeUndefined();
+
+      mockFetch.mockResolvedValueOnce(res(200, { candidates: [], total: 0 }));
+      await expect(client.listCandidates('p', 1)).resolves.toEqual({ candidates: [], total: 0 });
     });
   });
 
