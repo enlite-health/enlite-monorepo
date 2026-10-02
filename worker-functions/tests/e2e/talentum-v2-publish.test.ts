@@ -12,7 +12,7 @@
  *  - o link gravado é o WEB do publicId (nunca `wa.me`), o projeto fica IN_PROGRESS;
  *  - a FAQ do banco NÃO vai à Talentum e sobrevive à publicação e à despublicação;
  *  - título > 50 caracteres publica (nome cortado em 50);
- *  - id gravado morto (404 na v2) → 409 claro, não 500/502.
+ *  - id gravado morto (404 na v2): editar a descrição → 409 claro; despublicar limpa o vínculo (200).
  *
  * Sabotagem (T2.6): trocar o path do stub `/projects` por `/pre-screening/projects` DEVE derrubar este e2e.
  */
@@ -173,9 +173,9 @@ describe('Talentum v2 — publicar / editar descrição / despublicar (stub, sem
     const d = await pool.query(`SELECT talentum_description FROM job_postings WHERE id = $1`, [id]);
     expect(d.rows[0].talentum_description).toBe('Descripción inicial');
 
-    // despublicar o id morto: também 409 claro (não 502), e o banco não é limpo
+    // despublicar o id morto: o projeto já não existe na v2 → 200 e o vínculo é limpo (spec 040)
     const del = await api.delete(`/api/admin/vacancies/${id}/publish-talentum`, auth());
-    expect(del.status).toBe(409);
-    expect((await row(id)).talentum_project_id).toBe('id-antigo-v1-morto');
+    expect(del.status).toBe(200);
+    expect(await row(id)).toMatchObject({ talentum_project_id: null, talentum_public_id: null, is_draft: true });
   });
 });
