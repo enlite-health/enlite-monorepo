@@ -31,6 +31,8 @@ jobs:
   integration-e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    env:
+      E2E_BACKEND_URL: http://localhost:8080
 
     steps:
       - uses: actions/checkout@v4
@@ -310,6 +312,8 @@ jobs:
   integration-e2e-anacare-hours:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      E2E_BACKEND_URL: http://localhost:8080
 
     steps:
       - uses: actions/checkout@v4
@@ -472,6 +476,8 @@ jobs:
   integration-e2e-group-simulation:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      E2E_BACKEND_URL: http://localhost:8080
 
     steps:
       - uses: actions/checkout@v4

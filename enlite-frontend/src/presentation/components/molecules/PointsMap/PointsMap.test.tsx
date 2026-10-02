@@ -5,7 +5,7 @@
  * selecionado, e o placeholder quando o script não carrega.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor, act } from '@testing-library/react';
+import { render, screen, waitFor, act, cleanup } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { PointsMap, type MapPoint } from './PointsMap';
 
@@ -87,7 +87,11 @@ describe('PointsMap', () => {
     installFakeGoogle();
     loadGoogleMaps.mockResolvedValue(undefined);
   });
-  afterEach(() => { delete (globalThis as unknown as { google?: unknown }).google; });
+  afterEach(() => {
+    // desmonta ANTES de apagar o SDK: effect tardio sem `google` estoura ReferenceError
+    cleanup();
+    delete (globalThis as unknown as { google?: unknown }).google;
+  });
 
   it('carrega o SDK, cria o mapa, os marcadores (só quem tem coordenada), o círculo e o centro; expõe estado no DOM', async () => {
     renderMap();
@@ -96,7 +100,9 @@ describe('PointsMap', () => {
     expect(el).toHaveAttribute('data-markers', '0');
     expect(screen.getByTestId('points-map-placeholder')).toHaveTextContent('…');
     await waitFor(() => expect(el).toHaveAttribute('data-map-status', 'ready'));
-    expect(el).toHaveAttribute('data-markers', '2');
+    // os marcadores nascem nos effects passivos, DEPOIS do commit do status: esperar o fato afirmado
+    await waitFor(() => expect(markers.filter((m) => m.opts.title).map((m) => m.opts.title)).toEqual(['T a', 'T b']));
+    await waitFor(() => expect(el).toHaveAttribute('data-markers', '2'));
     expect(screen.queryByTestId('points-map-placeholder')).toBeNull();
     expect(maps).toHaveLength(1);
     expect((maps[0].opts as { clickableIcons: boolean }).clickableIcons).toBe(false);
