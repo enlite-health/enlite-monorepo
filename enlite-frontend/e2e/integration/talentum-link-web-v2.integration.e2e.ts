@@ -99,7 +99,7 @@ test.describe('talentum link web v2 @integration', () => {
       await expect(page).toHaveURL(new RegExp(`/admin/vacancies/${vacancyId}$`), { timeout: 15_000 });
 
       // ── o card (aba Talentum da vaga) mostra o link WEB v2 (valor LIDO da tela) ──
-      await page.getByTestId('vacancy-tab-talentum').click();
+      await page.getByRole('button', { name: 'Talentum', exact: true }).click();
       await expect(page.getByText('Link de preselección web')).toBeVisible({ timeout: 15_000 });
       await expect(page.getByText('Link del bot WhatsApp')).toHaveCount(0);
       const linkText = page.getByText(WEB_LINK);
