@@ -160,4 +160,33 @@ describe('AnaCareHoursDetailContainer — navegação por mês (spec 037)', () =
     expect(screen.getByText(/stale\.titleDesconhecido/)).toBeInTheDocument();
     expect(screen.getByTestId('anacare-hours-week-label').textContent).toContain('"start":"5 de octubre","end":"11 de octubre"');
   });
+
+  it('retrato de outubro REJEITA depois de navegar: página montada, data preservada, erro INLINE com o texto do retrato + Reintentar; Reintentar resolve e o erro some', async () => {
+    const { service } = makeService({ '2026-09': patientOf(shift('a', '2026-09-29')), '2026-10': patientOf(shift('b', '2026-10-06')) });
+    const retrato = { updatedAt: '2026-10-01T08:00:00-03:00', stale: false, snapshotState: 'fresco', circuitBreakerOpen: false };
+    let octFails = true;
+    (service.getRetratoStatus as ReturnType<typeof vi.fn>).mockImplementation(async (m: string) => {
+      if (m === '2026-10' && octFails) throw new Error('retrato de outubro fora do ar');
+      return retrato;
+    });
+    function Harness(): JSX.Element {
+      const [month, setMonth] = useState('2026-09');
+      return <AnaCareHoursDetailContainer axonicoService={AXONICO} patientDocumentService={DOCUMENT} service={service} month={month} onMonthChange={setMonth} patientId="90000" onBack={vi.fn()} />;
+    }
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId('anacare-hours-week-datepicker')).toBeInTheDocument());
+    setDate('2026-09-29');
+    await waitFor(() => expect(screen.getByTestId('anacare-hours-shift-row-a')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('anacare-hours-week-next'));
+    await waitFor(() => expect(screen.getByTestId('anacare-hours-retrato-error')).toBeInTheDocument());
+    expect(screen.queryByTestId('anacare-hours-detail-error')).not.toBeInTheDocument();
+    expect((screen.getByTestId('anacare-hours-week-datepicker') as HTMLInputElement).value).toBe('2026-10-06');
+    expect(screen.getByTestId('anacare-hours-retrato-error').textContent).toContain('retrato de outubro fora do ar');
+    expect(screen.queryByTestId('anacare-hours-week-error')).not.toBeInTheDocument(); // não é falha de turnos
+    expect(screen.getByTestId('anacare-hours-shift-row-b')).toBeInTheDocument();
+    octFails = false;
+    fireEvent.click(screen.getByTestId('anacare-hours-retrato-retry'));
+    await waitFor(() => expect(screen.queryByTestId('anacare-hours-retrato-error')).not.toBeInTheDocument());
+    expect((screen.getByTestId('anacare-hours-week-datepicker') as HTMLInputElement).value).toBe('2026-10-06');
+  });
 });
