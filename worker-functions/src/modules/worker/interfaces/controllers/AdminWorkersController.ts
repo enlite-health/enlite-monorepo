@@ -121,8 +121,9 @@ export class AdminWorkersController {
       phone: (row.phone as string) ?? '',
       worker: {
         id: row.id as string,
-        name: [firstName, lastName].filter(Boolean).join(' ') || (row.email as string),
-        email: row.email as string,
+        name: [firstName, lastName].filter(Boolean).join(' ') || ((row.email as string | null) ?? ''),
+        // workers.email é anulável (migration 499: worker criado só com telefone pelo sync da Talentum v2).
+        email: row.email as string | null,
         casesCount: parseInt((row.cases_count as string) ?? '0', 10),
         documentsStatus: row.documents_status as string,
         documentsComplete: row.status === 'REGISTERED',
@@ -249,7 +250,7 @@ export class AdminWorkersController {
 
         const decryptedAll = await Promise.all(result.rows.map((row) => this.decryptWorkerListRow(row)));
         const filtered = decryptedAll.filter(
-          ({ firstName, lastName, worker, phone }) => matchesSearch(searchTerm!, [firstName, lastName, worker.email, phone]),
+          ({ firstName, lastName, worker, phone }) => matchesSearch(searchTerm!, [firstName, lastName, worker.email ?? '', phone]),
         );
 
         const paginatedOffset = parseInt(offset, 10);
