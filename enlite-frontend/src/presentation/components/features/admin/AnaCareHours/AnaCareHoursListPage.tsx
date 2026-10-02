@@ -109,17 +109,19 @@ export function AnaCareHoursListPage({
   return (
     <PageContainer>
       <div className="flex flex-col gap-6">
-        <div className="flex flex-wrap items-end justify-between gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <Heading level={1}>{t('admin.anacareHours.title')}</Heading>
             <Text size="xs" color="muted" className="mt-1">
               {t('admin.anacareHours.updatedAt', { datetime: formatDateTime(snapshot.updatedAt) })}
             </Text>
           </div>
-          <div className="flex items-end gap-3">
+          <div className="flex items-start gap-3" data-testid="anacare-hours-header-actions">
             <div className="w-48">
+              {/* Mesma altura dos botões `size="sm"` (h-8): override LOCAL no wrapper, o atom `Select` e o tamanho `compact` (usado em outras telas) ficam intocados. */}
               <Select
                 inputSize="compact"
+                className="!h-8 !py-0"
                 options={monthOptions}
                 value={displayedMonth}
                 onValueChange={(v) => onMonthChange?.(v)}
