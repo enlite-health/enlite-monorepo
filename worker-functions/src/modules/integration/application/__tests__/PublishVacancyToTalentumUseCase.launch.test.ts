@@ -87,8 +87,7 @@ describe('PublishVacancyToTalentumUseCase — gancho pós-commit (P8)', () => {
   it('feliz: launchHook 1× com o id, DEPOIS de BEGIN → UPDATE → COMMIT → release', async () => {
     mockQuery
       .mockResolvedValueOnce({ rows: [rowsFor()] }) // vacancy
-      .mockResolvedValueOnce({ rows: [{ id: 'q1', question: 'q?', response_type: null, desired_response: null, weight: 1, required: true, analyzed: true, early_stoppage: false }] }) // questions
-      .mockResolvedValueOnce({ rows: [] }); // faq
+      .mockResolvedValueOnce({ rows: [{ id: 'q1', question: 'q?', response_type: null, desired_response: null, weight: 1, required: true, analyzed: true, early_stoppage: false }] }); // questions
 
     const result = await useCase.publish({ jobPostingId: JP_ID });
 
@@ -117,8 +116,7 @@ describe('PublishVacancyToTalentumUseCase — gancho pós-commit (P8)', () => {
   it('createPrescreening (Talentum) recusa → PublishError(502) e launchHook 0×', async () => {
     mockQuery
       .mockResolvedValueOnce({ rows: [rowsFor()] })
-      .mockResolvedValueOnce({ rows: [{ id: 'q1', question: 'q?', response_type: null, desired_response: null, weight: 1, required: true, analyzed: true, early_stoppage: false }] })
-      .mockResolvedValueOnce({ rows: [] });
+      .mockResolvedValueOnce({ rows: [{ id: 'q1', question: 'q?', response_type: null, desired_response: null, weight: 1, required: true, analyzed: true, early_stoppage: false }] });
     mockCreatePrescreening.mockRejectedValue(new Error('talentum-create-boom'));
 
     await expect(useCase.publish({ jobPostingId: JP_ID })).rejects.toMatchObject({ statusCode: 502 });
@@ -130,8 +128,7 @@ describe('PublishVacancyToTalentumUseCase — gancho pós-commit (P8)', () => {
   it('getPrescreening (Talentum) recusa → PublishError(502) e launchHook 0×', async () => {
     mockQuery
       .mockResolvedValueOnce({ rows: [rowsFor()] })
-      .mockResolvedValueOnce({ rows: [{ id: 'q1', question: 'q?', response_type: null, desired_response: null, weight: 1, required: true, analyzed: true, early_stoppage: false }] })
-      .mockResolvedValueOnce({ rows: [] });
+      .mockResolvedValueOnce({ rows: [{ id: 'q1', question: 'q?', response_type: null, desired_response: null, weight: 1, required: true, analyzed: true, early_stoppage: false }] });
     mockGetPrescreening.mockRejectedValue(new Error('talentum-get-boom'));
 
     await expect(useCase.publish({ jobPostingId: JP_ID })).rejects.toMatchObject({ statusCode: 502 });
@@ -143,8 +140,7 @@ describe('PublishVacancyToTalentumUseCase — gancho pós-commit (P8)', () => {
   it('UPDATE da transação lança → ROLLBACK, relança, launchHook 0×', async () => {
     mockQuery
       .mockResolvedValueOnce({ rows: [rowsFor()] })
-      .mockResolvedValueOnce({ rows: [{ id: 'q1', question: 'q?', response_type: null, desired_response: null, weight: 1, required: true, analyzed: true, early_stoppage: false }] })
-      .mockResolvedValueOnce({ rows: [] });
+      .mockResolvedValueOnce({ rows: [{ id: 'q1', question: 'q?', response_type: null, desired_response: null, weight: 1, required: true, analyzed: true, early_stoppage: false }] });
     mockClientQuery.mockImplementation((sql: string) => {
       if (sql === 'BEGIN') return Promise.resolve({ rows: [] });
       if (String(sql).includes('UPDATE job_postings')) return Promise.reject(new Error('update-boom'));
@@ -161,8 +157,7 @@ describe('PublishVacancyToTalentumUseCase — gancho pós-commit (P8)', () => {
   it('launchHook rejeita: o publish AINDA resolve com o resultado, e reportError roda 1×', async () => {
     mockQuery
       .mockResolvedValueOnce({ rows: [rowsFor()] })
-      .mockResolvedValueOnce({ rows: [{ id: 'q1', question: 'q?', response_type: null, desired_response: null, weight: 1, required: true, analyzed: true, early_stoppage: false }] })
-      .mockResolvedValueOnce({ rows: [] });
+      .mockResolvedValueOnce({ rows: [{ id: 'q1', question: 'q?', response_type: null, desired_response: null, weight: 1, required: true, analyzed: true, early_stoppage: false }] });
     launchHook.mockRejectedValue(new Error('hook-boom'));
 
     const result = await useCase.publish({ jobPostingId: JP_ID });

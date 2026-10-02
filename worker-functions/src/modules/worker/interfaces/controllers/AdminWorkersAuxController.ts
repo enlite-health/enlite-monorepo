@@ -14,7 +14,7 @@
 import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
-import { SyncTalentumWorkersUseCase } from '@modules/integration';
+import { SyncTalentumWorkersUseCase, parseSyncOptions } from '@modules/integration';
 import { reportError } from '@shared/logging';
 import { canonicalLocation, recognizedZoneLabel } from '@shared/utils/normalizeLocationValue';
 import { cellsOfRequest } from '@modules/identity/permissions';
@@ -201,7 +201,7 @@ export class AdminWorkersAuxController {
   }
 
   /** POST /api/admin/workers/sync-talentum — bulk sync workers from Talentum dashboard */
-  async syncTalentumWorkers(_req: Request, res: Response): Promise<void> {
+  async syncTalentumWorkers(req: Request, res: Response): Promise<void> {
     // In test environments there are no GCP credentials (ADC), so google-auth-library
     // would make async background retries that trigger uncaughtException and kill the
     // process. Return 503 early to avoid touching GoogleAuth entirely.
@@ -212,7 +212,8 @@ export class AdminWorkersAuxController {
 
     try {
       const useCase = new SyncTalentumWorkersUseCase();
-      const report = await useCase.execute();
+      // Lote opcional no corpo ({ cursor, maxProjects }): o sync completo passa de ~300 s (ver WorkerSyncOptions).
+      const report = await useCase.execute(parseSyncOptions(req.body));
       res.status(200).json({ success: true, data: report });
     } catch (error: any) {
       const isTalentumError = error.message?.includes('Talentum') || error.message?.includes('tl_auth');

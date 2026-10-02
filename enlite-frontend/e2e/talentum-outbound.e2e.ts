@@ -606,7 +606,7 @@ test.describe('Talentum Outbound — Frontend', () => {
       await expect(page.locator('text=Activo').first()).toBeVisible({ timeout: 5000 });
 
       // Link WhatsApp visible
-      await expect(page.locator('text=Link del bot WhatsApp').first()).toBeVisible();
+      await expect(page.locator('text=Link de preselección web').first()).toBeVisible();
       await expect(page.locator('text=/wa.me/i').first()).toBeVisible();
 
       // Slug visible

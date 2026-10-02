@@ -8,7 +8,7 @@ interface WorkerContactCardProps {
   status: string;
   firstName: string | null;
   lastName: string | null;
-  email: string;
+  email: string | null;
   phone: string | null;
   whatsappPhone: string | null;
   profilePhotoUrl: string | null;
@@ -70,7 +70,7 @@ export function WorkerContactCard({
   updatedAt,
 }: WorkerContactCardProps) {
   const { t } = useTranslation();
-  const fullName = [firstName, lastName].filter(Boolean).join(' ') || email;
+  const fullName = [firstName, lastName].filter(Boolean).join(' ') || email || '—';
   const statusLabel = STATUS_I18N_KEYS[status] ? t(STATUS_I18N_KEYS[status]) : status;
   const statusColor = STATUS_COLORS[status] ?? 'bg-gray-100 text-gray-600';
   const platformLabel = getPlatformLabel(t, platform);
@@ -89,7 +89,7 @@ export function WorkerContactCard({
         ) : (
           <div className="w-14 h-14 rounded-full bg-gray-300 flex items-center justify-center">
             <Text as="span" size="xl" weight="semibold" color="secondary">
-              {(firstName?.[0] ?? email[0] ?? '?').toUpperCase()}
+              {(firstName?.[0] ?? email?.[0] ?? '?').toUpperCase()}
             </Text>
           </div>
         )}
@@ -97,7 +97,7 @@ export function WorkerContactCard({
           <Heading level={1} as="h3" className="truncate">
             {fullName}
           </Heading>
-          <Text size="sm" color="muted" className="truncate">{email}</Text>
+          <Text size="sm" color="muted" className="truncate">{email || '—'}</Text>
         </div>
       </div>
 

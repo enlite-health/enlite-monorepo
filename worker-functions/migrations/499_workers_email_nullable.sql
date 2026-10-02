@@ -1,0 +1,11 @@
+-- 499 — workers.email ANULÁVEL (spec 040 F3, decisão do Gabriel 02/10/2026).
+--
+-- Por quê: na API v2 da Talentum o listing de candidatos (`GET /projects/:id/prescreening/candidates`) traz
+-- telefone (86/86 medido) mas NÃO traz e-mail; o sync de workers cria o cadastro só com telefone. A 001 declarou
+-- `email VARCHAR(255) UNIQUE NOT NULL`, então o INSERT sem e-mail falhava (T0.4 = NÃO).
+--
+-- O UNIQUE (`workers_email_key`) e o índice `idx_workers_email` ficam como estão: no Postgres vários NULL não
+-- colidem num UNIQUE, então dois workers sem e-mail coexistem (provado em e2e). Nenhum valor existente muda.
+-- Idempotente (DROP NOT NULL repetido é no-op).
+-- Rollback: migrations/pending/ROLLBACK_499_workers_email_nullable.sql (só com 0 workers sem e-mail).
+ALTER TABLE workers ALTER COLUMN email DROP NOT NULL;

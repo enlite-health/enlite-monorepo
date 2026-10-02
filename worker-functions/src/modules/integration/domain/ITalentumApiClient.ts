@@ -41,10 +41,9 @@ export interface CreatePrescreeningResult {
 }
 
 /**
- * Corpo do UPDATE in-place (PUT /pre-screening/projects/:id). Edita um projeto já
- * publicado SEM recriar — preserva projectId, whatsappUrl e slug (provado contra a
- * Talentum real: PUT 204, links intactos). Diferente do create: NÃO aceita `type`
- * no top-level, e cada pergunta pode carregar `questionId` (mantém a identidade).
+ * Corpo do UPDATE in-place (v2: `PATCH /projects/:id/prescreening` + `PUT .../job-description`). Edita um
+ * projeto já publicado SEM recriar — preserva projectId, link web e slug. Cada pergunta pode carregar
+ * `questionId` (mantém a identidade). `faq` é aceito por compatibilidade e IGNORADO (a v2 não tem FAQ).
  */
 export interface UpdatePrescreeningInput {
   title: string;
@@ -67,26 +66,25 @@ export interface TalentumProject {
   timestamp: string;
   questions: TalentumQuestionWithId[];
   faq: TalentumFaq[];
+  /** v2: status do projeto (IN_PROGRESS, PAUSED...), tipo (FULL/ATS/PHONE_CALL) e papel da conta (OWNER/VIEWER). */
+  status?: string;
+  type?: string;
+  myRole?: string;
 }
 
-// ─────────────────────────────────────────────────────────────────
-// Dashboard types (GET /dashboard — candidate profiles, not projects)
-// ─────────────────────────────────────────────────────────────────
-
-export interface TalentumDashboardProfile {
-  _id: string;
-  firstName: string;
-  lastName: string;
-  fullName: string;
-  emails: Array<{ type: string; value: string }>;
-  phoneNumbers: Array<{ type: string; value: string; normalizedPhoneNumber?: string }>;
-  status: string;
-  projects: Array<{ projectId: string | null; title: string; active: boolean }>;
+/** Candidato da v2 (`candidates` / `ready-for-interview`). Só `profileId` é garantido; nunca logar o resto. */
+export interface TalentumCandidate {
+  profileId: string;
+  firstName?: string;
+  lastName?: string;
+  phoneNumber?: string;
+  email?: string;
+  [key: string]: unknown;
 }
 
-export interface TalentumDashboardResponse {
+export interface TalentumCandidatesPage {
+  candidates: TalentumCandidate[];
   total: number;
-  profiles: TalentumDashboardProfile[];
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -119,4 +117,10 @@ export interface ITalentumApiClient {
 
   /** Iterate all pages and return every project. */
   listAllPrescreenings(): Promise<TalentumProject[]>;
+
+  /** v2: candidatos de um projeto (telefone, sem e-mail), 1 página. */
+  listCandidates(projectId: string, page: number): Promise<TalentumCandidatesPage>;
+
+  /** v2: qualificados do projeto (com e-mail), 1 página. */
+  listReadyForInterview(projectId: string, page: number): Promise<TalentumCandidatesPage>;
 }

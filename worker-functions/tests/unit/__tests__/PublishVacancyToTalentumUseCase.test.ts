@@ -264,11 +264,10 @@ describe('PublishVacancyToTalentumUseCase', () => {
       );
     });
 
-    it('passes FAQ when available', async () => {
+    it('NÃO lê nem envia a FAQ (a v2 não tem FAQ — decisão (g); ela fica só no banco)', async () => {
       mockPoolQuery
         .mockResolvedValueOnce({ rows: [setupVacancyRow()] })
-        .mockResolvedValueOnce({ rows: setupQuestionsRows() })
-        .mockResolvedValueOnce({ rows: [{ question: 'Salary?', answer: 'TBD' }] });
+        .mockResolvedValueOnce({ rows: setupQuestionsRows() });
 
       mockCreatePrescreening.mockResolvedValue({ projectId: 'p1', publicId: 'u1' });
       mockGetPrescreening.mockResolvedValue({ whatsappUrl: 'url', slug: 's' });
@@ -277,31 +276,9 @@ describe('PublishVacancyToTalentumUseCase', () => {
       const useCase = new PublishVacancyToTalentumUseCase();
       await useCase.publish({ jobPostingId: 'job-123' });
 
-      expect(mockCreatePrescreening).toHaveBeenCalledWith(
-        expect.objectContaining({
-          faq: [{ question: 'Salary?', answer: 'TBD' }],
-        })
-      );
-    });
-
-    it('omits FAQ when empty', async () => {
-      mockPoolQuery
-        .mockResolvedValueOnce({ rows: [setupVacancyRow()] })
-        .mockResolvedValueOnce({ rows: setupQuestionsRows() })
-        .mockResolvedValueOnce({ rows: [] }); // No FAQ
-
-      mockCreatePrescreening.mockResolvedValue({ projectId: 'p1', publicId: 'u1' });
-      mockGetPrescreening.mockResolvedValue({ whatsappUrl: 'url', slug: 's' });
-      mockClientQuery.mockResolvedValue({ rows: [] });
-
-      const useCase = new PublishVacancyToTalentumUseCase();
-      await useCase.publish({ jobPostingId: 'job-123' });
-
-      expect(mockCreatePrescreening).toHaveBeenCalledWith(
-        expect.objectContaining({
-          faq: undefined,
-        })
-      );
+      expect(mockCreatePrescreening.mock.calls[0][0]).not.toHaveProperty('faq');
+      const sqls = mockPoolQuery.mock.calls.map((c) => String(c[0]));
+      expect(sqls.some((q) => q.includes('job_posting_prescreening_faq'))).toBe(false);
     });
 
     it('uses vacancy title, fallback to "Caso {id}" when null', async () => {
@@ -583,6 +560,24 @@ describe('PublishVacancyToTalentumUseCase', () => {
         expect(err.statusCode).toBe(502);
         expect(err.message).toContain('Talentum API error (delete)');
       }
+    });
+
+    it('projectId morto (DELETE 404 na v2) → 409 claro com "rode a reconciliação", sem limpar o banco', async () => {
+      mockPoolQuery.mockResolvedValueOnce({ rows: [{ talentum_project_id: 'proj-morto', is_draft: false }] });
+      mockTalentumCreate.mockResolvedValue(makeTalentumClient());
+      mockDeletePrescreening.mockRejectedValue(
+        new Error('[TalentumApiClient] DELETE /projects/proj-morto — HTTP 404: {} (projeto não existe na Talentum v2; rode a reconciliação)'),
+      );
+      mockClientQuery.mockClear();
+
+      const err: any = await new PublishVacancyToTalentumUseCase()
+        .unpublish({ jobPostingId: 'job-123' })
+        .catch((e) => e);
+
+      expect(err).toBeInstanceOf(PublishError);
+      expect(err.statusCode).toBe(409);
+      expect(err.message).toContain('rode a reconciliação');
+      expect(mockClientQuery).not.toHaveBeenCalled();
     });
 
     it('rolls back transaction when DB clear fails', async () => {

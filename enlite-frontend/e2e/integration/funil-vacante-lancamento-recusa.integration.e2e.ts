@@ -4,13 +4,13 @@
  * P14 (Fase 6, cadeia-paciente-vacante-itinerario) — 1 teste, critério 7:
  *
  * `lancamento-talentum-recusa-nao-move`:
- *   7. quando a Talentum RECUSA o `POST /pre-screening/projects` (502, `stub.mode = 'reject'`),
+ *   7. quando a Talentum RECUSA o `POST /projects` (502, `stub.mode = 'reject'`),
  *      o publish falha ANTES do commit (`PublishVacancyToTalentumUseCase.ts:159-179` roda antes
  *      da UPDATE de `:195-207` e do gancho pós-commit `:235-240`) — a vaga continua rascunho
  *      (`is_draft = true`, `talentum_project_id` nulo), o paciente continua `ADMISSION`, a
  *      trilha `vacancy_launch` fica em 0. A tela mostra o
  *      erro (`publishError`, `TalentumConfigPage.tsx:134-138`) sem sair de `/talentum`. Controle:
- *      `stub.calls` tem o `POST /pre-screening/projects` — o backend TENTOU e o stub recusou (a
+ *      `stub.calls` tem o `POST /projects` — o backend TENTOU e o stub recusou (a
  *      recusa é do stub, no mesmo processo do teste, nunca de rede).
  *
  *   Alternativo, no MESMO teste: `stub.mode = 'accept'` e publicar de novo — mesmo botão, mesma
@@ -116,11 +116,11 @@ test.describe('funil-vacante lancamento recusa @integration', () => {
       expect(trailAfterReject, 'trilha vacancy_launch continua 0 depois da recusa').toBe(0);
 
       const createCallsAfterReject = stub.calls.filter(
-        (c) => c.method === 'POST' && c.path === '/pre-screening/projects',
+        (c) => c.method === 'POST' && c.path === '/projects',
       ).length;
       expect(
         createCallsAfterReject,
-        'controle: stub.calls tem o POST /pre-screening/projects — o backend TENTOU e o stub recusou',
+        'controle: stub.calls tem o POST /projects — o backend TENTOU e o stub recusou',
       ).toBeGreaterThanOrEqual(1);
 
       console.log('[6.7] lancamento-talentum-recusa-nao-move (recusa)', {

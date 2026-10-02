@@ -136,6 +136,10 @@ describe('VacancyTalentumController — syncFromTalentum', () => {
         updated: 5,
         created: 3,
         skipped: 1,
+        linkedByTitle: 0,
+        withoutWebLink: 0,
+        ignoredNotOurs: 0,
+        duplicateTitles: [],
         errors: [{ projectId: 'p1', title: 'CASO 1', error: 'parse failed' }],
       };
       mockExecute.mockResolvedValue(report);
@@ -157,6 +161,10 @@ describe('VacancyTalentumController — syncFromTalentum', () => {
         updated: 0,
         created: 0,
         skipped: 0,
+        linkedByTitle: 0,
+        withoutWebLink: 0,
+        ignoredNotOurs: 0,
+        duplicateTitles: [],
         errors: [],
       };
       mockExecute.mockResolvedValue(emptyReport);
@@ -247,6 +255,10 @@ describe('VacancyTalentumController — syncFromTalentum', () => {
         updated: 10,
         created: 3,
         skipped: 2,
+        linkedByTitle: 0,
+        withoutWebLink: 0,
+        ignoredNotOurs: 0,
+        duplicateTitles: [],
         errors: [],
       };
       mockExecute.mockResolvedValue(report);
@@ -378,7 +390,7 @@ describe('VacancyTalentumController — getTalentumStatus', () => {
 
   it('publicada e existente no Talentum → 200 { published:true, exists:true, whatsappUrl }', async () => {
     mockGetVacancyTalentumStatus.mockResolvedValueOnce({
-      kind: 'ok', published: true, exists: true, whatsappUrl: 'https://wa.me/xyz',
+      kind: 'ok', published: true, exists: true, whatsappUrl: 'https://www.v2.talentum.chat/public/pre-screening/pub-1/chat',
     });
 
     const req = { ...makeMockReq(), params: { id: 'vac-1' } };
@@ -387,7 +399,7 @@ describe('VacancyTalentumController — getTalentumStatus', () => {
     await controller.getTalentumStatus(req as Request, res as Response);
 
     expect(getStatus()).toBe(200);
-    expect(getBody().data).toEqual({ published: true, exists: true, whatsappUrl: 'https://wa.me/xyz' });
+    expect(getBody().data).toEqual({ published: true, exists: true, whatsappUrl: 'https://www.v2.talentum.chat/public/pre-screening/pub-1/chat' });
   });
 
   it('publicada mas 404 no Talentum (deletada manualmente) → 200 { published:true, exists:false }', async () => {
