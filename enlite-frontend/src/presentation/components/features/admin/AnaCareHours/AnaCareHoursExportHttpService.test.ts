@@ -17,7 +17,7 @@ const FILENAME = 'Sin_vinculo_ID_ACPAT0-2026-09-01-2026-09-30.xlsx';
 
 let originalFetch: typeof globalThis.fetch;
 let anchorClicks: Array<{ download: string; href: string }>;
-let clickSpy: ReturnType<typeof vi.spyOn>;
+let clickSpy: { mockRestore: () => void };
 
 function fileResponse(headers: Record<string, string> = { 'X-Export-Filename': FILENAME }): Response {
   const lower = Object.fromEntries(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v]));

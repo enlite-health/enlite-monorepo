@@ -9,6 +9,7 @@
 import { useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { AnaCareHoursListContainer } from '@presentation/components/features/admin/AnaCareHours/AnaCareHoursListContainer';
+import { AnaCareHoursExportHttpService } from '@presentation/components/features/admin/AnaCareHours/AnaCareHoursExportHttpService';
 import { AnaCareHoursHttpService } from '@presentation/components/features/admin/AnaCareHours/AnaCareHoursHttpService';
 import { parseMonthParam } from '@presentation/components/features/admin/AnaCareHours/selectors';
 
@@ -16,11 +17,13 @@ export default function AnaCareHoursPage(): JSX.Element {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const service = useMemo(() => new AnaCareHoursHttpService(), []);
+  const exportService = useMemo(() => new AnaCareHoursExportHttpService(), []);
   const month = parseMonthParam(searchParams.get('month'));
 
   return (
     <AnaCareHoursListContainer
       service={service}
+      exportService={exportService}
       initialMonth={month}
       onMonthChange={(next) => setSearchParams({ month: next }, { replace: true })}
       onOpenPatient={(patientId) => navigate(`/admin/anacare/horas/${patientId}?month=${month}`)}

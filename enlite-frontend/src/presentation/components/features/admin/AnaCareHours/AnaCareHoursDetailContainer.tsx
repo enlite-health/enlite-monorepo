@@ -25,6 +25,8 @@ import { AnaCareHoursDetailPage } from './AnaCareHoursDetailPage';
 import { AnaCareHoursServiceError, type AnaCareHoursService } from './AnaCareHoursService';
 import type { AxonicoComprobanteService } from './AxonicoComprobanteService';
 import type { AnaCarePatientDocumentService } from './AnaCarePatientDocumentService';
+import { AnaCareHoursExportButton } from './AnaCareHoursExportButton';
+import type { AnaCareHoursExportService } from './AnaCareHoursExportService';
 import type { AnaCareShift, ContestReason } from './types';
 import type { BlockReasonMode, SinCheckinHoursMode } from './selectors';
 
@@ -41,6 +43,8 @@ interface AnaCareHoursDetailContainerProps {
   onBack: () => void;
   sinCheckinHoursMode?: SinCheckinHoursMode;
   blockReasonMode?: BlockReasonMode;
+  /** Serviço da exportação (spec 032). Ausente = o detalhe não mostra o botão "Exportar". */
+  exportService?: AnaCareHoursExportService;
 }
 
 export function AnaCareHoursDetailContainer({
@@ -53,10 +57,11 @@ export function AnaCareHoursDetailContainer({
   onBack,
   sinCheckinHoursMode,
   blockReasonMode,
+  exportService,
 }: AnaCareHoursDetailContainerProps): JSX.Element {
   const { t } = useTranslation();
   const weekNav = useWeekNavigation(month, onMonthChange);
-  const { snapshot: retratoSnapshot, provisionalSnapshot, isLoading, error, retratoError, retryRetrato, refetch, retryMonth, monthStates } = useAnaCareHoursPatient(service, patientId, weekNav.months, month);
+  const { snapshot: retratoSnapshot, monthPatients, provisionalSnapshot, isLoading, error, retratoError, retryRetrato, refetch, retryMonth, monthStates } = useAnaCareHoursPatient(service, patientId, weekNav.months, month);
   const [actionError, setActionError] = useState<string | null>(null);
   const validateGate = useActionGate('anacare_hours', 'validate');
 
@@ -183,6 +188,18 @@ export function AnaCareHoursDetailContainer({
         isRefreshing={isLoading}
         sinCheckinHoursMode={sinCheckinHoursMode}
         blockReasonMode={blockReasonMode}
+        exportAction={
+          exportService && (
+            <AnaCareHoursExportButton
+              service={exportService}
+              patients={monthPatients}
+              initialPatientId={patientId}
+              initialPatientName={snapshot.patients.find((p) => p.anaCareId === patientId)?.name}
+              initialMonth={month}
+              disabledReason={retratoSnapshot === null ? t('admin.anacareHours.error.awaitingRetrato', { month: snapshot.month }) : undefined}
+            />
+          )
+        }
         // Spec 037: sem retrato REAL do mês da URL (em voo ou com erro) a tela usa o placeholder `fresco`; ele NÃO
         // pode liberar validar/contestar/enviar ao Axonico — `disableActions` (e o motivo) vêm daqui.
         disableActionsReason={

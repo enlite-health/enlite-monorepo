@@ -2,7 +2,7 @@
  * Spec 032 (T2.5) — diálogo de exportação. RTL com `userEvent` (click + keyboard.type); `t` devolve
  * a chave (as strings es/pt-BR são cobertas pela paridade de i18n).
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, type Mock } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
@@ -10,7 +10,7 @@ vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => k
 
 import { AnaCareHoursExportDialog } from './AnaCareHoursExportDialog';
 import { AnaCareHoursServiceError } from './AnaCareHoursService';
-import type { AnaCareHoursExportService } from './AnaCareHoursExportService';
+import type { AnaCareHoursExportService, ExportPatientRangeCommand } from './AnaCareHoursExportService';
 import type { AnaCareListPatient } from './types';
 
 function listPatient(anaCareId: string, name?: string): AnaCareListPatient {
@@ -22,12 +22,14 @@ function listPatient(anaCareId: string, name?: string): AnaCareListPatient {
 
 const PATIENTS = [listPatient('AC-PAT-0'), listPatient('AC-PAT-6'), listPatient('AC-PAT-7', 'Lucía Fernández QA')];
 
-function makeService(impl?: () => Promise<void>): AnaCareHoursExportService & { exportPatientRange: ReturnType<typeof vi.fn> } {
-  return { exportPatientRange: vi.fn(impl ?? (async () => undefined)) };
+type SpyService = AnaCareHoursExportService & { exportPatientRange: Mock<[ExportPatientRangeCommand], Promise<void>> };
+
+function makeService(impl?: () => Promise<void>): SpyService {
+  return { exportPatientRange: vi.fn<[ExportPatientRangeCommand], Promise<void>>(impl ?? (async () => undefined)) };
 }
 
 function setup(props: Partial<React.ComponentProps<typeof AnaCareHoursExportDialog>> = {}) {
-  const service = (props.service as ReturnType<typeof makeService>) ?? makeService();
+  const service = (props.service as SpyService) ?? makeService();
   const onClose = vi.fn();
   const user = userEvent.setup();
   render(<AnaCareHoursExportDialog patients={PATIENTS} initialMonth="2026-09" onClose={onClose} {...props} service={service} />);
