@@ -29,8 +29,18 @@ on:
 
 jobs:
   integration-e2e:
+    # 2 shards do Playwright (item 12 da spec 038): cada shard sobe a stack inteira na sua
+    # própria VM e roda metade dos testes. `fail-fast: false` deixa o outro shard terminar
+    # (o relatório de cada um fica disponível); o `gate` do pr-gate.yml reprova se qualquer
+    # shard falhar, pois o resultado de um job com matriz é `failure` se qualquer instância falhar.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    env:
+      E2E_BACKEND_URL: http://localhost:8080
 
     steps:
       - uses: actions/checkout@v4
@@ -99,9 +109,27 @@ jobs:
         working-directory: enlite-frontend
         run: pnpm install
 
-      - name: Instala o Chromium do Playwright
+      - name: Lê a versão resolvida do Playwright
+        id: playwright-version
+        working-directory: enlite-frontend
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache do Chromium do Playwright
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ steps.playwright-version.outputs.version }}
+
+      - name: Instala o Chromium do Playwright (cache miss)
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         working-directory: enlite-frontend
         run: npx playwright install --with-deps chromium
+
+      - name: Instala só as libs de sistema do Chromium (cache hit)
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        working-directory: enlite-frontend
+        run: npx playwright install-deps chromium
 
       # A chave do Maps é REAL de propósito: o spec do endereço reproduz o widget
       # do Google, e um fake responderia só o que nós mesmos programássemos —
@@ -162,9 +190,9 @@ jobs:
             echo "::warning::COBERTURA REDUZIDA — rodando apenas: ${{ inputs.grep }}"
             echo "Specs presentes no repositório e NÃO exercitados por esta execução:"
             ls e2e/integration/*.integration.e2e.ts | grep -vE "${{ inputs.grep }}" || true
-            npx playwright test --project=integration --ignore-snapshots --grep "${{ inputs.grep }}"
+            npx playwright test --project=integration --ignore-snapshots --shard=${{ matrix.shard }}/2 --grep "${{ inputs.grep }}"
           else
-            npx playwright test --project=integration --ignore-snapshots
+            npx playwright test --project=integration --ignore-snapshots --shard=${{ matrix.shard }}/2
           fi
 
       # ── O portão ESTRUTURAL das telas de plantillas (spec 010) ──
@@ -265,7 +293,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: plantillas-telas
+          name: plantillas-telas-shard-${{ matrix.shard }}
           path: enlite-frontend/e2e/__comparador__/app/
           retention-days: 14
           if-no-files-found: warn
@@ -274,7 +302,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-integration-report
+          name: playwright-integration-report-shard-${{ matrix.shard }}
           path: |
             enlite-frontend/playwright-report/
             enlite-frontend/test-results/
@@ -310,6 +338,8 @@ jobs:
   integration-e2e-anacare-hours:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      E2E_BACKEND_URL: http://localhost:8080
 
     steps:
       - uses: actions/checkout@v4
@@ -382,9 +412,27 @@ jobs:
         working-directory: enlite-frontend
         run: pnpm install
 
-      - name: Instala o Chromium do Playwright
+      - name: Lê a versão resolvida do Playwright
+        id: playwright-version
+        working-directory: enlite-frontend
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache do Chromium do Playwright
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ steps.playwright-version.outputs.version }}
+
+      - name: Instala o Chromium do Playwright (cache miss)
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         working-directory: enlite-frontend
         run: npx playwright install --with-deps chromium
+
+      - name: Instala só as libs de sistema do Chromium (cache hit)
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        working-directory: enlite-frontend
+        run: npx playwright install-deps chromium
 
       - name: Sobe o dev server
         working-directory: enlite-frontend
@@ -472,6 +520,8 @@ jobs:
   integration-e2e-group-simulation:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      E2E_BACKEND_URL: http://localhost:8080
 
     steps:
       - uses: actions/checkout@v4
@@ -536,9 +586,27 @@ jobs:
         working-directory: enlite-frontend
         run: pnpm install
 
-      - name: Instala o Chromium do Playwright
+      - name: Lê a versão resolvida do Playwright
+        id: playwright-version
+        working-directory: enlite-frontend
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache do Chromium do Playwright
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ steps.playwright-version.outputs.version }}
+
+      - name: Instala o Chromium do Playwright (cache miss)
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         working-directory: enlite-frontend
         run: npx playwright install --with-deps chromium
+
+      - name: Instala só as libs de sistema do Chromium (cache hit)
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        working-directory: enlite-frontend
+        run: npx playwright install-deps chromium
 
       - name: Sobe o dev server
         working-directory: enlite-frontend
