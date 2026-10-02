@@ -125,3 +125,31 @@ describe('botão Exportar — DETALHE', () => {
     expect(screen.getByTestId('anacare-hours-export-disabled-reason')).toHaveTextContent('admin.anacareHours.error.awaitingRetrato|month=2026-08');
   });
 });
+
+describe('ícone "Cambiar de paciente" — DETALHE (spec 032, FR-006)', () => {
+  it('POSITIVO — as opções do modal vêm do retrato (sem o atual) e escolher chama onSwitchPatient, sem GET novo', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const service = new FakeAnaCareHoursService({ '2026-08': SNAPSHOT });
+    const getRetrato = vi.spyOn(service, 'getRetratoStatus');
+    const getMonth = vi.spyOn(service, 'getMonthSnapshot');
+    const onSwitchPatient = vi.fn();
+    render(<AnaCareHoursDetailContainer service={service} axonicoService={AXONICO} patientDocumentService={DOC} onSwitchPatient={onSwitchPatient} month="2026-08" patientId="AC-PAT-0" onBack={vi.fn()} />);
+    await waitFor(() => expect(screen.getByTestId('anacare-hours-patient-switch-button')).toBeInTheDocument());
+    await waitFor(() => expect(getRetrato).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByTestId('anacare-hours-patient-switch-button'));
+    await user.click(screen.getByTestId('anacare-hours-patient-switch-combobox'));
+    expect(screen.queryByTestId('anacare-hours-patient-switch-combobox-option-AC-PAT-0')).toBeNull();
+    await user.keyboard('PAT-6');
+    await user.click(screen.getByTestId('anacare-hours-patient-switch-combobox-option-AC-PAT-6'));
+    expect(onSwitchPatient).toHaveBeenCalledWith('AC-PAT-6');
+    expect(getRetrato).toHaveBeenCalledTimes(1);
+    expect(getMonth).not.toHaveBeenCalled();
+  });
+
+  it('NEGATIVO — sem `onSwitchPatient` o ícone não aparece', async () => {
+    const service = new FakeAnaCareHoursService({ '2026-08': SNAPSHOT });
+    render(<AnaCareHoursDetailContainer service={service} axonicoService={AXONICO} patientDocumentService={DOC} month="2026-08" patientId="AC-PAT-0" onBack={vi.fn()} />);
+    await waitFor(() => expect(screen.getByTestId('anacare-hours-back')).toBeInTheDocument());
+    expect(screen.queryByTestId('anacare-hours-patient-switch-button')).toBeNull();
+  });
+});

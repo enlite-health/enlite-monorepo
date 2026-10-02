@@ -39,6 +39,7 @@ export default function AnaCareHoursPatientPage(): JSX.Element | null {
       month={month}
       patientId={patientId}
       onMonthChange={(next) => setSearchParams({ month: next }, { replace: true })}
+      onSwitchPatient={(id) => navigate(`/admin/anacare/horas/${encodeURIComponent(id)}?month=${month}`)}
       onBack={() => navigate(`/admin/anacare/horas?month=${month}`)}
     />
   );
