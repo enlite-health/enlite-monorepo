@@ -21,6 +21,8 @@ module.exports = {
     // usada por unit e e2e. Mesmo motivo do scanner acima — não é código de produção.
     '!src/modules/integration/infrastructure/__tests__/talentumV2Stub.ts',
     '!src/modules/integration/application/__tests__/fakeJobPostingsDb.ts',
+    '!src/modules/integration/application/__tests__/fakeReconcileDb.ts',
+    '!src/modules/integration/application/__tests__/fakeTalentumV2Client.ts',
     // O sync de templates ESCREVE em `message_templates` em produção. Ficava
     // fora do relatório inteiro — não por decisão, mas porque `scripts/` estava
     // fora dos `roots`: cobertura ali era 0% "por natureza", e piso nenhum
