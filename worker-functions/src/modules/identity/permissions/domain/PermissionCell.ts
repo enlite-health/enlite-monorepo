@@ -59,6 +59,8 @@ export const RESOURCE_CATEGORY: Readonly<Record<string, PermissionCategory>> = {
   patient_family: 'Pacientes',
   patient_chat: 'Pacientes',
   patient_conversation: 'Pacientes',
+  // Spec 031 (D463): aba "Documentos" da ficha — arquivos do paciente (subidos na aba ou vindos do chat).
+  patient_document: 'Pacientes',
   patient_coverage: 'Pacientes',
   patient_address: 'Pacientes',
   patient_services: 'Pacientes',
@@ -288,6 +290,15 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
     'Editar a própria mensagem já enviada no chat interno da equipe sobre o paciente (retração, correção).',
   'patient_conversation:delete':
     'Apagar a própria mensagem do chat interno da equipe sobre o paciente (soft delete; nunca cascateia para a thread).',
+  'patient_document:read':
+    'Ver a lista de documentos do paciente (aba Documentos) e abrir cada arquivo, inclusive os que entraram pelo chat '
+    + 'mesmo sem acesso à conversa. Dado de saúde (Ley 25.326 art. 2 e 8); toda abertura deixa trilha.',
+  'patient_document:create':
+    'Subir um documento do paciente pela aba Documentos, com nome livre. Anexar no chat não exige esta célula.',
+  'patient_document:update':
+    'Renomear um documento do paciente na lista da aba Documentos (só o nome na lista; o arquivo não muda).',
+  'patient_document:delete':
+    'Excluir um documento do paciente da aba Documentos. DEFINITIVO: some a linha e o arquivo; no chat a mensagem passa a mostrar documento eliminado.',
   'staff_directory:read':
     'Buscar staff ativo por nome ou e-mail para o autocomplete de menção do chat interno do paciente. '
     + 'Devolve apenas UID e nome de exibição — nunca e-mail, telefone ou papel (D-06).',

@@ -90,6 +90,9 @@ const CASCADE_CHILDREN = [
   // `patient_documents`/`patient_image_consents` foram DROPADOS por completo
   // (fix/018-remover-documentos-consentimento) — saíram desta lista junto com a tabela.
   'patient_photos',
+  // 497 (spec 031): documentos do paciente — filha direta, ON DELETE CASCADE. A LINHA some por CASCADE;
+  // o objeto do bucket dos documentos da ABA não é apagado por esta purga (só paciente de teste, `is_test`).
+  'patient_documents',
 ] as const;
 
 interface AppointmentRow {
