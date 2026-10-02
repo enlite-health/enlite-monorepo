@@ -1,19 +1,24 @@
 /**
  * SyncTalentumVacanciesUseCase
  *
- * Orchestrates: fetch all Talentum projects → create or update vacancies
- * in job_postings with Talentum reference data, questions and FAQ.
+ * Orchestrates: fetch all Talentum projects (API v2: `GET /projects`, paginado) → create or update
+ * vacancies in job_postings with Talentum reference data and questions.
  *
  * Rules:
  *  - No LLM/Gemini — pure data sync from Talentum to DB
  *  - Errors on individual projects do not abort the sync
  *  - Always save Talentum reference columns (projectId, whatsappUrl, etc.)
+ *  - Spec 040 (v2): o item da lista NÃO traz `publicId`/descrição/perguntas → 1 `getPrescreening` por
+ *    projeto (2 GETs) para ligar por `publicId` (estável). Ordem de ligação: talentum_project_id →
+ *    publicId → título EXATO 1:1 (duplicata → relatório, nada é ligado nem criado) → número do título
+ *    (legado). Projeto `PHONE_CALL` ou com `/prescreening` 400 não tem link web: liga/cria sem apagar
+ *    link/descrição existentes. A FAQ NÃO é tocada (a v2 não tem FAQ — decisão (g); fica só no banco).
  */
 
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { TalentumApiClient } from '../infrastructure/TalentumApiClient';
-import type { TalentumProject, TalentumQuestionWithId, TalentumFaq } from '../domain/ITalentumApiClient';
+import type { TalentumProject, TalentumQuestionWithId } from '../domain/ITalentumApiClient';
 import {
   JobPostingAuditRepository,
 } from '../../matching/infrastructure/JobPostingAuditRepository';
@@ -30,6 +35,16 @@ export interface SyncReport {
   updated: number;
   created: number;
   skipped: number;
+  /** Vagas ligadas só pelo título exato (menos confiável que o `publicId`). */
+  linkedByTitle: number;
+  /** Projetos sem link web (tipo `PHONE_CALL` ou `/prescreening` 400): ligados/criados sem `publicId`. */
+  withoutWebLink: number;
+  /** Título que casa com mais de uma vaga do banco: nada é ligado nem criado, só relatado. */
+  duplicateTitles: Array<{
+    projectId: string;
+    title: string;
+    matches: number;
+  }>;
   errors: Array<{
     projectId: string;
     title: string;
@@ -57,6 +72,9 @@ export class SyncTalentumVacanciesUseCase {
       updated: 0,
       created: 0,
       skipped: 0,
+      linkedByTitle: 0,
+      withoutWebLink: 0,
+      duplicateTitles: [],
       errors: [],
     };
 
@@ -83,7 +101,8 @@ export class SyncTalentumVacanciesUseCase {
 
     console.log(
       `[SyncTalentum] Done: total=${report.total} updated=${report.updated} ` +
-      `created=${report.created} skipped=${report.skipped} errors=${report.errors.length}`,
+      `created=${report.created} skipped=${report.skipped} linkedByTitle=${report.linkedByTitle} ` +
+      `withoutWebLink=${report.withoutWebLink} duplicateTitles=${report.duplicateTitles.length} errors=${report.errors.length}`,
     );
 
     return report;
@@ -95,14 +114,7 @@ export class SyncTalentumVacanciesUseCase {
     report: SyncReport,
     force = false,
   ): Promise<void> {
-    // 2a. Extract case_number and vacancy_number from title — T063: tolera os
-    //   formatos "CASO N[-M]" (legado) e "EN N#M" / "N#M" (novo, ver parser
-    //   compartilhado para por que o segundo número tem dois significados).
-    //   "CASO 230"    → case_number=230, nova vacante
-    //   "CASO 230-42" → case_number=230, vacancy_number=42 (vacante existente)
-    const { caseNumber, ordinal: parsedVacancyNumber } = parseCaseTitleReference(project.title);
-
-    // 2b. Lookup in DB — first by talentum_project_id, then by vacancy_number
+    // 2b. Lookup in DB — 1º por talentum_project_id (já ligada → pula sem gastar GET na Talentum)
     let existing: { id: string; talentum_project_id: string | null } | null = null;
 
     const byTalentum = await this.db.query(
@@ -111,7 +123,49 @@ export class SyncTalentumVacanciesUseCase {
     );
     existing = byTalentum.rows[0] ?? null;
 
-    // If not found by talentum_project_id, try by vacancy_number or case_number
+    // 2b'. Skip if already synced with this Talentum project (unless force)
+    if (!force && existing?.talentum_project_id === project.projectId) {
+      console.log(`[SyncTalentum] Skipping "${project.title}" — already synced (talentum_project_id=${project.projectId})`);
+      report.skipped++;
+      return;
+    }
+
+    // 2c. Detalhe v2: o item da lista não traz publicId/descrição/perguntas. PHONE_CALL não tem link web
+    //   (nem prescreening web) e um `/prescreening` 400 é projeto sem prescreening ativo: ambos seguem
+    //   SEM publicId (liga/cria, sem apagar link/descrição já gravados).
+    const source = await this.loadDetail(project, talentumClient, report);
+
+    // 2b''. Sem par pelo project_id: publicId (estável) → título exato 1:1 → número do título (legado)
+    if (!existing && source.publicId) {
+      const byPublic = await this.db.query(
+        'SELECT id, talentum_project_id FROM job_postings WHERE talentum_public_id = $1 AND deleted_at IS NULL',
+        [source.publicId],
+      );
+      existing = byPublic.rows[0] ?? null;
+    }
+
+    if (!existing) {
+      const byTitle = await this.db.query(
+        `SELECT id, talentum_project_id FROM job_postings
+         WHERE title = $1 AND deleted_at IS NULL AND (talentum_public_id IS NULL OR talentum_public_id = $2)`,
+        [project.title, source.publicId || null],
+      );
+      if (byTitle.rows.length > 1) {
+        report.duplicateTitles.push({ projectId: project.projectId, title: project.title, matches: byTitle.rows.length });
+        return;
+      }
+      if (byTitle.rows.length === 1) {
+        existing = byTitle.rows[0];
+        report.linkedByTitle++;
+      }
+    }
+
+    // T063: tolera os formatos "CASO N[-M]" (legado) e "EN N#M" / "N#M" (novo, ver parser compartilhado
+    //   para por que o segundo número tem dois significados).
+    //   "CASO 230"    → case_number=230, nova vacante
+    //   "CASO 230-42" → case_number=230, vacancy_number=42 (vacante existente)
+    const { caseNumber, ordinal: parsedVacancyNumber } = parseCaseTitleReference(project.title);
+
     if (!existing && parsedVacancyNumber != null) {
       const byVacancy = await this.db.query(
         'SELECT id, talentum_project_id FROM job_postings WHERE vacancy_number = $1',
@@ -129,19 +183,6 @@ export class SyncTalentumVacanciesUseCase {
       existing = byCaseNumber.rows[0] ?? null;
     }
 
-    // 2b'. Skip if already synced with this Talentum project (unless force)
-    if (!force && existing?.talentum_project_id === project.projectId) {
-      console.log(`[SyncTalentum] Skipping "${project.title}" — already synced (talentum_project_id=${project.projectId})`);
-      report.skipped++;
-      return;
-    }
-
-    // 2c. Use list data by default; fetch full detail only when missing description or questions
-    const needsDetail = !project.description || !project.questions?.length;
-    const source = needsDetail
-      ? await talentumClient.getPrescreening(project.projectId)
-      : project;
-
     // 2d. Create or update (no LLM — just save Talentum data directly)
     let jobPostingId: string;
     let wasCreated = false;
@@ -158,25 +199,49 @@ export class SyncTalentumVacanciesUseCase {
     // 2e. Save Talentum reference
     await this.saveTalentumReference(jobPostingId, wasCreated, {
       talentum_project_id: source.projectId,
-      talentum_public_id: source.publicId,
-      talentum_whatsapp_url: source.whatsappUrl,
-      talentum_slug: source.slug,
-      talentum_published_at: source.timestamp,
-      talentum_description: source.description,
+      // '' (item da lista / sem link web) → NULL: o COALESCE do UPDATE mantém o que já está gravado.
+      talentum_public_id: source.publicId || null,
+      talentum_whatsapp_url: source.whatsappUrl || null,
+      talentum_slug: source.slug || null,
+      talentum_published_at: source.timestamp || null,
+      talentum_description: source.description || null,
     });
 
-    // 2f. Sync questions and FAQ from Talentum
+    // 2f. Sync questions from Talentum. A FAQ NÃO é tocada: a v2 não tem FAQ (decisão (g)) e a do
+    //   banco (`job_posting_prescreening_faq`) é a única cópia.
     if (source.questions?.length) {
       await this.syncQuestions(jobPostingId, source.questions);
-    }
-    if (source.faq?.length) {
-      await this.syncFaq(jobPostingId, source.faq);
     }
 
     console.log(
       `[SyncTalentum] ${existing ? 'Updated' : 'Created'} vacancy for "${project.title}" ` +
       `case_number=${caseNumber ?? 'null'} (id=${jobPostingId})`,
     );
+  }
+
+  /**
+   * Detalhe do projeto (publicId, link web, descrição, perguntas). `PHONE_CALL` e `/prescreening` 400
+   * devolvem o item da lista sem `publicId` (conta em `withoutWebLink`); qualquer outro erro propaga
+   * (o `execute` o registra no relatório sem abortar o sync).
+   */
+  private async loadDetail(
+    project: TalentumProject,
+    talentumClient: TalentumApiClient,
+    report: SyncReport,
+  ): Promise<TalentumProject> {
+    if (project.type === 'PHONE_CALL') {
+      report.withoutWebLink++;
+      return project;
+    }
+    try {
+      return await talentumClient.getPrescreening(project.projectId);
+    } catch (err: unknown) {
+      if (err instanceof Error && err.message.includes('HTTP 400')) {
+        report.withoutWebLink++;
+        return project;
+      }
+      throw err;
+    }
   }
 
   /**
@@ -233,11 +298,11 @@ export class SyncTalentumVacanciesUseCase {
     wasCreated: boolean,
     ref: {
       talentum_project_id: string;
-      talentum_public_id: string;
-      talentum_whatsapp_url: string;
-      talentum_slug: string;
-      talentum_published_at: string;
-      talentum_description: string;
+      talentum_public_id: string | null;
+      talentum_whatsapp_url: string | null;
+      talentum_slug: string | null;
+      talentum_published_at: string | null;
+      talentum_description: string | null;
     },
   ): Promise<void> {
     const client = await this.db.connect();
@@ -246,11 +311,11 @@ export class SyncTalentumVacanciesUseCase {
       await client.query(
         `UPDATE job_postings
          SET talentum_project_id   = $1,
-             talentum_public_id    = $2,
-             talentum_whatsapp_url = $3,
-             talentum_slug         = $4,
-             talentum_published_at = $5,
-             talentum_description  = $6,
+             talentum_public_id    = COALESCE($2, talentum_public_id),
+             talentum_whatsapp_url = COALESCE($3, talentum_whatsapp_url),
+             talentum_slug         = COALESCE($4, talentum_slug),
+             talentum_published_at = COALESCE($5, talentum_published_at),
+             talentum_description  = COALESCE($6, talentum_description),
              updated_at            = NOW()
          WHERE id = $7`,
         [
@@ -314,29 +379,6 @@ export class SyncTalentumVacanciesUseCase {
           q.analyzed,
           q.earlyStoppage,
         ],
-      );
-    }
-  }
-
-  /**
-   * Replaces FAQ entries for a job posting with those from Talentum.
-   */
-  private async syncFaq(
-    jobPostingId: string,
-    faq: TalentumFaq[],
-  ): Promise<void> {
-    await this.db.query(
-      'DELETE FROM job_posting_prescreening_faq WHERE job_posting_id = $1',
-      [jobPostingId],
-    );
-
-    for (let i = 0; i < faq.length; i++) {
-      const f = faq[i];
-      await this.db.query(
-        `INSERT INTO job_posting_prescreening_faq
-           (job_posting_id, faq_order, question, answer)
-         VALUES ($1, $2, $3, $4)`,
-        [jobPostingId, i + 1, f.question, f.answer],
       );
     }
   }
