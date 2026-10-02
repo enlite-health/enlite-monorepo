@@ -43,6 +43,35 @@ describe('useAnaCareHoursPatient', () => {
     expect(result.current.snapshot?.snapshotState).toBe('nao_construido');
   });
 
+  describe('monthPatients (spec 032 — pacientes do retrato do mês, para o diálogo de exportação)', () => {
+    it('POSITIVO — devolve os pacientes do retrato SEM nenhum GET a mais', async () => {
+      const lista = [{ anaCareId: '90000', name: 'Lucía Fernández QA' }, { anaCareId: '90001', name: 'Mateo Díaz QA' }];
+      const getRetratoStatus = vitestVi.fn().mockResolvedValue({ updatedAt: '', stale: false, snapshotState: 'fresco', circuitBreakerOpen: false, patients: lista });
+      const getPatientMonth = vitestVi.fn().mockResolvedValue(SNAPSHOT.patients[0]);
+      const service = { getMonthSnapshot: vitestVi.fn(), getPatientMonth, getRetratoStatus, validateShift: vitestVi.fn(), validateBatch: vitestVi.fn(), contestShift: vitestVi.fn() } as unknown as AnaCareHoursService;
+      const { result } = renderHook(() => useAnaCareHoursPatient(service, '90000', ['2026-08'], '2026-08'));
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+      expect(result.current.monthPatients).toEqual(lista);
+      expect(getRetratoStatus).toHaveBeenCalledTimes(1);
+      expect(getPatientMonth).toHaveBeenCalledTimes(1);
+      expect((service.getMonthSnapshot as ReturnType<typeof vitestVi.fn>)).not.toHaveBeenCalled();
+    });
+
+    it('NEGATIVO — retrato sem `patients` → []', async () => {
+      const service = { getMonthSnapshot: vitestVi.fn(), getPatientMonth: vitestVi.fn().mockResolvedValue(SNAPSHOT.patients[0]), getRetratoStatus: vitestVi.fn().mockResolvedValue({ updatedAt: '', stale: false, snapshotState: 'fresco', circuitBreakerOpen: false }), validateShift: vitestVi.fn(), validateBatch: vitestVi.fn(), contestShift: vitestVi.fn() } as unknown as AnaCareHoursService;
+      const { result } = renderHook(() => useAnaCareHoursPatient(service, '90000', ['2026-08'], '2026-08'));
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+      expect(result.current.monthPatients).toEqual([]);
+    });
+
+    it('POSITIVO — o Fake devolve os pacientes do mês (agregados) pelo retrato', async () => {
+      const service = new FakeAnaCareHoursService({ '2026-08': SNAPSHOT });
+      const { result } = renderHook(() => useAnaCareHoursPatient(service, '90000', ['2026-08'], '2026-08'));
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+      expect(result.current.monthPatients.map((p) => p.anaCareId)).toEqual(['90000']);
+    });
+  });
+
   it('NEGATIVO — paciente inexistente: snapshot existe (retrato carregou) mas patients é []', async () => {
     const service = new FakeAnaCareHoursService({ '2026-08': SNAPSHOT });
     const { result } = renderHook(() => useAnaCareHoursPatient(service, 'no-existe', ['2026-08'], '2026-08'));

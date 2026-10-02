@@ -161,6 +161,7 @@ export class FakeAnaCareHoursService implements AnaCareHoursService {
       // F2 (migration 457) — repassa tal qual o fixture montou (mesmo padrão dos outros campos).
       reservationsTotal: snapshot.reservationsTotal,
       reservationsDone: snapshot.reservationsDone,
+      patients: snapshot.patients.map(aggregatePatientForList),
     });
   }
 
