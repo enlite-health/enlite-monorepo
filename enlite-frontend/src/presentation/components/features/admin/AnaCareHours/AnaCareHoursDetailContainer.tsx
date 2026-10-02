@@ -55,7 +55,7 @@ export function AnaCareHoursDetailContainer({
 }: AnaCareHoursDetailContainerProps): JSX.Element {
   const { t } = useTranslation();
   const weekNav = useWeekNavigation(month, onMonthChange);
-  const { snapshot, isLoading, error, refetch, retryMonth, monthStates } = useAnaCareHoursPatient(service, patientId, weekNav.months, month);
+  const { snapshot: retratoSnapshot, provisionalSnapshot, isLoading, error, refetch, retryMonth, monthStates } = useAnaCareHoursPatient(service, patientId, weekNav.months, month);
   const [actionError, setActionError] = useState<string | null>(null);
   const validateGate = useActionGate('anacare_hours', 'validate');
 
@@ -115,6 +115,9 @@ export function AnaCareHoursDetailContainer({
       setActionError(describeError(err, t('admin.anacareHours.error.contestShift')));
     }
   }
+
+  // Retrato do mês novo em voo: mantém a página montada com o placeholder `desconhecido` (nunca o retrato de outro mês).
+  const snapshot = retratoSnapshot ?? provisionalSnapshot;
 
   if (isLoading && !snapshot) {
     return (

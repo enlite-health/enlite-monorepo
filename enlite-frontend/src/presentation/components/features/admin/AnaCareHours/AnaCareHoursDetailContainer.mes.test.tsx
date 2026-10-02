@@ -3,7 +3,8 @@
  * mês novo (nunca filtra para vazio), a falha de um mês é inline e as ações refazem os meses carregados.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { useState } from 'react';
+import { render, screen, act, waitFor, fireEvent } from '@testing-library/react';
 import { AnaCareHoursDetailContainer } from './AnaCareHoursDetailContainer';
 import type { AnaCareHoursService } from './AnaCareHoursService';
 import type { AnaCarePatient, AnaCareShift } from './types';
@@ -128,5 +129,31 @@ describe('AnaCareHoursDetailContainer — navegação por mês (spec 037)', () =
     fireEvent.click(screen.getByTestId('anacare-hours-refresh'));
     await waitFor(() => expect(getPatientMonth.mock.calls.length).toBeGreaterThanOrEqual(mid + 2));
     expect(calledMonths(getPatientMonth).slice(mid)).toEqual(expect.arrayContaining(['2026-09', '2026-10']));
+  });
+
+  it('"Próxima semana" cruzando para outubro com o retrato de outubro PENDENTE: a página não some, e a data é preservada ao resolver', async () => {
+    const { service } = makeService({
+      '2026-09': patientOf(shift('a', '2026-09-29')),
+      '2026-10': patientOf(shift('b', '2026-10-06')),
+    });
+    let resolveOct: (v: unknown) => void = () => {};
+    const retrato = { updatedAt: '2026-10-01T08:00:00-03:00', stale: false, snapshotState: 'fresco', circuitBreakerOpen: false };
+    (service.getRetratoStatus as ReturnType<typeof vi.fn>).mockImplementation((m: string) => (m === '2026-10' ? new Promise((r) => { resolveOct = r; }) : Promise.resolve(retrato)));
+    function Harness(): JSX.Element {
+      const [month, setMonth] = useState('2026-09'); // como a página-rota: ?month sobe e volta como prop
+      return <AnaCareHoursDetailContainer axonicoService={AXONICO} patientDocumentService={DOCUMENT} service={service} month={month} onMonthChange={setMonth} patientId="90000" onBack={vi.fn()} />;
+    }
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId('anacare-hours-week-datepicker')).toBeInTheDocument());
+    setDate('2026-09-29');
+    await waitFor(() => expect(screen.getByTestId('anacare-hours-shift-row-a')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('anacare-hours-week-next')); // 29/09 -> 06/10 => ?month=2026-10, retrato pendente
+    await waitFor(() => expect((screen.getByTestId('anacare-hours-week-datepicker') as HTMLInputElement).value).toBe('2026-10-06'));
+    expect(screen.queryByTestId('anacare-hours-detail-loading')).not.toBeInTheDocument();
+    expect(screen.getByTestId('anacare-hours-week-datepicker')).toBeInTheDocument();
+    await act(async () => resolveOct(retrato));
+    await waitFor(() => expect(screen.getByTestId('anacare-hours-shift-row-b')).toBeInTheDocument());
+    expect((screen.getByTestId('anacare-hours-week-datepicker') as HTMLInputElement).value).toBe('2026-10-06');
+    expect(screen.getByTestId('anacare-hours-week-label').textContent).toContain('"start":"5 de octubre","end":"11 de octubre"');
   });
 });

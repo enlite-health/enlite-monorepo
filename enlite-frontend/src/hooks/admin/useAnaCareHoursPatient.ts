@@ -141,6 +141,15 @@ export function useAnaCareHoursPatient(service: AnaCareHoursService, patientId: 
       }
     : null;
 
+  // Retrato do mês da URL ainda em voo, mas já há turnos `ok` na tela: a página NÃO pode desmontar (a data
+  // selecionada e os dias carregados ficam). Só o retrato é "desconhecido" — placeholder sem dado de outro mês;
+  // `snapshot` (acima) continua `null` até o retrato verdadeiro chegar.
+  const retratoLoading = retrato === null && (retratos[retratoMonth] === undefined || retratos[retratoMonth].state === 'loading');
+  const provisionalSnapshot: AnaCareHoursPatientSnapshot | null =
+    retratoLoading && loadedMonths.some((m) => entries[m].state === 'ok')
+      ? { month: retratoMonth, updatedAt: '', stale: false, snapshotState: 'desconhecido', circuitBreakerOpen: false, patients: patient ? [patient] : [] }
+      : null;
+
   // Erro de TELA INTEIRA só na 1ª carga (nada para mostrar ainda). Depois disso, a falha de um mês é
   // inline (`monthStates`) — os dias dos outros meses nunca somem em silêncio.
   const hasData = snapshot !== null && loadedMonths.some((m) => entries[m].state === 'ok');
@@ -152,5 +161,5 @@ export function useAnaCareHoursPatient(service: AnaCareHoursService, patientId: 
   const firstLoadSettled = [entries[retratoMonth], retratos[retratoMonth]].every((e) => e !== undefined && e.state !== 'loading');
   const isLoading = pending > 0 || !firstLoadSettled;
 
-  return { patient, snapshot, isLoading, error, refetch, retryMonth, monthStates };
+  return { patient, snapshot, provisionalSnapshot, isLoading, error, refetch, retryMonth, monthStates };
 }
