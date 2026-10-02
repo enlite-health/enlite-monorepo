@@ -290,6 +290,12 @@ export interface AnaCareRetratoStatus {
   /** F2 (migration 457) — mesmo campo/mesma regra de `AnaCareMonthSnapshot`, ver ali. */
   reservationsTotal?: number;
   reservationsDone?: number;
+  /**
+   * Spec 032 — pacientes do retrato do mês (o MESMO `patients` do snapshot que o `getRetratoStatus`
+   * já busca; zero GET novo). Alimenta o autocomplete do diálogo de exportação. Opcional: mocks
+   * antigos não o têm, e retrato `nao_construido` não o traz.
+   */
+  patients?: AnaCareListPatient[];
 }
 
 /**
