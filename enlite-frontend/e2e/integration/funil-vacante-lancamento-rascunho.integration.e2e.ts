@@ -18,6 +18,7 @@ import {
   startTalentumStub,
   seedLaunchablePatient,
   clickFoguete,
+  postContractedServiceViaApi,
   readPatientKanbanColumn,
   backendUrl,
   mockAdminUserFor,
@@ -163,6 +164,38 @@ test.describe('funil-vacante lancamento rascunho @integration', () => {
     } finally {
       cleanupTestPatient(patientId);
       cleanupTestPatient(controlId);
+    }
+  });
+
+  // ── (3) foguete com outro serviço sem horário: vaga nasce, paciente NÃO move, a tela AVISA ──
+  test('foguete-sem-completude-avisa-e-nao-move', async ({ page, request }) => {
+    const LAT = -53.83;
+    const LNG = -67.71;
+    const token = tokenFor(MOCK_ADMIN_USER);
+    const patient = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: LAT, lng: LNG });
+
+    try {
+      // 2º serviço ATIVO sem horário: o foguete do serviço 1 passa no gate (que olha só o serviço
+      // dele), mas o SEARCHING exige horário de TODO serviço ativo — o paciente não pode mover.
+      await postContractedServiceViaApi(request, token, patient.patientId, {
+        serviceCode: 'AT', providersNeeded: 1, weeklyHours: 10, careLocation: 'HOME', addressId: patient.addressId,
+      });
+
+      await loginAs(page, MOCK_ADMIN_USER);
+      const vacancyId = await clickFoguete(page, patient.patientId, patient.serviceId);
+
+      await expect(page.getByTestId('toast-warning'), 'toast de AVISO (não o de sucesso)').toBeVisible({ timeout: 8_000 });
+      await expect(page.getByTestId('toast-warning')).toContainText('El paciente sigue en Admisión');
+      await expect(page.getByTestId('toast-success')).toHaveCount(0);
+
+      const isDraft = runSQL(`SELECT is_draft FROM job_postings WHERE id = '${vacancyId}'`).trim();
+      expect(isDraft, 'a vaga nasceu em rascunho').toBe('t');
+      const statusAfter = await readPatientStatusApi(request, backendUrl(), token, patient.patientId);
+      expect(statusAfter, 'paciente segue em Admisión').toBe('ADMISSION');
+      const columnAfter = await readPatientKanbanColumn(page, patient.patientId);
+      expect(columnAfter, 'card segue na coluna Admisión').toBe('ADMISSION');
+    } finally {
+      patient.cleanup();
     }
   });
 });

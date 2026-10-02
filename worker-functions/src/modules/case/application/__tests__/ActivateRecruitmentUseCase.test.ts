@@ -155,6 +155,7 @@ describe('ActivateRecruitmentUseCase', () => {
     });
     const result = await promise;
     expect(result).toEqual({ vacancyId: 'vac-42', patientStatus: 'SEARCHING', statusChanged: true });
+    expect(result).not.toHaveProperty('patientNotMoved');
     expect(mockMovePatientStatus).toHaveBeenCalledTimes(1);
     expect(mockMovePatientStatus).toHaveBeenCalledWith(
       PATIENT_ID,
@@ -235,7 +236,10 @@ describe('ActivateRecruitmentUseCase', () => {
       serviceRow: READY_SERVICE,
       insertedId: 'vac-77',
     });
-    await expect(promise).resolves.toEqual({ vacancyId: 'vac-77', patientStatus: 'ADMISSION', statusChanged: false });
+    await expect(promise).resolves.toEqual({
+      vacancyId: 'vac-77', patientStatus: 'ADMISSION', statusChanged: false,
+      patientNotMoved: { missing: ['SERVICE_SCHEDULE'] },
+    });
   });
 
   it('D469 — erro inesperado do movimento sobe (derruba a transação inteira, vaga incluída)', async () => {
