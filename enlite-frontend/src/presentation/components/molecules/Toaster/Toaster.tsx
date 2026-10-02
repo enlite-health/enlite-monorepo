@@ -28,7 +28,7 @@ function ToastItem({ toast }: { toast: Toast }): JSX.Element {
         isError
           ? 'bg-red-50 border-red-200 text-red-700'
           : isWarning
-            ? 'bg-amber-50 border-amber-200 text-amber-800'
+            ? 'bg-amber-50 border-amber-200 text-amber-900'
             : 'bg-green-50 border-green-200 text-green-700'
       }`}
     >
