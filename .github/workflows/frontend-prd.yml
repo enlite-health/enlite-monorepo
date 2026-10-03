@@ -20,12 +20,23 @@ env:
   REPOSITORY: enlite-frontend
 
 jobs:
+  # Spec 038 F4: a suíte só é pulada se o merge commit tem o MESMO tree da cabeça do PR
+  # (já testada pelo `pr-gate`). Qualquer outro caso roda a suíte. Ver `_mesmo-tree-do-pr.yml`.
+  mesmo-tree:
+    uses: ./.github/workflows/_mesmo-tree-do-pr.yml
+
   quality:
+    needs: mesmo-tree
+    if: needs.mesmo-tree.outputs.igual != 'true'
     uses: ./.github/workflows/_frontend-quality.yml
 
   deploy:
-    needs: quality
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [mesmo-tree, quality]
+    if: >-
+      !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+      && needs.mesmo-tree.result == 'success'
+      && (needs.quality.result == 'success'
+          || (needs.quality.result == 'skipped' && needs.mesmo-tree.outputs.igual == 'true'))
     runs-on: ubuntu-latest
     environment: production
     defaults:

@@ -1,0 +1,27 @@
+name: Mesmo tree do PR
+
+# Spec 038 F4 (opção d). Diz se o merge commit em `main` tem o MESMO conteúdo da cabeça do PR
+# que o `pr-gate` já testou. Só nesse caso os workflows de PRD pulam a suíte; qualquer outro
+# (tree diferente, commit sem 2º pai, erro) => `igual=false` e a suíte roda normal.
+# A lógica vive em `scripts/mesmo-tree-do-pr.sh` (testável localmente).
+on:
+  workflow_call:
+    outputs:
+      igual:
+        description: "'true' só se HEAD^{tree} == HEAD^2^{tree}; senão 'false'"
+        value: ${{ jobs.comparar.outputs.igual }}
+
+jobs:
+  comparar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      igual: ${{ steps.tree.outputs.igual }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # 2 = o merge commit + seus pais. Raso demais (1) => HEAD^2 some => igual=false.
+          fetch-depth: 2
+
+      - id: tree
+        run: bash scripts/mesmo-tree-do-pr.sh
