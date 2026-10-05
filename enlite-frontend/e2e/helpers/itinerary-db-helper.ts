@@ -36,8 +36,12 @@ export interface ItinerarySeed {
   permanentWorkerId: string;
   /** Substituto SEM conflito — o do caminho feliz (o `substituteWorkerId` colide de propósito, alternativo 1). */
   freeSubstituteWorkerId: string;
+  /** 041 R2 — só no step final "Selecionados" da vaga (nunca em Resposta Rápida nem alocado): sem bolinha. */
+  selectedOnlyWorkerId: string;
+  /** 041 R2 — só em Resposta Rápida e NUNCA usado por outro teste (o `free` vira IN_SERVICE ao substituir um dia). */
+  quickOnlyWorkerId: string;
   /** Nome de tela de cada worker sintético (`<Nome> <Sobrenome>`). */
-  names: { titular: string; substitute: string; permanent: string; free: string };
+  names: { titular: string; substitute: string; permanent: string; free: string; selected: string; quick: string };
   /** Próxima segunda-feira (weekday=1) — calculada NO BANCO, nunca no runner Node. */
   nextMonday: string;
 }
@@ -48,7 +52,7 @@ const TASK_PREFIX = `itin-pw-${RUN}-`;
 /** Nomes sintéticos (massa de teste) — com KMS desligado no stack local o "cifrado" é base64 puro. */
 const enc = (v: string): string => Buffer.from(v, 'utf8').toString('base64');
 
-function mkWorker(label: string, jobId: string, firstName: string, lastName: string, occupation: string): string {
+function mkWorker(label: string, jobId: string, firstName: string, lastName: string, occupation: string, stage = 'QUICK_RESPONSE_TEAM'): string {
   const authUid = `${TASK_PREFIX}${label}`;
   runSQL(`
     INSERT INTO workers (auth_uid, email, country, first_name_encrypted, last_name_encrypted, occupation)
@@ -57,7 +61,7 @@ function mkWorker(label: string, jobId: string, firstName: string, lastName: str
   const workerId = firstLine(runSQL(`SELECT id FROM workers WHERE auth_uid = '${authUid}'`));
   runSQL(`
     INSERT INTO worker_job_applications (worker_id, job_posting_id, application_funnel_stage, source)
-    VALUES ('${workerId}', '${jobId}', 'QUICK_RESPONSE_TEAM', 'import')
+    VALUES ('${workerId}', '${jobId}', '${stage}', 'import')
   `);
   return workerId;
 }
@@ -104,6 +108,8 @@ export function seedItinerary(): ItinerarySeed {
   const substituteWorkerId = mkWorker('substituto', jobId, 'Ana', 'Joulie', 'AT');
   const permanentWorkerId = mkWorker('permanente', jobId, 'Marcel', 'Araujo', 'AT');
   const freeSubstituteWorkerId = mkWorker('livre', jobId, 'Paula', 'Antonia', 'CAREGIVER');
+  const quickOnlyWorkerId = mkWorker('so-resposta-rapida', jobId, 'Quiteria', 'Respuesta', 'CAREGIVER');
+  const selectedOnlyWorkerId = mkWorker('so-selecionado', jobId, 'Sofia', 'Selecionada', 'CAREGIVER', 'SELECTED');
 
   const nextMonday = firstLine(
     runSQL(`
@@ -117,7 +123,7 @@ export function seedItinerary(): ItinerarySeed {
     `),
   );
 
-  return { patientId, serviceId, jobId, slotId, addressLabel: addressFormatted, titularWorkerId, substituteWorkerId, permanentWorkerId, freeSubstituteWorkerId, nextMonday, names: { titular: 'Alberto Marquez', substitute: 'Ana Joulie', permanent: 'Marcel Araujo', free: 'Paula Antonia' } };
+  return { patientId, serviceId, jobId, slotId, addressLabel: addressFormatted, titularWorkerId, substituteWorkerId, permanentWorkerId, freeSubstituteWorkerId, selectedOnlyWorkerId, quickOnlyWorkerId, nextMonday, names: { titular: 'Alberto Marquez', substitute: 'Ana Joulie', permanent: 'Marcel Araujo', free: 'Paula Antonia', selected: 'Sofia Selecionada', quick: 'Quiteria Respuesta' } };
 }
 
 /** Aloca o titular no slot direto por SQL (equivalente ao POST .../allocations, mais rápido no seed). */
