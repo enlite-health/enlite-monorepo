@@ -5841,6 +5841,7 @@
       "BOTH": "Indistinto"
     },
     "jobDescription": "Descrição do trabalho:",
+    "pathology": "Patologia",
     "characteristics": "Características:",
     "ageRange": "Faixa Etária:",
     "ageRangeUndefined": "Indistinta",
