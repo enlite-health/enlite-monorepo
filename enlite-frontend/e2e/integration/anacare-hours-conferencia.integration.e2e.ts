@@ -167,7 +167,11 @@ function criarNavegadorDeSemana(page: Page): { irPara: (dateIso: string) => Prom
       // Mount novo (`goto`/`reload`) sempre reabre na semana PADRÃO (`weekStart` é estado de
       // componente, não persiste) — o rastreador precisa saber disso pra não contar cliques que a
       // página já perdeu.
-      atual = DEFAULT_WEEK_START;
+      // Spec 037: navegar para outro mês grava `?month=` na URL (replace) e o reload REABRE nesse mês
+      // (hoje, se o mês contém hoje; senão a 1ª semana dele) — não na semana padrão do mês corrente.
+      const mes = new URL(page.url()).searchParams.get('month') ?? MONTH;
+      const hoje = todayIsoLocalForE2E();
+      atual = startOfWeekMonday(mes === hoje.slice(0, 7) ? hoje : `${mes}-01`);
     },
   };
 }

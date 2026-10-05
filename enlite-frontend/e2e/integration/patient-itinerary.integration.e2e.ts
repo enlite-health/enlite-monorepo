@@ -239,9 +239,12 @@ test.describe('Aba Itinerario — full stack, sem mock @integration', () => {
     expect(novo?.status).toBe('ACTIVE');
     expect(novo?.validTo).toBeNull();
     // Na tela (próximos eventos): antes de D (1ª segunda) o TITULAR; a partir de D o NOVO.
-    await expect(
-      page.locator(`[data-testid^="itinerario-evento-prestador-"][data-testid$="-${seed.nextMonday}"]`).first(),
-    ).toContainText(seed.names.titular, { timeout: 10_000 });
+    // "Antes de D" = o 1º evento com data < fromDate (não `seed.nextMonday`: numa segunda-feira ele coincide com D).
+    const idEventoAntesDeD = async (): Promise<string> =>
+      (await page.locator('[data-testid^="itinerario-evento-prestador-"]').evaluateAll((els) => els.map((e) => e.getAttribute('data-testid') ?? '')))
+        .filter((id) => id.slice(-10) < fromDate)[0] ?? '';
+    await expect.poll(idEventoAntesDeD, { timeout: 10_000 }).not.toBe('');
+    await expect(page.getByTestId(await idEventoAntesDeD())).toContainText(seed.names.titular, { timeout: 10_000 });
     // Na tela: o evento de D mostra o NOVO prestador.
     await expect(
       page.locator(`[data-testid^="itinerario-evento-prestador-"][data-testid$="-${fromDate}"]`).first(),

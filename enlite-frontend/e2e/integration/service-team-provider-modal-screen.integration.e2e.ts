@@ -64,9 +64,14 @@ test.describe('service-team-provider-modal-screen @integration', () => {
       await expect(phoneLink).toBeVisible();
       await expect(phoneLink).toContainText(PATIENT_PHONE);
       await expect(phoneLink.locator('img').first()).toBeVisible();
-      const iconBox = await phoneLink.locator('img').first().boundingBox();
-      const textBox = await phoneLink.locator('span').first().boundingBox();
-      expect(iconBox!.x + iconBox!.width).toBeLessThanOrEqual(textBox!.x + 1);
+      // O painel desliza (transition-transform 300ms): as duas caixas saem do MESMO quadro, senão o ícone
+      // medido antes do texto fica "à frente" dele só pelo deslocamento da animação.
+      const { iconRight, textLeft } = await phoneLink.evaluate((a) => {
+        const icon = a.querySelector('img')!.getBoundingClientRect();
+        const text = a.querySelector('span')!.getBoundingClientRect();
+        return { iconRight: icon.x + icon.width, textLeft: text.x };
+      });
+      expect(iconRight).toBeLessThanOrEqual(textLeft + 1);
       // O telefone do PRESTADOR não viaja nem aparece no painel.
       await expect(page.getByTestId('service-team-provider-modal')).not.toContainText(WORKER_PHONE);
 
