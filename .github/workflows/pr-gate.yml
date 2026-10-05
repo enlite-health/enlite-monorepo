@@ -37,6 +37,12 @@ jobs:
         with:
           fetch-depth: 0
 
+      # Spec 038 T6.1: `scripts/mesmo-tree-do-pr.sh` decide pular a suíte antes do deploy de PRD;
+      # se alguém o fizer dizer sempre `igual=true`, deployaria sem teste. Roda aqui (em todo PR,
+      # sem `paths:`, segundos) porque `gate` já agrega `changes` e reprova se ele falhar.
+      - name: Teste do script mesmo-tree-do-pr
+        run: bash scripts/mesmo-tree-do-pr.test.sh
+
       - id: filtro
         run: |
           set -euo pipefail
