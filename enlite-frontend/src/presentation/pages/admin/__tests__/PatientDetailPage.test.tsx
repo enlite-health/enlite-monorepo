@@ -404,4 +404,27 @@ describe('PatientDetailPage — deep-link do sino reage a location.state NOVO (D
     rerender(<PatientDetailPage />);
     expect(screen.getByTestId('conversation-handle-stub')).toHaveTextContent('none');
   });
+
+});
+
+// Spec 041 R4: `?tab=itinerary` (atalho da vacante) abre a aba Itinerario; sem query, o default não muda.
+describe('PatientDetailPage — ?tab= (atalho vacante → itinerário)', () => {
+  beforeEach(() => { detail.patient = { ...patientDetailFixture, admissionStatus: 'DONE', status: 'ACTIVE' }; detail.isLoading = false; detail.error = null; locationState.mockReturnValue({ state: null }); });
+
+  it('?tab=itinerary abre a aba Itinerario', () => {
+    locationState.mockReturnValue({ state: null, search: '?tab=itinerary' } as never);
+    render(<PatientDetailPage />);
+    expect(screen.getByTestId('itinerario-sem-servicos')).toBeInTheDocument();
+  });
+
+  it('sem ?tab= a ficha abre na aba padrão, não no Itinerario', () => {
+    render(<PatientDetailPage />);
+    expect(screen.queryByTestId('itinerario-sem-servicos')).not.toBeInTheDocument();
+  });
+
+  it('?tab= inválido cai na aba padrão', () => {
+    locationState.mockReturnValue({ state: null, search: '?tab=nao-existe' } as never);
+    render(<PatientDetailPage />);
+    expect(screen.queryByTestId('itinerario-sem-servicos')).not.toBeInTheDocument();
+  });
 });

@@ -64,7 +64,12 @@ export default function PatientDetailPage() {
   const { t } = useTranslation();
   const { patient, isLoading, error, refetch } = usePatientDetail(id);
   const { vacancies, isLoading: vacanciesLoading, error: vacanciesError, refetch: refetchVacancies } = usePatientVacancies(id);
-  const [activeTab, setActiveTab] = useState<PatientTab>('clinicalData');
+  // Spec 041 R4: `?tab=<aba>` abre a ficha já nessa aba (atalho vacante → itinerário). Valor fora de
+  // PATIENT_TABS (ou sem query) cai no default de sempre.
+  const [activeTab, setActiveTab] = useState<PatientTab>(() => {
+    const requested = new URLSearchParams(location.search ?? '').get('tab');
+    return PATIENT_TABS.find((tab) => tab === requested) ?? 'clinicalData';
+  });
   // D286: uma aba só existe se ALGUM container dela for legível (registro de telas + contrato de
   // authz). A ativa é a primeira visível quando a atual sumiu; sem enforcement, todas existem.
   const permissions = useAdminAuthStore((s) => s.authz?.permissions);

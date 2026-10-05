@@ -227,3 +227,29 @@ describe('VacancyDetailPage — containers por célula (D286 fase 2)', () => {
     expect(aba('links')).toBeInTheDocument();
   });
 });
+
+describe('VacancyDetailPage — atalho para o itinerário do paciente (spec 041 R4)', () => {
+  const comPaciente = (patient_id: string | null) =>
+    vi.mocked(useVacancyDetail).mockReturnValue({
+      vacancy: { ...mockVacancy, patient_id } as any,
+      isLoading: false,
+      error: null,
+      refetch: mockRefetch,
+    });
+
+  it('com patient_id: o botão aparece e leva a /admin/patients/:id?tab=itinerary', async () => {
+    comEnforcement([], 'off');
+    comPaciente('pat-42');
+    mockNavigate.mockClear();
+    renderPage();
+    await userEvent.click(screen.getByTestId('vacancy-view-patient-itinerary'));
+    expect(mockNavigate).toHaveBeenCalledWith('/admin/patients/pat-42?tab=itinerary');
+  });
+
+  it('sem patient_id: o botão não aparece', () => {
+    comEnforcement([], 'off');
+    comPaciente(null);
+    renderPage();
+    expect(screen.queryByTestId('vacancy-view-patient-itinerary')).not.toBeInTheDocument();
+  });
+});
