@@ -11,6 +11,7 @@
 
 const mockQuery = jest.fn();
 const mockLoggerWarn = jest.fn();
+const mockReportError = jest.fn();
 
 jest.mock('@shared/database/DatabaseConnection', () => ({
   DatabaseConnection: {
@@ -24,12 +25,16 @@ jest.mock('@shared/database/DatabaseConnection', () => ({
 
 jest.mock('@shared/logging', () => ({
   ...jest.requireActual('@shared/logging'),
+  reportError: (...a: unknown[]) => mockReportError(...a),
   logger: { info: jest.fn(), warn: (...a: unknown[]) => mockLoggerWarn(...a), error: jest.fn() },
 }));
 
 import { PublicVacancyController } from '../PublicVacancyController';
 import { Request, Response } from 'express';
 import { TEXTO_CLINICO, esperaSemVazamentoClinico } from '../../../__tests__/guardaVazamentoClinico';
+import { DiagnosisSource } from '@modules/diagnosis/domain/DiagnosisSource';
+import type { PatientDiagnosisService } from '@modules/diagnosis/application/PatientDiagnosisService';
+import * as logging from '@shared/logging';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -66,6 +71,7 @@ const CAMPOS_PUBLICOS = [
   'required_professions', 'required_sex', 'age_range_min', 'age_range_max',
   'worker_attributes', 'schedule', 'schedule_days_hours', 'salary_text',
   'talentum_description', 'talentum_whatsapp_url', 'patient_zone', 'country', 'created_at',
+  'diagnosisLabel',
 ].sort();
 
 function makeVacancyRow(overrides: Record<string, unknown> = {}) {
@@ -94,6 +100,33 @@ function makeVacancyRow(overrides: Record<string, unknown> = {}) {
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
+
+const PATIENT_ID = '11111111-2222-3333-4444-555555555555';
+const TITULO_SINTETICO = 'Diagnóstico sintético QA';
+
+/** Serviço fake no formato real do domínio, com código/URI sintéticos que NÃO podem sair. */
+function fakeDiagnosisService(diagnoses: Record<string, unknown>[] | Error): {
+  service: PatientDiagnosisService;
+  listForPatient: jest.Mock;
+} {
+  const listForPatient = jest.fn(async () => {
+    if (diagnoses instanceof Error) throw diagnoses;
+    return { found: true, diagnoses };
+  });
+  return { service: { listForPatient } as unknown as PatientDiagnosisService, listForPatient };
+}
+
+const cid = (o: Record<string, unknown> = {}) => ({
+  id: 'dddddddd-0000-0000-0000-000000000001',
+  conceptTitle: TITULO_SINTETICO,
+  conceptLanguage: 'es',
+  conceptCode: 'ZZ99.Z',
+  conceptUri: 'https://sintetico.invalid/entity/ZZ99Z',
+  source: DiagnosisSource.PANEL,
+  isPrimary: true,
+  active: true,
+  ...o,
+});
 
 describe('PublicVacancyController.getById', () => {
   let controller: PublicVacancyController;
@@ -535,6 +568,119 @@ describe('PublicVacancyController.getById', () => {
       }
       expect(sql).toContain('pcs.id = jp.contracted_service_id');
       expect(sql).toContain('pcs.active = false');
+    });
+  });
+  // ══════════════════════════════════════════════════════════════════════════
+  // Spec 042 (D473) — `diagnosisLabel`: só o NOME de catálogo, nada além.
+  // ══════════════════════════════════════════════════════════════════════════
+  describe('spec 042 — diagnosisLabel', () => {
+    const CHAVES_PROIBIDAS = [
+      'diagnosis', 'dependency_level', 'diagnoses', 'concept_code', 'conceptCode', 'concept_uri',
+      'conceptUri', 'isPrimary', 'source', 'catalogRelease', 'patient_id', 'patientId',
+    ];
+
+    it('A3: chaves exatas de data + corpo sem código, URI, patient_id nem texto livre; SQL sem patient_diagnoses/concept_', async () => {
+      const { service, listForPatient } = fakeDiagnosisService([cid()]);
+      const c = new PublicVacancyController(service);
+      const row = makeVacancyRow({
+        patient_id: PATIENT_ID,
+        diagnosis: TEXTO_CLINICO,
+        pathologies: TEXTO_CLINICO,
+        dependency_level: 'TOTAL',
+        concept_code: 'ZZ99.Z',
+      });
+      mockQuery.mockResolvedValueOnce({ rows: [row] });
+
+      const [req, res] = mockReqRes({ id: VACANCY_ID });
+      await c.getById(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(listForPatient).toHaveBeenCalledWith(PATIENT_ID);
+      const body = (res.json as jest.Mock).mock.calls[0][0];
+      expect(Object.keys(body.data).sort()).toEqual(CAMPOS_PUBLICOS);
+      expect(body.data.diagnosisLabel).toBe(TITULO_SINTETICO);
+      for (const k of CHAVES_PROIBIDAS) expect(body.data).not.toHaveProperty(k);
+
+      const serial = JSON.stringify(body);
+      expect(serial).not.toContain('ZZ99');
+      expect(serial).not.toContain('sintetico.invalid');
+      expect(serial).not.toContain(PATIENT_ID);
+      esperaSemVazamentoClinico(body);
+
+      const [sql] = mockQuery.mock.calls[0];
+      expect(sql).not.toMatch(/patient_diagnoses/);
+      expect(sql).not.toMatch(/concept_/);
+      expect(mockQuery).toHaveBeenCalledTimes(1);
+    });
+
+    it('A4: texto livre na linha + serviço sem CID → diagnosisLabel null, nunca o texto livre', async () => {
+      const { service } = fakeDiagnosisService([]);
+      const c = new PublicVacancyController(service);
+      mockQuery.mockResolvedValueOnce({
+        rows: [makeVacancyRow({ patient_id: PATIENT_ID, diagnosis: TEXTO_CLINICO })],
+      });
+
+      const [req, res] = mockReqRes({ id: VACANCY_ID });
+      await c.getById(req, res);
+
+      const body = (res.json as jest.Mock).mock.calls[0][0];
+      expect(body.data.diagnosisLabel).toBeNull();
+      esperaSemVazamentoClinico(body);
+    });
+
+    it('vaga sem paciente → diagnosisLabel null sem chamar o serviço', async () => {
+      const { service, listForPatient } = fakeDiagnosisService([cid()]);
+      const c = new PublicVacancyController(service);
+      mockQuery.mockResolvedValueOnce({ rows: [makeVacancyRow({ patient_id: null })] });
+
+      const [req, res] = mockReqRes({ id: VACANCY_ID });
+      await c.getById(req, res);
+
+      expect((res.json as jest.Mock).mock.calls[0][0].data.diagnosisLabel).toBeNull();
+      expect(listForPatient).not.toHaveBeenCalled();
+    });
+
+    it('A5 bulkhead: serviço lança → 200, diagnosisLabel null, reportError só com vacancyId, rótulo fora de log', async () => {
+      const reportSpy = mockReportError;
+      const consoleErr = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      const { service } = fakeDiagnosisService(new Error('catálogo fora do ar'));
+      const c = new PublicVacancyController(service);
+      mockQuery.mockResolvedValueOnce({ rows: [makeVacancyRow({ patient_id: PATIENT_ID })] });
+
+      const [req, res] = mockReqRes({ id: VACANCY_ID });
+      await c.getById(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect((res.json as jest.Mock).mock.calls[0][0].data.diagnosisLabel).toBeNull();
+      expect(reportSpy).toHaveBeenCalledTimes(1);
+      expect(reportSpy.mock.calls[0][1]).toEqual({
+        source: 'PublicVacancyController:diagnosisLabel',
+        vacancyId: VACANCY_ID,
+      });
+      expect(JSON.stringify([reportSpy.mock.calls, consoleErr.mock.calls, mockLoggerWarn.mock.calls])).not.toContain(PATIENT_ID);
+      consoleErr.mockRestore();
+    });
+
+    it('A5 caminho feliz: o título não vai a logger nem console', async () => {
+      const consoleErr = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      const consoleLog = jest.spyOn(console, 'log').mockImplementation(() => undefined);
+      const { service } = fakeDiagnosisService([cid()]);
+      const c = new PublicVacancyController(service);
+      mockQuery.mockResolvedValueOnce({ rows: [makeVacancyRow({ patient_id: PATIENT_ID })] });
+
+      const [req, res] = mockReqRes({ id: VACANCY_ID });
+      await c.getById(req, res);
+
+      const logging_ = JSON.stringify([
+        mockLoggerWarn.mock.calls,
+        (logging.logger.info as jest.Mock).mock.calls,
+        (logging.logger.error as jest.Mock).mock.calls,
+        consoleErr.mock.calls,
+        consoleLog.mock.calls,
+      ]);
+      expect(logging_).not.toContain(TITULO_SINTETICO);
+      consoleErr.mockRestore();
+      consoleLog.mockRestore();
     });
   });
 });
