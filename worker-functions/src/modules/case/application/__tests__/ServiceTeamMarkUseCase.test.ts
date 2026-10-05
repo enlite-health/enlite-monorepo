@@ -228,6 +228,20 @@ describe('ServiceTeamMarkUseCase', () => {
     expect(writer.insertRejection).not.toHaveBeenCalled();
   });
 
+  it('041 R3: reject de quem está SÓ em Selecionados (SELECTED, não QRT) grava a marca — mesmo pool que a R1 deixou alocar', async () => {
+    const SELECTED_ONLY_ROW: ServiceTeamRows = {
+      ...SELECTED_ROW,
+      candidacies: [{ workerId: 'w-1', vacancyId: 'v-live', stage: 'SELECTED', firstNameEncrypted: 'enc:Ana', lastNameEncrypted: null }],
+    };
+    const reader: ServiceTeamMarkReaderPort = { readWith: jest.fn().mockResolvedValueOnce(SELECTED_ONLY_ROW).mockResolvedValueOnce(REJECTED_ROW) };
+    const writer: ServiceTeamMarkWriterPort = { insertRejection: jest.fn(), revertRejection: jest.fn() };
+    const useCase = new ServiceTeamMarkUseCase(reader, writer, kmsSpy(), runInTransactionStub(), catalogStub());
+
+    await useCase.reject({ patientId: 'p-1', serviceId: 's-1', workerId: 'w-1', reasonCategory: 'OTHER', actorUid: 'u-1', cells: null });
+
+    expect(writer.insertRejection).toHaveBeenCalledWith(FAKE_CLIENT, { serviceId: 's-1', workerId: 'w-1', category: 'OTHER', actorUid: 'u-1' });
+  });
+
   it('reject feliz: 1 insert + o time recalculado (leitor chamado de novo, mesmo client) com o worker em rejected', async () => {
     const readWith = jest.fn().mockResolvedValueOnce(SELECTED_ROW).mockResolvedValueOnce(REJECTED_ROW);
     const reader: ServiceTeamMarkReaderPort = { readWith };

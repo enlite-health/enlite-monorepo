@@ -11,7 +11,7 @@
  * pelo MESMO leitor do GET, no MESMO client (`ServiceTeamReader.readWith`); serviço inexistente/
  * de outro paciente → `ServiceTeamNotFoundError` (mesma classe do GET — 404); rejeitar quem está
  * `inService` → `ServiceTeamWorkerAllocatedError` (invariante 10, "remova do itinerário
- * primeiro"); rejeitar quem não é candidato (`selected`) → `ServiceTeamNotSelectedError`
+ * primeiro"); rejeitar quem não é candidato do pool de alocação (QRT ou Selecionados, 041 R3) → `ServiceTeamNotSelectedError`
  * (invariante 1 — não há como pôr em C quem a vaga não pôs); reverter quem não está `rejected` →
  * `ServiceTeamNotRejectedError`. A corrida do índice `uq_csr_active_pair` (23505) vira
  * `ServiceTeamAlreadyRejectedError`.
@@ -33,7 +33,13 @@ import { ServiceTeamReader, type ServiceTeamRows } from '../infrastructure/Servi
 import { ServiceTeamMarkWriter } from '../infrastructure/ServiceTeamMarkWriter';
 import { ServiceExitReasonReader, type ServiceExitReasonOption } from '../infrastructure/ServiceExitReasonReader';
 import { ServiceTeamNotFoundError, type GetServiceTeamResult } from './GetServiceTeamUseCase';
-import { deriveServiceTeamFromRows, projectServiceTeamDisplayNames, buildServiceTeamResult } from './serviceTeamPresentation';
+import {
+  deriveServiceTeamFromRows,
+  deriveAllocationPoolFromRows,
+  projectServiceTeamDisplayNames,
+  buildServiceTeamResult,
+} from './serviceTeamPresentation';
+import { canAllocate } from '../domain/itineraryAllocationGate';
 import { type Decryptor } from '@modules/identity/permissions';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 
@@ -196,7 +202,9 @@ export class ServiceTeamMarkUseCase {
     if (team.inService.some((m) => m.workerId === workerId)) {
       throw new ServiceTeamWorkerAllocatedError(patientId, serviceId, workerId);
     }
-    if (!team.selected.some((m) => m.workerId === workerId)) {
+    // 041 R3: o gate é o MESMO pool de alocação da R1 (Selecionados + Equipe de Resposta Rápida da vaga viva,
+    // sem marca) — quem a R1 deixou alocar só de Selecionados também pode sair por "sale del servicio".
+    if (!canAllocate(deriveAllocationPoolFromRows(row, now), workerId)) {
       throw new ServiceTeamNotSelectedError(patientId, serviceId, workerId);
     }
 
