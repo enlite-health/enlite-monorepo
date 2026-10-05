@@ -5,10 +5,8 @@
 // — era a MESMA tabela de serviços contratados duplicada + um card "Próximamente". Naquele momento
 // o encuadre do paciente ficou sendo só o serviço contratado completo (endereço + horário,
 // migration 330), na aba "Servicio Contratado".
-// 29/09 (decisão do Gabriel, task "aba Enquadre conforme Figma"): 'encuadre' VOLTA como aba
-// própria — desta vez com conteúdo real (o quadro C, `ServiceTeamSection`/`ServiceTeamBoard`, que
-// SAI da aba "Servicio Contratado" e passa a viver só aqui). Não é a mesma aba antiga: aquela
-// duplicava a tabela de serviços e não tinha quadro nenhum atrás.
+// 05/10 (spec 041 R3, planning de 30/09): 'encuadre' SAI de novo — o enquadre será remodelado na
+// VACANTE (Diego, PEND-10). O back (`deriveServiceTeam`, marcas, rotas `team/*`) fica; o dado fica sem tela.
 // D442 (28/09): 'Itinerario' entra tendo conteúdo real (D431): a grade semanal por serviço e a alocação.
 // Spec 031 (D463, 02/10): 'documents' entra DEPOIS de 'supportNetwork' — a aba dos documentos do paciente
 // (subidos na ficha ou enviados pelo chat), container próprio `patient_document`.
@@ -19,7 +17,6 @@ export type PatientTab =
   | 'documents'
   | 'contractedService'
   | 'vacancies'
-  | 'encuadre'
   | 'itinerary'
   | 'history';
 
@@ -30,7 +27,6 @@ export const PATIENT_TABS: readonly PatientTab[] = [
   'documents',
   'contractedService',
   'vacancies',
-  'encuadre',
   'itinerary',
   'history',
 ];

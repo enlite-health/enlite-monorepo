@@ -46,9 +46,8 @@ import { runSQL } from '../helpers/patient-detail-a-helper';
 import { insertWJA, upsertEncuadre, getWjaByWorkerAndJob } from '../helpers/wja-test-helper';
 import { dndKitDrag } from '../helpers/dndKitDrag';
 import {
-  readServiceTeamApi, postServiceTeamAction, countMarks, selectServiceRow, openEncuadreTab,
+  readServiceTeamApi, postServiceTeamAction, countMarks,
 } from '../helpers/quadro-c-e2e-helper';
-import { openServiceTeamOf, nextWeekdaySql } from '../helpers/substituicao-e2e-helper';
 import {
   seedCadeia, seedRoleWorkers, seedPatientZ, seedMarkedWorker, countPatients, residueByIds, cleanupCadeia, collectRequests, readKanbanState,
   lastStatusChangeSource, printPath, type CadeiaPatientX, type CadeiaPatientWithVacancy,
@@ -60,7 +59,6 @@ interface OptionDto { workerId: string; displayName: string | null; status?: str
 interface OverlapSideDto { startTime: string; endTime: string }
 interface OverlapBody { code?: string; existing?: OverlapSideDto; requested?: OverlapSideDto; minGapMinutes?: number | null }
 /** O campo da Fase 13 (`substitutionDates`) que o `ServiceTeamDto` da Fase 10 ainda não tipa. */
-interface InServiceF13 { workerId: string; substitutionDates?: string[] }
 
 /** M entra UMA vez numa etapa de `FUNNEL_STAGES` (Rejeitados, passo 4) → 1 `domain_events` sem consumidor (mapa ⚠1). */
 const M_FUNNEL_STAGE_ENTRIES = 1;
@@ -290,32 +288,25 @@ test.describe('cadeia-completa @integration', () => {
           'tela', rejectPut.status(), lastM.newValue, lastM.reasonCategory, statusBefore, statusAfter);
       });
 
-      await test.step('passo 5 — quadro C pela tela: WA em Selecionado, só-Selecionados-de-B fora, C do serviço 2 vazio, rejeitar em C com motivo não mexe em B nem em X (invariantes 1, 8, 6, 11 e 3)', async () => {
-        await openServiceTeamOf(page, X.patientId, X.service1Id);
-        const selected = page.getByTestId('kanban-column-SELECTED_FOR_SERVICE');
-        for (const w of [wa, wc, ws]) await expect(selected.getByTestId(`service-team-card-${w}`)).toHaveCount(1);
-        for (const w of [wb, m]) await expect(page.getByTestId(`service-team-card-${w}`)).toHaveCount(0);
+      await test.step('passo 5 — time do serviço pela API: WA em Selecionado, só-Selecionados-de-B fora, C do serviço 2 vazio, rejeitar em C com motivo não mexe em B nem em X (invariantes 1, 8, 6, 11 e 3)', async () => {
+        const teamS1 = await readServiceTeamApi(request, X.patientId, X.service1Id);
+        const selectedIds = (teamS1.body.data?.selected ?? []).map((mm) => mm.workerId);
+        for (const w of [wa, wc, ws]) expect(selectedIds).toContain(w);
+        for (const w of [wb, m]) expect(selectedIds).not.toContain(w);
 
-        await selectServiceRow(page, X.service2Id);
-        await expect(page.getByTestId('quadro-c-sem-vaga')).toBeVisible();
-        await expect(page.locator('[data-testid^="kanban-column-"]')).toHaveCount(0);
         const teamS2 = await readServiceTeamApi(request, X.patientId, X.service2Id);
         expect(teamS2.body.data?.vacancyId ?? null).toBeNull();
 
-        await selectServiceRow(page, X.service1Id);
-        await expect(selected.getByTestId(`service-team-card-${wc}`)).toHaveCount(1);
-        // Rejeitar em C SEM motivo — pela API (molde `quadro-c-rejeitar-exige-motivo`): 422, nenhuma marca.
+        // Rejeitar em C SEM motivo — pela API: 422, nenhuma marca.
         const noReason = await postServiceTeamAction(request, X.patientId, X.service1Id, 'reject', { workerId: wc });
         expect(noReason.status).toBe(422);
         expect(noReason.body.code).toBe('SERVICE_TEAM_REASON_REQUIRED');
         expect(countMarks(X.service1Id, wc)).toBe(0);
 
-        await page.getByTestId(`service-team-reject-${wc}`).click();
-        await expect(page.getByTestId('service-team-reject-confirm')).toBeDisabled();
-        await chooseReasonInModal(page, 'service-team-reject', 'DESISTENCIA_DO_PRESTADOR');
-        await expect(
-          page.getByTestId('kanban-column-REJECTED_FOR_SERVICE').getByTestId(`service-team-card-${wc}`),
-        ).toBeVisible({ timeout: 10_000 });
+        const rejected = await postServiceTeamAction(request, X.patientId, X.service1Id, 'reject', {
+          workerId: wc, reasonCategory: 'DESISTENCIA_DO_PRESTADOR',
+        });
+        expect(rejected.status).toBe(200);
         const marks = countMarks(X.service1Id, wc, { active: true });
         expect(marks).toBe(1);
         const stageWc = getWjaByWorkerAndJob(wc, v)?.funnelStage;
@@ -323,7 +314,7 @@ test.describe('cadeia-completa @integration', () => {
         const status = await readPatientStatusApi(request, backendUrl(), token, X.patientId);
         expect(status).toBe('SEARCHING');
         console.log('[16.p5]', X.service1Id, X.service2Id, teamS2.body.data?.vacancyId ?? null,
-          'sem-motivo-via-api', noReason.status, noReason.body.code, 'tela', marks, stageWc, status);
+          'sem-motivo-via-api', noReason.status, noReason.body.code, 'rejeitou-via-api', marks, stageWc, status);
       });
 
       const Y = y;
@@ -394,11 +385,10 @@ test.describe('cadeia-completa @integration', () => {
         expect(allocationId).not.toBe('');
         await expect(page.getByTestId(`itinerario-slot-prestador-${slot1.id}-${wa}`)).toBeVisible({ timeout: 15_000 });
 
-        // 29/09: o quadro C saiu de "Servicio Contratado" — a aba certa agora é "Encuadre".
-        await openEncuadreTab(page, X.patientId);
-        await selectServiceRow(page, X.service1Id);
-        await expect(page.getByTestId('kanban-column-IN_SERVICE').getByTestId(`service-team-card-${wa}`)).toHaveCount(1);
-        await expect(page.getByTestId('kanban-column-SELECTED_FOR_SERVICE').getByTestId(`service-team-card-${wa}`)).toHaveCount(0);
+        // 041 R3: a aba Encuadre saiu da ficha — o time do serviço é lido pela API (o back segue calculando).
+        const teamP6 = await readServiceTeamApi(request, X.patientId, X.service1Id);
+        expect((teamP6.body.data?.inService ?? []).some((mm) => mm.workerId === wa)).toBe(true);
+        expect((teamP6.body.data?.selected ?? []).some((mm) => mm.workerId === wa)).toBe(false);
         console.log('[16.p6]', par0, par0s2, assembled.status, options.length, slot1.id, postResp.status(), allocationId);
       });
 
@@ -462,34 +452,7 @@ test.describe('cadeia-completa @integration', () => {
         console.log('[16.p8]', par0, par1, s2Pair, columnP8, apiStatus, source);
       });
 
-      await test.step('passo 9 — quadro C pela tela: ausência do titular numa data com substituto vindo de Selecionado (C); o par e a coluna do passo 8 não mudam; rejeitar o titular alocado → recusado (recusa via API, molde da Fase 10) (invariantes 9, 3 e 10)', async () => {
-        const d = nextWeekdaySql(1);
-        const teamBefore = await readServiceTeamApi(request, X.patientId, X.service1Id);
-        const wsLabel = (teamBefore.body.data?.selected ?? []).find((mm) => mm.workerId === ws)?.displayName;
-        if (!wsLabel) throw new Error('passo 9: WS sem displayName no time');
-
-        await openServiceTeamOf(page, X.patientId, X.service1Id);
-        await page.getByTestId(`service-team-substitute-${wa}`).click();
-        await expect(page.getByTestId('substitution-modal')).toBeVisible();
-        await page.getByTestId('substitution-date').selectOption(d);
-        await page.getByTestId('substitution-reason').selectOption('OTHER');
-        await page.getByTestId('substitution-worker').click();
-        await page.getByPlaceholder('Buscar...').pressSequentially(wsLabel, { delay: 20 });
-        await page.getByRole('option', { name: wsLabel }).click();
-        await Promise.all([
-          page.waitForResponse((r) => r.request().method() === 'GET' && r.url().includes('/contracted-services/') && r.url().endsWith('/team') && r.ok()),
-          page.getByTestId('substitution-confirm').click(),
-        ]);
-
-        const after = await readServiceTeamApi(request, X.patientId, X.service1Id);
-        const inService = (after.body.data as unknown as { inService: InServiceF13[] } | undefined)?.inService ?? [];
-        expect(inService.find((mm) => mm.workerId === ws)?.substitutionDates).toEqual([d]);
-        expect(inService.some((mm) => mm.workerId === wa)).toBe(true);
-        const chip = page.getByTestId(`service-team-card-${ws}`).getByTestId('card-datas-substituicao');
-        await expect(chip).toHaveCount(1);
-        const [, month, day] = d.split('-');
-        await expect(chip).toContainText(`${day}/${month}`);
-
+      await test.step('passo 9 — o par e a coluna do passo 8 não mudam; rejeitar o titular alocado → recusado (invariantes 1 e 3)', async () => {
         const state = await readKanbanState(page, X.patientId, X.service1Id);
         expect(state).toEqual({ column: columnP8, pair: par1 });
 
@@ -500,14 +463,14 @@ test.describe('cadeia-completa @integration', () => {
         expect(rejectAllocated.body.code).toBe('SERVICE_TEAM_WORKER_ALLOCATED');
         const marksWa = countMarks(X.service1Id, wa, { active: true });
         expect(marksWa).toBe(0);
-        console.log('[16.p9]', d, inService.length, state.column, state.pair, 'recusa-via-api', rejectAllocated.status, rejectAllocated.body.code, marksWa);
+        console.log('[16.p9]', state.column, state.pair, 'recusa-via-api', rejectAllocated.status, rejectAllocated.body.code, marksWa);
       });
 
       await test.step('passo 10 — encerrar a alocação do passo 6 (via API, Fase 12 não encerra pela tela): WA volta a Selecionado (C) e X é recalculado — volta a Búsqueda (invariante 2)', async () => {
         const end = await endAllocationApi(request, token, X.patientId, X.service1Id, allocationId);
         expect(end.status, `end ${end.status} ${end.body.code ?? ''}`).toBe(200);
-        await openServiceTeamOf(page, X.patientId, X.service1Id);
-        await expect(page.getByTestId('kanban-column-SELECTED_FOR_SERVICE').getByTestId(`service-team-card-${wa}`)).toHaveCount(1);
+        const teamP10 = await readServiceTeamApi(request, X.patientId, X.service1Id);
+        expect((teamP10.body.data?.selected ?? []).some((mm) => mm.workerId === wa)).toBe(true);
         const state = await readKanbanState(page, X.patientId, X.service1Id);
         expect(state.column).toBe('SEARCHING');
         expect(state.pair).toBe(par0);
@@ -612,9 +575,6 @@ test.describe('cadeia-completa @integration', () => {
         expect(team.status).toBe(200);
         const inTeam = [...(team.body.data?.selected ?? []), ...(team.body.data?.inService ?? [])].some((mm) => mm.workerId === wz);
         expect(inTeam).toBe(false);
-        await openServiceTeamOf(page, z.patientId, z.serviceId);
-        await expect(page.getByTestId('quadro-c-secao')).toBeVisible();
-        await expect(page.getByTestId(`service-team-card-${wz}`)).toHaveCount(0);
         const opts = await allocationOptionsApi(request, token, z.patientId, z.serviceId);
         expect(opts.status).toBe(200);
         const optionIds = ((opts.body.data as { options: OptionDto[] } | undefined)?.options ?? []).map((o) => o.workerId);

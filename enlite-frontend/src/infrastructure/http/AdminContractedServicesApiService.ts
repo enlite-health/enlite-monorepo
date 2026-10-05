@@ -14,10 +14,7 @@ import type {
   ItineraryAbsenceResult,
   ItineraryRemoveResult,
   ExitDestination,
-  ServiceTeam,
   ServiceTeamMember,
-  ServiceTeamContact,
-  RegisterServiceTeamContactBody,
 } from '@domain/entities/ServiceTeam';
 import type { ItineraryOverlapDetail, PatientItinerary, PatientItineraryEventsResult } from '@domain/entities/PatientItinerary';
 
@@ -151,17 +148,6 @@ class AdminContractedServicesApiServiceClass {
     return this.request<KanbanServicesResult>(
       'GET',
       `/api/admin/patients/kanban/services${country ? `?country=${encodeURIComponent(country)}` : ''}`,
-    );
-  }
-
-  /**
-   * GET /api/admin/patients/:id/contracted-services/:sid/team — o time do quadro C, CALCULADO
-   * (DX-10.7). Uma chamada por seleção de linha, nunca por card/coluna (o hook governa isso).
-   */
-  async getServiceTeam(patientId: string, serviceId: string): Promise<ServiceTeam> {
-    return this.request<ServiceTeam>(
-      'GET',
-      `/api/admin/patients/${patientId}/contracted-services/${serviceId}/team`,
     );
   }
 
@@ -309,71 +295,6 @@ class AdminContractedServicesApiServiceClass {
     return this.request<ItineraryAbsenceResult>(
       'POST',
       `/api/admin/patients/${patientId}/contracted-services/${serviceId}/itinerary/absences/${absenceId}/cancel`,
-    );
-  }
-
-  /**
-   * POST .../team/reject — grava a marca de rejeição; devolve o time já recalculado (0 GET
-   * extra). `reasonCategory` ausente é 422 `SERVICE_TEAM_REASON_REQUIRED` — regra da API, o
-   * cliente só encaminha (invariante 10, critério 8).
-   */
-  async rejectServiceTeamMember(
-    patientId: string,
-    serviceId: string,
-    workerId: string,
-    reasonCategory?: string,
-  ): Promise<ServiceTeam> {
-    return this.request<ServiceTeam>(
-      'POST',
-      `/api/admin/patients/${patientId}/contracted-services/${serviceId}/team/reject`,
-      { workerId, reasonCategory },
-    );
-  }
-
-  /**
-   * POST .../team/revert — reverte a rejeição (a tabela é o log: grava `reverted_*`, nunca
-   * `DELETE`); devolve o time recalculado. `reasonCategory` ausente é 422
-   * `SERVICE_TEAM_REASON_REQUIRED` (invariante 11 — motivo nos dois sentidos).
-   */
-  async revertServiceTeamMember(
-    patientId: string,
-    serviceId: string,
-    workerId: string,
-    reasonCategory?: string,
-  ): Promise<ServiceTeam> {
-    return this.request<ServiceTeam>(
-      'POST',
-      `/api/admin/patients/${patientId}/contracted-services/${serviceId}/team/revert`,
-      { workerId, reasonCategory },
-    );
-  }
-
-  /**
-   * GET .../team/:workerId/contact — modal do prestador (rodada 2, decisão D): nome/telefone
-   * projetados (célula `worker_contact:read`) + histórico de contato (migration 490). 404 quando
-   * o serviço não existe/é de outro paciente/está fora da RLS, OU o prestador nunca foi deste time.
-   */
-  async getServiceTeamContact(patientId: string, serviceId: string, workerId: string): Promise<ServiceTeamContact> {
-    return this.request<ServiceTeamContact>(
-      'GET',
-      `/api/admin/patients/${patientId}/contracted-services/${serviceId}/team/${workerId}/contact`,
-    );
-  }
-
-  /**
-   * POST .../team/:workerId/contact — grava um registro de contato (linha NOVA, append-only,
-   * nunca reescreve as anteriores); devolve o histórico já recalculado (0 GET extra).
-   */
-  async registerServiceTeamContact(
-    patientId: string,
-    serviceId: string,
-    workerId: string,
-    body: RegisterServiceTeamContactBody,
-  ): Promise<ServiceTeamContact> {
-    return this.request<ServiceTeamContact>(
-      'POST',
-      `/api/admin/patients/${patientId}/contracted-services/${serviceId}/team/${workerId}/contact`,
-      body,
     );
   }
 }

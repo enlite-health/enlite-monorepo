@@ -124,16 +124,15 @@ describe('screensByCell / containersOfTab / screenById', () => {
     expect(todasAsCelulas().get('worker_address:read')).toEqual(['map', 'workers.detail']);
   });
 
-  it('as abas do detalhe do paciente: cada uma sabe os seus containers; Matching saiu (05/09), Encuadre voltou com conteúdo próprio (29/09)', () => {
+  it('as abas do detalhe do paciente: cada uma sabe os seus containers; Matching saiu (05/09), Encuadre saiu de novo (05/10, 041 R3)', () => {
     const s = screenById('patients.detail');
     expect(containersOfTab(s, 'clinicalData').map((c) => c.resource)).toEqual(['patient_clinical', 'patient_care_team', 'patient_therapeutic_project']);
     expect(containersOfTab(s, 'supportNetwork').map((c) => c.resource)).toEqual(['patient_family', 'patient_chat']);
     // D293: o valor-hora é container próprio (célula de DADO), na mesma aba do serviço.
     expect(containersOfTab(s, 'contractedService').map((c) => c.resource)).toEqual(['patient_coverage', 'patient_address', 'patient_services', 'patient_contract_value']);
-    expect(s.tabs).toEqual(['clinicalData', 'supportNetwork', 'documents', 'contractedService', 'vacancies', 'encuadre', 'itinerary', 'history']);
-    // 29/09: o quadro C (ServiceTeamSection/Board) saiu de "Servicio Contratado" e passou a viver
-    // na aba "Encuadre" — MESMA célula `patient_services` do container `services`, nenhuma nova.
-    expect(containersOfTab(s, 'encuadre').map((c) => c.resource)).toEqual(['patient_services']);
+    expect(s.tabs).toEqual(['clinicalData', 'supportNetwork', 'documents', 'contractedService', 'vacancies', 'itinerary', 'history']);
+    // 041 R3: a aba "Encuadre" saiu — o container `services` (célula `patient_services`) segue nas outras abas.
+    expect(containersOfTab(s, 'encuadre')).toEqual([]);
     expect(containersOfTab(s, 'itinerary').map((c) => c.resource)).toEqual(['patient_services', 'patient_itinerary']);
     expect(containersOfTab(s, 'vacancies').map((c) => c.resource)).toEqual(['vacancy']);
     expect(containersOfTab(s, 'history').map((c) => c.resource)).toEqual(['patient']);

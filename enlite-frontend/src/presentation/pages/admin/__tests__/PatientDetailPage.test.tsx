@@ -103,7 +103,7 @@ describe('PatientDetailPage', () => {
     expect(navigate).toHaveBeenCalledWith('/admin/patients');
   });
 
-  it('abas: rede de apoio, serviço contratado (cobertura + localizações editáveis), vagas, encuadre, histórico (Historial)', () => {
+  it('abas: rede de apoio, serviço contratado (cobertura + localizações editáveis), vagas, histórico (Historial); a aba Enquadre não existe mais (041 R3)', () => {
     render(<PatientDetailPage />);
     fireEvent.click(screen.getByText("Rede de Apoio"));
     expect(screen.getByTestId('familiares-card')).toBeInTheDocument();
@@ -113,10 +113,9 @@ describe('PatientDetailPage', () => {
     expect(screen.getByTestId('new-address-btn')).not.toBeDisabled();
     fireEvent.click(screen.getByText("Vagas"));
     expect(screen.getByTestId('vacancies-stub')).toBeInTheDocument();
-    // 29/09: a aba "Enquadre" VOLTA — desta vez com conteúdo real (o quadro C, que saiu da aba
-    // "Servicio Contratado"), não mais a tabela de serviços duplicada de 05/09.
-    fireEvent.click(screen.getByText("Enquadre"));
-    expect(screen.getByTestId('encuadre-tab')).toBeInTheDocument();
+    // 041 R3: o enquadre sai da ficha (será remodelado na vacante) — nem aba, nem root da aba.
+    expect(screen.queryByText("Enquadre")).not.toBeInTheDocument();
+    expect(screen.queryByTestId('encuadre-tab')).not.toBeInTheDocument();
     fireEvent.click(screen.getByText("Histórico"));
     expect(screen.getByTestId('history-stub')).toHaveTextContent(patientDetailFixture.id);
   });
@@ -265,10 +264,10 @@ describe('PatientDetailPage — D286: abas e cards por container', () => {
     expect(screen.queryByTestId('edit-general-btn')).not.toBeInTheDocument();
   });
 
-  it('serviços contratados: com ela, Serviço Contratado E Encuadre existem (MESMA célula, 29/09); Dados Clínicos não', () => {
+  it('serviços contratados: com ela, Serviço Contratado e Itinerário existem (sem Enquadre, 041 R3); Dados Clínicos não', () => {
     comCelulas(['patient:read', 'patient_services:read'], 'on');
     render(<PatientDetailPage />);
-    expect(abasNaTela()).toEqual(['Serviço Contratado', 'Enquadre', 'Itinerário', 'Histórico']);
+    expect(abasNaTela()).toEqual(['Serviço Contratado', 'Itinerário', 'Histórico']);
     expect(screen.queryByTestId('edit-coverage-btn')).not.toBeInTheDocument();
   });
 
@@ -321,10 +320,10 @@ describe('PatientDetailPage — D286: abas e cards por container', () => {
     expect(screen.queryByTestId('itinerario-erro')).not.toBeInTheDocument();
   });
 
-  it('Fase 12 (D442): engine OFF, clicar Itinerário (7ª de 8 — Encuadre voltou em 29/09, Documentos entrou em 02/10) monta a aba do itinerário', () => {
+  it('Fase 12 (D442): engine OFF, clicar Itinerário (6ª de 7 — Encuadre saiu em 05/10, Documentos entrou em 02/10) monta a aba do itinerário', () => {
     comCelulas([], 'off');
     render(<PatientDetailPage />);
-    expect(abasNaTela()[6]).toBe('Itinerário');
+    expect(abasNaTela()[5]).toBe('Itinerário');
     expect(screen.queryByTestId('itinerario-sem-servicos')).not.toBeInTheDocument();
     fireEvent.click(screen.getByText('Itinerário'));
     expect(screen.getByTestId('itinerario-sem-servicos')).toBeInTheDocument();
@@ -333,7 +332,8 @@ describe('PatientDetailPage — D286: abas e cards por container', () => {
   it('enforcement OFF: tudo como antes, mesmo sem célula nenhuma (as células novas nascem sem grupo)', () => {
     comCelulas([], 'off');
     render(<PatientDetailPage />);
-    expect(abasNaTela()).toHaveLength(8);
+    // 041 R3: sem a aba Enquadre — a lista inteira, na ordem (sabotagem: reintroduzir 'encuadre' em patientTabs.ts quebra aqui).
+    expect(abasNaTela()).toEqual(['Dados Clínicos', 'Rede de Apoio', 'Documentos', 'Serviço Contratado', 'Vagas', 'Itinerário', 'Histórico']);
     fireEvent.click(screen.getByText('Rede de Apoio'));
     expect(screen.getByTestId('familiares-card')).toBeInTheDocument();
   });

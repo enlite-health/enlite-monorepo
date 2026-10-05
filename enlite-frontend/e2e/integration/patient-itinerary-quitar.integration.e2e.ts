@@ -29,7 +29,6 @@ import {
 } from '../helpers/lancamento-e2e-helper';
 import { loginAs } from '../helpers/abac-stack-helper';
 import { openItineraryTab } from '../helpers/itinerario-aba-e2e-helper';
-import { openEncuadreTab, selectServiceRow } from '../helpers/quadro-c-e2e-helper';
 import { assembleApi } from '../helpers/itinerario-escrita-e2e-helper';
 import {
   seedDerivablePatient, selectedWorker, allocateWorker, readStatusBoth, coveredHours, derivacaoToken,
@@ -148,11 +147,6 @@ test.describe('patient-itinerary-quitar: "Quitar del itinerario" pela tela @inte
         runSQL(`SELECT kind || '/' || destination || '/' || reason_code FROM patient_itinerary_change_log WHERE contracted_service_id = '${m.serviceId}'`).trim(),
       ).toBe('REMOVE/RESERVE/DESISTENCIA_DO_PRESTADOR');
 
-      // Ana volta a Seleccionado no Encuadre (RESERVE não grava marca).
-      await openEncuadreTab(page, m.seed.patientId);
-      await selectServiceRow(page, m.serviceId);
-      await expect(page.getByTestId('kanban-column-SELECTED_FOR_SERVICE').getByTestId(`service-team-card-${m.workerId}`)).toHaveCount(1, { timeout: 15_000 });
-      await expect(page.getByTestId('kanban-column-REJECTED_FOR_SERVICE').getByTestId(`service-team-card-${m.workerId}`)).toHaveCount(0);
       expect(proibidos(), 'nenhum host de canal real pedido pela página').toEqual([]);
     } finally {
       m.seed.cleanup();
@@ -197,7 +191,7 @@ test.describe('patient-itinerary-quitar: "Quitar del itinerario" pela tela @inte
     }
   });
 
-  test('ALTERNATIVO 2: "Sale del encuadre de este servicio" → Ana em Rechazado no Encuadre, com o rótulo do motivo', async ({ page, request }) => {
+  test('ALTERNATIVO 2: "Sale del encuadre de este servicio" → marca de Rechazado gravada com o código do motivo, estado Búsqueda', async ({ page, request }) => {
     const proibidos = vigiarHosts(page);
     const m = await semearMontado(request);
     try {
@@ -220,14 +214,6 @@ test.describe('patient-itinerary-quitar: "Quitar del itinerario" pela tela @inte
       ).toBe('PERFIL_INADEQUADO_AO_SERVICO');
       expect(await readStatusBoth(request, m.seed.patientId)).toEqual({ api: 'SEARCHING', db: 'SEARCHING' });
 
-      // Tela: Ana em Rechazado, com o RÓTULO (nunca o código), e fora de Seleccionado.
-      await openEncuadreTab(page, m.seed.patientId);
-      await selectServiceRow(page, m.serviceId);
-      const card = page.getByTestId('kanban-column-REJECTED_FOR_SERVICE').getByTestId(`service-team-card-${m.workerId}`);
-      await expect(card).toBeVisible({ timeout: 15_000 });
-      await expect(card).toContainText(MOTIVO_PERFIL);
-      await expect(card).not.toContainText('PERFIL_INADEQUADO_AO_SERVICO');
-      await expect(page.getByTestId('kanban-column-SELECTED_FOR_SERVICE').getByTestId(`service-team-card-${m.workerId}`)).toHaveCount(0);
       expect(proibidos(), 'nenhum host de canal real pedido pela página').toEqual([]);
     } finally {
       m.seed.cleanup();

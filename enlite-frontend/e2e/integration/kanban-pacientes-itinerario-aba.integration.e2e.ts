@@ -25,7 +25,7 @@ import { insertTestWorker, cleanupTestWorker } from '../helpers/db-test-helper';
 import { insertWJA, cleanupWJAAndEncuadre } from '../helpers/wja-test-helper';
 import { tokenFor, loginAs } from '../helpers/abac-stack-helper';
 import { runSQL } from '../helpers/patient-detail-a-helper';
-import { openEncuadreTab, selectServiceRow, postServiceTeamAction, readServiceTeamApi } from '../helpers/quadro-c-e2e-helper';
+import { postServiceTeamAction, readServiceTeamApi } from '../helpers/quadro-c-e2e-helper';
 import {
   allocationOptionsApi, allocateApi, countActiveAllocations, cleanupItineraryWrite,
 } from '../helpers/itinerario-escrita-e2e-helper';
@@ -94,11 +94,12 @@ test.describe('itinerario-aba @integration', () => {
       await loginAs(page, STAFF);
       await openItineraryTab(page, seed.patientId);
 
-      // Critério 10: 8 abas (29/09: Encuadre entra entre Vacantes e Itinerario; 02/10, spec 031: Documentos
-      // entra logo depois de Red de Apoyo), o Itinerario é o 7º (índice 6).
+      // Critério 10: 7 abas (02/10, spec 031: Documentos entra logo depois de Red de Apoyo; 05/10, 041 R3: a
+      // aba Encuadre sai), o Itinerario é o 6º (índice 5) e "Encuadre" não existe na tab bar.
       const tabButtons = page.getByTestId('patient-profile-tabs').getByRole('button');
-      await expect(tabButtons).toHaveCount(8);
-      await expect(tabButtons.nth(6)).toHaveText('Itinerario');
+      await expect(tabButtons).toHaveCount(7);
+      await expect(tabButtons.nth(5)).toHaveText('Itinerario');
+      await expect(page.getByTestId('patient-profile-tabs').getByRole('button', { name: 'Encuadre', exact: true })).toHaveCount(0);
 
       const par = page.getByTestId(`itinerario-servico-par-${seed.serviceId}`);
       await expect(par).toContainText(expectedPair(svcBefore.cobertas, svcBefore.contratadas.weekly));
@@ -151,14 +152,6 @@ test.describe('itinerario-aba @integration', () => {
         maxDiffPixelRatio: 0.05,
         mask: [secao.locator('[data-testid^="itinerario-slot-prestador-"]')],
       });
-
-      // Critério 5: o prestador alocado aparece em Em Atendimento no quadro C.
-      // 29/09: o quadro C saiu de "Servicio Contratado" — a aba certa agora é "Encuadre".
-      await openEncuadreTab(page, seed.patientId);
-      await selectServiceRow(page, seed.serviceId);
-      const inService = page.getByTestId('kanban-column-IN_SERVICE').getByTestId(`service-team-card-${w}`);
-      await expect(inService).toHaveCount(1);
-      console.log('[12.5]', await inService.count());
 
       // Critério 8: nenhum Places; nada clínico nos corpos da aba — controles positivos ao lado.
       const tabTexts = await Promise.all(tabBodies);

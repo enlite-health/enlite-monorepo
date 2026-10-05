@@ -3470,7 +3470,6 @@
           "documents": "Documentos",
           "contractedService": "Serviço Contratado",
           "vacancies": "Vagas",
-          "encuadre": "Enquadre",
           "itinerary": "Itinerário",
           "financialData": "Dados Financeiros",
           "matching": "Enquadre",
@@ -3508,19 +3507,6 @@
           "deleteConfirmYes": "Excluir",
           "deleteConfirmBusy": "Excluindo…",
           "deleteFailed": "Não conseguimos excluir o documento. Tente de novo."
-        },
-        "encuadreTab": {
-          "tableSex": "Sexo",
-          "sexOptions": {
-            "MALE": "Homem",
-            "FEMALE": "Mulher",
-            "BOTH": "Indiferente"
-          },
-          "viewServiceAria": "Ver detalhe de {{service}}",
-          "detailsGroupTitle": "Detalhes do Enquadre",
-          "weeklyHours": "Horas semanais",
-          "capacityGroupTitle": "Capacidade",
-          "professionalsCount": "Quantidade de Profissionais"
         },
         "comingSoon": "Em breve",
         "noData": "Sem dados cadastrados",
@@ -3864,40 +3850,10 @@
           "activateRecruitmentAlreadyRecruiting": "Este serviço já tem uma vaga em andamento"
         },
         "serviceTeam": {
-          "title": "Enquadre Terapêutico: {{local}}",
-          "noAddress": "sem endereço",
-          "emptySelection": "Escolha um serviço da tabela para ver o encuadre.",
-          "noVacancy": "Este serviço ainda não tem vaga: não há quem encuadrar.",
-          "loadError": "Não foi possível carregar o encuadre deste serviço.",
-          "refreshError": "A substituição foi salva, mas não foi possível atualizar o quadro. Recarregue a página.",
           "unnamedWorker": "Prestador sem nome · {{shortId}}",
           "columns": {
             "SELECTED_FOR_SERVICE": "Selecionado",
-            "IN_SERVICE": "Em atendimento",
-            "REJECTED_FOR_SERVICE": "Rejeitado"
-          },
-          "columnInfo": {
-            "SELECTED_FOR_SERVICE": "Está na Equipe de Resposta Rápida da vaga e ainda não foi alocado no itinerário.",
-            "IN_SERVICE": "Está alocado no itinerário deste serviço — as horas dele contam como cobertas.",
-            "REJECTED_FOR_SERVICE": "Foi rejeitado para este serviço, com motivo. Pode ser revertido."
-          },
-          "rejectButton": "Rejeitar",
-          "revertButton": "Reverter",
-          "substituteButton": "Substituir num dia",
-          "rejectModal": {
-            "title": "Motivo da rejeição",
-            "confirm": "Rejeitar",
-            "cancel": "Cancelar"
-          },
-          "revertModal": {
-            "title": "Motivo da reversão",
-            "confirm": "Reverter",
-            "cancel": "Cancelar"
-          },
-          "revertOptions": {
-            "REAVALIACAO": "Reavaliação",
-            "REJEITADO_POR_ENGANO": "Rejeitado por engano",
-            "OTHER": "Outro"
+            "IN_SERVICE": "Em atendimento"
           },
           "substitution": {
             "title": "Substituir num dia",
@@ -3915,45 +3871,7 @@
             "reasonPlaceholder": "Motivo da troca",
             "reasonLoadError": "Não foi possível carregar os motivos.",
             "anaCareNotice": "Lembre de lançar esta mudança à mão no Ana Care — não é enviado automaticamente."
-          },
-          "actionErrors": {
-            "SERVICE_TEAM_WORKER_ALLOCATED": "Remova o prestador do itinerário antes de rejeitá-lo.",
-            "SERVICE_TEAM_REASON_REQUIRED": "Escolha um motivo para continuar.",
-            "SERVICE_TEAM_REASON_INVALID": "Esse motivo não é válido.",
-            "SERVICE_TEAM_NOT_SELECTED": "Este prestador não está mais em Selecionados.",
-            "SERVICE_TEAM_NOT_REJECTED": "Este prestador não está em Rejeitados.",
-            "SERVICE_TEAM_ALREADY_REJECTED": "Este prestador já está rejeitado.",
-            "NOT_SELECTED_FOR_SERVICE": "Este prestador não está em Selecionados.",
-            "SUBSTITUTE_IS_TITULAR": "O substituto não pode ser o próprio titular.",
-            "ITINERARY_OVERLAP": "Esse horário se sobrepõe a outra alocação do substituto.",
-            "ABSENCE_ALREADY_EXISTS": "Já existe uma ausência registrada para essa data.",
-            "ABSENCE_DATE_IN_PAST": "Não é possível registrar uma ausência em data passada.",
-            "ABSENCE_WEEKDAY_MISMATCH": "A data escolhida não corresponde ao dia da faixa.",
-            "ABSENCE_OUTSIDE_ALLOCATION": "A data está fora do período da alocação.",
-            "ABSENCE_CANCELLED": "Essa ausência já foi cancelada.",
-            "ALLOCATION_NOT_ACTIVE": "Essa faixa não está mais ativa.",
-            "generic": "Não foi possível concluir a ação. Tente de novo."
           }
-        },
-        "serviceTeamModal": {
-          "close": "Fechar",
-          "providerField": "Prestador de serviço",
-          "contactedLabel": "Contato efetuado",
-          "contactedYes": "Sim",
-          "contactedNo": "Não",
-          "statusLabel": "Status",
-          "eventDateLabel": "Data do evento",
-          "noteLabel": "Anotações",
-          "notePlaceholder": "Anotações…",
-          "save": "Salvar",
-          "saveError": "Não foi possível salvar o contato. Tente de novo.",
-          "historyTitle": "Histórico",
-          "loading": "Carregando…",
-          "loadError": "Não foi possível carregar o histórico de contato.",
-          "historyEmpty": "Sem registros de contato.",
-          "historyDate": "DATA",
-          "historyNote": "ANOTAÇÃO",
-          "historyResponse": "RESPOSTA"
         },
         "itinerary": {
           "assemble": {
