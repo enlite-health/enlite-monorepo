@@ -56,7 +56,7 @@ import {
 
 const STAFF = mockAdminUserFor('cadeia-completa');
 
-interface OptionDto { workerId: string; displayName: string | null }
+interface OptionDto { workerId: string; displayName: string | null; status?: string }
 interface OverlapSideDto { startTime: string; endTime: string }
 interface OverlapBody { code?: string; existing?: OverlapSideDto; requested?: OverlapSideDto; minGapMinutes?: number | null }
 /** O campo da Fase 13 (`substitutionDates`) que o `ServiceTeamDto` da Fase 10 ainda não tipa. */
@@ -365,7 +365,7 @@ test.describe('cadeia-completa @integration', () => {
         return postResp;
       };
 
-      await test.step('passo 6 — itinerário pela tela: montado (via API — a aba da Fase 12 não marca montado), as opções são exatamente Selecionado (C), alocar WA; em C ele vai a Em Atendimento (invariantes 2 e 5)', async () => {
+      await test.step('passo 6 — itinerário pela tela: montado (via API — a aba da Fase 12 não marca montado), as opções são o pool do step final da vacante (Resposta Rápida + Selecionados), alocar WA; em C ele vai a Em Atendimento (invariantes 2 e 5)', async () => {
         await openBoardAtX('kanban-antes-da-alocacao');
         par0 = await readSubcardPair(page, X.service1Id);
         par0s2 = await readSubcardPair(page, X.service2Id);
@@ -376,11 +376,12 @@ test.describe('cadeia-completa @integration', () => {
         const assembled = await assembleApi(request, token, X.patientId);
         expect(assembled.status, `assemble ${assembled.status}`).toBeLessThan(300);
 
-        // Invariante 5: só quem foi candidato ERR (e não rejeitado em C) aparece — WB, WC e M ficam fora.
+        // Invariante 5 (041 R1): o pool é Selecionados ∪ Resposta Rápida da vaga viva, menos rejeitados — WB (SELECTED) entra; WC e M ficam fora.
         const opts = await allocationOptionsApi(request, token, X.patientId, X.service1Id);
         expect(opts.status).toBe(200);
         const options = (opts.body.data as { options: OptionDto[] } | undefined)?.options ?? [];
-        expect(options.map((o) => o.workerId).sort()).toEqual([wa, ws].sort());
+        expect(options.map((o) => o.workerId).sort()).toEqual([wa, wb, ws].sort());
+        expect(options.find((o) => o.workerId === wb)?.status).toBe('SELECTED');
         const waLabel = options.find((o) => o.workerId === wa)?.displayName;
         if (!waLabel) throw new Error('passo 6: WA sem displayName nas opções');
         const slot1 = itin0.services.find((s) => s.contractedServiceId === X.service1Id)?.slots.find((s) => s.startTime.startsWith('08:00'));
@@ -536,7 +537,7 @@ test.describe('cadeia-completa @integration', () => {
     }
   });
 
-  test('cadeia-completa-silencio — selecionado não é alocado', async ({ page, request }) => {
+  test('cadeia-completa-silencio — selecionado entra nas opções do pool do step final, sem mover nada', async ({ page, request }) => {
     const token = tokenFor(STAFF);
     const pre = countPatients();
     const tally = collectRequests(page);
@@ -617,7 +618,8 @@ test.describe('cadeia-completa @integration', () => {
         const opts = await allocationOptionsApi(request, token, z.patientId, z.serviceId);
         expect(opts.status).toBe(200);
         const optionIds = ((opts.body.data as { options: OptionDto[] } | undefined)?.options ?? []).map((o) => o.workerId);
-        expect(optionIds).not.toContain(wz);
+        expect(optionIds).toContain(wz);
+        expect(((opts.body.data as { options: OptionDto[] } | undefined)?.options ?? []).find((o) => o.workerId === wz)?.status).toBe('SELECTED');
 
         const net = tally();
         const outWz = countOutboundSince(wz, t0);

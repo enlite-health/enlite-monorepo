@@ -31,7 +31,7 @@ import {
 } from '../helpers/itinerario-escrita-e2e-helper';
 import { openItineraryTab, slotAllocationsInDom, countSlotAllocationsInDom } from '../helpers/itinerario-aba-e2e-helper';
 
-interface OptionDto { workerId: string; displayName: string | null }
+interface OptionDto { workerId: string; displayName: string | null; status?: string }
 interface OptionsData { options: OptionDto[] }
 interface OverlapSideDto { serviceId: string; weekday: number; startTime: string; endTime: string }
 interface OverlapBody {
@@ -223,7 +223,7 @@ test.describe('itinerario-aba @integration', () => {
     }
   });
 
-  test('itinerario-opcoes-sao-selecionado-c', async ({ page, request }) => {
+  test('itinerario-opcoes-sao-o-pool-do-step-final-da-vacante', async ({ page, request }) => {
     const seed = await seedLaunchablePatient(request, { status: 'ADMISSION', lat: -34.6, lng: -58.4 });
     const token = tokenFor(ITINERARIO_STAFF);
     const v = await activateRecruitmentViaApi(request, seed.patientId, seed.serviceId);
@@ -248,8 +248,10 @@ test.describe('itinerario-aba @integration', () => {
       expect(opts.status).toBe(200);
       const options = (opts.body.data as OptionsData | undefined)?.options ?? [];
       const n = options.length;
-      expect(n).toBe(1);
-      expect(options.map((o) => o.workerId)).toEqual([w1]);
+      expect(n).toBe(2);
+      // 041 R1: Resposta Rápida (w1) antes de Selecionado (w2); o rejeitado (w3) fica fora.
+      expect(options.map((o) => o.workerId)).toEqual([w1, w2]);
+      expect(options.map((o) => o.status)).toEqual(['QUICK_RESPONSE', 'SELECTED']);
 
       // Rótulos lidos da API (quadro C) e, para W2 — que o quadro C não lista —, do nome sintético no
       // banco (passthrough base64 do KMS de teste); nunca colados no log, só contagens.
@@ -277,7 +279,7 @@ test.describe('itinerario-aba @integration', () => {
       await expect(modal.getByRole('option', { name: w1Label })).toHaveCount(1);
       const w2Listed = modal.getByRole('option', { name: new RegExp(w2First) });
       const w3Listed = modal.getByRole('option', { name: w3Label });
-      await expect(w2Listed).toHaveCount(0);
+      await expect(w2Listed).toHaveCount(1);
       await expect(w3Listed).toHaveCount(0);
       console.log('[12.3]', n, (await listed.count()) - 1, await w2Listed.count(), await w3Listed.count(), reject.status);
     } finally {

@@ -36,7 +36,7 @@ import {
   insertServiceNoAddressSql, extractUuid,
 } from '../helpers/itinerario-escrita-e2e-helper';
 
-interface AllocationOptionRow { workerId: string }
+interface AllocationOptionRow { workerId: string; status?: string }
 interface AllocationOptionsData { options: AllocationOptionRow[] }
 interface AllocateData { allocationId: string }
 
@@ -54,13 +54,15 @@ test.describe('itinerario-escrita @integration', () => {
     if (!slotId) throw new Error('itinerario-gate-recusa: slot do serviço não encontrado no itinerário');
 
     const w1 = insertTestWorker({ occupation: 'AT' }); // sem candidatura
-    const w2 = insertTestWorker({ occupation: 'AT' }); // WJA SELECTED (quadro B — não entra no C)
+    const w2 = insertTestWorker({ occupation: 'AT' }); // WJA SELECTED (step final da vacante — entra no pool e aloca, 041 R1)
+    const w6 = insertTestWorker({ occupation: 'AT' }); // WJA CONFIRMED (coluna ANTERIOR — fora do pool)
     const w3 = insertTestWorker({ occupation: 'AT' }); // QUICK_RESPONSE_TEAM + Rejeitado (C)
     const w4 = insertTestWorker({ occupation: 'AT' }); // QUICK_RESPONSE_TEAM + já alocado no slot
     const w5 = insertTestWorker({ occupation: 'AT' }); // QUICK_RESPONSE_TEAM — deve poder alocar
 
     try {
       insertWJA({ workerId: w2, jobPostingId: v, funnelStage: 'SELECTED' });
+      insertWJA({ workerId: w6, jobPostingId: v, funnelStage: 'CONFIRMED' });
       insertWJA({ workerId: w3, jobPostingId: v, funnelStage: 'QUICK_RESPONSE_TEAM' });
       const rejectW3 = await postServiceTeamAction(request, seed.patientId, seed.serviceId, 'reject', {
         workerId: w3, reasonCategory: 'INDISPONIBILIDADE_DE_HORARIO',
@@ -72,13 +74,13 @@ test.describe('itinerario-escrita @integration', () => {
       insertWJA({ workerId: w5, jobPostingId: v, funnelStage: 'QUICK_RESPONSE_TEAM' });
 
       const r1 = await allocateApi(request, token, seed.patientId, seed.serviceId, slotId, { workerId: w1 });
-      const r2 = await allocateApi(request, token, seed.patientId, seed.serviceId, slotId, { workerId: w2 });
       const r3 = await allocateApi(request, token, seed.patientId, seed.serviceId, slotId, { workerId: w3 });
       const r4 = await allocateApi(request, token, seed.patientId, seed.serviceId, slotId, { workerId: w4 });
+      const r6 = await allocateApi(request, token, seed.patientId, seed.serviceId, slotId, { workerId: w6 });
       expect(r1.status).toBe(422);
       expect(r1.body.code).toBe('NOT_SELECTED_FOR_SERVICE');
-      expect(r2.status).toBe(422);
-      expect(r2.body.code).toBe('NOT_SELECTED_FOR_SERVICE');
+      expect(r6.status).toBe(422);
+      expect(r6.body.code).toBe('NOT_SELECTED_FOR_SERVICE');
       expect(r3.status).toBe(422);
       expect(r3.body.code).toBe('NOT_SELECTED_FOR_SERVICE');
       expect(r4.status).toBe(422);
@@ -86,18 +88,21 @@ test.describe('itinerario-escrita @integration', () => {
 
       const options = await allocationOptionsApi(request, token, seed.patientId, seed.serviceId);
       expect(options.status).toBe(200);
-      const optionIds = ((options.body.data as AllocationOptionsData | undefined)?.options ?? []).map(
-        (o) => o.workerId,
-      );
+      const optionRows = (options.body.data as AllocationOptionsData | undefined)?.options ?? [];
+      const optionIds = optionRows.map((o) => o.workerId);
       console.log(
-        '[11.5]', r1.status, r1.body.code, r2.status, r2.body.code, r3.status, r3.body.code,
+        '[11.5]', r1.status, r1.body.code, r6.status, r6.body.code, r3.status, r3.body.code,
         r4.status, r4.body.code, optionIds,
       );
       expect(optionIds).not.toContain(w1);
-      expect(optionIds).not.toContain(w2);
+      expect(optionIds).not.toContain(w6);
       expect(optionIds).not.toContain(w3);
-      expect(optionIds).not.toContain(w4);
+      // 041 R1: quem só está em Selecionados entra (SELECTED); quem já está alocado continua na lista (IN_SERVICE).
+      expect(optionRows.find((o) => o.workerId === w2)?.status).toBe('SELECTED');
+      expect(optionRows.find((o) => o.workerId === w4)?.status).toBe('IN_SERVICE');
       expect(optionIds).toContain(w5);
+      const r2 = await allocateApi(request, token, seed.patientId, seed.serviceId, slotId, { workerId: w2 });
+      expect(r2.status).toBe(201);
 
       const r5 = await allocateApi(request, token, seed.patientId, seed.serviceId, slotId, { workerId: w5 });
       expect(r5.status).toBe(201);
@@ -113,11 +118,13 @@ test.describe('itinerario-escrita @integration', () => {
       cleanupWJAAndEncuadre(w3, v);
       cleanupWJAAndEncuadre(w4, v);
       cleanupWJAAndEncuadre(w5, v);
+      cleanupWJAAndEncuadre(w6, v);
       cleanupTestWorker(w1);
       cleanupTestWorker(w2);
       cleanupTestWorker(w3);
       cleanupTestWorker(w4);
       cleanupTestWorker(w5);
+      cleanupTestWorker(w6);
       seed.cleanup();
     }
   });
