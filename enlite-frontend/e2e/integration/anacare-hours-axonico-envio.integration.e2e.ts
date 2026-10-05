@@ -268,7 +268,12 @@ function criarNavegadorDeSemana(page: Page): { irPara: (dateIso: string) => Prom
       atual = alvo;
     },
     resetarAposReloadOuMount(): void {
-      atual = defaultStart;
+      // Spec 037: navegar para outro mês grava `?month=` na URL (replace) e o reload REABRE nesse mês
+      // (hoje, se o mês contém hoje; senão a 1ª semana dele) — não na semana padrão do mês corrente.
+      const mes = new URL(page.url()).searchParams.get('month') ?? MONTH;
+      const now = new Date();
+      const hoje = `${now.getFullYear()}-${pad2(now.getMonth() + 1)}-${pad2(now.getDate())}`;
+      atual = startOfWeekMonday(mes === hoje.slice(0, 7) ? hoje : `${mes}-01`);
     },
   };
 }
