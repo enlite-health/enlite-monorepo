@@ -188,12 +188,12 @@ test.describe('Aba Itinerario — full stack, sem mock @integration', () => {
     const dotOf = (workerId: string) => modal.getByTestId(`itinerario-editar-status-${workerId}`).getByTestId('allocation-option-dot');
     // Verde no alocado (em atendimento), azul em Resposta Rápida, nenhuma bolinha em quem só está Selecionado.
     await expect(dotOf(seed.titularWorkerId)).toHaveClass(/bg-green-600/);
-    await expect(dotOf(seed.freeSubstituteWorkerId)).toHaveClass(/bg-blue-600/);
+    await expect(dotOf(seed.quickOnlyWorkerId)).toHaveClass(/bg-blue-600/);
     await expect(modal.getByTestId(`itinerario-editar-status-${seed.selectedOnlyWorkerId}`)).toContainText('Seleccionado');
     await expect(dotOf(seed.selectedOnlyWorkerId)).toHaveCount(0);
     // Prova de que os dois estados com bolinha são DISTINTOS: a cor computada do verde difere da do azul.
     const rgb = (workerId: string) => dotOf(workerId).evaluate((el) => getComputedStyle(el).backgroundColor);
-    expect(await rgb(seed.titularWorkerId)).not.toBe(await rgb(seed.freeSubstituteWorkerId));
+    expect(await rgb(seed.titularWorkerId)).not.toBe(await rgb(seed.quickOnlyWorkerId));
 
     // Ordem vinda da API: em atendimento → resposta rápida → selecionado.
     const ids = await modal
@@ -202,8 +202,8 @@ test.describe('Aba Itinerario — full stack, sem mock @integration', () => {
       .evaluateAll((els) => els.map((e) => e.getAttribute('data-testid') ?? ''));
     const pos = (workerId: string) => ids.indexOf(`itinerario-editar-card-${workerId}`);
     expect(pos(seed.titularWorkerId)).toBe(0);
-    expect(pos(seed.titularWorkerId)).toBeLessThan(pos(seed.freeSubstituteWorkerId));
-    expect(pos(seed.freeSubstituteWorkerId)).toBeLessThan(pos(seed.selectedOnlyWorkerId));
+    expect(pos(seed.titularWorkerId)).toBeLessThan(pos(seed.quickOnlyWorkerId));
+    expect(pos(seed.quickOnlyWorkerId)).toBeLessThan(pos(seed.selectedOnlyWorkerId));
     expect(pos(seed.selectedOnlyWorkerId)).toBe(ids.length - 1);
 
     // A mesma marca aparece no dropdown de escolha do prestador (digitando, como pessoa).

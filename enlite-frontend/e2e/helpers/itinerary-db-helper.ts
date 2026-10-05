@@ -38,8 +38,10 @@ export interface ItinerarySeed {
   freeSubstituteWorkerId: string;
   /** 041 R2 — só no step final "Selecionados" da vaga (nunca em Resposta Rápida nem alocado): sem bolinha. */
   selectedOnlyWorkerId: string;
+  /** 041 R2 — só em Resposta Rápida e NUNCA usado por outro teste (o `free` vira IN_SERVICE ao substituir um dia). */
+  quickOnlyWorkerId: string;
   /** Nome de tela de cada worker sintético (`<Nome> <Sobrenome>`). */
-  names: { titular: string; substitute: string; permanent: string; free: string; selected: string };
+  names: { titular: string; substitute: string; permanent: string; free: string; selected: string; quick: string };
   /** Próxima segunda-feira (weekday=1) — calculada NO BANCO, nunca no runner Node. */
   nextMonday: string;
 }
@@ -106,6 +108,7 @@ export function seedItinerary(): ItinerarySeed {
   const substituteWorkerId = mkWorker('substituto', jobId, 'Ana', 'Joulie', 'AT');
   const permanentWorkerId = mkWorker('permanente', jobId, 'Marcel', 'Araujo', 'AT');
   const freeSubstituteWorkerId = mkWorker('livre', jobId, 'Paula', 'Antonia', 'CAREGIVER');
+  const quickOnlyWorkerId = mkWorker('so-resposta-rapida', jobId, 'Quiteria', 'Respuesta', 'CAREGIVER');
   const selectedOnlyWorkerId = mkWorker('so-selecionado', jobId, 'Sofia', 'Selecionada', 'CAREGIVER', 'SELECTED');
 
   const nextMonday = firstLine(
@@ -120,7 +123,7 @@ export function seedItinerary(): ItinerarySeed {
     `),
   );
 
-  return { patientId, serviceId, jobId, slotId, addressLabel: addressFormatted, titularWorkerId, substituteWorkerId, permanentWorkerId, freeSubstituteWorkerId, selectedOnlyWorkerId, nextMonday, names: { titular: 'Alberto Marquez', substitute: 'Ana Joulie', permanent: 'Marcel Araujo', free: 'Paula Antonia', selected: 'Sofia Selecionada' } };
+  return { patientId, serviceId, jobId, slotId, addressLabel: addressFormatted, titularWorkerId, substituteWorkerId, permanentWorkerId, freeSubstituteWorkerId, selectedOnlyWorkerId, quickOnlyWorkerId, nextMonday, names: { titular: 'Alberto Marquez', substitute: 'Ana Joulie', permanent: 'Marcel Araujo', free: 'Paula Antonia', selected: 'Sofia Selecionada', quick: 'Quiteria Respuesta' } };
 }
 
 /** Aloca o titular no slot direto por SQL (equivalente ao POST .../allocations, mais rápido no seed). */
