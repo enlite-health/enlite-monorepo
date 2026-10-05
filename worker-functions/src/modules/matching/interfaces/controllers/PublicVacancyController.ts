@@ -2,6 +2,11 @@ import { Request, Response } from 'express';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { normalizeSchedule } from '../../infrastructure/scheduleNormalizer';
 import { logger } from '@shared/logging';
+import { PatientDiagnosisService } from '@modules/diagnosis/application/PatientDiagnosisService';
+import { PostgresPatientDiagnosisRepository } from '@modules/diagnosis/infrastructure/PostgresPatientDiagnosisRepository';
+import { DiagnosisSource } from '@modules/diagnosis/domain/DiagnosisSource';
+import { createTerminologyPort } from '@modules/terminology/infrastructure/TerminologyPortFactory';
+import { loadPublicVacancyDiagnosisLabel } from '../../application/publicVacancyDiagnosisLabel';
 
 /**
  * PublicVacancyController
@@ -40,6 +45,12 @@ import { logger } from '@shared/logging';
  * o campo esvazia a landing page, então é decisão de produto e está escalada. Enquanto ela não
  * vier, a guarda de fronteira desta rota cobre o que foi decidido, e a lacuna está NOMEADA aqui
  * em vez de silenciosa.
+ *
+ * ── 05/10/2026 (spec 042, D473): volta o NOME de catálogo, e só ele ────────
+ * A resposta ganha `diagnosisLabel: string | null` — o título do diagnóstico CID-11 principal
+ * (catálogo fechado, em espanhol), sem código, sem URI, sem lista. Vem de uma SEGUNDA chamada ao
+ * `PatientDiagnosisService` (nunca JOIN), com bulkhead: se falhar, `null` e a vaga segue 200.
+ * O texto livre `patients.diagnosis` continua proibido e NUNCA é o fallback.
  */
 
 /**
@@ -75,6 +86,23 @@ const STATUS_DETALHE_PUBLICO = [...STATUS_PUBLICAVEL, 'DE_BAJA'];
 
 export class PublicVacancyController {
   private readonly db = DatabaseConnection.getInstance().getPool();
+  private readonly diagnosisServiceOverride: PatientDiagnosisService | undefined;
+  private diagnosisServiceMemo: PatientDiagnosisService | undefined;
+
+  constructor(diagnosisService?: PatientDiagnosisService) {
+    this.diagnosisServiceOverride = diagnosisService;
+  }
+
+  /** Lazy: `createTerminologyPort` lança síncrono com `TERMINOLOGY_ADAPTER` inválido. O escopo de
+   *  origem (PANEL) é irrelevante para `listForPatient` (leitura global por desenho). */
+  private getDiagnosisService(): PatientDiagnosisService {
+    if (this.diagnosisServiceOverride) return this.diagnosisServiceOverride;
+    this.diagnosisServiceMemo ??= new PatientDiagnosisService(
+      createTerminologyPort(process.env),
+      new PostgresPatientDiagnosisRepository(DiagnosisSource.PANEL),
+    );
+    return this.diagnosisServiceMemo;
+  }
 
   async getById(req: Request, res: Response): Promise<void> {
     try {
@@ -122,6 +150,8 @@ export class PublicVacancyController {
           jp.vacancy_number,
           jp.title,
           jp.status,
+          -- patient_id so serve para a 2a chamada (rotulo); NUNCA entra na resposta.
+          jp.patient_id,
           -- ATENCAO: as duas colunas clinicas do paciente NAO entram aqui -- as duas revelam
           -- estado de saude e esta rota e aberta. Os nomes delas estao no cabecalho do arquivo,
           -- e NAO se repetem nesta string de proposito: a guarda do teste procura o nome da
@@ -164,6 +194,13 @@ export class PublicVacancyController {
 
       const row = result.rows[0];
 
+      // Spec 042: 2ª chamada (nunca JOIN), com bulkhead — falha vira `null`, a vaga segue 200.
+      const diagnosisLabel = await loadPublicVacancyDiagnosisLabel(
+        () => this.getDiagnosisService(),
+        row.patient_id,
+        row.id,
+      );
+
       // ── Lista de PERMISSÃO, não de bloqueio ────────────────────────────────
       // Antes: `res.json({ data: row })` devolvia a linha CRUA do banco. Com isso, o que a rota
       // expõe era decidido pelo SELECT e por mais nada — bastava alguém acrescentar uma coluna
@@ -198,6 +235,8 @@ export class PublicVacancyController {
         patient_zone:           row.patient_zone,
         country:                row.country,
         created_at:             row.created_at,
+        // Único campo clínico permitido: título de catálogo CID-11 (es) do diagnóstico principal.
+        diagnosisLabel,
       };
 
       res.status(200).json({ success: true, data });
