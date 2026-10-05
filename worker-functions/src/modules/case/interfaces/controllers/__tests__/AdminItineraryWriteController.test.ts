@@ -13,7 +13,7 @@ import { reportError } from '@shared/logging';
 import { emitirTrilhaDeContato } from '@shared/audit/contactAccessFromRequest';
 import { AuthMiddleware } from '@modules/identity';
 import { AdminItineraryWriteController } from '../AdminItineraryWriteController';
-import { GetServiceTeamUseCase, ServiceTeamNotFoundError, type GetServiceTeamResult } from '../../../application/GetServiceTeamUseCase';
+import { GetServiceTeamUseCase, ServiceTeamNotFoundError, type GetServiceTeamResult, type GetAllocationOptionsResult } from '../../../application/GetServiceTeamUseCase';
 import {
   ItinerarySlotWriteUseCase,
   ItineraryServiceNotFoundError,
@@ -68,12 +68,22 @@ function team(overrides: Partial<GetServiceTeamResult> = {}): GetServiceTeamResu
   };
 }
 
+const OPTIONS_RESULT: GetAllocationOptionsResult = {
+  serviceId: SERVICE_ID,
+  vacancyId: 'vac-1',
+  options: [
+    { workerId: WORKER_ID, displayName: 'Maria Perez', vacancyId: 'vac-1', status: 'QUICK_RESPONSE', occupation: null },
+    { workerId: 'w-selecionado', displayName: 'Zoe Gomez', vacancyId: 'vac-1', status: 'SELECTED', occupation: null },
+    { workerId: 'w-redigido', displayName: null, vacancyId: 'vac-1', status: 'SELECTED', occupation: null },
+  ],
+};
+
 function jsonOf(res: Response): jest.Mock {
   return (res as unknown as { json: jest.Mock }).json;
 }
 
 describe('AdminItineraryWriteController', () => {
-  const teamUseCase = { execute: jest.fn() };
+  const teamUseCase = { execute: jest.fn(), allocationOptions: jest.fn() };
   const slotUseCase = { create: jest.fn(), update: jest.fn(), end: jest.fn() };
   const allocationUseCase = { allocate: jest.fn(), end: jest.fn() };
   const assemblyUseCase = { execute: jest.fn() };
@@ -91,21 +101,21 @@ describe('AdminItineraryWriteController', () => {
     const [req, res] = reqRes({ id: 'not-a-uuid', sid: SERVICE_ID });
     await ctrl.allocationOptions(req, res);
     expect(res.status).toHaveBeenCalledWith(400);
-    expect(teamUseCase.execute).not.toHaveBeenCalled();
+    expect(teamUseCase.allocationOptions).not.toHaveBeenCalled();
   });
 
-  it('allocationOptions: feliz → 200, data só com selected; trilha só com displayName não nulo de selected', async () => {
-    teamUseCase.execute.mockResolvedValueOnce(team());
+  it('allocationOptions: feliz → 200, data com o pool do step final da vacante (041 R1); trilha só com displayName não nulo', async () => {
+    teamUseCase.allocationOptions.mockResolvedValueOnce(OPTIONS_RESULT);
     const [req, res] = reqRes({ id: PATIENT_ID, sid: SERVICE_ID });
     await ctrl.allocationOptions(req, res);
     expect(res.status).toHaveBeenCalledWith(200);
-    expect(jsonOf(res)).toHaveBeenCalledWith({ success: true, data: { serviceId: SERVICE_ID, vacancyId: 'vac-1', options: team().selected } });
-    expect(teamUseCase.execute).toHaveBeenCalledWith({ patientId: PATIENT_ID, serviceId: SERVICE_ID, cells: null });
-    expect(emitirTrilhaDeContato).toHaveBeenCalledWith(req, [WORKER_ID]);
+    expect(jsonOf(res)).toHaveBeenCalledWith({ success: true, data: { serviceId: SERVICE_ID, vacancyId: 'vac-1', options: OPTIONS_RESULT.options } });
+    expect(teamUseCase.allocationOptions).toHaveBeenCalledWith({ patientId: PATIENT_ID, serviceId: SERVICE_ID, cells: null });
+    expect(emitirTrilhaDeContato).toHaveBeenCalledWith(req, [WORKER_ID, 'w-selecionado']);
   });
 
   it('allocationOptions: ServiceTeamNotFoundError → 404 NOT_FOUND (reuso do quadro C — fora da lista literal da DX, mesma família)', async () => {
-    teamUseCase.execute.mockRejectedValueOnce(new ServiceTeamNotFoundError(PATIENT_ID, SERVICE_ID));
+    teamUseCase.allocationOptions.mockRejectedValueOnce(new ServiceTeamNotFoundError(PATIENT_ID, SERVICE_ID));
     const [req, res] = reqRes({ id: PATIENT_ID, sid: SERVICE_ID });
     await ctrl.allocationOptions(req, res);
     expect(res.status).toHaveBeenCalledWith(404);

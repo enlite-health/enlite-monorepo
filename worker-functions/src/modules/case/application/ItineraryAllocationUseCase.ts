@@ -5,8 +5,8 @@
  *
  * Molde de injeção `ServiceTeamMarkUseCase.ts:115-123` (leitor, escritor, `runInTransaction`,
  * `now`): `reader` é o MESMO `ServiceTeamReader` da Fase 10 (`readWith`, no client da transação —
- * nenhuma 2ª leitura do time); `writer` é o `ItineraryAllocationWriter` (P12). `team` sai de
- * `deriveServiceTeamFromRows` (P8/P9) — nenhuma 2ª definição de Selecionado.
+ * nenhuma 2ª leitura do time); `writer` é o `ItineraryAllocationWriter` (P12). o gate sai de
+ * `deriveAllocationPoolFromRows` (041 R1) — a MESMA fonte das opções do itinerário.
  *
  * `validFrom`/`hoje` sempre por `operationDateOf(row.country, now)` — nunca `Date`/`now()` do
  * processo fora do parâmetro injetável (DX-11.8). O estado do paciente só muda pela derivação
@@ -30,13 +30,13 @@ import {
   type InsertAllocationInput,
   type InsertedAllocation,
 } from '../infrastructure/ItineraryAllocationWriter';
-import { deriveServiceTeamFromRows } from './serviceTeamPresentation';
+import { deriveAllocationPoolFromRows } from './serviceTeamPresentation';
 import { canAllocate } from '../domain/itineraryAllocationGate';
 import { fromPgError, type PgOverlapLikeError } from '../domain/itineraryOverlap';
 import { addDaysToDateString } from '../domain/itineraryEvents';
 import { ServiceWithoutAddressError, SlotInactiveError, SlotNotFoundError } from './ItinerarySlotWriteUseCase';
 
-/** Nem Selecionado (C), nem Em Atendimento+candidato no mesmo slot (o gate `canAllocate`, DX-11.6). */
+/** Nem Selecionado (C), nem Em Atendimento+candidato no mesmo slot (o gate `canAllocate` sobre o pool do step final da vacante, 041 R1). */
 export class NotSelectedForServiceError extends Error {
   constructor(
     readonly patientId: string,
@@ -191,9 +191,8 @@ export class ItineraryAllocationUseCase {
       const row = await this.reader.readWith(client, patientId, serviceId);
       if (row === null) throw new SlotNotFoundError(serviceId, slotId);
 
-      const team = deriveServiceTeamFromRows(row, now);
-      const candidacyIds = new Set(row.candidacies.map((c) => c.workerId));
-      if (!canAllocate(team, candidacyIds, workerId)) throw new NotSelectedForServiceError(patientId, serviceId, workerId);
+      const pool = deriveAllocationPoolFromRows(row, now);
+      if (!canAllocate(pool, workerId)) throw new NotSelectedForServiceError(patientId, serviceId, workerId);
 
       if (row.liveVacancyId === null) throw new NotSelectedForServiceError(patientId, serviceId, workerId);
       const applicationId = await this.writer.findApplicationId(client, workerId, row.liveVacancyId);
@@ -272,9 +271,8 @@ export class ItineraryAllocationUseCase {
       const today = operationDateOf(row.country, now);
       if (fromDate < today) throw new ReplacementDateInPastError(allocationId, fromDate);
 
-      const team = deriveServiceTeamFromRows(row, now);
-      const candidacyIds = new Set(row.candidacies.map((c) => c.workerId));
-      if (!canAllocate(team, candidacyIds, newWorkerId)) throw new NotSelectedForServiceError(patientId, serviceId, newWorkerId);
+      const pool = deriveAllocationPoolFromRows(row, now);
+      if (!canAllocate(pool, newWorkerId)) throw new NotSelectedForServiceError(patientId, serviceId, newWorkerId);
       if (row.liveVacancyId === null) throw new NotSelectedForServiceError(patientId, serviceId, newWorkerId);
       const applicationId = await this.writer.findApplicationId(client, newWorkerId, row.liveVacancyId);
       if (applicationId === null) throw new NotSelectedForServiceError(patientId, serviceId, newWorkerId);

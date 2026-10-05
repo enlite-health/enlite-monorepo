@@ -48,12 +48,12 @@ describe('ServiceTeamReader', () => {
     expect(rawPoolQuery).not.toHaveBeenCalled();
   });
 
-  it('parâmetros [patientId, serviceId, \'QUICK_RESPONSE_TEAM\']', async () => {
+  it('parâmetros [patientId, serviceId, [SELECTED, QUICK_RESPONSE_TEAM]] (041 R1)', async () => {
     queryImpl = async () => ({ rows: [], rowCount: 0 });
 
     await reader.read('p-1', 's-1');
 
-    expect(svcCalls()[0].params).toEqual(['p-1', 's-1', 'QUICK_RESPONSE_TEAM']);
+    expect(svcCalls()[0].params).toEqual(['p-1', 's-1', ['SELECTED', 'QUICK_RESPONSE_TEAM']]);
   });
 
   it('a SQL contém a vaga viva, reverted_at IS NULL, to_char da data, o escopo do paciente e a exclusão de desativados; nada de capacidade/alocação antiga/encuadres/telefone/clínico/endereço', async () => {

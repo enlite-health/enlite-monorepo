@@ -204,3 +204,40 @@ describe('GetServiceTeamUseCase', () => {
     expect(reader.read).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('GetServiceTeamUseCase.allocationOptions — 041 R1', () => {
+  it('pool do step final: IN_SERVICE → QUICK_RESPONSE → SELECTED, alfabético dentro do grupo; rejeitado fora', async () => {
+    const cand = (workerId: string, stage: string, first: string) => ({
+      workerId, vacancyId: 'v-live', stage, firstNameEncrypted: `enc:${first}`, lastNameEncrypted: null,
+    });
+    const row: ServiceTeamRows = {
+      serviceId: 's-1',
+      country: 'AR',
+      liveVacancyId: 'v-live',
+      candidacies: [
+        cand('w-sel-b', 'SELECTED', 'Beto'),
+        cand('w-sel-a', 'SELECTED', 'Ana'),
+        cand('w-qrt', 'QUICK_RESPONSE_TEAM', 'Carla'),
+        cand('w-atend', 'QUICK_RESPONSE_TEAM', 'Zeca'),
+        cand('w-rej', 'SELECTED', 'Rita'),
+      ],
+      assignments: [
+        { workerId: 'w-atend', serviceId: 's-1', vacancyId: 'v-live', validFrom: '2026-09-01', validTo: null, status: 'ACTIVE', firstNameEncrypted: 'enc:Zeca', lastNameEncrypted: null },
+      ],
+      marks: [{ workerId: 'w-rej', serviceId: 's-1', rejectReasonCategory: 'OTHER', firstNameEncrypted: 'enc:Rita', lastNameEncrypted: null }],
+    };
+    const { kms } = kmsSpy();
+    const useCase = new GetServiceTeamUseCase(readerStub(row), kms);
+
+    const result = await useCase.allocationOptions({
+      patientId: 'p-1', serviceId: 's-1', cells: [CELL_WORKER_CONTACT_READ], now: NOW,
+    });
+
+    expect(result.options.map((o) => [o.workerId, o.status, o.displayName])).toEqual([
+      ['w-atend', 'IN_SERVICE', 'Zeca'],
+      ['w-qrt', 'QUICK_RESPONSE', 'Carla'],
+      ['w-sel-a', 'SELECTED', 'Ana'],
+      ['w-sel-b', 'SELECTED', 'Beto'],
+    ]);
+  });
+});

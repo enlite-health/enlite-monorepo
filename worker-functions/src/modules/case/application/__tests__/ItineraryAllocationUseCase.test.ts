@@ -133,6 +133,35 @@ describe('ItineraryAllocationUseCase.allocate', () => {
     expect(writer.insertAllocation).not.toHaveBeenCalled();
   });
 
+  it('041 R1: prestador só em "Selecionados" (SELECTED) → alocação ACEITA; rejeitado → NotSelectedForServiceError', async () => {
+    const onlySelected: ServiceTeamRows = {
+      ...SELECTED_ROW,
+      candidacies: [{ workerId: 'w-1', vacancyId: 'v-live', stage: 'SELECTED', firstNameEncrypted: null, lastNameEncrypted: null }],
+    };
+    const rejected: ServiceTeamRows = {
+      ...onlySelected,
+      marks: [{ workerId: 'w-1', serviceId: 's-1', rejectReasonCategory: 'OTHER', firstNameEncrypted: null, lastNameEncrypted: null }],
+    };
+    const mk = (row: ServiceTeamRows) => {
+      const reader: ItineraryAllocationReaderPort = { readWith: jest.fn().mockResolvedValue(row) };
+      const writer = writerStub({
+        findSlotForAllocation: jest.fn().mockResolvedValue(ACTIVE_SLOT),
+        findApplicationId: jest.fn().mockResolvedValue('app-1'),
+        insertAllocation: jest.fn().mockResolvedValue({ id: 'a-1', validFrom: '2026-09-28' }),
+      });
+      return { writer, useCase: new ItineraryAllocationUseCase(reader, writer, runInTransactionStub(), semDerivacao) };
+    };
+    const input = { patientId: 'p-1', serviceId: 's-1', slotId: 'slot-1', workerId: 'w-1', actorUid: 'u-1' };
+
+    const ok = mk(onlySelected);
+    await ok.useCase.allocate(input);
+    expect(ok.writer.insertAllocation).toHaveBeenCalledTimes(1);
+
+    const no = mk(rejected);
+    await expect(no.useCase.allocate(input)).rejects.toThrow(NotSelectedForServiceError);
+    expect(no.writer.insertAllocation).not.toHaveBeenCalled();
+  });
+
   it('elegível mas sem candidatura (findApplicationId null) → NotSelectedForServiceError', async () => {
     const reader: ItineraryAllocationReaderPort = { readWith: jest.fn().mockResolvedValue(SELECTED_ROW) };
     const writer = writerStub({

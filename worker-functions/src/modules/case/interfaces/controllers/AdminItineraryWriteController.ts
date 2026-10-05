@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { reportError } from '@shared/logging';
 import { AuthMiddleware } from '@modules/identity';
 import { emitirTrilhaDeContato } from '@shared/audit/contactAccessFromRequest';
-import { GetServiceTeamUseCase, ServiceTeamNotFoundError, type GetServiceTeamResult } from '../../application/GetServiceTeamUseCase';
+import { GetServiceTeamUseCase, ServiceTeamNotFoundError, type GetAllocationOptionsResult } from '../../application/GetServiceTeamUseCase';
 import {
   ItinerarySlotWriteUseCase,
   ItineraryServiceNotFoundError,
@@ -83,9 +83,9 @@ export class AdminItineraryWriteController {
     }
     const { id: patientId, sid: serviceId } = params.data;
     try {
-      const team = await this.teamUseCase.execute({ patientId, serviceId, cells: req.permissionCells ?? null });
-      emitirTrilhaDeContato(req, this.optionsWorkerIds(team));
-      res.status(200).json({ success: true, data: { serviceId: team.serviceId, vacancyId: team.vacancyId, options: team.selected } });
+      const result = await this.teamUseCase.allocationOptions({ patientId, serviceId, cells: req.permissionCells ?? null });
+      emitirTrilhaDeContato(req, this.optionsWorkerIds(result));
+      res.status(200).json({ success: true, data: { serviceId: result.serviceId, vacancyId: result.vacancyId, options: result.options } });
     } catch (err: unknown) {
       this.handleError(err, res, 'allocationOptions', patientId, serviceId);
     }
@@ -273,9 +273,9 @@ export class AdminItineraryWriteController {
     return actorUid;
   }
 
-  /** Só os `workerId` de `selected` (a única lista devolvida por `allocationOptions`) cujo `displayName` saiu NÃO-nulo. */
-  private optionsWorkerIds(team: GetServiceTeamResult): Array<string | null | undefined> {
-    return team.selected.filter((member) => member.displayName !== null).map((member) => member.workerId);
+  /** Só os `workerId` das opções (a lista devolvida por `allocationOptions`) cujo `displayName` saiu NÃO-nulo. */
+  private optionsWorkerIds(result: GetAllocationOptionsResult): Array<string | null | undefined> {
+    return result.options.filter((member) => member.displayName !== null).map((member) => member.workerId);
   }
 
   private handleError(err: unknown, res: Response, method: string, patientId: string, serviceId?: string): void {

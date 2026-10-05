@@ -7,14 +7,14 @@
  * inPatientTransaction`.
  *
  * O gate do substituto é `canAllocate` da Fase 11 (DX-13.6, IMPORTADO — nenhuma 2ª definição de
- * Selecionado): `team.selected` sempre aceita; `team.inService` só quando o mesmo prestador AINDA é
- * candidato da vaga viva (Q-13.3, a 2ª data do mesmo substituto). O próprio titular da alocação é
+ * Selecionado): desde a 041 R1 o gate é o pool do step final da vacante (Selecionados ∪ Equipe de
+ * Resposta Rápida da vaga viva, sem rejeitados; inclui quem já substitui — Q-13.3, a 2ª data). O próprio titular da alocação é
  * recusado pelo BANCO (`piab_substituto_e_o_titular`), nunca checado aqui — 1 lugar só para essa
  * regra.
  *
  * `asOf` é sempre `operationDateOf(row.country, now)` (data LOCAL do país, nunca o relógio do
- * processo) — a mesma fonte de `ItineraryAllocationUseCase`/`GetServiceTeamUseCase`. `team` sai de
- * `deriveServiceTeamFromRows` (nunca `deriveServiceTeam` direto — 2ª definição proibida).
+ * processo) — a mesma fonte de `ItineraryAllocationUseCase`/`GetServiceTeamUseCase`. o gate sai de
+ * `deriveAllocationPoolFromRows` (041 R1; nunca `deriveServiceTeam` direto — 2ª definição proibida).
  *
  * Motivo (change itinerario-trocas-motivos-e-figma, Fase 2, D3/D4-C4): `register` exige
  * `reasonCategory` — o `code` de um item ATIVO do catálogo `service_exit_reasons`. Ausente →
@@ -38,7 +38,7 @@ import { ItineraryAllocationWriter, type AllocationRow } from '../infrastructure
 import { ItineraryChangeLogWriter, type InsertItineraryChangeInput } from '../infrastructure/ItineraryChangeLogWriter';
 import { ServiceExitReasonReader, type ServiceExitReasonOption } from '../infrastructure/ServiceExitReasonReader';
 import { ServiceExitReasonRequiredError, ServiceExitReasonInvalidError } from '../domain/serviceExitReason';
-import { deriveServiceTeamFromRows } from './serviceTeamPresentation';
+import { deriveAllocationPoolFromRows } from './serviceTeamPresentation';
 import { canAllocate } from '../domain/itineraryAllocationGate';
 import { fromPgError, type PgOverlapLikeError } from '../domain/itineraryOverlap';
 import { NotSelectedForServiceError, AllocationNotFoundError, AllocationNotActiveError } from './ItineraryAllocationUseCase';
@@ -224,9 +224,8 @@ export class ItineraryAbsenceUseCase {
     substituteWorkerId: string,
     now: Date,
   ): Promise<string> {
-    const team = deriveServiceTeamFromRows(row, now);
-    const candidacyIds = new Set(row.candidacies.map((c) => c.workerId));
-    if (!canAllocate(team, candidacyIds, substituteWorkerId)) {
+    const pool = deriveAllocationPoolFromRows(row, now);
+    if (!canAllocate(pool, substituteWorkerId)) {
       throw new NotSelectedForServiceError(patientId, serviceId, substituteWorkerId);
     }
     if (row.liveVacancyId === null) throw new NotSelectedForServiceError(patientId, serviceId, substituteWorkerId);

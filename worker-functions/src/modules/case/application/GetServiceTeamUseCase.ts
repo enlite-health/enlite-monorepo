@@ -21,7 +21,14 @@
  * `phone: null` e só o `name` projetado é lido de volta.
  */
 import { ServiceTeamReader, type ServiceTeamRows } from '../infrastructure/ServiceTeamReader';
-import { deriveServiceTeamFromRows, projectServiceTeamDisplayNames, buildServiceTeamResult } from './serviceTeamPresentation';
+import {
+  deriveServiceTeamFromRows,
+  deriveAllocationPoolFromRows,
+  projectServiceTeamDisplayNames,
+  buildServiceTeamResult,
+  buildAllocationOptions,
+  type AllocationOption,
+} from './serviceTeamPresentation';
 import { type Decryptor } from '@modules/identity/permissions';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 
@@ -72,6 +79,12 @@ export interface GetServiceTeamResult {
   rejected: ServiceTeamMember[];
 }
 
+export interface GetAllocationOptionsResult {
+  serviceId: string;
+  vacancyId: string | null;
+  options: AllocationOption[];
+}
+
 export interface GetServiceTeamInput {
   patientId: string;
   serviceId: string;
@@ -101,5 +114,26 @@ export class GetServiceTeamUseCase {
     const displayNameByWorkerId = await projectServiceTeamDisplayNames(row, team, cells, this.kms);
 
     return buildServiceTeamResult(row, team, displayNameByWorkerId);
+  }
+
+  /**
+   * Opções de prestador do itinerário (041 R1): o pool do step final da vacante (`deriveAllocationPool`),
+   * não o `selected` do quadro C. Mesma leitura, mesma projeção de nome (D113: cells decide).
+   */
+  async allocationOptions(input: GetServiceTeamInput): Promise<GetAllocationOptionsResult> {
+    const { patientId, serviceId, cells, now = new Date() } = input;
+
+    const row = await this.reader.read(patientId, serviceId);
+    if (row === null) throw new ServiceTeamNotFoundError(patientId, serviceId);
+
+    const pool = deriveAllocationPoolFromRows(row, now);
+    const asTeam = { selected: pool, inService: [], rejected: [] };
+    const displayNameByWorkerId = await projectServiceTeamDisplayNames(row, asTeam, cells, this.kms);
+
+    return {
+      serviceId: row.serviceId,
+      vacancyId: row.liveVacancyId,
+      options: buildAllocationOptions(row, pool, displayNameByWorkerId),
+    };
   }
 }

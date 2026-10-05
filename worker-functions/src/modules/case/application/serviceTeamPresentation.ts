@@ -16,7 +16,14 @@
  * em série (`for (... await ...)`), presos DENTRO da transação no POST.
  */
 import type { ServiceTeamRows } from '../infrastructure/ServiceTeamReader';
-import { deriveServiceTeam, type DeriveServiceTeamResult } from '../domain/deriveServiceTeam';
+import {
+  deriveServiceTeam,
+  deriveAllocationPool,
+  ALLOCATION_POOL_RANK,
+  type AllocationPoolEntry,
+  type AllocationPoolStatus,
+  type DeriveServiceTeamResult,
+} from '../domain/deriveServiceTeam';
 import type { GetServiceTeamResult, ServiceTeamMember } from './GetServiceTeamUseCase';
 import { operationDateOf } from './itineraryCoverage';
 import type { Decryptor } from '@modules/identity/permissions';
@@ -45,6 +52,19 @@ export function deriveServiceTeamFromRows(row: ServiceTeamRows, now: Date): Deri
     substitutions: row.substitutions ?? [],
   });
   return { ...team, asOf };
+}
+
+/** Pool de alocação (041 R1): a MESMA fonte para as opções do itinerário e para o gate de alocação. */
+export function deriveAllocationPoolFromRows(row: ServiceTeamRows, now: Date): AllocationPoolEntry[] {
+  return deriveAllocationPool({
+    serviceId: row.serviceId,
+    liveVacancyId: row.liveVacancyId,
+    asOf: operationDateOf(row.country, now),
+    candidacies: row.candidacies,
+    assignments: row.assignments,
+    marks: row.marks,
+    substitutions: row.substitutions ?? [],
+  });
 }
 
 /**
@@ -148,4 +168,40 @@ export function buildServiceTeamResult(
       ...(reasonLabelByWorkerId.has(entry.workerId) ? { reasonLabel: reasonLabelByWorkerId.get(entry.workerId) } : {}),
     })),
   };
+}
+
+export interface AllocationOption {
+  workerId: string;
+  displayName: string | null;
+  vacancyId: string;
+  status: AllocationPoolStatus;
+  occupation: string | null;
+}
+
+/** Opções do itinerário: nome/ocupação projetados, ordem IN_SERVICE → QUICK_RESPONSE → SELECTED e alfabética dentro do grupo. */
+export function buildAllocationOptions(
+  row: Pick<ServiceTeamRows, 'candidacies'>,
+  pool: readonly AllocationPoolEntry[],
+  displayNameByWorkerId: Map<string, string | null>,
+): AllocationOption[] {
+  const occupationByWorkerId = occupationMap(row);
+  return pool
+    .map((entry) => ({
+      workerId: entry.workerId,
+      displayName: displayNameByWorkerId.get(entry.workerId) ?? null,
+      vacancyId: entry.vacancyId,
+      status: entry.status,
+      occupation: occupationByWorkerId.get(entry.workerId) ?? null,
+    }))
+    .sort((a, b) => {
+      const byRank = ALLOCATION_POOL_RANK[a.status] - ALLOCATION_POOL_RANK[b.status];
+      if (byRank !== 0) return byRank;
+      if (a.displayName === null || b.displayName === null) {
+        if (a.displayName !== b.displayName) return a.displayName === null ? 1 : -1;
+      } else {
+        const byName = a.displayName.localeCompare(b.displayName, 'es', { sensitivity: 'base' });
+        if (byName !== 0) return byName;
+      }
+      return a.workerId.localeCompare(b.workerId);
+    });
 }
