@@ -1,98 +1,68 @@
 import { canAllocate } from '../itineraryAllocationGate';
-import { deriveServiceTeam, SERVICE_TEAM_ENTRY_STAGE } from '../deriveServiceTeam';
+import { deriveAllocationPool, type DeriveServiceTeamInput } from '../deriveServiceTeam';
 
 /**
- * itineraryAllocationGate — P7, DX-11.6. `team` sempre vem de `deriveServiceTeam` REAL (nunca
- * montado à mão) — se a derivação de Selecionado/Em Atendimento mudar, este teste quebra junto,
- * em vez de continuar verde com uma cópia congelada da regra antiga.
+ * itineraryAllocationGate — 041 R1. O pool vem de `deriveAllocationPool` REAL (nunca montado à mão):
+ * se a regra "step final da vacante" mudar, este teste quebra junto, em vez de continuar verde com
+ * uma cópia congelada.
  */
-describe('canAllocate', () => {
+describe('canAllocate (pool do step final da vacante)', () => {
   const SERVICE_ID = 'service-1';
   const VACANCY_ID = 'vacancy-1';
-  const ASOF = '2026-09-28';
+  const base = (over: Partial<DeriveServiceTeamInput>): DeriveServiceTeamInput => ({
+    serviceId: SERVICE_ID,
+    liveVacancyId: VACANCY_ID,
+    asOf: '2026-09-28',
+    candidacies: [],
+    assignments: [],
+    marks: [],
+    ...over,
+  });
+  const cand = (workerId: string, stage: string) => ({ workerId, vacancyId: VACANCY_ID, stage });
 
-  it('em selected (candidato da vaga viva, nem alocado nem rejeitado) → true', () => {
-    const team = deriveServiceTeam({
-      serviceId: SERVICE_ID,
-      liveVacancyId: VACANCY_ID,
-      asOf: ASOF,
-      candidacies: [{ workerId: 'w1', vacancyId: VACANCY_ID, stage: SERVICE_TEAM_ENTRY_STAGE }],
-      assignments: [],
-      marks: [],
-    });
-
-    expect(canAllocate(team, new Set(['w1']), 'w1')).toBe(true);
+  it('só em "Selecionados" (SELECTED) → true (o caso que morria quando o gate era team.selected)', () => {
+    const pool = deriveAllocationPool(base({ candidacies: [cand('w1', 'SELECTED')] }));
+    expect(canAllocate(pool, 'w1')).toBe(true);
   });
 
-  it('sem candidatura nenhuma (fora de toda lista, fora de candidacyWorkerIds) → false', () => {
-    const team = deriveServiceTeam({
-      serviceId: SERVICE_ID,
-      liveVacancyId: VACANCY_ID,
-      asOf: ASOF,
-      candidacies: [],
-      assignments: [],
-      marks: [],
-    });
-
-    expect(canAllocate(team, new Set(), 'w1')).toBe(false);
+  it('em "Equipe de Resposta Rápida" → true', () => {
+    const pool = deriveAllocationPool(base({ candidacies: [cand('w1', 'QUICK_RESPONSE_TEAM')] }));
+    expect(canAllocate(pool, 'w1')).toBe(true);
   });
 
-  it('candidato só em outra etapa do quadro B (fora de candidacyWorkerIds, fora de selected) → false', () => {
-    const team = deriveServiceTeam({
-      serviceId: SERVICE_ID,
-      liveVacancyId: VACANCY_ID,
-      asOf: ASOF,
-      candidacies: [{ workerId: 'w1', vacancyId: VACANCY_ID, stage: 'SELECTED' }],
-      assignments: [],
-      marks: [],
-    });
-
-    expect(team.selected).toEqual([]);
-    expect(canAllocate(team, new Set(), 'w1')).toBe(false);
+  it('rejeitado no serviço, mesmo em Selecionados → false', () => {
+    const pool = deriveAllocationPool(
+      base({ candidacies: [cand('w1', 'SELECTED')], marks: [{ workerId: 'w1', serviceId: SERVICE_ID, rejectReasonCategory: 'OTHER' }] }),
+    );
+    expect(canAllocate(pool, 'w1')).toBe(false);
   });
 
-  it('em rejected → false', () => {
-    const team = deriveServiceTeam({
-      serviceId: SERVICE_ID,
-      liveVacancyId: VACANCY_ID,
-      asOf: ASOF,
-      candidacies: [],
-      assignments: [],
-      marks: [{ workerId: 'w1', serviceId: SERVICE_ID, rejectReasonCategory: 'OTHER' }],
-    });
-
-    expect(canAllocate(team, new Set(['w1']), 'w1')).toBe(false);
+  it('em coluna anterior do funil (CONFIRMED) → false', () => {
+    const pool = deriveAllocationPool(base({ candidacies: [cand('w1', 'CONFIRMED')] }));
+    expect(canAllocate(pool, 'w1')).toBe(false);
   });
 
-  it('em inService E em candidacyWorkerIds (2º slot do mesmo serviço, Q-11.3) → true', () => {
-    const team = deriveServiceTeam({
-      serviceId: SERVICE_ID,
-      liveVacancyId: VACANCY_ID,
-      asOf: ASOF,
-      candidacies: [{ workerId: 'w1', vacancyId: VACANCY_ID, stage: SERVICE_TEAM_ENTRY_STAGE }],
-      assignments: [
-        { workerId: 'w1', serviceId: SERVICE_ID, vacancyId: VACANCY_ID, validFrom: '2026-09-01', validTo: null, status: 'ACTIVE' },
-      ],
-      marks: [],
-    });
-
-    expect(team.inService).toEqual([{ workerId: 'w1', vacancyId: VACANCY_ID }]);
-    expect(canAllocate(team, new Set(['w1']), 'w1')).toBe(true);
+  it('já alocado E ainda numa das colunas (2º slot do mesmo serviço, Q-11.3) → true', () => {
+    const pool = deriveAllocationPool(
+      base({
+        candidacies: [cand('w1', 'SELECTED')],
+        assignments: [{ workerId: 'w1', serviceId: SERVICE_ID, vacancyId: VACANCY_ID, validFrom: '2026-09-01', validTo: null, status: 'ACTIVE' }],
+      }),
+    );
+    expect(canAllocate(pool, 'w1')).toBe(true);
   });
 
-  it('em inService e FORA de candidacyWorkerIds (a candidatura saiu de Equipe de Resposta Rápida) → false', () => {
-    const team = deriveServiceTeam({
-      serviceId: SERVICE_ID,
-      liveVacancyId: VACANCY_ID,
-      asOf: ASOF,
-      candidacies: [],
-      assignments: [
-        { workerId: 'w1', serviceId: SERVICE_ID, vacancyId: VACANCY_ID, validFrom: '2026-09-01', validTo: null, status: 'ACTIVE' },
-      ],
-      marks: [],
-    });
+  it('já alocado mas FORA das duas colunas (saiu do funil) → false', () => {
+    const pool = deriveAllocationPool(
+      base({
+        assignments: [{ workerId: 'w1', serviceId: SERVICE_ID, vacancyId: VACANCY_ID, validFrom: '2026-09-01', validTo: null, status: 'ACTIVE' }],
+      }),
+    );
+    expect(canAllocate(pool, 'w1')).toBe(false);
+  });
 
-    expect(team.inService).toEqual([{ workerId: 'w1', vacancyId: VACANCY_ID }]);
-    expect(canAllocate(team, new Set(), 'w1')).toBe(false);
+  it('candidato em SELECTED de OUTRA vaga (não a viva) → false', () => {
+    const pool = deriveAllocationPool(base({ candidacies: [{ workerId: 'w1', vacancyId: 'outra', stage: 'SELECTED' }] }));
+    expect(canAllocate(pool, 'w1')).toBe(false);
   });
 });

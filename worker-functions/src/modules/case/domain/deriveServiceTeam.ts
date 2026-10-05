@@ -189,3 +189,50 @@ export function deriveServiceTeam(input: DeriveServiceTeamInput): DeriveServiceT
 
   return { selected, inService, rejected };
 }
+
+// ── Pool de alocação (041 R1, DEC-04/DEC-05) ───────────────────────────────────────────────────
+// As opções do itinerário e o gate de alocação vêm do STEP FINAL DA VACANTE: quem está nas colunas
+// "Selecionados" (`SELECTED`) e "Equipe de Resposta Rápida" (`QUICK_RESPONSE_TEAM`) da vaga viva,
+// MENOS quem tem marca de rejeição no serviço (a marca segue existindo como dado — Q3). Quem já
+// está alocado (e continua numa das duas colunas) PERMANECE na lista, marcado `IN_SERVICE`.
+// `deriveServiceTeam` (quadro C) NÃO muda: `selected` segue sendo só `QUICK_RESPONSE_TEAM` não alocado.
+
+/** As colunas do funil da vacante que alimentam o pool (`WorkerJobApplication.ts:47-48`). */
+export const ALLOCATION_POOL_STAGES = ['SELECTED', 'QUICK_RESPONSE_TEAM'] as const;
+
+export type AllocationPoolStatus = 'IN_SERVICE' | 'QUICK_RESPONSE' | 'SELECTED';
+
+export interface AllocationPoolEntry {
+  workerId: string;
+  vacancyId: string;
+  status: AllocationPoolStatus;
+}
+
+/** IN_SERVICE → QUICK_RESPONSE → SELECTED (a ordem da lista; Q2). */
+export const ALLOCATION_POOL_RANK: Record<AllocationPoolStatus, number> = {
+  IN_SERVICE: 0,
+  QUICK_RESPONSE: 1,
+  SELECTED: 2,
+};
+
+export function deriveAllocationPool(input: DeriveServiceTeamInput): AllocationPoolEntry[] {
+  const team = deriveServiceTeam(input);
+  const inServiceIds = new Set(team.inService.map((e) => e.workerId));
+  const rejectedIds = new Set(team.rejected.map((e) => e.workerId));
+  const { liveVacancyId, candidacies } = input;
+  if (liveVacancyId === null) return [];
+
+  const poolStages: readonly string[] = ALLOCATION_POOL_STAGES;
+  const inPool = candidacies.filter(
+    (c) => c.vacancyId === liveVacancyId && poolStages.includes(c.stage) && !rejectedIds.has(c.workerId),
+  );
+  // Quem está nas duas colunas (dado legado) fica na mais avançada: QUICK_RESPONSE_TEAM.
+  const ordered = [...inPool].sort((a, b) => Number(b.stage === SERVICE_TEAM_ENTRY_STAGE) - Number(a.stage === SERVICE_TEAM_ENTRY_STAGE));
+
+  const entries: AllocationPoolEntry[] = dedupeByWorkerId(ordered).map((c) => ({
+    workerId: c.workerId,
+    vacancyId: c.vacancyId,
+    status: inServiceIds.has(c.workerId) ? 'IN_SERVICE' : c.stage === SERVICE_TEAM_ENTRY_STAGE ? 'QUICK_RESPONSE' : 'SELECTED',
+  }));
+  return entries.sort((a, b) => ALLOCATION_POOL_RANK[a.status] - ALLOCATION_POOL_RANK[b.status]);
+}
