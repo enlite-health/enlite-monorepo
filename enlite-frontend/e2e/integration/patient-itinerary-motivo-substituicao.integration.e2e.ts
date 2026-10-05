@@ -1,18 +1,17 @@
 /**
  * patient-itinerary-motivo-substituicao.integration.e2e.ts @integration — Fase 2 da change
- * itinerario-trocas-motivos-e-figma: a substituição de um dia e a rejeição do Encuadre passam a pedir o
+ * itinerario-trocas-motivos-e-figma: a substituição de um dia passa a pedir o
  * motivo de uma lista fechada, o CATÁLOGO de motivos de saída (Fase 1). Stack REAL (frontend + API +
  * Postgres), sem mock de dado — só a auth é o mock do stack (token `mock_*`, molde
  * `patient-itinerary-catalogo-motivos`). Régua humana (memória `e2e-humano-nao-e-fill`): click +
  * `keyboard.type` + valor lido da tela; nenhum `fill()`.
  *
- * Os 3 testes (serial, um `describe`):
+ * Os 2 testes (serial, um `describe`):
  *   1. FELIZ — aba Itinerario, "Nuevo +" → faixa → data → substituto → motivo "Cambio de disponibilidad"
  *      (criado na semente do teste pela API do catálogo) → Confirmar; o card aparece e
  *      `GET …/itinerary/changes` tem 1 linha `ABSENCE` com esse `reasonCode` (lido na mesma execução);
  *   2. ALTERNATIVO 1 — sem motivo, "Confirmar" fica desabilitado e nenhuma requisição `POST …/absences` sai;
- *   3. ALTERNATIVO 2 — no Encuadre, rejeitar mostra o item criado pelo admin E os 4 antigos; uma marca antiga
- *      semeada por SQL com `INDISPONIBILIDADE_DE_HORARIO` aparece como "Sin disponibilidad horaria".
+ *   (041 R3: o ALTERNATIVO 2, que provava o modal de rejeitar da aba Encuadre, saiu com a aba.)
  *
  * Re-executável: antes e depois remove o item criado (só o que o admin criou: `code = id::text`) e reativa
  * "Otro". O arquivo entra no `--grep patient-itinerary` do pr-gate (casa pelo caminho).
@@ -21,7 +20,6 @@ import { test, expect, type Page } from '@playwright/test';
 import { runSQL } from '../helpers/patient-detail-a-helper';
 import { loginAs, tokenFor, type MockUser } from '../helpers/abac-stack-helper';
 import { backendUrl } from '../helpers/lancamento-e2e-helper';
-import { openEncuadreTab, selectServiceRow } from '../helpers/quadro-c-e2e-helper';
 import { seedItinerary, seedTitularAllocation, cleanupItinerary, type ItinerarySeed } from '../helpers/itinerary-db-helper';
 
 const STAMP = Date.now().toString(36);
@@ -29,7 +27,6 @@ const ADMIN: MockUser = { uid: `e2e-motivo-subst-${STAMP}`, email: `e2e.motivo.s
 
 const NOVO = 'Cambio de disponibilidad';
 const ROTULO_ANTIGO = 'Sin disponibilidad horaria'; // INDISPONIBILIDADE_DE_HORARIO na carga inicial (F8)
-const QUATRO_ANTIGOS = ['PERFIL_INADEQUADO_AO_SERVICO', 'INDISPONIBILIDADE_DE_HORARIO', 'DESISTENCIA_DO_PRESTADOR', 'OTHER'];
 
 function limpar(): void {
   // Só o que o admin criou (o trigger põe code = id::text); a carga inicial nunca é apagada.
@@ -139,38 +136,5 @@ test.describe('patient-itinerary — motivo obrigatório na substituição de um
 
     expect(postsDeAusencia).toHaveLength(0);
     expect(Number(runSQL(`SELECT count(*) FROM patient_itinerary_change_log WHERE contracted_service_id = '${seed.serviceId}'`))).toBe(antes);
-  });
-
-  test('ALTERNATIVO 2: no Encuadre, rejeitar mostra o item do admin E os 4 antigos; a marca antiga aparece com o rótulo do catálogo', async ({ page }) => {
-    // Marca ANTIGA semeada por SQL (como se viesse de antes da Fase 2): INDISPONIBILIDADE_DE_HORARIO.
-    runSQL(
-      `INSERT INTO contracted_service_rejections (service_id, worker_id, rejected_by, reject_reason_category, created_by, updated_by) ` +
-        `VALUES ('${seed.serviceId}', '${seed.permanentWorkerId}', 'e2e', 'INDISPONIBILIDADE_DE_HORARIO', 'e2e', 'e2e')`,
-    );
-
-    await loginAs(page, ADMIN);
-    await openEncuadreTab(page, seed.patientId);
-    await selectServiceRow(page, seed.serviceId);
-
-    const cardAntigo = page.getByTestId('kanban-column-REJECTED_FOR_SERVICE').getByTestId(`service-team-card-${seed.permanentWorkerId}`);
-    await expect(cardAntigo).toBeVisible({ timeout: 15_000 });
-    await expect(cardAntigo).toContainText(ROTULO_ANTIGO);
-    await expect(cardAntigo).not.toContainText('INDISPONIBILIDADE_DE_HORARIO');
-
-    await page.getByTestId(`service-team-reject-${seed.substituteWorkerId}`).click();
-    await expect(page.getByTestId('service-team-reject-modal')).toBeVisible();
-    const codigoNovo = codigoDoNovo();
-    const opcao = (code: string) => page.getByTestId(`service-team-reject-option-${code.toLowerCase().replace(/_/g, '-')}`);
-    for (const code of QUATRO_ANTIGOS) await expect(opcao(code)).toBeVisible();
-    await expect(opcao(codigoNovo)).toContainText(NOVO);
-
-    await opcao(codigoNovo).click();
-    const rejeitou = page.waitForResponse((r) => r.request().method() === 'POST' && /\/team\/reject$/.test(r.url()) && r.ok());
-    await page.getByTestId('service-team-reject-confirm').click();
-    await rejeitou;
-
-    const cardNovo = page.getByTestId('kanban-column-REJECTED_FOR_SERVICE').getByTestId(`service-team-card-${seed.substituteWorkerId}`);
-    await expect(cardNovo).toContainText(NOVO, { timeout: 15_000 });
-    expect(runSQL(`SELECT reject_reason_category FROM contracted_service_rejections WHERE service_id = '${seed.serviceId}' AND worker_id = '${seed.substituteWorkerId}' AND reverted_at IS NULL`).trim()).toBe(codigoNovo);
   });
 });

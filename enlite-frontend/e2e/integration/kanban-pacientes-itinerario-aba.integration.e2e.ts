@@ -25,7 +25,7 @@ import { insertTestWorker, cleanupTestWorker } from '../helpers/db-test-helper';
 import { insertWJA, cleanupWJAAndEncuadre } from '../helpers/wja-test-helper';
 import { tokenFor, loginAs } from '../helpers/abac-stack-helper';
 import { runSQL } from '../helpers/patient-detail-a-helper';
-import { openEncuadreTab, selectServiceRow, postServiceTeamAction, readServiceTeamApi } from '../helpers/quadro-c-e2e-helper';
+import { postServiceTeamAction, readServiceTeamApi } from '../helpers/quadro-c-e2e-helper';
 import {
   allocationOptionsApi, allocateApi, countActiveAllocations, cleanupItineraryWrite,
 } from '../helpers/itinerario-escrita-e2e-helper';
@@ -151,14 +151,6 @@ test.describe('itinerario-aba @integration', () => {
         maxDiffPixelRatio: 0.05,
         mask: [secao.locator('[data-testid^="itinerario-slot-prestador-"]')],
       });
-
-      // Critério 5: o prestador alocado aparece em Em Atendimento no quadro C.
-      // 29/09: o quadro C saiu de "Servicio Contratado" — a aba certa agora é "Encuadre".
-      await openEncuadreTab(page, seed.patientId);
-      await selectServiceRow(page, seed.serviceId);
-      const inService = page.getByTestId('kanban-column-IN_SERVICE').getByTestId(`service-team-card-${w}`);
-      await expect(inService).toHaveCount(1);
-      console.log('[12.5]', await inService.count());
 
       // Critério 8: nenhum Places; nada clínico nos corpos da aba — controles positivos ao lado.
       const tabTexts = await Promise.all(tabBodies);

@@ -19,7 +19,6 @@ const TAB_I18N_KEYS: Record<PatientTab, string> = {
   documents: 'admin.patients.detail.tabs.documents',
   contractedService: 'admin.patients.detail.tabs.contractedService',
   vacancies: 'admin.patients.detail.tabs.vacancies',
-  encuadre: 'admin.patients.detail.tabs.encuadre',
   itinerary: 'admin.patients.detail.tabs.itinerary',
   history: 'admin.patients.detail.tabs.history',
 };

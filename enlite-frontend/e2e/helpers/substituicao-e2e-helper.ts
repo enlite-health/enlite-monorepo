@@ -17,11 +17,10 @@
  * Nenhum host/porta literal, nenhum `throw` no import, nenhum `fill()`, nenhuma conta de data no
  * relógio do processo — sempre lida do Postgres (DATA-F13).
  */
-import { type APIRequestContext, type Page } from '@playwright/test';
+import { type APIRequestContext } from '@playwright/test';
 import { backendUrl } from './lancamento-e2e-helper';
 import { runSQL } from './patient-detail-a-helper';
 import { extractUuid, cleanupItineraryWrite } from './itinerario-escrita-e2e-helper';
-import { openEncuadreTab, selectServiceRow } from './quadro-c-e2e-helper';
 
 export interface AbsenceApiResult<T = unknown> {
   status: number;
@@ -152,17 +151,6 @@ export function countOpenAbsences(allocationId: string): number {
       `SELECT count(*) FROM patient_itinerary_absence WHERE assignment_id = '${allocationId}' AND cancelled_at IS NULL`,
     ),
   );
-}
-
-// ── Tela: quadro C do serviço ────────────────────────────────────────────────────────
-
-/**
- * Ficha do paciente → aba "Encuadre" (29/09: saiu de "Servicio Contratado") → linha do serviço —
- * composição de `openEncuadreTab` + `selectServiceRow` (`quadro-c-e2e-helper.ts`), não cópia.
- */
-export async function openServiceTeamOf(page: Page, patientId: string, serviceId: string): Promise<void> {
-  await openEncuadreTab(page, patientId);
-  await selectServiceRow(page, serviceId);
 }
 
 // ── Limpeza ──────────────────────────────────────────────────────────────────────────

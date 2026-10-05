@@ -21,7 +21,6 @@ import { ExternalContactsCard } from '@presentation/components/features/admin/Pa
 import { CoberturaMedicaCard } from '@presentation/components/features/admin/PatientDetail/CoberturaMedicaCard';
 import { LocalizacoesCard } from '@presentation/components/features/admin/PatientDetail/LocalizacoesCard';
 import { ServicosContratadosCard } from '@presentation/components/features/admin/PatientDetail/ServicosContratadosCard';
-import { EncuadreTab } from '@presentation/components/features/admin/PatientDetail/EncuadreTab';
 import { PatientVacanciesCard } from '@presentation/components/features/admin/PatientDetail/PatientVacanciesCard';
 import { PatientItineraryTab } from '@presentation/components/features/admin/PatientDetail/PatientItineraryTab';
 import { PatientChatIdsCard } from '@presentation/components/features/admin/PatientDetail/PatientChatIdsCard';
@@ -339,11 +338,6 @@ export default function PatientDetailPage() {
               isLoading={vacanciesLoading}
               error={vacanciesError}
             />
-          </ContainerGate>
-        )}
-        {shownTab === 'encuadre' && (
-          <ContainerGate resource="patient_services">
-            <EncuadreTab patient={patient} />
           </ContainerGate>
         )}
         {shownTab === 'itinerary' && (
