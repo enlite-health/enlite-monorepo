@@ -12,7 +12,8 @@
  * enlite-frontend/CLAUDE.md (i18n) and `sex-both-i18n.test.tsx` for the
  * established pattern (real i18n resources + rawEnumLeakGuard).
  *
- * 🔧 F1.5-CORREÇÃO C5 (D261, spec 016): os testes de "Patología"
+ * 🔧 F1.5-CORREÇÃO C5 (D261, spec 016) [parcialmente superado pela spec 042/D473: o render
+ * voltou, mas SÓ para `diagnosisLabel` — ver os testes E4 abaixo]: os testes de "Patología"
  * (`pathologies`) SAÍRAM daqui — o campo já não existe no payload público
  * desde 25/08/2026 (`PublicVacancyController.ts`) e o render morto saiu de
  * `PublicVacancyPage.tsx` nesta mesma correção (REQ-21: o código do CID-11
@@ -157,10 +158,29 @@ describe('VacancyDetailsCard — campos faltantes (es)', () => {
     expectNoRawEnumLeaks(container);
   });
 
-  it('nunca renderiza a seção de patología (C5/D261: campo e render saíram — REQ-21)', () => {
+  // Spec 042 (D473): a seção volta, mas SÓ com o rótulo de catálogo (`diagnosisLabel`).
+  it.each([
+    ['null', null],
+    ['undefined', undefined],
+    ['string vazia', ''],
+  ])('E4: diagnosisLabel %s => nenhuma seção "Patología" (nunca "—")', (_nome, valor) => {
     i18n.changeLanguage('es');
-    render(<VacancyDetailsCard vacancy={baseVacancy} />);
-    expect(screen.queryByText('Hipótesis Diagnóstica - CIE:')).not.toBeInTheDocument();
+    const { container } = render(
+      <VacancyDetailsCard vacancy={{ ...baseVacancy, diagnosisLabel: valor as string | null | undefined }} />,
+    );
+    expect(screen.queryByRole('heading', { name: 'Patología' })).not.toBeInTheDocument();
+    expect(container.textContent).not.toContain('—');
+  });
+
+  it('E4: diagnosisLabel presente => heading "Patología" + o texto, sem código', () => {
+    i18n.changeLanguage('es');
+    const { container } = render(
+      <VacancyDetailsCard vacancy={{ ...baseVacancy, diagnosisLabel: 'Diagnóstico sintético QA' }} />,
+    );
+    expect(screen.getByRole('heading', { name: 'Patología' })).toBeInTheDocument();
+    expect(screen.getByText('Diagnóstico sintético QA')).toBeInTheDocument();
+    expect(container.textContent).not.toContain('ZZ99');
+    expectNoRawEnumLeaks(container);
   });
 });
 
@@ -171,5 +191,12 @@ describe('VacancyDetailsCard — campos faltantes (pt-BR)', () => {
     expect(screen.getByText('Acompanhante Terapêutico')).toBeInTheDocument();
     expect(screen.getByText('Indistinta')).toBeInTheDocument();
     expectNoRawEnumLeaks(container);
+  });
+
+  it('E4: diagnosisLabel presente em pt-BR => heading "Patologia"', () => {
+    i18n.changeLanguage('pt-BR');
+    render(<VacancyDetailsCard vacancy={{ ...baseVacancy, diagnosisLabel: 'Diagnóstico sintético QA' }} />);
+    expect(screen.getByRole('heading', { name: 'Patologia' })).toBeInTheDocument();
+    expect(screen.getByText('Diagnóstico sintético QA')).toBeInTheDocument();
   });
 });
