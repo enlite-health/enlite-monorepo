@@ -176,6 +176,45 @@ test.describe('Aba Itinerario — full stack, sem mock @integration', () => {
     expect(readOpenAbsences(seed)).toEqual([{ onDate: chosenDate, substituteWorkerId: seed.freeSubstituteWorkerId }]);
   });
 
+  test('041 R2 — modal de edição: verde no alocado, azul na Resposta Rápida, nada no Selecionado, nessa ordem', async ({ page }) => {
+    await loginAsAdmin(page);
+    await openItinerarioTab(page, seed.patientId);
+
+    await page.getByTestId(`itinerario-slot-editar-${seed.slotId}`).click();
+    const modal = page.getByTestId('itinerario-editar-modal');
+    await expect(modal).toBeVisible();
+    await expect(page.getByTestId('itinerario-editar-preselecionados')).toBeVisible({ timeout: 10_000 });
+
+    const dotOf = (workerId: string) => modal.getByTestId(`itinerario-editar-status-${workerId}`).getByTestId('allocation-option-dot');
+    // Verde no alocado (em atendimento), azul em Resposta Rápida, nenhuma bolinha em quem só está Selecionado.
+    await expect(dotOf(seed.titularWorkerId)).toHaveClass(/bg-green-600/);
+    await expect(dotOf(seed.freeSubstituteWorkerId)).toHaveClass(/bg-blue-600/);
+    await expect(modal.getByTestId(`itinerario-editar-status-${seed.selectedOnlyWorkerId}`)).toContainText('Seleccionado');
+    await expect(dotOf(seed.selectedOnlyWorkerId)).toHaveCount(0);
+    // Prova de que os dois estados com bolinha são DISTINTOS: a cor computada do verde difere da do azul.
+    const rgb = (workerId: string) => dotOf(workerId).evaluate((el) => getComputedStyle(el).backgroundColor);
+    expect(await rgb(seed.titularWorkerId)).not.toBe(await rgb(seed.freeSubstituteWorkerId));
+
+    // Ordem vinda da API: em atendimento → resposta rápida → selecionado.
+    const ids = await modal
+      .getByTestId('itinerario-editar-preselecionados')
+      .locator('[data-testid^="itinerario-editar-card-"]')
+      .evaluateAll((els) => els.map((e) => e.getAttribute('data-testid') ?? ''));
+    const pos = (workerId: string) => ids.indexOf(`itinerario-editar-card-${workerId}`);
+    expect(pos(seed.titularWorkerId)).toBe(0);
+    expect(pos(seed.titularWorkerId)).toBeLessThan(pos(seed.freeSubstituteWorkerId));
+    expect(pos(seed.freeSubstituteWorkerId)).toBeLessThan(pos(seed.selectedOnlyWorkerId));
+    expect(pos(seed.selectedOnlyWorkerId)).toBe(ids.length - 1);
+
+    // A mesma marca aparece no dropdown de escolha do prestador (digitando, como pessoa).
+    await modal.getByTestId('itinerario-editar-prestador').click();
+    await modal.getByPlaceholder('Buscar...').click();
+    await page.keyboard.type('Sofia', { delay: 20 });
+    const option = modal.getByRole('option', { name: new RegExp(seed.names.selected) });
+    await expect(option).toBeVisible();
+    await expect(option.getByTestId('allocation-option-dot')).toHaveCount(0);
+  });
+
   test('alternativo 1: reemplazo com substituto em conflito → erro legível na tela, nada muda', async ({ page }) => {
     await loginAsAdmin(page);
     await openItinerarioTab(page, seed.patientId);

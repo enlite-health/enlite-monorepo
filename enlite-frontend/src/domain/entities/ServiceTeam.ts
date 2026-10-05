@@ -41,7 +41,12 @@ export interface ServiceTeamMember {
    * rótulo é `serviceTypes.<code>`, a MESMA chave i18n do quadro de serviços contratados.
    */
   occupation?: string | null;
+  /** 041 R2 — só em `allocation-options`: de onde o nome vem (em atendimento, resposta rápida ou só selecionado). */
+  status?: AllocationOptionStatus;
 }
+
+/** Estado de uma opção do itinerário; a API já devolve a lista ordenada IN_SERVICE → QUICK_RESPONSE → SELECTED. */
+export type AllocationOptionStatus = 'IN_SERVICE' | 'QUICK_RESPONSE' | 'SELECTED';
 
 /**
  * GET /api/admin/patients/:id/contracted-services/:sid/team (DX-10.7). `vacancyId` aqui é a vaga

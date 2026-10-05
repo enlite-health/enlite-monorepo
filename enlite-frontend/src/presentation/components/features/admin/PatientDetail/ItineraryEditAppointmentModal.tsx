@@ -16,6 +16,7 @@ import type { ExitDestination } from '@domain/entities/ServiceTeam';
 import type { ServiceTeamMember } from '@domain/entities/ServiceTeam';
 import { weekdayName } from './substitutionDates';
 import { workerLabel } from './workerLabel';
+import { AllocationOptionStatus } from './AllocationOptionStatus';
 
 interface ItineraryEditAppointmentModalProps {
   slot: { weekday: number; startTime: string; endTime: string };
@@ -70,6 +71,7 @@ export function ItineraryEditAppointmentModal({
   const workerOptions = (options ?? []).map((member) => ({
     value: member.workerId,
     label: workerLabel(t, member.workerId, member.displayName),
+    adornment: member.status ? <AllocationOptionStatus status={member.status} data-testid={`itinerario-editar-opcao-status-${member.workerId}`} /> : undefined,
   }));
 
   const fieldLabel = 'font-semibold !text-[16px] !leading-[1.35]';
@@ -183,6 +185,9 @@ export function ItineraryEditAppointmentModal({
                     <Text as="span" size="base" weight="medium" color="primary" className="truncate">
                       {workerLabel(t, member.workerId, member.displayName)}
                     </Text>
+                    {member.status && (
+                      <AllocationOptionStatus status={member.status} data-testid={`itinerario-editar-status-${member.workerId}`} />
+                    )}
                     {member.occupation && (
                       <Text as="span" size="sm" color="secondary" data-testid={`itinerario-editar-ocupacao-${member.workerId}`}>
                         {t(`admin.patients.detail.contractedServicesCard.serviceTypes.${member.occupation}`, member.occupation)}

@@ -9,6 +9,7 @@ import { nextDatesOfWeekday, formatDDMM, weekdayName } from './substitutionDates
 import type { ServiceTeamAllocation, ServiceTeamMember } from '@domain/entities/ServiceTeam';
 import { workerLabel } from './workerLabel';
 import { ExitReasonSelect } from './ExitReasonSelect';
+import { AllocationOptionStatus } from './AllocationOptionStatus';
 import { SidePanelShell } from './SidePanelShell';
 
 interface SubstitutionDayModalProps {
@@ -83,6 +84,7 @@ export function SubstitutionDayModal({
     ...selected.map((member) => ({
       value: member.workerId,
       label: workerLabel(t, member.workerId, member.displayName),
+      adornment: member.status ? <AllocationOptionStatus status={member.status} data-testid={`substitution-status-${member.workerId}`} /> : undefined,
     })),
   ];
 
