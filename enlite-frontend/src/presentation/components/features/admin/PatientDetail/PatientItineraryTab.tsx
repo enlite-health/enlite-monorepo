@@ -9,8 +9,9 @@ import { usePatientItinerary, type ItineraryActionError } from '@hooks/admin/use
 import type { PatientDetail } from '@domain/entities/PatientDetail';
 import { patientAddressLabel } from '@domain/entities/PatientContractedService';
 import { isVigenteAt } from '@domain/entities/PatientItinerary';
-import type { ServiceTeamAllocation, ServiceTeamMember } from '@domain/entities/ServiceTeam';
+import type { ExitDestination, ServiceTeamAllocation, ServiceTeamMember } from '@domain/entities/ServiceTeam';
 import { ItinerarySection } from './ItinerarySection';
+import { AssembleItineraryButton } from './AssembleItineraryButton';
 import { ItineraryEditAppointmentModal } from './ItineraryEditAppointmentModal';
 import { ItineraryEventsPanel } from './ItineraryEventsPanel';
 import { NewSubstitutionModal, type NewSubstitutionServiceOption } from './NewSubstitutionModal';
@@ -23,6 +24,8 @@ interface EditingSlot {
   serviceId: string;
   slot: { id: string; weekday: number; startTime: string; endTime: string };
   currentWorkerId: string | null;
+  /** A alocação vigente do prestador atual da faixa — o que o "Quitar del itinerario" encerra. */
+  currentAllocationId: string | null;
 }
 
 /** Código sintético quando as opções do modal não carregam — cai no texto `actionErrors.generic`. */
@@ -49,6 +52,8 @@ export function PatientItineraryTab({ patient }: PatientItineraryTabProps): JSX.
   const [showNew, setShowNew] = useState(false);
   const [newSubstitutionError, setNewSubstitutionError] = useState<string | null>(null);
   const [refreshSignal, setRefreshSignal] = useState(0);
+  const [removing, setRemoving] = useState(false);
+  const [removeError, setRemoveError] = useState<string | null>(null);
   const openRef = useRef(0);
 
   if (status === 'idle' || status === 'loading') return <DetailSkeleton />;
@@ -106,7 +111,9 @@ export function PatientItineraryTab({ patient }: PatientItineraryTabProps): JSX.
       serviceId,
       slot: { id: slot.id, weekday: slot.weekday, startTime: slot.startTime, endTime: slot.endTime },
       currentWorkerId: covering?.workerId ?? null,
+      currentAllocationId: covering?.allocationId ?? null,
     });
+    setRemoveError(null);
     setEditOptions(null);
     setEditVacancyId(null);
     setEditOptionsFailed(false);
@@ -132,6 +139,7 @@ export function PatientItineraryTab({ patient }: PatientItineraryTabProps): JSX.
   function closeEdit(): void {
     openRef.current += 1;
     setEditing(null);
+    setRemoveError(null);
   }
 
   function confirmEdit(workerId: string): void {
@@ -139,6 +147,27 @@ export function PatientItineraryTab({ patient }: PatientItineraryTabProps): JSX.
     const { serviceId, slot } = editing;
     closeEdit();
     void allocate(serviceId, slot.id, workerId);
+  }
+
+  /** "Quitar del itinerario" (Fase 4): motivo + destino; erro fica no painel (traduzido por CÓDIGO), sucesso fecha o modal. */
+  async function removeFromItinerary(reasonCategory: string, destination: ExitDestination): Promise<void> {
+    if (!editing?.currentAllocationId) return;
+    const { serviceId, currentAllocationId } = editing;
+    setRemoving(true);
+    setRemoveError(null);
+    try {
+      await AdminContractedServicesApiService.endAllocation(patient.id, serviceId, currentAllocationId, { reasonCategory, destination });
+      closeEdit();
+    } catch (err) {
+      const code = (err as { code?: string } | null)?.code;
+      setRemoveError(
+        code ? t(`admin.patients.detail.itinerary.actionErrors.${code}`, ti('removePanel.submitError')) : ti('removePanel.submitError'),
+      );
+    } finally {
+      setRemoving(false);
+      refresh();
+      setRefreshSignal((n) => n + 1);
+    }
   }
 
   async function submitComplementary(serviceId: string, allocationId: string, date: string, substituteWorkerId: string | null, reasonCategory: string): Promise<void> {
@@ -199,6 +228,8 @@ export function PatientItineraryTab({ patient }: PatientItineraryTabProps): JSX.
         </Text>
       )}
 
+      <AssembleItineraryButton patientId={patient.id} assembledAt={itinerary.assembledAt} onAssembled={refresh} />
+
       <div className="flex gap-5 items-start" data-testid="itinerario-colunas">
         <div className="flex-1 min-w-0">
           <ItineraryEventsPanel
@@ -246,6 +277,9 @@ export function PatientItineraryTab({ patient }: PatientItineraryTabProps): JSX.
           currentWorkerId={editing.currentWorkerId}
           onSubmit={confirmEdit}
           onCancel={closeEdit}
+          onRemove={(reasonCategory, destination) => void removeFromItinerary(reasonCategory, destination)}
+          removing={removing}
+          removeError={removeError}
         />
       )}
 

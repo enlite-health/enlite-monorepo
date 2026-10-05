@@ -16,6 +16,7 @@ registry.registerPath({
     'declara período (é copiado, nunca calculado). Sem backfill: serviço cujo horário não foi ' +
     'salvo depois da migration 480 aparece com `slots: []`. `alerts: [{ serviceId, date, ' +
     'startTime, endTime }]` (fase 13): ausência sem substituto, data ≥ hoje (Buenos Aires); sem nome. ' +
+    '`assembledAt` (ISO UTC, `null` = nunca montado): `max(assembled_at)` de `patient_itinerary_assembly`. ' +
     'Fase 12: cada alocação traz `allocationId` e `displayName` (só vigente; `null` sem `worker_contact:read`).',
   security: [{ firebaseAuth: [] }],
   request: { params: z.object({ id: UuidParam }) },

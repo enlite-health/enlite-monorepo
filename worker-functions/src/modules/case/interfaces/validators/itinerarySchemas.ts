@@ -48,6 +48,8 @@ export const patientItineraryResponseSchema = z.object({
   patientId: z.string().uuid(),
   asOf: z.string().regex(ISO_DATE_REGEX),
   services: z.array(patientItineraryServiceSchema),
+  /** Fase 3 (C8): `max(assembled_at)` ISO UTC; `null` = nunca montado. Obrigatório (sem `.optional()`) — o GET sempre o devolve. */
+  assembledAt: z.string().datetime().nullable(),
 });
 
 export type PatientItineraryResponse = z.infer<typeof patientItineraryResponseSchema>;

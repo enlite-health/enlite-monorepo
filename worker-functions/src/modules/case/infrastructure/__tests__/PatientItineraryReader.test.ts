@@ -50,7 +50,7 @@ describe('PatientItineraryReader', () => {
     expect(c[c.length - 1].sql).toBe('COMMIT');
   });
 
-  it('paciente presente: as 4 queries rodam dentro da MESMA transação (BEGIN…COMMIT), datas/horas por to_char, sem contracted_service_providers/nome/telefone', async () => {
+  it('paciente presente: as 5 queries rodam dentro da MESMA transação (BEGIN…COMMIT), datas/horas por to_char, sem contracted_service_providers/nome/telefone', async () => {
     queryImpl = async (sql) => {
       if (/FROM patients/.test(sql)) return { rows: [{ id: PID, country: 'AR' }], rowCount: 1 };
       if (/FROM patient_contracted_services/.test(sql)) {
@@ -114,12 +114,13 @@ describe('PatientItineraryReader', () => {
         },
       ],
       uncoveredAbsences: [{ serviceId: 'svc-1', date: '2026-10-05', startTime: '08:00', endTime: '12:00' }],
+      assembledAt: null,
     });
 
     const c = calls();
     expect(c[0].sql).toBe('BEGIN');
     expect(c[c.length - 1].sql).toBe('COMMIT');
-    expect(c.filter((x) => /^SELECT/.test(x.sql))).toHaveLength(4);
+    expect(c.filter((x) => /^SELECT/.test(x.sql))).toHaveLength(5);
     const slotsQuery = c.find((x) => /FROM patient_itinerary_slot/.test(x.sql));
     expect(slotsQuery?.sql).toMatch(/to_char\(s\.start_time, 'HH24:MI'\)/);
     expect(slotsQuery?.sql).toMatch(/to_char\(a\.valid_from, 'YYYY-MM-DD'\)/);
@@ -133,6 +134,32 @@ describe('PatientItineraryReader', () => {
     expect(c.every((x) => !/contracted_service_providers|phone/i.test(x.sql))).toBe(true);
     expect(slotsQuery?.sql).toMatch(/w\.first_name_encrypted/);
     expect(slotsQuery?.sql).toMatch(/LEFT JOIN workers w ON w\.id = a\.worker_id/);
+  });
+
+  it('[Fase 3] assembledAt = max(assembled_at) em ISO UTC, lido no mesmo client (dentro do BEGIN…COMMIT); sem linha de montagem → null', async () => {
+    const base = async (sql: string) => {
+      if (/FROM patients/.test(sql)) return { rows: [{ id: PID, country: 'AR' }], rowCount: 1 };
+      return { rows: [], rowCount: 0 };
+    };
+    queryImpl = async (sql) => {
+      if (/FROM patient_itinerary_assembly/.test(sql)) {
+        return { rows: [{ assembled_at: '2026-09-30T18:05:09.123Z' }], rowCount: 1 };
+      }
+      return base(sql);
+    };
+
+    const montado = await reader.readPatientItinerary(PID);
+
+    expect(montado?.assembledAt).toBe('2026-09-30T18:05:09.123Z');
+    const q = calls().find((x) => /FROM patient_itinerary_assembly/.test(x.sql));
+    expect(q?.sql).toMatch(/max\(assembled_at\)/);
+    expect(q?.params).toEqual([PID]);
+
+    // `max()` sem linhas devolve UMA linha com NULL — e também aceita zero linhas.
+    queryImpl = async (sql) => (/FROM patient_itinerary_assembly/.test(sql) ? { rows: [{ assembled_at: null }], rowCount: 1 } : base(sql));
+    expect((await reader.readPatientItinerary(PID))?.assembledAt).toBeNull();
+    queryImpl = base;
+    expect((await reader.readPatientItinerary(PID))?.assembledAt).toBeNull();
   });
 
   it('[12.7] slot sem alocação (LEFT JOIN) → a linha vem, com os 2 cifrados null', async () => {

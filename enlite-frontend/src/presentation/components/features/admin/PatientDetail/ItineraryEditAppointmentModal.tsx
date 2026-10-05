@@ -11,6 +11,8 @@ import { ActionButton } from '@presentation/components/features/access';
 import { Button } from '@presentation/components/atoms/Button';
 import { Select } from '@presentation/components/atoms/Select';
 import { SidePanelShell } from './SidePanelShell';
+import { RemoveFromItineraryPanel } from './RemoveFromItineraryPanel';
+import type { ExitDestination } from '@domain/entities/ServiceTeam';
 import type { ServiceTeamMember } from '@domain/entities/ServiceTeam';
 import { weekdayName } from './substitutionDates';
 import { workerLabel } from './workerLabel';
@@ -26,6 +28,15 @@ interface ItineraryEditAppointmentModalProps {
   currentWorkerId: string | null;
   onSubmit: (workerId: string) => void;
   onCancel: () => void;
+  /**
+   * Fase 4: tirar o prestador ATUAL da faixa, com motivo e destino. Sem ele (ou sem prestador atual) a ação
+   * "Quitar del itinerario" não aparece. A escrita é de quem abre o modal.
+   */
+  onRemove?: (reasonCategory: string, destination: ExitDestination) => void;
+  /** Envio do "Quitar" em curso — desabilita o Confirmar do painel. */
+  removing?: boolean;
+  /** Erro (já traduzido) do último "Quitar"; o painel fica aberto. */
+  removeError?: string | null;
 }
 
 /**
@@ -46,10 +57,15 @@ export function ItineraryEditAppointmentModal({
   currentWorkerId,
   onSubmit,
   onCancel,
+  onRemove,
+  removing = false,
+  removeError = null,
 }: ItineraryEditAppointmentModalProps): JSX.Element {
   const { t, i18n } = useTranslation();
   const tm = (key: string, opts?: Record<string, unknown>) => t(`admin.patients.detail.itinerary.editModal.${key}`, opts);
   const [workerId, setWorkerId] = useState(currentWorkerId ?? '');
+  const [showRemove, setShowRemove] = useState(false);
+  const currentMember = currentWorkerId ? (options ?? []).find((m) => m.workerId === currentWorkerId) : undefined;
 
   const workerOptions = (options ?? []).map((member) => ({
     value: member.workerId,
@@ -65,6 +81,7 @@ export function ItineraryEditAppointmentModal({
   const disabledInput = '!bg-white !text-[#d9d9d9] cursor-not-allowed';
 
   return (
+    <>
     <SidePanelShell ariaLabel={tm('title')} onClose={onCancel} testId="itinerario-editar-modal">
       <div className="flex items-center justify-between w-full">
         <Heading level={1} as="h2" weight="semibold" color="primary">
@@ -209,9 +226,36 @@ export function ItineraryEditAppointmentModal({
         )}
       </div>
 
+      {onRemove && currentWorkerId && (
+        <div className="flex flex-col gap-2">
+          <ActionButton
+            resource="patient_itinerary"
+            action="update"
+            variant="outline"
+            size="sm"
+            className="self-start"
+            onClick={() => setShowRemove(true)}
+            data-testid={`itinerario-quitar-${currentWorkerId}`}
+          >
+            {tm('removeFromItinerary')}
+          </ActionButton>
+        </div>
+      )}
+
       <Text as="p" size="xs" color="secondary" data-testid="itinerario-editar-anacare-aviso">
         {tm('anaCareNotice')}
       </Text>
     </SidePanelShell>
+    {/* Irmão do modal, não filho: o modal tem `transform`, que viraria o bloco de contenção do `fixed` do painel. */}
+    {showRemove && onRemove && currentWorkerId && (
+      <RemoveFromItineraryPanel
+        workerLabel={workerLabel(t, currentWorkerId, currentMember?.displayName ?? null)}
+        onConfirm={onRemove}
+        onCancel={() => setShowRemove(false)}
+        submitting={removing}
+        errorMessage={removeError}
+      />
+    )}
+    </>
   );
 }

@@ -109,6 +109,9 @@ test.describe('itinerario-aba-sem-celula sob engine ligado @integration', () => 
       const semActions = page.getByTestId(/^itinerario-slot-editar-/);
       await expect(semActions).toHaveCount(0);
       const semCount = await semActions.count();
+      // Fase 3: o "Itinerario listo" (`patient_itinerary:update`) também SOME para quem não tem a célula —
+      // a tela carregou (o chip do slot acima), então o 0 não é "ainda não montou".
+      await expect(page.getByTestId('itinerario-montar')).toHaveCount(0);
 
       // COM (controle positivo): mesma tela, contexto novo — a ação aparece no slot sem cobertura.
       const ctx = await browser.newContext({ ...LANCAMENTO_VIEWPORT_ES_AR, deviceScaleFactor: 1 });
@@ -120,6 +123,8 @@ test.describe('itinerario-aba-sem-celula sob engine ligado @integration', () => 
         const comActions = pageCom.getByTestId(/^itinerario-slot-editar-/);
         await expect(comActions).toHaveCount(1);
         const comCount = await comActions.count();
+        // Fase 3, controle positivo: COM vê o "Itinerario listo" (paciente ainda não montado) — o 0 do SEM vem da célula.
+        await expect(pageCom.getByTestId('itinerario-montar')).toHaveCount(1);
         console.log('[12.6]', semCount, comCount, com.elapsedMs >= 0, sem.elapsedMs >= 0);
       } finally {
         await ctx.close();

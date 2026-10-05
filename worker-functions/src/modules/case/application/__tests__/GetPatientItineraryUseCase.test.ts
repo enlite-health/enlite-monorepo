@@ -47,6 +47,24 @@ describe('GetPatientItineraryUseCase', () => {
     expect(result.asOf).toBe('2026-09-28');
   });
 
+  it('assembledAt: sem linha de montagem → null (campo presente); com montagem → a string ISO do leitor, intacta', async () => {
+    const semMontagem = new GetPatientItineraryUseCase(readerWith({ country: 'AR', services: [], slots: [] }), kmsDouble());
+    const r1 = await semMontagem.execute(PID, new Date('2026-09-28T03:30:00Z'));
+    expect(r1).toHaveProperty('assembledAt', null);
+
+    const nuncaMontado = new GetPatientItineraryUseCase(
+      readerWith({ country: 'AR', services: [], slots: [], assembledAt: null }),
+      kmsDouble(),
+    );
+    expect((await nuncaMontado.execute(PID, new Date('2026-09-28T03:30:00Z'))).assembledAt).toBeNull();
+
+    const montado = new GetPatientItineraryUseCase(
+      readerWith({ country: 'AR', services: [], slots: [], assembledAt: '2026-09-30T18:05:09.123Z' }),
+      kmsDouble(),
+    );
+    expect((await montado.execute(PID, new Date('2026-09-28T03:30:00Z'))).assembledAt).toBe('2026-09-30T18:05:09.123Z');
+  });
+
   it('agrupamento: 2 serviços, 3 slots, 1 alocação vigente — cobertas certas, na ordem do leitor', async () => {
     const rows: ItineraryRows = {
       country: 'AR',
