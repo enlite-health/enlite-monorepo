@@ -2294,6 +2294,7 @@
     "vacancyDetail": {
       "notFound": "Vaga não encontrada",
       "back": "Voltar",
+      "viewPatientItinerary": "Ver itinerário do paciente",
       "kanban": "Kanban",
       "case": "Caso",
       "vacancy": "Vaga",

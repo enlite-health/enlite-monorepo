@@ -162,6 +162,18 @@ export default function VacancyDetailPage() {
             {pageTitle}
           </Heading>
         </div>
+        {/* Spec 041 R4 (DEC-04, Q1): atalho para a aba Itinerario do paciente da vaga. Só navega — a
+            aba é do container `patient_services` e a ficha aplica o gate dela. */}
+        {vacancy.patient_id && (
+          <Button
+            variant="outline"
+            size="sm"
+            data-testid="vacancy-view-patient-itinerary"
+            onClick={() => navigate(`/admin/patients/${vacancy.patient_id}?tab=itinerary`)}
+          >
+            {t('admin.vacancyDetail.viewPatientItinerary')}
+          </Button>
+        )}
       </div>
 
       {/* Linha 1: assimétrica — coluna esquerda fixa 404px, direita flex-1 */}
