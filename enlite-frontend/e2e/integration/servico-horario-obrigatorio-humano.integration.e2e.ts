@@ -269,4 +269,67 @@ test.describe('Horário obrigatório para mudar de status — o operador é avis
       cleanupPatientDeep(s4.patientId);
     }
   });
+
+  // 041 R5 (PEND-09): o editor de horário é compacto e copia a faixa de um dia para vários.
+  test('041 R5 — cria 1 faixa na segunda, "Copiar a… Lun–Vie", salva e a ficha relida mostra 5 dias; o editor cabe em ≤ 420 px', async ({ page }) => {
+    const s5 = seedActivatablePatient(730000);
+    try {
+      await loginComoHumano(page, STAFF_EMAIL, 'E2E Humano');
+      await page.goto(`/admin/patients/${s5.patientId}`);
+      await page.getByTestId('patient-profile-tabs').getByRole('button', { name: 'Servicio Contratado' }).click();
+      await page.getByTestId('new-service-btn').click();
+      await expect(page.getByTestId('patient-contracted-services-edit-drawer')).toBeVisible();
+      await page.getByTestId('svc-code-1').selectOption('AT');
+      await page.getByTestId('svc-addressId-1').selectOption(s5.addressId);
+
+      // 1 faixa na segunda (clique humano) → "Copiar a…" → atalho Lun–Vie → Aplicar
+      await page.getByTestId('day-schedule-add-monday').click();
+      await page.getByTestId('day-schedule-copy-monday').click();
+      await page.getByTestId('day-schedule-copy-weekdays').click();
+      await page.getByTestId('day-schedule-copy-apply').click();
+      for (const d of ['monday', 'tuesday', 'wednesday', 'thursday', 'friday']) {
+        await expect(page.getByTestId(`day-schedule-remove-${d}-0`)).toBeVisible();
+      }
+      await expect(page.getByTestId('day-schedule-remove-saturday-0')).toHaveCount(0);
+
+      // Medida: 1 faixa em CADA um dos 7 dias — o editor cabe em 420 px (1366×768, sem rolar o editor)
+      await page.setViewportSize({ width: 1366, height: 768 });
+      await page.getByTestId('day-schedule-add-saturday').click();
+      await page.getByTestId('day-schedule-add-sunday').click();
+      const editor = page.getByTestId('day-schedule-editor');
+      const box = await editor.boundingBox();
+      expect(box).not.toBeNull();
+      expect(box!.height).toBeLessThanOrEqual(420);
+      // volta ao pedido: só lun-vie
+      await page.getByTestId('day-schedule-remove-saturday-0').click();
+      await page.getByTestId('day-schedule-remove-sunday-0').click();
+
+      // Fim <= início: recusado em tela, com mensagem (os gatilhos do TimeSelect são `div.relative > button`)
+      const segunda = page.getByTestId('day-schedule-row-monday');
+      const gatilhos = segunda.locator('div.relative > button');
+      await gatilhos.nth(1).click(); // fim 17:00
+      await segunda.locator('ul').getByRole('button', { name: '09:00', exact: true }).click(); // fim = início
+      await expect(page.getByTestId('day-schedule-invalid-monday')).toContainText('posterior');
+      await gatilhos.nth(1).click();
+      await segunda.locator('ul').getByRole('button', { name: '17:00', exact: true }).click();
+      await expect(page.getByTestId('day-schedule-invalid-monday')).toHaveCount(0);
+
+      const created = page.waitForResponse((r) => r.request().method() === 'POST' && /\/contracted-services$/.test(r.url()));
+      await page.getByTestId('contracted-service-new-save').click();
+      const body = (await (await created).json()) as { data: { id: string; schedule: Array<{ dayOfWeek: number }> } };
+      expect(body.data.schedule.map((x) => x.dayOfWeek).sort()).toEqual([1, 2, 3, 4, 5]);
+
+      // Relê a ficha: 5 dias persistidos
+      await page.reload();
+      await page.getByTestId('patient-profile-tabs').getByRole('button', { name: 'Servicio Contratado' }).click();
+      await page.getByTestId(`contracted-service-edit-${body.data.id}`).click();
+      for (const d of ['monday', 'tuesday', 'wednesday', 'thursday', 'friday']) {
+        await expect(page.getByTestId(`day-schedule-remove-${d}-0`)).toBeVisible();
+      }
+      await expect(page.getByTestId('day-schedule-remove-saturday-0')).toHaveCount(0);
+      expect(runSQL(`SELECT jsonb_array_length(schedule) FROM patient_contracted_services WHERE id = '${body.data.id}'`).split('\n')[0].trim()).toBe('5');
+    } finally {
+      cleanupPatientDeep(s5.patientId);
+    }
+  });
 });
