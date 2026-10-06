@@ -44,13 +44,19 @@ describe('toInputTime', () => {
   });
 });
 
+/** TimeSelect: abre o seletor e clica na opção HH:MM (24h); '' = opção "--:--" (limpar). */
+function escolherHora(time: string): void {
+  fireEvent.click(screen.getByTestId('meet-recurring-time'));
+  fireEvent.click(screen.getByTestId(`meet-recurring-time-option-${time === '' ? 'empty' : time}`));
+}
+
 describe('VacancyMeetLinksCard — recorrente', () => {
   beforeEach(() => { vi.clearAllMocks(); mockUpdate.mockResolvedValue({}); });
 
   it('nasce com o recorrente da vaga preenchido e, sem mudança, o PUT NÃO manda `recurring`', async () => {
     render(<VacancyMeetLinksCard {...base} recurringWeekday={1} recurringTime="08:30:00" recurringLink={LINK} />);
     expect((screen.getByTestId('meet-recurring-weekday') as HTMLSelectElement).value).toBe('1');
-    expect((screen.getByTestId('meet-recurring-time') as HTMLInputElement).value).toBe('08:30');
+    expect(screen.getByTestId('meet-recurring-time')).toHaveTextContent('08:30');
     expect((screen.getByTestId('meet-recurring-link') as HTMLInputElement).value).toBe(LINK);
     fireEvent.click(screen.getByTestId('meet-links-save'));
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
@@ -62,7 +68,7 @@ describe('VacancyMeetLinksCard — recorrente', () => {
   it('preencher dia + hora + sala manda `recurring` como objeto (weekday numérico)', async () => {
     render(<VacancyMeetLinksCard {...base} />);
     fireEvent.change(screen.getByTestId('meet-recurring-weekday'), { target: { value: '2' } });
-    fireEvent.change(screen.getByTestId('meet-recurring-time'), { target: { value: '09:00' } });
+    escolherHora('09:00');
     fireEvent.change(screen.getByTestId('meet-recurring-link'), { target: { value: ` ${LINK} ` } });
     fireEvent.click(screen.getByTestId('meet-links-save'));
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith('v1', [LINK, null, null], { weekday: 2, time: '09:00', link: LINK }));
@@ -71,7 +77,7 @@ describe('VacancyMeetLinksCard — recorrente', () => {
   it('limpar os três campos de um recorrente existente manda `recurring: null`', async () => {
     render(<VacancyMeetLinksCard {...base} recurringWeekday={1} recurringTime="08:30" recurringLink={LINK} />);
     fireEvent.change(screen.getByTestId('meet-recurring-weekday'), { target: { value: '' } });
-    fireEvent.change(screen.getByTestId('meet-recurring-time'), { target: { value: '' } });
+    escolherHora('');
     fireEvent.change(screen.getByTestId('meet-recurring-link'), { target: { value: '' } });
     fireEvent.click(screen.getByTestId('meet-links-save'));
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledWith('v1', [LINK, null, null], null));
@@ -88,10 +94,10 @@ describe('VacancyMeetLinksCard — recorrente', () => {
     expect(screen.queryByTestId('meet-recurring-error')).toBeNull();
   });
 
-  it('sala fora do padrão → "invalidLink" (a hora é <input type="time">: o DOM só entrega HH:MM)', async () => {
+  it('sala fora do padrão → "invalidLink" (a hora vem do TimeSelect: só entrega HH:MM)', async () => {
     render(<VacancyMeetLinksCard {...base} />);
     fireEvent.change(screen.getByTestId('meet-recurring-weekday'), { target: { value: '1' } });
-    fireEvent.change(screen.getByTestId('meet-recurring-time'), { target: { value: '08:30' } });
+    escolherHora('08:30');
     fireEvent.change(screen.getByTestId('meet-recurring-link'), { target: { value: 'https://zoom.us/j/1' } });
     fireEvent.click(screen.getByTestId('meet-links-save'));
     expect(screen.getByTestId('meet-recurring-error')).toHaveTextContent('meetLinksCard.invalidLink');
@@ -125,10 +131,14 @@ describe('VacancyMeetLinksCard — recorrente', () => {
     expect(screen.getAllByTitle('admin.vacancyDetail.meetLinksCard.openLink')).toHaveLength(2);
   });
 
-  it('formatação de data que lança não derruba o card (catch do formatador)', () => {
-    const spy = vi.spyOn(Date.prototype, 'toLocaleString').mockImplementation(() => { throw new Error('boom'); });
-    render(<VacancyMeetLinksCard {...base} />);
+  it('data inválida não derruba o card e não imprime "Invalid Date"', () => {
+    render(<VacancyMeetLinksCard {...base} meetDatetime1="lixo" />);
     expect(screen.queryByText(/2027/)).toBeNull();
-    spy.mockRestore();
+    expect(screen.queryByText(/Invalid Date/)).toBeNull();
+  });
+
+  it('mostra a data do link em -03 e 24h (11:30Z = 08:30), nunca am/pm', () => {
+    render(<VacancyMeetLinksCard {...base} />);
+    expect(screen.getByText(/08:30/)).toBeInTheDocument();
   });
 });

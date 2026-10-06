@@ -208,4 +208,42 @@ describe('TimeSelect', () => {
     expect(buttons[0]).toHaveTextContent('08:00');
     expect(buttons[1]).toHaveTextContent('17:30');
   });
+
+  // ── data-testid / aria-label / clearable ───────────────────────────────────
+
+  it('aplica data-testid e aria-label no botão e gera opções endereçáveis', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    render(<TimeSelect value="" onChange={onChange} data-testid="hora" aria-label="Hora" />);
+
+    expect(screen.getByTestId('hora')).toHaveAttribute('aria-label', 'Hora');
+    await user.click(screen.getByTestId('hora'));
+    await user.click(screen.getByTestId('hora-option-19:00'));
+
+    expect(onChange).toHaveBeenCalledWith({ target: { value: '19:00' } });
+  });
+
+  it('nunca oferece am/pm: só opções HH:MM de 00:00 a 23:55', async () => {
+    const user = userEvent.setup();
+    render(<TimeSelect value="" data-testid="hora" />);
+    await user.click(screen.getByTestId('hora'));
+    const texts = screen.getAllByRole('listitem').map((li) => li.textContent);
+    expect(texts[0]).toBe('00:00');
+    expect(texts[texts.length - 1]).toBe('23:55');
+    expect(texts.every((t) => /^\d{2}:\d{2}$/.test(t ?? ''))).toBe(true);
+  });
+
+  it('clearable: a opção "--:--" emite string vazia; sem clearable ela não existe', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    const { unmount } = render(<TimeSelect value="08:30" onChange={onChange} clearable data-testid="hora" />);
+    await user.click(screen.getByTestId('hora'));
+    await user.click(screen.getByTestId('hora-option-empty'));
+    expect(onChange).toHaveBeenCalledWith({ target: { value: '' } });
+    unmount();
+
+    render(<TimeSelect value="08:30" data-testid="hora" />);
+    await user.click(screen.getByTestId('hora'));
+    expect(screen.queryByTestId('hora-option-empty')).toBeNull();
+  });
 });

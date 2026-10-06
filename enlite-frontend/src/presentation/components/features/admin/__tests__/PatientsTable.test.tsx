@@ -98,16 +98,16 @@ describe('PatientsTable — data do registro na linha', () => {
    * ⚠️ Não dá para provar o locale pela SAÍDA: es-AR e pt-BR formatam igual
    * (dd/mm/aaaa). Um teste que só lesse a tela ficaria verde com o ternário
    * invertido ou apagado — instrumento morto. Por isso o espião lê o argumento
-   * que chega ao `toLocaleDateString`.
+   * que chega ao `Intl.DateTimeFormat` (via `formatInstant`).
    */
   it.each([
     ['es', 'es-AR'],
     ['pt-BR', 'pt-BR'],
   ])('idioma %s entrega o locale %s ao formatador', (lang, esperado) => {
     language = lang;
-    const spy = vi.spyOn(Date.prototype, 'toLocaleDateString');
+    const spy = vi.spyOn(Intl, 'DateTimeFormat');
     render(<PatientsTable patients={[row()]} />);
-    expect(spy).toHaveBeenCalledWith(esperado, { day: '2-digit', month: '2-digit', year: 'numeric' });
+    expect(spy).toHaveBeenCalledWith(esperado, expect.objectContaining({ day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'America/Argentina/Buenos_Aires' }));
     spy.mockRestore();
   });
 

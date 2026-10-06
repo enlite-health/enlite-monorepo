@@ -7,6 +7,7 @@ import { ActionButton, PanelErrorAlert } from '@presentation/components/features
 import { useCellAccess } from '@presentation/hooks/useCellAccess';
 import { AccessGate, PANEL_RESOURCE } from './AccessGate';
 import { panelErrorKey } from './panelErrors';
+import { formatInstant } from '@presentation/utils/dateTimeFormat';
 
 /** `/admin/access/features` — a matriz país × função. Ligar/desligar é `ActionButton`. */
 export function CountryFeaturesPage(): JSX.Element {
@@ -84,7 +85,7 @@ function FeaturesMatrix(): JSX.Element {
                   <TableCell><span className="font-mono text-xs">{f.featureKey}</span></TableCell>
                   <TableCell>{f.enabled ? '✓' : '—'}</TableCell>
                   <TableCell>{t(`admin.access.features.${f.source}`)}</TableCell>
-                  <TableCell>{new Date(f.updatedAt).toLocaleDateString('es-AR')}</TableCell>
+                  <TableCell>{formatInstant(f.updatedAt, {})}</TableCell>
                   <TableCell unwrapped align="right">
                     <ActionButton resource={PANEL_RESOURCE} size="sm" variant="ghost" disabled={!reason.trim()} onClick={() => toggle(f)}>
                       {f.enabled ? t('admin.access.features.disable') : t('admin.access.features.enable')}

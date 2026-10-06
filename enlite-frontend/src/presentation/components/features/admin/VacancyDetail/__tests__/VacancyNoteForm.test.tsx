@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 vi.mock('react-i18next', () => ({
@@ -40,6 +40,32 @@ describe('VacancyNoteForm', () => {
     expect(payload.category).toBe('CONTATO');
     expect(() => new Date(payload.occurredAt).toISOString()).not.toThrow();
     expect(new Date(payload.occurredAt).toISOString()).toBe(payload.occurredAt);
+  });
+
+  // O input `datetime-local` é interpretado como hora de -03 (Buenos Aires), não do navegador.
+  // Rodar com TZ=Asia/Tokyo e TZ=America/Los_Angeles: no fuso do host o ISO sairia outro.
+  it('"Cuándo" digitado 19:00 vira 22:00Z (hora de -03), qualquer que seja o fuso do navegador', async () => {
+    render(<VacancyNoteForm onSubmit={onSubmit} onCancel={onCancel} isSaving={false} />);
+
+    fireEvent.change(screen.getByTestId('vacancy-note-when'), { target: { value: '2026-10-07T19:00' } });
+    await userEvent.click(screen.getByTestId('vacancy-note-contact'));
+    await userEvent.keyboard('grupo');
+    await userEvent.click(screen.getByTestId('vacancy-note-body'));
+    await userEvent.keyboard('texto');
+    await userEvent.click(screen.getByTestId('vacancy-note-save'));
+
+    expect(onSubmit.mock.calls[0][0].occurredAt).toBe('2026-10-07T22:00:00.000Z');
+  });
+
+  it('o "Cuándo" inicial mostra a hora de -03 de agora, não a do navegador', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-08T02:30:00Z'));
+    try {
+      render(<VacancyNoteForm onSubmit={onSubmit} onCancel={onCancel} isSaving={false} />);
+      expect((screen.getByTestId('vacancy-note-when') as HTMLInputElement).value).toBe('2026-10-07T23:30');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('"Cuándo" vazio desabilita Guardar e não chama onSubmit', async () => {

@@ -46,6 +46,7 @@ import { ClinicalTextareaField } from '../edit/ClinicalTextareaField';
 import { IcdSearchCombobox } from '../edit/IcdSearchCombobox';
 import { TherapeuticProjectSegmentField } from './TherapeuticProjectSegmentField';
 import { segmentOptions } from './segmentOptions';
+import { todayInOperationZone } from '@presentation/utils/dateTimeFormat';
 
 interface Props {
   services: PatientContractedServiceDetail[];
@@ -72,7 +73,8 @@ interface Props {
   onDirty: () => void;
 }
 
-const today = (): string => new Date().toISOString().slice(0, 10);
+// Dia civil de -03 (Buenos Aires), não o dia UTC: depois das 21h o `toISOString()` já devolvia amanhã.
+const today = (): string => todayInOperationZone();
 
 const idsOfKind = (refs: ContactRef[] | undefined, kind: ContactRefKind): string[] =>
   (refs ?? []).filter((r) => r.kind === kind).map((r) => r.id);

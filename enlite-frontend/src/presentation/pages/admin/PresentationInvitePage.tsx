@@ -14,6 +14,7 @@ import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 import { Label } from '@presentation/components/atoms/Label';
+import { formatInstant } from '@presentation/utils/dateTimeFormat';
 
 type SaveState = { status: 'idle' | 'saving' | 'saved' | 'error'; error?: string };
 
@@ -104,7 +105,7 @@ export function PresentationInvitePage() {
             {save.status === 'saved' && <span className="text-green-700" data-testid="pi-saved"><Text as="span" size="xs" color="inherit">{t('admin.presentationInvite.saved')}</Text></span>}
             {save.status === 'error' && <span className="text-red-600" data-testid="pi-error"><Text as="span" size="xs" color="inherit">{save.error}</Text></span>}
             <span data-testid="pi-last-edit"><Text as="span" size="xs" color="secondary">
-              {t('admin.presentationInvite.lastEdit')}: {settings.updatedAt ? new Date(settings.updatedAt).toLocaleString('es-AR') : '—'}{settings.updatedBy ? ` ${t('admin.presentationInvite.by')} ${settings.updatedBy}` : ''}
+              {t('admin.presentationInvite.lastEdit')}: {settings.updatedAt ? formatInstant(settings.updatedAt, { day: 'numeric', month: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit' }) ?? '—' : '—'}{settings.updatedBy ? ` ${t('admin.presentationInvite.by')} ${settings.updatedBy}` : ''}
             </Text></span>
           </div>
         </div>

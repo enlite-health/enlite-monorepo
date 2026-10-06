@@ -11,6 +11,7 @@ import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 import type { DedupAccount } from '@domain/entities/DedupGroup';
+import { formatInstant } from '@presentation/utils/dateTimeFormat';
 
 interface MergeAccountCardProps {
   account: DedupAccount;
@@ -20,11 +21,7 @@ interface MergeAccountCardProps {
 
 // new Date() + toLocaleString never throw in V8 (invalid input → 'Invalid Date' string).
 function formatDate(iso: string): string {
-  return new Date(iso).toLocaleString('es-AR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  });
+  return formatInstant(iso, { day: '2-digit', month: '2-digit', year: 'numeric' }) ?? 'Invalid Date';
 }
 
 export function MergeAccountCard({

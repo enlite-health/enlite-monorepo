@@ -3,6 +3,7 @@ import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { getPlatformLabel } from '@presentation/pages/admin/workersData';
 import { getDocumentTypeLabel } from './workerDetailLabels';
+import { formatInstant } from '@presentation/utils/dateTimeFormat';
 
 interface WorkerContactCardProps {
   status: string;
@@ -74,8 +75,8 @@ export function WorkerContactCard({
   const statusLabel = STATUS_I18N_KEYS[status] ? t(STATUS_I18N_KEYS[status]) : status;
   const statusColor = STATUS_COLORS[status] ?? 'bg-gray-100 text-gray-600';
   const platformLabel = getPlatformLabel(t, platform);
-  const created = new Date(createdAt).toLocaleDateString('pt-BR');
-  const updated = new Date(updatedAt).toLocaleDateString('pt-BR');
+  const created = formatInstant(createdAt, {}, 'pt-BR') ?? '';
+  const updated = formatInstant(updatedAt, {}, 'pt-BR') ?? '';
 
   return (
     <div data-testid="worker-contact-card" className="bg-white rounded-card border-[1.5px] border-gray-700 p-6 sm:px-8 sm:py-10 flex flex-col gap-4">

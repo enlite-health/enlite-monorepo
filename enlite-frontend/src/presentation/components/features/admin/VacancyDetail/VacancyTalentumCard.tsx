@@ -13,6 +13,7 @@ import { Heading } from '@presentation/components/atoms/Heading';
 import { ActionButton } from '@presentation/components/features/access';
 import { useActionGate } from '@presentation/hooks/useCellAccess';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
+import { formatInstant } from '@presentation/utils/dateTimeFormat';
 
 interface VacancyTalentumCardProps {
   vacancyId: string;
@@ -165,15 +166,13 @@ export function VacancyTalentumCard({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const publishedDate = talentumPublishedAt
-    ? new Date(talentumPublishedAt).toLocaleString('es-AR', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-      })
-    : null;
+  const publishedDate = formatInstant(talentumPublishedAt, {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 
   return (
     <div data-testid="talentum-card" className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex flex-col gap-5">

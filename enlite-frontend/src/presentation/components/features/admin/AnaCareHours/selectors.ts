@@ -9,6 +9,7 @@
  * string pro backend — regra dura de privacidade do brief).
  */
 import type { AnaCareMonthSnapshot, AnaCareOriginCounts, AnaCareProvider, AnaCareShift, AnaCarePatient } from './types';
+import { formatInstant, OPERATION_TIME_ZONE } from '@presentation/utils/dateTimeFormat';
 
 /**
  * Mês padrão da tela (decisão do Gabriel, 20/09 — substitui a decisão de 16/09 que usava o mês
@@ -170,7 +171,7 @@ const SOURCE_TIME_ZONE = 'Etc/GMT+6';
  * (`COUNTRY_TZ.AR`) — mesma constante por coincidência, mas amarrar as duas features por um
  * import criaria acoplamento sem necessidade.
  */
-export const DISPLAY_TIME_ZONE = 'America/Argentina/Buenos_Aires';
+export const DISPLAY_TIME_ZONE = OPERATION_TIME_ZONE;
 
 const wallClockFormatter = new Intl.DateTimeFormat('en-GB', {
   hour: '2-digit',
@@ -201,15 +202,7 @@ export function formatSourceTime(iso: string | null | undefined): string | undef
  * (ver comentário de `DISPLAY_TIME_ZONE`). Usada por `AnaCareHoursListPage` para "atualizado às".
  */
 export function formatDateTime(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleString('es-AR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: DISPLAY_TIME_ZONE,
-  });
+  return formatInstant(iso, { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) ?? 'Invalid Date';
 }
 
 /**
