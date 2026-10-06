@@ -4,6 +4,7 @@ import { Text } from '@presentation/components/atoms/Text';
 import { ActionButton } from '@presentation/components/features/access';
 import { AdminContractedServicesApiService } from '@infrastructure/http/AdminContractedServicesApiService';
 import { classifyActionError } from '@hooks/admin/contractedServiceActionError';
+import { formatInstant } from '@presentation/utils/dateTimeFormat';
 
 interface AssembleItineraryButtonProps {
   patientId: string;
@@ -16,14 +17,10 @@ interface AssembleItineraryButtonProps {
 /** Códigos 422 com texto próprio; qualquer outro cai em `generic` (nunca o id de serviço cru da API). */
 const KNOWN_ERROR_CODES = ['NO_SERVICE_WITH_VACANCY', 'SERVICE_WITHOUT_SLOT'];
 
-const BUENOS_AIRES = 'America/Argentina/Buenos_Aires';
-
 /** "dd/mm" da string ISO, no fuso de Buenos Aires — nunca o fuso do processo. `—` se a data não parsear. */
 function formatDdMm(iso: string): string {
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return '—';
   // `en-GB` só pela forma fixa dd/mm com zero à esquerda (`es-AR` devolve "30/9" mesmo com '2-digit').
-  return new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: '2-digit', timeZone: BUENOS_AIRES }).format(date);
+  return formatInstant(iso, { day: '2-digit', month: '2-digit' }, 'en-GB') ?? '—';
 }
 
 /**

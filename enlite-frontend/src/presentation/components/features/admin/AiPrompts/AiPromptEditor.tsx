@@ -33,6 +33,7 @@ import { Textarea } from '@presentation/components/atoms/Textarea';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
 import { AdminApiService, ApiError, type AiPrompt, type AiPromptSlug } from '@infrastructure/http/AdminApiService';
+import { formatInstant } from '@presentation/utils/dateTimeFormat';
 
 interface AiPromptEditorProps {
   prompt: AiPrompt;
@@ -50,11 +51,9 @@ interface AiPromptEditorProps {
   initialDraft?: string;
 }
 
-/** "28/09/2026, 14:35" no fuso e na língua de quem olha — mesmo formato de `ClinicalLongText.tsx`. */
+/** "28/09/2026, 14:35" em -03 (Buenos Aires), 24h, na língua de quem olha — mesmo formato de `ClinicalLongText.tsx`. */
 function formatDateTime(iso: string, locale: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString(resolveDateLocale(locale), { ...SHORT_DATE_OPTIONS, hour: '2-digit', minute: '2-digit' });
+  return formatInstant(iso, { ...SHORT_DATE_OPTIONS, hour: '2-digit', minute: '2-digit' }, resolveDateLocale(locale)) ?? iso;
 }
 
 export function AiPromptEditor({ prompt, onSaved, onDraftChange, initialDraft }: AiPromptEditorProps) {

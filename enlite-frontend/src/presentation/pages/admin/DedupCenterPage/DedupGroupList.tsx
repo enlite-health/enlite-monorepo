@@ -27,14 +27,11 @@ import {
 } from '@presentation/components/atoms/Table';
 import { DedupSignalBadge } from './DedupSignalBadge';
 import type { DedupGroupSummary } from '@domain/entities/DedupGroup';
+import { formatInstant } from '@presentation/utils/dateTimeFormat';
 
 // new Date() + toLocaleString never throw in V8 (invalid input → 'Invalid Date' string).
 function formatDate(iso: string): string {
-  return new Date(iso).toLocaleString('es-AR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  });
+  return formatInstant(iso, { day: '2-digit', month: '2-digit', year: 'numeric' }) ?? 'Invalid Date';
 }
 
 interface DedupGroupListProps {

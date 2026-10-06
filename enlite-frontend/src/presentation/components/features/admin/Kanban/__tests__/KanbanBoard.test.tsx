@@ -716,7 +716,8 @@ describe('KanbanBoard — menu "Mover a…"', () => {
     fireEvent.click(screen.getByTestId('move-to-button'));
     fireEvent.click(screen.getByTestId('move-to-option-CONFIRMED'));
     fireEvent.change(screen.getByTestId('interview-date-input'), { target: { value: '2026-08-05' } });
-    fireEvent.change(screen.getByTestId('interview-time-input'), { target: { value: '14:30' } });
+    fireEvent.click(screen.getByTestId('interview-time-input'));
+    fireEvent.click(screen.getByTestId('interview-time-input-option-14:30'));
     fireEvent.click(screen.getByTestId('interview-schedule-confirm'));
 
     expect(onMove).toHaveBeenCalledWith('enc-42', 'CONFIRMED', undefined, undefined, {

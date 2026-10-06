@@ -240,10 +240,12 @@ describe('DedupHistoryTab — date column', () => {
   it('renders a formatted date string for each row', () => {
     renderTab({ history: [ITEM_UNDOABLE] });
     // toLocaleString('es-AR') produces something non-empty; we just verify it's there
-    const expected = new Date(ITEM_UNDOABLE.created_at).toLocaleString('es-AR', {
+    const expected = new Intl.DateTimeFormat('es-AR', {
       dateStyle: 'short',
       timeStyle: 'short',
-    });
+      timeZone: 'America/Argentina/Buenos_Aires',
+      hourCycle: 'h23',
+    }).format(new Date(ITEM_UNDOABLE.created_at));
     expect(screen.getByText(expected)).toBeInTheDocument();
   });
 });

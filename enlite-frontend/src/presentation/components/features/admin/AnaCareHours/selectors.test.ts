@@ -658,19 +658,19 @@ describe('formatDateTime', () => {
 
   it('POSITIVO — igual a uma referência Intl.DateTimeFormat construída localmente com o MESMO timeZone (sem tocar nenhum global) — vide limite honesto no comentário acima', () => {
     const iso = '2026-09-15T02:30:00Z';
-    const referenciaBA = new Intl.DateTimeFormat('es-AR', { ...OPTIONS, timeZone: DISPLAY_TIME_ZONE }).format(new Date(iso));
+    const referenciaBA = new Intl.DateTimeFormat('es-AR', { ...OPTIONS, hourCycle: 'h23', timeZone: DISPLAY_TIME_ZONE }).format(new Date(iso));
     expect(formatDateTime(iso)).toBe(referenciaBA);
   });
 
   it('CONTROLE NEGATIVO — o MESMO iso formatado com um fuso distante (Asia/Tokyo) dá resultado DIFERENTE da referência de Buenos Aires — prova que a comparação acima tem dentes: se `timeZone` não afetasse `Intl.DateTimeFormat`, a positiva passaria com qualquer fuso e não provaria nada', () => {
     const iso = '2026-09-15T02:30:00Z';
-    const referenciaBA = new Intl.DateTimeFormat('es-AR', { ...OPTIONS, timeZone: DISPLAY_TIME_ZONE }).format(new Date(iso));
-    const referenciaTokyo = new Intl.DateTimeFormat('es-AR', { ...OPTIONS, timeZone: 'Asia/Tokyo' }).format(new Date(iso));
+    const referenciaBA = new Intl.DateTimeFormat('es-AR', { ...OPTIONS, hourCycle: 'h23', timeZone: DISPLAY_TIME_ZONE }).format(new Date(iso));
+    const referenciaTokyo = new Intl.DateTimeFormat('es-AR', { ...OPTIONS, hourCycle: 'h23', timeZone: 'Asia/Tokyo' }).format(new Date(iso));
     expect(referenciaTokyo).not.toBe(referenciaBA);
   });
 
   it('POSITIVO — hora de Buenos Aires (-03), independente do fuso do processo/navegador', () => {
-    expect(formatDateTime('2026-09-15T02:30:00Z')).toBe('14/09/2026, 11:30 p. m.');
+    expect(formatDateTime('2026-09-15T02:30:00Z')).toBe('14/09/2026, 23:30');
   });
 });
 

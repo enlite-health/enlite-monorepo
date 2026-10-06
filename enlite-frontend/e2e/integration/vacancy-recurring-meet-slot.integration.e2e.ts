@@ -87,7 +87,8 @@ test.describe('Vaga: horário recorrente da reunión de presentación (D211.4) @
     expect(runSQL(`SELECT meet_recurring_weekday IS NULL FROM job_postings WHERE id = '${vacancyId}'`)).toBe('t');
 
     await page.getByTestId('meet-recurring-weekday').selectOption('1');
-    await page.getByTestId('meet-recurring-time').fill('08:30');
+    await page.getByTestId('meet-recurring-time').click();
+    await page.getByTestId('meet-recurring-time-option-08:30').click();
     await page.getByTestId('meet-recurring-link').fill(ROOM);
     await page.screenshot({ path: testInfo.outputPath('01-card-recorrente-preenchido.png'), fullPage: false });
     await expect(card).toHaveScreenshot('slot-recorrente-card.png', { maxDiffPixelRatio: 0.05 });
@@ -111,7 +112,8 @@ test.describe('Vaga: horário recorrente da reunión de presentación (D211.4) @
     await page.getByRole('button', { name: /^Links$/ }).click({ timeout: 30_000 });
     await expect(page.getByTestId('meet-recurring-weekday')).toHaveValue('1', { timeout: 15_000 });
     await page.getByTestId('meet-recurring-weekday').selectOption('');
-    await page.getByTestId('meet-recurring-time').fill('');
+    await page.getByTestId('meet-recurring-time').click();
+    await page.getByTestId('meet-recurring-time-option-empty').click();
     await page.getByTestId('meet-recurring-link').fill('');
     await page.getByTestId('meet-links-save').click();
     await expect(page.getByTestId('meet-recurring-pill')).toHaveCount(0, { timeout: 15_000 });

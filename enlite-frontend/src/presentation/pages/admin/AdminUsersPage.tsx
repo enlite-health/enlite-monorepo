@@ -18,6 +18,7 @@ import { TableSkeleton } from '@presentation/components/ui/skeletons';
 import { CreateAdminUserModal, CreateAdminUserForm } from '@presentation/components/admin/CreateAdminUserModal';
 import { DeleteAdminUserModal } from '@presentation/components/admin/DeleteAdminUserModal';
 import { InvitationFallbackModal } from '@presentation/components/admin/InvitationFallbackModal';
+import { formatInstant } from '@presentation/utils/dateTimeFormat';
 
 // ── Page ───────────────────────────────────────────────────────────────────
 
@@ -140,9 +141,7 @@ export function AdminUsersPage(): JSX.Element {
                   <TableCell weight="medium">{admin.displayName || '—'}</TableCell>
                   <TableCell>{admin.email}</TableCell>
                   <TableCell>
-                    {admin.lastLoginAt
-                      ? new Date(admin.lastLoginAt).toLocaleDateString('es-AR')
-                      : '—'}
+                    {formatInstant(admin.lastLoginAt, {}) ?? '—'}
                   </TableCell>
                   <TableCell unwrapped align="right" className="space-x-2">
                     {resetGate.allowed && (

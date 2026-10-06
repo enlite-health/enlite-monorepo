@@ -102,15 +102,21 @@ describe('KanbanCard — visual rendering', () => {
     expect(screen.queryByTestId('icon-map-pin')).not.toBeInTheDocument();
   });
 
-  it('renders interview date formatted as es-AR locale', () => {
-    render(<KanbanCard {...defaultProps} interviewDate="2026-03-15T12:00:00" />);
-    // es-AR format: d/m/yyyy — using midday to avoid timezone shifts
-    expect(screen.getByText(/15\/3\/2026/)).toBeInTheDocument();
+  // `interview_date` é coluna `date`: a API devolve meia-noite UTC. Converter para -03 tirava um dia
+  // ("6 oct" para uma entrevista de 7/10). Rodar com TZ=America/Los_Angeles e TZ=Asia/Tokyo.
+  it('renders interview date (SÓ-DATA) without shifting the day', () => {
+    render(<KanbanCard {...defaultProps} interviewDate="2026-10-07T00:00:00.000Z" />);
+    expect(screen.getByText(/7\/10\/2026/)).toBeInTheDocument();
   });
 
-  it('renders interview date with time when provided', () => {
-    render(<KanbanCard {...defaultProps} interviewDate="2026-03-15T12:00:00" interviewTime="10:30" />);
-    expect(screen.getByText(/15\/3\/2026.*10:30/)).toBeInTheDocument();
+  it('renders interview date with time (HH:MM, 24h) when provided', () => {
+    render(<KanbanCard {...defaultProps} interviewDate="2026-10-07T00:00:00.000Z" interviewTime="19:00:00" />);
+    expect(screen.getByText(/7\/10\/2026 19:00$/)).toBeInTheDocument();
+  });
+
+  it('chip da entrevista (CONFIRMED): "7 oct 19:00", não "6 oct"', () => {
+    render(<KanbanCard {...defaultProps} stage="CONFIRMED" interviewDate="2026-10-07T00:00:00.000Z" interviewTime="19:00:00" />);
+    expect(screen.getByText('7 oct 19:00')).toBeInTheDocument();
   });
 
   it('does not render interview date when null', () => {

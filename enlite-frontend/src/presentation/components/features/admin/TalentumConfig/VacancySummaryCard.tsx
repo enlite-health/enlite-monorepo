@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { Typography } from '@presentation/components/atoms/Typography';
 import { VacancyStatusBadge } from '@presentation/components/atoms/VacancyStatusBadge';
 import { formatCaseNumber } from '@domain/value-objects/caseNumberFormat';
+import { formatInstant } from '@presentation/utils/dateTimeFormat';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -27,11 +28,7 @@ interface Props {
 
 function formatDate(iso: string | null): string {
   if (!iso) return '—';
-  return new Date(iso).toLocaleDateString('es-AR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  });
+  return formatInstant(iso, { day: '2-digit', month: '2-digit', year: 'numeric' }) ?? '—';
 }
 
 // ---------------------------------------------------------------------------

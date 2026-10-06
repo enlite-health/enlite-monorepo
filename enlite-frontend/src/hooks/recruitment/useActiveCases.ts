@@ -6,6 +6,7 @@
 import { useMemo } from 'react';
 import type { ClickUpRow, ActiveCase } from '@domain/entities/RecruitmentData';
 import { getMatchingKey, extractNumbers, parseDate } from '@presentation/utils/recruitmentHelpers';
+import { formatWallDate } from '@presentation/utils/dateTimeFormat';
 
 export function useActiveCases(clickUpData: ClickUpRow[]): ActiveCase[] {
   return useMemo(() => {
@@ -44,9 +45,8 @@ export function useActiveCases(clickUpData: ClickUpRow[]): ActiveCase[] {
         const name = nameCol ? String(row[nameCol] || '').trim() : `Caso ${id}`;
         const dateStr = dateCreatedCol ? String(row[dateCreatedCol] || '').trim() : '';
         const dateObj = parseDate(dateStr);
-        const inicioBusqueda = !isNaN(dateObj.getTime())
-          ? dateObj.toLocaleDateString('es-ES')
-          : dateStr || '-';
+        // `parseDate` monta a Date com o relógio LOCAL (planilha sem fuso): SÓ-DATA, sem conversão.
+        const inicioBusqueda = formatWallDate(dateObj, {}, 'es-ES') ?? (dateStr || '-');
 
         const normalizedStatus = (status === 'BUSQUEDA' || status === 'BÚSQUEDA')
           ? 'BUSQUEDA'

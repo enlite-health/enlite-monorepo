@@ -9,6 +9,7 @@ import {
   VacancyStatusEditor,
   type EditableVacancyStatus,
 } from './VacancyStatusEditor';
+import { formatInstant } from '@presentation/utils/dateTimeFormat';
 
 interface VacancyCaseCardProps {
   status: string;
@@ -31,15 +32,7 @@ interface VacancyCaseCardProps {
 
 function formatDateAR(dateStr: string | null): string {
   if (!dateStr) return '—';
-  try {
-    return new Date(dateStr).toLocaleDateString('es-AR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: '2-digit',
-    });
-  } catch {
-    return '—';
-  }
+  return formatInstant(dateStr, { day: '2-digit', month: '2-digit', year: '2-digit' }) ?? '—';
 }
 
 function DetailRow({

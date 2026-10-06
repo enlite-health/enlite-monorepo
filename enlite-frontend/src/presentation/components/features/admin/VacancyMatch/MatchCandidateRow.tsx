@@ -8,6 +8,7 @@ import { TableRow, TableCell } from '@presentation/components/atoms/Table';
 import { DocsStatusBadge } from '@presentation/components/atoms/DocsStatusBadge';
 import { WorkerProfileModal } from '@presentation/components/features/admin/WorkerDetail/WorkerProfileModal';
 import type { SavedCandidate } from '../../../../../types/match';
+import { formatInstant } from '@presentation/utils/dateTimeFormat';
 
 interface MatchCandidateRowProps {
   candidate: SavedCandidate;
@@ -50,12 +51,11 @@ export function MatchCandidateRow({
     });
   };
 
-  const messagedLabel = candidate.messagedAt
-    ? new Date(candidate.messagedAt).toLocaleDateString(i18n.language === 'pt-BR' ? 'pt-BR' : 'es-AR', {
-        day: '2-digit',
-        month: '2-digit',
-      })
-    : null;
+  const messagedLabel = formatInstant(
+    candidate.messagedAt,
+    { day: '2-digit', month: '2-digit' },
+    i18n.language === 'pt-BR' ? 'pt-BR' : 'es-AR',
+  );
 
   const distanceLabel = candidate.distanceKm != null
     ? `${candidate.distanceKm.toFixed(1)} km`

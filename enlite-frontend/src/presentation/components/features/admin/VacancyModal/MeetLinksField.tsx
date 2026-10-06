@@ -25,6 +25,7 @@ import {
   MEET_LINK_REGEX,
   normalizeMeetLink,
 } from '../vacancy-form-schema';
+import { formatInstant } from '@presentation/utils/dateTimeFormat';
 
 type MeetLookupState = 'idle' | 'loading' | 'found' | 'not_found' | 'invalid';
 type LookupRow = { status: MeetLookupState; datetime: string | null };
@@ -42,17 +43,7 @@ const INITIAL_LOOKUPS: LookupRow[] = [
 
 function formatMeetDatetime(iso: string | null): string | null {
   if (!iso) return null;
-  try {
-    return new Date(iso).toLocaleString('es-AR', {
-      day: 'numeric',
-      month: 'long',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  } catch {
-    return null;
-  }
+  return formatInstant(iso, { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
 export function MeetLinksField({ control, errors }: MeetLinksFieldProps): JSX.Element {

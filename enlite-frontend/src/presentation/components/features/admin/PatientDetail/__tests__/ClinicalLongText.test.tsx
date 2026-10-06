@@ -53,10 +53,10 @@ describe('ClinicalLongText', () => {
     const iso = '2026-08-28T14:35:00Z';
     language = 'es';
     const { unmount } = render(<ClinicalLongText {...base} />);
-    expect(screen.getByTestId('bloco-edited').textContent).toBe(`Última edição: ${new Date(iso).toLocaleString('es-AR', FMT)} · Coordinadora`);
+    expect(screen.getByTestId('bloco-edited').textContent).toBe(`Última edição: ${new Intl.DateTimeFormat('es-AR', { ...FMT, timeZone: 'America/Argentina/Buenos_Aires', hourCycle: 'h23' }).format(new Date(iso))} · Coordinadora`);
     unmount();
     language = 'pt-BR';
     render(<ClinicalLongText {...base} />);
-    expect(screen.getByTestId('bloco-edited').textContent).toBe(`Última edição: ${new Date(iso).toLocaleString('pt-BR', FMT)} · Coordinadora`);
+    expect(screen.getByTestId('bloco-edited').textContent).toBe(`Última edição: ${new Intl.DateTimeFormat('pt-BR', { ...FMT, timeZone: 'America/Argentina/Buenos_Aires', hourCycle: 'h23' }).format(new Date(iso))} · Coordinadora`);
   });
 });

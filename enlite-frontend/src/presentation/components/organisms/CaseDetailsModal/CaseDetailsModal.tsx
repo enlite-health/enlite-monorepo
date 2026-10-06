@@ -4,6 +4,7 @@ import { Button } from '@presentation/components/atoms/Button';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { diagnosisDisplayState } from '@domain/entities/diagnosisDisplay';
+import { formatInstant } from '@presentation/utils/dateTimeFormat';
 
 interface CaseDetailsModalProps {
   isOpen: boolean;
@@ -141,7 +142,7 @@ export function CaseDetailsModal({ isOpen, onClose, caseData }: CaseDetailsModal
                     <div className="flex justify-between">
                       <Text size="sm" weight="semibold">{pub.channel}</Text>
                       <Text size="sm" color="muted">
-                        {new Date(pub.published_at).toLocaleDateString()}
+                        {formatInstant(pub.published_at, {})}
                       </Text>
                     </div>
                     {pub.recruiter_name && (

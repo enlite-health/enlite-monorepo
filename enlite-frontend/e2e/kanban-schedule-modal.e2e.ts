@@ -165,7 +165,8 @@ test.describe('Kanban — captura da data ao agendar', () => {
     expect(store.moved).toHaveLength(0);
 
     await page.getByTestId('interview-date-input').fill('2026-08-05');
-    await page.getByTestId('interview-time-input').fill('14:30');
+    await page.getByTestId('interview-time-input').click();
+    await page.getByTestId('interview-time-input-option-14:30').click();
     await modal.screenshot({ path: 'e2e/__screenshots__/kanban-modal-agendamento-preenchido.png' });
     await page.getByTestId('interview-schedule-confirm').click();
 
