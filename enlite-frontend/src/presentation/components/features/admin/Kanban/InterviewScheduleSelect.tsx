@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { TimeSelect } from '@presentation/components/atoms/TimeSelect';
 import { useTranslation } from 'react-i18next';
 import { Text } from '@presentation/components/atoms/Text';
 import { Heading } from '@presentation/components/atoms/Heading';
@@ -79,12 +80,12 @@ export function InterviewScheduleSelect({ onSubmit, onCancel }: InterviewSchedul
             <Text as="span" size="xs" weight="medium" className="text-[#180149]">
               {t('admin.kanban.scheduleModal.timeLabel')}
             </Text>
-            <input
-              type="time"
+            {/* TimeSelect, não <input type="time">: o nativo mostra am/pm conforme o navegador; aqui é 24h por construção. */}
+            <TimeSelect
               value={time}
               onChange={(e) => setTime(e.target.value)}
               data-testid="interview-time-input"
-              className="rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-purple-500 focus:outline-none"
+              className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-purple-500 focus:outline-none"
             />
           </label>
 
