@@ -3,7 +3,8 @@
  *
  * Cobre:
  *  - promove uma linha elegível (vaga válida + sem WJA + worker REGISTERED)
- *  - skip por WJA já existente (inclusive REJECTED — nunca ressuscita)
+ *  - skip por WJA já existente À FRENTE de Iniciados (inclusive REJECTED — nunca ressuscita)
+ *  - WJA pré-Iniciado (convite do sistema, M6b/D474) NÃO bloqueia a promoção
  *  - skip por vaga fechada / draft / deletada (não encontrada)
  *  - skip por worker não-REGISTERED / merged (revalidação tardia)
  *  - conflito de UNIQUE (23505) vira skip, nunca propaga erro
@@ -94,6 +95,31 @@ describe('PromoteBlockedApplicationsUseCase', () => {
     );
   });
 
+  it('M6b (D474): WJA pré-Iniciado do par (convite do sistema) NÃO bloqueia — promove; a guarda só conta WJA à frente', async () => {
+    const query = jest.fn();
+    query.mockResolvedValueOnce({
+      rows: [{ id: 'ba-1', job_posting_id: 'jp-1', acquisition_channel: 'site' }],
+    });
+    query.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
+    query.mockResolvedValueOnce({ rows: [{ is_draft: false, status: 'SEARCHING' }] });
+    // a guarda exclui a pré-Iniciado no SQL → nenhuma linha "à frente"
+    query.mockResolvedValueOnce({ rows: [] });
+    query.mockResolvedValueOnce({ rows: [] });
+
+    const execute = jest.fn().mockResolvedValue({ wjaId: 'wja-do-convite' });
+    const useCase = new PromoteBlockedApplicationsUseCase(
+      makePool(query) as never,
+      makeCreateWjaUseCase(execute),
+    );
+
+    const result = await useCase.execute(WORKER_ID);
+
+    const guardSql: string = query.mock.calls[3][0];
+    expect(guardSql).toContain('NOT (wja.application_funnel_stage = \'INVITED\' AND wja.source IS DISTINCT FROM \'manual\')');
+    expect(result).toEqual({ promoted: 1, skipped: 0, reasons: {} });
+    expect(execute).toHaveBeenCalledTimes(1); // o createWjaUseCase transforma o convite em postulação (M6)
+  });
+
   it('skip: WJA já existe para o par (inclusive REJECTED — nunca ressuscita)', async () => {
     const query = jest.fn();
     query.mockResolvedValueOnce({
@@ -101,7 +127,7 @@ describe('PromoteBlockedApplicationsUseCase', () => {
     });
     query.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
     query.mockResolvedValueOnce({ rows: [{ is_draft: false, status: 'SEARCHING' }] });
-    // NOT EXISTS wja → já existe (qualquer stage, ex: REJECTED)
+    // WJA à frente de Iniciados já existe (qualquer stage/source não pré-Iniciado, ex: REJECTED)
     query.mockResolvedValueOnce({ rows: [{ '?column?': 1 }] });
 
     const execute = jest.fn();

@@ -253,17 +253,26 @@ describe('loadStageCounts', () => {
     expect(sql).toContain('UNION ALL');
   });
 
-  it('agrupa INVITED/manual + IN_PROGRESS + 1 blocked em INICIADO:1, IN_PROGRESS:1, REJECTED:1', async () => {
+  it('agrupa INVITED/manual + IN_PROGRESS + 1 bloqueada ativa + 1 dispensada em INICIADO:2, IN_PROGRESS:1, REJECTED:1 (D474)', async () => {
     const pool = makePool([
-      { id: 'jp-a', kind: 'wja', stage: 'INVITED', source: 'manual', messaged: false, n: 1 },
-      { id: 'jp-a', kind: 'wja', stage: 'IN_PROGRESS', source: 'talentum', messaged: true, n: 1 },
-      { id: 'jp-a', kind: 'blocked', stage: null, source: null, messaged: false, n: 1 },
+      { id: 'jp-a', kind: 'wja', stage: 'INVITED', source: 'manual', messaged: false, n: 1, dismissed: false },
+      { id: 'jp-a', kind: 'wja', stage: 'IN_PROGRESS', source: 'talentum', messaged: true, n: 1, dismissed: false },
+      { id: 'jp-a', kind: 'blocked', stage: null, source: null, messaged: false, n: 1, dismissed: false },
+      { id: 'jp-a', kind: 'blocked', stage: null, source: null, messaged: false, n: 1, dismissed: true },
     ]);
     const out = await loadStageCounts(pool, ['jp-a']);
     const counts = out.get('jp-a')!;
-    expect(counts.INICIADO).toBe(1);
+    expect(counts.INICIADO).toBe(2);
     expect(counts.IN_PROGRESS).toBe(1);
     expect(counts.REJECTED).toBe(1);
+  });
+
+  it('M6b: o SQL tira da contagem a WJA pré-Iniciado do par com tentativa bloqueada (um card, não dois)', async () => {
+    const pool = makePool([]);
+    await loadStageCounts(pool, ['jp-a']);
+    const [sql] = (pool.query as jest.Mock).mock.calls[0];
+    expect(sql).toMatch(/AND NOT \(\(wja\.application_funnel_stage = 'INVITED'[\s\S]*FROM worker_blocked_applications wba_dup/);
+    expect(sql).toContain('wba.dismissed_at IS NOT NULL');
   });
 
   it('um id sem linha nenhuma devolve as 10 colunas zeradas (Fase 5: + COMPATIBLE)', async () => {
