@@ -8,8 +8,6 @@ import { Text } from '@presentation/components/atoms/Text';
 import { VacancyStatusBadge } from '@presentation/components/atoms/VacancyStatusBadge';
 import { Logo } from '@presentation/components/shared/Logo';
 import { PublicApiService, VacancyNotFoundError } from '@infrastructure/http/PublicApiService';
-import { WorkerApiService } from '@infrastructure/http/WorkerApiService';
-import { useAuth } from '@presentation/hooks/useAuth';
 import { usePostularseAction } from '@presentation/hooks/usePostularseAction';
 import { ScheduleSection } from './components/ScheduleSection';
 import { UnauthenticatedModal } from './components/UnauthenticatedModal';
@@ -279,7 +277,6 @@ export default function PublicVacancyPage() {
   const { id } = useParams<{ id: string }>();
   const location = useLocation();
   const { t } = useTranslation();
-  const { isAuthenticated } = useAuth();
   const [vacancy, setVacancy] = useState<PublicVacancyDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isNotFound, setIsNotFound] = useState(false);
@@ -301,18 +298,6 @@ export default function PublicVacancyPage() {
     }
     sessionStorage.setItem('enlite_vacancy_return_url', location.pathname);
   }, [location.pathname, location.search]);
-
-  // Track acquisition channel on page load (creates encuadre for Kanban INITIATED).
-  // Fires as soon as the worker is authenticated and vacancy is loaded — no need to wait for Postularse.
-  useEffect(() => {
-    if (!vacancy?.id || !isAuthenticated) return;
-    const channel = sessionStorage.getItem('enlite_utm_source');
-    if (!channel) return;
-
-    WorkerApiService.trackAcquisitionChannel(vacancy.id, channel)
-      .then(() => sessionStorage.removeItem('enlite_utm_source'))
-      .catch((err) => console.warn('[PublicVacancyPage] trackChannel failed:', err));
-  }, [vacancy?.id, isAuthenticated]);
 
   useEffect(() => {
     if (!id) return;
