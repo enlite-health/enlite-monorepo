@@ -17,7 +17,7 @@ import {
   deriveKanbanColumn,
   tallyKanbanColumns,
   emptyFunnelColumnCounts,
-  KANBAN_COLUMN_BLOCKED,
+  kanbanColumnForBlocked,
   type KanbanColumn,
   type KanbanTallyRow,
 } from '../domain/kanbanColumn';
@@ -115,8 +115,9 @@ export class GetFunnelTableUseCase {
       messaged: r.messaged_at != null,
       n: 1,
     }));
-    const blockedTallyRows: KanbanTallyRow[] = blockedRawRows.map(() => ({
+    const blockedTallyRows: KanbanTallyRow[] = blockedRawRows.map(r => ({
       kind: 'blocked',
+      dismissed: r.is_dismissed === true,
       stage: null,
       source: null,
       messaged: false,
@@ -125,7 +126,7 @@ export class GetFunnelTableUseCase {
     counts.columns = tallyKanbanColumns([...wjaTallyRows, ...blockedTallyRows]);
 
     // Com `columns`: filtra WJA ∪ bloqueadas pela coluna derivada (a tentativa negada
-    // só aparece quando o filtro inclui REJECTED). Sem `columns`: o filtro de bucket
+    // só aparece quando o filtro inclui a coluna dela: INICIADO, ou REJECTED se dispensada). Sem `columns`: o filtro de bucket
     // de hoje, só sobre WJA — bloqueadas nunca entram em `bucket=ALL`.
     const filteredRows = columns
       ? [...rows, ...blockedRows].filter(r => r.kanbanColumn != null && columns.includes(r.kanbanColumn))
@@ -138,11 +139,11 @@ export class GetFunnelTableUseCase {
 
   private async mapRow(raw: FunnelTableRawRow, cells: string[] | null): Promise<FunnelTableRow> {
     // kanbanColumn calculado PRIMEIRO (DX-5.1/DX-5.7): tentativa negada =
-    // KANBAN_COLUMN_BLOCKED (REJECTED, D433); o resto segue deriveKanbanColumn,
+    // kanbanColumnForBlocked (INICIADO, ou REJECTED se dispensada, D474); o resto segue deriveKanbanColumn,
     // que agora devolve COMPATIBLE para o candidato do match nunca mensageado.
     // É essa coluna que decide, logo abaixo, se a projeção (e o KMS) rodam.
     const kanbanColumn: Exclude<KanbanColumn, 'BLOQUEADO'> = raw.is_blocked
-      ? (KANBAN_COLUMN_BLOCKED as Exclude<KanbanColumn, 'BLOQUEADO'>)
+      ? (kanbanColumnForBlocked(raw.is_dismissed === true) as Exclude<KanbanColumn, 'BLOQUEADO'>)
       : (deriveKanbanColumn(raw.funnel_stage, raw.source, raw.messaged_at) as Exclude<KanbanColumn, 'BLOQUEADO'>);
 
     const ir = raw.interview_response ?? null;

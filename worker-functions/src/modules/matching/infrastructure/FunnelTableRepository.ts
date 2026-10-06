@@ -2,7 +2,7 @@ import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { excludeDisabledWorkersSql } from '@shared/database/activeWorkerFilter';
 import { liveWorkerJoinSql } from './blockedAttemptLiveState';
-import { blockedNotPromotedSql } from './BlockedApplicationQueryRepository';
+import { blockedNotPromotedSql, wjaSupersededByBlockedSql } from './BlockedApplicationQueryRepository';
 import { candidateDistanceKmSql } from './candidateDistanceSql';
 
 /**
@@ -41,6 +41,8 @@ export interface FunnelTableRawRow {
   messaged_at: string | null;
   /** true quando a linha veio de worker_blocked_applications (fetchBlockedRawRows), não de WJA. */
   is_blocked: boolean;
+  /** Só nas linhas bloqueadas: tentativa dispensada ("Rechazar") → coluna REJECTED, senão INICIADO (D474). */
+  is_dismissed?: boolean;
   distance_km: number | string | null;
 }
 
@@ -120,6 +122,9 @@ export class FunnelTableRepository {
          -- Worker que deu baixa na conta some do kanban (linhas E contadores das
          -- abas, que o GetFunnelTableUseCase deriva destas linhas).
          AND ${excludeDisabledWorkersSql('w')}
+         -- M6b (D474): o convite do sistema some quando o par tem tentativa bloqueada —
+         -- o card que fica é o bloqueado (fetchBlockedRawRows), em Iniciados.
+         AND NOT ${wjaSupersededByBlockedSql('wja')}
        ORDER BY wja.created_at DESC NULLS LAST`,
       [jobPostingId],
     );
@@ -130,8 +135,8 @@ export class FunnelTableRepository {
   /**
    * Tentativas negadas (worker_blocked_applications) não promovidas, para a tabela
    * do modo lista — mesmo shape de linha de fetchRawRows, para o mapper (P8) tratar
-   * as duas fontes de forma uniforme. Só aparecem quando o filtro `columns` inclui
-   * REJECTED (D433) — não entram no bucket 'ALL' de hoje.
+   * as duas fontes de forma uniforme. Só aparecem quando o filtro `columns` inclui a
+   * coluna delas (INICIADO, ou REJECTED se dispensada — D474) — não entram no bucket 'ALL' de hoje.
    */
   async fetchBlockedRawRows(jobPostingId: string): Promise<FunnelTableRawRow[]> {
     const result = await this.pool.query<FunnelTableRawRow>(
@@ -140,7 +145,7 @@ lw.phone, lw.profile_photo_url_encrypted, wba.last_attempted_at::text AS invited
 NULL::text AS interview_response, NULL::text AS wbdl_dispatched_at, NULL::text AS wbdl_delivery_status,
 NULL::text AS wbdl_status, lw.status AS worker_status, (SELECT COUNT(*)::int FROM wja_contact_notes cn WHERE
 cn.worker_id = wba.worker_id AND cn.job_posting_id = wba.job_posting_id) AS contact_notes_count, NULL::text AS
-self_applied_at, NULL::text AS source, NULL::text AS messaged_at, true AS is_blocked, NULL::float AS distance_km FROM worker_blocked_applications wba
+self_applied_at, NULL::text AS source, NULL::text AS messaged_at, true AS is_blocked, (wba.dismissed_at IS NOT NULL) AS is_dismissed, NULL::float AS distance_km FROM worker_blocked_applications wba
 ${liveWorkerJoinSql()} WHERE wba.job_posting_id = $1 AND ${blockedNotPromotedSql('wba')} ORDER BY wba.last_attempted_at DESC`,
       [jobPostingId],
     );

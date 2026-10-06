@@ -25,7 +25,7 @@ import {
   type KanbanTallyRow,
   type FunnelColumnCounts,
 } from '../../domain/kanbanColumn';
-import { blockedNotPromotedSql } from '../../infrastructure/BlockedApplicationQueryRepository';
+import { blockedNotPromotedSql, wjaSupersededByBlockedSql } from '../../infrastructure/BlockedApplicationQueryRepository';
 import { OPERATION_TIMEZONE } from '../../domain/interviewSchedule';
 
 // ── Display mappers ────────────────────────────────────────────────────────────
@@ -257,7 +257,8 @@ export function buildListVacanciesQuery(filters: ListVacanciesFilters, opts: { s
 /**
  * Contagem por coluna do Kanban para uma PÁGINA de vagas, numa consulta só (não
  * uma por vaga — critério 10). UNION ALL de WJA (agrupada por stage/source/messaged)
- * com tentativas negadas não promovidas (blockedNotPromotedSql), dobrado em JS por
+ * com tentativas negadas não promovidas (blockedNotPromotedSql; `dismissed` manda a
+ * dispensada para REJECTED, o resto para INICIADO — D474), dobrado em JS por
  * tallyKanbanColumns — o MESMO SSOT do Kanban da vaga (Passo 0 (a): não repetir a
  * regra em SQL).
  */
@@ -266,15 +267,18 @@ export async function loadStageCounts(db: Pool, jobPostingIds: string[]): Promis
   if (jobPostingIds.length === 0) return out;
   const { rows } = await db.query(
     `SELECT wja.job_posting_id AS id, 'wja' AS kind, wja.application_funnel_stage AS stage, wja.source,
-            (wja.messaged_at IS NOT NULL) AS messaged, COUNT(*)::int AS n
+            (wja.messaged_at IS NOT NULL) AS messaged, COUNT(*)::int AS n,
+            false AS dismissed
        FROM worker_job_applications wja
       WHERE wja.job_posting_id = ANY($1::uuid[]) AND ${WORKER_ACTIVE_SQL}
+        AND NOT ${wjaSupersededByBlockedSql('wja')}
       GROUP BY 1, 2, 3, 4, 5
      UNION ALL
-     SELECT wba.job_posting_id, 'blocked', NULL, NULL, false, COUNT(*)::int
+     SELECT wba.job_posting_id, 'blocked', NULL, NULL, false, COUNT(*)::int,
+            (wba.dismissed_at IS NOT NULL) AS dismissed
        FROM worker_blocked_applications wba
       WHERE wba.job_posting_id = ANY($1::uuid[]) AND ${blockedNotPromotedSql('wba')}
-      GROUP BY 1`,
+      GROUP BY 1, 7`,
     [jobPostingIds],
   );
   const byId = new Map<string, KanbanTallyRow[]>();
