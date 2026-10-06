@@ -10,12 +10,7 @@ import {
   type VacancyNoteCategory,
   type CreateVacancyNotePayload,
 } from '@domain/entities/VacancyNote';
-
-/** `yyyy-MM-ddTHH:mm` no fuso LOCAL do navegador — o que `<input type="datetime-local">` espera. */
-function toDatetimeLocalValue(d: Date): string {
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
+import { toOperationDateTimeLocal, parseOperationDateTimeLocal } from '@presentation/utils/dateTimeFormat';
 
 interface VacancyNoteFormProps {
   onSubmit: (payload: CreateVacancyNotePayload) => void;
@@ -25,7 +20,7 @@ interface VacancyNoteFormProps {
 
 export function VacancyNoteForm({ onSubmit, onCancel, isSaving }: VacancyNoteFormProps) {
   const { t } = useTranslation();
-  const [when, setWhen] = useState(() => toDatetimeLocalValue(new Date()));
+  const [when, setWhen] = useState(() => toOperationDateTimeLocal(new Date()));
   const [category, setCategory] = useState<VacancyNoteCategory>('CONTATO');
   const [contact, setContact] = useState('');
   const [body, setBody] = useState('');
@@ -35,13 +30,15 @@ export function VacancyNoteForm({ onSubmit, onCancel, isSaving }: VacancyNoteFor
     label: t(`admin.vacancyDetail.notes.categoryOptions.${cat}`, cat),
   }));
 
-  const isWhenValid = !Number.isNaN(new Date(when).getTime());
+  // O valor do input é a hora de -03 (Buenos Aires), não a do navegador; vira o instante UTC certo.
+  const occurredAtIso = parseOperationDateTimeLocal(when);
+  const isWhenValid = occurredAtIso !== null;
   const canSave = isWhenValid && contact.trim().length > 0 && body.trim().length > 0 && !isSaving;
 
   const handleSave = () => {
-    if (!canSave) return;
+    if (!canSave || occurredAtIso === null) return;
     onSubmit({
-      occurredAt: new Date(when).toISOString(),
+      occurredAt: occurredAtIso,
       category,
       contact: contact.trim(),
       body: body.trim(),

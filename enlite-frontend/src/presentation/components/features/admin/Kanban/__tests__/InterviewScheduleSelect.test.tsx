@@ -14,7 +14,13 @@ vi.mock('react-i18next', () => ({
 describe('InterviewScheduleSelect', () => {
   function preencher(date: string, time: string): void {
     fireEvent.change(screen.getByTestId('interview-date-input'), { target: { value: date } });
-    fireEvent.change(screen.getByTestId('interview-time-input'), { target: { value: time } });
+    escolherHora(time);
+  }
+
+  /** TimeSelect: abre o seletor e clica na opção HH:MM (24h por construção). */
+  function escolherHora(time: string): void {
+    fireEvent.click(screen.getByTestId('interview-time-input'));
+    fireEvent.click(screen.getByTestId(`interview-time-input-option-${time}`));
   }
 
   it('confirma com data e hora', () => {
@@ -71,7 +77,7 @@ describe('InterviewScheduleSelect', () => {
     });
     expect(screen.getByTestId('interview-schedule-confirm')).toBeDisabled();
 
-    fireEvent.change(screen.getByTestId('interview-time-input'), { target: { value: '10:00' } });
+    escolherHora('10:00');
     expect(screen.getByTestId('interview-schedule-confirm')).toBeEnabled();
   });
 

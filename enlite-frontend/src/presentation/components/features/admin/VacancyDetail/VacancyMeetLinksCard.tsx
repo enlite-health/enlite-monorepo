@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { TimeSelect } from '@presentation/components/atoms/TimeSelect';
 import { useTranslation } from 'react-i18next';
 import { CheckCircle2, AlertCircle, Circle, Loader2, ExternalLink, Repeat } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
@@ -120,7 +121,7 @@ export function VacancyMeetLinksCard({
       setRecurringError(t('admin.vacancyDetail.meetRecurring.incomplete'));
       valid = false;
     } else if (allFilled && !MEET_LINK_REGEX.test(r.link)) {
-      // A hora vem de <input type="time"> — o navegador só entrega HH:MM (o backend revalida).
+      // A hora vem do TimeSelect — só entrega HH:MM (o backend revalida).
       setRecurringError(t('admin.vacancyDetail.meetLinksCard.invalidLink'));
       valid = false;
     } else {
@@ -232,13 +233,14 @@ export function VacancyMeetLinksCard({
             onValueChange={(v) => handleRecurringChange({ weekday: v })}
             aria-label={t('admin.vacancyDetail.meetRecurring.weekday')}
           />
-          <input
-            type="time"
+          {/* TimeSelect (24h por construção), não <input type="time"> (am/pm conforme o navegador). */}
+          <TimeSelect
             data-testid="meet-recurring-time"
             value={recurring.time}
+            clearable
             onChange={(e) => handleRecurringChange({ time: e.target.value })}
             aria-label={t('admin.vacancyDetail.meetRecurring.time')}
-            className="border rounded-lg px-3 py-2 text-sm text-slate-700 bg-white border-[#D9D9D9] focus:outline-none focus:ring-2 focus:ring-primary/30"
+            className="w-full border rounded-lg px-3 py-2 text-sm text-slate-700 bg-white border-[#D9D9D9] focus:outline-none focus:ring-2 focus:ring-primary/30"
           />
           <input
             type="url"

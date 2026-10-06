@@ -16,6 +16,11 @@ interface TimeSelectProps {
    * most libs reject it, which would force special-casing across the codebase.
    */
   includeEndOfDay?: boolean;
+  /** Adds an empty option at the top (`--:--`) that emits `''` — for optional times the user must be able to clear. */
+  clearable?: boolean;
+  /** Applied to the trigger button; each option gets `${data-testid}-option-HH:MM` (and `-option-empty` when clearable). */
+  'data-testid'?: string;
+  'aria-label'?: string;
 }
 
 const END_OF_DAY = '23:59';
@@ -44,6 +49,9 @@ export function TimeSelect({
   disabled = false,
   placeholder = '--:--',
   includeEndOfDay = false,
+  clearable = false,
+  'data-testid': testId,
+  'aria-label': ariaLabel,
 }: TimeSelectProps) {
   const normalized = normalizeTime(value);
   const [open, setOpen] = useState(false);
@@ -96,6 +104,10 @@ export function TimeSelect({
       <button
         type="button"
         disabled={disabled}
+        data-testid={testId}
+        aria-label={ariaLabel}
+        aria-haspopup="listbox"
+        aria-expanded={open}
         onClick={() => setOpen((prev) => !prev)}
         className={[
           'flex items-center gap-1 cursor-pointer select-none',
@@ -116,6 +128,18 @@ export function TimeSelect({
             openUp ? 'bottom-full mb-1' : 'top-full mt-1',
           ].join(' ')}
         >
+          {clearable && (
+            <li>
+              <button
+                type="button"
+                data-testid={testId ? `${testId}-option-empty` : undefined}
+                onClick={() => select('')}
+                className="w-full px-3 py-1.5 text-sm text-center tabular-nums text-gray-400 hover:bg-primary/10 hover:text-primary"
+              >
+                {placeholder}
+              </button>
+            </li>
+          )}
           {options.map((time, i) => {
             const showDivider = i > 0 && step < 60 && hour(time) !== hour(options[i - 1]);
             return (
@@ -123,6 +147,7 @@ export function TimeSelect({
                 {showDivider && <hr className="my-0.5 border-gray-100" />}
                 <button
                   type="button"
+                  data-testid={testId ? `${testId}-option-${time}` : undefined}
                   onClick={() => select(time)}
                   className={[
                     'w-full px-3 py-1.5 text-sm text-center tabular-nums transition-colors',
