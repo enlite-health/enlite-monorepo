@@ -78,6 +78,8 @@ const MOCK_PATIENT_DETAIL = {
     responsibles: [],
     addresses: [],
     professionals: [],
+    // `ServicosContratadosCard` lê `services.length` direto: sem a lista, a aba Serviço Contratado quebra ao montar.
+    contractedServices: [],
     createdAt: '2026-01-10T12:00:00Z',
     updatedAt: '2026-04-20T09:30:00Z',
   },
