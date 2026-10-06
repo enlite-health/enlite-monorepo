@@ -19,7 +19,7 @@ export function VacancyFunnelKanban({
   vacancyId,
 }: VacancyFunnelKanbanProps): JSX.Element {
   const { t } = useTranslation();
-  const { data, isLoading, error, refetch, moveEncuadre, promoteBlocked } =
+  const { data, isLoading, error, refetch, moveEncuadre, promoteBlocked, rejectBlocked } =
     useWJAFunnel(vacancyId);
   const [moveError, setMoveError] = useState<MoveEncuadreError | null>(null);
 
@@ -59,6 +59,16 @@ export function VacancyFunnelKanban({
       return t(`admin.kanban.promoteError.${code}`, { defaultValue: t('admin.kanban.promoteError.unknown') });
     },
     [promoteBlocked, t],
+  );
+
+  /** "Rechazar" do card bloqueado (E2): erro aparece no banner do topo, como o do move. */
+  const handleRejectBlocked = useCallback(
+    async (blockedId: string, rejectionReasonCategory: string): Promise<string | null> => {
+      const err = await rejectBlocked(blockedId, rejectionReasonCategory);
+      setMoveError(err);
+      return err ? err.message : null;
+    },
+    [rejectBlocked],
   );
 
   /**
@@ -175,6 +185,7 @@ export function VacancyFunnelKanban({
           vacancyId={vacancyId}
           onMove={handleMove}
           onPromoteBlocked={handlePromoteBlocked}
+          onRejectBlocked={handleRejectBlocked}
           onResendInvite={handleResendInvite}
           onPresentationInvite={handlePresentationInvite}
         />
