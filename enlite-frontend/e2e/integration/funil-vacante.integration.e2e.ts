@@ -14,7 +14,7 @@
  * Exercises (Fase 2 da change):
  *   P20 — os 3 lugares e a API dizem o mesmo número + print (DX-2.11, DX-2.13)
  *   P21 — Pre Screening une PRE_SCREENING + IN_PROGRESS numa coluna só
- *   P22 — tentativa negada aparece em Rejeitados (D433/DX-2.4), não some
+ *   P22 — tentativa negada aparece em Iniciados com a tag BLOQUEADO (D474, revoga o item 5 da D433), não some
  *   P23 — vaga sem candidatura mostra 00/0/0 nos 3 lugares
  */
 
@@ -455,8 +455,8 @@ test.describe('funil da vacante @integration', () => {
     }
   });
 
-  // ── P22 · tentativa negada aparece em Rejeitados, não some ─────────────────
-  test('funil-vacante-tentativa-negada-em-rejeitados', async ({ page, request }) => {
+  // ── P22 · tentativa negada aparece em Iniciados (tag BLOQUEADO), não some ─────────────────
+  test('funil-vacante-tentativa-negada-em-iniciados', async ({ page, request }) => {
     // "Antes": as 7 contagens nos 3 lugares + API.
     const apiBefore = await readApiStageCounts(request, vacancyIdV1);
     await loginAs(page, MOCK_ADMIN_USER);
@@ -465,8 +465,8 @@ test.describe('funil da vacante @integration', () => {
     const kanbanBefore = await readKanbanColumnCounts(page, vacancyIdV1);
 
     await gotoVacancyDetail(page, vacancyIdV1);
-    await page.locator('#funnel-tab-REJECTED').click();
-    const rejectedRowsBefore = await countFunnelTableRows(page);
+    await page.locator('#funnel-tab-INICIADO').click();
+    const iniciadoRowsBefore = await countFunnelTableRows(page);
 
     // Semeia a tentativa negada — worker INCOMPLETE_REGISTER, SEM WJA (o gatilho 183 recusa).
     const workerIncomplete = insertTestWorker({
@@ -490,7 +490,7 @@ test.describe('funil da vacante @integration', () => {
       const kanbanAfter = await readKanbanColumnCounts(page, vacancyIdV1);
 
       for (const col of COLUMN_IDS) {
-        const expectedDelta = col === 'REJECTED' ? 1 : 0;
+        const expectedDelta = col === 'INICIADO' ? 1 : 0;
         expect(apiAfter[col] - apiBefore[col], `API.${col}`).toBe(expectedDelta);
         expect(listAfter[col] - listBefore[col], `lista.${col}`).toBe(expectedDelta);
         expect(tabAfter[col] - tabBefore[col], `aba.${col}`).toBe(expectedDelta);
@@ -499,21 +499,22 @@ test.describe('funil da vacante @integration', () => {
 
       // `readKanbanColumnCounts` termina no Kanban — direto os asserts do card.
       await expect(page.getByTestId('kanban-column-BLOQUEADO')).toHaveCount(0);
-      await expect(page.getByTestId('kanban-column-REJECTED')).toHaveCount(1);
+      await expect(page.getByTestId('kanban-column-INICIADO')).toHaveCount(1);
       const card = page.locator(
-        `[data-testid="kanban-column-REJECTED"] [data-testid="kanban-card-${wbaId}"]`,
+        `[data-testid="kanban-column-INICIADO"] [data-testid="kanban-card-${wbaId}"]`,
       );
       await expect(card).toBeVisible();
       await expect(card.getByTestId('blocked-badge')).toBeVisible();
-      await expect(card.getByTestId('reject-button')).toHaveCount(0);
+      // D474/E2: o bloqueado não dispensado tem "Rechazar" (leva a Rechazados com motivo).
+      await expect(card.getByTestId('reject-button')).toHaveCount(1);
       await expect(card.getByTestId('undismiss-button')).toHaveCount(0);
 
-      // A aba Rejeitados do modo lista tem uma linha a mais.
+      // A aba Iniciados do modo lista tem uma linha a mais.
       await gotoVacancyDetail(page, vacancyIdV1);
-      await page.locator('#funnel-tab-REJECTED').click();
+      await page.locator('#funnel-tab-INICIADO').click();
       await expect
-        .poll(() => countFunnelTableRows(page), { message: 'linhas da tabela em Rejeitados' })
-        .toBe(rejectedRowsBefore + 1);
+        .poll(() => countFunnelTableRows(page), { message: 'linhas da tabela em Iniciados' })
+        .toBe(iniciadoRowsBefore + 1);
     } finally {
       try {
         runSQL(`DELETE FROM worker_blocked_applications WHERE worker_id = '${workerIncomplete}'`);
