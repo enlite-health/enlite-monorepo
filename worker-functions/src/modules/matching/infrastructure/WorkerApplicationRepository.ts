@@ -5,6 +5,7 @@ import { logger } from '@shared/logging';
 import { ApplicationFunnelStage } from '../domain/WorkerJobApplication';
 import { WorkerEngagement } from '../domain/WorkerEngagement';
 import { deriveKanbanColumn } from '../domain/kanbanColumn';
+import { wjaSupersededByBlockedSql } from './BlockedApplicationQueryRepository';
 
 // =====================================================
 // WorkerApplicationRepository
@@ -253,6 +254,9 @@ export class WorkerApplicationRepository {
          LIMIT 1
        ) e ON true
        WHERE wja.worker_id = $1
+         -- M6b (D474): o convite do sistema some quando o par tem tentativa bloqueada ativa;
+         -- o card que a ficha mostra é o bloqueado (BlockedApplicationQueryRepository.listByWorker).
+         AND NOT ${wjaSupersededByBlockedSql('wja', true)}
        ORDER BY COALESCE(e.created_at, wja.created_at) DESC`,
       [workerId],
     );

@@ -9,8 +9,8 @@
  *
  * Migration 230: INITIATED renamed to PRE_SCREENING; INICIADO added (INVITED+manual).
  * Feature BLOQUEADO (2026-07-03): blocked attempts (worker_blocked_applications) have
- * no funnel stage — they map to KANBAN_COLUMN_BLOCKED (= REJECTED, D433), handled by
- * the caller, not here.
+ * no funnel stage — they map to KANBAN_COLUMN_BLOCKED (= INICIADO, D474; a dispensada
+ * vai a REJECTED), via kanbanColumnForBlocked, handled by the caller, not here.
  */
 export type KanbanColumn =
   | 'COMPATIBLE'
@@ -25,8 +25,29 @@ export type KanbanColumn =
   | 'QUICK_RESPONSE_TEAM'
   | 'REJECTED';
 
-/** Column for a blocked postulation attempt — Rejeitados (D433: 'Bloqueados não existe; bloqueado vai para Rejeitados'). */
-export const KANBAN_COLUMN_BLOCKED: KanbanColumn = 'REJECTED';
+/**
+ * Column for a blocked postulation attempt NOT dismissed — Iniciados com a tag BLOQUEADO
+ * (D474, que revoga em parte a D433 item 5: o clique em Postularse leva a Iniciados, barrado ou não).
+ */
+export const KANBAN_COLUMN_BLOCKED: KanbanColumn = 'INICIADO';
+
+/**
+ * Column of a blocked attempt: INICIADO while active; REJECTED once the operator dismissed it
+ * ("Rechazar", `dismissed_at` preenchido). Fonte única — Kanban, contagens, tabela e ficha do worker.
+ */
+export function kanbanColumnForBlocked(isDismissed: boolean): KanbanColumn {
+  return isDismissed ? 'REJECTED' : KANBAN_COLUMN_BLOCKED;
+}
+
+/**
+ * WJA "pré-Iniciado" (D474/M6): o worker ainda NÃO clicou em Postularse — linha de convite/match
+ * gravada pelo sistema (stage INVITED, source diferente de 'manual'; inclui Compatíveis e Invitados).
+ * Predicado único: o espelho em SQL é `preIniciadoWjaSql` (BlockedApplicationQueryRepository.ts) e
+ * o ON CONFLICT de CreateManualWjaWithEncuadreUseCase; mudar um exige mudar os outros.
+ */
+export function isPreIniciado(stage: string | null, source: string | null): boolean {
+  return stage === 'INVITED' && source !== 'manual';
+}
 
 /**
  * A WJA row persisted by the matchmaking algorithm (MatchmakingService.saveMatchResults:
@@ -146,6 +167,8 @@ export function emptyFunnelColumnCounts(): FunnelColumnCounts {
 /** Uma linha já agrupada: candidatura (stage/source/messaged) ou tentativa negada. */
 export interface KanbanTallyRow {
   kind: 'wja' | 'blocked';
+  /** Só para kind='blocked': tentativa dispensada ("Rechazar") conta em REJECTED, não em INICIADO. */
+  dismissed?: boolean;
   stage: string | null;
   source: string | null;
   messaged: boolean;
@@ -157,7 +180,7 @@ export function tallyKanbanColumns(rows: readonly KanbanTallyRow[]): FunnelColum
   const counts = emptyFunnelColumnCounts();
   for (const r of rows) {
     if (r.kind === 'blocked') {
-      counts[KANBAN_COLUMN_BLOCKED as keyof FunnelColumnCounts] += r.n;
+      counts[kanbanColumnForBlocked(r.dismissed === true) as keyof FunnelColumnCounts] += r.n;
       continue;
     }
     counts[deriveKanbanColumn(r.stage, r.source, r.messaged ? 'sent' : null) as keyof FunnelColumnCounts] += r.n;
@@ -170,7 +193,7 @@ export function tallyKanbanColumns(rows: readonly KanbanTallyRow[]): FunnelColum
  * execucao/fase-4.md) — espelha `VACANCY_FUNNEL_COLUMNS` do front (funnelTabsConfig.ts).
  * IN_PROGRESS mora dentro de PRE_SCREENING no quadro; COMPLETED/QUALIFIED/IN_DOUBT já
  * chegam colapsados em COMPLETED por `deriveKanbanColumn`. BLOQUEADO fica de fora — não
- * tem posição própria no quadro (vira card em REJECTED, D433).
+ * tem posição própria no quadro (vira card em INICIADO, ou REJECTED se dispensado, D474).
  * 9 colunas; Compatíveis é derivada, destino proibido — DX-5.5.
  */
 export const VACANCY_BOARD_COLUMNS = [
