@@ -50,6 +50,9 @@ export interface PublicVacancyDetail {
   patient_zone: string | null;
   country: string | null;
   created_at: string;
+  /** Spec 042 (D473): NOME do diagnóstico CID-11 principal (catálogo fechado, sem código).
+   *  Opcional de propósito: bundle antigo/fixture sem o campo = seção ausente, nunca "—". */
+  diagnosisLabel?: string | null;
   /** Device/service type enum values. Full profession vocabulary:
    *  `AT | CAREGIVER | NURSE | KINESIOLOGIST | PSYCHOLOGIST` (mirrors
    *  worker-functions src/modules/worker/domain/enums/Profession.ts —
