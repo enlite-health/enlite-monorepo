@@ -280,7 +280,8 @@ jobs:
                  e2e/blocked-attempts-visual.e2e.ts \
                  e2e/vacancy-kanban.e2e.ts \
                  e2e/vacancy-kanban-eligibility-visual.e2e.ts \
-                 e2e/kanban-card-promover-elegivel.e2e.ts"
+                 e2e/kanban-card-promover-elegivel.e2e.ts \
+                 e2e/admin-patient-detail-happy.e2e.ts"
           for f in $SPECS; do
             [ -f "$f" ] || { echo "::error::spec sumiu ou foi renomeado: $f"; exit 1; }
           done
