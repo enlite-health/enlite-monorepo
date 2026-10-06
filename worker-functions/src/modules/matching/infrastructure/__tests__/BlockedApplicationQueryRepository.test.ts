@@ -26,7 +26,12 @@ jest.mock('@shared/database/DatabaseConnection', () => ({
   },
 }));
 
-import { BlockedApplicationQueryRepository, blockedNotPromotedSql } from '../BlockedApplicationQueryRepository';
+import {
+  BlockedApplicationQueryRepository,
+  blockedNotPromotedSql,
+  preIniciadoWjaSql,
+  wjaSupersededByBlockedSql,
+} from '../BlockedApplicationQueryRepository';
 import {
   liveWorkerJoinSql,
   liveBlockedReasonSql,
@@ -379,6 +384,7 @@ describe('BlockedApplicationQueryRepository', () => {
     expect(card.missingFields).toEqual(['years_experience', 'preferred_types']);
     expect(card.attemptCount).toBe(5);
     expect(card.isBlocked).toBe(true);
+    expect(card.kanbanStage).toBe('INICIADO'); // D474: bloqueado ativo fica em Iniciados
     expect(card.createdAt).toBe(NOW_DATE.toISOString());
   });
 
@@ -442,3 +448,22 @@ describe('blockedNotPromotedSql', () => {
   });
 });
 
+describe('M6b (D474) — a WJA pré-Iniciado não esconde a tentativa bloqueada', () => {
+  it('blockedNotPromotedSql só considera "WJA real" a que NÃO é pré-Iniciado', () => {
+    const sql = blockedNotPromotedSql('x');
+    expect(sql).toContain(`AND NOT ${preIniciadoWjaSql('wja')}`);
+  });
+
+  it('preIniciadoWjaSql: INVITED e source diferente de manual (NULL inclusive)', () => {
+    expect(preIniciadoWjaSql('w')).toBe("(w.application_funnel_stage = 'INVITED' AND w.source IS DISTINCT FROM 'manual')");
+  });
+
+  it('wjaSupersededByBlockedSql: a WJA pré-Iniciado do par com tentativa bloqueada some; onlyActive ignora a dispensada', () => {
+    const todas = wjaSupersededByBlockedSql('w');
+    expect(todas).toContain(preIniciadoWjaSql('w'));
+    expect(todas).toContain('wba_dup.worker_id = w.worker_id');
+    expect(todas).toContain('wba_dup.job_posting_id = w.job_posting_id');
+    expect(todas).not.toContain('dismissed_at');
+    expect(wjaSupersededByBlockedSql('w', true)).toContain('wba_dup.dismissed_at IS NULL');
+  });
+});

@@ -74,7 +74,7 @@ function linhaBloqueada() {
     funnel_stage: null, interview_response: null,
     wbdl_dispatched_at: null, wbdl_delivery_status: null, wbdl_status: null,
     worker_status: null, contact_notes_count: 0, self_applied_at: null,
-    source: null, messaged_at: null, is_blocked: true,
+    source: null, messaged_at: null, is_blocked: true, is_dismissed: false,
   };
 }
 
@@ -203,27 +203,43 @@ describe('funnel-table — filtro `columns` e tentativa negada (DX-2.6, D433)', 
     expect(out.rows).toHaveLength(2);
   });
 
-  it('uma tentativa negada aparece com columns=[REJECTED] e NÃO com bucket=ALL', async () => {
+  it('uma tentativa negada aparece com columns=[INICIADO] (D474), NÃO com columns=[REJECTED] e NÃO com bucket=ALL', async () => {
     mockFetchRawRows.mockResolvedValue([]);
     mockFetchBlockedRawRows.mockResolvedValue([linhaBloqueada()]);
 
-    const comFiltro = await new GetFunnelTableUseCase().execute('jp-1', 'ALL', null, ['REJECTED']);
+    const comFiltro = await new GetFunnelTableUseCase().execute('jp-1', 'ALL', null, ['INICIADO']);
     expect(comFiltro.rows).toHaveLength(1);
     expect(comFiltro.rows[0].isBlocked).toBe(true);
-    expect(comFiltro.rows[0].kanbanColumn).toBe('REJECTED');
+    expect(comFiltro.rows[0].kanbanColumn).toBe('INICIADO');
+
+    const emRejeitados = await new GetFunnelTableUseCase().execute('jp-1', 'ALL', null, ['REJECTED']);
+    expect(emRejeitados.rows).toHaveLength(0);
 
     const semFiltro = await new GetFunnelTableUseCase().execute('jp-1', 'ALL', null);
     expect(semFiltro.rows).toHaveLength(0);
   });
 
-  it('counts.ALL não muda com tentativa negada, e counts.columns.REJECTED sobe 1', async () => {
+  it('counts.ALL não muda com tentativa negada, e counts.columns.INICIADO sobe 1 (E3)', async () => {
     mockFetchRawRows.mockResolvedValue([linhaCifrada()]); // funnel_stage=CONFIRMED
     mockFetchBlockedRawRows.mockResolvedValue([linhaBloqueada()]);
 
     const out = await new GetFunnelTableUseCase().execute('jp-1', 'ALL');
 
     expect(out.counts.ALL).toBe(1);
+    expect(out.counts.columns.INICIADO).toBe(1);
+    expect(out.counts.columns.REJECTED).toBe(0);
+  });
+
+  it('tentativa negada DISPENSADA vai para REJECTED na linha e na contagem', async () => {
+    mockFetchRawRows.mockResolvedValue([]);
+    mockFetchBlockedRawRows.mockResolvedValue([{ ...linhaBloqueada(), is_dismissed: true }]);
+
+    const out = await new GetFunnelTableUseCase().execute('jp-1', 'ALL', null, ['REJECTED']);
+
+    expect(out.rows).toHaveLength(1);
+    expect(out.rows[0].kanbanColumn).toBe('REJECTED');
     expect(out.counts.columns.REJECTED).toBe(1);
+    expect(out.counts.columns.INICIADO).toBe(0);
   });
 
   it('?columns=COMPATIBLE devolve só a linha do match; counts.columns.COMPATIBLE=1; counts.INVITED (bucket) intocado', async () => {
@@ -247,8 +263,8 @@ describe('funnel-table — filtro `columns` e tentativa negada (DX-2.6, D433)', 
     mockFetchRawRows.mockResolvedValue([{ ...linhaComStage('CONFIRMED'), distance_km: '12.5' }]);
     mockFetchBlockedRawRows.mockResolvedValue([linhaBloqueada()]);
 
-    // columns inclui REJECTED (D433) para a bloqueada entrar em `rows` junto com a normal.
-    const out = await new GetFunnelTableUseCase().execute('jp-1', 'ALL', null, ['CONFIRMED', 'REJECTED']);
+    // columns inclui INICIADO (D474) para a bloqueada entrar em `rows` junto com a normal.
+    const out = await new GetFunnelTableUseCase().execute('jp-1', 'ALL', null, ['CONFIRMED', 'INICIADO']);
 
     const normal = out.rows.find((r) => r.id === 'wja-1');
     const bloqueada = out.rows.find((r) => r.id === 'blk-1');

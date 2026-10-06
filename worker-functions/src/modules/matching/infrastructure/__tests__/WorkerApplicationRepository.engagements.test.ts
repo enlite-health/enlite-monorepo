@@ -101,6 +101,16 @@ describe('WorkerApplicationRepository.listEngagementsByWorker', () => {
     expect(engagement.kanbanStage).toBe('INVITED');
   });
 
+  it('M6b (D474): a SQL esconde o convite do sistema do par com tentativa bloqueada ATIVA (a ficha mostra o card bloqueado)', async () => {
+    mockQuery.mockResolvedValue({ rows: [] });
+
+    await new WorkerApplicationRepository().listEngagementsByWorker(WORKER_ID);
+
+    const sql: string = mockQuery.mock.calls[0][0];
+    expect(sql).toMatch(/AND NOT \(\(wja\.application_funnel_stage = 'INVITED' AND wja\.source IS DISTINCT FROM 'manual'\)/);
+    expect(sql).toContain('wba_dup.dismissed_at IS NULL');
+  });
+
   it('a SQL enviada seleciona wja.messaged_at', async () => {
     mockQuery.mockResolvedValue({ rows: [] });
 

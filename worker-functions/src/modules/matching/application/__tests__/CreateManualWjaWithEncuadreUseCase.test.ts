@@ -39,6 +39,46 @@ describe('CreateManualWjaWithEncuadreUseCase', () => {
     expect(wjaCall[1]).toEqual(['w-1', 'jp-1', 'facebook']);
   });
 
+  it('M6/M6a (D474): o ON CONFLICT só vira source=manual para a linha pré-Iniciado; o resto mantém o source', async () => {
+    const db = makeDb();
+    db.query
+      .mockResolvedValueOnce({ rows: [{ id: 'wja-1', promoted: false, previous_source: null }] })
+      .mockResolvedValueOnce({ rows: [] });
+
+    await new CreateManualWjaWithEncuadreUseCase().execute(db as never, {
+      workerId: 'w-1', jobPostingId: 'jp-1', acquisitionChannel: 'facebook',
+    });
+
+    const sql: string = db.query.mock.calls[0][0];
+    expect(sql).toContain(
+      "source = CASE\n             WHEN (worker_job_applications.application_funnel_stage = 'INVITED' AND worker_job_applications.source IS DISTINCT FROM 'manual') THEN 'manual'\n             ELSE worker_job_applications.source",
+    );
+    // nunca toca a etapa de uma linha existente
+    expect(sql).not.toMatch(/application_funnel_stage\s*=\s*EXCLUDED/);
+    // sem promoção → nada no histórico (só WJA upsert + encuadre)
+    expect(db.query).toHaveBeenCalledTimes(2);
+  });
+
+  it('M6: quando a linha pré-Iniciado é promovida grava UMA linha no histórico (field_name=source, old→manual)', async () => {
+    const db = makeDb();
+    db.query
+      .mockResolvedValueOnce({ rows: [{ id: 'wja-9', promoted: true, previous_source: 'system' }] })
+      .mockResolvedValueOnce({ rows: [] }) // histórico
+      .mockResolvedValueOnce({ rows: [] }); // encuadre
+
+    const result = await new CreateManualWjaWithEncuadreUseCase().execute(db as never, {
+      workerId: 'w-1', jobPostingId: 'jp-1', acquisitionChannel: 'facebook',
+    });
+
+    expect(result).toEqual({ wjaId: 'wja-9' });
+    const [histSql, histParams] = db.query.mock.calls[1];
+    expect(histSql).toContain('INSERT INTO worker_job_application_stage_history');
+    expect(histSql).toContain("'source'");
+    expect(histSql).toContain("current_setting('app.current_uid', true)");
+    expect(histParams).toEqual(['wja-9', 'system']);
+    expect(db.query.mock.calls[2][0]).toContain('INSERT INTO encuadres');
+  });
+
   it('cria encuadre com dedup_hash determinístico e NOT EXISTS guard', async () => {
     const db = makeDb();
     db.query

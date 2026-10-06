@@ -37,6 +37,8 @@ jest.mock('@shared/security/KMSEncryptionService', () => ({
 }));
 
 jest.mock('../../../infrastructure/BlockedApplicationQueryRepository', () => ({
+  // helpers de SQL (wjaSupersededByBlockedSql etc.) ficam reais — só a classe é dublê
+  ...jest.requireActual('../../../infrastructure/BlockedApplicationQueryRepository'),
   BlockedApplicationQueryRepository: jest.fn().mockImplementation(() => ({
     listByVacancy: mockListByVacancy,
   })),
@@ -235,7 +237,7 @@ describe('WJAFunnelController', () => {
       expect(data.totalEncuadres).toBe(2);
     });
 
-    it('cards bloqueados aparecem em REJECTED (não INICIADO) com isBlocked=true, workerPhone e contactNotesCount (D433)', async () => {
+    it('cards bloqueados aparecem em INICIADO (não em REJECTED) com isBlocked=true, workerPhone e contactNotesCount (D474)', async () => {
       mockQuery.mockResolvedValueOnce({ rows: [] });
       mockListByVacancy.mockResolvedValue([
         {
@@ -258,11 +260,12 @@ describe('WJAFunnelController', () => {
       await controller.getEncuadreFunnel(req, res);
 
       const { stages } = (res.json as jest.Mock).mock.calls[0][0].data;
-      expect(stages.REJECTED).toHaveLength(1);
-      expect(stages.INICIADO).toHaveLength(0);
+      expect(stages.INICIADO).toHaveLength(1);
+      expect(stages.REJECTED).toHaveLength(0);
 
-      const card = stages.REJECTED[0] as Record<string, unknown>;
+      const card = stages.INICIADO[0] as Record<string, unknown>;
       expect(card.id).toBe('ba-1');
+      expect(card.isDismissed).toBe(false);
       expect(card.isBlocked).toBe(true);
       expect(card.blockedReason).toBe('registration_incomplete');
       expect(card.missingFields).toEqual(['profession', 'phone']);
@@ -276,7 +279,7 @@ describe('WJAFunnelController', () => {
       expect(card.workerPhone).toBe('+5491100000');
     });
 
-    it('card bloqueado com worker_not_found → workerName null, sem crash (coluna REJECTED)', async () => {
+    it('card bloqueado com worker_not_found → workerName null, sem crash (coluna INICIADO)', async () => {
       mockQuery.mockResolvedValueOnce({ rows: [] });
       mockListByVacancy.mockResolvedValue([
         {
@@ -295,13 +298,13 @@ describe('WJAFunnelController', () => {
       await controller.getEncuadreFunnel(req, res);
 
       const { stages } = (res.json as jest.Mock).mock.calls[0][0].data;
-      expect(stages.REJECTED).toHaveLength(1);
-      expect(stages.REJECTED[0].workerName).toBeNull();
-      expect(stages.REJECTED[0].workerPhone).toBeNull();
-      expect(stages.REJECTED[0].isBlocked).toBe(true);
+      expect(stages.INICIADO).toHaveLength(1);
+      expect(stages.INICIADO[0].workerName).toBeNull();
+      expect(stages.INICIADO[0].workerPhone).toBeNull();
+      expect(stages.INICIADO[0].isBlocked).toBe(true);
     });
 
-    it('bloqueado RECHAZADO (dismissedAt setado) vai para REJECTED como card de bloqueado, com motivo e isDismissed', async () => {
+    it('bloqueado RECHAZADO (dismissedAt setado) continua em REJECTED como card de bloqueado, com motivo e isDismissed (e NÃO entra em INICIADO)', async () => {
       mockQuery.mockResolvedValueOnce({ rows: [] });
       mockListByVacancy.mockResolvedValue([
         {
@@ -326,6 +329,7 @@ describe('WJAFunnelController', () => {
 
       const { stages } = (res.json as jest.Mock).mock.calls[0][0].data;
       expect(stages.REJECTED).toHaveLength(1);
+      expect(stages.INICIADO).toHaveLength(0);
       const card = stages.REJECTED[0] as Record<string, unknown>;
       expect(card.id).toBe('ba-dismissed');
       expect(card.isBlocked).toBe(true);
@@ -334,7 +338,7 @@ describe('WJAFunnelController', () => {
       expect(card.rejectionReasonCategory).toBe('WORKER_DECLINED'); // badge de motivo
     });
 
-    it('dedup: bloqueado promovido some de REJECTED e aparece como WJA real em INICIADO (NOT EXISTS no SQL)', async () => {
+    it('dedup: bloqueado promovido some de INICIADO (card bloqueado) e aparece como WJA real em INICIADO (NOT EXISTS no SQL)', async () => {
       // O dedup é implementado no SQL de listByVacancy via NOT EXISTS: uma linha
       // promovida (worker completou cadastro) já tem WJA real, então listByVacancy
       // não a retorna mais — sai de REJECTED e o card real aparece em INICIADO.
@@ -348,10 +352,35 @@ describe('WJAFunnelController', () => {
 
       const { stages } = (res.json as jest.Mock).mock.calls[0][0].data;
       expect(stages.REJECTED).toHaveLength(0);
-      // Só o WJA manual aparece em INICIADO
+      // Só o WJA manual aparece em INICIADO (nenhum card bloqueado ao lado dele)
       expect(stages.INICIADO).toHaveLength(1);
       expect(stages.INICIADO[0].id).toBe('e-wja');
       expect(stages.INICIADO[0].isBlocked).toBeUndefined();
+    });
+
+    it('M6b (D474): a query de WJA esconde o convite do sistema do par com tentativa bloqueada; o card que fica é o bloqueado, em INICIADO', async () => {
+      // Em produção o SQL some com a WJA pré-Iniciado (wjaSupersededByBlockedSql); aqui o banco
+      // já devolve só o card bloqueado — o teste trava a CLÁUSULA no SQL e o destino do card.
+      mockQuery.mockResolvedValueOnce({ rows: [] });
+      mockListByVacancy.mockResolvedValue([
+        {
+          id: 'ba-m6b', workerId: null, blockedReason: 'registration_incomplete', missingFields: ['profession'],
+          attemptCount: 1, acquisitionChannel: null, lastAttemptedAt: '2026-06-26T10:00:00.000Z', contactNotesCount: 0,
+        },
+      ]);
+
+      const [req, res] = mockReqRes({ id: 'jp-001' });
+      await controller.getEncuadreFunnel(req, res);
+
+      const sql: string = mockQuery.mock.calls[0][0];
+      expect(sql).toContain("wja.application_funnel_stage = 'INVITED' AND wja.source IS DISTINCT FROM 'manual'");
+      expect(sql).toMatch(/AND NOT \(\(wja\.application_funnel_stage = 'INVITED'[\s\S]*FROM worker_blocked_applications wba_dup/);
+
+      const { stages } = (res.json as jest.Mock).mock.calls[0][0].data;
+      expect(stages.INICIADO).toHaveLength(1);
+      expect(stages.INICIADO[0].id).toBe('ba-m6b');
+      expect(stages.INVITED).toHaveLength(0);
+      expect(stages.COMPATIBLE).toHaveLength(0);
     });
 
     it('preserva talentumStatus como tag para diferenciar dentro de COMPLETED', async () => {

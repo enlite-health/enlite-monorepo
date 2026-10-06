@@ -92,8 +92,8 @@ afterAll(async () => {
   await pool.end();
 });
 
-describe('GET /api/admin/workers/:id — aba Encuadres inclui casos REJECTED (endpoint real)', () => {
-  it('o caso bloqueado aparece nos encuadres com kanbanStage=REJECTED e isBlocked', async () => {
+describe('GET /api/admin/workers/:id — aba Encuadres inclui o caso bloqueado em INICIADO (endpoint real, D474)', () => {
+  it('o caso bloqueado aparece nos encuadres com kanbanStage=INICIADO e isBlocked', async () => {
     const res = await api.get(`/api/admin/workers/${workerId}`, {
       headers: { Authorization: `Bearer ${adminToken}` },
     });
@@ -105,7 +105,7 @@ describe('GET /api/admin/workers/:id — aba Encuadres inclui casos REJECTED (en
 
     const blockedCase = encuadres.find((e) => e.caseNumber === CASE_NUMBER);
     expect(blockedCase).toBeDefined();
-    expect(blockedCase?.kanbanStage).toBe('REJECTED');
+    expect(blockedCase?.kanbanStage).toBe('INICIADO');
     expect(blockedCase?.isBlocked).toBe(true);
   });
 });

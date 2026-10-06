@@ -27,6 +27,8 @@ jest.mock('@shared/security/KMSEncryptionService', () => ({
 }));
 
 jest.mock('../../../infrastructure/BlockedApplicationQueryRepository', () => ({
+  // helpers de SQL (wjaSupersededByBlockedSql etc.) ficam reais — só a classe é dublê
+  ...jest.requireActual('../../../infrastructure/BlockedApplicationQueryRepository'),
   BlockedApplicationQueryRepository: jest.fn().mockImplementation(() => ({
     listByVacancy: mockListByVacancy,
   })),
