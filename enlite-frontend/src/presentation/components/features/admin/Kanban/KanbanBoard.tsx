@@ -29,6 +29,8 @@ interface KanbanBoardProps {
   ) => Promise<MoveEncuadreError | null>;
   /** "Promover" um card ELEGIBLE (D300). Devolve mensagem localizada de erro, ou null no sucesso. */
   onPromoteBlocked?: (blockedId: string) => Promise<string | null>;
+  /** "Rechazar" um card BLOQUEADO não dispensado (E2): mesmo modal de motivo; null no sucesso, ou a mensagem de erro. */
+  onRejectBlocked?: (blockedId: string, rejectionReasonCategory: string) => Promise<string | null>;
   /**
    * "Reenviar" da tarjeta (REQ-08): redispara a mensagem para o worker. Devolve
    * null quando enviou, ou a mensagem localizada do motivo da recusa/falha.
@@ -78,7 +80,7 @@ function cardProps(enc: FunnelCard, stage: string) {
   };
 }
 
-export function KanbanBoard({ stages, vacancyId, onMove, onPromoteBlocked, onResendInvite, onPresentationInvite }: KanbanBoardProps) {
+export function KanbanBoard({ stages, vacancyId, onMove, onPromoteBlocked, onRejectBlocked, onResendInvite, onPresentationInvite }: KanbanBoardProps) {
   const { t } = useTranslation();
   // PUT /encuadres/:id/move, /result
   // → todos funnel:write. Arrasto e menu de clique chamam a MESMA rota — D269
@@ -89,7 +91,7 @@ export function KanbanBoard({ stages, vacancyId, onMove, onPromoteBlocked, onRes
   // nem monta o `MoveToMenu`/botão (mesmo `{onX && <.../>}` de sempre).
   const funnelWriteGate = useActionGate('funnel', 'update');
   /** Modal de motivo de rejeição: move o encuadre para REJECTED (onMove). */
-  const [showRejectionSelect, setShowRejectionSelect] = useState<{ encuadreId: string } | null>(null);
+  const [showRejectionSelect, setShowRejectionSelect] = useState<{ encuadreId?: string; blockedId?: string } | null>(null);
   /** Card aguardando escolha de papel (Titular/Substituto) ao ir para SELECTED. */
   const [showRoleSelect, setShowRoleSelect] = useState<{ encuadreId: string } | null>(null);
   const [showScheduleSelect, setShowScheduleSelect] = useState<{ encuadreId: string } | null>(null);
@@ -244,9 +246,13 @@ export function KanbanBoard({ stages, vacancyId, onMove, onPromoteBlocked, onRes
   }
 
 
-  async function handleRejectionSubmit(target: { encuadreId: string }, category: string) {
+  async function handleRejectionSubmit(target: { encuadreId?: string; blockedId?: string }, category: string) {
     setShowRejectionSelect(null);
-    await move(target.encuadreId, 'REJECTED', category);
+    if (target.blockedId) {
+      await onRejectBlocked?.(target.blockedId, category);
+      return;
+    }
+    if (target.encuadreId) await move(target.encuadreId, 'REJECTED', category);
   }
 
   async function handleRoleSubmit(encuadreId: string, role: EncuadreRole) {
@@ -291,9 +297,13 @@ export function KanbanBoard({ stages, vacancyId, onMove, onPromoteBlocked, onRes
             {...cardProps(enc, columnId)}
             isDismissed={enc.isDismissed}
             onReject={
-              funnelWriteGate.denied || !enc.encuadreId
+              funnelWriteGate.denied
                 ? undefined
-                : () => setShowRejectionSelect({ encuadreId: enc.encuadreId! })
+                : enc.encuadreId
+                  ? () => setShowRejectionSelect({ encuadreId: enc.encuadreId! })
+                  : onRejectBlocked && enc.isBlocked && !enc.isDismissed
+                    ? () => setShowRejectionSelect({ blockedId: enc.id })
+                    : undefined
             }
             onMoveTo={
               !funnelWriteGate.denied && enc.encuadreId

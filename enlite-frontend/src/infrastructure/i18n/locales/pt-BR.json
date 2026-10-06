@@ -1092,7 +1092,7 @@
         "bloqueadosFunil": {
           "title": "Bloqueados (funil)",
           "que": "Pessoas que tentaram se candidatar a uma vaga viva e foram barradas porque o cadastro estava incompleto. A candidatura não é criada; fica a tentativa registrada.",
-          "origen": "• Ao se candidatar, o sistema confere o cadastro. Se falta algo, registra a tentativa com o motivo e o que faltou.\n• No Kanban da vaga aparece na coluna Rejeitados, com a etiqueta BLOQUEADO (o card não pode ser arrastado).",
+          "origen": "• Ao se candidatar, o sistema confere o cadastro. Se falta algo, registra a tentativa com o motivo e o que faltou.\n• No Kanban da vaga aparece na coluna Iniciados, com a etiqueta BLOQUEADO e borda vermelha (o card não pode ser arrastado).",
           "cambia": "• Alguém com cadastro incompleto tenta se candidatar: sobe.\n• A pessoa completa o cadastro e a tentativa vira candidatura real: desce.\n• Rejeitar a tentativa: sai.",
           "ojo": "Fica fora das colunas do funil de propósito (não há candidatura real, e somá-la quebraria o total). É a fila mais acionável do painel: a pessoa já demonstrou interesse — falta um documento. Não confundir com \"Profissionais bloqueados\"."
         },

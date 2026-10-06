@@ -1092,7 +1092,7 @@
         "bloqueadosFunil": {
           "title": "Bloqueados (embudo)",
           "que": "Personas que intentaron postularse a una vacante viva y fueron frenadas porque su registro estaba incompleto. La postulación no se crea; queda el intento registrado.",
-          "origen": "• Al postularse, el sistema verifica el registro. Si falta algo, registra el intento con el motivo y qué faltó.\n• En el Kanban de la vacante aparece en la columna Rechazados, con la etiqueta BLOQUEADO (la tarjeta no se puede arrastrar).",
+          "origen": "• Al postularse, el sistema verifica el registro. Si falta algo, registra el intento con el motivo y qué faltó.\n• En el Kanban de la vacante aparece en la columna Iniciados, con la etiqueta BLOQUEADO y borde rojo (la tarjeta no se puede arrastrar).",
           "cambia": "• Alguien con registro incompleto intenta postularse: sube.\n• La persona completa el registro y el intento se promueve a postulación real: baja.\n• Rechazar el intento: sale.",
           "ojo": "Queda afuera de las columnas del embudo a propósito (no hay candidatura real, y sumarlo rompería el total). Es la fila más accionable del panel: la persona ya mostró interés — falta un documento. No confundir con \"Profesionales bloqueados\"."
         },
