@@ -13,11 +13,8 @@
  */
 
 import { test, expect, Page } from '@playwright/test';
-import { execSync } from 'child_process';
+import { loginAsStaffOffline } from './helpers/kanban-notes-e2e-helper';
 import { PATIENT_TABS } from '../src/presentation/components/features/admin/PatientDetail/patientTabs';
-
-const FIREBASE_EMULATOR = 'http://127.0.0.1:9099';
-const FIREBASE_API_KEY = 'test-api-key';
 
 const PATIENT_ID = 'bbbbbbbb-2222-2222-2222-000000000002';
 
@@ -88,53 +85,11 @@ const MOCK_PATIENT_DETAIL = {
 
 // ── Helper ───────────────────────────────────────────────────────────────────
 
+// Login offline (`page.route` em identitytoolkit/securetoken) — o mesmo helper dos irmãos mockados.
+// O `accounts:signUp` no emulador + INSERT via `docker exec` nunca saía de /admin/login no CI
+// (Vite com config Firebase falsa); o helper intercepta a auth e o perfil sem emulador nem banco.
 async function seedAdminAndLogin(page: Page): Promise<void> {
-  const rnd = Math.random().toString(36).slice(2, 8);
-  const email = `e2e.pd.happy.${Date.now()}.${rnd}@test.com`;
-  const password = 'TestAdmin123!';
-
-  const signUpRes = await fetch(
-    `${FIREBASE_EMULATOR}/identitytoolkit.googleapis.com/v1/accounts:signUp?key=${FIREBASE_API_KEY}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password, returnSecureToken: true }),
-    },
-  );
-  const signUpData = (await signUpRes.json()) as any;
-  if (!signUpData.localId) throw new Error(`Firebase sign-up failed: ${JSON.stringify(signUpData)}`);
-  const uid = signUpData.localId;
-
-  const sql = `
-    INSERT INTO users (firebase_uid, email, display_name, role, created_at, updated_at)
-      VALUES ('${uid}', '${email}', 'PD Happy E2E', 'admin', NOW(), NOW()) ON CONFLICT DO NOTHING;
-    INSERT INTO admins_extension (user_id, must_change_password, created_at, updated_at)
-      VALUES ('${uid}', false, NOW(), NOW()) ON CONFLICT DO NOTHING;
-  `.replace(/\n/g, ' ').trim();
-
-  try {
-    execSync(`docker exec enlite-postgres psql -U enlite_admin -d enlite_e2e -c "${sql}"`, { stdio: 'pipe' });
-  } catch { /* fall through */ }
-
-  await page.route('**/api/admin/auth/profile', (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        success: true,
-        data: { id: uid, email, role: 'superadmin', firstName: 'PD', lastName: 'Happy', isActive: true, mustChangePassword: false },
-      }),
-    }),
-  );
-  await page.route('**/api/admin/users*', (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ success: true, data: [] }) }),
-  );
-
-  await page.goto('/admin/login');
-  await page.locator('input[type="email"]').fill(email);
-  await page.locator('input[type="password"]').fill(password);
-  await page.locator('button[type="submit"]').click();
-  await expect(page).not.toHaveURL(/.*login.*/, { timeout: 20000 });
+  await loginAsStaffOffline(page);
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -208,7 +163,8 @@ test.describe('PatientDetailPage — happy path', () => {
     await expect(page.getByTestId('familiares-card')).toBeVisible({ timeout: 5000 });
   });
 
-  test('clicking Dados Financeiros tab shows Em breve placeholder', async ({ page }) => {
+  // Spec 014 US-D2: "Datos Financieros" saiu do tab bar (era só placeholder "Próximamente").
+  test('a aba Dados Financeiros não existe mais no tab bar', async ({ page }) => {
     await seedAdminAndLogin(page);
 
     await page.route(`**/api/admin/patients/${PATIENT_ID}`, (route) =>
@@ -218,10 +174,9 @@ test.describe('PatientDetailPage — happy path', () => {
     await page.goto(`/admin/patients/${PATIENT_ID}`);
     await expect(page.getByText('Francisco Alomon')).toBeVisible({ timeout: 15000 });
 
-    const financialTab = page.getByRole('button', { name: /Datos Financieros|Dados Financeiros/i });
-    await financialTab.first().click();
-
-    await expect(page.getByText(/Em breve|Próximamente/i).first()).toBeVisible({ timeout: 5000 });
+    await expect(
+      page.getByTestId('patient-profile-tabs').getByRole('button', { name: /Datos Financieros|Dados Financeiros/i }),
+    ).toHaveCount(0);
   });
 
   test('clicking Serviço Contratado tab shows Cobertura Médica + Localizações + Serviços Contratados', async ({ page }) => {
