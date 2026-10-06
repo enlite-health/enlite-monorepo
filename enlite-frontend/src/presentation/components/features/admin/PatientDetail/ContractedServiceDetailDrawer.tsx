@@ -6,6 +6,7 @@ import { Text } from '@presentation/components/atoms/Text';
 import type { PatientAddressDetail, PatientContractedServiceDetail } from '@domain/entities/PatientDetail';
 import { patientAddressLabel } from '@domain/entities/PatientContractedService';
 import { contractedServiceScheduleText } from './contractedServiceScheduleText';
+import { formatCalendarDate } from '@presentation/utils/dateTimeFormat';
 
 interface Props {
   service: PatientContractedServiceDetail;
@@ -135,7 +136,7 @@ export function ContractedServiceDetailDrawer({ service, addresses, onClose, onE
             <Field label={tc('tableWeeklyHours')} testId="svc-detail-weekly-hours" value={num(service.weeklyHours)} />
             <Field label={tc('tableAuthorizedHours')} testId="svc-detail-authorized-hours" value={num(service.authorizedHours)} />
             <Field label={tc('tableValue')} testId="svc-detail-value" value={valueText} />
-            <Field label={tc('tableStart')} testId="svc-detail-start" value={service.startDate ? new Date(service.startDate).toLocaleDateString() : EMPTY} />
+            <Field label={tc('tableStart')} testId="svc-detail-start" value={formatCalendarDate(service.startDate, {}) ?? EMPTY} />
             <Field label={tc('tableContract')} testId="svc-detail-contract" value={opt('contractTypeOptions', service.contractType)} />
             <Field label={tc('tableIVA')} testId="svc-detail-iva" value={opt('taxConditionOptions', service.taxCondition)} />
             <Field label={tc('tableProviderAgeBand')} testId="svc-detail-age-band" value={opt('providerAgeBandOptions', service.providerAgeBand)} />

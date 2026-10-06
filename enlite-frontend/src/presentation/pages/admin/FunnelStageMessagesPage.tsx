@@ -10,6 +10,7 @@ import { PageContainer } from '@presentation/components/atoms/PageContainer';
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from '@presentation/components/atoms/Table';
 import { StageMessagePickerModal } from './StageMessagePickerModal';
 import { summaryOf } from './stageMessagePreview';
+import { formatInstant } from '@presentation/utils/dateTimeFormat';
 
 /**
  * /admin/mensajes-por-etapa — DEC-12 / PEND-14 (planning 26/08).
@@ -28,7 +29,7 @@ type RowState = { templateSlug: string; enabled: boolean; status: 'idle' | 'savi
 
 /** Só é chamado com `updatedAt` presente; ISO inválido vira "Invalid Date" na tela (visível, não mascarado). */
 function formatWhen(iso: string): string {
-  return new Date(iso).toLocaleString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return formatInstant(iso, { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) ?? 'Invalid Date';
 }
 
 export function FunnelStageMessagesPage(): JSX.Element {

@@ -36,6 +36,7 @@ import {
 } from '@presentation/components/atoms/Table';
 import { DedupSignalBadge } from './DedupSignalBadge';
 import type { ImportedDedupGroup } from '@domain/entities/DedupGroup';
+import { formatInstant } from '@presentation/utils/dateTimeFormat';
 
 interface ImportedGroupsTabProps {
   groups: ImportedDedupGroup[];
@@ -62,11 +63,7 @@ function LoadingSkeleton() {
 // new Date() + toLocaleString never throw in V8 (invalid input → 'Invalid Date' string).
 // The try-catch that was here previously was dead code (confirmed exhaustive test).
 function formatDate(iso: string): string {
-  return new Date(iso).toLocaleString('es-AR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  });
+  return formatInstant(iso, { day: '2-digit', month: '2-digit', year: 'numeric' }) ?? 'Invalid Date';
 }
 
 export function ImportedGroupsTab({

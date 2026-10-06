@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { Heading } from '@presentation/components/atoms/Heading';
+import { formatInstant } from '@presentation/utils/dateTimeFormat';
 
 interface VacancyMeetLinksRowProps {
   meetLink1: string | null;
@@ -16,21 +17,14 @@ interface VacancyMeetLinksRowProps {
 
 function formatMeetDate(dateStr: string | null): string | null {
   if (!dateStr) return null;
-  try {
-    return new Intl.DateTimeFormat('es-AR', {
-      day: 'numeric',
-      month: 'long',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    })
-      .format(new Date(dateStr))
-      .replace(':00', 'h')
-      .replace(/:\d{2}$/, 'h');
-  } catch {
-    return null;
-  }
+  const formatted = formatInstant(dateStr, {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+  return formatted === null ? null : formatted.replace(':00', 'h').replace(/:\d{2}$/, 'h');
 }
 
 interface MeetSlot {

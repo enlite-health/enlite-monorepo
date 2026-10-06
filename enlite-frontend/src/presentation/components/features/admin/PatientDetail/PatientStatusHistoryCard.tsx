@@ -7,17 +7,14 @@ import { Text } from '@presentation/components/atoms/Text';
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from '@presentation/components/atoms/Table';
+import { formatInstant } from '@presentation/utils/dateTimeFormat';
 
 interface Props {
   patientId: string;
 }
 
 function formatWhen(iso: string): string {
-  try {
-    return new Date(iso).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' });
-  } catch {
-    return iso;
-  }
+  return formatInstant(iso, { dateStyle: 'short', timeStyle: 'short' }) ?? iso;
 }
 
 /**

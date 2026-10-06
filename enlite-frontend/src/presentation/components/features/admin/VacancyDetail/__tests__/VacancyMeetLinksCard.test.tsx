@@ -125,10 +125,14 @@ describe('VacancyMeetLinksCard — recorrente', () => {
     expect(screen.getAllByTitle('admin.vacancyDetail.meetLinksCard.openLink')).toHaveLength(2);
   });
 
-  it('formatação de data que lança não derruba o card (catch do formatador)', () => {
-    const spy = vi.spyOn(Date.prototype, 'toLocaleString').mockImplementation(() => { throw new Error('boom'); });
-    render(<VacancyMeetLinksCard {...base} />);
+  it('data inválida não derruba o card e não imprime "Invalid Date"', () => {
+    render(<VacancyMeetLinksCard {...base} meetDatetime1="lixo" />);
     expect(screen.queryByText(/2027/)).toBeNull();
-    spy.mockRestore();
+    expect(screen.queryByText(/Invalid Date/)).toBeNull();
+  });
+
+  it('mostra a data do link em -03 e 24h (11:30Z = 08:30), nunca am/pm', () => {
+    render(<VacancyMeetLinksCard {...base} />);
+    expect(screen.getByText(/08:30/)).toBeInTheDocument();
   });
 });

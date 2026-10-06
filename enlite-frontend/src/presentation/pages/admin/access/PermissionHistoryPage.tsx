@@ -10,6 +10,7 @@ import { Button } from '@presentation/components/atoms/Button';
 import { TableSkeleton } from '@presentation/components/ui/skeletons';
 import { PanelErrorAlert, permissionCellLabel } from '@presentation/components/features/access';
 import { AccessGate } from './AccessGate';
+import { formatInstant } from '@presentation/utils/dateTimeFormat';
 
 type TipoFiltro = '' | 'permission' | 'member';
 
@@ -154,7 +155,7 @@ function PermissionHistory(): JSX.Element {
                       </span>
                     )}
                   </TableCell>
-                  <TableCell>{new Date(ev.occurredAt).toLocaleString('es-AR')}</TableCell>
+                  <TableCell>{formatInstant(ev.occurredAt, { day: 'numeric', month: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', second: '2-digit' })}</TableCell>
                   <TableCell>{nomePessoa(ev.actorDisplayName, ev.actorEmail, ev.actorUid)}</TableCell>
                   <TableCell>{ev.groupName}</TableCell>
                   <TableCell weight="medium">

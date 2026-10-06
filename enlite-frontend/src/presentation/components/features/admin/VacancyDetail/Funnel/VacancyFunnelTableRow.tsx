@@ -9,6 +9,7 @@ import {
   TableCell,
 } from '@presentation/components/atoms/Table';
 import type { FunnelTableRow } from '@domain/entities/Funnel';
+import { formatInstant } from '@presentation/utils/dateTimeFormat';
 
 interface VacancyFunnelTableRowProps {
   row: FunnelTableRow;
@@ -24,13 +25,7 @@ export function VacancyFunnelTableRow({
 }: VacancyFunnelTableRowProps): JSX.Element {
   const { t } = useTranslation();
 
-  const formattedDate = row.invitedAt
-    ? new Intl.DateTimeFormat('es-AR', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-      }).format(new Date(row.invitedAt))
-    : '—';
+  const formattedDate = formatInstant(row.invitedAt, { day: '2-digit', month: '2-digit', year: 'numeric' }) ?? '—';
 
   const acceptedLabel =
     row.accepted === true
@@ -129,7 +124,7 @@ export function VacancyFunnelTableRow({
           <span
             data-testid="funnel-self-applied-badge"
             title={t('admin.kanban.selfAppliedTitle', {
-              date: new Date(row.selfAppliedAt).toLocaleDateString('es-AR'),
+              date: formatInstant(row.selfAppliedAt, {}) ?? '',
             })}
             className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-800"
           >

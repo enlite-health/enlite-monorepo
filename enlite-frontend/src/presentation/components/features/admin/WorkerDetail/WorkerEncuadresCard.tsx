@@ -11,6 +11,7 @@ import {
   TableCell,
 } from '@presentation/components/atoms/Table';
 import type { WorkerEncuadre, WorkerEncuadreKanbanStage } from '@domain/entities/Worker';
+import { formatInstant, formatCalendarDate, formatClockTime } from '@presentation/utils/dateTimeFormat';
 
 interface WorkerEncuadresCardProps {
   encuadres: WorkerEncuadre[];
@@ -61,7 +62,7 @@ export function WorkerEncuadresCard({ encuadres }: WorkerEncuadresCardProps) {
             {encuadres.map((e) => {
               const stageColor = STAGE_COLORS[e.kanbanStage] ?? 'bg-gray-100 text-gray-600';
               const interviewDisplay = e.interviewDate
-                ? `${new Date(e.interviewDate).toLocaleDateString('es-AR')}${e.interviewTime ? ` ${e.interviewTime}` : ''}`
+                ? `${formatCalendarDate(e.interviewDate, {}) ?? ''}${e.interviewTime ? ` ${formatClockTime(e.interviewTime)}` : ''}`
                 : '—';
 
               return (
@@ -90,7 +91,7 @@ export function WorkerEncuadresCard({ encuadres }: WorkerEncuadresCardProps) {
                   <TableCell>{interviewDisplay}</TableCell>
                   <TableCell>{e.recruiterName ?? '—'}</TableCell>
                   <TableCell>
-                    {new Date(e.createdAt).toLocaleDateString('es-AR')}
+                    {formatInstant(e.createdAt, {})}
                   </TableCell>
                 </TableRow>
               );

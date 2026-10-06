@@ -32,6 +32,7 @@ import { BlockedAggregatesBar } from './BlockedAggregatesBar';
 import { BlockedAttemptsFilters } from './BlockedAttemptsFilters';
 import type { BlockedReason } from '@domain/entities/BlockedAttempt';
 import type { ResolvedAttempt } from '@hooks/admin/useBlockedAttempts';
+import { formatInstant } from '@presentation/utils/dateTimeFormat';
 
 const PAGE_SIZE = 20;
 
@@ -42,17 +43,7 @@ const REASON_BADGE_COLORS: Record<string, string> = {
 };
 
 function formatDate(iso: string): string {
-  try {
-    return new Date(iso).toLocaleString('es-AR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  } catch {
-    return iso;
-  }
+  return formatInstant(iso, { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) ?? iso;
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────

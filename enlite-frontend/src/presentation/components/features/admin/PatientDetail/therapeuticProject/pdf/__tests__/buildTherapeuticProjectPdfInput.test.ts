@@ -80,7 +80,7 @@ const VERSAO: TherapeuticProjectVersion = {
   contacts: [],
 };
 
-const AGORA = new Date(2026, 8, 8, 14, 5); // 08/09/2026 14:05 — local, sem fuso
+const AGORA = new Date('2026-09-08T17:05:00Z'); // 08/09/2026 14:05 em -03
 
 const paciente = (over: Partial<PatientDetail> = {}): PatientDetail => ({ ...patientDetailFixture, ...over });
 
@@ -438,13 +438,13 @@ describe('responsáveis e equipe tratante — SEMPRE de `version.contacts` (PR-7
 
 // ── Data de emissão ──────────────────────────────────────────────────────────
 
-describe('formatIssuedAt — `dd/mm/aaaa HH:MM`, determinístico e sem Intl', () => {
+describe('formatIssuedAt — `dd/mm/aaaa HH:MM` em -03, determinístico', () => {
   it('põe zero à esquerda em dia, mês, hora e minuto', () => {
-    expect(formatIssuedAt(new Date(2026, 0, 5, 7, 3))).toBe('05/01/2026 07:03');
+    expect(formatIssuedAt(new Date('2026-01-05T10:03:00Z'))).toBe('05/01/2026 07:03');
   });
 
   it('mantém dois dígitos quando já os tem (e o mês é 1-based)', () => {
-    expect(formatIssuedAt(new Date(2026, 11, 25, 23, 59))).toBe('25/12/2026 23:59');
+    expect(formatIssuedAt(new Date('2026-12-26T02:59:00Z'))).toBe('25/12/2026 23:59');
   });
 
   it('sem `now`, o builder usa o relógio do operador', () => {

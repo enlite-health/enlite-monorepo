@@ -533,6 +533,7 @@ function AdmissionConfirmation({ country, result, t }: AdmissionConfirmationProp
       month: 'long',
       hour: '2-digit',
       minute: '2-digit',
+      hourCycle: 'h23', // 24h (regra do dono); o fuso segue sendo o do PAÍS.
     }).format(date);
   }, [result.slotStartISO, country]);
 

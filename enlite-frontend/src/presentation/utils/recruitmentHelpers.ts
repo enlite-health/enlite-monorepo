@@ -1,3 +1,5 @@
+import { formatWallDate } from '@presentation/utils/dateTimeFormat';
+
 /**
  * Recruitment Dashboard Data Processing Helpers
  * Migrated from Dashboard Reclutamiento - handles data normalization, parsing, and extraction
@@ -142,11 +144,8 @@ export function formatClickUpDate(val: string): string {
 
   const parsed = parseDate(str);
   if (!isNaN(parsed.getTime())) {
-    const datePart = parsed.toLocaleDateString('es-AR', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-    });
+    // `parseDate` monta a Date com o relógio LOCAL (planilha sem fuso): SÓ-DATA, sem conversão.
+    const datePart = formatWallDate(parsed, { day: 'numeric', month: 'short', year: 'numeric' }) ?? str;
     const timeMatch = str.match(/(\d{2}):(\d{2})(?::\d{2})?$/);
     return timeMatch ? `${datePart}, ${timeMatch[1]}:${timeMatch[2]}` : datePart;
   }

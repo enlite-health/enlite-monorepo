@@ -12,6 +12,7 @@ import {
   TableHead,
   TableCell,
 } from '@presentation/components/atoms/Table';
+import { formatInstant } from '@presentation/utils/dateTimeFormat';
 
 export interface PatientRow {
   id: string;
@@ -134,9 +135,7 @@ function formatServiceType(t: ReturnType<typeof useTranslation>['t'], types: str
  */
 function formatRegisteredAt(iso: string | null, locale: string): string | null {
   if (!iso) return null;
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleDateString(resolveDateLocale(locale), SHORT_DATE_OPTIONS);
+  return formatInstant(iso, SHORT_DATE_OPTIONS, resolveDateLocale(locale));
 }
 
 function formatDependency(t: ReturnType<typeof useTranslation>['t'], level: string | null): string {

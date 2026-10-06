@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { resolveDateLocale, SHORT_DATE_OPTIONS } from '@presentation/utils/dateLocale';
 import { Text } from '@presentation/components/atoms/Text';
+import { formatInstant } from '@presentation/utils/dateTimeFormat';
 
 interface ClinicalLongTextProps {
   /** Base dos `data-testid`: `<testId>`, `<testId>-text`, `<testId>-edited`, `<testId>-redacted`. */
@@ -20,11 +21,9 @@ interface ClinicalLongTextProps {
   emptyMessage?: string | null;
 }
 
-/** "28/08/2026, 14:35" no fuso e na língua de quem olha (molde: WorkersTable.formatDate). */
+/** "28/08/2026, 14:35" em -03 (Buenos Aires), 24h, na língua de quem olha (molde: WorkersTable.formatDate). */
 function formatDateTime(iso: string, locale: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleString(resolveDateLocale(locale), { ...SHORT_DATE_OPTIONS, hour: '2-digit', minute: '2-digit' });
+  return formatInstant(iso, { ...SHORT_DATE_OPTIONS, hour: '2-digit', minute: '2-digit' }, resolveDateLocale(locale)) ?? iso;
 }
 
 /**

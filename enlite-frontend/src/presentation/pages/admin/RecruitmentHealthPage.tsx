@@ -17,22 +17,13 @@ import { Button } from '@presentation/components/atoms/Button';
 import { PageContainer } from '@presentation/components/atoms/PageContainer';
 import { useRecruitmentHealth } from '@hooks/admin/useRecruitmentHealth';
 import type { BulkRun } from '@domain/entities/RecruitmentHealth';
+import { formatInstant } from '@presentation/utils/dateTimeFormat';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function formatTimestamp(iso: string | null, fallback: string): string {
   if (!iso) return fallback;
-  try {
-    return new Date(iso).toLocaleString('es-AR', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  } catch {
-    return iso;
-  }
+  return formatInstant(iso, { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) ?? iso;
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────

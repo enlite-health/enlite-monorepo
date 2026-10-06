@@ -2,6 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { getPlatformLabel } from '@presentation/pages/admin/workersData';
+import { formatInstant } from '@presentation/utils/dateTimeFormat';
 
 interface WorkerStatusCardProps {
   status: string;
@@ -35,8 +36,8 @@ export function WorkerStatusCard({
   const statusLabel = STATUS_I18N_KEYS[status] ? t(STATUS_I18N_KEYS[status]) : status;
   const platformLabel = getPlatformLabel(t, platform);
   const dataSourceLabels = dataSources.map((s) => getPlatformLabel(t, s));
-  const created = new Date(createdAt).toLocaleDateString('pt-BR');
-  const updated = new Date(updatedAt).toLocaleDateString('pt-BR');
+  const created = formatInstant(createdAt, {}, 'pt-BR') ?? '';
+  const updated = formatInstant(updatedAt, {}, 'pt-BR') ?? '';
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex flex-col gap-4">

@@ -4,6 +4,7 @@ import { CheckCircle2, X, ShieldCheck } from 'lucide-react';
 import type { DocumentValidationEntry } from '@domain/entities/Worker';
 import type { AdminDocumentType } from '@hooks/admin/useAdminWorkerDocuments';
 import { ConfirmValidationModal } from './ConfirmValidationModal';
+import { formatInstant } from '@presentation/utils/dateTimeFormat';
 
 interface DocumentValidationBadgeProps {
   docType: AdminDocumentType;
@@ -15,11 +16,7 @@ interface DocumentValidationBadgeProps {
 }
 
 function formatValidatedAt(isoDate: string): string {
-  return new Intl.DateTimeFormat('es-AR', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  }).format(new Date(isoDate));
+  return formatInstant(isoDate, { day: 'numeric', month: 'short', year: 'numeric' }) ?? isoDate;
 }
 
 export function DocumentValidationBadge({

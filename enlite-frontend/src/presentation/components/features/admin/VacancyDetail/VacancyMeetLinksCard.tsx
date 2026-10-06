@@ -7,6 +7,7 @@ import { ActionButton } from '@presentation/components/features/access';
 import { Select } from '@presentation/components/atoms/Select';
 import { AdminApiService, type RecurringMeetSlot } from '@infrastructure/http/AdminApiService';
 import { toInputTime } from './meetRecurringUtils';
+import { formatInstant } from '@presentation/utils/dateTimeFormat';
 
 const MEET_LINK_REGEX = /^https:\/\/meet\.google\.com\/[a-z]{3}-[a-z]{4}-[a-z]{3}$/;
 
@@ -38,17 +39,7 @@ interface RecurringForm {
 
 function formatDatetime(dateStr: string | null): string | null {
   if (!dateStr) return null;
-  try {
-    return new Date(dateStr).toLocaleString('es-AR', {
-      day: 'numeric',
-      month: 'long',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  } catch {
-    return null;
-  }
+  return formatInstant(dateStr, { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
 function LinkStatusIcon({ link, datetime }: { link: string; datetime: string | null }) {
