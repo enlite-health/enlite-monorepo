@@ -64,8 +64,8 @@ function funil() {
     success: true,
     data: {
       stages: {
-        INVITED: [], INICIADO: [], PRE_SCREENING: [],
-        IN_PROGRESS: [], COMPLETED: [], CONFIRMED: [], SELECTED: [], REJECTED: [CARD_ELEGIVEL],
+        INVITED: [], INICIADO: [CARD_ELEGIVEL], PRE_SCREENING: [],
+        IN_PROGRESS: [], COMPLETED: [], CONFIRMED: [], SELECTED: [], REJECTED: [],
       },
       totalEncuadres: 1,
     },
@@ -174,7 +174,7 @@ test.describe('Card ELEGIBLE — promover a candidatura', () => {
     );
     await page.route(`**/api/admin/vacancies/${VAGA}/funnel`, (r: Route) => {
       const f = funil();
-      f.data.stages.REJECTED = [{
+      f.data.stages.INICIADO = [{
         ...CARD_ELEGIVEL,
         blockedReason: 'registration_incomplete',
         missingFields: ['years_experience', 'preferred_types'],
