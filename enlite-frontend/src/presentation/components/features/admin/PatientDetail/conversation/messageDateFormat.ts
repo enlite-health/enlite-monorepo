@@ -1,3 +1,5 @@
+import { getInstantParts } from '@presentation/utils/dateTimeFormat';
+
 /**
  * messageDateFormat — data/hora do CARD de mensagem (spec 022, ajustes de UI B5), no molde do
  * comentário do ClickUp que o Gabriel mostrou: "17 de sep. a las 6:13 p. m." (ES) / "17 de set. às
@@ -18,11 +20,10 @@ const MONTH_ABBR_PT = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', '
 
 /** `language` é `i18n.language` (`'es'` ou `'pt-BR'`, ver `i18n/index.ts`) — só o prefixo importa. */
 export function formatMessageDateTime(iso: string, language: string, connector: string): string {
-  const date = new Date(iso);
+  const parts = getInstantParts(iso);
+  if (!parts) return iso;
   const isPt = language.toLowerCase().startsWith('pt');
   const months = isPt ? MONTH_ABBR_PT : MONTH_ABBR_ES;
-  const day = date.getDate();
-  const month = months[date.getMonth()];
-  const time = new Intl.DateTimeFormat(isPt ? 'pt-BR' : 'es-AR', { hour: 'numeric', minute: '2-digit' }).format(date);
-  return `${day} de ${month}. ${connector} ${time}`;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${parts.day} de ${months[parts.month - 1]}. ${connector} ${pad(parts.hour)}:${pad(parts.minute)}`;
 }

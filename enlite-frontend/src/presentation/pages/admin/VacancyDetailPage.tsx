@@ -37,6 +37,7 @@ import { tabsVisibleFor } from '@presentation/hooks/useCellAccess';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import { screenById } from '@presentation/config/screenRegistry';
 import { formatCaseNumber } from '@domain/value-objects/caseNumberFormat';
+import { formatInstant } from '@presentation/utils/dateTimeFormat';
 
 export default function VacancyDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -314,9 +315,7 @@ export default function VacancyDetailPage() {
                     <TableRow key={i}>
                       <TableCell>{pub.channel ?? '—'}</TableCell>
                       <TableCell>
-                        {pub.published_at
-                          ? new Date(pub.published_at).toLocaleDateString('es-AR')
-                          : '—'}
+                        {formatInstant(pub.published_at, {}) ?? '—'}
                       </TableCell>
                       <TableCell>{pub.recruiter ?? '—'}</TableCell>
                     </TableRow>

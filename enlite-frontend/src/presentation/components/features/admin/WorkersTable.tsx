@@ -13,6 +13,7 @@ import {
 } from '@presentation/components/atoms/Table';
 import { getPlatformLabel } from '@presentation/pages/admin/workersData';
 import { DocsStatusBadge } from '@presentation/components/atoms/DocsStatusBadge';
+import { formatInstant } from '@presentation/utils/dateTimeFormat';
 
 export interface WorkerRow {
   id: string;
@@ -44,7 +45,7 @@ const COLUMNS = [
 
 function formatDate(iso: string, locale: string): string {
   if (!iso) return '—';
-  return new Date(iso).toLocaleDateString(resolveDateLocale(locale), SHORT_DATE_OPTIONS);
+  return formatInstant(iso, SHORT_DATE_OPTIONS, resolveDateLocale(locale)) ?? 'Invalid Date';
 }
 
 /**

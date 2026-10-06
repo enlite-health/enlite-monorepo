@@ -8,6 +8,7 @@ import { KanbanCardStageMessage } from './KanbanCardStageMessage';
 import { KanbanCardBlocked, type PromoteStatus } from './KanbanCardBlocked';
 import { KanbanCardResend, type ResendStatus } from './KanbanCardResend';
 import { KanbanCardPresentationInvite, type PresentationInviteState } from './KanbanCardPresentationInvite';
+import { formatInstant, formatCalendarDate, formatClockTime } from '@presentation/utils/dateTimeFormat';
 
 interface KanbanCardProps {
   id: string;
@@ -167,7 +168,7 @@ export function KanbanCard({
   const stopPropagation = (e: React.MouseEvent) => e.stopPropagation();
 
   const interviewLabel = interviewDate
-    ? `${new Date(interviewDate).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })}${interviewTime ? ` ${interviewTime}` : ''}`
+    ? `${formatCalendarDate(interviewDate, { day: 'numeric', month: 'short' }) ?? ''}${interviewTime ? ` ${formatClockTime(interviewTime)}` : ''}`
     : null;
 
   return (
@@ -215,7 +216,7 @@ export function KanbanCard({
         <span
           data-testid="self-applied-badge"
           title={t('admin.kanban.selfAppliedTitle', {
-            date: new Date(selfAppliedAt).toLocaleDateString('es-AR'),
+            date: formatInstant(selfAppliedAt, {}) ?? '',
           })}
           className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-800"
         >
@@ -272,8 +273,8 @@ export function KanbanCard({
         )}
         {stage !== 'CONFIRMED' && interviewDate && (
           <span className="text-[10px] text-slate-400">
-            {new Date(interviewDate).toLocaleDateString('es-AR')}
-            {interviewTime ? ` ${interviewTime}` : ''}
+            {formatCalendarDate(interviewDate, {})}
+            {interviewTime ? ` ${formatClockTime(interviewTime)}` : ''}
           </span>
         )}
       </div>

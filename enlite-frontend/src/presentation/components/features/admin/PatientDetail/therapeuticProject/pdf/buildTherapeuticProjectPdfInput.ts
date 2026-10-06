@@ -9,6 +9,7 @@ import type { ResolvedTherapeuticContact, TherapeuticProjectVersion } from '@dom
 import { patientAddressLabel } from '@domain/entities/PatientContractedService';
 import { contractedServiceScheduleText } from '../../contractedServiceScheduleText';
 import { ageFromBirthDate, type PdfContact, type PdfCoverageContact, type TherapeuticProjectPdfInput } from './therapeuticProjectPdfInput';
+import { getInstantParts } from '@presentation/utils/dateTimeFormat';
 
 export interface PdfContainerReads {
   identity: boolean;
@@ -157,8 +158,10 @@ export function buildTherapeuticProjectPdfInput(args: {
   };
 }
 
-/** `dd/mm/aaaa HH:MM` — local do operador, sem depender de Intl (determinístico em teste). */
+/** `dd/mm/aaaa HH:MM` em -03 (Buenos Aires), 24h, por partes (determinístico em teste, sem depender do fuso do host). */
 export function formatIssuedAt(d: Date): string {
+  const parts = getInstantParts(d);
+  if (!parts) return '';
   const p = (n: number) => String(n).padStart(2, '0');
-  return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  return `${p(parts.day)}/${p(parts.month)}/${parts.year} ${p(parts.hour)}:${p(parts.minute)}`;
 }

@@ -12,6 +12,7 @@ import { FieldPair, FieldPairGrid, FieldGroupTitle } from './FieldPairs';
 import { maskDocumentNumber } from '@presentation/utils/maskDocumentNumber';
 import { PatientPhotoSlot } from './PatientPhotoSlot';
 import { ENV } from '@infrastructure/config/env';
+import { formatInstant } from '@presentation/utils/dateTimeFormat';
 
 interface PatientIdentityCardProps {
   patient: PatientDetail;
@@ -49,11 +50,7 @@ const STATUS_COLORS: Record<string, string> = {
 
 function formatDate(iso: string | null, locale = 'es-AR'): string | null {
   if (!iso) return null;
-  try {
-    return new Date(iso).toLocaleDateString(locale);
-  } catch {
-    return iso;
-  }
+  return formatInstant(iso, {}, locale) ?? iso;
 }
 
 function buildAddress(patient: PatientDetail): string | null {

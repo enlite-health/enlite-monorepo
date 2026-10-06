@@ -1,3 +1,5 @@
+import { formatCalendarDate } from '@presentation/utils/dateTimeFormat';
+
 /**
  * As próximas `count` datas de um `weekday` (0=domingo … 6=sábado — a MESMA convenção do
  * `dayOfWeek` do `schedule`, segunda = 1: `E2E/helpers/lancamento-e2e-helper.ts:317`) a partir de
@@ -55,5 +57,5 @@ export const WEEKDAY_REFERENCE_UTC_MS = Date.UTC(2023, 0, 1);
 export function weekdayName(weekday: number, language: string): string {
   const locale = language.startsWith('pt') ? 'pt-BR' : 'es-AR';
   const ms = WEEKDAY_REFERENCE_UTC_MS + weekday * 24 * 60 * 60 * 1000;
-  return new Intl.DateTimeFormat(locale, { weekday: 'long', timeZone: 'UTC' }).format(new Date(ms));
+  return formatCalendarDate(new Date(ms).toISOString(), { weekday: 'long' }, locale) ?? '';
 }

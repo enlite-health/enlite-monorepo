@@ -75,14 +75,19 @@ describe('PatientStatusHistoryCard', () => {
     await waitFor(() => expect(screen.getAllByTestId('status-history-error')).toHaveLength(2));
   });
 
-  it('origem nula → —; formatação de data que lança cai no ISO', async () => {
-    getPatientStatusHistory.mockResolvedValue([{ from: null, to: 'ACTIVE', source: null, at: '2026-09-03T14:00:00.000Z' }]);
-    const spy = vi.spyOn(Date.prototype, 'toLocaleString').mockImplementation(() => { throw new RangeError('locale'); });
-    try {
-      render(<PatientStatusHistoryCard patientId="p9" />);
-      const row = await screen.findByTestId('status-history-row-0');
-      expect(row).toHaveTextContent('2026-09-03T14:00:00.000Z');
-      expect(row.textContent?.split('—').length).toBeGreaterThanOrEqual(3);
-    } finally { spy.mockRestore(); }
+  it('origem nula → —; data inválida cai no valor cru', async () => {
+    getPatientStatusHistory.mockResolvedValue([{ from: null, to: 'ACTIVE', source: null, at: 'não-é-data' }]);
+    render(<PatientStatusHistoryCard patientId="p9" />);
+    const row = await screen.findByTestId('status-history-row-0');
+    expect(row).toHaveTextContent('não-é-data');
+    expect(row.textContent?.split('—').length).toBeGreaterThanOrEqual(3);
+  });
+
+  it('QUANDO sai em -03 e 24h, não no fuso do navegador (14:00Z = 11:00)', async () => {
+    getPatientStatusHistory.mockResolvedValue([{ from: null, to: 'ACTIVE', source: null, at: '2026-09-03T22:00:00.000Z' }]);
+    render(<PatientStatusHistoryCard patientId="p10" />);
+    const row = await screen.findByTestId('status-history-row-0');
+    expect(row.textContent).toContain('19:00');
+    expect(row.textContent).not.toMatch(/[ap]\. ?m\./i);
   });
 });

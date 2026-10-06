@@ -1,4 +1,5 @@
 import type { TemplateCatalogRow } from '@infrastructure/http/AdminTemplateCatalogApiService';
+import { formatInstant } from '@presentation/utils/dateTimeFormat';
 
 /**
  * templateCatalogView — as regras da faixa de filtros e do indicador de
@@ -141,12 +142,7 @@ export function relativeFrom(iso: string, agora: Date): RelativeAge | null {
  */
 export function dataLegivel(iso: string | null): string | null {
   if (!iso) return null;
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return null;
-  return d.toLocaleString('es-AR', {
-    day: '2-digit', month: '2-digit', year: 'numeric',
-    hour: '2-digit', minute: '2-digit',
-  });
+  return formatInstant(iso, { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
 /**

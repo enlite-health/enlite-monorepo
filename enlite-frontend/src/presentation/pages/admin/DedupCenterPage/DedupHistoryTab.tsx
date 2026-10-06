@@ -23,6 +23,7 @@ import {
   TableCell,
 } from '@presentation/components/atoms/Table/Table';
 import type { MergeHistoryItem } from '@domain/entities/DedupGroup';
+import { formatInstant } from '@presentation/utils/dateTimeFormat';
 
 interface DedupHistoryTabProps {
   history: MergeHistoryItem[];
@@ -147,10 +148,7 @@ export function DedupHistoryTab({
                 </div>
               </TableCell>
               <TableCell>
-                {new Date(item.created_at).toLocaleString('es-AR', {
-                  dateStyle: 'short',
-                  timeStyle: 'short',
-                })}
+                {formatInstant(item.created_at, { dateStyle: 'short', timeStyle: 'short' })}
               </TableCell>
               <TableCell unwrapped>
                 {item.can_undo ? (
