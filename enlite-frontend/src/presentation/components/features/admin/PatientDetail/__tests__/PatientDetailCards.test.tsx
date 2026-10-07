@@ -326,29 +326,45 @@ describe('PatientIdentityCard', () => {
     expect(par?.lastElementChild).toHaveTextContent('—');
   });
 
-  it('builds the address from neighborhood/city/province when no address has fullAddress', () => {
-    render(
-      <PatientIdentityCard
-        patient={{
-          ...patientDetailFixture,
-          addresses: [],
-          zoneNeighborhood: 'Palermo',
-          cityLocality: 'CABA',
-          province: 'Buenos Aires',
-        }}
-      />,
-    );
-    expect(screen.getByText('Endereço')).toBeInTheDocument();
-    expect(screen.getByText('Palermo, CABA, Buenos Aires')).toBeInTheDocument();
-  });
+  // Spec 044 (A1): o card lê o faturamento PRÓPRIO do paciente — não `addresses[0]` nem as colunas legadas.
+  describe('spec 044 A1 — Endereço de faturamento', () => {
+    const outroEndereco = { ...patientDetailFixture.addresses[0], addressFormatted: 'Rua Do Primeiro Local 1', isPrimary: false, displayOrder: 1 };
 
-  it('does not render the address field when there is no fullAddress and no location parts', () => {
-    render(
-      <PatientIdentityCard
-        patient={{ ...patientDetailFixture, addresses: [], zoneNeighborhood: null, cityLocality: null, province: null }}
-      />,
-    );
-    expect(screen.queryByText('Endereço')).not.toBeInTheDocument();
+    it('mostra billingAddressFormatted, mesmo com addresses[0] diferente', () => {
+      render(
+        <PatientIdentityCard
+          patient={{ ...patientDetailFixture, addresses: [outroEndereco], billingAddressFormatted: 'Calle Falsa 123, Ciudad Ficticia' }}
+        />,
+      );
+      expect(screen.getByText('Endereço de faturamento')).toBeInTheDocument();
+      expect(screen.getByTestId('patient-address')).toHaveTextContent('Calle Falsa 123, Ciudad Ficticia');
+      expect(screen.queryByText('Rua Do Primeiro Local 1')).not.toBeInTheDocument();
+    });
+
+    it('faturamento vazio com addresses[0] preenchido e colunas legadas: mostra "Não definido" (campo SEMPRE visível), nunca o addresses[0]', () => {
+      render(
+        <PatientIdentityCard
+          patient={{
+            ...patientDetailFixture,
+            addresses: [outroEndereco],
+            zoneNeighborhood: 'Palermo',
+            cityLocality: 'CABA',
+            province: 'Buenos Aires',
+            billingAddressFormatted: null,
+          }}
+        />,
+      );
+      expect(screen.getByTestId('patient-address')).toHaveTextContent('Não definido');
+      expect(screen.queryByText('Rua Do Primeiro Local 1')).not.toBeInTheDocument();
+      expect(screen.queryByText('Palermo, CABA, Buenos Aires')).not.toBeInTheDocument();
+    });
+
+    it('texto só com espaços conta como vazio; campo ausente (API antiga) também', () => {
+      const { rerender } = render(<PatientIdentityCard patient={{ ...patientDetailFixture, billingAddressFormatted: '   ' }} />);
+      expect(screen.getByTestId('patient-address')).toHaveTextContent('Não definido');
+      rerender(<PatientIdentityCard patient={{ ...patientDetailFixture, billingAddressFormatted: undefined }} />);
+      expect(screen.getByTestId('patient-address')).toHaveTextContent('Não definido');
+    });
   });
 
   // CONDIÇÃO 5 do lex (spec 018 PR-3): ator SÓ com `patient_identity:read` (SEM
@@ -1457,8 +1473,8 @@ describe('PatientIdentityCard — e-mail do paciente em claro com máscara do Cl
     expect(screen.getByTestId('patient-contact-email')).toHaveTextContent('—');
   });
 
-  it('o endereço do cabeçalho lê addresses[0].addressFormatted (A2)', () => {
-    render(<PatientIdentityCard patient={{ ...patientDetailFixture, addresses: [{ id: 'a1', addressType: 'primary', addressTypeOther: null, addressFormatted: 'Rua Contrato, 1 - SP', addressRaw: null, complement: null, displayOrder: 1, lat: null, lng: null, isPrimary: true, neighborhood: null, logisticsCorridor: null, accessNotes: null, country: 'BR' }] }} />);
+  it('o endereço do cabeçalho lê billingAddressFormatted (spec 044; antes lia addresses[0].addressFormatted — spec 011 A2)', () => {
+    render(<PatientIdentityCard patient={{ ...patientDetailFixture, billingAddressFormatted: 'Rua Contrato, 1 - SP' }} />);
     expect(screen.getByText('Rua Contrato, 1 - SP')).toBeInTheDocument();
   });
 });
@@ -1478,28 +1494,25 @@ describe('cards tocados na spec 011 — ramos defensivos', () => {
     render(<LocalizacoesCard addresses={undefined as unknown as []} />);
     expect(screen.getByText('Sem dados cadastrados')).toBeInTheDocument();
   });
-
-  it('PatientIdentityCard: sem endereço formatado, o cabeçalho cai no texto cru do operador', () => {
-    render(<PatientIdentityCard patient={{ ...patientDetailFixture, addresses: [{ id: 'a1', addressType: 'primary', addressTypeOther: null, addressFormatted: null, addressRaw: 'Rua Crua 77', complement: null, displayOrder: 1, lat: null, lng: null, isPrimary: true, neighborhood: null, logisticsCorridor: null, accessNotes: null, country: 'BR' }] }} />);
-    expect(screen.getByText('Rua Crua 77')).toBeInTheDocument();
-  });
 });
 
 // ── QA caça 🔴2 (spec 011, rodada 2): rua no card de identidade com máscara e rótulo i18n ──
 
-describe('PatientIdentityCard — endereço com data-clarity-mask (lex C2.1)', () => {
-  const addr = { id: 'a1', addressType: 'primary', addressTypeOther: null, addressFormatted: 'Rua Mascarada, 9 - SP', addressRaw: null, complement: null, displayOrder: 1, lat: null, lng: null, isPrimary: true, neighborhood: null, logisticsCorridor: null, accessNotes: null, country: 'BR' };
-
-  it('a rua fica dentro de um container com data-clarity-mask="True" e o rótulo vem do i18n', () => {
-    render(<PatientIdentityCard patient={{ ...patientDetailFixture, addresses: [addr] }} />);
+describe('PatientIdentityCard — endereço de faturamento com data-clarity-mask (lex C2.1; spec 044)', () => {
+  it('o endereço de faturamento fica dentro de um container com data-clarity-mask="True" e o rótulo vem do i18n', () => {
+    render(<PatientIdentityCard patient={{ ...patientDetailFixture, billingAddressFormatted: 'Rua Mascarada, 9 - SP' }} />);
     const field = screen.getByTestId('patient-address');
     expect(field).toHaveTextContent('Rua Mascarada, 9 - SP');
     expect(field.closest('[data-clarity-mask="True"]')).not.toBeNull();
-    expect(screen.getByText('Endereço')).toBeInTheDocument();
+    expect(screen.getByText('Endereço de faturamento')).toBeInTheDocument();
   });
 
-  it('sem endereço nenhum o campo não aparece', () => {
+  // Spec 044 INVERTE o antigo "sem endereço nenhum o campo não aparece": a spec pede o campo sempre
+  // visível, com "No definido" quando vazio (a mudança é a pedida, não uma regressão).
+  it('sem faturamento nenhum o campo APARECE, com "Não definido", ainda mascarado', () => {
     render(<PatientIdentityCard patient={patientDetailMinimal} />);
-    expect(screen.queryByTestId('patient-address')).toBeNull();
+    const field = screen.getByTestId('patient-address');
+    expect(field).toHaveTextContent('Não definido');
+    expect(field.closest('[data-clarity-mask="True"]')).not.toBeNull();
   });
 });

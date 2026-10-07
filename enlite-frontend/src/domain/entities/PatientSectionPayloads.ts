@@ -34,6 +34,13 @@ export interface PatientGeneralSectionPayload {
   gender?: string | null;
   /** Spec 018 PR-3: subconjunto fechado de 'pt'|'es'|'en'. `null` limpa. */
   languages?: string[] | null;
+  /**
+   * Spec 044 (migration 500): faturamento = o que o Google Places devolveu. Os 3 viajam juntos
+   * (o servidor recusa cidade/província sem o texto); `billingAddressFormatted: null` limpa os 3.
+   */
+  billingAddressFormatted?: string | null;
+  billingCity?: string | null;
+  billingProvince?: string | null;
 }
 
 /** section = 'clinical' — mirrors clinicalSectionSchema (backend). */
