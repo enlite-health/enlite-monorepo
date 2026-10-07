@@ -279,6 +279,8 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
   'patient:update': 'Editar status e vínculos administrativos do paciente (papéis do chat, convênios, status do funil).',
   'patient_address:create': 'Cadastrar um endereço novo do paciente.',
   'patient_address:update': 'Editar um endereço existente do paciente.',
+  // Spec 044 (migration 501): remoção definitiva de uma Localización — só sem vaga nem serviço apontando.
+  'patient_address:delete': 'Remover um endereço (Localización) do paciente, em definitivo. Só funciona quando nenhuma vaga nem serviço contratado aponta para ele.',
   'patient_chat:create': 'Vincular um novo grupo de WhatsApp do caso ao paciente.',
   'patient_chat:update': 'Trocar os IDs dos grupos de WhatsApp já vinculados ao caso.',
   'patient_conversation:read':
