@@ -45,6 +45,11 @@ jest.mock('@shared/security/BlindIndexService', () => ({
   })),
 }));
 
+const mockRecalculateWorkerStatus = jest.fn().mockResolvedValue(null);
+jest.mock('../../infrastructure/WorkerStatusRepository', () => ({
+  recalculateWorkerStatus: (...args: unknown[]) => mockRecalculateWorkerStatus(...args),
+}));
+
 const mockLogInfo = jest.fn();
 jest.mock('@shared/logging', () => ({
   logger: {
@@ -203,5 +208,38 @@ describe('UpdateWorkerProfileFieldsUseCase — transação + trilha de fonte', (
       ),
     ).rejects.toBeInstanceOf(WorkerNotFoundError);
     expect(mockConnect).not.toHaveBeenCalled();
+  });
+});
+
+describe('UpdateWorkerProfileFieldsUseCase — recálculo de status (043 A1)', () => {
+  it('edição que escreve campo recalcula o status do worker, como o wizard', async () => {
+    await new UpdateWorkerProfileFieldsUseCase().execute(
+      { workerId: WORKER_ID, profession: 'AT' },
+      { source: 'admin_panel', actorUid: 'staff-uid-1' },
+    );
+
+    expect(mockRecalculateWorkerStatus).toHaveBeenCalledTimes(1);
+    expect(mockRecalculateWorkerStatus.mock.calls[0][1]).toBe(WORKER_ID);
+  });
+
+  it('o recálculo roda DEPOIS do COMMIT da edição', async () => {
+    mockRecalculateWorkerStatus.mockImplementationOnce(async () => {
+      const sqls = mockClientQuery.mock.calls.map(([sql]) => String(sql));
+      expect(sqls).toContain('COMMIT');
+      return null;
+    });
+    await new UpdateWorkerProfileFieldsUseCase().execute(
+      { workerId: WORKER_ID, profession: 'AT' },
+      { source: 'admin_panel', actorUid: 'staff-uid-1' },
+    );
+    expect(mockRecalculateWorkerStatus).toHaveBeenCalledTimes(1);
+  });
+
+  it('patch sem nenhum campo escrito não recalcula', async () => {
+    await new UpdateWorkerProfileFieldsUseCase().execute(
+      { workerId: WORKER_ID },
+      { source: 'admin_panel', actorUid: 'staff-uid-1' },
+    );
+    expect(mockRecalculateWorkerStatus).not.toHaveBeenCalled();
   });
 });

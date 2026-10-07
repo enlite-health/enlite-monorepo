@@ -20,6 +20,7 @@ import { logger, reportError, loggingAls } from '@shared/logging';
 import type { EntityFieldDiff } from '@shared/audit/types';
 import { captureWorkerBefore } from './workerAuditDiff';
 import { enqueueDomainEvent } from '@shared/events/enqueueDomainEvent';
+import { recalculateWorkerStatus } from '../infrastructure/WorkerStatusRepository';
 import type { PubSubClient } from '@shared/events/PubSubClient';
 import {
   ProfileChangeAuditRepository,
@@ -182,6 +183,12 @@ export class UpdateWorkerProfileFieldsUseCase {
     // o sweep do DomainEventProcessor reprocessa pendentes.
     if (fieldsUpdated.length > 0) {
       await this.enqueueMirrorEvent(workerId);
+
+      // Mesmo caminho do wizard (SavePersonalInfoUseCase → recalculateStatus):
+      // se a edição do admin completou o cadastro, o status vira REGISTERED e
+      // `worker.registration_completed` promove TODAS as tentativas bloqueadas
+      // do worker. Sem isto o admin completava e os cards seguiam BLOQUEADO.
+      await recalculateWorkerStatus(this.pool, workerId, this.pubsub);
     }
 
     return { workerId, fieldsUpdated, changes };
