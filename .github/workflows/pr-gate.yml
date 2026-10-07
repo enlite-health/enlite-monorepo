@@ -166,7 +166,11 @@ jobs:
       # (`patient-itinerary.integration.e2e.ts`: feliz + 2 alternativos, 3 testes) passa a rodar no CI, job padrão.
       # `patient-status-aguardando-financeiro` ENTROU (spec 038, item 11): o login real no emulador nunca saía de
       # `/admin/login` neste job; passou a `loginComoStaffMock` (o mesmo do irmão `patient-status-suspendido-saida-motivo`).
-      grep: 'worker-profile-fields-persist|worker-completude-vitrine|027-public-jobs-search-en-code|vacancy-locked-fields|vacancy-schedule-hydration|draft-wizard-locked|027-vacancy-case-select|kanban-pacientes|funil-vacante|lista-vacantes|vacancy-de-baja|patient-status-suspendido-saida-motivo|patient-kanban-suspendido-saida-motivo|patient-itinerary|patient-status-aguardando-financeiro|cid-na-vaga-publica'
+      # `postularse-iniciado-043` ENTROU (spec 043): o gate do PR achou os specs
+      # `postularse-iniciado-043`, `kanban-iniciado-blocked-columns` e
+      # `kanban-blocked-live-missing-fields` na lista "NÃO exercitados" — o `--grep` casa
+      # pelo caminho do arquivo, na mesma convenção do `027-vacancy-case-select`.
+      grep: 'worker-profile-fields-persist|worker-completude-vitrine|027-public-jobs-search-en-code|vacancy-locked-fields|vacancy-schedule-hydration|draft-wizard-locked|027-vacancy-case-select|kanban-pacientes|funil-vacante|lista-vacantes|vacancy-de-baja|patient-status-suspendido-saida-motivo|patient-kanban-suspendido-saida-motivo|patient-itinerary|patient-status-aguardando-financeiro|cid-na-vaga-publica|postularse-iniciado-043|kanban-iniciado-blocked-columns|kanban-blocked-live-missing-fields'
 
   # O agregador. `if: always()` é o que garante que ele reporta mesmo quando
   # tudo acima foi pulado — sem isso, voltaríamos ao problema que este arquivo
