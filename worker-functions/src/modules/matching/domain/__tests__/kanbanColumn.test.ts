@@ -8,6 +8,8 @@ import {
   boardPosition,
   FUNNEL_COLUMNS,
   KANBAN_COLUMN_BLOCKED,
+  kanbanColumnForBlocked,
+  isPreIniciado,
   VACANCY_BOARD_COLUMNS,
   type KanbanColumn,
   type KanbanTallyRow,
@@ -68,8 +70,22 @@ describe('deriveKanbanColumn', () => {
     expect(deriveKanbanColumn('SOMETHING_NEW', 'talentum', null)).toBe('INVITED');
   });
 
-  it('maps a blocked attempt to REJECTED (D433)', () => {
-    expect(KANBAN_COLUMN_BLOCKED).toBe('REJECTED');
+  it('maps an active blocked attempt to INICIADO (D474, revoga D433 item 5)', () => {
+    expect(KANBAN_COLUMN_BLOCKED).toBe('INICIADO');
+    expect(kanbanColumnForBlocked(false)).toBe('INICIADO');
+  });
+
+  it('a DISMISSED blocked attempt ("Rechazar", E2) stays in REJECTED', () => {
+    expect(kanbanColumnForBlocked(true)).toBe('REJECTED');
+  });
+
+  it('isPreIniciado: só INVITED sem source manual (convite/match do sistema); o resto não', () => {
+    expect(isPreIniciado('INVITED', 'system')).toBe(true);
+    expect(isPreIniciado('INVITED', null)).toBe(true);
+    expect(isPreIniciado('INVITED', 'manual')).toBe(false);
+    expect(isPreIniciado('PRE_SCREENING', 'system')).toBe(false);
+    expect(isPreIniciado('SELECTED', 'system')).toBe(false);
+    expect(isPreIniciado('REJECTED', 'system')).toBe(false);
   });
 });
 
@@ -238,9 +254,19 @@ describe('tallyKanbanColumns', () => {
     expect(tally.PRE_SCREENING).toBe(0);
   });
 
-  it('soma tentativas negadas (kind=blocked) em REJECTED', () => {
+  it('soma tentativas negadas ativas (kind=blocked) em INICIADO — E3: o contador bate com os cards', () => {
     const tally = tallyKanbanColumns([row({ kind: 'blocked', n: 2 })]);
-    expect(tally.REJECTED).toBe(2);
+    expect(tally.INICIADO).toBe(2);
+    expect(tally.REJECTED).toBe(0);
+  });
+
+  it('tentativa negada DISPENSADA (dismissed) conta em REJECTED, não em INICIADO', () => {
+    const tally = tallyKanbanColumns([
+      row({ kind: 'blocked', n: 2 }),
+      row({ kind: 'blocked', n: 1, dismissed: true }),
+    ]);
+    expect(tally.INICIADO).toBe(2);
+    expect(tally.REJECTED).toBe(1);
   });
 
   it('devolve as 10 colunas, todas zero, quando não há linhas (Fase 5: + COMPATIBLE)', () => {

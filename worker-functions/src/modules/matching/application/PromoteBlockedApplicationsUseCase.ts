@@ -9,6 +9,7 @@ import {
   WorkerNotEligibleError,
 } from '../domain/WorkerApplicationEligibility';
 import { CreateManualWjaWithEncuadreUseCase } from './CreateManualWjaWithEncuadreUseCase';
+import { preIniciadoWjaSql } from '../infrastructure/BlockedApplicationQueryRepository';
 
 /** Canal neutro usado quando a tentativa bloqueada não tinha acquisition_channel. */
 const NEUTRAL_CHANNEL = 'blocked_promotion';
@@ -200,9 +201,13 @@ export class PromoteBlockedApplicationsUseCase {
           continue;
         }
 
-        // Guarda (b): NOT EXISTS WJA para o par, em qualquer stage
+        // Guarda (b): WJA do par à frente de Iniciados (qualquer stage/source que NÃO seja
+        // pré-Iniciado) → pula. A pré-Iniciado (convite do sistema, M6b/D474) segue: o
+        // createWjaUseCase a transforma em postulação (M6) e a tentativa é marcada promovida.
         const { rows: wjaRows } = await this.pool.query(
-          `SELECT 1 FROM worker_job_applications WHERE worker_id = $1 AND job_posting_id = $2`,
+          `SELECT 1 FROM worker_job_applications wja
+           WHERE wja.worker_id = $1 AND wja.job_posting_id = $2
+             AND NOT ${preIniciadoWjaSql('wja')}`,
           [workerId, row.job_posting_id],
         );
         if (wjaRows.length > 0) {

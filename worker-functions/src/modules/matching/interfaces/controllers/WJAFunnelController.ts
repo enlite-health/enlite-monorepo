@@ -10,9 +10,9 @@ import {
   assertWorkerCanApply,
   WorkerNotEligibleError,
 } from '../../domain/WorkerApplicationEligibility';
-import { BlockedApplicationQueryRepository } from '../../infrastructure/BlockedApplicationQueryRepository';
+import { BlockedApplicationQueryRepository, wjaSupersededByBlockedSql } from '../../infrastructure/BlockedApplicationQueryRepository';
 import { BlockedApplicationRepository } from '../../infrastructure/BlockedApplicationRepository';
-import { deriveKanbanColumn, KANBAN_COLUMN_BLOCKED, KanbanColumn } from '../../domain/kanbanColumn';
+import { deriveKanbanColumn, kanbanColumnForBlocked, KanbanColumn } from '../../domain/kanbanColumn';
 import {
   interviewScheduleSchema,
   interviewDatetimeSql,
@@ -80,7 +80,7 @@ function sendCompatibleReadOnly(res: Response, reason: CompatibleRefusal): void 
  *
  * Feature BLOQUEADO (2026-07-03): tentativas negadas (dispensadas ou não) →
  * Rejeitados, D433 (worker_blocked_applications cards não promovidas caem em
- * KANBAN_COLUMN_BLOCKED = REJECTED). Promoted (worker completed registration)
+ * kanbanColumnForBlocked). Promoted (worker completed registration)
  * blocked attempts stop appearing here and become real WJA cards in INICIADO
  * (see PromoteBlockedApplicationsUseCase).
  */
@@ -108,8 +108,8 @@ export class WJAFunnelController {
    *
    * Columns (Migration 230 + feature BLOQUEADO):
    *   INVITED    — WJA stage=INVITED, source != 'manual' (auto-invite system)
-   *   REJECTED   — inclui tentativas negadas (dispensadas ou não) não promovidas, D433
-   *   INICIADO   — WJA stage=INVITED + source='manual' (postulação real, não-bloqueada)
+   *   REJECTED   — inclui tentativas negadas DISPENSADAS não promovidas (D474)
+   *   INICIADO   — WJA stage=INVITED + source='manual' (postulação real) + tentativas negadas ativas (D474)
    *   PRE_SCREENING — WJA stage=PRE_SCREENING (antigo INITIATED)
    *   IN_PROGRESS, COMPLETED, CONFIRMED, SELECTED, REJECTED — inalterados
    */
@@ -186,6 +186,9 @@ export class WJAFunnelController {
              -- worker que deu baixa na conta não pode aparecer no kanban da vaga
              -- (mesmo recorte de FunnelTableRepository/VacancyMatchController)
              AND ${excludeDisabledWorkersSql('w')}
+             -- M6b (D474): o convite do sistema some quando o par tem tentativa bloqueada;
+             -- o card que fica é o bloqueado (blockedAttempts), em Iniciados.
+             AND NOT ${wjaSupersededByBlockedSql('wja')}
            ORDER BY wja.updated_at DESC NULLS LAST, wja.created_at DESC`,
           [id, RESEND_COOLDOWN_HOURS],
         ),
@@ -194,7 +197,7 @@ export class WJAFunnelController {
 
       // Colunas do Kanban — classificação 100% baseada em application_funnel_stage
       // Migration 230: INITIATED removido → PRE_SCREENING + INICIADO adicionados
-      // Feature BLOQUEADO: tentativas negadas (dispensadas ou não) → Rejeitados, D433
+      // Feature BLOQUEADO: tentativas negadas → Iniciados (dispensadas → Rejeitados), D474
       const stages: Record<string, unknown[]> = {
         COMPATIBLE: [], // Fase 5 (D432): candidato do match nunca mensageado
         INVITED: [],
@@ -335,8 +338,8 @@ export class WJAFunnelController {
         stages[column].push(item);
       }
 
-      // Merge blocked attempt cards. Tentativas negadas (dispensadas ou não) →
-      // Rejeitados, D433 (KANBAN_COLUMN_BLOCKED = REJECTED), como card de bloqueado
+      // Merge blocked attempt cards. Tentativa negada → Iniciados (D474), ou Rejeitados
+      // quando dispensada (kanbanColumnForBlocked), como card de bloqueado
       // (não-arrastável, encuadreId null — coerente: um incompleto não pode ter WJA
       // nem andar no funil). listByVacancy já faz NOT EXISTS contra
       // worker_job_applications, então um bloqueado promovido vira WJA real e some
@@ -345,7 +348,7 @@ export class WJAFunnelController {
         const ba = blockedAttempts[i];
         const blockedWorker = decryptedBlockedNames[i];
         const isDismissed = ba.dismissedAt != null;
-        stages[KANBAN_COLUMN_BLOCKED].push({
+        stages[kanbanColumnForBlocked(isDismissed)].push({
           id: ba.id,
           encuadreId: null,
           workerId: ba.workerId ?? null,

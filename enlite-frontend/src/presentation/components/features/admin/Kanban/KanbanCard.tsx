@@ -171,11 +171,14 @@ export function KanbanCard({
     ? `${formatCalendarDate(interviewDate, { day: 'numeric', month: 'short' }) ?? ''}${interviewTime ? ` ${formatClockTime(interviewTime)}` : ''}`
     : null;
 
+  // M5/E5: bloqueado de verdade (não elegível, não dispensado) ganha borda vermelha.
+  const showBlockedBorder = !!isBlocked && blockedReason !== 'eligible' && !isDismissed;
+
   return (
     <div
       data-testid={`kanban-card-${id}`}
       data-stage={stage}
-      className="bg-white rounded-xl border border-slate-200 p-3 shadow-sm hover:shadow-md transition-shadow cursor-grab active:cursor-grabbing"
+      className={`bg-white rounded-xl border ${showBlockedBorder ? 'border-red-500' : 'border-slate-200'} p-3 shadow-sm hover:shadow-md transition-shadow cursor-grab active:cursor-grabbing`}
     >
       <div className="flex items-start justify-between gap-2">
         {workerId ? (

@@ -46,7 +46,9 @@ const mockQuery = jest.fn(async (sql: string) => {
   if (sql.includes('FROM worker_availability')) return { rows: [{ id: 'av-1', day_of_week: 1, start_time: '08:00', end_time: '12:00', timezone: 'America/Argentina/Buenos_Aires', crosses_midnight: false }] };
   if (sql.includes('FROM worker_tags')) return { rows: [{ id: 'tag-1', name: 'VIP', color: '#000', description: null }] };
   // Encuadres (WorkerApplicationRepository / BlockedApplicationQueryRepository)
-  if (sql.includes('FROM worker_blocked_applications')) return { rows: [] };
+  // `\bwba\b` (não `includes`): a query de WJA ganhou o subselect `FROM worker_blocked_applications wba_dup`
+  // (M6b, D474) e não pode cair neste ramo.
+  if (/FROM worker_blocked_applications wba\b/.test(sql)) return { rows: [] };
   if (sql.includes('FROM worker_job_applications')) {
     const base = {
       id: 'enc-1', job_posting_id: 'jp-1', funnel_stage: 'SELECTED', source: 'talentum', case_number: 42, vacancy_number: 1,
