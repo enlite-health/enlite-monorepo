@@ -49,6 +49,7 @@
     "patient:update",
     "patient:write",
     "patient_address:create",
+    "patient_address:delete",
     "patient_address:read",
     "patient_address:update",
     "patient_care_team:create",

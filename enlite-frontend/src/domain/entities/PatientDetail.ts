@@ -108,6 +108,18 @@ export interface PatientAddressDetail {
   accessNotes: string | null;
   /** Jurisdição do endereço (mig 316). */
   country: string | null;
+  /**
+   * Spec 044: cidade/província do endereço (mig 147) — origem do "Copiar dirección principal".
+   * `null` em endereço criado pelo painel (o POST não grava). Opcionais: API anterior não manda.
+   */
+  city?: string | null;
+  state?: string | null;
+  /**
+   * Spec 044: nº de vagas (QUALQUER status, inclusive apagadas) e de serviços contratados (ativos ou
+   * não) que apontam para este endereço. Decidem se a lixeira habilita; o servidor reforça (409).
+   */
+  vacancyRefCount?: number;
+  serviceRefCount?: number;
   availability?: AddressAvailability;
 }
 
@@ -171,6 +183,14 @@ export interface PatientDetail {
    * Opcional: API anterior a esta rodada não manda o campo.
    */
   hasPhoto?: boolean | null;
+  /**
+   * Spec 044 (migration 500): endereço de faturamento — campo PRÓPRIO, independente do Principal
+   * (que é a residência). PII da célula `patient_identity`: `null` quando redigido ou não definido.
+   * Opcionais: API anterior não manda.
+   */
+  billingAddressFormatted?: string | null;
+  billingCity?: string | null;
+  billingProvince?: string | null;
   /** Data do último status DISCHARGED (spec 018 PR-3, FR-203/204). `null` = nunca esteve DISCHARGED. Opcional (idem). */
   dischargedAt?: string | null;
   /** chat_id do grupo de WhatsApp da FAMÍLIA no Periskope (@g.us). Migration 260. */
