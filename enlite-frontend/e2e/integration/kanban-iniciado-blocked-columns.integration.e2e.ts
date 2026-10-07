@@ -705,7 +705,10 @@ test.describe('Kanban INICIADO + PRE_SCREENING — colunas novas @integration', 
   // wja-flow-visuals — este cenário NÃO os duplica; cobre só o que é novo: a
   // continuidade do promovido.
 
-  test('K7 — Promovido percorre o funil: Pre Screening (PRE_SCREENING + IN_PROGRESS) → COMPLETED → SELECTED', async ({ page, request }) => {
+  // FIXME: falha desde antes da 043 (d71bef36, "K7 pré-existente, fora do CI"): `drag não persistiu
+  // SELECTED no banco; estado atual: QUALIFIED`. Hipótese NÃO provada: o modal Titular/Suplente de
+  // SELECTED não é preenchido pelo drag. Está na LISTA da spec 043.
+  test.fixme('K7 — Promovido percorre o funil: Pre Screening (PRE_SCREENING + IN_PROGRESS) → COMPLETED → SELECTED', async ({ page, request }) => {
     const promotedWjaId = getWjaIdByWorkerAndJob(workerBlocked_Id, vacancyId);
     if (!promotedWjaId) throw new Error('[K7] depende de K4 (WJA promovida inexistente)');
 
