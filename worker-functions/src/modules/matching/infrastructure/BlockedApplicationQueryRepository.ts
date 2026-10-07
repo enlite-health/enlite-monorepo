@@ -1,7 +1,7 @@
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { WorkerEngagement } from '../domain/WorkerEngagement';
-import { KANBAN_COLUMN_BLOCKED } from '../domain/kanbanColumn';
+import { kanbanColumnForBlocked } from '../domain/kanbanColumn';
 import {
   liveWorkerJoinSql,
   liveBlockedReasonSql,
@@ -51,18 +51,43 @@ export interface BlockedAggregates {
 }
 
 /**
+ * Espelho SQL de `isPreIniciado` (domain/kanbanColumn.ts): a WJA é linha de convite/match do
+ * sistema, o worker ainda não clicou em Postularse. `IS DISTINCT FROM` porque source NULL
+ * também é pré-Iniciado no TS (`source !== 'manual'`).
+ */
+export function preIniciadoWjaSql(alias = 'wja'): string {
+  return `(${alias}.application_funnel_stage = 'INVITED' AND ${alias}.source IS DISTINCT FROM 'manual')`;
+}
+
+/**
  * "Tentativa ainda não promovida" — o worker ainda não tem WJA real para o mesmo
  * par (worker_id, job_posting_id). Promovido (completou cadastro) vira WJA real
- * e some do lado bloqueado (NOT EXISTS). Usado por listByVacancy, listByWorker
- * (P4) e loadStageCounts (P5) — MESMO recorte nos três, para a contagem bater
- * com o board.
+ * e some do lado bloqueado (NOT EXISTS). A WJA pré-Iniciado (convite do sistema, M6b/D474)
+ * NÃO conta como real: é ela que some do Kanban (`wjaSupersededByBlockedSql`), a tentativa
+ * bloqueada fica. Usado por listByVacancy, listByWorker (P4) e loadStageCounts (P5) —
+ * MESMO recorte nos três, para a contagem bater com o board.
  */
 export function blockedNotPromotedSql(alias = 'wba'): string {
   return `NOT EXISTS (
            SELECT 1 FROM worker_job_applications wja
            WHERE wja.worker_id  = ${alias}.worker_id
              AND wja.job_posting_id = ${alias}.job_posting_id
+             AND NOT ${preIniciadoWjaSql('wja')}
          )`;
+}
+
+/**
+ * Complemento exato de `blockedNotPromotedSql` (M6b): a WJA pré-Iniciado do par que tem
+ * tentativa bloqueada some da leitura — um worker, um card por vaga (o bloqueado, em Iniciados).
+ * `onlyActive` ignora tentativas dispensadas (a ficha do worker não lista dispensada).
+ */
+export function wjaSupersededByBlockedSql(alias = 'wja', onlyActive = false): string {
+  return `(${preIniciadoWjaSql(alias)} AND EXISTS (
+           SELECT 1 FROM worker_blocked_applications wba_dup
+           WHERE wba_dup.worker_id = ${alias}.worker_id
+             AND wba_dup.job_posting_id = ${alias}.job_posting_id
+             ${onlyActive ? 'AND wba_dup.dismissed_at IS NULL' : ''}
+         ))`;
 }
 
 export interface ListBlockedAttemptsParams {
@@ -225,7 +250,7 @@ export class BlockedApplicationQueryRepository {
    * Lista tentativas bloqueadas de UM worker (todas as vagas), excluindo pares que já
    * viraram WJA real (NOT EXISTS — mesma dedup do listByVacancy). Enriquece com dados
    * da vaga/paciente para a aba de encuadre do worker-detail e mapeia para o shape
-   * unificado WorkerEngagement (kanbanStage = KANBAN_COLUMN_BLOCKED, Rejeitados, D433).
+   * unificado WorkerEngagement (kanbanStage = kanbanColumnForBlocked(false): só as ativas, Iniciados, D474).
    *
    * Motivo e missing_fields são recomputados ON-READ (`blockedAttemptLiveState`) —
    * editar o perfil do worker, ou ele ser reativado, reflete aqui sem nova tentativa.
@@ -262,7 +287,7 @@ export class BlockedApplicationQueryRepository {
       vacancyNumber: (r.vacancy_number as number | null) ?? null,
       patientName: [r.patient_first_name, r.patient_last_name].filter(Boolean).join(' ') || null,
       vacancyStatus: (r.vacancy_status as string | null) ?? null,
-      kanbanStage: KANBAN_COLUMN_BLOCKED,
+      kanbanStage: kanbanColumnForBlocked(false), // a query já filtra dismissed_at IS NULL
       resultado: null,
       interviewDate: null,
       interviewTime: null,

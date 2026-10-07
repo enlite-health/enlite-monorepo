@@ -13,6 +13,8 @@
 const mockQuery = jest.fn();
 
 jest.mock('@modules/matching/infrastructure/BlockedApplicationQueryRepository', () => ({
+  // helpers de SQL (wjaSupersededByBlockedSql etc.) ficam reais — só a classe é dublê
+  ...jest.requireActual('@modules/matching/infrastructure/BlockedApplicationQueryRepository'),
   BlockedApplicationQueryRepository: jest.fn().mockImplementation(() => ({
     listByVacancy: jest.fn().mockResolvedValue([]),
   })),

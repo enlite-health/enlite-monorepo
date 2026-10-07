@@ -9,6 +9,7 @@ import {
   WorkerNotEligibleError,
 } from '../domain/WorkerApplicationEligibility';
 import { CreateManualWjaWithEncuadreUseCase } from './CreateManualWjaWithEncuadreUseCase';
+import { preIniciadoWjaSql } from '../infrastructure/BlockedApplicationQueryRepository';
 
 /** Canal neutro usado quando a tentativa bloqueada não tinha acquisition_channel. */
 const NEUTRAL_CHANNEL = 'blocked_promotion';
@@ -17,6 +18,7 @@ interface BlockedRow {
   id: string;
   job_posting_id: string;
   acquisition_channel: string | null;
+  dismissed_at: Date | null;
 }
 
 interface JobPostingGuardRow {
@@ -45,7 +47,7 @@ export interface PromoteBlockedApplicationsResult {
   promoted: number;
   skipped: number;
   /** Contagem de skips por motivo — chaves: vacancy_invalid, wja_already_exists,
-   *  worker_not_eligible, unique_conflict, error. */
+   *  worker_not_eligible, unique_conflict, dismissed, error. */
   reasons: Record<string, number>;
 }
 
@@ -156,7 +158,7 @@ export class PromoteBlockedApplicationsUseCase {
     let rows: BlockedRow[];
     try {
       const { rows: fetched } = await this.pool.query<BlockedRow>(
-        `SELECT id, job_posting_id, acquisition_channel
+        `SELECT id, job_posting_id, acquisition_channel, dismissed_at
          FROM worker_blocked_applications
          WHERE worker_id = $1 AND promoted_at IS NULL
            AND ($2::uuid IS NULL OR id = $2::uuid)`,
@@ -188,6 +190,17 @@ export class PromoteBlockedApplicationsUseCase {
 
     for (const row of rows) {
       try {
+        // Tentativa DISPENSADA (Rechazar, E2): a varredura automática não a revive.
+        // Só sair de Rechazados com motivo (decisão de pessoa) desfaz o rechazo; o
+        // prestador completar o cadastro não é esse motivo. O caminho manual
+        // (`blockedApplicationId` informado) não passa por aqui: o card dispensado
+        // não mostra "Promover" no front, então só chega ali quem chama a API de
+        // propósito.
+        if (row.dismissed_at != null && !opts.blockedApplicationId) {
+          bumpSkip('dismissed');
+          continue;
+        }
+
         // Guarda (a): vaga válida
         const { rows: jpRows } = await this.pool.query<JobPostingGuardRow>(
           `SELECT is_draft, status FROM job_postings
@@ -200,9 +213,13 @@ export class PromoteBlockedApplicationsUseCase {
           continue;
         }
 
-        // Guarda (b): NOT EXISTS WJA para o par, em qualquer stage
+        // Guarda (b): WJA do par à frente de Iniciados (qualquer stage/source que NÃO seja
+        // pré-Iniciado) → pula. A pré-Iniciado (convite do sistema, M6b/D474) segue: o
+        // createWjaUseCase a transforma em postulação (M6) e a tentativa é marcada promovida.
         const { rows: wjaRows } = await this.pool.query(
-          `SELECT 1 FROM worker_job_applications WHERE worker_id = $1 AND job_posting_id = $2`,
+          `SELECT 1 FROM worker_job_applications wja
+           WHERE wja.worker_id = $1 AND wja.job_posting_id = $2
+             AND NOT ${preIniciadoWjaSql('wja')}`,
           [workerId, row.job_posting_id],
         );
         if (wjaRows.length > 0) {

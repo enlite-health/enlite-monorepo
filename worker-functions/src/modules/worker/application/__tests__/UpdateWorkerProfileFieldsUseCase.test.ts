@@ -45,6 +45,11 @@ jest.mock('@shared/security/BlindIndexService', () => ({
   })),
 }));
 
+const mockRecalculateWorkerStatus = jest.fn().mockResolvedValue(null);
+jest.mock('../../infrastructure/WorkerStatusRepository', () => ({
+  recalculateWorkerStatus: (...args: unknown[]) => mockRecalculateWorkerStatus(...args),
+}));
+
 const mockLogInfo = jest.fn();
 jest.mock('@shared/logging', () => ({
   logger: {
@@ -62,10 +67,12 @@ import { UpdateWorkerProfileFieldsUseCase, WorkerNotFoundError } from '../Update
 
 const WORKER_ID = '123e4567-e89b-12d3-a456-426614174000';
 
+let workerStatus = 'INCOMPLETE_REGISTER';
+
 /** pool.query: existe worker + snapshot before + enqueue mirror. */
 function primePoolQueries(beforeRow: Record<string, unknown> = {}) {
   mockPoolQuery.mockImplementation(async (sql: string) => {
-    if (String(sql).includes('SELECT id FROM workers')) return { rows: [{ id: WORKER_ID }] };
+    if (String(sql).includes('SELECT id, status FROM workers')) return { rows: [{ id: WORKER_ID, status: workerStatus }] };
     if (String(sql).startsWith('SELECT email')) return { rows: [beforeRow] };
     if (String(sql).includes('domain_events')) return { rows: [{ id: 'evt-1' }] };
     return { rows: [] };
@@ -74,6 +81,7 @@ function primePoolQueries(beforeRow: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  workerStatus = 'INCOMPLETE_REGISTER';
   primePoolQueries({ profession: 'CAREGIVER' });
   mockClientQuery.mockResolvedValue({ rows: [] });
 });
@@ -191,7 +199,7 @@ describe('UpdateWorkerProfileFieldsUseCase — transação + trilha de fonte', (
 
   it('worker inexistente → WorkerNotFoundError sem abrir transação', async () => {
     mockPoolQuery.mockImplementation(async (sql: string) => {
-      if (String(sql).includes('SELECT id FROM workers')) return { rows: [] };
+      if (String(sql).includes('SELECT id, status FROM workers')) return { rows: [] };
       return { rows: [] };
     });
     const useCase = new UpdateWorkerProfileFieldsUseCase();
@@ -203,5 +211,47 @@ describe('UpdateWorkerProfileFieldsUseCase — transação + trilha de fonte', (
       ),
     ).rejects.toBeInstanceOf(WorkerNotFoundError);
     expect(mockConnect).not.toHaveBeenCalled();
+  });
+});
+
+describe('UpdateWorkerProfileFieldsUseCase — recálculo de status (043 A1)', () => {
+  it('edição que escreve campo recalcula o status do worker, como o wizard', async () => {
+    await new UpdateWorkerProfileFieldsUseCase().execute(
+      { workerId: WORKER_ID, profession: 'AT' },
+      { source: 'admin_panel', actorUid: 'staff-uid-1' },
+    );
+
+    expect(mockRecalculateWorkerStatus).toHaveBeenCalledTimes(1);
+    expect(mockRecalculateWorkerStatus.mock.calls[0][1]).toBe(WORKER_ID);
+  });
+
+  it('worker REGISTERED: o recálculo NÃO é chamado (só promove, nunca rebaixa)', async () => {
+    workerStatus = 'REGISTERED';
+    await new UpdateWorkerProfileFieldsUseCase().execute(
+      { workerId: WORKER_ID, profession: 'AT' },
+      { source: 'admin_panel', actorUid: 'staff-uid-1' },
+    );
+    expect(mockRecalculateWorkerStatus).not.toHaveBeenCalled();
+  });
+
+  it('o recálculo roda DEPOIS do COMMIT da edição', async () => {
+    mockRecalculateWorkerStatus.mockImplementationOnce(async () => {
+      const sqls = mockClientQuery.mock.calls.map(([sql]) => String(sql));
+      expect(sqls).toContain('COMMIT');
+      return null;
+    });
+    await new UpdateWorkerProfileFieldsUseCase().execute(
+      { workerId: WORKER_ID, profession: 'AT' },
+      { source: 'admin_panel', actorUid: 'staff-uid-1' },
+    );
+    expect(mockRecalculateWorkerStatus).toHaveBeenCalledTimes(1);
+  });
+
+  it('patch sem nenhum campo escrito não recalcula', async () => {
+    await new UpdateWorkerProfileFieldsUseCase().execute(
+      { workerId: WORKER_ID },
+      { source: 'admin_panel', actorUid: 'staff-uid-1' },
+    );
+    expect(mockRecalculateWorkerStatus).not.toHaveBeenCalled();
   });
 });

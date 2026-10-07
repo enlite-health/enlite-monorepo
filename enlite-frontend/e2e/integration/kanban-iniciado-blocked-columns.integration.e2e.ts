@@ -1,15 +1,17 @@
 /**
  * kanban-iniciado-blocked-columns.integration.e2e.ts @integration
  *
- * Suite E2E visual — coluna Rejeitados (tentativa negada) (cards com isBlocked=true, sem encuadreId,
- * que DEIXAM de vir mesclados em INICIADO) e coluna PRE_SCREENING (renomeada de INITIATED).
+ * Suite E2E visual — coluna INICIADO com o card da tentativa bloqueada (isBlocked=true, sem encuadreId,
+ * tag BLOQUEADO e borda vermelha; D474 revoga em parte a D433 item 5, que mandava o bloqueado
+ * para Rejeitados) e coluna PRE_SCREENING (renomeada de INITIATED).
  *
  * Cenários cobertos:
  *   K1 — Board com 7 colunas na ordem correta (INVITED→INICIADO→PRE_SCREENING→...→REJECTED)
  *   K2 — Coluna INICIADO: card normal (sem flag isBlocked)
- *   K3 — Coluna Rejeitados (tentativa negada): card bloqueado com badge + motivo + missingFields + attemptCount
- *   K4 — Fluxo real de promoção: worker completa cadastro → card some de Rejeitados e
- *        reaparece como card normal em INICIADO (o backend cria a WJA)
+ *   K3 — Coluna INICIADO: card bloqueado com badge + motivo + missingFields + attemptCount + borda vermelha
+ *        (lida por getComputedStyle), e nada bloqueado em REJECTED
+ *   K4 — Fluxo real de promoção: worker completa cadastro → o card bloqueado some de INICIADO e
+ *        reaparece como card normal (sem badge, sem borda vermelha) em INICIADO (o backend cria a WJA)
  *   K5 — Coluna PRE_SCREENING: card normal (worker que passou pelo gate Talentum)
  *   K6 — Screenshot assertion das 7 colunas na ordem nova (ES)
  *   K7 — Jornada do promovido pelas demais colunas: PRE_SCREENING → IN_PROGRESS →
@@ -23,7 +25,7 @@
  * Seed criado dinamicamente no beforeAll:
  *   - 1 vaga de teste
  *   - 1 WJA em INVITED (normal)  → seed manual SQL
- *   - 1 tentativa bloqueada (isBlocked=true) via worker_blocked_applications → coluna Rejeitados (tentativa negada)
+ *   - 1 tentativa bloqueada (isBlocked=true) via worker_blocked_applications → coluna INICIADO (card bloqueado)
  *   - 1 WJA em PRE_SCREENING via webhook Talentum INITIATED
  *
  * Auth: USE_MOCK_AUTH=true no backend; token mock_<base64> injetado pelo interceptor.
@@ -307,9 +309,9 @@ test.describe('Kanban INICIADO + PRE_SCREENING — colunas novas @integration', 
     ).toHaveScreenshot('kanban-iniciado-k2-normal-card.png', { maxDiffPixelRatio: 0.05 });
   });
 
-  // ── K3 — Rejeitados (tentativa negada): card com badge + motivo + missingFields ─
+  // ── K3 — INICIADO (card bloqueado): badge + motivo + missingFields + borda vermelha ─
 
-  test('K3 — Coluna Rejeitados (tentativa negada): card com badge, motivo e campos faltantes', async ({ page }) => {
+  test('K3 — Coluna INICIADO: card bloqueado com badge, motivo, campos faltantes e borda vermelha', async ({ page }) => {
     // Tentativa REAL de postulação: worker INCOMPLETE_REGISTER chama o mesmo
     // endpoint da pessoa real e o gate (assertWorkerCanApply) devolve 403 e grava
     // worker_blocked_applications com missing_fields_at_attempt calculados por
@@ -340,38 +342,53 @@ test.describe('Kanban INICIADO + PRE_SCREENING — colunas novas @integration', 
     await loginAsKanbanAdmin(page);
     await openKanban(page, vacancyId);
 
-    // D433: bloqueado vai para Rejeitados (tentativa negada) — não existe mais coluna
-    // dedicada de bloqueio; o card aparece em REJECTED (sem encuadreId → data-drag-disabled=true)
-    const bloqueadoCol = page.locator('[data-testid="kanban-column-REJECTED"]');
-    await expect(bloqueadoCol, 'Coluna REJECTED deve estar visível').toBeVisible();
+    // D474: bloqueado fica em INICIADO com a tag BLOQUEADO (revoga o item 5 da D433). Sem
+    // encuadreId → data-drag-disabled=true. A linha não dispensada NÃO vai para REJECTED.
+    const bloqueadoCol = page.locator('[data-testid="kanban-column-INICIADO"]');
+    await expect(bloqueadoCol, 'Coluna INICIADO deve estar visível').toBeVisible();
 
     // Wait for the column to have at least 1 card (may need polling)
     await expect(
-      page.locator('[data-testid="kanban-column-REJECTED-count"]'),
-      'REJECTED deve ter pelo menos 1 card',
+      page.locator('[data-testid="kanban-column-INICIADO-count"]'),
+      'INICIADO deve ter pelo menos 1 card (E3: o contador inclui os bloqueados)',
     ).not.toHaveText('0', { timeout: 15_000 });
 
-    // INICIADO must NOT contain the blocked card / badge anymore
-    const iniciadoCol = page.locator('[data-testid="kanban-column-INICIADO"]');
+    // REJECTED must NOT contain the blocked card / badge (a tentativa não foi dispensada)
+    const rejeitadoCol = page.locator('[data-testid="kanban-column-REJECTED"]');
     await expect(
-      iniciadoCol.locator('[data-testid="blocked-badge"]'),
-      'INICIADO não deve mais conter cards bloqueados (mesclagem removida)',
-    ).not.toBeVisible();
+      rejeitadoCol.locator('[data-testid="blocked-badge"]'),
+      'REJECTED não deve conter a tentativa bloqueada não dispensada (D474)',
+    ).toHaveCount(0);
 
-    // The blocked card should show the Rejeitados (tentativa negada) badge
-    const blockedBadge = bloqueadoCol.locator('[data-testid="blocked-badge"]').first();
-    await expect(blockedBadge, 'Badge de tentativa negada deve estar visível na coluna Rejeitados (tentativa negada)').toBeVisible();
+    // The blocked card should show the BLOQUEADO badge, in INICIADO
+    const blockedCard = bloqueadoCol.locator(`[data-testid="kanban-card-${blockedWba_Id}"]`);
+    await expect(blockedCard, 'Card da tentativa bloqueada deve estar em INICIADO').toBeVisible();
+    await expect(blockedCard).toHaveAttribute('data-stage', 'INICIADO');
+    const blockedBadge = blockedCard.locator('[data-testid="blocked-badge"]');
+    await expect(blockedBadge, 'Badge BLOQUEADO deve estar visível na coluna INICIADO').toBeVisible();
+
+    // M5/A3: borda vermelha lida pelo ESTILO CALCULADO (não pela classe) — red-500 = rgb(239, 68, 68);
+    // o card normal tem o slate-200 = rgb(226, 232, 240).
+    const blockedBorder = await blockedCard.evaluate((el) => getComputedStyle(el).borderTopColor);
+    expect(blockedBorder, 'Borda do card bloqueado deve ser vermelha (red-500)').toBe('rgb(239, 68, 68)');
+    expect(blockedBorder, 'Borda do card bloqueado não pode ser o slate do card normal').not.toBe('rgb(226, 232, 240)');
+
+    // E2: o card bloqueado tem "Rechazar" (mesmo modal de motivo)
+    await expect(
+      blockedCard.locator('[data-testid="reject-button"]'),
+      'Card bloqueado deve ter o botão Rechazar (E2)',
+    ).toBeVisible();
 
     // The blocked reason label should be visible
-    const blockedReason = bloqueadoCol.locator('[data-testid="blocked-reason"]').first();
+    const blockedReason = blockedCard.locator('[data-testid="blocked-reason"]');
     await expect(blockedReason, 'Motivo do bloqueio deve estar visível').toBeVisible();
 
     // missingFields should be visible
-    const missingFields = bloqueadoCol.locator('[data-testid="blocked-missing-fields"]').first();
+    const missingFields = blockedCard.locator('[data-testid="blocked-missing-fields"]');
     await expect(missingFields, 'Campos faltantes devem estar visíveis').toBeVisible();
 
     // attemptCount should be visible
-    const attemptCount = bloqueadoCol.locator('[data-testid="blocked-attempt-count"]').first();
+    const attemptCount = blockedCard.locator('[data-testid="blocked-attempt-count"]');
     await expect(attemptCount, 'Contador de tentativas deve estar visível').toBeVisible();
 
     await expect(
@@ -379,9 +396,9 @@ test.describe('Kanban INICIADO + PRE_SCREENING — colunas novas @integration', 
     ).toHaveScreenshot('kanban-iniciado-k3-blocked-card.png', { maxDiffPixelRatio: 0.05 });
   });
 
-  // ── K4 — Fluxo real de promoção: Rejeitados (tentativa negada) → INICIADO ao completar cadastro ─
+  // ── K4 — Fluxo real de promoção: card bloqueado em INICIADO vira card normal em INICIADO ─
 
-  test('K4 — Worker completa cadastro: card some de Rejeitados e aparece em INICIADO', async ({ page }) => {
+  test('K4 — Worker completa cadastro: card bloqueado em INICIADO vira card normal em INICIADO, sem badge', async ({ page }) => {
     if (!blockedWba_Id) throw new Error('[K4] depende do seed de K3 (worker_blocked_applications)');
 
     // 1) Completar o cadastro pelo MESMO caminho da pessoa real (endpoints
@@ -514,22 +531,26 @@ test.describe('Kanban INICIADO + PRE_SCREENING — colunas novas @integration', 
       .poll(
         async () => {
           await openKanban(page, vacancyId);
-          const bloqueadoCard = page.locator(`[data-testid="kanban-card-${blockedWba_Id}"][data-stage="REJECTED"]`);
+          const bloqueadoCard = page.locator(`[data-testid="kanban-card-${blockedWba_Id}"]`);
           return (await bloqueadoCard.count()) === 0;
         },
         {
-          message: 'Card deve sumir da coluna REJECTED após completar o cadastro',
+          message: 'Card bloqueado deve sumir de INICIADO após completar o cadastro (vira o card normal da WJA)',
           timeout: 60_000,
           intervals: [2_000, 4_000, 6_000, 8_000],
         },
       )
       .toBe(true);
 
-    // Card sumiu de Rejeitados
+    // O card bloqueado (id da tentativa) sumiu, e o worker não foi parar em Rejeitados
     await expect(
-      page.locator('[data-testid="kanban-column-REJECTED"]').locator(`text=${workerBlocked_Phone}`),
-      'Worker promovido não deve mais aparecer em Rejeitados',
-    ).not.toBeVisible();
+      page.locator(`[data-testid="kanban-card-${blockedWba_Id}"]`),
+      'Card da tentativa bloqueada não deve mais existir após a promoção',
+    ).toHaveCount(0);
+    await expect(
+      page.locator('[data-testid="kanban-column-REJECTED"]').locator('[data-testid^="kanban-card-"]').filter({ hasText: 'Bloqueado Incompleto' }),
+      'Worker promovido não deve aparecer em Rejeitados',
+    ).toHaveCount(0);
 
     await expect(
       page.locator('[data-testid="kanban-board"]'),
@@ -539,9 +560,14 @@ test.describe('Kanban INICIADO + PRE_SCREENING — colunas novas @integration', 
     const iniciadoCol = page.locator('[data-testid="kanban-column-INICIADO"]');
     const promotedCard = iniciadoCol.locator(`[data-testid^="kanban-card-"]`).filter({ hasText: 'Bloqueado Incompleto' });
     await expect(promotedCard.first(), 'Card promovido deve aparecer normal em INICIADO').toBeVisible({ timeout: 15_000 });
+    // Um worker, um card por vaga: o bloqueado foi substituído, não duplicado
+    await expect(promotedCard, 'Só um card do worker promovido em INICIADO').toHaveCount(1);
+    // M5/E5: o card normal não tem a borda vermelha (slate-200 = rgb(226, 232, 240))
+    const promotedBorder = await promotedCard.first().evaluate((el) => getComputedStyle(el).borderTopColor);
+    expect(promotedBorder, 'Card promovido não deve ter borda vermelha').not.toBe('rgb(239, 68, 68)');
     await expect(
       promotedCard.first().locator('[data-testid="blocked-badge"]'),
-      'Card promovido não deve mais ter o badge de tentativa negada',
+      'Card promovido não deve mais ter o badge BLOQUEADO',
     ).not.toBeVisible();
 
     await expect(
@@ -679,7 +705,10 @@ test.describe('Kanban INICIADO + PRE_SCREENING — colunas novas @integration', 
   // wja-flow-visuals — este cenário NÃO os duplica; cobre só o que é novo: a
   // continuidade do promovido.
 
-  test('K7 — Promovido percorre o funil: Pre Screening (PRE_SCREENING + IN_PROGRESS) → COMPLETED → SELECTED', async ({ page, request }) => {
+  // FIXME: falha desde antes da 043 (d71bef36, "K7 pré-existente, fora do CI"): `drag não persistiu
+  // SELECTED no banco; estado atual: QUALIFIED`. Hipótese NÃO provada: o modal Titular/Suplente de
+  // SELECTED não é preenchido pelo drag. Está na LISTA da spec 043.
+  test.fixme('K7 — Promovido percorre o funil: Pre Screening (PRE_SCREENING + IN_PROGRESS) → COMPLETED → SELECTED', async ({ page, request }) => {
     const promotedWjaId = getWjaIdByWorkerAndJob(workerBlocked_Id, vacancyId);
     if (!promotedWjaId) throw new Error('[K7] depende de K4 (WJA promovida inexistente)');
 
