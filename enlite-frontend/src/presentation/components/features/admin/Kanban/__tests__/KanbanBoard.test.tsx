@@ -110,6 +110,11 @@ vi.mock('@presentation/components/features/admin/VacancyDetail/Funnel/ContactNot
   ),
 }));
 
+// ── Último convite de presentación — rede fora do teste (043 A3) ─────────────
+vi.mock('@infrastructure/http/AdminPresentationInviteApiService', () => ({
+  AdminPresentationInviteApiService: { last: vi.fn(async () => ({})), invite: vi.fn() },
+}));
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function makeEncuadre(overrides: Partial<FunnelStages['INVITED'][0]> = {}) {
@@ -1129,5 +1134,41 @@ describe('KanbanBoard — promover card elegível', () => {
     );
 
     expect(screen.queryByTestId('promote-button')).toBeNull();
+  });
+});
+
+// ── 043 A3: convite à reunión de presentación não vai ao card bloqueado ──────
+// O clique manda WhatsApp e nada no envio confere o cadastro. ELEGIBLE AHORA e
+// card normal mantêm o convite.
+
+describe('KanbanBoard — convite de presentación por tipo de card (043 A3)', () => {
+  const onPresentationInvite = vi.fn(async (_workerId: string) => ({ status: 'queued' as const, outboxId: 'o1' }));
+
+  function boardWith(card: ReturnType<typeof makeEncuadre>) {
+    const stages = emptyStages();
+    stages.INICIADO = [card];
+    return render(
+      <KanbanBoard stages={stages} vacancyId="v" onMove={noop} onPresentationInvite={onPresentationInvite} />,
+    );
+  }
+
+  it('card BLOQUEADO (cadastro incompleto) com workerId NÃO mostra o convite', () => {
+    boardWith(makeEncuadre({
+      id: 'ba-inc', encuadreId: null, workerId: 'wk-1', isBlocked: true, blockedReason: 'registration_incomplete',
+    }));
+    expect(screen.getByTestId('kanban-card-ba-inc')).toBeInTheDocument();
+    expect(screen.queryByTestId('presentation-invite-button')).toBeNull();
+  });
+
+  it('card ELEGIBLE AHORA mantém o convite', () => {
+    boardWith(makeEncuadre({
+      id: 'ba-el', encuadreId: null, workerId: 'wk-1', isBlocked: true, blockedReason: 'eligible',
+    }));
+    expect(screen.getByTestId('presentation-invite-button')).toBeInTheDocument();
+  });
+
+  it('card normal (não bloqueado) mantém o convite', () => {
+    boardWith(makeEncuadre({ id: 'enc-n', workerId: 'wk-2' }));
+    expect(screen.getByTestId('presentation-invite-button')).toBeInTheDocument();
   });
 });
