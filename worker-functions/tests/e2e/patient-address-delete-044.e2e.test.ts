@@ -12,7 +12,7 @@
  *   A9   DELETE aceito grava exatamente 1 linha em patient_address_audit_log (ator, created_at, patient_id,
  *        address_id, address_type, neighborhood)
  *   A10  a linha NÃO tem as chaves address_formatted/address_raw e NENHUM valor do jsonb é igual ao texto semeado
- *   A15  sem a célula patient_address:delete → 403 (a linha continua)
+ *   A15  sem a célula patient_address:delete → 403 (a linha continua) — SÓ com ABAC_ENGINE_ON=true (engine ligado na API)
  *
  * Endereços de ficção. O texto semeado é conferido em CLARO contra a linha de auditoria só para provar a ausência.
  */
@@ -160,8 +160,9 @@ describe('DELETE /api/admin/patients/:patientId/addresses/:addressId (spec 044) 
   it('A5 — serviço contratado INATIVO apontando: 409', async () => {
     const { patientId, addressIds } = await pacienteComEnderecos(2);
     await pool.query(
-      `INSERT INTO patient_contracted_services (patient_id, service_code, active, address_id, created_by, updated_by)
-       VALUES ($1, 'CAREGIVER', false, $2, 'e2e-044', 'e2e-044')`,
+      // `pcs_active_ended_coerente`: serviço inativo exige `ended_at`.
+      `INSERT INTO patient_contracted_services (patient_id, service_code, active, ended_at, address_id, created_by, updated_by)
+       VALUES ($1, 'CAREGIVER', false, NOW(), $2, 'e2e-044', 'e2e-044')`,
       [patientId, addressIds[1]],
     );
     const r = await del(patientId, addressIds[1]);
@@ -230,7 +231,12 @@ describe('DELETE /api/admin/patients/:patientId/addresses/:addressId (spec 044) 
     expect(rowCount).toBe(0);
   }, 30000);
 
-  it('A15 — quem tem patient_address:update mas NÃO patient_address:delete leva 403 e a linha continua', async () => {
+  // O 403 só existe com o ENGINE ABAC ligado na API. O stack padrão (o do CI do `backend-e2e`) roda com o engine
+  // DESLIGADO, onde o papel `admin` passa em qualquer célula — então este caso só roda com `ABAC_ENGINE_ON=true`
+  // apontando para uma API com PERMISSION_ENGINE_ENABLED=true (+ CATALOG_SYNC). A rota exigir a célula
+  // `patient_address:delete` é provado sem engine por `adminPatientsRoutes.test.ts` e `permission-route-inventory`.
+  const itComEngine = process.env.ABAC_ENGINE_ON === 'true' ? it : it.skip;
+  itComEngine('A15 — quem tem patient_address:update mas NÃO patient_address:delete leva 403 e a linha continua', async () => {
     const { patientId, addressIds } = await pacienteComEnderecos(2);
     const r = await del(patientId, addressIds[1], asSemCelula);
     expect(r.status).toBe(403);
