@@ -181,7 +181,16 @@ export class WJAFunnelController {
              ORDER BY created_at DESC
              LIMIT 1
            ) e ON true
-           LEFT JOIN worker_service_areas wsa ON wsa.worker_id = wja.worker_id AND wsa.deleted_at IS NULL
+           -- Uma área por WJA (043 A4): com a junção direta, quem tem 2+ áreas duplicava o
+           -- card e o total do funil passava o counts.columns da funnel-table. Convenção do repo
+           -- (BackfillWorkerMirrorUseCase): a mais antiga é a principal; o id desempata.
+           LEFT JOIN LATERAL (
+             SELECT work_zone
+             FROM worker_service_areas
+             WHERE worker_id = wja.worker_id AND deleted_at IS NULL
+             ORDER BY created_at ASC, id ASC
+             LIMIT 1
+           ) wsa ON true
            WHERE wja.job_posting_id = $1
              -- worker que deu baixa na conta não pode aparecer no kanban da vaga
              -- (mesmo recorte de FunnelTableRepository/VacancyMatchController)
