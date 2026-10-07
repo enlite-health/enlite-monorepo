@@ -134,11 +134,13 @@ test.describe('043 — só o clique em Postularse cria Iniciado; bloqueado em In
     expect(await openedUrls(page), 'elegível → abre o WhatsApp da vaga').toContain(WHATSAPP_URL);
     expect(tracks(), 'o clique chamou track-channel exatamente uma vez').toBe(1);
 
-    // M6: a linha do convite virou postulação (mesma linha, source='manual'), com o canal do utm_source.
+    // M6: a linha do convite virou postulação (mesma linha, source='manual'). O canal fica o do
+    // convite ('system'): acquisition_channel é first-touch (CreateManualWjaWithEncuadreUseCase,
+    // ON CONFLICT só preenche se NULL) — o utm_source do clique não sobrescreve.
     expect(
       runSQL(`SELECT source || '|' || COALESCE(acquisition_channel, '') FROM worker_job_applications WHERE id = '${wjaId}'`),
-      'a linha do convite virou postulação, com o canal do clique',
-    ).toBe('manual|whatsapp');
+      'a linha do convite virou postulação, canal do convite preservado (first-touch)',
+    ).toBe('manual|system');
 
     const { adminContext, adminPage } = await openKanbanAsAdmin(browser, baseURL, vacancyId);
     try {
