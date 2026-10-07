@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { PatientAddressDetail } from '@domain/entities/PatientDetail';
 import { deriveBillingLocality } from '@application/use-cases/deriveBillingLocality';
@@ -43,9 +43,14 @@ export function BillingAddressField({ value, onChange, addresses, notPicked }: P
   const { t } = useTranslation();
   const te = (k: string) => t(`admin.patients.editDrawer.${k}`);
   const inputRef = useRef<HTMLInputElement>(null);
+  // Places só é "armado" no 1º foco do campo e nunca desarma. O hook carrega o script do Google Maps ao ligar
+  // (`enabled`), e o drawer geral abre o tempo todo para editar telefone/e-mail: sem isto cada abertura faria
+  // uma requisição real ao Google sem ninguém ter tocado no endereço de faturamento.
+  const [placesArmed, setPlacesArmed] = useState(false);
 
   const { apiError: autocompleteError } = useGooglePlacesAutocomplete({
     inputRef,
+    enabled: placesArmed,
     guessFirstPredictionOnEnter: false,
     onPlaceApplied: (place) => {
       const { city, province } = deriveBillingLocality(
@@ -79,6 +84,7 @@ export function BillingAddressField({ value, onChange, addresses, notPicked }: P
         <div data-clarity-mask="True">
           <InputWithIcon
             ref={inputRef}
+            onFocus={() => setPlacesArmed(true)}
             id="pge-billing"
             inputSize="compact"
             value={value.formatted}
