@@ -465,3 +465,40 @@ describe('PromoteBlockedApplicationsUseCase — opt-out barra a promoção manua
   });
 });
 
+
+describe('PromoteBlockedApplicationsUseCase — tentativa dispensada (043 A2)', () => {
+  const DISMISSED = { id: 'ba-d', job_posting_id: 'jp-d', acquisition_channel: 'site', dismissed_at: new Date() };
+
+  it('a varredura automática PULA a dispensada com o motivo `dismissed`, sem tocar vaga/WJA', async () => {
+    const query = jest.fn();
+    query.mockResolvedValueOnce({ rows: [DISMISSED] }); // lista
+    query.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] }); // assertWorkerCanApply
+    const execute = jest.fn();
+
+    const result = await new PromoteBlockedApplicationsUseCase(
+      makePool(query) as never,
+      makeCreateWjaUseCase(execute),
+    ).execute('worker-1');
+
+    expect(result).toEqual({ promoted: 0, skipped: 1, reasons: { dismissed: 1 } });
+    expect(execute).not.toHaveBeenCalled();
+    expect(query).toHaveBeenCalledTimes(2); // nenhuma consulta de vaga/WJA
+  });
+
+  it('o caminho MANUAL (linha escolhida) não é barrado por este skip', async () => {
+    const query = jest.fn();
+    query.mockResolvedValueOnce({ rows: [DISMISSED] });
+    query.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
+    query.mockResolvedValueOnce({ rows: [{ is_draft: false, status: 'SEARCHING' }] });
+    query.mockResolvedValueOnce({ rows: [] });
+    query.mockResolvedValueOnce({ rows: [] });
+    const execute = jest.fn().mockResolvedValue({ wjaId: 'wja-m' });
+
+    const result = await new PromoteBlockedApplicationsUseCase(
+      makePool(query) as never,
+      makeCreateWjaUseCase(execute),
+    ).execute('worker-1', { blockedApplicationId: 'ba-d' });
+
+    expect(result.promoted).toBe(1);
+  });
+});

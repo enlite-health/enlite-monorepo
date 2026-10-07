@@ -332,7 +332,10 @@ export function KanbanBoard({ stages, vacancyId, onMove, onPromoteBlocked, onRej
             resendStatus={resendByCard[enc.id]?.status ?? 'idle'}
             resendMessage={resendByCard[enc.id]?.message ?? null}
             presentationInvite={
-              onPresentationInvite && enc.workerId
+              // 043 A3: card BLOQUEADO (cadastro incompleto) não convida para a reunião — o
+              // clique manda WhatsApp e nada no envio confere o cadastro. ELEGIBLE AHORA e
+              // card normal mantêm o convite.
+              onPresentationInvite && enc.workerId && !(enc.isBlocked && enc.blockedReason !== 'eligible')
                 ? { onInvite: () => handlePresentationInvite(enc.id, enc.workerId!, onPresentationInvite), state: presentationByCard[enc.id], lastInvitedAt: lastPresentationByWorker[enc.workerId]?.at ?? null }
                 : undefined
             }

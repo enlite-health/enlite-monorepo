@@ -211,6 +211,13 @@ test.describe('043 — só o clique em Postularse cria Iniciado; bloqueado em In
       await expect(card.locator('[data-testid="blocked-badge"]'), 'badge BLOQUEADO').toBeVisible();
       await expect(card.locator('[data-testid="blocked-badge"]')).toHaveText(/BLOQUEADO/);
 
+      // 043 A3: o card bloqueado NÃO oferece "Invitar a reunión de presentación"
+      // (o clique manda WhatsApp e nada no envio confere o cadastro).
+      await expect(
+        card.locator('[data-testid="presentation-invite-button"]'),
+        'card bloqueado sem o convite de presentación',
+      ).toHaveCount(0);
+
       // M5/A3: borda lida pelo estilo CALCULADO, não pela classe.
       const border = await card.evaluate((el) => getComputedStyle(el).borderTopColor);
       expect(border, 'borda do card bloqueado é vermelha').toBe(RED_500);

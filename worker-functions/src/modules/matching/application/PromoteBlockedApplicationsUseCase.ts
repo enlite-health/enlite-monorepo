@@ -18,6 +18,7 @@ interface BlockedRow {
   id: string;
   job_posting_id: string;
   acquisition_channel: string | null;
+  dismissed_at: Date | null;
 }
 
 interface JobPostingGuardRow {
@@ -46,7 +47,7 @@ export interface PromoteBlockedApplicationsResult {
   promoted: number;
   skipped: number;
   /** Contagem de skips por motivo — chaves: vacancy_invalid, wja_already_exists,
-   *  worker_not_eligible, unique_conflict, error. */
+   *  worker_not_eligible, unique_conflict, dismissed, error. */
   reasons: Record<string, number>;
 }
 
@@ -157,7 +158,7 @@ export class PromoteBlockedApplicationsUseCase {
     let rows: BlockedRow[];
     try {
       const { rows: fetched } = await this.pool.query<BlockedRow>(
-        `SELECT id, job_posting_id, acquisition_channel
+        `SELECT id, job_posting_id, acquisition_channel, dismissed_at
          FROM worker_blocked_applications
          WHERE worker_id = $1 AND promoted_at IS NULL
            AND ($2::uuid IS NULL OR id = $2::uuid)`,
@@ -189,6 +190,17 @@ export class PromoteBlockedApplicationsUseCase {
 
     for (const row of rows) {
       try {
+        // Tentativa DISPENSADA (Rechazar, E2): a varredura automática não a revive.
+        // Só sair de Rechazados com motivo (decisão de pessoa) desfaz o rechazo; o
+        // prestador completar o cadastro não é esse motivo. O caminho manual
+        // (`blockedApplicationId` informado) não passa por aqui: o card dispensado
+        // não mostra "Promover" no front, então só chega ali quem chama a API de
+        // propósito.
+        if (row.dismissed_at != null && !opts.blockedApplicationId) {
+          bumpSkip('dismissed');
+          continue;
+        }
+
         // Guarda (a): vaga válida
         const { rows: jpRows } = await this.pool.query<JobPostingGuardRow>(
           `SELECT is_draft, status FROM job_postings
