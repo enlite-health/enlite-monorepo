@@ -26,6 +26,7 @@ const ficha = {
   id: 'p1', status: 'ACTIVE', admissionStatus: 'DONE', country: 'AR', caseNumber: 12,
   firstName: 'Ana', lastName: 'G', documentNumber: '123', phoneWhatsapp: '+54', contactEmail: 'a@x',
   gender: 'FEMALE', languages: ['pt', 'es'], dischargedAt: '2026-08-01T12:00:00.000Z', hasPhoto: true,
+  billingAddressFormatted: 'Calle Falsa 123, Ciudad Ficticia', billingCity: 'Ciudad Ficticia', billingProvince: 'Provincia Ficticia',
   diagnosis: 'TEA', diagnoses: [{ code: 'x' }], dependencyLevel: 'ALTA', emergencyInstructions: 'llamar', hasConsent: true,
   professionals: [{ name: 'Dr' }],
   responsibles: [{ name: 'Mãe' }], phoneMatchesResponsible: true,
@@ -113,6 +114,19 @@ describe('projectPatientDetailByContainers', () => {
     const comIdentidade = projectPatientDetailByContainers(ficha, ['patient:read', 'patient_identity:read']);
     expect(comIdentidade.hasPhoto).toBe(true);
     expect(comIdentidade.redacted).not.toHaveProperty('identity');
+  });
+
+  it('spec 044 A14: billing* vive no container `identity` — sem patient_identity:read saem null, com a célula saem presentes', () => {
+    const semIdentidade = projectPatientDetailByContainers(ficha, ['patient:read', 'patient_address:read']);
+    expect(semIdentidade.billingAddressFormatted).toBeNull();
+    expect(semIdentidade.billingCity).toBeNull();
+    expect(semIdentidade.billingProvince).toBeNull();
+    expect(semIdentidade.redacted).toHaveProperty('identity', true);
+
+    const comIdentidade = projectPatientDetailByContainers(ficha, ['patient:read', 'patient_identity:read']);
+    expect(comIdentidade.billingAddressFormatted).toBe('Calle Falsa 123, Ciudad Ficticia');
+    expect(comIdentidade.billingCity).toBe('Ciudad Ficticia');
+    expect(comIdentidade.billingProvince).toBe('Provincia Ficticia');
   });
 
   // CONDIÇÃO 5 do lex (18-PR-3): telefone vive em `identity`, endereço vive em `address` — são
