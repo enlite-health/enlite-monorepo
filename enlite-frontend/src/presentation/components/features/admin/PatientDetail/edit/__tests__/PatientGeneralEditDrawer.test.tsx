@@ -7,7 +7,7 @@
  * não mexer → não envia; limpar → envia null.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
 import { patientDetailFixture } from '../../__tests__/patientDetailFixture';
 
@@ -25,6 +25,14 @@ vi.mock('react-i18next', () => ({ useTranslation: () => ({ t }) }));
 const updatePatientSection = vi.fn();
 vi.mock('@infrastructure/http/AdminApiService', () => ({
   AdminApiService: { updatePatientSection: (...a: unknown[]) => updatePatientSection(...a) },
+}));
+
+// Spec 044: o drawer agora monta o BillingAddressField, que usa o autocomplete do Google. O hook é
+// substituído por um espião que guarda as opções (assim os testes encenam "escolher da lista") — sem ele o
+// drawer tentaria carregar o script do Maps.
+let placesOptions: { onPlaceApplied: (p: unknown) => void } | null = null;
+vi.mock('@presentation/hooks/useGooglePlacesAutocomplete', () => ({
+  useGooglePlacesAutocomplete: (opts: typeof placesOptions) => { placesOptions = opts; return { apiError: null }; },
 }));
 
 import { PatientGeneralEditDrawer } from '../PatientGeneralEditDrawer';
@@ -331,5 +339,97 @@ describe('PatientGeneralEditDrawer — gender/languages (spec 018 PR-3)', () => 
     fireEvent.click(screen.getByTestId('pge-save'));
     await waitFor(() => expect(updatePatientSection).toHaveBeenCalledTimes(1));
     expect(updatePatientSection).toHaveBeenCalledWith(patient.id, 'general', { languages: null });
+  });
+});
+
+
+// ── Spec 044: faturamento do paciente (PATCH /general leva os 3 campos juntos) ──
+
+describe('PatientGeneralEditDrawer — endereço de faturamento (spec 044)', () => {
+  const principal = {
+    ...patientDetailFixture.addresses[0],
+    id: 'principal', isPrimary: true, displayOrder: 2,
+    addressFormatted: 'Calle Principal 2, Ciudad Principal', city: 'Ciudad Principal', state: 'Provincia Principal',
+  };
+  const primeiro = { ...patientDetailFixture.addresses[0], id: 'primeiro', isPrimary: false, displayOrder: 1, addressFormatted: 'Calle Primera 1', city: 'Primera', state: 'P1' };
+  const comBilling = { ...patient, addresses: [primeiro, principal], billingAddressFormatted: 'Calle Falsa 123, Ciudad Ficticia', billingCity: 'Ciudad Ficticia', billingProvince: 'Provincia Ficticia' };
+  const semBilling = { ...patient, addresses: [primeiro, principal], billingAddressFormatted: null, billingCity: null, billingProvince: null };
+
+  beforeEach(() => { updatePatientSection.mockReset().mockResolvedValue({ id: patient.id }); });
+
+  it('carrega o faturamento atual no campo; salvar sem mexer não manda billing', async () => {
+    render(<PatientGeneralEditDrawer patient={comBilling} onClose={vi.fn()} onSaved={vi.fn()} />);
+    expect(screen.getByTestId('pge-billing')).toHaveValue('Calle Falsa 123, Ciudad Ficticia');
+    fireEvent.change(screen.getByTestId('pge-phone'), { target: { value: '+1' } });
+    fireEvent.click(screen.getByTestId('pge-save'));
+    await waitFor(() => expect(updatePatientSection).toHaveBeenCalledTimes(1));
+    expect(updatePatientSection).toHaveBeenCalledWith(patient.id, 'general', { phoneWhatsapp: '+1' });
+  });
+
+  it('escolher da lista do Google manda os 3 JUNTOS (texto + locality + administrative_area_level_1)', async () => {
+    render(<PatientGeneralEditDrawer patient={semBilling} onClose={vi.fn()} onSaved={vi.fn()} />);
+    act(() => {
+      placesOptions!.onPlaceApplied({
+        formatted_address: 'Calle Nueva 77, Ciudad Nueva',
+        address_components: [
+          { long_name: 'Ciudad Nueva', types: ['locality'] },
+          { long_name: 'Provincia Nueva', types: ['administrative_area_level_1'] },
+        ],
+      });
+    });
+    fireEvent.click(screen.getByTestId('pge-save'));
+    await waitFor(() => expect(updatePatientSection).toHaveBeenCalledTimes(1));
+    expect(updatePatientSection).toHaveBeenCalledWith(patient.id, 'general', {
+      billingAddressFormatted: 'Calle Nueva 77, Ciudad Nueva', billingCity: 'Ciudad Nueva', billingProvince: 'Provincia Nueva',
+    });
+  });
+
+  it('"Copiar dirección principal" + salvar manda o Principal (não addresses[0]) nos 3 campos', async () => {
+    render(<PatientGeneralEditDrawer patient={semBilling} onClose={vi.fn()} onSaved={vi.fn()} />);
+    fireEvent.click(screen.getByTestId('pge-billing-copy-primary'));
+    expect(updatePatientSection).not.toHaveBeenCalled(); // só grava ao salvar
+    fireEvent.click(screen.getByTestId('pge-save'));
+    await waitFor(() => expect(updatePatientSection).toHaveBeenCalledTimes(1));
+    expect(updatePatientSection).toHaveBeenCalledWith(patient.id, 'general', {
+      billingAddressFormatted: 'Calle Principal 2, Ciudad Principal', billingCity: 'Ciudad Principal', billingProvince: 'Provincia Principal',
+    });
+  });
+
+  it('texto digitado SEM escolher da lista bloqueia o salvar, com a mensagem; nada vai à API', async () => {
+    render(<PatientGeneralEditDrawer patient={semBilling} onClose={vi.fn()} onSaved={vi.fn()} />);
+    fireEvent.change(screen.getByTestId('pge-billing'), { target: { value: 'Calle digitada à mão' } });
+    fireEvent.click(screen.getByTestId('pge-save'));
+    expect(await screen.findByText('Escolha o endereço de faturamento na lista de sugestões')).toBeInTheDocument();
+    expect(updatePatientSection).not.toHaveBeenCalled();
+  });
+
+  it('digitar de novo depois de escolher desfaz a escolha (bloqueia); escolher outra vez libera e limpa a mensagem', async () => {
+    render(<PatientGeneralEditDrawer patient={semBilling} onClose={vi.fn()} onSaved={vi.fn()} />);
+    act(() => { placesOptions!.onPlaceApplied({ formatted_address: 'Calle Escolhida 1' }); });
+    fireEvent.change(screen.getByTestId('pge-billing'), { target: { value: 'Calle Escolhida 1 editada' } });
+    fireEvent.click(screen.getByTestId('pge-save'));
+    expect(await screen.findByText('Escolha o endereço de faturamento na lista de sugestões')).toBeInTheDocument();
+    act(() => { placesOptions!.onPlaceApplied({ formatted_address: 'Calle Escolhida 2' }); });
+    expect(screen.queryByText('Escolha o endereço de faturamento na lista de sugestões')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('pge-save'));
+    await waitFor(() => expect(updatePatientSection).toHaveBeenCalledTimes(1));
+    expect(updatePatientSection).toHaveBeenCalledWith(patient.id, 'general', {
+      billingAddressFormatted: 'Calle Escolhida 2', billingCity: null, billingProvince: null,
+    });
+  });
+
+  it('campo vazio + salvar → null nos 3', async () => {
+    render(<PatientGeneralEditDrawer patient={comBilling} onClose={vi.fn()} onSaved={vi.fn()} />);
+    fireEvent.change(screen.getByTestId('pge-billing'), { target: { value: '' } });
+    fireEvent.click(screen.getByTestId('pge-save'));
+    await waitFor(() => expect(updatePatientSection).toHaveBeenCalledTimes(1));
+    expect(updatePatientSection).toHaveBeenCalledWith(patient.id, 'general', {
+      billingAddressFormatted: null, billingCity: null, billingProvince: null,
+    });
+  });
+
+  it('o input de faturamento é mascarado para o Clarity', () => {
+    render(<PatientGeneralEditDrawer patient={comBilling} onClose={vi.fn()} onSaved={vi.fn()} />);
+    expect(screen.getByTestId('pge-billing').closest('[data-clarity-mask="True"]')).not.toBeNull();
   });
 });
