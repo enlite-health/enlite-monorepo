@@ -30,9 +30,11 @@ vi.mock('@infrastructure/http/AdminApiService', () => ({
 // Spec 044: o drawer agora monta o BillingAddressField, que usa o autocomplete do Google. O hook é
 // substituído por um espião que guarda as opções (assim os testes encenam "escolher da lista") — sem ele o
 // drawer tentaria carregar o script do Maps.
-let placesOptions: { onPlaceApplied: (p: unknown) => void } | null = null;
+let placesOptions: { onPlaceApplied: (p: unknown) => void; enabled?: boolean } | null = null;
+/** `enabled` de CADA chamada ao hook (o hook só carrega o script do Maps quando `enabled` é true). */
+const placesEnabledCalls: Array<boolean | undefined> = [];
 vi.mock('@presentation/hooks/useGooglePlacesAutocomplete', () => ({
-  useGooglePlacesAutocomplete: (opts: typeof placesOptions) => { placesOptions = opts; return { apiError: null }; },
+  useGooglePlacesAutocomplete: (opts: typeof placesOptions) => { placesOptions = opts; placesEnabledCalls.push(opts?.enabled); return { apiError: null }; },
 }));
 
 import { PatientGeneralEditDrawer } from '../PatientGeneralEditDrawer';
@@ -431,5 +433,23 @@ describe('PatientGeneralEditDrawer — endereço de faturamento (spec 044)', () 
   it('o input de faturamento é mascarado para o Clarity', () => {
     render(<PatientGeneralEditDrawer patient={comBilling} onClose={vi.fn()} onSaved={vi.fn()} />);
     expect(screen.getByTestId('pge-billing').closest('[data-clarity-mask="True"]')).not.toBeNull();
+  });
+
+  it('Places é lazy: abrir o drawer geral NÃO liga o autocomplete (nenhum script do Maps); só o 1º foco no campo de faturamento liga, e não desliga', () => {
+    placesEnabledCalls.length = 0;
+    render(<PatientGeneralEditDrawer patient={comBilling} onClose={vi.fn()} onSaved={vi.fn()} />);
+    // Sem foco: mexer em outros campos também não liga.
+    fireEvent.focus(screen.getByTestId('pge-phone'));
+    fireEvent.change(screen.getByTestId('pge-phone'), { target: { value: '+1' } });
+    expect(placesEnabledCalls.length).toBeGreaterThan(0);
+    expect(placesEnabledCalls.every((e) => e === false)).toBe(true);
+
+    fireEvent.focus(screen.getByTestId('pge-billing'));
+    expect(placesEnabledCalls[placesEnabledCalls.length - 1]).toBe(true);
+
+    // Nunca desarma: sair do campo e re-renderizar mantém ligado.
+    fireEvent.blur(screen.getByTestId('pge-billing'));
+    fireEvent.change(screen.getByTestId('pge-phone'), { target: { value: '+2' } });
+    expect(placesEnabledCalls[placesEnabledCalls.length - 1]).toBe(true);
   });
 });

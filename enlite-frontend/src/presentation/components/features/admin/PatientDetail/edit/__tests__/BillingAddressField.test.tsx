@@ -19,7 +19,7 @@ function t(key: string, opts?: any): string {
 }
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t }) }));
 
-let placesOptions: { onPlaceApplied: (p: unknown) => void; guessFirstPredictionOnEnter?: boolean } | null = null;
+let placesOptions: { onPlaceApplied: (p: unknown) => void; guessFirstPredictionOnEnter?: boolean; enabled?: boolean } | null = null;
 const placesCalls = vi.fn();
 vi.mock('@presentation/hooks/useGooglePlacesAutocomplete', () => ({
   useGooglePlacesAutocomplete: (opts: typeof placesOptions) => { placesOptions = opts; placesCalls(opts); return { apiError: null }; },
@@ -112,6 +112,15 @@ describe('BillingAddressField (spec 044)', () => {
     }
     expect(acessos).not.toHaveBeenCalled();
     expect(input().value).toBe('Calle Principal 2, Ciudad Principal');
+  });
+
+  it('Places só liga no 1º foco do campo (enabled false → true) e nunca desliga', () => {
+    render(<Harness addresses={[]} />);
+    expect(placesOptions?.enabled).toBe(false);
+    fireEvent.focus(input());
+    expect(placesOptions?.enabled).toBe(true);
+    fireEvent.blur(input());
+    expect(placesOptions?.enabled).toBe(true);
   });
 
   it('usa a busca do Places com o chute do Enter DESLIGADO (escolha obrigatória)', () => {
