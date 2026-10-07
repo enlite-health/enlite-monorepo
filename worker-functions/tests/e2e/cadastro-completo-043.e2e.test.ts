@@ -208,6 +208,30 @@ describe('A1 — o admin completa o cadastro: TODAS as vagas bloqueadas do worke
   });
 });
 
+describe('A1 só promove — edição do admin NÃO rebaixa REGISTERED legado fora do critério', () => {
+  it('REGISTERED sem documentos/área (fora do critério do recálculo) + admin edita um campo → segue REGISTERED, sem evento novo', async () => {
+    const w = await makeRegisteredWorker('a1-legado'); // INSERT já REGISTERED: o trigger só barra a transição PARA REGISTERED
+    const eventosAntes = await pool.query(`SELECT count(*)::int AS n FROM domain_events WHERE payload->>'workerId' = $1`, [w]);
+    const histAntes = await pool.query(`SELECT count(*)::int AS n FROM worker_status_history WHERE worker_id = $1`, [w]);
+
+    const r = await new UpdateWorkerProfileFieldsUseCase().execute(
+      { workerId: w, profession: 'AT' },
+      { source: 'admin_panel', actorUid: 'staff-uid-043' },
+    );
+
+    expect(r.fieldsUpdated).toEqual(['profession']);
+    const { rows } = await pool.query(`SELECT status, profession FROM workers WHERE id = $1`, [w]);
+    expect(rows[0]).toEqual({ status: 'REGISTERED', profession: 'AT' });
+    const eventosDepois = await pool.query(`SELECT count(*)::int AS n FROM domain_events WHERE payload->>'workerId' = $1`, [w]);
+    const histDepois = await pool.query(`SELECT count(*)::int AS n FROM worker_status_history WHERE worker_id = $1`, [w]);
+    // o único evento permitido é o mirror da própria edição (já existia antes do A1); nenhum de status
+    expect(histDepois.rows[0].n).toBe(histAntes.rows[0].n);
+    expect(eventosDepois.rows[0].n - eventosAntes.rows[0].n).toBe(1);
+    const { rows: ev } = await pool.query(`SELECT event FROM domain_events WHERE payload->>'workerId' = $1`, [w]);
+    expect(ev.map((e) => e.event)).toEqual(['worker.mirror_requested']);
+  });
+});
+
 describe('A2 — a varredura automática não revive tentativa DISPENSADA', () => {
   it('dispensada + cadastro completo → skip `dismissed`, sem WJA, e o card segue em REJECTED', async () => {
     const w = await makeRegisteredWorker('a2');

@@ -123,7 +123,7 @@ export class UpdateWorkerProfileFieldsUseCase {
 
     // 1. Verify worker exists
     const workerCheck = await this.pool.query(
-      'SELECT id FROM workers WHERE id = $1',
+      'SELECT id, status FROM workers WHERE id = $1',
       [workerId],
     );
     if (workerCheck.rows.length === 0) {
@@ -131,6 +131,7 @@ export class UpdateWorkerProfileFieldsUseCase {
     }
 
     // Snapshot "before" (decriptado) para o diff de auditoria.
+    const statusBefore: string | undefined = workerCheck.rows[0].status;
     const before = await captureWorkerBefore(this.pool, this.encryptionService, workerId);
 
     const fieldsUpdated: string[] = [];
@@ -188,7 +189,13 @@ export class UpdateWorkerProfileFieldsUseCase {
       // se a edição do admin completou o cadastro, o status vira REGISTERED e
       // `worker.registration_completed` promove TODAS as tentativas bloqueadas
       // do worker. Sem isto o admin completava e os cards seguiam BLOQUEADO.
-      await recalculateWorkerStatus(this.pool, workerId, this.pubsub);
+      //
+      // SÓ PROMOVE (043 A1): o recálculo também REBAIXA REGISTERED → INCOMPLETE_REGISTER
+      // quando o critério fixo falha (WorkerImportRepository.recalculateStatus), e o admin
+      // editar um REGISTERED legado fora do critério não é pedido de rebaixar ninguém.
+      if (statusBefore === 'INCOMPLETE_REGISTER') {
+        await recalculateWorkerStatus(this.pool, workerId, this.pubsub);
+      }
     }
 
     return { workerId, fieldsUpdated, changes };
