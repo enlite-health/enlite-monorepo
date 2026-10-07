@@ -352,6 +352,7 @@ class AdminApiServiceClass {
   getPatientStatusHistory(id: string) { return AdminPatientsApiService.getPatientStatusHistory(id); }
   listInsuranceProviders() { return AdminPatientsApiService.listInsuranceProviders(); }
   updatePatientAddressLogistics(...args: Parameters<typeof AdminPatientsApiService.updatePatientAddressLogistics>) { return AdminPatientsApiService.updatePatientAddressLogistics(...args); }
+  deletePatientAddress(...args: Parameters<typeof AdminPatientsApiService.deletePatientAddress>) { return AdminPatientsApiService.deletePatientAddress(...args); }
   getPatientChatCandidates(id: string, limit?: number) { return AdminPatientsApiService.getPatientChatCandidates(id, limit); }
   updatePatientChatIds(...args: Parameters<typeof AdminPatientsApiService.updatePatientChatIds>) { return AdminPatientsApiService.updatePatientChatIds(...args); }
   listChatGroups(...args: Parameters<typeof AdminPatientsApiService.listChatGroups>) { return AdminPatientsApiService.listChatGroups(...args); }

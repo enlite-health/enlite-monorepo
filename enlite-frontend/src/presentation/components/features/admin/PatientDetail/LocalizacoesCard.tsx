@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
-import { Plus, Pencil } from 'lucide-react';
+import { Plus, Pencil, Trash2 } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import {
@@ -21,6 +21,7 @@ import type { PatientAddressDetail } from '@domain/entities/PatientDetail';
 import { patientAddressTypeSchema } from '@domain/entities/PatientAddress';
 import { PatientAddressDrawer } from './edit/PatientAddressDrawer';
 import { AvisoAmbar } from './edit/AvisoAmbar';
+import { DeleteAddressConfirm } from './edit/DeleteAddressConfirm';
 import { useAutoOpenDrawer, type DrawerFocusRequest } from '@hooks/admin/useAutoOpenDrawer';
 
 interface LocalizacoesCardProps {
@@ -77,6 +78,26 @@ function typeLabel(t: TFunction, addressType: string | null): string {
   return t(`admin.patients.detail.addressDrawer.type_${parsed}`, parsed);
 }
 
+/**
+ * Spec 044 (D4): por que a lixeira de um endereço está desabilitada — ou `null` se pode excluir.
+ * Vaga (qualquer status, inclusive fechada/apagada) ou serviço (ativo ou não) apontando bloqueia; o Principal
+ * com outro endereço ativo também (marcar outro primeiro). Contagem ausente (API antiga) conta 0: o servidor
+ * reforça com 409, então o pior caso é um clique que volta com a mensagem.
+ */
+function deleteBlockReason(
+  t: TFunction,
+  addr: PatientAddressDetail,
+  activeCount: number,
+): string | null {
+  const vacancies = addr.vacancyRefCount ?? 0;
+  const services = addr.serviceRefCount ?? 0;
+  if (vacancies > 0 || services > 0) {
+    return t('admin.patients.detail.locationsCard.deleteBlockedInUse', { vacancies, services });
+  }
+  if (addr.isPrimary && activeCount > 1) return t('admin.patients.detail.locationsCard.deleteBlockedPrimary');
+  return null;
+}
+
 export function LocalizacoesCard({ addresses, patientId, onSaved, focusRequest }: LocalizacoesCardProps) {
   const { t } = useTranslation();
   // D286: o lápis de cada endereço, e a ação "Marcar como principal", somem para quem não tem a
@@ -105,6 +126,11 @@ export function LocalizacoesCard({ addresses, patientId, onSaved, focusRequest }
    * Mesmo canal de erro que esses cards já usam: `Text` vermelho com `role="alert"`, sem modal.
    */
   const [markError, setMarkError] = useState<string | null>(null);
+  // Spec 044: remoção. `confirmDeleteId` = diálogo aberto para este endereço; o 409 usa o molde do
+  // `markError` (Text vermelho com role="alert", sem modal) e recarrega a lista.
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   // `patientId` sempre presente aqui: o botão que chama isto só renderiza dentro de
   // `{patientId && ...}` (ver a célula do Tipo, abaixo). Reentrância dupla é bloqueada pelo
   // `disabled` do próprio botão (abaixo) enquanto `markingId` aponta pra este endereço — checar
@@ -130,6 +156,35 @@ export function LocalizacoesCard({ addresses, patientId, onSaved, focusRequest }
       }
     } finally {
       setMarkingId(null);
+    }
+  };
+
+  const onConfirmDelete = async (): Promise<void> => {
+    const addressId = confirmDeleteId;
+    if (!addressId) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await AdminApiService.deletePatientAddress(patientId as string, addressId);
+      setConfirmDeleteId(null);
+      onSaved?.();
+    } catch (err) {
+      setConfirmDeleteId(null);
+      // O código do 409 vem em `message` (contrato do servidor); a contagem, em `details`.
+      if (err instanceof PatientApiError && err.status === 409 && err.message === 'PRIMARY_WITH_OTHERS') {
+        setDeleteError(t('admin.patients.detail.locationsCard.deleteConflictPrimary'));
+        onSaved?.();
+      } else if (err instanceof PatientApiError && err.status === 409 && err.message === 'ADDRESS_IN_USE') {
+        setDeleteError(t('admin.patients.detail.locationsCard.deleteConflictInUse', {
+          vacancies: Number(err.details?.vacancies ?? 0),
+          services: Number(err.details?.services ?? 0),
+        }));
+        onSaved?.(); // a lista pode estar desatualizada: recarrega para a lixeira refletir o uso
+      } else {
+        setDeleteError(t('admin.patients.detail.locationsCard.deleteError'));
+      }
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -159,6 +214,20 @@ export function LocalizacoesCard({ addresses, patientId, onSaved, focusRequest }
         <Text size="sm" role="alert" className="text-red-600" data-testid="address-mark-primary-error">
           {markError}
         </Text>
+      )}
+
+      {deleteError && (
+        <Text size="sm" role="alert" className="text-red-600" data-testid="address-delete-error">
+          {deleteError}
+        </Text>
+      )}
+
+      {confirmDeleteId && (
+        <DeleteAddressConfirm
+          busy={deleting}
+          onCancel={() => setConfirmDeleteId(null)}
+          onConfirm={onConfirmDelete}
+        />
       )}
 
       {drawer !== null && patientId && (
@@ -259,6 +328,30 @@ export function LocalizacoesCard({ addresses, patientId, onSaved, focusRequest }
                           <Pencil className="w-4 h-4" />
                         </button>
                       )}
+                      {/* Spec 044 (D4): DELETE → patient_address:delete (célula própria). Desabilitada com o motivo
+                          no `title`. O `title` também vai num <span>: botão desabilitado não recebe hover em
+                          todo navegador (Firefox/Safari), e o span garante que o motivo aparece. */}
+                      {(() => {
+                        const reason = deleteBlockReason(t, addr, list.length);
+                        return (
+                          <span title={reason ?? undefined} className="inline-flex">
+                            <ActionButton
+                              resource="patient_address"
+                              action="delete"
+                              variant="ghost"
+                              size="xs"
+                              disabled={reason !== null}
+                              title={reason ?? t('admin.patients.detail.locationsCard.deleteAddress')}
+                              aria-label={t('admin.patients.detail.locationsCard.deleteAddress')}
+                              onClick={() => setConfirmDeleteId(addr.id)}
+                              className="!px-2 !text-slate-400 hover:!text-red-600"
+                              data-testid={`delete-address-${addr.id}`}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </ActionButton>
+                          </span>
+                        );
+                      })()}
                     </TableCell>
                   )}
                 </TableRow>
