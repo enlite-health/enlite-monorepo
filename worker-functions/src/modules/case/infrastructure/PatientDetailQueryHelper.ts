@@ -49,6 +49,11 @@ const PATIENT_DETAIL_SQL = `
     -- de identity, mesmo padrão de dischargedAt -- redigido (null) por DETAIL_FIELDS.identity em
     -- patientContainerAccess.ts, NUNCA false na redacao (nao pode vazar "tem foto").
     EXISTS (SELECT 1 FROM patient_photos ph WHERE ph.patient_id = p.id) AS "hasPhoto",
+    -- Spec 044 (migration 500): endereço de faturamento, campo PRÓPRIO (não é o Principal). PII da célula
+    -- patient_identity — redigido por DETAIL_FIELDS.identity (patientContainerAccess.ts), nunca em log.
+    p.billing_address_formatted AS "billingAddressFormatted",
+    p.billing_city              AS "billingCity",
+    p.billing_province          AS "billingProvince",
     diagnosis,
     dependency_level         AS "dependencyLevel",
     clinical_specialty       AS "clinicalSpecialty",
@@ -164,8 +169,13 @@ async function fetchRelated(pool: Pool, patientId: string, enc: KMSEncryptionSer
       // operator. Archived rows still exist in the table to preserve historic
       // vacancies that point to them — see migration 198 and
       // docs/features/vacancy-creation/06-endereco-servico.md.
+      // Spec 044: `city`/`state` (mig 147) para o "Copiar dirección principal" e as contagens de uso para a
+      // lixeira. As contagens NÃO filtram status nem deleted_at: vaga fechada ou soft-deleted segura a FK 149
+      // (RESTRICT) e serviço inativo segura a FK 330 — a regra de remoção é "nenhuma referência, de qualquer tipo".
       `SELECT id, address_type, address_type_other, is_default, address_formatted, address_raw, complement, display_order, lat, lng,
-              neighborhood, logistics_corridor, access_notes, country
+              neighborhood, logistics_corridor, access_notes, country, city, state,
+              (SELECT count(*)::int FROM job_postings jp WHERE jp.patient_address_id = patient_addresses.id) AS vacancy_ref_count,
+              (SELECT count(*)::int FROM patient_contracted_services pcs WHERE pcs.address_id = patient_addresses.id) AS service_ref_count
          FROM patient_addresses
         WHERE patient_id = $1
           AND archived_at IS NULL
@@ -289,6 +299,11 @@ function mapAddresses(rows: any[], vacancyRows: ActiveVacancy[]): PatientAddress
     logisticsCorridor: a.logistics_corridor ?? null,
     accessNotes: a.access_notes ?? null,
     country: a.country ?? null,
+    // Spec 044: cidade/província do endereço (NULL em endereço criado pelo painel) e uso por vaga/serviço.
+    city: a.city ?? null,
+    state: a.state ?? null,
+    vacancyRefCount: Number(a.vacancy_ref_count ?? 0),
+    serviceRefCount: Number(a.service_ref_count ?? 0),
     availability: computeAddressAvailability(a.id, vacancyRows),
   }));
 }
@@ -390,6 +405,9 @@ export async function fetchPatientDetail(
     languages,
     dischargedAt: p.dischargedAt ?? null,
     hasPhoto: p.hasPhoto ?? false,
+    billingAddressFormatted: p.billingAddressFormatted ?? null,
+    billingCity: p.billingCity ?? null,
+    billingProvince: p.billingProvince ?? null,
     diagnosis: p.diagnosis,
     dependencyLevel: p.dependencyLevel,
     clinicalSpecialty: p.clinicalSpecialty,
