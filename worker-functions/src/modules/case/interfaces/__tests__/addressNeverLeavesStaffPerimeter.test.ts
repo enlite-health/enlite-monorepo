@@ -54,6 +54,10 @@ const ALLOWED_FILES: Record<string, string> = {
     'tipos da projeção de detalhe do painel (PatientAddressDetail) — declaração, não exposição pública.',
   'src/modules/case/infrastructure/PatientAddressQueryHelper.ts':
     'leitor/criador do painel (POST/GET /api/admin/patients/:id/addresses) — staff-only.',
+  'src/modules/case/infrastructure/PatientAddressAuditRepository.ts':
+    'trilha da REMOÇÃO de Localización (spec 044): grava address_type NA TRILHA do painel (staff-only) por lista positiva de chaves {address_id, address_type, neighborhood} — nunca texto de endereço (A10).',
+  'src/modules/case/infrastructure/deletePatientAddress.ts':
+    'DELETE do painel (spec 044): lê address_type da linha viva só para repassá-lo à trilha de auditoria staff-only; rota atrás de staffOnly + patient_address:delete.',
   'src/infrastructure/repositories/PatientRepository.ts':
     'shim deprecado (PatientAddress.addressType) — comentário explicando que a coluna deixou de ser escrita aqui (B4/B5).',
   'src/modules/matching/infrastructure/PatientAddressRepository.ts':

@@ -26,6 +26,9 @@ jest.mock('@shared/logging', () => ({ reportError: jest.fn(), logger: { info: je
 jest.mock('@shared/database/DatabaseConnection', () => ({ DatabaseConnection: { getInstance: jest.fn(() => ({ getPool: jest.fn(() => ({ connect: mockConnect })) })) } }));
 jest.mock('@modules/identity', () => ({ AuthMiddleware: { getAuthContext: jest.fn(() => ({ principal: { id: 'uid-1' } })) } }));
 
+const mockDeletePatientAddress = jest.fn();
+jest.mock('../../../infrastructure/deletePatientAddress', () => ({ deletePatientAddress: (...a: unknown[]) => mockDeletePatientAddress(...a) }));
+
 import { Request, Response } from 'express';
 import type { Pool } from 'pg';
 import { logger, reportError } from '@shared/logging';
@@ -267,5 +270,107 @@ describe('AdminPatientAddressesController.updatePatientAddress', () => {
     expect(ACCESS_NOTES_MAX).toBe(2000);
     expect(PATIENT_ADDRESS_TYPES).toContain('escuela');
     expect(PATIENT_ADDRESS_TYPES).toHaveLength(8);
+  });
+});
+
+// ── Spec 044 ──────────────────────────────────────────────────────────────────────────────────────
+
+describe('updatePatientAddressSchema — o TEXTO do endereço nunca é editável (spec 044, D3/A8)', () => {
+  // Um caso nomeado por campo: o teste tem de MORRER se qualquer um deles passar a ser aceito no PATCH.
+  it('A8: recusa address_formatted', () => {
+    expect(updatePatientAddressSchema.safeParse({ address_formatted: 'Calle Falsa 123' }).success).toBe(false);
+  });
+  it('A8: recusa address_raw', () => {
+    expect(updatePatientAddressSchema.safeParse({ address_raw: 'calle falsa 123' }).success).toBe(false);
+  });
+  it('A8: recusa lat', () => {
+    expect(updatePatientAddressSchema.safeParse({ lat: -34.6 }).success).toBe(false);
+  });
+  it('A8: recusa lng', () => {
+    expect(updatePatientAddressSchema.safeParse({ lng: -58.4 }).success).toBe(false);
+  });
+  it('controle positivo: o mesmo schema ACEITA um campo permitido (a recusa acima é do campo, não do schema inteiro)', () => {
+    expect(updatePatientAddressSchema.safeParse({ neighborhood: 'Barrio Ficticio' }).success).toBe(true);
+  });
+});
+
+describe('AdminPatientAddressesController.deletePatientAddress (spec 044)', () => {
+  const ctrl = new AdminPatientAddressesController();
+  function delReqRes(params: Record<string, unknown>): [Request, Response, { json: jest.Mock; send: jest.Mock; status: jest.Mock }] {
+    const json = jest.fn();
+    const send = jest.fn();
+    const res = { json, send, status: jest.fn() };
+    res.status.mockReturnValue(res);
+    return [{ params, body: {}, query: {} } as unknown as Request, res as unknown as Response, res];
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    // Fila de `mockReturnValueOnce(undefined)` deixada por testes anteriores não pode vazar para cá.
+    (require('@modules/identity').AuthMiddleware.getAuthContext as jest.Mock).mockReset().mockReturnValue({ principal: { id: 'uid-1' } });
+  });
+
+  it('sem contexto de auth o ator vai null (a trilha decide); a rota é staffOnly, então é só o limite do tipo', async () => {
+    (require('@modules/identity').AuthMiddleware.getAuthContext as jest.Mock).mockReturnValue(undefined);
+    mockDeletePatientAddress.mockResolvedValueOnce({ kind: 'deleted' });
+    const [req, res] = delReqRes({ patientId: P, addressId: A });
+    await ctrl.deletePatientAddress(req, res);
+    expect(mockDeletePatientAddress).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ actorUserId: null }));
+  });
+
+  it('400: params inválidos — não chega à regra', async () => {
+    const [req, res, m] = delReqRes({ patientId: 'x', addressId: A });
+    await ctrl.deletePatientAddress(req, res);
+    expect(m.status).toHaveBeenCalledWith(400);
+    expect(mockDeletePatientAddress).not.toHaveBeenCalled();
+  });
+
+  it('204 sem corpo quando removeu; passa ator e ids; o log leva só ids (sem texto de endereço)', async () => {
+    mockDeletePatientAddress.mockResolvedValueOnce({ kind: 'deleted' });
+    const [req, res, m] = delReqRes({ patientId: P, addressId: A });
+    await ctrl.deletePatientAddress(req, res);
+    expect(m.status).toHaveBeenCalledWith(204);
+    expect(m.send).toHaveBeenCalledTimes(1);
+    expect(m.json).not.toHaveBeenCalled();
+    expect(mockDeletePatientAddress).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ patientId: P, addressId: A, actorUserId: 'uid-1' }));
+    expect(logger.info).toHaveBeenCalledWith({ msg: 'patient_address.deleted', uid: 'uid-1', patientId: P, addressId: A });
+  });
+
+  it('404 quando o endereço não existe para o paciente', async () => {
+    mockDeletePatientAddress.mockResolvedValueOnce({ kind: 'not_found' });
+    const [req, res, m] = delReqRes({ patientId: P, addressId: A });
+    await ctrl.deletePatientAddress(req, res);
+    expect(m.status).toHaveBeenCalledWith(404);
+    expect(logger.info).not.toHaveBeenCalled();
+  });
+
+  it('409 PRIMARY_WITH_OTHERS', async () => {
+    mockDeletePatientAddress.mockResolvedValueOnce({ kind: 'primary_with_others' });
+    const [req, res, m] = delReqRes({ patientId: P, addressId: A });
+    await ctrl.deletePatientAddress(req, res);
+    expect(m.status).toHaveBeenCalledWith(409);
+    expect(m.json).toHaveBeenCalledWith({ success: false, error: 'PRIMARY_WITH_OTHERS' });
+  });
+
+  it('409 ADDRESS_IN_USE com as contagens (só números)', async () => {
+    mockDeletePatientAddress.mockResolvedValueOnce({ kind: 'in_use', vacancies: 2, services: 1 });
+    const [req, res, m] = delReqRes({ patientId: P, addressId: A });
+    await ctrl.deletePatientAddress(req, res);
+    expect(m.status).toHaveBeenCalledWith(409);
+    expect(m.json).toHaveBeenCalledWith({ success: false, error: 'ADDRESS_IN_USE', details: { vacancies: 2, services: 1 } });
+  });
+
+  it('500 sem eco do erro (reportError leva só o patientId); erro não-Error também vira 500', async () => {
+    mockDeletePatientAddress.mockRejectedValueOnce(new Error(`pg: ${SECRET}`));
+    const [req, res, m] = delReqRes({ patientId: P, addressId: A });
+    await ctrl.deletePatientAddress(req, res);
+    expect(m.status).toHaveBeenCalledWith(500);
+    expect(JSON.stringify(m.json.mock.calls)).not.toContain(SECRET);
+    expect(reportError).toHaveBeenCalledWith(expect.any(Error), { source: 'AdminPatientAddressesController:deletePatientAddress', patientId: P });
+
+    mockDeletePatientAddress.mockRejectedValueOnce('texto cru');
+    const [req2, res2, m2] = delReqRes({ patientId: P, addressId: A });
+    await ctrl.deletePatientAddress(req2, res2);
+    expect(m2.status).toHaveBeenCalledWith(500);
   });
 });

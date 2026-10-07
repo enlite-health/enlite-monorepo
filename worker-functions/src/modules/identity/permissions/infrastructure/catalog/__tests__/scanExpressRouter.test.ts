@@ -355,7 +355,7 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       // (spec 024, D401): era só "criar tag" — órfão, coberto por `tag:create` abaixo; `worker`
       // mantém só `:update`.
       'patient:create', 'patient:update',
-      'patient_address:create', 'patient_address:update',
+      'patient_address:create', 'patient_address:update', 'patient_address:delete',
       'patient_chat:create', 'patient_chat:update',
       // Spec 022 (chat interno por paciente, 20/09): as 5 células novas — 4 de
       // `patient_conversation` (família `admin.patients`) e `staff_directory:read`
