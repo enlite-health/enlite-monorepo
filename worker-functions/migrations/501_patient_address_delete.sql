@@ -42,6 +42,19 @@ CREATE INDEX IF NOT EXISTS idx_patient_address_al_actor_user
   ON patient_address_audit_log(actor_user_id, created_at DESC)
   WHERE actor_user_id IS NOT NULL;
 
+-- ── RLS por país: segue o paciente (molde 497). Toda tabela com FK para `patients` precisa de RLS
+-- (invariante de `country-rls-policies.test.ts`): a policy deixa ver a linha de quem enxerga o paciente
+-- (que tem a própria RLS de país) e deixa o contexto de sistema passar.
+ALTER TABLE patient_address_audit_log ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS patient_address_audit_log_follow_patient ON patient_address_audit_log;
+CREATE POLICY patient_address_audit_log_follow_patient ON patient_address_audit_log FOR ALL USING (
+  (
+    NULLIF(current_setting('app.system_context', true), '') IS NOT NULL
+    AND pg_has_role(current_user, 'app_system', 'MEMBER')
+  )
+  OR EXISTS (SELECT 1 FROM patients p WHERE p.id = patient_address_audit_log.patient_id)
+);
+
 -- Append-only para as roles do app (INSERT e SELECT ficam); manutenção excepcional roda como owner.
 -- Guardado: em ambientes sem as roles da 269 (local/CI cru) o REVOKE seria erro.
 DO $$
