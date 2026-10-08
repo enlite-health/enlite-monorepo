@@ -16,8 +16,16 @@ const DATABASE_URL =
 const TAG = 'F3SORT046';
 // vaga i tem COMPLETED_PER_VACANCY[i] candidaturas em COMPLETED: 3 vagas EMPATADAS em 2 (A13).
 const COMPLETED_PER_VACANCY = [0, 2, 1, 2, 2];
-const PUBLISHED_AT = [null, '2026-09-01T00:00:00Z', '2026-09-03T00:00:00Z', '2026-09-02T00:00:00Z', '2026-09-04T00:00:00Z'];
 const PAGE = 2;
+
+/** Monotônica na direção pedida e nulos só no fim (NULLS LAST nas duas direções). */
+function ordenadoComNulosPorUltimo(values: (string | null)[], order: 'asc' | 'desc'): boolean {
+  const firstNull = values.indexOf(null);
+  const comValor = firstNull === -1 ? values : values.slice(0, firstNull);
+  if (values.slice(comValor.length).some((v) => v !== null)) return false;
+  const t = comValor.map((v) => new Date(v as string).getTime());
+  return t.every((x, i) => i === 0 || (order === 'asc' ? t[i - 1] <= x : t[i - 1] >= x));
+}
 
 type Row = { id: string; stageCounts: Record<string, number>; lastActionAt: string | null };
 
@@ -54,7 +62,7 @@ describe('GET /api/admin/vacancies — sort/order (spec 046 F3)', () => {
       const v = await pool.query(
         `INSERT INTO job_postings (title, description, country, status, patient_id, case_number, providers_needed, talentum_published_at)
          VALUES ($1, 'desc', 'AR', 'SEARCHING', $2, $3, '4', $4) RETURNING id`,
-        [`${TAG} vaga ${i}`, patientId, 99950 + i, PUBLISHED_AT[i]],
+        [`${TAG} vaga ${i}`, patientId, 99950 + i, null],
       );
       const vacancyId = v.rows[0].id as string;
       vacancyIds.push(vacancyId);
@@ -99,15 +107,26 @@ describe('GET /api/admin/vacancies — sort/order (spec 046 F3)', () => {
   });
 
   it('A10 feliz: sort=lastActionAt ordena a lista inteira, nulos por último nas duas direções', async () => {
-    const desc = await allPages('sort=lastActionAt&order=desc');
-    const asc = await allPages('sort=lastActionAt&order=asc');
-    const datas = (rows: Row[]) => rows.map((r) => r.lastActionAt);
-    expect(datas(desc)).toEqual([
-      '2026-09-04T00:00:00.000Z', '2026-09-03T00:00:00.000Z', '2026-09-02T00:00:00.000Z', '2026-09-01T00:00:00.000Z', null,
-    ]);
-    expect(datas(asc)).toEqual([
-      '2026-09-01T00:00:00.000Z', '2026-09-02T00:00:00.000Z', '2026-09-03T00:00:00.000Z', '2026-09-04T00:00:00.000Z', null,
-    ]);
+    // lastActionAt = GREATEST(nota, histórico de funil, talentum_published_at): as candidaturas
+    // semeadas geram histórico com a hora da inserção, então o valor NÃO é o PUBLISHED_AT.
+    // Derivamos o esperado do que o próprio payload devolve e afirmamos a ORDEM.
+    const desc = (await allPages('sort=lastActionAt&order=desc')).map((r) => r.lastActionAt);
+    const asc = (await allPages('sort=lastActionAt&order=asc')).map((r) => r.lastActionAt);
+    expect(desc).toHaveLength(vacancyIds.length);
+    expect(asc).toHaveLength(vacancyIds.length);
+    // a vaga 0 (sem candidatura, sem publicação) é a única sem última ação
+    expect(desc.filter((d) => d === null)).toHaveLength(1);
+    expect(asc.filter((d) => d === null)).toHaveLength(1);
+    expect(ordenadoComNulosPorUltimo(desc, 'desc')).toBe(true);
+    expect(ordenadoComNulosPorUltimo(asc, 'asc')).toBe(true);
+  });
+
+  it('sabotagem: o comparador REPROVA lista invertida, nulo fora do fim e direção errada', () => {
+    const d = ['2026-10-04T00:00:00.000Z', '2026-10-03T00:00:00.000Z', '2026-10-01T00:00:00.000Z', null];
+    expect(ordenadoComNulosPorUltimo(d, 'desc')).toBe(true);
+    expect(ordenadoComNulosPorUltimo([...d].reverse(), 'desc')).toBe(false); // invertida
+    expect(ordenadoComNulosPorUltimo(d, 'asc')).toBe(false); // direção errada
+    expect(ordenadoComNulosPorUltimo([null, ...d.slice(0, 3)], 'desc')).toBe(false); // nulo primeiro
   });
 
   // ── alt1: A11 ───────────────────────────────────────────────────────────────
