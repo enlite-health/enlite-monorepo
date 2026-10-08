@@ -16,13 +16,14 @@
  *  alt 2 — local com vaga FECHADA: lixeira desabilitada com o motivo no `title`; forçando a rota
  *          (`page.request.delete`) → 409 ADDRESS_IN_USE e a linha continua.
  *
- * Rodar: stack do CI + emulador (API com `docker-compose.firebase.yml`) e Vite com VITE_FIREBASE_AUTH_EMULATOR;
+ * Rodar: stack do CI (API em mock-auth) e Vite do CI; login pelo mock (`loginComoStaffMock`).
  * E2E_PG_CONTAINER aponta para o Postgres do projeto docker, se não for o `enlite-postgres`.
  */
 import { test, expect, type Page } from '@playwright/test';
 import { insertTestPatient } from '../helpers/db-test-helper';
 import { runSQL, cleanupPatientDeep } from '../helpers/patient-detail-a-helper';
-import { loginComoHumano } from '../helpers/login-humano';
+import { loginComoStaffMock } from '../helpers/login-mock-staff';
+import { tokenFor, type MockUser } from '../helpers/abac-stack-helper';
 import {
   instalarFakeDeGestos,
   contarChamadasAoGoogle,
@@ -31,6 +32,14 @@ import {
 
 const API_URL = process.env.E2E_BACKEND_URL ?? 'http://localhost:8080';
 const STAFF_EMAIL = `e2e.enderecos-044.${Date.now()}@enlite.health`;
+// Login pelo MOCK do stack de CI (USE_MOCK_AUTH=true; sem emulador). O `uid` é o `principal.id` que a API grava como
+// ator na trilha de remoção — por isso precisa de linha em `users` (FK `actor_user_id`), semeada em `entrarComoStaff`.
+const STAFF: MockUser = { uid: `e2e-enderecos-044-${Date.now()}`, email: STAFF_EMAIL, role: 'admin', country: 'AR' };
+
+async function entrarComoStaff(page: Page): Promise<void> {
+  runSQL(`INSERT INTO users (firebase_uid, email, display_name, role, is_active, email_verified) VALUES ('${STAFF.uid}', '${STAFF.email}', 'E2E Enderecos 044', 'admin', true, true) ON CONFLICT (firebase_uid) DO NOTHING`);
+  await loginComoStaffMock(page, STAFF, 'E2E Enderecos 044');
+}
 
 /** O que o "Google" devolve ao escolher: texto + cidade (locality) + província (administrative_area_level_1). */
 const PLACE_FATURAMENTO: PlaceFalso = {
@@ -107,7 +116,7 @@ test.describe('Endereço de faturamento + remover Localización (spec 044) @inte
 
   test('feliz — escolher no Places e salvar; depois "Copiar dirección principal" copia o PRINCIPAL e salva', async ({ page }) => {
     await instalarFakeDeGestos(page, PLACE_FATURAMENTO);
-    await loginComoHumano(page, STAFF_EMAIL, 'E2E Enderecos 044');
+    await entrarComoStaff(page);
     // O 1º por display_order NÃO é o Principal: a cópia tem de pegar o Principal (A3).
     const { patientId } = seedPaciente('Feliz', [
       { chave: 'primeiro', texto: PRIMEIRO_TEXTO, city: 'Ciudad Uno', state: 'Provincia Uno' },
@@ -150,7 +159,7 @@ test.describe('Endereço de faturamento + remover Localización (spec 044) @inte
 
   test('alt 1 — excluir um local livre: lixeira → diálogo do design system → some da lista; Principal com outro ativo não exclui', async ({ page }) => {
     await instalarFakeDeGestos(page, PLACE_FATURAMENTO);
-    await loginComoHumano(page, STAFF_EMAIL, 'E2E Enderecos 044');
+    await entrarComoStaff(page);
     const { patientId, ids } = seedPaciente('Alt1', [
       { chave: 'principal', texto: PRINCIPAL_TEXTO, principal: true },
       { chave: 'livre', texto: LIVRE_TEXTO },
@@ -197,7 +206,7 @@ test.describe('Endereço de faturamento + remover Localización (spec 044) @inte
 
   test('alt 2 — local com vaga FECHADA: lixeira desabilitada com o motivo; forçando a rota → 409 e a linha continua', async ({ page }) => {
     await instalarFakeDeGestos(page, PLACE_FATURAMENTO);
-    await loginComoHumano(page, STAFF_EMAIL, 'E2E Enderecos 044');
+    await entrarComoStaff(page);
     const { patientId, ids } = seedPaciente('Alt2', [
       { chave: 'principal', texto: PRINCIPAL_TEXTO, principal: true },
       { chave: 'comVaga', texto: COM_VAGA_TEXTO },
@@ -213,12 +222,8 @@ test.describe('Endereço de faturamento + remover Localización (spec 044) @inte
     await expect(lixeira).toBeDisabled();
     await expect(lixeira).toHaveAttribute('title', 'Tiene 1 vacantes / 0 servicios asociados');
 
-    // Forçando a rota com o token real do operador logado: o servidor também recusa.
-    const token = await page.evaluate(() => {
-      const chave = Object.keys(localStorage).find((k) => k.startsWith('firebase:authUser:'));
-      return chave ? (JSON.parse(localStorage.getItem(chave) as string).stsTokenManager.accessToken as string) : '';
-    });
-    expect(token.length).toBeGreaterThan(20);
+    // Forçando a rota com o token do operador logado (mock do CI): o servidor também recusa.
+    const token = tokenFor(STAFF);
     const res = await page.request.delete(`${API_URL}/api/admin/patients/${patientId}/addresses/${ids.comVaga}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
