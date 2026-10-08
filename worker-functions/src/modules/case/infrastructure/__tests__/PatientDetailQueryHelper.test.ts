@@ -237,7 +237,7 @@ describe('fetchPatientDetail — serviços contratados (spec 013, bloco C)', () 
       .mockResolvedValueOnce({
         rows: [{
           contracted_service_id: 'svc-1', id: 'vac-live-1', case_number: 1234, case_ordinal: 1,
-          status: 'SEARCHING', site_url: 'https://exemplo.test/x',
+          status: 'SEARCHING',
         }],
       });
 
@@ -253,15 +253,15 @@ describe('fetchPatientDetail — serviços contratados (spec 013, bloco C)', () 
       authorizedHours: 20, weeklyHours: 20, hourlyValue: 1500, // string → Number
       deviceTypes: ['HOME'],
     });
-    // A1 (047): o objeto INTEIRO, com as 5 chaves e nenhuma a mais.
+    // A1 (047): o objeto INTEIRO, com as 4 chaves e nenhuma a mais.
     expect(svc.liveVacancy).toEqual({
-      id: 'vac-live-1', caseNumber: 1234, caseOrdinal: 1, status: 'SEARCHING', siteUrl: 'https://exemplo.test/x',
+      id: 'vac-live-1', caseNumber: 1234, caseOrdinal: 1, status: 'SEARCHING',
     });
-    expect(Object.keys(svc.liveVacancy!).sort()).toEqual(['caseNumber', 'caseOrdinal', 'id', 'siteUrl', 'status']);
-    // O SQL lê o caso do fragmento com dono (046), o link do JSONB e só vagas vivas.
+    expect(Object.keys(svc.liveVacancy!).sort()).toEqual(['caseNumber', 'caseOrdinal', 'id', 'status']);
+    // O SQL lê o caso do fragmento com dono (046) e só vagas vivas — e NÃO toca social_short_links.
     const sqlVaga = String(queryImpl.mock.calls[10][0]);
     expect(sqlVaga).toContain(`${VACANCY_CASE_NUMBER_SQL} AS case_number`);
-    expect(sqlVaga).toContain("jp.social_short_links->>'site'");
+    expect(sqlVaga).not.toContain('social_short_links');
     expect(sqlVaga).toContain('jp.deleted_at IS NULL');
     expect(svc.providers).toHaveLength(1);
     expect(svc.providers[0]).toMatchObject({

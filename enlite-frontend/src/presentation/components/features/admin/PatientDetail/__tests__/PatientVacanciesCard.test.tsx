@@ -58,7 +58,7 @@ describe('PatientVacanciesCard — código da vaga em EN1234#01 (spec 047 F4)', 
       careLocation: null, hourlyValue: null, hourlyValueRedacted: false, startDate: null, contractType: null, taxCondition: null,
       supervisionFrequency: null, guardShift: null, providerAgeBand: null, addressId: null, schedule: null, endedAt: null, country: 'AR',
       deviceTypes: [], providers: [], createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z', active: true,
-      liveVacancy: { id: 'v-1', caseNumber: VAGA.caseNumber, caseOrdinal: VAGA.caseOrdinal, status: VAGA.status, siteUrl: null }, liveVacancyRedacted: false,
+      liveVacancy: { id: 'v-1', caseNumber: VAGA.caseNumber, caseOrdinal: VAGA.caseOrdinal, status: VAGA.status }, liveVacancyRedacted: false,
     } as PatientContractedServiceDetail;
     render(<ServicosContratadosCard patient={{ ...patientDetailFixture, contractedServices: [servico] }} />);
     const naColuna = screen.getByTestId('contracted-service-vacancy-link-svc-x').textContent;

@@ -104,8 +104,8 @@ const SCHEDULE = [
  */
 describe('ServicosContratadosCard — tabela no molde do Figma (05/09) + #PEND-08', () => {
   it('mostra dispositivo, serviço, quantidade, lugar + ENDEREÇO vinculado e horário — nenhuma coluna com dado existente vira "—"', () => {
-    // Spec 047: com vaga viva (e link) as 2 colunas novas também têm dado — sem ela mostrariam "—" (coberto abaixo).
-    const svc: PatientContractedServiceDetail = { ...SERVICE, addressId: 'addr-home', schedule: SCHEDULE, liveVacancy: { id: 'v1', caseNumber: 1234, caseOrdinal: 1, status: 'SEARCHING', siteUrl: 'https://exemplo.test/x' } };
+    // Spec 047: com vaga viva a coluna da vacante também tem dado — sem ela mostraria "—" (coberto abaixo).
+    const svc: PatientContractedServiceDetail = { ...SERVICE, addressId: 'addr-home', schedule: SCHEDULE, liveVacancy: { id: 'v1', caseNumber: 1234, caseOrdinal: 1, status: 'SEARCHING' } };
     const patient = { ...patientDetailFixture, addresses: [ADDRESS_HOME, ADDRESS_SCHOOL], contractedServices: [svc] };
     render(<ServicosContratadosCard patient={patient} />);
 
@@ -475,9 +475,9 @@ describe('ServicosContratadosCard — ícone de ativação de recrutamento por s
     expect(onSaved).not.toHaveBeenCalled();
   });
 
-  // ── Spec 047 (F3): colunas "Código da vacante" e "Link do site"; o ícone "Ver vacante" saiu ────────────────
+  // ── Spec 047 (F3): coluna "Vacante" (o link do site saiu, 08/10); o ícone "Ver vacante" saiu ────────────────
   describe('spec 047 F3 — colunas da vaga viva', () => {
-    const VAGA = { id: 'vac-9', caseNumber: 1234, caseOrdinal: 1, status: 'SEARCHING', siteUrl: 'https://exemplo.test/x?a=1' };
+    const VAGA = { id: 'vac-9', caseNumber: 1234, caseOrdinal: 1, status: 'SEARCHING' };
     const comVaga = (patch: Record<string, unknown> = {}) => ({
       ...READY_PATIENT, contractedServices: [{ ...READY_SERVICE, liveVacancy: VAGA, liveVacancyRedacted: false, ...patch }],
     });
@@ -502,42 +502,28 @@ describe('ServicosContratadosCard — ícone de ativação de recrutamento por s
       expect(screen.getByTestId('contracted-service-vacancy-link-svc-1').textContent).toBe('EN1234');
     });
 
-    it('A2: "Link do site" mostra o siteUrl (externo, noopener) e o botão copia EXATAMENTE esse texto', async () => {
-      const writeText = vi.fn().mockResolvedValue(undefined);
-      Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    it('A2: NÃO existe coluna de link do site — nem cabeçalho "Enlace del sitio", nem célula, nem botão de copiar — e o cabeçalho do código é "Vacante" (uma palavra)', () => {
       render(<ServicosContratadosCard patient={comVaga()} />);
-      const url = screen.getByTestId('contracted-service-site-url-svc-1');
-      expect(url.textContent).toBe('https://exemplo.test/x?a=1');
-      expect(url.getAttribute('href')).toBe('https://exemplo.test/x?a=1');
-      expect(url.getAttribute('target')).toBe('_blank');
-      expect(url.getAttribute('rel')).toBe('noopener noreferrer');
-      fireEvent.click(screen.getByTestId('contracted-service-copy-link-svc-1'));
-      await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
-      expect(writeText).toHaveBeenCalledWith('https://exemplo.test/x?a=1');
-      expect(screen.queryByTestId('contracted-service-detail-drawer')).toBeNull();
-    });
-
-    it('vaga SEM link (rascunho / anterior ao Short.io) → "—" no link do site, sem botão de copiar; nada é gerado', () => {
-      render(<ServicosContratadosCard patient={comVaga({ liveVacancy: { ...VAGA, siteUrl: null } })} />);
-      expect(screen.getByTestId('contracted-service-site-link-svc-1').textContent).toBe('—');
-      expect(screen.queryByTestId('contracted-service-copy-link-svc-1')).toBeNull();
-    });
-
-    it('A3: serviço SEM vaga → as duas colunas "—" e "ativar recrutamento" com a regra de hoje (aparece)', () => {
-      render(<ServicosContratadosCard patient={READY_PATIENT} />);
-      expect(screen.getByTestId('contracted-service-vacancy-code-svc-1').textContent).toBe('—');
-      expect(screen.getByTestId('contracted-service-site-link-svc-1').textContent).toBe('—');
-      expect(screen.getByTestId('contracted-service-activate-recruitment-svc-1')).toBeInTheDocument();
-      expect(headers()).toContain('Código de la vacante');
-      expect(headers()).toContain('Enlace del sitio');
-    });
-
-    it('A4: liveVacancyRedacted → as duas colunas NÃO estão no DOM (nem o cabeçalho) e "ativar recrutamento" não aparece', () => {
-      render(<ServicosContratadosCard patient={comVaga({ liveVacancy: null, liveVacancyRedacted: true })} />);
-      expect(screen.queryByTestId('contracted-service-vacancy-code-svc-1')).toBeNull();
-      expect(screen.queryByTestId('contracted-service-site-link-svc-1')).toBeNull();
+      expect(headers()).toContain('Vacante');
       expect(headers()).not.toContain('Código de la vacante');
       expect(headers()).not.toContain('Enlace del sitio');
+      expect(screen.queryByTestId('contracted-service-site-link-svc-1')).toBeNull();
+      expect(screen.queryByTestId('contracted-service-site-url-svc-1')).toBeNull();
+      expect(screen.queryByTestId('contracted-service-copy-link-svc-1')).toBeNull();
+      expect(screen.getAllByRole('row')[1].querySelectorAll('td')).toHaveLength(headers().length);
+    });
+
+    it('A3: serviço SEM vaga → a coluna "—" e "ativar recrutamento" com a regra de hoje (aparece)', () => {
+      render(<ServicosContratadosCard patient={READY_PATIENT} />);
+      expect(screen.getByTestId('contracted-service-vacancy-code-svc-1').textContent).toBe('—');
+      expect(screen.getByTestId('contracted-service-activate-recruitment-svc-1')).toBeInTheDocument();
+      expect(headers()).toContain('Vacante');
+    });
+
+    it('A4: liveVacancyRedacted → a coluna NÃO está no DOM (nem o cabeçalho) e "ativar recrutamento" não aparece', () => {
+      render(<ServicosContratadosCard patient={comVaga({ liveVacancy: null, liveVacancyRedacted: true })} />);
+      expect(screen.queryByTestId('contracted-service-vacancy-code-svc-1')).toBeNull();
+      expect(headers()).not.toContain('Vacante');
       expect(screen.queryByTestId('contracted-service-activate-recruitment-svc-1')).toBeNull();
     });
 
