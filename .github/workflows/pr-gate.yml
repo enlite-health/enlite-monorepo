@@ -170,7 +170,12 @@ jobs:
       # `postularse-iniciado-043`, `kanban-iniciado-blocked-columns` e
       # `kanban-blocked-live-missing-fields` na lista "NÃO exercitados" — o `--grep` casa
       # pelo caminho do arquivo, na mesma convenção do `027-vacancy-case-select`.
-      grep: 'worker-profile-fields-persist|worker-completude-vitrine|027-public-jobs-search-en-code|vacancy-locked-fields|vacancy-schedule-hydration|draft-wizard-locked|027-vacancy-case-select|kanban-pacientes|funil-vacante|lista-vacantes|vacancy-de-baja|patient-status-suspendido-saida-motivo|patient-kanban-suspendido-saida-motivo|patient-itinerary|patient-status-aguardando-financeiro|cid-na-vaga-publica|postularse-iniciado-043|kanban-iniciado-blocked-columns|kanban-blocked-live-missing-fields'
+      # `enderecos-faturamento-044` ENTROU (spec 044): o gate do PR achou
+      # `enderecos-faturamento-044.integration.e2e.ts` (feliz + 2 alternativos, 3 testes) na lista
+      # "NÃO exercitados" — o `--grep` casa pelo caminho do arquivo, na mesma convenção do
+      # `027-vacancy-case-select`. Login pelo mock do CI (`loginComoStaffMock`), como o irmão
+      # `patient-status-aguardando-financeiro`.
+      grep: 'worker-profile-fields-persist|worker-completude-vitrine|027-public-jobs-search-en-code|vacancy-locked-fields|vacancy-schedule-hydration|draft-wizard-locked|027-vacancy-case-select|kanban-pacientes|funil-vacante|lista-vacantes|vacancy-de-baja|patient-status-suspendido-saida-motivo|patient-kanban-suspendido-saida-motivo|patient-itinerary|patient-status-aguardando-financeiro|cid-na-vaga-publica|postularse-iniciado-043|kanban-iniciado-blocked-columns|kanban-blocked-live-missing-fields|enderecos-faturamento-044'
 
   # O agregador. `if: always()` é o que garante que ele reporta mesmo quando
   # tudo acima foi pulado — sem isso, voltaríamos ao problema que este arquivo
