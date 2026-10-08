@@ -86,7 +86,7 @@ test.describe('046 F4 — ordenação pelo cabeçalho @integration', () => {
   const completados = (page: Page) => page.locator('tbody tr [data-testid$="-stage-COMPLETED"]').allTextContents();
   const cabecalho = (page: Page, col: string) => page.getByTestId(`vacancies-col-${col}`);
 
-  test('feliz (A14): clique em Completado ordena as linhas asc e, no 2º clique, desc', async ({ page }) => {
+  test('feliz (A14): clique em Completado ordena as linhas desc (maior para o menor) e, no 2º clique, asc', async ({ page }) => {
     const listas = contaListas(page);
     await abreEBusca(page, MARCA_ORDEM);
     await expect.poll(() => completados(page)).toHaveLength(COMPLETADOS.length);
@@ -96,16 +96,16 @@ test.describe('046 F4 — ordenação pelo cabeçalho @integration', () => {
     await expect(th.locator('[data-sort-icon]')).toHaveCount(0);
 
     await th.getByRole('button').click();
-    await expect(th).toHaveAttribute('aria-sort', 'ascending');
-    await expect(th.locator('[data-sort-icon="asc"]')).toBeVisible();
-    await expect.poll(() => completados(page)).toEqual(['00', '01', '02', '03']);
-    expect(listas.urls[listas.urls.length - 1]).toContain('sort=completed&order=asc');
-
-    await th.getByRole('button').click();
     await expect(th).toHaveAttribute('aria-sort', 'descending');
     await expect(th.locator('[data-sort-icon="desc"]')).toBeVisible();
     await expect.poll(() => completados(page)).toEqual(['03', '02', '01', '00']);
     expect(listas.urls[listas.urls.length - 1]).toContain('sort=completed&order=desc');
+
+    await th.getByRole('button').click();
+    await expect(th).toHaveAttribute('aria-sort', 'ascending');
+    await expect(th.locator('[data-sort-icon="asc"]')).toBeVisible();
+    await expect.poll(() => completados(page)).toEqual(['00', '01', '02', '03']);
+    expect(listas.urls[listas.urls.length - 1]).toContain('sort=completed&order=asc');
   });
 
   test('alt 1 (A15): clicar em Caso e Status não faz nada (sem requisição, sem ícone)', async ({ page }) => {
@@ -146,7 +146,7 @@ test.describe('046 F4 — ordenação pelo cabeçalho @integration', () => {
     await cabecalho(page, 'INVITED').getByRole('button').click();
     await expect(page.getByText(/^1–10 de 23$/)).toBeVisible({ timeout: 15_000 });
     await expect(page.locator('tbody tr')).toHaveCount(10);
-    await expect(cabecalho(page, 'INVITED')).toHaveAttribute('aria-sort', 'ascending');
+    await expect(cabecalho(page, 'INVITED')).toHaveAttribute('aria-sort', 'descending');
   });
 
   test('teclado (A18): Enter e Espaço no botão do cabeçalho ordenam', async ({ page }) => {
@@ -155,8 +155,8 @@ test.describe('046 F4 — ordenação pelo cabeçalho @integration', () => {
     const botao = cabecalho(page, 'COMPLETED').getByRole('button');
     await botao.focus();
     await page.keyboard.press('Enter');
-    await expect.poll(() => completados(page)).toEqual(['00', '01', '02', '03']);
-    await page.keyboard.press('Space');
     await expect.poll(() => completados(page)).toEqual(['03', '02', '01', '00']);
+    await page.keyboard.press('Space');
+    await expect.poll(() => completados(page)).toEqual(['00', '01', '02', '03']);
   });
 });
