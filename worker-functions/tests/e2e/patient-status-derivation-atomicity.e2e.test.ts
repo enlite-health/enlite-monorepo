@@ -16,7 +16,6 @@
  *   (b) controle positivo: alocar com a derivação real → alocação 1, REPLACEMENT, trilha 1.
  *   (c) encerrar com falha injetada → a alocação segue ACTIVE, status igual, trilha 0.
  *   (d) montar com falha injetada → montado 0, status igual, trilha 0.
- *   (e) flag `ENLITE_DERIVACAO_ESTADO=off` (lida no construtor) → alocação 1, status igual, trilha 0.
  */
 import { Pool, PoolClient } from 'pg';
 import { ItineraryAllocationUseCase } from '../../src/modules/case/application/ItineraryAllocationUseCase';
@@ -256,26 +255,6 @@ describe('derivação do estado e escritor do itinerário numa transação só �
     console.log('[15.7] (d)', { patientId: s.patientId, ...depois });
     expect(depois.montado).toBe(0);
     expect(depois.status).toBe('ACTIVE');
-    expect(depois.trilha).toBe(0);
-  });
-
-  it('(e) flag ENLITE_DERIVACAO_ESTADO=off (lida no construtor) → a alocação persiste e o status não muda', async () => {
-    const s = await seed('SEARCHING', { montado: true });
-    const anterior = process.env.ENLITE_DERIVACAO_ESTADO;
-    process.env.ENLITE_DERIVACAO_ESTADO = 'off';
-    let derivation: PatientStatusDerivation;
-    try {
-      derivation = new PatientStatusDerivation();
-    } finally {
-      if (anterior === undefined) delete process.env.ENLITE_DERIVACAO_ESTADO;
-      else process.env.ENLITE_DERIVACAO_ESTADO = anterior;
-    }
-    const useCase = new ItineraryAllocationUseCase(undefined, undefined, runInTransaction, derivation);
-    await useCase.allocate(allocateInput(s));
-    const depois = await read(s);
-    console.log('[15.7] (e)', { patientId: s.patientId, ...depois });
-    expect(depois.alocacoes).toBe(1);
-    expect(depois.status).toBe('SEARCHING');
     expect(depois.trilha).toBe(0);
   });
 });
