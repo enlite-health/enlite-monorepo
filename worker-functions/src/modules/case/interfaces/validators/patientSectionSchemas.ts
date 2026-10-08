@@ -57,8 +57,20 @@ export const generalSectionSchema = z
     gender: z.enum(PATIENT_GENDERS as unknown as [string, ...string[]]).nullable().optional(),
     /** Lista fechada ISO pt/es/en — a mesma de `workers.languages` (lex: cresce só por migration + parecer). */
     languages: z.array(z.enum(PATIENT_LANGUAGES as unknown as [string, ...string[]])).max(PATIENT_LANGUAGES.length).nullable().optional(),
+    /**
+     * Spec 044 (migration 500): endereço de faturamento = o que o Google Places devolveu (texto, cidade,
+     * província). PII da célula `patient_identity`. O servidor só valida e grava: não geocodifica, sem lat/lng.
+     * Os 3 viajam juntos (refine abaixo); `billingAddressFormatted: null` limpa os 3.
+     */
+    billingAddressFormatted: z.string().trim().min(1).max(500).nullable().optional(),
+    billingCity: z.string().trim().min(1).max(200).nullable().optional(),
+    billingProvince: z.string().trim().min(1).max(200).nullable().optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (v) => v.billingAddressFormatted !== undefined || (v.billingCity === undefined && v.billingProvince === undefined),
+    { message: 'billingCity/billingProvince só viajam junto de billingAddressFormatted', path: ['billingAddressFormatted'] },
+  );
 
 /**
  * section = 'clinical' → the full clinical block (PatientRelatedInput clinical subset).

@@ -744,3 +744,80 @@ describe('fetchPatientDetail — contatos externos e marca de emergência (spec 
     expect(result?.emergencyContactRef).toBeNull();
   });
 });
+
+// ── Spec 044: faturamento + cidade/província + contagens de uso por endereço ──────────────────────
+
+describe('fetchPatientDetail — faturamento e uso dos endereços (spec 044, migration 500)', () => {
+  const emptyRelated = () => ({ rows: [] });
+
+  function run(row: Record<string, unknown>, addressRows: Record<string, unknown>[] = []) {
+    const queryImpl = jest.fn();
+    queryImpl
+      .mockResolvedValueOnce({ rows: [row] })
+      .mockResolvedValueOnce(emptyRelated())
+      .mockResolvedValueOnce({ rows: addressRows })
+      .mockResolvedValueOnce(emptyRelated())
+      .mockResolvedValueOnce(emptyRelated())
+      .mockResolvedValueOnce(emptyRelated())
+      .mockResolvedValueOnce(emptyRelated())
+      .mockResolvedValueOnce(emptyRelated());
+    return { queryImpl, result: () => fetchPatientDetail(makePool(queryImpl), makeEncryptionService(), PATIENT_ID) };
+  }
+
+  it('a SQL do paciente projeta as 3 colunas billing_* e o mapeamento as passa adiante', async () => {
+    const { queryImpl, result } = run(basePatientRow({
+      billingAddressFormatted: 'Calle Falsa 123, Ciudad Ficticia', billingCity: 'Ciudad Ficticia', billingProvince: 'Provincia Ficticia',
+    }));
+    const r = await result();
+    const sql = String(queryImpl.mock.calls[0][0]);
+    expect(sql).toContain('p.billing_address_formatted AS "billingAddressFormatted"');
+    expect(sql).toContain('p.billing_city');
+    expect(sql).toContain('p.billing_province');
+    expect(r!.billingAddressFormatted).toBe('Calle Falsa 123, Ciudad Ficticia');
+    expect(r!.billingCity).toBe('Ciudad Ficticia');
+    expect(r!.billingProvince).toBe('Provincia Ficticia');
+  });
+
+  it('billing ausente na linha → null, nunca undefined', async () => {
+    const { result } = run(basePatientRow());
+    const r = await result();
+    expect(r!.billingAddressFormatted).toBeNull();
+    expect(r!.billingCity).toBeNull();
+    expect(r!.billingProvince).toBeNull();
+  });
+
+  it('endereços: city/state e as contagens de uso chegam como números', async () => {
+    const { result } = run(basePatientRow(), [{
+      id: 'addr-1', address_type: 'domicilio_propio', address_type_other: null, is_default: true,
+      address_formatted: 'Calle Falsa 123', address_raw: null, complement: null, display_order: 1, lat: null, lng: null,
+      city: 'Ciudad Ficticia', state: 'Provincia Ficticia', vacancy_ref_count: '2', service_ref_count: 1,
+    }]);
+    const a = (await result())!.addresses[0];
+    expect(a.city).toBe('Ciudad Ficticia');
+    expect(a.state).toBe('Provincia Ficticia');
+    expect(a.vacancyRefCount).toBe(2);
+    expect(a.serviceRefCount).toBe(1);
+  });
+
+  it('endereço sem city/state e sem contagem (defensivo) → null, 0, 0', async () => {
+    const { result } = run(basePatientRow(), [{
+      id: 'addr-2', address_type: null, address_type_other: null, is_default: false,
+      address_formatted: 'Sin ciudad', address_raw: null, complement: null, display_order: 2, lat: null, lng: null,
+    }]);
+    const a = (await result())!.addresses[0];
+    expect(a.city).toBeNull();
+    expect(a.state).toBeNull();
+    expect(a.vacancyRefCount).toBe(0);
+    expect(a.serviceRefCount).toBe(0);
+  });
+
+  it('as contagens de uso NÃO filtram status nem deleted_at (vaga fechada/soft-deleted e serviço inativo seguram a FK)', async () => {
+    const { queryImpl, result } = run(basePatientRow());
+    await result();
+    const addrSql = String(queryImpl.mock.calls[2][0]);
+    expect(addrSql).toContain('FROM job_postings jp WHERE jp.patient_address_id = patient_addresses.id)');
+    expect(addrSql).toContain('FROM patient_contracted_services pcs WHERE pcs.address_id = patient_addresses.id)');
+    expect(addrSql).not.toMatch(/jp\.(status|deleted_at)/);
+    expect(addrSql).not.toMatch(/pcs\.(active|status)/);
+  });
+});
