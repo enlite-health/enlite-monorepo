@@ -25,15 +25,15 @@ describe('AdminVacanciesPage — ordenação', () => {
     });
   });
 
-  it('A14: sem clique não manda sort/order; 1º clique asc, 2º desc', async () => {
+  it('A14: sem clique não manda sort/order; 1º clique desc, 2º asc', async () => {
     renderPage();
     expect(lastFilters().sort).toBeUndefined();
     expect(lastFilters().order).toBeUndefined();
     const th = screen.getByTestId('vacancies-col-COMPLETED');
     await userEvent.click(within(th).getByRole('button'));
-    expect(lastFilters()).toMatchObject({ sort: 'completed', order: 'asc' });
-    await userEvent.click(within(screen.getByTestId('vacancies-col-COMPLETED')).getByRole('button'));
     expect(lastFilters()).toMatchObject({ sort: 'completed', order: 'desc' });
+    await userEvent.click(within(screen.getByTestId('vacancies-col-COMPLETED')).getByRole('button'));
+    expect(lastFilters()).toMatchObject({ sort: 'completed', order: 'asc' });
   });
 
   it('A16: estando na página 3, ordenar volta para a página 1', async () => {
@@ -43,7 +43,7 @@ describe('AdminVacanciesPage — ordenação', () => {
     await userEvent.click(next);
     expect(lastFilters().offset).toBe('40');
     await userEvent.click(within(screen.getByTestId('vacancies-col-INVITED')).getByRole('button'));
-    expect(lastFilters()).toMatchObject({ sort: 'invited', order: 'asc', offset: '0' });
+    expect(lastFilters()).toMatchObject({ sort: 'invited', order: 'desc', offset: '0' });
   });
 
   it('refetch (isLoading=true) não troca a tabela pelo esqueleto: o botão focado do cabeçalho continua o mesmo', async () => {
