@@ -7,7 +7,7 @@ describe('VacanciesTable', () => {
   const realApiData: VacancyRow[] = [
     {
       id: 'fd269cde-d8c9-4fdc-88a9-5b19ebcdb531',
-      caso: 'Caso 349',
+      caseNumber: 349, caseOrdinal: 1,
       status: 'Esperando Ativação',
       diasAberto: '05',
       stageCounts: {
@@ -28,7 +28,7 @@ describe('VacanciesTable', () => {
     },
     {
       id: 'c83963ee-beaf-45f2-88a3-365147b0c205',
-      caso: 'Caso 348',
+      caseNumber: 348, caseOrdinal: 1,
       status: 'Esperando Ativação',
       diasAberto: '03',
       stageCounts: {
@@ -95,8 +95,8 @@ describe('VacanciesTable', () => {
   it('should render vacancy rows when data is provided', () => {
     render(<VacanciesTable vacancies={realApiData} />);
 
-    expect(screen.getByText('Caso 349')).toBeInTheDocument();
-    expect(screen.getByText('Caso 348')).toBeInTheDocument();
+    expect(screen.getByText('349#01')).toBeInTheDocument();
+    expect(screen.getByText('348#01')).toBeInTheDocument();
 
     const statusElements = screen.getAllByText('Esperando Ativação');
     expect(statusElements).toHaveLength(2);
@@ -173,7 +173,7 @@ describe('VacanciesTable', () => {
   it('calls onRowClick with the row id AND isDraft when the row is clicked (F25/D425, Fase 3 — quem decide o destino em rascunho é o pai)', () => {
     const onRowClick = vi.fn();
     render(<VacanciesTable vacancies={realApiData} onRowClick={onRowClick} />);
-    fireEvent.click(screen.getByText('Caso 349'));
+    fireEvent.click(screen.getByText('349#01'));
     expect(onRowClick).toHaveBeenCalledWith('fd269cde-d8c9-4fdc-88a9-5b19ebcdb531', false);
   });
 });
@@ -182,7 +182,7 @@ describe('VacanciesTable', () => {
 describe('VacanciesTable — última ação (DX-3.5) e ordem das colunas', () => {
   const base: VacancyRow = {
     id: 'vac-x',
-    caso: 'Caso X',
+    caseNumber: 9999, caseOrdinal: 1,
     status: 'Activo',
     diasAberto: '01',
     stageCounts: {},
@@ -225,5 +225,29 @@ describe('VacanciesTable — última ação (DX-3.5) e ordem das colunas', () =>
       'applicants',
       'missing',
     ]);
+  });
+});
+
+// Coluna "Caso" (spec 046 F2): o texto vem da função com dono, a célula não concatena nada.
+describe('VacanciesTable — coluna Caso (spec 046 F2, A5/A7/A8)', () => {
+  const base: VacancyRow = {
+    id: 'vac-c', caseNumber: 1234, caseOrdinal: 2, status: 'Activo', diasAberto: '01',
+    stageCounts: {}, postulados: '0', faltantes: '0', isDraft: false, lastActionAt: null,
+  };
+  const cellOf = () => screen.getByTestId('vacancy-row-vac-c').querySelectorAll('td')[1];
+
+  it('A5: caso 1234, posição 2 -> exatamente EN1234#02', () => {
+    render(<VacanciesTable vacancies={[base]} />);
+    expect(cellOf().textContent).toBe('EN1234#02');
+  });
+
+  it('A8: caso legado 812, posição 1 -> 812#01 (sem EN)', () => {
+    render(<VacanciesTable vacancies={[{ ...base, caseNumber: 812, caseOrdinal: 1 }]} />);
+    expect(cellOf().textContent).toBe('812#01');
+  });
+
+  it('A7: vaga sem paciente -> "—"', () => {
+    render(<VacanciesTable vacancies={[{ ...base, caseNumber: null, caseOrdinal: null }]} />);
+    expect(cellOf().textContent).toBe('—');
   });
 });

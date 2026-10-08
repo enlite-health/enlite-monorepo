@@ -45,7 +45,7 @@ const FAKE_ID_TOKEN =
 const MOCK_VACANCIES = [
   {
     id: 'v-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-    caso: 'Caso 234-12',
+    caseNumber: 234, caseOrdinal: 12,
     status: 'Activo',
     statusRaw: 'ACTIVE',
     priority: 'URGENT',
@@ -58,7 +58,7 @@ const MOCK_VACANCIES = [
   },
   {
     id: 'v-bbbb-bbbb-bbbb-bbbbbbbbbbbb',
-    caso: 'Caso 245-04',
+    caseNumber: 245, caseOrdinal: 4,
     status: 'En Espera',
     statusRaw: 'ON_HOLD',
     priority: 'HIGH',
@@ -71,7 +71,7 @@ const MOCK_VACANCIES = [
   },
   {
     id: 'v-cccc-cccc-cccc-cccccccccccc',
-    caso: 'Caso 257-02',
+    caseNumber: 257, caseOrdinal: 2,
     status: 'Buscando AT',
     statusRaw: 'SEARCHING',
     priority: 'NORMAL',
@@ -213,7 +213,7 @@ test.describe('AdminVacanciesPage — list visual + structural regression @integ
     await loginAsAdmin(page);
 
     await page.goto('/admin/vacancies');
-    await expect(page.getByText('Caso 234-12')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText('234#12')).toBeVisible({ timeout: 15_000 });
 
     // Removed column must not be in the DOM
     await expect(page.getByRole('columnheader', { name: /Grado de Dependencia/i })).toHaveCount(0);
@@ -243,7 +243,7 @@ test.describe('AdminVacanciesPage — list visual + structural regression @integ
     await loginAsAdmin(page);
 
     await page.goto('/admin/vacancies');
-    await expect(page.getByText('Caso 234-12')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText('234#12')).toBeVisible({ timeout: 15_000 });
 
     const statusSelect = filterBar(page).locator('select').nth(0);
     const values = await statusSelect.locator('option').evaluateAll(
@@ -267,7 +267,7 @@ test.describe('AdminVacanciesPage — list visual + structural regression @integ
     await loginAsAdmin(page);
 
     await page.goto('/admin/vacancies');
-    await expect(page.getByText('Caso 234-12')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText('234#12')).toBeVisible({ timeout: 15_000 });
 
     const statusSelect = filterBar(page).locator('select').nth(0);
 
@@ -283,9 +283,9 @@ test.describe('AdminVacanciesPage — list visual + structural regression @integ
     await loginAsAdmin(page);
 
     await page.goto('/admin/vacancies');
-    await expect(page.getByText('Caso 234-12')).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByText('Caso 245-04')).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByText('Caso 257-02')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('234#12')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText('245#04')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('257#02')).toBeVisible({ timeout: 10_000 });
 
     await expect(page).toHaveScreenshot('admin-vacancies-list.png', {
       fullPage: true,

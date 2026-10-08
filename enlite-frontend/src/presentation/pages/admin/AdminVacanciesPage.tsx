@@ -180,7 +180,8 @@ export function AdminVacanciesPage(): JSX.Element {
       const vac = v as Record<string, unknown>;
       return {
         id: vac.id as string,
-        caso: vac.caso ? String(vac.caso) : vac.id as string,
+        caseNumber: (vac.caseNumber as number | null | undefined) ?? null,
+        caseOrdinal: (vac.caseOrdinal as number | null | undefined) ?? null,
         status: (vac.status as string) || '—',
         diasAberto: (vac.diasAberto as string) || '—',
         stageCounts: (vac.stageCounts as Record<string, number> | undefined) ?? {},

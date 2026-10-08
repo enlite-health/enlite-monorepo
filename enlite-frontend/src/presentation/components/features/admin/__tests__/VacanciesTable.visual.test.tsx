@@ -15,7 +15,7 @@ import { VacanciesTable, VacancyRow } from '../VacanciesTable';
 const MOCK_VACANCIES: VacancyRow[] = [
   {
     id: '1',
-    caso: 'Caso 100',
+    caseNumber: 100, caseOrdinal: 1,
     status: 'Activo',
     diasAberto: '05',
     stageCounts: {

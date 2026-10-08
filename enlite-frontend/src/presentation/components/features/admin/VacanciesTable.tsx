@@ -13,11 +13,15 @@ import {
   VACANCY_FUNNEL_COLUMNS,
   columnCount,
 } from '@presentation/components/features/admin/VacancyDetail/Funnel/funnelTabsConfig';
+import { formatVacancyCase } from '@domain/value-objects/caseNumberFormat';
 import { formatDateTime } from '@presentation/components/features/admin/VacancyDetail/draftVacancyFormat';
 
 export interface VacancyRow {
   id: string;
-  caso: string;
+  /** Número do caso lido do paciente; null = vaga sem paciente visível (a célula mostra "—"). */
+  caseNumber: number | null;
+  /** Posição da vaga dentro do caso (`#01`). */
+  caseOrdinal: number | null;
   status: string;
   diasAberto: string;
   /** As 8 contagens do funil (DX-2.7, Fase 4: +QUICK_RESPONSE_TEAM), recorte do board — vêm prontas do backend (stageCounts). */
@@ -109,7 +113,7 @@ export function VacanciesTable({ vacancies, onRowClick }: VacanciesTableProps): 
                     <Eye className="w-4 h-4 text-gray-800" aria-label={t('admin.vacancies.table.view')} />
                   </div>
                 </TableCell>
-                <TableCell weight="medium">{row.caso}</TableCell>
+                <TableCell weight="medium">{formatVacancyCase(row.caseNumber, row.caseOrdinal)}</TableCell>
                 <TableCell unwrapped className="whitespace-nowrap">
                   <div className="flex items-center gap-2">
                     <Text as="span" size="sm" weight="medium">{row.status}</Text>

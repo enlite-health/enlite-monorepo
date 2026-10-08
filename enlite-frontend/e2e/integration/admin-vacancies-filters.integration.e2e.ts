@@ -42,7 +42,7 @@ const FAKE_ID_TOKEN =
 const MOCK_VACANCIES = [
   {
     id: 'v-f001',
-    caso: 'Caso 300-01',
+    caseNumber: 300, caseOrdinal: 1,
     status: 'Activo',
     statusRaw: 'ACTIVE',
     priority: 'NORMAL',
@@ -200,7 +200,7 @@ test.describe('AdminVacanciesPage — advanced filters @integration', () => {
   test('renders all 6 new filter labels in es-AR', async ({ page }) => {
     await loginAsAdmin(page);
     await page.goto('/admin/vacancies');
-    await expect(page.getByText('Caso 300-01')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText('300#01')).toBeVisible({ timeout: 15_000 });
 
     const bar = filterBar(page);
     // Use .first() to avoid strict-mode issues with repeated text in options
@@ -215,7 +215,7 @@ test.describe('AdminVacanciesPage — advanced filters @integration', () => {
   test('filter-options populates Provincia dropdown from API', async ({ page }) => {
     await loginAsAdmin(page);
     await page.goto('/admin/vacancies');
-    await expect(page.getByText('Caso 300-01')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText('300#01')).toBeVisible({ timeout: 15_000 });
 
     // Provincia é combobox com busca (REQ-06): a lista só existe depois de abrir.
     await page.getByTestId('vacancy-filter-province').click();
@@ -227,7 +227,7 @@ test.describe('AdminVacanciesPage — advanced filters @integration', () => {
   test('selecting Tipo=AT sends worker_type=AT in request', async ({ page }) => {
     await loginAsAdmin(page);
     await page.goto('/admin/vacancies');
-    await expect(page.getByText('Caso 300-01')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText('300#01')).toBeVisible({ timeout: 15_000 });
 
     // Tipo is the 2nd select (0-indexed: 0=status, 1=type)
     const selects = page.locator('select');
@@ -246,7 +246,7 @@ test.describe('AdminVacanciesPage — advanced filters @integration', () => {
   test('selecting Sexo=F sends required_sex=F in request', async ({ page }) => {
     await loginAsAdmin(page);
     await page.goto('/admin/vacancies');
-    await expect(page.getByText('Caso 300-01')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText('300#01')).toBeVisible({ timeout: 15_000 });
 
     // Sexo is the 5th select (0=status,1=type,2=province,3=city,4=sex)
     const selects = page.locator('select');
@@ -266,7 +266,7 @@ test.describe('AdminVacanciesPage — advanced filters @integration', () => {
   test('selecting days via MultiSelect sends days in request', async ({ page }) => {
     await loginAsAdmin(page);
     await page.goto('/admin/vacancies');
-    await expect(page.getByText('Caso 300-01')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText('300#01')).toBeVisible({ timeout: 15_000 });
 
     // MultiSelect trigger button — the one with aria-expanded attribute
     const multiBtn = page.locator('[aria-expanded]').first();
@@ -291,7 +291,7 @@ test.describe('AdminVacanciesPage — advanced filters @integration', () => {
   test('setting time range sends time_from and time_to together', async ({ page }) => {
     await loginAsAdmin(page);
     await page.goto('/admin/vacancies');
-    await expect(page.getByText('Caso 300-01')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText('300#01')).toBeVisible({ timeout: 15_000 });
 
 
     // First set only time_from — should NOT trigger a request with time_to absent
@@ -318,7 +318,7 @@ test.describe('AdminVacanciesPage — advanced filters @integration', () => {
   test('screenshot: filter bar with Tipo=AT applied', async ({ page }) => {
     await loginAsAdmin(page);
     await page.goto('/admin/vacancies');
-    await expect(page.getByText('Caso 300-01')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText('300#01')).toBeVisible({ timeout: 15_000 });
 
     // Apply Tipo = AT (2nd select)
     const selects = page.locator('select');
@@ -343,7 +343,7 @@ test.describe('AdminVacanciesPage — advanced filters @integration', () => {
   test('Limpiar filtros button resets Tipo filter', async ({ page }) => {
     await loginAsAdmin(page);
     await page.goto('/admin/vacancies');
-    await expect(page.getByText('Caso 300-01')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText('300#01')).toBeVisible({ timeout: 15_000 });
 
     // Apply Tipo = AT (2nd select)
     const selects = page.locator('select');
