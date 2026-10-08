@@ -15,13 +15,10 @@ import {
 } from '@presentation/components/features/admin/VacancyDetail/Funnel/funnelTabsConfig';
 import { formatDateTime } from '@presentation/components/features/admin/VacancyDetail/draftVacancyFormat';
 
-export type VacancyPriority = 'URGENT' | 'HIGH' | 'NORMAL' | 'LOW';
-
 export interface VacancyRow {
   id: string;
   caso: string;
   status: string;
-  priority: VacancyPriority | null;
   diasAberto: string;
   /** As 8 contagens do funil (DX-2.7, Fase 4: +QUICK_RESPONSE_TEAM), recorte do board — vêm prontas do backend (stageCounts). */
   stageCounts: Record<string, number>;
@@ -30,8 +27,6 @@ export interface VacancyRow {
   isDraft: boolean;
   /** GREATEST(última nota, último movimento de funil, talentum_published_at) — DX-3.5. null = sem nenhuma. */
   lastActionAt: string | null;
-  /** Dias de calendário (fuso da operação) desde a última nota DIVULGACAO — DX-3.6. null = sem nota. */
-  daysWithoutDivulgation: number | null;
 }
 
 interface VacanciesTableProps {
@@ -44,7 +39,6 @@ interface VacanciesTableProps {
 const STATIC_COLUMNS_BEFORE = [
   { key: 'case', hiddenClass: '' },
   { key: 'status', hiddenClass: '' },
-  { key: 'priority', hiddenClass: '' },
 ] as const;
 
 const STATIC_COLUMNS_AFTER = [
@@ -52,35 +46,18 @@ const STATIC_COLUMNS_AFTER = [
   { key: 'missing', hiddenClass: 'hidden md:table-cell' },
 ] as const;
 
+/**
+ * Spec 046 F1: "Confirmados" sai da LISTA, mas `VACANCY_FUNNEL_COLUMNS` é global — o Kanban e as
+ * abas do funil o usam. O filtro é local; o array global não muda.
+ */
+const LIST_FUNNEL_COLUMNS = VACANCY_FUNNEL_COLUMNS.filter((c) => c.id !== 'CONFIRMED');
+
 const TOTAL_COLUMNS =
+  1 + // coluna do olho
   STATIC_COLUMNS_BEFORE.length +
-  2 + // última ação + dias sem divulgação (DX-3.7)
-  VACANCY_FUNNEL_COLUMNS.length +
-  STATIC_COLUMNS_AFTER.length +
-  1; // + coluna do olho
-
-const PRIORITY_BADGE: Record<VacancyPriority, string> = {
-  URGENT: 'bg-red-100 text-red-700',
-  HIGH:   'bg-orange-100 text-orange-700',
-  NORMAL: 'bg-slate-100 text-slate-700',
-  LOW:    'bg-emerald-100 text-emerald-700',
-};
-
-function PriorityCell({ priority }: { priority: VacancyPriority | null }): JSX.Element {
-  const { t } = useTranslation();
-  if (!priority) {
-    return <Text as="span" size="sm" weight="medium" color="secondary">—</Text>;
-  }
-  const badgeClass = PRIORITY_BADGE[priority];
-  const label = t(`admin.vacancies.priorityOptions.${priority.toLowerCase()}`);
-  return (
-    <span className={`${badgeClass} px-2 py-0.5 rounded-full inline-block`}>
-      <Text as="span" size="xs" weight="medium" color="inherit">
-        {label}
-      </Text>
-    </span>
-  );
-}
+  1 + // última ação
+  LIST_FUNNEL_COLUMNS.length +
+  STATIC_COLUMNS_AFTER.length;
 
 export function VacanciesTable({ vacancies, onRowClick }: VacanciesTableProps): JSX.Element {
   const { t, i18n } = useTranslation();
@@ -99,10 +76,7 @@ export function VacanciesTable({ vacancies, onRowClick }: VacanciesTableProps): 
           <TableHead data-testid="vacancies-col-last-action" className="whitespace-nowrap">
             {t('admin.vacancies.table.lastAction')}
           </TableHead>
-          <TableHead data-testid="vacancies-col-days-without-divulgation" className="whitespace-nowrap">
-            {t('admin.vacancies.table.daysWithoutDivulgation')}
-          </TableHead>
-          {VACANCY_FUNNEL_COLUMNS.map((c) => (
+          {LIST_FUNNEL_COLUMNS.map((c) => (
             <TableHead key={c.id} data-testid={`vacancies-col-${c.id}`} className="whitespace-nowrap hidden md:table-cell">
               {t(`admin.kanban.columns.${c.id}`)}
             </TableHead>
@@ -153,24 +127,13 @@ export function VacanciesTable({ vacancies, onRowClick }: VacanciesTableProps): 
                     )}
                   </div>
                 </TableCell>
-                <TableCell unwrapped className="whitespace-nowrap">
-                  <PriorityCell priority={row.priority} />
-                </TableCell>
                 <TableCell
                   className="whitespace-nowrap"
                   data-testid={`vacancies-row-${row.id}-last-action`}
                 >
                   {formatDateTime(row.lastActionAt, i18n.language) ?? t('admin.vacancies.table.noLastAction')}
                 </TableCell>
-                <TableCell
-                  className="whitespace-nowrap"
-                  data-testid={`vacancies-row-${row.id}-days-without-divulgation`}
-                >
-                  {row.daysWithoutDivulgation == null
-                    ? t('admin.vacancies.table.noDivulgationRecord')
-                    : String(row.daysWithoutDivulgation)}
-                </TableCell>
-                {VACANCY_FUNNEL_COLUMNS.map((c) => (
+                {LIST_FUNNEL_COLUMNS.map((c) => (
                   <TableCell
                     key={c.id}
                     weight="medium"

@@ -186,7 +186,7 @@ async function loginAsAdmin(page: Page): Promise<void> {
 /**
  * Returns the advanced-filters row (second row inside the filter bar).
  * The filter bar is the rounded-bottom container. The advanced row is the
- * second flex row within it (after search + status + priority).
+ * second flex row within it (after search + status).
  */
 function filterBar(page: Page) {
   return page.locator('div.rounded-b-\\[20px\\]').first();
@@ -229,7 +229,7 @@ test.describe('AdminVacanciesPage — advanced filters @integration', () => {
     await page.goto('/admin/vacancies');
     await expect(page.getByText('Caso 300-01')).toBeVisible({ timeout: 15_000 });
 
-    // Tipo is the 3rd select (0-indexed: 0=status, 1=priority, 2=type)
+    // Tipo is the 2nd select (0-indexed: 0=status, 1=type)
     const selects = page.locator('select');
 
     const reqWait = page.waitForRequest((req) =>
@@ -238,7 +238,7 @@ test.describe('AdminVacanciesPage — advanced filters @integration', () => {
       !req.url().includes('stats') &&
       req.url().includes('worker_type=AT'),
     );
-    await selects.nth(2).selectOption('AT');
+    await selects.nth(1).selectOption('AT');
     const req = await reqWait;
     expect(req.url()).toContain('worker_type=AT');
   });
@@ -248,7 +248,7 @@ test.describe('AdminVacanciesPage — advanced filters @integration', () => {
     await page.goto('/admin/vacancies');
     await expect(page.getByText('Caso 300-01')).toBeVisible({ timeout: 15_000 });
 
-    // Sexo is the 6th select (0=status,1=priority,2=type,3=province,4=city,5=sex)
+    // Sexo is the 5th select (0=status,1=type,2=province,3=city,4=sex)
     const selects = page.locator('select');
 
     const reqWait = page.waitForRequest((req) =>
@@ -257,8 +257,8 @@ test.describe('AdminVacanciesPage — advanced filters @integration', () => {
       !req.url().includes('stats') &&
       req.url().includes('required_sex=F'),
     );
-    // Selects nativos restantes: status(0), priority(1), type(2), sex(3) — Provincia/Localidad/horários viraram combobox.
-    await selects.nth(3).selectOption('F');
+    // Selects nativos restantes: status(0), type(1), sex(2) — Provincia/Localidad/horários viraram combobox.
+    await selects.nth(2).selectOption('F');
     const req = await reqWait;
     expect(req.url()).toContain('required_sex=F');
   });
@@ -320,9 +320,9 @@ test.describe('AdminVacanciesPage — advanced filters @integration', () => {
     await page.goto('/admin/vacancies');
     await expect(page.getByText('Caso 300-01')).toBeVisible({ timeout: 15_000 });
 
-    // Apply Tipo = AT (3rd select)
+    // Apply Tipo = AT (2nd select)
     const selects = page.locator('select');
-    await selects.nth(2).selectOption('AT');
+    await selects.nth(1).selectOption('AT');
 
     // Wait for filter request to complete
     await page.waitForResponse((res) =>
@@ -345,9 +345,9 @@ test.describe('AdminVacanciesPage — advanced filters @integration', () => {
     await page.goto('/admin/vacancies');
     await expect(page.getByText('Caso 300-01')).toBeVisible({ timeout: 15_000 });
 
-    // Apply Tipo = AT (3rd select)
+    // Apply Tipo = AT (2nd select)
     const selects = page.locator('select');
-    await selects.nth(2).selectOption('AT');
+    await selects.nth(1).selectOption('AT');
 
     // Limpiar button should appear
     const clearBtn = filterBar(page).getByText('Limpiar filtros');
@@ -356,6 +356,6 @@ test.describe('AdminVacanciesPage — advanced filters @integration', () => {
     await clearBtn.click();
 
     // After clear, the Tipo select should be back to empty
-    await expect(selects.nth(2)).toHaveValue('');
+    await expect(selects.nth(1)).toHaveValue('');
   });
 });

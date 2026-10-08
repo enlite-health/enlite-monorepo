@@ -4,8 +4,8 @@
  * Integration E2E — Fase 3 da change cadeia-paciente-vacante-itinerario
  * (`CH/execucao/fase-3.md`, P20-P23): anotações CRM da vaga (aba
  * "Anotaciones", DX-3.3/DX-3.8), "última ação" (DX-3.5) e "dias sem
- * divulgação" (DX-3.6) na lista de vacantes, e a ordem literal das colunas
- * novas (DX-3.7). Frontend real (Vite) + backend real (Docker,
+ * divulgação" (DX-3.6, REMOVIDA da lista na spec 046 F1) na lista de vacantes, e a
+ * ordem literal das colunas (DX-3.7). Frontend real (Vite) + backend real (Docker,
  * USE_MOCK_AUTH=true) + Postgres real, mesma estratégia de auth de
  * `funil-vacante.integration.e2e.ts`.
  *
@@ -15,11 +15,14 @@
  *   P21 — lista-vacantes-ultima-acao: a célula bate com o `occurredAt` da
  *         nota, e um PUT que só toca `updated_at` NÃO move a célula
  *         (controle positivo de que `updated_at` avançou).
- *   P22 — lista-vacantes-colunas: ordem literal das 14 colunas + 1 listagem
- *         por página (nenhuma por-vaga).
- *   P23 — lista-vacantes-dias-sem-divulgacao: dias de calendário (Buenos
- *         Aires) desde a última nota DIVULGACAO; sem nota → "sin registro",
- *         nunca "0".
+ *   P22 — lista-vacantes-colunas: ordem literal das 13 colunas (spec 046 F1:
+ *         sem Prioridad, Días sin difusión nem Confirmados) + 1 listagem
+ *         por página (nenhuma por-vaga) + payload sem os 3 campos.
+ *   P23 — lista-vacantes-sem-dias-sem-divulgacao (alt 2 da 046 F1): mesmo com
+ *         nota DIVULGACAO, a coluna e o campo não existem; "Última acción"
+ *         segue preenchida.
+ *   P24 — lista-vacantes-kanban-confirmados (alt 1 da 046 F1): o Kanban da
+ *         vaga AINDA tem a coluna Confirmados.
  */
 
 import { readFileSync } from 'fs';
@@ -233,7 +236,7 @@ test.describe('lista de vacantes e anotações @integration', () => {
   });
 
   // ── P22 · ordem literal das colunas + 1 listagem por página ────────────────
-  test('lista-vacantes-colunas', async ({ page }) => {
+  test('lista-vacantes-colunas', async ({ page, request }) => {
     const requestUrls: string[] = [];
     page.on('request', (req) => {
       if (req.method() === 'GET') requestUrls.push(req.url());
@@ -259,21 +262,25 @@ test.describe('lista de vacantes e anotações @integration', () => {
     expect(ids).toEqual([
       'vacancies-col-case',
       'vacancies-col-status',
-      'vacancies-col-priority',
       'vacancies-col-last-action',
-      'vacancies-col-days-without-divulgation',
       'vacancies-col-COMPATIBLE',
       'vacancies-col-INVITED',
       'vacancies-col-INICIADO',
       'vacancies-col-PRE_SCREENING',
       'vacancies-col-COMPLETED',
-      'vacancies-col-CONFIRMED',
       'vacancies-col-SELECTED',
       'vacancies-col-QUICK_RESPONSE_TEAM',
       'vacancies-col-REJECTED',
       'vacancies-col-applicants',
       'vacancies-col-missing',
     ]);
+
+    // A3 (046 F1): payload real sem os 3 campos, e ainda com lastActionAt.
+    const rowA = await readVacancyListRow(request, BACKEND_URL, tokenFor(MOCK_STAFF), vacancyA);
+    expect(rowA).not.toHaveProperty('priority');
+    expect(rowA).not.toHaveProperty('confirmados');
+    expect(rowA).not.toHaveProperty('daysWithoutDivulgation');
+    expect(rowA).toHaveProperty('lastActionAt');
 
     const listagensDistintas = new Set(requestUrls.filter((u) => /\/api\/admin\/vacancies\?/.test(u))).size;
     const porVaga = requestUrls.filter((u) => /\/api\/admin\/vacancies\/[0-9a-f-]{36}/.test(u)).length;
@@ -282,9 +289,9 @@ test.describe('lista de vacantes e anotações @integration', () => {
     expect(porVaga, 'requests por-vaga nesta tela').toBe(0);
   });
 
-  // ── P23 · dias sem divulgação (calendário de Buenos Aires) ─────────────────
-  test('lista-vacantes-dias-sem-divulgacao', async ({ page, request }) => {
-    // VB: nota DIVULGACAO 5 dias atrás.
+  // ── P23 · dias sem divulgação saiu; "Última acción" segue preenchida ───────
+  test('lista-vacantes-sem-dias-sem-divulgacao', async ({ page, request }) => {
+    // VB: nota DIVULGACAO 5 dias atrás (antes da 046 F1 isto dava "5" na coluna).
     await loginAs(page, MOCK_STAFF);
     await page.goto(`/admin/vacancies/${vacancyB}`);
     await page.getByTestId('vacancy-tab-notes').click();
@@ -297,32 +304,36 @@ test.describe('lista de vacantes e anotações @integration', () => {
     });
     expect(statusB, 'POST /notes (VB, DIVULGACAO)').toBe(201);
 
-    // VC: nota CONTATO (sem DIVULGACAO nenhuma) → "sin registro".
-    await page.goto(`/admin/vacancies/${vacancyC}`);
-    await page.getByTestId('vacancy-tab-notes').click();
-    await expect(page.getByTestId('vacancy-notes-panel')).toBeVisible({ timeout: 15_000 });
-    const statusC = await createNoteViaUi(page, {
-      category: 'CONTATO',
-      contact: 'Hija',
-      body: 'Consulta',
-    });
-    expect(statusC, 'POST /notes (VC, CONTATO)').toBe(201);
-
     await page.goto('/admin/vacancies');
     await expect(page.getByTestId(`vacancy-row-${vacancyB}`)).toBeVisible({ timeout: 15_000 });
 
-    await expect(page.getByTestId(`vacancies-row-${vacancyB}-days-without-divulgation`)).toHaveText('5');
+    // A coluna e a célula não existem mais.
+    await expect(page.getByTestId('vacancies-col-days-without-divulgation')).toHaveCount(0);
+    await expect(page.getByTestId(`vacancies-row-${vacancyB}-days-without-divulgation`)).toHaveCount(0);
 
+    // Alt 2: "Última acción" continua preenchida (a nota acabou de ser criada).
     const semRegistro = JSON.parse(readFileSync('src/infrastructure/i18n/locales/es.json', 'utf8')).admin.vacancies
-      .table.noDivulgationRecord;
-    const cellC = page.getByTestId(`vacancies-row-${vacancyC}-days-without-divulgation`);
-    await expect(cellC).toHaveText(semRegistro);
-    await expect(cellC).not.toHaveText('0');
+      .table.noLastAction;
+    const lastAction = page.getByTestId(`vacancies-row-${vacancyB}-last-action`);
+    await expect(lastAction).not.toHaveText(semRegistro);
+    await expect(lastAction).not.toHaveText('');
 
     const rowB = await readVacancyListRow(request, BACKEND_URL, tokenFor(MOCK_STAFF), vacancyB);
-    expect(rowB.daysWithoutDivulgation, 'VB.daysWithoutDivulgation').toBe(5);
-    const rowC = await readVacancyListRow(request, BACKEND_URL, tokenFor(MOCK_STAFF), vacancyC);
-    expect(rowC.daysWithoutDivulgation, 'VC.daysWithoutDivulgation').toBeNull();
+    expect(rowB).not.toHaveProperty('daysWithoutDivulgation');
+    expect(rowB.lastActionAt, 'VB.lastActionAt').not.toBeNull();
+  });
+
+  // ── P24 · o Kanban da vaga AINDA mostra Confirmados (alt 1 da 046 F1) ──────
+  test('lista-vacantes-kanban-confirmados', async ({ page }) => {
+    await page.addInitScript(
+      ([key]) => window.localStorage.setItem(key, 'kanban'),
+      [`vacancy-funnel-view-${vacancyA}`],
+    );
+    await loginAs(page, MOCK_STAFF);
+    await page.goto(`/admin/vacancies/${vacancyA}`);
+    const col = page.getByTestId('kanban-column-CONFIRMED');
+    await expect(col).toBeVisible({ timeout: 15_000 });
+    await expect(col).toContainText('Confirmados');
   });
 
   // ── alt · "Cuándo" no futuro: o servidor recusa (400), a tela avisa ─────────

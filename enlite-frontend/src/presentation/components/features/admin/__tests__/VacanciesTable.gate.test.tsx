@@ -12,14 +12,12 @@ const draftRow: VacancyRow = {
   id: 'v1',
   caso: 'Caso 1',
   status: 'Esperando Ativação',
-  priority: 'NORMAL',
   diasAberto: '01',
   stageCounts: { INVITED: 1 },
   postulados: '1',
   faltantes: '1',
   isDraft: true,
   lastActionAt: null,
-  daysWithoutDivulgation: null,
 };
 
 const publishedRow: VacancyRow = { ...draftRow, id: 'v2', isDraft: false };

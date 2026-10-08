@@ -4,7 +4,6 @@ import { ErrorResponseSchema, OkMessage, UuidParam } from '../schemas/common';
 const VacancyListQuery = z.object({
   search: z.string().optional().openapi({ description: 'Busca textual por título ou caso.', example: 'Caso 766' }),
   status: z.string().optional().openapi({ description: 'Filtro por status da vaga.', example: 'SEARCHING' }),
-  priority: z.string().optional().openapi({ description: 'Filtro por prioridade.', example: 'high' }),
   limit: z.coerce.number().optional().openapi({ description: 'Máximo de itens (default 20).', example: 20 }),
   offset: z.coerce.number().optional().openapi({ description: 'Itens a pular (default 0).', example: 0 }),
 });

@@ -10,20 +10,12 @@ import { PageContainer } from '@presentation/components/atoms/PageContainer';
 import { Select } from '@presentation/components/atoms/Select';
 import { VacancyStatsCards } from '@presentation/components/features/admin/VacancyStatsCards';
 import { VacancyFilters, type VacancyAdvancedFilters } from '@presentation/components/features/admin/VacancyFilters';
-import { VacanciesTable, VacancyPriority } from '@presentation/components/features/admin/VacanciesTable';
+import { VacanciesTable } from '@presentation/components/features/admin/VacanciesTable';
 import { DraftVacancyChoiceDialog } from '@presentation/components/features/admin/DraftVacancyChoiceDialog';
 import { useVacanciesData } from '@hooks/admin/useVacanciesData';
-import { getStatusOptions, getPriorityOptions } from './vacanciesData';
+import { getStatusOptions } from './vacanciesData';
 import { TableSkeleton } from '@presentation/components/ui/skeletons';
 import type { SelectOption } from '@presentation/components/atoms/Select';
-
-const PRIORITY_SET: ReadonlySet<string> = new Set(['URGENT', 'HIGH', 'NORMAL', 'LOW']);
-
-function toPriority(value: unknown): VacancyPriority | null {
-  return typeof value === 'string' && PRIORITY_SET.has(value)
-    ? (value as VacancyPriority)
-    : null;
-}
 
 const INITIAL_ADVANCED: VacancyAdvancedFilters = {
   workerType: '',
@@ -39,11 +31,9 @@ export function AdminVacanciesPage(): JSX.Element {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const statusOptions = getStatusOptions(t);
-  const priorityOptions = getPriorityOptions(t);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('');
-  const [selectedPriority, setSelectedPriority] = useState('');
   const [itemsPerPage, setItemsPerPage] = useState('20');
   const [currentPage, setCurrentPage] = useState(1);
   const [advancedFilters, setAdvancedFilters] = useState<VacancyAdvancedFilters>(INITIAL_ADVANCED);
@@ -64,7 +54,6 @@ export function AdminVacanciesPage(): JSX.Element {
 
   const handleSearchChange = (v: string) => { setSearchQuery(v); setCurrentPage(1); };
   const handleStatusChange = (v: string) => { setSelectedStatus(v); setCurrentPage(1); };
-  const handlePriorityChange = (v: string) => { setSelectedPriority(v); setCurrentPage(1); };
   const handleItemsPerPageChange = (v: string) => { setItemsPerPage(v); setCurrentPage(1); };
   const handleAdvancedChange = useCallback((updates: Partial<VacancyAdvancedFilters>) => {
     setAdvancedFilters((prev) => ({ ...prev, ...updates }));
@@ -75,7 +64,6 @@ export function AdminVacanciesPage(): JSX.Element {
     const base: Record<string, string> = {
       search: searchQuery,
       status: selectedStatus,
-      priority: selectedPriority,
       limit: itemsPerPage,
       offset: String((currentPage - 1) * parseInt(itemsPerPage)),
     };
@@ -89,7 +77,7 @@ export function AdminVacanciesPage(): JSX.Element {
       base.time_to = advancedFilters.timeTo;
     }
     return base;
-  }, [searchQuery, selectedStatus, selectedPriority, itemsPerPage, currentPage, advancedFilters]);
+  }, [searchQuery, selectedStatus, itemsPerPage, currentPage, advancedFilters]);
 
   const { vacancies: rawVacancies, stats: rawStats, total, isLoading, error, refetch } = useVacanciesData(filters);
   const stats = rawStats as { label: string; value: string | number; icon: string }[] | null;
@@ -194,14 +182,12 @@ export function AdminVacanciesPage(): JSX.Element {
         id: vac.id as string,
         caso: vac.caso ? String(vac.caso) : vac.id as string,
         status: (vac.status as string) || '—',
-        priority: toPriority(vac.priority),
         diasAberto: (vac.diasAberto as string) || '—',
         stageCounts: (vac.stageCounts as Record<string, number> | undefined) ?? {},
         postulados: vac.postulados != null ? String(vac.postulados) : '—',
         faltantes: vac.faltantes != null ? String(vac.faltantes) : '—',
         isDraft: vac.is_draft === true,
         lastActionAt: (vac.lastActionAt as string | null | undefined) ?? null,
-        daysWithoutDivulgation: typeof vac.daysWithoutDivulgation === 'number' ? vac.daysWithoutDivulgation : null,
       };
     }),
     [rawVacancies],
@@ -287,10 +273,7 @@ export function AdminVacanciesPage(): JSX.Element {
           onSearchChange={handleSearchChange}
           selectedStatus={selectedStatus}
           onStatusChange={handleStatusChange}
-          selectedPriority={selectedPriority}
-          onPriorityChange={handlePriorityChange}
           statusOptions={statusOptions}
-          priorityOptions={priorityOptions}
           advancedFilters={advancedFilters}
           onAdvancedChange={handleAdvancedChange}
           stateOptions={stateOptions}

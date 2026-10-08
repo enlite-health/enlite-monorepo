@@ -171,13 +171,12 @@ describe('Vacancies API', () => {
       expect(Array.isArray(res.data.data)).toBe(true);
     });
 
-    it('aceita filtro de priority canônico (URGENT)', async () => {
-      const res = await api.get(
-        '/api/admin/vacancies?priority=URGENT',
-        authHeaders(adminToken),
-      );
-      expect(res.status).toBe(200);
-      expect(Array.isArray(res.data.data)).toBe(true);
+    it('spec 046 F1: ?priority= não altera o resultado (o filtro saiu)', async () => {
+      const sem = await api.get('/api/admin/vacancies', authHeaders(adminToken));
+      const com = await api.get('/api/admin/vacancies?priority=URGENT', authHeaders(adminToken));
+      expect(com.status).toBe(200);
+      expect(com.data.total).toBe(sem.data.total);
+      expect(com.data.data.map((v: { id: string }) => v.id)).toEqual(sem.data.data.map((v: { id: string }) => v.id));
     });
 
     it('aceita filtro de busca textual', async () => {

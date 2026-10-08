@@ -34,13 +34,6 @@ const STATUS_OPTIONS: SelectOption[] = [
   { value: 'CLOSED',                label: 'Cerrado' },
 ];
 
-const PRIORITY_OPTIONS: SelectOption[] = [
-  { value: 'URGENT', label: 'Urgente' },
-  { value: 'HIGH',   label: 'Alta' },
-  { value: 'NORMAL', label: 'Normal' },
-  { value: 'LOW',    label: 'Baja' },
-];
-
 const INITIAL_ADVANCED: VacancyAdvancedFilters = {
   workerType: '',
   state: '',
@@ -57,10 +50,7 @@ function defaultProps(overrides: Partial<Parameters<typeof VacancyFilters>[0]> =
     onSearchChange: vi.fn(),
     selectedStatus: '',
     onStatusChange: vi.fn(),
-    selectedPriority: '',
-    onPriorityChange: vi.fn(),
     statusOptions: STATUS_OPTIONS,
-    priorityOptions: PRIORITY_OPTIONS,
     advancedFilters: INITIAL_ADVANCED,
     onAdvancedChange: vi.fn(),
     stateOptions: [],
@@ -82,9 +72,10 @@ describe('VacancyFilters — renderização', () => {
     expect(screen.getByText('admin.vacancies.statusLabel')).toBeInTheDocument();
   });
 
-  it('exibe o label de Prioridade', () => {
+  it('A4 (spec 046 F1): NÃO exibe filtro de Prioridad', () => {
     render(<VacancyFilters {...defaultProps()} />);
-    expect(screen.getByText('admin.vacancies.priorityLabel')).toBeInTheDocument();
+    expect(screen.queryByText('admin.vacancies.priorityLabel')).not.toBeInTheDocument();
+    expect(screen.queryByText('admin.vacancies.priorityOptions.all')).not.toBeInTheDocument();
   });
 
   it('NÃO renderiza o filtro de Clientes (removido)', () => {
@@ -128,14 +119,6 @@ describe('VacancyFilters — opções', () => {
     expect(screen.getByText('Cerrado')).toBeInTheDocument();
   });
 
-  it('select de prioridade renderiza as 4 opções canônicas', () => {
-    render(<VacancyFilters {...defaultProps()} />);
-    expect(screen.getByText('Urgente')).toBeInTheDocument();
-    expect(screen.getByText('Alta')).toBeInTheDocument();
-    expect(screen.getByText('Normal')).toBeInTheDocument();
-    expect(screen.getByText('Baja')).toBeInTheDocument();
-  });
-
   it('Provincia é um combobox com busca e popula com stateOptions recebidas (REQ-06)', async () => {
     const stateOptions = [{ value: 'BA', label: 'Buenos Aires' }, { value: 'CB', label: 'Córdoba' }];
     render(<VacancyFilters {...defaultProps({ stateOptions })} />);
@@ -176,16 +159,6 @@ describe('VacancyFilters — callbacks', () => {
     expect(onStatusChange).toHaveBeenCalledWith('ACTIVE');
   });
 
-  it('onPriorityChange é chamado com o valor canônico ao selecionar uma prioridade', async () => {
-    const onPriorityChange = vi.fn();
-    render(<VacancyFilters {...defaultProps({ onPriorityChange })} />);
-
-    const selects = screen.getAllByRole('combobox');
-    await userEvent.selectOptions(selects[1], 'URGENT');
-
-    expect(onPriorityChange).toHaveBeenCalledWith('URGENT');
-  });
-
   it('onSearchChange é chamado ao digitar na busca', async () => {
     const onSearchChange = vi.fn();
     render(<VacancyFilters {...defaultProps({ onSearchChange })} />);
@@ -199,9 +172,9 @@ describe('VacancyFilters — callbacks', () => {
     const onAdvancedChange = vi.fn();
     render(<VacancyFilters {...defaultProps({ onAdvancedChange })} />);
 
-    // Tipo is the 3rd select (0=status, 1=priority, 2=type)
+    // Tipo is the 2nd select (0=status, 1=type)
     const selects = screen.getAllByRole('combobox');
-    await userEvent.selectOptions(selects[2], 'AT');
+    await userEvent.selectOptions(selects[1], 'AT');
 
     expect(onAdvancedChange).toHaveBeenCalledWith({ workerType: 'AT' });
   });
@@ -210,10 +183,10 @@ describe('VacancyFilters — callbacks', () => {
     const onAdvancedChange = vi.fn();
     render(<VacancyFilters {...defaultProps({ onAdvancedChange })} />);
 
-    // Selects NATIVOS restantes: status(0), priority(1), type(2), sex(3).
+    // Selects NATIVOS restantes: status(0), type(1), sex(2).
     // Provincia, Localidad e horários viraram combobox com busca (REQ-06).
     const selects = screen.getAllByRole('combobox');
-    await userEvent.selectOptions(selects[3], 'F');
+    await userEvent.selectOptions(selects[2], 'F');
 
     expect(onAdvancedChange).toHaveBeenCalledWith({ requiredSex: 'F' });
   });
@@ -221,12 +194,11 @@ describe('VacancyFilters — callbacks', () => {
   it('botão Limpiar chama todos os handlers para reset', () => {
     const onSearchChange = vi.fn();
     const onStatusChange = vi.fn();
-    const onPriorityChange = vi.fn();
     const onAdvancedChange = vi.fn();
 
     render(
       <VacancyFilters
-        {...defaultProps({ onSearchChange, onStatusChange, onPriorityChange, onAdvancedChange })}
+        {...defaultProps({ onSearchChange, onStatusChange, onAdvancedChange })}
         selectedStatus="ACTIVE"
       />,
     );
@@ -235,7 +207,6 @@ describe('VacancyFilters — callbacks', () => {
 
     expect(onSearchChange).toHaveBeenCalledWith('');
     expect(onStatusChange).toHaveBeenCalledWith('');
-    expect(onPriorityChange).toHaveBeenCalledWith('');
     expect(onAdvancedChange).toHaveBeenCalledWith({
       workerType: '',
       state: '',
@@ -257,18 +228,6 @@ describe('VacancyFilters — estado refletido nos selects', () => {
     expect(selects[0].value).toBe('ON_HOLD');
   });
 
-  it('selectedPriority="HIGH" é refletido no select de prioridade', () => {
-    render(<VacancyFilters {...defaultProps({ selectedPriority: 'HIGH' })} />);
-    const selects = screen.getAllByRole('combobox') as HTMLSelectElement[];
-    expect(selects[1].value).toBe('HIGH');
-  });
-
-  it('selectedPriority="" mostra a opção vazia selecionada', () => {
-    render(<VacancyFilters {...defaultProps({ selectedPriority: '' })} />);
-    const selects = screen.getAllByRole('combobox') as HTMLSelectElement[];
-    expect(selects[1].value).toBe('');
-  });
-
   it('advancedFilters.workerType="AT" é refletido no select de Tipo', () => {
     render(
       <VacancyFilters
@@ -276,7 +235,7 @@ describe('VacancyFilters — estado refletido nos selects', () => {
       />,
     );
     const selects = screen.getAllByRole('combobox') as HTMLSelectElement[];
-    expect(selects[2].value).toBe('AT');
+    expect(selects[1].value).toBe('AT');
   });
 
   it('advancedFilters.days com valores mostra count no MultiSelect', () => {

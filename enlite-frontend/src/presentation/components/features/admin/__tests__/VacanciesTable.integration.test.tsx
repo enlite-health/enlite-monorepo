@@ -9,7 +9,6 @@ describe('VacanciesTable - Integration Test - GARANTIA DE RENDERIZAÇÃO', () =>
         id: 'fd269cde-d8c9-4fdc-88a9-5b19ebcdb531',
         caso: 'Caso 349',
         status: 'Esperando Ativação',
-        priority: 'URGENT',
         diasAberto: '05',
         stageCounts: {
           COMPATIBLE: 6,
@@ -26,13 +25,11 @@ describe('VacanciesTable - Integration Test - GARANTIA DE RENDERIZAÇÃO', () =>
         faltantes: '00',
         isDraft: false,
         lastActionAt: null,
-        daysWithoutDivulgation: null,
       },
       {
         id: 'c83963ee-beaf-45f2-88a3-365147b0c205',
         caso: 'Caso 348',
         status: 'Esperando Ativação',
-        priority: 'NORMAL',
         diasAberto: '03',
         stageCounts: {
           COMPATIBLE: 8,
@@ -49,7 +46,6 @@ describe('VacanciesTable - Integration Test - GARANTIA DE RENDERIZAÇÃO', () =>
         faltantes: '01',
         isDraft: false,
         lastActionAt: null,
-        daysWithoutDivulgation: null,
       },
     ];
 
@@ -64,9 +60,8 @@ describe('VacanciesTable - Integration Test - GARANTIA DE RENDERIZAÇÃO', () =>
     expect(statusElements).toHaveLength(2);
     statusElements.forEach((el) => expect(el).toBeVisible());
 
-    // GARANTIA 3: Priority badge renderizado
-    expect(screen.getByText('admin.vacancies.priorityOptions.urgent')).toBeVisible();
-    expect(screen.getByText('admin.vacancies.priorityOptions.normal')).toBeVisible();
+    // GARANTIA 3: sem coluna de prioridade (spec 046 F1)
+    expect(screen.queryByText('admin.vacancies.priorityOptions.urgent')).not.toBeInTheDocument();
 
     // GARANTIA 4: Dados numéricos visíveis (stageCounts das 9 colunas, Fase 5: +COMPATIBLE, + postulados/faltantes)
     expect(screen.getByText('06')).toBeVisible();
@@ -74,7 +69,9 @@ describe('VacanciesTable - Integration Test - GARANTIA DE RENDERIZAÇÃO', () =>
     expect(screen.getByText('09')).toBeVisible();
     expect(screen.getByText('05')).toBeVisible();
     expect(screen.getByText('03')).toBeVisible();
-    expect(screen.getByText('43')).toBeVisible();
+    // CONFIRMED (43 e 19) segue no payload mas a lista não o mostra mais
+    expect(screen.queryByText('43')).not.toBeInTheDocument();
+    expect(screen.queryByText('19')).not.toBeInTheDocument();
     expect(screen.getByText('27')).toBeVisible();
     expect(screen.getByText('07')).toBeVisible();
     expect(screen.getByText('02')).toBeVisible();
