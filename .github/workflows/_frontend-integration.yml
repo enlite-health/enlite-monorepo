@@ -673,13 +673,17 @@ jobs:
       # `patient_document` não vê a aba" só mede com o engine ABAC ligado, e o spec sobe/baixa arquivo e anexa
       # PDF no chat — por isso este job ganhou o fake-gcs + o bucket `enlite-patient-documents-ci` (passos
       # acima) e `PATIENT_DOCUMENTS_BUCKET` em `docker-compose.group-simulation.yml`. Usa `abac-stack-helper`.
+      # `vacante-em-servico-047` ENTROU (spec 047, vacante dentro de Serviços Contratados): a F1 (`-aba`) mede a
+      # ausência do bloco/da aba por falta de `vacancy:read` — só vale com o engine ABAC ligado (com ele OFF
+      # `cells===null` mostra tudo e os 2 alternativos ficariam vermelhos/sem medir). As fases F3/F4 (`-colunas`,
+      # `-bloco`) casam pelo mesmo prefixo. Usa `abac-stack-helper` (staff REAL em grupo), como `patient-documents-tab`.
       - name: Teste de integração — simulação de grupo de acesso + completar-vacante (fases 2-3)
         working-directory: enlite-frontend
         env:
           CI: 'true'
           ABAC_API_URL: http://localhost:8080
           ABAC_TEST_DB_URL: postgresql://enlite_admin:enlite_password@localhost:5433/enlite_e2e
-        run: npx playwright test --project=integration --ignore-snapshots --grep "group-simulation|draft-vacancy-page|draft-vacancy-choice|cid-na-vacante-tela|patient-documents-tab|vacante-anotacao-sem-celula|funil-compativeis-sem-celula"
+        run: npx playwright test --project=integration --ignore-snapshots --grep "group-simulation|draft-vacancy-page|draft-vacancy-choice|cid-na-vacante-tela|patient-documents-tab|vacante-anotacao-sem-celula|funil-compativeis-sem-celula|vacante-em-servico-047"
 
       - name: Relatório (só quando falha)
         if: failure()

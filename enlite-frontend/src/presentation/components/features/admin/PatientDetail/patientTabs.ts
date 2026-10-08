@@ -10,7 +10,6 @@ export type PatientTab =
   | 'supportNetwork'
   | 'documents'
   | 'contractedService'
-  | 'vacancies'
   | 'history';
 
 
@@ -19,6 +18,5 @@ export const PATIENT_TABS: readonly PatientTab[] = [
   'supportNetwork',
   'documents',
   'contractedService',
-  'vacancies',
   'history',
 ];

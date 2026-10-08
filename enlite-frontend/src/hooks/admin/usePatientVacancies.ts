@@ -2,7 +2,11 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { AdminPatientsApiService } from '@infrastructure/http/AdminPatientsApiService';
 import type { PatientVacancySummary } from '@domain/entities/PatientDetail';
 
-export function usePatientVacancies(patientId: string | undefined) {
+/**
+ * `enabled` (spec 047, A4): sem `vacancy:read` a rota `GET /patients/:id/vacancies` responde 403, então a
+ * página nem pede. Default `true` = o comportamento de antes para quem chama sem a opção.
+ */
+export function usePatientVacancies(patientId: string | undefined, enabled = true) {
   const [vacancies, setVacancies] = useState<PatientVacancySummary[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -15,7 +19,7 @@ export function usePatientVacancies(patientId: string | undefined) {
   const latestRequestRef = useRef({ patientId, seq: 0 });
 
   useEffect(() => {
-    if (!patientId) return;
+    if (!patientId || !enabled) return;
 
     let cancelled = false;
     // Troca de `patientId` invalida qualquer refetch pendente do id anterior: zera o
@@ -41,14 +45,14 @@ export function usePatientVacancies(patientId: string | undefined) {
 
     fetchVacancies();
     return () => { cancelled = true; };
-  }, [patientId]);
+  }, [patientId, enabled]);
 
   // Item 1+4 (A1): mesma classe de defeito de `usePatientDetail.refetch` — o `refreshKey` reexecutava
   // o efeito de cima, que liga `isLoading`, e o card (`PatientVacanciesCard`) troca a lista por um
   // estado de loading a cada `onSaved` de `ServicosContratadosCard`. Refetch silencioso: mantém
   // `vacancies` na tela até a resposta chegar; falha só seta `error`, sem apagar a lista anterior.
   const refetch = useCallback(() => {
-    if (!patientId) return;
+    if (!patientId || !enabled) return;
     const seq = latestRequestRef.current.seq + 1;
     latestRequestRef.current = { patientId, seq };
     AdminPatientsApiService.getPatientVacancies(patientId)
@@ -64,7 +68,7 @@ export function usePatientVacancies(patientId: string | undefined) {
         const msg = err instanceof Error ? err.message : 'Error al cargar vacantes';
         setError(msg);
       });
-  }, [patientId]);
+  }, [patientId, enabled]);
 
   return { vacancies, isLoading, error, refetch };
 }

@@ -128,9 +128,12 @@ describe('screensByCell / containersOfTab / screenById', () => {
     expect(containersOfTab(s, 'clinicalData').map((c) => c.resource)).toEqual(['patient_clinical', 'patient_care_team', 'patient_therapeutic_project']);
     expect(containersOfTab(s, 'supportNetwork').map((c) => c.resource)).toEqual(['patient_family', 'patient_chat']);
     // D293: o valor-hora é container próprio (célula de DADO), na mesma aba do serviço.
-    expect(containersOfTab(s, 'contractedService').map((c) => c.resource)).toEqual(['patient_coverage', 'patient_address', 'patient_services', 'patient_contract_value']);
-    expect(s.tabs).toEqual(['clinicalData', 'supportNetwork', 'documents', 'contractedService', 'vacancies', 'history']);
-    expect(containersOfTab(s, 'vacancies').map((c) => c.resource)).toEqual(['vacancy']);
+    // Spec 047 (F1, A1): a aba Vacante saiu; o container `vacancy` (célula `vacancy:read`) desceu para Serviço Contratado.
+    expect(containersOfTab(s, 'contractedService').map((c) => c.resource)).toEqual(['patient_coverage', 'patient_address', 'patient_services', 'patient_contract_value', 'vacancy']);
+    expect(s.tabs).toEqual(['clinicalData', 'supportNetwork', 'documents', 'contractedService', 'history']);
+    expect(s.tabs).not.toContain('vacancies');
+    expect(containersOfTab(s, 'vacancies' as never)).toEqual([]);
+    expect(s.containers?.find((c) => c.resource === 'vacancy')?.cells).toEqual(['vacancy:read']);
     expect(containersOfTab(s, 'history').map((c) => c.resource)).toEqual(['patient']);
     // 02/10 (spec 031): a aba Documentos vem logo depois da Rede de apoio, com as 4 células do recurso.
     expect(containersOfTab(s, 'documents').map((c) => c.resource)).toEqual(['patient_document']);

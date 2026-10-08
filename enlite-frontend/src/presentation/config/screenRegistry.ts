@@ -87,7 +87,7 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
   {
     id: 'patients.detail',
     route: '/admin/patients/:id',
-    tabs: ['clinicalData', 'supportNetwork', 'documents', 'contractedService', 'vacancies', 'history'],
+    tabs: ['clinicalData', 'supportNetwork', 'documents', 'contractedService', 'history'],
     containers: [
       c('identity', 'patient_identity', ['read', 'create', 'update']),
       c('clinical', 'patient_clinical', ['read', 'create', 'update'], 'clinicalData'),
@@ -112,7 +112,9 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
       // O VALOR-HORA do serviço contratado é dado próprio (era "só admin" por papel; D293): quem
       // tem `patient_services:read` vê o serviço, mas o preço só sai com esta célula.
       c('contractValue', 'patient_contract_value', ['read'], 'contractedService'),
-      c('vacancies', 'vacancy', ['read'], 'vacancies'),
+      // Spec 047 (F1): a aba Vacante saiu; o bloco desce para Serviço Contratado, abaixo dos serviços.
+      // Célula e container NÃO mudam — só a aba a que pertencem (o card 5 cria a aba Admissão, com container próprio).
+      c('vacancies', 'vacancy', ['read'], 'contractedService'),
       // O operacional da tela numa linha só: cabeçalho (status, ativar, completude) e a aba de
       // histórico — mesmo recurso `patient`, uma célula de leitura e uma de escrita.
       c('operational', 'patient', ['read', 'create', 'update'], 'history'),

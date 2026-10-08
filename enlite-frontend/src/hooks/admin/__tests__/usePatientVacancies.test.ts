@@ -134,3 +134,34 @@ describe('usePatientVacancies', () => {
     expect(spy).not.toHaveBeenCalled();
   });
 });
+
+// Spec 047 (F1, A4): sem `vacancy:read` a página liga `enabled=false` — nem o carregamento nem o refetch pedem a rota.
+describe('usePatientVacancies — enabled=false (spec 047 A4)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('enabled=false: não busca no carregamento, nem no refetch(); isLoading continua false', () => {
+    const spy = vi.spyOn(AdminPatientsApiService, 'getPatientVacancies').mockResolvedValue([VACANCY_1]);
+    const { result } = renderHook(() => usePatientVacancies('p-1', false));
+
+    act(() => {
+      result.current.refetch();
+    });
+
+    expect(spy).not.toHaveBeenCalled();
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.vacancies).toEqual([]);
+  });
+
+  it('enabled passa de false para true: passa a buscar', async () => {
+    const spy = vi.spyOn(AdminPatientsApiService, 'getPatientVacancies').mockResolvedValue([VACANCY_1]);
+    const { result, rerender } = renderHook(({ on }) => usePatientVacancies('p-1', on), { initialProps: { on: false } });
+    expect(spy).not.toHaveBeenCalled();
+
+    rerender({ on: true });
+
+    await waitFor(() => expect(result.current.vacancies).toEqual([VACANCY_1]));
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+});

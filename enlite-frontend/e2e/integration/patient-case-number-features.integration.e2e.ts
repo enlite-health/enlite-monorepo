@@ -9,7 +9,7 @@
  *
  *   Feature 2 — Caso # badge + "Vacantes Generadas" card in patient detail
  *     - PatientIdentityCard shows "Caso #42" badge when lastCaseNumber is set
- *     - PatientVacanciesCard renders in the dedicated "Vacantes" tab
+ *     - PatientVacanciesCard renders in the "Servicio Contratado" tab (spec 047: the Vacantes tab is gone)
  *
  * Uses the same mock-auth strategy as admin-vacancies-list-visual.integration.e2e.ts:
  *   - Firebase Identity Toolkit mocked → fake JWT
@@ -371,7 +371,7 @@ test.describe('PatientDetailPage — Caso # badge + PatientVacanciesCard @integr
     await expect(page.getByText('Ana García')).toBeVisible({ timeout: 15_000 });
 
     // Navigate to Servicio Contratado tab (tabs are rendered as <button>)
-    await page.getByRole('button', { name: /^Vacantes$/i }).click();
+    await page.getByRole('button', { name: /^Servicio Contratado$/i }).click();
 
     // Card title
     await expect(page.getByText('Vacantes Generadas')).toBeVisible({ timeout: 10_000 });
@@ -402,7 +402,7 @@ test.describe('PatientDetailPage — Caso # badge + PatientVacanciesCard @integr
     await page.goto('/admin/patients/patient-aaa-111');
     await expect(page.getByText('Ana García')).toBeVisible({ timeout: 15_000 });
 
-    await page.getByRole('button', { name: /^Vacantes$/i }).click();
+    await page.getByRole('button', { name: /^Servicio Contratado$/i }).click();
     await expect(page.getByText('Vacantes Generadas')).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText('CASO 42-1')).toBeVisible();
 

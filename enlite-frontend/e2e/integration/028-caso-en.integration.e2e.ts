@@ -408,7 +408,7 @@ test.describe('@integration Spec 028 — "CASO EN{n}" no cartão, no prefill e n
 
     // ── Prova 3 (frontend, lista): PatientVacanciesCard, na ficha do paciente ──
     await page.goto(`/admin/patients/${nativeCreatePatientId}`);
-    await page.getByRole('button', { name: /^Vacantes$/i }).click();
+    await page.getByRole('button', { name: /^Servicio Contratado$/i }).click();
     const vacanciesCard = page.getByTestId('patient-vacancies-card');
     await expect(vacanciesCard).toBeVisible({ timeout: 15_000 });
     await expect(vacanciesCard.getByText(new RegExp(`CASO EN${NATIVE_CASE_CREATE}-\\d+`)).first()).toBeVisible({

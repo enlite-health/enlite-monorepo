@@ -373,8 +373,8 @@ test.describe('@integration Modal Nueva Vacante — seleção de caso (nativo ×
     await expect(identityCard).toBeVisible({ timeout: 15_000 });
     await expect(identityCard.getByText(`EN${NATIVE_CASE}`, { exact: false })).toBeVisible({ timeout: 10_000 });
 
-    // PatientVacanciesCard (mesma ficha, aba "Vacantes" — click real, não deep-link).
-    await page.getByRole('button', { name: /^Vacantes$/i }).click();
+    // PatientVacanciesCard (mesma ficha, aba "Servicio Contratado" (spec 047: a vacante desceu para ela) — click real, não deep-link).
+    await page.getByRole('button', { name: /^Servicio Contratado$/i }).click();
     await expect(page.getByText(`CASO EN${NATIVE_CASE}`, { exact: false }).first()).toBeVisible({ timeout: 10_000 });
 
     // PatientKanbanCard (/admin/patients/kanban) — mesma fonte de `caseNumber` da
