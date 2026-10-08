@@ -77,7 +77,7 @@ const SERVICE: PatientContractedServiceDetail = {
   providerAgeBand: 'AGE_30_45',
   addressId: null,
   schedule: null,
-  liveVacancyId: null,
+  liveVacancy: null, liveVacancyRedacted: false,
   active: true,
   endedAt: null,
   country: 'AR',
@@ -193,7 +193,7 @@ describe('ServicosContratadosCard — tabela no molde do Figma (05/09) + #PEND-0
       providerAgeBand: null,
       addressId: null,
       schedule: null,
-      liveVacancyId: null,
+      liveVacancy: null, liveVacancyRedacted: false,
       active: false, endedAt: '2026-09-02T00:00:00Z', country: 'AR', deviceTypes: [], providers: [],
       createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z',
     };
@@ -401,7 +401,7 @@ describe('ServicosContratadosCard — ícone de ativação de recrutamento por s
     ...SERVICE,
     addressId: 'addr-home',
     schedule: SCHEDULE,
-    liveVacancyId: null,
+    liveVacancy: null, liveVacancyRedacted: false,
   };
   const READY_PATIENT = {
     ...patientDetailFixture,
@@ -475,7 +475,7 @@ describe('ServicosContratadosCard — ícone de ativação de recrutamento por s
   });
 
   it('caminho "Ver vacante": serviço com vaga viva mostra o link (não o botão), abre em nova rota e não dispara o detalhe da linha', () => {
-    const withVacancy = { ...READY_SERVICE, liveVacancyId: 'vac-9' };
+    const withVacancy = { ...READY_SERVICE, liveVacancy: { id: 'vac-9', caseNumber: 1234, caseOrdinal: 1, status: 'SEARCHING', siteUrl: null }, liveVacancyRedacted: false };
     const patient = { ...READY_PATIENT, contractedServices: [withVacancy] };
     render(<ServicosContratadosCard patient={patient} />);
 

@@ -226,7 +226,7 @@ module.exports = {
       functions: 100,
       lines: 100,
     },
-    // Spec 018, PR-6: `liveVacancyId` (JOIN batched com `job_postings`) e `activateRecruitment`
+    // Spec 018, PR-6: `liveVacancy` (JOIN batched com `job_postings`) e `activateRecruitment`
     // TOCARAM os dois arquivos abaixo — medidos a 100 antes de entrar no piso.
     'src/modules/case/infrastructure/ContractedServiceDetailMapper.ts': {
       statements: 100,

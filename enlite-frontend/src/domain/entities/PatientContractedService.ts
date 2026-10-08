@@ -73,6 +73,15 @@ export interface PatientContractedServiceProvider {
   updatedAt: string;
 }
 
+/** A vaga viva de um serviço, como a ficha a mostra (spec 047) — allow-list: nenhum campo de dinheiro. */
+export interface PatientContractedServiceLiveVacancy {
+  id: string;
+  caseNumber: number | null;
+  caseOrdinal: number | null;
+  status: string | null;
+  siteUrl: string | null;
+}
+
 export interface PatientContractedServiceDetail {
   id: string;
   patientId: string;
@@ -111,8 +120,13 @@ export interface PatientContractedServiceDetail {
   addressId: string | null;
   /** Horário do encuadre (migration 330) — `null` = ainda sem horário. */
   schedule: ContractedServiceScheduleSlot[] | null;
-  /** Spec 018, PR-6: vaga viva deste serviço — `null` habilita "Activar reclutamiento". */
-  liveVacancyId: string | null;
+  /**
+   * Spec 047 (F2): vaga viva deste serviço (a mais antiga). `null` NÃO é sozinho "sem vaga": com
+   * `liveVacancyRedacted` o backend sinaliza que o ator não lê vagas (`vacancy:read`).
+   */
+  liveVacancy: PatientContractedServiceLiveVacancy | null;
+  /** `true` quando o backend redigiu `liveVacancy` para este ator (sem `vacancy:read`). */
+  liveVacancyRedacted: boolean;
   active: boolean;
   endedAt: string | null;
   country: string;

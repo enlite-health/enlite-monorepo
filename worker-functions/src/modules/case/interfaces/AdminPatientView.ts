@@ -94,7 +94,7 @@ export function projectAdminPatientDetail(
   const withServices = Array.isArray(rawServices)
     ? {
         ...clinicalProjected,
-        contractedServices: rawServices.map((s) => projectContractedServiceForActor(s as { hourlyValue: number | null }, actor)),
+        contractedServices: rawServices.map((s) => projectContractedServiceForActor(s as { hourlyValue: number | null; liveVacancy: unknown }, actor)),
       }
     : clinicalProjected;
   return projectPatientDetailByContainers(withServices, cells);

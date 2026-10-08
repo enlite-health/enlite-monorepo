@@ -24,6 +24,7 @@
  */
 import type { Request } from 'express';
 import { clinicalCellsOf } from './patientClinicalAccess';
+import { projectLiveVacancyForActor } from './contractedServiceVacancyAccess';
 
 export const PATIENT_CONTRACT_VALUE_READ_CELL = 'patient_contract_value:read';
 
@@ -50,15 +51,19 @@ export function hourlyValueActorOf(req: Request): HourlyValueActor {
 }
 
 /**
- * Projeta um serviço contratado para o ator: `hourlyValue` vira `null` + `hourlyValueRedacted:
- * true` quando o ator não lê o preço. Devolve o MESMO objeto quando lê (sem cópia).
+ * Projeta um serviço contratado para o ator, as DUAS redações na mesma passada:
+ *   - `hourlyValue` vira `null` + `hourlyValueRedacted: true` quando o ator não lê o preço;
+ *   - `liveVacancy` vira `null` + `liveVacancyRedacted: true` quando o ator não lê vagas
+ *     (`contractedServiceVacancyAccess`, spec 047).
+ * Quem lê tudo recebe os valores crus, com os dois flags `false`.
  */
-export function projectContractedServiceForActor<T extends { hourlyValue: number | null }>(
+export function projectContractedServiceForActor<T extends { hourlyValue: number | null; liveVacancy: unknown }>(
   service: T,
   actor: HourlyValueActor,
-): T & { hourlyValueRedacted: boolean } {
-  if (canReadHourlyValue(actor)) return { ...service, hourlyValueRedacted: false };
-  return { ...service, hourlyValue: null, hourlyValueRedacted: true };
+): T & { hourlyValueRedacted: boolean; liveVacancyRedacted: boolean } {
+  const withVacancy = projectLiveVacancyForActor(service, actor);
+  if (canReadHourlyValue(actor)) return { ...withVacancy, hourlyValueRedacted: false };
+  return { ...withVacancy, hourlyValue: null, hourlyValueRedacted: true };
 }
 
 /**

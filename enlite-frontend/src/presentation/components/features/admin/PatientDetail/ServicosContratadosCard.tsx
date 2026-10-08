@@ -57,10 +57,10 @@ function ActivateRecruitmentAction({
   const { allowed: podeEscreverServico } = useActionGate('patient_services', 'update');
   const { allowed: podeEscreverVaga } = useActionGate('vacancy', 'update');
 
-  if (service.liveVacancyId) {
+  if (service.liveVacancy) {
     return (
       <a
-        href={`/admin/vacancies/${service.liveVacancyId}`}
+        href={`/admin/vacancies/${service.liveVacancy.id}`}
         onClick={(e) => e.stopPropagation()}
         aria-label={tc('viewVacancyAria', { service: serviceLabel })}
         data-testid={`contracted-service-view-vacancy-${service.id}`}

@@ -43,7 +43,7 @@ const SERVICE: PatientContractedServiceDetail = {
   contractType: null, taxCondition: null, supervisionFrequency: null, guardShift: null,
   providerAgeBand: null,
   addressId: null,
-  liveVacancyId: null,
+  liveVacancy: null, liveVacancyRedacted: false,
   schedule: null,
   active: true, endedAt: null, country: 'AR', deviceTypes: [], providers: [],
   createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z',

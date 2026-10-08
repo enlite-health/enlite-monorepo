@@ -56,21 +56,51 @@ describe('hourlyValueActorOf', () => {
 });
 
 describe('projectContractedServiceForActor', () => {
-  const service = { id: 's1', hourlyValue: 1500 };
-  const le: HourlyValueActor = { cells: [CELL], roles: null };
+  const VAGA = { id: 'v1', caseNumber: 1234, caseOrdinal: 1, status: 'SEARCHING', siteUrl: 'https://exemplo.test/x' };
+  const service = { id: 's1', hourlyValue: 1500, liveVacancy: VAGA };
+  const le: HourlyValueActor = { cells: [CELL, 'vacancy:read'], roles: null };
   const naoLe: HourlyValueActor = { cells: [], roles: ['admin'] };
 
-  it('quem lê: valor cru, hourlyValueRedacted:false', () => {
-    expect(projectContractedServiceForActor(service, le)).toEqual({ id: 's1', hourlyValue: 1500, hourlyValueRedacted: false });
+  it('quem lê tudo: valor e vaga crus, os dois flags false', () => {
+    expect(projectContractedServiceForActor(service, le)).toEqual({
+      id: 's1', hourlyValue: 1500, hourlyValueRedacted: false, liveVacancy: VAGA, liveVacancyRedacted: false,
+    });
   });
 
-  it('quem não lê: hourlyValue vira null, hourlyValueRedacted:true', () => {
-    expect(projectContractedServiceForActor(service, naoLe)).toEqual({ id: 's1', hourlyValue: null, hourlyValueRedacted: true });
+  it('quem não lê nada: hourlyValue e liveVacancy viram null, os dois flags true', () => {
+    expect(projectContractedServiceForActor(service, naoLe)).toEqual({
+      id: 's1', hourlyValue: null, hourlyValueRedacted: true, liveVacancy: null, liveVacancyRedacted: true,
+    });
   });
 
   it('hourlyValue já null (não informado) + não lê: continua null, mas com o flag', () => {
-    const out = projectContractedServiceForActor({ id: 's2', hourlyValue: null }, naoLe);
-    expect(out).toEqual({ id: 's2', hourlyValue: null, hourlyValueRedacted: true });
+    const out = projectContractedServiceForActor({ id: 's2', hourlyValue: null, liveVacancy: null }, naoLe);
+    expect(out).toEqual({ id: 's2', hourlyValue: null, hourlyValueRedacted: true, liveVacancy: null, liveVacancyRedacted: true });
+  });
+
+  it('as duas redações são INDEPENDENTES: sem o preço mas com vacancy:read → vaga visível, valor redigido', () => {
+    const out = projectContractedServiceForActor(service, { cells: ['vacancy:read'], roles: null });
+    expect(out.hourlyValue).toBeNull();
+    expect(out.hourlyValueRedacted).toBe(true);
+    expect(out.liveVacancy).toEqual(VAGA);
+    expect(out.liveVacancyRedacted).toBe(false);
+  });
+
+  it('A3: a vaga projetada tem EXATAMENTE as 5 chaves (nenhum campo de dinheiro entra)', () => {
+    const out = projectContractedServiceForActor(service, { cells: ['vacancy:read'], roles: null });
+    expect(Object.keys(out.liveVacancy as object).sort()).toEqual(['caseNumber', 'caseOrdinal', 'id', 'siteUrl', 'status']);
+  });
+
+  it('A2, os DOIS lados: com vacancy:read e sem vaga → null + false; sem vacancy:read → null + true', () => {
+    const semVaga = { id: 's3', hourlyValue: null, liveVacancy: null };
+    expect(projectContractedServiceForActor(semVaga, le)).toMatchObject({ liveVacancy: null, liveVacancyRedacted: false });
+    expect(projectContractedServiceForActor(semVaga, naoLe)).toMatchObject({ liveVacancy: null, liveVacancyRedacted: true });
+  });
+
+  it('cells === null: o papel admin lê a vaga; recrutador não (mesmo padrão do valor-hora)', () => {
+    expect(projectContractedServiceForActor(service, { cells: null, roles: ['admin'] }).liveVacancyRedacted).toBe(false);
+    expect(projectContractedServiceForActor(service, { cells: null, roles: ['recruiter'] }).liveVacancyRedacted).toBe(true);
+    expect(projectContractedServiceForActor(service, { cells: null, roles: null }).liveVacancyRedacted).toBe(false);
   });
 });
 

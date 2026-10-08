@@ -11,6 +11,7 @@ import type { Pool, PoolClient } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { withActorContext } from '@shared/database/actorContext';
 import { DeviceTypeUnknownError } from './PatientDeviceTypeRepository';
+import { fetchLiveVacancies, type LiveVacancy } from './liveVacancyOfService';
 import {
   ContractedServiceProviderRepository,
   type ContractedServiceProviderDetail,
@@ -67,8 +68,8 @@ export interface ContractedServiceDetail {
   addressId: string | null;
   /** Horário do encuadre, formato do editor (migration 330) — null = ainda sem horário. */
   schedule: ContractedServiceScheduleSlot[] | null;
-  /** Vaga viva deste serviço (spec 018, PR-6) — null = ainda pode ativar recrutamento. */
-  liveVacancyId: string | null;
+  /** Vaga viva deste serviço (spec 018 PR-6; objeto na spec 047) — null = sem vaga OU redigida (ver `liveVacancyRedacted`, aplicado na projeção por ator). */
+  liveVacancy: LiveVacancy | null;
   active: boolean;
   endedAt: string | null;
   country: string;
@@ -183,17 +184,11 @@ export class PatientContractedServiceRepository {
       [row.id],
     );
     const providers = await this.providerRepo.listForService(row.id);
-    // Spec 018, PR-6 (`contracts/activation.md`): "some quando o serviço já tem vaga viva (mostra
-    // Ver vacante)" — a MESMA condição do 409 de `ActivateRecruitmentUseCase`
-    // (`contracted_service_id = :sid AND deleted_at IS NULL`), lida aqui para a ficha exibir sem
-    // reimplementar o critério.
-    const liveVacancy = await cli.query<{ id: string }>(
-      `SELECT id FROM job_postings WHERE contracted_service_id = $1 AND deleted_at IS NULL LIMIT 1`,
-      [row.id],
-    );
+    // Spec 018 PR-6 / spec 047 F2: a MESMA leitura do mapper da ficha (`fetchLiveVacancies`) — um dono só.
+    const liveVacancy = (await fetchLiveVacancies(cli, [row.id])).get(row.id) ?? null;
     return {
       id: row.id,
-      liveVacancyId: liveVacancy.rows[0]?.id ?? null,
+      liveVacancy,
       patientId: row.patient_id,
       serviceCode: row.service_code,
       professionalProfile: row.professional_profile,
