@@ -231,6 +231,8 @@ export { AdminPatientsMapController } from './interfaces/controllers/AdminPatien
 export { AdminPatientContractedServicesController } from './interfaces/controllers/AdminPatientContractedServicesController';
 export { AdminTherapeuticProjectsController } from './interfaces/controllers/AdminTherapeuticProjectsController';
 export { createAdminTherapeuticProjectsRoutes } from './interfaces/routes/adminTherapeuticProjectsRoutes';
+export { TherapeuticContactRemindersInternalController } from './interfaces/controllers/TherapeuticContactRemindersInternalController';
+export { createTherapeuticContactRemindersInternalRoutes } from './interfaces/routes/therapeuticContactRemindersInternalRoutes';
 export { AdminPatientChatIdsController } from './interfaces/controllers/AdminPatientChatIdsController';
 export { AdminPatientChatRolesController } from './interfaces/controllers/AdminPatientChatRolesController';
 export { patientChatIdsSchema, patientChatMapQuerySchema, chatGroupsQuerySchema } from './interfaces/validators/patientChatIdsSchema';

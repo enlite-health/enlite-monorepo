@@ -36,7 +36,18 @@ interface MentionSpan {
   end: number;
 }
 
-export type NotificationTypeCode = 'CONVERSATION_MENTIONED' | 'CONVERSATION_REPLIED';
+export type NotificationTypeCode = 'CONVERSATION_MENTIONED' | 'CONVERSATION_REPLIED' | 'THERAPEUTIC_PROJECT_CONTACTS_PENDING';
+
+/**
+ * Payload do aviso de contatos pendentes do PT (spec 048): SÓ ids e nomes de campo — nunca nome do
+ * paciente, número do caso, data ou texto. Construído por `buildPtContactsPendingPayload`, nunca por objeto livre.
+ */
+export interface PtContactsPendingPayload {
+  cycleId: string;
+  versionId: string;
+  dayOffset: number;
+  fields: string[];
+}
 
 export interface InsertNotificationEventInput {
   typeCode: NotificationTypeCode;
@@ -44,6 +55,8 @@ export interface InsertNotificationEventInput {
   patientId: string | null;
   conversationId: string | null;
   messageId: string | null;
+  /** Metadado SÓ-ids (461). Omitido = `'{}'`. Hoje só o tipo do PT grava aqui. */
+  payload?: PtContactsPendingPayload;
 }
 
 export interface NotificationEventRow {
@@ -54,6 +67,10 @@ export interface NotificationEventRow {
   patientId: string | null;
   conversationId: string | null;
   messageId: string | null;
+  /** Bruto do `notification_events.payload` — o use case filtra por tipo antes de devolver. */
+  payload: Record<string, unknown> | null;
+  /** `patients.case_number` (PII-safe, 164) — `null` se o paciente não tem número ou não é visível sob a RLS. */
+  patientCaseNumber: number | null;
   createdAt: Date;
   readAt: Date | null;
 }
@@ -66,6 +83,8 @@ interface RawNotificationEventRow {
   patientId: string | null;
   conversationId: string | null;
   messageId: string | null;
+  payload: Record<string, unknown> | null;
+  patientCaseNumber: number | null;
   createdAt: Date;
   readAt: Date | null;
 }
@@ -89,12 +108,21 @@ export class NotificationRepository {
    * `client` vem de `FanOutNotificationUseCase`, nunca de uma conexão própria.
    */
   async insertEvent(input: InsertNotificationEventInput, client: PoolClient): Promise<string> {
-    const { rows } = await client.query<{ id: string }>(
-      `INSERT INTO notification_events (type_code, actor_uid, patient_id, conversation_id, message_id)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING id`,
-      [input.typeCode, input.actorUid, input.patientId, input.conversationId, input.messageId],
-    );
+    // Eventos de conversa NUNCA escrevem em `payload` (D-08/D-09: DEFAULT '{}'); só o aviso de sistema do PT (spec 048)
+    // grava o payload tipado (ids + nome de campo) — dois SQL de propósito, o de conversa continua byte a byte o mesmo.
+    const { rows } = input.payload
+      ? await client.query<{ id: string }>(
+          `INSERT INTO notification_events (type_code, actor_uid, patient_id, conversation_id, message_id, payload)
+           VALUES ($1, $2, $3, $4, $5, $6::jsonb)
+           RETURNING id`,
+          [input.typeCode, input.actorUid, input.patientId, input.conversationId, input.messageId, JSON.stringify(input.payload)],
+        )
+      : await client.query<{ id: string }>(
+          `INSERT INTO notification_events (type_code, actor_uid, patient_id, conversation_id, message_id)
+           VALUES ($1, $2, $3, $4, $5)
+           RETURNING id`,
+          [input.typeCode, input.actorUid, input.patientId, input.conversationId, input.messageId],
+        );
     return rows[0].id;
   }
 
@@ -134,11 +162,14 @@ export class NotificationRepository {
           e.patient_id AS "patientId",
           e.conversation_id AS "conversationId",
           e.message_id AS "messageId",
+          e.payload AS "payload",
+          p.case_number AS "patientCaseNumber",
           n.created_at AS "createdAt",
           n.read_at AS "readAt"
        FROM notifications n
        JOIN notification_events e ON e.id = n.event_id
        LEFT JOIN users u ON u.firebase_uid = e.actor_uid
+       LEFT JOIN patients p ON p.id = e.patient_id
        WHERE n.recipient_uid = $1
        ${unreadClause}
        ORDER BY n.created_at DESC

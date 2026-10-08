@@ -24,6 +24,8 @@ function row(overrides: Partial<NotificationEventRow> = {}): NotificationEventRo
     patientId: 'p1',
     conversationId: 'c1',
     messageId: 'm1',
+    payload: null,
+    patientCaseNumber: null,
     createdAt: new Date('2026-09-21T10:00:00.000Z'),
     readAt: null,
     ...overrides,
@@ -199,5 +201,54 @@ describe('GetNotificationsUseCase — messageExcerpt (item 2, F7/F8) — MESMO g
     const [dto] = await useCase.execute({ recipientUid: 'me', limit: 20 });
 
     expect(dto.messageExcerpt).toBeNull();
+  });
+});
+
+describe('GetNotificationsUseCase — aviso do PT (spec 048): só o número do Caso, nunca o nome', () => {
+  const ptRow = (over: Partial<NotificationEventRow> = {}): NotificationEventRow =>
+    row({
+      id: 'pt1',
+      typeCode: 'THERAPEUTIC_PROJECT_CONTACTS_PENDING',
+      actorUid: 'system:pt-contact-reminders',
+      actorDisplayName: null,
+      conversationId: null,
+      messageId: null,
+      payload: { cycleId: 'c', versionId: 'v', dayOffset: 5, fields: ['RESPONSIBLE', 'CARE_TEAM'], nomeDoPaciente: 'Ana Silva' },
+      patientCaseNumber: 1041,
+      ...over,
+    });
+
+  it('destinatário COM patient_conversation:read: o nome do paciente continua null e o repositório nem é consultado por ele; o Caso e o payload (4 chaves) saem', async () => {
+    const repo = repoWith([ptRow()]);
+    const checker: ActorPatientConversationAccessChecker = { canReadPatientConversation: jest.fn().mockResolvedValue(true) };
+
+    const [dto] = await new GetNotificationsUseCase(repo, checker).execute({ recipientUid: 'me', limit: 20 });
+
+    expect(dto.patientDisplayName).toBeNull();
+    expect(dto.messageExcerpt).toBeNull();
+    expect(dto.patientCaseNumber).toBe(1041);
+    expect(dto.payload).toEqual({ cycleId: 'c', versionId: 'v', dayOffset: 5, fields: ['RESPONSIBLE', 'CARE_TEAM'] });
+    expect(JSON.stringify(dto)).not.toContain('Ana Silva');
+    expect(repo.findPatientDisplayName).not.toHaveBeenCalled();
+    expect(checker.canReadPatientConversation).not.toHaveBeenCalled();
+  });
+
+  it('os tipos de conversa seguem como antes: payload e Caso saem null', async () => {
+    const repo = repoWith([row({ patientCaseNumber: 1041, payload: { x: 1 } })]);
+    const checker: ActorPatientConversationAccessChecker = { canReadPatientConversation: jest.fn().mockResolvedValue(true) };
+    const [dto] = await new GetNotificationsUseCase(repo, checker).execute({ recipientUid: 'me', limit: 20 });
+    expect(dto.payload).toBeNull();
+    expect(dto.patientCaseNumber).toBeNull();
+    expect(dto.patientDisplayName).toBe('Ana Silva');
+  });
+
+  it('paciente sem número de caso: patientCaseNumber null (o front mostra "Caso sin número")', async () => {
+    const [dto] = await new GetNotificationsUseCase(repoWith([ptRow({ patientCaseNumber: null })])).execute({ recipientUid: 'me', limit: 20 });
+    expect(dto.patientCaseNumber).toBeNull();
+  });
+
+  it('payload malformado no banco vira null (nunca explode o sino)', async () => {
+    const [dto] = await new GetNotificationsUseCase(repoWith([ptRow({ payload: { cycleId: 1 } as never })])).execute({ recipientUid: 'me', limit: 20 });
+    expect(dto.payload).toBeNull();
   });
 });

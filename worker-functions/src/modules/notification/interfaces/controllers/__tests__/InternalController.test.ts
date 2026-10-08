@@ -485,6 +485,46 @@ describe('InternalController', () => {
       });
     });
 
+    describe('spec 048 — alarme de ESTADO dos lembretes de contato pendente do PT', () => {
+      const { logger } = jest.requireMock('@shared/logging');
+      beforeEach(() => {
+        logger.warn.mockClear();
+        logger.info.mockClear();
+      });
+      const comPt = (getHealth: jest.Mock) =>
+        new InternalController(
+          eventProcessor, outboxProcessor, reminderScheduler, bulkDispatchScheduler, bulkDispatchTalentumScheduler,
+          domainEventBacklogService, anaCareMirrorHealthService, messagingRetentionService, { getHealth } as never,
+        );
+
+      it('com lembrete vencido há > 1 dia: WARN com o msg literal que a métrica filtra, a CADA ciclo, e o bloco sobe no JSON', async () => {
+        const getHealth = jest.fn().mockResolvedValue({ overdue: 3, oldestOverdueHours: 49 });
+        const c = comPt(getHealth);
+        const res = mockRes();
+        await c.getEventsHealth(mockReq({}, {}), res);
+        await c.getEventsHealth(mockReq({}, {}), mockRes());
+
+        expect(getHealth).toHaveBeenCalledWith(24);
+        const warns = logger.warn.mock.calls.filter((x: [{ msg: string }]) => x[0].msg === '[pt-contact-reminders/health] overdue');
+        expect(warns).toHaveLength(2);
+        expect(warns[0][0]).toEqual({ msg: '[pt-contact-reminders/health] overdue', overdue: 3, oldestOverdueHours: 49 });
+        expect((res.json as jest.Mock).mock.calls[0][0].ptContactReminders).toEqual({ overdue: 3, oldestOverdueHours: 49 });
+      });
+
+      it('sem atraso: info ok, nenhum WARN do PT', async () => {
+        const c = comPt(jest.fn().mockResolvedValue({ overdue: 0, oldestOverdueHours: 0 }));
+        await c.getEventsHealth(mockReq({}, {}), mockRes());
+        expect(logger.warn.mock.calls.filter((x: [{ msg: string }]) => x[0].msg.startsWith('[pt-contact-reminders/health]'))).toHaveLength(0);
+        expect(logger.info).toHaveBeenCalledWith({ msg: '[pt-contact-reminders/health] ok' });
+      });
+
+      it('sem o serviço injetado (testes antigos) o bloco é omitido e nada quebra', async () => {
+        const res = mockRes();
+        await controller.getEventsHealth(mockReq({}, {}), res);
+        expect((res.json as jest.Mock).mock.calls[0][0]).not.toHaveProperty('ptContactReminders');
+      });
+    });
+
     it('parses recentWindowHours/stuckThresholdMinutes from query', async () => {
       const req = mockReq({}, { recentWindowHours: '12', stuckThresholdMinutes: '30' });
       const res = mockRes();

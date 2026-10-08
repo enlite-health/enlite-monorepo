@@ -31,6 +31,8 @@ import {
   AdminPatientContractedServicesController,
   AdminTherapeuticProjectsController,
   createAdminTherapeuticProjectsRoutes,
+  TherapeuticContactRemindersInternalController,
+  createTherapeuticContactRemindersInternalRoutes,
   createAdminPatientsRoutes,
   PublicLeadsController,
   createAdminPatientPhotoRoutes,
@@ -87,6 +89,7 @@ import { VacancyMeetLinksController } from '@modules/matching';
 import { DomainEventProcessor } from '@shared/events/DomainEventProcessor';
 import { DomainEventBacklogService } from '@shared/events/DomainEventBacklogService';
 import { AnaCareMirrorHealthService } from '@shared/events/AnaCareMirrorHealthService';
+import { TherapeuticContactReminderHealthService } from '@shared/events/TherapeuticContactReminderHealthService';
 import { CloudTasksClient } from '@shared/events/CloudTasksClient';
 import { PubSubClient } from '@shared/events/PubSubClient';
 import { createQualifiedInterviewHandler } from '@shared/events/handlers/QualifiedInterviewHandler';
@@ -669,13 +672,20 @@ const recruitmentHealthController = new RecruitmentHealthController(dbPool);
 const domainEventBacklogService = new DomainEventBacklogService(dbPool);
 const anaCareMirrorHealthService = new AnaCareMirrorHealthService(dbPool);
 const messagingRetentionService = new MessagingRetentionService(dbPool);
-const internalController = new InternalController(domainEventProcessor, outboxProcessor, reminderScheduler, bulkDispatchScheduler, bulkDispatchTalentumScheduler, domainEventBacklogService, anaCareMirrorHealthService, messagingRetentionService);
+const internalController = new InternalController(domainEventProcessor, outboxProcessor, reminderScheduler, bulkDispatchScheduler, bulkDispatchTalentumScheduler, domainEventBacklogService, anaCareMirrorHealthService, messagingRetentionService, new TherapeuticContactReminderHealthService(dbPool));
 app.use('/api/internal', systemContextMiddleware('job:internal'), createInternalRoutes(internalController));
 app.use(
   '/api/internal',
   systemContextMiddleware('job:internal'),
   internalAuthMiddleware,
   createAnaCareHoursSyncInternalRoutes(anaCareHoursSyncController),
+);
+// spec 048: varredura diária dos lembretes de contato pendente do PT (Cloud Scheduler, 09:00 AR) — outbox, sem Cloud Tasks.
+app.use(
+  '/api/internal',
+  systemContextMiddleware('job:pt-contact-reminders'),
+  internalAuthMiddleware,
+  createTherapeuticContactRemindersInternalRoutes(new TherapeuticContactRemindersInternalController()),
 );
 
 // Cloud Tasks: 30-min-before admission reminder (queue: admission-reminders).
