@@ -105,7 +105,7 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
       // NÃO da `patient_conversation:read`, mesmo para o anexo vindo do chat (Q11).
       c('documents', 'patient_document', ['read', 'create', 'update', 'delete'], 'documents'),
       c('coverage', 'patient_coverage', ['read', 'create', 'update'], 'contractedService'),
-      c('address', 'patient_address', ['read', 'create', 'update'], 'contractedService'),
+      c('address', 'patient_address', ['read', 'create', 'update', 'delete'], 'contractedService'),
       // A aba Matching saiu (decisão do Gabriel 05/09, na main): o encuadre É o serviço contratado
       // completo, que vive só na aba Serviço contratado — uma célula, uma aba.
       c('services', 'patient_services', ['read', 'create', 'update'], 'contractedService'),
