@@ -38,6 +38,8 @@ function seed(tag: string, cells: Array<[string, string]>): Seeded {
   const uid = `e2e-v047-${tag}-${run}`;
   const user: MockUser = { uid, email: `${uid}@e2e.test`, role: 'recruiter', country: 'AR' };
   const patientId = seedPatientQA();
+  // Spec 047 F4: o bloco lê o caso do PACIENTE (`EN{caso}#NN`), não da cópia na vaga.
+  safeSql(`UPDATE patients SET case_number = ${CASE_NUMBER} WHERE id = '${patientId}'`);
   const { groupId } = seedStaffInGroup({ uid, email: user.email, groupName: `E2E Vacante047 ${tag} ${run}`, country: 'AR' });
   for (const [resource, action] of cells) grantCell(groupId, resource, action);
   const serviceId = scalar(`INSERT INTO patient_contracted_services (patient_id, service_code, active, country, created_by, updated_by)

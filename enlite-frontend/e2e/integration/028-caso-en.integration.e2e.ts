@@ -411,7 +411,7 @@ test.describe('@integration Spec 028 — "CASO EN{n}" no cartão, no prefill e n
     await page.getByRole('button', { name: /^Servicio Contratado$/i }).click();
     const vacanciesCard = page.getByTestId('patient-vacancies-card');
     await expect(vacanciesCard).toBeVisible({ timeout: 15_000 });
-    await expect(vacanciesCard.getByText(new RegExp(`CASO EN${NATIVE_CASE_CREATE}-\\d+`)).first()).toBeVisible({
+    await expect(vacanciesCard.getByText(new RegExp(`EN${NATIVE_CASE_CREATE}(#\\d+)?`)).first()).toBeVisible({
       timeout: 10_000,
     });
 

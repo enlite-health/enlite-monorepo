@@ -9,6 +9,7 @@ vi.mock('@infrastructure/http/AdminPatientsApiService');
 const VACANCY_1: PatientVacancySummary = {
   id: 'v-1',
   caseNumber: 100,
+  caseOrdinal: 1,
   vacancyNumber: 1,
   title: 'Vaga 1',
   status: 'OPEN',
@@ -19,6 +20,7 @@ const VACANCY_1: PatientVacancySummary = {
 const VACANCY_2: PatientVacancySummary = {
   id: 'v-2',
   caseNumber: 100,
+  caseOrdinal: 2,
   vacancyNumber: 2,
   title: 'Vaga 2',
   status: 'OPEN',

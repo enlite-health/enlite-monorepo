@@ -375,7 +375,8 @@ test.describe('@integration Modal Nueva Vacante — seleção de caso (nativo ×
 
     // PatientVacanciesCard (mesma ficha, aba "Servicio Contratado" (spec 047: a vacante desceu para ela) — click real, não deep-link).
     await page.getByRole('button', { name: /^Servicio Contratado$/i }).click();
-    await expect(page.getByText(`CASO EN${NATIVE_CASE}`, { exact: false }).first()).toBeVisible({ timeout: 10_000 });
+    // Spec 047 (F4): o bloco mostra `EN{caso}#NN` (formatVacancyCase), não mais `CASO EN{caso}-{n}`.
+    await expect(page.getByTestId('patient-vacancies-card').getByText(`EN${NATIVE_CASE}`, { exact: false }).first()).toBeVisible({ timeout: 10_000 });
 
     // PatientKanbanCard (/admin/patients/kanban) — mesma fonte de `caseNumber` da
     // PatientsTable (PatientQueryRepository); paciente nativo está status=ACTIVE →

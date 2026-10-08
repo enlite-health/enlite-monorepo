@@ -127,6 +127,7 @@ const MOCK_PATIENT_VACANCIES = [
   {
     id: 'vacancy-v1-aaa',
     caseNumber: 42,
+    caseOrdinal: 1,
     vacancyNumber: 1,
     title: 'CASO 42-1',
     status: 'ACTIVE',
@@ -136,6 +137,7 @@ const MOCK_PATIENT_VACANCIES = [
   {
     id: 'vacancy-v2-bbb',
     caseNumber: 42,
+    caseOrdinal: 2,
     vacancyNumber: 2,
     title: 'CASO 42-2',
     status: 'CLOSED',
@@ -145,6 +147,7 @@ const MOCK_PATIENT_VACANCIES = [
   {
     id: 'vacancy-v3-ccc',
     caseNumber: 42,
+    caseOrdinal: 3,
     vacancyNumber: 3,
     title: 'CASO 42-3',
     status: 'SEARCHING',
@@ -377,9 +380,10 @@ test.describe('PatientDetailPage — Caso # badge + PatientVacanciesCard @integr
     await expect(page.getByText('Vacantes Generadas')).toBeVisible({ timeout: 10_000 });
 
     // Vacancy items
-    await expect(page.getByText('CASO 42-1')).toBeVisible();
-    await expect(page.getByText('CASO 42-2')).toBeVisible();
-    await expect(page.getByText('CASO 42-3')).toBeVisible();
+    // Spec 047 (F4): o código do bloco é `formatVacancyCase` (caso#ordinal), não mais `CASO 42-n`.
+    await expect(page.getByText('42#01', { exact: true })).toBeVisible();
+    await expect(page.getByText('42#02', { exact: true })).toBeVisible();
+    await expect(page.getByText('42#03', { exact: true })).toBeVisible();
 
     // Draft badge on v3
     await expect(page.getByText('Borrador')).toBeVisible();
@@ -404,7 +408,7 @@ test.describe('PatientDetailPage — Caso # badge + PatientVacanciesCard @integr
 
     await page.getByRole('button', { name: /^Servicio Contratado$/i }).click();
     await expect(page.getByText('Vacantes Generadas')).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByText('CASO 42-1')).toBeVisible();
+    await expect(page.getByText('42#01', { exact: true })).toBeVisible();
 
     // Screenshot the card itself (it renders below the fold) so the baseline
     // actually proves the vacancies render, not just the page header.
