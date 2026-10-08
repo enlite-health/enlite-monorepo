@@ -56,7 +56,7 @@ describe('hourlyValueActorOf', () => {
 });
 
 describe('projectContractedServiceForActor', () => {
-  const VAGA = { id: 'v1', caseNumber: 1234, caseOrdinal: 1, status: 'SEARCHING', siteUrl: 'https://exemplo.test/x' };
+  const VAGA = { id: 'v1', caseNumber: 1234, caseOrdinal: 1, status: 'SEARCHING' };
   const service = { id: 's1', hourlyValue: 1500, liveVacancy: VAGA };
   const le: HourlyValueActor = { cells: [CELL, 'vacancy:read'], roles: null };
   const naoLe: HourlyValueActor = { cells: [], roles: ['admin'] };
@@ -86,9 +86,9 @@ describe('projectContractedServiceForActor', () => {
     expect(out.liveVacancyRedacted).toBe(false);
   });
 
-  it('A3: a vaga projetada tem EXATAMENTE as 5 chaves (nenhum campo de dinheiro entra)', () => {
+  it('A3: a vaga projetada tem EXATAMENTE as 4 chaves (nenhum campo de dinheiro entra)', () => {
     const out = projectContractedServiceForActor(service, { cells: ['vacancy:read'], roles: null });
-    expect(Object.keys(out.liveVacancy as object).sort()).toEqual(['caseNumber', 'caseOrdinal', 'id', 'siteUrl', 'status']);
+    expect(Object.keys(out.liveVacancy as object).sort()).toEqual(['caseNumber', 'caseOrdinal', 'id', 'status']);
   });
 
   it('A2, os DOIS lados: com vacancy:read e sem vaga → null + false; sem vacancy:read → null + true', () => {

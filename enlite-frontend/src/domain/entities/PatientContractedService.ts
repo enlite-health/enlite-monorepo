@@ -79,7 +79,6 @@ export interface PatientContractedServiceLiveVacancy {
   caseNumber: number | null;
   caseOrdinal: number | null;
   status: string | null;
-  siteUrl: string | null;
 }
 
 export interface PatientContractedServiceDetail {

@@ -81,8 +81,8 @@ describe('contrato PatientDetail — fixture capturada da API real', () => {
     expect(p.contractedServices[0].serviceCode).toBe('AT');
   });
 
-  it('spec 047 (F2): liveVacancy é allow-list de 5 chaves (campo a mais é recusado) e liveVacancyRedacted distingue "sem vaga" de "sem permissão"', () => {
-    const vaga = { id: 'v1', caseNumber: 1234, caseOrdinal: 1, status: 'SEARCHING', siteUrl: null };
+  it('spec 047 (F2): liveVacancy é allow-list de 4 chaves (campo a mais é recusado) e liveVacancyRedacted distingue "sem vaga" de "sem permissão"', () => {
+    const vaga = { id: 'v1', caseNumber: 1234, caseOrdinal: 1, status: 'SEARCHING' };
     const comServico = (patch: Record<string, unknown>) => ({ ...fixture, contractedServices: [{ ...fixture.contractedServices[0], ...patch }] });
     const ok = patientDetailContractSchema.parse(comServico({ liveVacancy: vaga, liveVacancyRedacted: false }));
     expect(ok.contractedServices[0].liveVacancy).toEqual(vaga);

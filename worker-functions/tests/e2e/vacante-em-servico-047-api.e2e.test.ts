@@ -1,18 +1,18 @@
 /**
  * vacante-em-servico-047-api.e2e.test.ts @integration — spec 047, F2: a vaga viva do serviço contratado
- * chega à ficha com código, estado e link, REDIGIDA por `vacancy:read`.
+ * chega à ficha com código e estado, REDIGIDA por `vacancy:read`.
  *
  * Postgres real, SQL real, sem mock. O paciente tem 3 serviços:
- *   A — 2 vagas vivas (a mais ANTIGA é a que vale), com link do site;
+ *   A — 2 vagas vivas (a mais ANTIGA é a que vale), com link do site NO FORMATO REAL DE PRD (objeto `{id,url}`);
  *   B — sem vaga;
- *   C — 1 vaga viva SEM link do site (`social_short_links` vazio) → `siteUrl: null`.
+ *   C — 1 vaga viva SEM link do site (`social_short_links` vazio).
  * A vaga nunca é lida de `jp.case_number` (a coluna fica NULL de propósito): o caso vem do PACIENTE
  * (fragmento com dono, spec 046) — se alguém voltar a ler a cópia, o `caseNumber` do teste vira null.
  *
- *  feliz  — admin, pelas DUAS rotas HTTP (`GET /patients/:id` e `/contracted-services`): objeto completo com as 5
- *           chaves, valor-hora cru, flags false; B → null + false; C → siteUrl null.
+ *  feliz  — admin, pelas DUAS rotas HTTP (`GET /patients/:id` e `/contracted-services`): objeto completo com as 4
+ *           chaves (sem `siteUrl`: o link saiu da ficha em 08/10), valor-hora cru, flags false; B → null + false.
  *  alt 1  — "recrutador" SEM `patient_contract_value:read`, mas com `vacancy:read` (engine decidiu: células):
- *           valor redigido, vaga VISÍVEL — nas duas projeções reais. As chaves da vaga são EXATAMENTE as 5.
+ *           valor redigido, vaga VISÍVEL — nas duas projeções reais. As chaves da vaga são EXATAMENTE as 4.
  *  alt 2  — perfil SEM `vacancy:read` (com o valor-hora): vaga redigida (null + true) no serviço A e C, e no B
  *           (sem vaga) também true — "sem permissão" não se confunde com "sem vaga"; o serviço continua visível.
  *
@@ -35,7 +35,9 @@ const RUN = Date.now();
 const TASK = `v047-api-${RUN}`;
 const CASE_NUMBER = 940000 + (RUN % 50000);
 const SITE = 'https://exemplo.test/x';
-const CINCO_CHAVES = ['caseNumber', 'caseOrdinal', 'id', 'siteUrl', 'status'];
+const QUATRO_CHAVES = ['caseNumber', 'caseOrdinal', 'id', 'status'];
+/** Formato REAL de PRD: `social_short_links.site` é um objeto `{id,url}`, não uma string. */
+const linkPrd = (url: string): string => JSON.stringify({ site: { id: 'link_x', url } });
 
 type Captured = { status: number; body: unknown };
 function reqRes(params: Record<string, string>, roles: string[], cells: string[]): [Request, Response, Captured] {
@@ -88,8 +90,8 @@ describe('Vaga viva do serviço contratado, redigida por vacancy:read (spec 047 
     svc.A = await seedService();
     svc.B = await seedService();
     svc.C = await seedService();
-    vaga.Aold = await seedVaga(svc.A, 1, 'SEARCHING', '2 days', JSON.stringify({ site: SITE }));
-    vaga.Ayoung = await seedVaga(svc.A, 2, 'CLOSED', '1 hour', JSON.stringify({ site: 'https://exemplo.test/outra' }));
+    vaga.Aold = await seedVaga(svc.A, 1, 'SEARCHING', '2 days', linkPrd(SITE));
+    vaga.Ayoung = await seedVaga(svc.A, 2, 'CLOSED', '1 hour', linkPrd('https://exemplo.test/outra'));
     vaga.C = await seedVaga(svc.C, 3, 'SEARCHING', '1 day', '{}');
   });
 
@@ -111,18 +113,24 @@ describe('Vaga viva do serviço contratado, redigida por vacancy:read (spec 047 
     return { lista, ficha };
   }
 
-  it('feliz — admin: as DUAS rotas HTTP devolvem a vaga viva MAIS ANTIGA com as 5 chaves; sem vaga → null+false; sem link → siteUrl null', async () => {
+  it('feliz — admin: as DUAS rotas HTTP devolvem a vaga viva MAIS ANTIGA com as 4 chaves e SEM siteUrl; sem vaga → null+false', async () => {
     const lista = (await api.get(`/api/admin/patients/${patientId}/contracted-services`, asAdmin)).data.data.services as Svc[];
     const ficha = (await api.get(`/api/admin/patients/${patientId}`, asAdmin)).data.data.contractedServices as Svc[];
     for (const rows of [lista, ficha]) {
       const a = porId(rows, svc.A);
-      expect(a.liveVacancy).toEqual({ id: vaga.Aold, caseNumber: CASE_NUMBER, caseOrdinal: 1, status: 'SEARCHING', siteUrl: SITE });
-      expect(Object.keys(a.liveVacancy!).sort()).toEqual(CINCO_CHAVES);
+      expect(a.liveVacancy).toEqual({ id: vaga.Aold, caseNumber: CASE_NUMBER, caseOrdinal: 1, status: 'SEARCHING' });
+      expect(Object.keys(a.liveVacancy!).sort()).toEqual(QUATRO_CHAVES);
       expect(a).toMatchObject({ liveVacancyRedacted: false, hourlyValue: 1500, hourlyValueRedacted: false });
       expect(porId(rows, svc.B)).toMatchObject({ liveVacancy: null, liveVacancyRedacted: false });
-      // A4: vaga sem link → siteUrl null (nada é gerado na leitura: a coluna segue vazia).
-      expect(porId(rows, svc.C).liveVacancy).toEqual({ id: vaga.C, caseNumber: CASE_NUMBER, caseOrdinal: 3, status: 'SEARCHING', siteUrl: null });
+      expect(porId(rows, svc.C).liveVacancy).toEqual({ id: vaga.C, caseNumber: CASE_NUMBER, caseOrdinal: 3, status: 'SEARCHING' });
     }
+    // A4: o link do site (objeto {id,url} em PRD) NÃO vaza na resposta em lugar nenhum, nem como JSON cru.
+    for (const rows of [lista, ficha]) {
+      expect(JSON.stringify(rows)).not.toContain('siteUrl');
+      expect(JSON.stringify(rows)).not.toContain(SITE);
+      expect(JSON.stringify(rows)).not.toContain('link_x');
+    }
+    // Leitura não gera nada: a coluna da vaga C segue vazia.
     const aindaVazio = (await pool.query(`SELECT social_short_links FROM job_postings WHERE id = $1`, [vaga.C])).rows[0].social_short_links;
     expect(aindaVazio).toEqual({});
   });
@@ -132,9 +140,9 @@ describe('Vaga viva do serviço contratado, redigida por vacancy:read (spec 047 
     for (const rows of [lista, ficha]) {
       const a = porId(rows, svc.A);
       expect(a).toMatchObject({ hourlyValue: null, hourlyValueRedacted: true, liveVacancyRedacted: false });
-      expect(a.liveVacancy).toEqual({ id: vaga.Aold, caseNumber: CASE_NUMBER, caseOrdinal: 1, status: 'SEARCHING', siteUrl: SITE });
-      // A3: as chaves da vaga são EXATAMENTE as 5 — nenhum campo de dinheiro entra no objeto.
-      expect(Object.keys(a.liveVacancy!).sort()).toEqual(CINCO_CHAVES);
+      expect(a.liveVacancy).toEqual({ id: vaga.Aold, caseNumber: CASE_NUMBER, caseOrdinal: 1, status: 'SEARCHING' });
+      // A3: as chaves da vaga são EXATAMENTE as 4 — nenhum campo de dinheiro entra no objeto.
+      expect(Object.keys(a.liveVacancy!).sort()).toEqual(QUATRO_CHAVES);
       expect(porId(rows, svc.B)).toMatchObject({ liveVacancy: null, liveVacancyRedacted: false });
     }
   });

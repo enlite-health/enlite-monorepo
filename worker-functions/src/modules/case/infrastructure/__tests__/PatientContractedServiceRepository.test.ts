@@ -301,15 +301,15 @@ describe('PatientContractedServiceRepository', () => {
     expect(providerRepo.listForService).toHaveBeenCalledWith('svc-1');
   });
 
-  it('listForPatient (047 F2): a vaga viva vem do MESMO helper da ficha — objeto com as 5 chaves, ou null sem vaga', async () => {
+  it('listForPatient (047 F2): a vaga viva vem do MESMO helper da ficha — objeto com as 4 chaves, ou null sem vaga', async () => {
     mockPoolQuery.mockResolvedValueOnce({ rows: [SERVICE_ROW] }); // main
     mockPoolQuery.mockResolvedValueOnce({ rows: [] }); // devices
     mockPoolQuery.mockResolvedValueOnce({
-      rows: [{ contracted_service_id: 'svc-1', id: 'vac-1', case_number: 77, case_ordinal: 3, status: 'DRAFT', site_url: null }],
+      rows: [{ contracted_service_id: 'svc-1', id: 'vac-1', case_number: 77, case_ordinal: 3, status: 'DRAFT' }],
     }); // fetchLiveVacancies
     const repo = new PatientContractedServiceRepository(fakeProviderRepo());
     const [com] = await repo.listForPatient('pat-1');
-    expect(com.liveVacancy).toEqual({ id: 'vac-1', caseNumber: 77, caseOrdinal: 3, status: 'DRAFT', siteUrl: null });
+    expect(com.liveVacancy).toEqual({ id: 'vac-1', caseNumber: 77, caseOrdinal: 3, status: 'DRAFT' });
 
     mockPoolQuery.mockResolvedValueOnce({ rows: [SERVICE_ROW] });
     mockPoolQuery.mockResolvedValueOnce({ rows: [] });

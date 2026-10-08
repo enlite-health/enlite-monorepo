@@ -316,13 +316,12 @@ export function ServicosContratadosCard({ patient, onSaved, focusRequest }: Serv
           <TableHead>{t('admin.patients.detail.contractedServicesCard.tableLocation')}</TableHead>
           <TableHead>{t('admin.patients.detail.contractedServicesCard.tableSchedule')}</TableHead>
           {verVagas && <TableHead>{t('admin.patients.detail.contractedServicesCard.tableVacancyCode')}</TableHead>}
-          {verVagas && <TableHead>{t('admin.patients.detail.contractedServicesCard.tableSiteLink')}</TableHead>}
           <TableHead unwrapped><span className="sr-only">{t('admin.patients.detail.contractedServicesCard.tableActions')}</span></TableHead>
         </TableHeader>
         <TableBody>
           {services.length === 0 ? (
             <TableRow>
-              <TableCell unwrapped colSpan={verVagas ? 8 : 6} className="py-6 text-center">
+              <TableCell unwrapped colSpan={verVagas ? 7 : 6} className="py-6 text-center">
                 <Text as="span" size="sm" color="secondary">
                   {t('admin.patients.detail.noData')}
                 </Text>

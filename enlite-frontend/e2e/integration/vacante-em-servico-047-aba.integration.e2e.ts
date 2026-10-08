@@ -49,7 +49,7 @@ function seed(tag: string, cells: Array<[string, string]>): Seeded {
         required_professions, providers_needed, status, is_draft, is_test, country, social_short_links, created_at, updated_at
       ) VALUES (
         nextval('job_postings_vacancy_number_seq'), ${CASE_NUMBER}, 'CASO E2E 047 vaga do servico', '', '${patientId}', '${serviceId}',
-        ARRAY['AT']::varchar[], 1, 'SEARCHING', false, true, 'AR', '{"site": "https://exemplo.test/x"}'::jsonb, NOW(), NOW()
+        ARRAY['AT']::varchar[], 1, 'SEARCHING', false, true, 'AR', '{"site": {"id": "link_x", "url": "https://exemplo.test/x"}}'::jsonb, NOW(), NOW()
       ) RETURNING id`);
   return { patientId, groupId, user, serviceId, vacancyId };
 }
