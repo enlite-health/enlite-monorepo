@@ -190,4 +190,22 @@ describe('useVacanciesData', () => {
       expect(listSpy).toHaveBeenCalledWith({ time_from: '09:00', time_to: '17:00' });
     });
   });
+
+  it('refaz a busca quando sort/order mudam (sort e order estão nas deps do efeito)', async () => {
+    const listSpy = vi.spyOn(AdminApiService, 'listVacancies').mockResolvedValue({ data: [], total: 0 });
+    vi.spyOn(AdminApiService, 'getVacanciesStats').mockResolvedValue([]);
+
+    const { rerender } = renderHook(({ f }) => useVacanciesData(f), {
+      initialProps: { f: { limit: '20' } as Record<string, string> },
+    });
+    await waitFor(() => expect(listSpy).toHaveBeenCalledTimes(1));
+
+    rerender({ f: { limit: '20', sort: 'completed', order: 'asc' } });
+    await waitFor(() => expect(listSpy).toHaveBeenCalledTimes(2));
+    expect(listSpy).toHaveBeenLastCalledWith({ limit: '20', sort: 'completed', order: 'asc' });
+
+    rerender({ f: { limit: '20', sort: 'completed', order: 'desc' } });
+    await waitFor(() => expect(listSpy).toHaveBeenCalledTimes(3));
+    expect(listSpy).toHaveBeenLastCalledWith({ limit: '20', sort: 'completed', order: 'desc' });
+  });
 });

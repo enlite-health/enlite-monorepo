@@ -5,6 +5,7 @@ import {
   TdHTMLAttributes,
   HTMLAttributes,
 } from 'react';
+import { ChevronUp, ChevronDown } from 'lucide-react';
 import { Text } from '../Text';
 
 type Align = 'left' | 'center' | 'right';
@@ -102,13 +103,25 @@ interface TableHeadProps extends ThHTMLAttributes<HTMLTableCellElement> {
   align?: Align;
   /** Pula o wrap automático em Text — para conteúdo já estilizado (checkboxes, ícones). */
   unwrapped?: boolean;
+  /**
+   * Ordenação (opcional). Sem `onSort`, o render é o de sempre. Com `onSort`, o conteúdo vira um
+   * `<button type="button">`; `sortDirection` é a direção SE esta coluna é a ativa (null = inativa).
+   */
+  onSort?: () => void;
+  sortDirection?: SortDirection | null;
 }
+
+export type SortDirection = 'asc' | 'desc';
+
+const ARIA_SORT = { asc: 'ascending', desc: 'descending' } as const;
 
 export function TableHead({
   children,
   align = 'left',
   unwrapped = false,
   className = '',
+  onSort,
+  sortDirection = null,
   ...rest
 }: TableHeadProps): JSX.Element {
   const classes = [
@@ -120,6 +133,30 @@ export function TableHead({
     .join(' ');
 
   const isEmpty = children === undefined || children === null;
+
+  if (onSort) {
+    const Icon = sortDirection === 'desc' ? ChevronDown : ChevronUp;
+    return (
+      <th
+        {...rest}
+        className={classes}
+        aria-sort={sortDirection ? ARIA_SORT[sortDirection] : 'none'}
+      >
+        <button
+          type="button"
+          onClick={onSort}
+          className="inline-flex items-center gap-1 cursor-pointer bg-transparent p-0 text-inherit"
+        >
+          <Text as="span" size="sm" weight="medium" color="inherit">
+            {children}
+          </Text>
+          {sortDirection && (
+            <Icon className="w-3.5 h-3.5" aria-hidden="true" data-sort-icon={sortDirection} />
+          )}
+        </button>
+      </th>
+    );
+  }
 
   return (
     <th {...rest} className={classes}>

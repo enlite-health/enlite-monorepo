@@ -13,6 +13,8 @@ import { VacancyFilters, type VacancyAdvancedFilters } from '@presentation/compo
 import { VacanciesTable } from '@presentation/components/features/admin/VacanciesTable';
 import { DraftVacancyChoiceDialog } from '@presentation/components/features/admin/DraftVacancyChoiceDialog';
 import { useVacanciesData } from '@hooks/admin/useVacanciesData';
+import { useTableSort } from '@hooks/useTableSort';
+import type { VacancySortKey } from '@presentation/components/features/admin/VacanciesTable';
 import { getStatusOptions } from './vacanciesData';
 import { TableSkeleton } from '@presentation/components/ui/skeletons';
 import type { SelectOption } from '@presentation/components/atoms/Select';
@@ -37,6 +39,7 @@ export function AdminVacanciesPage(): JSX.Element {
   const [itemsPerPage, setItemsPerPage] = useState('20');
   const [currentPage, setCurrentPage] = useState(1);
   const [advancedFilters, setAdvancedFilters] = useState<VacancyAdvancedFilters>(INITIAL_ADVANCED);
+  const { sort, toggle: toggleSort } = useTableSort<VacancySortKey>();
 
   const [stateOptions, setStateOptions] = useState<SelectOption[]>([]);
   const [cityOptions, setCityOptions] = useState<SelectOption[]>([]);
@@ -55,6 +58,7 @@ export function AdminVacanciesPage(): JSX.Element {
   const handleSearchChange = (v: string) => { setSearchQuery(v); setCurrentPage(1); };
   const handleStatusChange = (v: string) => { setSelectedStatus(v); setCurrentPage(1); };
   const handleItemsPerPageChange = (v: string) => { setItemsPerPage(v); setCurrentPage(1); };
+  const handleSort = useCallback((key: VacancySortKey) => { toggleSort(key); setCurrentPage(1); }, [toggleSort]);
   const handleAdvancedChange = useCallback((updates: Partial<VacancyAdvancedFilters>) => {
     setAdvancedFilters((prev) => ({ ...prev, ...updates }));
     setCurrentPage(1);
@@ -76,8 +80,12 @@ export function AdminVacanciesPage(): JSX.Element {
       base.time_from = advancedFilters.timeFrom;
       base.time_to = advancedFilters.timeTo;
     }
+    if (sort) {
+      base.sort = sort.key;
+      base.order = sort.direction;
+    }
     return base;
-  }, [searchQuery, selectedStatus, itemsPerPage, currentPage, advancedFilters]);
+  }, [searchQuery, selectedStatus, itemsPerPage, currentPage, advancedFilters, sort]);
 
   const { vacancies: rawVacancies, stats: rawStats, total, isLoading, error, refetch } = useVacanciesData(filters);
   const stats = rawStats as { label: string; value: string | number; icon: string }[] | null;
@@ -295,6 +303,8 @@ export function AdminVacanciesPage(): JSX.Element {
             <VacanciesTable
               vacancies={vacancies}
               onRowClick={handleRowClick}
+              sort={sort}
+              onSort={handleSort}
             />
           </div>
         )}
