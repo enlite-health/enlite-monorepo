@@ -2,7 +2,7 @@ import { useTranslation } from 'react-i18next';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import type { PatientVacancySummary } from '@domain/entities/PatientDetail';
-import { formatCaseNumber } from '@domain/value-objects/caseNumberFormat';
+import { formatVacancyCase } from '@domain/value-objects/caseNumberFormat';
 
 interface PatientVacanciesCardProps {
   patientId: string;
@@ -47,10 +47,9 @@ function DraftBadge() {
   );
 }
 
+/** Spec 047 (F4): o código é `formatVacancyCase` — o MESMO dono da coluna "Código de la vacante" da tabela de serviços. */
 function buildVacancyTitle(v: PatientVacancySummary): string {
-  if (v.caseNumber != null && v.vacancyNumber != null) {
-    return `CASO ${formatCaseNumber(v.caseNumber)}-${v.vacancyNumber}`;
-  }
+  if (v.caseNumber != null) return formatVacancyCase(v.caseNumber, v.caseOrdinal);
   return v.title ?? '—';
 }
 
@@ -98,7 +97,7 @@ export function PatientVacanciesCard({
                   const code = buildVacancyTitle(v);
                   return (
                     <>
-                      <Text size="sm" weight="semibold" color="primary" className="block">
+                      <Text size="sm" weight="semibold" color="primary" className="block" data-testid={`patient-vacancy-code-${v.id}`}>
                         {code}
                       </Text>
                       {v.title && v.title !== code && (

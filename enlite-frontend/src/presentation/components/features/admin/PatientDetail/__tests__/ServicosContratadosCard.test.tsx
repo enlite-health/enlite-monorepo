@@ -77,7 +77,7 @@ const SERVICE: PatientContractedServiceDetail = {
   providerAgeBand: 'AGE_30_45',
   addressId: null,
   schedule: null,
-  liveVacancyId: null,
+  liveVacancy: null, liveVacancyRedacted: false,
   active: true,
   endedAt: null,
   country: 'AR',
@@ -104,7 +104,8 @@ const SCHEDULE = [
  */
 describe('ServicosContratadosCard — tabela no molde do Figma (05/09) + #PEND-08', () => {
   it('mostra dispositivo, serviço, quantidade, lugar + ENDEREÇO vinculado e horário — nenhuma coluna com dado existente vira "—"', () => {
-    const svc: PatientContractedServiceDetail = { ...SERVICE, addressId: 'addr-home', schedule: SCHEDULE };
+    // Spec 047: com vaga viva (e link) as 2 colunas novas também têm dado — sem ela mostrariam "—" (coberto abaixo).
+    const svc: PatientContractedServiceDetail = { ...SERVICE, addressId: 'addr-home', schedule: SCHEDULE, liveVacancy: { id: 'v1', caseNumber: 1234, caseOrdinal: 1, status: 'SEARCHING', siteUrl: 'https://exemplo.test/x' } };
     const patient = { ...patientDetailFixture, addresses: [ADDRESS_HOME, ADDRESS_SCHOOL], contractedServices: [svc] };
     render(<ServicosContratadosCard patient={patient} />);
 
@@ -193,7 +194,7 @@ describe('ServicosContratadosCard — tabela no molde do Figma (05/09) + #PEND-0
       providerAgeBand: null,
       addressId: null,
       schedule: null,
-      liveVacancyId: null,
+      liveVacancy: null, liveVacancyRedacted: false,
       active: false, endedAt: '2026-09-02T00:00:00Z', country: 'AR', deviceTypes: [], providers: [],
       createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z',
     };
@@ -401,7 +402,7 @@ describe('ServicosContratadosCard — ícone de ativação de recrutamento por s
     ...SERVICE,
     addressId: 'addr-home',
     schedule: SCHEDULE,
-    liveVacancyId: null,
+    liveVacancy: null, liveVacancyRedacted: false,
   };
   const READY_PATIENT = {
     ...patientDetailFixture,
@@ -474,18 +475,86 @@ describe('ServicosContratadosCard — ícone de ativação de recrutamento por s
     expect(onSaved).not.toHaveBeenCalled();
   });
 
-  it('caminho "Ver vacante": serviço com vaga viva mostra o link (não o botão), abre em nova rota e não dispara o detalhe da linha', () => {
-    const withVacancy = { ...READY_SERVICE, liveVacancyId: 'vac-9' };
-    const patient = { ...READY_PATIENT, contractedServices: [withVacancy] };
-    render(<ServicosContratadosCard patient={patient} />);
+  // ── Spec 047 (F3): colunas "Código da vacante" e "Link do site"; o ícone "Ver vacante" saiu ────────────────
+  describe('spec 047 F3 — colunas da vaga viva', () => {
+    const VAGA = { id: 'vac-9', caseNumber: 1234, caseOrdinal: 1, status: 'SEARCHING', siteUrl: 'https://exemplo.test/x?a=1' };
+    const comVaga = (patch: Record<string, unknown> = {}) => ({
+      ...READY_PATIENT, contractedServices: [{ ...READY_SERVICE, liveVacancy: VAGA, liveVacancyRedacted: false, ...patch }],
+    });
+    const headers = () => screen.getAllByRole('columnheader').map((h) => h.textContent);
 
-    expect(screen.queryByTestId('contracted-service-activate-recruitment-svc-1')).toBeNull();
-    const link = screen.getByTestId('contracted-service-view-vacancy-svc-1');
-    expect(link.getAttribute('href')).toBe('/admin/vacancies/vac-9');
+    it('A1: vaga publicada → a coluna mostra EN1234#01 (texto exato) e linka /admin/vacancies/:id; o clique não abre o detalhe da linha', () => {
+      render(<ServicosContratadosCard patient={comVaga()} />);
+      const link = screen.getByTestId('contracted-service-vacancy-link-svc-1');
+      expect(link.textContent).toBe('EN1234#01');
+      expect(link.getAttribute('href')).toBe('/admin/vacancies/vac-9');
+      fireEvent.click(link);
+      expect(screen.queryByTestId('contracted-service-detail-drawer')).toBeNull();
+    });
 
-    fireEvent.click(link);
-    expect(screen.queryByTestId('contracted-service-detail-drawer')).toBeNull();
-    expect(mockActivateRecruitment).not.toHaveBeenCalled();
+    it('A1: rascunho vai pelo MESMO href — o detalhe da vaga redireciona o rascunho para /borrador (VacancyDetailPage)', () => {
+      render(<ServicosContratadosCard patient={comVaga({ liveVacancy: { ...VAGA, status: 'DRAFT' } })} />);
+      expect(screen.getByTestId('contracted-service-vacancy-link-svc-1').getAttribute('href')).toBe('/admin/vacancies/vac-9');
+    });
+
+    it('A1: vaga legada sem ordinal → só o número do caso (fallback de formatVacancyCase), a linha não quebra', () => {
+      render(<ServicosContratadosCard patient={comVaga({ liveVacancy: { ...VAGA, caseOrdinal: null } })} />);
+      expect(screen.getByTestId('contracted-service-vacancy-link-svc-1').textContent).toBe('EN1234');
+    });
+
+    it('A2: "Link do site" mostra o siteUrl (externo, noopener) e o botão copia EXATAMENTE esse texto', async () => {
+      const writeText = vi.fn().mockResolvedValue(undefined);
+      Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+      render(<ServicosContratadosCard patient={comVaga()} />);
+      const url = screen.getByTestId('contracted-service-site-url-svc-1');
+      expect(url.textContent).toBe('https://exemplo.test/x?a=1');
+      expect(url.getAttribute('href')).toBe('https://exemplo.test/x?a=1');
+      expect(url.getAttribute('target')).toBe('_blank');
+      expect(url.getAttribute('rel')).toBe('noopener noreferrer');
+      fireEvent.click(screen.getByTestId('contracted-service-copy-link-svc-1'));
+      await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
+      expect(writeText).toHaveBeenCalledWith('https://exemplo.test/x?a=1');
+      expect(screen.queryByTestId('contracted-service-detail-drawer')).toBeNull();
+    });
+
+    it('vaga SEM link (rascunho / anterior ao Short.io) → "—" no link do site, sem botão de copiar; nada é gerado', () => {
+      render(<ServicosContratadosCard patient={comVaga({ liveVacancy: { ...VAGA, siteUrl: null } })} />);
+      expect(screen.getByTestId('contracted-service-site-link-svc-1').textContent).toBe('—');
+      expect(screen.queryByTestId('contracted-service-copy-link-svc-1')).toBeNull();
+    });
+
+    it('A3: serviço SEM vaga → as duas colunas "—" e "ativar recrutamento" com a regra de hoje (aparece)', () => {
+      render(<ServicosContratadosCard patient={READY_PATIENT} />);
+      expect(screen.getByTestId('contracted-service-vacancy-code-svc-1').textContent).toBe('—');
+      expect(screen.getByTestId('contracted-service-site-link-svc-1').textContent).toBe('—');
+      expect(screen.getByTestId('contracted-service-activate-recruitment-svc-1')).toBeInTheDocument();
+      expect(headers()).toContain('Código de la vacante');
+      expect(headers()).toContain('Enlace del sitio');
+    });
+
+    it('A4: liveVacancyRedacted → as duas colunas NÃO estão no DOM (nem o cabeçalho) e "ativar recrutamento" não aparece', () => {
+      render(<ServicosContratadosCard patient={comVaga({ liveVacancy: null, liveVacancyRedacted: true })} />);
+      expect(screen.queryByTestId('contracted-service-vacancy-code-svc-1')).toBeNull();
+      expect(screen.queryByTestId('contracted-service-site-link-svc-1')).toBeNull();
+      expect(headers()).not.toContain('Código de la vacante');
+      expect(headers()).not.toContain('Enlace del sitio');
+      expect(screen.queryByTestId('contracted-service-activate-recruitment-svc-1')).toBeNull();
+    });
+
+    it('A5: nenhuma linha tem "Ver vacante" — nem o ícone (testid antigo) nem o texto — com vaga, sem vaga ou redigida', () => {
+      for (const patient of [comVaga(), READY_PATIENT, comVaga({ liveVacancy: null, liveVacancyRedacted: true })]) {
+        const { container, unmount } = render(<ServicosContratadosCard patient={patient} />);
+        expect(screen.queryByTestId('contracted-service-view-vacancy-svc-1')).toBeNull();
+        expect(container.textContent).not.toMatch(/Ver vacante|Ver vaga/);
+        expect(container.querySelector('[aria-label^="Ver vaga"]')).toBeNull();
+        unmount();
+      }
+    });
+
+    it('com vaga viva o "ativar recrutamento" também não aparece (a vaga já existe)', () => {
+      render(<ServicosContratadosCard patient={comVaga()} />);
+      expect(screen.queryByTestId('contracted-service-activate-recruitment-svc-1')).toBeNull();
+    });
   });
 
   it('clique duplo enquanto a 1ª chamada está em voo: a 2ª é ignorada (guarda de `busy`, via clique real)', async () => {

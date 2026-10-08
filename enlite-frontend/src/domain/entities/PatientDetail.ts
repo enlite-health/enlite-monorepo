@@ -336,6 +336,8 @@ export interface CreatePatientResult {
 export interface PatientVacancySummary {
   id: string;
   caseNumber: number | null;
+  /** Posição da vaga no caso (`EN1234#01`) — null = vaga legada. */
+  caseOrdinal: number | null;
   vacancyNumber: number | null;
   title: string | null;
   status: string | null;

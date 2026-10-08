@@ -31,7 +31,7 @@ import { CompletenessChecklist } from '@presentation/components/features/admin/P
 import type { DrawerFocusRequest } from '@hooks/admin/useAutoOpenDrawer';
 import { ContainerGate } from '@presentation/components/features/access';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
-import { tabsVisibleFor } from '@presentation/hooks/useCellAccess';
+import { tabsVisibleFor, useContainerAccess } from '@presentation/hooks/useCellAccess';
 import { screenById } from '@presentation/config/screenRegistry';
 import { PATIENT_TABS } from '@presentation/components/features/admin/PatientDetail/patientTabs';
 import type { PatientCompletenessCode } from '@domain/entities/PatientDetail';
@@ -62,7 +62,9 @@ export default function PatientDetailPage() {
   const location = useLocation();
   const { t } = useTranslation();
   const { patient, isLoading, error, refetch } = usePatientDetail(id);
-  const { vacancies, isLoading: vacanciesLoading, error: vacanciesError, refetch: refetchVacancies } = usePatientVacancies(id);
+  // Spec 047 (A4): sem `vacancy:read` o bloco não existe e a lista de vagas nem é pedida (a rota exigiria a célula).
+  const vacancyAccess = useContainerAccess('vacancy');
+  const { vacancies, isLoading: vacanciesLoading, error: vacanciesError, refetch: refetchVacancies } = usePatientVacancies(id, vacancyAccess.visible);
   const [activeTab, setActiveTab] = useState<PatientTab>('clinicalData');
   // D286: uma aba só existe se ALGUM container dela for legível (registro de telas + contrato de
   // authz). A ativa é a primeira visível quando a atual sumiu; sem enforcement, todas existem.
@@ -327,17 +329,16 @@ export default function PatientDetailPage() {
                 focusRequest={focusRequest}
               />
             </ContainerGate>
+            {/* Spec 047 (F1): a vacante mora aqui, ABAIXO dos serviços; permissão própria (`vacancy:read`). */}
+            <ContainerGate resource="vacancy">
+              <PatientVacanciesCard
+                patientId={patient.id}
+                vacancies={vacancies}
+                isLoading={vacanciesLoading}
+                error={vacanciesError}
+              />
+            </ContainerGate>
           </>
-        )}
-        {shownTab === 'vacancies' && (
-          <ContainerGate resource="vacancy">
-            <PatientVacanciesCard
-              patientId={patient.id}
-              vacancies={vacancies}
-              isLoading={vacanciesLoading}
-              error={vacanciesError}
-            />
-          </ContainerGate>
         )}
         {shownTab === 'history' && (
           <PatientStatusHistoryCard patientId={patient.id} />

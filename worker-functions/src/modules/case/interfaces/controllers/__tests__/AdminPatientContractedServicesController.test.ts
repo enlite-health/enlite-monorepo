@@ -35,7 +35,8 @@ function mockRes(): Response & { status: jest.Mock; json: jest.Mock } {
   return res as unknown as Response & { status: jest.Mock; json: jest.Mock };
 }
 
-const SERVICE = { id: SERVICE_ID, patientId: PATIENT_ID, hourlyValue: 1500 };
+const LIVE_VACANCY = { id: 'v-1', caseNumber: 1234, caseOrdinal: 1, status: 'SEARCHING', siteUrl: 'https://exemplo.test/x' };
+const SERVICE = { id: SERVICE_ID, patientId: PATIENT_ID, hourlyValue: 1500, liveVacancy: LIVE_VACANCY };
 
 describe('AdminPatientContractedServicesController', () => {
   beforeEach(() => {
@@ -60,6 +61,21 @@ describe('AdminPatientContractedServicesController', () => {
       await controller.list(mockReq({ params: { id: PATIENT_ID }, user: { roles: ['recruiter'] } }), res);
       expect(res.status).toHaveBeenCalledWith(200);
       expect(res.json.mock.calls[0][0].data.services[0]).toMatchObject({ hourlyValue: null, hourlyValueRedacted: true });
+    });
+
+    it('047 A1/A2/A3: com vacancy:read a vaga sai inteira (5 chaves); sem a célula → null + redigida; valor-hora redigido à parte', async () => {
+      const repo = { listForPatient: jest.fn().mockResolvedValue([SERVICE]) };
+      const controller = new AdminPatientContractedServicesController(repo as never, {} as never);
+
+      const resCom = mockRes();
+      await controller.list(mockReq({ params: { id: PATIENT_ID }, user: { roles: ['recruiter'] }, permissionCells: ['vacancy:read'] }), resCom);
+      const com = resCom.json.mock.calls[0][0].data.services[0];
+      expect(com).toMatchObject({ liveVacancy: LIVE_VACANCY, liveVacancyRedacted: false, hourlyValue: null, hourlyValueRedacted: true });
+      expect(Object.keys(com.liveVacancy).sort()).toEqual(['caseNumber', 'caseOrdinal', 'id', 'siteUrl', 'status']);
+
+      const resSem = mockRes();
+      await controller.list(mockReq({ params: { id: PATIENT_ID }, user: { roles: ['admin'] }, permissionCells: ['patient_services:read'] }), resSem);
+      expect(resSem.json.mock.calls[0][0].data.services[0]).toMatchObject({ liveVacancy: null, liveVacancyRedacted: true });
     });
 
     it('500 quando o repo lança', async () => {

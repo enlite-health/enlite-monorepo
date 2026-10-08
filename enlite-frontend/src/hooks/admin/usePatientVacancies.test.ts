@@ -15,6 +15,7 @@ function makeVacancies(title: string): PatientVacancySummary[] {
     {
       id: `v-${title}`,
       caseNumber: 1,
+      caseOrdinal: 1,
       vacancyNumber: 1,
       title,
       status: 'OPEN',

@@ -81,6 +81,17 @@ describe('contrato PatientDetail — fixture capturada da API real', () => {
     expect(p.contractedServices[0].serviceCode).toBe('AT');
   });
 
+  it('spec 047 (F2): liveVacancy é allow-list de 5 chaves (campo a mais é recusado) e liveVacancyRedacted distingue "sem vaga" de "sem permissão"', () => {
+    const vaga = { id: 'v1', caseNumber: 1234, caseOrdinal: 1, status: 'SEARCHING', siteUrl: null };
+    const comServico = (patch: Record<string, unknown>) => ({ ...fixture, contractedServices: [{ ...fixture.contractedServices[0], ...patch }] });
+    const ok = patientDetailContractSchema.parse(comServico({ liveVacancy: vaga, liveVacancyRedacted: false }));
+    expect(ok.contractedServices[0].liveVacancy).toEqual(vaga);
+    const redigida = patientDetailContractSchema.parse(comServico({ liveVacancy: null, liveVacancyRedacted: true }));
+    expect(redigida.contractedServices[0]).toMatchObject({ liveVacancy: null, liveVacancyRedacted: true });
+    expect(() => patientDetailContractSchema.parse(comServico({ liveVacancy: { ...vaga, hourlyValue: 1500 }, liveVacancyRedacted: false }))).toThrow();
+    expect(() => patientDetailContractSchema.parse(comServico({ chaveAntiga: 'v1' }))).toThrow(); // `.strict()`: chave desconhecida é recusada
+  });
+
   it('spec 015 (US-A6.1): providerAgeBand chega CRU no contrato — a tradução é responsabilidade da TELA, não do contrato', () => {
     const p = patientDetailContractSchema.parse(fixture);
     expect(p.contractedServices[0].providerAgeBand).toBe('AGE_30_45');

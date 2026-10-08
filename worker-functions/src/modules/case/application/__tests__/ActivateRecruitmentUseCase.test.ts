@@ -67,7 +67,7 @@ interface DispatchOpts {
     schedule?: unknown;
     live_address_id?: string | null;
   } | null;
-  liveVacancyId?: string | null;
+  existingVacancyId?: string | null;
   vacancyNumber?: number;
   insertedId?: string;
   /** T019 — força o INSERT do audit (dentro do SAVEPOINT) a rejeitar. */
@@ -107,8 +107,8 @@ function makeClient(opts: DispatchOpts) {
       return { rowCount: 1, rows: [{ id, providers_needed, provider_age_band, schedule, live_address_id }] };
     }
     if (sql.includes('FROM job_postings WHERE contracted_service_id')) {
-      return opts.liveVacancyId
-        ? { rowCount: 1, rows: [{ id: opts.liveVacancyId }] }
+      return opts.existingVacancyId
+        ? { rowCount: 1, rows: [{ id: opts.existingVacancyId }] }
         : { rowCount: 0, rows: [] };
     }
     if (sql.includes('nextval')) {
@@ -288,7 +288,7 @@ describe('ActivateRecruitmentUseCase', () => {
     const { promise } = run({
       patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular' },
       serviceRow: READY_SERVICE,
-      liveVacancyId: 'vac-existente',
+      existingVacancyId: 'vac-existente',
     });
     await expect(promise).rejects.toMatchObject({
       constructor: ServiceAlreadyRecruitingError,
@@ -454,7 +454,7 @@ describe('ActivateRecruitmentUseCase', () => {
   });
 
   it('rowCount undefined no SELECT de vaga viva cai no `?? 0` — segue como "sem vaga viva" (não 409)', async () => {
-    // Cobre o MESMO ramo de `run({ liveVacancyId: undefined })` (que já devolve `rowCount: 0`
+    // Cobre o MESMO ramo de `run({ existingVacancyId: undefined })` (que já devolve `rowCount: 0`
     // explícito), só que com `rowCount: undefined` em vez de `0` — o `?? 0` do código.
     const client = {
       query: jest.fn(async (sql: string) => {

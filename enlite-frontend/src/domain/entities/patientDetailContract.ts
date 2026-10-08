@@ -147,8 +147,19 @@ const contractedServiceSchema = z
     schedule: z
       .array(z.object({ dayOfWeek: z.number(), startTime: z.string(), endTime: z.string() }))
       .nullable(),
-    // Spec 018, PR-6: vaga viva deste serviço (null = pode ativar recrutamento; "Ver vacante" senão).
-    liveVacancyId: z.string().nullable(),
+    // Spec 047 (F2): vaga viva do serviço — allow-list de 5 chaves (`.strict()`: campo a mais quebra o parse).
+    // `null` + `liveVacancyRedacted: false` = sem vaga; `null` + `true` = o ator não lê vagas (não é "sem vaga").
+    liveVacancy: z
+      .object({
+        id: z.string(),
+        caseNumber: z.number().nullable(),
+        caseOrdinal: z.number().nullable(),
+        status: z.string().nullable(),
+        siteUrl: z.string().nullable(),
+      })
+      .strict()
+      .nullable(),
+    liveVacancyRedacted: z.boolean(),
     active: z.boolean(),
     endedAt: isoDate.nullable(),
     country: z.string(),

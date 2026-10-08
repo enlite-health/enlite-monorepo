@@ -36,3 +36,5 @@ export {
   textareaBaseClasses,
   INPUT_SIZE_CONFIG,
 } from './Input/inputClasses';
+export { CopyToClipboardButton } from './CopyToClipboardButton';
+export type { CopyToClipboardButtonProps } from './CopyToClipboardButton';

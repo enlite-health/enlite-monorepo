@@ -134,13 +134,16 @@ describe('Serviço contratado — entidade própria (spec 013, bloco C) @integra
   it('7. hourlyValue redigido para recruiter, cru para admin — na lista E no GET /patients/:id', async () => {
     const listAdmin = await api.get(`/api/admin/patients/${patientAR}/contracted-services`, asAdmin);
     expect(listAdmin.data.data.services[0]).toMatchObject({ hourlyValue: 1500, hourlyValueRedacted: false });
+    // Spec 047 (F2): a vaga viva viaja como objeto com o próprio flag — sem vaga, admin lê `null` + redigida:false;
+    // recrutador sem `vacancy:read` (papel, engine sem decidir) lê `null` + redigida:true.
+    expect(listAdmin.data.data.services[0]).toMatchObject({ liveVacancy: null, liveVacancyRedacted: false });
     const listRecruiter = await api.get(`/api/admin/patients/${patientAR}/contracted-services`, asRecruiter);
-    expect(listRecruiter.data.data.services[0]).toMatchObject({ hourlyValue: null, hourlyValueRedacted: true });
+    expect(listRecruiter.data.data.services[0]).toMatchObject({ hourlyValue: null, hourlyValueRedacted: true, liveVacancy: null, liveVacancyRedacted: true });
 
     const detailAdmin = await api.get(`/api/admin/patients/${patientAR}`, asAdmin);
-    expect(detailAdmin.data.data.contractedServices[0]).toMatchObject({ hourlyValue: 1500, hourlyValueRedacted: false });
+    expect(detailAdmin.data.data.contractedServices[0]).toMatchObject({ hourlyValue: 1500, hourlyValueRedacted: false, liveVacancy: null, liveVacancyRedacted: false });
     const detailRecruiter = await api.get(`/api/admin/patients/${patientAR}`, asRecruiter);
-    expect(detailRecruiter.data.data.contractedServices[0]).toMatchObject({ hourlyValue: null, hourlyValueRedacted: true });
+    expect(detailRecruiter.data.data.contractedServices[0]).toMatchObject({ hourlyValue: null, hourlyValueRedacted: true, liveVacancy: null, liveVacancyRedacted: true });
   });
 
   it('8. guarda de posse: :sid de OUTRO paciente → 404, nunca edita cross-patient', async () => {

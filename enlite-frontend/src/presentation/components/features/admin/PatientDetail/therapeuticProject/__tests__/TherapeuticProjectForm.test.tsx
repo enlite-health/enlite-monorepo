@@ -83,7 +83,7 @@ const servico = (over: Partial<PatientContractedServiceDetail> = {}): PatientCon
   guardShift: null,
   providerAgeBand: null,
   addressId: null,
-  liveVacancyId: null,
+  liveVacancy: null, liveVacancyRedacted: false,
   schedule: null,
   active: true,
   endedAt: null,

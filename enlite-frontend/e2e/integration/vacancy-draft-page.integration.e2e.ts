@@ -222,7 +222,7 @@ test.describe('draft-vacancy-page — fase 2 (completar-vacante-em-rascunho, D42
     await expect(page.getByTestId('draft-vacancy-callout')).toHaveCount(0);
   });
 
-  test('4. ficha do paciente — "Ver vacante" no serviço em rascunho leva a /borrador (F16)', async ({ page }) => {
+  test('4. ficha do paciente — o código da vacante no serviço em rascunho leva a /borrador (F16; spec 047: o ícone "Ver vacante" virou o código clicável)', async ({ page }) => {
     await loginAs(page, COM_CELULA);
     await page.goto(`/admin/patients/${patientId}`);
     // A ficha abre em "Datos Clínicos" por padrão (`PatientDetailPage.tsx:63`,
@@ -231,7 +231,7 @@ test.describe('draft-vacancy-page — fase 2 (completar-vacante-em-rascunho, D42
     // Contratado" do fallback `visibleTabs[0]`). Clicar a aba certa em vez de confiar na
     // primeira visível.
     await page.getByTestId('patient-profile-tabs').getByText('Servicio Contratado').click();
-    const verVacante = page.getByTestId(`contracted-service-view-vacancy-${draftServiceId}`);
+    const verVacante = page.getByTestId(`contracted-service-vacancy-link-${draftServiceId}`);
     await expect(verVacante).toBeVisible();
     await verVacante.click();
     await expect(page).toHaveURL(new RegExp(`/admin/vacancies/${draftVacancyId}/borrador$`));

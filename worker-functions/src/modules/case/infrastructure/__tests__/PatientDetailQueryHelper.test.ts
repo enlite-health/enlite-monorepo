@@ -28,6 +28,7 @@ jest.mock('@shared/logging', () => ({
 }));
 
 import { fetchPatientDetail } from '../PatientDetailQueryHelper';
+import { VACANCY_CASE_NUMBER_SQL } from '@shared/sql/vacancyCaseNumberSql';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -231,9 +232,14 @@ describe('fetchPatientDetail — serviços contratados (spec 013, bloco C)', () 
           },
         ],
       }) // providers
-      // Spec 018, PR-6: vaga viva DESTE serviço — exercita o Map liveVacancyId (o outro teste da
-      // suíte cobre o caso "nenhuma vaga viva").
-      .mockResolvedValueOnce({ rows: [{ contracted_service_id: 'svc-1', id: 'vac-live-1' }] });
+      // Spec 018, PR-6 / spec 047 F2: vaga viva DESTE serviço (id, caso, ordinal, status, link) — exercita
+      // o Map de `fetchLiveVacancies` (o outro teste da suíte cobre o caso "nenhuma vaga viva").
+      .mockResolvedValueOnce({
+        rows: [{
+          contracted_service_id: 'svc-1', id: 'vac-live-1', case_number: 1234, case_ordinal: 1,
+          status: 'SEARCHING', site_url: 'https://exemplo.test/x',
+        }],
+      });
 
     const pool = makePool(queryImpl);
     const enc = makeEncryptionService();
@@ -246,8 +252,17 @@ describe('fetchPatientDetail — serviços contratados (spec 013, bloco C)', () 
       id: 'svc-1', patientId: PATIENT_ID, serviceCode: 'AT',
       authorizedHours: 20, weeklyHours: 20, hourlyValue: 1500, // string → Number
       deviceTypes: ['HOME'],
-      liveVacancyId: 'vac-live-1',
     });
+    // A1 (047): o objeto INTEIRO, com as 5 chaves e nenhuma a mais.
+    expect(svc.liveVacancy).toEqual({
+      id: 'vac-live-1', caseNumber: 1234, caseOrdinal: 1, status: 'SEARCHING', siteUrl: 'https://exemplo.test/x',
+    });
+    expect(Object.keys(svc.liveVacancy!).sort()).toEqual(['caseNumber', 'caseOrdinal', 'id', 'siteUrl', 'status']);
+    // O SQL lê o caso do fragmento com dono (046), o link do JSONB e só vagas vivas.
+    const sqlVaga = String(queryImpl.mock.calls[10][0]);
+    expect(sqlVaga).toContain(`${VACANCY_CASE_NUMBER_SQL} AS case_number`);
+    expect(sqlVaga).toContain("jp.social_short_links->>'site'");
+    expect(sqlVaga).toContain('jp.deleted_at IS NULL');
     expect(svc.providers).toHaveLength(1);
     expect(svc.providers[0]).toMatchObject({
       id: 'prov-1', workerId: 'w-1', workerName: 'dec(enc-first) dec(enc-last)', weeklyHours: 20,

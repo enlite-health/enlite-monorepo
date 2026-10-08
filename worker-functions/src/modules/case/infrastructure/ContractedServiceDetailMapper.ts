@@ -1,6 +1,7 @@
 import { Pool } from 'pg';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import type { ContractedServiceDetail } from './PatientContractedServiceRepository';
+import { fetchLiveVacancies } from './liveVacancyOfService';
 
 /**
  * ContractedServiceDetailMapper — a SUBÁRVORE de serviços contratados da ficha do paciente.
@@ -16,7 +17,7 @@ import type { ContractedServiceDetail } from './PatientContractedServiceReposito
  */
 
 async function fetchContractedServiceChildren(pool: Pool, serviceIds: string[]) {
-  if (serviceIds.length === 0) return { devices: [] as any[], providers: [] as any[], liveVacancies: [] as any[] };
+  if (serviceIds.length === 0) return { devices: [] as any[], providers: [] as any[], liveVacancies: new Map() as Awaited<ReturnType<typeof fetchLiveVacancies>> };
   const [devices, providers, liveVacancies] = await Promise.all([
     pool.query(
       `SELECT csd.service_id, csd.device_type
@@ -36,18 +37,10 @@ async function fetchContractedServiceChildren(pool: Pool, serviceIds: string[]) 
         ORDER BY csp.active DESC, csp.created_at ASC`,
       [serviceIds],
     ),
-    // Spec 018, PR-6: mesma condição do 409 de `ActivateRecruitmentUseCase` — vaga viva do
-    // serviço. Uma linha por serviço (LIMIT via DISTINCT ON) — nunca conta duas vagas do mesmo
-    // serviço (não deveria existir, mas o mapper não assume).
-    pool.query(
-      `SELECT DISTINCT ON (contracted_service_id) contracted_service_id, id
-         FROM job_postings
-        WHERE contracted_service_id = ANY($1::uuid[]) AND deleted_at IS NULL
-        ORDER BY contracted_service_id, created_at ASC`,
-      [serviceIds],
-    ),
+    // Spec 018 PR-6 / spec 047 F2: a vaga viva do serviço (id + código + estado + link) — dono: `fetchLiveVacancies`.
+    fetchLiveVacancies(pool, serviceIds),
   ]);
-  return { devices: devices.rows, providers: providers.rows, liveVacancies: liveVacancies.rows };
+  return { devices: devices.rows, providers: providers.rows, liveVacancies };
 }
 
 export async function mapContractedServices(
@@ -57,7 +50,6 @@ export async function mapContractedServices(
 ): Promise<ContractedServiceDetail[]> {
   const ids = serviceRows.map((r) => r.id);
   const { devices, providers, liveVacancies } = await fetchContractedServiceChildren(pool, ids);
-  const liveVacancyByService = new Map(liveVacancies.map((v) => [v.contracted_service_id, v.id as string]));
   const decryptedProviders = await Promise.all(
     providers.map(async (p) => {
       const [first, last] = await Promise.all([enc.decrypt(p.first_name_encrypted ?? ''), enc.decrypt(p.last_name_encrypted ?? '')]);
@@ -98,7 +90,7 @@ export async function mapContractedServices(
     // formato de job_postings.schedule). `SELECT *` já traz as duas colunas.
     addressId: r.address_id,
     schedule: r.schedule,
-    liveVacancyId: liveVacancyByService.get(r.id) ?? null,
+    liveVacancy: liveVacancies.get(r.id) ?? null,
     active: r.active,
     endedAt: r.ended_at,
     country: r.country,

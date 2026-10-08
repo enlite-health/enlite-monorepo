@@ -9,7 +9,7 @@
  *
  *   Feature 2 — Caso # badge + "Vacantes Generadas" card in patient detail
  *     - PatientIdentityCard shows "Caso #42" badge when lastCaseNumber is set
- *     - PatientVacanciesCard renders in the dedicated "Vacantes" tab
+ *     - PatientVacanciesCard renders in the "Servicio Contratado" tab (spec 047: the Vacantes tab is gone)
  *
  * Uses the same mock-auth strategy as admin-vacancies-list-visual.integration.e2e.ts:
  *   - Firebase Identity Toolkit mocked → fake JWT
@@ -127,6 +127,7 @@ const MOCK_PATIENT_VACANCIES = [
   {
     id: 'vacancy-v1-aaa',
     caseNumber: 42,
+    caseOrdinal: 1,
     vacancyNumber: 1,
     title: 'CASO 42-1',
     status: 'ACTIVE',
@@ -136,6 +137,7 @@ const MOCK_PATIENT_VACANCIES = [
   {
     id: 'vacancy-v2-bbb',
     caseNumber: 42,
+    caseOrdinal: 2,
     vacancyNumber: 2,
     title: 'CASO 42-2',
     status: 'CLOSED',
@@ -145,6 +147,7 @@ const MOCK_PATIENT_VACANCIES = [
   {
     id: 'vacancy-v3-ccc',
     caseNumber: 42,
+    caseOrdinal: 3,
     vacancyNumber: 3,
     title: 'CASO 42-3',
     status: 'SEARCHING',
@@ -371,15 +374,16 @@ test.describe('PatientDetailPage — Caso # badge + PatientVacanciesCard @integr
     await expect(page.getByText('Ana García')).toBeVisible({ timeout: 15_000 });
 
     // Navigate to Servicio Contratado tab (tabs are rendered as <button>)
-    await page.getByRole('button', { name: /^Vacantes$/i }).click();
+    await page.getByRole('button', { name: /^Servicio Contratado$/i }).click();
 
     // Card title
     await expect(page.getByText('Vacantes Generadas')).toBeVisible({ timeout: 10_000 });
 
     // Vacancy items
-    await expect(page.getByText('CASO 42-1')).toBeVisible();
-    await expect(page.getByText('CASO 42-2')).toBeVisible();
-    await expect(page.getByText('CASO 42-3')).toBeVisible();
+    // Spec 047 (F4): o código do bloco é `formatVacancyCase` (caso#ordinal), não mais `CASO 42-n`.
+    await expect(page.getByText('42#01', { exact: true })).toBeVisible();
+    await expect(page.getByText('42#02', { exact: true })).toBeVisible();
+    await expect(page.getByText('42#03', { exact: true })).toBeVisible();
 
     // Draft badge on v3
     await expect(page.getByText('Borrador')).toBeVisible();
@@ -402,9 +406,9 @@ test.describe('PatientDetailPage — Caso # badge + PatientVacanciesCard @integr
     await page.goto('/admin/patients/patient-aaa-111');
     await expect(page.getByText('Ana García')).toBeVisible({ timeout: 15_000 });
 
-    await page.getByRole('button', { name: /^Vacantes$/i }).click();
+    await page.getByRole('button', { name: /^Servicio Contratado$/i }).click();
     await expect(page.getByText('Vacantes Generadas')).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByText('CASO 42-1')).toBeVisible();
+    await expect(page.getByText('42#01', { exact: true })).toBeVisible();
 
     // Screenshot the card itself (it renders below the fold) so the baseline
     // actually proves the vacancies render, not just the page header.

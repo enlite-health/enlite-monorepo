@@ -99,7 +99,7 @@ describe('PatientDetailPage', () => {
     expect(navigate).toHaveBeenCalledWith('/admin/patients');
   });
 
-  it('abas: rede de apoio, serviço contratado (cobertura + localizações editáveis), vagas, histórico (Historial) — sem "Enquadre" (05/09)', () => {
+  it('abas: rede de apoio, serviço contratado (cobertura + localizações editáveis + vagas ABAIXO dos serviços), histórico (Historial) — sem "Enquadre" (05/09) e sem aba "Vagas" (spec 047)', () => {
     render(<PatientDetailPage />);
     fireEvent.click(screen.getByText("Rede de Apoio"));
     expect(screen.getByTestId('familiares-card')).toBeInTheDocument();
@@ -107,8 +107,9 @@ describe('PatientDetailPage', () => {
     fireEvent.click(screen.getByText("Serviço Contratado"));
     expect(screen.getByTestId('edit-coverage-btn')).not.toBeDisabled();
     expect(screen.getByTestId('new-address-btn')).not.toBeDisabled();
-    fireEvent.click(screen.getByText("Vagas"));
+    // Spec 047 (F1): a vacante não é mais aba — vive na própria aba Serviço Contratado.
     expect(screen.getByTestId('vacancies-stub')).toBeInTheDocument();
+    expect(screen.queryByText("Vagas")).not.toBeInTheDocument();
     // A aba "Enquadre" saiu: era a MESMA tabela de serviços contratados montada uma 2ª vez, sem
     // `onSaved` — editar por ali salvava e a tela não atualizava.
     expect(screen.queryByText("Enquadre")).not.toBeInTheDocument();
@@ -267,6 +268,34 @@ describe('PatientDetailPage — D286: abas e cards por container', () => {
     expect(screen.queryByTestId('edit-coverage-btn')).not.toBeInTheDocument();
   });
 
+  // Spec 047 (F1) A2: com `vacancy:read` + `patient_services:read` o bloco da vacante vem DEPOIS do card de serviços.
+  it('047 A2: vacancy:read + patient_services:read → Serviço Contratado mostra o bloco da vacante ABAIXO dos serviços (ordem no DOM)', () => {
+    comCelulas(['patient:read', 'patient_services:read', 'vacancy:read'], 'on');
+    render(<PatientDetailPage />);
+    expect(abasNaTela()).toEqual(['Serviço Contratado', 'Histórico']);
+    const servicos = screen.getByTestId('services-saved-stub');
+    const vagas = screen.getByTestId('vacancies-stub');
+    expect(servicos.compareDocumentPosition(vagas) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  // Spec 047 (F1) A3: só `vacancy:read` → a aba Serviço Contratado existe e mostra SÓ o bloco da vacante.
+  it('047 A3: SÓ vacancy:read → a aba Serviço Contratado aparece e mostra só o bloco da vacante', () => {
+    comCelulas(['patient:read', 'vacancy:read'], 'on');
+    render(<PatientDetailPage />);
+    expect(abasNaTela()).toEqual(['Serviço Contratado', 'Histórico']);
+    expect(screen.getByTestId('vacancies-stub')).toBeInTheDocument();
+    expect(screen.queryByTestId('services-saved-stub')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('edit-coverage-btn')).not.toBeInTheDocument();
+  });
+
+  // Spec 047 (F1) A4 (lado da tela): sem `vacancy:read` o bloco não está no DOM; o fetch é provado em PatientDetailPage.vacancyFetch.test.tsx.
+  it('047 A4: sem vacancy:read → o bloco da vacante não está no DOM mesmo com a aba Serviço Contratado', () => {
+    comCelulas(['patient:read', 'patient_services:read'], 'on');
+    render(<PatientDetailPage />);
+    expect(abasNaTela()).toEqual(['Serviço Contratado', 'Histórico']);
+    expect(screen.queryByTestId('vacancies-stub')).not.toBeInTheDocument();
+  });
+
   it('🔴 só o operacional (patient:read): a única aba é Histórico; nenhum card de container, nem a identidade', () => {
     comCelulas(['patient:read'], 'on');
     render(<PatientDetailPage />);
@@ -311,7 +340,7 @@ describe('PatientDetailPage — D286: abas e cards por container', () => {
   it('enforcement OFF: tudo como antes, mesmo sem célula nenhuma (as células novas nascem sem grupo)', () => {
     comCelulas([], 'off');
     render(<PatientDetailPage />);
-    expect(abasNaTela()).toHaveLength(6);
+    expect(abasNaTela()).toHaveLength(5);
     fireEvent.click(screen.getByText('Rede de Apoio'));
     expect(screen.getByTestId('familiares-card')).toBeInTheDocument();
   });
