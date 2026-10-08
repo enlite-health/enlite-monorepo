@@ -43,13 +43,12 @@ function montar(opts: {
   subject?: { status: string | null; country: string; montado: boolean } | null;
   rows?: KanbanServicesRows | null;
   move?: jest.Mock;
-  enabled?: boolean;
 }) {
   const subjectReader = { readSubjectWith: jest.fn(async () => (opts.subject === undefined ? { status: 'SEARCHING', country: 'AR', montado: true } : opts.subject)) };
   const servicesReader = { readForPatientWith: jest.fn(async () => (opts.rows === undefined ? linhas(servico('s1', 1)) : opts.rows)) };
   const moveStatus = opts.move ?? jest.fn(async (id: string, status: string) => ({ id, status }));
   const derivation = new PatientStatusDerivation({
-    subjectReader, servicesReader, moveStatus: moveStatus as never, ...(opts.enabled === undefined ? {} : { enabled: opts.enabled }),
+    subjectReader, servicesReader, moveStatus: moveStatus as never,
   });
   return { derivation, subjectReader, servicesReader, moveStatus };
 }
@@ -59,29 +58,21 @@ const client = { query: jest.fn() } as unknown as PoolClient;
 describe('PatientStatusDerivation', () => {
   beforeEach(() => { jest.clearAllMocks(); });
 
-  it("desligada → 'off' sem leitura nenhuma nem mover", async () => {
-    const { derivation, subjectReader, servicesReader, moveStatus } = montar({ enabled: false });
-    await expect(derivation.run(client, PID, NOW)).resolves.toBe('off');
-    expect(subjectReader.readSubjectWith).not.toHaveBeenCalled();
-    expect(servicesReader.readForPatientWith).not.toHaveBeenCalled();
-    expect(moveStatus).not.toHaveBeenCalled();
-  });
-
   it("paciente não encontrado → 'not_subject'", async () => {
-    const { derivation, servicesReader, moveStatus } = montar({ enabled: true, subject: null });
+    const { derivation, servicesReader, moveStatus } = montar({ subject: null });
     await expect(derivation.run(client, PID, NOW)).resolves.toBe('not_subject');
     expect(servicesReader.readForPatientWith).not.toHaveBeenCalled();
     expect(moveStatus).not.toHaveBeenCalled();
   });
 
   it("itinerário não montado → 'unchanged' e mover 0×", async () => {
-    const { derivation, moveStatus } = montar({ enabled: true, subject: { status: 'SEARCHING', country: 'AR', montado: false } });
+    const { derivation, moveStatus } = montar({ subject: { status: 'SEARCHING', country: 'AR', montado: false } });
     await expect(derivation.run(client, PID, NOW)).resolves.toBe('unchanged');
     expect(moveStatus).not.toHaveBeenCalled();
   });
 
   it('SEARCHING + 4/8 → mover(PID, REPLACEMENT, { changeSource: system }, client) — o 4º argumento é o MESMO client', async () => {
-    const { derivation, subjectReader, servicesReader, moveStatus } = montar({ enabled: true });
+    const { derivation, subjectReader, servicesReader, moveStatus } = montar({});
     await expect(derivation.run(client, PID, NOW)).resolves.toBe('moved');
     expect(moveStatus).toHaveBeenCalledTimes(1);
     const args = moveStatus.mock.calls[0];
@@ -95,7 +86,7 @@ describe('PatientStatusDerivation', () => {
 
   it("ACTIVE coberto (8/8) → 'unchanged', mover 0×", async () => {
     const { derivation, moveStatus } = montar({
-      enabled: true, subject: { status: 'ACTIVE', country: 'AR', montado: true }, rows: linhas(servico('s1', 2)),
+      subject: { status: 'ACTIVE', country: 'AR', montado: true }, rows: linhas(servico('s1', 2)),
     });
     await expect(derivation.run(client, PID, NOW)).resolves.toBe('unchanged');
     expect(moveStatus).not.toHaveBeenCalled();
@@ -103,7 +94,7 @@ describe('PatientStatusDerivation', () => {
 
   it('serviço sem vacante viva é ignorado: cheio + vazio-sem-vacante → ACTIVE', async () => {
     const { derivation, moveStatus } = montar({
-      enabled: true, subject: { status: 'REPLACEMENT', country: 'AR', montado: true },
+      subject: { status: 'REPLACEMENT', country: 'AR', montado: true },
       rows: linhas(servico('s1', 2), servico('s2', 0, null)),
     });
     await expect(derivation.run(client, PID, NOW)).resolves.toBe('moved');
@@ -111,7 +102,7 @@ describe('PatientStatusDerivation', () => {
   });
 
   it("sem serviço ativo (leitor devolve null) → 'unchanged'", async () => {
-    const { derivation, moveStatus } = montar({ enabled: true, rows: null });
+    const { derivation, moveStatus } = montar({ rows: null });
     await expect(derivation.run(client, PID, NOW)).resolves.toBe('unchanged');
     expect(moveStatus).not.toHaveBeenCalled();
   });
@@ -119,7 +110,7 @@ describe('PatientStatusDerivation', () => {
   it('borda 9 — alvo ACTIVE recusado pela completude: fica, e a recusa é registrada sem PII', async () => {
     const move = jest.fn(async () => { throw new PatientStatusNotReadyError('ACTIVE', ['ADDRESS']); });
     const { derivation } = montar({
-      enabled: true, subject: { status: 'REPLACEMENT', country: 'AR', montado: true }, rows: linhas(servico('s1', 2)), move,
+      subject: { status: 'REPLACEMENT', country: 'AR', montado: true }, rows: linhas(servico('s1', 2)), move,
     });
     await expect(derivation.run(client, PID, NOW)).resolves.toBe('not_ready');
     expect(functions.logger.warn).toHaveBeenCalledTimes(1);
@@ -133,7 +124,7 @@ describe('PatientStatusDerivation', () => {
   it('borda 9 — alvo SEARCHING recusado por SERVICE_SCHEDULE: fica, mesma trilha', async () => {
     const move = jest.fn(async () => { throw new PatientStatusNotReadyError('SEARCHING', ['SERVICE_SCHEDULE']); });
     const { derivation } = montar({
-      enabled: true, subject: { status: 'ACTIVE', country: 'AR', montado: true }, rows: linhas(servico('s1', 0)), move,
+      subject: { status: 'ACTIVE', country: 'AR', montado: true }, rows: linhas(servico('s1', 0)), move,
     });
     await expect(derivation.run(client, PID, NOW)).resolves.toBe('not_ready');
     expect((functions.logger.warn as jest.Mock).mock.calls[0]).toEqual([
@@ -145,7 +136,7 @@ describe('PatientStatusDerivation', () => {
   it('outro erro (PatientStatusTransitionError) propaga — desfaz a transação do escritor', async () => {
     const erro = new PatientStatusTransitionError('SEARCHING', 'REPLACEMENT');
     const move = jest.fn(async () => { throw erro; });
-    const { derivation } = montar({ enabled: true, move });
+    const { derivation } = montar({ move });
     await expect(derivation.run(client, PID, NOW)).rejects.toBe(erro);
     expect(functions.logger.warn).not.toHaveBeenCalled();
   });
@@ -157,35 +148,13 @@ describe('PatientStatusDerivation', () => {
       services: [{ id: 's1', serviceCode: 'AT', weeklyHours: 8, authorizedHours: null, liveVacancyId: 'v-s1' }],
       slots: [faixa('s1', 's1-a', 1, '2026-10-06'), faixa('s1', 's1-b', 3, null)],
     });
-    const { derivation, moveStatus } = montar({ enabled: true, subject: { status: 'REPLACEMENT', country: 'AR', montado: true }, rows });
+    const { derivation, moveStatus } = montar({ subject: { status: 'REPLACEMENT', country: 'AR', montado: true }, rows });
     // asOf 2026-10-05 → a alocação não é vigente → 0/8 → SEARCHING (com asOf UTC seria 4/8 → REPLACEMENT = unchanged)
     await expect(derivation.run(client, PID, now)).resolves.toBe('moved');
     expect(moveStatus.mock.calls[0].slice(0, 2)).toEqual([PID, 'SEARCHING']);
   });
 
-  describe('flag lida no construtor (ENLITE_DERIVACAO_ESTADO)', () => {
-    const original = process.env.ENLITE_DERIVACAO_ESTADO;
-    afterEach(() => {
-      if (original === undefined) delete process.env.ENLITE_DERIVACAO_ESTADO;
-      else process.env.ENLITE_DERIVACAO_ESTADO = original;
-    });
-
-    it("'off' desliga", async () => {
-      process.env.ENLITE_DERIVACAO_ESTADO = 'off';
-      const { derivation, subjectReader } = montar({});
-      await expect(derivation.run(client, PID, NOW)).resolves.toBe('off');
-      expect(subjectReader.readSubjectWith).not.toHaveBeenCalled();
-    });
-
-    it('ausente liga (padrão LIGADO)', async () => {
-      delete process.env.ENLITE_DERIVACAO_ESTADO;
-      const { derivation } = montar({});
-      await expect(derivation.run(client, PID, NOW)).resolves.toBe('moved');
-    });
-
-    it('construção sem deps: os leitores e o mover padrão existem (nenhuma query no construtor)', () => {
-      delete process.env.ENLITE_DERIVACAO_ESTADO;
-      expect(() => new PatientStatusDerivation()).not.toThrow();
-    });
+  it('construção sem deps: os leitores e o mover padrão existem (nenhuma query no construtor)', () => {
+    expect(() => new PatientStatusDerivation()).not.toThrow();
   });
 });

@@ -3,8 +3,8 @@
 -- cadeia Fase 15).
 --
 -- QUANDO USAR: regressão detectada depois do deploy da 485 — decisão de reverter a derivação
--- do estado do paciente antes de um fix mais específico ficar pronto (desligar a derivação por
--- ENLITE_DERIVACAO_ESTADO=off vem ANTES: sem ela, estas 2 linhas não são usadas por ninguém).
+-- do estado do paciente antes de um fix mais específico ficar pronto (não há mais flag para
+-- desligar a derivação: D476, sem feature flag — o rollback é este arquivo ou um revert do PR).
 --
 -- Por que mora em `migrations/pending/`, sem número: `scripts/run-migrations-docker.js` lista
 -- `migrations/` com `fs.readdirSync` SEM recursão e aplica tudo `.sql` em ordem numérica — um

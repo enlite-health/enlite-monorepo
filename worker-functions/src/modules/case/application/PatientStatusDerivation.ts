@@ -13,18 +13,17 @@
  *     BEGIN/COMMIT próprio — comitaria a alocação no meio).
  * A recusa da completude (`PatientStatusNotReadyError`) não desfaz a alocação: o estado fica e a
  * recusa vai para `logger.warn` sem PII (molde `VacancyLaunchHook`). Qualquer outro erro propaga.
- * A flag `ENLITE_DERIVACAO_ESTADO` (padrão LIGADO; só `off` desliga) é lida uma vez, no construtor.
+ * A derivação é incondicional: sem feature flag (D476).
  */
 import * as functions from 'firebase-functions';
 import type { PoolClient } from 'pg';
-import { isEnvFlagOff } from '@shared/utils/envFlag';
 import { derivarEstadoPaciente, type ServicoParaDerivar } from '../domain/derivarEstadoPaciente';
 import { PatientStatusDerivationReader, type DerivationSubject } from '../infrastructure/PatientStatusDerivationReader';
 import { PatientKanbanServicesReader, type KanbanServicesRows } from '../infrastructure/PatientKanbanServicesReader';
 import { buildServiceCoverages, operationDateOf } from './itineraryCoverage';
 import { movePatientStatus, PatientStatusNotReadyError } from './PatientStatusWriter';
 
-export type DerivationOutcome = 'off' | 'not_subject' | 'unchanged' | 'moved' | 'not_ready';
+export type DerivationOutcome = 'not_subject' | 'unchanged' | 'moved' | 'not_ready';
 
 export interface PatientStatusDerivationPort {
   run(client: PoolClient, patientId: string, now: Date): Promise<DerivationOutcome>;
@@ -42,24 +41,20 @@ export interface PatientStatusDerivationDeps {
   subjectReader?: DerivationSubjectReaderPort;
   servicesReader?: DerivationServicesReaderPort;
   moveStatus?: typeof movePatientStatus;
-  enabled?: boolean;
 }
 
 export class PatientStatusDerivation implements PatientStatusDerivationPort {
   private readonly subjectReader: DerivationSubjectReaderPort;
   private readonly servicesReader: DerivationServicesReaderPort;
   private readonly moveStatus: typeof movePatientStatus;
-  private readonly enabled: boolean;
 
   constructor(deps: PatientStatusDerivationDeps = {}) {
     this.subjectReader = deps.subjectReader ?? new PatientStatusDerivationReader();
     this.servicesReader = deps.servicesReader ?? new PatientKanbanServicesReader();
     this.moveStatus = deps.moveStatus ?? movePatientStatus;
-    this.enabled = deps.enabled ?? !isEnvFlagOff('ENLITE_DERIVACAO_ESTADO');
   }
 
   async run(client: PoolClient, patientId: string, now: Date): Promise<DerivationOutcome> {
-    if (!this.enabled) return 'off';
     const subject = await this.subjectReader.readSubjectWith(client, patientId);
     if (!subject) return 'not_subject';
 
