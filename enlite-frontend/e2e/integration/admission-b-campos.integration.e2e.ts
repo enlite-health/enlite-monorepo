@@ -219,7 +219,7 @@ test.describe('Spec 012 bloco B — os campos que faltam na ficha @integration',
     const activated = page.waitForResponse((r) => r.request().method() === 'POST' && /\/activate-recruitment$/.test(r.url()));
     await page.getByTestId(`contracted-service-activate-recruitment-${serviceId}`).click();
     expect((await activated).status()).toBe(201);
-    await expect(page.getByTestId(`contracted-service-view-vacancy-${serviceId}`)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId(`contracted-service-vacancy-link-${serviceId}`)).toBeVisible({ timeout: 15_000 });
     expect(readPatientStatus(admission.patientId).status).toBe('SEARCHING');
 
     await expect(page.getByTestId('patient-status-control')).toBeVisible({ timeout: 15_000 });

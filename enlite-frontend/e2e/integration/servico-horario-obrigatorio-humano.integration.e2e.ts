@@ -133,8 +133,8 @@ test.describe('Horário obrigatório para mudar de status — o operador é avis
     const activated = page.waitForResponse((r) => r.request().method() === 'POST' && /\/activate-recruitment$/.test(r.url()));
     await page.getByTestId(`contracted-service-activate-recruitment-${serviceId}`).click();
     expect((await activated).status()).toBe(201);
-    // ativado: o ícone vira "Ver vacante" (o serviço agora tem vaga viva)
-    await expect(page.getByTestId(`contracted-service-view-vacancy-${serviceId}`)).toBeVisible({ timeout: 20_000 });
+    // ativado: a coluna "Código de la vacante" mostra o link da vaga (o serviço agora tem vaga viva; o ícone "Ver vacante" saiu na spec 047)
+    await expect(page.getByTestId(`contracted-service-vacancy-link-${serviceId}`)).toBeVisible({ timeout: 20_000 });
   });
 
   test('sem horário, "Activar reclutamiento" fica DESABILITADO e o tooltip NOMEIA o que falta (spec 018, PR-6, ADR-5)', async ({ page }) => {

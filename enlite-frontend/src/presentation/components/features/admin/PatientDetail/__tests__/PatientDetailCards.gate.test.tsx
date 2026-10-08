@@ -236,16 +236,23 @@ describe('D269/D286 — write-gate nos botões Editar/Novo (célula do CONTAINER
       expect(screen.queryByTestId(ATIVAR_TESTID)).not.toBeInTheDocument();
     });
 
-    // Achado do coordenador (12/09): o gate das duas células é só do BOTÃO de ativar. O "Ver
-    // vacante" (serviço já com vaga viva) não tinha NENHUM gate na `origin/stage` — é um `<a>`
-    // simples, sem `useActionGate`/`ActionButton` — e continua assim, mesmo sem nenhuma célula.
-    it('"Ver vacante" (serviço COM liveVacancy) continua visível SEM nenhuma célula — igual à stage, que não gateava esse link', () => {
+    // Spec 047 (F3): o ícone "Ver vacante" SAIU (o código da vacante, na coluna, é o caminho — e a coluna só
+    // existe com `vacancy:read`). Sem nenhuma célula: serviço com vaga viva não oferece ativar, não mostra o ícone
+    // antigo e não mostra as colunas da vaga.
+    it('serviço COM vaga viva e SEM células: nem o ícone "Ver vacante" (removido) nem as colunas da vaga; ativar continua fora', () => {
       comEnforcement([], 'on');
       const comVagaViva = { ...SERVICO, liveVacancy: { id: 'vac-gate-1', caseNumber: 1234, caseOrdinal: 1, status: 'SEARCHING', siteUrl: null }, liveVacancyRedacted: false };
       render(<ServicosContratadosCard patient={{ ...patientDetailFixture, contractedServices: [comVagaViva] }} />);
       expect(screen.queryByTestId(ATIVAR_TESTID)).not.toBeInTheDocument();
-      const link = screen.getByTestId('contracted-service-view-vacancy-svc-gate');
-      expect(link.getAttribute('href')).toBe('/admin/vacancies/vac-gate-1');
+      expect(screen.queryByTestId('contracted-service-view-vacancy-svc-gate')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('contracted-service-vacancy-code-svc-gate')).not.toBeInTheDocument();
+    });
+
+    it('com vacancy:read: as colunas da vaga aparecem', () => {
+      comEnforcement(['vacancy:read'], 'on');
+      const comVagaViva = { ...SERVICO, liveVacancy: { id: 'vac-gate-1', caseNumber: 1234, caseOrdinal: 1, status: 'SEARCHING', siteUrl: null }, liveVacancyRedacted: false };
+      render(<ServicosContratadosCard patient={{ ...patientDetailFixture, contractedServices: [comVagaViva] }} />);
+      expect(screen.getByTestId('contracted-service-vacancy-link-svc-gate').getAttribute('href')).toBe('/admin/vacancies/vac-gate-1');
     });
   });
 });

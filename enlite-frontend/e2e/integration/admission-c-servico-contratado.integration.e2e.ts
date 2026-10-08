@@ -213,12 +213,12 @@ test.describe('Spec 013 bloco C — serviço contratado como entidade @integrati
     const activated1 = page.waitForResponse((r) => r.request().method() === 'POST' && /\/activate-recruitment$/.test(r.url()), { timeout: 30_000 });
     await forceClick(page.getByTestId(`contracted-service-activate-recruitment-${service1Id}`));
     expect((await activated1).status()).toBe(201);
-    await expect(page.getByTestId(`contracted-service-view-vacancy-${service1Id}`)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId(`contracted-service-vacancy-link-${service1Id}`)).toBeVisible({ timeout: 15_000 });
 
     const activated2 = page.waitForResponse((r) => r.request().method() === 'POST' && /\/activate-recruitment$/.test(r.url()), { timeout: 30_000 });
     await forceClick(page.getByTestId(`contracted-service-activate-recruitment-${service2Id}`));
     expect((await activated2).status()).toBe(201);
-    await expect(page.getByTestId(`contracted-service-view-vacancy-${service2Id}`)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId(`contracted-service-vacancy-link-${service2Id}`)).toBeVisible({ timeout: 15_000 });
 
     // paciente do funil → SEARCHING na 1ª ativação; a 2ª não regride nada (statusChanged: false)
     expect(runSQL(`SELECT status FROM patients WHERE id = '${seed.patientId}'`).trim()).toBe('SEARCHING');
