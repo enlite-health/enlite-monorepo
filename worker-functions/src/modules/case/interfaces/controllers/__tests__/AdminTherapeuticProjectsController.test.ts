@@ -23,7 +23,7 @@ import { AuthMiddleware } from '@modules/identity';
 import { reportError } from '@shared/logging';
 import type { Response } from 'express';
 import { AdminTherapeuticProjectsController } from '../AdminTherapeuticProjectsController';
-import { ServiceNotOfPatientError, SourceVersionNotFoundError, PatientNotFoundForProjectError } from '../../../infrastructure/TherapeuticProjectRepository';
+import { ServiceNotOfPatientError, SourceVersionNotFoundError, PatientNotFoundForProjectError, WaiveContactForbiddenError } from '../../../infrastructure/TherapeuticProjectRepository';
 import { CatalogItemsUnknownError, CatalogLabelTakenError, CatalogSegmentInvalidError } from '../../../infrastructure/TherapeuticCatalogRepository';
 import { DiagnosisUnknownError } from '../../../application/pathologySegments';
 import { therapeuticTrailAction } from '../../../application/therapeuticProjectAccess';
@@ -55,6 +55,7 @@ const CORPO_NOVO = {
     startDate: '2026-01-01',
     endDate: '2026-06-30',
     segmentId: SEGMENT_ID,
+    contactStatus: {},
   },
 };
 
@@ -108,14 +109,19 @@ function stubContacts(): Record<string, unknown> {
 function stubCoverageContacts(kinds: Record<string, string> = {}): Record<string, unknown> {
   return { getKind: jest.fn(async (_patientId: string, id: string) => kinds[id] ?? null) };
 }
-/** O controller com os quatro repos falsos (a fronteira; o SQL é provado no e2e). */
+/** Stub de `TherapeuticProjectContactStatusRepository` (spec 048): por padrão, nenhum campo com status. */
+function stubStatuses(byVersion: Record<string, unknown[]> = {}): Record<string, unknown> {
+  return { listByVersions: jest.fn(async (ids: string[]) => new Map(ids.filter((i) => byVersion[i]).map((i) => [i, byVersion[i]]))) };
+}
+/** O controller com os cinco repos falsos (a fronteira; o SQL é provado no e2e). */
 function ctrl(
   repo: Record<string, unknown> = {},
   catalogs: Record<string, unknown> = {},
   contacts: Record<string, unknown> = stubContacts(),
   coverageContacts: Record<string, unknown> = stubCoverageContacts(),
+  statuses: Record<string, unknown> = stubStatuses(),
 ) {
-  return new AdminTherapeuticProjectsController(repo as never, catalogs as never, contacts as never, coverageContacts as never);
+  return new AdminTherapeuticProjectsController(repo as never, catalogs as never, contacts as never, coverageContacts as never, statuses as never);
 }
 const corpoDaResposta = (res: { json: jest.Mock }) => res.json.mock.calls[0][0];
 
@@ -574,7 +580,7 @@ describe('AdminTherapeuticProjectsController', () => {
       );
       expect(res.status).toHaveBeenCalledWith(201);
       expect(repo.createVersion).toHaveBeenCalledWith({
-        mode: 'new', patientId: PATIENT_ID, actorUid: 'uid-1', version: { ...CORPO_NOVO.version, contactRefs: [], careTeamIds: [] },
+        mode: 'new', patientId: PATIENT_ID, actorUid: 'uid-1', cells: ['patient_clinical:write'], version: { ...CORPO_NOVO.version, contactRefs: [], careTeamIds: [] },
       });
       expect(corpoDaResposta(res).data.version).toBe('V.1.0');
     });
@@ -644,7 +650,49 @@ describe('AdminTherapeuticProjectsController', () => {
       await ctrl(repo).create(mockReq({ params: { id: PATIENT_ID }, body: corpo }), res);
       expect(res.status).toHaveBeenCalledWith(201);
       expect(repo.createVersion).toHaveBeenCalledWith({
-        mode: 'edit', patientId: PATIENT_ID, actorUid: 'uid-1', fromVersionId: SOURCE_ID, version: { ...VERSAO_DO_EDIT, contactRefs: [], careTeamIds: [] },
+        mode: 'edit', patientId: PATIENT_ID, actorUid: 'uid-1', cells: null, fromVersionId: SOURCE_ID, version: { ...VERSAO_DO_EDIT, contactRefs: [], careTeamIds: [] },
+      });
+    });
+
+    describe('spec 048 — "Todavía no hay registro" / "No necesita"', () => {
+      it('"No necesita" novo sem a célula: 403 nomeando `patient_therapeutic_project:waive_contact` (só nomes de campo, nada de valor)', async () => {
+        const repo = { createVersion: jest.fn().mockRejectedValue(new WaiveContactForbiddenError(['EXTERNAL'])) };
+        const res = mockRes();
+        const corpo = { ...CORPO_NOVO, version: { ...CORPO_NOVO.version, contactStatus: { EXTERNAL: 'NOT_NEEDED' } } };
+        await ctrl(repo).create(mockReq({ params: { id: PATIENT_ID }, body: corpo, permissionCells: ['patient_clinical:write'] }), res);
+        expect(res.status).toHaveBeenCalledWith(403);
+        expect(corpoDaResposta(res)).toMatchObject({ success: false, error: 'Forbidden', details: { cell: 'patient_therapeutic_project:waive_contact', fields: ['EXTERNAL'] } });
+        expect(JSON.stringify(corpoDaResposta(res))).not.toContain(TEXTO_CLINICO);
+        expect(reportError).not.toHaveBeenCalled();
+      });
+
+      it('ids + status no mesmo campo: 400 e o repo nem é chamado', async () => {
+        const repo = { createVersion: jest.fn() };
+        const res = mockRes();
+        const corpo = { ...CORPO_NOVO, version: { ...CORPO_NOVO.version, contactStatus: { CARE_TEAM: 'PENDING' }, careTeamIds: [OBJ_ID] } };
+        await ctrl(repo).create(mockReq({ params: { id: PATIENT_ID }, body: corpo, permissionCells: ['patient_clinical:write'] }), res);
+        expect(res.status).toHaveBeenCalledWith(400);
+        expect(repo.createVersion).not.toHaveBeenCalled();
+      });
+
+      it('a resposta traz `contactStatus` com o vencimento (pendingSince + 15 dias no fuso) e SEM o uid de quem marcou', async () => {
+        const repo = { createVersion: jest.fn().mockResolvedValue(VERSAO) };
+        const statuses = stubStatuses({
+          [VERSION_ID]: [
+            { kind: 'CARE_TEAM', status: 'PENDING', pendingSince: new Date('2026-09-08T10:00:00.000Z'), markedByUid: 'uid-secreto' },
+            { kind: 'RESPONSIBLE', status: 'NOT_NEEDED', pendingSince: null, markedByUid: 'uid-secreto' },
+          ],
+        });
+        const res = mockRes();
+        await ctrl(repo, {}, stubContacts(), stubCoverageContacts(), statuses).create(
+          mockReq({ params: { id: PATIENT_ID }, body: CORPO_NOVO, permissionCells: ['patient_clinical:write'] }),
+          res,
+        );
+        expect(corpoDaResposta(res).data.contactStatus).toEqual([
+          { kind: 'RESPONSIBLE', status: 'NOT_NEEDED', pendingSince: null, deadlineDate: null },
+          { kind: 'CARE_TEAM', status: 'PENDING', pendingSince: '2026-09-08T10:00:00.000Z', deadlineDate: '2026-09-23' },
+        ]);
+        expect(JSON.stringify(corpoDaResposta(res))).not.toContain('uid-secreto');
       });
     });
 

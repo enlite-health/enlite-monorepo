@@ -18,6 +18,10 @@ import {
   type TherapeuticProjectVersion,
 } from '../domain/TherapeuticProject';
 import { TherapeuticCatalogRepository } from './TherapeuticCatalogRepository';
+import { TherapeuticProjectContactStatusRepository } from './TherapeuticProjectContactStatusRepository';
+import { TherapeuticContactReminderRepository } from './TherapeuticContactReminderRepository';
+import { planContactStatuses, type ContactStatusMap } from '../domain/TherapeuticContactStatus';
+import { canWaiveContact } from '../application/therapeuticProjectAccess';
 import { createTerminologyPort } from '@modules/terminology/infrastructure/TerminologyPortFactory';
 import type { TerminologyPort } from '@modules/terminology/domain/TerminologyPort';
 import { derivePathologySegments } from '../application/pathologySegments';
@@ -64,14 +68,28 @@ export interface TherapeuticProjectVersionInput {
   /** MICRO (D328/SUP-24) — só ids; a linha de origem tem de estar ATIVA (trigger 429). */
   contactRefs: ContactRef[];
   careTeamIds: string[];
+  /** spec 048: estado explícito por campo ("Todavía no hay registro" / "No necesita"); `{}` = nenhum. */
+  contactStatus: ContactStatusMap;
 }
 
 /** `mode:'new'` carrega o `segmentId` (MACRO, spec 030) — o `{id,label}` é congelado AQUI, do catálogo ativo. */
 export type NewTherapeuticProjectVersionInput = TherapeuticProjectVersionInput & { segmentId: string };
 
+/** `cells`: células do ator (D113: `null`/ausente = o engine não decidiu → passa). Só decide `NOT_NEEDED` novo. */
 export type CreateVersionCommand =
-  | { mode: 'new'; patientId: string; actorUid: string; version: NewTherapeuticProjectVersionInput }
-  | { mode: 'edit'; patientId: string; actorUid: string; fromVersionId: string; version: TherapeuticProjectVersionInput };
+  | { mode: 'new'; patientId: string; actorUid: string; cells?: readonly string[] | null; version: NewTherapeuticProjectVersionInput }
+  | { mode: 'edit'; patientId: string; actorUid: string; cells?: readonly string[] | null; fromVersionId: string; version: TherapeuticProjectVersionInput };
+
+/**
+ * spec 048: "No necesita" NOVO sem `patient_therapeutic_project:waive_contact` — 403, com só os NOMES dos campos.
+ * A checagem mora no repositório porque precisa da vigente (NOT_NEEDED herdado passa), lida com o paciente travado.
+ */
+export class WaiveContactForbiddenError extends Error {
+  readonly code = 'ptp_waive_contact_forbidden';
+  constructor(readonly fields: string[]) {
+    super('ptp_waive_contact_forbidden');
+  }
+}
 
 /** A versão de origem do "Editar" não existe neste paciente (ou está anulada). */
 export class SourceVersionNotFoundError extends Error {
@@ -212,6 +230,8 @@ export class TherapeuticProjectRepository {
     private readonly catalogs: TherapeuticCatalogRepository = new TherapeuticCatalogRepository(),
     /** Resolve o capítulo CID-11 de cada diagnóstico — o "tipo de patologia" é derivado, não escolhido. */
     private readonly terminology: TerminologyPort = createTerminologyPort(process.env),
+    private readonly statuses: TherapeuticProjectContactStatusRepository = new TherapeuticProjectContactStatusRepository(),
+    private readonly reminders: TherapeuticContactReminderRepository = new TherapeuticContactReminderRepository(),
   ) {}
 
   private get pool(): Pool {
@@ -247,6 +267,15 @@ export class TherapeuticProjectRepository {
         const lock = await cli.query('SELECT id FROM patients WHERE id = $1 FOR UPDATE', [cmd.patientId]);
         if (lock.rows.length === 0) throw new PatientNotFoundForProjectError();
         const existing = await this.listForPatient(cmd.patientId, cli);
+
+        // spec 048: o status da nova versão herda da VIGENTE (nos dois modos). "No necesita" NOVO exige a célula —
+        // checado ANTES de qualquer INSERT (a transação inteira some junto, de todo jeito).
+        const vigente = currentVersionOf(existing);
+        const previousStatuses = vigente ? (await this.statuses.listByVersions([vigente.id], cli)).get(vigente.id) ?? [] : [];
+        const statusPlan = planContactStatuses(cmd.version.contactStatus, previousStatuses, cmd.actorUid);
+        if (statusPlan.newlyWaived.length > 0 && !canWaiveContact(cmd.cells)) {
+          throw new WaiveContactForbiddenError(statusPlan.newlyWaived);
+        }
 
         let number: { major: number; minor: number };
         let editedFrom: string | null = null;
@@ -314,8 +343,19 @@ export class TherapeuticProjectRepository {
         // SUP-26: a ligação só nasce NESTA transação, com a versão já gravada — nunca "adicionar
         // depois" numa versão antiga. Erro daqui vira 422/404 (lex #7 C7: nunca nome/telefone).
         await this.insertContacts(cli, ins.rows[0].id, cmd.patientId, cmd.version.contactRefs, cmd.version.careTeamIds);
+        // Ordem fixa: o trigger do status recusa status + contato no MESMO campo, então os contatos entram ANTES.
+        await this.statuses.insertStatuses(cli, ins.rows[0].id, cmd.patientId, statusPlan.rows);
 
         const sel = await cli.query<VersionRow>(`${SELECT_VERSION} WHERE v.id = $1`, [ins.rows[0].id]);
+        // Outbox dos lembretes: só campo NOVAMENTE pendente abre ciclo; com ciclo aberto o campo entra nele (P6, Opção A).
+        if (statusPlan.newlyPending.length > 0) {
+          await this.reminders.openCycleIfNone(cli, {
+            patientId: cmd.patientId,
+            anchorVersionId: ins.rows[0].id,
+            openedByUid: cmd.actorUid,
+            country: sel.rows[0].country,
+          });
+        }
         return sel.rows[0];
       });
       return toVersion(row);
@@ -367,6 +407,20 @@ export class TherapeuticProjectRepository {
         [patientId, versionId, actorUid, reason],
       );
       if (res.rows.length === 0) return null;
+      // P5 (Gabriel, 08/10): anular a VIGENTE pode re-expor uma pendência. Se a nova vigente tem campo PENDING e não há
+      // ciclo aberto, abre um — não deixar pendente sem ninguém ser lembrado (mesma regra da criação). A trava do
+      // paciente é a mesma do `createVersion` (as duas escritas do ciclo se serializam).
+      await cli.query('SELECT id FROM patients WHERE id = $1 FOR UPDATE', [patientId]);
+      const all = await this.listForPatient(patientId, cli);
+      const annulledNow = all.find((v) => v.id === versionId);
+      const wasCurrent = !!annulledNow && all.every((v) => v.id === versionId || v.annulledAt !== null || v.createdAt < annulledNow.createdAt);
+      const after = wasCurrent ? currentVersionOf(all) : null;
+      if (after) {
+        const rows = (await this.statuses.listByVersions([after.id], cli)).get(after.id) ?? [];
+        if (rows.some((r) => r.status === 'PENDING')) {
+          await this.reminders.openCycleIfNone(cli, { patientId, anchorVersionId: after.id, openedByUid: actorUid, country: after.country });
+        }
+      }
       const sel = await cli.query<VersionRow>(`${SELECT_VERSION} WHERE v.id = $1`, [versionId]);
       return sel.rows[0];
     });

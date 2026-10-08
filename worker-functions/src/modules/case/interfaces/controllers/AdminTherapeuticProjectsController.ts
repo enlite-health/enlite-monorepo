@@ -12,7 +12,10 @@ import {
   MacroFieldsLockedError,
   ContactInactiveError,
   ContactNotFoundError,
+  WaiveContactForbiddenError,
 } from '../../infrastructure/TherapeuticProjectRepository';
+import { TherapeuticProjectContactStatusRepository, toContactStatusViews } from '../../infrastructure/TherapeuticProjectContactStatusRepository';
+import type { ContactStatusView } from '../../domain/TherapeuticContactStatus';
 import { TherapeuticProjectContactsRepository } from '../../infrastructure/TherapeuticProjectContactsRepository';
 import {
   TherapeuticCatalogRepository,
@@ -27,6 +30,7 @@ import {
   missingContactOriginCell,
   missingCoverageDirectProfessionalCell,
   PATIENT_CLINICAL_WRITE_CELL,
+  PT_WAIVE_CONTACT_CELL,
 } from '../../application/therapeuticProjectAccess';
 import type { ContactRef, ResolvedTherapeuticContact } from '../../domain/TherapeuticProject';
 import {
@@ -78,7 +82,20 @@ export class AdminTherapeuticProjectsController {
     // Injetado LAZY (molde das outras 3 acima): construir aqui em cima tocaria o pool no
     // construtor sem repo (PatientCoverageEmergencyContactRepository NÃO tem getter preguiçoso).
     private readonly coverageContactsInjected?: PatientCoverageEmergencyContactRepository,
+    // spec 048: injetado LAZY pelo mesmo motivo (não toca o pool no construtor).
+    private readonly statusesInjected?: TherapeuticProjectContactStatusRepository,
   ) {}
+
+  private statusesMemo?: TherapeuticProjectContactStatusRepository;
+  private get statuses(): TherapeuticProjectContactStatusRepository {
+    return (this.statusesMemo ??= this.statusesInjected ?? new TherapeuticProjectContactStatusRepository());
+  }
+
+  /** `contactStatus` (spec 048) de cada versão: sem o uid de quem marcou; ordem fixa; vencimento no fuso do país. */
+  private async contactStatusOf(versions: readonly { id: string; country: string }[]): Promise<Map<string, ContactStatusView[]>> {
+    const byVersion = await this.statuses.listByVersions(versions.map((v) => v.id));
+    return new Map(versions.map((v) => [v.id, toContactStatusViews(byVersion.get(v.id) ?? [], v.country)]));
+  }
 
   private coverageContactsMemo?: PatientCoverageEmergencyContactRepository;
   /** lex-pr7 §alterado: só é criado (e só toca o pool) quando `create()` de fato precisa checar um `COVERAGE` ref. */
@@ -121,10 +138,11 @@ export class AdminTherapeuticProjectsController {
     try {
       const versions = await this.repo.listForPatient(params.data.id);
       const cells = cellsOfRequest(req);
+      const statusByVersion = await this.contactStatusOf(versions);
       const projected = await Promise.all(
         versions.map(async (v) => {
           const { contacts, contactRefs, careTeamIds } = await this.resolveContacts(req, v.id, cells);
-          return { ...projectTherapeuticVersionForActor(v, cells), contactRefs, careTeamIds, contacts };
+          return { ...projectTherapeuticVersionForActor(v, cells), contactRefs, careTeamIds, contacts, contactStatus: statusByVersion.get(v.id) ?? [] };
         }),
       );
       res.status(200).json({
@@ -161,7 +179,8 @@ export class AdminTherapeuticProjectsController {
       // especial por `annulledAt`/"não é a última": a projeção e a resolução de contatos são
       // por CÉLULA, sempre, nunca por status da versão.
       const { contacts, contactRefs, careTeamIds } = await this.resolveContacts(req, version.id, cells);
-      res.status(200).json({ success: true, data: { ...projectTherapeuticVersionForActor(version, cells), contactRefs, careTeamIds, contacts } });
+      const contactStatus = (await this.contactStatusOf([version])).get(version.id) ?? [];
+      res.status(200).json({ success: true, data: { ...projectTherapeuticVersionForActor(version, cells), contactRefs, careTeamIds, contacts, contactStatus } });
     } catch (err: unknown) {
       const e = err instanceof Error ? err : new Error(String(err));
       reportError(e, { source: 'AdminTherapeuticProjectsController:get', patientId: params.data.id, versionId: params.data.vid });
@@ -209,17 +228,23 @@ export class AdminTherapeuticProjectsController {
     try {
       const actorUid = this.actorUid(req);
       const created = body.data.mode === 'new'
-        ? await this.repo.createVersion({ mode: 'new', patientId: params.data.id, actorUid, version: body.data.version })
-        : await this.repo.createVersion({ mode: 'edit', patientId: params.data.id, actorUid, fromVersionId: body.data.fromVersionId, version: body.data.version });
+        ? await this.repo.createVersion({ mode: 'new', patientId: params.data.id, actorUid, cells, version: body.data.version })
+        : await this.repo.createVersion({ mode: 'edit', patientId: params.data.id, actorUid, cells, fromVersionId: body.data.fromVersionId, version: body.data.version });
       // Conserto 14/09 (achado do gate): a versão recém-criada passa pelo MESMO `resolveContacts`
       // de `list`/`get` — nunca crua — pra "Editar" a vigente logo após salvar (antes do refetch)
       // partir com os contatos já resolvidos, e pra trilha do POST registrar os containers SERVIDOS
       // igual ao GET (contract `therapeutic-project.md` §POST).
       const { contacts, contactRefs, careTeamIds } = await this.resolveContacts(req, created.id, cells);
-      res.status(201).json({ success: true, data: { ...projectTherapeuticVersionForActor(created, cells), contactRefs, careTeamIds, contacts } });
+      const contactStatus = (await this.contactStatusOf([created])).get(created.id) ?? [];
+      res.status(201).json({ success: true, data: { ...projectTherapeuticVersionForActor(created, cells), contactRefs, careTeamIds, contacts, contactStatus } });
     } catch (err: unknown) {
       if (err instanceof PatientNotFoundForProjectError) {
         res.status(404).json({ success: false, error: 'Patient not found', code: err.code });
+        return;
+      }
+      // spec 048: "No necesita" é do Acesso Master — esconder no front não basta; o servidor recusa nomeando a célula.
+      if (err instanceof WaiveContactForbiddenError) {
+        res.status(403).json({ success: false, error: 'Forbidden', code: err.code, details: { cell: PT_WAIVE_CONTACT_CELL, fields: err.fields } });
         return;
       }
       if (err instanceof SourceVersionNotFoundError) {
