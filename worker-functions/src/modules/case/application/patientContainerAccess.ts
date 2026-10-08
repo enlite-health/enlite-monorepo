@@ -86,6 +86,9 @@ const DETAIL_FIELDS: Readonly<Record<PatientContainer, readonly string[]>> = {
     'dischargedAt',
     // Spec 018, PR-4: `EXISTS` contra `patient_photos`, mesma célula de identity.
     'hasPhoto',
+    // Spec 044 (migration 500): faturamento do paciente = PII da célula `patient_identity`. Sem estar aqui,
+    // vazaria por omissão para quem não lê identidade (a redação é por lista de campos).
+    'billingAddressFormatted', 'billingCity', 'billingProvince',
   ],
   clinical: [
     'diagnosis', 'diagnoses', 'diagnosesUnavailable', 'dependencyLevel', 'clinicalSpecialty', 'clinicalSegments',

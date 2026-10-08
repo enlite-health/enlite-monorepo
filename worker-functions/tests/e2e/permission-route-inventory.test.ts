@@ -121,6 +121,7 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         // Marca de emergência (spec 018, PR-2, D-A; contracts/support-network.md).
         'DELETE /api/admin/patients/:id/emergency-contact → patient_family:update',
         'DELETE /api/admin/patients/:id/photo → patient_identity:update',
+        'DELETE /api/admin/patients/:patientId/addresses/:addressId → patient_address:delete',
         'GET /api/admin/chat-groups → messaging:read',
         'GET /api/admin/patient-chat-roles → patient:read',
         'GET /api/admin/patients → patient:read',

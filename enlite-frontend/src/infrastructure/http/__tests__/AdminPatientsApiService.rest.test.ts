@@ -108,6 +108,24 @@ describe('AdminPatientsApiService — resto', () => {
     await expect(AdminPatientsApiService.deletePatientChatRole('X')).rejects.toThrow('HTTP 502');
   });
 
+  it('deletePatientAddress (spec 044): DELETE na rota certa; 204 sem corpo; 409 com o código em message e details; erro não-JSON', async () => {
+    fetchMock.mockResolvedValueOnce({ status: 204, headers: { get: () => null } } as unknown as Response);
+    await expect(AdminPatientsApiService.deletePatientAddress('p1', 'a1')).resolves.toBeUndefined();
+    expect(fetchMock.mock.calls[0][0]).toMatch(/\/api\/admin\/patients\/p1\/addresses\/a1$/);
+    expect(fetchMock.mock.calls[0][1].method).toBe('DELETE');
+    expect(fetchMock.mock.calls[0][1].headers.Authorization).toBe('Bearer tok');
+    fetchMock.mockResolvedValueOnce(json({ success: false, error: 'ADDRESS_IN_USE', details: { vacancies: 2, services: 1 } }, 409));
+    await expect(AdminPatientsApiService.deletePatientAddress('p1', 'a1')).rejects.toMatchObject({
+      status: 409, message: 'ADDRESS_IN_USE', details: { vacancies: 2, services: 1 },
+    });
+    fetchMock.mockResolvedValueOnce(json({ success: false }, 404));
+    await expect(AdminPatientsApiService.deletePatientAddress('p1', 'a1')).rejects.toThrow('HTTP 404');
+    fetchMock.mockResolvedValueOnce(json('', 502, 'text/html'));
+    await expect(AdminPatientsApiService.deletePatientAddress('p1', 'a1')).rejects.toThrow('HTTP 502');
+    fetchMock.mockResolvedValueOnce({ status: 500, headers: { get: () => null }, json: async () => ({}) } as unknown as Response);
+    await expect(AdminPatientsApiService.deletePatientAddress('p1', 'a1')).rejects.toBeInstanceOf(PatientApiError);
+  });
+
   it('resposta sem content-type (headers.get → null) é tratada como não-JSON em listPatients, createPatient, writeJson e delete', async () => {
     const semTipo = () => ({ status: 500, headers: { get: () => null }, json: async () => ({}) } as unknown as Response);
     fetchMock.mockResolvedValueOnce(semTipo());

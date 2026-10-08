@@ -63,6 +63,12 @@ export interface PatientAddressDetail {
   accessNotes: string | null;
   /** Jurisdição do endereço (mig 316). */
   country: string | null;
+  /** Spec 044: cidade/província do endereço (mig 147) — NULL em endereço criado pelo painel. Origem do "Copiar dirección principal". */
+  city: string | null;
+  state: string | null;
+  /** Spec 044: nº de vagas (QUALQUER status, inclusive soft-deleted) e de serviços (ativos ou não) que apontam para o endereço. Só números. */
+  vacancyRefCount: number;
+  serviceRefCount: number;
   /** Computed availability for this address based on active vacancies. */
   availability: import('../application/AddressAvailabilityCalculator').AddressAvailability;
 }
@@ -110,6 +116,10 @@ export interface PatientDetailRow {
   dischargedAt: Date | null;
   /** Spec 018, PR-4: tem foto de perfil cadastrada (`EXISTS` contra `patient_photos`). */
   hasPhoto: boolean;
+  /** Spec 044 (mig 500): endereço de faturamento, campo próprio. PII da célula `patient_identity` (redigido em DETAIL_FIELDS). */
+  billingAddressFormatted: string | null;
+  billingCity: string | null;
+  billingProvince: string | null;
   // Clinical
   diagnosis: string | null;
   dependencyLevel: string | null;

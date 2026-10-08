@@ -347,6 +347,33 @@ export class AdminPatientsApiServiceClass {
     return this.writeJson<{ id: string }>('PATCH', `/api/admin/patients/${patientId}/addresses/${addressId}`, payload);
   }
 
+  /**
+   * DELETE /api/admin/patients/:patientId/addresses/:addressId — remover Localización (spec 044, D4).
+   *
+   * Mesma forma do `deletePatientChatRole`: sucesso é 204 SEM CORPO (o `writeJson` exige JSON), e o erro
+   * vem em JSON e precisa chegar na tela. Contrato do servidor: 409 `{ error: 'PRIMARY_WITH_OTHERS' }`
+   * (o Principal com outro endereço ativo) ou `{ error: 'ADDRESS_IN_USE', details: { vacancies, services } }`
+   * — o código vai em `PatientApiError.message`, as contagens em `.details`. 404 se o endereço sumiu.
+   */
+  async deletePatientAddress(patientId: string, addressId: string): Promise<void> {
+    const headers = await this.getAuthHeaders();
+    const response = await fetch(
+      `${this.baseURL}/api/admin/patients/${patientId}/addresses/${addressId}`,
+      { method: 'DELETE', headers },
+    );
+    if (response.status === 204) return;
+
+    const contentType = response.headers.get('content-type') ?? '';
+    if (!contentType.includes('application/json')) {
+      throw new PatientApiError(`Erro ao conectar ao servidor (HTTP ${response.status})`, response.status);
+    }
+    const json = (await response.json()) as ApiErrorResponse & {
+      code?: string;
+      details?: Record<string, unknown>;
+    };
+    throw new PatientApiError(json.error || `HTTP ${response.status}`, response.status, json);
+  }
+
   // `activatePatient` (POST /:id/activate) SAIU (spec 018, PR-6, ADR-5): a rota é 410. Ativar
   // recrutamento agora é por serviço — `AdminContractedServicesApiService.activateRecruitment`.
 

@@ -65,6 +65,13 @@ export interface PatientGeneralSectionData {
   gender?: string | null;
   /** Spec 018 PR-3. Plaintext array; serializado a JSON e encriptado com KMS antes de gravar. */
   languages?: string[] | null;
+  /**
+   * Spec 044 (migration 500): endereço de faturamento, texto como o Google Places devolveu. PII da célula
+   * `patient_identity`. Os 3 viajam juntos; `billingAddressFormatted = null` limpa os 3. Sem geocoding, sem lat/lng.
+   */
+  billingAddressFormatted?: string | null;
+  billingCity?: string | null;
+  billingProvince?: string | null;
 }
 
 /**
@@ -168,6 +175,20 @@ export async function writePatientSection(
   });
 }
 
+/**
+ * Spec 044: faturamento é um trio (texto, cidade, província) que se grava junto. Quando o texto vem, cidade e
+ * província vêm com ele (ausente = NULL, nunca o valor antigo de outra escolha); texto `null` limpa os 3.
+ */
+function withBillingTriad(data: PatientGeneralSectionData): PatientGeneralSectionData {
+  if (!Object.prototype.hasOwnProperty.call(data, 'billingAddressFormatted')) return data;
+  const cleared = data.billingAddressFormatted == null;
+  return {
+    ...data,
+    billingCity: cleared ? null : data.billingCity ?? null,
+    billingProvince: cleared ? null : data.billingProvince ?? null,
+  };
+}
+
 async function updateGeneralSection(
   deps: PatientSectionWriterDeps,
   patientId: string,
@@ -187,14 +208,18 @@ async function updateGeneralSection(
     healthInsuranceName:     'health_insurance_name',
     healthInsuranceMemberId: 'health_insurance_member_id',
     serviceStartDate:        'service_start_date',
+    billingAddressFormatted: 'billing_address_formatted',
+    billingCity:             'billing_city',
+    billingProvince:         'billing_province',
   };
 
   const sets: string[] = [];
   const values: unknown[] = [patientId];
+  const source = withBillingTriad(data);
 
   for (const [key, column] of Object.entries(columnByKey)) {
-    if (Object.prototype.hasOwnProperty.call(data, key)) {
-      values.push((data as Record<string, unknown>)[key] ?? null);
+    if (Object.prototype.hasOwnProperty.call(source, key)) {
+      values.push((source as Record<string, unknown>)[key] ?? null);
       sets.push(`${column} = $${values.length}`);
     }
   }

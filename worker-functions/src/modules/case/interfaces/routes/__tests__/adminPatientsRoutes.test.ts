@@ -81,6 +81,8 @@ const ESPERADO: Record<string, string | null> = {
   'GET /patients/:patientId/addresses': 'patient_address:read',
   'POST /patients/:patientId/addresses': 'patient_address:create',
   'PATCH /patients/:patientId/addresses/:addressId': 'patient_address:update',
+  // Spec 044 (A15): remover Localización tem célula PRÓPRIA — não pega carona em `update`.
+  'DELETE /patients/:patientId/addresses/:addressId': 'patient_address:delete',
   'GET /patients/:id/vacancies': 'vacancy:read',
   'PUT /patients/:id/status': 'patient:update',
   'GET /patients/:id/status-history': 'patient:read',
@@ -176,7 +178,7 @@ function pecas() {
   } as unknown as AdminPatientChatRolesController;
 
   const map = { getMapPoints: responde('getMapPoints') } as unknown as AdminPatientsMapController;
-  const addresses = { updatePatientAddress: responde('updatePatientAddress') } as unknown as AdminPatientAddressesController;
+  const addresses = { updatePatientAddress: responde('updatePatientAddress'), deletePatientAddress: responde('deletePatientAddress') } as unknown as AdminPatientAddressesController;
   const insurance = {
     list: responde('providers.list'),
     create: responde('providers.create'),
@@ -252,8 +254,8 @@ describe('createAdminPatientsRoutes', () => {
     expect(declarado).toEqual(ESPERADO);
   });
 
-  it('a família declara exatamente 54 rotas — 45 do PR-1 (39 de antes/D286 + o 410 de support-network + as 6 por linha) + activate-recruitment (PR-6) + as 3 da equipe tratante (PR-5) + as 5 do PR-2 (contatos externos + marca de emergência) + itinerário (fase 7) + agregado do Kanban (fase 8) − as 2 da alocação antiga (fase 14)', () => {
-    expect(scanExpressRouter(build())).toHaveLength(55);
+  it('a família declara exatamente 56 rotas — 45 do PR-1 (39 de antes/D286 + o 410 de support-network + as 6 por linha) + activate-recruitment (PR-6) + as 3 da equipe tratante (PR-5) + as 5 do PR-2 (contatos externos + marca de emergência) + itinerário (fase 7) + agregado do Kanban (fase 8) − as 2 da alocação antiga (fase 14) + o DELETE de endereço (spec 044)', () => {
+    expect(scanExpressRouter(build())).toHaveLength(56);
   });
 
   it('a família é `admin.patients` — o nome que PERMISSION_ENFORCED_ROUTES liga', () => {
@@ -277,7 +279,7 @@ describe('createAdminPatientsRoutes', () => {
         p.map, p.addresses, p.insurance, p.contracted, p.diagnoses, p.terminology,
         // 12º/13º/14º/15º/16º omitidos de propósito
       );
-      expect(scanExpressRouter(router)).toHaveLength(55);
+      expect(scanExpressRouter(router)).toHaveLength(56);
     } finally {
       if (antes === undefined) delete process.env.DATABASE_URL; else process.env.DATABASE_URL = antes;
     }
@@ -332,6 +334,7 @@ describe('createAdminPatientsRoutes', () => {
     ['get', '/api/admin/patients/kanban/services', 'kanbanServices.list'],
     ['get', '/api/admin/patients/abc-123/status-history', 'getPatientStatusHistory'],
     ['patch', '/api/admin/patients/abc-123/addresses/addr-1', 'updatePatientAddress'],
+    ['delete', '/api/admin/patients/abc-123/addresses/addr-1', 'deletePatientAddress'],
     ['get', '/api/admin/patients/abc-123/contracted-services', 'cs.list'],
     ['post', '/api/admin/patients/abc-123/contracted-services', 'cs.create'],
     ['patch', '/api/admin/patients/abc-123/contracted-services/s1', 'cs.update'],

@@ -53,19 +53,6 @@ function formatDate(iso: string | null, locale = 'es-AR'): string | null {
   return formatInstant(iso, {}, locale) ?? iso;
 }
 
-function buildAddress(patient: PatientDetail): string | null {
-  const addr = patient.addresses?.[0];
-  // Contrato real da API (spec 011 A2): `addressFormatted`/`addressRaw`, não `fullAddress`.
-  const formatted = addr?.addressFormatted ?? addr?.addressRaw;
-  if (formatted) return formatted;
-  const parts = [
-    patient.zoneNeighborhood,
-    patient.cityLocality,
-    patient.province,
-  ].filter(Boolean);
-  return parts.length > 0 ? parts.join(', ') : null;
-}
-
 /**
  * Spec 018 PR-3 (FR-208/209/210/224, US-8, D-A): o cabeçalho mostra o contato de EMERGÊNCIA
  * MARCADO (`emergencyContactRef` — spec 018 PR-2), nunca mais o `find(isPrimary) ??
@@ -170,7 +157,6 @@ export function PatientIdentityCard({ patient, onSaved }: PatientIdentityCardPro
   const onHoldReasonLabel = statusKey === 'ON_HOLD' && patient.onHoldReason
     ? t(`admin.patients.onHoldReasonOptions.${patient.onHoldReason}`, patient.onHoldReason)
     : null;
-  const address = buildAddress(patient);
   // FR-204: chip/linha de alta SÓ com status ATUAL DISCHARGED (não "já foi DISCHARGED alguma
   // vez" — REGRA-17, um nome só, SUP-1). dischargedAt vem do backend já filtrado pela mesma
   // condição (último DISCHARGED em patient_status_history), mas o status atual é quem decide a
@@ -250,12 +236,18 @@ export function PatientIdentityCard({ patient, onSaved }: PatientIdentityCardPro
           {isDischarged && (
             <FieldPair label={t('admin.patients.detail.identityCard.discharge')} value={dischargedAtLabel} testId="patient-discharged-at" />
           )}
-          {/* Rua + número é texto: o Clarity (Balanced) não mascara sozinho (lex C2.1; QA 🔴2). */}
-          {address && (
-            <div data-clarity-mask="True" className="flex flex-col min-w-0 sm:col-span-2">
-              <FieldPair label={t('admin.patients.detail.identityCard.address')} value={address} testId="patient-address" />
-            </div>
-          )}
+          {/* Spec 044 (D475): "Dirección de facturación" é campo PRÓPRIO do paciente (`billing_*`), não
+              o Principal (residência) nem `addresses[0]`. O campo aparece SEMPRE: vazio mostra "No
+              definido" (reusa a chave do contato de emergência, mesmo texto). O testid
+              `patient-address` foi mantido (consumidores: PatientDetailCards*.test e nenhum e2e).
+              Texto de endereço: o Clarity não mascara sozinho (lex C2.1; QA 🔴2). */}
+          <div data-clarity-mask="True" className="flex flex-col min-w-0 sm:col-span-2">
+            <FieldPair
+              label={t('admin.patients.detail.identityCard.billingAddress')}
+              value={patient.billingAddressFormatted?.trim() || t('admin.patients.detail.identityCard.emergencyContactNotSet')}
+              testId="patient-address"
+            />
+          </div>
         </FieldPairGrid>
         {showPhoneWarning && (
           <div

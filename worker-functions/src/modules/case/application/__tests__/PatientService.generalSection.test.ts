@@ -85,6 +85,7 @@ jest.mock('firebase-functions', () => ({
 
 import { PatientService, type PatientGeneralSectionData } from '../PatientService';
 import { PatientResponsibleRepository } from '../../infrastructure/PatientResponsibleRepository';
+import { geocodePatientAddressesBestEffort } from '../../infrastructure/geocodePatientAddresses';
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
@@ -276,5 +277,63 @@ describe('PatientService.updatePatientSection(general) / updateGeneralSection', 
 
     expect(rollbackCalls.length).toBeGreaterThanOrEqual(1);
     expect(mockClient.release).toHaveBeenCalled();
+  });
+
+  // ── Spec 044 (migration 500): faturamento do paciente ─────────────────────────
+  // Endereços de FICÇÃO: nenhum dado real de paciente em fixture.
+
+  async function runGeneral(data: PatientGeneralSectionData, service2: PatientService = service) {
+    const seen: Array<{ sql: string; params?: unknown[] }> = [];
+    _queryImpl = async (sql: string, params?: unknown[]) => { seen.push({ sql, params }); return undefined; };
+    await service2.updatePatientSection('pid-bill', 'general', data);
+    return seen.find((s) => s.sql.startsWith('UPDATE patients SET'));
+  }
+
+  it('044 A2: grava os 3 campos de faturamento nas colunas billing_*', async () => {
+    const update = await runGeneral({
+      billingAddressFormatted: 'Calle Falsa 123, Ciudad Ficticia, Provincia Ficticia',
+      billingCity: 'Ciudad Ficticia',
+      billingProvince: 'Provincia Ficticia',
+    });
+    expect(update!.sql).toContain('billing_address_formatted = $2');
+    expect(update!.sql).toContain('billing_city = $3');
+    expect(update!.sql).toContain('billing_province = $4');
+    expect(update!.params).toEqual([
+      'pid-bill', 'Calle Falsa 123, Ciudad Ficticia, Provincia Ficticia', 'Ciudad Ficticia', 'Provincia Ficticia',
+    ]);
+  });
+
+  it('044 A2: billingAddressFormatted = null limpa os 3 mesmo que cidade/província venham preenchidas', async () => {
+    const update = await runGeneral({
+      billingAddressFormatted: null,
+      billingCity: 'Ciudad Ficticia',
+      billingProvince: 'Provincia Ficticia',
+    });
+    expect(update!.params).toEqual(['pid-bill', null, null, null]);
+  });
+
+  it('044 A2: texto sem cidade/província grava NULL nelas (nunca sobra a cidade da escolha anterior)', async () => {
+    const update = await runGeneral({ billingAddressFormatted: 'Calle Falsa 123' });
+    expect(update!.sql).toContain('billing_city = $3');
+    expect(update!.params).toEqual(['pid-bill', 'Calle Falsa 123', null, null]);
+  });
+
+  it('044 A2: sem billingAddressFormatted no payload, nenhuma coluna billing_* entra no SET', async () => {
+    const update = await runGeneral({ firstName: 'Nuevo' });
+    expect(update!.sql).not.toContain('billing_');
+  });
+
+  it('044 A13: gravar faturamento NÃO chama geocoding e o SQL não toca lat/lng', async () => {
+    const geocode = jest.fn();
+    const geocodeBatch = jest.fn();
+    const withSpy = new PatientService({ geocode, geocodeBatch } as never);
+    const update = await runGeneral(
+      { billingAddressFormatted: 'Calle Falsa 123', billingCity: 'Ciudad Ficticia', billingProvince: 'Provincia Ficticia' },
+      withSpy,
+    );
+    expect(geocode).not.toHaveBeenCalled();
+    expect(geocodeBatch).not.toHaveBeenCalled();
+    expect(geocodePatientAddressesBestEffort).not.toHaveBeenCalled();
+    expect(update!.sql).not.toMatch(/\blat\b|\blng\b|latitude|longitude/i);
   });
 });

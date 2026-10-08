@@ -16,6 +16,7 @@ import { SelectField, type SelectOption } from '@presentation/components/molecul
 import { MultiSelect } from '@presentation/components/atoms/MultiSelect';
 import { useConfirmDiscardClose } from '@hooks/admin/useConfirmDiscardClose';
 import { DiscardChangesConfirm } from './DiscardChangesConfirm';
+import { BillingAddressField, type BillingAddressValue } from './BillingAddressField';
 
 interface Props {
   patient: PatientDetail;
@@ -73,6 +74,22 @@ export function PatientGeneralEditDrawer({ patient, onClose, onSaved }: Props): 
   const [busy, setBusy] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
+  // Spec 044: faturamento fora do react-hook-form — é um trio (texto + cidade + província) que o Places
+  // preenche de uma vez, e a "escolha da lista" é estado próprio (como no PatientAddressDrawer).
+  const initialBilling: BillingAddressValue = {
+    formatted: patient.billingAddressFormatted ?? '',
+    city: patient.billingCity ?? null,
+    province: patient.billingProvince ?? null,
+  };
+  const [billing, setBilling] = useState<BillingAddressValue>(initialBilling);
+  // O valor já gravado conta como "escolhido" (não foi digitado agora); digitar desfaz.
+  const [billingPicked, setBillingPicked] = useState(true);
+  const [billingNotPicked, setBillingNotPicked] = useState(false);
+  const billingDirty =
+    billing.formatted.trim() !== initialBilling.formatted.trim() ||
+    billing.city !== initialBilling.city ||
+    billing.province !== initialBilling.province;
+
   const { register, handleSubmit, control, formState: { errors, isDirty } } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
@@ -103,7 +120,7 @@ export function PatientGeneralEditDrawer({ patient, onClose, onSaved }: Props): 
   // Spec 014 (US-D4, lex D4 AUTORIZADO): react-hook-form já rastreia dirty campo a campo
   // contra `defaultValues` — reusar em vez de duplicar a comparação manual.
   const { confirmingClose, requestClose, keepEditing, confirmDiscard } = useConfirmDiscardClose({
-    isDirty,
+    isDirty: isDirty || billingDirty,
     onConfirmedClose: handleClose,
   });
 
@@ -160,6 +177,18 @@ export function PatientGeneralEditDrawer({ patient, onClose, onSaved }: Props): 
       values.languages.length !== currentLanguages.length ||
       values.languages.some((l) => !currentLanguages.includes(l));
     if (languagesChanged) payload.languages = values.languages.length > 0 ? values.languages : null;
+
+    // Spec 044: texto digitado que não veio da lista do Google (nem da cópia do Principal) NÃO grava —
+    // é o erro de digitação que o campo existe para não deixar passar. Vazio é válido: limpa os 3.
+    const billingText = billing.formatted.trim();
+    if (billingText && !billingPicked) { setBillingNotPicked(true); return; }
+    setBillingNotPicked(false);
+    if (billingDirty) {
+      // Os 3 viajam JUNTOS (o servidor recusa cidade/província sem o texto); vazio → null nos 3.
+      payload.billingAddressFormatted = billingText || null;
+      payload.billingCity = billingText ? billing.city : null;
+      payload.billingProvince = billingText ? billing.province : null;
+    }
 
     if (Object.keys(payload).length === 0) { handleClose(); return; }
 
@@ -247,6 +276,12 @@ export function PatientGeneralEditDrawer({ patient, onClose, onSaved }: Props): 
                 <MultiSelect options={languageOptions} value={field.value} onChange={field.onChange} placeholder={te('selectPlaceholder')} id="pge-languages" />
               )} />
             </FormField>
+            <BillingAddressField
+              value={billing}
+              addresses={patient.addresses}
+              notPicked={billingNotPicked}
+              onChange={(next, picked) => { setBilling(next); setBillingPicked(picked); if (picked) setBillingNotPicked(false); }}
+            />
           </div>
 
           {submitError && <Text size="sm" className="text-red-600" data-testid="pge-error">{submitError}</Text>}

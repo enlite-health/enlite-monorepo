@@ -6,6 +6,8 @@ import { pgUniqueViolationConflict } from '@shared/http/pgUniqueViolationConflic
 import { AuthMiddleware } from '@modules/identity';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { withActorContext } from '@shared/database/actorContext';
+import { loggingAls } from '@shared/logging';
+import { deletePatientAddress } from '../../infrastructure/deletePatientAddress';
 
 /**
  * AdminPatientAddressesController — edição da LOGÍSTICA + PRINCIPAL + TIPO por endereço
@@ -196,6 +198,56 @@ export class AdminPatientAddressesController {
       // C2.3: nada do corpo no reportError nem na resposta.
       reportError(e, { source: 'AdminPatientAddressesController:updatePatientAddress', patientId: params.data.patientId });
       res.status(500).json({ success: false, error: 'Failed to update patient address' });
+    }
+  }
+
+  /**
+   * DELETE /api/admin/patients/:patientId/addresses/:addressId (spec 044, D4) — célula `patient_address:delete`.
+   * Toda a regra mora em `deletePatientAddress` (404 / 409 PRIMARY_WITH_OTHERS / 409 ADDRESS_IN_USE / 204).
+   * Resposta e log SEM texto de endereço: só ids e, no 409 de uso, as contagens.
+   */
+  async deletePatientAddress(req: Request, res: Response): Promise<void> {
+    const params = paramsSchema.safeParse(req.params);
+    if (!params.success) {
+      res.status(400).json({ success: false, error: 'Invalid params', details: params.error.flatten() });
+      return;
+    }
+    const uid = AuthMiddleware.getAuthContext(req)?.principal.id ?? null;
+    try {
+      const outcome = await deletePatientAddress(this.db, {
+        patientId: params.data.patientId,
+        addressId: params.data.addressId,
+        actorUserId: uid,
+        traceId: loggingAls?.getStore?.()?.traceId ?? null,
+      });
+      switch (outcome.kind) {
+        case 'not_found':
+          res.status(404).json({ success: false, error: 'Address not found' });
+          return;
+        case 'primary_with_others':
+          res.status(409).json({ success: false, error: 'PRIMARY_WITH_OTHERS' });
+          return;
+        case 'in_use':
+          res.status(409).json({
+            success: false,
+            error: 'ADDRESS_IN_USE',
+            details: { vacancies: outcome.vacancies, services: outcome.services },
+          });
+          return;
+        case 'deleted':
+          logger.info({
+            msg: 'patient_address.deleted',
+            uid,
+            patientId: params.data.patientId,
+            addressId: params.data.addressId,
+          });
+          res.status(204).send();
+          return;
+      }
+    } catch (err: unknown) {
+      const e = err instanceof Error ? err : new Error(String(err));
+      reportError(e, { source: 'AdminPatientAddressesController:deletePatientAddress', patientId: params.data.patientId });
+      res.status(500).json({ success: false, error: 'Failed to delete patient address' });
     }
   }
 }

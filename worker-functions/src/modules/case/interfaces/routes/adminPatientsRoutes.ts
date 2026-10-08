@@ -188,6 +188,10 @@ export function createAdminPatientsRoutes(
   router.patch('/patients/:patientId/addresses/:addressId', staffOnly, perm.require('patient_address', 'update'), (req: Request, res: Response) =>
     addressesController.updatePatientAddress(req, res),
   );
+  // Remover Localización (spec 044, D4): célula própria `patient_address:delete`, concedida a quem já editava endereço.
+  router.delete('/patients/:patientId/addresses/:addressId', staffOnly, perm.require('patient_address', 'delete'), (req: Request, res: Response) =>
+    addressesController.deletePatientAddress(req, res),
+  );
 
   // Patient vacancies — all job_postings for a patient, newest first
   router.get('/patients/:id/vacancies', staffOnly, perm.require('vacancy', 'read'), (req: Request, res: Response) =>
