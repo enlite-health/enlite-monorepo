@@ -27,7 +27,17 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Spec 045: no `push`, pula a suíte se o merge commit tem o MESMO tree da cabeça do PR
+  # (já testada pelo `pr-gate`). Só roda no `push`; chamado por `workflow_call` (pr-gate) o job
+  # é pulado e o `e2e` roda sempre, como antes. Fail-closed: sem output `true`, a suíte roda.
+  mesmo-tree:
+    if: github.event_name == 'push'
+    uses: ./.github/workflows/_mesmo-tree-do-pr.yml
+
   e2e:
+    needs: mesmo-tree
+    if: >-
+      !cancelled() && (github.event_name != 'push' || needs.mesmo-tree.outputs.igual != 'true')
     runs-on: ubuntu-latest
     # 15 min não bastava: no PR #299 o job foi cancelado no teto com 181 de 182 suítes
     # concluídas, e agora entram o boot do container da OMS (~16 s) e a ingestão (~13 s
