@@ -3,7 +3,6 @@ import { X } from 'lucide-react';
 import { Button } from '@presentation/components/atoms/Button';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
-import { diagnosisDisplayState } from '@domain/entities/diagnosisDisplay';
 import { formatInstant } from '@presentation/utils/dateTimeFormat';
 
 interface CaseDetailsModalProps {
@@ -52,36 +51,7 @@ export function CaseDetailsModal({ isOpen, onClose, caseData }: CaseDetailsModal
               <Text size="sm" weight="semibold" color="muted">
                 {t('admin.recruitment.diagnosis')}
               </Text>
-              {(() => {
-                // Patología lida do paciente pela rota do caso (sem copiar coluna).
-                // REQ-21: só o título, nunca o código do CID.
-                const state = diagnosisDisplayState(
-                  caseInfo?.diagnoses ?? null,
-                  Boolean(caseInfo?.diagnosesUnavailable),
-                );
-                if (state.kind === 'unavailable') {
-                  return (
-                    <Text size="sm" className="!text-red-600" data-testid="case-details-patologia-unavailable">
-                      {t('admin.patients.detail.diagnosisCard.patologiesUnavailable')}
-                    </Text>
-                  );
-                }
-                if (state.kind === 'noPermission') {
-                  return (
-                    <Text size="sm" color="secondary" data-testid="case-details-patologia-no-permission">
-                      {t('admin.patients.detail.diagnosisCard.patologiesNoPermission')}
-                    </Text>
-                  );
-                }
-                if (state.kind === 'empty') {
-                  return <Text size="sm" data-testid="case-details-patologia-empty">-</Text>;
-                }
-                return (
-                  <Text size="sm" data-testid="case-details-patologias">
-                    {state.diagnoses.map((d) => d.title).join(', ')}
-                  </Text>
-                );
-              })()}
+              <Text size="sm">{caseInfo?.diagnosis || '-'}</Text>
             </div>
             <div>
               <Text size="sm" weight="semibold" color="muted">
