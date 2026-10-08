@@ -6,9 +6,9 @@
  *
  *   - Removed "Grado de Dependencia" column (patient info, not vacancy)
  *   - Removed "Clientes" filter (was hardcoded fake)
- *   - Added "Prioridad" column with badge
- *   - Estado/Prioridad filters aligned with the 8 canonical statuses and 4
- *     canonical priorities
+ *   - Spec 046 F1: Prioridad, Días sin difusión e Confirmados saíram da lista,
+ *     e o filtro de Prioridad saiu junto
+ *   - Estado filter aligned with the 8 canonical statuses
  *   - Filter selects switched from h-60 SelectField to h-42 Select atom
  *
  * Uses the integration auth pattern (mock Firebase Identity Toolkit + mock
@@ -218,23 +218,25 @@ test.describe('AdminVacanciesPage — list visual + structural regression @integ
     // Removed column must not be in the DOM
     await expect(page.getByRole('columnheader', { name: /Grado de Dependencia/i })).toHaveCount(0);
 
-    // New column must be visible
-    await expect(page.getByRole('columnheader', { name: /Prioridad/i })).toBeVisible();
-
-    // Confirmados counter column (stage CONFIRMED) between Postulados and Seleccionados
-    await expect(page.getByRole('columnheader', { name: /^Confirmados$/i })).toBeVisible();
+    // Spec 046 F1: as 3 colunas saíram da lista
+    await expect(page.getByRole('columnheader', { name: /Prioridad/i })).toHaveCount(0);
+    await expect(page.getByRole('columnheader', { name: /^Confirmados$/i })).toHaveCount(0);
+    await expect(page.getByRole('columnheader', { name: /Días sin difusión/i })).toHaveCount(0);
+    await expect(page.getByTestId('vacancies-col-priority')).toHaveCount(0);
+    await expect(page.getByTestId('vacancies-col-CONFIRMED')).toHaveCount(0);
+    await expect(page.getByTestId('vacancies-col-days-without-divulgation')).toHaveCount(0);
 
     // Removed Clientes filter
     await expect(page.getByText(/^Clientes$/)).toHaveCount(0);
 
-    // Filter bar has at least 2 selects (Estado, Prioridad) — Clientes is gone
+    // Filter bar has at least 1 select (Estado) — Clientes e Prioridad se foram
     // (additional selects added by advanced filters: Tipo, Provincia, Localidad, Sexo, De, Hasta)
     const selectCount = await filterBar(page).locator('select').count();
-    expect(selectCount).toBeGreaterThanOrEqual(2);
+    expect(selectCount).toBeGreaterThanOrEqual(1);
 
-    // Remaining filter labels (Estado, Prioridad) appear inside the toolbar
+    // Estado fica na barra; Prioridad não (A4)
     await expect(filterBar(page).getByText(/^Estado$/)).toBeVisible();
-    await expect(filterBar(page).getByText(/^Prioridad$/)).toBeVisible();
+    await expect(filterBar(page).getByText(/^Prioridad$/)).toHaveCount(0);
   });
 
   test('Estado filter exposes the 8 canonical job_postings.status values', async ({ page }) => {
@@ -259,19 +261,6 @@ test.describe('AdminVacanciesPage — list visual + structural regression @integ
         'SUSPENDED',
       ].sort(),
     );
-  });
-
-  test('Prioridad filter exposes the 4 canonical priorities', async ({ page }) => {
-    await loginAsAdmin(page);
-
-    await page.goto('/admin/vacancies');
-    await expect(page.getByText('Caso 234-12')).toBeVisible({ timeout: 15_000 });
-
-    const prioritySelect = filterBar(page).locator('select').nth(1);
-    const values = await prioritySelect.locator('option').evaluateAll(
-      (opts) => opts.map((o) => (o as HTMLOptionElement).value).filter((v) => v.length > 0),
-    );
-    expect(values).toEqual(['URGENT', 'HIGH', 'NORMAL', 'LOW']);
   });
 
   test('Status filter forwards canonical value to /api/admin/vacancies query', async ({ page }) => {

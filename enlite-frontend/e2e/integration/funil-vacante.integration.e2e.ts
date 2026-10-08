@@ -58,6 +58,8 @@ const COLUMN_SOURCES: Record<string, string[]> = {
   REJECTED: ['REJECTED'],
 };
 const COLUMN_IDS = Object.keys(COLUMN_SOURCES);
+// Spec 046 F1: a LISTA de vacantes não tem mais a coluna Confirmados (aba e Kanban têm).
+const LIST_COLUMN_IDS = COLUMN_IDS.filter((c) => c !== 'CONFIRMED');
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -146,9 +148,10 @@ async function switchToKanban(page: Page, vacancyId: string): Promise<Response> 
 async function readTestIdNumbers(
   page: Page,
   testIdFor: (col: string) => string,
+  columns: string[] = COLUMN_IDS,
 ): Promise<Record<string, number>> {
   const out: Record<string, number> = {};
-  for (const col of COLUMN_IDS) {
+  for (const col of columns) {
     const locator = page.getByTestId(testIdFor(col));
     await expect(locator).toBeVisible({ timeout: 15_000 });
     let previous: string | null = null;
@@ -176,7 +179,8 @@ async function readListRowCounts(page: Page, vacancyId: string): Promise<Record<
   const response = await gotoVacanciesList(page);
   expect(response.ok(), 'GET /api/admin/vacancies (lista) falhou').toBe(true);
   await expect(page.getByTestId(`vacancy-row-${vacancyId}`)).toBeVisible({ timeout: 15_000 });
-  return readTestIdNumbers(page, (col) => `vacancy-row-${vacancyId}-stage-${col}`);
+  await expect(page.getByTestId(`vacancy-row-${vacancyId}-stage-CONFIRMED`)).toHaveCount(0);
+  return readTestIdNumbers(page, (col) => `vacancy-row-${vacancyId}-stage-${col}`, LIST_COLUMN_IDS);
 }
 
 async function readFunnelTabCounts(page: Page, vacancyId: string): Promise<Record<string, number>> {
@@ -377,8 +381,10 @@ test.describe('funil da vacante @integration', () => {
     const kanbanCounts = await readKanbanColumnCounts(page, vacancyIdV1);
 
     // 6. Asserts: cell == tab == badge == api, por coluna nomeada.
-    for (const col of COLUMN_IDS) {
+    for (const col of LIST_COLUMN_IDS) {
       expect(listCounts[col], `lista.${col}`).toBe(apiCounts[col]);
+    }
+    for (const col of COLUMN_IDS) {
       expect(tabCounts[col], `aba.${col}`).toBe(apiCounts[col]);
       expect(kanbanCounts[col], `kanban.${col}`).toBe(apiCounts[col]);
     }
@@ -492,7 +498,9 @@ test.describe('funil da vacante @integration', () => {
       for (const col of COLUMN_IDS) {
         const expectedDelta = col === 'INICIADO' ? 1 : 0;
         expect(apiAfter[col] - apiBefore[col], `API.${col}`).toBe(expectedDelta);
-        expect(listAfter[col] - listBefore[col], `lista.${col}`).toBe(expectedDelta);
+        if (LIST_COLUMN_IDS.includes(col)) {
+          expect(listAfter[col] - listBefore[col], `lista.${col}`).toBe(expectedDelta);
+        }
         expect(tabAfter[col] - tabBefore[col], `aba.${col}`).toBe(expectedDelta);
         expect(kanbanAfter[col] - kanbanBefore[col], `kanban.${col}`).toBe(expectedDelta);
       }
@@ -551,8 +559,8 @@ test.describe('funil da vacante @integration', () => {
       // Lista de vacantes: não pula — o `00` vem do padStart (DX-2.7).
       await gotoVacanciesList(page);
       await expect(page.getByTestId(`vacancy-row-${vacancyId}`)).toBeVisible({ timeout: 15_000 });
-      const listCounts = await readTestIdNumbers(page, (col) => `vacancy-row-${vacancyId}-stage-${col}`);
-      for (const col of COLUMN_IDS) {
+      const listCounts = await readTestIdNumbers(page, (col) => `vacancy-row-${vacancyId}-stage-${col}`, LIST_COLUMN_IDS);
+      for (const col of LIST_COLUMN_IDS) {
         expect(listCounts[col], `lista.${col}`).toBe(0);
         await expect(page.getByTestId(`vacancy-row-${vacancyId}-stage-${col}`)).toHaveText('00');
       }
