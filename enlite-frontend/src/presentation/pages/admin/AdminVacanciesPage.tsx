@@ -88,6 +88,10 @@ export function AdminVacanciesPage(): JSX.Element {
   }, [searchQuery, selectedStatus, itemsPerPage, currentPage, advancedFilters, sort]);
 
   const { vacancies: rawVacancies, stats: rawStats, total, isLoading, error, refetch } = useVacanciesData(filters);
+  // Esqueleto só na 1ª carga. Nas buscas seguintes (ordenar/filtrar/paginar) a tabela fica montada
+  // (aria-busy + opacidade) para o foco continuar no cabeçalho ordenável.
+  const [loadedOnce, setLoadedOnce] = useState(false);
+  useEffect(() => { if (!isLoading) setLoadedOnce(true); }, [isLoading]);
   const stats = rawStats as { label: string; value: string | number; icon: string }[] | null;
 
   // POST /vacancies/sync-talentum é sincronização EM MASSA (sem :id) — pela regra do
@@ -296,10 +300,14 @@ export function AdminVacanciesPage(): JSX.Element {
             </Typography>
             <Typography variant="body" className="text-slate-600">{error}</Typography>
           </div>
-        ) : isLoading ? (
+        ) : isLoading && !loadedOnce ? (
           <div className="mt-6"><TableSkeleton /></div>
         ) : (
-          <div className="mt-6">
+          <div
+            className={`mt-6 transition-opacity ${isLoading ? 'opacity-60' : ''}`}
+            data-testid="vacancies-table-region"
+            aria-busy={isLoading}
+          >
             <VacanciesTable
               vacancies={vacancies}
               onRowClick={handleRowClick}

@@ -45,4 +45,30 @@ describe('AdminVacanciesPage — ordenação', () => {
     await userEvent.click(within(screen.getByTestId('vacancies-col-INVITED')).getByRole('button'));
     expect(lastFilters()).toMatchObject({ sort: 'invited', order: 'asc', offset: '0' });
   });
+
+  it('refetch (isLoading=true) não troca a tabela pelo esqueleto: o botão focado do cabeçalho continua o mesmo', async () => {
+    // 1ª carga: dados prontos. Depois de ordenar, o hook liga isLoading (como o real a cada busca).
+    useVacanciesData.mockImplementation((f: Record<string, string>) => ({
+      vacancies: [], stats: [], total: 200, isLoading: !!f.sort, error: null, refetch: vi.fn(),
+    }));
+    renderPage();
+    const botao = within(screen.getByTestId('vacancies-col-COMPLETED')).getByRole('button');
+    await userEvent.click(botao);
+    expect(lastFilters().sort).toBe('completed');
+    expect(useVacanciesData.mock.results[useVacanciesData.mock.results.length - 1].value.isLoading).toBe(true);
+
+    const depois = within(screen.getByTestId('vacancies-col-COMPLETED')).getByRole('button');
+    expect(depois).toBe(botao);
+    expect(botao.isConnected).toBe(true);
+    expect(document.activeElement).toBe(botao);
+    expect(screen.getByTestId('vacancies-table-region')).toHaveAttribute('aria-busy', 'true');
+  });
+
+  it('na 1ª carga (sem dados ainda) mostra o esqueleto, não a tabela', () => {
+    useVacanciesData.mockReturnValue({
+      vacancies: [], stats: [], total: 0, isLoading: true, error: null, refetch: vi.fn(),
+    });
+    renderPage();
+    expect(screen.queryByTestId('vacancies-col-COMPLETED')).toBeNull();
+  });
 });
