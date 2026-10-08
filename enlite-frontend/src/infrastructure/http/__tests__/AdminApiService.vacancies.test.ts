@@ -82,36 +82,16 @@ describe('AdminApiService - Vacancies Methods', () => {
       expect(capturedUrl()).toContain('status=pausado');
     });
 
-    it('priority=urgent é incluído na URL', async () => {
-      mockFetch();
-      await AdminApiService.listVacancies({ priority: 'urgent' });
-      expect(capturedUrl()).toContain('priority=urgent');
-    });
-
-    it('priority=high é incluído na URL', async () => {
-      mockFetch();
-      await AdminApiService.listVacancies({ priority: 'high' });
-      expect(capturedUrl()).toContain('priority=high');
-    });
-
     it('todos os filtros combinados são incluídos na URL', async () => {
       mockFetch([{ id: 1 }], 1);
-      const filters = { search: 'test', client: 'OSDE', status: 'ativo', priority: 'urgent', limit: '10', offset: '0' };
+      const filters = { search: 'test', client: 'OSDE', status: 'ativo', limit: '10', offset: '0' };
       const result = await AdminApiService.listVacancies(filters);
 
       const url = capturedUrl();
       expect(url).toContain('search=test');
       expect(url).toContain('status=ativo');
-      expect(url).toContain('priority=urgent');
       expect(url).toContain('client=OSDE');
       expect(result).toEqual({ data: [{ id: 1 }], total: 1 });
-    });
-
-    it('priority vazio ("") não é enviado como parâmetro na URL', async () => {
-      mockFetch();
-      await AdminApiService.listVacancies({ status: 'ativo', priority: '' });
-      const url = capturedUrl();
-      expect(url).toContain('status=ativo');
     });
   });
 

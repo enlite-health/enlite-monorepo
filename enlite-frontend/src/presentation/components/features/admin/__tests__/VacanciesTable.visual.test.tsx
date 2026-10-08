@@ -5,7 +5,7 @@
  * - Ícone Eye é do lucide-react (SVG), não uma <img> externa
  * - Colunas numéricas (invited/applicants/selected/missing) são ocultas em mobile
  * - min-width da tabela é 500px (não 900px)
- * - Colunas essenciais (caso, status, priority) sempre visíveis
+ * - Colunas essenciais (caso, status, última ação) sempre visíveis; localizadas por data-testid, nunca por posição
  */
 
 import { describe, it, expect } from 'vitest';
@@ -17,7 +17,6 @@ const MOCK_VACANCIES: VacancyRow[] = [
     id: '1',
     caso: 'Caso 100',
     status: 'Activo',
-    priority: 'HIGH',
     diasAberto: '05',
     stageCounts: {
       INVITED: 10,
@@ -32,7 +31,6 @@ const MOCK_VACANCIES: VacancyRow[] = [
     faltantes: '2',
     isDraft: false,
     lastActionAt: '2026-09-20T14:30:00.000Z',
-    daysWithoutDivulgation: 3,
   },
 ];
 
@@ -64,44 +62,55 @@ describe('VacanciesTable — Eye icon', () => {
 
 // ── GARANTIA 2: Colunas responsivas (hidden md:table-cell) ────────────────
 
+const ESSENTIAL_KEYS = ['case', 'status', 'last-action'];
+const RESPONSIVE_KEYS = [
+  'COMPATIBLE', 'INVITED', 'INICIADO', 'PRE_SCREENING', 'COMPLETED',
+  'SELECTED', 'QUICK_RESPONSE_TEAM', 'REJECTED', 'applicants', 'missing',
+];
+
+function headerByKey(container: HTMLElement, key: string): HTMLElement {
+  const th = container.querySelector<HTMLElement>(`[data-testid="vacancies-col-${key}"]`);
+  expect(th).toBeTruthy();
+  return th!;
+}
+
+function cellByKey(container: HTMLElement, rowId: string, key: string): HTMLElement {
+  const th = headerByKey(container, key);
+  const headers = Array.from(container.querySelectorAll('thead th'));
+  const cells = container.querySelectorAll(`[data-testid="vacancy-row-${rowId}"] td`);
+  const cell = cells[headers.indexOf(th)] as HTMLElement | undefined;
+  expect(cell).toBeTruthy();
+  return cell!;
+}
+
 describe('VacanciesTable — responsive columns', () => {
-  it('CRITICAL: numeric columns (as 7 do funil + applicants + missing) have hidden md:table-cell', () => {
+  it('CRITICAL: numeric columns (as 8 do funil sem Confirmados + applicants + missing) have hidden md:table-cell', () => {
     const { container } = render(<VacanciesTable vacancies={MOCK_VACANCIES} />);
-
-    const row = container.querySelector('[class*="h-[72px]"]');
-    expect(row).toBeTruthy();
-
-    const cells = row!.querySelectorAll('td');
-    // Cells: eye(0), caso(1), status(2), priority(3), última ação(4), dias(5),
-    // 7 colunas do funil(6-12), postulados(13), faltantes(14) — DX-3.7.
-    for (let i = 6; i <= 14; i++) {
-      expect(cells[i].className).toContain('hidden');
-      expect(cells[i].className).toContain('md:table-cell');
+    for (const key of RESPONSIVE_KEYS) {
+      const cell = cellByKey(container, '1', key);
+      expect(cell.className).toContain('hidden');
+      expect(cell.className).toContain('md:table-cell');
     }
   });
 
-  it('CRITICAL: essential columns (caso, status, priority, última ação, dias) are always visible', () => {
+  it('CRITICAL: essential columns (olho, caso, status, última ação) are always visible', () => {
     const { container } = render(<VacanciesTable vacancies={MOCK_VACANCIES} />);
-
-    const row = container.querySelector('[class*="h-[72px]"]');
-    const cells = row!.querySelectorAll('td');
-
-    // olho(0), caso(1), status(2), priority(3), última ação(4), dias(5) — DX-3.7:
-    // as duas colunas novas ficam visíveis também abaixo de md.
-    for (let i = 0; i <= 5; i++) {
-      expect(cells[i].className).not.toContain('hidden');
+    const eye = container.querySelector(`[data-testid="vacancy-row-1"] td`) as HTMLElement;
+    expect(eye.className).not.toContain('hidden');
+    for (const key of ESSENTIAL_KEYS) {
+      expect(cellByKey(container, '1', key).className).not.toContain('hidden');
     }
   });
 
   it('table headers also have responsive hidden classes', () => {
     const { container } = render(<VacanciesTable vacancies={MOCK_VACANCIES} />);
-
-    const headerCells = container.querySelectorAll('thead th');
-    // Headers: empty(0), case(1), status(2), priority(3), última ação(4), dias(5),
-    // 7 colunas do funil(6-12), applicants(13), missing(14) — DX-3.7.
-    for (let i = 6; i <= 14; i++) {
-      expect(headerCells[i].className).toContain('hidden');
-      expect(headerCells[i].className).toContain('md:table-cell');
+    for (const key of RESPONSIVE_KEYS) {
+      const th = headerByKey(container, key);
+      expect(th.className).toContain('hidden');
+      expect(th.className).toContain('md:table-cell');
+    }
+    for (const key of ESSENTIAL_KEYS) {
+      expect(headerByKey(container, key).className).not.toContain('hidden');
     }
   });
 });
@@ -129,7 +138,9 @@ describe('VacanciesTable — empty state colspan', () => {
     expect(emptyCell).toBeTruthy();
 
     const colspan = parseInt(emptyCell!.getAttribute('colspan') || '0');
-    // 3 (case/status/priority) + 2 (última ação/dias) + 9 colunas do funil (Fase 5: +COMPATIBLE) + 2 (applicants/missing) + 1 (eye) = 17
-    expect(colspan).toBe(17);
+    // eye + case/status + última ação + 8 colunas do funil (sem CONFIRMED) + applicants/missing = 14
+    // e igual ao número real de <th> (a soma deixa de ser literal).
+    expect(colspan).toBe(14);
+    expect(colspan).toBe(container.querySelectorAll('thead th').length);
   });
 });

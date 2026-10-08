@@ -18,7 +18,6 @@ export interface VacancyListFilters {
   search?: string;
   client?: string;
   status?: string;
-  priority?: string;
   limit?: string;
   offset?: string;
   worker_type?: string;
