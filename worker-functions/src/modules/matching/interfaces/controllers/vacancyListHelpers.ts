@@ -6,7 +6,6 @@
  */
 
 import {
-  CONFIRMED_KANBAN_STAGES,
   FILLED_POSITION_STAGES,
   POSTULATED_STAGES,
   SELECTED_KANBAN_STAGES,
@@ -26,7 +25,6 @@ import {
   type FunnelColumnCounts,
 } from '../../domain/kanbanColumn';
 import { blockedNotPromotedSql, wjaSupersededByBlockedSql } from '../../infrastructure/BlockedApplicationQueryRepository';
-import { OPERATION_TIMEZONE } from '../../domain/interviewSchedule';
 
 // ── Display mappers ────────────────────────────────────────────────────────────
 
@@ -56,7 +54,6 @@ export function mapStatus(status: string | null): string {
 const WORKER_ACTIVE_SQL = workerNotDisabledSql('wja.worker_id');
 
 const POSTULATED_SQL = toSqlInList(POSTULATED_STAGES);
-const CONFIRMED_KANBAN_SQL = toSqlInList(CONFIRMED_KANBAN_STAGES);
 const SELECTED_KANBAN_SQL = toSqlInList(SELECTED_KANBAN_STAGES);
 const FILLED_POSITION_SQL = toSqlInList(FILLED_POSITION_STAGES);
 
@@ -68,7 +65,6 @@ const LIST_VACANCIES_BASE = `
     jp.title,
     jp.status,
     jp.is_draft,
-    jp.priority,
     p.zone_neighborhood as patient_zone,
     jp.search_start_date,
     jp.created_at,
@@ -94,10 +90,6 @@ const LIST_VACANCIES_BASE = `
       WHERE wja.job_posting_id = jp.id
         AND wja.application_funnel_stage IN (${POSTULATED_SQL})
         AND ${WORKER_ACTIVE_SQL}) as postulados,
-    (SELECT COUNT(*) FROM worker_job_applications wja
-      WHERE wja.job_posting_id = jp.id
-        AND wja.application_funnel_stage IN (${CONFIRMED_KANBAN_SQL})
-        AND ${WORKER_ACTIVE_SQL}) as confirmados,
     (SELECT COUNT(*) FROM worker_job_applications wja
       WHERE wja.job_posting_id = jp.id
         AND wja.application_funnel_stage IN (${SELECTED_KANBAN_SQL})
@@ -137,8 +129,6 @@ const VALID_STATUSES: ReadonlySet<string> = new Set([
   'CLOSED',
 ]);
 
-const VALID_PRIORITIES: ReadonlySet<string> = new Set(['URGENT', 'HIGH', 'NORMAL', 'LOW']);
-
 /** Values accepted for the workerType filter (maps to required_professions column). */
 const VALID_WORKER_TYPES: ReadonlySet<string> = new Set(['AT', 'CAREGIVER']);
 
@@ -148,7 +138,6 @@ const VALID_REQUIRED_SEX: ReadonlySet<string> = new Set(['F', 'M', 'BOTH']);
 export interface ListVacanciesFilters {
   search?: unknown;
   status?: unknown;
-  priority?: unknown;
   /** Filter by required_professions: 'AT' | 'CAREGIVER' */
   workerType?: unknown;
   /** Filter by patient_addresses.state (ILIKE exact value). */
@@ -206,12 +195,6 @@ export function buildListVacanciesQuery(filters: ListVacanciesFilters, opts: { s
   if (typeof filters.status === 'string' && VALID_STATUSES.has(filters.status)) {
     baseQuery += ` AND jp.status = $${paramIndex}`;
     params.push(filters.status);
-    paramIndex++;
-  }
-
-  if (typeof filters.priority === 'string' && VALID_PRIORITIES.has(filters.priority)) {
-    baseQuery += ` AND jp.priority = $${paramIndex}`;
-    params.push(filters.priority);
     paramIndex++;
   }
 
@@ -288,19 +271,15 @@ export async function loadStageCounts(db: Pool, jobPostingIds: string[]): Promis
 }
 
 /**
- * Última ação e dias sem divulgação para uma PÁGINA de vagas, numa consulta só
+ * Última ação para uma PÁGINA de vagas, numa consulta só
  * (irmã de `loadStageCounts` — DX-3.4). `lastActionAt` = GREATEST(última nota,
  * último movimento de funil de qualquer WJA da vaga, publicação na Talentum);
- * NUNCA `updated_at` (DX-3.5 — sabotagem futura testada em P6). `daysWithoutDivulgation`
- * conta só notas de categoria DIVULGACAO, em dias de calendário do fuso da operação
- * (DX-3.6); sem nota → `null` (nunca `0`).
+ * NUNCA `updated_at` (DX-3.5 — sabotagem futura testada em P6). Os "dias sem
+ * divulgação" saíram do DTO na spec 046 F1.
  */
 export interface VacancyActivity {
   lastActionAt: string | null;
-  daysWithoutDivulgation: number | null;
 }
-
-const TZ = OPERATION_TIMEZONE;
 
 export async function loadVacancyActivity(db: Pool, jobPostingIds: string[]): Promise<Map<string, VacancyActivity>> {
   const out = new Map<string, VacancyActivity>();
@@ -313,19 +292,14 @@ export async function loadVacancyActivity(db: Pool, jobPostingIds: string[]): Pr
                  JOIN worker_job_applications w ON w.id = h.application_id
                 WHERE w.job_posting_id = jp.id),
               jp.talentum_published_at
-            ) AS last_action_at,
-            ((NOW() AT TIME ZONE '${TZ}')::date
-              - ((SELECT MAX(d.occurred_at) FROM job_posting_notes d
-                   WHERE d.job_posting_id = jp.id AND d.category = 'DIVULGACAO') AT TIME ZONE '${TZ}')::date
-            ) AS days_without_divulgation
+            ) AS last_action_at
        FROM job_postings jp
       WHERE jp.id = ANY($1::uuid[])`,
     [jobPostingIds],
   );
   for (const r of rows) out.set(r.id, {
-    lastActionAt: r.last_action_at ? new Date(r.last_action_at).toISOString() : null,
-    daysWithoutDivulgation: r.days_without_divulgation == null ? null : Number(r.days_without_divulgation) });
-  for (const id of jobPostingIds) if (!out.has(id)) out.set(id, { lastActionAt: null, daysWithoutDivulgation: null });
+    lastActionAt: r.last_action_at ? new Date(r.last_action_at).toISOString() : null });
+  for (const id of jobPostingIds) if (!out.has(id)) out.set(id, { lastActionAt: null });
   return out;
 }
 
@@ -339,11 +313,9 @@ export interface VacancyListRow {
   vacancy_number: number;
   status: string | null;
   is_draft: boolean | null;
-  priority: string | null;
   dias_aberto: number | null;
   convidados: number | string | null;
   postulados: number | string | null;
-  confirmados: number | string | null;
   selecionados: number | string | null;
   faltantes: number | string | null;
 }
@@ -362,11 +334,9 @@ export function mapVacancyListRow(row: VacancyListRow) {
     status: mapStatus(row.status),
     statusRaw: row.status,
     is_draft: row.is_draft === true,
-    priority: row.priority,
     diasAberto: row.dias_aberto?.toString().padStart(2, '0') ?? '00',
     convidados: row.convidados?.toString().padStart(2, '0') ?? '00',
     postulados: row.postulados?.toString().padStart(2, '0') ?? '00',
-    confirmados: row.confirmados?.toString().padStart(2, '0') ?? '00',
     selecionados: row.selecionados?.toString().padStart(2, '0') ?? '00',
     faltantes: row.faltantes != null ? row.faltantes.toString().padStart(2, '0') : null,
   };

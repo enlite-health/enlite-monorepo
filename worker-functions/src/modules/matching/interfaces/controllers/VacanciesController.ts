@@ -79,7 +79,7 @@ export class VacanciesController {
   async listVacancies(req: Request, res: Response): Promise<void> {
     try {
       const {
-        search, status, priority,
+        search, status,
         worker_type, state, city, required_sex,
         days, time_from, time_to,
         limit = '20', offset = '0',
@@ -88,7 +88,7 @@ export class VacanciesController {
       // D286 fase 2: nome do paciente na lista segue `patient_identity:read` — inclusive na BUSCA.
       const cellsDaLista = cellsOfRequest(req);
       const { baseQuery, params, paramIndex } = buildListVacanciesQuery({
-        search, status, priority,
+        search, status,
         workerType: worker_type,
         state,
         city,
@@ -119,7 +119,7 @@ export class VacanciesController {
       const vacancies = (result.rows as VacancyListRow[]).map((r) => ({
         ...mapVacancyListRow(projectPatientInVacancy(r, cellsDaLista)),
         stageCounts: stageCounts.get(r.id) ?? emptyFunnelColumnCounts(),
-        ...(activity.get(r.id) ?? { lastActionAt: null, daysWithoutDivulgation: null }),
+        ...(activity.get(r.id) ?? { lastActionAt: null }),
       }));
 
       res.status(200).json({

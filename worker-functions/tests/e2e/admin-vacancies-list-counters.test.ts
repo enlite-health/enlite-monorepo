@@ -79,7 +79,7 @@ describe('GET /api/admin/vacancies — contador selecionados', () => {
     expect(row.selecionados).toBe('01');
   });
 
-  it('confirmados conta só CONFIRMED (mesma semântica da coluna do kanban)', async () => {
+  it('spec 046 F1: o DTO não traz priority, confirmados nem daysWithoutDivulgation, e traz lastActionAt', async () => {
     const res = await api.get(
       `/api/admin/vacancies?search=${uniqueCaseNumber}`,
       { headers: { Authorization: `Bearer ${adminToken}` } },
@@ -87,7 +87,10 @@ describe('GET /api/admin/vacancies — contador selecionados', () => {
     expect(res.status).toBe(200);
     const row = res.data.data.find((v: { id: string }) => v.id === vacancyId);
     expect(row).toBeDefined();
-    expect(row.confirmados).toBe('01');
+    expect(row).not.toHaveProperty('priority');
+    expect(row).not.toHaveProperty('confirmados');
+    expect(row).not.toHaveProperty('daysWithoutDivulgation');
+    expect(row).toHaveProperty('lastActionAt');
   });
 
   it('faltantes desconta apenas os de SELECTED do providers_needed', async () => {
