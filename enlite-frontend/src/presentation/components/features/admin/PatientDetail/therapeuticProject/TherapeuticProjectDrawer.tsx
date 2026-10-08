@@ -13,7 +13,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X, FileDown, Pencil } from 'lucide-react';
 import type { PatientDetail } from '@domain/entities/PatientDetail';
-import type { TherapeuticFieldClass, TherapeuticProjectVersion, TherapeuticProjectVersionBody } from '@domain/entities/TherapeuticProject';
+import type { ContactStatusEntry, TherapeuticFieldClass, TherapeuticProjectVersion, TherapeuticProjectVersionBody } from '@domain/entities/TherapeuticProject';
 import { AdminTherapeuticProjectsApiService } from '@infrastructure/http/AdminTherapeuticProjectsApiService';
 import { saveRefusalMessage } from './saveRefusalMessage';
 import { useTherapeuticCatalogs } from '@hooks/admin/useTherapeuticProjects';
@@ -24,6 +24,9 @@ import { Text } from '@presentation/components/atoms/Text';
 import { ActionButton } from '@presentation/components/features/access';
 import { DiscardChangesConfirm } from '../edit/DiscardChangesConfirm';
 import { TherapeuticProjectForm } from './TherapeuticProjectForm';
+import { PendingContactsConfirm, type PendingContactLine } from './PendingContactsConfirm';
+import { newCycleReminderDates, newPendingDeadline } from './contactStatusDates';
+import { todayInOperationZone } from '@presentation/utils/dateTimeFormat';
 import { TherapeuticProjectVersionView } from './TherapeuticProjectVersionView';
 import { buildTherapeuticProjectPdfInput } from './pdf/buildTherapeuticProjectPdfInput';
 import { pdfFileName, renderTherapeuticProjectPdfBlob } from './pdf/renderTherapeuticProjectPdf';
@@ -42,6 +45,10 @@ interface Props {
   target: TherapeuticProjectTarget;
   /** Lista MACRO×MICRO da API (task 7.7) — o form lê daqui, nunca copia. */
   fieldClass: TherapeuticFieldClass;
+  /** spec 048: estado dos campos de contato da VIGENTE — o "Nuevo" pré-marca só o estado (nunca os contatos). */
+  currentContactStatus?: ContactStatusEntry[];
+  /** spec 048: datas reais dos lembretes que faltam no ciclo aberto (`null` = sem ciclo) — a confirmação mostra. */
+  contactReminderDates?: string[] | null;
   onClose: () => void;
   /** Uma versão foi criada — o pai recarrega a lista. */
   onSaved: () => void;
@@ -50,7 +57,7 @@ interface Props {
 const CLOSE_MS = 300;
 
 
-export function TherapeuticProjectDrawer({ patient, target: initial, fieldClass, onClose, onSaved }: Props): JSX.Element {
+export function TherapeuticProjectDrawer({ patient, target: initial, fieldClass, currentContactStatus = [], contactReminderDates = null, onClose, onSaved }: Props): JSX.Element {
   const { t } = useTranslation();
   const tf = (k: string, o?: Record<string, unknown>) => t(`admin.patients.detail.therapeuticProjectForm.${k}`, o ?? {});
   const [show, setShow] = useState(false);
@@ -60,6 +67,8 @@ export function TherapeuticProjectDrawer({ patient, target: initial, fieldClass,
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
+  // spec 048: corpo à espera da confirmação "Crear igual" (campo com "Todavía no hay registro").
+  const [pendingBody, setPendingBody] = useState<TherapeuticProjectVersionBody | null>(null);
   const isForm = target.mode !== 'view';
   const { catalogs, error: catalogsError } = useTherapeuticCatalogs(isForm);
 
@@ -107,7 +116,28 @@ export function TherapeuticProjectDrawer({ patient, target: initial, fieldClass,
     return () => document.removeEventListener('keydown', onKeyDown);
   }, [requestClose]);
 
+  const inheritedStatus = target.mode === 'edit' ? target.version.contactStatus : currentContactStatus;
+
+  /** Salvar: com campo "Todavía no hay registro" passa antes pelo passo de confirmação DENTRO do drawer. */
+  const handleFormSubmit = (body: TherapeuticProjectVersionBody): void => {
+    if (Object.values(body.contactStatus).includes('PENDING')) { setPendingBody(body); return; }
+    void handleSubmit(body);
+  };
+
+  const confirmationOf = (body: TherapeuticProjectVersionBody): { fields: PendingContactLine[]; reminderDates: string[] } => {
+    const today = todayInOperationZone();
+    const labelOf = (kind: string): string => tf(({ RESPONSIBLE: 'responsibles', EXTERNAL: 'externalContacts', COVERAGE: 'coverageContacts', CARE_TEAM: 'careTeam' } as Record<string, string>)[kind]);
+    const pendingKinds = Object.entries(body.contactStatus).filter(([, v]) => v === 'PENDING').map(([k]) => k);
+    const inherited = (kind: string): ContactStatusEntry | undefined => inheritedStatus.find((e) => e.kind === kind && e.status === 'PENDING');
+    const fields = pendingKinds.map((kind) => ({ label: labelOf(kind), deadline: inherited(kind)?.deadlineDate ?? newPendingDeadline(today) }));
+    // Só campo NOVAMENTE pendente abre (ou entra em) um ciclo; se todos já eram pendentes, valem os lembretes que já faltam.
+    const hasNew = pendingKinds.some((kind) => !inherited(kind));
+    const reminderDates = hasNew ? (contactReminderDates ?? newCycleReminderDates(today)) : (contactReminderDates ?? []);
+    return { fields, reminderDates };
+  };
+
   const handleSubmit = async (body: TherapeuticProjectVersionBody): Promise<void> => {
+    setPendingBody(null);
     setSaving(true);
     setSaveError(null);
     try {
@@ -125,7 +155,7 @@ export function TherapeuticProjectDrawer({ patient, target: initial, fieldClass,
       // chega completo daqui, sem precisar do refetch pra "Editar" imediatamente depois reconstruir a
       // seleção. `?? []` fica só como defesa contra uma resposta ainda mais antiga/desatualizada (ex:
       // cache do browser); não há mais branch normal em que `created.contacts` venha `undefined`.
-      setTarget({ mode: 'view', version: { ...created, contacts: created.contacts ?? [] }, isCurrent: true });
+      setTarget({ mode: 'view', version: { ...created, contacts: created.contacts ?? [], contactStatus: created.contactStatus ?? [] }, isCurrent: true });
     } catch (err: unknown) {
       setSaveError(saveRefusalMessage(err, t));
     } finally {
@@ -164,6 +194,9 @@ export function TherapeuticProjectDrawer({ patient, target: initial, fieldClass,
   return (
     <>
       {confirmingClose && <DiscardChangesConfirm onKeepEditing={keepEditing} onDiscard={confirmDiscard} />}
+      {pendingBody && (
+        <PendingContactsConfirm {...confirmationOf(pendingBody)} saving={saving} onBack={() => setPendingBody(null)} onConfirm={() => void handleSubmit(pendingBody)} />
+      )}
       <div
         className={`fixed inset-0 bg-black/50 z-40 transition-opacity duration-300 ${show ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
         onClick={requestClose}
@@ -231,9 +264,10 @@ export function TherapeuticProjectDrawer({ patient, target: initial, fieldClass,
               coverageEmergencyContacts={patient.coverageEmergencyContacts ?? []}
               professionals={patient.professionals ?? []}
               from={target.mode === 'edit' ? target.version : null}
+              initialContactStatus={inheritedStatus}
               saving={saving}
               saveError={saveError}
-              onSubmit={handleSubmit}
+              onSubmit={handleFormSubmit}
               onCancel={requestClose}
               onDirty={() => setDirty(true)}
             />

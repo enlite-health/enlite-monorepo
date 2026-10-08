@@ -123,6 +123,7 @@ const versao = (over: Partial<TherapeuticProjectVersion> = {}): TherapeuticProje
   contactRefs: [],
   careTeamIds: [],
   contacts: [],
+  contactStatus: [],
   ...over,
 });
 

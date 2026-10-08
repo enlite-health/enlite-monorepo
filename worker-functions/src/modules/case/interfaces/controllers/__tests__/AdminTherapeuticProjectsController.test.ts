@@ -120,8 +120,9 @@ function ctrl(
   contacts: Record<string, unknown> = stubContacts(),
   coverageContacts: Record<string, unknown> = stubCoverageContacts(),
   statuses: Record<string, unknown> = stubStatuses(),
+  reminders: Record<string, unknown> = { remainingReminderDates: jest.fn().mockResolvedValue(null) },
 ) {
-  return new AdminTherapeuticProjectsController(repo as never, catalogs as never, contacts as never, coverageContacts as never, statuses as never);
+  return new AdminTherapeuticProjectsController(repo as never, catalogs as never, contacts as never, coverageContacts as never, statuses as never, reminders as never);
 }
 const corpoDaResposta = (res: { json: jest.Mock }) => res.json.mock.calls[0][0];
 
@@ -655,6 +656,19 @@ describe('AdminTherapeuticProjectsController', () => {
     });
 
     describe('spec 048 — "Todavía no hay registro" / "No necesita"', () => {
+      it('a LISTA traz as datas dos lembretes que faltam no ciclo aberto (null sem ciclo)', async () => {
+        const repo = { listForPatient: jest.fn().mockResolvedValue([VERSAO]) };
+        const reminders = { remainingReminderDates: jest.fn().mockResolvedValue(['2026-10-12', '2026-10-15', '2026-10-22']) };
+        const res = mockRes();
+        await ctrl(repo, {}, stubContacts(), stubCoverageContacts(), stubStatuses(), reminders).list(mockReq({ params: { id: PATIENT_ID } }), res);
+        expect(corpoDaResposta(res).data.contactReminderDates).toEqual(['2026-10-12', '2026-10-15', '2026-10-22']);
+        expect(reminders.remainingReminderDates).toHaveBeenCalledWith(PATIENT_ID);
+
+        const sem = mockRes();
+        await ctrl(repo).list(mockReq({ params: { id: PATIENT_ID } }), sem);
+        expect(corpoDaResposta(sem).data.contactReminderDates).toBeNull();
+      });
+
       it('"No necesita" novo sem a célula: 403 nomeando `patient_therapeutic_project:waive_contact` (só nomes de campo, nada de valor)', async () => {
         const repo = { createVersion: jest.fn().mockRejectedValue(new WaiveContactForbiddenError(['EXTERNAL'])) };
         const res = mockRes();

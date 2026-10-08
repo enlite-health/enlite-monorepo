@@ -4008,7 +4008,20 @@
           "responsibles": "Responsáveis",
           "externalContacts": "Contatos externos",
           "coverageContacts": "Contatos da cobertura",
-          "careTeam": "Equipe tratante"
+          "careTeam": "Equipe tratante",
+          "contactPending": "Ainda não há registro",
+          "contactNotNeeded": "Não precisa",
+          "contactPendingDeadline": "Você tem 15 dias para completar este campo.",
+          "contactPendingUntil": "Você tem até {{date}} para completar este campo.",
+          "contactDueOn": "vence em {{date}}",
+          "pendingConfirm": {
+            "title": "Campos sem registro",
+            "body": "Estes campos ficam marcados como \"Ainda não há registro\":",
+            "item": "{{field}} — vence em {{date}}",
+            "reminders": "Vamos lembrar você no sino de notificações em {{dates}}. No dia 12 os gestores também são avisados.",
+            "back": "Voltar",
+            "confirm": "Criar mesmo assim"
+          }
         },
         "conversation": {
           "errors": {
@@ -5606,6 +5619,11 @@
       "mentioned": "{{actor}} mencionou você em {{patient}}",
       "replied": "{{actor}} respondeu na conversa de {{patient}}",
       "generic": "{{actor}} tem uma atualização para você",
+      "ptContactsPendingActor": "Enlite",
+      "ptContactsPendingCase": "Caso {{number}}",
+      "ptContactsPendingNoCase": "Caso sem número",
+      "ptContactsPendingFields": "Projeto terapêutico: faltam {{fields}}",
+      "ptContactsPendingText": "{{case}}: no projeto terapêutico faltam {{fields}}",
       "inPatient": "em {{patient}}",
       "markAllRead": "Marcar todas como lidas",
       "unknownPatient": "um paciente",

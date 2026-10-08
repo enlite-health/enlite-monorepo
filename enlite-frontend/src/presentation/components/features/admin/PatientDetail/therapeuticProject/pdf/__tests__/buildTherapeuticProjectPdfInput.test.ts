@@ -9,6 +9,7 @@
  *  · lex C13 — a `version` que entra aqui é a buscada a cada clique; a função é PURA e não busca nada.
  */
 import { describe, it, expect } from 'vitest';
+import esJson from '@infrastructure/i18n/locales/es.json';
 import type { PatientContractedServiceDetail, PatientDetail } from '@domain/entities/PatientDetail';
 import type { ResolvedTherapeuticContact, TherapeuticProjectVersion } from '@domain/entities/TherapeuticProject';
 import { patientDetailFixture } from '../../../__tests__/patientDetailFixture';
@@ -78,6 +79,7 @@ const VERSAO: TherapeuticProjectVersion = {
   contactRefs: [],
   careTeamIds: [],
   contacts: [],
+  contactStatus: [],
 };
 
 const AGORA = new Date('2026-09-08T17:05:00Z'); // 08/09/2026 14:05 em -03
@@ -90,12 +92,13 @@ const montar = (over: {
   reads?: PdfContainerReads;
   now?: Date;
   logoSrc?: string;
+  tEs?: (key: string, fallback?: string) => string;
 } = {}) =>
   buildTherapeuticProjectPdfInput({
     patient: over.patient ?? paciente({ contractedServices: [SERVICO] }),
     version: over.version ?? VERSAO,
     reads: over.reads ?? TODOS,
-    tEs,
+    tEs: over.tEs ?? tEs,
     now: over.now ?? AGORA,
     logoSrc: over.logoSrc,
   });
@@ -456,5 +459,36 @@ describe('formatIssuedAt — `dd/mm/aaaa HH:MM` em -03, determinístico', () => 
     });
 
     expect(input.issuedAtText).toMatch(/^\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}$/);
+  });
+});
+
+// ── spec 048: o estado explícito dos campos de contato no PDF (espanhol fixo) ─
+
+describe('spec 048 — contactStatusLines', () => {
+  // Como o `i18n.getFixedT('es')` real: resolve a chave no es.json; sem chave, o `defaultValue` que o builder passa.
+  const tEsReal = (key: string, fallback?: string): string => {
+    let cur: unknown = esJson;
+    for (const part of key.split('.')) cur = (cur as Record<string, unknown> | undefined)?.[part];
+    return typeof cur === 'string' ? cur : (fallback ?? key);
+  };
+
+  it('PENDING com vencimento e NOT_NEEDED saem em espanhol, por bloco; o bloco da família prefixa o nome do campo', () => {
+    const v = {
+      ...VERSAO,
+      contactStatus: [
+        { kind: 'RESPONSIBLE' as const, status: 'PENDING' as const, pendingSince: '2026-10-08T12:00:00.000Z', deadlineDate: '2026-10-23' },
+        { kind: 'EXTERNAL' as const, status: 'NOT_NEEDED' as const, pendingSince: null, deadlineDate: null },
+        { kind: 'CARE_TEAM' as const, status: 'PENDING' as const, pendingSince: '2026-10-08T12:00:00.000Z', deadlineDate: '2026-10-23' },
+      ],
+    };
+    const input = montar({ version: v, tEs: tEsReal });
+    expect(input.contactStatusLines.family).toBe('Responsables: Todavía no hay registro — vence el 23/10. Contactos externos: No necesita');
+    expect(input.contactStatusLines.careTeam).toBe('Todavía no hay registro — vence el 23/10');
+    expect(input.contactStatusLines.coverage).toBeNull();
+  });
+
+  it('sem estado: tudo `null` (e versão de resposta antiga sem a chave não quebra)', () => {
+    expect(montar({ version: { ...VERSAO, contactStatus: [] } }).contactStatusLines).toEqual({ family: null, coverage: null, careTeam: null });
+    expect(montar({ version: { ...VERSAO, contactStatus: undefined as never } }).contactStatusLines).toEqual({ family: null, coverage: null, careTeam: null });
   });
 });

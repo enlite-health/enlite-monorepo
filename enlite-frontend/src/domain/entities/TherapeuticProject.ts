@@ -53,6 +53,27 @@ export type ResolvedTherapeuticContact =
   | { kind: ResolvedTherapeuticContactKind; id: string; inactive: true }
   | { kind: ResolvedTherapeuticContactKind; id: string; redacted: true };
 
+/**
+ * Estado explícito dos 4 campos de contato (spec 048): `PENDING` = "Todavía no hay registro" (prazo de 15 dias),
+ * `NOT_NEEDED` = "No necesita" (só o Acesso Master escolhe). Campo sem entrada = tem contatos ou nada informado.
+ */
+export const CONTACT_STATUS_KINDS = ['RESPONSIBLE', 'EXTERNAL', 'COVERAGE', 'CARE_TEAM'] as const;
+export type ContactStatusKind = (typeof CONTACT_STATUS_KINDS)[number];
+export type ContactStatusValue = 'PENDING' | 'NOT_NEEDED';
+export type ContactStatusMap = Partial<Record<ContactStatusKind, ContactStatusValue>>;
+
+/** Como a API devolve (sem uid de quem marcou). `deadlineDate`: `YYYY-MM-DD` = dia local de `pendingSince` + 15. */
+export interface ContactStatusEntry {
+  kind: ContactStatusKind;
+  status: ContactStatusValue;
+  pendingSince: string | null;
+  deadlineDate: string | null;
+}
+
+/** Dias de prazo do campo pendente e dos lembretes — espelho de `TherapeuticContactStatus.ts` do backend. */
+export const CONTACT_PENDING_DEADLINE_DAYS = 15;
+export const CONTACT_REMINDER_DAY_OFFSETS = [2, 5, 12] as const;
+
 export interface TherapeuticProjectVersion {
   id: string;
   patientId: string;
@@ -99,6 +120,8 @@ export interface TherapeuticProjectVersion {
   careTeamIds: string[];
   /** Os mesmos contatos RESOLVIDOS pela célula de origem (lex #7 C5) — a tela lê daqui, nunca da versão bruta. */
   contacts: ResolvedTherapeuticContact[];
+  /** spec 048: "Todavía no hay registro" / "No necesita" por campo. `[]` = nenhum campo com estado. */
+  contactStatus: ContactStatusEntry[];
 }
 
 export interface TherapeuticProjectVersionBody {
@@ -115,6 +138,8 @@ export interface TherapeuticProjectVersionBody {
   endDate: string;
   contactRefs: ContactRef[];
   careTeamIds: string[];
+  /** spec 048: SEMPRE no corpo (`{}` = nenhum) — o servidor recusa corpo sem a chave, para cliente velho não apagar pendência. */
+  contactStatus: ContactStatusMap;
 }
 
 /** `data.fieldClass` da LISTA (task 7.7) — espelho de `THERAPEUTIC_FIELD_CLASS` do backend (dono

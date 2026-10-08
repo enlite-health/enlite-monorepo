@@ -9,7 +9,7 @@
  *  · lex C6 — o texto clínico renderizado carrega `data-clarity-mask` (o Clarity está vivo em PRD).
  */
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
 import type { PatientContractedServiceDetail } from '@domain/entities/PatientDetail';
 import type { TherapeuticProjectVersion } from '@domain/entities/TherapeuticProject';
@@ -108,6 +108,7 @@ const VERSAO: TherapeuticProjectVersion = {
   contactRefs: [],
   careTeamIds: [],
   contacts: [],
+  contactStatus: [],
 };
 
 const montar = (over: Partial<TherapeuticProjectVersion> = {}, props: { services?: PatientContractedServiceDetail[]; compact?: boolean } = {}) =>
@@ -342,5 +343,37 @@ describe('linha "Segmento (Ana Care)" (spec 030)', () => {
     montar({ segment: { id: 'seg-1', label: 'Segmento sintético X' } });
 
     expect(document.querySelector('[data-testid="tpv-segment"]')?.getAttribute('data-clarity-mask')).toBe('True');
+  });
+});
+
+// ── spec 048: o estado explícito no lugar da lista vazia ─────────────────────
+
+describe('spec 048 — "Todavía no hay registro — vence el DD/MM" / "No necesita" na leitura', () => {
+  const tf = ptBR.admin.patients.detail.therapeuticProjectForm as unknown as Record<string, string>;
+
+  it('PENDING mostra o rótulo e o vencimento real; NOT_NEEDED mostra "No necesita"; cada um sob o nome do SEU campo', () => {
+    montar({
+      contactStatus: [
+        { kind: 'RESPONSIBLE', status: 'PENDING', pendingSince: '2026-10-08T12:00:00.000Z', deadlineDate: '2026-10-23' },
+        { kind: 'COVERAGE', status: 'NOT_NEEDED', pendingSince: null, deadlineDate: null },
+      ],
+    });
+    expect(screen.getByTestId('tpv-contact-status-RESPONSIBLE')).toHaveTextContent(`${tf.responsibles}: ${tf.contactPending} — vence em 23/10`);
+    expect(screen.getByTestId('tpv-contact-status-COVERAGE')).toHaveTextContent(`${tf.coverageContacts}: ${tf.contactNotNeeded}`);
+    // sem contatos e COM estado: o "—" da lista vazia não aparece
+    expect(within(screen.getByTestId('tpv-contacts')).queryByText('—')).toBeNull();
+  });
+
+  it('sem estado e sem contatos continua "—"; resposta antiga sem a chave não quebra', () => {
+    montar({ contactStatus: [] });
+    expect(screen.getByTestId('tpv-contacts')).toHaveTextContent('—');
+    document.body.innerHTML = '';
+    montar({ contactStatus: undefined as never });
+    expect(screen.queryByTestId('tpv-contact-status')).not.toBeInTheDocument();
+  });
+
+  it('no modo compacto (card) o bloco de contatos nem existe', () => {
+    montar({ contactStatus: [{ kind: 'CARE_TEAM', status: 'NOT_NEEDED', pendingSince: null, deadlineDate: null }] }, { compact: true });
+    expect(screen.queryByTestId('tpv-contact-status')).not.toBeInTheDocument();
   });
 });

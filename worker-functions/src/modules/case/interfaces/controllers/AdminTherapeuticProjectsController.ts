@@ -14,6 +14,7 @@ import {
   ContactNotFoundError,
   WaiveContactForbiddenError,
 } from '../../infrastructure/TherapeuticProjectRepository';
+import { TherapeuticContactReminderRepository } from '../../infrastructure/TherapeuticContactReminderRepository';
 import { TherapeuticProjectContactStatusRepository, toContactStatusViews } from '../../infrastructure/TherapeuticProjectContactStatusRepository';
 import type { ContactStatusView } from '../../domain/TherapeuticContactStatus';
 import { TherapeuticProjectContactsRepository } from '../../infrastructure/TherapeuticProjectContactsRepository';
@@ -84,7 +85,13 @@ export class AdminTherapeuticProjectsController {
     private readonly coverageContactsInjected?: PatientCoverageEmergencyContactRepository,
     // spec 048: injetado LAZY pelo mesmo motivo (não toca o pool no construtor).
     private readonly statusesInjected?: TherapeuticProjectContactStatusRepository,
+    private readonly remindersInjected?: TherapeuticContactReminderRepository,
   ) {}
+
+  private remindersMemo?: TherapeuticContactReminderRepository;
+  private get reminders(): TherapeuticContactReminderRepository {
+    return (this.remindersMemo ??= this.remindersInjected ?? new TherapeuticContactReminderRepository());
+  }
 
   private statusesMemo?: TherapeuticProjectContactStatusRepository;
   private get statuses(): TherapeuticProjectContactStatusRepository {
@@ -139,6 +146,7 @@ export class AdminTherapeuticProjectsController {
       const versions = await this.repo.listForPatient(params.data.id);
       const cells = cellsOfRequest(req);
       const statusByVersion = await this.contactStatusOf(versions);
+      const contactReminderDates = await this.reminders.remainingReminderDates(params.data.id);
       const projected = await Promise.all(
         versions.map(async (v) => {
           const { contacts, contactRefs, careTeamIds } = await this.resolveContacts(req, v.id, cells);
@@ -152,6 +160,8 @@ export class AdminTherapeuticProjectsController {
           // task 7.7: dono único é THERAPEUTIC_FIELD_CLASS (domain) — o front NÃO copia a lista,
           // lê aqui pra decidir quais campos da vigente renderizam como TEXTO na edição (D328/R5).
           fieldClass: { macro: [...THERAPEUTIC_FIELD_CLASS.MACRO], micro: [...THERAPEUTIC_FIELD_CLASS.MICRO] },
+          // spec 048: datas reais dos lembretes que faltam no ciclo aberto (`null` = sem ciclo) — a confirmação ao criar usa.
+          contactReminderDates,
         },
       });
     } catch (err: unknown) {

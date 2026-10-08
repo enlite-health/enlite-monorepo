@@ -210,7 +210,16 @@ describe('spec 048 — PT com "Todavía no hay registro": API sob engine de perm
     // a leitura (GET) devolve o mesmo estado, sem uid
     const g = await chamar('GET', BASE(), U.operador);
     expect(g.body.data.versions[0].contactStatus).toHaveLength(2);
+    // as datas REAIS dos 3 lembretes que faltam (a confirmação da tela mostra isto; sem ciclo seria null)
+    const somar = async (n: number): Promise<string> => (await pool.query<{ d: string }>(`SELECT ($1::date + $2::int)::text AS d`, [hojeAr, n])).rows[0].d;
+    expect(g.body.data.contactReminderDates).toEqual([await somar(2), await somar(5), await somar(12)]);
     expect(JSON.stringify(g.body)).not.toContain(U.operador);
+  });
+
+  it('LISTA sem ciclo aberto: contactReminderDates é null', async () => {
+    await chamar('POST', BASE(), U.operador, { mode: 'new', version: newVersionBody() });
+    const g = await chamar('GET', BASE(), U.operador);
+    expect(g.body.data.contactReminderDates).toBeNull();
   });
 
   it('ALTERNATIVO 1: ids + status no MESMO campo → 400 e nada gravado', async () => {

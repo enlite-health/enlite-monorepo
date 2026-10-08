@@ -368,3 +368,82 @@ describe('NotificationPanel (spec 022, T412/T413)', () => {
     expect(header?.className).toMatch(/\bpr-14\b/);
   });
 });
+
+
+// ── spec 048: aviso de sistema do PT — só o número do Caso, nunca o nome do paciente ─────────
+
+describe('NotificationCard — aviso do PT (spec 048)', () => {
+  const ptNotif = (overrides: Partial<AdminNotification> = {}): AdminNotification =>
+    notif({
+      id: 'pt1',
+      typeCode: 'THERAPEUTIC_PROJECT_CONTACTS_PENDING',
+      actorUid: 'system:pt-contact-reminders',
+      actorDisplayName: null,
+      patientId: 'p77',
+      patientDisplayName: null,
+      conversationId: null,
+      messageId: null,
+      payload: { cycleId: 'c', versionId: 'v', dayOffset: 5, fields: ['RESPONSIBLE', 'CARE_TEAM'] },
+      patientCaseNumber: 1041,
+      ...overrides,
+    });
+
+  beforeEach(() => {
+    vi.mocked(AdminNotificationApiService.listNotifications).mockResolvedValue([]);
+  });
+  afterEach(() => { vi.clearAllMocks(); });
+
+  it('linha 1 "Enlite" (NUNCA o uid sentinela), linha 2 "Caso EN1041", linha 3 com os campos pendentes pelos rótulos do formulário', async () => {
+    vi.mocked(AdminNotificationApiService.listNotifications).mockResolvedValue([ptNotif()]);
+    render(<NotificationPanel isOpen onClose={vi.fn()} />);
+
+    const item = await screen.findByTestId('notification-item-pt1');
+    expect(within(item).getByText('Enlite')).toBeInTheDocument();
+    expect(item).not.toHaveTextContent('system:pt-contact-reminders');
+    expect(within(item).getByTestId('notification-patient-pt1')).toHaveTextContent('Caso EN1041');
+    expect(item).toHaveTextContent('Proyecto terapéutico: faltan Responsables, Equipo tratante');
+    expect(item).toHaveAttribute('aria-label', 'Caso EN1041: en el proyecto terapéutico faltan Responsables, Equipo tratante');
+  });
+
+  it('NUNCA mostra o nome do paciente, mesmo que a resposta o traga preenchido', async () => {
+    vi.mocked(AdminNotificationApiService.listNotifications).mockResolvedValue([ptNotif({ patientDisplayName: 'Fulano Paciente' })]);
+    render(<NotificationPanel isOpen onClose={vi.fn()} />);
+    const item = await screen.findByTestId('notification-item-pt1');
+    expect(item).not.toHaveTextContent('Fulano Paciente');
+    expect(item.getAttribute('aria-label')).not.toContain('Fulano Paciente');
+  });
+
+  it('paciente sem número de caso: "Caso sin número" e o mesmo link', async () => {
+    vi.mocked(AdminNotificationApiService.listNotifications).mockResolvedValue([ptNotif({ patientCaseNumber: null })]);
+    render(<NotificationPanel isOpen onClose={vi.fn()} />);
+    const item = await screen.findByTestId('notification-item-pt1');
+    expect(within(item).getByTestId('notification-patient-pt1')).toHaveTextContent('Caso sin número');
+    fireEvent.click(item);
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith('/admin/patients/p77', expect.anything()));
+  });
+
+  it('número legado (< 1000) sai sem o prefixo EN', async () => {
+    vi.mocked(AdminNotificationApiService.listNotifications).mockResolvedValue([ptNotif({ patientCaseNumber: 812 })]);
+    render(<NotificationPanel isOpen onClose={vi.fn()} />);
+    expect(await screen.findByTestId('notification-patient-pt1')).toHaveTextContent('Caso 812');
+  });
+
+  it('clique: marca lida e navega para a ficha (link), sem abrir drawer de conversa', async () => {
+    vi.mocked(AdminNotificationApiService.listNotifications).mockResolvedValue([ptNotif()]);
+    render(<NotificationPanel isOpen onClose={vi.fn()} />);
+    fireEvent.click(await screen.findByTestId('notification-item-pt1'));
+    await waitFor(() => expect(AdminNotificationApiService.markNotificationRead).toHaveBeenCalledWith('pt1'));
+    expect(navigate).toHaveBeenCalledWith(
+      '/admin/patients/p77',
+      expect.objectContaining({ state: { focusRequest: expect.objectContaining({ code: 'therapeuticProject' }) } }),
+    );
+  });
+
+  it('os tipos de conversa seguem iguais: autor na linha 1 e "en <paciente>" na 2', async () => {
+    vi.mocked(AdminNotificationApiService.listNotifications).mockResolvedValue([notif()]);
+    render(<NotificationPanel isOpen onClose={vi.fn()} />);
+    const item = await screen.findByTestId('notification-item-n1');
+    expect(within(item).getByText('Ana Staff')).toBeInTheDocument();
+    expect(within(item).getByTestId('notification-patient-n1')).toHaveTextContent('en Fulano Paciente');
+  });
+});

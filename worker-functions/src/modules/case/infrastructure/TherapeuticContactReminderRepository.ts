@@ -1,6 +1,7 @@
 import type { Pool, PoolClient } from 'pg';
 import { countryToTimezone } from '@shared/locale/CountryTimezone';
-import { REMINDER_DAY_OFFSETS } from '../domain/TherapeuticContactStatus';
+import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { REMINDER_DAY_OFFSETS, localDateOf } from '../domain/TherapeuticContactStatus';
 
 /**
  * Ciclo de lembretes do PT (migration 502) — a OUTBOX que o Scheduler diário varre. A escrita acontece na
@@ -9,6 +10,32 @@ import { REMINDER_DAY_OFFSETS } from '../domain/TherapeuticContactStatus';
  * (índice único parcial `uq_ptcrc_um_aberto_por_paciente`), não só deste código.
  */
 export class TherapeuticContactReminderRepository {
+  private poolMemo?: Pool;
+
+  private get pool(): Pool {
+    this.poolMemo ??= DatabaseConnection.getInstance().getPool();
+    return this.poolMemo;
+  }
+
+  /**
+   * Datas (dia local do país, `YYYY-MM-DD`) dos lembretes que AINDA FALTAM no ciclo aberto do paciente, do dia 2 ao 12 —
+   * é o que a confirmação ao criar mostra ("datas reais"). `null` = nenhum ciclo aberto (a tela calcula a partir de hoje).
+   * Só datas: nenhum uid, nenhuma notificação.
+   */
+  async remainingReminderDates(patientId: string, cli: Pool | PoolClient = this.pool): Promise<string[] | null> {
+    const { rows } = await cli.query<{ due_at: Date | string; country: string }>(
+      `SELECT r.due_at, c.country
+         FROM patient_tp_contact_reminder_cycles c
+         LEFT JOIN patient_tp_contact_reminders r
+                ON r.cycle_id = c.id AND r.sent_at IS NULL AND r.cancelled_at IS NULL
+        WHERE c.patient_id = $1 AND c.closed_at IS NULL
+        ORDER BY r.day_offset`,
+      [patientId],
+    );
+    if (rows.length === 0) return null;
+    return rows.filter((r) => r.due_at != null).map((r) => localDateOf(r.due_at instanceof Date ? r.due_at : new Date(r.due_at), r.country));
+  }
+
   async hasOpenCycle(cli: PoolClient, patientId: string): Promise<boolean> {
     const { rows } = await cli.query(
       'SELECT 1 FROM patient_tp_contact_reminder_cycles WHERE patient_id = $1 AND closed_at IS NULL',
