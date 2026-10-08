@@ -16,8 +16,7 @@ import {
 } from '../../infrastructure/TherapeuticProjectRepository';
 import { TherapeuticContactReminderRepository } from '../../infrastructure/TherapeuticContactReminderRepository';
 import { TherapeuticProjectContactStatusRepository, toContactStatusViews } from '../../infrastructure/TherapeuticProjectContactStatusRepository';
-import type { ContactStatusView } from '../../domain/TherapeuticContactStatus';
-import { TherapeuticProjectContactsRepository } from '../../infrastructure/TherapeuticProjectContactsRepository';
+import type { ContactStatusView } from '../../domain/TherapeuticContactStatus';import { TherapeuticProjectContactsRepository } from '../../infrastructure/TherapeuticProjectContactsRepository';
 import {
   TherapeuticCatalogRepository,
   CatalogItemsUnknownError,
@@ -83,31 +82,25 @@ export class AdminTherapeuticProjectsController {
     // Injetado LAZY (molde das outras 3 acima): construir aqui em cima tocaria o pool no
     // construtor sem repo (PatientCoverageEmergencyContactRepository NÃO tem getter preguiçoso).
     private readonly coverageContactsInjected?: PatientCoverageEmergencyContactRepository,
-    // spec 048: injetado LAZY pelo mesmo motivo (não toca o pool no construtor).
     private readonly statusesInjected?: TherapeuticProjectContactStatusRepository,
     private readonly remindersInjected?: TherapeuticContactReminderRepository,
   ) {}
-
-  private remindersMemo?: TherapeuticContactReminderRepository;
-  private get reminders(): TherapeuticContactReminderRepository {
-    return (this.remindersMemo ??= this.remindersInjected ?? new TherapeuticContactReminderRepository());
-  }
-
-  private statusesMemo?: TherapeuticProjectContactStatusRepository;
-  private get statuses(): TherapeuticProjectContactStatusRepository {
-    return (this.statusesMemo ??= this.statusesInjected ?? new TherapeuticProjectContactStatusRepository());
-  }
-
-  /** `contactStatus` (spec 048) de cada versão: sem o uid de quem marcou; ordem fixa; vencimento no fuso do país. */
-  private async contactStatusOf(versions: readonly { id: string; country: string }[]): Promise<Map<string, ContactStatusView[]>> {
-    const byVersion = await this.statuses.listByVersions(versions.map((v) => v.id));
-    return new Map(versions.map((v) => [v.id, toContactStatusViews(byVersion.get(v.id) ?? [], v.country)]));
-  }
 
   private coverageContactsMemo?: PatientCoverageEmergencyContactRepository;
   /** lex-pr7 §alterado: só é criado (e só toca o pool) quando `create()` de fato precisa checar um `COVERAGE` ref. */
   private get coverageContacts(): PatientCoverageEmergencyContactRepository {
     return (this.coverageContactsMemo ??= this.coverageContactsInjected ?? new PatientCoverageEmergencyContactRepository());
+  }
+
+  private statusesMemo?: TherapeuticProjectContactStatusRepository;
+  private remindersMemo?: TherapeuticContactReminderRepository;
+  private get statuses(): TherapeuticProjectContactStatusRepository { return (this.statusesMemo ??= this.statusesInjected ?? new TherapeuticProjectContactStatusRepository()); }
+  private get reminders(): TherapeuticContactReminderRepository { return (this.remindersMemo ??= this.remindersInjected ?? new TherapeuticContactReminderRepository()); }
+
+  // `contactStatus` (spec 048) por versão: sem o uid de quem marcou; ordem fixa; vencimento no fuso do país.
+  private async contactStatusOf(versions: readonly { id: string; country: string }[]): Promise<Map<string, ContactStatusView[]>> {
+    const byVersion = await this.statuses.listByVersions(versions.map((v) => v.id));
+    return new Map(versions.map((v) => [v.id, toContactStatusViews(byVersion.get(v.id) ?? [], v.country)]));
   }
 
   private actorUid(req: Request): string {
@@ -145,8 +138,7 @@ export class AdminTherapeuticProjectsController {
     try {
       const versions = await this.repo.listForPatient(params.data.id);
       const cells = cellsOfRequest(req);
-      const statusByVersion = await this.contactStatusOf(versions);
-      const contactReminderDates = await this.reminders.remainingReminderDates(params.data.id);
+      const [statusByVersion, contactReminderDates] = await Promise.all([this.contactStatusOf(versions), this.reminders.remainingReminderDates(params.data.id)]);
       const projected = await Promise.all(
         versions.map(async (v) => {
           const { contacts, contactRefs, careTeamIds } = await this.resolveContacts(req, v.id, cells);
@@ -253,10 +245,7 @@ export class AdminTherapeuticProjectsController {
         return;
       }
       // spec 048: "No necesita" é do Acesso Master — esconder no front não basta; o servidor recusa nomeando a célula.
-      if (err instanceof WaiveContactForbiddenError) {
-        res.status(403).json({ success: false, error: 'Forbidden', code: err.code, details: { cell: PT_WAIVE_CONTACT_CELL, fields: err.fields } });
-        return;
-      }
+      if (err instanceof WaiveContactForbiddenError) { res.status(403).json({ success: false, error: 'Forbidden', code: err.code, details: { cell: PT_WAIVE_CONTACT_CELL, fields: err.fields } }); return; }
       if (err instanceof SourceVersionNotFoundError) {
         res.status(404).json({ success: false, error: 'Source version not found', code: err.code });
         return;
