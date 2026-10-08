@@ -185,3 +185,5 @@ Não é necessário reconfigurar DNS ou SSL.
 - [Firebase Hosting Docs](https://firebase.google.com/docs/hosting)
 - [Cloud Run Integration](https://firebase.google.com/docs/hosting/cloud-run)
 - [Custom Domain Setup](https://firebase.google.com/docs/hosting/custom-domain)
+
+<!-- 038 F4 c3: PR de prova, atrás da main de propósito -->
