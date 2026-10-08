@@ -10,7 +10,7 @@ vi.mock('react-i18next', () => ({
 
 const draftRow: VacancyRow = {
   id: 'v1',
-  caso: 'Caso 1',
+  caseNumber: 1, caseOrdinal: 1,
   status: 'Esperando Ativação',
   diasAberto: '01',
   stageCounts: { INVITED: 1 },
@@ -51,14 +51,14 @@ describe('VacanciesTable — clique na linha decide o destino (lápis removido, 
   it('clicar na linha em rascunho chama onRowClick(id, true) — quem decide modal × navegação direta é o pai', () => {
     const onRowClick = vi.fn();
     render(<VacanciesTable vacancies={[draftRow]} onRowClick={onRowClick} />);
-    fireEvent.click(screen.getByText(draftRow.caso));
+    fireEvent.click(screen.getByText('1#01'));
     expect(onRowClick).toHaveBeenCalledWith(draftRow.id, true);
   });
 
   it('clicar na linha publicada chama onRowClick(id, false)', () => {
     const onRowClick = vi.fn();
     render(<VacanciesTable vacancies={[publishedRow]} onRowClick={onRowClick} />);
-    fireEvent.click(screen.getByText(publishedRow.caso));
+    fireEvent.click(screen.getByText('1#01'));
     expect(onRowClick).toHaveBeenCalledWith(publishedRow.id, false);
   });
 });

@@ -2136,7 +2136,7 @@
       },
       "table": {
         "name": "Nombre",
-        "case": "Caso - Vacante",
+        "case": "Caso",
         "status": "Estado",
         "priority": "Prioridad",
         "daysOpen": "Días Abierto",

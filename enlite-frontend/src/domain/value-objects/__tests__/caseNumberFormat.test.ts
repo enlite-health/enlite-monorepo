@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatCaseNumber, formatCaseLabel, formatCaseOrdinal } from '../caseNumberFormat';
+import { formatCaseNumber, formatCaseLabel, formatCaseOrdinal, formatVacancyCase } from '../caseNumberFormat';
 
 describe('formatCaseNumber', () => {
   it('legado do ClickUp (828, < 1000) — sem prefixo', () => {
@@ -47,5 +47,24 @@ describe('formatCaseOrdinal', () => {
 
   it('null passa direto', () => {
     expect(formatCaseOrdinal(null)).toBeNull();
+  });
+});
+
+describe('formatVacancyCase (spec 046 F2)', () => {
+  it('A5: 1234 + posição 2 -> EN1234#02 (sem espaço, sem "Caso")', () => {
+    expect(formatVacancyCase(1234, 2)).toBe('EN1234#02');
+  });
+
+  it('A8: legado < 1000 -> sem EN', () => {
+    expect(formatVacancyCase(812, 1)).toBe('812#01');
+  });
+
+  it('A7: sem número do caso -> "—", mesmo com posição', () => {
+    expect(formatVacancyCase(null, null)).toBe('—');
+    expect(formatVacancyCase(null, 3)).toBe('—');
+  });
+
+  it('número sem posição -> só o número', () => {
+    expect(formatVacancyCase(1234, null)).toBe('EN1234');
   });
 });

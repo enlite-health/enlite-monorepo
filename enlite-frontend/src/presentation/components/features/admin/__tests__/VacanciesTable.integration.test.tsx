@@ -7,7 +7,7 @@ describe('VacanciesTable - Integration Test - GARANTIA DE RENDERIZAÇÃO', () =>
     const realApiData: VacancyRow[] = [
       {
         id: 'fd269cde-d8c9-4fdc-88a9-5b19ebcdb531',
-        caso: 'Caso 349',
+        caseNumber: 349, caseOrdinal: 1,
         status: 'Esperando Ativação',
         diasAberto: '05',
         stageCounts: {
@@ -28,7 +28,7 @@ describe('VacanciesTable - Integration Test - GARANTIA DE RENDERIZAÇÃO', () =>
       },
       {
         id: 'c83963ee-beaf-45f2-88a3-365147b0c205',
-        caso: 'Caso 348',
+        caseNumber: 348, caseOrdinal: 1,
         status: 'Esperando Ativação',
         diasAberto: '03',
         stageCounts: {
@@ -52,8 +52,8 @@ describe('VacanciesTable - Integration Test - GARANTIA DE RENDERIZAÇÃO', () =>
     const { container } = render(<VacanciesTable vacancies={realApiData} />);
 
     // GARANTIA 1: Casos visíveis
-    expect(screen.getByText('Caso 349')).toBeVisible();
-    expect(screen.getByText('Caso 348')).toBeVisible();
+    expect(screen.getByText('349#01')).toBeVisible();
+    expect(screen.getByText('348#01')).toBeVisible();
 
     // GARANTIA 2: Status visível (aparece 2x)
     const statusElements = screen.getAllByText('Esperando Ativação');
@@ -87,13 +87,13 @@ describe('VacanciesTable - Integration Test - GARANTIA DE RENDERIZAÇÃO', () =>
 
     // GARANTIA 7: textContent OK
     const allText = container.textContent;
-    expect(allText).toContain('Caso 349');
-    expect(allText).toContain('Caso 348');
+    expect(allText).toContain('349#01');
+    expect(allText).toContain('348#01');
   });
 
   it('CRITICAL: should NOT render when vacancies array is empty', () => {
     render(<VacanciesTable vacancies={[]} />);
-    expect(screen.queryByText('Caso 349')).not.toBeInTheDocument();
+    expect(screen.queryByText('349#01')).not.toBeInTheDocument();
     expect(screen.getByText('admin.vacancies.noVacancies')).toBeInTheDocument();
   });
 

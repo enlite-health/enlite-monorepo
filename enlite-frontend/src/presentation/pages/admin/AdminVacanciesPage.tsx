@@ -13,6 +13,8 @@ import { VacancyFilters, type VacancyAdvancedFilters } from '@presentation/compo
 import { VacanciesTable } from '@presentation/components/features/admin/VacanciesTable';
 import { DraftVacancyChoiceDialog } from '@presentation/components/features/admin/DraftVacancyChoiceDialog';
 import { useVacanciesData } from '@hooks/admin/useVacanciesData';
+import { useTableSort } from '@hooks/useTableSort';
+import type { VacancySortKey } from '@presentation/components/features/admin/VacanciesTable';
 import { getStatusOptions } from './vacanciesData';
 import { TableSkeleton } from '@presentation/components/ui/skeletons';
 import type { SelectOption } from '@presentation/components/atoms/Select';
@@ -37,6 +39,7 @@ export function AdminVacanciesPage(): JSX.Element {
   const [itemsPerPage, setItemsPerPage] = useState('20');
   const [currentPage, setCurrentPage] = useState(1);
   const [advancedFilters, setAdvancedFilters] = useState<VacancyAdvancedFilters>(INITIAL_ADVANCED);
+  const { sort, toggle: toggleSort } = useTableSort<VacancySortKey>();
 
   const [stateOptions, setStateOptions] = useState<SelectOption[]>([]);
   const [cityOptions, setCityOptions] = useState<SelectOption[]>([]);
@@ -55,6 +58,7 @@ export function AdminVacanciesPage(): JSX.Element {
   const handleSearchChange = (v: string) => { setSearchQuery(v); setCurrentPage(1); };
   const handleStatusChange = (v: string) => { setSelectedStatus(v); setCurrentPage(1); };
   const handleItemsPerPageChange = (v: string) => { setItemsPerPage(v); setCurrentPage(1); };
+  const handleSort = useCallback((key: VacancySortKey) => { toggleSort(key); setCurrentPage(1); }, [toggleSort]);
   const handleAdvancedChange = useCallback((updates: Partial<VacancyAdvancedFilters>) => {
     setAdvancedFilters((prev) => ({ ...prev, ...updates }));
     setCurrentPage(1);
@@ -76,10 +80,18 @@ export function AdminVacanciesPage(): JSX.Element {
       base.time_from = advancedFilters.timeFrom;
       base.time_to = advancedFilters.timeTo;
     }
+    if (sort) {
+      base.sort = sort.key;
+      base.order = sort.direction;
+    }
     return base;
-  }, [searchQuery, selectedStatus, itemsPerPage, currentPage, advancedFilters]);
+  }, [searchQuery, selectedStatus, itemsPerPage, currentPage, advancedFilters, sort]);
 
   const { vacancies: rawVacancies, stats: rawStats, total, isLoading, error, refetch } = useVacanciesData(filters);
+  // Esqueleto só na 1ª carga. Nas buscas seguintes (ordenar/filtrar/paginar) a tabela fica montada
+  // (aria-busy + opacidade) para o foco continuar no cabeçalho ordenável.
+  const [loadedOnce, setLoadedOnce] = useState(false);
+  useEffect(() => { if (!isLoading) setLoadedOnce(true); }, [isLoading]);
   const stats = rawStats as { label: string; value: string | number; icon: string }[] | null;
 
   // POST /vacancies/sync-talentum é sincronização EM MASSA (sem :id) — pela regra do
@@ -180,7 +192,8 @@ export function AdminVacanciesPage(): JSX.Element {
       const vac = v as Record<string, unknown>;
       return {
         id: vac.id as string,
-        caso: vac.caso ? String(vac.caso) : vac.id as string,
+        caseNumber: (vac.caseNumber as number | null | undefined) ?? null,
+        caseOrdinal: (vac.caseOrdinal as number | null | undefined) ?? null,
         status: (vac.status as string) || '—',
         diasAberto: (vac.diasAberto as string) || '—',
         stageCounts: (vac.stageCounts as Record<string, number> | undefined) ?? {},
@@ -287,13 +300,19 @@ export function AdminVacanciesPage(): JSX.Element {
             </Typography>
             <Typography variant="body" className="text-slate-600">{error}</Typography>
           </div>
-        ) : isLoading ? (
+        ) : isLoading && !loadedOnce ? (
           <div className="mt-6"><TableSkeleton /></div>
         ) : (
-          <div className="mt-6">
+          <div
+            className={`mt-6 transition-opacity ${isLoading ? 'opacity-60' : ''}`}
+            data-testid="vacancies-table-region"
+            aria-busy={isLoading}
+          >
             <VacanciesTable
               vacancies={vacancies}
               onRowClick={handleRowClick}
+              sort={sort}
+              onSort={handleSort}
             />
           </div>
         )}

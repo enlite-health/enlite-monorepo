@@ -13,6 +13,8 @@ export interface UseVacanciesDataFilters {
   days?: string;     // CSV of ints, e.g. "1,3,5"
   time_from?: string;
   time_to?: string;
+  sort?: string;
+  order?: string;
 }
 
 export function useVacanciesData(filters?: UseVacanciesDataFilters) {
@@ -61,6 +63,8 @@ export function useVacanciesData(filters?: UseVacanciesDataFilters) {
     filters?.days,
     filters?.time_from,
     filters?.time_to,
+    filters?.sort,
+    filters?.order,
     fetchKey,
   ]);
 

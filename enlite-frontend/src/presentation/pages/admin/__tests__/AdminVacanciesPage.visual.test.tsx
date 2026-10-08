@@ -21,7 +21,7 @@ vi.mock('@hooks/admin/useVacanciesData', () => ({
     vacancies: [
       {
         id: '1',
-        caso: 'Caso 100',
+        caseNumber: 100, caseOrdinal: 1,
         status: 'Activo',
         diasAberto: '05',
         convidados: '10',
@@ -32,7 +32,7 @@ vi.mock('@hooks/admin/useVacanciesData', () => ({
       },
       {
         id: '2',
-        caso: 'Caso 200',
+        caseNumber: 200, caseOrdinal: 1,
         status: 'En Espera',
         diasAberto: '12',
         convidados: '20',

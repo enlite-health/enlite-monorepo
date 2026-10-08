@@ -250,7 +250,7 @@ describe('C1 — o diagnóstico do paciente não é sequer BUSCADO', () => {
     // Conjunto EXATO — `id` vem só do `LEFT JOIN patients p ON jp.patient_id = p.id` (mesmo
     // artefato do JOIN que `colunasDePacientes()` acima também inclui), não de uma coluna
     // projetada nova. Fora ele, a lista de hoje não precisa de mais nada do paciente além das
-    // 3 usadas para exibir/buscar por nome e zona.
-    expect(colunasDaLista).toEqual(new Set(['zone_neighborhood', 'first_name', 'last_name', 'id']));
+    // 3 usadas para exibir/buscar por nome e zona + `case_number` (spec 046 F2: o número do caso vem do paciente).
+    expect(colunasDaLista).toEqual(new Set(['zone_neighborhood', 'first_name', 'last_name', 'id', 'case_number']));
   });
 });

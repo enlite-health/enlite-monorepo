@@ -3,12 +3,12 @@ import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import {
   buildListVacanciesQuery,
-  mapVacancyListRow,
   loadStageCounts,
   loadVacancyActivity,
   VacancyListRow,
 } from './vacancyListHelpers';
-import { emptyFunnelColumnCounts } from '../../domain/kanbanColumn';
+import { buildVacancyListItem, parseVacancySort, sortVacancyItems } from './vacancyListSort';
+import { SortParamError } from '@shared/utils/parseSort';
 import { normalizeSchedule } from '../../infrastructure/scheduleNormalizer';
 import { SOURCE_LOCKED_FIELDS } from './vacancyCrudHelpers';
 import { AdminVacancyDetailSchema } from '../schemas/AdminVacancyDetailSchema';
@@ -84,6 +84,7 @@ export class VacanciesController {
         days, time_from, time_to,
         limit = '20', offset = '0',
       } = req.query;
+      const sort = parseVacancySort(req.query);
 
       // D286 fase 2: nome do paciente na lista segue `patient_identity:read` — inclusive na BUSCA.
       const cellsDaLista = cellsOfRequest(req);
@@ -104,11 +105,18 @@ export class VacanciesController {
       const countResult = await this.db.query(countQuery, params);
       const total = parseInt(countResult.rows[0]?.total || '0');
 
-      const finalQuery =
-        baseQuery +
-        ` ORDER BY jp.created_at DESC` +
-        ` LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
-      params.push(parseInt(limit as string), parseInt(offset as string));
+      const parsedLimit = parseInt(limit as string);
+      const parsedOffset = parseInt(offset as string);
+
+      // Sem `sort`: caminho de sempre (created_at DESC, desempate por id) paginado no SQL.
+      // Com `sort`: as colunas ordenáveis são calculadas depois do SQL, então carrega TODAS as
+      // vagas filtradas, ordena em memória sobre o payload e só então pagina (spec 046 F3).
+      const finalQuery = sort
+        ? baseQuery + ` ORDER BY jp.created_at DESC, jp.id ASC`
+        : baseQuery +
+          ` ORDER BY jp.created_at DESC, jp.id ASC` +
+          ` LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+      if (!sort) params.push(parsedLimit, parsedOffset);
 
       const result = await this.db.query(finalQuery, params);
       const ids = (result.rows as VacancyListRow[]).map((r) => r.id);
@@ -116,20 +124,24 @@ export class VacanciesController {
         loadStageCounts(this.db, ids),
         loadVacancyActivity(this.db, ids),
       ]);
-      const vacancies = (result.rows as VacancyListRow[]).map((r) => ({
-        ...mapVacancyListRow(projectPatientInVacancy(r, cellsDaLista)),
-        stageCounts: stageCounts.get(r.id) ?? emptyFunnelColumnCounts(),
-        ...(activity.get(r.id) ?? { lastActionAt: null }),
-      }));
+      const items = (result.rows as VacancyListRow[]).map((r) =>
+        buildVacancyListItem(r, cellsDaLista, stageCounts.get(r.id), activity.get(r.id)));
+      const vacancies = sort
+        ? sortVacancyItems(items, sort).slice(parsedOffset, parsedOffset + parsedLimit)
+        : items;
 
       res.status(200).json({
         success: true,
         data: vacancies,
         total,
-        limit: parseInt(limit as string),
-        offset: parseInt(offset as string),
+        limit: parsedLimit,
+        offset: parsedOffset,
       });
     } catch (error: unknown) {
+      if (error instanceof SortParamError) {
+        res.status(400).json({ success: false, error: error.message });
+        return;
+      }
       const msg = error instanceof Error ? error.message : String(error);
       reportError(
         error instanceof Error ? error : new Error(msg),

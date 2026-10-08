@@ -6,6 +6,18 @@ const VacancyListQuery = z.object({
   status: z.string().optional().openapi({ description: 'Filtro por status da vaga.', example: 'SEARCHING' }),
   limit: z.coerce.number().optional().openapi({ description: 'Máximo de itens (default 20).', example: 20 }),
   offset: z.coerce.number().optional().openapi({ description: 'Itens a pular (default 0).', example: 0 }),
+  sort: z.enum(['compatible', 'invited', 'iniciado', 'preScreening', 'completed', 'selected', 'quickResponseTeam', 'rejected', 'postulados', 'faltantes', 'lastActionAt']).optional().openapi({
+    description:
+      'Ordena a lista INTEIRA (antes da paginação) pela coluna indicada: contagens do quadro (`compatible`, `invited`, ' +
+      '`iniciado`, `preScreening` [= PRE_SCREENING + IN_PROGRESS], `completed`, `selected`, `quickResponseTeam`, `rejected`), ' +
+      '`postulados`, `faltantes` e `lastActionAt`. Nulos vão por último nas duas direções; empate desempata por id. ' +
+      'Qualquer outro valor (inclusive `case`, `status` e dados do paciente) responde 400. Ausente = ordem padrão.',
+    example: 'completed',
+  }),
+  order: z.enum(['asc', 'desc']).optional().openapi({
+    description: 'Direção da ordenação (default `asc` quando há `sort`). Só vale com `sort`; valor inválido responde 400.',
+    example: 'desc',
+  }),
 });
 
 const CreateVacancyBody = z.object({
@@ -55,12 +67,15 @@ registry.registerPath({
   tags: ['Admin · Vacancies'],
   summary: 'Lista vagas com filtros e paginação',
   description:
-    'Retorna vagas com filtros opcionais de status, busca textual e prioridade. ' +
-    'Ordenadas por data de criação decrescente.',
+    'Retorna vagas com filtros opcionais de status e busca textual. ' +
+    'Ordem padrão (sem `sort`): data de criação decrescente. Com `sort`/`order` ordena a lista inteira antes de paginar. ' +
+    'Cada vaga traz `caseNumber` (número do caso lido do paciente; null se a vaga não tem paciente visível ao ator) e ' +
+    '`caseOrdinal` (posição da vaga no caso); o texto `EN1234#01` é formatado pelo frontend.',
   security: [{ firebaseAuth: [] }],
   request: { query: VacancyListQuery },
   responses: {
     200: { description: 'Lista paginada de vagas.', content: { 'application/json': { schema: OkMessage } } },
+    400: { description: '`sort` fora da allowlist ou `order` inválido.', content: { 'application/json': { schema: ErrorResponseSchema } } },
     401: { description: 'Não autenticado.', content: { 'application/json': { schema: ErrorResponseSchema } } },
     500: { description: 'Erro interno.', content: { 'application/json': { schema: ErrorResponseSchema } } },
   },
