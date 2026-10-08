@@ -1,6 +1,6 @@
 /**
  * CID-11 na vacante (D286/D263) — `diagnoses[]`/`diagnosesUnavailable` embutidos em
- * `GET /vacancies/:id` e `GET /recruitment/case/:caseNumber`, lidos por uma SEGUNDA chamada
+ * `GET /vacancies/:id`, lido por uma SEGUNDA chamada
  * (`loadVacancyPatientDiagnoses` → `PatientDiagnosisService`), nunca por `JOIN patient_diagnoses`
  * na query principal — guarda disso é `__tests__/diagnosticoForaDaVaga.test.ts` (não este arquivo).
  *
@@ -161,46 +161,3 @@ describe('VacanciesController.getVacancyById — diagnoses[]/diagnosesUnavailabl
   });
 });
 
-describe('RecruitmentAnalyticsController.getCaseAnalysis — diagnoses[]/diagnosesUnavailable dentro de caseInfo', () => {
-  beforeEach(() => jest.clearAllMocks());
-
-  function prepararCaso(patientId: string | null) {
-    mockQuery.mockResolvedValue({
-      rows: [{
-        id: 'jp-1', case_number: 442, patient_id: patientId,
-        patient_first_name: 'Paciente', dependency_level: 'ALTA', zone_neighborhood: 'Palermo',
-      }],
-    });
-  }
-
-  it('1. ator COM célula clínica + paciente com diagnóstico → caseInfo.diagnoses tem 1 item, sem code/group/release', async () => {
-    prepararCaso(PATIENT_ID);
-    const listForPatient = jest.fn().mockResolvedValue({ found: true, diagnoses: [diagnosisFixture()] });
-    const controller = new RecruitmentAnalyticsController(fakeDiagnosisService({ listForPatient }));
-    const [req, res] = reqRes({ caseNumber: '442' }, ['recruitment:read', PATIENT_CLINICAL_READ]);
-
-    await controller.getCaseAnalysis(req, res);
-
-    const caseInfo = (res.json as jest.Mock).mock.calls[0][0].data.caseInfo;
-    expect(caseInfo.diagnosesUnavailable).toBe(false);
-    expect(caseInfo.diagnoses).toHaveLength(1);
-    expect(Object.keys(caseInfo.diagnoses[0])).not.toContain('conceptCode');
-    expect(Object.keys(caseInfo.diagnoses[0])).not.toContain('conceptGroup');
-    expect(Object.keys(caseInfo.diagnoses[0])).not.toContain('catalogRelease');
-    expect(listForPatient).toHaveBeenCalledWith(PATIENT_ID);
-  });
-
-  it('2. ator SEM célula clínica → caseInfo.diagnoses === null (nunca [])', async () => {
-    prepararCaso(PATIENT_ID);
-    const listForPatient = jest.fn();
-    const controller = new RecruitmentAnalyticsController(fakeDiagnosisService({ listForPatient }));
-    const [req, res] = reqRes({ caseNumber: '442' }, ['recruitment:read']);
-
-    await controller.getCaseAnalysis(req, res);
-
-    const caseInfo = (res.json as jest.Mock).mock.calls[0][0].data.caseInfo;
-    expect(caseInfo.diagnoses).toBeNull();
-    expect(caseInfo.diagnosesUnavailable).toBe(false);
-    expect(listForPatient).not.toHaveBeenCalled();
-  });
-});

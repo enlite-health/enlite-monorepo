@@ -1659,7 +1659,6 @@
       "title": "Dashboard de Reclutamiento",
       "loading": "Cargando datos del dashboard...",
       "errorLoading": "Error al cargar datos",
-      "diagnosis": "Patología",
       "tabs": {
         "global": "Panel Global",
         "case": "Análisis por Caso",
