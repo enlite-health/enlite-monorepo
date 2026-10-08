@@ -17,6 +17,7 @@ import {
   parseTimeHHMM,
 } from './vacancyScheduleFilter';
 import type { Pool } from 'pg';
+import { VACANCY_CASE_NUMBER_SQL } from '@shared/sql/vacancyCaseNumberSql';
 import { workerNotDisabledSql } from '@shared/database/activeWorkerFilter';
 import { INICIAIS_REDIGIDAS, patientNameIsRedacted } from '../../application/patientInVacancyProjection';
 import {
@@ -60,7 +61,8 @@ const FILLED_POSITION_SQL = toSqlInList(FILLED_POSITION_STAGES);
 const LIST_VACANCIES_BASE = `
   SELECT
     jp.id,
-    jp.case_number,
+    ${VACANCY_CASE_NUMBER_SQL} AS case_number,
+    jp.case_ordinal,
     jp.vacancy_number,
     jp.title,
     jp.status,
@@ -309,7 +311,8 @@ export interface VacancyListRow {
   id: string;
   patient_first_name: string | null;
   patient_last_name: string | null;
-  case_number: number;
+  case_number: number | null;
+  case_ordinal: number | null;
   vacancy_number: number;
   status: string | null;
   is_draft: boolean | null;
@@ -329,7 +332,8 @@ export function mapVacancyListRow(row: VacancyListRow) {
     initials: redigido ? INICIAIS_REDIGIDAS : getInitials(row.patient_first_name, row.patient_last_name),
     name: `${row.patient_first_name || ''} ${row.patient_last_name || ''}`.trim(),
     email: '',
-    caso: `Caso ${row.case_number}-${row.vacancy_number}`,
+    caseNumber: row.case_number ?? null,
+    caseOrdinal: row.case_ordinal ?? null,
     vacancyNumber: row.vacancy_number,
     status: mapStatus(row.status),
     statusRaw: row.status,

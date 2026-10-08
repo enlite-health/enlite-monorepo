@@ -55,8 +55,10 @@ registry.registerPath({
   tags: ['Admin · Vacancies'],
   summary: 'Lista vagas com filtros e paginação',
   description:
-    'Retorna vagas com filtros opcionais de status, busca textual e prioridade. ' +
-    'Ordenadas por data de criação decrescente.',
+    'Retorna vagas com filtros opcionais de status e busca textual. ' +
+    'Ordenadas por data de criação decrescente. ' +
+    'Cada vaga traz `caseNumber` (número do caso lido do paciente; null se a vaga não tem paciente visível ao ator) e ' +
+    '`caseOrdinal` (posição da vaga no caso); o texto `EN1234#01` é formatado pelo frontend.',
   security: [{ firebaseAuth: [] }],
   request: { query: VacancyListQuery },
   responses: {

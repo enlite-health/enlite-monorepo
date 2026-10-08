@@ -6,6 +6,7 @@
  * existing filters (search, status, priority), and absence of each filter.
  */
 
+import { VACANCY_CASE_NUMBER_SQL } from '@shared/sql/vacancyCaseNumberSql';
 import { buildListVacanciesQuery, ListVacanciesFilters, loadStageCounts, loadVacancyActivity, mapVacancyListRow, VacancyListRow } from '../vacancyListHelpers';
 
 // Minimal filters that satisfy the required fields
@@ -75,7 +76,7 @@ describe('LIST_VACANCIES_BASE / mapVacancyListRow — colunas removidas (spec 04
 
   it('o DTO não tem priority, confirmados nem daysWithoutDivulgation', () => {
     const row = {
-      id: 'jp-a', patient_first_name: 'Ana', patient_last_name: 'García', case_number: 1, vacancy_number: 1,
+      id: 'jp-a', patient_first_name: 'Ana', patient_last_name: 'García', case_number: 1, case_ordinal: 1, vacancy_number: 1,
       status: 'SEARCHING', is_draft: false, dias_aberto: 3, convidados: 1, postulados: 1, selecionados: 0, faltantes: 1,
     } as unknown as VacancyListRow;
     const dto = mapVacancyListRow(row) as Record<string, unknown>;
@@ -86,6 +87,32 @@ describe('LIST_VACANCIES_BASE / mapVacancyListRow — colunas removidas (spec 04
   });
 });
 
+
+describe('coluna Caso — número lido do paciente (spec 046 F2, A5-A7)', () => {
+  const row = (over: Partial<VacancyListRow> = {}): VacancyListRow => ({
+    id: 'jp-c', patient_first_name: 'Ana', patient_last_name: 'García', case_number: 1234, case_ordinal: 2, vacancy_number: 5905,
+    status: 'SEARCHING', is_draft: false, dias_aberto: 0, convidados: 0, postulados: 0, selecionados: 0, faltantes: null, ...over,
+  });
+
+  it('A5: o DTO devolve os NÚMEROS (caseNumber, caseOrdinal) e não a string `caso`', () => {
+    const dto = mapVacancyListRow(row()) as Record<string, unknown>;
+    expect(dto).toMatchObject({ caseNumber: 1234, caseOrdinal: 2 });
+    expect(dto).not.toHaveProperty('caso');
+  });
+
+  it('A7: vaga sem paciente -> caseNumber e caseOrdinal null', () => {
+    const dto = mapVacancyListRow(row({ case_number: null, case_ordinal: null })) as Record<string, unknown>;
+    expect(dto).toMatchObject({ caseNumber: null, caseOrdinal: null });
+  });
+
+  it('A6: o SELECT lê o número do PACIENTE (fragmento com dono), não a cópia jp.case_number', () => {
+    const { baseQuery } = buildListVacanciesQuery(base());
+    expect(baseQuery).toContain(`${VACANCY_CASE_NUMBER_SQL} AS case_number`);
+    expect(VACANCY_CASE_NUMBER_SQL).toBe('p.case_number');
+    expect(baseQuery).not.toMatch(/SELECT\s+jp\.id,\s+jp\.case_number,/);
+    expect(baseQuery).toContain('jp.case_ordinal');
+  });
+});
 
 // ── new filters ────────────────────────────────────────────────────────────────
 

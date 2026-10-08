@@ -45,12 +45,13 @@ describe('projectPatientInVacancy — o dado do paciente dentro da vaga segue a 
 
   it('a lista: nome redigido vira iniciais "—", nunca as do rótulo', () => {
     const base: VacancyListRow = {
-      id: 'v1', patient_first_name: 'Juan', patient_last_name: 'Perez', case_number: 42, vacancy_number: 1, status: 'ACTIVE',
+      id: 'v1', patient_first_name: 'Juan', patient_last_name: 'Perez', case_number: 42, case_ordinal: 1, vacancy_number: 1, status: 'ACTIVE',
       is_draft: false, dias_aberto: 3, convidados: 1, postulados: 1, selecionados: 0, faltantes: null,
     };
     expect(mapVacancyListRow(base)).toMatchObject({ initials: 'JP', name: 'Juan Perez' });
     const redigida = mapVacancyListRow(projectPatientInVacancy(base, ['vacancy:read']));
-    expect(redigida).toMatchObject({ initials: INICIAIS_REDIGIDAS, name: NOME_REDIGIDO, caso: 'Caso 42-1' });
+    expect(redigida).toMatchObject({ initials: INICIAIS_REDIGIDAS, name: NOME_REDIGIDO, caseNumber: 42, caseOrdinal: 1 });
+    expect(redigida).not.toHaveProperty('caso');
     expect(patientNameIsRedacted({ patient_first_name: NOME_REDIGIDO, patient_last_name: 'x' })).toBe(false);
   });
 });
