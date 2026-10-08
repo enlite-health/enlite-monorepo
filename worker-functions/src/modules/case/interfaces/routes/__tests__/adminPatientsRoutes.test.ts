@@ -334,6 +334,7 @@ describe('createAdminPatientsRoutes', () => {
     ['get', '/api/admin/patients/kanban/services', 'kanbanServices.list'],
     ['get', '/api/admin/patients/abc-123/status-history', 'getPatientStatusHistory'],
     ['patch', '/api/admin/patients/abc-123/addresses/addr-1', 'updatePatientAddress'],
+    ['delete', '/api/admin/patients/abc-123/addresses/addr-1', 'deletePatientAddress'],
     ['get', '/api/admin/patients/abc-123/contracted-services', 'cs.list'],
     ['post', '/api/admin/patients/abc-123/contracted-services', 'cs.create'],
     ['patch', '/api/admin/patients/abc-123/contracted-services/s1', 'cs.update'],

@@ -105,7 +105,7 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
       // NÃO da `patient_conversation:read`, mesmo para o anexo vindo do chat (Q11).
       c('documents', 'patient_document', ['read', 'create', 'update', 'delete'], 'documents'),
       c('coverage', 'patient_coverage', ['read', 'create', 'update'], 'contractedService'),
-      c('address', 'patient_address', ['read', 'create', 'update'], 'contractedService'),
+      c('address', 'patient_address', ['read', 'create', 'update', 'delete'], 'contractedService'),
       c('services', 'patient_services', ['read', 'create', 'update'], 'contractedService', 'itinerary'),
       // O VALOR-HORA do serviço contratado é dado próprio (era "só admin" por papel; D293): quem
       // tem `patient_services:read` vê o serviço, mas o preço só sai com esta célula.
