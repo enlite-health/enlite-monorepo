@@ -1,5 +1,5 @@
 /**
- * 046-f4-ordenacao.integration.e2e.ts @integration
+ * lista-vacantes-046-ordenacao.integration.e2e.ts @integration
  *
  * Spec 046 F4 — a lista de Vacantes ordena pelo cabeçalho. Stack real (Vite + API do docker com
  * USE_MOCK_AUTH + Postgres); sem `page.route` e sem nada de WhatsApp/Google/Ana Care — a identidade
@@ -26,7 +26,7 @@ const MOCK_STAFF: MockUser = {
 
 const MARCA_ORDEM = 'ORD046F4A';
 const MARCA_PAGINA = 'ORD046F4B';
-const TOTAL_PAGINADAS = 23; // 10 por página -> página 3 existe (21–23)
+const TOTAL_PAGINADAS = 23; // com 10 por página (escolhido na UI) -> página 3 existe (21–23)
 
 /** Contagens de "Completado" semeadas, em ordem de criação (embaralhadas de propósito). */
 const COMPLETADOS = [2, 0, 3, 1];
@@ -129,17 +129,22 @@ test.describe('046 F4 — ordenação pelo cabeçalho @integration', () => {
 
   test('alt 2 (A16): na página 3, ordenar volta para a página 1', async ({ page }) => {
     await abreEBusca(page, MARCA_PAGINA);
-    await expect(page.getByText(/1–10 de 23/)).toBeVisible({ timeout: 15_000 });
+    // A tela abre com 20 por página (useState('20')): com 23 vagas só haveria 2 páginas.
+    // Escolhe o menor "itens por página" (10) pelo seletor da tela, como o usuário.
+    const itensPorPagina = page.locator('select', { has: page.locator('option[value="50"]') });
+    await itensPorPagina.selectOption('10');
+    await expect(itensPorPagina).toHaveValue('10');
+    await expect(page.getByText(/^1–10 de 23$/)).toBeVisible({ timeout: 15_000 });
 
     const proxima = page.getByRole('button', { name: 'Página siguiente' });
     await proxima.click();
-    await expect(page.getByText(/11–20 de 23/)).toBeVisible();
+    await expect(page.getByText(/^11–20 de 23$/)).toBeVisible();
     await proxima.click();
-    await expect(page.getByText(/21–23 de 23/)).toBeVisible();
+    await expect(page.getByText(/^21–23 de 23$/)).toBeVisible();
     await expect(page.locator('tbody tr')).toHaveCount(3);
 
     await cabecalho(page, 'INVITED').getByRole('button').click();
-    await expect(page.getByText(/1–10 de 23/)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(/^1–10 de 23$/)).toBeVisible({ timeout: 15_000 });
     await expect(page.locator('tbody tr')).toHaveCount(10);
     await expect(cabecalho(page, 'INVITED')).toHaveAttribute('aria-sort', 'ascending');
   });

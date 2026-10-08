@@ -1,5 +1,5 @@
 /**
- * 046-f2-coluna-caso.integration.e2e.ts @integration
+ * lista-vacantes-046-caso.integration.e2e.ts @integration
  *
  * Spec 046 F2 — coluna "Caso" da lista de vacantes, formato `EN1234#01`, número lido do PACIENTE.
  * Stack real (Vite + API do docker com USE_MOCK_AUTH + Postgres); sem `page.route` e sem nada de
