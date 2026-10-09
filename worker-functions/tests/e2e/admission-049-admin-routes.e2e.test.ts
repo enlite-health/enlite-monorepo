@@ -49,7 +49,7 @@ const OUTRA_CONTA = 'outra.conta.e2e049@example.test';
 
 const U = {
   chefe: 'adm049-chefe', // read + create + update + resend_message
-  agendadora: 'adm049-agendadora', // read + create (agenda, não cancela)
+  agendadora: 'adm049-agendadora', // read + create + update (agenda e cancela; sem resend_message)
   leitora: 'adm049-leitora', // read
   semGrupo: 'adm049-sem-grupo', // staff sem célula nenhuma
 };
@@ -174,7 +174,7 @@ describe('rotas admin da aba Admissão — HTTP real, banco real, engine LIGADO 
       [U.chefe, U.agendadora, U.leitora, U.semGrupo, TENANT_E2E],
     );
     await grupoComCelulas(admin, { nome: GRUPOS.chefe, uid: U.chefe, celulas: [['patient_admission', 'read'], ['patient_admission', 'create'], ['patient_admission', 'update'], ['patient_admission', 'resend_message']] });
-    await grupoComCelulas(admin, { nome: GRUPOS.agendadora, uid: U.agendadora, celulas: [['patient_admission', 'read'], ['patient_admission', 'create']] });
+    await grupoComCelulas(admin, { nome: GRUPOS.agendadora, uid: U.agendadora, celulas: [['patient_admission', 'read'], ['patient_admission', 'create'], ['patient_admission', 'update']] });
     await grupoComCelulas(admin, { nome: GRUPOS.leitora, uid: U.leitora, celulas: [['patient_admission', 'read']] });
     await admin.query(
       `INSERT INTO interview_hosts (email, display_name, country, active) VALUES ($1,'Ana','AR',true), ($2,'Mari','AR',true),
