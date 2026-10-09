@@ -3,7 +3,9 @@
  * Os dois sentidos da fábrica + o adapter real que lança no construtor. A fábrica NÃO lança no boot de teste.
  */
 import { AdmissionRealAdapterInTestError } from '../../application/ports/AdmissionMessagingPorts';
+import { admissionCalendarService } from '../AdmissionCalendarService';
 import { createAdmissionExternals } from '../admissionExternals';
+import { FakeAdmissionCalendar } from '../doubles/FakeAdmissionCalendar';
 import { InMemoryAdmissionReminderTasks } from '../doubles/InMemoryAdmissionReminderTasks';
 import { RecordingAdmissionWhatsApp } from '../doubles/RecordingAdmissionWhatsApp';
 import { RealAdmissionReminderTasks } from '../RealAdmissionReminderTasks';
@@ -51,6 +53,24 @@ describe('createAdmissionExternals', () => {
     } finally {
       process.env.NODE_ENV = OLD;
     }
+  });
+});
+
+describe('createAdmissionExternals — o Calendar (spec 049 F3)', () => {
+  it('ADMISSION_EXTERNALS=fake explícito → FakeAdmissionCalendar (a stack e2e da 049)', () => {
+    const ext = createAdmissionExternals({ NODE_ENV: 'test', ADMISSION_EXTERNALS: 'fake' }, { realWhatsApp });
+    expect(ext.calendar).toBeInstanceOf(FakeAdmissionCalendar);
+  });
+
+  it('NODE_ENV=test SEM a variável mantém o adapter real do Calendar (o e2e do roster depende de "agenda inacessível → 500")', () => {
+    const ext = createAdmissionExternals({ NODE_ENV: 'test' }, { realWhatsApp });
+    expect(ext.mode).toBe('fake');
+    expect(ext.calendar).toBe(admissionCalendarService);
+  });
+
+  it('produção → Calendar real', () => {
+    const ext = createAdmissionExternals({ NODE_ENV: 'production' }, { realWhatsApp, realReminderTasks: () => new InMemoryAdmissionReminderTasks() });
+    expect(ext.calendar).toBe(admissionCalendarService);
   });
 });
 

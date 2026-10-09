@@ -3,7 +3,10 @@ import {
   AdmissionRealAdapterInTestError,
   type AdmissionReminderTasksPort,
 } from '../application/ports/AdmissionMessagingPorts';
+import type { AdmissionCalendarPort } from '../application/ports/AdmissionCalendarPort';
+import { admissionCalendarService } from './AdmissionCalendarService';
 import type { AdmissionWhatsAppSender } from './admissionTemplates';
+import { FakeAdmissionCalendar } from './doubles/FakeAdmissionCalendar';
 import { InMemoryAdmissionReminderTasks } from './doubles/InMemoryAdmissionReminderTasks';
 import { RecordingAdmissionWhatsApp } from './doubles/RecordingAdmissionWhatsApp';
 import { RealAdmissionReminderTasks } from './RealAdmissionReminderTasks';
@@ -17,6 +20,11 @@ export interface AdmissionExternals {
   mode: 'real' | 'fake';
   reminderTasks: AdmissionReminderTasksPort;
   whatsapp: AdmissionWhatsAppSender;
+  /**
+   * Google Calendar. Dublê SÓ com `ADMISSION_EXTERNALS=fake` explícito (a stack e2e da 049); `NODE_ENV=test` sozinho
+   * mantém o adapter real, que sem credencial falha alto — o e2e do roster depende disso ("agenda inacessível → 500").
+   */
+  calendar: AdmissionCalendarPort;
 }
 
 export interface AdmissionExternalsDeps {
@@ -48,11 +56,17 @@ export function createAdmissionExternals(env: AdmissionExternalsEnv, deps: Admis
   }
 
   if (wantsFake) {
-    return { mode: 'fake', reminderTasks: new InMemoryAdmissionReminderTasks(), whatsapp: new RecordingAdmissionWhatsApp() };
+    return {
+      mode: 'fake',
+      reminderTasks: new InMemoryAdmissionReminderTasks(),
+      whatsapp: new RecordingAdmissionWhatsApp(),
+      calendar: env.ADMISSION_EXTERNALS === 'fake' ? new FakeAdmissionCalendar() : admissionCalendarService,
+    };
   }
   return {
     mode: 'real',
     reminderTasks: deps.realReminderTasks ? deps.realReminderTasks() : new RealAdmissionReminderTasks(new CloudTasksClient()),
     whatsapp: deps.realWhatsApp(),
+    calendar: admissionCalendarService,
   };
 }

@@ -110,6 +110,10 @@ import { AdmissionReminderController } from '@modules/matching/interfaces/contro
 import { RealAdmissionNotifier } from '@modules/matching/infrastructure/RealAdmissionNotifier';
 import { AdmissionMessagingService } from '@modules/matching/application/AdmissionMessagingService';
 import { AdmissionMessageContent } from '@modules/matching/infrastructure/AdmissionMessageContent';
+import { AdmissionPanelService } from '@modules/matching/application/AdmissionPanelService';
+import { AdmissionPanelController } from '@modules/matching/interfaces/controllers/AdmissionPanelController';
+import { createAdminAdmissionRoutes } from '@modules/matching/interfaces/routes/adminAdmissionRoutes';
+import { interviewHostRepository } from '@modules/matching/infrastructure/InterviewHostRepository';
 import { AdmissionMessageRepository } from '@modules/matching/infrastructure/AdmissionMessageRepository';
 import { AdmissionEventRepository } from '@modules/matching/infrastructure/AdmissionEventRepository';
 import { createAdmissionExternals } from '@modules/matching/infrastructure/admissionExternals';
@@ -376,9 +380,9 @@ const admissionNotifier = new RealAdmissionNotifier(
   admissionEvents,
   admissionDb,
 );
-const admissionSchedulingController = new AdmissionSchedulingController(
-  new AdmissionSchedulingService(undefined, admissionNotifier),
-);
+// UM serviço de agendamento (e UM núcleo de reserva) para o site e para o painel (spec 049 F3).
+const admissionSchedulingService049 = new AdmissionSchedulingService(admissionExternals.calendar, admissionNotifier);
+const admissionSchedulingController = new AdmissionSchedulingController(admissionSchedulingService049);
 const admissionSlotsRateLimit = rateLimit({
   windowMs: 60 * 1000,
   max: 30, // read endpoint
@@ -565,6 +569,21 @@ app.use('/api/admin', createAdminConversationRoutes(authMiddleware, permissionMi
 
 // ========== Admin Patient Documents — aba "Documentos" (spec 031) ==========
 app.use('/api/admin', createPatientDocumentsRoutes(authMiddleware, permissionMiddleware));
+
+// Spec 049 F3: aba "Admissão" do paciente (agendar pelo painel, listar, cancelar, reenviar). Família admin.patients.
+const admissionPanelController = new AdmissionPanelController(
+  admissionSchedulingService049,
+  new AdmissionPanelService({
+    db: admissionDb,
+    calendar: admissionExternals.calendar,
+    reminderTasks: admissionExternals.reminderTasks,
+    events: admissionEvents,
+    messaging: admissionMessaging,
+    hosts: interviewHostRepository,
+    impersonateEmail: process.env.ADMISSION_IMPERSONATE_EMAIL || 'enlite@enlite.health',
+  }),
+);
+app.use('/api/admin', createAdminAdmissionRoutes(authMiddleware, permissionMiddleware, admissionPanelController));
 
 // ========== Admin Notifications / sino (spec 022, Bloco 4) ==========
 // `permissionsBoundary.permissions.client` — leitura CRUA do ABAC (D-13, revisado no fecho B5:
