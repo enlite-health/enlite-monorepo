@@ -1,4 +1,4 @@
-import * as functions from 'firebase-functions';
+import { logger } from '@shared/logging';
 import type { AdmissionCountry } from '../domain/admissionCountries';
 
 /**
@@ -27,13 +27,15 @@ export interface AdmissionNotifier {
 /** No-op notifier: logs the booking. Real WhatsApp/Cloud Task delivery is another phase. */
 export class LoggingAdmissionNotifier implements AdmissionNotifier {
   async onBooked(appt: BookedAppointmentNotice): Promise<void> {
-    functions.logger.info('admission.notifier.on_booked', {
-      appointmentId: appt.appointmentId,
-      patientId: appt.patientId,
-      country: appt.country,
-      hostEmail: appt.hostEmail,
-      slotStartISO: appt.slotStartISO,
-      hasMeetLink: Boolean(appt.meetLink),
-    });
+    logger.info(
+      {
+        appointmentId: appt.appointmentId,
+        patientId: appt.patientId,
+        country: appt.country,
+        slotStartISO: appt.slotStartISO,
+        hasMeetLink: Boolean(appt.meetLink),
+      },
+      'admission.notifier.on_booked',
+    );
   }
 }

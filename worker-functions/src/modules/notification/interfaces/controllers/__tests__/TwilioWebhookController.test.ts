@@ -30,7 +30,11 @@ describe('TwilioWebhookController — auto-bloqueio por falha repetida', () => {
     // Sem callback URL/token -> validação de assinatura é pulada (dev/test).
     delete process.env.TWILIO_STATUS_CALLBACK_URL;
     delete process.env.TWILIO_AUTH_TOKEN;
-    controller = new TwilioWebhookController();
+    // Armazém/trilha de admissão (spec 049) dublados: este arquivo conta as queries do caminho de WORKER.
+    controller = new TwilioWebhookController(
+      { applyDeliveryStatus: async () => null } as never,
+      { append: async () => undefined },
+    );
   });
 
   it('undelivered + worker já com >=2 falhas -> insere em messaging_opt_out', async () => {

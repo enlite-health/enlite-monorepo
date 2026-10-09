@@ -108,6 +108,11 @@ import { AdmissionSchedulingService } from '@modules/matching/application/Admiss
 import { AdmissionReminderService } from '@modules/matching/application/AdmissionReminderService';
 import { AdmissionReminderController } from '@modules/matching/interfaces/controllers/AdmissionReminderController';
 import { RealAdmissionNotifier } from '@modules/matching/infrastructure/RealAdmissionNotifier';
+import { AdmissionMessagingService } from '@modules/matching/application/AdmissionMessagingService';
+import { AdmissionMessageContent } from '@modules/matching/infrastructure/AdmissionMessageContent';
+import { AdmissionMessageRepository } from '@modules/matching/infrastructure/AdmissionMessageRepository';
+import { AdmissionEventRepository } from '@modules/matching/infrastructure/AdmissionEventRepository';
+import { createAdmissionExternals } from '@modules/matching/infrastructure/admissionExternals';
 import { RecruitmentHealthController } from '@modules/notification/interfaces/controllers/RecruitmentHealthController';
 import { createSwaggerRouter, shouldGateDocs } from '@shared/openapi/swaggerRouter';
 import { createClaimController } from './bootstrap/createClaimController';
@@ -352,10 +357,24 @@ app.post('/api/public/v1/leads', publicLeadsRateLimit, publicContextMiddleware('
 // Real notifier: immediate WhatsApp confirmation to the patient (direct Content
 // API, no outbox — the patient is not a worker) + a 30-min-before reminder via
 // Cloud Task. Injected in place of the default LoggingAdmissionNotifier.
+// Spec 049 (F2): envio só por quem ganha o CLAIM em `admission_messages`; task do lembrete NOMEADA; trilha append-only.
+// As fronteiras (Twilio, Cloud Tasks) vêm da fábrica: em NODE_ENV=test ou ADMISSION_EXTERNALS=fake são dublês.
+const admissionDb = DatabaseConnection.getInstance().getPool();
+const admissionExternals = createAdmissionExternals(process.env, { realWhatsApp: () => twilioMessagingService });
+const admissionMessageContent = new AdmissionMessageContent(admissionDb);
+const admissionEvents = new AdmissionEventRepository(admissionDb);
+const admissionMessaging = new AdmissionMessagingService(
+  new AdmissionMessageRepository(admissionDb),
+  admissionEvents,
+  admissionExternals.whatsapp,
+  admissionMessageContent,
+);
 const admissionNotifier = new RealAdmissionNotifier(
-  twilioMessagingService,
-  new CloudTasksClient(),
-  DatabaseConnection.getInstance().getPool(),
+  admissionMessaging,
+  admissionMessageContent,
+  admissionExternals.reminderTasks,
+  admissionEvents,
+  admissionDb,
 );
 const admissionSchedulingController = new AdmissionSchedulingController(
   new AdmissionSchedulingService(undefined, admissionNotifier),
@@ -692,7 +711,7 @@ app.use(
 // Kept on the app (not the notification router) to avoid a notification→matching
 // import; guarded by the same internalAuthMiddleware (X-Internal-Secret).
 const admissionReminderController = new AdmissionReminderController(
-  new AdmissionReminderService(twilioMessagingService, dbPool),
+  new AdmissionReminderService(admissionMessaging, admissionMessageContent, dbPool),
 );
 app.post('/api/internal/reminders/admission-30min', internalAuthMiddleware, systemContextMiddleware('job:admission-reminder'), (req: Request, res: Response) =>
   admissionReminderController.handle(req, res),
