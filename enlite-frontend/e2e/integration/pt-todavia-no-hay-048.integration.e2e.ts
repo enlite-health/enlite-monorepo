@@ -92,7 +92,8 @@ const campo = (page: Page, chave: string) => page.getByTestId(`tp-field-${chave}
  * intercepta o ponteiro, então `.check()` no input não é o que o operador faz. O estado é lido da TELA depois.
  */
 async function alternar(escopo: ReturnType<typeof campo>, rotulo: string): Promise<void> {
-  await escopo.getByText(rotulo, { exact: true }).click();
+  // Só dentro do <label>: travado, o select também mostra o estado como texto (não é alvo de clique).
+  await escopo.locator('label').getByText(rotulo, { exact: true }).click();
 }
 
 /** Preenche o "Nuevo" até só faltar o que o teste decide (contatos). */
