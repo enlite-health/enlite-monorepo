@@ -166,8 +166,9 @@ export class PatientDocumentRepository {
     );
     if (rows.length === 0) return null;
     const row = rows[0];
-    if (row.origin === 'tab') {
-      return { origin: 'tab', storedFileId: null, pathEncrypted: row.filePathEncrypted };
+    // `tab` e `admission` são donas do arquivo no bucket (caminho cifrado na própria linha); só `chat` aponta para `stored_files`.
+    if (row.origin === 'tab' || row.origin === 'admission') {
+      return { origin: row.origin, storedFileId: null, pathEncrypted: row.filePathEncrypted };
     }
 
     const marked = await client.query<{ pathEncrypted: string }>(
