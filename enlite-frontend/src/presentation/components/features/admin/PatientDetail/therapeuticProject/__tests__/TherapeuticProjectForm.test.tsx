@@ -160,6 +160,7 @@ const VERSAO: TherapeuticProjectVersion = {
   contactRefs: [],
   careTeamIds: [],
   contacts: [],
+  contactStatus: [],
 };
 
 type Props = Parameters<typeof TherapeuticProjectForm>[0];
@@ -181,6 +182,7 @@ const montar = (over: Partial<Props> = {}) =>
       coverageEmergencyContacts={over.coverageEmergencyContacts ?? [COBERTURA]}
       professionals={over.professionals ?? [PROFISSIONAL]}
       from={over.from ?? null}
+      initialContactStatus={over.initialContactStatus ?? []}
       saving={over.saving ?? false}
       saveError={over.saveError ?? null}
       onSubmit={over.onSubmit ?? onSubmit}
@@ -420,6 +422,7 @@ describe('submissão', () => {
       endDate: '2026-12-01',
       contactRefs: [],
       careTeamIds: [],
+      contactStatus: {},
     });
     expect(Object.keys(onSubmit.mock.calls[0][0])).not.toContain('major');
     // O tipo de patologia não é escolhido: deriva do CID-11 no servidor (Gabriel 08/09) — nem campo, nem chave no corpo.
@@ -875,5 +878,55 @@ describe('🔒 lex C7 — versão redigida não vira versão nova', () => {
     fireEvent.submit(screen.getByTestId('therapeutic-project-form'));
 
     expect(onSubmit).not.toHaveBeenCalled();
+  });
+});
+
+// ── spec 048: estado explícito dos campos de contato no corpo ────────────────
+
+describe('spec 048 — "Todavía no hay registro" / "No necesita" no corpo enviado', () => {
+  const marcar = (id: string) => fireEvent.click(screen.getByTestId(id));
+
+  it('marcar "Todavía no hay registro" em 2 campos: o corpo leva PENDING neles e NENHUM id; o resto do corpo é o mesmo', () => {
+    montar({ patientDiagnoses: [] });
+    preencherTudo();
+    marcar('tp-responsibles-pending');
+    marcar('tp-careTeam-pending');
+    fireEvent.click(salvar());
+
+    const corpo = onSubmit.mock.calls[0][0];
+    expect(corpo.contactStatus).toEqual({ RESPONSIBLE: 'PENDING', CARE_TEAM: 'PENDING' });
+    expect(corpo.contactRefs).toEqual([]);
+    expect(corpo.careTeamIds).toEqual([]);
+  });
+
+  it('escolher um contato num campo marcado desmarca o estado: o corpo leva o id e NENHUM status naquele campo', () => {
+    montar({ patientDiagnoses: [], initialContactStatus: [{ kind: 'EXTERNAL', status: 'NOT_NEEDED', pendingSince: null, deadlineDate: null }] });
+    preencherTudo();
+    alternarNoMulti('tp-externalContacts', 'Lucía Externa');
+    fireEvent.click(salvar());
+    const corpo = onSubmit.mock.calls[0][0];
+    expect(corpo.contactStatus).toEqual({});
+    expect(corpo.contactRefs).toEqual([{ kind: 'EXTERNAL', id: 'ext-1' }]);
+  });
+
+  it('"Editar" já nasce com o estado herdado da origem (NOT_NEEDED herdado viaja no corpo)', () => {
+    montar({
+      from: { ...VERSAO, contactStatus: [{ kind: 'COVERAGE', status: 'NOT_NEEDED', pendingSince: null, deadlineDate: null }] },
+      initialContactStatus: [{ kind: 'COVERAGE', status: 'NOT_NEEDED', pendingSince: null, deadlineDate: null }],
+    });
+    fireEvent.change(screen.getByTestId('tp-modality'), { target: { value: 'ONLINE' } });
+    fireEvent.click(salvar());
+    expect(onSubmit.mock.calls[0][0].contactStatus).toEqual({ COVERAGE: 'NOT_NEEDED' });
+  });
+
+  it('desmarcar o estado e salvar manda o campo SEM status (preencher na versão nova tira o pendente)', () => {
+    montar({
+      from: VERSAO,
+      initialContactStatus: [{ kind: 'CARE_TEAM', status: 'PENDING', pendingSince: '2026-10-01T12:00:00.000Z', deadlineDate: '2026-10-16' }],
+    });
+    marcar('tp-careTeam-pending');
+    fireEvent.change(screen.getByTestId('tp-modality'), { target: { value: 'ONLINE' } });
+    fireEvent.click(salvar());
+    expect(onSubmit.mock.calls[0][0].contactStatus).toEqual({});
   });
 });

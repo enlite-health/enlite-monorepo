@@ -18,6 +18,7 @@ import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
 import type { PatientContractedServiceDetail, PatientDetail } from '@domain/entities/PatientDetail';
 import type { TherapeuticCatalogItem, TherapeuticProjectVersion } from '@domain/entities/TherapeuticProject';
 import type { AuthzContract } from '@domain/entities/Authz';
+import type { ContactStatusEntry } from '@domain/entities/TherapeuticProject';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import { patientDetailFixture } from '../../__tests__/patientDetailFixture';
 
@@ -168,6 +169,7 @@ const VERSAO: TherapeuticProjectVersion = {
   contactRefs: [],
   careTeamIds: [],
   contacts: [],
+  contactStatus: [],
 };
 
 const CRIADA: TherapeuticProjectVersion = { ...VERSAO, id: 'v2', major: 1, minor: 1, version: 'V.1.1', createdByName: 'Gabriel QA' };
@@ -185,8 +187,21 @@ const FIELD_CLASS = {
   micro: ['startDate', 'endDate', 'modality', 'contactRefs', 'careTeamIds'],
 };
 
-const montar = (target: TherapeuticProjectTarget, over: { patient?: PatientDetail } = {}) =>
-  render(<TherapeuticProjectDrawer patient={over.patient ?? PACIENTE} target={target} fieldClass={FIELD_CLASS} onClose={onClose} onSaved={onSaved} />);
+const montar = (
+  target: TherapeuticProjectTarget,
+  over: { patient?: PatientDetail; currentContactStatus?: ContactStatusEntry[]; contactReminderDates?: string[] | null } = {},
+) =>
+  render(
+    <TherapeuticProjectDrawer
+      patient={over.patient ?? PACIENTE}
+      target={target}
+      fieldClass={FIELD_CLASS}
+      currentContactStatus={over.currentContactStatus}
+      contactReminderDates={over.contactReminderDates}
+      onClose={onClose}
+      onSaved={onSaved}
+    />,
+  );
 
 /** Contrato ABAC pronto, com o engine LIGADO (D268/D286) e só as células listadas. */
 function comEnforcement(permissions: string[], enforcement: AuthzContract['enforcement'] = 'on'): void {
@@ -523,6 +538,7 @@ describe('salvar — `new` cria a major seguinte, `edit` a minor da origem', () 
         endDate: '2026-12-01',
         contactRefs: [],
         careTeamIds: [],
+        contactStatus: {},
       },
     });
     expect(onSaved).toHaveBeenCalledTimes(1);
@@ -746,5 +762,87 @@ describe('animação de entrada', () => {
 
     expect(screen.getByTestId('therapeutic-project-drawer').className).toContain('translate-x-full');
     await waitFor(() => expect(screen.getByTestId('therapeutic-project-drawer').className).toContain('translate-x-0'));
+  });
+});
+
+// ── spec 048: confirmação DENTRO do drawer ao criar com "Todavía no hay registro" ───────────
+
+describe('spec 048 — passo de confirmação com campo pendente (dentro do drawer, sem window.confirm)', () => {
+  const confirmSpy = () => vi.spyOn(window, 'confirm');
+  const PEND_RESP: ContactStatusEntry = { kind: 'RESPONSIBLE', status: 'PENDING', pendingSince: '2026-10-01T12:00:00.000Z', deadlineDate: '2026-10-16' };
+
+  async function editarEMarcar(over: Parameters<typeof montar>[1] = {}): Promise<void> {
+    catalogosOk();
+    mockCreateVersion.mockResolvedValue({ ...CRIADA, contactStatus: [PEND_RESP] });
+    montar({ mode: 'edit', version: VERSAO }, over);
+    await esperarFormulario();
+    fireEvent.click(screen.getByTestId('tp-careTeam-pending'));
+  }
+
+  it('SEM campo pendente: salva direto, nenhum passo de confirmação', async () => {
+    catalogosOk();
+    mockCreateVersion.mockResolvedValue(CRIADA);
+    montar({ mode: 'edit', version: VERSAO });
+    await esperarFormulario();
+    fireEvent.change(screen.getByTestId('tp-modality'), { target: { value: 'ONLINE' } });
+    await act(async () => { fireEvent.click(screen.getByTestId('tp-save')); });
+    expect(screen.queryByTestId('pending-contacts-confirm')).not.toBeInTheDocument();
+    expect(mockCreateVersion).toHaveBeenCalledTimes(1);
+  });
+
+  it('com campo pendente: abre a confirmação (campo + vencimento de hoje+15 + 3 lembretes), NÃO chama a API e NÃO usa window.confirm', async () => {
+    const spy = confirmSpy();
+    vi.setSystemTime(new Date('2026-10-08T15:00:00Z'));
+    await editarEMarcar();
+    fireEvent.click(screen.getByTestId('tp-save'));
+
+    const caixa = screen.getByTestId('pending-contacts-confirm');
+    expect(within(caixa).getByTestId('pending-contacts-list')).toHaveTextContent('Equipe tratante — vence em 23/10');
+    expect(within(caixa).getByTestId('pending-contacts-reminders')).toHaveTextContent('10/10, 13/10, 20/10');
+    expect(mockCreateVersion).not.toHaveBeenCalled();
+    expect(spy).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it('"Voltar" fecha a confirmação SEM chamar a API e mantém o formulário preenchido', async () => {
+    await editarEMarcar();
+    fireEvent.click(screen.getByTestId('tp-save'));
+    fireEvent.click(screen.getByTestId('pending-contacts-back'));
+    expect(screen.queryByTestId('pending-contacts-confirm')).not.toBeInTheDocument();
+    expect(mockCreateVersion).not.toHaveBeenCalled();
+    expect((screen.getByTestId('tp-careTeam-pending') as HTMLInputElement).checked).toBe(true);
+  });
+
+  it('"Criar mesmo assim" chama a API UMA vez, com o status no corpo e SEM ids no campo pendente', async () => {
+    await editarEMarcar();
+    fireEvent.click(screen.getByTestId('tp-save'));
+    await act(async () => { fireEvent.click(screen.getByTestId('pending-contacts-confirm-btn')); });
+    expect(mockCreateVersion).toHaveBeenCalledTimes(1);
+    const corpo = mockCreateVersion.mock.calls[0][1].version;
+    expect(corpo.contactStatus).toEqual({ CARE_TEAM: 'PENDING' });
+    expect(corpo.careTeamIds).toEqual([]);
+    expect(screen.queryByTestId('pending-contacts-confirm')).not.toBeInTheDocument();
+  });
+
+  it('campo que JÁ era pendente na origem mostra o vencimento REAL herdado e os lembretes que AINDA FALTAM (do ciclo aberto)', async () => {
+    catalogosOk();
+    mockCreateVersion.mockResolvedValue(CRIADA);
+    montar({ mode: 'edit', version: { ...VERSAO, contactStatus: [PEND_RESP] } }, { contactReminderDates: ['2026-10-12', '2026-10-15'] });
+    await esperarFormulario();
+    expect((screen.getByTestId('tp-responsibles-pending') as HTMLInputElement).checked).toBe(true);
+    fireEvent.change(screen.getByTestId('tp-modality'), { target: { value: 'ONLINE' } });
+    fireEvent.click(screen.getByTestId('tp-save'));
+    expect(screen.getByTestId('pending-contacts-list')).toHaveTextContent('Responsáveis — vence em 16/10');
+    expect(screen.getByTestId('pending-contacts-reminders')).toHaveTextContent('12/10, 15/10');
+    expect(screen.getByTestId('pending-contacts-reminders')).not.toHaveTextContent('13/10');
+  });
+
+  it('"Nuevo" pré-marca SÓ o estado da vigente (nunca os contatos)', async () => {
+    catalogosOk();
+    montar({ mode: 'new' }, { currentContactStatus: [PEND_RESP] });
+    await esperarFormulario();
+    expect((screen.getByTestId('tp-responsibles-pending') as HTMLInputElement).checked).toBe(true);
+    expect(screen.getByTestId('tp-responsibles-deadline')).toHaveTextContent('16/10');
+    expect((screen.getByTestId('tp-externalContacts-pending') as HTMLInputElement).checked).toBe(false);
   });
 });

@@ -93,6 +93,9 @@ const CASCADE_CHILDREN = [
   // 497 (spec 031): documentos do paciente — filha direta, ON DELETE CASCADE. A LINHA some por CASCADE;
   // o objeto do bucket dos documentos da ABA não é apagado por esta purga (só paciente de teste, `is_test`).
   'patient_documents',
+  // 502 (spec 048): ciclo de lembretes do PT — filha DIRETA de patients (ON DELETE CASCADE). Status por campo e
+  // lembretes são netas (CASCADE a partir da versão/ciclo), como `patient_therapeutic_project_contacts` (429).
+  'patient_tp_contact_reminder_cycles',
 ] as const;
 
 interface AppointmentRow {

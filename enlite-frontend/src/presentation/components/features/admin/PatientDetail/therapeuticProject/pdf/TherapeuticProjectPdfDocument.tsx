@@ -66,6 +66,12 @@ function contactLine(c: PdfContact): string {
   return [c.name + (c.relationship ? ` (${c.relationship})` : ''), c.phone].filter(Boolean).join(' - ');
 }
 
+/** spec 048: contatos escolhidos + o estado explícito do campo (os dois nunca coexistem no mesmo campo); vazio = `null`. */
+function joinWithStatus(contactLines: string[], status: string | null): string | null {
+  const parts = [...contactLines, ...(status ? [status] : [])];
+  return parts.length === 0 ? null : parts.join('. ');
+}
+
 /** Mesma régua de `contactLine`, forma do bloco de cobertura (kind + nome + telefone). */
 function coverageContactLine(c: PdfCoverageContact): string {
   if (c.status === 'inactive') return PDF_LABELS.contactInactive;
@@ -167,7 +173,7 @@ export function TherapeuticProjectPdfDocument({ input }: { input: TherapeuticPro
         {input.emergencyContacts ? (
           <Field
             label={PDF_LABELS.familyEmergencyContact}
-            value={input.emergencyContacts.length === 0 ? null : input.emergencyContacts.map(contactLine).join('. ')}
+            value={joinWithStatus(input.emergencyContacts.map(contactLine), input.contactStatusLines.family)}
           />
         ) : <Redacted />}
         {input.coverageEmergencyContacts ? (
@@ -176,7 +182,7 @@ export function TherapeuticProjectPdfDocument({ input }: { input: TherapeuticPro
               label={PDF_LABELS.coverageEmergencyContact}
               value={input.coverageEmergencyContactsUnavailable
                 ? PDF_LABELS.fieldUnavailable
-                : input.coverageEmergencyContacts.length === 0 ? null : input.coverageEmergencyContacts.map(coverageContactLine).join('. ')}
+                : joinWithStatus(input.coverageEmergencyContacts.map(coverageContactLine), input.contactStatusLines.coverage)}
             />
             {/* lex C3: a lista não é completa para este emissor — o documento diz, em vez de fingir. */}
             {input.coverageDirectProfessionalRedacted && <Text style={styles.redacted}>{PDF_LABELS.directProfessionalWithheld}</Text>}
@@ -196,7 +202,17 @@ export function TherapeuticProjectPdfDocument({ input }: { input: TherapeuticPro
           : <Field label={PDF_LABELS.segment} value={v.segment?.label} />}
 
         <SectionTitle>{PDF_SECTIONS.careTeam}</SectionTitle>
-        {input.careTeam ? (input.careTeam.length === 0 ? <Text style={styles.paragraph}>{PDF_LABELS.notInformed}</Text> : input.careTeam.map((c, i) => <Bullet key={i}>{contactLine(c)}</Bullet>)) : <Redacted />}
+        {input.careTeam ? (
+          input.careTeam.length === 0 && !input.contactStatusLines.careTeam
+            ? <Text style={styles.paragraph}>{PDF_LABELS.notInformed}</Text>
+            : (
+              <>
+                {input.careTeam.map((c, i) => <Bullet key={i}>{contactLine(c)}</Bullet>)}
+                {/* spec 048: "Todavía no hay registro — vence el DD/MM" / "No necesita" no lugar da lista vazia. */}
+                {input.contactStatusLines.careTeam && <Bullet>{input.contactStatusLines.careTeam}</Bullet>}
+              </>
+            )
+        ) : <Redacted />}
 
         <SectionTitle>{PDF_SECTIONS.clinicalContext}</SectionTitle>
         {clinicalRedacted || v.clinicalContext === null ? <Redacted /> : <Text style={styles.paragraph}>{v.clinicalContext}</Text>}

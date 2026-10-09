@@ -169,6 +169,15 @@ describe('PatientTestFixtureService.purge — limpeza de paciente sintético', (
     expect(clientCalls.some((c) => /DELETE FROM job_postings/i.test(c.sql))).toBe(true);
   });
 
+  it('spec 048: a contagem do CASCADE inclui o ciclo de lembretes do PT (filha direta de patients)', async () => {
+    const { db, clientCalls } = makeDb([selectIsTest(true)]);
+    const svc = new PatientTestFixtureService(db as never, calendarSpy() as never);
+
+    await svc.purge(PATIENT_ID);
+
+    expect(clientCalls.some((c) => c.sql.includes('patient_tp_contact_reminder_cycles'))).toBe(true);
+  });
+
   it('falha no Calendar é CONTADA, não aborta a limpeza do banco', async () => {
     const { db, clientCalls } = makeDb([
       selectIsTest(true),

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { containsLikelyPersonalData } from '@modules/identity/permissions';
 import { CONTACT_REF_KINDS, THERAPEUTIC_CATALOG_KINDS, THERAPEUTIC_MODALITIES, type TherapeuticCatalogKind } from '../../domain/TherapeuticProject';
+import { CONTACT_STATUS_VALUES } from '../../domain/TherapeuticContactStatus';
 
 /** Teto de contatos/equipe por versão — espelha o `.max(20)` do contrato (lex #7, migration 429). */
 export const THERAPEUTIC_CONTACT_REFS_MAX = 20;
@@ -15,6 +16,20 @@ const contactRefSchema = z
   .object({
     kind: z.enum(CONTACT_REF_KINDS),
     id: z.string().uuid(),
+  })
+  .strict();
+
+/**
+ * Estado explícito dos 4 campos de contato (spec 048): "Todavía no hay registro" (`PENDING`) / "No necesita"
+ * (`NOT_NEEDED`). OBRIGATÓRIO no corpo, sem `.default`: `{}` explícito = "nenhum status"; ausente = 400 — lista
+ * vazia já é ambígua ("nenhum" × "não veio", vazio ambíguo), então cliente antigo não apaga pendência em silêncio.
+ */
+const contactStatusSchema = z
+  .object({
+    RESPONSIBLE: z.enum(CONTACT_STATUS_VALUES).optional(),
+    EXTERNAL: z.enum(CONTACT_STATUS_VALUES).optional(),
+    COVERAGE: z.enum(CONTACT_STATUS_VALUES).optional(),
+    CARE_TEAM: z.enum(CONTACT_STATUS_VALUES).optional(),
   })
   .strict();
 
@@ -59,13 +74,33 @@ const versionBodyShape = {
   // MICRO (D328/SUP-24): trocar a seleção de contato não pede versão nova nem trava em `mode:'edit'`.
   contactRefs: z.array(contactRefSchema).max(THERAPEUTIC_CONTACT_REFS_MAX).optional().default([]),
   careTeamIds: z.array(z.string().uuid()).max(THERAPEUTIC_CARE_TEAM_IDS_MAX).optional().default([]),
+  contactStatus: contactStatusSchema,
 };
+
+/** Um campo ou tem contatos escolhidos ou tem status — nunca os dois (spec 048). */
+const noStatusWithContacts = (b: {
+  contactRefs: { kind: string }[];
+  careTeamIds: string[];
+  contactStatus: Partial<Record<string, string>>;
+}): boolean =>
+  Object.keys(b.contactStatus).every((kind) =>
+    b.contactStatus[kind] === undefined
+      ? true
+      : kind === 'CARE_TEAM'
+        ? b.careTeamIds.length === 0
+        : !b.contactRefs.some((r) => r.kind === kind),
+  );
+const STATUS_WITH_CONTACTS = { message: 'a contact field cannot have both contacts and a status', path: ['contactStatus'] };
 
 const endNotBeforeStart = (b: { startDate: string; endDate: string }): boolean => b.endDate >= b.startDate;
 const END_NOT_BEFORE_START = { message: 'endDate must be on or after startDate', path: ['endDate'] };
 
 /** Corpo do "Editar": a forma-base, SEM `segmentId` — o segmento é MACRO (só muda com "Nuevo"). */
-const editVersionBodySchema = z.object(versionBodyShape).strict().refine(endNotBeforeStart, END_NOT_BEFORE_START);
+const editVersionBodySchema = z
+  .object(versionBodyShape)
+  .strict()
+  .refine(endNotBeforeStart, END_NOT_BEFORE_START)
+  .refine(noStatusWithContacts, STATUS_WITH_CONTACTS);
 
 /**
  * Corpo do "Novo": a forma-base + `segmentId` (spec 030, MACRO, obrigatório — lex C4). O cliente manda só o
@@ -74,7 +109,8 @@ const editVersionBodySchema = z.object(versionBodyShape).strict().refine(endNotB
 const newVersionBodySchema = z
   .object({ ...versionBodyShape, segmentId: z.string().uuid() })
   .strict()
-  .refine(endNotBeforeStart, END_NOT_BEFORE_START);
+  .refine(endNotBeforeStart, END_NOT_BEFORE_START)
+  .refine(noStatusWithContacts, STATUS_WITH_CONTACTS);
 
 /** `mode: 'new'` → major seguinte; `mode: 'edit'` → minor seguinte da versão de origem. */
 export const createTherapeuticProjectSchema = z.discriminatedUnion('mode', [

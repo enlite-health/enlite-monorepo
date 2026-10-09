@@ -339,6 +339,10 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       // `route.stack`), então esta célula só existe no catálogo por `cellsForaDeRota`. Sem
       // esta linha em `CELL_DESCRIPTION`, o export nasce `deprecated_at` a cada sync/boot.
       'patient_therapeutic_project:export',
+      // spec 048: `waive_contact` é checada no repositório do PT (`cells.includes`) e `incomplete_alert` pelo job de
+      // lembretes (`iam.effective_permissions`) — nenhuma das duas é `perm.require` de rota, só `CELL_DESCRIPTION`.
+      'patient_therapeutic_project:waive_contact',
+      'patient_therapeutic_project:incomplete_alert',
       // Os `:write` dos catálogos terapêuticos (objectives/activities/segments) REMOVIDOS de
       // `CELL_DESCRIPTION` (mesma change, F8/F9): órfãos — cobertos pelos `:create`/`:update`
       // explícitos abaixo.

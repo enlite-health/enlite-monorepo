@@ -39,6 +39,14 @@ export type PdfContact =
   | { status: 'inactive' }
   | { status: 'redacted' };
 
+/** spec 048: estado explícito do campo no PDF — texto já em espanhol, pronto para imprimir. */
+export interface PdfContactStatusLines {
+  /** Responsables + Contactos externos (bloco "Familiar / persona responsable"). */
+  family: string | null;
+  coverage: string | null;
+  careTeam: string | null;
+}
+
 /** Contato de emergência da COBERTURA (417; D301.3b) — mesma régua resolved/inactive/redacted de `PdfContact`. */
 export type PdfCoverageContact =
   | { status: 'resolved'; kindLabel: string; name: string; phone: string }
@@ -66,6 +74,8 @@ export interface TherapeuticProjectPdfInput {
   /** Modalidade já traduzida; `null` = versão anterior à 417. */
   modalityLabel: string | null;
   careTeam: PdfContact[] | null;
+  /** spec 048: "Todavía no hay registro — vence el DD/MM" / "No necesita" por bloco; `null` = campo sem estado. */
+  contactStatusLines: PdfContactStatusLines;
   /** Data/hora de emissão, já formatada (es-AR). */
   issuedAtText: string;
   /** URL/dataURL do logo, servido da própria origem; opcional (o teste em Node não carrega imagem). */

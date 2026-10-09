@@ -55,9 +55,38 @@ function ContactsValue({ contacts, tc }: { contacts: TherapeuticProjectVersion['
   );
 }
 
+const STATUS_FIELD_KEY: Record<string, string> = {
+  RESPONSIBLE: 'responsibles',
+  EXTERNAL: 'externalContacts',
+  COVERAGE: 'coverageContacts',
+  CARE_TEAM: 'careTeam',
+};
+
+/**
+ * spec 048: o estado explícito de cada campo de contato — "Todavía no hay registro — vence el DD/MM" ou "No necesita" —
+ * aparece NO LUGAR da lista vazia daquele campo (o estado e os contatos nunca coexistem no mesmo campo).
+ */
+function ContactStatusValue({ entries, tf }: { entries: TherapeuticProjectVersion['contactStatus']; tf: (k: string, o?: Record<string, unknown>) => string }): JSX.Element {
+  return (
+    <ul className="list-disc pl-5" data-testid="tpv-contact-status">
+      {entries.map((e) => (
+        <li key={e.kind} data-testid={`tpv-contact-status-${e.kind}`}>
+          <Text as="span" size="sm" color="primary">
+            {tf(STATUS_FIELD_KEY[e.kind])}: {e.status === 'PENDING'
+              ? `${tf('contactPending')}${e.deadlineDate ? ` — ${tf('contactDueOn', { date: (formatIsoDateEsAr(e.deadlineDate) ?? e.deadlineDate).slice(0, 5) })}` : ''}`
+              : tf('contactNotNeeded')}
+          </Text>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function TherapeuticProjectVersionView({ version: v, services, compact = false, servicesRedacted = false }: Props): JSX.Element {
   const { t } = useTranslation();
   const tc = (k: string, o?: Record<string, unknown>) => t(`admin.patients.detail.therapeuticProjectCard.${k}`, o ?? {});
+  const tf = (k: string, o?: Record<string, unknown>) => t(`admin.patients.detail.therapeuticProjectForm.${k}`, o ?? {});
+  const statusEntries = v.contactStatus ?? [];
   const redacted = v.redacted?.clinical === true;
   const service = services.find((s) => s.id === v.contractedServiceId) ?? null;
   // `[]` por falta de célula NÃO é "serviço não encontrado" (D113: `[]` × "não posso ver").
@@ -97,7 +126,10 @@ export function TherapeuticProjectVersionView({ version: v, services, compact = 
         <Row label={tc('activitiesPlan')} testId="tpv-activities"><ListValue items={compact ? v.activities.slice(0, 3) : v.activities} /></Row>
         {/* "Tipo de patología" não aparece na tela: é máscara derivada do CID-11 para o Ana Care (DEC-09) — sai só no PDF. */}
         {!compact && (
-          <Row label={tc('contacts')} testId="tpv-contacts"><ContactsValue contacts={v.contacts} tc={tc} /></Row>
+          <Row label={tc('contacts')} testId="tpv-contacts">
+            {(v.contacts.length > 0 || statusEntries.length === 0) && <ContactsValue contacts={v.contacts} tc={tc} />}
+            {statusEntries.length > 0 && <ContactStatusValue entries={statusEntries} tf={tf} />}
+          </Row>
         )}
         <Row label={tc('deadlines')} testId="tpv-deadlines">
           <Text as="span" size="sm" color="primary">{formatIsoDateEsAr(v.startDate)} - {formatIsoDateEsAr(v.endDate)}</Text>

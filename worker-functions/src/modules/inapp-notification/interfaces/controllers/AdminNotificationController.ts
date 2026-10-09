@@ -26,6 +26,9 @@ function toNotificationDto(row: NotificationDto) {
     messageId: row.messageId,
     rootMessageId: row.rootMessageId,
     messageExcerpt: row.messageExcerpt,
+    // spec 048: só preenchidos no tipo do PT (4 chaves de ids/nome de campo + número do Caso); `null` nos de conversa.
+    payload: row.payload,
+    patientCaseNumber: row.patientCaseNumber,
     createdAt: row.createdAt.toISOString(),
     readAt: row.readAt ? row.readAt.toISOString() : null,
   };

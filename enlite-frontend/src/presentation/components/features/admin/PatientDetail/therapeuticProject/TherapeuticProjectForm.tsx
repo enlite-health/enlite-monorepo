@@ -27,7 +27,10 @@ import {
   THERAPEUTIC_MODALITIES,
   THERAPEUTIC_TEXT_MAX,
   type ContactRef,
-  type ContactRefKind,
+  type ContactStatusEntry,
+  type ContactStatusKind,
+  type ContactStatusMap,
+  type ContactStatusValue,
   type ResolvedTherapeuticContactKind,
   type TherapeuticDiagnosis,
   type TherapeuticFieldClass,
@@ -39,6 +42,7 @@ import type { TherapeuticCatalogs } from '@hooks/admin/useTherapeuticProjects';
 import { FormField } from '@presentation/components/molecules/FormField';
 import { Select } from '@presentation/components/atoms/Select';
 import { MultiSelect } from '@presentation/components/atoms/MultiSelect';
+import { TherapeuticProjectContactField } from './TherapeuticProjectContactField';
 import { Input } from '@presentation/components/atoms/Input';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
@@ -46,6 +50,7 @@ import { ClinicalTextareaField } from '../edit/ClinicalTextareaField';
 import { IcdSearchCombobox } from '../edit/IcdSearchCombobox';
 import { TherapeuticProjectSegmentField } from './TherapeuticProjectSegmentField';
 import { segmentOptions } from './segmentOptions';
+import { keptCareTeamIds, keptIdsOfKind, removedInactiveByKind } from './contactSelection';
 import { todayInOperationZone } from '@presentation/utils/dateTimeFormat';
 
 interface Props {
@@ -66,6 +71,8 @@ interface Props {
   professionals: PatientProfessionalDetail[];
   /** Versão de origem ("Editar") — os campos nascem dela. `null` = "Novo". */
   from: TherapeuticProjectVersion | null;
+  /** spec 048: estado dos campos de contato que a versão nova HERDA — o da origem no "Editar", o da vigente no "Nuevo" (só o estado, nunca os contatos). */
+  initialContactStatus: ContactStatusEntry[];
   saving: boolean;
   saveError: string | null;
   onSubmit: (body: TherapeuticProjectVersionBody) => void;
@@ -75,43 +82,6 @@ interface Props {
 
 // Dia civil de -03 (Buenos Aires), não o dia UTC: depois das 21h o `toISOString()` já devolvia amanhã.
 const today = (): string => todayInOperationZone();
-
-const idsOfKind = (refs: ContactRef[] | undefined, kind: ContactRefKind): string[] =>
-  (refs ?? []).filter((r) => r.kind === kind).map((r) => r.id);
-
-/**
- * Conserto 14/09 (achado do gate — decisão do Gabriel, fechada): ao EDITAR, um contato da versão
- * de ORIGEM que já está INATIVO não entra na seleção inicial (a versão antiga fica intocada; só a
- * seleção da minor nova exclui). "Inativo" = `from.contacts` (lex #7 C5 — a MESMA leitura resolvida
- * pela célula de origem, nunca uma checagem própria aqui) marca `inactive:true`, OU não tem
- * entrada nenhuma pra esse `kind`/`id` (a única forma disso acontecer é anomalia de dado — a 429
- * grava 1 ligação por `contactRefs`/`careTeamIds` e `resolve()` devolve 1 `contacts` por ligação).
- * Contato ATIVO mas REDIGIDO (`redacted:true`, sem célula de origem pra resolver nome/telefone)
- * TEM entrada em `contacts` — não cai aqui, a referência é MANTIDA (decisão do Gabriel: "não some").
- */
-const isInactiveOnEdit = (from: TherapeuticProjectVersion | null, kind: ResolvedTherapeuticContactKind, id: string): boolean => {
-  const entry = from?.contacts.find((c) => c.kind === kind && c.id === id);
-  return !entry || ('inactive' in entry && entry.inactive === true);
-};
-
-const keptIdsOfKind = (from: TherapeuticProjectVersion | null, refs: ContactRef[] | undefined, kind: ContactRefKind): string[] =>
-  idsOfKind(refs, kind).filter((id) => !isInactiveOnEdit(from, kind, id));
-
-const keptCareTeamIds = (from: TherapeuticProjectVersion | null): string[] =>
-  (from?.careTeamIds ?? []).filter((id) => !isInactiveOnEdit(from, 'CARE_TEAM', id));
-
-/** Quantos ids de cada `kind` saíram da seleção inicial por estarem inativos — só o AVISO precisa disso. */
-const removedInactiveByKind = (from: TherapeuticProjectVersion | null): { kind: ResolvedTherapeuticContactKind; count: number }[] => {
-  const groups: [ResolvedTherapeuticContactKind, string[]][] = [
-    ['RESPONSIBLE', idsOfKind(from?.contactRefs, 'RESPONSIBLE')],
-    ['EXTERNAL', idsOfKind(from?.contactRefs, 'EXTERNAL')],
-    ['COVERAGE', idsOfKind(from?.contactRefs, 'COVERAGE')],
-    ['CARE_TEAM', from?.careTeamIds ?? []],
-  ];
-  return groups
-    .map(([kind, ids]) => ({ kind, count: ids.filter((id) => isInactiveOnEdit(from, kind, id)).length }))
-    .filter((g) => g.count > 0);
-};
 
 export function TherapeuticProjectForm({
   services,
@@ -124,6 +94,7 @@ export function TherapeuticProjectForm({
   coverageEmergencyContacts,
   professionals,
   from,
+  initialContactStatus,
   saving,
   saveError,
   onSubmit,
@@ -160,6 +131,16 @@ export function TherapeuticProjectForm({
   const [coverageIds, setCoverageIds] = useState<string[]>(keptIdsOfKind(from, from?.contactRefs, 'COVERAGE'));
   const [careTeamIds, setCareTeamIds] = useState<string[]>(keptCareTeamIds(from));
   const removedInactiveContacts = removedInactiveByKind(from);
+  // spec 048: "Todavía no hay registro" / "No necesita" por campo. O contato inativo que saiu da seleção NÃO vira estado.
+  const [contactStatus, setContactStatus] = useState<ContactStatusMap>(
+    Object.fromEntries(initialContactStatus.map((e) => [e.kind, e.status])) as ContactStatusMap,
+  );
+  const inheritedDeadlineOf = (kind: ContactStatusKind): string | null =>
+    initialContactStatus.find((e) => e.kind === kind && e.status === 'PENDING')?.deadlineDate ?? null;
+  const setStatusOf = (kind: ContactStatusKind) => (v: ContactStatusValue | null): void => {
+    const { [kind]: _old, ...rest } = contactStatus;
+    touch(setContactStatus)(v === null ? rest : { ...rest, [kind]: v });
+  };
   const [segmentId, setSegmentId] = useState(from?.segment?.id ?? ''); // spec 030: MACRO, escolhido só no "Nuevo"; filtra objetivos/atividades
 
   const touch = <T,>(setter: (v: T) => void) => (v: T) => { setter(v); onDirty(); };
@@ -254,6 +235,7 @@ export function TherapeuticProjectForm({
           endDate,
           contactRefs,
           careTeamIds,
+          contactStatus,
         });
       }}
     >
@@ -368,18 +350,26 @@ export function TherapeuticProjectForm({
           </div>
 
           {/* Contato por seleção (PR-7, MICRO — sempre editável): só ativos, já filtrados pelo servidor. */}
-          <FormField label={tf('responsibles')} htmlFor="tp-responsibles" labelSize="compact">
-            <MultiSelect id="tp-responsibles" options={contactOptionsOf(responsibles.map((r) => ({ id: r.id, label: responsibleLabel(r) })))} value={responsibleIds} onChange={touch(setResponsibleIds)} placeholder={tf('selectPlaceholder')} />
-          </FormField>
-          <FormField label={tf('externalContacts')} htmlFor="tp-externalContacts" labelSize="compact">
-            <MultiSelect id="tp-externalContacts" options={contactOptionsOf(externalContacts.map((c) => ({ id: c.id, label: c.name })))} value={externalIds} onChange={touch(setExternalIds)} placeholder={tf('selectPlaceholder')} />
-          </FormField>
-          <FormField label={tf('coverageContacts')} htmlFor="tp-coverageContacts" labelSize="compact">
-            <MultiSelect id="tp-coverageContacts" options={contactOptionsOf(coverageEmergencyContacts.map((c) => ({ id: c.id, label: coverageLabel(c) })))} value={coverageIds} onChange={touch(setCoverageIds)} placeholder={tf('selectPlaceholder')} />
-          </FormField>
-          <FormField label={tf('careTeam')} htmlFor="tp-careTeam" labelSize="compact">
-            <MultiSelect id="tp-careTeam" options={contactOptionsOf(professionals.map((p) => ({ id: p.id, label: professionalLabel(p) })))} value={careTeamIds} onChange={touch(setCareTeamIds)} placeholder={tf('selectPlaceholder')} />
-          </FormField>
+          {/* spec 048: cada campo tem também "Todavía no hay registro" / "No necesita" (exclusivos com a seleção). */}
+          {([
+            ['RESPONSIBLE', 'responsibles', tf('responsibles'), contactOptionsOf(responsibles.map((r) => ({ id: r.id, label: responsibleLabel(r) }))), responsibleIds, touch(setResponsibleIds)],
+            ['EXTERNAL', 'externalContacts', tf('externalContacts'), contactOptionsOf(externalContacts.map((c) => ({ id: c.id, label: c.name }))), externalIds, touch(setExternalIds)],
+            ['COVERAGE', 'coverageContacts', tf('coverageContacts'), contactOptionsOf(coverageEmergencyContacts.map((c) => ({ id: c.id, label: coverageLabel(c) }))), coverageIds, touch(setCoverageIds)],
+            ['CARE_TEAM', 'careTeam', tf('careTeam'), contactOptionsOf(professionals.map((p) => ({ id: p.id, label: professionalLabel(p) }))), careTeamIds, touch(setCareTeamIds)],
+          ] as const).map(([kind, key, label, options, ids, setIds]) => (
+            <TherapeuticProjectContactField
+              key={kind}
+              fieldKey={key}
+              label={label}
+              options={options}
+              value={ids}
+              onChange={setIds}
+              status={contactStatus[kind] ?? null}
+              onStatusChange={setStatusOf(kind)}
+              inheritedDeadline={inheritedDeadlineOf(kind)}
+              placeholder={tf('selectPlaceholder')}
+            />
+          ))}
         </div>
       </div>
 

@@ -255,6 +255,14 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
   'patient_therapeutic_project:export':
     'Exportar o PDF de uma versão do projeto terapêutico (vigente ou antiga). Exige também '
     + '`patient_therapeutic_project:read` — a leitura da versão é pré-requisito do export.',
+  // spec 048: as 2 células abaixo NÃO estão em `perm.require` de rota (a 1ª é checada no repositório do PT com
+  // `cells.includes`, a 2ª pelo job de lembretes com `iam.effective_permissions`) — por isso entram aqui.
+  'patient_therapeutic_project:waive_contact':
+    'Ver e escolher "No necesita" nos campos de contato do projeto terapêutico (campo que não se aplica ao '
+    + 'paciente: tira o campo do prazo de 15 dias e dos lembretes). Sem a célula a opção nem aparece e o servidor recusa (403).',
+  'patient_therapeutic_project:incomplete_alert':
+    'Receber no sino o aviso do 12º dia de que um paciente está com contatos do projeto terapêutico ainda marcados '
+    + '"Todavía no hay registro" (cadastro incompleto).',
   'catalog_therapeutic_objectives:read':
     'Ver o catálogo de OBJETIVOS ESPECÍFICOS do projeto terapêutico (lista global, sem dado de paciente).',
   // `catalog_therapeutic_objectives:write` REMOVIDA (change `catalogo-de-permissoes-derivado-do-codigo`,

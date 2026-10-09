@@ -20,10 +20,41 @@ const version = {
   activityIds: [UUID],
   startDate: '2026-09-01',
   endDate: '2026-12-31',
+  contactStatus: {},
 };
 
 // 030: `mode:'new'` leva `segmentId` (MACRO); `version` (sem a chave) é o corpo do `mode:'edit'`.
 const newVersion = { ...version, segmentId: UUID };
+
+describe('therapeuticProjectSchemas — contactStatus (spec 048)', () => {
+  const edit = (v: Record<string, unknown>) => createTherapeuticProjectSchema.safeParse({ mode: 'edit', fromVersionId: UUID, version: v });
+
+  it('ausente → falha (vazio ambíguo: cliente antigo não apaga pendência em silêncio); {} passa', () => {
+    const { contactStatus: _c, ...sem } = version;
+    expect(edit(sem).success).toBe(false);
+    expect(edit(version).success).toBe(true);
+  });
+
+  it('status e ids no MESMO campo → falha, nas duas formas (contactRefs e careTeamIds)', () => {
+    expect(edit({ ...version, contactStatus: { RESPONSIBLE: 'PENDING' }, contactRefs: [{ kind: 'RESPONSIBLE', id: UUID }] }).success).toBe(false);
+    expect(edit({ ...version, contactStatus: { COVERAGE: 'NOT_NEEDED' }, contactRefs: [{ kind: 'COVERAGE', id: UUID }] }).success).toBe(false);
+    expect(edit({ ...version, contactStatus: { CARE_TEAM: 'PENDING' }, careTeamIds: [UUID] }).success).toBe(false);
+  });
+
+  it('status num campo e ids em OUTRO campo passa', () => {
+    expect(edit({ ...version, contactStatus: { RESPONSIBLE: 'PENDING' }, contactRefs: [{ kind: 'EXTERNAL', id: UUID }], careTeamIds: [UUID] }).success).toBe(true);
+  });
+
+  it('valor fora de PENDING|NOT_NEEDED e chave desconhecida → falha', () => {
+    expect(edit({ ...version, contactStatus: { RESPONSIBLE: 'DONE' } }).success).toBe(false);
+    expect(edit({ ...version, contactStatus: { OTHER: 'PENDING' } }).success).toBe(false);
+  });
+
+  it('o mesmo vale no modo new', () => {
+    expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...newVersion, contactStatus: { CARE_TEAM: 'PENDING' }, careTeamIds: [UUID] } }).success).toBe(false);
+    expect(createTherapeuticProjectSchema.safeParse({ mode: 'new', version: { ...newVersion, contactStatus: { CARE_TEAM: 'PENDING' } } }).success).toBe(true);
+  });
+});
 
 describe('therapeuticProjectSchemas — a borda (spec 017)', () => {
   it('Novo e Editar: discriminado por mode; edit exige fromVersionId', () => {

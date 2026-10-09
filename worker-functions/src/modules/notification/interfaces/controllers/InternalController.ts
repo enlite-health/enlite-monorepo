@@ -4,6 +4,7 @@ import { DomainEventProcessor } from '@shared/events/DomainEventProcessor';
 import { PubSubClient } from '@shared/events/PubSubClient';
 import { DomainEventBacklogService } from '@shared/events/DomainEventBacklogService';
 import { AnaCareMirrorHealthService } from '@shared/events/AnaCareMirrorHealthService';
+import { TherapeuticContactReminderHealthService } from '@shared/events/TherapeuticContactReminderHealthService';
 import { OutboxProcessor } from '../../infrastructure/OutboxProcessor';
 import { ReminderScheduler } from '../../infrastructure/ReminderScheduler';
 import { BulkDispatchScheduler } from '../../infrastructure/BulkDispatchScheduler';
@@ -64,6 +65,8 @@ export class InternalController {
     private readonly domainEventBacklogService: DomainEventBacklogService,
     private readonly anaCareMirrorHealthService: AnaCareMirrorHealthService,
     private readonly messagingRetentionService: MessagingRetentionService,
+    /** spec 048: opcional — sem ele o bloco do PT é omitido (testes antigos do controller não o conhecem). */
+    private readonly ptContactReminderHealthService?: TherapeuticContactReminderHealthService,
   ) {}
 
   /**
@@ -308,6 +311,26 @@ export class InternalController {
         });
       }
 
+      /**
+       * spec 048 — lembretes de contato pendente do PT: checagem de ESTADO (vencido há > 1 dia sem envio/cancelamento).
+       * Reemite o WARN a cada ciclo enquanto houver atraso (heartbeat, não auto-resolve); cobre o modo mais provável:
+       * o job novo do Scheduler ainda não aplicado.
+       */
+      const ptContactReminders = this.ptContactReminderHealthService
+        ? await this.ptContactReminderHealthService.getHealth(24)
+        : null;
+      if (ptContactReminders) {
+        if (ptContactReminders.overdue > 0) {
+          logger.warn({
+            msg: '[pt-contact-reminders/health] overdue',
+            overdue: ptContactReminders.overdue,
+            oldestOverdueHours: ptContactReminders.oldestOverdueHours,
+          });
+        } else {
+          logger.info({ msg: '[pt-contact-reminders/health] ok' });
+        }
+      }
+
       const stuckRows = summary.filter(row => row.stuck);
 
       for (const row of stuckRows) {
@@ -334,6 +357,7 @@ export class InternalController {
         stuckCount: stuckRows.length,
         worstOldestRecentAgeMinutes,
         anaCareMirror: mirror,
+        ...(ptContactReminders ? { ptContactReminders } : {}),
       });
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));

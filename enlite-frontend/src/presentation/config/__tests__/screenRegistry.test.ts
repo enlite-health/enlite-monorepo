@@ -77,6 +77,8 @@ describe('SCREEN_REGISTRY — paridade com o catálogo do back', () => {
       'own_presence:update',
       'patient:write',
       'patient_clinical:write',
+      // Spec 048: destinatário do aviso do 12º dia (consulta por célula no job) — não controla elemento de tela.
+      'patient_therapeutic_project:incomplete_alert',
       'prescreening:write',
       'recruitment:create',
       'recruitment:update',

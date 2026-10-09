@@ -4087,7 +4087,20 @@
           "responsibles": "Responsables",
           "externalContacts": "Contactos externos",
           "coverageContacts": "Contactos de la cobertura",
-          "careTeam": "Equipo tratante"
+          "careTeam": "Equipo tratante",
+          "contactPending": "Todavía no hay registro",
+          "contactNotNeeded": "No necesita",
+          "contactPendingDeadline": "Tenés 15 días para completar este campo.",
+          "contactPendingUntil": "Tenés hasta el {{date}} para completar este campo.",
+          "contactDueOn": "vence el {{date}}",
+          "pendingConfirm": {
+            "title": "Campos sin registro",
+            "body": "Estos campos quedan marcados como \"Todavía no hay registro\":",
+            "item": "{{field}} — vence el {{date}}",
+            "reminders": "Te vamos a recordar en la campana de notificaciones el {{dates}}. El día 12 también se avisa a los gestores.",
+            "back": "Volver",
+            "confirm": "Crear igual"
+          }
         },
         "conversation": {
           "errors": {
@@ -4543,7 +4556,9 @@
             "execute": "Ejecutar",
             "send": "Enviar",
             "disable": "Dar de baja",
-            "write": "Crear y editar"
+            "write": "Crear y editar",
+            "incomplete_alert": "Aviso día 12",
+            "waive_contact": "No necesita"
           },
           "category": {
             "Trabalhadores": "Trabajadores",
@@ -5685,6 +5700,11 @@
       "mentioned": "{{actor}} mencionó a vos en {{patient}}",
       "replied": "{{actor}} respondió en la conversación de {{patient}}",
       "generic": "{{actor}} tiene una actualización para vos",
+      "ptContactsPendingActor": "Enlite",
+      "ptContactsPendingCase": "Caso {{number}}",
+      "ptContactsPendingNoCase": "Caso sin número",
+      "ptContactsPendingFields": "Proyecto terapéutico: faltan {{fields}}",
+      "ptContactsPendingText": "{{case}}: en el proyecto terapéutico faltan {{fields}}",
       "inPatient": "en {{patient}}",
       "markAllRead": "Marcar todas como leídas",
       "unknownPatient": "un paciente",

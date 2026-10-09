@@ -97,7 +97,10 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
       // `<ActionButton resource="patient_therapeutic_project" action="export">`) passa por
       // `useActionGate` (`ActionButton.tsx:58`) — célula com consumidor e gate reais, só faltava
       // ser declarada.
-      c('therapeuticProject', 'patient_therapeutic_project', ['read', 'create', 'update', 'export'], 'clinicalData'),
+      // Spec 048: `waive_contact` entra (a opção "No necesita" do formulário passa por `useHasCell` em
+      // `TherapeuticProjectContactField.tsx`). `incomplete_alert` NÃO: é o destinatário do aviso do 12º dia
+      // (consulta por célula no job), não controla nenhum elemento de tela — fica em "Outras células".
+      c('therapeuticProject', 'patient_therapeutic_project', ['read', 'create', 'update', 'export', 'waive_contact'], 'clinicalData'),
       c('family', 'patient_family', ['read', 'create', 'update'], 'supportNetwork'),
       c('chat', 'patient_chat', ['read', 'create', 'update'], 'supportNetwork'),
       c('conversation', 'patient_conversation', ['read', 'create', 'update', 'delete']),

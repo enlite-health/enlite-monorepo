@@ -43,6 +43,7 @@ const CORPO: TherapeuticProjectVersionBody = {
   activityIds: ['a-1'],
   startDate: '2026-09-01',
   endDate: '2026-12-01',
+  contactStatus: {},
   contactRefs: [{ kind: 'RESPONSIBLE', id: 'resp-1' }],
   careTeamIds: ['prof-1'],
 };

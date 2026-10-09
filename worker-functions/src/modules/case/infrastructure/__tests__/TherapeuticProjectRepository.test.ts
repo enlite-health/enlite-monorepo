@@ -23,6 +23,7 @@ import {
   ServiceNotOfPatientError,
   SourceVersionNotFoundError,
   PatientNotFoundForProjectError,
+  WaiveContactForbiddenError,
   type TherapeuticProjectVersionInput,
 } from '../TherapeuticProjectRepository';
 import { CatalogItemsUnknownError, CatalogSegmentInvalidError } from '../TherapeuticCatalogRepository';
@@ -90,6 +91,7 @@ const CORPO: TherapeuticProjectVersionInput = {
   endDate: '2026-06-30',
   contactRefs: [],
   careTeamIds: [],
+  contactStatus: {},
 };
 
 /** `mode:'new'` leva `segmentId` (030, MACRO); `mode:'edit'` usa `CORPO` (sem a chave) e herda o segmento da origem. */
@@ -108,6 +110,10 @@ interface Cenario {
   anuladas?: Array<{ id: string }>;
   /** Erro para o client cuspir na query de negócio indicada. */
   erroEm?: { padrao: RegExp; erro: unknown };
+  /** spec 048: linhas de status que a VIGENTE já tem (o que a versão nova herda). */
+  statusDaVigente?: Array<{ version_id: string; contact_kind: string; status: string; pending_since: string | null; marked_by_uid: string }>;
+  /** spec 048: já existe ciclo de lembretes aberto para o paciente. */
+  cicloAberto?: boolean;
   /** `false` = a trava `FOR UPDATE` não acha o paciente (inexistente ou invisível sob a RLS). */
   pacienteExiste?: boolean;
 }
@@ -134,6 +140,9 @@ function cliente(cen: Cenario = {}) {
     if (cen.erroEm && cen.erroEm.padrao.test(sql)) throw cen.erroEm.erro;
     if (/FOR UPDATE/.test(sql)) return cen.pacienteExiste === false ? { rows: [], rowCount: 0 } : { rows: [{ id: PACIENTE }], rowCount: 1 };
     if (/WHERE v\.patient_id = \$1/.test(sql)) return { rows: cen.existentes ?? [], rowCount: (cen.existentes ?? []).length };
+    if (/FROM patient_therapeutic_project_contact_status/.test(sql)) return { rows: cen.statusDaVigente ?? [], rowCount: (cen.statusDaVigente ?? []).length };
+    if (/FROM patient_tp_contact_reminder_cycles/.test(sql)) return cen.cicloAberto ? { rows: [{ '?column?': 1 }], rowCount: 1 } : { rows: [], rowCount: 0 };
+    if (/^INSERT INTO patient_tp_contact_reminder_cycles/.test(sql)) return { rows: [{ id: 'ciclo-1' }], rowCount: 1 };
     if (/FROM therapeutic_segments /.test(sql)) {
       const achados = (cen.segmentos ?? [{ id: 'seg-1', label: 'Segmento A' }]).filter((s) => s.id === params[0]);
       return { rows: achados, rowCount: achados.length };
@@ -640,6 +649,125 @@ describe('TherapeuticProjectRepository', () => {
       await expect(
         repo().createVersion({ mode: 'new', patientId: PACIENTE, actorUid: 'uid-1', version: CORPO_NOVO }),
       ).rejects.toBeNull();
+    });
+  });
+
+  describe('spec 048 — status por campo e ciclo de lembretes (outbox na transação da versão)', () => {
+    const ctx = { patientId: PACIENTE, actorUid: 'uid-op', fromVersionId: 'v-10' };
+    const vigente = row({ id: 'v-10', major: 1, minor: 0, created_at: '2026-09-08T10:00:00.000Z' });
+    const inserts = (chamadas: Array<{ sql: string }>, tabela: string) => chamadas.filter((c) => c.sql.includes(`INSERT INTO ${tabela}`));
+
+    it('campo NOVAMENTE pendente grava o status DEPOIS dos contatos e abre ciclo + 3 lembretes (dias 2/5/12)', async () => {
+      const { cli, chamadas } = cliente({ existentes: [vigente] });
+      mockConnect.mockResolvedValue(cli);
+      await repo().createVersion({ mode: 'edit', ...ctx, version: { ...CORPO, contactRefs: [{ kind: 'EXTERNAL', id: 'e-1' }], contactStatus: { RESPONSIBLE: 'PENDING' } } });
+      const ordem = sqls(chamadas);
+      const iContato = ordem.findIndex((q) => q.includes('INSERT INTO patient_therapeutic_project_contacts'));
+      const iStatus = ordem.findIndex((q) => q.includes('INSERT INTO patient_therapeutic_project_contact_status'));
+      expect(iContato).toBeGreaterThan(-1);
+      expect(iStatus).toBeGreaterThan(iContato);
+      expect(inserts(chamadas, 'patient_tp_contact_reminder_cycles')).toHaveLength(1);
+      const lembretes = inserts(chamadas, 'patient_tp_contact_reminders');
+      expect(lembretes.map((c) => (c as unknown as { params: unknown[] }).params[1])).toEqual([2, 5, 12]);
+    });
+
+    it('PENDING HERDADO da vigente mantém a âncora e o autor e NÃO abre ciclo (salvar outra coisa não dá mais 15 dias)', async () => {
+      const { cli, chamadas } = cliente({
+        existentes: [vigente],
+        statusDaVigente: [{ version_id: 'v-10', contact_kind: 'RESPONSIBLE', status: 'PENDING', pending_since: '2026-09-01T12:00:00.000Z', marked_by_uid: 'uid-primeiro' }],
+      });
+      mockConnect.mockResolvedValue(cli);
+      await repo().createVersion({ mode: 'edit', ...ctx, version: { ...CORPO, contactStatus: { RESPONSIBLE: 'PENDING' } } });
+      const st = chamadas.find((c) => c.sql.includes('INSERT INTO patient_therapeutic_project_contact_status'))!;
+      expect(st.params).toEqual(['v-novo', PACIENTE, 'RESPONSIBLE', 'PENDING', new Date('2026-09-01T12:00:00.000Z'), 'uid-primeiro']);
+      expect(inserts(chamadas, 'patient_tp_contact_reminder_cycles')).toHaveLength(0);
+    });
+
+    it('o modo `new` também herda da vigente (a âncora não reinicia)', async () => {
+      const { cli, chamadas } = cliente({
+        existentes: [vigente],
+        statusDaVigente: [{ version_id: 'v-10', contact_kind: 'CARE_TEAM', status: 'PENDING', pending_since: '2026-09-01T12:00:00.000Z', marked_by_uid: 'uid-primeiro' }],
+      });
+      mockConnect.mockResolvedValue(cli);
+      await repo().createVersion({ mode: 'new', patientId: PACIENTE, actorUid: 'uid-op', version: { ...CORPO_NOVO, contactStatus: { CARE_TEAM: 'PENDING' } } });
+      const st = chamadas.find((c) => c.sql.includes('INSERT INTO patient_therapeutic_project_contact_status'))!;
+      expect(st.params[4]).toEqual(new Date('2026-09-01T12:00:00.000Z'));
+      expect(inserts(chamadas, 'patient_tp_contact_reminder_cycles')).toHaveLength(0);
+    });
+
+    it('campo novo pendente com ciclo JÁ aberto entra no ciclo corrente: nenhum 2º ciclo (P6, Opção A)', async () => {
+      const { cli, chamadas } = cliente({ existentes: [vigente], cicloAberto: true });
+      mockConnect.mockResolvedValue(cli);
+      await repo().createVersion({ mode: 'edit', ...ctx, version: { ...CORPO, contactStatus: { COVERAGE: 'PENDING' } } });
+      expect(inserts(chamadas, 'patient_tp_contact_reminder_cycles')).toHaveLength(0);
+      expect(inserts(chamadas, 'patient_tp_contact_reminders')).toHaveLength(0);
+    });
+
+    it('"No necesita" NOVO sem a célula waive_contact → WaiveContactForbiddenError e NADA é gravado', async () => {
+      const { cli, chamadas } = cliente({ existentes: [vigente] });
+      mockConnect.mockResolvedValue(cli);
+      const p = repo().createVersion({ mode: 'edit', ...ctx, cells: ['patient_therapeutic_project:create'], version: { ...CORPO, contactStatus: { EXTERNAL: 'NOT_NEEDED' } } });
+      await expect(p).rejects.toBeInstanceOf(WaiveContactForbiddenError);
+      await expect(p).rejects.toMatchObject({ fields: ['EXTERNAL'] });
+      expect(inserts(chamadas, 'patient_therapeutic_projects')).toHaveLength(0);
+    });
+
+    it('"No necesita" NOVO com a célula, ou com cells=null (engine não decidiu, D113), grava e não abre ciclo', async () => {
+      for (const cells of [['patient_therapeutic_project:waive_contact'], null] as const) {
+        const { cli, chamadas } = cliente({ existentes: [vigente] });
+        mockConnect.mockResolvedValue(cli);
+        await repo().createVersion({ mode: 'edit', ...ctx, cells, version: { ...CORPO, contactStatus: { EXTERNAL: 'NOT_NEEDED' } } });
+        const st = chamadas.find((c) => c.sql.includes('INSERT INTO patient_therapeutic_project_contact_status'))!;
+        expect(st.params.slice(2, 4)).toEqual(['EXTERNAL', 'NOT_NEEDED']);
+        expect(inserts(chamadas, 'patient_tp_contact_reminder_cycles')).toHaveLength(0);
+      }
+    });
+
+    it('"No necesita" HERDADO passa sem a célula (o operador só está salvando outra coisa)', async () => {
+      const { cli, chamadas } = cliente({
+        existentes: [vigente],
+        statusDaVigente: [{ version_id: 'v-10', contact_kind: 'EXTERNAL', status: 'NOT_NEEDED', pending_since: null, marked_by_uid: 'uid-master' }],
+      });
+      mockConnect.mockResolvedValue(cli);
+      await repo().createVersion({ mode: 'edit', ...ctx, cells: [], version: { ...CORPO, contactStatus: { EXTERNAL: 'NOT_NEEDED' } } });
+      const st = chamadas.find((c) => c.sql.includes('INSERT INTO patient_therapeutic_project_contact_status'))!;
+      expect(st.params[5]).toBe('uid-master');
+    });
+
+    it('sem status no corpo: nenhuma linha de status e nenhum ciclo', async () => {
+      const { cli, chamadas } = cliente({ existentes: [vigente] });
+      mockConnect.mockResolvedValue(cli);
+      await repo().createVersion({ mode: 'edit', ...ctx, version: CORPO });
+      expect(inserts(chamadas, 'patient_therapeutic_project_contact_status')).toHaveLength(0);
+      expect(inserts(chamadas, 'patient_tp_contact_reminder_cycles')).toHaveLength(0);
+    });
+
+    describe('anulação (P5, 08/10)', () => {
+      const v2 = row({ id: 'v-20', major: 1, minor: 1, created_at: '2026-09-09T10:00:00.000Z', annulled_at: '2026-09-10T10:00:00.000Z', annulled_by: 'uid-x' });
+      const v1 = row({ id: 'v-10', created_at: '2026-09-08T10:00:00.000Z' });
+      const pendenteEmV1 = [{ version_id: 'v-10', contact_kind: 'CARE_TEAM', status: 'PENDING', pending_since: '2026-09-01T12:00:00.000Z', marked_by_uid: 'uid-a' }];
+
+      it('anular a versão que resolvia o campo deixa a vigente com PENDING e abre ciclo com 3 lembretes', async () => {
+        const { cli, chamadas } = cliente({ existentes: [v1, v2], anuladas: [{ id: 'v-20' }], statusDaVigente: pendenteEmV1 });
+        mockConnect.mockResolvedValue(cli);
+        await repo().annul(PACIENTE, 'v-20', 'uid-op', 'carga errada');
+        expect(inserts(chamadas, 'patient_tp_contact_reminder_cycles')).toHaveLength(1);
+        expect(inserts(chamadas, 'patient_tp_contact_reminders')).toHaveLength(3);
+      });
+
+      it('com ciclo já aberto, ou anulando uma versão que NÃO era a vigente, não abre nada', async () => {
+        const a = cliente({ existentes: [v1, v2], anuladas: [{ id: 'v-20' }], statusDaVigente: pendenteEmV1, cicloAberto: true });
+        mockConnect.mockResolvedValue(a.cli);
+        await repo().annul(PACIENTE, 'v-20', 'uid-op', 'm');
+        expect(inserts(a.chamadas, 'patient_tp_contact_reminder_cycles')).toHaveLength(0);
+
+        const antiga = row({ id: 'v-10', created_at: '2026-09-08T10:00:00.000Z', annulled_at: '2026-09-11T10:00:00.000Z', annulled_by: 'uid-x' });
+        const nova = row({ id: 'v-20', major: 1, minor: 1, created_at: '2026-09-09T10:00:00.000Z' });
+        const b = cliente({ existentes: [antiga, nova], anuladas: [{ id: 'v-10' }], statusDaVigente: pendenteEmV1 });
+        mockConnect.mockResolvedValue(b.cli);
+        await repo().annul(PACIENTE, 'v-10', 'uid-op', 'm');
+        expect(inserts(b.chamadas, 'patient_tp_contact_reminder_cycles')).toHaveLength(0);
+      });
     });
   });
 
