@@ -1,4 +1,4 @@
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { loggingAls } from '@shared/logging';
 import type { AdmissionEventInput, AdmissionEventSink } from '../application/ports/AdmissionMessagingPorts';
@@ -10,9 +10,10 @@ import type { AdmissionEventInput, AdmissionEventSink } from '../application/por
 export class AdmissionEventRepository implements AdmissionEventSink {
   constructor(private readonly db: Pool = DatabaseConnection.getInstance().getPool()) {}
 
-  async append(event: AdmissionEventInput): Promise<void> {
+  /** `ex`: um client de transação (o evento entra ATOMICAMENTE com a mudança de estado que ele registra). */
+  async append(event: AdmissionEventInput, ex: Pick<Pool, 'query'> | Pick<PoolClient, 'query'> = this.db): Promise<void> {
     const traceId = loggingAls?.getStore?.()?.traceId ?? null;
-    await this.db.query(
+    await ex.query(
       `INSERT INTO admission_events (appointment_id, kind, outcome, reason, ref, trace_id)
        VALUES ($1, $2, $3, $4, $5::jsonb, $6)`,
       [

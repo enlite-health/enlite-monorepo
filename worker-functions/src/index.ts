@@ -118,6 +118,10 @@ import { TactiqLinkRepository } from '@modules/matching/infrastructure/TactiqLin
 import { TactiqLinkController } from '@modules/matching/interfaces/controllers/TactiqLinkController';
 import { TactiqCheckInternalController } from '@modules/matching/interfaces/controllers/TactiqCheckInternalController';
 import { createTactiqLinkRoutes, createTactiqLinkCallbackRoute, createTactiqCheckInternalRoutes } from '@modules/matching/interfaces/routes/tactiqLinkRoutes';
+import { AdmissionPostCallJob } from '@modules/matching/application/AdmissionPostCallJob';
+import { AdmissionPostCallRepository } from '@modules/matching/infrastructure/AdmissionPostCallRepository';
+import { AdmissionPostCallInternalController } from '@modules/matching/interfaces/controllers/AdmissionPostCallInternalController';
+import { createAdmissionPostCallInternalRoutes } from '@modules/matching/interfaces/routes/admissionPostCallRoutes';
 import { interviewHostRepository } from '@modules/matching/infrastructure/InterviewHostRepository';
 import { AdmissionMessageRepository } from '@modules/matching/infrastructure/AdmissionMessageRepository';
 import { AdmissionEventRepository } from '@modules/matching/infrastructure/AdmissionEventRepository';
@@ -760,6 +764,23 @@ app.use(
   systemContextMiddleware('job:admission-tactiq-check'),
   internalAuthMiddleware,
   createTactiqCheckInternalRoutes(new TactiqCheckInternalController(tactiqLinkService)),
+);
+
+// spec 049 F5: job de 15 min — fim REAL da call (Meet API), no_show e detectores de silêncio (Cloud Scheduler, a cada 15 min).
+app.use(
+  '/api/internal',
+  systemContextMiddleware('job:admission-post-call'),
+  internalAuthMiddleware,
+  createAdmissionPostCallInternalRoutes(
+    new AdmissionPostCallInternalController(
+      new AdmissionPostCallJob({
+        repo: new AdmissionPostCallRepository(admissionDb),
+        meet: admissionExternals.meet,
+        events: admissionEvents,
+        db: admissionDb,
+      }),
+    ),
+  ),
 );
 
 // Cloud Tasks: 30-min-before admission reminder (queue: admission-reminders).
