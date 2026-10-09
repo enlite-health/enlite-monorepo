@@ -70,6 +70,22 @@ describe('"Todavía no hay registro"', () => {
     expect(gatilho()).not.toHaveTextContent('Marta');
   });
 
+  it('travado, o select mostra o estado (não o "Escolha") e tem cara de desativado (borda tracejada)', () => {
+    comCelulas(['patient_therapeutic_project:waive_contact']);
+    render(<Harness />);
+    fireEvent.click(pendente());
+    expect(gatilho()).toHaveTextContent(tf.contactPending);
+    expect(gatilho()).not.toHaveTextContent('Escolha');
+    expect(gatilho().className).toContain('border-dashed');
+
+    fireEvent.click(screen.getByTestId('tp-responsibles-waived'));
+    expect(gatilho()).toHaveTextContent(tf.contactNotNeeded);
+
+    fireEvent.click(screen.getByTestId('tp-responsibles-waived'));
+    expect(gatilho()).toHaveTextContent('Escolha');
+    expect(gatilho().className).not.toContain('border-dashed');
+  });
+
   it('desmarcar reabilita o select e some o aviso', () => {
     comCelulas([]);
     render(<Harness inicial="PENDING" />);
