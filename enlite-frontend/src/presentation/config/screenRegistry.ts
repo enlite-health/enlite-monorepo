@@ -87,7 +87,7 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
   {
     id: 'patients.detail',
     route: '/admin/patients/:id',
-    tabs: ['clinicalData', 'supportNetwork', 'documents', 'contractedService', 'history'],
+    tabs: ['clinicalData', 'supportNetwork', 'documents', 'admission', 'contractedService', 'history'],
     containers: [
       c('identity', 'patient_identity', ['read', 'create', 'update']),
       c('clinical', 'patient_clinical', ['read', 'create', 'update'], 'clinicalData'),
@@ -107,6 +107,9 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
       // Spec 031 (D463): a aba "Documentos" — subir, ver, renomear e excluir. A leitura é desta célula e
       // NÃO da `patient_conversation:read`, mesmo para o anexo vindo do chat (Q11).
       c('documents', 'patient_document', ['read', 'create', 'update', 'delete'], 'documents'),
+      // Spec 049 (F7): a aba "Admisión" — container próprio. `write` = agendar/cancelar; `resend_message` = reenviar o WhatsApp
+      // que falhou (célula separada: quais perfis a recebem é decisão do Diego, H7).
+      c('admission', 'patient_admission', ['read', 'write', 'resend_message'], 'admission'),
       c('coverage', 'patient_coverage', ['read', 'create', 'update'], 'contractedService'),
       c('address', 'patient_address', ['read', 'create', 'update', 'delete'], 'contractedService'),
       // A aba Matching saiu (decisão do Gabriel 05/09, na main): o encuadre É o serviço contratado
@@ -123,6 +126,8 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
       c('operational', 'patient', ['read', 'create', 'update'], 'history'),
     ],
   },
+  // Spec 049 (F7): "Vincular Tactiq" — a conta do PRÓPRIO operador. `own_` = toda conta com grupo recebe (auto-grant 471).
+  { id: 'account.tactiq', route: '/admin/mi-cuenta/tactiq', cells: ['own_tactiq_link:read', 'own_tactiq_link:write'] },
   { id: 'patients.chatRoles', route: '/admin/patient-chat-roles', cells: ['patient:read', 'patient:create', 'patient:update'] },
   // Spec 017 (D299.3): os 2 catálogos do projeto terapêutico — uma tela e uma célula por lista (tipo de patologia deriva do CID-11, sem tela).
   { id: 'patients.catalogObjectives', route: '/admin/catalogos/objetivos-especificos', cells: ['catalog_therapeutic_objectives:read', 'catalog_therapeutic_objectives:create', 'catalog_therapeutic_objectives:update'] },

@@ -47,13 +47,15 @@ module.exports = {
     {
       // O módulo central e as EXCEÇÕES declaradas (cada uma tem o motivo no próprio arquivo):
       // AnaCareHours = fuso -06 da fonte Ana Care + formatadores Date.UTC de só-data;
-      // AdmisionPage = fuso POR PAÍS (COUNTRY_TZ), não o do operador.
+      // AdmisionPage = fuso POR PAÍS (COUNTRY_TZ), não o do operador;
+      // admissionTime (spec 049) = fuso POR PAÍS do paciente (AR/BR), sempre explícito — nunca o do navegador.
       files: [
         'src/presentation/utils/dateTimeFormat.ts',
         'src/presentation/components/features/admin/AnaCareHours/selectors.ts',
         'src/presentation/components/features/admin/AnaCareHours/AnaCareHoursWeekNavigator.tsx',
         'src/presentation/components/features/admin/AnaCareHours/DayGroup.tsx',
         'src/presentation/pages/public/AdmisionPage.tsx',
+        'src/presentation/components/features/admin/PatientDetail/admission/admissionTime.ts',
       ],
       rules: { 'no-restricted-syntax': 'off' },
     },

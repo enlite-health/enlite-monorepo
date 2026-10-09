@@ -48,6 +48,15 @@ vi.mock('@presentation/components/features/admin/PatientDetail/PatientStatusCont
 vi.mock('@presentation/components/features/admin/PatientDetail/documents/PatientDocumentsSection', () => ({
   PatientDocumentsSection: (p: { patientId: string }) => <div data-testid="documents-section-stub">{p.patientId}</div>,
 }));
+// Spec 049 (F7): a aba "Admisión" tem hooks + HTTP próprios (testados em admission/__tests__); aqui só a montagem.
+vi.mock('@presentation/components/features/admin/PatientDetail/admission/AdmissionTab', () => ({
+  AdmissionTab: (p: { patientId: string; country: string; onOpenDocuments?: () => void }) => (
+    <div data-testid="admission-tab-stub" data-country={p.country}>
+      {p.patientId}
+      {p.onOpenDocuments && <button data-testid="admission-open-docs" onClick={p.onOpenDocuments}>docs</button>}
+    </div>
+  ),
+}));
 vi.mock('@infrastructure/http/AdminApiService', () => ({ AdminApiService: { updatePatientSection: vi.fn(), listInsuranceProviders: vi.fn().mockResolvedValue([]) } }));
 // Defeito 1 (Rodada 2, medido em prd 21-22/09): captura o `focusRequest` que a página repassa,
 // sem depender do componente real (polling/HTTP) nem do gate de permissão.
@@ -337,10 +346,48 @@ describe('PatientDetailPage — D286: abas e cards por container', () => {
     expect(screen.getByTestId('documents-section-stub')).toBeInTheDocument();
   });
 
+  // Spec 049 (F7) A7-1: a aba "Admissão" é do container `patient_admission`.
+  it('049 A7-1: SEM patient_admission:* a aba Admissão não existe e a seção nunca monta', () => {
+    comCelulas(['patient:read', 'patient_document:read'], 'on');
+    render(<PatientDetailPage />);
+    expect(abasNaTela()).toEqual(['Documentos', 'Histórico']);
+    expect(screen.queryByTestId('admission-tab-stub')).not.toBeInTheDocument();
+  });
+
+  it('049 A7-1: COM patient_admission:read a aba existe logo depois de Documentos e monta a seção com o paciente e o país', () => {
+    comCelulas(['patient:read', 'patient_document:read', 'patient_admission:read'], 'on');
+    render(<PatientDetailPage />);
+    expect(abasNaTela()).toEqual(['Documentos', 'Admissão', 'Histórico']);
+    fireEvent.click(screen.getByText('Admissão'));
+    expect(screen.getByTestId('admission-tab-stub')).toHaveTextContent(patientDetailFixture.id);
+    expect(screen.getByTestId('admission-tab-stub')).toHaveAttribute('data-country', patientDetailFixture.country);
+  });
+
+  it('049: só a célula de reenviar já faz a aba existir (qualquer célula do container), mas a seção exige LER', () => {
+    comCelulas(['patient:read', 'patient_admission:resend_message'], 'on');
+    render(<PatientDetailPage />);
+    expect(abasNaTela()).toEqual(['Admissão', 'Histórico']);
+    fireEvent.click(screen.getByText('Admissão'));
+    expect(screen.queryByTestId('admission-tab-stub')).not.toBeInTheDocument();
+  });
+
+  it('049: o selo Documento leva à aba Documentos — só se ela estiver visível para o ator', () => {
+    comCelulas(['patient:read', 'patient_document:read', 'patient_admission:read'], 'on');
+    const a = render(<PatientDetailPage />);
+    fireEvent.click(screen.getByText('Admissão'));
+    fireEvent.click(screen.getByTestId('admission-open-docs'));
+    expect(screen.getByTestId('documents-section-stub')).toBeInTheDocument();
+    a.unmount();
+    comCelulas(['patient:read', 'patient_admission:read'], 'on');
+    render(<PatientDetailPage />);
+    fireEvent.click(screen.getByText('Admissão'));
+    expect(screen.queryByTestId('admission-open-docs')).not.toBeInTheDocument();
+  });
+
   it('enforcement OFF: tudo como antes, mesmo sem célula nenhuma (as células novas nascem sem grupo)', () => {
     comCelulas([], 'off');
     render(<PatientDetailPage />);
-    expect(abasNaTela()).toHaveLength(5);
+    expect(abasNaTela()).toHaveLength(6); // + "Admissão" (spec 049, F7)
     fireEvent.click(screen.getByText('Rede de Apoio'));
     expect(screen.getByTestId('familiares-card')).toBeInTheDocument();
   });

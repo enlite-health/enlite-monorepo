@@ -74,7 +74,7 @@ export function NotificationPanel({ isOpen, onClose, onNotificationsChanged }: N
     // mais um `if (typeCode === ...)` inline aqui. `null` (D-08, sem `patientId`) = sem navegação.
     const deepLink = getNotificationTypeHandler(notification.typeCode).getDeepLink(notification);
     if (deepLink) {
-      navigate(deepLink.path, { state: { focusRequest: deepLink.focusRequest } });
+      navigate(deepLink.path, deepLink.focusRequest ? { state: { focusRequest: deepLink.focusRequest } } : undefined);
       onClose();
     }
   };

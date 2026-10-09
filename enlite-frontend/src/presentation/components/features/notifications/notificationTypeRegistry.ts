@@ -13,7 +13,7 @@
  * `patientDisplayName` nulos) — texto neutro com o nome do ator, deep-link igual ao padrão
  * (navega se houver `patientId`, D-08).
  */
-import type { AdminNotification, NotificationTypeCode } from '@infrastructure/http/AdminNotificationApiService';
+import type { AdminNotification, AdmissionTactiqLinkReason, NotificationTypeCode } from '@infrastructure/http/AdminNotificationApiService';
 import type { DrawerFocusRequest } from '@hooks/admin/useAutoOpenDrawer';
 import { formatCaseNumber } from '@domain/value-objects/caseNumberFormat';
 
@@ -21,7 +21,8 @@ export type Translate = (key: string, opts?: Record<string, unknown>) => string;
 
 export interface NotificationDeepLink {
   path: string;
-  focusRequest: DrawerFocusRequest;
+  /** Ausente quando o alvo não é a ficha de um paciente (ex.: a tela "Vincular Tactiq"). */
+  focusRequest?: DrawerFocusRequest;
 }
 
 export interface NotificationTypeHandler {
@@ -75,7 +76,8 @@ function ptCaseLabel(n: AdminNotification, t: Translate): string {
 
 /** Os rótulos dos campos são as MESMAS chaves do formulário do PT — sem duplicar i18n. */
 function ptFieldsLabel(n: AdminNotification, t: Translate): string {
-  return (n.payload?.fields ?? [])
+  const fields = n.payload && 'fields' in n.payload ? n.payload.fields : [];
+  return fields
     .map((f) => t(`admin.patients.detail.therapeuticProjectForm.${PT_FIELD_LABEL_KEY[f] ?? f}`))
     .join(', ');
 }
@@ -85,6 +87,15 @@ function patientFileDeepLink(n: AdminNotification): NotificationDeepLink | null 
   if (!n.patientId) return null;
   return { path: `/admin/patients/${n.patientId}`, focusRequest: { code: 'therapeuticProject', token: Date.now() } };
 }
+
+/** spec 049 (§3.0.1): o motivo decide a frase; payload ausente/estranho cai na frase de "sem vínculo". */
+function tactiqReason(n: AdminNotification): AdmissionTactiqLinkReason {
+  const reason = n.payload && 'reason' in n.payload ? n.payload.reason : null;
+  return reason === 'wrong_account' || reason === 'broken' ? reason : 'missing';
+}
+
+/** A tela do próprio operador, não a ficha de um paciente: sem `focusRequest`. */
+export const TACTIQ_LINK_PATH = '/admin/mi-cuenta/tactiq';
 
 const REGISTRY: Record<NotificationTypeCode, NotificationTypeHandler> = {
   CONVERSATION_MENTIONED: {
@@ -101,6 +112,13 @@ const REGISTRY: Record<NotificationTypeCode, NotificationTypeHandler> = {
     actorLabel: (_n, t) => t('admin.notifications.ptContactsPendingActor'),
     contextLine: (n, t) => ptCaseLabel(n, t),
     detailLine: (n, t) => t('admin.notifications.ptContactsPendingFields', { fields: ptFieldsLabel(n, t) }),
+  },
+  ADMISSION_TACTIQ_LINK_REQUIRED: {
+    buildText: (n, t) => t(`admin.notifications.tactiq.${tactiqReason(n)}`),
+    getDeepLink: () => ({ path: TACTIQ_LINK_PATH }),
+    actorLabel: (_n, t) => t('admin.notifications.ptContactsPendingActor'),
+    contextLine: (_n, t) => t('admin.notifications.tactiq.action'),
+    detailLine: (n, t) => t(`admin.notifications.tactiq.${tactiqReason(n)}`),
   },
 };
 

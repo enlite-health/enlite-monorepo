@@ -14,12 +14,19 @@ import { useTranslation } from 'react-i18next';
 import { Eye, Pencil, Trash2 } from 'lucide-react';
 import { Text } from '@presentation/components/atoms/Text';
 import { Input } from '@presentation/components/atoms/Input';
-import type { PatientDocument } from '@infrastructure/http/AdminPatientDocumentsApiService';
+import type { PatientDocument, PatientDocumentOrigin } from '@infrastructure/http/AdminPatientDocumentsApiService';
 import { formatMessageDateTime } from '../conversation/messageDateFormat';
 import { formatFileSize, iconComponentForContentType } from '../conversation/attachmentIcon';
 import { renameErrorKey } from './documentErrors';
 
 const MAX_LABEL_LENGTH = 255;
+
+/** Origem → chave i18n do rótulo. Conjunto FECHADO: `Record` faz o tsc acusar uma origem nova sem rótulo (spec 049, F7). */
+const ORIGIN_LABEL_KEY: Record<PatientDocumentOrigin, string> = {
+  tab: 'originTab',
+  chat: 'originChat',
+  admission: 'originAdmission',
+};
 
 interface Props {
   doc: PatientDocument;
@@ -132,7 +139,13 @@ export function PatientDocumentRow({ doc, canUpdate, canDelete, onView, onRename
             </Text>
           )}
           <Text as="span" size="xs" className="text-slate-600" data-testid={`patient-document-meta-${doc.id}`}>
-            {[td(doc.origin === 'chat' ? 'originChat' : 'originTab'), author, when, formatFileSize(doc.sizeBytes)].join(' · ')}
+            {[
+              td(ORIGIN_LABEL_KEY[doc.origin] ?? 'originTab'),
+              // O resumo da admissão é gerado pelo sistema (sem autor humano): "Autor desconhecido" seria ruído.
+              doc.origin === 'admission' ? null : author,
+              when,
+              formatFileSize(doc.sizeBytes),
+            ].filter(Boolean).join(' · ')}
           </Text>
         </div>
       </div>

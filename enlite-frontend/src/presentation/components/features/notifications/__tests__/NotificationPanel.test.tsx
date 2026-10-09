@@ -447,3 +447,57 @@ describe('NotificationCard — aviso do PT (spec 048)', () => {
     expect(within(item).getByTestId('notification-patient-n1')).toHaveTextContent('en Fulano Paciente');
   });
 });
+
+// Spec 049 (F7, A7-7): clicar no aviso do Tactiq leva à tela do vínculo — com texto ES e PT reais.
+describe('NotificationPanel — aviso do vínculo do Tactiq (spec 049, A7-7)', () => {
+  const tactiqNotif = (reason: 'missing' | 'broken' | 'wrong_account'): AdminNotification =>
+    notif({
+      id: 'tq1',
+      typeCode: 'ADMISSION_TACTIQ_LINK_REQUIRED',
+      actorUid: 'system:admission',
+      actorDisplayName: null,
+      patientId: null,
+      patientDisplayName: null,
+      conversationId: null,
+      messageId: null,
+      payload: { reason },
+    });
+
+  afterEach(async () => { vi.clearAllMocks(); await i18n.changeLanguage('es'); });
+
+  it('clique marca lida e navega para /admin/mi-cuenta/tactiq (sem state de foco)', async () => {
+    vi.mocked(AdminNotificationApiService.listNotifications).mockResolvedValue([tactiqNotif('missing')]);
+    const onClose = vi.fn();
+    render(<NotificationPanel isOpen onClose={onClose} />);
+    fireEvent.click(await screen.findByTestId('notification-item-tq1'));
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith('/admin/mi-cuenta/tactiq', undefined));
+    expect(AdminNotificationApiService.markNotificationRead).toHaveBeenCalledWith('tq1');
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('ES: texto de "sem vínculo" e variante wrong_account com texto próprio', async () => {
+    vi.mocked(AdminNotificationApiService.listNotifications).mockResolvedValue([tactiqNotif('missing'), { ...tactiqNotif('wrong_account'), id: 'tq2' }]);
+    render(<NotificationPanel isOpen onClose={vi.fn()} />);
+    expect(await screen.findByTestId('notification-item-tq1')).toHaveAttribute(
+      'aria-label',
+      'Tu usuario no está vinculado a Tactiq. Hasta que lo vincules no vas a poder ser responsable de agendas de admisión.',
+    );
+    expect(screen.getByTestId('notification-item-tq2')).toHaveAttribute(
+      'aria-label',
+      'La cuenta de Tactiq vinculada no corresponde a tu usuario. Volvé a vincularla para seguir recibiendo agendas.',
+    );
+    expect(screen.getByTestId('notification-patient-tq1')).toHaveTextContent('Vincular Tactiq');
+    expect(screen.getAllByText('Enlite', { selector: 'span' })).toHaveLength(2);
+    expect(screen.queryByText('system:admission')).not.toBeInTheDocument();
+  });
+
+  it('PT pela i18n', async () => {
+    await i18n.changeLanguage('pt-BR');
+    vi.mocked(AdminNotificationApiService.listNotifications).mockResolvedValue([tactiqNotif('wrong_account')]);
+    render(<NotificationPanel isOpen onClose={vi.fn()} />);
+    expect(await screen.findByTestId('notification-item-tq1')).toHaveAttribute(
+      'aria-label',
+      'A conta do Tactiq vinculada não corresponde ao seu usuário. Vincule novamente para continuar recebendo agendas.',
+    );
+  });
+});

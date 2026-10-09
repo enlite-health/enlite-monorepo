@@ -25,6 +25,7 @@ import { PatientVacanciesCard } from '@presentation/components/features/admin/Pa
 import { PatientChatIdsCard } from '@presentation/components/features/admin/PatientDetail/PatientChatIdsCard';
 import { PatientConversationHandle } from '@presentation/components/features/admin/PatientDetail/conversation/PatientConversationHandle';
 import { PatientDocumentsSection } from '@presentation/components/features/admin/PatientDetail/documents/PatientDocumentsSection';
+import { AdmissionTab } from '@presentation/components/features/admin/PatientDetail/admission/AdmissionTab';
 import { PatientStatusControl } from '@presentation/components/features/admin/PatientDetail/PatientStatusControl';
 import { PatientStatusHistoryCard } from '@presentation/components/features/admin/PatientDetail/PatientStatusHistoryCard';
 import { CompletenessChecklist } from '@presentation/components/features/admin/PatientDetail/CompletenessChecklist';
@@ -312,6 +313,16 @@ export default function PatientDetailPage() {
         {shownTab === 'documents' && (
           <ContainerGate resource="patient_document">
             <PatientDocumentsSection patientId={patient.id} />
+          </ContainerGate>
+        )}
+        {/* Spec 049 (F7): reuniões de admissão (painel + site) com selos, "Nueva agenda", cancelar e reenviar. */}
+        {shownTab === 'admission' && (
+          <ContainerGate resource="patient_admission">
+            <AdmissionTab
+              patientId={patient.id}
+              country={patient.country}
+              onOpenDocuments={visibleTabs.includes('documents') ? () => changeTab('documents') : undefined}
+            />
           </ContainerGate>
         )}
         {shownTab === 'contractedService' && (

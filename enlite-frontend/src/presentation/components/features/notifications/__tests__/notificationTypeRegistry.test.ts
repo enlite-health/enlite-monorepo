@@ -66,7 +66,7 @@ describe('notificationTypeRegistry (spec 022, Rodada 2/R2-F)', () => {
         path: '/admin/patients/p1',
         focusRequest: { code: 'conversation', messageId: 'm1', rootMessageId: 'root1' },
       });
-      expect(deepLink?.focusRequest.token).toEqual(expect.any(Number));
+      expect(deepLink?.focusRequest?.token).toEqual(expect.any(Number));
     }
   });
 
@@ -78,12 +78,50 @@ describe('notificationTypeRegistry (spec 022, Rodada 2/R2-F)', () => {
   it('rootMessageId ausente (mensagem de topo, não reply): focusRequest.rootMessageId é null', () => {
     const handler = getNotificationTypeHandler('CONVERSATION_MENTIONED');
     const deepLink = handler.getDeepLink(notif({ rootMessageId: null }));
-    expect(deepLink?.focusRequest.rootMessageId).toBeNull();
+    expect(deepLink?.focusRequest?.rootMessageId).toBeNull();
   });
 
   it('messageId null: focusRequest.messageId vira undefined (nunca "null" string)', () => {
     const handler = getNotificationTypeHandler('CONVERSATION_MENTIONED');
     const deepLink = handler.getDeepLink(notif({ messageId: null }));
-    expect(deepLink?.focusRequest.messageId).toBeUndefined();
+    expect(deepLink?.focusRequest?.messageId).toBeUndefined();
+  });
+});
+
+// Spec 049 (F7, A7-7): o aviso do vínculo do Tactiq — o servidor manda só `{reason}`; o TEXTO vive aqui.
+describe('ADMISSION_TACTIQ_LINK_REQUIRED (spec 049, A7-7)', () => {
+  const tactiq = (reason: string | null) =>
+    notif({
+      typeCode: 'ADMISSION_TACTIQ_LINK_REQUIRED',
+      actorUid: 'system:admission',
+      actorDisplayName: null,
+      patientId: null,
+      patientDisplayName: null,
+      messageId: null,
+      payload: reason === null ? null : ({ reason } as never),
+    });
+
+  it('o deep link abre /admin/mi-cuenta/tactiq, sem paciente e sem pedido de foco', () => {
+    const link = getNotificationTypeHandler('ADMISSION_TACTIQ_LINK_REQUIRED').getDeepLink(tactiq('missing'));
+    expect(link).toEqual({ path: '/admin/mi-cuenta/tactiq' });
+  });
+
+  it.each([['missing'], ['broken']])('motivo %s → "Tu usuario no está vinculado a Tactiq…" (chave do texto sem vínculo)', (reason) => {
+    const h = getNotificationTypeHandler('ADMISSION_TACTIQ_LINK_REQUIRED');
+    expect(h.buildText(tactiq(reason), t)).toBe('admin.notifications.tactiq.' + (reason === 'broken' ? 'broken' : 'missing') + ':{}');
+  });
+
+  it('wrong_account tem o texto PRÓPRIO; payload ausente/estranho cai no texto de "sem vínculo", nunca crash', () => {
+    const h = getNotificationTypeHandler('ADMISSION_TACTIQ_LINK_REQUIRED');
+    expect(h.buildText(tactiq('wrong_account'), t)).toBe('admin.notifications.tactiq.wrong_account:{}');
+    expect(h.buildText(tactiq(null), t)).toBe('admin.notifications.tactiq.missing:{}');
+    expect(h.buildText(tactiq('qualquer'), t)).toBe('admin.notifications.tactiq.missing:{}');
+  });
+
+  it('linhas do card: autor "Enlite" (nunca o uid sentinela), ação "Vincular Tactiq" e a frase do motivo', () => {
+    const h = getNotificationTypeHandler('ADMISSION_TACTIQ_LINK_REQUIRED');
+    expect(h.actorLabel?.(tactiq('missing'), t)).toBe('admin.notifications.ptContactsPendingActor:{}');
+    expect(h.contextLine?.(tactiq('missing'), t)).toBe('admin.notifications.tactiq.action:{}');
+    expect(h.detailLine?.(tactiq('wrong_account'), t)).toBe('admin.notifications.tactiq.wrong_account:{}');
   });
 });
