@@ -122,6 +122,10 @@ import { AdmissionPostCallJob } from '@modules/matching/application/AdmissionPos
 import { AdmissionPostCallRepository } from '@modules/matching/infrastructure/AdmissionPostCallRepository';
 import { AdmissionPostCallInternalController } from '@modules/matching/interfaces/controllers/AdmissionPostCallInternalController';
 import { createAdmissionPostCallInternalRoutes } from '@modules/matching/interfaces/routes/admissionPostCallRoutes';
+import { AdmissionImportService } from '@modules/matching/application/AdmissionImportService';
+import { AdmissionImportRepository } from '@modules/matching/infrastructure/AdmissionImportRepository';
+import { AdmissionImportInternalController } from '@modules/matching/interfaces/controllers/AdmissionImportInternalController';
+import { createAdmissionImportInternalRoutes } from '@modules/matching/interfaces/routes/admissionImportRoutes';
 import { interviewHostRepository } from '@modules/matching/infrastructure/InterviewHostRepository';
 import { AdmissionMessageRepository } from '@modules/matching/infrastructure/AdmissionMessageRepository';
 import { AdmissionEventRepository } from '@modules/matching/infrastructure/AdmissionEventRepository';
@@ -777,6 +781,27 @@ app.use(
         repo: new AdmissionPostCallRepository(admissionDb),
         meet: admissionExternals.meet,
         events: admissionEvents,
+        db: admissionDb,
+      }),
+    ),
+  ),
+);
+
+// spec 049 F6: importação do Tactiq (MCP -> provas -> cofre -> Vertex -> PDF -> documento). Roda depois do job de 15 min (a F5 grava
+// `conference_ended_at` e `import_status='pending'`). Cloud Scheduler, a cada 15 min.
+app.use(
+  '/api/internal',
+  systemContextMiddleware('job:admission-import'),
+  internalAuthMiddleware,
+  createAdmissionImportInternalRoutes(
+    new AdmissionImportInternalController(
+      new AdmissionImportService({
+        repo: new AdmissionImportRepository(admissionDb),
+        events: admissionEvents,
+        tokens: tactiqLinkService,
+        mcp: admissionExternals.tactiq.mcp,
+        vault: admissionExternals.vault,
+        summary: admissionExternals.summary,
         db: admissionDb,
       }),
     ),

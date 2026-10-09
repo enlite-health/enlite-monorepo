@@ -9,6 +9,10 @@ import { FakeAdmissionCalendar } from '../doubles/FakeAdmissionCalendar';
 import { InMemoryAdmissionReminderTasks } from '../doubles/InMemoryAdmissionReminderTasks';
 import { RecordingAdmissionWhatsApp } from '../doubles/RecordingAdmissionWhatsApp';
 import { RealAdmissionReminderTasks } from '../RealAdmissionReminderTasks';
+import { InMemoryTranscriptVault } from '../doubles/InMemoryTranscriptVault';
+import { FakeAdmissionSummaryGenerator } from '../doubles/FakeAdmissionSummaryGenerator';
+import { GcsTranscriptVault } from '../GcsTranscriptVault';
+import { VertexAdmissionSummaryGenerator } from '../VertexAdmissionSummaryGenerator';
 
 const realWhatsApp = jest.fn(() => ({ sendWithContentSid: jest.fn() }));
 
@@ -78,5 +82,25 @@ describe('RealAdmissionReminderTasks (trava de construtor)', () => {
   it('A2-9: new RealAdmissionReminderTasks() com NODE_ENV=test LANÇA', () => {
     expect(process.env.NODE_ENV).toBe('test');
     expect(() => new RealAdmissionReminderTasks()).toThrow(AdmissionRealAdapterInTestError);
+  });
+});
+
+describe('createAdmissionExternals — cofre e Vertex (spec 049 F6, A6-10)', () => {
+  it('NODE_ENV=test → cofre em memória e gerador dublê, SEM lançar no boot', () => {
+    const ext = createAdmissionExternals({ NODE_ENV: 'test' }, { realWhatsApp });
+    expect(ext.vault).toBeInstanceOf(InMemoryTranscriptVault);
+    expect(ext.summary).toBeInstanceOf(FakeAdmissionSummaryGenerator);
+  });
+
+  it('A6-10: new GcsTranscriptVault() e new VertexAdmissionSummaryGenerator() com NODE_ENV=test LANÇAM', () => {
+    expect(process.env.NODE_ENV).toBe('test');
+    expect(() => new GcsTranscriptVault()).toThrow(AdmissionRealAdapterInTestError);
+    expect(() => new VertexAdmissionSummaryGenerator()).toThrow(AdmissionRealAdapterInTestError);
+  });
+
+  it('produção sem as envs → constrói os adapters REAIS no boot sem lançar (o bucket só é exigido na CHAMADA)', () => {
+    const ext = createAdmissionExternals({ NODE_ENV: 'production' }, { realWhatsApp, realReminderTasks: () => new InMemoryAdmissionReminderTasks() });
+    expect(ext.vault).toBeInstanceOf(GcsTranscriptVault);
+    expect(ext.summary).toBeInstanceOf(VertexAdmissionSummaryGenerator);
   });
 });

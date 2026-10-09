@@ -104,3 +104,15 @@ export class TactiqLinkRequiredError extends Error {
     this.name = 'TactiqLinkRequiredError';
   }
 }
+
+export type TactiqAccessResult =
+  | { ok: true; accessToken: string }
+  /** `no_link`: sem vínculo vivo. `broken`: o Tactiq recusou o token agora (o vínculo caiu). `transient`: rede/KMS — tenta depois. */
+  | { ok: false; reason: 'no_link' | 'broken' | 'transient' };
+
+/** O que a importação (F6) precisa do vínculo: um token de acesso do RESPONSÁVEL e os dois rebaixamentos de estado. */
+export interface TactiqTokenProvider {
+  accessTokenFor(email: string): Promise<TactiqAccessResult>;
+  markBroken(email: string): Promise<boolean>;
+  markWrongAccount(email: string): Promise<boolean>;
+}

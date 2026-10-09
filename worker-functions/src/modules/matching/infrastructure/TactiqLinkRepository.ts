@@ -77,6 +77,17 @@ export class TactiqLinkRepository {
     return rows;
   }
 
+  /** Token cifrado de UM vínculo vivo (`linked`). `null` = sem vínculo vivo. Só o job de importação, em papel de sistema. */
+  async findLinkedTokenByEmail(email: string, ex: Db = this.db): Promise<{ id: string; refresh_token_encrypted: string } | null> {
+    const { rows } = await ex.query<{ id: string; refresh_token_encrypted: string }>(
+      `SELECT l.id, s.refresh_token_encrypted
+         FROM tactiq_links l JOIN tactiq_link_secrets s ON s.link_id = l.id
+        WHERE lower(l.host_email) = lower($1) AND l.status = 'linked'`,
+      [email],
+    );
+    return rows[0] ?? null;
+  }
+
   // ── escrita ────────────────────────────────────────────────────────────────────────────────────────
   /** Vincula (ou revincula): estado `linked`, token novo, "já avisei" zerado para `linked`. Nunca devolve o token. */
   async upsertLinked(

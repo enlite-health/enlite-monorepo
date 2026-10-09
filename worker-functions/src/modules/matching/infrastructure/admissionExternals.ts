@@ -17,6 +17,11 @@ import { TactiqOAuthClient } from './tactiq/TactiqOAuthClient';
 import type { MeetConferencePort } from '../application/ports/MeetConferencePort';
 import { FakeMeetConference } from './doubles/FakeMeetConference';
 import { GoogleMeetConferenceClient } from './GoogleMeetConferenceClient';
+import type { AdmissionSummaryPort, TranscriptVaultPort } from '../application/ports/AdmissionImportPorts';
+import { InMemoryTranscriptVault } from './doubles/InMemoryTranscriptVault';
+import { FakeAdmissionSummaryGenerator } from './doubles/FakeAdmissionSummaryGenerator';
+import { GcsTranscriptVault } from './GcsTranscriptVault';
+import { VertexAdmissionSummaryGenerator } from './VertexAdmissionSummaryGenerator';
 
 export interface AdmissionExternalsEnv {
   NODE_ENV?: string;
@@ -36,6 +41,10 @@ export interface AdmissionExternals {
   tactiq: { oauth: TactiqOAuthPort; mcp: TactiqMcpPort };
   /** Meet REST API (spec 049 F5): fim real da call. Dublê em `fake`; o adapter real LANÇA no construtor com NODE_ENV=test. */
   meet: MeetConferencePort;
+  /** Cofre da transcrição (spec 049 F6): só cria. Em `fake`, em memória com a mesma semântica; o real LANÇA no construtor com NODE_ENV=test. */
+  vault: TranscriptVaultPort;
+  /** Resumo da admissão via Vertex (F6). Dublê em `fake`; o real LANÇA no construtor com NODE_ENV=test. */
+  summary: AdmissionSummaryPort;
 }
 
 export interface AdmissionExternalsDeps {
@@ -46,7 +55,7 @@ export interface AdmissionExternalsDeps {
 }
 
 /**
- * Fábrica das fronteiras externas da admissão (spec 049, regra transversal 2): Twilio, Cloud Tasks, Calendar, Tactiq e Meet.
+ * Fábrica das fronteiras externas da admissão (spec 049, regra transversal 2): Twilio, Cloud Tasks, Calendar, Tactiq, Meet, cofre e Vertex.
  *
  *  - `NODE_ENV=test` OU `ADMISSION_EXTERNALS=fake` → dublês (nada sai da máquina).
  *  - `NODE_ENV=production` com `fake` → LANÇA (dublê em produção seria mensagem que nunca sai, sem erro).
@@ -74,6 +83,8 @@ export function createAdmissionExternals(env: AdmissionExternalsEnv, deps: Admis
       calendar: env.ADMISSION_EXTERNALS === 'fake' ? new FakeAdmissionCalendar() : admissionCalendarService,
       tactiq: { oauth: new FakeTactiqOAuth(), mcp: new FakeTactiqMcp() },
       meet: new FakeMeetConference(),
+      vault: new InMemoryTranscriptVault(),
+      summary: new FakeAdmissionSummaryGenerator(),
     };
   }
   return {
@@ -83,5 +94,7 @@ export function createAdmissionExternals(env: AdmissionExternalsEnv, deps: Admis
     calendar: admissionCalendarService,
     tactiq: { oauth: new TactiqOAuthClient(env as NodeJS.ProcessEnv), mcp: new TactiqMcpClient(env as NodeJS.ProcessEnv) },
     meet: new GoogleMeetConferenceClient(env as NodeJS.ProcessEnv),
+    vault: new GcsTranscriptVault({ env: env as NodeJS.ProcessEnv }),
+    summary: new VertexAdmissionSummaryGenerator(env as NodeJS.ProcessEnv),
   };
 }

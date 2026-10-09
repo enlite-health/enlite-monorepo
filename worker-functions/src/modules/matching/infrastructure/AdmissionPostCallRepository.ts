@@ -23,12 +23,15 @@ export const CONFIRMATION_SILENCE_MINUTES = 10;
  * Elegível para o job: reunião NOVA (tem código ADM — as antigas ficam fora da importação, migration 503), ainda `booked`,
  * cujo fim passou há menos de 72 h e que não está em estado terminal. `blocked` volta à fila: o bloqueio por escopo some
  * quando o H2 é liberado, e a reunião não pode ficar perdida para sempre.
+ * `conference_ended_at IS NULL` (F6): depois que o fim real foi gravado, a reunião é da IMPORTAÇÃO (`pending|waiting|blocked` por
+ * vínculo). Sem isto este job devolveria `waiting`/`blocked` da F6 a `pending` a cada 15 min, com um `conference_ended` novo na trilha.
  */
 const ELIGIBLE = `
   a.status = 'booked'
   AND a.admission_code IS NOT NULL
   AND a.slot_end < $1
   AND a.slot_end >= $1::timestamptz - make_interval(hours => ${POST_CALL_WINDOW_HOURS})
+  AND a.conference_ended_at IS NULL
   AND (a.import_status IS NULL OR a.import_status IN ('waiting', 'blocked'))`;
 
 /**

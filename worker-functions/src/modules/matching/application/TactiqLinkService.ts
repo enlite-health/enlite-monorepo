@@ -9,10 +9,12 @@ import { hashState, newOAuthState, newPkcePair } from '../infrastructure/tactiq/
 import {
   TactiqInvalidGrantError,
   TactiqUnauthorizedError,
+  type TactiqAccessResult,
   type TactiqLinkGate,
   type TactiqLinkState,
   type TactiqMcpPort,
   type TactiqOAuthPort,
+  type TactiqTokenProvider,
 } from './ports/TactiqPorts';
 import type { AdmissionLogger } from './AdmissionMessagingService';
 
@@ -86,7 +88,7 @@ const noticeReason = (s: NoticeState): 'missing' | 'broken' | 'wrong_account' =>
  *
  * Token: cifrado em repouso, nunca em log, erro, resposta HTTP nem evento. Logs só com ids (`linkId`, `hostId`).
  */
-export class TactiqLinkService implements TactiqLinkGate {
+export class TactiqLinkService implements TactiqLinkGate, TactiqTokenProvider {
   private readonly repo: TactiqLinkRepository;
   private readonly cipher: Cipher;
   private readonly publisher: SystemNotificationPublisher;
@@ -181,6 +183,40 @@ export class TactiqLinkService implements TactiqLinkGate {
     if (!changed) return false;
     await this.repo.appendEvent({ email, kind: 'tactiq_link.wrong_account', outcome: 'wrong_account', reason: 'meeting_not_visible', at: now });
     await this.noticeOnTransition(email, 'wrong_account');
+    return true;
+  }
+
+  /**
+   * Token de acesso do RESPONSÁVEL para a importação (F6). Mesma regra do teste diário: refresh com ROTAÇÃO (o refresh novo é
+   * gravado ANTES de qualquer uso). `invalid_grant` derruba o vínculo (`broken`, com aviso); rede/KMS não prova nada (`transient`).
+   */
+  async accessTokenFor(email: string): Promise<TactiqAccessResult> {
+    const link = await this.repo.findLinkedTokenByEmail(email);
+    if (!link) return { ok: false, reason: 'no_link' };
+    try {
+      const current = await this.cipher.decrypt(link.refresh_token_encrypted);
+      const tokens = await this.deps.oauth.refresh(current);
+      if (tokens.refreshToken && tokens.refreshToken !== current) {
+        const enc = await this.cipher.encrypt(tokens.refreshToken);
+        if (enc) await this.repo.rotateToken(email, enc);
+      }
+      return { ok: true, accessToken: tokens.accessToken };
+    } catch (err) {
+      if (err instanceof TactiqInvalidGrantError) {
+        await this.markBroken(email, 'invalid_grant');
+        return { ok: false, reason: 'broken' };
+      }
+      this.log.warn({ linkId: link.id, reason: (err as { reason?: string })?.reason ?? 'unexpected' }, 'admission.tactiq_link.token_transient');
+      return { ok: false, reason: 'transient' };
+    }
+  }
+
+  /** O Tactiq recusou o token (401/403) durante a importação: o vínculo caiu. `true` só quando MUDOU (uma transição, um aviso). */
+  async markBroken(email: string, outcome: 'invalid_grant' | 'unauthorized' = 'unauthorized'): Promise<boolean> {
+    const now = this.now();
+    if (!(await this.repo.degrade(email, 'broken', outcome, now))) return false;
+    await this.repo.appendEvent({ email, kind: 'tactiq_link.broken', outcome: 'broken', reason: outcome, at: now });
+    await this.noticeOnTransition(email, 'broken');
     return true;
   }
 
