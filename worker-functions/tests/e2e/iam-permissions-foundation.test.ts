@@ -363,7 +363,8 @@ describe('IAM — fundação do painel de grupos (migrations 274-280, banco real
       // células de vacancy, as 3 `own_*` PERMANECEM no grupo e NÃO entram na trilha como
       // 'remove' — só os 3 'add' de vacancy aparecem (antes da 470 seriam 6 linhas, com 3
       // 'remove' fantasma; ver cabeçalho da migration 470).
-      const OWN_PREFIX_BASELINE = 3;
+      // 3 históricas + 2 da spec 049 (`own_tactiq_link:read|create`, mig 507 — o prefixo `own_` as inclui no auto-grant).
+      const OWN_PREFIX_BASELINE = 5;
       const changes = await pool.query<{ op: string; changed_by: string; resource: string }>(
         `SELECT c.op, c.changed_by, p.resource
            FROM iam.permission_group_changes c

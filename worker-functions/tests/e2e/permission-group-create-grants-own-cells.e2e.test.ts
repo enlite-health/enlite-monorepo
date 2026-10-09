@@ -158,6 +158,9 @@ describe('Criação de grupo concede own_* automaticamente (spec 022, Rodada 4, 
       { resource: 'own_notifications', action: 'read' },
       { resource: 'own_notifications', action: 'update' },
       { resource: 'own_presence', action: 'update' },
+      // spec 049 (mig 507): `own_tactiq_link:read|create` também são `own_*` e nascem concedidas na criação do grupo.
+      { resource: 'own_tactiq_link', action: 'create' },
+      { resource: 'own_tactiq_link', action: 'read' },
     ]);
   });
 

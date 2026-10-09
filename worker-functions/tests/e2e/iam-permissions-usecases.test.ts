@@ -194,7 +194,8 @@ describe('IAM — use cases do painel de grupos (banco real, role app_runtime)',
       // `own_*` PERMANECEM no grupo e NÃO entram na trilha como 'remove' — só os 3 'add' de
       // vacancy aparecem. Antes da 470, as 3 `own_*` saíam do conjunto e geravam 'remove'
       // fantasma (111 DENY em 2h medidos em prd) — ver cabeçalho da migration 470.
-      const OWN_PREFIX_BASELINE = 3;
+      // 3 históricas + 2 da spec 049 (`own_tactiq_link:read|create`, mig 507 — o prefixo `own_` as inclui no auto-grant).
+      const OWN_PREFIX_BASELINE = 5;
       const changes = await admin.query<{ op: string; changed_by: string; reason: string | null; resource: string }>(
         `SELECT c.op, c.changed_by, c.reason, p.resource
            FROM iam.permission_group_changes c
@@ -214,7 +215,7 @@ describe('IAM — use cases do painel de grupos (banco real, role app_runtime)',
       expect(cellCount.rows[0].n).toBe(OWN_PREFIX_BASELINE + 3);
     });
 
-    it('célula fora do catálogo é recusada dizendo QUAL — e nada É GRAVADO A MAIS (fica no estado do teste anterior: 3 own_* protegidas + 3 vacancy)', async () => {
+    it('célula fora do catálogo é recusada dizendo QUAL — e nada É GRAVADO A MAIS (fica no estado do teste anterior: 5 own_* protegidas + 3 vacancy)', async () => {
       await expect(
         asStaff(U.gestor, () =>
           permissions.groups.setPermissions.execute({
@@ -224,7 +225,8 @@ describe('IAM — use cases do painel de grupos (banco real, role app_runtime)',
           }),
         ),
       ).rejects.toThrow(/inventada:read/);
-      const OWN_PREFIX_BASELINE = 3;
+      // 3 históricas + 2 da spec 049 (ver acima).
+      const OWN_PREFIX_BASELINE = 5;
       const cells = await admin.query(`SELECT count(*)::int n FROM iam.group_permissions WHERE group_id = $1`, [groupId]);
       expect(cells.rows[0].n).toBe(OWN_PREFIX_BASELINE + 3);
     });
