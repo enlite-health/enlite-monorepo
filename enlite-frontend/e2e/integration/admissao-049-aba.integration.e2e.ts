@@ -19,11 +19,18 @@
  * API com `ADMISSION_EXTERNALS=fake` — por isso o nome entra no `--grep` do job `integration-e2e-group-simulation` do
  * `_frontend-integration.yml` (e NÃO no `grep:` do `pr-gate.yml`, que roda com o engine OFF).
  *
+ * Vínculo Tactiq (`/admin/mi-cuenta/tactiq`, `TactiqLinkPage`) — segundo bloco deste arquivo, mesmo `--grep admissao-049`:
+ *  feliz  — sem vínculo, "Vincular Tactiq" -> o POST REAL devolve `authorizeUrl` e o navegador navega até ele (só o domínio
+ *           externo do Tactiq é interceptado, para nada sair da máquina; o `state` fica no banco).
+ *  alt 1  — volta do callback com `?tactiq=error&reason=...` mostra o banner de erro, a URL é limpa e o estado segue "Sin vincular".
+ *  alt 2  — vínculo `linked` (semeado no banco) mostra o estado, as datas e o banner de sucesso.
+ *  alt 3  — quem só tem `own_tactiq_link:read` vê a tela mas não tem o botão (e o POST direto leva 403).
+ *
  * Rodar local = o job do CI: `ABAC_API_URL`, `ABAC_TEST_DB_URL`, `E2E_PG_CONTAINER`, `E2E_BACKEND_URL`.
  * Dados SINTÉTICOS (paciente "BlocoC", e-mails @example.test, telefone fictício).
  */
 import { test, expect, type Page } from '@playwright/test';
-import { seedActivatablePatient, cleanupPatientDeep, runSQL } from '../helpers/patient-detail-c-helper';
+import { seedActivatablePatient, cleanupPatientDeep } from '../helpers/patient-detail-c-helper';
 import {
   psql, scalar, safeSql, seedStaffInGroup, cleanupStaffAndGroup, grantCell, loginAs, tokenFor, ABAC_API_URL, ABAC_TENANT,
 } from '../helpers/abac-stack-helper';
@@ -259,5 +266,117 @@ test.describe('admissao-049 — aba Admisión: nova agenda, vínculo Tactiq, can
     });
     expect(comCelula.status()).toBe(201);
     expect(linhasDoPaciente(seed.patientId)).toBe(antes + 1);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+// Vínculo do Tactiq do PRÓPRIO operador (TactiqLinkPage) — e2e de tela, API e Postgres reais.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+const TACTIQ_EXTERNO = 'https://fake-tactiq.example.test/**';
+const PAGINA_TACTIQ = '/admin/mi-cuenta/tactiq';
+
+test.describe('admissao-049 — vínculo Tactiq do operador: vincular, volta do callback e célula (spec 049) @integration', () => {
+  test.describe.configure({ mode: 'serial' });
+  test.setTimeout(120_000);
+
+  const mk = (nome: string) => {
+    const uid = `e2e-049-tq-${nome}-${RUN_ID}`;
+    return { uid, email: `${uid}@e2e.test`, role: 'admin', country: 'AR' };
+  };
+  const vinculadora = mk('novo'); // sem linha em tactiq_links (estado `missing`)
+  const jaVinculada = mk('linked'); // linha `linked` semeada
+  const soLeitura = mk('leitura'); // só own_tactiq_link:read
+  const todas = [vinculadora, jaVinculada, soLeitura];
+  const grupos: Record<string, string> = {};
+
+  test.beforeAll(() => {
+    for (const u of todas) {
+      grupos[u.uid] = seedStaffInGroup({ uid: u.uid, email: u.email, groupName: `Adm049 Tq ${u.uid}`, country: 'AR' }).groupId;
+      grantCell(grupos[u.uid], 'own_tactiq_link', 'read');
+      if (u !== soLeitura) grantCell(grupos[u.uid], 'own_tactiq_link', 'create');
+    }
+    psql(`INSERT INTO tactiq_links (host_email, firebase_uid, status, linked_at, last_check_at, last_check_outcome)
+          VALUES ('${jaVinculada.email}', '${jaVinculada.uid}', 'linked', now() - interval '3 days', now() - interval '2 hours', 'ok')`);
+  });
+
+  test.afterAll(() => {
+    for (const u of todas) {
+      safeSql(`DELETE FROM tactiq_oauth_states WHERE firebase_uid = '${u.uid}'`);
+      safeSql(`DELETE FROM tactiq_links WHERE lower(host_email) = '${u.email}'`);
+      cleanupStaffAndGroup(u.uid, grupos[u.uid]);
+    }
+    safeSql(`DELETE FROM iam.permission_groups WHERE tenant_id = '${ABAC_TENANT}' AND name LIKE 'Adm049 Tq %${RUN_ID}'`);
+  });
+
+  test('feliz: sem vínculo, "Vincular Tactiq" faz o POST real e o navegador vai ao authorizeUrl do Tactiq (state gravado no banco)', async ({ page }, testInfo) => {
+    // Fronteira externa: o domínio do Tactiq não pode ser alcançado. Só ele é interceptado; a API (POST) é a real.
+    const destinos: string[] = [];
+    await page.route(TACTIQ_EXTERNO, async (route) => {
+      destinos.push(route.request().url());
+      await route.fulfill({ status: 200, contentType: 'text/html', body: '<html><body data-testid="tactiq-externo">Tactiq (dublê de fronteira)</body></html>' });
+    });
+    await loginAs(page, vinculadora);
+    await page.goto(PAGINA_TACTIQ);
+    await expect(page.getByTestId('tactiq-link-page')).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId('tactiq-state')).toHaveText('Sin vincular');
+    await expect(page.getByTestId('tactiq-linked-at')).toHaveCount(0);
+    await expect(page.getByTestId('tactiq-link-button')).toHaveText('Vincular Tactiq');
+    expect(Number(scalar(`SELECT count(*) FROM tactiq_oauth_states WHERE firebase_uid = '${vinculadora.uid}'`))).toBe(0);
+    await page.screenshot({ path: testInfo.outputPath('6-tactiq-feliz-sem-vinculo.png') });
+
+    const post = page.waitForResponse((r) => r.request().method() === 'POST' && /\/api\/admin\/me\/tactiq-link$/.test(r.url()));
+    await page.getByTestId('tactiq-link-button').click();
+    expect((await post).status()).toBe(200);
+    await expect(page.getByTestId('tactiq-externo')).toBeVisible({ timeout: 15_000 });
+    // O destino é lido da barra do navegador: o `authorizeUrl` do Tactiq com o `state` e o desafio PKCE (S256).
+    const url = new URL(page.url());
+    expect(url.origin).toBe('https://fake-tactiq.example.test');
+    expect(url.pathname).toBe('/oauth/authorize');
+    expect(url.searchParams.get('code_challenge_method')).toBe('S256');
+    expect(url.searchParams.get('state')?.length ?? 0).toBeGreaterThan(20);
+    expect(destinos).toHaveLength(1);
+    // O banco concorda: 1 state do operador, ainda não consumido, com validade futura; nenhum vínculo foi criado.
+    expect(scalar(`SELECT count(*) || '|' || count(*) FILTER (WHERE consumed_at IS NULL AND expires_at > now()) FROM tactiq_oauth_states WHERE firebase_uid = '${vinculadora.uid}'`)).toBe('1|1');
+    expect(scalar(`SELECT count(*) FROM tactiq_links WHERE lower(host_email) = '${vinculadora.email}'`)).toBe('0');
+  });
+
+  test('alt 1: volta do callback com ?tactiq=error mostra o banner de erro, limpa a URL e o estado segue "Sin vincular"', async ({ page }, testInfo) => {
+    await loginAs(page, vinculadora);
+    await page.goto(`${PAGINA_TACTIQ}?tactiq=error&reason=exchange_failed`);
+    await expect(page.getByTestId('tactiq-banner-error')).toHaveText('No pudimos completar la vinculación con Tactiq. Probá de nuevo.');
+    await expect(page.getByTestId('tactiq-banner-linked')).toHaveCount(0);
+    await expect(page.getByTestId('tactiq-state')).toHaveText('Sin vincular');
+    await expect(page).toHaveURL(new RegExp(`${PAGINA_TACTIQ}$`)); // F5 não repete o erro
+    await expect(page.getByTestId('tactiq-link-button')).toBeEnabled(); // dá para tentar de novo
+    await page.screenshot({ path: testInfo.outputPath('7-tactiq-alt1-erro.png') });
+    await page.reload();
+    await expect(page.getByTestId('tactiq-state')).toBeVisible();
+    await expect(page.getByTestId('tactiq-banner-error')).toHaveCount(0);
+    expect(scalar(`SELECT count(*) FROM tactiq_links WHERE lower(host_email) = '${vinculadora.email}'`)).toBe('0');
+  });
+
+  test('alt 2: vínculo `linked` mostra estado e datas (e o banner de sucesso na volta) e o token nunca aparece na resposta', async ({ page }, testInfo) => {
+    await loginAs(page, jaVinculada);
+    await page.goto(`${PAGINA_TACTIQ}?tactiq=linked`);
+    await expect(page.getByTestId('tactiq-banner-linked')).toHaveText('Listo: tu cuenta de Tactiq quedó vinculada.');
+    await expect(page.getByTestId('tactiq-state')).toHaveText('Vinculado');
+    await expect(page.getByTestId('tactiq-linked-at')).not.toHaveText('—');
+    await expect(page.getByTestId('tactiq-last-check-at')).not.toHaveText('—');
+    await expect(page.getByTestId('tactiq-link-button')).toHaveText('Volver a vincular');
+    await page.screenshot({ path: testInfo.outputPath('8-tactiq-alt2-vinculado.png') });
+    // O estado vem do banco real: o token nunca chega à tela nem à resposta.
+    const corpo = await page.request.get(`${ABAC_API_URL}/api/admin/me/tactiq-link`, { headers: { Authorization: `Bearer ${tokenFor(jaVinculada)}` } });
+    expect(JSON.stringify(await corpo.json())).not.toMatch(/token/i);
+  });
+
+  test('alt 3: quem só tem `own_tactiq_link:read` vê a tela mas não tem o botão, e o POST direto leva 403 sem criar state', async ({ page }, testInfo) => {
+    await loginAs(page, soLeitura);
+    await page.goto(PAGINA_TACTIQ);
+    await expect(page.getByTestId('tactiq-state')).toHaveText('Sin vincular'); // controle positivo: a tela abriu
+    await expect(page.getByTestId('tactiq-link-button')).toHaveCount(0);
+    const direto = await page.request.post(`${ABAC_API_URL}/api/admin/me/tactiq-link`, { headers: { Authorization: `Bearer ${tokenFor(soLeitura)}` } });
+    expect(direto.status()).toBe(403);
+    expect(Number(scalar(`SELECT count(*) FROM tactiq_oauth_states WHERE firebase_uid = '${soLeitura.uid}'`))).toBe(0);
+    await page.screenshot({ path: testInfo.outputPath('9-tactiq-alt3-so-leitura.png') });
   });
 });
