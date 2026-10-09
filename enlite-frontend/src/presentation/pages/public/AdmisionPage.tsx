@@ -9,6 +9,7 @@ import { Heading, Text, Button } from '@presentation/components/atoms';
 import { FormField } from '@presentation/components/molecules/FormField';
 import { SelectField } from '@presentation/components/molecules/SelectField';
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon';
+import { COUNTRY_TIME_ZONE } from '@presentation/utils/countryTimeZone';
 import {
   LeadsApiService,
   AdmissionApiError,
@@ -44,10 +45,6 @@ const SERVICE_TYPES: LeadServiceType[] = [
 
 /** Page language + tz/locale for datetime grouping, keyed by country. */
 const COUNTRY_LANG: Record<AdmissionCountry, string> = { AR: 'es', BR: 'pt-BR' };
-const COUNTRY_TZ: Record<AdmissionCountry, string> = {
-  AR: 'America/Argentina/Buenos_Aires',
-  BR: 'America/Sao_Paulo',
-};
 const COUNTRY_LOCALE: Record<AdmissionCountry, string> = { AR: 'es-AR', BR: 'pt-BR' };
 
 function useLeadSchema(t: TFunction) {
@@ -325,7 +322,7 @@ interface DayGroup {
 }
 
 function groupSlotsByDay(slots: AdmissionSlot[], country: AdmissionCountry): DayGroup[] {
-  const tz = COUNTRY_TZ[country];
+  const tz = COUNTRY_TIME_ZONE[country];
   const locale = COUNTRY_LOCALE[country];
   const keyFmt = new Intl.DateTimeFormat('en-CA', {
     timeZone: tz,
@@ -527,7 +524,7 @@ function AdmissionConfirmation({ country, result, t }: AdmissionConfirmationProp
     const date = new Date(result.slotStartISO);
     if (Number.isNaN(date.getTime())) return result.slotStartISO;
     return new Intl.DateTimeFormat(COUNTRY_LOCALE[country], {
-      timeZone: COUNTRY_TZ[country],
+      timeZone: COUNTRY_TIME_ZONE[country],
       weekday: 'long',
       day: 'numeric',
       month: 'long',

@@ -11,11 +11,7 @@
  * "Hora de parede" = `YYYY-MM-DDTHH:mm` sem offset. É o que a pessoa digita e o que `POST .../admission-appointments`
  * recebe em `slotStartISO`: o servidor a interpreta no fuso do país (nunca o navegador, nunca `Date` local).
  */
-export const COUNTRY_TIME_ZONE: Readonly<Record<string, string>> = {
-  AR: 'America/Argentina/Buenos_Aires',
-  BR: 'America/Sao_Paulo',
-  UY: 'America/Montevideo',
-};
+import { COUNTRY_TIME_ZONE } from '@presentation/utils/countryTimeZone';
 
 /** Fuso de um país; desconhecido → Buenos Aires (o operador é argentino) em vez de cair no fuso do navegador. */
 export function timeZoneForCountry(country: string | null | undefined): string {
