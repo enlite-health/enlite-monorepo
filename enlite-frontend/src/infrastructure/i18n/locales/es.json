@@ -4556,7 +4556,9 @@
             "execute": "Ejecutar",
             "send": "Enviar",
             "disable": "Dar de baja",
-            "write": "Crear y editar"
+            "write": "Crear y editar",
+            "incomplete_alert": "Aviso día 12",
+            "waive_contact": "No necesita"
           },
           "category": {
             "Trabalhadores": "Trabajadores",
