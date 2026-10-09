@@ -27,7 +27,7 @@ import { seedActivatablePatient, cleanupPatientDeep, runSQL } from '../helpers/p
 import {
   psql, scalar, safeSql, seedStaffInGroup, cleanupStaffAndGroup, grantCell, loginAs, tokenFor, ABAC_API_URL, ABAC_TENANT,
 } from '../helpers/abac-stack-helper';
-import { escolherSegmentoPeloTeclado, primeiroSegmento } from '../helpers/pti-segmento-helper';
+import { primeiroSegmento } from '../helpers/pti-segmento-helper';
 
 const RUN_ID = `${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
 const ICD_URI = `http://id.who.int/icd/entity/e2e-048-${RUN_ID}`;
@@ -101,7 +101,11 @@ async function preencherNuevo(page: Page, serviceId: string): Promise<void> {
   await expect(page.getByTestId('therapeutic-project-form')).toBeVisible({ timeout: 15_000 });
   await expect(page.getByTestId('tp-service')).toHaveValue(serviceId);
   await page.getByTestId('tp-modality').selectOption('HYBRID');
-  await escolherSegmentoPeloTeclado(page, primeiroSegmento().label);
+  // Segmento (MACRO, obrigatório no "Nuevo"): `selectOption` pelo rótulo — o type-ahead do select nativo não é confiável no
+  // Chromium/Linux do CI (medido: o valor ficou vazio no runner), e o segmento não é o que esta spec mede.
+  const segmento = primeiroSegmento().label;
+  await page.locator('#tp-segment').selectOption({ label: segmento });
+  await expect(page.locator('#tp-segment').locator('option:checked')).toHaveText(segmento);
   const search = page.waitForResponse((r) => r.request().method() === 'GET' && /\/api\/admin\/terminology\/search/.test(r.url()));
   await page.getByTestId('tp-icd-input').click();
   await page.keyboard.type('sintetico 048');
