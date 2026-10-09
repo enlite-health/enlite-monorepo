@@ -103,7 +103,8 @@ test.describe('admissao-049 — aba Admisión: nova agenda, vínculo Tactiq, can
 
     operadoraGroupId = seedStaffInGroup({ uid: operadoraUid, email: operadora.email, groupName: `Adm049 Operadora ${RUN_ID}`, country: 'AR' }).groupId;
     for (const [r, a] of CELULAS_VER) grantCell(operadoraGroupId, r, a);
-    grantCell(operadoraGroupId, 'patient_admission', 'write');
+    grantCell(operadoraGroupId, 'patient_admission', 'create');
+    grantCell(operadoraGroupId, 'patient_admission', 'update');
     leitoraGroupId = seedStaffInGroup({ uid: leitoraUid, email: leitora.email, groupName: `Adm049 Leitora ${RUN_ID}`, country: 'AR' }).groupId;
     for (const [r, a] of CELULAS_VER) grantCell(leitoraGroupId, r, a);
   });

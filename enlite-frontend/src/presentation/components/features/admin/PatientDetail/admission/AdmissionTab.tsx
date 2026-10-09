@@ -4,7 +4,7 @@
  * reenviar o WhatsApp que falhou.
  *
  * Células (D286): a LEITURA é do container (`ContainerGate resource="patient_admission"` na página); aqui, escrever
- * (`:write`) libera "Nueva agenda" e "Cancelar", e `:resend_message` libera "Reenviar". Sem a célula o botão SOME.
+ * (`:create` libera "Nueva agenda"; `:update` libera "Cancelar" — convenção PR-8b, sem `write`), e `:resend_message` libera "Reenviar". Sem a célula o botão SOME.
  * Horários sempre no fuso do país do paciente. Nada de PII em log: este componente não loga.
  */
 import { useState, type JSX } from 'react';
@@ -47,7 +47,7 @@ const asAdmissionCountry = (c: string): AdmissionCountry => (c === 'BR' ? 'BR' :
 export function AdmissionTab({ patientId, country, onOpenDocuments, now = () => new Date() }: Props): JSX.Element {
   const { t } = useTranslation();
   const ta = (key: string): string => t(`admin.patients.detail.admissionTab.${key}`);
-  const writeGate = useActionGate('patient_admission', 'write');
+  const updateGate = useActionGate('patient_admission', 'update');
   const resendGate = useActionGate('patient_admission', 'resend_message');
   const { appointments, status, reload } = useAdmissionAppointments(patientId);
   const timeZone = timeZoneForCountry(country);
@@ -109,7 +109,7 @@ export function AdmissionTab({ patientId, country, onOpenDocuments, now = () => 
         <Heading level={2} weight="semibold" color="secondary">{ta('title')}</Heading>
         <ActionButton
           resource="patient_admission"
-          action="write"
+          action="create"
           variant="primary"
           size="sm"
           onClick={() => { setNotice(null); setNewOpen(true); }}
@@ -142,7 +142,7 @@ export function AdmissionTab({ patientId, country, onOpenDocuments, now = () => 
               appointment={a}
               timeZone={timeZone}
               canResendCell={resendGate.allowed}
-              canCancel={writeGate.allowed}
+              canCancel={updateGate.allowed}
               now={nowDate}
               onOpenDocuments={onOpenDocuments}
               onResend={(kind) => { setDialogError(null); setPendingResend({ appointment: a, kind }); }}

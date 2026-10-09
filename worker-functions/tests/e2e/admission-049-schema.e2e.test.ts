@@ -176,8 +176,8 @@ describe('schema da aba Admissão (spec 049, migrations 503-507)', () => {
       `SELECT p.resource || ':' || p.action AS cell FROM iam.permissions p
         WHERE p.resource IN ('patient_admission','own_tactiq_link') AND p.deprecated_at IS NULL ORDER BY 1`);
     expect(cells.map((c) => c.cell)).toEqual([
-      'own_tactiq_link:read', 'own_tactiq_link:write',
-      'patient_admission:read', 'patient_admission:resend_message', 'patient_admission:write',
+      'own_tactiq_link:create', 'own_tactiq_link:read',
+      'patient_admission:create', 'patient_admission:read', 'patient_admission:resend_message', 'patient_admission:update',
     ]);
     // patient_admission:* — só o Master (decisão do Diego/H7 abre o resto)
     const { rows: adm } = await pool.query(

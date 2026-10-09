@@ -39,7 +39,7 @@ const unb64 = (s: string): string => Buffer.from(s, 'base64').toString('utf8');
 const HOUR = 3_600_000;
 
 const U = {
-  linker: `tq049-linker-${RUN}`, // own_tactiq_link: read + write
+  linker: `tq049-linker-${RUN}`, // own_tactiq_link: read + create
   reader: `tq049-reader-${RUN}`, // own_tactiq_link: read
   semGrupo: `tq049-sem-grupo-${RUN}`, // staff sem célula
 };
@@ -143,7 +143,7 @@ describe('vínculo do Tactiq — HTTP real, banco real, engine LIGADO (spec 049,
          ($1,$4,'admin','ACTIVE',true,$7), ($2,$5,'admin','ACTIVE',true,$7), ($3,$6,'admin','ACTIVE',true,$7)`,
       [U.linker, U.reader, U.semGrupo, emailOf(U.linker), emailOf(U.reader), emailOf(U.semGrupo), TENANT_E2E],
     );
-    await grupoComCelulas(admin, { nome: GRUPOS.linker, uid: U.linker, celulas: [['own_tactiq_link', 'read'], ['own_tactiq_link', 'write']] });
+    await grupoComCelulas(admin, { nome: GRUPOS.linker, uid: U.linker, celulas: [['own_tactiq_link', 'read'], ['own_tactiq_link', 'create']] });
     await grupoComCelulas(admin, { nome: GRUPOS.reader, uid: U.reader, celulas: [['own_tactiq_link', 'read']] });
 
     oauth = new FakeTactiqOAuth();
@@ -608,7 +608,7 @@ describeAbacStack('stack com engine ligado e catálogo SINCRONIZADO no boot (F4:
          ($1,$4,'admin','ACTIVE',true,$7), ($2,$5,'admin','ACTIVE',true,$7), ($3,$6,'admin','ACTIVE',true,$7)`,
       [uids.com, uids.leitor, uids.sem, emailOf(uids.com), emailOf(uids.leitor), emailOf(uids.sem), TENANT_E2E],
     );
-    await grupoComCelulas(pool, { nome: grupos.com, uid: uids.com, celulas: [['own_tactiq_link', 'read'], ['own_tactiq_link', 'write']] });
+    await grupoComCelulas(pool, { nome: grupos.com, uid: uids.com, celulas: [['own_tactiq_link', 'read'], ['own_tactiq_link', 'create']] });
     await grupoComCelulas(pool, { nome: grupos.leitor, uid: uids.leitor, celulas: [['own_tactiq_link', 'read']] });
   });
 
@@ -619,13 +619,13 @@ describeAbacStack('stack com engine ligado e catálogo SINCRONIZADO no boot (F4:
     await pool.end();
   });
 
-  it('as 5 células do 049 estão no catálogo SINCRONIZADO: descrição do código (não o placeholder da 507) e deprecated_at IS NULL', async () => {
+  it('as 6 células do 049 estão no catálogo SINCRONIZADO: descrição do código (não o placeholder da 507) e deprecated_at IS NULL', async () => {
     const { rows } = await pool.query(
       `SELECT resource || ':' || action AS cell, description, deprecated_at FROM iam.permissions WHERE resource IN ('patient_admission','own_tactiq_link') ORDER BY 1`,
     );
     expect(rows.map((r) => r.cell)).toEqual([
-      'own_tactiq_link:read', 'own_tactiq_link:write',
-      'patient_admission:read', 'patient_admission:resend_message', 'patient_admission:write',
+      'own_tactiq_link:create', 'own_tactiq_link:read',
+      'patient_admission:create', 'patient_admission:read', 'patient_admission:resend_message', 'patient_admission:update',
     ]);
     for (const r of rows) {
       expect(r.deprecated_at).toBeNull();

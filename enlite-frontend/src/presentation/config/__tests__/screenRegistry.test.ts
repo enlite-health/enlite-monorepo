@@ -135,8 +135,8 @@ describe('screensByCell / containersOfTab / screenById', () => {
     // Spec 049 (F7): a aba Admissão vem logo depois de Documentos, com container próprio e 3 células.
     expect(s.tabs).toEqual(['clinicalData', 'supportNetwork', 'documents', 'admission', 'contractedService', 'history']);
     expect(containersOfTab(s, 'admission').map((c) => c.resource)).toEqual(['patient_admission']);
-    expect(s.containers?.find((c) => c.id === 'admission')?.cells).toEqual(['patient_admission:read', 'patient_admission:write', 'patient_admission:resend_message']);
-    expect(screenById('account.tactiq').cells).toEqual(['own_tactiq_link:read', 'own_tactiq_link:write']);
+    expect(s.containers?.find((c) => c.id === 'admission')?.cells).toEqual(['patient_admission:read', 'patient_admission:create', 'patient_admission:update', 'patient_admission:resend_message']);
+    expect(screenById('account.tactiq').cells).toEqual(['own_tactiq_link:read', 'own_tactiq_link:create']);
     expect(s.tabs).not.toContain('vacancies');
     expect(containersOfTab(s, 'vacancies' as never)).toEqual([]);
     expect(s.containers?.find((c) => c.resource === 'vacancy')?.cells).toEqual(['vacancy:read']);

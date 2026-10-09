@@ -5,7 +5,7 @@
  * responsável de uma agenda de admissão. A tela mostra o estado do vínculo (sem token, nunca — a API não o envia),
  * o botão que inicia o OAuth (`POST /me/tactiq-link` → `{ authorizeUrl }` → redireciona o NAVEGADOR) e o resultado
  * da volta do callback (`?tactiq=linked|error&reason=`). Gates: `own_tactiq_link:read` abre a tela (a rota) e
- * `own_tactiq_link:write` libera o botão.
+ * `own_tactiq_link:create` libera o botão.
  *
  * Sem PII em log: nada aqui loga. O motivo do erro (`reason`) é um código curto do servidor e não é exibido cru.
  */
@@ -134,7 +134,7 @@ export default function TactiqLinkPage({ redirect = (url) => window.location.ass
             <div className="flex flex-col items-start gap-2">
               <ActionButton
                 resource="own_tactiq_link"
-                action="write"
+                action="create"
                 variant="primary"
                 size="md"
                 onClick={() => { void start(); }}

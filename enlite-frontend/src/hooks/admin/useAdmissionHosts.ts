@@ -1,6 +1,6 @@
 /**
  * useAdmissionHosts — o roster de admissão do país, com o estado do vínculo do Tactiq de cada responsável
- * (spec 049, F7). Só é pedido quando o modal "Nueva agenda" abre (`enabled`): a rota exige `patient_admission:write`.
+ * (spec 049, F7). Só é pedido quando o modal "Nueva agenda" abre (`enabled`): a rota exige `patient_admission:create`.
  */
 import { useCallback, useEffect, useState } from 'react';
 import {

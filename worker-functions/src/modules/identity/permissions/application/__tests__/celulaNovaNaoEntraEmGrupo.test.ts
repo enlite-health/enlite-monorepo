@@ -326,12 +326,12 @@ describe('own_ (revogação ESTREITA da D338, decisão do Gabriel 23/09/2026, mi
       if (key.startsWith('own_')) encontradas.add(key);
     }
 
-    // Spec 049 (F4): `own_tactiq_link:read|write` — o operador vê/vincula a PRÓPRIA conta do Tactiq (nunca a de terceiro).
+    // Spec 049 (F4): `own_tactiq_link:read|create` — o operador vê/vincula a PRÓPRIA conta do Tactiq (nunca a de terceiro).
     // ⚠️ PENDENTE DE CONFIRMAÇÃO DO GABRIEL (este teste existe para isso): pelo prefixo `own_`, o sync do catálogo as
     // concede a TODO grupo ativo (mig 471) — a 507 as deu só ao Master. Registrado no §11 da spec 049.
     const KNOWN_OWN_CELLS = [
       'own_notifications:read', 'own_notifications:update', 'own_presence:update',
-      'own_tactiq_link:read', 'own_tactiq_link:write',
+      'own_tactiq_link:read', 'own_tactiq_link:create',
     ];
     const novas = [...encontradas].filter((c) => !KNOWN_OWN_CELLS.includes(c));
     if (novas.length > 0) {

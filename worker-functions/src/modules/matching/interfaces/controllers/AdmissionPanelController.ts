@@ -24,9 +24,9 @@ import {
  * AdmissionPanelController — rotas ADMIN da aba Admissão (spec 049 F3). `:id` é SEMPRE o patient id.
  *
  *   GET  /patients/:id/admission-appointments                              patient_admission:read
- *   GET  /admission/hosts?country=AR|BR                                    patient_admission:write
- *   POST /patients/:id/admission-appointments                              patient_admission:write  (409 TACTIQ_LINK_REQUIRED se o responsável não tem vínculo vivo)
- *   POST /patients/:id/admission-appointments/:apptId/cancel               patient_admission:write
+ *   GET  /admission/hosts?country=AR|BR                                    patient_admission:create
+ *   POST /patients/:id/admission-appointments                              patient_admission:create  (409 TACTIQ_LINK_REQUIRED se o responsável não tem vínculo vivo)
+ *   POST /patients/:id/admission-appointments/:apptId/cancel               patient_admission:update
  *   POST /patients/:id/admission-appointments/:apptId/messages/:kind/resend patient_admission:resend_message
  *
  * Erros de domínio viram resposta com `code` estável; o resto vira 500 genérico, relatado só com ids (nunca telefone,

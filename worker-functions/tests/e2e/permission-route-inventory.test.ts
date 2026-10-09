@@ -413,15 +413,15 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         // família `admin.users`, célula NOVA `own_presence:update` (nasce concedida a todo
         // staff, mesma regra de `own_notifications`, D-07; migration 466).
         'POST /api/admin/me/presence → own_presence:update',
-        // spec 049 F3 (aba Admissão): família admin.patients, 3 células literais nas 5 rotas.
+        // spec 049 F3 (aba Admissão): família admin.patients, 4 células literais nas 5 rotas (PR-8b: create/update, sem write).
         'GET /api/admin/patients/:id/admission-appointments → patient_admission:read',
-        'GET /api/admin/admission/hosts → patient_admission:write',
-        'POST /api/admin/patients/:id/admission-appointments → patient_admission:write',
-        'POST /api/admin/patients/:id/admission-appointments/:apptId/cancel → patient_admission:write',
+        'GET /api/admin/admission/hosts → patient_admission:create',
+        'POST /api/admin/patients/:id/admission-appointments → patient_admission:create',
+        'POST /api/admin/patients/:id/admission-appointments/:apptId/cancel → patient_admission:update',
         'POST /api/admin/patients/:id/admission-appointments/:apptId/messages/:kind/resend → patient_admission:resend_message',
         // spec 049 F4 (vínculo do Tactiq): família admin.users, células own_* (o operador vê/vincula a PRÓPRIA conta).
         'GET /api/admin/me/tactiq-link → own_tactiq_link:read',
-        'POST /api/admin/me/tactiq-link → own_tactiq_link:write',
+        'POST /api/admin/me/tactiq-link → own_tactiq_link:create',
       ].sort(),
     );
   });
@@ -448,7 +448,7 @@ describe('inventário de rotas governadas (app real de pé)', () => {
     // não numa célula desta lista.
     // `GET /api/admin/me/tactiq-link/callback` entrou na spec 049 (F4): o Tactiq redireciona o NAVEGADOR para o callback,
     // que não carrega Bearer. A isenção é a MARCA da montagem (`exemptHandler` em `tactiqLinkRoutes.ts`); a prova de
-    // identidade é o `state` single-use criado pelo POST autenticado (`own_tactiq_link:write`), 10 min, ligado ao uid.
+    // identidade é o `state` single-use criado pelo POST autenticado (`own_tactiq_link:create`), 10 min, ligado ao uid.
     const isentas = inventario.governedRoutes.filter((r) => r.status === 'exempt');
     expect(isentas.map((r) => `${r.method} ${r.path}`).sort()).toEqual([
       'DELETE /v1/me/simulation',

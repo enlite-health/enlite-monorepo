@@ -10,7 +10,8 @@ import { AdmissionPanelController } from '../controllers/AdmissionPanelControlle
  * Células LITERAIS em cada rota (nunca por variável/loop/closure — o scanner do catálogo só reconhece
  * `perm.require('recurso', 'ação', ...)` com strings literais; `celula-em-closure-nao-entra-no-catalogo`):
  *  - `patient_admission:read`           — lista de reuniões (site + painel) com os selos.
- *  - `patient_admission:write`          — hosts do roster, agendar, cancelar.
+ *  - `patient_admission:create`         — hosts do roster e agendar.
+ *  - `patient_admission:update`         — cancelar a agenda (convenção PR-8b: `write` não existe fora de permission_management).
  *  - `patient_admission:resend_message` — reenviar o WhatsApp que falhou.
  * `untilEnforced: 'admin'`: com a família ainda não enforçada, só o papel admin passa.
  * `staffOnly` SEMPRE antes de `perm.require` (a ordem é parte do contrato do `PermissionMiddleware`).
@@ -34,21 +35,21 @@ export function createAdminAdmissionRoutes(
   router.get(
     '/admission/hosts',
     staffOnly,
-    perm.require('patient_admission', 'write', { untilEnforced: 'admin' }),
+    perm.require('patient_admission', 'create', { untilEnforced: 'admin' }),
     (req: Request, res: Response) => controller.listHosts(req, res),
   );
 
   router.post(
     '/patients/:id/admission-appointments',
     staffOnly,
-    perm.require('patient_admission', 'write', { untilEnforced: 'admin' }),
+    perm.require('patient_admission', 'create', { untilEnforced: 'admin' }),
     (req: Request, res: Response) => controller.book(req, res),
   );
 
   router.post(
     '/patients/:id/admission-appointments/:apptId/cancel',
     staffOnly,
-    perm.require('patient_admission', 'write', { untilEnforced: 'admin' }),
+    perm.require('patient_admission', 'update', { untilEnforced: 'admin' }),
     (req: Request, res: Response) => controller.cancel(req, res),
   );
 

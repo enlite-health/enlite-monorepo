@@ -109,7 +109,7 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
       c('documents', 'patient_document', ['read', 'create', 'update', 'delete'], 'documents'),
       // Spec 049 (F7): a aba "Admisión" — container próprio. `write` = agendar/cancelar; `resend_message` = reenviar o WhatsApp
       // que falhou (célula separada: quais perfis a recebem é decisão do Diego, H7).
-      c('admission', 'patient_admission', ['read', 'write', 'resend_message'], 'admission'),
+      c('admission', 'patient_admission', ['read', 'create', 'update', 'resend_message'], 'admission'),
       c('coverage', 'patient_coverage', ['read', 'create', 'update'], 'contractedService'),
       c('address', 'patient_address', ['read', 'create', 'update', 'delete'], 'contractedService'),
       // A aba Matching saiu (decisão do Gabriel 05/09, na main): o encuadre É o serviço contratado
@@ -127,7 +127,7 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
     ],
   },
   // Spec 049 (F7): "Vincular Tactiq" — a conta do PRÓPRIO operador. `own_` = toda conta com grupo recebe (auto-grant 471).
-  { id: 'account.tactiq', route: '/admin/mi-cuenta/tactiq', cells: ['own_tactiq_link:read', 'own_tactiq_link:write'] },
+  { id: 'account.tactiq', route: '/admin/mi-cuenta/tactiq', cells: ['own_tactiq_link:read', 'own_tactiq_link:create'] },
   { id: 'patients.chatRoles', route: '/admin/patient-chat-roles', cells: ['patient:read', 'patient:create', 'patient:update'] },
   // Spec 017 (D299.3): os 2 catálogos do projeto terapêutico — uma tela e uma célula por lista (tipo de patologia deriva do CID-11, sem tela).
   { id: 'patients.catalogObjectives', route: '/admin/catalogos/objetivos-especificos', cells: ['catalog_therapeutic_objectives:read', 'catalog_therapeutic_objectives:create', 'catalog_therapeutic_objectives:update'] },

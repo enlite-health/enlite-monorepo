@@ -15,7 +15,7 @@ const callbackQuery = z.object({ code: z.string().min(1).max(2048), state: z.str
  * TactiqLinkController — o operador vê e gerencia o PRÓPRIO vínculo (spec 049 F4).
  *
  *   GET  /me/tactiq-link            own_tactiq_link:read   estado do vínculo (SEM token, nunca)
- *   POST /me/tactiq-link            own_tactiq_link:write  inicia o OAuth → { authorizeUrl }
+ *   POST /me/tactiq-link            own_tactiq_link:create inicia o OAuth → { authorizeUrl }
  *   GET  /me/tactiq-link/callback   (sem Bearer)           o Tactiq redireciona o NAVEGADOR para cá
  *
  * O callback é uma navegação do browser: não carrega o header de autorização. A identidade vem do `state` (criado no

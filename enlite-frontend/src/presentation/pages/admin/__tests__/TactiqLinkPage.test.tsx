@@ -1,6 +1,6 @@
 /**
  * TactiqLinkPage — "Vincular Tactiq" (spec 049, F7): estado do vínculo, botão que inicia o OAuth e redireciona o
- * navegador, retorno do callback (`?tactiq=linked|error&reason=`) e a célula `own_tactiq_link:write`.
+ * navegador, retorno do callback (`?tactiq=linked|error&reason=`) e a célula `own_tactiq_link:create`.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
@@ -36,7 +36,7 @@ const view = (status: string, extra: Record<string, string | null> = {}) => ({
 
 beforeEach(() => {
   Object.values(api).forEach((m) => m.mockReset());
-  setCells(['own_tactiq_link:read', 'own_tactiq_link:write']);
+  setCells(['own_tactiq_link:read', 'own_tactiq_link:create']);
 });
 afterEach(() => setCells(null));
 
@@ -98,7 +98,7 @@ describe('vincular', () => {
     expect(screen.getByTestId('tactiq-link-button')).not.toBeDisabled();
   });
 
-  it('sem own_tactiq_link:write o botão some (a tela só informa)', async () => {
+  it('sem own_tactiq_link:create o botão some (a tela só informa)', async () => {
     setCells(['own_tactiq_link:read']);
     api.getOwnTactiqLink.mockResolvedValue(view('missing'));
     renderPage();

@@ -369,10 +369,10 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       // Spec 031 (02/10): aba "Documentos" — 4 células declaradas por rota real
       // (`patientDocumentsRoutes.ts`); o fixture de 2 rotas deste teste não as declara.
       'patient_document:read', 'patient_document:create', 'patient_document:update', 'patient_document:delete',
-      // Spec 049 (F3): aba "Admissão" — 3 células declaradas por rota real (`adminAdmissionRoutes.ts`).
-      'patient_admission:read', 'patient_admission:write', 'patient_admission:resend_message',
+      // Spec 049 (F3): aba "Admissão" — 4 células declaradas por rota real (`adminAdmissionRoutes.ts`).
+      'patient_admission:read', 'patient_admission:create', 'patient_admission:update', 'patient_admission:resend_message',
       // Spec 049 (F4): vínculo do Tactiq — 2 células `own_*` declaradas por rota real (`tactiqLinkRoutes.ts`).
-      'own_tactiq_link:read', 'own_tactiq_link:write',
+      'own_tactiq_link:read', 'own_tactiq_link:create',
       'staff_directory:read',
       // Spec 022, Bloco 4 (fecho, 21/09): notificações in-app — `own_notifications:read|update`
       // (família `admin.users`). Mesma situação das 5 células acima: rota real existe

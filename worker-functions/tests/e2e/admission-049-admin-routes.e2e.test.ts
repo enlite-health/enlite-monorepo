@@ -48,8 +48,8 @@ const QUEBRADO = 'quebrado.e2e049@example.test';
 const OUTRA_CONTA = 'outra.conta.e2e049@example.test';
 
 const U = {
-  chefe: 'adm049-chefe', // read + write + resend_message
-  agendadora: 'adm049-agendadora', // read + write
+  chefe: 'adm049-chefe', // read + create + update + resend_message
+  agendadora: 'adm049-agendadora', // read + create (agenda, não cancela)
   leitora: 'adm049-leitora', // read
   semGrupo: 'adm049-sem-grupo', // staff sem célula nenhuma
 };
@@ -173,8 +173,8 @@ describe('rotas admin da aba Admissão — HTTP real, banco real, engine LIGADO 
          ($4,'adm049-sem-grupo@e2e.local','admin','ACTIVE',true,$5)`,
       [U.chefe, U.agendadora, U.leitora, U.semGrupo, TENANT_E2E],
     );
-    await grupoComCelulas(admin, { nome: GRUPOS.chefe, uid: U.chefe, celulas: [['patient_admission', 'read'], ['patient_admission', 'write'], ['patient_admission', 'resend_message']] });
-    await grupoComCelulas(admin, { nome: GRUPOS.agendadora, uid: U.agendadora, celulas: [['patient_admission', 'read'], ['patient_admission', 'write']] });
+    await grupoComCelulas(admin, { nome: GRUPOS.chefe, uid: U.chefe, celulas: [['patient_admission', 'read'], ['patient_admission', 'create'], ['patient_admission', 'update'], ['patient_admission', 'resend_message']] });
+    await grupoComCelulas(admin, { nome: GRUPOS.agendadora, uid: U.agendadora, celulas: [['patient_admission', 'read'], ['patient_admission', 'create']] });
     await grupoComCelulas(admin, { nome: GRUPOS.leitora, uid: U.leitora, celulas: [['patient_admission', 'read']] });
     await admin.query(
       `INSERT INTO interview_hosts (email, display_name, country, active) VALUES ($1,'Ana','AR',true), ($2,'Mari','AR',true),
@@ -265,20 +265,20 @@ describe('rotas admin da aba Admissão — HTTP real, banco real, engine LIGADO 
   });
 
   describe('A3-8 (varredura): as 3 células estão LITERAIS na rota — é o que o catálogo enxerga', () => {
-    it('scanExpressRouter vê cada rota com a SUA célula (read / write / resend_message)', async () => {
+    it('scanExpressRouter vê cada rota com a SUA célula (read / create / update / resend_message)', async () => {
       const { scanExpressRouter, declaredCells } = await import('@modules/identity/permissions');
       const routes = scanExpressRouter(app.servidor.listeners('request')[0] as never)
         .filter((r) => r.path.includes('admission'));
       const por = (m: string, suffix: string) =>
         routes.find((r) => r.method === m && r.path.endsWith(suffix))?.cell;
       expect(por('GET', '/patients/:id/admission-appointments')).toMatchObject({ resource: 'patient_admission', action: 'read' });
-      expect(por('POST', '/patients/:id/admission-appointments')).toMatchObject({ resource: 'patient_admission', action: 'write' });
-      expect(por('GET', '/admission/hosts')).toMatchObject({ resource: 'patient_admission', action: 'write' });
-      expect(por('POST', '/:apptId/cancel')).toMatchObject({ resource: 'patient_admission', action: 'write' });
+      expect(por('POST', '/patients/:id/admission-appointments')).toMatchObject({ resource: 'patient_admission', action: 'create' });
+      expect(por('GET', '/admission/hosts')).toMatchObject({ resource: 'patient_admission', action: 'create' });
+      expect(por('POST', '/:apptId/cancel')).toMatchObject({ resource: 'patient_admission', action: 'update' });
       expect(por('POST', '/messages/:kind/resend')).toMatchObject({ resource: 'patient_admission', action: 'resend_message' });
       expect(routes).toHaveLength(5);
       const declared = declaredCells(routes).map((c) => `${c.resource}:${c.action}`).sort();
-      expect(declared).toEqual(['patient_admission:read', 'patient_admission:resend_message', 'patient_admission:write']);
+      expect(declared).toEqual(['patient_admission:create', 'patient_admission:read', 'patient_admission:resend_message', 'patient_admission:update']);
     });
   });
 
@@ -305,7 +305,7 @@ describe('rotas admin da aba Admissão — HTTP real, banco real, engine LIGADO 
       expect((await http('GET', '/api/admin/admission/hosts?country=AR', U.semGrupo)).status).toBe(403);
     });
 
-    it('com patient_admission:write → 201 (controle positivo) e lista de hosts 200', async () => {
+    it('com patient_admission:create → 201 (controle positivo) e lista de hosts 200', async () => {
       const p = await newPatient();
       const res = await book(p, U.agendadora);
       expect(res.status).toBe(201);
@@ -315,7 +315,7 @@ describe('rotas admin da aba Admissão — HTTP real, banco real, engine LIGADO 
       expect(hosts.body.data.map((h: { email: string }) => h.email)).toEqual(expect.arrayContaining([ANA, OCUPADA]));
     });
 
-    it('reenviar exige a célula PRÓPRIA: quem agenda (write) mas não tem resend_message leva 403', async () => {
+    it('reenviar exige a célula PRÓPRIA: quem agenda (create) mas não tem resend_message leva 403', async () => {
       const p = await newPatient();
       const b = await book(p, U.agendadora);
       const r = await http('POST', `/api/admin/patients/${p}/admission-appointments/${b.body.data.appointmentId}/messages/confirmation/resend`, U.agendadora);
@@ -323,7 +323,7 @@ describe('rotas admin da aba Admissão — HTTP real, banco real, engine LIGADO 
       expect(r.body).toMatchObject({ code: 'missing_cell' });
     });
 
-    it('cancelar exige write: só-leitura leva 403 e a reunião segue booked', async () => {
+    it('cancelar exige update: só-leitura leva 403 e a reunião segue booked', async () => {
       const p = await newPatient();
       const b = await book(p, U.agendadora);
       const id = b.body.data.appointmentId as string;
@@ -671,7 +671,7 @@ describeAbacStack('stack com engine ligado e catálogo SINCRONIZADO no boot (A3-
       [uids.sem, uids.com, TENANT_E2E],
     );
     await grupoComCelulas(pool, { nome: grupos.sem, uid: uids.sem, celulas: [['patient_admission', 'read']] });
-    await grupoComCelulas(pool, { nome: grupos.com, uid: uids.com, celulas: [['patient_admission', 'read'], ['patient_admission', 'write']] });
+    await grupoComCelulas(pool, { nome: grupos.com, uid: uids.com, celulas: [['patient_admission', 'read'], ['patient_admission', 'create'], ['patient_admission', 'update']] });
     await pool.query(`INSERT INTO interview_hosts (email, display_name, country, active) VALUES ($1,'Ana','AR',true)`, [ANA]);
     await pool.query(`DELETE FROM tactiq_links WHERE lower(host_email) = $1`, [ANA]);
     await pool.query(`INSERT INTO tactiq_links (host_email, firebase_uid, status) VALUES ($1,'tq-ana-c','linked')`, [ANA]);
@@ -691,18 +691,18 @@ describeAbacStack('stack com engine ligado e catálogo SINCRONIZADO no boot (A3-
     await pool.end();
   });
 
-  it('A3-8: as 3 células patient_admission estão no catálogo SINCRONIZADO (descrição do código, não o placeholder da 507) e com deprecated_at IS NULL', async () => {
+  it('A3-8: as 4 células patient_admission estão no catálogo SINCRONIZADO (descrição do código, não o placeholder da 507) e com deprecated_at IS NULL', async () => {
     const { rows } = await pool.query(
       `SELECT action, description, deprecated_at FROM iam.permissions WHERE resource = 'patient_admission' ORDER BY action`,
     );
-    expect(rows.map((r) => r.action)).toEqual(['read', 'resend_message', 'write']);
+    expect(rows.map((r) => r.action)).toEqual(['create', 'read', 'resend_message', 'update']);
     for (const r of rows) {
       expect(r.deprecated_at).toBeNull();
       expect(r.description).not.toContain('507 placeholder');
     }
   });
 
-  it('A3-7 pelo container: só-leitura → 403 e nada criado; com write → 201 (Meet do dublê fak-e049); engine ligado', async () => {
+  it('A3-7 pelo container: só-leitura → 403 e nada criado; com create → 201 (Meet do dublê fak-e049); engine ligado', async () => {
     const slot = DateTime.now().plus({ days: 400 + Math.floor(Math.random() * 300) }).set({ hour: 10, minute: 0, second: 0, millisecond: 0 }).toISO();
     const call = async (uid: string) => {
       const res = await fetch(`${API_URL}/api/admin/patients/${patientId}/admission-appointments`, {

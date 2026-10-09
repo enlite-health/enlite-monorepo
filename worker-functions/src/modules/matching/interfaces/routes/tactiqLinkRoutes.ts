@@ -10,11 +10,11 @@ import { TactiqCheckInternalController } from '../controllers/TactiqCheckInterna
  *
  * Células LITERAIS em cada rota (`celula-em-closure-nao-entra-no-catalogo`):
  *  - `own_tactiq_link:read`  — ver o estado do PRÓPRIO vínculo.
- *  - `own_tactiq_link:write` — iniciar a vinculação da PRÓPRIA conta.
+ *  - `own_tactiq_link:create` — iniciar a vinculação da PRÓPRIA conta.
  * `staffOnly` SEMPRE antes de `perm.require`.
  *
  * O callback NÃO entra aqui: é navegação do browser (sem Bearer) e usa `createTactiqLinkCallbackRoute` — a prova de
- * identidade é o `state` single-use criado pelo POST acima, que já passou pela célula `own_tactiq_link:write`.
+ * identidade é o `state` single-use criado pelo POST acima, que já passou pela célula `own_tactiq_link:create`.
  */
 export function createTactiqLinkRoutes(
   authMiddleware: AuthMiddleware,
@@ -35,7 +35,7 @@ export function createTactiqLinkRoutes(
   router.post(
     '/me/tactiq-link',
     staffOnly,
-    perm.require('own_tactiq_link', 'write', { untilEnforced: 'admin' }),
+    perm.require('own_tactiq_link', 'create', { untilEnforced: 'admin' }),
     (req: Request, res: Response) => controller.start(req, res),
   );
 
@@ -53,7 +53,7 @@ export function createTactiqLinkCallbackRoute(controller: TactiqLinkController, 
     '/me/tactiq-link/callback',
     rateLimit,
     publicContextMiddleware('public:/api/admin/me/tactiq-link/callback'),
-    exemptHandler('state single-use criado pelo POST autenticado (own_tactiq_link:write); callback é navegação do browser, sem Bearer'),
+    exemptHandler('state single-use criado pelo POST autenticado (own_tactiq_link:create); callback é navegação do browser, sem Bearer'),
     (req: Request, res: Response) => controller.callback(req, res),
   );
   return router;

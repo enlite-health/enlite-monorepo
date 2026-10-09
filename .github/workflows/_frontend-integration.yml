@@ -683,7 +683,7 @@ jobs:
       # `grep:` do `pr-gate.yml`. O feliz dispara a varredura pelo endpoint interno com `INTERNAL_TOKEN_SECRET` do compose de teste
       # (`test-secret-for-e2e-only`, o mesmo do override deste job). Usa `abac-stack-helper` (staff REAL em grupo).
       # `admissao-049` ENTROU (spec 049, aba "Admisión" da ficha: nova agenda, vínculo Tactiq, cancelar): o alt 2 mede a AUSÊNCIA do
-      # botão "Nueva agenda" e o 403 por falta de `patient_admission:write` — só vale com o engine ABAC ligado (com ele OFF
+      # botão "Nueva agenda" e o 403 por falta de `patient_admission:create` — só vale com o engine ABAC ligado (com ele OFF
       # `cells===null` mostra tudo e o teste ficaria verde sem medir nada), por isso entra aqui e NÃO no `grep:` do `pr-gate.yml`.
       # A API deste job sobe com `ADMISSION_EXTERNALS=fake` (em `docker-compose.group-simulation.yml`): Calendar, Meet, Twilio, Cloud Tasks,
       # Tactiq, Vertex e cofre são DUBLÊS — nenhum canal real. Usa `abac-stack-helper` (staff REAL em grupo), como `pt-todavia-no-hay-048`.

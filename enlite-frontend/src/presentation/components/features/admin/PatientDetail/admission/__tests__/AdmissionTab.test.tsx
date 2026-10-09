@@ -19,7 +19,7 @@ vi.mock('@infrastructure/http/AdminAdmissionApiService', () => ({ AdminAdmission
 
 import { AdmissionTab } from '../AdmissionTab';
 
-const ALL = ['patient_admission:read', 'patient_admission:write', 'patient_admission:resend_message'];
+const ALL = ['patient_admission:read', 'patient_admission:create', 'patient_admission:update', 'patient_admission:resend_message'];
 const now = () => NOW;
 const renderTab = (props: Partial<React.ComponentProps<typeof AdmissionTab>> = {}) =>
   render(<AdmissionTab patientId="p1" country="AR" now={now} {...props} />);
@@ -140,7 +140,7 @@ describe('fuso do país do paciente', () => {
 });
 
 describe('A7-2 — células', () => {
-  it('sem patient_admission:write não há "Nueva agenda" nem "Cancelar"; com write há', async () => {
+  it('sem create/update não há "Nueva agenda" nem "Cancelar"; com create+update há', async () => {
     api.listAppointments.mockResolvedValue([appt()]);
     setCells(['patient_admission:read']);
     const a = renderTab();
@@ -149,7 +149,7 @@ describe('A7-2 — células', () => {
     expect(screen.queryByTestId('admission-cancel-a1')).not.toBeInTheDocument();
     a.unmount();
 
-    setCells(['patient_admission:read', 'patient_admission:write']);
+    setCells(['patient_admission:read', 'patient_admission:create', 'patient_admission:update']);
     renderTab();
     await screen.findByTestId('admission-row-a1');
     expect(screen.getByTestId('admission-new-button')).toBeInTheDocument();
@@ -178,7 +178,7 @@ describe('A7-5 — reenviar só quando falhou', () => {
 
   it('sem a célula resend_message o botão some mesmo com canResend', async () => {
     api.listAppointments.mockResolvedValue([appt({ seals: failed() })]);
-    setCells(['patient_admission:read', 'patient_admission:write']);
+    setCells(['patient_admission:read', 'patient_admission:create', 'patient_admission:update']);
     renderTab();
     await screen.findByTestId('admission-row-a1');
     expect(screen.queryByTestId('admission-resend-confirmation-a1')).not.toBeInTheDocument();
