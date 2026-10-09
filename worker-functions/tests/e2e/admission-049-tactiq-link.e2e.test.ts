@@ -96,19 +96,23 @@ describe('vínculo do Tactiq — HTTP real, banco real, engine LIGADO (spec 049,
     }
     if (opts.link) {
       const token = opts.link.token ?? `rt-seed-${seq}-${RUN}`;
-      await admin.query(
-        `INSERT INTO tactiq_links (host_email, firebase_uid, status, refresh_token_encrypted, status_changed_at, missing_since, last_notified_status)
-         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      const ins = await admin.query(
+        `INSERT INTO tactiq_links (host_email, firebase_uid, status, status_changed_at, missing_since, last_notified_status)
+         VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
         [
-          email, uid, opts.link.status, opts.link.status === 'linked' ? b64(token) : null,
+          email, uid, opts.link.status,
           opts.link.statusChangedAt ?? clock, opts.link.missingSince ?? null, opts.link.status === 'linked' ? 'linked' : null,
         ],
       );
+      if (opts.link.status === 'linked') {
+        await admin.query(`INSERT INTO tactiq_link_secrets (link_id, refresh_token_encrypted) VALUES ($1,$2)`, [ins.rows[0].id, b64(token)]);
+      }
     }
     return { id: rows[0].id as string, email, uid };
   }
 
-  const linkRow = async (email: string) => (await admin.query(`SELECT * FROM tactiq_links WHERE lower(host_email) = lower($1)`, [email])).rows[0];
+  const linkRow = async (email: string) => (await admin.query(
+    `SELECT l.*, s.refresh_token_encrypted FROM tactiq_links l LEFT JOIN tactiq_link_secrets s ON s.link_id = l.id WHERE lower(l.host_email) = lower($1)`, [email])).rows[0];
   const sino = async (uid: string) =>
     (await admin.query(
       `SELECT e.type_code, e.actor_uid, e.payload, e.patient_id FROM notifications n JOIN notification_events e ON e.id = n.event_id WHERE n.recipient_uid = $1 ORDER BY n.created_at, e.id`,
@@ -201,9 +205,9 @@ describe('vínculo do Tactiq — HTTP real, banco real, engine LIGADO (spec 049,
     mcp.pingError = null;
   });
 
-  it('0. sanidade: as tabelas da 505/508 existem, as 2 células estão no catálogo e o dublê do OAuth é o do teste', async () => {
-    const t = await admin.query(`SELECT count(*)::int AS n FROM information_schema.tables WHERE table_name IN ('tactiq_links','tactiq_oauth_states')`);
-    expect(t.rows[0].n).toBe(2);
+  it('0. sanidade: as tabelas da 505/508 (links, secrets, oauth_states) existem, as 2 células estão no catálogo e o dublê do OAuth é o do teste', async () => {
+    const t = await admin.query(`SELECT count(*)::int AS n FROM information_schema.tables WHERE table_name IN ('tactiq_links','tactiq_link_secrets','tactiq_oauth_states')`);
+    expect(t.rows[0].n).toBe(3);
     const c = await admin.query(`SELECT count(*)::int AS n FROM iam.permissions WHERE resource = 'own_tactiq_link'`);
     expect(c.rows[0].n).toBe(2);
     expect(oauth).toBeInstanceOf(FakeTactiqOAuth);
@@ -646,7 +650,7 @@ describeAbacStack('stack com engine ligado e catálogo SINCRONIZADO no boot (F4:
     expect(ok.status).toBe(200);
     expect(ok.body).toMatchObject({ data: { status: 'linked' } });
 
-    const row = (await pool.query(`SELECT status, refresh_token_encrypted FROM tactiq_links WHERE lower(host_email) = $1`, [emailOf(uids.com)])).rows[0];
+    const row = (await pool.query(`SELECT l.status, s.refresh_token_encrypted FROM tactiq_links l JOIN tactiq_link_secrets s ON s.link_id = l.id WHERE lower(l.host_email) = $1`, [emailOf(uids.com)])).rows[0];
     expect(row.status).toBe('linked');
     expect(unb64(row.refresh_token_encrypted)).toBe(`rt-stack-${RUN}`);
     // o runtime lê o próprio estado (SELECT por coluna) e a resposta não tem o token

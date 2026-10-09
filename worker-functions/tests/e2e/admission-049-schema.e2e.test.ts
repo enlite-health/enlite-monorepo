@@ -171,7 +171,7 @@ describe('schema da aba Admissão (spec 049, migrations 503-507)', () => {
     expect(cellsAfter).toBe(cellsBefore);
   });
 
-  it('A1-8. células: as 5 existem e só o Acesso Master as tem; tipo de notificação semeado', async () => {
+  it('A1-8. células: as 3 patient_admission:* só no Acesso Master; as 2 own_tactiq_link:* seguem a convenção own_ (todo grupo ativo); tipo de notificação semeado', async () => {
     const { rows: cells } = await pool.query(
       `SELECT p.resource || ':' || p.action AS cell FROM iam.permissions p
         WHERE p.resource IN ('patient_admission','own_tactiq_link') AND p.deprecated_at IS NULL ORDER BY 1`);
@@ -179,31 +179,63 @@ describe('schema da aba Admissão (spec 049, migrations 503-507)', () => {
       'own_tactiq_link:read', 'own_tactiq_link:write',
       'patient_admission:read', 'patient_admission:resend_message', 'patient_admission:write',
     ]);
-    const { rows: grants } = await pool.query(
+    // (a) patient_admission:* — só o Master (decisão do Diego/H7 abre o resto)
+    const { rows: adm } = await pool.query(
       `SELECT DISTINCT gp.group_id FROM iam.group_permissions gp JOIN iam.permissions p ON p.id = gp.permission_id
-        WHERE p.resource IN ('patient_admission','own_tactiq_link')`);
-    expect(grants).toEqual([{ group_id: MASTER_GROUP }]);
+        WHERE p.resource = 'patient_admission'`);
+    expect(adm).toEqual([{ group_id: MASTER_GROUP }]);
+    // (b) own_tactiq_link:* — convenção own_ (471): TODO grupo ativo tem as duas células (com o sync do catálogo ligado)
+    const { rows: own } = await pool.query(
+      `SELECT g.id, count(DISTINCT p.action)::int AS n
+         FROM iam.permission_groups g
+         LEFT JOIN iam.group_permissions gp ON gp.group_id = g.id
+         LEFT JOIN iam.permissions p ON p.id = gp.permission_id AND p.resource = 'own_tactiq_link' AND p.deprecated_at IS NULL
+        WHERE g.archived_at IS NULL GROUP BY g.id`);
+    expect(own.length).toBeGreaterThan(0); // contagem zero não é sucesso
+    expect(own.filter((r) => r.n !== 2)).toEqual([]);
     const { rows: nt } = await pool.query(`SELECT 1 FROM notification_types WHERE code = 'ADMISSION_TACTIQ_LINK_REQUIRED'`);
     expect(nt).toHaveLength(1);
   });
 
-  it('A1-9. o token cifrado do Tactiq não sai em SELECT do app_runtime (42501), mas o resto sim; e-mail é único sem olhar caixa', async () => {
-    await pool.query(
-      `INSERT INTO tactiq_links (host_email, firebase_uid, status, refresh_token_encrypted) VALUES ('Op1@example.test', 'e049-op1', 'linked', 'enc:segredo')`);
+  it('A1-9. o token cifrado do Tactiq (tabela à parte, RLS só do sistema) é invisível ao app_runtime — 0 linhas, escrita 42501 — mas o estado do vínculo ele lê; e-mail é único sem olhar caixa', async () => {
+    const { rows: ins } = await pool.query(
+      `INSERT INTO tactiq_links (host_email, firebase_uid, status) VALUES ('Op1@example.test', 'e049-op1', 'linked') RETURNING id`);
+    await pool.query(`INSERT INTO tactiq_link_secrets (link_id, refresh_token_encrypted) VALUES ($1, 'enc:segredo')`, [ins[0].id]);
     expect(await sqlState(() => pool.query(
-      `INSERT INTO tactiq_links (host_email, firebase_uid, status, refresh_token_encrypted) VALUES ('op1@EXAMPLE.test', 'e049-op1b', 'linked', 'enc:x')`))).toBe('23505');
+      `INSERT INTO tactiq_links (host_email, firebase_uid, status) VALUES ('op1@EXAMPLE.test', 'e049-op1b', 'linked')`))).toBe('23505');
+    // o segredo exige o vínculo (FK) e some com ele (CASCADE)
     expect(await sqlState(() => pool.query(
-      `INSERT INTO tactiq_links (host_email, firebase_uid, status) VALUES ('op2@example.test', 'e049-op2', 'linked')`))).toBe('23514');
+      `INSERT INTO tactiq_link_secrets (link_id, refresh_token_encrypted) VALUES (gen_random_uuid(), 'enc:x')`))).toBe('23503');
+
+    const lerSegredos = async (role: string | null): Promise<number> => {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        if (role) await client.query(`SET LOCAL ROLE ${role}`);
+        const r = await client.query(`SELECT refresh_token_encrypted FROM tactiq_link_secrets WHERE link_id = $1`, [ins[0].id]);
+        return r.rows.length;
+      } finally {
+        await client.query('ROLLBACK').catch(() => undefined);
+        client.release();
+      }
+    };
+    // controle positivo: o dono e o app_system VEEM a linha (senão "0 linhas" do runtime não provaria nada)
+    expect(await lerSegredos(null)).toBe(1);
+    expect(await lerSegredos('app_system')).toBe(1);
+    expect(await lerSegredos('app_runtime')).toBe(0);
+
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
       await client.query('SET LOCAL ROLE app_runtime');
-      const ok = await client.query(`SELECT status FROM tactiq_links WHERE lower(host_email) = 'op1@example.test'`);
-      expect(ok.rows).toEqual([{ status: 'linked' }]);
+      const ok = await client.query(`SELECT * FROM tactiq_links WHERE lower(host_email) = 'op1@example.test'`);
+      expect(ok.rows).toHaveLength(1);
+      expect(ok.rows[0]).not.toHaveProperty('refresh_token_encrypted');
       await client.query('SAVEPOINT s');
-      expect(await sqlState(() => client.query(`SELECT refresh_token_encrypted FROM tactiq_links`))).toBe('42501');
+      expect(await sqlState(() => client.query(
+        `INSERT INTO tactiq_link_secrets (link_id, refresh_token_encrypted) VALUES ($1, 'enc:runtime')`, [ins[0].id]))).toBe('42501');
       await client.query('ROLLBACK TO SAVEPOINT s');
-      expect(await sqlState(() => client.query(`SELECT * FROM tactiq_links`))).toBe('42501');
+      expect(await sqlState(() => client.query(`UPDATE tactiq_link_secrets SET refresh_token_encrypted = 'x'`))).toBe('42501');
     } finally {
       await client.query('ROLLBACK').catch(() => undefined);
       client.release();

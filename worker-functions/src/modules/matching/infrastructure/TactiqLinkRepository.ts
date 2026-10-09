@@ -4,7 +4,7 @@ import type { TactiqLinkState } from '../application/ports/TactiqPorts';
 
 type Db = Pick<Pool, 'query'> | Pick<PoolClient, 'query'>;
 
-/** Colunas SEM o token — as únicas que o `app_runtime` pode ler (migration 505). */
+/** Colunas de `tactiq_links` (o token vive em `tactiq_link_secrets`, que o `app_runtime` lê com 0 linhas — migration 505). */
 const SAFE_COLUMNS = `id, host_email, firebase_uid, status, client_id, linked_at, last_check_at, last_check_outcome,
   status_changed_at, last_notified_status, missing_since`;
 
@@ -70,7 +70,9 @@ export class TactiqLinkRepository {
   // ── leitura COM token (só o job, em papel de sistema) ──────────────────────────────────────────────
   async listLinkedWithToken(ex: Db = this.db): Promise<Array<{ id: string; host_email: string; refresh_token_encrypted: string }>> {
     const { rows } = await ex.query<{ id: string; host_email: string; refresh_token_encrypted: string }>(
-      `SELECT id, host_email, refresh_token_encrypted FROM tactiq_links WHERE status = 'linked' ORDER BY host_email`,
+      `SELECT l.id, l.host_email, s.refresh_token_encrypted
+         FROM tactiq_links l JOIN tactiq_link_secrets s ON s.link_id = l.id
+        WHERE l.status = 'linked' ORDER BY l.host_email`,
     );
     return rows;
   }
@@ -82,27 +84,36 @@ export class TactiqLinkRepository {
     ex: Db = this.db,
   ): Promise<void> {
     await ex.query(
-      `INSERT INTO tactiq_links (host_email, firebase_uid, status, refresh_token_encrypted, client_id, linked_at, last_check_at,
-                                 last_check_outcome, status_changed_at, last_notified_status, missing_since)
-       VALUES ($1, $2, 'linked', $3, $4, $5, $5, 'linked', $5, 'linked', NULL)
-       ON CONFLICT (lower(host_email)) DO UPDATE SET
-         firebase_uid = EXCLUDED.firebase_uid,
-         status = 'linked',
-         refresh_token_encrypted = EXCLUDED.refresh_token_encrypted,
-         client_id = EXCLUDED.client_id,
-         linked_at = EXCLUDED.linked_at,
-         last_check_at = EXCLUDED.last_check_at,
-         last_check_outcome = 'linked',
-         status_changed_at = CASE WHEN tactiq_links.status <> 'linked' THEN EXCLUDED.status_changed_at ELSE tactiq_links.status_changed_at END,
-         last_notified_status = 'linked',
-         missing_since = NULL`,
+      `WITH l AS (
+         INSERT INTO tactiq_links (host_email, firebase_uid, status, client_id, linked_at, last_check_at,
+                                   last_check_outcome, status_changed_at, last_notified_status, missing_since)
+         VALUES ($1, $2, 'linked', $4, $5, $5, 'linked', $5, 'linked', NULL)
+         ON CONFLICT (lower(host_email)) DO UPDATE SET
+           firebase_uid = EXCLUDED.firebase_uid,
+           status = 'linked',
+           client_id = EXCLUDED.client_id,
+           linked_at = EXCLUDED.linked_at,
+           last_check_at = EXCLUDED.last_check_at,
+           last_check_outcome = 'linked',
+           status_changed_at = CASE WHEN tactiq_links.status <> 'linked' THEN EXCLUDED.status_changed_at ELSE tactiq_links.status_changed_at END,
+           last_notified_status = 'linked',
+           missing_since = NULL
+         RETURNING id)
+       INSERT INTO tactiq_link_secrets (link_id, refresh_token_encrypted, updated_at)
+       SELECT id, $3, $5 FROM l
+       ON CONFLICT (link_id) DO UPDATE SET refresh_token_encrypted = EXCLUDED.refresh_token_encrypted, updated_at = EXCLUDED.updated_at`,
       [input.email.toLowerCase(), input.uid, input.tokenEncrypted, input.clientId, input.now],
     );
   }
 
   /** Rotação: o refresh token novo SUBSTITUI o antigo (grava sempre que o Tactiq devolver um). */
   async rotateToken(email: string, tokenEncrypted: string, ex: Db = this.db): Promise<void> {
-    await ex.query(`UPDATE tactiq_links SET refresh_token_encrypted = $2 WHERE lower(host_email) = lower($1) AND status = 'linked'`, [email, tokenEncrypted]);
+    await ex.query(
+      `UPDATE tactiq_link_secrets s SET refresh_token_encrypted = $2, updated_at = now()
+         FROM tactiq_links l
+        WHERE l.id = s.link_id AND lower(l.host_email) = lower($1) AND l.status = 'linked'`,
+      [email, tokenEncrypted],
+    );
   }
 
   async recordCheck(email: string, outcome: string, now: Date, ex: Db = this.db): Promise<void> {

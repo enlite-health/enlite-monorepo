@@ -181,11 +181,10 @@ describe('rotas admin da aba Admissão — HTTP real, banco real, engine LIGADO 
          ($3,'Sem','AR',true), ($4,'Quebrado','AR',true), ($5,'Outra','AR',true)`,
       [ANA, OCUPADA, SEM_VINCULO, QUEBRADO, OUTRA_CONTA],
     );
-    // Vínculo do Tactiq (F4). Token só pro CHECK "linked exige token" — o teste nunca o usa.
+    // Vínculo do Tactiq (F4). O token (tabela à parte, 505) o teste nunca usa.
     await admin.query(
-      `INSERT INTO tactiq_links (host_email, firebase_uid, status, refresh_token_encrypted) VALUES
-         ($1,'tq-ana','linked','enc:ana'), ($2,'tq-mari','linked','enc:mari'),
-         ($3,'tq-quebrado','broken',NULL), ($4,'tq-outra','wrong_account',NULL)`,
+      `INSERT INTO tactiq_links (host_email, firebase_uid, status) VALUES
+         ($1,'tq-ana','linked'), ($2,'tq-mari','linked'), ($3,'tq-quebrado','broken'), ($4,'tq-outra','wrong_account')`,
       [ANA, OCUPADA, QUEBRADO, OUTRA_CONTA],
     );
 
@@ -675,7 +674,7 @@ describeAbacStack('stack com engine ligado e catálogo SINCRONIZADO no boot (A3-
     await grupoComCelulas(pool, { nome: grupos.com, uid: uids.com, celulas: [['patient_admission', 'read'], ['patient_admission', 'write']] });
     await pool.query(`INSERT INTO interview_hosts (email, display_name, country, active) VALUES ($1,'Ana','AR',true)`, [ANA]);
     await pool.query(`DELETE FROM tactiq_links WHERE lower(host_email) = $1`, [ANA]);
-    await pool.query(`INSERT INTO tactiq_links (host_email, firebase_uid, status, refresh_token_encrypted) VALUES ($1,'tq-ana-c','linked','enc:ana')`, [ANA]);
+    await pool.query(`INSERT INTO tactiq_links (host_email, firebase_uid, status) VALUES ($1,'tq-ana-c','linked')`, [ANA]);
     const { rows } = await pool.query(
       `INSERT INTO patients (clickup_task_id, first_name, last_name, country, is_test) VALUES ($1,'Carla','Sintetico','AR',true) RETURNING id`,
       [`e2e-049-adm-c-${Date.now()}`],
