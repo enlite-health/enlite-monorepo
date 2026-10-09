@@ -682,13 +682,37 @@ jobs:
       # engine ABAC ligado (com ele OFF `cells===null` mostra tudo e o teste ficaria verde sem medir nada), por isso entra aqui e NÃO no
       # `grep:` do `pr-gate.yml`. O feliz dispara a varredura pelo endpoint interno com `INTERNAL_TOKEN_SECRET` do compose de teste
       # (`test-secret-for-e2e-only`, o mesmo do override deste job). Usa `abac-stack-helper` (staff REAL em grupo).
+      # `admissao-049` ENTROU (spec 049, aba "Admisión" da ficha: nova agenda, vínculo Tactiq, cancelar): o alt 2 mede a AUSÊNCIA do
+      # botão "Nueva agenda" e o 403 por falta de `patient_admission:write` — só vale com o engine ABAC ligado (com ele OFF
+      # `cells===null` mostra tudo e o teste ficaria verde sem medir nada), por isso entra aqui e NÃO no `grep:` do `pr-gate.yml`.
+      # A API deste job sobe com `ADMISSION_EXTERNALS=fake` (em `docker-compose.group-simulation.yml`): Calendar, Meet, Twilio, Cloud Tasks,
+      # Tactiq, Vertex e cofre são DUBLÊS — nenhum canal real. Usa `abac-stack-helper` (staff REAL em grupo), como `pt-todavia-no-hay-048`.
       - name: Teste de integração — simulação de grupo de acesso + completar-vacante (fases 2-3)
         working-directory: enlite-frontend
         env:
           CI: 'true'
           ABAC_API_URL: http://localhost:8080
           ABAC_TEST_DB_URL: postgresql://enlite_admin:enlite_password@localhost:5433/enlite_e2e
-        run: npx playwright test --project=integration --ignore-snapshots --grep "group-simulation|draft-vacancy-page|draft-vacancy-choice|cid-na-vacante-tela|patient-documents-tab|vacante-anotacao-sem-celula|funil-compativeis-sem-celula|vacante-em-servico-047|pt-todavia-no-hay-048"
+        run: npx playwright test --project=integration --ignore-snapshots --grep "group-simulation|draft-vacancy-page|draft-vacancy-choice|cid-na-vacante-tela|patient-documents-tab|vacante-anotacao-sem-celula|funil-compativeis-sem-celula|vacante-em-servico-047|pt-todavia-no-hay-048|admissao-049"
+
+      # Spec 049 (F9): os e2e de API da aba Admissão têm blocos que só valem com a stack de ENGINE LIGADO + SYNC DO CATÁLOGO +
+      # `ADMISSION_EXTERNALS=fake` — exatamente a API deste job. No job `backend-e2e` (sem sync, de propósito: ligá-lo ali
+      # descontinuaria células que `permissions-iam-schema` ainda espera) esses blocos são `skip` DECLARADOS (`E2E_ABAC_STACK`);
+      # aqui eles RODAM (A1-8b, A3-7/A3-8 pelo container, A4 pelo index.ts, rota interna do job pós-call). Vem DEPOIS do Playwright:
+      # o `setup.ts` do jest TRUNCA tabelas de negócio e não pode correr por baixo das telas.
+      - name: E2E de API da 049 com a stack de engine ligado + sync (blocos E2E_ABAC_STACK)
+        working-directory: worker-functions
+        env:
+          E2E_ABAC_STACK: '1'
+          API_URL: http://localhost:8080
+          DATABASE_URL: postgresql://enlite_admin:enlite_password@localhost:5433/enlite_e2e
+          TEST_DATABASE_URL: postgresql://enlite_admin:enlite_password@localhost:5433/enlite_e2e
+          INTERNAL_TOKEN_SECRET: test-secret-for-e2e-only
+          FIREBASE_AUTH_EMULATOR_HOST: 127.0.0.1:1
+        run: |
+          npm ci
+          npm run test:e2e:fixtures
+          npx jest --config jest.config.e2e.js --testPathPattern 'tests/e2e/admission-049-' --testTimeout=60000 --forceExit
 
       - name: Relatório (só quando falha)
         if: failure()

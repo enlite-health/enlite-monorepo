@@ -171,7 +171,7 @@ describe('schema da aba Admissão (spec 049, migrations 503-507)', () => {
     expect(cellsAfter).toBe(cellsBefore);
   });
 
-  it('A1-8. células: as 3 patient_admission:* só no Acesso Master; as 2 own_tactiq_link:* seguem a convenção own_ (todo grupo ativo); tipo de notificação semeado', async () => {
+  it('A1-8. células: as 3 patient_admission:* só no Acesso Master e as 2 own_tactiq_link:* no catálogo; tipo de notificação semeado', async () => {
     const { rows: cells } = await pool.query(
       `SELECT p.resource || ':' || p.action AS cell FROM iam.permissions p
         WHERE p.resource IN ('patient_admission','own_tactiq_link') AND p.deprecated_at IS NULL ORDER BY 1`);
@@ -179,12 +179,22 @@ describe('schema da aba Admissão (spec 049, migrations 503-507)', () => {
       'own_tactiq_link:read', 'own_tactiq_link:write',
       'patient_admission:read', 'patient_admission:resend_message', 'patient_admission:write',
     ]);
-    // (a) patient_admission:* — só o Master (decisão do Diego/H7 abre o resto)
+    // patient_admission:* — só o Master (decisão do Diego/H7 abre o resto)
     const { rows: adm } = await pool.query(
       `SELECT DISTINCT gp.group_id FROM iam.group_permissions gp JOIN iam.permissions p ON p.id = gp.permission_id
         WHERE p.resource = 'patient_admission'`);
     expect(adm).toEqual([{ group_id: MASTER_GROUP }]);
-    // (b) own_tactiq_link:* — convenção own_ (471): TODO grupo ativo tem as duas células (com o sync do catálogo ligado)
+    const { rows: nt } = await pool.query(`SELECT 1 FROM notification_types WHERE code = 'ADMISSION_TACTIQ_LINK_REQUIRED'`);
+    expect(nt).toHaveLength(1);
+  });
+
+  // A convenção own_ (471) concede `own_tactiq_link:*` a TODO grupo ativo pelo SYNC do catálogo no boot da API — e o banco do
+  // job `backend-e2e` nunca roda o sync (`PERMISSION_CATALOG_SYNC_ENABLED` só existe no deploy; ligá-lo ali descontinuaria
+  // células que `permissions-iam-schema` ainda espera). SKIP DECLARADO, não verde-sem-medir: com `E2E_ABAC_STACK=1` (a stack
+  // do job `integration-e2e-group-simulation` do `_frontend-integration.yml`, engine ligado + sync + ADMISSION_EXTERNALS=fake)
+  // este caso RODA — o mesmo passo roda os blocos `E2E_ABAC_STACK` dos outros e2e da 049.
+  const comSync = process.env.E2E_ABAC_STACK === '1' ? it : it.skip;
+  comSync('A1-8b. (stack com sync do catálogo) own_tactiq_link:* segue a convenção own_ (471): TODO grupo ativo tem as duas células', async () => {
     const { rows: own } = await pool.query(
       `SELECT g.id, count(DISTINCT p.action)::int AS n
          FROM iam.permission_groups g
@@ -193,8 +203,6 @@ describe('schema da aba Admissão (spec 049, migrations 503-507)', () => {
         WHERE g.archived_at IS NULL GROUP BY g.id`);
     expect(own.length).toBeGreaterThan(0); // contagem zero não é sucesso
     expect(own.filter((r) => r.n !== 2)).toEqual([]);
-    const { rows: nt } = await pool.query(`SELECT 1 FROM notification_types WHERE code = 'ADMISSION_TACTIQ_LINK_REQUIRED'`);
-    expect(nt).toHaveLength(1);
   });
 
   it('A1-9. o token cifrado do Tactiq (tabela à parte, RLS só do sistema) é invisível ao app_runtime — 0 linhas, escrita 42501 — mas o estado do vínculo ele lê; e-mail é único sem olhar caixa', async () => {
