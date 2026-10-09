@@ -52,7 +52,8 @@ export function TherapeuticProjectContactField({
             if (ids.length > 0 && status !== null) onStatusChange(null);
             onChange(ids);
           }}
-          placeholder={placeholder}
+          // Travado, o select diz o estado no lugar do "Elegí…": senão parece que ainda falta escolher.
+          placeholder={locked ? tf(status === 'PENDING' ? 'contactPending' : 'contactNotNeeded') : placeholder}
         />
         <Checkbox
           id={`tp-${fieldKey}-pending`}

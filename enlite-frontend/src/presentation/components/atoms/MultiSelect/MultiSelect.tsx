@@ -97,7 +97,7 @@ export function MultiSelect({
         className={[
           wrapperClasses,
           'flex items-center justify-between cursor-pointer select-none text-left',
-          disabled ? 'cursor-not-allowed' : '',
+          disabled ? 'cursor-not-allowed border-dashed' : '',
         ]
           .filter(Boolean)
           .join(' ')}
@@ -114,7 +114,8 @@ export function MultiSelect({
         <ChevronDown
           size={20}
           className={[
-            'shrink-0 text-[#737373] transition-transform ml-2',
+            'shrink-0 transition-transform ml-2',
+            disabled ? 'text-[#D9D9D9]' : 'text-[#737373]',
             open ? 'rotate-180' : '',
           ].join(' ')}
         />
