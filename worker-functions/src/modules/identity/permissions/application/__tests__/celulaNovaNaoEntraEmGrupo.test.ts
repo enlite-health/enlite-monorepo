@@ -260,7 +260,7 @@ describe('own_ (revogação ESTREITA da D338, decisão do Gabriel 23/09/2026, mi
     );
   });
 
-  it('KNOWN_OWN_CELLS — as 3 células own_ conhecidas hoje; uma QUARTA exige decisão do Gabriel', () => {
+  it('KNOWN_OWN_CELLS — as 5 células own_ conhecidas hoje; uma SEXTA exige decisão do Gabriel', () => {
     // Varredura ESTÁTICA de toda declaração `perm.require('own_...', ...)` no código-fonte
     // (a mesma fonte que o sync do catálogo deriva). O critério de concessão automática virou
     // o NOME do prefixo `own_` — por isso toda célula NOVA com esse prefixo é auto-concedida a
@@ -326,11 +326,17 @@ describe('own_ (revogação ESTREITA da D338, decisão do Gabriel 23/09/2026, mi
       if (key.startsWith('own_')) encontradas.add(key);
     }
 
-    const KNOWN_OWN_CELLS = ['own_notifications:read', 'own_notifications:update', 'own_presence:update'];
+    // Spec 049 (F4): `own_tactiq_link:read|write` — o operador vê/vincula a PRÓPRIA conta do Tactiq (nunca a de terceiro).
+    // ⚠️ PENDENTE DE CONFIRMAÇÃO DO GABRIEL (este teste existe para isso): pelo prefixo `own_`, o sync do catálogo as
+    // concede a TODO grupo ativo (mig 471) — a 507 as deu só ao Master. Registrado no §11 da spec 049.
+    const KNOWN_OWN_CELLS = [
+      'own_notifications:read', 'own_notifications:update', 'own_presence:update',
+      'own_tactiq_link:read', 'own_tactiq_link:write',
+    ];
     const novas = [...encontradas].filter((c) => !KNOWN_OWN_CELLS.includes(c));
     if (novas.length > 0) {
       throw new Error(
-        `célula(s) own_ NOVA(s) encontrada(s) fora das 3 conhecidas: ${novas.join(', ')}. ` +
+        `célula(s) own_ NOVA(s) encontrada(s) fora das 5 conhecidas: ${novas.join(', ')}. ` +
           'O critério de concessão automática a TODO grupo (mig 471) virou o NOME do prefixo ' +
           '`own_` — antes de deixar isso passar, volte ao Gabriel: essa célula nova dá acesso ' +
           'SÓ ao próprio registro do usuário autenticado, ou a dado de terceiro? Se a resposta ' +

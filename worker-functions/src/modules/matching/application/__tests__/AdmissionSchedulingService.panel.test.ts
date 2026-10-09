@@ -23,6 +23,7 @@ import { AR_ZONE } from '../../infrastructure/AdmissionCalendarService';
 import { FakeAdmissionCalendar } from '../../infrastructure/doubles/FakeAdmissionCalendar';
 import type { InterviewHostRepository } from '../../infrastructure/InterviewHostRepository';
 import type { AdmissionNotifier } from '../AdmissionNotifier';
+import { TactiqLinkRequiredError, type TactiqLinkGate, type TactiqLinkState } from '../ports/TactiqPorts';
 
 const CAL_AR = 'admission-ar@group.calendar.google.com';
 const PATIENT_ID = '11111111-1111-1111-1111-111111111111';
@@ -58,8 +59,12 @@ function setup(fx: Fx = {}) {
   const notifier = { onBooked: jest.fn(async () => undefined) } as unknown as jest.Mocked<AdmissionNotifier>;
   const encryption = { decrypt: jest.fn(async () => 'paciente@example.test') } as unknown as KMSEncryptionService;
   const hosts = { listActiveByCountry: jest.fn(async () => (fx.hosts ?? [HOST]).map((email) => ({ email, displayName: 'Ana' }))) } as unknown as InterviewHostRepository;
-  const service = new AdmissionSchedulingService(calendar, notifier, encryption, 'enlite@enlite.health', hosts);
-  return { service, calendar, notifier, inserts, hosts };
+  const tactiqStates = new Map<string, TactiqLinkState>();
+  const gate: TactiqLinkGate = {
+    statesFor: jest.fn(async (emails: string[]) => new Map(emails.map((e) => [e.toLowerCase(), tactiqStates.get(e.toLowerCase()) ?? 'linked'] as const))),
+  };
+  const service = new AdmissionSchedulingService(calendar, notifier, encryption, 'enlite@enlite.health', hosts, gate);
+  return { service, calendar, notifier, inserts, hosts, tactiqStates, gate, serviceWithoutGate: new AdmissionSchedulingService(calendar, notifier, encryption, 'enlite@enlite.health', hosts) };
 }
 
 const params = (over: Partial<{ hostEmail: string; slotStartISO: string }> = {}) => ({
@@ -101,6 +106,28 @@ describe('AdmissionSchedulingService.bookForHost (painel)', () => {
     expect(calendar.created[0]).toMatchObject({ calendarId: CAL_AR, coHostEmail: HOST, patientEmail: 'paciente@example.test' });
     expect(notifier.onBooked).toHaveBeenCalledTimes(1);
     expect(notifier.onBooked.mock.calls[0][0]).toMatchObject({ appointmentId: out.appointmentId, hostEmail: HOST });
+  });
+
+  it.each(['missing', 'broken', 'wrong_account', 'revoked'] as const)('A4-3: responsável com vínculo %s → TactiqLinkRequiredError, 0 INSERT, 0 evento, 0 envio', async (state) => {
+    const { service, calendar, notifier, inserts, tactiqStates } = setup();
+    tactiqStates.set(HOST, state);
+    await expect(service.bookForHost(params(), NOW)).rejects.toBeInstanceOf(TactiqLinkRequiredError);
+    expect(inserts).toHaveLength(0);
+    expect(calendar.created).toHaveLength(0);
+    expect(notifier.onBooked).not.toHaveBeenCalled();
+  });
+
+  it('A4-3: responsável SEM LINHA no gate (nunca vinculou) vale como missing → recusa', async () => {
+    const { service, gate, inserts } = setup();
+    (gate.statesFor as jest.Mock).mockResolvedValueOnce(new Map());
+    await expect(service.bookForHost(params(), NOW)).rejects.toMatchObject({ code: 'TACTIQ_LINK_REQUIRED', reason: 'missing' });
+    expect(inserts).toHaveLength(0);
+  });
+
+  it('sem o gate configurado o painel RECUSA (falha alta, nunca trava desligada em silêncio)', async () => {
+    const { serviceWithoutGate, inserts } = setup();
+    await expect(serviceWithoutGate.bookForHost(params(), NOW)).rejects.toThrow(/gate do vínculo do Tactiq/);
+    expect(inserts).toHaveLength(0);
   });
 
   it('horário FUTURO basta: 1 h à frente passa (sem a antecedência de 4 h do site)', async () => {

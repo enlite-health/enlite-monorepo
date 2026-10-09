@@ -113,6 +113,11 @@ import { AdmissionMessageContent } from '@modules/matching/infrastructure/Admiss
 import { AdmissionPanelService } from '@modules/matching/application/AdmissionPanelService';
 import { AdmissionPanelController } from '@modules/matching/interfaces/controllers/AdmissionPanelController';
 import { createAdminAdmissionRoutes } from '@modules/matching/interfaces/routes/adminAdmissionRoutes';
+import { TactiqLinkService } from '@modules/matching/application/TactiqLinkService';
+import { TactiqLinkRepository } from '@modules/matching/infrastructure/TactiqLinkRepository';
+import { TactiqLinkController } from '@modules/matching/interfaces/controllers/TactiqLinkController';
+import { TactiqCheckInternalController } from '@modules/matching/interfaces/controllers/TactiqCheckInternalController';
+import { createTactiqLinkRoutes, createTactiqLinkCallbackRoute, createTactiqCheckInternalRoutes } from '@modules/matching/interfaces/routes/tactiqLinkRoutes';
 import { interviewHostRepository } from '@modules/matching/infrastructure/InterviewHostRepository';
 import { AdmissionMessageRepository } from '@modules/matching/infrastructure/AdmissionMessageRepository';
 import { AdmissionEventRepository } from '@modules/matching/infrastructure/AdmissionEventRepository';
@@ -380,8 +385,19 @@ const admissionNotifier = new RealAdmissionNotifier(
   admissionEvents,
   admissionDb,
 );
-// UM serviço de agendamento (e UM núcleo de reserva) para o site e para o painel (spec 049 F3).
-const admissionSchedulingService049 = new AdmissionSchedulingService(admissionExternals.calendar, admissionNotifier);
+// Spec 049 F4: vínculo do responsável com o Tactiq (OAuth PKCE público, token cifrado KMS, teste diário, sino por transição).
+const tactiqLinkService = new TactiqLinkService({
+  repo: new TactiqLinkRepository(admissionDb),
+  oauth: admissionExternals.tactiq.oauth,
+  mcp: admissionExternals.tactiq.mcp,
+  db: admissionDb,
+  clientId: () => process.env.TACTIQ_OAUTH_CLIENT_ID ?? null,
+});
+const tactiqLinkController = new TactiqLinkController(tactiqLinkService);
+// UM serviço de agendamento (e UM núcleo de reserva) para o site e para o painel (spec 049 F3); o painel exige o vínculo (F4).
+const admissionSchedulingService049 = new AdmissionSchedulingService(
+  admissionExternals.calendar, admissionNotifier, undefined, undefined, undefined, tactiqLinkService,
+);
 const admissionSchedulingController = new AdmissionSchedulingController(admissionSchedulingService049);
 const admissionSlotsRateLimit = rateLimit({
   windowMs: 60 * 1000,
@@ -580,10 +596,22 @@ const admissionPanelController = new AdmissionPanelController(
     events: admissionEvents,
     messaging: admissionMessaging,
     hosts: interviewHostRepository,
+    tactiq: tactiqLinkService,
     impersonateEmail: process.env.ADMISSION_IMPERSONATE_EMAIL || 'enlite@enlite.health',
   }),
 );
 app.use('/api/admin', createAdminAdmissionRoutes(authMiddleware, permissionMiddleware, admissionPanelController));
+
+// Spec 049 F4: o operador vincula a PRÓPRIA conta do Tactiq (own_tactiq_link:read|write). O callback do OAuth é navegação
+// do browser (sem Bearer): isento na montagem, em contexto público, e a prova de identidade é o `state` single-use.
+app.use('/api/admin', createTactiqLinkRoutes(authMiddleware, permissionMiddleware, tactiqLinkController));
+app.use('/api/admin', createTactiqLinkCallbackRoute(tactiqLinkController, rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many requests' },
+})));
 
 // ========== Admin Notifications / sino (spec 022, Bloco 4) ==========
 // `permissionsBoundary.permissions.client` — leitura CRUA do ABAC (D-13, revisado no fecho B5:
@@ -724,6 +752,14 @@ app.use(
   systemContextMiddleware('job:pt-contact-reminders'),
   internalAuthMiddleware,
   createTherapeuticContactRemindersInternalRoutes(new TherapeuticContactRemindersInternalController()),
+);
+
+// spec 049 F4: teste diário do vínculo do Tactiq + aviso no sino por transição + alarme 48 h (Cloud Scheduler, 1×/dia).
+app.use(
+  '/api/internal',
+  systemContextMiddleware('job:admission-tactiq-check'),
+  internalAuthMiddleware,
+  createTactiqCheckInternalRoutes(new TactiqCheckInternalController(tactiqLinkService)),
 );
 
 // Cloud Tasks: 30-min-before admission reminder (queue: admission-reminders).

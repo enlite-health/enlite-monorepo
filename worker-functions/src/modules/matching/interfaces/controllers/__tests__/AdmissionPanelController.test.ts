@@ -19,6 +19,7 @@ import {
   SlotTakenError,
   type AdmissionSchedulingService,
 } from '../../../application/AdmissionSchedulingService';
+import { TactiqLinkRequiredError } from '../../../application/ports/TactiqPorts';
 import { AdmissionPanelController } from '../AdmissionPanelController';
 
 const P = '11111111-1111-1111-1111-111111111111';
@@ -36,6 +37,17 @@ function build() {
   const c = new AdmissionPanelController(scheduling as unknown as AdmissionSchedulingService, panel as unknown as AdmissionPanelService);
   return { c, scheduling, panel };
 }
+
+describe('POST agendar — a trava do vínculo do Tactiq (spec 049 F4, A4-3)', () => {
+  it.each(['missing', 'broken', 'wrong_account'] as const)('responsável %s → 409 TACTIQ_LINK_REQUIRED, sem criar nada', async (state) => {
+    const b = build();
+    b.scheduling.bookForHost.mockRejectedValue(new TactiqLinkRequiredError(state));
+    const r = res();
+    await b.c.book(req({ params: { id: P }, body: { hostEmail: 'ana@example.test', slotStartISO: '2030-01-01T10:00:00-03:00' } }), r);
+    expect(r.statusCode).toBe(409);
+    expect(r.body).toMatchObject({ success: false, code: 'TACTIQ_LINK_REQUIRED' });
+  });
+});
 
 describe('POST resend — todo perdedor vira 409', () => {
   const call = (b: ReturnType<typeof build>) => {
@@ -147,10 +159,16 @@ describe('cancelar, listar, hosts', () => {
     const bad = res();
     await b.c.listHosts(req({ query: { country: 'XX' } }), bad);
     expect(bad.statusCode).toBe(400);
-    b.panel.listHosts.mockResolvedValue([{ email: 'ana@example.test', displayName: 'Ana' }]);
+    b.panel.listHosts.mockResolvedValue([
+      { email: 'ana@example.test', displayName: 'Ana', linked: true, linkState: 'linked' },
+      { email: 'mari@example.test', displayName: 'Mari', linked: false, linkState: 'broken' },
+    ]);
     const r = res();
     await b.c.listHosts(req({ query: { country: 'AR' } }), r);
-    expect(r.body).toEqual({ success: true, data: [{ email: 'ana@example.test', displayName: 'Ana' }] });
+    expect(r.body).toEqual({ success: true, data: [
+      { email: 'ana@example.test', displayName: 'Ana', linked: true, linkState: 'linked' },
+      { email: 'mari@example.test', displayName: 'Mari', linked: false, linkState: 'broken' },
+    ] });
   });
 
   it('sem ator identificado → 401 (não 500)', async () => {

@@ -36,7 +36,11 @@ interface MentionSpan {
   end: number;
 }
 
-export type NotificationTypeCode = 'CONVERSATION_MENTIONED' | 'CONVERSATION_REPLIED' | 'THERAPEUTIC_PROJECT_CONTACTS_PENDING';
+export type NotificationTypeCode =
+  | 'CONVERSATION_MENTIONED'
+  | 'CONVERSATION_REPLIED'
+  | 'THERAPEUTIC_PROJECT_CONTACTS_PENDING'
+  | 'ADMISSION_TACTIQ_LINK_REQUIRED';
 
 /**
  * Payload do aviso de contatos pendentes do PT (spec 048): SÓ ids e nomes de campo — nunca nome do
@@ -49,6 +53,15 @@ export interface PtContactsPendingPayload {
   fields: string[];
 }
 
+/**
+ * Payload do aviso "seu usuário não está vinculado ao Tactiq" (spec 049 F4): SÓ o motivo, de um conjunto fechado —
+ * nunca e-mail, nome nem token. Construído por `buildAdmissionTactiqLinkPayload`.
+ */
+export type AdmissionTactiqLinkReason = 'missing' | 'broken' | 'wrong_account';
+export interface AdmissionTactiqLinkPayload {
+  reason: AdmissionTactiqLinkReason;
+}
+
 export interface InsertNotificationEventInput {
   typeCode: NotificationTypeCode;
   actorUid: string;
@@ -56,7 +69,7 @@ export interface InsertNotificationEventInput {
   conversationId: string | null;
   messageId: string | null;
   /** Metadado SÓ-ids (461). Omitido = `'{}'`. Hoje só o tipo do PT grava aqui. */
-  payload?: PtContactsPendingPayload;
+  payload?: PtContactsPendingPayload | AdmissionTactiqLinkPayload;
 }
 
 export interface NotificationEventRow {

@@ -64,6 +64,7 @@ function build(fx: DbFx = {}) {
     events: store,
     messaging,
     hosts: { listActiveByCountry: async () => [{ email: 'ana@example.test', displayName: 'Ana' }] },
+    tactiq: { statesFor: async (emails: string[]) => new Map(emails.map((e) => [e.toLowerCase(), 'linked' as const])) },
     impersonateEmail: 'enlite@enlite.health',
     log: logs.log,
     now: () => NOW,

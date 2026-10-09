@@ -104,7 +104,7 @@ export const RESOURCE_CATEGORY: Readonly<Record<string, PermissionCategory>> = {
   own_notifications: 'Administração',
   // Change 022-ux-mencao-e-notificacao, Rodada 2 (R2-B): heartbeat de presença do painel admin.
   own_presence: 'Administração',
-  // Spec 049 (F4): o operador vê/gerencia o PRÓPRIO vínculo com o Tactiq (célula own_*). As rotas chegam na F4.
+  // Spec 049 (F4): o operador vê/gerencia o PRÓPRIO vínculo com o Tactiq (célula own_*).
   own_tactiq_link: 'Administração',
 };
 
@@ -323,6 +323,12 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
   'patient_admission:resend_message':
     'Reenviar o WhatsApp da reunião de admissão que FALHOU (confirmação ou lembrete). Cada reenvio manda uma mensagem '
     + 'à família; teto de 2 reenvios por mensagem. Quais perfis recebem esta célula é decisão do Diego.',
+  'own_tactiq_link:read':
+    'Ver o estado do PRÓPRIO vínculo com o Tactiq (vinculado, caído, conta errada ou sem vínculo) e a data da última '
+    + 'verificação. Nunca devolve o token. Quem não está vinculado não pode ser responsável de agenda de admissão.',
+  'own_tactiq_link:write':
+    'Vincular a PRÓPRIA conta do Tactiq (OAuth no navegador). O token fica cifrado e só o teste diário o usa; nunca '
+    + 'vincula a conta de outro usuário. Quais perfis recebem esta célula é decisão do Diego.',
   'staff_directory:read':
     'Buscar staff ativo por nome ou e-mail para o autocomplete de menção do chat interno do paciente. '
     + 'Devolve apenas UID e nome de exibição — nunca e-mail, telefone ou papel (D-06).',

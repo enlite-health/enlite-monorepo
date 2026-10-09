@@ -7,6 +7,7 @@ import type { AdmissionLogger, AdmissionMessagingService, DispatchOutcome } from
 import { AppointmentNotCancellableError, AppointmentNotFoundError, ResendInProgressError } from './AdmissionPanelErrors';
 import { PatientNotFoundError } from './AdmissionSchedulingService';
 import type { AdmissionCalendarPort } from './ports/AdmissionCalendarPort';
+import type { TactiqLinkGate, TactiqLinkState } from './ports/TactiqPorts';
 import type {
   AdmissionEventSink,
   AdmissionMessageKind,
@@ -69,6 +70,8 @@ export interface AdmissionPanelDeps {
   events: AdmissionEventSink;
   messaging: AdmissionMessagingService;
   hosts: Pick<InterviewHostRepository, 'listActiveByCountry'>;
+  /** Vínculo do Tactiq por responsável (spec 049 F4): a lista de hosts devolve `linked` e o motivo. */
+  tactiq: TactiqLinkGate;
   impersonateEmail: string;
   log?: AdmissionLogger;
   now?: () => Date;
@@ -90,8 +93,14 @@ export class AdmissionPanelService {
     this.now = deps.now ?? (() => new Date());
   }
 
-  async listHosts(country: AdmissionCountry): Promise<InterviewHost[]> {
-    return this.deps.hosts.listActiveByCountry(country);
+  /** Responsáveis do roster do país, cada um com o estado do vínculo do Tactiq (`linked` → pode ser escolhido). */
+  async listHosts(country: AdmissionCountry): Promise<Array<InterviewHost & { linked: boolean; linkState: TactiqLinkState }>> {
+    const hosts = await this.deps.hosts.listActiveByCountry(country);
+    const states = await this.deps.tactiq.statesFor(hosts.map((h) => h.email));
+    return hosts.map((h) => {
+      const linkState = states.get(h.email.toLowerCase()) ?? 'missing';
+      return { ...h, linked: linkState === 'linked', linkState };
+    });
   }
 
   async list(patientId: string): Promise<AdmissionAppointmentView[]> {

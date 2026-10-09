@@ -5,7 +5,8 @@
  * Só as fronteiras externas são dublês (Google Calendar, Cloud Tasks, Twilio) — injetadas nos MESMOS serviços que o
  * `index.ts` monta. Nada toca canal real. Dados SINTÉTICOS (e-mails @example.test, telefone fictício).
  *
- * Bloco 1 (sempre roda, é o que o CI executa): A3-2 a A3-7 e A3-9 + a varredura de rota (as 3 células estão LITERAIS na rota).
+ * Bloco 1 (sempre roda, é o que o CI executa): A3-2 a A3-7 e A3-9 + a varredura de rota (as 3 células estão LITERAIS na rota)
+ *   + A4-3 (F4): a TRAVA do vínculo do Tactiq no servidor — responsável missing/broken/wrong_account → 409, linked → 201.
  * Bloco 2 (só com a stack de engine ligado — `E2E_ABAC_STACK=1`, API em container com ADMISSION_EXTERNALS=fake,
  *   PERMISSION_ENGINE_ENABLED, PERMISSION_CATALOG_SYNC_ENABLED): A3-8 (catálogo SINCRONIZADO no boot, `deprecated_at IS NULL`)
  *   e 403 sem a célula / 201 com ela pelo `index.ts` de verdade.
@@ -24,6 +25,7 @@ import { FakeAdmissionCalendar } from '../../src/modules/matching/infrastructure
 import { InMemoryAdmissionReminderTasks } from '../../src/modules/matching/infrastructure/doubles/InMemoryAdmissionReminderTasks';
 import { RecordingAdmissionWhatsApp } from '../../src/modules/matching/infrastructure/doubles/RecordingAdmissionWhatsApp';
 import { capturingLogger } from '../../src/modules/matching/infrastructure/doubles/admissionTestKit';
+import { FakeTactiqMcp, FakeTactiqOAuth } from '../../src/modules/matching/infrastructure/doubles/FakeTactiq';
 import { AdmissionMessageRepository } from '../../src/modules/matching/infrastructure/AdmissionMessageRepository';
 import { admissionReminderTaskId } from '../../src/modules/matching/infrastructure/RealAdmissionNotifier';
 import type { AdmissionMessageKind } from '../../src/modules/matching/application/ports/AdmissionMessagingPorts';
@@ -40,6 +42,10 @@ const FAMILY_EMAIL = 'familia.e2e049@example.test';
 const ANA = 'ana.e2e049@example.test';
 const OCUPADA = 'ocupado.mari.e2e049@example.test';
 const CAL_AR = 'cal-ar-e2e049@example.test';
+// A4-3: responsáveis do roster em cada estado do vínculo do Tactiq (ANA e OCUPADA estão `linked`).
+const SEM_VINCULO = 'sem.vinculo.e2e049@example.test';
+const QUEBRADO = 'quebrado.e2e049@example.test';
+const OUTRA_CONTA = 'outra.conta.e2e049@example.test';
 
 const U = {
   chefe: 'adm049-chefe', // read + write + resend_message
@@ -146,6 +152,7 @@ describe('rotas admin da aba Admissão — HTTP real, banco real, engine LIGADO 
     admin = new Pool({ connectionString: DATABASE_URL });
     await limparIam();
     await admin.query('DELETE FROM interview_hosts WHERE email = ANY($1)', [[ANA, OCUPADA]]);
+    await admin.query('DELETE FROM tactiq_links WHERE lower(host_email) = ANY($1)', [[ANA, OCUPADA, SEM_VINCULO, QUEBRADO, OUTRA_CONTA]]);
 
     setEnv('USE_MOCK_AUTH', 'true');
     setEnv('PERMISSION_ENGINE_ENABLED', 'true');
@@ -170,8 +177,16 @@ describe('rotas admin da aba Admissão — HTTP real, banco real, engine LIGADO 
     await grupoComCelulas(admin, { nome: GRUPOS.agendadora, uid: U.agendadora, celulas: [['patient_admission', 'read'], ['patient_admission', 'write']] });
     await grupoComCelulas(admin, { nome: GRUPOS.leitora, uid: U.leitora, celulas: [['patient_admission', 'read']] });
     await admin.query(
-      `INSERT INTO interview_hosts (email, display_name, country, active) VALUES ($1,'Ana','AR',true), ($2,'Mari','AR',true)`,
-      [ANA, OCUPADA],
+      `INSERT INTO interview_hosts (email, display_name, country, active) VALUES ($1,'Ana','AR',true), ($2,'Mari','AR',true),
+         ($3,'Sem','AR',true), ($4,'Quebrado','AR',true), ($5,'Outra','AR',true)`,
+      [ANA, OCUPADA, SEM_VINCULO, QUEBRADO, OUTRA_CONTA],
+    );
+    // Vínculo do Tactiq (F4). Token só pro CHECK "linked exige token" — o teste nunca o usa.
+    await admin.query(
+      `INSERT INTO tactiq_links (host_email, firebase_uid, status, refresh_token_encrypted) VALUES
+         ($1,'tq-ana','linked','enc:ana'), ($2,'tq-mari','linked','enc:mari'),
+         ($3,'tq-quebrado','broken',NULL), ($4,'tq-outra','wrong_account',NULL)`,
+      [ANA, OCUPADA, QUEBRADO, OUTRA_CONTA],
     );
 
     calendar = new FakeAdmissionCalendar();
@@ -206,9 +221,13 @@ describe('rotas admin da aba Admissão — HTTP real, banco real, engine LIGADO 
         const messaging = new AdmissionMessagingService(racyStore, events, whatsapp, content, logs.log);
         const notifier = new RealAdmissionNotifier(messaging, content, tasks, events, pool, () => new Date(), logs.log);
         const encryption = { decrypt: async () => FAMILY_EMAIL } as never;
-        const scheduling = new AdmissionSchedulingService(calendar, notifier, encryption, 'enlite@enlite.health', interviewHostRepository);
+        const { TactiqLinkService } = await import('../../src/modules/matching/application/TactiqLinkService');
+        const { TactiqLinkRepository } = await import('../../src/modules/matching/infrastructure/TactiqLinkRepository');
+        // O gate de produção (TactiqLinkService.statesFor sobre o banco real); OAuth/MCP são dublês que nunca são chamados aqui.
+        const tactiq = new TactiqLinkService({ repo: new TactiqLinkRepository(pool), oauth: new FakeTactiqOAuth(), mcp: new FakeTactiqMcp(), db: pool });
+        const scheduling = new AdmissionSchedulingService(calendar, notifier, encryption, 'enlite@enlite.health', interviewHostRepository, tactiq);
         const panel = new AdmissionPanelService({
-          db: pool, calendar, reminderTasks: tasks, events, messaging, hosts: interviewHostRepository,
+          db: pool, calendar, reminderTasks: tasks, events, messaging, hosts: interviewHostRepository, tactiq,
           impersonateEmail: 'enlite@enlite.health', log: logs.log,
         });
         reminderService = new AdmissionReminderService(messaging, content, pool, logs.log);
@@ -227,7 +246,8 @@ describe('rotas admin da aba Admissão — HTTP real, banco real, engine LIGADO 
       await admin.query(`DELETE FROM admission_appointments WHERE patient_id = ANY($1)`, [patients]);
       await admin.query(`DELETE FROM patients WHERE id = ANY($1)`, [patients]);
     }
-    await admin.query('DELETE FROM interview_hosts WHERE email = ANY($1)', [[ANA, OCUPADA]]);
+    await admin.query('DELETE FROM interview_hosts WHERE email = ANY($1)', [[ANA, OCUPADA, SEM_VINCULO, QUEBRADO, OUTRA_CONTA]]);
+    await admin.query('DELETE FROM tactiq_links WHERE lower(host_email) = ANY($1)', [[ANA, OCUPADA, SEM_VINCULO, QUEBRADO, OUTRA_CONTA]]);
     await limparIam();
     await admin.end();
     for (const [k, v] of Object.entries(envAnterior)) {
@@ -237,8 +257,10 @@ describe('rotas admin da aba Admissão — HTTP real, banco real, engine LIGADO 
   });
 
   it('0. sanidade: o roster semeado existe e as tabelas da F1 estão lá (o zero das provas abaixo não é banco vazio)', async () => {
-    const { rows } = await admin.query(`SELECT count(*)::int AS n FROM interview_hosts WHERE email = ANY($1) AND active`, [[ANA, OCUPADA]]);
-    expect(rows[0].n).toBe(2);
+    const { rows } = await admin.query(`SELECT count(*)::int AS n FROM interview_hosts WHERE email = ANY($1) AND active`, [[ANA, OCUPADA, SEM_VINCULO, QUEBRADO, OUTRA_CONTA]]);
+    expect(rows[0].n).toBe(5);
+    const links = await admin.query(`SELECT count(*)::int AS n FROM tactiq_links WHERE lower(host_email) = ANY($1)`, [[ANA, OCUPADA, QUEBRADO, OUTRA_CONTA]]);
+    expect(links.rows[0].n).toBe(4);
     const t = await admin.query(`SELECT count(*)::int AS n FROM information_schema.tables WHERE table_name IN ('admission_messages','admission_events')`);
     expect(t.rows[0].n).toBe(2);
   });
@@ -406,6 +428,57 @@ describe('rotas admin da aba Admissão — HTTP real, banco real, engine LIGADO 
       });
       expect(list.body.data[0].meetLink).toMatch(/fak-e049/);
       expect(JSON.stringify(list.body)).not.toContain(PHONE);
+    });
+  });
+
+  describe('A4-3 (trava, spec 049 F4): o PAINEL só agenda com responsável de vínculo Tactiq `linked` — no SERVIDOR', () => {
+    it.each([
+      ['missing (nunca vinculou)', SEM_VINCULO, 'missing'],
+      ['broken (o teste diário derrubou)', QUEBRADO, 'broken'],
+      ['wrong_account (a conta não é a dele)', OUTRA_CONTA, 'wrong_account'],
+    ])('responsável %s → 409 TACTIQ_LINK_REQUIRED, 0 linhas, 0 evento no Google, 0 envio, 0 task', async (_n, host) => {
+      const p = await newPatient();
+      const created = calendar.created.length;
+      const sent = whatsapp.calls.length;
+      const taskCount = tasks.tasks.size;
+      const res = await book(p, U.agendadora, host);
+      expect(res.status).toBe(409);
+      expect(res.body).toMatchObject({ success: false, code: 'TACTIQ_LINK_REQUIRED' });
+      expect(await countAppts(p)).toBe(0);
+      expect(calendar.created.length).toBe(created);
+      expect(whatsapp.calls.length).toBe(sent);
+      expect(tasks.tasks.size).toBe(taskCount);
+    });
+
+    it('responsável `linked` → 201 (controle positivo: a mesma chamada passa quando o vínculo está vivo)', async () => {
+      const p = await newPatient();
+      const res = await book(p, U.agendadora, ANA);
+      expect(res.status).toBe(201);
+      expect(await countAppts(p)).toBe(1);
+    });
+
+    it('a trava segue o BANCO ao vivo: derruba o vínculo da ANA → 409; religa → 201', async () => {
+      await admin.query(`UPDATE tactiq_links SET status = 'broken' WHERE lower(host_email) = $1`, [ANA]);
+      try {
+        const p = await newPatient();
+        expect((await book(p, U.agendadora, ANA)).status).toBe(409);
+        expect(await countAppts(p)).toBe(0);
+      } finally {
+        await admin.query(`UPDATE tactiq_links SET status = 'linked' WHERE lower(host_email) = $1`, [ANA]);
+      }
+      expect((await book(await newPatient(), U.agendadora, ANA)).status).toBe(201);
+    });
+
+    it('GET /admission/hosts devolve `linked` e o motivo de cada responsável (a tela mostra desabilitado "Sin Tactiq vinculado")', async () => {
+      const res = await http('GET', '/api/admin/admission/hosts?country=AR', U.agendadora);
+      expect(res.status).toBe(200);
+      const by = Object.fromEntries((res.body.data as Array<{ email: string; linked: boolean; linkState: string }>).map((h) => [h.email, h]));
+      expect(by[ANA]).toMatchObject({ linked: true, linkState: 'linked' });
+      expect(by[OCUPADA]).toMatchObject({ linked: true, linkState: 'linked' });
+      expect(by[SEM_VINCULO]).toMatchObject({ linked: false, linkState: 'missing' });
+      expect(by[QUEBRADO]).toMatchObject({ linked: false, linkState: 'broken' });
+      expect(by[OUTRA_CONTA]).toMatchObject({ linked: false, linkState: 'wrong_account' });
+      expect(JSON.stringify(res.body)).not.toContain('enc:ana');
     });
   });
 
@@ -601,6 +674,8 @@ describeAbacStack('stack com engine ligado e catálogo SINCRONIZADO no boot (A3-
     await grupoComCelulas(pool, { nome: grupos.sem, uid: uids.sem, celulas: [['patient_admission', 'read']] });
     await grupoComCelulas(pool, { nome: grupos.com, uid: uids.com, celulas: [['patient_admission', 'read'], ['patient_admission', 'write']] });
     await pool.query(`INSERT INTO interview_hosts (email, display_name, country, active) VALUES ($1,'Ana','AR',true)`, [ANA]);
+    await pool.query(`DELETE FROM tactiq_links WHERE lower(host_email) = $1`, [ANA]);
+    await pool.query(`INSERT INTO tactiq_links (host_email, firebase_uid, status, refresh_token_encrypted) VALUES ($1,'tq-ana-c','linked','enc:ana')`, [ANA]);
     const { rows } = await pool.query(
       `INSERT INTO patients (clickup_task_id, first_name, last_name, country, is_test) VALUES ($1,'Carla','Sintetico','AR',true) RETURNING id`,
       [`e2e-049-adm-c-${Date.now()}`],
@@ -612,6 +687,7 @@ describeAbacStack('stack com engine ligado e catálogo SINCRONIZADO no boot (A3-
     await pool.query(`DELETE FROM admission_appointments WHERE patient_id = $1`, [patientId]);
     await pool.query(`DELETE FROM patients WHERE id = $1`, [patientId]);
     await pool.query('DELETE FROM interview_hosts WHERE email = $1', [ANA]);
+    await pool.query(`DELETE FROM tactiq_links WHERE lower(host_email) = $1`, [ANA]);
     await limparIamFixtures(pool, { uids: Object.values(uids), grupos: Object.values(grupos) });
     await pool.end();
   });

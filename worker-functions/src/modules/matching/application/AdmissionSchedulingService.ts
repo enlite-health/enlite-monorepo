@@ -32,6 +32,7 @@ import {
   LoggingAdmissionNotifier,
 } from './AdmissionNotifier';
 import type { AdmissionCalendarPort } from './ports/AdmissionCalendarPort';
+import { TactiqLinkRequiredError, type TactiqLinkGate } from './ports/TactiqPorts';
 
 // ─── Errors ────────────────────────────────────────────────────────────────
 
@@ -185,6 +186,12 @@ export class AdmissionSchedulingService {
     private readonly impersonateEmail: string = process.env.ADMISSION_IMPERSONATE_EMAIL ||
       'enlite@enlite.health',
     private readonly hosts: InterviewHostRepository = interviewHostRepository,
+    /**
+     * A trava do vínculo do Tactiq (spec 049 F4, passo 3): o PAINEL só agenda com responsável de vínculo `linked`.
+     * Sem o gate o `bookForHost` RECUSA (falha alta) — um gate ausente que deixasse passar seria a trava desligada
+     * em silêncio. O fluxo do site (atribuição automática) não passa por aqui.
+     */
+    private readonly tactiqGate?: TactiqLinkGate,
   ) {}
 
   private resolveCalendarId(country: AdmissionCountry): string {
@@ -690,6 +697,7 @@ export class AdmissionSchedulingService {
     const roster = await this.hosts.listActiveByCountry(country);
     const host = roster.find((h) => h.email.toLowerCase() === wanted);
     if (!host) throw new HostNotInRosterError();
+    await this.assertTactiqLinked(host.email);
 
     if (!(await this.isHostFreeAt(host.email, startISO, endISO, timezone))) throw new SlotTakenError();
 
@@ -719,6 +727,14 @@ export class AdmissionSchedulingService {
       meetLink: reserved.meetLink,
       admissionCode: reserved.admissionCode,
     };
+  }
+
+  /** Passo 3 do §3.0.1, NO SERVIDOR: responsável sem vínculo `linked` → 409 `TACTIQ_LINK_REQUIRED` (nada é criado). */
+  private async assertTactiqLinked(hostEmail: string): Promise<void> {
+    if (!this.tactiqGate) throw new Error('AdmissionSchedulingService: bookForHost exige o gate do vínculo do Tactiq (spec 049 F4)');
+    const states = await this.tactiqGate.statesFor([hostEmail]);
+    const state = states.get(hostEmail.toLowerCase()) ?? 'missing';
+    if (state !== 'linked') throw new TactiqLinkRequiredError(state);
   }
 
   private async loadPatient(patientId: string): Promise<PatientRow> {

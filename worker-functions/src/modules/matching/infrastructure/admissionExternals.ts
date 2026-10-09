@@ -10,6 +10,10 @@ import { FakeAdmissionCalendar } from './doubles/FakeAdmissionCalendar';
 import { InMemoryAdmissionReminderTasks } from './doubles/InMemoryAdmissionReminderTasks';
 import { RecordingAdmissionWhatsApp } from './doubles/RecordingAdmissionWhatsApp';
 import { RealAdmissionReminderTasks } from './RealAdmissionReminderTasks';
+import type { TactiqMcpPort, TactiqOAuthPort } from '../application/ports/TactiqPorts';
+import { FakeTactiqMcp, FakeTactiqOAuth } from './doubles/FakeTactiq';
+import { TactiqMcpClient } from './tactiq/TactiqMcpClient';
+import { TactiqOAuthClient } from './tactiq/TactiqOAuthClient';
 
 export interface AdmissionExternalsEnv {
   NODE_ENV?: string;
@@ -25,6 +29,8 @@ export interface AdmissionExternals {
    * mantém o adapter real, que sem credencial falha alto — o e2e do roster depende disso ("agenda inacessível → 500").
    */
   calendar: AdmissionCalendarPort;
+  /** Tactiq (spec 049 F4): OAuth e MCP. Dublês em `fake`; os adapters reais LANÇAM no construtor com NODE_ENV=test. */
+  tactiq: { oauth: TactiqOAuthPort; mcp: TactiqMcpPort };
 }
 
 export interface AdmissionExternalsDeps {
@@ -35,7 +41,7 @@ export interface AdmissionExternalsDeps {
 }
 
 /**
- * Fábrica das fronteiras externas da admissão (spec 049, regra transversal 2): Twilio e Cloud Tasks.
+ * Fábrica das fronteiras externas da admissão (spec 049, regra transversal 2): Twilio, Cloud Tasks, Calendar e Tactiq.
  *
  *  - `NODE_ENV=test` OU `ADMISSION_EXTERNALS=fake` → dublês (nada sai da máquina).
  *  - `NODE_ENV=production` com `fake` → LANÇA (dublê em produção seria mensagem que nunca sai, sem erro).
@@ -61,6 +67,7 @@ export function createAdmissionExternals(env: AdmissionExternalsEnv, deps: Admis
       reminderTasks: new InMemoryAdmissionReminderTasks(),
       whatsapp: new RecordingAdmissionWhatsApp(),
       calendar: env.ADMISSION_EXTERNALS === 'fake' ? new FakeAdmissionCalendar() : admissionCalendarService,
+      tactiq: { oauth: new FakeTactiqOAuth(), mcp: new FakeTactiqMcp() },
     };
   }
   return {
@@ -68,5 +75,6 @@ export function createAdmissionExternals(env: AdmissionExternalsEnv, deps: Admis
     reminderTasks: deps.realReminderTasks ? deps.realReminderTasks() : new RealAdmissionReminderTasks(new CloudTasksClient()),
     whatsapp: deps.realWhatsApp(),
     calendar: admissionCalendarService,
+    tactiq: { oauth: new TactiqOAuthClient(env as NodeJS.ProcessEnv), mcp: new TactiqMcpClient(env as NodeJS.ProcessEnv) },
   };
 }

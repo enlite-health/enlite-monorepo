@@ -9,6 +9,7 @@ import {
   AppointmentNotFoundError,
   ResendInProgressError,
 } from '../../application/AdmissionPanelErrors';
+import { TactiqLinkRequiredError } from '../../application/ports/TactiqPorts';
 import { AdmissionPanelService } from '../../application/AdmissionPanelService';
 import {
   AdmissionSchedulingService,
@@ -24,7 +25,7 @@ import {
  *
  *   GET  /patients/:id/admission-appointments                              patient_admission:read
  *   GET  /admission/hosts?country=AR|BR                                    patient_admission:write
- *   POST /patients/:id/admission-appointments                              patient_admission:write
+ *   POST /patients/:id/admission-appointments                              patient_admission:write  (409 TACTIQ_LINK_REQUIRED se o responsável não tem vínculo vivo)
  *   POST /patients/:id/admission-appointments/:apptId/cancel               patient_admission:write
  *   POST /patients/:id/admission-appointments/:apptId/messages/:kind/resend patient_admission:resend_message
  *
@@ -40,6 +41,7 @@ const DOMAIN_STATUS: ReadonlyArray<readonly [new (...a: never[]) => Error, numbe
   [PatientNotFoundError, 404],
   [AppointmentNotFoundError, 404],
   [SlotTakenError, 409],
+  [TactiqLinkRequiredError, 409],
   [AppointmentNotCancellableError, 409],
   [ResendNotAllowed, 409],
   [ResendLimitReached, 409],
@@ -77,7 +79,7 @@ export class AdmissionPanelController {
     }
     await this.run(res, 'listHosts', '-', async () => {
       const hosts = await this.panel.listHosts(country);
-      res.status(200).json({ success: true, data: hosts.map((h) => ({ email: h.email, displayName: h.displayName })) });
+      res.status(200).json({ success: true, data: hosts.map((h) => ({ email: h.email, displayName: h.displayName, linked: h.linked, linkState: h.linkState })) });
     });
   }
 
