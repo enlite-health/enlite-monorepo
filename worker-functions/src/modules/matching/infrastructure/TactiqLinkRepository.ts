@@ -167,8 +167,9 @@ export class TactiqLinkRepository {
   async claimMissingNotification(email: string, ex: Db): Promise<boolean> {
     await ex.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [`tactiq_missing:${email.toLowerCase()}`]);
     const { rows } = await ex.query(
-      `SELECT 1 FROM admission_events WHERE kind = 'tactiq_link.notified' AND reason = 'missing' AND lower(host_email) = lower($1) LIMIT 1`,
-      [email],
+      `SELECT 1 FROM admission_events WHERE kind = $2 AND reason = 'missing' AND lower(host_email) = lower($1) LIMIT 1`,
+      // kind vai como parâmetro: o literal 'tactiq_link.notified' dentro do SQL é lido como tabela.coluna pelo sql-schema-sync.
+      [email, 'tactiq_link.notified'],
     );
     return rows.length === 0;
   }
