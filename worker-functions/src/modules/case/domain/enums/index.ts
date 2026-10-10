@@ -8,3 +8,4 @@ export * from './AttentionReason';
 export * from './PatientStatus';
 export * from './PatientGender';
 export * from './PatientLanguage';
+export * from './PatientChangeSource';

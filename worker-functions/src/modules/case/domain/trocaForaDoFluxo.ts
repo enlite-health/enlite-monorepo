@@ -18,10 +18,8 @@
  * recusa pela transição). `[]` = ator conhecido SEM célula → recusa por permissão. Nunca `?? []`.
  */
 
-import {
-  CLINICAL_PATIENT_STATUSES,
-  type ClinicalPatientStatus,
-} from './enums/PatientStatus';
+import { isClinicalPatientStatus, type ClinicalPatientStatus } from './enums/PatientStatus';
+import { isManualChangeSource, type PatientChangeSource } from './enums/PatientChangeSource';
 
 export const CELL_PATIENT_STATUS_MOVE_TO_SEARCHING = 'patient_status:move_to_searching';
 export const CELL_PATIENT_STATUS_MOVE_TO_ACTIVE = 'patient_status:move_to_active';
@@ -42,9 +40,6 @@ export const CELULA_DO_DESTINO: Readonly<Record<ClinicalPatientStatus, string>> 
   DISCHARGED: CELL_PATIENT_STATUS_MOVE_TO_DISCHARGED,
 };
 
-/** Origens de mudança que são decisão de uma PESSOA (as únicas sujeitas à célula). */
-const ORIGENS_MANUAIS: ReadonlyArray<string> = ['admin_panel', 'kanban'];
-
 export interface EntradaTrocaForaDoFluxo {
   de: string | null;
   para: string;
@@ -52,7 +47,7 @@ export interface EntradaTrocaForaDoFluxo {
   naFsm: boolean;
   /** Células do ator. `null` = engine não decidiu (≠ `[]`). */
   cells: readonly string[] | null;
-  changeSource: string;
+  changeSource: PatientChangeSource;
 }
 
 export type DecisaoTrocaForaDoFluxo =
@@ -66,10 +61,6 @@ export type DecisaoTrocaForaDoFluxo =
   | { resultado: 'recusada_por_permissao'; celulaFaltante: string }
   /** Par fora da FSM e o ator TEM a célula do destino: é o caso que gravará `*_override`. */
   | { resultado: 'permitida_por_permissao'; celula: string };
-
-function ehClinico(s: string | null): s is ClinicalPatientStatus {
-  return s !== null && (CLINICAL_PATIENT_STATUSES as readonly string[]).includes(s);
-}
 
 /**
  * Consumidor das 7 células. Um `case` por destino, com a constante à vista, de propósito: a
@@ -88,10 +79,10 @@ function atorTemACelulaDoDestino(cells: readonly string[], para: ClinicalPatient
 }
 
 export function decidirTrocaForaDoFluxo(e: EntradaTrocaForaDoFluxo): DecisaoTrocaForaDoFluxo {
-  if (!ORIGENS_MANUAIS.includes(e.changeSource)) {
+  if (!isManualChangeSource(e.changeSource)) {
     return { resultado: 'nao_se_aplica', motivo: 'origem_nao_manual' };
   }
-  if (!ehClinico(e.de) || !ehClinico(e.para)) {
+  if (!isClinicalPatientStatus(e.de) || !isClinicalPatientStatus(e.para)) {
     return { resultado: 'nao_se_aplica', motivo: 'fora_do_funil_clinico' };
   }
   if (e.de === e.para) {
