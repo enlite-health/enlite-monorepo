@@ -259,7 +259,9 @@ export class AdmissionPanelService {
    *
    * 404: paciente/reunião inexistente, de outro paciente ou de outro país (a RLS esconde o paciente) — igual às rotas irmãs.
    * 409: paciente que NÃO é de teste (não existe ensaio de paciente real), reunião não `booked`, ou liberação ainda vigente.
-   * A checagem "ainda vigente" e o INSERT são UMA instrução: dois cliques simultâneos não gravam duas liberações.
+   * Sequencial: liberar de novo com liberação vigente → 409. Simultâneo: o `INSERT … WHERE NOT EXISTS` não tem lock nem índice único
+   * (READ COMMITTED), então dois cliques ao mesmo tempo PODEM gravar 2 eventos e responder 2×201; o prazo não se estende de forma útil (os
+   * dois `expiresAt` diferem em ms) e `admissionRealm` lê o mais recente.
    */
   async releasePaidRehearsal(input: { patientId: string; appointmentId: string; actorUid: string }): Promise<PaidRehearsalRelease> {
     const { db } = this.deps;

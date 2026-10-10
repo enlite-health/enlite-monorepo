@@ -4672,7 +4672,8 @@
             "write": "Crear y editar",
             "incomplete_alert": "Aviso día 12",
             "waive_contact": "No necesita",
-            "resend_message": "Reenviar mensaje"
+            "resend_message": "Reenviar mensaje",
+            "release_paid_rehearsal": "Liberar ensayo pago"
           },
           "category": {
             "Trabalhadores": "Trabajadores",
