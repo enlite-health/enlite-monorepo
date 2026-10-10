@@ -21,6 +21,8 @@ import { PatientDiagnosisService } from '@modules/diagnosis/application/PatientD
 import { PostgresPatientDiagnosisRepository } from '@modules/diagnosis/infrastructure/PostgresPatientDiagnosisRepository';
 import { DiagnosisSource } from '@modules/diagnosis/domain/DiagnosisSource';
 import { createTerminologyPort } from '@modules/terminology/infrastructure/TerminologyPortFactory';
+import { applyEffectiveAgeRange } from '@modules/case/domain/ProviderAgeBandMapping';
+import { vacancyEffectiveColumnsSql, vacancyEffectiveGroupBySql, vacancyEffectiveJoinSql } from '@shared/sql/vacancyEffectiveFieldsSql';
 
 /**
  * Decryptor da rota `GET /vacancies/:id`: os campos de prestador aqui já vêm em
@@ -232,7 +234,7 @@ export class VacanciesController {
       const { id } = req.params;
       const result = await this.db.query(`
         SELECT
-          jp.*,
+          ${vacancyEffectiveColumnsSql('jp')},
           jp.closes_at as closed_at,
           p.first_name as patient_first_name,
           p.last_name as patient_last_name,
@@ -251,6 +253,14 @@ export class VacanciesController {
           -- a regex clinica da guarda -- D182.)
           p.insurance_verified,
           p.service_type,
+          -- F3 (vaga-le-do-servico): avisos ABERTOS de "o serviço mudou com a vaga publicada". Mesma query (sessão com
+          -- identidade); sem aviso = '[]'. Só campo e instante, nunca valor.
+          COALESCE(
+            (SELECT json_agg(json_build_object('field', n.field, 'changed_at', n.changed_at) ORDER BY n.changed_at, n.field)
+               FROM vacancy_source_change_notices n
+              WHERE n.job_posting_id = jp.id AND n.acknowledged_at IS NULL),
+            '[]'::json
+          ) as source_change_notices,
           COALESCE(pa.city, p.city_locality) as patient_city,
           COALESCE(pa.neighborhood, p.zone_neighborhood) as patient_neighborhood,
           pa.address_formatted as patient_address_formatted,
@@ -275,13 +285,14 @@ export class VacanciesController {
             )
           ) FILTER (WHERE pub.id IS NOT NULL) as publications
         FROM job_postings jp
+        ${vacancyEffectiveJoinSql('jp')}
         LEFT JOIN patients p ON jp.patient_id = p.id
         LEFT JOIN patient_addresses pa ON jp.patient_address_id = pa.id
         LEFT JOIN encuadres e ON jp.id = e.job_posting_id
         LEFT JOIN workers w ON e.worker_id = w.id
         LEFT JOIN publications pub ON jp.id = pub.job_posting_id
         WHERE jp.id = $1
-        GROUP BY jp.id, p.id, pa.id
+        GROUP BY jp.id, p.id, pa.id, ${vacancyEffectiveGroupBySql()}
       `, [id]);
 
       if (result.rows.length === 0) {
@@ -289,7 +300,7 @@ export class VacanciesController {
         return;
       }
 
-      const row = result.rows[0];
+      const row = applyEffectiveAgeRange(result.rows[0]);
 
       // F2/C3 — os encuadres embutidos carregam NOME e TELEFONE do prestador
       // sob `vacancy:read`. Aqui não há KMS a economizar: `e.worker_raw_name` e

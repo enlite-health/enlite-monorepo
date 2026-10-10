@@ -248,6 +248,8 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'POST /api/admin/vacancies/:id/publish-talentum → talentum:update',
         'POST /api/admin/vacancies/:id/resolve-address-review → vacancy:update',
         'POST /api/admin/vacancies/:id/social-links → vacancy:create',
+        // F3 (vaga-le-do-servico): "marcar como atendido" o aviso de vaga publicada — a MESMA célula do PUT da vaga.
+        'POST /api/admin/vacancies/:id/source-change-notices/:field/ack → vacancy:update',
         'POST /api/admin/vacancies/:vacancyId/workers/:workerId/contact-notes → funnel:create',
         // "Promover" (D300, merge main→stage 19/09/2026): entrou junto com
         // reject/restore, mesma célula (escrita no funil).
@@ -332,6 +334,8 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'GET /api/admin/patients/:id/contracted-services → patient_services:read',
         'GET /api/admin/patients/:id/diagnoses → patient_clinical:read',
         'GET /api/admin/patients/:id/status-history → patient:read',
+        // Spec 051 (F3): a lista de destinos de estado — a MESMA célula do PUT /status.
+        'GET /api/admin/patients/:id/status-options → patient:update',
         'GET /api/admin/presentation-invite/last → messaging:read',
         'GET /api/admin/presentation-invite/settings → messaging:read',
         'GET /api/admin/presentation-invite/stats → messaging:read',

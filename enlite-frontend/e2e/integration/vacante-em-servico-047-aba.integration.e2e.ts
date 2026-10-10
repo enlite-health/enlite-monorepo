@@ -46,10 +46,10 @@ function seed(tag: string, cells: Array<[string, string]>): Seeded {
       VALUES ('${patientId}', 'AT', true, 'AR', '${uid}', '${uid}') RETURNING id`);
   const vacancyId = scalar(`INSERT INTO job_postings (
         vacancy_number, case_number, title, description, patient_id, contracted_service_id,
-        required_professions, providers_needed, status, is_draft, is_test, country, social_short_links, created_at, updated_at
+        required_professions, status, is_draft, is_test, country, social_short_links, created_at, updated_at
       ) VALUES (
         nextval('job_postings_vacancy_number_seq'), ${CASE_NUMBER}, 'CASO E2E 047 vaga do servico', '', '${patientId}', '${serviceId}',
-        ARRAY['AT']::varchar[], 1, 'SEARCHING', false, true, 'AR', '{"site": {"id": "link_x", "url": "https://exemplo.test/x"}}'::jsonb, NOW(), NOW()
+        ARRAY['AT']::varchar[], 'SEARCHING', false, true, 'AR', '{"site": {"id": "link_x", "url": "https://exemplo.test/x"}}'::jsonb, NOW(), NOW()
       ) RETURNING id`);
   return { patientId, groupId, user, serviceId, vacancyId };
 }

@@ -174,7 +174,17 @@ jobs:
       # "NÃO exercitados" — o `--grep` casa pelo caminho do arquivo, na mesma convenção do
       # `027-vacancy-case-select`. Login pelo mock do CI (`loginComoStaffMock`), como o irmão
       # `patient-status-aguardando-financeiro`.
-      grep: 'worker-profile-fields-persist|worker-completude-vitrine|027-public-jobs-search-en-code|vacancy-locked-fields|vacancy-schedule-hydration|draft-wizard-locked|027-vacancy-case-select|vacancy-de-baja|patient-status-suspendido-saida-motivo|patient-status-aguardando-financeiro|kanban-pacientes|funil-vacante|lista-vacantes|cid-na-vaga-publica|postularse-iniciado-043|kanban-iniciado-blocked-columns|kanban-blocked-live-missing-fields|enderecos-faturamento-044'
+      # `vacancy-servico-horario-link` ENTROU (change vaga-le-do-servico-contratado, F4): o spec
+      # nasceu no commit `1d4ad016` e o CI verde daquele commit NÃO o exercitou — ele saiu na lista
+      # "NÃO exercitados" dos dois shards. 3 testes (lápis do horário leva à aba Servicio Contratado,
+      # `?tab=` inválido cai na aba inicial, faixa de aviso some após "marcar como atendido"). Login
+      # pelo mock do CI (`loginComoStaffMock`), job padrão, como `draft-wizard-locked`.
+      # `vaga-le-servico-fecho` ENTROU (change vaga-le-do-servico-contratado, F8): o spec de fecho por TELA
+      # (horário, aviso + "marcar como atendido", erro ao apagar o horário com vaga viva, quantidade, faixa etária e
+      # vaga manual: 6 testes). O `--grep` casa pelo caminho do arquivo, na mesma convenção do
+      # `vacancy-servico-horario-link` (o furo da F4: spec fora da lista nunca roda). Login pelo mock do CI
+      # (`loginComoStaffMock`), job padrão, engine OFF.
+      grep: 'worker-profile-fields-persist|worker-completude-vitrine|027-public-jobs-search-en-code|vacancy-locked-fields|vacancy-servico-horario-link|vaga-le-servico-fecho|vacancy-schedule-hydration|draft-wizard-locked|027-vacancy-case-select|vacancy-de-baja|patient-status-suspendido-saida-motivo|patient-status-aguardando-financeiro|kanban-pacientes|funil-vacante|lista-vacantes|cid-na-vaga-publica|postularse-iniciado-043|kanban-iniciado-blocked-columns|kanban-blocked-live-missing-fields|enderecos-faturamento-044'
 
   # O agregador. `if: always()` é o que garante que ele reporta mesmo quando
   # tudo acima foi pulado — sem isso, voltaríamos ao problema que este arquivo

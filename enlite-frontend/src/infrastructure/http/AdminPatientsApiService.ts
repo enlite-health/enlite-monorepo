@@ -18,6 +18,8 @@ import type {
   PatientFunnelData,
   UpdatePatientStatusPayload,
   PatientStatusHistoryEntry,
+  PatientStatusOptions,
+  PatientStatusChangeSource,
   InsuranceProvider,
   PatientAddressLogisticsPayload,
   PatientChatIdsPayload,
@@ -122,7 +124,8 @@ export class AdminPatientsApiServiceClass {
     const response = await fetch(`${this.baseURL}${path}`, { method, headers });
     const json: ApiResponse<T> = await response.json();
     if (!json.success) {
-      throw new Error((json as ApiErrorResponse).error || `HTTP ${response.status}`);
+      // PatientApiError é um Error: quem só lê `.message` não muda; quem precisa do HTTP status (403 da lista de destinos) o tem.
+      throw new PatientApiError((json as ApiErrorResponse).error || `HTTP ${response.status}`, response.status);
     }
     return (json as ApiSuccessResponse<T>).data;
   }
@@ -328,6 +331,14 @@ export class AdminPatientsApiServiceClass {
   async updatePatientStatus(id: string, status: string | UpdatePatientStatusPayload): Promise<UpdatePatientStatusResult> {
     const body: UpdatePatientStatusPayload = typeof status === 'string' ? { status } : status;
     return this.writeJson<UpdatePatientStatusResult>('PUT', `/api/admin/patients/${id}/status`, body);
+  }
+
+  /** GET /api/admin/patients/:id/status-options — os destinos que o SERVIDOR aceitaria (spec 051). */
+  async getPatientStatusOptions(id: string, changeSource: PatientStatusChangeSource): Promise<PatientStatusOptions> {
+    const r = await this.request<PatientStatusOptions>('GET', `/api/admin/patients/${id}/status-options?changeSource=${changeSource}`);
+    // A lista vale para a ORIGEM do PUT que vai sair: lista de outra origem nunca é usada (quem chamou trata como indisponível).
+    if (r.changeSource !== changeSource) throw new Error(`status-options: origem ${String(r.changeSource)} ≠ pedida ${changeSource}`);
+    return r;
   }
 
   /** GET /api/admin/patients/:id/status-history — a aba Historial (spec 012). */

@@ -23,3 +23,20 @@ export const PATIENT_TABS: readonly PatientTab[] = [
   'contractedService',
   'history',
 ];
+
+/**
+ * `?tab=` da URL da ficha → aba, validado contra a união. Valor ausente ou fora de `PATIENT_TABS`
+ * devolve `null` (quem chama cai em `clinicalData`, o comportamento de antes do `?tab=`).
+ */
+export function parsePatientTab(raw: string | null | undefined): PatientTab | null {
+  return PATIENT_TABS.find((tab) => tab === raw) ?? null;
+}
+
+/**
+ * Caminho da ficha do paciente já aberta numa aba — o ÚNICO montador, para o wizard
+ * (`LockedFieldBadgeLink`) e o detalhe da vaga abrirem o MESMO lugar. Horário, quantidade de
+ * profissionais, faixa etária e domicílio do serviço moram todos na aba "Servicio Contratado".
+ */
+export function patientTabPath(patientId: string, tab: PatientTab): string {
+  return `/admin/patients/${patientId}?tab=${tab}`;
+}

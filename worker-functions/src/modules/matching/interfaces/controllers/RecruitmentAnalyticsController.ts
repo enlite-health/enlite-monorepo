@@ -1,6 +1,8 @@
 import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { applyEffectiveAgeRange } from '@modules/case/domain/ProviderAgeBandMapping';
+import { vacancyEffectiveColumnsSql, vacancyEffectiveJoinSql } from '@shared/sql/vacancyEffectiveFieldsSql';
 
 /**
  * RecruitmentAnalyticsController
@@ -110,7 +112,7 @@ export class RecruitmentAnalyticsController {
 
       const caseQuery = `
         SELECT
-          jp.*,
+          ${vacancyEffectiveColumnsSql('jp')},
           p.first_name as patient_first_name,
           p.last_name as patient_last_name,
           p.dependency_level,
@@ -121,6 +123,7 @@ export class RecruitmentAnalyticsController {
           -- O comentario nao soletra a coluna de proposito: a guarda le a QUERY.
           p.zone_neighborhood
         FROM job_postings jp
+        ${vacancyEffectiveJoinSql('jp')}
         LEFT JOIN patients p ON jp.patient_id = p.id
         WHERE jp.case_number = $1
           AND jp.deleted_at IS NULL
@@ -189,7 +192,7 @@ export class RecruitmentAnalyticsController {
       }
 
       const analysis = {
-        caseInfo: caseData.rows[0],
+        caseInfo: applyEffectiveAgeRange(caseData.rows[0]),
         publicationsByChannel: publications.rows.map(row => ({
           channel: row.channel || 'Desconocido',
           count: parseInt(row.count),
