@@ -88,9 +88,10 @@ describe('troca de estado fora do fluxo — HTTP real, banco real, engine LIGADO
     return id;
   }
   const estado = async (id: string) => (await admin.query(`SELECT status FROM patients WHERE id = $1`, [id])).rows[0].status as string;
+  /** Só TROCAS: o trigger grava uma linha `insert` (old_value NULL) quando o paciente nasce — não é troca. */
   const historico = async (id: string) =>
     (await admin.query(
-      `SELECT old_value, new_value, change_source, actor_uid FROM patient_status_history WHERE patient_id = $1 ORDER BY created_at, id`,
+      `SELECT old_value, new_value, change_source, actor_uid FROM patient_status_history WHERE patient_id = $1 AND old_value IS NOT NULL ORDER BY created_at, id`,
       [id],
     )).rows as Array<{ old_value: string; new_value: string; change_source: string; actor_uid: string | null }>;
 
