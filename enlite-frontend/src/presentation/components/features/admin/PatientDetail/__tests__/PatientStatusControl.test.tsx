@@ -290,6 +290,20 @@ describe('PatientStatusControl', () => {
     expect(byValue('ON_HOLD').textContent).toBe('Em espera');
   });
 
+  it('completar o dado que falta (mesmo status, completeness.missing muda) relê a lista e habilita a opção, sem remontar', async () => {
+    const withMissing = { ...active, completeness: { ...active.completeness, missing: ['SERVICE_SCHEDULE' as const] } };
+    getPatientStatusOptions.mockResolvedValueOnce(serverOptions(['SEARCHING'], { SEARCHING: ['SERVICE_SCHEDULE'] }));
+    const { rerender } = await ready(<PatientStatusControl patient={withMissing} onSaved={vi.fn()} />);
+    const searching = () => [...(screen.getByTestId('patient-status-select') as HTMLSelectElement).options].find((o) => o.value === 'SEARCHING')!;
+    expect(searching()).toBeDisabled();
+    expect(getPatientStatusOptions).toHaveBeenCalledTimes(1);
+    getPatientStatusOptions.mockResolvedValueOnce(serverOptions(['SEARCHING']));
+    rerender(<PatientStatusControl patient={{ ...active, completeness: { ...active.completeness, missing: [] } }} onSaved={vi.fn()} />);
+    await waitFor(() => expect(searching()).not.toBeDisabled());
+    expect(getPatientStatusOptions).toHaveBeenCalledTimes(2);
+    expect(searching().textContent).toBe('Busca');
+  });
+
   it('destino liberado por permissão (via) não leva marca nem aviso — é só mais uma opção', async () => {
     getPatientStatusOptions.mockResolvedValue({ current: 'ACTIVE', options: [{ status: 'SEARCHING', via: 'permissao' }] });
     await ready(<PatientStatusControl patient={active} onSaved={vi.fn()} />);

@@ -48,7 +48,10 @@ export function PatientStatusControl({ patient, onSaved }: Props): JSX.Element |
   const [exitReason, setExitReason] = useState<string>('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { state: optionsState, reload: reloadOptions } = usePatientStatusOptions(patient.id, 'admin_panel', patient.status, patient.admissionStatus === 'DONE');
+  // Chave de releitura = estado + o que falta (`completeness.missing`, ordenado): é o dado que alimenta o `blockedBy` da lista.
+  // Salvar serviço/endereço/horário refaz o paciente SEM mudar `status`; sem o `missing` na chave a opção desabilitada ficava presa.
+  const optionsKey = `${patient.status}|${[...(patient.completeness?.missing ?? [])].sort().join(',')}`;
+  const { state: optionsState, reload: reloadOptions } = usePatientStatusOptions(patient.id, 'admin_panel', optionsKey, patient.admissionStatus === 'DONE');
 
   // Lista relida e o destino escolhido saiu dela (permissão revogada, dado mudou): volta ao atual — não
   // deixa o operador salvar o que o servidor já não oferece.
