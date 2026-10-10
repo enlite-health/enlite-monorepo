@@ -23,7 +23,8 @@ const navigate = vi.fn();
 // `useLocation` (Spec 022, Bloco 4, T413): seed opcional de `focusRequest` vindo do deep-link do
 // sino — default sem `state` nenhum (comportamento de sempre); testes do deep-link sobrescrevem
 // com `locationState.mockReturnValue`.
-const locationState = vi.fn(() => ({ state: null as { focusRequest?: { code: string; token: number } } | null }));
+// `search` (F4 de vaga-le-do-servico-contratado): o `?tab=` da URL; ausente = sem query (o que os testes antigos assumem).
+const locationState = vi.fn((): { state: { focusRequest?: { code: string; token: number } } | null; search?: string } => ({ state: null }));
 vi.mock('react-router-dom', () => ({
   useParams: () => ({ id: 'p1' }),
   useNavigate: () => navigate,
@@ -457,5 +458,31 @@ describe('PatientDetailPage — deep-link do sino reage a location.state NOVO (D
     locationState.mockReturnValue({ state: { focusRequest: { code: 'conversation', token: 111 } } });
     rerender(<PatientDetailPage />);
     expect(screen.getByTestId('conversation-handle-stub')).toHaveTextContent('none');
+  });
+});
+
+// vaga-le-do-servico-contratado, F4: `?tab=` (link do lápis da vaga e do wizard) escolhe a aba inicial.
+describe('?tab= na URL', () => {
+  beforeEach(() => { detail.patient = { ...patientDetailFixture, admissionStatus: 'DONE', status: 'ACTIVE' }; detail.isLoading = false; detail.error = null; navigate.mockReset(); });
+
+  it('?tab=contractedService abre direto a aba Serviço Contratado (e não a inicial)', () => {
+    locationState.mockReturnValue({ state: null, search: '?tab=contractedService' });
+    render(<PatientDetailPage />);
+    expect(screen.getByTestId('services-saved-stub')).toBeInTheDocument();
+    expect(screen.queryByTestId('familiares-card')).not.toBeInTheDocument();
+  });
+
+  it('?tab=lixo (fora da união) cai em Dados Clínicos, o comportamento de sempre', () => {
+    locationState.mockReturnValue({ state: null, search: '?tab=lixo' });
+    render(<PatientDetailPage />);
+    expect(screen.queryByTestId('services-saved-stub')).not.toBeInTheDocument();
+    expect(screen.getByTestId('diagnostico-card')).toBeInTheDocument();
+  });
+
+  it('sem ?tab= abre Dados Clínicos', () => {
+    locationState.mockReturnValue({ state: null, search: '' });
+    render(<PatientDetailPage />);
+    expect(screen.queryByTestId('services-saved-stub')).not.toBeInTheDocument();
+    expect(screen.getByTestId('diagnostico-card')).toBeInTheDocument();
   });
 });

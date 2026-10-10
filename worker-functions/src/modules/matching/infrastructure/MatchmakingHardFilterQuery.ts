@@ -7,6 +7,7 @@ import { MatchmakingSpecification, composeSpecifications } from '../domain/speci
 import { SameRealmSpecification } from '../domain/specifications/SameRealmSpecification';
 import { SameZoneSpecification } from '../domain/specifications/SameZoneSpecification';
 import { ProfessionSpecification } from '../domain/specifications/ProfessionSpecification';
+import { vacancyEffectiveJoinSql, vacancyEffectiveScheduleSql } from '@shared/sql/vacancyEffectiveFieldsSql';
 
 export async function runHardFilter(
   db: Pool,
@@ -96,7 +97,7 @@ export async function runHardFilter(
          OR NOT EXISTS (
            SELECT 1
            FROM jsonb_to_recordset(
-             COALESCE((SELECT schedule FROM job_postings WHERE id = $1), '[]'::jsonb)
+             COALESCE((SELECT ${vacancyEffectiveScheduleSql('jp_sched')} FROM job_postings jp_sched ${vacancyEffectiveJoinSql('jp_sched')} WHERE jp_sched.id = $1), '[]'::jsonb)
            ) AS vd("dayOfWeek" int)
            WHERE NOT EXISTS (
              SELECT 1 FROM worker_availability wa

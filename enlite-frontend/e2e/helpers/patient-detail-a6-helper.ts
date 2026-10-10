@@ -32,8 +32,9 @@ export function seedActivatablePatientA6(): { patientId: string; addressId: stri
 }
 
 /**
- * `age_range_min/max` da vaga NASCIDA do serviço `serviceId` (spec 015, US-A6.2) — junta por
- * `contracted_service_id`, molde de `readVacanciesByService` (patient-detail-c-helper.ts).
+ * `age_range_min/max` CRUS (a cópia) da vaga NASCIDA do serviço `serviceId` — junta por `contracted_service_id`, molde de
+ * `readVacanciesByService` (patient-detail-c-helper.ts). Desde a F6 de `vaga-le-do-servico-contratado` a ativação NÃO
+ * copia a faixa: a vaga com serviço guarda NULL/NULL e a faixa efetiva é derivada de `provider_age_band` pelos leitores.
  */
 export function readVacancyAgeRangeForService(
   patientId: string,

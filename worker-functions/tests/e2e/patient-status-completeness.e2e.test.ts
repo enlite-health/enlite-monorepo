@@ -15,6 +15,7 @@
 import { Pool } from 'pg';
 import { createApiClient, waitForBackend } from './helpers';
 import { staffAuth } from './helpers/staffAuth';
+import { vacancyEffectiveJoinSql, vacancyEffectiveScheduleSql } from '../../src/shared/sql/vacancyEffectiveFieldsSql';
 
 const DATABASE_URL = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL ?? '';
 const UID = 'sched-gate-e2e-admin';
@@ -252,7 +253,7 @@ describe('Horário do serviço trava a mudança de status (07/09) @integration',
     expect(Number(rows[0].n)).toBe(0);
   });
 
-  it('13. com horário e cobertura, `activate-recruitment` cria a vaga (201) e copia o horário do serviço para ela', async () => {
+  it('13. com horário e cobertura, `activate-recruitment` cria a vaga (201) SEM copiar o horário: a vaga lê do serviço', async () => {
     const id = await criarPaciente({
       tag: 'sched-gate-e2e-13',
       status: 'PENDING_ADMISSION',
@@ -273,10 +274,15 @@ describe('Horário do serviço trava a mudança de status (07/09) @integration',
     );
     expect(hist[0].change_source).toBe('recruitment_activation');
 
-    const { rows } = await pool.query<{ schedule: unknown }>(
-      'SELECT schedule FROM job_postings WHERE patient_id = $1', [id],
+    // Fonte única: a coluna da vaga fica vazia e o horário efetivo vem do serviço, pela peça.
+    const { rows } = await pool.query<{ copia: unknown; efetivo: unknown; contracted_service_id: string }>(
+      `SELECT jp.schedule AS copia, ${vacancyEffectiveScheduleSql()} AS efetivo, jp.contracted_service_id
+         FROM job_postings jp ${vacancyEffectiveJoinSql()}
+        WHERE jp.patient_id = $1`, [id],
     );
     expect(rows).toHaveLength(1);
-    expect(rows[0].schedule).toEqual([{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }]);
+    expect(rows[0].contracted_service_id).toBe(sid);
+    expect(rows[0].copia).toBeNull();
+    expect(rows[0].efetivo).toEqual([{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }]);
   });
 });

@@ -248,6 +248,8 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'POST /api/admin/vacancies/:id/publish-talentum → talentum:update',
         'POST /api/admin/vacancies/:id/resolve-address-review → vacancy:update',
         'POST /api/admin/vacancies/:id/social-links → vacancy:create',
+        // F3 (vaga-le-do-servico): "marcar como atendido" o aviso de vaga publicada — a MESMA célula do PUT da vaga.
+        'POST /api/admin/vacancies/:id/source-change-notices/:field/ack → vacancy:update',
         'POST /api/admin/vacancies/:vacancyId/workers/:workerId/contact-notes → funnel:create',
         // "Promover" (D300, merge main→stage 19/09/2026): entrou junto com
         // reject/restore, mesma célula (escrita no funil).

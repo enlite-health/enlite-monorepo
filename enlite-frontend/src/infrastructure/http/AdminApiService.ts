@@ -26,6 +26,7 @@ import {
   type VacancyFilterOptions,
 } from './AdminVacancyListApiService';
 import type { VacancyDraftSummary, VacancyByAddressSummary } from '@domain/entities/VacancyDraft';
+import type { SourceChangeField } from '@domain/entities/Vacancy';
 import type {
   ParseVacancyFullResult,
   PatientAddressCreateInput,
@@ -189,6 +190,11 @@ class AdminApiServiceClass {
 
   async updateVacancy(id: string, data: any): Promise<any> {
     return this.request<any>('PUT', `/api/admin/vacancies/${id}`, data);
+  }
+
+  /** "Marcar como atendido": fecha o aviso aberto de (vaga, campo). 404 = sem aviso aberto; 400 = campo inválido. */
+  async acknowledgeVacancySourceChangeNotice(vacancyId: string, field: SourceChangeField): Promise<void> {
+    await this.request<unknown>('POST', `/api/admin/vacancies/${vacancyId}/source-change-notices/${field}/ack`);
   }
 
   async deleteVacancy(id: string): Promise<void> {

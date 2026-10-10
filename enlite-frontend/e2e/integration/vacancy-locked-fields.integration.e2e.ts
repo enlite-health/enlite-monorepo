@@ -26,6 +26,10 @@ const MOCK_ADMIN = {
   role: 'admin',
 };
 const MOCK_TOKEN = 'mock_' + Buffer.from(JSON.stringify(MOCK_ADMIN), 'utf-8').toString('base64');
+// Horário do serviço contratado — a ÚNICA fonte do horário da vaga (F2: o foguete não o copia).
+const SERVICE_SCHEDULE = [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }];
+// O GET da vaga devolve o horário no formato da VAGA (`normalizeSchedule`: dayOfWeek 1 → 'lunes'), não no do serviço.
+const EXPECTED_VACANCY_SCHEDULE = { lunes: [{ start: '08:00', end: '12:00' }] };
 const AUTH_HEADERS = {
   Authorization: `Bearer ${MOCK_TOKEN}`,
   'Content-Type': 'application/json',
@@ -68,7 +72,7 @@ test.describe('vacancy-locked-fields — fase 1 (completar-vacante-em-rascunho) 
           weeklyHours: 20,
           careLocation: 'HOME',
           addressId,
-          schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }],
+          schedule: SERVICE_SCHEDULE,
         },
       },
     );
@@ -103,6 +107,16 @@ test.describe('vacancy-locked-fields — fase 1 (completar-vacante-em-rascunho) 
     );
     expect(body.locked_fields).toHaveLength(8);
     expect(body.updated_at).toBeTruthy();
+
+    // F2 (vaga-le-do-servico-contratado): o foguete NÃO copia o horário — a coluna da vaga fica NULL e o GET
+    // devolve o horário do SERVIÇO (leitura pela peça de campos efetivos, F1).
+    expect(runSQL(`SELECT (schedule IS NULL)::text FROM job_postings WHERE id='${vacancyId}'`)).toBe('true');
+    expect(body.schedule).toEqual(EXPECTED_VACANCY_SCHEDULE);
+
+    // F5: idem para a quantidade de prestadores — o foguete NÃO copia (coluna NULL) e o GET devolve a do SERVIÇO
+    // (providersNeeded: 1 no POST do beforeAll), como texto, o tipo da coluna da vaga.
+    expect(runSQL(`SELECT (providers_needed IS NULL)::text FROM job_postings WHERE id='${vacancyId}'`)).toBe('true');
+    expect(String(body.providers_needed)).toBe('1');
   });
 
   test('PUT em campo travado (schedule) → 422 com locked_fields e o banco não muda; PUT em campo livre (required_professions) → 200 e persiste', async ({ request }) => {
@@ -113,12 +127,11 @@ test.describe('vacancy-locked-fields — fase 1 (completar-vacante-em-rascunho) 
     const getRes = await request.get(`${BACKEND_URL}/api/admin/vacancies/${vacancyId}`, { headers: AUTH_HEADERS });
     const lockedFromGet: string[] = (await getRes.json()).data.locked_fields;
 
-    const scheduleBefore = runSQL(`SELECT schedule::text FROM job_postings WHERE id='${vacancyId}'`);
-    // O "antes" tem de ser um horário DE VERDADE (o que o foguete gravou do serviço) — senão o
-    // "antes == depois" do 422 provaria só que dois vazios são iguais (achado do gate, item 3a).
-    const scheduleBeforeParsed = JSON.parse(scheduleBefore);
-    expect(Array.isArray(scheduleBeforeParsed)).toBe(true);
-    expect(scheduleBeforeParsed.length).toBeGreaterThanOrEqual(1);
+    // F2: a coluna da vaga é NULL (sem cópia); o horário vigente é o EFETIVO (o do serviço), lido pelo GET.
+    // O "antes" tem de ser um horário DE VERDADE — senão o "antes == depois" do 422 provaria só que dois
+    // vazios são iguais (achado do gate, item 3a).
+    const scheduleBefore = (await getRes.json()).data.schedule;
+    expect(scheduleBefore).toEqual(EXPECTED_VACANCY_SCHEDULE);
 
     const putLocked = await request.put(`${BACKEND_URL}/api/admin/vacancies/${vacancyId}`, {
       headers: AUTH_HEADERS,
@@ -129,8 +142,9 @@ test.describe('vacancy-locked-fields — fase 1 (completar-vacante-em-rascunho) 
     expect(putLockedBody.locked_fields).toEqual(['schedule']);
     expect(lockedFromGet).toEqual(expect.arrayContaining(putLockedBody.locked_fields));
 
-    const scheduleAfter = runSQL(`SELECT schedule::text FROM job_postings WHERE id='${vacancyId}'`);
-    expect(scheduleAfter).toBe(scheduleBefore);
+    const scheduleAfter = (await (await request.get(`${BACKEND_URL}/api/admin/vacancies/${vacancyId}`, { headers: AUTH_HEADERS })).json()).data.schedule;
+    expect(scheduleAfter).toEqual(scheduleBefore);
+    expect(runSQL(`SELECT (schedule IS NULL)::text FROM job_postings WHERE id='${vacancyId}'`)).toBe('true');
 
     const putFree = await request.put(`${BACKEND_URL}/api/admin/vacancies/${vacancyId}`, {
       headers: AUTH_HEADERS,
@@ -149,7 +163,10 @@ test.describe('vacancy-locked-fields — fase 1 (completar-vacante-em-rascunho) 
     // proibido em teste, F11): só o bit `is_draft` importa para o gate de SOURCE_LOCKED_FIELDS.
     runSQL(`UPDATE job_postings SET is_draft = false WHERE id = '${vacancyId}'`);
 
-    const scheduleBefore = runSQL(`SELECT schedule::text FROM job_postings WHERE id='${vacancyId}'`);
+    const getEffectiveSchedule = async () =>
+      (await (await request.get(`${BACKEND_URL}/api/admin/vacancies/${vacancyId}`, { headers: AUTH_HEADERS })).json()).data.schedule;
+    const scheduleBefore = await getEffectiveSchedule();
+    expect(scheduleBefore).toEqual(EXPECTED_VACANCY_SCHEDULE);
 
     const put = await request.put(`${BACKEND_URL}/api/admin/vacancies/${vacancyId}`, {
       headers: AUTH_HEADERS,
@@ -159,7 +176,6 @@ test.describe('vacancy-locked-fields — fase 1 (completar-vacante-em-rascunho) 
     expect((await put.json()).locked_fields).toEqual(['schedule']);
 
     // Mesmo padrão do caso do rascunho: o 422 recusa ANTES de escrever — publicada ou não.
-    const scheduleAfter = runSQL(`SELECT schedule::text FROM job_postings WHERE id='${vacancyId}'`);
-    expect(scheduleAfter).toBe(scheduleBefore);
+    expect(await getEffectiveSchedule()).toEqual(scheduleBefore);
   });
 });

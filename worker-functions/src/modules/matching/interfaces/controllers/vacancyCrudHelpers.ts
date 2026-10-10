@@ -8,6 +8,14 @@
 import type { Pool } from 'pg';
 import { captureEntityDiff } from '@shared/audit/captureEntityDiff';
 import type { EntityFieldDiff } from '@shared/audit/types';
+import { applyEffectiveAgeRange } from '@modules/case/domain/ProviderAgeBandMapping';
+import {
+  vacancyEffectiveAgeRangeSql,
+  vacancyEffectiveJoinSql,
+  vacancyEffectiveProvidersNeededSql,
+  vacancyEffectiveScheduleSql,
+  vacancyRawColumnsSql,
+} from '@shared/sql/vacancyEffectiveFieldsSql';
 
 export interface VacancyInsertParams {
   vacancyNumber: number;
@@ -264,6 +272,8 @@ export function buildInsertQuery(): string {
   // índice, e ao destravar já vê o valor commitado do 1º — reconta e bate 23505
   // se ainda colidir. Callers tratam 23505 com retry (ver isCaseOrdinalConflict/
   // retryOnCaseOrdinalConflict abaixo).
+  // RETURNING com lista explícita e SEM join: este INSERT roda também em client cru (sem identidade). O horário
+  // efetivo da resposta é lido depois, por `withEffectiveFields`.
   return `
     INSERT INTO job_postings (
       vacancy_number, case_number, title, patient_id,
@@ -302,8 +312,34 @@ export function buildInsertQuery(): string {
          WHERE jp2.patient_id = $4::uuid
       ) END
     )
-    RETURNING *
+    RETURNING ${vacancyRawColumnsSql()}
   `;
+}
+
+/**
+ * Troca os campos CRUS da linha escrita pelos EFETIVOS (`schedule`, `providers_needed` e a faixa etária: os do serviço, se
+ * a vaga tem serviço). Lê por `db.query` — o proxy do pool desvia para o client fixado da request, COM identidade — depois do
+ * COMMIT, nunca no client cru da transação. Vaga que a sessão não enxerga mais (ou sem linha) devolve a linha como veio.
+ * Campo novo efetivo entra aqui, pela peça — nunca num helper paralelo.
+ */
+export async function withEffectiveFields<T extends Record<string, unknown>>(db: Pool, row: T): Promise<T> {
+  const r = await db.query(
+    `SELECT ${vacancyEffectiveScheduleSql('jp')} AS schedule,
+            ${vacancyEffectiveProvidersNeededSql('jp')} AS providers_needed,
+            ${vacancyEffectiveAgeRangeSql('jp')}
+       FROM job_postings jp ${vacancyEffectiveJoinSql('jp')}
+      WHERE jp.id = $1`,
+    [row.id],
+  );
+  if (r.rows.length === 0) return row;
+  const eff = applyEffectiveAgeRange(r.rows[0]);
+  return {
+    ...row,
+    schedule: eff.schedule,
+    providers_needed: eff.providers_needed,
+    age_range_min: eff.age_range_min,
+    age_range_max: eff.age_range_max,
+  };
 }
 
 // ─── case_ordinal conflict retry (spec 027 Fase 5) ───────────────────────────
@@ -394,14 +430,21 @@ export function buildInsertParams(p: VacancyInsertParams): unknown[] {
     locked.patient_id,
     p.required_professions ?? [],
     p.required_sex ?? null,
-    locked.age_range_min ?? null,
-    locked.age_range_max ?? null,
+    // F6: idem para a faixa etária — vaga COM serviço grava NULL (a faixa é derivada de `provider_age_band` do serviço
+    // por `applyEffectiveAgeRange`); vaga manual segue gravando a própria faixa.
+    locked.contracted_service_id == null ? locked.age_range_min ?? null : null,
+    locked.contracted_service_id == null ? locked.age_range_max ?? null : null,
     p.worker_profile_sought ?? null,
     p.required_experience ?? null,
     p.worker_attributes ?? null,
-    locked.schedule ? JSON.stringify(locked.schedule) : null,
+    // F2 (vaga-le-do-servico-contratado): vaga COM serviço não grava o horário — o valor mora no serviço
+    // (`patient_contracted_services.schedule`) e os leitores o buscam pela peça de campos efetivos.
+    // Vaga manual (sem serviço) segue gravando o próprio horário.
+    locked.contracted_service_id == null && locked.schedule ? JSON.stringify(locked.schedule) : null,
     p.work_schedule ?? null,
-    locked.providers_needed,
+    // F5: idem para a quantidade de prestadores — vaga COM serviço grava NULL (o valor mora em
+    // `patient_contracted_services.providers_needed`); vaga manual segue gravando o próprio valor.
+    locked.contracted_service_id == null ? locked.providers_needed : null,
     p.salary_text ?? 'A convenir',
     p.payment_day ?? null,
     p.daily_obs ?? null,

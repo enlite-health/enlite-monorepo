@@ -18,6 +18,7 @@ import {
 } from './vacancyScheduleFilter';
 import type { Pool } from 'pg';
 import { VACANCY_CASE_NUMBER_SQL } from '@shared/sql/vacancyCaseNumberSql';
+import { vacancyEffectiveJoinSql, vacancyEffectiveProvidersNeededSql } from '@shared/sql/vacancyEffectiveFieldsSql';
 import { workerNotDisabledSql } from '@shared/database/activeWorkerFilter';
 import { INICIAIS_REDIGIDAS, patientNameIsRedacted } from '../../application/patientInVacancyProjection';
 import {
@@ -97,10 +98,10 @@ const LIST_VACANCIES_BASE = `
         AND wja.application_funnel_stage IN (${SELECTED_KANBAN_SQL})
         AND ${WORKER_ACTIVE_SQL}) as selecionados,
     CASE
-      WHEN jp.providers_needed IS NOT NULL AND jp.providers_needed ~ '^[0-9]+$'
+      WHEN ${vacancyEffectiveProvidersNeededSql('jp')} IS NOT NULL AND ${vacancyEffectiveProvidersNeededSql('jp')} ~ '^[0-9]+$'
       THEN GREATEST(
         -- quem deu baixa não ocupa a vaga: a posição volta a faltar
-        jp.providers_needed::INTEGER - (
+        (${vacancyEffectiveProvidersNeededSql('jp')})::INTEGER - (
           -- Fase 4 (DX-4.9, critério 11): SELECTED + QUICK_RESPONSE_TEAM ocupam a posição
           -- da vaga; SELECTED_KANBAN_SQL (linha "selecionados" acima) fica intocado —
           -- espelha só a coluna "Seleccionados" do Kanban, não "quem preenche a vaga".
@@ -114,6 +115,7 @@ const LIST_VACANCIES_BASE = `
       ELSE NULL
     END as faltantes
   FROM job_postings jp
+  ${vacancyEffectiveJoinSql('jp')}
   LEFT JOIN patients p ON jp.patient_id = p.id
   LEFT JOIN patient_addresses pa ON jp.patient_address_id = pa.id
   WHERE jp.case_number IS NOT NULL

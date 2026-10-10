@@ -273,6 +273,44 @@ describe('VacancyTalentumController', () => {
     });
   });
 
+  // ── unpublishFromTalentum ────────────────────────────────────────
+
+  describe('unpublishFromTalentum', () => {
+    it('delegates to the use case with the actor and returns 200', async () => {
+      mockUnpublish.mockResolvedValueOnce(undefined);
+      const res = mockRes();
+
+      await controller.unpublishFromTalentum(mockReq({}, { id: 'v-1' }), res);
+
+      expect(mockUnpublish).toHaveBeenCalledWith(
+        { jobPostingId: 'v-1' },
+        expect.objectContaining({ actorType: 'HUMAN', actorLabel: 'admin_panel' }),
+      );
+      expect(res.status).toHaveBeenCalledWith(200);
+    });
+
+    it('maps PublishError to its status code', async () => {
+      const { PublishError } = jest.requireMock('@modules/integration');
+      mockUnpublish.mockRejectedValueOnce(new PublishError(409, 'not published'));
+      const res = mockRes();
+
+      await controller.unpublishFromTalentum(mockReq({}, { id: 'v-1' }), res);
+
+      expect(res.status).toHaveBeenCalledWith(409);
+      expect(res.json).toHaveBeenCalledWith({ success: false, error: 'not published' });
+    });
+
+    it('maps any other error to 500', async () => {
+      mockUnpublish.mockRejectedValueOnce(new Error('boom'));
+      const res = mockRes();
+
+      await controller.unpublishFromTalentum(mockReq({}, { id: 'v-1' }), res);
+
+      expect(res.status).toHaveBeenCalledWith(500);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ error: 'Failed to unpublish from Talentum', details: 'boom' }));
+    });
+  });
+
   // ── generateTalentumDescription ──────────────────────────────────
 
   describe('generateTalentumDescription', () => {
@@ -361,6 +399,20 @@ describe('VacancyTalentumController', () => {
       expect(body.data.description).toBe('Generated description text');
       expect(body.data.prescreening.questions).toHaveLength(1);
       expect(body.data.prescreening.faq).toHaveLength(1);
+    });
+
+    it('hands the EFFECTIVE schedule, providers and age range of the row to the parser (vaga-le-servico)', async () => {
+      const schedule = [{ dayOfWeek: 3, startTime: '14:15', endTime: '18:45' }];
+      mockQuery.mockResolvedValueOnce({
+        rows: [{ ...VACANCY_ROW, schedule, providers_needed: 3, age_range_min: 20, age_range_max: 30 }],
+      });
+      mockGenerateDescriptionPreview.mockResolvedValueOnce({ title: 'T', description: 'D' });
+      mockGenerateFromVacancyData.mockResolvedValueOnce({ prescreening: { questions: [], faq: [] } });
+
+      await controller.generateAIContent(mockReq({}, { id: 'v-1' }), mockRes());
+
+      const vacancyArg = mockGenerateFromVacancyData.mock.calls[0][0];
+      expect(vacancyArg).toMatchObject({ schedule, providers_needed: 3, age_range_min: 20, age_range_max: 30 });
     });
 
     it('does NOT persist anything (no UPDATE query issued)', async () => {

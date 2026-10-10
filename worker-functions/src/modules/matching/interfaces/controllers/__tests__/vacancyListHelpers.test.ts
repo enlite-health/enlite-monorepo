@@ -7,6 +7,7 @@
  */
 
 import { VACANCY_CASE_NUMBER_SQL } from '@shared/sql/vacancyCaseNumberSql';
+import { vacancyEffectiveProvidersNeededSql } from '@shared/sql/vacancyEffectiveFieldsSql';
 import { buildListVacanciesQuery, ListVacanciesFilters, loadStageCounts, loadVacancyActivity, mapVacancyListRow, VacancyListRow } from '../vacancyListHelpers';
 
 // Minimal filters that satisfy the required fields
@@ -357,9 +358,12 @@ describe('buildListVacanciesQuery — faltantes usa SELECTED + QUICK_RESPONSE_TE
     expect(faltantesBlock).toContain("application_funnel_stage IN ('SELECTED','QUICK_RESPONSE_TEAM')");
   });
 
-  it('não toca a linha de providers_needed (critério 14)', () => {
+  it('não muda a conta da linha de providers_needed (critério 14): continua `~ ^[0-9]+$` e `::INTEGER`, agora sobre o EFETIVO da peça (F5)', () => {
     const { baseQuery } = buildListVacanciesQuery(base());
-    expect(baseQuery).toContain('jp.providers_needed::INTEGER');
+    const efetivo = vacancyEffectiveProvidersNeededSql('jp');
+    expect(baseQuery).toContain(`(${efetivo})::INTEGER`);
+    expect(baseQuery).toContain(`${efetivo} ~ '^[0-9]+$'`);
+    expect(baseQuery).not.toMatch(/(?<![\w.])jp\.providers_needed\b(?!\s+END)/);
   });
 });
 
