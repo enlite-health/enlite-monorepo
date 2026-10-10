@@ -3,6 +3,7 @@
  * ao writer. `null` ≠ `[]`.
  */
 import { CLINICAL_PATIENT_STATUSES, type ClinicalPatientStatus } from '../enums/PatientStatus';
+import { INTERNAL_CHANGE_SOURCES, MANUAL_CHANGE_SOURCES, type PatientChangeSource } from '../enums/PatientChangeSource';
 import { CELULA_DO_DESTINO, decidirTrocaForaDoFluxo } from '../trocaForaDoFluxo';
 
 const DESTINOS: readonly ClinicalPatientStatus[] = CLINICAL_PATIENT_STATUSES;
@@ -11,7 +12,7 @@ const TODAS = Object.values(CELULA_DO_DESTINO);
 
 let casos = 0;
 afterAll(() => {
-  // Contagem declarada: 7 destinos x 14 casos + 1 caso de funil (destino) = 99.
+  // Contagem declarada: 7 destinos x 14 casos + 1 de funil + 1 de tipo = 100.
   // eslint-disable-next-line no-console
   console.log(`TABELA_VERDADE casos executados: ${casos}`);
 });
@@ -25,9 +26,9 @@ describe('decidirTrocaForaDoFluxo — tabela-verdade', () => {
   describe.each(DESTINOS)('destino %s', (para) => {
     const de = outraOrigem(para);
     const propria = CELULA_DO_DESTINO[para];
-    const base = { de, para, naFsm: false, cells: [propria] as string[] | null, changeSource: 'admin_panel' };
+    const base = { de, para, naFsm: false, cells: [propria] as string[] | null, changeSource: 'admin_panel' as PatientChangeSource };
 
-    it.each(['system', 'activate', 'vacancy_launch', 'recruitment_activation'])(
+    it.each(INTERNAL_CHANGE_SOURCES)(
       'origem não manual (%s) não se aplica, mesmo fora da FSM e sem célula', (changeSource) => {
         marca();
         expect(decidirTrocaForaDoFluxo({ ...base, changeSource, cells: [] }))
@@ -52,7 +53,7 @@ describe('decidirTrocaForaDoFluxo — tabela-verdade', () => {
         .toEqual({ resultado: 'nao_se_aplica', motivo: 'mesmo_estado' });
     });
 
-    it.each(['admin_panel', 'kanban'])('par na FSM (%s): fluxo normal, sem célula e sem override', (changeSource) => {
+    it.each(MANUAL_CHANGE_SOURCES)('par na FSM (%s): fluxo normal, sem célula e sem override', (changeSource) => {
       marca();
       expect(decidirTrocaForaDoFluxo({ ...base, changeSource, naFsm: true, cells: [] }))
         .toEqual({ resultado: 'fluxo_normal' });
@@ -75,7 +76,7 @@ describe('decidirTrocaForaDoFluxo — tabela-verdade', () => {
         .toEqual({ resultado: 'recusada_por_permissao', celulaFaltante: propria });
     });
 
-    it.each(['admin_panel', 'kanban'])('fora da FSM com a célula do destino (%s): permitida por permissão', (changeSource) => {
+    it.each(MANUAL_CHANGE_SOURCES)('fora da FSM com a célula do destino (%s): permitida por permissão', (changeSource) => {
       marca();
       expect(decidirTrocaForaDoFluxo({ ...base, changeSource, cells: [propria, 'patient:read'] }))
         .toEqual({ resultado: 'permitida_por_permissao', celula: propria });
@@ -88,9 +89,19 @@ describe('decidirTrocaForaDoFluxo — tabela-verdade', () => {
       .toEqual({ resultado: 'nao_se_aplica', motivo: 'fora_do_funil_clinico' });
   });
 
-  it('contagem: 7 destinos x 14 casos + 1 de funil = 99 (contagem zero é falha, não sucesso)', () => {
+  it('tipo fechado: erro de digitação na origem é erro de COMPILAÇÃO (e, em runtime, não é manual)', () => {
+    marca();
+    const r = decidirTrocaForaDoFluxo({
+      de: 'ACTIVE', para: 'SEARCHING', naFsm: false, cells: [],
+      // @ts-expect-error 'admin_pannel' não pertence a PatientChangeSource
+      changeSource: 'admin_pannel',
+    });
+    expect(r).toEqual({ resultado: 'nao_se_aplica', motivo: 'origem_nao_manual' });
+  });
+
+  it('contagem: 7 destinos x 14 casos + 1 de funil + 1 de tipo = 100 (contagem zero é falha, não sucesso)', () => {
     // por destino: 4 origens não manuais + funil(de) + nulo + mesmo estado + 2 na FSM
     //              + null + [] + só-outras + 2 permitidas = 14
-    expect(casos).toBe(7 * 14 + 1);
+    expect(casos).toBe(7 * 14 + 2);
   });
 });
