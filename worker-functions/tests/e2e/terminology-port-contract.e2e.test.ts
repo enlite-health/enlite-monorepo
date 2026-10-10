@@ -22,6 +22,7 @@ import { Pool } from 'pg';
 import { IcdCatalogTerminology } from '../../src/modules/terminology/infrastructure/IcdCatalogTerminology';
 import { InMemoryTerminology } from '../../src/modules/terminology/infrastructure/InMemoryTerminology';
 import type { DiagnosisEntity, TerminologyPort } from '../../src/modules/terminology/domain/TerminologyPort';
+import { pathologyLabelsFrom } from '../../src/modules/matching/infrastructure/VertexAdmissionSummaryGenerator';
 import { IcdCode } from '../../src/modules/terminology/domain/IcdCode';
 
 const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
@@ -33,6 +34,18 @@ const CHAPTER_ZZ: DiagnosisEntity = {
   titleEs: 'Capítulo de prueba',
   titleEn: 'Test chapter',
   chapter: '99',
+  release: FIXTURE_RELEASE,
+  kind: 'chapter',
+  isLeaf: false,
+  parentUri: null,
+};
+
+const CHAPTER_98: DiagnosisEntity = {
+  uri: 'test://contract/chapter-98',
+  code: IcdCode.parse('98'),
+  titleEs: 'Capítulo de prueba B',
+  titleEn: 'Test chapter B',
+  chapter: '98',
   release: FIXTURE_RELEASE,
   kind: 'chapter',
   isLeaf: false,
@@ -75,7 +88,7 @@ const EXTENSION: DiagnosisEntity = {
   parentUri: null,
 };
 
-const FIXTURES = [CHAPTER_ZZ, STEM, STEM_OUTRO_CAPITULO, EXTENSION];
+const FIXTURES = [CHAPTER_ZZ, CHAPTER_98, STEM, STEM_OUTRO_CAPITULO, EXTENSION];
 
 async function seedPostgres(pool: Pool): Promise<void> {
   await pool.query(`INSERT INTO terminology.icd_releases (release, entity_count) VALUES ($1, $2) ON CONFLICT (release) DO NOTHING`, [
@@ -225,6 +238,20 @@ describe('TerminologyPort — contrato (spec 016 F1)', () => {
       expect(chapter.title).toBe(CHAPTER_ZZ.titleEs);
     });
 
+    it('listChapters: capítulos do release corrente, por código, com o MESMO rótulo que ancestorsOf devolve (o que o PT grava)', async () => {
+      const chapters = await port.listChapters();
+      expect(chapters).toEqual([
+        { code: '98', title: CHAPTER_98.titleEs },
+        { code: '99', title: CHAPTER_ZZ.titleEs },
+      ]);
+      const { chapter } = await port.ancestorsOf(STEM.uri);
+      expect(chapters).toContainEqual(chapter);
+    });
+
+    it('resumo da admissão (049): o catálogo de patologia do prompt sai dos capítulos desta porta, um rótulo por capítulo', async () => {
+      expect(await pathologyLabelsFrom(port)()).toEqual(['Capítulo de prueba B (98)', 'Capítulo de prueba (99)']);
+    });
+
     it('ancestorsOf: lança para uri inexistente — nunca devolve capítulo inventado', async () => {
       await expect(port.ancestorsOf('test://contract/nao-existe')).rejects.toThrow();
     });
@@ -237,6 +264,12 @@ describe('TerminologyPort — contrato (spec 016 F1)', () => {
  * construído com um array fixo de entidades, sem um `icd_releases` por trás — então não há uma
  * versão honesta deste caso para rodar nele sem inventar um conceito que a spec não pede.
  */
+describe('resumo da admissão (049) — terminologia não carregada vira catálogo VAZIO, não erro', () => {
+  it('fake sem entidades -> [] (o gerador então barra com prompt_catalog_empty)', async () => {
+    expect(await pathologyLabelsFrom(new InMemoryTerminology([]))()).toEqual([]);
+  });
+});
+
 describe('D2 — promover um release muda o que search() devolve (Postgres real)', () => {
   let pool: Pool;
   const RELEASE_A = 'TEST-D2-RELEASE-A';

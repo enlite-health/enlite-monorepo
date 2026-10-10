@@ -23,6 +23,9 @@ import {
 import type { AdmissionLogger } from './AdmissionMessagingService';
 import {
   AdmissionSummaryError,
+  MAX_SUMMARY_ATTEMPTS,
+  SUMMARY_ATTEMPTS_EXHAUSTED,
+  type AdmissionSummaryResult,
   TranscriptVaultError,
   type AdmissionSummaryPort,
   type TranscriptVaultPort,
@@ -99,6 +102,11 @@ type ReadResult = { ok: true; parts: Transcript[] } | { ok: false; kind: 'integr
 const sha256Hex = (data: string | Buffer): string => createHash('sha256').update(data).digest('hex');
 
 /** `dd/mm/aaaa` no fuso do país da reunião (a data que a operadora reconhece, não a UTC). */
+/** Data da reunião em ISO (AAAA-MM-DD) no fuso do país — o `fecha` que o Gem pede. */
+function isoDateLabel(slotStart: Date, country: string): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: countryToTimezone(country), year: 'numeric', month: '2-digit', day: '2-digit' }).format(slotStart);
+}
+
 function dateLabel(slotStart: Date, country: string): string {
   return new Intl.DateTimeFormat('es-AR', { timeZone: countryToTimezone(country), day: '2-digit', month: '2-digit', year: 'numeric' }).format(slotStart);
 }
@@ -188,6 +196,18 @@ export class AdmissionImportService {
     ) {
       return 'not_eligible';
     }
+    // Teto de tentativas de resumo (custo do Vertex): contado pelos eventos, sob o lock da reunião (vale para execuções sobrepostas).
+    if ((await this.deps.repo.countModelSummaryFailures(a.id)) >= MAX_SUMMARY_ATTEMPTS) {
+      // O evento entra UMA vez, mesmo se a reunião já estava `blocked` por outro motivo (senão ela nunca sai da fila).
+      if (!(await this.deps.repo.hasBlockedReason(a.id, SUMMARY_ATTEMPTS_EXHAUSTED))) {
+        await this.inTx(async (cli) => {
+          await this.deps.repo.setState(a.id, 'blocked', cli);
+          await this.deps.events.append({ appointmentId: a.id, kind: 'import_blocked', outcome: 'blocked', reason: SUMMARY_ATTEMPTS_EXHAUSTED }, cli);
+        });
+      }
+      this.log.error({ appointmentId: a.id, reason: SUMMARY_ATTEMPTS_EXHAUSTED }, 'admission.import_blocked');
+      return 'blocked';
+    }
     const endedAt = a.conference_ended_at;
     if (now.getTime() < endedAt.getTime() + IMPORT_MIN_DELAY_MS) return 'too_early';
     const expired = now.getTime() - endedAt.getTime() >= IMPORT_EXPIRE_AFTER_MS;
@@ -263,26 +283,36 @@ export class AdmissionImportService {
     }
 
     // 6. o resumo (Vertex) e o PDF.
-    let generated: { summary: string; promptVersion: string };
+    let generated: AdmissionSummaryResult;
     try {
-      generated = await this.deps.summary.generate({ transcript: fullText });
+      generated = await this.deps.summary.generate({ transcript: fullText, entrevistaId: a.admission_code, fecha: isoDateLabel(a.slot_start, a.country) });
     } catch (err) {
       const reason = err instanceof AdmissionSummaryError ? err.reason : 'unexpected';
-      await this.deps.events.append({ appointmentId: a.id, kind: 'summary_failed', outcome: 'failed', reason });
-      this.log.error({ appointmentId: a.id, reason }, 'admission.summary_failed');
+      const placeholders = err instanceof AdmissionSummaryError ? err.placeholders : [];
+      const errorClass = err instanceof AdmissionSummaryError ? err.errorClass : undefined;
+      await this.deps.events.append({
+        appointmentId: a.id, kind: 'summary_failed', outcome: 'failed', reason,
+        ...(placeholders.length ? { ref: { placeholders: placeholders.join(',') } } : {}),
+      });
+      this.log.error({ appointmentId: a.id, reason, ...(placeholders.length ? { placeholders } : {}), ...(errorClass ? { errorClass } : {}) }, 'admission.summary_failed');
+      // credencial quebrada: log ADICIONAL com nome próprio (alerta dedicado no futuro); o `admission.summary_failed` acima segue sendo o que o alerta vigia.
+      if (reason === 'vertex_auth_failed') this.log.error({ appointmentId: a.id, reason }, 'admission.vertex_auth_failed');
       return 'summary_failed';
     }
+    // Daqui em diante a chamada ao modelo JÁ foi paga: falha no PDF, no bucket ou na transação vira `post_model_failed` (conta no teto).
     const label = `Resumen de admisión · ${dateLabel(a.slot_start, a.country)}`;
-    const pdf = await renderAdmissionSummaryPdf({ title: label, body: generated.summary });
-
-    // 7. o objeto do PDF sobe SEM transação; a linha do documento + `summary_saved` + `done` entram numa transação curta.
-    const prepared = await this.documents.prepare({
-      patientId: a.patient_id, appointmentId: a.id, pdf, originalFilename: `resumen-admision-${a.admission_code}.pdf`, label,
-    });
+    if (generated.jsonInvalid) this.log.warn({ appointmentId: a.id }, 'admission.summary_json_invalid');
+    let prepared: Awaited<ReturnType<StoreAdmissionSummaryDocument['prepare']>> | undefined;
     let stored;
     try {
+      const pdf = await renderAdmissionSummaryPdf({ title: label, body: generated.summary, structured: generated.jsonInvalid ? null : generated.structured });
+      // o objeto do PDF sobe SEM transação; a linha do documento + `summary_saved` + `done` entram numa transação curta.
+      prepared = await this.documents.prepare({
+        patientId: a.patient_id, appointmentId: a.id, pdf, originalFilename: `resumen-admision-${a.admission_code}.pdf`, label,
+      });
+      const ready = prepared;
       stored = await this.inTx(async (cli) => {
-        const r = await prepared.commit(cli);
+        const r = await ready.commit(cli);
         if (r.outcome === 'stored') {
           await this.deps.events.append(
             { appointmentId: a.id, kind: 'summary_saved', outcome: 'saved', ref: { documentId: r.documentId, promptVersion: generated.promptVersion, bytes: r.sizeBytes, sha256: r.sha256 } },
@@ -293,8 +323,10 @@ export class AdmissionImportService {
         return r;
       });
     } catch (err) {
-      await prepared.discard();
-      throw err;
+      if (prepared) await prepared.discard().catch(() => undefined); // sem objeto órfão no bucket
+      await this.deps.events.append({ appointmentId: a.id, kind: 'summary_failed', outcome: 'failed', reason: 'post_model_failed' });
+      this.log.error({ appointmentId: a.id, reason: 'post_model_failed', errorClass: err instanceof Error ? err.constructor.name : 'unknown' }, 'admission.summary_failed');
+      return 'summary_failed';
     }
     if (stored.outcome === 'duplicate') {
       this.log.info({ appointmentId: a.id }, 'admission.import.already_done');

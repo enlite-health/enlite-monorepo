@@ -332,4 +332,22 @@ export class IcdCatalogTerminology implements TerminologyPort {
     // conhecido da F1, documentado no relatório (NAO CONSEGUI).
     return { chapter: { code: chapterRow.code, title: titleFor(chapterRow, 'es') } };
   }
+
+  /** Mesma tabela e mesmo título (`titleFor(..., 'es')`) do 2º SELECT de `ancestorsOf`: o rótulo é o que o PT grava. */
+  async listChapters(): Promise<Chapter[]> {
+    const release = await this.resolveCurrentRelease();
+    let rows: Array<{ code: string; title_es: string | null; title_en: string | null }>;
+    try {
+      ({ rows } = await this.pool.query(
+        `SELECT code, title_es, title_en
+           FROM terminology.icd_entities
+          WHERE kind = 'chapter' AND release = $1
+          ORDER BY code`,
+        [release],
+      ));
+    } catch (err) {
+      throw toUnavailableError(err, INFRA_FAILURE_REASON);
+    }
+    return rows.map((r) => ({ code: r.code, title: titleFor(r, 'es') }));
+  }
 }

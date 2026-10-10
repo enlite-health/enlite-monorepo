@@ -1,0 +1,8 @@
+- entrevista\_id, fecha
+|  |  |
+| \*\*clave JSON\*\* | \*\*Pregunta del formulario\*\* |
+| resp\\\_nombre\\\_completo | ¿Cuál es tu nombre completo? |
+| equipo\\\_tratante\\\[\\\] | Nombre, especialidad |
+"informante\_inferido": true
+{"entrevistas\_procesadas": \[{"entrevista\_id": ""}\]}
+Clasificar según {{ESCALA\_DEPENDENCIA\_ENLITE}} y {{CATALOGO\_SEGMENTOS\_CLINICOS}}

@@ -357,6 +357,7 @@ describe('importação do Tactiq — banco real, cofre e bucket em emulador (spe
       const viaVertex = jest.fn(async () => ({ json: async () => ({ candidates: [{ content: { parts: [{ text: 'RESUMO-SINTETICO-H4' }] } }] }) }) as unknown as Response);
       const gen = new VertexAdmissionSummaryGenerator(env as NodeJS.ProcessEnv, {
         promptProvider: { getPrompt: async () => 'PROMPT-SINTETICO-DO-DOC' }, vertex: viaVertex as never,
+        catalogs: { segmentLabels: async () => ['SEG-SINTETICO'], pathologyTypeLabels: async () => ['PAT-SINTETICA (99)'] },
       });
       const deps = (service as unknown as { deps: { summary: unknown } }).deps;
       const original = deps.summary;
@@ -626,6 +627,212 @@ describe('importação do Tactiq — banco real, cofre e bucket em emulador (spe
     for (const proibido of [FRASE_CLINICA, RESUMO, 'Operadora', a.host, a.token, 'meet.google.com', 'Carlota']) {
       expect(out).not.toContain(proibido);
     }
+  });
+
+  // ── H4: o Gem — trava de marcador, entrada e JSON ───────────────────────────────────────────────
+  it('H4 trava: marcador sem valor no Doc -> 0 chamadas ao Vertex, `summary_failed prompt_unfilled_placeholder` na trilha e no log, SÓ com o nome', async () => {
+    const viaVertex = jest.fn();
+    const gen = new VertexAdmissionSummaryGenerator({ NODE_ENV: 'production', ADMISSION_SUMMARY_PROMPT_DOC_ID: 'doc-sintetico' } as NodeJS.ProcessEnv, {
+      promptProvider: { getPrompt: async () => 'PROSA-DO-PROMPT-ZETA {{MARCADOR_ORFAO}}' }, vertex: viaVertex as never,
+      catalogs: { segmentLabels: async () => ['SEG-SINTETICO'], pathologyTypeLabels: async () => ['PAT-SINTETICA (99)'] },
+    });
+    const deps = (service as unknown as { deps: { summary: unknown } }).deps;
+    const original = deps.summary;
+    deps.summary = gen;
+    try {
+      const a = await appt();
+      see(a, [meeting(a, 'tq-h4-trava')]);
+      expect(await service.importOne(a.id, clock)).toBe('summary_failed');
+      expect(viaVertex).not.toHaveBeenCalled();
+      expect(await docs(a.id)).toHaveLength(0);
+      const failed = (await events(a.id)).filter((e) => e.kind === 'summary_failed');
+      expect(failed).toHaveLength(1);
+      expect(failed[0]).toMatchObject({ reason: 'prompt_unfilled_placeholder', ref: { placeholders: 'MARCADOR_ORFAO' } });
+      const out = logs.output();
+      expect(out).toContain('prompt_unfilled_placeholder');
+      expect(out).toContain('MARCADOR_ORFAO');
+      for (const proibido of ['PROSA-DO-PROMPT-ZETA', FRASE_CLINICA]) expect(out).not.toContain(proibido);
+    } finally {
+      deps.summary = original;
+    }
+  });
+
+  it('H4 entrada/saída: o gerador recebe entrevista_id = código ADM e fecha ISO; JSON inválido -> documento sai só com o resumo + log `admission.summary_json_invalid` sem texto', async () => {
+    const a = await appt();
+    see(a, [meeting(a, 'tq-h4-json')]);
+    vertex.summary = `${RESUMO}: legible`;
+    vertex.jsonInvalid = true;
+    try {
+      expect(await service.importOne(a.id, clock)).toBe('done');
+    } finally {
+      vertex.jsonInvalid = false;
+    }
+    expect(vertex.inputs.at(-1)).toEqual({ entrevistaId: expect.stringMatching(/^ADM-/), fecha: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) });
+    expect(await docs(a.id)).toHaveLength(1);
+    const out = logs.output();
+    expect(out).toContain('admission.summary_json_invalid');
+    for (const proibido of [FRASE_CLINICA, RESUMO]) expect(out).not.toContain(proibido);
+  });
+
+  // ── H4: truncamento, teto de tentativas e catálogo real ─────────────────────────────────────────
+  it('H4 truncamento: finishReason MAX_TOKENS -> 0 documentos e `summary_failed output_truncated`, sem o texto parcial no log', async () => {
+    const viaVertex = jest.fn(async () => ({ json: async () => ({ candidates: [{ finishReason: 'MAX_TOKENS', content: { parts: [{ text: `{"a":1} ${FRASE_CLINICA}` }] } }] }) }) as unknown as Response);
+    const gen = new VertexAdmissionSummaryGenerator({ NODE_ENV: 'production', ADMISSION_SUMMARY_PROMPT_DOC_ID: 'doc-sintetico' } as NodeJS.ProcessEnv, {
+      promptProvider: { getPrompt: async () => 'PROMPT' }, vertex: viaVertex as never,
+      catalogs: { segmentLabels: async () => ['SEG-SINTETICO'], pathologyTypeLabels: async () => ['PAT-SINTETICA (99)'] },
+    });
+    const deps = (service as unknown as { deps: { summary: unknown } }).deps;
+    const original = deps.summary;
+    deps.summary = gen;
+    try {
+      const a = await appt();
+      see(a, [meeting(a, 'tq-h4-trunc')]);
+      expect(await service.importOne(a.id, clock)).toBe('summary_failed');
+      expect(viaVertex).toHaveBeenCalledTimes(1);
+      expect(await docs(a.id)).toHaveLength(0);
+      expect((await events(a.id)).filter((e) => e.kind === 'summary_failed')).toEqual([expect.objectContaining({ reason: 'output_truncated' })]);
+      expect(logs.output()).toContain('output_truncated');
+      expect(logs.output()).not.toContain(FRASE_CLINICA);
+    } finally {
+      deps.summary = original;
+    }
+  });
+
+  it('H4 teto: 3 falhas do lado do Vertex -> a 4ª execução faz 0 chamadas ao Vertex, bloqueia `summary_attempts_exhausted` UMA vez e a reunião sai da fila', async () => {
+    const a = await appt();
+    see(a, [meeting(a, 'tq-h4-teto')]);
+    vertex.failWith = new AdmissionSummaryError('vertex_failed');
+    for (let i = 0; i < 3; i += 1) expect(await service.importOne(a.id, clock)).toBe('summary_failed');
+    expect(vertex.received).toHaveLength(3);
+    vertex.failWith = null; // mesmo com o Vertex "curado", o teto vale
+    expect(await service.importOne(a.id, clock)).toBe('blocked');
+    expect(await service.importOne(a.id, clock)).toBe('blocked');
+    expect(vertex.received).toHaveLength(3);
+    expect(await docs(a.id)).toHaveLength(0);
+    const blocked = (await events(a.id)).filter((e) => e.kind === 'import_blocked');
+    expect(blocked).toEqual([expect.objectContaining({ reason: 'summary_attempts_exhausted' })]);
+    expect(await row(a.id)).toMatchObject({ import_status: 'blocked' });
+    expect(logs.output()).toContain('admission.import_blocked');
+    const { AdmissionImportRepository } = await import('../../src/modules/matching/infrastructure/AdmissionImportRepository');
+    const { DatabaseConnection } = await import('@shared/database/DatabaseConnection');
+    expect(await new AdmissionImportRepository(DatabaseConnection.getInstance().getPool()).listDueIds(clock)).not.toContain(a.id);
+  });
+
+  it('H4 teto: motivos que NÃO chegam ao Vertex (prompt/catálogo) não contam — 4 falhas dessas e a 5ª execução ainda gera o documento', async () => {
+    const a = await appt();
+    see(a, [meeting(a, 'tq-h4-nao-conta')]);
+    for (const reason of ['prompt_missing', 'prompt_unavailable', 'prompt_unfilled_placeholder', 'prompt_catalog_empty'] as const) {
+      vertex.failWith = new AdmissionSummaryError(reason);
+      expect(await service.importOne(a.id, clock)).toBe('summary_failed');
+    }
+    vertex.failWith = null;
+    expect(await service.importOne(a.id, clock)).toBe('done');
+    expect(await docs(a.id)).toHaveLength(1);
+    expect((await events(a.id)).filter((e) => e.kind === 'import_blocked')).toHaveLength(0);
+  });
+
+  it('H4 catálogo (caminho REAL): `TherapeuticCatalogRepository.list(segments)` -> rótulos só dos ATIVOS, por sort_order, contra o Postgres', async () => {
+    const { TherapeuticCatalogRepository } = await import('../../src/modules/case/infrastructure/TherapeuticCatalogRepository');
+    const tag = `SEG-049-${RUN}`;
+    await admin.query(
+      `INSERT INTO therapeutic_segments (label, sort_order, active, deactivated_at, created_by, updated_by)
+       VALUES ($1, 9001, true, NULL, 'e2e', 'e2e'), ($2, 9000, true, NULL, 'e2e', 'e2e'), ($3, 9002, false, NOW(), 'e2e', 'e2e')`,
+      [`${tag}-B`, `${tag}-A`, `${tag}-INATIVO`],
+    );
+    try {
+      const labels = (await new TherapeuticCatalogRepository().list('segments')).map((i) => i.label);
+      const ours = labels.filter((l) => l.startsWith(tag));
+      expect(ours).toEqual([`${tag}-A`, `${tag}-B`]);
+      expect(labels.length).toBeGreaterThan(2); // as migrations semeiam os segmentos reais (495)
+    } finally {
+      await admin.query(`DELETE FROM therapeutic_segments WHERE label LIKE $1`, [`${tag}%`]);
+    }
+  });
+
+  it('H4 teto partindo de `blocked` por OUTRO motivo: a exaustão grava o evento UMA vez, mesmo com o estado já `blocked`, e a reunião sai da fila', async () => {
+    const a = await appt({ importStatus: 'blocked' });
+    see(a, [meeting(a, 'tq-h4-blocked')]);
+    await admin.query(`INSERT INTO admission_events (appointment_id, kind, outcome, reason) VALUES ($1,'import_blocked','blocked','no_link')`, [a.id]);
+    for (let i = 0; i < 3; i += 1) {
+      await admin.query(`INSERT INTO admission_events (appointment_id, kind, outcome, reason) VALUES ($1,'summary_failed','failed','empty_response')`, [a.id]);
+    }
+    expect(await service.importOne(a.id, clock)).toBe('blocked');
+    expect(await service.importOne(a.id, clock)).toBe('blocked');
+    expect(vertex.received).toHaveLength(0);
+    const motivos = (await events(a.id)).filter((e) => e.kind === 'import_blocked').map((e) => e.reason).sort();
+    expect(motivos).toEqual(['no_link', 'summary_attempts_exhausted']);
+    const { AdmissionImportRepository } = await import('../../src/modules/matching/infrastructure/AdmissionImportRepository');
+    const { DatabaseConnection } = await import('@shared/database/DatabaseConnection');
+    expect(await new AdmissionImportRepository(DatabaseConnection.getInstance().getPool()).listDueIds(clock)).not.toContain(a.id);
+  });
+
+  it('H4 teto: 5 falhas TRANSITÓRIAS do Vertex (429/5xx/rede) seguidas não bloqueiam, e a 6ª execução gera o documento', async () => {
+    const a = await appt();
+    see(a, [meeting(a, 'tq-h4-transit')]);
+    vertex.failWith = new AdmissionSummaryError('vertex_transient');
+    for (let i = 0; i < 5; i += 1) expect(await service.importOne(a.id, clock)).toBe('summary_failed');
+    vertex.failWith = null;
+    expect(await service.importOne(a.id, clock)).toBe('done');
+    expect(await docs(a.id)).toHaveLength(1);
+    expect((await events(a.id)).filter((e) => e.kind === 'import_blocked')).toHaveLength(0);
+  });
+
+  it('H4 teto pós-modelo: o PDF lança 3 vezes -> `post_model_failed` conta; a 4ª execução faz 0 chamadas ao Vertex e há 1 evento de exaustão; sem objeto órfão', async () => {
+    const pdfModule = await import('../../src/modules/matching/infrastructure/admissionSummaryPdf');
+    const spy = jest.spyOn(pdfModule, 'renderAdmissionSummaryPdf').mockRejectedValue(new Error('pdf quebrou'));
+    const a = await appt();
+    see(a, [meeting(a, 'tq-h4-pos')]);
+    const pdfsBefore = (await docFiles()).length;
+    try {
+      for (let i = 0; i < 3; i += 1) expect(await service.importOne(a.id, clock)).toBe('summary_failed');
+      expect(vertex.received).toHaveLength(3);
+      expect((await events(a.id)).filter((e) => e.kind === 'summary_failed').map((e) => e.reason)).toEqual(['post_model_failed', 'post_model_failed', 'post_model_failed']);
+      expect(await service.importOne(a.id, clock)).toBe('blocked');
+      expect(vertex.received).toHaveLength(3);
+      expect((await events(a.id)).filter((e) => e.kind === 'import_blocked')).toEqual([expect.objectContaining({ reason: 'summary_attempts_exhausted' })]);
+      expect(await docs(a.id)).toHaveLength(0);
+      expect((await docFiles()).length).toBe(pdfsBefore);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('H4 pós-modelo: a transação falha DEPOIS do upload do PDF -> `discard` do objeto é chamado e o evento `post_model_failed` nasce', async () => {
+    const a = await appt();
+    see(a, [meeting(a, 'tq-h4-commit')]);
+    const discard = jest.fn(async () => undefined);
+    const svc = service as unknown as { documents: unknown };
+    const original = svc.documents;
+    svc.documents = { prepare: async () => ({ commit: async () => { throw new Error('tx quebrou'); }, discard }) };
+    try {
+      expect(await service.importOne(a.id, clock)).toBe('summary_failed');
+      expect(discard).toHaveBeenCalledTimes(1);
+      expect((await events(a.id)).filter((e) => e.kind === 'summary_failed')).toEqual([expect.objectContaining({ reason: 'post_model_failed' })]);
+      expect(await docs(a.id)).toHaveLength(0);
+    } finally {
+      svc.documents = original;
+    }
+  });
+
+  it('H4 teto: 3 `vertex_timeout` contam -> a 4ª execução faz 0 chamadas; `vertex_auth_failed` NÃO conta e tem log próprio', async () => {
+    const a = await appt();
+    see(a, [meeting(a, 'tq-h4-timeout')]);
+    vertex.failWith = new AdmissionSummaryError('vertex_timeout');
+    for (let i = 0; i < 3; i += 1) expect(await service.importOne(a.id, clock)).toBe('summary_failed');
+    expect(await service.importOne(a.id, clock)).toBe('blocked');
+    expect(vertex.received).toHaveLength(3);
+    expect((await events(a.id)).filter((e) => e.kind === 'import_blocked')).toEqual([expect.objectContaining({ reason: 'summary_attempts_exhausted' })]);
+
+    const b = await appt();
+    see(b, [meeting(b, 'tq-h4-auth')]);
+    vertex.failWith = new AdmissionSummaryError('vertex_auth_failed');
+    for (let i = 0; i < 4; i += 1) expect(await service.importOne(b.id, clock)).toBe('summary_failed');
+    vertex.failWith = null;
+    expect(await service.importOne(b.id, clock)).toBe('done');
+    expect(logs.output()).toContain('admission.vertex_auth_failed');
+    const lines = logs.output().split('\n').filter(Boolean).map((l) => JSON.parse(l) as { message?: string; reason?: string; appointmentId?: string });
+    // o log que o alerta vigia (`admission.summary_failed`) TAMBÉM sai para a falha de credencial
+    expect(lines.some((l) => l.message === 'admission.summary_failed' && l.reason === 'vertex_auth_failed' && l.appointmentId === b.id)).toBe(true);
   });
 
   // ── A6-9 ─────────────────────────────────────────────────────────────────────────────────────────

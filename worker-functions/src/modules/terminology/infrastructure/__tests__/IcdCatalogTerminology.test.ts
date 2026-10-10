@@ -264,6 +264,32 @@ describe('IcdCatalogTerminology', () => {
 
   });
 
+  describe('listChapters', () => {
+    it('lê os capítulos do release corrente (kind=chapter, ordenados por código) com o título ES — o mesmo de ancestorsOf', async () => {
+      mockQuery
+        .mockResolvedValueOnce(CURRENT_RELEASE_ROW)
+        .mockResolvedValueOnce({ rows: [{ code: '06', title_es: 'Trastornos mentales', title_en: 'Mental' }, { code: '08', title_es: null, title_en: 'Nervous system' }] });
+      const out = await new IcdCatalogTerminology().listChapters();
+      expect(out).toEqual([{ code: '06', title: 'Trastornos mentales' }, { code: '08', title: 'Nervous system' }]);
+      const [sql, params] = mockQuery.mock.calls[1];
+      expect(sql).toMatch(/kind = 'chapter'/);
+      expect(sql).toMatch(/ORDER BY code/);
+      expect(params).toEqual(['2026-01']);
+    });
+
+    it('sem release corrente -> TerminologyUnavailableError', async () => {
+      mockQuery.mockResolvedValueOnce(NO_CURRENT_RELEASE_ROW);
+      await expect(new IcdCatalogTerminology().listChapters()).rejects.toBeInstanceOf(TerminologyUnavailableError);
+    });
+
+    it('erro de banco na consulta (tabela ausente 42P01 ou outro) -> TerminologyUnavailableError, nunca o erro cru', async () => {
+      mockQuery.mockResolvedValueOnce(CURRENT_RELEASE_ROW).mockRejectedValueOnce(Object.assign(new Error('boom'), { code: '42P01' }));
+      await expect(new IcdCatalogTerminology().listChapters()).rejects.toBeInstanceOf(TerminologyUnavailableError);
+      mockQuery.mockResolvedValueOnce(CURRENT_RELEASE_ROW).mockRejectedValueOnce(new Error('conexao caiu'));
+      await expect(new IcdCatalogTerminology().listChapters()).rejects.toBeInstanceOf(TerminologyUnavailableError);
+    });
+  });
+
   describe('ancestorsOf', () => {
     it('resolve o capítulo com uma 2ª query pelo código de capítulo da entidade, filtrando por release', async () => {
       mockQuery
