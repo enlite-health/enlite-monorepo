@@ -1,7 +1,7 @@
 import type { PoolClient } from 'pg';
 import { inPatientTransaction } from './patientTransaction';
 import { avaliarTroca } from './PatientStatusWriter';
-import { CLINICAL_PATIENT_STATUSES, isClinicalPatientStatus } from '../domain/enums/PatientStatus';
+import { CLINICAL_PATIENT_STATUSES, isClinicalPatientStatus, type PatientStatus } from '../domain/enums/PatientStatus';
 import { blockingCodesForStatusChange, type PatientCompletenessCode } from '../domain/PatientCompleteness';
 import { loadPatientCompleteness } from '../infrastructure/PatientCompletenessLoader';
 
@@ -15,16 +15,18 @@ import { loadPatientCompleteness } from '../infrastructure/PatientCompletenessLo
  * é só (a) quem são os candidatos e (b) `blockedBy`, da completude.
  */
 
+/** `fluxo` = tem linha na FSM; `permissao` = fora da FSM, liberada pela célula do destino. */
+export type ViaDaTroca = 'fluxo' | 'permissao';
+
 export interface PatientStatusOption {
-  status: string;
-  /** `fluxo` = tem linha na FSM; `permissao` = fora da FSM, liberada pela célula do destino. */
-  via: 'fluxo' | 'permissao';
+  status: PatientStatus;
+  via: ViaDaTroca;
   /** Códigos de completude que faltam para ESTE destino; ausente quando nada falta. */
   blockedBy?: PatientCompletenessCode[];
 }
 
 export interface PatientStatusOptions {
-  current: string | null;
+  current: PatientStatus | null;
   options: PatientStatusOption[];
 }
 
@@ -33,24 +35,24 @@ export async function loadStatusOptions(
   patientId: string,
   cells: readonly string[] | null,
 ): Promise<PatientStatusOptions> {
-  const cur = await client.query<{ status: string | null }>(
+  const cur = await client.query<{ status: PatientStatus | null }>(
     'SELECT status FROM patients WHERE id = $1 AND deleted_at IS NULL',
     [patientId],
   );
   if (cur.rows.length === 0) throw new Error(`Patient not found: ${patientId}`);
   const current = cur.rows[0].status;
 
-  const fsm = await client.query<{ to_status: string }>(
+  const fsm = await client.query<{ to_status: PatientStatus }>(
     'SELECT to_status FROM patient_status_transitions WHERE from_status = $1',
     [current],
   );
   const naFsm = new Set(fsm.rows.map((r) => r.to_status));
   // Candidatos: o que a FSM oferece + os clínicos (fora da FSM só vale se o estado atual é clínico;
   // `avaliarTroca` recusa o resto). Nunca o estado atual.
-  const candidatos = new Set<string>([...naFsm, ...(isClinicalPatientStatus(current) ? CLINICAL_PATIENT_STATUSES : [])]);
-  candidatos.delete(current ?? '');
+  const candidatos = new Set<PatientStatus>([...naFsm, ...(isClinicalPatientStatus(current) ? CLINICAL_PATIENT_STATUSES : [])]);
+  if (current) candidatos.delete(current);
 
-  const aceitos: Array<{ status: string; via: 'fluxo' | 'permissao' }> = [];
+  const aceitos: Array<{ status: PatientStatus; via: ViaDaTroca }> = [];
   for (const para of candidatos) {
     const a = avaliarTroca({ from: current, to: para, naFsm: naFsm.has(para), cells, changeSource: 'admin_panel' });
     if (a.resultado === 'dentro_do_fluxo') aceitos.push({ status: para, via: 'fluxo' });

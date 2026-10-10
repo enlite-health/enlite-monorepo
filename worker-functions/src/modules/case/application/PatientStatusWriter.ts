@@ -3,6 +3,7 @@ import type { PoolClient } from 'pg';
 import { inPatientTransaction } from './patientTransaction';
 import { isPatientStatus, isClinicalPatientStatus, isFunnelToSearchingTransition, type PatientStatus } from '../domain/enums/PatientStatus';
 import { isManualChangeSource, type PatientChangeSource } from '../domain/enums/PatientChangeSource';
+import { recordedChangeSource } from '../domain/enums/PatientChangeSourceOverride';
 import type { OnHoldReason } from '../domain/enums/OnHoldReason';
 import type { SuspensionExitReason } from '../domain/enums/SuspensionExitReason';
 import { blockingCodesForStatusChange } from '../domain/PatientCompleteness';
@@ -77,14 +78,14 @@ export class SuspensionExitReasonRequiredError extends Error {
  */
 export class PatientStatusPermissionError extends Error {
   readonly code = 'PATIENT_STATUS_MOVE_NOT_PERMITTED';
-  constructor(readonly from: string | null, readonly to: string, readonly cell: string) {
+  constructor(readonly from: PatientStatus | null, readonly to: PatientStatus, readonly cell: string) {
     super(`Patient status move ${from ?? 'null'} → ${to} requires permission ${cell}`);
     this.name = 'PatientStatusPermissionError';
   }
 }
 
 /** Origens que podem tirar o paciente do funil de admissão para SEARCHING (D469). */
-const FUNNEL_TO_SEARCHING_SOURCES: ReadonlyArray<MoveStatusOptions['changeSource']> = [
+const FUNNEL_TO_SEARCHING_SOURCES: ReadonlyArray<PatientChangeSource> = [
   'vacancy_launch',
   'recruitment_activation',
   'kanban',
@@ -95,7 +96,7 @@ const FUNNEL_TO_SEARCHING_SOURCES: ReadonlyArray<MoveStatusOptions['changeSource
  * Talentum ou arrasto no Kanban. O PUT /status do select da ficha (admin_panel) e a derivação
  * (system) continuam recusados com o 422. Não depende da FSM: o writer a checa ANTES de consultá-la.
  */
-function funilParaSearchingBarrado(from: string | null, to: string, changeSource: MoveStatusOptions['changeSource']): boolean {
+function funilParaSearchingBarrado(from: PatientStatus | null, to: PatientStatus, changeSource: PatientChangeSource): boolean {
   return isFunnelToSearchingTransition(from, to) && !FUNNEL_TO_SEARCHING_SOURCES.includes(changeSource);
 }
 
@@ -115,17 +116,22 @@ export type AvaliacaoDaTroca =
  * primeiro, depois a FSM, e só então a célula.
  */
 export function avaliarTroca(e: {
-  from: string | null;
-  to: string;
+  from: PatientStatus | null;
+  to: PatientStatus;
   naFsm: boolean;
   cells: readonly string[] | null;
-  changeSource: MoveStatusOptions['changeSource'];
+  changeSource: PatientChangeSource;
 }): AvaliacaoDaTroca {
   if (funilParaSearchingBarrado(e.from, e.to, e.changeSource)) return { resultado: 'recusa_de_transicao' };
   if (e.naFsm) return { resultado: 'dentro_do_fluxo' };
   const d = decidirTrocaForaDoFluxo({ de: e.from, para: e.to, naFsm: false, cells: e.cells, changeSource: e.changeSource });
   if (d.resultado === 'permitida_por_permissao') return { resultado: 'fora_do_fluxo_permitida', celula: d.celula };
   if (d.resultado === 'recusada_por_permissao') return { resultado: 'recusa_por_permissao', celula: d.celulaFaltante };
+  // Os demais resultados (`nao_se_aplica`, `engine_nao_decidiu`, `fluxo_normal`) NUNCA liberam: o
+  // par segue a FSM de hoje, que aqui não tem a seta → 422. A atribuição abaixo é a trava de
+  // exaustividade: um resultado novo em `DecisaoTrocaForaDoFluxo` quebra a compilação até alguém decidir.
+  const segueAFsmDeHoje: 'nao_se_aplica' | 'engine_nao_decidiu' | 'fluxo_normal' = d.resultado;
+  void segueAFsmDeHoje;
   return { resultado: 'recusa_de_transicao' };
 }
 
@@ -197,7 +203,7 @@ export async function movePatientStatus(
   }
 
   const body = async (client: PoolClient): Promise<{ id: string; status: PatientStatus }> => {
-    const current = await client.query<{ status: string | null }>(
+    const current = await client.query<{ status: PatientStatus | null }>(
       'SELECT status FROM patients WHERE id = $1 AND deleted_at IS NULL FOR UPDATE',
       [patientId],
     );
@@ -282,7 +288,7 @@ export async function movePatientStatus(
 
     // Troca fora do fluxo (spec 051 §4): o SERVIDOR marca `*_override` — o corpo da rota nunca
     // aceita esse valor (zod), então o cliente não se declara override.
-    const changeSourceGravado = foraDoFluxo ? `${opts.changeSource}_override` : opts.changeSource;
+    const changeSourceGravado = recordedChangeSource(opts.changeSource, foraDoFluxo);
     await client.query("SELECT set_config('app.change_source', $1, true)", [changeSourceGravado]);
     // Motivo de saída de SUSPENDED e ator: mesmo molde do change_source acima, GUCs próprios que
     // os triggers da 254/255 leem via NULLIF(…, '') — string vazia = ausente = NULL na history
