@@ -14,6 +14,7 @@ import { createNativePatient } from './PatientNativeCreator';
 import { inPatientTransaction, CaseNumberConflictRetry, rethrowAsCaseNumberRetry } from './patientTransaction';
 import type { AttentionReason } from '../domain/enums/AttentionReason';
 import type { PatientStatus } from '../domain/enums/PatientStatus';
+import type { ManualChangeSource } from '../domain/enums/PatientChangeSource';
 import {
   movePatientStatus,
   type MoveStatusOptions,
@@ -299,7 +300,7 @@ export class PatientService {
   }
 
   /** Spec 051 (F3): destinos de estado que o servidor aceitaria para este paciente e este ator. */
-  async statusOptions(patientId: string, cells: readonly string[] | null): Promise<PatientStatusOptions> {
-    return listPatientStatusOptions(patientId, cells);
+  async statusOptions(patientId: string, cells: readonly string[] | null, changeSource: ManualChangeSource): Promise<PatientStatusOptions> {
+    return listPatientStatusOptions(patientId, cells, changeSource);
   }
 }

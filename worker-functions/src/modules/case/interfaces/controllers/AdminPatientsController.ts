@@ -6,6 +6,7 @@ import { pgUniqueViolationConflict } from '@shared/http/pgUniqueViolationConflic
 import { AuthMiddleware, resolveCountryScope, CountryScopeError } from '@modules/identity';
 import { currentDbContext } from '@shared/database/requestDbSession';
 import { adminPatientsListSchema } from '../validators/adminPatientsListSchema';
+import { statusOptionsQuerySchema } from '../validators/statusOptionsQuerySchema';
 import { adminPatientParamsSchema } from '../validators/adminPatientParamsSchema';
 import { createPatientSchema } from '../validators/createPatientSchema';
 import { PatientQueryRepository } from '../../infrastructure/PatientQueryRepository';
@@ -425,7 +426,9 @@ export class AdminPatientsController {
    * GET /api/admin/patients/:id/status-options — spec 051 (F3): os destinos de estado que o
    * servidor ACEITARIA para este paciente e este ator (`via: 'fluxo' | 'permissao'`, `blockedBy`
    * opcional). Mesma célula do PUT (`patient:update`): a lista nunca oferece o que o PUT negaria
-   * por falta dela. `cells=null` (engine neutro) → só a FSM, como hoje. Só status e contagem:
+   * por falta dela. `?changeSource=admin_panel|kanban` (default admin_panel; outro valor → 400): o
+   * PUT depende da origem (D469 libera funil→SEARCHING só para `kanban`) e a resposta devolve a
+   * origem usada em `data.changeSource`. `cells=null` (engine neutro) → só a FSM, como hoje. Só status e contagem:
    * nenhum texto clínico.
    */
   async getPatientStatusOptions(req: Request, res: Response): Promise<void> {
@@ -434,8 +437,13 @@ export class AdminPatientsController {
       res.status(400).json({ success: false, error: 'Invalid params', details: parsed.error.flatten() });
       return;
     }
+    const query = statusOptionsQuerySchema.safeParse(req.query);
+    if (!query.success) {
+      res.status(400).json({ success: false, error: 'Invalid query', details: query.error.flatten() });
+      return;
+    }
     try {
-      const data = await this.patientService.statusOptions(parsed.data.id, clinicalCellsOf(req));
+      const data = await this.patientService.statusOptions(parsed.data.id, clinicalCellsOf(req), query.data.changeSource);
       res.status(200).json({ success: true, data });
     } catch (err: unknown) {
       const e = err instanceof Error ? err : new Error(String(err));

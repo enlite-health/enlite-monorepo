@@ -51,6 +51,23 @@ describe('AdminPatientsController.getPatientStatusOptions (spec 051, F3)', () =>
     expect(statusOptions.mock.calls.map((c) => c[1])).toEqual([['patient:update', 'patient_status:move_to_searching'], [], null]);
   });
 
+  it('?changeSource: ausente = admin_panel; kanban e admin_panel viajam ao serviço', async () => {
+    const statusOptions = jest.fn().mockResolvedValue({ current: 'ADMISSION', changeSource: 'kanban', options: [] });
+    const ctrl = ctrlCom(statusOptions);
+    await ctrl.getPatientStatusOptions(...reqRes({ id: ID }));
+    await ctrl.getPatientStatusOptions(...reqRes({ id: ID }, { query: { changeSource: 'kanban' } }));
+    await ctrl.getPatientStatusOptions(...reqRes({ id: ID }, { query: { changeSource: 'admin_panel' } }));
+    expect(statusOptions.mock.calls.map((c) => c[2])).toEqual(['admin_panel', 'kanban', 'admin_panel']);
+  });
+
+  it.each(['system', 'admin_panel_override', 'kanban_override', 'qualquer'])('?changeSource=%s → 400 e o serviço não é chamado', async (valor) => {
+    const statusOptions = jest.fn();
+    const [req, res] = reqRes({ id: ID }, { query: { changeSource: valor } });
+    await ctrlCom(statusOptions).getPatientStatusOptions(req, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(statusOptions).not.toHaveBeenCalled();
+  });
+
   it('id inválido → 400 e o serviço não é chamado', async () => {
     const statusOptions = jest.fn();
     const [req, res] = reqRes({ id: 'nao-e-uuid' });

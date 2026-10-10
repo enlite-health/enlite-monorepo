@@ -10,11 +10,12 @@ jest.mock('../patientTransaction', () => ({
 jest.mock('firebase-functions', () => ({ logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() } }));
 
 import type { PoolClient } from 'pg';
+import { MANUAL_CHANGE_SOURCES, type ManualChangeSource } from '../../domain/enums/PatientChangeSource';
 import { loadStatusOptions } from '../PatientStatusOptions';
-import { movePatientStatus, PatientStatusPermissionError, PatientStatusTransitionError } from '../PatientStatusWriter';
-import { CLINICAL_PATIENT_STATUSES, PATIENT_STATUSES, type ClinicalPatientStatus } from '../../domain/enums/PatientStatus';
+import { movePatientStatus, trocaPassaPelaGuarda, PatientStatusPermissionError, PatientStatusTransitionError } from '../PatientStatusWriter';
+import { CLINICAL_PATIENT_STATUSES, PATIENT_STATUSES, isClinicalPatientStatus, type PatientStatus } from '../../domain/enums/PatientStatus';
 import { CELULA_DO_DESTINO } from '../../domain/trocaForaDoFluxo';
-import { naFsm } from './fixtures/fsmClinicaProd20261010';
+import { naFsm, destinosNaFsm, PARES_FSM_36 } from './fixtures/fsmClinicaProd20261010';
 
 const PID = '11111111-1111-4111-8111-111111111111';
 const FICHA_COMPLETA = {
@@ -23,25 +24,24 @@ const FICHA_COMPLETA = {
   services_without_address_count: '0', services_without_schedule_count: '0',
 };
 
-/** `extraFsm`: linhas fora das 27 clínicas (ex.: funil→SEARCHING) para o teste da D469. */
-function banco(de: string | null, ficha: Partial<typeof FICHA_COMPLETA> = {}, extraFsm: Array<[string, string]> = []) {
-  const existe = (f: string, t: string) => naFsm(f, t) || extraFsm.some(([a, b]) => a === f && b === t);
+/** `de` = status atual; `existe=false` = paciente inexistente/deletado; `de=null` com `existe` = paciente com status NULO. */
+function banco(de: string | null, ficha: Partial<typeof FICHA_COMPLETA> = {}, existe = de !== null) {
   mockClient.query.mockImplementation(async (sql: string, params?: unknown[]) => {
     if (/services_without_schedule_count/.test(sql)) return { rows: [{ ...FICHA_COMPLETA, ...ficha }], rowCount: 1 };
-    if (/FROM patients/.test(sql)) return de === null ? { rows: [], rowCount: 0 } : { rows: [{ status: de }], rowCount: 1 };
+    if (/FROM patients/.test(sql)) return !existe ? { rows: [], rowCount: 0 } : { rows: [{ status: de }], rowCount: 1 };
     if (/FROM patient_status_transitions WHERE from_status = \$1$/.test(sql.trim())) {
       const [f] = params as [string];
-      return { rows: PATIENT_STATUSES.filter((t) => existe(f, t)).map((t) => ({ to_status: t })), rowCount: 0 };
+      return { rows: destinosNaFsm(f).map((t) => ({ to_status: t })), rowCount: 0 };
     }
     if (/patient_status_transitions/.test(sql)) {
       const [f, t] = params as [string, string];
-      return { rows: existe(f, t) ? [{ ok: 1 }] : [], rowCount: 0 };
+      return { rows: naFsm(f, t) ? [{ ok: 1 }] : [], rowCount: 0 };
     }
     return { rows: [], rowCount: 1 };
   });
 }
-const lista = (de: string, cells: readonly string[] | null, ficha: Partial<typeof FICHA_COMPLETA> = {}) =>
-  (banco(de, ficha), loadStatusOptions(mockClient as unknown as PoolClient, PID, cells));
+const lista = (de: string | null, cells: readonly string[] | null, ficha: Partial<typeof FICHA_COMPLETA> = {}, origem: ManualChangeSource = 'admin_panel') =>
+  (banco(de, ficha, true), loadStatusOptions(mockClient as unknown as PoolClient, PID, cells, origem));
 
 // Os conjuntos de células testados: nenhuma, cada uma das 7 sozinha, todas, e null (engine neutro).
 const TODAS = CLINICAL_PATIENT_STATUSES.map((s) => CELULA_DO_DESTINO[s]);
@@ -55,34 +55,80 @@ const CONJUNTOS: Array<{ nome: string; cells: readonly string[] | null }> = [
 describe('T6 — a lista de status-options é exatamente o que o PUT /status aceitaria', () => {
   beforeEach(() => jest.clearAllMocks());
 
-  const casos = CLINICAL_PATIENT_STATUSES.flatMap((atual) => CONJUNTOS.map((c) => ({ atual, ...c })));
+  // 10 estados de origem (3 do funil + 7 clínicos) + origem NULA, × 2 origens manuais × 10 conjuntos de células.
+  const ORIGENS_DE_ESTADO: Array<PatientStatus | null> = [...PATIENT_STATUSES, null];
+  const casos = ORIGENS_DE_ESTADO.flatMap((atual) =>
+    MANUAL_CHANGE_SOURCES.flatMap((origem) => CONJUNTOS.map((c) => ({ atual, origem, ...c }))));
+  const nomeDe = (s: string | null): string => s ?? 'NULO';
 
-  it('a matriz tem 7 estados × 10 conjuntos de células = 70 casos', () => {
-    expect(CONJUNTOS).toHaveLength(10);
-    expect(casos).toHaveLength(70);
+  it('a FSM da fixture tem as 36 linhas de prd; a matriz tem (10 estados + nulo) × 2 origens × 10 conjuntos = 220 casos', () => {
+    const funilFunil = casos.filter((c) => c.atual !== null && !isClinicalPatientStatus(c.atual)).length;
+    const nulos = casos.filter((c) => c.atual === null).length;
+    // eslint-disable-next-line no-console
+    console.log(`T6: casos=${casos.length}; FSM=${PARES_FSM_36.length} linhas; casos com origem no funil (funil↔funil entre os destinos)=${funilFunil}; casos com status NULO=${nulos}`);
+    expect(PARES_FSM_36).toHaveLength(36);
+    expect(PATIENT_STATUSES).toHaveLength(10);
+    expect(casos).toHaveLength(220);
+    expect(funilFunil).toBe(3 * 2 * 10);
+    expect(nulos).toBe(2 * 10);
   });
 
-  it.each(casos)('estado atual $atual, células: $nome', async ({ atual, cells }) => {
-    const { current, options } = await lista(atual, cells);
+  it.each(casos.map((c) => ({ ...c, nome: c.nome, de: nomeDe(c.atual) })))('estado atual $de, origem $origem, células: $nome', async ({ atual, origem, cells }) => {
+    const { current, changeSource, options } = await lista(atual, cells, {}, origem);
     expect(current).toBe(atual);
+    expect(changeSource).toBe(origem);
 
-    // O que o writer aceitaria: roda o PUT de verdade para cada destino do vocabulário. Só duas
-    // recusas existem nesta guarda (permissão / transição) — qualquer outra falha seria bug do teste.
+    // IGUALDADE nos dois sentidos: roda o PUT de verdade para CADA um dos destinos possíveis (todo o
+    // vocabulário menos o estado atual). Só duas recusas existem na guarda (permissão / transição) —
+    // qualquer outra falha seria bug do teste. Funil↔funil é livre no writer e a lista o espelha.
     const aceitosPeloPut: string[] = [];
-    for (const destino of PATIENT_STATUSES.filter((s) => s !== atual)) {
-      banco(atual);
+    const destinos = PATIENT_STATUSES.filter((s) => s !== atual);
+    for (const destino of destinos) {
+      banco(atual, {}, true);
       try {
-        await movePatientStatus(PID, destino, { changeSource: 'admin_panel', onHoldReason: 'SCHOOL', suspensionExitReason: 'OTHER', cells });
+        await movePatientStatus(PID, destino, { changeSource: origem, onHoldReason: 'SCHOOL', suspensionExitReason: 'OTHER', cells });
         aceitosPeloPut.push(destino);
       } catch (e) {
         expect([PatientStatusPermissionError, PatientStatusTransitionError].some((k) => e instanceof k)).toBe(true);
       }
     }
+    expect(destinos).toHaveLength(atual === null ? 10 : 9);
     expect(options.map((o) => o.status).sort()).toEqual([...aceitosPeloPut].sort());
     expect(options.map((o) => o.status)).not.toContain(atual);
-    // `via` reflete a FSM: fluxo = tem linha; permissão = não tem.
-    for (const o of options) expect(o.via).toBe(naFsm(atual, o.status) ? 'fluxo' : 'permissao');
+    // `via`: sem linha na FSM e com ponta clínica = permissão; o resto (FSM e funil↔funil) = fluxo.
+    for (const o of options) {
+      const esperado = trocaPassaPelaGuarda(atual, o.status) && !naFsm(atual ?? '', o.status) ? 'permissao' : 'fluxo';
+      expect(o.via).toBe(esperado);
+    }
     if (cells === null) expect(options.every((o) => o.via === 'fluxo')).toBe(true);
+  });
+
+  it('funil↔funil e status nulo, em concreto: a lista oferece os outros 2 estados do funil com via fluxo; nulo oferece só o funil', async () => {
+    const funil = await lista('ADMISSION', []);
+    expect(funil.options.filter((o) => ['SOLICITANTE', 'PENDING_ADMISSION'].includes(o.status))).toEqual([
+      { status: 'SOLICITANTE', via: 'fluxo' }, { status: 'PENDING_ADMISSION', via: 'fluxo' },
+    ]);
+    const nulo = await lista(null, ['patient:update', ...TODAS]);
+    expect(nulo.current).toBeNull();
+    expect(nulo.options).toEqual([
+      { status: 'SOLICITANTE', via: 'fluxo' }, { status: 'ADMISSION', via: 'fluxo' }, { status: 'PENDING_ADMISSION', via: 'fluxo' },
+    ]);
+    banco(null, {}, true);
+    await expect(movePatientStatus(PID, 'ADMISSION', { changeSource: 'kanban', cells: [] })).resolves.toEqual({ id: PID, status: 'ADMISSION' });
+    banco(null, {}, true);
+    await expect(movePatientStatus(PID, 'SEARCHING', { changeSource: 'kanban', cells: ['patient:update', ...TODAS] })).rejects.toBeInstanceOf(PatientStatusTransitionError);
+  });
+
+  it('controle positivo (D469): ADMISSION + kanban → SEARCHING ESTÁ na lista; ADMISSION + admin_panel → NÃO está; e o writer concorda nos dois', async () => {
+    const kanban = await lista('ADMISSION', ['patient:update'], {}, 'kanban');
+    const painel = await lista('ADMISSION', ['patient:update'], {}, 'admin_panel');
+    expect(kanban.options).toContainEqual({ status: 'SEARCHING', via: 'fluxo' });
+    expect(painel.options.map((o) => o.status)).not.toContain('SEARCHING');
+
+    banco('ADMISSION');
+    await expect(movePatientStatus(PID, 'SEARCHING', { changeSource: 'kanban', cells: ['patient:update'] })).resolves.toEqual({ id: PID, status: 'SEARCHING' });
+    banco('ADMISSION');
+    await expect(movePatientStatus(PID, 'SEARCHING', { changeSource: 'admin_panel', cells: ['patient:update'] })).rejects.toBeInstanceOf(PatientStatusTransitionError);
   });
 
   it('controle positivo: com a célula do destino a lista TEM um destino fora da FSM (via permissao); sem ela, não', async () => {
@@ -98,15 +144,14 @@ describe('F3 — regras próprias da lista', () => {
   beforeEach(() => jest.clearAllMocks());
 
   it('D469: de um estado do funil, SEARCHING não entra (o PUT admin_panel recusaria) mesmo com linha na FSM', async () => {
-    banco('ADMISSION', {}, [['ADMISSION', 'SEARCHING'], ['ADMISSION', 'SOLICITANTE']]);
-    const r = await loadStatusOptions(mockClient as unknown as PoolClient, PID, ['patient:update', ...TODAS]);
-    expect(r.options.map((o) => o.status)).toEqual(['SOLICITANTE']);
+    const r = await lista('ADMISSION', ['patient:update', ...TODAS]);
+    expect(r.options.map((o) => o.status).sort()).toEqual(['ALTA', 'DISCHARGED', 'PENDING_ADMISSION', 'SOLICITANTE']);
   });
 
   it('de estado do funil nenhum destino clínico "fora da FSM" é oferecido, nem com todas as células', async () => {
-    banco('SOLICITANTE');
-    const r = await loadStatusOptions(mockClient as unknown as PoolClient, PID, ['patient:update', ...TODAS]);
-    expect(r.options).toEqual([]);
+    const r = await lista('SOLICITANTE', ['patient:update', ...TODAS]);
+    expect(r.options.map((o) => o.status).sort()).toEqual(['ADMISSION', 'ALTA', 'DISCHARGED', 'PENDING_ADMISSION']); // FSM (498) + funil livre; nada "fora da FSM"
+    expect(r.options.every((o) => o.via === 'fluxo')).toBe(true);
   });
 
   it('blockedBy (SEARCHING fora do fluxo): serviço ativo + endereço + horário, na ordem do domínio', async () => {
@@ -146,14 +191,12 @@ describe('F3 — regras próprias da lista', () => {
   });
 
   it('paciente com status null (sem estado) → sem candidatos além da FSM, sem quebrar', async () => {
-    mockClient.query.mockImplementation(async (sql: string) =>
-      /FROM patients/.test(sql) ? { rows: [{ status: null }], rowCount: 1 } : { rows: [], rowCount: 0 });
-    await expect(loadStatusOptions(mockClient as unknown as PoolClient, PID, null)).resolves.toEqual({ current: null, options: [] });
+    await expect(lista(null, null)).resolves.toMatchObject({ current: null, changeSource: 'admin_panel' });
   });
 
   it('paciente inexistente/deletado → "Patient not found" (o controller devolve 404)', async () => {
-    banco(null);
-    await expect(loadStatusOptions(mockClient as unknown as PoolClient, PID, null)).rejects.toThrow(/Patient not found/);
+    banco(null, {}, false);
+    await expect(loadStatusOptions(mockClient as unknown as PoolClient, PID, null, 'admin_panel')).rejects.toThrow(/Patient not found/);
   });
 
   it('só leitura: nenhuma escrita, nenhum set_config', async () => {

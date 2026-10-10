@@ -1,7 +1,8 @@
 import type { PoolClient } from 'pg';
 import { inPatientTransaction } from './patientTransaction';
-import { avaliarTroca } from './PatientStatusWriter';
-import { CLINICAL_PATIENT_STATUSES, isClinicalPatientStatus, type PatientStatus } from '../domain/enums/PatientStatus';
+import type { ManualChangeSource } from '../domain/enums/PatientChangeSource';
+import { avaliarTroca, trocaPassaPelaGuarda } from './PatientStatusWriter';
+import { PATIENT_STATUSES, type PatientStatus } from '../domain/enums/PatientStatus';
 import { blockingCodesForStatusChange, type PatientCompletenessCode } from '../domain/PatientCompleteness';
 import { loadPatientCompleteness } from '../infrastructure/PatientCompletenessLoader';
 
@@ -27,6 +28,8 @@ export interface PatientStatusOption {
 
 export interface PatientStatusOptions {
   current: PatientStatus | null;
+  /** A origem com que a lista foi calculada — o front confere que é a mesma do PUT que vai mandar. */
+  changeSource: ManualChangeSource;
   options: PatientStatusOption[];
 }
 
@@ -34,6 +37,7 @@ export async function loadStatusOptions(
   client: PoolClient,
   patientId: string,
   cells: readonly string[] | null,
+  changeSource: ManualChangeSource,
 ): Promise<PatientStatusOptions> {
   const cur = await client.query<{ status: PatientStatus | null }>(
     'SELECT status FROM patients WHERE id = $1 AND deleted_at IS NULL',
@@ -47,14 +51,18 @@ export async function loadStatusOptions(
     [current],
   );
   const naFsm = new Set(fsm.rows.map((r) => r.to_status));
-  // Candidatos: o que a FSM oferece + os clínicos (fora da FSM só vale se o estado atual é clínico;
-  // `avaliarTroca` recusa o resto). Nunca o estado atual.
-  const candidatos = new Set<PatientStatus>([...naFsm, ...(isClinicalPatientStatus(current) ? CLINICAL_PATIENT_STATUSES : [])]);
-  if (current) candidatos.delete(current);
 
+  // A lista é o conjunto de destinos que o PUT aceitaria com esta origem e estas células — nem a
+  // mais, nem a menos. Candidatos = o vocabulário inteiro menos o estado atual; cada um passa pela
+  // MESMA decisão do writer: dentro do funil (nenhuma ponta clínica) é livre (`fluxo`); o resto vai
+  // para `avaliarTroca`. Status nulo: o PUT só aceita destinos do funil (clínico fica sem linha → 422).
   const aceitos: Array<{ status: PatientStatus; via: ViaDaTroca }> = [];
-  for (const para of candidatos) {
-    const a = avaliarTroca({ from: current, to: para, naFsm: naFsm.has(para), cells, changeSource: 'admin_panel' });
+  for (const para of PATIENT_STATUSES.filter((s) => s !== current)) {
+    if (!trocaPassaPelaGuarda(current, para)) {
+      aceitos.push({ status: para, via: 'fluxo' });
+      continue;
+    }
+    const a = avaliarTroca({ from: current, to: para, naFsm: naFsm.has(para), cells, changeSource });
     if (a.resultado === 'dentro_do_fluxo') aceitos.push({ status: para, via: 'fluxo' });
     else if (a.resultado === 'fora_do_fluxo_permitida') aceitos.push({ status: para, via: 'permissao' });
   }
@@ -69,9 +77,13 @@ export async function loadStatusOptions(
     const faltando = blockingCodesForStatusChange(o.status, o.via === 'permissao').filter((c) => missing.includes(c));
     return faltando.length > 0 ? { ...o, blockedBy: [...faltando] } : o;
   });
-  return { current, options };
+  return { current, changeSource, options };
 }
 
-export function listPatientStatusOptions(patientId: string, cells: readonly string[] | null): Promise<PatientStatusOptions> {
-  return inPatientTransaction((client) => loadStatusOptions(client, patientId, cells));
+export function listPatientStatusOptions(
+  patientId: string,
+  cells: readonly string[] | null,
+  changeSource: ManualChangeSource,
+): Promise<PatientStatusOptions> {
+  return inPatientTransaction((client) => loadStatusOptions(client, patientId, cells, changeSource));
 }

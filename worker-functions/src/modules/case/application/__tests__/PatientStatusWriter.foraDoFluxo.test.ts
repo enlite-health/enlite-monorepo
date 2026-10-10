@@ -25,7 +25,7 @@ import {
 import { CLINICAL_PATIENT_STATUSES, type ClinicalPatientStatus } from '../../domain/enums/PatientStatus';
 import { CELULA_DO_DESTINO } from '../../domain/trocaForaDoFluxo';
 import { patientStatusSchema } from '../../interfaces/validators/patientSectionSchemas';
-import { naFsm, PARES_NA_FSM } from './fixtures/fsmClinicaProd20261010';
+import { naFsm, PARES_NA_FSM, PARES_FSM_36 } from './fixtures/fsmClinicaProd20261010';
 
 const PID = '11111111-1111-4111-8111-111111111111';
 
@@ -70,6 +70,18 @@ const CASOS = CLINICAL_PATIENT_STATUSES.flatMap((de) =>
 
 describe('T1 — matriz A1: 42 pares × {com a célula do destino, cells=[], cells=null} = 126 casos', () => {
   beforeEach(() => { jest.clearAllMocks(); });
+
+  it('a fixture derivada das migrations (36 linhas) tem as MESMAS 27 clínicas medidas em prd em 10/10/2026', () => {
+    const medidas = [
+      'ACTIVE>ALTA', 'ACTIVE>DISCHARGED', 'ACTIVE>ON_HOLD', 'ACTIVE>REPLACEMENT', 'ACTIVE>SUSPENDED', 'ALTA>DISCHARGED',
+      'DISCHARGED>ACTIVE', 'DISCHARGED>ALTA', 'ON_HOLD>ACTIVE', 'ON_HOLD>ALTA', 'ON_HOLD>DISCHARGED', 'ON_HOLD>SEARCHING',
+      'REPLACEMENT>ACTIVE', 'REPLACEMENT>ALTA', 'REPLACEMENT>DISCHARGED', 'REPLACEMENT>SEARCHING', 'REPLACEMENT>SUSPENDED',
+      'SEARCHING>ACTIVE', 'SEARCHING>ALTA', 'SEARCHING>DISCHARGED', 'SEARCHING>ON_HOLD',
+      'SUSPENDED>ACTIVE', 'SUSPENDED>ALTA', 'SUSPENDED>DISCHARGED', 'SUSPENDED>ON_HOLD', 'SUSPENDED>REPLACEMENT', 'SUSPENDED>SEARCHING',
+    ];
+    expect(PARES_FSM_36).toHaveLength(36);
+    expect(PARES_NA_FSM.map(([d, p]) => `${d}>${p}`).sort()).toEqual([...medidas].sort());
+  });
 
   it('a contagem declarada bate com a FSM: 126 casos = 27 dentro × 3 + 15 fora × 3', () => {
     const dentro = CASOS.filter((c) => c.dentro).length;
