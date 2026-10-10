@@ -7,6 +7,7 @@ import { PostgresPatientDiagnosisRepository } from '@modules/diagnosis/infrastru
 import { DiagnosisSource } from '@modules/diagnosis/domain/DiagnosisSource';
 import { createTerminologyPort } from '@modules/terminology/infrastructure/TerminologyPortFactory';
 import { loadPublicVacancyDiagnosisLabel } from '../../application/publicVacancyDiagnosisLabel';
+import { vacancyEffectiveJoinSql, vacancyEffectiveScheduleSql } from '@shared/sql/vacancyEffectiveFieldsSql';
 
 /**
  * PublicVacancyController
@@ -164,7 +165,7 @@ export class PublicVacancyController {
           jp.age_range_min,
           jp.age_range_max,
           jp.worker_attributes,
-          jp.schedule,
+          ${vacancyEffectiveScheduleSql('jp')} AS schedule,
           jp.schedule_days_hours,
           jp.salary_text,
           jp.talentum_description,
@@ -180,6 +181,7 @@ export class PublicVacancyController {
             jp.inferred_zone
           ) AS patient_zone
         FROM job_postings jp
+        ${vacancyEffectiveJoinSql('jp')}
         LEFT JOIN patients p ON jp.patient_id = p.id
         LEFT JOIN patient_addresses pa ON jp.patient_address_id = pa.id
         WHERE ${whereClause}

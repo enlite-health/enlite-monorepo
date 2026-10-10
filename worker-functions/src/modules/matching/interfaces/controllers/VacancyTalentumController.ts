@@ -18,6 +18,7 @@ import {
 import type { AuditActor } from '@modules/integration';
 import { getVacancyTalentumStatus } from './vacancyTalentumStatusHelper';
 import { normalizePrescreeningResponseType } from '@shared/utils/normalizePrescreeningResponseType';
+import { vacancyEffectiveJoinSql, vacancyEffectiveScheduleSql } from '@shared/sql/vacancyEffectiveFieldsSql';
 
 /**
  * VacancyTalentumController
@@ -259,11 +260,12 @@ export class VacancyTalentumController {
         `SELECT
            jp.id, jp.title, jp.case_number, jp.required_professions, jp.required_sex,
            jp.age_range_min, jp.age_range_max, jp.required_experience, jp.worker_attributes,
-           jp.schedule, jp.work_schedule, jp.providers_needed, jp.salary_text,
+           ${vacancyEffectiveScheduleSql('jp')} AS schedule, jp.work_schedule, jp.providers_needed, jp.salary_text,
            jp.payment_day, jp.daily_obs,
            pa.address_formatted, pa.city, pa.state,
            p.diagnosis, p.dependency_level, p.service_type
          FROM job_postings jp
+         ${vacancyEffectiveJoinSql('jp')}
          LEFT JOIN patient_addresses pa ON jp.patient_address_id = pa.id
          LEFT JOIN patients p ON jp.patient_id = p.id
          WHERE jp.id = $1`,

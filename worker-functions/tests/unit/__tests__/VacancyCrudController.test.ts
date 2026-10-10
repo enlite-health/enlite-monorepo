@@ -270,7 +270,8 @@ describe('VacancyCrudController', () => {
 
       // INSERT is still pool.query[2] (not in a client transaction)
       const sql = mockQuery.mock.calls[2][0] as string;
-      expect(sql).not.toContain('description');
+      // só o INSERT (o RETURNING lista todas as colunas da vaga, `description` inclusa)
+      expect(sql.split('RETURNING')[0]).not.toContain('description');
       // VALUES now starts with the 4 positional params (no `''` description literal)
       expect(sql).toMatch(/VALUES\s*\(\s*\$1,\s*\$2,\s*\$3,\s*\$4,/);
     });
@@ -806,8 +807,8 @@ describe('VacancyCrudController', () => {
         await controller.updateVacancy(req as never, res as never);
 
         expect(res.status).toHaveBeenCalledWith(200);
-        // pool: 1 SELECT (authorizeVacancyUpdate)
-        expect(mockQuery).toHaveBeenCalledTimes(1);
+        // pool: 1 SELECT (authorizeVacancyUpdate) + 1 leitura do horário efetivo (withEffectiveSchedule)
+        expect(mockQuery).toHaveBeenCalledTimes(2);
         // client: BEGIN, SELECT before, UPDATE, [audit], COMMIT
         expect(mockConnect).toHaveBeenCalledTimes(1);
       });
@@ -883,8 +884,8 @@ describe('VacancyCrudController', () => {
         await controller.updateVacancy(req as never, res as never);
 
         expect(res.status).toHaveBeenCalledWith(200);
-        // pool: 1 SELECT (authorize) + 1 SELECT (patient check)
-        expect(mockQuery).toHaveBeenCalledTimes(2);
+        // pool: 1 SELECT (authorize) + 1 SELECT (patient check) + 1 leitura do horário efetivo
+        expect(mockQuery).toHaveBeenCalledTimes(3);
         expect(mockConnect).toHaveBeenCalledTimes(1);
       });
 

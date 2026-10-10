@@ -29,6 +29,7 @@ import {
   JobPostingAuditRepository,
   type AuditActorType,
 } from '../../matching/infrastructure/JobPostingAuditRepository';
+import { vacancyEffectiveJoinSql, vacancyEffectiveScheduleSql } from '@shared/sql/vacancyEffectiveFieldsSql';
 
 export interface DescriptionAuditActor {
   actorUserId: string | null;
@@ -96,13 +97,14 @@ export class TalentumDescriptionService {
          jp.required_professions, jp.required_sex,
          jp.required_experience, jp.worker_attributes,
          jp.age_range_min, jp.age_range_max,
-         jp.providers_needed, jp.schedule, jp.work_schedule,
+         jp.providers_needed, ${vacancyEffectiveScheduleSql('jp')} AS schedule, jp.work_schedule,
          jp.salary_text, jp.payment_day,
          pa.city, pa.state, pa.neighborhood,
          p.diagnosis AS pathology_types,
          p.dependency_level,
          p.service_type AS service_device_types
        FROM job_postings jp
+       ${vacancyEffectiveJoinSql('jp')}
        LEFT JOIN patient_addresses pa ON jp.patient_address_id = pa.id
        LEFT JOIN patients p ON jp.patient_id = p.id
        WHERE jp.id = $1`,

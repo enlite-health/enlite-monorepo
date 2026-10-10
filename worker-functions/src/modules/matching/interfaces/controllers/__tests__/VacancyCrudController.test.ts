@@ -324,6 +324,7 @@ describe('VacancyCrudController', () => {
         .mockResolvedValueOnce({ rows: [{ id: 'p-1' }] })
         .mockResolvedValueOnce({ rows: [{ vn: '13' }] })
         .mockResolvedValueOnce({ rows: [{ id: 'jp-domain-fail', status: 'SEARCHING', is_test: false }] })
+        .mockResolvedValueOnce({ rows: [{ schedule: null }] }) // leitura do horário efetivo (withEffectiveSchedule)
         .mockRejectedValueOnce(new Error('domain_events insert failed')); // dentro do setImmediate
 
       const req = makeReq({ body: { patient_id: 'p-1', case_number: 230 } });
@@ -413,7 +414,8 @@ describe('VacancyCrudController', () => {
       expect(res.status).toHaveBeenCalledWith(200);
       const updateCall = mockClientQuery.mock.calls[2];
       expect(updateCall[0]).toContain('status = $1');
-      expect(updateCall[0]).not.toContain('title');
+      // só o SET (o RETURNING lista todas as colunas da vaga, `title` inclusa)
+      expect(updateCall[0].split('RETURNING')[0]).not.toContain('title');
     });
 
     it('is_draft=true → campos de FULL_ALLOWED_UPDATE_FIELDS (ex: title) são aceitos', async () => {
@@ -832,6 +834,7 @@ describe('VacancyCrudController', () => {
         .mockResolvedValueOnce({ rows: [{ id: 'p-1' }] })
         .mockResolvedValueOnce({ rows: [{ vn: '32' }] })
         .mockResolvedValueOnce({ rows: [{ id: 'jp-domain-raw', status: 'SEARCHING', is_test: false }] })
+        .mockResolvedValueOnce({ rows: [{ schedule: null }] }) // leitura do horário efetivo (withEffectiveSchedule)
         .mockRejectedValueOnce('domain event raw failure');
       mockClientQuery.mockResolvedValue({ rows: [] });
 

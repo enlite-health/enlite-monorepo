@@ -21,6 +21,7 @@ import { PatientDiagnosisService } from '@modules/diagnosis/application/PatientD
 import { PostgresPatientDiagnosisRepository } from '@modules/diagnosis/infrastructure/PostgresPatientDiagnosisRepository';
 import { DiagnosisSource } from '@modules/diagnosis/domain/DiagnosisSource';
 import { createTerminologyPort } from '@modules/terminology/infrastructure/TerminologyPortFactory';
+import { vacancyEffectiveColumnsSql, vacancyEffectiveGroupBySql, vacancyEffectiveJoinSql } from '@shared/sql/vacancyEffectiveFieldsSql';
 
 /**
  * Decryptor da rota `GET /vacancies/:id`: os campos de prestador aqui já vêm em
@@ -232,7 +233,7 @@ export class VacanciesController {
       const { id } = req.params;
       const result = await this.db.query(`
         SELECT
-          jp.*,
+          ${vacancyEffectiveColumnsSql('jp')},
           jp.closes_at as closed_at,
           p.first_name as patient_first_name,
           p.last_name as patient_last_name,
@@ -275,13 +276,14 @@ export class VacanciesController {
             )
           ) FILTER (WHERE pub.id IS NOT NULL) as publications
         FROM job_postings jp
+        ${vacancyEffectiveJoinSql('jp')}
         LEFT JOIN patients p ON jp.patient_id = p.id
         LEFT JOIN patient_addresses pa ON jp.patient_address_id = pa.id
         LEFT JOIN encuadres e ON jp.id = e.job_posting_id
         LEFT JOIN workers w ON e.worker_id = w.id
         LEFT JOIN publications pub ON jp.id = pub.job_posting_id
         WHERE jp.id = $1
-        GROUP BY jp.id, p.id, pa.id
+        GROUP BY jp.id, p.id, pa.id, ${vacancyEffectiveGroupBySql()}
       `, [id]);
 
       if (result.rows.length === 0) {

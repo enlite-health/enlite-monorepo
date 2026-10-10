@@ -8,6 +8,11 @@
 import type { Pool } from 'pg';
 import { captureEntityDiff } from '@shared/audit/captureEntityDiff';
 import type { EntityFieldDiff } from '@shared/audit/types';
+import {
+  vacancyEffectiveJoinSql,
+  vacancyEffectiveScheduleSql,
+  vacancyRawColumnsSql,
+} from '@shared/sql/vacancyEffectiveFieldsSql';
 
 export interface VacancyInsertParams {
   vacancyNumber: number;
@@ -264,6 +269,8 @@ export function buildInsertQuery(): string {
   // índice, e ao destravar já vê o valor commitado do 1º — reconta e bate 23505
   // se ainda colidir. Callers tratam 23505 com retry (ver isCaseOrdinalConflict/
   // retryOnCaseOrdinalConflict abaixo).
+  // RETURNING com lista explícita e SEM join: este INSERT roda também em client cru (sem identidade). O horário
+  // efetivo da resposta é lido depois, por `withEffectiveSchedule`.
   return `
     INSERT INTO job_postings (
       vacancy_number, case_number, title, patient_id,
@@ -302,8 +309,23 @@ export function buildInsertQuery(): string {
          WHERE jp2.patient_id = $4::uuid
       ) END
     )
-    RETURNING *
+    RETURNING ${vacancyRawColumnsSql()}
   `;
+}
+
+/**
+ * Troca o `schedule` CRU da linha escrita pelo efetivo (o do serviço, se a vaga tem serviço). Lê por `db.query`
+ * — o proxy do pool desvia para o client fixado da request, COM identidade — depois do COMMIT, nunca no client
+ * cru da transação. Vaga que a sessão não enxerga mais (ou sem linha) devolve a linha como veio.
+ */
+export async function withEffectiveSchedule<T extends Record<string, unknown>>(db: Pool, row: T): Promise<T> {
+  const r = await db.query<{ schedule: unknown }>(
+    `SELECT ${vacancyEffectiveScheduleSql('jp')} AS schedule
+       FROM job_postings jp ${vacancyEffectiveJoinSql('jp')}
+      WHERE jp.id = $1`,
+    [row.id],
+  );
+  return r.rows.length === 0 ? row : { ...row, schedule: r.rows[0].schedule };
 }
 
 // ─── case_ordinal conflict retry (spec 027 Fase 5) ───────────────────────────

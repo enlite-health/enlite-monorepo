@@ -18,6 +18,7 @@ import {
 } from './vacancyScheduleFilter';
 import type { Pool } from 'pg';
 import { VACANCY_CASE_NUMBER_SQL } from '@shared/sql/vacancyCaseNumberSql';
+import { vacancyEffectiveJoinSql } from '@shared/sql/vacancyEffectiveFieldsSql';
 import { workerNotDisabledSql } from '@shared/database/activeWorkerFilter';
 import { INICIAIS_REDIGIDAS, patientNameIsRedacted } from '../../application/patientInVacancyProjection';
 import {
@@ -114,6 +115,7 @@ const LIST_VACANCIES_BASE = `
       ELSE NULL
     END as faltantes
   FROM job_postings jp
+  ${vacancyEffectiveJoinSql('jp')}
   LEFT JOIN patients p ON jp.patient_id = p.id
   LEFT JOIN patient_addresses pa ON jp.patient_address_id = pa.id
   WHERE jp.case_number IS NOT NULL
