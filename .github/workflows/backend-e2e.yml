@@ -95,6 +95,13 @@ jobs:
           API_URL: http://localhost:8080
           HEALTH_TIMEOUT_MS: 90000
 
+      # R-16 (spec 050): a API de TESTE não alcança terceiro. Controle `rede-bloqueada.controle`, DENTRO do contêiner: cada host de
+      # terceiro resolve só para o endereço morto de `extra_hosts` (docker-compose.test.yml) e a conexão falha; a própria API é
+      # alcançada (controle do controle). Falha o job se algum terceiro conectar. O processo jest tem a guarda de rede (jest.config.e2e.js)
+      # e o teste `rede-bloqueada.controle` em tests/e2e/.
+      - name: rede-bloqueada.controle — contêiner da API (mock auth)
+        run: docker compose -f docker-compose.yml -f docker-compose.test.yml exec -T api node - < ../scripts/rede-bloqueada-no-conteiner.cjs
+
       # As migrations rodam no boot do container da API (`run-migrations-docker.js && npm start`),
       # então o schema `terminology` já existe quando este passo começa.
       - name: Ingest + promote ICD-11 catalog
@@ -168,6 +175,9 @@ jobs:
             [ "$i" = "60" ] && { echo "::error::API real não respondeu em 120s"; docker compose $REAL logs api | tail -50; exit 1; }
             sleep 2
           done
+
+      - name: rede-bloqueada.controle — contêiner da API (stack REAL, token real)
+        run: docker compose -p realauth -f docker-compose.yml -f docker-compose.test.yml -f docker-compose.firebase.yml -f docker-compose.real-auth-ports.yml exec -T api node - < ../scripts/rede-bloqueada-no-conteiner.cjs
 
       - name: E2E com token REAL — prestador nunca entra no painel
         run: npm run test:e2e:real-auth

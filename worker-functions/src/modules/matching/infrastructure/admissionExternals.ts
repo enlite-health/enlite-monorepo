@@ -7,6 +7,7 @@ import type { AdmissionCalendarPort } from '../application/ports/AdmissionCalend
 import { admissionCalendarService } from './AdmissionCalendarService';
 import type { AdmissionWhatsAppSender } from './admissionTemplates';
 import { FakeAdmissionCalendar } from './doubles/FakeAdmissionCalendar';
+import { UnavailableAdmissionCalendar } from './doubles/UnavailableAdmissionCalendar';
 import { InMemoryAdmissionReminderTasks } from './doubles/InMemoryAdmissionReminderTasks';
 import { RecordingAdmissionWhatsApp } from './doubles/RecordingAdmissionWhatsApp';
 import { RealAdmissionReminderTasks } from './RealAdmissionReminderTasks';
@@ -26,6 +27,8 @@ import { VertexAdmissionSummaryGenerator } from './VertexAdmissionSummaryGenerat
 export interface AdmissionExternalsEnv {
   NODE_ENV?: string;
   ADMISSION_EXTERNALS?: string;
+  /** Só em modo dublê: `unavailable` troca o Calendar dublê por um que FALHA de propósito (stack do e2e, docker-compose.test.yml). */
+  ADMISSION_CALENDAR_DOUBLE?: string;
 }
 
 export interface AdmissionExternals {
@@ -33,8 +36,9 @@ export interface AdmissionExternals {
   reminderTasks: AdmissionReminderTasksPort;
   whatsapp: AdmissionWhatsAppSender;
   /**
-   * Google Calendar. Dublê SÓ com `ADMISSION_EXTERNALS=fake` explícito (a stack e2e da 049); `NODE_ENV=test` sozinho
-   * mantém o adapter real, que sem credencial falha alto — o e2e do roster depende disso ("agenda inacessível → 500").
+   * Google Calendar. Em teste é SEMPRE dublê (R-17, spec 050): `FakeAdmissionCalendar` (sempre livre), ou
+   * `UnavailableAdmissionCalendar` (falha de propósito) com `ADMISSION_CALENDAR_DOUBLE=unavailable` — o e2e do roster
+   * depende de "agenda inacessível → 500". `ADMISSION_EXTERNALS=fake` explícito sempre dá o `Fake` (a stack e2e da 049).
    */
   calendar: AdmissionCalendarPort;
   /** Tactiq (spec 049 F4): OAuth e MCP. Dublês em `fake`; os adapters reais LANÇAM no construtor com NODE_ENV=test. */
@@ -52,6 +56,11 @@ export interface AdmissionExternalsDeps {
   realWhatsApp: () => AdmissionWhatsAppSender;
   /** Para teste: substitui o adapter real do agendador (que lança em NODE_ENV=test). */
   realReminderTasks?: () => AdmissionReminderTasksPort;
+}
+
+function testCalendar(env: AdmissionExternalsEnv): AdmissionCalendarPort {
+  if (env.ADMISSION_EXTERNALS !== 'fake' && env.ADMISSION_CALENDAR_DOUBLE === 'unavailable') return new UnavailableAdmissionCalendar();
+  return new FakeAdmissionCalendar();
 }
 
 /**
@@ -80,7 +89,7 @@ export function createAdmissionExternals(env: AdmissionExternalsEnv, deps: Admis
       mode: 'fake',
       reminderTasks: new InMemoryAdmissionReminderTasks(),
       whatsapp: new RecordingAdmissionWhatsApp(),
-      calendar: env.ADMISSION_EXTERNALS === 'fake' ? new FakeAdmissionCalendar() : admissionCalendarService,
+      calendar: testCalendar(env),
       tactiq: { oauth: new FakeTactiqOAuth(), mcp: new FakeTactiqMcp() },
       meet: new FakeMeetConference(),
       vault: new InMemoryTranscriptVault(),
