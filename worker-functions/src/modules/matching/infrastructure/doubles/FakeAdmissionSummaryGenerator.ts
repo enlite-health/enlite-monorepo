@@ -1,3 +1,4 @@
+import { validSummaryJson } from './admissionSummaryFixtures';
 import { AdmissionSummaryError, type AdmissionSummaryPort, type AdmissionSummaryResult } from '../../application/ports/AdmissionImportPorts';
 
 /**
@@ -10,7 +11,7 @@ export class FakeAdmissionSummaryGenerator implements AdmissionSummaryPort {
   promptVersion = 'fake-v0';
   failWith: AdmissionSummaryError | null = null;
   gate: Promise<void> | null = null;
-  structured: unknown | null = null;
+  structured: unknown | null = validSummaryJson();
   jsonInvalid = false;
   readonly inputs: Array<{ entrevistaId?: string; fecha?: string }> = [];
 
@@ -26,7 +27,7 @@ export class FakeAdmissionSummaryGenerator implements AdmissionSummaryPort {
     this.received.length = 0;
     this.failWith = null;
     this.gate = null;
-    this.structured = null;
+    this.structured = validSummaryJson();
     this.jsonInvalid = false;
     this.inputs.length = 0;
     this.summary = 'RESUMO-SINTETICO: ponto A; ponto B.';

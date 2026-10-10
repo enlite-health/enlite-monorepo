@@ -41,7 +41,7 @@ export interface RehearsalVaultPort extends TranscriptVaultPort {
  * `prompt_missing`: `ADMISSION_SUMMARY_PROMPT_DOC_ID` sem valor (H4 pendente). `prompt_unavailable`: o Google Doc não leu.
  * Nos dois casos NÃO há resumo com prompt inventado; a próxima execução do job tenta de novo.
  */
-export type AdmissionSummaryFailure = 'vertex_failed' | 'empty_response' | 'prompt_missing' | 'prompt_unavailable' | 'prompt_unfilled_placeholder' | 'prompt_catalog_empty' | 'catalog_read_failed' | 'output_truncated' | 'blocked_by_model' | 'vertex_transient' | 'post_model_failed' | 'vertex_timeout' | 'vertex_auth_failed';
+export type AdmissionSummaryFailure = 'vertex_failed' | 'empty_response' | 'prompt_missing' | 'prompt_unavailable' | 'prompt_unfilled_placeholder' | 'prompt_catalog_empty' | 'catalog_read_failed' | 'output_truncated' | 'blocked_by_model' | 'vertex_transient' | 'post_model_failed' | 'vertex_timeout' | 'vertex_auth_failed' | 'json_invalid' | 'schema_invalid';
 
 export class AdmissionSummaryError extends Error {
   readonly code = 'ADMISSION_SUMMARY_ERROR';
@@ -72,6 +72,6 @@ export interface AdmissionSummaryPort {
  * `vertex_transient` e NÃO contam: não custam token e uma queda do Vertex não pode tirar reuniões da fila. `vertex_timeout` (prazo
  * estourado com o pedido já enviado) CONTA. `vertex_auth_failed` (credencial) NÃO conta.
  */
-export const MODEL_SIDE_SUMMARY_FAILURES = ['empty_response', 'output_truncated', 'blocked_by_model', 'vertex_failed', 'vertex_timeout', 'post_model_failed'] as const;
+export const MODEL_SIDE_SUMMARY_FAILURES = ['empty_response', 'output_truncated', 'blocked_by_model', 'vertex_failed', 'vertex_timeout', 'post_model_failed', 'json_invalid', 'schema_invalid'] as const;
 export const MAX_SUMMARY_ATTEMPTS = 3;
 export const SUMMARY_ATTEMPTS_EXHAUSTED = 'summary_attempts_exhausted';

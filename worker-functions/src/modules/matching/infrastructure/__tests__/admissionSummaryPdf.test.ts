@@ -44,6 +44,7 @@ describe('renderAdmissionSummaryPdf', () => {
     expect(pdfText(com)).toContain(hex('estado: BORRADOR_PARA_REVISION_CTM'));
     expect(pdfText(com)).not.toContain(hex('"estado"'));
     expect(pdfText(sem)).not.toContain(hex('Datos estructurados'));
+    expect(pdfText(sem)).toContain(hex('BORRADOR')); // F6/A6-6: o cabeçalho diz que é rascunho, com ou sem anexo
   });
 
   describe('entradas hostis terminam rápido e devolvem PDF (recuo com teto, largura com piso, palavra cortada por caractere)', () => {
