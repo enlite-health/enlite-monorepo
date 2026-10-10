@@ -4672,7 +4672,14 @@
             "write": "Crear y editar",
             "incomplete_alert": "Aviso día 12",
             "waive_contact": "No necesita",
-            "resend_message": "Reenviar mensaje"
+            "resend_message": "Reenviar mensaje",
+            "move_to_searching": "A búsqueda",
+            "move_to_active": "A activo",
+            "move_to_replacement": "A reemplazo",
+            "move_to_on_hold": "A en espera",
+            "move_to_suspended": "A suspendido",
+            "move_to_alta": "A alta",
+            "move_to_discharged": "A baja"
           },
           "category": {
             "Trabalhadores": "Trabajadores",
@@ -4738,7 +4745,8 @@
             "staff_directory": "Directorio del equipo",
             "patient_document": "Documentos del paciente",
             "patient_admission": "Admisión del paciente (reuniones y mensajes)",
-            "own_tactiq_link": "Mi vínculo con Tactiq"
+            "own_tactiq_link": "Mi vínculo con Tactiq",
+            "patient_status": "Estado del paciente: cambio fuera del flujo"
           },
           "help": {
             "open": "Qué hace este permiso",
