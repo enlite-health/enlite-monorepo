@@ -3,8 +3,9 @@ import { useTranslation } from 'react-i18next';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { PatientApiError } from '@infrastructure/http/AdminPatientsApiService';
 import type { PatientDetail, UpdatePatientStatusPayload } from '@domain/entities/PatientDetail';
-import { ON_HOLD_REASONS } from '@domain/entities/patientEnums';
+import { ON_HOLD_REASONS, isPatientStatus, type PatientStatus } from '@domain/entities/patientEnums';
 import { usePatientStatusOptions } from '@hooks/admin/usePatientStatusOptions';
+import { refusalFromError } from '@domain/entities/PatientStatusRefusal';
 import { friendlyStatusMessage, missingItemsLabel } from '@presentation/utils/patientStatusMessages';
 import { Button } from '@presentation/components/atoms/Button';
 import { Text } from '@presentation/components/atoms/Text';
@@ -40,8 +41,8 @@ export function PatientStatusControl({ patient, onSaved }: Props): JSX.Element |
   const { t } = useTranslation();
   const ts = (k: string, opts?: Record<string, string>): string => String(t(`admin.patients.status.${k}`, opts ?? {}));
 
-  const current = patient.status ?? 'ACTIVE';
-  const [status, setStatus] = useState<string>(current);
+  const current: PatientStatus = isPatientStatus(patient.status) ? patient.status : 'ACTIVE';
+  const [status, setStatus] = useState<PatientStatus>(current);
   const [reason, setReason] = useState<string>(patient.onHoldReason ?? '');
   const [note, setNote] = useState<string>(patient.onHoldNote ?? '');
   const [exitReason, setExitReason] = useState<string>('');
@@ -70,7 +71,7 @@ export function PatientStatusControl({ patient, onSaved }: Props): JSX.Element |
   const reasonOptions: SelectOption[] = ON_HOLD_REASONS.map((r) => ({ value: r, label: t(`admin.patients.onHoldReasonOptions.${r}`, r) }));
   // Estado atual + SÓ o que o servidor devolveu. Sem lista (carregando ou falha) só o atual — nunca o catálogo inteiro.
   const optionsReady = optionsState.phase === 'ready';
-  const statusOptions: Array<{ value: string; label: string; disabled: boolean }> = [
+  const statusOptions: Array<{ value: PatientStatus; label: string; disabled: boolean }> = [
     { value: current, label: label(current), disabled: false },
     ...(optionsState.phase === 'ready' ? optionsState.options : [])
       .filter((o) => o.status !== current)
@@ -102,9 +103,8 @@ export function PatientStatusControl({ patient, onSaved }: Props): JSX.Element |
       onSaved();
     } catch (err) {
       const api = err instanceof PatientApiError ? err : null;
-      const d = (api?.details ?? {}) as { to?: string; missing?: string[] };
       // Spec 051 (§6.4): frase amigável, a mesma do Kanban; o código/célula ficam no corpo da resposta.
-      const friendly = api ? friendlyStatusMessage(t, { code: api.code, to: d.to ?? status, missing: d.missing }) : null;
+      const friendly = api ? friendlyStatusMessage(t, refusalFromError(api, status)) : null;
       setError(friendly ?? (err instanceof Error ? err.message : ts('error')));
       // A lista pode ter ficado velha (permissão revogada, dado completado em outra aba): relê.
       if (api && (api.status === 403 || api.status === 422)) reloadOptions();
@@ -143,7 +143,7 @@ export function PatientStatusControl({ patient, onSaved }: Props): JSX.Element |
             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
             value={status}
             disabled={!optionsReady}
-            onChange={(e) => { setStatus(e.target.value); setError(null); }}
+            onChange={(e) => { if (isPatientStatus(e.target.value)) setStatus(e.target.value); setError(null); }}
             data-testid="patient-status-select"
           >
             {statusOptions.map((o) => (

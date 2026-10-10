@@ -22,6 +22,7 @@ vi.mock('@infrastructure/http/AdminApiService', () => ({
   },
 }));
 
+import { PatientApiError } from '@infrastructure/http/AdminPatientsApiService';
 import {
   usePatientKanban,
   PATIENT_KANBAN_STATUSES,
@@ -249,7 +250,7 @@ describe('usePatientKanban — patients.status', () => {
     });
 
     it('403 da lista (sem patient:update) → "sem permissão" (não "não deu para comprobar"), sem PUT e card no lugar', async () => {
-      getPatientStatusOptions.mockRejectedValue(Object.assign(new Error('Forbidden'), { status: 403 }));
+      getPatientStatusOptions.mockRejectedValue(new PatientApiError('Forbidden', 403));
       const { result } = renderHook(() => usePatientKanban());
       await waitFor(() => expect(result.current.isLoading).toBe(false));
       let err: PatientKanbanMoveError | null = null;

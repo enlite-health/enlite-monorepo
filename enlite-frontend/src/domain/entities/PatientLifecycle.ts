@@ -1,8 +1,14 @@
+import type { PatientStatus } from './patientEnums';
+import type { PatientCompletenessCode } from './PatientCompleteness';
+
 /**
  * Estado v2 do paciente e o Historial — spec 012, US-B7.
  * As transições permitidas são do SERVIDOR (`patient_status_transitions`, migration 315): a
  * tela só traduz a recusa (422 com `code`).
  */
+
+/** Origem que o CLIENTE declara (o servidor decide sozinho a variante `*_override`). */
+export type PatientStatusChangeSource = 'admin_panel' | 'kanban';
 
 /** Body de PUT /api/admin/patients/:id/status (v2) — mirrors patientStatusSchema (backend). */
 export interface UpdatePatientStatusPayload {
@@ -11,7 +17,7 @@ export interface UpdatePatientStatusPayload {
   /** Texto clínico restrito (pacote D211.2) — nunca logado. */
   onHoldNote?: string | null;
   /** Origem da mudança → coluna "origem" do Historial. */
-  changeSource?: 'admin_panel' | 'kanban';
+  changeSource?: PatientStatusChangeSource;
   /**
    * Motivo de SAÍDA de SUSPENDED (decisão do Gabriel 29/09/2026) — obrigatório quando o paciente
    * ESTÁ em SUSPENDED e o alvo é outro; ignorado fora desse caso. Catálogo fechado, sem texto livre.
@@ -25,18 +31,13 @@ export interface UpdatePatientStatusPayload {
  * não é motivo de aviso. `blockedBy` = códigos de completude (os mesmos do checklist da ficha).
  */
 export interface PatientStatusOption {
-  status: string;
+  status: PatientStatus;
   via: 'fluxo' | 'permissao';
-  blockedBy?: string[];
+  blockedBy?: PatientCompletenessCode[];
 }
 
-/** Recusa LOCAL: o destino pedido não está na lista do servidor, então o PUT nem sai (spec 051). */
-export const STATUS_NOT_OFFERED = 'STATUS_NOT_OFFERED';
-/** Recusa LOCAL: a lista do servidor não pôde ser lida, então o arrasto não prossegue (spec 051). */
-export const STATUS_OPTIONS_UNAVAILABLE = 'STATUS_OPTIONS_UNAVAILABLE';
-
 export interface PatientStatusOptions {
-  current: string | null;
+  current: PatientStatus | null;
   options: PatientStatusOption[];
 }
 

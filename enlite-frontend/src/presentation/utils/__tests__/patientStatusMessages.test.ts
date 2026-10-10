@@ -31,7 +31,7 @@ describe('friendlyStatusMessage', () => {
   it('completude sem lista (corpo incompleto ou `missing` que não é array) cai na frase genérica — nunca "Falta: ."', () => {
     const generic = 'Para pasar a «Activo» faltan datos obligatorios en la ficha.';
     expect(friendlyStatusMessage(t, { code: 'PATIENT_STATUS_NOT_READY', to: 'ACTIVE' })).toBe(generic);
-    expect(friendlyStatusMessage(t, { code: 'PATIENT_STATUS_NOT_READY', to: 'ACTIVE', missing: 'ADDRESS' as unknown as string[] })).toBe(generic);
+    expect(friendlyStatusMessage(t, { code: 'PATIENT_STATUS_NOT_READY', to: 'ACTIVE', missing: 'ADDRESS' as never })).toBe(generic);
   });
 
   it('motivos obrigatórios, destino indisponível e lista ilegível', () => {
@@ -48,14 +48,14 @@ describe('friendlyStatusMessage', () => {
   });
 
   it('destino sem tradução cai no valor cru em vez de quebrar', () => {
-    expect(friendlyStatusMessage(t, { code: 'PATIENT_STATUS_MOVE_NOT_PERMITTED', to: 'NOVO_ESTADO' })).toContain('«NOVO_ESTADO»');
+    expect(friendlyStatusMessage(t, { code: 'PATIENT_STATUS_MOVE_NOT_PERMITTED', to: 'NOVO_ESTADO' as never })).toContain('«NOVO_ESTADO»');
   });
 });
 
 describe('missingItemsLabel', () => {
   it('minúscula só na 1ª letra, e não em sigla (2ª letra maiúscula); item sem tradução cai no código', () => {
     const fake = (k: string, o?: Record<string, unknown>) => ({ 'admin.patients.detail.completeness.items.A': 'Horario del servicio', 'admin.patients.detail.completeness.items.B': 'CID-11' } as Record<string, string>)[k] ?? String(o?.defaultValue);
-    expect(missingItemsLabel(fake, ['A', 'B', 'C'])).toBe('horario del servicio, CID-11, C');
+    expect(missingItemsLabel(fake, ['A', 'B', 'C'] as never)).toBe('horario del servicio, CID-11, C');
     expect(missingItemsLabel(fake, undefined)).toBe('');
   });
 });

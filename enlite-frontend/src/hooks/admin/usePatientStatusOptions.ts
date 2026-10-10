@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import type { PatientStatusOption } from '@domain/entities/PatientDetail';
+import { PatientApiError } from '@infrastructure/http/AdminPatientsApiService';
 
 export type PatientStatusOptionsState =
   | { phase: 'loading' }
@@ -37,7 +38,7 @@ export function usePatientStatusOptions(patientId: string, refreshKey: unknown, 
     AdminApiService.getPatientStatusOptions(patientId)
       .then((r) => { if (!cancelled) setState({ phase: 'ready', options: r.options, forKey: key }); })
       .catch((err: unknown) => {
-        if (!cancelled) setState({ phase: (err as { status?: number })?.status === 403 ? 'readonly' : 'error' });
+        if (!cancelled) setState({ phase: err instanceof PatientApiError && err.status === 403 ? 'readonly' : 'error' });
       });
     return () => { cancelled = true; };
   }, [patientId, refreshKey, nonce, enabled]);

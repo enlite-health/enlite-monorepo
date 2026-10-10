@@ -23,6 +23,9 @@ export const PATIENT_STATUSES: readonly (AdmissionFunnelStatus | ClinicalPatient
   ...CLINICAL_PATIENT_STATUSES,
 ];
 export type PatientStatus = (typeof PATIENT_STATUSES)[number];
+export function isPatientStatus(v: unknown): v is PatientStatus {
+  return (PATIENT_STATUSES as readonly unknown[]).includes(v);
+}
 
 /** Motivo da espera (ON_HOLD). O texto livre que o acompanha é clínico restrito (D211.2). */
 export const ON_HOLD_REASONS = ['SCHOOL', 'INSURER', 'OTHER'] as const;
