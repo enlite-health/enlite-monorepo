@@ -830,6 +830,9 @@ describe('importação do Tactiq — banco real, cofre e bucket em emulador (spe
     vertex.failWith = null;
     expect(await service.importOne(b.id, clock)).toBe('done');
     expect(logs.output()).toContain('admission.vertex_auth_failed');
+    const lines = logs.output().split('\n').filter(Boolean).map((l) => JSON.parse(l) as { message?: string; reason?: string; appointmentId?: string });
+    // o log que o alerta vigia (`admission.summary_failed`) TAMBÉM sai para a falha de credencial
+    expect(lines.some((l) => l.message === 'admission.summary_failed' && l.reason === 'vertex_auth_failed' && l.appointmentId === b.id)).toBe(true);
   });
 
   // ── A6-9 ─────────────────────────────────────────────────────────────────────────────────────────
