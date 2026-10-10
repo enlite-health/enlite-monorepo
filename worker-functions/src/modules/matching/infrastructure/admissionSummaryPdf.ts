@@ -77,7 +77,8 @@ export async function renderAdmissionSummaryPdf(input: { title: string; body: st
   y -= 10;
 
   const drawBlock = (text: string, f: PDFFont): void => {
-    for (const raw of sanitize(text, charset).split(/\r?\n/)) {
+    // Divide em linhas ANTES de sanitizar: a Helvetica não tem LF/CR e `sanitize` os trocaria por `?`.
+    for (const raw of text.split(/\r\n|\r|\n/).map((l) => sanitize(l, charset))) {
       const lead = Math.min(raw.match(/^ */)?.[0].length ?? 0, MAX_INDENT_SPACES); // preserva o recuo do anexo, com teto
       const indent = lead * INDENT_PT_PER_SPACE;
       for (const [i, line] of wrap(raw.trim(), f, BODY_SIZE, maxWidth - indent).entries()) {

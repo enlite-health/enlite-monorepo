@@ -1,5 +1,5 @@
 import { inflateSync } from 'zlib';
-import { PDFDocument } from 'pdf-lib';
+import { PDFDocument, PDFPage } from 'pdf-lib';
 import { ConversationAttachmentValidator } from '@modules/conversation/infrastructure/ConversationAttachmentValidator';
 import { renderAdmissionSummaryPdf } from '../admissionSummaryPdf';
 
@@ -55,10 +55,40 @@ describe('renderAdmissionSummaryPdf', () => {
       ['palavra única de 5.000 caracteres', { body: 'x'.repeat(5000) }],
     ];
     it.each(casos)('%s', async (_n, input) => {
+      const drawn: string[] = [];
+      const spy = jest.spyOn(PDFPage.prototype, 'drawText').mockImplementation(function (this: PDFPage, t: string) { drawn.push(t); return undefined as never; });
       const t0 = Date.now();
-      const pdf = await renderAdmissionSummaryPdf({ title: 'T', ...input });
+      let pdf: Buffer;
+      try { pdf = await renderAdmissionSummaryPdf({ title: 'T', ...input }); } finally { spy.mockRestore(); }
       expect(Date.now() - t0).toBeLessThan(2000);
       expect(pdf.subarray(0, 5).toString('latin1')).toBe('%PDF-');
+      // conteúdo: nada some e nada vira `?` no lugar de quebra/recuo
+      const body = drawn.slice(1).join('');
+      expect(body).not.toContain('?');
+      if (_n.includes('5.000')) expect(body.length).toBe(5000);
+      if (_n.includes('espaços') || _n.includes('tabs')) expect(body).toContain('texto');
+      if (_n.includes('80 níveis')) expect(body).toContain('fim');
     }, 5000);
+  });
+
+  describe('quebras de linha viram linhas desenhadas (split ANTES de sanitizar)', () => {
+    const capture = async (input: { body: string; structured?: unknown }): Promise<Array<{ text: string; x: number }>> => {
+      const calls: Array<{ text: string; x: number }> = [];
+      const spy = jest.spyOn(PDFPage.prototype, 'drawText').mockImplementation(function (this: PDFPage, t: string, o?: { x?: number }) { calls.push({ text: t, x: o?.x ?? 0 }); return undefined as never; });
+      try { await renderAdmissionSummaryPdf({ title: 'Titulo', ...input }); } finally { spy.mockRestore(); }
+      return calls.slice(1); // a 1ª é o título
+    };
+
+    it('(a) resumo de 3 linhas -> 3 linhas desenhadas, sem `?` no lugar da quebra (inclui CRLF)', async () => {
+      expect((await capture({ body: 'LINHAUM\nLINHADOIS\nLINHATRES' })).map((c) => c.text)).toEqual(['LINHAUM', 'LINHADOIS', 'LINHATRES']);
+      expect((await capture({ body: 'A\r\nB\rC' })).map((c) => c.text)).toEqual(['A', 'B', 'C']);
+    });
+
+    it('(b) anexo `chaveA: v1 / chaveB: / filho: v2` -> 3 linhas, o filho com recuo maior', async () => {
+      const calls = await capture({ body: 'r', structured: { chaveA: 'v1', chaveB: { filho: 'v2' } } });
+      const anexo = calls.slice(2); // 'r' + cabeçalho "Datos estructurados"
+      expect(anexo.map((c) => c.text)).toEqual(['chaveA: v1', 'chaveB:', 'filho: v2']);
+      expect(anexo[2].x).toBeGreaterThan(anexo[1].x);
+    });
   });
 });
