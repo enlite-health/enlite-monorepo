@@ -155,7 +155,9 @@ export function usePatientKanban(country?: string) {
     let offered: Array<{ status: string; blockedBy?: string[] }>;
     try {
       offered = (await AdminApiService.getPatientStatusOptions(patientId)).options;
-    } catch {
+    } catch (err) {
+      // 403 da lista = a conta não pode mexer no estado: a mesma frase de "sem permissão" do 403 do PUT.
+      if ((err as { status?: number })?.status === 403) return { code: 'PATIENT_STATUS_MOVE_NOT_PERMITTED', to: targetStatus };
       return { code: STATUS_OPTIONS_UNAVAILABLE, to: targetStatus };
     }
     const destino = offered.find((o) => o.status === targetStatus);

@@ -248,6 +248,17 @@ describe('usePatientKanban — patients.status', () => {
       expect(result.current.groups.ACTIVE.map((p) => p.id)).toEqual(['c']);
     });
 
+    it('403 da lista (sem patient:update) → "sem permissão" (não "não deu para comprobar"), sem PUT e card no lugar', async () => {
+      getPatientStatusOptions.mockRejectedValue(Object.assign(new Error('Forbidden'), { status: 403 }));
+      const { result } = renderHook(() => usePatientKanban());
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+      let err: PatientKanbanMoveError | null = null;
+      await act(async () => { err = await result.current.moveStatus('c', 'ON_HOLD'); });
+      expect(err).toEqual({ code: 'PATIENT_STATUS_MOVE_NOT_PERMITTED', to: 'ON_HOLD' });
+      expect(updatePatientStatus).not.toHaveBeenCalled();
+      expect(result.current.groups.ACTIVE.map((p) => p.id)).toEqual(['c']);
+    });
+
     it('admisión → ACTIVE segue recusado ANTES da rede: nem a lista é lida', async () => {
       const { result } = renderHook(() => usePatientKanban());
       await waitFor(() => expect(result.current.isLoading).toBe(false));

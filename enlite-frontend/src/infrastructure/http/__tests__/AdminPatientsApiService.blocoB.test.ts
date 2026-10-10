@@ -51,7 +51,7 @@ describe('AdminPatientsApiService — bloco B', () => {
     expect(fetchMock.mock.calls[0][0]).toMatch(/\/api\/admin\/patients\/p\/status-options$/);
     expect(fetchMock.mock.calls[0][1].method).toBe('GET');
     fetchMock.mockResolvedValueOnce(jsonResponse({ success: false, error: 'Forbidden' }, 403));
-    await expect(AdminPatientsApiService.getPatientStatusOptions('p')).rejects.toThrow('Forbidden');
+    await expect(AdminPatientsApiService.getPatientStatusOptions('p')).rejects.toMatchObject({ message: 'Forbidden', status: 403 });
   });
 
   it('updatePatientAddressLogistics → PATCH /patients/:id/addresses/:addressId com só os campos dados', async () => {

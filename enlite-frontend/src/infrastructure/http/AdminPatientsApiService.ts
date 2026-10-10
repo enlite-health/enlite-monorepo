@@ -123,7 +123,8 @@ export class AdminPatientsApiServiceClass {
     const response = await fetch(`${this.baseURL}${path}`, { method, headers });
     const json: ApiResponse<T> = await response.json();
     if (!json.success) {
-      throw new Error((json as ApiErrorResponse).error || `HTTP ${response.status}`);
+      // PatientApiError é um Error: quem só lê `.message` não muda; quem precisa do HTTP status (403 da lista de destinos) o tem.
+      throw new PatientApiError((json as ApiErrorResponse).error || `HTTP ${response.status}`, response.status);
     }
     return (json as ApiSuccessResponse<T>).data;
   }

@@ -5,6 +5,8 @@ import type { PatientStatusOption } from '@domain/entities/PatientDetail';
 export type PatientStatusOptionsState =
   | { phase: 'loading' }
   | { phase: 'error' }
+  /** 403 da lista: a conta não tem `patient:update` — a ficha fica só-leitura (estado atual), sem erro nem retry. */
+  | { phase: 'readonly' }
   /** `forKey`: paciente + estado para o qual a lista foi calculada (lista de OUTRO estado não vale). */
   | { phase: 'ready'; options: PatientStatusOption[]; forKey: string };
 
@@ -34,7 +36,9 @@ export function usePatientStatusOptions(patientId: string, refreshKey: unknown, 
     setState((prev) => (prev.phase === 'ready' && prev.forKey === key ? prev : { phase: 'loading' }));
     AdminApiService.getPatientStatusOptions(patientId)
       .then((r) => { if (!cancelled) setState({ phase: 'ready', options: r.options, forKey: key }); })
-      .catch(() => { if (!cancelled) setState({ phase: 'error' }); });
+      .catch((err: unknown) => {
+        if (!cancelled) setState({ phase: (err as { status?: number })?.status === 403 ? 'readonly' : 'error' });
+      });
     return () => { cancelled = true; };
   }, [patientId, refreshKey, nonce, enabled]);
 

@@ -373,4 +373,16 @@ describe('PatientStatusControl', () => {
     await waitFor(() => expect(select).not.toBeDisabled());
     expect([...select.options].map((o) => o.value)).toEqual(['SEARCHING', 'ACTIVE']);
   });
+  it('403 da lista (conta sem patient:update): ficha SÓ-LEITURA — select travado só com o estado atual, sem mensagem de erro e sem "tentar de novo"', async () => {
+    getPatientStatusOptions.mockRejectedValue(new PatientApiError('Forbidden', 403));
+    render(<PatientStatusControl patient={active} onSaved={vi.fn()} />);
+    const select = screen.getByTestId('patient-status-select') as HTMLSelectElement;
+    await waitFor(() => expect(getPatientStatusOptions).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 0));
+    expect(select).toBeDisabled();
+    expect([...select.options].map((o) => o.value)).toEqual(['ACTIVE']);
+    expect(screen.queryByTestId('patient-status-options-error')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('patient-status-options-retry')).not.toBeInTheDocument();
+    expect(screen.getByTestId('patient-status-save')).toBeDisabled();
+  });
 });
