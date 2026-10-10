@@ -9,6 +9,7 @@ import {
 } from '@modules/patient-documents/application/StoreAdmissionSummaryDocument';
 import type { AdmissionEventRepository } from '../infrastructure/AdmissionEventRepository';
 import type { AdmissionImportRepository, ImportCandidate } from '../infrastructure/AdmissionImportRepository';
+import { SKIPPED_TEST_EVENT, admissionRealm, isBlockedFromPaidPath } from '../domain/admissionRealm';
 import { renderAdmissionSummaryPdf } from '../infrastructure/admissionSummaryPdf';
 import {
   IMPORT_EXPIRE_AFTER_MS,
@@ -52,6 +53,7 @@ export type ImportOutcome =
   | 'transient'
   | 'too_early'
   | 'not_eligible'
+  | 'skipped_test'
   | 'skipped_locked';
 
 export interface ImportSummary {
@@ -78,7 +80,7 @@ const emptySummary = (): ImportSummary => ({
 const SUMMARY_KEY: Record<ImportOutcome, keyof ImportSummary> = {
   done: 'done', already_done: 'alreadyDone', waiting: 'waiting', rejected: 'rejected', ambiguous: 'ambiguous', expired: 'expired',
   blocked: 'blocked', wrong_account: 'wrongAccount', vault_failed: 'failed', summary_failed: 'failed', transient: 'transient',
-  too_early: 'skipped', not_eligible: 'skipped', skipped_locked: 'skipped',
+  too_early: 'skipped', not_eligible: 'skipped', skipped_test: 'skipped', skipped_locked: 'skipped',
 };
 
 export interface AdmissionImportServiceDeps {
@@ -196,6 +198,16 @@ export class AdmissionImportService {
     ) {
       return 'not_eligible';
     }
+    // R-18: a função de domínio decide ANTES de qualquer porta (token do Tactiq, MCP, cofre, Vertex). `test` não entra: UM
+    // `skipped_test` na trilha (sob o lock da reunião) e a reunião sai da fila (`listDueIds`).
+    const realm = admissionRealm({ isTest: a.patient_is_test });
+    if (isBlockedFromPaidPath(realm)) {
+      if (!(await this.deps.repo.hasSkippedTest(a.id, 'import'))) {
+        await this.deps.events.append({ appointmentId: a.id, kind: SKIPPED_TEST_EVENT, outcome: 'skipped', reason: 'import', ref: { realm } });
+      }
+      this.log.info({ appointmentId: a.id, realm }, 'admission.import.skipped_test');
+      return 'skipped_test';
+    }
     // Teto de tentativas de resumo (custo do Vertex): contado pelos eventos, sob o lock da reunião (vale para execuções sobrepostas).
     if ((await this.deps.repo.countModelSummaryFailures(a.id)) >= MAX_SUMMARY_ATTEMPTS) {
       // O evento entra UMA vez, mesmo se a reunião já estava `blocked` por outro motivo (senão ela nunca sai da fila).
@@ -284,6 +296,8 @@ export class AdmissionImportService {
 
     // 6. o resumo (Vertex) e o PDF.
     let generated: AdmissionSummaryResult;
+    // R-20: o rastro contável sai ANTES da chamada paga (só ids e o `realm`). Se a chamada falhar, o log já existe.
+    this.log.info({ provider: 'vertex', appointmentId: a.id, realm }, 'admission.paid_call');
     try {
       generated = await this.deps.summary.generate({ transcript: fullText, entrevistaId: a.admission_code, fecha: isoDateLabel(a.slot_start, a.country) });
     } catch (err) {

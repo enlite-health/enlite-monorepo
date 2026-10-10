@@ -347,7 +347,7 @@ describe('job de 15 min da admissão — fim real, no_show e silêncio (spec 049
     expect(ok.status).toBe(200);
     const body = (await ok.json()) as { success: boolean; data: Record<string, unknown> };
     expect(Object.keys(body.data).sort()).toEqual([
-      'blocked', 'candidates', 'ended', 'errors', 'noShow', 'silenceConfirmation', 'silenceReminder', 'skippedLocked', 'transient', 'waiting',
+      'blocked', 'candidates', 'ended', 'errors', 'noShow', 'silenceConfirmation', 'silenceReminder', 'skippedLocked', 'skippedTest', 'transient', 'waiting',
     ]);
     expect(Object.values(body.data).every((v) => typeof v === 'number')).toBe(true);
     expect(body.data.candidates as number).toBeGreaterThanOrEqual(1);

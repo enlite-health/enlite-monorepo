@@ -6,6 +6,7 @@ import { MEET_LINK_REGEX, extractMeetingCode } from '../infrastructure/GoogleCal
 import type { AdmissionPostCallRepository, PostCallCandidate } from '../infrastructure/AdmissionPostCallRepository';
 import type { AdmissionEventRepository } from '../infrastructure/AdmissionEventRepository';
 import { decidePostCall } from '../domain/admissionPostCall';
+import { SKIPPED_TEST_EVENT, admissionRealm, isBlockedFromPaidPath } from '../domain/admissionRealm';
 import { MeetScopeMissingError, MeetTransientError, type MeetConferencePort } from './ports/MeetConferencePort';
 import type { AdmissionLogger } from './AdmissionMessagingService';
 
@@ -17,12 +18,14 @@ export interface PostCallSummary {
   waiting: number;
   transient: number;
   skippedLocked: number;
+  /** Reuniões de paciente `is_test` que a fila pulou (R-18): nenhuma chamada ao Meet. */
+  skippedTest: number;
   errors: number;
   silenceReminder: number;
   silenceConfirmation: number;
 }
 
-type Outcome = 'ended' | 'noShow' | 'blocked' | 'waiting' | 'transient' | 'skippedLocked';
+type Outcome = 'ended' | 'noShow' | 'blocked' | 'waiting' | 'transient' | 'skippedLocked' | 'skippedTest';
 type BlockReason = 'meet_scope_missing' | 'no_meet_link';
 
 export interface AdmissionPostCallJobDeps {
@@ -35,7 +38,7 @@ export interface AdmissionPostCallJobDeps {
 }
 
 const emptySummary = (): PostCallSummary => ({
-  candidates: 0, ended: 0, noShow: 0, blocked: 0, waiting: 0, transient: 0, skippedLocked: 0, errors: 0,
+  candidates: 0, ended: 0, noShow: 0, blocked: 0, waiting: 0, transient: 0, skippedLocked: 0, skippedTest: 0, errors: 0,
   silenceReminder: 0, silenceConfirmation: 0,
 });
 
@@ -46,6 +49,7 @@ const emptySummary = (): PostCallSummary => ({
  *     `conference_ended_at` = o maior `endTime` e `import_status='pending'` (a importação, F6, pega daí);
  *     nenhuma conferência até `slot_start + 1 h` → `no_show` (sem tocar Tactiq nem cofre); alguma aberta → espera, sem escrever nada.
  *  2. Escopo do Meet não delegado (H2 aberto) → `blocked reason=meet_scope_missing` + log de alarme. NUNCA `no_show`.
+ *  0. Paciente `is_test` (R-18, spec 050): nenhuma chamada ao Meet; um `skipped_test` na trilha e a reunião sai da fila.
  *  3. Detectores de silêncio (§5.3): lembrete e confirmação que deviam ter saído e não saíram → um log por reunião por execução.
  *
  * Idempotente: terminais (`pending`, `no_show`) saem da fila; `FOR UPDATE SKIP LOCKED` por reunião protege execuções
@@ -89,6 +93,17 @@ export class AdmissionPostCallJob {
     return withActorContext(this.db, async (cli) => {
       const appt = await this.deps.repo.lockCandidate(id, now, cli);
       if (!appt) return 'skippedLocked';
+
+      // R-18: a função de domínio decide ANTES de qualquer porta. `test` nunca chama o Meet; a trilha ganha UM `skipped_test`
+      // (o `ELIGIBLE` do repositório tira a reunião da fila depois dele).
+      if (isBlockedFromPaidPath(admissionRealm({ isTest: appt.patient_is_test }))) {
+        await this.deps.events.append(
+          { appointmentId: appt.id, kind: SKIPPED_TEST_EVENT, outcome: 'skipped', reason: 'post_call', ref: { realm: 'test' } },
+          cli,
+        );
+        this.log.info({ appointmentId: appt.id, realm: 'test' }, 'admission.post_call.skipped_test');
+        return 'skippedTest';
+      }
 
       try {
         let space = appt.meet_space_name;

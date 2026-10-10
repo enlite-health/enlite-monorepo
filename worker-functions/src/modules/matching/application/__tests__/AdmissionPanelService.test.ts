@@ -55,7 +55,7 @@ function build(fx: DbFx = {}) {
   const store = new InMemoryAdmissionStore();
   const whatsapp = new RecordingAdmissionWhatsApp();
   const logs = capturingLogger();
-  const resolver = { resolve: jest.fn(async () => ({ send: { to: '+5491100000000', contentSid: 'HX', vars: { 1: 'Carla' } } })) };
+  const resolver = { resolve: jest.fn(async () => ({ send: { to: '+5491100000000', contentSid: 'HX', vars: { 1: 'Carla' }, realm: 'real' as const } })) };
   const messaging = new AdmissionMessagingService(store, store, whatsapp, resolver, logs.log, () => NOW);
   const panel = new AdmissionPanelService({
     db,
