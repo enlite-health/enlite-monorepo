@@ -141,10 +141,10 @@ describe('screensByCell / containersOfTab / screenById', () => {
     // D293: o valor-hora é container próprio (célula de DADO), na mesma aba do serviço.
     // Spec 047 (F1, A1): a aba Vacante saiu; o container `vacancy` (célula `vacancy:read`) desceu para Serviço Contratado.
     expect(containersOfTab(s, 'contractedService').map((c) => c.resource)).toEqual(['patient_coverage', 'patient_address', 'patient_services', 'patient_contract_value', 'vacancy']);
-    // Spec 049 (F7): a aba Admissão vem logo depois de Documentos, com container próprio e 3 células.
+    // Spec 049 (F7): a aba Admissão vem logo depois de Documentos, com container próprio e 5 células (4 da 049 + o ensaio pago da 050).
     expect(s.tabs).toEqual(['clinicalData', 'supportNetwork', 'documents', 'admission', 'contractedService', 'history']);
     expect(containersOfTab(s, 'admission').map((c) => c.resource)).toEqual(['patient_admission']);
-    expect(s.containers?.find((c) => c.id === 'admission')?.cells).toEqual(['patient_admission:read', 'patient_admission:create', 'patient_admission:update', 'patient_admission:resend_message']);
+    expect(s.containers?.find((c) => c.id === 'admission')?.cells).toEqual(['patient_admission:read', 'patient_admission:create', 'patient_admission:update', 'patient_admission:resend_message', 'patient_admission:release_paid_rehearsal']);
     expect(screenById('account.tactiq').cells).toEqual(['own_tactiq_link:read', 'own_tactiq_link:create']);
     expect(s.tabs).not.toContain('vacancies');
     expect(containersOfTab(s, 'vacancies' as never)).toEqual([]);

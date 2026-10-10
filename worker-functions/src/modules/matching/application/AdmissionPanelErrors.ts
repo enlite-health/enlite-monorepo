@@ -24,3 +24,21 @@ export class ResendInProgressError extends Error {
     this.name = 'ResendInProgressError';
   }
 }
+
+/** Ensaio pago só existe para reunião `booked` de paciente `is_test` (spec 050 R-19). `reason` é um enum fechado. */
+export class PaidRehearsalNotAllowedError extends Error {
+  readonly code = 'PAID_REHEARSAL_NOT_ALLOWED';
+  constructor(public readonly reason: 'patient_not_test' | 'appointment_not_booked') {
+    super(`Paid rehearsal not allowed: ${reason}`);
+    this.name = 'PaidRehearsalNotAllowedError';
+  }
+}
+
+/** A reunião já tem liberação VIGENTE: liberar de novo não estende o prazo (R-19). */
+export class PaidRehearsalAlreadyActiveError extends Error {
+  readonly code = 'PAID_REHEARSAL_ALREADY_ACTIVE';
+  constructor() {
+    super('A paid rehearsal release is already active for this appointment');
+    this.name = 'PaidRehearsalAlreadyActiveError';
+  }
+}

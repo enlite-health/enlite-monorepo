@@ -177,11 +177,16 @@ describe('schema da aba Admissão (spec 049, migrations 503-507)', () => {
         WHERE p.resource IN ('patient_admission','own_tactiq_link') AND p.deprecated_at IS NULL ORDER BY 1`);
     expect(cells.map((c) => c.cell)).toEqual([
       'own_tactiq_link:create', 'own_tactiq_link:read',
-      'patient_admission:create', 'patient_admission:read', 'patient_admission:resend_message', 'patient_admission:update',
+      'patient_admission:create', 'patient_admission:read', 'patient_admission:release_paid_rehearsal', 'patient_admission:resend_message', 'patient_admission:update',
     ]);
+    // 050 F3 (509): a célula do ensaio pago é SÓ do Acesso Master — a 049 original (as 4 abaixo) segue como era.
+    const releaseGroups = async (): Promise<string[]> => (await pool.query(
+      `SELECT gp.group_id FROM iam.group_permissions gp JOIN iam.permissions p ON p.id = gp.permission_id
+        WHERE p.resource = 'patient_admission' AND p.action = 'release_paid_rehearsal'`)).rows.map((r) => r.group_id as string);
+    expect(await releaseGroups()).toEqual([MASTER_GROUP]);
     const gruposComCelulas = async (): Promise<Array<{ group_id: string; n: number }>> => (await pool.query(
       `SELECT gp.group_id, count(*)::int AS n FROM iam.group_permissions gp JOIN iam.permissions p ON p.id = gp.permission_id
-        WHERE p.resource = 'patient_admission' GROUP BY gp.group_id`)).rows;
+        WHERE p.resource = 'patient_admission' AND p.action <> 'release_paid_rehearsal' GROUP BY gp.group_id`)).rows;
 
     // Sem o grupo (stage): só o Master, com as 4.
     const { rows: tenant } = await pool.query(`SELECT tenant_id FROM iam.permission_groups WHERE id = $1`, [MASTER_GROUP]);
@@ -212,6 +217,13 @@ describe('schema da aba Admissão (spec 049, migrations 503-507)', () => {
       expect(depois.every((r) => r.n === 4)).toBe(true);
       expect(ids).not.toContain(controleId);
     } finally {
+      // A reaplicação da 507 concede `patient_admission` POR RESOURCE: a célula da 509 vai junto. O runner nunca reexecuta a 507,
+      // mas este banco é compartilhado: devolve a célula do ensaio pago ao Master (nunca fica em outro grupo).
+      await pool.query(
+        `DELETE FROM iam.group_permissions gp USING iam.permissions p
+          WHERE gp.permission_id = p.id AND p.resource = 'patient_admission' AND p.action = 'release_paid_rehearsal' AND gp.group_id <> $1`,
+        [MASTER_GROUP],
+      );
       for (const id of criados) {
         await pool.query(`DELETE FROM iam.group_permissions WHERE group_id = $1`, [id]);
         await pool.query(`DELETE FROM iam.permission_groups WHERE id = $1`, [id]);

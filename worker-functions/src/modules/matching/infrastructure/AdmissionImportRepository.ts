@@ -1,6 +1,8 @@
 import type { Pool, PoolClient } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { IMPORT_MIN_DELAY_MS } from '../domain/admissionImport';
+import type { SkippedTestStage } from '../domain/admissionRealm';
+import { rehearsalUntilSql, standingSkippedTestSql } from './admissionRehearsalSql';
 import { MODEL_SIDE_SUMMARY_FAILURES, SUMMARY_ATTEMPTS_EXHAUSTED } from '../application/ports/AdmissionImportPorts';
 
 type Ex = Pick<Pool, 'query'> | Pick<PoolClient, 'query'>;
@@ -16,6 +18,10 @@ export interface ImportCandidate {
   conference_ended_at: Date | null;
   import_status: string | null;
   import_attempts: number;
+  /** `patients.is_test` — a entrada da função `admissionRealm` (R-18). */
+  patient_is_test: boolean;
+  /** Fim da liberação mais recente do ensaio pago (spec 050 F3); `null` = nunca liberada. */
+  rehearsal_until: Date | null;
 }
 
 export type ImportState = 'waiting' | 'done' | 'rejected' | 'ambiguous' | 'expired' | 'blocked';
@@ -30,6 +36,8 @@ export class AdmissionImportRepository {
   /**
    * Devidas: reunião `booked` NOVA, com fim real gravado há mais de 10 min, ainda não terminal. `blocked` volta à fila (o
    * vínculo pode ter sido refeito); o `conference_ended_at IS NOT NULL` o separa do `blocked` da F5 (escopo do Meet).
+   * Reunião de paciente `is_test` com o `skipped_test` desta etapa já gravado (spec 050, R-18) sai da fila — até uma liberação
+   * mais nova (ensaio pago, F3) devolvê-la; a expiração a tira de novo com outro `skipped_test`.
    */
   async listDueIds(now: Date, limit = 50, ex: Ex = this.db): Promise<string[]> {
     const { rows } = await ex.query<{ id: string }>(
@@ -41,6 +49,7 @@ export class AdmissionImportRepository {
           AND a.import_status IN ('pending', 'waiting', 'blocked')
           AND NOT EXISTS (SELECT 1 FROM admission_events e
                            WHERE e.appointment_id = a.id AND e.kind = 'import_blocked' AND e.reason = $4)
+          AND NOT ${standingSkippedTestSql('a', 'import')}
         ORDER BY a.conference_ended_at
         LIMIT $2`,
       [now, limit, IMPORT_MIN_DELAY_MS / 1000, SUMMARY_ATTEMPTS_EXHAUSTED],
@@ -55,8 +64,10 @@ export class AdmissionImportRepository {
   async find(id: string, ex: Ex = this.db): Promise<ImportCandidate | null> {
     const { rows } = await ex.query<ImportCandidate>(
       `SELECT a.id, a.patient_id, a.country, a.host_email, a.admission_code, a.slot_start, a.status,
-              a.conference_ended_at, a.import_status, a.import_attempts
+              a.conference_ended_at, a.import_status, a.import_attempts, p.is_test IS TRUE AS patient_is_test,
+              ${rehearsalUntilSql('a')} AS rehearsal_until
          FROM admission_appointments a
+         JOIN patients p ON p.id = a.patient_id
         WHERE a.id = $1`,
       [id],
     );
@@ -74,6 +85,15 @@ export class AdmissionImportRepository {
 
   async hasEvent(appointmentId: string, kind: string, ex: Ex = this.db): Promise<boolean> {
     const { rows } = await ex.query(`SELECT 1 FROM admission_events WHERE appointment_id = $1 AND kind = $2 LIMIT 1`, [appointmentId, kind]);
+    return rows.length > 0;
+  }
+
+  /** Há `skipped_test` VIGENTE desta etapa (sem liberação do ensaio mais nova depois dele)? (a mensageria também grava `skipped_test`, com outro motivo.) */
+  async hasSkippedTest(appointmentId: string, stage: SkippedTestStage, ex: Ex = this.db): Promise<boolean> {
+    const { rows } = await ex.query(
+      `SELECT 1 FROM admission_appointments a WHERE a.id = $1 AND ${standingSkippedTestSql('a', stage)}`,
+      [appointmentId],
+    );
     return rows.length > 0;
   }
 

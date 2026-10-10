@@ -413,12 +413,14 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         // família `admin.users`, célula NOVA `own_presence:update` (nasce concedida a todo
         // staff, mesma regra de `own_notifications`, D-07; migration 466).
         'POST /api/admin/me/presence → own_presence:update',
-        // spec 049 F3 (aba Admissão): família admin.patients, 4 células literais nas 5 rotas (PR-8b: create/update, sem write).
+        // spec 049 F3 (aba Admissão): família admin.patients, 4 células literais nas 5 rotas (+1 da 050 F3 abaixo) (PR-8b: create/update, sem write).
         'GET /api/admin/patients/:id/admission-appointments → patient_admission:read',
         'GET /api/admin/admission/hosts → patient_admission:create',
         'POST /api/admin/patients/:id/admission-appointments → patient_admission:create',
         'POST /api/admin/patients/:id/admission-appointments/:apptId/cancel → patient_admission:update',
         'POST /api/admin/patients/:id/admission-appointments/:apptId/messages/:kind/resend → patient_admission:resend_message',
+        // spec 050 F3 (ensaio pago, R-19): célula própria, só do Acesso Master.
+        'POST /api/admin/patients/:id/admission-appointments/:apptId/paid-rehearsal → patient_admission:release_paid_rehearsal',
         // spec 049 F4 (vínculo do Tactiq): família admin.users, células own_* (o operador vê/vincula a PRÓPRIA conta).
         'GET /api/admin/me/tactiq-link → own_tactiq_link:read',
         'POST /api/admin/me/tactiq-link → own_tactiq_link:create',

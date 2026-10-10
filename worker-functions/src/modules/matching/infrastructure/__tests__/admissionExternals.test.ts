@@ -3,9 +3,10 @@
  * Os dois sentidos da fábrica + o adapter real que lança no construtor. A fábrica NÃO lança no boot de teste.
  */
 import { AdmissionRealAdapterInTestError } from '../../application/ports/AdmissionMessagingPorts';
-import { admissionCalendarService } from '../AdmissionCalendarService';
+import { AdmissionCalendarService, admissionCalendarService } from '../AdmissionCalendarService';
 import { createAdmissionExternals } from '../admissionExternals';
 import { FakeAdmissionCalendar } from '../doubles/FakeAdmissionCalendar';
+import { UnavailableAdmissionCalendar } from '../doubles/UnavailableAdmissionCalendar';
 import { InMemoryAdmissionReminderTasks } from '../doubles/InMemoryAdmissionReminderTasks';
 import { RecordingAdmissionWhatsApp } from '../doubles/RecordingAdmissionWhatsApp';
 import { RealAdmissionReminderTasks } from '../RealAdmissionReminderTasks';
@@ -66,10 +67,31 @@ describe('createAdmissionExternals — o Calendar (spec 049 F3)', () => {
     expect(ext.calendar).toBeInstanceOf(FakeAdmissionCalendar);
   });
 
-  it('NODE_ENV=test SEM a variável mantém o adapter real do Calendar (o e2e do roster depende de "agenda inacessível → 500")', () => {
+  it('R-17: NODE_ENV=test SEM a variável também devolve o DUBLÊ do Calendar (nunca o real, que manda e-mail)', () => {
     const ext = createAdmissionExternals({ NODE_ENV: 'test' }, { realWhatsApp });
     expect(ext.mode).toBe('fake');
-    expect(ext.calendar).toBe(admissionCalendarService);
+    expect(ext.calendar).toBeInstanceOf(FakeAdmissionCalendar);
+    expect(ext.calendar).not.toBe(admissionCalendarService);
+  });
+
+  it('R-17: ADMISSION_CALENDAR_DOUBLE=unavailable → dublê que FALHA de propósito (o e2e do roster: "agenda inacessível → 500")', async () => {
+    const ext = createAdmissionExternals({ NODE_ENV: 'test', ADMISSION_CALENDAR_DOUBLE: 'unavailable' }, { realWhatsApp });
+    expect(ext.calendar).toBeInstanceOf(UnavailableAdmissionCalendar);
+    await expect(ext.calendar.getFreeBusyByCalendar(['a@b.test'], 'x@y.test', '2026-01-01T00:00:00Z', '2026-01-02T00:00:00Z')).rejects.toThrow(/agenda inacessível/);
+    await expect(ext.calendar.getCalendarTimezone('cal', 'x@y.test')).rejects.toThrow(/agenda inacessível/);
+  });
+
+  it('R-17: ADMISSION_EXTERNALS=fake vence ADMISSION_CALENDAR_DOUBLE (a stack da 049 não pode herdar a agenda quebrada)', () => {
+    const ext = createAdmissionExternals({ NODE_ENV: 'test', ADMISSION_EXTERNALS: 'fake', ADMISSION_CALENDAR_DOUBLE: 'unavailable' }, { realWhatsApp });
+    expect(ext.calendar).toBeInstanceOf(FakeAdmissionCalendar);
+  });
+
+  it('R-17: instanciar o cliente REAL do Calendar com NODE_ENV=test LANÇA (o singleton só o constrói na 1ª chamada, e aí lança)', async () => {
+    expect(process.env.NODE_ENV).toBe('test');
+    expect(() => new AdmissionCalendarService()).toThrow(AdmissionRealAdapterInTestError);
+    await expect(admissionCalendarService.getCalendarTimezone('cal', 'x@y.test')).rejects.toThrow(AdmissionRealAdapterInTestError);
+    // controle: fora de teste o mesmo construtor NÃO lança
+    expect(() => new AdmissionCalendarService({ NODE_ENV: 'production' })).not.toThrow();
   });
 
   it('produção → Calendar real', () => {
