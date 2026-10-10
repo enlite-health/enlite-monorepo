@@ -15,11 +15,16 @@ vi.mock('react-i18next', () => ({
       const dict: Record<string, string> = {
         'admin.patients.kanban.dragHint': 'Arrastrá una tarjeta para cambiar el estado del paciente.',
         'admin.patients.kanban.moveError': 'No se pudo mover el paciente',
-        'admin.patients.kanban.moveErrorCodes.PATIENT_STATUS_TRANSITION_NOT_ALLOWED': 'Ese cambio de estado no está permitido.',
-        // Decisão do Gabriel 07/09 — textos reais de `es.json` (bloqueio por completude).
-        'admin.patients.kanban.moveErrorCodes.PATIENT_STATUS_NOT_READY':
-          'No se puede mover: faltan datos obligatorios en la ficha.',
-        'admin.patients.kanban.moveNotReady': 'No se puede mover: falta {{items}}.',
+        // Spec 051 (§6.4) — textos reais de `es.json`: a frase amigável, sem código técnico.
+        'admin.patients.status.friendly.forbidden': 'No tienes permiso para pasar a este paciente a «{{status}}». Pídele a quien administra los accesos que lo habilite.',
+        'admin.patients.status.friendly.notReadySearching': 'Para pasar a «{{status}}», el servicio contratado tiene que estar completo. Falta: {{items}}.',
+        'admin.patients.status.friendly.notReady': 'Para pasar a «{{status}}» faltan datos del paciente: {{items}}.',
+        'admin.patients.status.friendly.notReadyGeneric': 'Para pasar a «{{status}}» faltan datos obligatorios en la ficha.',
+        'admin.patients.status.friendly.notAvailable': 'Este cambio de estado no está disponible.',
+        'admin.patients.status.friendly.optionsUnavailable': 'No se pudieron comprobar los estados disponibles. Intenta de nuevo.',
+        'admin.patients.statusOptions.SEARCHING': 'Búsqueda',
+        'admin.patients.statusOptions.ACTIVE': 'Activo',
+        'admin.patients.kanban.moveErrorCodes.KANBAN_ACTIVATION_MOVED_TO_SERVICE': 'Para activar, usá "Activar reclutamiento" en el servicio contratado de la ficha del paciente.',
         'admin.patients.detail.completeness.items.ADDRESS': 'Domicilio',
         'admin.patients.detail.completeness.items.SERVICE_SCHEDULE': 'Horario del servicio',
       };
@@ -37,7 +42,7 @@ vi.mock('react-router-dom', () => ({ useNavigate: () => vi.fn() }));
 const showToast = vi.fn();
 vi.mock('@presentation/hooks/useToast', () => ({ useToast: () => showToast }));
 
-let moveResult: { code: string; missing?: string[] } | null = null;
+let moveResult: { code: string; missing?: string[]; to?: string } | null = null;
 const kanban = {
   groups: { SOLICITANTE: [], ADMISSION: [], PENDING_ADMISSION: [], DONE: [] },
   isLoading: false,
@@ -48,7 +53,7 @@ vi.mock('@hooks/admin/usePatientKanban', () => ({ usePatientKanban: () => kanban
 
 vi.mock('@presentation/components/features/admin/PatientDetail/kanban/PatientKanbanBoard', () => ({
   PatientKanbanBoard: (p: {
-    onMove: (id: string, target: string) => Promise<{ code: string; missing?: string[] } | null>;
+    onMove: (id: string, target: string) => Promise<{ code: string; missing?: string[]; to?: string } | null>;
   }) => (
     <button data-testid="move-stub" onClick={() => p.onMove('pat-1', 'DONE')}>mover</button>
   ),
@@ -88,7 +93,44 @@ describe('PatientKanbanPage — toast do erro de movimentação (lex D5.1)', () 
     moveResult = { code: 'PATIENT_STATUS_TRANSITION_NOT_ALLOWED' };
     render(<PatientKanbanPage />);
     await user.click(screen.getByTestId('move-stub'));
-    expect(showToast).toHaveBeenCalledWith('Ese cambio de estado no está permitido.', 'error');
+    expect(showToast).toHaveBeenCalledWith('Este cambio de estado no está disponible.', 'error');
+  });
+
+  it('código que não é da troca de estado (ex.: ativar pelo serviço) → segue o mapa por código de antes', async () => {
+    const user = userEvent.setup();
+    moveResult = { code: 'KANBAN_ACTIVATION_MOVED_TO_SERVICE' };
+    render(<PatientKanbanPage />);
+    await user.click(screen.getByTestId('move-stub'));
+    expect(showToast).toHaveBeenCalledWith(expect.stringContaining('Activar reclutamiento'), 'error');
+  });
+
+  // Spec 051: sem a permissão do destino (ou destino fora da lista) o card volta e o toast fala em
+  // português claro — a frase NÃO cita código, enum nem célula.
+  it('403 sem permissão → frase amigável com o estado de destino, sem código técnico', async () => {
+    const user = userEvent.setup();
+    moveResult = { code: 'PATIENT_STATUS_MOVE_NOT_PERMITTED', to: 'SEARCHING' };
+    render(<PatientKanbanPage />);
+    await user.click(screen.getByTestId('move-stub'));
+    const msg = showToast.mock.calls[0][0] as string;
+    expect(msg).toBe('No tienes permiso para pasar a este paciente a «Búsqueda». Pídele a quien administra los accesos que lo habilite.');
+    expect(msg).not.toMatch(/patient_status|move_to|PATIENT_STATUS|SEARCHING|403/);
+    expect(showToast).toHaveBeenCalledWith(msg, 'error');
+  });
+
+  it('destino fora da lista do servidor (nem chegou ao PUT) → "no está disponible"', async () => {
+    const user = userEvent.setup();
+    moveResult = { code: 'STATUS_NOT_OFFERED', to: 'SEARCHING' };
+    render(<PatientKanbanPage />);
+    await user.click(screen.getByTestId('move-stub'));
+    expect(showToast).toHaveBeenCalledWith('Este cambio de estado no está disponible.', 'error');
+  });
+
+  it('lista do servidor ilegível → "no se pudieron comprobar los estados"', async () => {
+    const user = userEvent.setup();
+    moveResult = { code: 'STATUS_OPTIONS_UNAVAILABLE', to: 'SEARCHING' };
+    render(<PatientKanbanPage />);
+    await user.click(screen.getByTestId('move-stub'));
+    expect(showToast).toHaveBeenCalledWith('No se pudieron comprobar los estados disponibles. Intenta de nuevo.', 'error');
   });
 
   it('código desconhecido/ausente → cai no toast genérico', async () => {
@@ -103,30 +145,33 @@ describe('PatientKanbanPage — toast do erro de movimentação (lex D5.1)', () 
   // palavras do checklist da ficha — o operador não pode ficar só com "não foi possível".
   it('422 de completude com `missing` → toast NOMEIA o que falta, com os rótulos do checklist', async () => {
     const user = userEvent.setup();
-    moveResult = { code: 'PATIENT_STATUS_NOT_READY', missing: ['SERVICE_SCHEDULE'] };
+    moveResult = { code: 'PATIENT_STATUS_NOT_READY', missing: ['SERVICE_SCHEDULE'], to: 'SEARCHING' };
     render(<PatientKanbanPage />);
     await user.click(screen.getByTestId('move-stub'));
-    expect(showToast).toHaveBeenCalledWith('No se puede mover: falta Horario del servicio.', 'error');
+    expect(showToast).toHaveBeenCalledWith(
+      'Para pasar a «Búsqueda», el servicio contratado tiene que estar completo. Falta: horario del servicio.',
+      'error',
+    );
   });
 
   it('vários códigos faltando → o toast lista todos, separados por vírgula', async () => {
     const user = userEvent.setup();
-    moveResult = { code: 'PATIENT_STATUS_NOT_READY', missing: ['ADDRESS', 'SERVICE_SCHEDULE'] };
+    moveResult = { code: 'PATIENT_STATUS_NOT_READY', missing: ['ADDRESS', 'SERVICE_SCHEDULE'], to: 'ACTIVE' };
     render(<PatientKanbanPage />);
     await user.click(screen.getByTestId('move-stub'));
     expect(showToast).toHaveBeenCalledWith(
-      'No se puede mover: falta Domicilio, Horario del servicio.',
+      'Para pasar a «Activo» faltan datos del paciente: domicilio, horario del servicio.',
       'error',
     );
   });
 
   it('código de completude SEM `missing` → cai na mensagem do código, não numa lista vazia', async () => {
     const user = userEvent.setup();
-    moveResult = { code: 'PATIENT_STATUS_NOT_READY' };
+    moveResult = { code: 'PATIENT_STATUS_NOT_READY', to: 'ACTIVE' };
     render(<PatientKanbanPage />);
     await user.click(screen.getByTestId('move-stub'));
     expect(showToast).toHaveBeenCalledWith(
-      'No se puede mover: faltan datos obligatorios en la ficha.',
+      'Para pasar a «Activo» faltan datos obligatorios en la ficha.',
       'error',
     );
   });

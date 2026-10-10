@@ -2,9 +2,12 @@ import * as functions from 'firebase-functions';
 import type { PoolClient } from 'pg';
 import { inPatientTransaction } from './patientTransaction';
 import { isPatientStatus, isClinicalPatientStatus, isFunnelToSearchingTransition, type PatientStatus } from '../domain/enums/PatientStatus';
+import { isManualChangeSource, type PatientChangeSource } from '../domain/enums/PatientChangeSource';
+import { recordedChangeSource } from '../domain/enums/PatientChangeSourceOverride';
 import type { OnHoldReason } from '../domain/enums/OnHoldReason';
 import type { SuspensionExitReason } from '../domain/enums/SuspensionExitReason';
 import { blockingCodesForStatusChange } from '../domain/PatientCompleteness';
+import { decidirTrocaForaDoFluxo } from '../domain/trocaForaDoFluxo';
 import { loadPatientCompleteness } from '../infrastructure/PatientCompletenessLoader';
 
 /**
@@ -68,12 +71,78 @@ export class SuspensionExitReasonRequiredError extends Error {
   }
 }
 
+/**
+ * Troca clínica→clínica FORA do fluxo (sem linha em `patient_status_transitions`) sem a célula do
+ * DESTINO (spec 051) — o controller devolve 403 `{code, details:{from,to,cell}}`, antes de qualquer
+ * escrita. `cells=null` (engine neutro) nunca chega aqui: cai no `PatientStatusTransitionError`.
+ */
+export class PatientStatusPermissionError extends Error {
+  readonly code = 'PATIENT_STATUS_MOVE_NOT_PERMITTED';
+  constructor(readonly from: PatientStatus | null, readonly to: PatientStatus, readonly cell: string) {
+    super(`Patient status move ${from ?? 'null'} → ${to} requires permission ${cell}`);
+    this.name = 'PatientStatusPermissionError';
+  }
+}
+
 /** Origens que podem tirar o paciente do funil de admissão para SEARCHING (D469). */
-const FUNNEL_TO_SEARCHING_SOURCES: ReadonlyArray<MoveStatusOptions['changeSource']> = [
+const FUNNEL_TO_SEARCHING_SOURCES: ReadonlyArray<PatientChangeSource> = [
   'vacancy_launch',
   'recruitment_activation',
   'kanban',
 ];
+
+/**
+ * Guarda D469 (02/10/2026; antes D434/DX-6.4): funil→SEARCHING é ato intencional — foguete, envio à
+ * Talentum ou arrasto no Kanban. O PUT /status do select da ficha (admin_panel) e a derivação
+ * (system) continuam recusados com o 422. Não depende da FSM: o writer a checa ANTES de consultá-la.
+ */
+function funilParaSearchingBarrado(from: PatientStatus | null, to: PatientStatus, changeSource: PatientChangeSource): boolean {
+  return isFunnelToSearchingTransition(from, to) && !FUNNEL_TO_SEARCHING_SOURCES.includes(changeSource);
+}
+
+/**
+ * A troca passa pela guarda D469/FSM/célula quando UMA DAS PONTAS é clínica (e o estado muda).
+ * Movimento DENTRO do funil (as duas pontas em SOLICITANTE/ADMISSION/PENDING_ADMISSION) é livre —
+ * Kanban, sem FSM, sem célula. Único lugar da condição: o writer e a lista de destinos a usam.
+ */
+export function trocaPassaPelaGuarda(from: PatientStatus | null, to: PatientStatus): boolean {
+  return (isClinicalPatientStatus(to) || isClinicalPatientStatus(from)) && from !== to;
+}
+
+export type AvaliacaoDaTroca =
+  /** Par com linha na FSM: livre para quem tem `patient:update`, como sempre foi. */
+  | { resultado: 'dentro_do_fluxo' }
+  /** Par fora da FSM e o ator TEM a célula do destino: passa, e grava `*_override`. */
+  | { resultado: 'fora_do_fluxo_permitida'; celula: string }
+  | { resultado: 'recusa_por_permissao'; celula: string }
+  /** Qualquer outra recusa: o `PatientStatusTransitionError` (422) de hoje. */
+  | { resultado: 'recusa_de_transicao' };
+
+/**
+ * O ÚNICO lugar que responde "esta troca de estado passa pela guarda de transição/permissão?".
+ * O writer (PUT /status) e a lista de destinos (GET /status-options) chamam esta função — a lista
+ * e o PUT nunca têm duas implementações da regra (spec 051, A6). Ordem preservada de antes: D469
+ * primeiro, depois a FSM, e só então a célula.
+ */
+export function avaliarTroca(e: {
+  from: PatientStatus | null;
+  to: PatientStatus;
+  naFsm: boolean;
+  cells: readonly string[] | null;
+  changeSource: PatientChangeSource;
+}): AvaliacaoDaTroca {
+  if (funilParaSearchingBarrado(e.from, e.to, e.changeSource)) return { resultado: 'recusa_de_transicao' };
+  if (e.naFsm) return { resultado: 'dentro_do_fluxo' };
+  const d = decidirTrocaForaDoFluxo({ de: e.from, para: e.to, naFsm: false, cells: e.cells, changeSource: e.changeSource });
+  if (d.resultado === 'permitida_por_permissao') return { resultado: 'fora_do_fluxo_permitida', celula: d.celula };
+  if (d.resultado === 'recusada_por_permissao') return { resultado: 'recusa_por_permissao', celula: d.celulaFaltante };
+  // Os demais resultados (`nao_se_aplica`, `engine_nao_decidiu`, `fluxo_normal`) NUNCA liberam: o
+  // par segue a FSM de hoje, que aqui não tem a seta → 422. A atribuição abaixo é a trava de
+  // exaustividade: um resultado novo em `DecisaoTrocaForaDoFluxo` quebra a compilação até alguém decidir.
+  const segueAFsmDeHoje: 'nao_se_aplica' | 'engine_nao_decidiu' | 'fluxo_normal' = d.resultado;
+  void segueAFsmDeHoje;
+  return { resultado: 'recusa_de_transicao' };
+}
 
 export interface MoveStatusOptions {
   onHoldReason?: OnHoldReason | null;
@@ -88,7 +157,7 @@ export interface MoveStatusOptions {
    */
   onHoldNote?: string | null;
   /** Vira `change_source` em patient_status_history (trigger 254, via app.change_source). */
-  changeSource: 'admin_panel' | 'kanban' | 'activate' | 'system' | 'vacancy_launch' | 'recruitment_activation'; // vacancy_launch/recruitment_activation são internos: o zod da rota HTTP só aceita admin_panel/kanban
+  changeSource: PatientChangeSource; // união no domínio (PatientChangeSource): o zod da rota HTTP só aceita as MANUAIS
   /**
    * Motivo de SAÍDA de SUSPENDED (decisão do Gabriel 29/09/2026) — exigido só quando `from`
    * (lido dentro da transação) é SUSPENDED, o alvo é outro e `changeSource` é MANUAL
@@ -103,6 +172,12 @@ export interface MoveStatusOptions {
    * NUNCA logado (nem `functions.logger.info` abaixo) — só viaja por `app.actor_uid`.
    */
   actorUid?: string | null;
+  /**
+   * Células do ator (spec 051) — SÓ o `AdminPatientsController.updatePatientStatus` passa, com
+   * `clinicalCellsOf(req)`. Ausente = `null` = o engine não decidiu = comportamento de antes
+   * (troca fora da FSM → 422). `[]` ≠ `null`: ator conhecido sem célula → 403. Nunca `?? []`.
+   */
+  cells?: readonly string[] | null;
 }
 
 /**
@@ -137,7 +212,7 @@ export async function movePatientStatus(
   }
 
   const body = async (client: PoolClient): Promise<{ id: string; status: PatientStatus }> => {
-    const current = await client.query<{ status: string | null }>(
+    const current = await client.query<{ status: PatientStatus | null }>(
       'SELECT status FROM patients WHERE id = $1 AND deleted_at IS NULL FOR UPDATE',
       [patientId],
     );
@@ -146,24 +221,31 @@ export async function movePatientStatus(
     }
     const from = current.rows[0].status;
 
+    let foraDoFluxo = false;
     // A tabela decide sempre que UMA DAS PONTAS é clínica — não só o alvo. Validar só o alvo
     // deixava a DEMOÇÃO passar sem 422 (arrastar o card de ACTIVE para a coluna de admissão),
     // e o mesmo UPDATE ainda apagava motivo e nota. Movimento DENTRO do funil (as duas pontas
     // em SOLICITANTE/ADMISSION/PENDING_ADMISSION) continua livre, como sempre foi.
-    if ((isClinicalPatientStatus(status) || isClinicalPatientStatus(from)) && from !== status) {
-      // Guarda D469 (02/10/2026; antes D434/DX-6.4): funil→SEARCHING é ato intencional — foguete,
-      // envio à Talentum ou arrasto no Kanban. O PUT /status do select da ficha (admin_panel) e a
-      // derivação (system) continuam recusados com o 422.
-      if (isFunnelToSearchingTransition(from, status) && !FUNNEL_TO_SEARCHING_SOURCES.includes(opts.changeSource)) {
+    if (trocaPassaPelaGuarda(from, status)) {
+      // D469 antes de qualquer consulta (não precisa da FSM); depois FSM + célula do destino
+      // (spec 051), tudo em `avaliarTroca` — a mesma função que a lista de destinos usa.
+      if (funilParaSearchingBarrado(from, status, opts.changeSource)) {
         throw new PatientStatusTransitionError(from, status);
       }
       const allowed = await client.query(
         'SELECT 1 FROM patient_status_transitions WHERE from_status = $1 AND to_status = $2',
         [from, status],
       );
-      if (allowed.rows.length === 0) {
+      const avaliacao = avaliarTroca({
+        from, to: status, naFsm: allowed.rows.length > 0, cells: opts.cells ?? null, changeSource: opts.changeSource,
+      });
+      if (avaliacao.resultado === 'recusa_por_permissao') {
+        throw new PatientStatusPermissionError(from, status, avaliacao.celula);
+      }
+      if (avaliacao.resultado === 'recusa_de_transicao') {
         throw new PatientStatusTransitionError(from, status);
       }
+      foraDoFluxo = avaliacao.resultado === 'fora_do_fluxo_permitida';
     }
 
     // Saída MANUAL de SUSPENDED exige motivo (decisão do Gabriel 29/09/2026). Roda DEPOIS da FSM
@@ -173,7 +255,7 @@ export async function movePatientStatus(
     // nunca disparou OnHoldReasonRequiredError.
     const leavingSuspendedManually =
       from === 'SUSPENDED' && status !== 'SUSPENDED' &&
-      (opts.changeSource === 'admin_panel' || opts.changeSource === 'kanban');
+      isManualChangeSource(opts.changeSource);
     if (leavingSuspendedManually && !opts.suspensionExitReason) {
       throw new SuspensionExitReasonRequiredError();
     }
@@ -191,7 +273,7 @@ export async function movePatientStatus(
     // "Activo" no Kanban ativava sem checklist NENHUM, furando inclusive o ADDRESS que barra o
     // botão "Activar" desde a D255. SEARCHING/REPLACEMENT cobram só o horário.
     if (from !== status) {
-      const required = blockingCodesForStatusChange(status);
+      const required = blockingCodesForStatusChange(status, foraDoFluxo);
       if (required.length > 0) {
         const { missing } = await loadPatientCompleteness(client, patientId);
         const faltando = required.filter((code) => missing.includes(code));
@@ -213,7 +295,10 @@ export async function movePatientStatus(
       sets.push(`on_hold_note = $${values.length}`);
     }
 
-    await client.query("SELECT set_config('app.change_source', $1, true)", [opts.changeSource]);
+    // Troca fora do fluxo (spec 051 §4): o SERVIDOR marca `*_override` — o corpo da rota nunca
+    // aceita esse valor (zod), então o cliente não se declara override.
+    const changeSourceGravado = recordedChangeSource(opts.changeSource, foraDoFluxo);
+    await client.query("SELECT set_config('app.change_source', $1, true)", [changeSourceGravado]);
     // Motivo de saída de SUSPENDED e ator: mesmo molde do change_source acima, GUCs próprios que
     // os triggers da 254/255 leem via NULLIF(…, '') — string vazia = ausente = NULL na history
     // (migration 486). Duas queries próprias (não uma combinada) para não mudar o formato que os
@@ -227,7 +312,7 @@ export async function movePatientStatus(
     // Trilha SEM a nota: from/to/motivo/origem. O texto é clínico restrito (D211.2). NUNCA o
     // actorUid (nem aqui) — ele só viaja pelo set_config acima, direto para a history.
     functions.logger.info('patient_status.moved', {
-      patientId, from, to: status, onHoldReason: goingOnHold ? opts.onHoldReason : null, changeSource: opts.changeSource,
+      patientId, from, to: status, onHoldReason: goingOnHold ? opts.onHoldReason : null, changeSource: changeSourceGravado,
       suspensionExitReason: statusReasonToRecord,
     });
     return { id: patientId, status };

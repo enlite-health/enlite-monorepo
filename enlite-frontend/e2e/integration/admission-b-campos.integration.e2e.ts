@@ -137,13 +137,14 @@ test.describe('Spec 012 bloco B — os campos que faltam na ficha @integration',
     expect(await history.textContent()).not.toContain(NOTE);
     await expect(history).toHaveScreenshot('bloco-b-historial.png', { maxDiffPixelRatio: 0.05 });
 
-    // Transição PROIBIDA (ON_HOLD → REPLACEMENT não está na 315): 422 com código → mensagem traduzida
-    await page.getByTestId('patient-status-select').selectOption('REPLACEMENT');
-    const put = page.waitForResponse((r) => r.request().method() === 'PUT' && /\/status$/.test(r.url()));
-    await page.getByTestId('patient-status-save').click();
-    expect((await put).status()).toBe(422);
-    await expect(page.getByTestId('patient-status-error')).toHaveText('Transición no permitida: En espera → Reemplazo');
-    await expect(page.getByTestId('patient-status-control')).toHaveScreenshot('bloco-b-transicion-prohibida.png', { maxDiffPixelRatio: 0.05 });
+    // Transição PROIBIDA (ON_HOLD → REPLACEMENT não está na 315): desde a spec 051 o select oferece SÓ o que o
+    // servidor devolve (GET status-options) — o destino proibido nem aparece, em vez de falhar no clique. O 422
+    // continua sendo a rede de segurança no servidor (coberto no unit e no e2e de API).
+    const select = page.getByTestId('patient-status-select');
+    await expect(select).toBeEnabled({ timeout: 20_000 });
+    await expect(select.locator('option[value="ON_HOLD"]')).toHaveCount(1); // controle positivo: o select tem opções
+    await expect(select.locator('option[value="ACTIVE"]')).toHaveCount(1); // ON_HOLD → ACTIVE está na FSM
+    await expect(select.locator('option[value="REPLACEMENT"]')).toHaveCount(0);
     expect(readPatientStatus(active.patientId).status).toBe('ON_HOLD');
   });
 
