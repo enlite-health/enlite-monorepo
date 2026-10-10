@@ -18,26 +18,35 @@ function sanitize(text: string, charset: Set<number>): string {
   return out;
 }
 
-function wrap(line: string, font: PDFFont, size: number, maxWidth: number): string[] {
+/** Recuo máximo (em espaços) e largura mínima de linha: JSON muito aninhado não pode zerar a largura útil. */
+const MAX_INDENT_SPACES = 40;
+const INDENT_PT_PER_SPACE = 4;
+
+/**
+ * Quebra em linhas que cabem em `maxWidth`. SEMPRE progride: a largura tem piso de 1 caractere do corpo e palavra que não cabe
+ * é cortada por caractere (cada pedaço tem >= 1 caractere), então não existe largura que faça o laço girar.
+ */
+function wrap(line: string, font: PDFFont, size: number, maxWidthIn: number): string[] {
   if (!line.trim()) return [''];
+  const maxWidth = Math.max(maxWidthIn, size);
   const out: string[] = [];
   let current = '';
-  for (const word of line.split(/\s+/)) {
+  for (const word of line.split(/\s+/).filter(Boolean)) {
     const candidate = current ? `${current} ${word}` : word;
     if (font.widthOfTextAtSize(candidate, size) <= maxWidth) {
       current = candidate;
       continue;
     }
     if (current) out.push(current);
-    // Palavra maior que a linha: corta em pedaços que cabem.
-    let rest = word;
-    while (font.widthOfTextAtSize(rest, size) > maxWidth) {
-      let n = rest.length;
-      while (n > 1 && font.widthOfTextAtSize(rest.slice(0, n), size) > maxWidth) n -= 1;
-      out.push(rest.slice(0, n));
-      rest = rest.slice(n);
+    let piece = '';
+    for (const ch of word) {
+      if (piece && font.widthOfTextAtSize(piece + ch, size) > maxWidth) {
+        out.push(piece);
+        piece = '';
+      }
+      piece += ch;
     }
-    current = rest;
+    current = piece;
   }
   if (current) out.push(current);
   return out;
@@ -69,10 +78,11 @@ export async function renderAdmissionSummaryPdf(input: { title: string; body: st
 
   const drawBlock = (text: string, f: PDFFont): void => {
     for (const raw of sanitize(text, charset).split(/\r?\n/)) {
-      const lead = raw.match(/^ */)?.[0].length ?? 0; // preserva o recuo do anexo (wrap colapsa espaços)
-      for (const [i, line] of wrap(raw.trim(), f, BODY_SIZE, maxWidth - lead * 4).entries()) {
+      const lead = Math.min(raw.match(/^ */)?.[0].length ?? 0, MAX_INDENT_SPACES); // preserva o recuo do anexo, com teto
+      const indent = lead * INDENT_PT_PER_SPACE;
+      for (const [i, line] of wrap(raw.trim(), f, BODY_SIZE, maxWidth - indent).entries()) {
         if (y - LEADING < MARGIN) newPage();
-        if (line) page.drawText(line, { x: MARGIN + lead * 4 + (i > 0 ? 8 : 0), y: y - BODY_SIZE, size: BODY_SIZE, font: f });
+        if (line) page.drawText(line, { x: MARGIN + indent + (i > 0 ? 8 : 0), y: y - BODY_SIZE, size: BODY_SIZE, font: f });
         y -= LEADING;
       }
     }

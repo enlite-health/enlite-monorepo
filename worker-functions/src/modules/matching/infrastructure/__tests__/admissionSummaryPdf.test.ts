@@ -45,4 +45,20 @@ describe('renderAdmissionSummaryPdf', () => {
     expect(pdfText(com)).not.toContain(hex('"estado"'));
     expect(pdfText(sem)).not.toContain(hex('Datos estructurados'));
   });
+
+  describe('entradas hostis terminam rápido e devolvem PDF (recuo com teto, largura com piso, palavra cortada por caractere)', () => {
+    const aninhado = (n: number): unknown => { let v: unknown = 'fim'; for (let i = 0; i < n; i += 1) v = { k: v }; return v; };
+    const casos: Array<[string, { body: string; structured?: unknown }]> = [
+      ['linha com 200 espaços', { body: `${' '.repeat(200)}texto` }],
+      ['linha com 80 tabs', { body: `${'\t'.repeat(80)}texto` }],
+      ['JSON com 80 níveis', { body: 'r', structured: aninhado(80) }],
+      ['palavra única de 5.000 caracteres', { body: 'x'.repeat(5000) }],
+    ];
+    it.each(casos)('%s', async (_n, input) => {
+      const t0 = Date.now();
+      const pdf = await renderAdmissionSummaryPdf({ title: 'T', ...input });
+      expect(Date.now() - t0).toBeLessThan(2000);
+      expect(pdf.subarray(0, 5).toString('latin1')).toBe('%PDF-');
+    }, 5000);
+  });
 });
