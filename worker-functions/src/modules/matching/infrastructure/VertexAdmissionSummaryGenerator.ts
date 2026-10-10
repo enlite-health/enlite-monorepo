@@ -8,6 +8,9 @@ import { DEPENDENCY_LEVELS } from '@modules/case/domain/enums/DependencyLevel';
 import { PROFESSIONS } from '@modules/worker/domain/enums/Profession';
 import { ADMISSION_STAFFING_RULES } from '../domain/admissionStaffingRules';
 import { DEPENDENCY_LABELS_ES, PROFESSION_LABELS_ES } from '../domain/admissionCatalogLabels';
+import type { TerminologyPort } from '@modules/terminology/domain/TerminologyPort';
+import { createTerminologyPort } from '@modules/terminology/infrastructure/TerminologyPortFactory';
+import { TerminologyUnavailableError } from '@modules/terminology/domain/UnavailableTerminology';
 import { buildInterviewInput, fillPrompt, findUnfilled, normalizeMarkdownEscapes } from '../application/admissionPromptFiller';
 import { splitGemOutput } from '../application/admissionGemOutput';
 
@@ -15,33 +18,51 @@ import { splitGemOutput } from '../application/admissionGemOutput';
 export interface AdmissionPromptProvider {
   getPrompt(docId: string): Promise<string>;
 }
-/**
- * Catálogos que vêm do banco/terminologia. `pathologyTypeLabels` NÃO tem fonte enumerável hoje (a `TerminologyPort` só resolve
- * por URI/busca; não lista capítulos CID-11): sem ele o marcador `CATALOGO_TIPO_PATOLOGIA` fica sem preencher e a trava barra o resumo.
- */
+/** Catálogos que vêm do banco/terminologia (rótulos prontos). Lista vazia = catálogo não carregado -> o resumo NÃO roda. */
 export interface AdmissionPromptCatalogs {
   segmentLabels(): Promise<string[]>;
-  pathologyTypeLabels?(): Promise<string[]>;
+  pathologyTypeLabels(): Promise<string[]>;
 }
 
 const joinLabels = (labels: readonly string[]): string => labels.join(' / ');
 
-/** Os 8 marcadores do Doc: enum/catálogo do app + regras do Marcel (`admissionStaffingRules`). Valor vazio = não preenche (a trava pega). */
+/**
+ * Os 8 marcadores do Doc: enum/catálogo do app + regras do Marcel (`admissionStaffingRules`). Catálogo VAZIO não vira prompt
+ * com lista vazia: `prompt_catalog_empty` com o nome do marcador (nunca mandar catálogo vazio ao modelo).
+ */
 export async function buildPromptValues(catalogs: AdmissionPromptCatalogs): Promise<Record<string, string>> {
   const values: Record<string, string> = { ...ADMISSION_STAFFING_RULES };
   const known = (Object.keys(DEPENDENCY_LABELS_ES) as Array<keyof typeof DEPENDENCY_LABELS_ES>).filter((k) => DEPENDENCY_LEVELS.includes(k));
   values.ESCALA_DEPENDENCIA_ENLITE = joinLabels(known.map((k) => DEPENDENCY_LABELS_ES[k]));
   values.CATALOGO_TIPOS_PRESTADOR = joinLabels(PROFESSIONS.map((p) => PROFESSION_LABELS_ES[p]));
-  const segments = await catalogs.segmentLabels();
-  if (segments.length) values.CATALOGO_SEGMENTOS_CLINICOS = joinLabels(segments);
-  const pathology = catalogs.pathologyTypeLabels ? await catalogs.pathologyTypeLabels() : [];
-  if (pathology.length) values.CATALOGO_TIPO_PATOLOGIA = joinLabels(pathology);
+  const fromDb: Array<[string, () => Promise<string[]>]> = [
+    ['CATALOGO_SEGMENTOS_CLINICOS', () => catalogs.segmentLabels()],
+    ['CATALOGO_TIPO_PATOLOGIA', () => catalogs.pathologyTypeLabels()],
+  ];
+  for (const [marker, load] of fromDb) {
+    const labels = await load();
+    if (!labels.length) throw new AdmissionSummaryError('prompt_catalog_empty', [marker]);
+    values[marker] = joinLabels(labels);
+  }
   return values;
 }
 
-const defaultCatalogs = (): AdmissionPromptCatalogs => {
+/** Capítulos CID-11 pela terminologia do app: o MESMO rótulo (`título (código)`) que `derivePathologySegments()` grava no PT. */
+export const pathologyLabelsFrom = (terminology: TerminologyPort) => async (): Promise<string[]> => {
+  try {
+    return (await terminology.listChapters()).map((c) => `${c.title} (${c.code})`);
+  } catch (err) {
+    if (err instanceof TerminologyUnavailableError) return []; // terminologia não carregada = catálogo vazio
+    throw err;
+  }
+};
+
+const defaultCatalogs = (env: NodeJS.ProcessEnv): AdmissionPromptCatalogs => {
   const repo = new TherapeuticCatalogRepository();
-  return { segmentLabels: async () => (await repo.list('segments')).map((i) => i.label) };
+  return {
+    segmentLabels: async () => (await repo.list('segments')).map((i) => i.label),
+    pathologyTypeLabels: pathologyLabelsFrom(createTerminologyPort(env)),
+  };
 };
 
 export interface VertexAdmissionSummaryDeps {
@@ -76,7 +97,7 @@ export class VertexAdmissionSummaryGenerator implements AdmissionSummaryPort {
     this.model = env.ADMISSION_SUMMARY_MODEL ?? env.GEMINI_MODEL ?? 'gemini-2.5-pro';
     this.promptProvider = deps.promptProvider ?? new GoogleDocsPromptProvider();
     this.vertex = deps.vertex ?? generateContentVertex;
-    this.catalogs = deps.catalogs ?? defaultCatalogs();
+    this.catalogs = deps.catalogs ?? defaultCatalogs(env);
   }
 
   async generate(input: { transcript: string; entrevistaId?: string; fecha?: string }): Promise<AdmissionSummaryResult> {
@@ -94,7 +115,8 @@ export class VertexAdmissionSummaryGenerator implements AdmissionSummaryPort {
     let values: Record<string, string>;
     try {
       values = await buildPromptValues(this.catalogs);
-    } catch {
+    } catch (err) {
+      if (err instanceof AdmissionSummaryError) throw err;
       throw new AdmissionSummaryError('prompt_unavailable');
     }
     const filled = fillPrompt(normalizeMarkdownEscapes(prompt), values);

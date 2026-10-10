@@ -43,4 +43,8 @@ export class UnavailableTerminology implements TerminologyPort {
   async ancestorsOf(_uri: string, _asOfRelease?: string): Promise<{ chapter: Chapter; block?: Block }> {
     throw new TerminologyUnavailableError(this.reason);
   }
+
+  async listChapters(): Promise<Chapter[]> {
+    throw new TerminologyUnavailableError(this.reason);
+  }
 }

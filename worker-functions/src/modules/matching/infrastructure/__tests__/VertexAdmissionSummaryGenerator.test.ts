@@ -100,11 +100,11 @@ describe('VertexAdmissionSummaryGenerator — marcadores, trava, entrada e saíd
     expect(vertex).not.toHaveBeenCalled();
   });
 
-  it('trava: catálogo sem fonte (patologia ausente) ou vazio (segmentos) também barra, sem inventar valor', async () => {
-    const semPat = build({ ADMISSION_SUMMARY_PROMPT_DOC_ID: 'D' }, async () => REAL_DOC, { catalogs: { pathologyTypeLabels: undefined } });
-    await expect(semPat.gen.generate({ transcript: 't' })).rejects.toMatchObject({ reason: 'prompt_unfilled_placeholder', placeholders: ['CATALOGO_TIPO_PATOLOGIA'] });
+  it('catálogo VAZIO (terminologia não carregada ou segmentos sem item) -> prompt_catalog_empty com o nome, 0 chamadas ao Vertex', async () => {
+    const semPat = build({ ADMISSION_SUMMARY_PROMPT_DOC_ID: 'D' }, async () => REAL_DOC, { catalogs: { pathologyTypeLabels: async () => [] } });
+    await expect(semPat.gen.generate({ transcript: 't' })).rejects.toMatchObject({ reason: 'prompt_catalog_empty', placeholders: ['CATALOGO_TIPO_PATOLOGIA'] });
     const semSeg = build({ ADMISSION_SUMMARY_PROMPT_DOC_ID: 'D' }, async () => REAL_DOC, { catalogs: { segmentLabels: async () => [] } });
-    await expect(semSeg.gen.generate({ transcript: 't' })).rejects.toMatchObject({ placeholders: ['CATALOGO_SEGMENTOS_CLINICOS'] });
+    await expect(semSeg.gen.generate({ transcript: 't' })).rejects.toMatchObject({ reason: 'prompt_catalog_empty', placeholders: ['CATALOGO_SEGMENTOS_CLINICOS'] });
     expect(semPat.vertex).not.toHaveBeenCalled();
     expect(semSeg.vertex).not.toHaveBeenCalled();
   });

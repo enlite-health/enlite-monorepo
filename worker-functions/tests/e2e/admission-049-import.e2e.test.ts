@@ -357,7 +357,7 @@ describe('importação do Tactiq — banco real, cofre e bucket em emulador (spe
       const viaVertex = jest.fn(async () => ({ json: async () => ({ candidates: [{ content: { parts: [{ text: 'RESUMO-SINTETICO-H4' }] } }] }) }) as unknown as Response);
       const gen = new VertexAdmissionSummaryGenerator(env as NodeJS.ProcessEnv, {
         promptProvider: { getPrompt: async () => 'PROMPT-SINTETICO-DO-DOC' }, vertex: viaVertex as never,
-        catalogs: { segmentLabels: async () => ['SEG-SINTETICO'] },
+        catalogs: { segmentLabels: async () => ['SEG-SINTETICO'], pathologyTypeLabels: async () => ['PAT-SINTETICA (99)'] },
       });
       const deps = (service as unknown as { deps: { summary: unknown } }).deps;
       const original = deps.summary;
@@ -634,7 +634,7 @@ describe('importação do Tactiq — banco real, cofre e bucket em emulador (spe
     const viaVertex = jest.fn();
     const gen = new VertexAdmissionSummaryGenerator({ NODE_ENV: 'production', ADMISSION_SUMMARY_PROMPT_DOC_ID: 'doc-sintetico' } as NodeJS.ProcessEnv, {
       promptProvider: { getPrompt: async () => 'PROSA-DO-PROMPT-ZETA {{MARCADOR_ORFAO}}' }, vertex: viaVertex as never,
-      catalogs: { segmentLabels: async () => ['SEG-SINTETICO'] },
+      catalogs: { segmentLabels: async () => ['SEG-SINTETICO'], pathologyTypeLabels: async () => ['PAT-SINTETICA (99)'] },
     });
     const deps = (service as unknown as { deps: { summary: unknown } }).deps;
     const original = deps.summary;

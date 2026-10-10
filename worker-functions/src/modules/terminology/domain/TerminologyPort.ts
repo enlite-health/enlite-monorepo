@@ -116,4 +116,10 @@ export interface TerminologyPort {
   search(query: string, opts?: SearchOptions): Promise<DiagnosisCandidate[]>;
   getByUri(uri: string): Promise<DiagnosisEntity | null>;
   ancestorsOf(uri: string): Promise<{ chapter: Chapter; block?: Block }>;
+  /**
+   * Capítulos do release CORRENTE, ordenados por código — a MESMA fonte e o MESMO rótulo (`{code, title es}`) que
+   * `ancestorsOf(uri).chapter` devolve e que `derivePathologySegments()` grava no Projeto Terapêutico. Catálogo
+   * indisponível/vazio lança `TerminologyUnavailableError` (nunca `[]` silencioso).
+   */
+  listChapters(): Promise<Chapter[]>;
 }
