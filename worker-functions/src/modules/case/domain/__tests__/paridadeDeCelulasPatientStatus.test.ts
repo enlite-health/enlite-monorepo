@@ -7,11 +7,8 @@
  * no catálogo (memória `celula-em-closure-nao-entra-no-catalogo`): sem a descrição, o sync
  * nunca a cria em `iam.permissions` e o PR-B negaria a troca para todos.
  */
-import {
-  CELL_DESCRIPTION,
-  RESOURCE_CATEGORY,
-} from '../../../identity/permissions/domain/PermissionCell';
-import { cellsForaDeRota } from '../../../identity/permissions/infrastructure/catalog/scanExpressRouter';
+// Só o barrel (régua moduleBoundary: ninguém alcança subdiretório de identity/permissions).
+import { CELL_DESCRIPTION, RESOURCE_CATEGORY, cellsForaDeRota } from '@modules/identity/permissions';
 import { CLINICAL_PATIENT_STATUSES } from '../enums/PatientStatus';
 import { CELULA_DO_DESTINO, decidirTrocaForaDoFluxo } from '../trocaForaDoFluxo';
 
