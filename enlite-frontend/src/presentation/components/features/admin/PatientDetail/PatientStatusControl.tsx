@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { PatientApiError } from '@infrastructure/http/AdminPatientsApiService';
 import type { PatientDetail, UpdatePatientStatusPayload } from '@domain/entities/PatientDetail';
-import { ON_HOLD_REASONS, isPatientStatus, type PatientStatus } from '@domain/entities/patientEnums';
+import { ON_HOLD_REASONS } from '@domain/entities/patientEnums';
 import { usePatientStatusOptions } from '@hooks/admin/usePatientStatusOptions';
 import { refusalFromError } from '@domain/entities/PatientStatusRefusal';
 import { friendlyStatusMessage, missingItemsLabel } from '@presentation/utils/patientStatusMessages';
@@ -41,8 +41,8 @@ export function PatientStatusControl({ patient, onSaved }: Props): JSX.Element |
   const { t } = useTranslation();
   const ts = (k: string, opts?: Record<string, string>): string => String(t(`admin.patients.status.${k}`, opts ?? {}));
 
-  const current: PatientStatus = isPatientStatus(patient.status) ? patient.status : 'ACTIVE';
-  const [status, setStatus] = useState<PatientStatus>(current);
+  const current = patient.status ?? 'ACTIVE';
+  const [status, setStatus] = useState<string>(current);
   const [reason, setReason] = useState<string>(patient.onHoldReason ?? '');
   const [note, setNote] = useState<string>(patient.onHoldNote ?? '');
   const [exitReason, setExitReason] = useState<string>('');
@@ -52,7 +52,7 @@ export function PatientStatusControl({ patient, onSaved }: Props): JSX.Element |
 
   // Lista relida e o destino escolhido saiu dela (permissão revogada, dado mudou): volta ao atual — não
   // deixa o operador salvar o que o servidor já não oferece.
-  const offeredNow = optionsState.phase === 'ready' ? optionsState.options.map((o) => o.status) : null;
+  const offeredNow = optionsState.phase === 'ready' ? optionsState.options.map((o): string => o.status) : null;
   useEffect(() => {
     if (offeredNow && status !== current && !offeredNow.includes(status)) setStatus(current);
   }, [offeredNow, status, current]);
@@ -71,7 +71,7 @@ export function PatientStatusControl({ patient, onSaved }: Props): JSX.Element |
   const reasonOptions: SelectOption[] = ON_HOLD_REASONS.map((r) => ({ value: r, label: t(`admin.patients.onHoldReasonOptions.${r}`, r) }));
   // Estado atual + SÓ o que o servidor devolveu. Sem lista (carregando ou falha) só o atual — nunca o catálogo inteiro.
   const optionsReady = optionsState.phase === 'ready';
-  const statusOptions: Array<{ value: PatientStatus; label: string; disabled: boolean }> = [
+  const statusOptions: Array<{ value: string; label: string; disabled: boolean }> = [
     { value: current, label: label(current), disabled: false },
     ...(optionsState.phase === 'ready' ? optionsState.options : [])
       .filter((o) => o.status !== current)
@@ -143,7 +143,7 @@ export function PatientStatusControl({ patient, onSaved }: Props): JSX.Element |
             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
             value={status}
             disabled={!optionsReady}
-            onChange={(e) => { if (isPatientStatus(e.target.value)) setStatus(e.target.value); setError(null); }}
+            onChange={(e) => { setStatus(e.target.value); setError(null); }}
             data-testid="patient-status-select"
           >
             {statusOptions.map((o) => (

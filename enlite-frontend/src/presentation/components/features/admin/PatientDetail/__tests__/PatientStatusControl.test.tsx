@@ -385,4 +385,13 @@ describe('PatientStatusControl', () => {
     expect(screen.queryByTestId('patient-status-options-retry')).not.toBeInTheDocument();
     expect(screen.getByTestId('patient-status-save')).toBeDisabled();
   });
+  // Comportamento herdado da main: null cai em ACTIVE; funil e valor desconhecido mostram O VALOR (nunca "Activo").
+  it('estado do funil ou valor desconhecido NÃO vira "Ativo": o controle mostra o valor do paciente', async () => {
+    await ready(<PatientStatusControl patient={{ ...active, status: 'PENDING_ADMISSION' }} onSaved={vi.fn()} />);
+    expect(screen.getByTestId('patient-status-select')).toHaveValue('PENDING_ADMISSION');
+    expect(screen.queryByText('Estado: Ativo')).not.toBeInTheDocument();
+    await ready(<PatientStatusControl patient={{ ...active, status: 'NOVO_ESTADO' as never }} onSaved={vi.fn()} />);
+    expect(screen.getAllByTestId('patient-status-select').slice(-1)[0]).toHaveValue('NOVO_ESTADO');
+    expect(screen.getByText('Estado: NOVO_ESTADO')).toBeInTheDocument();
+  });
 });
