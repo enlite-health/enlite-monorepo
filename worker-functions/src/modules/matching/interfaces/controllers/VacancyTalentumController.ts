@@ -18,8 +18,7 @@ import {
 import type { AuditActor } from '@modules/integration';
 import { getVacancyTalentumStatus } from './vacancyTalentumStatusHelper';
 import { normalizePrescreeningResponseType } from '@shared/utils/normalizePrescreeningResponseType';
-import { vacancyEffectiveAgeRangeSql, vacancyEffectiveJoinSql, vacancyEffectiveProvidersNeededSql, vacancyEffectiveScheduleSql } from '@shared/sql/vacancyEffectiveFieldsSql';
-import { applyEffectiveAgeRange } from '@modules/case/domain/ProviderAgeBandMapping';
+import { loadVacancyForAiContent } from './vacancyAiContentQuery';
 
 /**
  * VacancyTalentumController
@@ -257,39 +256,14 @@ export class VacancyTalentumController {
     try {
       const { id } = req.params;
 
-      const result = await this.db.query(
-        `SELECT
-           jp.id, jp.title, jp.case_number, jp.required_professions, jp.required_sex,
-           ${vacancyEffectiveAgeRangeSql('jp')}, jp.required_experience, jp.worker_attributes,
-           ${vacancyEffectiveScheduleSql('jp')} AS schedule, jp.work_schedule, ${vacancyEffectiveProvidersNeededSql('jp')} AS providers_needed, jp.salary_text,
-           jp.payment_day, jp.daily_obs,
-           pa.address_formatted, pa.city, pa.state,
-           p.diagnosis, p.dependency_level, p.service_type
-         FROM job_postings jp
-         ${vacancyEffectiveJoinSql('jp')}
-         LEFT JOIN patient_addresses pa ON jp.patient_address_id = pa.id
-         LEFT JOIN patients p ON jp.patient_id = p.id
-         WHERE jp.id = $1`,
-        [id],
-      );
+      const loaded = await loadVacancyForAiContent(this.db, id);
 
-      if (result.rows.length === 0) {
+      if (!loaded) {
         res.status(404).json({ success: false, error: 'Vacancy not found' });
         return;
       }
 
-      const row = applyEffectiveAgeRange(result.rows[0]);
-      const vacancyData = {
-        title: row.title, case_number: row.case_number,
-        required_professions: row.required_professions, required_sex: row.required_sex,
-        age_range_min: row.age_range_min, age_range_max: row.age_range_max,
-        required_experience: row.required_experience, worker_attributes: row.worker_attributes,
-        schedule: row.schedule, work_schedule: row.work_schedule,
-        providers_needed: row.providers_needed, salary_text: row.salary_text,
-        payment_day: row.payment_day, daily_obs: row.daily_obs,
-      };
-      const patientData = { diagnosis: row.diagnosis, dependency_level: row.dependency_level, service_type: row.service_type };
-      const addressData = { address_formatted: row.address_formatted, city: row.city, state: row.state };
+      const { vacancyData, patientData, addressData } = loaded;
 
       const fastModel = process.env.GEMINI_MODEL_FAST ?? 'gemini-2.5-flash';
       const descService = new TalentumDescriptionService(fastModel);
