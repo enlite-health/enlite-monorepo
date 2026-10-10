@@ -1,6 +1,6 @@
 /**
- * A QUARTA e MAIOR família (task 3.5-A2): 48 rotas, 16 células, um arquivo
- * (45 + `promote`, D300, entrada no merge main→stage 19/09).
+ * A QUARTA e MAIOR família (task 3.5-A2): 49 rotas, 16 células, um arquivo
+ * (45 + `promote`, D300, entrada no merge main→stage 19/09, + `ack` do aviso de vaga publicada, F3).
  * Mesmo papel dos testes de `admin.users`, `admin.patients` e `admin.workers`:
  * varrer o router de verdade (o mesmo `scanExpressRouter` do catálogo) e afirmar
  * que TODA rota declara, e declara a célula do MAPA — não a que o código escolheu.
@@ -8,7 +8,7 @@
  * ⚠️ Duas rotas ficam atrás de controller OPCIONAL
  * (`vacancyAddressReviewController` → `resolve-address-review`,
  * `funnelTableController` → `funnel-table`). O router é montado aqui COM os dois,
- * porque é assim que o `src/index.ts` monta — sem eles a conta daria 44 e o teste
+ * porque é assim que o `src/index.ts` monta — sem eles a conta daria 47 e o teste
  * passaria escondendo duas rotas sem célula.
  */
 
@@ -80,6 +80,8 @@ const ESPERADO: Record<string, string> = {
   'POST /vacancies/:id/publish-talentum': 'talentum:update',
   'POST /vacancies/:id/resolve-address-review': 'vacancy:update',
   'POST /vacancies/:id/social-links': 'vacancy:create',
+  // F3 (vaga-le-do-servico): "marcar como atendido" — a MESMA célula do PUT da vaga, nenhuma célula nova.
+  'POST /vacancies/:id/source-change-notices/:field/ack': 'vacancy:update',
   'POST /vacancies/:vacancyId/workers/:workerId/contact-notes': 'funnel:create',
   // "Promover" card ELEGIBLE (D300): mesma célula de reject/restore — escrita no funil.
   'POST /vacancies/blocked-applications/:blockedId/promote': 'funnel:update',
@@ -135,7 +137,7 @@ function declaradas(): Record<string, string | null> {
   );
 }
 
-describe('família admin.vacancies — 48 rotas declaram célula', () => {
+describe('família admin.vacancies — 49 rotas declaram célula', () => {
   it('a família é `admin.vacancies` — o nome que PERMISSION_ENFORCED_ROUTES liga', () => {
     expect(ADMIN_VACANCIES_FAMILY).toBe('admin.vacancies');
   });
@@ -148,9 +150,9 @@ describe('família admin.vacancies — 48 rotas declaram célula', () => {
     expect(undeclaredRoutes(scanExpressRouter(build()), () => true)).toEqual([]);
   });
 
-  it('a família soma exatamente 48 rotas — a conta que saiu do PENDING_DECLARATIONS + promote (D300)', () => {
-    expect(Object.keys(ESPERADO)).toHaveLength(48);
-    expect(scanExpressRouter(build())).toHaveLength(48);
+  it('a família soma exatamente 49 rotas — a conta que saiu do PENDING_DECLARATIONS + promote (D300) + ack do aviso (F3)', () => {
+    expect(Object.keys(ESPERADO)).toHaveLength(49);
+    expect(scanExpressRouter(build())).toHaveLength(49);
   });
 
   it('as 2 rotas de controller OPCIONAL estão presentes — montadas como em produção', () => {
@@ -159,7 +161,7 @@ describe('família admin.vacancies — 48 rotas declaram célula', () => {
     expect(rotas['GET /vacancies/:id/funnel-table']).toBe('funnel:read');
   });
 
-  it('sem os controllers opcionais, o router encolhe para 44 — o motivo de o teste montar com eles', () => {
+  it('sem os controllers opcionais, o router encolhe para 47 — o motivo de o teste montar com eles', () => {
     const semOpcionais = createAdminVacanciesRoutes(
       dubleDe('vac', ['listVacancies', 'getVacanciesStats', 'getNextVacancyNumber', 'getCasesForSelect',
         'getVacancyById']) as never,
@@ -177,7 +179,7 @@ describe('família admin.vacancies — 48 rotas declaram célula', () => {
       authDouble(),
       permissionsDouble(),
     );
-    expect(scanExpressRouter(semOpcionais)).toHaveLength(46);
+    expect(scanExpressRouter(semOpcionais)).toHaveLength(47);
   });
 
   describe('as células que separam ações de peso diferente', () => {
@@ -326,6 +328,8 @@ describe('família admin.vacancies — 48 rotas declaram célula', () => {
       // o DESPACHO (chegou no handler certo, não caiu em `/vacancies/:id`), não
       // o corpo da resposta — por isso 'AUX', igual às outras rotas não-injetáveis.
       ['post', '/api/admin/vacancies/blocked-applications/b1/promote', 'AUX'],
+      // F3: controller construído INTERNAMENTE (como o promote) — `v1` não é UUID, o controller REAL responde 400 sem banco.
+      ['post', '/api/admin/vacancies/v1/source-change-notices/schedule/ack', 'AUX'],
       ['get', '/api/admin/vacancies/v1/funnel-table', 'table.getEncuadreFunnelTable'],
       ['get', '/api/admin/dashboard/coordinator-capacity', 'dash.getCoordinatorCapacity'],
       ['get', '/api/admin/dashboard/alerts', 'dash.getAlerts'],

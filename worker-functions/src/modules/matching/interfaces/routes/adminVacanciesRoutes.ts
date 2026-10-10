@@ -15,6 +15,7 @@ import { InterviewSlotsController } from '../controllers/InterviewSlotsControlle
 import { VacancyAddressReviewController } from '../controllers/VacancyAddressReviewController';
 import { WorkerVacancyDeliveryStatusController } from '../controllers/WorkerVacancyDeliveryStatusController';
 import { PromoteBlockedApplicationController } from '../controllers/PromoteBlockedApplicationController';
+import { VacancySourceChangeNoticeController } from '../controllers/VacancySourceChangeNoticeController';
 import { AuthMiddleware, type PermissionMiddleware } from '@modules/identity';
 
 /**
@@ -76,6 +77,8 @@ export function createAdminVacanciesRoutes(
   const auxController = new VacanciesAuxController();
   // Idem: o controller de promoção resolve o use case sozinho (mesmo padrão).
   const promoteBlockedController = new PromoteBlockedApplicationController();
+  // Idem (F3 vaga-le-do-servico): o controller do "marcar como atendido" resolve o pool sozinho.
+  const sourceChangeNoticeController = new VacancySourceChangeNoticeController();
 
   // ── Read (VacanciesController) ────────────────────────────────────────────────
   router.get('/vacancies', authMiddleware.requireStaff(), perm.require('vacancy', 'read'), (req: Request, res: Response) =>
@@ -117,6 +120,10 @@ export function createAdminVacanciesRoutes(
   );
   router.delete('/vacancies/:id', authMiddleware.requireStaff(), perm.require('vacancy', 'delete'), (req: Request, res: Response) =>
     vacancyCrudController.deleteVacancy(req, res),
+  );
+  // F3: "marcar como atendido" o aviso de que o serviço mudou com a vaga publicada. MESMA célula do PUT da vaga.
+  router.post('/vacancies/:id/source-change-notices/:field/ack', authMiddleware.requireStaff(), perm.require('vacancy', 'update'), (req: Request, res: Response) =>
+    sourceChangeNoticeController.acknowledge(req, res),
   );
   if (vacancyAddressReviewController) {
     router.post('/vacancies/:id/resolve-address-review', authMiddleware.requireStaff(), perm.require('vacancy', 'update'), (req: Request, res: Response) =>

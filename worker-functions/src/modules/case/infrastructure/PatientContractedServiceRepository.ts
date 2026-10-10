@@ -11,7 +11,8 @@ import type { Pool, PoolClient } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { withActorContext } from '@shared/database/actorContext';
 import { DeviceTypeUnknownError } from './PatientDeviceTypeRepository';
-import { fetchLiveVacancies, type LiveVacancy } from './liveVacancyOfService';
+import { fetchLiveVacancies, liveVacancySql, type LiveVacancy } from './liveVacancyOfService';
+import { captureScheduleBefore, recordScheduleChange } from './vacancySourceChangeNotice';
 import {
   ContractedServiceProviderRepository,
   type ContractedServiceProviderDetail,
@@ -343,8 +344,7 @@ export class PatientContractedServiceRepository {
     await cli.query('SELECT id FROM patient_contracted_services WHERE id = $1 FOR UPDATE', [serviceId]);
     const live = await cli.query<{ id: string }>(
       `SELECT id FROM job_postings
-        WHERE contracted_service_id = $1 AND deleted_at IS NULL
-          AND COALESCE(status, '') NOT IN ('DE_BAJA', 'CLOSED')
+        WHERE contracted_service_id = $1 AND ${liveVacancySql('')}
         FOR UPDATE`,
       [serviceId],
     );
@@ -366,6 +366,8 @@ export class PatientContractedServiceRepository {
         if (patch.schedule !== undefined && (patch.schedule === null || patch.schedule.length === 0)) {
           await this.refuseClearWhenLiveVacancy(cli, serviceId);
         }
+        // F3: o valor de ANTES é lido (e travado) na mesma transação do UPDATE; `undefined` quando o PATCH não toca o horário.
+        const scheduleBefore = await captureScheduleBefore(cli, serviceId, patch.schedule);
         const sets: string[] = [];
         const params: unknown[] = [serviceId];
         const push = (col: string, value: unknown): void => {
@@ -391,6 +393,8 @@ export class PatientContractedServiceRepository {
           // Linha inexistente → ROLLBACK (o `replaceDevices` acima pode já ter escrito) e null.
           if ((res.rowCount ?? 0) === 0) throw SERVICE_ROW_MISSING;
         }
+        // F3: horário NORMALIZADO mudou + vaga publicada viva → aviso (mesma transação; falha aqui desfaz o UPDATE).
+        await recordScheduleChange(cli, serviceId, scheduleBefore, patch.schedule);
         await this.applyVacancyBajaGatilho(cli, serviceId, patch.active);
         const sel = await cli.query<ServiceRow>('SELECT * FROM patient_contracted_services WHERE id = $1', [serviceId]);
         return sel.rows[0] ?? null;

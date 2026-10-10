@@ -252,6 +252,14 @@ export class VacanciesController {
           -- a regex clinica da guarda -- D182.)
           p.insurance_verified,
           p.service_type,
+          -- F3 (vaga-le-do-servico): avisos ABERTOS de "o serviço mudou com a vaga publicada". Mesma query (sessão com
+          -- identidade); sem aviso = '[]'. Só campo e instante, nunca valor.
+          COALESCE(
+            (SELECT json_agg(json_build_object('field', n.field, 'changed_at', n.changed_at) ORDER BY n.changed_at, n.field)
+               FROM vacancy_source_change_notices n
+              WHERE n.job_posting_id = jp.id AND n.acknowledged_at IS NULL),
+            '[]'::json
+          ) as source_change_notices,
           COALESCE(pa.city, p.city_locality) as patient_city,
           COALESCE(pa.neighborhood, p.zone_neighborhood) as patient_neighborhood,
           pa.address_formatted as patient_address_formatted,

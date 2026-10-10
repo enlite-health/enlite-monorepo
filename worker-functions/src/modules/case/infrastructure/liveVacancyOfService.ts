@@ -20,6 +20,15 @@ export interface LiveVacancy {
 }
 
 /**
+ * "Viva" no vocabulário da F2/F3 (vaga-le-do-servico-contratado): não apagada e fora de `DE_BAJA`/`CLOSED`.
+ * UM dono só — a recusa de apagar o horário (`refuseClearWhenLiveVacancy`) e o aviso de vaga publicada
+ * (`recordSourceChange`) montam a condição por aqui, nunca copiada. `columnPrefix`: `''` ou `'jp.'`.
+ */
+export function liveVacancySql(columnPrefix: string): string {
+  return `${columnPrefix}deleted_at IS NULL AND COALESCE(${columnPrefix}status, '') NOT IN ('DE_BAJA', 'CLOSED')`;
+}
+
+/**
  * Predicado de "viva" = o MESMO do 409 de `ActivateRecruitmentUseCase` (`contracted_service_id` e
  * `deleted_at IS NULL`); com mais de uma, vale a mais ANTIGA (`created_at ASC`).
  */
