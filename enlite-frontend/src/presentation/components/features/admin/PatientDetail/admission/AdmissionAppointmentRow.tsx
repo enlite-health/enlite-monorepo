@@ -27,13 +27,15 @@ interface Props {
   timeZone: string;
   canResendCell: boolean;
   canCancel: boolean;
+  canRetryCell?: boolean;
   now: Date;
   onOpenDocuments?: () => void;
   onResend: (kind: ResendKind) => void;
   onCancel: () => void;
+  onRetrySummary?: () => void;
 }
 
-export function AdmissionAppointmentRow({ appointment: a, timeZone, canResendCell, canCancel, now, onOpenDocuments, onResend, onCancel }: Props): JSX.Element {
+export function AdmissionAppointmentRow({ appointment: a, timeZone, canResendCell, canCancel, canRetryCell, now, onOpenDocuments, onResend, onCancel, onRetrySummary }: Props): JSX.Element {
   const { t, i18n } = useTranslation();
   const ta = (key: string): string => t(`admin.patients.detail.admissionTab.${key}`);
   const upcoming = a.status === 'booked' && isFuture(a.slotEnd, now);
@@ -95,7 +97,7 @@ export function AdmissionAppointmentRow({ appointment: a, timeZone, canResendCel
           )}
         </div>
       </div>
-      <AdmissionSeals appointment={a} canResendCell={canResendCell} onOpenDocuments={onOpenDocuments} onResend={onResend} />
+      <AdmissionSeals appointment={a} canResendCell={canResendCell} onOpenDocuments={onOpenDocuments} onResend={onResend} canRetryCell={canRetryCell} onRetrySummary={onRetrySummary} />
     </div>
   );
 }

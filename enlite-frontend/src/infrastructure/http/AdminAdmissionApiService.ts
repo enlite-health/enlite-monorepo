@@ -6,7 +6,7 @@
  * `TactiqLinkController.ts`. Molde: `AdminPatientDocumentsApiService.ts`.
  *
  * Erros de domínio chegam com `code` estável (`ApiError.code`): SLOT_TAKEN, TACTIQ_LINK_REQUIRED (409),
- * RESEND_NOT_ALLOWED, RESEND_LIMIT_REACHED, RESEND_IN_PROGRESS (409), SLOT_IN_PAST e HOST_NOT_IN_ROSTER (422), CALENDAR_CREATE_FAILED (502).
+ * RESEND_NOT_ALLOWED, RESEND_LIMIT_REACHED, RESEND_IN_PROGRESS, SUMMARY_RETRY_NOT_ALLOWED, SUMMARY_RETRY_LIMIT_REACHED (409), SLOT_IN_PAST e HOST_NOT_IN_ROSTER (422), CALENDAR_CREATE_FAILED (502).
  * Nada aqui loga corpo, e-mail nem telefone.
  */
 import { FirebaseAuthService } from '@infrastructure/services/FirebaseAuthService';
@@ -46,6 +46,14 @@ export type AdmissionImportStatus =
 
 export type AdmissionAppointmentStatus = 'booked' | 'cancelled' | 'completed' | 'no_show';
 
+/** Estado do botão "Reintentar resumen" (spec 050 F11, R-38): o servidor decide; `null`/ausente = sem botão. */
+export interface SummaryRetryView {
+  /** 3 chamadas pagas gastas desde a última autorização: o botão AUTORIZA uma rodada nova (com custo). Falso: só roda agora. */
+  exhausted: boolean;
+  /** Autorizações que ainda restam (teto 2). `exhausted && authorizationsLeft === 0` = sem saída pelo botão. */
+  authorizationsLeft: number;
+}
+
 export interface AdmissionAppointment {
   id: string;
   admissionCode: string | null;
@@ -64,6 +72,8 @@ export interface AdmissionAppointment {
     import: AdmissionImportStatus | null;
     document: { id: string } | null;
   };
+  /** Spec 050 F11. Ausente em resposta antiga. */
+  summaryRetry?: SummaryRetryView | null;
 }
 
 export type TactiqLinkState = 'missing' | 'linked' | 'broken' | 'wrong_account' | 'revoked';
@@ -79,6 +89,16 @@ export interface AdmissionBookResult {
   appointmentId?: string;
   admissionCode: string;
   [key: string]: unknown;
+}
+
+export interface AdmissionSummaryRetryResult {
+  appointmentId: string;
+  /** `authorized`: +1 rodada autorizada, a reunião voltou à fila. `run_now`: rodou agora, sem autorização nova. */
+  mode: 'authorized' | 'run_now';
+  authorizationsUsed: number;
+  authorizationsLeft: number;
+  /** Só em `run_now`: o resultado da importação disparada agora (`done`, `summary_failed`, ...). */
+  outcome?: string;
 }
 
 export interface AdmissionResendResult {
@@ -143,6 +163,13 @@ export class AdminAdmissionApiServiceClass {
     return this.requestJson<AdmissionResendResult>(
       'POST',
       `/api/admin/patients/${patientId}/admission-appointments/${appointmentId}/messages/${kind}/resend`,
+    );
+  }
+
+  async retrySummary(patientId: string, appointmentId: string): Promise<AdmissionSummaryRetryResult> {
+    return this.requestJson<AdmissionSummaryRetryResult>(
+      'POST',
+      `/api/admin/patients/${patientId}/admission-appointments/${appointmentId}/summary-retry`,
     );
   }
 

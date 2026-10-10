@@ -21,6 +21,15 @@ const RESEND_CODES: Record<string, string> = {
   RESEND_IN_PROGRESS: `${A}.errors.resendInProgress`,
 };
 
+const RETRY_CODES: Record<string, string> = {
+  SUMMARY_RETRY_NOT_ALLOWED: `${A}.errors.retryNotAllowed`,
+  SUMMARY_RETRY_LIMIT_REACHED: `${A}.errors.retryLimitReached`,
+};
+
+export function retryErrorKey(err: unknown): string {
+  return (err instanceof ApiError && err.code && RETRY_CODES[err.code]) || `${A}.errors.retryFailed`;
+}
+
 export function bookErrorKey(err: unknown): string {
   return (err instanceof ApiError && err.code && BOOK_CODES[err.code]) || `${A}.errors.bookFailed`;
 }

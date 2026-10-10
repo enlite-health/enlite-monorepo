@@ -1,10 +1,10 @@
 /**
  * AdmissionTab — aba "Admisión" da ficha do paciente (spec 049, F7): as reuniões de admissão (as do painel E as que a
  * família marcou pelo site), da mais recente para a mais antiga, com os selos de saúde; "Nueva agenda", cancelar e
- * reenviar o WhatsApp que falhou.
+ * reenviar o WhatsApp que falhou e (spec 050 F11, R-38) reintentar o resumo.
  *
  * Células (D286): a LEITURA é do container (`ContainerGate resource="patient_admission"` na página); aqui, escrever
- * (`:create` libera "Nueva agenda"; `:update` libera "Cancelar" — convenção PR-8b, sem `write`), e `:resend_message` libera "Reenviar". Sem a célula o botão SOME.
+ * (`:create` libera "Nueva agenda"; `:update` libera "Cancelar" — convenção PR-8b, sem `write`), e `:resend_message` libera "Reenviar" e `:retry_summary` libera "Reintentar resumen". Sem a célula o botão SOME.
  * Horários sempre no fuso do país do paciente. Nada de PII em log: este componente não loga.
  */
 import { useState, type JSX } from 'react';
@@ -24,7 +24,7 @@ import {
 import { AdmissionAppointmentRow } from './AdmissionAppointmentRow';
 import { AdmissionConfirmDialog } from './AdmissionConfirmDialog';
 import { NewAdmissionModal } from './NewAdmissionModal';
-import { cancelErrorKey, isStateConflict, resendErrorKey } from './admissionErrors';
+import { cancelErrorKey, isStateConflict, resendErrorKey, retryErrorKey } from './admissionErrors';
 import { timeZoneForCountry } from './admissionTime';
 
 interface Props {
@@ -49,12 +49,14 @@ export function AdmissionTab({ patientId, country, onOpenDocuments, now = () => 
   const ta = (key: string): string => t(`admin.patients.detail.admissionTab.${key}`);
   const updateGate = useActionGate('patient_admission', 'update');
   const resendGate = useActionGate('patient_admission', 'resend_message');
+  const retryGate = useActionGate('patient_admission', 'retry_summary');
   const { appointments, status, reload } = useAdmissionAppointments(patientId);
   const timeZone = timeZoneForCountry(country);
 
   const [newOpen, setNewOpen] = useState(false);
   const [pendingCancel, setPendingCancel] = useState<Pending | null>(null);
   const [pendingResend, setPendingResend] = useState<Pending | null>(null);
+  const [pendingRetry, setPendingRetry] = useState<Pending | null>(null);
   const [busy, setBusy] = useState(false);
   const [dialogError, setDialogError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -62,6 +64,7 @@ export function AdmissionTab({ patientId, country, onOpenDocuments, now = () => 
   const closeDialogs = (): void => {
     setPendingCancel(null);
     setPendingResend(null);
+    setPendingRetry(null);
     setDialogError(null);
   };
 
@@ -95,6 +98,25 @@ export function AdmissionTab({ patientId, country, onOpenDocuments, now = () => 
     } catch (err) {
       // 409 = o estado mudou (entregue, teto, outra pessoa reenviou): mostra o motivo e recarrega para o botão sumir.
       setDialogError(t(resendErrorKey(err)));
+      if (isStateConflict(err)) await reload();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const confirmRetry = async (): Promise<void> => {
+    if (!pendingRetry) return;
+    setBusy(true);
+    setDialogError(null);
+    try {
+      const out = await AdminAdmissionApiService.retrySummary(patientId, pendingRetry.appointment.id);
+      closeDialogs();
+      // `run_now` não é erro de HTTP: o resumo pode não ter saído ainda — o selo da importação mostra o resultado.
+      setNotice(out.mode === 'authorized' ? ta('retry.authorized') : out.outcome === 'done' ? ta('retry.ranDone') : ta('retry.ranNotDone'));
+      await reload();
+    } catch (err) {
+      // 409 = o estado mudou (já gerado, teto de autorizações): mostra o motivo e recarrega para o botão sumir.
+      setDialogError(t(retryErrorKey(err)));
       if (isStateConflict(err)) await reload();
     } finally {
       setBusy(false);
@@ -143,10 +165,12 @@ export function AdmissionTab({ patientId, country, onOpenDocuments, now = () => 
               timeZone={timeZone}
               canResendCell={resendGate.allowed}
               canCancel={updateGate.allowed}
+              canRetryCell={retryGate.allowed}
               now={nowDate}
               onOpenDocuments={onOpenDocuments}
               onResend={(kind) => { setDialogError(null); setPendingResend({ appointment: a, kind }); }}
               onCancel={() => { setDialogError(null); setPendingCancel({ appointment: a }); }}
+              onRetrySummary={() => { setDialogError(null); setPendingRetry({ appointment: a }); }}
             />
           ))}
         </div>
@@ -184,6 +208,19 @@ export function AdmissionTab({ patientId, country, onOpenDocuments, now = () => 
           busy={busy}
           error={dialogError}
           onConfirm={() => { void confirmResend(); }}
+          onClose={closeDialogs}
+        />
+      )}
+      {pendingRetry && (
+        <AdmissionConfirmDialog
+          testId="admission-retry-dialog"
+          title={ta('retry.title')}
+          body={ta(pendingRetry.appointment.summaryRetry?.exhausted ? 'retry.bodyExhausted' : 'retry.bodyNow')}
+          confirmLabel={ta('retry.confirm')}
+          busyLabel={ta('retry.busy')}
+          busy={busy}
+          error={dialogError}
+          onConfirm={() => { void confirmRetry(); }}
           onClose={closeDialogs}
         />
       )}
