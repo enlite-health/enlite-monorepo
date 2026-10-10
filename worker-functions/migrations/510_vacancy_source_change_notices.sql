@@ -1,4 +1,4 @@
--- 509 — `vacancy_source_change_notices`: aviso na vaga PUBLICADA quando um campo do serviço contratado que ela lê
+-- 510 — `vacancy_source_change_notices`: aviso na vaga PUBLICADA quando um campo do serviço contratado que ela lê
 -- muda (change vaga-le-do-servico-contratado, F3; design.md §Aviso de vaga publicada).
 --
 -- POR QUÊ: a vaga lê horário (e, nas fases 5/6, quantidade e faixa etária) do serviço contratado. Quando o serviço muda
