@@ -14,10 +14,12 @@ import { createNativePatient } from './PatientNativeCreator';
 import { inPatientTransaction, CaseNumberConflictRetry, rethrowAsCaseNumberRetry } from './patientTransaction';
 import type { AttentionReason } from '../domain/enums/AttentionReason';
 import type { PatientStatus } from '../domain/enums/PatientStatus';
+import type { ManualChangeSource } from '../domain/enums/PatientChangeSource';
 import {
   movePatientStatus,
   type MoveStatusOptions,
 } from './PatientStatusWriter';
+import { listPatientStatusOptions, type PatientStatusOptions } from './PatientStatusOptions';
 import { PatientDeviceTypeRepository } from '../infrastructure/PatientDeviceTypeRepository';
 import { PatientInsuranceVerifiedRepository } from '../infrastructure/PatientInsuranceVerifiedRepository';
 
@@ -295,5 +297,10 @@ export class PatientService {
     opts: MoveStatusOptions = { changeSource: 'admin_panel' },
   ): Promise<{ id: string; status: PatientStatus }> {
     return movePatientStatus(patientId, status, opts);
+  }
+
+  /** Spec 051 (F3): destinos de estado que o servidor aceitaria para este paciente e este ator. */
+  async statusOptions(patientId: string, cells: readonly string[] | null, changeSource: ManualChangeSource): Promise<PatientStatusOptions> {
+    return listPatientStatusOptions(patientId, cells, changeSource);
   }
 }

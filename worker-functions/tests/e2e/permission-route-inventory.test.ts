@@ -332,6 +332,8 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'GET /api/admin/patients/:id/contracted-services → patient_services:read',
         'GET /api/admin/patients/:id/diagnoses → patient_clinical:read',
         'GET /api/admin/patients/:id/status-history → patient:read',
+        // Spec 051 (F3): a lista de destinos de estado — a MESMA célula do PUT /status.
+        'GET /api/admin/patients/:id/status-options → patient:update',
         'GET /api/admin/presentation-invite/last → messaging:read',
         'GET /api/admin/presentation-invite/settings → messaging:read',
         'GET /api/admin/presentation-invite/stats → messaging:read',
