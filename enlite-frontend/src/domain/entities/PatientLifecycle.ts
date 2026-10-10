@@ -19,6 +19,27 @@ export interface UpdatePatientStatusPayload {
   suspensionExitReason?: string | null;
 }
 
+/**
+ * Um destino de GET /api/admin/patients/:id/status-options (spec 051). A lista é do SERVIDOR: a
+ * tela não decide permissão nem FSM. `via` só informa (fluxo normal × liberado por permissão) —
+ * não é motivo de aviso. `blockedBy` = códigos de completude (os mesmos do checklist da ficha).
+ */
+export interface PatientStatusOption {
+  status: string;
+  via: 'fluxo' | 'permissao';
+  blockedBy?: string[];
+}
+
+/** Recusa LOCAL: o destino pedido não está na lista do servidor, então o PUT nem sai (spec 051). */
+export const STATUS_NOT_OFFERED = 'STATUS_NOT_OFFERED';
+/** Recusa LOCAL: a lista do servidor não pôde ser lida, então o arrasto não prossegue (spec 051). */
+export const STATUS_OPTIONS_UNAVAILABLE = 'STATUS_OPTIONS_UNAVAILABLE';
+
+export interface PatientStatusOptions {
+  current: string | null;
+  options: PatientStatusOption[];
+}
+
 /** Uma linha de GET /api/admin/patients/:id/status-history — sem nota clínica (C7.3). */
 export interface PatientStatusHistoryEntry {
   from: string | null;

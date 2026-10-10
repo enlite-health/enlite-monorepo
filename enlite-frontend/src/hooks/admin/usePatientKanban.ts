@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import type { PatientKanbanItem } from '@domain/entities/PatientDetail';
 import { ADMISSION_FUNNEL_STATUSES } from '@domain/entities/patientEnums';
+import { STATUS_NOT_OFFERED, STATUS_OPTIONS_UNAVAILABLE } from '@domain/entities/PatientLifecycle';
 
 /**
  * As colunas do board agrupam por `patients.status` (estado clínico v2). ADMISSION junta os 3
@@ -32,7 +33,10 @@ export type PatientKanbanGroups = Record<PatientKanbanStatus, PatientKanbanItem[
 export interface PatientKanbanMoveError {
   code: string;
   missing?: string[];
+  /** Coluna de destino pedida — a frase amigável a nomeia (spec 051, §6.4). */
+  to?: string;
 }
+
 
 function emptyGroups(): PatientKanbanGroups {
   return {
@@ -144,6 +148,21 @@ export function usePatientKanban(country?: string) {
       return { code: KANBAN_ACTIVATION_MOVED_TO_SERVICE };
     }
 
+    // Spec 051: UMA leitura por arrasto, no drop, da MESMA lista do servidor que alimenta o select da
+    // ficha (GET status-options). O card ainda não saiu da origem — recusar aqui não tem otimismo a
+    // desfazer, e o PUT nem sai. O `KanbanBoardShell` não expõe `onDragStart`; ler no início do arrasto
+    // exigiria mexer no shell compartilhado com o funil de vagas.
+    let offered: Array<{ status: string; blockedBy?: string[] }>;
+    try {
+      offered = (await AdminApiService.getPatientStatusOptions(patientId)).options;
+    } catch {
+      return { code: STATUS_OPTIONS_UNAVAILABLE, to: targetStatus };
+    }
+    const destino = offered.find((o) => o.status === targetStatus);
+    if (!destino) return { code: STATUS_NOT_OFFERED, to: targetStatus };
+    // Lista diz que falta dado do paciente: o PUT recusaria com o mesmo 422 — poupa a ida e volta.
+    if (destino.blockedBy?.length) return { code: 'PATIENT_STATUS_NOT_READY', missing: destino.blockedBy, to: targetStatus };
+
     if (card) {
       const next = emptyGroups();
       for (const key of PATIENT_KANBAN_STATUSES) {
@@ -175,9 +194,10 @@ export function usePatientKanban(country?: string) {
         return {
           code: code ?? err.message,
           missing: Array.isArray(missing) ? (missing as string[]) : undefined,
+          to: targetStatus,
         };
       }
-      return { code: 'Failed to move patient' };
+      return { code: 'Failed to move patient', to: targetStatus };
     }
   }, [setGroups]);
 

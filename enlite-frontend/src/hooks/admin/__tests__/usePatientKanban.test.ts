@@ -13,10 +13,12 @@ import { renderHook, act, waitFor } from '@testing-library/react';
 
 const listPatientsForKanban = vi.fn();
 const updatePatientStatus = vi.fn();
+const getPatientStatusOptions = vi.fn();
 vi.mock('@infrastructure/http/AdminApiService', () => ({
   AdminApiService: {
     listPatientsForKanban: (...a: unknown[]) => listPatientsForKanban(...a),
     updatePatientStatus: (...a: unknown[]) => updatePatientStatus(...a),
+    getPatientStatusOptions: (...a: unknown[]) => getPatientStatusOptions(...a),
   },
 }));
 
@@ -41,6 +43,11 @@ describe('usePatientKanban — patients.status', () => {
       item('e', 'DONE', 'DISCHARGED'),     // alta definitiva → coluna DISCHARGED, nunca ACTIVE (1.6)
     ]);
     updatePatientStatus.mockReset().mockResolvedValue({ id: 'x', status: 'ACTIVE' });
+    // A lista do SERVIDOR (spec 051): por padrão oferece todas as colunas, para os testes de PUT/rollback.
+    getPatientStatusOptions.mockReset().mockResolvedValue({
+      current: 'ACTIVE',
+      options: PATIENT_KANBAN_STATUSES.map((status) => ({ status, via: 'fluxo' })),
+    });
   });
 
   it('as colunas são os 8 estados clínicos, e o agrupamento é por status (ADMISSION junta o funil; DISCHARGED não cai em ACTIVE)', async () => {
@@ -85,13 +92,13 @@ describe('usePatientKanban — patients.status', () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     let err: PatientKanbanMoveError | null = null;
     await act(async () => { err = await result.current.moveStatus('a', 'ADMISSION'); });
-    expect(err).toEqual({ code: '422 transição', missing: undefined });
+    expect(err).toEqual({ code: '422 transição', missing: undefined, to: 'ADMISSION' });
     expect(result.current.groups.ADMISSION.map((p) => p.id)).toEqual(['a', 'd']);
     await act(async () => { err = await result.current.moveStatus('nao-existe', 'ADMISSION'); });
     expect(result.current.groups.ADMISSION.map((p) => p.id)).toEqual(['a', 'd']);
     updatePatientStatus.mockRejectedValueOnce('string-error');
     await act(async () => { err = await result.current.moveStatus('a', 'ADMISSION'); });
-    expect(err).toEqual({ code: 'Failed to move patient' });
+    expect(err).toEqual({ code: 'Failed to move patient', to: 'ADMISSION' });
   });
 
   // Spec 014 (US-D5, lex D5.1): quando o backend manda `code` (enum), o hook devolve o CÓDIGO,
@@ -144,6 +151,7 @@ describe('usePatientKanban — patients.status', () => {
     expect(err).toEqual({
       code: 'PATIENT_STATUS_NOT_READY',
       missing: ['ADDRESS', 'SERVICE_SCHEDULE'],
+      to: 'ADMISSION',
     });
     expect(JSON.stringify(err)).not.toContain('Juan Pérez');
     // o card volta para a coluna de origem (rollback otimista)
@@ -161,7 +169,7 @@ describe('usePatientKanban — patients.status', () => {
     let err: PatientKanbanMoveError | null = null;
     await act(async () => { err = await result.current.moveStatus('a', 'ADMISSION'); });
 
-    expect(err).toEqual({ code: 'PATIENT_STATUS_NOT_READY', missing: undefined });
+    expect(err).toEqual({ code: 'PATIENT_STATUS_NOT_READY', missing: undefined, to: 'ADMISSION' });
     expect(JSON.stringify(err)).not.toContain('Juan Pérez');
   });
 
@@ -194,5 +202,57 @@ describe('usePatientKanban — patients.status', () => {
 
     const allIds = PATIENT_KANBAN_STATUSES.flatMap((key) => result.current.groups[key].map((p) => p.id));
     expect(allIds).toEqual(['a']);
+  });
+  // ── Spec 051: o arrasto usa a MESMA lista do servidor que o select da ficha ──────────────────────
+  describe('lista de destinos do servidor (GET status-options)', () => {
+    it('lê a lista UMA vez por arrasto, do card arrastado, antes de qualquer PUT', async () => {
+      const { result } = renderHook(() => usePatientKanban());
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+      await act(async () => { await result.current.moveStatus('c', 'ON_HOLD'); });
+      expect(getPatientStatusOptions).toHaveBeenCalledTimes(1);
+      expect(getPatientStatusOptions).toHaveBeenCalledWith('c');
+      expect(getPatientStatusOptions.mock.invocationCallOrder[0]).toBeLessThan(updatePatientStatus.mock.invocationCallOrder[0]);
+    });
+
+    it('destino que a lista não traz → STATUS_NOT_OFFERED, o PUT NÃO sai e o card não sai da coluna', async () => {
+      getPatientStatusOptions.mockResolvedValue({ current: 'ACTIVE', options: [{ status: 'ON_HOLD', via: 'fluxo' }] });
+      const { result } = renderHook(() => usePatientKanban());
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+      let err: PatientKanbanMoveError | null = null;
+      await act(async () => { err = await result.current.moveStatus('c', 'SEARCHING'); });
+      expect(err).toEqual({ code: 'STATUS_NOT_OFFERED', to: 'SEARCHING' });
+      expect(updatePatientStatus).not.toHaveBeenCalled();
+      expect(result.current.groups.ACTIVE.map((p) => p.id)).toEqual(['c']);
+      expect(result.current.groups.SEARCHING).toEqual([]);
+    });
+
+    it('destino com blockedBy → devolve o 422 de completude com o que falta, sem chamar o PUT', async () => {
+      getPatientStatusOptions.mockResolvedValue({ current: 'ACTIVE', options: [{ status: 'SEARCHING', via: 'permissao', blockedBy: ['SERVICE_SCHEDULE'] }] });
+      const { result } = renderHook(() => usePatientKanban());
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+      let err: PatientKanbanMoveError | null = null;
+      await act(async () => { err = await result.current.moveStatus('c', 'SEARCHING'); });
+      expect(err).toEqual({ code: 'PATIENT_STATUS_NOT_READY', missing: ['SERVICE_SCHEDULE'], to: 'SEARCHING' });
+      expect(updatePatientStatus).not.toHaveBeenCalled();
+      expect(result.current.groups.ACTIVE.map((p) => p.id)).toEqual(['c']);
+    });
+
+    it('falha ao ler a lista → STATUS_OPTIONS_UNAVAILABLE, sem PUT e sem mover o card (nunca "tenta mesmo assim")', async () => {
+      getPatientStatusOptions.mockRejectedValue(new Error('rede caiu'));
+      const { result } = renderHook(() => usePatientKanban());
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+      let err: PatientKanbanMoveError | null = null;
+      await act(async () => { err = await result.current.moveStatus('c', 'ON_HOLD'); });
+      expect(err).toEqual({ code: 'STATUS_OPTIONS_UNAVAILABLE', to: 'ON_HOLD' });
+      expect(updatePatientStatus).not.toHaveBeenCalled();
+      expect(result.current.groups.ACTIVE.map((p) => p.id)).toEqual(['c']);
+    });
+
+    it('admisión → ACTIVE segue recusado ANTES da rede: nem a lista é lida', async () => {
+      const { result } = renderHook(() => usePatientKanban());
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+      await act(async () => { await result.current.moveStatus('d', 'ACTIVE'); });
+      expect(getPatientStatusOptions).not.toHaveBeenCalled();
+    });
   });
 });

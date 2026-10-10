@@ -3405,13 +3405,8 @@
           "confirm": "Confirmar y mover"
         },
         "moveErrorCodes": {
-          "PATIENT_STATUS_TRANSITION_NOT_ALLOWED": "Ese cambio de estado no está permitido.",
-          "ON_HOLD_REASON_REQUIRED": "Para poner en espera hace falta indicar el motivo.",
-          "SUSPENSION_EXIT_REASON_REQUIRED": "Hace falta indicar el motivo de salida de Suspendido.",
-          "PATIENT_STATUS_NOT_READY": "No se puede mover: faltan datos obligatorios en la ficha.",
           "KANBAN_ACTIVATION_MOVED_TO_SERVICE": "Para activar, usá \"Activar reclutamiento\" en el servicio contratado de la ficha del paciente."
-        },
-        "moveNotReady": "No se puede mover: falta {{items}}."
+        }
       },
       "countryLabel": "País",
       "countryOptions": {
@@ -4318,10 +4313,7 @@
         "note": "Nota",
         "notePlaceholder": "¿Por qué el servicio está en espera?",
         "noteRedacted": "No tenés permiso para ver la nota.",
-        "transitionNotAllowed": "Transición no permitida: {{from}} → {{to}}",
-        "reasonRequired": "Indicá el motivo de la espera",
         "suspensionExitReason": "Motivo de salida",
-        "suspensionExitReasonRequired": "Indicá el motivo de salida de Suspendido",
         "error": "No se pudo cambiar el estado",
         "sources": {
           "admin_panel": "Panel",
@@ -4330,7 +4322,9 @@
           "backfill": "Carga inicial",
           "activate": "Activación",
           "system": "Sistema",
-          "recruitment_activation": "Activación del reclutamiento"
+          "recruitment_activation": "Activación del reclutamiento",
+          "admin_panel_override": "Panel (fuera del flujo)",
+          "kanban_override": "Kanban (fuera del flujo)"
         },
         "historyCard": {
           "title": "Historial de estados",
@@ -4342,8 +4336,19 @@
           "actor": "Autor",
           "error": "No se pudo cargar el historial"
         },
-        "notReady": "No se puede pasar a {{status}}: falta {{items}}.",
-        "notReadyGeneric": "No se puede cambiar el estado: faltan datos obligatorios en la ficha."
+        "blockedOption": "{{status}} (falta: {{items}})",
+        "optionsLoadError": "No se pudieron cargar los estados disponibles.",
+        "optionsRetry": "Reintentar",
+        "friendly": {
+          "forbidden": "No tienes permiso para pasar a este paciente a «{{status}}». Pídele a quien administra los accesos que lo habilite.",
+          "notReadySearching": "Para pasar a «{{status}}», el servicio contratado tiene que estar completo. Falta: {{items}}.",
+          "notReady": "Para pasar a «{{status}}» faltan datos del paciente: {{items}}.",
+          "notReadyGeneric": "Para pasar a «{{status}}» faltan datos obligatorios en la ficha.",
+          "onHoldReasonRequired": "Para dejar al paciente «En espera» indica el motivo (escuela, obra social u otro).",
+          "suspensionExitReasonRequired": "Para sacar al paciente de «Suspendido» elige el motivo.",
+          "notAvailable": "Este cambio de estado no está disponible.",
+          "optionsUnavailable": "No se pudieron comprobar los estados disponibles. Intenta de nuevo."
+        }
       },
       "insuranceProviderOptions": {
         "API": "API",

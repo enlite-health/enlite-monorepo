@@ -44,6 +44,16 @@ describe('AdminPatientsApiService — bloco B', () => {
     expect(fetchMock.mock.calls[1][0]).toMatch(/\/api\/admin\/catalogs\/insurance-providers$/);
   });
 
+  it('getPatientStatusOptions (spec 051): GET /status-options devolve {current, options} como o servidor mandou; recusa do servidor vira erro', async () => {
+    const body = { current: 'ACTIVE', options: [{ status: 'ON_HOLD', via: 'fluxo' }, { status: 'SEARCHING', via: 'permissao', blockedBy: ['SERVICE_SCHEDULE'] }] };
+    fetchMock.mockResolvedValueOnce(jsonResponse({ success: true, data: body }));
+    await expect(AdminPatientsApiService.getPatientStatusOptions('p')).resolves.toEqual(body);
+    expect(fetchMock.mock.calls[0][0]).toMatch(/\/api\/admin\/patients\/p\/status-options$/);
+    expect(fetchMock.mock.calls[0][1].method).toBe('GET');
+    fetchMock.mockResolvedValueOnce(jsonResponse({ success: false, error: 'Forbidden' }, 403));
+    await expect(AdminPatientsApiService.getPatientStatusOptions('p')).rejects.toThrow('Forbidden');
+  });
+
   it('updatePatientAddressLogistics → PATCH /patients/:id/addresses/:addressId com só os campos dados', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ success: true, data: { id: 'a1' } }));
     await expect(AdminPatientsApiService.updatePatientAddressLogistics('p', 'a1', { access_notes: null, neighborhood: 'Centro' })).resolves.toEqual({ id: 'a1' });

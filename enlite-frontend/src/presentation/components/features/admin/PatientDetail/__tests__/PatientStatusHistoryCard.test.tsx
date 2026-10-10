@@ -52,6 +52,22 @@ describe('PatientStatusHistoryCard', () => {
     expect(screen.getByText('Autor')).toBeInTheDocument();
   });
 
+  // Spec 051 (§4): a troca fora do fluxo grava `*_override`; o Historial a mostra traduzida, deixando
+  // claro que foi fora do fluxo — e NUNCA como o valor cru do banco.
+  it('origem *_override aparece traduzida como "fora do fluxo" (painel e Kanban), não como valor cru', async () => {
+    getPatientStatusHistory.mockResolvedValue([
+      { from: 'ACTIVE', to: 'SEARCHING', source: 'admin_panel_override', at: '2026-10-10T14:00:00.000Z', reason: null, actorUid: 'uid-a' },
+      { from: 'ACTIVE', to: 'ALTA', source: 'kanban_override', at: '2026-10-10T15:00:00.000Z', reason: null, actorUid: 'uid-b' },
+    ]);
+    render(<PatientStatusHistoryCard patientId="p1" />);
+    const row0 = await screen.findByTestId('status-history-row-0');
+    expect(row0).toHaveTextContent('Painel (fora do fluxo)');
+    expect(row0).not.toHaveTextContent('admin_panel_override');
+    const row1 = screen.getByTestId('status-history-row-1');
+    expect(row1).toHaveTextContent('Kanban (fora do fluxo)');
+    expect(row1).not.toHaveTextContent('kanban_override');
+  });
+
   it('origem desconhecida cai no valor cru; estado e motivo desconhecidos idem', async () => {
     getPatientStatusHistory.mockResolvedValue([{ from: 'FOO', to: 'BAR', source: 'migration-314', at: '2026-09-03T14:00:00.000Z', reason: 'MOTIVO_CRU', actorUid: 'uid-xyz' }]);
     render(<PatientStatusHistoryCard patientId="p1" />);

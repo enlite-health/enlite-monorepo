@@ -18,6 +18,7 @@ import type {
   PatientFunnelData,
   UpdatePatientStatusPayload,
   PatientStatusHistoryEntry,
+  PatientStatusOptions,
   InsuranceProvider,
   PatientAddressLogisticsPayload,
   PatientChatIdsPayload,
@@ -328,6 +329,11 @@ export class AdminPatientsApiServiceClass {
   async updatePatientStatus(id: string, status: string | UpdatePatientStatusPayload): Promise<UpdatePatientStatusResult> {
     const body: UpdatePatientStatusPayload = typeof status === 'string' ? { status } : status;
     return this.writeJson<UpdatePatientStatusResult>('PUT', `/api/admin/patients/${id}/status`, body);
+  }
+
+  /** GET /api/admin/patients/:id/status-options — os destinos que o SERVIDOR aceitaria (spec 051). */
+  async getPatientStatusOptions(id: string): Promise<PatientStatusOptions> {
+    return this.request<PatientStatusOptions>('GET', `/api/admin/patients/${id}/status-options`);
   }
 
   /** GET /api/admin/patients/:id/status-history — a aba Historial (spec 012). */
