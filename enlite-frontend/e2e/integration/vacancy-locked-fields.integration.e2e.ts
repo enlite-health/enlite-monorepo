@@ -28,6 +28,8 @@ const MOCK_ADMIN = {
 const MOCK_TOKEN = 'mock_' + Buffer.from(JSON.stringify(MOCK_ADMIN), 'utf-8').toString('base64');
 // Horário do serviço contratado — a ÚNICA fonte do horário da vaga (F2: o foguete não o copia).
 const SERVICE_SCHEDULE = [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }];
+// O GET da vaga devolve o horário no formato da VAGA (`normalizeSchedule`: dayOfWeek 1 → 'lunes'), não no do serviço.
+const EXPECTED_VACANCY_SCHEDULE = { lunes: [{ start: '08:00', end: '12:00' }] };
 const AUTH_HEADERS = {
   Authorization: `Bearer ${MOCK_TOKEN}`,
   'Content-Type': 'application/json',
@@ -109,7 +111,7 @@ test.describe('vacancy-locked-fields — fase 1 (completar-vacante-em-rascunho) 
     // F2 (vaga-le-do-servico-contratado): o foguete NÃO copia o horário — a coluna da vaga fica NULL e o GET
     // devolve o horário do SERVIÇO (leitura pela peça de campos efetivos, F1).
     expect(runSQL(`SELECT (schedule IS NULL)::text FROM job_postings WHERE id='${vacancyId}'`)).toBe('true');
-    expect(body.schedule).toMatchObject(SERVICE_SCHEDULE);
+    expect(body.schedule).toEqual(EXPECTED_VACANCY_SCHEDULE);
   });
 
   test('PUT em campo travado (schedule) → 422 com locked_fields e o banco não muda; PUT em campo livre (required_professions) → 200 e persiste', async ({ request }) => {
@@ -124,7 +126,7 @@ test.describe('vacancy-locked-fields — fase 1 (completar-vacante-em-rascunho) 
     // O "antes" tem de ser um horário DE VERDADE — senão o "antes == depois" do 422 provaria só que dois
     // vazios são iguais (achado do gate, item 3a).
     const scheduleBefore = (await getRes.json()).data.schedule;
-    expect(scheduleBefore).toMatchObject(SERVICE_SCHEDULE);
+    expect(scheduleBefore).toEqual(EXPECTED_VACANCY_SCHEDULE);
 
     const putLocked = await request.put(`${BACKEND_URL}/api/admin/vacancies/${vacancyId}`, {
       headers: AUTH_HEADERS,
@@ -159,7 +161,7 @@ test.describe('vacancy-locked-fields — fase 1 (completar-vacante-em-rascunho) 
     const getEffectiveSchedule = async () =>
       (await (await request.get(`${BACKEND_URL}/api/admin/vacancies/${vacancyId}`, { headers: AUTH_HEADERS })).json()).data.schedule;
     const scheduleBefore = await getEffectiveSchedule();
-    expect(scheduleBefore).toMatchObject(SERVICE_SCHEDULE);
+    expect(scheduleBefore).toEqual(EXPECTED_VACANCY_SCHEDULE);
 
     const put = await request.put(`${BACKEND_URL}/api/admin/vacancies/${vacancyId}`, {
       headers: AUTH_HEADERS,
