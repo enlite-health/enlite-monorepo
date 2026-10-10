@@ -12,6 +12,7 @@ const BOOK_CODES: Record<string, string> = {
   SLOT_IN_PAST: `${A}.errors.slotInPast`,
   HOST_NOT_IN_ROSTER: `${A}.errors.hostNotInRoster`,
   INVALID_SLOT: `${A}.errors.invalidSlot`,
+  CALENDAR_CREATE_FAILED: `${A}.errors.calendarCreateFailed`,
 };
 
 const RESEND_CODES: Record<string, string> = {

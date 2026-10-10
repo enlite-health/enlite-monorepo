@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { getAccessToken } from './GoogleCalendarEventFinder';
 import { AdmissionRealAdapterInTestError } from '../application/ports/AdmissionMessagingPorts';
 import type { AdmissionCalendarPort } from '../application/ports/AdmissionCalendarPort';
+import { readCreatedEvent } from './googleCalendarCreateResponse';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -114,6 +115,8 @@ export interface CreateEventParams {
   coHostEmail?: string;
   /** E-mail de contato do paciente/lead (attendee), se houver. */
   patientEmail?: string;
+  /** Id FIXO do evento (base32hex, 5-1024): repetir a criação não duplica (spec 050 F9). */
+  eventId?: string;
 }
 
 interface RawCalendarEvent {
@@ -478,6 +481,7 @@ export class AdmissionCalendarService {
       timezone = AR_ZONE,
       coHostEmail,
       patientEmail,
+      eventId,
     }: CreateEventParams,
   ): Promise<{ eventId: string; meetLink: string }> {
     const token = await this.token(impersonateEmail);
@@ -489,6 +493,7 @@ export class AdmissionCalendarService {
     ];
 
     const body = {
+      ...(eventId ? { id: eventId } : {}),
       summary,
       description,
       start: { dateTime: startISO, timeZone: timezone },
@@ -524,13 +529,7 @@ export class AdmissionCalendarService {
         body: JSON.stringify(body),
       },
     );
-    if (!res.ok) {
-      const detail = await res.text().catch(() => '');
-      throw new Error(`[AdmissionCalendarService] createEvent ${res.status} on ${calendarId}: ${detail}`);
-    }
-
-    const created = (await res.json()) as { id?: string; hangoutLink?: string };
-    return { eventId: created.id ?? '', meetLink: created.hangoutLink ?? '' };
+    return readCreatedEvent(res, { calendarId, eventId, token });
   }
 
   /** Remove evento de uma agenda (limpeza / cancelamento), impersonando o dono. */

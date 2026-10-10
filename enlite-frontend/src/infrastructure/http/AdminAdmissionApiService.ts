@@ -6,7 +6,7 @@
  * `TactiqLinkController.ts`. Molde: `AdminPatientDocumentsApiService.ts`.
  *
  * Erros de domínio chegam com `code` estável (`ApiError.code`): SLOT_TAKEN, TACTIQ_LINK_REQUIRED (409),
- * RESEND_NOT_ALLOWED, RESEND_LIMIT_REACHED, RESEND_IN_PROGRESS (409), SLOT_IN_PAST e HOST_NOT_IN_ROSTER (422).
+ * RESEND_NOT_ALLOWED, RESEND_LIMIT_REACHED, RESEND_IN_PROGRESS (409), SLOT_IN_PAST e HOST_NOT_IN_ROSTER (422), CALENDAR_CREATE_FAILED (502).
  * Nada aqui loga corpo, e-mail nem telefone.
  */
 import { FirebaseAuthService } from '@infrastructure/services/FirebaseAuthService';

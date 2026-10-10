@@ -4270,6 +4270,7 @@
             "slotInPast": "Elegí un horario futuro.",
             "hostNotInRoster": "Esa persona no está en el equipo de admisión de este país.",
             "invalidSlot": "La fecha u hora no son válidas.",
+            "calendarCreateFailed": "No pudimos crear la reunión en Google. No se agendó nada. Probá de nuevo.",
             "bookFailed": "No pudimos agendar la reunión. Probá de nuevo.",
             "cancelNotAllowed": "Esta reunión ya no se puede cancelar.",
             "cancelFailed": "No pudimos cancelar la reunión. Probá de nuevo.",

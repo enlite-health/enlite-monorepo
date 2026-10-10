@@ -413,6 +413,13 @@ describe('AdmissionCalendarService — I/O', () => {
       expect(JSON.stringify(body)).not.toContain('Ana');
     });
 
+    it('F9: com eventId o corpo leva `id` (criação idempotente); sem eventId não leva', async () => {
+      await service.createEventWithMeet({ ...baseParams, eventId: 'abcde12345' });
+      expect(lastCall().body.id).toBe('abcde12345');
+      await service.createEventWithMeet(baseParams);
+      expect(lastCall().body).not.toHaveProperty('id');
+    });
+
     it('sem atendente e sem paciente → nenhum participante', async () => {
       await service.createEventWithMeet(baseParams);
       expect(lastCall().body.attendees).toEqual([]);

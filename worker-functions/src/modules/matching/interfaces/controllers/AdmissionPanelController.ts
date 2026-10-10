@@ -21,6 +21,7 @@ import {
   SlotInPastError,
   SlotTakenError,
 } from '../../application/AdmissionSchedulingService';
+import { CalendarCreateFailedError } from '../../application/admissionCalendarCreate';
 
 /**
  * AdmissionPanelController — rotas ADMIN da aba Admissão (spec 049 F3). `:id` é SEMPRE o patient id.
@@ -54,6 +55,7 @@ const DOMAIN_STATUS: ReadonlyArray<readonly [new (...a: never[]) => Error, numbe
   [SlotInPastError, 422],
   [HostNotInRosterError, 422],
   [InvalidSlotError, 400],
+  [CalendarCreateFailedError, 502],
   [MissingActorError, 401],
 ];
 

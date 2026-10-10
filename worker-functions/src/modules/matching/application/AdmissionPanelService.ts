@@ -127,7 +127,7 @@ export class AdmissionPanelService {
               a.meet_link, a.reminder_task_name, a.import_status,
               (SELECT d.id FROM patient_documents d WHERE d.source_appointment_id = a.id LIMIT 1) AS document_id
          FROM admission_appointments a
-        WHERE a.patient_id = $1
+        WHERE a.patient_id = $1 AND a.status <> 'calendar_failed'
         ORDER BY a.slot_start DESC`,
       [patientId],
     );
