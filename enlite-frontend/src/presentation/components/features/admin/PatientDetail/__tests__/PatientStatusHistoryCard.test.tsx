@@ -54,6 +54,22 @@ describe('PatientStatusHistoryCard', () => {
 
   // Spec 051 (§4): a troca fora do fluxo grava `*_override`; o Historial a mostra traduzida, deixando
   // claro que foi fora do fluxo — e NUNCA como o valor cru do banco.
+  // Quem só enxerga a aba Historial (patient:read sem as outras) a tem aberta DESDE o carregamento: a troca de
+  // estado sai com a aba já montada, e a lista tem de ser relida (achado do CI #672, e2e feliz).
+  it('refreshKey novo (o estado mudou) relê a lista com a aba já aberta', async () => {
+    getPatientStatusHistory.mockResolvedValueOnce([{ from: null, to: 'ACTIVE', source: 'insert', at: '2026-10-10T10:00:00.000Z', reason: null, actorUid: null }]);
+    const { rerender } = render(<PatientStatusHistoryCard patientId="p1" refreshKey="ACTIVE" />);
+    await screen.findByTestId('status-history-row-0');
+    getPatientStatusHistory.mockResolvedValueOnce([
+      { from: 'ACTIVE', to: 'SEARCHING', source: 'admin_panel_override', at: '2026-10-10T11:00:00.000Z', reason: null, actorUid: 'uid-a' },
+      { from: null, to: 'ACTIVE', source: 'insert', at: '2026-10-10T10:00:00.000Z', reason: null, actorUid: null },
+    ]);
+    rerender(<PatientStatusHistoryCard patientId="p1" refreshKey="SEARCHING" />);
+    await waitFor(() => expect(screen.getByTestId('status-history-row-1')).toBeInTheDocument());
+    expect(getPatientStatusHistory).toHaveBeenCalledTimes(2);
+    expect(screen.getByTestId('status-history-row-0')).toHaveTextContent('Painel (fora do fluxo)');
+  });
+
   it('origem *_override aparece traduzida como "fora do fluxo" (painel e Kanban), não como valor cru', async () => {
     getPatientStatusHistory.mockResolvedValue([
       { from: 'ACTIVE', to: 'SEARCHING', source: 'admin_panel_override', at: '2026-10-10T14:00:00.000Z', reason: null, actorUid: 'uid-a' },
