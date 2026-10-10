@@ -1,4 +1,10 @@
-import { SystemNotificationPublisher, buildPtContactsPendingPayload, SYSTEM_NOTIFICATION_ACTOR_UID } from '../SystemNotificationPublisher';
+import {
+  SystemNotificationPublisher,
+  buildAdmissionTactiqLinkPayload,
+  buildPtContactsPendingPayload,
+  SYSTEM_ADMISSION_ACTOR_UID,
+  SYSTEM_NOTIFICATION_ACTOR_UID,
+} from '../SystemNotificationPublisher';
 
 const base = { patientId: 'p-1', cycleId: 'c-1', versionId: 'v-1', dayOffset: 5 };
 
@@ -59,5 +65,33 @@ describe('SystemNotificationPublisher (spec 048)', () => {
 
   it('o payload é fechado: campo fora do conjunto (ex.: um nome) é recusado', () => {
     expect(() => buildPtContactsPendingPayload({ cycleId: 'c', versionId: 'v', dayOffset: 2, fields: ['Maria Souza'] })).toThrow();
+  });
+});
+
+describe('SystemNotificationPublisher — aviso do vínculo do Tactiq (spec 049 F4)', () => {
+  it('um evento + UMA notificação, remetente system:admission, sem paciente/conversa/mensagem, payload só com o motivo', async () => {
+    const r = repo();
+    const id = await new SystemNotificationPublisher(r as never).publishAdmissionTactiqLinkRequired({} as never, { recipientUid: 'op1', reason: 'broken' });
+    expect(id).toBe('ev-1');
+    expect(r.insertEvent).toHaveBeenCalledWith(
+      { typeCode: 'ADMISSION_TACTIQ_LINK_REQUIRED', actorUid: SYSTEM_ADMISSION_ACTOR_UID, patientId: null, conversationId: null, messageId: null, payload: { reason: 'broken' } },
+      expect.anything(),
+    );
+    expect(r.insertNotifications).toHaveBeenCalledWith('ev-1', ['op1'], expect.anything());
+    expect(SYSTEM_ADMISSION_ACTOR_UID).toBe('system:admission');
+  });
+
+  it('sem destinatário NUNCA cria evento', async () => {
+    const r = repo();
+    expect(await new SystemNotificationPublisher(r as never).publishAdmissionTactiqLinkRequired({} as never, { recipientUid: null, reason: 'missing' })).toBeNull();
+    expect(r.insertEvent).not.toHaveBeenCalled();
+    expect(r.insertNotifications).not.toHaveBeenCalled();
+  });
+
+  it('motivo fora do conjunto fechado é erro de programação (lança, nada grava)', async () => {
+    const r = repo();
+    expect(() => buildAdmissionTactiqLinkPayload('ana@example.test')).toThrow(/conjunto fechado/);
+    await expect(new SystemNotificationPublisher(r as never).publishAdmissionTactiqLinkRequired({} as never, { recipientUid: 'op1', reason: 'x' })).rejects.toThrow();
+    expect(r.insertEvent).not.toHaveBeenCalled();
   });
 });

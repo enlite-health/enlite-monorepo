@@ -5,7 +5,7 @@ import { screenByRoute } from '@presentation/config/screenRegistry';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import { useFeature } from '@presentation/hooks/useFeature';
 import { SCREEN_FEATURE_MAP } from './screenFeatureMap';
-import { MapPin } from 'lucide-react';
+import { Link2, MapPin } from 'lucide-react';
 
 export const useAdminNavItems = (): AppSidebarNavItem[] => {
   const { t } = useTranslation();
@@ -127,6 +127,12 @@ export const useAdminNavItems = (): AppSidebarNavItem[] => {
       ),
       label: t('admin.nav.apiDocs', 'API Docs'),
       href: '/admin/api-docs',
+    },
+    // Spec 049 (F7): o operador vincula a própria conta do Tactiq (`own_tactiq_link:*`, registro `account.tactiq`).
+    {
+      icon: <Link2 className="w-6 h-6" strokeWidth={2} />,
+      label: t('admin.nav.tactiqLink', 'Vincular Tactiq'),
+      href: '/admin/mi-cuenta/tactiq',
     },
   ];
 

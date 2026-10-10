@@ -4,11 +4,13 @@
 // 05/09 (decisão do Gabriel, veio da main no sync de 08/09): "Encuadre/Matching" também sai — era a MESMA
 // tabela de serviços contratados duplicada + um card "Próximamente". O encuadre do paciente É o serviço
 // contratado completo (endereço + horário, migration 330), e vive na aba "Servicio Contratado".
+// Spec 049 (F7): a aba "Admisión" entra logo depois de "Documentos" (a vacante deixou a posição livre; 047 não reservou lugar).
 // Fora do componente (react-refresh): a página e o registro de telas importam a lista.
 export type PatientTab =
   | 'clinicalData'
   | 'supportNetwork'
   | 'documents'
+  | 'admission'
   | 'contractedService'
   | 'history';
 
@@ -17,6 +19,7 @@ export const PATIENT_TABS: readonly PatientTab[] = [
   'clinicalData',
   'supportNetwork',
   'documents',
+  'admission',
   'contractedService',
   'history',
 ];

@@ -1365,7 +1365,8 @@
       "templateDrafts": "Registrar mensagem",
       "catalogObjectives": "Objetivos específicos",
       "catalogActivities": "Rotina e atividades",
-      "catalogSegments": "Segmentos (Ana Care)"
+      "catalogSegments": "Segmentos (Ana Care)",
+      "tactiqLink": "Vincular Tactiq"
     },
     "dedup": {
       "title": "Central de Duplicatas",
@@ -3474,7 +3475,8 @@
           "financialData": "Dados Financeiros",
           "matching": "Enquadre",
           "appointments": "Agendamentos",
-          "history": "Histórico"
+          "history": "Histórico",
+          "admission": "Admissão"
         },
         "documentsTab": {
           "title": "Documentos",
@@ -3506,7 +3508,8 @@
           "deleteConfirmCancel": "Cancelar",
           "deleteConfirmYes": "Excluir",
           "deleteConfirmBusy": "Excluindo…",
-          "deleteFailed": "Não conseguimos excluir o documento. Tente de novo."
+          "deleteFailed": "Não conseguimos excluir o documento. Tente de novo.",
+          "originAdmission": "Entrevista de admissão"
         },
         "comingSoon": "Em breve",
         "noData": "Sem dados cadastrados",
@@ -4086,6 +4089,111 @@
             "mentionListLabel": "Mencionar alguém",
             "mentionShowAll": "Mostrar todos"
           }
+        },
+        "admissionTab": {
+          "title": "Admissão",
+          "newButton": "Nova agenda",
+          "loading": "Carregando reuniões…",
+          "loadError": "Não conseguimos carregar as reuniões de admissão. Tente novamente.",
+          "empty": "Ainda não há reuniões de admissão para este paciente.",
+          "row": {
+            "host": "Responsável",
+            "meet": "Entrar no Meet",
+            "cancel": "Cancelar",
+            "viaSite": "Agendada pela família no site"
+          },
+          "status": {
+            "booked": "Agendada",
+            "cancelled": "Cancelada",
+            "completed": "Realizada",
+            "no_show": "Não compareceu"
+          },
+          "seal": {
+            "confirmation": "Confirmação",
+            "reminder": "Lembrete",
+            "import": "Importação",
+            "document": "Documento",
+            "documentReady": "Ver resumo",
+            "documentNone": "Sem resumo",
+            "message": {
+              "none": "Sem envio",
+              "scheduled": "Programado",
+              "pending": "Enviando",
+              "sent": "Enviado",
+              "delivered": "Entregue",
+              "failed": "Falhou",
+              "no_consent": "Sem consentimento",
+              "skipped": "Não é enviado",
+              "cancelled": "Cancelado"
+            },
+            "importStatus": {
+              "none": "—",
+              "pending": "Pendente",
+              "waiting": "Aguardando",
+              "done": "Importada",
+              "rejected": "Rejeitada",
+              "ambiguous": "Ambígua",
+              "expired": "Expirou",
+              "blocked": "Bloqueada",
+              "no_show": "Não compareceu"
+            }
+          },
+          "newModal": {
+            "title": "Nova agenda de admissão",
+            "host": "Responsável",
+            "hostsLoading": "Carregando responsáveis…",
+            "hostsError": "Não conseguimos carregar os responsáveis.",
+            "hostsEmpty": "Não há responsáveis de admissão ativos neste país.",
+            "retry": "Tentar novamente",
+            "date": "Data",
+            "time": "Hora de início",
+            "timezoneNote": "Horário de {{country}} (agora são {{now}}). A reunião dura 60 minutos.",
+            "submit": "Agendar",
+            "submitting": "Agendando…"
+          },
+          "hostReason": {
+            "missing": "Sem Tactiq vinculado",
+            "revoked": "Sem Tactiq vinculado",
+            "broken": "Sem Tactiq vinculado: o vínculo caiu e precisa ser refeito",
+            "wrong_account": "Sem Tactiq vinculado: a conta vinculada não corresponde a esta pessoa"
+          },
+          "slotProblem": {
+            "outside_window": "O horário de início deve estar entre {{first}} e {{last}}.",
+            "in_past": "Escolha um horário futuro."
+          },
+          "dialog": {
+            "back": "Voltar"
+          },
+          "cancel": {
+            "title": "Cancelar esta reunião?",
+            "body": "O evento é apagado do calendário e a família recebe o aviso de cancelamento do Google. O lembrete programado também é cancelado.",
+            "confirm": "Cancelar reunião",
+            "busy": "Cancelando…"
+          },
+          "resend": {
+            "button": "Reenviar",
+            "title": "Reenviar o WhatsApp?",
+            "bodyConfirmation": "Vamos enviar de novo à família o WhatsApp de confirmação que falhou. Cada mensagem pode ser reenviada até 2 vezes.",
+            "bodyReminder": "Vamos enviar de novo à família o WhatsApp de lembrete que falhou. Cada mensagem pode ser reenviada até 2 vezes.",
+            "confirm": "Reenviar",
+            "busy": "Reenviando…",
+            "sent": "Mensagem reenviada.",
+            "notSent": "O reenvio não pôde ser enviado. Confira o estado da mensagem na reunião."
+          },
+          "errors": {
+            "slotTaken": "Esse horário já está ocupado para o responsável. Escolha outro.",
+            "tactiqLinkRequired": "Esse responsável não tem Tactiq vinculado. Escolha outra pessoa.",
+            "slotInPast": "Escolha um horário futuro.",
+            "hostNotInRoster": "Essa pessoa não está na equipe de admissão deste país.",
+            "invalidSlot": "A data ou a hora não são válidas.",
+            "bookFailed": "Não conseguimos agendar a reunião. Tente novamente.",
+            "cancelNotAllowed": "Esta reunião não pode mais ser cancelada.",
+            "cancelFailed": "Não conseguimos cancelar a reunião. Tente novamente.",
+            "resendNotAllowed": "Esta mensagem não pode mais ser reenviada (foi entregue, a reunião começou ou foi cancelada).",
+            "resendLimitReached": "Esta mensagem já foi reenviada 2 vezes: não dá para reenviar mais.",
+            "resendInProgress": "Já há um reenvio em andamento para esta mensagem.",
+            "resendFailed": "Não conseguimos reenviar a mensagem. Tente novamente."
+          }
         }
       },
       "statusOptions": {
@@ -4479,7 +4587,8 @@
             "disable": "Dar baixa",
             "write": "Criar e editar",
             "incomplete_alert": "Aviso dia 12",
-            "waive_contact": "Não precisa"
+            "waive_contact": "Não precisa",
+            "resend_message": "Reenviar mensagem"
           },
           "category": {
             "Trabalhadores": "Trabalhadores",
@@ -4543,7 +4652,9 @@
             "own_notifications": "Minhas notificações",
             "own_presence": "Minha presença online",
             "staff_directory": "Diretório da equipe",
-            "patient_document": "Documentos do paciente"
+            "patient_document": "Documentos do paciente",
+            "patient_admission": "Admissão do paciente (reuniões e mensagens)",
+            "own_tactiq_link": "Meu vínculo com o Tactiq"
           },
           "help": {
             "open": "O que esta permissão faz",
@@ -4914,7 +5025,8 @@
             "operational": "Status, ativação e histórico",
             "therapeuticProject": "Projeto terapêutico",
             "conversation": "Conversa",
-            "documents": "Documentos"
+            "documents": "Documentos",
+            "admission": "Admissão"
           }
         },
         "patients.chatRoles": {
@@ -5009,6 +5121,9 @@
         },
         "patients.catalogSegments": {
           "label": "Pacientes: Catálogo de segmentos (Ana Care)"
+        },
+        "account.tactiq": {
+          "label": "Minha conta: Vincular Tactiq"
         }
       }
     },
@@ -5638,7 +5753,43 @@
       "close": "Fechar notificações",
       "loadError": "Não conseguimos carregar suas notificações. Tente de novo.",
       "retry": "Tentar novamente",
-      "markAllReadError": "Não conseguimos marcar todas como lidas. Tente de novo."
+      "markAllReadError": "Não conseguimos marcar todas como lidas. Tente de novo.",
+      "tactiq": {
+        "action": "Vincular Tactiq",
+        "missing": "Seu usuário não está vinculado ao Tactiq. Até vincular, você não poderá ser responsável por agendas de admissão.",
+        "broken": "Seu usuário não está vinculado ao Tactiq. Até vincular, você não poderá ser responsável por agendas de admissão.",
+        "wrong_account": "A conta do Tactiq vinculada não corresponde ao seu usuário. Vincule novamente para continuar recebendo agendas."
+      }
+    },
+    "tactiqLink": {
+      "title": "Vincular Tactiq",
+      "subtitle": "Conecte sua conta do Tactiq para poder ser responsável por agendas de admissão.",
+      "loading": "Carregando o estado do seu vínculo…",
+      "loadError": "Não conseguimos carregar o estado do seu vínculo.",
+      "retry": "Tentar novamente",
+      "stateLabel": "Estado",
+      "state": {
+        "linked": "Vinculado",
+        "missing": "Não vinculado",
+        "broken": "Vínculo caído",
+        "wrong_account": "Conta incorreta",
+        "revoked": "Vínculo revogado"
+      },
+      "stateHelp": {
+        "linked": "Sua conta do Tactiq está vinculada. Você pode ser responsável por agendas de admissão.",
+        "missing": "Você ainda não vinculou sua conta do Tactiq. Até fazer isso, não poderá ser responsável por agendas de admissão.",
+        "broken": "O vínculo com o Tactiq caiu. Vincule novamente para continuar recebendo agendas.",
+        "wrong_account": "A conta do Tactiq vinculada não corresponde ao seu usuário. Vincule novamente para continuar recebendo agendas.",
+        "revoked": "O vínculo foi revogado. Vincule sua conta novamente para continuar recebendo agendas."
+      },
+      "linkedAt": "Vinculado em",
+      "lastCheckAt": "Última verificação",
+      "link": "Vincular Tactiq",
+      "relink": "Vincular novamente",
+      "starting": "Abrindo o Tactiq…",
+      "startError": "Não conseguimos iniciar a vinculação. Tente novamente.",
+      "returnLinked": "Pronto: sua conta do Tactiq foi vinculada.",
+      "returnError": "Não conseguimos concluir a vinculação com o Tactiq. Tente novamente."
     }
   },
   "publicVacancy": {

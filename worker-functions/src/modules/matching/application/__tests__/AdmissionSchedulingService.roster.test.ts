@@ -614,7 +614,7 @@ describe('AdmissionSchedulingService — roster', () => {
           coHostEmail: ANA.email,
           patientEmail: 'paciente@example.com',
           // O título nomeia a LINHA (Care/Clinic), nunca a pessoa.
-          summary: 'Entrevista de admisión — EnLite Care',
+          summary: expect.stringMatching(/^Entrevista de admisión — EnLite Care · ADM-[0-9A-Z]{6}$/),
         }),
       );
     });
@@ -756,8 +756,8 @@ describe('AdmissionSchedulingService — título do evento', () => {
       NOW,
     );
 
-    expect(calendar.createEventWithMeet.mock.calls[0][0].summary).toBe(
-      'Entrevista de admisión — EnLite Care',
+    expect(calendar.createEventWithMeet.mock.calls[0][0].summary).toMatch(
+      /^Entrevista de admisión — EnLite Care · ADM-[0-9A-Z]{6}$/,
     );
     // A linha NÃO vaza para a confirmação do paciente, que é por equipe.
     expect(out.hostDisplayName).toBe(TEAM_AR);
@@ -766,7 +766,7 @@ describe('AdmissionSchedulingService — título do evento', () => {
     expect(calendar.createEventWithMeet.mock.calls[0][0].summary).not.toContain('Ana');
   });
 
-  it('com a flag DESLIGADA o título fica como está no ar hoje — merge é neutro', async () => {
+  it('com a flag DESLIGADA o título é o de hoje — a 049 só ACRESCENTA o código ADM no fim', async () => {
     delete process.env.ADMISSION_HOST_ROSTER_ENABLED;
     const { service, calendar } = makeService({ countryBusy: [] });
 
@@ -774,8 +774,8 @@ describe('AdmissionSchedulingService — título do evento', () => {
 
     // Trocar o título dos eventos que já são criados hoje seria mudar produção
     // no merge. A linha (Care/Clinic) entra junto com o roster.
-    expect(calendar.createEventWithMeet.mock.calls[0][0].summary).toBe(
-      `Entrevista de admisión — ${TEAM_AR}`,
+    expect(calendar.createEventWithMeet.mock.calls[0][0].summary).toMatch(
+      new RegExp(`^Entrevista de admisión — ${TEAM_AR} · ADM-[0-9A-Z]{6}$`),
     );
   });
 });

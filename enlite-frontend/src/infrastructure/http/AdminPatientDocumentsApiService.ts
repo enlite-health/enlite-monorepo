@@ -12,7 +12,8 @@
 import { FirebaseAuthService } from '@infrastructure/services/FirebaseAuthService';
 import { ApiError, type ApiErrorResponse, type ApiResponse, type ApiSuccessResponse } from './ApiError';
 
-export type PatientDocumentOrigin = 'tab' | 'chat';
+/** `admission` (spec 049): o resumo da entrevista de admissão, gerado pelo sistema e ligado à reunião. */
+export type PatientDocumentOrigin = 'tab' | 'chat' | 'admission';
 
 /** Forma da lista (`PatientDocumentDto` do backend). */
 export interface PatientDocument {

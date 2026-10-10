@@ -61,6 +61,8 @@ export const RESOURCE_CATEGORY: Readonly<Record<string, PermissionCategory>> = {
   patient_conversation: 'Pacientes',
   // Spec 031 (D463): aba "Documentos" da ficha — arquivos do paciente (subidos na aba ou vindos do chat).
   patient_document: 'Pacientes',
+  // Spec 049 (F3): aba "Admissão" da ficha — agenda da entrevista de admissão, selos de mensagem e resumo.
+  patient_admission: 'Pacientes',
   patient_coverage: 'Pacientes',
   patient_address: 'Pacientes',
   patient_services: 'Pacientes',
@@ -102,6 +104,8 @@ export const RESOURCE_CATEGORY: Readonly<Record<string, PermissionCategory>> = {
   own_notifications: 'Administração',
   // Change 022-ux-mencao-e-notificacao, Rodada 2 (R2-B): heartbeat de presença do painel admin.
   own_presence: 'Administração',
+  // Spec 049 (F4): o operador vê/gerencia o PRÓPRIO vínculo com o Tactiq (célula own_*).
+  own_tactiq_link: 'Administração',
 };
 
 /**
@@ -309,6 +313,23 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
     'Renomear um documento do paciente na lista da aba Documentos (só o nome na lista; o arquivo não muda).',
   'patient_document:delete':
     'Excluir um documento do paciente da aba Documentos. DEFINITIVO: some a linha e o arquivo; no chat a mensagem passa a mostrar documento eliminado.',
+  'patient_admission:read':
+    'Ver a aba Admissão do paciente: reuniões de admissão (marcadas pelo painel e pelo site), responsável, horário e os '
+    + 'selos de Confirmação, Lembrete, Importação e Documento. Só estados e datas — sem texto clínico nem telefone.',
+  'patient_admission:create':
+    'Marcar a reunião de admissão pelo painel e listar os responsáveis disponíveis do país. Marcar cria evento no '
+    + 'Google Calendar com Meet e dispara o WhatsApp de confirmação à família.',
+  'patient_admission:update':
+    'Cancelar a reunião de admissão pelo painel: apaga o evento no Google Calendar (a família é avisada pelo Google).',
+  'patient_admission:resend_message':
+    'Reenviar o WhatsApp da reunião de admissão que FALHOU (confirmação ou lembrete). Cada reenvio manda uma mensagem '
+    + 'à família; teto de 2 reenvios por mensagem. Quais perfis recebem esta célula é decisão do Diego.',
+  'own_tactiq_link:read':
+    'Ver o estado do PRÓPRIO vínculo com o Tactiq (vinculado, caído, conta errada ou sem vínculo) e a data da última '
+    + 'verificação. Nunca devolve o token. Quem não está vinculado não pode ser responsável de agenda de admissão.',
+  'own_tactiq_link:create':
+    'Vincular a PRÓPRIA conta do Tactiq (OAuth no navegador). O token fica cifrado e só o teste diário o usa; nunca '
+    + 'vincula a conta de outro usuário. Quais perfis recebem esta célula é decisão do Diego.',
   'staff_directory:read':
     'Buscar staff ativo por nome ou e-mail para o autocomplete de menção do chat interno do paciente. '
     + 'Devolve apenas UID e nome de exibição — nunca e-mail, telefone ou papel (D-06).',

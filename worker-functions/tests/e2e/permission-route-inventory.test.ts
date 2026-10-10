@@ -413,11 +413,20 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         // família `admin.users`, célula NOVA `own_presence:update` (nasce concedida a todo
         // staff, mesma regra de `own_notifications`, D-07; migration 466).
         'POST /api/admin/me/presence → own_presence:update',
+        // spec 049 F3 (aba Admissão): família admin.patients, 4 células literais nas 5 rotas (PR-8b: create/update, sem write).
+        'GET /api/admin/patients/:id/admission-appointments → patient_admission:read',
+        'GET /api/admin/admission/hosts → patient_admission:create',
+        'POST /api/admin/patients/:id/admission-appointments → patient_admission:create',
+        'POST /api/admin/patients/:id/admission-appointments/:apptId/cancel → patient_admission:update',
+        'POST /api/admin/patients/:id/admission-appointments/:apptId/messages/:kind/resend → patient_admission:resend_message',
+        // spec 049 F4 (vínculo do Tactiq): família admin.users, células own_* (o operador vê/vincula a PRÓPRIA conta).
+        'GET /api/admin/me/tactiq-link → own_tactiq_link:read',
+        'POST /api/admin/me/tactiq-link → own_tactiq_link:create',
       ].sort(),
     );
   });
 
-  it('as isentas são as NOVE decididas, e nenhuma a mais', () => {
+  it('as isentas são as DEZ decididas, e nenhuma a mais', () => {
     // Eram três (D116). `GET /v1/me/authz` entrou na F3: ela é `self` como as
     // outras, mas mora em `/v1/`, fora dos `GOVERNED_PREFIXES` — nascia
     // `not_governed`, isto é, isenta SEM linha, invisível a este teste. Foi o
@@ -437,10 +446,14 @@ describe('inventário de rotas governadas (app real de pé)', () => {
     // — self, versionado, fora dos `GOVERNED_PREFIXES`. O gate real de "só o
     // Acesso Master simula" mora no banco (`iam.start_group_simulation`, mig 458),
     // não numa célula desta lista.
+    // `GET /api/admin/me/tactiq-link/callback` entrou na spec 049 (F4): o Tactiq redireciona o NAVEGADOR para o callback,
+    // que não carrega Bearer. A isenção é a MARCA da montagem (`exemptHandler` em `tactiqLinkRoutes.ts`); a prova de
+    // identidade é o `state` single-use criado pelo POST autenticado (`own_tactiq_link:create`), 10 min, ligado ao uid.
     const isentas = inventario.governedRoutes.filter((r) => r.status === 'exempt');
     expect(isentas.map((r) => `${r.method} ${r.path}`).sort()).toEqual([
       'DELETE /v1/me/simulation',
       'GET /api/admin/auth/profile',
+      'GET /api/admin/me/tactiq-link/callback',
       'GET /v1/me/authz',
       'GET /v1/me/simulation/groups',
       'PATCH /api/admin/patients/:id/support-network',

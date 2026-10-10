@@ -8,9 +8,26 @@
  * e a tela não mostra o uid (o registry do front pede o rótulo "Enlite").
  */
 import type { PoolClient } from 'pg';
-import { NotificationRepository, type PtContactsPendingPayload } from '../infrastructure/NotificationRepository';
+import {
+  NotificationRepository,
+  type AdmissionTactiqLinkPayload,
+  type AdmissionTactiqLinkReason,
+  type PtContactsPendingPayload,
+} from '../infrastructure/NotificationRepository';
 
 export const SYSTEM_NOTIFICATION_ACTOR_UID = 'system:pt-contact-reminders';
+/** Sentinela do aviso automático da admissão (spec 049 T9): sem autor humano, sem FK (461). */
+export const SYSTEM_ADMISSION_ACTOR_UID = 'system:admission';
+
+const ADMISSION_TACTIQ_REASONS: readonly AdmissionTactiqLinkReason[] = ['missing', 'broken', 'wrong_account'];
+
+/** Payload fechado de 1 chave. Motivo fora do conjunto é erro de programação (lança) — nada livre entra. */
+export function buildAdmissionTactiqLinkPayload(reason: string): AdmissionTactiqLinkPayload {
+  if (!(ADMISSION_TACTIQ_REASONS as readonly string[]).includes(reason)) {
+    throw new Error('admission_tactiq_link_payload: motivo fora do conjunto fechado');
+  }
+  return { reason: reason as AdmissionTactiqLinkReason };
+}
 
 /** Os campos de contato que o aviso pode listar — espelha `ContactStatusKind` sem importar do módulo `case`. */
 const PT_CONTACT_FIELDS = ['RESPONSIBLE', 'EXTERNAL', 'COVERAGE', 'CARE_TEAM'] as const;
@@ -46,6 +63,32 @@ export interface PublishPtContactsPendingInput {
 
 export class SystemNotificationPublisher {
   constructor(private readonly repository: NotificationRepository = new NotificationRepository()) {}
+
+  /**
+   * Spec 049 F4: UM aviso (evento + 1 notificação) para o responsável de admissão sem vínculo vivo com o Tactiq.
+   * Quem decide SE avisa (por transição de estado) é o `TactiqLinkService`; aqui só se grava. Sem destinatário não
+   * grava nada e devolve `null`. O `client` é a transação do chamador (o carimbo de "já avisei" vai na MESMA transação).
+   */
+  async publishAdmissionTactiqLinkRequired(
+    client: PoolClient,
+    input: { recipientUid: string | null; reason: string },
+  ): Promise<string | null> {
+    const payload = buildAdmissionTactiqLinkPayload(input.reason);
+    if (!input.recipientUid) return null;
+    const eventId = await this.repository.insertEvent(
+      {
+        typeCode: 'ADMISSION_TACTIQ_LINK_REQUIRED',
+        actorUid: SYSTEM_ADMISSION_ACTOR_UID,
+        patientId: null,
+        conversationId: null,
+        messageId: null,
+        payload,
+      },
+      client,
+    );
+    await this.repository.insertNotifications(eventId, [input.recipientUid], client);
+    return eventId;
+  }
 
   /**
    * Um evento por conjunto DISTINTO de campos; cada destinatário (deduplicado por uid) recebe UMA notificação por

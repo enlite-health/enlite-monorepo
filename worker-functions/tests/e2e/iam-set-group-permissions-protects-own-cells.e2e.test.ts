@@ -27,6 +27,10 @@ const DATABASE_URL = process.env.DATABASE_URL || 'postgresql://enlite_admin:enli
  * Padrão do harness: igual a `iam-permissions-foundation.test.ts` — `SET LOCAL ROLE
  * app_runtime` dentro de transação + GUC `app.user_uid`, nunca parâmetro.
  */
+// Linha de base das own_* concedidas na criação: 3 (notifications read/update + presence update) + 2 da spec 049
+// (`own_tactiq_link:read|create`, mig 507 — o prefixo `own_` as inclui no auto-grant de `iam.create_group`, mig 469/471).
+const OWN_BASELINE = 5;
+
 describe('iam.set_group_permissions protege own_* do REPLACE TOTAL (migration 470, R5-2)', () => {
   let pool: Pool;
 
@@ -137,7 +141,7 @@ describe('iam.set_group_permissions protege own_* do REPLACE TOTAL (migration 47
     await pool.end();
   });
 
-  it('setup: iam.create_group concede as 3 own_* na criação (linha de base — mig 469)', async () => {
+  it('setup: iam.create_group concede as 5 own_* na criação (3 + 2 da spec 049) (linha de base — mig 469)', async () => {
     groupId = await asRole('app_runtime', { uid: U.gestor }, async (c) => {
       const r = await c.query(`SELECT iam.create_group($1, $2, 'e2e r5') AS id`, [TENANT, GROUP_NAME]);
       return r.rows[0].id as string;
@@ -146,10 +150,12 @@ describe('iam.set_group_permissions protege own_* do REPLACE TOTAL (migration 47
       { resource: 'own_notifications', action: 'read' },
       { resource: 'own_notifications', action: 'update' },
       { resource: 'own_presence', action: 'update' },
+      { resource: 'own_tactiq_link', action: 'create' }, // spec 049
+      { resource: 'own_tactiq_link', action: 'read' }, // spec 049
     ]);
   });
 
-  it('1. set_group_permissions com lista SEM own_* preserva as 3 own_* e NÃO grava remove fantasma na trilha', async () => {
+  it('1. set_group_permissions com lista SEM own_* preserva as 5 own_* e NÃO grava remove fantasma na trilha', async () => {
     await asRole('app_runtime', { uid: U.gestor }, (c) =>
       c.query(`SELECT iam.set_group_permissions($1, $2, 'setup vacancy')`, [
         groupId,
@@ -160,16 +166,16 @@ describe('iam.set_group_permissions protege own_* do REPLACE TOTAL (migration 47
     const cells = await cellsOf(groupId);
     const ownCells = cells.filter((r) => r.resource.startsWith('own_'));
     const vacancyCells = cells.filter((r) => r.resource === 'vacancy');
-    expect(ownCells).toHaveLength(3); // as 3 own_* SOBREVIVEM ao REPLACE
+    expect(ownCells).toHaveLength(OWN_BASELINE); // as own_* SOBREVIVEM ao REPLACE
     expect(vacancyCells).toHaveLength(3);
-    expect(cells).toHaveLength(6);
+    expect(cells).toHaveLength(OWN_BASELINE + 3);
 
     const trail = await trailOf(groupId);
     const ownRemoves = trail.filter((r) => r.resource.startsWith('own_') && r.op === 'remove');
     const vacancyAdds = trail.filter((r) => r.resource === 'vacancy' && r.op === 'add');
     expect(ownRemoves).toHaveLength(0); // NENHUM remove fantasma para own_*
     expect(vacancyAdds).toHaveLength(3);
-    expect(trail).toHaveLength(3); // só os 3 adds — sem os 3 removes que o bug gravava
+    expect(trail).toHaveLength(3); // só os 3 adds — sem os removes (um por own_*) que o bug gravava
   });
 
   it('2. lista INCLUINDO uma own_* é idempotente — sem duplicar linha nem trilha add repetida', async () => {
@@ -181,7 +187,7 @@ describe('iam.set_group_permissions protege own_* do REPLACE TOTAL (migration 47
     );
 
     const cells = await cellsOf(groupId);
-    expect(cells).toHaveLength(6); // mesmas 6 — nenhuma duplicata
+    expect(cells).toHaveLength(OWN_BASELINE + 3); // mesmas — nenhuma duplicata
     const presenceCount = cells.filter((r) => r.resource === 'own_presence').length;
     expect(presenceCount).toBe(1);
 
@@ -203,7 +209,7 @@ describe('iam.set_group_permissions protege own_* do REPLACE TOTAL (migration 47
     const cells = await cellsOf(groupId);
     const ownCells = cells.filter((r) => r.resource.startsWith('own_'));
     const vacancyCells = cells.filter((r) => r.resource === 'vacancy');
-    expect(ownCells).toHaveLength(3); // own_* seguem intocadas
+    expect(ownCells).toHaveLength(OWN_BASELINE); // own_* seguem intocadas
     expect(vacancyCells).toEqual([
       { resource: 'vacancy', action: 'read' },
       { resource: 'vacancy', action: 'update' },

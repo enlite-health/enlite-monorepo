@@ -29,3 +29,11 @@ services:
       # PDF. Sem esta env o upload devolve 503 (fail-closed, sem fallback — D-15). O bucket é criado
       # pelo workflow no fake-gcs (`GCS_EMULATOR_HOST` já vem do docker-compose.test.yml); nome só de CI.
       PATIENT_DOCUMENTS_BUCKET: "enlite-patient-documents-ci"
+      # Spec 049 (aba Admissão, F9): o e2e de TELA `admissao-049-*` agenda de verdade pelo painel. `ADMISSION_EXTERNALS=fake`
+      # troca Calendar, Meet, Twilio, Cloud Tasks, Tactiq, Vertex e cofre por DUBLÊS (nada sai da máquina; a fábrica LANÇA se o
+      # modo for `fake` com NODE_ENV=production). `NODE_ENV=test` sozinho mantém o Calendar real — por isso a env é explícita.
+      # O dublê do Calendar trata e-mail `ocupado.*` como agenda ocupada. Calendário e templates são valores só de CI.
+      ADMISSION_EXTERNALS: "fake"
+      ADMISSION_CALENDAR_ID_AR: "cal-ar-e2e049@example.test"
+      TWILIO_TEMPLATE_ADMISSION_CONFIRMATION_ES: "HX_CONF_ES_E2E"
+      TWILIO_TEMPLATE_ADMISSION_REMINDER_ES: "HX_REM_ES_E2E"

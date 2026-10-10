@@ -252,3 +252,36 @@ describe('GetNotificationsUseCase — aviso do PT (spec 048): só o número do C
     expect(dto.payload).toBeNull();
   });
 });
+
+describe('GetNotificationsUseCase — aviso do vínculo do Tactiq (spec 049 F4): payload só com o motivo', () => {
+  const tactiqRow = (payload: Record<string, unknown> | null): NotificationEventRow =>
+    row({
+      id: 'tq1',
+      typeCode: 'ADMISSION_TACTIQ_LINK_REQUIRED',
+      actorUid: 'system:admission',
+      actorDisplayName: null,
+      patientId: null,
+      conversationId: null,
+      messageId: null,
+      patientCaseNumber: null,
+      payload,
+    });
+
+  it.each(['missing', 'broken', 'wrong_account'])('motivo %s sai no payload; nenhuma outra chave, nenhum paciente, nenhum trecho', async (reason) => {
+    const repo = repoWith([tactiqRow({ reason, email: 'ana@example.test', token: 'rt-segredo' })]);
+    const [dto] = await new GetNotificationsUseCase(repo).execute({ recipientUid: 'me', limit: 20 });
+    expect(dto.payload).toEqual({ reason });
+    expect(dto.patientDisplayName).toBeNull();
+    expect(dto.patientCaseNumber).toBeNull();
+    expect(dto.messageExcerpt).toBeNull();
+    expect(JSON.stringify(dto)).not.toContain('rt-segredo');
+    expect(JSON.stringify(dto)).not.toContain('ana@example.test');
+  });
+
+  it('motivo fora do conjunto fechado (ou payload ausente) vira null', async () => {
+    const [a] = await new GetNotificationsUseCase(repoWith([tactiqRow({ reason: 'qualquer-coisa' })])).execute({ recipientUid: 'me', limit: 20 });
+    const [b] = await new GetNotificationsUseCase(repoWith([tactiqRow(null)])).execute({ recipientUid: 'me', limit: 20 });
+    expect(a.payload).toBeNull();
+    expect(b.payload).toBeNull();
+  });
+});

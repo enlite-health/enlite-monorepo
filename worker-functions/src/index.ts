@@ -108,6 +108,28 @@ import { AdmissionSchedulingService } from '@modules/matching/application/Admiss
 import { AdmissionReminderService } from '@modules/matching/application/AdmissionReminderService';
 import { AdmissionReminderController } from '@modules/matching/interfaces/controllers/AdmissionReminderController';
 import { RealAdmissionNotifier } from '@modules/matching/infrastructure/RealAdmissionNotifier';
+import { AdmissionMessagingService } from '@modules/matching/application/AdmissionMessagingService';
+import { AdmissionMessageContent } from '@modules/matching/infrastructure/AdmissionMessageContent';
+import { AdmissionPanelService } from '@modules/matching/application/AdmissionPanelService';
+import { AdmissionPanelController } from '@modules/matching/interfaces/controllers/AdmissionPanelController';
+import { createAdminAdmissionRoutes } from '@modules/matching/interfaces/routes/adminAdmissionRoutes';
+import { TactiqLinkService } from '@modules/matching/application/TactiqLinkService';
+import { TactiqLinkRepository } from '@modules/matching/infrastructure/TactiqLinkRepository';
+import { TactiqLinkController } from '@modules/matching/interfaces/controllers/TactiqLinkController';
+import { TactiqCheckInternalController } from '@modules/matching/interfaces/controllers/TactiqCheckInternalController';
+import { createTactiqLinkRoutes, createTactiqLinkCallbackRoute, createTactiqCheckInternalRoutes } from '@modules/matching/interfaces/routes/tactiqLinkRoutes';
+import { AdmissionPostCallJob } from '@modules/matching/application/AdmissionPostCallJob';
+import { AdmissionPostCallRepository } from '@modules/matching/infrastructure/AdmissionPostCallRepository';
+import { AdmissionPostCallInternalController } from '@modules/matching/interfaces/controllers/AdmissionPostCallInternalController';
+import { createAdmissionPostCallInternalRoutes } from '@modules/matching/interfaces/routes/admissionPostCallRoutes';
+import { AdmissionImportService } from '@modules/matching/application/AdmissionImportService';
+import { AdmissionImportRepository } from '@modules/matching/infrastructure/AdmissionImportRepository';
+import { AdmissionImportInternalController } from '@modules/matching/interfaces/controllers/AdmissionImportInternalController';
+import { createAdmissionImportInternalRoutes } from '@modules/matching/interfaces/routes/admissionImportRoutes';
+import { interviewHostRepository } from '@modules/matching/infrastructure/InterviewHostRepository';
+import { AdmissionMessageRepository } from '@modules/matching/infrastructure/AdmissionMessageRepository';
+import { AdmissionEventRepository } from '@modules/matching/infrastructure/AdmissionEventRepository';
+import { createAdmissionExternals } from '@modules/matching/infrastructure/admissionExternals';
 import { RecruitmentHealthController } from '@modules/notification/interfaces/controllers/RecruitmentHealthController';
 import { createSwaggerRouter, shouldGateDocs } from '@shared/openapi/swaggerRouter';
 import { createClaimController } from './bootstrap/createClaimController';
@@ -352,14 +374,39 @@ app.post('/api/public/v1/leads', publicLeadsRateLimit, publicContextMiddleware('
 // Real notifier: immediate WhatsApp confirmation to the patient (direct Content
 // API, no outbox — the patient is not a worker) + a 30-min-before reminder via
 // Cloud Task. Injected in place of the default LoggingAdmissionNotifier.
+// Spec 049 (F2): envio só por quem ganha o CLAIM em `admission_messages`; task do lembrete NOMEADA; trilha append-only.
+// As fronteiras (Twilio, Cloud Tasks) vêm da fábrica: em NODE_ENV=test ou ADMISSION_EXTERNALS=fake são dublês.
+const admissionDb = DatabaseConnection.getInstance().getPool();
+const admissionExternals = createAdmissionExternals(process.env, { realWhatsApp: () => twilioMessagingService });
+const admissionMessageContent = new AdmissionMessageContent(admissionDb);
+const admissionEvents = new AdmissionEventRepository(admissionDb);
+const admissionMessaging = new AdmissionMessagingService(
+  new AdmissionMessageRepository(admissionDb),
+  admissionEvents,
+  admissionExternals.whatsapp,
+  admissionMessageContent,
+);
 const admissionNotifier = new RealAdmissionNotifier(
-  twilioMessagingService,
-  new CloudTasksClient(),
-  DatabaseConnection.getInstance().getPool(),
+  admissionMessaging,
+  admissionMessageContent,
+  admissionExternals.reminderTasks,
+  admissionEvents,
+  admissionDb,
 );
-const admissionSchedulingController = new AdmissionSchedulingController(
-  new AdmissionSchedulingService(undefined, admissionNotifier),
+// Spec 049 F4: vínculo do responsável com o Tactiq (OAuth PKCE público, token cifrado KMS, teste diário, sino por transição).
+const tactiqLinkService = new TactiqLinkService({
+  repo: new TactiqLinkRepository(admissionDb),
+  oauth: admissionExternals.tactiq.oauth,
+  mcp: admissionExternals.tactiq.mcp,
+  db: admissionDb,
+  clientId: () => process.env.TACTIQ_OAUTH_CLIENT_ID ?? null,
+});
+const tactiqLinkController = new TactiqLinkController(tactiqLinkService);
+// UM serviço de agendamento (e UM núcleo de reserva) para o site e para o painel (spec 049 F3); o painel exige o vínculo (F4).
+const admissionSchedulingService049 = new AdmissionSchedulingService(
+  admissionExternals.calendar, admissionNotifier, undefined, undefined, undefined, tactiqLinkService,
 );
+const admissionSchedulingController = new AdmissionSchedulingController(admissionSchedulingService049);
 const admissionSlotsRateLimit = rateLimit({
   windowMs: 60 * 1000,
   max: 30, // read endpoint
@@ -547,6 +594,33 @@ app.use('/api/admin', createAdminConversationRoutes(authMiddleware, permissionMi
 // ========== Admin Patient Documents — aba "Documentos" (spec 031) ==========
 app.use('/api/admin', createPatientDocumentsRoutes(authMiddleware, permissionMiddleware));
 
+// Spec 049 F3: aba "Admissão" do paciente (agendar pelo painel, listar, cancelar, reenviar). Família admin.patients.
+const admissionPanelController = new AdmissionPanelController(
+  admissionSchedulingService049,
+  new AdmissionPanelService({
+    db: admissionDb,
+    calendar: admissionExternals.calendar,
+    reminderTasks: admissionExternals.reminderTasks,
+    events: admissionEvents,
+    messaging: admissionMessaging,
+    hosts: interviewHostRepository,
+    tactiq: tactiqLinkService,
+    impersonateEmail: process.env.ADMISSION_IMPERSONATE_EMAIL || 'enlite@enlite.health',
+  }),
+);
+app.use('/api/admin', createAdminAdmissionRoutes(authMiddleware, permissionMiddleware, admissionPanelController));
+
+// Spec 049 F4: o operador vincula a PRÓPRIA conta do Tactiq (own_tactiq_link:read|write). O callback do OAuth é navegação
+// do browser (sem Bearer): isento na montagem, em contexto público, e a prova de identidade é o `state` single-use.
+app.use('/api/admin', createTactiqLinkRoutes(authMiddleware, permissionMiddleware, tactiqLinkController));
+app.use('/api/admin', createTactiqLinkCallbackRoute(tactiqLinkController, rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many requests' },
+})));
+
 // ========== Admin Notifications / sino (spec 022, Bloco 4) ==========
 // `permissionsBoundary.permissions.client` — leitura CRUA do ABAC (D-13, revisado no fecho B5:
 // resolve `patientDisplayName` sob a célula do DESTINATÁRIO da requisição, independente do gate
@@ -688,11 +762,57 @@ app.use(
   createTherapeuticContactRemindersInternalRoutes(new TherapeuticContactRemindersInternalController()),
 );
 
+// spec 049 F4: teste diário do vínculo do Tactiq + aviso no sino por transição + alarme 48 h (Cloud Scheduler, 1×/dia).
+app.use(
+  '/api/internal',
+  systemContextMiddleware('job:admission-tactiq-check'),
+  internalAuthMiddleware,
+  createTactiqCheckInternalRoutes(new TactiqCheckInternalController(tactiqLinkService)),
+);
+
+// spec 049 F5: job de 15 min — fim REAL da call (Meet API), no_show e detectores de silêncio (Cloud Scheduler, a cada 15 min).
+app.use(
+  '/api/internal',
+  systemContextMiddleware('job:admission-post-call'),
+  internalAuthMiddleware,
+  createAdmissionPostCallInternalRoutes(
+    new AdmissionPostCallInternalController(
+      new AdmissionPostCallJob({
+        repo: new AdmissionPostCallRepository(admissionDb),
+        meet: admissionExternals.meet,
+        events: admissionEvents,
+        db: admissionDb,
+      }),
+    ),
+  ),
+);
+
+// spec 049 F6: importação do Tactiq (MCP -> provas -> cofre -> Vertex -> PDF -> documento). Roda depois do job de 15 min (a F5 grava
+// `conference_ended_at` e `import_status='pending'`). Cloud Scheduler, a cada 15 min.
+app.use(
+  '/api/internal',
+  systemContextMiddleware('job:admission-import'),
+  internalAuthMiddleware,
+  createAdmissionImportInternalRoutes(
+    new AdmissionImportInternalController(
+      new AdmissionImportService({
+        repo: new AdmissionImportRepository(admissionDb),
+        events: admissionEvents,
+        tokens: tactiqLinkService,
+        mcp: admissionExternals.tactiq.mcp,
+        vault: admissionExternals.vault,
+        summary: admissionExternals.summary,
+        db: admissionDb,
+      }),
+    ),
+  ),
+);
+
 // Cloud Tasks: 30-min-before admission reminder (queue: admission-reminders).
 // Kept on the app (not the notification router) to avoid a notification→matching
 // import; guarded by the same internalAuthMiddleware (X-Internal-Secret).
 const admissionReminderController = new AdmissionReminderController(
-  new AdmissionReminderService(twilioMessagingService, dbPool),
+  new AdmissionReminderService(admissionMessaging, admissionMessageContent, dbPool),
 );
 app.post('/api/internal/reminders/admission-30min', internalAuthMiddleware, systemContextMiddleware('job:admission-reminder'), (req: Request, res: Response) =>
   admissionReminderController.handle(req, res),

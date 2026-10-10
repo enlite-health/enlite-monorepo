@@ -10,6 +10,8 @@ export const MEET_LINK_REGEX = /^https:\/\/meet\.google\.com\/[a-z0-9]+-[a-z0-9]
 const METADATA_BASE = 'http://metadata.google.internal/computeMetadata/v1';
 const METADATA_HEADERS = { 'Metadata-Flavor': 'Google' };
 export const CALENDAR_SCOPE = 'https://www.googleapis.com/auth/calendar';
+/** Meet REST API, só leitura (spec 049 F5). SEMPRE em token PRÓPRIO: somado ao do Calendar derrubaria o agendamento enquanto o H2 está aberto. */
+export const MEET_SCOPE = 'https://www.googleapis.com/auth/meetings.space.readonly';
 const SEARCH_BATCH_SIZE = 5;
 
 // ─── Internal types ───────────────────────────────────────────────────────────
@@ -39,6 +41,16 @@ export function extractMeetingCode(link: string): string {
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
 
+/**
+ * Resultado de pedir um token DWD. `unauthorized_client` = o Workspace NÃO delegou o escopo pedido a esta conta de serviço
+ * (o H2 da spec 049): é diferente de falha de rede/metadata (`unavailable`), e o chamador precisa distinguir.
+ */
+export type DwdTokenResult = { token: string } | { error: 'unauthorized_client' | 'unavailable' };
+
+function exchangeError(detail: string): 'unauthorized_client' | 'unavailable' {
+  return /unauthorized_client/.test(detail) ? 'unauthorized_client' : 'unavailable';
+}
+
 interface ServiceAccountKey {
   client_email?: string;
   private_key?: string;
@@ -50,7 +62,7 @@ interface ServiceAccountKey {
  * access_token. Em Cloud Run essa env NÃO está setada → retorna null e o
  * chamador cai no caminho metadata+signJwt (keyless). NUNCA usado em prod.
  */
-async function getLocalDwdToken(subject: string): Promise<string | null> {
+async function getLocalDwdToken(subject: string, scope: string): Promise<DwdTokenResult | null> {
   const keyPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
   if (!keyPath || !existsSync(keyPath)) return null;
 
@@ -69,7 +81,7 @@ async function getLocalDwdToken(subject: string): Promise<string | null> {
       {
         iss: key.client_email,
         sub: subject,
-        scope: CALENDAR_SCOPE,
+        scope,
         aud: 'https://oauth2.googleapis.com/token',
         iat: now,
         exp: now + 3600,
@@ -89,13 +101,13 @@ async function getLocalDwdToken(subject: string): Promise<string | null> {
     if (!tokenRes.ok) {
       const detail = await tokenRes.text().catch(() => '');
       console.warn(`[GoogleCalendarService] local token exchange error ${tokenRes.status}: ${detail}`);
-      return null;
+      return { error: exchangeError(detail) };
     }
     const { access_token } = (await tokenRes.json()) as { access_token: string };
-    return access_token ?? null;
+    return access_token ? { token: access_token } : { error: 'unavailable' };
   } catch (err: unknown) {
     console.warn('[GoogleCalendarService] local DWD sign error:', err instanceof Error ? err.message : err);
-    return null;
+    return { error: 'unavailable' };
   }
 }
 
@@ -105,16 +117,34 @@ async function getLocalDwdToken(subject: string): Promise<string | null> {
  * metadata server → signJwt → token exchange.
  * LOCAL (dev): se GOOGLE_APPLICATION_CREDENTIALS existe, assina o JWT localmente.
  */
-export async function getAccessToken(subjectEmail: string, fallbackEmail: string): Promise<string | null> {
+export async function getAccessToken(
+  subjectEmail: string,
+  fallbackEmail: string,
+  scope: string = CALENDAR_SCOPE,
+): Promise<string | null> {
+  const res = await requestDwdAccessToken(subjectEmail, fallbackEmail, scope);
+  return 'token' in res ? res.token : null;
+}
+
+/**
+ * Igual a `getAccessToken`, mas devolve o MOTIVO da falha (`unauthorized_client` = escopo não delegado). O escopo é sempre
+ * UM: o token do Meet nunca carrega o do Calendar (nem o contrário).
+ */
+export async function requestDwdAccessToken(
+  subjectEmail: string,
+  fallbackEmail: string,
+  scope: string = CALENDAR_SCOPE,
+): Promise<DwdTokenResult> {
   const subject = subjectEmail || fallbackEmail;
   if (!subject) {
     console.warn('[GoogleCalendarService] GOOGLE_CALENDAR_IMPERSONATE_EMAIL not set');
-    return null;
+    return { error: 'unavailable' };
   }
 
   // Caminho LOCAL (dev) — só dispara se a chave de SA estiver presente.
-  const localToken = await getLocalDwdToken(subject);
-  if (localToken) return localToken;
+  const local = await getLocalDwdToken(subject, scope);
+  if (local && 'token' in local) return local;
+  if (local && local.error === 'unauthorized_client') return local;
 
   try {
     const [saEmailRes, saTokenRes] = await Promise.all([
@@ -123,7 +153,7 @@ export async function getAccessToken(subjectEmail: string, fallbackEmail: string
     ]);
     if (!saEmailRes.ok || !saTokenRes.ok) {
       console.warn('[GoogleCalendarService] metadata server error');
-      return null;
+      return { error: 'unavailable' };
     }
     const saEmail = await saEmailRes.text();
     const { access_token: saToken } = (await saTokenRes.json()) as { access_token: string };
@@ -132,7 +162,7 @@ export async function getAccessToken(subjectEmail: string, fallbackEmail: string
     const claimSet = {
       iss: saEmail,
       sub: subject,
-      scope: CALENDAR_SCOPE,
+      scope,
       aud: 'https://oauth2.googleapis.com/token',
       iat: now,
       exp: now + 3600,
@@ -149,7 +179,7 @@ export async function getAccessToken(subjectEmail: string, fallbackEmail: string
     if (!signRes.ok) {
       const detail = await signRes.text().catch(() => '');
       console.warn(`[GoogleCalendarService] signJwt error ${signRes.status}: ${detail}`);
-      return null;
+      return { error: 'unavailable' };
     }
     const { signedJwt } = (await signRes.json()) as { signedJwt: string };
 
@@ -164,13 +194,13 @@ export async function getAccessToken(subjectEmail: string, fallbackEmail: string
     if (!tokenRes.ok) {
       const detail = await tokenRes.text().catch(() => '');
       console.warn(`[GoogleCalendarService] token exchange error ${tokenRes.status}: ${detail}`);
-      return null;
+      return { error: exchangeError(detail) };
     }
     const { access_token } = (await tokenRes.json()) as { access_token: string };
-    return access_token ?? null;
+    return access_token ? { token: access_token } : { error: 'unavailable' };
   } catch (err: unknown) {
     console.warn('[GoogleCalendarService] Auth error:', err instanceof Error ? err.message : err);
-    return null;
+    return { error: 'unavailable' };
   }
 }
 

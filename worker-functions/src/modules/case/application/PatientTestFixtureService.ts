@@ -229,6 +229,13 @@ export class PatientTestFixtureService {
         let vacanciesDeleted = 0;
         let cascaded: Record<string, number> = {};
 
+        // 506 (spec 049): documento de origem `admission` aponta para a reunião com FK RESTRICT — sai ANTES
+        // das reuniões, ou o DELETE delas aborta. (O objeto no bucket não é apagado: só paciente `is_test`.)
+        await client.query(
+          `DELETE FROM patient_documents WHERE patient_id = $1 AND origin = 'admission'`,
+          [patientId],
+        );
+
         const appt = await client.query(
           `DELETE FROM admission_appointments WHERE patient_id = $1`,
           [patientId],

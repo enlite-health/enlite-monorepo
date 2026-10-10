@@ -11,7 +11,7 @@ const DocumentIdParams = z.object({ id: UuidParam, docId: UuidParam });
 
 const PatientDocumentDto = z.object({
   id: z.string().uuid(),
-  origin: z.enum(['tab', 'chat']).openapi({ description: '`tab` = subido na aba; `chat` = anexado numa mensagem do chat do paciente.' }),
+  origin: z.enum(['tab', 'chat', 'admission']).openapi({ description: '`tab` = subido na aba; `chat` = anexado numa mensagem do chat do paciente; `admission` = resumo gerado da reunião de admissão.' }),
   label: z.string().nullable().openapi({ description: 'Nome do documento (livre, dado pela operadora). `null` só se a decifra falhar neste item.' }),
   contentType: z.string(),
   sizeBytes: z.number().int().positive(),

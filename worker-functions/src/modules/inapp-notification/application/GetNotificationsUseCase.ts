@@ -12,6 +12,7 @@
  */
 import {
   NotificationRepository,
+  type AdmissionTactiqLinkPayload,
   type NotificationTypeCode,
   type PtContactsPendingPayload,
 } from '../infrastructure/NotificationRepository';
@@ -37,7 +38,7 @@ export interface NotificationDto {
    *  origem É o root, ou quando não há `messageId` no evento. */
   rootMessageId: string | null;
   /** spec 048: SÓ no tipo `THERAPEUTIC_PROJECT_CONTACTS_PENDING` (4 chaves, ids + nome de campo); `null` nos de conversa. */
-  payload: PtContactsPendingPayload | null;
+  payload: PtContactsPendingPayload | AdmissionTactiqLinkPayload | null;
   /** spec 048: número do Caso (`patients.case_number`) do tipo do PT — o sino NUNCA mostra o nome do paciente nele. */
   patientCaseNumber: number | null;
   /** Item 2 (card com trecho, F7/F8): MESMO gate de `patientDisplayName` — só resolvido quando o
@@ -104,7 +105,7 @@ export class GetNotificationsUseCase {
         patientDisplayName,
         rootMessageId,
         messageExcerpt,
-        payload: isSystemPtType(row.typeCode) ? ptPayloadOf(rawPayload) : null,
+        payload: payloadOf(row.typeCode, rawPayload),
         patientCaseNumber: isSystemPtType(row.typeCode) ? row.patientCaseNumber : null,
       });
     }
@@ -114,6 +115,16 @@ export class GetNotificationsUseCase {
 }
 
 const isSystemPtType = (code: NotificationTypeCode): boolean => code === 'THERAPEUTIC_PROJECT_CONTACTS_PENDING';
+
+/** Payload por tipo: o do PT (4 chaves) ou o da admissão (`reason`); conversa não tem payload. */
+function payloadOf(code: NotificationTypeCode, raw: Record<string, unknown> | null): PtContactsPendingPayload | AdmissionTactiqLinkPayload | null {
+  if (isSystemPtType(code)) return ptPayloadOf(raw);
+  if (code === 'ADMISSION_TACTIQ_LINK_REQUIRED') {
+    const reason = raw?.reason;
+    return reason === 'missing' || reason === 'broken' || reason === 'wrong_account' ? { reason } : null;
+  }
+  return null;
+}
 
 /** Filtra o payload bruto às 4 chaves do contrato — nunca devolve chave extra que alguém tenha gravado. */
 function ptPayloadOf(raw: Record<string, unknown> | null): PtContactsPendingPayload | null {
