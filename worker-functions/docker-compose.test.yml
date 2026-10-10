@@ -153,11 +153,51 @@ services:
       # Em produção o default do código continua OFF: a virada é por env, com
       # a tabela já populada (design § Migration Plan).
       ADMISSION_HOST_ROSTER_ENABLED: ${ADMISSION_HOST_ROSTER_ENABLED:-true}
+      # Google Calendar da admissão (R-17, spec 050): em teste o Calendar é SEMPRE dublê. Aqui é o que FALHA de propósito —
+      # o e2e do roster ("agenda inacessível vira 500 genérico") precisa de uma agenda que não responda, e o cliente real não
+      # pode ser instanciado em teste. Quem sobe `ADMISSION_EXTERNALS=fake` (docker-compose.group-simulation.yml) recebe o dublê
+      # que responde (a fábrica dá a precedência a `fake`).
+      ADMISSION_CALENDAR_DOUBLE: unavailable
+      # Ana Care na API de TESTE (R-16, spec 050): o handler `worker.mirror_requested` chama `AnaCareClient.create()`, que sem
+      # `ANACARE_API_KEY` vai ao Secret Manager do Google — e com o host bloqueado o cliente gRPC re-tenta por 60 s (estoura o
+      # `sweep-safe` de tests/e2e/internal-endpoints.test.ts). Chave FALSA + base URL do STUB local (porta 9913, a mesma do
+      # docker-compose.anacare-hours-real-stub-local.yml; não sobe no CI → ECONNREFUSED imediato, nunca admin.ana.care).
+      # `create()` já prefere a env (AnaCareClient.ts:100): nada muda em produção.
+      ANACARE_API_KEY: ${ANACARE_API_KEY:-stub-key-e2e-only}
+      ANACARE_BASE_URL: ${ANACARE_BASE_URL:-http://host.docker.internal:9913}
     # host.docker.internal existe sozinho no Docker Desktop (macOS), mas NÃO no
     # Linux do runner do CI — sem isto o container não acha o stub e os testes de
     # candidatos falham só no CI.
     extra_hosts:
       - "host.docker.internal:host-gateway"
+      # ── R-16 (spec 050): a API de TESTE não alcança terceiro. ─────────────────────────────────────────────────────
+      # Cada host de terceiro que o código chama resolve para 127.0.0.1 AQUI DENTRO do contêiner, onde nada escuta em
+      # 80/443: a conexão é recusada na hora e nada sai da máquina (um endereço roteável como 192.0.2.1 deixaria a
+      # chamada pendurada por minutos). `extra_hosts` NÃO aceita curinga (`*.googleapis.com` não existe): lista de hosts
+      # REAIS (`grep -rhoE "[a-z0-9.-]+\.googleapis\.com|[a-z0-9.-]+\.twilio\.com|mcp\.tactiq\.io" worker-functions/src`)
+      # mais os hosts implícitos dos SDKs do Google (secretmanager, cloudkms, cloudtasks, pubsub, iamcredentials, securetoken).
+      # ⚠️ HOST NOVO DE TERCEIRO NO CÓDIGO TEM DE ENTRAR NESTA LISTA. O passo "rede-bloqueada.controle" dos workflows prova
+      # que o bloqueio está de pé (resolve para o endereço morto e a conexão falha).
+      - "mcp.tactiq.io:127.0.0.1"
+      - "api.twilio.com:127.0.0.1"
+      - "content.twilio.com:127.0.0.1"
+      - "media.twilio.com:127.0.0.1"
+      - "oauth2.googleapis.com:127.0.0.1"
+      - "www.googleapis.com:127.0.0.1"
+      - "storage.googleapis.com:127.0.0.1"
+      - "aiplatform.googleapis.com:127.0.0.1"
+      - "meet.googleapis.com:127.0.0.1"
+      - "routes.googleapis.com:127.0.0.1"
+      - "identitytoolkit.googleapis.com:127.0.0.1"
+      - "securetoken.googleapis.com:127.0.0.1"
+      - "iam.googleapis.com:127.0.0.1"
+      - "iamcredentials.googleapis.com:127.0.0.1"
+      - "apikeys.googleapis.com:127.0.0.1"
+      - "generativelanguage.googleapis.com:127.0.0.1"
+      - "secretmanager.googleapis.com:127.0.0.1"
+      - "cloudkms.googleapis.com:127.0.0.1"
+      - "cloudtasks.googleapis.com:127.0.0.1"
+      - "pubsub.googleapis.com:127.0.0.1"
 
 volumes:
   firebase_emulator_data:

@@ -61,4 +61,37 @@ describe('GcsTranscriptVault', () => {
     expect(() => new GcsTranscriptVault({ env, client: fakeStorage(jest.fn(), 'https://storage.googleapis.com').client })).toThrow(AdmissionRealAdapterInTestError);
     expect(() => new GcsTranscriptVault({ env, client: fakeStorage(jest.fn()).client })).not.toThrow();
   });
+
+  describe('instância de ENSAIO (spec 050 R-29): o mesmo adapter, outro bucket', () => {
+    const envBoth = { ...env, ADMISSION_REHEARSAL_BUCKET: 'ensaio-teste' } as NodeJS.ProcessEnv;
+
+    it('grava no bucket de ENSAIO e nunca no cofre; a do cofre continua gravando no cofre', async () => {
+      const save = jest.fn().mockResolvedValue(undefined);
+      const { client, files } = fakeStorage(save);
+      await new GcsTranscriptVault({ env: envBoth, client, bucketEnv: 'ADMISSION_REHEARSAL_BUCKET' }).putOnce('AR/a/t.txt', Buffer.from('x'), { sha256: 'h' });
+      await new GcsTranscriptVault({ env: envBoth, client }).putOnce('AR/b/t.txt', Buffer.from('x'), { sha256: 'h' });
+      expect(files).toEqual(['ensaio-teste/AR/a/t.txt', 'cofre-teste/AR/b/t.txt']);
+      expect(save.mock.calls[0][1].preconditionOpts).toEqual({ ifGenerationMatch: 0 }); // mesmo "só cria"
+    });
+
+    it.each([
+      ['ausente', env],
+      ['vazia', { ...env, ADMISSION_REHEARSAL_BUCKET: '' } as NodeJS.ProcessEnv],
+      ['IGUAL ao cofre (cairia no cofre de 5 anos)', { ...env, ADMISSION_REHEARSAL_BUCKET: 'cofre-teste' } as NodeJS.ProcessEnv],
+    ])('env %s → não configurada: `isConfigured()` falso e `putOnce` falha com 0 chamadas ao SDK', async (_nome, e) => {
+      const save = jest.fn();
+      const { client, files } = fakeStorage(save);
+      const vault = new GcsTranscriptVault({ env: e, client, bucketEnv: 'ADMISSION_REHEARSAL_BUCKET' });
+      expect(vault.isConfigured()).toBe(false);
+      await expect(vault.putOnce('n', Buffer.from('x'), { sha256: 'h' })).rejects.toMatchObject({ reason: 'not_configured' });
+      expect(save).not.toHaveBeenCalled();
+      expect(files).toEqual([]);
+    });
+
+    it('configurada: `isConfigured()` verdadeiro (e o cofre, com a env dele, também)', () => {
+      const { client } = fakeStorage(jest.fn());
+      expect(new GcsTranscriptVault({ env: envBoth, client, bucketEnv: 'ADMISSION_REHEARSAL_BUCKET' }).isConfigured()).toBe(true);
+      expect(new GcsTranscriptVault({ env: envBoth, client }).isConfigured()).toBe(true);
+    });
+  });
 });

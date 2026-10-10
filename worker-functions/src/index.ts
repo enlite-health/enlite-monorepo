@@ -801,6 +801,7 @@ app.use(
         tokens: tactiqLinkService,
         mcp: admissionExternals.tactiq.mcp,
         vault: admissionExternals.vault,
+        rehearsalVault: admissionExternals.rehearsalVault,
         summary: admissionExternals.summary,
         db: admissionDb,
       }),
