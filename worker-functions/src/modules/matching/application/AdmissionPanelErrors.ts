@@ -42,3 +42,21 @@ export class PaidRehearsalAlreadyActiveError extends Error {
     this.name = 'PaidRehearsalAlreadyActiveError';
   }
 }
+
+/** Reprocesso do resumo recusado (spec 050 R-38): reunião encerrada/terminal ou já concluída. `reason` é um enum fechado. */
+export class SummaryRetryNotAllowedError extends Error {
+  readonly code = 'SUMMARY_RETRY_NOT_ALLOWED';
+  constructor(public readonly reason: 'appointment_not_booked' | 'already_done' | 'import_terminal') {
+    super(`Summary retry not allowed: ${reason}`);
+    this.name = 'SummaryRetryNotAllowedError';
+  }
+}
+
+/** A reunião já gastou as autorizações de reprocesso do resumo (R-38): 409, sem nova rodada paga. */
+export class SummaryRetryLimitReachedError extends Error {
+  readonly code = 'SUMMARY_RETRY_LIMIT_REACHED';
+  constructor() {
+    super('The summary retry authorization limit for this appointment was reached');
+    this.name = 'SummaryRetryLimitReachedError';
+  }
+}

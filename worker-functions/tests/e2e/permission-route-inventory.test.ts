@@ -421,6 +421,8 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'POST /api/admin/patients/:id/admission-appointments/:apptId/messages/:kind/resend → patient_admission:resend_message',
         // spec 050 F3 (ensaio pago, R-19): célula própria, só do Acesso Master.
         'POST /api/admin/patients/:id/admission-appointments/:apptId/paid-rehearsal → patient_admission:release_paid_rehearsal',
+        // spec 050 F11 (reprocesso do resumo, R-38): célula própria, Master + Admisión y Supervisión.
+        'POST /api/admin/patients/:id/admission-appointments/:apptId/summary-retry → patient_admission:retry_summary',
         // spec 049 F4 (vínculo do Tactiq): família admin.users, células own_* (o operador vê/vincula a PRÓPRIA conta).
         'GET /api/admin/me/tactiq-link → own_tactiq_link:read',
         'POST /api/admin/me/tactiq-link → own_tactiq_link:create',

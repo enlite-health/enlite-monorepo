@@ -373,6 +373,8 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       'patient_admission:read', 'patient_admission:create', 'patient_admission:update', 'patient_admission:resend_message',
       // Spec 050 (F3): ensaio pago por reunião — célula própria (só Master), declarada em `adminAdmissionRoutes.ts`.
       'patient_admission:release_paid_rehearsal',
+      // Spec 050 (F11): reprocesso do resumo — célula própria (Master + Admisión y Supervisión), declarada em `adminAdmissionRoutes.ts`.
+      'patient_admission:retry_summary',
       // Spec 049 (F4): vínculo do Tactiq — 2 células `own_*` declaradas por rota real (`tactiqLinkRoutes.ts`).
       'own_tactiq_link:read', 'own_tactiq_link:create',
       'staff_directory:read',

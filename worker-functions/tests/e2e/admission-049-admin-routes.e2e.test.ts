@@ -265,7 +265,7 @@ describe('rotas admin da aba Admissão — HTTP real, banco real, engine LIGADO 
   });
 
   describe('A3-8 (varredura): as 3 células estão LITERAIS na rota — é o que o catálogo enxerga', () => {
-    it('scanExpressRouter vê cada rota com a SUA célula (read / create / update / resend_message)', async () => {
+    it('scanExpressRouter vê cada rota com a SUA célula (read / create / update / resend_message / release_paid_rehearsal / retry_summary)', async () => {
       const { scanExpressRouter, declaredCells } = await import('@modules/identity/permissions');
       const routes = scanExpressRouter(app.servidor.listeners('request')[0] as never)
         .filter((r) => r.path.includes('admission'));
@@ -277,9 +277,13 @@ describe('rotas admin da aba Admissão — HTTP real, banco real, engine LIGADO 
       expect(por('POST', '/:apptId/cancel')).toMatchObject({ resource: 'patient_admission', action: 'update' });
       expect(por('POST', '/messages/:kind/resend')).toMatchObject({ resource: 'patient_admission', action: 'resend_message' });
       expect(por('POST', '/:apptId/paid-rehearsal')).toMatchObject({ resource: 'patient_admission', action: 'release_paid_rehearsal' });
-      expect(routes).toHaveLength(6);
+      expect(por('POST', '/:apptId/summary-retry')).toMatchObject({ resource: 'patient_admission', action: 'retry_summary' });
+      expect(routes).toHaveLength(7);
       const declared = declaredCells(routes).map((c) => `${c.resource}:${c.action}`).sort();
-      expect(declared).toEqual(['patient_admission:create', 'patient_admission:read', 'patient_admission:release_paid_rehearsal', 'patient_admission:resend_message', 'patient_admission:update']);
+      expect(declared).toEqual([
+        'patient_admission:create', 'patient_admission:read', 'patient_admission:release_paid_rehearsal', 'patient_admission:resend_message',
+        'patient_admission:retry_summary', 'patient_admission:update',
+      ]);
     });
   });
 
@@ -697,11 +701,11 @@ describeAbacStack('stack com engine ligado e catálogo SINCRONIZADO no boot (A3-
     await pool.end();
   });
 
-  it('A3-8: as 5 células patient_admission estão no catálogo SINCRONIZADO (descrição do código, não o placeholder da 507 nem da 509) e com deprecated_at IS NULL', async () => {
+  it('A3-8: as 6 células patient_admission estão no catálogo SINCRONIZADO (descrição do código, não o placeholder da 507, da 509 nem da 512) e com deprecated_at IS NULL', async () => {
     const { rows } = await pool.query(
       `SELECT action, description, deprecated_at FROM iam.permissions WHERE resource = 'patient_admission' ORDER BY action`,
     );
-    expect(rows.map((r) => r.action)).toEqual(['create', 'read', 'release_paid_rehearsal', 'resend_message', 'update']);
+    expect(rows.map((r) => r.action)).toEqual(['create', 'read', 'release_paid_rehearsal', 'resend_message', 'retry_summary', 'update']);
     for (const r of rows) {
       expect(r.deprecated_at).toBeNull();
       expect(r.description).not.toMatch(/\[\d{3} placeholder/);

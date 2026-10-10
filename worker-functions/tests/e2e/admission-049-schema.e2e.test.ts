@@ -177,16 +177,18 @@ describe('schema da aba Admissão (spec 049, migrations 503-507)', () => {
         WHERE p.resource IN ('patient_admission','own_tactiq_link') AND p.deprecated_at IS NULL ORDER BY 1`);
     expect(cells.map((c) => c.cell)).toEqual([
       'own_tactiq_link:create', 'own_tactiq_link:read',
-      'patient_admission:create', 'patient_admission:read', 'patient_admission:release_paid_rehearsal', 'patient_admission:resend_message', 'patient_admission:update',
+      'patient_admission:create', 'patient_admission:read', 'patient_admission:release_paid_rehearsal', 'patient_admission:resend_message',
+      'patient_admission:retry_summary', 'patient_admission:update',
     ]);
-    // 050 F3 (509): a célula do ensaio pago é SÓ do Acesso Master — a 049 original (as 4 abaixo) segue como era.
+    // 050 F3 (509): a célula do ensaio pago é SÓ do Acesso Master; 050 F11 (512): a do reprocesso do resumo é do Master + 'Admisión y Supervisión'
+    // (testada em A11-7). A 049 original (as 4 abaixo) segue como era.
     const releaseGroups = async (): Promise<string[]> => (await pool.query(
       `SELECT gp.group_id FROM iam.group_permissions gp JOIN iam.permissions p ON p.id = gp.permission_id
         WHERE p.resource = 'patient_admission' AND p.action = 'release_paid_rehearsal'`)).rows.map((r) => r.group_id as string);
     expect(await releaseGroups()).toEqual([MASTER_GROUP]);
     const gruposComCelulas = async (): Promise<Array<{ group_id: string; n: number }>> => (await pool.query(
       `SELECT gp.group_id, count(*)::int AS n FROM iam.group_permissions gp JOIN iam.permissions p ON p.id = gp.permission_id
-        WHERE p.resource = 'patient_admission' AND p.action <> 'release_paid_rehearsal' GROUP BY gp.group_id`)).rows;
+        WHERE p.resource = 'patient_admission' AND p.action NOT IN ('release_paid_rehearsal', 'retry_summary') GROUP BY gp.group_id`)).rows;
 
     // Sem o grupo (stage): só o Master, com as 4.
     const { rows: tenant } = await pool.query(`SELECT tenant_id FROM iam.permission_groups WHERE id = $1`, [MASTER_GROUP]);
@@ -217,8 +219,8 @@ describe('schema da aba Admissão (spec 049, migrations 503-507)', () => {
       expect(depois.every((r) => r.n === 4)).toBe(true);
       expect(ids).not.toContain(controleId);
     } finally {
-      // A reaplicação da 507 concede `patient_admission` POR RESOURCE: a célula da 509 vai junto. O runner nunca reexecuta a 507,
-      // mas este banco é compartilhado: devolve a célula do ensaio pago ao Master (nunca fica em outro grupo).
+      // A reaplicação da 507 concede `patient_admission` POR RESOURCE: a célula da 509 vai junto (a da 512 também, mas o grupo EXATO a
+      // recebe por direito). O runner nunca reexecuta a 507, mas este banco é compartilhado: devolve a célula do ensaio pago ao Master.
       await pool.query(
         `DELETE FROM iam.group_permissions gp USING iam.permissions p
           WHERE gp.permission_id = p.id AND p.resource = 'patient_admission' AND p.action = 'release_paid_rehearsal' AND gp.group_id <> $1`,
@@ -292,6 +294,38 @@ describe('schema da aba Admissão (spec 049, migrations 503-507)', () => {
     } finally {
       await client.query('ROLLBACK').catch(() => undefined);
       client.release();
+    }
+  });
+  it('A11-7. migration 512: a célula retry_summary é concedida ao Acesso Master e ao grupo de nome EXATO "Admisión y Supervisión" — a outros, não; roda 2× sem erro', async () => {
+    const sql512 = fs.readFileSync(path.join(__dirname, '..', '..', 'migrations', '512_admission_050_retry_summary_cell.sql'), 'utf8');
+    const grupos = async (): Promise<string[]> => (await pool.query(
+      `SELECT gp.group_id FROM iam.group_permissions gp JOIN iam.permissions p ON p.id = gp.permission_id
+        WHERE p.resource = 'patient_admission' AND p.action = 'retry_summary'`)).rows.map((r) => r.group_id as string).sort();
+    const { rows: tenant } = await pool.query(`SELECT tenant_id FROM iam.permission_groups WHERE id = $1`, [MASTER_GROUP]);
+    const nomeAdmissao = 'Admisión y Supervisión';
+    const criados: string[] = [];
+    try {
+      await expect(pool.query(sql512)).resolves.toBeDefined();
+      await expect(pool.query(sql512)).resolves.toBeDefined(); // 2×
+      const existentes = (await pool.query(`SELECT id FROM iam.permission_groups WHERE name = $1 AND archived_at IS NULL`, [nomeAdmissao])).rows.map((r) => r.id as string);
+      expect(await grupos()).toEqual([MASTER_GROUP, ...existentes].sort());
+      if (existentes.length === 0) {
+        const g = await pool.query(`INSERT INTO iam.permission_groups (tenant_id, name, description) VALUES ($1, $2, 'e2e 050 A11-7') RETURNING id`, [tenant[0].tenant_id, nomeAdmissao]);
+        criados.push(g.rows[0].id);
+      }
+      const c = await pool.query(`INSERT INTO iam.permission_groups (tenant_id, name, description) VALUES ($1, 'e2e050 Outro Grupo', 'controle') RETURNING id`, [tenant[0].tenant_id]);
+      criados.push(c.rows[0].id);
+      await expect(pool.query(sql512)).resolves.toBeDefined();
+      const admRows = (await pool.query(`SELECT id FROM iam.permission_groups WHERE name = $1 AND archived_at IS NULL`, [nomeAdmissao])).rows.map((r) => r.id as string);
+      expect(admRows.length).toBeGreaterThan(0);
+      const depois = await grupos();
+      expect(depois).toEqual([MASTER_GROUP, ...admRows].sort());
+      expect(depois).not.toContain(c.rows[0].id);
+    } finally {
+      for (const id of criados) {
+        await pool.query(`DELETE FROM iam.group_permissions WHERE group_id = $1`, [id]);
+        await pool.query(`DELETE FROM iam.permission_groups WHERE id = $1`, [id]);
+      }
     }
   });
 });
