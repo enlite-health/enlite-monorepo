@@ -120,7 +120,7 @@ beforeEach(async () => {
 // ── Migration 283: a trava certa está no lugar ────────────────────────────────
 
 describe('trava anti-corrida (migration 283)', () => {
-  it('a trava é por ATENDENTE (parcial, só reunião ativa — 510), e a trava por país e a cheia saíram', async () => {
+  it('a trava é por ATENDENTE (parcial, só reunião ativa — 512), e a trava por país e a cheia saíram', async () => {
     const res = await pool.query<{ indexname: string }>(
       `SELECT indexname FROM pg_indexes
         WHERE tablename = 'admission_appointments'

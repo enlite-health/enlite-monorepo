@@ -110,7 +110,7 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
       // Spec 049 (F7): a aba "Admisión" — container próprio. `write` = agendar/cancelar; `resend_message` = reenviar o WhatsApp
       // que falhou (célula separada: quais perfis a recebem é decisão do Diego, H7). Spec 050 (F3): `release_paid_rehearsal` = liberar
       // o ensaio pago de uma reunião de paciente de teste (custa dinheiro; só o Acesso Master a recebe, migration 509). Spec 050 (F11):
-      // `retry_summary` = autorizar +1 rodada do resumo depois de esgotadas as 3 chamadas pagas (Master + Admisión y Supervisión, migration 512).
+      // `retry_summary` = autorizar +1 rodada do resumo depois de esgotadas as 3 chamadas pagas (Master + Admisión y Supervisión, migration 514).
       c('admission', 'patient_admission', ['read', 'create', 'update', 'resend_message', 'release_paid_rehearsal', 'retry_summary'], 'admission'),
       c('coverage', 'patient_coverage', ['read', 'create', 'update'], 'contractedService'),
       c('address', 'patient_address', ['read', 'create', 'update', 'delete'], 'contractedService'),

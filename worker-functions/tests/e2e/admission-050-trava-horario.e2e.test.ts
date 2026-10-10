@@ -1,7 +1,7 @@
 /**
  * spec 050 F8 (R-39): a trava de horário da admissão vale só para reunião ATIVA (`status='booked'`).
  *
- * Banco real com as migrations do HEAD (índice `uq_admission_appointments_host_slot_booked`, migration 510); Google/Twilio dublados.
+ * Banco real com as migrations do HEAD (índice `uq_admission_appointments_host_slot_booked`, migration 512); Google/Twilio dublados.
  * Dados sintéticos. A1 = cancelar e reagendar (site e painel), A2 = corrida, A3 = ativa + nova, A4 = migration 2×, A5 = código × horário.
  * O cancelamento é um UPDATE de status (o efeito no Calendar não é o que se mede aqui).
  */
@@ -21,7 +21,7 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 
 const DATABASE_URL =
   process.env.TEST_DATABASE_URL || process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
-const MIGRATION = path.join(__dirname, '../../migrations/510_admission_050_appointments_unique_booked_only.sql');
+const MIGRATION = path.join(__dirname, '../../migrations/512_admission_050_appointments_unique_booked_only.sql');
 const INDEX = 'uq_admission_appointments_host_slot_booked';
 
 const RUN = `t${Date.now().toString(36)}`;
@@ -139,7 +139,7 @@ describe('trava de horário só para reunião ativa (spec 050 F8, R-39)', () => 
     expect(await count(slot, 'booked')).toBe(1);
   });
 
-  it('A8-4: a migration 510 aplicada 2× não dá erro, vindo do índice cheio (283) e já aplicada', async () => {
+  it('A8-4: a migration 512 aplicada 2× não dá erro, vindo do índice cheio (283) e já aplicada', async () => {
     await admin.query(`DELETE FROM admission_appointments WHERE patient_id = $1`, [patientId]);
     const sql = fs.readFileSync(MIGRATION, 'utf8');
     expect(sql).not.toMatch(/^\s*(BEGIN|COMMIT)\s*;/im); // a 509 abriu transação própria e gera aviso no boot

@@ -630,7 +630,7 @@ describeAbacStack('stack com engine ligado e catálogo SINCRONIZADO no boot (F4:
     ]);
     for (const r of rows) {
       expect(r.deprecated_at).toBeNull();
-      // o placeholder das migrations 507, 509 e 512 é "[NNN placeholder — sincronizado no boot] …": nenhum pode sobrar
+      // o placeholder das migrations 507, 509 e 514 é "[NNN placeholder — sincronizado no boot] …": nenhum pode sobrar
       expect(r.description).not.toMatch(/\[\d{3} placeholder/);
     }
   });

@@ -296,8 +296,8 @@ describe('schema da aba Admissão (spec 049, migrations 503-507)', () => {
       client.release();
     }
   });
-  it('A11-7. migration 512: a célula retry_summary é concedida ao Acesso Master e ao grupo de nome EXATO "Admisión y Supervisión" — a outros, não; roda 2× sem erro', async () => {
-    const sql512 = fs.readFileSync(path.join(__dirname, '..', '..', 'migrations', '512_admission_050_retry_summary_cell.sql'), 'utf8');
+  it('A11-7. migration 514: a célula retry_summary é concedida ao Acesso Master e ao grupo de nome EXATO "Admisión y Supervisión" — a outros, não; roda 2× sem erro', async () => {
+    const sql514 = fs.readFileSync(path.join(__dirname, '..', '..', 'migrations', '514_admission_050_retry_summary_cell.sql'), 'utf8');
     const grupos = async (): Promise<string[]> => (await pool.query(
       `SELECT gp.group_id FROM iam.group_permissions gp JOIN iam.permissions p ON p.id = gp.permission_id
         WHERE p.resource = 'patient_admission' AND p.action = 'retry_summary'`)).rows.map((r) => r.group_id as string).sort();
@@ -305,8 +305,8 @@ describe('schema da aba Admissão (spec 049, migrations 503-507)', () => {
     const nomeAdmissao = 'Admisión y Supervisión';
     const criados: string[] = [];
     try {
-      await expect(pool.query(sql512)).resolves.toBeDefined();
-      await expect(pool.query(sql512)).resolves.toBeDefined(); // 2×
+      await expect(pool.query(sql514)).resolves.toBeDefined();
+      await expect(pool.query(sql514)).resolves.toBeDefined(); // 2×
       const existentes = (await pool.query(`SELECT id FROM iam.permission_groups WHERE name = $1 AND archived_at IS NULL`, [nomeAdmissao])).rows.map((r) => r.id as string);
       expect(await grupos()).toEqual([MASTER_GROUP, ...existentes].sort());
       if (existentes.length === 0) {
@@ -315,7 +315,7 @@ describe('schema da aba Admissão (spec 049, migrations 503-507)', () => {
       }
       const c = await pool.query(`INSERT INTO iam.permission_groups (tenant_id, name, description) VALUES ($1, 'e2e050 Outro Grupo', 'controle') RETURNING id`, [tenant[0].tenant_id]);
       criados.push(c.rows[0].id);
-      await expect(pool.query(sql512)).resolves.toBeDefined();
+      await expect(pool.query(sql514)).resolves.toBeDefined();
       const admRows = (await pool.query(`SELECT id FROM iam.permission_groups WHERE name = $1 AND archived_at IS NULL`, [nomeAdmissao])).rows.map((r) => r.id as string);
       expect(admRows.length).toBeGreaterThan(0);
       const depois = await grupos();

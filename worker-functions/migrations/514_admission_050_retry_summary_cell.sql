@@ -1,4 +1,4 @@
--- 512 — Reintentar resumen (spec 050, F11, R-38): 1 célula nova, concedida ao Acesso Master e ao grupo 'Admisión y Supervisión'.
+-- 514 — Reintentar resumen (spec 050, F11, R-38): 1 célula nova, concedida ao Acesso Master e ao grupo 'Admisión y Supervisión'.
 --
 --   patient_admission:retry_summary   (autoriza +1 rodada de até 3 chamadas pagas do resumo; ação que GASTA, como o reenviar)
 --
@@ -8,7 +8,7 @@
 -- nunca cria/move/reativa grupo. A autorização em si é um EVENTO da trilha (`summary_retry_authorized`, 504) — sem tabela nova.
 --
 -- Sem BEGIN/COMMIT próprio (o runner já envolve). Idempotente (2×).
--- ROLLBACK: migrations/pending/ROLLBACK_512_admission_050_retry_summary_cell.sql
+-- ROLLBACK: migrations/pending/ROLLBACK_514_admission_050_retry_summary_cell.sql
 
 DO $$
 DECLARE
@@ -19,7 +19,7 @@ BEGIN
     INSERT INTO iam.permissions (resource, action, description, category, owner_service, deprecated_at)
     VALUES
       ('patient_admission', 'retry_summary',
-       '[512 placeholder — sincronizado no boot] Autorizar uma nova rodada do resumo da reunião de admissão (até 3 chamadas pagas).',
+       '[514 placeholder — sincronizado no boot] Autorizar uma nova rodada do resumo da reunião de admissão (até 3 chamadas pagas).',
        'Pacientes', 'worker-functions', NULL)
     ON CONFLICT (resource, action) DO NOTHING;
   END IF;
@@ -32,7 +32,7 @@ BEGIN
        AND EXISTS (SELECT 1 FROM iam.permission_groups g WHERE g.id = v_master_id)
     ON CONFLICT DO NOTHING;
     GET DIAGNOSTICS v_n = ROW_COUNT;
-    RAISE NOTICE '[512] grant ao Acesso Master: % célula patient_admission:retry_summary', v_n;
+    RAISE NOTICE '[514] grant ao Acesso Master: % célula patient_admission:retry_summary', v_n;
 
     INSERT INTO iam.group_permissions (group_id, permission_id)
     SELECT g.id, p.id
@@ -43,7 +43,7 @@ BEGIN
        AND p.resource = 'patient_admission' AND p.action = 'retry_summary' AND p.deprecated_at IS NULL
     ON CONFLICT DO NOTHING;
     GET DIAGNOSTICS v_n = ROW_COUNT;
-    RAISE NOTICE '[512] grant a Admisión y Supervisión: % célula patient_admission:retry_summary', v_n;
+    RAISE NOTICE '[514] grant a Admisión y Supervisión: % célula patient_admission:retry_summary', v_n;
   END IF;
 END
 $$;

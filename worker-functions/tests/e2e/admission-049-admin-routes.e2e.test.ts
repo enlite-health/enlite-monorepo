@@ -548,7 +548,7 @@ describe('rotas admin da aba Admissão — HTTP real, banco real, engine LIGADO 
       // controle: com a reunião ATIVA no horário, outro paciente com a mesma responsável leva 409
       expect((await book(await newPatient(), U.agendadora, ANA, slot)).status).toBe(409);
       expect((await http('POST', `/api/admin/patients/${p}/admission-appointments/${id}/cancel`, U.agendadora)).status).toBe(200);
-      // o achado §11 (a trava do banco segurava o horário para sempre) foi resolvido pela migration 510: só `booked` trava
+      // o achado §11 (a trava do banco segurava o horário para sempre) foi resolvido pela migration 512: só `booked` trava
       const again = await book(await newPatient(), U.agendadora, ANA, slot);
       expect(again.status).toBe(201);
       expect((await apptRow(again.body.data.appointmentId as string)).status).toBe('booked');

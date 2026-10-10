@@ -1,7 +1,7 @@
 /**
  * spec 050 F9 (R-34, R-35): falha do Google na criação do evento não deixa reserva órfã.
  *
- * Banco real com as migrations do HEAD (511 amplia a CHECK de status); Google dublado (nunca o Calendar real); dados sintéticos.
+ * Banco real com as migrations do HEAD (513 amplia a CHECK de status); Google dublado (nunca o Calendar real); dados sintéticos.
  * A9-1 falha 1× → agenda com 1 evento · A9-2 falha 3× → 0 `booked`, horário reaproveitável, mensagem certa no painel e no site ·
  * A9-3 site com 2 responsáveis, a 1ª sempre falhando → agenda com a 2ª · A9-4 link vazio → 0 mensagens, 0 `booked` · A9-5 controle.
  */
@@ -28,7 +28,7 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 
 const DATABASE_URL =
   process.env.TEST_DATABASE_URL || process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
-const MIGRATION = path.join(__dirname, '../../migrations/511_admission_050_appointments_status_calendar_failed.sql');
+const MIGRATION = path.join(__dirname, '../../migrations/513_admission_050_appointments_status_calendar_failed.sql');
 const MEET = 'https://meet.google.com/abc-defg-hij';
 
 const RUN = `t${Date.now().toString(36)}`;
@@ -295,7 +295,7 @@ describe('falha do Google na criação não deixa reserva órfã (spec 050 F9, R
     }
   });
 
-  it('migration 511: aplicada 2× sem erro, sem BEGIN/COMMIT próprio; a CHECK aceita calendar_failed e recusa valor desconhecido', async () => {
+  it('migration 513: aplicada 2× sem erro, sem BEGIN/COMMIT próprio; a CHECK aceita calendar_failed e recusa valor desconhecido', async () => {
     const sql = fs.readFileSync(MIGRATION, 'utf8');
     expect(sql).not.toMatch(/^\s*(BEGIN|COMMIT)\s*;/im);
     await admin.query(sql);

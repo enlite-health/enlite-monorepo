@@ -1,7 +1,7 @@
--- 511 — Reserva sem evento no Google não segura o horário (spec 050, F9, R-34/R-35).
+-- 513 — Reserva sem evento no Google não segura o horário (spec 050, F9, R-34/R-35).
 --
 -- Novo valor de `admission_appointments.status`: `calendar_failed` = a linha foi reservada, o Google não criou o evento (ou devolveu
--- evento sem id/link do Meet) e a reserva foi desfeita. Fica fora da trava de horário porque o índice da 510
+-- evento sem id/link do Meet) e a reserva foi desfeita. Fica fora da trava de horário porque o índice da 512
 -- (`uq_admission_appointments_host_slot_booked`) só vale para `status = 'booked'`: o horário volta a ser reservável na hora.
 --
 -- Aditiva: só AMPLIA o conjunto aceito (todo dado que passava na CHECK antiga passa na nova). Nenhuma linha existente muda.
