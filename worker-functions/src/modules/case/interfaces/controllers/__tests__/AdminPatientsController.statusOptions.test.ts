@@ -65,6 +65,12 @@ describe('AdminPatientsController.getPatientStatusOptions (spec 051, F3)', () =>
     expect(res.status).toHaveBeenCalledWith(404);
   });
 
+  it('rejeição que não é Error (string) → 500 também', async () => {
+    const [req, res] = reqRes({ id: ID });
+    await ctrlCom(jest.fn().mockRejectedValue('texto cru')).getPatientStatusOptions(req, res);
+    expect(res.status).toHaveBeenCalledWith(500);
+  });
+
   it('erro inesperado → 500 e reportError', async () => {
     const [req, res] = reqRes({ id: ID });
     await ctrlCom(jest.fn().mockRejectedValue(new Error('boom'))).getPatientStatusOptions(req, res);

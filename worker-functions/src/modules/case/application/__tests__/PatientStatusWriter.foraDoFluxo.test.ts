@@ -265,3 +265,11 @@ describe('T5 — par NA FSM para SEARCHING continua cobrando só o que cobra hoj
     expect(err.missing).toEqual(['SERVICE_SCHEDULE']);
   });
 });
+
+describe('PatientStatusPermissionError', () => {
+  it('carrega from/to/cell e a mensagem nomeia a origem mesmo quando ela é null', () => {
+    const e = new PatientStatusPermissionError(null, 'SEARCHING', 'patient_status:move_to_searching');
+    expect(e).toMatchObject({ from: null, to: 'SEARCHING', cell: 'patient_status:move_to_searching' });
+    expect(e.message).toContain('null → SEARCHING');
+  });
+});

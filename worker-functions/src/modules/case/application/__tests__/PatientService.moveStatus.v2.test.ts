@@ -457,4 +457,14 @@ describe('movePatientStatus com o client de quem chama (cadeia Fase 15)', () => 
     expect(c[0].sql).toBe('BEGIN');
     expect(c[c.length - 1].sql).toBe('COMMIT');
   });
+
+  it('spec 051: statusOptions é a porta da lista de destinos — passa o estado atual e as células ao módulo', async () => {
+    queryImpl = async (sql) => {
+      if (/FROM patients/.test(sql)) return { rows: [{ status: 'ALTA' }], rowCount: 1 };
+      if (/FROM patient_status_transitions/.test(sql)) return { rows: [{ to_status: 'DISCHARGED' }], rowCount: 1 };
+      return { rows: [], rowCount: 0 };
+    };
+    jest.clearAllMocks();
+    await expect(new PatientService().statusOptions(PID, null)).resolves.toEqual({ current: 'ALTA', options: [{ status: 'DISCHARGED', via: 'fluxo' }] });
+  });
 });

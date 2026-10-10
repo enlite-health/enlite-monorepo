@@ -154,6 +154,7 @@ function pecas() {
     purgeTestPatient: responde('purgeTestPatient'),
     updatePatientSection: responde('updatePatientSection'),
     getPatientStatusHistory: responde('getPatientStatusHistory'),
+    getPatientStatusOptions: responde('getPatientStatusOptions'),
   } as unknown as AdminPatientsController;
 
   const chatIds = {
@@ -320,6 +321,7 @@ describe('createAdminPatientsRoutes', () => {
     ['post', '/api/admin/catalogs/insurance-providers', 'providers.create'],
     ['post', '/api/admin/patients/map', 'getMapPoints'],
     ['get', '/api/admin/patients/abc-123/status-history', 'getPatientStatusHistory'],
+    ['get', '/api/admin/patients/abc-123/status-options', 'getPatientStatusOptions'],
     ['patch', '/api/admin/patients/abc-123/addresses/addr-1', 'updatePatientAddress'],
     ['delete', '/api/admin/patients/abc-123/addresses/addr-1', 'deletePatientAddress'],
     ['get', '/api/admin/patients/abc-123/contracted-services', 'cs.list'],

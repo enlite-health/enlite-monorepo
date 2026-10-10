@@ -145,6 +145,12 @@ describe('F3 — regras próprias da lista', () => {
     expect(mockClient.query.mock.calls.some(([s]) => /services_without_schedule_count/.test(String(s)))).toBe(false);
   });
 
+  it('paciente com status null (sem estado) → sem candidatos além da FSM, sem quebrar', async () => {
+    mockClient.query.mockImplementation(async (sql: string) =>
+      /FROM patients/.test(sql) ? { rows: [{ status: null }], rowCount: 1 } : { rows: [], rowCount: 0 });
+    await expect(loadStatusOptions(mockClient as unknown as PoolClient, PID, null)).resolves.toEqual({ current: null, options: [] });
+  });
+
   it('paciente inexistente/deletado → "Patient not found" (o controller devolve 404)', async () => {
     banco(null);
     await expect(loadStatusOptions(mockClient as unknown as PoolClient, PID, null)).rejects.toThrow(/Patient not found/);
