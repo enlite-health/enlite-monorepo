@@ -196,6 +196,11 @@ export function createAdminPatientsRoutes(
   router.put('/patients/:id/status', staffOnly, perm.require('patient', 'update'), (req: Request, res: Response) =>
     controller.updatePatientStatus(req, res),
   );
+  // Spec 051 (F3): lista de destinos que o servidor aceitaria para ESTE paciente e ESTE ator. Mesma
+  // célula do PUT acima (`patient:update`) — a lista nunca oferece o que o PUT negaria por falta dela.
+  router.get('/patients/:id/status-options', staffOnly, perm.require('patient', 'update'), (req: Request, res: Response) =>
+    controller.getPatientStatusOptions(req, res),
+  );
   // Historial (spec 012, US-B7): quando / de → para / origem — sem ator, sem on_hold_note.
   router.get('/patients/:id/status-history', staffOnly, perm.require('patient', 'read'), (req: Request, res: Response) =>
     controller.getPatientStatusHistory(req, res),

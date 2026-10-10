@@ -422,6 +422,33 @@ export class AdminPatientsController {
   }
 
   /**
+   * GET /api/admin/patients/:id/status-options — spec 051 (F3): os destinos de estado que o
+   * servidor ACEITARIA para este paciente e este ator (`via: 'fluxo' | 'permissao'`, `blockedBy`
+   * opcional). Mesma célula do PUT (`patient:update`): a lista nunca oferece o que o PUT negaria
+   * por falta dela. `cells=null` (engine neutro) → só a FSM, como hoje. Só status e contagem:
+   * nenhum texto clínico.
+   */
+  async getPatientStatusOptions(req: Request, res: Response): Promise<void> {
+    const parsed = adminPatientParamsSchema.safeParse(req.params);
+    if (!parsed.success) {
+      res.status(400).json({ success: false, error: 'Invalid params', details: parsed.error.flatten() });
+      return;
+    }
+    try {
+      const data = await this.patientService.statusOptions(parsed.data.id, clinicalCellsOf(req));
+      res.status(200).json({ success: true, data });
+    } catch (err: unknown) {
+      const e = err instanceof Error ? err : new Error(String(err));
+      if (/not found/i.test(e.message)) {
+        res.status(404).json({ success: false, error: 'Patient not found' });
+        return;
+      }
+      reportError(e, { source: 'AdminPatientsController:getPatientStatusOptions' });
+      res.status(500).json({ success: false, error: 'Failed to load patient status options', details: e.message });
+    }
+  }
+
+  /**
    * GET /api/admin/patients/:id/status-history — a aba Historial (spec 012, US-B7).
    * Quando / de → para / origem / motivo / autor (migration 486, decisão do Gabriel 29/09/2026 —
    * substitui o "sem quem" de C7.2). SEM `on_hold_note` (C7.3): a tabela nunca guarda texto clínico.
