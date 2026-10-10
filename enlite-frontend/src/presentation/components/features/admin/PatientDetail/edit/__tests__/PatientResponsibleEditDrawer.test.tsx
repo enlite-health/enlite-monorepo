@@ -136,6 +136,45 @@ describe('PatientResponsibleEditDrawer — criar × editar', () => {
   });
 });
 
+describe('PatientResponsibleEditDrawer — opcionais intocados não são apagados (parentesco, e-mail, documento)', () => {
+  // Valores REAIS do enum (`RELATIONSHIP_CODES`, patientEnums.ts:49-52): 'MOM'/'AUNT' NÃO existem — o
+  // select não tem <option> para eles; um stub com valor fora do enum abre em "Seleccioná…".
+  const comParentesco: PatientResponsibleDetail = { ...titular, relationship: 'UNCLE_AUNT' };
+
+  it('editar numa linha com parentesco VÁLIDO: o select abre com esse valor (e a tabela/rótulo existe para ele)', () => {
+    renderDrawer(comParentesco, [comParentesco]);
+    expect(screen.getByTestId('responsible-rel')).toHaveValue('UNCLE_AUNT');
+    expect(screen.getByRole('option', { name: t('admin.patients.detail.relationshipOptions.UNCLE_AUNT') })).toBeInTheDocument();
+  });
+
+  it('salvar mudando SÓ o telefone: PATCH manda parentesco, e-mail, tipo e nº do documento IGUAIS (nunca null/\'\') — mesmo payload do drawer antigo', async () => {
+    renderDrawer(comParentesco, [comParentesco, outro]);
+    fill('responsible-phone', '(11) 90000-0000');
+    fireEvent.click(screen.getByTestId('responsible-save'));
+    await waitFor(() => expect(updateResponsible).toHaveBeenCalledTimes(1));
+    expect(updateResponsible).toHaveBeenCalledWith(PATIENT_ID, 'r1', {
+      firstName: 'Luciana', lastName: 'Soto', relationship: 'UNCLE_AUNT', phone: '(11) 90000-0000',
+      email: 'luciana.soto@example.com', documentType: 'CPF', documentNumber: DOC_NUMBER, isPrimary: true,
+    });
+  });
+
+  it('parentesco LEGADO fora do enum (ex.: vindo do ClickUp) também não é apagado ao salvar sem mexer nele', async () => {
+    renderDrawer({ ...titular, relationship: 'MOM' }, [titular]);
+    fill('responsible-phone', '123');
+    fireEvent.click(screen.getByTestId('responsible-save'));
+    await waitFor(() => expect(updateResponsible).toHaveBeenCalledTimes(1));
+    expect(updateResponsible.mock.calls[0][2]).toMatchObject({ relationship: 'MOM' });
+  });
+
+  it('só LIMPAR um opcional de propósito manda null (e só ele): e-mail vazio → null, o resto intacto', async () => {
+    renderDrawer(comParentesco, [comParentesco]);
+    fill('responsible-email', '');
+    fireEvent.click(screen.getByTestId('responsible-save'));
+    await waitFor(() => expect(updateResponsible).toHaveBeenCalledTimes(1));
+    expect(updateResponsible.mock.calls[0][2]).toMatchObject({ email: null, relationship: 'UNCLE_AUNT', documentType: 'CPF', documentNumber: DOC_NUMBER });
+  });
+});
+
 describe('PatientResponsibleEditDrawer — TITULAR (índice único: 1 ativo; backend não despromove sozinho)', () => {
   it('(a) marcar este como titular com OUTRO titular ativo → despromove o antigo ANTES, grava este DEPOIS', async () => {
     const ordem: string[] = [];

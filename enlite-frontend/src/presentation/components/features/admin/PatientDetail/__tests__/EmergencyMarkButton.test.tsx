@@ -79,7 +79,7 @@ describe('EmergencyMarkButton', () => {
     expect(btn).toHaveAttribute('title', t('admin.patients.editDrawer.unmarkEmergencyContact'));
     expect(btn).toHaveAttribute('aria-label', t('admin.patients.editDrawer.unmarkEmergencyContact'));
     expect(btn.querySelector('svg.lucide-x')).not.toBeNull();
-    expect(btn.className).toContain('!w-5');
+    expect(btn.className).toContain('!w-6');
     expect(btn.className).not.toContain('border-2');
   });
 
