@@ -4593,7 +4593,8 @@
             "write": "Criar e editar",
             "incomplete_alert": "Aviso dia 12",
             "waive_contact": "Não precisa",
-            "resend_message": "Reenviar mensagem"
+            "resend_message": "Reenviar mensagem",
+            "release_paid_rehearsal": "Liberar ensaio pago"
           },
           "category": {
             "Trabalhadores": "Trabalhadores",

@@ -1,7 +1,7 @@
 import type { Pool, PoolClient } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { POST_CALL_WINDOW_HOURS } from '../domain/admissionPostCall';
-import { SKIPPED_TEST_EVENT } from '../domain/admissionRealm';
+import { rehearsalUntilSql, standingSkippedTestSql } from './admissionRehearsalSql';
 
 type Ex = Pick<Pool, 'query'> | Pick<PoolClient, 'query'>;
 
@@ -15,6 +15,8 @@ export interface PostCallCandidate {
   import_status: string | null;
   /** `patients.is_test` — a entrada da função `admissionRealm` (R-18). */
   patient_is_test: boolean;
+  /** Fim da liberação mais recente do ensaio pago (spec 050 F3); `null` = nunca liberada. */
+  rehearsal_until: Date | null;
 }
 
 /** Janela dos detectores de silêncio: o mesmo 72 h do job (sinal de estado não vira ruído eterno sobre reunião antiga). */
@@ -29,7 +31,8 @@ export const CONFIRMATION_SILENCE_MINUTES = 10;
  * `conference_ended_at IS NULL` (F6): depois que o fim real foi gravado, a reunião é da IMPORTAÇÃO (`pending|waiting|blocked` por
  * vínculo). Sem isto este job devolveria `waiting`/`blocked` da F6 a `pending` a cada 15 min, com um `conference_ended` novo na trilha.
  * `skipped_test` desta etapa (spec 050, R-18): reunião de paciente `is_test` já registrada sai da fila — o evento é UM, e a
- * reunião não volta a ser lida a cada execução.
+ * reunião não volta a ser lida a cada execução. Uma liberação do ensaio pago mais NOVA que o `skipped_test` a devolve à fila; a
+ * expiração a tira de novo (o job grava outro `skipped_test`) — sem apagar evento (F3, R-19).
  */
 const ELIGIBLE = `
   a.status = 'booked'
@@ -38,8 +41,7 @@ const ELIGIBLE = `
   AND a.slot_end >= $1::timestamptz - make_interval(hours => ${POST_CALL_WINDOW_HOURS})
   AND a.conference_ended_at IS NULL
   AND (a.import_status IS NULL OR a.import_status IN ('waiting', 'blocked'))
-  AND NOT EXISTS (SELECT 1 FROM admission_events e
-                   WHERE e.appointment_id = a.id AND e.kind = '${SKIPPED_TEST_EVENT}' AND e.reason = 'post_call')`;
+  AND NOT ${standingSkippedTestSql('a', 'post_call')}`;
 
 /**
  * AdmissionPostCallRepository — SQL do job de 15 min (spec 049 F5): candidatas, trava por reunião (`FOR UPDATE SKIP LOCKED`,
@@ -61,7 +63,7 @@ export class AdmissionPostCallRepository {
   async lockCandidate(id: string, now: Date, ex: Ex): Promise<PostCallCandidate | null> {
     const { rows } = await ex.query<PostCallCandidate>(
       `SELECT a.id, a.host_email, a.meet_link, a.meet_space_name, a.slot_start, a.slot_end, a.import_status,
-              p.is_test IS TRUE AS patient_is_test
+              p.is_test IS TRUE AS patient_is_test, ${rehearsalUntilSql('a')} AS rehearsal_until
          FROM admission_appointments a
          JOIN patients p ON p.id = a.patient_id
         WHERE a.id = $2 AND ${ELIGIBLE}

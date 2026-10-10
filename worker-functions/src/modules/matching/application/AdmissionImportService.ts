@@ -9,7 +9,13 @@ import {
 } from '@modules/patient-documents/application/StoreAdmissionSummaryDocument';
 import type { AdmissionEventRepository } from '../infrastructure/AdmissionEventRepository';
 import type { AdmissionImportRepository, ImportCandidate } from '../infrastructure/AdmissionImportRepository';
-import { SKIPPED_TEST_EVENT, admissionRealm, isBlockedFromPaidPath } from '../domain/admissionRealm';
+import {
+  REHEARSAL_BUCKET_MISSING,
+  SKIPPED_TEST_EVENT,
+  admissionRealm,
+  isBlockedFromPaidPath,
+  transcriptDestination,
+} from '../domain/admissionRealm';
 import { renderAdmissionSummaryPdf } from '../infrastructure/admissionSummaryPdf';
 import {
   IMPORT_EXPIRE_AFTER_MS,
@@ -29,6 +35,7 @@ import {
   type AdmissionSummaryResult,
   TranscriptVaultError,
   type AdmissionSummaryPort,
+  type RehearsalVaultPort,
   type TranscriptVaultPort,
 } from './ports/AdmissionImportPorts';
 import {
@@ -89,6 +96,8 @@ export interface AdmissionImportServiceDeps {
   tokens: TactiqTokenProvider;
   mcp: TactiqMcpPort;
   vault: TranscriptVaultPort;
+  /** Bucket de ENSAIO (R-29). Ausente = como não configurado: `ensaio` falha fechado. */
+  rehearsalVault?: RehearsalVaultPort;
   summary: AdmissionSummaryPort;
   /** Fábrica (não instância): sem `PATIENT_DOCUMENTS_BUCKET` o `new` lança — só roda dentro de `importOne`. */
   documents?: StoreAdmissionSummaryDocument;
@@ -200,13 +209,20 @@ export class AdmissionImportService {
     }
     // R-18: a função de domínio decide ANTES de qualquer porta (token do Tactiq, MCP, cofre, Vertex). `test` não entra: UM
     // `skipped_test` na trilha (sob o lock da reunião) e a reunião sai da fila (`listDueIds`).
-    const realm = admissionRealm({ isTest: a.patient_is_test });
+    const realm = admissionRealm({ isTest: a.patient_is_test, rehearsalUntil: a.rehearsal_until, now });
     if (isBlockedFromPaidPath(realm)) {
       if (!(await this.deps.repo.hasSkippedTest(a.id, 'import'))) {
         await this.deps.events.append({ appointmentId: a.id, kind: SKIPPED_TEST_EVENT, outcome: 'skipped', reason: 'import', ref: { realm } });
       }
       this.log.info({ appointmentId: a.id, realm }, 'admission.import.skipped_test');
       return 'skipped_test';
+    }
+    // R-29, FALHA FECHADA: `ensaio` sem bucket de ensaio não chama NADA pago (token, Tactiq, cofre, Vertex) nem cai no cofre de 5
+    // anos. `blocked` com o motivo na trilha (UM evento na transição); volta à fila e segue quando a env existir.
+    if (transcriptDestination(realm) === 'rehearsal' && !this.deps.rehearsalVault?.isConfigured()) {
+      await this.setBlocked(a, REHEARSAL_BUCKET_MISSING);
+      this.log.error({ appointmentId: a.id, reason: REHEARSAL_BUCKET_MISSING, realm }, 'admission.import_blocked');
+      return 'blocked';
     }
     // Teto de tentativas de resumo (custo do Vertex): contado pelos eventos, sob o lock da reunião (vale para execuções sobrepostas).
     if ((await this.deps.repo.countModelSummaryFailures(a.id)) >= MAX_SUMMARY_ATTEMPTS) {
@@ -274,10 +290,12 @@ export class AdmissionImportService {
     });
     this.log.info({ appointmentId: a.id, parts: parts.length, sha256: fullHash }, 'admission.import_matched');
 
-    // 5. o cofre: só cria; 412 = já está lá (idempotente).
+    // 5. o cofre (real) ou o bucket de ensaio: só cria; 412 = já está lá (idempotente). O destino vem do `realm`, nunca do `is_test`.
     const objectName = `${a.country}/${a.id}/transcricao-${fullHash}.txt`;
+    const destination = { vault: this.deps.vault, rehearsal: this.deps.rehearsalVault, none: undefined }[transcriptDestination(realm)];
     try {
-      const put = await this.deps.vault.putOnce(objectName, body, { sha256: fullHash });
+      if (!destination) throw new TranscriptVaultError('not_configured');
+      const put = await destination.putOnce(objectName, body, { sha256: fullHash });
       if (put.outcome === 'created') {
         await this.deps.events.append({ appointmentId: a.id, kind: 'transcript_vaulted', outcome: 'created', ref: { object: objectName, generation: put.generation, sha256: fullHash, bytes: body.byteLength } });
         this.log.info({ appointmentId: a.id, sha256: fullHash, bytes: body.byteLength }, 'admission.transcript_vaulted');

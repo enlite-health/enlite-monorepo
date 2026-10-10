@@ -108,8 +108,9 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
       // NÃO da `patient_conversation:read`, mesmo para o anexo vindo do chat (Q11).
       c('documents', 'patient_document', ['read', 'create', 'update', 'delete'], 'documents'),
       // Spec 049 (F7): a aba "Admisión" — container próprio. `write` = agendar/cancelar; `resend_message` = reenviar o WhatsApp
-      // que falhou (célula separada: quais perfis a recebem é decisão do Diego, H7).
-      c('admission', 'patient_admission', ['read', 'create', 'update', 'resend_message'], 'admission'),
+      // que falhou (célula separada: quais perfis a recebem é decisão do Diego, H7). Spec 050 (F3): `release_paid_rehearsal` = liberar
+      // o ensaio pago de uma reunião de paciente de teste (custa dinheiro; só o Acesso Master a recebe, migration 509).
+      c('admission', 'patient_admission', ['read', 'create', 'update', 'resend_message', 'release_paid_rehearsal'], 'admission'),
       c('coverage', 'patient_coverage', ['read', 'create', 'update'], 'contractedService'),
       c('address', 'patient_address', ['read', 'create', 'update', 'delete'], 'contractedService'),
       // A aba Matching saiu (decisão do Gabriel 05/09, na main): o encuadre É o serviço contratado

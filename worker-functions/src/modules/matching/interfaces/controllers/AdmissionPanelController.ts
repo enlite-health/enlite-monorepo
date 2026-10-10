@@ -7,6 +7,8 @@ import { ResendLimitReached, ResendNotAllowed } from '../../application/Admissio
 import {
   AppointmentNotCancellableError,
   AppointmentNotFoundError,
+  PaidRehearsalAlreadyActiveError,
+  PaidRehearsalNotAllowedError,
   ResendInProgressError,
 } from '../../application/AdmissionPanelErrors';
 import { TactiqLinkRequiredError } from '../../application/ports/TactiqPorts';
@@ -28,6 +30,7 @@ import {
  *   POST /patients/:id/admission-appointments                              patient_admission:create  (409 TACTIQ_LINK_REQUIRED se o responsável não tem vínculo vivo)
  *   POST /patients/:id/admission-appointments/:apptId/cancel               patient_admission:update
  *   POST /patients/:id/admission-appointments/:apptId/messages/:kind/resend patient_admission:resend_message
+ *   POST /patients/:id/admission-appointments/:apptId/paid-rehearsal       patient_admission:release_paid_rehearsal  (spec 050 R-19: libera UMA reunião de teste por 48 h; 409 se o paciente não é de teste)
  *
  * Erros de domínio viram resposta com `code` estável; o resto vira 500 genérico, relatado só com ids (nunca telefone,
  * nome, e-mail nem corpo da requisição). 404 vale para paciente/reunião inexistente, de outro paciente ou de outro país.
@@ -43,6 +46,8 @@ const DOMAIN_STATUS: ReadonlyArray<readonly [new (...a: never[]) => Error, numbe
   [SlotTakenError, 409],
   [TactiqLinkRequiredError, 409],
   [AppointmentNotCancellableError, 409],
+  [PaidRehearsalNotAllowedError, 409],
+  [PaidRehearsalAlreadyActiveError, 409],
   [ResendNotAllowed, 409],
   [ResendLimitReached, 409],
   [ResendInProgressError, 409],
@@ -118,6 +123,15 @@ export class AdmissionPanelController {
         actorUid: actorUid(req),
       });
       res.status(200).json({ success: true, data: out });
+    });
+  }
+
+  async releasePaidRehearsal(req: Request, res: Response): Promise<void> {
+    const params = apptParams.safeParse(req.params);
+    if (!params.success) return this.invalid(res);
+    await this.run(res, 'releasePaidRehearsal', params.data.id, async () => {
+      const out = await this.panel.releasePaidRehearsal({ patientId: params.data.id, appointmentId: params.data.apptId, actorUid: actorUid(req) });
+      res.status(201).json({ success: true, data: out });
     });
   }
 

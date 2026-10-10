@@ -18,10 +18,10 @@ import { TactiqOAuthClient } from './tactiq/TactiqOAuthClient';
 import type { MeetConferencePort } from '../application/ports/MeetConferencePort';
 import { FakeMeetConference } from './doubles/FakeMeetConference';
 import { GoogleMeetConferenceClient } from './GoogleMeetConferenceClient';
-import type { AdmissionSummaryPort, TranscriptVaultPort } from '../application/ports/AdmissionImportPorts';
+import type { AdmissionSummaryPort, RehearsalVaultPort, TranscriptVaultPort } from '../application/ports/AdmissionImportPorts';
 import { InMemoryTranscriptVault } from './doubles/InMemoryTranscriptVault';
 import { FakeAdmissionSummaryGenerator } from './doubles/FakeAdmissionSummaryGenerator';
-import { GcsTranscriptVault } from './GcsTranscriptVault';
+import { GcsTranscriptVault, REHEARSAL_BUCKET_ENV } from './GcsTranscriptVault';
 import { VertexAdmissionSummaryGenerator } from './VertexAdmissionSummaryGenerator';
 
 export interface AdmissionExternalsEnv {
@@ -47,6 +47,8 @@ export interface AdmissionExternals {
   meet: MeetConferencePort;
   /** Cofre da transcrição (spec 049 F6): só cria. Em `fake`, em memória com a mesma semântica; o real LANÇA no construtor com NODE_ENV=test. */
   vault: TranscriptVaultPort;
+  /** Bucket de ENSAIO (spec 050 R-29): a mesma porta, outro destino (`ADMISSION_REHEARSAL_BUCKET`). Escolhido pelo `realm`, nunca por `if` no serviço. */
+  rehearsalVault: RehearsalVaultPort;
   /** Resumo da admissão via Vertex (F6). Dublê em `fake`; o real LANÇA no construtor com NODE_ENV=test. */
   summary: AdmissionSummaryPort;
 }
@@ -93,6 +95,7 @@ export function createAdmissionExternals(env: AdmissionExternalsEnv, deps: Admis
       tactiq: { oauth: new FakeTactiqOAuth(), mcp: new FakeTactiqMcp() },
       meet: new FakeMeetConference(),
       vault: new InMemoryTranscriptVault(),
+      rehearsalVault: new InMemoryTranscriptVault(),
       summary: new FakeAdmissionSummaryGenerator(),
     };
   }
@@ -104,6 +107,7 @@ export function createAdmissionExternals(env: AdmissionExternalsEnv, deps: Admis
     tactiq: { oauth: new TactiqOAuthClient(env as NodeJS.ProcessEnv), mcp: new TactiqMcpClient(env as NodeJS.ProcessEnv) },
     meet: new GoogleMeetConferenceClient(env as NodeJS.ProcessEnv),
     vault: new GcsTranscriptVault({ env: env as NodeJS.ProcessEnv }),
+    rehearsalVault: new GcsTranscriptVault({ env: env as NodeJS.ProcessEnv, bucketEnv: REHEARSAL_BUCKET_ENV }),
     summary: new VertexAdmissionSummaryGenerator(env as NodeJS.ProcessEnv),
   };
 }
