@@ -355,7 +355,7 @@ export default function PatientDetailPage() {
           </>
         )}
         {shownTab === 'history' && (
-          <PatientStatusHistoryCard patientId={patient.id} />
+          <PatientStatusHistoryCard patientId={patient.id} refreshKey={patient.status} />
         )}
       </div>
     </div>

@@ -44,6 +44,20 @@ describe('AdminPatientsApiService — bloco B', () => {
     expect(fetchMock.mock.calls[1][0]).toMatch(/\/api\/admin\/catalogs\/insurance-providers$/);
   });
 
+  it('getPatientStatusOptions (spec 051): GET /status-options devolve {current, options} como o servidor mandou; recusa do servidor vira erro', async () => {
+    const body = { current: 'ACTIVE', changeSource: 'admin_panel', options: [{ status: 'ON_HOLD', via: 'fluxo' }, { status: 'SEARCHING', via: 'permissao', blockedBy: ['SERVICE_SCHEDULE'] }] };
+    fetchMock.mockResolvedValueOnce(jsonResponse({ success: true, data: body }));
+    await expect(AdminPatientsApiService.getPatientStatusOptions('p', 'admin_panel')).resolves.toEqual(body);
+    expect(fetchMock.mock.calls[0][0]).toMatch(/\/api\/admin\/patients\/p\/status-options\?changeSource=admin_panel$/);
+    expect(fetchMock.mock.calls[0][1].method).toBe('GET');
+    fetchMock.mockResolvedValueOnce(jsonResponse({ success: false, error: 'Forbidden' }, 403));
+    await expect(AdminPatientsApiService.getPatientStatusOptions('p', 'admin_panel')).rejects.toMatchObject({ message: 'Forbidden', status: 403 });
+    // a origem vai na query e a lista de OUTRA origem nunca é aceita
+    fetchMock.mockResolvedValueOnce(jsonResponse({ success: true, data: { ...body, changeSource: 'admin_panel' } }));
+    await expect(AdminPatientsApiService.getPatientStatusOptions('p', 'kanban')).rejects.toThrow(/origem admin_panel ≠ pedida kanban/);
+    expect(fetchMock.mock.calls[2][0]).toMatch(/status-options\?changeSource=kanban$/);
+  });
+
   it('updatePatientAddressLogistics → PATCH /patients/:id/addresses/:addressId com só os campos dados', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ success: true, data: { id: 'a1' } }));
     await expect(AdminPatientsApiService.updatePatientAddressLogistics('p', 'a1', { access_notes: null, neighborhood: 'Centro' })).resolves.toEqual({ id: 'a1' });

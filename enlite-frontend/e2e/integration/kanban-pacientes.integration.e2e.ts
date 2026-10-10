@@ -314,7 +314,8 @@ test.describe('kanban de pacientes @integration', () => {
       await card.scrollIntoViewIfNeeded();
       await dndKitDrag(page, card, targetColumn);
 
-      await expect(page.getByText('Ese cambio de estado no está permitido.')).toBeVisible({ timeout: 8_000 });
+      // spec 051: o destino fora da lista do servidor nem chega ao PUT — a frase é a amigável (§6.4)
+      await expect(page.getByText('Este cambio de estado no está disponible.')).toBeVisible({ timeout: 8_000 });
 
       await expect(page.locator('[data-testid="kanban-column-SEARCHING"]')).toContainText(lastName);
 

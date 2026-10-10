@@ -13,13 +13,16 @@ import { renderHook, act, waitFor } from '@testing-library/react';
 
 const listPatientsForKanban = vi.fn();
 const updatePatientStatus = vi.fn();
+const getPatientStatusOptions = vi.fn();
 vi.mock('@infrastructure/http/AdminApiService', () => ({
   AdminApiService: {
     listPatientsForKanban: (...a: unknown[]) => listPatientsForKanban(...a),
     updatePatientStatus: (...a: unknown[]) => updatePatientStatus(...a),
+    getPatientStatusOptions: (...a: unknown[]) => getPatientStatusOptions(...a),
   },
 }));
 
+import { PatientApiError } from '@infrastructure/http/AdminPatientsApiService';
 import {
   usePatientKanban,
   PATIENT_KANBAN_STATUSES,
@@ -41,6 +44,11 @@ describe('usePatientKanban — patients.status', () => {
       item('e', 'DONE', 'DISCHARGED'),     // alta definitiva → coluna DISCHARGED, nunca ACTIVE (1.6)
     ]);
     updatePatientStatus.mockReset().mockResolvedValue({ id: 'x', status: 'ACTIVE' });
+    // A lista do SERVIDOR (spec 051): por padrão oferece todas as colunas, para os testes de PUT/rollback.
+    getPatientStatusOptions.mockReset().mockResolvedValue({
+      current: 'ACTIVE',
+      options: PATIENT_KANBAN_STATUSES.map((status) => ({ status, via: 'fluxo' })),
+    });
   });
 
   it('as colunas são os 8 estados clínicos, e o agrupamento é por status (ADMISSION junta o funil; DISCHARGED não cai em ACTIVE)', async () => {
@@ -85,13 +93,13 @@ describe('usePatientKanban — patients.status', () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     let err: PatientKanbanMoveError | null = null;
     await act(async () => { err = await result.current.moveStatus('a', 'ADMISSION'); });
-    expect(err).toEqual({ code: '422 transição', missing: undefined });
+    expect(err).toEqual({ code: '422 transição', missing: undefined, to: 'ADMISSION' });
     expect(result.current.groups.ADMISSION.map((p) => p.id)).toEqual(['a', 'd']);
     await act(async () => { err = await result.current.moveStatus('nao-existe', 'ADMISSION'); });
     expect(result.current.groups.ADMISSION.map((p) => p.id)).toEqual(['a', 'd']);
     updatePatientStatus.mockRejectedValueOnce('string-error');
     await act(async () => { err = await result.current.moveStatus('a', 'ADMISSION'); });
-    expect(err).toEqual({ code: 'Failed to move patient' });
+    expect(err).toEqual({ code: 'Failed to move patient', to: 'ADMISSION' });
   });
 
   // Spec 014 (US-D5, lex D5.1): quando o backend manda `code` (enum), o hook devolve o CÓDIGO,
@@ -144,6 +152,7 @@ describe('usePatientKanban — patients.status', () => {
     expect(err).toEqual({
       code: 'PATIENT_STATUS_NOT_READY',
       missing: ['ADDRESS', 'SERVICE_SCHEDULE'],
+      to: 'ADMISSION',
     });
     expect(JSON.stringify(err)).not.toContain('Juan Pérez');
     // o card volta para a coluna de origem (rollback otimista)
@@ -161,7 +170,7 @@ describe('usePatientKanban — patients.status', () => {
     let err: PatientKanbanMoveError | null = null;
     await act(async () => { err = await result.current.moveStatus('a', 'ADMISSION'); });
 
-    expect(err).toEqual({ code: 'PATIENT_STATUS_NOT_READY', missing: undefined });
+    expect(err).toEqual({ code: 'PATIENT_STATUS_NOT_READY', missing: undefined, to: 'ADMISSION' });
     expect(JSON.stringify(err)).not.toContain('Juan Pérez');
   });
 
@@ -194,5 +203,138 @@ describe('usePatientKanban — patients.status', () => {
 
     const allIds = PATIENT_KANBAN_STATUSES.flatMap((key) => result.current.groups[key].map((p) => p.id));
     expect(allIds).toEqual(['a']);
+  });
+  // ── Spec 051: o arrasto usa a MESMA lista do servidor que o select da ficha ──────────────────────
+  describe('lista de destinos do servidor (GET status-options)', () => {
+    it('lê a lista UMA vez por arrasto, do card arrastado, antes de qualquer PUT', async () => {
+      const { result } = renderHook(() => usePatientKanban());
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+      await act(async () => { await result.current.moveStatus('c', 'ON_HOLD'); });
+      expect(getPatientStatusOptions).toHaveBeenCalledTimes(1);
+      expect(getPatientStatusOptions).toHaveBeenCalledWith('c', 'kanban'); // a origem do arrasto, explícita
+      expect(getPatientStatusOptions.mock.invocationCallOrder[0]).toBeLessThan(updatePatientStatus.mock.invocationCallOrder[0]);
+    });
+
+    it('paciente do FUNIL arrastado para Búsqueda: com SEARCHING na lista (origem kanban) o PUT sai (D469)', async () => {
+      getPatientStatusOptions.mockResolvedValue({ current: 'PENDING_ADMISSION', changeSource: 'kanban', options: [{ status: 'SEARCHING', via: 'fluxo' }, { status: 'ADMISSION', via: 'fluxo' }] });
+      const { result } = renderHook(() => usePatientKanban());
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+      let err: PatientKanbanMoveError | null = null;
+      await act(async () => { err = await result.current.moveStatus('d', 'SEARCHING'); });
+      expect(err).toBeNull();
+      expect(getPatientStatusOptions).toHaveBeenCalledWith('d', 'kanban');
+      expect(updatePatientStatus).toHaveBeenCalledWith('d', { status: 'SEARCHING', changeSource: 'kanban' });
+    });
+
+    it('lista de OUTRA origem (o serviço recusa) → indisponível, sem PUT', async () => {
+      getPatientStatusOptions.mockRejectedValue(new Error('status-options: origem admin_panel ≠ pedida kanban'));
+      const { result } = renderHook(() => usePatientKanban());
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+      let err: PatientKanbanMoveError | null = null;
+      await act(async () => { err = await result.current.moveStatus('d', 'SEARCHING'); });
+      expect(err).toEqual({ code: 'STATUS_OPTIONS_UNAVAILABLE', to: 'SEARCHING' });
+      expect(updatePatientStatus).not.toHaveBeenCalled();
+    });
+
+    it('destino que a lista não traz → STATUS_NOT_OFFERED, o PUT NÃO sai e o card não sai da coluna', async () => {
+      getPatientStatusOptions.mockResolvedValue({ current: 'ACTIVE', options: [{ status: 'ON_HOLD', via: 'fluxo' }] });
+      const { result } = renderHook(() => usePatientKanban());
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+      let err: PatientKanbanMoveError | null = null;
+      await act(async () => { err = await result.current.moveStatus('c', 'SEARCHING'); });
+      expect(err).toEqual({ code: 'STATUS_NOT_OFFERED', to: 'SEARCHING' });
+      expect(updatePatientStatus).not.toHaveBeenCalled();
+      expect(result.current.groups.ACTIVE.map((p) => p.id)).toEqual(['c']);
+      expect(result.current.groups.SEARCHING).toEqual([]);
+    });
+
+    it('destino com blockedBy → devolve o 422 de completude com o que falta, sem chamar o PUT', async () => {
+      getPatientStatusOptions.mockResolvedValue({ current: 'ACTIVE', options: [{ status: 'SEARCHING', via: 'permissao', blockedBy: ['SERVICE_SCHEDULE'] }] });
+      const { result } = renderHook(() => usePatientKanban());
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+      let err: PatientKanbanMoveError | null = null;
+      await act(async () => { err = await result.current.moveStatus('c', 'SEARCHING'); });
+      expect(err).toEqual({ code: 'PATIENT_STATUS_NOT_READY', missing: ['SERVICE_SCHEDULE'], to: 'SEARCHING' });
+      expect(updatePatientStatus).not.toHaveBeenCalled();
+      expect(result.current.groups.ACTIVE.map((p) => p.id)).toEqual(['c']);
+    });
+
+    it('falha ao ler a lista → STATUS_OPTIONS_UNAVAILABLE, sem PUT e sem mover o card (nunca "tenta mesmo assim")', async () => {
+      getPatientStatusOptions.mockRejectedValue(new Error('rede caiu'));
+      const { result } = renderHook(() => usePatientKanban());
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+      let err: PatientKanbanMoveError | null = null;
+      await act(async () => { err = await result.current.moveStatus('c', 'ON_HOLD'); });
+      expect(err).toEqual({ code: 'STATUS_OPTIONS_UNAVAILABLE', to: 'ON_HOLD' });
+      expect(updatePatientStatus).not.toHaveBeenCalled();
+      expect(result.current.groups.ACTIVE.map((p) => p.id)).toEqual(['c']);
+    });
+
+    it('403 da lista (sem patient:update) → "sem permissão" (não "não deu para comprobar"), sem PUT e card no lugar', async () => {
+      getPatientStatusOptions.mockRejectedValue(new PatientApiError('Forbidden', 403));
+      const { result } = renderHook(() => usePatientKanban());
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+      let err: PatientKanbanMoveError | null = null;
+      await act(async () => { err = await result.current.moveStatus('c', 'ON_HOLD'); });
+      expect(err).toEqual({ code: 'PATIENT_STATUS_MOVE_NOT_PERMITTED', to: 'ON_HOLD' });
+      expect(updatePatientStatus).not.toHaveBeenCalled();
+      expect(result.current.groups.ACTIVE.map((p) => p.id)).toEqual(['c']);
+    });
+
+    it('admisión → ACTIVE segue recusado ANTES da rede: nem a lista é lida', async () => {
+      const { result } = renderHook(() => usePatientKanban());
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+      await act(async () => { await result.current.moveStatus('d', 'ACTIVE'); });
+      expect(getPatientStatusOptions).not.toHaveBeenCalled();
+    });
+  });
+});
+
+// Spec 051: o `await` da lista de destinos abre uma janela entre ler o board e escrevê-lo. Dois arrastos
+// dentro dela não podem desfazer um ao outro (foto velha do board), nem no sucesso nem no rollback.
+describe('usePatientKanban — arrastos concorrentes (board lido depois do await da lista)', () => {
+  const ids = (g: Record<string, Array<{ id: string }>>, col: string) => g[col].map((p) => p.id);
+  const deferred = <T,>() => {
+    let resolve!: (v: T) => void; let reject!: (e: unknown) => void;
+    const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej; });
+    return { promise, resolve, reject };
+  };
+  const all = { current: 'ACTIVE', options: PATIENT_KANBAN_STATUSES.map((status) => ({ status, via: 'fluxo' })) };
+
+  beforeEach(() => {
+    listPatientsForKanban.mockReset().mockResolvedValue([item('a', 'DONE', 'SEARCHING'), item('c', 'DONE', 'ACTIVE')]);
+    updatePatientStatus.mockReset().mockResolvedValue({});
+    getPatientStatusOptions.mockReset().mockResolvedValue(all);
+  });
+
+  it('a lista do 1º arrasto resolve DEPOIS de o 2º já ter movido outro card: os dois terminam na coluna certa', async () => {
+    const slow = deferred<typeof all>();
+    getPatientStatusOptions.mockReturnValueOnce(slow.promise);
+    const { result } = renderHook(() => usePatientKanban());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    let p1!: Promise<unknown>;
+    act(() => { p1 = result.current.moveStatus('a', 'REPLACEMENT'); });
+    await act(async () => { await result.current.moveStatus('c', 'ON_HOLD'); });
+    expect(ids(result.current.groups, 'ON_HOLD')).toEqual(['c']);
+    await act(async () => { slow.resolve(all); await p1; });
+    expect(ids(result.current.groups, 'REPLACEMENT')).toEqual(['a']);
+    expect(ids(result.current.groups, 'ON_HOLD')).toEqual(['c']);
+    expect(ids(result.current.groups, 'ACTIVE')).toEqual([]);
+    expect(ids(result.current.groups, 'SEARCHING')).toEqual([]);
+  });
+
+  it('o rollback de um arrasto reverte só o card dele e não apaga o movimento concorrente do outro', async () => {
+    const slowPut = deferred<unknown>();
+    updatePatientStatus.mockReturnValueOnce(slowPut.promise);
+    const { result } = renderHook(() => usePatientKanban());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    let p1!: Promise<unknown>;
+    await act(async () => { p1 = result.current.moveStatus('a', 'REPLACEMENT'); await Promise.resolve(); });
+    await waitFor(() => expect(ids(result.current.groups, 'REPLACEMENT')).toEqual(['a']));
+    await act(async () => { await result.current.moveStatus('c', 'ON_HOLD'); });
+    await act(async () => { slowPut.reject(new Error('422')); await p1; });
+    expect(ids(result.current.groups, 'SEARCHING')).toEqual(['a']);
+    expect(ids(result.current.groups, 'REPLACEMENT')).toEqual([]);
+    expect(ids(result.current.groups, 'ON_HOLD')).toEqual(['c']);
   });
 });

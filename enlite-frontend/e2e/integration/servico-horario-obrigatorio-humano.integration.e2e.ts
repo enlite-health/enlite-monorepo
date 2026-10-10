@@ -251,16 +251,13 @@ test.describe('Horário obrigatório para mudar de status — o operador é avis
 
       const select = page.getByTestId('patient-status-select');
       await expect(select).toBeVisible({ timeout: 30_000 });
-      // REPLACEMENT (reemplazo), não SEARCHING: a FSM não tem `ACTIVE → SEARCHING` (seed da 315),
-      // e ela é consultada ANTES da completude — a 1ª versão deste teste pedia uma transição
-      // inexistente e recebia "Transición no permitida", que é outra recusa.
-      await select.selectOption('REPLACEMENT');
-      await page.getByTestId('patient-status-save').click();
-
-      const erro = page.getByTestId('patient-status-error');
-      await expect(erro).toBeVisible({ timeout: 20_000 });
-      await expect(erro).toContainText('Horario del servicio');
-      await expect(erro).toHaveScreenshot('erro-select-ficha.png');
+      // REPLACEMENT (reemplazo), não SEARCHING: a FSM não tem `ACTIVE → SEARCHING` (seed da 315).
+      // Spec 051: o servidor devolve REPLACEMENT com `blockedBy: [SERVICE_SCHEDULE]` e a ficha o mostra
+      // DESABILITADO com o motivo — o operador não chega a clicar para ser recusado (o 422 segue no servidor).
+      const opcao = select.locator('option[value="REPLACEMENT"]');
+      await expect(opcao).toHaveCount(1, { timeout: 20_000 });
+      await expect(opcao).toBeDisabled();
+      await expect(opcao).toHaveText(/horario del servicio/);
 
       // o banco não mudou
       const status = runSQL(`SELECT status FROM patients WHERE id = '${s4.patientId}'`).trim();

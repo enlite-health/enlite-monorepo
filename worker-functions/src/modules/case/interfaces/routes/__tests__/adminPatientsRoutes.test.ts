@@ -80,6 +80,8 @@ const ESPERADO: Record<string, string | null> = {
   'DELETE /patients/:patientId/addresses/:addressId': 'patient_address:delete',
   'GET /patients/:id/vacancies': 'vacancy:read',
   'PUT /patients/:id/status': 'patient:update',
+  // Spec 051 (F3): a MESMA célula do PUT /status — a lista não oferece o que o PUT negaria por falta de `patient:update`.
+  'GET /patients/:id/status-options': 'patient:update',
   'GET /patients/:id/status-history': 'patient:read',
   // 410 (spec 018, PR-6, ADR-5): ativar deixou de ser rota única do paciente. Sem célula, como o
   // 410 de support-network.
@@ -152,6 +154,7 @@ function pecas() {
     purgeTestPatient: responde('purgeTestPatient'),
     updatePatientSection: responde('updatePatientSection'),
     getPatientStatusHistory: responde('getPatientStatusHistory'),
+    getPatientStatusOptions: responde('getPatientStatusOptions'),
   } as unknown as AdminPatientsController;
 
   const chatIds = {
@@ -242,8 +245,8 @@ describe('createAdminPatientsRoutes', () => {
     expect(declarado).toEqual(ESPERADO);
   });
 
-  it('a família declara exatamente 55 rotas — 45 do PR-1 (39 de antes/D286 + o 410 de support-network + as 6 por linha) + activate-recruitment (PR-6) + as 3 da equipe tratante (PR-5) + as 5 do PR-2 (contatos externos + marca de emergência) + o DELETE de endereço (spec 044)', () => {
-    expect(scanExpressRouter(build())).toHaveLength(55);
+  it('a família declara exatamente 56 rotas — 45 do PR-1 (39 de antes/D286 + o 410 de support-network + as 6 por linha) + activate-recruitment (PR-6) + as 3 da equipe tratante (PR-5) + as 5 do PR-2 (contatos externos + marca de emergência) + o DELETE de endereço (spec 044) + GET status-options (spec 051)', () => {
+    expect(scanExpressRouter(build())).toHaveLength(56);
   });
 
   it('a família é `admin.patients` — o nome que PERMISSION_ENFORCED_ROUTES liga', () => {
@@ -265,7 +268,7 @@ describe('createAdminPatientsRoutes', () => {
         p.map, p.addresses, p.insurance, p.contracted, p.diagnoses, p.terminology,
         // 12º/13º/14º omitidos de propósito
       );
-      expect(scanExpressRouter(router)).toHaveLength(55);
+      expect(scanExpressRouter(router)).toHaveLength(56);
     } finally {
       if (antes === undefined) delete process.env.DATABASE_URL; else process.env.DATABASE_URL = antes;
     }
@@ -318,6 +321,7 @@ describe('createAdminPatientsRoutes', () => {
     ['post', '/api/admin/catalogs/insurance-providers', 'providers.create'],
     ['post', '/api/admin/patients/map', 'getMapPoints'],
     ['get', '/api/admin/patients/abc-123/status-history', 'getPatientStatusHistory'],
+    ['get', '/api/admin/patients/abc-123/status-options', 'getPatientStatusOptions'],
     ['patch', '/api/admin/patients/abc-123/addresses/addr-1', 'updatePatientAddress'],
     ['delete', '/api/admin/patients/abc-123/addresses/addr-1', 'deletePatientAddress'],
     ['get', '/api/admin/patients/abc-123/contracted-services', 'cs.list'],
