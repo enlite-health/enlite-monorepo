@@ -1,5 +1,6 @@
 import type { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { withActorContext } from '@shared/database/actorContext';
 import { logger } from '@shared/logging';
 import { AdmissionEventRepository } from '../infrastructure/AdmissionEventRepository';
 import type { CreateEventParams } from '../infrastructure/AdmissionCalendarService';
@@ -87,26 +88,19 @@ export async function releaseReservationWithoutEvent(
   reason: string,
   db: Pool = DatabaseConnection.getInstance().getPool(),
 ): Promise<boolean> {
-  const client = await db.connect();
-  try {
-    await client.query('BEGIN');
+  // `withActorContext` (não `db.connect()` cru): sob RLS a conexão crua chega sem identidade e a escrita é recusada
+  // (`rls_session_without_identity`). O helper abre a transação já com o contexto da request (staff, público ou job).
+  const released = await withActorContext(db, async (client) => {
     const res = await client.query(
       `UPDATE admission_appointments SET status = 'calendar_failed', updated_at = now()
         WHERE id = $1 AND status = 'booked' AND calendar_event_id IS NULL`,
       [appointmentId],
     );
-    if (res.rowCount === 0) {
-      await client.query('ROLLBACK');
-      return false;
-    }
+    if (res.rowCount === 0) return false;
     await new AdmissionEventRepository(db).append({ appointmentId, kind: CALENDAR_CREATE_FAILED_EVENT, outcome: 'failed', reason }, client);
-    await client.query('COMMIT');
-  } catch (err) {
-    await client.query('ROLLBACK').catch(() => undefined);
-    throw err;
-  } finally {
-    client.release();
-  }
+    return true;
+  });
+  if (!released) return false;
   logger.error({ appointmentId, reason }, CALENDAR_CREATE_FAILED_LOG);
   return true;
 }

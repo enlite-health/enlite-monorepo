@@ -289,6 +289,15 @@ export function sumBusyMinutesInWeek(
 
 // ─── Service (I/O contra Google Calendar) ──────────────────────────────────────
 
+/** O Google respondeu 404 ao apagar: o evento não existe. `code` é como a camada de aplicação reconhece, sem importar este módulo. */
+export class CalendarEventNotFoundError extends Error {
+  readonly code = 'EVENT_NOT_FOUND';
+  constructor(message: string) {
+    super(message);
+    this.name = 'CalendarEventNotFoundError';
+  }
+}
+
 export class AdmissionCalendarService {
   /** ⚠️ Lança com NODE_ENV=test (R-17, spec 050): teste nunca toca o Google Calendar — que MANDA e-mail. Use o dublê. */
   constructor(env: NodeJS.ProcessEnv = process.env) {
@@ -544,7 +553,9 @@ export class AdmissionCalendarService {
     // 410 = já deletado; tratamos como sucesso idempotente.
     if (!res.ok && res.status !== 410) {
       const detail = await res.text().catch(() => '');
-      throw new Error(`[AdmissionCalendarService] deleteEvent ${res.status} on ${calendarId}: ${detail}`);
+      const message = `[AdmissionCalendarService] deleteEvent ${res.status} on ${calendarId}: ${detail}`;
+      // 404 = o evento não existe (mais): quem repete o apagar (spec 050 R-36) para de repetir. Segue sendo `Error` para os demais chamadores.
+      throw res.status === 404 ? new CalendarEventNotFoundError(message) : new Error(message);
     }
   }
 

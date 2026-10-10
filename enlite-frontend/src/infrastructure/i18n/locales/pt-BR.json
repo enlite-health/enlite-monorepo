@@ -4105,7 +4105,8 @@
             "host": "Responsável",
             "meet": "Entrar no Meet",
             "cancel": "Cancelar",
-            "viaSite": "Agendada pela família no site"
+            "viaSite": "Agendada pela família no site",
+            "calendarEventPending": "Cancelada, evento do Google pendente"
           },
           "status": {
             "booked": "Agendada",

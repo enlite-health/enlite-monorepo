@@ -77,6 +77,11 @@ export function AdmissionAppointmentRow({ appointment: a, timeZone, canResendCel
           <SealChip tone={STATUS_TONE[a.status] ?? 'neutral'} testId={`admission-status-${a.id}`}>
             {ta(`status.${a.status}`)}
           </SealChip>
+          {a.status === 'cancelled' && a.calendarEventPending && (
+            <SealChip tone="warn" testId={`admission-calendar-pending-${a.id}`}>
+              {ta('row.calendarEventPending')}
+            </SealChip>
+          )}
           {canCancel && upcoming && (
             <button
               type="button"

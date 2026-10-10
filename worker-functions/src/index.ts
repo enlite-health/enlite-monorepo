@@ -119,6 +119,7 @@ import { TactiqLinkController } from '@modules/matching/interfaces/controllers/T
 import { TactiqCheckInternalController } from '@modules/matching/interfaces/controllers/TactiqCheckInternalController';
 import { createTactiqLinkRoutes, createTactiqLinkCallbackRoute, createTactiqCheckInternalRoutes } from '@modules/matching/interfaces/routes/tactiqLinkRoutes';
 import { AdmissionPostCallJob } from '@modules/matching/application/AdmissionPostCallJob';
+import { AdmissionCalendarSweeps } from '@modules/matching/application/admissionCalendarSweeps';
 import { AdmissionPostCallRepository } from '@modules/matching/infrastructure/AdmissionPostCallRepository';
 import { AdmissionPostCallInternalController } from '@modules/matching/interfaces/controllers/AdmissionPostCallInternalController';
 import { createAdmissionPostCallInternalRoutes } from '@modules/matching/interfaces/routes/admissionPostCallRoutes';
@@ -785,6 +786,12 @@ app.use(
         meet: admissionExternals.meet,
         events: admissionEvents,
         db: admissionDb,
+        calendarSweeps: new AdmissionCalendarSweeps({
+          db: admissionDb,
+          calendar: admissionExternals.calendar,
+          events: admissionEvents,
+          impersonateEmail: process.env.ADMISSION_IMPERSONATE_EMAIL || 'enlite@enlite.health',
+        }),
       }),
     ),
   ),

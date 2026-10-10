@@ -55,6 +55,8 @@ export interface AdmissionAppointment {
   slotStart: string;
   slotEnd: string;
   status: AdmissionAppointmentStatus | string;
+  /** Cancelada e o Google ainda não apagou o evento (spec 050 R-36); o job repete até apagar. */
+  calendarEventPending: boolean;
   meetLink: string | null;
   seals: {
     confirmation: MessageSealView;
