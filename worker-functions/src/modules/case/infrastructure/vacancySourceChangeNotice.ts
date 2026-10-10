@@ -1,6 +1,6 @@
 /**
  * Aviso de vaga publicada quando um campo do serviço contratado que ela lê muda
- * (vaga-le-do-servico-contratado, F3; migration 509 `vacancy_source_change_notices`).
+ * (vaga-le-do-servico-contratado, F3; migration 510 `vacancy_source_change_notices`).
  *
  * A tabela NÃO guarda valor antigo nem novo: o dado tem dona (o serviço) e copiá-lo seria outra fonte.
  * Log: só `{ jobPostingId, field }` — nunca horário, nunca dado de paciente.
@@ -14,7 +14,7 @@ import { liveVacancySql } from './liveVacancyOfService';
 import { vacancyRangeForProviderAgeBand } from '../domain/ProviderAgeBandMapping';
 import type { ProviderAgeBand } from '../domain/enums/ContractedService';
 
-/** Conjunto fechado — o mesmo do CHECK `vscn_field_check` da migration 509. */
+/** Conjunto fechado — o mesmo do CHECK `vscn_field_check` da migration 510. */
 export const SOURCE_CHANGE_FIELDS = ['schedule', 'providers_needed', 'age_range'] as const;
 export type SourceChangeField = (typeof SOURCE_CHANGE_FIELDS)[number];
 
