@@ -169,7 +169,7 @@ describe('AdmissionSchedulingService.bookForHost (painel)', () => {
   });
 
   it('perdeu a corrida da trava UNIQUE(host_email, slot_start) → SlotTakenError, sem evento', async () => {
-    const { service, calendar, notifier } = setup({ insertThrows: [{ code: '23505', constraint: 'uq_admission_appointments_host_slot' }] });
+    const { service, calendar, notifier } = setup({ insertThrows: [{ code: '23505', constraint: 'uq_admission_appointments_host_slot_booked' }] });
     await expect(service.bookForHost(params(), NOW)).rejects.toBeInstanceOf(SlotTakenError);
     expect(calendar.created).toHaveLength(0);
     expect(notifier.onBooked).not.toHaveBeenCalled();

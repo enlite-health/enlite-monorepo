@@ -120,15 +120,17 @@ beforeEach(async () => {
 // ── Migration 283: a trava certa está no lugar ────────────────────────────────
 
 describe('trava anti-corrida (migration 283)', () => {
-  it('a trava é por ATENDENTE, e a trava por país saiu', async () => {
+  it('a trava é por ATENDENTE (parcial, só reunião ativa — 510), e a trava por país e a cheia saíram', async () => {
     const res = await pool.query<{ indexname: string }>(
       `SELECT indexname FROM pg_indexes
         WHERE tablename = 'admission_appointments'
-          AND indexname IN ('uq_admission_appointments_host_slot',
+          AND indexname IN ('uq_admission_appointments_host_slot_booked',
+                            'uq_admission_appointments_host_slot',
                             'uq_admission_appointments_country_slot')`,
     );
     const names = res.rows.map((r) => r.indexname);
-    expect(names).toContain('uq_admission_appointments_host_slot');
+    expect(names).toContain('uq_admission_appointments_host_slot_booked');
+    expect(names).not.toContain('uq_admission_appointments_host_slot');
     expect(names).not.toContain('uq_admission_appointments_country_slot');
   });
 
