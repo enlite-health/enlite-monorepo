@@ -5,6 +5,7 @@ import { PATIENT_GENDERS } from '../../domain/enums/PatientGender';
 import { PATIENT_LANGUAGES } from '../../domain/enums/PatientLanguage';
 import { DEPENDENCY_LEVELS } from '../../domain/enums/DependencyLevel';
 import { PATIENT_STATUSES } from '../../domain/enums/PatientStatus';
+import { MANUAL_CHANGE_SOURCES } from '../../domain/enums/PatientChangeSource';
 import { ON_HOLD_REASONS } from '../../domain/enums/OnHoldReason';
 import { SUSPENSION_EXIT_REASONS } from '../../domain/enums/SuspensionExitReason';
 import { RELATIONSHIPS } from '../../domain/enums/Relationship';
@@ -188,7 +189,7 @@ export const patientStatusSchema = z
     onHoldReason: z.enum(ON_HOLD_REASONS as unknown as [string, ...string[]]).nullable().optional(),
     onHoldNote: z.string().max(ON_HOLD_NOTE_MAX).nullable().optional(),
     /** Origem da mudança → `change_source` na history (Historial). Default: admin_panel. */
-    changeSource: z.enum(['admin_panel', 'kanban']).optional(),
+    changeSource: z.enum(MANUAL_CHANGE_SOURCES).optional(),
     /**
      * Motivo de SAÍDA de SUSPENDED (decisão do Gabriel 29/09/2026) — obrigatório só quando o
      * paciente ESTÁ em SUSPENDED e o alvo é outro (validado no serviço, que conhece o estado

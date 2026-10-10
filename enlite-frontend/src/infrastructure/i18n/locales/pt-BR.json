@@ -4594,6 +4594,13 @@
             "incomplete_alert": "Aviso dia 12",
             "waive_contact": "Não precisa",
             "resend_message": "Reenviar mensagem",
+            "move_to_searching": "Para busca",
+            "move_to_active": "Para ativo",
+            "move_to_replacement": "Para reposição",
+            "move_to_on_hold": "Para em espera",
+            "move_to_suspended": "Para suspenso",
+            "move_to_alta": "Para alta",
+            "move_to_discharged": "Para baixa",
             "release_paid_rehearsal": "Liberar ensaio pago"
           },
           "category": {
@@ -4660,7 +4667,8 @@
             "staff_directory": "Diretório da equipe",
             "patient_document": "Documentos do paciente",
             "patient_admission": "Admissão do paciente (reuniões e mensagens)",
-            "own_tactiq_link": "Meu vínculo com o Tactiq"
+            "own_tactiq_link": "Meu vínculo com o Tactiq",
+            "patient_status": "Status do paciente: troca fora do fluxo"
           },
           "help": {
             "open": "O que esta permissão faz",

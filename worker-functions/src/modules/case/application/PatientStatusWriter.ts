@@ -2,6 +2,7 @@ import * as functions from 'firebase-functions';
 import type { PoolClient } from 'pg';
 import { inPatientTransaction } from './patientTransaction';
 import { isPatientStatus, isClinicalPatientStatus, isFunnelToSearchingTransition, type PatientStatus } from '../domain/enums/PatientStatus';
+import { isManualChangeSource, type PatientChangeSource } from '../domain/enums/PatientChangeSource';
 import type { OnHoldReason } from '../domain/enums/OnHoldReason';
 import type { SuspensionExitReason } from '../domain/enums/SuspensionExitReason';
 import { blockingCodesForStatusChange } from '../domain/PatientCompleteness';
@@ -88,7 +89,7 @@ export interface MoveStatusOptions {
    */
   onHoldNote?: string | null;
   /** Vira `change_source` em patient_status_history (trigger 254, via app.change_source). */
-  changeSource: 'admin_panel' | 'kanban' | 'activate' | 'system' | 'vacancy_launch' | 'recruitment_activation'; // vacancy_launch/recruitment_activation são internos: o zod da rota HTTP só aceita admin_panel/kanban
+  changeSource: PatientChangeSource; // união no domínio (PatientChangeSource): o zod da rota HTTP só aceita as MANUAIS
   /**
    * Motivo de SAÍDA de SUSPENDED (decisão do Gabriel 29/09/2026) — exigido só quando `from`
    * (lido dentro da transação) é SUSPENDED, o alvo é outro e `changeSource` é MANUAL
@@ -173,7 +174,7 @@ export async function movePatientStatus(
     // nunca disparou OnHoldReasonRequiredError.
     const leavingSuspendedManually =
       from === 'SUSPENDED' && status !== 'SUSPENDED' &&
-      (opts.changeSource === 'admin_panel' || opts.changeSource === 'kanban');
+      isManualChangeSource(opts.changeSource);
     if (leavingSuspendedManually && !opts.suspensionExitReason) {
       throw new SuspensionExitReasonRequiredError();
     }
