@@ -77,6 +77,12 @@ export class AdmissionImportRepository {
     return rows.length > 0;
   }
 
+  /** O evento de exaustão já foi gravado? (garante UM só, seja qual for o estado anterior da reunião.) */
+  async hasBlockedReason(appointmentId: string, reason: string, ex: Ex = this.db): Promise<boolean> {
+    const { rows } = await ex.query(`SELECT 1 FROM admission_events WHERE appointment_id = $1 AND kind = 'import_blocked' AND reason = $2 LIMIT 1`, [appointmentId, reason]);
+    return rows.length > 0;
+  }
+
   /** Tentativas de resumo que chegaram ao Vertex, pelos eventos (sem coluna nova). Chamado com o lock da reunião seguro. */
   async countModelSummaryFailures(appointmentId: string, ex: Ex = this.db): Promise<number> {
     const { rows } = await ex.query<{ n: string }>(

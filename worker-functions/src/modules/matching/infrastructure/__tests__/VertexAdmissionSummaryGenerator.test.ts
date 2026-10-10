@@ -4,6 +4,7 @@
  */
 import { AdmissionSummaryError } from '../../application/ports/AdmissionImportPorts';
 import { readFileSync } from 'fs';
+import { GeminiApiError } from '../../../integration/infrastructure/gemini-fetch';
 import { join } from 'path';
 import { MAX_OUTPUT_TOKENS, THINKING_BUDGET, promptVersionOf, VertexAdmissionSummaryGenerator } from '../VertexAdmissionSummaryGenerator';
 
@@ -165,5 +166,28 @@ describe('VertexAdmissionSummaryGenerator — marcadores, trava, entrada e saíd
     expect(b.vertex).not.toHaveBeenCalled();
     const naoErro = build({ ADMISSION_SUMMARY_PROMPT_DOC_ID: 'D' }, async () => REAL_DOC, { catalogs: { pathologyTypeLabels: async () => { throw 'texto'; } } });
     await expect(naoErro.gen.generate({ transcript: 't' })).rejects.toMatchObject({ reason: 'catalog_read_failed', errorClass: 'unknown' });
+  });
+
+  describe('falha do Vertex: transitória (não conta no teto) × configuração (conta)', () => {
+    const failWith = async (err: unknown) => {
+      const vertex = jest.fn(async () => { throw err; });
+      const gen = new VertexAdmissionSummaryGenerator({ NODE_ENV: 'production', ADMISSION_SUMMARY_PROMPT_DOC_ID: 'D' } as NodeJS.ProcessEnv, {
+        promptProvider: { getPrompt: async () => 'p' }, vertex: vertex as never, catalogs: CATALOGS,
+      });
+      return gen.generate({ transcript: 't' }).catch((e) => e as AdmissionSummaryError);
+    };
+    it.each([429, 500, 503, 599])('HTTP %i -> vertex_transient', async (status) => {
+      expect(await failWith(new GeminiApiError(status, 'x'))).toMatchObject({ reason: 'vertex_transient' });
+    });
+    it.each([400, 401, 403, 404])('HTTP %i -> vertex_failed (configuração/permissão)', async (status) => {
+      expect(await failWith(new GeminiApiError(status, 'x'))).toMatchObject({ reason: 'vertex_failed' });
+    });
+    it('erro de rede/timeout (não-HTTP) -> vertex_transient; corpo ilegível -> empty_response (a chamada foi paga)', async () => {
+      expect(await failWith(new Error('ETIMEDOUT'))).toMatchObject({ reason: 'vertex_transient' });
+      const b = new VertexAdmissionSummaryGenerator({ NODE_ENV: 'production', ADMISSION_SUMMARY_PROMPT_DOC_ID: 'D' } as NodeJS.ProcessEnv, {
+        promptProvider: { getPrompt: async () => 'p' }, vertex: (async () => ({ json: async () => { throw new Error('json'); } })) as never, catalogs: CATALOGS,
+      });
+      await expect(b.generate({ transcript: 't' })).rejects.toMatchObject({ reason: 'empty_response' });
+    });
   });
 });

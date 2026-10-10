@@ -198,7 +198,13 @@ export class AdmissionImportService {
     }
     // Teto de tentativas de resumo (custo do Vertex): contado pelos eventos, sob o lock da reunião (vale para execuções sobrepostas).
     if ((await this.deps.repo.countModelSummaryFailures(a.id)) >= MAX_SUMMARY_ATTEMPTS) {
-      await this.setBlocked(a, SUMMARY_ATTEMPTS_EXHAUSTED);
+      // O evento entra UMA vez, mesmo se a reunião já estava `blocked` por outro motivo (senão ela nunca sai da fila).
+      if (!(await this.deps.repo.hasBlockedReason(a.id, SUMMARY_ATTEMPTS_EXHAUSTED))) {
+        await this.inTx(async (cli) => {
+          await this.deps.repo.setState(a.id, 'blocked', cli);
+          await this.deps.events.append({ appointmentId: a.id, kind: 'import_blocked', outcome: 'blocked', reason: SUMMARY_ATTEMPTS_EXHAUSTED }, cli);
+        });
+      }
       this.log.error({ appointmentId: a.id, reason: SUMMARY_ATTEMPTS_EXHAUSTED }, 'admission.import_blocked');
       return 'blocked';
     }
@@ -291,18 +297,20 @@ export class AdmissionImportService {
       this.log.error({ appointmentId: a.id, reason, ...(placeholders.length ? { placeholders } : {}), ...(errorClass ? { errorClass } : {}) }, 'admission.summary_failed');
       return 'summary_failed';
     }
+    // Daqui em diante a chamada ao modelo JÁ foi paga: falha no PDF, no bucket ou na transação vira `post_model_failed` (conta no teto).
     const label = `Resumen de admisión · ${dateLabel(a.slot_start, a.country)}`;
     if (generated.jsonInvalid) this.log.warn({ appointmentId: a.id }, 'admission.summary_json_invalid');
-    const pdf = await renderAdmissionSummaryPdf({ title: label, body: generated.summary, structured: generated.jsonInvalid ? null : generated.structured });
-
-    // 7. o objeto do PDF sobe SEM transação; a linha do documento + `summary_saved` + `done` entram numa transação curta.
-    const prepared = await this.documents.prepare({
-      patientId: a.patient_id, appointmentId: a.id, pdf, originalFilename: `resumen-admision-${a.admission_code}.pdf`, label,
-    });
+    let prepared: Awaited<ReturnType<StoreAdmissionSummaryDocument['prepare']>> | undefined;
     let stored;
     try {
+      const pdf = await renderAdmissionSummaryPdf({ title: label, body: generated.summary, structured: generated.jsonInvalid ? null : generated.structured });
+      // o objeto do PDF sobe SEM transação; a linha do documento + `summary_saved` + `done` entram numa transação curta.
+      prepared = await this.documents.prepare({
+        patientId: a.patient_id, appointmentId: a.id, pdf, originalFilename: `resumen-admision-${a.admission_code}.pdf`, label,
+      });
+      const ready = prepared;
       stored = await this.inTx(async (cli) => {
-        const r = await prepared.commit(cli);
+        const r = await ready.commit(cli);
         if (r.outcome === 'stored') {
           await this.deps.events.append(
             { appointmentId: a.id, kind: 'summary_saved', outcome: 'saved', ref: { documentId: r.documentId, promptVersion: generated.promptVersion, bytes: r.sizeBytes, sha256: r.sha256 } },
@@ -313,8 +321,10 @@ export class AdmissionImportService {
         return r;
       });
     } catch (err) {
-      await prepared.discard();
-      throw err;
+      if (prepared) await prepared.discard().catch(() => undefined); // sem objeto órfão no bucket
+      await this.deps.events.append({ appointmentId: a.id, kind: 'summary_failed', outcome: 'failed', reason: 'post_model_failed' });
+      this.log.error({ appointmentId: a.id, reason: 'post_model_failed', errorClass: err instanceof Error ? err.constructor.name : 'unknown' }, 'admission.summary_failed');
+      return 'summary_failed';
     }
     if (stored.outcome === 'duplicate') {
       this.log.info({ appointmentId: a.id }, 'admission.import.already_done');

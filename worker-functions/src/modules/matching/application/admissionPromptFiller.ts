@@ -21,7 +21,7 @@ export function fillPrompt(template: string, values: Readonly<Record<string, str
 export function findUnfilled(text: string): string[] {
   const names = [...text.matchAll(ANY_PLACEHOLDER)]
     .map((m) => m[1].trim())
-    .filter((inner) => inner !== '...')
+    .filter((inner) => inner !== '...' && inner !== '\u2026') // U+2026: autocorreção do Google Docs
     .map((inner) => (/^[A-Za-z0-9_]{1,64}$/.test(inner) ? inner : '(invalido)'));
   return [...new Set(names)];
 }

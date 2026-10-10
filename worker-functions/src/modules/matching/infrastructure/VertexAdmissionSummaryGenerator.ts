@@ -11,6 +11,7 @@ import { DEPENDENCY_LABELS_ES, PROFESSION_LABELS_ES } from '../domain/admissionC
 import type { TerminologyPort } from '@modules/terminology/domain/TerminologyPort';
 import { createTerminologyPort } from '@modules/terminology/infrastructure/TerminologyPortFactory';
 import { TerminologyUnavailableError } from '@modules/terminology/domain/UnavailableTerminology';
+import { GeminiApiError } from '../../integration/infrastructure/gemini-fetch';
 import { buildInterviewInput, fillPrompt, findUnfilled, normalizeMarkdownEscapes } from '../application/admissionPromptFiller';
 import { splitGemOutput } from '../application/admissionGemOutput';
 
@@ -140,8 +141,9 @@ export class VertexAdmissionSummaryGenerator implements AdmissionSummaryPort {
     let text: string | undefined;
     let truncated = false;
     let blocked = false;
+    let response: Response;
     try {
-      const response = await this.vertex(
+      response = await this.vertex(
         this.model,
         {
           systemInstruction: { parts: [{ text: filled }] },
@@ -150,6 +152,12 @@ export class VertexAdmissionSummaryGenerator implements AdmissionSummaryPort {
         },
         'AdmissionSummary',
       );
+    } catch (err) {
+      // 429/5xx (já com retry no helper), timeout e rede: transitório, não conta. 400/401/403/404 e demais 4xx: configuração, conta.
+      const transient = err instanceof GeminiApiError ? err.isTransient : true;
+      throw new AdmissionSummaryError(transient ? 'vertex_transient' : 'vertex_failed');
+    }
+    try {
       const data = (await response.json()) as {
         candidates?: Array<{ finishReason?: string; content?: { parts?: Array<{ text?: string }> } }>;
         promptFeedback?: { blockReason?: string };
@@ -160,7 +168,7 @@ export class VertexAdmissionSummaryGenerator implements AdmissionSummaryPort {
       else if (finish && finish !== 'STOP') blocked = true; // SAFETY, RECITATION, BLOCKLIST, PROHIBITED_CONTENT, SPII, OTHER...
       text = data.candidates?.[0]?.content?.parts?.map((p) => p.text ?? '').join('');
     } catch {
-      throw new AdmissionSummaryError('vertex_failed');
+      throw new AdmissionSummaryError('empty_response'); // corpo ilegível: a chamada foi paga
     }
     // Resposta cortada ou barrada NÃO vira documento: um JSON/resumo pela metade é pior que nenhum.
     if (truncated) throw new AdmissionSummaryError('output_truncated');

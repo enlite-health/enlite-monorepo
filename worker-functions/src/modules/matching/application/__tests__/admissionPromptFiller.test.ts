@@ -52,4 +52,9 @@ describe('admissionPromptFiller', () => {
     // marcador conhecido com espaços é PREENCHIDO
     expect(fillPrompt('x {{ MAX_HORAS_POR_TURNO }} y', { MAX_HORAS_POR_TURNO: '12' })).toBe('x 12 y');
   });
+
+  it('reticências Unicode (U+2026, autocorreção do Google Docs) em `{{…}}` é o literal ignorado, igual a `{{...}}`', () => {
+    expect(findUnfilled('prosa {{\u2026}} e {{ \u2026 }} e {{...}}')).toEqual([]);
+    expect(findUnfilled('prosa {{\u2026}} e {{X_NOVO}}')).toEqual(['X_NOVO']);
+  });
 });

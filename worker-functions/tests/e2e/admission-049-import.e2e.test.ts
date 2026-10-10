@@ -749,6 +749,71 @@ describe('importação do Tactiq — banco real, cofre e bucket em emulador (spe
     }
   });
 
+  it('H4 teto partindo de `blocked` por OUTRO motivo: a exaustão grava o evento UMA vez, mesmo com o estado já `blocked`, e a reunião sai da fila', async () => {
+    const a = await appt({ importStatus: 'blocked' });
+    see(a, [meeting(a, 'tq-h4-blocked')]);
+    await admin.query(`INSERT INTO admission_events (appointment_id, kind, outcome, reason) VALUES ($1,'import_blocked','blocked','no_link')`, [a.id]);
+    for (let i = 0; i < 3; i += 1) {
+      await admin.query(`INSERT INTO admission_events (appointment_id, kind, outcome, reason) VALUES ($1,'summary_failed','failed','empty_response')`, [a.id]);
+    }
+    expect(await service.importOne(a.id, clock)).toBe('blocked');
+    expect(await service.importOne(a.id, clock)).toBe('blocked');
+    expect(vertex.received).toHaveLength(0);
+    const motivos = (await events(a.id)).filter((e) => e.kind === 'import_blocked').map((e) => e.reason).sort();
+    expect(motivos).toEqual(['no_link', 'summary_attempts_exhausted']);
+    const { AdmissionImportRepository } = await import('../../src/modules/matching/infrastructure/AdmissionImportRepository');
+    const { DatabaseConnection } = await import('@shared/database/DatabaseConnection');
+    expect(await new AdmissionImportRepository(DatabaseConnection.getInstance().getPool()).listDueIds(clock)).not.toContain(a.id);
+  });
+
+  it('H4 teto: 5 falhas TRANSITÓRIAS do Vertex (429/5xx/rede) seguidas não bloqueiam, e a 6ª execução gera o documento', async () => {
+    const a = await appt();
+    see(a, [meeting(a, 'tq-h4-transit')]);
+    vertex.failWith = new AdmissionSummaryError('vertex_transient');
+    for (let i = 0; i < 5; i += 1) expect(await service.importOne(a.id, clock)).toBe('summary_failed');
+    vertex.failWith = null;
+    expect(await service.importOne(a.id, clock)).toBe('done');
+    expect(await docs(a.id)).toHaveLength(1);
+    expect((await events(a.id)).filter((e) => e.kind === 'import_blocked')).toHaveLength(0);
+  });
+
+  it('H4 teto pós-modelo: o PDF lança 3 vezes -> `post_model_failed` conta; a 4ª execução faz 0 chamadas ao Vertex e há 1 evento de exaustão; sem objeto órfão', async () => {
+    const pdfModule = await import('../../src/modules/matching/infrastructure/admissionSummaryPdf');
+    const spy = jest.spyOn(pdfModule, 'renderAdmissionSummaryPdf').mockRejectedValue(new Error('pdf quebrou'));
+    const a = await appt();
+    see(a, [meeting(a, 'tq-h4-pos')]);
+    const pdfsBefore = (await docFiles()).length;
+    try {
+      for (let i = 0; i < 3; i += 1) expect(await service.importOne(a.id, clock)).toBe('summary_failed');
+      expect(vertex.received).toHaveLength(3);
+      expect((await events(a.id)).filter((e) => e.kind === 'summary_failed').map((e) => e.reason)).toEqual(['post_model_failed', 'post_model_failed', 'post_model_failed']);
+      expect(await service.importOne(a.id, clock)).toBe('blocked');
+      expect(vertex.received).toHaveLength(3);
+      expect((await events(a.id)).filter((e) => e.kind === 'import_blocked')).toEqual([expect.objectContaining({ reason: 'summary_attempts_exhausted' })]);
+      expect(await docs(a.id)).toHaveLength(0);
+      expect((await docFiles()).length).toBe(pdfsBefore);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('H4 pós-modelo: a transação falha DEPOIS do upload do PDF -> `discard` do objeto é chamado e o evento `post_model_failed` nasce', async () => {
+    const a = await appt();
+    see(a, [meeting(a, 'tq-h4-commit')]);
+    const discard = jest.fn(async () => undefined);
+    const svc = service as unknown as { documents: unknown };
+    const original = svc.documents;
+    svc.documents = { prepare: async () => ({ commit: async () => { throw new Error('tx quebrou'); }, discard }) };
+    try {
+      expect(await service.importOne(a.id, clock)).toBe('summary_failed');
+      expect(discard).toHaveBeenCalledTimes(1);
+      expect((await events(a.id)).filter((e) => e.kind === 'summary_failed')).toEqual([expect.objectContaining({ reason: 'post_model_failed' })]);
+      expect(await docs(a.id)).toHaveLength(0);
+    } finally {
+      svc.documents = original;
+    }
+  });
+
   // ── A6-9 ─────────────────────────────────────────────────────────────────────────────────────────
   it('A6-9: vínculo `broken` ou ausente → `blocked` (no_link) + alarme, 0 chamadas ao MCP; 401 no meio vira `broken` e bloqueia', async () => {
     const quebrado = await appt({ link: 'broken', importStatus: 'pending' });
