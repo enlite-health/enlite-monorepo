@@ -32,6 +32,7 @@ import {
 } from '../../application/PatientService';
 import {
   PatientStatusTransitionError,
+  PatientStatusPermissionError,
   OnHoldReasonRequiredError,
   PatientStatusNotReadyError,
   SuspensionExitReasonRequiredError,
@@ -372,9 +373,17 @@ export class AdminPatientsController {
         changeSource: changeSource ?? 'admin_panel',
         suspensionExitReason: suspensionExitReason as import('../../domain/enums/SuspensionExitReason').SuspensionExitReason | null | undefined,
         actorUid,
+        // Spec 051: SÓ aqui a célula do ator chega ao writer. `null` (engine neutro) NÃO vira `[]`.
+        cells: clinicalCellsOf(req),
       });
       res.status(200).json({ success: true, data: { id: result.id, status: result.status } });
     } catch (err: unknown) {
+      // Troca fora do fluxo sem a célula do destino (spec 051): 403 ANTES de qualquer escrita.
+      // Mesmo molde do 403 de `onHoldNote` acima; `details.cell` leva o nome interno para o suporte.
+      if (err instanceof PatientStatusPermissionError) {
+        res.status(403).json({ success: false, error: 'Forbidden', code: err.code, details: { from: err.from, to: err.to, cell: err.cell } });
+        return;
+      }
       if (err instanceof PatientStatusTransitionError) {
         res.status(422).json({ success: false, error: err.message, code: err.code, details: { from: err.from, to: err.to } });
         return;
