@@ -100,6 +100,15 @@ function funilParaSearchingBarrado(from: PatientStatus | null, to: PatientStatus
   return isFunnelToSearchingTransition(from, to) && !FUNNEL_TO_SEARCHING_SOURCES.includes(changeSource);
 }
 
+/**
+ * A troca passa pela guarda D469/FSM/célula quando UMA DAS PONTAS é clínica (e o estado muda).
+ * Movimento DENTRO do funil (as duas pontas em SOLICITANTE/ADMISSION/PENDING_ADMISSION) é livre —
+ * Kanban, sem FSM, sem célula. Único lugar da condição: o writer e a lista de destinos a usam.
+ */
+export function trocaPassaPelaGuarda(from: PatientStatus | null, to: PatientStatus): boolean {
+  return (isClinicalPatientStatus(to) || isClinicalPatientStatus(from)) && from !== to;
+}
+
 export type AvaliacaoDaTroca =
   /** Par com linha na FSM: livre para quem tem `patient:update`, como sempre foi. */
   | { resultado: 'dentro_do_fluxo' }
@@ -217,7 +226,7 @@ export async function movePatientStatus(
     // deixava a DEMOÇÃO passar sem 422 (arrastar o card de ACTIVE para a coluna de admissão),
     // e o mesmo UPDATE ainda apagava motivo e nota. Movimento DENTRO do funil (as duas pontas
     // em SOLICITANTE/ADMISSION/PENDING_ADMISSION) continua livre, como sempre foi.
-    if ((isClinicalPatientStatus(status) || isClinicalPatientStatus(from)) && from !== status) {
+    if (trocaPassaPelaGuarda(from, status)) {
       // D469 antes de qualquer consulta (não precisa da FSM); depois FSM + célula do destino
       // (spec 051), tudo em `avaliarTroca` — a mesma função que a lista de destinos usa.
       if (funilParaSearchingBarrado(from, status, opts.changeSource)) {

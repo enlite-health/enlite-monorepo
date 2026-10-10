@@ -290,4 +290,32 @@ describe('troca de estado fora do fluxo — HTTP real, banco real, engine LIGADO
     const leitora = await http('GET', `/api/admin/patients/${id}/status-options`, U.leitora);
     expect(leitora.status).toBe(403);
   });
+
+  it('F3/D469. paciente do FUNIL: a lista depende da origem — kanban oferece SEARCHING e o PUT kanban é aceito; admin_panel não oferece e o PUT admin_panel é recusado; system → 400', async () => {
+    const id = await paciente('d469', 'ADMISSION', 'completo');
+    const opcoes = async (qs: string) => (await http('GET', `/api/admin/patients/${id}/status-options${qs}`, U.semCelula));
+
+    const kanban = await opcoes('?changeSource=kanban');
+    expect(kanban.status).toBe(200);
+    expect(kanban.body.data.changeSource).toBe('kanban');
+    expect((kanban.body.data.options as Array<{ status: string }>).map((o) => o.status)).toContain('SEARCHING');
+
+    for (const qs of ['', '?changeSource=admin_panel']) {
+      const painel = await opcoes(qs);
+      expect(painel.status).toBe(200);
+      expect(painel.body.data.changeSource).toBe('admin_panel');
+      expect((painel.body.data.options as Array<{ status: string }>).map((o) => o.status)).not.toContain('SEARCHING');
+    }
+    expect((await opcoes('?changeSource=system')).status).toBe(400);
+    expect((await opcoes('?changeSource=admin_panel_override')).status).toBe(400);
+
+    // o PUT concorda com a lista, nas duas origens (a completude do fluxo normal passa: serviço com horário)
+    const recusado = await http('PUT', `/api/admin/patients/${id}/status`, U.semCelula, { status: 'SEARCHING', changeSource: 'admin_panel' });
+    expect(recusado.status).toBe(422);
+    expect(await estado(id)).toBe('ADMISSION');
+    const aceito = await http('PUT', `/api/admin/patients/${id}/status`, U.semCelula, { status: 'SEARCHING', changeSource: 'kanban' });
+    expect(aceito.status).toBe(200);
+    expect(await estado(id)).toBe('SEARCHING');
+    expect((await historico(id)).map((h) => h.change_source)).toEqual(['kanban']); // funil→SEARCHING está na FSM (479): sem override
+  });
 });

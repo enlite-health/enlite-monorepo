@@ -465,6 +465,6 @@ describe('movePatientStatus com o client de quem chama (cadeia Fase 15)', () => 
       return { rows: [], rowCount: 0 };
     };
     jest.clearAllMocks();
-    await expect(new PatientService().statusOptions(PID, null)).resolves.toEqual({ current: 'ALTA', options: [{ status: 'DISCHARGED', via: 'fluxo' }] });
+    await expect(new PatientService().statusOptions(PID, null, 'kanban')).resolves.toEqual({ current: 'ALTA', changeSource: 'kanban', options: [{ status: 'DISCHARGED', via: 'fluxo' }] });
   });
 });
