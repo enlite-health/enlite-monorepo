@@ -19,6 +19,10 @@ describe('UnavailableTerminology', () => {
     await expect(port.getByUri('uri-qualquer')).rejects.toBeInstanceOf(TerminologyUnavailableError);
   });
 
+  it('listChapters() rejeita', async () => {
+    await expect(port.listChapters()).rejects.toBeInstanceOf(TerminologyUnavailableError);
+  });
+
   it('ancestorsOf() rejeita', async () => {
     await expect(port.ancestorsOf('uri-qualquer')).rejects.toBeInstanceOf(TerminologyUnavailableError);
   });

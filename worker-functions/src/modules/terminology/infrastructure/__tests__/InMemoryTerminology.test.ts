@@ -210,6 +210,29 @@ describe('InMemoryTerminology', () => {
     });
   });
 
+  describe('listChapters', () => {
+    it('devolve só kind=chapter, ordenado por código, com o MESMO rótulo que ancestorsOf devolve', async () => {
+      const cap08: DiagnosisEntity = { ...CAPITULO_06, uri: `${CAPITULO_06.uri}-08`, code: IcdCode.parse('08'), titleEs: 'Enfermedades del sistema nervioso', chapter: '08' };
+      const fake = new InMemoryTerminology([cap08, AUTISMO, CAPITULO_06]);
+      const out = await fake.listChapters();
+      expect(out).toEqual([
+        { code: '06', title: CAPITULO_06.titleEs },
+        { code: '08', title: 'Enfermedades del sistema nervioso' },
+      ]);
+      expect(out).toContainEqual((await fake.ancestorsOf(AUTISMO.uri)).chapter);
+    });
+
+    it('com dois releases carregados, lista só os capítulos do vigente (o mais novo)', async () => {
+      const novo: DiagnosisEntity = { ...CAPITULO_06, uri: `${CAPITULO_06.uri}-2027`, release: '2027-01', titleEs: 'Capítulo 06 (2027)' };
+      const out = await new InMemoryTerminology([CAPITULO_06, novo]).listChapters();
+      expect(out).toEqual([{ code: '06', title: 'Capítulo 06 (2027)' }]);
+    });
+
+    it('catálogo vazio lança TerminologyUnavailableError, nunca []', async () => {
+      await expect(new InMemoryTerminology().listChapters()).rejects.toThrow(TerminologyUnavailableError);
+    });
+  });
+
   describe('ancestorsOf', () => {
     it('resolve o capítulo a partir do código do capítulo gravado na entidade', async () => {
       const { chapter, block } = await makeFake().ancestorsOf(AUTISMO.uri);
