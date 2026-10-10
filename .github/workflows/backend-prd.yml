@@ -169,6 +169,7 @@ jobs:
             TACTIQ_MCP_URL=https://mcp.tactiq.io
             TACTIQ_OAUTH_REDIRECT_URL=https://api.enlite.health/api/admin/me/tactiq-link/callback
             TACTIQ_LINK_RETURN_URL=https://app.enlite.health/admin/mi-cuenta/tactiq
+            TACTIQ_OAUTH_CLIENT_ID=mcp-6302753d9632ca87b4d97097
             TWILIO_TEMPLATE_ADMISSION_CONFIRMATION_ES=HX0ff7a2b0796720e820c4fc0c1f51de7a
             TWILIO_TEMPLATE_ADMISSION_CONFIRMATION_PT=HXbce81c8d53926d61493cb870cb3254b4
             TWILIO_TEMPLATE_ADMISSION_REMINDER_ES=HX85f46263a1b26334b0f389716274d01c
