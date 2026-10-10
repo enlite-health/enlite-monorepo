@@ -240,20 +240,25 @@ test.describe.serial('Jornada do paciente — do form no site ao big number na t
   });
 
   test('7. o notifier rodou e NÃO mandou WhatsApp (paciente sintético)', async () => {
-    // `admission.skipped_test` (AdmissionMessagingService.ts:98) carrega SÓ o appointmentId — não há patientId
-    // nele, e o `on_booked` do LoggingAdmissionNotifier (que tinha os dois) NÃO é emitido em prd: o RealAdmissionNotifier
-    // (index.ts:389) substitui o LoggingAdmissionNotifier (medido: 0 ocorrências em 30 dias). Sem como filtrar
-    // por paciente, a correlação é a janela de 15 min: `skipped_test` só nasce de paciente `is_test` e a suíte
-    // roda serial (workers=1), então o que aparece na janela é desta jornada.
+    // O corpo do book não traz o appointmentId, mas a leitura do painel (GET, só leitura) lista as
+    // entrevistas do paciente que este teste criou. `admission.skipped_test` carrega SÓ o appointmentId
+    // (AdmissionMessagingService.ts:98) e `on_booked` não é emitido em prd (index.ts:389), então o filtro
+    // do log é por appointmentId.
+    const lista = await adminCtx!.get(`/api/admin/patients/${journey.patientId}/admission-appointments`);
+    expect(lista.status(), 'GET admission-appointments (leitura) responde 200').toBe(200);
+    const { data } = (await lista.json()) as { data: { id: string }[] };
+    expect(data.length, 'o paciente tem a entrevista que o passo 3 agendou').toBeGreaterThanOrEqual(1);
+    const appointmentId = data[0]!.id;
+
     const entry = await waitForLog({
       message: 'admission.skipped_test',
       withinMinutes: 15,
+      match: { appointmentId },
     });
     expect(
       entry,
-      'sem `admission.skipped_test`: ou o notifier não rodou, ou o gate falhou e a Twilio foi cobrada',
+      'sem `admission.skipped_test` para esta entrevista: ou o notifier não rodou, ou o gate falhou e a Twilio foi cobrada',
     ).not.toBeNull();
-    expect(payloadString(entry, 'appointmentId'), 'o log precisa identificar a entrevista').toBeTruthy();
   });
 
   test('[@route:/admin/dashboard @depth:happy] 8. o big number SUBIU na tela', async ({ browser }) => {
