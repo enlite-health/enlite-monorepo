@@ -145,6 +145,14 @@ describe('AdminApiService - Vacancies Methods', () => {
     });
   });
 
+  describe('acknowledgeVacancySourceChangeNotice (F3 de vaga-le-do-servico-contratado)', () => {
+    it('POST /vacancies/:id/source-change-notices/:field/ack, sem corpo', async () => {
+      const requestSpy = vi.spyOn(AdminApiService, 'request' as keyof typeof AdminApiService).mockResolvedValue(undefined);
+      await AdminApiService.acknowledgeVacancySourceChangeNotice('v9', 'providers_needed');
+      expect(requestSpy).toHaveBeenCalledWith('POST', '/api/admin/vacancies/v9/source-change-notices/providers_needed/ack');
+    });
+  });
+
   describe('updateVacancyMeetLinks (slot recorrente, mig 291)', () => {
     const links: [string | null, string | null, string | null] = ['https://meet.google.com/aaa-aaaa-aaa', null, null];
     const echo = { meet_link_1: links[0], meet_datetime_1: null, meet_link_2: null, meet_datetime_2: null, meet_link_3: null, meet_datetime_3: null };

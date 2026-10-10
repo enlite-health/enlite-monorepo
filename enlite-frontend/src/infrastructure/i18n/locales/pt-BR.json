@@ -2296,6 +2296,18 @@
       "case": "Caso",
       "vacancy": "Vaga",
       "publishedRedirectBanner": "Esta vaga já foi publicada. Edite horário pelo lápis ao lado de \"Días y Horarios\" e o estado clicando no badge — não é preciso abrir o formulário completo.",
+      "sourceChangeNotice": {
+        "title": "O serviço contratado mudou e esta vaga já está publicada",
+        "message": {
+          "schedule": "O horário do serviço contratado mudou: a vaga já mostra o horário novo, mas a publicação e os candidatos convidados não se atualizam sozinhos.",
+          "providers_needed": "A quantidade de profissionais do serviço contratado mudou: a vaga já mostra o valor novo, mas a publicação e os candidatos convidados não se atualizam sozinhos.",
+          "age_range": "A faixa etária do serviço contratado mudou: a vaga já mostra o valor novo, mas a publicação e os candidatos convidados não se atualizam sozinhos.",
+          "generic": "O serviço contratado mudou: a publicação e os candidatos convidados não se atualizam sozinhos."
+        },
+        "changedAt": "Mudança registrada em {{date}}",
+        "acknowledge": "Marcar como atendido",
+        "error": "Não foi possível marcar como atendido. Tente de novo."
+      },
       "dismissBanner": "Fechar aviso",
       "statusCard": {
         "title": "Status da Vaga",
@@ -2639,6 +2651,8 @@
         "daysAndHours": "Dias e Horários:",
         "edit": "Editar",
         "editSchedule": "Editar horários",
+        "editScheduleInService": "Editar o horário no serviço contratado do paciente",
+        "scheduleFromService": "O horário é editado no serviço contratado do paciente",
         "editDescription": "Editar descrição",
         "weekdays": {
           "sunday": "Domingo:",

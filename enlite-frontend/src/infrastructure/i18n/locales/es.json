@@ -2297,6 +2297,18 @@
       "vacancy": "Vacante",
       "publishedRedirectBanner": "Esta vacante ya fue publicada. Editá horario con el lápiz al lado de \"Días y Horarios\" y el estado tocando el badge — no es necesario abrir el formulario completo.",
       "dismissBanner": "Cerrar aviso",
+      "sourceChangeNotice": {
+        "title": "El servicio contratado cambió y esta vacante ya está publicada",
+        "message": {
+          "schedule": "El horario del servicio contratado cambió: la vacante ya muestra el horario nuevo, pero la publicación y los candidatos invitados no se actualizan solos.",
+          "providers_needed": "La cantidad de profesionales del servicio contratado cambió: la vacante ya muestra el valor nuevo, pero la publicación y los candidatos invitados no se actualizan solos.",
+          "age_range": "El rango etario del servicio contratado cambió: la vacante ya muestra el valor nuevo, pero la publicación y los candidatos invitados no se actualizan solos.",
+          "generic": "El servicio contratado cambió: la publicación y los candidatos invitados no se actualizan solos."
+        },
+        "changedAt": "Cambio registrado el {{date}}",
+        "acknowledge": "Marcar como atendido",
+        "error": "No se pudo marcar como atendido. Probá de nuevo."
+      },
       "statusCard": {
         "title": "Estado de la Vacante",
         "status": "Estado",
@@ -2718,6 +2730,8 @@
         "daysAndHours": "Días y Horarios:",
         "edit": "Editar",
         "editSchedule": "Editar horarios",
+        "editScheduleInService": "Editar el horario en el servicio contratado del paciente",
+        "scheduleFromService": "El horario se edita en el servicio contratado del paciente",
         "editDescription": "Editar descripción",
         "weekdays": {
           "sunday": "Domingo:",
