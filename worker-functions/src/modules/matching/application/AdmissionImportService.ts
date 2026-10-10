@@ -23,6 +23,7 @@ import {
 import type { AdmissionLogger } from './AdmissionMessagingService';
 import {
   AdmissionSummaryError,
+  type AdmissionSummaryResult,
   TranscriptVaultError,
   type AdmissionSummaryPort,
   type TranscriptVaultPort,
@@ -99,6 +100,11 @@ type ReadResult = { ok: true; parts: Transcript[] } | { ok: false; kind: 'integr
 const sha256Hex = (data: string | Buffer): string => createHash('sha256').update(data).digest('hex');
 
 /** `dd/mm/aaaa` no fuso do país da reunião (a data que a operadora reconhece, não a UTC). */
+/** Data da reunião em ISO (AAAA-MM-DD) no fuso do país — o `fecha` que o Gem pede. */
+function isoDateLabel(slotStart: Date, country: string): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: countryToTimezone(country), year: 'numeric', month: '2-digit', day: '2-digit' }).format(slotStart);
+}
+
 function dateLabel(slotStart: Date, country: string): string {
   return new Intl.DateTimeFormat('es-AR', { timeZone: countryToTimezone(country), day: '2-digit', month: '2-digit', year: 'numeric' }).format(slotStart);
 }
@@ -263,17 +269,22 @@ export class AdmissionImportService {
     }
 
     // 6. o resumo (Vertex) e o PDF.
-    let generated: { summary: string; promptVersion: string };
+    let generated: AdmissionSummaryResult;
     try {
-      generated = await this.deps.summary.generate({ transcript: fullText });
+      generated = await this.deps.summary.generate({ transcript: fullText, entrevistaId: a.admission_code, fecha: isoDateLabel(a.slot_start, a.country) });
     } catch (err) {
       const reason = err instanceof AdmissionSummaryError ? err.reason : 'unexpected';
-      await this.deps.events.append({ appointmentId: a.id, kind: 'summary_failed', outcome: 'failed', reason });
-      this.log.error({ appointmentId: a.id, reason }, 'admission.summary_failed');
+      const placeholders = err instanceof AdmissionSummaryError ? err.placeholders : [];
+      await this.deps.events.append({
+        appointmentId: a.id, kind: 'summary_failed', outcome: 'failed', reason,
+        ...(placeholders.length ? { ref: { placeholders: placeholders.join(',') } } : {}),
+      });
+      this.log.error({ appointmentId: a.id, reason, ...(placeholders.length ? { placeholders } : {}) }, 'admission.summary_failed');
       return 'summary_failed';
     }
     const label = `Resumen de admisión · ${dateLabel(a.slot_start, a.country)}`;
-    const pdf = await renderAdmissionSummaryPdf({ title: label, body: generated.summary });
+    if (generated.jsonInvalid) this.log.warn({ appointmentId: a.id }, 'admission.summary_json_invalid');
+    const pdf = await renderAdmissionSummaryPdf({ title: label, body: generated.summary, structured: generated.jsonInvalid ? null : generated.structured });
 
     // 7. o objeto do PDF sobe SEM transação; a linha do documento + `summary_saved` + `done` entram numa transação curta.
     const prepared = await this.documents.prepare({

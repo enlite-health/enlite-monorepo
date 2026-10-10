@@ -1,3 +1,4 @@
+import { renderStructuredLines } from '../application/admissionGemOutput';
 import { PDFDocument, StandardFonts, type PDFFont } from 'pdf-lib';
 
 const PAGE_W = 595.28; // A4
@@ -46,7 +47,7 @@ function wrap(line: string, font: PDFFont, size: number, maxWidth: number): stri
  * Resumo da admissão em PDF (spec 049 F6). `pdf-lib` puro JS, sem I/O: devolve os bytes. O PDF não tem JavaScript nem
  * anexo (passa no pipeline de validação do chat) e as datas dos metadados são fixas — a mesma entrada dá o mesmo conteúdo.
  */
-export async function renderAdmissionSummaryPdf(input: { title: string; body: string }): Promise<Buffer> {
+export async function renderAdmissionSummaryPdf(input: { title: string; body: string; structured?: unknown | null }): Promise<Buffer> {
   const pdf = await PDFDocument.create();
   const font = await pdf.embedFont(StandardFonts.Helvetica);
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold);
@@ -66,12 +67,24 @@ export async function renderAdmissionSummaryPdf(input: { title: string; body: st
   }
   y -= 10;
 
-  for (const raw of sanitize(input.body, charset).split(/\r?\n/)) {
-    for (const line of wrap(raw, font, BODY_SIZE, maxWidth)) {
-      if (y - LEADING < MARGIN) newPage();
-      if (line) page.drawText(line, { x: MARGIN, y: y - BODY_SIZE, size: BODY_SIZE, font });
-      y -= LEADING;
+  const drawBlock = (text: string, f: PDFFont): void => {
+    for (const raw of sanitize(text, charset).split(/\r?\n/)) {
+      const lead = raw.match(/^ */)?.[0].length ?? 0; // preserva o recuo do anexo (wrap colapsa espaços)
+      for (const [i, line] of wrap(raw.trim(), f, BODY_SIZE, maxWidth - lead * 4).entries()) {
+        if (y - LEADING < MARGIN) newPage();
+        if (line) page.drawText(line, { x: MARGIN + lead * 4 + (i > 0 ? 8 : 0), y: y - BODY_SIZE, size: BODY_SIZE, font: f });
+        y -= LEADING;
+      }
     }
+  };
+  drawBlock(input.body, font);
+
+  // Anexo "Datos estructurados": o JSON do Gem, legível (chave: valor, listas). Sem JSON válido não há anexo.
+  if (input.structured !== undefined && input.structured !== null) {
+    newPage();
+    drawBlock('Datos estructurados', bold);
+    y -= LEADING / 2;
+    drawBlock(renderStructuredLines(input.structured).join('\n'), font);
   }
 
   pdf.setTitle(sanitize(input.title, charset));

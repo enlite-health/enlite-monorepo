@@ -357,6 +357,7 @@ describe('importação do Tactiq — banco real, cofre e bucket em emulador (spe
       const viaVertex = jest.fn(async () => ({ json: async () => ({ candidates: [{ content: { parts: [{ text: 'RESUMO-SINTETICO-H4' }] } }] }) }) as unknown as Response);
       const gen = new VertexAdmissionSummaryGenerator(env as NodeJS.ProcessEnv, {
         promptProvider: { getPrompt: async () => 'PROMPT-SINTETICO-DO-DOC' }, vertex: viaVertex as never,
+        catalogs: { segmentLabels: async () => ['SEG-SINTETICO'] },
       });
       const deps = (service as unknown as { deps: { summary: unknown } }).deps;
       const original = deps.summary;
@@ -626,6 +627,51 @@ describe('importação do Tactiq — banco real, cofre e bucket em emulador (spe
     for (const proibido of [FRASE_CLINICA, RESUMO, 'Operadora', a.host, a.token, 'meet.google.com', 'Carlota']) {
       expect(out).not.toContain(proibido);
     }
+  });
+
+  // ── H4: o Gem — trava de marcador, entrada e JSON ───────────────────────────────────────────────
+  it('H4 trava: marcador sem valor no Doc -> 0 chamadas ao Vertex, `summary_failed prompt_unfilled_placeholder` na trilha e no log, SÓ com o nome', async () => {
+    const viaVertex = jest.fn();
+    const gen = new VertexAdmissionSummaryGenerator({ NODE_ENV: 'production', ADMISSION_SUMMARY_PROMPT_DOC_ID: 'doc-sintetico' } as NodeJS.ProcessEnv, {
+      promptProvider: { getPrompt: async () => 'PROSA-DO-PROMPT-ZETA {{MARCADOR_ORFAO}}' }, vertex: viaVertex as never,
+      catalogs: { segmentLabels: async () => ['SEG-SINTETICO'] },
+    });
+    const deps = (service as unknown as { deps: { summary: unknown } }).deps;
+    const original = deps.summary;
+    deps.summary = gen;
+    try {
+      const a = await appt();
+      see(a, [meeting(a, 'tq-h4-trava')]);
+      expect(await service.importOne(a.id, clock)).toBe('summary_failed');
+      expect(viaVertex).not.toHaveBeenCalled();
+      expect(await docs(a.id)).toHaveLength(0);
+      const failed = (await events(a.id)).filter((e) => e.kind === 'summary_failed');
+      expect(failed).toHaveLength(1);
+      expect(failed[0]).toMatchObject({ reason: 'prompt_unfilled_placeholder', ref: { placeholders: 'MARCADOR_ORFAO' } });
+      const out = logs.output();
+      expect(out).toContain('prompt_unfilled_placeholder');
+      expect(out).toContain('MARCADOR_ORFAO');
+      for (const proibido of ['PROSA-DO-PROMPT-ZETA', FRASE_CLINICA]) expect(out).not.toContain(proibido);
+    } finally {
+      deps.summary = original;
+    }
+  });
+
+  it('H4 entrada/saída: o gerador recebe entrevista_id = código ADM e fecha ISO; JSON inválido -> documento sai só com o resumo + log `admission.summary_json_invalid` sem texto', async () => {
+    const a = await appt();
+    see(a, [meeting(a, 'tq-h4-json')]);
+    vertex.summary = `${RESUMO}: legible`;
+    vertex.jsonInvalid = true;
+    try {
+      expect(await service.importOne(a.id, clock)).toBe('done');
+    } finally {
+      vertex.jsonInvalid = false;
+    }
+    expect(vertex.inputs.at(-1)).toEqual({ entrevistaId: expect.stringMatching(/^ADM-/), fecha: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) });
+    expect(await docs(a.id)).toHaveLength(1);
+    const out = logs.output();
+    expect(out).toContain('admission.summary_json_invalid');
+    for (const proibido of [FRASE_CLINICA, RESUMO]) expect(out).not.toContain(proibido);
   });
 
   // ── A6-9 ─────────────────────────────────────────────────────────────────────────────────────────
