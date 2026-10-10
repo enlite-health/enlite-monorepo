@@ -74,6 +74,65 @@ export interface GeneratedDescription {
 // Service
 // ─────────────────────────────────────────────────────────────────
 
+/**
+ * Exported so the single-source e2e can prove the READ (effective schedule / providers / age range)
+ * without reaching Gemini.
+ * Loads vacancy + patient data needed to build the Talentum prompt.
+ * city/state/service_device_types/pathology_types/dependency_level were
+ * dropped from job_postings in migration 152 — sourced from
+ * patient_addresses (pa) and patients (p) via FKs.
+ */
+export async function loadVacancyDescriptionInput(db: Pool, jobPostingId: string): Promise<GenerateDescriptionInput> {
+  const result = await db.query(
+    `SELECT
+       jp.case_number, jp.title,
+       jp.required_professions, jp.required_sex,
+       jp.required_experience, jp.worker_attributes,
+       ${vacancyEffectiveAgeRangeSql('jp')},
+       ${vacancyEffectiveProvidersNeededSql('jp')} AS providers_needed, ${vacancyEffectiveScheduleSql('jp')} AS schedule, jp.work_schedule,
+       jp.salary_text, jp.payment_day,
+       pa.city, pa.state, pa.neighborhood,
+       p.diagnosis AS pathology_types,
+       p.dependency_level,
+       p.service_type AS service_device_types
+     FROM job_postings jp
+     ${vacancyEffectiveJoinSql('jp')}
+     LEFT JOIN patient_addresses pa ON jp.patient_address_id = pa.id
+     LEFT JOIN patients p ON jp.patient_id = p.id
+     WHERE jp.id = $1`,
+    [jobPostingId]
+  );
+
+  if (result.rows.length === 0) {
+    throw new Error(`Job posting ${jobPostingId} not found`);
+  }
+
+  const row = applyEffectiveAgeRange(result.rows[0]);
+  const input: GenerateDescriptionInput = {
+    caseNumber: row.case_number?.toString() ?? '',
+    title: row.title ?? `Caso ${row.case_number}`,
+    requiredProfessions: row.required_professions ?? [],
+    requiredSex: row.required_sex ?? undefined,
+    requiredExperience: row.required_experience ?? undefined,
+    workerAttributes: row.worker_attributes ?? undefined,
+    ageRangeMin: row.age_range_min ?? undefined,
+    ageRangeMax: row.age_range_max ?? undefined,
+    providersNeeded: row.providers_needed ?? undefined,
+    schedule: row.schedule ?? undefined,
+    workSchedule: row.work_schedule ?? undefined,
+    city: row.city ?? undefined,
+    state: row.state ?? undefined,
+    neighborhood: row.neighborhood ?? undefined,
+    serviceDeviceTypes: row.service_device_types ? [row.service_device_types] : undefined,
+    pathologyTypes: row.pathology_types ?? undefined,
+    dependencyLevel: row.dependency_level ?? undefined,
+    salaryText: row.salary_text ?? undefined,
+    paymentDay: row.payment_day ?? undefined,
+  };
+
+  return input;
+}
+
 export class TalentumDescriptionService {
   private db: Pool;
   private model: string;
@@ -86,69 +145,12 @@ export class TalentumDescriptionService {
   }
 
   /**
-   * Loads vacancy + patient data needed to build the Talentum prompt.
-   * city/state/service_device_types/pathology_types/dependency_level were
-   * dropped from job_postings in migration 152 — sourced from
-   * patient_addresses (pa) and patients (p) via FKs.
-   */
-  private async loadInput(jobPostingId: string): Promise<GenerateDescriptionInput> {
-    const result = await this.db.query(
-      `SELECT
-         jp.case_number, jp.title,
-         jp.required_professions, jp.required_sex,
-         jp.required_experience, jp.worker_attributes,
-         ${vacancyEffectiveAgeRangeSql('jp')},
-         ${vacancyEffectiveProvidersNeededSql('jp')} AS providers_needed, ${vacancyEffectiveScheduleSql('jp')} AS schedule, jp.work_schedule,
-         jp.salary_text, jp.payment_day,
-         pa.city, pa.state, pa.neighborhood,
-         p.diagnosis AS pathology_types,
-         p.dependency_level,
-         p.service_type AS service_device_types
-       FROM job_postings jp
-       ${vacancyEffectiveJoinSql('jp')}
-       LEFT JOIN patient_addresses pa ON jp.patient_address_id = pa.id
-       LEFT JOIN patients p ON jp.patient_id = p.id
-       WHERE jp.id = $1`,
-      [jobPostingId]
-    );
-
-    if (result.rows.length === 0) {
-      throw new Error(`Job posting ${jobPostingId} not found`);
-    }
-
-    const row = applyEffectiveAgeRange(result.rows[0]);
-    const input: GenerateDescriptionInput = {
-      caseNumber: row.case_number?.toString() ?? '',
-      title: row.title ?? `Caso ${row.case_number}`,
-      requiredProfessions: row.required_professions ?? [],
-      requiredSex: row.required_sex ?? undefined,
-      requiredExperience: row.required_experience ?? undefined,
-      workerAttributes: row.worker_attributes ?? undefined,
-      ageRangeMin: row.age_range_min ?? undefined,
-      ageRangeMax: row.age_range_max ?? undefined,
-      providersNeeded: row.providers_needed ?? undefined,
-      schedule: row.schedule ?? undefined,
-      workSchedule: row.work_schedule ?? undefined,
-      city: row.city ?? undefined,
-      state: row.state ?? undefined,
-      neighborhood: row.neighborhood ?? undefined,
-      serviceDeviceTypes: row.service_device_types ? [row.service_device_types] : undefined,
-      pathologyTypes: row.pathology_types ?? undefined,
-      dependencyLevel: row.dependency_level ?? undefined,
-      salaryText: row.salary_text ?? undefined,
-      paymentDay: row.payment_day ?? undefined,
-    };
-
-    return input;
-  }
-
-  /**
    * Generates a Talentum-ready description for a job posting WITHOUT persisting.
    * Used by the AI content preview endpoint.
    */
   async generateDescriptionPreview(jobPostingId: string): Promise<GeneratedDescription> {
     console.log(`[TalentumDesc] Generating description preview for job_posting ${jobPostingId}`);
-    const input = await this.loadInput(jobPostingId);
+    const input = await loadVacancyDescriptionInput(this.db, jobPostingId);
     const llmText = await this.callGemini(input);
     const fullDescription = `${llmText.trim()}\n\n${MARCO_TEXT}`;
     return { title: input.title, description: fullDescription };
@@ -168,7 +170,7 @@ export class TalentumDescriptionService {
     actor?: DescriptionAuditActor,
   ): Promise<GeneratedDescription> {
     console.log(`[TalentumDesc] Generating description for job_posting ${jobPostingId}`);
-    const input = await this.loadInput(jobPostingId);
+    const input = await loadVacancyDescriptionInput(this.db, jobPostingId);
     const llmText = await this.callGemini(input);
     const fullDescription = `${llmText.trim()}\n\n${MARCO_TEXT}`;
 

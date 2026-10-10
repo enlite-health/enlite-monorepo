@@ -7,40 +7,19 @@
  *   `UPDATE patient_contracted_services SET schedule = X` direto no SQL, SEM tocar a vaga;
  *   chama o leitor de produção (método/handler/função exportada, não cópia da query) e afirma que a saída traz X.
  *
- * Gemini/Talentum: dublê obrigatório (nenhuma chamada de rede); a asserção é sobre o que chega ao dublê.
+ * Gemini/Talentum: nenhuma chamada de rede e nenhum módulo trocado — os dois leitores que terminam no Gemini são provados na
+ * fronteira de DADOS (`loadVacancyDescriptionInput`, `loadVacancyForAiContent`: a linha lida, antes do LLM); a montagem do
+ * prompt/payload a partir da linha é provada nos unitários (TalentumDescriptionService.test.ts, VacancyTalentumController.test.ts).
  * Roda no CI pelo `npm run test:e2e` (jest.config.e2e.js, `tests/e2e/**.test.ts`, backend-e2e.yml).
  */
 import { Pool } from 'pg';
 import { randomUUID } from 'crypto';
 import { JOB_POSTING_COLUMNS, VACANCY_EFFECTIVE_SERVICE_ALIAS as SVC, vacancyEffectiveAgeRangeSql, vacancyEffectiveJoinSql, vacancyEffectiveProvidersNeededSql } from '../../src/shared/sql/vacancyEffectiveFieldsSql';
 
-const mockGeminiPrompts: string[] = [];
-const mockParserCalls: Array<{ vacancy: { schedule?: unknown } }> = [];
-
-jest.mock('../../src/modules/integration/infrastructure/vertex-gemini', () => ({
-  generateContentVertex: jest.fn(async (_model: string, body: { contents: Array<{ parts: Array<{ text: string }> }> }) => {
-    mockGeminiPrompts.push(body.contents[0].parts[0].text);
-    return {
-      json: async () => ({
-        candidates: [{ content: { parts: [{ text: JSON.stringify({ propuesta: 'p', perfilProfesional: 'q' }) }] } }],
-      }),
-    };
-  }),
-}));
-jest.mock('../../src/modules/integration/infrastructure/GeminiVacancyParserService', () => ({
-  GeminiVacancyParserService: jest.fn().mockImplementation(() => ({
-    generateFromVacancyData: jest.fn(async (vacancy: { schedule?: unknown }) => {
-      mockParserCalls.push({ vacancy });
-      return { prescreening: { questions: [], faq: [] } };
-    }),
-  })),
-}));
-
-// Importados DEPOIS dos mocks (jest.mock é içado, mas os pools são plugados em beforeAll).
 import { DatabaseConnection } from '../../src/shared/database/DatabaseConnection';
 import { fetchPatientDetail } from '../../src/modules/case/infrastructure/PatientDetailQueryHelper';
-import { TalentumDescriptionService } from '../../src/modules/integration/infrastructure/TalentumDescriptionService';
-import { VacancyTalentumController } from '../../src/modules/matching/interfaces/controllers/VacancyTalentumController';
+import { loadVacancyDescriptionInput } from '../../src/modules/integration/infrastructure/TalentumDescriptionService';
+import { loadVacancyForAiContent } from '../../src/modules/matching/interfaces/controllers/vacancyAiContentQuery';
 import { FindNearbyVacanciesForWorkerUseCase } from '../../src/modules/matching/application/FindNearbyVacanciesForWorkerUseCase';
 import { GetArmedCasesUseCase } from '../../src/modules/matching/application/GetArmedCasesUseCase';
 import { horasAtivasQuery } from '../../src/modules/matching/application/managementDashboardQueries';
@@ -211,30 +190,19 @@ const LEITORES: Leitor[] = [
     },
   },
   {
-    n: 2, nome: 'TalentumDescriptionService.generateDescriptionPreview (Gemini = dublê)',
+    n: 2, nome: 'loadVacancyDescriptionInput (leitura da vaga que alimenta o prompt do Talentum; sem Gemini)',
     probe: async (ctx) => {
-      mockGeminiPrompts.length = 0;
-      await new TalentumDescriptionService().generateDescriptionPreview(ctx.vacancyId);
-      expect(mockGeminiPrompts).toHaveLength(1);
-      const horarios = mockGeminiPrompts[0].split('\n').find((l) => l.startsWith('- Horarios:')) ?? '';
-      return { sawA: horarios.includes('Lun: 08:00-12:00'), sawX: horarios.includes('Mié: 14:15-18:45') };
+      const input = await loadVacancyDescriptionInput(identityPool, ctx.vacancyId);
+      return { sawA: mentions(input.schedule, '08:00'), sawX: mentions(input.schedule, '14:15') && mentions(input.schedule, '18:45') };
     },
   },
   {
-    n: 3, nome: 'VacancyTalentumController.generateAIContent (Gemini = dublê)',
+    n: 3, nome: 'loadVacancyForAiContent (leitura da vaga que alimenta o payload do parser; sem Gemini)',
     probe: async (ctx) => {
-      mockGeminiPrompts.length = 0;
-      mockParserCalls.length = 0;
-      const res = mockRes();
-      await new VacancyTalentumController().generateAIContent(asReq({ params: { id: ctx.vacancyId } }), asRes(res));
-      expect(res.statusCode).toBe(200);
-      expect(mockParserCalls).toHaveLength(1);
-      const horarios = mockGeminiPrompts[0].split('\n').find((l) => l.startsWith('- Horarios:')) ?? '';
-      const payload = mockParserCalls[0].vacancy.schedule;
-      return {
-        sawA: mentions(payload, '08:00') || horarios.includes('08:00'),
-        sawX: mentions(payload, '14:15') && horarios.includes('14:15-18:45'),
-      };
+      const loaded = await loadVacancyForAiContent(identityPool, ctx.vacancyId);
+      expect(loaded).not.toBeNull();
+      const payload = loaded!.vacancyData.schedule;
+      return { sawA: mentions(payload, '08:00'), sawX: mentions(payload, '14:15') && mentions(payload, '18:45') };
     },
   },
   {
@@ -362,29 +330,20 @@ interface LeitorQtd {
   probe: (ctx: Ctx) => Promise<string | null>;
 }
 
-const promptLine = (prompts: string[], prefix: string): string | null => {
-  const l = prompts.join('\n').split('\n').find((x) => x.startsWith(prefix));
-  return l ? l.slice(prefix.length).trim() : null;
-};
-
 const LEITORES_QTD: LeitorQtd[] = [
   {
-    nome: 'TalentumDescriptionService.generateDescriptionPreview (Gemini = dublê)',
+    nome: 'loadVacancyDescriptionInput (quantidade lida para o prompt do Talentum; sem Gemini)',
     probe: async (ctx) => {
-      mockGeminiPrompts.length = 0;
-      await new TalentumDescriptionService().generateDescriptionPreview(ctx.vacancyId);
-      return promptLine(mockGeminiPrompts, '- Cantidad de prestadores:');
+      const v = (await loadVacancyDescriptionInput(identityPool, ctx.vacancyId)).providersNeeded;
+      return v == null ? null : String(v);
     },
   },
   {
-    nome: 'VacancyTalentumController.generateAIContent (payload ao parser = dublê)',
+    nome: 'loadVacancyForAiContent (quantidade lida para o payload do parser; sem Gemini)',
     probe: async (ctx) => {
-      mockParserCalls.length = 0;
-      const res = mockRes();
-      await new VacancyTalentumController().generateAIContent(asReq({ params: { id: ctx.vacancyId } }), asRes(res));
-      expect(res.statusCode).toBe(200);
-      expect(mockParserCalls).toHaveLength(1);
-      const v = (mockParserCalls[0].vacancy as { providers_needed?: unknown }).providers_needed;
+      const loaded = await loadVacancyForAiContent(identityPool, ctx.vacancyId);
+      expect(loaded).not.toBeNull();
+      const v = loaded!.vacancyData.providers_needed;
       return v == null ? null : String(v);
     },
   },
@@ -721,26 +680,18 @@ const LEITORES_FAIXA: LeitorFaixa[] = [
     },
   },
   {
-    nome: 'TalentumDescriptionService.generateDescriptionPreview (Gemini = dublê)',
+    nome: 'loadVacancyDescriptionInput (faixa etária lida para o prompt do Talentum; sem Gemini)',
     probe: async (ctx) => {
-      mockGeminiPrompts.length = 0;
-      await new TalentumDescriptionService().generateDescriptionPreview(ctx.vacancyId);
-      const linha = promptLine(mockGeminiPrompts, '- Rango etario del prestador:');
-      const m = linha?.match(/^De (\d+) a (\d+) años$/) ?? linha?.match(/^Desde (\d+) años$/);
-      if (!m) return linha === 'No especificado' ? '-' : `?${linha}`;
-      return linha!.startsWith('Desde') ? `${m[1]}-` : `${m[1]}-${m[2]}`;
+      const i = await loadVacancyDescriptionInput(identityPool, ctx.vacancyId);
+      return faixa(i.ageRangeMin, i.ageRangeMax);
     },
   },
   {
-    nome: 'VacancyTalentumController.generateAIContent (payload ao parser = dublê)',
+    nome: 'loadVacancyForAiContent (faixa etária lida para o payload do parser; sem Gemini)',
     probe: async (ctx) => {
-      mockParserCalls.length = 0;
-      const res = mockRes();
-      await new VacancyTalentumController().generateAIContent(asReq({ params: { id: ctx.vacancyId } }), asRes(res));
-      expect(res.statusCode).toBe(200);
-      expect(mockParserCalls).toHaveLength(1);
-      const v = mockParserCalls[0].vacancy as { age_range_min?: unknown; age_range_max?: unknown };
-      return faixa(v.age_range_min, v.age_range_max);
+      const loaded = await loadVacancyForAiContent(identityPool, ctx.vacancyId);
+      expect(loaded).not.toBeNull();
+      return faixa(loaded!.vacancyData.age_range_min, loaded!.vacancyData.age_range_max);
     },
   },
   {
