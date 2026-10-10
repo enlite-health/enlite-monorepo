@@ -93,10 +93,16 @@ async function seed(opts: {
   draft?: boolean; status?: string; withService?: boolean; serviceSchedule?: unknown; vacancySchedule?: unknown;
   /** F5: quantidade no SERVIÇO (INT) e a cópia TEXT na vaga. Padrão 1 / '1' (comportamento da F1). */
   serviceProviders?: number | null; vacancyProviders?: string | null;
-  /** F6: banda no SERVIÇO e a cópia (min,max) na vaga. Padrão: banda NULL e cópia NULL/NULL (comportamento das F1/F5). */
+  /** F6: banda no SERVIÇO e a faixa (min,max) PRÓPRIA da vaga. Padrão: banda NULL e faixa NULL/NULL. */
   serviceBand?: string | null; vacancyAge?: [number | null, number | null];
 } = {}): Promise<Ctx> {
   const { draft = false, status = 'SEARCHING', withService = true } = opts;
+  // F7: a CHECK `job_postings_service_owns_fields_chk` proíbe vaga com serviço E valor próprio — a "cópia stale" que este
+  // seed gravava de propósito (para provar que o leitor a ignora) não pode mais existir. `vacancy*` só vale para vaga
+  // MANUAL; passá-lo com serviço é erro do teste (falha alto aqui, em vez de o banco recusar o INSERT adiante).
+  if (withService && (opts.vacancySchedule !== undefined || opts.vacancyProviders !== undefined || opts.vacancyAge !== undefined)) {
+    throw new Error('seed(): vacancySchedule/vacancyProviders/vacancyAge só valem para vaga MANUAL (withService:false); com serviço a vaga nasce com as 4 colunas NULL (F7)');
+  }
   const patientId = randomUUID();
   const addressId = randomUUID();
   const serviceId = randomUUID();
@@ -126,8 +132,9 @@ async function seed(opts: {
                                age_range_min, age_range_max)
      VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, ARRAY['AT'], 'AR', false, $10, '{"site":"https://enlite.test/x"}'::jsonb, $11, $12)`,
     [vacancyId, `CASO ${caseNumber}`, caseNumber, patientId, addressId, withService ? serviceId : null,
-      JSON.stringify(opts.vacancySchedule === undefined ? SCHEDULE_A : opts.vacancySchedule), status, draft,
-      opts.vacancyProviders === undefined ? '1' : opts.vacancyProviders, opts.vacancyAge?.[0] ?? null, opts.vacancyAge?.[1] ?? null],
+      withService ? null : JSON.stringify(opts.vacancySchedule === undefined ? SCHEDULE_A : opts.vacancySchedule), status, draft,
+      withService ? null : opts.vacancyProviders === undefined ? '1' : opts.vacancyProviders,
+      withService ? null : opts.vacancyAge?.[0] ?? null, withService ? null : opts.vacancyAge?.[1] ?? null],
   );
   return { patientId, addressId, serviceId, vacancyId, caseNumber };
 }
@@ -320,7 +327,7 @@ const LEITORES: Leitor[] = [
 
 /**
  * F5 (`providers_needed`): a quantidade da vaga com serviço é lida do SERVIÇO (INT) e devolvida como TEXT (o tipo da
- * coluna da vaga), por todo leitor. Estado inicial: serviço = 2 e a cópia stale da vaga = '2'; o teste faz
+ * coluna da vaga), por todo leitor. Estado inicial: serviço = 2 e a coluna da vaga NULL (F7); o teste faz
  * `UPDATE patient_contracted_services SET providers_needed = 7` SEM tocar a vaga e afirma que o leitor passa a mostrar 7.
  */
 interface LeitorQtd {
@@ -401,7 +408,7 @@ const LEITORES_QTD: LeitorQtd[] = [
   },
   {
     nome: 'VacancyCrudController.updateVacancy (resposta do PUT, client cru + leitura efetiva)',
-    seed: () => seed({ draft: true, serviceProviders: 2, vacancyProviders: '2' }),
+    seed: () => seed({ draft: true, serviceProviders: 2 }),
     probe: async (ctx) => {
       const res = mockRes();
       await new VacancyCrudController().updateVacancy(asReq({ params: { id: ctx.vacancyId }, body: { daily_obs: `obs ${randomUUID()}` }, user: { uid: UID } }), asRes(res));
@@ -469,7 +476,7 @@ describe('vacancyEffectiveFields.singleSource — o leitor lê o horário do SER
       expect(antes).toEqual({ sawA: true, sawX: false }); // controle positivo: o instrumento enxerga A
       await setServiceSchedule(ctx, SCHEDULE_X);
       const copia = await admin.query(`SELECT schedule FROM job_postings WHERE id = $1`, [ctx.vacancyId]);
-      expect(copia.rows[0].schedule).toEqual(SCHEDULE_A); // a cópia da vaga continua A
+      expect(copia.rows[0].schedule).toBeNull(); // a coluna da vaga segue NULL: quem manda é o serviço (F7: não há mais cópia)
       const depois = await leitor.probe(ctx);
       expect(depois).toEqual({ sawA: false, sawX: true });
     });
@@ -484,8 +491,10 @@ describe('vacancyEffectiveFields.singleSource — o leitor lê o horário do SER
       expect(probeJson((res.body as { data: { schedule: unknown } }).data.schedule)).toEqual({ sawA: false, sawX: true });
     });
 
-    it('serviço com horário NULL e vaga com cópia preenchida -> o leitor devolve vazio, NÃO a cópia', async () => {
-      const ctx = await seed({ serviceSchedule: null, vacancySchedule: SCHEDULE_A });
+    it('serviço com horário NULL (e a coluna da vaga NULL, como a F7 impõe) -> o leitor devolve vazio', async () => {
+      // F7: a prova antiga ("a cópia stale preenchida é ignorada") não é mais montável — a CHECK impede a cópia.
+      // Quem a substitui é a própria constraint (`vaga-sem-copia-do-servico.e2e.test.ts`: INSERT/UPDATE com valor próprio -> 23514).
+      const ctx = await seed({ serviceSchedule: null });
       const res = mockRes();
       await new VacanciesController(diagnosisStub).getVacancyById(asReq({ params: { id: ctx.vacancyId } }), asRes(res));
       expect(res.statusCode).toBe(200);
@@ -536,7 +545,7 @@ describe('vacancyEffectiveFields.singleSource — o leitor lê o horário do SER
       expect(JSON.stringify(put.body)).not.toMatch(/rls_session_without_identity/);
       expect(put.statusCode).toBe(200);
       expect((put.body as { data: { schedule: unknown } }).data.schedule).toEqual(SCHEDULE_X);
-      expect((await admin.query(`SELECT schedule FROM job_postings WHERE id = $1`, [ctx.vacancyId])).rows[0].schedule).toEqual(SCHEDULE_A);
+      expect((await admin.query(`SELECT schedule FROM job_postings WHERE id = $1`, [ctx.vacancyId])).rows[0].schedule).toBeNull(); // a coluna da vaga segue NULL (F7)
 
       const del = mockRes();
       await crud.deleteVacancy(asReq({ params: { id: ctx.vacancyId }, user: { uid: UID } }), asRes(del));
@@ -563,12 +572,12 @@ describe('vacancyEffectiveFields.singleSource — F5: o leitor lê a QUANTIDADE 
 
   describe.each(LEITORES_QTD.map((l) => [l.nome, l] as const))('%s', (_nome, leitor) => {
     it('UPDATE em pcs.providers_needed (vaga intocada) -> a saída passa de 2 para 7', async () => {
-      const ctx = await (leitor.seed ?? (() => seed({ serviceProviders: 2, vacancyProviders: '2' })))();
+      const ctx = await (leitor.seed ?? (() => seed({ serviceProviders: 2 })))();
       const antes = await leitor.probe(ctx);
       expect(antes).toBe('2'); // controle positivo: o instrumento enxerga o valor inicial
       await setServiceProviders(ctx, leitor.nome.startsWith('GetArmedCasesUseCase') ? null : 7);
       const copia = await admin.query(`SELECT providers_needed FROM job_postings WHERE id = $1`, [ctx.vacancyId]);
-      expect(copia.rows[0].providers_needed).toBe('2'); // a cópia da vaga continua '2'
+      expect(copia.rows[0].providers_needed).toBeNull(); // a coluna da vaga segue NULL (F7: não há mais cópia)
       expect(await leitor.probe(ctx)).toBe('7');
     });
   });
@@ -582,21 +591,22 @@ describe('vacancyEffectiveFields.singleSource — F5: o leitor lê a QUANTIDADE 
     });
 
     it('vaga COM serviço e cópia NULL (estado pós-F5) devolve a quantidade do serviço, como TEXT', async () => {
-      const ctx = await seed({ serviceProviders: 4, vacancyProviders: null });
+      const ctx = await seed({ serviceProviders: 4 });
       const res = mockRes();
       await new VacanciesController(diagnosisStub).getVacancyById(asReq({ params: { id: ctx.vacancyId } }), asRes(res));
       expect((res.body as { data: { providers_needed: unknown } }).data.providers_needed).toBe('4');
     });
 
-    it('serviço com quantidade NULL e cópia preenchida -> o leitor devolve NULL, NÃO a cópia (nunca COALESCE)', async () => {
-      const ctx = await seed({ serviceProviders: null, vacancyProviders: '9' });
+    it('serviço com quantidade NULL (e a coluna da vaga NULL, como a F7 impõe) -> o leitor devolve NULL', async () => {
+      // F7: a cópia stale '9' não é mais montável (CHECK); a prova "nunca COALESCE" passa a ser a própria constraint.
+      const ctx = await seed({ serviceProviders: null });
       const res = mockRes();
       await new VacanciesController(diagnosisStub).getVacancyById(asReq({ params: { id: ctx.vacancyId } }), asRes(res));
       expect((res.body as { data: { providers_needed: unknown } }).data.providers_needed ?? null).toBeNull();
     });
 
     it('tipos: a expressão efetiva é TEXT nos dois ramos, e comparar vaga × serviço pela peça NÃO dá `text = integer`', async () => {
-      const comServico = await seed({ serviceProviders: 3, vacancyProviders: null });
+      const comServico = await seed({ serviceProviders: 3 });
       const manual = await seed({ withService: false, vacancyProviders: '5' });
       const expr = vacancyEffectiveProvidersNeededSql('jp');
       const tipos = await identityPool.query<{ id: string; tipo: string; valor: string | null }>(
@@ -624,7 +634,7 @@ describe('vacancyEffectiveFields.singleSource — F5: o leitor lê a QUANTIDADE 
 
 /**
  * F6 (faixa etária): a faixa da vaga com serviço é DERIVADA de `patient_contracted_services.provider_age_band` (mapeamento
- * em TS, `ProviderAgeBandMapping.ts`). Estado inicial: banda AGE_20_30 (20-29) e a cópia stale da vaga 20/29. O teste faz
+ * em TS, `ProviderAgeBandMapping.ts`). Estado inicial: banda AGE_20_30 (20-29) e as colunas da vaga NULL (F7). O teste faz
  * `UPDATE ... SET provider_age_band = 'AGE_30_45'` SEM tocar a vaga e afirma que o leitor passa a mostrar 30-44.
  */
 interface LeitorFaixa {
@@ -635,7 +645,7 @@ interface LeitorFaixa {
 }
 
 const faixa = (min: unknown, max: unknown): string => `${min ?? ''}-${max ?? ''}`;
-const seedFaixa = (extra: Parameters<typeof seed>[0] = {}) => seed({ serviceBand: 'AGE_20_30', vacancyAge: [20, 29], ...extra });
+const seedFaixa = (extra: Parameters<typeof seed>[0] = {}) => seed({ serviceBand: 'AGE_20_30', ...extra });
 
 const LEITORES_FAIXA: LeitorFaixa[] = [
   {
@@ -719,11 +729,12 @@ describe('vacancyEffectiveFields.singleSource — F6: o leitor deriva a FAIXA ET
       expect(await leitor.probe(ctx)).toBe('20-29'); // controle positivo: o instrumento enxerga a faixa inicial
       await setServiceBand(ctx, 'AGE_30_45');
       const copia = await admin.query(`SELECT age_range_min, age_range_max FROM job_postings WHERE id = $1`, [ctx.vacancyId]);
-      expect(copia.rows[0]).toEqual({ age_range_min: 20, age_range_max: 29 }); // a cópia da vaga continua 20-29
+      expect(copia.rows[0]).toEqual({ age_range_min: null, age_range_max: null }); // as colunas da vaga seguem NULL (F7: não há mais cópia)
       expect(await leitor.probe(ctx)).toBe('30-44');
     });
 
-    it('serviço com banda NULL e cópia antiga 20-29 na vaga -> faixa VAZIA, não a cópia (nunca COALESCE)', async () => {
+    it('serviço com banda NULL (e as colunas da vaga NULL, como a F7 impõe) -> faixa VAZIA', async () => {
+      // F7: a cópia antiga 20-29 não é mais montável (CHECK); a prova "nunca COALESCE" passa a ser a própria constraint.
       const ctx = await (leitor.seed ?? (() => seedFaixa()))();
       await setServiceBand(ctx, null);
       const out = await leitor.probe(ctx);
