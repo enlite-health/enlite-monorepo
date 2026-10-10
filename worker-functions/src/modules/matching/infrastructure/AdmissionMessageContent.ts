@@ -2,6 +2,7 @@ import type { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { getAdmissionCountryConfig, isAdmissionCountry } from '../domain/admissionCountries';
 import type { AdmissionCountry } from '../domain/admissionCountries';
+import { admissionRealm, isBlockedFromPaidPath } from '../domain/admissionRealm';
 import type { AdmissionMessageKind } from '../application/ports/AdmissionMessagingPorts';
 import type { AdmissionMessageResolver, MessageResolution } from '../application/AdmissionMessagingService';
 import {
@@ -62,7 +63,8 @@ export class AdmissionMessageContent implements AdmissionMessageResolver {
   async resolveWith(kind: AdmissionMessageKind, facts: AppointmentFacts): Promise<MessageResolution> {
     const contact = await this.loadPatientContact(facts.patientId);
     // Synthetic gate ANTES do consentimento: paciente is_test é do monitor sintético e roda todo dia contra produção.
-    if (contact?.is_test) return { skip: 'skipped_test' };
+    const realm = admissionRealm({ isTest: contact?.is_test === true });
+    if (isBlockedFromPaidPath(realm)) return { skip: 'skipped_test' };
     if (!contact?.has_consent) return { skip: 'skipped_no_consent' };
     if (!contact.phone_whatsapp) return { skip: 'skipped_no_phone' };
 
@@ -83,7 +85,7 @@ export class AdmissionMessageContent implements AdmissionMessageResolver {
             '5': facts.meetLink ?? '',
           }
         : { '1': hostLabel(facts.hostDisplayName, lang), '2': time, '3': facts.meetLink ?? '' };
-    return { send: { to: contact.phone_whatsapp, contentSid, vars } };
+    return { send: { to: contact.phone_whatsapp, contentSid, vars, realm } };
   }
 
   private async loadAppointment(appointmentId: string): Promise<AppointmentRow | null> {

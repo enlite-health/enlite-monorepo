@@ -174,7 +174,7 @@ test.describe.serial('Spec 009 · Fase 3 — ciclo da vaga pela mão do staff', 
     await adminCtx?.dispose();
   });
 
-  test('[@route:POST /api/admin/vacancies @depth:happy] 3.1 — a vaga nasce is_test, é editada, e a edição sobrevive à releitura', async ({ browser }) => {
+  test('[@route:POST /api/admin/vacancies @depth:happy] 3.1 — a vaga nasce is_test, é editada, a edição sobrevive à releitura, e a ficha publicada mostra o valor', async ({ browser }) => {
     // A vaga referencia um paciente REAL (não criamos paciente aqui) — mesmo molde da
     // `qualified-interview-invite`. Nenhum dado desse paciente é lido ou comparado: só o id.
     const patientsRes = await adminCtx!.get('/api/admin/patients');
@@ -224,12 +224,35 @@ test.describe.serial('Spec 009 · Fase 3 — ciclo da vaga pela mão do staff', 
       'e é DIFERENTE do valor anterior — a asserção mede mudança, não presença',
     ).not.toBe(antes.worker_attributes);
 
-    // ── e a tela do staff mostra o valor novo ───────────────────────────────
-    const { page, fechar } = await abrirComAdmin(browser, `/admin/vacancies/${vaga.id}`);
+    // ── e a tela do staff mostra o valor ─────────────────────────────────────
+    // Desde 26/09 a vaga nasce RASCUNHO: o detalhe redireciona para /borrador, que só marca o campo como
+    // preenchido (DraftVacancyTodoCard) e NÃO mostra o texto; e depois de publicada o PUT recusa
+    // `worker_attributes` (403, vacancyCrudHelpers.ts:197-205) — a edição só existe em rascunho. Logo a
+    // edição (acima) continua provada por API, e a TELA é provada sobre uma segunda vaga is_test já
+    // publicável (`is_draft:false` só vale com is_test, vacancyCrudHelpers.ts:383; não passa pelo Talentum)
+    // criada JÁ com o valor, que é o que a ficha publicada renderiza.
+    const publicadaRes = await adminCtx!.post('/api/admin/vacancies', {
+      data: {
+        case_number: patient.caseNumber ?? 0,
+        patient_id: patient.id,
+        is_test: true,
+        is_draft: false,
+        required_professions: ['CAREGIVER'],
+        worker_attributes: ATTRS_EDITADO,
+        age_range_min: 25,
+        age_range_max: 60,
+        providers_needed: '1',
+      },
+    });
+    expect(publicadaRes.status(), 'POST da vaga is_test publicável responde 201').toBe(201);
+    const publicada = (await publicadaRes.json()) as VacancyBody;
+    expect(publicada.data.is_test, 'a segunda vaga também é is_test — senão o cleanup não a alcança').toBe(true);
+
+    const { page, fechar } = await abrirComAdmin(browser, `/admin/vacancies/${publicada.data.id}`);
     try {
       await expect(
         page.getByText(ATTRS_EDITADO),
-        'a ficha da vaga renderiza a edição — não basta o banco concordar consigo mesmo',
+        'a ficha da vaga publicada renderiza o valor gravado — não basta o banco concordar consigo mesmo',
       ).toBeVisible({ timeout: 30_000 });
     } finally {
       await fechar();
