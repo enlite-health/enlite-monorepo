@@ -324,6 +324,10 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
   'patient_admission:resend_message':
     'Reenviar o WhatsApp da reunião de admissão que FALHOU (confirmação ou lembrete). Cada reenvio manda uma mensagem '
     + 'à família; teto de 2 reenvios por mensagem. Quais perfis recebem esta célula é decisão do Diego.',
+  'patient_admission:release_paid_rehearsal':
+    'Liberar o ENSAIO PAGO de uma reunião de admissão de paciente de TESTE, por 48 h: só então a reunião usa Meet, Tactiq, '
+    + 'Vertex e WhatsApp reais (custa dinheiro e manda mensagem de verdade); a transcrição vai a um bucket separado que '
+    + 'expira. Não existe para paciente real. Fica na trilha quem liberou e quando. Só o Acesso Master.',
   'own_tactiq_link:read':
     'Ver o estado do PRÓPRIO vínculo com o Tactiq (vinculado, caído, conta errada ou sem vínculo) e a data da última '
     + 'verificação. Nunca devolve o token. Quem não está vinculado não pode ser responsável de agenda de admissão.',

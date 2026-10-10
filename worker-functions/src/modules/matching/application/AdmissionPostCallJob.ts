@@ -95,8 +95,8 @@ export class AdmissionPostCallJob {
       if (!appt) return 'skippedLocked';
 
       // R-18: a função de domínio decide ANTES de qualquer porta. `test` nunca chama o Meet; a trilha ganha UM `skipped_test`
-      // (o `ELIGIBLE` do repositório tira a reunião da fila depois dele).
-      if (isBlockedFromPaidPath(admissionRealm({ isTest: appt.patient_is_test }))) {
+      // (o `ELIGIBLE` do repositório tira a reunião da fila depois dele). `ensaio` (liberação vigente, F3) segue o caminho pago.
+      if (isBlockedFromPaidPath(admissionRealm({ isTest: appt.patient_is_test, rehearsalUntil: appt.rehearsal_until, now }))) {
         await this.deps.events.append(
           { appointmentId: appt.id, kind: SKIPPED_TEST_EVENT, outcome: 'skipped', reason: 'post_call', ref: { realm: 'test' } },
           cli,
