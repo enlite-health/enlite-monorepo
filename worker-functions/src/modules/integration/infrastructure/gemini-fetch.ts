@@ -64,6 +64,17 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
+ * Opções OPT-IN (quem não passa nada tem o comportamento de sempre).
+ * - `redactErrors`: o chamador manda texto sensível (ex.: transcrição clínica da admissão). O log leva só status HTTP, classe do erro e
+ *   tamanho do corpo — NUNCA o corpo nem `err.message` — e o `GeminiApiError` sobe com `body` vazio (a mensagem não ecoa o pedido).
+ * - `signal`: prazo TOTAL da chamada (inclui os retries). Abort/timeout NÃO é repetido: relança na hora.
+ */
+export interface GeminiFetchOptions {
+  redactErrors?: boolean;
+  signal?: AbortSignal;
+}
+
+/**
  * Fetches a Gemini endpoint with retry on transient failures.
  *
  * @param url      Full Gemini API URL (including `?key=...`)
@@ -81,19 +92,28 @@ export async function fetchGeminiWithRetry(
   url: string,
   init: RequestInit,
   logTag: string,
+  opts: GeminiFetchOptions = {},
 ): Promise<Response> {
   let lastError: unknown;
+  const redact = opts.redactErrors === true;
+  const reqInit: RequestInit = opts.signal ? { ...init, signal: opts.signal } : init;
 
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     let response: Response;
     try {
-      response = await fetch(url, init);
+      response = await fetch(url, reqInit);
     } catch (err) {
       lastError = err;
+      if (opts.signal?.aborted) {
+        // prazo estourado: o pedido já foi enviado, repetir só pagaria de novo.
+        console.warn(`[${logTag}] Request aborted (deadline) on attempt ${attempt + 1}/${MAX_ATTEMPTS} — not retrying`);
+        throw err;
+      }
       const isLast = attempt === MAX_ATTEMPTS - 1;
       const wait = delayMs(attempt);
+      const detail = redact ? (err instanceof Error ? err.constructor.name : typeof err) : err instanceof Error ? err.message : String(err);
       console.warn(
-        `[${logTag}] Network error on attempt ${attempt + 1}/${MAX_ATTEMPTS}: ${err instanceof Error ? err.message : String(err)}` +
+        `[${logTag}] Network error on attempt ${attempt + 1}/${MAX_ATTEMPTS}: ${detail}` +
           (isLast ? ' — giving up' : ` — retrying in ${wait}ms`),
       );
       if (isLast) throw err;
@@ -104,15 +124,17 @@ export async function fetchGeminiWithRetry(
     if (response.ok) return response;
 
     const errBody = await response.text();
+    const shown = redact ? `(body ${errBody.length} chars, redacted)` : errBody;
+    const keptBody = redact ? '' : errBody;
 
     if (!isTransientStatus(response.status)) {
       console.error(
-        `[${logTag}] Gemini API error HTTP ${response.status}: ${errBody}`,
+        `[${logTag}] Gemini API error HTTP ${response.status}: ${shown}`,
       );
-      throw new GeminiApiError(response.status, errBody);
+      throw new GeminiApiError(response.status, keptBody);
     }
 
-    lastError = new GeminiApiError(response.status, errBody);
+    lastError = new GeminiApiError(response.status, keptBody);
     const isLast = attempt === MAX_ATTEMPTS - 1;
     const wait = delayMs(attempt);
     console.warn(
@@ -121,7 +143,7 @@ export async function fetchGeminiWithRetry(
     );
     if (isLast) {
       console.error(
-        `[${logTag}] Gemini API error HTTP ${response.status}: ${errBody}`,
+        `[${logTag}] Gemini API error HTTP ${response.status}: ${shown}`,
       );
       throw lastError;
     }

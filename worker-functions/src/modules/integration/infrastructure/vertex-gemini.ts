@@ -17,7 +17,7 @@
  */
 
 import { GoogleAuth } from 'google-auth-library';
-import { fetchGeminiWithRetry } from './gemini-fetch';
+import { fetchGeminiWithRetry, type GeminiFetchOptions } from './gemini-fetch';
 
 const CLOUD_PLATFORM_SCOPE = 'https://www.googleapis.com/auth/cloud-platform';
 
@@ -43,6 +43,14 @@ function vertexHost(loc: string): string {
     : `${loc}-aiplatform.googleapis.com`;
 }
 
+/** Falha de CREDENCIAL (ADC/token), distinta de Vertex fora do ar. Só lançada quando o chamador passa `opts`. Mensagem fixa. */
+export class VertexAuthError extends Error {
+  constructor() {
+    super('Vertex AI: ADC credential failure');
+    this.name = 'VertexAuthError';
+  }
+}
+
 /**
  * POSTs `body` to the Vertex `generateContent` endpoint for `model`,
  * authenticating via ADC. Returns the raw Response (caller reads `.json()`).
@@ -58,16 +66,24 @@ export async function generateContentVertex(
   model: string,
   body: Record<string, unknown>,
   logTag: string,
+  opts?: GeminiFetchOptions,
 ): Promise<Response> {
   const auth = getAuth();
-  if (!projectIdCache) {
-    projectIdCache =
-      process.env.GOOGLE_CLOUD_PROJECT ??
-      process.env.GCP_PROJECT_ID ??
-      (await auth.getProjectId());
+  let token: string | null | undefined;
+  try {
+    if (!projectIdCache) {
+      projectIdCache =
+        process.env.GOOGLE_CLOUD_PROJECT ??
+        process.env.GCP_PROJECT_ID ??
+        (await auth.getProjectId());
+    }
+    token = await auth.getAccessToken();
+  } catch (err) {
+    if (opts) throw new VertexAuthError(); // opt-in: classificável, sem a mensagem do Google
+    throw err;
   }
-  const token = await auth.getAccessToken();
   if (!token) {
+    if (opts) throw new VertexAuthError();
     throw new Error('Vertex AI: could not obtain an ADC access token');
   }
 
@@ -87,5 +103,6 @@ export async function generateContentVertex(
       body: JSON.stringify(body),
     },
     logTag,
+    opts,
   );
 }

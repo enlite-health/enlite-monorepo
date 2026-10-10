@@ -11,6 +11,7 @@ import { DEPENDENCY_LABELS_ES, PROFESSION_LABELS_ES } from '../domain/admissionC
 import type { TerminologyPort } from '@modules/terminology/domain/TerminologyPort';
 import { createTerminologyPort } from '@modules/terminology/infrastructure/TerminologyPortFactory';
 import { TerminologyUnavailableError } from '@modules/terminology/domain/UnavailableTerminology';
+import { VertexAuthError } from '../../integration/infrastructure/vertex-gemini';
 import { GeminiApiError } from '../../integration/infrastructure/gemini-fetch';
 import { buildInterviewInput, fillPrompt, findUnfilled, normalizeMarkdownEscapes } from '../application/admissionPromptFiller';
 import { splitGemOutput } from '../application/admissionGemOutput';
@@ -25,6 +26,11 @@ export interface AdmissionPromptProvider {
  * O teto conta o thinking: 8192 de thinking explícito + até 24576 de JSON + resumo (o JSON do Gem tem ~5-8 mil tokens).
  * `thinkingBudget` aceito pelo 2.5-pro (medido: STOP, thoughtsTokenCount 184).
  */
+/**
+ * Prazo TOTAL da chamada ao Vertex (inclui retries do helper). Cabe no `attempt_deadline` do Scheduler (300s) e no `--timeout=600s`
+ * do Cloud Run; 2.5-pro com 8192 de thinking e até ~24k de saída leva dezenas de segundos. Estourou = `vertex_timeout` (conta no teto).
+ */
+export const VERTEX_TIMEOUT_MS = 180_000;
 export const MAX_OUTPUT_TOKENS = 32768;
 export const THINKING_BUDGET = 8192;
 
@@ -81,6 +87,7 @@ const defaultCatalogs = (env: NodeJS.ProcessEnv): AdmissionPromptCatalogs => {
 };
 
 export interface VertexAdmissionSummaryDeps {
+  timeoutMs?: number;
   catalogs?: AdmissionPromptCatalogs;
   promptProvider?: AdmissionPromptProvider;
   /** Fronteira do Vertex; o teste injeta um dublê (o real é `generateContentVertex`). */
@@ -106,6 +113,7 @@ export class VertexAdmissionSummaryGenerator implements AdmissionSummaryPort {
   private readonly promptProvider: AdmissionPromptProvider;
   private readonly vertex: typeof generateContentVertex;
   private readonly catalogs: AdmissionPromptCatalogs;
+  private readonly timeoutMs: number;
 
   constructor(private readonly env: NodeJS.ProcessEnv = process.env, deps: VertexAdmissionSummaryDeps = {}) {
     if (env.NODE_ENV === 'test') throw new AdmissionRealAdapterInTestError('new VertexAdmissionSummaryGenerator()');
@@ -113,6 +121,7 @@ export class VertexAdmissionSummaryGenerator implements AdmissionSummaryPort {
     this.promptProvider = deps.promptProvider ?? new GoogleDocsPromptProvider();
     this.vertex = deps.vertex ?? generateContentVertex;
     this.catalogs = deps.catalogs ?? defaultCatalogs(env);
+    this.timeoutMs = deps.timeoutMs ?? VERTEX_TIMEOUT_MS;
   }
 
   async generate(input: { transcript: string; entrevistaId?: string; fecha?: string }): Promise<AdmissionSummaryResult> {
@@ -142,6 +151,7 @@ export class VertexAdmissionSummaryGenerator implements AdmissionSummaryPort {
     let truncated = false;
     let blocked = false;
     let response: Response;
+    const signal = AbortSignal.timeout(this.timeoutMs);
     try {
       response = await this.vertex(
         this.model,
@@ -151,9 +161,12 @@ export class VertexAdmissionSummaryGenerator implements AdmissionSummaryPort {
           generationConfig: { temperature: 0.2, maxOutputTokens: MAX_OUTPUT_TOKENS, thinkingConfig: { thinkingBudget: THINKING_BUDGET } },
         },
         'AdmissionSummary',
+        { redactErrors: true, signal }, // a transcrição é texto clínico: o helper não pode logar corpo nem mensagem de erro
       );
     } catch (err) {
-      // 429/5xx (já com retry no helper), timeout e rede: transitório, não conta. 400/401/403/404 e demais 4xx: configuração, conta.
+      if (signal.aborted) throw new AdmissionSummaryError('vertex_timeout'); // pedido enviado e sem resposta no prazo: conta
+      if (err instanceof VertexAuthError) throw new AdmissionSummaryError('vertex_auth_failed'); // credencial, não conta
+      // 429/5xx e falha antes do envio (rede): transitório, não conta. 400/401/403/404 e demais 4xx: configuração, conta.
       const transient = err instanceof GeminiApiError ? err.isTransient : true;
       throw new AdmissionSummaryError(transient ? 'vertex_transient' : 'vertex_failed');
     }
@@ -168,6 +181,7 @@ export class VertexAdmissionSummaryGenerator implements AdmissionSummaryPort {
       else if (finish && finish !== 'STOP') blocked = true; // SAFETY, RECITATION, BLOCKLIST, PROHIBITED_CONTENT, SPII, OTHER...
       text = data.candidates?.[0]?.content?.parts?.map((p) => p.text ?? '').join('');
     } catch {
+      if (signal.aborted) throw new AdmissionSummaryError('vertex_timeout');
       throw new AdmissionSummaryError('empty_response'); // corpo ilegível: a chamada foi paga
     }
     // Resposta cortada ou barrada NÃO vira documento: um JSON/resumo pela metade é pior que nenhum.

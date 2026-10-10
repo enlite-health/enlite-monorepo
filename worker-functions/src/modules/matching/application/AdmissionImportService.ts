@@ -294,7 +294,9 @@ export class AdmissionImportService {
         appointmentId: a.id, kind: 'summary_failed', outcome: 'failed', reason,
         ...(placeholders.length ? { ref: { placeholders: placeholders.join(',') } } : {}),
       });
-      this.log.error({ appointmentId: a.id, reason, ...(placeholders.length ? { placeholders } : {}), ...(errorClass ? { errorClass } : {}) }, 'admission.summary_failed');
+      // credencial quebrada tem log PRÓPRIO (alarme distingue de Vertex fora do ar); o evento na trilha segue `summary_failed`.
+      const logName = reason === 'vertex_auth_failed' ? 'admission.vertex_auth_failed' : 'admission.summary_failed';
+      this.log.error({ appointmentId: a.id, reason, ...(placeholders.length ? { placeholders } : {}), ...(errorClass ? { errorClass } : {}) }, logName);
       return 'summary_failed';
     }
     // Daqui em diante a chamada ao modelo JÁ foi paga: falha no PDF, no bucket ou na transação vira `post_model_failed` (conta no teto).

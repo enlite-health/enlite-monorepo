@@ -814,6 +814,24 @@ describe('importação do Tactiq — banco real, cofre e bucket em emulador (spe
     }
   });
 
+  it('H4 teto: 3 `vertex_timeout` contam -> a 4ª execução faz 0 chamadas; `vertex_auth_failed` NÃO conta e tem log próprio', async () => {
+    const a = await appt();
+    see(a, [meeting(a, 'tq-h4-timeout')]);
+    vertex.failWith = new AdmissionSummaryError('vertex_timeout');
+    for (let i = 0; i < 3; i += 1) expect(await service.importOne(a.id, clock)).toBe('summary_failed');
+    expect(await service.importOne(a.id, clock)).toBe('blocked');
+    expect(vertex.received).toHaveLength(3);
+    expect((await events(a.id)).filter((e) => e.kind === 'import_blocked')).toEqual([expect.objectContaining({ reason: 'summary_attempts_exhausted' })]);
+
+    const b = await appt();
+    see(b, [meeting(b, 'tq-h4-auth')]);
+    vertex.failWith = new AdmissionSummaryError('vertex_auth_failed');
+    for (let i = 0; i < 4; i += 1) expect(await service.importOne(b.id, clock)).toBe('summary_failed');
+    vertex.failWith = null;
+    expect(await service.importOne(b.id, clock)).toBe('done');
+    expect(logs.output()).toContain('admission.vertex_auth_failed');
+  });
+
   // ── A6-9 ─────────────────────────────────────────────────────────────────────────────────────────
   it('A6-9: vínculo `broken` ou ausente → `blocked` (no_link) + alarme, 0 chamadas ao MCP; 401 no meio vira `broken` e bloqueia', async () => {
     const quebrado = await appt({ link: 'broken', importStatus: 'pending' });
