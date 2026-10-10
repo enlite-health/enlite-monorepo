@@ -1,10 +1,17 @@
 import type { Pool } from 'pg';
-import { logger } from '@shared/logging';
+import { logger, loggingAls } from '@shared/logging';
 import { getAdmissionCountryConfig, isAdmissionCountry, type AdmissionCountry } from '../domain/admissionCountries';
 import { sealForMessage, type MessageSealView, type SealMessageRow } from '../domain/admissionSeals';
 import type { InterviewHost, InterviewHostRepository } from '../infrastructure/InterviewHostRepository';
 import type { AdmissionLogger, AdmissionMessagingService, DispatchOutcome } from './AdmissionMessagingService';
-import { AppointmentNotCancellableError, AppointmentNotFoundError, ResendInProgressError } from './AdmissionPanelErrors';
+import { PAID_REHEARSAL_RELEASED_EVENT, PAID_REHEARSAL_TTL_MS } from '../domain/admissionRealm';
+import {
+  AppointmentNotCancellableError,
+  AppointmentNotFoundError,
+  PaidRehearsalAlreadyActiveError,
+  PaidRehearsalNotAllowedError,
+  ResendInProgressError,
+} from './AdmissionPanelErrors';
 import { PatientNotFoundError } from './AdmissionSchedulingService';
 import type { AdmissionCalendarPort } from './ports/AdmissionCalendarPort';
 import type { TactiqLinkGate, TactiqLinkState } from './ports/TactiqPorts';
@@ -46,6 +53,12 @@ export interface CancelResult {
 export interface ResendResult {
   outcome: Exclude<DispatchOutcome, 'duplicate_blocked'>;
   skip?: string;
+}
+
+export interface PaidRehearsalRelease {
+  appointmentId: string;
+  /** Fim da liberação (ISO): `agora + 48 h`. Depois dele a reunião volta a valer como `test`. */
+  expiresAt: string;
 }
 
 interface AppointmentRow {
@@ -237,6 +250,50 @@ export class AdmissionPanelService {
     const res = await this.deps.messaging.requestResend(input.appointmentId, input.kind, input.actorUid);
     if (res.outcome === 'duplicate_blocked') throw new ResendInProgressError();
     return { outcome: res.outcome, ...(res.skip ? { skip: res.skip } : {}) };
+  }
+
+  /**
+   * Ensaio pago (spec 050 R-19): libera UMA reunião de paciente de teste por 48 h. A liberação é um evento da trilha
+   * (`paid_rehearsal_released`, `ref = { actorUid, expiresAt }`, só id e carimbo) — a trilha é só-acréscimo, então não há
+   * "revogar": o prazo é o único fim. Quem LÊ a liberação é `admissionRealm` (via `rehearsalUntilSql`), nunca este serviço.
+   *
+   * 404: paciente/reunião inexistente, de outro paciente ou de outro país (a RLS esconde o paciente) — igual às rotas irmãs.
+   * 409: paciente que NÃO é de teste (não existe ensaio de paciente real), reunião não `booked`, ou liberação ainda vigente.
+   * Sequencial: liberar de novo com liberação vigente → 409. Simultâneo: o `INSERT … WHERE NOT EXISTS` não tem lock nem índice único
+   * (READ COMMITTED), então dois cliques ao mesmo tempo PODEM gravar 2 eventos e responder 2×201; o prazo não se estende de forma útil (os
+   * dois `expiresAt` diferem em ms) e `admissionRealm` lê o mais recente.
+   */
+  async releasePaidRehearsal(input: { patientId: string; appointmentId: string; actorUid: string }): Promise<PaidRehearsalRelease> {
+    const { db } = this.deps;
+    const { patientId, appointmentId, actorUid } = input;
+
+    const patient = await db.query<{ is_test: boolean }>(
+      `SELECT is_test IS TRUE AS is_test FROM patients WHERE id = $1 AND deleted_at IS NULL`,
+      [patientId],
+    );
+    if (patient.rows.length === 0) throw new PatientNotFoundError();
+    const appt = await db.query<{ status: string }>(
+      `SELECT status FROM admission_appointments WHERE id = $1 AND patient_id = $2`,
+      [appointmentId, patientId],
+    );
+    if (appt.rows.length === 0) throw new AppointmentNotFoundError();
+    if (!patient.rows[0].is_test) throw new PaidRehearsalNotAllowedError('patient_not_test');
+    if (appt.rows[0].status !== 'booked') throw new PaidRehearsalNotAllowedError('appointment_not_booked');
+
+    const now = this.now();
+    const expiresAt = new Date(now.getTime() + PAID_REHEARSAL_TTL_MS).toISOString();
+    const inserted = await db.query(
+      `INSERT INTO admission_events (appointment_id, kind, outcome, ref, trace_id)
+       SELECT $1, '${PAID_REHEARSAL_RELEASED_EVENT}', 'released', $2::jsonb, $3
+        WHERE NOT EXISTS (SELECT 1 FROM admission_events e
+                           WHERE e.appointment_id = $1 AND e.kind = '${PAID_REHEARSAL_RELEASED_EVENT}'
+                             AND (e.ref->>'expiresAt')::timestamptz > $4::timestamptz)
+       RETURNING id`,
+      [appointmentId, JSON.stringify({ actorUid, expiresAt }), loggingAls?.getStore?.()?.traceId ?? null, now.toISOString()],
+    );
+    if (inserted.rows.length === 0) throw new PaidRehearsalAlreadyActiveError();
+    this.log.info({ appointmentId }, 'admission.paid_rehearsal_released');
+    return { appointmentId, expiresAt };
   }
 
   private calendarIdFor(country: string): string {

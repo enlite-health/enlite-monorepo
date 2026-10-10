@@ -30,6 +30,14 @@ export interface TranscriptVaultPort {
 }
 
 /**
+ * O bucket de ENSAIO (spec 050 R-29): a mesma porta, outro destino. `isConfigured()` deixa o serviço FALHAR FECHADO antes de
+ * qualquer chamada paga quando `ADMISSION_REHEARSAL_BUCKET` falta — transcrição de ensaio nunca cai no cofre de 5 anos.
+ */
+export interface RehearsalVaultPort extends TranscriptVaultPort {
+  isConfigured(): boolean;
+}
+
+/**
  * `prompt_missing`: `ADMISSION_SUMMARY_PROMPT_DOC_ID` sem valor (H4 pendente). `prompt_unavailable`: o Google Doc não leu.
  * Nos dois casos NÃO há resumo com prompt inventado; a próxima execução do job tenta de novo.
  */

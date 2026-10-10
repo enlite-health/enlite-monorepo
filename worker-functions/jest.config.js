@@ -1,6 +1,8 @@
 module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
+  // R-16 (spec 050): a guarda de rede entra ANTES de qualquer teste; terceiro não conecta. Controle: tests/unit/__tests__/rede-bloqueada.controle.test.ts
+  setupFiles: ['<rootDir>/../scripts/rede-bloqueada-em-teste.cjs'],
   // `scripts` entra aqui porque script que escreve em produção (o sync de
   // templates) precisa de teste como qualquer código — a pasta inteira estava
   // fora do alcance do runner, e por isso a 0%.

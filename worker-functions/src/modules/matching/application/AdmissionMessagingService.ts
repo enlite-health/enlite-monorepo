@@ -1,4 +1,5 @@
 import { logger } from '@shared/logging';
+import type { AdmissionRealm } from '../domain/admissionRealm';
 import type { AdmissionWhatsAppSender } from '../infrastructure/admissionTemplates';
 import type {
   AdmissionEventSink,
@@ -12,7 +13,7 @@ import { ResendLimitReached, ResendNotAllowed } from './AdmissionMessagingErrors
 /** O que o chamador decide DEPOIS de ganhar o claim: pular (com motivo escrito) ou enviar este conteúdo. */
 export type MessageResolution =
   | { skip: AdmissionSkipStatus }
-  | { send: { to: string; contentSid: string; vars: Record<string, string> } };
+  | { send: { to: string; contentSid: string; vars: Record<string, string>; realm: AdmissionRealm } };
 
 /** Monta o conteúdo de uma mensagem a partir do id da reunião (usado pelo reenvio). */
 export interface AdmissionMessageResolver {
@@ -99,8 +100,10 @@ export class AdmissionMessagingService {
       return { outcome: 'skipped', messageId, skip: resolution.skip };
     }
 
-    const { to, contentSid, vars } = resolution.send;
+    const { to, contentSid, vars, realm } = resolution.send;
     let externalId: string | null = null;
+    // R-20: o rastro contável sai ANTES do envio pago (só ids e o `realm` — nunca telefone, nome ou texto).
+    this.log.info({ provider: 'twilio', appointmentId, realm }, 'admission.paid_call');
     try {
       const res = await this.whatsapp.sendWithContentSid(to, contentSid, vars);
       if (!res.isFailure) externalId = res.getValue().externalId;
