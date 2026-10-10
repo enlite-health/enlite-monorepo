@@ -692,14 +692,14 @@ describeAbacStack('stack com engine ligado e catálogo SINCRONIZADO no boot (A3-
     await pool.end();
   });
 
-  it('A3-8: as 5 células patient_admission estão no catálogo SINCRONIZADO (descrição do código, não o placeholder da 507) e com deprecated_at IS NULL', async () => {
+  it('A3-8: as 5 células patient_admission estão no catálogo SINCRONIZADO (descrição do código, não o placeholder da 507 nem da 509) e com deprecated_at IS NULL', async () => {
     const { rows } = await pool.query(
       `SELECT action, description, deprecated_at FROM iam.permissions WHERE resource = 'patient_admission' ORDER BY action`,
     );
     expect(rows.map((r) => r.action)).toEqual(['create', 'read', 'release_paid_rehearsal', 'resend_message', 'update']);
     for (const r of rows) {
       expect(r.deprecated_at).toBeNull();
-      expect(r.description).not.toContain('507 placeholder');
+      expect(r.description).not.toMatch(/\[\d{3} placeholder/);
     }
   });
 
