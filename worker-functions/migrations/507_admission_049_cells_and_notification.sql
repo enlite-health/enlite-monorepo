@@ -4,7 +4,8 @@
 -- sobrescreve a descrição sem trocar o id):
 --   patient_admission:read | create | update | resend_message   (aba Admissão do paciente)
 --   own_tactiq_link:read | create                     (o operador vê/gerencia o PRÓPRIO vínculo — célula own_*)
--- Grant SÓ ao Acesso Master. O grupo "Admisión y Supervisión" NÃO recebe: quais perfis recebem é decisão do Diego (H7).
+-- H7 (Gabriel, 09/10): grant ao Acesso Master + ao grupo de nome EXATO 'Admisión y Supervisión' (patient_admission:*;
+-- as own_tactiq_link:* seguem a convenção own_ pelo sync do catálogo). Ausente na stage: o INSERT ... SELECT casa 0 linhas.
 -- Nunca remove grant, nunca cria/move/reativa grupo.
 --
 -- Tipo de notificação: ADMISSION_TACTIQ_LINK_REQUIRED (aviso no sino: "seu usuário não está vinculado ao Tactiq").
@@ -56,6 +57,17 @@ BEGIN
     ON CONFLICT DO NOTHING;
     GET DIAGNOSTICS v_n = ROW_COUNT;
     RAISE NOTICE '[507] grant ao Acesso Master: % células patient_admission/own_tactiq_link', v_n;
+
+    INSERT INTO iam.group_permissions (group_id, permission_id)
+    SELECT g.id, p.id
+      FROM iam.permission_groups g
+      CROSS JOIN iam.permissions p
+     WHERE g.name IN ('Admisión y Supervisión')
+       AND g.archived_at IS NULL
+       AND p.resource = 'patient_admission' AND p.deprecated_at IS NULL
+    ON CONFLICT DO NOTHING;
+    GET DIAGNOSTICS v_n = ROW_COUNT;
+    RAISE NOTICE '[507] grant a Admisión y Supervisión: % células patient_admission', v_n;
   END IF;
 END
 $$;

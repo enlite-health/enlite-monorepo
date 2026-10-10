@@ -171,7 +171,7 @@ describe('schema da aba Admissão (spec 049, migrations 503-507)', () => {
     expect(cellsAfter).toBe(cellsBefore);
   });
 
-  it('A1-8. células: as 3 patient_admission:* só no Acesso Master e as 2 own_tactiq_link:* no catálogo; tipo de notificação semeado', async () => {
+  it('A1-8. células: as 4 patient_admission:* no Acesso Master e (H7) no grupo EXATO "Admisión y Supervisión" quando existe — em nenhum outro; as 2 own_tactiq_link:* no catálogo; tipo de notificação semeado', async () => {
     const { rows: cells } = await pool.query(
       `SELECT p.resource || ':' || p.action AS cell FROM iam.permissions p
         WHERE p.resource IN ('patient_admission','own_tactiq_link') AND p.deprecated_at IS NULL ORDER BY 1`);
@@ -179,11 +179,44 @@ describe('schema da aba Admissão (spec 049, migrations 503-507)', () => {
       'own_tactiq_link:create', 'own_tactiq_link:read',
       'patient_admission:create', 'patient_admission:read', 'patient_admission:resend_message', 'patient_admission:update',
     ]);
-    // patient_admission:* — só o Master (decisão do Diego/H7 abre o resto)
-    const { rows: adm } = await pool.query(
-      `SELECT DISTINCT gp.group_id FROM iam.group_permissions gp JOIN iam.permissions p ON p.id = gp.permission_id
-        WHERE p.resource = 'patient_admission'`);
-    expect(adm).toEqual([{ group_id: MASTER_GROUP }]);
+    const gruposComCelulas = async (): Promise<Array<{ group_id: string; n: number }>> => (await pool.query(
+      `SELECT gp.group_id, count(*)::int AS n FROM iam.group_permissions gp JOIN iam.permissions p ON p.id = gp.permission_id
+        WHERE p.resource = 'patient_admission' GROUP BY gp.group_id`)).rows;
+
+    // Sem o grupo (stage): só o Master, com as 4.
+    const { rows: tenant } = await pool.query(`SELECT tenant_id FROM iam.permission_groups WHERE id = $1`, [MASTER_GROUP]);
+    const nomeAdmissao = 'Admisión y Supervisión';
+    const jaExiste = (await pool.query(`SELECT 1 FROM iam.permission_groups WHERE name = $1`, [nomeAdmissao])).rowCount;
+    const antes = await gruposComCelulas();
+    if (!jaExiste) expect(antes).toEqual([{ group_id: MASTER_GROUP, n: 4 }]);
+
+    // Caminho positivo: cria o grupo de nome EXATO + um controle de outro nome, reaplica a 507 → só o EXATO ganha as 4.
+    const criados: string[] = [];
+    try {
+      if (!jaExiste) {
+        const g = await pool.query(`INSERT INTO iam.permission_groups (tenant_id, name, description) VALUES ($1, $2, 'e2e 049 A1-8') RETURNING id`, [tenant[0].tenant_id, nomeAdmissao]);
+        criados.push(g.rows[0].id);
+      }
+      const c = await pool.query(`INSERT INTO iam.permission_groups (tenant_id, name, description) VALUES ($1, 'e2e049 Outro Grupo', 'controle') RETURNING id`, [tenant[0].tenant_id]);
+      criados.push(c.rows[0].id);
+      const controleId = c.rows[0].id as string;
+
+      const sql507 = fs.readFileSync(path.join(__dirname, '..', '..', 'migrations', MIGRATIONS[4]), 'utf8');
+      await expect(pool.query(sql507)).resolves.toBeDefined();
+
+      const { rows: admRows } = await pool.query(`SELECT id FROM iam.permission_groups WHERE name = $1 AND archived_at IS NULL`, [nomeAdmissao]);
+      expect(admRows.length).toBeGreaterThan(0);
+      const depois = await gruposComCelulas();
+      const ids = depois.map((r) => r.group_id).sort();
+      expect(ids).toEqual([MASTER_GROUP, ...admRows.map((r) => r.id as string)].sort());
+      expect(depois.every((r) => r.n === 4)).toBe(true);
+      expect(ids).not.toContain(controleId);
+    } finally {
+      for (const id of criados) {
+        await pool.query(`DELETE FROM iam.group_permissions WHERE group_id = $1`, [id]);
+        await pool.query(`DELETE FROM iam.permission_groups WHERE id = $1`, [id]);
+      }
+    }
     const { rows: nt } = await pool.query(`SELECT 1 FROM notification_types WHERE code = 'ADMISSION_TACTIQ_LINK_REQUIRED'`);
     expect(nt).toHaveLength(1);
   });
