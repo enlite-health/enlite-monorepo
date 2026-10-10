@@ -127,6 +127,7 @@ import { AdmissionImportRepository } from '@modules/matching/infrastructure/Admi
 import { AdmissionImportInternalController } from '@modules/matching/interfaces/controllers/AdmissionImportInternalController';
 import { createAdmissionImportInternalRoutes } from '@modules/matching/interfaces/routes/admissionImportRoutes';
 import { interviewHostRepository } from '@modules/matching/infrastructure/InterviewHostRepository';
+import { noEligibleHost } from '@modules/matching/application/admissionHostEligibility';
 import { AdmissionMessageRepository } from '@modules/matching/infrastructure/AdmissionMessageRepository';
 import { AdmissionEventRepository } from '@modules/matching/infrastructure/AdmissionEventRepository';
 import { createAdmissionExternals } from '@modules/matching/infrastructure/admissionExternals';
@@ -406,7 +407,9 @@ const tactiqLinkController = new TactiqLinkController(tactiqLinkService);
 const admissionSchedulingService049 = new AdmissionSchedulingService(
   admissionExternals.calendar, admissionNotifier, undefined, undefined, undefined, tactiqLinkService,
 );
-const admissionSchedulingController = new AdmissionSchedulingController(admissionSchedulingService049);
+const admissionSchedulingController = new AdmissionSchedulingController(
+  admissionSchedulingService049, (country) => noEligibleHost(interviewHostRepository, tactiqLinkService, country),
+);
 const admissionSlotsRateLimit = rateLimit({
   windowMs: 60 * 1000,
   max: 30, // read endpoint

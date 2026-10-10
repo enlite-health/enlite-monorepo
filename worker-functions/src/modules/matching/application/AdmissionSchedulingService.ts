@@ -33,6 +33,7 @@ import {
 } from './AdmissionNotifier';
 import type { AdmissionCalendarPort } from './ports/AdmissionCalendarPort';
 import { TactiqLinkRequiredError, type TactiqLinkGate } from './ports/TactiqPorts';
+import { aptRoster, isHostApt } from './admissionHostEligibility';
 
 // ─── Errors ────────────────────────────────────────────────────────────────
 
@@ -189,7 +190,7 @@ export class AdmissionSchedulingService {
     /**
      * A trava do vínculo do Tactiq (spec 049 F4, passo 3): o PAINEL só agenda com responsável de vínculo `linked`.
      * Sem o gate o `bookForHost` RECUSA (falha alta) — um gate ausente que deixasse passar seria a trava desligada
-     * em silêncio. O fluxo do site (atribuição automática) não passa por aqui.
+     * em silêncio. O site (roster ligado) usa o MESMO gate para só sortear quem tem o vínculo (spec 050 F7).
      */
     private readonly tactiqGate?: TactiqLinkGate,
   ) {}
@@ -248,7 +249,7 @@ export class AdmissionSchedulingService {
     // ou fuso: o spec manda responder "zero horários, sem erro", e um país que
     // ainda não tem agenda configurada não pode virar 500 na tela pública.
     const activeHosts = isHostRosterEnabled()
-      ? await this.hosts.listActiveByCountry(country)
+      ? await aptRoster(this.tactiqGate, await this.hosts.listActiveByCountry(country), country)
       : null;
     if (activeHosts && activeHosts.length === 0) {
       logger.warn(
@@ -481,8 +482,7 @@ export class AdmissionSchedulingService {
     timezone: string,
   ): Promise<RankedHost[]> {
     const cfg = getAdmissionCountryConfig(country);
-    const hosts = await this.hosts.listActiveByCountry(country);
-    if (hosts.length === 0) return [];
+    const hosts = await aptRoster(this.tactiqGate, await this.hosts.listActiveByCountry(country), country); if (!hosts.length) return [];
 
     const weekStart = slotStart.startOf('week');
     const weekEnd = weekStart.plus({ days: 7 });
@@ -734,7 +734,7 @@ export class AdmissionSchedulingService {
     if (!this.tactiqGate) throw new Error('AdmissionSchedulingService: bookForHost exige o gate do vínculo do Tactiq (spec 049 F4)');
     const states = await this.tactiqGate.statesFor([hostEmail]);
     const state = states.get(hostEmail.toLowerCase()) ?? 'missing';
-    if (state !== 'linked') throw new TactiqLinkRequiredError(state);
+    if (!isHostApt(state)) throw new TactiqLinkRequiredError(state);
   }
 
   private async loadPatient(patientId: string): Promise<PatientRow> {

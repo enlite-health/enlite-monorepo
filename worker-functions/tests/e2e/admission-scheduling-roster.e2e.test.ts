@@ -76,10 +76,15 @@ function stubCalendar(opts: StubOptions = {}): AdmissionCalendarService {
   } as unknown as AdmissionCalendarService;
 }
 
+/** Spec 050 F7: o site só sorteia quem tem o vínculo Tactiq. Aqui toda atendente do roster está `linked` (a trava é provada em admission-050-site-vinculo). */
+const allLinkedGate = {
+  statesFor: async (emails: string[]) => new Map(emails.map((e) => [e.toLowerCase(), 'linked' as const])),
+};
+
 function makeService(calendar: AdmissionCalendarService): AdmissionSchedulingService {
   const notifier = { onBooked: async () => undefined } as unknown as AdmissionNotifier;
   const encryption = { decrypt: async () => 'paciente.e2e@admissionroster.test' } as unknown as KMSEncryptionService;
-  return new AdmissionSchedulingService(calendar, notifier, encryption, 'enlite@enlite.health');
+  return new AdmissionSchedulingService(calendar, notifier, encryption, 'enlite@enlite.health', undefined, allLinkedGate);
 }
 
 beforeAll(async () => {
@@ -99,6 +104,7 @@ afterAll(async () => {
   await pool.query(`DELETE FROM admission_appointments WHERE patient_id = $1`, [patientId]);
   await pool.query(`DELETE FROM patients WHERE id = $1`, [patientId]);
   await pool.query('DELETE FROM interview_hosts');
+  await pool.query(`DELETE FROM tactiq_links WHERE lower(host_email) = lower($1)`, [ANA]);
   await pool.end();
 });
 
@@ -302,6 +308,9 @@ describe('endpoint público de horários', () => {
       `INSERT INTO interview_hosts (email, display_name, country, active) VALUES ($1,'Ana Joulie','AR',true)`,
       [ANA],
     );
+    // Spec 050 F7: sem o vínculo Tactiq ela nem entra no sorteio (a API responderia 200 vazio, sem ler a agenda).
+    await pool.query(`DELETE FROM tactiq_links WHERE lower(host_email) = lower($1)`, [ANA]);
+    await pool.query(`INSERT INTO tactiq_links (host_email, firebase_uid, status) VALUES ($1,'tq-roster-ana','linked')`, [ANA]);
 
     const res = await axios.get(`${API_URL}/api/public/v1/admission/slots`, {
       params: { country: 'AR' },
@@ -341,7 +350,7 @@ describe('convidado do Meet = quem solicitou (PEND-09)', () => {
     const encryption = {
       decrypt: async (c: string) => Buffer.from(c, 'base64').toString('utf8'),
     } as unknown as KMSEncryptionService;
-    return new AdmissionSchedulingService(calendar, notifier, encryption, 'enlite@enlite.health');
+    return new AdmissionSchedulingService(calendar, notifier, encryption, 'enlite@enlite.health', undefined, allLinkedGate);
   }
 
   beforeAll(async () => {

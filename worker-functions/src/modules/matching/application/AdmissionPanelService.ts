@@ -15,6 +15,7 @@ import {
 import { PatientNotFoundError } from './AdmissionSchedulingService';
 import type { AdmissionCalendarPort } from './ports/AdmissionCalendarPort';
 import type { TactiqLinkGate, TactiqLinkState } from './ports/TactiqPorts';
+import { isHostApt } from './admissionHostEligibility';
 import type {
   AdmissionEventSink,
   AdmissionMessageKind,
@@ -112,7 +113,7 @@ export class AdmissionPanelService {
     const states = await this.deps.tactiq.statesFor(hosts.map((h) => h.email));
     return hosts.map((h) => {
       const linkState = states.get(h.email.toLowerCase()) ?? 'missing';
-      return { ...h, linked: linkState === 'linked', linkState };
+      return { ...h, linked: isHostApt(linkState), linkState };
     });
   }
 

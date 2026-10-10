@@ -1,13 +1,14 @@
 import { Request, Response } from 'express';
 import { z } from 'zod';
 import { reportError } from '@shared/logging';
-import { isAdmissionCountry } from '../../domain/admissionCountries';
+import { isAdmissionCountry, type AdmissionCountry } from '../../domain/admissionCountries';
 import {
   AdmissionSchedulingService,
   admissionSchedulingService,
   PatientNotFoundError,
   SlotTakenError,
 } from '../../application/AdmissionSchedulingService';
+import { NO_ELIGIBLE_HOST_MESSAGE } from '../../application/admissionHostEligibility';
 
 /**
  * AdmissionSchedulingController — unauthenticated B2C admission scheduling.
@@ -28,7 +29,11 @@ const bookSchema = z
 export class AdmissionSchedulingController {
   private readonly service: AdmissionSchedulingService;
 
-  constructor(service?: AdmissionSchedulingService) {
+  /** `noEligibleHost` (R-26): decide se a lista vazia leva a mensagem de contato. Sem ele (singleton sem gate) a resposta é só `{ slots }`. */
+  constructor(
+    service?: AdmissionSchedulingService,
+    private readonly noEligibleHost: (country: AdmissionCountry) => Promise<boolean> = async () => false,
+  ) {
     this.service = service ?? admissionSchedulingService;
   }
 
@@ -42,7 +47,8 @@ export class AdmissionSchedulingController {
 
     try {
       const slots = await this.service.getAvailableSlots(country);
-      res.status(200).json({ slots });
+      const noHost = slots.length === 0 && (await this.noEligibleHost(country));
+      res.status(200).json(noHost ? { slots, message: NO_ELIGIBLE_HOST_MESSAGE } : { slots });
     } catch (err: unknown) {
       const e = err instanceof Error ? err : new Error(String(err));
       reportError(e, { source: 'AdmissionSchedulingController:getSlots' });
