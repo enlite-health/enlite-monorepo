@@ -983,14 +983,14 @@ describe('FamiliaresCard', () => {
   });
 
   // Spec 018, PR-2 (D-A): a coluna de emergência — só existe COM patientId.
-  it('com patientId: mostra o botão de marcar emergência; a linha marcada mostra "quitar"', () => {
+  it('com patientId: mostra o botão de marcar emergência; a linha marcada mostra só o ✕ (aria-label "quitar")', () => {
     render(<FamiliaresCard responsibles={patientDetailFixture.responsibles} patientId="p1" emergencyContactRef={{ kind: 'RESPONSIBLE', id: patientDetailFixture.responsibles[0].id }} />);
-    expect(screen.getByTestId(`emergency-mark-RESPONSIBLE-${patientDetailFixture.responsibles[0].id}`)).toHaveTextContent(t('admin.patients.editDrawer.unmarkEmergencyContact'));
+    expect(screen.getByTestId(`emergency-mark-RESPONSIBLE-${patientDetailFixture.responsibles[0].id}`)).toHaveAttribute('aria-label', t('admin.patients.editDrawer.unmarkEmergencyContact'));
   });
 
-  it('sem emergencyContactRef (ou apontando para outro kind/id): mostra "marcar"', () => {
+  it('sem emergencyContactRef (ou apontando para outro kind/id): mostra a sirene (aria-label "marcar")', () => {
     render(<FamiliaresCard responsibles={patientDetailFixture.responsibles} patientId="p1" />);
-    expect(screen.getByTestId(`emergency-mark-RESPONSIBLE-${patientDetailFixture.responsibles[0].id}`)).toHaveTextContent(t('admin.patients.editDrawer.markEmergencyContact'));
+    expect(screen.getByTestId(`emergency-mark-RESPONSIBLE-${patientDetailFixture.responsibles[0].id}`)).toHaveAttribute('aria-label', t('admin.patients.editDrawer.markEmergencyContact'));
   });
 
   it('clicar no botão de emergência chama a API e o onSaved do card (refetch)', async () => {
@@ -1047,7 +1047,7 @@ describe('FamiliaresCard — coluna Emergencia é informação, não ação (D26
       />,
     );
     expect(screen.getByTestId(`familiares-emergency-marked-${patientDetailFixture.responsibles[0].id}`)).toBeInTheDocument();
-    expect(screen.getByTestId(`emergency-mark-RESPONSIBLE-${patientDetailFixture.responsibles[0].id}`)).toHaveTextContent(t('admin.patients.editDrawer.unmarkEmergencyContact'));
+    expect(screen.getByTestId(`emergency-mark-RESPONSIBLE-${patientDetailFixture.responsibles[0].id}`)).toHaveAttribute('aria-label', t('admin.patients.editDrawer.unmarkEmergencyContact'));
   });
 });
 

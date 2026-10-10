@@ -359,13 +359,14 @@ test.describe('Spec 012 bloco B — os campos que faltam na ficha @integration',
     await loginAsRealStaff(page);
     await openDetail(page, active.patientId);
     await page.getByRole('button', { name: /Red de Apoyo/i }).click();
-    await page.getByTestId('edit-support-btn').click();
-    const rel = page.getByTestId('psn-rel-0');
+    // Lápis da linha do responsável (só há um) — abre o drawer de UM familiar.
+    await page.getByTestId('familiares-card').locator('[data-testid^="familiares-edit-"]').first().click();
+    const rel = page.getByTestId('responsible-rel');
     await expect(rel).toHaveValue('OTHER');
     expect(await rel.evaluate((el) => (el as HTMLSelectElement).tagName)).toBe('SELECT');
     await rel.selectOption('PARENT');
-    await page.getByTestId('psn-save').click();
-    await expect(page.getByTestId('patient-support-edit-drawer')).toHaveCount(0, { timeout: 15_000 });
+    await page.getByTestId('responsible-save').click();
+    await expect(page.getByTestId('responsible-edit-drawer')).toHaveCount(0, { timeout: 15_000 });
     const card = page.getByTestId('familiares-card');
     await expect(card).toContainText('Madre / Padre', { timeout: 20_000 });
     testInfo.annotations.push({ type: 'evidência', description: `B5 — relationship: ${readRelationship(active.patientId)}` });

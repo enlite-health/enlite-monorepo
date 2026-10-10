@@ -162,25 +162,26 @@ describe('FamiliaresCard — ramos', () => {
     render(<FamiliaresCard responsibles={[{ ...nulls, id: 'r1', relationship: 'MOM' }, nulls]} />);
     expect(screen.getByText('MOM')).toBeInTheDocument();
     expect(screen.getAllByText('—').length).toBeGreaterThanOrEqual(6);
-    for (const btn of screen.getAllByTestId('edit-support-btn')) expect(btn).toBeDisabled();
+    // Sem patientId nada grava: "Nuevo", lápis e lixeira ficam desabilitados.
+    for (const btn of screen.getAllByTestId('familiares-add')) expect(btn).toBeDisabled();
+    for (const btn of screen.getAllByTestId('familiares-edit-r1')) expect(btn).toBeDisabled();
   });
 
-  it('com patientId: abre o drawer, Escape fecha (onClose), salvar → onSaved; sem onSaved não quebra', async () => {
+  it('com patientId: "Nuevo" abre o drawer, Escape fecha (onClose); lápis → Guardar chama updateResponsible e onSaved; sem onSaved não quebra', async () => {
     const onSaved = vi.fn();
     render(<FamiliaresCard responsibles={patientDetailFixture.responsibles} patientId="p1" onSaved={onSaved} />);
-    fireEvent.click(screen.getByTestId('edit-support-btn'));
-    expect(screen.getByTestId('patient-support-edit-drawer')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('familiares-add'));
+    expect(screen.getByTestId('responsible-edit-drawer')).toBeInTheDocument();
     fireEvent.keyDown(document, { key: 'Escape' });
-    await waitFor(() => expect(screen.queryByTestId('patient-support-edit-drawer')).toBeNull(), { timeout: 1500 });
-    fireEvent.click(screen.getByTestId('edit-support-btn'));
-    fireEvent.click(screen.getByTestId('psn-save'));
+    await waitFor(() => expect(screen.queryByTestId('responsible-edit-drawer')).toBeNull(), { timeout: 1500 });
+    fireEvent.click(screen.getByTestId('familiares-edit-r1'));
+    fireEvent.click(screen.getByTestId('responsible-save'));
     await waitFor(() => expect(onSaved).toHaveBeenCalled());
+    expect(rows.updateResponsible).toHaveBeenCalledTimes(1);
     render(<FamiliaresCard responsibles={patientDetailFixture.responsibles} patientId="p2" />);
-    fireEvent.click(screen.getAllByTestId('edit-support-btn')[1]);
-    fireEvent.click(screen.getAllByTestId('psn-save').slice(-1)[0] as HTMLElement);
-    // spec 018, PR-1, ADR-1: a rede de apoio grava por LINHA — cada responsável existente do
-    // fixture (`patientDetailFixture.responsibles`, 1 linha) vira um `updateResponsible` próprio;
-    // `updatePatientSection` NUNCA é chamado por este drawer.
+    fireEvent.click(screen.getAllByTestId('familiares-edit-r1')[1]);
+    fireEvent.click(screen.getAllByTestId('responsible-save').slice(-1)[0] as HTMLElement);
+    // Grava por LINHA: só o familiar aberto vira `updateResponsible`; `updatePatientSection` NUNCA é chamado.
     await waitFor(() => expect(rows.updateResponsible).toHaveBeenCalledTimes(2));
     expect(api.updatePatientSection).not.toHaveBeenCalled();
   });

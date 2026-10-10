@@ -111,7 +111,7 @@ describe('D269/D286 — write-gate nos botões Editar/Novo (célula do CONTAINER
     render(<DiagnosticoCard patient={patientDetailFixture} onSaved={() => {}} />);
     render(<FamiliaresCard responsibles={[]} patientId="p1" onSaved={() => {}} />);
     expect(screen.queryByTestId('edit-clinical-btn')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('edit-support-btn')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('familiares-add')).not.toBeInTheDocument();
   });
 
   it('🔴 DiagnosticoCard: enforcement=on, sem patient:write → edit-clinical-btn SOME', () => {
@@ -126,38 +126,36 @@ describe('D269/D286 — write-gate nos botões Editar/Novo (célula do CONTAINER
     expect(screen.getByTestId('edit-clinical-btn')).toBeInTheDocument();
   });
 
-  it('🔴 FamiliaresCard: enforcement=on, sem patient:write → edit-support-btn SOME', () => {
+  it('🔴 FamiliaresCard: enforcement=on, sem células → "Nuevo", lápis e lixeira SOMEM', () => {
     comEnforcement([], 'on');
-    render(<FamiliaresCard responsibles={[]} patientId="test-id" />);
-    expect(screen.queryByTestId('edit-support-btn')).not.toBeInTheDocument();
+    render(<FamiliaresCard responsibles={patientDetailFixture.responsibles} patientId="test-id" />);
+    expect(screen.queryByTestId('familiares-add')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('familiares-edit-r1')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('familiares-deactivate-r1')).not.toBeInTheDocument();
   });
 
-  it('FamiliaresCard: enforcement=on, com patient_family:create (PR-8b) → edit-support-btn existe (e não desabilitado, com patientId)', () => {
+  it('FamiliaresCard: só patient_family:create → "Nuevo" existe (e habilitado); lápis e lixeira SOMEM', () => {
     comEnforcement(['patient_family:create'], 'on');
-    render(<FamiliaresCard responsibles={[]} patientId="test-id" />);
-    const btn = screen.getByTestId('edit-support-btn');
-    expect(btn).toBeInTheDocument();
-    expect(btn).not.toBeDisabled();
+    render(<FamiliaresCard responsibles={patientDetailFixture.responsibles} patientId="test-id" />);
+    expect(screen.getByTestId('familiares-add')).not.toBeDisabled();
+    expect(screen.queryByTestId('familiares-edit-r1')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('familiares-deactivate-r1')).not.toBeInTheDocument();
   });
 
-  // Gate `canCreateRow || canUpdateRow` (PR-8b rodada B) — os 4 casos, FamiliaresCard e
-  // ExternalContactsCard (mesma célula `patient_family`, mesmo componente de gate).
-  it('FamiliaresCard: só patient_family:update → edit-support-btn existe (a outra metade do OR)', () => {
+  it('FamiliaresCard: só patient_family:update → lápis e lixeira existem; "Nuevo" SOME', () => {
     comEnforcement(['patient_family:update'], 'on');
-    render(<FamiliaresCard responsibles={[]} patientId="test-id" />);
-    expect(screen.getByTestId('edit-support-btn')).toBeInTheDocument();
+    render(<FamiliaresCard responsibles={patientDetailFixture.responsibles} patientId="test-id" />);
+    expect(screen.queryByTestId('familiares-add')).not.toBeInTheDocument();
+    expect(screen.getByTestId('familiares-edit-r1')).toBeInTheDocument();
+    expect(screen.getByTestId('familiares-deactivate-r1')).toBeInTheDocument();
   });
 
-  it('FamiliaresCard: as duas células (create + update) → edit-support-btn existe', () => {
+  it('FamiliaresCard: as duas células → "Nuevo", lápis e lixeira existem', () => {
     comEnforcement(['patient_family:create', 'patient_family:update'], 'on');
-    render(<FamiliaresCard responsibles={[]} patientId="test-id" />);
-    expect(screen.getByTestId('edit-support-btn')).toBeInTheDocument();
-  });
-
-  it('🔴 FamiliaresCard: nenhuma das duas células → edit-support-btn SOME', () => {
-    comEnforcement([], 'on');
-    render(<FamiliaresCard responsibles={[]} patientId="test-id" />);
-    expect(screen.queryByTestId('edit-support-btn')).not.toBeInTheDocument();
+    render(<FamiliaresCard responsibles={patientDetailFixture.responsibles} patientId="test-id" />);
+    expect(screen.getByTestId('familiares-add')).toBeInTheDocument();
+    expect(screen.getByTestId('familiares-edit-r1')).toBeInTheDocument();
+    expect(screen.getByTestId('familiares-deactivate-r1')).toBeInTheDocument();
   });
 
   it('ExternalContactsCard: só patient_family:create → edit-external-contacts-btn existe', () => {

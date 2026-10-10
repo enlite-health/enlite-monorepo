@@ -3,9 +3,11 @@
  * `useActionGate` devolve `{allowed:true}`), o `ActionButton` sempre renderiza — aqui cobrimos o
  * toggle mark/unmark e a chamada certa da API.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
+import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
+import type { AuthzContract } from '@domain/entities/Authz';
 
 const translations = ptBR as Record<string, any>;
 function t(key: string): string {
@@ -29,20 +31,18 @@ import { EmergencyMarkButton } from '../EmergencyMarkButton';
 describe('EmergencyMarkButton', () => {
   beforeEach(() => { mockMark.mockReset().mockResolvedValue({}); mockUnmark.mockReset().mockResolvedValue({}); });
 
-  it('não marcado: rótulo "marcar"; clicar chama markEmergencyContact com {kind, id} e dispara onChanged', async () => {
+  it('não marcado: sirene; clicar chama markEmergencyContact com {kind, id} e dispara onChanged', async () => {
     const onChanged = vi.fn();
     render(<EmergencyMarkButton patientId="p1" kind="RESPONSIBLE" contactId="r1" isMarked={false} onChanged={onChanged} />);
-    expect(screen.getByTestId('emergency-mark-RESPONSIBLE-r1')).toHaveTextContent(t('admin.patients.editDrawer.markEmergencyContact'));
     fireEvent.click(screen.getByTestId('emergency-mark-RESPONSIBLE-r1'));
     await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
     expect(mockMark).toHaveBeenCalledWith('p1', { kind: 'RESPONSIBLE', id: 'r1' });
     expect(mockUnmark).not.toHaveBeenCalled();
   });
 
-  it('marcado: rótulo "quitar"; clicar chama unmarkEmergencyContact(patientId) e dispara onChanged', async () => {
+  it('marcado: ✕; clicar chama unmarkEmergencyContact(patientId) e dispara onChanged', async () => {
     const onChanged = vi.fn();
     render(<EmergencyMarkButton patientId="p1" kind="EXTERNAL" contactId="x1" isMarked onChanged={onChanged} />);
-    expect(screen.getByTestId('emergency-mark-EXTERNAL-x1')).toHaveTextContent(t('admin.patients.editDrawer.unmarkEmergencyContact'));
     fireEvent.click(screen.getByTestId('emergency-mark-EXTERNAL-x1'));
     await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
     expect(mockUnmark).toHaveBeenCalledWith('p1');
@@ -58,5 +58,65 @@ describe('EmergencyMarkButton', () => {
     await waitFor(() => expect(alertSpy).toHaveBeenCalledWith(t('admin.patients.editDrawer.markEmergencyContactError')));
     expect(onChanged).not.toHaveBeenCalled();
     alertSpy.mockRestore();
+  });
+
+  // Botão compacto: só ícone; o rótulo longo foi para title + aria-label.
+  it('NÃO marcado: botão só-ícone (sem texto visível), title e aria-label = "marcar", formato quadrado p-2, ícone sirene', () => {
+    render(<EmergencyMarkButton patientId="p1" kind="RESPONSIBLE" contactId="r1" isMarked={false} onChanged={vi.fn()} />);
+    const btn = screen.getByTestId('emergency-mark-RESPONSIBLE-r1');
+    expect(btn.textContent).toBe('');
+    expect(btn).toHaveAttribute('title', t('admin.patients.editDrawer.markEmergencyContact'));
+    expect(btn).toHaveAttribute('aria-label', t('admin.patients.editDrawer.markEmergencyContact'));
+    expect(btn.className).toContain('p-2');
+    expect(btn.querySelector('svg.lucide-siren')).not.toBeNull();
+    expect(btn.querySelector('svg')).toHaveClass('w-4', 'h-4');
+  });
+
+  it('MARCADO: botão só-ícone ✕ menor e discreto (ghost), title e aria-label = "quitar", sem texto', () => {
+    render(<EmergencyMarkButton patientId="p1" kind="RESPONSIBLE" contactId="r1" isMarked onChanged={vi.fn()} />);
+    const btn = screen.getByTestId('emergency-mark-RESPONSIBLE-r1');
+    expect(btn.textContent).toBe('');
+    expect(btn).toHaveAttribute('title', t('admin.patients.editDrawer.unmarkEmergencyContact'));
+    expect(btn).toHaveAttribute('aria-label', t('admin.patients.editDrawer.unmarkEmergencyContact'));
+    expect(btn.querySelector('svg.lucide-x')).not.toBeNull();
+    expect(btn.className).toContain('!w-5');
+    expect(btn.className).not.toContain('border-2');
+  });
+
+  it.each([false, true])('carregando (isMarked=%s): NÃO vira texto "Cargando…"; fica desabilitado, aria-busy e ícone girando; segundo clique é ignorado', async (isMarked) => {
+    let release: (v: unknown) => void = () => {};
+    (isMarked ? mockUnmark : mockMark).mockReturnValueOnce(new Promise((r) => { release = r; }));
+    render(<EmergencyMarkButton patientId="p1" kind="RESPONSIBLE" contactId="r1" isMarked={isMarked} onChanged={vi.fn()} />);
+    const btn = screen.getByTestId('emergency-mark-RESPONSIBLE-r1');
+    expect(btn).toHaveAttribute('aria-busy', 'false');
+    fireEvent.click(btn);
+    await waitFor(() => expect(btn).toBeDisabled());
+    expect(btn).toHaveAttribute('aria-busy', 'true');
+    expect(btn.textContent).toBe('');
+    expect(btn.querySelector('svg.animate-spin')).not.toBeNull();
+    fireEvent.click(btn);
+    expect(mockMark.mock.calls.length + mockUnmark.mock.calls.length).toBe(1);
+    release({});
+    await waitFor(() => expect(btn).not.toBeDisabled());
+  });
+});
+
+describe('EmergencyMarkButton — gate patient_family:update (modo hide)', () => {
+  afterEach(() => { useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' }); });
+  const comEnforcement = (permissions: string[]) => useAdminAuthStore.setState({
+    authzStatus: 'ready',
+    authz: { uid: 'u', tenantId: 't', status: 'ACTIVE', permissions, countries: [], groups: [], features: {}, enforcement: 'on' } as AuthzContract,
+  });
+
+  it.each([false, true])('sem patient_family:update (isMarked=%s) o botão SOME do DOM', (isMarked) => {
+    comEnforcement(['patient_family:read']);
+    render(<EmergencyMarkButton patientId="p1" kind="RESPONSIBLE" contactId="r1" isMarked={isMarked} onChanged={vi.fn()} />);
+    expect(screen.queryByTestId('emergency-mark-RESPONSIBLE-r1')).not.toBeInTheDocument();
+  });
+
+  it('com patient_family:update o botão existe', () => {
+    comEnforcement(['patient_family:update']);
+    render(<EmergencyMarkButton patientId="p1" kind="RESPONSIBLE" contactId="r1" isMarked={false} onChanged={vi.fn()} />);
+    expect(screen.getByTestId('emergency-mark-RESPONSIBLE-r1')).toBeInTheDocument();
   });
 });
