@@ -277,7 +277,7 @@ describe('PatientStatusControl', () => {
     const values = [...(screen.getByTestId('patient-status-select') as HTMLSelectElement).options].map((o) => o.value);
     expect(values).toEqual(['ACTIVE', 'ON_HOLD', 'DISCHARGED']);
     expect(values).not.toContain('SEARCHING');
-    expect(getPatientStatusOptions).toHaveBeenCalledWith(active.id);
+    expect(getPatientStatusOptions).toHaveBeenCalledWith(active.id, 'admin_panel'); // a origem da ficha, explícita
   });
 
   it('destino com blockedBy aparece DESABILITADO com o motivo legível; o liberado segue habilitado', async () => {
@@ -393,5 +393,11 @@ describe('PatientStatusControl', () => {
     await ready(<PatientStatusControl patient={{ ...active, status: 'NOVO_ESTADO' as never }} onSaved={vi.fn()} />);
     expect(screen.getAllByTestId('patient-status-select').slice(-1)[0]).toHaveValue('NOVO_ESTADO');
     expect(screen.getByText('Estado: NOVO_ESTADO')).toBeInTheDocument();
+  });
+  it('lista com estados do FUNIL (funil↔funil, estado nulo): o select da ficha mostra só os clínicos', async () => {
+    getPatientStatusOptions.mockResolvedValue(serverOptions(['ON_HOLD', 'SOLICITANTE', 'ADMISSION', 'PENDING_ADMISSION', 'SEARCHING']));
+    await ready(<PatientStatusControl patient={active} onSaved={vi.fn()} />);
+    const values = [...(screen.getByTestId('patient-status-select') as HTMLSelectElement).options].map((o) => o.value);
+    expect(values).toEqual(['ACTIVE', 'ON_HOLD', 'SEARCHING']);
   });
 });

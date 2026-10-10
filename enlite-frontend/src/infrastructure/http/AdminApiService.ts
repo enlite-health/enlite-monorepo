@@ -301,7 +301,7 @@ class AdminApiServiceClass {
   createPatient(payload: Parameters<typeof AdminPatientsApiService.createPatient>[0]) { return AdminPatientsApiService.createPatient(payload); }
   updatePatientSection(...args: Parameters<typeof AdminPatientsApiService.updatePatientSection>) { return AdminPatientsApiService.updatePatientSection(...args); }
   updatePatientStatus(...args: Parameters<typeof AdminPatientsApiService.updatePatientStatus>) { return AdminPatientsApiService.updatePatientStatus(...args); }
-  getPatientStatusOptions(id: string) { return AdminPatientsApiService.getPatientStatusOptions(id); }
+  getPatientStatusOptions(...args: Parameters<typeof AdminPatientsApiService.getPatientStatusOptions>) { return AdminPatientsApiService.getPatientStatusOptions(...args); }
   getPatientStatusHistory(id: string) { return AdminPatientsApiService.getPatientStatusHistory(id); }
   listInsuranceProviders() { return AdminPatientsApiService.listInsuranceProviders(); }
   updatePatientAddressLogistics(...args: Parameters<typeof AdminPatientsApiService.updatePatientAddressLogistics>) { return AdminPatientsApiService.updatePatientAddressLogistics(...args); }

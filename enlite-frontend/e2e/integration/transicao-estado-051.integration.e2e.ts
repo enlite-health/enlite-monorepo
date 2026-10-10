@@ -229,7 +229,7 @@ test.describe('transicao-estado-051 — troca manual de estado com permissão po
       const antes = linhasHistorico(patientId);
 
       // A lista do servidor é lida no drop: a tela só segue se o destino está nela.
-      const lista = page.waitForResponse((r) => r.request().method() === 'GET' && new RegExp(`/patients/${patientId}/status-options$`).test(r.url()));
+      const lista = page.waitForResponse((r) => r.request().method() === 'GET' && new RegExp(`/patients/${patientId}/status-options\\?changeSource=kanban$`).test(r.url()));
       await dndKitDrag(page, card, coluna('SEARCHING'));
       expect((await lista).status()).toBe(200);
 

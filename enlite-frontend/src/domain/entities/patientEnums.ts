@@ -17,6 +17,9 @@ export type AdmissionFunnelStatus = (typeof ADMISSION_FUNNEL_STATUSES)[number];
 /** Estado clínico v2 — decisão 2 do Gabriel (03/09/2026). */
 export const CLINICAL_PATIENT_STATUSES = ['ACTIVE', 'ON_HOLD', 'SEARCHING', 'REPLACEMENT', 'SUSPENDED', 'ALTA', 'DISCHARGED'] as const;
 export type ClinicalPatientStatus = (typeof CLINICAL_PATIENT_STATUSES)[number];
+export function isClinicalPatientStatus(v: unknown): v is ClinicalPatientStatus {
+  return (CLINICAL_PATIENT_STATUSES as readonly unknown[]).includes(v);
+}
 
 export const PATIENT_STATUSES: readonly (AdmissionFunnelStatus | ClinicalPatientStatus)[] = [
   ...ADMISSION_FUNNEL_STATUSES,

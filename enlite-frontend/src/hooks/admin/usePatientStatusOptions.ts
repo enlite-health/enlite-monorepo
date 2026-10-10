@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
-import type { PatientStatusOption } from '@domain/entities/PatientDetail';
+import type { PatientStatusOption, PatientStatusChangeSource } from '@domain/entities/PatientDetail';
 import { PatientApiError } from '@infrastructure/http/AdminPatientsApiService';
 
 export type PatientStatusOptionsState =
@@ -13,14 +13,14 @@ export type PatientStatusOptionsState =
 
 /**
  * Spec 051 — a lista de destinos de estado que o SERVIDOR aceita para este paciente e este ator
- * (GET /patients/:id/status-options). Quem renderiza o select usa SÓ isto: a tela não decide FSM
+ * (GET /patients/:id/status-options?changeSource=…, a origem do PUT que vai sair). Quem renderiza o select usa SÓ isto: a tela não decide FSM
  * nem permissão. Falha de leitura é estado próprio (`error`) — NUNCA vira "lista inteira": sem a
  * lista, o select fica travado e `reload` tenta de novo.
  *
  * `refreshKey` refaz a leitura quando o estado do paciente muda (o que era destino deixa de ser).
  * `enabled=false` não lê nada (ficha que ainda nem tem estado clínico).
  */
-export function usePatientStatusOptions(patientId: string, refreshKey: unknown, enabled = true): {
+export function usePatientStatusOptions(patientId: string, changeSource: PatientStatusChangeSource, refreshKey: unknown, enabled = true): {
   state: PatientStatusOptionsState;
   reload: () => void;
 } {
@@ -31,17 +31,17 @@ export function usePatientStatusOptions(patientId: string, refreshKey: unknown, 
   useEffect(() => {
     if (!enabled) return undefined;
     let cancelled = false;
-    const key = `${patientId}|${String(refreshKey)}`;
+    const key = `${patientId}|${changeSource}|${String(refreshKey)}`;
     // Releitura por recusa (`reload`) mantém a lista que já havia — o select não fecha nem pisca. Mas lista de
     // OUTRO estado do paciente não vale: a 1ª leitura, o "tentar de novo" e a troca de estado travam até chegar a nova.
     setState((prev) => (prev.phase === 'ready' && prev.forKey === key ? prev : { phase: 'loading' }));
-    AdminApiService.getPatientStatusOptions(patientId)
+    AdminApiService.getPatientStatusOptions(patientId, changeSource)
       .then((r) => { if (!cancelled) setState({ phase: 'ready', options: r.options, forKey: key }); })
       .catch((err: unknown) => {
         if (!cancelled) setState({ phase: err instanceof PatientApiError && err.status === 403 ? 'readonly' : 'error' });
       });
     return () => { cancelled = true; };
-  }, [patientId, refreshKey, nonce, enabled]);
+  }, [patientId, changeSource, refreshKey, nonce, enabled]);
 
   return { state, reload };
 }

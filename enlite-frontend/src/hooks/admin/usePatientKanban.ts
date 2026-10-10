@@ -157,7 +157,7 @@ export function usePatientKanban(country?: string) {
     // exigiria mexer no shell compartilhado com o funil de vagas.
     let offered: PatientStatusOption[];
     try {
-      offered = (await AdminApiService.getPatientStatusOptions(patientId)).options;
+      offered = (await AdminApiService.getPatientStatusOptions(patientId, 'kanban')).options;
     } catch (err) {
       // 403 da lista = a conta não pode mexer no estado: a mesma frase de "sem permissão" do 403 do PUT.
       if (err instanceof PatientApiError && err.status === 403) return { code: SERVER_STATUS_REFUSAL.NOT_PERMITTED, to: targetStatus };

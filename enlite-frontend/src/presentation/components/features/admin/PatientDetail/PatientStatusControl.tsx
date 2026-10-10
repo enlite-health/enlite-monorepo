@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { PatientApiError } from '@infrastructure/http/AdminPatientsApiService';
 import type { PatientDetail, UpdatePatientStatusPayload } from '@domain/entities/PatientDetail';
-import { ON_HOLD_REASONS } from '@domain/entities/patientEnums';
+import { ON_HOLD_REASONS, isClinicalPatientStatus } from '@domain/entities/patientEnums';
 import { usePatientStatusOptions } from '@hooks/admin/usePatientStatusOptions';
 import { refusalFromError } from '@domain/entities/PatientStatusRefusal';
 import { friendlyStatusMessage, missingItemsLabel } from '@presentation/utils/patientStatusMessages';
@@ -48,11 +48,11 @@ export function PatientStatusControl({ patient, onSaved }: Props): JSX.Element |
   const [exitReason, setExitReason] = useState<string>('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { state: optionsState, reload: reloadOptions } = usePatientStatusOptions(patient.id, patient.status, patient.admissionStatus === 'DONE');
+  const { state: optionsState, reload: reloadOptions } = usePatientStatusOptions(patient.id, 'admin_panel', patient.status, patient.admissionStatus === 'DONE');
 
   // Lista relida e o destino escolhido saiu dela (permissão revogada, dado mudou): volta ao atual — não
   // deixa o operador salvar o que o servidor já não oferece.
-  const offeredNow = optionsState.phase === 'ready' ? optionsState.options.map((o): string => o.status) : null;
+  const offeredNow = optionsState.phase === 'ready' ? optionsState.options.map((o): string => o.status) : null; // lista completa: só confere se o destino escolhido ainda existe
   useEffect(() => {
     if (offeredNow && status !== current && !offeredNow.includes(status)) setStatus(current);
   }, [offeredNow, status, current]);
@@ -71,9 +71,12 @@ export function PatientStatusControl({ patient, onSaved }: Props): JSX.Element |
   const reasonOptions: SelectOption[] = ON_HOLD_REASONS.map((r) => ({ value: r, label: t(`admin.patients.onHoldReasonOptions.${r}`, r) }));
   // Estado atual + SÓ o que o servidor devolveu. Sem lista (carregando ou falha) só o atual — nunca o catálogo inteiro.
   const optionsReady = optionsState.phase === 'ready';
+  // Recorte de APRESENTAÇÃO da ficha (spec ponto 1: o funil fica como hoje): a lista do servidor pode trazer
+  // estados do funil (funil↔funil, estado nulo); o select da ficha só mostra os clínicos. Permissão continua do servidor.
+  const offered = optionsState.phase === 'ready' ? optionsState.options.filter((o) => isClinicalPatientStatus(o.status)) : [];
   const statusOptions: Array<{ value: string; label: string; disabled: boolean }> = [
     { value: current, label: label(current), disabled: false },
-    ...(optionsState.phase === 'ready' ? optionsState.options : [])
+    ...offered
       .filter((o) => o.status !== current)
       .map((o) => {
         const items = missingItemsLabel(t, o.blockedBy);

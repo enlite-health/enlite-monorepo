@@ -38,6 +38,8 @@ export interface PatientStatusOption {
 
 export interface PatientStatusOptions {
   current: PatientStatus | null;
+  /** Origem com que o servidor calculou a lista: tem de ser a pedida (e a do PUT que vai sair). */
+  changeSource: PatientStatusChangeSource;
   options: PatientStatusOption[];
 }
 

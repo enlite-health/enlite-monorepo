@@ -19,6 +19,7 @@ import type {
   UpdatePatientStatusPayload,
   PatientStatusHistoryEntry,
   PatientStatusOptions,
+  PatientStatusChangeSource,
   InsuranceProvider,
   PatientAddressLogisticsPayload,
   PatientChatIdsPayload,
@@ -333,8 +334,11 @@ export class AdminPatientsApiServiceClass {
   }
 
   /** GET /api/admin/patients/:id/status-options — os destinos que o SERVIDOR aceitaria (spec 051). */
-  async getPatientStatusOptions(id: string): Promise<PatientStatusOptions> {
-    return this.request<PatientStatusOptions>('GET', `/api/admin/patients/${id}/status-options`);
+  async getPatientStatusOptions(id: string, changeSource: PatientStatusChangeSource): Promise<PatientStatusOptions> {
+    const r = await this.request<PatientStatusOptions>('GET', `/api/admin/patients/${id}/status-options?changeSource=${changeSource}`);
+    // A lista vale para a ORIGEM do PUT que vai sair: lista de outra origem nunca é usada (quem chamou trata como indisponível).
+    if (r.changeSource !== changeSource) throw new Error(`status-options: origem ${String(r.changeSource)} ≠ pedida ${changeSource}`);
+    return r;
   }
 
   /** GET /api/admin/patients/:id/status-history — a aba Historial (spec 012). */

@@ -12,7 +12,7 @@ export type { PatientCompleteness, PatientCompletenessCode } from './PatientComp
 // `PatientCoverage.ts`, logística do endereço em `PatientAddress.ts` — este arquivo já
 // batia no teto de 400 linhas do validador.
 export type { PatientCoverageSectionPayload } from './PatientCoverage';
-export type { UpdatePatientStatusPayload, PatientStatusHistoryEntry, PatientStatusOptions, PatientStatusOption } from './PatientLifecycle';
+export type { UpdatePatientStatusPayload, PatientStatusHistoryEntry, PatientStatusOptions, PatientStatusOption, PatientStatusChangeSource } from './PatientLifecycle';
 export type { InsuranceProvider } from './PatientCoverage';
 export type { PatientCoverageEmergencyContact, PatientCoverageEmergencyContactInput, CoverageEmergencyContactKind } from './PatientCoverage';
 import type { PatientCoverageEmergencyContact } from './PatientCoverage';

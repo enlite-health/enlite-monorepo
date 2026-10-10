@@ -211,8 +211,29 @@ describe('usePatientKanban — patients.status', () => {
       await waitFor(() => expect(result.current.isLoading).toBe(false));
       await act(async () => { await result.current.moveStatus('c', 'ON_HOLD'); });
       expect(getPatientStatusOptions).toHaveBeenCalledTimes(1);
-      expect(getPatientStatusOptions).toHaveBeenCalledWith('c');
+      expect(getPatientStatusOptions).toHaveBeenCalledWith('c', 'kanban'); // a origem do arrasto, explícita
       expect(getPatientStatusOptions.mock.invocationCallOrder[0]).toBeLessThan(updatePatientStatus.mock.invocationCallOrder[0]);
+    });
+
+    it('paciente do FUNIL arrastado para Búsqueda: com SEARCHING na lista (origem kanban) o PUT sai (D469)', async () => {
+      getPatientStatusOptions.mockResolvedValue({ current: 'PENDING_ADMISSION', changeSource: 'kanban', options: [{ status: 'SEARCHING', via: 'fluxo' }, { status: 'ADMISSION', via: 'fluxo' }] });
+      const { result } = renderHook(() => usePatientKanban());
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+      let err: PatientKanbanMoveError | null = null;
+      await act(async () => { err = await result.current.moveStatus('d', 'SEARCHING'); });
+      expect(err).toBeNull();
+      expect(getPatientStatusOptions).toHaveBeenCalledWith('d', 'kanban');
+      expect(updatePatientStatus).toHaveBeenCalledWith('d', { status: 'SEARCHING', changeSource: 'kanban' });
+    });
+
+    it('lista de OUTRA origem (o serviço recusa) → indisponível, sem PUT', async () => {
+      getPatientStatusOptions.mockRejectedValue(new Error('status-options: origem admin_panel ≠ pedida kanban'));
+      const { result } = renderHook(() => usePatientKanban());
+      await waitFor(() => expect(result.current.isLoading).toBe(false));
+      let err: PatientKanbanMoveError | null = null;
+      await act(async () => { err = await result.current.moveStatus('d', 'SEARCHING'); });
+      expect(err).toEqual({ code: 'STATUS_OPTIONS_UNAVAILABLE', to: 'SEARCHING' });
+      expect(updatePatientStatus).not.toHaveBeenCalled();
     });
 
     it('destino que a lista não traz → STATUS_NOT_OFFERED, o PUT NÃO sai e o card não sai da coluna', async () => {
