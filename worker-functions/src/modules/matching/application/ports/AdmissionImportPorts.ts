@@ -33,12 +33,12 @@ export interface TranscriptVaultPort {
  * `prompt_missing`: `ADMISSION_SUMMARY_PROMPT_DOC_ID` sem valor (H4 pendente). `prompt_unavailable`: o Google Doc não leu.
  * Nos dois casos NÃO há resumo com prompt inventado; a próxima execução do job tenta de novo.
  */
-export type AdmissionSummaryFailure = 'vertex_failed' | 'empty_response' | 'prompt_missing' | 'prompt_unavailable' | 'prompt_unfilled_placeholder' | 'prompt_catalog_empty';
+export type AdmissionSummaryFailure = 'vertex_failed' | 'empty_response' | 'prompt_missing' | 'prompt_unavailable' | 'prompt_unfilled_placeholder' | 'prompt_catalog_empty' | 'catalog_read_failed' | 'output_truncated' | 'blocked_by_model';
 
 export class AdmissionSummaryError extends Error {
   readonly code = 'ADMISSION_SUMMARY_ERROR';
   /** Só NOMES de marcador/catálogo (`prompt_unfilled_placeholder`, `prompt_catalog_empty`): nunca texto do prompt, do resumo ou da transcrição. */
-  constructor(readonly reason: AdmissionSummaryFailure, readonly placeholders: readonly string[] = []) {
+  constructor(readonly reason: AdmissionSummaryFailure, readonly placeholders: readonly string[] = [], readonly errorClass?: string) {
     super(`admission_summary:${reason}`);
     this.name = 'AdmissionSummaryError';
   }
@@ -57,3 +57,8 @@ export interface AdmissionSummaryResult {
 export interface AdmissionSummaryPort {
   generate(input: { transcript: string; entrevistaId?: string; fecha?: string }): Promise<AdmissionSummaryResult>;
 }
+
+/** Motivos de `summary_failed` que CHEGARAM ao Vertex (do lado do modelo/rede): só estes contam para o teto de tentativas. */
+export const MODEL_SIDE_SUMMARY_FAILURES = ['empty_response', 'output_truncated', 'blocked_by_model', 'vertex_failed'] as const;
+export const MAX_SUMMARY_ATTEMPTS = 3;
+export const SUMMARY_ATTEMPTS_EXHAUSTED = 'summary_attempts_exhausted';

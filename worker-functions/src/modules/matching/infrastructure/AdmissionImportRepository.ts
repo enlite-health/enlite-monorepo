@@ -1,6 +1,7 @@
 import type { Pool, PoolClient } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { IMPORT_MIN_DELAY_MS } from '../domain/admissionImport';
+import { MODEL_SIDE_SUMMARY_FAILURES, SUMMARY_ATTEMPTS_EXHAUSTED } from '../application/ports/AdmissionImportPorts';
 
 type Ex = Pick<Pool, 'query'> | Pick<PoolClient, 'query'>;
 
@@ -38,9 +39,11 @@ export class AdmissionImportRepository {
           AND a.conference_ended_at IS NOT NULL
           AND a.conference_ended_at <= $1::timestamptz - make_interval(secs => $3::double precision)
           AND a.import_status IN ('pending', 'waiting', 'blocked')
+          AND NOT EXISTS (SELECT 1 FROM admission_events e
+                           WHERE e.appointment_id = a.id AND e.kind = 'import_blocked' AND e.reason = $4)
         ORDER BY a.conference_ended_at
         LIMIT $2`,
-      [now, limit, IMPORT_MIN_DELAY_MS / 1000],
+      [now, limit, IMPORT_MIN_DELAY_MS / 1000, SUMMARY_ATTEMPTS_EXHAUSTED],
     );
     return rows.map((r) => r.id);
   }
@@ -72,5 +75,14 @@ export class AdmissionImportRepository {
   async hasEvent(appointmentId: string, kind: string, ex: Ex = this.db): Promise<boolean> {
     const { rows } = await ex.query(`SELECT 1 FROM admission_events WHERE appointment_id = $1 AND kind = $2 LIMIT 1`, [appointmentId, kind]);
     return rows.length > 0;
+  }
+
+  /** Tentativas de resumo que chegaram ao Vertex, pelos eventos (sem coluna nova). Chamado com o lock da reunião seguro. */
+  async countModelSummaryFailures(appointmentId: string, ex: Ex = this.db): Promise<number> {
+    const { rows } = await ex.query<{ n: string }>(
+      `SELECT count(*) AS n FROM admission_events WHERE appointment_id = $1 AND kind = 'summary_failed' AND reason = ANY($2::text[])`,
+      [appointmentId, MODEL_SIDE_SUMMARY_FAILURES],
+    );
+    return Number(rows[0]?.n ?? 0);
   }
 }

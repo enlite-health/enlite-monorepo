@@ -19,6 +19,14 @@ export interface AdmissionPromptProvider {
   getPrompt(docId: string): Promise<string>;
 }
 /** Catálogos que vêm do banco/terminologia (rótulos prontos). Lista vazia = catálogo não carregado -> o resumo NÃO roda. */
+/**
+ * Teto de saída medido: o Vertex recusa `maxOutputTokens` >= 65537 para gemini-2.5-pro (400 INVALID_ARGUMENT, medido em 10/10/2026).
+ * O teto conta o thinking: 8192 de thinking explícito + até 24576 de JSON + resumo (o JSON do Gem tem ~5-8 mil tokens).
+ * `thinkingBudget` aceito pelo 2.5-pro (medido: STOP, thoughtsTokenCount 184).
+ */
+export const MAX_OUTPUT_TOKENS = 32768;
+export const THINKING_BUDGET = 8192;
+
 export interface AdmissionPromptCatalogs {
   segmentLabels(): Promise<string[]>;
   pathologyTypeLabels(): Promise<string[]>;
@@ -40,7 +48,13 @@ export async function buildPromptValues(catalogs: AdmissionPromptCatalogs): Prom
     ['CATALOGO_TIPO_PATOLOGIA', () => catalogs.pathologyTypeLabels()],
   ];
   for (const [marker, load] of fromDb) {
-    const labels = await load();
+    let labels: string[];
+    try {
+      labels = await load();
+    } catch (err) {
+      // falha de banco/terminologia (≠ TerminologyUnavailableError, que já virou lista vazia): só nome do catálogo e CLASSE do erro
+      throw new AdmissionSummaryError('catalog_read_failed', [marker], err instanceof Error ? err.constructor.name : 'unknown');
+    }
     if (!labels.length) throw new AdmissionSummaryError('prompt_catalog_empty', [marker]);
     values[marker] = joinLabels(labels);
   }
@@ -124,22 +138,33 @@ export class VertexAdmissionSummaryGenerator implements AdmissionSummaryPort {
     if (unfilled.length) throw new AdmissionSummaryError('prompt_unfilled_placeholder', unfilled);
 
     let text: string | undefined;
+    let truncated = false;
+    let blocked = false;
     try {
       const response = await this.vertex(
         this.model,
         {
           systemInstruction: { parts: [{ text: filled }] },
           contents: [{ role: 'user', parts: [{ text: buildInterviewInput(input, input.transcript) }] }],
-          // 2.5-pro gasta parte do teto em "thinking"; 8192 deixa folga para um resumo longo.
-          generationConfig: { temperature: 0.2, maxOutputTokens: 8192 },
+          generationConfig: { temperature: 0.2, maxOutputTokens: MAX_OUTPUT_TOKENS, thinkingConfig: { thinkingBudget: THINKING_BUDGET } },
         },
         'AdmissionSummary',
       );
-      const data = (await response.json()) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
+      const data = (await response.json()) as {
+        candidates?: Array<{ finishReason?: string; content?: { parts?: Array<{ text?: string }> } }>;
+        promptFeedback?: { blockReason?: string };
+      };
+      const finish = data.candidates?.[0]?.finishReason;
+      if (data.promptFeedback?.blockReason) blocked = true;
+      else if (finish === 'MAX_TOKENS') truncated = true;
+      else if (finish && finish !== 'STOP') blocked = true; // SAFETY, RECITATION, BLOCKLIST, PROHIBITED_CONTENT, SPII, OTHER...
       text = data.candidates?.[0]?.content?.parts?.map((p) => p.text ?? '').join('');
     } catch {
       throw new AdmissionSummaryError('vertex_failed');
     }
+    // Resposta cortada ou barrada NÃO vira documento: um JSON/resumo pela metade é pior que nenhum.
+    if (truncated) throw new AdmissionSummaryError('output_truncated');
+    if (blocked) throw new AdmissionSummaryError('blocked_by_model');
     if (!text || !text.trim()) throw new AdmissionSummaryError('empty_response');
     const out = splitGemOutput(text);
     if (!out.readable) throw new AdmissionSummaryError('empty_response');

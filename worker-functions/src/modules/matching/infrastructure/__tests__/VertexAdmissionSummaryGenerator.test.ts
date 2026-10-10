@@ -5,7 +5,7 @@
 import { AdmissionSummaryError } from '../../application/ports/AdmissionImportPorts';
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { promptVersionOf, VertexAdmissionSummaryGenerator } from '../VertexAdmissionSummaryGenerator';
+import { MAX_OUTPUT_TOKENS, THINKING_BUDGET, promptVersionOf, VertexAdmissionSummaryGenerator } from '../VertexAdmissionSummaryGenerator';
 
 const okResponse = (text: string) => ({ json: async () => ({ candidates: [{ content: { parts: [{ text }] } }] }) }) as unknown as Response;
 
@@ -16,9 +16,12 @@ const CATALOGS = {
 
 function build(
   env: Record<string, string | undefined>, getPrompt: (id: string) => Promise<string>,
-  opts: { catalogs?: Partial<typeof CATALOGS>; reply?: string } = {},
+  opts: { catalogs?: Partial<typeof CATALOGS>; reply?: string; finishReason?: string; promptFeedback?: unknown } = {},
 ) {
-  const vertex = jest.fn(async (_model: string, _body: unknown, _label: string) => okResponse(opts.reply ?? '  resumo sintético  '));
+  const vertex = jest.fn(async (_model: string, _body: unknown, _label: string) => {
+    if (opts.finishReason === undefined && opts.promptFeedback === undefined) return okResponse(opts.reply ?? '  resumo sintético  ');
+    return ({ json: async () => ({ candidates: [{ finishReason: opts.finishReason, content: { parts: [{ text: opts.reply ?? 'resumo cortado' }] } }], promptFeedback: opts.promptFeedback }) }) as unknown as Response;
+  });
   const gen = new VertexAdmissionSummaryGenerator(
     { NODE_ENV: 'production', ...env } as NodeJS.ProcessEnv,
     { promptProvider: { getPrompt: jest.fn(getPrompt) }, vertex: vertex as never, catalogs: { ...CATALOGS, ...opts.catalogs } },
@@ -128,5 +131,39 @@ describe('VertexAdmissionSummaryGenerator — marcadores, trava, entrada e saíd
     expect(await ok.gen.generate({ transcript: 't' })).toMatchObject({ summary: 'Resumen legible', structured: { estado: 'BORRADOR_PARA_REVISION_CTM' }, jsonInvalid: false });
     const bad = build({ ADMISSION_SUMMARY_PROMPT_DOC_ID: 'D' }, async () => 'p', { reply: '{"a":,}\n\nResumen legible' });
     expect(await bad.gen.generate({ transcript: 't' })).toMatchObject({ summary: 'Resumen legible', structured: null, jsonInvalid: true });
+  });
+
+  it('finishReason: MAX_TOKENS -> output_truncated; SAFETY/RECITATION/promptFeedback -> blocked_by_model; STOP salva. Em todos o texto parcial NÃO sobe', async () => {
+    const run = async (o: { finishReason?: string; promptFeedback?: unknown }) => {
+      const b = build({ ADMISSION_SUMMARY_PROMPT_DOC_ID: 'D' }, async () => 'p', { ...o, reply: '{"a":1}\n\nTEXTO-PARCIAL-CLINICO' });
+      return b.gen.generate({ transcript: 't' }).catch((e) => e as AdmissionSummaryError);
+    };
+    const trunc = await run({ finishReason: 'MAX_TOKENS' });
+    expect(trunc).toMatchObject({ reason: 'output_truncated' });
+    expect((trunc as Error).message).not.toContain('TEXTO-PARCIAL');
+    expect(await run({ finishReason: 'SAFETY' })).toMatchObject({ reason: 'blocked_by_model' });
+    expect(await run({ finishReason: 'RECITATION' })).toMatchObject({ reason: 'blocked_by_model' });
+    expect(await run({ promptFeedback: { blockReason: 'SAFETY' } })).toMatchObject({ reason: 'blocked_by_model' });
+    expect(await run({ finishReason: 'STOP' })).toMatchObject({ summary: 'TEXTO-PARCIAL-CLINICO' });
+  });
+
+  it('o pedido leva o teto de saída medido e o thinking explícito', async () => {
+    const { gen, vertex } = build({ ADMISSION_SUMMARY_PROMPT_DOC_ID: 'D' }, async () => 'p');
+    await gen.generate({ transcript: 't' });
+    const cfg = (vertex.mock.calls[0][1] as { generationConfig: Record<string, unknown> }).generationConfig;
+    expect(cfg).toMatchObject({ maxOutputTokens: MAX_OUTPUT_TOKENS, thinkingConfig: { thinkingBudget: THINKING_BUDGET } });
+    expect(MAX_OUTPUT_TOKENS).toBeLessThan(65537); // teto do gemini-2.5-pro no Vertex (400 acima disso, medido)
+    expect(MAX_OUTPUT_TOKENS).toBeGreaterThan(THINKING_BUDGET * 2);
+  });
+
+  it('falha de leitura do catálogo (≠ lista vazia) -> catalog_read_failed com o nome do catálogo e a CLASSE do erro, sem a mensagem; 0 chamadas ao Vertex', async () => {
+    class PgBoom extends Error {}
+    const b = build({ ADMISSION_SUMMARY_PROMPT_DOC_ID: 'D' }, async () => REAL_DOC, { catalogs: { segmentLabels: async () => { throw new PgBoom('conexao com senha=SEGREDO'); } } });
+    const err = await b.gen.generate({ transcript: 't' }).catch((e) => e as AdmissionSummaryError);
+    expect(err).toMatchObject({ reason: 'catalog_read_failed', placeholders: ['CATALOGO_SEGMENTOS_CLINICOS'], errorClass: 'PgBoom' });
+    expect((err as Error).message).not.toContain('SEGREDO');
+    expect(b.vertex).not.toHaveBeenCalled();
+    const naoErro = build({ ADMISSION_SUMMARY_PROMPT_DOC_ID: 'D' }, async () => REAL_DOC, { catalogs: { pathologyTypeLabels: async () => { throw 'texto'; } } });
+    await expect(naoErro.gen.generate({ transcript: 't' })).rejects.toMatchObject({ reason: 'catalog_read_failed', errorClass: 'unknown' });
   });
 });

@@ -45,4 +45,11 @@ describe('admissionPromptFiller', () => {
     expect(t).not.toContain('informante_tipo');
     expect(t.endsWith('TEXTO')).toBe(true);
   });
+
+  it('trava reconhece `{{nombre}}` e `{{ X }}` (minúscula e espaços), só pelo nome, e ignora apenas o literal `{{...}}` da prosa', () => {
+    expect(findUnfilled('a {{nombre}} b {{ X }} c {{ ... }} d {{...}} e {{texto clinico longo}}').sort()).toEqual(['(invalido)', 'X', 'nombre']);
+    expect(findUnfilled('so {{...}} aqui')).toEqual([]);
+    // marcador conhecido com espaços é PREENCHIDO
+    expect(fillPrompt('x {{ MAX_HORAS_POR_TURNO }} y', { MAX_HORAS_POR_TURNO: '12' })).toBe('x 12 y');
+  });
 });

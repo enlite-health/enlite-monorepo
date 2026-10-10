@@ -23,6 +23,8 @@ import {
 import type { AdmissionLogger } from './AdmissionMessagingService';
 import {
   AdmissionSummaryError,
+  MAX_SUMMARY_ATTEMPTS,
+  SUMMARY_ATTEMPTS_EXHAUSTED,
   type AdmissionSummaryResult,
   TranscriptVaultError,
   type AdmissionSummaryPort,
@@ -194,6 +196,12 @@ export class AdmissionImportService {
     ) {
       return 'not_eligible';
     }
+    // Teto de tentativas de resumo (custo do Vertex): contado pelos eventos, sob o lock da reunião (vale para execuções sobrepostas).
+    if ((await this.deps.repo.countModelSummaryFailures(a.id)) >= MAX_SUMMARY_ATTEMPTS) {
+      await this.setBlocked(a, SUMMARY_ATTEMPTS_EXHAUSTED);
+      this.log.error({ appointmentId: a.id, reason: SUMMARY_ATTEMPTS_EXHAUSTED }, 'admission.import_blocked');
+      return 'blocked';
+    }
     const endedAt = a.conference_ended_at;
     if (now.getTime() < endedAt.getTime() + IMPORT_MIN_DELAY_MS) return 'too_early';
     const expired = now.getTime() - endedAt.getTime() >= IMPORT_EXPIRE_AFTER_MS;
@@ -275,11 +283,12 @@ export class AdmissionImportService {
     } catch (err) {
       const reason = err instanceof AdmissionSummaryError ? err.reason : 'unexpected';
       const placeholders = err instanceof AdmissionSummaryError ? err.placeholders : [];
+      const errorClass = err instanceof AdmissionSummaryError ? err.errorClass : undefined;
       await this.deps.events.append({
         appointmentId: a.id, kind: 'summary_failed', outcome: 'failed', reason,
         ...(placeholders.length ? { ref: { placeholders: placeholders.join(',') } } : {}),
       });
-      this.log.error({ appointmentId: a.id, reason, ...(placeholders.length ? { placeholders } : {}) }, 'admission.summary_failed');
+      this.log.error({ appointmentId: a.id, reason, ...(placeholders.length ? { placeholders } : {}), ...(errorClass ? { errorClass } : {}) }, 'admission.summary_failed');
       return 'summary_failed';
     }
     const label = `Resumen de admisión · ${dateLabel(a.slot_start, a.country)}`;
