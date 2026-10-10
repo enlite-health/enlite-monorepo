@@ -21,6 +21,7 @@ import { FakeAdmissionSummaryGenerator } from '../../src/modules/matching/infras
 import { capturingLogger } from '../../src/modules/matching/infrastructure/doubles/admissionTestKit';
 import { TactiqUnauthorizedError, type TactiqMeetingItem, type TactiqTranscriptPage } from '../../src/modules/matching/application/ports/TactiqPorts';
 import { AdmissionSummaryError } from '../../src/modules/matching/application/ports/AdmissionImportPorts';
+import { VertexAdmissionSummaryGenerator } from '../../src/modules/matching/infrastructure/VertexAdmissionSummaryGenerator';
 import type { AdmissionImportService } from '../../src/modules/matching/application/AdmissionImportService';
 import type { GcsTranscriptVault } from '../../src/modules/matching/infrastructure/GcsTranscriptVault';
 
@@ -348,6 +349,45 @@ describe('importação do Tactiq — banco real, cofre e bucket em emulador (spe
       expect(files[0].metadata.generation).toBe(generation);
       // `transcript_vaulted` não se repete quando o objeto já estava lá
       expect((await events(a.id)).filter((e) => e.kind === 'transcript_vaulted')).toHaveLength(1);
+    });
+
+    it('H4 (a)+(b): SEM o Doc do prompt → 1 objeto no cofre, 0 documentos, `summary_failed prompt_missing`; depois de configurar, a próxima execução gera 1 documento e o cofre segue com 1 objeto (mesma geração)', async () => {
+      // O gerador REAL (Vertex + provider do Doc são dublês): a ausência do Doc é provada no código de produção, não no dublê do teste.
+      const env: Record<string, string | undefined> = { NODE_ENV: 'production' };
+      const viaVertex = jest.fn(async () => ({ json: async () => ({ candidates: [{ content: { parts: [{ text: 'RESUMO-SINTETICO-H4' }] } }] }) }) as unknown as Response);
+      const gen = new VertexAdmissionSummaryGenerator(env as NodeJS.ProcessEnv, {
+        promptProvider: { getPrompt: async () => 'PROMPT-SINTETICO-DO-DOC' }, vertex: viaVertex as never,
+      });
+      const deps = (service as unknown as { deps: { summary: unknown } }).deps;
+      const original = deps.summary;
+      deps.summary = gen;
+      try {
+        const a = await appt();
+        see(a, [meeting(a, 'tq-h4')]);
+
+        expect(await service.importOne(a.id, clock)).toBe('summary_failed');
+        expect(viaVertex).not.toHaveBeenCalled();
+        expect(await docs(a.id)).toHaveLength(0);
+        const [obj] = await vaultFiles(a.id);
+        expect(await vaultFiles(a.id)).toHaveLength(1);
+        expect(await row(a.id)).toMatchObject({ import_status: 'pending' });
+        const failed = (await events(a.id)).filter((e) => e.kind === 'summary_failed');
+        expect(failed).toHaveLength(1);
+        expect(failed[0]).toMatchObject({ reason: 'prompt_missing' });
+
+        env.ADMISSION_SUMMARY_PROMPT_DOC_ID = 'doc-sintetico';
+        expect(await service.importOne(a.id, clock)).toBe('done');
+        expect(viaVertex).toHaveBeenCalledTimes(1);
+        expect(await docs(a.id)).toHaveLength(1);
+        const files = await vaultFiles(a.id);
+        expect(files).toHaveLength(1);
+        expect(files[0].metadata.generation).toBe(obj.metadata.generation); // o cofre NÃO foi regravado
+        expect((await events(a.id)).filter((e) => e.kind === 'transcript_vaulted')).toHaveLength(1);
+        const saved = (await events(a.id)).find((e) => e.kind === 'summary_saved');
+        expect(saved?.ref).toMatchObject({ promptVersion: expect.stringMatching(/^sha256:[0-9a-f]{12}$/) });
+      } finally {
+        deps.summary = original;
+      }
     });
 
     it('2 execuções SOBREPOSTAS (a 1ª segura o lock da reunião enquanto fala com o Tactiq e o Vertex): a outra pula; 1 documento, 1 objeto, 1 só busca no Tactiq', async () => {
