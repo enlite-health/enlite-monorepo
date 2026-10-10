@@ -79,8 +79,8 @@ async function seed(vacancies: VacancyOpts[], serviceSchedule: unknown = SCHEDUL
     vacancyIds.push(id);
     await admin.query(
       `INSERT INTO job_postings (id, title, case_number, patient_id, patient_address_id, contracted_service_id,
-                                 status, is_draft, deleted_at, required_professions, country, is_test, providers_needed)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, ARRAY['AT'], 'AR', false, '1')`,
+                                 status, is_draft, deleted_at, required_professions, country, is_test)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, ARRAY['AT'], 'AR', false)`, // F7: vaga com serviço nasce sem valor próprio (CHECK)
       [id, `CASO ${caseNumber} #${i}`, caseNumber, patientId, addressId, serviceId,
         v.status ?? 'SEARCHING', v.draft ?? false, v.deleted ? new Date() : null],
     );
