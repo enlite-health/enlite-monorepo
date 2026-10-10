@@ -15,6 +15,7 @@ import { FakeAdmissionCalendar } from '../../../src/modules/matching/infrastruct
 import { FakeMeetConference } from '../../../src/modules/matching/infrastructure/doubles/FakeMeetConference';
 import { FakeTactiqMcp, FakeTactiqOAuth } from '../../../src/modules/matching/infrastructure/doubles/FakeTactiq';
 import type { CreateEventParams } from '../../../src/modules/matching/infrastructure/AdmissionCalendarService';
+import { capturingLogger } from '../../../src/modules/matching/infrastructure/doubles/admissionTestKit';
 
 const DATABASE_URL =
   process.env.TEST_DATABASE_URL || process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
@@ -54,6 +55,7 @@ export function definirCenariosCalendarioRls(conexao: ConexaoCalendario, sufixo:
     let admin: Pool;
     let app: AppDeFamilia;
     let cal: ProgrammableCalendar;
+    const logs = capturingLogger();
     let patientId: string;
     const envAnterior: Record<string, string | undefined> = {};
     let dayOffset = 40 + Math.floor(Math.random() * 200);
@@ -177,8 +179,8 @@ export function definirCenariosCalendarioRls(conexao: ConexaoCalendario, sufixo:
             createAdmissionPostCallInternalRoutes(
               new AdmissionPostCallInternalController(
                 new AdmissionPostCallJob({
-                  repo: new AdmissionPostCallRepository(pool), meet: new FakeMeetConference(), events, db: pool,
-                  calendarSweeps: new AdmissionCalendarSweeps({ db: pool, calendar: cal, events, impersonateEmail: 'enlite@enlite.health' }),
+                  repo: new AdmissionPostCallRepository(pool), meet: new FakeMeetConference(), events, db: pool, log: logs.log,
+                  calendarSweeps: new AdmissionCalendarSweeps({ db: pool, calendar: cal, events, impersonateEmail: 'enlite@enlite.health', log: logs.log }),
                 }),
               ),
             ),
@@ -265,6 +267,24 @@ export function definirCenariosCalendarioRls(conexao: ConexaoCalendario, sufixo:
       const falhas = await bySlot(slot, 'calendar_failed');
       expect(falhas).toHaveLength(1);
       expect(await trail(falhas[0], 'calendar_create_failed')).toBe(1);
+    });
+
+    it('E. detector de mensagem sem status (F7) com o papel do runtime: `sent` há 30 h conta em deliveryNoStatus e nenhum alarme de detector/varredura sai', async () => {
+      const appt = await seed({ status: 'cancelled' });
+      const msg = (await admin.query(
+        `INSERT INTO admission_messages (appointment_id, kind, attempt, status, updated_at) VALUES ($1,'confirmation',0,'sent', now() - interval '30 hours') RETURNING id`,
+        [appt],
+      )).rows[0].id as string;
+      const antes = logs.output().length;
+      const r = await job();
+      expect(r.status).toBe(200);
+      expect(r.body.data.deliveryNoStatus).toBeGreaterThanOrEqual(1);
+      const novo = logs.output().slice(antes);
+      // controle positivo: o alarme informativo do detector SAIU, com o id da mensagem semeada (o detector enxergou a linha)
+      expect(novo).toContain('"message":"admission.delivery.no_status"');
+      expect(novo).toContain(msg);
+      expect(novo).not.toContain('admission.delivery.detector_failed');
+      expect(novo).not.toContain('admission.calendar_sweep.failed');
     });
 
     it('controle positivo: sem falha, painel e site agendam (a RLS não derruba o caminho feliz)', async () => {
