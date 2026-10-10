@@ -113,14 +113,14 @@ test.describe('spec 018/PR-2 — rede de apoio (contatos externos + marca de eme
     const contatoId = linhas[0].trim().split('|')[0].trim();
     expect(contatoId).toBeTruthy();
 
-    // Marca de emergência — o botão (só ícone) nasce com a sirene "marcar"; marcado, vira o ✕ "quitar" ao lado do marcador "Emergencia".
+    // Marca de emergência — o botão (só ícone, toggle) nasce com a sirene vazada "marcar" (aria-pressed=false); marcado, a MESMA sirene fica preenchida, "quitar" (aria-pressed=true).
     const marcarBtn = page.getByTestId(`emergency-mark-EXTERNAL-${contatoId}`);
     await expect(marcarBtn).toBeVisible();
     const putEmergencia = page.waitForResponse((r) => r.request().method() === 'PUT' && r.url().includes(`/patients/${patientId}/emergency-contact`));
     await marcarBtn.click();
     expect((await putEmergencia).status()).toBe(200);
     await expect(page.getByTestId(`emergency-mark-EXTERNAL-${contatoId}`)).toHaveAttribute('aria-label', /quitar/i, { timeout: 15_000 });
-    await expect(page.getByTestId(`external-emergency-marked-${contatoId}`)).toBeVisible();
+    await expect(page.getByTestId(`emergency-mark-EXTERNAL-${contatoId}`)).toHaveAttribute('aria-pressed', 'true');
 
     const marca = scalar(`SELECT emergency_external_contact_id FROM patients WHERE id = '${patientId}'`);
     expect(marca).toBe(contatoId);
@@ -185,7 +185,7 @@ test.describe('spec 018/PR-2 — rede de apoio (contatos externos + marca de eme
 
     // O botão continua sendo o "marcar" (sirene) — nada foi marcado.
     await expect(page.getByTestId(`emergency-mark-EXTERNAL-${contatoId}`)).toHaveAttribute('aria-label', /marcar/i);
-    await expect(page.getByTestId(`external-emergency-marked-${contatoId}`)).toHaveCount(0);
+    await expect(page.getByTestId(`emergency-mark-EXTERNAL-${contatoId}`)).toHaveAttribute('aria-pressed', 'false');
     const marca = scalar(`SELECT emergency_external_contact_id FROM patients WHERE id = '${patientId}'`);
     expect(marca).not.toBe(contatoId);
   });

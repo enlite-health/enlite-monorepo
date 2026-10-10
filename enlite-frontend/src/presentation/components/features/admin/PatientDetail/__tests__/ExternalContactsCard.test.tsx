@@ -88,7 +88,7 @@ describe('ExternalContactsCard', () => {
   it('marca a linha correspondente ao emergencyContactRef', () => {
     render(<ExternalContactsCard externalContacts={rows} patientId="p1" emergencyContactRef={{ kind: 'EXTERNAL', id: 'x1' }} />);
     expect(screen.getByTestId('emergency-mark-EXTERNAL-x1')).toHaveAttribute('aria-label', t('admin.patients.editDrawer.unmarkEmergencyContact'));
-    expect(screen.getByTestId('external-emergency-marked-x1')).toBeInTheDocument();
+    expect(screen.getByTestId('emergency-mark-EXTERNAL-x1')).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('sem externalContacts (prop ausente): cai no fallback `?? []`, sem estourar', () => {

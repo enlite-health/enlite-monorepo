@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Siren, X, Loader2 } from 'lucide-react';
-import { Text } from '@presentation/components/atoms/Text';
+import { Siren, Loader2 } from 'lucide-react';
 import { AdminPatientContactRowsApiService } from '@infrastructure/http/AdminPatientContactRowsApiService';
 import { ActionButton } from '@presentation/components/features/access';
 import type { EmergencyContactRef } from '@domain/entities/PatientDetail';
@@ -46,60 +45,26 @@ export function EmergencyMarkButton({ patientId, kind, contactId, isMarked, onCh
   };
 
   const label = te(isMarked ? 'unmarkEmergencyContact' : 'markEmergencyContact');
-  // `isLoading` do Button trocaria o conteúdo por "Cargando…" e o botão voltaria a ficar largo:
-  // aqui o carregando é `disabled` + ícone girando + `aria-busy`, sem texto.
-  const spinner = <Loader2 className={isMarked ? 'w-3 h-3 animate-spin' : 'w-4 h-4 animate-spin'} />;
 
-  // Marcado: só o "✕" (ghost, discreto) — quem diz "Emergencia" é o marcador de leitura
-  // (`EmergencyMarkedBadge`), que fica FORA do botão para quem só lê continuar vendo a marca.
-  if (isMarked) {
-    return (
-      <ActionButton
-        resource="patient_family"
-        action="update"
-        variant="ghost"
-        size="xs"
-        onClick={toggle}
-        disabled={busy}
-        aria-busy={busy}
-        title={label}
-        aria-label={label}
-        className="!h-6 !w-6 !p-0 inline-flex items-center justify-center text-gray-500 hover:text-red-600"
-        data-testid={`emergency-mark-${kind}-${contactId}`}
-      >
-        {busy ? spinner : <X className="w-3 h-3" />}
-      </ActionButton>
-    );
-  }
-
+  // UM botão-ícone (sirene) do MESMO tamanho nos dois estados — é um toggle: vazado = não marcado,
+  // preenchido = marcado (`aria-pressed`). `isLoading` do Button trocaria o conteúdo por "Cargando…"
+  // e alargaria o botão: o carregando é `disabled` + ícone girando + `aria-busy`, sem texto.
   return (
     <ActionButton
       resource="patient_family"
       action="update"
-      variant="outline"
+      variant={isMarked ? 'primary' : 'outline'}
       size="sm"
       onClick={toggle}
       disabled={busy}
       aria-busy={busy}
+      aria-pressed={isMarked}
       title={label}
       aria-label={label}
-      className="p-2"
+      className={isMarked ? 'p-2 !border-2' : 'p-2'}
       data-testid={`emergency-mark-${kind}-${contactId}`}
     >
-      {busy ? spinner : <Siren className="w-4 h-4" />}
+      {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Siren className="w-4 h-4" />}
     </ActionButton>
-  );
-}
-
-/**
- * Marcador de LEITURA "Emergencia" (informação, não ação): aparece para qualquer ator com
- * `patient_family:read`, mesmo sem `:update` — por isso vive separado do botão acima.
- */
-export function EmergencyMarkedBadge({ label, testId }: { label: string; testId: string }): JSX.Element {
-  return (
-    <span className="inline-flex items-center gap-1 whitespace-nowrap text-red-600" data-testid={testId}>
-      <Siren className="w-3.5 h-3.5" />
-      <Text as="span" size="xs" weight="semibold" color="inherit">{label}</Text>
-    </span>
   );
 }

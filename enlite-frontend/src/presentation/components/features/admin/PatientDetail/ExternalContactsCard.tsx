@@ -15,7 +15,7 @@ import {
 import { useActionGate } from '@presentation/hooks/useCellAccess';
 import type { PatientExternalContactDetail, EmergencyContactRef } from '@domain/entities/PatientDetail';
 import { PatientExternalContactsEditDrawer } from './edit/PatientExternalContactsEditDrawer';
-import { EmergencyMarkButton, EmergencyMarkedBadge } from './EmergencyMarkButton';
+import { EmergencyMarkButton } from './EmergencyMarkButton';
 
 interface Props {
   externalContacts: PatientExternalContactDetail[];
@@ -94,14 +94,9 @@ export function ExternalContactsCard({ externalContacts, emergencyContactRef, pa
                   <TableCell>{c.name || empty}</TableCell>
                   <TableCell>{c.phone ?? empty}</TableCell>
                   <TableCell unwrapped>
-                    <div className="inline-flex items-center gap-1 whitespace-nowrap">
-                      {isMarked && (
-                        <EmergencyMarkedBadge testId={`external-emergency-marked-${c.id}`} label={t('admin.patients.detail.externalContactsCard.tableEmergency')} />
-                      )}
-                      {patientId ? (
-                        <EmergencyMarkButton patientId={patientId} kind="EXTERNAL" contactId={c.id} isMarked={isMarked} onChanged={() => onSaved?.()} />
-                      ) : (!isMarked && empty)}
-                    </div>
+                    {patientId ? (
+                      <EmergencyMarkButton patientId={patientId} kind="EXTERNAL" contactId={c.id} isMarked={isMarked} onChanged={() => onSaved?.()} />
+                    ) : empty}
                   </TableCell>
                 </TableRow>
               );

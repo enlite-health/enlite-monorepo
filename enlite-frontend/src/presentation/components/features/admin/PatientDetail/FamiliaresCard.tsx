@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, Pencil, Trash2 } from 'lucide-react';
+import { Plus, Pencil, Trash2, Siren } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import {
@@ -17,7 +17,8 @@ import type { PatientResponsibleDetail, EmergencyContactRef } from '@domain/enti
 import { PatientResponsibleEditDrawer } from './edit/PatientResponsibleEditDrawer';
 import { DeactivateResponsibleConfirm } from './DeactivateResponsibleConfirm';
 import { useAutoOpenDrawer, type DrawerFocusRequest } from '@hooks/admin/useAutoOpenDrawer';
-import { EmergencyMarkButton, EmergencyMarkedBadge } from './EmergencyMarkButton';
+import { EmergencyMarkButton } from './EmergencyMarkButton';
+import { useActionGate } from '@presentation/hooks/useCellAccess';
 
 interface FamiliaresCardProps {
   responsibles: PatientResponsibleDetail[];
@@ -37,6 +38,8 @@ export function FamiliaresCard({ responsibles, emergencyContactRef, patientId, o
   const [editing, setEditing] = useState<PatientResponsibleDetail | 'new' | null>(null);
   const [deactivating, setDeactivating] = useState<PatientResponsibleDetail | null>(null);
   const [busy, setBusy] = useState(false);
+  // Quem pode editar vê o botão-toggle preenchido; quem só LÊ vê a etiqueta "Emergencia" (informação).
+  const { allowed: canUpdate } = useActionGate('patient_family', 'update');
   const [deactivateError, setDeactivateError] = useState<string | null>(null);
   const rows = responsibles ?? [];
   const empty = '—';
@@ -148,23 +151,22 @@ export function FamiliaresCard({ responsibles, emergencyContactRef, patientId, o
                   </TableCell>
                   <TableCell>{r.phone ?? empty}</TableCell>
                   <TableCell unwrapped className="w-px whitespace-nowrap">
-                    <div className="inline-flex items-center gap-1 whitespace-nowrap">
-                      {isMarked && (
-                        <EmergencyMarkedBadge
-                          testId={`familiares-emergency-marked-${r.id}`}
-                          label={t('admin.patients.detail.externalContactsCard.tableEmergency')}
-                        />
-                      )}
-                      {patientId ? (
-                        <EmergencyMarkButton
-                          patientId={patientId}
-                          kind="RESPONSIBLE"
-                          contactId={r.id}
-                          isMarked={isMarked}
-                          onChanged={() => onSaved?.()}
-                        />
-                      ) : (!isMarked && empty)}
-                    </div>
+                    {canUpdate && patientId ? (
+                      <EmergencyMarkButton
+                        patientId={patientId}
+                        kind="RESPONSIBLE"
+                        contactId={r.id}
+                        isMarked={isMarked}
+                        onChanged={() => onSaved?.()}
+                      />
+                    ) : isMarked ? (
+                      <span className="inline-flex items-center gap-1 whitespace-nowrap text-red-600" data-testid={`familiares-emergency-marked-${r.id}`}>
+                        <Siren className="w-3.5 h-3.5" />
+                        <Text as="span" size="xs" weight="semibold" color="inherit">
+                          {t('admin.patients.detail.externalContactsCard.tableEmergency')}
+                        </Text>
+                      </span>
+                    ) : (canUpdate ? empty : null)}
                   </TableCell>
                   <TableCell unwrapped align="right">
                     <div className="flex items-center justify-end gap-1">

@@ -7,6 +7,8 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import ptBR from '@infrastructure/i18n/locales/pt-BR.json';
 import type { PatientResponsibleDetail } from '@domain/entities/PatientDetail';
+import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
+import type { AuthzContract } from '@domain/entities/Authz';
 
 const translations = ptBR as Record<string, any>;
 function t(key: string, opts?: any): string {
@@ -140,14 +142,28 @@ describe('FamiliaresCard — abertura automática pelo checklist (RESPONSIBLE)',
   });
 });
 
-describe('FamiliaresCard — marcador de leitura × botão de emergência', () => {
-  it('linha marcada: o marcador "Emergência" (texto) é SEPARADO do botão (só ✕); a não marcada tem só a sirene', () => {
+describe('FamiliaresCard — etiqueta de leitura × botão-toggle de emergência', () => {
+  const comEnforcement = (permissions: string[]) => useAdminAuthStore.setState({
+    authzStatus: 'ready',
+    authz: { uid: 'u', tenantId: 't', status: 'ACTIVE', permissions, countries: [], groups: [], features: {}, enforcement: 'on' } as AuthzContract,
+  });
+  afterEach(() => { useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' }); });
+
+  it('quem PODE editar (update): vê o botão (marcado = preenchido, aria-pressed) e NÃO a etiqueta — sem duas sirenes lado a lado', () => {
+    comEnforcement(['patient_family:read', 'patient_family:update']);
+    render(<FamiliaresCard responsibles={[A, B]} patientId="p1" emergencyContactRef={{ kind: 'RESPONSIBLE', id: 'rB' }} />);
+    expect(screen.getByTestId('emergency-mark-RESPONSIBLE-rB')).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByTestId('emergency-mark-RESPONSIBLE-rA')).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.queryByTestId('familiares-emergency-marked-rB')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('familiares-emergency-marked-rA')).not.toBeInTheDocument();
+  });
+
+  it('quem só LÊ (sem update): vê a etiqueta "Emergencia" na linha marcada e nenhum botão; linha não marcada, nada', () => {
+    comEnforcement(['patient_family:read']);
     render(<FamiliaresCard responsibles={[A, B]} patientId="p1" emergencyContactRef={{ kind: 'RESPONSIBLE', id: 'rB' }} />);
     expect(screen.getByTestId('familiares-emergency-marked-rB')).toHaveTextContent(t('admin.patients.detail.externalContactsCard.tableEmergency'));
-    const marcado = screen.getByTestId('emergency-mark-RESPONSIBLE-rB');
-    expect(marcado.textContent).toBe('');
-    expect(screen.getByTestId('familiares-emergency-marked-rB').contains(marcado)).toBe(false);
     expect(screen.queryByTestId('familiares-emergency-marked-rA')).not.toBeInTheDocument();
-    expect(screen.getByTestId('emergency-mark-RESPONSIBLE-rA').textContent).toBe('');
+    expect(screen.queryByTestId('emergency-mark-RESPONSIBLE-rB')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('emergency-mark-RESPONSIBLE-rA')).not.toBeInTheDocument();
   });
 });

@@ -31,7 +31,7 @@ import { EmergencyMarkButton } from '../EmergencyMarkButton';
 describe('EmergencyMarkButton', () => {
   beforeEach(() => { mockMark.mockReset().mockResolvedValue({}); mockUnmark.mockReset().mockResolvedValue({}); });
 
-  it('não marcado: sirene; clicar chama markEmergencyContact com {kind, id} e dispara onChanged', async () => {
+  it('não marcado: sirene vazada; clicar chama markEmergencyContact com {kind, id} e dispara onChanged', async () => {
     const onChanged = vi.fn();
     render(<EmergencyMarkButton patientId="p1" kind="RESPONSIBLE" contactId="r1" isMarked={false} onChanged={onChanged} />);
     fireEvent.click(screen.getByTestId('emergency-mark-RESPONSIBLE-r1'));
@@ -40,7 +40,7 @@ describe('EmergencyMarkButton', () => {
     expect(mockUnmark).not.toHaveBeenCalled();
   });
 
-  it('marcado: ✕; clicar chama unmarkEmergencyContact(patientId) e dispara onChanged', async () => {
+  it('marcado: sirene preenchida; clicar chama unmarkEmergencyContact(patientId) e dispara onChanged', async () => {
     const onChanged = vi.fn();
     render(<EmergencyMarkButton patientId="p1" kind="EXTERNAL" contactId="x1" isMarked onChanged={onChanged} />);
     fireEvent.click(screen.getByTestId('emergency-mark-EXTERNAL-x1'));
@@ -72,15 +72,24 @@ describe('EmergencyMarkButton', () => {
     expect(btn.querySelector('svg')).toHaveClass('w-4', 'h-4');
   });
 
-  it('MARCADO: botão só-ícone ✕ menor e discreto (ghost), title e aria-label = "quitar", sem texto', () => {
+  it('MARCADO: MESMO botão-ícone de sirene, preenchido (primary), aria-pressed=true, title e aria-label = "quitar", mesmo tamanho (p-2), sem texto', () => {
+    const { unmount } = render(<EmergencyMarkButton patientId="p1" kind="RESPONSIBLE" contactId="r1" isMarked={false} onChanged={vi.fn()} />);
+    const vazado = screen.getByTestId('emergency-mark-RESPONSIBLE-r1');
+    expect(vazado).toHaveAttribute('aria-pressed', 'false');
+    expect(vazado.className).toContain('border-2');
+    expect(vazado.className).not.toMatch(/(^| )bg-primary( |$)/);
+    unmount();
     render(<EmergencyMarkButton patientId="p1" kind="RESPONSIBLE" contactId="r1" isMarked onChanged={vi.fn()} />);
     const btn = screen.getByTestId('emergency-mark-RESPONSIBLE-r1');
     expect(btn.textContent).toBe('');
+    expect(btn).toHaveAttribute('aria-pressed', 'true');
     expect(btn).toHaveAttribute('title', t('admin.patients.editDrawer.unmarkEmergencyContact'));
     expect(btn).toHaveAttribute('aria-label', t('admin.patients.editDrawer.unmarkEmergencyContact'));
-    expect(btn.querySelector('svg.lucide-x')).not.toBeNull();
-    expect(btn.className).toContain('!w-6');
-    expect(btn.className).not.toContain('border-2');
+    expect(btn.querySelector('svg.lucide-siren')).not.toBeNull();
+    expect(btn.querySelector('svg.lucide-x')).toBeNull();
+    expect(btn.className).toMatch(/(^| )bg-primary( |$)/);
+    expect(btn.className).toContain('p-2');
+    expect(btn.className).toContain('h-8');
   });
 
   it.each([false, true])('carregando (isMarked=%s): NÃO vira texto "Cargando…"; fica desabilitado, aria-busy e ícone girando; segundo clique é ignorado', async (isMarked) => {
