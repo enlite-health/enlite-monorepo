@@ -19,7 +19,7 @@
  * Sessão que não enxerga o paciente lê o serviço como ausente e o CASE devolve NULL — o mesmo que
  * `p.case_number` faz em `vacancyCaseNumberSql.ts`. O leitor tem de rodar numa sessão com identidade.
  *
- * As F5/F6 acrescentam `providers_needed` e a faixa etária em EFFECTIVE_FIELD_EXPRESSIONS; os leitores
+ * A F5 acrescentou `providers_needed` e a F6 acrescenta a faixa etária em EFFECTIVE_FIELD_EXPRESSIONS; os leitores
  * que usam `vacancyEffectiveColumnsSql` as recebem sem mudar.
  */
 
@@ -48,10 +48,15 @@ export const JOB_POSTING_COLUMNS = [
   'case_ordinal', 'title_before_en', 'status_before_baja',
 ] as const;
 
-/** Colunas que a vaga LÊ do serviço. Só `schedule` na F1; `providers_needed` (F5) e faixa (F6) entram aqui. */
+/** Colunas que a vaga LÊ do serviço: `schedule` (F1) e `providers_needed` (F5); a faixa (F6) entra aqui. */
 export const EFFECTIVE_FIELD_EXPRESSIONS: Record<string, (jp: string, eff: string) => string> = {
   schedule: (jp, eff) =>
     `CASE WHEN ${jp}.contracted_service_id IS NOT NULL THEN ${eff}.schedule ELSE ${jp}.schedule END`,
+  // `job_postings.providers_needed` é TEXT e `patient_contracted_services.providers_needed` é INT: os dois
+  // ramos do CASE precisam do MESMO tipo (Postgres recusa o contrário) e os leitores esperam TEXT
+  // (`~ '^[0-9]+$'`, `::INTEGER`). O cast mora AQUI, uma vez; leitor nenhum faz cast próprio.
+  providers_needed: (jp, eff) =>
+    `CASE WHEN ${jp}.contracted_service_id IS NOT NULL THEN ${eff}.providers_needed::text ELSE ${jp}.providers_needed END`,
 };
 
 /** `LEFT JOIN` do serviço contratado da vaga (join por PK: no máximo 1 linha, não multiplica a vaga). */
@@ -73,6 +78,14 @@ export function vacancyEffectiveScheduleSql(
   eff: string = VACANCY_EFFECTIVE_SERVICE_ALIAS,
 ): string {
   return EFFECTIVE_FIELD_EXPRESSIONS.schedule(jp, eff);
+}
+
+/** Expressão da quantidade de prestadores efetiva, sempre TEXT (sem alias de saída; o leitor escreve `AS providers_needed`). */
+export function vacancyEffectiveProvidersNeededSql(
+  jp: string = 'jp',
+  eff: string = VACANCY_EFFECTIVE_SERVICE_ALIAS,
+): string {
+  return EFFECTIVE_FIELD_EXPRESSIONS.providers_needed(jp, eff);
 }
 
 /**

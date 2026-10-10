@@ -11,9 +11,11 @@ import type { PoolClient } from 'pg';
 import {
   SOURCE_CHANGE_FIELDS,
   acknowledgeNotice,
-  captureScheduleBefore,
+  GUARDED_SERVICE_COLUMNS,
+  captureFieldBefore,
+  isClearedValue,
   isSourceChangeField,
-  recordScheduleChange,
+  recordFieldChange,
   recordSourceChange,
 } from '../vacancySourceChangeNotice';
 
@@ -35,43 +37,43 @@ describe('vacancySourceChangeNotice — conjunto fechado de campos', () => {
   });
 });
 
-describe('captureScheduleBefore', () => {
+describe('captureFieldBefore — schedule', () => {
   it('PATCH que não toca o horário (undefined) → não consulta nada', async () => {
     const c = cli();
-    expect(await captureScheduleBefore(c, 'svc-1', undefined)).toBeUndefined();
+    expect(await captureFieldBefore(c, 'svc-1', 'schedule', undefined)).toBeUndefined();
     expect(c.query).not.toHaveBeenCalled();
   });
 
   it('lê o horário atual travando a linha (FOR UPDATE)', async () => {
     const c = cli([{ schedule: [A] }]);
-    expect(await captureScheduleBefore(c, 'svc-1', [B])).toEqual([A]);
+    expect(await captureFieldBefore(c, 'svc-1', 'schedule', [B])).toEqual([A]);
     expect(c.query.mock.calls[0][0]).toMatch(/^SELECT schedule FROM patient_contracted_services WHERE id = \$1 FOR UPDATE$/);
     expect(c.query.mock.calls[0][1]).toEqual(['svc-1']);
   });
 
   it('serviço sem horário (NULL) ou inexistente (0 linhas) → null', async () => {
-    expect(await captureScheduleBefore(cli([{ schedule: null }]), 'svc-1', [A])).toBeNull();
-    expect(await captureScheduleBefore(cli([]), 'svc-1', [A])).toBeNull();
+    expect(await captureFieldBefore(cli([{ schedule: null }]), 'svc-1', 'schedule', [A])).toBeNull();
+    expect(await captureFieldBefore(cli([]), 'svc-1', 'schedule', [A])).toBeNull();
   });
 });
 
-describe('recordScheduleChange — só grava quando o valor NORMALIZADO mudou', () => {
+describe('recordFieldChange (schedule) — só grava quando o valor NORMALIZADO mudou', () => {
   it('horário mudou → grava o aviso de `schedule` para o serviço', async () => {
     const c = cli([{ job_posting_id: 'vac-1' }]);
-    await recordScheduleChange(c, 'svc-1', [A], [B]);
+    await recordFieldChange(c, 'svc-1', 'schedule', [A], [B]);
     expect(c.query).toHaveBeenCalledTimes(1);
     expect(c.query.mock.calls[0][1]).toEqual(['svc-1', 'schedule']);
   });
 
   it('valor igual → 0 gravações', async () => {
     const c = cli();
-    await recordScheduleChange(c, 'svc-1', [A], [{ ...A }]);
+    await recordFieldChange(c, 'svc-1', 'schedule', [A], [{ ...A }]);
     expect(c.query).not.toHaveBeenCalled();
   });
 
   it('mesmo conteúdo com os slots em OUTRA ordem (e chaves em outra ordem) → 0 gravações', async () => {
     const c = cli();
-    await recordScheduleChange(c, 'svc-1', [A, B], [
+    await recordFieldChange(c, 'svc-1', 'schedule', [A, B], [
       { endTime: '18:00', startTime: '14:00', dayOfWeek: 3 },
       { endTime: '12:00', startTime: '08:00', dayOfWeek: 1 },
     ]);
@@ -80,23 +82,68 @@ describe('recordScheduleChange — só grava quando o valor NORMALIZADO mudou', 
 
   it('PATCH sem horário (undefined) → 0 gravações', async () => {
     const c = cli();
-    await recordScheduleChange(c, 'svc-1', undefined, undefined);
+    await recordFieldChange(c, 'svc-1', 'schedule', undefined, undefined);
     expect(c.query).not.toHaveBeenCalled();
   });
 
   it('NULL → [] não é mudança (ambos "sem horário"); NULL → horário é', async () => {
     const c = cli();
-    await recordScheduleChange(c, 'svc-1', null, []);
+    await recordFieldChange(c, 'svc-1', 'schedule', null, []);
     expect(c.query).not.toHaveBeenCalled();
-    await recordScheduleChange(c, 'svc-1', null, [A]);
+    await recordFieldChange(c, 'svc-1', 'schedule', null, [A]);
     expect(c.query).toHaveBeenCalledTimes(1);
   });
 
   it('um slot a mais ou um horário diferente no mesmo dia → grava', async () => {
     const c = cli();
-    await recordScheduleChange(c, 'svc-1', [A], [A, B]);
-    await recordScheduleChange(c, 'svc-1', [A], [{ ...A, endTime: '12:30' }]);
+    await recordFieldChange(c, 'svc-1', 'schedule', [A], [A, B]);
+    await recordFieldChange(c, 'svc-1', 'schedule', [A], [{ ...A, endTime: '12:30' }]);
     expect(c.query).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('providers_needed (F5) — captura, decisão de gravar e o que conta como "apagar"', () => {
+  it('captura lê SÓ a coluna providers_needed do serviço, travando a linha; PATCH sem o campo não consulta', async () => {
+    const c = cli([{ providers_needed: 2 }]);
+    expect(await captureFieldBefore(c, 'svc-1', 'providers_needed', 3)).toBe(2);
+    expect(c.query.mock.calls[0][0]).toMatch(/^SELECT providers_needed FROM patient_contracted_services WHERE id = \$1 FOR UPDATE$/);
+    const d = cli();
+    expect(await captureFieldBefore(d, 'svc-1', 'providers_needed', undefined)).toBeUndefined();
+    expect(d.query).not.toHaveBeenCalled();
+  });
+
+  it('serviço sem quantidade (NULL) ou inexistente → null', async () => {
+    expect(await captureFieldBefore(cli([{ providers_needed: null }]), 'svc-1', 'providers_needed', 3)).toBeNull();
+    expect(await captureFieldBefore(cli([]), 'svc-1', 'providers_needed', 3)).toBeNull();
+  });
+
+  it('valor mudou (2 → 3, null → 2, 2 → null) → grava o aviso `providers_needed`; valor igual ou PATCH sem o campo → 0 gravações', async () => {
+    const c = cli([{ job_posting_id: 'vac-1' }]);
+    await recordFieldChange(c, 'svc-1', 'providers_needed', 2, 3);
+    await recordFieldChange(c, 'svc-1', 'providers_needed', null, 2);
+    await recordFieldChange(c, 'svc-1', 'providers_needed', 2, null);
+    expect(c.query).toHaveBeenCalledTimes(3);
+    expect(c.query.mock.calls.map((x) => x[1])).toEqual([['svc-1', 'providers_needed'], ['svc-1', 'providers_needed'], ['svc-1', 'providers_needed']]);
+    const z = cli();
+    await recordFieldChange(z, 'svc-1', 'providers_needed', 2, 2);
+    await recordFieldChange(z, 'svc-1', 'providers_needed', null, null);
+    await recordFieldChange(z, 'svc-1', 'providers_needed', undefined, undefined);
+    expect(z.query).not.toHaveBeenCalled();
+  });
+
+  it('isClearedValue: schedule null/[] e providers_needed null/0 apagam; ausente, horário e quantidade válidos não', () => {
+    expect(isClearedValue('schedule', null)).toBe(true);
+    expect(isClearedValue('schedule', [])).toBe(true);
+    expect(isClearedValue('schedule', [A])).toBe(false);
+    expect(isClearedValue('schedule', undefined)).toBe(false);
+    expect(isClearedValue('providers_needed', null)).toBe(true);
+    expect(isClearedValue('providers_needed', 0)).toBe(true);
+    expect(isClearedValue('providers_needed', 2)).toBe(false);
+    expect(isClearedValue('providers_needed', undefined)).toBe(false);
+  });
+
+  it('os campos vigiados são colunas reais do serviço, em conjunto fechado', () => {
+    expect({ ...GUARDED_SERVICE_COLUMNS }).toEqual({ schedule: 'schedule', providers_needed: 'providers_needed' });
   });
 });
 

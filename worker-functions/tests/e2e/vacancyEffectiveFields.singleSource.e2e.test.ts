@@ -12,7 +12,7 @@
  */
 import { Pool } from 'pg';
 import { randomUUID } from 'crypto';
-import { JOB_POSTING_COLUMNS } from '../../src/shared/sql/vacancyEffectiveFieldsSql';
+import { JOB_POSTING_COLUMNS, VACANCY_EFFECTIVE_SERVICE_ALIAS as SVC, vacancyEffectiveJoinSql, vacancyEffectiveProvidersNeededSql } from '../../src/shared/sql/vacancyEffectiveFieldsSql';
 
 const mockGeminiPrompts: string[] = [];
 const mockParserCalls: Array<{ vacancy: { schedule?: unknown } }> = [];
@@ -49,6 +49,7 @@ import { JobPostingARRepository } from '../../src/modules/matching/infrastructur
 import { PublicVacancyController } from '../../src/modules/matching/interfaces/controllers/PublicVacancyController';
 import { VacanciesController } from '../../src/modules/matching/interfaces/controllers/VacanciesController';
 import { RecruitmentAnalyticsController } from '../../src/modules/matching/interfaces/controllers/RecruitmentAnalyticsController';
+import { RecruitmentController } from '../../src/modules/matching/interfaces/controllers/RecruitmentController';
 import { VacancyCrudController } from '../../src/modules/matching/interfaces/controllers/VacancyCrudController';
 import { DataRealm } from '../../src/shared/domain/DataRealm';
 
@@ -109,7 +110,11 @@ const asRes = (r: unknown) => r as never;
 const mentions = (out: unknown, needle: string) => JSON.stringify(out).includes(needle);
 const probeJson = (out: unknown): Probe => ({ sawA: mentions(out, '08:00'), sawX: mentions(out, '14:15') });
 
-async function seed(opts: { draft?: boolean; status?: string; withService?: boolean; serviceSchedule?: unknown; vacancySchedule?: unknown } = {}): Promise<Ctx> {
+async function seed(opts: {
+  draft?: boolean; status?: string; withService?: boolean; serviceSchedule?: unknown; vacancySchedule?: unknown;
+  /** F5: quantidade no SERVIÇO (INT) e a cópia TEXT na vaga. Padrão 1 / '1' (comportamento da F1). */
+  serviceProviders?: number | null; vacancyProviders?: string | null;
+} = {}): Promise<Ctx> {
   const { draft = false, status = 'SEARCHING', withService = true } = opts;
   const patientId = randomUUID();
   const addressId = randomUUID();
@@ -129,19 +134,24 @@ async function seed(opts: { draft?: boolean; status?: string; withService?: bool
   if (withService) {
     await admin.query(
       `INSERT INTO patient_contracted_services (id, patient_id, service_code, country, created_by, updated_by, schedule, providers_needed, address_id)
-       VALUES ($1, $2, 'AT', 'AR', $3, $3, $4::jsonb, 1, $5)`,
-      [serviceId, patientId, TAG, opts.serviceSchedule === null ? null : JSON.stringify(opts.serviceSchedule ?? SCHEDULE_A), addressId],
+       VALUES ($1, $2, 'AT', 'AR', $3, $3, $4::jsonb, $6, $5)`,
+      [serviceId, patientId, TAG, opts.serviceSchedule === null ? null : JSON.stringify(opts.serviceSchedule ?? SCHEDULE_A), addressId,
+        opts.serviceProviders === undefined ? 1 : opts.serviceProviders],
     );
   }
   await admin.query(
     `INSERT INTO job_postings (id, title, case_number, patient_id, patient_address_id, contracted_service_id, schedule,
                                status, is_draft, required_professions, country, is_test, providers_needed, social_short_links)
-     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, ARRAY['AT'], 'AR', false, '1', '{"site":"https://enlite.test/x"}'::jsonb)`,
+     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, ARRAY['AT'], 'AR', false, $10, '{"site":"https://enlite.test/x"}'::jsonb)`,
     [vacancyId, `CASO ${caseNumber}`, caseNumber, patientId, addressId, withService ? serviceId : null,
-      JSON.stringify(opts.vacancySchedule === undefined ? SCHEDULE_A : opts.vacancySchedule), status, draft],
+      JSON.stringify(opts.vacancySchedule === undefined ? SCHEDULE_A : opts.vacancySchedule), status, draft,
+      opts.vacancyProviders === undefined ? '1' : opts.vacancyProviders],
   );
   return { patientId, addressId, serviceId, vacancyId, caseNumber };
 }
+
+const setServiceProviders = (ctx: Ctx, n: number | null) =>
+  admin.query(`UPDATE patient_contracted_services SET providers_needed = $2 WHERE id = $1`, [ctx.serviceId, n]);
 
 const setServiceSchedule = (ctx: Ctx, schedule: unknown) =>
   admin.query(`UPDATE patient_contracted_services SET schedule = $2::jsonb WHERE id = $1`, [ctx.serviceId, schedule === null ? null : JSON.stringify(schedule)]);
@@ -333,6 +343,110 @@ const LEITORES: Leitor[] = [
   },
 ];
 
+
+/**
+ * F5 (`providers_needed`): a quantidade da vaga com serviço é lida do SERVIÇO (INT) e devolvida como TEXT (o tipo da
+ * coluna da vaga), por todo leitor. Estado inicial: serviço = 2 e a cópia stale da vaga = '2'; o teste faz
+ * `UPDATE patient_contracted_services SET providers_needed = 7` SEM tocar a vaga e afirma que o leitor passa a mostrar 7.
+ */
+interface LeitorQtd {
+  nome: string;
+  seed?: () => Promise<Ctx>;
+  /** Devolve o que o leitor mostra como quantidade ('2' | '7' | outro), ou null se não mostra. */
+  probe: (ctx: Ctx) => Promise<string | null>;
+}
+
+const promptLine = (prompts: string[], prefix: string): string | null => {
+  const l = prompts.join('\n').split('\n').find((x) => x.startsWith(prefix));
+  return l ? l.slice(prefix.length).trim() : null;
+};
+
+const LEITORES_QTD: LeitorQtd[] = [
+  {
+    nome: 'TalentumDescriptionService.generateDescriptionPreview (Gemini = dublê)',
+    probe: async (ctx) => {
+      mockGeminiPrompts.length = 0;
+      await new TalentumDescriptionService().generateDescriptionPreview(ctx.vacancyId);
+      return promptLine(mockGeminiPrompts, '- Cantidad de prestadores:');
+    },
+  },
+  {
+    nome: 'VacancyTalentumController.generateAIContent (payload ao parser = dublê)',
+    probe: async (ctx) => {
+      mockParserCalls.length = 0;
+      const res = mockRes();
+      await new VacancyTalentumController().generateAIContent(asReq({ params: { id: ctx.vacancyId } }), asRes(res));
+      expect(res.statusCode).toBe(200);
+      expect(mockParserCalls).toHaveLength(1);
+      const v = (mockParserCalls[0].vacancy as { providers_needed?: unknown }).providers_needed;
+      return v == null ? null : String(v);
+    },
+  },
+  {
+    nome: 'GetArmedCasesUseCase.execute (serviço NULL = SEM_CONFIG; com valor = POR_ARMAR)',
+    probe: async () => {
+      const r = await new GetArmedCasesUseCase(identityPool).execute(['AR']);
+      if (r.porArmar === 1 && r.semConfig === 0) return '2';
+      if (r.porArmar === 0 && r.semConfig === 1) return '7';
+      return `porArmar=${r.porArmar} semConfig=${r.semConfig}`;
+    },
+  },
+  {
+    nome: 'RecruitmentController.getClickUpCases',
+    probe: async (ctx) => {
+      const res = mockRes();
+      await new RecruitmentController().getClickUpCases(asReq({ query: { page: '1', limit: '100' } }), asRes(res));
+      expect(res.statusCode).toBe(200);
+      const rows = (res.body as { data: Array<{ id: string; providers_needed: unknown }> }).data;
+      const row = rows.find((r) => r.id === ctx.vacancyId);
+      return row ? String(row.providers_needed) : null;
+    },
+  },
+  {
+    nome: 'VacanciesController.listVacancies (faltantes = quantidade − preenchidas)',
+    probe: async (ctx) => {
+      const res = mockRes();
+      await new VacanciesController(diagnosisStub).listVacancies(asReq({ query: { limit: '50', offset: '0' } }), asRes(res));
+      expect(res.statusCode).toBe(200);
+      const rows = ((res.body as { data: unknown }).data ?? []) as Array<{ id: string; faltantes: unknown }>;
+      const row = rows.find((r) => r.id === ctx.vacancyId);
+      // a lista devolve `faltantes` com zeros à esquerda (ordenação lexicográfica: '02'); Number() tira o preenchimento
+      return row ? String(Number(row.faltantes)) : null;
+    },
+  },
+  {
+    nome: 'VacanciesController.getVacancyById (GET admin)',
+    probe: async (ctx) => {
+      const res = mockRes();
+      await new VacanciesController(diagnosisStub).getVacancyById(asReq({ params: { id: ctx.vacancyId } }), asRes(res));
+      expect(res.statusCode).toBe(200);
+      const v = (res.body as { data: { providers_needed: unknown } }).data.providers_needed;
+      return v == null ? null : String(v);
+    },
+  },
+  {
+    nome: 'RecruitmentAnalyticsController.getCaseAnalysis',
+    probe: async (ctx) => {
+      const res = mockRes();
+      await new RecruitmentAnalyticsController().getCaseAnalysis(asReq({ params: { caseNumber: String(ctx.caseNumber) } }), asRes(res));
+      expect(res.statusCode).toBe(200);
+      const v = (res.body as { data: { caseInfo: { providers_needed: unknown } } }).data.caseInfo.providers_needed;
+      return v == null ? null : String(v);
+    },
+  },
+  {
+    nome: 'VacancyCrudController.updateVacancy (resposta do PUT, client cru + leitura efetiva)',
+    seed: () => seed({ draft: true, serviceProviders: 2, vacancyProviders: '2' }),
+    probe: async (ctx) => {
+      const res = mockRes();
+      await new VacancyCrudController().updateVacancy(asReq({ params: { id: ctx.vacancyId }, body: { daily_obs: `obs ${randomUUID()}` }, user: { uid: UID } }), asRes(res));
+      expect(res.statusCode).toBe(200);
+      const v = (res.body as { data: { providers_needed: unknown } }).data.providers_needed;
+      return v == null ? null : String(v);
+    },
+  },
+];
+
 beforeAll(async () => {
   admin = new Pool({ connectionString: ADMIN_URL });
   identityPool = new Pool({ connectionString: ADMIN_URL, options: runtimeOptions(`-c app.user_country=AR -c app.user_uid=${UID}`), max: 4 });
@@ -473,6 +587,72 @@ describe('vacancyEffectiveFields.singleSource — o leitor lê o horário do SER
       ).rejects.toThrow(/rls_session_without_identity/);
       const soVaga = await barePool.query(`SELECT id FROM job_postings WHERE id = $1`, [ctx.vacancyId]);
       expect(soVaga.rowCount).toBe(1); // job_postings sozinho passa, como medido na stage
+    });
+  });
+});
+
+describe('vacancyEffectiveFields.singleSource — F5: o leitor lê a QUANTIDADE do SERVIÇO (app_runtime, banco real)', () => {
+  it('são 8 leitores de quantidade cobertos', () => {
+    expect(LEITORES_QTD).toHaveLength(8);
+  });
+
+  describe.each(LEITORES_QTD.map((l) => [l.nome, l] as const))('%s', (_nome, leitor) => {
+    it('UPDATE em pcs.providers_needed (vaga intocada) -> a saída passa de 2 para 7', async () => {
+      const ctx = await (leitor.seed ?? (() => seed({ serviceProviders: 2, vacancyProviders: '2' })))();
+      const antes = await leitor.probe(ctx);
+      expect(antes).toBe('2'); // controle positivo: o instrumento enxerga o valor inicial
+      await setServiceProviders(ctx, leitor.nome.startsWith('GetArmedCasesUseCase') ? null : 7);
+      const copia = await admin.query(`SELECT providers_needed FROM job_postings WHERE id = $1`, [ctx.vacancyId]);
+      expect(copia.rows[0].providers_needed).toBe('2'); // a cópia da vaga continua '2'
+      expect(await leitor.probe(ctx)).toBe('7');
+    });
+  });
+
+  describe('casos adicionais', () => {
+    it('vaga MANUAL (sem serviço) devolve o próprio valor da vaga', async () => {
+      const ctx = await seed({ withService: false, vacancyProviders: '5' });
+      const res = mockRes();
+      await new VacanciesController(diagnosisStub).getVacancyById(asReq({ params: { id: ctx.vacancyId } }), asRes(res));
+      expect((res.body as { data: { providers_needed: unknown } }).data.providers_needed).toBe('5');
+    });
+
+    it('vaga COM serviço e cópia NULL (estado pós-F5) devolve a quantidade do serviço, como TEXT', async () => {
+      const ctx = await seed({ serviceProviders: 4, vacancyProviders: null });
+      const res = mockRes();
+      await new VacanciesController(diagnosisStub).getVacancyById(asReq({ params: { id: ctx.vacancyId } }), asRes(res));
+      expect((res.body as { data: { providers_needed: unknown } }).data.providers_needed).toBe('4');
+    });
+
+    it('serviço com quantidade NULL e cópia preenchida -> o leitor devolve NULL, NÃO a cópia (nunca COALESCE)', async () => {
+      const ctx = await seed({ serviceProviders: null, vacancyProviders: '9' });
+      const res = mockRes();
+      await new VacanciesController(diagnosisStub).getVacancyById(asReq({ params: { id: ctx.vacancyId } }), asRes(res));
+      expect((res.body as { data: { providers_needed: unknown } }).data.providers_needed ?? null).toBeNull();
+    });
+
+    it('tipos: a expressão efetiva é TEXT nos dois ramos, e comparar vaga × serviço pela peça NÃO dá `text = integer`', async () => {
+      const comServico = await seed({ serviceProviders: 3, vacancyProviders: null });
+      const manual = await seed({ withService: false, vacancyProviders: '5' });
+      const expr = vacancyEffectiveProvidersNeededSql('jp');
+      const tipos = await identityPool.query<{ id: string; tipo: string; valor: string | null }>(
+        `SELECT jp.id, pg_typeof(${expr})::text AS tipo, ${expr} AS valor
+           FROM job_postings jp ${vacancyEffectiveJoinSql('jp')} WHERE jp.id = ANY($1::uuid[])`,
+        [[comServico.vacancyId, manual.vacancyId]],
+      );
+      const byId = new Map(tipos.rows.map((r) => [r.id, r]));
+      expect(byId.get(comServico.vacancyId)).toMatchObject({ tipo: 'text', valor: '3' });
+      expect(byId.get(manual.vacancyId)).toMatchObject({ tipo: 'text', valor: '5' });
+      // comparação vaga × serviço: o efetivo (TEXT) contra o INT do serviço com cast explícito do lado do serviço
+      const cmp = await identityPool.query<{ igual: boolean }>(
+        `SELECT (${expr}) = ${SVC}.providers_needed::text AS igual
+           FROM job_postings jp ${vacancyEffectiveJoinSql('jp')} WHERE jp.id = $1`,
+        [comServico.vacancyId],
+      );
+      expect(cmp.rows[0].igual).toBe(true);
+      // o erro de produção (text = integer) acontece SEM a peça: comparar a coluna crua com o INT do serviço
+      await expect(
+        identityPool.query(`SELECT jp.providers_needed = ${SVC}.providers_needed FROM job_postings jp ${vacancyEffectiveJoinSql('jp')} WHERE jp.id = $1`, [comServico.vacancyId]),
+      ).rejects.toThrow(/operator does not exist: text = integer/);
     });
   });
 });

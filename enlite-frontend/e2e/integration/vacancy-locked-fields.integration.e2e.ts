@@ -112,6 +112,11 @@ test.describe('vacancy-locked-fields — fase 1 (completar-vacante-em-rascunho) 
     // devolve o horário do SERVIÇO (leitura pela peça de campos efetivos, F1).
     expect(runSQL(`SELECT (schedule IS NULL)::text FROM job_postings WHERE id='${vacancyId}'`)).toBe('true');
     expect(body.schedule).toEqual(EXPECTED_VACANCY_SCHEDULE);
+
+    // F5: idem para a quantidade de prestadores — o foguete NÃO copia (coluna NULL) e o GET devolve a do SERVIÇO
+    // (providersNeeded: 1 no POST do beforeAll), como texto, o tipo da coluna da vaga.
+    expect(runSQL(`SELECT (providers_needed IS NULL)::text FROM job_postings WHERE id='${vacancyId}'`)).toBe('true');
+    expect(String(body.providers_needed)).toBe('1');
   });
 
   test('PUT em campo travado (schedule) → 422 com locked_fields e o banco não muda; PUT em campo livre (required_professions) → 200 e persiste', async ({ request }) => {

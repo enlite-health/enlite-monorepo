@@ -18,7 +18,7 @@ import {
 import type { AuditActor } from '@modules/integration';
 import { getVacancyTalentumStatus } from './vacancyTalentumStatusHelper';
 import { normalizePrescreeningResponseType } from '@shared/utils/normalizePrescreeningResponseType';
-import { vacancyEffectiveJoinSql, vacancyEffectiveScheduleSql } from '@shared/sql/vacancyEffectiveFieldsSql';
+import { vacancyEffectiveJoinSql, vacancyEffectiveProvidersNeededSql, vacancyEffectiveScheduleSql } from '@shared/sql/vacancyEffectiveFieldsSql';
 
 /**
  * VacancyTalentumController
@@ -260,7 +260,7 @@ export class VacancyTalentumController {
         `SELECT
            jp.id, jp.title, jp.case_number, jp.required_professions, jp.required_sex,
            jp.age_range_min, jp.age_range_max, jp.required_experience, jp.worker_attributes,
-           ${vacancyEffectiveScheduleSql('jp')} AS schedule, jp.work_schedule, jp.providers_needed, jp.salary_text,
+           ${vacancyEffectiveScheduleSql('jp')} AS schedule, jp.work_schedule, ${vacancyEffectiveProvidersNeededSql('jp')} AS providers_needed, jp.salary_text,
            jp.payment_day, jp.daily_obs,
            pa.address_formatted, pa.city, pa.state,
            p.diagnosis, p.dependency_level, p.service_type

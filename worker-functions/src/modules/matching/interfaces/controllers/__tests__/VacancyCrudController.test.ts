@@ -324,7 +324,7 @@ describe('VacancyCrudController', () => {
         .mockResolvedValueOnce({ rows: [{ id: 'p-1' }] })
         .mockResolvedValueOnce({ rows: [{ vn: '13' }] })
         .mockResolvedValueOnce({ rows: [{ id: 'jp-domain-fail', status: 'SEARCHING', is_test: false }] })
-        .mockResolvedValueOnce({ rows: [{ schedule: null }] }) // leitura do horário efetivo (withEffectiveSchedule)
+        .mockResolvedValueOnce({ rows: [{ schedule: null, providers_needed: null }] }) // leitura de horário e quantidade efetivos (withEffectiveFields)
         .mockRejectedValueOnce(new Error('domain_events insert failed')); // dentro do setImmediate
 
       const req = makeReq({ body: { patient_id: 'p-1', case_number: 230 } });
@@ -834,7 +834,7 @@ describe('VacancyCrudController', () => {
         .mockResolvedValueOnce({ rows: [{ id: 'p-1' }] })
         .mockResolvedValueOnce({ rows: [{ vn: '32' }] })
         .mockResolvedValueOnce({ rows: [{ id: 'jp-domain-raw', status: 'SEARCHING', is_test: false }] })
-        .mockResolvedValueOnce({ rows: [{ schedule: null }] }) // leitura do horário efetivo (withEffectiveSchedule)
+        .mockResolvedValueOnce({ rows: [{ schedule: null, providers_needed: null }] }) // leitura de horário e quantidade efetivos (withEffectiveFields)
         .mockRejectedValueOnce('domain event raw failure');
       mockClientQuery.mockResolvedValue({ rows: [] });
 

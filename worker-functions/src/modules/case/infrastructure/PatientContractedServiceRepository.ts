@@ -12,7 +12,12 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { withActorContext } from '@shared/database/actorContext';
 import { DeviceTypeUnknownError } from './PatientDeviceTypeRepository';
 import { fetchLiveVacancies, liveVacancySql, type LiveVacancy } from './liveVacancyOfService';
-import { captureScheduleBefore, recordScheduleChange } from './vacancySourceChangeNotice';
+import {
+  captureFieldBefore,
+  isClearedValue,
+  recordFieldChange,
+  type GuardedServiceField,
+} from './vacancySourceChangeNotice';
 import {
   ContractedServiceProviderRepository,
   type ContractedServiceProviderDetail,
@@ -41,12 +46,12 @@ export class AddressNotOfPatientError extends Error {
 }
 
 /**
- * F2 (vaga-le-do-servico-contratado): o horário do serviço é a ÚNICA fonte do horário da vaga viva —
- * apagá-lo (`null`/`[]`) com vaga viva deixaria a vaga sem horário. O controller responde 422.
+ * F2/F5 (vaga-le-do-servico-contratado): o horário e a quantidade do serviço são a ÚNICA fonte desses campos na vaga viva —
+ * apagá-los (`null`/`[]`; quantidade `null`/`0`) com vaga viva deixaria a vaga sem eles. O controller responde 422.
  */
 export class ServiceFieldRequiredByLiveVacancyError extends Error {
   readonly code = 'SERVICE_FIELD_REQUIRED_BY_LIVE_VACANCY';
-  constructor(readonly field: 'schedule', readonly vacancyIds: string[]) {
+  constructor(readonly field: GuardedServiceField, readonly vacancyIds: string[]) {
     super(`service ${field} cannot be cleared while a live vacancy reads it`);
     this.name = 'ServiceFieldRequiredByLiveVacancyError';
   }
@@ -119,6 +124,12 @@ export interface CreateContractedServiceInput extends ContractedServiceWriteInpu
   patientId: string;
   serviceCode: string;
 }
+
+/** Campo vigiado de `GUARDED_SERVICE_COLUMNS` → chave do corpo do PATCH. */
+const GUARDED_FIELDS: ReadonlyArray<readonly [GuardedServiceField, 'schedule' | 'providersNeeded']> = [
+  ['schedule', 'schedule'],
+  ['providers_needed', 'providersNeeded'],
+];
 
 const WRITABLE_COLUMNS: Array<[keyof ContractedServiceWriteInput, string]> = [
   ['serviceCode', 'service_code'],
@@ -335,12 +346,12 @@ export class PatientContractedServiceRepository {
   }
 
   /**
-   * F2: recusa APAGAR o horário do serviço (`null`/`[]`) enquanto há vaga viva ("viva" = não apagada e
+   * F2/F5: recusa APAGAR um campo vigiado do serviço (`GUARDED_SERVICE_COLUMNS`) enquanto há vaga viva ("viva" = não apagada e
    * status fora de `DE_BAJA`/`CLOSED`). Trava o serviço e depois as vagas (`FOR UPDATE`) na MESMA transação,
    * na ordem da ativação (serviço → vagas): ativar×apagar não deixa vaga viva sem horário — quem chega
    * depois enxerga o commit do outro. Client = `withActorContext` (com identidade), nunca `connect()` cru.
    */
-  private async refuseClearWhenLiveVacancy(cli: PoolClient, serviceId: string): Promise<void> {
+  private async refuseClearWhenLiveVacancy(cli: PoolClient, serviceId: string, field: GuardedServiceField): Promise<void> {
     await cli.query('SELECT id FROM patient_contracted_services WHERE id = $1 FOR UPDATE', [serviceId]);
     const live = await cli.query<{ id: string }>(
       `SELECT id FROM job_postings
@@ -349,7 +360,7 @@ export class PatientContractedServiceRepository {
       [serviceId],
     );
     if ((live.rowCount ?? live.rows.length) > 0) {
-      throw new ServiceFieldRequiredByLiveVacancyError('schedule', live.rows.map((r) => r.id));
+      throw new ServiceFieldRequiredByLiveVacancyError(field, live.rows.map((r) => r.id));
     }
   }
 
@@ -363,11 +374,13 @@ export class PatientContractedServiceRepository {
     try {
       // Mesmo molde do `create`: transação COM contexto de país (D95), nunca client cru.
       const row = await withActorContext(this.pool, async (cli) => {
-        if (patch.schedule !== undefined && (patch.schedule === null || patch.schedule.length === 0)) {
-          await this.refuseClearWhenLiveVacancy(cli, serviceId);
+        // F2/F5: apagar um campo que a vaga viva lê → recusa (um campo por vez, na ordem de GUARDED_FIELDS).
+        for (const [field, key] of GUARDED_FIELDS) {
+          if (isClearedValue(field, patch[key])) await this.refuseClearWhenLiveVacancy(cli, serviceId, field);
         }
-        // F3: o valor de ANTES é lido (e travado) na mesma transação do UPDATE; `undefined` quando o PATCH não toca o horário.
-        const scheduleBefore = await captureScheduleBefore(cli, serviceId, patch.schedule);
+        // F3/F5: o valor de ANTES é lido (e travado) na mesma transação do UPDATE; `undefined` quando o PATCH não toca o campo.
+        const before = new Map<GuardedServiceField, unknown>();
+        for (const [field, key] of GUARDED_FIELDS) before.set(field, await captureFieldBefore(cli, serviceId, field, patch[key]));
         const sets: string[] = [];
         const params: unknown[] = [serviceId];
         const push = (col: string, value: unknown): void => {
@@ -393,8 +406,8 @@ export class PatientContractedServiceRepository {
           // Linha inexistente → ROLLBACK (o `replaceDevices` acima pode já ter escrito) e null.
           if ((res.rowCount ?? 0) === 0) throw SERVICE_ROW_MISSING;
         }
-        // F3: horário NORMALIZADO mudou + vaga publicada viva → aviso (mesma transação; falha aqui desfaz o UPDATE).
-        await recordScheduleChange(cli, serviceId, scheduleBefore, patch.schedule);
+        // F3/F5: valor mudou + vaga publicada viva → aviso (mesma transação; falha aqui desfaz o UPDATE).
+        for (const [field, key] of GUARDED_FIELDS) await recordFieldChange(cli, serviceId, field, before.get(field), patch[key]);
         await this.applyVacancyBajaGatilho(cli, serviceId, patch.active);
         const sel = await cli.query<ServiceRow>('SELECT * FROM patient_contracted_services WHERE id = $1', [serviceId]);
         return sel.rows[0] ?? null;

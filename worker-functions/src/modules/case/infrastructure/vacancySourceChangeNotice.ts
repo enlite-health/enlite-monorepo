@@ -5,8 +5,8 @@
  * A tabela NÃO guarda valor antigo nem novo: o dado tem dona (o serviço) e copiá-lo seria outra fonte.
  * Log: só `{ jobPostingId, field }` — nunca horário, nunca dado de paciente.
  *
- * `recordSourceChange` é o ponto reutilizável: as fases 5 (`providers_needed`) e 6 (`age_range`) chamam o MESMO
- * com o `field` delas. Nesta fase só `schedule` dispara (via `recordScheduleChange`).
+ * `recordSourceChange` é o ponto reutilizável: a F5 (`providers_needed`) já chama o MESMO, via
+ * `recordFieldChange`; a F6 (`age_range`) fará igual.
  */
 import type { Pool, PoolClient } from 'pg';
 import { logger } from '@shared/logging';
@@ -36,28 +36,55 @@ function canonicalSchedule(value: unknown): string {
 }
 
 /**
- * Lê (e trava, `FOR UPDATE`) o horário ATUAL do serviço, na transação do PATCH. `undefined` quando o PATCH não
- * toca o horário (nada a ler). Serviço inexistente → `null` (o UPDATE seguinte falha e a transação desfaz).
+ * Campos do serviço que a vaga lê e que o PATCH vigia (recusa de apagar + aviso). O valor é a COLUNA de
+ * `patient_contracted_services` (conjunto fechado: interpolada no SQL, nunca vinda de fora). A faixa etária (F6) entra aqui.
  */
-export async function captureScheduleBefore(cli: PoolClient, serviceId: string, patched: unknown): Promise<unknown> {
-  if (patched === undefined) return undefined;
-  const { rows } = await cli.query<{ schedule: unknown }>(
-    'SELECT schedule FROM patient_contracted_services WHERE id = $1 FOR UPDATE',
-    [serviceId],
-  );
-  return rows[0]?.schedule ?? null;
+export const GUARDED_SERVICE_COLUMNS = { schedule: 'schedule', providers_needed: 'providers_needed' } as const;
+export type GuardedServiceField = keyof typeof GUARDED_SERVICE_COLUMNS;
+
+/** O PATCH está APAGANDO o campo? `undefined` (chave ausente) não é apagar. `schedule`: `null`/`[]`; `providers_needed`: `null`/`0`. */
+export function isClearedValue(field: GuardedServiceField, patched: unknown): boolean {
+  if (patched === undefined) return false;
+  if (field === 'schedule') return patched === null || (patched as unknown[]).length === 0;
+  return patched === null || patched === 0;
 }
 
-/** Grava o aviso de `schedule` se (e só se) o horário normalizado mudou. No-op quando o PATCH não toca o horário. */
-export async function recordScheduleChange(
+/**
+ * Lê (e trava, `FOR UPDATE`) o valor ATUAL do campo no serviço, na transação do PATCH. `undefined` quando o PATCH não
+ * toca o campo (nada a ler). Serviço inexistente → `null` (o UPDATE seguinte falha e a transação desfaz).
+ */
+export async function captureFieldBefore(
   cli: PoolClient,
   serviceId: string,
+  field: GuardedServiceField,
+  patched: unknown,
+): Promise<unknown> {
+  if (patched === undefined) return undefined;
+  const col = GUARDED_SERVICE_COLUMNS[field];
+  const { rows } = await cli.query<Record<string, unknown>>(
+    `SELECT ${col} FROM patient_contracted_services WHERE id = $1 FOR UPDATE`,
+    [serviceId],
+  );
+  return rows[0]?.[col] ?? null;
+}
+
+/** Mudou de verdade? `schedule` compara a forma normalizada; `providers_needed` compara o número (`null` ≠ 3). */
+function fieldChanged(field: GuardedServiceField, before: unknown, patched: unknown): boolean {
+  if (field === 'schedule') return canonicalSchedule(before) !== canonicalSchedule(patched);
+  return before !== patched;
+}
+
+/** Grava o aviso do campo se (e só se) o valor mudou. No-op quando o PATCH não toca o campo. */
+export async function recordFieldChange(
+  cli: PoolClient,
+  serviceId: string,
+  field: GuardedServiceField,
   before: unknown,
   patched: unknown,
 ): Promise<void> {
   if (patched === undefined) return;
-  if (canonicalSchedule(before) === canonicalSchedule(patched)) return;
-  await recordSourceChange(cli, serviceId, 'schedule');
+  if (!fieldChanged(field, before, patched)) return;
+  await recordSourceChange(cli, serviceId, field);
 }
 
 /**

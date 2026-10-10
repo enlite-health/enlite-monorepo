@@ -10,6 +10,7 @@ import { captureEntityDiff } from '@shared/audit/captureEntityDiff';
 import type { EntityFieldDiff } from '@shared/audit/types';
 import {
   vacancyEffectiveJoinSql,
+  vacancyEffectiveProvidersNeededSql,
   vacancyEffectiveScheduleSql,
   vacancyRawColumnsSql,
 } from '@shared/sql/vacancyEffectiveFieldsSql';
@@ -270,7 +271,7 @@ export function buildInsertQuery(): string {
   // se ainda colidir. Callers tratam 23505 com retry (ver isCaseOrdinalConflict/
   // retryOnCaseOrdinalConflict abaixo).
   // RETURNING com lista explícita e SEM join: este INSERT roda também em client cru (sem identidade). O horário
-  // efetivo da resposta é lido depois, por `withEffectiveSchedule`.
+  // efetivo da resposta é lido depois, por `withEffectiveFields`.
   return `
     INSERT INTO job_postings (
       vacancy_number, case_number, title, patient_id,
@@ -314,18 +315,22 @@ export function buildInsertQuery(): string {
 }
 
 /**
- * Troca o `schedule` CRU da linha escrita pelo efetivo (o do serviço, se a vaga tem serviço). Lê por `db.query`
- * — o proxy do pool desvia para o client fixado da request, COM identidade — depois do COMMIT, nunca no client
- * cru da transação. Vaga que a sessão não enxerga mais (ou sem linha) devolve a linha como veio.
+ * Troca os campos CRUS da linha escrita pelos EFETIVOS (`schedule` e `providers_needed`: os do serviço, se a vaga tem
+ * serviço). Lê por `db.query` — o proxy do pool desvia para o client fixado da request, COM identidade — depois do
+ * COMMIT, nunca no client cru da transação. Vaga que a sessão não enxerga mais (ou sem linha) devolve a linha como veio.
+ * Campo novo efetivo (F6: faixa etária) entra aqui, pela peça — nunca num helper paralelo.
  */
-export async function withEffectiveSchedule<T extends Record<string, unknown>>(db: Pool, row: T): Promise<T> {
-  const r = await db.query<{ schedule: unknown }>(
-    `SELECT ${vacancyEffectiveScheduleSql('jp')} AS schedule
+export async function withEffectiveFields<T extends Record<string, unknown>>(db: Pool, row: T): Promise<T> {
+  const r = await db.query<{ schedule: unknown; providers_needed: string | null }>(
+    `SELECT ${vacancyEffectiveScheduleSql('jp')} AS schedule,
+            ${vacancyEffectiveProvidersNeededSql('jp')} AS providers_needed
        FROM job_postings jp ${vacancyEffectiveJoinSql('jp')}
       WHERE jp.id = $1`,
     [row.id],
   );
-  return r.rows.length === 0 ? row : { ...row, schedule: r.rows[0].schedule };
+  return r.rows.length === 0
+    ? row
+    : { ...row, schedule: r.rows[0].schedule, providers_needed: r.rows[0].providers_needed };
 }
 
 // ─── case_ordinal conflict retry (spec 027 Fase 5) ───────────────────────────
@@ -426,7 +431,9 @@ export function buildInsertParams(p: VacancyInsertParams): unknown[] {
     // Vaga manual (sem serviço) segue gravando o próprio horário.
     locked.contracted_service_id == null && locked.schedule ? JSON.stringify(locked.schedule) : null,
     p.work_schedule ?? null,
-    locked.providers_needed,
+    // F5: idem para a quantidade de prestadores — vaga COM serviço grava NULL (o valor mora em
+    // `patient_contracted_services.providers_needed`); vaga manual segue gravando o próprio valor.
+    locked.contracted_service_id == null ? locked.providers_needed : null,
     p.salary_text ?? 'A convenir',
     p.payment_day ?? null,
     p.daily_obs ?? null,

@@ -11,7 +11,7 @@ import {
 import { LIVE_JOB_POSTING_SQL } from '../domain/openJobStatuses';
 import { countryPredicateSql } from '@shared/database/countryScopeSql';
 import { COUNTRY_CODES, type CountryCode } from '@shared/domain/countryCodes';
-import { vacancyEffectiveJoinSql, vacancyEffectiveScheduleSql } from '@shared/sql/vacancyEffectiveFieldsSql';
+import { vacancyEffectiveJoinSql, vacancyEffectiveProvidersNeededSql, vacancyEffectiveScheduleSql } from '@shared/sql/vacancyEffectiveFieldsSql';
 
 /** Linha por job_posting (não-draft, não deletado) com contagens de seleção. */
 interface JobPostingArmedRow {
@@ -82,7 +82,7 @@ export class GetArmedCasesUseCase {
     const { rows } = await this.db.query<JobPostingArmedRow>(
       `SELECT
          jp.id,
-         jp.providers_needed,
+         ${vacancyEffectiveProvidersNeededSql('jp')} AS providers_needed,
          ${vacancyEffectiveScheduleSql('jp')} AS schedule,
          COALESCE(s.sel_total, 0)::int      AS sel_total,
          COALESCE(s.sel_with_role, 0)::int  AS sel_with_role,

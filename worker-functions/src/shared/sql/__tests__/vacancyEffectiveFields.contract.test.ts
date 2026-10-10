@@ -6,7 +6,7 @@
  * `schedule` sem alias numa query sobre `job_postings`, ou (c) faz `SELECT *`/`<alias>.*`/`RETURNING *` em `job_postings`
  * (a lista de colunas vive na peça).
  *
- * Estruturado por CAMPO: `providers_needed` (F5) e `age_range_min|max` (F6) entram em PROTECTED_FIELDS depois.
+ * Estruturado por CAMPO: `schedule` (F1), `providers_needed` (F5); `age_range_min|max` (F6) entram em PROTECTED_FIELDS depois.
  *
  * LIMITE HONESTO: é regex sobre texto. NÃO vê SQL montado dinamicamente (ex.: `SET ${key} = $1` do PUT, coluna vinda
  * de variável) nem alias passado entre arquivos. Quem cobre isso é o teste por EFEITO (`singleSource`: muda o serviço,
@@ -19,6 +19,7 @@ import {
   JOB_POSTING_COLUMNS,
   vacancyEffectiveColumnsSql,
   vacancyEffectiveJoinSql,
+  vacancyEffectiveProvidersNeededSql,
   vacancyEffectiveScheduleSql,
   vacancyRawColumnsSql,
 } from '../vacancyEffectiveFieldsSql';
@@ -27,7 +28,7 @@ const ROOT = path.resolve(__dirname, '../../../..'); // worker-functions/
 const PIECE = 'src/shared/sql/vacancyEffectiveFieldsSql.ts';
 
 /** Campos da vaga que passam a ser lidos do serviço. Acrescentar aqui na F5/F6. */
-const PROTECTED_FIELDS = ['schedule'];
+const PROTECTED_FIELDS = ['schedule', 'providers_needed'];
 
 type RuleId = `${string}:alias` | `${string}:bare` | 'star' | 'raw-export';
 
@@ -42,8 +43,12 @@ const ALLOWLIST: Record<string, { rules: RuleId[]; motivo: string }> = {
     motivo: 'LEITOR 13 em client cru (connect() sem identidade): SELECT/RETURNING com lista explícita SEM join, só para auditar o que foi gravado; a resposta traz o efetivo via withEffectiveSchedule.',
   },
   'src/modules/matching/interfaces/controllers/vacancyCrudHelpers.ts': {
-    rules: ['schedule:bare', 'raw-export'],
-    motivo: 'ESCRITOR (F2): o INSERT único ainda NOMEIA a coluna `schedule` (vaga manual, sem serviço), mas `buildInsertParams` grava NULL quando há `contracted_service_id`; o RETURNING crua serve ao client cru (leitor 13), a resposta traz o efetivo via withEffectiveSchedule.',
+    rules: ['schedule:bare', 'providers_needed:bare', 'raw-export'],
+    motivo: 'ESCRITOR (F2/F5): o INSERT único ainda NOMEIA as colunas `schedule` e `providers_needed` (vaga manual, sem serviço), mas `buildInsertParams` grava NULL nas duas quando há `contracted_service_id`; o RETURNING crua serve ao client cru (leitor 13), a resposta traz o efetivo via withEffectiveSchedule.',
+  },
+  'src/modules/matching/infrastructure/JobPostingARRepository.ts': {
+    rules: ['providers_needed:bare'],
+    motivo: 'ESCRITOR (F5, código sem chamador vivo): upsertFromClickUp só é chamado por scripts/import-vacancies-from-clickup.ts (manual, ClickUp depreciado), que NUNCA passa `providersNeeded` (grava NULL); escreve, não lê.',
   },
   'scripts/enrich-vacancies-helpers.ts': {
     rules: ['schedule:bare'],
@@ -161,6 +166,11 @@ describe('vacancyEffectiveFields — contrato: ninguém lê o horário cru da va
         ['`SELECT jsonb_array_elements(jp9.schedule) FROM x`', 'schedule:alias'],
         ['`SELECT schedule FROM job_postings WHERE id = $1`', 'schedule:bare'],
         ["'SELECT schedule FROM job_postings'", 'schedule:bare'],
+        ['`SELECT jp.providers_needed FROM job_postings jp WHERE jp.id = $1`', 'providers_needed:alias'],
+        ['`SELECT j2.providers_needed FROM job_postings AS j2`', 'providers_needed:alias'],
+        ['`SELECT jp.providers_needed::INTEGER FROM job_postings jp`', 'providers_needed:alias'],
+        ['`SELECT providers_needed FROM job_postings WHERE id = $1`', 'providers_needed:bare'],
+        ["'SELECT providers_needed FROM job_postings'", 'providers_needed:bare'],
         ['`SELECT * FROM job_postings WHERE id = $1`', 'star'],
         ['import { vacancyRawColumnsSql } from \'@shared/sql/vacancyEffectiveFieldsSql\';', 'raw-export'],
         ['const c = JOB_POSTING_COLUMNS;', 'raw-export'],
@@ -176,6 +186,9 @@ describe('vacancyEffectiveFields — contrato: ninguém lê o horário cru da va
         '`SELECT ${vacancyEffectiveScheduleSql(\'jp\')} AS schedule FROM job_postings jp ${vacancyEffectiveJoinSql(\'jp\')}`',
         '`SELECT jp.schedule_days_hours, jp.work_schedule FROM job_postings jp`',
         '`SELECT pcs.schedule FROM patient_contracted_services pcs`',
+        '`SELECT ${vacancyEffectiveProvidersNeededSql(\'jp\')} AS providers_needed FROM job_postings jp ${vacancyEffectiveJoinSql(\'jp\')}`',
+        '`SELECT pcs.providers_needed FROM patient_contracted_services pcs`',
+        '`SELECT jp.active_providers FROM job_postings jp`',
         '`UPDATE workers SET a = 1 RETURNING *`',
         '// SELECT jp.schedule FROM job_postings jp\n`SELECT 1`',
       ];
@@ -184,6 +197,14 @@ describe('vacancyEffectiveFields — contrato: ninguém lê o horário cru da va
   });
 
   describe('a peça', () => {
+    it('providers_needed efetivo: CASE com cast INT→TEXT DENTRO da peça (ramos do mesmo tipo), nunca COALESCE', () => {
+      expect(vacancyEffectiveProvidersNeededSql('jp', 'e')).toBe(
+        'CASE WHEN jp.contracted_service_id IS NOT NULL THEN e.providers_needed::text ELSE jp.providers_needed END',
+      );
+      expect(vacancyEffectiveProvidersNeededSql()).not.toMatch(/COALESCE/i);
+      expect(vacancyEffectiveColumnsSql('jp', 'e')).toContain(`${EFFECTIVE_FIELD_EXPRESSIONS.providers_needed('jp', 'e')} AS providers_needed`);
+    });
+
     it('o horário efetivo é CASE (serviço manda quando há serviço), nunca COALESCE(serviço, vaga)', () => {
       expect(vacancyEffectiveScheduleSql('jp', 'e')).toBe(
         'CASE WHEN jp.contracted_service_id IS NOT NULL THEN e.schedule ELSE jp.schedule END',

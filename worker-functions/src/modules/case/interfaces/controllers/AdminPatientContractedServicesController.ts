@@ -152,9 +152,9 @@ export class AdminPatientContractedServicesController {
         res.status(422).json({ success: false, error: 'addressId does not belong to this patient', code: err.code, details: { addressId: err.addressId } });
         return;
       }
-      // F2: apagar o horário com vaga viva — a vaga lê o horário do serviço (vaga-le-do-servico-contratado).
+      // F2/F5: apagar horário ou quantidade com vaga viva — a vaga lê esses campos do serviço (vaga-le-do-servico-contratado).
       if (err instanceof ServiceFieldRequiredByLiveVacancyError) {
-        res.status(422).json({ success: false, error: 'Service schedule cannot be cleared while a live vacancy reads it', code: err.code, details: { field: err.field, vacancyIds: err.vacancyIds } });
+        res.status(422).json({ success: false, error: `Service ${err.field} cannot be cleared while a live vacancy reads it`, code: err.code, details: { field: err.field, vacancyIds: err.vacancyIds } });
         return;
       }
       const e = err instanceof Error ? err : new Error(String(err));

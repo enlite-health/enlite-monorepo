@@ -807,7 +807,7 @@ describe('VacancyCrudController', () => {
         await controller.updateVacancy(req as never, res as never);
 
         expect(res.status).toHaveBeenCalledWith(200);
-        // pool: 1 SELECT (authorizeVacancyUpdate) + 1 leitura do horário efetivo (withEffectiveSchedule)
+        // pool: 1 SELECT (authorizeVacancyUpdate) + 1 leitura de horário e quantidade efetivos (withEffectiveFields)
         expect(mockQuery).toHaveBeenCalledTimes(2);
         // client: BEGIN, SELECT before, UPDATE, [audit], COMMIT
         expect(mockConnect).toHaveBeenCalledTimes(1);
@@ -884,7 +884,7 @@ describe('VacancyCrudController', () => {
         await controller.updateVacancy(req as never, res as never);
 
         expect(res.status).toHaveBeenCalledWith(200);
-        // pool: 1 SELECT (authorize) + 1 SELECT (patient check) + 1 leitura do horário efetivo
+        // pool: 1 SELECT (authorize) + 1 SELECT (patient check) + 1 leitura de horário e quantidade efetivos
         expect(mockQuery).toHaveBeenCalledTimes(3);
         expect(mockConnect).toHaveBeenCalledTimes(1);
       });

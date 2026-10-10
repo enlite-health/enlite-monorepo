@@ -10,7 +10,7 @@ import {
   FULL_ALLOWED_UPDATE_FIELDS,
   OPERATIONAL_EDITABLE_FIELDS,
   retryOnCaseOrdinalConflict,
-  withEffectiveSchedule,
+  withEffectiveFields,
 } from './vacancyCrudHelpers';
 import {
   auditVacancyCreated,
@@ -232,7 +232,7 @@ export class VacancyCrudController {
       });
 
       // Horário que SAI = o efetivo, lido na sessão com identidade (a cópia crua da vaga com serviço não sai).
-      res.status(201).json({ success: true, data: await withEffectiveSchedule(this.db, newVacancy) });
+      res.status(201).json({ success: true, data: await withEffectiveFields(this.db, newVacancy) });
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : String(error);
       reportError(error instanceof Error ? error : new Error(msg), { source: 'VacancyCrudController:createVacancy' });
@@ -340,7 +340,7 @@ export class VacancyCrudController {
             }
           });
         });
-        res.status(200).json({ success: true, data: await withEffectiveSchedule(this.db, updated) });
+        res.status(200).json({ success: true, data: await withEffectiveFields(this.db, updated) });
       }
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : String(error);

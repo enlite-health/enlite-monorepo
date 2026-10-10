@@ -241,7 +241,8 @@ export class ActivateRecruitmentUseCase {
       age_range_max: ageRange.max,
       // F2: o horário NÃO é copiado — a vaga lê do serviço (`service.schedule` só serve ao gate de prontidão acima).
       schedule: null,
-      providers_needed: service.providers_needed,
+      // F5: a quantidade também NÃO é copiada — a vaga lê `patient_contracted_services.providers_needed` pela peça.
+      providers_needed: null,
     };
     // Tipado com o MESMO `Omit` que sobra de `fromOrigin` (+`vacancyNumber`/`computedTitle`, que não
     // são nem origem nem recrutamento) — sem isto, uma chave travada repetida aqui (ex.:

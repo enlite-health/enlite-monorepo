@@ -279,9 +279,55 @@ describe('vacancySourceChangeNotice (e2e, app_runtime, banco real)', () => {
     expect(await get()).toEqual([]);
   });
 
-  it('PATCH sem o campo schedule (ex.: só providers_needed) = 0 aviso', async () => {
+  it('PATCH sem o campo schedule (ex.: só weeklyHours) = 0 aviso', async () => {
     const ctx = await seed([{}]);
-    await repo().update(ctx.serviceId, { providersNeeded: 3, actorUid: UID } as never);
+    await repo().update(ctx.serviceId, { weeklyHours: 12, actorUid: UID } as never);
     expect((await notices()).rows).toHaveLength(0);
+  });
+
+  describe('F5 — quantidade de prestadores (providers_needed)', () => {
+    const patchProviders = (ctx: Ctx, providersNeeded: number | null) =>
+      repo().update(ctx.serviceId, { providersNeeded, actorUid: UID } as never);
+    const providersOf = async (serviceId: string) =>
+      (await admin.query(`SELECT providers_needed FROM patient_contracted_services WHERE id = $1`, [serviceId])).rows[0].providers_needed;
+
+    it('muda (1 → 3) + publicada viva = 1 aviso `providers_needed` aberto; o serviço grava o valor', async () => {
+      const ctx = await seed([{}]);
+      await patchProviders(ctx, 3);
+      const n = await notices();
+      expect(n.rows).toHaveLength(1);
+      expect(n.rows[0]).toMatchObject({ job_posting_id: ctx.vacancyIds[0], field: 'providers_needed', acknowledged_at: null });
+      expect(await providersOf(ctx.serviceId)).toBe(3);
+    });
+
+    it('valor igual (1 → 1) = 0 aviso', async () => {
+      const ctx = await seed([{}]);
+      await patchProviders(ctx, 1);
+      expect((await notices()).rows).toHaveLength(0);
+    });
+
+    it('só rascunho, só encerrada ou sem vaga = 0 aviso', async () => {
+      for (const vagas of [[{ draft: true }], [{ status: 'CLOSED' }], []] as VacancyOpts[][]) {
+        await wipe();
+        const ctx = await seed(vagas);
+        await patchProviders(ctx, 3);
+        expect((await notices()).rows).toHaveLength(0);
+      }
+    });
+
+    it('apagar (null) COM vaga viva → recusa (SERVICE_FIELD_REQUIRED_BY_LIVE_VACANCY), o serviço fica com o valor e nenhum aviso é gravado', async () => {
+      const ctx = await seed([{}]);
+      const err = await patchProviders(ctx, null).catch((e) => e);
+      expect(err).toMatchObject({ code: 'SERVICE_FIELD_REQUIRED_BY_LIVE_VACANCY', field: 'providers_needed', vacancyIds: [ctx.vacancyIds[0]] });
+      expect(await providersOf(ctx.serviceId)).toBe(1);
+      expect((await notices()).rows).toHaveLength(0);
+    });
+
+    it('apagar (null) SEM vaga viva (só encerrada) → grava NULL no serviço, sem aviso', async () => {
+      const ctx = await seed([{ status: 'CLOSED' }]);
+      await patchProviders(ctx, null);
+      expect(await providersOf(ctx.serviceId)).toBeNull();
+      expect((await notices()).rows).toHaveLength(0);
+    });
   });
 });
