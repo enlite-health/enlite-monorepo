@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { z } from 'zod';
-import { reportError } from '@shared/logging';
+import { logger, reportError } from '@shared/logging';
 import { actorUid, MissingActorError } from '@modules/conversation/interfaces/controllers/ConversationActor';
 import {
   TactiqExchangeFailedError,
@@ -98,6 +98,7 @@ export class TactiqLinkController {
         return;
       }
       if (err instanceof TactiqNotConfiguredError) {
+        logger.warn({ source }, 'admission.tactiq_link.not_configured');
         res.status(503).json({ success: false, error: 'Tactiq link unavailable', code: err.code });
         return;
       }

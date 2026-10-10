@@ -6,7 +6,7 @@ jest.mock('@shared/logging', () => ({ reportError: jest.fn(), logger: { info: je
 jest.mock('@modules/identity', () => ({ AuthMiddleware: { getAuthContext: jest.fn(() => ({ principal: { id: 'staff-uid-1' } })) } }));
 
 import type { Request, Response } from 'express';
-import { reportError } from '@shared/logging';
+import { logger, reportError } from '@shared/logging';
 import { AuthMiddleware } from '@modules/identity';
 import { TactiqExchangeFailedError, TactiqStateInvalidError, type TactiqLinkService } from '../../../application/TactiqLinkService';
 import { TactiqNotConfiguredError } from '../../../application/ports/TactiqPorts';
@@ -57,6 +57,8 @@ describe('TactiqLinkController', () => {
     await b.c.start(req(withUser), r2);
     expect(r2.statusCode).toBe(503);
     expect(r2.body).toMatchObject({ code: 'TACTIQ_NOT_CONFIGURED' });
+    expect(logger.warn).toHaveBeenCalledWith({ source: 'start' }, 'admission.tactiq_link.not_configured');
+    expect(reportError).not.toHaveBeenCalled();
 
     (AuthMiddleware.getAuthContext as jest.Mock).mockReturnValueOnce(undefined);
     const r3 = res();
