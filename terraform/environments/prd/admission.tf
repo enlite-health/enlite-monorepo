@@ -446,3 +446,105 @@ resource "google_monitoring_alert_policy" "admission_vault_read" {
 
   depends_on = [google_logging_metric.admission_vault_read]
 }
+
+# ---------------------------------------------------------------------------
+# Spec 050 (F4) — bucket de ENSAIO (R-29) + alerta de gasto do Vertex (R-28)
+# ---------------------------------------------------------------------------
+# Ordem (desarmar → importar → alinhar): plan da main = "No changes" (medido 10/10) → nada a desarmar nem importar; tudo NOVO.
+# ⚠️ NÃO APLICADO: falta o "vai" do Gabriel. Rollback: `terraform destroy -target` dos 3 recursos abaixo (sem retenção, sem prevent_destroy).
+
+# Transcrição de reunião de paciente de teste liberada pela R-19 (ensaio pago) grava AQUI, nunca no cofre de 5 anos.
+# NÃO é um prefixo dentro do cofre: a retention_policy do GCS vale para o bucket inteiro e o prefixo herdaria os 5 anos.
+resource "google_storage_bucket" "admission_transcripts_rehearsal" {
+  project                     = var.project_id
+  name                        = "enlite-admission-rehearsal-prd"
+  location                    = "SOUTHAMERICA-WEST1"
+  storage_class               = "STANDARD"
+  uniform_bucket_level_access = true
+  public_access_prevention    = "enforced"
+  force_destroy               = true # só dado sintético de ensaio; permite o rollback por destroy
+
+  # Mesma chave do cofre (a cifra é a mesma); o agente do Storage já tem o papel (admission_vault_gcs_agent).
+  encryption {
+    default_kms_key_name = google_kms_crypto_key.admission_transcripts.id
+  }
+
+  # SEM retention_policy (de propósito). Sem versionamento: a exclusão aos 30 dias é definitiva.
+  soft_delete_policy {
+    retention_duration_seconds = 0
+  }
+
+  lifecycle_rule {
+    condition {
+      age = var.admission_rehearsal_expiry_days
+    }
+    action {
+      type = "Delete"
+    }
+  }
+
+  depends_on = [google_kms_crypto_key_iam_member.admission_vault_gcs_agent]
+}
+
+variable "admission_rehearsal_expiry_days" {
+  type        = number
+  description = "Expiração automática do bucket de ensaio (R-29): 30 dias."
+  default     = 30
+}
+
+# Mesmo "só cria" do cofre. Nenhum outro binding: ninguém lê o bucket de ensaio por IAM do projeto além de papéis herdados.
+resource "google_storage_bucket_iam_member" "admission_rehearsal_backend_creator" {
+  bucket = google_storage_bucket.admission_transcripts_rehearsal.name
+  role   = "roles/storage.objectCreator"
+  member = module.sa_enlite_functions.member
+}
+
+# R-28 — alerta de gasto do Vertex. Caminho: alerta do Cloud Monitoring (e não google_billing_budget): a API
+# billingbudgets.googleapis.com está DESLIGADA em enlite-prd e a permissão billing.budgets.* da conta do terraform não é
+# verificável daqui. Mede tokens/hora no PROJETO inteiro (inclui o triage-service). Base medida 10/10: 10,9 M tokens em 30 dias
+# (~15 mil/h em média) → 500 mil/h é ~33× a média. Ajuste pela variável.
+variable "vertex_tokens_per_hour_alert" {
+  type        = number
+  description = "Tokens/hora no Vertex (projeto inteiro) acima dos quais o alerta de gasto dispara (R-28)."
+  default     = 500000
+}
+
+resource "google_monitoring_alert_policy" "vertex_token_spend" {
+  project      = var.project_id
+  display_name = "[URGENTE] Vertex AI: consumo de tokens acima do normal (reforço de gasto, spec 050 R-28)"
+  combiner     = "OR"
+  enabled      = true
+  severity     = "ERROR"
+
+  notification_channels = [var.events_notification_channel]
+
+  documentation {
+    mime_type = "text/markdown"
+    subject   = "Vertex AI: consumo de tokens acima do normal"
+    content   = "Mais de ${var.vertex_tokens_per_hour_alert} tokens em 1 hora no Vertex do projeto enlite-prd (média de 30 dias: ~15 mil/h). Pode ser laço de chamadas pagas (resumo da admissão, triage-service). Conferir logs `admission.summary_*` e o consumo em Vertex AI > Painel. Este alerta NÃO bloqueia nada: é o reforço fora do código dos controles da spec 050."
+  }
+
+  alert_strategy {
+    auto_close = "3600s"
+  }
+
+  conditions {
+    display_name = "tokens do Vertex > ${var.vertex_tokens_per_hour_alert} em 1 h"
+    condition_threshold {
+      filter          = "metric.type=\"aiplatform.googleapis.com/publisher/online_serving/token_count\" AND resource.type=\"aiplatform.googleapis.com/PublisherModel\""
+      comparison      = "COMPARISON_GT"
+      threshold_value = var.vertex_tokens_per_hour_alert
+      duration        = "0s"
+
+      trigger {
+        count = 1
+      }
+
+      aggregations {
+        alignment_period     = "3600s"
+        per_series_aligner   = "ALIGN_SUM"
+        cross_series_reducer = "REDUCE_SUM"
+      }
+    }
+  }
+}
