@@ -153,12 +153,13 @@ export function NewAdmissionModal({ patientId, country, onBooked, onClose, now =
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="flex flex-col gap-1">
               <label htmlFor="admission-date" className="text-[11px] uppercase text-primary font-lexend">{ta('newModal.date')}</label>
-              <Input id="admission-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} disabled={busy} data-testid="admission-date-input" />
+              <Input id="admission-date" inputSize="compact" type="date" value={date} onChange={(e) => setDate(e.target.value)} disabled={busy} data-testid="admission-date-input" />
             </div>
             <div className="flex flex-col gap-1">
               <label htmlFor="admission-time" className="text-[11px] uppercase text-primary font-lexend">{ta('newModal.time')}</label>
               <Input
                 id="admission-time"
+                inputSize="compact"
                 type="time"
                 value={time}
                 min={ADMISSION_FIRST_START}

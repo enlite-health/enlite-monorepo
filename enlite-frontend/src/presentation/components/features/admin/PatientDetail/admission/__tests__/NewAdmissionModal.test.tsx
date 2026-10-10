@@ -8,6 +8,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ApiError } from '@infrastructure/http/ApiError';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
+import { INPUT_SIZE_CONFIG } from '@presentation/components/atoms/Input/inputClasses';
 import { i18nMock, host, NOW, tEs } from './admissionTestKit';
 
 vi.mock('react-i18next', () => i18nMock);
@@ -100,6 +101,18 @@ describe('A7-3 — responsável sem vínculo', () => {
     api.listHosts.mockResolvedValueOnce([]);
     fireEvent.click(screen.getByTestId('admission-hosts-retry'));
     expect(await screen.findByTestId('admission-hosts-empty')).toBeInTheDocument();
+  });
+});
+
+describe('tamanho dos campos', () => {
+  it('data e hora usam o tamanho compact do painel (h-12), não o default de 60px', async () => {
+    renderModal();
+    await screen.findByTestId('admission-host-radio-dani@example.test');
+    for (const id of ['admission-date-input', 'admission-time-input']) {
+      const classes = screen.getByTestId(id).className.split(' ');
+      expect(classes).toContain(INPUT_SIZE_CONFIG.compact.height);
+      expect(classes).not.toContain(INPUT_SIZE_CONFIG.default.height);
+    }
   });
 });
 
