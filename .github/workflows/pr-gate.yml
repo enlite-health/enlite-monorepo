@@ -61,6 +61,13 @@ jobs:
             BACKEND=true; FRONTEND=true
           fi
 
+          # Spec 050 (R-16): a guarda de rede e os controles moram em `scripts/rede-bloqueada-*` e são usados pelos DOIS pacotes
+          # (jest, vitest, Playwright, contêineres). Sem isto, um PR que só altere a guarda não rodaria suíte nenhuma — a guarda
+          # poderia ser desligada sem que o controle dela fosse executado.
+          if grep -qE '^scripts/rede-bloqueada-' <<< "$ALTERADOS"; then
+            BACKEND=true; FRONTEND=true
+          fi
+
           echo "backend=$BACKEND"   >> "$GITHUB_OUTPUT"
           echo "frontend=$FRONTEND" >> "$GITHUB_OUTPUT"
 

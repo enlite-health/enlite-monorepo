@@ -64,7 +64,9 @@ describe('AdmissionCalendarService — I/O', () => {
     jest.clearAllMocks();
     (getAccessToken as jest.Mock).mockResolvedValue('fake-token');
     global.fetch = jest.fn();
-    service = new AdmissionCalendarService();
+    // Construtor lança com NODE_ENV=test (R-17, spec 050): o teste usa o cliente REAL com o `fetch` interceptado, então declara
+    // o ambiente explicitamente — o mesmo padrão dos outros adapters reais (GoogleMeetConferenceClient.test.ts).
+    service = new AdmissionCalendarService({ NODE_ENV: 'production' });
   });
 
   describe('getFreeBusyByCalendar', () => {

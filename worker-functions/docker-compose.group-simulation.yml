@@ -31,7 +31,8 @@ services:
       PATIENT_DOCUMENTS_BUCKET: "enlite-patient-documents-ci"
       # Spec 049 (aba Admissão, F9): o e2e de TELA `admissao-049-*` agenda de verdade pelo painel. `ADMISSION_EXTERNALS=fake`
       # troca Calendar, Meet, Twilio, Cloud Tasks, Tactiq, Vertex e cofre por DUBLÊS (nada sai da máquina; a fábrica LANÇA se o
-      # modo for `fake` com NODE_ENV=production). `NODE_ENV=test` sozinho mantém o Calendar real — por isso a env é explícita.
+      # modo for `fake` com NODE_ENV=production). `NODE_ENV=test` sozinho também dá dublê (R-17, spec 050), mas o de `docker-compose.test.yml` FALHA de propósito (`ADMISSION_CALENDAR_DOUBLE=unavailable`);
+      # `fake` vence e dá o dublê que responde — por isso a env é explícita.
       # O dublê do Calendar trata e-mail `ocupado.*` como agenda ocupada. Calendário e templates são valores só de CI.
       ADMISSION_EXTERNALS: "fake"
       ADMISSION_CALENDAR_ID_AR: "cal-ar-e2e049@example.test"

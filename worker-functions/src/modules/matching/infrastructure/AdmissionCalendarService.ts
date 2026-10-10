@@ -1,6 +1,8 @@
 import { DateTime } from 'luxon';
 import { v4 as uuidv4 } from 'uuid';
 import { getAccessToken } from './GoogleCalendarEventFinder';
+import { AdmissionRealAdapterInTestError } from '../application/ports/AdmissionMessagingPorts';
+import type { AdmissionCalendarPort } from '../application/ports/AdmissionCalendarPort';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -285,6 +287,11 @@ export function sumBusyMinutesInWeek(
 // ─── Service (I/O contra Google Calendar) ──────────────────────────────────────
 
 export class AdmissionCalendarService {
+  /** ⚠️ Lança com NODE_ENV=test (R-17, spec 050): teste nunca toca o Google Calendar — que MANDA e-mail. Use o dublê. */
+  constructor(env: NodeJS.ProcessEnv = process.env) {
+    if (env.NODE_ENV === 'test') throw new AdmissionRealAdapterInTestError('new AdmissionCalendarService()');
+  }
+
   private token(hostEmail: string): Promise<string | null> {
     return getAccessToken(hostEmail, hostEmail);
   }
@@ -544,4 +551,18 @@ export class AdmissionCalendarService {
 
 }
 
-export const admissionCalendarService = new AdmissionCalendarService();
+let realInstance: AdmissionCalendarService | undefined;
+const real = (): AdmissionCalendarService => (realInstance ??= new AdmissionCalendarService());
+
+/**
+ * O Calendar REAL, construído só na primeira chamada. É preguiçoso de propósito: o módulo é importado por todo teste que
+ * toca a admissão, e o construtor lança com NODE_ENV=test — sem a preguiça, o `import` já derrubaria a suíte. Em teste, o
+ * serviço só chega aqui se alguém ignorar a fábrica (`createAdmissionExternals`), e aí a primeira chamada LANÇA.
+ */
+export const admissionCalendarService: AdmissionCalendarPort = {
+  getCalendarTimezone: async (...a: Parameters<AdmissionCalendarService['getCalendarTimezone']>) => real().getCalendarTimezone(...a),
+  getBusyIntervals: async (...a: Parameters<AdmissionCalendarService['getBusyIntervals']>) => real().getBusyIntervals(...a),
+  getFreeBusyByCalendar: async (...a: Parameters<AdmissionCalendarService['getFreeBusyByCalendar']>) => real().getFreeBusyByCalendar(...a),
+  createEventWithMeet: async (...a: Parameters<AdmissionCalendarService['createEventWithMeet']>) => real().createEventWithMeet(...a),
+  deleteEvent: async (...a: Parameters<AdmissionCalendarService['deleteEvent']>) => real().deleteEvent(...a),
+};

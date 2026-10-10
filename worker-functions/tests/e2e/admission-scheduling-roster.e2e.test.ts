@@ -294,9 +294,10 @@ describe('endpoint público de horários', () => {
   });
 
   it('agenda inacessível vira 500 genérico — sem vazar e-mail de atendente no erro', async () => {
-    // Com atendente cadastrada, o container tenta ler a agenda no Google e não
-    // tem credencial. O que importa aqui é o que o paciente recebe quando isso
-    // acontece: um erro genérico, sem o e-mail de ninguém dentro.
+    // Com atendente cadastrada, o container tenta ler a agenda e ela está inacessível: em teste o Calendar é um DUBLÊ que
+    // falha de propósito (`ADMISSION_CALENDAR_DOUBLE=unavailable`, docker-compose.test.yml — R-17, spec 050; antes era o
+    // cliente real sem credencial). O que importa aqui é o que o paciente recebe quando isso acontece: um erro genérico,
+    // sem o e-mail de ninguém dentro.
     await pool.query(
       `INSERT INTO interview_hosts (email, display_name, country, active) VALUES ($1,'Ana Joulie','AR',true)`,
       [ANA],
