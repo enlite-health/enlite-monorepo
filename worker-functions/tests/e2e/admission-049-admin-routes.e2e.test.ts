@@ -537,13 +537,18 @@ describe('rotas admin da aba Admissão — HTTP real, banco real, engine LIGADO 
       expect(calendar.deleted.filter((d) => d.eventId === eventId)).toHaveLength(1);
     });
 
-    it('o cancelamento libera o horário no Google mas a trava do banco segue: refazer no MESMO horário → 409 (achado §11)', async () => {
+    it('o cancelamento libera o horário: refazer no MESMO horário com a mesma responsável → 201 (trava só para reunião ATIVA, R-39); controle: com a reunião ativa → 409', async () => {
       const p = await newPatient();
       const slot = nextSlot();
       const id = (await book(p, U.agendadora, ANA, slot)).body.data.appointmentId as string;
-      await http('POST', `/api/admin/patients/${p}/admission-appointments/${id}/cancel`, U.agendadora);
+      // controle: com a reunião ATIVA no horário, outro paciente com a mesma responsável leva 409
+      expect((await book(await newPatient(), U.agendadora, ANA, slot)).status).toBe(409);
+      expect((await http('POST', `/api/admin/patients/${p}/admission-appointments/${id}/cancel`, U.agendadora)).status).toBe(200);
+      // o achado §11 (a trava do banco segurava o horário para sempre) foi resolvido pela migration 510: só `booked` trava
       const again = await book(await newPatient(), U.agendadora, ANA, slot);
-      expect(again.status).toBe(409);
+      expect(again.status).toBe(201);
+      expect((await apptRow(again.body.data.appointmentId as string)).status).toBe('booked');
+      expect((await apptRow(id)).status).toBe('cancelled');
     });
   });
 
