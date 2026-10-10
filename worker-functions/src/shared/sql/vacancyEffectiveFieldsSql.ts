@@ -19,8 +19,14 @@
  * Sessão que não enxerga o paciente lê o serviço como ausente e o CASE devolve NULL — o mesmo que
  * `p.case_number` faz em `vacancyCaseNumberSql.ts`. O leitor tem de rodar numa sessão com identidade.
  *
- * A F5 acrescentou `providers_needed` e a F6 acrescenta a faixa etária em EFFECTIVE_FIELD_EXPRESSIONS; os leitores
- * que usam `vacancyEffectiveColumnsSql` as recebem sem mudar.
+ * A F5 acrescentou `providers_needed` e a F6 a faixa etária; os leitores que usam `vacancyEffectiveColumnsSql` as recebem
+ * sem mudar.
+ *
+ * FAIXA ETÁRIA (F6): o serviço guarda a BANDA (`provider_age_band`) e o mapeamento banda → (min,max) vive em TS
+ * (`ProviderAgeBandMapping.ts`), sem função SQL (nenhum leitor filtra por faixa dentro do SQL). Por isso a peça NÃO
+ * entrega min/max do serviço: entrega a BANDA efetiva (`effective_provider_age_band`) e devolve `age_range_min/max`
+ * NULL para vaga com serviço (nunca a cópia). Todo leitor aplica `applyEffectiveAgeRange(row)` à linha lida: serviço →
+ * mapeamento da banda; manual → as colunas da própria vaga.
  */
 
 /** Alias padrão do serviço contratado na query do leitor. */
@@ -48,7 +54,10 @@ export const JOB_POSTING_COLUMNS = [
   'case_ordinal', 'title_before_en', 'status_before_baja',
 ] as const;
 
-/** Colunas que a vaga LÊ do serviço: `schedule` (F1) e `providers_needed` (F5); a faixa (F6) entra aqui. */
+/** Nome de saída da banda efetiva; `applyEffectiveAgeRange` a consome e a REMOVE da linha (o consumidor não a vê). */
+export const EFFECTIVE_AGE_BAND_ALIAS = 'effective_provider_age_band';
+
+/** Colunas que a vaga LÊ do serviço: `schedule` (F1), `providers_needed` (F5) e a faixa etária (F6). */
 export const EFFECTIVE_FIELD_EXPRESSIONS: Record<string, (jp: string, eff: string) => string> = {
   schedule: (jp, eff) =>
     `CASE WHEN ${jp}.contracted_service_id IS NOT NULL THEN ${eff}.schedule ELSE ${jp}.schedule END`,
@@ -57,6 +66,9 @@ export const EFFECTIVE_FIELD_EXPRESSIONS: Record<string, (jp: string, eff: strin
   // (`~ '^[0-9]+$'`, `::INTEGER`). O cast mora AQUI, uma vez; leitor nenhum faz cast próprio.
   providers_needed: (jp, eff) =>
     `CASE WHEN ${jp}.contracted_service_id IS NOT NULL THEN ${eff}.providers_needed::text ELSE ${jp}.providers_needed END`,
+  // F6: vaga com serviço devolve NULL (a faixa é derivada da banda em TS, sem cair na cópia); manual lê o próprio valor.
+  age_range_min: (jp) => `CASE WHEN ${jp}.contracted_service_id IS NOT NULL THEN NULL ELSE ${jp}.age_range_min END`,
+  age_range_max: (jp) => `CASE WHEN ${jp}.contracted_service_id IS NOT NULL THEN NULL ELSE ${jp}.age_range_max END`,
 };
 
 /** `LEFT JOIN` do serviço contratado da vaga (join por PK: no máximo 1 linha, não multiplica a vaga). */
@@ -88,6 +100,27 @@ export function vacancyEffectiveProvidersNeededSql(
   return EFFECTIVE_FIELD_EXPRESSIONS.providers_needed(jp, eff);
 }
 
+/** Banda etária efetiva (só a vaga com serviço tem; manual = NULL). Sem alias de saída; use `vacancyEffectiveAgeRangeSql`. */
+export function vacancyEffectiveAgeBandSql(
+  jp: string = 'jp',
+  eff: string = VACANCY_EFFECTIVE_SERVICE_ALIAS,
+): string {
+  return `CASE WHEN ${jp}.contracted_service_id IS NOT NULL THEN ${eff}.provider_age_band ELSE NULL END`;
+}
+
+/**
+ * Os TRÊS itens do SELECT da faixa etária: `age_range_min`, `age_range_max` (NULL para vaga com serviço) e a banda
+ * efetiva. A linha lida TEM de passar por `applyEffectiveAgeRange` (ProviderAgeBandMapping.ts) antes de sair.
+ */
+export function vacancyEffectiveAgeRangeSql(
+  jp: string = 'jp',
+  eff: string = VACANCY_EFFECTIVE_SERVICE_ALIAS,
+): string {
+  return `${EFFECTIVE_FIELD_EXPRESSIONS.age_range_min(jp, eff)} AS age_range_min, `
+    + `${EFFECTIVE_FIELD_EXPRESSIONS.age_range_max(jp, eff)} AS age_range_max, `
+    + `${vacancyEffectiveAgeBandSql(jp, eff)} AS ${EFFECTIVE_AGE_BAND_ALIAS}`;
+}
+
 /**
  * Lista explícita de colunas no lugar de `jp.*`: cada coluna da vaga, com as migradas trocadas pelo
  * efetivo e o MESMO nome de saída (o consumidor não percebe). Exige o JOIN de `vacancyEffectiveJoinSql`.
@@ -96,10 +129,12 @@ export function vacancyEffectiveColumnsSql(
   jp: string = 'jp',
   eff: string = VACANCY_EFFECTIVE_SERVICE_ALIAS,
 ): string {
-  return JOB_POSTING_COLUMNS.map((col) => {
+  const cols = JOB_POSTING_COLUMNS.map((col) => {
     const expr = EFFECTIVE_FIELD_EXPRESSIONS[col];
     return expr ? `${expr(jp, eff)} AS ${col}` : `${jp}.${col}`;
-  }).join(', ');
+  });
+  // F6: a banda vai junto (uma coluna a mais no fim); `applyEffectiveAgeRange` a consome e a remove.
+  return [...cols, `${vacancyEffectiveAgeBandSql(jp, eff)} AS ${EFFECTIVE_AGE_BAND_ALIAS}`].join(', ');
 }
 
 /**

@@ -7,7 +7,8 @@ import { PostgresPatientDiagnosisRepository } from '@modules/diagnosis/infrastru
 import { DiagnosisSource } from '@modules/diagnosis/domain/DiagnosisSource';
 import { createTerminologyPort } from '@modules/terminology/infrastructure/TerminologyPortFactory';
 import { loadPublicVacancyDiagnosisLabel } from '../../application/publicVacancyDiagnosisLabel';
-import { vacancyEffectiveJoinSql, vacancyEffectiveScheduleSql } from '@shared/sql/vacancyEffectiveFieldsSql';
+import { vacancyEffectiveAgeRangeSql, vacancyEffectiveJoinSql, vacancyEffectiveScheduleSql } from '@shared/sql/vacancyEffectiveFieldsSql';
+import { applyEffectiveAgeRange } from '@modules/case/domain/ProviderAgeBandMapping';
 
 /**
  * PublicVacancyController
@@ -162,8 +163,7 @@ export class PublicVacancyController {
           p.service_type AS service_type,
           jp.required_professions,
           jp.required_sex,
-          jp.age_range_min,
-          jp.age_range_max,
+          ${vacancyEffectiveAgeRangeSql('jp')},
           jp.worker_attributes,
           ${vacancyEffectiveScheduleSql('jp')} AS schedule,
           jp.schedule_days_hours,
@@ -194,7 +194,7 @@ export class PublicVacancyController {
         return;
       }
 
-      const row = result.rows[0];
+      const row = applyEffectiveAgeRange(result.rows[0]);
 
       // Spec 042: 2ª chamada (nunca JOIN), com bulkhead — falha vira `null`, a vaga segue 200.
       const diagnosisLabel = await loadPublicVacancyDiagnosisLabel(

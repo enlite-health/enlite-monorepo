@@ -101,8 +101,8 @@ describe('paridade — SOURCE_LOCKED_FIELDS × buildInsertParams (fase 1, F3)', 
     for (const field of SOURCE_LOCKED_FIELDS) {
       // F2: com serviço o horário NÃO é gravado (a vaga lê do serviço) — a paridade de `schedule` é provada
       // numa vaga SEM serviço; `contracted_service_id` varia sobre o base (com serviço) como os demais.
-      // F5: idem para `providers_needed` (teste próprio abaixo).
-      if (field === 'schedule' || field === 'providers_needed') continue;
+      // F5/F6: idem para `providers_needed` e para a faixa etária (testes próprios abaixo).
+      if (field === 'schedule' || field === 'providers_needed' || field === 'age_range_min' || field === 'age_range_max') continue;
       const variant = buildInsertParams({ ...base, [field]: overridesPerField[field] });
       const diffIndexes = baseParams
         .map((_, i) => i)
@@ -140,6 +140,22 @@ describe('paridade — SOURCE_LOCKED_FIELDS × buildInsertParams (fase 1, F3)', 
     expect(buildInsertParams(fogueteArgs())[diff[0]]).toBeNull();
     expect(buildInsertParams(fogueteArgs({ providers_needed: 7 }))[diff[0]]).toBeNull();
   });
+
+  it.each([['age_range_min', 20, 6], ['age_range_max', 29, 7]] as const)(
+    'paridade de `%s` (vaga SEM serviço): variar só ele muda só a posição dele; COM serviço a faixa nunca vira param (F6)',
+    (field, value, idx) => {
+      const semServico = fogueteArgs({ contracted_service_id: null });
+      const variant = buildInsertParams({ ...semServico, [field]: 77 });
+      const baseParams = buildInsertParams(semServico);
+      const diff = baseParams.map((_, i) => i).filter((i) => JSON.stringify(baseParams[i]) !== JSON.stringify(variant[i]));
+      expect(diff).toEqual([idx]);
+      expect(baseParams[idx]).toBe(value);
+      expect(variant[idx]).toBe(77);
+      // COM serviço: nem o valor base nem o 77 chegam ao INSERT (mesma posição).
+      expect(buildInsertParams(fogueteArgs())[idx]).toBeNull();
+      expect(buildInsertParams(fogueteArgs({ [field]: 77 }))[idx]).toBeNull();
+    },
+  );
 
   it('paridade: buildInsertParams não muda de tamanho — mesmo número de colunas do INSERT de sempre (baseline Fase 0)', () => {
     const params = buildInsertParams(fogueteArgs());

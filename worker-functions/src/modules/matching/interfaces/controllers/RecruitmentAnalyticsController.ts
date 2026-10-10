@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { applyEffectiveAgeRange } from '@modules/case/domain/ProviderAgeBandMapping';
 import { vacancyEffectiveColumnsSql, vacancyEffectiveJoinSql } from '@shared/sql/vacancyEffectiveFieldsSql';
 
 /**
@@ -191,7 +192,7 @@ export class RecruitmentAnalyticsController {
       }
 
       const analysis = {
-        caseInfo: caseData.rows[0],
+        caseInfo: applyEffectiveAgeRange(caseData.rows[0]),
         publicationsByChannel: publications.rows.map(row => ({
           channel: row.channel || 'Desconocido',
           count: parseInt(row.count),

@@ -12,7 +12,7 @@
  */
 import { Pool } from 'pg';
 import { randomUUID } from 'crypto';
-import { JOB_POSTING_COLUMNS, VACANCY_EFFECTIVE_SERVICE_ALIAS as SVC, vacancyEffectiveJoinSql, vacancyEffectiveProvidersNeededSql } from '../../src/shared/sql/vacancyEffectiveFieldsSql';
+import { JOB_POSTING_COLUMNS, VACANCY_EFFECTIVE_SERVICE_ALIAS as SVC, vacancyEffectiveAgeRangeSql, vacancyEffectiveJoinSql, vacancyEffectiveProvidersNeededSql } from '../../src/shared/sql/vacancyEffectiveFieldsSql';
 
 const mockGeminiPrompts: string[] = [];
 const mockParserCalls: Array<{ vacancy: { schedule?: unknown } }> = [];
@@ -114,6 +114,8 @@ async function seed(opts: {
   draft?: boolean; status?: string; withService?: boolean; serviceSchedule?: unknown; vacancySchedule?: unknown;
   /** F5: quantidade no SERVIÇO (INT) e a cópia TEXT na vaga. Padrão 1 / '1' (comportamento da F1). */
   serviceProviders?: number | null; vacancyProviders?: string | null;
+  /** F6: banda no SERVIÇO e a cópia (min,max) na vaga. Padrão: banda NULL e cópia NULL/NULL (comportamento das F1/F5). */
+  serviceBand?: string | null; vacancyAge?: [number | null, number | null];
 } = {}): Promise<Ctx> {
   const { draft = false, status = 'SEARCHING', withService = true } = opts;
   const patientId = randomUUID();
@@ -133,25 +135,29 @@ async function seed(opts: {
   );
   if (withService) {
     await admin.query(
-      `INSERT INTO patient_contracted_services (id, patient_id, service_code, country, created_by, updated_by, schedule, providers_needed, address_id)
-       VALUES ($1, $2, 'AT', 'AR', $3, $3, $4::jsonb, $6, $5)`,
+      `INSERT INTO patient_contracted_services (id, patient_id, service_code, country, created_by, updated_by, schedule, providers_needed, address_id, provider_age_band)
+       VALUES ($1, $2, 'AT', 'AR', $3, $3, $4::jsonb, $6, $5, $7)`,
       [serviceId, patientId, TAG, opts.serviceSchedule === null ? null : JSON.stringify(opts.serviceSchedule ?? SCHEDULE_A), addressId,
-        opts.serviceProviders === undefined ? 1 : opts.serviceProviders],
+        opts.serviceProviders === undefined ? 1 : opts.serviceProviders, opts.serviceBand ?? null],
     );
   }
   await admin.query(
     `INSERT INTO job_postings (id, title, case_number, patient_id, patient_address_id, contracted_service_id, schedule,
-                               status, is_draft, required_professions, country, is_test, providers_needed, social_short_links)
-     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, ARRAY['AT'], 'AR', false, $10, '{"site":"https://enlite.test/x"}'::jsonb)`,
+                               status, is_draft, required_professions, country, is_test, providers_needed, social_short_links,
+                               age_range_min, age_range_max)
+     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, ARRAY['AT'], 'AR', false, $10, '{"site":"https://enlite.test/x"}'::jsonb, $11, $12)`,
     [vacancyId, `CASO ${caseNumber}`, caseNumber, patientId, addressId, withService ? serviceId : null,
       JSON.stringify(opts.vacancySchedule === undefined ? SCHEDULE_A : opts.vacancySchedule), status, draft,
-      opts.vacancyProviders === undefined ? '1' : opts.vacancyProviders],
+      opts.vacancyProviders === undefined ? '1' : opts.vacancyProviders, opts.vacancyAge?.[0] ?? null, opts.vacancyAge?.[1] ?? null],
   );
   return { patientId, addressId, serviceId, vacancyId, caseNumber };
 }
 
 const setServiceProviders = (ctx: Ctx, n: number | null) =>
   admin.query(`UPDATE patient_contracted_services SET providers_needed = $2 WHERE id = $1`, [ctx.serviceId, n]);
+
+const setServiceBand = (ctx: Ctx, band: string | null) =>
+  admin.query(`UPDATE patient_contracted_services SET provider_age_band = $2 WHERE id = $1`, [ctx.serviceId, band]);
 
 const setServiceSchedule = (ctx: Ctx, schedule: unknown) =>
   admin.query(`UPDATE patient_contracted_services SET schedule = $2::jsonb WHERE id = $1`, [ctx.serviceId, schedule === null ? null : JSON.stringify(schedule)]);
@@ -653,6 +659,159 @@ describe('vacancyEffectiveFields.singleSource — F5: o leitor lê a QUANTIDADE 
       await expect(
         identityPool.query(`SELECT jp.providers_needed = ${SVC}.providers_needed FROM job_postings jp ${vacancyEffectiveJoinSql('jp')} WHERE jp.id = $1`, [comServico.vacancyId]),
       ).rejects.toThrow(/operator does not exist: text = integer/);
+    });
+  });
+});
+
+/**
+ * F6 (faixa etária): a faixa da vaga com serviço é DERIVADA de `patient_contracted_services.provider_age_band` (mapeamento
+ * em TS, `ProviderAgeBandMapping.ts`). Estado inicial: banda AGE_20_30 (20-29) e a cópia stale da vaga 20/29. O teste faz
+ * `UPDATE ... SET provider_age_band = 'AGE_30_45'` SEM tocar a vaga e afirma que o leitor passa a mostrar 30-44.
+ */
+interface LeitorFaixa {
+  nome: string;
+  seed?: () => Promise<Ctx>;
+  /** Devolve a faixa que o leitor mostra, como 'min-max' ('' = ausente), ou null se não achou a vaga. */
+  probe: (ctx: Ctx) => Promise<string | null>;
+}
+
+const faixa = (min: unknown, max: unknown): string => `${min ?? ''}-${max ?? ''}`;
+const seedFaixa = (extra: Parameters<typeof seed>[0] = {}) => seed({ serviceBand: 'AGE_20_30', vacancyAge: [20, 29], ...extra });
+
+const LEITORES_FAIXA: LeitorFaixa[] = [
+  {
+    nome: 'JobPostingARRepository.findActivePublic (feed público)',
+    probe: async (ctx) => {
+      const rows = await new JobPostingARRepository().findActivePublic({ country: 'AR' } as never);
+      const row = rows.find((r) => r.id === ctx.vacancyId);
+      return row ? faixa(row.age_range_min, row.age_range_max) : null;
+    },
+  },
+  {
+    nome: 'PublicVacancyController.getById (detalhe público)',
+    probe: async (ctx) => {
+      const res = mockRes();
+      await new PublicVacancyController(diagnosisStub).getById(asReq({ params: { id: ctx.vacancyId } }), asRes(res));
+      expect(res.statusCode).toBe(200);
+      const d = (res.body as { data: Record<string, unknown> }).data;
+      expect(d).not.toHaveProperty('effective_provider_age_band');
+      return faixa(d.age_range_min, d.age_range_max);
+    },
+  },
+  {
+    nome: 'VacanciesController.getVacancyById (detalhe admin)',
+    probe: async (ctx) => {
+      const res = mockRes();
+      await new VacanciesController(diagnosisStub).getVacancyById(asReq({ params: { id: ctx.vacancyId } }), asRes(res));
+      expect(res.statusCode).toBe(200);
+      const d = (res.body as { data: Record<string, unknown> }).data;
+      expect(d).not.toHaveProperty('effective_provider_age_band');
+      return faixa(d.age_range_min, d.age_range_max);
+    },
+  },
+  {
+    nome: 'RecruitmentAnalyticsController.getCaseAnalysis',
+    probe: async (ctx) => {
+      const res = mockRes();
+      await new RecruitmentAnalyticsController().getCaseAnalysis(asReq({ params: { caseNumber: String(ctx.caseNumber) } }), asRes(res));
+      expect(res.statusCode).toBe(200);
+      const info = (res.body as { data: { caseInfo: Record<string, unknown> } }).data.caseInfo;
+      expect(info).not.toHaveProperty('effective_provider_age_band');
+      return faixa(info.age_range_min, info.age_range_max);
+    },
+  },
+  {
+    nome: 'TalentumDescriptionService.generateDescriptionPreview (Gemini = dublê)',
+    probe: async (ctx) => {
+      mockGeminiPrompts.length = 0;
+      await new TalentumDescriptionService().generateDescriptionPreview(ctx.vacancyId);
+      const linha = promptLine(mockGeminiPrompts, '- Rango etario del prestador:');
+      const m = linha?.match(/^De (\d+) a (\d+) años$/) ?? linha?.match(/^Desde (\d+) años$/);
+      if (!m) return linha === 'No especificado' ? '-' : `?${linha}`;
+      return linha!.startsWith('Desde') ? `${m[1]}-` : `${m[1]}-${m[2]}`;
+    },
+  },
+  {
+    nome: 'VacancyTalentumController.generateAIContent (payload ao parser = dublê)',
+    probe: async (ctx) => {
+      mockParserCalls.length = 0;
+      const res = mockRes();
+      await new VacancyTalentumController().generateAIContent(asReq({ params: { id: ctx.vacancyId } }), asRes(res));
+      expect(res.statusCode).toBe(200);
+      expect(mockParserCalls).toHaveLength(1);
+      const v = mockParserCalls[0].vacancy as { age_range_min?: unknown; age_range_max?: unknown };
+      return faixa(v.age_range_min, v.age_range_max);
+    },
+  },
+  {
+    nome: 'VacancyCrudController.updateVacancy (resposta do PUT, client cru + leitura efetiva)',
+    seed: () => seedFaixa({ draft: true }),
+    probe: async (ctx) => {
+      const res = mockRes();
+      await new VacancyCrudController().updateVacancy(asReq({ params: { id: ctx.vacancyId }, body: { daily_obs: `obs ${randomUUID()}` }, user: { uid: UID } }), asRes(res));
+      expect(res.statusCode).toBe(200);
+      const d = (res.body as { data: Record<string, unknown> }).data;
+      expect(d).not.toHaveProperty('effective_provider_age_band');
+      return faixa(d.age_range_min, d.age_range_max);
+    },
+  },
+];
+
+describe('vacancyEffectiveFields.singleSource — F6: o leitor deriva a FAIXA ETÁRIA da banda do SERVIÇO (app_runtime, banco real)', () => {
+  it('são 7 leitores da faixa cobertos', () => {
+    expect(LEITORES_FAIXA).toHaveLength(7);
+  });
+
+  describe.each(LEITORES_FAIXA.map((l) => [l.nome, l] as const))('%s', (_nome, leitor) => {
+    it('UPDATE em pcs.provider_age_band (vaga intocada) -> a saída passa de 20-29 para 30-44', async () => {
+      const ctx = await (leitor.seed ?? (() => seedFaixa()))();
+      expect(await leitor.probe(ctx)).toBe('20-29'); // controle positivo: o instrumento enxerga a faixa inicial
+      await setServiceBand(ctx, 'AGE_30_45');
+      const copia = await admin.query(`SELECT age_range_min, age_range_max FROM job_postings WHERE id = $1`, [ctx.vacancyId]);
+      expect(copia.rows[0]).toEqual({ age_range_min: 20, age_range_max: 29 }); // a cópia da vaga continua 20-29
+      expect(await leitor.probe(ctx)).toBe('30-44');
+    });
+
+    it('serviço com banda NULL e cópia antiga 20-29 na vaga -> faixa VAZIA, não a cópia (nunca COALESCE)', async () => {
+      const ctx = await (leitor.seed ?? (() => seedFaixa()))();
+      await setServiceBand(ctx, null);
+      const out = await leitor.probe(ctx);
+      expect(out === '-' || out === '').toBe(true);
+    });
+  });
+
+  describe('casos adicionais', () => {
+    it('banda AGE_45_PLUS -> 45 sem teto; ANY -> faixa vazia', async () => {
+      const ctx = await seedFaixa();
+      const feed = async () => {
+        const rows = await new JobPostingARRepository().findActivePublic({ country: 'AR' } as never);
+        const row = rows.find((x) => x.id === ctx.vacancyId)!;
+        return faixa(row.age_range_min, row.age_range_max);
+      };
+      await setServiceBand(ctx, 'AGE_45_PLUS');
+      expect(await feed()).toBe('45-');
+      await setServiceBand(ctx, 'ANY');
+      expect(await feed()).toBe('-');
+    });
+
+    it('vaga MANUAL (sem serviço) devolve a PRÓPRIA faixa da vaga', async () => {
+      const ctx = await seed({ withService: false, vacancyAge: [25, 40] });
+      const res = mockRes();
+      await new PublicVacancyController(diagnosisStub).getById(asReq({ params: { id: ctx.vacancyId } }), asRes(res));
+      const d = (res.body as { data: Record<string, unknown> }).data;
+      expect(faixa(d.age_range_min, d.age_range_max)).toBe('25-40');
+      const rows = await new JobPostingARRepository().findActivePublic({ country: 'AR' } as never);
+      const row = rows.find((x) => x.id === ctx.vacancyId)!;
+      expect(faixa(row.age_range_min, row.age_range_max)).toBe('25-40');
+    });
+
+    it('a peça devolve NULL/NULL e a banda crua para a vaga com serviço (a derivação é só em TS)', async () => {
+      const ctx = await seedFaixa();
+      const { rows } = await identityPool.query(
+        `SELECT ${vacancyEffectiveAgeRangeSql('jp')} FROM job_postings jp ${vacancyEffectiveJoinSql('jp')} WHERE jp.id = $1`,
+        [ctx.vacancyId],
+      );
+      expect(rows[0]).toEqual({ age_range_min: null, age_range_max: null, effective_provider_age_band: 'AGE_20_30' });
     });
   });
 });

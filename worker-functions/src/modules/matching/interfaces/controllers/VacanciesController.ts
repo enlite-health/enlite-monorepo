@@ -21,6 +21,7 @@ import { PatientDiagnosisService } from '@modules/diagnosis/application/PatientD
 import { PostgresPatientDiagnosisRepository } from '@modules/diagnosis/infrastructure/PostgresPatientDiagnosisRepository';
 import { DiagnosisSource } from '@modules/diagnosis/domain/DiagnosisSource';
 import { createTerminologyPort } from '@modules/terminology/infrastructure/TerminologyPortFactory';
+import { applyEffectiveAgeRange } from '@modules/case/domain/ProviderAgeBandMapping';
 import { vacancyEffectiveColumnsSql, vacancyEffectiveGroupBySql, vacancyEffectiveJoinSql } from '@shared/sql/vacancyEffectiveFieldsSql';
 
 /**
@@ -299,7 +300,7 @@ export class VacanciesController {
         return;
       }
 
-      const row = result.rows[0];
+      const row = applyEffectiveAgeRange(result.rows[0]);
 
       // F2/C3 — os encuadres embutidos carregam NOME e TELEFONE do prestador
       // sob `vacancy:read`. Aqui não há KMS a economizar: `e.worker_raw_name` e

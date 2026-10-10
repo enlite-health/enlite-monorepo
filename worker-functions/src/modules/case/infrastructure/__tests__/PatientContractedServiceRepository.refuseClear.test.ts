@@ -27,7 +27,7 @@ function fakeProviderRepo(): ContractedServiceProviderRepository {
   return { listForService: jest.fn().mockResolvedValue([]) } as unknown as ContractedServiceProviderRepository;
 }
 
-function cliente(liveVacancies: Array<{ id: string }>, rowCountDasVagas: number | null = liveVacancies.length) {
+function cliente(liveVacancies: Array<{ id: string }>, rowCountDasVagas: number | null = liveVacancies.length, bandaAtual: string | null = null) {
   const chamadas: string[] = [];
   const query = jest.fn(async (sql: string) => {
     chamadas.push(sql.replace(/\s+/g, ' ').trim());
@@ -36,6 +36,7 @@ function cliente(liveVacancies: Array<{ id: string }>, rowCountDasVagas: number 
     if (/^SELECT id FROM patient_contracted_services WHERE id = \$1 FOR UPDATE/.test(t)) return { rows: [{ id: 'svc-1' }], rowCount: 1 };
     if (/^SELECT id FROM job_postings/.test(t)) return { rows: liveVacancies, rowCount: rowCountDasVagas };
     if (/^SELECT providers_needed FROM patient_contracted_services/.test(t)) return { rows: [{ providers_needed: SERVICE_ROW.providers_needed }], rowCount: 1 };
+    if (/^SELECT provider_age_band FROM patient_contracted_services/.test(t)) return { rows: [{ provider_age_band: bandaAtual }], rowCount: 1 };
     if (/^INSERT INTO vacancy_source_change_notices/.test(t)) return { rows: [{ job_posting_id: 'vac-1' }], rowCount: 1 };
     if (/^UPDATE patient_contracted_services SET/.test(t)) return { rows: [], rowCount: 1 };
     if (/^SELECT \* FROM patient_contracted_services WHERE id/.test(t)) return { rows: [SERVICE_ROW], rowCount: 1 };
@@ -160,5 +161,43 @@ describe('PatientContractedServiceRepository.update — quantidade de prestadore
     await repo.update('svc-1', { weeklyHours: 10, actorUid: 'u-1' });
     expect(semCampo.chamadas.some((c) => c.startsWith('INSERT INTO vacancy_source_change_notices'))).toBe(false);
     expect(semCampo.chamadas.some((c) => c.startsWith('SELECT providers_needed FROM'))).toBe(false);
+  });
+  it('F6: MUDAR a banda (AGE_20_30 → AGE_30_45) COM vaga viva → 200, grava o aviso `age_range`', async () => {
+    const { cli, chamadas } = cliente([{ id: 'vac-1' }], 1, 'AGE_20_30');
+    mockConnect.mockResolvedValue(cli);
+    const repo = new PatientContractedServiceRepository(fakeProviderRepo());
+    expect(await repo.update('svc-1', { providerAgeBand: 'AGE_30_45', actorUid: 'u-1' })).not.toBeNull();
+    expect(chamadas.some((c) => c.startsWith('SELECT id FROM job_postings'))).toBe(false);
+    const avisos = (cli.query as jest.Mock).mock.calls.filter((c) => /^INSERT INTO vacancy_source_change_notices/.test(String(c[0]).trim()));
+    expect(avisos).toHaveLength(1);
+    expect(avisos[0][1]).toEqual(['svc-1', 'age_range']);
+  });
+
+  it('F6: APAGAR a banda (null) COM vaga viva NÃO é recusado (banda vazia é estado normal): o UPDATE roda e o aviso é gravado', async () => {
+    const { cli, chamadas } = cliente([{ id: 'vac-1' }], 1, 'AGE_45_PLUS');
+    mockConnect.mockResolvedValue(cli);
+    const repo = new PatientContractedServiceRepository(fakeProviderRepo());
+    expect(await repo.update('svc-1', { providerAgeBand: null, actorUid: 'u-1' })).not.toBeNull();
+    expect(chamadas.some((c) => c.startsWith('SELECT id FROM job_postings'))).toBe(false); // nenhuma consulta de recusa
+    expect(chamadas.some((c) => c.startsWith('UPDATE patient_contracted_services SET'))).toBe(true);
+    expect(chamadas.some((c) => c.startsWith('INSERT INTO vacancy_source_change_notices'))).toBe(true);
+  });
+
+  it('F6: MESMA banda, null → ANY (mesma faixa vazia) ou PATCH sem a banda → 0 avisos', async () => {
+    const mesma = cliente([{ id: 'vac-1' }], 1, 'AGE_30_45');
+    mockConnect.mockResolvedValue(mesma.cli);
+    const repo = new PatientContractedServiceRepository(fakeProviderRepo());
+    await repo.update('svc-1', { providerAgeBand: 'AGE_30_45', actorUid: 'u-1' });
+    expect(mesma.chamadas.some((c) => c.startsWith('INSERT INTO vacancy_source_change_notices'))).toBe(false);
+
+    const nulaParaAny = cliente([{ id: 'vac-1' }], 1, null);
+    mockConnect.mockResolvedValue(nulaParaAny.cli);
+    await repo.update('svc-1', { providerAgeBand: 'ANY', actorUid: 'u-1' });
+    expect(nulaParaAny.chamadas.some((c) => c.startsWith('INSERT INTO vacancy_source_change_notices'))).toBe(false);
+
+    const semCampo = cliente([{ id: 'vac-1' }], 1, 'AGE_30_45');
+    mockConnect.mockResolvedValue(semCampo.cli);
+    await repo.update('svc-1', { weeklyHours: 10, actorUid: 'u-1' });
+    expect(semCampo.chamadas.some((c) => c.startsWith('SELECT provider_age_band FROM'))).toBe(false);
   });
 });

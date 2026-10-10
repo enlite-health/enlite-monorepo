@@ -6,7 +6,7 @@
  * `schedule` sem alias numa query sobre `job_postings`, ou (c) faz `SELECT *`/`<alias>.*`/`RETURNING *` em `job_postings`
  * (a lista de colunas vive na peça).
  *
- * Estruturado por CAMPO: `schedule` (F1), `providers_needed` (F5); `age_range_min|max` (F6) entram em PROTECTED_FIELDS depois.
+ * Estruturado por CAMPO: `schedule` (F1), `providers_needed` (F5), `age_range_min|max` (F6).
  *
  * LIMITE HONESTO: é regex sobre texto. NÃO vê SQL montado dinamicamente (ex.: `SET ${key} = $1` do PUT, coluna vinda
  * de variável) nem alias passado entre arquivos. Quem cobre isso é o teste por EFEITO (`singleSource`: muda o serviço,
@@ -17,6 +17,9 @@ import * as path from 'path';
 import {
   EFFECTIVE_FIELD_EXPRESSIONS,
   JOB_POSTING_COLUMNS,
+  EFFECTIVE_AGE_BAND_ALIAS,
+  vacancyEffectiveAgeBandSql,
+  vacancyEffectiveAgeRangeSql,
   vacancyEffectiveColumnsSql,
   vacancyEffectiveJoinSql,
   vacancyEffectiveProvidersNeededSql,
@@ -27,8 +30,8 @@ import {
 const ROOT = path.resolve(__dirname, '../../../..'); // worker-functions/
 const PIECE = 'src/shared/sql/vacancyEffectiveFieldsSql.ts';
 
-/** Campos da vaga que passam a ser lidos do serviço. Acrescentar aqui na F5/F6. */
-const PROTECTED_FIELDS = ['schedule', 'providers_needed'];
+/** Campos da vaga que passam a ser lidos do serviço. */
+const PROTECTED_FIELDS = ['schedule', 'providers_needed', 'age_range_min', 'age_range_max'];
 
 type RuleId = `${string}:alias` | `${string}:bare` | 'star' | 'raw-export';
 
@@ -43,16 +46,16 @@ const ALLOWLIST: Record<string, { rules: RuleId[]; motivo: string }> = {
     motivo: 'LEITOR 13 em client cru (connect() sem identidade): SELECT/RETURNING com lista explícita SEM join, só para auditar o que foi gravado; a resposta traz o efetivo via withEffectiveSchedule.',
   },
   'src/modules/matching/interfaces/controllers/vacancyCrudHelpers.ts': {
-    rules: ['schedule:bare', 'providers_needed:bare', 'raw-export'],
-    motivo: 'ESCRITOR (F2/F5): o INSERT único ainda NOMEIA as colunas `schedule` e `providers_needed` (vaga manual, sem serviço), mas `buildInsertParams` grava NULL nas duas quando há `contracted_service_id`; o RETURNING crua serve ao client cru (leitor 13), a resposta traz o efetivo via withEffectiveSchedule.',
+    rules: ['schedule:bare', 'providers_needed:bare', 'age_range_min:bare', 'age_range_max:bare', 'raw-export'],
+    motivo: 'ESCRITOR (F2/F5/F6): o INSERT único ainda NOMEIA as colunas `schedule`, `providers_needed` e `age_range_min/max` (vaga manual, sem serviço), mas `buildInsertParams` grava NULL nelas quando há `contracted_service_id`; o RETURNING crua serve ao client cru (leitor 13), a resposta traz o efetivo via withEffectiveSchedule.',
   },
   'src/modules/matching/infrastructure/JobPostingARRepository.ts': {
     rules: ['providers_needed:bare'],
     motivo: 'ESCRITOR (F5, código sem chamador vivo): upsertFromClickUp só é chamado por scripts/import-vacancies-from-clickup.ts (manual, ClickUp depreciado), que NUNCA passa `providersNeeded` (grava NULL); escreve, não lê.',
   },
   'scripts/enrich-vacancies-helpers.ts': {
-    rules: ['schedule:bare'],
-    motivo: 'ESCRITOR (F2): UPDATE do enrichment, sem chamador em src; escreve, não lê; o WHERE ganhou `AND contracted_service_id IS NULL` (nunca toca vaga com serviço).',
+    rules: ['schedule:bare', 'age_range_min:bare', 'age_range_max:bare'],
+    motivo: 'ESCRITOR (F2/F6): UPDATE do enrichment, sem chamador em src; escreve, não lê; o WHERE ganhou `AND contracted_service_id IS NULL` (nunca toca vaga com serviço).',
   },
 };
 
@@ -169,6 +172,10 @@ describe('vacancyEffectiveFields — contrato: ninguém lê o horário cru da va
         ['`SELECT jp.providers_needed FROM job_postings jp WHERE jp.id = $1`', 'providers_needed:alias'],
         ['`SELECT j2.providers_needed FROM job_postings AS j2`', 'providers_needed:alias'],
         ['`SELECT jp.providers_needed::INTEGER FROM job_postings jp`', 'providers_needed:alias'],
+        ['`SELECT jp.age_range_min FROM job_postings jp WHERE jp.id = $1`', 'age_range_min:alias'],
+        ['`SELECT j2.age_range_max FROM job_postings AS j2`', 'age_range_max:alias'],
+        ['`SELECT age_range_min, age_range_max FROM job_postings WHERE id = $1`', 'age_range_min:bare'],
+        ["'SELECT age_range_max FROM job_postings'", 'age_range_max:bare'],
         ['`SELECT providers_needed FROM job_postings WHERE id = $1`', 'providers_needed:bare'],
         ["'SELECT providers_needed FROM job_postings'", 'providers_needed:bare'],
         ['`SELECT * FROM job_postings WHERE id = $1`', 'star'],
@@ -188,6 +195,8 @@ describe('vacancyEffectiveFields — contrato: ninguém lê o horário cru da va
         '`SELECT pcs.schedule FROM patient_contracted_services pcs`',
         '`SELECT ${vacancyEffectiveProvidersNeededSql(\'jp\')} AS providers_needed FROM job_postings jp ${vacancyEffectiveJoinSql(\'jp\')}`',
         '`SELECT pcs.providers_needed FROM patient_contracted_services pcs`',
+        '`SELECT ${vacancyEffectiveAgeRangeSql(\'jp\')} FROM job_postings jp ${vacancyEffectiveJoinSql(\'jp\')}`',
+        '`SELECT pcs.provider_age_band FROM patient_contracted_services pcs`',
         '`SELECT jp.active_providers FROM job_postings jp`',
         '`UPDATE workers SET a = 1 RETURNING *`',
         '// SELECT jp.schedule FROM job_postings jp\n`SELECT 1`',
@@ -213,10 +222,29 @@ describe('vacancyEffectiveFields — contrato: ninguém lê o horário cru da va
       expect(vacancyEffectiveJoinSql('jp', 'e')).toBe('LEFT JOIN patient_contracted_services e ON e.id = jp.contracted_service_id');
     });
 
-    it('a lista explícita troca só as colunas migradas e mantém os nomes de saída', () => {
+    it('faixa etária efetiva: a peça entrega a BANDA do serviço e NULL (nunca a cópia) em age_range_min/max da vaga com serviço', () => {
+      expect(EFFECTIVE_FIELD_EXPRESSIONS.age_range_min('jp', 'e')).toBe(
+        'CASE WHEN jp.contracted_service_id IS NOT NULL THEN NULL ELSE jp.age_range_min END',
+      );
+      expect(EFFECTIVE_FIELD_EXPRESSIONS.age_range_max('jp', 'e')).toBe(
+        'CASE WHEN jp.contracted_service_id IS NOT NULL THEN NULL ELSE jp.age_range_max END',
+      );
+      expect(vacancyEffectiveAgeBandSql('jp', 'e')).toBe(
+        'CASE WHEN jp.contracted_service_id IS NOT NULL THEN e.provider_age_band ELSE NULL END',
+      );
+      const sql = vacancyEffectiveAgeRangeSql('jp', 'e');
+      expect(sql).toContain('AS age_range_min');
+      expect(sql).toContain('AS age_range_max');
+      expect(sql).toContain(`AS ${EFFECTIVE_AGE_BAND_ALIAS}`);
+      expect(sql).not.toMatch(/COALESCE|WHEN\s+'AGE_/i); // sem fallback e sem CASE de faixa no SQL: o mapeamento é só TS
+    });
+
+    it('a lista explícita troca só as colunas migradas e mantém os nomes de saída (e leva a banda no fim)', () => {
       const cols = vacancyEffectiveColumnsSql('jp', 'e');
       expect(cols).toContain(`${EFFECTIVE_FIELD_EXPRESSIONS.schedule('jp', 'e')} AS schedule`);
-      expect(cols.split(', ').length).toBe(JOB_POSTING_COLUMNS.length);
+      expect(cols).toContain(`${EFFECTIVE_FIELD_EXPRESSIONS.age_range_min('jp', 'e')} AS age_range_min`);
+      expect(cols.endsWith(`${vacancyEffectiveAgeBandSql('jp', 'e')} AS ${EFFECTIVE_AGE_BAND_ALIAS}`)).toBe(true);
+      expect(cols.split(', ').length).toBe(JOB_POSTING_COLUMNS.length + 1);
       expect(cols).toContain('jp.work_schedule');
       expect(new Set(JOB_POSTING_COLUMNS).size).toBe(JOB_POSTING_COLUMNS.length);
       expect(vacancyRawColumnsSql().split(', ')).toEqual([...JOB_POSTING_COLUMNS]);

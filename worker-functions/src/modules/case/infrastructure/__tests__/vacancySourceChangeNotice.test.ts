@@ -140,10 +140,44 @@ describe('providers_needed (F5) — captura, decisão de gravar e o que conta co
     expect(isClearedValue('providers_needed', 0)).toBe(true);
     expect(isClearedValue('providers_needed', 2)).toBe(false);
     expect(isClearedValue('providers_needed', undefined)).toBe(false);
+    // F6: banda vazia é estado NORMAL ("sem preferência"): apagar a banda NÃO é recusado.
+    expect(isClearedValue('age_range', null)).toBe(false);
+    expect(isClearedValue('age_range', 'ANY')).toBe(false);
+    expect(isClearedValue('age_range', undefined)).toBe(false);
   });
 
   it('os campos vigiados são colunas reais do serviço, em conjunto fechado', () => {
-    expect({ ...GUARDED_SERVICE_COLUMNS }).toEqual({ schedule: 'schedule', providers_needed: 'providers_needed' });
+    expect({ ...GUARDED_SERVICE_COLUMNS }).toEqual({ schedule: 'schedule', providers_needed: 'providers_needed', age_range: 'provider_age_band' });
+  });
+});
+
+describe('age_range (F6) — o aviso compara a FAIXA derivada da banda, na coluna provider_age_band', () => {
+  it('captura lê SÓ a coluna provider_age_band do serviço, travando a linha; PATCH sem o campo não consulta', async () => {
+    const c = cli([{ provider_age_band: 'AGE_20_30' }]);
+    expect(await captureFieldBefore(c, 'svc-1', 'age_range', 'AGE_30_45')).toBe('AGE_20_30');
+    expect(c.query.mock.calls[0][0]).toMatch(/^SELECT provider_age_band FROM patient_contracted_services WHERE id = \$1 FOR UPDATE$/);
+    const d = cli();
+    expect(await captureFieldBefore(d, 'svc-1', 'age_range', undefined)).toBeUndefined();
+    expect(d.query).not.toHaveBeenCalled();
+  });
+
+  it('a faixa mudou (20-30 → 30-45, null → 45+, 45+ → null) → grava o aviso `age_range`', async () => {
+    const c = cli([{ job_posting_id: 'vac-1' }]);
+    await recordFieldChange(c, 'svc-1', 'age_range', 'AGE_20_30', 'AGE_30_45');
+    await recordFieldChange(c, 'svc-1', 'age_range', null, 'AGE_45_PLUS');
+    await recordFieldChange(c, 'svc-1', 'age_range', 'AGE_45_PLUS', null);
+    expect(c.query).toHaveBeenCalledTimes(3);
+    expect(c.query.mock.calls.map((x) => x[1])).toEqual([['svc-1', 'age_range'], ['svc-1', 'age_range'], ['svc-1', 'age_range']]);
+  });
+
+  it('valor igual, null ↔ ANY (mesma faixa vazia) ou PATCH sem o campo → 0 gravações', async () => {
+    const z = cli();
+    await recordFieldChange(z, 'svc-1', 'age_range', 'AGE_30_45', 'AGE_30_45');
+    await recordFieldChange(z, 'svc-1', 'age_range', null, null);
+    await recordFieldChange(z, 'svc-1', 'age_range', null, 'ANY');
+    await recordFieldChange(z, 'svc-1', 'age_range', 'ANY', null);
+    await recordFieldChange(z, 'svc-1', 'age_range', undefined, undefined);
+    expect(z.query).not.toHaveBeenCalled();
   });
 });
 

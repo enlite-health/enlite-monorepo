@@ -168,12 +168,12 @@ describe('ActivateRecruitmentUseCase', () => {
         patient_id: PATIENT_ID,
         contracted_service_id: SERVICE_ID,
         patient_address_id: 'addr-1',
-        // F2/F5: horário e quantidade do serviço NÃO são copiados para a vaga (a vaga lê do serviço, mesmo com o
-        // serviço devolvendo providers_needed=2); a faixa etária segue copiada (F6).
+        // F2/F5/F6: horário, quantidade e faixa etária do serviço NÃO são copiados para a vaga (a vaga lê do serviço, mesmo
+        // com o serviço devolvendo providers_needed=2 e provider_age_band=AGE_20_30).
         providers_needed: null,
         schedule: null,
-        age_range_min: 20,
-        age_range_max: 29,
+        age_range_min: null,
+        age_range_max: null,
         is_test: false,
       }),
     );
@@ -399,10 +399,10 @@ describe('ActivateRecruitmentUseCase', () => {
     });
   });
 
-  it('franja etária ausente (provider_age_band null) → age_range null/null (fallback), não estoura', async () => {
+  it.each([['AGE_45_PLUS'], ['ANY'], [null]])('F6: banda do serviço %s → a faixa NUNCA é copiada para a vaga (age_range null/null), não estoura', async (band) => {
     const { promise } = run({
       patientRow: { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular' },
-      serviceRow: { ...READY_SERVICE, provider_age_band: null },
+      serviceRow: { ...READY_SERVICE, provider_age_band: band },
     });
     await promise;
     expect(mockBuildInsertParams).toHaveBeenCalledWith(

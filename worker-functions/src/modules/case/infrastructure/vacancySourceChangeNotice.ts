@@ -6,11 +6,13 @@
  * Log: só `{ jobPostingId, field }` — nunca horário, nunca dado de paciente.
  *
  * `recordSourceChange` é o ponto reutilizável: a F5 (`providers_needed`) já chama o MESMO, via
- * `recordFieldChange`; a F6 (`age_range`) fará igual.
+ * `recordFieldChange`; a F6 (`age_range`, coluna `provider_age_band`) faz igual.
  */
 import type { Pool, PoolClient } from 'pg';
 import { logger } from '@shared/logging';
 import { liveVacancySql } from './liveVacancyOfService';
+import { vacancyRangeForProviderAgeBand } from '../domain/ProviderAgeBandMapping';
+import type { ProviderAgeBand } from '../domain/enums/ContractedService';
 
 /** Conjunto fechado — o mesmo do CHECK `vscn_field_check` da migration 509. */
 export const SOURCE_CHANGE_FIELDS = ['schedule', 'providers_needed', 'age_range'] as const;
@@ -37,15 +39,25 @@ function canonicalSchedule(value: unknown): string {
 
 /**
  * Campos do serviço que a vaga lê e que o PATCH vigia (recusa de apagar + aviso). O valor é a COLUNA de
- * `patient_contracted_services` (conjunto fechado: interpolada no SQL, nunca vinda de fora). A faixa etária (F6) entra aqui.
+ * `patient_contracted_services` (conjunto fechado: interpolada no SQL, nunca vinda de fora). A chave é o `field` do aviso: a
+ * faixa etária é `age_range` no aviso e `provider_age_band` na coluna do serviço.
  */
-export const GUARDED_SERVICE_COLUMNS = { schedule: 'schedule', providers_needed: 'providers_needed' } as const;
+export const GUARDED_SERVICE_COLUMNS = {
+  schedule: 'schedule',
+  providers_needed: 'providers_needed',
+  age_range: 'provider_age_band',
+} as const;
 export type GuardedServiceField = keyof typeof GUARDED_SERVICE_COLUMNS;
 
-/** O PATCH está APAGANDO o campo? `undefined` (chave ausente) não é apagar. `schedule`: `null`/`[]`; `providers_needed`: `null`/`0`. */
+/**
+ * O PATCH está APAGANDO o campo? `undefined` (chave ausente) não é apagar. `schedule`: `null`/`[]`; `providers_needed`: `null`/`0`.
+ * `age_range`: NUNCA — banda vazia é estado NORMAL do produto ("sem preferência de idade": campo opcional na tela, `NULL` aceito
+ * pelo CHECK da migration 322, 4 das 17 vagas vivas em produção já têm serviço sem banda); apagar a banda não é recusado.
+ */
 export function isClearedValue(field: GuardedServiceField, patched: unknown): boolean {
   if (patched === undefined) return false;
   if (field === 'schedule') return patched === null || (patched as unknown[]).length === 0;
+  if (field === 'age_range') return false;
   return patched === null || patched === 0;
 }
 
@@ -68,9 +80,19 @@ export async function captureFieldBefore(
   return rows[0]?.[col] ?? null;
 }
 
-/** Mudou de verdade? `schedule` compara a forma normalizada; `providers_needed` compara o número (`null` ≠ 3). */
+/** Faixa (min,max) da banda, como a vaga a exibe. `null`, `ANY` e banda ausente dão a mesma faixa vazia. */
+function canonicalAgeRange(band: unknown): string {
+  const r = vacancyRangeForProviderAgeBand(band as ProviderAgeBand | null);
+  return `${r.min ?? ''}-${r.max ?? ''}`;
+}
+
+/**
+ * Mudou de verdade? `schedule` compara a forma normalizada; `providers_needed` compara o número (`null` ≠ 3); `age_range` compara
+ * a FAIXA derivada da banda (`null` → `ANY` não muda o que a vaga mostra, então não avisa).
+ */
 function fieldChanged(field: GuardedServiceField, before: unknown, patched: unknown): boolean {
   if (field === 'schedule') return canonicalSchedule(before) !== canonicalSchedule(patched);
+  if (field === 'age_range') return canonicalAgeRange(before) !== canonicalAgeRange(patched);
   return before !== patched;
 }
 

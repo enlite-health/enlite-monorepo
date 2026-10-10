@@ -330,4 +330,52 @@ describe('vacancySourceChangeNotice (e2e, app_runtime, banco real)', () => {
       expect((await notices()).rows).toHaveLength(0);
     });
   });
+
+  describe('F6 — faixa etária (aviso `age_range`; coluna do serviço = provider_age_band)', () => {
+    const patchBand = (ctx: Ctx, providerAgeBand: string | null) =>
+      repo().update(ctx.serviceId, { providerAgeBand, actorUid: UID } as never);
+    const bandOf = async (serviceId: string) =>
+      (await admin.query(`SELECT provider_age_band FROM patient_contracted_services WHERE id = $1`, [serviceId])).rows[0].provider_age_band;
+    const setBand = (ctx: Ctx, band: string | null) =>
+      admin.query(`UPDATE patient_contracted_services SET provider_age_band = $2 WHERE id = $1`, [ctx.serviceId, band]);
+
+    it('muda (AGE_20_30 → AGE_30_45) + publicada viva = 1 aviso `age_range` aberto; o serviço grava a banda', async () => {
+      const ctx = await seed([{}]);
+      await setBand(ctx, 'AGE_20_30');
+      await patchBand(ctx, 'AGE_30_45');
+      const n = await notices();
+      expect(n.rows).toHaveLength(1);
+      expect(n.rows[0]).toMatchObject({ job_posting_id: ctx.vacancyIds[0], field: 'age_range', acknowledged_at: null });
+      expect(await bandOf(ctx.serviceId)).toBe('AGE_30_45');
+    });
+
+    it('mesma banda = 0 aviso; null → ANY (mesma faixa vazia) = 0 aviso', async () => {
+      const ctx = await seed([{}]);
+      await setBand(ctx, 'AGE_20_30');
+      await patchBand(ctx, 'AGE_20_30');
+      expect((await notices()).rows).toHaveLength(0);
+      await setBand(ctx, null);
+      await patchBand(ctx, 'ANY');
+      expect((await notices()).rows).toHaveLength(0);
+    });
+
+    it('só rascunho, só encerrada ou sem vaga = 0 aviso', async () => {
+      for (const vagas of [[{ draft: true }], [{ status: 'CLOSED' }], []] as VacancyOpts[][]) {
+        await wipe();
+        const ctx = await seed(vagas);
+        await patchBand(ctx, 'AGE_45_PLUS');
+        expect((await notices()).rows).toHaveLength(0);
+      }
+    });
+
+    it('apagar a banda (null) COM vaga viva NÃO é recusado (banda vazia é estado normal): grava NULL e registra o aviso', async () => {
+      const ctx = await seed([{}]);
+      await setBand(ctx, 'AGE_45_PLUS');
+      await patchBand(ctx, null);
+      expect(await bandOf(ctx.serviceId)).toBeNull();
+      const n = await notices();
+      expect(n.rows).toHaveLength(1);
+      expect(n.rows[0]).toMatchObject({ field: 'age_range', acknowledged_at: null });
+    });
+  });
 });

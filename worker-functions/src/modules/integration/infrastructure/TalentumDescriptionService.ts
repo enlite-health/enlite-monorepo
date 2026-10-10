@@ -29,7 +29,8 @@ import {
   JobPostingAuditRepository,
   type AuditActorType,
 } from '../../matching/infrastructure/JobPostingAuditRepository';
-import { vacancyEffectiveJoinSql, vacancyEffectiveProvidersNeededSql, vacancyEffectiveScheduleSql } from '@shared/sql/vacancyEffectiveFieldsSql';
+import { vacancyEffectiveAgeRangeSql, vacancyEffectiveJoinSql, vacancyEffectiveProvidersNeededSql, vacancyEffectiveScheduleSql } from '@shared/sql/vacancyEffectiveFieldsSql';
+import { applyEffectiveAgeRange } from '@modules/case/domain/ProviderAgeBandMapping';
 
 export interface DescriptionAuditActor {
   actorUserId: string | null;
@@ -96,7 +97,7 @@ export class TalentumDescriptionService {
          jp.case_number, jp.title,
          jp.required_professions, jp.required_sex,
          jp.required_experience, jp.worker_attributes,
-         jp.age_range_min, jp.age_range_max,
+         ${vacancyEffectiveAgeRangeSql('jp')},
          ${vacancyEffectiveProvidersNeededSql('jp')} AS providers_needed, ${vacancyEffectiveScheduleSql('jp')} AS schedule, jp.work_schedule,
          jp.salary_text, jp.payment_day,
          pa.city, pa.state, pa.neighborhood,
@@ -115,7 +116,7 @@ export class TalentumDescriptionService {
       throw new Error(`Job posting ${jobPostingId} not found`);
     }
 
-    const row = result.rows[0];
+    const row = applyEffectiveAgeRange(result.rows[0]);
     const input: GenerateDescriptionInput = {
       caseNumber: row.case_number?.toString() ?? '',
       title: row.title ?? `Caso ${row.case_number}`,

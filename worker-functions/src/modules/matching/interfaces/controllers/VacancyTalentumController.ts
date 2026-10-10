@@ -18,7 +18,8 @@ import {
 import type { AuditActor } from '@modules/integration';
 import { getVacancyTalentumStatus } from './vacancyTalentumStatusHelper';
 import { normalizePrescreeningResponseType } from '@shared/utils/normalizePrescreeningResponseType';
-import { vacancyEffectiveJoinSql, vacancyEffectiveProvidersNeededSql, vacancyEffectiveScheduleSql } from '@shared/sql/vacancyEffectiveFieldsSql';
+import { vacancyEffectiveAgeRangeSql, vacancyEffectiveJoinSql, vacancyEffectiveProvidersNeededSql, vacancyEffectiveScheduleSql } from '@shared/sql/vacancyEffectiveFieldsSql';
+import { applyEffectiveAgeRange } from '@modules/case/domain/ProviderAgeBandMapping';
 
 /**
  * VacancyTalentumController
@@ -259,7 +260,7 @@ export class VacancyTalentumController {
       const result = await this.db.query(
         `SELECT
            jp.id, jp.title, jp.case_number, jp.required_professions, jp.required_sex,
-           jp.age_range_min, jp.age_range_max, jp.required_experience, jp.worker_attributes,
+           ${vacancyEffectiveAgeRangeSql('jp')}, jp.required_experience, jp.worker_attributes,
            ${vacancyEffectiveScheduleSql('jp')} AS schedule, jp.work_schedule, ${vacancyEffectiveProvidersNeededSql('jp')} AS providers_needed, jp.salary_text,
            jp.payment_day, jp.daily_obs,
            pa.address_formatted, pa.city, pa.state,
@@ -277,7 +278,7 @@ export class VacancyTalentumController {
         return;
       }
 
-      const row = result.rows[0];
+      const row = applyEffectiveAgeRange(result.rows[0]);
       const vacancyData = {
         title: row.title, case_number: row.case_number,
         required_professions: row.required_professions, required_sex: row.required_sex,
