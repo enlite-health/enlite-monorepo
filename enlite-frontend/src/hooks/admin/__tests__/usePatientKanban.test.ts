@@ -289,3 +289,52 @@ describe('usePatientKanban — patients.status', () => {
     });
   });
 });
+
+// Spec 051: o `await` da lista de destinos abre uma janela entre ler o board e escrevê-lo. Dois arrastos
+// dentro dela não podem desfazer um ao outro (foto velha do board), nem no sucesso nem no rollback.
+describe('usePatientKanban — arrastos concorrentes (board lido depois do await da lista)', () => {
+  const ids = (g: Record<string, Array<{ id: string }>>, col: string) => g[col].map((p) => p.id);
+  const deferred = <T,>() => {
+    let resolve!: (v: T) => void; let reject!: (e: unknown) => void;
+    const promise = new Promise<T>((res, rej) => { resolve = res; reject = rej; });
+    return { promise, resolve, reject };
+  };
+  const all = { current: 'ACTIVE', options: PATIENT_KANBAN_STATUSES.map((status) => ({ status, via: 'fluxo' })) };
+
+  beforeEach(() => {
+    listPatientsForKanban.mockReset().mockResolvedValue([item('a', 'DONE', 'SEARCHING'), item('c', 'DONE', 'ACTIVE')]);
+    updatePatientStatus.mockReset().mockResolvedValue({});
+    getPatientStatusOptions.mockReset().mockResolvedValue(all);
+  });
+
+  it('a lista do 1º arrasto resolve DEPOIS de o 2º já ter movido outro card: os dois terminam na coluna certa', async () => {
+    const slow = deferred<typeof all>();
+    getPatientStatusOptions.mockReturnValueOnce(slow.promise);
+    const { result } = renderHook(() => usePatientKanban());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    let p1!: Promise<unknown>;
+    act(() => { p1 = result.current.moveStatus('a', 'REPLACEMENT'); });
+    await act(async () => { await result.current.moveStatus('c', 'ON_HOLD'); });
+    expect(ids(result.current.groups, 'ON_HOLD')).toEqual(['c']);
+    await act(async () => { slow.resolve(all); await p1; });
+    expect(ids(result.current.groups, 'REPLACEMENT')).toEqual(['a']);
+    expect(ids(result.current.groups, 'ON_HOLD')).toEqual(['c']);
+    expect(ids(result.current.groups, 'ACTIVE')).toEqual([]);
+    expect(ids(result.current.groups, 'SEARCHING')).toEqual([]);
+  });
+
+  it('o rollback de um arrasto reverte só o card dele e não apaga o movimento concorrente do outro', async () => {
+    const slowPut = deferred<unknown>();
+    updatePatientStatus.mockReturnValueOnce(slowPut.promise);
+    const { result } = renderHook(() => usePatientKanban());
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    let p1!: Promise<unknown>;
+    await act(async () => { p1 = result.current.moveStatus('a', 'REPLACEMENT'); await Promise.resolve(); });
+    await waitFor(() => expect(ids(result.current.groups, 'REPLACEMENT')).toEqual(['a']));
+    await act(async () => { await result.current.moveStatus('c', 'ON_HOLD'); });
+    await act(async () => { slowPut.reject(new Error('422')); await p1; });
+    expect(ids(result.current.groups, 'SEARCHING')).toEqual(['a']);
+    expect(ids(result.current.groups, 'REPLACEMENT')).toEqual([]);
+    expect(ids(result.current.groups, 'ON_HOLD')).toEqual(['c']);
+  });
+});

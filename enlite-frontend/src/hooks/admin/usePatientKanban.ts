@@ -135,11 +135,10 @@ export function usePatientKanban(country?: string) {
      */
     opts?: { suspensionExitReason?: string },
   ): Promise<PatientKanbanMoveError | null> => {
-    const previous = groupsRef.current;
     // find the card in any column
     let card: PatientKanbanItem | undefined;
     for (const key of PATIENT_KANBAN_STATUSES) {
-      const found = previous[key].find((c) => c.id === patientId);
+      const found = groupsRef.current[key].find((c) => c.id === patientId);
       if (found) { card = found; break; }
     }
 
@@ -168,12 +167,21 @@ export function usePatientKanban(country?: string) {
     // Lista diz que falta dado do paciente: o PUT recusaria com o mesmo 422 — poupa a ida e volta.
     if (destino.blockedBy?.length) return { code: SERVER_STATUS_REFUSAL.NOT_READY, missing: destino.blockedBy, to: targetStatus };
 
-    if (card) {
+    // O board é lido DEPOIS do `await` da lista: outro arrasto ou um refetch pode ter mudado o board nesse
+    // intervalo, e montar o próximo estado sobre a foto de antes devolveria o card dele à coluna antiga.
+    // `original` = o card como está agora (coluna e posição de origem), só dele se reverte em erro.
+    let original: { card: PatientKanbanItem; key: PatientKanbanStatus; index: number } | undefined;
+    const current = groupsRef.current;
+    for (const key of PATIENT_KANBAN_STATUSES) {
+      const index = current[key].findIndex((c) => c.id === patientId);
+      if (index >= 0) { original = { card: current[key][index], key, index }; break; }
+    }
+    if (original) {
       const next = emptyGroups();
       for (const key of PATIENT_KANBAN_STATUSES) {
-        next[key] = previous[key].filter((c) => c.id !== patientId);
+        next[key] = current[key].filter((c) => c.id !== patientId);
       }
-      next[targetStatus] = [{ ...card, status: targetStatus }, ...next[targetStatus]];
+      next[targetStatus] = [{ ...original.card, status: targetStatus }, ...next[targetStatus]];
       setGroups(next);
     }
 
@@ -185,7 +193,16 @@ export function usePatientKanban(country?: string) {
       });
       return null;
     } catch (err) {
-      setGroups(previous);
+      if (original) {
+        // Reverte SÓ o card movido, sobre o board de agora (não sobre a foto antiga, que apagaria outro movimento).
+        const now = groupsRef.current;
+        const back = emptyGroups();
+        for (const key of PATIENT_KANBAN_STATUSES) {
+          back[key] = now[key].filter((c) => c.id !== patientId);
+        }
+        back[original.key].splice(Math.min(original.index, back[original.key].length), 0, original.card);
+        setGroups(back);
+      }
       // Spec 014 (US-D5, lex D5.1): devolve o CÓDIGO de enum quando o backend manda um
       // (`PatientApiError.code` — PATIENT_STATUS_TRANSITION_NOT_ALLOWED/ON_HOLD_REASON_REQUIRED),
       // nunca o texto cru — a página traduz o código, nunca ecoa `err.message` no toast. Erro
