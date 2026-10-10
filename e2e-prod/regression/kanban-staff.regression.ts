@@ -316,6 +316,9 @@ test.describe.serial('Spec 009 · Fase 1 — Kanban do staff', () => {
         case_number: patient.caseNumber ?? 0,
         patient_id: patient.id,
         is_test: true,
+        // Desde 26/09 a vaga nasce rascunho e o detalhe redireciona para /borrador (sem Kanban).
+        // `is_draft:false` só vale com is_test=true (vacancyCrudHelpers.ts:383) e NÃO passa pelo Talentum.
+        is_draft: false,
         required_professions: ['CAREGIVER'],
         worker_attributes: ATTRS,
         age_range_min: 25,

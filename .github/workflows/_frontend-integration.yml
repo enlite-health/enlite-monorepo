@@ -135,6 +135,16 @@ jobs:
       # do Google, e um fake responderia só o que nós mesmos programássemos —
       # nunca teria pegado o bug do teclado (`place_changed` sem
       # `formatted_address`). Ver worker-address-keyboard.integration.e2e.ts.
+      # R-16 (spec 050): CI sem rede para terceiros. Controle `rede-bloqueada.controle` (1) DENTRO do contêiner da API: os hosts de terceiro
+      # resolvem só para o endereço morto de `extra_hosts` (docker-compose.test.yml) e a conexão falha, e a própria API é alcançada (controle
+      # do controle); (2) no PROCESSO node do runner: `mcp.tactiq.io` é bloqueado pela guarda e um servidor em localhost é alcançado.
+      # Não cobre o NAVEGADOR do Playwright (chave do Google Maps — spec 050 §15). Falha o job se algum terceiro conectar.
+      - name: rede-bloqueada.controle — contêiner da API e processo do runner
+        run: |
+          set -euo pipefail
+          (cd worker-functions && docker compose -f docker-compose.yml -f docker-compose.test.yml exec -T api node - < ../scripts/rede-bloqueada-no-conteiner.cjs)
+          node scripts/rede-bloqueada-controle-runner.cjs
+
       - name: Sobe o dev server
         working-directory: enlite-frontend
         env:
@@ -177,6 +187,9 @@ jobs:
       - name: Testes de integração (stack real, zero mock)
         working-directory: enlite-frontend
         env:
+          # R-16 (spec 050): guarda de rede no PROCESSO node do runner (workers herdam). Só neste passo: o `npx playwright install` baixa o
+          # Chromium e precisa de rede. Não cobre o NAVEGADOR (chave do Google Maps — spec 050 §15).
+          NODE_OPTIONS: --require ${{ github.workspace }}/scripts/rede-bloqueada-em-teste.cjs
           CI: 'true'
           VITE_GOOGLE_MAPS_API_KEY: ${{ secrets.VITE_GOOGLE_MAPS_API_KEY }}
         run: |
@@ -217,6 +230,9 @@ jobs:
       - name: Portão visual estrutural — plantillas × desenho
         working-directory: enlite-frontend
         env:
+          # R-16 (spec 050): guarda de rede no PROCESSO node do runner (workers herdam). Só neste passo: o `npx playwright install` baixa o
+          # Chromium e precisa de rede. Não cobre o NAVEGADOR (chave do Google Maps — spec 050 §15).
+          NODE_OPTIONS: --require ${{ github.workspace }}/scripts/rede-bloqueada-em-teste.cjs
           CI: 'true'
           E2E_BASE_URL: http://localhost:5173
         run: npx playwright test --config=playwright.mocked.config.ts e2e/plantillas-vs-desenho.e2e.ts
@@ -241,6 +257,9 @@ jobs:
       - name: Prova visual mockada — as telas de plantillas
         working-directory: enlite-frontend
         env:
+          # R-16 (spec 050): guarda de rede no PROCESSO node do runner (workers herdam). Só neste passo: o `npx playwright install` baixa o
+          # Chromium e precisa de rede. Não cobre o NAVEGADOR (chave do Google Maps — spec 050 §15).
+          NODE_OPTIONS: --require ${{ github.workspace }}/scripts/rede-bloqueada-em-teste.cjs
           CI: 'true'
           E2E_BASE_URL: http://localhost:5173
         run: |
@@ -269,6 +288,9 @@ jobs:
       - name: Prova mockada — funil de bloqueados e Kanban da vaga
         working-directory: enlite-frontend
         env:
+          # R-16 (spec 050): guarda de rede no PROCESSO node do runner (workers herdam). Só neste passo: o `npx playwright install` baixa o
+          # Chromium e precisa de rede. Não cobre o NAVEGADOR (chave do Google Maps — spec 050 §15).
+          NODE_OPTIONS: --require ${{ github.workspace }}/scripts/rede-bloqueada-em-teste.cjs
           CI: 'true'
           E2E_BASE_URL: http://localhost:5173
         run: |
@@ -434,6 +456,16 @@ jobs:
         working-directory: enlite-frontend
         run: npx playwright install-deps chromium
 
+      # R-16 (spec 050): CI sem rede para terceiros. Controle `rede-bloqueada.controle` (1) DENTRO do contêiner da API: os hosts de terceiro
+      # resolvem só para o endereço morto de `extra_hosts` (docker-compose.test.yml) e a conexão falha, e a própria API é alcançada (controle
+      # do controle); (2) no PROCESSO node do runner: `mcp.tactiq.io` é bloqueado pela guarda e um servidor em localhost é alcançado.
+      # Não cobre o NAVEGADOR do Playwright (chave do Google Maps — spec 050 §15). Falha o job se algum terceiro conectar.
+      - name: rede-bloqueada.controle — contêiner da API e processo do runner
+        run: |
+          set -euo pipefail
+          (cd worker-functions && docker compose -f docker-compose.yml -f docker-compose.test.yml -f docker-compose.anacare-hours.yml -f docker-compose.anacare-hours-min-absolute.yml exec -T api node - < ../scripts/rede-bloqueada-no-conteiner.cjs)
+          node scripts/rede-bloqueada-controle-runner.cjs
+
       - name: Sobe o dev server
         working-directory: enlite-frontend
         env:
@@ -462,6 +494,9 @@ jobs:
       - name: Teste de integração — horas do Ana Care, conferência, envio ao Axonico e sync (FELIZ + troca de mês)
         working-directory: enlite-frontend
         env:
+          # R-16 (spec 050): guarda de rede no PROCESSO node do runner (workers herdam). Só neste passo: o `npx playwright install` baixa o
+          # Chromium e precisa de rede. Não cobre o NAVEGADOR (chave do Google Maps — spec 050 §15).
+          NODE_OPTIONS: --require ${{ github.workspace }}/scripts/rede-bloqueada-em-teste.cjs
           CI: 'true'
         run: npx playwright test --project=integration --ignore-snapshots --grep "anacare-hours-conferencia|anacare-hours-axonico-envio|anacare-hours-detalhe-por-mes|anacare-hours-sync-real.*(FELIZ|ALTERNATIVO 3)|anacare-hours-export"
 
@@ -491,6 +526,9 @@ jobs:
       - name: Teste de integração — sync do Ana Care, cenário de ERRO (fail-closed do diretório)
         working-directory: enlite-frontend
         env:
+          # R-16 (spec 050): guarda de rede no PROCESSO node do runner (workers herdam). Só neste passo: o `npx playwright install` baixa o
+          # Chromium e precisa de rede. Não cobre o NAVEGADOR (chave do Google Maps — spec 050 §15).
+          NODE_OPTIONS: --require ${{ github.workspace }}/scripts/rede-bloqueada-em-teste.cjs
           CI: 'true'
           ANACARE_SYNC_E2E_ERROR_SCENARIO: '1'
         run: npx playwright test --project=integration --ignore-snapshots --grep "anacare-hours-sync-real.*ALTERNATIVO 2"
@@ -619,6 +657,16 @@ jobs:
         working-directory: enlite-frontend
         run: npx playwright install-deps chromium
 
+      # R-16 (spec 050): CI sem rede para terceiros. Controle `rede-bloqueada.controle` (1) DENTRO do contêiner da API: os hosts de terceiro
+      # resolvem só para o endereço morto de `extra_hosts` (docker-compose.test.yml) e a conexão falha, e a própria API é alcançada (controle
+      # do controle); (2) no PROCESSO node do runner: `mcp.tactiq.io` é bloqueado pela guarda e um servidor em localhost é alcançado.
+      # Não cobre o NAVEGADOR do Playwright (chave do Google Maps — spec 050 §15). Falha o job se algum terceiro conectar.
+      - name: rede-bloqueada.controle — contêiner da API e processo do runner
+        run: |
+          set -euo pipefail
+          (cd worker-functions && docker compose -f docker-compose.yml -f docker-compose.test.yml -f docker-compose.group-simulation.yml exec -T api node - < ../scripts/rede-bloqueada-no-conteiner.cjs)
+          node scripts/rede-bloqueada-controle-runner.cjs
+
       - name: Sobe o dev server
         working-directory: enlite-frontend
         env:
@@ -695,6 +743,9 @@ jobs:
       - name: Teste de integração — simulação de grupo de acesso + completar-vacante (fases 2-3)
         working-directory: enlite-frontend
         env:
+          # R-16 (spec 050): guarda de rede no PROCESSO node do runner (workers herdam). Só neste passo: o `npx playwright install` baixa o
+          # Chromium e precisa de rede. Não cobre o NAVEGADOR (chave do Google Maps — spec 050 §15).
+          NODE_OPTIONS: --require ${{ github.workspace }}/scripts/rede-bloqueada-em-teste.cjs
           CI: 'true'
           ABAC_API_URL: http://localhost:8080
           ABAC_TEST_DB_URL: postgresql://enlite_admin:enlite_password@localhost:5433/enlite_e2e

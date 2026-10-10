@@ -4684,7 +4684,8 @@
             "move_to_on_hold": "A en espera",
             "move_to_suspended": "A suspendido",
             "move_to_alta": "A alta",
-            "move_to_discharged": "A baja"
+            "move_to_discharged": "A baja",
+            "release_paid_rehearsal": "Liberar ensayo pago"
           },
           "category": {
             "Trabalhadores": "Trabajadores",

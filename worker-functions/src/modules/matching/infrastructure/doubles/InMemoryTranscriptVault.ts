@@ -1,15 +1,21 @@
-import type { TranscriptVaultPort, VaultPutResult } from '../../application/ports/AdmissionImportPorts';
+import type { RehearsalVaultPort, TranscriptVaultPort, VaultPutResult } from '../../application/ports/AdmissionImportPorts';
 import { TranscriptVaultError } from '../../application/ports/AdmissionImportPorts';
 
 /**
  * Cofre em memória (NODE_ENV=test ou ADMISSION_EXTERNALS=fake) COM a semântica do real: criar só se não existe (o
  * equivalente de `ifGenerationMatch=0`). O 2º `putOnce` do mesmo nome volta `already_exists` e NÃO muda o conteúdo.
  */
-export class InMemoryTranscriptVault implements TranscriptVaultPort {
+export class InMemoryTranscriptVault implements TranscriptVaultPort, RehearsalVaultPort {
   readonly objects = new Map<string, { body: Buffer; sha256: string; generation: number }>();
   readonly putCalls: string[] = [];
   failWith: TranscriptVaultError | null = null;
+  /** Como o bucket de ensaio sem a env: `false` faz o serviço falhar fechado (R-29). */
+  configured = true;
   private seq = 0;
+
+  isConfigured(): boolean {
+    return this.configured;
+  }
 
   async putOnce(objectName: string, body: Buffer, meta: { sha256: string }): Promise<VaultPutResult> {
     this.putCalls.push(objectName);

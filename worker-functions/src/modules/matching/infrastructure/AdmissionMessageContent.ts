@@ -2,6 +2,8 @@ import type { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { getAdmissionCountryConfig, isAdmissionCountry } from '../domain/admissionCountries';
 import type { AdmissionCountry } from '../domain/admissionCountries';
+import { admissionRealm, isBlockedFromPaidPath } from '../domain/admissionRealm';
+import { rehearsalUntilSql } from './admissionRehearsalSql';
 import type { AdmissionMessageKind } from '../application/ports/AdmissionMessagingPorts';
 import type { AdmissionMessageResolver, MessageResolution } from '../application/AdmissionMessagingService';
 import {
@@ -27,6 +29,8 @@ interface PatientContactRow {
   first_name: string | null;
   has_consent: boolean | null;
   is_test: boolean | null;
+  /** Fim da liberação mais recente do ensaio pago da REUNIÃO (spec 050 F3); `null` = nunca liberada. */
+  rehearsal_until: Date | null;
 }
 
 interface AppointmentRow {
@@ -44,7 +48,10 @@ interface AppointmentRow {
  * (o `AdmissionMessagingService` o grava como linha). Serve o envio original e o reenvio.
  */
 export class AdmissionMessageContent implements AdmissionMessageResolver {
-  constructor(private readonly db: Pool = DatabaseConnection.getInstance().getPool()) {}
+  constructor(
+    private readonly db: Pool = DatabaseConnection.getInstance().getPool(),
+    private readonly now: () => Date = () => new Date(),
+  ) {}
 
   async resolve(kind: AdmissionMessageKind, appointmentId: string): Promise<MessageResolution> {
     const appt = await this.loadAppointment(appointmentId);
@@ -60,9 +67,11 @@ export class AdmissionMessageContent implements AdmissionMessageResolver {
   }
 
   async resolveWith(kind: AdmissionMessageKind, facts: AppointmentFacts): Promise<MessageResolution> {
-    const contact = await this.loadPatientContact(facts.patientId);
-    // Synthetic gate ANTES do consentimento: paciente is_test é do monitor sintético e roda todo dia contra produção.
-    if (contact?.is_test) return { skip: 'skipped_test' };
+    const contact = await this.loadPatientContact(facts.patientId, facts.appointmentId);
+    // Synthetic gate ANTES do consentimento: paciente is_test é do monitor sintético e roda todo dia contra produção. O realm é
+    // resolvido NA HORA DO ENVIO: lembrete e reenvio de uma reunião com ensaio liberado (e vigente) saem pelo caminho normal.
+    const realm = admissionRealm({ isTest: contact?.is_test === true, rehearsalUntil: contact?.rehearsal_until ?? null, now: this.now() });
+    if (isBlockedFromPaidPath(realm)) return { skip: 'skipped_test' };
     if (!contact?.has_consent) return { skip: 'skipped_no_consent' };
     if (!contact.phone_whatsapp) return { skip: 'skipped_no_phone' };
 
@@ -83,7 +92,7 @@ export class AdmissionMessageContent implements AdmissionMessageResolver {
             '5': facts.meetLink ?? '',
           }
         : { '1': hostLabel(facts.hostDisplayName, lang), '2': time, '3': facts.meetLink ?? '' };
-    return { send: { to: contact.phone_whatsapp, contentSid, vars } };
+    return { send: { to: contact.phone_whatsapp, contentSid, vars, realm } };
   }
 
   private async loadAppointment(appointmentId: string): Promise<AppointmentRow | null> {
@@ -95,12 +104,14 @@ export class AdmissionMessageContent implements AdmissionMessageResolver {
     return res.rows[0] ?? null;
   }
 
-  private async loadPatientContact(patientId: string): Promise<PatientContactRow | null> {
+  private async loadPatientContact(patientId: string, appointmentId: string): Promise<PatientContactRow | null> {
     const res = await this.db.query<PatientContactRow>(
-      `SELECT phone_whatsapp, first_name, has_consent, is_test
+      `SELECT patients.phone_whatsapp, patients.first_name, patients.has_consent, patients.is_test,
+              ${rehearsalUntilSql('a')} AS rehearsal_until
          FROM patients
-        WHERE id = $1 AND deleted_at IS NULL`,
-      [patientId],
+         LEFT JOIN admission_appointments a ON a.id = $2 AND a.patient_id = patients.id
+        WHERE patients.id = $1 AND patients.deleted_at IS NULL`,
+      [patientId, appointmentId],
     );
     return res.rows[0] ?? null;
   }

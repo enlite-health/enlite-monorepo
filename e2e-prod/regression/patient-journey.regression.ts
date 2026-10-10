@@ -23,7 +23,7 @@
  * envia para paciente `is_test` (gate em RealAdmissionNotifier).
  *
  * Aqui a gente prova que o pipeline CHEGOU no notifier e que o gate segurou
- * (log `admission.notifier.skipped_test_patient`). Que o envio real está de pé é
+ * (log `admission.skipped_test`). Que o envio real está de pé é
  * medido pelo smoke `admission-whatsapp-health`, sobre pacientes REAIS, sem gastar
  * um centavo. As duas metades juntas respondem "está enviando?".
  *
@@ -240,15 +240,17 @@ test.describe.serial('Jornada do paciente — do form no site ao big number na t
   });
 
   test('7. o notifier rodou e NÃO mandou WhatsApp (paciente sintético)', async () => {
+    // Correlação por JANELA (15 min): `admission.skipped_test` carrega SÓ o appointmentId (AdmissionMessagingService.ts:98)
+    // e `on_booked` não é emitido em prd (index.ts:389). Falta provar que a conta do e2e lê
+    // `GET /patients/:id/admission-appointments` (sonda 404 sem controle 403 válido) para filtrar por appointmentId.
+    // `skipped_test` só nasce de paciente is_test e a suíte roda serial (workers=1).
     const entry = await waitForLog({
-      message: 'admission.notifier.skipped_test_patient',
+      message: 'admission.skipped_test',
       withinMinutes: 15,
-      // por patientId: o corpo do book não expõe appointmentId, mas o log traz os dois.
-      match: { patientId: journey.patientId! },
     });
     expect(
       entry,
-      'sem `skipped_test_patient`: ou o notifier não rodou, ou o gate falhou e a Twilio foi cobrada',
+      'sem `admission.skipped_test`: ou o notifier não rodou, ou o gate falhou e a Twilio foi cobrada',
     ).not.toBeNull();
     expect(payloadString(entry, 'appointmentId'), 'o log precisa identificar a entrevista').toBeTruthy();
   });

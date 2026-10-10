@@ -166,6 +166,7 @@ jobs:
             ADMISSION_IMPERSONATE_EMAIL=enlite@enlite.health
             ADMISSION_HOST_ROSTER_ENABLED=true
             ADMISSION_TRANSCRIPT_VAULT_BUCKET=enlite-admission-transcripts-prd
+            ADMISSION_REHEARSAL_BUCKET=enlite-admission-rehearsal-prd
             ADMISSION_SUMMARY_PROMPT_DOC_ID=1rM2UbpPDU5HrXI1JyUruR8ZZj7Vn-aotB-k8HvW2RtA
             TACTIQ_MCP_URL=https://mcp.tactiq.io
             TACTIQ_OAUTH_REDIRECT_URL=https://api.enlite.health/api/admin/me/tactiq-link/callback

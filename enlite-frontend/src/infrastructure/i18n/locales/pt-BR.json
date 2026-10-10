@@ -4605,7 +4605,8 @@
             "move_to_on_hold": "Para em espera",
             "move_to_suspended": "Para suspenso",
             "move_to_alta": "Para alta",
-            "move_to_discharged": "Para baixa"
+            "move_to_discharged": "Para baixa",
+            "release_paid_rehearsal": "Liberar ensaio pago"
           },
           "category": {
             "Trabalhadores": "Trabalhadores",
