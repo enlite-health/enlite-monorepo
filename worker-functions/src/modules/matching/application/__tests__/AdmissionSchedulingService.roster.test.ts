@@ -141,17 +141,12 @@ function makeService(fx: Fixture) {
     listActiveByCountry: jest.fn(async () => fx.hosts ?? []),
   } as unknown as jest.Mocked<InterviewHostRepository>;
 
-  // Spec 050 F7: o site só sorteia quem tem o vínculo Tactiq. Aqui todas as atendentes do roster estão `linked`.
-  const gate = {
-    statesFor: jest.fn(async (emails: string[]) => new Map(emails.map((e) => [e.toLowerCase(), 'linked'] as const))),
-  };
   const service = new AdmissionSchedulingService(
     calendar,
     notifier,
     encryption,
     IMPERSONATE,
     hosts,
-    gate,
   );
 
   return { service, calendar, notifier, hosts, inserted };

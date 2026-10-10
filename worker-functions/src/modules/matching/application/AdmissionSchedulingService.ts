@@ -33,7 +33,7 @@ import {
 } from './AdmissionNotifier';
 import type { AdmissionCalendarPort } from './ports/AdmissionCalendarPort';
 import { TactiqLinkRequiredError, type TactiqLinkGate } from './ports/TactiqPorts';
-import { aptRoster, isHostApt } from './admissionHostEligibility';
+import { isHostApt } from './admissionHostEligibility';
 import {
   HostNotInRosterError,
   InvalidSlotError,
@@ -148,7 +148,7 @@ export class AdmissionSchedulingService {
     /**
      * A trava do vínculo do Tactiq (spec 049 F4, passo 3): o PAINEL só agenda com responsável de vínculo `linked`.
      * Sem o gate o `bookForHost` RECUSA (falha alta) — um gate ausente que deixasse passar seria a trava desligada
-     * em silêncio. O site (roster ligado) usa o MESMO gate para só sortear quem tem o vínculo (spec 050 F7).
+     * em silêncio. O fluxo do site (atribuição automática) não passa por aqui.
      */
     private readonly tactiqGate?: TactiqLinkGate,
   ) {}
@@ -207,7 +207,7 @@ export class AdmissionSchedulingService {
     // ou fuso: o spec manda responder "zero horários, sem erro", e um país que
     // ainda não tem agenda configurada não pode virar 500 na tela pública.
     const activeHosts = isHostRosterEnabled()
-      ? await aptRoster(this.tactiqGate, await this.hosts.listActiveByCountry(country), country)
+      ? await this.hosts.listActiveByCountry(country)
       : null;
     if (activeHosts && activeHosts.length === 0) {
       logger.warn(
@@ -440,8 +440,8 @@ export class AdmissionSchedulingService {
     timezone: string,
   ): Promise<RankedHost[]> {
     const cfg = getAdmissionCountryConfig(country);
-    const hosts = await aptRoster(this.tactiqGate, await this.hosts.listActiveByCountry(country), country); if (!hosts.length) return [];
-
+    const hosts = await this.hosts.listActiveByCountry(country);
+    if (hosts.length === 0) return [];
     const weekStart = slotStart.startOf('week');
     const weekEnd = weekStart.plus({ days: 7 });
     const busyByHost = await this.readHostsBusy(
