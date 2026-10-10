@@ -99,6 +99,9 @@ describe('paridade — SOURCE_LOCKED_FIELDS × buildInsertParams (fase 1, F3)', 
     };
 
     for (const field of SOURCE_LOCKED_FIELDS) {
+      // F2: com serviço o horário NÃO é gravado (a vaga lê do serviço) — a paridade de `schedule` é provada
+      // numa vaga SEM serviço; `contracted_service_id` varia sobre o base (com serviço) como os demais.
+      if (field === 'schedule') continue;
       const variant = buildInsertParams({ ...base, [field]: overridesPerField[field] });
       const diffIndexes = baseParams
         .map((_, i) => i)
@@ -110,6 +113,18 @@ describe('paridade — SOURCE_LOCKED_FIELDS × buildInsertParams (fase 1, F3)', 
       expect({ field, diffIndexes }).toEqual({ field, diffIndexes: [diffIndexes[0]] });
       expect(diffIndexes).toHaveLength(1);
     }
+  });
+
+  it('paridade de `schedule` (vaga SEM serviço): variar só ele muda só a posição dele; COM serviço o horário nunca vira param (F2)', () => {
+    const semServico = fogueteArgs({ contracted_service_id: null });
+    const variant = buildInsertParams({ ...semServico, schedule: [{ dayOfWeek: 5, startTime: '10:00', endTime: '14:00' }] });
+    const baseParams = buildInsertParams(semServico);
+    const diff = baseParams.map((_, i) => i).filter((i) => JSON.stringify(baseParams[i]) !== JSON.stringify(variant[i]));
+    expect(diff).toHaveLength(1);
+    expect(JSON.parse(variant[diff[0]] as string)).toEqual([{ dayOfWeek: 5, startTime: '10:00', endTime: '14:00' }]);
+    // COM serviço: o mesmo horário não chega ao INSERT (posição do schedule = a mesma do diff acima).
+    const comServico = buildInsertParams(fogueteArgs());
+    expect(comServico[diff[0]]).toBeNull();
   });
 
   it('paridade: buildInsertParams não muda de tamanho — mesmo número de colunas do INSERT de sempre (baseline Fase 0)', () => {

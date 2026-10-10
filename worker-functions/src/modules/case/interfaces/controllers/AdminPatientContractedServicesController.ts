@@ -5,7 +5,7 @@ import { AuthMiddleware } from '@modules/identity';
 import { PatientContractedServiceRepository, type ContractedServiceDetail } from '../../infrastructure/PatientContractedServiceRepository';
 import { ContractedServiceProviderRepository, ProviderAlreadyActiveError } from '../../infrastructure/ContractedServiceProviderRepository';
 import { DeviceTypeUnknownError } from '../../infrastructure/PatientDeviceTypeRepository';
-import { AddressNotOfPatientError } from '../../infrastructure/PatientContractedServiceRepository';
+import { AddressNotOfPatientError, ServiceFieldRequiredByLiveVacancyError } from '../../infrastructure/PatientContractedServiceRepository';
 import {
   createContractedServiceSchema,
   updateContractedServiceSchema,
@@ -150,6 +150,11 @@ export class AdminPatientContractedServicesController {
       // catálogo de dispositivos; nunca 500.
       if (err instanceof AddressNotOfPatientError) {
         res.status(422).json({ success: false, error: 'addressId does not belong to this patient', code: err.code, details: { addressId: err.addressId } });
+        return;
+      }
+      // F2: apagar o horário com vaga viva — a vaga lê o horário do serviço (vaga-le-do-servico-contratado).
+      if (err instanceof ServiceFieldRequiredByLiveVacancyError) {
+        res.status(422).json({ success: false, error: 'Service schedule cannot be cleared while a live vacancy reads it', code: err.code, details: { field: err.field, vacancyIds: err.vacancyIds } });
         return;
       }
       const e = err instanceof Error ? err : new Error(String(err));

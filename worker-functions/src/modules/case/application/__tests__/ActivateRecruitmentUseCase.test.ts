@@ -169,7 +169,8 @@ describe('ActivateRecruitmentUseCase', () => {
         contracted_service_id: SERVICE_ID,
         patient_address_id: 'addr-1',
         providers_needed: 2,
-        schedule: READY_SERVICE.schedule,
+        // F2: o horário do serviço NÃO é copiado para a vaga (a vaga lê do serviço); providers e faixa seguem copiados.
+        schedule: null,
         age_range_min: 20,
         age_range_max: 29,
         is_test: false,

@@ -239,7 +239,8 @@ export class ActivateRecruitmentUseCase {
       contracted_service_id: service.id,
       age_range_min: ageRange.min,
       age_range_max: ageRange.max,
-      schedule: service.schedule,
+      // F2: o horário NÃO é copiado — a vaga lê do serviço (`service.schedule` só serve ao gate de prontidão acima).
+      schedule: null,
       providers_needed: service.providers_needed,
     };
     // Tipado com o MESMO `Omit` que sobra de `fromOrigin` (+`vacancyNumber`/`computedTitle`, que não

@@ -8,7 +8,7 @@
  * quando não tem, com 0/1/2 campos travados no body e com campo livre.
  */
 import type { Pool } from 'pg';
-import { authorizeVacancyUpdate, SOURCE_LOCKED_FIELDS } from '../vacancyCrudHelpers';
+import { authorizeVacancyUpdate, buildInsertParams, SOURCE_LOCKED_FIELDS } from '../vacancyCrudHelpers';
 
 function makeDb(row: {
   status?: string | null;
@@ -70,5 +70,30 @@ describe('authorizeVacancyUpdate — 422 de SOURCE_LOCKED_FIELDS (F3, fase 1)', 
     const db = makeDb(null);
     const result = await authorizeVacancyUpdate(db, 'jp-sumiu', { schedule: [] });
     expect(result).toEqual({ kind: 'error', status: 404, error: 'Vacancy not found' });
+  });
+});
+
+describe('buildInsertParams — F2 (vaga-le-do-servico-contratado): vaga com serviço não grava o horário', () => {
+  const SLOT = [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }];
+  const base = {
+    vacancyNumber: 1, case_number: 1000, computedTitle: 'CASO EN1000-1', patient_id: 'p-1',
+    required_professions: null, required_sex: null, age_range_min: 20, age_range_max: 29,
+    worker_profile_sought: null, required_experience: null, worker_attributes: null,
+    work_schedule: null, providers_needed: 2, salary_text: null, payment_day: null, daily_obs: null,
+    patient_address_id: 'a-1',
+  };
+  // Posição do `schedule` no array de params (12º placeholder do INSERT, índice 11).
+  const SCHEDULE_IDX = 11;
+
+  it('COM contracted_service_id: schedule vira NULL no INSERT mesmo que o chamador o passe; providers e faixa seguem copiados', () => {
+    const params = buildInsertParams({ ...base, schedule: SLOT, contracted_service_id: 'svc-1' });
+    expect(params[SCHEDULE_IDX]).toBeNull();
+    expect(params[6]).toBe(20); // age_range_min
+    expect(params[13]).toBe(2); // providers_needed
+  });
+
+  it('SEM contracted_service_id (vaga manual): schedule continua gravado como JSON', () => {
+    const params = buildInsertParams({ ...base, schedule: SLOT, contracted_service_id: null });
+    expect(JSON.parse(params[SCHEDULE_IDX] as string)).toEqual(SLOT);
   });
 });

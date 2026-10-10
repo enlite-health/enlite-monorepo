@@ -39,6 +39,18 @@ export class AddressNotOfPatientError extends Error {
   }
 }
 
+/**
+ * F2 (vaga-le-do-servico-contratado): o horário do serviço é a ÚNICA fonte do horário da vaga viva —
+ * apagá-lo (`null`/`[]`) com vaga viva deixaria a vaga sem horário. O controller responde 422.
+ */
+export class ServiceFieldRequiredByLiveVacancyError extends Error {
+  readonly code = 'SERVICE_FIELD_REQUIRED_BY_LIVE_VACANCY';
+  constructor(readonly field: 'schedule', readonly vacancyIds: string[]) {
+    super(`service ${field} cannot be cleared while a live vacancy reads it`);
+    this.name = 'ServiceFieldRequiredByLiveVacancyError';
+  }
+}
+
 const ADDRESS_FK = 'pcs_address_same_patient_fk';
 
 function isAddressFkViolation(err: unknown): boolean {
@@ -322,6 +334,26 @@ export class PatientContractedServiceRepository {
   }
 
   /**
+   * F2: recusa APAGAR o horário do serviço (`null`/`[]`) enquanto há vaga viva ("viva" = não apagada e
+   * status fora de `DE_BAJA`/`CLOSED`). Trava o serviço e depois as vagas (`FOR UPDATE`) na MESMA transação,
+   * na ordem da ativação (serviço → vagas): ativar×apagar não deixa vaga viva sem horário — quem chega
+   * depois enxerga o commit do outro. Client = `withActorContext` (com identidade), nunca `connect()` cru.
+   */
+  private async refuseClearWhenLiveVacancy(cli: PoolClient, serviceId: string): Promise<void> {
+    await cli.query('SELECT id FROM patient_contracted_services WHERE id = $1 FOR UPDATE', [serviceId]);
+    const live = await cli.query<{ id: string }>(
+      `SELECT id FROM job_postings
+        WHERE contracted_service_id = $1 AND deleted_at IS NULL
+          AND COALESCE(status, '') NOT IN ('DE_BAJA', 'CLOSED')
+        FOR UPDATE`,
+      [serviceId],
+    );
+    if ((live.rowCount ?? live.rows.length) > 0) {
+      throw new ServiceFieldRequiredByLiveVacancyError('schedule', live.rows.map((r) => r.id));
+    }
+  }
+
+  /**
    * Atualização PARCIAL (Merge Patch, molde `PatientClinicalRepository`): chave ausente não
    * toca a coluna. `active:false` grava `ended_at=NOW()` (baixa, C-a.4); o schema HTTP só
    * aceita `false` (reabrir não existe, lex C-a.4) — o repositório aceita as duas direções
@@ -331,6 +363,9 @@ export class PatientContractedServiceRepository {
     try {
       // Mesmo molde do `create`: transação COM contexto de país (D95), nunca client cru.
       const row = await withActorContext(this.pool, async (cli) => {
+        if (patch.schedule !== undefined && (patch.schedule === null || patch.schedule.length === 0)) {
+          await this.refuseClearWhenLiveVacancy(cli, serviceId);
+        }
         const sets: string[] = [];
         const params: unknown[] = [serviceId];
         const push = (col: string, value: unknown): void => {

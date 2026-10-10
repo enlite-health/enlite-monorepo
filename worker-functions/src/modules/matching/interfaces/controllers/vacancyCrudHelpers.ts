@@ -421,7 +421,10 @@ export function buildInsertParams(p: VacancyInsertParams): unknown[] {
     p.worker_profile_sought ?? null,
     p.required_experience ?? null,
     p.worker_attributes ?? null,
-    locked.schedule ? JSON.stringify(locked.schedule) : null,
+    // F2 (vaga-le-do-servico-contratado): vaga COM serviço não grava o horário — o valor mora no serviço
+    // (`patient_contracted_services.schedule`) e os leitores o buscam pela peça de campos efetivos.
+    // Vaga manual (sem serviço) segue gravando o próprio horário.
+    locked.contracted_service_id == null && locked.schedule ? JSON.stringify(locked.schedule) : null,
     p.work_schedule ?? null,
     locked.providers_needed,
     p.salary_text ?? 'A convenir',

@@ -43,11 +43,11 @@ const ALLOWLIST: Record<string, { rules: RuleId[]; motivo: string }> = {
   },
   'src/modules/matching/interfaces/controllers/vacancyCrudHelpers.ts': {
     rules: ['schedule:bare', 'raw-export'],
-    motivo: 'ESCRITOR (F2): INSERT único copia o horário; o RETURNING crua serve ao client cru (leitor 13), a resposta traz o efetivo via withEffectiveSchedule.',
+    motivo: 'ESCRITOR (F2): o INSERT único ainda NOMEIA a coluna `schedule` (vaga manual, sem serviço), mas `buildInsertParams` grava NULL quando há `contracted_service_id`; o RETURNING crua serve ao client cru (leitor 13), a resposta traz o efetivo via withEffectiveSchedule.',
   },
   'scripts/enrich-vacancies-helpers.ts': {
     rules: ['schedule:bare'],
-    motivo: 'ESCRITOR (F2): UPDATE do enrichment (:276-278 e :302), sem chamador em src; escreve, não lê.',
+    motivo: 'ESCRITOR (F2): UPDATE do enrichment, sem chamador em src; escreve, não lê; o WHERE ganhou `AND contracted_service_id IS NULL` (nunca toca vaga com serviço).',
   },
 };
 
