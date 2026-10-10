@@ -10,6 +10,17 @@ import { isCountryCode, isCountryRlsEnabled, setDbContext } from '@shared/databa
 import { ENLITE_TENANT_ID, type PermissionClient } from '@modules/identity/permissions';
 
 /**
+ * E-mail do usuário autenticado para `req.user.email` — a MESMA chave que o mock preenche.
+ * Único ponto de verdade dos dois caminhos reais (`requireAuth` e `requireStaffOrApiKey`):
+ * sem ele o `req.user` real saía sem e-mail e toda rota que o lê (ex.: `/me/tactiq-link`,
+ * que respondia 400 NO_EMAIL) falhava só em produção. Minúsculo; token sem e-mail → ausente.
+ */
+function emailOfPrincipal(principal: { email?: string | null }): { email?: string } {
+  const email = principal.email?.trim().toLowerCase();
+  return email ? { email } : {};
+}
+
+/**
  * Guarda quem autenticou no contexto da request (ALS), para que as escritas
  * carimbem `changed_by`/`change_source` nas trilhas de histórico sem precisar
  * receber o ator por parâmetro em cada camada. Ver `withActorContext`.
@@ -215,6 +226,7 @@ export class AuthMiddleware {
         // Also attach user object for controller compatibility
         (req as any).user = {
           uid: authContext.principal.id,
+          ...emailOfPrincipal(authContext.principal),
           type: authContext.principal.type,
           roles: authContext.principal.roles,
           accountType: authContext.principal.accountType,
@@ -408,6 +420,7 @@ export class AuthMiddleware {
               req.authContext = firebaseContext;
               req.user = {
                 uid: firebaseContext.principal.id,
+                ...emailOfPrincipal(firebaseContext.principal),
                 roles,
                 accountType: firebaseContext.principal.accountType,
               };
