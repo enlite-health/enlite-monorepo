@@ -3163,7 +3163,6 @@
       "editDrawer": {
         "generalTitle": "Editar informações gerais",
         "clinicalTitle": "Editar diagnóstico",
-        "supportTitle": "Editar familiares",
         "serviceTitle": "Editar serviços contratados",
         "save": "Salvar",
         "close": "Fechar",
@@ -3207,9 +3206,6 @@
           "genericError": "Não foi possível concluir a ação. Tente novamente."
         },
         "hasConsent": "Consentimento",
-        "responsible": "Familiar",
-        "addResponsible": "Adicionar familiar",
-        "removeResponsible": "Remover",
         "isPrimary": "Contato principal",
         "firstName": "Nome",
         "lastName": "Sobrenome",
@@ -3731,7 +3727,16 @@
           "tableRelationship": "Tipo de Familiar",
           "tableIdentification": "Identificação",
           "tableName": "Nome",
-          "tablePhone": "Telefone"
+          "tablePhone": "Telefone",
+          "newTitle": "Novo familiar",
+          "editTitle": "Editar familiar",
+          "editResponsible": "Editar familiar",
+          "deactivateResponsible": "Desativar familiar",
+          "deactivateConfirmTitle": "Desativar familiar",
+          "deactivateConfirmBody": "O familiar deixa de aparecer na ficha do paciente. O histórico não é apagado.",
+          "deactivateConfirmCancel": "Cancelar",
+          "deactivateConfirmYes": "Desativar",
+          "deactivateConfirmBusy": "Desativando…"
         },
         "externalContactsCard": {
           "title": "Rede de contatos",

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ShieldAlert, ShieldOff } from 'lucide-react';
+import { Siren, Loader2 } from 'lucide-react';
 import { AdminPatientContactRowsApiService } from '@infrastructure/http/AdminPatientContactRowsApiService';
 import { ActionButton } from '@presentation/components/features/access';
 import type { EmergencyContactRef } from '@domain/entities/PatientDetail';
@@ -44,6 +44,11 @@ export function EmergencyMarkButton({ patientId, kind, contactId, isMarked, onCh
     }
   };
 
+  const label = te(isMarked ? 'unmarkEmergencyContact' : 'markEmergencyContact');
+
+  // UM botão-ícone (sirene) do MESMO tamanho nos dois estados — é um toggle: vazado = não marcado,
+  // preenchido = marcado (`aria-pressed`). `isLoading` do Button trocaria o conteúdo por "Cargando…"
+  // e alargaria o botão: o carregando é `disabled` + ícone girando + `aria-busy`, sem texto.
   return (
     <ActionButton
       resource="patient_family"
@@ -51,12 +56,15 @@ export function EmergencyMarkButton({ patientId, kind, contactId, isMarked, onCh
       variant={isMarked ? 'primary' : 'outline'}
       size="sm"
       onClick={toggle}
-      isLoading={busy}
-      className="flex items-center gap-1"
+      disabled={busy}
+      aria-busy={busy}
+      aria-pressed={isMarked}
+      title={label}
+      aria-label={label}
+      className={isMarked ? 'p-2 !border-2' : 'p-2'}
       data-testid={`emergency-mark-${kind}-${contactId}`}
     >
-      {isMarked ? <ShieldOff className="w-3.5 h-3.5" /> : <ShieldAlert className="w-3.5 h-3.5" />}
-      {isMarked ? te('unmarkEmergencyContact') : te('markEmergencyContact')}
+      {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Siren className="w-4 h-4" />}
     </ActionButton>
   );
 }
