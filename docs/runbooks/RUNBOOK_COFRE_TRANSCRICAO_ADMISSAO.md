@@ -7,14 +7,14 @@ Definido em `terraform/environments/prd/admission.tf`. **Nada deste runbook cont
 
 - O backend (`enlite-functions-sa`) só tem `roles/storage.objectCreator` neste bucket: grava (com `ifGenerationMatch=0`), não lê, não lista, não apaga, não sobrescreve.
 - **Ninguém** lê no dia a dia. Leitura existe só para o **resgate** (caso jurídico, pedido do titular, auditoria).
-- Quem pode pedir/autorizar o resgate: **Marcel** (decide), **Javier** e **DPO** (executam/atestam). Quem executa o `gcloud` é um membro do grupo do cofre. A composição do grupo é o **H5** (Marcel, Javier e Gabriel segundo a spec §4.4) e **está ABERTA**: enquanto a variável `admission_vault_readers_group` estiver vazia, o Terraform não concede leitura a ninguém.
+- Quem pode pedir/autorizar o resgate: **Marcel** (decide), **Javier** e **DPO** (executam/atestam). Quem executa o `gcloud` é uma das contas listadas em `admission_vault_readers`. **H5 (Gabriel, 09/10):** resgate = as 4 contas @enlite.health do Acesso Master (marcel, javier.bernal, diego.trevisan, gabriel.stein); o gmail pessoal fica fora de propósito. O IAM do GCP não enxerga grupo do app, por isso a lista é de membros IAM completos. Lista vazia = o Terraform não concede leitura a ninguém.
 - Texto da transcrição é dado clínico: **nunca** vai para chat, ticket, log, prompt ou e-mail. O resgate entrega o arquivo por canal oficial ao jurídico; este runbook não descreve conteúdo.
 
-## Pré-condição única (H5)
+## Leitores do cofre (H5, decidido)
 
-1. Gabriel define o grupo (ex.: `<GRUPO_COFRE>@enlite.health`) e a lista de membros fixos, se houver.
-2. Preencher `admission_vault_readers_group = "group:<GRUPO_COFRE>@enlite.health"` no `terraform.tfvars` de prd e rodar `plan`/`apply` com o "vai" do Gabriel (cria só o binding `roles/storage.objectViewer` do grupo no bucket).
-3. O grupo nasce **vazio**. Membro entra só por concessão temporária (abaixo).
+1. Os membros vivem no HCL versionado: default da variável `admission_vault_readers` em `terraform/environments/prd/admission.tf` (não no `terraform.tfvars`, que é gitignorado). Formato: `"user:x@enlite.health"` ou `"group:y@enlite.health"`.
+2. Mudar a lista = editar o HCL, `plan`/`apply` com o "vai" do Gabriel (cria/remove só os bindings `roles/storage.objectViewer` do bucket, um por membro).
+3. Esses 4 leem o cofre inteiro; a concessão temporária abaixo continua valendo para quem NÃO está na lista.
 
 ## Resgate: concessão temporária de leitura
 
@@ -54,13 +54,17 @@ Reabilitar com `gcloud kms keys versions enable ...`. **Não destruir** a versã
 
 ## Retenção e Bucket Lock (depende do H6)
 
-- Hoje: versionamento ligado, soft delete 90 d, `retention_policy` **sem trava** com prazo **provisório** de 1 ano (`admission_vault_retention_seconds`).
-- O prazo definitivo e a base legal da transferência internacional são do **Marcel/jurídico (H6)**.
-- Depois do H6: ajustar `admission_vault_retention_seconds` ao prazo legal, `plan`/`apply`, e só então travar. **Bucket Lock é irreversível** (o prazo só aumenta e o bucket não pode ser apagado antes dele). Travar exige mudar `is_locked = true` no HCL com o "vai" nominal do Gabriel e do Marcel; nunca por `gcloud` solto.
+- Hoje: versionamento ligado, soft delete 90 d, `retention_policy` **sem trava** com prazo de **5 anos** (H6, Gabriel, 09/10; `admission_vault_retention_seconds = 157680000`).
+- A base legal da transferência internacional segue com o **Marcel/jurídico**.
+- Para travar: `plan`/`apply` do prazo, e só então travar. **Bucket Lock é irreversível** (o prazo só aumenta e o bucket não pode ser apagado antes dele). Travar exige mudar `is_locked = true` no HCL com o "vai" nominal do Gabriel e do Marcel; nunca por `gcloud` solto.
 
 ## Entrega das envs e passos de fecho (fora do Terraform)
 
-1. Envs do Cloud Run `worker-functions` (nomes): `ADMISSION_TRANSCRIPT_VAULT_BUCKET`, `TACTIQ_MCP_URL`, `TACTIQ_OAUTH_CLIENT_ID`, `TACTIQ_OAUTH_REDIRECT_URL` (`<URL_PRD>/api/admin/me/tactiq-link/callback`), `TACTIQ_LINK_RETURN_URL`; opcionais `TACTIQ_OAUTH_SCOPE`, `ADMISSION_SUMMARY_MODEL`. `VERTEX_LOCATION` já existe em prd. Entrega só depois do "vai" (decisão do Gabriel; ver o relatório da F8), nunca por overwrite do workflow de prd.
+1. Envs do Cloud Run `worker-functions` (nomes): `ADMISSION_TRANSCRIPT_VAULT_BUCKET`, `TACTIQ_MCP_URL`, `TACTIQ_OAUTH_CLIENT_ID`, `TACTIQ_OAUTH_REDIRECT_URL` (`<URL_PRD>/api/admin/me/tactiq-link/callback`), `TACTIQ_LINK_RETURN_URL` (as 4 sem o CLIENT_ID já estão no `backend-prd.yml`); `ADMISSION_SUMMARY_PROMPT_DOC_ID` (H4, ver abaixo, NÃO está no workflow); opcionais `TACTIQ_OAUTH_SCOPE`, `ADMISSION_SUMMARY_MODEL`. `VERTEX_LOCATION` já existe em prd. Entrega só depois do "vai" (decisão do Gabriel; ver o relatório da F8), nunca por overwrite do workflow de prd.
 2. **Cliente OAuth do Tactiq em prd**: o registro dinâmico de prd é PRÓPRIO, com o redirect de prd. Fazer depois do deploy do código, uma vez, e só então preencher `TACTIQ_OAUTH_CLIENT_ID`. O cliente é público (sem segredo novo no Secret Manager).
 3. O Scheduler `admission-post-call`/`admission-import`/`admission-tactiq-check` nasce no mesmo `apply`; conferir `gcloud scheduler jobs list --location=southamerica-east1 | grep admission` e disparar uma vez à mão.
 4. A fila Cloud Tasks `admission-reminders` foi criada à mão e **não** está no state (spec §11).
+
+## Prompt do resumo (H4)
+
+O prompt do resumo vem de um Google Doc, lido pelo mesmo `GoogleDocsPromptProvider` da vacante (ADC, `drive.readonly`, cache de 10 min). Env: `ADMISSION_SUMMARY_PROMPT_DOC_ID` (id do doc). **Pendente: o Gabriel manda o doc**; ele precisa **compartilhar o doc (leitor) com a service account do Cloud Run** `worker-functions`. Sem a env, ou com falha de leitura, a importação guarda a transcrição no cofre, NÃO cria documento e registra `summary_failed` (`prompt_missing` / `prompt_unavailable`); a próxima execução do job refaz só o resumo quando o doc passar a ler.

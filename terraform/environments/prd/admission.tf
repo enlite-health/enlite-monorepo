@@ -11,16 +11,24 @@
 #
 # Envs do Cloud Run (ADMISSION_TRANSCRIPT_VAULT_BUCKET, TACTIQ_*, ...) NÃO são deste arquivo: ver o runbook.
 
-variable "admission_vault_readers_group" {
-  type        = string
-  description = "Grupo (ex.: group:cofre-transcricoes@enlite.health) com leitura do cofre da transcrição. H5 ABERTO: vazio = ninguém lê. Marcel, Javier e Gabriel (spec §4.4) — só preencher depois do H5."
-  default     = ""
+# H5 (Gabriel, 09/10): resgate = 4 contas @enlite.health do Acesso Master; o gmail pessoal fica fora de propósito.
+# IAM do GCP não enxerga grupo do app: lista de membros IAM completos ("user:x@enlite.health" / "group:y@enlite.health").
+# Os valores vivem AQUI (HCL versionado), não no terraform.tfvars (gitignorado). Lista vazia = ninguém lê.
+variable "admission_vault_readers" {
+  type        = list(string)
+  description = "Membros IAM com leitura (roles/storage.objectViewer) do cofre da transcrição — o resgate. Vazio = ninguém lê."
+  default = [
+    "user:marcel@enlite.health",
+    "user:javier.bernal@enlite.health",
+    "user:diego.trevisan@enlite.health",
+    "user:gabriel.stein@enlite.health",
+  ]
 }
 
 variable "admission_vault_retention_seconds" {
   type        = number
-  description = "Retenção do cofre, SEM trava (is_locked fica false até o H6). PROVISÓRIO: 1 ano. O prazo legal é do Marcel/jurídico (H6); destravada, a política pode ser encurtada ou removida — o Bucket Lock é irreversível e só entra depois."
-  default     = 31536000
+  description = "Retenção do cofre, SEM trava (is_locked fica false). H6 (Gabriel, 09/10): 5 anos (5 × 365 × 86400). Destravada, a política pode ser encurtada ou removida — o Bucket Lock é irreversível e só entra depois."
+  default     = 157680000
 }
 
 locals {
@@ -116,12 +124,12 @@ resource "google_storage_bucket_iam_member" "admission_transcripts_backend_creat
   member = module.sa_enlite_functions.member
 }
 
-# Leitura: só o grupo do resgate (H5). Vazio = nenhum binding.
+# Leitura: só os membros do resgate (H5). Lista vazia = nenhum binding.
 resource "google_storage_bucket_iam_member" "admission_transcripts_readers" {
-  count  = var.admission_vault_readers_group == "" ? 0 : 1
-  bucket = google_storage_bucket.admission_transcripts.name
-  role   = "roles/storage.objectViewer"
-  member = var.admission_vault_readers_group
+  for_each = toset(var.admission_vault_readers)
+  bucket   = google_storage_bucket.admission_transcripts.name
+  role     = "roles/storage.objectViewer"
+  member   = each.value
 }
 
 # ---------------------------------------------------------------------------
