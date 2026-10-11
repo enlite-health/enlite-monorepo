@@ -4,8 +4,8 @@
  * Mapeia o `ack` numérico do evento webhook `message.ack.updated` do
  * Periskope para o MESMO vocabulário de `delivery_status` já gravado pelo
  * canal Twilio (grep confirma os valores lidos pelos consumidores
- * existentes — GetFunnelTableUseCase.deriveWhatsAppStatus,
- * RecruitmentHealthController — usam 'sent' | 'delivered' | 'read' |
+ * existentes — GetFunnelTableUseCase.deriveWhatsAppStatus —
+ * usam 'sent' | 'delivered' | 'read' |
  * 'failed' | 'undelivered'). NUNCA inventar valor novo aqui.
  *
  * Semântica oficial do Periskope

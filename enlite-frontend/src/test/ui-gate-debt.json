@@ -22,7 +22,7 @@
     },
     {
       "cell": "recruitment:write",
-      "motivo": "D269 — única rota (POST calculate-reemplazos) é servida por ReemplazosButton/useReemplazosCalculator, componentes que NÃO estão montados em página nenhuma (código órfão). Gate entra quando o botão for montado."
+      "motivo": "Seed 206 ainda declara a célula, mas a única rota (POST calculate-reemplazos) e o ReemplazosButton foram REMOVIDOS junto com o dashboard de Reclutamiento: sem rota, sem tela, sem consumidor possível. Some desta lista quando o seed deixar de declará-la."
     },
     {
       "cell": "upload:write",

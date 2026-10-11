@@ -15,7 +15,6 @@ import './adminMessaging';
 import './adminNotifications';
 import './adminPatients';
 import './adminPresence';
-import './adminRecruitment';
 import './adminSetup';
 import './adminSocialLinks';
 import './adminMeetLinks';

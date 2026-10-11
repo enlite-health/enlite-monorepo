@@ -92,15 +92,6 @@ async function seedAdminAndLogin(page: Page): Promise<void> {
     });
   });
 
-  // 6. Mock recruitment data
-  await page.route('**/api/recruitment*', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ success: true, data: [] }),
-    });
-  });
-
   // 7. Mock workers list so WorkersPage doesn't stay in loading state
   await page.route('**/api/admin/workers*', async (route) => {
     await route.fulfill({

@@ -19,7 +19,6 @@ import { AuthActionPage } from './pages/auth/AuthActionPage';
 import { AdminUsersPage } from './pages/admin/AdminUsersPage';
 import { AccessPage, GroupDetailPage, CountryFeaturesPage, PermissionHistoryPage } from './pages/admin/access';
 import { AdminVacanciesPage } from './pages/admin/AdminVacanciesPage';
-import { AdminRecruitmentPage } from './pages/admin/AdminRecruitmentPage';
 import { ManagementDashboardPage } from './pages/admin/ManagementDashboardPage';
 import { AdminWorkersPage } from './pages/admin/AdminWorkersPage';
 import { AdminPatientsPage } from './pages/admin/AdminPatientsPage';
@@ -34,7 +33,6 @@ import PatientDetailPage from './pages/admin/PatientDetailPage';
 import { PatientKanbanPage } from './pages/admin/PatientKanbanPage';
 import { AdminMapPage } from './pages/admin/AdminMapPage/AdminMapPage';
 import { PendingAddressReviewPage } from './pages/admin/PendingAddressReviewPage';
-import { RecruitmentHealthPage } from './pages/admin/RecruitmentHealthPage';
 import { BlockedAttemptsPage } from './pages/admin/BlockedAttemptsPage';
 import TagCatalogPage from './pages/admin/TagCatalogPage';
 import { FunnelStageMessagesPage } from './pages/admin/FunnelStageMessagesPage';
@@ -254,8 +252,6 @@ export function App() {
           <Route path="vacancies/:id/borrador" element={<FeatureRouteGate feature="screen:vacancies"><DraftVacancyPage /></FeatureRouteGate>} />
           <Route path="vacancies/:id" element={<FeatureRouteGate feature="screen:vacancies"><VacancyDetailPage /></FeatureRouteGate>} />
           <Route path="dashboard" element={<FeatureRouteGate feature="screen:management-dashboard"><ManagementDashboardPage /></FeatureRouteGate>} />
-          <Route path="recruitment" element={<FeatureRouteGate feature="screen:funnel"><AdminRecruitmentPage /></FeatureRouteGate>} />
-          <Route path="recruitment/health" element={<FeatureRouteGate feature="screen:funnel"><RecruitmentHealthPage /></FeatureRouteGate>} />
           <Route path="recruitment/blocked-attempts" element={<FeatureRouteGate feature="screen:funnel"><BlockedAttemptsPage /></FeatureRouteGate>} />
           <Route path="workers" element={<FeatureRouteGate feature="screen:workers"><AdminWorkersPage /></FeatureRouteGate>} />
           <Route path="workers/:id" element={<FeatureRouteGate feature="screen:workers"><WorkerDetailPage /></FeatureRouteGate>} />

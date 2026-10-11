@@ -1,7 +1,7 @@
 /**
  * tests/fixtures/pr8b-rotas-create-update.ts
  *
- * Fixture NOMINAL das 99 rotas splitadas (spec 018, PR-8b, 8b.1) — gerada de
+ * Fixture NOMINAL das rotas splitadas (era 99; `POST /admin/recruitment/calculate-reemplazos` saiu com o dashboard de recrutamento) (spec 018, PR-8b, 8b.1) — gerada de
  * `specs/018-planning-0909-ficha-admissao/pr8b-mapa-rotas.tsv` (108 rotas menos as 9
  * `permission_management` que ficam `write`, contracts/permissions-split.md linha 11).
  *
@@ -110,7 +110,6 @@ export const PR8B_ROTAS_CREATE_UPDATE: readonly RotaCreateUpdate[] = [
   { method: 'POST', path: '/api/admin/vacancies/:vacancyId/workers/:workerId/contact-notes', actions: ['create'], source: 'adminVacanciesRoutes.ts:244' },
   { method: 'DELETE', path: '/api/admin/vacancies/:vacancyId/workers/:workerId/contact-notes/:noteId', actions: ['update'], source: 'adminVacanciesRoutes.ts:250' },
   { method: 'PUT', path: '/api/admin/funnel-stage-messages/:stage', actions: ['update'], source: 'funnelStageMessagesRoutes.ts:19' },
-  { method: 'POST', path: '/api/admin/recruitment/calculate-reemplazos', actions: ['create', 'update'], source: 'recruitmentRoutes.ts:64' },
   { method: 'POST', path: '/api/admin/template-drafts', actions: ['create'], source: 'templateDraftsRoutes.ts:34' },
   { method: 'POST', path: '/api/admin/template-drafts/validar', actions: ['create', 'update'], source: 'templateDraftsRoutes.ts:50' },
   { method: 'PUT', path: '/api/admin/template-drafts/:id', actions: ['update'], source: 'templateDraftsRoutes.ts:51' },

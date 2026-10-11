@@ -30,15 +30,6 @@ const DIVIDA_DECLARADA: ReadonlyArray<readonly [string, string]> = [
     '`worker:export` com gate por coluna. Sai daqui quando a C5 fechar.',
   ],
   [
-    'src/modules/matching/interfaces/controllers/RecruitmentAnalyticsController.ts',
-    '`e.worker_raw_name` e `e.worker_raw_phone` em texto claro no relatório de encuadres ' +
-    '(:147,:149). O diagnóstico do paciente já saiu daqui na C1; o contato do prestador não.',
-  ],
-  [
-    'src/modules/matching/interfaces/controllers/RecruitmentController.ts',
-    '`e.worker_raw_name`/`worker_raw_phone` no relatório de recrutamento (:286). Mesma classe.',
-  ],
-  [
     'src/modules/notification/interfaces/controllers/MessagingController.ts',
     '`whatsapp_phone_encrypted` descriptografado para ENVIAR mensagem — uso legítimo. ' +
     'Precisa de decisão própria: o telefone é insumo do envio, não conteúdo de resposta. ' +

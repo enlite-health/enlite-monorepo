@@ -1,1 +1,0 @@
-export { ActiveCasesTable } from './ActiveCasesTable';

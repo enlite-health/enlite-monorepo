@@ -60,7 +60,6 @@ const MAPA = [
   ['user_management',      '/admin', null, 'main'],
   ['permission_management', `/admin/access/groups/${ID.group}`, null, 'main'],
   ['dedup',                '/admin/dedup', null, 'main'],
-  ['recruitment',          '/admin/recruitment', null, 'main'],
 ];
 
 mkdirSync(OUT, { recursive: true });

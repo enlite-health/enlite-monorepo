@@ -23,7 +23,6 @@ jest.mock('@shared/database/DatabaseConnection', () => ({
 
 import { Request, Response } from 'express';
 import { VacanciesController } from '../VacanciesController';
-import { RecruitmentAnalyticsController } from '../RecruitmentAnalyticsController';
 import { PatientDiagnosisService } from '@modules/diagnosis/application/PatientDiagnosisService';
 import { PatientDiagnosis } from '@modules/diagnosis/domain/PatientDiagnosis';
 import { DiagnosisSource } from '@modules/diagnosis/domain/DiagnosisSource';

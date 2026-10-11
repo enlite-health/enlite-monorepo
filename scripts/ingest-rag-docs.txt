@@ -36,7 +36,6 @@ docs/worker-profile-fields.md
 enlite-frontend/CLAUDE.md
 enlite-frontend/FIREBASE_HOSTING_SETUP.md
 enlite-frontend/INTEGRATION_GUIDE.md
-enlite-frontend/MIGRATION_DASHBOARD_RECLUTAMIENTO.md
 enlite-frontend/README.md
 enlite-frontend/docs/roadmaps/e2e-perfil-100-cobertura.md
 enlite-frontend/docs/roadmaps/navegacao-fluida.md

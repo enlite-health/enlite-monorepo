@@ -29,9 +29,9 @@ export function sortDiagnosesForCard(diagnoses: PatientDiagnosisDetail[]): Patie
 }
 
 /**
- * diagnosisDisplayState — a MESMA decisão de estado (spec cid-na-vacante), reusada pelos 3
+ * diagnosisDisplayState — a MESMA decisão de estado (spec cid-na-vacante), reusada pelos
  * pontos que passaram a mostrar patología na vaga/caso (`VacancyFormLeftColumn`,
- * `VacancyProfessionCard`, `CaseDetailsModal`). Cada chamador mantém seu próprio markup/i18n —
+ * `VacancyProfessionCard`). Cada chamador mantém seu próprio markup/i18n —
  * isto só decide QUAL estado é, não como ele se desenha.
  *
  * `null` = ator sem permissão clínica (a API projetou o dado fora, D113): NUNCA vira "vazio".
