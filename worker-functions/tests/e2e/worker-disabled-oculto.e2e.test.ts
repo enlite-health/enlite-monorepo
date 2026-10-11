@@ -9,7 +9,6 @@
  *   - kanban da vaga, cards (GET /vacancies/:id/funnel) — colunas do Kanban
  *   - candidatos da vaga (GET /vacancies/:id/match-results) — lista E total
  *   - contadores da listagem de vagas (GET /vacancies)
- *   - salud del reclutamiento (GET /admin/recruitment/encuadres)
  *   - detalhe da vaga (GET /vacancies/:id) — array de encuadres agregado
  *   - analytics: missing-documents, incomplete-registrations, métricas de
  *     caso e reemplazos (GET /analytics/*)
@@ -84,8 +83,7 @@ describe('Worker com baixa de conta (DISABLED) some das superfícies operacionai
     await pool.query(`UPDATE workers SET status = 'DISABLED' WHERE id = $1`, [disabledWorkerId]);
 
     // Nada a inserir em encuadres: trg_ensure_encuadre_on_wja_insert (migration 189)
-    // já criou 1 encuadre por WJA automaticamente — é isso que alimenta
-    // /admin/recruitment/encuadres (tela "Salud del Reclutamiento").
+    // já criou 1 encuadre por WJA automaticamente.
   });
 
   afterAll(async () => {
@@ -149,20 +147,6 @@ describe('Worker com baixa de conta (DISABLED) some das superfícies operacionai
     expect(vacancy!.convidados).toBe('01');
     // 2 vagas pedidas, ninguém selecionado ainda.
     expect(vacancy!.faltantes).toBe('02');
-  });
-
-  it('salud del reclutamiento (/recruitment/encuadres): não lista o worker que deu baixa', async () => {
-    const res = await api.get(
-      `/api/admin/recruitment/encuadres?caseNumber=${uniqueCaseNumber}&limit=50`,
-      auth(),
-    );
-
-    expect(res.status).toBe(200);
-    // Colunas cruas do Postgres (snake_case) — este controller não remapeia pra camelCase.
-    const ids = (res.data.data as Array<{ worker_id: string }>).map((e) => e.worker_id);
-    expect(ids).toContain(activeWorkerId);
-    expect(ids).not.toContain(disabledWorkerId);
-    expect(res.data.pagination.total).toBe(1);
   });
 
   it('detalhe da vaga (/vacancies/:id): worker que deu baixa some do array de encuadres', async () => {

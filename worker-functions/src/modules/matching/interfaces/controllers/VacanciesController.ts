@@ -246,8 +246,7 @@ export class VacanciesController {
           -- outra celula: foi TIRADA, porque o dado nao e necessario para operar a
           -- vaga (o requisito de perfil vem de required_professions,
           -- worker_attributes e da descricao). Quem precisar do quadro clinico le
-          -- no cadastro do paciente, que tem guarda propria. Irmao do mesmo
-          -- defeito: RecruitmentAnalyticsController.getCaseAnalysis.
+          -- no cadastro do paciente, que tem guarda propria.
           -- (O ponteiro para a guarda mora no JSDoc do metodo, nao aqui: comentario
           -- de SQL viaja DENTRO da query, e ate o NOME do arquivo de teste casaria
           -- a regex clinica da guarda -- D182.)

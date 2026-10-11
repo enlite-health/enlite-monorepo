@@ -403,7 +403,6 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       'prescreening:create', 'prescreening:update',
       'interview:create', 'interview:update',
       'messaging:create', 'messaging:update',
-      'recruitment:create', 'recruitment:update',
       'worker:update',
       'worker_document:create', 'worker_document:update',
       // Spec `anacare-conferencia-de-horas`, fase 1 (D344/D345, 15/09): DECLARADAS por rota real

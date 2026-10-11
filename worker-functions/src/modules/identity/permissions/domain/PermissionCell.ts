@@ -397,8 +397,11 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
   'messaging:update':
     'Editar/enviar template ou rascunho de mensagem já existente, configurar mensageria por etapa e '
     + 'o convite à apresentação.',
-  'recruitment:create': 'Disparar cálculo novo de reemplazos.',
-  'recruitment:update': 'Editar/repetir o cálculo de reemplazos.',
+  // `recruitment:create`/`recruitment:update` REMOVIDAS junto com o dashboard de recrutamento
+  // (`POST /admin/recruitment/calculate-reemplazos` e as 5 rotas `recruitment:read` saíram): SEM consumidor
+  // no backend, e o recurso `recruitment` saiu de `SPLIT_RESOURCES`. Mesmo caminho de `api_docs:read`
+  // (commit 8991d6708): só código, sem migration — o sync do boot marca `deprecated_at`, nunca apaga linha
+  // nem mexe em `iam.group_permissions`.
   'worker:update': 'Editar status, ocupação, área de serviço, perfil e tags de um prestador já cadastrado.',
   'worker_document:create': 'Subir um documento novo do prestador (ou o link de ingestão a partir de URL).',
   'worker_document:update': 'Editar o prazo de validade de um documento já cadastrado do prestador.',
@@ -469,7 +472,8 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
  * (spec 018, PR-8b, ADR-2/SUP-30). `permission_management` fica de fora de propósito —
  * é a ÚNICA rota que continua sob `write` (contracts/permissions-split.md linha 11).
  *
- * Os 18 primeiros são os recursos com `perm.require('<recurso>', 'write', …)` LITERAL
+ * (`recruitment` SAIU em out/2026, com o dashboard de recrutamento — sem rota nem célula `create`/`update`.)
+ * Os 17 primeiros são os recursos com `perm.require('<recurso>', 'write', …)` LITERAL
  * (`git grep -n "perm\.require([^)]*'write'" -- worker-functions/src | grep -v test` menos
  * `permission_management`, 93 hits medidos em 15/09 (excluindo por CAMINHO `__tests__`, não por
  * substring da linha — correção do coordenador: o filtro por substring "test" cortava
@@ -501,7 +505,6 @@ export const SPLIT_RESOURCES: ReadonlySet<string> = new Set([
   'prescreening',
   'interview',
   'messaging',
-  'recruitment',
   'worker_document',
   'patient_therapeutic_project',
   'catalog_therapeutic_objectives',

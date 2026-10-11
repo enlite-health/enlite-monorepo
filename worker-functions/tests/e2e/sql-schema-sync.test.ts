@@ -441,7 +441,6 @@ describe('SQL ↔ Schema Sync Validation', () => {
       'modules/matching/interfaces/controllers/VacancyCrudController.ts',
       'modules/matching/interfaces/controllers/WJAFunnelController.ts',
       'modules/worker/interfaces/controllers/AdminWorkersController.ts',
-      'modules/matching/interfaces/controllers/RecruitmentController.ts',
       'modules/matching/interfaces/controllers/AnalyticsController.ts',
       'modules/matching/infrastructure/MatchmakingService.ts',
     ];

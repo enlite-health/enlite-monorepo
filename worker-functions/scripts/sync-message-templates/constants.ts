@@ -12,7 +12,7 @@
  *   - src/modules/notification/interfaces/controllers/InboundWhatsAppController.ts
  *
  * NÃO incluir slugs que aparecem apenas em queries de leitura de
- * `whatsapp_bulk_dispatch_logs` (RecruitmentHealthController) — esses logs
+ * `whatsapp_bulk_dispatch_logs` (antiga tela de saúde do recrutamento, removida) — esses logs
  * guardam o slug como string solta, não exigem o template em
  * `message_templates`. Exemplo: `vacancy_invited_auto` foi desativado
  * pela migration 178 e substituído por `ar_vacancy_match_*`; só é lido

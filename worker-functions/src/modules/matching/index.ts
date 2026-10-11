@@ -52,8 +52,6 @@ export { AnalyticsController } from './interfaces/controllers/AnalyticsControlle
 export { AnalyticsDashboardController } from './interfaces/controllers/AnalyticsDashboardController';
 export { InterviewSlotsController } from './interfaces/controllers/InterviewSlotsController';
 export { PublicVacancyController } from './interfaces/controllers/PublicVacancyController';
-export { RecruitmentAnalyticsController } from './interfaces/controllers/RecruitmentAnalyticsController';
-export { RecruitmentController } from './interfaces/controllers/RecruitmentController';
 export { VacancyCrudController } from './interfaces/controllers/VacancyCrudController';
 // Vacancy INSERT building blocks — reused by ActivatePatientUseCase (case module)
 // so the draft-vacancy creation on patient activation goes through the SAME SQL

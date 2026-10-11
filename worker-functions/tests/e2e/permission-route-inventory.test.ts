@@ -263,7 +263,7 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'PUT /api/admin/vacancies/:id → vacancy:update',
         'PUT /api/admin/vacancies/:id/meet-links → vacancy:update',
         'PUT /api/admin/vacancies/:id/talentum-description → talentum:update',
-        // ── admin.analytics (15) + admin.recruitment (11) — a 5ª e a 6ª
+        // ── admin.analytics (15) + admin.recruitment (hoje só blocked-attempts; as outras 10 saíram com o dashboard) — a 5ª e a 6ª
         'GET /analytics/dashboard/cases/:caseNumber → dashboard:read',
         'GET /analytics/dashboard/global → dashboard:read',
         'GET /analytics/dashboard/management → dashboard:read',
@@ -280,17 +280,7 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'GET /analytics/workers/missing-documents → analytics:read',
         // Spec 024 (D2/D401, 21/09): LOG administrativo, dado diferente do funil — célula própria.
         'GET /api/admin/recruitment/blocked-attempts → recruitment_blocked:read',
-        'GET /api/admin/recruitment/case/:caseNumber → recruitment:read',
-        'GET /api/admin/recruitment/clickup-cases → recruitment:read',
-        'GET /api/admin/recruitment/encuadres → match:read',
-        'GET /api/admin/recruitment/global-metrics → recruitment:read',
-        'GET /api/admin/recruitment/health → messaging:read',
-        'GET /api/admin/recruitment/progreso → recruitment:read',
-        'GET /api/admin/recruitment/publications → recruitment:read',
-        'GET /api/admin/recruitment/talentum-workers → talentum:read',
-        'GET /api/admin/recruitment/zones → recruitment:read',
         'POST /analytics/dedup/run → dedup:execute',
-        'POST /api/admin/recruitment/calculate-reemplazos → recruitment:create+recruitment:update',
         // ── A4: admin.messaging (7) + admin.integrations (1) + admin.test_fixtures (1)
         'POST /api/admin/messaging/whatsapp/vacancy-match → messaging:send',
         'POST /api/admin/messaging/whatsapp/direct → messaging:send',

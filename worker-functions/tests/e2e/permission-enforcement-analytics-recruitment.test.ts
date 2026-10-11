@@ -24,8 +24,9 @@ import {
  *  2. **`dedup:execute` mora em `admin.analytics`** — a célula destrutiva do A5
  *     aparece nesta família, e virar `admin.dedup` não a alcança.
  *  3. **Células "vizinhas" não se cobrem**: `analytics:read` não abre o
- *     dashboard, `recruitment:read` não abre a lista de encuadres (`match:read`)
- *     nem a do Talentum (`talentum:read`).
+ *     dashboard, e não abre `blocked-attempts` (`recruitment_blocked:read`).
+ *     (O dashboard de recrutamento e a saúde saíram; `admin.recruitment` hoje
+ *     governa só `blocked-attempts`.)
  *  4. **D-P4 pela AÇÃO**: `dedup:execute` é ação sensível → ALLOW vai à trilha,
  *     enquanto `analytics:read` não vai.
  *
@@ -44,7 +45,7 @@ describe('famílias admin.analytics e admin.recruitment sob decisão por célula
     analista: 'perm-a3-e2e-analista',
     /** `dashboard:read` apenas. */
     gestao: 'perm-a3-e2e-gestao',
-    /** `recruitment:read|write` — a operação de recrutamento, sem match nem talentum. */
+    /** `recruitment_blocked:read` — o log de postulações bloqueadas. */
     recrutamento: 'perm-a3-e2e-recrutamento',
     /** `dedup:read|execute` — a fusão de cadastros. */
     dedup: 'perm-a3-e2e-dedup',
@@ -98,11 +99,7 @@ describe('famílias admin.analytics e admin.recruitment sob decisão por célula
     await grupoComCelulas(pool, {
       nome: GRUPOS.recrutamento,
       uid: U.recrutamento,
-      celulas: [
-        ['recruitment', 'read'],
-        ['recruitment', 'create'],
-        ['recruitment', 'update'],
-      ],
+      celulas: [['recruitment_blocked', 'read']],
     });
     await grupoComCelulas(pool, {
       nome: GRUPOS.dedup,
@@ -122,8 +119,6 @@ describe('famílias admin.analytics e admin.recruitment sob decisão por célula
         'listVacancies', 'getVacancyByCaseNumber', 'getVacancyIncompleteRegistrations', 'getVacancyById',
         'getDedupCandidates', 'runDeduplication', 'getGlobalMetrics', 'getZoneMetrics',
         'getReemplazosMetrics', 'getManagementMetrics', 'getZoneAnalytics', 'getCaseMetrics']),
-      recruitment: de(['getClickUpCases', 'getTalentumWorkers', 'getProgresoWorkers',
-        'getPublications', 'getEncuadres']),
     };
   }
 
@@ -134,7 +129,7 @@ describe('famílias admin.analytics e admin.recruitment sob decisão por célula
       enforcedRoutes: familiasEnforced,
       montarRotas: ({ app: express, auth, permissions }) => {
         express.use('/analytics', createAnalyticsRoutes(c.analytics as never, auth, permissions));
-        express.use('/api', createRecruitmentRoutes(c.recruitment as never, auth, permissions));
+        express.use('/api', createRecruitmentRoutes(auth, permissions));
       },
     });
   }
@@ -187,23 +182,15 @@ describe('famílias admin.analytics e admin.recruitment sob decisão por célula
       expect((await chamar('GET', '/analytics/workers', U.gestao)).status).toBe(403);
     });
 
-    it('recruitment:read NÃO abre a lista de encuadres — aquilo é match:read', async () => {
-      expect(await chamar('GET', '/api/admin/recruitment/progreso', U.recrutamento)).toMatchObject({
-        status: 200,
-        body: { chegou: 'getProgresoWorkers' },
-      });
-      expect((await chamar('GET', '/api/admin/recruitment/encuadres', U.recrutamento)).status).toBe(403);
+    it('recruitment_blocked:read abre blocked-attempts; analytics:read não', async () => {
+      expect((await chamar('GET', '/api/admin/recruitment/blocked-attempts', U.recrutamento)).status).toBe(200);
+      const negado = await chamar('GET', '/api/admin/recruitment/blocked-attempts', U.analista);
+      expect(negado.status).toBe(403);
+      expect(negado.body).toMatchObject({ code: 'missing_cell' });
     });
 
-    it('… nem a lista do Talentum — aquilo é talentum:read', async () => {
-      expect((await chamar('GET', '/api/admin/recruitment/talentum-workers', U.recrutamento)).status).toBe(403);
-    });
-
-    it('calcular reemplazos exige recruitment:write', async () => {
-      expect(await chamar('POST', '/api/admin/recruitment/calculate-reemplazos', U.recrutamento))
-        .toMatchObject({ status: 200 });
-      expect((await chamar('POST', '/api/admin/recruitment/calculate-reemplazos', U.analista)).status)
-        .toBe(403);
+    it('recruitment_blocked:read não abre o dashboard de analytics', async () => {
+      expect((await chamar('GET', '/analytics/dashboard/global', U.recrutamento)).status).toBe(403);
     });
   });
 
@@ -254,8 +241,9 @@ describe('famílias admin.analytics e admin.recruitment sob decisão por célula
       try {
         expect((await chamar('GET', '/analytics/dashboard/global', U.recrutamento, soAnalytics)).status)
           .toBe(403);
-        expect(await chamar('GET', '/api/admin/recruitment/encuadres', U.recrutamento, soAnalytics))
-          .toMatchObject({ status: 200, body: { chegou: 'getEncuadres' } });
+        // `admin.recruitment` fora do enforce → `untilEnforced: 'admin'` (usuário semeado é role admin).
+        expect((await chamar('GET', '/api/admin/recruitment/blocked-attempts', U.analista, soAnalytics)).status)
+          .toBe(200);
       } finally {
         await soAnalytics.fechar();
       }
@@ -266,7 +254,7 @@ describe('famílias admin.analytics e admin.recruitment sob decisão por célula
       try {
         expect(await chamar('GET', '/analytics/dashboard/global', U.recrutamento, soRecruitment))
           .toMatchObject({ status: 200, body: { chegou: 'getGlobalMetrics' } });
-        expect((await chamar('GET', '/api/admin/recruitment/encuadres', U.recrutamento, soRecruitment)).status)
+        expect((await chamar('GET', '/api/admin/recruitment/blocked-attempts', U.analista, soRecruitment)).status)
           .toBe(403);
       } finally {
         await soRecruitment.fechar();
