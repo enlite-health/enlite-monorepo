@@ -26,6 +26,19 @@ module "sa_enlite_functions" {
   ]
 }
 
+# spec 050 §18 R-40: o papel de assumir a PRÓPRIA conta (signBlob/signJwt) estava feito à mão no vivo. Entra no HCL por
+# `import` (executa só no apply) antes de o papel de projeto sair (R-43).
+resource "google_service_account_iam_member" "sa_enlite_functions_self_token_creator" {
+  service_account_id = module.sa_enlite_functions.name
+  role               = "roles/iam.serviceAccountTokenCreator"
+  member             = module.sa_enlite_functions.member
+}
+
+import {
+  to = google_service_account_iam_member.sa_enlite_functions_self_token_creator
+  id = "projects/enlite-prd/serviceAccounts/enlite-functions-sa@enlite-prd.iam.gserviceaccount.com roles/iam.serviceAccountTokenCreator serviceAccount:enlite-functions-sa@enlite-prd.iam.gserviceaccount.com"
+}
+
 module "sa_pubsub_invoker" {
   source       = "../../modules/service-account"
   project_id   = var.project_id
