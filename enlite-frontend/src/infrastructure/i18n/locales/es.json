@@ -4194,7 +4194,9 @@
             "meet": "Entrar a Meet",
             "cancel": "Cancelar",
             "viaSite": "Agendada por la familia en el sitio",
-            "calendarEventPending": "Cancelada, evento de Google pendiente"
+            "calendarEventPending": "Cancelada, evento de Google pendiente",
+            "conferenceStart": "Inicio real",
+            "conferenceEnd": "Fin real"
           },
           "status": {
             "booked": "Agendada",

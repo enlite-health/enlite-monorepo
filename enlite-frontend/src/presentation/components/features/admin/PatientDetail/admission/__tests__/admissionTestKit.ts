@@ -24,6 +24,8 @@ export function appt(overrides: Partial<AdmissionAppointment> = {}): AdmissionAp
     hostEmail: 'ana@example.test',
     slotStart: '2026-10-13T15:00:00.000Z',
     slotEnd: '2026-10-13T16:00:00.000Z',
+    conferenceStartedAt: null,
+    conferenceEndedAt: null,
     status: 'booked',
     calendarEventPending: false,
     meetLink: 'https://meet.google.com/abc-defg-hij',

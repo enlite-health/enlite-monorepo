@@ -62,6 +62,16 @@ export function AdmissionAppointmentRow({ appointment: a, timeZone, canResendCel
           {a.admissionCode && (
             <Text color="inherit" as="span" size="xs" className="text-slate-600" data-testid={`admission-code-${a.id}`}>{a.admissionCode}</Text>
           )}
+          {a.conferenceStartedAt && (
+            <Text color="inherit" as="span" size="xs" className="text-slate-600" data-testid={`admission-conference-start-${a.id}`}>
+              {ta('row.conferenceStart')} {formatTimeIn(a.conferenceStartedAt, timeZone)}
+            </Text>
+          )}
+          {a.conferenceEndedAt && (
+            <Text color="inherit" as="span" size="xs" className="text-slate-600" data-testid={`admission-conference-end-${a.id}`}>
+              {ta('row.conferenceEnd')} {formatTimeIn(a.conferenceEndedAt, timeZone)}
+            </Text>
+          )}
         </div>
         <div className="flex items-center gap-3 shrink-0">
           {showMeet && (
