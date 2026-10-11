@@ -57,8 +57,8 @@ export function useWeekNavigation(month: string, onMonthChange?: (month: string)
     months: monthsOfWeek(selectedDate),
     minDate: min,
     maxDate: max,
-    canPrev: addDaysIso(selectedDate, -7) >= min,
-    canNext: addDaysIso(selectedDate, 7) <= max,
+    canPrev: addDaysIso(weekStart, -1) >= min, // o domingo da semana anterior ainda é navegável
+    canNext: addDaysIso(weekStart, 7) <= max, // a segunda da próxima semana ainda é navegável
     selectDate,
     goPrev: () => selectDate(addDaysIso(selectedDate, -7)),
     goNext: () => selectDate(addDaysIso(selectedDate, 7)),
