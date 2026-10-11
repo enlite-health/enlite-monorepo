@@ -14,7 +14,7 @@ export const CELL_HELP_IMAGES: ReadonlySet<string> = new Set([
   'worker', 'worker_contact', 'worker_pii', 'worker_address', 'worker_document',
   'vacancy', 'funnel', 'match', 'messaging', 'prescreening', 'talentum',
   'dashboard', 'dashboard_numbers', 'dashboard_team', 'dashboard_priorities', 'dashboard_registrations', 'dashboard_funnel', 'dashboard_zones',
-  'user_management', 'permission_management', 'dedup', 'recruitment',
+  'user_management', 'permission_management', 'dedup',
 ]);
 
 export const cellHelpImageUrl = (resource: string): string | null =>

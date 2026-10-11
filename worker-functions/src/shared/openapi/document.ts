@@ -130,7 +130,6 @@ const TAGS_ORDER = [
   { name: 'Admin · Funnel', description: 'Funil de encuadres por vaga.' },
   { name: 'Admin · Dashboard', description: 'Métricas operacionais agregadas.' },
   { name: 'Admin · Interview Slots', description: 'Slots de entrevista e booking.' },
-  { name: 'Admin · Recruitment', description: 'Pipeline ClickUp ↔ Talentum.' },
   { name: 'Admin · Messaging', description: 'WhatsApp e templates de mensagem.' },
   { name: 'Analytics · Workers', description: 'Estatísticas de workers.' },
   { name: 'Analytics · Vacancies', description: 'Estatísticas de vagas.' },

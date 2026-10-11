@@ -2,7 +2,7 @@
  * Fonte única do horário da vaga (change `vaga-le-do-servico-contratado`, F1) — banco REAL, sessão do leitor
  * como `app_runtime` (não a dona), com RLS ativa.
  *
- * Para CADA um dos 13 leitores de `job_postings.schedule` (lista F1 do `fatos-medidos.md`):
+ * Para CADA um dos 12 leitores de `job_postings.schedule` (lista F1 do `fatos-medidos.md`):
  *   paciente + serviço contratado (horário A) + vaga vinculada cuja CÓPIA `job_postings.schedule` é A;
  *   `UPDATE patient_contracted_services SET schedule = X` direto no SQL, SEM tocar a vaga;
  *   chama o leitor de produção (método/handler/função exportada, não cópia da query) e afirma que a saída traz X.
@@ -27,8 +27,6 @@ import { runHardFilter } from '../../src/modules/matching/infrastructure/Matchma
 import { JobPostingARRepository } from '../../src/modules/matching/infrastructure/JobPostingARRepository';
 import { PublicVacancyController } from '../../src/modules/matching/interfaces/controllers/PublicVacancyController';
 import { VacanciesController } from '../../src/modules/matching/interfaces/controllers/VacanciesController';
-import { RecruitmentAnalyticsController } from '../../src/modules/matching/interfaces/controllers/RecruitmentAnalyticsController';
-import { RecruitmentController } from '../../src/modules/matching/interfaces/controllers/RecruitmentController';
 import { VacancyCrudController } from '../../src/modules/matching/interfaces/controllers/VacancyCrudController';
 import { DataRealm } from '../../src/shared/domain/DataRealm';
 
@@ -40,7 +38,7 @@ const TAG = 'vls-f1';
 const SCHEDULE_A = [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }];
 const SCHEDULE_X = [{ dayOfWeek: 3, startTime: '14:15', endTime: '18:45' }];
 
-/** A lista F1 do `fatos-medidos.md`, na ordem. O teste afirma que são 13 e que o corpo cobre cada um. */
+/** A lista F1 do `fatos-medidos.md`, na ordem. O teste afirma que são 12 (eram 13; o 11 saiu) e que o corpo cobre cada um. */
 const LEITORES_F1 = [
   '1 case/infrastructure/PatientDetailQueryHelper.ts (-> AddressAvailabilityCalculator)',
   '2 integration/infrastructure/TalentumDescriptionService.ts',
@@ -52,7 +50,7 @@ const LEITORES_F1 = [
   '8 matching/infrastructure/JobPostingARRepository.ts (findActivePublic)',
   '9 matching/interfaces/controllers/PublicVacancyController.ts',
   '10 matching/interfaces/controllers/VacanciesController.ts (getVacancyById)',
-  '11 matching/interfaces/controllers/RecruitmentAnalyticsController.ts (getCaseAnalysis)',
+  // 11 (RecruitmentAnalyticsController.getCaseAnalysis) saiu com o dashboard de recrutamento; a numeração dos demais foi mantida.
   '12 matching/interfaces/controllers/vacancyScheduleFilter.ts (via VacanciesController.listVacancies)',
   '13 matching/interfaces/controllers/VacancyCrudController.ts (+ vacancyCrudHelpers.ts)',
 ] as const;
@@ -289,16 +287,6 @@ const LEITORES: Leitor[] = [
     },
   },
   {
-    n: 11, nome: 'RecruitmentAnalyticsController.getCaseAnalysis',
-    probe: async (ctx) => {
-      const res = mockRes();
-      await new RecruitmentAnalyticsController().getCaseAnalysis(asReq({ params: { caseNumber: String(ctx.caseNumber) } }), asRes(res));
-      expect(res.statusCode).toBe(200);
-      const info = (res.body as { data: { caseInfo: { schedule: unknown } } }).data.caseInfo;
-      return probeJson(info.schedule);
-    },
-  },
-  {
     n: 12, nome: 'filtro por dia (vacancyScheduleFilter) via VacanciesController.listVacancies',
     probe: async (ctx) => {
       const listaPorDia = async (day: number) => {
@@ -364,17 +352,6 @@ const LEITORES_QTD: LeitorQtd[] = [
     },
   },
   {
-    nome: 'RecruitmentController.getClickUpCases',
-    probe: async (ctx) => {
-      const res = mockRes();
-      await new RecruitmentController().getClickUpCases(asReq({ query: { page: '1', limit: '100' } }), asRes(res));
-      expect(res.statusCode).toBe(200);
-      const rows = (res.body as { data: Array<{ id: string; providers_needed: unknown }> }).data;
-      const row = rows.find((r) => r.id === ctx.vacancyId);
-      return row ? String(row.providers_needed) : null;
-    },
-  },
-  {
     nome: 'VacanciesController.listVacancies (faltantes = quantidade − preenchidas)',
     probe: async (ctx) => {
       const res = mockRes();
@@ -393,16 +370,6 @@ const LEITORES_QTD: LeitorQtd[] = [
       await new VacanciesController(diagnosisStub).getVacancyById(asReq({ params: { id: ctx.vacancyId } }), asRes(res));
       expect(res.statusCode).toBe(200);
       const v = (res.body as { data: { providers_needed: unknown } }).data.providers_needed;
-      return v == null ? null : String(v);
-    },
-  },
-  {
-    nome: 'RecruitmentAnalyticsController.getCaseAnalysis',
-    probe: async (ctx) => {
-      const res = mockRes();
-      await new RecruitmentAnalyticsController().getCaseAnalysis(asReq({ params: { caseNumber: String(ctx.caseNumber) } }), asRes(res));
-      expect(res.statusCode).toBe(200);
-      const v = (res.body as { data: { caseInfo: { providers_needed: unknown } } }).data.caseInfo.providers_needed;
       return v == null ? null : String(v);
     },
   },
@@ -449,10 +416,10 @@ afterAll(async () => {
 beforeEach(wipe);
 
 describe('vacancyEffectiveFields.singleSource — o leitor lê o horário do SERVIÇO (app_runtime, banco real)', () => {
-  it('são 13 leitores, na mesma ordem e nomes da lista F1', () => {
-    expect(LEITORES_F1).toHaveLength(13);
+  it('são 12 leitores, na mesma ordem e nomes da lista F1', () => {
+    expect(LEITORES_F1).toHaveLength(12);
     expect(LEITORES.map((l) => l.n)).toEqual(LEITORES_F1.map((s) => Number(s.split(' ')[0])));
-    expect(LEITORES).toHaveLength(13);
+    expect(LEITORES).toHaveLength(12);
   });
 
   it('a sessão do leitor é app_runtime (e a "crua" também), não a dona', async () => {
@@ -566,8 +533,8 @@ describe('vacancyEffectiveFields.singleSource — o leitor lê o horário do SER
 });
 
 describe('vacancyEffectiveFields.singleSource — F5: o leitor lê a QUANTIDADE do SERVIÇO (app_runtime, banco real)', () => {
-  it('são 8 leitores de quantidade cobertos', () => {
-    expect(LEITORES_QTD).toHaveLength(8);
+  it('são 6 leitores de quantidade cobertos', () => {
+    expect(LEITORES_QTD).toHaveLength(6);
   });
 
   describe.each(LEITORES_QTD.map((l) => [l.nome, l] as const))('%s', (_nome, leitor) => {
@@ -679,17 +646,6 @@ const LEITORES_FAIXA: LeitorFaixa[] = [
     },
   },
   {
-    nome: 'RecruitmentAnalyticsController.getCaseAnalysis',
-    probe: async (ctx) => {
-      const res = mockRes();
-      await new RecruitmentAnalyticsController().getCaseAnalysis(asReq({ params: { caseNumber: String(ctx.caseNumber) } }), asRes(res));
-      expect(res.statusCode).toBe(200);
-      const info = (res.body as { data: { caseInfo: Record<string, unknown> } }).data.caseInfo;
-      expect(info).not.toHaveProperty('effective_provider_age_band');
-      return faixa(info.age_range_min, info.age_range_max);
-    },
-  },
-  {
     nome: 'loadVacancyDescriptionInput (faixa etária lida para o prompt do Talentum; sem Gemini)',
     probe: async (ctx) => {
       const i = await loadVacancyDescriptionInput(identityPool, ctx.vacancyId);
@@ -719,8 +675,8 @@ const LEITORES_FAIXA: LeitorFaixa[] = [
 ];
 
 describe('vacancyEffectiveFields.singleSource — F6: o leitor deriva a FAIXA ETÁRIA da banda do SERVIÇO (app_runtime, banco real)', () => {
-  it('são 7 leitores da faixa cobertos', () => {
-    expect(LEITORES_FAIXA).toHaveLength(7);
+  it('são 6 leitores da faixa cobertos', () => {
+    expect(LEITORES_FAIXA).toHaveLength(6);
   });
 
   describe.each(LEITORES_FAIXA.map((l) => [l.nome, l] as const))('%s', (_nome, leitor) => {

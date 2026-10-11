@@ -206,8 +206,6 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
   },
 
   // ── Recrutamento e mensageria ──────────────────────────────────────────────────────────────
-  { id: 'recruitment', route: '/admin/recruitment', cells: ['recruitment:read', 'match:read', 'talentum:read'] },
-  { id: 'recruitment.health', route: '/admin/recruitment/health', cells: ['messaging:read'] },
   { id: 'messaging.stageMessages', route: '/admin/mensajes-por-etapa', cells: ['messaging:read', 'messaging:create', 'messaging:update'] },
   { id: 'messaging.templates', route: '/admin/plantillas', cells: ['messaging:read', 'messaging:create', 'messaging:update'] },
   { id: 'messaging.presentationInvite', route: '/admin/invitacion-presentacion', cells: ['messaging:read', 'messaging:create', 'messaging:update', 'messaging:send'] },

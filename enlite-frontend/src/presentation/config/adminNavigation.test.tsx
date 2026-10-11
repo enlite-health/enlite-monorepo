@@ -22,9 +22,9 @@ import type { AuthzContract } from '@domain/entities/Authz';
 /**
  * As células de leitura de TODOS os itens da seção Administración.
  * Spec 024 (D1/D2/D401, 21/09): `tag:read` abre Etiquetas (era `worker:read`) e
- * `recruitment_blocked:read` abre Postulaciones bloqueadas (era `recruitment:read`).
+ * `recruitment_blocked:read` abre Postulaciones bloqueadas.
  */
-const TODAS_AS_CELULAS = ['tag:read', 'dedup:read', 'patient:read', 'recruitment:read', 'recruitment_blocked:read', 'messaging:read'];
+const TODAS_AS_CELULAS = ['tag:read', 'dedup:read', 'patient:read', 'recruitment_blocked:read', 'messaging:read'];
 
 const contrato = (
   permissions: string[],
@@ -101,8 +101,8 @@ describe('useAdminNavItems — Postulaciones bloqueadas depende de recruitment_b
     expect(blockedIdx).toBeGreaterThanOrEqual(sectionIdx);
   });
 
-  it('SEM recruitment_blocked:read (engine ON) o item some — nem `recruitment:read` nem as outras células o trazem de volta', () => {
-    comContrato(['tag:read', 'dedup:read', 'patient:read', 'recruitment:read', 'messaging:read'], 'on');
+  it('SEM recruitment_blocked:read (engine ON) o item some — nenhuma das outras células o traz de volta', () => {
+    comContrato(['tag:read', 'dedup:read', 'patient:read', 'messaging:read'], 'on');
 
     expect(itens().some((item) => item.href === BLOCKED_HREF)).toBe(false);
   });
@@ -152,7 +152,7 @@ describe('useAdminNavItems — Mensajes por etapa (DEC-12 / PEND-14) depende de 
   });
 
   it('SEM messaging:read (engine ON) o item some', () => {
-    comContrato(['worker:read', 'dedup:read', 'patient:read', 'recruitment:read'], 'on');
+    comContrato(['worker:read', 'dedup:read', 'patient:read', 'recruitment_blocked:read'], 'on');
 
     expect(itens().some((item) => item.href === HREF)).toBe(false);
   });
@@ -237,14 +237,28 @@ describe('useAdminNavItems — D286: item de topo só existe para quem tem algum
   it('com o engine OFF a régua é a de antes: todos os itens de topo aparecem (freio D268)', () => {
     useAdminAuthStore.setState({ authzStatus: 'ready', authz: { ...authzCom([]), enforcement: 'off' } });
     const visiveis = hrefs();
-    for (const h of ['/admin/dashboard', '/admin', '/admin/vacancies', '/admin/workers', '/admin/patients', '/admin/mapa', '/admin/recruitment', '/admin/api-docs']) {
+    for (const h of ['/admin/dashboard', '/admin', '/admin/vacancies', '/admin/workers', '/admin/patients', '/admin/mapa']) {
       expect(visiveis).toContain(h);
+    }
+    expect(visiveis).not.toContain('/admin/recruitment');
+    expect(visiveis).not.toContain('/admin/api-docs');
+  });
+
+  it('a tela API Docs saiu do front: nenhum item de menu aponta para /admin/api-docs, com ou sem célula, engine on ou off', () => {
+    // O swagger do back (`/api/docs/`) permanece; só a tela do front foi removida.
+    for (const authz of [authzCom([]), authzCom(['patient:read']), { ...authzCom([]), enforcement: 'off' as const }]) {
+      useAdminAuthStore.setState({ authzStatus: 'ready', authz });
+      expect(hrefs()).not.toContain('/admin/api-docs');
     }
   });
 
-  it('item cujo href não está no registro de telas (API Docs) NÃO é gateado por célula — nomeado, não esquecido', () => {
-    useAdminAuthStore.setState({ authzStatus: 'ready', authz: authzCom([]) });
-    // A rota `/api/docs` do back exige só staff (index.ts), sem célula: o menu espelha o back.
-    expect(hrefs()).toEqual(['/admin/api-docs']);
+  it('o dashboard de Reclutamiento saiu do front: nenhum item de menu aponta para /admin/recruitment (nem /health), com ou sem célula, engine on ou off', () => {
+    // Postulaciones bloqueadas (/admin/recruitment/blocked-attempts) fica; só o href EXATO do dashboard e o da saúde somem.
+    for (const authz of [authzCom([]), authzCom(['match:read', 'recruitment_blocked:read']), { ...authzCom([]), enforcement: 'off' as const }]) {
+      useAdminAuthStore.setState({ authzStatus: 'ready', authz });
+      const visiveis = hrefs();
+      expect(visiveis).not.toContain('/admin/recruitment');
+      expect(visiveis).not.toContain('/admin/recruitment/health');
+    }
   });
 });

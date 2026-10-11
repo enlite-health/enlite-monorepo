@@ -55,7 +55,7 @@ import {
   mockAuthMiddleware,
   createMockAuthEndpoints,
 } from '@modules/identity';
-import { EncuadreController, VacanciesController, VacancyTalentumController, VacancyMatchController, WJAFunnelController, WJAFunnelTableController, EncuadreDashboardController, AnalyticsController, RecruitmentController, VacancyCrudController, PublicVacancyController, WorkerApplicationsController, VacancyAddressReviewController, PublicJobsController, AdmissionSchedulingController } from '@modules/matching';
+import { EncuadreController, VacanciesController, VacancyTalentumController, VacancyMatchController, WJAFunnelController, WJAFunnelTableController, EncuadreDashboardController, AnalyticsController, VacancyCrudController, PublicVacancyController, WorkerApplicationsController, VacancyAddressReviewController, PublicJobsController, AdmissionSchedulingController } from '@modules/matching';
 import { AdminWorkersController, AdminWorkerTestFlagController, AdminWorkerProfileController, AdminWorkerServiceAreaController, createAdminWorkerRoutes } from '@modules/worker';
 import { AdminWorkersAuxController } from './modules/worker/interfaces/controllers/AdminWorkersAuxController';
 import { AdminWorkersMapController } from './modules/worker/interfaces/controllers/AdminWorkersMapController';
@@ -80,7 +80,7 @@ import {
   runPermissionsBootTasks,
   wirePermissionsModule,
 } from './bootstrap/wirePermissionsModule';
-import { ADMIN_RECRUITMENT_FAMILY, createAnalyticsRoutes, createRecruitmentRoutes, createWorkerApplicationsRoutes, createAdminVacanciesRoutes, createWorkerEncuadreRoutes, InterviewSlotsController, VacancySocialLinksController } from '@modules/matching';
+import { createAnalyticsRoutes, createRecruitmentRoutes, createWorkerApplicationsRoutes, createAdminVacanciesRoutes, createWorkerEncuadreRoutes, InterviewSlotsController, VacancySocialLinksController } from '@modules/matching';
 import { WorkerContextController } from '@modules/matching/interfaces/controllers/WorkerContextController';
 import { createWorkerContextRoutes } from '@modules/matching/interfaces/routes/workerContextRoutes';
 import { createTransitCorridorRoutes } from '@modules/matching/interfaces/routes/transitCorridorRoutes';
@@ -136,7 +136,6 @@ import { interviewHostRepository } from '@modules/matching/infrastructure/Interv
 import { AdmissionMessageRepository } from '@modules/matching/infrastructure/AdmissionMessageRepository';
 import { AdmissionEventRepository } from '@modules/matching/infrastructure/AdmissionEventRepository';
 import { createAdmissionExternals } from '@modules/matching/infrastructure/admissionExternals';
-import { RecruitmentHealthController } from '@modules/notification/interfaces/controllers/RecruitmentHealthController';
 import { createSwaggerRouter, shouldGateDocs } from '@shared/openapi/swaggerRouter';
 import { createClaimController } from './bootstrap/createClaimController';
 import { createClaimRoutes } from '@modules/auth/interfaces/routes/claimRoutes';
@@ -248,7 +247,6 @@ const workerAdditionalDocsMeController = new WorkerAdditionalDocsMeController();
 const adminAdditionalDocsController = new AdminAdditionalDocsController();
 const encuadreController = new EncuadreController();
 const analyticsController = new AnalyticsController();
-const recruitmentController = new RecruitmentController();
 const vacanciesController = new VacanciesController();
 const vacancyCrudController = new VacancyCrudController();
 const vacancyTalentumController = new VacancyTalentumController();
@@ -710,7 +708,7 @@ app.use('/api/admin', createTemplateDraftsRoutes(new TemplateDraftsController(),
 app.use('/analytics', createAnalyticsRoutes(analyticsController, authMiddleware, permissionMiddleware));
 
 // ========== Recruitment (extracted router) ==========
-app.use('/api', createRecruitmentRoutes(recruitmentController, authMiddleware, permissionMiddleware));
+app.use('/api', createRecruitmentRoutes(authMiddleware, permissionMiddleware));
 
 // ========== Messaging Routes ==========
 app.use('/api/admin/messaging', authMiddleware.requireStaff(), createMessagingRoutes(messagingService, templateRepo, permissionMiddleware));
@@ -762,7 +760,6 @@ domainEventProcessor.registerHandler(
 const reminderScheduler = new ReminderScheduler(dbPool, cloudTasksClient, pubsubClient, tokenService);
 const bulkDispatchScheduler = new BulkDispatchScheduler(dbPool, messagingService);
 const bulkDispatchTalentumScheduler = new BulkDispatchTalentumScheduler(dbPool, messagingService);
-const recruitmentHealthController = new RecruitmentHealthController(dbPool);
 const domainEventBacklogService = new DomainEventBacklogService(dbPool);
 const anaCareMirrorHealthService = new AnaCareMirrorHealthService(dbPool);
 const messagingRetentionService = new MessagingRetentionService(dbPool);
@@ -846,26 +843,6 @@ const admissionReminderController = new AdmissionReminderController(
 );
 app.post('/api/internal/reminders/admission-30min', internalAuthMiddleware, systemContextMiddleware('job:admission-reminder'), (req: Request, res: Response) =>
   admissionReminderController.handle(req, res),
-);
-
-// ========== Recruitment Health Dashboard ==========
-// A 11ª rota da família `admin.recruitment` (task 3.5-A3). Mora aqui, e não em
-// `recruitmentRoutes.ts`, porque `recruitmentHealthController` depende do
-// `dbPool`, criado DEPOIS daquele mount — movê-la exigiria reordenar este
-// arquivo, e reordenar o `src/index.ts` é mudança de risco silencioso que não
-// pertence a um PR de declaração de célula.
-//
-// A célula é `messaging:read`, e não `recruitment:read`, porque a rota devolve
-// EXCLUSIVAMENTE agregados de disparo (`domain_events`, `messaging_outbox`,
-// `whatsapp_bulk_dispatch_logs` — zero tabela de worker ou encuadre, medido).
-// É a régua da D127 aplicada: vale o que a rota DEVOLVE, não o que o caminho
-// sugere. Família e célula são coisas diferentes — a família é a unidade de
-// rollout, a célula é a permissão.
-app.get(
-  '/api/admin/recruitment/health',
-  staffOnly,
-  permissionMiddleware.family(ADMIN_RECRUITMENT_FAMILY).require('messaging', 'read'),
-  (req: Request, res: Response) => recruitmentHealthController.getHealth(req, res),
 );
 
 // ========== Permissões (painel de grupos, grupo 2) ==========

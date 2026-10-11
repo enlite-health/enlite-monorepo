@@ -19,7 +19,6 @@ import { AuthActionPage } from './pages/auth/AuthActionPage';
 import { AdminUsersPage } from './pages/admin/AdminUsersPage';
 import { AccessPage, GroupDetailPage, CountryFeaturesPage, PermissionHistoryPage } from './pages/admin/access';
 import { AdminVacanciesPage } from './pages/admin/AdminVacanciesPage';
-import { AdminRecruitmentPage } from './pages/admin/AdminRecruitmentPage';
 import { ManagementDashboardPage } from './pages/admin/ManagementDashboardPage';
 import { AdminWorkersPage } from './pages/admin/AdminWorkersPage';
 import { AdminPatientsPage } from './pages/admin/AdminPatientsPage';
@@ -34,7 +33,6 @@ import PatientDetailPage from './pages/admin/PatientDetailPage';
 import { PatientKanbanPage } from './pages/admin/PatientKanbanPage';
 import { AdminMapPage } from './pages/admin/AdminMapPage/AdminMapPage';
 import { PendingAddressReviewPage } from './pages/admin/PendingAddressReviewPage';
-import { RecruitmentHealthPage } from './pages/admin/RecruitmentHealthPage';
 import { BlockedAttemptsPage } from './pages/admin/BlockedAttemptsPage';
 import TagCatalogPage from './pages/admin/TagCatalogPage';
 import { FunnelStageMessagesPage } from './pages/admin/FunnelStageMessagesPage';
@@ -70,9 +68,6 @@ const AdmisionBrPage = lazyWithRetry(() =>
     default: () => <m.default country="BR" />,
   })),
 );
-// Swagger UI é pesado (~500kb gzipped) — lazy load isola o chunk e só baixa
-// quando staff abre /admin/api-docs.
-const AdminApiDocsPage = lazyWithRetry(() => import('./pages/admin/AdminApiDocsPage'));
 // Mantém lazy — são a fronteira worker/admin; carregados uma única vez
 const AdminProtectedRoute = lazy(() => import('./components/features/admin/AdminProtectedRoute').then(m => ({ default: m.AdminProtectedRoute })));
 const AdminLoginGuard = lazy(() => import('./components/features/admin/AdminLoginGuard').then(m => ({ default: m.AdminLoginGuard })));
@@ -239,8 +234,8 @@ export function App() {
           <Route index element={<AdminUsersPage />} />
           {/* B2 (D268) — cada rota de tela `screen:*` envolvida por `FeatureRouteGate`:
               desligada no país do ator → redireciona a `/admin` (mesma postura que
-              `AccessGate` já usa para `hidden`). `tags`/`patient-chat-roles`/`dedup`/
-              `api-docs` não têm chave `screen:*` no manifest — ficam de fora. */}
+              `AccessGate` já usa para `hidden`). `tags`/`patient-chat-roles`/`dedup`
+              não têm chave `screen:*` no manifest — ficam de fora. */}
           <Route path="vacancies" element={<FeatureRouteGate feature="screen:vacancies"><AdminVacanciesPage /></FeatureRouteGate>} />
           {/* D425 item 4 (Fase 3, 24/09) — "Nueva" sai temporariamente: vacante nasce só do
               serviço contratado. Esconder só o botão deixaria a porta aberta por URL — a
@@ -257,8 +252,6 @@ export function App() {
           <Route path="vacancies/:id/borrador" element={<FeatureRouteGate feature="screen:vacancies"><DraftVacancyPage /></FeatureRouteGate>} />
           <Route path="vacancies/:id" element={<FeatureRouteGate feature="screen:vacancies"><VacancyDetailPage /></FeatureRouteGate>} />
           <Route path="dashboard" element={<FeatureRouteGate feature="screen:management-dashboard"><ManagementDashboardPage /></FeatureRouteGate>} />
-          <Route path="recruitment" element={<FeatureRouteGate feature="screen:funnel"><AdminRecruitmentPage /></FeatureRouteGate>} />
-          <Route path="recruitment/health" element={<FeatureRouteGate feature="screen:funnel"><RecruitmentHealthPage /></FeatureRouteGate>} />
           <Route path="recruitment/blocked-attempts" element={<FeatureRouteGate feature="screen:funnel"><BlockedAttemptsPage /></FeatureRouteGate>} />
           <Route path="workers" element={<FeatureRouteGate feature="screen:workers"><AdminWorkersPage /></FeatureRouteGate>} />
           <Route path="workers/:id" element={<FeatureRouteGate feature="screen:workers"><WorkerDetailPage /></FeatureRouteGate>} />
@@ -291,14 +284,6 @@ export function App() {
           <Route path="access/features" element={<FeatureRouteGate feature="screen:access-permissions"><CountryFeaturesPage /></FeatureRouteGate>} />
           {/* Histórico de mudanças de permissão — substitui a Auditoría ALLOW/DENY (mesma URL, mesma célula). */}
           <Route path="access/audit" element={<FeatureRouteGate feature="screen:access-permissions"><PermissionHistoryPage /></FeatureRouteGate>} />
-          <Route
-            path="api-docs"
-            element={
-              <Suspense fallback={<AdminFallback />}>
-                <AdminApiDocsPage />
-              </Suspense>
-            }
-          />
         </Route>
         {/* Catch-all: rota desconhecida redireciona para home */}
         <Route path="*" element={<Navigate to="/" replace />} />

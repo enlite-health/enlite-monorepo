@@ -2,13 +2,12 @@
  * src/modules/identity/interfaces/routes/__tests__/pr8b-ambiguous-routes.test.ts
  *
  * PR-8b, rodada A2 (8b.4) — prova, POR FORA do inventário HTTP (que só carimba
- * o 1º guard da rota, `scanExpressRouter.ts:cellOfRoute`), que as 4 rotas
+ * o 1º guard da rota, `scanExpressRouter.ts:cellOfRoute`), que as 3 rotas
  * "massa ou incerto" do mapa nominal (`pr8b-mapa-rotas.tsv`, regra do
  * orquestrador 15/09: ninguém ganha acesso, exige as DUAS ações) realmente têm
  * os DOIS guards ENCADEADOS no array de middlewares da rota — e que os dois
  * ENFORÇAM de verdade (`PermissionMiddleware` real, engine ligado):
  *
- *   · POST /admin/recruitment/calculate-reemplazos    → recruitment:create + update
  *   · POST /vacancies/sync-talentum                   → talentum:create + update
  *   · POST /workers/sync-talentum                     → talentum:create + update
  *   · POST /template-drafts/validar                    → messaging:create + update
@@ -22,9 +21,8 @@
  * já está provado nos testes de família de cada arquivo.
  */
 
-// Duas destas fábricas constroem controller(s) internos que pedem `DatabaseConnection`/`pg.Pool`
-// no construtor (RecruitmentAnalyticsController/RecruitmentBlockedController,
-// VacanciesAuxController) — mesma armadilha documentada em recruitmentRoutes.test.ts e
+// Alguma destas fábricas constrói controller(s) internos que pedem `DatabaseConnection`/`pg.Pool`
+// no construtor (VacanciesAuxController) — mesma armadilha documentada em
 // adminVacanciesRoutes.test.ts. URL falsa: `pg.Pool` não conecta até a 1ª query.
 process.env.DATABASE_URL = process.env.DATABASE_URL ?? 'postgresql://unit:unit@127.0.0.1:1/unit';
 
@@ -33,7 +31,6 @@ import request from 'supertest';
 import { PermissionMiddleware } from '@modules/identity/interfaces/middleware/PermissionMiddleware';
 import type { AuthMiddleware } from '@modules/identity';
 import { createAdminVacanciesRoutes, ADMIN_VACANCIES_FAMILY } from '@modules/matching/interfaces/routes/adminVacanciesRoutes';
-import { createRecruitmentRoutes, ADMIN_RECRUITMENT_FAMILY } from '@modules/matching/interfaces/routes/recruitmentRoutes';
 import { createTemplateDraftsRoutes } from '@modules/matching/interfaces/routes/templateDraftsRoutes';
 import { ADMIN_MESSAGING_FAMILY } from '@modules/identity/permissions';
 import { createAdminWorkerRoutes, ADMIN_WORKERS_FAMILY } from '@modules/worker/interfaces/routes/adminWorkerRoutes';
@@ -88,15 +85,6 @@ interface CasoAmbiguo {
 
 const CASOS: CasoAmbiguo[] = [
   {
-    nome: 'POST /admin/recruitment/calculate-reemplazos',
-    family: ADMIN_RECRUITMENT_FAMILY,
-    resource: 'recruitment',
-    method: 'post',
-    mountPrefix: '/api',
-    path: '/api/admin/recruitment/calculate-reemplazos',
-    buildRouter: (perm) => createRecruitmentRoutes(autoDouble(), authComoUid('u'), perm),
-  },
-  {
     nome: 'POST /vacancies/sync-talentum',
     family: ADMIN_VACANCIES_FAMILY,
     resource: 'talentum',
@@ -150,16 +138,7 @@ describe.each(CASOS)('PR-8b 8b.4 — $nome exige create E update (rota "massa ou
     expect(res.body.code).toBe('missing_cell');
   });
 
-  /**
-   * ⚠️ `POST /admin/recruitment/calculate-reemplazos` despacha para
-   * `RecruitmentAnalyticsController`, construído DENTRO da fábrica (não é
-   * injetável — mesma dívida documentada em `recruitmentRoutes.test.ts`): com
-   * as duas células o request ATRAVESSA os dois guards e cai no controller
-   * real, que tenta falar com um Postgres que não existe neste teste unit e
-   * responde 500 — não 403. Por isso a prova aqui é "não foi barrado pelo
-   * guard" (`missing_cell` ausente), não um 200 literal; os 3 outros casos
-   * (controller-alvo é o auto-duplo) chegam a 200 de verdade.
-   */
+  /** Com as duas células o request atravessa os dois guards (o controller-alvo é o auto-duplo → 200). */
   it('as DUAS (`create` + `update`) → passa dos DOIS guards (não é 403 missing_cell)', async () => {
     const app = montar([`${caso.resource}:create`, `${caso.resource}:update`]);
     const res = await request(app)[caso.method](caso.path).send({});

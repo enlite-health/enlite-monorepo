@@ -82,9 +82,12 @@ describe('AnaCareHoursDetailPage — navegação por mês (spec 037)', () => {
     expect(picker).toHaveAttribute('max', '2026-10-31');
   });
 
-  it('"Semana anterior" fica desabilitada com a data 03/08 (menos 7 dias cairia antes de 01/08) e "Próxima" no teto do mês corrente', () => {
+  it('"Semana anterior" fica desabilitada na semana do piso (01/08 cai na semana de 27/07) e "Próxima" na última semana do mês corrente', () => {
     renderPage('2026-08');
     setDate('2026-08-03');
+    // 03/08 é segunda: a semana anterior ainda tem 01/08 e 02/08 navegáveis.
+    expect(screen.getByTestId('anacare-hours-week-prev')).toBeEnabled();
+    setDate('2026-08-01');
     expect(screen.getByTestId('anacare-hours-week-prev')).toBeDisabled();
     expect(screen.getByTestId('anacare-hours-week-next')).toBeEnabled();
     setDate('2026-10-28');

@@ -1348,10 +1348,8 @@
       "users": "Usuários",
       "vacancies": "Vagas",
       "workers": "Prestadores",
-      "recruitment": "Recrutamento",
       "blockedAttempts": "Candidaturas bloqueadas",
       "patients": "Pacientes",
-      "apiDocs": "API Docs",
       "tags": "Etiquetas",
       "dedup": "Duplicatas",
       "adminSection": "Administração",
@@ -1600,10 +1598,6 @@
         }
       }
     },
-    "apiDocs": {
-      "title": "Documentação da API",
-      "subtitle": "Referência completa do worker-functions. Todas as chamadas usam seu token de staff atual automaticamente."
-    },
     "login": {
       "title": "Painel Administrativo",
       "description": "Insira suas credenciais de administrador",
@@ -1641,66 +1635,10 @@
       "invitationFallbackDesc": "Já enviamos um email com o link para definir a senha. Se não chegar, você pode copiá-lo abaixo e enviá-lo manualmente.",
       "done": "Pronto"
     },
-    "recruitment": {
-      "title": "Dashboard de Recrutamento",
-      "loading": "Carregando dados do dashboard...",
-      "errorLoading": "Erro ao carregar dados",
-      "tabs": {
-        "global": "Painel Global",
-        "case": "Análise por Caso",
-        "zone": "Análise por Zona"
-      },
-      "filters": {
-        "period": "Período",
-        "all": "Todo o tempo",
-        "today": "Hoje",
-        "yesterday": "Ontem",
-        "lastWeek": "Última Semana",
-        "lastMonth": "Último Mês",
-        "custom": "Personalizado"
-      },
-      "metrics": {
-        "globalMetrics": "Métricas Globais",
-        "activeCases": "Casos em Busca/Substituição",
-        "search": "Busca",
-        "replacements": "Substituições",
-        "candidates": "Candidatos",
-        "candidatesSubtitle": "Não terminaram Talentum",
-        "applicants": "Postulantes no Talentum",
-        "applicantsSubtitle": "Para casos ativos",
-        "frameworks": "Quantidade de Enquadramentos",
-        "frameworksSubtitle": "Presença confirmada",
-        "publicationsByChannel": "Publicações por Canal",
-        "total": "Total",
-        "activeCasesList": "Lista de Casos Ativos"
-      },
-      "caseAnalysis": {
-        "title": "Análise por Caso",
-        "searchLabel": "Buscar Número do Caso",
-        "searchPlaceholder": "Ex. 442",
-        "noCase": "Digite um número de caso para ver a análise detalhada",
-        "candidatesInProgress": "Em NãoTerminaramTalentum",
-        "applicantsInTalentum": "No Talentum",
-        "invited": "Convidados",
-        "invitedSubtitle": "Para enquadramento"
-      },
-      "zoneAnalysis": {
-        "title": "Análise por Zona",
-        "comingSoon": "A análise geográfica e mapa de calor de zonas será implementada na próxima fase"
-      },
-      "table": {
-        "caseNumber": "Número do Caso",
-        "taskName": "Nome da Tarefa",
-        "status": "Status",
-        "startDate": "Início da Busca",
-        "viewAnalysis": "Ver análise"
-      }
-    },
     "blockedAttempts": {
       "title": "Tentativas de candidatura bloqueadas",
       "subtitle": "Registros de workers que tentaram se candidatar e foram bloqueados",
       "refresh": "Atualizar",
-      "linkFromRecruitment": "Ver tentativas bloqueadas",
       "loading": "Carregando tentativas bloqueadas...",
       "loadError": "Erro ao carregar as tentativas bloqueadas",
       "retry": "Tentar novamente",
@@ -1770,32 +1708,6 @@
         "next": "Próximo",
         "page": "Página {{page}} de {{total}}"
       }
-    },
-    "recruitmentHealth": {
-      "title": "Saúde do recrutamento",
-      "refresh": "Atualizar",
-      "autoInvite": {
-        "title": "Convites automáticos (últimas 24h)",
-        "vacanciesCreated": "Vagas criadas",
-        "invitesEnqueued": "Convites enfileirados",
-        "sent": "Enviados",
-        "delivered": "Entregues",
-        "failed": "Falhas"
-      },
-      "bulkIncomplete": {
-        "title": "Lembrete de cadastro incompleto (última execução)"
-      },
-      "bulkTalentum": {
-        "title": "Lembrete de Talentum incompleto (última execução)"
-      },
-      "noRuns": "Sem execuções ainda",
-      "batchId": "Batch ID",
-      "total": "Total",
-      "errors": "Erros",
-      "startedAt": "Início",
-      "finishedAt": "Fim",
-      "loadError": "Erro ao carregar as métricas",
-      "retry": "Tentar novamente"
     },
     "kanban": {
       "columns": {
@@ -5135,9 +5047,6 @@
         },
         "recruitment": {
           "label": "Recrutamento",
-          "health": {
-            "label": "Recrutamento: Saúde"
-          },
           "blocked": {
             "label": "Candidaturas bloqueadas"
           }
