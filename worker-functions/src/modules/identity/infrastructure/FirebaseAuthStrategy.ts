@@ -43,6 +43,7 @@ export class FirebaseAuthStrategy {
           role?: string;
           account_type?: string;
           country?: string;
+          email?: string;
         };
         logger.info({ userId: payload.user_id ?? payload.sub }, '[AUTH] Emulator JWT decoded');
 
@@ -52,6 +53,7 @@ export class FirebaseAuthStrategy {
           id: payload.user_id ?? payload.sub ?? 'emulator-user',
           type: PrincipalType.USER,
           roles,
+          ...(payload.email ? { email: payload.email } : {}),
           ...(accountType ? { accountType } : {}),
           ...(payload.country ? { country: payload.country } : {}),
         };
@@ -85,6 +87,7 @@ export class FirebaseAuthStrategy {
       id: decodedToken.uid,
       type: PrincipalType.USER,
       roles: role ? [role] : [],
+      ...(decodedToken.email ? { email: decodedToken.email } : {}),
       ...(accountType ? { accountType } : {}),
       ...(claimCountry ? { country: claimCountry } : {}),
     };
