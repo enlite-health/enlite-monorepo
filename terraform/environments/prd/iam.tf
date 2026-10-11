@@ -18,6 +18,7 @@ module "sa_enlite_functions" {
     "roles/cloudsql.client",
     "roles/cloudtasks.enqueuer",
     "roles/firebase.admin",
+    "roles/firebaseauth.admin", # spec 050 R-41: papel estreito de Auth (11 permissões, nenhuma de Storage); firebase.admin sai na R-42
     "roles/iam.serviceAccountTokenCreator",
     "roles/pubsub.publisher",
     "roles/secretmanager.secretAccessor",

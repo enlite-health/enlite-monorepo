@@ -200,6 +200,17 @@ resource "google_project_iam_audit_config" "kms" {
   }
 }
 
+# spec 050 §18 R-41: liga o Data Access de LEITURA do Firebase Auth para passar a medir o uso da conta do backend.
+# Autoritativo por serviço; `auditConfigs` de identitytoolkit estava vazio (checar no plan: só adição).
+resource "google_project_iam_audit_config" "identitytoolkit" {
+  project = var.project_id
+  service = "identitytoolkit.googleapis.com"
+
+  audit_log_config {
+    log_type = "DATA_READ"
+  }
+}
+
 # ---------------------------------------------------------------------------
 # Schedulers (molde: events.tf — X-Internal-Secret do secret internal-token-secret)
 # ---------------------------------------------------------------------------
