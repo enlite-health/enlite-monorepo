@@ -63,6 +63,8 @@ export const RESOURCE_CATEGORY: Readonly<Record<string, PermissionCategory>> = {
   patient_document: 'Pacientes',
   // Spec 049 (F3): aba "Admissão" da ficha — agenda da entrevista de admissão, selos de mensagem e resumo.
   patient_admission: 'Pacientes',
+  // Spec 051 (F1): trocar o status do paciente por fora do fluxo — uma célula por destino.
+  patient_status: 'Pacientes',
   patient_coverage: 'Pacientes',
   patient_address: 'Pacientes',
   patient_services: 'Pacientes',
@@ -328,6 +330,10 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
     'Liberar o ENSAIO PAGO de uma reunião de admissão de paciente de TESTE, por 48 h: só então a reunião usa Meet, Tactiq, '
     + 'Vertex e WhatsApp reais (custa dinheiro e manda mensagem de verdade); a transcrição vai a um bucket separado que '
     + 'expira. Não existe para paciente real. Fica na trilha quem liberou e quando. Só o Acesso Master.',
+  'patient_admission:retry_summary':
+    'Autorizar uma NOVA rodada do resumo da reunião de admissão depois que as 3 tentativas pagas se esgotaram: cada rodada '
+    + 'custa até 3 chamadas ao Vertex. Teto de 2 autorizações por reunião; fica na trilha quem autorizou e quando. '
+    + 'Acesso Master e Admisión y Supervisión.',
   'own_tactiq_link:read':
     'Ver o estado do PRÓPRIO vínculo com o Tactiq (vinculado, caído, conta errada ou sem vínculo) e a data da última '
     + 'verificação. Nunca devolve o token. Quem não está vinculado não pode ser responsável de agenda de admissão.',
@@ -430,6 +436,32 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
     'Ver o log de POSTULAÇÕES BLOQUEADAS: tentativas de um prestador se postular a uma vaga e '
     + 'serem bloqueadas antes de completar a aplicação (cadastro incompleto, prestador '
     + 'desativado ou não encontrado). Tela só leitura — sem ação.',
+
+  // ── Spec 051 (F1 / PR-A): trocar o status do paciente por FORA do fluxo normal de transições.
+  //    Uma célula por DESTINO. Nenhuma rota as exige neste PR: o consumidor é a função pura
+  //    `decidirTrocaForaDoFluxo` (`case/domain/trocaForaDoFluxo.ts`), ainda não ligada ao writer.
+  //    Nenhuma entra em grupo por padrão; o Acesso Master as recebe pelo sync do catálogo.
+  'patient_status:move_to_searching':
+    'Trocar o paciente para BÚSQUEDA (procurando prestador) por FORA do fluxo normal de transições, '
+    + 'a partir de qualquer estado clínico. Exige a ficha completa para o novo estado. Não vem em nenhum grupo por padrão.',
+  'patient_status:move_to_active':
+    'Trocar o paciente para ATIVO (em atendimento) por FORA do fluxo normal de transições, '
+    + 'a partir de qualquer estado clínico. Exige a ficha completa para o novo estado. Não vem em nenhum grupo por padrão.',
+  'patient_status:move_to_replacement':
+    'Trocar o paciente para REEMPLAZO (troca de prestador) por FORA do fluxo normal de transições, '
+    + 'a partir de qualquer estado clínico. Exige a ficha completa para o novo estado. Não vem em nenhum grupo por padrão.',
+  'patient_status:move_to_on_hold':
+    'Trocar o paciente para EN ESPERA por FORA do fluxo normal de transições, a partir de qualquer '
+    + 'estado clínico. Continua exigindo o motivo da espera. Não vem em nenhum grupo por padrão.',
+  'patient_status:move_to_suspended':
+    'Trocar o paciente para SUSPENSO (internação, viagem) por FORA do fluxo normal de transições, '
+    + 'a partir de qualquer estado clínico. Não vem em nenhum grupo por padrão.',
+  'patient_status:move_to_alta':
+    'Trocar o paciente para ALTA por FORA do fluxo normal de transições, a partir de qualquer '
+    + 'estado clínico. Não vem em nenhum grupo por padrão.',
+  'patient_status:move_to_discharged':
+    'Trocar o paciente para BAJA (desligado) por FORA do fluxo normal de transições, a partir de '
+    + 'qualquer estado clínico. Não vem em nenhum grupo por padrão.',
 };
 
 /**

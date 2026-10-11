@@ -1,9 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { PatientApiError } from '@infrastructure/http/AdminPatientsApiService';
 import type { PatientDetail, UpdatePatientStatusPayload } from '@domain/entities/PatientDetail';
-import { CLINICAL_PATIENT_STATUSES, ON_HOLD_REASONS } from '@domain/entities/patientEnums';
+import { ON_HOLD_REASONS, isClinicalPatientStatus } from '@domain/entities/patientEnums';
+import { usePatientStatusOptions } from '@hooks/admin/usePatientStatusOptions';
+import { refusalFromError } from '@domain/entities/PatientStatusRefusal';
+import { friendlyStatusMessage, missingItemsLabel } from '@presentation/utils/patientStatusMessages';
 import { Button } from '@presentation/components/atoms/Button';
 import { Text } from '@presentation/components/atoms/Text';
 import { Textarea } from '@presentation/components/atoms/Textarea';
@@ -23,10 +26,12 @@ interface Props {
 export const ON_HOLD_NOTE_MAX = 2000;
 
 /**
- * O estado clínico v2 da ficha (spec 012, US-B7): select dos seis estados; ON_HOLD abre motivo
- * (obrigatório) + nota. A regra de transição é do SERVIDOR (patient_status_transitions, 422 com
- * código) — a tela só traduz a recusa. Só existe para quem já passou pela admissão; antes disso o
- * caminho é o botão "Activar paciente".
+ * O estado clínico v2 da ficha (spec 012, US-B7): select do estado atual + os destinos que o
+ * SERVIDOR devolve (spec 051: GET status-options — fluxo normal mais o que a permissão do ator
+ * libera); ON_HOLD abre motivo (obrigatório) + nota. Nada aqui decide FSM nem permissão: destino
+ * com `blockedBy` aparece desabilitado com o motivo; se a lista não carregar, o select TRAVA (não
+ * volta à lista inteira). A recusa do PUT é traduzida em frase amigável, sem código técnico. Só
+ * existe para quem já passou pela admissão; antes disso o caminho é o botão "Activar paciente".
  *
  * A nota é texto clínico restrito (pacote D211.2): `data-clarity-mask` no wrapper, e quando o
  * backend a redigiu para este ator (`onHoldNoteRedacted`) o campo nem é editável — não há valor
@@ -43,6 +48,17 @@ export function PatientStatusControl({ patient, onSaved }: Props): JSX.Element |
   const [exitReason, setExitReason] = useState<string>('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Chave de releitura = estado + o que falta (`completeness.missing`, ordenado): é o dado que alimenta o `blockedBy` da lista.
+  // Salvar serviço/endereço/horário refaz o paciente SEM mudar `status`; sem o `missing` na chave a opção desabilitada ficava presa.
+  const optionsKey = `${patient.status}|${[...(patient.completeness?.missing ?? [])].sort().join(',')}`;
+  const { state: optionsState, reload: reloadOptions } = usePatientStatusOptions(patient.id, 'admin_panel', optionsKey, patient.admissionStatus === 'DONE');
+
+  // Lista relida e o destino escolhido saiu dela (permissão revogada, dado mudou): volta ao atual — não
+  // deixa o operador salvar o que o servidor já não oferece.
+  const offeredNow = optionsState.phase === 'ready' ? optionsState.options.map((o): string => o.status) : null; // lista completa: só confere se o destino escolhido ainda existe
+  useEffect(() => {
+    if (offeredNow && status !== current && !offeredNow.includes(status)) setStatus(current);
+  }, [offeredNow, status, current]);
 
   if (patient.admissionStatus !== 'DONE') return null;
 
@@ -54,9 +70,26 @@ export function PatientStatusControl({ patient, onSaved }: Props): JSX.Element |
   const changed = status !== current || (goingOnHold && (reason !== (patient.onHoldReason ?? '') || note !== (patient.onHoldNote ?? '')));
   const canSave = changed && (!goingOnHold || reason !== '') && (!leavingSuspended || exitReason !== '') && !busy;
 
-  const statusOptions: SelectOption[] = CLINICAL_PATIENT_STATUSES.map((s) => ({ value: s, label: t(`admin.patients.statusOptions.${s}`, s) }));
-  const reasonOptions: SelectOption[] = ON_HOLD_REASONS.map((r) => ({ value: r, label: t(`admin.patients.onHoldReasonOptions.${r}`, r) }));
   const label = (s: string) => t(`admin.patients.statusOptions.${s}`, s);
+  const reasonOptions: SelectOption[] = ON_HOLD_REASONS.map((r) => ({ value: r, label: t(`admin.patients.onHoldReasonOptions.${r}`, r) }));
+  // Estado atual + SÓ o que o servidor devolveu. Sem lista (carregando ou falha) só o atual — nunca o catálogo inteiro.
+  const optionsReady = optionsState.phase === 'ready';
+  // Recorte de APRESENTAÇÃO da ficha (spec ponto 1: o funil fica como hoje): a lista do servidor pode trazer
+  // estados do funil (funil↔funil, estado nulo); o select da ficha só mostra os clínicos. Permissão continua do servidor.
+  const offered = optionsState.phase === 'ready' ? optionsState.options.filter((o) => isClinicalPatientStatus(o.status)) : [];
+  const statusOptions: Array<{ value: string; label: string; disabled: boolean }> = [
+    { value: current, label: label(current), disabled: false },
+    ...offered
+      .filter((o) => o.status !== current)
+      .map((o) => {
+        const items = missingItemsLabel(t, o.blockedBy);
+        return {
+          value: o.status,
+          label: items ? ts('blockedOption', { status: label(o.status), items }) : label(o.status),
+          disabled: !!o.blockedBy?.length,
+        };
+      }),
+  ];
 
   const handleSave = async (): Promise<void> => {
     setError(null);
@@ -75,26 +108,12 @@ export function PatientStatusControl({ patient, onSaved }: Props): JSX.Element |
       await AdminApiService.updatePatientStatus(patient.id, payload);
       onSaved();
     } catch (err) {
-      if (err instanceof PatientApiError && err.code === 'PATIENT_STATUS_TRANSITION_NOT_ALLOWED') {
-        const d = (err.details ?? {}) as { from?: string; to?: string };
-        setError(ts('transitionNotAllowed', { from: label(d.from ?? current), to: label(d.to ?? status) }));
-      } else if (err instanceof PatientApiError && err.code === 'ON_HOLD_REASON_REQUIRED') {
-        setError(ts('reasonRequired'));
-      } else if (err instanceof PatientApiError && err.code === 'SUSPENSION_EXIT_REASON_REQUIRED') {
-        setError(ts('suspensionExitReasonRequired'));
-      } else if (err instanceof PatientApiError && err.code === 'PATIENT_STATUS_NOT_READY') {
-        // Decisão do Gabriel 07/09: nomeia o que falta com as MESMAS chaves do checklist da
-        // ficha — o operador lê o mesmo vocabulário aqui e no bloco de completude acima.
-        const d = (err.details ?? {}) as { missing?: string[] };
-        const items = (Array.isArray(d.missing) ? d.missing : [])
-          .map((code) => t(`admin.patients.detail.completeness.items.${code}`, code))
-          .join(', ');
-        // Sem lista, a frase com `{{items}}` viraria "No se puede pasar a Activo: falta ." — o
-        // Kanban já caía na mensagem por código nesse caso, e a ficha não. Mesmo tratamento nas duas.
-        setError(items ? ts('notReady', { status: label(status), items }) : ts('notReadyGeneric'));
-      } else {
-        setError(err instanceof Error ? err.message : ts('error'));
-      }
+      const api = err instanceof PatientApiError ? err : null;
+      // Spec 051 (§6.4): frase amigável, a mesma do Kanban; o código/célula ficam no corpo da resposta.
+      const friendly = api ? friendlyStatusMessage(t, refusalFromError(api, status)) : null;
+      setError(friendly ?? (err instanceof Error ? err.message : ts('error')));
+      // A lista pode ter ficado velha (permissão revogada, dado completado em outra aba): relê.
+      if (api && (api.status === 403 || api.status === 422)) reloadOptions();
     } finally {
       setBusy(false);
     }
@@ -129,11 +148,12 @@ export function PatientStatusControl({ patient, onSaved }: Props): JSX.Element |
             aria-label={ts('title')}
             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
             value={status}
+            disabled={!optionsReady}
             onChange={(e) => { setStatus(e.target.value); setError(null); }}
             data-testid="patient-status-select"
           >
             {statusOptions.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
+              <option key={o.value} value={o.value} disabled={o.disabled}>{o.label}</option>
             ))}
           </select>
         </div>
@@ -141,6 +161,14 @@ export function PatientStatusControl({ patient, onSaved }: Props): JSX.Element |
           {ts('save')}
         </Button>
       </div>
+      {optionsState.phase === 'error' && (
+        <div className="flex items-center gap-2" data-testid="patient-status-options-error">
+          <Text size="sm" className="text-red-600">{ts('optionsLoadError')}</Text>
+          <Button type="button" variant="quiet" size="xs" onClick={reloadOptions} data-testid="patient-status-options-retry">
+            {ts('optionsRetry')}
+          </Button>
+        </div>
+      )}
       {goingOnHold && (
         <>
           <FormField label={ts('reason')} htmlFor="patient-status-reason" required>

@@ -77,6 +77,15 @@ describe('SCREEN_REGISTRY — paridade com o catálogo do back', () => {
       'own_presence:update',
       'patient:write',
       'patient_clinical:write',
+      // Spec 051 (F1): trocar o status do paciente por fora da FSM. Decidida no back por
+      // `decidirTrocaForaDoFluxo`; a tela (PR-C) só mostra o destino que a lista do servidor trouxer.
+      'patient_status:move_to_active',
+      'patient_status:move_to_alta',
+      'patient_status:move_to_discharged',
+      'patient_status:move_to_on_hold',
+      'patient_status:move_to_replacement',
+      'patient_status:move_to_searching',
+      'patient_status:move_to_suspended',
       // Spec 048: destinatário do aviso do 12º dia (consulta por célula no job) — não controla elemento de tela.
       'patient_therapeutic_project:incomplete_alert',
       'prescreening:write',
@@ -135,7 +144,7 @@ describe('screensByCell / containersOfTab / screenById', () => {
     // Spec 049 (F7): a aba Admissão vem logo depois de Documentos, com container próprio e 5 células (4 da 049 + o ensaio pago da 050).
     expect(s.tabs).toEqual(['clinicalData', 'supportNetwork', 'documents', 'admission', 'contractedService', 'history']);
     expect(containersOfTab(s, 'admission').map((c) => c.resource)).toEqual(['patient_admission']);
-    expect(s.containers?.find((c) => c.id === 'admission')?.cells).toEqual(['patient_admission:read', 'patient_admission:create', 'patient_admission:update', 'patient_admission:resend_message', 'patient_admission:release_paid_rehearsal']);
+    expect(s.containers?.find((c) => c.id === 'admission')?.cells).toEqual(['patient_admission:read', 'patient_admission:create', 'patient_admission:update', 'patient_admission:resend_message', 'patient_admission:release_paid_rehearsal', 'patient_admission:retry_summary']);
     expect(screenById('account.tactiq').cells).toEqual(['own_tactiq_link:read', 'own_tactiq_link:create']);
     expect(s.tabs).not.toContain('vacancies');
     expect(containersOfTab(s, 'vacancies' as never)).toEqual([]);

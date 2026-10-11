@@ -71,6 +71,20 @@ export const ACTIVATION_BLOCKING_CODES = [
 export const SCHEDULE_REQUIRED_STATUSES = ['ACTIVE', 'SEARCHING', 'REPLACEMENT'] as const;
 
 /**
+ * Spec 051 (ponto 4, decisão do Gabriel 10/10/2026: "ir para Búsqueda precisa de serviço
+ * contratado já completo"): na troca manual FORA do fluxo para SEARCHING, o serviço contratado tem
+ * de estar completo — ao menos 1 serviço ativo, com endereço e com horário. O fluxo normal
+ * (foguete, lançamento, ON_HOLD→SEARCHING…) continua cobrando só o horário. UM dono: o writer
+ * (que barra o PUT) e a lista de destinos (`blockedBy`) leem esta constante via
+ * `blockingCodesForStatusChange(…, foraDoFluxo)`.
+ */
+export const SEARCHING_FORA_DO_FLUXO_CODES = [
+  'CONTRACTED_SERVICE',
+  'SERVICE_ADDRESS',
+  'SERVICE_SCHEDULE',
+] as const;
+
+/**
  * Quais códigos do checklist barram a ENTRADA em cada status, no `PUT /patients/:id/status`
  * (select da ficha e drop no Kanban — as duas telas chamam a mesma rota).
  *
@@ -82,11 +96,14 @@ export const SCHEDULE_REQUIRED_STATUSES = ['ACTIVE', 'SEARCHING', 'REPLACEMENT']
  *   ativado (portanto já passou pelo gate completo uma vez); exigir de novo endereço e
  *   consentimento aqui seria reabrir a admissão no meio de uma troca urgente de prestadora.
  * - Demais estados: nada. Pausa e saída não pedem dado nenhum.
+ * - `foraDoFluxo` (spec 051): só SEARCHING muda — ver `SEARCHING_FORA_DO_FLUXO_CODES`.
  */
 export function blockingCodesForStatusChange(
   toStatus: string,
+  foraDoFluxo = false,
 ): readonly PatientCompletenessCode[] {
   if (toStatus === 'ACTIVE') return ACTIVATION_BLOCKING_CODES;
+  if (foraDoFluxo && toStatus === 'SEARCHING') return SEARCHING_FORA_DO_FLUXO_CODES;
   if ((SCHEDULE_REQUIRED_STATUSES as readonly string[]).includes(toStatus)) {
     return ['SERVICE_SCHEDULE'];
   }

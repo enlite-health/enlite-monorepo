@@ -157,6 +157,7 @@ describe('agendar', () => {
     [409, 'TACTIQ_LINK_REQUIRED', 'tactiqLinkRequired'],
     [422, 'SLOT_IN_PAST', 'slotInPast'],
     [422, 'HOST_NOT_IN_ROSTER', 'hostNotInRoster'],
+    [502, 'CALENDAR_CREATE_FAILED', 'calendarCreateFailed'],
   ])('%s %s: mensagem própria, o modal fica aberto e o botão volta', async (status, code, key) => {
     api.bookAppointment.mockRejectedValue(new ApiError({ success: false, error: 'dado@example.test', code }, status));
     const { onBooked, onClose } = renderModal();

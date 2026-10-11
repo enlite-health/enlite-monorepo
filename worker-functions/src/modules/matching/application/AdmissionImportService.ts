@@ -28,6 +28,7 @@ import {
   matchWindow,
 } from '../domain/admissionImport';
 import type { AdmissionLogger } from './AdmissionMessagingService';
+import { assertSummaryShape } from './admissionSummaryGate';
 import {
   AdmissionSummaryError,
   MAX_SUMMARY_ATTEMPTS,
@@ -317,7 +318,7 @@ export class AdmissionImportService {
     // R-20: o rastro contável sai ANTES da chamada paga (só ids e o `realm`). Se a chamada falhar, o log já existe.
     this.log.info({ provider: 'vertex', appointmentId: a.id, realm }, 'admission.paid_call');
     try {
-      generated = await this.deps.summary.generate({ transcript: fullText, entrevistaId: a.admission_code, fecha: isoDateLabel(a.slot_start, a.country) });
+      generated = assertSummaryShape(await this.deps.summary.generate({ transcript: fullText, entrevistaId: a.admission_code, fecha: isoDateLabel(a.slot_start, a.country) }));
     } catch (err) {
       const reason = err instanceof AdmissionSummaryError ? err.reason : 'unexpected';
       const placeholders = err instanceof AdmissionSummaryError ? err.placeholders : [];
@@ -333,11 +334,10 @@ export class AdmissionImportService {
     }
     // Daqui em diante a chamada ao modelo JÁ foi paga: falha no PDF, no bucket ou na transação vira `post_model_failed` (conta no teto).
     const label = `Resumen de admisión · ${dateLabel(a.slot_start, a.country)}`;
-    if (generated.jsonInvalid) this.log.warn({ appointmentId: a.id }, 'admission.summary_json_invalid');
     let prepared: Awaited<ReturnType<StoreAdmissionSummaryDocument['prepare']>> | undefined;
     let stored;
     try {
-      const pdf = await renderAdmissionSummaryPdf({ title: label, body: generated.summary, structured: generated.jsonInvalid ? null : generated.structured });
+      const pdf = await renderAdmissionSummaryPdf({ title: label, body: generated.summary, structured: generated.structured });
       // o objeto do PDF sobe SEM transação; a linha do documento + `summary_saved` + `done` entram numa transação curta.
       prepared = await this.documents.prepare({
         patientId: a.patient_id, appointmentId: a.id, pdf, originalFilename: `resumen-admision-${a.admission_code}.pdf`, label,

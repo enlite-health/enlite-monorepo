@@ -58,13 +58,19 @@ interface Props {
   /** O resumo existe e a aba Documentos está visível: o selo vira atalho para ela. */
   onOpenDocuments?: () => void;
   onResend: (kind: ResendKind) => void;
+  /** `patient_admission:retry_summary` — sem a célula o botão "Reintentar resumen" nem existe (e o aviso de teto também não). */
+  canRetryCell?: boolean;
+  onRetrySummary?: () => void;
 }
 
-export function AdmissionSeals({ appointment, canResendCell, onOpenDocuments, onResend }: Props): JSX.Element {
+export function AdmissionSeals({ appointment, canResendCell, onOpenDocuments, onResend, canRetryCell = false, onRetrySummary }: Props): JSX.Element {
   const { t } = useTranslation();
   const ta = (key: string): string => t(`admin.patients.detail.admissionTab.${key}`);
   const id = appointment.id;
   const { confirmation, reminder, import: importStatus, document } = appointment.seals;
+  // O servidor decide se há o que reprocessar (`summaryRetry`) e quantas autorizações restam; a tela só esconde o que a célula não dá.
+  const retry = canRetryCell ? appointment.summaryRetry ?? null : null;
+  const retryAtLimit = Boolean(retry && retry.exhausted && retry.authorizationsLeft === 0);
 
   const messageSeal = (kind: ResendKind, view: MessageSealView, label: string, testKey: string): JSX.Element => (
     <SealSlot label={label} testId={`admission-seal-${testKey}-${id}`}>
@@ -92,13 +98,27 @@ export function AdmissionSeals({ appointment, canResendCell, onOpenDocuments, on
       {messageSeal('confirmation', confirmation, ta('seal.confirmation'), 'confirmation')}
       {messageSeal('reminder_30min', reminder, ta('seal.reminder'), 'reminder')}
       <SealSlot label={ta('seal.import')} testId={`admission-seal-import-${id}`}>
-        {importStatus ? (
-          <SealChip tone={IMPORT_SEAL_TONE[importStatus] ?? 'neutral'} testId={`admission-seal-import-chip-${id}`}>
-            {ta(`seal.importStatus.${importStatus}`)}
-          </SealChip>
-        ) : (
-          <SealChip tone="neutral" testId={`admission-seal-import-chip-${id}`}>{ta('seal.importStatus.none')}</SealChip>
-        )}
+        <>
+          {importStatus ? (
+            <SealChip tone={IMPORT_SEAL_TONE[importStatus] ?? 'neutral'} testId={`admission-seal-import-chip-${id}`}>
+              {ta(`seal.importStatus.${importStatus}`)}
+            </SealChip>
+          ) : (
+            <SealChip tone="neutral" testId={`admission-seal-import-chip-${id}`}>{ta('seal.importStatus.none')}</SealChip>
+          )}
+          {retry && !retryAtLimit && onRetrySummary && (
+            <button
+              type="button"
+              onClick={onRetrySummary}
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-primary underline hover:bg-gray-200 transition-colors"
+              data-testid={`admission-retry-summary-${id}`}
+            >
+              <RotateCw size={12} aria-hidden="true" />
+              <Text as="span" size="xs" weight="medium" color="inherit">{ta('retry.button')}</Text>
+            </button>
+          )}
+          {retryAtLimit && <SealChip tone="bad" testId={`admission-retry-limit-${id}`}>{ta('retry.limit')}</SealChip>}
+        </>
       </SealSlot>
       <SealSlot label={ta('seal.document')} testId={`admission-seal-document-${id}`}>
         {document ? (

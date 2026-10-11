@@ -10,6 +10,7 @@ import {
   FULL_ALLOWED_UPDATE_FIELDS,
   OPERATIONAL_EDITABLE_FIELDS,
   retryOnCaseOrdinalConflict,
+  withEffectiveFields,
 } from './vacancyCrudHelpers';
 import {
   auditVacancyCreated,
@@ -24,6 +25,7 @@ import { PurgeVacancyShortLinksUseCase } from '../../application/PurgeVacancySho
 import { ShortLinkService } from '../../infrastructure/shortlinks/ShortLinkService';
 import { reportError, loggingAls } from '@shared/logging';
 import { withSystemDbContext } from '@shared/database/requestDbSession';
+import { vacancyRawColumnsSql } from '@shared/sql/vacancyEffectiveFieldsSql';
 
 const PUBLIC_STATUSES = new Set([
   'ACTIVE', 'SEARCHING', 'SEARCHING_REPLACEMENT', 'RAPID_RESPONSE',
@@ -229,7 +231,8 @@ export class VacancyCrudController {
         });
       });
 
-      res.status(201).json({ success: true, data: newVacancy });
+      // Horário que SAI = o efetivo, lido na sessão com identidade (a cópia crua da vaga com serviço não sai).
+      res.status(201).json({ success: true, data: await withEffectiveFields(this.db, newVacancy) });
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : String(error);
       reportError(error instanceof Error ? error : new Error(msg), { source: 'VacancyCrudController:createVacancy' });
@@ -291,7 +294,7 @@ export class VacancyCrudController {
 
         // Snapshot before
         const beforeResult = await client.query<Record<string, unknown>>(
-          `SELECT * FROM job_postings WHERE id = $1`,
+          `SELECT ${vacancyRawColumnsSql()} FROM job_postings WHERE id = $1`,
           [id],
         );
         if (beforeResult.rows.length === 0) {
@@ -304,7 +307,7 @@ export class VacancyCrudController {
         values.push(id);
         const result = await client.query<Record<string, unknown>>(
           `UPDATE job_postings SET ${setClause.join(', ')}, updated_at = NOW()
-           WHERE id = $${paramIndex} RETURNING *`,
+           WHERE id = $${paramIndex} RETURNING ${vacancyRawColumnsSql()}`,
           values,
         );
         if (result.rows.length === 0) {
@@ -337,7 +340,7 @@ export class VacancyCrudController {
             }
           });
         });
-        res.status(200).json({ success: true, data: updated });
+        res.status(200).json({ success: true, data: await withEffectiveFields(this.db, updated) });
       }
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : String(error);
@@ -357,7 +360,7 @@ export class VacancyCrudController {
 
         // Snapshot before soft-delete
         const beforeResult = await client.query<Record<string, unknown>>(
-          `SELECT * FROM job_postings WHERE id = $1 AND deleted_at IS NULL`,
+          `SELECT ${vacancyRawColumnsSql()} FROM job_postings WHERE id = $1 AND deleted_at IS NULL`,
           [id],
         );
         if (beforeResult.rows.length === 0) {

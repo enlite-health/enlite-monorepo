@@ -21,7 +21,12 @@
  * Reason: a half-open interval is ambiguous and the caller should send both.
  */
 
+import { vacancyEffectiveScheduleSql } from '@shared/sql/vacancyEffectiveFieldsSql';
+
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+/** Horário efetivo da vaga `jp`. A query que usa o filtro tem de trazer `vacancyEffectiveJoinSql('jp')` no FROM. */
+const SCHEDULE_SQL = vacancyEffectiveScheduleSql('jp');
 
 export interface ScheduleFilterInput {
   days: number[];
@@ -77,7 +82,7 @@ export function buildScheduleFilter(
     const sql = ` AND (
   SELECT bool_and(
     EXISTS (
-      SELECT 1 FROM jsonb_array_elements(jp.schedule) s
+      SELECT 1 FROM jsonb_array_elements(${SCHEDULE_SQL}) s
       WHERE (s->>'dayOfWeek')::int = d.day
     )
   )
@@ -99,7 +104,7 @@ export function buildScheduleFilter(
     const sql = ` AND (
   SELECT bool_and(
     EXISTS (
-      SELECT 1 FROM jsonb_array_elements(jp.schedule) s
+      SELECT 1 FROM jsonb_array_elements(${SCHEDULE_SQL}) s
       WHERE (s->>'dayOfWeek')::int = d.day
         AND s->>'startTime' < ${ttParam}
         AND s->>'endTime'   > ${tfParam}
@@ -119,7 +124,7 @@ export function buildScheduleFilter(
   idx += 2;
 
   const sql = ` AND EXISTS (
-  SELECT 1 FROM jsonb_array_elements(jp.schedule) s
+  SELECT 1 FROM jsonb_array_elements(${SCHEDULE_SQL}) s
   WHERE s->>'startTime' < ${ttParam}
     AND s->>'endTime'   > ${tfParam}
 )`;

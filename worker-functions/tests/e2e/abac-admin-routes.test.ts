@@ -46,6 +46,7 @@ describe('rotas de paciente sob a RLS de país (HTTP real, banco real)', () => {
   const STAFF_AR = { uid: 'abac-routes-staff-ar', email: 'abac-routes-ar@enlite.health', role: 'recruiter', country: 'AR' };
 
   const IDS = {
+    vacancyAR: 'ee270000-0e00-0004-0001-000000000001',
     patientAR: 'ee270000-0e00-0001-0001-000000000001',
     patientBR: 'ee270000-0e00-0001-0002-000000000001',
     groupAR: 'ee270000-0e00-0002-0001-000000000001',
@@ -119,6 +120,7 @@ describe('rotas de paciente sob a RLS de país (HTTP real, banco real)', () => {
 
   async function cleanupDados(): Promise<void> {
     await adminPool.query(`DELETE FROM resource_access_log WHERE operator_uid = $1`, [STAFF_AR.uid]);
+    await adminPool.query(`DELETE FROM job_postings WHERE id = $1`, [IDS.vacancyAR]); // cascata: avisos (F3)
     const semeados = [IDS.patientAR, IDS.patientBR, ...criadosPelaRota];
     await adminPool.query(`DELETE FROM patient_status_history WHERE patient_id = ANY($1)`, [semeados]);
     await adminPool.query(`DELETE FROM patients WHERE id = ANY($1)`, [semeados]);
@@ -201,9 +203,10 @@ describe('rotas de paciente sob a RLS de país (HTTP real, banco real)', () => {
     process.env.DB_SYSTEM_POOL_MAX = '2';
 
     // 4. Só agora o `src/` entra.
-    const [identity, caseModule, { DatabaseConnection }] = await Promise.all([
+    const [identity, caseModule, matchingModule, { DatabaseConnection }] = await Promise.all([
       import('@modules/identity'),
       import('@modules/case'),
+      import('@modules/matching'),
       import('@shared/database/DatabaseConnection'),
     ]);
 
@@ -250,6 +253,17 @@ describe('rotas de paciente sob a RLS de país (HTTP real, banco real)', () => {
         express.use(
           '/api/admin',
           caseModule.createAdminTherapeuticProjectsRoutes(new caseModule.AdminTherapeuticProjectsController(), auth, permissions),
+        ) &&
+        // F3 (vaga-le-do-servico): a família `admin.vacancies` monta COM O ROUTER REAL; os controllers que as rotas
+        // exercitadas aqui não usam entram como `{}` (os handlers só os chamam por arrow, em rota que este teste não pede).
+        // O controller do `ack` é construído DENTRO da fábrica — esse é o de produção.
+        express.use(
+          '/api/admin',
+          matchingModule.createAdminVacanciesRoutes(
+            {} as never, {} as never, {} as never, {} as never, {} as never, {} as never, {} as never, {} as never, {} as never,
+            auth,
+            permissions,
+          ),
         ),
     });
     baseUrl = app.url;
@@ -673,6 +687,39 @@ describe('rotas de paciente sob a RLS de país (HTTP real, banco real)', () => {
       // O processo conecta como o login de runtime, não como enlite_admin (senão a prova seria vazia).
       const quem = await adminPool.query<{ n: number }>(`SELECT count(*)::int AS n FROM pg_stat_activity WHERE usename = $1`, [RUNTIME_USER]);
       expect(quem.rows[0].n).toBeGreaterThan(0);
+    });
+  });
+
+  // ── (i) F3 vaga-le-do-servico: "marcar como atendido" o aviso da vaga publicada, como app_runtime ──────
+  describe('(i) POST /api/admin/vacancies/:id/source-change-notices/:field/ack como app_runtime', () => {
+    const ackPath = (field: string) => `/api/admin/vacancies/${IDS.vacancyAR}/source-change-notices/${field}/ack`;
+
+    beforeAll(async () => {
+      await adminPool.query(
+        `INSERT INTO job_postings (id, title, patient_id, status, is_draft, country, is_test)
+         VALUES ($1, 'CASO 93 abac-routes ack', $2, 'SEARCHING', false, 'AR', true)`,
+        [IDS.vacancyAR, IDS.patientAR],
+      );
+    });
+
+    it('aviso aberto → 200 (não 503 de GRANT, não 403 mudo) e a LINHA fecha com o ator', async () => {
+      await adminPool.query(`INSERT INTO vacancy_source_change_notices (job_posting_id, field) VALUES ($1, 'schedule')`, [IDS.vacancyAR]);
+
+      const res = await asStaffAR(ackPath('schedule'), { method: 'POST' });
+
+      expect(res.status).toBe(200);
+      expect((await bodyOf(res)).success).toBe(true);
+      const linha = await adminPool.query<{ acknowledged_at: Date | null; acknowledged_by: string | null }>(
+        `SELECT acknowledged_at, acknowledged_by FROM vacancy_source_change_notices WHERE job_posting_id = $1 AND field = 'schedule'`,
+        [IDS.vacancyAR],
+      );
+      expect(linha.rows[0].acknowledged_at).not.toBeNull();
+      expect(linha.rows[0].acknowledged_by).toBe(`staff:${STAFF_AR.uid}`);
+    });
+
+    it('sem aviso aberto → 404; field fora do conjunto fechado → 400', async () => {
+      expect((await asStaffAR(ackPath('schedule'), { method: 'POST' })).status).toBe(404);
+      expect((await asStaffAR(ackPath('address'), { method: 'POST' })).status).toBe(400);
     });
   });
 

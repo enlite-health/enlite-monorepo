@@ -119,10 +119,12 @@ import { TactiqLinkController } from '@modules/matching/interfaces/controllers/T
 import { TactiqCheckInternalController } from '@modules/matching/interfaces/controllers/TactiqCheckInternalController';
 import { createTactiqLinkRoutes, createTactiqLinkCallbackRoute, createTactiqCheckInternalRoutes } from '@modules/matching/interfaces/routes/tactiqLinkRoutes';
 import { AdmissionPostCallJob } from '@modules/matching/application/AdmissionPostCallJob';
+import { AdmissionCalendarSweeps } from '@modules/matching/application/admissionCalendarSweeps';
 import { AdmissionPostCallRepository } from '@modules/matching/infrastructure/AdmissionPostCallRepository';
 import { AdmissionPostCallInternalController } from '@modules/matching/interfaces/controllers/AdmissionPostCallInternalController';
 import { createAdmissionPostCallInternalRoutes } from '@modules/matching/interfaces/routes/admissionPostCallRoutes';
 import { AdmissionImportService } from '@modules/matching/application/AdmissionImportService';
+import { AdmissionSummaryRetryService } from '@modules/matching/application/AdmissionSummaryRetryService';
 import { AdmissionImportRepository } from '@modules/matching/infrastructure/AdmissionImportRepository';
 import { AdmissionImportInternalController } from '@modules/matching/interfaces/controllers/AdmissionImportInternalController';
 import { createAdmissionImportInternalRoutes } from '@modules/matching/interfaces/routes/admissionImportRoutes';
@@ -594,6 +596,19 @@ app.use('/api/admin', createAdminConversationRoutes(authMiddleware, permissionMi
 // ========== Admin Patient Documents — aba "Documentos" (spec 031) ==========
 app.use('/api/admin', createPatientDocumentsRoutes(authMiddleware, permissionMiddleware));
 
+// Spec 049 F6: a importação do Tactiq. Criada aqui porque o botão "Reintentar resumen" (spec 050 F11) também a chama; o job de 15 min a monta abaixo.
+const admissionImportRepository = new AdmissionImportRepository(admissionDb);
+const admissionImportService = new AdmissionImportService({
+  repo: admissionImportRepository,
+  events: admissionEvents,
+  tokens: tactiqLinkService,
+  mcp: admissionExternals.tactiq.mcp,
+  vault: admissionExternals.vault,
+  rehearsalVault: admissionExternals.rehearsalVault,
+  summary: admissionExternals.summary,
+  db: admissionDb,
+});
+
 // Spec 049 F3: aba "Admissão" do paciente (agendar pelo painel, listar, cancelar, reenviar). Família admin.patients.
 const admissionPanelController = new AdmissionPanelController(
   admissionSchedulingService049,
@@ -607,6 +622,7 @@ const admissionPanelController = new AdmissionPanelController(
     tactiq: tactiqLinkService,
     impersonateEmail: process.env.ADMISSION_IMPERSONATE_EMAIL || 'enlite@enlite.health',
   }),
+  new AdmissionSummaryRetryService({ db: admissionDb, repo: admissionImportRepository, events: admissionEvents, importer: admissionImportService }),
 );
 app.use('/api/admin', createAdminAdmissionRoutes(authMiddleware, permissionMiddleware, admissionPanelController));
 
@@ -782,6 +798,12 @@ app.use(
         meet: admissionExternals.meet,
         events: admissionEvents,
         db: admissionDb,
+        calendarSweeps: new AdmissionCalendarSweeps({
+          db: admissionDb,
+          calendar: admissionExternals.calendar,
+          events: admissionEvents,
+          impersonateEmail: process.env.ADMISSION_IMPERSONATE_EMAIL || 'enlite@enlite.health',
+        }),
       }),
     ),
   ),
@@ -795,16 +817,7 @@ app.use(
   internalAuthMiddleware,
   createAdmissionImportInternalRoutes(
     new AdmissionImportInternalController(
-      new AdmissionImportService({
-        repo: new AdmissionImportRepository(admissionDb),
-        events: admissionEvents,
-        tokens: tactiqLinkService,
-        mcp: admissionExternals.tactiq.mcp,
-        vault: admissionExternals.vault,
-        rehearsalVault: admissionExternals.rehearsalVault,
-        summary: admissionExternals.summary,
-        db: admissionDb,
-      }),
+      admissionImportService,
     ),
   ),
 );

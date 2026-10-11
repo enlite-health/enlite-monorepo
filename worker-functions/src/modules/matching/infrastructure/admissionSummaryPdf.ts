@@ -1,4 +1,5 @@
 import { renderStructuredLines } from '../application/admissionGemOutput';
+import { SUMMARY_DRAFT_BANNER } from '../domain/admissionSummaryShape';
 import { PDFDocument, StandardFonts, type PDFFont } from 'pdf-lib';
 
 const PAGE_W = 595.28; // A4
@@ -70,7 +71,8 @@ export async function renderAdmissionSummaryPdf(input: { title: string; body: st
     y = PAGE_H - MARGIN;
   };
 
-  for (const line of wrap(sanitize(input.title, charset), bold, TITLE_SIZE, maxWidth)) {
+  // R-13: todo resumo que chega aqui passou pela porta de forma (`estado` = BORRADOR_PARA_REVISION_CTM): o cabeçalho diz que é rascunho.
+  for (const line of wrap(sanitize(`${SUMMARY_DRAFT_BANNER} - ${input.title}`, charset), bold, TITLE_SIZE, maxWidth)) {
     page.drawText(line, { x: MARGIN, y: y - TITLE_SIZE, size: TITLE_SIZE, font: bold });
     y -= TITLE_SIZE + 6;
   }

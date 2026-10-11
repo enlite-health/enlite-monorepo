@@ -9,8 +9,9 @@ import { decidePostCall } from '../domain/admissionPostCall';
 import { SKIPPED_TEST_EVENT, admissionRealm, isBlockedFromPaidPath } from '../domain/admissionRealm';
 import { MeetScopeMissingError, MeetTransientError, type MeetConferencePort } from './ports/MeetConferencePort';
 import type { AdmissionLogger } from './AdmissionMessagingService';
+import { EMPTY_CALENDAR_SWEEP, type AdmissionCalendarSweeps, type CalendarSweepSummary } from './admissionCalendarSweeps';
 
-export interface PostCallSummary {
+export interface PostCallSummary extends CalendarSweepSummary {
   candidates: number;
   ended: number;
   noShow: number;
@@ -23,6 +24,8 @@ export interface PostCallSummary {
   errors: number;
   silenceReminder: number;
   silenceConfirmation: number;
+  /** Mensagens `sent` há mais de 24 h sem status final (R-30 b). */
+  deliveryNoStatus: number;
 }
 
 type Outcome = 'ended' | 'noShow' | 'blocked' | 'waiting' | 'transient' | 'skippedLocked' | 'skippedTest';
@@ -33,13 +36,16 @@ export interface AdmissionPostCallJobDeps {
   meet: MeetConferencePort;
   events: AdmissionEventRepository;
   db?: Pool;
+  /** Varreduras do Google (spec 050 F10: R-36 e R-37); sem elas o job roda como antes. */
+  calendarSweeps?: Pick<AdmissionCalendarSweeps, 'run'>;
   log?: AdmissionLogger;
   now?: () => Date;
 }
 
 const emptySummary = (): PostCallSummary => ({
   candidates: 0, ended: 0, noShow: 0, blocked: 0, waiting: 0, transient: 0, skippedLocked: 0, skippedTest: 0, errors: 0,
-  silenceReminder: 0, silenceConfirmation: 0,
+  silenceReminder: 0, silenceConfirmation: 0, deliveryNoStatus: 0,
+  ...EMPTY_CALENDAR_SWEEP,
 });
 
 /**
@@ -84,6 +90,8 @@ export class AdmissionPostCallJob {
     const silence = await this.runSilenceDetectors(now);
     summary.silenceReminder = silence.reminder;
     summary.silenceConfirmation = silence.confirmation;
+    summary.deliveryNoStatus = await this.runDeliveryDetector(now);
+    Object.assign(summary, await (this.deps.calendarSweeps?.run(now) ?? EMPTY_CALENDAR_SWEEP));
 
     this.log.info({ ...summary }, 'admission.post_call.run_done');
     return summary;
@@ -174,6 +182,23 @@ export class AdmissionPostCallJob {
       this.log.error({}, 'admission.silence.detector_failed');
     }
     return out;
+  }
+
+  /** R-30 (b): UM log por execução, com a contagem e os ids internos (mensagem e reunião). Zero mensagens → nenhum log. */
+  private async runDeliveryDetector(now: Date): Promise<number> {
+    try {
+      const stale = await this.deps.repo.findStaleSentMessages(now);
+      if (stale.length > 0) {
+        this.log.warn(
+          { count: stale.length, messageIds: stale.map((m) => m.messageId), appointmentIds: [...new Set(stale.map((m) => m.appointmentId))] },
+          'admission.delivery.no_status',
+        );
+      }
+      return stale.length;
+    } catch {
+      this.log.error({}, 'admission.delivery.detector_failed');
+      return 0;
+    }
   }
 }
 

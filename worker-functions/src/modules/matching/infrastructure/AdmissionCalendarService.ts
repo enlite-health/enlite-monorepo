@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { getAccessToken } from './GoogleCalendarEventFinder';
 import { AdmissionRealAdapterInTestError } from '../application/ports/AdmissionMessagingPorts';
 import type { AdmissionCalendarPort } from '../application/ports/AdmissionCalendarPort';
+import { readCreatedEvent } from './googleCalendarCreateResponse';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -114,6 +115,8 @@ export interface CreateEventParams {
   coHostEmail?: string;
   /** E-mail de contato do paciente/lead (attendee), se houver. */
   patientEmail?: string;
+  /** Id FIXO do evento (base32hex, 5-1024): repetir a criação não duplica (spec 050 F9). */
+  eventId?: string;
 }
 
 interface RawCalendarEvent {
@@ -285,6 +288,15 @@ export function sumBusyMinutesInWeek(
 }
 
 // ─── Service (I/O contra Google Calendar) ──────────────────────────────────────
+
+/** O Google respondeu 404 ao apagar: o evento não existe. `code` é como a camada de aplicação reconhece, sem importar este módulo. */
+export class CalendarEventNotFoundError extends Error {
+  readonly code = 'EVENT_NOT_FOUND';
+  constructor(message: string) {
+    super(message);
+    this.name = 'CalendarEventNotFoundError';
+  }
+}
 
 export class AdmissionCalendarService {
   /** ⚠️ Lança com NODE_ENV=test (R-17, spec 050): teste nunca toca o Google Calendar — que MANDA e-mail. Use o dublê. */
@@ -478,6 +490,7 @@ export class AdmissionCalendarService {
       timezone = AR_ZONE,
       coHostEmail,
       patientEmail,
+      eventId,
     }: CreateEventParams,
   ): Promise<{ eventId: string; meetLink: string }> {
     const token = await this.token(impersonateEmail);
@@ -489,6 +502,7 @@ export class AdmissionCalendarService {
     ];
 
     const body = {
+      ...(eventId ? { id: eventId } : {}),
       summary,
       description,
       start: { dateTime: startISO, timeZone: timezone },
@@ -524,13 +538,7 @@ export class AdmissionCalendarService {
         body: JSON.stringify(body),
       },
     );
-    if (!res.ok) {
-      const detail = await res.text().catch(() => '');
-      throw new Error(`[AdmissionCalendarService] createEvent ${res.status} on ${calendarId}: ${detail}`);
-    }
-
-    const created = (await res.json()) as { id?: string; hangoutLink?: string };
-    return { eventId: created.id ?? '', meetLink: created.hangoutLink ?? '' };
+    return readCreatedEvent(res, { calendarId, eventId, token });
   }
 
   /** Remove evento de uma agenda (limpeza / cancelamento), impersonando o dono. */
@@ -545,7 +553,9 @@ export class AdmissionCalendarService {
     // 410 = já deletado; tratamos como sucesso idempotente.
     if (!res.ok && res.status !== 410) {
       const detail = await res.text().catch(() => '');
-      throw new Error(`[AdmissionCalendarService] deleteEvent ${res.status} on ${calendarId}: ${detail}`);
+      const message = `[AdmissionCalendarService] deleteEvent ${res.status} on ${calendarId}: ${detail}`;
+      // 404 = o evento não existe (mais): quem repete o apagar (spec 050 R-36) para de repetir. Segue sendo `Error` para os demais chamadores.
+      throw res.status === 404 ? new CalendarEventNotFoundError(message) : new Error(message);
     }
   }
 

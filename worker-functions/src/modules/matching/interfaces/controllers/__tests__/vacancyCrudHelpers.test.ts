@@ -8,7 +8,7 @@
  * quando não tem, com 0/1/2 campos travados no body e com campo livre.
  */
 import type { Pool } from 'pg';
-import { authorizeVacancyUpdate, SOURCE_LOCKED_FIELDS } from '../vacancyCrudHelpers';
+import { authorizeVacancyUpdate, buildInsertParams, SOURCE_LOCKED_FIELDS, withEffectiveFields } from '../vacancyCrudHelpers';
 
 function makeDb(row: {
   status?: string | null;
@@ -70,5 +70,72 @@ describe('authorizeVacancyUpdate — 422 de SOURCE_LOCKED_FIELDS (F3, fase 1)', 
     const db = makeDb(null);
     const result = await authorizeVacancyUpdate(db, 'jp-sumiu', { schedule: [] });
     expect(result).toEqual({ kind: 'error', status: 404, error: 'Vacancy not found' });
+  });
+});
+
+describe('buildInsertParams — F2/F5 (vaga-le-do-servico-contratado): vaga com serviço não grava horário nem quantidade', () => {
+  const SLOT = [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }];
+  const base = {
+    vacancyNumber: 1, case_number: 1000, computedTitle: 'CASO EN1000-1', patient_id: 'p-1',
+    required_professions: null, required_sex: null, age_range_min: 20, age_range_max: 29,
+    worker_profile_sought: null, required_experience: null, worker_attributes: null,
+    work_schedule: null, providers_needed: 2, salary_text: null, payment_day: null, daily_obs: null,
+    patient_address_id: 'a-1',
+  };
+  // Posição do `schedule` no array de params (12º placeholder do INSERT, índice 11).
+  const SCHEDULE_IDX = 11;
+  // `providers_needed` = 14º placeholder (índice 13).
+  const PROVIDERS_IDX = 13;
+
+  it('COM contracted_service_id: schedule e providers_needed viram NULL no INSERT mesmo que o chamador os passe; a faixa etária também (F6)', () => {
+    const params = buildInsertParams({ ...base, schedule: SLOT, contracted_service_id: 'svc-1' });
+    expect(params[SCHEDULE_IDX]).toBeNull();
+    expect(params[6]).toBeNull(); // age_range_min (F6: derivada da banda do serviço)
+    expect(params[7]).toBeNull(); // age_range_max
+    expect(params[PROVIDERS_IDX]).toBeNull();
+  });
+
+  it('SEM contracted_service_id (vaga manual): a faixa etária segue gravando a própria (F6)', () => {
+    const params = buildInsertParams({ ...base, schedule: SLOT, contracted_service_id: null });
+    expect(params[6]).toBe(20);
+    expect(params[7]).toBe(29);
+  });
+
+  it('SEM contracted_service_id (vaga manual): providers_needed segue gravando o próprio valor', () => {
+    const params = buildInsertParams({ ...base, schedule: SLOT, contracted_service_id: null });
+    expect(params[PROVIDERS_IDX]).toBe(2);
+  });
+
+  it('SEM contracted_service_id (vaga manual): schedule continua gravado como JSON', () => {
+    const params = buildInsertParams({ ...base, schedule: SLOT, contracted_service_id: null });
+    expect(JSON.parse(params[SCHEDULE_IDX] as string)).toEqual(SLOT);
+  });
+});
+
+describe('withEffectiveFields — F5: a resposta traz horário e quantidade EFETIVOS, lidos pela peça', () => {
+  it('troca schedule e providers_needed crus pelos efetivos; lê por db.query com a peça (cast só lá)', async () => {
+    const query = jest.fn().mockResolvedValue({ rows: [{ schedule: [{ dayOfWeek: 1 }], providers_needed: '3' }] });
+    const out = await withEffectiveFields({ query } as unknown as Pool, { id: 'jp-1', schedule: null, providers_needed: null, title: 'T' });
+    expect(out).toEqual({ id: 'jp-1', schedule: [{ dayOfWeek: 1 }], providers_needed: '3', title: 'T' });
+    const sql = String(query.mock.calls[0][0]);
+    expect(sql).toContain('pcs_eff.providers_needed::text');
+    expect(sql).toContain('LEFT JOIN patient_contracted_services');
+    expect(query.mock.calls[0][1]).toEqual(['jp-1']);
+  });
+
+  it('F6: a faixa etária efetiva vem da banda do serviço (mapeamento em TS) e a coluna auxiliar não vaza', async () => {
+    const query = jest.fn().mockResolvedValue({
+      rows: [{ schedule: null, providers_needed: null, age_range_min: null, age_range_max: null, effective_provider_age_band: 'AGE_30_45' }],
+    });
+    const out = await withEffectiveFields({ query } as unknown as Pool, { id: 'jp-1', age_range_min: 99, age_range_max: 99 });
+    expect(out).toEqual({ id: 'jp-1', schedule: null, providers_needed: null, age_range_min: 30, age_range_max: 44 });
+    expect(out).not.toHaveProperty('effective_provider_age_band');
+    expect(String(query.mock.calls[0][0])).toContain('pcs_eff.provider_age_band');
+  });
+
+  it('vaga que a sessão não enxerga (0 linhas) → devolve a linha como veio', async () => {
+    const query = jest.fn().mockResolvedValue({ rows: [] });
+    const row = { id: 'jp-2', schedule: 'cru', providers_needed: '9' };
+    expect(await withEffectiveFields({ query } as unknown as Pool, row)).toBe(row);
   });
 });

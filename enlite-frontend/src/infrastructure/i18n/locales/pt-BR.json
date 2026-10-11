@@ -2296,6 +2296,18 @@
       "case": "Caso",
       "vacancy": "Vaga",
       "publishedRedirectBanner": "Esta vaga já foi publicada. Edite horário pelo lápis ao lado de \"Días y Horarios\" e o estado clicando no badge — não é preciso abrir o formulário completo.",
+      "sourceChangeNotice": {
+        "title": "O serviço contratado mudou e esta vaga já está publicada",
+        "message": {
+          "schedule": "O horário do serviço contratado mudou: a vaga já mostra o horário novo, mas a publicação e os candidatos convidados não se atualizam sozinhos.",
+          "providers_needed": "A quantidade de profissionais do serviço contratado mudou: a vaga já mostra o valor novo, mas a publicação e os candidatos convidados não se atualizam sozinhos.",
+          "age_range": "A faixa etária do serviço contratado mudou: a vaga já mostra o valor novo, mas a publicação e os candidatos convidados não se atualizam sozinhos.",
+          "generic": "O serviço contratado mudou: a publicação e os candidatos convidados não se atualizam sozinhos."
+        },
+        "changedAt": "Mudança registrada em {{date}}",
+        "acknowledge": "Marcar como atendido",
+        "error": "Não foi possível marcar como atendido. Tente de novo."
+      },
       "dismissBanner": "Fechar aviso",
       "statusCard": {
         "title": "Status da Vaga",
@@ -2639,6 +2651,8 @@
         "daysAndHours": "Dias e Horários:",
         "edit": "Editar",
         "editSchedule": "Editar horários",
+        "editScheduleInService": "Editar o horário no serviço contratado do paciente",
+        "scheduleFromService": "O horário é editado no serviço contratado do paciente",
         "editDescription": "Editar descrição",
         "weekdays": {
           "sunday": "Domingo:",
@@ -3326,13 +3340,8 @@
           "confirm": "Confirmar e mover"
         },
         "moveErrorCodes": {
-          "PATIENT_STATUS_TRANSITION_NOT_ALLOWED": "Essa mudança de estado não é permitida.",
-          "ON_HOLD_REASON_REQUIRED": "Para colocar em espera é preciso indicar o motivo.",
-          "SUSPENSION_EXIT_REASON_REQUIRED": "É preciso indicar o motivo de saída de Suspenso.",
-          "PATIENT_STATUS_NOT_READY": "Não é possível mover: faltam dados obrigatórios na ficha.",
           "KANBAN_ACTIVATION_MOVED_TO_SERVICE": "Para ativar, use \"Ativar recrutamento\" no serviço contratado da ficha do paciente."
-        },
-        "moveNotReady": "Não é possível mover: falta {{items}}."
+        }
       },
       "countryLabel": "País",
       "countryOptions": {
@@ -4105,7 +4114,8 @@
             "host": "Responsável",
             "meet": "Entrar no Meet",
             "cancel": "Cancelar",
-            "viaSite": "Agendada pela família no site"
+            "viaSite": "Agendada pela família no site",
+            "calendarEventPending": "Cancelada, evento do Google pendente"
           },
           "status": {
             "booked": "Agendada",
@@ -4185,19 +4195,35 @@
             "sent": "Mensagem reenviada.",
             "notSent": "O reenvio não pôde ser enviado. Confira o estado da mensagem na reunião."
           },
+          "retry": {
+            "button": "Reprocessar resumo",
+            "title": "Reprocessar o resumo?",
+            "bodyExhausted": "As 3 chamadas pagas do resumo desta reunião se esgotaram. Se você confirmar, autoriza uma nova rodada de até 3 chamadas pagas (têm custo) e a reunião volta à fila de importação. Cada reunião aceita até 2 autorizações.",
+            "bodyNow": "Vamos tentar gerar o resumo agora. Isso não consome uma autorização nova.",
+            "confirm": "Reprocessar",
+            "busy": "Reprocessando…",
+            "authorized": "Nova rodada autorizada: o resumo será gerado na próxima importação.",
+            "ranDone": "Resumo gerado.",
+            "ranNotDone": "Ainda não foi possível gerar o resumo. Confira o estado da importação na reunião.",
+            "limit": "Limite de reprocessamentos atingido"
+          },
           "errors": {
             "slotTaken": "Esse horário já está ocupado para o responsável. Escolha outro.",
             "tactiqLinkRequired": "Esse responsável não tem Tactiq vinculado. Escolha outra pessoa.",
             "slotInPast": "Escolha um horário futuro.",
             "hostNotInRoster": "Essa pessoa não está na equipe de admissão deste país.",
             "invalidSlot": "A data ou a hora não são válidas.",
+            "calendarCreateFailed": "Não conseguimos criar a reunião no Google. Nada foi agendado. Tente novamente.",
             "bookFailed": "Não conseguimos agendar a reunião. Tente novamente.",
             "cancelNotAllowed": "Esta reunião não pode mais ser cancelada.",
             "cancelFailed": "Não conseguimos cancelar a reunião. Tente novamente.",
             "resendNotAllowed": "Esta mensagem não pode mais ser reenviada (foi entregue, a reunião começou ou foi cancelada).",
             "resendLimitReached": "Esta mensagem já foi reenviada 2 vezes: não dá para reenviar mais.",
             "resendInProgress": "Já há um reenvio em andamento para esta mensagem.",
-            "resendFailed": "Não conseguimos reenviar a mensagem. Tente novamente."
+            "resendFailed": "Não conseguimos reenviar a mensagem. Tente novamente.",
+            "retryNotAllowed": "Esta reunião não aceita mais reprocessar o resumo (já foi gerado ou foi cancelada).",
+            "retryLimitReached": "Esta reunião já usou as 2 autorizações de reprocessamento: não dá para reprocessar mais por aqui.",
+            "retryFailed": "Não conseguimos reprocessar o resumo. Tente novamente."
           }
         }
       },
@@ -4239,10 +4265,7 @@
         "note": "Nota",
         "notePlaceholder": "Por que o serviço está em espera?",
         "noteRedacted": "Você não tem permissão para ver a nota.",
-        "transitionNotAllowed": "Transição não permitida: {{from}} → {{to}}",
-        "reasonRequired": "Informe o motivo da espera",
         "suspensionExitReason": "Motivo de saída",
-        "suspensionExitReasonRequired": "Informe o motivo de saída de Suspenso",
         "error": "Não foi possível mudar o estado",
         "sources": {
           "admin_panel": "Painel",
@@ -4251,7 +4274,9 @@
           "backfill": "Carga inicial",
           "activate": "Ativação",
           "system": "Sistema",
-          "recruitment_activation": "Ativação do recrutamento"
+          "recruitment_activation": "Ativação do recrutamento",
+          "admin_panel_override": "Painel (fora do fluxo)",
+          "kanban_override": "Kanban (fora do fluxo)"
         },
         "historyCard": {
           "title": "Histórico de estados",
@@ -4263,8 +4288,19 @@
           "actor": "Autor",
           "error": "Não foi possível carregar o histórico"
         },
-        "notReady": "Não é possível passar para {{status}}: falta {{items}}.",
-        "notReadyGeneric": "Não é possível mudar o estado: faltam dados obrigatórios na ficha."
+        "blockedOption": "{{status}} (falta: {{items}})",
+        "optionsLoadError": "Não foi possível carregar os estados disponíveis.",
+        "optionsRetry": "Tentar de novo",
+        "friendly": {
+          "forbidden": "Você não tem permissão para passar este paciente para «{{status}}». Peça a quem administra os acessos que habilite.",
+          "notReadySearching": "Para passar para «{{status}}», o serviço contratado precisa estar completo. Falta: {{items}}.",
+          "notReady": "Para passar para «{{status}}» faltam dados do paciente: {{items}}.",
+          "notReadyGeneric": "Para passar para «{{status}}» faltam dados obrigatórios na ficha.",
+          "onHoldReasonRequired": "Para deixar o paciente «Em espera», informe o motivo (escola, convênio ou outro).",
+          "suspensionExitReasonRequired": "Para tirar o paciente de «Suspenso», escolha o motivo.",
+          "notAvailable": "Esta mudança de estado não está disponível.",
+          "optionsUnavailable": "Não foi possível verificar os estados disponíveis. Tente novamente."
+        }
       },
       "insuranceProviderOptions": {
         "API": "API",
@@ -4594,7 +4630,15 @@
             "incomplete_alert": "Aviso dia 12",
             "waive_contact": "Não precisa",
             "resend_message": "Reenviar mensagem",
-            "release_paid_rehearsal": "Liberar ensaio pago"
+            "move_to_searching": "Para busca",
+            "move_to_active": "Para ativo",
+            "move_to_replacement": "Para reposição",
+            "move_to_on_hold": "Para em espera",
+            "move_to_suspended": "Para suspenso",
+            "move_to_alta": "Para alta",
+            "move_to_discharged": "Para baixa",
+            "release_paid_rehearsal": "Liberar ensaio pago",
+            "retry_summary": "Reprocessar resumo"
           },
           "category": {
             "Trabalhadores": "Trabalhadores",
@@ -4660,7 +4704,8 @@
             "staff_directory": "Diretório da equipe",
             "patient_document": "Documentos do paciente",
             "patient_admission": "Admissão do paciente (reuniões e mensagens)",
-            "own_tactiq_link": "Meu vínculo com o Tactiq"
+            "own_tactiq_link": "Meu vínculo com o Tactiq",
+            "patient_status": "Status do paciente: troca fora do fluxo"
           },
           "help": {
             "open": "O que esta permissão faz",

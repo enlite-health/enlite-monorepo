@@ -34,7 +34,7 @@ import { ContainerGate } from '@presentation/components/features/access';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import { tabsVisibleFor, useContainerAccess } from '@presentation/hooks/useCellAccess';
 import { screenById } from '@presentation/config/screenRegistry';
-import { PATIENT_TABS } from '@presentation/components/features/admin/PatientDetail/patientTabs';
+import { PATIENT_TABS, parsePatientTab } from '@presentation/components/features/admin/PatientDetail/patientTabs';
 import type { PatientCompletenessCode } from '@domain/entities/PatientDetail';
 import { ACTIVATABLE_STATUSES } from '@domain/entities/PatientCompleteness';
 
@@ -66,7 +66,10 @@ export default function PatientDetailPage() {
   // Spec 047 (A4): sem `vacancy:read` o bloco não existe e a lista de vagas nem é pedida (a rota exigiria a célula).
   const vacancyAccess = useContainerAccess('vacancy');
   const { vacancies, isLoading: vacanciesLoading, error: vacanciesError, refetch: refetchVacancies } = usePatientVacancies(id, vacancyAccess.visible);
-  const [activeTab, setActiveTab] = useState<PatientTab>('clinicalData');
+  // `?tab=` (link da vaga e do wizard): lido só na inicialização, validado contra a união; inválido/ausente → `clinicalData`.
+  const [activeTab, setActiveTab] = useState<PatientTab>(
+    () => parsePatientTab(new URLSearchParams(location.search).get('tab')) ?? 'clinicalData',
+  );
   // D286: uma aba só existe se ALGUM container dela for legível (registro de telas + contrato de
   // authz). A ativa é a primeira visível quando a atual sumiu; sem enforcement, todas existem.
   const permissions = useAdminAuthStore((s) => s.authz?.permissions);
@@ -352,7 +355,7 @@ export default function PatientDetailPage() {
           </>
         )}
         {shownTab === 'history' && (
-          <PatientStatusHistoryCard patientId={patient.id} />
+          <PatientStatusHistoryCard patientId={patient.id} refreshKey={patient.status} />
         )}
       </div>
     </div>

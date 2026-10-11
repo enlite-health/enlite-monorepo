@@ -730,11 +730,17 @@ jobs:
       # engine ABAC ligado (com ele OFF `cells===null` mostra tudo e o teste ficaria verde sem medir nada), por isso entra aqui e NÃO no
       # `grep:` do `pr-gate.yml`. O feliz dispara a varredura pelo endpoint interno com `INTERNAL_TOKEN_SECRET` do compose de teste
       # (`test-secret-for-e2e-only`, o mesmo do override deste job). Usa `abac-stack-helper` (staff REAL em grupo).
+      # `admissao-050` (spec 050 F11, "Reintentar resumen") entra pelo mesmo motivo (alt 1 mede a AUSÊNCIA do botão por falta de `patient_admission:retry_summary`).
       # `admissao-049` ENTROU (spec 049, aba "Admisión" da ficha: nova agenda, vínculo Tactiq, cancelar): o alt 2 mede a AUSÊNCIA do
       # botão "Nueva agenda" e o 403 por falta de `patient_admission:create` — só vale com o engine ABAC ligado (com ele OFF
       # `cells===null` mostra tudo e o teste ficaria verde sem medir nada), por isso entra aqui e NÃO no `grep:` do `pr-gate.yml`.
       # A API deste job sobe com `ADMISSION_EXTERNALS=fake` (em `docker-compose.group-simulation.yml`): Calendar, Meet, Twilio, Cloud Tasks,
       # Tactiq, Vertex e cofre são DUBLÊS — nenhum canal real. Usa `abac-stack-helper` (staff REAL em grupo), como `pt-todavia-no-hay-048`.
+      # `transicao-estado-051` ENTROU (spec 051, troca manual de estado do paciente fora do fluxo, atrás de `patient_status:move_to_<destino>`): o alt
+      # "sem a permissão" mede a AUSÊNCIA da opção Búsqueda no select e o 403 do PUT por falta da célula — só vale com o engine ABAC ligado (com ele OFF
+      # `cells===null` mostra tudo e o teste ficaria verde sem medir nada), por isso entra aqui e NÃO no `grep:` do `pr-gate.yml`. Precisa do sync do
+      # catálogo (`PERMISSION_CATALOG_SYNC_ENABLED`, já neste override): `grantCell` falha alto se as 7 células `patient_status:*` não existirem.
+      # Usa `abac-stack-helper` (staff REAL em grupo). Sem canal externo: só Postgres.
       - name: Teste de integração — simulação de grupo de acesso + completar-vacante (fases 2-3)
         working-directory: enlite-frontend
         env:
@@ -744,7 +750,7 @@ jobs:
           CI: 'true'
           ABAC_API_URL: http://localhost:8080
           ABAC_TEST_DB_URL: postgresql://enlite_admin:enlite_password@localhost:5433/enlite_e2e
-        run: npx playwright test --project=integration --ignore-snapshots --grep "group-simulation|draft-vacancy-page|draft-vacancy-choice|cid-na-vacante-tela|patient-documents-tab|vacante-anotacao-sem-celula|funil-compativeis-sem-celula|vacante-em-servico-047|pt-todavia-no-hay-048|admissao-049"
+        run: npx playwright test --project=integration --ignore-snapshots --grep "group-simulation|draft-vacancy-page|draft-vacancy-choice|cid-na-vacante-tela|patient-documents-tab|vacante-anotacao-sem-celula|funil-compativeis-sem-celula|vacante-em-servico-047|pt-todavia-no-hay-048|admissao-049|admissao-050|transicao-estado-051"
 
       # Spec 049 (F9): os e2e de API da aba Admissão têm blocos que só valem com a stack de ENGINE LIGADO + SYNC DO CATÁLOGO +
       # `ADMISSION_EXTERNALS=fake` — exatamente a API deste job. No job `backend-e2e` (sem sync, de propósito: ligá-lo ali

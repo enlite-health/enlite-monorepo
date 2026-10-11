@@ -7,6 +7,7 @@ import {
   createPaginatedResponse,
 } from '@shared/utils/pagination';
 import { excludeDisabledWorkersSql } from '@shared/database/activeWorkerFilter';
+import { vacancyEffectiveJoinSql, vacancyEffectiveProvidersNeededSql } from '@shared/sql/vacancyEffectiveFieldsSql';
 
 /**
  * RecruitmentController
@@ -59,7 +60,7 @@ export class RecruitmentController {
           c.name AS coordinator_name,
           jp.is_covered,
           jp.weekly_hours,
-          jp.providers_needed,
+          ${vacancyEffectiveProvidersNeededSql('jp')} AS providers_needed,
           jp.active_providers,
           jp.authorized_period,
           jp.marketing_channel,
@@ -73,6 +74,7 @@ export class RecruitmentController {
           p.service_type,
           p.zone_neighborhood as patient_zone_detail
         FROM job_postings jp
+        ${vacancyEffectiveJoinSql('jp')}
         LEFT JOIN job_postings_clickup_sync cs ON cs.job_posting_id = jp.id
         LEFT JOIN patients p ON jp.patient_id = p.id
         LEFT JOIN coordinators c ON c.id = jp.coordinator_id

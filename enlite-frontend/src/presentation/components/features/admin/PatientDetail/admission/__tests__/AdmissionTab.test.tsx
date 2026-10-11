@@ -120,6 +120,21 @@ describe('A7-4 — link do Meet só em reunião futura', () => {
   });
 });
 
+describe('A10-2 — cancelada com o evento do Google pendente (spec 050 R-36)', () => {
+  it('cancelada com evento pendente: selo "Cancelada, evento de Google pendiente"; cancelada limpa, agendada e controle sem selo', async () => {
+    api.listAppointments.mockResolvedValue([
+      appt({ id: 'pendente', status: 'cancelled', calendarEventPending: true }),
+      appt({ id: 'limpa', status: 'cancelled', calendarEventPending: false }),
+      appt({ id: 'agendada' }),
+    ]);
+    renderTab();
+    expect(await screen.findByTestId('admission-calendar-pending-pendente')).toHaveTextContent('Cancelada, evento de Google pendiente');
+    expect(screen.getByTestId('admission-status-pendente')).toHaveTextContent('Cancelada');
+    expect(screen.queryByTestId('admission-calendar-pending-limpa')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('admission-calendar-pending-agendada')).not.toBeInTheDocument();
+  });
+});
+
 describe('fuso do país do paciente', () => {
   it('entrega ao Intl o timeZone do país (BR → São Paulo, AR → Buenos Aires), nunca o do navegador', async () => {
     api.listAppointments.mockResolvedValue([appt()]);

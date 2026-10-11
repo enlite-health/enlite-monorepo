@@ -23,6 +23,7 @@ import { VacancyMeetLinksRow } from '@presentation/components/features/admin/Vac
 import { VacancyFunnelView } from '@presentation/components/features/admin/VacancyDetail/Funnel/VacancyFunnelView';
 import { VacancyMeetLinksCard } from '@presentation/components/features/admin/VacancyDetail/VacancyMeetLinksCard';
 import { VacancySocialLinksCard } from '@presentation/components/features/admin/VacancyDetail/VacancySocialLinksCard';
+import { VacancySourceChangeNoticeBanner } from '@presentation/components/features/admin/VacancyDetail/VacancySourceChangeNoticeBanner';
 import { VacancyScheduleEditModal } from '@presentation/components/features/admin/VacancyDetail/VacancyScheduleEditModal';
 import { VacancyDescriptionEditModal } from '@presentation/components/features/admin/VacancyDetail/VacancyDescriptionEditModal';
 import type { EditableVacancyStatus } from '@presentation/components/features/admin/VacancyDetail/VacancyStatusEditor';
@@ -146,6 +147,13 @@ export default function VacancyDetailPage() {
         </div>
       )}
 
+      {/* O serviço contratado mudou com a vaga publicada: só avisa; "marcar como atendido" fecha o campo. */}
+      <VacancySourceChangeNoticeBanner
+        vacancyId={vacancy.id ?? id!}
+        notices={vacancy.source_change_notices}
+        onAcknowledged={refetch}
+      />
+
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div className="flex items-center gap-3">
@@ -227,6 +235,10 @@ export default function VacancyDetailPage() {
           serviceType={vacancy.service_type ?? null}
           schedule={vacancy.schedule ?? null}
           onEditSchedule={() => setShowScheduleModal(true)}
+          // Horário do serviço contratado: o lápis leva à ficha (aba Servicio Contratado); o modal fica para vaga manual.
+          scheduleServicePatientId={
+            vacancy.locked_fields?.includes('schedule') ? (vacancy.patient_id ?? null) : null
+          }
           onEditDescription={() => setShowDescriptionModal(true)}
         />
       </div>

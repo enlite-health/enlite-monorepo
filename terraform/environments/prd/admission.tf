@@ -117,19 +117,56 @@ resource "google_storage_bucket" "admission_transcripts" {
   depends_on = [google_kms_crypto_key_iam_member.admission_vault_gcs_agent]
 }
 
-# Backend: SÓ cria objeto (upload com ifGenerationMatch=0). Não lê, não lista, não apaga, não sobrescreve.
-resource "google_storage_bucket_iam_member" "admission_transcripts_backend_creator" {
-  bucket = google_storage_bucket.admission_transcripts.name
-  role   = "roles/storage.objectCreator"
-  member = module.sa_enlite_functions.member
+# IAM do cofre: política AUTORITATIVA (10/10). O GCS cria, em todo bucket, vínculos padrão que o `iam_member` não enxerga:
+# legacyObjectReader/legacyBucketReader (projectViewer) e legacyObjectOwner/legacyBucketOwner (projectEditor, projectOwner)
+# — quem tem Viewer/Editor/Owner no projeto lia a transcrição crua. Só `google_storage_bucket_iam_policy` os remove.
+# - Backend: SÓ cria objeto (upload com ifGenerationMatch=0). Não lê, não lista, não apaga, não sobrescreve.
+# - Leitura: só os membros do resgate (H5). Lista vazia = nenhum binding.
+# - tf-admin: legacyBucketOwner EXPLÍCITO e só dele. O Editor do projeto não tem storage.buckets.get/update nem
+#   setIamPolicy (chegava por herança); sem isto o terraform perde o acesso ao bucket. Esse papel NÃO tem storage.objects.get
+#   (administra o bucket, não lê a transcrição) — medido com `gcloud iam roles describe roles/storage.legacyBucketOwner`.
+# Os `iam_member` antigos saem do state SEM destruir (`removed`+destroy=false): destruí-los depois da política remove o membro dela.
+locals {
+  admission_tf_admin_member = "serviceAccount:tf-admin@${var.project_id}.iam.gserviceaccount.com"
 }
 
-# Leitura: só os membros do resgate (H5). Lista vazia = nenhum binding.
-resource "google_storage_bucket_iam_member" "admission_transcripts_readers" {
-  for_each = toset(var.admission_vault_readers)
-  bucket   = google_storage_bucket.admission_transcripts.name
-  role     = "roles/storage.objectViewer"
-  member   = each.value
+data "google_iam_policy" "admission_transcripts" {
+  binding {
+    role    = "roles/storage.objectCreator"
+    members = [module.sa_enlite_functions.member]
+  }
+
+  dynamic "binding" {
+    for_each = length(var.admission_vault_readers) > 0 ? [1] : []
+    content {
+      role    = "roles/storage.objectViewer"
+      members = var.admission_vault_readers
+    }
+  }
+
+  binding {
+    role    = "roles/storage.legacyBucketOwner"
+    members = [local.admission_tf_admin_member]
+  }
+}
+
+resource "google_storage_bucket_iam_policy" "admission_transcripts" {
+  bucket      = google_storage_bucket.admission_transcripts.name
+  policy_data = data.google_iam_policy.admission_transcripts.policy_data
+}
+
+removed {
+  from = google_storage_bucket_iam_member.admission_transcripts_backend_creator
+  lifecycle {
+    destroy = false
+  }
+}
+
+removed {
+  from = google_storage_bucket_iam_member.admission_transcripts_readers
+  lifecycle {
+    destroy = false
+  }
 }
 
 # ---------------------------------------------------------------------------
@@ -492,11 +529,30 @@ variable "admission_rehearsal_expiry_days" {
   default     = 30
 }
 
-# Mesmo "só cria" do cofre. Nenhum outro binding: ninguém lê o bucket de ensaio por IAM do projeto além de papéis herdados.
-resource "google_storage_bucket_iam_member" "admission_rehearsal_backend_creator" {
-  bucket = google_storage_bucket.admission_transcripts_rehearsal.name
-  role   = "roles/storage.objectCreator"
-  member = module.sa_enlite_functions.member
+# IAM do ensaio: mesma política autoritativa do cofre (sem leitores) — sem legacyObjectReader/Owner de projectViewer/Editor/Owner.
+# Backend só cria; tf-admin com o mesmo vínculo mínimo de administração (ver o cofre). `removed` esquece o iam_member sem destruí-lo.
+data "google_iam_policy" "admission_rehearsal" {
+  binding {
+    role    = "roles/storage.objectCreator"
+    members = [module.sa_enlite_functions.member]
+  }
+
+  binding {
+    role    = "roles/storage.legacyBucketOwner"
+    members = [local.admission_tf_admin_member]
+  }
+}
+
+resource "google_storage_bucket_iam_policy" "admission_rehearsal" {
+  bucket      = google_storage_bucket.admission_transcripts_rehearsal.name
+  policy_data = data.google_iam_policy.admission_rehearsal.policy_data
+}
+
+removed {
+  from = google_storage_bucket_iam_member.admission_rehearsal_backend_creator
+  lifecycle {
+    destroy = false
+  }
 }
 
 # R-28 — alerta de gasto do Vertex. Caminho: alerta do Cloud Monitoring (e não google_billing_budget): a API

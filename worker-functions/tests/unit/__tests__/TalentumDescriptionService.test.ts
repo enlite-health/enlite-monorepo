@@ -493,5 +493,26 @@ describe('TalentumDescriptionService', () => {
       const body = JSON.parse(mockFetch.mock.calls[0][1].body);
       expect(body.contents[0].parts[0].text).toContain('Patologías: Alzheimer leve');
     });
+
+    it('prompt carries the EFFECTIVE schedule, providers and age range of the row (vaga-le-servico)', async () => {
+      mockQuery.mockResolvedValueOnce({
+        rows: [makeVacancyRow({
+          schedule: [{ dayOfWeek: 3, startTime: '14:15', endTime: '18:45' }],
+          providers_needed: 3,
+          age_range_min: 20,
+          age_range_max: 30,
+        })],
+      });
+      mockFetch.mockResolvedValueOnce(mockGeminiResponse('text'));
+
+      const service = createService();
+      await service.generateDescriptionPreview('job-effective');
+
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      const prompt: string = body.contents[0].parts[0].text;
+      expect(prompt).toContain('- Horarios: Mié: 14:15-18:45');
+      expect(prompt).toContain('- Cantidad de prestadores: 3');
+      expect(prompt).toContain('- Rango etario del prestador: De 20 a 30 años');
+    });
   });
 });

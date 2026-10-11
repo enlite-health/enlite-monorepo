@@ -10,9 +10,12 @@ import {
   PaidRehearsalAlreadyActiveError,
   PaidRehearsalNotAllowedError,
   ResendInProgressError,
+  SummaryRetryLimitReachedError,
+  SummaryRetryNotAllowedError,
 } from '../../application/AdmissionPanelErrors';
 import { TactiqLinkRequiredError } from '../../application/ports/TactiqPorts';
 import { AdmissionPanelService } from '../../application/AdmissionPanelService';
+import type { AdmissionSummaryRetryService } from '../../application/AdmissionSummaryRetryService';
 import {
   AdmissionSchedulingService,
   HostNotInRosterError,
@@ -21,6 +24,7 @@ import {
   SlotInPastError,
   SlotTakenError,
 } from '../../application/AdmissionSchedulingService';
+import { CalendarCreateFailedError } from '../../application/admissionCalendarCreate';
 
 /**
  * AdmissionPanelController — rotas ADMIN da aba Admissão (spec 049 F3). `:id` é SEMPRE o patient id.
@@ -31,6 +35,7 @@ import {
  *   POST /patients/:id/admission-appointments/:apptId/cancel               patient_admission:update
  *   POST /patients/:id/admission-appointments/:apptId/messages/:kind/resend patient_admission:resend_message
  *   POST /patients/:id/admission-appointments/:apptId/paid-rehearsal       patient_admission:release_paid_rehearsal  (spec 050 R-19: libera UMA reunião de teste por 48 h; 409 se o paciente não é de teste)
+ *   POST /patients/:id/admission-appointments/:apptId/summary-retry        patient_admission:retry_summary  (spec 050 R-38: +1 rodada do resumo, teto de 2; 409 se `done`, terminal ou teto)
  *
  * Erros de domínio viram resposta com `code` estável; o resto vira 500 genérico, relatado só com ids (nunca telefone,
  * nome, e-mail nem corpo da requisição). 404 vale para paciente/reunião inexistente, de outro paciente ou de outro país.
@@ -48,12 +53,15 @@ const DOMAIN_STATUS: ReadonlyArray<readonly [new (...a: never[]) => Error, numbe
   [AppointmentNotCancellableError, 409],
   [PaidRehearsalNotAllowedError, 409],
   [PaidRehearsalAlreadyActiveError, 409],
+  [SummaryRetryNotAllowedError, 409],
+  [SummaryRetryLimitReachedError, 409],
   [ResendNotAllowed, 409],
   [ResendLimitReached, 409],
   [ResendInProgressError, 409],
   [SlotInPastError, 422],
   [HostNotInRosterError, 422],
   [InvalidSlotError, 400],
+  [CalendarCreateFailedError, 502],
   [MissingActorError, 401],
 ];
 
@@ -66,13 +74,17 @@ export class AdmissionPanelController {
   constructor(
     private readonly scheduling: AdmissionSchedulingService,
     private readonly panel: AdmissionPanelService,
+    private readonly summaryRetry?: AdmissionSummaryRetryService,
   ) {}
 
   async list(req: Request, res: Response): Promise<void> {
     const params = patientParams.safeParse(req.params);
     if (!params.success) return this.invalid(res);
     await this.run(res, 'list', params.data.id, async () => {
-      res.status(200).json({ success: true, data: await this.panel.list(params.data.id) });
+      const rows = await this.panel.list(params.data.id);
+      // Spec 050 F11: o botão "Reintentar resumen" — só as reuniões com falha de resumo levam o campo (as outras: `summaryRetry: null`).
+      const views = await this.summaryRetry?.viewsFor(params.data.id);
+      res.status(200).json({ success: true, data: views ? rows.map((r) => ({ ...r, summaryRetry: views.get(r.id) ?? null })) : rows });
     });
   }
 
@@ -132,6 +144,16 @@ export class AdmissionPanelController {
     await this.run(res, 'releasePaidRehearsal', params.data.id, async () => {
       const out = await this.panel.releasePaidRehearsal({ patientId: params.data.id, appointmentId: params.data.apptId, actorUid: actorUid(req) });
       res.status(201).json({ success: true, data: out });
+    });
+  }
+
+  async retrySummary(req: Request, res: Response): Promise<void> {
+    const params = apptParams.safeParse(req.params);
+    if (!params.success || !this.summaryRetry) return this.invalid(res);
+    const retry = this.summaryRetry;
+    await this.run(res, 'retrySummary', params.data.id, async () => {
+      const out = await retry.retry({ patientId: params.data.id, appointmentId: params.data.apptId, actorUid: actorUid(req) });
+      res.status(200).json({ success: true, data: out });
     });
   }
 

@@ -13,11 +13,15 @@
  */
 import { createHash } from 'crypto';
 import { inflateSync } from 'zlib';
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import { Pool } from 'pg';
 import { Storage } from '@google-cloud/storage';
 import { montarAppDeFamilia, TENANT_E2E, type AppDeFamilia } from './helpers/permissionFamilyHarness';
 import { FakeTactiqMcp, FakeTactiqOAuth } from '../../src/modules/matching/infrastructure/doubles/FakeTactiq';
 import { FakeAdmissionSummaryGenerator } from '../../src/modules/matching/infrastructure/doubles/FakeAdmissionSummaryGenerator';
+import { validSummaryJson } from '../../src/modules/matching/infrastructure/doubles/admissionSummaryFixtures';
 import { capturingLogger } from '../../src/modules/matching/infrastructure/doubles/admissionTestKit';
 import { TactiqUnauthorizedError, type TactiqMeetingItem, type TactiqTranscriptPage } from '../../src/modules/matching/application/ports/TactiqPorts';
 import { AdmissionSummaryError } from '../../src/modules/matching/application/ports/AdmissionImportPorts';
@@ -354,7 +358,7 @@ describe('importação do Tactiq — banco real, cofre e bucket em emulador (spe
     it('H4 (a)+(b): SEM o Doc do prompt → 1 objeto no cofre, 0 documentos, `summary_failed prompt_missing`; depois de configurar, a próxima execução gera 1 documento e o cofre segue com 1 objeto (mesma geração)', async () => {
       // O gerador REAL (Vertex + provider do Doc são dublês): a ausência do Doc é provada no código de produção, não no dublê do teste.
       const env: Record<string, string | undefined> = { NODE_ENV: 'production' };
-      const viaVertex = jest.fn(async () => ({ json: async () => ({ candidates: [{ content: { parts: [{ text: 'RESUMO-SINTETICO-H4' }] } }] }) }) as unknown as Response);
+      const viaVertex = jest.fn(async () => ({ json: async () => ({ candidates: [{ content: { parts: [{ text: `${JSON.stringify(validSummaryJson())}\n\nRESUMO-SINTETICO-H4` }] } }] }) }) as unknown as Response);
       const gen = new VertexAdmissionSummaryGenerator(env as NodeJS.ProcessEnv, {
         promptProvider: { getPrompt: async () => 'PROMPT-SINTETICO-DO-DOC' }, vertex: viaVertex as never,
         catalogs: { segmentLabels: async () => ['SEG-SINTETICO'], pathologyTypeLabels: async () => ['PAT-SINTETICA (99)'] },
@@ -629,6 +633,166 @@ describe('importação do Tactiq — banco real, cofre e bucket em emulador (spe
     }
   });
 
+  // ── F6 (spec 050): resumo fora de forma reprova; sentinela fora de log, banco e disco ──────────────
+  describe('F6: forma do resumo (R-12, R-13, R-14)', () => {
+    /** Roda UMA importação com a saída dada; devolve resultado, documentos, eventos `summary_failed` e nº de chamadas ao Vertex. */
+    async function runWith(shape: { structured?: unknown; jsonInvalid?: boolean }) {
+      const a = await appt();
+      see(a, [meeting(a, `tq-f6-${seq}`)]);
+      if ('structured' in shape) vertex.structured = shape.structured;
+      vertex.jsonInvalid = shape.jsonInvalid ?? false;
+      const outcome = await service.importOne(a.id, clock);
+      return { a, outcome, docs: await docs(a.id), failed: (await events(a.id)).filter((e) => e.kind === 'summary_failed'), calls: vertex.received.length };
+    }
+
+    it('controle positivo: a fixture VÁLIDA gera 1 documento e nenhum `summary_failed`', async () => {
+      const r = await runWith({});
+      expect(r.outcome).toBe('done');
+      expect(r.docs).toHaveLength(1);
+      expect(r.failed).toHaveLength(0);
+    });
+
+    it('A6-1: JSON inválido -> 0 documentos e `summary_failed json_invalid` na trilha', async () => {
+      const r = await runWith({ structured: null, jsonInvalid: true });
+      expect(r.outcome).toBe('summary_failed');
+      expect(r.docs).toHaveLength(0);
+      expect(r.failed).toEqual([expect.objectContaining({ reason: 'json_invalid' })]);
+      expect(r.calls).toBe(1); // a chamada foi paga
+    });
+
+    it('A6-2: fora do esquema (chave de topo ausente) -> 0 documentos e `schema_invalid`, com o NOME da chave e nada mais', async () => {
+      const j = validSummaryJson();
+      delete j.dotacion;
+      const r = await runWith({ structured: j });
+      expect(r.outcome).toBe('summary_failed');
+      expect(r.docs).toHaveLength(0);
+      expect(r.failed).toEqual([expect.objectContaining({ reason: 'schema_invalid', ref: { placeholders: 'dotacion' } })]);
+    });
+
+    it('A6-2b: `campos_faltantes` que não é lista -> `schema_invalid`', async () => {
+      const j = validSummaryJson();
+      j.campos_faltantes = 'resp_email';
+      const r = await runWith({ structured: j });
+      expect(r.docs).toHaveLength(0);
+      expect(r.failed).toEqual([expect.objectContaining({ reason: 'schema_invalid', ref: { placeholders: 'campos_faltantes' } })]);
+    });
+
+    it('A6-3: `estado` diferente de BORRADOR_PARA_REVISION_CTM -> 0 documentos e `schema_invalid`', async () => {
+      const j = validSummaryJson();
+      j.estado = 'APROBADO';
+      const r = await runWith({ structured: j });
+      expect(r.outcome).toBe('summary_failed');
+      expect(r.docs).toHaveLength(0);
+      expect(r.failed).toEqual([expect.objectContaining({ reason: 'schema_invalid', ref: { placeholders: 'estado' } })]);
+    });
+
+    it('A6-4: obrigatório `null` FORA de `campos_faltantes` -> 0 documentos e `schema_invalid`; DENTRO dos faltantes passa', async () => {
+      const j = validSummaryJson();
+      j.datos_administrativos.pac_fecha_nacimiento = { valor: null, fuente: [], conflicto: false, historial: [] };
+      const r = await runWith({ structured: j });
+      expect(r.outcome).toBe('summary_failed');
+      expect(r.docs).toHaveLength(0);
+      expect(r.failed).toEqual([expect.objectContaining({ reason: 'schema_invalid', ref: { placeholders: 'pac_fecha_nacimiento' } })]);
+      vertex.reset();
+      const ok = validSummaryJson();
+      ok.datos_administrativos.pac_fecha_nacimiento = { valor: null, fuente: [], conflicto: false, historial: [] };
+      ok.campos_faltantes = ['pac_fecha_nacimiento'];
+      const r2 = await runWith({ structured: ok });
+      expect(r2.outcome).toBe('done');
+      expect(r2.docs).toHaveLength(1);
+    });
+
+    it('os três motivos contam no teto de 3: na 4ª execução o Vertex nem é chamado e a reunião bloqueia `summary_attempts_exhausted`', async () => {
+      const a = await appt();
+      see(a, [meeting(a, 'tq-f6-teto')]);
+      const reprovados = [{ structured: null, jsonInvalid: true }, { structured: { ...validSummaryJson(), estado: 'X' }, jsonInvalid: false }, { structured: { x: 1 }, jsonInvalid: false }];
+      for (const r of reprovados) {
+        vertex.structured = r.structured;
+        vertex.jsonInvalid = r.jsonInvalid;
+        expect(await service.importOne(a.id, clock)).toBe('summary_failed');
+      }
+      expect(vertex.received).toHaveLength(3);
+      expect(await service.importOne(a.id, clock)).toBe('blocked');
+      expect(vertex.received).toHaveLength(3); // 0 chamadas novas
+      expect((await events(a.id)).filter((e) => e.kind === 'import_blocked')).toEqual([expect.objectContaining({ reason: 'summary_attempts_exhausted' })]);
+      expect(await docs(a.id)).toHaveLength(0);
+    });
+
+    it('A6-6: o cabeçalho do PDF traz BORRADOR (e o texto do cabeçalho vem antes do título)', async () => {
+      const a = await appt();
+      see(a, [meeting(a, 'tq-f6-pdf')]);
+      expect(await service.importOne(a.id, clock)).toBe('done');
+      const d = (await docs(a.id))[0];
+      const pdfFile = (await docFiles()).find((f) => f.name === unb64(d.file_path_encrypted));
+      const [pdf] = await (pdfFile as NonNullable<typeof pdfFile>).download();
+      const text = pdfStreams(pdf);
+      expect(text).toContain(hexOf('BORRADOR'));
+      expect(text.indexOf(hexOf('BORRADOR'))).toBeLessThan(text.indexOf(hexOf('Resumen de admisi')));
+    });
+  });
+
+  describe('F6: sentinela (R-10) — fora do logger, do banco e do disco', () => {
+    const SENTINELA = `SENTINELA-ZZ-${RUN}-QXV`;
+    const contem = (haystack: string): boolean => haystack.includes(SENTINELA) || haystack.includes(Buffer.from(SENTINELA).toString('base64'));
+
+    /** Varre arquivos criados/alterados desde `desde` sob `raiz` (até 4 níveis, ≤ 2 MB cada). */
+    function arquivosComSentinela(raiz: string, desde: number, nivel = 0): string[] {
+      const achados: string[] = [];
+      let nomes: string[] = [];
+      try { nomes = readdirSync(raiz); } catch { return achados; }
+      for (const n of nomes) {
+        const p = join(raiz, n);
+        try {
+          const st = statSync(p);
+          if (st.isDirectory()) { if (nivel < 4) achados.push(...arquivosComSentinela(p, desde, nivel + 1)); continue; }
+          if (st.mtimeMs < desde || st.size > 2_000_000) continue;
+          if (contem(readFileSync(p).toString('latin1'))) achados.push(p);
+        } catch { /* arquivo some/sem permissão: ignora */ }
+      }
+      return achados;
+    }
+
+    async function linhasDoBanco(a: Appt): Promise<string> {
+      const q = async (sql: string, p: unknown[]) => (await admin.query(sql, p)).rows.map((r) => JSON.stringify(r)).join('\n');
+      return [
+        await q(`SELECT t::text AS r FROM admission_events t WHERE appointment_id = $1`, [a.id]),
+        await q(`SELECT t::text AS r FROM admission_appointments t WHERE id = $1`, [a.id]),
+        await q(`SELECT t::text AS r FROM patient_documents t WHERE source_appointment_id = $1`, [a.id]),
+      ].join('\n');
+    }
+
+    it('A6-5: a transcrição com a sentinela vai ao cofre dublado; logger, linhas do banco e arquivos temporários NÃO a têm — e a MESMA busca a acha no cofre', async () => {
+      const desde = Date.now() - 1000;
+      const a = await appt();
+      see(a, [meeting(a, 'tq-f6-sent')], { 'tq-f6-sent': [`fala ${SENTINELA} fim`, 'dois'] });
+      expect(await service.importOne(a.id, clock)).toBe('done');
+
+      // CONTROLE: a mesma busca ACHA a sentinela no objeto do cofre (se a busca fosse cega, o zero abaixo não valeria)
+      const files = await vaultFiles(a.id);
+      expect(files).toHaveLength(1);
+      const [naCofre] = await files[0].download();
+      expect(contem(naCofre.toString('utf8'))).toBe(true);
+      expect(vertex.received[0]).toContain(SENTINELA);
+      // controle do varredor de disco e do de banco: acham a sentinela quando ela existe
+      const dir = mkdtempSync(join(tmpdir(), 'f6-controle-'));
+      try {
+        writeFileSync(join(dir, 'x.txt'), `abc ${SENTINELA}`);
+        expect(arquivosComSentinela(dir, desde)).toHaveLength(1);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+      expect(contem(`{"x":"${SENTINELA}"}`)).toBe(true);
+
+      // o que se mede existe: há linhas no banco, log e eventos
+      const banco = await linhasDoBanco(a);
+      expect(banco).toContain(a.id);
+      expect(logs.output()).toContain(a.id);
+      expect(contem(logs.output())).toBe(false);
+      expect(contem(banco)).toBe(false);
+      expect(arquivosComSentinela(tmpdir(), desde)).toEqual([]);
+    });
+  });
+
   // ── H4: o Gem — trava de marcador, entrada e JSON ───────────────────────────────────────────────
   it('H4 trava: marcador sem valor no Doc -> 0 chamadas ao Vertex, `summary_failed prompt_unfilled_placeholder` na trilha e no log, SÓ com o nome', async () => {
     const viaVertex = jest.fn();
@@ -657,21 +821,14 @@ describe('importação do Tactiq — banco real, cofre e bucket em emulador (spe
     }
   });
 
-  it('H4 entrada/saída: o gerador recebe entrevista_id = código ADM e fecha ISO; JSON inválido -> documento sai só com o resumo + log `admission.summary_json_invalid` sem texto', async () => {
+  it('H4 entrada/saída: o gerador recebe entrevista_id = código ADM e fecha ISO; com o JSON válido nasce o documento (JSON inválido reprova: ver F6 A6-1)', async () => {
     const a = await appt();
     see(a, [meeting(a, 'tq-h4-json')]);
     vertex.summary = `${RESUMO}: legible`;
-    vertex.jsonInvalid = true;
-    try {
-      expect(await service.importOne(a.id, clock)).toBe('done');
-    } finally {
-      vertex.jsonInvalid = false;
-    }
+    expect(await service.importOne(a.id, clock)).toBe('done');
     expect(vertex.inputs.at(-1)).toEqual({ entrevistaId: expect.stringMatching(/^ADM-/), fecha: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/) });
     expect(await docs(a.id)).toHaveLength(1);
-    const out = logs.output();
-    expect(out).toContain('admission.summary_json_invalid');
-    for (const proibido of [FRASE_CLINICA, RESUMO]) expect(out).not.toContain(proibido);
+    for (const proibido of [FRASE_CLINICA, RESUMO]) expect(logs.output()).not.toContain(proibido);
   });
 
   // ── H4: truncamento, teto de tentativas e catálogo real ─────────────────────────────────────────

@@ -1,6 +1,6 @@
 import type { Pool } from 'pg';
 import { logger, loggingAls } from '@shared/logging';
-import { getAdmissionCountryConfig, isAdmissionCountry, type AdmissionCountry } from '../domain/admissionCountries';
+import type { AdmissionCountry } from '../domain/admissionCountries';
 import { sealForMessage, type MessageSealView, type SealMessageRow } from '../domain/admissionSeals';
 import type { InterviewHost, InterviewHostRepository } from '../infrastructure/InterviewHostRepository';
 import type { AdmissionLogger, AdmissionMessagingService, DispatchOutcome } from './AdmissionMessagingService';
@@ -15,6 +15,16 @@ import {
 import { PatientNotFoundError } from './AdmissionSchedulingService';
 import type { AdmissionCalendarPort } from './ports/AdmissionCalendarPort';
 import type { TactiqLinkGate, TactiqLinkState } from './ports/TactiqPorts';
+import { isHostApt } from './admissionHostEligibility';
+import {
+  CANCEL_CALENDAR_DELETED_EVENT,
+  CANCEL_CALENDAR_FAILED_EVENT,
+  type CalendarDeleteOutcome,
+  CANCEL_EVENT_FAILED_LOG,
+  admissionCalendarIdFor,
+  deleteCalendarEventWithRetry,
+  pendingCalendarDeleteSql,
+} from './admissionCalendarSweeps';
 import type {
   AdmissionEventSink,
   AdmissionMessageKind,
@@ -30,6 +40,8 @@ export interface AdmissionAppointmentView {
   slotStart: string;
   slotEnd: string;
   status: string;
+  /** Cancelada e o Google ainda não apagou o evento (R-36): o job repete até apagar. */
+  calendarEventPending: boolean;
   /** Só enquanto a reunião está ativa e ainda não terminou. */
   meetLink: string | null;
   seals: {
@@ -74,6 +86,7 @@ interface AppointmentRow {
   reminder_task_name: string | null;
   import_status: string | null;
   document_id: string | null;
+  calendar_event_pending: boolean;
 }
 
 export interface AdmissionPanelDeps {
@@ -112,7 +125,7 @@ export class AdmissionPanelService {
     const states = await this.deps.tactiq.statesFor(hosts.map((h) => h.email));
     return hosts.map((h) => {
       const linkState = states.get(h.email.toLowerCase()) ?? 'missing';
-      return { ...h, linked: linkState === 'linked', linkState };
+      return { ...h, linked: isHostApt(linkState), linkState };
     });
   }
 
@@ -124,9 +137,10 @@ export class AdmissionPanelService {
     const appts = await db.query<AppointmentRow>(
       `SELECT a.id, a.admission_code, a.created_via, a.country, a.host_email, a.slot_start, a.slot_end, a.status,
               a.meet_link, a.reminder_task_name, a.import_status,
-              (SELECT d.id FROM patient_documents d WHERE d.source_appointment_id = a.id LIMIT 1) AS document_id
+              (SELECT d.id FROM patient_documents d WHERE d.source_appointment_id = a.id LIMIT 1) AS document_id,
+              ${pendingCalendarDeleteSql('a')} AS calendar_event_pending
          FROM admission_appointments a
-        WHERE a.patient_id = $1
+        WHERE a.patient_id = $1 AND a.status <> 'calendar_failed'
         ORDER BY a.slot_start DESC`,
       [patientId],
     );
@@ -156,6 +170,7 @@ export class AdmissionPanelService {
         slotStart: slotStart.toISOString(),
         slotEnd: slotEnd.toISOString(),
         status: a.status,
+        calendarEventPending: a.calendar_event_pending,
         meetLink: a.status === 'booked' && slotEnd.getTime() > now.getTime() ? a.meet_link : null,
         seals: {
           confirmation: sealForMessage('confirmation', rows, facts, now),
@@ -219,15 +234,21 @@ export class AdmissionPanelService {
 
     let calendarEventDeleted: boolean | null = null;
     if (row.calendar_event_id) {
+      const eventId = row.calendar_event_id;
+      let outcome: CalendarDeleteOutcome = 'failed';
       try {
-        const calendarId = this.calendarIdFor(row.country);
-        await this.deps.calendar.deleteEvent(calendarId, row.calendar_event_id, this.deps.impersonateEmail);
-        calendarEventDeleted = true;
-        this.log.info({ appointmentId }, 'admission.cancel.calendar_event_deleted');
+        const calendarId = admissionCalendarIdFor(row.country);
+        outcome = await deleteCalendarEventWithRetry(this.deps.calendar, { calendarId, eventId, impersonateEmail: this.deps.impersonateEmail });
       } catch {
-        calendarEventDeleted = false;
-        this.log.error({ appointmentId }, 'admission.cancel.calendar_event_failed');
-        await this.append(appointmentId, 'cancel_calendar_failed', { outcome: 'failed', reason: 'delete_event' });
+        outcome = 'failed';
+      }
+      calendarEventDeleted = outcome !== 'failed';
+      if (outcome === 'not_found') await this.append(appointmentId, CANCEL_CALENDAR_DELETED_EVENT, { outcome: 'deleted', reason: 'not_found' });
+      if (calendarEventDeleted) {
+        this.log.info({ appointmentId }, 'admission.cancel.calendar_event_deleted');
+      } else {
+        this.log.error({ appointmentId }, CANCEL_EVENT_FAILED_LOG);
+        await this.append(appointmentId, CANCEL_CALENDAR_FAILED_EVENT, { outcome: 'failed', reason: 'delete_event' });
       }
     }
 
@@ -294,13 +315,6 @@ export class AdmissionPanelService {
     if (inserted.rows.length === 0) throw new PaidRehearsalAlreadyActiveError();
     this.log.info({ appointmentId }, 'admission.paid_rehearsal_released');
     return { appointmentId, expiresAt };
-  }
-
-  private calendarIdFor(country: string): string {
-    if (!isAdmissionCountry(country)) throw new Error('bad_country');
-    const id = process.env[getAdmissionCountryConfig(country).admissionCalendarIdEnv];
-    if (!id) throw new Error('missing_calendar_id');
-    return id;
   }
 
   private async append(

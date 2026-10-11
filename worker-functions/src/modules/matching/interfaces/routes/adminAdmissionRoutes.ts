@@ -14,6 +14,7 @@ import { AdmissionPanelController } from '../controllers/AdmissionPanelControlle
  *  - `patient_admission:update`         — cancelar a agenda (convenção PR-8b: `write` não existe fora de permission_management).
  *  - `patient_admission:resend_message` — reenviar o WhatsApp que falhou.
  *  - `patient_admission:release_paid_rehearsal` — liberar o ensaio pago de UMA reunião de teste por 48 h (spec 050 R-19; só Master).
+ *  - `patient_admission:retry_summary`  — autorizar +1 rodada do resumo depois de esgotadas as 3 chamadas pagas (spec 050 R-38; teto de 2).
  * `untilEnforced: 'admin'`: com a família ainda não enforçada, só o papel admin passa.
  * `staffOnly` SEMPRE antes de `perm.require` (a ordem é parte do contrato do `PermissionMiddleware`).
  */
@@ -66,6 +67,13 @@ export function createAdminAdmissionRoutes(
     staffOnly,
     perm.require('patient_admission', 'release_paid_rehearsal', { untilEnforced: 'admin' }),
     (req: Request, res: Response) => controller.releasePaidRehearsal(req, res),
+  );
+
+  router.post(
+    '/patients/:id/admission-appointments/:apptId/summary-retry',
+    staffOnly,
+    perm.require('patient_admission', 'retry_summary', { untilEnforced: 'admin' }),
+    (req: Request, res: Response) => controller.retrySummary(req, res),
   );
 
   return router;

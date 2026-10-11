@@ -338,6 +338,43 @@ describe('job de 15 min da admissão — fim real, no_show e silêncio (spec 049
     expect(msgFor('admission.silence.confirmation', todos).map((l) => l.appointmentId)).toEqual([onze]);
   });
 
+  // ── A7-3 (spec 050 F7, R-30 b) ───────────────────────────────────────────────────────────────────
+  it('A7-3: mensagem em `sent` há mais de 24 h (dentro da janela) → 1 log com contagem e ids; com status final, recente ou fora da janela → 0', async () => {
+    const velha = await appt({ startedMinAgo: -300 });
+    const recente = await appt({ startedMinAgo: -300 });
+    const entregue = await appt({ startedMinAgo: -300 });
+    const foraDaJanela = await appt({ startedMinAgo: -300 });
+    const at = (hoursAgo: number) => new Date(clock.getTime() - hoursAgo * 60 * MIN);
+    const msg = async (apptId: string, status: string, hoursAgo: number): Promise<string> =>
+      (await admin.query(
+        `INSERT INTO admission_messages (appointment_id, kind, attempt, status, updated_at) VALUES ($1,'confirmation',0,$2,$3) RETURNING id`,
+        [apptId, status, at(hoursAgo)],
+      )).rows[0].id as string;
+    const mVelha = await msg(velha, 'sent', 30);
+    const mRecente = await msg(recente, 'sent', 2);
+    const mEntregue = await msg(entregue, 'delivered', 30);
+    const mFora = await msg(foraDaJanela, 'sent', 100);
+
+    const s = await job.runOnce(clock);
+    const mine = (ids: string[]) =>
+      logs.output().split('\n').filter((l) => l.includes('"message":"admission.delivery.no_status"'))
+        .map((l) => JSON.parse(l) as { count: number; messageIds: string[]; appointmentIds: string[] })
+        .filter((l) => l.messageIds.some((m) => ids.includes(m)));
+
+    const lines = mine([mVelha, mRecente, mEntregue, mFora]);
+    expect(lines).toHaveLength(1); // 1 log por execução, não 1 por mensagem
+    expect(lines[0].messageIds).toContain(mVelha);
+    expect(lines[0].appointmentIds).toContain(velha);
+    expect(lines[0].count).toBe(lines[0].messageIds.length);
+    for (const naoDeve of [mRecente, mEntregue, mFora]) expect(lines[0].messageIds).not.toContain(naoDeve);
+    expect(s.deliveryNoStatus).toBe(lines[0].count);
+
+    // o status final chega depois: a mesma mensagem sai do detector (controle: a de antes ERA achada)
+    await admin.query(`UPDATE admission_messages SET status = 'delivered', updated_at = now() WHERE id = $1`, [mVelha]);
+    await job.runOnce(clock);
+    expect(mine([mVelha])).toHaveLength(1); // continua 1: a 2ª execução não a viu mais
+  });
+
   // ── rota interna + logs ──────────────────────────────────────────────────────────────────────────
   it('rota POST /api/internal/jobs/admission-post-call: sem segredo 403; com segredo 200 e SÓ contagens numéricas', async () => {
     await appt({ startedMinAgo: 120 });
@@ -347,7 +384,7 @@ describe('job de 15 min da admissão — fim real, no_show e silêncio (spec 049
     expect(ok.status).toBe(200);
     const body = (await ok.json()) as { success: boolean; data: Record<string, unknown> };
     expect(Object.keys(body.data).sort()).toEqual([
-      'blocked', 'candidates', 'ended', 'errors', 'noShow', 'silenceConfirmation', 'silenceReminder', 'skippedLocked', 'skippedTest', 'transient', 'waiting',
+      'blocked', 'cancelEventDeleted', 'cancelEventPending', 'candidates', 'deliveryNoStatus', 'ended', 'errors', 'noShow', 'orphanReleased', 'silenceConfirmation', 'silenceReminder', 'skippedLocked', 'skippedTest', 'transient', 'waiting',
     ]);
     expect(Object.values(body.data).every((v) => typeof v === 'number')).toBe(true);
     expect(body.data.candidates as number).toBeGreaterThanOrEqual(1);
