@@ -2,7 +2,7 @@
  * decidePostCall — a regra do fim real da call (spec 049 F5, §3.3), pura. A5-1/A5-2 no nível da regra;
  * o e2e prova o efeito no banco.
  */
-import { decidePostCall, NO_SHOW_AFTER_START_MS } from '../admissionPostCall';
+import { decidePostCall, earliestConferenceStart, NO_SHOW_AFTER_START_MS } from '../admissionPostCall';
 
 const START = new Date('2026-10-09T15:00:00.000Z');
 const at = (ms: number) => new Date(START.getTime() + ms);
@@ -29,5 +29,19 @@ describe('decidePostCall', () => {
 
   it('com conferência, nunca é no_show — mesmo muito depois da hora marcada', () => {
     expect(decidePostCall({ now: at(10 * NO_SHOW_AFTER_START_MS), slotStart: START, records: [rec('conferenceRecords/a', 0, null)] })).toEqual({ kind: 'wait' });
+  });
+});
+
+describe('earliestConferenceStart (spec 050 F14, R-7)', () => {
+  it('o início real é o MENOR startTime, em qualquer ordem e com conferência aberta', () => {
+    expect(earliestConferenceStart([rec('conferenceRecords/b', 14, 55), rec('conferenceRecords/a', 3, null)])).toEqual(at(3 * 60_000));
+    expect(earliestConferenceStart([rec('conferenceRecords/a', 3, null), rec('conferenceRecords/b', 14, 55)])).toEqual(at(3 * 60_000));
+  });
+
+  it('sem conferência não há início (null) — e ler o início não muda a decisão de fim', () => {
+    expect(earliestConferenceStart([])).toBeNull();
+    const records = [rec('conferenceRecords/a', 3, 10)];
+    expect(earliestConferenceStart(records)).not.toBeNull();
+    expect(decidePostCall({ now: at(120 * 60_000), slotStart: START, records })).toEqual({ kind: 'ended', endedAt: at(10 * 60_000), recordNames: ['conferenceRecords/a'] });
   });
 });

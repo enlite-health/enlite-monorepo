@@ -39,6 +39,10 @@ export interface AdmissionAppointmentView {
   hostEmail: string;
   slotStart: string;
   slotEnd: string;
+  /** Início real da reunião (menor `startTime` do Meet, F14); `null` = o job ainda não observou conferência. */
+  conferenceStartedAt: string | null;
+  /** Fim real (maior `endTime`, quando todas as conferências terminaram); `null` = ainda não terminou / não observado. */
+  conferenceEndedAt: string | null;
   status: string;
   /** Cancelada e o Google ainda não apagou o evento (R-36): o job repete até apagar. */
   calendarEventPending: boolean;
@@ -81,6 +85,8 @@ interface AppointmentRow {
   host_email: string;
   slot_start: Date;
   slot_end: Date;
+  conference_started_at: Date | null;
+  conference_ended_at: Date | null;
   status: string;
   meet_link: string | null;
   reminder_task_name: string | null;
@@ -136,6 +142,7 @@ export class AdmissionPanelService {
 
     const appts = await db.query<AppointmentRow>(
       `SELECT a.id, a.admission_code, a.created_via, a.country, a.host_email, a.slot_start, a.slot_end, a.status,
+              a.conference_started_at, a.conference_ended_at,
               a.meet_link, a.reminder_task_name, a.import_status,
               (SELECT d.id FROM patient_documents d WHERE d.source_appointment_id = a.id LIMIT 1) AS document_id,
               ${pendingCalendarDeleteSql('a')} AS calendar_event_pending
@@ -169,6 +176,8 @@ export class AdmissionPanelService {
         hostEmail: a.host_email,
         slotStart: slotStart.toISOString(),
         slotEnd: slotEnd.toISOString(),
+        conferenceStartedAt: a.conference_started_at ? new Date(a.conference_started_at).toISOString() : null,
+        conferenceEndedAt: a.conference_ended_at ? new Date(a.conference_ended_at).toISOString() : null,
         status: a.status,
         calendarEventPending: a.calendar_event_pending,
         meetLink: a.status === 'booked' && slotEnd.getTime() > now.getTime() ? a.meet_link : null,
