@@ -4193,7 +4193,8 @@
             "host": "Responsable",
             "meet": "Entrar a Meet",
             "cancel": "Cancelar",
-            "viaSite": "Agendada por la familia en el sitio"
+            "viaSite": "Agendada por la familia en el sitio",
+            "calendarEventPending": "Cancelada, evento de Google pendiente"
           },
           "status": {
             "booked": "Agendada",
@@ -4273,19 +4274,35 @@
             "sent": "Mensaje reenviado.",
             "notSent": "El reenvío no pudo enviarse. Revisá el estado del mensaje en la reunión."
           },
+          "retry": {
+            "button": "Reintentar resumen",
+            "title": "¿Reintentar el resumen?",
+            "bodyExhausted": "Se agotaron las 3 llamadas pagas del resumen de esta reunión. Si confirmás, autorizás una nueva ronda de hasta 3 llamadas pagas (tienen costo) y la reunión vuelve a la cola de importación. Cada reunión admite hasta 2 autorizaciones.",
+            "bodyNow": "Vamos a intentar generar el resumen ahora. Esto no consume una autorización nueva.",
+            "confirm": "Reintentar",
+            "busy": "Reintentando…",
+            "authorized": "Nueva ronda autorizada: el resumen se generará en la próxima importación.",
+            "ranDone": "Resumen generado.",
+            "ranNotDone": "Todavía no se pudo generar el resumen. Revisá el estado de la importación en la reunión.",
+            "limit": "Límite de reintentos alcanzado"
+          },
           "errors": {
             "slotTaken": "Ese horario ya está ocupado para el responsable. Elegí otro.",
             "tactiqLinkRequired": "Ese responsable no tiene Tactiq vinculado. Elegí otra persona.",
             "slotInPast": "Elegí un horario futuro.",
             "hostNotInRoster": "Esa persona no está en el equipo de admisión de este país.",
             "invalidSlot": "La fecha u hora no son válidas.",
+            "calendarCreateFailed": "No pudimos crear la reunión en Google. No se agendó nada. Probá de nuevo.",
             "bookFailed": "No pudimos agendar la reunión. Probá de nuevo.",
             "cancelNotAllowed": "Esta reunión ya no se puede cancelar.",
             "cancelFailed": "No pudimos cancelar la reunión. Probá de nuevo.",
             "resendNotAllowed": "Este mensaje ya no se puede reenviar (fue entregado, la reunión empezó o se canceló).",
             "resendLimitReached": "Este mensaje ya se reenvió 2 veces: no se puede reenviar más.",
             "resendInProgress": "Ya hay un reenvío en curso para este mensaje.",
-            "resendFailed": "No pudimos reenviar el mensaje. Probá de nuevo."
+            "resendFailed": "No pudimos reenviar el mensaje. Probá de nuevo.",
+            "retryNotAllowed": "Esta reunión ya no admite reintentar el resumen (ya se generó o se canceló).",
+            "retryLimitReached": "Esta reunión ya usó sus 2 autorizaciones de reintento: no se puede reintentar más desde acá.",
+            "retryFailed": "No pudimos reintentar el resumen. Probá de nuevo."
           }
         }
       },
@@ -4699,7 +4716,8 @@
             "move_to_suspended": "A suspendido",
             "move_to_alta": "A alta",
             "move_to_discharged": "A baja",
-            "release_paid_rehearsal": "Liberar ensayo pago"
+            "release_paid_rehearsal": "Liberar ensayo pago",
+            "retry_summary": "Reintentar resumen"
           },
           "category": {
             "Trabalhadores": "Trabajadores",

@@ -312,6 +312,13 @@ describe('AdmissionCalendarService — I/O', () => {
       await expect(service.deleteEvent(CAL_AR, 'evt-1', IMPERSONATE)).resolves.toBeUndefined();
     });
 
+    it('404 (o evento não existe) sobe como CalendarEventNotFoundError (code EVENT_NOT_FOUND); 500 não leva esse code', async () => {
+      (global.fetch as jest.Mock).mockResolvedValue(jsonResponse({}, false, 404));
+      await expect(service.deleteEvent(CAL_AR, 'evt-1', IMPERSONATE)).rejects.toMatchObject({ code: 'EVENT_NOT_FOUND', message: expect.stringMatching(/deleteEvent 404/) });
+      (global.fetch as jest.Mock).mockResolvedValue(jsonResponse({}, false, 500));
+      await expect(service.deleteEvent(CAL_AR, 'evt-1', IMPERSONATE)).rejects.not.toMatchObject({ code: 'EVENT_NOT_FOUND' });
+    });
+
     it('outro erro HTTP sobe', async () => {
       (global.fetch as jest.Mock).mockResolvedValue(jsonResponse({}, false, 500));
       await expect(service.deleteEvent(CAL_AR, 'evt-1', IMPERSONATE)).rejects.toThrow(
@@ -411,6 +418,13 @@ describe('AdmissionCalendarService — I/O', () => {
       // ...e o título nomeia a EQUIPE, nunca a pessoa.
       expect(body.summary).toBe('Entrevista de admisión — Equipo de Admisión EnLite');
       expect(JSON.stringify(body)).not.toContain('Ana');
+    });
+
+    it('F9: com eventId o corpo leva `id` (criação idempotente); sem eventId não leva', async () => {
+      await service.createEventWithMeet({ ...baseParams, eventId: 'abcde12345' });
+      expect(lastCall().body.id).toBe('abcde12345');
+      await service.createEventWithMeet(baseParams);
+      expect(lastCall().body).not.toHaveProperty('id');
     });
 
     it('sem atendente e sem paciente → nenhum participante', async () => {

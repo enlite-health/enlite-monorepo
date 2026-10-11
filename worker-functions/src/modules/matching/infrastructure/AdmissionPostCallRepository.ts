@@ -23,6 +23,8 @@ export interface PostCallCandidate {
 export const SILENCE_WINDOW_HOURS = 72;
 /** "booked há > 10 min sem linha de confirmação" (spec §5.3). */
 export const CONFIRMATION_SILENCE_MINUTES = 10;
+/** R-30 (b): mensagem que ficou em `sent` por mais de 24 h é callback que não chegou. */
+export const DELIVERY_NO_STATUS_HOURS = 24;
 
 /**
  * Elegível para o job: reunião NOVA (tem código ADM — as antigas ficam fora da importação, migration 503), ainda `booked`,
@@ -136,5 +138,21 @@ export class AdmissionPostCallRepository {
       [now],
     );
     return rows.map((r) => r.id);
+  }
+  /**
+   * R-30 (b): mensagem presa em `sent` (a Twilio aceitou e o status final nunca chegou) há mais de 24 h, dentro da janela dos
+   * outros detectores. Só ids internos — nunca telefone, SID nem texto.
+   */
+  async findStaleSentMessages(now: Date, ex: Ex = this.db): Promise<Array<{ messageId: string; appointmentId: string }>> {
+    const { rows } = await ex.query<{ id: string; appointment_id: string }>(
+      `SELECT m.id, m.appointment_id
+         FROM admission_messages m
+        WHERE m.status = 'sent'
+          AND m.updated_at < $1::timestamptz - make_interval(hours => ${DELIVERY_NO_STATUS_HOURS})
+          AND m.updated_at >= $1::timestamptz - make_interval(hours => ${SILENCE_WINDOW_HOURS})
+        ORDER BY m.updated_at, m.id`,
+      [now],
+    );
+    return rows.map((r) => ({ messageId: r.id, appointmentId: r.appointment_id }));
   }
 }

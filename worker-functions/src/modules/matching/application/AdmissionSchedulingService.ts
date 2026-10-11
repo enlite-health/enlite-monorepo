@@ -33,58 +33,17 @@ import {
 } from './AdmissionNotifier';
 import type { AdmissionCalendarPort } from './ports/AdmissionCalendarPort';
 import { TactiqLinkRequiredError, type TactiqLinkGate } from './ports/TactiqPorts';
+import { isHostApt } from './admissionHostEligibility';
+import {
+  HostNotInRosterError,
+  InvalidSlotError,
+  PatientNotFoundError,
+  SlotInPastError,
+  SlotTakenError,
+} from './AdmissionSchedulingErrors';
+import { CalendarCreateFailedError, createEventWithRetry, releaseReservationWithoutEvent } from './admissionCalendarCreate';
 
-// ─── Errors ────────────────────────────────────────────────────────────────
-
-/**
- * O horário pedido não pode mais ser reservado: ninguém livre depois do
- * re-check, corrida perdida na trava do banco, ou pedido dentro da janela de
- * antecedência mínima. Um código só porque, para o paciente, a saída é a mesma
- * nos três casos — escolher outro horário.
- */
-export class SlotTakenError extends Error {
-  readonly code = 'SLOT_TAKEN';
-  constructor(message = 'Slot no longer available') {
-    super(message);
-    this.name = 'SlotTakenError';
-  }
-}
-
-/** Patient not found, or not in the requested country. */
-export class PatientNotFoundError extends Error {
-  readonly code = 'PATIENT_NOT_FOUND';
-  constructor(message = 'Patient not found') {
-    super(message);
-    this.name = 'PatientNotFoundError';
-  }
-}
-
-/** Painel (spec 049 F3): o horário pedido já passou. */
-export class SlotInPastError extends Error {
-  readonly code = 'SLOT_IN_PAST';
-  constructor(message = 'Slot is in the past') {
-    super(message);
-    this.name = 'SlotInPastError';
-  }
-}
-
-/** Painel: o responsável escolhido não está no roster ativo do país do paciente. */
-export class HostNotInRosterError extends Error {
-  readonly code = 'HOST_NOT_IN_ROSTER';
-  constructor(message = 'Host is not in the active roster of the patient country') {
-    super(message);
-    this.name = 'HostNotInRosterError';
-  }
-}
-
-/** Painel: `slotStartISO` não é uma data/hora válida. */
-export class InvalidSlotError extends Error {
-  readonly code = 'INVALID_SLOT';
-  constructor(message = 'Invalid slotStartISO') {
-    super(message);
-    this.name = 'InvalidSlotError';
-  }
-}
+export { HostNotInRosterError, InvalidSlotError, PatientNotFoundError, SlotInPastError, SlotTakenError };
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -392,7 +351,7 @@ export class AdmissionSchedulingService {
           candidatesConsidered: ranked.length,
           attemptsBeforeSuccess: ranked.findIndex((r) => r.host.email === host.email),
         },
-      });
+      }).catch(nextHostOnCalendarFailure);
       if (!reserved) continue;
 
       return { appointmentId: reserved.appointmentId, hostDisplayName: teamName, slotStartISO: startISO, meetLink: reserved.meetLink };
@@ -483,7 +442,6 @@ export class AdmissionSchedulingService {
     const cfg = getAdmissionCountryConfig(country);
     const hosts = await this.hosts.listActiveByCountry(country);
     if (hosts.length === 0) return [];
-
     const weekStart = slotStart.startOf('week');
     const weekEnd = weekStart.plus({ days: 7 });
     const busyByHost = await this.readHostsBusy(
@@ -583,7 +541,7 @@ export class AdmissionSchedulingService {
       createdVia: 'site',
       createdByUid: null,
       assignment: { mode: 'country_calendar', candidatesConsidered: 1, attemptsBeforeSuccess: 0 },
-    });
+    }).catch(nextHostOnCalendarFailure);
     if (!reserved) throw new SlotTakenError();
 
     return { appointmentId: reserved.appointmentId, hostDisplayName: teamName, slotStartISO: startISO, meetLink: reserved.meetLink };
@@ -638,17 +596,28 @@ export class AdmissionSchedulingService {
     }
     if (!appointmentId) throw new Error('[AdmissionSchedulingService] não gerou um código ADM único');
 
-    const { eventId, meetLink } = await this.calendar.createEventWithMeet({
-      calendarId,
-      impersonateEmail: this.impersonateEmail,
-      summary: `Entrevista de admisión — ${input.eventLabel} · ${admissionCode}`,
-      description: `Entrevista de admisión Enlite (${country}).`,
-      startISO,
-      endISO,
-      timezone,
-      ...(input.coHostEmail ? { coHostEmail: input.coHostEmail } : {}),
-      patientEmail: input.patientEmail,
-    });
+    let created: { eventId: string; meetLink: string };
+    try {
+      created = await createEventWithRetry(
+        this.calendar,
+        {
+          calendarId,
+          impersonateEmail: this.impersonateEmail,
+          summary: `Entrevista de admisión — ${input.eventLabel} · ${admissionCode}`,
+          description: `Entrevista de admisión Enlite (${country}).`,
+          startISO,
+          endISO,
+          timezone,
+          ...(input.coHostEmail ? { coHostEmail: input.coHostEmail } : {}),
+          patientEmail: input.patientEmail,
+        },
+        appointmentId,
+      );
+    } catch (err) {
+      if (err instanceof CalendarCreateFailedError) await releaseReservationWithoutEvent(appointmentId, err.reason);
+      throw err;
+    }
+    const { eventId, meetLink } = created;
 
     await this.attachCalendarRefs(appointmentId, eventId, meetLink);
 
@@ -734,7 +703,7 @@ export class AdmissionSchedulingService {
     if (!this.tactiqGate) throw new Error('AdmissionSchedulingService: bookForHost exige o gate do vínculo do Tactiq (spec 049 F4)');
     const states = await this.tactiqGate.statesFor([hostEmail]);
     const state = states.get(hostEmail.toLowerCase()) ?? 'missing';
-    if (state !== 'linked') throw new TactiqLinkRequiredError(state);
+    if (!isHostApt(state)) throw new TactiqLinkRequiredError(state);
   }
 
   private async loadPatient(patientId: string): Promise<PatientRow> {
@@ -840,6 +809,12 @@ export class AdmissionSchedulingService {
       [appointmentId, calendarEventId, meetLink],
     );
   }
+}
+
+/** Site: a falha do Google na criação não é erro para a família — esta responsável sai da disputa (null) e o horário foi liberado. */
+function nextHostOnCalendarFailure(err: unknown): null {
+  if (err instanceof CalendarCreateFailedError) return null;
+  throw err;
 }
 
 /** Postgres unique_violation. */

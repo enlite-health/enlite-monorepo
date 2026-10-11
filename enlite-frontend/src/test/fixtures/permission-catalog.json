@@ -58,6 +58,7 @@
     "patient_admission:read",
     "patient_admission:release_paid_rehearsal",
     "patient_admission:resend_message",
+    "patient_admission:retry_summary",
     "patient_admission:update",
     "patient_care_team:create",
     "patient_care_team:read",

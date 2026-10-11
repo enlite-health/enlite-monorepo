@@ -619,17 +619,18 @@ describeAbacStack('stack com engine ligado e catálogo SINCRONIZADO no boot (F4:
     await pool.end();
   });
 
-  it('as células de admissão (6 da 049 + o ensaio pago da 050) estão no catálogo SINCRONIZADO: descrição do código (não o placeholder da 507 nem da 509) e deprecated_at IS NULL', async () => {
+  it('as células de admissão (6 da 049 + o ensaio pago e o reprocesso do resumo da 050) estão no catálogo SINCRONIZADO: descrição do código (não o placeholder da 507, da 509 nem da 512) e deprecated_at IS NULL', async () => {
     const { rows } = await pool.query(
       `SELECT resource || ':' || action AS cell, description, deprecated_at FROM iam.permissions WHERE resource IN ('patient_admission','own_tactiq_link') ORDER BY 1`,
     );
     expect(rows.map((r) => r.cell)).toEqual([
       'own_tactiq_link:create', 'own_tactiq_link:read',
-      'patient_admission:create', 'patient_admission:read', 'patient_admission:release_paid_rehearsal', 'patient_admission:resend_message', 'patient_admission:update',
+      'patient_admission:create', 'patient_admission:read', 'patient_admission:release_paid_rehearsal', 'patient_admission:resend_message',
+      'patient_admission:retry_summary', 'patient_admission:update',
     ]);
     for (const r of rows) {
       expect(r.deprecated_at).toBeNull();
-      // o placeholder das migrations 507 e 509 é "[NNN placeholder — sincronizado no boot] …": nenhum pode sobrar
+      // o placeholder das migrations 507, 509 e 514 é "[NNN placeholder — sincronizado no boot] …": nenhum pode sobrar
       expect(r.description).not.toMatch(/\[\d{3} placeholder/);
     }
   });

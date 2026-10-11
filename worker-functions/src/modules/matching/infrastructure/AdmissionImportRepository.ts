@@ -2,6 +2,8 @@ import type { Pool, PoolClient } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { IMPORT_MIN_DELAY_MS } from '../domain/admissionImport';
 import type { SkippedTestStage } from '../domain/admissionRealm';
+import { SUMMARY_RETRY_AUTHORIZED_EVENT, type SummaryRetryListFacts } from '../domain/admissionSummaryRetry';
+import { lastRetryAuthorizationSql } from './admissionSummaryRetrySql';
 import { rehearsalUntilSql, standingSkippedTestSql } from './admissionRehearsalSql';
 import { MODEL_SIDE_SUMMARY_FAILURES, SUMMARY_ATTEMPTS_EXHAUSTED } from '../application/ports/AdmissionImportPorts';
 
@@ -48,7 +50,8 @@ export class AdmissionImportRepository {
           AND a.conference_ended_at <= $1::timestamptz - make_interval(secs => $3::double precision)
           AND a.import_status IN ('pending', 'waiting', 'blocked')
           AND NOT EXISTS (SELECT 1 FROM admission_events e
-                           WHERE e.appointment_id = a.id AND e.kind = 'import_blocked' AND e.reason = $4)
+                           WHERE e.appointment_id = a.id AND e.kind = 'import_blocked' AND e.reason = $4
+                             AND e.at > ${lastRetryAuthorizationSql('a.id')})
           AND NOT ${standingSkippedTestSql('a', 'import')}
         ORDER BY a.conference_ended_at
         LIMIT $2`,
@@ -97,17 +100,52 @@ export class AdmissionImportRepository {
     return rows.length > 0;
   }
 
-  /** O evento de exaustão já foi gravado? (garante UM só, seja qual for o estado anterior da reunião.) */
+  /** O evento de exaustão já foi gravado NESTA rodada (desde a última autorização, F11)? (garante UM só por rodada, seja qual for o estado anterior.) */
   async hasBlockedReason(appointmentId: string, reason: string, ex: Ex = this.db): Promise<boolean> {
-    const { rows } = await ex.query(`SELECT 1 FROM admission_events WHERE appointment_id = $1 AND kind = 'import_blocked' AND reason = $2 LIMIT 1`, [appointmentId, reason]);
+    const { rows } = await ex.query(`SELECT 1 FROM admission_events WHERE appointment_id = $1 AND kind = 'import_blocked' AND reason = $2 AND at > ${lastRetryAuthorizationSql('$1::uuid')} LIMIT 1`, [appointmentId, reason]);
     return rows.length > 0;
   }
 
-  /** Tentativas de resumo que chegaram ao Vertex, pelos eventos (sem coluna nova). Chamado com o lock da reunião seguro. */
+  /**
+   * Tentativas de resumo que chegaram ao Vertex, pelos eventos (sem coluna nova), DESDE a última autorização de reprocesso (spec 050
+   * F11, R-38; sem autorização = desde sempre). É a ÚNICA contagem do teto de 3: o serviço de importação e o botão leem esta.
+   * Chamado com o lock da reunião seguro.
+   */
   async countModelSummaryFailures(appointmentId: string, ex: Ex = this.db): Promise<number> {
     const { rows } = await ex.query<{ n: string }>(
-      `SELECT count(*) AS n FROM admission_events WHERE appointment_id = $1 AND kind = 'summary_failed' AND reason = ANY($2::text[])`,
+      `SELECT count(*) AS n FROM admission_events
+        WHERE appointment_id = $1 AND kind = 'summary_failed' AND reason = ANY($2::text[])
+          AND at > ${lastRetryAuthorizationSql('$1::uuid')}`,
       [appointmentId, MODEL_SIDE_SUMMARY_FAILURES],
+    );
+    return Number(rows[0]?.n ?? 0);
+  }
+
+  /** Os fatos do botão "Reintentar resumen" de TODAS as reuniões `booked` do paciente, numa consulta (a lista da aba; spec 050 F11). */
+  async summaryRetryFacts(patientId: string, ex: Ex = this.db): Promise<Array<{ id: string } & SummaryRetryListFacts>> {
+    const since = lastRetryAuthorizationSql('a.id');
+    const { rows } = await ex.query<{ id: string; status: string; import_status: string | null; model: number; any: number; auths: number }>(
+      `SELECT a.id, a.status, a.import_status,
+              (SELECT count(*)::int FROM admission_events e WHERE e.appointment_id = a.id AND e.kind = 'summary_failed'
+                  AND e.reason = ANY($2::text[]) AND e.at > ${since}) AS model,
+              (SELECT count(*)::int FROM admission_events e WHERE e.appointment_id = a.id AND e.kind = 'summary_failed'
+                  AND e.at > ${since}) AS any,
+              (SELECT count(*)::int FROM admission_events e WHERE e.appointment_id = a.id AND e.kind = '${SUMMARY_RETRY_AUTHORIZED_EVENT}') AS auths
+         FROM admission_appointments a
+        WHERE a.patient_id = $1 AND a.status = 'booked'`,
+      [patientId, MODEL_SIDE_SUMMARY_FAILURES],
+    );
+    return rows.map((r) => ({
+      id: r.id, appointmentStatus: r.status, importStatus: r.import_status,
+      modelFailuresSinceAuthorization: r.model, anyFailuresSinceAuthorization: r.any, authorizations: r.auths,
+    }));
+  }
+
+  /** Autorizações de reprocesso já dadas à reunião (R-38; o teto é `MAX_SUMMARY_RETRY_AUTHORIZATIONS`). */
+  async countRetryAuthorizations(appointmentId: string, ex: Ex = this.db): Promise<number> {
+    const { rows } = await ex.query<{ n: string }>(
+      `SELECT count(*) AS n FROM admission_events WHERE appointment_id = $1 AND kind = '${SUMMARY_RETRY_AUTHORIZED_EVENT}'`,
+      [appointmentId],
     );
     return Number(rows[0]?.n ?? 0);
   }

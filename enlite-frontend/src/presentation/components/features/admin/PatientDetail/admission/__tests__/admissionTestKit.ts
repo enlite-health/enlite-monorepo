@@ -25,6 +25,7 @@ export function appt(overrides: Partial<AdmissionAppointment> = {}): AdmissionAp
     slotStart: '2026-10-13T15:00:00.000Z',
     slotEnd: '2026-10-13T16:00:00.000Z',
     status: 'booked',
+    calendarEventPending: false,
     meetLink: 'https://meet.google.com/abc-defg-hij',
     seals: {
       confirmation: { seal: 'delivered', attempt: 0, canResend: false },
