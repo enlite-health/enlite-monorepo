@@ -116,17 +116,8 @@ import { createAdminAdmissionRoutes } from '@modules/matching/interfaces/routes/
 import { TactiqLinkService } from '@modules/matching/application/TactiqLinkService';
 import { TactiqLinkRepository } from '@modules/matching/infrastructure/TactiqLinkRepository';
 import { TactiqLinkController } from '@modules/matching/interfaces/controllers/TactiqLinkController';
-import { ChromeReportJob } from '@modules/matching/application/ChromeReportJob';
-import { ChromeReportRepository } from '@modules/matching/infrastructure/ChromeReportRepository';
-import { ChromeReportInternalController } from '@modules/matching/interfaces/controllers/ChromeReportInternalController';
-import { createChromeReportInternalRoutes } from '@modules/matching/interfaces/routes/chromeReportRoutes';
 import { TactiqCheckInternalController } from '@modules/matching/interfaces/controllers/TactiqCheckInternalController';
 import { createTactiqLinkRoutes, createTactiqLinkCallbackRoute, createTactiqCheckInternalRoutes } from '@modules/matching/interfaces/routes/tactiqLinkRoutes';
-import { AdmissionPostCallJob } from '@modules/matching/application/AdmissionPostCallJob';
-import { AdmissionCalendarSweeps } from '@modules/matching/application/admissionCalendarSweeps';
-import { AdmissionPostCallRepository } from '@modules/matching/infrastructure/AdmissionPostCallRepository';
-import { AdmissionPostCallInternalController } from '@modules/matching/interfaces/controllers/AdmissionPostCallInternalController';
-import { createAdmissionPostCallInternalRoutes } from '@modules/matching/interfaces/routes/admissionPostCallRoutes';
 import { AdmissionImportService } from '@modules/matching/application/AdmissionImportService';
 import { AdmissionSummaryRetryService } from '@modules/matching/application/AdmissionSummaryRetryService';
 import { AdmissionImportRepository } from '@modules/matching/infrastructure/AdmissionImportRepository';
@@ -142,6 +133,7 @@ import { createClaimRoutes } from '@modules/auth/interfaces/routes/claimRoutes';
 import { AccountLinkController } from '@modules/account-link/AccountLinkController';
 import { createAccountLinkRoutes } from '@modules/account-link/accountLinkRoutes';
 import { registerAdminMaintenanceRoutes } from './bootstrap/registerAdminMaintenanceRoutes';
+import { registerAdmissionInternalJobRoutes } from './bootstrap/registerAdmissionInternalJobRoutes';
 import { createAdminIntegrationsRoutes } from '@modules/integration';
 import { createStageMessageHandler } from './shared/events/handlers/StageMessageHandler';
 import { FUNNEL_STAGES, funnelStageEventName } from './modules/matching/application/FunnelStageEventEmitter';
@@ -787,40 +779,8 @@ app.use(
   createTactiqCheckInternalRoutes(new TactiqCheckInternalController(tactiqLinkService)),
 );
 
-// spec 050 F15: relatório diário do Chrome (a extensão do Tactiq por operadora). Porta dublada; o adaptador real não tem rede até a F18.
-app.use(
-  '/api/internal',
-  systemContextMiddleware('job:admission-chrome-report'),
-  internalAuthMiddleware,
-  createChromeReportInternalRoutes(
-    new ChromeReportInternalController(
-      new ChromeReportJob({ repo: new ChromeReportRepository(admissionDb), chrome: admissionExternals.chrome, db: admissionDb }),
-    ),
-  ),
-);
-
-// spec 049 F5: job de 15 min — fim REAL da call (Meet API), no_show e detectores de silêncio (Cloud Scheduler, a cada 15 min).
-app.use(
-  '/api/internal',
-  systemContextMiddleware('job:admission-post-call'),
-  internalAuthMiddleware,
-  createAdmissionPostCallInternalRoutes(
-    new AdmissionPostCallInternalController(
-      new AdmissionPostCallJob({
-        repo: new AdmissionPostCallRepository(admissionDb),
-        meet: admissionExternals.meet,
-        events: admissionEvents,
-        db: admissionDb,
-        calendarSweeps: new AdmissionCalendarSweeps({
-          db: admissionDb,
-          calendar: admissionExternals.calendar,
-          events: admissionEvents,
-          impersonateEmail: process.env.ADMISSION_IMPERSONATE_EMAIL || 'enlite@enlite.health',
-        }),
-      }),
-    ),
-  ),
-);
+// spec 050 F15 + spec 049 F5: relatório diário do Chrome e job de 15 min do fim da call (ordem preservada).
+registerAdmissionInternalJobRoutes(app, { db: admissionDb, externals: admissionExternals, events: admissionEvents });
 
 // spec 049 F6: importação do Tactiq (MCP -> provas -> cofre -> Vertex -> PDF -> documento). Roda depois do job de 15 min (a F5 grava
 // `conference_ended_at` e `import_status='pending'`). Cloud Scheduler, a cada 15 min.

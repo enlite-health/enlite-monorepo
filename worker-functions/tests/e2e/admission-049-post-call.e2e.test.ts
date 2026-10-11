@@ -10,6 +10,7 @@
 import { Pool } from 'pg';
 import { montarAppDeFamilia, type AppDeFamilia } from './helpers/permissionFamilyHarness';
 import { FakeMeetConference } from '../../src/modules/matching/infrastructure/doubles/FakeMeetConference';
+import { criarEscopoDeEnv } from './helpers/admissionHarnessKit';
 import { capturingLogger } from '../../src/modules/matching/infrastructure/doubles/admissionTestKit';
 import type { AdmissionPostCallJob } from '../../src/modules/matching/application/AdmissionPostCallJob';
 
@@ -38,12 +39,7 @@ describe('job de 15 min da admissão — fim real, no_show e silêncio (spec 049
   let seq = 0;
   const patients: Record<'ok' | 'semConsentimento' | 'semTelefone' | 'teste', string> = { ok: '', semConsentimento: '', semTelefone: '', teste: '' };
   const patientIds = (): string[] => Object.values(patients);
-  const envAnterior: Record<string, string | undefined> = {};
-  function setEnv(k: string, v: string | undefined): void {
-    if (!(k in envAnterior)) envAnterior[k] = process.env[k];
-    if (v === undefined) delete process.env[k];
-    else process.env[k] = v;
-  }
+  const env = criarEscopoDeEnv();
 
   const code = (): string => `ADM-${(RUN + String(seq).padStart(3, '0')).toUpperCase().slice(-6)}`;
 
@@ -93,9 +89,7 @@ describe('job de 15 min da admissão — fim real, no_show e silêncio (spec 049
 
   beforeAll(async () => {
     admin = new Pool({ connectionString: DATABASE_URL });
-    setEnv('USE_MOCK_AUTH', 'true');
-    setEnv('DATABASE_URL', DATABASE_URL);
-    setEnv('INTERNAL_TOKEN_SECRET', SECRET);
+    env.setAll({ USE_MOCK_AUTH: 'true', DATABASE_URL, INTERNAL_TOKEN_SECRET: SECRET });
 
     const mk = async (tag: string, o: { consent: boolean | null; phone: string | null; test: boolean }): Promise<string> => {
       const { rows } = await admin.query(
@@ -147,10 +141,7 @@ describe('job de 15 min da admissão — fim real, no_show e silêncio (spec 049
     const { DatabaseConnection } = await import('@shared/database/DatabaseConnection');
     await DatabaseConnection.getInstance().close();
     await admin.end();
-    for (const [k, v] of Object.entries(envAnterior)) {
-      if (v === undefined) delete process.env[k];
-      else process.env[k] = v;
-    }
+    env.restaurar();
   });
 
   // ── A5-1 ─────────────────────────────────────────────────────────────────────────────────────────

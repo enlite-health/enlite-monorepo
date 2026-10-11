@@ -19,7 +19,8 @@ import { Storage } from '@google-cloud/storage';
 import {
   grupoComCelulas, limparIamFixtures, montarAppDeFamilia, tokenMock, TENANT_E2E, type AppDeFamilia,
 } from './permissionFamilyHarness';
-import { ensureLoginRole, dropLoginRoles, urlFor } from './loginRoles';
+import { ensureLoginRole, dropLoginRoles } from './loginRoles';
+import { criarEscopoDeEnv, configurarConexaoRls, montarAuthDeProducao, criarBucketNoFakeGcs, criarBarreiraDeRequisicoes } from './admissionHarnessKit';
 import { FakeTactiqMcp, FakeTactiqOAuth } from '../../../src/modules/matching/infrastructure/doubles/FakeTactiq';
 import { FakeAdmissionSummaryGenerator } from '../../../src/modules/matching/infrastructure/doubles/FakeAdmissionSummaryGenerator';
 import { capturingLogger } from '../../../src/modules/matching/infrastructure/doubles/admissionTestKit';
@@ -57,25 +58,10 @@ export function definirCenariosResumoRetry(conexao: ConexaoRetry, sufixo: string
     const oauth = new FakeTactiqOAuth();
     const logs = capturingLogger();
     const b64 = (t: string): string => Buffer.from(t, 'utf8').toString('base64');
-    const envAnterior: Record<string, string | undefined> = {};
+    const env = criarEscopoDeEnv();
     const clock = new Date();
-    /**
-     * Barreira de A11-2: com ela ligada, quem chega à contagem espera (até 600 ms) a OUTRA requisição chegar. Sem o lock da reunião
-     * as duas chegam juntas e as duas leem "esgotada" (2 autorizações); com o lock, a 2ª nem chega: a 1ª passa depois do prazo.
-     */
-    const barreira = { ligada: false, chegadas: 0 };
-    async function esperarOutraRequisicao(): Promise<void> {
-      if (!barreira.ligada) return;
-      barreira.chegadas += 1;
-      const ate = Date.now() + 600;
-      while (barreira.chegadas < 2 && Date.now() < ate) await new Promise((r) => setTimeout(r, 10));
-    }
-
-    function setEnv(k: string, v: string | undefined): void {
-      if (!(k in envAnterior)) envAnterior[k] = process.env[k];
-      if (v === undefined) delete process.env[k];
-      else process.env[k] = v;
-    }
+    /** Barreira de A11-2 (ver `criarBarreiraDeRequisicoes`): sem o lock da reunião as duas requisições leem "esgotada" (2 autorizações). */
+    const barreira = criarBarreiraDeRequisicoes();
 
     async function http(method: string, path: string, headers: Record<string, string>) {
       const res = await fetch(`${app.url}${path}`, { method, headers: { 'Content-Type': 'application/json', ...headers } });
@@ -141,34 +127,21 @@ export function definirCenariosResumoRetry(conexao: ConexaoRetry, sufixo: string
       await limparIamFixtures(admin, { uids: Object.values(U), grupos: Object.values(GRUPOS) });
     }
 
-    async function createBucket(name: string): Promise<void> {
-      const res = await fetch(`${FAKE_GCS_URL}/storage/v1/b?project=enlite-test`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }),
-      });
-      if (!res.ok && res.status !== 409) throw new Error(`fake-gcs: bucket ${name} -> ${res.status}`);
-    }
-
     beforeAll(async () => {
       admin = new Pool({ connectionString: DATABASE_URL });
       await ensureLoginRole(admin, RUNTIME_USER, SENHA, 'app_runtime');
       await ensureLoginRole(admin, SYSTEM_USER, SENHA, 'app_system');
       await limpar();
-      setEnv('DATABASE_URL', conexao === 'runtime' ? urlFor(DATABASE_URL, RUNTIME_USER, SENHA) : DATABASE_URL);
-      setEnv('DATABASE_SYSTEM_URL', conexao === 'runtime' ? urlFor(DATABASE_URL, SYSTEM_USER, SENHA) : undefined);
-      setEnv('COUNTRY_RLS_ENABLED', 'true');
-      setEnv('USE_MOCK_AUTH', 'true');
-      setEnv('DB_POOL_MAX', '4');
-      setEnv('DB_SYSTEM_POOL_MAX', '2');
-      setEnv('INTERNAL_TOKEN_SECRET', SECRET);
-      setEnv('PERMISSION_ENGINE_ENABLED', 'true');
-      setEnv('PERMISSION_ENFORCED_ROUTES', 'admin.patients');
-      setEnv('PERMISSION_CACHE_TTL_MS', '0');
-      setEnv('GCS_EMULATOR_HOST', FAKE_GCS_URL);
-      setEnv('GCP_PROJECT_ID', 'enlite-test');
-      setEnv('PATIENT_DOCUMENTS_BUCKET', DOCS_BUCKET);
-      setEnv('ADMISSION_TRANSCRIPT_VAULT_BUCKET', VAULT_BUCKET);
-      await createBucket(VAULT_BUCKET);
-      await createBucket(DOCS_BUCKET);
+      configurarConexaoRls(env, { conexao, databaseUrl: DATABASE_URL, runtimeUser: RUNTIME_USER, systemUser: SYSTEM_USER, senha: SENHA, secret: SECRET });
+      env.set('PERMISSION_ENGINE_ENABLED', 'true');
+      env.set('PERMISSION_ENFORCED_ROUTES', 'admin.patients');
+      env.set('PERMISSION_CACHE_TTL_MS', '0');
+      env.set('GCS_EMULATOR_HOST', FAKE_GCS_URL);
+      env.set('GCP_PROJECT_ID', 'enlite-test');
+      env.set('PATIENT_DOCUMENTS_BUCKET', DOCS_BUCKET);
+      env.set('ADMISSION_TRANSCRIPT_VAULT_BUCKET', VAULT_BUCKET);
+      await criarBucketNoFakeGcs(FAKE_GCS_URL, VAULT_BUCKET);
+      await criarBucketNoFakeGcs(FAKE_GCS_URL, DOCS_BUCKET);
 
       await admin.query(
         `INSERT INTO users (firebase_uid, email, role, status, is_active, tenant_id) VALUES ($1,$3,'admin','ACTIVE',true,$5), ($2,$4,'admin','ACTIVE',true,$5)`,
@@ -182,11 +155,7 @@ export function definirCenariosResumoRetry(conexao: ConexaoRetry, sufixo: string
         [`e2e-050-retry-${sufixo}`],
       )).rows[0].id;
 
-      const [identity, { DatabaseConnection }] = await Promise.all([import('@modules/identity'), import('@shared/database/DatabaseConnection')]);
-      const auth = new identity.AuthMiddleware(
-        new identity.MultiAuthService({ enableApiKeys: true, enableJwt: false, enableGoogleIdToken: true }, DatabaseConnection.getInstance().getPool()),
-        new identity.SimplifiedAuthorizationEngine(),
-      );
+      const { auth, DatabaseConnection } = await montarAuthDeProducao();
       app = await montarAppDeFamilia({
         auth,
         enforcedRoutes: 'admin.patients',
@@ -222,7 +191,7 @@ export function definirCenariosResumoRetry(conexao: ConexaoRetry, sufixo: string
                 countRetryAuthorizations: (id, ex) => repo.countRetryAuthorizations(id, ex),
                 summaryRetryFacts: (pid, ex) => repo.summaryRetryFacts(pid, ex),
                 countModelSummaryFailures: async (id, ex) => {
-                  await esperarOutraRequisicao();
+                  await barreira.esperarOutra();
                   return repo.countModelSummaryFailures(id, ex);
                 },
               },
@@ -247,10 +216,7 @@ export function definirCenariosResumoRetry(conexao: ConexaoRetry, sufixo: string
       await limpar();
       await dropLoginRoles(admin, [RUNTIME_USER, SYSTEM_USER]);
       await admin.end();
-      for (const [k, v] of Object.entries(envAnterior)) {
-        if (v === undefined) delete process.env[k];
-        else process.env[k] = v;
-      }
+      env.restaurar();
     });
 
     it('0. sanidade: a conexão é a que o arquivo declara e, no runtime, a RLS está de pé (a conexão do runtime, sem identidade, é recusada)', async () => {

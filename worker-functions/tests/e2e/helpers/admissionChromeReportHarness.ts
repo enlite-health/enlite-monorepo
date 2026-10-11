@@ -12,7 +12,8 @@
  */
 import { Pool } from 'pg';
 import { montarAppDeFamilia, type AppDeFamilia } from './permissionFamilyHarness';
-import { ensureLoginRole, dropLoginRoles, urlFor } from './loginRoles';
+import { ensureLoginRole, dropLoginRoles } from './loginRoles';
+import { criarEscopoDeEnv, configurarConexaoRls, montarAuthDeProducao } from './admissionHarnessKit';
 import { FakeChromeReport } from '../../../src/modules/matching/infrastructure/doubles/FakeChromeReport';
 import { TACTIQ_EXTENSION_ID, type ChromeReportPort } from '../../../src/modules/matching/application/ports/ChromeReportPort';
 import { capturingLogger } from '../../../src/modules/matching/infrastructure/doubles/admissionTestKit';
@@ -44,12 +45,7 @@ export function definirCenariosRelatorioChrome(conexao: ConexaoChrome, sufixo: s
     const hostUids: string[] = [];
     const inicio = new Date();
     let seq = 0;
-    const envAnterior: Record<string, string | undefined> = {};
-    function setEnv(k: string, v: string | undefined): void {
-      if (!(k in envAnterior)) envAnterior[k] = process.env[k];
-      if (v === undefined) delete process.env[k];
-      else process.env[k] = v;
-    }
+    const env = criarEscopoDeEnv();
 
     const job = async (): Promise<{ status: number; data: Record<string, any> }> => {
       const res = await fetch(`${app.url}/api/internal/jobs/admission-chrome-report`, { method: 'POST', headers: { 'X-Internal-Secret': SECRET } });
@@ -101,20 +97,10 @@ export function definirCenariosRelatorioChrome(conexao: ConexaoChrome, sufixo: s
       admin = new Pool({ connectionString: DATABASE_URL });
       await ensureLoginRole(admin, RUNTIME_USER, SENHA, 'app_runtime');
       await ensureLoginRole(admin, SYSTEM_USER, SENHA, 'app_system');
-      setEnv('DATABASE_URL', conexao === 'runtime' ? urlFor(DATABASE_URL, RUNTIME_USER, SENHA) : DATABASE_URL);
-      setEnv('DATABASE_SYSTEM_URL', conexao === 'runtime' ? urlFor(DATABASE_URL, SYSTEM_USER, SENHA) : undefined);
-      setEnv('COUNTRY_RLS_ENABLED', 'true');
-      setEnv('USE_MOCK_AUTH', 'true');
-      setEnv('DB_POOL_MAX', '4');
-      setEnv('DB_SYSTEM_POOL_MAX', '2');
-      setEnv('INTERNAL_TOKEN_SECRET', SECRET);
+      configurarConexaoRls(env, { conexao, databaseUrl: DATABASE_URL, runtimeUser: RUNTIME_USER, systemUser: SYSTEM_USER, senha: SENHA, secret: SECRET });
       porta = fake;
 
-      const [identity, { DatabaseConnection }] = await Promise.all([import('@modules/identity'), import('@shared/database/DatabaseConnection')]);
-      const auth = new identity.AuthMiddleware(
-        new identity.MultiAuthService({ enableApiKeys: true, enableJwt: false, enableGoogleIdToken: true }, DatabaseConnection.getInstance().getPool()),
-        new identity.SimplifiedAuthorizationEngine(),
-      );
+      const { auth, DatabaseConnection } = await montarAuthDeProducao();
       app = await montarAppDeFamilia({
         auth,
         montarRotas: async ({ app: express }) => {
@@ -162,10 +148,7 @@ export function definirCenariosRelatorioChrome(conexao: ConexaoChrome, sufixo: s
       await admin.query('DELETE FROM users WHERE firebase_uid = ANY($1)', [hostUids]);
       await dropLoginRoles(admin, [RUNTIME_USER, SYSTEM_USER]);
       await admin.end();
-      for (const [k, v] of Object.entries(envAnterior)) {
-        if (v === undefined) delete process.env[k];
-        else process.env[k] = v;
-      }
+      env.restaurar();
     });
 
     it('0. sanidade: a conexão é a que o arquivo declara; o runtime lê o estado mas NÃO o escreve (só o sistema)', async () => {
