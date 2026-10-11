@@ -17,8 +17,7 @@ module "sa_enlite_functions" {
     "roles/aiplatform.user", # Vertex AI (geração de descrição + prescreening via ADC)
     "roles/cloudsql.client",
     "roles/cloudtasks.enqueuer",
-    "roles/firebase.admin",
-    "roles/firebaseauth.admin", # spec 050 R-41: papel estreito de Auth (11 permissões, nenhuma de Storage); firebase.admin sai na R-42
+    "roles/firebaseauth.admin", # spec 050 R-41: papel estreito de Auth (11 permissões, nenhuma de Storage); R-42 tirou o firebase.admin
     "roles/iam.serviceAccountTokenCreator",
     "roles/pubsub.publisher",
     "roles/secretmanager.secretAccessor",
