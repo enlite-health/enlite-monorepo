@@ -21,6 +21,7 @@ import {
   permissionsDouble,
 } from '@modules/identity/interfaces/middleware/__tests__/permissionFamilyDoubles';
 import { createRecruitmentRoutes, ADMIN_RECRUITMENT_FAMILY } from '../recruitmentRoutes';
+import { RecruitmentBlockedController } from '../../controllers/RecruitmentBlockedController';
 
 jest.mock('@shared/logging', () => ({
   logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
@@ -73,6 +74,23 @@ describe('família admin.recruitment — o router declara só blocked-attempts',
 
   it('este router tem exatamente 1 rota — recolocar uma rota do dashboard removido quebra aqui', () => {
     expect(scanExpressRouter(build())).toHaveLength(1);
+  });
+
+  it('GET /admin/recruitment/blocked-attempts chama listBlockedAttempts do controller com a request e a response', async () => {
+    const espiao = jest
+      .spyOn(RecruitmentBlockedController.prototype, 'listBlockedAttempts')
+      .mockImplementation(async (_req, res) => {
+        res.json({ m: 'listBlockedAttempts' });
+      });
+    const app = express();
+    app.use('/api', build());
+
+    const res = await request(app).get('/api/admin/recruitment/blocked-attempts').expect(200);
+
+    expect(res.body.m).toBe('listBlockedAttempts');
+    expect(espiao).toHaveBeenCalledTimes(1);
+    expect(espiao.mock.calls[0][0].originalUrl).toBe('/api/admin/recruitment/blocked-attempts');
+    espiao.mockRestore();
   });
 
   it.each(REMOVIDAS)('%s %s não existe mais (404)', async (metodo, caminho) => {

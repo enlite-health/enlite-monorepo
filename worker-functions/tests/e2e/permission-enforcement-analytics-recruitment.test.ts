@@ -5,6 +5,7 @@ import {
   montarAppDeFamilia,
   limparIamFixtures,
   grupoComCelulas,
+  garantirCelula,
   limparTrilhaDrenada,
   aguardarTrilhaQuieta,
   type AppDeFamilia,
@@ -93,6 +94,11 @@ describe('famílias admin.analytics e admin.recruitment sob decisão por célula
          ($4, 'perm-a3-dedup@e2e.local',        'admin', 'ACTIVE', true, $5)`,
       [U.analista, U.gestao, U.recrutamento, U.dedup, TENANT_E2E],
     );
+
+    // `recruitment_blocked:read` nasceu FORA do seed da 206: só entra em `iam.permissions` pelo sync do
+    // catálogo no boot da API, que este harness não roda. `garantirCelula` é idempotente (ON CONFLICT DO NOTHING)
+    // e a célula fica — é o que o sync faria em produção, e outras suítes dependem de ela existir.
+    await garantirCelula(pool, { resource: 'recruitment_blocked', action: 'read', category: 'Recrutamento' });
 
     await grupoComCelulas(pool, { nome: GRUPOS.analista, uid: U.analista, celulas: [['analytics', 'read']] });
     await grupoComCelulas(pool, { nome: GRUPOS.gestao, uid: U.gestao, celulas: [['dashboard', 'read']] });
