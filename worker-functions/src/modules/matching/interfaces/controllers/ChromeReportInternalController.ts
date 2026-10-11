@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { reportError } from '@shared/logging';
+import { reportError, safeErrorFields } from '@shared/logging';
 import { ChromeReportJob } from '../../application/ChromeReportJob';
 
 /**
@@ -14,7 +14,16 @@ export class ChromeReportInternalController {
       const summary = await this.job.run();
       res.status(200).json({ success: true, data: summary });
     } catch (err: unknown) {
-      reportError(err instanceof Error ? err : new Error(String(err)), { source: 'ChromeReportInternalController' });
+      // Nunca o objeto do erro: o `detail` de um erro de constraint do Postgres traz a LINHA (inclui `host_email`). Só nome, SQLSTATE e
+      // constraint; o `Error` reportado é novo (sem `message`/`stack` do original) para o Error Reporting agrupar sem vazar dado.
+      const { errorName, code } = safeErrorFields(err);
+      const constraint = (err as { constraint?: unknown } | null)?.constraint;
+      reportError(new Error(`chrome report job failed: ${errorName} ${code ?? ''}`.trim()), {
+        source: 'ChromeReportInternalController',
+        errorName,
+        code,
+        constraint: typeof constraint === 'string' ? constraint : null,
+      });
       res.status(500).json({ success: false, error: 'Internal error' });
     }
   }
