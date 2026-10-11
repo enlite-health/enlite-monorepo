@@ -21,6 +21,12 @@ variable "admission_alert_channels" {
   default     = []
 }
 
+variable "admission_chrome_report_silence_alert_enabled" {
+  type        = bool
+  description = "Liga o alerta de silêncio do job do relatório do Chrome (só depois do adaptador real em produção + agendador)."
+  default     = false
+}
+
 locals {
   # D490 "repetindo até resolver": 1800 s é o MÍNIMO que o Cloud Monitoring aceita (30 min a 24 h), o mais perto de "até resolver".
   admission_alert_renotify_interval = "1800s"
@@ -54,12 +60,21 @@ locals {
     import_run_done = {
       message = "admission.import.run_done"
       window  = 2700 # roda a cada 15 min (7,22,37,52): 45 min = 3 ciclos perdidos
+      enabled = true
       what    = "Nenhum `admission.import.run_done` em 45 min: a importação do Tactiq não está rodando (job `admission-import`)."
     }
     tactiq_check_done = {
       message = "admission.tactiq_link.check_done"
       window  = 86400 # roda 1x/dia (12:00 UTC); teto do Cloud Monitoring para condition_absent é 24 h
+      enabled = true
       what    = "Nenhum `admission.tactiq_link.check_done` em 24 h: o teste diário do vínculo do Tactiq não rodou (job `admission-tactiq-check`)."
+    }
+    # F18: nasce DESLIGADO — liga (var=true) quando o adaptador real do Chrome estiver em produção E houver agendador rodando o job.
+    chrome_report_done = {
+      message = "admission.chrome_report.run_done"
+      window  = 86400 # teto do condition_absent (24 h); cadência do job ainda não definida (sem agendador)
+      enabled = var.admission_chrome_report_silence_alert_enabled
+      what    = "Nenhum `admission.chrome_report.run_done` em 24 h: o relatório de extensões do Chrome não está rodando (job do relatório do Chrome)."
     }
   }
 }
@@ -85,7 +100,7 @@ resource "google_monitoring_alert_policy" "admission_silence" {
   project      = var.project_id
   display_name = "[URGENTE] Admissão: sem ${each.value.message} (job parado)"
   combiner     = "OR"
-  enabled      = true
+  enabled      = each.value.enabled
   severity     = "ERROR"
 
   notification_channels = local.admission_alert_channels
