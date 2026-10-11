@@ -43,12 +43,8 @@ export const useAdminNavItems = (): AppSidebarNavItem[] => {
   for (const [chave, entrada] of Object.entries(SCREEN_FEATURE_MAP)) {
     if (entrada.navHref && chave in valorPorChave) featureByHref[entrada.navHref] = valorPorChave[chave];
   }
-  // `/admin/recruitment/blocked-attempts` (item admin-only, ver `adminItems`
-  // abaixo) não é o `navHref` de nenhuma chave — é sub-rota de `screen:funnel`
-  // (ver `routes` de `screen:funnel` em screenFeatureMap.ts). Sem esta linha
-  // o item ficava morto no menu quando `screen:funnel` está off: a ROTA nega
-  // (App.tsx já gateia), mas o link continuava visível.
-  featureByHref['/admin/recruitment/blocked-attempts'] = valorPorChave['screen:funnel'];
+  // `/admin/recruitment/blocked-attempts` (item admin-only, ver `adminItems`) é o `navHref` de
+  // `screen:funnel`: some do menu junto com a rota quando a chave está off no país do ator.
 
   const baseItems: AppSidebarNavItem[] = [
     {
@@ -109,15 +105,6 @@ export const useAdminNavItems = (): AppSidebarNavItem[] => {
       ),
       label: t('admin.nav.anacareHours', 'Horas Ana Care'),
       href: '/admin/anacare/horas',
-    },
-    {
-      icon: (
-        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-        </svg>
-      ),
-      label: t('admin.nav.recruitment', 'Reclutamiento'),
-      href: '/admin/recruitment',
     },
     // Spec 049 (F7): o operador vincula a própria conta do Tactiq (`own_tactiq_link:*`, registro `account.tactiq`).
     {

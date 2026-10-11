@@ -54,11 +54,6 @@ describe('ScreenTree — chave i18n de tela pontuada não pode cair pro ID cru q
     expect(rotulo).not.toBe('recruitment.blocked');
   });
 
-  it.each(['es', 'pt-BR'] as const)('recruitment.health resolve pro rótulo humano, não pro ID (%s)', (lng) => {
-    const rotulo = rotuloDaTela('recruitment.health', lng);
-    expect(rotulo).not.toBe('recruitment.health');
-  });
-
   // Trava de classe: TODA tela do registro (não só as 2 nomeadas) tem que resolver — se alguém
   // criar outra tela-filha de uma tela-pai homônima amanhã, este teste pega sem precisar nomear.
   it.each(['es', 'pt-BR'] as const)('nenhuma tela do SCREEN_REGISTRY cai pro ID cru (%s)', (lng) => {

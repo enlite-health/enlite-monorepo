@@ -43,8 +43,8 @@ export const SCREEN_FEATURE_MAP: Readonly<Record<string, ScreenFeatureEntry>> = 
     ],
   },
   'screen:funnel': {
-    navHref: '/admin/recruitment',
-    routes: ['/admin/recruitment', '/admin/recruitment/health', '/admin/recruitment/blocked-attempts'],
+    navHref: '/admin/recruitment/blocked-attempts',
+    routes: ['/admin/recruitment/blocked-attempts'],
   },
   'screen:patients': {
     navHref: '/admin/patients',

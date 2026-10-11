@@ -62,8 +62,6 @@ export const USER_FACING_ROUTES: readonly UserFacingRoute[] = [
   { route: '/admin/vacancies/:id/talentum', surface: 'admin', tier: 'regression' },
   { route: '/admin/vacancies/:id', surface: 'admin', tier: 'regression' },
   { route: '/admin/dashboard', surface: 'admin', tier: 'regression' },
-  { route: '/admin/recruitment', surface: 'admin', tier: 'regression' },
-  { route: '/admin/recruitment/health', surface: 'admin', tier: 'regression' },
   { route: '/admin/recruitment/blocked-attempts', surface: 'admin', tier: 'regression' },
   { route: '/admin/workers', surface: 'admin', tier: 'regression' },
   { route: '/admin/workers/:id', surface: 'admin', tier: 'regression' },
@@ -152,7 +150,6 @@ export const USER_FACING_ROUTES: readonly UserFacingRoute[] = [
   { route: 'POST /api/public/v1/admission/book', surface: 'api', tier: 'smoke' },
   { route: 'GET /api/admin/vacancies', surface: 'api', tier: 'regression' },
   { route: 'GET /api/admin/dedup/groups', surface: 'api', tier: 'regression' },
-  { route: 'GET /api/admin/recruitment/health', surface: 'api', tier: 'regression' },
   { route: 'GET /api/admin/users', surface: 'api', tier: 'regression' },
   { route: 'GET /analytics/workers', surface: 'api', tier: 'regression' },
   { route: 'GET /analytics/dashboard/global', surface: 'api', tier: 'regression' },
@@ -172,7 +169,6 @@ export const USER_FACING_ROUTES: readonly UserFacingRoute[] = [
   { route: 'GET /api/admin/messaging/templates', surface: 'api', tier: 'regression' },
   { route: 'GET /api/admin/dedup/history', surface: 'api', tier: 'regression' },
   { route: 'GET /api/workers/me/availability', surface: 'api', tier: 'regression' },
-  { route: 'GET /api/admin/recruitment/progreso', surface: 'api', tier: 'regression' },
 
   // ─────── API · admin write/error endpoints (exercitados pela leva admin-error) ──────
   // Rotas de escrita/erro do painel admin cobertas por specs de CAMINHO DE ERRO em

@@ -1348,7 +1348,6 @@
       "users": "Usuarios",
       "vacancies": "Vacantes",
       "workers": "Prestadores",
-      "recruitment": "Reclutamiento",
       "blockedAttempts": "Postulaciones bloqueadas",
       "patients": "Pacientes",
       "tags": "Etiquetas",
@@ -1636,66 +1635,10 @@
       "invitationFallbackDesc": "Ya enviamos un email con el link para definir la contraseña. Si no llega, podés copiarlo abajo y enviarlo manualmente.",
       "done": "Listo"
     },
-    "recruitment": {
-      "title": "Dashboard de Reclutamiento",
-      "loading": "Cargando datos del dashboard...",
-      "errorLoading": "Error al cargar datos",
-      "tabs": {
-        "global": "Panel Global",
-        "case": "Análisis por Caso",
-        "zone": "Análisis por Zona"
-      },
-      "filters": {
-        "period": "Periodo",
-        "all": "Todo el tiempo",
-        "today": "Hoy",
-        "yesterday": "Ayer",
-        "lastWeek": "Última Semana",
-        "lastMonth": "Último Mes",
-        "custom": "Personalizado"
-      },
-      "metrics": {
-        "globalMetrics": "Métricas Globales",
-        "activeCases": "Casos en Búsqueda/Reemplazo",
-        "search": "Búsqueda",
-        "replacements": "Reemplazos",
-        "candidates": "Candidatos",
-        "candidatesSubtitle": "No terminaron Talentum",
-        "applicants": "Postulantes en Talentum",
-        "applicantsSubtitle": "Para casos activos",
-        "frameworks": "Cantidad de Encuadres",
-        "frameworksSubtitle": "Asistencia confirmada",
-        "publicationsByChannel": "Publicaciones por Canal",
-        "total": "Total",
-        "activeCasesList": "Listado de Casos Activos"
-      },
-      "caseAnalysis": {
-        "title": "Análisis por Caso",
-        "searchLabel": "Buscar Número de Caso",
-        "searchPlaceholder": "Ej. 442",
-        "noCase": "Ingrese un número de caso para ver el análisis detallado",
-        "candidatesInProgress": "En NoTerminaronTalentum",
-        "applicantsInTalentum": "En Talentum",
-        "invited": "Invitados",
-        "invitedSubtitle": "A encuadre"
-      },
-      "zoneAnalysis": {
-        "title": "Análisis por Zona",
-        "comingSoon": "El análisis geográfico y heatmap de zonas será implementado en la siguiente fase"
-      },
-      "table": {
-        "caseNumber": "Caso Número",
-        "taskName": "Task Name",
-        "status": "Estado",
-        "startDate": "Inicio Búsqueda",
-        "viewAnalysis": "Ver análisis"
-      }
-    },
     "blockedAttempts": {
       "title": "Intentos de postulación bloqueados",
       "subtitle": "Registros de workers que intentaron postularse y fueron bloqueados",
       "refresh": "Actualizar",
-      "linkFromRecruitment": "Ver intentos bloqueados",
       "loading": "Cargando intentos bloqueados...",
       "loadError": "Error al cargar los intentos bloqueados",
       "retry": "Reintentar",
@@ -1765,32 +1708,6 @@
         "next": "Siguiente",
         "page": "Página {{page}} de {{total}}"
       }
-    },
-    "recruitmentHealth": {
-      "title": "Salud del reclutamiento",
-      "refresh": "Actualizar",
-      "autoInvite": {
-        "title": "Invitaciones automáticas (últimas 24h)",
-        "vacanciesCreated": "Vacantes creadas",
-        "invitesEnqueued": "Invitaciones encoladas",
-        "sent": "Enviadas",
-        "delivered": "Entregadas",
-        "failed": "Fallidas"
-      },
-      "bulkIncomplete": {
-        "title": "Recordatorio de registro incompleto (última ejecución)"
-      },
-      "bulkTalentum": {
-        "title": "Recordatorio de Talentum incompleto (última ejecución)"
-      },
-      "noRuns": "Sin ejecuciones aún",
-      "batchId": "Batch ID",
-      "total": "Total",
-      "errors": "Errores",
-      "startedAt": "Inicio",
-      "finishedAt": "Fin",
-      "loadError": "Error al cargar las métricas",
-      "retry": "Reintentar"
     },
     "kanban": {
       "columns": {
@@ -5207,9 +5124,6 @@
         },
         "recruitment": {
           "label": "Reclutamiento",
-          "health": {
-            "label": "Reclutamiento: Salud"
-          },
           "blocked": {
             "label": "Postulaciones bloqueadas"
           }
