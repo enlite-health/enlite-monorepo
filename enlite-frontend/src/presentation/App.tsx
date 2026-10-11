@@ -70,9 +70,6 @@ const AdmisionBrPage = lazyWithRetry(() =>
     default: () => <m.default country="BR" />,
   })),
 );
-// Swagger UI é pesado (~500kb gzipped) — lazy load isola o chunk e só baixa
-// quando staff abre /admin/api-docs.
-const AdminApiDocsPage = lazyWithRetry(() => import('./pages/admin/AdminApiDocsPage'));
 // Mantém lazy — são a fronteira worker/admin; carregados uma única vez
 const AdminProtectedRoute = lazy(() => import('./components/features/admin/AdminProtectedRoute').then(m => ({ default: m.AdminProtectedRoute })));
 const AdminLoginGuard = lazy(() => import('./components/features/admin/AdminLoginGuard').then(m => ({ default: m.AdminLoginGuard })));
@@ -239,8 +236,8 @@ export function App() {
           <Route index element={<AdminUsersPage />} />
           {/* B2 (D268) — cada rota de tela `screen:*` envolvida por `FeatureRouteGate`:
               desligada no país do ator → redireciona a `/admin` (mesma postura que
-              `AccessGate` já usa para `hidden`). `tags`/`patient-chat-roles`/`dedup`/
-              `api-docs` não têm chave `screen:*` no manifest — ficam de fora. */}
+              `AccessGate` já usa para `hidden`). `tags`/`patient-chat-roles`/`dedup`
+              não têm chave `screen:*` no manifest — ficam de fora. */}
           <Route path="vacancies" element={<FeatureRouteGate feature="screen:vacancies"><AdminVacanciesPage /></FeatureRouteGate>} />
           {/* D425 item 4 (Fase 3, 24/09) — "Nueva" sai temporariamente: vacante nasce só do
               serviço contratado. Esconder só o botão deixaria a porta aberta por URL — a
@@ -291,14 +288,6 @@ export function App() {
           <Route path="access/features" element={<FeatureRouteGate feature="screen:access-permissions"><CountryFeaturesPage /></FeatureRouteGate>} />
           {/* Histórico de mudanças de permissão — substitui a Auditoría ALLOW/DENY (mesma URL, mesma célula). */}
           <Route path="access/audit" element={<FeatureRouteGate feature="screen:access-permissions"><PermissionHistoryPage /></FeatureRouteGate>} />
-          <Route
-            path="api-docs"
-            element={
-              <Suspense fallback={<AdminFallback />}>
-                <AdminApiDocsPage />
-              </Suspense>
-            }
-          />
         </Route>
         {/* Catch-all: rota desconhecida redireciona para home */}
         <Route path="*" element={<Navigate to="/" replace />} />
