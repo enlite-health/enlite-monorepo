@@ -116,6 +116,10 @@ import { createAdminAdmissionRoutes } from '@modules/matching/interfaces/routes/
 import { TactiqLinkService } from '@modules/matching/application/TactiqLinkService';
 import { TactiqLinkRepository } from '@modules/matching/infrastructure/TactiqLinkRepository';
 import { TactiqLinkController } from '@modules/matching/interfaces/controllers/TactiqLinkController';
+import { ChromeReportJob } from '@modules/matching/application/ChromeReportJob';
+import { ChromeReportRepository } from '@modules/matching/infrastructure/ChromeReportRepository';
+import { ChromeReportInternalController } from '@modules/matching/interfaces/controllers/ChromeReportInternalController';
+import { createChromeReportInternalRoutes } from '@modules/matching/interfaces/routes/chromeReportRoutes';
 import { TactiqCheckInternalController } from '@modules/matching/interfaces/controllers/TactiqCheckInternalController';
 import { createTactiqLinkRoutes, createTactiqLinkCallbackRoute, createTactiqCheckInternalRoutes } from '@modules/matching/interfaces/routes/tactiqLinkRoutes';
 import { AdmissionPostCallJob } from '@modules/matching/application/AdmissionPostCallJob';
@@ -784,6 +788,18 @@ app.use(
   systemContextMiddleware('job:admission-tactiq-check'),
   internalAuthMiddleware,
   createTactiqCheckInternalRoutes(new TactiqCheckInternalController(tactiqLinkService)),
+);
+
+// spec 050 F15: relatório diário do Chrome (a extensão do Tactiq por operadora). Porta dublada; o adaptador real não tem rede até a F18.
+app.use(
+  '/api/internal',
+  systemContextMiddleware('job:admission-chrome-report'),
+  internalAuthMiddleware,
+  createChromeReportInternalRoutes(
+    new ChromeReportInternalController(
+      new ChromeReportJob({ repo: new ChromeReportRepository(admissionDb), chrome: admissionExternals.chrome, db: admissionDb }),
+    ),
+  ),
 );
 
 // spec 049 F5: job de 15 min — fim REAL da call (Meet API), no_show e detectores de silêncio (Cloud Scheduler, a cada 15 min).

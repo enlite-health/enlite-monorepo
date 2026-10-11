@@ -5891,6 +5891,11 @@
         "missing": "Tu usuario no está vinculado a Tactiq. Hasta que lo vincules no vas a poder ser responsable de agendas de admisión.",
         "broken": "Tu usuario no está vinculado a Tactiq. Hasta que lo vincules no vas a poder ser responsable de agendas de admisión.",
         "wrong_account": "La cuenta de Tactiq vinculada no corresponde a tu usuario. Volvé a vincularla para seguir recibiendo agendas."
+      },
+      "tactiqExtension": {
+        "installed": "La extensión de Tactiq quedó instalada en tu Chrome. Para quedar habilitada para recibir agendas, falta hacer la reunión de prueba.",
+        "missing": "La extensión de Tactiq no está activa en tu Chrome. Instalala para seguir recibiendo agendas de admisión.",
+        "disabled": "La extensión de Tactiq está desactivada en tu Chrome. Activala de nuevo para seguir recibiendo agendas de admisión."
       }
     },
     "tactiqLink": {

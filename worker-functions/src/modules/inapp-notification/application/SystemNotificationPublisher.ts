@@ -12,6 +12,8 @@ import {
   NotificationRepository,
   type AdmissionTactiqLinkPayload,
   type AdmissionTactiqLinkReason,
+  type AdmissionTactiqExtensionPayload,
+  type AdmissionTactiqExtensionState,
   type PtContactsPendingPayload,
 } from '../infrastructure/NotificationRepository';
 
@@ -27,6 +29,16 @@ export function buildAdmissionTactiqLinkPayload(reason: string): AdmissionTactiq
     throw new Error('admission_tactiq_link_payload: motivo fora do conjunto fechado');
   }
   return { reason: reason as AdmissionTactiqLinkReason };
+}
+
+const ADMISSION_EXTENSION_STATES: readonly AdmissionTactiqExtensionState[] = ['installed', 'missing', 'disabled'];
+
+/** Payload fechado de 1 chave (spec 050 F15). Estado fora do conjunto é erro de programação (lança). */
+export function buildAdmissionTactiqExtensionPayload(state: string): AdmissionTactiqExtensionPayload {
+  if (!(ADMISSION_EXTENSION_STATES as readonly string[]).includes(state)) {
+    throw new Error('admission_tactiq_extension_payload: estado fora do conjunto fechado');
+  }
+  return { state: state as AdmissionTactiqExtensionState };
 }
 
 /** Os campos de contato que o aviso pode listar — espelha `ContactStatusKind` sem importar do módulo `case`. */
@@ -78,6 +90,31 @@ export class SystemNotificationPublisher {
     const eventId = await this.repository.insertEvent(
       {
         typeCode: 'ADMISSION_TACTIQ_LINK_REQUIRED',
+        actorUid: SYSTEM_ADMISSION_ACTOR_UID,
+        patientId: null,
+        conversationId: null,
+        messageId: null,
+        payload,
+      },
+      client,
+    );
+    await this.repository.insertNotifications(eventId, [input.recipientUid], client);
+    return eventId;
+  }
+
+  /**
+   * Aviso da transição do relatório do Chrome (spec 050 F15, R-3): UM evento + UMA notificação para a operadora. Quem decide SE avisa
+   * (1 por transição) é o `ChromeReportJob`; aqui só se grava, na transação do chamador. Sem destinatário não grava e devolve `null`.
+   */
+  async publishAdmissionTactiqExtensionChanged(
+    client: PoolClient,
+    input: { recipientUid: string | null; state: string },
+  ): Promise<string | null> {
+    const payload = buildAdmissionTactiqExtensionPayload(input.state);
+    if (!input.recipientUid) return null;
+    const eventId = await this.repository.insertEvent(
+      {
+        typeCode: 'ADMISSION_TACTIQ_EXTENSION_CHANGED',
         actorUid: SYSTEM_ADMISSION_ACTOR_UID,
         patientId: null,
         conversationId: null,

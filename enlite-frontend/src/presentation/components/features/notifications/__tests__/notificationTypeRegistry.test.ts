@@ -125,3 +125,34 @@ describe('ADMISSION_TACTIQ_LINK_REQUIRED (spec 049, A7-7)', () => {
     expect(h.detailLine?.(tactiq('wrong_account'), t)).toBe('admin.notifications.tactiq.wrong_account:{}');
   });
 });
+
+// Spec 050 (F15, R-3): o aviso da transição do relatório do Chrome — o servidor manda só `{state}`; o TEXTO vive aqui.
+describe('ADMISSION_TACTIQ_EXTENSION_CHANGED (spec 050, F15)', () => {
+  const ext = (state: string | null) =>
+    notif({
+      typeCode: 'ADMISSION_TACTIQ_EXTENSION_CHANGED',
+      actorUid: 'system:admission',
+      actorDisplayName: null,
+      patientId: null,
+      patientDisplayName: null,
+      messageId: null,
+      payload: state === null ? null : ({ state } as never),
+    });
+
+  it('o deep link abre /admin/mi-cuenta/tactiq, sem paciente e sem pedido de foco', () => {
+    const link = getNotificationTypeHandler('ADMISSION_TACTIQ_EXTENSION_CHANGED').getDeepLink(ext('installed'));
+    expect(link).toEqual({ path: '/admin/mi-cuenta/tactiq' });
+  });
+
+  it.each([['installed'], ['missing'], ['disabled']])('estado %s tem o texto PRÓPRIO', (state) => {
+    const h = getNotificationTypeHandler('ADMISSION_TACTIQ_EXTENSION_CHANGED');
+    expect(h.buildText(ext(state), t)).toBe(`admin.notifications.tactiqExtension.${state}:{}`);
+    expect(h.detailLine?.(ext(state), t)).toBe(`admin.notifications.tactiqExtension.${state}:{}`);
+  });
+
+  it('payload ausente/estranho cai no texto de "não está ativa", nunca no de "instalada" e nunca crash', () => {
+    const h = getNotificationTypeHandler('ADMISSION_TACTIQ_EXTENSION_CHANGED');
+    expect(h.buildText(ext(null), t)).toBe('admin.notifications.tactiqExtension.missing:{}');
+    expect(h.buildText(ext('qualquer'), t)).toBe('admin.notifications.tactiqExtension.missing:{}');
+  });
+});
