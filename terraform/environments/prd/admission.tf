@@ -329,7 +329,7 @@ locals {
 }
 
 resource "google_logging_metric" "admission" {
-  for_each = local.admission_log_alerts
+  for_each = merge(local.admission_log_alerts, local.admission_log_alerts_passo2) # passo2: admission_alerts_passo2.tf
 
   project     = var.project_id
   name        = "admission_${each.key}"
@@ -344,7 +344,7 @@ resource "google_logging_metric" "admission" {
 }
 
 resource "google_monitoring_alert_policy" "admission" {
-  for_each = local.admission_log_alerts
+  for_each = merge(local.admission_log_alerts, local.admission_log_alerts_passo2)
 
   project      = var.project_id
   display_name = "${each.value.severity == "ERROR" ? "[URGENTE]" : "[ATENÇÃO]"} Admissão: ${each.value.message}"
@@ -352,7 +352,7 @@ resource "google_monitoring_alert_policy" "admission" {
   enabled      = true
   severity     = each.value.severity == "ERROR" ? "ERROR" : "WARNING"
 
-  notification_channels = [var.events_notification_channel]
+  notification_channels = local.admission_alert_channels
 
   documentation {
     mime_type = "text/markdown"
@@ -362,6 +362,14 @@ resource "google_monitoring_alert_policy" "admission" {
 
   alert_strategy {
     auto_close = "1800s"
+    # Só os alertas do passo2 repetem (os 14 antigos ficam como estão: mudá-los é "change" em recurso existente, fora da F12).
+    dynamic "notification_channel_strategy" {
+      for_each = contains(keys(local.admission_log_alerts_passo2), each.key) ? [1] : []
+      content {
+        notification_channel_names = local.admission_alert_channels
+        renotify_interval          = local.admission_alert_renotify_interval
+      }
+    }
   }
 
   conditions {
