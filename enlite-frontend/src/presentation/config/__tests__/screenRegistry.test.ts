@@ -208,7 +208,7 @@ describe('screensByCell / containersOfTab / screenById', () => {
     expect(screenByRoute('/admin/patients')?.id).toBe('patients.list');
     expect(screenByRoute('/admin')?.id).toBe('users');
     expect(screenByRoute('/admin/mapa')?.id).toBe('map');
-    expect(screenByRoute('/admin/api-docs')).toBeUndefined();
+    expect(screenByRoute('/admin/rota-inexistente')).toBeUndefined();
     expect(screenByRoute('/admin/patients/', [])).toBeUndefined();
     expect(screenByRoute(undefined)).toBeUndefined();
   });

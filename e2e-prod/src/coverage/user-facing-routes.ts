@@ -86,7 +86,6 @@ export const USER_FACING_ROUTES: readonly UserFacingRoute[] = [
   { route: '/admission-ar', surface: 'public', tier: 'smoke' },
   { route: '/admission-br', surface: 'public', tier: 'smoke' },
   { route: '/admin/dedup', surface: 'admin', tier: 'regression' },
-  { route: '/admin/api-docs', surface: 'admin', tier: 'regression' },
 
   // ───────────────────────── FRONTEND · excluídas ──────────────────────────
   {

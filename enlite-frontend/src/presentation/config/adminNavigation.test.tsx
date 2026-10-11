@@ -237,14 +237,17 @@ describe('useAdminNavItems — D286: item de topo só existe para quem tem algum
   it('com o engine OFF a régua é a de antes: todos os itens de topo aparecem (freio D268)', () => {
     useAdminAuthStore.setState({ authzStatus: 'ready', authz: { ...authzCom([]), enforcement: 'off' } });
     const visiveis = hrefs();
-    for (const h of ['/admin/dashboard', '/admin', '/admin/vacancies', '/admin/workers', '/admin/patients', '/admin/mapa', '/admin/recruitment', '/admin/api-docs']) {
+    for (const h of ['/admin/dashboard', '/admin', '/admin/vacancies', '/admin/workers', '/admin/patients', '/admin/mapa', '/admin/recruitment']) {
       expect(visiveis).toContain(h);
     }
+    expect(visiveis).not.toContain('/admin/api-docs');
   });
 
-  it('item cujo href não está no registro de telas (API Docs) NÃO é gateado por célula — nomeado, não esquecido', () => {
-    useAdminAuthStore.setState({ authzStatus: 'ready', authz: authzCom([]) });
-    // A rota `/api/docs` do back exige só staff (index.ts), sem célula: o menu espelha o back.
-    expect(hrefs()).toEqual(['/admin/api-docs']);
+  it('a tela API Docs saiu do front: nenhum item de menu aponta para /admin/api-docs, com ou sem célula, engine on ou off', () => {
+    // O swagger do back (`/api/docs/`) permanece; só a tela do front foi removida.
+    for (const authz of [authzCom([]), authzCom(['patient:read']), { ...authzCom([]), enforcement: 'off' as const }]) {
+      useAdminAuthStore.setState({ authzStatus: 'ready', authz });
+      expect(hrefs()).not.toContain('/admin/api-docs');
+    }
   });
 });

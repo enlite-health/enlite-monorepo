@@ -323,7 +323,7 @@ test.describe('Simulação de grupo de acesso (spec 026, F3/T3.6) — integraç�
     // NÃO é a WelcomeNoGroupPage (o achado — confirmação negativa, não esquecimento):
     await expect(page.getByText(/no tiene un grupo de acceso|não tem um grupo de acesso/i)).toHaveCount(0);
     // É o painel normal, com o menu quase vazio (só o que independe de célula):
-    await expect(page.getByRole('navigation').first().getByRole('link', { name: 'API Docs' })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('navigation').first().getByRole('link', { name: 'API Docs' })).toHaveCount(0);
     for (const nome of ['Pacientes', 'Vacantes', 'Prestadores', 'Usuarios']) {
       await expect(page.getByRole('navigation').first().getByRole('link', { name: nome }), `"${nome}" apareceu sem nenhuma célula`).toHaveCount(0);
     }
