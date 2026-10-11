@@ -18,6 +18,13 @@ export interface Principal {
   type: PrincipalType;
   roles?: string[];
   /**
+   * E-mail da conta, do claim `email` do token JÁ VERIFICADO (nenhuma chamada extra ao
+   * Firebase). É PII: o `CerbosAuthorizationAdapter` monta o payload campo a campo e não
+   * o envia, e nenhum log imprime o principal inteiro. Ausente = o token não traz e-mail.
+   * Quem expõe em `req.user.email` (minúsculo) é o `AuthMiddleware`, num ponto só.
+   */
+  email?: string;
+  /**
    * O que a conta É (`staff` | `worker`; obra social e paciente virão) — custom
    * claim `account_type` / coluna `users.account_type` (D294). É a fronteira
    * staff × prestador; o que a conta PODE é a célula do grupo. Ausente = a

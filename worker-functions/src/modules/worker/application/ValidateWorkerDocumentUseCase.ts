@@ -2,6 +2,7 @@ import { IWorkerDocumentsRepository } from '../infrastructure/WorkerDocumentsRep
 import { ValidateDocumentDTO, WorkerDocuments } from '../domain/WorkerDocuments';
 import { DocumentType } from '../infrastructure/GCSStorageService';
 import { logger } from '@shared/logging';
+import { maskEmailForLog } from '@shared/utils/emailMask';
 
 const VALID_DOC_TYPES: DocumentType[] = [
   'resume_cv', 'identity_document', 'identity_document_back', 'criminal_record',
@@ -37,7 +38,7 @@ export class ValidateWorkerDocumentUseCase {
 
   async execute(dto: ValidateDocumentDTO): Promise<WorkerDocuments> {
     const log = logger.child({ workerId: dto.workerId });
-    log.info({ msg: '[ValidateWorkerDocumentUseCase] START', docType: dto.docType, adminEmail: dto.adminEmail });
+    log.info({ msg: '[ValidateWorkerDocumentUseCase] START', docType: dto.docType, adminEmail: maskEmailForLog(dto.adminEmail) });
 
     if (!VALID_DOC_TYPES.includes(dto.docType as DocumentType)) {
       throw new Error(
