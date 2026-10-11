@@ -10,6 +10,7 @@
 import { Pool } from 'pg';
 import { montarAppDeFamilia, type AppDeFamilia } from './helpers/permissionFamilyHarness';
 import { FakeMeetConference } from '../../src/modules/matching/infrastructure/doubles/FakeMeetConference';
+import { criarEscopoDeEnv } from './helpers/admissionHarnessKit';
 import { capturingLogger } from '../../src/modules/matching/infrastructure/doubles/admissionTestKit';
 import type { AdmissionPostCallJob } from '../../src/modules/matching/application/AdmissionPostCallJob';
 
@@ -38,12 +39,7 @@ describe('job de 15 min da admissão — fim real, no_show e silêncio (spec 049
   let seq = 0;
   const patients: Record<'ok' | 'semConsentimento' | 'semTelefone' | 'teste', string> = { ok: '', semConsentimento: '', semTelefone: '', teste: '' };
   const patientIds = (): string[] => Object.values(patients);
-  const envAnterior: Record<string, string | undefined> = {};
-  function setEnv(k: string, v: string | undefined): void {
-    if (!(k in envAnterior)) envAnterior[k] = process.env[k];
-    if (v === undefined) delete process.env[k];
-    else process.env[k] = v;
-  }
+  const env = criarEscopoDeEnv();
 
   const code = (): string => `ADM-${(RUN + String(seq).padStart(3, '0')).toUpperCase().slice(-6)}`;
 
@@ -78,7 +74,7 @@ describe('job de 15 min da admissão — fim real, no_show e silêncio (spec 049
 
   const row = async (id: string) =>
     (await admin.query(
-      `SELECT status, import_status, conference_ended_at, meet_space_name, import_attempts, updated_at FROM admission_appointments WHERE id = $1`, [id])).rows[0];
+      `SELECT status, import_status, conference_started_at, conference_ended_at, meet_space_name, import_attempts, updated_at FROM admission_appointments WHERE id = $1`, [id])).rows[0];
   const events = async (id: string, like = '%') =>
     (await admin.query(`SELECT kind, outcome, reason, ref FROM admission_events WHERE appointment_id = $1 AND kind LIKE $2 ORDER BY at, kind`, [id, like])).rows as
       Array<{ kind: string; outcome: string | null; reason: string | null; ref: Record<string, unknown> | null }>;
@@ -93,9 +89,7 @@ describe('job de 15 min da admissão — fim real, no_show e silêncio (spec 049
 
   beforeAll(async () => {
     admin = new Pool({ connectionString: DATABASE_URL });
-    setEnv('USE_MOCK_AUTH', 'true');
-    setEnv('DATABASE_URL', DATABASE_URL);
-    setEnv('INTERNAL_TOKEN_SECRET', SECRET);
+    env.setAll({ USE_MOCK_AUTH: 'true', DATABASE_URL, INTERNAL_TOKEN_SECRET: SECRET });
 
     const mk = async (tag: string, o: { consent: boolean | null; phone: string | null; test: boolean }): Promise<string> => {
       const { rows } = await admin.query(
@@ -147,10 +141,7 @@ describe('job de 15 min da admissão — fim real, no_show e silêncio (spec 049
     const { DatabaseConnection } = await import('@shared/database/DatabaseConnection');
     await DatabaseConnection.getInstance().close();
     await admin.end();
-    for (const [k, v] of Object.entries(envAnterior)) {
-      if (v === undefined) delete process.env[k];
-      else process.env[k] = v;
-    }
+    env.restaurar();
   });
 
   // ── A5-1 ─────────────────────────────────────────────────────────────────────────────────────────
@@ -170,8 +161,10 @@ describe('job de 15 min da admissão — fim real, no_show e silêncio (spec 049
     expect(after1.status).toBe('booked');
     expect(new Date(after1.conference_ended_at).toISOString()).toBe(t1.toISOString());
     expect(after1.meet_space_name).toBe(`spaces/${MEET_CODE}`);
-    const ev1 = await events(id);
+    // F14: a trilha ganhou `conference_started` (1×); o fim continua UM `conference_ended`, com os mesmos ids
+    const ev1 = await events(id, 'conference_ended');
     expect(ev1).toHaveLength(1);
+    expect(await events(id, 'conference_started')).toHaveLength(1);
     expect(ev1[0]).toMatchObject({ kind: 'conference_ended', outcome: 'ended' });
     expect(ev1[0].ref).toMatchObject({ parts: 2, conferenceRecords: 'conferenceRecords/p1,conferenceRecords/p2' });
 
@@ -179,19 +172,24 @@ describe('job de 15 min da admissão — fim real, no_show e silêncio (spec 049
     const callsBefore = fake.listCalls.length;
     await job.runOnce(clock);
     expect(await row(id)).toEqual(after1);
-    expect(await events(id)).toEqual(ev1);
+    expect(await events(id, 'conference_ended')).toEqual(ev1);
+    expect(await events(id, 'conference_started')).toHaveLength(1);
     expect(fake.listCalls.length).toBe(callsBefore);
   });
 
-  it('A5-1: conferência ainda ABERTA (sem endTime) → NADA muda (nem estado, nem trilha, nem updated_at)', async () => {
+  it('A5-1: conferência ainda ABERTA (sem endTime) → NADA muda no estado nem no fim; só o INÍCIO é gravado (F14, A14-1: coluna + 1 evento `conference_started`)', async () => {
     const id = await appt({ startedMinAgo: 40, meetSpace: `spaces/${MEET_CODE}` });
     fake.setRecords(MEET_CODE, [{ name: 'conferenceRecords/aberta', startTime: new Date(clock.getTime() - 38 * MIN), endTime: null }]);
     const before = await row(id);
     const s = await job.runOnce(clock);
     expect(s.waiting).toBeGreaterThanOrEqual(1);
     expect(fake.listCalls).toContain(`spaces/${MEET_CODE}`); // a Meet API FOI consultada (o "nada muda" não é "nem olhou")
-    expect(await row(id)).toEqual(before);
-    expect(await events(id)).toEqual([]);
+    const { updated_at: _u0, conference_started_at: eraNulo, ...antes } = before;
+    expect(eraNulo).toBeNull();
+    const { updated_at: _u1, conference_started_at: iniciou, ...depois } = await row(id);
+    expect(depois).toEqual(antes);
+    expect(new Date(iniciou).toISOString()).toBe(new Date(clock.getTime() - 38 * MIN).toISOString());
+    expect((await events(id)).map((e) => e.kind)).toEqual(['conference_started']);
   });
 
   it('A5-1: reunião ANTIGA (sem código ADM), cancelada, ou com fim há mais de 72 h → fora do job (a Meet API nem é consultada)', async () => {
@@ -253,7 +251,7 @@ describe('job de 15 min da admissão — fim real, no_show e silêncio (spec 049
     fake.setRecords(MEET_CODE, [{ name: 'conferenceRecords/ok', startTime: new Date(clock.getTime() - 88 * MIN), endTime: new Date(clock.getTime() - 60 * MIN) }]);
     await job.runOnce(clock);
     expect(await row(id)).toMatchObject({ status: 'booked', import_status: 'pending' });
-    expect((await events(id)).map((e) => [e.kind, e.reason])).toEqual([['import_blocked', 'meet_scope_missing'], ['conference_ended', 'unblocked']]);
+    expect((await events(id)).map((e) => [e.kind, e.reason])).toEqual([['import_blocked', 'meet_scope_missing'], ['conference_ended', 'unblocked'], ['conference_started', null]]);
   });
 
   it('A5-3: falha transitória (rede/5xx) não prova nada: estado e trilha intactos, contada como transient; reunião sem link do Meet → blocked no_meet_link', async () => {
@@ -278,7 +276,8 @@ describe('job de 15 min da admissão — fim real, no_show e silêncio (spec 049
     const [a, b] = await Promise.all([job.runOnce(clock), job.runOnce(clock)]);
     expect(a.ended + b.ended).toBe(1);
     expect(a.skippedLocked + b.skippedLocked).toBeGreaterThanOrEqual(1);
-    expect(await events(id)).toHaveLength(1);
+    expect(await events(id, 'conference_ended')).toHaveLength(1);
+    expect(await events(id, 'conference_started')).toHaveLength(1);
     expect((await row(id)).import_status).toBe('pending');
   });
 

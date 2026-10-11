@@ -13,6 +13,7 @@
 import {
   NotificationRepository,
   type AdmissionTactiqLinkPayload,
+  type AdmissionTactiqExtensionPayload,
   type NotificationTypeCode,
   type PtContactsPendingPayload,
 } from '../infrastructure/NotificationRepository';
@@ -38,7 +39,7 @@ export interface NotificationDto {
    *  origem É o root, ou quando não há `messageId` no evento. */
   rootMessageId: string | null;
   /** spec 048: SÓ no tipo `THERAPEUTIC_PROJECT_CONTACTS_PENDING` (4 chaves, ids + nome de campo); `null` nos de conversa. */
-  payload: PtContactsPendingPayload | AdmissionTactiqLinkPayload | null;
+  payload: PtContactsPendingPayload | AdmissionTactiqLinkPayload | AdmissionTactiqExtensionPayload | null;
   /** spec 048: número do Caso (`patients.case_number`) do tipo do PT — o sino NUNCA mostra o nome do paciente nele. */
   patientCaseNumber: number | null;
   /** Item 2 (card com trecho, F7/F8): MESMO gate de `patientDisplayName` — só resolvido quando o
@@ -117,11 +118,18 @@ export class GetNotificationsUseCase {
 const isSystemPtType = (code: NotificationTypeCode): boolean => code === 'THERAPEUTIC_PROJECT_CONTACTS_PENDING';
 
 /** Payload por tipo: o do PT (4 chaves) ou o da admissão (`reason`); conversa não tem payload. */
-function payloadOf(code: NotificationTypeCode, raw: Record<string, unknown> | null): PtContactsPendingPayload | AdmissionTactiqLinkPayload | null {
+function payloadOf(
+  code: NotificationTypeCode,
+  raw: Record<string, unknown> | null,
+): PtContactsPendingPayload | AdmissionTactiqLinkPayload | AdmissionTactiqExtensionPayload | null {
   if (isSystemPtType(code)) return ptPayloadOf(raw);
   if (code === 'ADMISSION_TACTIQ_LINK_REQUIRED') {
     const reason = raw?.reason;
     return reason === 'missing' || reason === 'broken' || reason === 'wrong_account' ? { reason } : null;
+  }
+  if (code === 'ADMISSION_TACTIQ_EXTENSION_CHANGED') {
+    const state = raw?.state;
+    return state === 'installed' || state === 'missing' || state === 'disabled' ? { state } : null;
   }
   return null;
 }

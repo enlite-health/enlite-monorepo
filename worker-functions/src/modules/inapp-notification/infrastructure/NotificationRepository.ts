@@ -40,7 +40,8 @@ export type NotificationTypeCode =
   | 'CONVERSATION_MENTIONED'
   | 'CONVERSATION_REPLIED'
   | 'THERAPEUTIC_PROJECT_CONTACTS_PENDING'
-  | 'ADMISSION_TACTIQ_LINK_REQUIRED';
+  | 'ADMISSION_TACTIQ_LINK_REQUIRED'
+  | 'ADMISSION_TACTIQ_EXTENSION_CHANGED';
 
 /**
  * Payload do aviso de contatos pendentes do PT (spec 048): SÓ ids e nomes de campo — nunca nome do
@@ -62,6 +63,15 @@ export interface AdmissionTactiqLinkPayload {
   reason: AdmissionTactiqLinkReason;
 }
 
+/**
+ * Payload do aviso "a extensão do Tactiq mudou no seu Chrome" (spec 050 F15, R-3): SÓ o estado novo, de um conjunto fechado —
+ * nunca e-mail, nome, id de perfil/dispositivo. Construído por `buildAdmissionTactiqExtensionPayload`.
+ */
+export type AdmissionTactiqExtensionState = 'installed' | 'missing' | 'disabled';
+export interface AdmissionTactiqExtensionPayload {
+  state: AdmissionTactiqExtensionState;
+}
+
 export interface InsertNotificationEventInput {
   typeCode: NotificationTypeCode;
   actorUid: string;
@@ -69,7 +79,7 @@ export interface InsertNotificationEventInput {
   conversationId: string | null;
   messageId: string | null;
   /** Metadado SÓ-ids (461). Omitido = `'{}'`. Hoje só o tipo do PT grava aqui. */
-  payload?: PtContactsPendingPayload | AdmissionTactiqLinkPayload;
+  payload?: PtContactsPendingPayload | AdmissionTactiqLinkPayload | AdmissionTactiqExtensionPayload;
 }
 
 export interface NotificationEventRow {

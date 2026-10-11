@@ -62,6 +62,10 @@ export interface AdmissionAppointment {
   hostEmail: string;
   slotStart: string;
   slotEnd: string;
+  /** Início real da reunião (menor `startTime` do Meet, spec 050 F14); null = o job ainda não observou conferência. */
+  conferenceStartedAt: string | null;
+  /** Fim real (maior `endTime`); null = ainda não terminou / não observado. */
+  conferenceEndedAt: string | null;
   status: AdmissionAppointmentStatus | string;
   /** Cancelada e o Google ainda não apagou o evento (spec 050 R-36); o job repete até apagar. */
   calendarEventPending: boolean;

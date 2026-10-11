@@ -31,7 +31,8 @@ export async function readCreatedEvent(
   }
   if (!res.ok) {
     const detail = await res.text().catch(() => '');
-    throw new Error(`[AdmissionCalendarService] createEvent ${res.status} on ${calendarId}: ${detail}`);
+    // `status` numérico na propriedade: quem registra a falha lê o número, nunca a mensagem (que carrega o corpo da resposta).
+    throw Object.assign(new Error(`[AdmissionCalendarService] createEvent ${res.status} on ${calendarId}: ${detail}`), { status: res.status });
   }
   const created = (await res.json()) as RawCreated;
   return { eventId: created.id ?? '', meetLink: created.hangoutLink ?? '' };

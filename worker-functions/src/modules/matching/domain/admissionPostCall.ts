@@ -25,3 +25,12 @@ export function decidePostCall(input: { now: Date; slotStart: Date; records: rea
   const endedAt = new Date(Math.max(...records.map((r) => (r.endTime as Date).getTime())));
   return { kind: 'ended', endedAt, recordNames: records.map((r) => r.name) };
 }
+
+/**
+ * O início real da reunião (spec 050, R-7): o MENOR `startTime` entre as conferências do espaço. Sem conferência, `null` (nada
+ * observado). Função à parte da decisão de fim: ler o início não muda `no_show` nem o fim.
+ */
+export function earliestConferenceStart(records: readonly MeetConferenceRecord[]): Date | null {
+  if (records.length === 0) return null;
+  return new Date(Math.min(...records.map((r) => r.startTime.getTime())));
+}

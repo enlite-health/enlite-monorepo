@@ -12,6 +12,8 @@ export interface PostCallCandidate {
   meet_space_name: string | null;
   slot_start: Date;
   slot_end: Date;
+  /** Início real já gravado (F14); `null` = nenhuma conferência observada ainda. */
+  conference_started_at: Date | null;
   import_status: string | null;
   /** `patients.is_test` — a entrada da função `admissionRealm` (R-18). */
   patient_is_test: boolean;
@@ -28,7 +30,8 @@ export const DELIVERY_NO_STATUS_HOURS = 24;
 
 /**
  * Elegível para o job: reunião NOVA (tem código ADM — as antigas ficam fora da importação, migration 503), ainda `booked`,
- * cujo fim passou há menos de 72 h e que não está em estado terminal. `blocked` volta à fila: o bloqueio por escopo some
+ * que JÁ COMEÇOU pela hora marcada (F14: o job passa a ver o início real; antes só olhava depois do fim marcado — o fim e o
+ * `no_show` continuam só depois do fim marcado, ver `AdmissionPostCallJob`) e cujo fim passou há menos de 72 h e que não está em estado terminal. `blocked` volta à fila: o bloqueio por escopo some
  * quando o H2 é liberado, e a reunião não pode ficar perdida para sempre.
  * `conference_ended_at IS NULL` (F6): depois que o fim real foi gravado, a reunião é da IMPORTAÇÃO (`pending|waiting|blocked` por
  * vínculo). Sem isto este job devolveria `waiting`/`blocked` da F6 a `pending` a cada 15 min, com um `conference_ended` novo na trilha.
@@ -39,7 +42,7 @@ export const DELIVERY_NO_STATUS_HOURS = 24;
 const ELIGIBLE = `
   a.status = 'booked'
   AND a.admission_code IS NOT NULL
-  AND a.slot_end < $1
+  AND a.slot_start <= $1
   AND a.slot_end >= $1::timestamptz - make_interval(hours => ${POST_CALL_WINDOW_HOURS})
   AND a.conference_ended_at IS NULL
   AND (a.import_status IS NULL OR a.import_status IN ('waiting', 'blocked'))
@@ -64,7 +67,7 @@ export class AdmissionPostCallRepository {
   /** A trava da reunião: quem não a consegue (outra execução com ela) recebe `null` e segue adiante. */
   async lockCandidate(id: string, now: Date, ex: Ex): Promise<PostCallCandidate | null> {
     const { rows } = await ex.query<PostCallCandidate>(
-      `SELECT a.id, a.host_email, a.meet_link, a.meet_space_name, a.slot_start, a.slot_end, a.import_status,
+      `SELECT a.id, a.host_email, a.meet_link, a.meet_space_name, a.slot_start, a.slot_end, a.conference_started_at, a.import_status,
               p.is_test IS TRUE AS patient_is_test, ${rehearsalUntilSql('a')} AS rehearsal_until
          FROM admission_appointments a
          JOIN patients p ON p.id = a.patient_id
@@ -77,6 +80,14 @@ export class AdmissionPostCallRepository {
 
   async saveSpace(id: string, spaceName: string, ex: Ex): Promise<void> {
     await ex.query(`UPDATE admission_appointments SET meet_space_name = $2, updated_at = NOW() WHERE id = $1`, [id, spaceName]);
+  }
+
+  /** F14: grava o MENOR início observado (nunca anda para frente). Chamado só quando muda — o job compara antes. */
+  async markConferenceStarted(id: string, startedAt: Date, ex: Ex): Promise<void> {
+    await ex.query(
+      `UPDATE admission_appointments SET conference_started_at = LEAST(COALESCE(conference_started_at, $2), $2), updated_at = NOW() WHERE id = $1`,
+      [id, startedAt],
+    );
   }
 
   async markConferenceEnded(id: string, endedAt: Date, ex: Ex): Promise<void> {

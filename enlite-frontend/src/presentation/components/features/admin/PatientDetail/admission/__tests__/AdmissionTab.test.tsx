@@ -135,6 +135,23 @@ describe('A10-2 — cancelada com o evento do Google pendente (spec 050 R-36)', 
   });
 });
 
+describe('A14-4 — início e fim reais da reunião (spec 050 R-7)', () => {
+  it('com início e fim: mostra os dois horários no fuso do país; só início (em andamento): só o início; sem conferência: nenhum', async () => {
+    api.listAppointments.mockResolvedValue([
+      appt({ id: 'completa', conferenceStartedAt: '2026-10-13T15:04:00.000Z', conferenceEndedAt: '2026-10-13T15:52:00.000Z' }),
+      appt({ id: 'andamento', conferenceStartedAt: '2026-10-13T15:07:00.000Z', conferenceEndedAt: null }),
+      appt({ id: 'nada' }),
+    ]);
+    renderTab();
+    expect(await screen.findByTestId('admission-conference-start-completa')).toHaveTextContent('Inicio real 12:04');
+    expect(screen.getByTestId('admission-conference-end-completa')).toHaveTextContent('Fin real 12:52');
+    expect(screen.getByTestId('admission-conference-start-andamento')).toHaveTextContent('Inicio real 12:07');
+    expect(screen.queryByTestId('admission-conference-end-andamento')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('admission-conference-start-nada')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('admission-conference-end-nada')).not.toBeInTheDocument();
+  });
+});
+
 describe('fuso do país do paciente', () => {
   it('entrega ao Intl o timeZone do país (BR → São Paulo, AR → Buenos Aires), nunca o do navegador', async () => {
     api.listAppointments.mockResolvedValue([appt()]);

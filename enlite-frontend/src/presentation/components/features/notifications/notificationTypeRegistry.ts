@@ -13,7 +13,7 @@
  * `patientDisplayName` nulos) — texto neutro com o nome do ator, deep-link igual ao padrão
  * (navega se houver `patientId`, D-08).
  */
-import type { AdminNotification, AdmissionTactiqLinkReason, NotificationTypeCode } from '@infrastructure/http/AdminNotificationApiService';
+import type { AdminNotification, AdmissionTactiqExtensionState, AdmissionTactiqLinkReason, NotificationTypeCode } from '@infrastructure/http/AdminNotificationApiService';
 import type { DrawerFocusRequest } from '@hooks/admin/useAutoOpenDrawer';
 import { formatCaseNumber } from '@domain/value-objects/caseNumberFormat';
 
@@ -94,6 +94,12 @@ function tactiqReason(n: AdminNotification): AdmissionTactiqLinkReason {
   return reason === 'wrong_account' || reason === 'broken' ? reason : 'missing';
 }
 
+/** spec 050 F15: o estado novo decide a frase; payload ausente/estranho cai no texto de "não está ativa" (nunca no de "instalada"). */
+function tactiqExtensionState(n: AdminNotification): AdmissionTactiqExtensionState {
+  const state = n.payload && 'state' in n.payload ? n.payload.state : null;
+  return state === 'installed' || state === 'disabled' ? state : 'missing';
+}
+
 /** A tela do próprio operador, não a ficha de um paciente: sem `focusRequest`. */
 export const TACTIQ_LINK_PATH = '/admin/mi-cuenta/tactiq';
 
@@ -119,6 +125,13 @@ const REGISTRY: Record<NotificationTypeCode, NotificationTypeHandler> = {
     actorLabel: (_n, t) => t('admin.notifications.ptContactsPendingActor'),
     contextLine: (_n, t) => t('admin.notifications.tactiq.action'),
     detailLine: (n, t) => t(`admin.notifications.tactiq.${tactiqReason(n)}`),
+  },
+  ADMISSION_TACTIQ_EXTENSION_CHANGED: {
+    buildText: (n, t) => t(`admin.notifications.tactiqExtension.${tactiqExtensionState(n)}`),
+    getDeepLink: () => ({ path: TACTIQ_LINK_PATH }),
+    actorLabel: (_n, t) => t('admin.notifications.ptContactsPendingActor'),
+    contextLine: (_n, t) => t('admin.notifications.tactiq.action'),
+    detailLine: (n, t) => t(`admin.notifications.tactiqExtension.${tactiqExtensionState(n)}`),
   },
 };
 

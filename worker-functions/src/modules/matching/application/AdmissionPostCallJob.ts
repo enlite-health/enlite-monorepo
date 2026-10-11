@@ -5,7 +5,7 @@ import { logger } from '@shared/logging';
 import { MEET_LINK_REGEX, extractMeetingCode } from '../infrastructure/GoogleCalendarEventFinder';
 import type { AdmissionPostCallRepository, PostCallCandidate } from '../infrastructure/AdmissionPostCallRepository';
 import type { AdmissionEventRepository } from '../infrastructure/AdmissionEventRepository';
-import { decidePostCall } from '../domain/admissionPostCall';
+import { decidePostCall, earliestConferenceStart } from '../domain/admissionPostCall';
 import { SKIPPED_TEST_EVENT, admissionRealm, isBlockedFromPaidPath } from '../domain/admissionRealm';
 import { MeetScopeMissingError, MeetTransientError, type MeetConferencePort } from './ports/MeetConferencePort';
 import type { AdmissionLogger } from './AdmissionMessagingService';
@@ -51,7 +51,8 @@ const emptySummary = (): PostCallSummary => ({
 /**
  * AdmissionPostCallJob — o job de 15 min, parte 1 (spec 049 F5, §3.3 e §5.3). Roda em `POST /api/internal/jobs/admission-post-call`.
  *
- *  1. Fim REAL da call, pelo Google (Meet REST API) e não pela hora marcada: todas as conferências terminadas →
+ *  1. Início REAL (F14, R-7): desde a hora marcada, o MENOR `startTime` vai para `conference_started_at` (+ evento `conference_started` 1×).
+ *     Fim REAL da call, pelo Google (Meet REST API) e não pela hora marcada: todas as conferências terminadas →
  *     `conference_ended_at` = o maior `endTime` e `import_status='pending'` (a importação, F6, pega daí);
  *     nenhuma conferência até `slot_start + 1 h` → `no_show` (sem tocar Tactiq nem cofre); alguma aberta → espera, sem escrever nada.
  *  2. Escopo do Meet não delegado (H2 aberto) → `blocked reason=meet_scope_missing` + log de alarme. NUNCA `no_show`.
@@ -122,6 +123,11 @@ export class AdmissionPostCallJob {
           await this.deps.repo.saveSpace(appt.id, space, cli);
         }
         const records = await this.deps.meet.listConferenceRecords(space, appt.host_email);
+        await this.recordStart(appt, records, cli);
+
+        // F14: o job passa a olhar desde a hora marcada só para gravar o INÍCIO. O fim e o `no_show` seguem decididos só depois
+        // do fim marcado, como antes (a regra de `decidePostCall` não muda): antes disso a reunião apenas espera.
+        if (now.getTime() < appt.slot_end.getTime()) return 'waiting';
         const decision = decidePostCall({ now, slotStart: appt.slot_start, records });
 
         if (decision.kind === 'wait') return 'waiting';
@@ -155,6 +161,24 @@ export class AdmissionPostCallJob {
         throw err;
       }
     });
+  }
+
+  /**
+   * F14 (R-7): grava o MENOR `startTime` observado (`conference_started_at`) e, na PRIMEIRA vez, o evento `conference_started` na
+   * trilha. O início só anda para trás (conferência mais antiga aparecendo depois). Sem conferência não escreve nada.
+   */
+  private async recordStart(appt: PostCallCandidate, records: Parameters<typeof earliestConferenceStart>[0], cli: Parameters<AdmissionPostCallRepository['markBlocked']>[1]): Promise<void> {
+    const startedAt = earliestConferenceStart(records);
+    if (!startedAt) return;
+    const known = appt.conference_started_at ? new Date(appt.conference_started_at).getTime() : null;
+    if (known !== null && known <= startedAt.getTime()) return;
+    await this.deps.repo.markConferenceStarted(appt.id, startedAt, cli);
+    if (known !== null) return;
+    await this.deps.events.append(
+      { appointmentId: appt.id, kind: 'conference_started', outcome: 'started', ref: { parts: records.length, startedAt: startedAt.toISOString() } },
+      cli,
+    );
+    this.log.info({ appointmentId: appt.id, parts: records.length }, 'admission.conference_started');
   }
 
   /** `blocked` com motivo. O evento da trilha entra só na TRANSIÇÃO; o log de alarme sai a cada execução enquanto durar. */

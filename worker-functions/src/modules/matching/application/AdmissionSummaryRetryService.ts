@@ -1,5 +1,6 @@
 import type { Pool } from 'pg';
 import { withActorContext } from '@shared/database/actorContext';
+import { withSystemDbContext } from '@shared/database/requestDbSession';
 import { logger } from '@shared/logging';
 import { MAX_SUMMARY_ATTEMPTS } from './ports/AdmissionImportPorts';
 import {
@@ -13,6 +14,9 @@ import type { AdmissionEventRepository } from '../infrastructure/AdmissionEventR
 import type { AdmissionImportRepository } from '../infrastructure/AdmissionImportRepository';
 import { AppointmentNotFoundError, SummaryRetryLimitReachedError, SummaryRetryNotAllowedError } from './AdmissionPanelErrors';
 import type { AdmissionLogger } from './AdmissionMessagingService';
+
+/** Rótulo do contexto de sistema da importação: o MESMO do job da fila (`systemContextMiddleware` em `index.ts`). */
+const IMPORT_SYSTEM_CONTEXT = 'job:admission-import';
 
 /** O que o botão precisa da importação: rodar UMA reunião agora (o `AdmissionImportService` cumpre). */
 export interface SummaryImportNow {
@@ -103,6 +107,9 @@ export class AdmissionSummaryRetryService {
     };
     this.log.info({ appointmentId, mode: step.mode, authorizationsUsed: step.authorizations }, 'admission.summary_retry');
     if (step.mode === 'authorized') return base;
-    return { ...base, outcome: await this.deps.importer.importOne(appointmentId) };
+    // A autorização do staff já foi checada na rota (célula `retry_summary`). A importação em si é trabalho de SISTEMA, o mesmo do job da
+    // fila: o segredo do vínculo Tactiq (`tactiq_link_secrets`) só o papel de sistema lê; no contexto do staff (runtime) vira `no_link` falso.
+    const outcome = await withSystemDbContext(IMPORT_SYSTEM_CONTEXT, () => this.deps.importer.importOne(appointmentId));
+    return { ...base, outcome };
   }
 }

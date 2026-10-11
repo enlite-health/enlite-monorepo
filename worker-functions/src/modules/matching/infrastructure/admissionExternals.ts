@@ -15,6 +15,9 @@ import type { TactiqMcpPort, TactiqOAuthPort } from '../application/ports/Tactiq
 import { FakeTactiqMcp, FakeTactiqOAuth } from './doubles/FakeTactiq';
 import { TactiqMcpClient } from './tactiq/TactiqMcpClient';
 import { TactiqOAuthClient } from './tactiq/TactiqOAuthClient';
+import type { ChromeReportPort } from '../application/ports/ChromeReportPort';
+import { FakeChromeReport } from './doubles/FakeChromeReport';
+import { GoogleChromeManagementClient } from './GoogleChromeManagementClient';
 import type { MeetConferencePort } from '../application/ports/MeetConferencePort';
 import { FakeMeetConference } from './doubles/FakeMeetConference';
 import { GoogleMeetConferenceClient } from './GoogleMeetConferenceClient';
@@ -45,6 +48,8 @@ export interface AdmissionExternals {
   tactiq: { oauth: TactiqOAuthPort; mcp: TactiqMcpPort };
   /** Meet REST API (spec 049 F5): fim real da call. Dublê em `fake`; o adapter real LANÇA no construtor com NODE_ENV=test. */
   meet: MeetConferencePort;
+  /** Relatório do Chrome (spec 050 F15). Dublê em `fake`; o real NÃO tem rede até a F18 (rejeita `not_released`) e LANÇA no construtor com NODE_ENV=test. */
+  chrome: ChromeReportPort;
   /** Cofre da transcrição (spec 049 F6): só cria. Em `fake`, em memória com a mesma semântica; o real LANÇA no construtor com NODE_ENV=test. */
   vault: TranscriptVaultPort;
   /** Bucket de ENSAIO (spec 050 R-29): a mesma porta, outro destino (`ADMISSION_REHEARSAL_BUCKET`). Escolhido pelo `realm`, nunca por `if` no serviço. */
@@ -94,6 +99,7 @@ export function createAdmissionExternals(env: AdmissionExternalsEnv, deps: Admis
       calendar: testCalendar(env),
       tactiq: { oauth: new FakeTactiqOAuth(), mcp: new FakeTactiqMcp() },
       meet: new FakeMeetConference(),
+      chrome: new FakeChromeReport(),
       vault: new InMemoryTranscriptVault(),
       rehearsalVault: new InMemoryTranscriptVault(),
       summary: new FakeAdmissionSummaryGenerator(),
@@ -106,6 +112,7 @@ export function createAdmissionExternals(env: AdmissionExternalsEnv, deps: Admis
     calendar: admissionCalendarService,
     tactiq: { oauth: new TactiqOAuthClient(env as NodeJS.ProcessEnv), mcp: new TactiqMcpClient(env as NodeJS.ProcessEnv) },
     meet: new GoogleMeetConferenceClient(env as NodeJS.ProcessEnv),
+    chrome: new GoogleChromeManagementClient(env as NodeJS.ProcessEnv),
     vault: new GcsTranscriptVault({ env: env as NodeJS.ProcessEnv }),
     rehearsalVault: new GcsTranscriptVault({ env: env as NodeJS.ProcessEnv, bucketEnv: REHEARSAL_BUCKET_ENV }),
     summary: new VertexAdmissionSummaryGenerator(env as NodeJS.ProcessEnv),
