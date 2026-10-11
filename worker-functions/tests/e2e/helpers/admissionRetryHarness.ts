@@ -6,7 +6,8 @@
  * dono do banco, que bypassa RLS). A lição da F10: escrita com `db.connect()` cru passa com o dono e é recusada no runtime
  * (`rls_session_without_identity`); por isso o POST de autorização e a volta da reunião à fila são provados nos DOIS.
  *
- * Só as fronteiras de terceiros são dublê: Tactiq (token e MCP) e Vertex. O cofre e o bucket de documentos são o código de verdade
+ * Só as fronteiras de terceiros são dublê: Tactiq (cliente OAuth e MCP) e Vertex. O vínculo é o REAL (`TactiqLinkService` + `tactiq_link_secrets`,
+ * legível só pelo papel de sistema): o dublê do serviço escondeu o `no_link` falso do "roda agora" sob o runtime (gate do #676, 3ª sessão p3-1). O cofre e o bucket de documentos são o código de verdade
  * contra o fake-gcs (`GCS_EMULATOR_HOST`). A importação roda pela ROTA do job (contexto de sistema), como no Cloud Scheduler.
  * Dados sintéticos; nenhum texto de transcrição/resumo em log ou trilha (provado em A11-1).
  *
@@ -19,11 +20,11 @@ import {
   grupoComCelulas, limparIamFixtures, montarAppDeFamilia, tokenMock, TENANT_E2E, type AppDeFamilia,
 } from './permissionFamilyHarness';
 import { ensureLoginRole, dropLoginRoles, urlFor } from './loginRoles';
-import { FakeTactiqMcp } from '../../../src/modules/matching/infrastructure/doubles/FakeTactiq';
+import { FakeTactiqMcp, FakeTactiqOAuth } from '../../../src/modules/matching/infrastructure/doubles/FakeTactiq';
 import { FakeAdmissionSummaryGenerator } from '../../../src/modules/matching/infrastructure/doubles/FakeAdmissionSummaryGenerator';
 import { capturingLogger } from '../../../src/modules/matching/infrastructure/doubles/admissionTestKit';
 import { AdmissionSummaryError } from '../../../src/modules/matching/application/ports/AdmissionImportPorts';
-import type { TactiqAccessResult, TactiqMeetingItem } from '../../../src/modules/matching/application/ports/TactiqPorts';
+import type { TactiqMeetingItem } from '../../../src/modules/matching/application/ports/TactiqPorts';
 
 const DATABASE_URL =
   process.env.TEST_DATABASE_URL || process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
@@ -53,7 +54,9 @@ export function definirCenariosResumoRetry(conexao: ConexaoRetry, sufixo: string
     let seq = 0;
     const vertex = new FakeAdmissionSummaryGenerator();
     const mcp = new FakeTactiqMcp();
+    const oauth = new FakeTactiqOAuth();
     const logs = capturingLogger();
+    const b64 = (t: string): string => Buffer.from(t, 'utf8').toString('base64');
     const envAnterior: Record<string, string | undefined> = {};
     const clock = new Date();
     /**
@@ -97,6 +100,12 @@ export function definirCenariosResumoRetry(conexao: ConexaoRetry, sufixo: string
          VALUES ($1,'AR',$2,'Operadora Sintetica',$3,$4,'booked','https://meet.google.com/abc-defg-hij',$5,$6,$7,'pending') RETURNING id`,
         [patientId, host, start, new Date(start.getTime() + 30 * MIN), code, new Date(start.getTime() - 300 * MIN), new Date(clock.getTime() - 80 * MIN)],
       );
+      // Vínculo vivo da operadora (o REAL: token em `tactiq_link_secrets`, KMS em passthrough no NODE_ENV=test). O dublê do OAuth devolve `at-<refresh>`.
+      const link = await admin.query(
+        `INSERT INTO tactiq_links (host_email, firebase_uid, status, status_changed_at, last_notified_status) VALUES ($1,$2,'linked',$3,'linked') RETURNING id`,
+        [host, `adm050-ret-host-${seq}-${RUN}`, clock],
+      );
+      await admin.query(`INSERT INTO tactiq_link_secrets (link_id, refresh_token_encrypted) VALUES ($1,$2)`, [link.rows[0].id, b64(host)]);
       const item: TactiqMeetingItem = { id: `tq-${code}`, title: `${code} Admisión`, createdAt: start.toISOString(), durationSeconds: 1800 };
       mcp.meetingsByToken.set(`at-${host}`, [item]);
       mcp.pagesByMeeting.set(item.id, [{
@@ -125,6 +134,7 @@ export function definirCenariosResumoRetry(conexao: ConexaoRetry, sufixo: string
     }
 
     async function limpar(): Promise<void> {
+      await admin.query(`DELETE FROM tactiq_links WHERE lower(host_email) LIKE $1`, [`op%.${RUN.toLowerCase()}@example.test`]);
       await admin.query(`DELETE FROM patient_documents WHERE patient_id IN (SELECT id FROM patients WHERE clickup_task_id = $1)`, [`e2e-050-retry-${sufixo}`]);
       await admin.query(`DELETE FROM admission_appointments WHERE patient_id IN (SELECT id FROM patients WHERE clickup_task_id = $1)`, [`e2e-050-retry-${sufixo}`]);
       await admin.query(`DELETE FROM patients WHERE clickup_task_id = $1`, [`e2e-050-retry-${sufixo}`]);
@@ -197,11 +207,9 @@ export function definirCenariosResumoRetry(conexao: ConexaoRetry, sufixo: string
           const pool = DatabaseConnection.getInstance().getPool();
           const repo = new AdmissionImportRepository(pool);
           const eventsRepo = new AdmissionEventRepository(pool);
-          const tokens = {
-            accessTokenFor: async (email: string): Promise<TactiqAccessResult> => ({ ok: true, accessToken: `at-${email}` }),
-            markBroken: async () => true,
-            markWrongAccount: async () => true,
-          };
+          const { TactiqLinkService } = await import('../../../src/modules/matching/application/TactiqLinkService');
+          const { TactiqLinkRepository } = await import('../../../src/modules/matching/infrastructure/TactiqLinkRepository');
+          const tokens = new TactiqLinkService({ repo: new TactiqLinkRepository(pool), oauth, mcp, db: pool, log: logs.log, now: () => clock });
           const vault = new GcsTranscriptVault({ env: process.env, client: new Storage({ apiEndpoint: FAKE_GCS_URL, projectId: 'enlite-test' }) });
           const importer = new AdmissionImportService({
             repo, events: eventsRepo, tokens, mcp, vault, summary: vertex, db: pool, log: logs.log, now: () => clock,
@@ -229,6 +237,7 @@ export function definirCenariosResumoRetry(conexao: ConexaoRetry, sufixo: string
     beforeEach(() => {
       vertex.reset();
       mcp.reset();
+      oauth.refreshCalls.length = 0;
     });
 
     afterAll(async () => {
@@ -354,6 +363,39 @@ export function definirCenariosResumoRetry(conexao: ConexaoRetry, sufixo: string
       expect(r2.body.data).toMatchObject({ mode: 'run_now', outcome: 'done' });
       expect(await docs(a.id)).toBe(1);
       expect(await events(a.id, 'summary_retry_authorized')).toHaveLength(0);
+    });
+
+    it('C1-1: "roda agora" lê o vínculo REAL em contexto de sistema → importa e gera 1 documento (no runtime, sem isso o vínculo vira `no_link` falso)', async () => {
+      const a = await novaReuniao();
+      vertex.failWith = new AdmissionSummaryError('prompt_missing');
+      await runImportJob();
+      expect(await docs(a.id)).toBe(0);
+      vertex.failWith = null; // o prompt voltou
+      const antes = oauth.refreshCalls.length;
+      const r = await clicar(a.id, U.com);
+      expect(r.status).toBe(200);
+      expect(r.body.data).toMatchObject({ mode: 'run_now', outcome: 'done', authorizationsUsed: 0 });
+      expect(oauth.refreshCalls.length).toBeGreaterThan(antes); // o token do vínculo foi lido e usado
+      expect(await docs(a.id)).toBe(1);
+      expect(await importStatus(a.id)).toBe('done');
+      expect((await events(a.id, 'import_blocked')).filter((e) => e.reason === 'no_link')).toHaveLength(0);
+      expect(logs.output()).not.toContain(TEXTO_CLINICO);
+    });
+
+    it('C1-2: sem a célula → 403 e a importação NÃO roda (0 chamadas ao dublê do Tactiq); com a célula → ≥ 1 (controle)', async () => {
+      const a = await novaReuniao();
+      vertex.failWith = new AdmissionSummaryError('prompt_missing');
+      await runImportJob();
+      vertex.failWith = null;
+      const chamadas = () => oauth.refreshCalls.length + mcp.searchCalls.length;
+      const antes = chamadas();
+      const negado = await clicar(a.id, U.sem);
+      expect(negado.status).toBe(403);
+      expect(chamadas() - antes).toBe(0);
+      expect(await docs(a.id)).toBe(0);
+      expect((await clicar(a.id, U.com)).status).toBe(200);
+      expect(chamadas() - antes).toBeGreaterThanOrEqual(1);
+      expect(await docs(a.id)).toBe(1);
     });
 
     it('a lista da aba carrega o estado do botão: sem falha → null; `prompt_*` → só roda agora; esgotada → autoriza; teto gasto → 0 restantes (e o GET lê com o papel do runtime)', async () => {

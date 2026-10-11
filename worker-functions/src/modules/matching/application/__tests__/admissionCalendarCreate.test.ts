@@ -7,6 +7,7 @@ import {
   createEventWithRetry,
 } from '../admissionCalendarCreate';
 import type { AdmissionCalendarPort } from '../ports/AdmissionCalendarPort';
+import { logger } from '@shared/logging';
 
 const APPT = '3f2b8c1e-9a4d-4e7b-8c11-0123456789ab';
 const PARAMS = {
@@ -81,5 +82,51 @@ describe('createEventWithRetry', () => {
     const create = jest.fn().mockRejectedValue(new Error('x'));
     const del = jest.fn().mockRejectedValue(new Error('404'));
     await expect(createEventWithRetry(calendar(create, del), PARAMS, APPT, NO_WAIT)).rejects.toBeInstanceOf(CalendarCreateFailedError);
+  });
+});
+
+describe('C1-4: o log de falha do Calendar carrega o status HTTP numérico e nenhum corpo/PII', () => {
+  const CORPO = 'CORPO-DA-RESPOSTA-SINTETICO operadora.sintetica@example.test evento-id-de-pessoa';
+  const retryLogs = (spy: jest.SpyInstance) => spy.mock.calls.filter((c) => c[1] === 'admission.calendar_create_retry').map((c) => c[0] as Record<string, unknown>);
+
+  it('erro com status 503 → cada tentativa registra status=503 (número), e o log inteiro não contém o corpo, o e-mail nem o id do evento', async () => {
+    const spy = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+    try {
+      const erro = Object.assign(new Error(`[AdmissionCalendarService] createEvent 503 on cal@example.test: ${CORPO}`), { status: 503 });
+      const create = jest.fn().mockRejectedValue(erro);
+      await expect(createEventWithRetry(calendar(create), PARAMS, APPT, NO_WAIT)).rejects.toBeInstanceOf(CalendarCreateFailedError);
+      const logs = retryLogs(spy);
+      expect(logs).toHaveLength(3);
+      for (const l of logs) {
+        expect(l.status).toBe(503);
+        expect(typeof l.status).toBe('number');
+        expect(Object.keys(l).sort()).toEqual(['appointmentId', 'attempt', 'reason', 'status']);
+      }
+      const tudo = JSON.stringify(spy.mock.calls);
+      expect(tudo).not.toContain('CORPO-DA-RESPOSTA');
+      expect(tudo).not.toContain('example.test');
+      expect(tudo).not.toContain(calendarEventIdFor(APPT, 0));
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('controle: erro SEM status (rede) → status=null, e link vazio zera o status da tentativa anterior', async () => {
+    const spy = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
+    try {
+      const create = jest
+        .fn()
+        .mockRejectedValueOnce(Object.assign(new Error('x'), { status: 500 }))
+        .mockRejectedValueOnce(new Error('ECONNRESET'))
+        .mockResolvedValueOnce({ eventId: 'evt-x', meetLink: '' });
+      await expect(createEventWithRetry(calendar(create), PARAMS, APPT, NO_WAIT)).rejects.toBeInstanceOf(CalendarCreateFailedError);
+      expect(retryLogs(spy).map((l) => [l.reason, l.status])).toEqual([
+        ['create_error', 500],
+        ['create_error', null],
+        ['empty_event_or_link', null],
+      ]);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

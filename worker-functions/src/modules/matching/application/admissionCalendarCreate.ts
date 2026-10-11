@@ -39,6 +39,12 @@ export function calendarEventIdFor(appointmentId: string, generation: number): s
   return `${appointmentId.replace(/-/g, '').toLowerCase()}${'ghijklmnopqrstuv'[generation] ?? 'v'}`;
 }
 
+/** Status HTTP numérico da falha do Google (propriedade `status` do erro). Só o número: nunca a mensagem, que pode carregar o corpo da resposta. */
+export function httpStatusOf(err: unknown): number | null {
+  const status = typeof err === 'object' && err !== null ? (err as { status?: unknown }).status : undefined;
+  return typeof status === 'number' && Number.isInteger(status) ? status : null;
+}
+
 const sleepMs = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** Apagar o evento é compensação: falha aqui vira log, nunca esconde a causa original. */
@@ -58,6 +64,7 @@ export async function createEventWithRetry(
 ): Promise<{ eventId: string; meetLink: string }> {
   let generation = 0;
   let reason: CalendarCreateFailedError['reason'] = 'create_error';
+  let status: number | null = null;
   for (let attempt = 0; attempt <= delaysMs.length; attempt += 1) {
     if (attempt > 0) await sleepMs(delaysMs[attempt - 1]);
     const eventId = calendarEventIdFor(appointmentId, generation);
@@ -66,13 +73,15 @@ export async function createEventWithRetry(
       if (created.eventId && created.meetLink) return created;
       // R-35: evento sem id ou sem link do Meet não é confirmação. O que existir é apagado; o id apagado não se reaproveita.
       reason = 'empty_event_or_link';
+      status = null;
       if (created.eventId) await deleteQuietly(calendar, params, created.eventId, appointmentId);
       generation += 1;
-    } catch {
+    } catch (err) {
       // Resposta perdida: o evento pode existir. Mesma geração = mesmo id, e o Google não duplica.
       reason = 'create_error';
+      status = httpStatusOf(err);
     }
-    logger.warn({ appointmentId, attempt: attempt + 1, reason }, 'admission.calendar_create_retry');
+    logger.warn({ appointmentId, attempt: attempt + 1, reason, status }, 'admission.calendar_create_retry');
   }
   if (reason === 'create_error') await deleteQuietly(calendar, params, calendarEventIdFor(appointmentId, generation), appointmentId);
   throw new CalendarCreateFailedError(reason);

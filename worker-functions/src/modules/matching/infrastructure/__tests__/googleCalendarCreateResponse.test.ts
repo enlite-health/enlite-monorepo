@@ -50,4 +50,9 @@ describe('readCreatedEvent', () => {
   it('outro erro HTTP → erro com status e agenda', async () => {
     await expect(readCreatedEvent(resp(500, { error: 'x' }), CTX)).rejects.toThrow(/createEvent 500 on cal@example.test/);
   });
+
+  it('C1-4: o erro carrega o status HTTP como NÚMERO na propriedade `status` (é o que o log de falha lê, nunca a mensagem)', async () => {
+    await expect(readCreatedEvent(resp(503, { error: 'x' }), CTX)).rejects.toMatchObject({ status: 503 });
+    await expect(readCreatedEvent(resp(409), { ...CTX, eventId: undefined })).rejects.toMatchObject({ status: 409 });
+  });
 });
