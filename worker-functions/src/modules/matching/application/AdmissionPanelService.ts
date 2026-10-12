@@ -1,6 +1,7 @@
 import type { Pool } from 'pg';
 import { logger, loggingAls } from '@shared/logging';
 import type { AdmissionCountry } from '../domain/admissionCountries';
+import { callProgressOf, type CallProgress } from '../domain/admissionCallProgress';
 import { sealForMessage, type MessageSealView, type SealMessageRow } from '../domain/admissionSeals';
 import type { InterviewHost, InterviewHostRepository } from '../infrastructure/InterviewHostRepository';
 import type { AdmissionLogger, AdmissionMessagingService, DispatchOutcome } from './AdmissionMessagingService';
@@ -44,6 +45,8 @@ export interface AdmissionAppointmentView {
   /** Fim real (maior `endTime`, quando todas as conferências terminaram); `null` = ainda não terminou / não observado. */
   conferenceEndedAt: string | null;
   status: string;
+  /** Andamento da reunião (F29): o estado é decidido AQUI (`callProgressOf`); a tela só escolhe o texto pela chave. */
+  callProgress: CallProgress;
   /** Cancelada e o Google ainda não apagou o evento (R-36): o job repete até apagar. */
   calendarEventPending: boolean;
   /** Só enquanto a reunião está ativa e ainda não terminou. */
@@ -92,6 +95,8 @@ interface AppointmentRow {
   reminder_task_name: string | null;
   import_status: string | null;
   document_id: string | null;
+  document_created_at: Date | null;
+  reopened_after_summary_at: Date | null;
   calendar_event_pending: boolean;
 }
 
@@ -145,6 +150,8 @@ export class AdmissionPanelService {
               a.conference_started_at, a.conference_ended_at,
               a.meet_link, a.reminder_task_name, a.import_status,
               (SELECT d.id FROM patient_documents d WHERE d.source_appointment_id = a.id LIMIT 1) AS document_id,
+              (SELECT d.created_at FROM patient_documents d WHERE d.source_appointment_id = a.id LIMIT 1) AS document_created_at,
+              (SELECT min(e.at) FROM admission_events e WHERE e.appointment_id = a.id AND e.kind = 'conference_reopened' AND e.reason = 'after_summary') AS reopened_after_summary_at,
               ${pendingCalendarDeleteSql('a')} AS calendar_event_pending
          FROM admission_appointments a
         WHERE a.patient_id = $1 AND a.status <> 'calendar_failed'
@@ -179,6 +186,13 @@ export class AdmissionPanelService {
         conferenceStartedAt: a.conference_started_at ? new Date(a.conference_started_at).toISOString() : null,
         conferenceEndedAt: a.conference_ended_at ? new Date(a.conference_ended_at).toISOString() : null,
         status: a.status,
+        callProgress: callProgressOf({
+          conferenceStartedAt: a.conference_started_at ? new Date(a.conference_started_at) : null,
+          conferenceEndedAt: a.conference_ended_at ? new Date(a.conference_ended_at) : null,
+          importStatus: a.import_status,
+          summaryCreatedAt: a.document_created_at ? new Date(a.document_created_at) : null,
+          reopenedAfterSummaryAt: a.reopened_after_summary_at ? new Date(a.reopened_after_summary_at) : null,
+        }),
         calendarEventPending: a.calendar_event_pending,
         meetLink: a.status === 'booked' && slotEnd.getTime() > now.getTime() ? a.meet_link : null,
         seals: {
