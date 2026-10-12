@@ -2,13 +2,13 @@ import type { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { withActorContext } from '@shared/database/actorContext';
 import { logger } from '@shared/logging';
-import { MEET_LINK_REGEX, extractMeetingCode } from '../infrastructure/GoogleCalendarEventFinder';
 import type { AdmissionPostCallRepository, PostCallCandidate } from '../infrastructure/AdmissionPostCallRepository';
 import type { AdmissionEventRepository } from '../infrastructure/AdmissionEventRepository';
-import { decidePostCall, earliestConferenceStart } from '../domain/admissionPostCall';
+import { decidePostCall } from '../domain/admissionPostCall';
 import { SKIPPED_TEST_EVENT, admissionRealm, isBlockedFromPaidPath } from '../domain/admissionRealm';
 import { MeetScopeMissingError, MeetTransientError, type MeetConferencePort } from './ports/MeetConferencePort';
 import type { AdmissionLogger } from './AdmissionMessagingService';
+import { AdmissionConferenceObserver } from './AdmissionConferenceObserver';
 import { EMPTY_CALENDAR_SWEEP, type AdmissionCalendarSweeps, type CalendarSweepSummary } from './admissionCalendarSweeps';
 
 export interface PostCallSummary extends CalendarSweepSummary {
@@ -66,11 +66,13 @@ export class AdmissionPostCallJob {
   private readonly db: Pool;
   private readonly log: AdmissionLogger;
   private readonly now: () => Date;
+  private readonly observer: AdmissionConferenceObserver;
 
   constructor(private readonly deps: AdmissionPostCallJobDeps) {
     this.db = deps.db ?? DatabaseConnection.getInstance().getPool();
     this.log = deps.log ?? (logger as unknown as AdmissionLogger);
     this.now = deps.now ?? (() => new Date());
+    this.observer = new AdmissionConferenceObserver({ repo: deps.repo, meet: deps.meet, events: deps.events, log: this.log });
   }
 
   async runOnce(now: Date = this.now()): Promise<PostCallSummary> {
@@ -115,15 +117,8 @@ export class AdmissionPostCallJob {
       }
 
       try {
-        let space = appt.meet_space_name;
-        if (!space) {
-          const code = meetCodeOf(appt.meet_link);
-          if (!code) return await this.block(appt, 'no_meet_link', cli);
-          space = (await this.deps.meet.resolveSpace(code, appt.host_email)).spaceName;
-          await this.deps.repo.saveSpace(appt.id, space, cli);
-        }
-        const records = await this.deps.meet.listConferenceRecords(space, appt.host_email);
-        await this.recordStart(appt, records, cli);
+        const records = await this.observer.observe(appt, now, cli);
+        if (!records) return await this.block(appt, 'no_meet_link', cli);
 
         // F14: o job passa a olhar desde a hora marcada só para gravar o INÍCIO. O fim e o `no_show` seguem decididos só depois
         // do fim marcado, como antes (a regra de `decidePostCall` não muda): antes disso a reunião apenas espera.
@@ -139,7 +134,7 @@ export class AdmissionPostCallJob {
           return 'noShow';
         }
 
-        await this.deps.repo.markConferenceEnded(appt.id, decision.endedAt, cli);
+        await this.deps.repo.markConferenceEnded(appt.id, decision.endedAt, now, cli);
         await this.deps.events.append(
           {
             appointmentId: appt.id,
@@ -161,24 +156,6 @@ export class AdmissionPostCallJob {
         throw err;
       }
     });
-  }
-
-  /**
-   * F14 (R-7): grava o MENOR `startTime` observado (`conference_started_at`) e, na PRIMEIRA vez, o evento `conference_started` na
-   * trilha. O início só anda para trás (conferência mais antiga aparecendo depois). Sem conferência não escreve nada.
-   */
-  private async recordStart(appt: PostCallCandidate, records: Parameters<typeof earliestConferenceStart>[0], cli: Parameters<AdmissionPostCallRepository['markBlocked']>[1]): Promise<void> {
-    const startedAt = earliestConferenceStart(records);
-    if (!startedAt) return;
-    const known = appt.conference_started_at ? new Date(appt.conference_started_at).getTime() : null;
-    if (known !== null && known <= startedAt.getTime()) return;
-    await this.deps.repo.markConferenceStarted(appt.id, startedAt, cli);
-    if (known !== null) return;
-    await this.deps.events.append(
-      { appointmentId: appt.id, kind: 'conference_started', outcome: 'started', ref: { parts: records.length, startedAt: startedAt.toISOString() } },
-      cli,
-    );
-    this.log.info({ appointmentId: appt.id, parts: records.length }, 'admission.conference_started');
   }
 
   /** `blocked` com motivo. O evento da trilha entra só na TRANSIÇÃO; o log de alarme sai a cada execução enquanto durar. */
@@ -224,9 +201,4 @@ export class AdmissionPostCallJob {
       return 0;
     }
   }
-}
-
-function meetCodeOf(link: string | null): string | null {
-  if (!link || !MEET_LINK_REGEX.test(link.trim())) return null;
-  return extractMeetingCode(link) || null;
 }

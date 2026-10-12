@@ -1,0 +1,7 @@
+/**
+ * spec 050 F25 (R-48, R-54) — o que os dois jobs compartilham, com a conexão `dono`. Os cenários vivem em
+ * `helpers/admissionLiveCompartilhadoHarness.ts`; o par é `admission-050-live-compartilhado-runtime`.
+ */
+import { definirCenariosLiveCompartilhado } from './helpers/admissionLiveCompartilhadoHarness';
+
+definirCenariosLiveCompartilhado('dono', 'l2');

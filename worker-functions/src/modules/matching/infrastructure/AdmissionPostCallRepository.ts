@@ -33,8 +33,10 @@ export const DELIVERY_NO_STATUS_HOURS = 24;
  * que JÁ COMEÇOU pela hora marcada (F14: o job passa a ver o início real; antes só olhava depois do fim marcado — o fim e o
  * `no_show` continuam só depois do fim marcado, ver `AdmissionPostCallJob`) e cujo fim passou há menos de 72 h e que não está em estado terminal. `blocked` volta à fila: o bloqueio por escopo some
  * quando o H2 é liberado, e a reunião não pode ficar perdida para sempre.
- * `conference_ended_at IS NULL` (F6): depois que o fim real foi gravado, a reunião é da IMPORTAÇÃO (`pending|waiting|blocked` por
+ * `(conference_ended_at IS NULL OR import_status IS NULL)` (F6 + 050 F25): depois que o fim real foi gravado, a reunião é da IMPORTAÇÃO (`pending|waiting|blocked` por
  * vínculo). Sem isto este job devolveria `waiting`/`blocked` da F6 a `pending` a cada 15 min, com um `conference_ended` novo na trilha.
+ * O `OR import_status IS NULL` (F25, R-56): fim gravado SEM `pending` é o estado que só o job de 1 min cria (fim cedo demais, não
+ * armado); a rede o decide depois do fim marcado, como hoje. Fim com `pending` (ou `waiting|blocked|no_show`) NÃO volta à fila.
  * `skipped_test` desta etapa (spec 050, R-18): reunião de paciente `is_test` já registrada sai da fila — o evento é UM, e a
  * reunião não volta a ser lida a cada execução. Uma liberação do ensaio pago mais NOVA que o `skipped_test` a devolve à fila; a
  * expiração a tira de novo (o job grava outro `skipped_test`) — sem apagar evento (F3, R-19).
@@ -44,7 +46,7 @@ const ELIGIBLE = `
   AND a.admission_code IS NOT NULL
   AND a.slot_start <= $1
   AND a.slot_end >= $1::timestamptz - make_interval(hours => ${POST_CALL_WINDOW_HOURS})
-  AND a.conference_ended_at IS NULL
+  AND (a.conference_ended_at IS NULL OR a.import_status IS NULL)
   AND (a.import_status IS NULL OR a.import_status IN ('waiting', 'blocked'))
   AND NOT ${standingSkippedTestSql('a', 'post_call')}`;
 
@@ -82,18 +84,24 @@ export class AdmissionPostCallRepository {
     await ex.query(`UPDATE admission_appointments SET meet_space_name = $2, updated_at = NOW() WHERE id = $1`, [id, spaceName]);
   }
 
-  /** F14: grava o MENOR início observado (nunca anda para frente). Chamado só quando muda — o job compara antes. */
-  async markConferenceStarted(id: string, startedAt: Date, ex: Ex): Promise<void> {
+  /**
+   * F14: grava o MENOR início observado (nunca anda para frente). Chamado só quando muda — quem chama compara antes.
+   * 050 F25 (R-48): `conference_start_seen_at` = quando o sistema FICOU SABENDO (`seenAt`, o relógio do job), por `COALESCE`:
+   * o primeiro instante vale para sempre.
+   */
+  async markConferenceStarted(id: string, startedAt: Date, seenAt: Date, ex: Ex): Promise<void> {
     await ex.query(
-      `UPDATE admission_appointments SET conference_started_at = LEAST(COALESCE(conference_started_at, $2), $2), updated_at = NOW() WHERE id = $1`,
-      [id, startedAt],
+      `UPDATE admission_appointments SET conference_started_at = LEAST(COALESCE(conference_started_at, $2), $2),
+              conference_start_seen_at = COALESCE(conference_start_seen_at, $3), updated_at = NOW() WHERE id = $1`,
+      [id, startedAt, seenAt],
     );
   }
 
-  async markConferenceEnded(id: string, endedAt: Date, ex: Ex): Promise<void> {
+  /** `conference_end_seen_at` = quando o sistema ficou sabendo do fim (regravado a cada fim novo, R-49). */
+  async markConferenceEnded(id: string, endedAt: Date, seenAt: Date, ex: Ex): Promise<void> {
     await ex.query(
-      `UPDATE admission_appointments SET conference_ended_at = $2, import_status = 'pending', updated_at = NOW() WHERE id = $1`,
-      [id, endedAt],
+      `UPDATE admission_appointments SET conference_ended_at = $2, conference_end_seen_at = $3, import_status = 'pending', updated_at = NOW() WHERE id = $1`,
+      [id, endedAt, seenAt],
     );
   }
 
