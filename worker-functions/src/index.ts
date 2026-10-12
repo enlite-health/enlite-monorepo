@@ -780,7 +780,7 @@ app.use(
 );
 
 // spec 050 F15 + spec 049 F5: relatório diário do Chrome e job de 15 min do fim da call (ordem preservada).
-registerAdmissionInternalJobRoutes(app, { db: admissionDb, externals: admissionExternals, events: admissionEvents });
+registerAdmissionInternalJobRoutes(app, { db: admissionDb, externals: admissionExternals, events: admissionEvents, importer: admissionImportService });
 
 // spec 049 F6: importação do Tactiq (MCP -> provas -> cofre -> Vertex -> PDF -> documento). Roda depois do job de 15 min (a F5 grava
 // `conference_ended_at` e `import_status='pending'`). Cloud Scheduler, a cada 15 min.

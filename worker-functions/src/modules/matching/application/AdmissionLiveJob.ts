@@ -10,6 +10,7 @@ import { admissionRealm, isBlockedFromPaidPath } from '../domain/admissionRealm'
 import { MeetScopeMissingError, MeetTransientError, type MeetConferencePort, type MeetConferenceRecord } from './ports/MeetConferencePort';
 import type { AdmissionLogger } from './AdmissionMessagingService';
 import { AdmissionConferenceObserver } from './AdmissionConferenceObserver';
+import type { AdmissionFastSummaryStep } from './AdmissionFastSummaryStep';
 
 /** Só contagens: o que sai no log `admission.live.run_done` e na resposta da rota. */
 export interface LiveSummary {
@@ -43,6 +44,8 @@ export interface AdmissionLiveJobDeps {
   postCall: Pick<AdmissionPostCallRepository, 'saveSpace' | 'markConferenceStarted' | 'markConferenceEnded' | 'markConferenceEndedEarly'>;
   meet: MeetConferencePort;
   events: AdmissionEventRepository;
+  /** O passo do resumo (F28). Ausente = o job só observa e arma o gatilho, como na F26. */
+  fast?: Pick<AdmissionFastSummaryStep, 'runOne'>;
   db?: Pool;
   log?: AdmissionLogger;
   now?: () => Date;
@@ -60,7 +63,7 @@ const emptySummary = (): LiveSummary => ({
  * Por reunião, UMA transação sob a trava de linha (`FOR UPDATE OF a SKIP LOCKED`, a mesma do job de 15 min): `admissionRealm` ANTES
  * de qualquer porta (`test` não chama o Meet nem grava evento) → conferências (`AdmissionConferenceObserver`) → `decideLive` → efeitos
  * e eventos da trilha na MESMA transação. Escopo do Meet ausente e erro transitório só contam: estado e alarme são da rede.
- * Esta fase ARMA o gatilho do resumo e não lê o Tactiq nem importa (gancho da F28). Idempotente: o estado decide, não o relógio.
+ * Arma o gatilho do resumo; quem lê o Tactiq e importa é o passo `fast` (F28), DEPOIS da transação da reunião e fora dela. Idempotente: o estado decide, não o relógio.
  * Log só com contagens e ids; nunca nome, e-mail, telefone, link nem texto.
  */
 export class AdmissionLiveJob {
@@ -82,7 +85,11 @@ export class AdmissionLiveJob {
     summary.candidates = ids.length;
     for (const id of ids) {
       try {
-        summary[await this.processOne(id, now, summary)] += 1;
+        const seen: { open: boolean | null } = { open: null };
+        const outcome = await this.processOne(id, now, summary, seen);
+        summary[outcome] += 1;
+        // O Meet respondeu nesta rodada (`seen.open` conhecido) e nada impede a reunião: segue o passo do resumo, fora da transação.
+        if (this.deps.fast && seen.open !== null && (outcome === 'applied' || outcome === 'waiting')) await this.deps.fast.runOne(id, now, seen.open);
       } catch {
         // Uma reunião com defeito não impede as outras. Sem texto do erro: pode ecoar dado.
         summary.errors += 1;
@@ -93,7 +100,7 @@ export class AdmissionLiveJob {
     return summary;
   }
 
-  private processOne(id: string, now: Date, summary: LiveSummary): Promise<Outcome> {
+  private processOne(id: string, now: Date, summary: LiveSummary, seen: { open: boolean | null }): Promise<Outcome> {
     return withActorContext(this.db, async (cli) => {
       const appt = await this.deps.live.lockActive(id, now, cli);
       if (!appt) return 'skippedLocked';
@@ -108,6 +115,7 @@ export class AdmissionLiveJob {
         throw err;
       }
       if (!records) return 'noMeetLink';
+      seen.open = records.some((r) => r.endTime === null);
 
       const effects = decideLive(
         {

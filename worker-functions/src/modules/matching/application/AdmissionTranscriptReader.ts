@@ -10,7 +10,8 @@ import {
   type TactiqTokenProvider,
 } from './ports/TactiqPorts';
 
-export type Transcript = { meetingId: string; text: string; sha256: string; chars: number };
+/** `blocks`: quantos blocos de fala (`entries`) a parte tem em todas as páginas — o que a regra de "pronta" (R-51) compara. */
+export type Transcript = { meetingId: string; text: string; sha256: string; chars: number; blocks: number };
 
 /** O que os passos 1 a 4 da importação (token, busca, provas, páginas e integridade) concluíram. Fechado: o chamador decide o estado. */
 export type TranscriptRead =
@@ -20,6 +21,15 @@ export type TranscriptRead =
   | { kind: 'verdict'; decision: Exclude<MatchDecision, { kind: 'matched' }> }
   | { kind: 'integrity' }
   | { kind: 'read'; parts: Transcript[] };
+
+/**
+ * Portão do modo rápido da importação (spec 050 F28, R-51): `hold` roda DEPOIS da leitura do Tactiq e ANTES de qualquer estado, cofre ou
+ * Vertex. `true` = ainda não está pronta: a importação devolve `not_ready` sem escrever nada. `false` segue pelo caminho de sempre
+ * (inclusive `busy` e o token transitório, que continuam `transient`).
+ */
+export interface FastGate {
+  hold(read: TranscriptRead): boolean;
+}
 
 export const sha256Hex = (data: string | Buffer): string => createHash('sha256').update(data).digest('hex');
 
@@ -74,7 +84,7 @@ export class AdmissionTranscriptReader {
       if (pages.length > MAX_TRANSCRIPT_PAGES || pages[pages.length - 1].hasMore) return { kind: 'integrity' };
       const assembled = assembleTranscript(pages);
       if (!assembled.ok) return { kind: 'integrity' };
-      parts.push({ meetingId: m.id, text: assembled.text, sha256: sha256Hex(assembled.text), chars: assembled.chars });
+      parts.push({ meetingId: m.id, text: assembled.text, sha256: sha256Hex(assembled.text), chars: assembled.chars, blocks: pages.reduce((n, p) => n + p.entries.length, 0) });
     }
     return { kind: 'read', parts };
   }

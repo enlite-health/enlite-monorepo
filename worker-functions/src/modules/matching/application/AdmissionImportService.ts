@@ -25,7 +25,7 @@ import {
 } from '../domain/admissionImport';
 import type { AdmissionLogger } from './AdmissionMessagingService';
 import { assertSummaryShape } from './admissionSummaryGate';
-import { AdmissionTranscriptReader, sha256Hex } from './AdmissionTranscriptReader';
+import { AdmissionTranscriptReader, sha256Hex, type FastGate } from './AdmissionTranscriptReader';
 import {
   AdmissionSummaryError,
   MAX_SUMMARY_ATTEMPTS,
@@ -56,8 +56,7 @@ export type ImportOutcome =
   | 'transient'
   | 'too_early'
   | 'not_eligible'
-  | 'skipped_test'
-  | 'skipped_locked';
+  | 'skipped_test' | 'skipped_locked' | 'not_ready';
 
 export interface ImportSummary {
   candidates: number;
@@ -83,7 +82,7 @@ const emptySummary = (): ImportSummary => ({
 const SUMMARY_KEY: Record<ImportOutcome, keyof ImportSummary> = {
   done: 'done', already_done: 'alreadyDone', waiting: 'waiting', rejected: 'rejected', ambiguous: 'ambiguous', expired: 'expired',
   blocked: 'blocked', wrong_account: 'wrongAccount', vault_failed: 'failed', summary_failed: 'failed', transient: 'transient',
-  too_early: 'skipped', not_eligible: 'skipped', skipped_test: 'skipped', skipped_locked: 'skipped',
+  too_early: 'skipped', not_eligible: 'skipped', skipped_test: 'skipped', skipped_locked: 'skipped', not_ready: 'skipped',
 };
 
 export interface AdmissionImportServiceDeps {
@@ -104,7 +103,6 @@ export interface AdmissionImportServiceDeps {
 
 type Cli = PoolClient;
 
-/** `dd/mm/aaaa` no fuso do país da reunião (a data que a operadora reconhece, não a UTC). */
 /** Data da reunião em ISO (AAAA-MM-DD) no fuso do país — o `fecha` que o Gem pede. */
 function isoDateLabel(slotStart: Date, country: string): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: countryToTimezone(country), year: 'numeric', month: '2-digit', day: '2-digit' }).format(slotStart);
@@ -165,8 +163,8 @@ export class AdmissionImportService {
    * Exclusão mútua por reunião: advisory lock de SESSÃO (não de transação). A conexão que o segura fica ociosa — NENHUMA
    * transação fica aberta enquanto se fala com Tactiq, cofre, Vertex ou bucket. Execução sobreposta não consegue o lock e pula.
    */
-  async importOne(appointmentId: string, now: Date = this.now()): Promise<ImportOutcome> {
-    const locked = await withSessionAdvisoryLock(this.db, `admission_import:${appointmentId}`, () => this.importHeld(appointmentId, now));
+  async importOne(appointmentId: string, now: Date = this.now(), fast?: FastGate): Promise<ImportOutcome> {
+    const locked = await withSessionAdvisoryLock(this.db, `admission_import:${appointmentId}`, () => this.importHeld(appointmentId, now, fast));
     return locked.acquired ? locked.value : 'skipped_locked';
   }
 
@@ -175,7 +173,7 @@ export class AdmissionImportService {
     return withActorContext(this.db, fn);
   }
 
-  private async importHeld(id: string, now: Date): Promise<ImportOutcome> {
+  private async importHeld(id: string, now: Date, fast?: FastGate): Promise<ImportOutcome> {
     const a = await this.deps.repo.find(id);
     if (!a) return 'not_eligible';
     if (a.import_status === 'done') return 'already_done';
@@ -215,11 +213,12 @@ export class AdmissionImportService {
       return 'blocked';
     }
     const endedAt = a.conference_ended_at;
-    if (now.getTime() < endedAt.getTime() + IMPORT_MIN_DELAY_MS) return 'too_early';
+    if (!fast && now.getTime() < endedAt.getTime() + IMPORT_MIN_DELAY_MS) return 'too_early'; // modo rápido (R-51): pula só a espera
     const expired = now.getTime() - endedAt.getTime() >= IMPORT_EXPIRE_AFTER_MS;
 
     // 1 a 4. a leitura do Tactiq (token, busca, provas, páginas, integridade), uma por vez por responsável (R-53).
     const read = await this.reader.read(a);
+    if (fast?.hold(read)) return 'not_ready'; // modo rápido: ainda não está pronta — nenhuma linha de estado
     switch (read.kind) {
       case 'busy':
         return this.transient(a, 'busy'); // outra leitura do mesmo responsável: sem estado, sem tentativa, na rodada seguinte
