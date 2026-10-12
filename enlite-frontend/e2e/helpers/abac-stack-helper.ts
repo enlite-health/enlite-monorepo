@@ -153,10 +153,9 @@ export async function loginAs(page: Page, u: MockUser): Promise<void> {
   await expect(page).not.toHaveURL(/.*login.*/, { timeout: 20_000 });
   // ⚠️ A página de login dispara um SEGUNDO redirect (o guard `AdminLoginGuard`) ~500 ms depois (medido em
   // `admin-access.e2e.ts`). Os dois vão para `ADMIN_HOME_PATH` (`/admin/dashboard`, Gestão à Vista). Clicar num
-  // item do menu antes disso leva a uma foto da tela ERRADA. Quem não tem a tela da Gestão à Vista é devolvido
-  // pelo gate da rota ao índice `/admin` — por isso a URL final aceita as duas. Espera-se o redirect assentar.
+  // item do menu antes disso leva a uma foto da tela ERRADA. Espera-se o redirect assentar.
   await page.waitForTimeout(1_200);
-  await expect(page).toHaveURL(/\/admin(\/dashboard)?\/?$/);
+  await expect(page).toHaveURL(/\/admin\/dashboard\/?$/);
 }
 
 export async function meAuthz(request: APIRequestContext, u: MockUser): Promise<{ status: number; body: any }> {

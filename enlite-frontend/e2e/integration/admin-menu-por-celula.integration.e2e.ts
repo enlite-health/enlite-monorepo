@@ -92,8 +92,8 @@ test.describe('Menu lateral por célula (D286) — o item só existe para quem t
 
   test('1. com só `patient:read`: o menu mostra Pacientes (e o que essa célula abre) e NENHUM dos outros itens de topo', async ({ page }) => {
     await loginAs(page, STAFF);
-    // `/admin` (Usuarios) é onde o login cai — sem célula, a rota nega e a tela mostra erro; o
-    // que importa aqui é o MENU. `patient:read` também abre "Roles de grupos" (D269); é bloco de
+    // O login cai em `/admin/dashboard` (Gestión a la Vista) — sem `dashboard:read`, a API nega e a tela mostra
+    // erro; o que importa aqui é o MENU. `patient:read` também abre "Roles de grupos" (D269); é bloco de
     // Gestión a la Vista, mas abrir essa tela é `dashboard:read` — sem ela, o item não aparece.
     await expect(link(page, 'Pacientes')).toBeVisible({ timeout: 15_000 });
 
@@ -153,5 +153,17 @@ test.describe('Menu lateral por célula (D286) — o item só existe para quem t
     await expect(link(page, 'Prestadores')).toHaveCount(0);
     await expect(link(page, 'Etiquetas')).toHaveCount(0);
     await foto(page, '4-revogado');
+  });
+
+  test('5. o login cai em /admin/dashboard e FICA lá — sem segundo redirect nem bounce para /admin (Usuarios)', async ({ page }) => {
+    // Sem foto e sem mock: login pela UI contra o stack real. `loginAs` já exige a URL exata do dashboard; aqui
+    // a tela é conferida de novo depois da janela do 2º redirect (AdminLoginGuard, ~500 ms) e do gate de feature.
+    await loginAs(page, STAFF);
+    await expect(page).toHaveURL(/\/admin\/dashboard\/?$/);
+    await expect(page.getByRole('heading', { level: 1, name: 'Gestión a la Vista' })).toBeVisible({ timeout: 15_000 });
+
+    await page.waitForTimeout(1_500);
+    await expect(page).toHaveURL(/\/admin\/dashboard\/?$/);
+    await expect(page.getByRole('heading', { level: 1, name: 'Gestión a la Vista' })).toBeVisible();
   });
 });
