@@ -2,7 +2,8 @@
  * login-cai-na-gestao-a-vista.integration.e2e.ts @integration
  *
  * Quem entra no painel admin começa em `/admin/dashboard` (Gestión a la Vista), e FICA lá: nem o segundo
- * redirect do `AdminLoginGuard` (~500 ms depois) nem o `FeatureRouteGate` devolvem para `/admin` (Usuarios).
+ * redirect do `AdminLoginGuard` (~500 ms depois) nem o `FeatureRouteGate` devolvem para `/admin`. O índice `/admin` agora também termina na Gestão à Vista (redirect),
+ * e Usuarios tem endereço próprio: `/admin/users`.
  *
  * Stack REAL com o engine ABAC ligado (job `integration-e2e-group-simulation`): login pela UI, staff REAL em grupo
  * (`seedStaffInGroup`/`grantCell` de `abac-stack-helper.ts`), nada de `page.route` em dado. Célula concedida ANTES do
@@ -43,6 +44,7 @@ test.describe('login cai na Gestão à Vista @integration', () => {
   test.beforeAll(() => {
     ({ groupId: groupComId } = seedStaffInGroup({ uid: COM_UID, email: STAFF_COM.email, groupName: `Gestao com ${RUN_ID}`, country: 'AR' }));
     grantCell(groupComId, 'dashboard', 'read');
+    grantCell(groupComId, 'user_management', 'read');
     // Sem `dashboard:read`, mas num grupo (sem grupo nenhum o painel mostraria a WelcomeNoGroupPage).
     ({ groupId: groupSemId } = seedStaffInGroup({ uid: SEM_UID, email: STAFF_SEM.email, groupName: `Gestao sem ${RUN_ID}`, country: 'AR' }));
     grantCell(groupSemId, 'patient', 'read');
@@ -92,6 +94,40 @@ test.describe('login cai na Gestão à Vista @integration', () => {
     expect((await resposta).status(), 'sem dashboard:read a API da tela responde 403').toBe(403);
     await expect(titulo(page)).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId('mgmt-error')).toBeVisible({ timeout: 15_000 });
+
+    await page.waitForTimeout(1_500);
+    await expect(page).toHaveURL(DASHBOARD_URL);
+  });
+
+  test('ÍNDICE 1 — já logado, abrir /admin direto termina em /admin/dashboard e fica', async ({ page }) => {
+    await trocarTokenEmAnalytics(page, STAFF_COM);
+    await loginAs(page, STAFF_COM);
+    await expect(page).toHaveURL(DASHBOARD_URL);
+
+    await page.goto('/admin');
+    await expect(page).toHaveURL(DASHBOARD_URL, { timeout: 15_000 });
+    await expect(titulo(page)).toBeVisible({ timeout: 15_000 });
+
+    await page.waitForTimeout(1_500);
+    await expect(page).toHaveURL(DASHBOARD_URL);
+  });
+
+  test('ÍNDICE 2 — /admin/users abre a tela de Usuários para quem tem user_management:read (API 200)', async ({ page }) => {
+    await trocarTokenEmAnalytics(page, STAFF_COM);
+    await loginAs(page, STAFF_COM);
+    const lista = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/admin/users' && r.request().method() === 'GET');
+    await page.goto('/admin/users');
+    expect((await lista).status(), 'com user_management:read a API de usuários responde 200').toBe(200);
+    await expect(page).toHaveURL(/\/admin\/users\/?$/);
+    await expect(page.getByRole('heading', { name: 'Usuarios Administradores' })).toBeVisible({ timeout: 15_000 });
+  });
+
+  test('ÍNDICE 3 — devolvido por um guard (tela que não pode ver) termina em /admin/dashboard, não em Usuários', async ({ page }) => {
+    await trocarTokenEmAnalytics(page, STAFF_SEM);
+    await loginAs(page, STAFF_SEM);
+    await page.goto('/admin/recruitment/blocked-attempts');
+    await expect(page).toHaveURL(DASHBOARD_URL, { timeout: 20_000 });
+    await expect(page.getByRole('heading', { name: 'Usuarios Administradores' })).toHaveCount(0);
 
     await page.waitForTimeout(1_500);
     await expect(page).toHaveURL(DASHBOARD_URL);

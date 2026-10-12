@@ -150,7 +150,7 @@ test.describe('Fase 3 — Fade-in de navegação', () => {
     await seedAdminAndLogin(page);
 
     await page.goto('/admin');
-    await expect(page).toHaveURL('/admin', { timeout: 10000 });
+    await expect(page).toHaveURL('/admin/dashboard', { timeout: 10000 });
 
     // Collect the key value (reflected as DOM key via React internals) — we verify
     // the wrapper remounts by checking that a new .page-enter element appears after
@@ -212,7 +212,7 @@ test.describe('Fase 3 — Fade-in de navegação', () => {
 
     // Go back
     await page.goBack();
-    await expect(page).toHaveURL('/admin', { timeout: 10000 });
+    await expect(page).toHaveURL('/admin/dashboard', { timeout: 10000 });
 
     // Animation wrapper should be present on the previous page
     await expect(page.locator('.page-enter').first()).toBeAttached({ timeout: 10000 });

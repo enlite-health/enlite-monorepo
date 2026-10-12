@@ -240,7 +240,7 @@ test.describe('AppSidebar — visão sem as células da seção Administración'
     await page.goto(`${BASE}/admin/recruitment/blocked-attempts`);
 
     // Guard da page redireciona sem renderizar conteúdo da tela bloqueada
-    await expect(page).toHaveURL(`${BASE}/admin`, { timeout: 15000 });
+    await expect(page).toHaveURL(`${BASE}/admin/dashboard`, { timeout: 15000 });
     await expect(page.locator('[data-testid="blocked-content"]')).toHaveCount(0);
     await expect(page.locator('[data-testid="blocked-skeleton"]')).toHaveCount(0);
 

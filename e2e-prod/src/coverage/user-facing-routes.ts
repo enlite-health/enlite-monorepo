@@ -54,7 +54,13 @@ export const USER_FACING_ROUTES: readonly UserFacingRoute[] = [
   // ─────────────────────────── FRONTEND · admin ────────────────────────────
   // Todas regression (auth + dados) EXCETO /admin/login que é smoke.
   { route: '/admin/login', surface: 'admin', tier: 'smoke' },
-  { route: '/admin', surface: 'admin', tier: 'regression' },
+  {
+    route: '/admin',
+    surface: 'admin',
+    tier: 'regression',
+    excluded: 'índice sem tela: redireciona para /admin/dashboard (ou /admin/users com a feature desligada)',
+  },
+  { route: '/admin/users', surface: 'admin', tier: 'regression' },
   { route: '/admin/vacancies', surface: 'admin', tier: 'regression' },
   { route: '/admin/vacancies/new', surface: 'admin', tier: 'regression' },
   { route: '/admin/vacancies/pending-address-review', surface: 'admin', tier: 'regression' },

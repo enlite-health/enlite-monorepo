@@ -378,7 +378,7 @@ test.describe('AdminWorkersPage', () => {
 
     // Começa em /admin para testar navegação via sidebar
     await page.goto('/admin');
-    await expect(page).toHaveURL('/admin', { timeout: 10000 });
+    await expect(page).toHaveURL('/admin/dashboard', { timeout: 10000 });
 
     const workersLink = page.getByRole('link', { name: /Workers/i }).first();
     await expect(workersLink).toBeVisible({ timeout: 10000 });

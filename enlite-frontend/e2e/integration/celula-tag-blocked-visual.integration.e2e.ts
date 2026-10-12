@@ -241,11 +241,11 @@ test.describe('Spec 024 — célula por dado (tag:* / recruitment_blocked:read) 
 
   // ── (b) Postulaciones bloqueadas ───────────────────────────────────────────
 
-  test('b1. sem recruitment_blocked:read — redireciona para /admin', async ({ page }) => {
+  test('b1. sem recruitment_blocked:read — redireciona para /admin (índice) e termina em /admin/dashboard', async ({ page }) => {
     await loginAs(page, BLOQ_SEM);
     await page.goto('/admin/recruitment/blocked-attempts');
     await expect(page).not.toHaveURL(/blocked-attempts/, { timeout: 20_000 });
-    await expect(page).toHaveURL(/\/admin\/?$/, { timeout: 20_000 });
+    await expect(page).toHaveURL(/\/admin\/dashboard$/, { timeout: 20_000 });
   });
 
   test('b2. com recruitment_blocked:read — a tela abre', async ({ page }) => {

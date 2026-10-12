@@ -258,7 +258,7 @@ test.describe('Botões da família USUÁRIOS ADMIN + item de menu Duplicados (D2
 
   test('1. só user_management:read: "Crear", "Reset" e "Eliminar" NÃO EXISTEM no DOM (e nenhum <select> — a coluna de papel saiu)', async ({ page }) => {
     await loginAs(page, ADMIN);
-    await page.goto('/admin');
+    await page.goto('/admin/users');
     await expect(page.getByRole('heading', { name: 'Usuarios Administradores' })).toBeVisible({ timeout: 15_000 });
     await expect(page.locator('table, [role="table"]').first()).toBeVisible({ timeout: 15_000 });
 
@@ -296,7 +296,7 @@ test.describe('Botões da família USUÁRIOS ADMIN + item de menu Duplicados (D2
     expect(settled.has).toBe(true);
 
     await loginAs(page, ADMIN);
-    await page.goto('/admin');
+    await page.goto('/admin/users');
     await expect(page.getByRole('heading', { name: 'Usuarios Administradores' })).toBeVisible({ timeout: 15_000 });
 
     await expect(page.getByRole('button', { name: 'Nuevo Usuario' })).toBeVisible({ timeout: 10_000 });

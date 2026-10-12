@@ -213,7 +213,7 @@ describe('useAdminNavItems — D286: item de topo só existe para quem tem algum
     // O item "Pacientes" abre a LISTA (`/admin/patients`), cujas células são as do operacional,
     // identidade e clínica — família não abre a lista: item some.
     expect(visiveis).not.toContain('/admin/patients');
-    for (const h of ['/admin/dashboard', '/admin', '/admin/vacancies', '/admin/workers', '/admin/mapa', '/admin/recruitment']) {
+    for (const h of ['/admin/dashboard', '/admin/users', '/admin/vacancies', '/admin/workers', '/admin/mapa', '/admin/recruitment']) {
       expect(visiveis, `${h} apareceu sem célula`).not.toContain(h);
     }
   });
@@ -224,7 +224,7 @@ describe('useAdminNavItems — D286: item de topo só existe para quem tem algum
     expect(visiveis).toContain('/admin/patients');
     // `patient:read` também é célula de um BLOCO do dashboard — mas abrir a tela é `dashboard:read`,
     // e sem ela a rota nega: o item não aparece (medido no e2e `admin-menu-por-celula`).
-    for (const h of ['/admin/dashboard', '/admin', '/admin/vacancies', '/admin/workers', '/admin/mapa', '/admin/recruitment']) {
+    for (const h of ['/admin/dashboard', '/admin/users', '/admin/vacancies', '/admin/workers', '/admin/mapa', '/admin/recruitment']) {
       expect(visiveis, `${h} apareceu sem célula`).not.toContain(h);
     }
   });
@@ -237,7 +237,7 @@ describe('useAdminNavItems — D286: item de topo só existe para quem tem algum
   it('com o engine OFF a régua é a de antes: todos os itens de topo aparecem (freio D268)', () => {
     useAdminAuthStore.setState({ authzStatus: 'ready', authz: { ...authzCom([]), enforcement: 'off' } });
     const visiveis = hrefs();
-    for (const h of ['/admin/dashboard', '/admin', '/admin/vacancies', '/admin/workers', '/admin/patients', '/admin/mapa']) {
+    for (const h of ['/admin/dashboard', '/admin/users', '/admin/vacancies', '/admin/workers', '/admin/patients', '/admin/mapa']) {
       expect(visiveis).toContain(h);
     }
     expect(visiveis).not.toContain('/admin/recruitment');
