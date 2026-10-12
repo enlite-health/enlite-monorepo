@@ -18,6 +18,8 @@ export interface ReuniaoViva {
   conferenceEndedMin?: number | null;
   summaryFastState?: 'armed' | 'fired' | 'gave_up' | 'cancelled' | null;
   importStatus?: string | null;
+  /** Paciente da reunião; padrão = o paciente real da fixture (`criarPaciente` cria outros, ex. `is_test`). */
+  pacienteId?: string;
 }
 
 export class LiveFixtures {
@@ -38,9 +40,19 @@ export class LiveFixtures {
     )).rows[0].id;
   }
 
+  /** Outro paciente sintético da mesma fixture (some no `limpar`). */
+  async criarPaciente(opts: { isTest: boolean; primeiroNome?: string; sobrenome?: string; telefone?: string }): Promise<string> {
+    this.seq += 1;
+    return (await this.admin.query(
+      `INSERT INTO patients (clickup_task_id, first_name, last_name, country, is_test, has_consent, phone_whatsapp)
+       VALUES ($1,$2,$3,'AR',$4,true,$5) RETURNING id`,
+      [`e2e-050-live-${this.sufixo}-x${this.seq}`, opts.primeiroNome ?? 'Dario', opts.sobrenome ?? 'Sintetico', opts.isTest, opts.telefone ?? null],
+    )).rows[0].id;
+  }
+
   async limpar(): Promise<void> {
     await this.admin.query(`DELETE FROM admission_appointments WHERE host_email LIKE $1`, [`%.live.${this.sufixo}.%@example.test`]);
-    await this.admin.query(`DELETE FROM patients WHERE clickup_task_id = $1`, [`e2e-050-live-${this.sufixo}`]);
+    await this.admin.query(`DELETE FROM patients WHERE clickup_task_id LIKE $1`, [`e2e-050-live-${this.sufixo}%`]);
   }
 
   private at(min: number | null | undefined): Date | null {
@@ -55,7 +67,7 @@ export class LiveFixtures {
           conference_started_at, conference_ended_at, summary_fast_state, import_status, created_at)
        VALUES ($1,'AR',$2,'Operadora Sintetica',$3::timestamptz,$4::timestamptz,$5,$6,CASE WHEN $7::boolean THEN 'ADM-' || upper(substr(md5(random()::text), 1, 6)) END,$8::timestamptz,$9::timestamptz,$10,$11, $12::timestamptz - interval '1 day') RETURNING id`,
       [
-        this.patientId, `ana.live.${this.sufixo}.${this.seq}@example.test`, this.at(r.inicioMin), this.at(r.fimMin), r.status ?? 'booked',
+        r.pacienteId ?? this.patientId, `ana.live.${this.sufixo}.${this.seq}@example.test`, this.at(r.inicioMin), this.at(r.fimMin), r.status ?? 'booked',
         `https://meet.google.com/liv-${this.sufixo}${this.seq}-xyz`,
         r.comCodigo !== false,
         this.at(r.conferenceStartedMin), this.at(r.conferenceEndedMin), r.summaryFastState ?? null, r.importStatus ?? null, this.now,

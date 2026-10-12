@@ -105,6 +105,17 @@ export class AdmissionPostCallRepository {
     );
   }
 
+  /**
+   * 050 F26 (R-56): fim ANTES de `hora marcada + 10 min` (sala aberta antes da hora): grava o fim e o "ficou sabendo", mas NÃO
+   * põe `pending` (a importação não vê; a rede de 15 min decide o fim depois do fim marcado).
+   */
+  async markConferenceEndedEarly(id: string, endedAt: Date, seenAt: Date, ex: Ex): Promise<void> {
+    await ex.query(
+      `UPDATE admission_appointments SET conference_ended_at = $2, conference_end_seen_at = $3, updated_at = NOW() WHERE id = $1`,
+      [id, endedAt, seenAt],
+    );
+  }
+
   async markBlocked(id: string, ex: Ex): Promise<void> {
     await ex.query(`UPDATE admission_appointments SET import_status = 'blocked', updated_at = NOW() WHERE id = $1`, [id]);
   }

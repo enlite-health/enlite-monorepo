@@ -134,18 +134,7 @@ export class AdmissionPostCallJob {
           return 'noShow';
         }
 
-        await this.deps.repo.markConferenceEnded(appt.id, decision.endedAt, now, cli);
-        await this.deps.events.append(
-          {
-            appointmentId: appt.id,
-            kind: 'conference_ended',
-            outcome: 'ended',
-            reason: appt.import_status === 'blocked' ? 'unblocked' : null,
-            ref: { parts: decision.recordNames.length, conferenceRecords: decision.recordNames.join(','), endedAt: decision.endedAt.toISOString() },
-          },
-          cli,
-        );
-        this.log.info({ appointmentId: appt.id, parts: decision.recordNames.length }, 'admission.conference_ended');
+        await this.observer.recordEnd(appt, decision, now, cli);
         return 'ended';
       } catch (err) {
         if (err instanceof MeetScopeMissingError) return await this.block(appt, 'meet_scope_missing', cli);

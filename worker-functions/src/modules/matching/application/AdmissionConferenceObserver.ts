@@ -7,7 +7,7 @@ import type { MeetConferencePort, MeetConferenceRecord } from './ports/MeetConfe
 import type { AdmissionLogger } from './AdmissionMessagingService';
 
 export interface AdmissionConferenceObserverDeps {
-  repo: Pick<AdmissionPostCallRepository, 'saveSpace' | 'markConferenceStarted'>;
+  repo: Pick<AdmissionPostCallRepository, 'saveSpace' | 'markConferenceStarted' | 'markConferenceEnded' | 'markConferenceEndedEarly'>;
   meet: MeetConferencePort;
   events: Pick<AdmissionEventRepository, 'append'>;
   log: AdmissionLogger;
@@ -26,6 +26,13 @@ export class AdmissionConferenceObserver {
    * Os erros do Meet (`MeetScopeMissingError`, `MeetTransientError`) sobem: quem decide o que fazer com eles é o job.
    */
   async observe(appt: PostCallCandidate, now: Date, cli: PoolClient): Promise<MeetConferenceRecord[] | null> {
+    const records = await this.listRecords(appt, cli);
+    if (records) await this.recordStart(appt, records, now, cli);
+    return records;
+  }
+
+  /** Resolve o espaço (guardando-o) e lista as conferências, SEM gravar o início (o job de 1 min grava o que `decideLive` mandar). */
+  async listRecords(appt: PostCallCandidate, cli: PoolClient): Promise<MeetConferenceRecord[] | null> {
     let space = appt.meet_space_name;
     if (!space) {
       const code = meetCodeOf(appt.meet_link);
@@ -33,9 +40,34 @@ export class AdmissionConferenceObserver {
       space = (await this.deps.meet.resolveSpace(code, appt.host_email)).spaceName;
       await this.deps.repo.saveSpace(appt.id, space, cli);
     }
-    const records = await this.deps.meet.listConferenceRecords(space, appt.host_email);
-    await this.recordStart(appt, records, now, cli);
-    return records;
+    return this.deps.meet.listConferenceRecords(space, appt.host_email);
+  }
+
+  /**
+   * Grava o FIM real e o evento `conference_ended` (a rede de 15 min e o job de 1 min, pelo mesmo caminho). `early` (R-56, só o job de
+   * 1 min): fim cedo demais — grava sem `pending` e com `reason='too_early'`. Fora disso `pending` e, se a reunião estava `blocked`,
+   * `reason='unblocked'`. "Ficou sabendo" do fim = `now`, regravado a cada fim novo.
+   */
+  async recordEnd(
+    appt: Pick<PostCallCandidate, 'id' | 'import_status'>,
+    end: { endedAt: Date; recordNames: readonly string[] },
+    now: Date,
+    cli: PoolClient,
+    early = false,
+  ): Promise<void> {
+    if (early) await this.deps.repo.markConferenceEndedEarly(appt.id, end.endedAt, now, cli);
+    else await this.deps.repo.markConferenceEnded(appt.id, end.endedAt, now, cli);
+    await this.deps.events.append(
+      {
+        appointmentId: appt.id,
+        kind: 'conference_ended',
+        outcome: 'ended',
+        reason: early ? 'too_early' : appt.import_status === 'blocked' ? 'unblocked' : null,
+        ref: { parts: end.recordNames.length, conferenceRecords: end.recordNames.join(','), endedAt: end.endedAt.toISOString() },
+      },
+      cli,
+    );
+    this.deps.log.info({ appointmentId: appt.id, parts: end.recordNames.length }, 'admission.conference_ended');
   }
 
   /**
