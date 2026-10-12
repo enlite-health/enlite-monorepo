@@ -45,6 +45,8 @@ export interface ScreenDef {
   tabs?: readonly string[];
 }
 
+import { ADMIN_USERS_PATH } from './adminHome';
+
 const c = (id: string, resource: string, actions: readonly string[], ...tabs: readonly string[]): ScreenContainer => ({
   id,
   resource,
@@ -71,7 +73,7 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
   },
   {
     id: 'users',
-    route: '/admin',
+    route: ADMIN_USERS_PATH,
     cells: ['user_management:read', 'user_management:create', 'user_management:update', 'user_management:delete', 'permission_management:write'],
   },
 

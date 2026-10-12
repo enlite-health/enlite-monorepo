@@ -5,6 +5,7 @@ import { screenByRoute } from '@presentation/config/screenRegistry';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import { useFeature } from '@presentation/hooks/useFeature';
 import { SCREEN_FEATURE_MAP } from './screenFeatureMap';
+import { ADMIN_USERS_PATH } from './adminHome';
 import { Link2, MapPin } from 'lucide-react';
 
 export const useAdminNavItems = (): AppSidebarNavItem[] => {
@@ -63,7 +64,7 @@ export const useAdminNavItems = (): AppSidebarNavItem[] => {
         </svg>
       ),
       label: t('admin.nav.users', 'Usuarios'),
-      href: '/admin',
+      href: ADMIN_USERS_PATH,
     },
     {
       icon: (

@@ -111,8 +111,7 @@ describe('SCREEN_REGISTRY — rotas', () => {
   it('🔴 toda rota do registro existe em App.tsx (tela fantasma = bloco morto no painel)', () => {
     const faltando = SCREEN_REGISTRY.filter((s) => {
       const sub = s.route.replace(/^\/admin\/?/, '');
-      // `/admin` é a rota `index` do shell admin (Usuários).
-      if (sub === '') return !/<Route index /.test(APP_TSX);
+      // `/admin` (índice) só redireciona; Usuários tem rota própria `users` (cai no caso geral).
       return !new RegExp(`path="${sub.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`).test(APP_TSX);
     }).map((s) => s.route);
     expect(faltando).toEqual([]);
@@ -205,7 +204,8 @@ describe('screensByCell / containersOfTab / screenById', () => {
 
   it('screenByRoute — rota exata (o href do item de menu); rota que nenhuma tela declara é undefined', () => {
     expect(screenByRoute('/admin/patients')?.id).toBe('patients.list');
-    expect(screenByRoute('/admin')?.id).toBe('users');
+    expect(screenByRoute('/admin/users')?.id).toBe('users');
+    expect(screenByRoute('/admin')).toBeUndefined();
     expect(screenByRoute('/admin/mapa')?.id).toBe('map');
     expect(screenByRoute('/admin/rota-inexistente')).toBeUndefined();
     expect(screenByRoute('/admin/patients/', [])).toBeUndefined();
