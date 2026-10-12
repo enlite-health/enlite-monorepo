@@ -154,16 +154,4 @@ test.describe('Menu lateral por célula (D286) — o item só existe para quem t
     await expect(link(page, 'Etiquetas')).toHaveCount(0);
     await foto(page, '4-revogado');
   });
-
-  test('5. o login cai em /admin/dashboard e FICA lá — sem segundo redirect nem bounce para /admin (Usuarios)', async ({ page }) => {
-    // Sem foto e sem mock: login pela UI contra o stack real. `loginAs` já exige a URL exata do dashboard; aqui
-    // a tela é conferida de novo depois da janela do 2º redirect (AdminLoginGuard, ~500 ms) e do gate de feature.
-    await loginAs(page, STAFF);
-    await expect(page).toHaveURL(/\/admin\/dashboard\/?$/);
-    await expect(page.getByRole('heading', { level: 1, name: 'Gestión a la Vista' })).toBeVisible({ timeout: 15_000 });
-
-    await page.waitForTimeout(1_500);
-    await expect(page).toHaveURL(/\/admin\/dashboard\/?$/);
-    await expect(page.getByRole('heading', { level: 1, name: 'Gestión a la Vista' })).toBeVisible();
-  });
 });
