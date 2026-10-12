@@ -1,5 +1,5 @@
-import { createHash } from 'crypto';
 import type { Pool, PoolClient } from 'pg';
+import { withSessionAdvisoryLock } from '@shared/database/sessionAdvisoryLock';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { withActorContext } from '@shared/database/actorContext';
 import { logger } from '@shared/logging';
@@ -20,15 +20,12 @@ import { renderAdmissionSummaryPdf } from '../infrastructure/admissionSummaryPdf
 import {
   IMPORT_EXPIRE_AFTER_MS,
   IMPORT_MIN_DELAY_MS,
-  MAX_TRANSCRIPT_PAGES,
   WRONG_ACCOUNT_AFTER_MS,
-  assembleTranscript,
-  decideMatch,
   joinParts,
-  matchWindow,
 } from '../domain/admissionImport';
 import type { AdmissionLogger } from './AdmissionMessagingService';
 import { assertSummaryShape } from './admissionSummaryGate';
+import { AdmissionTranscriptReader, sha256Hex } from './AdmissionTranscriptReader';
 import {
   AdmissionSummaryError,
   MAX_SUMMARY_ATTEMPTS,
@@ -40,10 +37,8 @@ import {
   type TranscriptVaultPort,
 } from './ports/AdmissionImportPorts';
 import {
-  TactiqTransientError,
   TactiqUnauthorizedError,
   type TactiqMcpPort,
-  type TactiqMeetingItem,
   type TactiqTokenProvider,
 } from './ports/TactiqPorts';
 
@@ -108,10 +103,6 @@ export interface AdmissionImportServiceDeps {
 }
 
 type Cli = PoolClient;
-type Transcript = { meetingId: string; text: string; sha256: string; chars: number };
-type ReadResult = { ok: true; parts: Transcript[] } | { ok: false; kind: 'integrity' | 'transient' | 'unauthorized' };
-
-const sha256Hex = (data: string | Buffer): string => createHash('sha256').update(data).digest('hex');
 
 /** `dd/mm/aaaa` no fuso do país da reunião (a data que a operadora reconhece, não a UTC). */
 /** Data da reunião em ISO (AAAA-MM-DD) no fuso do país — o `fecha` que o Gem pede. */
@@ -143,12 +134,14 @@ export class AdmissionImportService {
   private readonly log: AdmissionLogger;
   private readonly now: () => Date;
   private readonly documents: StoreAdmissionSummaryDocument;
+  private readonly reader: AdmissionTranscriptReader;
 
   constructor(private readonly deps: AdmissionImportServiceDeps) {
     this.db = deps.db ?? DatabaseConnection.getInstance().getPool();
     this.log = deps.log ?? (logger as unknown as AdmissionLogger);
     this.now = deps.now ?? (() => new Date());
     this.documents = deps.documents ?? new StoreAdmissionSummaryDocument();
+    this.reader = new AdmissionTranscriptReader(deps.tokens, deps.mcp);
   }
 
   async runOnce(now: Date = this.now()): Promise<ImportSummary> {
@@ -173,24 +166,8 @@ export class AdmissionImportService {
    * transação fica aberta enquanto se fala com Tactiq, cofre, Vertex ou bucket. Execução sobreposta não consegue o lock e pula.
    */
   async importOne(appointmentId: string, now: Date = this.now()): Promise<ImportOutcome> {
-    const key = `admission_import:${appointmentId}`;
-    const holder = await this.db.connect();
-    let destroy = false;
-    try {
-      const got = await holder.query<{ ok: boolean }>(`SELECT pg_try_advisory_lock(hashtextextended($1, 0)) AS ok`, [key]);
-      if (!got.rows[0]?.ok) return 'skipped_locked';
-      try {
-        return await this.importHeld(appointmentId, now);
-      } finally {
-        try {
-          await holder.query(`SELECT pg_advisory_unlock(hashtextextended($1, 0))`, [key]);
-        } catch {
-          destroy = true; // a conexão não devolveu o lock: descarta, o Postgres solta o lock ao fechá-la
-        }
-      }
-    } finally {
-      holder.release(destroy);
-    }
+    const locked = await withSessionAdvisoryLock(this.db, `admission_import:${appointmentId}`, () => this.importHeld(appointmentId, now));
+    return locked.acquired ? locked.value : 'skipped_locked';
   }
 
   /** Transação CURTA (estado + trilha + documento juntos). Nunca contém chamada externa. */
@@ -241,42 +218,29 @@ export class AdmissionImportService {
     if (now.getTime() < endedAt.getTime() + IMPORT_MIN_DELAY_MS) return 'too_early';
     const expired = now.getTime() - endedAt.getTime() >= IMPORT_EXPIRE_AFTER_MS;
 
-    // 1. o vínculo do responsável (P2: a reunião está na conta DELE).
-    const access = await this.deps.tokens.accessTokenFor(a.host_email);
-    if (!access.ok) {
-      if (access.reason === 'transient') return this.transient(a, 'token');
-      return expired ? this.expire(a, 'no_link') : this.block(a, 'no_link');
-    }
-
-    // 2. busca por código + janela, com o token do responsável.
-    const window = matchWindow(a.slot_start);
-    let items: TactiqMeetingItem[];
-    try {
-      items = await this.deps.mcp.searchMeetings(access.accessToken, {
-        query: a.admission_code, dateFrom: window.from.toISOString(), dateTo: window.to.toISOString(),
-      });
-    } catch (err) {
-      return this.mcpFailure(a, err, 'search');
-    }
-
-    // 3. as provas (P1 código exato, P3 janela e duração, unicidade/partes).
-    const decision = decideMatch({ code: a.admission_code, slotStart: a.slot_start, items });
-    switch (decision.kind) {
-      case 'none':
-        return this.noMatch(a, decision.reason, now, expired);
-      case 'rejected':
-        return this.terminal(a, 'rejected', 'import_rejected', decision.reason);
-      case 'ambiguous':
-        return this.terminal(a, 'ambiguous', 'import_ambiguous', decision.reason);
+    // 1 a 4. a leitura do Tactiq (token, busca, provas, páginas, integridade), uma por vez por responsável (R-53).
+    const read = await this.reader.read(a);
+    switch (read.kind) {
+      case 'busy':
+        return this.transient(a, 'busy'); // outra leitura do mesmo responsável: sem estado, sem tentativa, na rodada seguinte
+      case 'no_access':
+        if (read.reason === 'transient') return this.transient(a, 'token');
+        return expired ? this.expire(a, 'no_link') : this.block(a, 'no_link');
+      case 'mcp_failed':
+        return this.mcpFailure(a, read.err, read.where);
+      case 'verdict':
+        switch (read.decision.kind) {
+          case 'none':
+            return this.noMatch(a, read.decision.reason, now, expired);
+          case 'rejected':
+            return this.terminal(a, 'rejected', 'import_rejected', read.decision.reason);
+          default:
+            return this.terminal(a, 'ambiguous', 'import_ambiguous', read.decision.reason);
+        }
+      case 'integrity':
+        return this.terminal(a, 'rejected', 'import_rejected', 'integrity');
       default:
         break;
-    }
-
-    // 4. integridade: todas as páginas, soma = totalChars, sha256 por parte.
-    const read = await this.readParts(access.accessToken, decision.parts);
-    if (!read.ok) {
-      if (read.kind === 'integrity') return this.terminal(a, 'rejected', 'import_rejected', 'integrity');
-      return this.mcpFailure(a, read.kind === 'unauthorized' ? new TactiqUnauthorizedError() : new TactiqTransientError('transcript'), 'transcript');
     }
     const parts = read.parts;
     const fullText = joinParts(parts);
@@ -436,27 +400,5 @@ export class AdmissionImportService {
       return 'blocked';
     }
     return this.transient(a, `${where}:${(err as { reason?: string })?.reason ?? 'unexpected'}`);
-  }
-
-  /** Lê TODAS as páginas de cada parte (até `hasMore=false`) e confere a integridade. */
-  private async readParts(token: string, meetings: TactiqMeetingItem[]): Promise<ReadResult> {
-    const parts: Transcript[] = [];
-    for (const m of meetings) {
-      const pages = [];
-      try {
-        for (let page = 1; page <= MAX_TRANSCRIPT_PAGES + 1; page += 1) {
-          const p = await this.deps.mcp.getTranscriptPage(token, m.id, page);
-          pages.push(p);
-          if (!p.hasMore) break;
-        }
-      } catch (err) {
-        return { ok: false, kind: err instanceof TactiqUnauthorizedError ? 'unauthorized' : 'transient' };
-      }
-      if (pages.length > MAX_TRANSCRIPT_PAGES || pages[pages.length - 1].hasMore) return { ok: false, kind: 'integrity' };
-      const assembled = assembleTranscript(pages);
-      if (!assembled.ok) return { ok: false, kind: 'integrity' };
-      parts.push({ meetingId: m.id, text: assembled.text, sha256: sha256Hex(assembled.text), chars: assembled.chars });
-    }
-    return { ok: true, parts };
   }
 }

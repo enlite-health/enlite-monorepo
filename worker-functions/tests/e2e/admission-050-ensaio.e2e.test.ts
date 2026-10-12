@@ -19,7 +19,7 @@ import { AdmissionMessagingService } from '../../src/modules/matching/applicatio
 import { AdmissionReminderService } from '../../src/modules/matching/application/AdmissionReminderService';
 import { AdmissionPanelService } from '../../src/modules/matching/application/AdmissionPanelService';
 import { PatientNotFoundError } from '../../src/modules/matching/application/AdmissionSchedulingService';
-import type { TactiqAccessResult, TactiqMeetingItem } from '../../src/modules/matching/application/ports/TactiqPorts';
+import type { TactiqMeetingItem } from '../../src/modules/matching/application/ports/TactiqPorts';
 import { AdmissionEventRepository } from '../../src/modules/matching/infrastructure/AdmissionEventRepository';
 import { AdmissionImportRepository } from '../../src/modules/matching/infrastructure/AdmissionImportRepository';
 import { AdmissionMessageContent } from '../../src/modules/matching/infrastructure/AdmissionMessageContent';
@@ -27,7 +27,9 @@ import { AdmissionMessageRepository } from '../../src/modules/matching/infrastru
 import { AdmissionPostCallRepository } from '../../src/modules/matching/infrastructure/AdmissionPostCallRepository';
 import { GcsTranscriptVault } from '../../src/modules/matching/infrastructure/GcsTranscriptVault';
 import { FakeMeetConference } from '../../src/modules/matching/infrastructure/doubles/FakeMeetConference';
-import { FakeTactiqMcp } from '../../src/modules/matching/infrastructure/doubles/FakeTactiq';
+import { TactiqLinkService } from '../../src/modules/matching/application/TactiqLinkService';
+import { TactiqLinkRepository } from '../../src/modules/matching/infrastructure/TactiqLinkRepository';
+import { FakeTactiqMcp, FakeTactiqOAuth } from '../../src/modules/matching/infrastructure/doubles/FakeTactiq';
 import { FakeAdmissionSummaryGenerator } from '../../src/modules/matching/infrastructure/doubles/FakeAdmissionSummaryGenerator';
 import { FakeAdmissionCalendar } from '../../src/modules/matching/infrastructure/doubles/FakeAdmissionCalendar';
 import { InMemoryAdmissionReminderTasks } from '../../src/modules/matching/infrastructure/doubles/InMemoryAdmissionReminderTasks';
@@ -102,15 +104,12 @@ describe('ensaio pago por reunião + roteamento ao bucket de ensaio (spec 050, F
   const logs = capturingLogger();
   const vertex = new SpyVertex();
   const whatsapp = new RecordingAdmissionWhatsApp();
-  const tokenCalls: string[] = [];
-  const tokens = {
-    accessTokenFor: async (email: string): Promise<TactiqAccessResult> => {
-      tokenCalls.push(email);
-      return { ok: true, accessToken: `at-${email}` };
-    },
-    markBroken: async () => true,
-    markWrongAccount: async () => true,
-  };
+  // O vínculo é o REAL (`TactiqLinkService`, a única porta para um token). O refresh token de cada responsável é o próprio e-mail dele
+  // (cifra identidade), e o dublê do OAuth devolve `at-<refresh>`: o mesmo token que `tactiqSees` programa no MCP.
+  const oauth = new FakeTactiqOAuth();
+  const tokenCalls = oauth.refreshCalls;
+  let tokens: TactiqLinkService;
+  let linkRepo: TactiqLinkRepository;
   const documentsStub = {
     prepare: async () => ({
       commit: async () => ({ outcome: 'stored' as const, documentId: '00000000-0000-4000-8000-000000000051', sizeBytes: 1, sha256: 'x' }),
@@ -145,6 +144,7 @@ describe('ensaio pago por reunião + roteamento ao bucket de ensaio (spec 050, F
        VALUES ($1,$10,$2,'Operadora Sintetica',$3,$4,$11,$5,$6,$7,$8,$9) RETURNING id`,
       [patientId, host, start, end, `https://meet.google.com/${meetCode}`, code, new Date(start.getTime() - 300 * MIN), ended, ended ? 'pending' : null, o.country ?? 'AR', o.status ?? 'booked'],
     );
+    await linkRepo.upsertLinked({ email: host, uid: `e2e-050-${RUN}`, tokenEncrypted: host, clientId: null, now: new Date() });
     return { id: rows[0].id as string, code, host, meetCode, start };
   }
 
@@ -264,6 +264,8 @@ describe('ensaio pago por reunião + roteamento ao bucket de ensaio (spec 050, F
     importRepo = new AdmissionImportRepository(pool);
     panelEvents = new AdmissionEventRepository(pool);
     job = new AdmissionPostCallJob({ repo: postCallRepo, meet, events: panelEvents, db: pool, log: logs.log, now: () => clock });
+    linkRepo = new TactiqLinkRepository(pool);
+    tokens = new TactiqLinkService({ repo: linkRepo, oauth, mcp, cipher: { encrypt: async (p) => p, decrypt: async (c) => c }, db: pool, log: logs.log, now: () => clock });
     importer = new AdmissionImportService({
       repo: importRepo, events: panelEvents, tokens, mcp, vault, rehearsalVault, summary: vertex, documents: documentsStub, db: pool, log: logs.log, now: () => clock,
     });
@@ -309,6 +311,7 @@ describe('ensaio pago por reunião + roteamento ao bucket de ensaio (spec 050, F
     await app?.fechar();
     const { DatabaseConnection } = await import('@shared/database/DatabaseConnection');
     await DatabaseConnection.getInstance().close();
+    await admin.query(`DELETE FROM tactiq_links WHERE host_email LIKE $1`, [`%.${RUN}@example.test`]);
     await admin.query(`DELETE FROM admission_appointments WHERE patient_id = ANY($1)`, [patientIds]);
     await admin.query(`DELETE FROM patients WHERE id = ANY($1)`, [patientIds]);
     await limparIamFixtures(admin, { uids: Object.values(U), grupos: Object.values(GRUPOS) });

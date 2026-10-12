@@ -53,7 +53,8 @@ export class FakeTactiqOAuth implements TactiqOAuthPort {
  * Importação (spec 049 F6): o que a CONTA enxerga é por TOKEN (`meetingsByToken`) — é assim que o teste prova "autor errado"
  * (o token do responsável não vê a reunião). Sem programação por token, vale `meetings`. As páginas da transcrição vêm de
  * `pagesByMeeting` (id da reunião -> páginas); sem isso, vale `transcript`. Todas as chamadas ficam registradas.
- * `gate`: se definido, `searchMeetings` espera por ele (prova de execuções sobrepostas).
+ * `gate`: se definido, `searchMeetings` espera por ele (prova de execuções sobrepostas). `pingGates`: o mesmo para o `ping` de UM token.
+ * `inFlight`/`maxInFlight`: leituras em curso agora e o máximo já visto (R-53: nunca 2 do mesmo responsável).
  */
 export class FakeTactiqMcp implements TactiqMcpPort {
   readonly pingTokens: string[] = [];
@@ -67,10 +68,26 @@ export class FakeTactiqMcp implements TactiqMcpPort {
   readonly pagesByMeeting = new Map<string, TactiqTranscriptPage[]>();
   transcript: TactiqTranscriptPage = { page: 1, totalPages: 1, totalChars: 0, hasMore: false, entries: [] };
   gate: Promise<void> | null = null;
+  readonly pingGates = new Map<string, Promise<void>>();
+  inFlight = 0;
+  maxInFlight = 0;
+
+  private async counted<T>(fn: () => Promise<T>): Promise<T> {
+    this.inFlight += 1;
+    this.maxInFlight = Math.max(this.maxInFlight, this.inFlight);
+    try {
+      return await fn();
+    } finally {
+      this.inFlight -= 1;
+    }
+  }
 
   async ping(accessToken: string): Promise<void> {
     this.pingTokens.push(accessToken);
-    if (this.pingError) throw this.pingError;
+    return this.counted(async () => {
+      await this.pingGates.get(accessToken);
+      if (this.pingError) throw this.pingError;
+    });
   }
 
   async searchMeetings(
@@ -78,19 +95,23 @@ export class FakeTactiqMcp implements TactiqMcpPort {
     input: { query: string; dateFrom: string; dateTo: string },
   ): Promise<TactiqMeetingItem[]> {
     this.searchCalls.push({ token: accessToken, ...input });
-    if (this.gate) await this.gate;
-    if (this.searchError) throw this.searchError;
-    return this.meetingsByToken.get(accessToken) ?? this.meetings;
+    return this.counted(async () => {
+      if (this.gate) await this.gate;
+      if (this.searchError) throw this.searchError;
+      return this.meetingsByToken.get(accessToken) ?? this.meetings;
+    });
   }
 
   async getTranscriptPage(accessToken: string, meetingId: string, page: number): Promise<TactiqTranscriptPage> {
     this.transcriptCalls.push({ token: accessToken, meetingId, page });
-    if (this.transcriptError) throw this.transcriptError;
-    const pages = this.pagesByMeeting.get(meetingId);
-    if (!pages) return this.transcript;
-    const found = pages[page - 1];
-    if (!found) throw new Error('fake_tactiq_page_out_of_range');
-    return found;
+    return this.counted(async () => {
+      if (this.transcriptError) throw this.transcriptError;
+      const pages = this.pagesByMeeting.get(meetingId);
+      if (!pages) return this.transcript;
+      const found = pages[page - 1];
+      if (!found) throw new Error('fake_tactiq_page_out_of_range');
+      return found;
+    });
   }
 
   reset(): void {
@@ -104,5 +125,8 @@ export class FakeTactiqMcp implements TactiqMcpPort {
     this.meetingsByToken.clear();
     this.pagesByMeeting.clear();
     this.gate = null;
+    this.pingGates.clear();
+    this.inFlight = 0;
+    this.maxInFlight = 0;
   }
 }
