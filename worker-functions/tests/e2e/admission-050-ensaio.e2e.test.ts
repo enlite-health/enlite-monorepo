@@ -104,12 +104,9 @@ describe('ensaio pago por reunião + roteamento ao bucket de ensaio (spec 050, F
   const logs = capturingLogger();
   const vertex = new SpyVertex();
   const whatsapp = new RecordingAdmissionWhatsApp();
-  // O vínculo é o REAL (`TactiqLinkService`, a única porta para um token). O refresh token de cada responsável é o próprio e-mail dele
-  // (cifra identidade), e o dublê do OAuth devolve `at-<refresh>`: o mesmo token que `tactiqSees` programa no MCP.
-  const oauth = new FakeTactiqOAuth();
-  const tokenCalls = oauth.refreshCalls;
-  let tokens: TactiqLinkService;
-  let linkRepo: TactiqLinkRepository;
+  // Vínculo REAL (`TactiqLinkService`, a única porta para um token); refresh token = o e-mail do responsável (cifra identidade); o OAuth dublê devolve `at-<refresh>`, o token que `tactiqSees` programa no MCP.
+  const oauth = new FakeTactiqOAuth(); const tokenCalls = oauth.refreshCalls;
+  let tokens: TactiqLinkService; let linkRepo: TactiqLinkRepository;
   const documentsStub = {
     prepare: async () => ({
       commit: async () => ({ outcome: 'stored' as const, documentId: '00000000-0000-4000-8000-000000000051', sizeBytes: 1, sha256: 'x' }),
