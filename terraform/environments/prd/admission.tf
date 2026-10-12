@@ -215,7 +215,7 @@ resource "google_project_iam_audit_config" "identitytoolkit" {
 # Schedulers (molde: events.tf — X-Internal-Secret do secret internal-token-secret)
 # ---------------------------------------------------------------------------
 resource "google_cloud_scheduler_job" "admission" {
-  for_each = local.admission_jobs
+  for_each = merge(local.admission_jobs, local.admission_jobs_passo4)
 
   project          = var.project_id
   region           = var.scheduler_region
@@ -226,7 +226,7 @@ resource "google_cloud_scheduler_job" "admission" {
 
   # Retry curto: os jobs são idempotentes e o Scheduler é "at least once".
   retry_config {
-    retry_count          = 2
+    retry_count          = try(each.value.retry_count, 2)
     max_backoff_duration = "3600s"
     max_doublings        = 5
     max_retry_duration   = "0s"
