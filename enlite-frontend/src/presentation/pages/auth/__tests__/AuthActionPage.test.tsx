@@ -219,9 +219,9 @@ describe('AuthActionPage', () => {
     expect(mockConfirmPasswordReset).not.toHaveBeenCalled();
   });
 
-  // ─── 6. Submit OK + role=admin → navigate('/admin') ──────────────────────
+  // ─── 6. Submit OK + role=admin → navigate('/admin/dashboard') ──────────────────────
 
-  it('navega para /admin quando role=admin apos submit bem-sucedido', async () => {
+  it('navega para /admin/dashboard quando role=admin apos submit bem-sucedido', async () => {
     setParams({ mode: 'resetPassword', oobCode: 'valid-code' });
     mockVerifyPasswordResetCode.mockResolvedValueOnce('admin@enlite.health');
     mockConfirmPasswordReset.mockResolvedValueOnce(undefined);
@@ -250,13 +250,13 @@ describe('AuthActionPage', () => {
     fireEvent.submit(form);
 
     await waitFor(() => {
-      expect(mockNavigate).toHaveBeenCalledWith('/admin', { replace: true });
+      expect(mockNavigate).toHaveBeenCalledWith('/admin/dashboard', { replace: true });
     });
   });
 
-  // ─── 7. Submit OK + role=recruiter → navigate('/admin') ──────────────────
+  // ─── 7. Submit OK + role=recruiter → navigate('/admin/dashboard') ──────────────────
 
-  it('navega para /admin quando role=recruiter', async () => {
+  it('navega para /admin/dashboard quando role=recruiter', async () => {
     setParams({ mode: 'resetPassword', oobCode: 'valid-code' });
     mockVerifyPasswordResetCode.mockResolvedValueOnce('recruiter@enlite.health');
     mockConfirmPasswordReset.mockResolvedValueOnce(undefined);
@@ -285,7 +285,7 @@ describe('AuthActionPage', () => {
     fireEvent.submit(form);
 
     await waitFor(() => {
-      expect(mockNavigate).toHaveBeenCalledWith('/admin', { replace: true });
+      expect(mockNavigate).toHaveBeenCalledWith('/admin/dashboard', { replace: true });
     });
   });
 
@@ -342,10 +342,10 @@ describe('AuthActionPage', () => {
     fireEvent.submit(screen.getByTestId('password-new-password').closest('form')!);
   }
 
-  it('account_type=staff → /admin, mesmo sem role', async () => {
+  it('account_type=staff → /admin/dashboard, mesmo sem role', async () => {
     await submitComClaims({ account_type: 'staff' });
     await waitFor(() => {
-      expect(mockNavigate).toHaveBeenCalledWith('/admin', { replace: true });
+      expect(mockNavigate).toHaveBeenCalledWith('/admin/dashboard', { replace: true });
     });
   });
 

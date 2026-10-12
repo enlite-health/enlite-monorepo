@@ -151,12 +151,11 @@ export async function loginAs(page: Page, u: MockUser): Promise<void> {
   await page.keyboard.type(PASSWORD);
   await page.getByRole('button', { name: /Iniciar sesión/i }).click();
   await expect(page).not.toHaveURL(/.*login.*/, { timeout: 20_000 });
-  // ⚠️ A página de login dispara um SEGUNDO redirect para `/admin` ~500 ms depois (medido em
-  // `admin-access.e2e.ts`). Clicar num item do menu antes disso leva a uma foto da tela ERRADA:
-  // o teste navega para Prestadores e o redirect atrasado puxa de volta para Usuarios. Comportamento
-  // pré-existente do login, fora do que estes specs medem — espera-se ele assentar.
+  // ⚠️ A página de login dispara um SEGUNDO redirect (o guard `AdminLoginGuard`) ~500 ms depois (medido em
+  // `admin-access.e2e.ts`). Os dois vão para `ADMIN_HOME_PATH` (`/admin/dashboard`, Gestão à Vista). Clicar num
+  // item do menu antes disso leva a uma foto da tela ERRADA. Espera-se o redirect assentar.
   await page.waitForTimeout(1_200);
-  await expect(page).toHaveURL(/\/admin\/?$/);
+  await expect(page).toHaveURL(/\/admin\/dashboard\/?$/);
 }
 
 export async function meAuthz(request: APIRequestContext, u: MockUser): Promise<{ status: number; body: any }> {
