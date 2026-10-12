@@ -4108,7 +4108,12 @@
             "viaSite": "Agendada por la familia en el sitio",
             "calendarEventPending": "Cancelada, evento de Google pendiente",
             "conferenceStart": "Inicio real",
-            "conferenceEnd": "Fin real"
+            "conferenceEnd": "Fin real",
+            "callInProgress": "En curso desde",
+            "callEnded": "Terminó a las",
+            "summaryPreparing": "Resumen en preparación",
+            "summaryReady": "Resumen listo a las",
+            "reopenedAfterSummary": "Volvió a abrirse después del resumen"
           },
           "status": {
             "booked": "Agendada",
