@@ -105,14 +105,21 @@ export class TactiqLinkRequiredError extends Error {
   }
 }
 
-export type TactiqAccessResult =
-  | { ok: true; accessToken: string }
-  /** `no_link`: sem vínculo vivo. `broken`: o Tactiq recusou o token agora (o vínculo caiu). `transient`: rede/KMS — tenta depois. */
-  | { ok: false; reason: 'no_link' | 'broken' | 'transient' };
+/** `no_link`: sem vínculo vivo. `broken`: o Tactiq recusou o token agora (o vínculo caiu). `transient`: rede/KMS — tenta depois. */
+export type TactiqAccessFailure = 'no_link' | 'broken' | 'transient';
 
-/** O que a importação (F6) precisa do vínculo: um token de acesso do RESPONSÁVEL e os dois rebaixamentos de estado. */
+/**
+ * Resultado de `withHostAccess`. `busy`: outra leitura do MESMO responsável está em curso (R-53): nada foi lido, nada mudou de
+ * estado, nenhuma tentativa conta; tenta na rodada seguinte.
+ */
+export type HostAccessResult<T> = { ok: true; value: T } | { ok: false; reason: TactiqAccessFailure | 'busy' };
+
+/**
+ * O que a importação precisa do vínculo: a ÚNICA porta para um token do RESPONSÁVEL (a troca com rotação e todo o uso do token
+ * acontecem dentro de `withHostAccess`, uma leitura por vez por responsável) e os dois rebaixamentos de estado.
+ */
 export interface TactiqTokenProvider {
-  accessTokenFor(email: string): Promise<TactiqAccessResult>;
+  withHostAccess<T>(email: string, fn: (accessToken: string) => Promise<T>): Promise<HostAccessResult<T>>;
   markBroken(email: string): Promise<boolean>;
   markWrongAccount(email: string): Promise<boolean>;
 }

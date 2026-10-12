@@ -2,6 +2,7 @@ import type { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { withActorContext } from '@shared/database/actorContext';
 import { logger } from '@shared/logging';
+import { withSessionAdvisoryLock } from '@shared/database/sessionAdvisoryLock';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { SystemNotificationPublisher } from '@modules/inapp-notification/application/SystemNotificationPublisher';
 import { TactiqLinkRepository } from '../infrastructure/TactiqLinkRepository';
@@ -9,7 +10,7 @@ import { hashState, newOAuthState, newPkcePair } from '../infrastructure/tactiq/
 import {
   TactiqInvalidGrantError,
   TactiqUnauthorizedError,
-  type TactiqAccessResult,
+  type HostAccessResult,
   type TactiqLinkGate,
   type TactiqLinkState,
   type TactiqMcpPort,
@@ -73,6 +74,9 @@ export interface TactiqLinkServiceDeps {
   log?: AdmissionLogger;
   now?: () => Date;
 }
+
+/** Chave da trava por responsável: e-mail em minúsculas, sem nunca ir para log, erro ou trilha. */
+const hostLockKey = (email: string): string => `tactiq_link:${email.toLowerCase()}`;
 
 type NoticeState = Exclude<TactiqLinkState, 'linked'>;
 const noticeReason = (s: NoticeState): 'missing' | 'broken' | 'wrong_account' => (s === 'revoked' ? 'missing' : s);
@@ -187,28 +191,41 @@ export class TactiqLinkService implements TactiqLinkGate, TactiqTokenProvider {
   }
 
   /**
-   * Token de acesso do RESPONSÁVEL para a importação (F6). Mesma regra do teste diário: refresh com ROTAÇÃO (o refresh novo é
-   * gravado ANTES de qualquer uso). `invalid_grant` derruba o vínculo (`broken`, com aviso); rede/KMS não prova nada (`transient`).
+   * A ÚNICA porta para um token do RESPONSÁVEL (R-53): uma leitura do Tactiq por vez por responsável. A trava é advisory de SESSÃO
+   * do Postgres (chave `tactiq_link:<e-mail em minúsculas>`, nunca logada): vale entre importação, job de 1 min, teste diário e
+   * "Reintentar resumen", e entre instâncias. Dentro dela: a troca com ROTAÇÃO (refresh novo gravado ANTES de qualquer uso) e o
+   * `fn(accessToken)` (busca, páginas). `invalid_grant` derruba o vínculo (`broken`, com aviso); rede/KMS não prova nada
+   * (`transient`). Ocupada → `busy`, sem tocar estado. Cofre, Vertex e PDF ficam FORA: o chamador os faz depois de `fn`.
    */
-  async accessTokenFor(email: string): Promise<TactiqAccessResult> {
-    const link = await this.repo.findLinkedTokenByEmail(email);
-    if (!link) return { ok: false, reason: 'no_link' };
-    try {
-      const current = await this.cipher.decrypt(link.refresh_token_encrypted);
-      const tokens = await this.deps.oauth.refresh(current);
-      if (tokens.refreshToken && tokens.refreshToken !== current) {
-        const enc = await this.cipher.encrypt(tokens.refreshToken);
-        if (enc) await this.repo.rotateToken(email, enc);
+  async withHostAccess<T>(email: string, fn: (accessToken: string) => Promise<T>): Promise<HostAccessResult<T>> {
+    const locked = await withSessionAdvisoryLock(this.db, hostLockKey(email), async (): Promise<HostAccessResult<T>> => {
+      const link = await this.repo.findLinkedTokenByEmail(email);
+      if (!link) return { ok: false, reason: 'no_link' };
+      let accessToken: string;
+      try {
+        accessToken = await this.refreshAndRotate(email, link.refresh_token_encrypted);
+      } catch (err) {
+        if (err instanceof TactiqInvalidGrantError) {
+          await this.markBroken(email, 'invalid_grant');
+          return { ok: false, reason: 'broken' };
+        }
+        this.log.warn({ linkId: link.id, reason: (err as { reason?: string })?.reason ?? 'unexpected' }, 'admission.tactiq_link.token_transient');
+        return { ok: false, reason: 'transient' };
       }
-      return { ok: true, accessToken: tokens.accessToken };
-    } catch (err) {
-      if (err instanceof TactiqInvalidGrantError) {
-        await this.markBroken(email, 'invalid_grant');
-        return { ok: false, reason: 'broken' };
-      }
-      this.log.warn({ linkId: link.id, reason: (err as { reason?: string })?.reason ?? 'unexpected' }, 'admission.tactiq_link.token_transient');
-      return { ok: false, reason: 'transient' };
+      return { ok: true, value: await fn(accessToken) };
+    });
+    return locked.acquired ? locked.value : { ok: false, reason: 'busy' };
+  }
+
+  /** Refresh com ROTAÇÃO: o refresh novo é gravado ANTES de qualquer uso do access token (se o uso falhar, o único válido não se perde). */
+  private async refreshAndRotate(email: string, refreshTokenEncrypted: string): Promise<string> {
+    const current = await this.cipher.decrypt(refreshTokenEncrypted);
+    const tokens = await this.deps.oauth.refresh(current);
+    if (tokens.refreshToken && tokens.refreshToken !== current) {
+      const enc = await this.cipher.encrypt(tokens.refreshToken);
+      if (enc) await this.repo.rotateToken(email, enc);
     }
+    return tokens.accessToken;
   }
 
   /** O Tactiq recusou o token (401/403) durante a importação: o vínculo caiu. `true` só quando MUDOU (uma transição, um aviso). */
@@ -225,8 +242,9 @@ export class TactiqLinkService implements TactiqLinkGate, TactiqTokenProvider {
     const summary: TactiqCheckSummary = { rosterHosts: 0, pinged: 0, ok: 0, broken: 0, transient: 0, notified: 0, alarms: 0 };
 
     for (const link of await this.repo.listLinkedWithToken()) {
-      summary.pinged += 1;
       const verdict = await this.checkOne(link);
+      if (verdict === 'busy') continue; // responsável ocupado (ou sem vínculo vivo agora): não pingou, não rebaixa, não grava nada; amanhã
+      summary.pinged += 1;
       summary[verdict] += 1;
     }
 
@@ -246,33 +264,33 @@ export class TactiqLinkService implements TactiqLinkGate, TactiqTokenProvider {
     return summary;
   }
 
-  private async checkOne(link: { id: string; host_email: string; refresh_token_encrypted: string }): Promise<'ok' | 'broken' | 'transient'> {
+  private async checkOne(link: { id: string; host_email: string }): Promise<'ok' | 'broken' | 'transient' | 'busy'> {
     const now = this.now();
-    try {
-      const current = await this.cipher.decrypt(link.refresh_token_encrypted);
-      const tokens = await this.deps.oauth.refresh(current);
-      // Rotação: grava o refresh novo ANTES do ping — se o ping falhar, o token novo (o único válido) não se perde.
-      if (tokens.refreshToken && tokens.refreshToken !== current) {
-        const enc = await this.cipher.encrypt(tokens.refreshToken);
-        if (enc) await this.repo.rotateToken(link.host_email, enc);
-      }
-      await this.deps.mcp.ping(tokens.accessToken);
-      await this.repo.recordCheck(link.host_email, 'ok', now);
-      return 'ok';
-    } catch (err) {
-      if (err instanceof TactiqInvalidGrantError || err instanceof TactiqUnauthorizedError) {
-        const outcome = err instanceof TactiqInvalidGrantError ? 'invalid_grant' : 'unauthorized';
-        if (await this.repo.degrade(link.host_email, 'broken', outcome, now)) {
-          await this.repo.appendEvent({ email: link.host_email, kind: 'tactiq_link.broken', outcome: 'broken', reason: outcome, at: now });
+    const email = link.host_email;
+    // Na trava: o token é relido AQUI (outra leitura pode ter rotacionado entre a listagem e a vez desta) e o `ping` é o uso.
+    const locked = await withSessionAdvisoryLock(this.db, hostLockKey(email), async (): Promise<'ok' | 'broken' | 'transient' | 'skipped'> => {
+      const current = await this.repo.findLinkedTokenByEmail(email);
+      if (!current) return 'skipped'; // o vínculo caiu entre a listagem e a vez desta: não há o que testar
+      try {
+        await this.deps.mcp.ping(await this.refreshAndRotate(email, current.refresh_token_encrypted));
+        await this.repo.recordCheck(email, 'ok', now);
+        return 'ok';
+      } catch (err) {
+        if (err instanceof TactiqInvalidGrantError || err instanceof TactiqUnauthorizedError) {
+          const outcome = err instanceof TactiqInvalidGrantError ? 'invalid_grant' : 'unauthorized';
+          if (await this.repo.degrade(email, 'broken', outcome, now)) {
+            await this.repo.appendEvent({ email, kind: 'tactiq_link.broken', outcome: 'broken', reason: outcome, at: now });
+          }
+          this.log.warn({ linkId: link.id, outcome }, 'admission.tactiq_link.broken');
+          return 'broken';
         }
-        this.log.warn({ linkId: link.id, outcome }, 'admission.tactiq_link.broken');
-        return 'broken';
+        // Rede, 5xx, KMS: não prova vínculo quebrado. Registra e tenta amanhã (derrubar por soluço geraria aviso falso).
+        await this.repo.recordCheck(email, 'transient_error', now);
+        this.log.warn({ linkId: link.id, reason: (err as { reason?: string })?.reason ?? 'unexpected' }, 'admission.tactiq_link.check_transient');
+        return 'transient';
       }
-      // Rede, 5xx, KMS: não prova vínculo quebrado. Registra e tenta amanhã (derrubar por soluço geraria aviso falso).
-      await this.repo.recordCheck(link.host_email, 'transient_error', now);
-      this.log.warn({ linkId: link.id, reason: (err as { reason?: string })?.reason ?? 'unexpected' }, 'admission.tactiq_link.check_transient');
-      return 'transient';
-    }
+    });
+    return locked.acquired && locked.value !== 'skipped' ? locked.value : 'busy';
   }
 
   /** Operadora sem linha: o relógio das 48 h nasce AQUI (1ª vez que o sistema a viu sem vínculo), não na criação do roster. */

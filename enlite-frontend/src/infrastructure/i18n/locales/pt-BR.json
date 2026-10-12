@@ -4029,7 +4029,12 @@
             "viaSite": "Agendada pela família no site",
             "calendarEventPending": "Cancelada, evento do Google pendente",
             "conferenceStart": "Início real",
-            "conferenceEnd": "Fim real"
+            "conferenceEnd": "Fim real",
+            "callInProgress": "Em andamento desde",
+            "callEnded": "Terminou às",
+            "summaryPreparing": "Resumo em preparação",
+            "summaryReady": "Resumo pronto às",
+            "reopenedAfterSummary": "Voltou a abrir depois do resumo"
           },
           "status": {
             "booked": "Agendada",

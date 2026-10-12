@@ -10,7 +10,7 @@ import type { JSX } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Video, CalendarX } from 'lucide-react';
 import { Text } from '@presentation/components/atoms/Text';
-import type { AdmissionAppointment, ResendKind } from '@infrastructure/http/AdminAdmissionApiService';
+import type { AdmissionAppointment, AdmissionCallProgressState, ResendKind } from '@infrastructure/http/AdminAdmissionApiService';
 import { AdmissionSeals, SealChip } from './AdmissionSeals';
 import type { SealTone } from './sealTones';
 import { formatSlotIn, formatTimeIn, isFuture } from './admissionTime';
@@ -21,6 +21,17 @@ const STATUS_TONE: Record<string, SealTone> = {
   cancelled: 'neutral',
   no_show: 'warn',
 };
+
+/** Estado do andamento (decidido no servidor) → chave do texto. `none` não tem linha. A reabertura NÃO promete botão de refazer. */
+const PROGRESS_KEY: Partial<Record<AdmissionCallProgressState, string>> = {
+  in_progress: 'callInProgress',
+  ended: 'callEnded',
+  summary_preparing: 'summaryPreparing',
+  summary_ready: 'summaryReady',
+  reopened_after_summary: 'reopenedAfterSummary',
+};
+/** Estados cujo texto termina numa hora (a hora "sabida" do R-48 nunca aparece). */
+const PROGRESS_WITH_TIME: ReadonlySet<AdmissionCallProgressState> = new Set(['in_progress', 'ended', 'summary_ready']);
 
 interface Props {
   appointment: AdmissionAppointment;
@@ -40,6 +51,8 @@ export function AdmissionAppointmentRow({ appointment: a, timeZone, canResendCel
   const ta = (key: string): string => t(`admin.patients.detail.admissionTab.${key}`);
   const upcoming = a.status === 'booked' && isFuture(a.slotEnd, now);
   const showMeet = upcoming && Boolean(a.meetLink);
+  const progressKey = a.callProgress ? PROGRESS_KEY[a.callProgress.state] : undefined; // estado desconhecido/vazio → sem linha
+  const progress = a.callProgress && progressKey ? a.callProgress : null;
 
   return (
     <div
@@ -107,6 +120,12 @@ export function AdmissionAppointmentRow({ appointment: a, timeZone, canResendCel
           )}
         </div>
       </div>
+      {progress && (
+        <Text color="inherit" as="span" size="xs" className="text-slate-600" data-testid={`admission-call-progress-${a.id}`} data-state={progress.state}>
+          {ta(`row.${progressKey}`)}
+          {PROGRESS_WITH_TIME.has(progress.state) && progress.at ? ` ${formatTimeIn(progress.at, timeZone)}` : ''}
+        </Text>
+      )}
       <AdmissionSeals appointment={a} canResendCell={canResendCell} onOpenDocuments={onOpenDocuments} onResend={onResend} canRetryCell={canRetryCell} onRetrySummary={onRetrySummary} />
     </div>
   );

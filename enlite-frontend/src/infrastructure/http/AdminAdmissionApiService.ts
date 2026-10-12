@@ -54,6 +54,14 @@ export interface SummaryRetryView {
   authorizationsLeft: number;
 }
 
+export type AdmissionCallProgressState =
+  | 'none'
+  | 'in_progress'
+  | 'ended'
+  | 'summary_preparing'
+  | 'summary_ready'
+  | 'reopened_after_summary';
+
 export interface AdmissionAppointment {
   id: string;
   admissionCode: string | null;
@@ -67,6 +75,8 @@ export interface AdmissionAppointment {
   /** Fim real (maior `endTime`); null = ainda não terminou / não observado. */
   conferenceEndedAt: string | null;
   status: AdmissionAppointmentStatus | string;
+  /** Andamento da reunião (spec 050 F29, §19.3): o ESTADO é decidido no servidor; a tela só escolhe o texto pela chave. `at` = a hora que o estado mostra. */
+  callProgress?: { state: AdmissionCallProgressState; at: string | null };
   /** Cancelada e o Google ainda não apagou o evento (spec 050 R-36); o job repete até apagar. */
   calendarEventPending: boolean;
   meetLink: string | null;

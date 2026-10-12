@@ -80,7 +80,7 @@ locals {
 }
 
 resource "google_logging_metric" "admission_silence" {
-  for_each = local.admission_silence_alerts
+  for_each = merge(local.admission_silence_alerts, local.admission_silence_alerts_passo4)
 
   project     = var.project_id
   name        = "admission_${each.key}"
@@ -95,7 +95,7 @@ resource "google_logging_metric" "admission_silence" {
 }
 
 resource "google_monitoring_alert_policy" "admission_silence" {
-  for_each = local.admission_silence_alerts
+  for_each = merge(local.admission_silence_alerts, local.admission_silence_alerts_passo4)
 
   project      = var.project_id
   display_name = "[URGENTE] Admissão: sem ${each.value.message} (job parado)"
