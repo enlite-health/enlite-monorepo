@@ -78,13 +78,12 @@ async function login(page: Page, permissions: string[]): Promise<void> {
   await page.locator('input[type="email"]').fill(email);
   await page.locator('input[type="password"]').fill(password);
   await page.locator('form button[type="submit"]').click();
-  await expect(page).toHaveURL(/\/admin$/, { timeout: 20_000 });
-  // ⚠️ A página de login dispara um SEGUNDO redirect para `/admin` ~500 ms depois
-  // (`[admin-login password] … redirect {to: /admin}`, medido). Navegar antes
-  // disso faz o painel "sumir" no meio da captura — era a lista virando a
-  // página de Usuários. Comportamento pré-existente do login, fora deste diff.
+  await expect(page).toHaveURL(/\/admin(\/dashboard)?$/, { timeout: 20_000 });
+  // ⚠️ A página de login dispara um SEGUNDO redirect (`[admin-login password] … redirect {to: /admin/dashboard}`,
+  // medido) ~500 ms depois. Navegar antes disso faz o painel "sumir" no meio da captura. Quem não tem a Gestão à
+  // Vista é devolvido pelo gate da rota ao índice `/admin` — por isso a URL final aceita as duas.
   await page.waitForTimeout(1_200);
-  await expect(page).toHaveURL(/\/admin$/);
+  await expect(page).toHaveURL(/\/admin(\/dashboard)?$/);
 }
 
 test.describe('painel de acessos — regra por componente', () => {
