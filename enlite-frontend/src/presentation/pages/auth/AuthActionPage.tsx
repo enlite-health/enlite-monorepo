@@ -8,6 +8,7 @@ import {
 } from 'firebase/auth';
 import { getFirebaseAuth } from '@infrastructure/config/firebase';
 import { AuthNavbar } from '@presentation/components/organisms/AuthNavbar';
+import { ADMIN_HOME_PATH } from '@presentation/config/adminHome';
 import { ActionErrorCard } from './ActionErrorCard';
 import { PasswordResetForm } from './PasswordResetForm';
 
@@ -70,7 +71,7 @@ export function AuthActionPage(): JSX.Element {
         : role === 'admin' || role === 'recruiter' || role === 'community_manager';
 
       if (isStaff) {
-        navigate('/admin', { replace: true });
+        navigate(ADMIN_HOME_PATH, { replace: true });
       } else {
         navigate('/', { replace: true });
       }

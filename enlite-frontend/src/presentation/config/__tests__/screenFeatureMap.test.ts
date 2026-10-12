@@ -14,7 +14,7 @@ const APP_TSX = readFileSync(resolve(__dirname, '../../App.tsx'), 'utf8');
 const ADMIN_NAV_TSX = readFileSync(resolve(__dirname, '../adminNavigation.tsx'), 'utf8');
 
 /** O bloco das rotas ANINHADAS sob `<Route path="/admin" ...>` — uma linha por `<Route .../>`. */
-const INICIO_BLOCO_ADMIN = APP_TSX.indexOf('<Route index element={<AdminUsersPage />} />');
+const INICIO_BLOCO_ADMIN = APP_TSX.indexOf('<Route index element={<AdminHomeRedirect />} />');
 const FIM_BLOCO_ADMIN = APP_TSX.indexOf('{/* Catch-all: rota desconhecida');
 if (INICIO_BLOCO_ADMIN === -1 || FIM_BLOCO_ADMIN === -1) {
   throw new Error('screenFeatureMap.test.ts: âncoras do bloco /admin não encontradas em App.tsx — o arquivo mudou, atualizar as âncoras.');
@@ -42,7 +42,7 @@ const ROTAS_ADMIN: RotaAdmin[] = BLOCO_ADMIN.split('\n')
 // Sync main→stage (06/09): mapa, mensagens por etapa, plantillas e invitación também não têm
 // chave `screen:*` no manifest — gateadas por célula (`messaging:read` no menu), não por país.
 const ROTAS_SEM_CHAVE_SCREEN = new Set([
-  '', 'tags', 'patient-chat-roles', 'dedup',
+  '', 'users', 'tags', 'patient-chat-roles', 'dedup',
   // Spec 049 (F7): "Vincular Tactiq" — célula própria (`own_tactiq_link:*`), não é tela por país.
   'mi-cuenta/tactiq',
   'mapa', 'mensajes-por-etapa', 'plantillas', 'plantillas/registrar', 'plantillas/:slug', 'invitacion-presentacion',

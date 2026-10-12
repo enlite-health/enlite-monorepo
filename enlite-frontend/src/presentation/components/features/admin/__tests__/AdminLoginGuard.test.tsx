@@ -20,7 +20,7 @@ const mockUseAdminAuth = useAdminAuth as Mock;
  * 
  * Cenários testados:
  * 1. Worker autenticado → redireciona para /
- * 2. Admin autenticado → redireciona para /admin
+ * 2. Admin autenticado → redireciona para /admin/dashboard
  * 3. Ninguém autenticado → permite acesso à página de login
  * 4. Loading state → mostra spinner
  */
@@ -36,7 +36,7 @@ describe('AdminLoginGuard', () => {
       <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <Routes>
           <Route path="/" element={<HomeComponent />} />
-          <Route path="/admin" element={<AdminDashboard />} />
+          <Route path="/admin/dashboard" element={<AdminDashboard />} />
           <Route
             path="/admin/login"
             element={
@@ -55,7 +55,7 @@ describe('AdminLoginGuard', () => {
   });
 
   describe('Redirecionamento de admins já autenticados', () => {
-    it('deve redirecionar admin autenticado para /admin', async () => {
+    it('deve redirecionar admin autenticado para /admin/dashboard', async () => {
       // Não é worker
       mockUseAuth.mockReturnValue({
         isAuthenticated: false,
@@ -92,7 +92,7 @@ describe('AdminLoginGuard', () => {
 
       renderWithRouter('/admin/login');
 
-      // Deve redirecionar para /admin
+      // Deve redirecionar para /admin/dashboard (Gestão à Vista)
       await waitFor(() => {
         expect(screen.getByText('Admin Dashboard')).toBeInTheDocument();
       });

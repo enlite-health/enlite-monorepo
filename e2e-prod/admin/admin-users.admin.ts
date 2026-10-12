@@ -6,7 +6,7 @@
  */
 import { test, expect } from '@playwright/test';
 
-test('[@route:/admin @depth:smoke] página de usuários renderiza heading', async ({ page }) => {
-  await page.goto('/admin');
+test('[@route:/admin/users @depth:smoke] página de usuários renderiza heading', async ({ page }) => {
+  await page.goto('/admin/users');
   await expect(page.getByRole('heading', { name: 'Usuarios Administradores', exact: true })).toBeVisible();
 });

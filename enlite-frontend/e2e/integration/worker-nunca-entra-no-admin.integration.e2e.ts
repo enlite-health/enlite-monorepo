@@ -26,7 +26,7 @@ const DOMINIO = 'painel-real.e2e.local';
 const WORKER_EMAIL = `prestador@${DOMINIO}`;
 const STAFF_EMAIL = `staff-tipo@${DOMINIO}`;
 
-// Rotas REAIS do painel (App.tsx): `/admin` é a lista de usuários (index); caminho inexistente
+// Rotas REAIS do painel (App.tsx): `/admin` é o índice (redireciona à Gestão à Vista; Usuários é `/admin/users`); caminho inexistente
 // sob /admin cai no catch-all `*` e vai para `/` — também coberto, no final.
 const ROTAS_DO_PAINEL = ['/admin', '/admin/access', '/admin/patients', '/admin/workers', '/admin/dashboard', '/admin/vacancies', '/admin/tags', '/admin/dedup', '/admin/nao-existe'];
 /** URL de tela do painel = /admin ou /admin/<algo> que não seja o login. */

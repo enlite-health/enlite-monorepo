@@ -17,6 +17,7 @@ import { AdminLayout } from './components/templates/AdminLayout/AdminLayout';
 import { AdminLoginPage } from './pages/admin/AdminLoginPage';
 import { AuthActionPage } from './pages/auth/AuthActionPage';
 import { AdminUsersPage } from './pages/admin/AdminUsersPage';
+import { AdminHomeRedirect } from './components/features/admin/AdminHomeRedirect';
 import { AccessPage, GroupDetailPage, CountryFeaturesPage, PermissionHistoryPage } from './pages/admin/access';
 import { AdminVacanciesPage } from './pages/admin/AdminVacanciesPage';
 import { ManagementDashboardPage } from './pages/admin/ManagementDashboardPage';
@@ -231,7 +232,8 @@ export function App() {
             </AdminErrorBoundary>
           }
         >
-          <Route index element={<AdminUsersPage />} />
+          <Route index element={<AdminHomeRedirect />} />
+          <Route path="users" element={<AdminUsersPage />} />
           {/* B2 (D268) — cada rota de tela `screen:*` envolvida por `FeatureRouteGate`:
               desligada no país do ator → redireciona a `/admin` (mesma postura que
               `AccessGate` já usa para `hidden`). `tags`/`patient-chat-roles`/`dedup`
