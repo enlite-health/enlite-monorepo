@@ -38,3 +38,9 @@ services:
       ADMISSION_CALENDAR_ID_AR: "cal-ar-e2e049@example.test"
       TWILIO_TEMPLATE_ADMISSION_CONFIRMATION_ES: "HX_CONF_ES_E2E"
       TWILIO_TEMPLATE_ADMISSION_REMINDER_ES: "HX_REM_ES_E2E"
+      # Spec 052 (aba Encuadre, T-32): o e2e de TELA `enquadre-052-*` cria o evento de enquadre de verdade pelo painel. O Calendar é o
+      # MESMO dublê da admissão (`ADMISSION_EXTERNALS=fake`; e-mail de entrevistadora com prefixo `falha.` faz a criação falhar). Sem estas
+      # duas envs o serviço RECUSA criar (fail-closed): agenda dedicada do enquadre por país e trava de canal real nos convidados —
+      # só o domínio `example.test` (o das sementes) recebe convite. Valores só de CI.
+      ENQUADRE_CALENDAR_ID_AR: "cal-enq-ar-e2e052@example.test"
+      ENQUADRE_GUEST_POLICY: "allowlist:example.test"
