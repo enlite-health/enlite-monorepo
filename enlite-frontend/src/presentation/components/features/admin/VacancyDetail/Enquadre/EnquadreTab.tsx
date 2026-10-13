@@ -3,7 +3,7 @@
  * evento), os estados carregando/erro/vazio e a tabela de eventos. Molde: AdmissionTab (mesma anatomia).
  *
  * Fase 0: "Crear evento" é `Button` simples (sem célula de ABAC — entra na Fase 2). `createOpen` monta o drawer; o clique
- * na linha só guarda `selectedEventId` e o kanban do evento (T-11) monta nesse ponto.
+ * na linha guarda `selectedEventId` e a aba troca a lista pelo kanban do evento ("← Eventos" volta e recarrega).
  */
 import { useState, type JSX } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -15,6 +15,7 @@ import { useEnquadreEvents } from '@hooks/admin/useEnquadreEvents';
 import { useEnquadreAvailableWorkers } from '@hooks/admin/useEnquadreAvailableWorkers';
 import { timeZoneForCountry } from '../../PatientDetail/admission/admissionTime';
 import { CreateEnquadreEventDrawer } from './CreateEnquadreEventDrawer';
+import { EnquadreEventKanban } from './EnquadreEventKanban';
 import { EnquadreEventsTable } from './EnquadreEventsTable';
 
 interface Props {
@@ -34,12 +35,25 @@ export function EnquadreTab({ vacancyId, now = () => new Date() }: Props): JSX.E
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
 
+  const backToList = (): void => {
+    setSelectedEventId(null);
+    void reload();
+    void available.reload();
+  };
+
+  if (selectedEventId) {
+    return (
+      <div className="flex flex-col gap-4" data-testid="enquadre-tab" data-selected-event={selectedEventId}>
+        <EnquadreEventKanban vacancyId={vacancyId} eventId={selectedEventId} now={now} onBack={backToList} />
+      </div>
+    );
+  }
+
   return (
     <div
       className="flex flex-col gap-4"
       data-testid="enquadre-tab"
       data-create-open={createOpen}
-      data-selected-event={selectedEventId ?? undefined}
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-4">
@@ -87,7 +101,6 @@ export function EnquadreTab({ vacancyId, now = () => new Date() }: Props): JSX.E
           onCreated={() => { setCreateOpen(false); void reload(); void available.reload(); }}
         />
       )}
-      {/* T-11: selectedEventId troca a lista por <EnquadreEventKanban … /> aqui. */}
     </div>
   );
 }

@@ -2768,7 +2768,11 @@
           "workersLoading": "Cargando prestadores…",
           "workersError": "No pudimos cargar los prestadores.",
           "timezoneNote": "Hora de {{country}} (ahora son las {{now}}).",
-          "selectedCount": "{{count}} prestadores seleccionados"
+          "selectedCount": "{{count}} prestadores seleccionados",
+          "slotsIdle": "Elegí un entrevistador y una fecha para ver los horarios libres.",
+          "slotsLoading": "Buscando horarios libres…",
+          "slotsError": "No pudimos cargar los horarios libres. Podés escribir la hora a mano.",
+          "slotsEmpty": "No hay horarios libres ese día. Podés escribir la hora a mano."
         },
         "kanban": {
           "back": "Eventos",
@@ -2782,14 +2786,19 @@
             "busy": "Cerrando…"
           },
           "convoked": "Convocado · {{date}}",
-          "readOnly": "Evento terminado: solo lectura"
+          "readOnly": "Evento terminado: solo lectura",
+          "returned": "Devuelto",
+          "closeError": "No se pudo cerrar el evento.",
+          "title": "Evento del {{date}} · {{start}}–{{end}}",
+          "moveError": "No se pudo mover al convocado."
         },
         "cancel": {
           "button": "Cancelar evento",
           "title": "Cancelar evento",
           "body": "Se cancelará el evento en Google y los {{count}} convocados quedarán libres",
           "confirm": "Cancelar evento",
-          "busy": "Cancelando…"
+          "busy": "Cancelando…",
+          "error": "No se pudo cancelar el evento."
         },
         "convoked": {
           "title": "Gestionar convocados",
@@ -2802,7 +2811,12 @@
             "busy": "Quitando…"
           },
           "add": "Agregar ({{count}})",
-          "noneAvailable": "No hay completados disponibles para agregar"
+          "noneAvailable": "No hay completados disponibles para agregar",
+          "addError": "No se pudo agregar a los convocados.",
+          "removeError": "No se pudo quitar al convocado.",
+          "current": "Convocados actuales",
+          "available": "Completados disponibles",
+          "currentEmpty": "No hay convocados."
         },
         "seals": {
           "summary": "Resumen",

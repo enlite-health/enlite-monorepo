@@ -15,6 +15,7 @@ import { Button } from '@presentation/components/atoms/Button';
 import { Input } from '@presentation/components/atoms/Input';
 import { SlideOverPanel } from '@presentation/components/molecules/SlideOverPanel/SlideOverPanel';
 import { useEnquadreHosts } from '@hooks/admin/useEnquadreHosts';
+import { useEnquadreFreeSlots } from '@hooks/admin/useEnquadreFreeSlots';
 import type { EnquadreHostOption, EnquadreWorkerOption } from '@domain/entities/EnquadreEvent';
 import type { EnquadreLoadStatus } from '@hooks/admin/useEnquadreEvents';
 import { AdminEnquadreApiService } from '@infrastructure/http/AdminEnquadreApiService';
@@ -48,6 +49,7 @@ export function CreateEnquadreEventDrawer({ vacancyId, workers, workersStatus, o
 
   const wall = toWallClock(date, time);
   const minutes = Number(duration);
+  const freeSlots = useEnquadreFreeSlots(vacancyId, hostId, date, minutes);
   const canSubmit = !busy && hostId !== null && wall !== null && workerIds.length > 0 && Number.isInteger(minutes) && minutes > 0;
 
   const submit = async (): Promise<void> => {
@@ -136,6 +138,30 @@ export function CreateEnquadreEventDrawer({ vacancyId, workers, workersStatus, o
             <label htmlFor="enquadre-create-duration" className="text-[11px] uppercase text-primary font-lexend">{te('create.duration')}</label>
             <Input id="enquadre-create-duration" inputSize="compact" type="number" min={15} step={15} value={duration} onChange={(e) => setDuration(e.target.value)} disabled={busy} data-testid="enquadre-create-duration-input" />
           </div>
+        </div>
+        <div className="flex flex-col gap-2" data-testid="enquadre-create-slots">
+          <Text as="span" size="2xs" color="primary" className="uppercase">{te('create.freeSlots')}</Text>
+          {freeSlots.status === 'idle' && <Text size="sm" color="secondary" data-testid="enquadre-create-slots-idle">{te('create.slotsIdle')}</Text>}
+          {freeSlots.status === 'loading' && <Text size="sm" color="secondary" data-testid="enquadre-create-slots-loading">{te('create.slotsLoading')}</Text>}
+          {freeSlots.status === 'error' && <Text color="inherit" size="sm" role="alert" className="text-red-800" data-testid="enquadre-create-slots-error">{te('create.slotsError')}</Text>}
+          {freeSlots.status === 'ok' && freeSlots.slots.length === 0 && <Text size="sm" color="secondary" data-testid="enquadre-create-slots-empty">{te('create.slotsEmpty')}</Text>}
+          {freeSlots.status === 'ok' && freeSlots.slots.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {freeSlots.slots.map((slot) => (
+                <Button
+                  key={slot}
+                  variant={time === slot ? 'primary' : 'outline'}
+                  size="xs"
+                  aria-pressed={time === slot}
+                  disabled={busy}
+                  onClick={() => setTime(slot)}
+                  data-testid={`enquadre-create-slot-${slot}`}
+                >
+                  {slot}
+                </Button>
+              ))}
+            </div>
+          )}
         </div>
         <Text color="inherit" size="xs" className="text-slate-600" data-testid="enquadre-create-tz-note">
           {te('create.timezoneNote', { country: t('admin.patients.detail.country.AR', 'AR'), now: wallClockNow(timeZone, now()).slice(11) })}

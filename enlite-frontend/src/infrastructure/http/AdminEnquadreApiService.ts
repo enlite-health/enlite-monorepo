@@ -29,6 +29,14 @@ export class AdminEnquadreApiService {
     throw new Error('enquadre: backend só na Fase 2');
   }
 
+  /**
+   * Horários de início livres na agenda do entrevistador no dia `date` (`YYYY-MM-DD`), em hora de parede `HH:mm`,
+   * já calculados pelo servidor para a duração pedida. A tela não calcula disponibilidade.
+   */
+  static async listHostFreeSlots(_vacancyId: string, _hostId: string, _date: string, _durationMinutes: number): Promise<string[]> {
+    throw new Error('enquadre: backend só na Fase 2');
+  }
+
   static async createEvent(_vacancyId: string, _input: CreateEnquadreEventInput): Promise<EnquadreEventDetail> {
     throw new Error('enquadre: backend só na Fase 2');
   }
@@ -49,7 +57,10 @@ export class AdminEnquadreApiService {
     throw new Error('enquadre: backend só na Fase 2');
   }
 
-  /** `reason` = categoria de rejeição, obrigatória quando `column === 'REJECTED'`. */
+  /**
+   * `reason` = motivo obrigatório ao ENTRAR em Rejeitados (categoria de rejeição) e ao SAIR dele (spec §5.2). Como no
+   * funil da vaga, quem decide que o motivo faltou é o servidor: 422 `MOVE_REASON_REQUIRED` (`ApiError`), e a tela reage.
+   */
   static async moveParticipant(
     _vacancyId: string,
     _eventId: string,

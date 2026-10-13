@@ -10,7 +10,8 @@ import { Text } from '@presentation/components/atoms/Text';
 import { TableCell, TableRow } from '@presentation/components/atoms/Table';
 import type { EnquadreEventListItem, EnquadreOutcomeCounts } from '@domain/entities/EnquadreEvent';
 import { SealChip } from '../../PatientDetail/admission/AdmissionSeals';
-import { isFuture, wallClockIn } from '../../PatientDetail/admission/admissionTime';
+import { isFuture } from '../../PatientDetail/admission/admissionTime';
+import { dateAndTime } from './enquadreEventTime';
 import { EnquadrePipelineSeals } from './EnquadrePipelineSeals';
 import { ENQUADRE_PHASE_KEY, ENQUADRE_PHASE_OPEN, ENQUADRE_PHASE_TONE } from './enquadreEventPhase';
 
@@ -27,15 +28,6 @@ const OUTCOME_KEYS: ReadonlyArray<readonly [keyof EnquadreOutcomeCounts, string]
   ['rejected', 'outcome.rejected'],
   ['returned', 'outcome.returned'],
 ];
-
-/** "2026-10-16T14:00" → ["16/10", "14:00"] (relógio de parede do fuso, sem depender do navegador). */
-function dateAndTime(iso: string, timeZone: string): [string, string] {
-  const wall = wallClockIn(iso, timeZone);
-  if (!wall) return [iso, ''];
-  const [date, time] = wall.split('T');
-  const [, month, day] = date.split('-');
-  return [`${day}/${month}`, time];
-}
 
 export function EnquadreEventRow({ event: e, timeZone, now, onSelect }: Props): JSX.Element {
   const { t } = useTranslation();
