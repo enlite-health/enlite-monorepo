@@ -2634,6 +2634,21 @@
         }
       },
       "enquadre": {
+        "errors": {
+          "generic": "Não conseguimos concluir a ação. Tente novamente.",
+          "tactiqLinkRequired": "Esse entrevistador não tem Tactiq vinculado. Escolha outra pessoa.",
+          "hostNotInRoster": "Essa pessoa não está na equipe de entrevistadores deste país.",
+          "workerNotAvailable": "Algum prestador não está mais disponível (mudou de etapa ou já está em outro evento). Atualizamos a lista.",
+          "workerEmailInvalid": "Algum prestador não tem e-mail válido: não dá para convocá-lo.",
+          "guestNotAllowed": "Esse convite não é permitido para este evento.",
+          "configInvalid": "A agenda de enquadres não está configurada. Avise a equipe técnica.",
+          "slotInPast": "Escolha um horário futuro.",
+          "calendarUpdateFailed": "Não foi possível atualizar o evento no Google Calendar. Nada foi salvo. Tente novamente.",
+          "eventNotOpen": "Este evento não está mais aberto. Atualizamos os dados.",
+          "eventNotEnded": "O evento ainda não terminou: dá para encerrar quando o horário acabar.",
+          "participantAlreadyMarked": "Esse convocado já tem uma marcação e não pode ser removido do evento.",
+          "eventNotFound": "Não encontramos este evento."
+        },
         "title": "Eventos de enquadre",
         "newButton": "Criar evento",
         "loading": "Carregando eventos…",

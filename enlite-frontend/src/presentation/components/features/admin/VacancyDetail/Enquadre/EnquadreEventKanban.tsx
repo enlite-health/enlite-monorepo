@@ -27,6 +27,9 @@ import { ENQUADRE_COLUMNS, ENQUADRE_COLUMN_WIDTH, ENQUADRE_MOVE_TARGETS } from '
 import { ENQUADRE_PHASE_OPEN } from './enquadreEventPhase';
 import { EnquadreEventKanbanHeader } from './EnquadreEventKanbanHeader';
 import { EnquadreConvokedPanel } from './EnquadreConvokedPanel';
+import { enquadreErrorKey, isEnquadreStateConflict } from './enquadreErrors';
+
+const E = 'admin.vacancyDetail.enquadre';
 
 interface Props {
   vacancyId: string;
@@ -99,7 +102,7 @@ export function EnquadreEventKanban({ vacancyId, eventId, onBack, now = () => ne
         setPendingLeave({ participantId, column });
         return;
       }
-      setMoveError(te('kanban.moveError'));
+      setMoveError(t(enquadreErrorKey(err, `${E}.kanban.moveError`)));
       await reload();
     }
   }
@@ -120,8 +123,9 @@ export function EnquadreEventKanban({ vacancyId, eventId, onBack, now = () => ne
       await action();
       setConfirm(null);
       await after();
-    } catch {
-      setDialogError(te(errorKey));
+    } catch (err) {
+      setDialogError(t(enquadreErrorKey(err, `${E}.${errorKey}`)));
+      if (isEnquadreStateConflict(err)) await reload();
     } finally {
       setBusy(false);
     }

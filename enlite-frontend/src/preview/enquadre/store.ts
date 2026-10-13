@@ -88,7 +88,7 @@ export function createFakeServer(seed: Seed): Record<string, unknown> {
     listHosts: async (): Promise<EnquadreHostOption[]> => clone(HOSTS),
     listHostFreeSlots: async (): Promise<string[]> => [...FREE_SLOTS],
     createEvent: async (_v: string, input: CreateEnquadreEventInput): Promise<EnquadreEventDetail> => {
-      if (seed.createFails) throw new Error('google calendar');
+      if (seed.createFails) throw new ApiError({ success: false, error: 'google calendar', code: 'CALENDAR_CREATE_FAILED' }, 502);
       const chosen = available.filter((w) => input.workerIds.includes(w.id) && w.hasValidEmail);
       const start = new Date(`${input.startsAt}:00-03:00`);
       const end = new Date(start.getTime() + input.durationMinutes * 60_000);

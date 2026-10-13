@@ -99,6 +99,7 @@ export function EnquadreTab({ vacancyId, now = () => new Date() }: Props): JSX.E
           now={now}
           onClose={() => setCreateOpen(false)}
           onCreated={() => { setCreateOpen(false); void reload(); void available.reload(); }}
+          onStaleData={() => { void available.reload(); }}
         />
       )}
     </div>

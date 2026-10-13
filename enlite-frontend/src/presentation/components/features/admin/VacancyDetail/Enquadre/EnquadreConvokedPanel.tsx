@@ -15,6 +15,9 @@ import { AdminEnquadreApiService } from '@infrastructure/http/AdminEnquadreApiSe
 import type { EnquadreEventDetail, EnquadreParticipant } from '@domain/entities/EnquadreEvent';
 import { AdmissionConfirmDialog } from '../../PatientDetail/admission/AdmissionConfirmDialog';
 import { EnquadreWorkerPicker } from './EnquadreWorkerPicker';
+import { enquadreErrorKey, isEnquadreStateConflict } from './enquadreErrors';
+
+const E = 'admin.vacancyDetail.enquadre';
 
 interface Props {
   vacancyId: string;
@@ -44,8 +47,9 @@ export function EnquadreConvokedPanel({ vacancyId, event, onChanged, onClose }: 
       await AdminEnquadreApiService.addParticipants(vacancyId, event.id, selected);
       setSelected([]);
       await refresh();
-    } catch {
-      setError(te('convoked.addError'));
+    } catch (err) {
+      setError(t(enquadreErrorKey(err, `${E}.convoked.addError`)));
+      if (isEnquadreStateConflict(err)) await refresh();
     } finally {
       setBusy(false);
     }
@@ -59,9 +63,10 @@ export function EnquadreConvokedPanel({ vacancyId, event, onChanged, onClose }: 
       await AdminEnquadreApiService.removeParticipant(vacancyId, event.id, pendingRemove.id);
       setPendingRemove(null);
       await refresh();
-    } catch {
-      setError(te('convoked.removeError'));
+    } catch (err) {
+      setError(t(enquadreErrorKey(err, `${E}.convoked.removeError`)));
       setPendingRemove(null);
+      if (isEnquadreStateConflict(err)) await refresh();
     } finally {
       setBusy(false);
     }

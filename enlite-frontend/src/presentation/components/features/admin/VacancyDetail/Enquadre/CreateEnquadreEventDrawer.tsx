@@ -21,6 +21,7 @@ import type { EnquadreLoadStatus } from '@hooks/admin/useEnquadreEvents';
 import { AdminEnquadreApiService } from '@infrastructure/http/AdminEnquadreApiService';
 import { timeZoneForCountry, toWallClock, wallClockNow } from '../../PatientDetail/admission/admissionTime';
 import { EnquadreWorkerPicker } from './EnquadreWorkerPicker';
+import { enquadreErrorKey, isEnquadreStateConflict } from './enquadreErrors';
 
 const DEFAULT_DURATION_MINUTES = 60;
 
@@ -30,11 +31,13 @@ interface Props {
   workersStatus: EnquadreLoadStatus;
   onCreated: () => void;
   onClose: () => void;
+  /** Um 409 de estado (ex.: prestador que já não está disponível): quem montou o drawer recarrega a lista. */
+  onStaleData?: () => void;
   /** Relógio injetável (teste e harness). */
   now?: () => Date;
 }
 
-export function CreateEnquadreEventDrawer({ vacancyId, workers, workersStatus, onCreated, onClose, now = () => new Date() }: Props): JSX.Element {
+export function CreateEnquadreEventDrawer({ vacancyId, workers, workersStatus, onCreated, onClose, onStaleData, now = () => new Date() }: Props): JSX.Element {
   const { t } = useTranslation();
   const te = (key: string, opts?: Record<string, unknown>): string => t(`admin.vacancyDetail.enquadre.${key}`, opts);
   const { hosts, status: hostsStatus, reload: reloadHosts } = useEnquadreHosts(vacancyId);
@@ -59,8 +62,9 @@ export function CreateEnquadreEventDrawer({ vacancyId, workers, workersStatus, o
     try {
       await AdminEnquadreApiService.createEvent(vacancyId, { hostId, startsAt: wall, durationMinutes: minutes, workerIds });
       onCreated();
-    } catch {
-      setError(te('create.googleError'));
+    } catch (err) {
+      setError(t(enquadreErrorKey(err)));
+      if (isEnquadreStateConflict(err)) onStaleData?.();
       setBusy(false);
     }
   };
