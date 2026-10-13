@@ -6,8 +6,8 @@ import type { EnquadreEventStatus, EnquadreParticipantOutcome } from '../domain/
 /**
  * EnquadreEventRepository — SQL do evento de enquadre (spec 052, migration 518). Todo método recebe o `client` da TRANSAÇÃO do
  * chamador (`withActorContext`): é o que carimba `app.current_uid` e o contexto de país (RLS de `patients`). NENHUM DELETE:
- * tirar convocado e cancelar são UPDATE de carimbo (a 518 revoga DELETE). As mutações (acrescentar/tirar, cancelar, mover,
- * encerrar) entram na T-30c como métodos novos aqui.
+ * tirar convocado e cancelar são UPDATE de carimbo (a 518 revoga DELETE). As escritas do estágio da candidatura NÃO moram
+ * aqui: só `moveApplicationStage` escreve `application_funnel_stage`.
  */
 
 export interface VacancyRow {
@@ -39,6 +39,21 @@ export interface ParticipantRow {
   stage: string | null;
   occupation_raw: string | null;
   rejection_reason_category: string | null;
+}
+
+/** Evento relido COM TRAVA (`FOR UPDATE`) para mutar: traz o que o Google e o carimbo precisam. */
+export interface LockedEventRow extends EventRow {
+  host_email: string;
+  calendar_event_id: string | null;
+}
+
+/** Participação ATIVA (`released_at IS NULL`) com o que as mutações precisam: e-mail (convite), estágio vigente e o encuadre mais recente. */
+export interface ActiveParticipantRow {
+  id: string;
+  worker_id: string;
+  email: string | null;
+  stage: string | null;
+  encuadre_id: string | null;
 }
 
 export interface AvailableWorkerRow {
@@ -174,5 +189,72 @@ export class EnquadreEventRepository {
 
   async attachCalendarRefs(client: PoolClient, eventId: string, calendarEventId: string, meetLink: string): Promise<void> {
     await client.query(`UPDATE enquadre_events SET calendar_event_id = $2, meet_link = $3 WHERE id = $1`, [eventId, calendarEventId, meetLink]);
+  }
+
+  // ─── mutações (T-30c) ──────────────────────────────────────────────────────
+
+  /** O evento da vaga, TRAVADO até o fim da transação: duas mutações no mesmo evento se enfileiram. */
+  async lockEvent(client: PoolClient, vacancyId: string, eventId: string): Promise<LockedEventRow | null> {
+    const res = await client.query<LockedEventRow>(
+      `SELECT id, country, host_display_name, host_email, calendar_event_id, starts_at, ends_at, status, meet_link, import_status
+         FROM enquadre_events
+        WHERE job_posting_id = $1 AND id = $2
+          FOR UPDATE`,
+      [vacancyId, eventId],
+    );
+    return res.rows[0] ?? null;
+  }
+
+  async listActiveParticipants(client: PoolClient, eventId: string): Promise<ActiveParticipantRow[]> {
+    const res = await client.query<ActiveParticipantRow>(
+      `SELECT p.id, p.worker_id, w.email,
+              wja.application_funnel_stage AS stage,
+              (SELECT e.id FROM encuadres e
+                WHERE e.worker_id = p.worker_id AND e.job_posting_id = p.job_posting_id
+                ORDER BY e.created_at DESC LIMIT 1) AS encuadre_id
+         FROM enquadre_event_participants p
+         JOIN workers w ON w.id = p.worker_id
+         LEFT JOIN worker_job_applications wja
+                ON wja.worker_id = p.worker_id AND wja.job_posting_id = p.job_posting_id
+        WHERE p.event_id = $1 AND p.released_at IS NULL
+        ORDER BY p.created_at ASC, p.id ASC`,
+      [eventId],
+    );
+    return res.rows;
+  }
+
+  /** Tirar convocado: carimba a saída (`removed`), não apaga. */
+  async releaseParticipant(client: PoolClient, participantId: string): Promise<void> {
+    await client.query(
+      `UPDATE enquadre_event_participants SET released_at = now(), release_kind = 'removed' WHERE id = $1 AND released_at IS NULL`,
+      [participantId],
+    );
+  }
+
+  /** Cancelar o evento: libera TODAS as participações ativas (`cancelled`). */
+  async releaseAllCancelled(client: PoolClient, eventId: string): Promise<void> {
+    await client.query(
+      `UPDATE enquadre_event_participants SET released_at = now(), release_kind = 'cancelled' WHERE event_id = $1 AND released_at IS NULL`,
+      [eventId],
+    );
+  }
+
+  async markEventCancelled(client: PoolClient, eventId: string, uid: string): Promise<void> {
+    await client.query(
+      `UPDATE enquadre_events SET status = 'cancelled', cancelled_at = now(), cancelled_by_uid = $2 WHERE id = $1`,
+      [eventId, uid],
+    );
+  }
+
+  /** Encerrar: carimba a participação ativa com o resultado (`closed` + `outcome`, que o CHECK da 518 exige juntos). */
+  async closeParticipant(client: PoolClient, participantId: string, outcome: EnquadreParticipantOutcome): Promise<void> {
+    await client.query(
+      `UPDATE enquadre_event_participants SET released_at = now(), release_kind = 'closed', outcome = $2 WHERE id = $1 AND released_at IS NULL`,
+      [participantId, outcome],
+    );
+  }
+
+  async markEventClosed(client: PoolClient, eventId: string, uid: string): Promise<void> {
+    await client.query(`UPDATE enquadre_events SET status = 'closed', closed_at = now(), closed_by_uid = $2 WHERE id = $1`, [eventId, uid]);
   }
 }

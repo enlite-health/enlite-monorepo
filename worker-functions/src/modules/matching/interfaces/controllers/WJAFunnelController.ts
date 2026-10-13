@@ -25,6 +25,7 @@ import { RESEND_COOLDOWN_HOURS, resendCooldownUntilSql } from '../../../notifica
 import { PubSubClient } from '@shared/events/PubSubClient';
 import { MOVABLE_FUNNEL_STAGES, isMovableFunnelStage } from '../../application/FunnelStageEventEmitter';
 import { moveApplicationStage } from '../../application/moveApplicationStage';
+import { publishStageEvent } from '../../application/publishStageEvent';
 import { candidateDistanceKmSql } from '../../infrastructure/candidateDistanceSql';
 import {
   MoveReasonRequiredError,
@@ -166,6 +167,20 @@ export class WJAFunnelController {
               FROM funnel_stage_message_log l
               WHERE l.worker_id = wja.worker_id AND l.job_posting_id = wja.job_posting_id AND l.status = 'queued'
               ORDER BY l.created_at DESC LIMIT 1) AS last_stage_message,
+             -- Spec 052: convocação ATIVA do par num evento de enquadre (etiqueta "Convocado · dd/mm hh:mm").
+             (SELECT ev.starts_at FROM enquadre_event_participants ep
+                JOIN enquadre_events ev ON ev.id = ep.event_id
+               WHERE ep.worker_id = wja.worker_id AND ep.job_posting_id = wja.job_posting_id AND ep.released_at IS NULL
+               ORDER BY ev.starts_at DESC LIMIT 1) AS convocation_starts_at,
+             -- Spec 052: código do evento (não cancelado) em que o par foi marcado — só para Selecionados / Resposta rápida.
+             CASE WHEN wja.application_funnel_stage IN ('SELECTED', 'QUICK_RESPONSE_TEAM') THEN
+               (SELECT ev.event_code FROM enquadre_event_participants ep
+                  JOIN enquadre_events ev ON ev.id = ep.event_id
+                 WHERE ep.worker_id = wja.worker_id AND ep.job_posting_id = wja.job_posting_id
+                   AND ev.status <> 'cancelled'
+                   AND (ep.released_at IS NULL OR ep.outcome IN ('selected', 'quick_response'))
+                 ORDER BY ev.starts_at DESC LIMIT 1)
+             END AS enquadre_origin_code,
              wsa.work_zone,
              ${candidateDistanceKmSql('wja.worker_id', 'wja.job_posting_id')} AS distance_km
            FROM worker_job_applications wja
@@ -327,6 +342,11 @@ export class WJAFunnelController {
           internalStage: stage ?? null,
           contactNotesCount: Number(row.contact_notes_count ?? 0),
           selfAppliedAt: row.self_applied_at ?? null,
+          // Spec 052: derivados no servidor (a tela só mostra). Linha sem as colunas (mock, leitura antiga) = null.
+          convocation: row.convocation_starts_at
+            ? { startsAt: new Date(row.convocation_starts_at as string | Date).toISOString() }
+            : null,
+          enquadreOrigin: row.enquadre_origin_code ? { eventCode: row.enquadre_origin_code as string } : null,
           // Último envio de WhatsApp a esta candidatura (manual ou em lote) —
           // o card mostra a data/hora ao lado do botão "Reenviar" (REQ-08).
           lastMessagedAt: row.messaged_at ? new Date(row.messaged_at as string | Date).toISOString() : null,
@@ -541,13 +561,7 @@ export class WJAFunnelController {
 
       // Depois do COMMIT: o evento já está gravado (pending); a publicação só
       // acelera o processamento — se falhar, a varredura de segurança reprocessa.
-      if (stageEventId) {
-        try {
-          await this.pubsub.publish('talentum-prescreening-qualified', { eventId: stageEventId });
-        } catch (err) {
-          reportError(err instanceof Error ? err : new Error(String(err)), { source: 'WJAFunnelController:moveEncuadre:publish' });
-        }
-      }
+      if (stageEventId) await publishStageEvent(this.pubsub, stageEventId, 'WJAFunnelController:moveEncuadre:publish');
 
       res.json({ success: true, data: { encuadreId: id, targetStage } });
     } catch (error) {

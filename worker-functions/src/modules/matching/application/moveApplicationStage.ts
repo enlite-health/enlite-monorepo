@@ -27,8 +27,11 @@ import {
 export interface MoveApplicationStageInput {
   workerId: string;
   jobPostingId: string;
-  /** Id do `encuadre` que recebe o resultado em SELECTED/REJECTED. */
-  encuadreId: string;
+  /**
+   * Id do `encuadre` que recebe o resultado em SELECTED/REJECTED. `null` = o par não tem encuadre (candidatura sem ficha):
+   * os `UPDATE encuadres` são pulados, todo o resto é igual (spec 052: o evento de enquadre move quem pode não ter encuadre).
+   */
+  encuadreId: string | null;
   /** Destino já validado como movível por quem chama. */
   targetStage: string;
   actorUid: string | null;
@@ -137,7 +140,9 @@ export async function moveApplicationStage(
   );
 
   // Sincronizar encuadre.resultado para estados terminais
-  if (targetStage === 'SELECTED') {
+  if (encuadreId === null) {
+    // sem encuadre: nada a sincronizar
+  } else if (targetStage === 'SELECTED') {
     // Grava o papel quando informado; sem papel o COALESCE preserva o
     // existente (re-mover não apaga a classificação anterior). Encuadre
     // selecionado sem papel = PENDENTE_CLASSIFICACAO no dashboard.

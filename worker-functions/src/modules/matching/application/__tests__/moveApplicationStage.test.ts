@@ -93,4 +93,16 @@ describe('moveApplicationStage', () => {
     expect(r).toEqual({ moved: false, code: 'MOVE_REASON_INVALID', reason: 'JUMP' });
     expect(writes(bad.query)).toHaveLength(0);
   });
+
+  it('(g) encuadreId null (par sem encuadre): o upsert e o evento acontecem, NENHUM UPDATE encuadres', async () => {
+    const sel = fakeClient(from('COMPLETED'));
+    const rSel = await moveApplicationStage(sel.client, { ...base, encuadreId: null }, { skipJumpReason: true });
+    expect(rSel).toEqual({ moved: true, previousStage: 'COMPLETED', eventId: 'evt-1' });
+    expect(sel.query.mock.calls.some((c) => /INSERT INTO worker_job_applications/.test(c[0]))).toBe(true);
+    expect(sel.query.mock.calls.some((c) => /UPDATE encuadres/.test(c[0]))).toBe(false);
+
+    const rej = fakeClient(from('COMPLETED'));
+    await moveApplicationStage(rej.client, { ...base, encuadreId: null, targetStage: 'REJECTED', reasonCategory: 'OTHER' }, { skipJumpReason: true });
+    expect(rej.query.mock.calls.some((c) => /UPDATE encuadres/.test(c[0]))).toBe(false);
+  });
 });

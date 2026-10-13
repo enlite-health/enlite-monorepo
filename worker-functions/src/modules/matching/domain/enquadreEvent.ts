@@ -108,3 +108,23 @@ export function buildEnquadreEventTitle(input: EnquadreTitleInput): string {
   parts.push(input.eventCode);
   return `Encuadre terapéutico — ${parts.join(' · ')}`;
 }
+
+/** Estágio vigente da candidatura → carimbo da participação no encerramento. Estágio que não é de resultado = `returned` (devolvido). */
+export function outcomeOfStage(stage: string | null): EnquadreParticipantOutcome {
+  if (stage === 'SELECTED') return 'selected';
+  if (stage === 'QUICK_RESPONSE_TEAM') return 'quick_response';
+  if (stage === 'REJECTED') return 'rejected';
+  return 'returned';
+}
+
+/** Coluna do kanban do evento → estágio da candidatura (o MESMO estágio do Recrutamento, spec §4.1). Voltar a Convocados = `COMPLETED`. */
+export const STAGE_OF_COLUMN: Readonly<Record<EnquadreColumnId, string>> = {
+  CONVOKED: 'COMPLETED',
+  SELECTED: 'SELECTED',
+  QUICK_RESPONSE_TEAM: 'QUICK_RESPONSE_TEAM',
+  REJECTED: 'REJECTED',
+};
+
+/** Textos FIXOS das anotações automáticas (spec 052 §5.1 item 5 e §5.2 item 8). `wallClock` = `dd/mm hh:mm` no fuso do país do evento. */
+export const cancelledNoteText = (wallClock: string): string => `El encuadre del ${wallClock} fue cancelado`;
+export const notMarkedNoteText = (wallClock: string): string => `No fue marcado en el encuadre del ${wallClock}`;

@@ -40,6 +40,7 @@ import { createEventWithRetry } from './admissionCalendarCreate';
 import { readHostsBusy } from './admissionHostBusy';
 import {
   EnquadreEventNotFoundError,
+  EnquadreSlotInPastError,
   EnquadreVacancyNotFoundError,
   EnquadreWorkerEmailInvalidError,
   EnquadreWorkerNotAvailableError,
@@ -137,16 +138,16 @@ export interface EnquadreEventServiceDeps {
   calendarRetryDelaysMs?: readonly number[];
 }
 
-function isUniqueViolation(err: unknown, constraint: string): boolean {
+export function isUniqueViolation(err: unknown, constraint: string): boolean {
   if (typeof err !== 'object' || err === null) return false;
   const e = err as { code?: string; constraint?: string };
   return e.code === '23505' && e.constraint === constraint;
 }
 
 /**
- * EnquadreEventService — o evento de enquadre (spec 052, Fase 2). Esta rodada: LEITURA (lista, detalhe, prestadores
- * disponíveis, entrevistadoras, horários livres) e CRIAÇÃO. As mutações (acrescentar/tirar convocado, cancelar, mover,
- * encerrar) entram na T-30c como métodos novos sobre o mesmo repositório/transação.
+ * EnquadreEventService — o evento de enquadre (spec 052, Fase 2): LEITURA (lista, detalhe, prestadores disponíveis,
+ * entrevistadoras, horários livres) e CRIAÇÃO. As mutações (acrescentar/tirar convocado, cancelar, mover, encerrar) moram em
+ * `EnquadreEventMutations.ts`, sobre o mesmo repositório e a mesma forma de transação.
  *
  * Nada aqui fala com mensageria (WhatsApp/Cloud Tasks): o aviso ao prestador é o convite do próprio Google.
  * Log: só ids e contagens — nunca e-mail, nome ou telefone.
@@ -278,6 +279,7 @@ export class EnquadreEventService {
 
         const start = DateTime.fromFormat(input.startsAt, WALL_CLOCK, { zone: cfg.timezone });
         if (!start.isValid) throw new InvalidSlotError();
+        if (start.toMillis() < this.now().getTime()) throw new EnquadreSlotInPastError();
         const end = start.plus({ minutes: input.durationMinutes });
 
         const workerIds = [...new Set(input.workerIds)];
@@ -436,7 +438,7 @@ export class EnquadreEventService {
   }
 }
 
-function hasValidEmail(email: string | null): boolean {
+export function hasValidEmail(email: string | null): boolean {
   return typeof email === 'string' && EMAIL.safeParse(email.trim()).success;
 }
 
