@@ -270,6 +270,15 @@ describe('evento de enquadre — HTTP real, banco real, engine LIGADO (spec 052,
     const ev = await admin.query(`SELECT count(DISTINCT event_id)::int AS n FROM enquadre_event_participants WHERE worker_id = $1`, [w1]);
     expect(ev.rows[0].n).toBe(1);
     expect(calendar.created.length - antesCalendar).toBe(1);
+
+    // O 409 acima vem da checagem de aplicação (disponibilidade). A TRAVA do banco só se prova pelo INSERT cru: sem o índice
+    // `uq_enquadre_participant_um_aberto` a 2ª participação aberta entraria (era o furo: DROP INDEX deixava o caso verde).
+    await expect(
+      admin.query(
+        `INSERT INTO enquadre_event_participants (event_id, job_posting_id, worker_id, added_by_uid) VALUES ($1, $2, $3, $4)`,
+        [a.body.data.id, vacancyId, w1, UID],
+      ),
+    ).rejects.toMatchObject({ code: '23505', constraint: 'uq_enquadre_participant_um_aberto' });
   });
 
   it('2. título sem nome: o summary NÃO tem o primeiro nome do paciente e TEM o sobrenome e o nº do caso', async () => {
