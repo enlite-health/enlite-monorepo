@@ -1721,7 +1721,8 @@
         "QUICK_RESPONSE_TEAM": "Equipe de Resposta Rápida",
         "REJECTED": "Rejeitados",
         "INICIADO": "Iniciados",
-        "PRE_SCREENING": "Pré-triagem"
+        "PRE_SCREENING": "Pré-triagem",
+        "CONVOKED": "Convocados"
       },
       "talentumStatus": {
         "INITIATED": "Talentum: Iniciado",
@@ -2292,7 +2293,8 @@
         "CLOSED": "Encerrado"
       },
       "tabs": {
-        "encuadres": "Encuadres",
+        "encuadres": "Recrutamento",
+        "enquadre": "Enquadre",
         "talentum": "Talentum",
         "links": "Links",
         "notes": "Anotações"
@@ -2630,6 +2632,125 @@
           "5": "Sexta",
           "6": "Sábado"
         }
+      },
+      "enquadre": {
+        "title": "Eventos de enquadre",
+        "newButton": "Criar evento",
+        "loading": "Carregando eventos…",
+        "loadError": "Não foi possível carregar os eventos.",
+        "empty": "Ainda não há eventos",
+        "columns": {
+          "date": "Data",
+          "time": "Hora",
+          "host": "Entrevistador",
+          "convoked": "Convocados",
+          "outcome": "Resultado",
+          "status": "Estado"
+        },
+        "phase": {
+          "scheduled": "Agendado",
+          "pending_close": "Pendente de encerramento",
+          "closed": "Encerrado",
+          "cancelled": "Cancelado"
+        },
+        "outcome": {
+          "none": "—",
+          "selected": "Selecionados: {{count}}",
+          "quickResponse": "Resposta rápida: {{count}}",
+          "rejected": "Rejeitados: {{count}}",
+          "returned": "Devolvidos: {{count}}",
+          "partial": "{{marked}} marcados de {{total}}"
+        },
+        "row": {
+          "meet": "Abrir Meet"
+        },
+        "create": {
+          "title": "Criar evento",
+          "host": "Entrevistador",
+          "hostPlaceholder": "Escolha um entrevistador",
+          "date": "Data",
+          "time": "Hora",
+          "duration": "Duração (minutos)",
+          "freeSlots": "Horários livres",
+          "workers": "Prestadores a convocar",
+          "noEmail": "Sem e-mail válido: não é possível convocar",
+          "googleError": "Não foi possível criar o evento no Google Calendar. Nada foi gravado.",
+          "submit": "Criar",
+          "submitting": "Criando…",
+          "close": "Fechar",
+          "hostReason": {
+            "unlinked": "Sem vínculo com o Google Calendar: não é possível agendar"
+          },
+          "hostsLoading": "Carregando entrevistadores…",
+          "hostsError": "Não foi possível carregar os entrevistadores.",
+          "hostsEmpty": "Não há entrevistadores disponíveis.",
+          "retry": "Tentar de novo",
+          "workersLoading": "Carregando prestadores…",
+          "workersError": "Não foi possível carregar os prestadores.",
+          "timezoneNote": "Horário de {{country}} (agora são {{now}}).",
+          "selectedCount_one": "{{count}} prestador selecionado",
+          "selectedCount_other": "{{count}} prestadores selecionados",
+          "slotsIdle": "Escolha um entrevistador e uma data para ver os horários livres.",
+          "slotsLoading": "Buscando horários livres…",
+          "slotsError": "Não foi possível carregar os horários livres. Você pode digitar a hora à mão.",
+          "slotsEmpty": "Não há horários livres nesse dia. Você pode digitar a hora à mão."
+        },
+        "kanban": {
+          "back": "Eventos",
+          "openMeet": "Abrir Meet",
+          "close": "Encerrar evento",
+          "closeBlocked": "Disponível quando o horário do evento terminar",
+          "closeConfirm": {
+            "title": "Encerrar evento",
+            "body_one": "{{count}} convocado sem marcação volta para Completado",
+            "body_other": "{{count}} convocados sem marcação voltam para Completado",
+            "confirm": "Encerrar evento",
+            "busy": "Encerrando…"
+          },
+          "convoked": "Convocado · {{date}}",
+          "readOnly": "Evento terminado: somente leitura",
+          "returned": "Devolvido",
+          "closeError": "Não foi possível encerrar o evento.",
+          "title": "Evento de {{date}} · {{start}}–{{end}}",
+          "moveError": "Não foi possível mover o convocado.",
+          "originSelected": "Selecionado em: {{code}}",
+          "originQuickResponse": "Resposta rápida em: {{code}}"
+        },
+        "cancel": {
+          "button": "Cancelar evento",
+          "title": "Cancelar evento",
+          "body_one": "O evento será cancelado no Google e o convocado ficará livre",
+          "body_other": "O evento será cancelado no Google e os {{count}} convocados ficarão livres",
+          "confirm": "Cancelar evento",
+          "busy": "Cancelando…",
+          "error": "Não foi possível cancelar o evento."
+        },
+        "convoked": {
+          "title": "Gerenciar convocados",
+          "manage": "Gerenciar convocados",
+          "remove": "Retirar",
+          "removeConfirm": {
+            "title": "Tirar {{name}}",
+            "body": "Sairá do evento e do convite do Google e voltará para Completado",
+            "confirm": "Retirar",
+            "busy": "Retirando…"
+          },
+          "add": "Acrescentar ({{count}})",
+          "noneAvailable": "Não há completados disponíveis para acrescentar",
+          "addError": "Não foi possível acrescentar aos convocados.",
+          "removeError": "Não foi possível retirar o convocado.",
+          "current": "Convocados atuais",
+          "available": "Completados disponíveis",
+          "currentEmpty": "Não há convocados."
+        },
+        "seals": {
+          "summary": "Resumo",
+          "summaryReady": "Resumo pronto",
+          "summaryUnavailable": "Resumo indisponível",
+          "blockedWhy": "Motivo: {{reason}}"
+        },
+        "unassignedCount_one": "{{count}} completado sem evento",
+        "unassignedCount_other": "{{count}} completados sem evento"
       }
     },
     "vacancyModal": {
