@@ -7,7 +7,7 @@ import { useAdminNavItems } from '@presentation/config/adminNavigation';
 import { AppSidebar } from '@presentation/components/templates/DashboardLayout';
 
 export function AdminLayout() {
-  const { logout, adminProfile } = useAdminAuth();
+  const { logout, adminProfile, user } = useAdminAuth();
   const navigate = useNavigate();
   const navItems = useAdminNavItems();
   const location = useLocation();
@@ -40,7 +40,9 @@ export function AdminLayout() {
       <AppSidebar
         navItems={navItems}
         userName={adminProfile?.displayName || adminProfile?.email || 'Admin'}
+        userAvatar={user?.photoUrl ?? undefined}
         onMenuClick={handleLogout}
+        profileHref="/admin/mi-cuenta"
       />
 
       {/* `relative` (05/09): o <main> é o ÚNICO rolável da tela. Sem ele, um filho `position:absolute`

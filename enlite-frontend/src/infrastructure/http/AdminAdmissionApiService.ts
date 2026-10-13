@@ -120,12 +120,27 @@ export interface AdmissionResendResult {
   skip?: string;
 }
 
+/** Estado da extensão do Tactiq no Chrome do operador, como a própria extensão o relata (vocabulário do backend). */
+export type TactiqExtensionState = 'sem_relatorio' | 'ausente' | 'desativada' | 'instalada';
+
+export interface TactiqExtensionStatus {
+  state: TactiqExtensionState;
+  /** Quando a extensão reportou pela última vez (ISO). `null` com `sem_relatorio`. */
+  reportedAt: string | null;
+}
+
 /** `GET /api/admin/me/tactiq-link` — NUNCA carrega token. */
 export interface OwnTactiqLink {
   status: TactiqLinkState;
   linkedAt: string | null;
   lastCheckAt: string | null;
   statusChangedAt: string | null;
+  /**
+   * Estado da extensão no Chrome (PR #685, backend). O backend sempre manda o objeto (sem relatório =
+   * `{ state: 'sem_relatorio', reportedAt: null }`), mas o campo é OPCIONAL aqui de propósito: front e back deployam em
+   * momentos diferentes, e um back antigo não o envia — ausente é lido como `sem_relatorio`.
+   */
+  extension?: TactiqExtensionStatus;
 }
 
 export type ResendKind = 'confirmation' | 'reminder_30min';

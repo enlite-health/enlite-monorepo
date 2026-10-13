@@ -307,6 +307,7 @@ export class FirebaseAuthService {
   }
 
   private mapFirebaseUser(firebaseUser: FirebaseUser, _roles: string[] = []): User {
+    const providers = firebaseUser.providerData ?? [];
     return {
       id: firebaseUser.uid,
       email: firebaseUser.email || '',
@@ -314,6 +315,11 @@ export class FirebaseAuthService {
       roles: _roles,
       createdAt: new Date(),
       updatedAt: new Date(),
+      photoUrl:
+        providers.find((p) => p.providerId === 'google.com')?.photoURL
+        ?? firebaseUser.photoURL
+        ?? null,
+      authProviders: providers.map((p) => p.providerId),
     };
   }
 }

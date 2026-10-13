@@ -1,5 +1,5 @@
 /**
- * TactiqLinkPage — "Vincular Tactiq" (spec 049, F7): estado do vínculo, botão que inicia o OAuth e redireciona o
+ * TactiqLinkSection — "Vincular Tactiq" (spec 049, F7): estado do vínculo, botão que inicia o OAuth e redireciona o
  * navegador, retorno do callback (`?tactiq=linked|error&reason=`) e a célula `own_tactiq_link:create`.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -11,7 +11,7 @@ vi.mock('react-i18next', () => i18nMock);
 const api = vi.hoisted(() => ({ getOwnTactiqLink: vi.fn(), startTactiqLink: vi.fn() }));
 vi.mock('@infrastructure/http/AdminAdmissionApiService', () => ({ AdminAdmissionApiService: api }));
 
-import TactiqLinkPage from '../TactiqLinkPage';
+import TactiqLinkSection from '../TactiqLinkSection';
 
 function Where(): JSX.Element {
   const loc = useLocation();
@@ -20,7 +20,7 @@ function Where(): JSX.Element {
 function renderPage(search = '', redirect = vi.fn()) {
   render(
     <MemoryRouter initialEntries={[`/admin/mi-cuenta/tactiq${search}`]}>
-      <TactiqLinkPage redirect={redirect} />
+      <TactiqLinkSection redirect={redirect} />
       <Where />
     </MemoryRouter>,
   );
