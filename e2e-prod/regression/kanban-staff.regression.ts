@@ -20,9 +20,9 @@
  * Não é "a Fase 1 é sobre mensageria" por rótulo. É mecanismo:
  *   · `WJAFunnelController.moveEncuadre` chama `emitFunnelStageEvent` em TODO
  *     movimento que muda de etapa → grava `funnel_stage.<etapa>` em `domain_events`;
- *   · `funnel_stage.qualified` cai no `QualifiedInterviewHandler` (built-in), que
- *     ENFILEIRA o convite; as demais caem no `StageMessageHandler`, que enfileira o
- *     template da etapa se ele estiver LIGADO;
+ *   · todas as etapas (QUALIFIED inclusive, desde a spec 052) caem no `StageMessageHandler`,
+ *     que enfileira o template da etapa se ele estiver LIGADO (a linha `builtin` da
+ *     QUALIFIED é pulada como DISABLED: o convite automático saiu);
  *   · quem impede a mensagem de SAIR para um fixture é o guard `is_test` no
  *     `OutboxProcessor` — o "ponto único de defesa", o mesmo do opt-out.
  *
@@ -52,7 +52,7 @@
  *
  * ── TEARDOWN ─────────────────────────────────────────────────────────────────
  * `POST /api/admin/test-fixtures/cleanup` (worker + vaga + linha de outbox), provado
- * por releitura 404, no molde da `qualified-interview-invite`.
+ * por releitura 404.
  */
 import { test, expect, type APIRequestContext, type Browser, type Page, type Response } from '@playwright/test';
 import * as path from 'path';
@@ -274,8 +274,7 @@ test.describe.serial('Spec 009 · Fase 1 — Kanban do staff', () => {
     // ── is_test ANTES de qualquer passo que possa enfileirar ──────────────────
     // Marcar depois de enfileirar seria apostar numa corrida contra o processador.
     //
-    // ⚠️ POR QUE É UM POLL, e não um PATCH direto: a `qualified-interview-invite` marca
-    // DEPOIS do `completeCaregiverRegistration`, e o intervalo daquelas chamadas esconde
+    // ⚠️ POR QUE É UM POLL, e não um PATCH direto: o intervalo entre chamadas esconde
     // o problema. Chamando `test-flag` imediatamente após o `init`, prod devolve **500**
     // — medido em 31/08, na primeira execução deste spec, e reproduzido em 2 tentativas
     // seguidas. Minutos depois o MESMO PATCH devolve 200: é o lag de read-replica que o
@@ -424,7 +423,7 @@ test.describe.serial('Spec 009 · Fase 1 — Kanban do staff', () => {
     test.fixme(
       true,
       '1.2 pendente: o reenvio não enfileirou na outbox nesta jornada (delivery-status devolve ' +
-        'outbox=null após 90 s). O convite POR ARRASTO já é provado pela `qualified-interview-invite`; ' +
+        'outbox=null após 90 s). O convite por arrasto saiu na spec 052; ' +
         'falta entender por que o botão "Reenviar" a partir de SELECIONADOS não enfileira. Ver tasks.md.',
     );
     const { page, fechar } = await abrirVaga(browser);
