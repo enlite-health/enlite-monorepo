@@ -30,6 +30,7 @@ import type { EditableVacancyStatus } from '@presentation/components/features/ad
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { VacancyPrescreeningConfig } from '@presentation/components/features/admin/VacancyDetail/VacancyPrescreeningConfig';
 import { VacancyTalentumCard } from '@presentation/components/features/admin/VacancyDetail/VacancyTalentumCard';
+import { EnquadreTab } from '@presentation/components/features/admin/VacancyDetail/Enquadre/EnquadreTab';
 import { VacancyDetailTabs } from '@presentation/components/features/admin/VacancyDetail/VacancyDetailTabs';
 import { VacancyNotesPanel } from '@presentation/components/features/admin/VacancyDetail/VacancyNotesPanel';
 import { VACANCY_TABS, type VacancyTab } from '@presentation/components/features/admin/VacancyDetail/vacancyTabs';
@@ -271,6 +272,8 @@ export default function VacancyDetailPage() {
           <VacancyFunnelView vacancyId={id!} vacancy={vacancy} />
         </div>
       )}
+
+      {shownTab === 'enquadre' && <EnquadreTab vacancyId={id!} />}
 
       {shownTab === 'talentum' && (
         <>
