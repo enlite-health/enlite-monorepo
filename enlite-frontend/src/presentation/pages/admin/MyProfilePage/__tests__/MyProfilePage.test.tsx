@@ -142,6 +142,16 @@ describe('conta Google: linha "nombre y foto vienen de Google" e foto da sessão
     expect(screen.getByTestId('profile-avatar')).toHaveTextContent('UE');
   });
 
+  it('Clarity: nome, e-mail e foto ficam sob data-clarity-mask (precedente MemberTransfer: dado de staff não vai ao session replay)', () => {
+    seed({ cells: ['patient:read'], photoUrl: 'data:image/png;base64,AAAA' });
+    renderPage();
+    const bloco = screen.getByTestId('profile-identity-who');
+    expect(bloco).toHaveAttribute('data-clarity-mask', 'True');
+    expect(bloco).toContainElement(screen.getByTestId('profile-name'));
+    expect(bloco).toContainElement(screen.getByTestId('profile-email'));
+    expect(bloco).toContainElement(screen.getByTestId('profile-photo'));
+  });
+
   it('sem foto: iniciais de 2 letras', () => {
     seed({ cells: ['patient:read'] });
     renderPage();

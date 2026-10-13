@@ -1,7 +1,8 @@
 /**
- * IdentitySection — quem é a pessoa logada: avatar (foto se houver, senão a inicial), nome, e-mail, departamento e
+ * IdentitySection — quem é a pessoa logada: avatar (foto se houver, senão a inicial), nome, e-mail e
  * último acesso. Só leitura. A foto vem da sessão do Firebase (`photoUrl`), nunca de backend; para conta Google há uma linha
- * dizendo que nome e foto vêm de lá, com o link para trocá-los. NÃO mostra papel/role: saiu do contrato HTTP de propósito (a verdade é o ABAC, em "Meus accesos").
+ * dizendo que nome e foto vêm de lá, com o link para trocá-los. Nome, e-mail e foto (<img src>) ficam sob `data-clarity-mask`
+ * (session replay do Clarity, ligado só em PRD — mesmo precedente de `MemberTransfer.tsx`: dado de staff não é gravado). NÃO mostra papel/role: saiu do contrato HTTP de propósito (a verdade é o ABAC, em "Meus accesos").
  */
 import { useState, type JSX } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -41,7 +42,7 @@ export function IdentitySection({ profile, locale, onLogout, photoUrl, isGoogle 
   return (
     <ProfileCard title={tt('title')} testId="profile-identity" className="xl:col-span-2">
       <div className={`${HALVES_GRID} items-center`}>
-        <div className="flex flex-col sm:flex-row sm:items-center gap-5 min-w-0 xl:col-start-1">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-5 min-w-0 xl:col-start-1" data-clarity-mask="True" data-testid="profile-identity-who">
           {photoUrl && !photoFailed ? (
             <img
               src={photoUrl}

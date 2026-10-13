@@ -5867,8 +5867,6 @@
       }
     },
     "tactiqLink": {
-      "title": "Vincular Tactiq",
-      "subtitle": "Conectá tu cuenta de Tactiq para poder ser responsable de agendas de admisión.",
       "loading": "Cargando el estado de tu vínculo…",
       "loadError": "No pudimos cargar el estado de tu vínculo.",
       "retry": "Reintentar",

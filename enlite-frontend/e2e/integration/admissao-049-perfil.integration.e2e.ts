@@ -10,6 +10,9 @@
  *           e a tela troca de idioma e a escolha SOBREVIVE ao reload (localStorage). Conta de e-mail/senha: sem a linha do Google.
  *  alt 1  — a rota antiga `/admin/mi-cuenta/tactiq?tactiq=error` redireciona para o Perfil PRESERVANDO a query: o banner de erro
  *           do retorno do OAuth aparece e a URL é limpa (F5 não repete).
+ *  extensão — o estado da extensão do Chrome vem da API REAL do mesmo checkout (PR #685): sem linha em `admission_chrome_reports`
+ *           a tela lê "Sin información"; com uma linha `desativada` semeada por SQL (`psql` do `abac-stack-helper`, o mesmo seed
+ *           dos irmãos 049) lê "Desactivada" e o "Último reporte" preenchido.
  *  alt 2  — staff SEM `own_tactiq_link:read`: o Perfil abre, o cartão Tactiq NÃO existe no DOM (nem chamada ao vínculo) e a
  *           página segue simétrica (Identidad + Idioma | Mis accesos).
  *
@@ -36,7 +39,8 @@ test.describe('admissao-049 — página Perfil: seções, idioma, rota antiga e 
   };
   const completa = mk('completa'); // own_tactiq_link:read + create, com vínculo `linked` semeado
   const semTactiq = mk('sem-tactiq'); // nenhuma célula own_tactiq_link
-  const todas = [completa, semTactiq];
+  const comRelatorio = mk('relatorio'); // own_tactiq_link + linha `desativada` em admission_chrome_reports
+  const todas = [completa, semTactiq, comRelatorio];
   const grupos: Record<string, string> = {};
 
   test.beforeAll(() => {
@@ -45,12 +49,17 @@ test.describe('admissao-049 — página Perfil: seções, idioma, rota antiga e 
     }
     grantCell(grupos[completa.uid], 'own_tactiq_link', 'read');
     grantCell(grupos[completa.uid], 'own_tactiq_link', 'create');
+    grantCell(grupos[comRelatorio.uid], 'own_tactiq_link', 'read');
+    grantCell(grupos[comRelatorio.uid], 'own_tactiq_link', 'create');
+    psql(`INSERT INTO admission_chrome_reports (host_email, state, report_at, conclusive_state)
+          VALUES ('${comRelatorio.email}', 'desativada', now() - interval '1 hour', 'desativada')`);
     psql(`INSERT INTO tactiq_links (host_email, firebase_uid, status, linked_at, last_check_at, last_check_outcome)
           VALUES ('${completa.email}', '${completa.uid}', 'linked', now() - interval '3 days', now() - interval '2 hours', 'ok')`);
   });
 
   test.afterAll(() => {
     safeSql(`DELETE FROM tactiq_links WHERE lower(host_email) = '${completa.email}'`);
+    safeSql(`DELETE FROM admission_chrome_reports WHERE lower(host_email) = '${comRelatorio.email}'`);
     for (const u of todas) cleanupStaffAndGroup(u.uid, grupos[u.uid]);
     safeSql(`DELETE FROM iam.permission_groups WHERE tenant_id = '${ABAC_TENANT}' AND name LIKE 'Adm049 Perfil %${RUN_ID}'`);
   });
@@ -78,7 +87,8 @@ test.describe('admissao-049 — página Perfil: seções, idioma, rota antiga e 
     // Vínculo e extensão vêm do GET real. A extensão sem relatório (ou a API ainda sem o campo) lê "Sin información".
     await expect(page.getByTestId('tactiq-state')).toHaveText('Vinculado');
     await expect(page.getByTestId('tactiq-linked-at')).not.toHaveText('—');
-    await expect(page.getByTestId('tactiq-extension-state')).toBeVisible();
+    await expect(page.getByTestId('tactiq-extension-state')).toHaveText('Sin información'); // sem linha em admission_chrome_reports
+    await expect(page.getByTestId('tactiq-extension-reported')).toHaveCount(0);
     // O grupo do ator (semeado por SQL) aparece em "Mis accesos"; a lista crua de células nunca.
     await expect(page.getByTestId('profile-groups')).toContainText(`Adm049 Perfil ${completa.uid}`);
     await expect(page.getByTestId('profile-country-AR')).toHaveText('Argentina');
@@ -99,6 +109,16 @@ test.describe('admissao-049 — página Perfil: seções, idioma, rota antiga e 
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Meu perfil');
     await page.getByTestId('language-es').click(); // devolve ao padrão (o navegador é novo a cada teste, mas o describe é serial)
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('Mi perfil');
+  });
+
+  test('extensão: com relatório `desativada` no banco a tela mostra "Desactivada" e o "Último reporte" (a API real devolve `extension`)', async ({ page }, testInfo) => {
+    await loginAs(page, comRelatorio);
+    await page.goto(PERFIL);
+    await expect(page.getByTestId('tactiq-extension-state')).toHaveText('Desactivada', { timeout: 30_000 });
+    await expect(page.getByTestId('tactiq-extension-help')).toContainText('desactivada');
+    await expect(page.getByTestId('tactiq-extension-reported')).not.toHaveText('—');
+    await expect(page.getByTestId('tactiq-extension-reported')).toHaveText(/\d/);
+    await page.screenshot({ path: testInfo.outputPath('4-perfil-extension-desativada.png') });
   });
 
   test('alt 1: a rota antiga /admin/mi-cuenta/tactiq redireciona ao Perfil preservando ?tactiq= (banner do retorno do OAuth, URL limpa)', async ({ page }, testInfo) => {
