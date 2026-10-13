@@ -9,8 +9,8 @@ import type {
   EnquadreParticipant,
   EnquadrePipelineState,
   EnquadreWorkerOption,
-} from '../../domain/entities/EnquadreEvent';
-import type { FunnelStages } from '../../hooks/admin/useWJAFunnel';
+} from '@domain/entities/EnquadreEvent';
+import type { FunnelStages } from '@hooks/admin/useWJAFunnel';
 import type { SeedEvent } from './store';
 
 /** Relógio fixo do protótipo: 14/10/2026 12:00 em Buenos Aires. */

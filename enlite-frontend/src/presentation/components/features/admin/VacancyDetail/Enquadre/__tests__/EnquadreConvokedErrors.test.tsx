@@ -7,8 +7,8 @@ import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import i18n from '@infrastructure/i18n/config';
-import { datasetById, installDataset } from '../../../../../../../preview/enquadre/datasets';
-import { StateRoot } from '../../../../../../../preview/enquadre/PreviewShell';
+import { datasetById, installDataset } from './support/datasets';
+import { StateRoot } from './support/PreviewShell';
 
 let restore: (() => void) | null = null;
 beforeAll(async () => { await i18n.changeLanguage('es'); });

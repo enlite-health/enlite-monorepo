@@ -1,6 +1,6 @@
 /**
  * EnquadreStates — os 17 estados do protótipo do enquadre (spec 052, Fase 0), com os MESMOS datasets do harness
- * (`src/preview/enquadre/datasets.ts`) e os mesmos cliques que abrem o drawer/diálogo/painel (`autoSteps.ts`).
+ * (`__tests__/support/datasets.ts`) e os mesmos cliques que abrem o drawer/diálogo/painel (`support/autoSteps.ts`).
  * Só este teste importa o harness; a produção não. Idioma: es (o do print).
  *
  * ARRASTO: o dnd-kit não dispara drop em jsdom (convenção de KanbanBoard.drop.test.tsx). O wrapper do mock abaixo
@@ -18,10 +18,10 @@ import { tabsVisibleFor } from '@presentation/hooks/useCellAccess';
 import { screenById } from '@presentation/config/screenRegistry';
 import { VACANCY_TABS } from '@presentation/components/features/admin/VacancyDetail/vacancyTabs';
 import type { EnquadreParticipant } from '@domain/entities/EnquadreEvent';
-import { runAutoSteps } from '../../../../../../../preview/enquadre/autoSteps';
-import { datasetById, installDataset } from '../../../../../../../preview/enquadre/datasets';
-import { StateRoot } from '../../../../../../../preview/enquadre/PreviewShell';
-import { funnelStages } from '../../../../../../../preview/enquadre/fixtures';
+import { runAutoSteps } from './support/autoSteps';
+import { datasetById, installDataset } from './support/datasets';
+import { StateRoot } from './support/PreviewShell';
+import { funnelStages } from './support/fixtures';
 
 let capturedOnDrop: ((e: KanbanDropEvent<EnquadreParticipant>) => void) | null = null;
 vi.mock('@presentation/components/features/admin/Kanban/KanbanBoardShell', async (importOriginal) => {

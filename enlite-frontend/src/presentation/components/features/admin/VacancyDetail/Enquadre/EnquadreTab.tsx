@@ -2,7 +2,7 @@
  * EnquadreTab — aba "Enquadre" do detalhe da vaga (spec 052): o cabeçalho (criar evento + contador de completados sem
  * evento), os estados carregando/erro/vazio e a tabela de eventos. Molde: AdmissionTab (mesma anatomia).
  *
- * Fase 0: "Crear evento" é `Button` simples (sem célula de ABAC — entra na Fase 2). `createOpen` monta o drawer; o clique
+ * "Crear evento" é `ActionButton` (`enquadre_event:create`). `createOpen` monta o drawer; o clique
  * na linha guarda `selectedEventId` e a aba troca a lista pelo kanban do evento ("← Eventos" volta e recarrega).
  */
 import { useState, type JSX } from 'react';

@@ -11,8 +11,8 @@ import { MemoryRouter } from 'react-router-dom';
 import i18n from '@infrastructure/i18n/config';
 import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
 import { CreateEnquadreEventDrawer } from '../CreateEnquadreEventDrawer';
-import { datasetById, installDataset } from '../../../../../../../preview/enquadre/datasets';
-import { StateRoot } from '../../../../../../../preview/enquadre/PreviewShell';
+import { datasetById, installDataset } from './support/datasets';
+import { StateRoot } from './support/PreviewShell';
 
 let dragDisabled: ((item: unknown) => boolean) | null = null;
 vi.mock('@presentation/components/features/admin/Kanban/KanbanBoardShell', async (importOriginal) => {

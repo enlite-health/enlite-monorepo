@@ -4,9 +4,9 @@ import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import i18n from '@infrastructure/i18n/config';
-import { HARNESS_VACANCY_ID } from '../../../../../../../preview/enquadre/fixtures';
-import { datasetById, installDataset } from '../../../../../../../preview/enquadre/datasets';
-import { StateRoot } from '../../../../../../../preview/enquadre/PreviewShell';
+import { HARNESS_VACANCY_ID } from './support/fixtures';
+import { datasetById, installDataset } from './support/datasets';
+import { StateRoot } from './support/PreviewShell';
 
 vi.mock('../../Funnel/ContactNotesModal', () => ({
   ContactNotesModal: (p: { vacancyId: string; workerId: string; workerName: string; onClose: () => void }) => (

@@ -3,8 +3,8 @@
  * `AdminEnquadreApiService`. É AQUI que se faz o papel do servidor (fase, contagens, `markedCount`, `unmarkedCount`,
  * liberar prestador ao cancelar/encerrar); as telas nunca contam. Só o harness e o teste dos 17 estados importam.
  */
-import { AdminEnquadreApiService } from '../../infrastructure/http/AdminEnquadreApiService';
-import { ApiError } from '../../infrastructure/http/ApiError';
+import { AdminEnquadreApiService } from '@infrastructure/http/AdminEnquadreApiService';
+import { ApiError } from '@infrastructure/http/ApiError';
 import type {
   CreateEnquadreEventInput,
   EnquadreAvailableWorkers,
@@ -16,7 +16,7 @@ import type {
   EnquadreParticipant,
   EnquadrePipelineState,
   EnquadreWorkerOption,
-} from '../../domain/entities/EnquadreEvent';
+} from '@domain/entities/EnquadreEvent';
 import { FREE_SLOTS, HOSTS } from './fixtures';
 
 /** O evento "cru": só o que o servidor GUARDA; o resto é derivado em `toDetail`. */
