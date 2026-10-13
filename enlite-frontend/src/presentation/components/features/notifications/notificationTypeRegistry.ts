@@ -21,7 +21,7 @@ export type Translate = (key: string, opts?: Record<string, unknown>) => string;
 
 export interface NotificationDeepLink {
   path: string;
-  /** Ausente quando o alvo não é a ficha de um paciente (ex.: a tela "Vincular Tactiq"). */
+  /** Ausente quando o alvo não é a ficha de um paciente (ex.: a página Perfil, seção Tactiq). */
   focusRequest?: DrawerFocusRequest;
 }
 
@@ -101,7 +101,7 @@ function tactiqExtensionState(n: AdminNotification): AdmissionTactiqExtensionSta
 }
 
 /** A tela do próprio operador, não a ficha de um paciente: sem `focusRequest`. */
-export const TACTIQ_LINK_PATH = '/admin/mi-cuenta/tactiq';
+export const TACTIQ_LINK_PATH = '/admin/mi-cuenta';
 
 const REGISTRY: Record<NotificationTypeCode, NotificationTypeHandler> = {
   CONVERSATION_MENTIONED: {

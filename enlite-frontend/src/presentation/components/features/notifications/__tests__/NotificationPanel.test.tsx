@@ -465,12 +465,12 @@ describe('NotificationPanel — aviso do vínculo do Tactiq (spec 049, A7-7)', (
 
   afterEach(async () => { vi.clearAllMocks(); await i18n.changeLanguage('es'); });
 
-  it('clique marca lida e navega para /admin/mi-cuenta/tactiq (sem state de foco)', async () => {
+  it('clique marca lida e navega para /admin/mi-cuenta (sem state de foco)', async () => {
     vi.mocked(AdminNotificationApiService.listNotifications).mockResolvedValue([tactiqNotif('missing')]);
     const onClose = vi.fn();
     render(<NotificationPanel isOpen onClose={onClose} />);
     fireEvent.click(await screen.findByTestId('notification-item-tq1'));
-    await waitFor(() => expect(navigate).toHaveBeenCalledWith('/admin/mi-cuenta/tactiq', undefined));
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith('/admin/mi-cuenta', undefined));
     expect(AdminNotificationApiService.markNotificationRead).toHaveBeenCalledWith('tq1');
     expect(onClose).toHaveBeenCalled();
   });

@@ -19,7 +19,7 @@
  * API com `ADMISSION_EXTERNALS=fake` — por isso o nome entra no `--grep` do job `integration-e2e-group-simulation` do
  * `_frontend-integration.yml` (e NÃO no `grep:` do `pr-gate.yml`, que roda com o engine OFF).
  *
- * Vínculo Tactiq (`/admin/mi-cuenta/tactiq`, `TactiqLinkPage`) — segundo bloco deste arquivo, mesmo `--grep admissao-049`:
+ * Vínculo Tactiq (seção da página Perfil, `/admin/mi-cuenta`; antes `TactiqLinkPage`) — segundo bloco deste arquivo, mesmo `--grep admissao-049`:
  *  feliz  — sem vínculo, "Vincular Tactiq" -> o POST REAL devolve `authorizeUrl` e o navegador navega até ele (só o domínio
  *           externo do Tactiq é interceptado, para nada sair da máquina; o `state` fica no banco).
  *  alt 1  — volta do callback com `?tactiq=error&reason=...` mostra o banner de erro, a URL é limpa e o estado segue "Sin vincular".
@@ -270,10 +270,10 @@ test.describe('admissao-049 — aba Admisión: nova agenda, vínculo Tactiq, can
 });
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-// Vínculo do Tactiq do PRÓPRIO operador (TactiqLinkPage) — e2e de tela, API e Postgres reais.
+// Vínculo do Tactiq do PRÓPRIO operador (seção Tactiq da página Perfil) — e2e de tela, API e Postgres reais.
 // ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 const TACTIQ_EXTERNO = 'https://fake-tactiq.example.test/**';
-const PAGINA_TACTIQ = '/admin/mi-cuenta/tactiq';
+const PAGINA_TACTIQ = '/admin/mi-cuenta'; // a rota antiga (/admin/mi-cuenta/tactiq) redireciona para cá; coberta em admissao-049-perfil
 
 test.describe('admissao-049 — vínculo Tactiq do operador: vincular, volta do callback e célula (spec 049) @integration', () => {
   test.describe.configure({ mode: 'serial' });

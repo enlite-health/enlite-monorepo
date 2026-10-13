@@ -43,7 +43,8 @@ import { TemplateDraftsPage } from './pages/admin/TemplateDraftsPage';
 import PatientChatRolesPage from './pages/admin/PatientChatRolesPage';
 import TherapeuticCatalogPage from './pages/admin/TherapeuticCatalogPage/TherapeuticCatalogPage';
 import PresentationInvitePage from './pages/admin/PresentationInvitePage';
-import TactiqLinkPage from './pages/admin/TactiqLinkPage';
+import { RedirectKeepingSearch } from './components/shared/RedirectKeepingSearch';
+import MyProfilePage from './pages/admin/MyProfilePage/MyProfilePage';
 import { DedupCenterPage } from './pages/admin/DedupCenterPage/DedupCenterPage';
 import { NewVersionBanner } from './components/molecules/NewVersionBanner/NewVersionBanner';
 import { Toaster } from './components/molecules/Toaster';
@@ -276,9 +277,12 @@ export function App() {
           <Route path="catalogos/actividades" element={<TherapeuticCatalogPage kind="activities" />} />
           <Route path="catalogos/segmentos" element={<TherapeuticCatalogPage kind="segments" />} />
           <Route path="invitacion-presentacion" element={<PresentationInvitePage />} />
-          {/* Spec 049 (F7): o operador vincula a PRÓPRIA conta do Tactiq. Sem chave `screen:*` (célula própria
-              `own_tactiq_link`, não é tela por país) — e é também o alvo do aviso no sino e da volta do OAuth. */}
-          <Route path="mi-cuenta/tactiq" element={<TactiqLinkPage />} />
+          {/* Perfil da conta logada (Identidade · Tactiq · Idioma · Accesos · Sair). Sem chave `screen:*`: é a conta do
+              próprio operador, não uma tela por país. A seção Tactiq herda a célula própria `own_tactiq_link` (spec 049, F7). */}
+          <Route path="mi-cuenta" element={<MyProfilePage />} />
+          {/* A rota antiga vira redirect: o aviso no sino e a volta do OAuth do Tactiq ainda apontam para ela, e a query
+              (`?tactiq=linked|error`) tem de sobreviver para o banner do retorno aparecer. */}
+          <Route path="mi-cuenta/tactiq" element={<RedirectKeepingSearch to="/admin/mi-cuenta" />} />
           <Route path="dedup" element={<DedupCenterPage />} />
           {/* Painel de acessos — cada página se fecha sozinha em `permission_management:read` (AccessGate). */}
           <Route path="access" element={<FeatureRouteGate feature="screen:access-permissions"><AccessPage /></FeatureRouteGate>} />

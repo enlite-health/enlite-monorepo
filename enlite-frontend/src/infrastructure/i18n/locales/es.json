@@ -119,7 +119,9 @@
     "expandMenu": "Expandir menú",
     "collapseMenu": "Contraer menú",
     "logoAlt": "Enlite",
-    "userAvatarAlt": "Avatar del usuario"
+    "userAvatarAlt": "Avatar del usuario",
+    "profileLink": "Mi perfil",
+    "profileAria": "Mi perfil — {{name}}"
   },
   "topNavbar": {
     "greeting": "Hola",
@@ -1363,8 +1365,7 @@
       "templateDrafts": "Registrar mensaje",
       "catalogObjectives": "Objetivos específicos",
       "catalogActivities": "Rutina y actividades",
-      "catalogSegments": "Segmentos (Ana Care)",
-      "tactiqLink": "Vincular Tactiq"
+      "catalogSegments": "Segmentos (Ana Care)"
     },
     "dedup": {
       "title": "Centro de Duplicados",
@@ -5169,7 +5170,7 @@
           "label": "Pacientes: Catálogo de segmentos (Ana Care)"
         },
         "account.tactiq": {
-          "label": "Mi cuenta: Vincular Tactiq"
+          "label": "Mi perfil: Tactiq"
         }
       }
     },
@@ -5810,6 +5811,59 @@
         "installed": "La extensión de Tactiq quedó instalada en tu Chrome. Para quedar habilitada para recibir agendas, falta hacer la reunión de prueba.",
         "missing": "La extensión de Tactiq no está activa en tu Chrome. Instalala para seguir recibiendo agendas de admisión.",
         "disabled": "La extensión de Tactiq está desactivada en tu Chrome. Activala de nuevo para seguir recibiendo agendas de admisión."
+      }
+    },
+    "profile": {
+      "title": "Mi perfil",
+      "subtitle": "Tu cuenta en el panel: quién sos, tu conexión con Tactiq, el idioma y a qué tenés acceso.",
+      "identity": {
+        "title": "Identidad",
+        "googleNote": "Tu nombre y tu foto vienen de tu cuenta de Google.",
+        "googleLink": "Cambiar en Google",
+        "lastLogin": "Último acceso"
+      },
+      "tactiq": {
+        "title": "Tactiq",
+        "subtitle": "Tu cuenta de Tactiq y la extensión de Chrome que registra las reuniones de admisión.",
+        "extension": {
+          "label": "Extensión de Chrome",
+          "reportedAt": "Último reporte",
+          "state": {
+            "sem_relatorio": "Sin información",
+            "ausente": "No instalada",
+            "desativada": "Desactivada",
+            "instalada": "Instalada"
+          },
+          "help": {
+            "sem_relatorio": "Todavía la extensión no nos reportó nada. Abrí Tactiq en Chrome y esperá unos minutos.",
+            "ausente": "No encontramos la extensión de Tactiq en tu Chrome. Instalala para que se registren tus reuniones.",
+            "desativada": "La extensión está instalada pero desactivada. Activala en Chrome para que se registren tus reuniones.",
+            "instalada": "La extensión de Tactiq está instalada y activa en tu Chrome."
+          }
+        }
+      },
+      "language": {
+        "title": "Idioma",
+        "subtitle": "Es el idioma de todo el panel. Se guarda en este navegador.",
+        "options": {
+          "es": "Español",
+          "pt-BR": "Português (Brasil)"
+        }
+      },
+      "access": {
+        "title": "Mis accesos",
+        "subtitle": "Los grupos a los que pertenecés y los países que ves. Si necesitás algo más, pedíselo a quien gestiona los accesos.",
+        "groups": "Grupos",
+        "noGroups": "No pertenecés a ningún grupo.",
+        "countries": "Países",
+        "noCountries": "Sin países asignados.",
+        "countryNames": {
+          "AR": "Argentina",
+          "BR": "Brasil"
+        }
+      },
+      "session": {
+        "logout": "Cerrar sesión"
       }
     },
     "tactiqLink": {

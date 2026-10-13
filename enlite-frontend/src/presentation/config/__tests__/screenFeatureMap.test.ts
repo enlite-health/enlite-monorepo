@@ -43,8 +43,8 @@ const ROTAS_ADMIN: RotaAdmin[] = BLOCO_ADMIN.split('\n')
 // chave `screen:*` no manifest — gateadas por célula (`messaging:read` no menu), não por país.
 const ROTAS_SEM_CHAVE_SCREEN = new Set([
   '', 'users', 'tags', 'patient-chat-roles', 'dedup',
-  // Spec 049 (F7): "Vincular Tactiq" — célula própria (`own_tactiq_link:*`), não é tela por país.
-  'mi-cuenta/tactiq',
+  // Página Perfil (seção Tactiq: célula própria `own_tactiq_link:*`) — não é tela por país. `mi-cuenta/tactiq` é só o redirect antigo.
+  'mi-cuenta', 'mi-cuenta/tactiq',
   'mapa', 'mensajes-por-etapa', 'plantillas', 'plantillas/registrar', 'plantillas/:slug', 'invitacion-presentacion',
   // Spec 017: os 3 catálogos do projeto terapêutico — gateados pela célula própria de cada um, não por país.
   'catalogos/objetivos-especificos', 'catalogos/actividades',
