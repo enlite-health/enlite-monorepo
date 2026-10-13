@@ -114,12 +114,12 @@ describe('WJAFunnelController', () => {
 
   // ═══════════════════════════════════════════════════════════════════
   // getEncuadreFunnel — classificação por application_funnel_stage
-  // Migration 230 + D433 + Fase 4 (D430): 9 colunas (INVITED, INICIADO, PRE_SCREENING,
-  //   IN_PROGRESS, COMPLETED, CONFIRMED, SELECTED, QUICK_RESPONSE_TEAM, REJECTED)
+  // Migration 230 + D433 + Fase 4 (D430): 8 colunas (INVITED, INICIADO, PRE_SCREENING,
+  //   IN_PROGRESS, COMPLETED, SELECTED, QUICK_RESPONSE_TEAM, REJECTED) — spec 052: sem Confirmado
   // ═══════════════════════════════════════════════════════════════════
 
   describe('getEncuadreFunnel', () => {
-    it('classifica encuadres nas 9 colunas por funnel_stage (migration 230 + D433 + Fase 4)', async () => {
+    it('classifica encuadres nas 8 colunas por funnel_stage (migration 230 + D433 + Fase 4)', async () => {
       // Migration 230: INITIATED renomeado para PRE_SCREENING; INICIADO adicionado.
       // F3: NOT_QUALIFIED não existe mais em prod (migration 191 backfill → REJECTED)
       // F7.a: PLACED removido (migration 194 — 0 linhas em prod, sync F6 morta)
@@ -134,7 +134,6 @@ describe('WJAFunnelController', () => {
           makeRow({ id: 'e5', funnel_stage: 'COMPLETED', talentum_status: 'COMPLETED' }),
           makeRow({ id: 'e6', funnel_stage: 'QUALIFIED', talentum_status: 'QUALIFIED' }),
           makeRow({ id: 'e7', funnel_stage: 'IN_DOUBT', talentum_status: 'IN_DOUBT' }),
-          makeRow({ id: 'e8', funnel_stage: 'CONFIRMED' }),
           makeRow({ id: 'e9', funnel_stage: 'SELECTED' }),
           makeRow({ id: 'e10', funnel_stage: 'REJECTED' }),
         ],
@@ -145,13 +144,14 @@ describe('WJAFunnelController', () => {
 
       const response = (res.json as jest.Mock).mock.calls[0][0];
       expect(response.success).toBe(true);
-      expect(response.data.totalEncuadres).toBe(11);
+      expect(response.data.totalEncuadres).toBe(10);
 
       const { stages } = response.data;
 
-      // 10 colunas no kanban (migration 230 + D433 + Fase 4 + Fase 5/D432: COMPATIBLE)
-      expect(Object.keys(stages)).toHaveLength(10);
-      expect(Object.keys(stages)[0]).toBe('COMPATIBLE');
+      // 9 colunas no kanban (migration 230 + D433 + Fase 4 + Fase 5/D432: COMPATIBLE; spec 052: sem Confirmado)
+      expect(Object.keys(stages)).toEqual([
+        'COMPATIBLE', 'INVITED', 'INICIADO', 'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED', 'SELECTED', 'QUICK_RESPONSE_TEAM', 'REJECTED',
+      ]);
 
       // NULL → INVITED (coluna de auto-invite / sem source)
       expect(stages.INVITED).toHaveLength(2); // e1 (null stage) + e2 (INVITED+system)
@@ -191,10 +191,6 @@ describe('WJAFunnelController', () => {
       expect(completedIds).toContain('e5');
       expect(completedIds).toContain('e6');
       expect(completedIds).toContain('e7');
-
-      // CONFIRMED
-      expect(stages.CONFIRMED).toHaveLength(1);
-      expect(stages.CONFIRMED[0].id).toBe('e8');
 
       // SELECTED
       expect(stages.SELECTED).toHaveLength(1);
@@ -494,8 +490,8 @@ describe('WJAFunnelController', () => {
       const response = (res.json as jest.Mock).mock.calls[0][0];
       expect(response.success).toBe(true);
       expect(response.data.totalEncuadres).toBe(0);
-      // 10 colunas: COMPATIBLE, INVITED, INICIADO, PRE_SCREENING, IN_PROGRESS, COMPLETED, CONFIRMED, SELECTED, QUICK_RESPONSE_TEAM, REJECTED
-      expect(Object.keys(response.data.stages)).toHaveLength(10);
+      // 9 colunas: COMPATIBLE, INVITED, INICIADO, PRE_SCREENING, IN_PROGRESS, COMPLETED, SELECTED, QUICK_RESPONSE_TEAM, REJECTED
+      expect(Object.keys(response.data.stages)).toHaveLength(9);
       Object.values(response.data.stages).forEach((stage: any) => {
         expect(stage).toHaveLength(0);
       });

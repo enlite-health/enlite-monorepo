@@ -33,7 +33,7 @@ describe('FunnelStageMessagesController', () => {
   });
 
   describe('list', () => {
-    it('devolve as 9 etapas (AR) com a config e os templates com elegibilidade explicada', async () => {
+    it('devolve as 8 etapas (AR) com a config e os templates com elegibilidade explicada', async () => {
       mockQuery
         .mockResolvedValueOnce({ rows: [{ stage: 'COMPLETED', template_slug: 'qualified_reprogram_confirm', enabled: true, channel: 'whatsapp', builtin: null, updated_by: 'u1', updated_at: '2026-08-29', updated_by_name: 'Gabi' }, { stage: 'QUALIFIED', template_slug: null, enabled: false, channel: 'whatsapp', builtin: 'interview_invite', updated_by: null, updated_at: null, updated_by_name: null }] })
         .mockResolvedValueOnce({ rows: [T_OK, T_MKT, T_DENY, { slug: 'x_pos', name: 'p', body: 'Hola {{1}}', body_twilio: null, category: 'UTILITY', is_active: true }] });
@@ -42,7 +42,7 @@ describe('FunnelStageMessagesController', () => {
       expect(res.statusCode).toBe(200);
       const data = (res.payload as { data: { country: string; stages: Array<Record<string, unknown>>; templates: Array<Record<string, unknown>> } }).data;
       expect(data.country).toBe('AR');
-      expect(data.stages).toHaveLength(9);
+      expect(data.stages).toHaveLength(8);
       expect(data.stages.find((s) => s.stage === 'COMPLETED')).toEqual({ stage: 'COMPLETED', templateSlug: 'qualified_reprogram_confirm', enabled: true, channel: 'whatsapp', builtin: null, updatedBy: 'Gabi', updatedAt: '2026-08-29' });
       expect(data.stages.find((s) => s.stage === 'QUALIFIED')).toMatchObject({ builtin: 'interview_invite', enabled: false });
       expect(data.stages.find((s) => s.stage === 'INVITED')).toMatchObject({ templateSlug: null, enabled: false, updatedBy: null });

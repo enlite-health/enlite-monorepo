@@ -18,11 +18,11 @@ const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
 const FUNNEL_COLUMNS = [
   'INVITED', 'INICIADO', 'PRE_SCREENING', 'IN_PROGRESS',
-  'COMPLETED', 'CONFIRMED', 'SELECTED', 'QUICK_RESPONSE_TEAM', 'REJECTED',
+  'COMPLETED', 'SELECTED', 'QUICK_RESPONSE_TEAM', 'REJECTED',
 ] as const;
 
 const FUNNEL_LEGADO_KEYS = [
-  'invitados', 'bloqueados', 'preScreening', 'completos', 'agendados', 'seleccionados', 'rechazados',
+  'invitados', 'bloqueados', 'preScreening', 'completos', 'seleccionados', 'rechazados',
 ] as const;
 
 /** Vocabulário FECHADO de valores de string que o payload tem permissão de carregar. */
@@ -131,7 +131,6 @@ function fullValidPayload(): ManagementDashboardData {
     funnel: Object.fromEntries(FUNNEL_LEGADO_KEYS.map((k) => [k, 3])),
     encuadres: {
       agendadosEstaSemana: 8,
-      semDataRegistrada: 0,
       pctCapacidadeSemana: { agendados: 8, capacidade: 30, pct: 26.7 },
     },
     cadastros: {

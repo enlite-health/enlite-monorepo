@@ -26,7 +26,6 @@ const funnelColumnCountsSchema = z.object({
   PRE_SCREENING: nonNegInt,
   IN_PROGRESS: nonNegInt,
   COMPLETED: nonNegInt,
-  CONFIRMED: nonNegInt,
   SELECTED: nonNegInt,
   QUICK_RESPONSE_TEAM: nonNegInt,
   REJECTED: nonNegInt,
@@ -200,23 +199,17 @@ export const managementDashboardSchema = z.object({
     bloqueados: nonNegInt, // worker_blocked_applications (registration_incomplete)
     preScreening: nonNegInt, // PRE_SCREENING
     completos: nonNegInt, // COMPLETED
-    agendados: nonNegInt, // CONFIRMED
     seleccionados: nonNegInt, // SELECTED
     rechazados: nonNegInt, // REJECTED
   }),
   /**
-   * Entrevistas da semana corrente, no fuso da operação (segunda→domingo em Buenos Aires).
-   * A data é resolvida das duas fontes (`wja.interview_datetime` atual + `encuadres.interview_date`
-   * legado) pelo helper único em `domain/interviewSchedule`.
+   * Entrevistas da semana corrente, no fuso da operação (segunda→domingo em Buenos Aires):
+   * pessoa × vaga distintas com (a) data antiga resolvida das duas fontes (`wja.interview_datetime` atual +
+   * `encuadres.interview_date` legado, helper único em `domain/interviewSchedule`) OU (b) participação ativa
+   * em evento de enquadre aberto da semana (spec 052). O "sem data" saiu junto com o estágio Confirmado.
    */
   encuadres: z.object({
     agendadosEstaSemana: nonNegInt,
-    /**
-     * Cards em "Agendados" SEM data registrada — medida de adoção da captura.
-     * Enquanto for alto, `agendadosEstaSemana` subestima; exibir os dois juntos evita que a
-     * lacuna vire um zero mudo (design D4).
-     */
-    semDataRegistrada: nonNegInt,
     /**
      * % da capacidade semanal contratada de encuadres (call 22/07, "regra de
      * três" interina até plugar o Google Calendar). `capacidade` vem de config

@@ -68,7 +68,8 @@ export const WORKER_COMPARE_FIELDS = [
 ] as const;
 
 // ── Degrau de alto valor ───────────────────────────────────────────────────
-// WJA em estágio "entrevista ou além" (proposta): CONFIRMED (slot de encuadre
-// confirmado) e SELECTED (selecionado). REJECTED/funil inicial não seguram.
+// WJA em estágio "entrevista ou além" (proposta): SELECTED (selecionado). O estágio
+// o estágio Confirmado saiu do código na spec 052; entrevista marcada continua segurando pelo
+// `interview_scheduled_at` (AccountLinkService.isHighValue). REJECTED/funil inicial não seguram.
 
-export const HIGH_VALUE_WJA_STAGES = ['CONFIRMED', 'SELECTED'] as const;
+export const HIGH_VALUE_WJA_STAGES = ['SELECTED'] as const;

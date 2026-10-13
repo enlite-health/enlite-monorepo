@@ -27,27 +27,27 @@ const writes = (q: jest.Mock) =>
   q.mock.calls.map((c) => c[0] as string).filter((s) => /INSERT|UPDATE|set_config/i.test(s));
 
 describe('moveApplicationStage', () => {
-  it('(a) sem options, COMPLETED → SELECTED sem motivo recusa MOVE_REASON_REQUIRED/JUMP e NÃO escreve', async () => {
-    const { client, query } = fakeClient(from('COMPLETED'));
+  it('(a) sem options, PRE_SCREENING → SELECTED sem motivo recusa MOVE_REASON_REQUIRED/JUMP e NÃO escreve', async () => {
+    const { client, query } = fakeClient(from('PRE_SCREENING'));
     const r = await moveApplicationStage(client, base);
     expect(r).toEqual({ moved: false, code: 'MOVE_REASON_REQUIRED', reason: 'JUMP' });
     expect(writes(query)).toHaveLength(0);
   });
 
-  it('(b) com skipJumpReason, COMPLETED → SELECTED e → QUICK_RESPONSE_TEAM movem sem motivo', async () => {
-    const a = fakeClient(from('COMPLETED'));
+  it('(b) com skipJumpReason, PRE_SCREENING → SELECTED e → QUICK_RESPONSE_TEAM movem sem motivo', async () => {
+    const a = fakeClient(from('PRE_SCREENING'));
     const rSel = await moveApplicationStage(a.client, base, { skipJumpReason: true });
-    expect(rSel).toEqual({ moved: true, previousStage: 'COMPLETED', eventId: 'evt-1' });
+    expect(rSel).toEqual({ moved: true, previousStage: 'PRE_SCREENING', eventId: 'evt-1' });
     expect(a.query.mock.calls.some((c) => /INSERT INTO worker_job_applications/.test(c[0]))).toBe(true);
     expect(a.query.mock.calls.some((c) => /UPDATE encuadres SET resultado = 'SELECCIONADO'/.test(c[0]))).toBe(true);
 
-    const b = fakeClient(from('COMPLETED'));
+    const b = fakeClient(from('PRE_SCREENING'));
     const rQrt = await moveApplicationStage(b.client, { ...base, targetStage: 'QUICK_RESPONSE_TEAM' }, { skipJumpReason: true });
-    expect(rQrt).toEqual({ moved: true, previousStage: 'COMPLETED', eventId: null });
+    expect(rQrt).toEqual({ moved: true, previousStage: 'PRE_SCREENING', eventId: null });
   });
 
-  it('(c) com skipJumpReason, COMPLETED → REJECTED sem motivo continua recusando ENTER_REJECTED', async () => {
-    const { client, query } = fakeClient(from('COMPLETED'));
+  it('(c) com skipJumpReason, PRE_SCREENING → REJECTED sem motivo continua recusando ENTER_REJECTED', async () => {
+    const { client, query } = fakeClient(from('PRE_SCREENING'));
     const r = await moveApplicationStage(client, { ...base, targetStage: 'REJECTED' }, { skipJumpReason: true });
     expect(r).toEqual({ moved: false, code: 'MOVE_REASON_REQUIRED', reason: 'ENTER_REJECTED' });
     expect(writes(query)).toHaveLength(0);
@@ -64,11 +64,11 @@ describe('moveApplicationStage', () => {
     const payloadOf = (q: jest.Mock) =>
       JSON.parse(q.mock.calls.find((c) => /INSERT INTO domain_events/.test(c[0]))![1][1]);
 
-    const enq = fakeClient(from('CONFIRMED'));
+    const enq = fakeClient(from('COMPLETED'));
     await moveApplicationStage(enq.client, base, { eventSource: 'enquadre' });
-    expect(payloadOf(enq.query)).toMatchObject({ source: 'enquadre', previousStage: 'CONFIRMED', actorUid: 'staff-1' });
+    expect(payloadOf(enq.query)).toMatchObject({ source: 'enquadre', previousStage: 'COMPLETED', actorUid: 'staff-1' });
 
-    const def = fakeClient(from('CONFIRMED'));
+    const def = fakeClient(from('COMPLETED'));
     await moveApplicationStage(def.client, base);
     expect(payloadOf(def.query).source).toBe('kanban');
   });
@@ -81,27 +81,27 @@ describe('moveApplicationStage', () => {
   });
 
   it('motivo válido é carimbado antes do upsert; motivo fora da lista recusa MOVE_REASON_INVALID', async () => {
-    const ok = fakeClient(from('COMPLETED'));
+    const ok = fakeClient(from('PRE_SCREENING'));
     await moveApplicationStage(ok.client, { ...base, reasonCategory: 'OTHER' });
     const sqls = ok.query.mock.calls.map((c) => c[0] as string);
     expect(sqls.findIndex((s) => /set_config\('app.move_reason'/.test(s))).toBeLessThan(
       sqls.findIndex((s) => /INSERT INTO worker_job_applications/.test(s)),
     );
 
-    const bad = fakeClient(from('COMPLETED'));
+    const bad = fakeClient(from('PRE_SCREENING'));
     const r = await moveApplicationStage(bad.client, { ...base, reasonCategory: 'NAO_EXISTE' });
     expect(r).toEqual({ moved: false, code: 'MOVE_REASON_INVALID', reason: 'JUMP' });
     expect(writes(bad.query)).toHaveLength(0);
   });
 
   it('(g) encuadreId null (par sem encuadre): o upsert e o evento acontecem, NENHUM UPDATE encuadres', async () => {
-    const sel = fakeClient(from('COMPLETED'));
+    const sel = fakeClient(from('PRE_SCREENING'));
     const rSel = await moveApplicationStage(sel.client, { ...base, encuadreId: null }, { skipJumpReason: true });
-    expect(rSel).toEqual({ moved: true, previousStage: 'COMPLETED', eventId: 'evt-1' });
+    expect(rSel).toEqual({ moved: true, previousStage: 'PRE_SCREENING', eventId: 'evt-1' });
     expect(sel.query.mock.calls.some((c) => /INSERT INTO worker_job_applications/.test(c[0]))).toBe(true);
     expect(sel.query.mock.calls.some((c) => /UPDATE encuadres/.test(c[0]))).toBe(false);
 
-    const rej = fakeClient(from('COMPLETED'));
+    const rej = fakeClient(from('PRE_SCREENING'));
     await moveApplicationStage(rej.client, { ...base, encuadreId: null, targetStage: 'REJECTED', reasonCategory: 'OTHER' }, { skipJumpReason: true });
     expect(rej.query.mock.calls.some((c) => /UPDATE encuadres/.test(c[0]))).toBe(false);
   });

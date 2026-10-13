@@ -18,7 +18,7 @@ import { GetManagementDashboardUseCase } from '../GetManagementDashboardUseCase'
  *  12. blocked (pessoas, vaga viva)  → rows [{bloqueados}] — alimenta TANTO
  *      funnel.bloqueados QUANTO prioridades.bloqueadosAlPostularse (mesma fonte
  *      já recortada a vaga viva + não desativado, ver GetManagementDashboardUseCase).
- *  13. encuadres semana + sem data   → rows [{agendados, sem_data}]
+ *  13. encuadres semana (data antiga ∪ evento aberto) → rows [{agendados}]
  */
 interface FunnelWorkerRow {
   worker_id: string;
@@ -52,7 +52,6 @@ function mockDb(
   bloqueados: number,
   agendados: number,
   funnelPorPrestador: FunnelWorkerRow[] = [],
-  encuadresSemData = 0,
   esperandoAgenda = 0,
   estados: EstadosRow = { solicitudes: 0, entrevista_agendada: 0, en_admision: 0, en_busca: 0 },
   ubicaciones = 0,
@@ -72,7 +71,7 @@ function mockDb(
     .mockResolvedValueOnce({ rows: [{ esperando: esperandoAgenda }] })
     .mockResolvedValueOnce({ rows: [{ activos: alocados.activos, cubriendo_guardias: alocados.cubriendoGuardias }] })
     .mockResolvedValueOnce({ rows: [{ bloqueados }] })
-    .mockResolvedValueOnce({ rows: [{ agendados, sem_data: encuadresSemData }] });
+    .mockResolvedValueOnce({ rows: [{ agendados }] });
   return { query };
 }
 
@@ -148,7 +147,6 @@ describe('GetManagementDashboardUseCase', () => {
         { k: 'IN_PROGRESS', count: 5190 },
         { k: 'COMPLETED', count: 4 },
         { k: 'QUALIFIED', count: 2387 },
-        { k: 'CONFIRMED', count: 11 },
         { k: 'SELECTED', count: 2 },
         { k: 'REJECTED', count: 2498 },
       ],
@@ -163,7 +161,6 @@ describe('GetManagementDashboardUseCase', () => {
         { worker_id: 'w1', stage: 'REJECTED', source: 'talentum', messaged_at: null },
         { worker_id: 'w2', stage: 'REJECTED', source: 'manual', messaged_at: null },
       ],
-      0,   // encuadres sem data
       569, // esperando agenda: PESSOAS em vaga viva
       // Linha CHEGANDO (Diego): estados atuais, exclusivos por precedência
       { solicitudes: 2, entrevista_agendada: 1, en_admision: 5, en_busca: 112 },
@@ -228,14 +225,14 @@ describe('GetManagementDashboardUseCase', () => {
           somavel: false,
           colunas: {
             INVITED: 0, INICIADO: 0, PRE_SCREENING: 0, IN_PROGRESS: 1,
-            COMPLETED: 0, CONFIRMED: 0, SELECTED: 0, QUICK_RESPONSE_TEAM: 0, REJECTED: 2,
+            COMPLETED: 0, SELECTED: 0, QUICK_RESPONSE_TEAM: 0, REJECTED: 2,
           },
         },
         consolidado: {
           somavel: true,
           colunas: {
             INVITED: 0, INICIADO: 0, PRE_SCREENING: 0, IN_PROGRESS: 1,
-            COMPLETED: 0, CONFIRMED: 0, SELECTED: 0, QUICK_RESPONSE_TEAM: 0, REJECTED: 1,
+            COMPLETED: 0, SELECTED: 0, QUICK_RESPONSE_TEAM: 0, REJECTED: 1,
           },
         },
       },
@@ -244,13 +241,11 @@ describe('GetManagementDashboardUseCase', () => {
         bloqueados: 405,
         preScreening: 90,
         completos: 4,
-        agendados: 11,
         seleccionados: 2,
         rechazados: 2498,
       },
       encuadres: {
         agendadosEstaSemana: 8,
-        semDataRegistrada: 0,
         // Capacidade default 36 (env ausente, pedido time recrutamento 22/09): 8/36 = 22,2%.
         pctCapacidadeSemana: { agendados: 8, capacidade: 36, pct: 22.2 },
       },
@@ -402,18 +397,25 @@ describe('GetManagementDashboardUseCase', () => {
     expect(funnelParams).toEqual([['AR', 'BR']]); // PR-9: país default = os dois
   });
 
-  it('conta entrevistas da semana no fuso da OPERAÇÃO e expõe quantos estão sem data', async () => {
-    const db = mockDb([], [], { activos: 0 }, { leads: 0, completos: 0, incompletos: 0, nuevos: 0 }, [], { activos: 0, cubriendoGuardias: 0 }, 0, 7, [], 12);
+  it('conta entrevistas da semana no fuso da OPERAÇÃO: data antiga ∪ participação ativa em evento aberto', async () => {
+    const db = mockDb([], [], { activos: 0 }, { leads: 0, completos: 0, incompletos: 0, nuevos: 0 }, [], { activos: 0, cubriendoGuardias: 0 }, 0, 7);
     const result = await new GetManagementDashboardUseCase(db as never).execute();
 
     expect(result.encuadres.agendadosEstaSemana).toBe(7);
-    expect(result.encuadres.semDataRegistrada).toBe(12);
+    expect(result.encuadres).not.toHaveProperty('semDataRegistrada'); // saiu com o estágio
+    expect(result.funnel).not.toHaveProperty('agendados');
 
     const encuadresSql: string = db.query.mock.calls[CALL.encuadres][0];
     expect(encuadresSql).toContain('worker_job_applications');
     expect(encuadresSql).toContain('interview_datetime'); // fonte atual
     expect(encuadresSql).toContain('e.interview_date'); // fallback do legado da importação
     expect(encuadresSql).toContain('America/Argentina/Buenos_Aires'); // não UTC
+    // spec 052: o evento aberto conta; participação que saiu (released_at) e evento fechado/cancelado, não
+    expect(encuadresSql).toContain('enquadre_event_participants');
+    expect(encuadresSql).toContain('p.released_at IS NULL');
+    expect(encuadresSql).toContain("ev.status = 'open'");
+    expect(encuadresSql).toContain('UNION'); // pessoa × vaga com as duas fontes conta uma vez
+    expect(encuadresSql).not.toContain('CONFIRM');
   });
 
   it('não conta paciente apagado em pacientesActivos', async () => {

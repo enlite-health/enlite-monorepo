@@ -15,7 +15,7 @@ export const POSTULATED_STAGES = ['PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED'] a
 // Fase 4 (D430): QUICK_RESPONSE_TEAM entra em PRE_SELECTED — sem isso, classifyBucket
 // (GetFunnelTableUseCase.ts) jogaria a linha no balde INVITED (fallback) e sair de
 // Seleccionados baixaria a aba "Pre-seleccionados" (DX-4.9).
-export const PRE_SELECTED_STAGES = ['QUALIFIED', 'CONFIRMED', 'SELECTED', 'QUICK_RESPONSE_TEAM'] as const;
+export const PRE_SELECTED_STAGES = ['QUALIFIED', 'SELECTED', 'QUICK_RESPONSE_TEAM'] as const;
 export const REJECTION_STAGES = ['REJECTED'] as const;
 
 /**
@@ -34,13 +34,6 @@ export const SELECTED_KANBAN_STAGES = ['SELECTED'] as const;
  * espelha a coluna "Seleccionados" do Kanban, não a posição da vaga.
  */
 export const FILLED_POSITION_STAGES = ['SELECTED', 'QUICK_RESPONSE_TEAM'] as const;
-
-/**
- * Stages que aparecem na coluna "Confirmados" do kanban (WJAFunnelController).
- * Usado pelo contador "Confirmados" da listagem de vagas para que o número
- * bata exatamente com o que o operador vê ao abrir o kanban.
- */
-export const CONFIRMED_KANBAN_STAGES = ['CONFIRMED'] as const;
 
 export const POSTULATED_STAGES_SET: ReadonlySet<string> = new Set(POSTULATED_STAGES);
 export const PRE_SELECTED_STAGES_SET: ReadonlySet<string> = new Set(PRE_SELECTED_STAGES);

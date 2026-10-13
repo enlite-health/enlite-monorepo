@@ -125,7 +125,7 @@ describe('WJAFunnelController — moveEncuadre', () => {
   it('retorna 404 quando encuadre não existe', async () => {
     mockQuery.mockResolvedValueOnce({ rowCount: 0, rows: [] });
 
-    const [req, res] = mockReqRes({ id: 'e-nonexistent' }, { targetStage: 'CONFIRMED' });
+    const [req, res] = mockReqRes({ id: 'e-nonexistent' }, { targetStage: 'COMPLETED' });
     await controller.moveEncuadre(req, res);
 
     expect(res.status).toHaveBeenCalledWith(404);
@@ -137,7 +137,7 @@ describe('WJAFunnelController — moveEncuadre', () => {
       rows: [{ worker_id: null, job_posting_id: 'jp-1' }],
     });
 
-    const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'CONFIRMED' });
+    const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'COMPLETED' });
     await controller.moveEncuadre(req, res);
 
     expect(res.status).toHaveBeenCalledWith(400);
@@ -146,38 +146,38 @@ describe('WJAFunnelController — moveEncuadre', () => {
   it('falha ao publicar o evento no Pub/Sub depois do COMMIT → 200 mesmo assim + reportError (a varredura reprocessa)', async () => {
     mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [{ worker_id: 'w-1', job_posting_id: 'jp-1' }] });
     mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
-    // etapa anterior: COMPLETED (1 posição antes de CONFIRMED) — não é salto (DX-4.5).
-    mockQuery.mockResolvedValueOnce({ rows: [{ application_funnel_stage: 'COMPLETED', source: 'talentum' }] });
+    // etapa anterior: PRE_SCREENING (1 posição antes de COMPLETED) — não é salto (DX-4.5).
+    mockQuery.mockResolvedValueOnce({ rows: [{ application_funnel_stage: 'PRE_SCREENING', source: 'talentum' }] });
     mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [] }); // upsert wja
     mockQuery.mockResolvedValueOnce({ rows: [{ id: 'ev-1' }] }); // INSERT domain_events
     (controller as unknown as { pubsub: { publish: jest.Mock } }).pubsub = { publish: jest.fn().mockRejectedValue(new Error('pubsub down')) };
 
-    const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'CONFIRMED' });
+    const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'COMPLETED' });
     await controller.moveEncuadre(req, res);
 
-    expect(res.json).toHaveBeenCalledWith({ success: true, data: { encuadreId: 'e1', targetStage: 'CONFIRMED' } });
+    expect(res.json).toHaveBeenCalledWith({ success: true, data: { encuadreId: 'e1', targetStage: 'COMPLETED' } });
     expect(mockReportError).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({ source: 'WJAFunnelController:moveEncuadre:publish' }));
   });
 
   it('rejeição do Pub/Sub que não é Error vira Error no reportError (nunca engole)', async () => {
     mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [{ worker_id: 'w-1', job_posting_id: 'jp-1' }] });
     mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
-    // etapa anterior: COMPLETED (1 posição antes de CONFIRMED) — não é salto (DX-4.5).
-    mockQuery.mockResolvedValueOnce({ rows: [{ application_funnel_stage: 'COMPLETED', source: 'talentum' }] });
+    // etapa anterior: PRE_SCREENING (1 posição antes de COMPLETED) — não é salto (DX-4.5).
+    mockQuery.mockResolvedValueOnce({ rows: [{ application_funnel_stage: 'PRE_SCREENING', source: 'talentum' }] });
     mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [] });
     mockQuery.mockResolvedValueOnce({ rows: [{ id: 'ev-1' }] });
     (controller as unknown as { pubsub: { publish: jest.Mock } }).pubsub = { publish: jest.fn().mockRejectedValue('pubsub string') };
 
-    const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'CONFIRMED' });
+    const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'COMPLETED' });
     await controller.moveEncuadre(req, res);
 
-    expect(res.json).toHaveBeenCalledWith({ success: true, data: { encuadreId: 'e1', targetStage: 'CONFIRMED' } });
+    expect(res.json).toHaveBeenCalledWith({ success: true, data: { encuadreId: 'e1', targetStage: 'COMPLETED' } });
     const [errArg] = mockReportError.mock.calls[0];
     expect(errArg).toBeInstanceOf(Error);
     expect((errArg as Error).message).toBe('pubsub string');
   });
 
-  it('move para CONFIRMED — atualiza application_funnel_stage sem tocar resultado', async () => {
+  it('move para COMPLETED — atualiza application_funnel_stage sem tocar resultado', async () => {
     // Query 1: SELECT encuadre
     mockQuery.mockResolvedValueOnce({
       rowCount: 1,
@@ -185,27 +185,27 @@ describe('WJAFunnelController — moveEncuadre', () => {
     });
     // Query 2: SELECT status FROM workers (eligibility check)
     mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
-    // etapa anterior: COMPLETED (1 posição antes de CONFIRMED) — não é salto (DX-4.5),
+    // etapa anterior: PRE_SCREENING (1 posição antes de COMPLETED) — não é salto (DX-4.5),
     // então não precisa de reasonCategory.
-    mockQuery.mockResolvedValueOnce({ rows: [{ application_funnel_stage: 'COMPLETED', source: 'talentum' }] });
+    mockQuery.mockResolvedValueOnce({ rows: [{ application_funnel_stage: 'PRE_SCREENING', source: 'talentum' }] });
     // Query 3: INSERT/UPDATE worker_job_applications
     mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [] });
 
-    const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'CONFIRMED' });
+    const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'COMPLETED' });
     await controller.moveEncuadre(req, res);
 
     expect(res.json).toHaveBeenCalledWith({
       success: true,
-      data: { encuadreId: 'e1', targetStage: 'CONFIRMED' },
+      data: { encuadreId: 'e1', targetStage: 'COMPLETED' },
     });
 
     // Deve ter feito exatamente 3 queries (SELECT + eligibility + upsert wja)
     expect(mockQuery).toHaveBeenCalledTimes(5); // + etapa anterior + domain_events (PEND-14)
 
-    // Terceira query: upsert em worker_job_applications com stage CONFIRMED
+    // Terceira query: upsert em worker_job_applications com stage COMPLETED
     const upsertCall = mockQuery.mock.calls[3];
     expect(upsertCall[0]).toContain('worker_job_applications');
-    expect(upsertCall[1]).toEqual(['w-1', 'jp-1', 'CONFIRMED', null, null, null]);
+    expect(upsertCall[1]).toEqual(['w-1', 'jp-1', 'COMPLETED', null, null, null]);
     // O SQL é ESTÁTICO (sempre referencia $4/$5 — interpolar 'NULL' deixando 6 valores no
     // array quebrava TODO movimento sem data: "could not determine data type of parameter
     // $4"). A invariante "mover sem data não apaga agendamento existente" vive no CASE:
@@ -229,8 +229,8 @@ describe('WJAFunnelController — moveEncuadre', () => {
         rows: [{ worker_id: 'w-1', job_posting_id: 'jp-1' }],
       });
       mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
-      // etapa anterior: COMPLETED (1 posição antes de CONFIRMED) — não é salto (DX-4.5).
-      mockQuery.mockResolvedValueOnce({ rows: [{ application_funnel_stage: 'COMPLETED', source: 'talentum' }] });
+      // etapa anterior: PRE_SCREENING (1 posição antes de COMPLETED) — não é salto (DX-4.5).
+      mockQuery.mockResolvedValueOnce({ rows: [{ application_funnel_stage: 'PRE_SCREENING', source: 'talentum' }] });
       mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [] });
     }
 
@@ -239,7 +239,7 @@ describe('WJAFunnelController — moveEncuadre', () => {
 
       const [req, res] = mockReqRes(
         { id: 'e1' },
-        { targetStage: 'CONFIRMED', interviewDate: '2026-08-05', interviewTime: '14:30' },
+        { targetStage: 'COMPLETED', interviewDate: '2026-08-05', interviewTime: '14:30' },
       );
       await controller.moveEncuadre(req, res);
 
@@ -247,10 +247,10 @@ describe('WJAFunnelController — moveEncuadre', () => {
       expect(upsertCall[0]).toContain('interview_datetime =');
       expect(upsertCall[0]).toContain("AT TIME ZONE 'America/Argentina/Buenos_Aires'");
       expect(upsertCall[0]).not.toContain("AT TIME ZONE 'UTC'");
-      expect(upsertCall[1]).toEqual(['w-1', 'jp-1', 'CONFIRMED', '2026-08-05', '14:30', null]);
+      expect(upsertCall[1]).toEqual(['w-1', 'jp-1', 'COMPLETED', '2026-08-05', '14:30', null]);
       expect(res.json).toHaveBeenCalledWith({
         success: true,
-        data: { encuadreId: 'e1', targetStage: 'CONFIRMED' },
+        data: { encuadreId: 'e1', targetStage: 'COMPLETED' },
       });
     });
 
@@ -259,7 +259,7 @@ describe('WJAFunnelController — moveEncuadre', () => {
 
       const [req, res] = mockReqRes(
         { id: 'e1' },
-        { targetStage: 'CONFIRMED', interviewDate: '2026-08-05', interviewTime: '09:00' },
+        { targetStage: 'COMPLETED', interviewDate: '2026-08-05', interviewTime: '09:00' },
       );
       await controller.moveEncuadre(req, res);
 
@@ -276,7 +276,7 @@ describe('WJAFunnelController — moveEncuadre', () => {
       const [req, res] = mockReqRes(
         { id: 'e1' },
         {
-          targetStage: 'CONFIRMED',
+          targetStage: 'COMPLETED',
           interviewDate: '2026-08-05',
           interviewTime: '14:30',
           interviewMeetLink: 'https://meet.google.com/abc-defg-hij',
@@ -292,20 +292,20 @@ describe('WJAFunnelController — moveEncuadre', () => {
     it('conclui o movimento sem data ("ainda não sei") — não bloqueia nem inventa horário', async () => {
       mockUpsertPath();
 
-      const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'CONFIRMED' });
+      const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'COMPLETED' });
       await controller.moveEncuadre(req, res);
 
       expect(res.status).not.toHaveBeenCalledWith(400);
       expect(res.json).toHaveBeenCalledWith({
         success: true,
-        data: { encuadreId: 'e1', targetStage: 'CONFIRMED' },
+        data: { encuadreId: 'e1', targetStage: 'COMPLETED' },
       });
     });
 
     it('400 quando a data vem sem a hora (metade do agendamento não serve a nada)', async () => {
       const [req, res] = mockReqRes(
         { id: 'e1' },
-        { targetStage: 'CONFIRMED', interviewDate: '2026-08-05' },
+        { targetStage: 'COMPLETED', interviewDate: '2026-08-05' },
       );
       await controller.moveEncuadre(req, res);
 
@@ -315,9 +315,9 @@ describe('WJAFunnelController — moveEncuadre', () => {
 
     it('400 para data ou hora malformada, sem tocar o banco', async () => {
       for (const body of [
-        { targetStage: 'CONFIRMED', interviewDate: '05/08/2026', interviewTime: '14:30' },
-        { targetStage: 'CONFIRMED', interviewDate: '2026-08-05', interviewTime: '25:00' },
-        { targetStage: 'CONFIRMED', interviewDate: '2026-08-05', interviewTime: 'manhã' },
+        { targetStage: 'COMPLETED', interviewDate: '05/08/2026', interviewTime: '14:30' },
+        { targetStage: 'COMPLETED', interviewDate: '2026-08-05', interviewTime: '25:00' },
+        { targetStage: 'COMPLETED', interviewDate: '2026-08-05', interviewTime: 'manhã' },
       ]) {
         mockQuery.mockClear();
         const [req, res] = mockReqRes({ id: 'e1' }, body);
@@ -338,7 +338,7 @@ describe('WJAFunnelController — moveEncuadre', () => {
     // Query 2: SELECT status — INCOMPLETE
     mockQuery.mockResolvedValueOnce({ rows: [{ status: 'INCOMPLETE_REGISTER' }] });
 
-    const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'CONFIRMED' });
+    const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'COMPLETED' });
     await controller.moveEncuadre(req, res);
 
     expect(res.status).toHaveBeenCalledWith(403);
@@ -373,8 +373,8 @@ describe('WJAFunnelController — moveEncuadre', () => {
     });
     // Query 2: eligibility check
     mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
-    // etapa anterior: CONFIRMED (1 posição antes de SELECTED) — não é salto (DX-4.5).
-    mockQuery.mockResolvedValueOnce({ rows: [{ application_funnel_stage: 'CONFIRMED', source: 'talentum' }] });
+    // etapa anterior: COMPLETED (1 posição antes de SELECTED) — não é salto (DX-4.5).
+    mockQuery.mockResolvedValueOnce({ rows: [{ application_funnel_stage: 'COMPLETED', source: 'talentum' }] });
     // Query 3: upsert wja
     mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [] });
     // Query 4: UPDATE encuadre resultado = SELECCIONADO
@@ -434,7 +434,7 @@ describe('WJAFunnelController — moveEncuadre', () => {
     // PLACED removido em F7.a (migration 194 — 0 linhas em prod, sync F6 morta)
     const validStages = [
       'INVITED', 'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED', 'QUALIFIED', 'IN_DOUBT',
-      'CONFIRMED', 'SELECTED', 'REJECTED',
+      'SELECTED', 'REJECTED',
     ];
 
     for (const stage of validStages) {
@@ -478,10 +478,10 @@ describe('WJAFunnelController — moveEncuadre', () => {
     it('salto sem motivo → 422 MOVE_REASON_REQUIRED e NADA é escrito (nem upsert, nem evento)', async () => {
       mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [{ worker_id: 'w-1', job_posting_id: 'jp-1' }] });
       mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
-      // etapa anterior: INVITED (posição 0) → CONFIRMED (posição 4) é salto (Q-4.1).
+      // etapa anterior: INVITED (posição 1) → COMPLETED (posição 4) é salto (Q-4.1).
       mockQuery.mockResolvedValueOnce({ rows: [{ application_funnel_stage: 'INVITED', source: 'talentum' }] });
 
-      const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'CONFIRMED' });
+      const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'COMPLETED' });
       await controller.moveEncuadre(req, res);
 
       expect(res.status).toHaveBeenCalledWith(422);
@@ -506,10 +506,10 @@ describe('WJAFunnelController — moveEncuadre', () => {
       mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [] }); // upsert wja
       mockQuery.mockResolvedValueOnce({ rows: [{ id: 'ev-1' }] }); // INSERT domain_events
 
-      const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'CONFIRMED', reasonCategory: 'ENCUADRE_ANTECIPADO' });
+      const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'COMPLETED', reasonCategory: 'ENCUADRE_ANTECIPADO' });
       await controller.moveEncuadre(req, res);
 
-      expect(res.json).toHaveBeenCalledWith({ success: true, data: { encuadreId: 'e1', targetStage: 'CONFIRMED' } });
+      expect(res.json).toHaveBeenCalledWith({ success: true, data: { encuadreId: 'e1', targetStage: 'COMPLETED' } });
       // Ver nota da classe sobre poolMockSupport — set_config nunca chega a mockQuery.
       expect(mockQuery.mock.calls.some(([sql]) => typeof sql === 'string' && sql.includes('move_reason'))).toBe(false);
     });
@@ -519,7 +519,7 @@ describe('WJAFunnelController — moveEncuadre', () => {
       mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
       mockQuery.mockResolvedValueOnce({ rows: [{ application_funnel_stage: 'INVITED', source: 'talentum' }] });
 
-      const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'CONFIRMED', reasonCategory: 'REAVALIACAO' });
+      const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'COMPLETED', reasonCategory: 'REAVALIACAO' });
       await controller.moveEncuadre(req, res);
 
       expect(res.status).toHaveBeenCalledWith(422);
@@ -534,7 +534,7 @@ describe('WJAFunnelController — moveEncuadre', () => {
     it('entrar em REJECTED sem motivo → 422 MOVE_REASON_REQUIRED (ENTER_REJECTED)', async () => {
       mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [{ worker_id: 'w-1', job_posting_id: 'jp-1' }] });
       mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
-      mockQuery.mockResolvedValueOnce({ rows: [{ application_funnel_stage: 'CONFIRMED', source: 'talentum' }] });
+      mockQuery.mockResolvedValueOnce({ rows: [{ application_funnel_stage: 'COMPLETED', source: 'talentum' }] });
 
       const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'REJECTED' });
       await controller.moveEncuadre(req, res);
@@ -551,7 +551,7 @@ describe('WJAFunnelController — moveEncuadre', () => {
     it('motivo de salto usado para entrar em REJECTED → 422 MOVE_REASON_INVALID (ENTER_REJECTED)', async () => {
       mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [{ worker_id: 'w-1', job_posting_id: 'jp-1' }] });
       mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
-      mockQuery.mockResolvedValueOnce({ rows: [{ application_funnel_stage: 'CONFIRMED', source: 'talentum' }] });
+      mockQuery.mockResolvedValueOnce({ rows: [{ application_funnel_stage: 'COMPLETED', source: 'talentum' }] });
 
       const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'REJECTED', reasonCategory: 'ENCUADRE_ANTECIPADO' });
       await controller.moveEncuadre(req, res);
@@ -570,7 +570,7 @@ describe('WJAFunnelController — moveEncuadre', () => {
       mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
       mockQuery.mockResolvedValueOnce({ rows: [{ application_funnel_stage: 'REJECTED', source: 'talentum' }] });
 
-      const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'CONFIRMED' });
+      const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'COMPLETED' });
       await controller.moveEncuadre(req, res);
 
       expect(res.status).toHaveBeenCalledWith(422);
@@ -589,18 +589,18 @@ describe('WJAFunnelController — moveEncuadre', () => {
       mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [] }); // upsert wja
       mockQuery.mockResolvedValueOnce({ rows: [{ id: 'ev-1' }] }); // INSERT domain_events
 
-      const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'CONFIRMED', reasonCategory: 'REAVALIACAO' });
+      const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'COMPLETED', reasonCategory: 'REAVALIACAO' });
       await controller.moveEncuadre(req, res);
 
-      expect(res.json).toHaveBeenCalledWith({ success: true, data: { encuadreId: 'e1', targetStage: 'CONFIRMED' } });
+      expect(res.json).toHaveBeenCalledWith({ success: true, data: { encuadreId: 'e1', targetStage: 'COMPLETED' } });
     });
 
     it('vizinho (mesma direção, 1 posição) sem motivo → 200 e nenhuma query de motivo', async () => {
       mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [{ worker_id: 'w-1', job_posting_id: 'jp-1' }] });
       mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
-      // Confirmados → Seleccionados: 1 posição à frente, NÃO é salto (Q-4.1, o caso que
+      // Completado → Seleccionados: 1 posição à frente, NÃO é salto (Q-4.1, o caso que
       // a fase explicitamente NÃO pede motivo).
-      mockQuery.mockResolvedValueOnce({ rows: [{ application_funnel_stage: 'CONFIRMED', source: 'talentum' }] });
+      mockQuery.mockResolvedValueOnce({ rows: [{ application_funnel_stage: 'COMPLETED', source: 'talentum' }] });
       mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [] }); // upsert wja
       mockQuery.mockResolvedValueOnce({ rows: [{ id: 'ev-1' }] }); // INSERT domain_events
       mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [] }); // UPDATE encuadres resultado=SELECCIONADO
@@ -719,14 +719,14 @@ describe('WJAFunnelController — moveEncuadre', () => {
       });
     });
 
-    it('origem Compatíveis → CONFIRMED sem motivo → 422 MOVE_REASON_REQUIRED (JUMP) — Compatíveis conta como posição 0', async () => {
+    it('origem Compatíveis → COMPLETED sem motivo → 422 MOVE_REASON_REQUIRED (JUMP) — Compatíveis conta como posição 0', async () => {
       mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [{ worker_id: 'w-1', job_posting_id: 'jp-1' }] });
       mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
       mockQuery.mockResolvedValueOnce({
         rows: [{ application_funnel_stage: 'INVITED', source: 'system', messaged_at: null }],
       });
 
-      const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'CONFIRMED' });
+      const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'COMPLETED' });
       await controller.moveEncuadre(req, res);
 
       expect(res.status).toHaveBeenCalledWith(422);

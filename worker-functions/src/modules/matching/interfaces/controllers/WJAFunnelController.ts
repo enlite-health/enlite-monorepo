@@ -110,7 +110,7 @@ export class WJAFunnelController {
    *   REJECTED   — inclui tentativas negadas DISPENSADAS não promovidas (D474)
    *   INICIADO   — WJA stage=INVITED + source='manual' (postulação real) + tentativas negadas ativas (D474)
    *   PRE_SCREENING — WJA stage=PRE_SCREENING (antigo INITIATED)
-   *   IN_PROGRESS, COMPLETED, CONFIRMED, SELECTED, REJECTED — inalterados
+   *   IN_PROGRESS, COMPLETED, SELECTED, REJECTED — inalterados
    */
   async getEncuadreFunnel(req: Request, res: Response): Promise<void> {
     try {
@@ -227,7 +227,6 @@ export class WJAFunnelController {
         PRE_SCREENING: [],  // Antigo INITIATED — entrou no formulário Talentum
         IN_PROGRESS: [],
         COMPLETED: [],      // agrupa COMPLETED + QUALIFIED + IN_DOUBT (tag diferencia)
-        CONFIRMED: [],
         SELECTED: [],
         QUICK_RESPONSE_TEAM: [], // Fase 4 (D430) — destino do arrasto manual, entrada do quadro C
         REJECTED: [],
@@ -438,7 +437,7 @@ export class WJAFunnelController {
    * INVITED added to validStages — "Invitados" is a droppable column in the kanban
    * (KanbanBoard DROPPABLE_STAGES); its omission here 400'd every drop into it.
    *
-   * interviewDate/Time (2026-07-30): mover para CONFIRMED registra QUANDO a entrevista é.
+   * interviewDate/Time (2026-07-30): o corpo ainda aceita QUANDO a entrevista é (o estágio onde a tela os pedia saiu na spec 052).
    * Até aqui o sistema gravava só que ela foi agendada — por isso lembrete de véspera,
    * lembrete de 5min e marcação de falta nunca dispararam (0 execuções cada). Ambas são
    * OPCIONAIS: "ainda não sei" é caminho válido (design D4), porque bloquear o movimento

@@ -20,7 +20,7 @@ import type { PoolClient } from 'pg';
  */
 
 /**
- * As 9 etapas COM MENSAGEM — registra um `StageMessageHandler` por etapa
+ * As 8 etapas COM MENSAGEM — registra um `StageMessageHandler` por etapa
  * (`src/index.ts:616`) e é a lista que a tela de plantillas edita
  * (`FunnelStageMessagesController.ts`). `QUICK_RESPONSE_TEAM` (Fase 4, DX-4.7)
  * fica de fora DE PROPÓSITO: é o destino do arrasto do quadro B que não vira
@@ -29,7 +29,7 @@ import type { PoolClient } from 'pg';
  * 292), não um `if` espalhado pelo código.
  */
 export const FUNNEL_STAGES = [
-  'INVITED', 'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED', 'QUALIFIED', 'IN_DOUBT', 'CONFIRMED', 'SELECTED', 'REJECTED',
+  'INVITED', 'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED', 'QUALIFIED', 'IN_DOUBT', 'SELECTED', 'REJECTED',
 ] as const;
 
 export type FunnelStage = (typeof FUNNEL_STAGES)[number];

@@ -122,10 +122,10 @@ describe('Mensagem por etapa do Kanban (PEND-14 / DEC-12) @integration', () => {
       else encC = e.rows[0].id;
     }
     // O setup do e2e trunca tabelas entre suítes e leva o seed da migration 292 junto:
-    // (re)semear as 9 etapas AR (mesmo INSERT da migration) e zerar a config.
+    // (re)semear as 8 etapas AR (o INSERT da migration menos a etapa retirada na spec 052) e zerar a config.
     await pool.query(`INSERT INTO funnel_stage_messages (country, stage, builtin) VALUES
       ('AR','INVITED',NULL),('AR','PRE_SCREENING',NULL),('AR','IN_PROGRESS',NULL),('AR','COMPLETED',NULL),('AR','QUALIFIED','interview_invite'),
-      ('AR','IN_DOUBT',NULL),('AR','CONFIRMED',NULL),('AR','SELECTED',NULL),('AR','REJECTED',NULL)
+      ('AR','IN_DOUBT',NULL),('AR','SELECTED',NULL),('AR','REJECTED',NULL)
       ON CONFLICT (country, stage) DO NOTHING`);
     await pool.query(`UPDATE funnel_stage_messages SET template_slug = NULL, enabled = false WHERE country = 'AR'`);
   });

@@ -28,7 +28,6 @@ import {
  * Classifies a row into one of the five named buckets.
  *
  * Withdrew takes precedence: interview_response='declined'.
- * Workers em CONFIRMED+awaiting_reschedule+meet_link=NULL pertencem a PRE_SELECTED (F7.b — ADR-003).
  * REPROGRAM removido em F7.b — não existe mais como stage válido.
  */
 function classifyBucket(row: FunnelTableRow): Exclude<FunnelBucket, 'ALL'> {

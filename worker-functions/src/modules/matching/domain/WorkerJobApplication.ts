@@ -43,7 +43,6 @@ export type ApplicationFunnelStage =
   | 'COMPLETED'      // concluiu o processo Talentum
   | 'QUALIFIED'      // aprovado pela Talentum
   | 'IN_DOUBT'       // em dúvida
-  | 'CONFIRMED'      // worker confirmou slot de encuadre
   | 'SELECTED'       // selecionado no encuadre
   | 'QUICK_RESPONSE_TEAM' // Equipe de Resposta Rápida — arrasto manual do quadro B (D430, migration 477)
   | 'REJECTED';      // rejeitado no encuadre (inclui auto-rejeição por NOT_QUALIFIED Talentum — migration 191)
