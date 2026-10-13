@@ -750,7 +750,7 @@ jobs:
           CI: 'true'
           ABAC_API_URL: http://localhost:8080
           ABAC_TEST_DB_URL: postgresql://enlite_admin:enlite_password@localhost:5433/enlite_e2e
-        run: npx playwright test --project=integration --ignore-snapshots --grep "group-simulation|draft-vacancy-page|draft-vacancy-choice|cid-na-vacante-tela|patient-documents-tab|vacante-anotacao-sem-celula|funil-compativeis-sem-celula|vacante-em-servico-047|pt-todavia-no-hay-048|admissao-049|admissao-050|transicao-estado-051|login-cai-na-gestao-a-vista"
+        run: npx playwright test --project=integration --ignore-snapshots --grep "group-simulation|draft-vacancy-page|draft-vacancy-choice|cid-na-vacante-tela|patient-documents-tab|vacante-anotacao-sem-celula|funil-compativeis-sem-celula|vacante-em-servico-047|pt-todavia-no-hay-048|admissao-049|admissao-050|transicao-estado-051|enquadre-052|login-cai-na-gestao-a-vista"
 
       # Spec 049 (F9): os e2e de API da aba Admissão têm blocos que só valem com a stack de ENGINE LIGADO + SYNC DO CATÁLOGO +
       # `ADMISSION_EXTERNALS=fake` — exatamente a API deste job. No job `backend-e2e` (sem sync, de propósito: ligá-lo ali
@@ -769,7 +769,7 @@ jobs:
         run: |
           npm ci
           npm run test:e2e:fixtures
-          npx jest --config jest.config.e2e.js --testPathPattern 'tests/e2e/admission-049-' --testTimeout=60000 --forceExit
+          npx jest --config jest.config.e2e.js --testPathPattern 'tests/e2e/(admission-049-|enquadre-052-)' --testTimeout=60000 --forceExit
 
       - name: Relatório (só quando falha)
         if: failure()
