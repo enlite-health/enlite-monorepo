@@ -65,7 +65,7 @@ export async function loginAsKanbanAdmin(page: Page): Promise<void> {
 }
 
 /**
- * Garante que a aba Encuadres da página de detalhe da vaga abra em view=kanban
+ * Garante que a aba Reclutamiento da página de detalhe da vaga abra em view=kanban
  * via localStorage (a chave que o VacancyFunnelView lê na inicialização).
  */
 async function forceKanbanView(page: Page, vacancyId: string): Promise<void> {
