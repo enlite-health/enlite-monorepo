@@ -61,6 +61,8 @@ interface FunnelEncuadre {
   resendBlockedReason?: { code: string; until: string } | null;
   /** Blocked card que foi "rechazado" (soft-dismiss): aparece em RECHAZADOS, com botão de voltar. */
   isDismissed?: boolean;
+  /** Spec 052: o prestador está convocado para um evento de enquadre (ISO do início). Derivado no servidor. */
+  convocation?: { startsAt: string } | null;
 }
 
 export interface FunnelStages {

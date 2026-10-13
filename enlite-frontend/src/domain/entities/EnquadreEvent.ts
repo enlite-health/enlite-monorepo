@@ -56,6 +56,8 @@ export interface EnquadreParticipant {
 
 export interface EnquadreEventDetail extends EnquadreEventListItem {
   participants: EnquadreParticipant[];
+  /** Convocados SEM marcação que voltam a Completado ao encerrar. Derivado no servidor; o corpo do diálogo de encerrar usa este número. */
+  unmarkedCount: number;
 }
 
 export interface EnquadreWorkerOption {

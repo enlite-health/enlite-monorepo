@@ -4,6 +4,7 @@ import { CalendarClock, Hand, MapPin, MessageSquare, Phone, Star } from 'lucide-
 import { formatPhoneDisplay } from '@presentation/utils/recruitmentHelpers';
 import { NotesCountBadge } from '@presentation/components/features/admin/VacancyDetail/Funnel/NotesCountBadge';
 import { MoveToMenu } from './MoveToMenu';
+import { convocationLabel } from '@presentation/components/features/admin/VacancyDetail/Enquadre/enquadreEventTime';
 import { KanbanCardStageMessage } from './KanbanCardStageMessage';
 import { KanbanCardBlocked, type PromoteStatus } from './KanbanCardBlocked';
 import { KanbanCardResend, type ResendStatus } from './KanbanCardResend';
@@ -55,6 +56,8 @@ interface KanbanCardProps {
   /** Move o card para outro stage via menu de clique (alternativa ao arrasto).
    *  Só é passado para cards movíveis (com encuadre) — orphans/BLOQUEADO ficam sem. */
   onMoveTo?: (targetStage: string) => void;
+  /** Destinos do "Mover a…" (ids de coluna). Ausente = os do funil da vaga. */
+  moveTargets?: readonly string[];
   /** Opens the contact-notes modal for the VACANCY — same thread on every card, including BLOQUEADO. */
   onOpenNotes?: () => void;
   /** ISO do último envio de WhatsApp a esta candidatura (manual ou em lote); null = nunca. */
@@ -82,6 +85,8 @@ interface KanbanCardProps {
    * (a autoria só é gravada desde 06/08): ausência NÃO significa desinteresse.
    */
   selfAppliedAt?: string | null;
+  /** Evento de enquadre para o qual o prestador foi convocado (spec 052): vira a etiqueta "Convocado · dd/mm hh:mm". */
+  convocation?: { startsAt: string } | null;
 }
 
 const ACQUISITION_CHANNEL_STYLE: Record<string, { bg: string; text: string }> = {
@@ -142,6 +147,8 @@ export function KanbanCard({
   onReject,
   onUndismiss,
   onMoveTo,
+  moveTargets,
+  convocation,
   onOpenNotes,
   contactNotesCount = 0,
   selfAppliedAt,
@@ -291,6 +298,14 @@ export function KanbanCard({
         </div>
       )}
 
+      {convocation && (
+        <div className="mt-2">
+          <span data-testid="convocation-badge" className="inline-block px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-blue-50 text-blue-700">
+            {t('admin.vacancyDetail.enquadre.kanban.convoked', { date: convocationLabel(convocation.startsAt) })}
+          </span>
+        </div>
+      )}
+
       {rejectionReasonCategory && (
         <div className="mt-2">
           <span data-testid="rejection-badge" className="inline-block px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-red-50 text-red-600">
@@ -332,7 +347,7 @@ export function KanbanCard({
         <KanbanCardResend onResend={onResend} status={resendStatus} message={resendMessage} blockedReason={resendBlockedReason} lastMessagedAt={lastMessagedAt} />
       )}
 
-      {onMoveTo && <MoveToMenu currentStage={stage} onMove={onMoveTo} />}
+      {onMoveTo && <MoveToMenu currentStage={stage} onMove={onMoveTo} targets={moveTargets} />}
 
       {onReject && stage !== 'REJECTED' && (
         <button

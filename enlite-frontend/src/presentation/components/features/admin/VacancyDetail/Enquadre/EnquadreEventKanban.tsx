@@ -15,7 +15,6 @@ import { Loader2 } from 'lucide-react';
 import { Text } from '@presentation/components/atoms/Text';
 import { KanbanBoardShell, type KanbanDropEvent } from '../../Kanban/KanbanBoardShell';
 import { KanbanCard } from '../../Kanban/KanbanCard';
-import { MoveToMenu } from '../../Kanban/MoveToMenu';
 import { RejectionReasonSelect } from '../../Kanban/RejectionReasonSelect';
 import { AdmissionConfirmDialog } from '../../PatientDetail/admission/AdmissionConfirmDialog';
 import { timeZoneForCountry } from '../../PatientDetail/admission/admissionTime';
@@ -88,7 +87,6 @@ export function EnquadreEventKanban({ vacancyId, eventId, onBack, now = () => ne
   }
 
   const open = ENQUADRE_PHASE_OPEN[event.phase];
-  const unmarked = event.participants.filter((p) => p.column === 'CONVOKED').length;
 
   /** Ponto ÚNICO de mover (arrasto e "Mover a…"). Faltou o motivo de saída de Rejeitados → o servidor diz, a tela pergunta. */
   async function moveParticipant(participantId: string, column: EnquadreColumnId, reason?: string): Promise<void> {
@@ -154,7 +152,12 @@ export function EnquadreEventKanban({ vacancyId, eventId, onBack, now = () => ne
         columnWidthClass={ENQUADRE_COLUMN_WIDTH}
         renderCard={(p, columnId) => (
           <div data-testid={`enquadre-participant-${p.id}`} data-column={columnId}>
-            <KanbanCard {...cardProps(p, columnId)} onReject={open ? () => setPendingReject(p.id) : undefined} />
+            <KanbanCard
+              {...cardProps(p, columnId)}
+              onReject={open ? () => setPendingReject(p.id) : undefined}
+              onMoveTo={open ? (target) => { void moveParticipant(p.id, target as EnquadreColumnId); } : undefined}
+              moveTargets={ENQUADRE_MOVE_TARGETS}
+            />
             {p.outcome === 'returned' && (
               <span
                 className="mt-1 inline-block px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-700"
@@ -162,13 +165,6 @@ export function EnquadreEventKanban({ vacancyId, eventId, onBack, now = () => ne
               >
                 {te('kanban.returned')}
               </span>
-            )}
-            {open && (
-              <MoveToMenu
-                currentStage={columnId}
-                targets={ENQUADRE_MOVE_TARGETS}
-                onMove={(target) => { void moveParticipant(p.id, target as EnquadreColumnId); }}
-              />
             )}
           </div>
         )}
@@ -197,7 +193,7 @@ export function EnquadreEventKanban({ vacancyId, eventId, onBack, now = () => ne
         <AdmissionConfirmDialog
           testId="enquadre-close-dialog"
           title={te('kanban.closeConfirm.title')}
-          body={te('kanban.closeConfirm.body', { count: unmarked })}
+          body={te('kanban.closeConfirm.body', { count: event.unmarkedCount })}
           confirmLabel={te('kanban.closeConfirm.confirm')}
           busyLabel={te('kanban.closeConfirm.busy')}
           busy={busy}

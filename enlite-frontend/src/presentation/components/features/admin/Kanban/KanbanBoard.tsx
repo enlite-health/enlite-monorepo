@@ -3,11 +3,12 @@ import { useTranslation } from 'react-i18next';
 import type { FunnelStages, MoveEncuadreError } from '@hooks/admin/useWJAFunnel';
 import { KanbanBoardShell, type KanbanDropEvent } from './KanbanBoardShell';
 import { KanbanCard } from './KanbanCard';
+import { cardProps, type FunnelCard } from './kanbanCardProps';
 import { RejectionReasonSelect } from './RejectionReasonSelect';
 import { RoleSelect } from './RoleSelect';
 import { InterviewScheduleSelect, type InterviewSchedule } from './InterviewScheduleSelect';
 import { ContactNotesModal } from '@presentation/components/features/admin/VacancyDetail/Funnel/ContactNotesModal';
-import { VACANCY_FUNNEL_COLUMNS, columnItems } from '@presentation/components/features/admin/VacancyDetail/Funnel/funnelTabsConfig';
+import { VACANCY_FUNNEL_COLUMNS, columnItems, type VacancyFunnelColumn } from '@presentation/components/features/admin/VacancyDetail/Funnel/funnelTabsConfig';
 import { compareByDistanceKm } from '@domain/value-objects/candidateDistance';
 import { useActionGate } from '@presentation/hooks/useCellAccess';
 import type { EncuadreRole } from '@domain/entities/EncuadreRole';
@@ -18,6 +19,8 @@ import type { PresentationInviteState } from './KanbanCardPresentationInvite';
 
 interface KanbanBoardProps {
   stages: FunnelStages;
+  /** Colunas do board. Padrão = `VACANCY_FUNNEL_COLUMNS` (as 9 de hoje); o protótipo do enquadre passa a lista sem Confirmado. */
+  columns?: readonly VacancyFunnelColumn[];
   vacancyId: string;
   onMove: (
     encuadreId: string,
@@ -44,43 +47,7 @@ interface KanbanBoardProps {
   onPresentationInvite?: (workerId: string) => Promise<PresentationInviteResult>;
 }
 
-/** Um card do funil (o mesmo shape em qualquer etapa). */
-type FunnelCard = FunnelStages[keyof FunnelStages][number];
-
-/**
- * Props de exibição do card — as MESMAS na coluna e no overlay de arrasto.
- * Estavam escritas duas vezes; qualquer campo novo entrava só numa e o card
- * arrastado ficava diferente do card parado.
- */
-function cardProps(enc: FunnelCard, stage: string) {
-  return {
-    id: enc.id,
-    workerId: enc.workerId,
-    workerName: enc.workerName,
-    workerPhone: enc.workerPhone,
-    occupation: enc.occupation,
-    workZone: enc.workZone,
-    matchScore: enc.matchScore,
-    talentumStatus: enc.talentumStatus,
-    rejectionReasonCategory: enc.rejectionReasonCategory,
-    interviewDate: enc.interviewDate,
-    interviewTime: enc.interviewTime,
-    stage,
-    interviewResponse: enc.interviewResponse,
-    meetLink: enc.meetLink,
-    acquisitionChannel: enc.acquisitionChannel,
-    internalStage: enc.internalStage ?? null,
-    isBlocked: enc.isBlocked,
-    blockedReason: enc.blockedReason,
-    missingFields: enc.missingFields,
-    attemptCount: enc.attemptCount,
-    lastMessagedAt: enc.lastMessagedAt ?? null,
-    lastStageMessage: enc.lastStageMessage ?? null,
-    resendBlockedReason: enc.resendBlockedReason ?? null,
-  };
-}
-
-export function KanbanBoard({ stages, vacancyId, onMove, onPromoteBlocked, onRejectBlocked, onResendInvite, onPresentationInvite }: KanbanBoardProps) {
+export function KanbanBoard({ stages, columns: columnDefs = VACANCY_FUNNEL_COLUMNS, vacancyId, onMove, onPromoteBlocked, onRejectBlocked, onResendInvite, onPresentationInvite }: KanbanBoardProps) {
   const { t } = useTranslation();
   // PUT /encuadres/:id/move, /result
   // → todos funnel:write. Arrasto e menu de clique chamam a MESMA rota — D269
@@ -164,7 +131,7 @@ export function KanbanBoard({ stages, vacancyId, onMove, onPromoteBlocked, onRej
     }));
   }
 
-  const columns = VACANCY_FUNNEL_COLUMNS.map((c) => ({
+  const columns = columnDefs.map((c) => ({
     id: c.id,
     color: c.color,
     droppable: c.droppable,
@@ -282,7 +249,7 @@ export function KanbanBoard({ stages, vacancyId, onMove, onPromoteBlocked, onRej
       <KanbanBoardShell<FunnelCard>
         columns={columns}
         itemsOf={(columnId) => {
-          const col = VACANCY_FUNNEL_COLUMNS.find((c) => c.id === columnId);
+          const col = columnDefs.find((c) => c.id === columnId);
           // FunnelStages não tem index signature; columnItems só lê por chave conhecida, e as 8
           // chaves de FunnelStages cobrem todo `sources` possível de VACANCY_FUNNEL_COLUMNS. Sem
           // mudança de comportamento — só o tipo que o tsc exige para a assinatura genérica.
