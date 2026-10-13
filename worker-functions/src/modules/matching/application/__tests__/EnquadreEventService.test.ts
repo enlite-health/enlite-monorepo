@@ -401,3 +401,15 @@ describe('leitura', () => {
     expect(await build({ available: [] }).service.listHostFreeSlots(VACANCY_ID, HOST_ID, '2026-10-01', 60)).toEqual([]);
   });
 });
+
+describe('createEvent — início no passado (T-30c)', () => {
+  it('startsAt anterior ao agora: ENQUADRE_SLOT_IN_PAST e NADA gravado nem enviado ao Google', async () => {
+    const { service, calendar, db } = build({ available: TWO_WORKERS });
+    await expect(service.createEvent(VACANCY_ID, { ...INPUT, startsAt: '2026-10-13T10:00' }, ACTOR)).rejects.toMatchObject({
+      code: 'ENQUADRE_SLOT_IN_PAST',
+    });
+    expect(calendar.created).toHaveLength(0);
+    expect(db.statements().some((s) => s.startsWith('INSERT INTO enquadre_'))).toBe(false);
+    expect(db.statements()).not.toContain('COMMIT');
+  });
+});
