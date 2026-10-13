@@ -2715,7 +2715,6 @@
       "enquadre": {
         "title": "Eventos de encuadre",
         "newButton": "Crear evento",
-        "unassignedCount": "{{count}} completados sin evento",
         "loading": "Cargando eventos…",
         "loadError": "No se pudieron cargar los eventos.",
         "empty": "Todavía no hay eventos",
@@ -2768,7 +2767,8 @@
           "workersLoading": "Cargando prestadores…",
           "workersError": "No pudimos cargar los prestadores.",
           "timezoneNote": "Hora de {{country}} (ahora son las {{now}}).",
-          "selectedCount": "{{count}} prestadores seleccionados",
+          "selectedCount_one": "{{count}} prestador seleccionado",
+          "selectedCount_other": "{{count}} prestadores seleccionados",
           "slotsIdle": "Elegí un entrevistador y una fecha para ver los horarios libres.",
           "slotsLoading": "Buscando horarios libres…",
           "slotsError": "No pudimos cargar los horarios libres. Podés escribir la hora a mano.",
@@ -2781,7 +2781,8 @@
           "closeBlocked": "Disponible cuando termine el horario del evento",
           "closeConfirm": {
             "title": "Cerrar evento",
-            "body": "{{count}} convocados sin marcación vuelven a Completado",
+            "body_one": "{{count}} convocado sin marcación vuelve a Completado",
+            "body_other": "{{count}} convocados sin marcación vuelven a Completado",
             "confirm": "Cerrar evento",
             "busy": "Cerrando…"
           },
@@ -2795,7 +2796,8 @@
         "cancel": {
           "button": "Cancelar evento",
           "title": "Cancelar evento",
-          "body": "Se cancelará el evento en Google y los {{count}} convocados quedarán libres",
+          "body_one": "Se cancelará el evento en Google y el convocado quedará libre",
+          "body_other": "Se cancelará el evento en Google y los {{count}} convocados quedarán libres",
           "confirm": "Cancelar evento",
           "busy": "Cancelando…",
           "error": "No se pudo cancelar el evento."
@@ -2823,7 +2825,9 @@
           "summaryReady": "Resumen listo",
           "summaryUnavailable": "Resumen no disponible",
           "blockedWhy": "Motivo: {{reason}}"
-        }
+        },
+        "unassignedCount_one": "{{count}} completado sin evento",
+        "unassignedCount_other": "{{count}} completados sin evento"
       }
     },
     "vacancyModal": {

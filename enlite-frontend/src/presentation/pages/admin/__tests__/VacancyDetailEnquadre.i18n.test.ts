@@ -40,9 +40,16 @@ describe('VacancyDetail enquadre i18n — paridade es × pt-BR', () => {
   });
 
   it('as chaves de contagem usam {{count}} nos dois idiomas', () => {
-    for (const key of ['unassignedCount', 'kanban.closeConfirm.body', 'cancel.body', 'convoked.add']) {
+    for (const key of ['unassignedCount_other', 'kanban.closeConfirm.body_other', 'cancel.body_other', 'create.selectedCount_other', 'convoked.add']) {
       expect(esLeaves[key]).toContain('{{count}}');
       expect(ptLeaves[key]).toContain('{{count}}');
+    }
+  });
+
+  it('as chaves com contagem têm a forma do singular (1 convocado, não "1 convocados")', () => {
+    for (const key of ['unassignedCount_one', 'kanban.closeConfirm.body_one', 'cancel.body_one', 'create.selectedCount_one']) {
+      expect(esLeaves[key]).toBeDefined();
+      expect(ptLeaves[key]).toBeDefined();
     }
   });
 });

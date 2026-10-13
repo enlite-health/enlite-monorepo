@@ -3,7 +3,7 @@
  * é a raiz (`root`), com que dados o "servidor" nasce (`seed`) e o nome do print. O que o estado tem "aberto" (drawer,
  * diálogo, painel) é feito por `autoSteps.ts`, com cliques reais na tela — nenhuma prop de produção existe para isso.
  */
-import { AVAILABLE_BASE, DRAWER_WORKERS, DRAWER_WORKERS_WITH_BLOCKED, EV_01, EV_02, EV_03, EV_03_E11, EV_04, EV_05, EV_PIPELINE } from './fixtures';
+import { HARNESS_VACANCY_ID, AVAILABLE_BASE, DRAWER_WORKERS, DRAWER_WORKERS_WITH_BLOCKED, EV_01, EV_02, EV_03, EV_03_E11, EV_04, EV_05, EV_PIPELINE } from './fixtures';
 import { AdminPresentationInviteApiService } from '@infrastructure/http/AdminPresentationInviteApiService';
 import { installFakeServer, type Seed } from './store';
 
@@ -56,5 +56,14 @@ export function installDataset(id: string): () => void {
   const ds = datasetById(id);
   if (!ds) throw new Error(`estado desconhecido: ${id}`);
   stubFunnelServices();
+  // E13: o quadro da vacante tem 8 colunas de 280px e rola na horizontal (é assim hoje). O print recolhe as colunas
+  // vazias pelo recurso REAL de colapso (persistido por vaga) para que Completado e Selecionados caibam em 1440px.
+  if (ds.root === 'funnel') {
+    try {
+      localStorage.setItem(`kanban-collapsed-${HARNESS_VACANCY_ID}`, JSON.stringify(['COMPATIBLE', 'INVITED', 'INICIADO', 'PRE_SCREENING', 'QUICK_RESPONSE_TEAM']));
+    } catch {
+      // sem localStorage o quadro só fica expandido
+    }
+  }
   return installFakeServer(ds.seed);
 }

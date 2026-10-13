@@ -20,5 +20,5 @@ export const ENQUADRE_COLUMNS: readonly EnquadreColumnDef[] = [
 /** Alvos do "Mover a…" do evento. Rejeitados fica de fora: tem o botão "Rechazar" (pede o motivo). */
 export const ENQUADRE_MOVE_TARGETS = ['CONVOKED', 'SELECTED', 'QUICK_RESPONSE_TEAM'] as const;
 
-/** Largura da coluna: 4 colunas + 3 vãos de 12px cabem sem rolagem horizontal em 1440px. */
-export const ENQUADRE_COLUMN_WIDTH = 'w-[250px]';
+/** Largura da coluna: 4 colunas + 3 vãos de 12px (1236px) cabem sem rolagem horizontal em 1440px, com o título "Equipo de Respuesta Rápida" inteiro. */
+export const ENQUADRE_COLUMN_WIDTH = 'w-[300px]';

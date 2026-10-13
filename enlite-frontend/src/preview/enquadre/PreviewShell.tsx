@@ -56,7 +56,7 @@ function Stage({ dataset }: { dataset: PreviewDataset }): JSX.Element {
     void runAutoSteps(dataset.id).catch((err: unknown) => { console.error('auto-steps', err); }).finally(() => setReady(true));
   }, [dataset.id]);
   return (
-    <div className="p-6 max-w-[1400px]" data-testid="preview-stage" data-estado={dataset.id} data-ready={ready}>
+    <div className="p-6 max-w-[1400px]" data-testid="preview-stage" data-estado={dataset.id} data-preview-ready={ready ? dataset.id : undefined}>
       <StateRoot dataset={dataset} />
     </div>
   );

@@ -2636,7 +2636,6 @@
       "enquadre": {
         "title": "Eventos de enquadre",
         "newButton": "Criar evento",
-        "unassignedCount": "{{count}} completados sem evento",
         "loading": "Carregando eventos…",
         "loadError": "Não foi possível carregar os eventos.",
         "empty": "Ainda não há eventos",
@@ -2689,7 +2688,8 @@
           "workersLoading": "Carregando prestadores…",
           "workersError": "Não foi possível carregar os prestadores.",
           "timezoneNote": "Horário de {{country}} (agora são {{now}}).",
-          "selectedCount": "{{count}} prestadores selecionados",
+          "selectedCount_one": "{{count}} prestador selecionado",
+          "selectedCount_other": "{{count}} prestadores selecionados",
           "slotsIdle": "Escolha um entrevistador e uma data para ver os horários livres.",
           "slotsLoading": "Buscando horários livres…",
           "slotsError": "Não foi possível carregar os horários livres. Você pode digitar a hora à mão.",
@@ -2702,7 +2702,8 @@
           "closeBlocked": "Disponível quando o horário do evento terminar",
           "closeConfirm": {
             "title": "Encerrar evento",
-            "body": "{{count}} convocados sem marcação voltam para Completado",
+            "body_one": "{{count}} convocado sem marcação volta para Completado",
+            "body_other": "{{count}} convocados sem marcação voltam para Completado",
             "confirm": "Encerrar evento",
             "busy": "Encerrando…"
           },
@@ -2716,7 +2717,8 @@
         "cancel": {
           "button": "Cancelar evento",
           "title": "Cancelar evento",
-          "body": "O evento será cancelado no Google e os {{count}} convocados ficarão livres",
+          "body_one": "O evento será cancelado no Google e o convocado ficará livre",
+          "body_other": "O evento será cancelado no Google e os {{count}} convocados ficarão livres",
           "confirm": "Cancelar evento",
           "busy": "Cancelando…",
           "error": "Não foi possível cancelar o evento."
@@ -2744,7 +2746,9 @@
           "summaryReady": "Resumo pronto",
           "summaryUnavailable": "Resumo indisponível",
           "blockedWhy": "Motivo: {{reason}}"
-        }
+        },
+        "unassignedCount_one": "{{count}} completado sem evento",
+        "unassignedCount_other": "{{count}} completados sem evento"
       }
     },
     "vacancyModal": {

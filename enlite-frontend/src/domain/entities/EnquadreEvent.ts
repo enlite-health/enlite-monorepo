@@ -3,7 +3,6 @@
  * servidor (`phase`): a tela só traduz, nunca recalcula a partir do relógio. O prestador aparece só como opção
  * (`hasValidEmail: boolean`); nenhum endereço de contato trafega por aqui.
  */
-import type { AdmissionImportStatus } from '@infrastructure/http/AdminAdmissionApiService';
 
 export type EnquadreEventPhase = 'scheduled' | 'pending_close' | 'closed' | 'cancelled';
 
@@ -20,9 +19,17 @@ export interface EnquadreOutcomeCounts {
   returned: number;
 }
 
-/** Esteira pós-call (spec §5.5): a mesma da admissão, logo os mesmos estados de importação. */
+/**
+ * Estados da importação da esteira pós-call (spec §5.5): a MESMA da admissão, logo os mesmos 8 estados de
+ * `AdmissionImportStatus` (infraestrutura; o domínio não a importa). `EnquadrePipelineSeals` indexa `IMPORT_SEAL_TONE`
+ * (`Record<AdmissionImportStatus, …>`) com este tipo: se um estado desta união não existir lá, o `tsc` reprova.
+ */
+export type EnquadreImportStatus =
+  | 'pending' | 'waiting' | 'done' | 'rejected' | 'ambiguous' | 'expired' | 'blocked' | 'no_show';
+
+/** Esteira pós-call (spec §5.5). */
 export interface EnquadrePipelineState {
-  importStatus: AdmissionImportStatus | null;
+  importStatus: EnquadreImportStatus | null;
   summary: 'waiting' | 'ready' | 'unavailable';
   /** Motivo escrito quando `importStatus === 'blocked'`. */
   blockedReason: string | null;
