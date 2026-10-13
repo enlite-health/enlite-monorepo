@@ -4,7 +4,6 @@
  * --allow-hardcoded-delete seja passado.
  *
  * Manter sincronizado com:
- *   - src/modules/notification/application/HandleReminderResponseUseCase.ts
  *   - src/modules/notification/application/BulkDispatchIncompleteWorkersUseCase.ts
  *   - src/modules/notification/application/BulkDispatchTalentumIncompleteUseCase.ts
  *   - src/modules/notification/interfaces/controllers/MessagingController.ts

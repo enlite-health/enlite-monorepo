@@ -84,7 +84,6 @@ import { createAnalyticsRoutes, createRecruitmentRoutes, createWorkerApplication
 import { WorkerContextController } from '@modules/matching/interfaces/controllers/WorkerContextController';
 import { createWorkerContextRoutes } from '@modules/matching/interfaces/routes/workerContextRoutes';
 import { createTransitCorridorRoutes } from '@modules/matching/interfaces/routes/transitCorridorRoutes';
-import { ReminderScheduler } from '@modules/notification/infrastructure/ReminderScheduler';
 import { VacancyMeetLinksController } from '@modules/matching';
 import { DomainEventProcessor } from '@shared/events/DomainEventProcessor';
 import { DomainEventBacklogService } from '@shared/events/DomainEventBacklogService';
@@ -766,13 +765,12 @@ domainEventProcessor.registerHandler(
   createPromoteBlockedApplicationsHandler(dbPool),
 );
 
-const reminderScheduler = new ReminderScheduler(dbPool, cloudTasksClient, pubsubClient, tokenService);
 const bulkDispatchScheduler = new BulkDispatchScheduler(dbPool, messagingService);
 const bulkDispatchTalentumScheduler = new BulkDispatchTalentumScheduler(dbPool, messagingService);
 const domainEventBacklogService = new DomainEventBacklogService(dbPool);
 const anaCareMirrorHealthService = new AnaCareMirrorHealthService(dbPool);
 const messagingRetentionService = new MessagingRetentionService(dbPool);
-const internalController = new InternalController(domainEventProcessor, outboxProcessor, reminderScheduler, bulkDispatchScheduler, bulkDispatchTalentumScheduler, domainEventBacklogService, anaCareMirrorHealthService, messagingRetentionService, new TherapeuticContactReminderHealthService(dbPool));
+const internalController = new InternalController(domainEventProcessor, outboxProcessor, bulkDispatchScheduler, bulkDispatchTalentumScheduler, domainEventBacklogService, anaCareMirrorHealthService, messagingRetentionService, new TherapeuticContactReminderHealthService(dbPool));
 app.use('/api/internal', systemContextMiddleware('job:internal'), createInternalRoutes(internalController));
 app.use(
   '/api/internal',

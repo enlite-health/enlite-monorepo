@@ -7,7 +7,6 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { createWebhookRoutes, PartnerAuthMiddleware, GoogleApiKeyValidator, WebhookPartnerRepository } from '@modules/integration';
 import { PubSubClient } from '@shared/events/PubSubClient';
 import { CloudTasksClient } from '@shared/events/CloudTasksClient';
-import { HandleReminderResponseUseCase } from '@modules/notification/application/HandleReminderResponseUseCase';
 import { PeriskopeInboundRouter } from '@modules/notification/application/PeriskopeInboundRouter';
 import { TriggerWorkerHandoverUseCase } from '@modules/notification/application/TriggerWorkerHandoverUseCase';
 import { InboundWhatsAppController } from '@modules/notification/interfaces/controllers/InboundWhatsAppController';
@@ -59,12 +58,6 @@ export async function startServer(
   const webhookPartnerRepo = new WebhookPartnerRepository();
   const partnerAuth = new PartnerAuthMiddleware(googleValidator, webhookPartnerRepo);
 
-  const googleCalendarService = new GoogleCalendarService();
-  const handleReminderResponseUseCase = new HandleReminderResponseUseCase(
-    DatabaseConnection.getInstance().getPool(),
-    new PubSubClient(),
-    googleCalendarService,
-  );
   // Handover Twilio → Periskope (fundação do roteamento por worker).
   // PeriskopeTicketService é best-effort e não exige config para instanciar
   // (loga warning interno se faltar env — ver PeriskopeTicketService).
@@ -81,7 +74,6 @@ export async function startServer(
   // envio do mirror ainda é gated por CHATWOOT_INBOUND_MIRROR_ENABLED no controller.
   const inboundWhatsAppController = new InboundWhatsAppController(
     DatabaseConnection.getInstance().getPool(),
-    handleReminderResponseUseCase,
     triggerHandoverUseCase,
     buildChatwootClient() ?? undefined,
   );
@@ -93,11 +85,9 @@ export async function startServer(
   if (process.env.PERISKOPE_WEBHOOK_ENABLED === 'true') {
     const periskopeInboundRouter = new PeriskopeInboundRouter(
       DatabaseConnection.getInstance().getPool(),
-      handleReminderResponseUseCase,
     );
     periskopeWebhookController = new PeriskopeWebhookController(
       DatabaseConnection.getInstance().getPool(),
-      handleReminderResponseUseCase,
       periskopeInboundRouter,
     );
     console.log('[startup] Periskope inbound webhook route enabled');

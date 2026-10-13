@@ -59,7 +59,6 @@ interface SharedState {
   workerBId: string;
   workerCId: string;
   jobPostingId: string;
-  inviteSidA: string;
 }
 
 function saveState(state: SharedState): void {
@@ -76,7 +75,6 @@ describe('WJA Full Flow Part 1 — T1→T5 @integration', () => {
   let workerBId: string;
   let workerCId: string;
   let jobPostingId: string;
-  let inviteSidA: string;
 
   // ── beforeAll: seed workers + vaga + templates ──────────────────────────
 
@@ -155,7 +153,7 @@ describe('WJA Full Flow Part 1 — T1→T5 @integration', () => {
 
   afterAll(async () => {
     // Salvar IDs para part2 usar sem re-seed
-    saveState({ workerAId, workerBId, workerCId, jobPostingId, inviteSidA });
+    saveState({ workerAId, workerBId, workerCId, jobPostingId });
     await pool.end();
   });
 

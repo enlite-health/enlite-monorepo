@@ -29,7 +29,6 @@ import './analytics';
 import './internalEvents';
 import './internalMessaging';
 import './internalOutbox';
-import './internalReminders';
 import './internalWebhooks';
 import './publicJobs';
 import './publicVacancies';

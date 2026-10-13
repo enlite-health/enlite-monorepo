@@ -33,17 +33,12 @@ function mockReq(body: Record<string, string>, headers: Record<string, string> =
 describe('InboundWhatsAppController', () => {
   let mockDbQuery: jest.Mock;
   let mockDb: { query: jest.Mock };
-  let mockHandleReminder: { execute: jest.Mock; executeTextResponse: jest.Mock };
   let controller: InboundWhatsAppController;
 
   beforeEach(() => {
     mockDbQuery = jest.fn();
     mockDb = { query: mockDbQuery };
-    mockHandleReminder = {
-      execute: jest.fn().mockResolvedValue(Result.ok()),
-      executeTextResponse: jest.fn().mockResolvedValue(Result.fail('No application awaiting reason')),
-    };
-    controller = new InboundWhatsAppController(mockDb as any, mockHandleReminder as any);
+    controller = new InboundWhatsAppController(mockDb as any);
     mockValidateRequest.mockReturnValue(true);
 
     process.env.TWILIO_AUTH_TOKEN = 'test-token';
@@ -62,7 +57,7 @@ describe('InboundWhatsAppController', () => {
     it('texto livre não-roteável + flag ON → espelha como incoming', async () => {
       const mirror = { mirrorIncomingMessage: jest.fn().mockResolvedValue(undefined) };
       const c = new InboundWhatsAppController(
-        mockDb as any, mockHandleReminder as any, undefined, mirror as any,
+        mockDb as any, undefined, mirror as any,
       );
       process.env.CHATWOOT_INBOUND_MIRROR_ENABLED = 'true';
       const req = mockReq({ From: 'whatsapp:+5491112345678', Body: 'hola, tengo una duda', MessageSid: 'SMabc' });
@@ -79,7 +74,7 @@ describe('InboundWhatsAppController', () => {
     it('flag OFF → NÃO espelha (deploy neutro)', async () => {
       const mirror = { mirrorIncomingMessage: jest.fn() };
       const c = new InboundWhatsAppController(
-        mockDb as any, mockHandleReminder as any, undefined, mirror as any,
+        mockDb as any, undefined, mirror as any,
       );
       const req = mockReq({ From: 'whatsapp:+5491112345678', Body: 'hola', MessageSid: 'SMx' });
 
@@ -91,7 +86,7 @@ describe('InboundWhatsAppController', () => {
     it('opt-out ("baja") NÃO vira mirror (intercepta antes)', async () => {
       const mirror = { mirrorIncomingMessage: jest.fn() };
       const c = new InboundWhatsAppController(
-        mockDb as any, mockHandleReminder as any, undefined, mirror as any,
+        mockDb as any, undefined, mirror as any,
       );
       process.env.CHATWOOT_INBOUND_MIRROR_ENABLED = 'true';
       mockDbQuery.mockResolvedValue({ rows: [] }); // handleOptOut: worker lookup
@@ -146,7 +141,6 @@ describe('InboundWhatsAppController', () => {
     await controller.handleInbound(req, res);
 
     expect(res.status).toHaveBeenCalledWith(403);
-    expect(mockHandleReminder.execute).not.toHaveBeenCalled();
   });
 
   it('rejeita com 403 se X-Twilio-Signature ausente', async () => {
@@ -164,38 +158,17 @@ describe('InboundWhatsAppController', () => {
 
   // ─── Roteamento por template_slug + payload ────────────────────
 
-  it('botão slot_* de convite antigo (qualified_worker_request e legado qualified_worker) NÃO reserva mais: 200 e nenhum use case (spec 052)', async () => {
-    for (const [slug, sid] of [['qualified_worker_request', 'SM-abc123'], ['qualified_worker', 'SM-legacy']] as const) {
-      mockDbQuery.mockResolvedValueOnce({ rows: [{ template_slug: slug }] });
-
-      const req = mockReq({ From: 'whatsapp:+5491112345678', ButtonPayload: 'slot_2', OriginalRepliedMessageSid: sid });
+  it('botão de convite/lembrete antigo (slot_*, confirm_*, reschedule_*) é ignorado: 200, sem lookup nem escrita (spec 052)', async () => {
+    for (const payload of ['slot_2', 'confirm_yes', 'reschedule_no']) {
+      const req = mockReq({ From: 'whatsapp:+5491112345678', ButtonPayload: payload, OriginalRepliedMessageSid: 'SM-abc123' });
       const res = mockRes();
 
       await controller.handleInbound(req, res);
 
-      expect(mockDbQuery).toHaveBeenCalledWith(expect.stringContaining('twilio_sid'), [sid]);
-      expect(mockHandleReminder.execute).not.toHaveBeenCalled();
+      expect(mockDbQuery).not.toHaveBeenCalled();
       expect(res.status).toHaveBeenCalledWith(200);
     }
   });
-
-  it('roteia confirm_* para HandleReminder quando template é qualified_reminder_confirm', async () => {
-    mockDbQuery.mockResolvedValueOnce({ rows: [{ template_slug: 'qualified_reminder_confirm' }] });
-
-    const req = mockReq({
-      From: 'whatsapp:+5491112345678',
-      ButtonPayload: 'confirm_yes',
-      OriginalRepliedMessageSid: 'SM-def456',
-    });
-    const res = mockRes();
-
-    await controller.handleInbound(req, res);
-
-    expect(mockHandleReminder.execute).toHaveBeenCalledWith('whatsapp:+5491112345678', 'confirm_yes', 'SM-def456');
-    expect(res.status).toHaveBeenCalledWith(200);
-  });
-
-  // ─── Ignora mensagens de outros fluxos ─────────────────────────
 
   it('ignora mensagem se template_slug não pertence ao fluxo de entrevista', async () => {
     mockDbQuery.mockResolvedValueOnce({ rows: [{ template_slug: 'client_selection' }] });
@@ -209,8 +182,6 @@ describe('InboundWhatsAppController', () => {
 
     await controller.handleInbound(req, res);
 
-    expect(mockHandleReminder.execute).not.toHaveBeenCalled();
-    expect(mockHandleReminder.execute).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
@@ -227,8 +198,6 @@ describe('InboundWhatsAppController', () => {
     await controller.handleInbound(req, res);
 
     // Não deve chamar nenhum use case (response não tem ação associada)
-    expect(mockHandleReminder.execute).not.toHaveBeenCalled();
-    expect(mockHandleReminder.execute).not.toHaveBeenCalled();
     // Mas deve responder 200 (não é "template not interview flow")
     expect(res.status).toHaveBeenCalledWith(200);
   });
@@ -246,8 +215,6 @@ describe('InboundWhatsAppController', () => {
 
     await controller.handleInbound(req, res);
 
-    expect(mockHandleReminder.execute).not.toHaveBeenCalled();
-    expect(mockHandleReminder.execute).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
@@ -260,18 +227,6 @@ describe('InboundWhatsAppController', () => {
     await controller.handleInbound(req, res);
 
     expect(mockDbQuery).not.toHaveBeenCalled();
-    expect(mockHandleReminder.execute).not.toHaveBeenCalled();
-    expect(res.status).toHaveBeenCalledWith(200);
-  });
-
-  it('usa fallback confirm_* se OriginalRepliedMessageSid ausente', async () => {
-    const req = mockReq({ From: 'whatsapp:+5491112345678', ButtonPayload: 'confirm_no' });
-    const res = mockRes();
-
-    await controller.handleInbound(req, res);
-
-    expect(mockDbQuery).not.toHaveBeenCalled();
-    expect(mockHandleReminder.execute).toHaveBeenCalledWith('whatsapp:+5491112345678', 'confirm_no', '');
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
@@ -287,119 +242,20 @@ describe('InboundWhatsAppController', () => {
 
     await controller.handleInbound(req, res);
 
-    expect(mockHandleReminder.execute).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
   // ─── Roteamento reschedule_* ─────────────────────────────────
 
-  it('roteia reschedule_yes para HandleReminder via template', async () => {
-    mockDbQuery.mockResolvedValueOnce({ rows: [{ template_slug: 'qualified_reminder_reschedule' }] });
-
-    const req = mockReq({
-      From: 'whatsapp:+5491112345678',
-      ButtonPayload: 'reschedule_yes',
-      OriginalRepliedMessageSid: 'SM-reschedule',
-    });
-    const res = mockRes();
-
-    await controller.handleInbound(req, res);
-
-    expect(mockHandleReminder.execute).toHaveBeenCalledWith(
-      'whatsapp:+5491112345678', 'reschedule_yes', 'SM-reschedule',
-    );
-    expect(res.status).toHaveBeenCalledWith(200);
-  });
-
-  it('roteia reschedule_no para HandleReminder via template', async () => {
-    mockDbQuery.mockResolvedValueOnce({ rows: [{ template_slug: 'qualified_reminder_reschedule' }] });
-
-    const req = mockReq({
-      From: 'whatsapp:+5491112345678',
-      ButtonPayload: 'reschedule_no',
-      OriginalRepliedMessageSid: 'SM-reschedule-no',
-    });
-    const res = mockRes();
-
-    await controller.handleInbound(req, res);
-
-    expect(mockHandleReminder.execute).toHaveBeenCalledWith(
-      'whatsapp:+5491112345678', 'reschedule_no', 'SM-reschedule-no',
-    );
-  });
-
-  it('roteia reschedule_yes via fallback sem SID', async () => {
-    const req = mockReq({ From: 'whatsapp:+5491112345678', ButtonPayload: 'reschedule_yes' });
-    const res = mockRes();
-
-    await controller.handleInbound(req, res);
-
-    expect(mockHandleReminder.execute).toHaveBeenCalledWith(
-      'whatsapp:+5491112345678', 'reschedule_yes', '',
-    );
-  });
-
-  it('loga warn se reschedule via template falha', async () => {
-    mockDbQuery.mockResolvedValueOnce({ rows: [{ template_slug: 'qualified_reminder_reschedule' }] });
-    mockHandleReminder.execute.mockResolvedValue(Result.fail('Invalid transition'));
-
-    const req = mockReq({
-      From: 'whatsapp:+5491112345678',
-      ButtonPayload: 'reschedule_yes',
-      OriginalRepliedMessageSid: 'SM-fail',
-    });
-    const res = mockRes();
-
-    await controller.handleInbound(req, res);
-    expect(res.status).toHaveBeenCalledWith(200);
-  });
-
-  it('loga warn se reschedule via fallback falha', async () => {
-    mockHandleReminder.execute.mockResolvedValue(Result.fail('Invalid transition'));
-
-    const req = mockReq({ From: 'whatsapp:+5491112345678', ButtonPayload: 'reschedule_no' });
-    const res = mockRes();
-
-    await controller.handleInbound(req, res);
-    expect(res.status).toHaveBeenCalledWith(200);
-  });
-
   // ─── Texto livre (awaiting_reason) ────────────────────────────
 
-  it('captura texto livre quando worker em awaiting_reason', async () => {
-    mockHandleReminder.executeTextResponse.mockResolvedValue(Result.ok());
-
-    const req = mockReq({ From: 'whatsapp:+5491112345678', Body: 'No tengo tiempo' });
-    const res = mockRes();
-
-    await controller.handleInbound(req, res);
-
-    expect(mockHandleReminder.executeTextResponse).toHaveBeenCalledWith(
-      'whatsapp:+5491112345678',
-      'No tengo tiempo',
-    );
-    expect(res.status).toHaveBeenCalledWith(200);
-  });
-
-  it('ignora texto livre quando worker NAO esta em awaiting_reason', async () => {
+  it('texto livre sem estado especial: ignorado, responde 200 (spec 052: awaiting_reason saiu)', async () => {
     // Default mock: executeTextResponse returns fail
     const req = mockReq({ From: 'whatsapp:+5491112345678', Body: 'Hola!' });
     const res = mockRes();
 
     await controller.handleInbound(req, res);
 
-    expect(mockHandleReminder.executeTextResponse).toHaveBeenCalled();
-    expect(mockHandleReminder.execute).not.toHaveBeenCalled();
-    expect(res.status).toHaveBeenCalledWith(200);
-  });
-
-  it('trata excecao em tryHandleTextResponse gracefully', async () => {
-    mockHandleReminder.executeTextResponse.mockRejectedValue(new Error('DB crash'));
-
-    const req = mockReq({ From: 'whatsapp:+5491112345678', Body: 'Motivo qualquer' });
-    const res = mockRes();
-
-    await controller.handleInbound(req, res);
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
@@ -419,7 +275,7 @@ describe('InboundWhatsAppController', () => {
     it('flag OFF (default) → NÃO consulta worker nem dispara handover', async () => {
       delete process.env.PERISKOPE_HANDOVER_ENABLED;
       const withHandover = new InboundWhatsAppController(
-        mockDb as any, mockHandleReminder as any, mockTriggerHandover as any,
+        mockDb as any, mockTriggerHandover as any,
       );
 
       const req = mockReq({ From: 'whatsapp:+5491112345678', Body: 'Hola!' });
@@ -433,7 +289,7 @@ describe('InboundWhatsAppController', () => {
     it('flag ON, worker resolvido com messaging_channel=twilio → dispara handover', async () => {
       process.env.PERISKOPE_HANDOVER_ENABLED = 'true';
       const withHandover = new InboundWhatsAppController(
-        mockDb as any, mockHandleReminder as any, mockTriggerHandover as any,
+        mockDb as any, mockTriggerHandover as any,
       );
       mockDbQuery.mockResolvedValueOnce({ rows: [{ id: 'w-handover-1', messaging_channel: 'twilio' }] });
 
@@ -448,7 +304,7 @@ describe('InboundWhatsAppController', () => {
     it('flag ON, worker já em periskope → NÃO dispara handover', async () => {
       process.env.PERISKOPE_HANDOVER_ENABLED = 'true';
       const withHandover = new InboundWhatsAppController(
-        mockDb as any, mockHandleReminder as any, mockTriggerHandover as any,
+        mockDb as any, mockTriggerHandover as any,
       );
       mockDbQuery.mockResolvedValueOnce({ rows: [{ id: 'w-handover-2', messaging_channel: 'periskope' }] });
 
@@ -462,7 +318,7 @@ describe('InboundWhatsAppController', () => {
     it('flag ON, worker não encontrado por telefone → NÃO dispara handover', async () => {
       process.env.PERISKOPE_HANDOVER_ENABLED = 'true';
       const withHandover = new InboundWhatsAppController(
-        mockDb as any, mockHandleReminder as any, mockTriggerHandover as any,
+        mockDb as any, mockTriggerHandover as any,
       );
       mockDbQuery.mockResolvedValueOnce({ rows: [] });
 
@@ -476,7 +332,7 @@ describe('InboundWhatsAppController', () => {
     it('flag ON mas triggerHandoverUseCase não injetado → não quebra, responde 200', async () => {
       process.env.PERISKOPE_HANDOVER_ENABLED = 'true';
       const withoutHandover = new InboundWhatsAppController(
-        mockDb as any, mockHandleReminder as any,
+        mockDb as any,
       );
 
       const req = mockReq({ From: 'whatsapp:+5491112345678', Body: 'Hola!' });
@@ -490,7 +346,7 @@ describe('InboundWhatsAppController', () => {
       process.env.PERISKOPE_HANDOVER_ENABLED = 'true';
       mockTriggerHandover.execute.mockResolvedValue(Result.fail('boom'));
       const withHandover = new InboundWhatsAppController(
-        mockDb as any, mockHandleReminder as any, mockTriggerHandover as any,
+        mockDb as any, mockTriggerHandover as any,
       );
       mockDbQuery.mockResolvedValueOnce({ rows: [{ id: 'w-handover-3', messaging_channel: 'twilio' }] });
 
@@ -504,7 +360,7 @@ describe('InboundWhatsAppController', () => {
     it('erro na consulta do worker (db.query lança) → capturado, ainda responde 200', async () => {
       process.env.PERISKOPE_HANDOVER_ENABLED = 'true';
       const withHandover = new InboundWhatsAppController(
-        mockDb as any, mockHandleReminder as any, mockTriggerHandover as any,
+        mockDb as any, mockTriggerHandover as any,
       );
       mockDbQuery.mockRejectedValueOnce(new Error('DB down'));
 
@@ -525,34 +381,10 @@ describe('InboundWhatsAppController', () => {
 
     await controller.handleInbound(req, res);
 
-    expect(mockHandleReminder.execute).not.toHaveBeenCalled();
-    expect(mockHandleReminder.execute).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
   // ─── Resiliência ───────────────────────────────────────────────
-
-  it('responde 200 mesmo se use case falhar', async () => {
-    mockHandleReminder.execute.mockResolvedValue(Result.fail('Worker not found'));
-
-    const req = mockReq({ From: 'whatsapp:+5491112345678', ButtonPayload: 'confirm_yes' });
-    const res = mockRes();
-
-    await controller.handleInbound(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(200);
-  });
-
-  it('responde 200 mesmo se use case lançar exceção', async () => {
-    mockHandleReminder.execute.mockRejectedValue(new Error('DB connection lost'));
-
-    const req = mockReq({ From: 'whatsapp:+5491112345678', ButtonPayload: 'confirm_yes' });
-    const res = mockRes();
-
-    await controller.handleInbound(req, res);
-
-    expect(res.status).toHaveBeenCalledWith(200);
-  });
 
   it('responde 200 mesmo se lookup na outbox falhar', async () => {
     mockDbQuery.mockRejectedValueOnce(new Error('DB timeout'));
@@ -571,38 +403,6 @@ describe('InboundWhatsAppController', () => {
 
   // ─── Use case failure com template slug identificado ────────────
 
-  it('loga warn se HandleReminder falha com template slug identificado', async () => {
-    mockDbQuery.mockResolvedValueOnce({ rows: [{ template_slug: 'qualified_reminder_confirm' }] });
-    mockHandleReminder.execute.mockResolvedValue(Result.fail('Reminder not found'));
-
-    const req = mockReq({
-      From: 'whatsapp:+5491112345678',
-      ButtonPayload: 'confirm_yes',
-      OriginalRepliedMessageSid: 'SM-reminder-fail',
-    });
-    const res = mockRes();
-
-    await controller.handleInbound(req, res);
-
-    expect(mockHandleReminder.execute).toHaveBeenCalled();
-    expect(res.status).toHaveBeenCalledWith(200);
-  });
-
-  it('loga warn se HandleReminder (fallback) falha', async () => {
-    mockHandleReminder.execute.mockResolvedValue(Result.fail('Something wrong'));
-
-    const req = mockReq({
-      From: 'whatsapp:+5491112345678',
-      ButtonPayload: 'confirm_no',
-    });
-    const res = mockRes();
-
-    await controller.handleInbound(req, res);
-
-    expect(mockHandleReminder.execute).toHaveBeenCalled();
-    expect(res.status).toHaveBeenCalledWith(200);
-  });
-
   // ─── Fallback com payload desconhecido ──────────────────────────
 
   it('ignora payload desconhecido no fallback (sem SID)', async () => {
@@ -611,8 +411,6 @@ describe('InboundWhatsAppController', () => {
 
     await controller.handleInbound(req, res);
 
-    expect(mockHandleReminder.execute).not.toHaveBeenCalled();
-    expect(mockHandleReminder.execute).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
@@ -631,7 +429,6 @@ describe('InboundWhatsAppController', () => {
 
     await controller.handleInbound(req, res);
 
-    expect(mockHandleReminder.execute).toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(200);
 
     delete process.env.TWILIO_ACCOUNT_SID;
@@ -649,7 +446,6 @@ describe('InboundWhatsAppController', () => {
 
     await controller.handleInbound(req, res);
 
-    expect(mockHandleReminder.execute).toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(200);
 
     delete process.env.TWILIO_ACCOUNT_SID;
@@ -668,7 +464,6 @@ describe('InboundWhatsAppController', () => {
     await controller.handleInbound(req, res);
 
     expect(res.status).toHaveBeenCalledWith(403);
-    expect(mockHandleReminder.execute).not.toHaveBeenCalled();
 
     delete process.env.TWILIO_ACCOUNT_SID;
   });
@@ -685,30 +480,31 @@ describe('InboundWhatsAppController', () => {
     await controller.handleInbound(req, res);
 
     expect(res.status).toHaveBeenCalledWith(200);
-    expect(mockHandleReminder.execute).toHaveBeenCalled();
   });
 
   // ─── inferButtonPayloadFromBody (Body → ButtonPayload via Content API) ───
 
   describe('inferButtonPayloadFromBody (sem ButtonPayload, usa Body)', () => {
     let originalFetch: typeof globalThis.fetch;
+    let infoSpy: jest.SpyInstance;
 
     beforeEach(() => {
       originalFetch = globalThis.fetch;
+      infoSpy = jest.spyOn(console, 'info').mockImplementation(() => undefined);
       process.env.TWILIO_ACCOUNT_SID = 'AC-test';
     });
 
     afterEach(() => {
       globalThis.fetch = originalFetch;
       delete process.env.TWILIO_ACCOUNT_SID;
+      infoSpy.mockRestore();
     });
 
     it('infere ButtonPayload a partir do Body usando Content API', async () => {
-      // Ordem: inferência (A: outbox slug, B: content_sid) → roteamento (C: outbox slug)
+      // Ordem: inferência (A: outbox slug, B: content_sid); o roteamento por template saiu (spec 052)
       mockDbQuery
         .mockResolvedValueOnce({ rows: [{ template_slug: 'qualified_reminder_confirm' }] })  // A: inferência outbox
-        .mockResolvedValueOnce({ rows: [{ content_sid: 'HX-test-123' }] })                 // B: content_sid
-        .mockResolvedValueOnce({ rows: [{ template_slug: 'qualified_reminder_confirm' }] });  // C: roteamento outbox
+        .mockResolvedValueOnce({ rows: [{ content_sid: 'HX-test-123' }] });                // B: content_sid
 
       // Mock fetch → Twilio Content API
       globalThis.fetch = jest.fn().mockResolvedValue({
@@ -734,17 +530,14 @@ describe('InboundWhatsAppController', () => {
 
       await controller.handleInbound(req, res);
 
-      expect(mockHandleReminder.execute).toHaveBeenCalledWith(
-        'whatsapp:+5491112345678', 'confirm_no', 'SM-infer',
-      );
+      expect(infoSpy).toHaveBeenCalledWith('[InboundWhatsApp] Inferred ButtonPayload from Body via Content API', expect.objectContaining({ buttonPayload: 'confirm_no' }));
       expect(res.status).toHaveBeenCalledWith(200);
     });
 
     it('inferência case-insensitive: "opción 1" match "Opción 1"', async () => {
       mockDbQuery
         .mockResolvedValueOnce({ rows: [{ template_slug: 'qualified_reminder_confirm' }] })  // A: inferência outbox
-        .mockResolvedValueOnce({ rows: [{ content_sid: 'HX-test-123' }] })                 // B: content_sid
-        .mockResolvedValueOnce({ rows: [{ template_slug: 'qualified_reminder_confirm' }] });  // C: roteamento outbox
+        .mockResolvedValueOnce({ rows: [{ content_sid: 'HX-test-123' }] });                // B: content_sid
 
       globalThis.fetch = jest.fn().mockResolvedValue({
         ok: true,
@@ -768,9 +561,7 @@ describe('InboundWhatsAppController', () => {
 
       await controller.handleInbound(req, res);
 
-      expect(mockHandleReminder.execute).toHaveBeenCalledWith(
-        'whatsapp:+5491112345678', 'confirm_yes', 'SM-case',
-      );
+      expect(infoSpy).toHaveBeenCalledWith('[InboundWhatsApp] Inferred ButtonPayload from Body via Content API', expect.objectContaining({ buttonPayload: 'confirm_yes' }));
     });
 
     it('retorna vazio se Body não matcha nenhum botão', async () => {
@@ -801,8 +592,9 @@ describe('InboundWhatsAppController', () => {
       await controller.handleInbound(req, res);
 
       // Sem ButtonPayload inferido → ignora
-      expect(mockHandleReminder.execute).not.toHaveBeenCalled();
-      expect(res.status).toHaveBeenCalledWith(200);
+        expect(res.status).toHaveBeenCalledWith(200);
+
+      expect(infoSpy).not.toHaveBeenCalledWith('[InboundWhatsApp] Inferred ButtonPayload from Body via Content API', expect.anything());
     });
 
     it('retorna vazio se outbox não encontra slug', async () => {
@@ -818,8 +610,9 @@ describe('InboundWhatsAppController', () => {
 
       await controller.handleInbound(req, res);
 
-      expect(mockHandleReminder.execute).not.toHaveBeenCalled();
-      expect(res.status).toHaveBeenCalledWith(200);
+        expect(res.status).toHaveBeenCalledWith(200);
+
+      expect(infoSpy).not.toHaveBeenCalledWith('[InboundWhatsApp] Inferred ButtonPayload from Body via Content API', expect.anything());
     });
 
     it('retorna vazio se template não tem content_sid', async () => {
@@ -836,8 +629,9 @@ describe('InboundWhatsAppController', () => {
 
       await controller.handleInbound(req, res);
 
-      expect(mockHandleReminder.execute).not.toHaveBeenCalled();
-      expect(res.status).toHaveBeenCalledWith(200);
+        expect(res.status).toHaveBeenCalledWith(200);
+
+      expect(infoSpy).not.toHaveBeenCalledWith('[InboundWhatsApp] Inferred ButtonPayload from Body via Content API', expect.anything());
     });
 
     it('retorna vazio se Content API retorna erro', async () => {
@@ -859,8 +653,9 @@ describe('InboundWhatsAppController', () => {
 
       await controller.handleInbound(req, res);
 
-      expect(mockHandleReminder.execute).not.toHaveBeenCalled();
-      expect(res.status).toHaveBeenCalledWith(200);
+        expect(res.status).toHaveBeenCalledWith(200);
+
+      expect(infoSpy).not.toHaveBeenCalledWith('[InboundWhatsApp] Inferred ButtonPayload from Body via Content API', expect.anything());
     });
 
     it('retorna vazio se TWILIO_ACCOUNT_SID não configurado', async () => {
@@ -879,8 +674,9 @@ describe('InboundWhatsAppController', () => {
 
       await controller.handleInbound(req, res);
 
-      expect(mockHandleReminder.execute).not.toHaveBeenCalled();
-      expect(res.status).toHaveBeenCalledWith(200);
+        expect(res.status).toHaveBeenCalledWith(200);
+
+      expect(infoSpy).not.toHaveBeenCalledWith('[InboundWhatsApp] Inferred ButtonPayload from Body via Content API', expect.anything());
     });
 
     it('usa cache na segunda chamada (não faz fetch de novo)', async () => {
@@ -940,8 +736,9 @@ describe('InboundWhatsAppController', () => {
 
       await controller.handleInbound(req, res);
 
-      expect(mockHandleReminder.execute).not.toHaveBeenCalled();
-      expect(res.status).toHaveBeenCalledWith(200);
+        expect(res.status).toHaveBeenCalledWith(200);
+
+      expect(infoSpy).not.toHaveBeenCalledWith('[InboundWhatsApp] Inferred ButtonPayload from Body via Content API', expect.anything());
     });
 
     it('retorna vazio se Body está vazio', async () => {
@@ -955,8 +752,9 @@ describe('InboundWhatsAppController', () => {
       await controller.handleInbound(req, res);
 
       // Body vazio → não tenta inferir → ignora
-      expect(mockHandleReminder.execute).not.toHaveBeenCalled();
-      expect(res.status).toHaveBeenCalledWith(200);
+        expect(res.status).toHaveBeenCalledWith(200);
+
+      expect(infoSpy).not.toHaveBeenCalledWith('[InboundWhatsApp] Inferred ButtonPayload from Body via Content API', expect.anything());
     });
 
     it('retorna vazio se OriginalRepliedMessageSid ausente (sem inferência)', async () => {
@@ -968,8 +766,9 @@ describe('InboundWhatsAppController', () => {
 
       await controller.handleInbound(req, res);
 
-      expect(mockHandleReminder.execute).not.toHaveBeenCalled();
-      expect(res.status).toHaveBeenCalledWith(200);
+        expect(res.status).toHaveBeenCalledWith(200);
+
+      expect(infoSpy).not.toHaveBeenCalledWith('[InboundWhatsApp] Inferred ButtonPayload from Body via Content API', expect.anything());
     });
 
     it('retorna vazio se template não tem quick-reply actions', async () => {
@@ -995,8 +794,9 @@ describe('InboundWhatsAppController', () => {
 
       await controller.handleInbound(req, res);
 
-      expect(mockHandleReminder.execute).not.toHaveBeenCalled();
-      expect(res.status).toHaveBeenCalledWith(200);
+        expect(res.status).toHaveBeenCalledWith(200);
+
+      expect(infoSpy).not.toHaveBeenCalledWith('[InboundWhatsApp] Inferred ButtonPayload from Body via Content API', expect.anything());
     });
   });
 });

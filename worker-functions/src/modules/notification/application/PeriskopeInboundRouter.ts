@@ -1,13 +1,8 @@
 import { Pool } from 'pg';
 import { logger } from '@shared/logging';
 import { maskPhoneForLog } from '@shared/utils/phoneMask';
-import { HandleReminderResponseUseCase } from './HandleReminderResponseUseCase';
 import { TemplateButton } from '../domain/MessageTemplate';
 import { parseNumberedReply } from '../domain/numberedButtonOptions';
-import {
-  REMINDER_CONFIRM_SLUG,
-  REMINDER_RESCHEDULE_SLUG,
-} from '../domain/interviewFlowTemplateSlugs';
 
 /**
  * Janela de correlação: uma resposta numerada só é roteada se a última
@@ -53,7 +48,6 @@ interface ButtonOutboxCorrelator {
 export class PeriskopeInboundRouter {
   constructor(
     private readonly db: Pool,
-    private readonly handleReminderResponseUseCase: HandleReminderResponseUseCase,
   ) {}
 
   /**
@@ -77,7 +71,7 @@ export class PeriskopeInboundRouter {
     const button = parseNumberedReply(bodyText, correlator.buttons);
     if (!button) return false;
 
-    return this.dispatch(phone, correlator.template_slug, button, correlator.twilio_sid);
+    return this.dispatch(phone, correlator.template_slug, button);
   }
 
   private async findWorker(phone: string): Promise<{ id: string } | null> {
@@ -108,25 +102,9 @@ export class PeriskopeInboundRouter {
     phone: string,
     templateSlug: string,
     button: TemplateButton,
-    originalMessageSid: string | null,
   ): Promise<boolean> {
-    const sid = originalMessageSid ?? undefined;
-
-    if (templateSlug === REMINDER_CONFIRM_SLUG && button.payload.startsWith('confirm_')) {
-      const result = await this.handleReminderResponseUseCase.execute(phone, button.payload, sid);
-      if (result.isFailure) {
-        logger.warn({ phone: maskPhoneForLog(phone), templateSlug, error: result.error }, '[PeriskopeInboundRouter] ReminderResponse failed');
-      }
-      return true;
-    }
-
-    if (templateSlug === REMINDER_RESCHEDULE_SLUG && button.payload.startsWith('reschedule_')) {
-      const result = await this.handleReminderResponseUseCase.execute(phone, button.payload, sid);
-      if (result.isFailure) {
-        logger.warn({ phone: maskPhoneForLog(phone), templateSlug, error: result.error }, '[PeriskopeInboundRouter] RescheduleResponse failed');
-      }
-      return true;
-    }
+    // Spec 052: os fluxos de convite e de lembrete de entrevista saíram — nenhuma resposta numerada é roteada
+    // para um use case; cai no fluxo normal (texto livre).
 
     // PII (achado do gate, 2ª rodada): telefone mascarado; `payload` pode carregar
     // texto livre digitado pela pessoa — nunca cru, só o tamanho (o slug já diz
