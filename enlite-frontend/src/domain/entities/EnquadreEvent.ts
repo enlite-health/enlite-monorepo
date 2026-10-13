@@ -36,6 +36,8 @@ export interface EnquadreEventListItem {
   hostName: string;
   phase: EnquadreEventPhase;
   convokedCount: number;
+  /** Convocados já com marcação (selecionado/resposta rápida/rejeitado). Derivado no servidor; alimenta "N marcados de M" em `pending_close`. */
+  markedCount: number;
   outcome: EnquadreOutcomeCounts;
   /** Servidor devolve `null` para evento encerrado/cancelado. */
   meetLink: string | null;
@@ -78,6 +80,7 @@ export interface EnquadreAvailableWorkers {
 
 export interface CreateEnquadreEventInput {
   hostId: string;
+  /** Hora de PAREDE `YYYY-MM-DDTHH:mm`, sem offset (molde da Admissão): quem a interpreta no fuso é o servidor. */
   startsAt: string;
   durationMinutes: number;
   workerIds: string[];

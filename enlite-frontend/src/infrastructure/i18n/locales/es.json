@@ -2738,7 +2738,8 @@
           "selected": "Seleccionados: {{count}}",
           "quickResponse": "Respuesta rápida: {{count}}",
           "rejected": "Rechazados: {{count}}",
-          "returned": "Devueltos: {{count}}"
+          "returned": "Devueltos: {{count}}",
+          "partial": "{{marked}} marcados de {{total}}"
         },
         "row": {
           "meet": "Abrir Meet"
@@ -2759,7 +2760,15 @@
           "close": "Cerrar",
           "hostReason": {
             "unlinked": "Sin vínculo con Google Calendar: no se puede agendar"
-          }
+          },
+          "hostsLoading": "Cargando entrevistadores…",
+          "hostsError": "No pudimos cargar los entrevistadores.",
+          "hostsEmpty": "No hay entrevistadores disponibles.",
+          "retry": "Reintentar",
+          "workersLoading": "Cargando prestadores…",
+          "workersError": "No pudimos cargar los prestadores.",
+          "timezoneNote": "Hora de {{country}} (ahora son las {{now}}).",
+          "selectedCount": "{{count}} prestadores seleccionados"
         },
         "kanban": {
           "back": "Eventos",
@@ -2794,6 +2803,12 @@
           },
           "add": "Agregar ({{count}})",
           "noneAvailable": "No hay completados disponibles para agregar"
+        },
+        "seals": {
+          "summary": "Resumen",
+          "summaryReady": "Resumen listo",
+          "summaryUnavailable": "Resumen no disponible",
+          "blockedWhy": "Motivo: {{reason}}"
         }
       }
     },

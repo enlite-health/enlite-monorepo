@@ -2,8 +2,8 @@
  * EnquadreTab — aba "Enquadre" do detalhe da vaga (spec 052): o cabeçalho (criar evento + contador de completados sem
  * evento), os estados carregando/erro/vazio e a tabela de eventos. Molde: AdmissionTab (mesma anatomia).
  *
- * Fase 0: "Crear evento" é `Button` simples (sem célula de ABAC — entra na Fase 2). O clique só guarda `createOpen`
- * e o clique na linha só guarda `selectedEventId`; o drawer (T-10) e o kanban do evento (T-11) montam nesses pontos.
+ * Fase 0: "Crear evento" é `Button` simples (sem célula de ABAC — entra na Fase 2). `createOpen` monta o drawer; o clique
+ * na linha só guarda `selectedEventId` e o kanban do evento (T-11) monta nesse ponto.
  */
 import { useState, type JSX } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -14,6 +14,7 @@ import { Button } from '@presentation/components/atoms/Button';
 import { useEnquadreEvents } from '@hooks/admin/useEnquadreEvents';
 import { useEnquadreAvailableWorkers } from '@hooks/admin/useEnquadreAvailableWorkers';
 import { timeZoneForCountry } from '../../PatientDetail/admission/admissionTime';
+import { CreateEnquadreEventDrawer } from './CreateEnquadreEventDrawer';
 import { EnquadreEventsTable } from './EnquadreEventsTable';
 
 interface Props {
@@ -25,7 +26,7 @@ interface Props {
 export function EnquadreTab({ vacancyId, now = () => new Date() }: Props): JSX.Element {
   const { t } = useTranslation();
   const te = (key: string, opts?: Record<string, unknown>): string => t(`admin.vacancyDetail.enquadre.${key}`, opts);
-  const { events, status } = useEnquadreEvents(vacancyId);
+  const { events, status, reload } = useEnquadreEvents(vacancyId);
   const available = useEnquadreAvailableWorkers(vacancyId);
   // O operador é argentino: sem país da vaga aqui, o fuso é o de Buenos Aires (mesmo default da aba Admissão).
   const timeZone = timeZoneForCountry(null);
@@ -76,7 +77,16 @@ export function EnquadreTab({ vacancyId, now = () => new Date() }: Props): JSX.E
         <EnquadreEventsTable events={events} timeZone={timeZone} now={now()} onSelect={setSelectedEventId} />
       )}
 
-      {/* T-10: {createOpen && <CreateEnquadreEventDrawer … />} monta aqui. */}
+      {createOpen && (
+        <CreateEnquadreEventDrawer
+          vacancyId={vacancyId}
+          workers={available.workers}
+          workersStatus={available.status}
+          now={now}
+          onClose={() => setCreateOpen(false)}
+          onCreated={() => { setCreateOpen(false); void reload(); void available.reload(); }}
+        />
+      )}
       {/* T-11: selectedEventId troca a lista por <EnquadreEventKanban … /> aqui. */}
     </div>
   );
