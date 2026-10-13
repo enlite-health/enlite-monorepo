@@ -195,7 +195,7 @@ test.describe('VacancyDetailPage', () => {
 
   // ── Testes visuais das tabs ───────────────────────────────────────────────
 
-  test('tabs visíveis: Encuadres (default), Talentum, Links', async ({ page }) => {
+  test('tabs visíveis: Reclutamiento (default), Talentum, Links', async ({ page }) => {
     await seedAdminAndLogin(page);
 
     await page.route(`**/api/admin/vacancies/${MOCK_VACANCY_ID}`, route =>
@@ -209,15 +209,15 @@ test.describe('VacancyDetailPage', () => {
     await expect(page.locator('text=11001').first()).toBeVisible({ timeout: 15000 });
 
     // 3 abas visíveis
-    await expect(page.getByRole('button', { name: /Encuadres/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Reclutamiento/i })).toBeVisible();
     await expect(page.getByRole('button', { name: /Talentum/i })).toBeVisible();
     await expect(page.getByRole('button', { name: /Links/i })).toBeVisible();
 
-    // Aba Encuadres é a default (estilo ativo)
-    const encuadresBtn = page.getByRole('button', { name: /Encuadres/i });
+    // Aba Reclutamiento é a default (estilo ativo)
+    const encuadresBtn = page.getByRole('button', { name: /Reclutamiento/i });
     await expect(encuadresBtn).toHaveClass(/bg-primary/);
 
-    // Screenshot: estado default com aba Encuadres ativa
+    // Screenshot: estado default com aba Reclutamiento ativa
     await page.screenshot({ path: 'e2e/screenshots/vacancy-detail-tab-encuadres.png', fullPage: true });
   });
 
@@ -234,7 +234,7 @@ test.describe('VacancyDetailPage', () => {
     await page.goto(`/admin/vacancies/${MOCK_VACANCY_ID}`);
     await expect(page.locator('text=11001').first()).toBeVisible({ timeout: 15000 });
 
-    // Cards fixos visíveis na aba default (Encuadres)
+    // Cards fixos visíveis na aba default (Reclutamiento)
     await expect(page.locator('text=11001').first()).toBeVisible();
     await expect(page.locator('text=Palermo').first()).toBeVisible();
 
@@ -282,9 +282,9 @@ test.describe('VacancyDetailPage', () => {
     await page.getByRole('button', { name: /Links/i }).click();
     await expect(page.getByRole('button', { name: /Links/i })).toHaveClass(/bg-primary/);
 
-    // Volta para Encuadres — verifica retorno
-    await page.getByRole('button', { name: /Encuadres/i }).click();
-    await expect(page.getByRole('button', { name: /Encuadres/i })).toHaveClass(/bg-primary/);
+    // Volta para Reclutamiento — verifica retorno
+    await page.getByRole('button', { name: /Reclutamiento/i }).click();
+    await expect(page.getByRole('button', { name: /Reclutamiento/i })).toHaveClass(/bg-primary/);
 
     // Screenshot final: round-trip completo
     await page.screenshot({ path: 'e2e/screenshots/vacancy-detail-tab-roundtrip.png', fullPage: true });

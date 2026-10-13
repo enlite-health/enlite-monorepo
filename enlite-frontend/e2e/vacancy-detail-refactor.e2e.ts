@@ -569,7 +569,7 @@ test.describe('VacancyDetailPage — Refactor (Funnel + Cards + Toggle)', () => 
 
   // ── B. Funil — modo Lista ────────────────────────────────────────────────────
 
-  test('B1 — aba Encuadres ativa por default, toggle mostra "Lista" pressionado', async ({
+  test('B1 — aba Reclutamiento ativa por default, toggle mostra "Lista" pressionado', async ({
     page,
   }) => {
     await loginAsAdmin(page);
@@ -580,8 +580,8 @@ test.describe('VacancyDetailPage — Refactor (Funnel + Cards + Toggle)', () => 
       timeout: 15_000,
     });
 
-    // Tab Encuadres ativa
-    const encuadresBtn = page.getByRole('button', { name: /Encuadres/i });
+    // Tab Reclutamiento ativa
+    const encuadresBtn = page.getByRole('button', { name: /Reclutamiento/i });
     await expect(encuadresBtn).toHaveClass(/bg-primary/);
 
     // Toggle Lista pressionado (aria-pressed=true)
@@ -695,7 +695,7 @@ test.describe('VacancyDetailPage — Refactor (Funnel + Cards + Toggle)', () => 
     ).toBeVisible({ timeout: 15_000 });
   });
 
-  test('B6 — botão "Enviar invitaciones" visível na aba Encuadres', async ({
+  test('B6 — botão "Enviar invitaciones" visível na aba Reclutamiento', async ({
     page,
   }) => {
     await loginAsAdmin(page);
