@@ -133,6 +133,8 @@ export function createFakeServer(seed: Seed): Record<string, unknown> {
       const ev = findOpen(id);
       const out = ev.participants.find((p) => p.id === participantId);
       if (!out) throw new Error('convocado não encontrado');
+      // Como o servidor (T-30): quem já foi marcado deixou Convocados e não sai do evento.
+      if (out.column !== 'CONVOKED') throw new ApiError({ success: false, error: 'já marcado', code: 'ENQUADRE_PARTICIPANT_ALREADY_MARKED' }, 409);
       ev.participants = ev.participants.filter((p) => p.id !== participantId);
       release([out]);
       return toDetail(ev);
