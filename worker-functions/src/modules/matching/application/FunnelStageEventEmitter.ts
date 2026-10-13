@@ -11,8 +11,8 @@ import type { PoolClient } from 'pg';
  *   - só quando a etapa MUDA (mover para a mesma coluna não é evento);
  *   - o INSERT roda no MESMO client da transação do movimento — se a etapa
  *     não gravar, o evento não nasce; se nascer, a etapa gravou;
- *   - nome do evento = `funnel_stage.<etapa em minúsculas>` — QUALIFIED cai no
- *     `QualifiedInterviewHandler` existente, as demais no `StageMessageHandler`;
+ *   - nome do evento = `funnel_stage.<etapa em minúsculas>` — todas caem no
+ *     `StageMessageHandler`;
  *   - o payload leva quem moveu (`actorUid`) e a origem: é a autoria que a
  *     trilha (funnel_stage_message_log) registra.
  * A publicação no Pub/Sub é feita DEPOIS do COMMIT por quem chamou (o evento

@@ -92,7 +92,6 @@ import { AnaCareMirrorHealthService } from '@shared/events/AnaCareMirrorHealthSe
 import { TherapeuticContactReminderHealthService } from '@shared/events/TherapeuticContactReminderHealthService';
 import { CloudTasksClient } from '@shared/events/CloudTasksClient';
 import { PubSubClient } from '@shared/events/PubSubClient';
-import { createQualifiedInterviewHandler } from '@shared/events/handlers/QualifiedInterviewHandler';
 import { createVacancyAutoInviteHandler } from '@shared/events/handlers/VacancyAutoInviteHandler';
 import { createAnaCareMirrorHandler } from '@modules/integration/application/AnaCareMirrorEventHandler';
 import { createPromoteBlockedApplicationsHandler } from '@modules/matching';
@@ -140,8 +139,7 @@ import { createAccountLinkRoutes } from '@modules/account-link/accountLinkRoutes
 import { registerAdminMaintenanceRoutes } from './bootstrap/registerAdminMaintenanceRoutes';
 import { registerAdmissionInternalJobRoutes } from './bootstrap/registerAdmissionInternalJobRoutes';
 import { createAdminIntegrationsRoutes } from '@modules/integration';
-import { createStageMessageHandler } from './shared/events/handlers/StageMessageHandler';
-import { FUNNEL_STAGES, funnelStageEventName } from './modules/matching/application/FunnelStageEventEmitter';
+import { registerFunnelStageHandlers } from './shared/events/registerFunnelStageHandlers';
 import { FunnelStageMessagesController } from './modules/matching/interfaces/controllers/FunnelStageMessagesController';
 import { createFunnelStageMessagesRoutes } from './modules/matching/interfaces/routes/funnelStageMessagesRoutes';
 import { createTemplateCatalogRoutes } from './modules/matching/interfaces/routes/templateCatalogRoutes';
@@ -749,20 +747,9 @@ app.use('/api/admin', createPresentationInviteRoutes(
 ));
 const domainEventProcessor = new DomainEventProcessor(dbPool);
 
-domainEventProcessor.registerHandler(
-  'funnel_stage.qualified',
-  createQualifiedInterviewHandler(dbPool, pubsubClient, tokenService),
-);
-
-// PEND-14/DEC-12: mensagem por etapa — o movimento da tarjeta emite
-// `funnel_stage.<etapa>`; QUALIFIED continua no handler acima (built-in).
-for (const stage of FUNNEL_STAGES) {
-  if (stage === 'QUALIFIED') continue;
-  domainEventProcessor.registerHandler(
-    funnelStageEventName(stage),
-    createStageMessageHandler(dbPool, pubsubClient, tokenService, stage),
-  );
-}
+// PEND-14/DEC-12: mensagem por etapa — o movimento da tarjeta emite `funnel_stage.<etapa>`.
+// Spec 052 (T-40b): QUALIFIED também passa aqui; o convite automático saiu.
+registerFunnelStageHandlers(domainEventProcessor, dbPool, pubsubClient, tokenService);
 
 domainEventProcessor.registerHandler(
   'vacancy.created',
