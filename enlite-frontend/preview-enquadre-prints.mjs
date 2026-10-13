@@ -40,6 +40,8 @@ async function measure(page, id) {
       const panel = document.querySelector('[data-testid="enquadre-create-drawer"], [data-testid="enquadre-convoked-panel"]');
       const submit = document.querySelector('[data-testid="enquadre-create-submit"], [data-testid="enquadre-convoked-add"]');
       out.painel = panel ? rect(panel) : null;
+      const motivo = document.querySelector('[data-testid="enquadre-create-host-reason-h-c"]');
+      if (motivo) out.motivoEntrevistadoraSemVinculo = motivo.textContent;
       if (submit) { const r = submit.getBoundingClientRect(); out.submit = { ...rect(submit), dentroDaViewport: r.top >= 0 && r.bottom <= window.innerHeight && r.left >= 0 && r.right <= window.innerWidth }; }
     }
     return out;

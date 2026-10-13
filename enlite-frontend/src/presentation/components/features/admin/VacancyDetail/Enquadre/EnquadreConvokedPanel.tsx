@@ -131,7 +131,7 @@ export function EnquadreConvokedPanel({ vacancyId, event, onChanged, onClose }: 
         <div className="relative z-[60]">
           <AdmissionConfirmDialog
             testId="enquadre-convoked-remove-dialog"
-            title={te('convoked.removeConfirm.title')}
+            title={te('convoked.removeConfirm.title', { name: pendingRemove.workerName })}
             body={te('convoked.removeConfirm.body')}
             confirmLabel={te('convoked.removeConfirm.confirm')}
             busyLabel={te('convoked.removeConfirm.busy')}

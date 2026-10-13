@@ -314,6 +314,7 @@ describe('Cancelar e gerir convocados (E14, E16, E17)', () => {
 
   it('E17 quitar: o diálogo diz o que acontece; confirmar tira o convocado (5 → 4) e ele volta aos disponíveis', async () => {
     await mount('17');
+    expect(text('enquadre-convoked-remove-dialog')).toContain('Quitar a Ficticio 03');
     expect(text('enquadre-convoked-remove-dialog')).toContain('Saldrá del evento y de la invitación de Google y volverá a Completado');
     await user.click(q('enquadre-convoked-remove-dialog-confirm'));
     await waitFor(() => expect(q('enquadre-convoked-current').getAttribute('data-count')).toBe('4'));

@@ -46,6 +46,11 @@ describe('VacancyDetail enquadre i18n — paridade es × pt-BR', () => {
     }
   });
 
+  it('o título de quitar nomeia a pessoa nos dois idiomas ({{name}})', () => {
+    expect(esLeaves['convoked.removeConfirm.title']).toContain('{{name}}');
+    expect(ptLeaves['convoked.removeConfirm.title']).toContain('{{name}}');
+  });
+
   it('as chaves com contagem têm a forma do singular (1 convocado, não "1 convocados")', () => {
     for (const key of ['unassignedCount_one', 'kanban.closeConfirm.body_one', 'cancel.body_one', 'create.selectedCount_one']) {
       expect(esLeaves[key]).toBeDefined();

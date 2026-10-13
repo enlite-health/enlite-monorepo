@@ -2728,7 +2728,7 @@
           "manage": "Gerenciar convocados",
           "remove": "Retirar",
           "removeConfirm": {
-            "title": "Retirar convocado",
+            "title": "Tirar {{name}}",
             "body": "Sairá do evento e do convite do Google e voltará para Completado",
             "confirm": "Retirar",
             "busy": "Retirando…"

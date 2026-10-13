@@ -2807,7 +2807,7 @@
           "manage": "Gestionar convocados",
           "remove": "Quitar",
           "removeConfirm": {
-            "title": "Quitar convocado",
+            "title": "Quitar a {{name}}",
             "body": "Saldrá del evento y de la invitación de Google y volverá a Completado",
             "confirm": "Quitar",
             "busy": "Quitando…"
