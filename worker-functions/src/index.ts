@@ -113,6 +113,10 @@ import { AdmissionMessageContent } from '@modules/matching/infrastructure/Admiss
 import { AdmissionPanelService } from '@modules/matching/application/AdmissionPanelService';
 import { AdmissionPanelController } from '@modules/matching/interfaces/controllers/AdmissionPanelController';
 import { createAdminAdmissionRoutes } from '@modules/matching/interfaces/routes/adminAdmissionRoutes';
+import { EnquadreEventService } from '@modules/matching/application/EnquadreEventService';
+import { EnquadreEventController } from '@modules/matching/interfaces/controllers/EnquadreEventController';
+import { createAdminEnquadreEventRoutes } from '@modules/matching/interfaces/routes/adminEnquadreEventRoutes';
+import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { TactiqLinkService } from '@modules/matching/application/TactiqLinkService';
 import { TactiqLinkRepository } from '@modules/matching/infrastructure/TactiqLinkRepository';
 import { TactiqLinkController } from '@modules/matching/interfaces/controllers/TactiqLinkController';
@@ -619,6 +623,21 @@ const admissionPanelController = new AdmissionPanelController(
   new AdmissionSummaryRetryService({ db: admissionDb, repo: admissionImportRepository, events: admissionEvents, importer: admissionImportService }),
 );
 app.use('/api/admin', createAdminAdmissionRoutes(authMiddleware, permissionMiddleware, admissionPanelController));
+
+// Spec 052 F2: evento de enquadre na vaga (leitura e criação). Família admin.vacancies. O Calendar e o Tactiq vêm da MESMA fábrica de
+// externos da admissão (dublê no stack de teste); nada de mensageria da admissão entra aqui.
+const enquadreEventController = new EnquadreEventController(
+  new EnquadreEventService({
+    db: admissionDb,
+    calendar: admissionExternals.calendar,
+    hosts: interviewHostRepository,
+    tactiq: tactiqLinkService,
+    decryptor: new KMSEncryptionService(),
+    env: process.env,
+    impersonateEmail: process.env.ADMISSION_IMPERSONATE_EMAIL || 'enlite@enlite.health',
+  }),
+);
+app.use('/api/admin', createAdminEnquadreEventRoutes(authMiddleware, permissionMiddleware, enquadreEventController));
 
 // Spec 049 F4: o operador vincula a PRÓPRIA conta do Tactiq (own_tactiq_link:read|write). O callback do OAuth é navegação
 // do browser (sem Bearer): isento na montagem, em contexto público, e a prova de identidade é o `state` single-use.

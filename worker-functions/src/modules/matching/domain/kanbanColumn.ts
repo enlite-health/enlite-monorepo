@@ -124,6 +124,9 @@ export function mostAdvancedColumn(a: KanbanColumn, b: KanbanColumn): KanbanColu
   return kanbanColumnRank(a) >= kanbanColumnRank(b) ? a : b;
 }
 
+/** Estágios que o quadro B colapsa na coluna Completado (spec 052 os lê para listar quem pode ser convocado). */
+export const COMPLETED_COLUMN_STAGES: readonly string[] = ['COMPLETED', 'QUALIFIED', 'IN_DOUBT'];
+
 /**
  * Derives the Kanban column for a WJA row from its funnel stage + source.
  * Mirrors the classification chain in WJAFunnelController.getEncuadreFunnel.
@@ -143,7 +146,7 @@ export function deriveKanbanColumn(
   if (stage === 'QUICK_RESPONSE_TEAM') return 'QUICK_RESPONSE_TEAM';
   if (stage === 'REJECTED') return 'REJECTED';
   if (stage === 'CONFIRMED') return 'CONFIRMED';
-  if (stage !== null && ['COMPLETED', 'QUALIFIED', 'IN_DOUBT'].includes(stage)) return 'COMPLETED';
+  if (stage !== null && COMPLETED_COLUMN_STAGES.includes(stage)) return 'COMPLETED';
   if (stage === 'IN_PROGRESS') return 'IN_PROGRESS';
   if (stage === 'PRE_SCREENING') return 'PRE_SCREENING';
   // INVITED+manual = clicou em postularse manualmente → coluna INICIADO.

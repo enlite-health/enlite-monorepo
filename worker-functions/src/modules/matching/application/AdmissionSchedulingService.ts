@@ -42,6 +42,7 @@ import {
   SlotTakenError,
 } from './AdmissionSchedulingErrors';
 import { CalendarCreateFailedError, createEventWithRetry, releaseReservationWithoutEvent } from './admissionCalendarCreate';
+import { readHostsBusy } from './admissionHostBusy';
 
 export { HostNotInRosterError, InvalidSlotError, PatientNotFoundError, SlotInPastError, SlotTakenError };
 
@@ -402,26 +403,7 @@ export class AdmissionSchedulingService {
     timezone: string,
     country: AdmissionCountry,
   ): Promise<Record<string, BusyInterval[]>> {
-    const results = await this.calendar.getFreeBusyByCalendar(
-      emails,
-      this.impersonateEmail,
-      fromISO,
-      toISO,
-      timezone,
-    );
-
-    const byHost: Record<string, BusyInterval[]> = {};
-    for (const r of results) {
-      if (r.error) {
-        logger.error(
-          { country, calendarId: r.calendarId, reason: r.error },
-          '[admission] agenda de atendente ilegível: fica fora do cálculo (fail-closed)',
-        );
-        continue;
-      }
-      byHost[r.calendarId] = r.busy;
-    }
-    return byHost;
+    return readHostsBusy(this.calendar, this.impersonateEmail, emails, fromISO, toISO, timezone, country);
   }
 
   /**
