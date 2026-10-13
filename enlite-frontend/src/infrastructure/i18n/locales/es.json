@@ -2833,6 +2833,7 @@
           "noneAvailable": "No hay completados disponibles para agregar",
           "addError": "No se pudo agregar a los convocados.",
           "removeError": "No se pudo quitar al convocado.",
+          "removeMarked": "Ya fue marcado en el evento. Devolvelo a Convocados para poder quitarlo.",
           "current": "Convocados actuales",
           "available": "Completados disponibles",
           "currentEmpty": "No hay convocados."

@@ -2754,6 +2754,7 @@
           "noneAvailable": "Não há completados disponíveis para acrescentar",
           "addError": "Não foi possível acrescentar aos convocados.",
           "removeError": "Não foi possível retirar o convocado.",
+          "removeMarked": "Já foi marcado no evento. Devolva para Convocados para poder tirar.",
           "current": "Convocados atuais",
           "available": "Completados disponíveis",
           "currentEmpty": "Não há convocados."

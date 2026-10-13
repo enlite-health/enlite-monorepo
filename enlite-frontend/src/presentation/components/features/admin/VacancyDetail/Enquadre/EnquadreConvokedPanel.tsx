@@ -92,14 +92,17 @@ export function EnquadreConvokedPanel({ vacancyId, event, onChanged, onClose }: 
           <section className="flex flex-col gap-2" data-testid="enquadre-convoked-current" data-count={event.participants.length}>
             <Text as="span" size="2xs" color="primary" className="uppercase">{te('convoked.current')} ({event.participants.length})</Text>
             {event.participants.length === 0 && <Text size="sm" color="secondary" data-testid="enquadre-convoked-current-empty">{te('convoked.currentEmpty')}</Text>}
-            {event.participants.map((p) => (
+            {event.participants.map((p) => {
+              const marked = p.column !== 'CONVOKED';
+              return (
               <div key={p.id} className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg border border-gray-600 bg-white" data-testid={`enquadre-convoked-item-${p.id}`}>
                 <Text as="span" size="sm" weight="medium" color="inherit" className="truncate text-gray-900" data-clarity-mask="True">{p.workerName}</Text>
-                <ActionButton resource="enquadre_event" action="update" variant="outline" size="xs" disabled={busy} onClick={() => { setError(null); setPendingRemove(p); }} data-testid={`enquadre-convoked-remove-${p.id}`}>
+                <ActionButton resource="enquadre_event" action="update" variant="outline" size="xs" disabled={busy || marked} data-disabled={marked ? 'true' : 'false'} title={marked ? te('convoked.removeMarked') : undefined} onClick={() => { setError(null); setPendingRemove(p); }} data-testid={`enquadre-convoked-remove-${p.id}`}>
                   {te('convoked.remove')}
                 </ActionButton>
               </div>
-            ))}
+              );
+            })}
           </section>
 
           <section className="flex flex-col gap-2" data-testid="enquadre-convoked-available" data-count={available.workers.length}>
