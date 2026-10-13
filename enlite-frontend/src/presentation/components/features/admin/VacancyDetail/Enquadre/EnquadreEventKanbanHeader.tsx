@@ -10,7 +10,7 @@ import { useTranslation } from 'react-i18next';
 import { ArrowLeft, Video } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
-import { Button } from '@presentation/components/atoms/Button';
+import { ActionButton } from '@presentation/components/features/access';
 import type { EnquadreEventDetail } from '@domain/entities/EnquadreEvent';
 import { SealChip } from '../../PatientDetail/admission/AdmissionSeals';
 import { isFuture } from '../../PatientDetail/admission/admissionTime';
@@ -71,9 +71,11 @@ export function EnquadreEventKanbanHeader({ event: e, timeZone, now, onBack, onM
         </div>
         {open && (
           <div className="flex flex-wrap items-center gap-2" data-testid="enquadre-kanban-actions">
-            <Button variant="outline" size="sm" onClick={onManageConvoked} data-testid="enquadre-kanban-manage">{te('convoked.manage')}</Button>
-            <Button variant="outline" size="sm" onClick={onCancel} data-testid="enquadre-kanban-cancel">{te('cancel.button')}</Button>
-            <Button
+            <ActionButton resource="enquadre_event" action="update" variant="outline" size="sm" onClick={onManageConvoked} data-testid="enquadre-kanban-manage">{te('convoked.manage')}</ActionButton>
+            <ActionButton resource="enquadre_event" action="update" variant="outline" size="sm" onClick={onCancel} data-testid="enquadre-kanban-cancel">{te('cancel.button')}</ActionButton>
+            <ActionButton
+              resource="enquadre_result"
+              action="update"
               variant="primary"
               size="sm"
               onClick={onClose}
@@ -84,7 +86,7 @@ export function EnquadreEventKanbanHeader({ event: e, timeZone, now, onBack, onM
               data-testid="enquadre-kanban-close"
             >
               {te('kanban.close')}
-            </Button>
+            </ActionButton>
           </div>
         )}
       </div>

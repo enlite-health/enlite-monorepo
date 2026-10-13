@@ -218,7 +218,7 @@ describe('Kanban do evento (E9-E11)', () => {
     expect(close.getAttribute('aria-describedby')).toBe(q('enquadre-kanban-close-blocked').id);
     expect(screen.getAllByTestId('move-to-button')).toHaveLength(5);
     expect(screen.getAllByTestId('reject-button')).toHaveLength(5);
-    expect(screen.queryByTestId('notes-button')).not.toBeInTheDocument();
+    expect(screen.getAllByTestId('notes-button')).toHaveLength(5);
   });
 
   it('E9 "Mover a…" oferece Seleccionados e Respuesta rápida (o atual some; sem Rechazados)', async () => {

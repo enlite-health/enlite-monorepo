@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
+import { ActionButton } from '@presentation/components/features/access';
 import { SlideOverPanel } from '@presentation/components/molecules/SlideOverPanel/SlideOverPanel';
 import { useEnquadreAvailableWorkers } from '@hooks/admin/useEnquadreAvailableWorkers';
 import { AdminEnquadreApiService } from '@infrastructure/http/AdminEnquadreApiService';
@@ -94,9 +95,9 @@ export function EnquadreConvokedPanel({ vacancyId, event, onChanged, onClose }: 
             {event.participants.map((p) => (
               <div key={p.id} className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg border border-gray-600 bg-white" data-testid={`enquadre-convoked-item-${p.id}`}>
                 <Text as="span" size="sm" weight="medium" color="inherit" className="truncate text-gray-900" data-clarity-mask="True">{p.workerName}</Text>
-                <Button variant="outline" size="xs" disabled={busy} onClick={() => { setError(null); setPendingRemove(p); }} data-testid={`enquadre-convoked-remove-${p.id}`}>
+                <ActionButton resource="enquadre_event" action="update" variant="outline" size="xs" disabled={busy} onClick={() => { setError(null); setPendingRemove(p); }} data-testid={`enquadre-convoked-remove-${p.id}`}>
                   {te('convoked.remove')}
-                </Button>
+                </ActionButton>
               </div>
             ))}
           </section>
@@ -125,9 +126,9 @@ export function EnquadreConvokedPanel({ vacancyId, event, onChanged, onClose }: 
 
         <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-600 shrink-0">
           <Button variant="outline" size="sm" onClick={onClose} disabled={busy} data-testid="enquadre-convoked-close">{te('create.close')}</Button>
-          <Button variant="primary" size="sm" onClick={() => { void add(); }} disabled={busy || selected.length === 0} data-count={selected.length} data-testid="enquadre-convoked-add">
+          <ActionButton resource="enquadre_event" action="update" variant="primary" size="sm" onClick={() => { void add(); }} disabled={busy || selected.length === 0} data-count={selected.length} data-testid="enquadre-convoked-add">
             {te('convoked.add', { count: selected.length })}
-          </Button>
+          </ActionButton>
         </div>
       </SlideOverPanel>
 

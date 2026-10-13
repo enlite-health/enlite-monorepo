@@ -10,7 +10,7 @@ import { useTranslation } from 'react-i18next';
 import { CalendarPlus, Loader2 } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
-import { Button } from '@presentation/components/atoms/Button';
+import { ActionButton } from '@presentation/components/features/access';
 import { useEnquadreEvents } from '@hooks/admin/useEnquadreEvents';
 import { useEnquadreAvailableWorkers } from '@hooks/admin/useEnquadreAvailableWorkers';
 import { timeZoneForCountry } from '../../PatientDetail/admission/admissionTime';
@@ -64,10 +64,10 @@ export function EnquadreTab({ vacancyId, now = () => new Date() }: Props): JSX.E
             </Text>
           )}
         </div>
-        <Button variant="primary" size="sm" onClick={() => setCreateOpen(true)} data-testid="enquadre-create-button">
+        <ActionButton resource="enquadre_event" action="create" variant="primary" size="sm" onClick={() => setCreateOpen(true)} data-testid="enquadre-create-button">
           <CalendarPlus className="w-4 h-4 mr-2" aria-hidden="true" />
           {te('newButton')}
-        </Button>
+        </ActionButton>
       </div>
 
       {status === 'loading' && (
@@ -82,9 +82,9 @@ export function EnquadreTab({ vacancyId, now = () => new Date() }: Props): JSX.E
       {status === 'ok' && events.length === 0 && (
         <div className="flex flex-col items-start gap-3" data-testid="enquadre-empty">
           <Text color="inherit" as="p" size="sm" className="italic text-slate-600">{te('empty')}</Text>
-          <Button variant="outline" size="sm" onClick={() => setCreateOpen(true)} data-testid="enquadre-empty-create-button">
+          <ActionButton resource="enquadre_event" action="create" variant="outline" size="sm" onClick={() => setCreateOpen(true)} data-testid="enquadre-empty-create-button">
             {te('newButton')}
-          </Button>
+          </ActionButton>
         </div>
       )}
       {status === 'ok' && events.length > 0 && (

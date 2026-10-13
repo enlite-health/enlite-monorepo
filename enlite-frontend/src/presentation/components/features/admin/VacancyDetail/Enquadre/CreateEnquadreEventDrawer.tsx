@@ -12,6 +12,7 @@ import { useTranslation } from 'react-i18next';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { Button } from '@presentation/components/atoms/Button';
+import { ActionButton } from '@presentation/components/features/access';
 import { Input } from '@presentation/components/atoms/Input';
 import { SlideOverPanel } from '@presentation/components/molecules/SlideOverPanel/SlideOverPanel';
 import { useEnquadreHosts } from '@hooks/admin/useEnquadreHosts';
@@ -198,9 +199,9 @@ export function CreateEnquadreEventDrawer({ vacancyId, workers, workersStatus, o
 
       <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-600 shrink-0">
         <Button variant="outline" size="sm" onClick={onClose} disabled={busy} data-testid="enquadre-create-cancel">{te('create.close')}</Button>
-        <Button variant="primary" size="sm" onClick={() => { void submit(); }} disabled={!canSubmit} data-testid="enquadre-create-submit">
+        <ActionButton resource="enquadre_event" action="create" variant="primary" size="sm" onClick={() => { void submit(); }} disabled={!canSubmit} data-testid="enquadre-create-submit">
           {busy ? te('create.submitting') : te('create.submit')}
-        </Button>
+        </ActionButton>
       </div>
     </SlideOverPanel>
   );

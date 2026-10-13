@@ -7,7 +7,7 @@
  * vaga: ENTRAR pergunta antes (soltar na coluna ou "Rechazar"); SAIR é decidido pelo servidor — 422
  * `MOVE_REASON_REQUIRED` com `reason: LEAVE_REJECTED` — e a tela reage abrindo o mesmo diálogo com a lista de saída.
  * Evento `closed`/`cancelled`: nada se arrasta, não há menu nem "Rechazar".
- * Fase 0: o botão de notas do card NÃO é ligado (o modal chama a API; a ligação é da Fase 2).
+ * O botão de notas do card abre o `ContactNotesModal` do funil da vaga (mesmo modal, mesma API de notas).
  */
 import { useState, type JSX } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -19,6 +19,7 @@ import { RejectionReasonSelect } from '../../Kanban/RejectionReasonSelect';
 import { AdmissionConfirmDialog } from '../../PatientDetail/admission/AdmissionConfirmDialog';
 import { timeZoneForCountry } from '../../PatientDetail/admission/admissionTime';
 import { useEnquadreEvent } from '@hooks/admin/useEnquadreEvent';
+import { useActionGate } from '@presentation/hooks/useCellAccess';
 import { ApiError } from '@infrastructure/http/ApiError';
 import { AdminEnquadreApiService } from '@infrastructure/http/AdminEnquadreApiService';
 import { MOVE_REASON_OPTIONS, MOVE_REASON_REQUIRED } from '@domain/entities/MoveReason';
@@ -27,6 +28,7 @@ import { ENQUADRE_COLUMNS, ENQUADRE_COLUMN_WIDTH, ENQUADRE_MOVE_TARGETS } from '
 import { ENQUADRE_PHASE_OPEN } from './enquadreEventPhase';
 import { EnquadreEventKanbanHeader } from './EnquadreEventKanbanHeader';
 import { EnquadreConvokedPanel } from './EnquadreConvokedPanel';
+import { ContactNotesModal } from '../Funnel/ContactNotesModal';
 import { enquadreErrorKey, isEnquadreStateConflict } from './enquadreErrors';
 
 const E = 'admin.vacancyDetail.enquadre';
@@ -63,11 +65,15 @@ export function EnquadreEventKanban({ vacancyId, eventId, onBack, now = () => ne
   const te = (key: string, opts?: Record<string, unknown>): string => t(`admin.vacancyDetail.enquadre.${key}`, opts);
   const { event, status, reload } = useEnquadreEvent(vacancyId, eventId);
   const timeZone = timeZoneForCountry(null);
+  // Marcar o resultado (arrasto, "Mover a…", "Rechazar") é `enquadre_result:update`; sem a célula a OFERTA some (molde KanbanBoard).
+  const resultGate = useActionGate('enquadre_result', 'update');
 
   const [pendingReject, setPendingReject] = useState<string | null>(null);
   const [pendingLeave, setPendingLeave] = useState<{ participantId: string; column: EnquadreColumnId } | null>(null);
   const [confirm, setConfirm] = useState<'close' | 'cancel' | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
+  /** Notas do prestador (o mesmo modal do funil da vaga): abre pelo botão do card. */
+  const [activeNotes, setActiveNotes] = useState<{ workerId: string; workerName: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [dialogError, setDialogError] = useState<string | null>(null);
   const [moveError, setMoveError] = useState<string | null>(null);
@@ -151,15 +157,16 @@ export function EnquadreEventKanban({ vacancyId, eventId, onBack, now = () => ne
         columns={columns}
         itemsOf={(columnId) => event.participants.filter((p) => p.column === columnId)}
         getItemId={(p) => p.id}
-        isDragDisabled={() => !open}
+        isDragDisabled={() => !open || resultGate.denied}
         onDrop={handleDrop}
         columnWidthClass={ENQUADRE_COLUMN_WIDTH}
         renderCard={(p, columnId) => (
           <div data-testid={`enquadre-participant-${p.id}`} data-column={columnId}>
             <KanbanCard
               {...cardProps(p, columnId)}
-              onReject={open ? () => setPendingReject(p.id) : undefined}
-              onMoveTo={open ? (target) => { void moveParticipant(p.id, target as EnquadreColumnId); } : undefined}
+              onReject={open && !resultGate.denied ? () => setPendingReject(p.id) : undefined}
+              onMoveTo={open && !resultGate.denied ? (target) => { void moveParticipant(p.id, target as EnquadreColumnId); } : undefined}
+              onOpenNotes={() => setActiveNotes({ workerId: p.workerId, workerName: p.workerName })}
               moveTargets={ENQUADRE_MOVE_TARGETS}
             />
             {p.outcome === 'returned' && (
@@ -217,6 +224,14 @@ export function EnquadreEventKanban({ vacancyId, eventId, onBack, now = () => ne
           error={dialogError}
           onConfirm={() => { void runConfirmed(() => AdminEnquadreApiService.cancelEvent(vacancyId, eventId), 'cancel.error', onBack); }}
           onClose={() => setConfirm(null)}
+        />
+      )}
+      {activeNotes && (
+        <ContactNotesModal
+          vacancyId={vacancyId}
+          workerId={activeNotes.workerId}
+          workerName={activeNotes.workerName}
+          onClose={() => setActiveNotes(null)}
         />
       )}
       {panelOpen && open && (
