@@ -2,6 +2,7 @@ import { Pool } from 'pg';
 import { AdminPatientDiagnosesController } from '@modules/diagnosis/interfaces/controllers/AdminPatientDiagnosesController';
 import { AdminTerminologySearchController } from '@modules/terminology/interfaces/controllers/AdminTerminologySearchController';
 import { montarAppDeFamilia, type AppDeFamilia } from './helpers/permissionFamilyHarness';
+import { TENANT_E2E, tokenMock, grupoComCelulas, limparIamFixtures } from './helpers/permissionFamilyHarness';
 
 /**
  * AS ROTAS DE PACIENTE SOB A RLS DE PAÍS — HTTP REAL, BANCO REAL (abac-pais-fase1).
@@ -827,6 +828,119 @@ describe('rotas de paciente sob a RLS de país (HTTP real, banco real)', () => {
       expect(body.success).toBe(true);
       // Escopo com 2 países: o contrato de saída ecoa null — "não é um só" — nunca 403.
       expect(body.data.country).toBeNull();
+    });
+  });
+
+  // ── (j) Spec 052 (F2): as 4 células do enquadre, pelo LOGIN DE RUNTIME e com o engine LIGADO ────────────────
+  describe('(j) rotas do evento de enquadre (admin.vacancies) como app_runtime: 403 sem a célula, 200 com ela', () => {
+    const U = { semRead: 'abac052-sem-read', leitor: 'abac052-leitor' };
+    const GRUPOS = { semRead: 'Abac052 Sem Read', leitor: 'Abac052 Leitor' };
+    const VAGA = 'ee270000-0e00-0004-0052-000000000001';
+    const EVENTO = 'ee270000-0e00-0005-0052-000000000001';
+    let enquadreApp: AppDeFamilia;
+    const envAntes: Record<string, string | undefined> = {};
+    const setEnv = (k: string, v: string): void => {
+      if (!(k in envAntes)) envAntes[k] = process.env[k];
+      process.env[k] = v;
+    };
+    const call = (method: string, path: string, uid: string) =>
+      fetch(`${enquadreApp.url}${path}`, { method, headers: { Authorization: tokenMock(uid, 'admin', 'AR'), 'Content-Type': 'application/json' } });
+    const limpar = async (): Promise<void> => {
+      await adminPool.query(`DELETE FROM enquadre_events WHERE id = $1`, [EVENTO]);
+      await adminPool.query(`DELETE FROM job_postings WHERE id = $1`, [VAGA]);
+      await limparIamFixtures(adminPool, { uids: Object.values(U), grupos: Object.values(GRUPOS) });
+    };
+
+    beforeAll(async () => {
+      await limpar();
+      setEnv('PERMISSION_ENGINE_ENABLED', 'true');
+      setEnv('PERMISSION_CACHE_TTL_MS', '0');
+      await adminPool.query(
+        `INSERT INTO users (firebase_uid, email, role, status, is_active, tenant_id) VALUES
+           ($1,'abac052-sem-read@e2e.local','admin','ACTIVE',true,$3), ($2,'abac052-leitor@e2e.local','admin','ACTIVE',true,$3)`,
+        [U.semRead, U.leitor, TENANT_E2E],
+      );
+      await grupoComCelulas(adminPool, { nome: GRUPOS.semRead, uid: U.semRead, celulas: [['enquadre_event', 'create']] });
+      await grupoComCelulas(adminPool, { nome: GRUPOS.leitor, uid: U.leitor, celulas: [['enquadre_event', 'read']] });
+      await adminPool.query(
+        `INSERT INTO job_postings (id, title, patient_id, status, is_draft, country, is_test)
+         VALUES ($1, 'CASO 52 abac-routes enquadre', $2, 'SEARCHING', false, 'AR', true)`,
+        [VAGA, IDS.patientAR],
+      );
+      await adminPool.query(
+        `INSERT INTO enquadre_events (id, job_posting_id, host_email, host_display_name, starts_at, ends_at, event_code, created_by_uid)
+         VALUES ($1, $2, 'abac052.host@example.test', 'Entrevistadora Uno', now() + interval '3 days', now() + interval '3 days 1 hour', 'ENC-ABAC52', 'abac052-seed')`,
+        [EVENTO, VAGA],
+      );
+
+      // Mesmo wiring do `src/index.ts` (AuthMiddleware de produção: é ele que liga o claim de país ao GUC), serviço REAL sobre o pool de runtime.
+      const [identity, { DatabaseConnection }, { EnquadreEventService }, { EnquadreEventMutations }, { EnquadreEventController }, { createAdminEnquadreEventRoutes }, { interviewHostRepository }, { FakeAdmissionCalendar }] =
+        await Promise.all([
+          import('@modules/identity'),
+          import('@shared/database/DatabaseConnection'),
+          import('../../src/modules/matching/application/EnquadreEventService'),
+          import('../../src/modules/matching/application/EnquadreEventMutations'),
+          import('../../src/modules/matching/interfaces/controllers/EnquadreEventController'),
+          import('../../src/modules/matching/interfaces/routes/adminEnquadreEventRoutes'),
+          import('../../src/modules/matching/infrastructure/InterviewHostRepository'),
+          import('../../src/modules/matching/infrastructure/doubles/FakeAdmissionCalendar'),
+        ]);
+      const pool = DatabaseConnection.getInstance().getPool();
+      const authMiddleware = new identity.AuthMiddleware(
+        new identity.MultiAuthService({ enableApiKeys: true, enableJwt: false, enableGoogleIdToken: true }, pool),
+        new identity.SimplifiedAuthorizationEngine(),
+      );
+      const calendar = new FakeAdmissionCalendar();
+      const env = { ENQUADRE_CALENDAR_ID_AR: 'cal-abac052@example.test', ENQUADRE_GUEST_POLICY: 'allowlist:example.test' };
+      const service = new EnquadreEventService({
+        db: pool, calendar, hosts: interviewHostRepository, tactiq: { statesFor: async () => new Map() },
+        decryptor: { decrypt: async () => 'Ficticio NN' }, env, impersonateEmail: 'enlite@enlite.health',
+      });
+      const mutations = new EnquadreEventMutations({
+        db: pool, calendar, env, impersonateEmail: 'enlite@enlite.health',
+        readEvent: (v, e, viewer) => service.getEvent(v, e, viewer), pubsub: { publish: async () => 'msg' } as never,
+      });
+      enquadreApp = await montarAppDeFamilia({
+        auth: authMiddleware,
+        enforcedRoutes: 'admin.vacancies',
+        montarRotas: ({ app: express, auth, permissions }) =>
+          express.use('/api/admin', createAdminEnquadreEventRoutes(auth, permissions, new EnquadreEventController(service, mutations))),
+      });
+    });
+
+    afterAll(async () => {
+      await enquadreApp?.fechar();
+      await limpar();
+      for (const [k, v] of Object.entries(envAntes)) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    });
+
+    it('as 4 células do enquadre existem em iam.permissions, vigentes (deprecated_at IS NULL)', async () => {
+      const { rows } = await adminPool.query(
+        `SELECT count(*)::int AS n FROM iam.permissions WHERE resource IN ('enquadre_event','enquadre_result') AND deprecated_at IS NULL`,
+      );
+      expect(rows[0].n).toBe(4);
+    });
+
+    it('staff SEM enquadre_event:read → 403 em GET …/enquadre-events (tem outra célula do mesmo recurso: o 403 é sobre ESTA célula)', async () => {
+      const res = await call('GET', `/api/admin/vacancies/${VAGA}/enquadre-events`, U.semRead);
+      expect(res.status).toBe(403);
+    });
+
+    it('staff COM enquadre_event:read → 200 e a lista traz o evento semeado (o runtime lê enquadre_events)', async () => {
+      const res = await call('GET', `/api/admin/vacancies/${VAGA}/enquadre-events`, U.leitor);
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { success: boolean; data: Array<{ id: string }> };
+      expect(body.data.map((e) => e.id)).toEqual([EVENTO]);
+    });
+
+    it('staff com enquadre_event:read MAS sem enquadre_result:update → 403 no …/close, e o evento segue open', async () => {
+      const res = await call('POST', `/api/admin/vacancies/${VAGA}/enquadre-events/${EVENTO}/close`, U.leitor);
+      expect(res.status).toBe(403);
+      const { rows } = await adminPool.query(`SELECT status FROM enquadre_events WHERE id = $1`, [EVENTO]);
+      expect(rows[0].status).toBe('open');
     });
   });
 });
