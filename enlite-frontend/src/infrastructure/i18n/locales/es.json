@@ -4824,7 +4824,9 @@
             "patient_document": "Documentos del paciente",
             "patient_admission": "Admisión del paciente (reuniones y mensajes)",
             "own_tactiq_link": "Mi vínculo con Tactiq",
-            "patient_status": "Estado del paciente: cambio fuera del flujo"
+            "patient_status": "Estado del paciente: cambio fuera del flujo",
+            "enquadre_event": "Eventos de encuadre (crear, convocados y cancelar)",
+            "enquadre_result": "Resultado del encuadre (marcar y cerrar)"
           },
           "help": {
             "open": "Qué hace este permiso",
@@ -5247,7 +5249,9 @@
             "invites": "Invitaciones por WhatsApp",
             "prescreening": "Preselección",
             "talentum": "Publicación en Talentum",
-            "patient": "Paciente (nombre)"
+            "patient": "Paciente (nombre)",
+            "enquadreEvent": "Eventos de encuadre",
+            "enquadreResult": "Resultado del encuadre"
           }
         },
         "recruitment": {

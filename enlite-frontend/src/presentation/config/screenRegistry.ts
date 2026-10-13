@@ -190,7 +190,7 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
   {
     id: 'vacancies.detail',
     route: '/admin/vacancies/:id',
-    tabs: ['encuadres', 'talentum', 'links', 'notes'],
+    tabs: ['encuadres', 'enquadre', 'talentum', 'links', 'notes'],
     containers: [
       // `vacancy:delete` sem botão (ui-gate-debt.json): arquivar é status CLOSED via write. O caso
       // cobre cabeçalho, perfil requerido, links de reunião, a aba Links e a aba Anotações (tudo
@@ -204,6 +204,9 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
       c('invites', 'messaging', ['send'], 'encuadres'),
       c('prescreening', 'prescreening', ['read', 'create', 'update'], 'talentum'),
       c('talentum', 'talentum', ['read', 'create', 'update'], 'talentum'),
+      // Aba Enquadre (spec 052): ler/criar/acrescentar-tirar-cancelar o evento; marcar o resultado e encerrar.
+      c('enquadreEvent', 'enquadre_event', ['read', 'create', 'update'], 'enquadre'),
+      c('enquadreResult', 'enquadre_result', ['update'], 'enquadre'),
     ],
   },
 

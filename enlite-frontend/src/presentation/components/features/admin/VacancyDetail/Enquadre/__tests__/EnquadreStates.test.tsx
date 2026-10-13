@@ -81,9 +81,9 @@ describe('Lista de eventos (E1-E5, E12, E15)', () => {
     expect(q('enquadre-events-table')).toBeInTheDocument();
   });
 
-  it('E1 tabsVisibleFor mostra a aba `enquadre` sem container, com o engine ligado e sem nenhuma permissão', () => {
+  it('E1 tabsVisibleFor esconde a aba `enquadre` com o engine ligado e sem nenhuma célula de enquadre', () => {
     const visible = tabsVisibleFor(screenById('vacancies.detail'), VACANCY_TABS, [], 'on');
-    expect(visible).toContain('enquadre');
+    expect(visible).not.toContain('enquadre');
     expect(visible).not.toContain('encuadres');
   });
 
