@@ -34,7 +34,7 @@ const ACK_UPDATED_EVENT = 'message.ack.updated';
  *   2. resposta numerada ("1"/"2"/...) → PeriskopeInboundRouter (item 2.3):
  *      correlaciona com a última mensagem com botões enviada ao worker e
  *      roteia pro mesmo use case que o canal Twilio usaria
- *      (BookSlotFromWhatsAppUseCase / HandleReminderResponseUseCase)
+ *      (HandleReminderResponseUseCase)
  *   3. worker em awaiting_reason → captura motivo de recusa (RECHAZADO)
  *   4. resto: ignorado com log (a inbox humana é o próprio Periskope; a
  *      triagem IA consome o mesmo webhook em serviço separado)

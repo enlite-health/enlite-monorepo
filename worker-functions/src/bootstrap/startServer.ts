@@ -7,7 +7,6 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { createWebhookRoutes, PartnerAuthMiddleware, GoogleApiKeyValidator, WebhookPartnerRepository } from '@modules/integration';
 import { PubSubClient } from '@shared/events/PubSubClient';
 import { CloudTasksClient } from '@shared/events/CloudTasksClient';
-import { BookSlotFromWhatsAppUseCase } from '@modules/notification/application/BookSlotFromWhatsAppUseCase';
 import { HandleReminderResponseUseCase } from '@modules/notification/application/HandleReminderResponseUseCase';
 import { PeriskopeInboundRouter } from '@modules/notification/application/PeriskopeInboundRouter';
 import { TriggerWorkerHandoverUseCase } from '@modules/notification/application/TriggerWorkerHandoverUseCase';
@@ -61,12 +60,6 @@ export async function startServer(
   const partnerAuth = new PartnerAuthMiddleware(googleValidator, webhookPartnerRepo);
 
   const googleCalendarService = new GoogleCalendarService();
-  const bookSlotUseCase = new BookSlotFromWhatsAppUseCase(
-    DatabaseConnection.getInstance().getPool(),
-    new PubSubClient(),
-    new CloudTasksClient(),
-    googleCalendarService,
-  );
   const handleReminderResponseUseCase = new HandleReminderResponseUseCase(
     DatabaseConnection.getInstance().getPool(),
     new PubSubClient(),
@@ -88,7 +81,6 @@ export async function startServer(
   // envio do mirror ainda é gated por CHATWOOT_INBOUND_MIRROR_ENABLED no controller.
   const inboundWhatsAppController = new InboundWhatsAppController(
     DatabaseConnection.getInstance().getPool(),
-    bookSlotUseCase,
     handleReminderResponseUseCase,
     triggerHandoverUseCase,
     buildChatwootClient() ?? undefined,
@@ -101,7 +93,6 @@ export async function startServer(
   if (process.env.PERISKOPE_WEBHOOK_ENABLED === 'true') {
     const periskopeInboundRouter = new PeriskopeInboundRouter(
       DatabaseConnection.getInstance().getPool(),
-      bookSlotUseCase,
       handleReminderResponseUseCase,
     );
     periskopeWebhookController = new PeriskopeWebhookController(

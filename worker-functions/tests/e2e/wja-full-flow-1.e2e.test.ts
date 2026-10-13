@@ -2,7 +2,7 @@
  * wja-full-flow-1.e2e.test.ts  (Part 1 of 2)
  *
  * Smoke E2E — WJA Full Flow (Fase A do gate de regressão do core).
- * Steps 1-5: T1 → T7 (INVITED → CONFIRMED)
+ * Steps 1-3: T1 → T5 (INVITED → QUALIFIED). Convite/reserva automáticos saíram (spec 052, Fase 4).
  *
  * Part 2: wja-full-flow-2.e2e.test.ts (REPROGRAMAR + RECHAZAR + invariantes)
  *
@@ -68,7 +68,7 @@ function saveState(state: SharedState): void {
 
 // ── Suite part1 ───────────────────────────────────────────────────────────
 
-describe('WJA Full Flow Part 1 — T1→T7 @integration', () => {
+describe('WJA Full Flow Part 1 — T1→T5 @integration', () => {
   const api = createApiClient();
   let pool: Pool;
 
@@ -318,85 +318,6 @@ describe('WJA Full Flow Part 1 — T1→T7 @integration', () => {
       );
       // Precedência canônica: QUALIFIED(5) > PRE_SCREENING(1) — subtype='INITIATED' → PRE_SCREENING (migration 230)
       expect(rows[0].application_funnel_stage).toBe('QUALIFIED');
-    });
-  });
-
-  // ── Step 4: T6 ─────────────────────────────────────────────────────────
-
-  describe('Step 4 — T6: messaging_outbox com 3 slots enfileirados', () => {
-    it('outbox tem row com template_slug=qualified_worker_request com slot_1/slot_2/slot_3', async () => {
-      // QualifiedInterviewHandler é disparado via Pub/Sub (sem infra real no E2E).
-      // Simular a row que ele inseriria na messaging_outbox.
-      inviteSidA = 'SM_WFF_INVITE_A_FIXED';
-      await pool.query(
-        `INSERT INTO messaging_outbox
-           (worker_id, template_slug, variables, status, twilio_sid, attempts)
-         VALUES ($1, 'qualified_worker_request', $2::jsonb, 'sent', $3, 1)
-         ON CONFLICT DO NOTHING`,
-        [
-          workerAId,
-          JSON.stringify({
-            job_posting_id: jobPostingId,
-            slot_1: `${FUTURE_DT_1} | ${MEET_LINK_1}`,
-            slot_2: `${FUTURE_DT_2} | ${MEET_LINK_2}`,
-            slot_3: `${FUTURE_DT_3} | ${MEET_LINK_3}`,
-            case_number: String(CASE_NUMBER),
-          }),
-          inviteSidA,
-        ],
-      );
-
-      const { rows } = await pool.query(
-        `SELECT template_slug, variables FROM messaging_outbox
-         WHERE worker_id = $1 AND template_slug = 'qualified_worker_request'
-         ORDER BY created_at DESC LIMIT 1`,
-        [workerAId],
-      );
-      expect(rows).toHaveLength(1);
-      const vars = rows[0].variables as Record<string, string>;
-      expect(vars.slot_1).toBeDefined();
-      expect(vars.slot_2).toBeDefined();
-      expect(vars.slot_3).toBeDefined();
-    });
-  });
-
-  // ── Step 5: T7 ─────────────────────────────────────────────────────────
-
-  describe('Step 5 — T7: Worker A clica slot_1 → stage=CONFIRMED', () => {
-    beforeAll(async () => {
-      // Garantir que WJA está em QUALIFIED + interview_response=pending
-      await pool.query(
-        `UPDATE worker_job_applications
-         SET application_funnel_stage = 'QUALIFIED', interview_response = 'pending', updated_at = NOW()
-         WHERE worker_id = $1 AND job_posting_id = $2`,
-        [workerAId, jobPostingId],
-      );
-    });
-
-    it('POST /api/webhooks/twilio/inbound ButtonPayload=slot_1 → 200', async () => {
-      const res = await api.post(
-        '/api/webhooks/twilio/inbound',
-        new URLSearchParams({
-          From: `whatsapp:${PHONE_A}`,
-          ButtonPayload: 'slot_1',
-          OriginalRepliedMessageSid: inviteSidA,
-        }).toString(),
-        { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } },
-      );
-      expect(res.status).toBe(200);
-    });
-
-    it('WJA tem interview_meet_link, interview_datetime e interview_response=confirmed', async () => {
-      const { rows } = await pool.query(
-        `SELECT application_funnel_stage, interview_meet_link, interview_datetime, interview_response
-         FROM worker_job_applications
-         WHERE worker_id = $1 AND job_posting_id = $2`,
-        [workerAId, jobPostingId],
-      );
-      expect(rows[0].application_funnel_stage).toBe('CONFIRMED');
-      expect(rows[0].interview_meet_link).toBe(MEET_LINK_1);
-      expect(rows[0].interview_datetime).not.toBeNull();
-      expect(rows[0].interview_response).toBe('confirmed');
     });
   });
 });

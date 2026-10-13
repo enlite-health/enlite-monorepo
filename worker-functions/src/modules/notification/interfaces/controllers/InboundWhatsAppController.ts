@@ -1,14 +1,11 @@
 import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import twilio from 'twilio';
-import { BookSlotFromWhatsAppUseCase } from '../../application/BookSlotFromWhatsAppUseCase';
 import { HandleReminderResponseUseCase } from '../../application/HandleReminderResponseUseCase';
 import { TriggerWorkerHandoverUseCase } from '../../application/TriggerWorkerHandoverUseCase';
 import { logger } from '@shared/logging';
 import { maskPhoneForLog } from '@shared/utils/phoneMask';
 import {
-  INTERVIEW_INVITE_SLUG,
-  LEGACY_INVITE_SLUG,
   REMINDER_CONFIRM_SLUG,
   REMINDER_RESCHEDULE_SLUG,
   INTERVIEW_SLUGS,
@@ -36,7 +33,6 @@ export class InboundWhatsAppController {
 
   constructor(
     private readonly db: Pool,
-    private readonly bookSlotUseCase: BookSlotFromWhatsAppUseCase,
     private readonly handleReminderResponseUseCase: HandleReminderResponseUseCase,
     /**
      * Opcional: quando ausente OU PERISKOPE_HANDOVER_ENABLED != 'true', o
@@ -137,12 +133,6 @@ export class InboundWhatsAppController {
         console.info('[InboundWhatsApp] Message ignored (template not interview flow)', {
           from, templateSlug, buttonPayload,
         });
-      } else if ((templateSlug === INTERVIEW_INVITE_SLUG || templateSlug === LEGACY_INVITE_SLUG) && buttonPayload.startsWith('slot_')) {
-        // Resposta ao convite de entrevista: worker escolheu horário
-        const result = await this.bookSlotUseCase.execute(from, buttonPayload, originalMessageSid);
-        if (result.isFailure) {
-          console.warn(`[InboundWhatsApp] BookSlot failed: ${result.error}`);
-        }
       } else if (templateSlug === REMINDER_CONFIRM_SLUG && buttonPayload.startsWith('confirm_')) {
         // Resposta ao reminder de 24h: worker confirmou ou declinou
         const result = await this.handleReminderResponseUseCase.execute(from, buttonPayload, originalMessageSid);
@@ -158,12 +148,7 @@ export class InboundWhatsAppController {
       } else if (!templateSlug) {
         // OriginalRepliedMessageSid ausente ou não encontrado na outbox
         // Fallback: rotear pelo prefixo do ButtonPayload (compatibilidade / janela 7 dias)
-        if (buttonPayload.startsWith('slot_')) {
-          const result = await this.bookSlotUseCase.execute(from, buttonPayload, originalMessageSid);
-          if (result.isFailure) {
-            console.warn(`[InboundWhatsApp] BookSlot (fallback) failed: ${result.error}`);
-          }
-        } else if (buttonPayload.startsWith('confirm_')) {
+        if (buttonPayload.startsWith('confirm_')) {
           const result = await this.handleReminderResponseUseCase.execute(from, buttonPayload, originalMessageSid);
           if (result.isFailure) {
             console.warn(`[InboundWhatsApp] ReminderResponse (fallback) failed: ${result.error}`);

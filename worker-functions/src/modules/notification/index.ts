@@ -51,7 +51,6 @@ export type {
   BulkDispatchDetail,
   BulkDispatchOptions,
 } from './application/BulkDispatchIncompleteWorkersUseCase';
-export { BookSlotFromWhatsAppUseCase } from './application/BookSlotFromWhatsAppUseCase';
 export { HandleReminderResponseUseCase } from './application/HandleReminderResponseUseCase';
 export { MarkNoShowUseCase } from './application/MarkNoShowUseCase';
 export type { NoShowResult } from './application/MarkNoShowUseCase';

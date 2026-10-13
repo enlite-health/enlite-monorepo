@@ -7,7 +7,6 @@
  *   - src/modules/notification/application/HandleReminderResponseUseCase.ts
  *   - src/modules/notification/application/BulkDispatchIncompleteWorkersUseCase.ts
  *   - src/modules/notification/application/BulkDispatchTalentumIncompleteUseCase.ts
- *   - src/modules/notification/application/BookSlotFromWhatsAppUseCase.ts
  *   - src/modules/notification/interfaces/controllers/MessagingController.ts
  *   - src/modules/notification/interfaces/controllers/InboundWhatsAppController.ts
  *

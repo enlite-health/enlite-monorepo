@@ -1,13 +1,10 @@
 import { Pool } from 'pg';
 import { logger } from '@shared/logging';
 import { maskPhoneForLog } from '@shared/utils/phoneMask';
-import { BookSlotFromWhatsAppUseCase } from './BookSlotFromWhatsAppUseCase';
 import { HandleReminderResponseUseCase } from './HandleReminderResponseUseCase';
 import { TemplateButton } from '../domain/MessageTemplate';
 import { parseNumberedReply } from '../domain/numberedButtonOptions';
 import {
-  INTERVIEW_INVITE_SLUG,
-  LEGACY_INVITE_SLUG,
   REMINDER_CONFIRM_SLUG,
   REMINDER_RESCHEDULE_SLUG,
 } from '../domain/interviewFlowTemplateSlugs';
@@ -56,7 +53,6 @@ interface ButtonOutboxCorrelator {
 export class PeriskopeInboundRouter {
   constructor(
     private readonly db: Pool,
-    private readonly bookSlotUseCase: BookSlotFromWhatsAppUseCase,
     private readonly handleReminderResponseUseCase: HandleReminderResponseUseCase,
   ) {}
 
@@ -115,17 +111,6 @@ export class PeriskopeInboundRouter {
     originalMessageSid: string | null,
   ): Promise<boolean> {
     const sid = originalMessageSid ?? undefined;
-
-    if (
-      (templateSlug === INTERVIEW_INVITE_SLUG || templateSlug === LEGACY_INVITE_SLUG)
-      && button.payload.startsWith('slot_')
-    ) {
-      const result = await this.bookSlotUseCase.execute(phone, button.payload, sid);
-      if (result.isFailure) {
-        logger.warn({ phone: maskPhoneForLog(phone), templateSlug, error: result.error }, '[PeriskopeInboundRouter] BookSlot failed');
-      }
-      return true;
-    }
 
     if (templateSlug === REMINDER_CONFIRM_SLUG && button.payload.startsWith('confirm_')) {
       const result = await this.handleReminderResponseUseCase.execute(phone, button.payload, sid);

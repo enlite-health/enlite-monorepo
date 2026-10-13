@@ -5,7 +5,6 @@ import { logger } from '@shared/logging';
 describe('PeriskopeInboundRouter', () => {
   let mockDbQuery: jest.Mock;
   let mockDb: { query: jest.Mock };
-  let mockBookSlot: { execute: jest.Mock };
   let mockHandleReminder: { execute: jest.Mock };
   let router: PeriskopeInboundRouter;
 
@@ -14,9 +13,8 @@ describe('PeriskopeInboundRouter', () => {
   beforeEach(() => {
     mockDbQuery = jest.fn();
     mockDb = { query: mockDbQuery };
-    mockBookSlot = { execute: jest.fn().mockResolvedValue(Result.ok()) };
     mockHandleReminder = { execute: jest.fn().mockResolvedValue(Result.ok()) };
-    router = new PeriskopeInboundRouter(mockDb as any, mockBookSlot as any, mockHandleReminder as any);
+    router = new PeriskopeInboundRouter(mockDb as any, mockHandleReminder as any);
   });
 
   afterEach(() => jest.clearAllMocks());
@@ -27,7 +25,6 @@ describe('PeriskopeInboundRouter', () => {
     const result = await router.routeNumberedReply('+5491112345678', '1');
 
     expect(result).toBe(false);
-    expect(mockBookSlot.execute).not.toHaveBeenCalled();
     expect(mockHandleReminder.execute).not.toHaveBeenCalled();
   });
 
@@ -69,7 +66,6 @@ describe('PeriskopeInboundRouter', () => {
     const result = await router.routeNumberedReply('+5491112345678', 'hola');
 
     expect(result).toBe(false);
-    expect(mockBookSlot.execute).not.toHaveBeenCalled();
   });
 
   it('retorna false para número fora do range (ex: "10" com só 1 opção)', async () => {
@@ -88,7 +84,7 @@ describe('PeriskopeInboundRouter', () => {
     expect(result).toBe(false);
   });
 
-  it('roteia slot_N para BookSlotFromWhatsAppUseCase com o twilio_sid correlacionado', async () => {
+  it('botão slot_N de convite antigo NÃO é mais roteado (spec 052: a reserva saiu): devolve false e nada é chamado', async () => {
     mockDbQuery
       .mockResolvedValueOnce(WORKER_ROW)
       .mockResolvedValueOnce({
@@ -104,8 +100,8 @@ describe('PeriskopeInboundRouter', () => {
 
     const result = await router.routeNumberedReply('+5491112345678', '2');
 
-    expect(result).toBe(true);
-    expect(mockBookSlot.execute).toHaveBeenCalledWith('+5491112345678', 'slot_2', 'sid-abc');
+    expect(result).toBe(false);
+    expect(mockHandleReminder.execute).not.toHaveBeenCalled();
   });
 
   it('tolera espaços e ponto final no número digitado (" 2. ")', async () => {
@@ -113,16 +109,16 @@ describe('PeriskopeInboundRouter', () => {
       .mockResolvedValueOnce(WORKER_ROW)
       .mockResolvedValueOnce({
         rows: [{
-          template_slug: 'qualified_worker_request',
+          template_slug: 'qualified_reminder_confirm',
           twilio_sid: 'sid-abc',
-          buttons: [{ label: 'a', payload: 'slot_1' }, { label: 'b', payload: 'slot_2' }],
+          buttons: [{ label: 'a', payload: 'confirm_yes' }, { label: 'b', payload: 'confirm_no' }],
         }],
       });
 
     const result = await router.routeNumberedReply('+5491112345678', ' 2. ');
 
     expect(result).toBe(true);
-    expect(mockBookSlot.execute).toHaveBeenCalledWith('+5491112345678', 'slot_2', 'sid-abc');
+    expect(mockHandleReminder.execute).toHaveBeenCalledWith('+5491112345678', 'confirm_no', 'sid-abc');
   });
 
   it('roteia confirm_yes/confirm_no para HandleReminderResponseUseCase', async () => {
@@ -179,19 +175,18 @@ describe('PeriskopeInboundRouter', () => {
     const result = await router.routeNumberedReply('+5491112345678', '1');
 
     expect(result).toBe(false);
-    expect(mockBookSlot.execute).not.toHaveBeenCalled();
     expect(mockHandleReminder.execute).not.toHaveBeenCalled();
   });
 
   it('retorna true mesmo se o use case falhar (mensagem numerada já foi consumida — não cai no fallback)', async () => {
-    mockBookSlot.execute.mockResolvedValue(Result.fail('No pending interview'));
+    mockHandleReminder.execute.mockResolvedValue(Result.fail('No pending interview'));
     mockDbQuery
       .mockResolvedValueOnce(WORKER_ROW)
       .mockResolvedValueOnce({
         rows: [{
-          template_slug: 'qualified_worker_request',
+          template_slug: 'qualified_reminder_confirm',
           twilio_sid: 'sid-5',
-          buttons: [{ label: 'a', payload: 'slot_1' }],
+          buttons: [{ label: 'a', payload: 'confirm_yes' }],
         }],
       });
 
@@ -200,7 +195,7 @@ describe('PeriskopeInboundRouter', () => {
     expect(result).toBe(true);
   });
 
-  it('roteia legacy invite slug (LEGACY_INVITE_SLUG) da mesma forma que o invite atual', async () => {
+  it('o slug legado do convite (LEGACY_INVITE_SLUG) também não é mais roteado', async () => {
     mockDbQuery
       .mockResolvedValueOnce(WORKER_ROW)
       .mockResolvedValueOnce({
@@ -213,8 +208,7 @@ describe('PeriskopeInboundRouter', () => {
 
     const result = await router.routeNumberedReply('+5491112345678', '1');
 
-    expect(result).toBe(true);
-    expect(mockBookSlot.execute).toHaveBeenCalledWith('+5491112345678', 'slot_1', 'sid-6');
+    expect(result).toBe(false);
   });
 
   // ═══════════════════════════════════════════════════════════════════
@@ -223,23 +217,6 @@ describe('PeriskopeInboundRouter', () => {
 
   describe('PII guard — telefone mascarado nos 3 logger.warn de falha + o logger.info de fallback', () => {
     const SENSITIVE_PHONE = '+5491122334455';
-
-    it('ponto 5 — BookSlot failed: telefone mascarado', async () => {
-      const warnSpy = jest.spyOn(logger, 'warn').mockImplementation();
-      mockBookSlot.execute.mockResolvedValue(Result.fail('No pending interview'));
-      mockDbQuery
-        .mockResolvedValueOnce(WORKER_ROW)
-        .mockResolvedValueOnce({ rows: [{ template_slug: 'qualified_worker_request', twilio_sid: 'sid-5', buttons: [{ label: 'a', payload: 'slot_1' }] }] });
-
-      await router.routeNumberedReply(SENSITIVE_PHONE, '1');
-
-      expect(warnSpy).toHaveBeenCalledTimes(1);
-      const [payload, msg] = warnSpy.mock.calls[0] as [Record<string, unknown>, string];
-      expect(msg).toBe('[PeriskopeInboundRouter] BookSlot failed');
-      expect(JSON.stringify(payload)).not.toContain('1122334455');
-      expect(payload.phone).toBe('+549******4455');
-      warnSpy.mockRestore();
-    });
 
     it('ponto 6 — ReminderResponse failed: telefone mascarado', async () => {
       const warnSpy = jest.spyOn(logger, 'warn').mockImplementation();
