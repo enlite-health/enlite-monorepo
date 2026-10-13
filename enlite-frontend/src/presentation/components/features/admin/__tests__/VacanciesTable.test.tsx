@@ -47,7 +47,7 @@ describe('VacanciesTable', () => {
     },
   ];
 
-  it('should render table headers (case, status, última ação, as 8 colunas do funil sem Confirmados, applicants, missing)', () => {
+  it('should render table headers (case, status, última ação, as 8 colunas do funil, applicants, missing)', () => {
     render(<VacanciesTable vacancies={[]} />);
 
     expect(screen.getByText('admin.vacancies.table.case')).toBeInTheDocument();

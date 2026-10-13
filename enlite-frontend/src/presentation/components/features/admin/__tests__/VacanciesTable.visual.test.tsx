@@ -83,7 +83,7 @@ function cellByKey(container: HTMLElement, rowId: string, key: string): HTMLElem
 }
 
 describe('VacanciesTable — responsive columns', () => {
-  it('CRITICAL: numeric columns (as 8 do funil sem Confirmados + applicants + missing) have hidden md:table-cell', () => {
+  it('CRITICAL: numeric columns (as 8 do funil + applicants + missing) have hidden md:table-cell', () => {
     const { container } = render(<VacanciesTable vacancies={MOCK_VACANCIES} />);
     for (const key of RESPONSIVE_KEYS) {
       const cell = cellByKey(container, '1', key);

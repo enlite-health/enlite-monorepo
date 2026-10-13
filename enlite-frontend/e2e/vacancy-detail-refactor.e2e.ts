@@ -192,7 +192,6 @@ function buildFunnelTableResponse(bucket: string) {
       INICIADO: 0,
       PRE_SCREENING: 0,
       COMPLETED: 0,
-      CONFIRMED: 0,
       SELECTED: 0,
       REJECTED: 0,
     },
@@ -238,7 +237,7 @@ const MOCK_FUNNEL_KANBAN = {
           redireccionamiento: null,
         },
       ],
-      CONFIRMED: [
+      COMPLETED: [
         {
           id: 'f2',
           workerName: 'Bruno López',

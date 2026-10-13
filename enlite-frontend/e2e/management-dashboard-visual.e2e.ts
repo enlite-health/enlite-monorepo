@@ -83,14 +83,14 @@ const MOCK_DASHBOARD = {
       somavel: false,
       colunas: {
         INVITED: 466, INICIADO: 182, PRE_SCREENING: 49, IN_PROGRESS: 1347,
-        COMPLETED: 604, CONFIRMED: 27, SELECTED: 10, REJECTED: 626,
+        COMPLETED: 631, SELECTED: 10, REJECTED: 626,
       },
     },
     consolidado: {
       somavel: true,
       colunas: {
         INVITED: 303, INICIADO: 84, PRE_SCREENING: 23, IN_PROGRESS: 1173,
-        COMPLETED: 585, CONFIRMED: 27, SELECTED: 10, REJECTED: 371,
+        COMPLETED: 612, SELECTED: 10, REJECTED: 371,
       },
     },
   },
@@ -100,11 +100,10 @@ const MOCK_DASHBOARD = {
     bloqueados: 405,
     preScreening: 90,
     completos: 4,
-    agendados: 11,
     seleccionados: 2,
     rechazados: 2498,
   },
-  encuadres: { agendadosEstaSemana: 7, semDataRegistrada: 36, pctCapacidadeSemana: { agendados: 7, capacidade: 30, pct: 23.3 } },
+  encuadres: { agendadosEstaSemana: 7, pctCapacidadeSemana: { agendados: 7, capacidade: 30, pct: 23.3 } },
   cadastros: {
     leads: 6882,
     completos: 250,

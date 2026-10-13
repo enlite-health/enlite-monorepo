@@ -5,7 +5,7 @@
  * - Cenário 0: contrato de API — encuadreId null para órfãos, uuid para positivo
  * - Cenário 1: card sem encuadreId (órfão) → drag bloqueado, sem request
  * - Cenário 2: drag positivo real — card com encuadreId → PUT usa encuadre.id correto,
- *              card some da coluna INVITED, aparece em CONFIRMED, persiste após refresh
+ *              card some da coluna INVITED, aparece em SELECTED, persiste após refresh
  * - Cenário 3: prova de rede — órfão=0 requests confirmado via rede
  *
  * Pré-condições:
@@ -231,8 +231,8 @@ test.describe('Kanban Drag Fase 1 Validation @integration', () => {
     expect(titleAttr, 'Orphan must have tooltip').toBeTruthy();
     console.log(`[C1] Orphan tooltip: "${titleAttr}"`);
 
-    const confirmedCol = page.locator('[data-testid="kanban-column-CONFIRMED"]');
-    await dndKitDrag(page, orphanWrapper, confirmedCol);
+    const selectedCol = page.locator('[data-testid="kanban-column-SELECTED"]');
+    await dndKitDrag(page, orphanWrapper, selectedCol);
     await page.waitForTimeout(2_000);
 
     console.log(`[C1] Move requests captured: ${moveRequests.length}`);
@@ -298,15 +298,21 @@ test.describe('Kanban Drag Fase 1 Validation @integration', () => {
     await expect(cardInInvitedBefore, 'Card must be in INVITED column before drag').toBeVisible();
 
     // Perform drag using dnd-kit compatible helper
-    const confirmedCol = page.locator('[data-testid="kanban-column-CONFIRMED"]');
-    await expect(confirmedCol, 'CONFIRMED column must be visible').toBeVisible();
+    const selectedCol = page.locator('[data-testid="kanban-column-SELECTED"]');
+    await expect(selectedCol, 'SELECTED column must be visible').toBeVisible();
 
-    await dndKitDrag(page, positiveWrapper, confirmedCol, {
+    await dndKitDrag(page, positiveWrapper, selectedCol, {
       activationSteps: 8,
       mainSteps: 30,
       pauseAfterDown: 80,
       pauseAfterUp: 500,
     });
+
+    // 052: soltar em Seleccionados pergunta o papel antes do PUT (a coluna que saiu não existe mais).
+    await page.getByTestId('role-modal').waitFor({ state: 'visible', timeout: 10_000 });
+    await page.locator('[data-testid^="role-option-"]').first().click();
+    await page.getByTestId('role-confirm').click();
+    await page.waitForTimeout(500);
 
     // Wait for the network request to settle
     await page.waitForTimeout(3_000);
@@ -357,30 +363,30 @@ test.describe('Kanban Drag Fase 1 Validation @integration', () => {
       'Card must have left the INVITED column after drag',
     ).not.toBeVisible();
 
-    // ── ASSERTIVA 5: card appeared in CONFIRMED column ────────────────────────
-    const cardInConfirmed = confirmedCol.locator(`[data-testid="kanban-draggable-${positiveWjaId}"]`);
+    // ── ASSERTIVA 5: card appeared in SELECTED column ────────────────────────
+    const cardInSelected = selectedCol.locator(`[data-testid="kanban-draggable-${positiveWjaId}"]`);
     await expect(
-      cardInConfirmed,
-      'Card must appear in CONFIRMED column after drag',
+      cardInSelected,
+      'Card must appear in SELECTED column after drag',
     ).toBeVisible();
 
-    console.log('[C2] DOM assertions OK: card moved INVITED → CONFIRMED');
+    console.log('[C2] DOM assertions OK: card moved INVITED → SELECTED');
 
     // ── PERSISTÊNCIA: reload and verify ───────────────────────────────────────
     await page.reload();
     await page.waitForSelector('[data-testid="kanban-board"]', { state: 'attached', timeout: 20_000 });
     await page.waitForTimeout(1_500);
 
-    const cardInConfirmedAfterReload = page
-      .locator('[data-testid="kanban-column-CONFIRMED"]')
+    const cardInSelectedAfterReload = page
+      .locator('[data-testid="kanban-column-SELECTED"]')
       .locator(`[data-testid="kanban-draggable-${positiveWjaId}"]`);
 
     await expect(
-      cardInConfirmedAfterReload,
-      'Card must still be in CONFIRMED after page refresh (persistence check)',
+      cardInSelectedAfterReload,
+      'Card must still be in SELECTED after page refresh (persistence check)',
     ).toBeVisible();
 
-    console.log('[C2] Persistence OK: card still in CONFIRMED after reload');
+    console.log('[C2] Persistence OK: card still in SELECTED after reload');
 
     // ── VISUAL SNAPSHOT ───────────────────────────────────────────────────────
     await expect(page.locator('[data-testid="kanban-board"]')).toHaveScreenshot(
@@ -424,11 +430,11 @@ test.describe('Kanban Drag Fase 1 Validation @integration', () => {
     await page.waitForTimeout(200);
 
     // -- Orphan drag attempt using dndKitDrag --
-    const confirmedCol = page.locator('[data-testid="kanban-column-CONFIRMED"]');
+    const selectedCol = page.locator('[data-testid="kanban-column-SELECTED"]');
     const orphanWrapper = page.locator(`[data-testid="kanban-draggable-${orphanWjaId}"]`);
 
     const prevCount = allMoves.length;
-    await dndKitDrag(page, orphanWrapper, confirmedCol);
+    await dndKitDrag(page, orphanWrapper, selectedCol);
     await page.waitForTimeout(2_000);
 
     const addedByOrphan = allMoves.length - prevCount;

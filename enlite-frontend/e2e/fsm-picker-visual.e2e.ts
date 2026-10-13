@@ -32,7 +32,7 @@ const REPROGRAM_BODY =
   'de día y horario para que puedas elegir el que más te convenga.\n\n' +
   '¡Gracias por tu interés y por seguir siendo parte de este proceso! 💛';
 
-const STAGES = ['INVITED', 'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED', 'QUALIFIED', 'IN_DOUBT', 'CONFIRMED', 'SELECTED', 'REJECTED'];
+const STAGES = ['INVITED', 'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED', 'QUALIFIED', 'IN_DOUBT', 'SELECTED', 'REJECTED'];
 
 const tpl = (slug: string, body: string | null, bodyTwilio: string | null, category: string, eligible: boolean, reason: string | null) =>
   ({ slug, name: slug, body, bodyTwilio, category, eligible, reason, placeholders: [], unsupported: [] });

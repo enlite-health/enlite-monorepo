@@ -40,7 +40,7 @@ const MOCK_FUNNEL = {
       INVITED: [
         { id: 'f1', encuadreId: 'enc-f1', workerName: 'Carlos Ruiz', workerPhone: '+549333', occupation: 'AT', interviewDate: '2026-04-10', interviewTime: '10:00', meetLink: null, resultado: null, attended: null, rejectionReasonCategory: null, rejectionReason: null, matchScore: 72, workZone: 'Belgrano', redireccionamiento: null },
       ],
-      CONFIRMED: [
+      COMPLETED: [
         { id: 'f2', encuadreId: 'enc-f2', workerName: 'Diana Martínez', workerPhone: '+549444', occupation: 'NURSE', interviewDate: '2026-04-10', interviewTime: '14:00', meetLink: 'https://meet.google.com/abc', resultado: null, attended: null, rejectionReasonCategory: null, rejectionReason: null, matchScore: 88, workZone: 'Palermo', redireccionamiento: null },
       ],
       IN_PROGRESS: [],
@@ -156,7 +156,7 @@ test.describe('VacancyKanbanPage', () => {
     // São 7 colunas (D433): sem Bloqueados e sem En Progreso. A fonte é
     // VACANCY_FUNNEL_COLUMNS em funnelTabsConfig.ts + admin.kanban.columns no es.json.
     for (const titulo of ['Invitados', 'Iniciados', 'Pre Screening',
-                          'Completado', 'Confirmados', 'Seleccionados', 'Rechazados']) {
+                          'Completado', 'Seleccionados', 'Rechazados']) {
       await expect(page.locator(`text=${titulo}`).first(), `coluna ${titulo}`)
         .toBeVisible({ timeout: 15000 });
     }
@@ -238,7 +238,7 @@ test.describe('VacancyKanbanPage', () => {
 
     // Ids reais de VACANCY_FUNNEL_COLUMNS. BLOQUEADO e IN_PROGRESS não existem mais como coluna própria.
     const columnIds = ['INVITED', 'INICIADO', 'PRE_SCREENING',
-                       'COMPLETED', 'CONFIRMED', 'SELECTED', 'REJECTED'];
+                       'COMPLETED', 'SELECTED', 'REJECTED'];
     for (const id of columnIds) {
       await expect(page.locator(`[data-testid="kanban-column-${id}"]`)).toBeAttached();
     }

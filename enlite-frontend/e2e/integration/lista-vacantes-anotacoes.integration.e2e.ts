@@ -22,7 +22,8 @@
  *         nota DIVULGACAO, a coluna e o campo não existem; "Última acción"
  *         segue preenchida.
  *   P24 — lista-vacantes-kanban-confirmados (alt 1 da 046 F1): o Kanban da
- *         vaga AINDA tem a coluna Confirmados.
+ *         vaga tinha a coluna Confirmados; desde a 052 o estágio saiu e o Kanban
+ *         tem 8 colunas (o id do teste fica, por rastreabilidade).
  */
 
 import { readFileSync } from 'fs';
@@ -323,7 +324,7 @@ test.describe('lista de vacantes e anotações @integration', () => {
     expect(rowB.lastActionAt, 'VB.lastActionAt').not.toBeNull();
   });
 
-  // ── P24 · o Kanban da vaga AINDA mostra Confirmados (alt 1 da 046 F1) ──────
+  // ── P24 · o Kanban da vaga NÃO tem mais a coluna Confirmados (052) ────────
   test('lista-vacantes-kanban-confirmados', async ({ page }) => {
     await page.addInitScript(
       ([key]) => window.localStorage.setItem(key, 'kanban'),
@@ -331,9 +332,9 @@ test.describe('lista de vacantes e anotações @integration', () => {
     );
     await loginAs(page, MOCK_STAFF);
     await page.goto(`/admin/vacancies/${vacancyA}`);
-    const col = page.getByTestId('kanban-column-CONFIRMED');
-    await expect(col).toBeVisible({ timeout: 15_000 });
-    await expect(col).toContainText('Confirmados');
+    await expect(page.getByTestId('kanban-column-COMPLETED')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('kanban-column-SELECTED')).toBeVisible();
+    await expect(page.locator('[data-testid^="kanban-column-"][data-testid$="-count"]')).toHaveCount(8);
   });
 
   // ── alt · "Cuándo" no futuro: o servidor recusa (400), a tela avisa ─────────

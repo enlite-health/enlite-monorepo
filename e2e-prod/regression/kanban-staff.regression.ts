@@ -125,7 +125,6 @@ function colunaEsperada(
   if (stage === 'SELECTED') return 'SELECTED';
   if (stage === 'QUICK_RESPONSE_TEAM') return 'QUICK_RESPONSE_TEAM';
   if (stage === 'REJECTED') return 'REJECTED';
-  if (stage === 'CONFIRMED') return 'CONFIRMED';
   if (stage !== null && ['COMPLETED', 'QUALIFIED', 'IN_DOUBT'].includes(stage)) return 'COMPLETED';
   if (stage === 'IN_PROGRESS') return 'IN_PROGRESS';
   if (stage === 'PRE_SCREENING') return 'PRE_SCREENING';
@@ -170,13 +169,12 @@ async function abrirVaga(browser: Browser): Promise<{ page: Page; fechar: () => 
  *    a sequência manual de mouse não dispara o `PUT /encuadres/:id/move` — 20 s de
  *    `waitForResponse` estourando, 2 tentativas. O `MoveToMenu` vive no MESMO card
  *    (`KanbanCard.tsx:336`), é a via ACESSÍVEL e chama o mesmo `onMoveTo`.
- * 2. OS DESTINOS SÃO TRÊS, NÃO NOVE. `MOVE_TARGETS = ['INVITED','CONFIRMED','SELECTED']`
- *    menos o atual — de INICIADO sobram "Confirmados" e "Seleccionados". Meu primeiro
+ * 2. OS DESTINOS SÃO DOIS, NÃO NOVE. `MOVE_TARGETS = ['INVITED','SELECTED']`
+ *    menos o atual — de INICIADO sobra só "Seleccionados". Meu primeiro
  *    destino (`PRE_SCREENING`) simplesmente não existe no menu.
- * 3. OS DOIS ABREM MODAL, de propósito: SELECTED pede o PAPEL, CONFIRMED pede a DATA.
- *    O comentário do `KanbanBoard` diz por quê: "os dois caminhos têm que pedir a mesma
- *    coisa, senão o menu vira a porta dos fundos que grava card sem data". Ou seja: o
- *    modal É a jornada, não um obstáculo — e é isso que este teste passa a exercitar.
+ * 3. SELECTED ABRE MODAL, de propósito: pede o PAPEL. O comentário do `KanbanBoard` diz por
+ *    quê: "os dois caminhos têm que pedir a mesma coisa, senão o menu vira a porta dos
+ *    fundos". Ou seja: o modal É a jornada, não um obstáculo — e é isso que este teste exercita.
  *
  * O que fica SEM cobertura, dito para não virar falsa sensação: se o `@dnd-kit` quebrar,
  * este teste continua verde. Cobrir o arrasto exige afinar pointer events contra o

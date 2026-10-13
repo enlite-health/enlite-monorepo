@@ -240,7 +240,7 @@ async function mockBaseApis(
         contentType: 'application/json',
         body: JSON.stringify({
           success: true,
-          data: { stages: { INVITED: [], CONFIRMED: [], INTERVIEWING: [], SELECTED: [], REJECTED: [], PENDING: [] }, totalEncuadres: 0 },
+          data: { stages: { INVITED: [], INTERVIEWING: [], SELECTED: [], REJECTED: [], PENDING: [] }, totalEncuadres: 0 },
         }),
       }),
   );

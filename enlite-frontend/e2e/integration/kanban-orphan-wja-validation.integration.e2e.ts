@@ -296,7 +296,7 @@ test.describe('Kanban Orphan WJA Validation @integration', () => {
     await page.waitForTimeout(200);
 
     // Card órfão está em INVITED (1ª coluna) — bounding box capturada ANTES de
-    // rolar o board horizontalmente até CONFIRMED, senão o card sai do viewport
+    // rolar o board horizontalmente até SELECTED, senão o card sai do viewport
     // (9 colunas, feature BLOQUEADO, não cabem em 1920px de uma vez).
     const cardBox = await draggableCard.boundingBox();
     if (!cardBox) throw new Error('Não foi possível obter bounding box do card órfão');
@@ -313,18 +313,18 @@ test.describe('Kanban Orphan WJA Validation @integration', () => {
     // Mover 12px primeiro para ativar o PointerSensor (distance=8)
     await page.mouse.move(startX + 12, startY, { steps: 3 });
 
-    // Rolar o board até CONFIRMED ficar visível (mouse já pressionado no card
+    // Rolar o board até SELECTED ficar visível (mouse já pressionado no card
     // órfão) — mesma técnica de dndKitDrag.ts (scrollIntoViewIfNeeded mid-drag).
-    const confirmedColumn = page.locator('[data-testid="kanban-column-CONFIRMED"]');
-    await confirmedColumn.scrollIntoViewIfNeeded();
-    const colBox = await confirmedColumn.boundingBox();
-    if (!colBox) throw new Error('Não foi possível obter bounding box da coluna CONFIRMED');
-    console.log(`[Gate 4] CONFIRMED col bbox: x=${Math.round(colBox.x)}, y=${Math.round(colBox.y)}`);
+    const selectedColumn = page.locator('[data-testid="kanban-column-SELECTED"]');
+    await selectedColumn.scrollIntoViewIfNeeded();
+    const colBox = await selectedColumn.boundingBox();
+    if (!colBox) throw new Error('Não foi possível obter bounding box da coluna SELECTED');
+    console.log(`[Gate 4] SELECTED col bbox: x=${Math.round(colBox.x)}, y=${Math.round(colBox.y)}`);
 
     const endX = colBox.x + colBox.width / 2;
     const endY = colBox.y + 100; // Dentro da coluna mas não no header
 
-    // Mover para a coluna CONFIRMED
+    // Mover para a coluna SELECTED
     await page.mouse.move(endX, endY, { steps: 20 });
     await page.waitForTimeout(500);
     await page.mouse.up();
@@ -359,8 +359,8 @@ test.describe('Kanban Orphan WJA Validation @integration', () => {
       }
     }
 
-    const confirmedAfterDrag = await page.locator('[data-testid="kanban-column-CONFIRMED-count"]').textContent();
-    console.log(`[Gate 4] CONFIRMED count após drag: ${confirmedAfterDrag}`);
+    const selectedAfterDrag = await page.locator('[data-testid="kanban-column-SELECTED-count"]').textContent();
+    console.log(`[Gate 4] SELECTED count após drag: ${selectedAfterDrag}`);
     console.log(`\n[Gate 4] CENÁRIO: ${scenario}`);
 
     await expect(
@@ -386,12 +386,12 @@ test.describe('Kanban Orphan WJA Validation @integration', () => {
     const stages = body.data.stages;
     for (const stage of [
       'INVITED', 'INICIADO', 'PRE_SCREENING', 'IN_PROGRESS',
-      'COMPLETED', 'CONFIRMED', 'SELECTED', 'REJECTED',
+      'COMPLETED', 'SELECTED', 'REJECTED',
     ]) {
       expect(stages, `Stage ${stage} deve estar presente`).toHaveProperty(stage);
     }
 
-    console.log('[Gate 5] Contrato da API OK — todos os 8 stages presentes (backend continua com IN_PROGRESS, DX-2.2), fix não quebrou estrutura');
+    console.log('[Gate 5] Contrato da API OK — todos os 7 stages presentes (backend continua com IN_PROGRESS, DX-2.2), fix não quebrou estrutura');
     console.log(`[Gate 5] Total cards: ${body.data.totalEncuadres}`);
   });
 });
