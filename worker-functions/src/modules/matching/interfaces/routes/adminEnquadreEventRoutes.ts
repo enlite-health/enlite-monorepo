@@ -12,7 +12,8 @@ import { EnquadreEventController } from '../controllers/EnquadreEventController'
  * `perm.require('recurso', 'ação', ...)` com strings literais):
  *  - `enquadre_event:read`   — lista e detalhe dos eventos.
  *  - `enquadre_event:create` — prestadores disponíveis, entrevistadoras, horários livres e criar o evento.
- * (`enquadre_event:update` e `enquadre_result:update` chegam com as mutações, T-30c.)
+ *  - `enquadre_event:update` — acrescentar/tirar convocado e cancelar o evento (mudam o evento e o convite do Google).
+ *  - `enquadre_result:update` — marcar o resultado do convocado (mover) e encerrar o evento.
  * `staffOnly` SEMPRE antes de `perm.require`. Rotas ESTÁTICAS antes de `/:eventId` (senão o parâmetro as captura).
  */
 export function createAdminEnquadreEventRoutes(
@@ -64,6 +65,41 @@ export function createAdminEnquadreEventRoutes(
     staffOnly,
     perm.require('enquadre_event', 'create'),
     (req: Request, res: Response) => controller.create(req, res),
+  );
+
+  router.post(
+    '/vacancies/:vacancyId/enquadre-events/:eventId/participants',
+    staffOnly,
+    perm.require('enquadre_event', 'update'),
+    (req: Request, res: Response) => controller.addParticipants(req, res),
+  );
+
+  router.post(
+    '/vacancies/:vacancyId/enquadre-events/:eventId/participants/:participantId/remove',
+    staffOnly,
+    perm.require('enquadre_event', 'update'),
+    (req: Request, res: Response) => controller.removeParticipant(req, res),
+  );
+
+  router.post(
+    '/vacancies/:vacancyId/enquadre-events/:eventId/cancel',
+    staffOnly,
+    perm.require('enquadre_event', 'update'),
+    (req: Request, res: Response) => controller.cancel(req, res),
+  );
+
+  router.put(
+    '/vacancies/:vacancyId/enquadre-events/:eventId/participants/:participantId/move',
+    staffOnly,
+    perm.require('enquadre_result', 'update'),
+    (req: Request, res: Response) => controller.moveParticipant(req, res),
+  );
+
+  router.post(
+    '/vacancies/:vacancyId/enquadre-events/:eventId/close',
+    staffOnly,
+    perm.require('enquadre_result', 'update'),
+    (req: Request, res: Response) => controller.close(req, res),
   );
 
   return router;

@@ -114,6 +114,7 @@ import { AdmissionPanelService } from '@modules/matching/application/AdmissionPa
 import { AdmissionPanelController } from '@modules/matching/interfaces/controllers/AdmissionPanelController';
 import { createAdminAdmissionRoutes } from '@modules/matching/interfaces/routes/adminAdmissionRoutes';
 import { EnquadreEventService } from '@modules/matching/application/EnquadreEventService';
+import { EnquadreEventMutations } from '@modules/matching/application/EnquadreEventMutations';
 import { EnquadreEventController } from '@modules/matching/interfaces/controllers/EnquadreEventController';
 import { createAdminEnquadreEventRoutes } from '@modules/matching/interfaces/routes/adminEnquadreEventRoutes';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
@@ -624,17 +625,27 @@ const admissionPanelController = new AdmissionPanelController(
 );
 app.use('/api/admin', createAdminAdmissionRoutes(authMiddleware, permissionMiddleware, admissionPanelController));
 
-// Spec 052 F2: evento de enquadre na vaga (leitura e criação). Família admin.vacancies. O Calendar e o Tactiq vêm da MESMA fábrica de
+// Spec 052 F2: evento de enquadre na vaga (leitura, criação e mutações). Família admin.vacancies. O Calendar e o Tactiq vêm da MESMA fábrica de
 // externos da admissão (dublê no stack de teste); nada de mensageria da admissão entra aqui.
+const enquadreImpersonateEmail = process.env.ADMISSION_IMPERSONATE_EMAIL || 'enlite@enlite.health';
+const enquadreEventService = new EnquadreEventService({
+  db: admissionDb,
+  calendar: admissionExternals.calendar,
+  hosts: interviewHostRepository,
+  tactiq: tactiqLinkService,
+  decryptor: new KMSEncryptionService(),
+  env: process.env,
+  impersonateEmail: enquadreImpersonateEmail,
+});
 const enquadreEventController = new EnquadreEventController(
-  new EnquadreEventService({
+  enquadreEventService,
+  new EnquadreEventMutations({
     db: admissionDb,
     calendar: admissionExternals.calendar,
-    hosts: interviewHostRepository,
-    tactiq: tactiqLinkService,
-    decryptor: new KMSEncryptionService(),
     env: process.env,
-    impersonateEmail: process.env.ADMISSION_IMPERSONATE_EMAIL || 'enlite@enlite.health',
+    impersonateEmail: enquadreImpersonateEmail,
+    readEvent: (vacancyId, eventId, viewer) => enquadreEventService.getEvent(vacancyId, eventId, viewer),
+    pubsub: new PubSubClient(),
   }),
 );
 app.use('/api/admin', createAdminEnquadreEventRoutes(authMiddleware, permissionMiddleware, enquadreEventController));
