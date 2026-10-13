@@ -30,4 +30,8 @@ export class UnavailableAdmissionCalendar implements AdmissionCalendarPort {
   deleteEvent(): Promise<void> {
     return this.fail();
   }
+
+  setEventAttendees(): Promise<void> {
+    return this.fail();
+  }
 }

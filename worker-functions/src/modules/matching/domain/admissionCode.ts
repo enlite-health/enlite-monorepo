@@ -10,8 +10,12 @@ export const ADMISSION_CODE_ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
 export const ADMISSION_CODE_PREFIX = 'ADM-';
 export const ADMISSION_CODE_LENGTH = 6;
 
-export function generateAdmissionCode(pick: (maxExclusive: number) => number = (max) => randomInt(max)): string {
+/** `prefix` (spec 052): o enquadre reusa alfabeto e sorteio com `ENC-`. Fica DEPOIS de `pick` para não mexer nos chamadores. */
+export function generateAdmissionCode(
+  pick: (maxExclusive: number) => number = (max) => randomInt(max),
+  prefix: string = ADMISSION_CODE_PREFIX,
+): string {
   let out = '';
   for (let i = 0; i < ADMISSION_CODE_LENGTH; i += 1) out += ADMISSION_CODE_ALPHABET[pick(ADMISSION_CODE_ALPHABET.length)];
-  return ADMISSION_CODE_PREFIX + out;
+  return prefix + out;
 }
