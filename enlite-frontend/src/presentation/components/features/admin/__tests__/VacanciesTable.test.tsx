@@ -16,7 +16,6 @@ describe('VacanciesTable', () => {
         INICIADO: 9,
         PRE_SCREENING: 5,
         COMPLETED: 3,
-        CONFIRMED: 43,
         SELECTED: 27,
         QUICK_RESPONSE_TEAM: 7,
         REJECTED: 2,
@@ -37,7 +36,6 @@ describe('VacanciesTable', () => {
         INICIADO: 41,
         PRE_SCREENING: 18,
         COMPLETED: 11,
-        CONFIRMED: 19,
         SELECTED: 61,
         QUICK_RESPONSE_TEAM: 4,
         REJECTED: 10,
@@ -67,19 +65,18 @@ describe('VacanciesTable', () => {
     expect(screen.getByText('admin.vacancies.table.missing')).toBeInTheDocument();
   });
 
-  it('A1 (spec 046 F1): a lista não tem as colunas Prioridad, Días sin difusión nem Confirmados', () => {
+  it('A1 (spec 046 F1): a lista não tem as colunas Prioridad nem Días sin difusión', () => {
     render(<VacanciesTable vacancies={realApiData} />);
     expect(screen.queryByTestId('vacancies-col-priority')).not.toBeInTheDocument();
     expect(screen.queryByTestId('vacancies-col-days-without-divulgation')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('vacancies-col-CONFIRMED')).not.toBeInTheDocument();
-    expect(screen.queryByTestId(`vacancy-row-${realApiData[0].id}-stage-CONFIRMED`)).not.toBeInTheDocument();
     expect(screen.queryByText('admin.vacancies.table.priority')).not.toBeInTheDocument();
     expect(screen.queryByText('admin.vacancies.table.daysWithoutDivulgation')).not.toBeInTheDocument();
-    expect(screen.queryByText('admin.kanban.columns.CONFIRMED')).not.toBeInTheDocument();
   });
 
-  it('A2 (spec 046 F1): o filtro é LOCAL — o array global do funil (Kanban/abas) ainda tem CONFIRMED', () => {
-    expect(VACANCY_FUNNEL_COLUMNS.map((c) => c.id)).toContain('CONFIRMED');
+  it('A2 (spec 052): a lista mostra as mesmas 8 colunas do funil (Kanban/abas), sem filtro local', () => {
+    expect(VACANCY_FUNNEL_COLUMNS).toHaveLength(8);
+    render(<VacanciesTable vacancies={realApiData} />);
+    VACANCY_FUNNEL_COLUMNS.forEach((c) => expect(screen.getByTestId(`vacancies-col-${c.id}`)).toBeInTheDocument());
   });
 
   it('should NOT render the removed dependencyLevel column', () => {
@@ -102,7 +99,7 @@ describe('VacanciesTable', () => {
     expect(statusElements).toHaveLength(2);
   });
 
-  it('should render numeric data fields (stageCounts das 9 colunas, Fase 5: +COMPATIBLE, + postulados/faltantes)', () => {
+  it('should render numeric data fields (stageCounts das 8 colunas, Fase 5: +COMPATIBLE, + postulados/faltantes)', () => {
     render(<VacanciesTable vacancies={realApiData} />);
 
     // Caso 349: stageCounts padStart(2,'0')
@@ -206,7 +203,7 @@ describe('VacanciesTable — última ação (DX-3.5) e ordem das colunas', () =>
     expect(cell.textContent).not.toBe('');
   });
 
-  it('ordem dos vacancies-col-* = lista literal de 13 (tudo menos o olho; sem priority, dias sem divulgação nem CONFIRMED)', () => {
+  it('ordem dos vacancies-col-* = lista literal de 13 (tudo menos o olho; sem priority nem dias sem divulgação)', () => {
     render(<VacanciesTable vacancies={[base]} />);
     const headers = screen.getAllByTestId(/^vacancies-col-/);
     const ids = headers.map((el) => el.getAttribute('data-testid')!.replace('vacancies-col-', ''));

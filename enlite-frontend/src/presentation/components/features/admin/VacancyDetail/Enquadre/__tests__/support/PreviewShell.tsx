@@ -7,21 +7,18 @@ import { useEffect, useMemo, useState, type JSX } from 'react';
 import { KanbanBoard } from '@presentation/components/features/admin/Kanban/KanbanBoard';
 import { VacancyDetailTabs } from '@presentation/components/features/admin/VacancyDetail/VacancyDetailTabs';
 import { EnquadreTab } from '@presentation/components/features/admin/VacancyDetail/Enquadre/EnquadreTab';
-import { VACANCY_FUNNEL_COLUMNS } from '@presentation/components/features/admin/VacancyDetail/Funnel/funnelTabsConfig';
 import { runAutoSteps } from './autoSteps';
 import { DATASETS, datasetById, installDataset, type PreviewDataset } from './datasets';
 import { HARNESS_NOW_ISO, HARNESS_VACANCY_ID, funnelStages } from './fixtures';
 
 const NOW = new Date(HARNESS_NOW_ISO);
 const now = (): Date => NOW;
-const COLUMNS_WITHOUT_CONFIRMED = VACANCY_FUNNEL_COLUMNS.filter((c) => c.id !== 'CONFIRMED');
 
 export function StateRoot({ dataset }: { dataset: PreviewDataset }): JSX.Element {
   if (dataset.root === 'funnel') {
     return (
       <KanbanBoard
         stages={funnelStages()}
-        columns={COLUMNS_WITHOUT_CONFIRMED}
         vacancyId={HARNESS_VACANCY_ID}
         onMove={async () => null}
       />

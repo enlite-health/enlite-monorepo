@@ -142,6 +142,6 @@ export function funnelStages(): FunnelStages {
   return {
     COMPATIBLE: [], INVITED: [], INICIADO: [], PRE_SCREENING: [], IN_PROGRESS: [],
     COMPLETED: [card('61', at), card('62', at), card('63')],
-    CONFIRMED: [], SELECTED: [card('64', null, { eventCode: 'ENC-K7M2QX' })], QUICK_RESPONSE_TEAM: [card('65', null, { eventCode: 'ENC-R4T9WB' })], REJECTED: [],
+    SELECTED: [card('64', null, { eventCode: 'ENC-K7M2QX' })], QUICK_RESPONSE_TEAM: [card('65', null, { eventCode: 'ENC-R4T9WB' })], REJECTED: [],
   };
 }

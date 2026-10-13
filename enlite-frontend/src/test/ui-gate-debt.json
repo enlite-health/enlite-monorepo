@@ -10,7 +10,7 @@
     },
     {
       "cell": "interview:write",
-      "motivo": "D269 F3 (vagas) — POST /vacancies/:id/interview-slots e POST /interview-slots/:id/book (createInterviewSlots/bookInterviewSlot) idem: useInterviewSlots.ts sem consumidor no front. O agendamento que existe hoje (KanbanBoard, coluna CONFIRMED) é moveEncuadre → funnel:write, rota diferente."
+      "motivo": "D269 F3 (vagas) — POST /vacancies/:id/interview-slots e POST /interview-slots/:id/book (createInterviewSlots/bookInterviewSlot) idem: useInterviewSlots.ts sem consumidor no front. O agendamento antes feito no KanbanBoard saiu (spec 052); a convocação agora vive no evento de enquadre."
     },
     {
       "cell": "patient:delete",

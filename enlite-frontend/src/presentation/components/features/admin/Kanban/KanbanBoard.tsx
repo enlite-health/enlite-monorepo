@@ -6,9 +6,8 @@ import { KanbanCard } from './KanbanCard';
 import { cardProps, type FunnelCard } from './kanbanCardProps';
 import { RejectionReasonSelect } from './RejectionReasonSelect';
 import { RoleSelect } from './RoleSelect';
-import { InterviewScheduleSelect, type InterviewSchedule } from './InterviewScheduleSelect';
 import { ContactNotesModal } from '@presentation/components/features/admin/VacancyDetail/Funnel/ContactNotesModal';
-import { VACANCY_FUNNEL_COLUMNS, columnItems, type VacancyFunnelColumn } from '@presentation/components/features/admin/VacancyDetail/Funnel/funnelTabsConfig';
+import { VACANCY_FUNNEL_COLUMNS, columnItems } from '@presentation/components/features/admin/VacancyDetail/Funnel/funnelTabsConfig';
 import { compareByDistanceKm } from '@domain/value-objects/candidateDistance';
 import { useActionGate } from '@presentation/hooks/useCellAccess';
 import type { EncuadreRole } from '@domain/entities/EncuadreRole';
@@ -19,16 +18,12 @@ import type { PresentationInviteState } from './KanbanCardPresentationInvite';
 
 interface KanbanBoardProps {
   stages: FunnelStages;
-  /** Colunas do board. Padrão = `VACANCY_FUNNEL_COLUMNS` (as 9 de hoje); o protótipo do enquadre passa a lista sem Confirmado. */
-  columns?: readonly VacancyFunnelColumn[];
   vacancyId: string;
   onMove: (
     encuadreId: string,
     targetStage: string,
     reasonCategory?: string,
     role?: EncuadreRole,
-    /** Data/hora da entrevista ao mover para CONFIRMED. Ausente = "ainda não sei". */
-    schedule?: InterviewSchedule,
   ) => Promise<MoveEncuadreError | null>;
   /** "Promover" um card ELEGIBLE (D300). Devolve mensagem localizada de erro, ou null no sucesso. */
   onPromoteBlocked?: (blockedId: string) => Promise<string | null>;
@@ -47,7 +42,7 @@ interface KanbanBoardProps {
   onPresentationInvite?: (workerId: string) => Promise<PresentationInviteResult>;
 }
 
-export function KanbanBoard({ stages, columns: columnDefs = VACANCY_FUNNEL_COLUMNS, vacancyId, onMove, onPromoteBlocked, onRejectBlocked, onResendInvite, onPresentationInvite }: KanbanBoardProps) {
+export function KanbanBoard({ stages, vacancyId, onMove, onPromoteBlocked, onRejectBlocked, onResendInvite, onPresentationInvite }: KanbanBoardProps) {
   const { t } = useTranslation();
   // PUT /encuadres/:id/move, /result
   // → todos funnel:write. Arrasto e menu de clique chamam a MESMA rota — D269
@@ -61,10 +56,9 @@ export function KanbanBoard({ stages, columns: columnDefs = VACANCY_FUNNEL_COLUM
   const [showRejectionSelect, setShowRejectionSelect] = useState<{ encuadreId?: string; blockedId?: string } | null>(null);
   /** Card aguardando escolha de papel (Titular/Substituto) ao ir para SELECTED. */
   const [showRoleSelect, setShowRoleSelect] = useState<{ encuadreId: string } | null>(null);
-  const [showScheduleSelect, setShowScheduleSelect] = useState<{ encuadreId: string } | null>(null);
   /**
    * Fase 4 (DX-4.6/DX-4.10): a API recusou o `move` (422 `MOVE_REASON_REQUIRED`) por salto ou
-   * saída de Rejeitados — guarda o movimento pendente (com papel/agendamento, se houver) e abre
+   * saída de Rejeitados — guarda o movimento pendente (com papel, se houver) e abre
    * o diálogo do motivo. O front nunca decide "o que é salto"; só reage ao 422.
    */
   const [pendingReason, setPendingReason] = useState<{
@@ -72,7 +66,6 @@ export function KanbanBoard({ stages, columns: columnDefs = VACANCY_FUNNEL_COLUM
     encuadreId: string;
     targetStage: string;
     role?: EncuadreRole;
-    schedule?: InterviewSchedule;
   } | null>(null);
   /**
    * Worker cujo modal de comentários (contact notes) está aberto. Chaveado
@@ -131,7 +124,7 @@ export function KanbanBoard({ stages, columns: columnDefs = VACANCY_FUNNEL_COLUM
     }));
   }
 
-  const columns = columnDefs.map((c) => ({
+  const columns = VACANCY_FUNNEL_COLUMNS.map((c) => ({
     id: c.id,
     color: c.color,
     droppable: c.droppable,
@@ -150,11 +143,10 @@ export function KanbanBoard({ stages, columns: columnDefs = VACANCY_FUNNEL_COLUM
     targetStage: string,
     reasonCategory?: string,
     role?: EncuadreRole,
-    schedule?: InterviewSchedule,
   ): Promise<MoveEncuadreError | null> {
-    const result = await onMove(encuadreId, targetStage, reasonCategory, role, schedule);
+    const result = await onMove(encuadreId, targetStage, reasonCategory, role);
     if (result?.code === MOVE_REASON_REQUIRED && isMoveReasonKind(result.reason) && result.reason !== 'ENTER_REJECTED') {
-      setPendingReason({ kind: result.reason, encuadreId, targetStage, role, schedule });
+      setPendingReason({ kind: result.reason, encuadreId, targetStage, role });
     }
     return result;
   }
@@ -162,9 +154,9 @@ export function KanbanBoard({ stages, columns: columnDefs = VACANCY_FUNNEL_COLUM
   /** Confirmar o diálogo do motivo: reenvia o MESMO movimento pendente, agora com a categoria. */
   function handleMoveReasonSubmit(category: string) {
     if (!pendingReason) return;
-    const { encuadreId, targetStage, role, schedule } = pendingReason;
+    const { encuadreId, targetStage, role } = pendingReason;
     setPendingReason(null);
-    void move(encuadreId, targetStage, category, role, schedule);
+    void move(encuadreId, targetStage, category, role);
   }
 
   /**
@@ -194,24 +186,8 @@ export function KanbanBoard({ stages, columns: columnDefs = VACANCY_FUNNEL_COLUM
       setShowRoleSelect({ encuadreId });
       return;
     }
-    // Ao agendar, perguntar QUANDO — é o único ponto em que o sistema captura a data
-    // da entrevista (sem ela, lembretes e no-show não têm do que disparar).
-    if (toColumnId === 'CONFIRMED') {
-      setShowScheduleSelect({ encuadreId });
-      return;
-    }
     void move(encuadreId, toColumnId);
   }
-
-  async function handleScheduleSubmit(
-    encuadreId: string,
-    schedule: InterviewSchedule | null,
-  ) {
-    setShowScheduleSelect(null);
-    // schedule=null → "ainda não sei": move mesmo assim, sem inventar horário.
-    await move(encuadreId, 'CONFIRMED', undefined, undefined, schedule ?? undefined);
-  }
-
 
   async function handleRejectionSubmit(target: { encuadreId?: string; blockedId?: string }, category: string) {
     setShowRejectionSelect(null);
@@ -228,17 +204,12 @@ export function KanbanBoard({ stages, columns: columnDefs = VACANCY_FUNNEL_COLUM
   }
 
   /**
-   * Move click (MoveToMenu): mesma pergunta do arrasto — papel ao selecionar, data ao
-   * agendar. Os dois caminhos têm que pedir a mesma coisa, senão o menu vira a porta dos
-   * fundos que grava card sem data.
+   * Move click (MoveToMenu): mesma pergunta do arrasto — papel ao selecionar. Os dois
+   * caminhos têm que pedir a mesma coisa, senão o menu vira a porta dos fundos.
    */
   function handleCardMoveTo(encuadreId: string, target: string) {
     if (target === 'SELECTED') {
       setShowRoleSelect({ encuadreId });
-      return;
-    }
-    if (target === 'CONFIRMED') {
-      setShowScheduleSelect({ encuadreId });
       return;
     }
     void move(encuadreId, target);
@@ -249,7 +220,7 @@ export function KanbanBoard({ stages, columns: columnDefs = VACANCY_FUNNEL_COLUM
       <KanbanBoardShell<FunnelCard>
         columns={columns}
         itemsOf={(columnId) => {
-          const col = columnDefs.find((c) => c.id === columnId);
+          const col = VACANCY_FUNNEL_COLUMNS.find((c) => c.id === columnId);
           // FunnelStages não tem index signature; columnItems só lê por chave conhecida, e as 8
           // chaves de FunnelStages cobrem todo `sources` possível de VACANCY_FUNNEL_COLUMNS. Sem
           // mudança de comportamento — só o tipo que o tsc exige para a assinatura genérica.
@@ -323,13 +294,6 @@ export function KanbanBoard({ stages, columns: columnDefs = VACANCY_FUNNEL_COLUM
         <RoleSelect
           onSubmit={(role) => handleRoleSubmit(showRoleSelect.encuadreId, role)}
           onCancel={() => setShowRoleSelect(null)}
-        />
-      )}
-
-      {showScheduleSelect && (
-        <InterviewScheduleSelect
-          onSubmit={(schedule) => handleScheduleSubmit(showScheduleSelect.encuadreId, schedule)}
-          onCancel={() => setShowScheduleSelect(null)}
         />
       )}
 

@@ -23,7 +23,7 @@ vi.mock('lucide-react', () => {
 function counts(partial: Partial<FunnelColumnCounts>): FunnelColumnCounts {
   return {
     INVITED: 0, INICIADO: 0, PRE_SCREENING: 0, IN_PROGRESS: 0,
-    COMPLETED: 0, CONFIRMED: 0, SELECTED: 0, REJECTED: 0,
+    COMPLETED: 0, SELECTED: 0, REJECTED: 0,
     ...partial,
   };
 }
@@ -38,19 +38,19 @@ const funnelPorPrestador = {
     somavel: false as const,
     colunas: counts({
       INVITED: 466, INICIADO: 181, PRE_SCREENING: 49, IN_PROGRESS: 1347,
-      COMPLETED: 604, CONFIRMED: 27, SELECTED: 10, REJECTED: 626,
+      COMPLETED: 604, SELECTED: 10, REJECTED: 626,
     }),
   },
   consolidado: {
     somavel: true as const,
     colunas: counts({
       INVITED: 303, INICIADO: 83, PRE_SCREENING: 23, IN_PROGRESS: 1173,
-      COMPLETED: 585, CONFIRMED: 27, SELECTED: 10, REJECTED: 371,
+      COMPLETED: 585, SELECTED: 10, REJECTED: 371,
     }),
   },
 };
 
-const encuadres = { agendadosEstaSemana: 3, semDataRegistrada: 12 };
+const encuadres = { agendadosEstaSemana: 3 };
 
 describe('FunnelTotalsSection', () => {
   it('mostra o total de PESSOAS no funil, não a soma de cards', () => {
@@ -85,22 +85,10 @@ describe('FunnelTotalsSection', () => {
     ).toBeInTheDocument();
   });
 
-  it('mostra entrevistas da semana e expõe quantos estão sem data (adoção da captura)', () => {
+  it('mostra os encuadres da semana e NÃO tem mais o aviso "sem data" (o indicador saiu em 052)', () => {
     render(<FunnelTotalsSection funnelPorPrestador={funnelPorPrestador} encuadres={encuadres} />);
 
     expect(screen.getByText('3')).toBeInTheDocument();
-    const aviso = screen.getByTestId('mgmt-encuadres-sem-data');
-    expect(within(aviso).getByText(/semData count=12/)).toBeInTheDocument();
-  });
-
-  it('não polui a tela com o aviso quando todos os agendados têm data', () => {
-    render(
-      <FunnelTotalsSection
-        funnelPorPrestador={funnelPorPrestador}
-        encuadres={{ agendadosEstaSemana: 5, semDataRegistrada: 0 }}
-      />,
-    );
-
     expect(screen.queryByTestId('mgmt-encuadres-sem-data')).toBeNull();
   });
 

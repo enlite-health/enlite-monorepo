@@ -74,7 +74,6 @@ export interface FunnelStages {
   PRE_SCREENING: FunnelEncuadre[];
   IN_PROGRESS: FunnelEncuadre[];
   COMPLETED: FunnelEncuadre[];
-  CONFIRMED: FunnelEncuadre[];
   SELECTED: FunnelEncuadre[];
   QUICK_RESPONSE_TEAM: FunnelEncuadre[];
   REJECTED: FunnelEncuadre[];

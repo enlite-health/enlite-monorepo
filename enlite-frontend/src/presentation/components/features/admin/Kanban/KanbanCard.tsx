@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { Text } from '@presentation/components/atoms/Text';
-import { CalendarClock, Hand, MapPin, MessageSquare, Phone, Star } from 'lucide-react';
+import { Hand, MapPin, MessageSquare, Phone, Star } from 'lucide-react';
 import { formatPhoneDisplay } from '@presentation/utils/recruitmentHelpers';
 import { NotesCountBadge } from '@presentation/components/features/admin/VacancyDetail/Funnel/NotesCountBadge';
 import { MoveToMenu } from './MoveToMenu';
@@ -180,10 +180,6 @@ export function KanbanCard({
   // stopPropagation evita que o clique dispare o drag do card.
   const stopPropagation = (e: React.MouseEvent) => e.stopPropagation();
 
-  const interviewLabel = interviewDate
-    ? `${formatCalendarDate(interviewDate, { day: 'numeric', month: 'short' }) ?? ''}${interviewTime ? ` ${formatClockTime(interviewTime)}` : ''}`
-    : null;
-
   // M5/E5: bloqueado de verdade (não elegível, não dispensado) ganha borda vermelha.
   const showBlockedBorder = !!isBlocked && blockedReason !== 'eligible' && !isDismissed;
 
@@ -265,15 +261,6 @@ export function KanbanCard({
         </span>
       )}
 
-      {stage === 'CONFIRMED' && interviewLabel && (
-        <div className="mt-1">
-          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-cyan-50 text-cyan-700">
-            <CalendarClock className="w-3 h-3" />
-            {interviewLabel}
-          </span>
-        </div>
-      )}
-
       <div className="mt-2 flex flex-col gap-1">
         {formattedPhone && (
           <div className="flex items-center gap-1 text-slate-500">
@@ -287,7 +274,7 @@ export function KanbanCard({
             <span className="text-xs">{workZone}</span>
           </div>
         )}
-        {stage !== 'CONFIRMED' && interviewDate && (
+        {interviewDate && (
           <span className="text-[10px] text-slate-400">
             {formatCalendarDate(interviewDate, {})}
             {interviewTime ? ` ${formatClockTime(interviewTime)}` : ''}

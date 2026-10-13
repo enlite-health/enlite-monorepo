@@ -32,8 +32,8 @@ describe('KanbanCard — etiqueta do enquadre de origem (spec 052, ajuste do Gab
     expect(screen.getByTestId('enquadre-origin-badge').textContent).toBe('admin.vacancyDetail.enquadre.kanban.originQuickResponse|ENC-ABC123');
   });
 
-  it('(d) outros estágios (CONFIRMED, INVITED, REJECTED) também ignoram o campo', () => {
-    for (const stage of ['CONFIRMED', 'INVITED', 'REJECTED']) {
+  it('(d) outros estágios (COMPATIBLE, INVITED, REJECTED) também ignoram o campo', () => {
+    for (const stage of ['COMPATIBLE', 'INVITED', 'REJECTED']) {
       const { unmount } = render(<KanbanCard {...base} stage={stage} enquadreOrigin={ORIGIN} />);
       expect(screen.queryByTestId('enquadre-origin-badge')).not.toBeInTheDocument();
       unmount();

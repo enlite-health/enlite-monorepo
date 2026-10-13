@@ -938,10 +938,10 @@
         },
         "pctCapacidadEncuadres": {
           "title": "% de la agenda de encuadres usada",
-          "que": "Cuántas entrevistas (encuadres) están agendadas esta semana, comparado con la capacidad semanal contratada de la coordinación. 100% = semana llena.",
-          "origen": "• Numerador: encuadres con fecha dentro de la semana en curso (lunes a domingo, hora de Buenos Aires).\n• Denominador: la capacidad semanal contratada — es una configuración del sistema; si el contrato cambia, se actualiza sin tocar código.",
-          "cambia": "• Agendar una entrevista cargando la fecha al mover la tarjeta a Agendados: sube.\n• Cambio de semana: se reinicia el lunes.",
-          "ojo": "Si la fecha no se carga al agendar, la entrevista no cuenta acá. El contador \"sin fecha\" mide justamente eso: mientras sea alto, este porcentaje subestima."
+          "que": "Cuántos encuadres hay esta semana (personas convocadas a un evento de encuadre abierto, más las entrevistas con fecha cargada antes), comparado con la capacidad semanal contratada de la coordinación. 100% = semana llena.",
+          "origen": "• Numerador: personas distintas por vacante con participación activa en un evento de encuadre abierto que cae en la semana en curso, sumadas a las entrevistas con fecha de la semana cargadas por el camino anterior (lunes a domingo, hora de Buenos Aires). Quien está en las dos fuentes cuenta una sola vez.\n• Denominador: la capacidad semanal contratada — es una configuración del sistema; si el contrato cambia, se actualiza sin tocar código.",
+          "cambia": "• Convocar a alguien a un evento de encuadre de la semana: sube.\n• Sacarlo del evento o cerrar el evento: baja.\n• Cambio de semana: se reinicia el lunes.",
+          "ojo": "Desde el 13/10/2026 el número cambió de significado (cuenta convocados de eventos abiertos, además de las fechas antiguas): no es comparable con el de semanas anteriores. El contador \"sin fecha\" ya no existe."
         },
         "pacientesActivos": {
           "title": "Pacientes activos",
@@ -1100,10 +1100,10 @@
         },
         "agendadosSemana": {
           "title": "Encuadres agendados esta semana",
-          "que": "Cuántas entrevistas (encuadres) están marcadas para la semana en curso.",
-          "origen": "• Al mover la tarjeta a Agendados en el Kanban, el sistema pregunta cuándo es la entrevista (se puede responder \"todavía no sé\").\n• El panel cuenta los encuadres con fecha entre lunes y domingo de esta semana (hora de Buenos Aires).",
-          "cambia": "• Agendar con fecha: sube.\n• Cambio de semana: se reinicia.",
-          "ojo": "La captura de la fecha es reciente: el contador \"sin fecha\" de al lado mide cuántos agendados no la tienen. Mientras sea alto, este número subestima — y eso queda a la vista en vez de ser un cero mudo."
+          "que": "Cuántos encuadres hay en la semana en curso: personas convocadas a un evento de encuadre abierto, más las entrevistas con fecha cargada antes.",
+          "origen": "• Personas con participación activa en un evento de encuadre abierto que cae entre el lunes y el domingo de esta semana (hora de Buenos Aires).\n• Se suman las entrevistas con fecha de la semana cargadas por el camino anterior (al mover la tarjeta a la columna Agendados, que ya no existe).\n• Quien está en las dos fuentes, en la misma vacante, cuenta una sola vez.",
+          "cambia": "• Convocar a alguien a un evento de la semana: sube.\n• Sacarlo del evento o cerrar el evento: baja.\n• Cambio de semana: se reinicia.",
+          "ojo": "Desde el 13/10/2026 el número cuenta convocados de eventos abiertos, además de las fechas antiguas: no es comparable con el de semanas anteriores. El contador \"sin fecha\" ya no existe."
         },
         "stage_INVITED": {
           "title": "Invitados (columna)",
@@ -1134,13 +1134,7 @@
           "title": "Completos (columna)",
           "que": "Prestadores que terminaron el triage y están listos para la próxima etapa. La columna agrupa tres situaciones internas: completo, calificado y en duda (por ejemplo, ausencia en la entrevista).",
           "origen": "• Es la misma agrupación que la columna Completos del Kanban — panel y Kanban cuentan igual.",
-          "cambia": "• El triage califica a alguien: entra.\n• Agendar entrevista, seleccionar o rechazar: sale.\n• Una ausencia en la entrevista trae la tarjeta de vuelta acá (\"en duda\")."
-        },
-        "stage_CONFIRMED": {
-          "title": "Agendados (columna)",
-          "que": "Prestadores con entrevista (encuadre) marcada.",
-          "origen": "• La reclutadora arrastra la tarjeta a Agendados en el Kanban — y el sistema también pregunta cuándo es la entrevista.",
-          "cambia": "• Agendar: sube.\n• Seleccionar o rechazar: baja.\n• Ausencia en la entrevista: la tarjeta pasa a \"en duda\" (columna Completos)."
+          "cambia": "• El triage califica a alguien: entra.\n• Seleccionar o rechazar: sale.\n• Una ausencia en la entrevista trae la tarjeta de vuelta acá (\"en duda\")."
         },
         "stage_SELECTED": {
           "title": "Seleccionados (columna)",
@@ -1296,15 +1290,12 @@
           "PRE_SCREENING": "Pre Screening",
           "IN_PROGRESS": "En progreso",
           "COMPLETED": "Completos",
-          "CONFIRMED": "Agendados",
           "SELECTED": "Seleccionados",
           "REJECTED": "Rechazados"
         },
         "periodLabel": "Entrada al embudo:",
         "periodAll": "Todo",
         "periodDays": "Últimos {{count}} días",
-        "semData": "{{count}} agendados sin fecha registrada",
-        "semDataSub": "El número de arriba los deja de fuera. Al mover la tarjeta a \"Agendados\", cargá fecha y hora.",
         "bloqueados": "Bloqueados",
         "bloqueadosSub": "Intentaron postularse y el registro incompleto lo impidió — vacantes activas"
       },
@@ -1717,7 +1708,6 @@
         "BLOQUEADO": "Bloqueados",
         "IN_PROGRESS": "En Progreso",
         "COMPLETED": "Completado",
-        "CONFIRMED": "Confirmados",
         "SELECTED": "Seleccionados",
         "QUICK_RESPONSE_TEAM": "Equipo de Respuesta Rápida",
         "REJECTED": "Rechazados",
@@ -1823,16 +1813,6 @@
       "blockedBadge": "BLOQUEADO",
       "blockedAttemptCount_one": "Intentó {{count}} vez",
       "blockedAttemptCount_other": "Intentó {{count}} veces",
-      "scheduleModal": {
-        "title": "¿Cuándo es la entrevista?",
-        "subtitle": "Con fecha y hora el sistema puede recordarle al prestador y avisar si no aparece.",
-        "dateLabel": "Fecha",
-        "timeLabel": "Hora",
-        "meetLabel": "Link de la videollamada (opcional)",
-        "confirm": "Agendar",
-        "cancel": "Cancelar",
-        "unknown": "Todavía no sé la fecha — mover igual"
-      },
       "stageLastMessage": "Mensaje de etapa ({{stage}}): {{date}}",
       "eligibleBadge": "ELEGIBLE AHORA",
       "promote": {
@@ -2057,7 +2037,6 @@
         "daysOpen": "Días Abierto",
         "invited": "Invitados",
         "applicants": "Postulados",
-        "confirmed": "Confirmados",
         "selected": "Seleccionados",
         "missing": "Faltantes",
         "view": "Ver",

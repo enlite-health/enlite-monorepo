@@ -12,7 +12,6 @@ import { act, cleanup, render, screen, waitFor, within } from '@testing-library/
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import i18n from '@infrastructure/i18n/config';
-import { KanbanBoard } from '@presentation/components/features/admin/Kanban/KanbanBoard';
 import type { KanbanDropEvent } from '@presentation/components/features/admin/Kanban/KanbanBoardShell';
 import { tabsVisibleFor } from '@presentation/hooks/useCellAccess';
 import { screenById } from '@presentation/config/screenRegistry';
@@ -21,7 +20,6 @@ import type { EnquadreParticipant } from '@domain/entities/EnquadreEvent';
 import { runAutoSteps } from './support/autoSteps';
 import { datasetById, installDataset } from './support/datasets';
 import { StateRoot } from './support/PreviewShell';
-import { funnelStages } from './support/fixtures';
 
 let capturedOnDrop: ((e: KanbanDropEvent<EnquadreParticipant>) => void) | null = null;
 vi.mock('@presentation/components/features/admin/Kanban/KanbanBoardShell', async (importOriginal) => {
@@ -334,10 +332,9 @@ describe('Cancelar e gerir convocados (E14, E16, E17)', () => {
 });
 
 describe('Kanban da vacante (E13)', () => {
-  it('E13 sem Confirmado: 8 colunas, 3 em Completado (2 com etiqueta Convocado) e 1 em Selecionados', async () => {
+  it('E13 8 colunas (o estágio Confirmado saiu), 3 em Completado (2 com etiqueta Convocado) e 1 em Selecionados', async () => {
     await mount('13');
     expect(columnIds()).toHaveLength(8);
-    expect(screen.queryByTestId('kanban-column-CONFIRMED')).not.toBeInTheDocument();
     expect(count('COMPLETED')).toBe(3);
     expect(count('SELECTED')).toBe(1);
     const badges = screen.getAllByTestId('convocation-badge');
@@ -349,12 +346,5 @@ describe('Kanban da vacante (E13)', () => {
     expect(within(q('kanban-column-COMPLETED')).queryByTestId('enquadre-origin-badge')).not.toBeInTheDocument();
     expect(count('COMPLETED')).toBe(3);
     expect(count('QUICK_RESPONSE_TEAM')).toBe(1);
-  });
-
-  it('E13 sem a prop `columns` o board continua com as 9 colunas de hoje', async () => {
-    restore = installDataset('13');
-    render(<MemoryRouter><KanbanBoard stages={funnelStages()} vacancyId="vac-01" onMove={async () => null} /></MemoryRouter>);
-    expect(columnIds()).toHaveLength(9);
-    expect(screen.getByTestId('kanban-column-CONFIRMED')).toBeInTheDocument();
   });
 });

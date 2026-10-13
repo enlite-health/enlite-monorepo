@@ -7,7 +7,7 @@ import { ArrowRightLeft, ChevronDown } from 'lucide-react';
  * do KanbanBoard, menos REJECTED — a rejeição tem botão próprio ("Rechazar") que
  * abre o modal de motivo, então fica de fora do menu pra não duplicar o fluxo.
  */
-const MOVE_TARGETS = ['INVITED', 'CONFIRMED', 'SELECTED'] as const;
+const MOVE_TARGETS = ['INVITED', 'SELECTED'] as const;
 
 /**
  * Mapeia o id da COLUNA onde o card está para o funnel stage efetivo, pra excluir

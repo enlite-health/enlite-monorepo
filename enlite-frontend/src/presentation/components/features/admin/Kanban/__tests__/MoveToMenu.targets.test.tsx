@@ -11,12 +11,12 @@ vi.mock('react-i18next', () => ({
 const EVENT_TARGETS = ['CONVOKED', 'SELECTED', 'QUICK_RESPONSE_TEAM'] as const;
 
 describe('MoveToMenu — prop opcional `targets` (spec 052, kanban do evento)', () => {
-  it('(a) sem a prop, os destinos são INVITED/CONFIRMED/SELECTED menos o atual', async () => {
+  it('(a) sem a prop, os destinos são INVITED/SELECTED menos o atual', async () => {
     const user = userEvent.setup();
     render(<MoveToMenu currentStage="COMPLETED" onMove={vi.fn()} />);
     await user.click(screen.getByTestId('move-to-button'));
     const ids = screen.getAllByRole('menuitem').map((b) => b.getAttribute('data-testid'));
-    expect(ids).toEqual(['move-to-option-INVITED', 'move-to-option-CONFIRMED', 'move-to-option-SELECTED']);
+    expect(ids).toEqual(['move-to-option-INVITED', 'move-to-option-SELECTED']);
   });
 
   it('(b) com targets=[CONVOKED, SELECTED, QUICK_RESPONSE_TEAM] as três opções aparecem, com rótulo da coluna', async () => {
