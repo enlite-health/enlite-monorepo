@@ -6,6 +6,8 @@ import { withSessionAdvisoryLock } from '@shared/database/sessionAdvisoryLock';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { SystemNotificationPublisher } from '@modules/inapp-notification/application/SystemNotificationPublisher';
 import { TactiqLinkRepository } from '../infrastructure/TactiqLinkRepository';
+import { ChromeReportRepository } from '../infrastructure/ChromeReportRepository';
+import type { ExtensionState } from '../domain/chromeExtensionState';
 import { hashState, newOAuthState, newPkcePair } from '../infrastructure/tactiq/pkce';
 import {
   TactiqInvalidGrantError,
@@ -46,6 +48,14 @@ export interface OwnLinkView {
   linkedAt: string | null;
   lastCheckAt: string | null;
   statusChangedAt: string | null;
+  /** Extensão do Tactiq no Chrome da PRÓPRIA pessoa (a linha que o `ChromeReportJob` grava e de onde sai o aviso do sino). */
+  extension: OwnExtensionView;
+}
+
+/** `sem_relatorio` também cobre "nunca reportou" (sem linha): o job trata a falta de linha assim; nunca `null`, nunca `ausente`. */
+export interface OwnExtensionView {
+  state: ExtensionState;
+  reportedAt: string | null;
 }
 
 export interface TactiqCheckSummary {
@@ -65,6 +75,8 @@ interface Cipher {
 
 export interface TactiqLinkServiceDeps {
   repo: TactiqLinkRepository;
+  /** Padrão: `ChromeReportRepository` sobre `db`. */
+  chromeReports?: ChromeReportRepository;
   oauth: TactiqOAuthPort;
   mcp: TactiqMcpPort;
   cipher?: Cipher;
@@ -94,6 +106,7 @@ const noticeReason = (s: NoticeState): 'missing' | 'broken' | 'wrong_account' =>
  */
 export class TactiqLinkService implements TactiqLinkGate, TactiqTokenProvider {
   private readonly repo: TactiqLinkRepository;
+  private readonly chromeReports: ChromeReportRepository;
   private readonly cipher: Cipher;
   private readonly publisher: SystemNotificationPublisher;
   private readonly db: Pool;
@@ -109,6 +122,7 @@ export class TactiqLinkService implements TactiqLinkGate, TactiqTokenProvider {
     };
     this.publisher = deps.publisher ?? new SystemNotificationPublisher();
     this.db = deps.db ?? DatabaseConnection.getInstance().getPool();
+    this.chromeReports = deps.chromeReports ?? new ChromeReportRepository(this.db);
     this.log = deps.log ?? (logger as unknown as AdmissionLogger);
     this.now = deps.now ?? (() => new Date());
   }
@@ -122,12 +136,17 @@ export class TactiqLinkService implements TactiqLinkGate, TactiqTokenProvider {
   // ── o PRÓPRIO vínculo ──────────────────────────────────────────────────────────────────────────────
   async getOwn(email: string): Promise<OwnLinkView> {
     const row = await this.repo.findByEmail(email);
-    if (!row) return { status: 'missing', linkedAt: null, lastCheckAt: null, statusChangedAt: null };
+    const report = await this.chromeReports.findByEmail(email);
+    const extension: OwnExtensionView = report
+      ? { state: report.state, reportedAt: report.report_at ? report.report_at.toISOString() : null }
+      : { state: 'sem_relatorio', reportedAt: null };
+    if (!row) return { status: 'missing', linkedAt: null, lastCheckAt: null, statusChangedAt: null, extension };
     return {
       status: row.status,
       linkedAt: row.linked_at ? row.linked_at.toISOString() : null,
       lastCheckAt: row.last_check_at ? row.last_check_at.toISOString() : null,
       statusChangedAt: row.status_changed_at.toISOString(),
+      extension,
     };
   }
 
