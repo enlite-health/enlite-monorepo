@@ -87,6 +87,8 @@ interface KanbanCardProps {
   selfAppliedAt?: string | null;
   /** Evento de enquadre para o qual o prestador foi convocado (spec 052): vira a etiqueta "Convocado · dd/mm hh:mm". */
   convocation?: { startsAt: string } | null;
+  /** Spec 052: enquadre em que foi marcado. Só aparece em SELECTED e QUICK_RESPONSE_TEAM; nos outros estágios é ignorada. */
+  enquadreOrigin?: { eventCode: string } | null;
 }
 
 const ACQUISITION_CHANNEL_STYLE: Record<string, { bg: string; text: string }> = {
@@ -107,6 +109,9 @@ const TALENTUM_STATUS_STYLE: Record<string, { bg: string; text: string }> = {
   IN_DOUBT: { bg: 'bg-orange-50', text: 'text-orange-700' },
   NOT_QUALIFIED: { bg: 'bg-red-50', text: 'text-red-600' },
 };
+
+/** Estágio → chave da etiqueta do enquadre de origem. Só estes dois estágios a mostram. */
+const ORIGIN_KEY: Record<string, string | undefined> = { SELECTED: 'originSelected', QUICK_RESPONSE_TEAM: 'originQuickResponse' };
 
 const COMPLETADO_BADGE_STYLE: Record<string, string> = {
   QUALIFIED: 'bg-green-50 text-green-700',
@@ -149,6 +154,7 @@ export function KanbanCard({
   onMoveTo,
   moveTargets,
   convocation,
+  enquadreOrigin,
   onOpenNotes,
   contactNotesCount = 0,
   selfAppliedAt,
@@ -302,6 +308,14 @@ export function KanbanCard({
         <div className="mt-2">
           <span data-testid="convocation-badge" className="inline-block px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-blue-50 text-blue-700">
             {t('admin.vacancyDetail.enquadre.kanban.convoked', { date: convocationLabel(convocation.startsAt) })}
+          </span>
+        </div>
+      )}
+
+      {enquadreOrigin && ORIGIN_KEY[stage] && (
+        <div className="mt-2">
+          <span data-testid="enquadre-origin-badge" className="inline-block px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-blue-50 text-blue-700">
+            {t(`admin.vacancyDetail.enquadre.kanban.${ORIGIN_KEY[stage]}`, { code: enquadreOrigin.eventCode })}
           </span>
         </div>
       )}

@@ -2791,7 +2791,9 @@
           "returned": "Devuelto",
           "closeError": "No se pudo cerrar el evento.",
           "title": "Evento del {{date}} · {{start}}–{{end}}",
-          "moveError": "No se pudo mover al convocado."
+          "moveError": "No se pudo mover al convocado.",
+          "originSelected": "Seleccionado en: {{code}}",
+          "originQuickResponse": "Respuesta rápida en: {{code}}"
         },
         "cancel": {
           "button": "Cancelar evento",

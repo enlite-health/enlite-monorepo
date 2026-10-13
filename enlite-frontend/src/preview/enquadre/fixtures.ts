@@ -127,21 +127,21 @@ export const EV_PIPELINE: SeedEvent[] = [
 
 type Card = FunnelStages['COMPLETED'][number];
 
-function card(n: string, convocation: Card['convocation'] = null): Card {
+function card(n: string, convocation: Card['convocation'] = null, enquadreOrigin: Card['enquadreOrigin'] = null): Card {
   return {
     id: `c-${n}`, encuadreId: `enc-${n}`, workerId: `w-${n}`, workerName: `${Number(n) % 2 === 0 ? 'Ficticia' : 'Ficticio'} ${n}`,
     workerPhone: null, occupation: OCCUPATION, interviewDate: null, interviewTime: null, meetLink: null, resultado: null,
     attended: null, rejectionReasonCategory: null, rejectionReason: null, matchScore: null, talentumStatus: null,
-    workZone: null, redireccionamiento: null, convocation,
+    workZone: null, redireccionamiento: null, convocation, enquadreOrigin,
   };
 }
 
-/** E13: 3 cards em Completado (2 convocados) e 1 em Selecionados. */
+/** E13: 3 cards em Completado (2 convocados), 1 em Selecionados e 1 em Resposta rápida (os 2 com o enquadre de origem). */
 export function funnelStages(): FunnelStages {
   const at = { startsAt: '2026-10-16T14:00:00-03:00' };
   return {
     COMPATIBLE: [], INVITED: [], INICIADO: [], PRE_SCREENING: [], IN_PROGRESS: [],
     COMPLETED: [card('61', at), card('62', at), card('63')],
-    CONFIRMED: [], SELECTED: [card('64')], QUICK_RESPONSE_TEAM: [], REJECTED: [],
+    CONFIRMED: [], SELECTED: [card('64', null, { eventCode: 'ENC-K7M2QX' })], QUICK_RESPONSE_TEAM: [card('65', null, { eventCode: 'ENC-R4T9WB' })], REJECTED: [],
   };
 }

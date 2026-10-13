@@ -343,6 +343,12 @@ describe('Kanban da vacante (E13)', () => {
     const badges = screen.getAllByTestId('convocation-badge');
     expect(badges).toHaveLength(2);
     badges.forEach((b) => expect(b.textContent).toBe('Convocado · 16/10 14:00'));
+    // ajuste do Gabriel (13/10): o enquadre de origem em Selecionados e em Resposta rápida
+    expect(within(q('kanban-column-SELECTED')).getByTestId('enquadre-origin-badge').textContent).toBe('Seleccionado en: ENC-K7M2QX');
+    expect(within(q('kanban-column-QUICK_RESPONSE_TEAM')).getByTestId('enquadre-origin-badge').textContent).toBe('Respuesta rápida en: ENC-R4T9WB');
+    expect(within(q('kanban-column-COMPLETED')).queryByTestId('enquadre-origin-badge')).not.toBeInTheDocument();
+    expect(count('COMPLETED')).toBe(3);
+    expect(count('QUICK_RESPONSE_TEAM')).toBe(1);
   });
 
   it('E13 sem a prop `columns` o board continua com as 9 colunas de hoje', async () => {

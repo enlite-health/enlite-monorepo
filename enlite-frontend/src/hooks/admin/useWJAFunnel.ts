@@ -63,6 +63,8 @@ interface FunnelEncuadre {
   isDismissed?: boolean;
   /** Spec 052: o prestador está convocado para um evento de enquadre (ISO do início). Derivado no servidor. */
   convocation?: { startsAt: string } | null;
+  /** Spec 052: código do evento de enquadre (`ENC-` + 6 caracteres) em que a pessoa foi marcada Selecionada ou Resposta rápida. Derivado no servidor. */
+  enquadreOrigin?: { eventCode: string } | null;
 }
 
 export interface FunnelStages {

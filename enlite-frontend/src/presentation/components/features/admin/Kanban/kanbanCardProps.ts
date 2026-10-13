@@ -34,5 +34,6 @@ export function cardProps(enc: FunnelCard, stage: string) {
     lastStageMessage: enc.lastStageMessage ?? null,
     resendBlockedReason: enc.resendBlockedReason ?? null,
     convocation: enc.convocation ?? null,
+    enquadreOrigin: enc.enquadreOrigin ?? null,
   };
 }

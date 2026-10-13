@@ -60,7 +60,7 @@ export function installDataset(id: string): () => void {
   // vazias pelo recurso REAL de colapso (persistido por vaga) para que Completado e Selecionados caibam em 1440px.
   if (ds.root === 'funnel') {
     try {
-      localStorage.setItem(`kanban-collapsed-${HARNESS_VACANCY_ID}`, JSON.stringify(['COMPATIBLE', 'INVITED', 'INICIADO', 'PRE_SCREENING', 'QUICK_RESPONSE_TEAM']));
+      localStorage.setItem(`kanban-collapsed-${HARNESS_VACANCY_ID}`, JSON.stringify(['COMPATIBLE', 'INVITED', 'INICIADO', 'PRE_SCREENING', 'REJECTED']));
     } catch {
       // sem localStorage o quadro só fica expandido
     }
