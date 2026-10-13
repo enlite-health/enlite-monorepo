@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS enquadre_events (
   import_attempts      SMALLINT     NOT NULL DEFAULT 0,
   CONSTRAINT enquadre_events_country_check     CHECK (country IN ('AR', 'BR')),
   CONSTRAINT enquadre_events_code_format       CHECK (event_code ~ '^ENC-[0-9A-Z]{6}$'),
+  CONSTRAINT enquadre_events_window_check      CHECK (ends_at > starts_at),
   CONSTRAINT enquadre_events_status_check      CHECK (status IN ('open', 'closed', 'cancelled')),
   CONSTRAINT enquadre_events_closed_pair       CHECK ((status = 'closed') = (closed_at IS NOT NULL)
                                                       AND (closed_at IS NULL) = (closed_by_uid IS NULL)),
