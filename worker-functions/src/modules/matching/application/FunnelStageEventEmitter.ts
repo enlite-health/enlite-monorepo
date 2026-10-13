@@ -62,7 +62,7 @@ export interface EmitFunnelStageEventInput {
   previousStage: string | null;
   targetStage: FunnelStage;
   actorUid: string | null;
-  source: 'kanban';
+  source: 'kanban' | 'enquadre';
 }
 
 /**

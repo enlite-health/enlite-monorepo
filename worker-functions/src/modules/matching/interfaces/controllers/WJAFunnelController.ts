@@ -15,7 +15,6 @@ import { BlockedApplicationRepository } from '../../infrastructure/BlockedApplic
 import { deriveKanbanColumn, kanbanColumnForBlocked, KanbanColumn } from '../../domain/kanbanColumn';
 import {
   interviewScheduleSchema,
-  interviewDatetimeSql,
   INTERVIEW_DATE_RESOLVED_SQL,
   INTERVIEW_TIME_RESOLVED_SQL,
 } from '../../domain/interviewSchedule';
@@ -24,11 +23,10 @@ import { cellsOfRequest, projectWorkerFields, NOME_REDIGIDO, podeVerCandidatoDoM
 import { emitirTrilhaDeContato } from '@shared/audit/contactAccessFromRequest';
 import { RESEND_COOLDOWN_HOURS, resendCooldownUntilSql } from '../../../notification/application/VacancyInviteGuard';
 import { PubSubClient } from '@shared/events/PubSubClient';
-import { emitFunnelStageEvent, isFunnelStage, MOVABLE_FUNNEL_STAGES, isMovableFunnelStage } from '../../application/FunnelStageEventEmitter';
+import { MOVABLE_FUNNEL_STAGES, isMovableFunnelStage } from '../../application/FunnelStageEventEmitter';
+import { moveApplicationStage } from '../../application/moveApplicationStage';
 import { candidateDistanceKmSql } from '../../infrastructure/candidateDistanceSql';
 import {
-  requiredMoveReason,
-  isAllowedMoveReason,
   MoveReasonRequiredError,
   MoveReasonInvalidError,
   compatibleMoveRefusal,
@@ -518,122 +516,27 @@ export class WJAFunnelController {
         throw err;
       }
 
-      // 2. Atualizar application_funnel_stage (fonte de verdade) + agendamento quando informado.
-      // A conversão para timestamptz é feita pelo Postgres a partir do fuso da OPERAÇÃO
-      // (interviewDatetimeSql) — nunca do fuso do navegador de quem arrastou o card.
-      //
-      // SQL ESTÁTICO de propósito: os placeholders $4/$5 são SEMPRE referenciados, com
-      // CASE null-safe. A versão anterior interpolava 'NULL' quando não havia agendamento
-      // e mantinha 6 valores no array → Postgres: "could not determine data type of
-      // parameter $4" → 500 em TODO movimento sem data (pego pelo e2e de banco real;
-      // mocks de db.query não veem isso).
+      // 2. A mudança de estágio (upsert + encuadre + evento) mora em `moveApplicationStage`.
+      // Roda numa transação ÚNICA que carimba quem moveu o card (o trigger de histórico lê
+      // `app.current_uid` — ver actorContext). Recusa do miolo vira erro DENTRO da transação
+      // para o ROLLBACK de sempre; o catch abaixo traduz em 422. O evento fica `pending` e é
+      // publicado depois do COMMIT.
       const { interviewDate, interviewTime, interviewMeetLink } = schedule.data;
-      const datetimeInsertSql = `CASE WHEN $4::date IS NULL THEN NULL ELSE ${interviewDatetimeSql('$4', '$5')} END`;
-      // No conflito, mover sem data NÃO apaga um agendamento já gravado.
-      const datetimeUpdateSql = `CASE WHEN $4::date IS NULL THEN worker_job_applications.interview_datetime ELSE ${interviewDatetimeSql('$4', '$5')} END`;
-
-      // As duas escritas rodam numa transação ÚNICA que carimba quem moveu o
-      // card (o trigger de histórico lê `app.current_uid` — ver actorContext).
-      // Efeito colateral desejado: a candidatura e o encuadre passam a mudar
-      // juntos; antes, falha na 2ª query deixava a etapa já alterada.
-      // PEND-14/DEC-12: o movimento vira EVENTO quando a etapa muda. A etapa
-      // anterior é lida na mesma transação; o INSERT em domain_events roda no
-      // mesmo client (etapa e evento nascem — ou não — juntos).
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const actorUid = ((req as any).user as { uid?: string } | undefined)?.uid ?? null;
       let stageEventId: string | null = null;
       await withActorContext(this.db, async (client) => {
-        const prev = await client.query<{
-          application_funnel_stage: string | null;
-          source: string | null;
-          messaged_at: string | Date | null;
-        }>(
-          `SELECT application_funnel_stage, source, messaged_at FROM worker_job_applications WHERE worker_id = $1 AND job_posting_id = $2`,
-          [workerId, jobPostingId],
-        );
-        const previousStage = prev.rows[0]?.application_funnel_stage ?? null;
-        const previousSource = prev.rows[0]?.source ?? null;
-        const previousMessagedAt = prev.rows[0]?.messaged_at ?? null;
-        const origin = prev.rows[0]
-          ? { stage: previousStage, source: previousSource, messagedAt: previousMessagedAt }
-          : null;
-
-        // Fase 5 (DX-5.6): sair de Compatíveis para Invitados por arrasto é recusado — virar
-        // convidado é ter sido MENSAGEADO (messaged_at), nunca arrastado. Roda ANTES de
-        // requiredMoveReason: para Compatíveis → Invitados aquela devolveria `null` (etapa
-        // igual, INVITED sobre INVITED) e o upsert seria um 200 que não muda nada.
-        const compatibleRefusal = compatibleMoveRefusal(origin, targetStage);
-        if (compatibleRefusal) {
-          throw new CompatibleReadOnlyError(compatibleRefusal);
+        const moved = await moveApplicationStage(client, {
+          workerId, jobPostingId, encuadreId: id, targetStage, actorUid,
+          reasonCategory, rejectionReason, role: selectedRole,
+          interviewDate, interviewTime, interviewMeetLink,
+        });
+        if (!moved.moved) {
+          if (moved.code === 'COMPATIBLE_READ_ONLY') throw new CompatibleReadOnlyError(moved.reason);
+          if (moved.code === 'MOVE_REASON_REQUIRED') throw new MoveReasonRequiredError(moved.reason);
+          throw new MoveReasonInvalidError(moved.reason);
         }
-
-        // Fase 4 (DX-4.6): a checagem roda DENTRO da transação, ANTES do upsert —
-        // se recusar, o catch externo faz ROLLBACK (actorContext.ts) e nada é escrito.
-        const moveReasonKind = requiredMoveReason(origin, targetStage);
-        if (moveReasonKind) {
-          if (reasonCategory === undefined || reasonCategory === null) {
-            throw new MoveReasonRequiredError(moveReasonKind);
-          }
-          if (!isAllowedMoveReason(moveReasonKind, reasonCategory)) {
-            throw new MoveReasonInvalidError(moveReasonKind);
-          }
-          // Lido pelo gatilho da trilha (migration 478, NULLIF) — carimba o motivo na
-          // MESMA transação, antes do upsert. Interceptado pelo poolMockSupport nos
-          // unit tests (regex de controle de transação): não é observável por mock,
-          // só no e2e com banco real.
-          await client.query(`SELECT set_config('app.move_reason', $1, true)`, [reasonCategory]);
-        }
-
-        await client.query(
-          `INSERT INTO worker_job_applications (
-             worker_id, job_posting_id, application_funnel_stage, source,
-             interview_datetime, interview_meet_link)
-           VALUES (
-             $1, $2, $3, 'manual',
-             ${datetimeInsertSql},
-             $6)
-           ON CONFLICT (worker_id, job_posting_id) DO UPDATE SET
-             application_funnel_stage = $3,
-             interview_datetime = ${datetimeUpdateSql},
-             interview_meet_link = COALESCE($6, worker_job_applications.interview_meet_link),
-             updated_at = NOW()`,
-          [
-            workerId,
-            jobPostingId,
-            targetStage,
-            interviewDate ?? null,
-            interviewTime ?? null,
-            interviewMeetLink ?? null,
-          ],
-        );
-
-        // 3. Sincronizar encuadre.resultado para estados terminais
-        if (targetStage === 'SELECTED') {
-          // Grava o papel quando informado; sem papel o COALESCE preserva o
-          // existente (re-mover não apaga a classificação anterior). Encuadre
-          // selecionado sem papel = PENDENTE_CLASSIFICACAO no dashboard.
-          await client.query(
-            `UPDATE encuadres SET resultado = 'SELECCIONADO', role = COALESCE($2, role), updated_at = NOW() WHERE id = $1`,
-            [id, selectedRole],
-          );
-        } else if (targetStage === 'REJECTED') {
-          await client.query(
-            `UPDATE encuadres SET resultado = 'RECHAZADO',
-               rejection_reason_category = COALESCE($2, rejection_reason_category),
-               rejection_reason = COALESCE($3, rejection_reason),
-               updated_at = NOW()
-             WHERE id = $1`,
-            [id, reasonCategory ?? null, rejectionReason ?? null],
-          );
-        }
-
-        // DX-4.7: QUICK_RESPONSE_TEAM é movível mas não vira evento (sem mensagem
-        // de propósito) — só as etapas de FUNNEL_STAGES emitem.
-        stageEventId = isFunnelStage(targetStage)
-          ? await emitFunnelStageEvent(client, {
-              workerId, jobPostingId, previousStage, targetStage, actorUid, source: 'kanban',
-            })
-          : null;
+        stageEventId = moved.eventId;
       });
 
       // Depois do COMMIT: o evento já está gravado (pending); a publicação só
