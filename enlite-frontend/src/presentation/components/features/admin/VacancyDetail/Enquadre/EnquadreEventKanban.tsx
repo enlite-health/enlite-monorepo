@@ -64,7 +64,7 @@ export function EnquadreEventKanban({ vacancyId, eventId, onBack, now = () => ne
   const { t } = useTranslation();
   const te = (key: string, opts?: Record<string, unknown>): string => t(`admin.vacancyDetail.enquadre.${key}`, opts);
   const { event, status, reload } = useEnquadreEvent(vacancyId, eventId);
-  const timeZone = timeZoneForCountry(null);
+  const timeZone = timeZoneForCountry(event?.country ?? null);
   // Marcar o resultado (arrasto, "Mover a…", "Rechazar") é `enquadre_result:update`; sem a célula a OFERTA some (molde KanbanBoard).
   const resultGate = useActionGate('enquadre_result', 'update');
 

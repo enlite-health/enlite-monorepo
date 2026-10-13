@@ -41,6 +41,8 @@ export interface EnquadreEventListItem {
   startsAt: string;
   endsAt: string;
   hostName: string;
+  /** País do evento (o da vaga): data e hora da tela saem no fuso dele. */
+  country: 'AR' | 'BR';
   phase: EnquadreEventPhase;
   convokedCount: number;
   /** Convocados já com marcação (selecionado/resposta rápida/rejeitado). Derivado no servidor; alimenta "N marcados de M" em `pending_close`. */

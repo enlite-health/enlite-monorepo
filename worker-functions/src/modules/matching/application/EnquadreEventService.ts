@@ -66,6 +66,8 @@ export interface EnquadreEventListItem {
   startsAt: string;
   endsAt: string;
   hostName: string;
+  /** País do evento (o da vaga): a tela formata data e hora no fuso dele. */
+  country: AdmissionCountry;
   phase: EnquadreEventPhase;
   convokedCount: number;
   markedCount: number;
@@ -420,12 +422,14 @@ export class EnquadreEventService {
       rejectionReasonCategory: r.rejection_reason_category,
     }));
     const counters = eventCounters(participants);
-    const tz = getAdmissionCountryConfig(isAdmissionCountry(ev.country) ? ev.country : 'AR').timezone;
+    const country: AdmissionCountry = isAdmissionCountry(ev.country) ? ev.country : 'AR';
+    const tz = getAdmissionCountryConfig(country).timezone;
     return {
       id: ev.id,
       startsAt: inZone(ev.starts_at, tz),
       endsAt: inZone(ev.ends_at, tz),
       hostName: ev.host_display_name,
+      country,
       phase: enquadreEventPhase(ev.status, ev.ends_at, now),
       convokedCount: counters.convokedCount,
       markedCount: counters.markedCount,

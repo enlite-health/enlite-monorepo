@@ -298,6 +298,7 @@ describe('leitura', () => {
       startsAt: '2026-10-16T14:00:00-03:00',
       endsAt: '2026-10-16T15:00:00-03:00',
       hostName: 'Entrevistadora Ficticia A',
+      country: 'AR',
       phase: 'scheduled',
       convokedCount: 3,
       markedCount: 2,
@@ -356,6 +357,7 @@ describe('leitura', () => {
     const items = await service.listEvents(VACANCY_ID);
     expect(items.map((i) => i.id)).toEqual(['open-soon', 'open-late', 'cancelled', 'closed-old']);
     expect(items.map((i) => i.phase)).toEqual(['scheduled', 'scheduled', 'cancelled', 'closed']);
+    expect(items.map((i) => i.country)).toEqual(['AR', 'AR', 'AR', 'AR']);
     expect(items[0]).not.toHaveProperty('participants');
     expect(items[0]).not.toHaveProperty('unmarkedCount');
   });

@@ -48,7 +48,7 @@ function toDetail(ev: SeedEvent): EnquadreEventDetail {
   const ps = ev.participants;
   const count = (o: EnquadreParticipant['outcome']): number => ps.filter((p) => p.outcome === o).length;
   return {
-    id: ev.id, startsAt: ev.startsAt, endsAt: ev.endsAt, hostName: ev.hostName, phase: ev.phase, meetLink: ev.meetLink, pipeline: ev.pipeline,
+    id: ev.id, startsAt: ev.startsAt, endsAt: ev.endsAt, hostName: ev.hostName, country: 'AR', phase: ev.phase, meetLink: ev.meetLink, pipeline: ev.pipeline,
     convokedCount: ps.length,
     markedCount: ps.filter((p) => p.column !== 'CONVOKED').length,
     unmarkedCount: ps.filter((p) => p.column === 'CONVOKED').length,
