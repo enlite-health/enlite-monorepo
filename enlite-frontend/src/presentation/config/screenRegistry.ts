@@ -130,8 +130,8 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
       c('operational', 'patient', ['read', 'create', 'update'], 'history'),
     ],
   },
-  // Spec 049 (F7): "Vincular Tactiq" — a conta do PRÓPRIO operador. `own_` = toda conta com grupo recebe (auto-grant 471).
-  { id: 'account.tactiq', route: '/admin/mi-cuenta/tactiq', cells: ['own_tactiq_link:read', 'own_tactiq_link:create'] },
+  // Spec 049 (F7): seção Tactiq (vincular) da página Perfil — a conta do PRÓPRIO operador. `own_` = toda conta com grupo recebe (auto-grant 471).
+  { id: 'account.tactiq', route: '/admin/mi-cuenta', cells: ['own_tactiq_link:read', 'own_tactiq_link:create'] },
   { id: 'patients.chatRoles', route: '/admin/patient-chat-roles', cells: ['patient:read', 'patient:create', 'patient:update'] },
   // Spec 017 (D299.3): os 2 catálogos do projeto terapêutico — uma tela e uma célula por lista (tipo de patologia deriva do CID-11, sem tela).
   { id: 'patients.catalogObjectives', route: '/admin/catalogos/objetivos-especificos', cells: ['catalog_therapeutic_objectives:read', 'catalog_therapeutic_objectives:create', 'catalog_therapeutic_objectives:update'] },

@@ -101,9 +101,9 @@ describe('ADMISSION_TACTIQ_LINK_REQUIRED (spec 049, A7-7)', () => {
       payload: reason === null ? null : ({ reason } as never),
     });
 
-  it('o deep link abre /admin/mi-cuenta/tactiq, sem paciente e sem pedido de foco', () => {
+  it('o deep link abre /admin/mi-cuenta, sem paciente e sem pedido de foco', () => {
     const link = getNotificationTypeHandler('ADMISSION_TACTIQ_LINK_REQUIRED').getDeepLink(tactiq('missing'));
-    expect(link).toEqual({ path: '/admin/mi-cuenta/tactiq' });
+    expect(link).toEqual({ path: '/admin/mi-cuenta' });
   });
 
   it.each([['missing'], ['broken']])('motivo %s → "Tu usuario no está vinculado a Tactiq…" (chave do texto sem vínculo)', (reason) => {
@@ -139,9 +139,9 @@ describe('ADMISSION_TACTIQ_EXTENSION_CHANGED (spec 050, F15)', () => {
       payload: state === null ? null : ({ state } as never),
     });
 
-  it('o deep link abre /admin/mi-cuenta/tactiq, sem paciente e sem pedido de foco', () => {
+  it('o deep link abre /admin/mi-cuenta, sem paciente e sem pedido de foco', () => {
     const link = getNotificationTypeHandler('ADMISSION_TACTIQ_EXTENSION_CHANGED').getDeepLink(ext('installed'));
-    expect(link).toEqual({ path: '/admin/mi-cuenta/tactiq' });
+    expect(link).toEqual({ path: '/admin/mi-cuenta' });
   });
 
   it.each([['installed'], ['missing'], ['disabled']])('estado %s tem o texto PRÓPRIO', (state) => {

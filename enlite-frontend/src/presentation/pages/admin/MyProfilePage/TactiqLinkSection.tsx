@@ -1,5 +1,8 @@
 /**
- * TactiqLinkPage — /admin/mi-cuenta/tactiq, "Vincular Tactiq" (spec 049, F7; §3.0.1 passo 1).
+ * TactiqLinkSection — seção "Tactiq" da página Perfil (/admin/mi-cuenta). Era a página inteira
+ * /admin/mi-cuenta/tactiq (antiga), "Vincular Tactiq" (spec 049, F7; §3.0.1 passo 1); a lógica e o visual do vínculo
+ * foram movidos sem mudar comportamento, e a rota antiga agora redireciona para o Perfil (preservando a query
+ * do callback OAuth). Ganhou só o bloco da extensão do Chrome (`TactiqExtensionRow`).
  *
  * O operador conecta a PRÓPRIA conta do Tactiq (OAuth): é o ato único que o sistema exige para ele poder ser
  * responsável de uma agenda de admissão. A tela mostra o estado do vínculo (sem token, nunca — a API não o envia),
@@ -12,11 +15,14 @@
 import { useCallback, useEffect, useState, type JSX } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { ActionButton } from '@presentation/components/features/access';
 import { SealChip } from '@presentation/components/features/admin/PatientDetail/admission/AdmissionSeals';
 import type { SealTone } from '@presentation/components/features/admin/PatientDetail/admission/sealTones';
+import { TactiqExtensionRow } from './TactiqExtensionRow';
+import { ProfileCard } from './ProfileCard';
+import { ProfileField } from './ProfileField';
+import { HALVES_GRID } from './profileLayout';
 import { formatInstant } from '@presentation/utils/dateTimeFormat';
 import {
   AdminAdmissionApiService,
@@ -46,7 +52,7 @@ interface Props {
   redirect?: (url: string) => void;
 }
 
-export default function TactiqLinkPage({ redirect = (url) => window.location.assign(url) }: Props): JSX.Element {
+export default function TactiqLinkSection({ redirect = (url) => window.location.assign(url) }: Props): JSX.Element {
   const { t, i18n } = useTranslation();
   const tt = (key: string): string => t(`admin.tactiqLink.${key}`);
   const [params, setParams] = useSearchParams();
@@ -91,12 +97,7 @@ export default function TactiqLinkPage({ redirect = (url) => window.location.ass
   const state = link?.status;
 
   return (
-    <div className="max-w-3xl flex flex-col gap-6" data-testid="tactiq-link-page">
-      <div className="flex flex-col gap-1">
-        <Heading level={1} weight="semibold" color="primary">{tt('title')}</Heading>
-        <Text color="inherit" size="sm" className="text-slate-600">{tt('subtitle')}</Text>
-      </div>
-
+    <ProfileCard title={t('admin.profile.tactiq.title')} description={t('admin.profile.tactiq.subtitle')} testId="tactiq-link-page" className="xl:col-span-2">
       {banner?.kind === 'linked' && (
         <Text color="inherit" as="p" size="sm" role="status" className="rounded-lg bg-green-100 text-green-900 px-4 py-3" data-testid="tactiq-banner-linked">{tt('returnLinked')}</Text>
       )}
@@ -104,7 +105,7 @@ export default function TactiqLinkPage({ redirect = (url) => window.location.ass
         <Text color="inherit" as="p" size="sm" role="alert" className="rounded-lg bg-red-100 text-red-900 px-4 py-3" data-testid="tactiq-banner-error">{tt('returnError')}</Text>
       )}
 
-      <div className="bg-white rounded-card border-[1.5px] border-gray-700 p-6 sm:px-8 sm:py-8 flex flex-col gap-5" data-testid="tactiq-link-card">
+      <div data-testid="tactiq-link-card">
         {status === 'loading' && <Text color="inherit" size="sm" className="text-slate-600" data-testid="tactiq-loading">{tt('loading')}</Text>}
         {status === 'error' && (
           <div className="flex items-center gap-3" role="alert">
@@ -113,41 +114,50 @@ export default function TactiqLinkPage({ redirect = (url) => window.location.ass
           </div>
         )}
         {status === 'ok' && state && (
-          <>
-            <div className="flex flex-wrap items-center gap-3">
-              <Text as="span" size="2xs" color="primary" className="uppercase">{tt('stateLabel')}</Text>
-              <SealChip tone={STATE_TONE[state]} testId="tactiq-state">{tt(`state.${state}`)}</SealChip>
-            </div>
-            <Text color="inherit" size="sm" className="text-gray-900" data-testid="tactiq-state-help">{tt(`stateHelp.${state}`)}</Text>
-            {state === 'linked' && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="flex flex-col gap-1">
-                  <Text as="span" size="2xs" color="primary" className="uppercase">{tt('linkedAt')}</Text>
-                  <Text color="inherit" as="span" size="sm" weight="medium" className="text-gray-900" data-testid="tactiq-linked-at">{when(link.linkedAt)}</Text>
-                </div>
-                <div className="flex flex-col gap-1">
-                  <Text as="span" size="2xs" color="primary" className="uppercase">{tt('lastCheckAt')}</Text>
-                  <Text color="inherit" as="span" size="sm" weight="medium" className="text-gray-900" data-testid="tactiq-last-check-at">{when(link.lastCheckAt)}</Text>
-                </div>
+          /* Duas metades espelhadas (vínculo | extensão), separadas por um filete vertical a partir de `xl`. As 4 linhas
+              (cabeçalho · ajuda · pares · ação) são COMPARTILHADAS entre as metades via subgrid: um texto de ajuda que
+              quebra em 2 linhas empurra os pares dos DOIS lados, e os rótulos de metades vizinhas ficam na mesma linha
+              de base. Abaixo de `xl` empilha (vínculo, filete horizontal, extensão). Margens `mt-5` (e não `gap`) para
+              linha vazia não ocupar espaço. */
+          <div className={`${HALVES_GRID} xl:grid-rows-[auto_auto_auto_auto]`}>
+            <div className="flex flex-col xl:grid xl:[grid-template-rows:subgrid] xl:row-span-4 xl:row-start-1 xl:col-start-1 min-w-0">
+              <div className="flex flex-wrap items-center gap-3 xl:row-start-1">
+                <Text as="span" size="2xs" color="primary" className="uppercase">{tt('stateLabel')}</Text>
+                <SealChip tone={STATE_TONE[state]} testId="tactiq-state">{tt(`state.${state}`)}</SealChip>
               </div>
-            )}
-            <div className="flex flex-col items-start gap-2">
-              <ActionButton
-                resource="own_tactiq_link"
-                action="create"
-                variant="primary"
-                size="md"
-                onClick={() => { void start(); }}
-                disabled={starting}
-                data-testid="tactiq-link-button"
-              >
-                {starting ? tt('starting') : state === 'linked' ? tt('relink') : tt('link')}
-              </ActionButton>
-              {startError && <Text color="inherit" size="sm" role="alert" className="text-red-800" data-testid="tactiq-start-error">{tt('startError')}</Text>}
+              <Text color="inherit" size="sm" className="text-gray-900 mt-5 xl:row-start-2" data-testid="tactiq-state-help">{tt(`stateHelp.${state}`)}</Text>
+              {state === 'linked' && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-5 xl:row-start-3">
+                  <ProfileField label={tt('linkedAt')} value={when(link.linkedAt)} testId="tactiq-linked-at" />
+                  <ProfileField label={tt('lastCheckAt')} value={when(link.lastCheckAt)} testId="tactiq-last-check-at" />
+                </div>
+              )}
+              {/* Sem a linha de pares (não vinculado) o botão sobe para a linha 3, ao lado do "Último reporte". */}
+              <div className={`flex flex-col items-start gap-2 mt-5 ${state === 'linked' ? 'xl:row-start-4' : 'xl:row-start-3'}`}>
+                <ActionButton
+                  resource="own_tactiq_link"
+                  action="create"
+                  variant="primary"
+                  size="md"
+                  onClick={() => { void start(); }}
+                  disabled={starting}
+                  data-testid="tactiq-link-button"
+                >
+                  {starting ? tt('starting') : state === 'linked' ? tt('relink') : tt('link')}
+                </ActionButton>
+                {startError && <Text color="inherit" size="sm" role="alert" className="text-red-800" data-testid="tactiq-start-error">{tt('startError')}</Text>}
+              </div>
             </div>
-          </>
+            <div aria-hidden="true" className="flex justify-center xl:col-start-2 xl:row-start-1 xl:row-span-4">
+              <div className="h-px w-full bg-gray-600 xl:h-full xl:w-px" data-testid="tactiq-divider" />
+            </div>
+            {/* `extension` vem do mesmo GET (PR #685); ausente (back antigo) = "sem relatório" — ver `OwnTactiqLink.extension`. */}
+            <div className="flex flex-col xl:grid xl:[grid-template-rows:subgrid] xl:row-span-4 xl:row-start-1 xl:col-start-3 min-w-0">
+              <TactiqExtensionRow extension={link.extension} locale={locale} />
+            </div>
+          </div>
         )}
       </div>
-    </div>
+    </ProfileCard>
   );
 }

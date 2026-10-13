@@ -303,6 +303,21 @@ describe('FirebaseAuthService', () => {
     });
   });
 
+  describe('foto e provider da sessão', () => {
+    const map = (u: object) => (service as unknown as { mapFirebaseUser: (x: object) => { photoUrl?: string | null; authProviders?: string[] } }).mapFirebaseUser(u);
+
+    it('prefere o photoURL do provider google.com e expõe os providers', () => {
+      const r = map({ uid: 'u', email: 'a@b.test', displayName: 'A', photoURL: 'https://fallback.test/p.png', providerData: [{ providerId: 'google.com', photoURL: 'https://google.test/p.png' }] });
+      expect(r.photoUrl).toBe('https://google.test/p.png');
+      expect(r.authProviders).toEqual(['google.com']);
+    });
+
+    it('sem provider google.com cai no user.photoURL; sem nenhum, null', () => {
+      expect(map({ uid: 'u', email: 'a@b.test', photoURL: 'https://fallback.test/p.png', providerData: [{ providerId: 'password', photoURL: null }] }).photoUrl).toBe('https://fallback.test/p.png');
+      expect(map({ uid: 'u', email: 'a@b.test', photoURL: null, providerData: [] }).photoUrl).toBeNull();
+    });
+  });
+
   describe('getIdToken', () => {
     it('should return id token when authenticated', async () => {
       const mockUser = {
