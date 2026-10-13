@@ -5,7 +5,7 @@
  *
  * Valida as 3 fases do refactor:
  *   1. Backend funnel-table endpoint
- *   2. Layout dos cards (VacancyCaseCard + VacancyPatientCard + VacancyProfessionCard + MeetLinksRow)
+ *   2. Layout dos cards (VacancyCaseCard + VacancyPatientCard + VacancyProfessionCard)
  *   3. Tab de funil com toggle Lista/Kanban
  *
  * Todos os testes são totalmente mockados (sem backend real, sem Gemini, sem banco).
@@ -548,23 +548,6 @@ test.describe('VacancyDetailPage — Refactor (Funnel + Cards + Toggle)', () => 
     await expect(
       page.locator('text=/\\d{2}:\\d{2}h - \\d{2}:\\d{2}h/').first(),
     ).toBeVisible();
-  });
-
-  test('A5 — VacancyMeetLinksRow exibe 1 pílula com link de entrevista', async ({
-    page,
-  }) => {
-    await loginAsAdmin(page);
-    await mockVacancyApis(page);
-
-    await page.goto(`/admin/vacancies/${MOCK_VACANCY_ID}`);
-    await expect(page.locator('text=226').first()).toBeVisible({
-      timeout: 15_000,
-    });
-
-    // Row de meet links deve conter "Fechas para entrevista" (título do componente VacancyMeetLinksRow)
-    await expect(
-      page.locator('text=/Fechas para entrevista/i').first(),
-    ).toBeVisible({ timeout: 10_000 });
   });
 
   // ── B. Funil — modo Lista ────────────────────────────────────────────────────

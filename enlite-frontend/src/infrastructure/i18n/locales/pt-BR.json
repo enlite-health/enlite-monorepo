@@ -2245,15 +2245,6 @@
       "scheduleCard": {
         "title": "Horário"
       },
-      "meetLinksCard": {
-        "title": "Link do Google Meet para a entrevista de Enquadramento Terapêutico",
-        "invalidLink": "Link inválido. Use o formato https://meet.google.com/xxx-xxxx-xxx",
-        "saveSuccess": "Links salvos com sucesso.",
-        "saveError": "Erro ao salvar links.",
-        "openLink": "Abrir link",
-        "saving": "Salvando…",
-        "saveLinks": "Salvar links"
-      },
       "encuadresCard": {
         "title": "Enquadramentos recentes",
         "allResults": "Todos os resultados",
@@ -2579,9 +2570,6 @@
           "saturday": "Sábado:"
         }
       },
-      "meetLinksRow": {
-        "title": "Datas para entrevista:"
-      },
       "statusEditor": {
         "editLabel": "Editar estado da vaga"
       },
@@ -2603,36 +2591,6 @@
         "cancel": "Cancelar",
         "close": "Fechar",
         "errorEmpty": "A descrição não pode ficar vazia."
-      },
-      "meetRecurring": {
-        "title": "Horário recorrente (reunião de apresentação)",
-        "hint": "Toda semana, no mesmo dia e hora, na mesma sala. O convite oferece as próximas datas automaticamente.",
-        "weekday": "Dia",
-        "time": "Hora (Argentina)",
-        "link": "Sala do Meet",
-        "none": "Sem horário recorrente",
-        "clear": "Remover",
-        "every": "Toda(o) {{day}} às {{time}}",
-        "invalidTime": "Hora inválida (HH:MM)",
-        "incomplete": "Preencha dia, hora e sala",
-        "days": {
-          "0": "domingo",
-          "1": "segunda",
-          "2": "terça",
-          "3": "quarta",
-          "4": "quinta",
-          "5": "sexta",
-          "6": "sábado"
-        },
-        "daysShort": {
-          "0": "Domingo",
-          "1": "Segunda",
-          "2": "Terça",
-          "3": "Quarta",
-          "4": "Quinta",
-          "5": "Sexta",
-          "6": "Sábado"
-        }
       },
       "enquadre": {
         "errors": {
