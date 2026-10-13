@@ -188,6 +188,7 @@ describe('vínculo do Tactiq — HTTP real, banco real, engine LIGADO (spec 049,
     await admin.query(
       `DELETE FROM notification_events e WHERE e.type_code = 'ADMISSION_TACTIQ_LINK_REQUIRED' AND NOT EXISTS (SELECT 1 FROM notifications n WHERE n.event_id = e.id)`);
     const all = [...hostEmails, emailOf(U.linker), emailOf(U.reader)];
+    await admin.query(`DELETE FROM admission_chrome_reports WHERE lower(host_email) = ANY($1)`, [all]);
     await admin.query(`DELETE FROM tactiq_links WHERE lower(host_email) = ANY($1)`, [all]);
     await admin.query(`DELETE FROM tactiq_oauth_states WHERE host_email = ANY($1)`, [all]);
     await admin.query('DELETE FROM interview_hosts WHERE email = ANY($1)', [hostEmails]);
@@ -295,6 +296,26 @@ describe('vínculo do Tactiq — HTTP real, banco real, engine LIGADO (spec 049,
       expect(json).not.toContain(row.refresh_token_encrypted);
       expect(json).not.toContain('refresh_token');
       expect(json).not.toContain('rt-dublado');
+    });
+
+    it('perfil: GET /me/tactiq-link traz `extension` da PRÓPRIA pessoa — estado e data do relatório; sem linha → sem_relatorio; a linha de outra pessoa não vaza', async () => {
+      const reportAt = new Date(Date.now() - 2 * HOUR);
+      await admin.query(
+        `INSERT INTO admission_chrome_reports (host_email, state, report_at, conclusive_state) VALUES (lower($1), 'desativada', $2, 'desativada')`,
+        [emailOf(U.linker), reportAt],
+      );
+      try {
+        const own = await http('GET', '/api/admin/me/tactiq-link', U.linker);
+        expect(own.status).toBe(200);
+        expect(own.body.data).toMatchObject({ status: 'linked', extension: { state: 'desativada', reportedAt: reportAt.toISOString() } });
+        // quem NÃO tem linha lê sem_relatorio (nunca null, nunca ausente), mesmo havendo linha de outra pessoa na tabela
+        const other = await http('GET', '/api/admin/me/tactiq-link', U.reader);
+        expect(other.status).toBe(200);
+        expect(other.body.data.extension).toEqual({ state: 'sem_relatorio', reportedAt: null });
+        expect(JSON.stringify(other.body)).not.toContain('desativada');
+      } finally {
+        await admin.query(`DELETE FROM admission_chrome_reports WHERE lower(host_email) = lower($1)`, [emailOf(U.linker)]);
+      }
     });
 
     it('A4-2: state VENCIDO (10 min) → 400, nada gravado, state continua não consumido', async () => {
