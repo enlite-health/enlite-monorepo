@@ -12,7 +12,6 @@ import { ENQUADRE_PHASE_ORDER } from './enquadreEventPhase';
 
 interface Props {
   events: readonly EnquadreEventListItem[];
-  timeZone: string;
   now: Date;
   onSelect: (eventId: string) => void;
 }
@@ -26,7 +25,7 @@ function byListOrder(a: EnquadreEventListItem, b: EnquadreEventListItem): number
   return a.phase === 'closed' ? -diff : diff;
 }
 
-export function EnquadreEventsTable({ events, timeZone, now, onSelect }: Props): JSX.Element {
+export function EnquadreEventsTable({ events, now, onSelect }: Props): JSX.Element {
   const { t } = useTranslation();
   const sorted = [...events].sort(byListOrder);
   return (
@@ -38,7 +37,7 @@ export function EnquadreEventsTable({ events, timeZone, now, onSelect }: Props):
       </TableHeader>
       <TableBody>
         {sorted.map((e) => (
-          <EnquadreEventRow key={e.id} event={e} timeZone={timeZone} now={now} onSelect={onSelect} />
+          <EnquadreEventRow key={e.id} event={e} now={now} onSelect={onSelect} />
         ))}
       </TableBody>
     </Table>

@@ -11,6 +11,7 @@ import { ArrowLeft, Video } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
 import { ActionButton } from '@presentation/components/features/access';
+import { useActionGate } from '@presentation/hooks/useCellAccess';
 import type { EnquadreEventDetail } from '@domain/entities/EnquadreEvent';
 import { SealChip } from '../../PatientDetail/admission/AdmissionSeals';
 import { isFuture } from '../../PatientDetail/admission/admissionTime';
@@ -35,6 +36,8 @@ export function EnquadreEventKanbanHeader({ event: e, timeZone, now, onBack, onM
   const [, end] = dateAndTime(e.endsAt, timeZone);
   const showMeet = open && isFuture(e.endsAt, now) && Boolean(e.meetLink);
   const closeBlocked = e.phase !== 'pending_close';
+  // Sem a célula o botão "Encerrar" some; o texto que o explica some junto (senão sobra um motivo sem botão).
+  const canClose = !useActionGate('enquadre_result', 'update').denied;
   const blockedId = `enquadre-kanban-close-blocked-${e.id}`;
 
   return (
@@ -90,7 +93,7 @@ export function EnquadreEventKanbanHeader({ event: e, timeZone, now, onBack, onM
           </div>
         )}
       </div>
-      {open && closeBlocked && (
+      {open && closeBlocked && canClose && (
         <Text color="inherit" as="p" size="xs" className="text-slate-600 text-right" id={blockedId} data-testid="enquadre-kanban-close-blocked">
           {te('kanban.closeBlocked')}
         </Text>

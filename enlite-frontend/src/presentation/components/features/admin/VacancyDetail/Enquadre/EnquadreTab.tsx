@@ -13,7 +13,6 @@ import { Text } from '@presentation/components/atoms/Text';
 import { ActionButton } from '@presentation/components/features/access';
 import { useEnquadreEvents } from '@hooks/admin/useEnquadreEvents';
 import { useEnquadreAvailableWorkers } from '@hooks/admin/useEnquadreAvailableWorkers';
-import { timeZoneForCountry } from '../../PatientDetail/admission/admissionTime';
 import { CreateEnquadreEventDrawer } from './CreateEnquadreEventDrawer';
 import { EnquadreEventKanban } from './EnquadreEventKanban';
 import { EnquadreEventsTable } from './EnquadreEventsTable';
@@ -29,8 +28,6 @@ export function EnquadreTab({ vacancyId, now = () => new Date() }: Props): JSX.E
   const te = (key: string, opts?: Record<string, unknown>): string => t(`admin.vacancyDetail.enquadre.${key}`, opts);
   const { events, status, reload } = useEnquadreEvents(vacancyId);
   const available = useEnquadreAvailableWorkers(vacancyId);
-  // O operador é argentino: sem país da vaga aqui, o fuso é o de Buenos Aires (mesmo default da aba Admissão).
-  const timeZone = timeZoneForCountry(null);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
@@ -88,7 +85,7 @@ export function EnquadreTab({ vacancyId, now = () => new Date() }: Props): JSX.E
         </div>
       )}
       {status === 'ok' && events.length > 0 && (
-        <EnquadreEventsTable events={events} timeZone={timeZone} now={now()} onSelect={setSelectedEventId} />
+        <EnquadreEventsTable events={events} now={now()} onSelect={setSelectedEventId} />
       )}
 
       {createOpen && (

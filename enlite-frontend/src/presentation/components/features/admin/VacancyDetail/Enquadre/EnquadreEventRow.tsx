@@ -10,14 +10,13 @@ import { Text } from '@presentation/components/atoms/Text';
 import { TableCell, TableRow } from '@presentation/components/atoms/Table';
 import type { EnquadreEventListItem, EnquadreOutcomeCounts } from '@domain/entities/EnquadreEvent';
 import { SealChip } from '../../PatientDetail/admission/AdmissionSeals';
-import { isFuture } from '../../PatientDetail/admission/admissionTime';
+import { isFuture, timeZoneForCountry } from '../../PatientDetail/admission/admissionTime';
 import { dateAndTime } from './enquadreEventTime';
 import { EnquadrePipelineSeals } from './EnquadrePipelineSeals';
 import { ENQUADRE_PHASE_KEY, ENQUADRE_PHASE_OPEN, ENQUADRE_PHASE_TONE } from './enquadreEventPhase';
 
 interface Props {
   event: EnquadreEventListItem;
-  timeZone: string;
   now: Date;
   onSelect: (eventId: string) => void;
 }
@@ -29,10 +28,11 @@ const OUTCOME_KEYS: ReadonlyArray<readonly [keyof EnquadreOutcomeCounts, string]
   ['returned', 'outcome.returned'],
 ];
 
-export function EnquadreEventRow({ event: e, timeZone, now, onSelect }: Props): JSX.Element {
+export function EnquadreEventRow({ event: e, now, onSelect }: Props): JSX.Element {
   const { t } = useTranslation();
   const te = (key: string, opts?: Record<string, unknown>): string => t(`admin.vacancyDetail.enquadre.${key}`, opts);
-  const [date, time] = dateAndTime(e.startsAt, timeZone);
+  // Data e hora no fuso do PAÍS DO EVENTO (o da vaga), como o kanban do evento; nunca o de Buenos Aires por omissão.
+  const [date, time] = dateAndTime(e.startsAt, timeZoneForCountry(e.country));
   const showMeet = ENQUADRE_PHASE_OPEN[e.phase] && isFuture(e.endsAt, now) && Boolean(e.meetLink);
   const showSeals = e.phase === 'closed' && e.pipeline !== null;
   const outcomeParts = e.phase === 'closed'

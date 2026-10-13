@@ -118,6 +118,20 @@ describe('botões de ação × célula (enforcement ligado)', () => {
     expect(has('enquadre-kanban-cancel')).toBe(false);
   });
 
+  it('o motivo de "Encerrar" bloqueado só aparece quando o botão aparece: sem enquadre_result:update some o texto; com ela ficam os dois', async () => {
+    setAuthz('on', ['enquadre_event:read', 'enquadre_event:update']);
+    await mountList();
+    await openOpenEvent();
+    expect(has('enquadre-kanban-close')).toBe(false);
+    expect(has('enquadre-kanban-close-blocked')).toBe(false);
+    cleanup(); restore?.(); restore = null;
+    setAuthz('on', ['enquadre_event:read', 'enquadre_result:update']);
+    await mountList();
+    await openOpenEvent();
+    expect(has('enquadre-kanban-close')).toBe(true);
+    expect(has('enquadre-kanban-close-blocked')).toBe(true);
+  });
+
   it('no painel de convocados, "Quitar" e "Agregar" existem com enquadre_event:update', async () => {
     setAuthz('on', [...EVENT_ALL]);
     await mountList();
