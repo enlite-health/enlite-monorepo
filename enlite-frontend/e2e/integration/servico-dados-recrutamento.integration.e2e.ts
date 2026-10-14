@@ -90,7 +90,8 @@ test.describe('servico-dados-recrutamento — spec 027 Fase 3 @integration', () 
 
     await page.getByTestId(`contracted-service-edit-${serviceId}`).click();
     await expect(page.getByTestId(`contracted-service-form-${serviceId}`)).toBeVisible({ timeout: 15_000 });
-    await page.getByTestId('svc-profession-CAREGIVER-1').click();
+    // O input real é `sr-only`: o alvo de um humano é o <label> (mesmo gesto do wizard da vaga).
+    await page.locator('label[for="svc-profession-CAREGIVER-1"]').click();
     await page.getByTestId('svc-requiredSex-1').selectOption('F');
     await page.getByTestId('svc-workSchedule-1').selectOption('full-time');
     for (const [id, texto] of [
@@ -103,7 +104,7 @@ test.describe('servico-dados-recrutamento — spec 027 Fase 3 @integration', () 
     const guardou = page.waitForResponse((r) => r.request().method() === 'PATCH' && new RegExp(`/contracted-services/${serviceId}$`).test(r.url()));
     await page.getByTestId(`contracted-service-save-${serviceId}`).click();
     expect((await guardou).status()).toBe(200);
-    await page.getByLabel('Cerrar').click();
+    await page.getByTestId('patient-contracted-services-edit-drawer').getByLabel('Cerrar').click();
     await expect(page.getByTestId('patient-contracted-services-edit-drawer')).not.toBeVisible({ timeout: 15_000 });
 
     await expect(page.getByTestId(`contracted-service-activate-recruitment-${serviceId}`)).toBeEnabled({ timeout: 15_000 });
@@ -144,7 +145,7 @@ test.describe('servico-dados-recrutamento — spec 027 Fase 3 @integration', () 
     const guardou = page.waitForResponse((r) => r.request().method() === 'PATCH' && new RegExp(`/contracted-services/${serviceId}$`).test(r.url()));
     await page.getByTestId(`contracted-service-save-${serviceId}`).click();
     expect((await guardou).status()).toBe(200);
-    await page.getByLabel('Cerrar').click();
+    await page.getByTestId('patient-contracted-services-edit-drawer').getByLabel('Cerrar').click();
     await expect(botao).toBeEnabled({ timeout: 15_000 });
   });
 
