@@ -135,12 +135,11 @@ function colunaEsperada(
 /**
  * Abre a vaga e coloca o funil na visão KANBAN.
  *
- * ⚠️ A troca de visão é obrigatória, e descobri isso na 1ª execução real: o padrão do
- * funil é `list`, não `kanban` (`VacancyFunnelView.getPersistedView` → `return 'list'`),
- * e a escolha é persistida em `localStorage` POR VAGA
- * (`vacancy-funnel-view-<id>`). Num contexto de browser novo — que é o que todo run
- * cria — não há nada persistido, então o Kanban simplesmente não é renderizado e
- * `kanban-card-*` não existe no DOM.
+ * Desde a 054 o padrão do funil é `kanban` (`VacancyFunnelView.getPersistedView` →
+ * `return 'kanban'`); antes era `list`, e foi aí que a troca de visão abaixo nasceu. A
+ * escolha é persistida em `localStorage` POR VAGA (`vacancy-funnel-view-v2-<id>`). Num
+ * contexto de browser novo — que é o que todo run cria — não há nada persistido e o
+ * Kanban já abre; o clique no alternador segue aqui por garantia, é inofensivo.
  *
  * O clique no alternador é também o que o staff faz, então não é contorno: é o passo
  * que faltava na jornada. O `aria-label` é "Kanban" em ES e pt-BR, então o seletor por
@@ -489,8 +488,8 @@ test.describe.serial('Spec 009 · Fase 1 — Kanban do staff', () => {
     const page = await ctx.newPage();
     try {
       await page.goto(`/admin/vacancies/${kanban.vacancyId}`);
-      // Mesma troca de visão do `abrirVaga`: o funil nasce em `list` e o Kanban só
-      // renderiza depois do clique (a preferência é por vaga, no localStorage).
+      // Mesma troca de visão do `abrirVaga`: desde a 054 o funil já nasce em `kanban`; o
+      // clique é por garantia (a preferência é por vaga, no localStorage).
       const alternador = page.getByRole('button', { name: 'Kanban' });
       await expect(alternador).toBeVisible({ timeout: 30_000 });
       await alternador.click();

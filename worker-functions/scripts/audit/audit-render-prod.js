@@ -94,7 +94,7 @@ async function loginFirebase() {
     localStorage.setItem(key, value);
     // Force Kanban view (default é 'list')
     for (const vid of vacancyIds) {
-      localStorage.setItem(`vacancy-funnel-view-${vid}`, 'kanban');
+      localStorage.setItem(`vacancy-funnel-view-v2-${vid}`, 'kanban');
     }
   }, { uid, email: FIREBASE_EMAIL, idToken, refreshToken, apiKey: FIREBASE_API_KEY, vacancyIds });
 
