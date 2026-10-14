@@ -596,6 +596,11 @@ test.describe('funil da vacante @integration', () => {
 
       // Lista: sem linha nenhuma (clicando "Lista").
       await switchToLista(page, vacancyId);
+      // Empty-state NÃO filtrado da Lista (role=status, sem spinner): sem isto o zero passaria carregando.
+      await expect(
+        page.locator('[role="status"]').filter({ hasText: /Sin candidatos/ }),
+        'empty-state da Lista (vaga vazia)',
+      ).toBeVisible({ timeout: 15_000 });
       await expect
         .poll(() => countFunnelTableRows(page), { timeout: 15_000, message: 'linhas da Lista (vaga vazia)' })
         .toBe(0);
