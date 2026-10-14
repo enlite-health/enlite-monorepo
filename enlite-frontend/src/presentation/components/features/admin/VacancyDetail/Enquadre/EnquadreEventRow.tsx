@@ -16,6 +16,7 @@ import { EnquadrePipelineSeals } from './EnquadrePipelineSeals';
 import { ENQUADRE_PHASE_KEY, ENQUADRE_PHASE_OPEN, ENQUADRE_PHASE_TONE } from './enquadreEventPhase';
 
 interface Props {
+  vacancyId: string;
   event: EnquadreEventListItem;
   now: Date;
   onSelect: (eventId: string) => void;
@@ -28,7 +29,7 @@ const OUTCOME_KEYS: ReadonlyArray<readonly [keyof EnquadreOutcomeCounts, string]
   ['returned', 'outcome.returned'],
 ];
 
-export function EnquadreEventRow({ event: e, now, onSelect }: Props): JSX.Element {
+export function EnquadreEventRow({ vacancyId, event: e, now, onSelect }: Props): JSX.Element {
   const { t } = useTranslation();
   const te = (key: string, opts?: Record<string, unknown>): string => t(`admin.vacancyDetail.enquadre.${key}`, opts);
   // Data e hora no fuso do PAÍS DO EVENTO (o da vaga), como o kanban do evento; nunca o de Buenos Aires por omissão.
@@ -88,7 +89,7 @@ export function EnquadreEventRow({ event: e, now, onSelect }: Props): JSX.Elemen
     {showSeals && e.pipeline && (
       <TableRow data-testid={`enquadre-event-seals-row-${e.id}`} clickable={false}>
         <TableCell colSpan={6} unwrapped className="px-3 pb-3 pt-0">
-          <EnquadrePipelineSeals eventId={e.id} pipeline={e.pipeline} />
+          <EnquadrePipelineSeals vacancyId={vacancyId} eventId={e.id} pipeline={e.pipeline} />
         </TableCell>
       </TableRow>
     )}

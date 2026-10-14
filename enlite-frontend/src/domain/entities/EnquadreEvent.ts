@@ -27,12 +27,18 @@ export interface EnquadreOutcomeCounts {
 export type EnquadreImportStatus =
   | 'pending' | 'waiting' | 'done' | 'rejected' | 'ambiguous' | 'expired' | 'blocked' | 'no_show';
 
-/** Esteira pós-call (spec §5.5). */
+/**
+ * Esteira pós-call (spec §5.5). O servidor DERIVA tudo do `import_status`, do documento do resumo e da presença medida.
+ * `summary` é AUSENTE (a chave nem vem) quando o usuário não tem a célula `enquadre_summary:read`: sem ela nem o selo do resumo
+ * nem o botão de baixar existem na tela.
+ */
 export interface EnquadrePipelineState {
   importStatus: EnquadreImportStatus | null;
-  summary: 'waiting' | 'ready' | 'unavailable';
-  /** Motivo escrito quando `importStatus === 'blocked'`. */
+  summary?: 'waiting' | 'ready' | 'unavailable';
+  /** Código fechado do motivo (`no_link`, `wrong_account`, `meet_scope_missing`...) quando `importStatus === 'blocked'`; a tela o traduz. */
   blockedReason: string | null;
+  /** Convocados que o app não conseguiu ligar a ninguém da call (presença `unidentified`). 0 = nenhum ou presença ainda não medida. */
+  unidentifiedCount: number;
 }
 
 export interface EnquadreEventListItem {

@@ -85,7 +85,7 @@ export function EnquadreTab({ vacancyId, now = () => new Date() }: Props): JSX.E
         </div>
       )}
       {status === 'ok' && events.length > 0 && (
-        <EnquadreEventsTable events={events} now={now()} onSelect={setSelectedEventId} />
+        <EnquadreEventsTable vacancyId={vacancyId} events={events} now={now()} onSelect={setSelectedEventId} />
       )}
 
       {createOpen && (

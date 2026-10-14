@@ -132,7 +132,9 @@ describe('Lista de eventos (E1-E5, E12, E15)', () => {
     expect([text('enquadre-seal-import-chip-ev-71'), text('enquadre-seal-summary-chip-ev-71')]).toEqual(['Esperando', 'Esperando']);
     expect([text('enquadre-seal-import-chip-ev-72'), text('enquadre-seal-summary-chip-ev-72')]).toEqual(['Importada', 'Resumen listo']);
     expect(text('enquadre-seal-import-chip-ev-73')).toBe('Bloqueada');
-    expect(text('enquadre-seal-blocked-reason-ev-73')).toContain('Falta confirmar la identidad');
+    expect(text('enquadre-seal-blocked-reason-ev-73')).toBe('Motivo: El responsable no vinculó su cuenta de Tactiq'); // o código `no_link` do servidor, traduzido
+    expect(text('enquadre-seal-unidentified-ev-74')).toBe('Convocados sin identificar: 2');
+    expect(screen.queryByTestId('enquadre-seal-unidentified-ev-72')).not.toBeInTheDocument(); // 0 = nada na linha
     expect([text('enquadre-seal-import-chip-ev-74'), text('enquadre-seal-summary-chip-ev-74')]).toEqual(['Importada', 'Resumen no disponible']);
     expect(q('enquadre-seal-import-chip-ev-72').getAttribute('data-tone')).toBe('ok');
     expect(q('enquadre-seal-import-chip-ev-73').getAttribute('data-tone')).toBe('bad');

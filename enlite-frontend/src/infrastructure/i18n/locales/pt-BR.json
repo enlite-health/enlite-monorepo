@@ -2701,7 +2701,19 @@
           "summary": "Resumo",
           "summaryReady": "Resumo pronto",
           "summaryUnavailable": "Resumo indisponível",
-          "blockedWhy": "Motivo: {{reason}}"
+          "blockedWhy": "Motivo: {{reason}}",
+          "blockedReasons": {
+            "no_link": "O responsável não vinculou a conta do Tactiq",
+            "wrong_account": "A reunião está em outra conta do Tactiq",
+            "meet_scope_missing": "Falta a permissão do Google Meet",
+            "no_meet_link": "O evento não tem link do Meet",
+            "summary_attempts_exhausted": "As tentativas de gerar o resumo se esgotaram",
+            "unauthorized": "O Tactiq recusou o acesso"
+          },
+          "download": "Baixar resumo",
+          "downloadError": "Não foi possível abrir o resumo. Tente de novo.",
+          "popupBlocked": "O navegador bloqueou a nova aba. Libere e tente de novo.",
+          "unidentified": "Convocados não identificados: {{count}}"
         },
         "unassignedCount_one": "{{count}} completado sem evento",
         "unassignedCount_other": "{{count}} completados sem evento"
@@ -4701,7 +4713,8 @@
             "own_tactiq_link": "Meu vínculo com o Tactiq",
             "patient_status": "Status do paciente: troca fora do fluxo",
             "enquadre_event": "Eventos de enquadre (criar, convocados e cancelar)",
-            "enquadre_result": "Resultado do enquadre (marcar e encerrar)"
+            "enquadre_result": "Resultado do enquadre (marcar e encerrar)",
+            "enquadre_summary": "Resumo do enquadre (ver e baixar)"
           },
           "help": {
             "open": "O que esta permissão faz",
@@ -5126,7 +5139,8 @@
             "talentum": "Publicação no Talentum",
             "patient": "Paciente (nome)",
             "enquadreEvent": "Eventos de enquadre",
-            "enquadreResult": "Resultado do enquadre"
+            "enquadreResult": "Resultado do enquadre",
+            "enquadreSummary": "Resumo do enquadre"
           }
         },
         "recruitment": {

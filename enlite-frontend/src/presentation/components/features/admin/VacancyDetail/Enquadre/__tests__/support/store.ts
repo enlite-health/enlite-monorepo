@@ -111,7 +111,7 @@ export function createFakeServer(seed: Seed): Record<string, unknown> {
       release(unmarked);
       ev.phase = 'closed';
       ev.meetLink = null;
-      ev.pipeline = { importStatus: 'waiting', summary: 'waiting', blockedReason: null };
+      ev.pipeline = { importStatus: 'waiting', summary: 'waiting', blockedReason: null, unidentifiedCount: 0 };
       return toDetail(ev);
     },
     cancelEvent: async (_v: string, id: string): Promise<EnquadreEventDetail> => {

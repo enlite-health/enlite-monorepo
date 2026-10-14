@@ -28,6 +28,7 @@
     "enquadre_event:read",
     "enquadre_event:update",
     "enquadre_result:update",
+    "enquadre_summary:read",
     "funnel:create",
     "funnel:read",
     "funnel:update",

@@ -34,7 +34,7 @@ afterEach(() => cleanup());
 describe('lista de eventos: fuso por país do evento', () => {
   it('o mesmo instante sai 14:00 no evento AR (-03) e 22:00 no evento BR (+05 no mapa trocado)', () => {
     const events: EnquadreEventListItem[] = [base, { ...base, id: 'ev-br', country: 'BR' }];
-    render(<EnquadreEventsTable events={events} now={new Date('2026-10-01T12:00:00.000Z')} onSelect={() => undefined} />);
+    render(<EnquadreEventsTable vacancyId="v1" events={events} now={new Date('2026-10-01T12:00:00.000Z')} onSelect={() => undefined} />);
     expect(screen.getByTestId('enquadre-event-time-ev-ar').textContent).toBe('14:00');
     expect(screen.getByTestId('enquadre-event-time-ev-br').textContent).toBe('22:00');
     expect(screen.getByTestId('enquadre-event-date-ev-br').textContent).toBe('16/10');

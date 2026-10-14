@@ -207,6 +207,8 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
       // Aba Enquadre (spec 052): ler/criar/acrescentar-tirar-cancelar o evento; marcar o resultado e encerrar.
       c('enquadreEvent', 'enquadre_event', ['read', 'create', 'update'], 'enquadre'),
       c('enquadreResult', 'enquadre_result', ['update'], 'enquadre'),
+      // Quinta célula (Fase 3): o selo do resumo na linha do evento e o botão de baixar o PDF só existem para quem a tem.
+      c('enquadreSummary', 'enquadre_summary', ['read'], 'enquadre'),
     ],
   },
 

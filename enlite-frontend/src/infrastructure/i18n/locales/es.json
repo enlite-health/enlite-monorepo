@@ -2780,7 +2780,19 @@
           "summary": "Resumen",
           "summaryReady": "Resumen listo",
           "summaryUnavailable": "Resumen no disponible",
-          "blockedWhy": "Motivo: {{reason}}"
+          "blockedWhy": "Motivo: {{reason}}",
+          "blockedReasons": {
+            "no_link": "El responsable no vinculó su cuenta de Tactiq",
+            "wrong_account": "La reunión está en otra cuenta de Tactiq",
+            "meet_scope_missing": "Falta el permiso de Google Meet",
+            "no_meet_link": "El evento no tiene enlace de Meet",
+            "summary_attempts_exhausted": "Se agotaron los intentos de generar el resumen",
+            "unauthorized": "Tactiq rechazó el acceso"
+          },
+          "download": "Descargar resumen",
+          "downloadError": "No se pudo abrir el resumen. Intente de nuevo.",
+          "popupBlocked": "El navegador bloqueó la nueva pestaña. Permítala e intente de nuevo.",
+          "unidentified": "Convocados sin identificar: {{count}}"
         },
         "unassignedCount_one": "{{count}} completado sin evento",
         "unassignedCount_other": "{{count}} completados sin evento"
@@ -4780,7 +4792,8 @@
             "own_tactiq_link": "Mi vínculo con Tactiq",
             "patient_status": "Estado del paciente: cambio fuera del flujo",
             "enquadre_event": "Eventos de encuadre (crear, convocados y cancelar)",
-            "enquadre_result": "Resultado del encuadre (marcar y cerrar)"
+            "enquadre_result": "Resultado del encuadre (marcar y cerrar)",
+            "enquadre_summary": "Resumen del encuadre (ver y descargar)"
           },
           "help": {
             "open": "Qué hace este permiso",
@@ -5205,7 +5218,8 @@
             "talentum": "Publicación en Talentum",
             "patient": "Paciente (nombre)",
             "enquadreEvent": "Eventos de encuadre",
-            "enquadreResult": "Resultado del encuadre"
+            "enquadreResult": "Resultado del encuadre",
+            "enquadreSummary": "Resumen del encuadre"
           }
         },
         "recruitment": {

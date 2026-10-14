@@ -70,7 +70,7 @@ function part(
 }
 
 const parts = (ns: string[]): EnquadreParticipant[] => ns.map((n) => part(n));
-const waiting: EnquadrePipelineState = { importStatus: 'waiting', summary: 'waiting', blockedReason: null };
+const waiting: EnquadrePipelineState = { importStatus: 'waiting', summary: 'waiting', blockedReason: null, unidentifiedCount: 0 };
 
 /** 16/10 14:00, 5 convocados. */
 export const EV_01: SeedEvent = {
@@ -96,7 +96,7 @@ export const EV_03_E11: SeedEvent = {
 /** Encerrado 09/10: 2 selecionados, 1 resposta rápida, 1 rejeitado, 1 devolvido. */
 export const EV_04: SeedEvent = {
   id: 'ev-04', startsAt: '2026-10-09T10:00:00-03:00', endsAt: '2026-10-09T11:00:00-03:00', hostName: 'Entrevistadora Ficticia A',
-  phase: 'closed', meetLink: null, pipeline: { importStatus: 'done', summary: 'ready', blockedReason: null },
+  phase: 'closed', meetLink: null, pipeline: { importStatus: 'done', summary: 'ready', blockedReason: null, unidentifiedCount: 0 },
   participants: [
     part('41', 'SELECTED', 'selected'), part('42', 'SELECTED', 'selected'), part('43', 'QUICK_RESPONSE_TEAM', 'quick_response'),
     part('44', 'REJECTED', 'rejected', 'WORKER_DECLINED'), part('45', 'CONVOKED', 'returned'),
@@ -119,10 +119,10 @@ function closedWith(id: string, day: string, n: string, pipeline: EnquadrePipeli
 
 /** E12: 4 eventos encerrados, um por estado da esteira. */
 export const EV_PIPELINE: SeedEvent[] = [
-  closedWith('ev-71', '08', '71', { importStatus: 'waiting', summary: 'waiting', blockedReason: null }),
-  closedWith('ev-72', '07', '72', { importStatus: 'done', summary: 'ready', blockedReason: null }),
-  closedWith('ev-73', '05', '73', { importStatus: 'blocked', summary: 'waiting', blockedReason: 'Falta confirmar la identidad de un convocado' }),
-  closedWith('ev-74', '02', '74', { importStatus: 'done', summary: 'unavailable', blockedReason: null }),
+  closedWith('ev-71', '08', '71', { importStatus: 'waiting', summary: 'waiting', blockedReason: null, unidentifiedCount: 0 }),
+  closedWith('ev-72', '07', '72', { importStatus: 'done', summary: 'ready', blockedReason: null, unidentifiedCount: 0 }),
+  closedWith('ev-73', '05', '73', { importStatus: 'blocked', summary: 'waiting', blockedReason: 'no_link', unidentifiedCount: 0 }),
+  closedWith('ev-74', '02', '74', { importStatus: 'done', summary: 'unavailable', blockedReason: null, unidentifiedCount: 2 }),
 ];
 
 type Card = FunnelStages['COMPLETED'][number];
