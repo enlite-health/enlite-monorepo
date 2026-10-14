@@ -137,6 +137,7 @@ import { AccountLinkController } from '@modules/account-link/AccountLinkControll
 import { createAccountLinkRoutes } from '@modules/account-link/accountLinkRoutes';
 import { registerAdminMaintenanceRoutes } from './bootstrap/registerAdminMaintenanceRoutes';
 import { registerAdmissionInternalJobRoutes } from './bootstrap/registerAdmissionInternalJobRoutes';
+import { registerEnquadreInternalJobRoutes } from './bootstrap/registerEnquadreInternalJobRoutes';
 import { createAdminIntegrationsRoutes } from '@modules/integration';
 import { registerFunnelStageHandlers } from './shared/events/registerFunnelStageHandlers';
 import { FunnelStageMessagesController } from './modules/matching/interfaces/controllers/FunnelStageMessagesController';
@@ -796,6 +797,8 @@ app.use(
 
 // spec 050 F15 + spec 049 F5: relatório diário do Chrome e job de 15 min do fim da call (ordem preservada).
 registerAdmissionInternalJobRoutes(app, { db: admissionDb, externals: admissionExternals, events: admissionEvents, importer: admissionImportService });
+// spec 052 F3: fim de call do enquadre (jobs separados dos da admissão, D506); mesma Meet API, fonte/destino próprios.
+registerEnquadreInternalJobRoutes(app, { db: admissionDb, meet: admissionExternals.meet });
 
 // spec 049 F6: importação do Tactiq (MCP -> provas -> cofre -> Vertex -> PDF -> documento). Roda depois do job de 15 min (a F5 grava
 // `conference_ended_at` e `import_status='pending'`). Cloud Scheduler, a cada 15 min.
