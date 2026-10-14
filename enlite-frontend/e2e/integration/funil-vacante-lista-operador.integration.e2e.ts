@@ -54,6 +54,17 @@ async function visibleNames(page: Page): Promise<string[]> {
   return (await links.allInnerTexts()).map((n) => n.trim()).sort();
 }
 
+/**
+ * Container do ContactNotesModal (ContactNotesModal.tsx:57-58: overlay `fixed inset-0`, sem role/testid),
+ * achado pelo título h3 "Notas de contacto" (:68) → ancestral `fixed`. Evita casar com o painel de
+ * notificações (aria-label "Cerrar notificaciones") e com qualquer outro botão da página.
+ */
+function notesModal(page: Page) {
+  return page
+    .getByRole('heading', { name: 'Notas de contacto' })
+    .locator('xpath=ancestor::div[contains(@class,"fixed")][1]');
+}
+
 async function clearSearchAndType(page: Page, text: string): Promise<void> {
   const search = page.getByTestId('funnel-filter-search');
   await search.click();
@@ -156,19 +167,21 @@ test.describe('funil da vacante — Lista como operador @integration', () => {
     const card = page.getByTestId(`kanban-card-${angelaWjaId}`);
     await expect(card).toBeVisible({ timeout: 15_000 });
     await card.getByTestId('notes-button').click();
-    const textarea = page.getByPlaceholder('Escribí una nota sobre este candidato…');
+    const modal = notesModal(page);
+    await expect(modal).toBeVisible();
+    const textarea = modal.getByPlaceholder('Escribí una nota sobre este candidato…');
     await textarea.click();
     await expect(textarea).toBeFocused();
     await page.keyboard.type(noteText);
     await expect(textarea).toHaveValue(noteText);
     const [post] = await Promise.all([
       page.waitForResponse((r) => /contact-notes/.test(r.url()) && r.request().method() === 'POST'),
-      page.getByRole('button', { name: 'Registrar', exact: true }).click(),
+      modal.getByRole('button', { name: 'Registrar', exact: true }).click(),
     ]);
     expect(post.ok(), 'POST contact-notes falhou').toBe(true);
-    await expect(page.getByText(noteText)).toBeVisible();
-    await page.getByRole('button', { name: 'Cerrar' }).click();
-    await expect(page.getByText(noteText)).toHaveCount(0);
+    await expect(modal.getByText(noteText)).toBeVisible();
+    await modal.getByRole('button', { name: 'Cerrar', exact: true }).click();
+    await expect(modal).toHaveCount(0);
 
     // Lista: badge da linha da Ángela mostra 1 e o modal do funnel-notes-button mostra o texto.
     await switchToLista(page, vacancyId);
@@ -177,6 +190,6 @@ test.describe('funil da vacante — Lista como operador @integration', () => {
       await expect(row.getByTestId('notes-count-badge')).toHaveText('1');
     }).toPass({ timeout: 25_000 }); // cobre o polling de 10 s da Lista
     await row.getByTestId('funnel-notes-button').click();
-    await expect(page.getByText(noteText)).toBeVisible({ timeout: 15_000 });
+    await expect(notesModal(page).getByText(noteText)).toBeVisible({ timeout: 15_000 });
   });
 });
