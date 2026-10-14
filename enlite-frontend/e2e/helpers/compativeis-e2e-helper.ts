@@ -303,12 +303,10 @@ async function readCountByTestId(page: Page, testId: string): Promise<number | u
  */
 export async function readCompatibleCountsOnScreen(page: Page, vacancyId: string): Promise<CompatibleCountsOnScreen> {
   const kanban = await readCountByTestId(page, 'kanban-column-COMPATIBLE-count');
-  const listaAtiva =
-    (await page
-      .getByRole('group', { name: 'Cambiar vista' })
-      .getByRole('button', { name: 'Lista' })
-      .getAttribute('aria-pressed')
-      .catch(() => null)) === 'true';
+  // count() não auto-espera: na lista de vacantes (/admin/vacancies) o grupo "Cambiar vista" não
+  // existe e getAttribute esperaria o timeout do teste inteiro.
+  const listaBtn = page.getByRole('group', { name: 'Cambiar vista' }).getByRole('button', { name: 'Lista' });
+  const listaAtiva = (await listaBtn.count()) > 0 && (await listaBtn.getAttribute('aria-pressed')) === 'true';
   const lista = listaAtiva ? await countListaRowsInStage(page, 'COMPATIBLE') : undefined;
   const vacantes = await readCountByTestId(page, `vacancy-row-${vacancyId}-stage-COMPATIBLE`);
   return { kanban, lista, vacantes };
