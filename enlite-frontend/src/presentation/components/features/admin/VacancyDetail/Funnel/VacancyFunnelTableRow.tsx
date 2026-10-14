@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { Hand, MessageSquare } from 'lucide-react';
+import { MessageSquare } from 'lucide-react';
 import { WorkerAvatar } from '@presentation/components/atoms/WorkerAvatar';
 import { WhatsappStatusBadge } from '@presentation/components/atoms/WhatsappStatusBadge';
 import { Text } from '@presentation/components/atoms/Text';
@@ -26,13 +26,6 @@ export function VacancyFunnelTableRow({
   const { t } = useTranslation();
 
   const formattedDate = formatInstant(row.invitedAt, { day: '2-digit', month: '2-digit', year: 'numeric' }) ?? '—';
-
-  const acceptedLabel =
-    row.accepted === true
-      ? t('admin.vacancyDetail.funnelTable.acceptedYes')
-      : row.accepted === false
-        ? t('admin.vacancyDetail.funnelTable.acceptedNo')
-        : '—';
 
   function handleNotesClick(e: React.MouseEvent) {
     e.stopPropagation();
@@ -116,28 +109,6 @@ export function VacancyFunnelTableRow({
         </div>
       </TableCell>
 
-      {/* Origen — "levantou a mão" (mesmo sinal do card do Kanban, aqui na vista
-          que é o DEFAULT do funil). Célula vazia = não sabemos: a autoria só é
-          gravada desde 06/08 e ausência não prova desinteresse. */}
-      <TableCell className="px-6 whitespace-nowrap">
-        {row.selfAppliedAt ? (
-          <span
-            data-testid="funnel-self-applied-badge"
-            title={t('admin.kanban.selfAppliedTitle', {
-              date: formatInstant(row.selfAppliedAt, {}) ?? '',
-            })}
-            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-800"
-          >
-            <Hand className="w-3 h-3" />
-            {t('admin.kanban.selfApplied')}
-          </span>
-        ) : (
-          <Text as="span" size="xs" color="muted">
-            —
-          </Text>
-        )}
-      </TableCell>
-
       {/* Phone */}
       <TableCell weight="medium" className="px-6">
         {row.workerPhone ?? '—'}
@@ -151,11 +122,6 @@ export function VacancyFunnelTableRow({
       {/* WhatsApp status */}
       <TableCell unwrapped className="px-6">
         <WhatsappStatusBadge status={row.whatsappStatus} />
-      </TableCell>
-
-      {/* Accepted */}
-      <TableCell weight="medium" className="px-6">
-        {acceptedLabel}
       </TableCell>
 
       {/* Registration badge */}

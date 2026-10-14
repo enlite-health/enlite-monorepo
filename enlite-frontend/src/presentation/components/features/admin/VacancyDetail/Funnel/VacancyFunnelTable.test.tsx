@@ -115,9 +115,6 @@ describe('VacancyFunnelTable', () => {
       screen.getByText('admin.vacancyDetail.funnelTable.headers.whatsapp'),
     ).toBeInTheDocument();
     expect(
-      screen.getByText('admin.vacancyDetail.funnelTable.headers.accepted'),
-    ).toBeInTheDocument();
-    expect(
       screen.getByText('admin.vacancyDetail.funnelTable.headers.registration'),
     ).toBeInTheDocument();
     expect(
@@ -180,12 +177,6 @@ describe('VacancyFunnelTable', () => {
     expect(mockNavigate).not.toHaveBeenCalled();
   });
 
-  it('renders the "no" label when accepted=false', () => {
-    const rows: FunnelTableRow[] = [{ ...mockRows[0], accepted: false }];
-    renderTable({ ...defaultProps, rows });
-    expect(screen.getByText('admin.vacancyDetail.funnelTable.acceptedNo')).toBeInTheDocument();
-  });
-
   it('opens the contact notes modal for the row when the notes button is clicked', () => {
     renderTable(defaultProps);
     fireEvent.click(screen.getAllByTestId('funnel-notes-button')[0]);
@@ -219,37 +210,24 @@ describe('VacancyFunnelTable', () => {
   });
 });
 
-// Coluna "Origen" — o mesmo sinal do card do Kanban, aqui na vista que é o DEFAULT
-// do funil. Sem isto, quem nunca troca de vista não vê quem levantou a mão.
-describe('VacancyFunnelTable — coluna Origen (levantou a mão)', () => {
+// 054 item 2: saem as colunas Origen e ACEPTÓ da Lista (o selo de auto-postulação segue no card do Kanban).
+describe('VacancyFunnelTable — sem as colunas Origen e ACEPTÓ (054 item 2)', () => {
   const props = { vacancyId: 'vac-123', isLoading: false, activeTabLabel: 'Invitados' };
 
-  it('mostra o selo quando o próprio prestador entrou pelo link', () => {
+  it('os headers não contêm origin nem accepted', () => {
+    renderTable({ ...props, rows: mockRows });
+    expect(screen.queryByText('admin.vacancyDetail.funnelTable.headers.origin')).toBeNull();
+    expect(screen.queryByText('admin.vacancyDetail.funnelTable.headers.accepted')).toBeNull();
+  });
+
+  it('linha auto-postulada e com accepted=false não renderiza selo nem rótulo Sí/No', () => {
     const rows: FunnelTableRow[] = [
-      { ...mockRows[0], selfAppliedAt: '2026-08-07T13:51:19.923Z' },
+      { ...mockRows[0], selfAppliedAt: '2026-08-07T13:51:19.923Z', accepted: false },
     ];
     renderTable({ ...props, rows });
-    expect(screen.getByTestId('funnel-self-applied-badge')).toHaveTextContent(
-      'admin.kanban.selfApplied',
-    );
-  });
-
-  it('sem carimbo mostra travessão, não o selo — ausência não é prova de desinteresse', () => {
-    const rows: FunnelTableRow[] = [{ ...mockRows[0], selfAppliedAt: null }];
-    renderTable({ ...props, rows });
     expect(screen.queryByTestId('funnel-self-applied-badge')).toBeNull();
-  });
-
-  it('linha sem o campo (card antigo) também não mostra o selo', () => {
-    renderTable({ ...props, rows: [mockRows[0]] });
-    expect(screen.queryByTestId('funnel-self-applied-badge')).toBeNull();
-  });
-
-  it('a coluna existe no cabeçalho da lista', () => {
-    renderTable({ ...props, rows: mockRows });
-    expect(
-      screen.getByText('admin.vacancyDetail.funnelTable.headers.origin'),
-    ).toBeInTheDocument();
+    expect(screen.queryByText('admin.vacancyDetail.funnelTable.acceptedNo')).toBeNull();
+    expect(screen.queryByText('admin.vacancyDetail.funnelTable.acceptedYes')).toBeNull();
   });
 });
 

@@ -77,3 +77,14 @@ describe('VacancyFunnelTableRow — linha redigida (workerId null)', () => {
     expect(screen.queryByTestId('funnel-worker-link')).not.toBeInTheDocument();
   });
 });
+
+// 054 item 2: Origen/ACEPTÓ saem da Lista.
+describe('VacancyFunnelTableRow — sem Origen nem ACEPTÓ (054 item 2)', () => {
+  it('não renderiza o selo de auto-postulação nem o rótulo de aceite', () => {
+    renderRow({ ...baseRow, selfAppliedAt: '2026-08-07T13:51:19.923Z', accepted: true });
+    expect(screen.queryByTestId('funnel-self-applied-badge')).not.toBeInTheDocument();
+    expect(screen.queryByText('admin.vacancyDetail.funnelTable.acceptedYes')).not.toBeInTheDocument();
+    renderRow({ ...baseRow, accepted: false });
+    expect(screen.queryByText('admin.vacancyDetail.funnelTable.acceptedNo')).not.toBeInTheDocument();
+  });
+});

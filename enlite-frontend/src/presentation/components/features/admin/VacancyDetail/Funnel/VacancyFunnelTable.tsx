@@ -37,14 +37,9 @@ export function VacancyFunnelTable({
   const headers = [
     t('admin.vacancyDetail.funnelTable.headers.notes'),
     t('admin.vacancyDetail.funnelTable.headers.name'),
-    // "Origen": distingue quem levantou a mão de quem foi convidado numa lista fria.
-    // Vive aqui além do Kanban porque a vista LISTA é o default do funil — deixar
-    // só no card escondia o sinal de quem nunca troca de vista.
-    t('admin.vacancyDetail.funnelTable.headers.origin'),
     t('admin.vacancyDetail.funnelTable.headers.phone'),
     t('admin.vacancyDetail.funnelTable.headers.inviteDate'),
     t('admin.vacancyDetail.funnelTable.headers.whatsapp'),
-    t('admin.vacancyDetail.funnelTable.headers.accepted'),
     t('admin.vacancyDetail.funnelTable.headers.registration'),
   ];
 
