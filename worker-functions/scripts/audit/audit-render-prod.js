@@ -92,7 +92,7 @@ async function loginFirebase() {
       apiKey, appName: '[DEFAULT]',
     });
     localStorage.setItem(key, value);
-    // Force Kanban view (default é 'list')
+    // Force Kanban view (desde a 054 o padrão já é Kanban; chave v2)
     for (const vid of vacancyIds) {
       localStorage.setItem(`vacancy-funnel-view-v2-${vid}`, 'kanban');
     }
