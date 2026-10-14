@@ -257,4 +257,37 @@ describe('VacancyFunnelView', () => {
       screen.getByRole('button', { name: /dispatchInvitesButtonCount/ }),
     ).toHaveTextContent('dispatchInvitesButtonCount:3');
   });
+  it('falha de carga da Lista mostra funnel-table-error (não o vazio) e reintentar chama o refetch (054b item 4)', async () => {
+    const refetch = vi.fn();
+    mockUseVacancyFunnelTable.mockReturnValue({
+      data: null, isLoading: false, error: 'HTTP 500', refetch,
+    });
+    localStorage.setItem(NEW_KEY, 'list');
+    render(<VacancyFunnelView vacancyId="vac-1" />);
+    expect(screen.getByTestId('funnel-table-error')).toHaveTextContent(
+      'admin.vacancyDetail.funnelTable.loadError',
+    );
+    // sem dados + erro: a tabela (e portanto o "Sin candidatos") não é montada
+    expect(screen.queryByTestId('funnel-table')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByTestId('funnel-table-retry'));
+    expect(refetch).toHaveBeenCalledTimes(1);
+    expect(refetch).toHaveBeenCalledWith();
+  });
+
+  it('erro de refetch COM dados já carregados: mantém a tabela e mostra o aviso (054b item 4)', () => {
+    mockUseVacancyFunnelTable.mockReturnValue({
+      data: { ...mockData, rows: [frow('a', 'Ana', true)] },
+      isLoading: false, error: 'HTTP 500', refetch: vi.fn(),
+    });
+    localStorage.setItem(NEW_KEY, 'list');
+    render(<VacancyFunnelView vacancyId="vac-1" />);
+    expect(screen.getByTestId('funnel-table-error')).toBeInTheDocument();
+    expect(screen.getAllByTestId('mock-row')).toHaveLength(1);
+  });
+
+  it('sem erro, funnel-table-error não aparece (054b item 4)', () => {
+    localStorage.setItem(NEW_KEY, 'list');
+    render(<VacancyFunnelView vacancyId="vac-1" />);
+    expect(screen.queryByTestId('funnel-table-error')).not.toBeInTheDocument();
+  });
 });

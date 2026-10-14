@@ -2329,6 +2329,8 @@
         },
         "emptyState": "Sem candidatos nesta vaga",
         "emptyFiltered": "Nenhum candidato corresponde à busca.",
+        "loadError": "Não foi possível carregar a lista de candidatos.",
+        "retry": "Tentar novamente",
         "ariaLabel": "Tabela do funil da vaga",
         "filters": {
           "searchPlaceholder": "Buscar por nome ou telefone",
