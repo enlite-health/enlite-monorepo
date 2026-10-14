@@ -10,6 +10,7 @@ import {
 } from '@presentation/components/atoms/Table';
 import type { FunnelTableRow } from '@domain/entities/Funnel';
 import { formatInstant } from '@presentation/utils/dateTimeFormat';
+import { stageColumnIdFor } from './funnelTabsConfig';
 
 interface VacancyFunnelTableRowProps {
   row: FunnelTableRow;
@@ -26,6 +27,8 @@ export function VacancyFunnelTableRow({
   const { t } = useTranslation();
 
   const formattedDate = formatInstant(row.invitedAt, { day: '2-digit', month: '2-digit', year: 'numeric' }) ?? '—';
+
+  const stageId = stageColumnIdFor(row.kanbanColumn);
 
   function handleNotesClick(e: React.MouseEvent) {
     e.stopPropagation();
@@ -124,6 +127,20 @@ export function VacancyFunnelTableRow({
             </Text>
           </span>
         )}
+      </TableCell>
+
+      {/* Etapa — coluna do Kanban lida de row.kanbanColumn (o back decide; sem cálculo aqui) */}
+      <TableCell unwrapped className="px-6 whitespace-nowrap">
+        <Text
+          as="span"
+          size="sm"
+          weight="medium"
+          color="secondary"
+          data-testid={`funnel-stage-${row.id}`}
+          data-stage={stageId ?? undefined}
+        >
+          {stageId ? t(`admin.kanban.columns.${stageId}`) : '—'}
+        </Text>
       </TableCell>
 
       {/* Phone */}

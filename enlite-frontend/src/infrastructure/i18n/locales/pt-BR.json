@@ -2335,6 +2335,7 @@
           "whatsapp": "WHATSAPP",
           "accepted": "ACEITOU",
           "registration": "CADASTRO",
+          "stage": "ETAPA",
           "notes": "NOTAS"
         },
         "acceptedYes": "Sim",

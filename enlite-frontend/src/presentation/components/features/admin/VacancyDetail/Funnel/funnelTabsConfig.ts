@@ -47,3 +47,13 @@ export const FUNNEL_TABS: readonly FunnelTab[] = [
   { key: 'PRE_SELECTED', kind: 'bucket', bucket: 'PRE_SELECTED', i18nKey: 'admin.vacancyDetail.funnelTabs.preSelected' },
   { key: 'WITHDREW', kind: 'bucket', bucket: 'WITHDREW', i18nKey: 'admin.vacancyDetail.funnelTabs.withdrew' },
 ];
+
+/**
+ * Etapa da Lista = coluna do Kanban em que o prestador está. O back decide `kanbanColumn`
+ * (deriveKanbanColumn); aqui só se traduz source → id da coluna (IN_PROGRESS → PRE_SCREENING).
+ * Nulo ou fora do mapa → null.
+ */
+export function stageColumnIdFor(kanbanColumn: string | null | undefined): VacancyFunnelColumnId | null {
+  if (!kanbanColumn) return null;
+  return VACANCY_FUNNEL_COLUMNS.find((c) => c.sources.includes(kanbanColumn))?.id ?? null;
+}

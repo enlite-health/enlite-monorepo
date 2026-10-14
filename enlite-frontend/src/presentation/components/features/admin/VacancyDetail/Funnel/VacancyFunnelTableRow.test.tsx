@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { VacancyFunnelTableRow } from './VacancyFunnelTableRow';
 import type { FunnelTableRow } from '@domain/entities/Funnel';
+import es from '@infrastructure/i18n/locales/es.json';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -97,5 +98,40 @@ describe('VacancyFunnelTableRow — REGISTRO na 3ª célula (054 item 3)', () =>
     unmount();
     renderRow({ ...baseRow, registrationComplete: false });
     expect(screen.getAllByRole('cell')[2]).toHaveTextContent('admin.vacancyDetail.funnelTable.registration.incomplete');
+  });
+});
+
+// 054 item 4: ETAPA lê row.kanbanColumn pelo mapa sources → id (IN_PROGRESS aparece como Pre Screening).
+describe('VacancyFunnelTableRow — ETAPA (054 item 4)', () => {
+  const stageCell = () => screen.getByTestId('funnel-stage-row-1');
+  const kanbanLabels = es.admin.kanban.columns as Record<string, string>;
+
+  it('IN_PROGRESS mostra o rótulo de PRE_SCREENING ("Pre Screening"), nunca "En Progreso"', () => {
+    renderRow({ ...baseRow, kanbanColumn: 'IN_PROGRESS' });
+    expect(stageCell()).toHaveTextContent('admin.kanban.columns.PRE_SCREENING');
+    expect(stageCell()).toHaveAttribute('data-stage', 'PRE_SCREENING');
+    expect(kanbanLabels.PRE_SCREENING).toBe('Pre Screening');
+  });
+
+  it('COMPATIBLE mostra o rótulo de COMPATIBLE ("Compatibles")', () => {
+    renderRow({ ...baseRow, kanbanColumn: 'COMPATIBLE' });
+    expect(stageCell()).toHaveTextContent('admin.kanban.columns.COMPATIBLE');
+    expect(stageCell()).toHaveAttribute('data-stage', 'COMPATIBLE');
+    expect(kanbanLabels.COMPATIBLE).toBe('Compatibles');
+  });
+
+  it('kanbanColumn nulo ou fora do mapa mostra "—" e nenhum data-stage', () => {
+    const { unmount } = renderRow({ ...baseRow, kanbanColumn: null });
+    expect(stageCell()).toHaveTextContent('—');
+    expect(stageCell()).not.toHaveAttribute('data-stage');
+    unmount();
+    renderRow({ ...baseRow, kanbanColumn: 'FOO' });
+    expect(stageCell()).toHaveTextContent('—');
+    expect(stageCell()).not.toHaveAttribute('data-stage');
+  });
+
+  it('a ETAPA é a 4ª célula, logo depois de REGISTRO', () => {
+    renderRow({ ...baseRow, kanbanColumn: 'INVITED' });
+    expect(screen.getAllByRole('cell')[3]).toContainElement(stageCell());
   });
 });

@@ -201,7 +201,7 @@ describe('VacancyFunnelTable', () => {
 
   it('renders "—" with no title on the plain text when the row has neither workerId nor workerName', () => {
     const rows: FunnelTableRow[] = [
-      { ...mockRows[0], workerId: '', workerName: null, selfAppliedAt: '2026-01-01T00:00:00.000Z' },
+      { ...mockRows[0], workerId: '', workerName: null, kanbanColumn: 'INVITED' },
     ];
     renderTable({ ...defaultProps, rows });
     expect(screen.queryByTestId('funnel-worker-link')).not.toBeInTheDocument();
@@ -232,14 +232,15 @@ describe('VacancyFunnelTable — sem as colunas Origen e ACEPTÓ (054 item 2)', 
 });
 
 // 054 item 3: a SEQUÊNCIA dos headers, não só a presença.
-describe('VacancyFunnelTable — ordem das colunas (054 item 3)', () => {
-  it('headers renderizados: NOTAS, NOMBRE, REGISTRO, TELÉFONO, FECHA DE INVITACIÓN, WHATSAPP', () => {
+describe('VacancyFunnelTable — ordem das colunas (054 itens 3 e 4)', () => {
+  it('headers renderizados: NOTAS, NOMBRE, REGISTRO, ETAPA, TELÉFONO, FECHA DE INVITACIÓN, WHATSAPP', () => {
     renderTable({ vacancyId: 'vac-1', isLoading: false, activeTabLabel: 'Invitados', rows: mockRows });
     const seq = screen.getAllByRole('columnheader').map((h) => h.textContent);
     expect(seq).toEqual([
       'admin.vacancyDetail.funnelTable.headers.notes',
       'admin.vacancyDetail.funnelTable.headers.name',
       'admin.vacancyDetail.funnelTable.headers.registration',
+      'admin.vacancyDetail.funnelTable.headers.stage',
       'admin.vacancyDetail.funnelTable.headers.phone',
       'admin.vacancyDetail.funnelTable.headers.inviteDate',
       'admin.vacancyDetail.funnelTable.headers.whatsapp',
