@@ -1,12 +1,11 @@
 import { useEffect, useState } from 'react';
-import { useForm, Controller } from 'react-hook-form';
+import { useForm, Controller, type Control, type UseFormRegister } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useTranslation } from 'react-i18next';
 import { Trash2 } from 'lucide-react';
 import { AdminContractedServicesApiService } from '@infrastructure/http/AdminContractedServicesApiService';
 import type { PatientAddressDetail, PatientContractedServiceDetail } from '@domain/entities/PatientDetail';
-import type { ContractedServiceScheduleSlot } from '@domain/entities/PatientContractedService';
 import { Button } from '@presentation/components/atoms/Button';
 import { Text } from '@presentation/components/atoms/Text';
 import { Textarea } from '@presentation/components/atoms/Textarea';
@@ -18,7 +17,11 @@ import { DayScheduleEditor } from '@presentation/components/molecules/DaySchedul
 import { ContractedServiceProvidersSection } from './ContractedServiceProvidersSection';
 import { AvisoAmbar } from './AvisoAmbar';
 import { NumericField } from './NumericField';
+import {
+  ContractedServiceRecruitmentFields, recruitmentFormSchema, recruitmentDefaults, recruitmentBody, type RecruitmentFormValues,
+} from './ContractedServiceRecruitmentFields';
 import { useContractedServiceOptions } from './useContractedServiceOptions';
+import { empty, numOrNull, scheduleOrNull } from './contractedServiceFormHelpers';
 
 interface Props {
   patientId: string;
@@ -70,22 +73,9 @@ const schema = z.object({
   // Horário do encuadre — o mesmo slot do DayScheduleEditor. [] = "ainda sem horário" → null.
   schedule: z.array(z.object({ dayOfWeek: z.number(), startTime: z.string(), endTime: z.string() })),
   deviceTypeCodes: z.array(z.string()),
+  ...recruitmentFormSchema, // spec 027 Fase 3
 });
 type FormValues = z.infer<typeof schema>;
-
-function empty(v: string | number | null | undefined): string {
-  return v === null || v === undefined ? '' : String(v);
-}
-
-function numOrNull(v: string): number | null {
-  const s = v.trim();
-  return s === '' ? null : Number(s);
-}
-
-/** `[]` no formulário é "ainda sem horário" e viaja como `null` (migration 330). */
-function scheduleOrNull(slots: ContractedServiceScheduleSlot[]): ContractedServiceScheduleSlot[] | null {
-  return slots.length === 0 ? null : slots;
-}
 
 export interface DeactivateServiceDeps {
   patientId: string;
@@ -161,6 +151,7 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
       addressId: addresses.some((a) => a.id === service?.addressId) ? String(service?.addressId) : '',
       schedule: service?.schedule ?? [],
       deviceTypeCodes: service?.deviceTypes ?? [],
+      ...recruitmentDefaults(service),
     },
   });
 
@@ -198,6 +189,7 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
           addressId: nz(values.addressId),
           schedule: scheduleOrNull(values.schedule),
           deviceTypeCodes: values.deviceTypeCodes,
+          ...recruitmentBody(values),
         });
       } else {
         saved = await AdminContractedServicesApiService.updateContractedService(patientId, service.id, {
@@ -218,6 +210,7 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
           addressId: nz(values.addressId),
           schedule: scheduleOrNull(values.schedule),
           deviceTypeCodes: values.deviceTypeCodes,
+          ...recruitmentBody(values),
         });
       }
       // Marca o formulário como "limpo de novo" (o `defaultValues` capturado no mount não
@@ -374,6 +367,8 @@ export function ContractedServiceFormRow({ patientId, addresses, service, index,
           <MultiSelect options={deviceOptions} value={field.value} onChange={field.onChange} placeholder={te('selectPlaceholder')} id={`svc-devices-${index}`} />
         )} />
       </FormField>
+
+      <ContractedServiceRecruitmentFields index={index} control={control as unknown as Control<RecruitmentFormValues>} register={register as unknown as UseFormRegister<RecruitmentFormValues>} disabled={busy} />
 
       <FormField label={te('professionalProfile')} htmlFor={`svc-profile-${index}`} optional hint={te('professionalProfileHint')} hintBelow>
         <div data-clarity-mask="True">

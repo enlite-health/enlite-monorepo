@@ -41,7 +41,7 @@ const SERVICE: PatientContractedServiceDetail = {
   providersNeeded: 2, authorizedHours: 20, weeklyHours: 20, careLocation: 'HOME',
   hourlyValue: 1500, hourlyValueRedacted: false, startDate: null,
   contractType: null, taxCondition: null, supervisionFrequency: null, guardShift: null,
-  providerAgeBand: null,
+  providerAgeBand: null, requiredProfessions: null, requiredSex: null, requiredExperience: null, workerAttributes: null, workSchedule: null, paymentDay: null, dailyObs: null,
   addressId: null,
   liveVacancy: null, liveVacancyRedacted: false,
   schedule: null,
