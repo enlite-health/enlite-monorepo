@@ -70,6 +70,9 @@ test.describe('funil da vacante — convidar um Compatível é o envio que já e
     timezoneId: 'America/Argentina/Buenos_Aires',
   });
   test.setTimeout(120_000);
+  // 054: serial — o stub Periskope (porta 9911) é compartilhado e o 1º teste afirma `stub.calls.length === 1`;
+  // o teste da barra (abaixo) roda DEPOIS e mede o delta.
+  test.describe.configure({ mode: 'serial' });
 
   let stub: PeriskopeStub;
   let seed: ReturnType<typeof seedVacancyWithCards>;
@@ -215,5 +218,88 @@ test.describe('funil da vacante — convidar um Compatível é o envio que já e
       0,
     );
     expect(backendHits.length, `controle positivo: requests a ${API_HOST}`).toBeGreaterThan(0);
+  });
+
+  // ── 054 item 6: a barra "Enviar invitaciones (N)" NA VISÃO KANBAN (sem clicar Lista) ──
+  // Mapa do side-effect outbound: a barra enfileira em `inviteProgressStore` →
+  // `AdminApiService.sendVacancyMatchInvite` → POST /api/admin/messaging/whatsapp/vacancy-match
+  // (MESMA rota do "Reenviar" da tarjeta, só sem `resend:true` → guard em modo `invite`,
+  // `MessagingController.ts:90`). O worker nasce com `messaging_channel='periskope'`, então o envio
+  // sai do backend para o stub da 9911 — nunca Twilio/Meta. O N vem de `useInvitedPendingCandidates`
+  // (linhas do bucket INVITED com `whatsappStatus === 'NOT_SENT'`, i.e. sem log de disparo), que
+  // inclui o Compatível; ao enviar, o log de disparo vira 'sent' e o N cai.
+  test('funil-compativeis-barra-envia-no-kanban', async ({ page }) => {
+    const vacancySeed = seedVacancyWithCards([]);
+    const compat2 = seedCompatibleCard(vacancySeed.vacancyId, { periskope: true });
+    const callsBefore = stub.calls.length;
+    const requestUrls: string[] = [];
+    page.on('request', (req) => requestUrls.push(req.url()));
+
+    try {
+      await loginAs(page, MOCK_STAFF);
+      // Visita fresca: abre no Kanban (padrão 054). Não clica "Lista" em momento nenhum.
+      await gotoVacancyDetail(page, vacancySeed.vacancyId);
+      await expect(
+        page.getByRole('group', { name: 'Cambiar vista' }).getByRole('button', { name: 'Kanban' }),
+      ).toHaveAttribute('aria-pressed', 'true');
+
+      const cardTestId = `kanban-card-${compat2.wjaId}`;
+      await expect(page.getByTestId('kanban-column-COMPATIBLE').getByTestId(cardTestId), 'card nasce em Compatíveis').toBeVisible({
+        timeout: 15_000,
+      });
+      await expect(page.getByTestId('kanban-column-COMPATIBLE-count')).toHaveText('1');
+      await expect(page.getByTestId('kanban-column-INVITED-count')).toHaveText('0');
+
+      // N antes: o botão habilita quando o hook carrega (pendentes >= 1).
+      const dispatchButton = page.getByRole('button', { name: /^Enviar invitaciones \(\d+\)$/ });
+      await expect(dispatchButton).toBeEnabled({ timeout: 15_000 });
+      const readN = async (): Promise<number> =>
+        Number(/\((\d+)\)/.exec((await dispatchButton.textContent()) ?? '')?.[1] ?? NaN);
+      const nBefore = await readN();
+      expect(nBefore, 'N antes do envio (>= 1: o Compatível é pendente)').toBeGreaterThanOrEqual(1);
+
+      // Barra → modal de confirmação → "Enviar".
+      await dispatchButton.click();
+      await expect(page.getByRole('heading', { name: /Confirmar envío/i })).toBeVisible({ timeout: 5_000 });
+      await page.getByRole('button', { name: 'Enviar', exact: true }).click();
+
+      // O card sai de Compatíveis e entra em Invitados (polling do funil = 5 s) — prazo >= 15 s.
+      await expect
+        .poll(
+          async () => ({
+            compat: await page.getByTestId('kanban-column-COMPATIBLE').getByTestId(cardTestId).count(),
+            invited: await page.getByTestId('kanban-column-INVITED').getByTestId(cardTestId).count(),
+          }),
+          { timeout: 30_000, intervals: [500, 1000, 2000], message: 'card Compatíveis → Invitados' },
+        )
+        .toEqual({ compat: 0, invited: 1 });
+      await expect(page.getByTestId('kanban-column-COMPATIBLE-count')).toHaveText('0', { timeout: 15_000 });
+      await expect(page.getByTestId('kanban-column-INVITED-count')).toHaveText('1', { timeout: 15_000 });
+
+      // O N do botão cai (o log de disparo deixa o candidato de ser NOT_SENT; refetch ao fim do lote + polling).
+      await expect
+        .poll(readN, { timeout: 30_000, intervals: [500, 1000, 2000], message: 'N de "Enviar invitaciones (N)" cai' })
+        .toBe(nBefore - 1);
+
+      // Efeito colateral: 1 chamada ao stub, messaged_at carimbado, nada saiu do navegador para canal real.
+      expect(stub.calls.length - callsBefore, 'stub Periskope recebeu exatamente 1 chamada').toBe(1);
+      expect(
+        runSQL(`SELECT messaged_at IS NOT NULL FROM worker_job_applications WHERE id = '${compat2.wjaId}'`),
+        'messaged_at do WJA não é nulo',
+      ).toBe('t');
+      const realChannelHits = requestUrls.filter((u) => {
+        try {
+          return REAL_CHANNEL_RE.test(new URL(u).hostname);
+        } catch {
+          return false;
+        }
+      });
+      expect(realChannelHits.length, 'nenhuma request do navegador a canal real').toBe(0);
+      expect(requestUrls.filter((u) => new URL(u).host === API_HOST).length, `controle positivo: requests a ${API_HOST}`).toBeGreaterThan(0);
+    } finally {
+      runSQL(`DELETE FROM whatsapp_bulk_dispatch_logs WHERE worker_id = '${compat2.workerId}'`);
+      cleanupCompatibleCard(compat2.workerId, vacancySeed.vacancyId);
+      vacancySeed.cleanup();
+    }
   });
 });
