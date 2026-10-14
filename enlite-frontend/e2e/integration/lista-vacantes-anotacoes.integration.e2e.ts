@@ -328,7 +328,7 @@ test.describe('lista de vacantes e anotações @integration', () => {
   test('lista-vacantes-kanban-confirmados', async ({ page }) => {
     await page.addInitScript(
       ([key]) => window.localStorage.setItem(key, 'kanban'),
-      [`vacancy-funnel-view-${vacancyA}`],
+      [`vacancy-funnel-view-v2-${vacancyA}`],
     );
     await loginAs(page, MOCK_STAFF);
     await page.goto(`/admin/vacancies/${vacancyA}`);

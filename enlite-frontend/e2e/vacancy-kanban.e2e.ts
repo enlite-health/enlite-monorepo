@@ -101,7 +101,7 @@ async function seedAdminAndLogin(page: Page): Promise<void> {
 async function gotoVacancyKanban(page: Page, vacancyId: string): Promise<void> {
   await page.addInitScript(
     ([key]) => window.localStorage.setItem(key, 'kanban'),
-    [`vacancy-funnel-view-${vacancyId}`],
+    [`vacancy-funnel-view-v2-${vacancyId}`],
   );
   await page.goto(`/admin/vacancies/${vacancyId}`);
 }
