@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { startVisiblePolling } from './visiblePolling';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import { ApiError } from '@infrastructure/http/ApiError';
 import type { EncuadreRole } from '@domain/entities/EncuadreRole';
@@ -109,11 +110,10 @@ export function useWJAFunnel(vacancyId: string | undefined) {
     }
   }, [vacancyId]);
 
-  // Fetch inicial + polling a cada 5s — limpa ao sair da tela
+  // Fetch inicial + polling a cada 5s (pausado com a aba oculta) — limpa ao sair da tela
   useEffect(() => {
     fetchFunnel();
-    const intervalId = setInterval(() => fetchFunnel(true), POLL_INTERVAL_MS);
-    return () => clearInterval(intervalId);
+    return startVisiblePolling(() => void fetchFunnel(true), POLL_INTERVAL_MS);
   }, [fetchFunnel]);
 
   const moveEncuadre = useCallback(async (

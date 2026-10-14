@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { startVisiblePolling } from './visiblePolling';
 import { AdminApiService } from '@infrastructure/http/AdminApiService';
 import type { FunnelBucket, FunnelTableData } from '@domain/entities/Funnel';
 import type { VacancyFunnelColumn } from '@presentation/components/features/admin/VacancyDetail/Funnel/funnelTabsConfig';
@@ -57,8 +58,7 @@ export function useVacancyFunnelTable(
   useEffect(() => {
     if (!enabled) return;
     fetchTable();
-    const intervalId = setInterval(() => fetchTable(true), POLL_INTERVAL_MS);
-    return () => clearInterval(intervalId);
+    return startVisiblePolling(() => void fetchTable(true), POLL_INTERVAL_MS);
   }, [fetchTable, enabled]);
 
   return { data, isLoading, error, refetch: fetchTable };
