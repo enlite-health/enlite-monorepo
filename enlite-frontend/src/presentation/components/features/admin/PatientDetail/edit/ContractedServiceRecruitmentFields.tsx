@@ -1,20 +1,18 @@
-import { z } from 'zod';
 import { Controller, type Control, type UseFormRegister } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import type { PatientContractedServiceDetail } from '@domain/entities/PatientDetail';
 import {
   REQUIRED_PROFESSION_OPTIONS,
   REQUIRED_SEX_OPTIONS,
   WORK_SCHEDULE_OPTIONS,
   RECRUITMENT_TEXT_MAX,
   PAYMENT_DAY_MAX,
-  type CreateContractedServiceBody,
 } from '@domain/entities/PatientContractedService';
 import { Checkbox } from '@presentation/components/atoms/Checkbox';
 import { Text } from '@presentation/components/atoms/Text';
 import { Textarea } from '@presentation/components/atoms/Textarea';
 import { FormField } from '@presentation/components/molecules/FormField';
 import { InputWithIcon } from '@presentation/components/molecules/InputWithIcon';
+import type { RecruitmentFormValues } from './contractedServiceRecruitmentForm';
 import { SelectField, type SelectOption } from '@presentation/components/molecules/SelectField';
 
 /**
@@ -23,47 +21,6 @@ import { SelectField, type SelectOption } from '@presentation/components/molecul
  * pagamento ao prestador) são COPIADOS para a vaga ao ativar o recrutamento; `workerAttributes` e `dailyObs` são
  * SÓ FICHA (nunca copiados). Nada de campo de motivo do sexo (lex S.4, D507 item 4).
  */
-
-/** Fatia do formulário que pertence a este componente (tudo STRING/array, como os demais campos do form). */
-export const recruitmentFormSchema = {
-  requiredProfessions: z.array(z.string()),
-  requiredSex: z.string(),
-  requiredExperience: z.string().max(RECRUITMENT_TEXT_MAX),
-  workerAttributes: z.string().max(RECRUITMENT_TEXT_MAX),
-  workSchedule: z.string(),
-  paymentDay: z.string().max(PAYMENT_DAY_MAX),
-  dailyObs: z.string().max(RECRUITMENT_TEXT_MAX),
-};
-export type RecruitmentFormValues = { [K in keyof typeof recruitmentFormSchema]: z.infer<(typeof recruitmentFormSchema)[K]> };
-
-export function recruitmentDefaults(service: PatientContractedServiceDetail | null): RecruitmentFormValues {
-  return {
-    requiredProfessions: service?.requiredProfessions ?? [],
-    requiredSex: service?.requiredSex ?? '',
-    requiredExperience: service?.requiredExperience ?? '',
-    workerAttributes: service?.workerAttributes ?? '',
-    workSchedule: service?.workSchedule ?? '',
-    paymentDay: service?.paymentDay ?? '',
-    dailyObs: service?.dailyObs ?? '',
-  };
-}
-
-/** '' vira `null` (limpar apaga o campo); lista vazia também. Nunca loga valor (lex T.4). */
-export function recruitmentBody(v: RecruitmentFormValues): Pick<
-  CreateContractedServiceBody,
-  'requiredProfessions' | 'requiredSex' | 'requiredExperience' | 'workerAttributes' | 'workSchedule' | 'paymentDay' | 'dailyObs'
-> {
-  const nz = (s: string): string | null => (s.trim() ? s.trim() : null);
-  return {
-    requiredProfessions: v.requiredProfessions.length > 0 ? v.requiredProfessions : null,
-    requiredSex: nz(v.requiredSex) as never,
-    requiredExperience: nz(v.requiredExperience),
-    workerAttributes: nz(v.workerAttributes),
-    workSchedule: nz(v.workSchedule) as never,
-    paymentDay: nz(v.paymentDay),
-    dailyObs: nz(v.dailyObs),
-  };
-}
 
 interface Props {
   index: number;

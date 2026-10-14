@@ -17,9 +17,8 @@ import { DayScheduleEditor } from '@presentation/components/molecules/DaySchedul
 import { ContractedServiceProvidersSection } from './ContractedServiceProvidersSection';
 import { AvisoAmbar } from './AvisoAmbar';
 import { NumericField } from './NumericField';
-import {
-  ContractedServiceRecruitmentFields, recruitmentFormSchema, recruitmentDefaults, recruitmentBody, type RecruitmentFormValues,
-} from './ContractedServiceRecruitmentFields';
+import { ContractedServiceRecruitmentFields } from './ContractedServiceRecruitmentFields';
+import { recruitmentFormSchema, recruitmentDefaults, recruitmentBody, type RecruitmentFormValues } from './contractedServiceRecruitmentForm';
 import { useContractedServiceOptions } from './useContractedServiceOptions';
 import { empty, numOrNull, scheduleOrNull } from './contractedServiceFormHelpers';
 
