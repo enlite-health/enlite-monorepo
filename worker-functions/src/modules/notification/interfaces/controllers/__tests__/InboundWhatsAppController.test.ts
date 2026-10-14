@@ -170,6 +170,19 @@ describe('InboundWhatsAppController', () => {
     }
   });
 
+  it('PII guard: o log de "button of removed interview flow" mascara o telefone, nunca o número cru', async () => {
+    const infoSpy = jest.spyOn(console, 'info').mockImplementation(() => undefined);
+    const req = mockReq({ From: 'whatsapp:+5491112345678', ButtonPayload: 'slot_1', OriginalRepliedMessageSid: 'SM-abc123' });
+
+    await controller.handleInbound(req, mockRes());
+
+    const call = infoSpy.mock.calls.find((c) => String(c[0]).includes('button of removed interview flow'));
+    expect(call).toBeDefined();
+    expect(JSON.stringify(call)).not.toContain('5491112345678');
+    expect((call![1] as { from: string }).from).toBe(maskPhoneForLog('whatsapp:+5491112345678'));
+    infoSpy.mockRestore();
+  });
+
   it('ignora mensagem se template_slug não pertence ao fluxo de entrevista', async () => {
     mockDbQuery.mockResolvedValueOnce({ rows: [{ template_slug: 'client_selection' }] });
 

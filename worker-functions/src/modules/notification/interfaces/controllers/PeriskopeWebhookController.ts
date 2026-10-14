@@ -107,7 +107,7 @@ export class PeriskopeWebhookController {
       } else if (bodyText) {
         const routed = await this.inboundRouter.routeNumberedReply(from, bodyText);
         if (!routed) {
-          console.info('[PeriskopeInbound] Message ignored (no special state)', { from });
+          console.info('[PeriskopeInbound] Message ignored (no special state)', { from: maskPhoneForLog(from) });
         }
       }
     } catch (err) {

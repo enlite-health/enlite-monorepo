@@ -100,7 +100,7 @@ export class InboundWhatsAppController {
     }
 
     // Botão de convite/lembrete de entrevista antigo: o fluxo automático saiu (spec 052) — ignorado, sempre 200.
-    console.info('[InboundWhatsApp] Message ignored (button of removed interview flow)', { from, buttonPayload });
+    console.info('[InboundWhatsApp] Message ignored (button of removed interview flow)', { from: maskPhoneForLog(from), buttonPayload });
 
     // 4. Twilio espera 200 OK
     res.status(200).send();
