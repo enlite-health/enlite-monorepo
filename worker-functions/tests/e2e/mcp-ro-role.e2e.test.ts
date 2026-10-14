@@ -205,6 +205,22 @@ describe('Role enlite_mcp_ro — SELECT por coluna em patients (D216) @integrati
     await expectAllowedColumns((sql, params) => ro.query(sql, params));
   });
 
+  it('spec 027 Fase 3 (lex T.2, migration 518): os 4 textos livres novos de patient_contracted_services são negados ao LLM; os codificados e service_code passam', async () => {
+    // Matriz de GRANTs via has_column_privilege (não passa por RLS): vale com a RLS ligada ou desligada.
+    const priv = async (col: string): Promise<boolean> =>
+      (await admin.query<{ c: boolean }>(
+        `SELECT has_column_privilege('enlite_mcp_ro', 'public.patient_contracted_services', $1, 'SELECT') AS c`,
+        [col],
+      )).rows[0].c;
+    for (const negada of ['worker_attributes', 'required_experience', 'payment_day', 'daily_obs']) {
+      expect({ col: negada, select: await priv(negada) }).toEqual({ col: negada, select: false });
+    }
+    // CONTROLE POSITIVO: a mesma função devolve true para coluna liberada (o instrumento distingue permitido de negado).
+    for (const liberada of ['service_code', 'required_sex', 'required_professions', 'work_schedule']) {
+      expect({ col: liberada, select: await priv(liberada) }).toEqual({ col: liberada, select: true });
+    }
+  });
+
   it('spec 013 bloco C (achado QA-caça #1): patient_contracted_services.professional_profile/hourly_value negados; colunas irmãs, contracted_service_providers, contracted_service_devices e service_types passam', async () => {
     const { rows: [svc] } = await admin.query<{ id: string }>(
       `INSERT INTO patient_contracted_services (patient_id, service_code, professional_profile, hourly_value, providers_needed, created_by, updated_by)

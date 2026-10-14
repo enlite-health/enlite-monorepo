@@ -86,7 +86,11 @@ describe('Vaga lê do serviço contratado — fecho por API (vaga-le-do-servico-
     expect(addr.status).toBe(201);
     const svc = await api.post(
       `/api/admin/patients/${patientId}/contracted-services`,
-      { serviceCode: 'AT', addressId: addr.data.data.id, schedule: SCHEDULE_V1, providersNeeded: 2, providerAgeBand: 'AGE_20_30' },
+      {
+        serviceCode: 'AT', addressId: addr.data.data.id, schedule: SCHEDULE_V1, providersNeeded: 2, providerAgeBand: 'AGE_20_30',
+        // spec 027 Fase 3: o portão exige os 5 campos que a vaga copia
+        requiredProfessions: ['AT'], requiredSex: 'BOTH', requiredExperience: 'EXP-E2E', workSchedule: 'part-time', paymentDay: 'DIA-E2E',
+      },
       asAdmin,
     );
     expect(svc.status).toBe(201);

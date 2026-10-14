@@ -46,6 +46,7 @@ import {
   RecruitmentNotReadyError,
 } from '../ActivateRecruitmentUseCase';
 import { PatientStatusNotReadyError } from '../PatientStatusWriter';
+import { esperaSqlSemDadoClinico } from '../../../matching/__tests__/guardaVazamentoClinico';
 import type { HumanActor } from '../../../matching/interfaces/controllers/vacancyCrudAuditHelpers';
 
 const PATIENT_ID = 'p-1';
@@ -66,6 +67,14 @@ interface DispatchOpts {
     provider_age_band?: string | null;
     schedule?: unknown;
     live_address_id?: string | null;
+    // Spec 027 Fase 3 (D508): os 5 campos que a vaga copia + os 2 de ficha (que o use case NÃO lê).
+    required_professions?: string[] | null;
+    required_sex?: string | null;
+    required_experience?: string | null;
+    work_schedule?: string | null;
+    payment_day?: string | null;
+    worker_attributes?: string | null;
+    daily_obs?: string | null;
   } | null;
   existingVacancyId?: string | null;
   vacancyNumber?: number;
@@ -103,8 +112,20 @@ function makeClient(opts: DispatchOpts) {
     }
     if (sql.includes('FROM patient_contracted_services pcs') && sql.includes('FOR UPDATE OF pcs')) {
       if (!opts.serviceRow) return { rowCount: 0, rows: [] };
-      const { id, providers_needed = null, provider_age_band = null, schedule = null, live_address_id = null } = opts.serviceRow;
-      return { rowCount: 1, rows: [{ id, providers_needed, provider_age_band, schedule, live_address_id }] };
+      const {
+        id, providers_needed = null, provider_age_band = null, schedule = null, live_address_id = null,
+        required_professions = null, required_sex = null, required_experience = null, work_schedule = null, payment_day = null,
+        worker_attributes = null, daily_obs = null,
+      } = opts.serviceRow;
+      return {
+        rowCount: 1,
+        rows: [{
+          id, providers_needed, provider_age_band, schedule, live_address_id,
+          required_professions, required_sex, required_experience, work_schedule, payment_day,
+          // O use case não seleciona estes dois; se um dia selecionar e copiar, os `it`s da T029 morrem.
+          worker_attributes, daily_obs,
+        }],
+      };
     }
     if (sql.includes('FROM job_postings WHERE contracted_service_id')) {
       return opts.existingVacancyId
@@ -141,6 +162,12 @@ const READY_SERVICE = {
   provider_age_band: 'AGE_20_30',
   schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }],
   live_address_id: 'addr-1',
+  // Spec 027 Fase 3: os 5 campos do portão preenchidos (valores sintéticos, sem texto clínico).
+  required_professions: ['AT'],
+  required_sex: 'F',
+  required_experience: 'EXP-TEXTO-1',
+  work_schedule: 'part-time',
+  payment_day: 'dia 5',
 };
 
 describe('ActivateRecruitmentUseCase', () => {
@@ -271,6 +298,99 @@ describe('ActivateRecruitmentUseCase', () => {
       }
       expect(mockMovePatientStatus).not.toHaveBeenCalled();
     }
+  });
+
+  describe('spec 027 Fase 3 — os 5 campos do serviço (D508)', () => {
+    const ADMISSION_PATIENT = { id: PATIENT_ID, status: 'ADMISSION', case_number: 100, insurance_informed: 'Particular' };
+
+    it('SERVICE_RECRUITMENT_FIELDS: ativar com os campos vazios devolve o código no 422 (T026)', async () => {
+      const { promise } = run({
+        patientRow: ADMISSION_PATIENT,
+        serviceRow: { ...READY_SERVICE, required_professions: null, required_sex: null, required_experience: null, work_schedule: null, payment_day: null },
+      });
+      await expect(promise).rejects.toBeInstanceOf(RecruitmentNotReadyError);
+      await expect(promise).rejects.toMatchObject({ missing: ['SERVICE_RECRUITMENT_FIELDS'] });
+      expect(mockBuildInsertParams).not.toHaveBeenCalled();
+    });
+
+    it('SERVICE_RECRUITMENT_FIELDS: required_sex null com os outros 4 preenchidos ainda bloqueia (S.2); BOTH libera', async () => {
+      const blocked = run({ patientRow: ADMISSION_PATIENT, serviceRow: { ...READY_SERVICE, required_sex: null } });
+      await expect(blocked.promise).rejects.toMatchObject({ missing: ['SERVICE_RECRUITMENT_FIELDS'] });
+      const ok = run({ patientRow: ADMISSION_PATIENT, serviceRow: { ...READY_SERVICE, required_sex: 'BOTH' } });
+      await expect(ok.promise).resolves.toMatchObject({ vacancyId: 'vac-1' });
+    });
+
+    it('os 5 campos copiados são IGUAIS aos do serviço, literais (S.5)', async () => {
+      const service = {
+        ...READY_SERVICE,
+        required_professions: ['AT', 'CAREGIVER'],
+        required_sex: 'BOTH',
+        required_experience: 'EXP-TEXTO-2',
+        work_schedule: 'full-time',
+        payment_day: 'dia 10',
+      };
+      const { promise } = run({ patientRow: ADMISSION_PATIENT, serviceRow: service });
+      await promise;
+      expect(mockBuildInsertParams).toHaveBeenCalledWith(
+        expect.objectContaining({
+          required_professions: ['AT', 'CAREGIVER'],
+          required_sex: 'BOTH',
+          required_experience: 'EXP-TEXTO-2',
+          work_schedule: 'full-time',
+          payment_day: 'dia 10',
+        }),
+      );
+    });
+
+    it('worker_attributes, daily_obs e worker_profile_sought são null no INSERT, mesmo com texto nos dois primeiros do serviço (D508 a)', async () => {
+      const { promise } = run({
+        patientRow: ADMISSION_PATIENT,
+        serviceRow: { ...READY_SERVICE, worker_attributes: 'ATRIB-NAO-COPIAR', daily_obs: 'OBS-NAO-COPIAR' },
+      });
+      await promise;
+      const arg = mockBuildInsertParams.mock.calls[0][0];
+      expect(arg.worker_attributes).toBeNull();
+      expect(arg.daily_obs).toBeNull();
+      expect(arg.worker_profile_sought).toBeNull();
+      expect(arg.salary_text).toBeNull();
+      expect(JSON.stringify(arg)).not.toContain('NAO-COPIAR');
+    });
+
+    it('worker_attributes e daily_obs são opcionais: serviço sem eles ativa (D508 c)', async () => {
+      const { promise } = run({
+        patientRow: ADMISSION_PATIENT,
+        serviceRow: { ...READY_SERVICE, worker_attributes: null, daily_obs: null },
+      });
+      await expect(promise).resolves.toMatchObject({ vacancyId: 'vac-1' });
+    });
+
+    it('a vaga nasce rascunho: nenhum param is_draft=false e o INSERT usa o caminho padrão (T.6)', async () => {
+      const { promise } = run({ patientRow: ADMISSION_PATIENT, serviceRow: READY_SERVICE });
+      await promise;
+      const arg = mockBuildInsertParams.mock.calls[0][0];
+      expect(arg).not.toHaveProperty('is_draft');
+      expect(arg.status).toBeUndefined(); // status default do INSERT = PENDING_ACTIVATION; is_draft default true
+      expect(arg.published_at).toBeNull();
+    });
+
+    it('as queries do use case não puxam dado clínico do paciente (S.5)', async () => {
+      const { promise, client } = run({ patientRow: ADMISSION_PATIENT, serviceRow: READY_SERVICE });
+      await promise;
+      esperaSqlSemDadoClinico((client.query as jest.Mock).mock.calls);
+    });
+
+    it('o SELECT do serviço lê os 5 campos copiados e NÃO lê worker_attributes/daily_obs', async () => {
+      const { promise, client } = run({ patientRow: ADMISSION_PATIENT, serviceRow: READY_SERVICE });
+      await promise;
+      const serviceSql = (client.query as jest.Mock).mock.calls
+        .map(([sql]: [unknown]) => String(sql))
+        .find((sql) => sql.includes('FOR UPDATE OF pcs')) as string;
+      for (const col of ['required_professions', 'required_sex', 'required_experience', 'work_schedule', 'payment_day']) {
+        expect(serviceSql).toContain(`pcs.${col}`);
+      }
+      expect(serviceSql).not.toContain('worker_attributes');
+      expect(serviceSql).not.toContain('daily_obs');
+    });
   });
 
   it('404 — paciente inexistente (ou soft-deletado)', async () => {

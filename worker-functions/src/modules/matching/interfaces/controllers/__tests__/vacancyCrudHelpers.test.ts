@@ -8,7 +8,13 @@
  * quando não tem, com 0/1/2 campos travados no body e com campo livre.
  */
 import type { Pool } from 'pg';
-import { authorizeVacancyUpdate, buildInsertParams, SOURCE_LOCKED_FIELDS, withEffectiveFields } from '../vacancyCrudHelpers';
+import {
+  authorizeVacancyUpdate,
+  buildInsertParams,
+  FULL_ALLOWED_UPDATE_FIELDS,
+  SOURCE_LOCKED_FIELDS,
+  withEffectiveFields,
+} from '../vacancyCrudHelpers';
 
 function makeDb(row: {
   status?: string | null;
@@ -70,6 +76,29 @@ describe('authorizeVacancyUpdate — 422 de SOURCE_LOCKED_FIELDS (F3, fase 1)', 
     const db = makeDb(null);
     const result = await authorizeVacancyUpdate(db, 'jp-sumiu', { schedule: [] });
     expect(result).toEqual({ kind: 'error', status: 404, error: 'Vacancy not found' });
+  });
+});
+
+ // Spec 027 Fase 3 (T035, D508 item 4, lex T.5): a ficha é o DEFAULT, não espelho vivo. Os 5 campos que o botão copia do
+// serviço ficam FORA de SOURCE_LOCKED_FIELDS, para a recrutadora corrigir na vaga rascunho. Sabotagem: acrescentar
+// `payment_day` a SOURCE_LOCKED_FIELDS deixa os dois primeiros `it`s vermelhos.
+describe('SOURCE_LOCKED_FIELDS — os 5 campos copiados do serviço continuam editáveis no rascunho (T035)', () => {
+  const COPIED_FROM_SERVICE = ['required_professions', 'required_sex', 'required_experience', 'work_schedule', 'payment_day'] as const;
+
+  it('nenhum dos 5 está em SOURCE_LOCKED_FIELDS', () => {
+    for (const f of COPIED_FROM_SERVICE) expect(SOURCE_LOCKED_FIELDS as readonly string[]).not.toContain(f);
+  });
+
+  it('o PUT de vaga rascunho nascida do botão (com contracted_service_id) com CADA uma das 5 chaves NÃO dá 422 (autoriza)', async () => {
+    for (const field of COPIED_FROM_SERVICE) {
+      const db = makeDb({ contracted_service_id: 'svc-1', is_draft: true });
+      const result = await authorizeVacancyUpdate(db, 'jp-1', { [field]: field === 'required_professions' ? ['AT'] : 'novo-valor' });
+      expect({ field, kind: result.kind }).toEqual({ field, kind: 'ok' });
+    }
+  });
+
+  it('as 5 chaves entram no UPDATE (estão em FULL_ALLOWED_UPDATE_FIELDS): o valor novo é gravado na vaga', () => {
+    for (const f of COPIED_FROM_SERVICE) expect(FULL_ALLOWED_UPDATE_FIELDS as readonly string[]).toContain(f);
   });
 });
 

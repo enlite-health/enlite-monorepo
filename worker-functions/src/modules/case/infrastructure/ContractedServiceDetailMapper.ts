@@ -90,6 +90,14 @@ export async function mapContractedServices(
     // formato de job_postings.schedule). `SELECT *` já traz as duas colunas.
     addressId: r.address_id,
     schedule: r.schedule,
+    // Spec 027 Fase 3 (D507/D508): `SELECT *` já traz as 7 colunas. `worker_attributes`/`daily_obs` são SÓ FICHA.
+    requiredProfessions: r.required_professions,
+    requiredSex: r.required_sex,
+    requiredExperience: r.required_experience,
+    workerAttributes: r.worker_attributes,
+    workSchedule: r.work_schedule,
+    paymentDay: r.payment_day,
+    dailyObs: r.daily_obs,
     liveVacancy: liveVacancies.get(r.id) ?? null,
     active: r.active,
     endedAt: r.ended_at,

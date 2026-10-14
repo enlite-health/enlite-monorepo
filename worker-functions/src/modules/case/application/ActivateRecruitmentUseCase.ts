@@ -173,8 +173,17 @@ export class ActivateRecruitmentUseCase {
       providers_needed: number | null;
       schedule: unknown;
       live_address_id: string | null;
+      required_professions: string[] | null;
+      required_sex: string | null;
+      required_experience: string | null;
+      work_schedule: string | null;
+      payment_day: string | null;
     }>(
+      // Spec 027 Fase 3 (D508): SÓ os 5 campos que a vaga copia. `worker_attributes`/`daily_obs` ficam na
+      // ficha e NÃO são lidos aqui (não são usados: nem pelo portão, nem pela cópia).
       `SELECT pcs.id, pcs.providers_needed, pcs.schedule,
+                pcs.required_professions, pcs.required_sex, pcs.required_experience,
+                pcs.work_schedule, pcs.payment_day,
                 pa.id AS live_address_id
            FROM patient_contracted_services pcs
            LEFT JOIN patient_addresses pa
@@ -204,6 +213,13 @@ export class ActivateRecruitmentUseCase {
       serviceHasSchedule: hasSchedule,
       insuranceInformed: insurance_informed,
       hasVerifiedActiveCoverage: has_verified_active_coverage,
+      serviceRecruitmentFields: {
+        requiredProfessions: service.required_professions,
+        requiredSex: service.required_sex,
+        requiredExperience: service.required_experience,
+        workSchedule: service.work_schedule,
+        paymentDay: service.payment_day,
+      },
     });
     if (!ready) {
       throw new RecruitmentNotReadyError(patientId, serviceId, missing);
@@ -246,14 +262,19 @@ export class ActivateRecruitmentUseCase {
     // as duas juntas: o tipo host barra a chave errada AQUI, e a ordem barra a chave certa perdendo
     // se alguém escapar o tipo.
     const fromRecruitment: Omit<VacancyInsertParams, SourceLockedField | 'vacancyNumber' | 'computedTitle'> = {
-      required_professions: null,
-      required_sex: null,
+      // Spec 027 Fase 3 (D508): estes 5 vêm do serviço, LITERAIS (lex S.5: nunca derivados de dado do
+      // paciente). Ficam FORA de `SOURCE_LOCKED_FIELDS` de propósito (D508 item 4): a vaga nasce rascunho
+      // (T.6) e a recrutadora corrige na vaga.
+      required_professions: service.required_professions,
+      required_sex: service.required_sex,
+      required_experience: service.required_experience,
+      work_schedule: service.work_schedule,
+      payment_day: service.payment_day,
+      // NÃO COPIAR (D508 a; vedação lex C-b2/C-c.3): a vaga continua com estes digitados pela recrutadora.
+      // `worker_attributes`/`daily_obs` ficam só na ficha; `salary_text` cai no default 'A convenir'.
       worker_profile_sought: null,
-      required_experience: null,
       worker_attributes: null,
-      work_schedule: null,
       salary_text: null,
-      payment_day: null,
       daily_obs: null,
       status: undefined,
       published_at: null,

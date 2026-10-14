@@ -86,6 +86,19 @@ export interface ContractedServiceDetail {
   addressId: string | null;
   /** Horário do encuadre, formato do editor (migration 330) — null = ainda sem horário. */
   schedule: ContractedServiceScheduleSlot[] | null;
+  /**
+   * Spec 027 Fase 3 (D507/D508): o que a vaga precisa. Os 5 primeiros são COPIADOS para a vaga na ativação;
+   * `workerAttributes` e `dailyObs` são SÓ FICHA (nunca copiados). Texto livre: nunca em log (lex T.4).
+   */
+  requiredProfessions: string[] | null;
+  /** 'M' | 'F' | 'BOTH' (Zod). Sem campo de motivo: o motivo é clínico e nunca se registra (D507 item 4). */
+  requiredSex: string | null;
+  requiredExperience: string | null;
+  workerAttributes: string | null;
+  workSchedule: string | null;
+  /** Dia em que a Enlite paga o PRESTADOR (D508 b), não o termo de pagamento da família. */
+  paymentDay: string | null;
+  dailyObs: string | null;
   /** Vaga viva deste serviço (spec 018 PR-6; objeto na spec 047) — null = sem vaga OU redigida (ver `liveVacancyRedacted`, aplicado na projeção por ator). */
   liveVacancy: LiveVacancy | null;
   active: boolean;
@@ -113,6 +126,13 @@ export interface ContractedServiceWriteInput {
   providerAgeBand?: string | null;
   addressId?: string | null;
   schedule?: ContractedServiceScheduleSlot[] | null;
+  requiredProfessions?: string[] | null;
+  requiredSex?: string | null;
+  requiredExperience?: string | null;
+  workerAttributes?: string | null;
+  workSchedule?: string | null;
+  paymentDay?: string | null;
+  dailyObs?: string | null;
   deviceTypeCodes?: string[];
   /** Só `false` é caminho válido de escrita (baixa) — reabrir não existe (mesma régua do C-e.2). */
   active?: boolean;
@@ -148,6 +168,13 @@ const WRITABLE_COLUMNS: Array<[keyof ContractedServiceWriteInput, string]> = [
   ['providerAgeBand', 'provider_age_band'],
   ['addressId', 'address_id'],
   ['schedule', 'schedule'],
+  ['requiredProfessions', 'required_professions'],
+  ['requiredSex', 'required_sex'],
+  ['requiredExperience', 'required_experience'],
+  ['workerAttributes', 'worker_attributes'],
+  ['workSchedule', 'work_schedule'],
+  ['paymentDay', 'payment_day'],
+  ['dailyObs', 'daily_obs'],
 ];
 
 /**
@@ -177,6 +204,13 @@ interface ServiceRow {
   provider_age_band: string | null;
   address_id: string | null;
   schedule: ContractedServiceScheduleSlot[] | null;
+  required_professions: string[] | null;
+  required_sex: string | null;
+  required_experience: string | null;
+  worker_attributes: string | null;
+  work_schedule: string | null;
+  payment_day: string | null;
+  daily_obs: string | null;
   active: boolean;
   ended_at: string | null;
   country: string;
@@ -230,6 +264,13 @@ export class PatientContractedServiceRepository {
       providerAgeBand: row.provider_age_band,
       addressId: row.address_id,
       schedule: row.schedule,
+      requiredProfessions: row.required_professions,
+      requiredSex: row.required_sex,
+      requiredExperience: row.required_experience,
+      workerAttributes: row.worker_attributes,
+      workSchedule: row.work_schedule,
+      paymentDay: row.payment_day,
+      dailyObs: row.daily_obs,
       active: row.active,
       endedAt: row.ended_at,
       country: row.country,
