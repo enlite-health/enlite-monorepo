@@ -57,7 +57,36 @@ export const ACTIVATABLE_STATUSES = ['ADMISSION', 'PENDING_ADMISSION'] as const;
  * paciente") + `COVERAGE` do paciente. Só decide o ESTADO do botão na tela — quem decide de
  * verdade é sempre o backend (422 `PATIENT_NOT_READY`).
  */
-export const RECRUITMENT_BLOCKING_CODES = ['SERVICE_ADDRESS', 'SERVICE_SCHEDULE', 'COVERAGE'] as const;
+export const RECRUITMENT_BLOCKING_CODES = [
+  'SERVICE_ADDRESS',
+  'SERVICE_SCHEDULE',
+  // Spec 027 Fase 3 (D508 c): os 5 campos que a vaga copia do serviço. Código único.
+  'SERVICE_RECRUITMENT_FIELDS',
+  'COVERAGE',
+] as const;
+
+/** Os 5 campos do serviço que a vaga copia (D508) — `workerAttributes`/`dailyObs` ficam fora: são só ficha e opcionais. */
+export interface ServiceRecruitmentFields {
+  requiredProfessions: readonly string[] | null | undefined;
+  /** 'M' | 'F' | 'BOTH'. `null`/ausente = FALTANDO (lex S.2); 'BOTH' = respondido (indistinto). */
+  requiredSex: string | null | undefined;
+  requiredExperience: string | null | undefined;
+  workSchedule: string | null | undefined;
+  paymentDay: string | null | undefined;
+}
+
+const hasText = (v: string | null | undefined): boolean => (v ?? '').trim().length > 0;
+
+/** Mesma regra do backend (`serviceRecruitmentFieldsFilled`): lista vazia e texto só com espaços = faltando. */
+export function serviceRecruitmentFieldsFilled(f: ServiceRecruitmentFields): boolean {
+  return (
+    (f.requiredProfessions ?? []).some((p) => hasText(p)) &&
+    hasText(f.requiredSex) &&
+    hasText(f.requiredExperience) &&
+    hasText(f.workSchedule) &&
+    hasText(f.paymentDay)
+  );
+}
 
 /**
  * FR-121/122 — mesma régua de `isPlaceholderCoverageValue` do backend: "sin cobertura /
@@ -83,6 +112,8 @@ export interface RecruitmentReadinessInput {
    * satisfeito pelo legado OU por esta cobertura verificada — nunca os dois exigidos.
    */
   hasVerifiedActiveCoverage?: boolean;
+  /** Spec 027 Fase 3: os 5 campos copiados do serviço. Ausente = nenhum preenchido (faltando). */
+  serviceRecruitmentFields?: ServiceRecruitmentFields;
 }
 
 /** Códigos que faltam para ESTE serviço poder ativar recrutamento — vazio = pronto. */
@@ -92,6 +123,9 @@ export function recruitmentMissingCodes(
   const missing: Array<(typeof RECRUITMENT_BLOCKING_CODES)[number]> = [];
   if (!input.serviceHasAddress) missing.push('SERVICE_ADDRESS');
   if (!input.serviceHasSchedule) missing.push('SERVICE_SCHEDULE');
+  if (!input.serviceRecruitmentFields || !serviceRecruitmentFieldsFilled(input.serviceRecruitmentFields)) {
+    missing.push('SERVICE_RECRUITMENT_FIELDS');
+  }
   if (isPlaceholderCoverageValue(input.insuranceInformed) && !input.hasVerifiedActiveCoverage) {
     missing.push('COVERAGE');
   }

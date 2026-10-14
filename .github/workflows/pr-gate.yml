@@ -184,7 +184,14 @@ jobs:
       # vaga manual: 6 testes). O `--grep` casa pelo caminho do arquivo, na mesma convenção do
       # `vacancy-servico-horario-link` (o furo da F4: spec fora da lista nunca roda). Login pelo mock do CI
       # (`loginComoStaffMock`), job padrão, engine OFF.
-      grep: 'worker-profile-fields-persist|worker-completude-vitrine|027-public-jobs-search-en-code|vacancy-locked-fields|vacancy-servico-horario-link|vaga-le-servico-fecho|vacancy-schedule-hydration|draft-wizard-locked|027-vacancy-case-select|vacancy-de-baja|patient-status-suspendido-saida-motivo|patient-status-aguardando-financeiro|kanban-pacientes|funil-vacante|lista-vacantes|cid-na-vaga-publica|postularse-iniciado-043|kanban-iniciado-blocked-columns|kanban-blocked-live-missing-fields|enderecos-faturamento-044'
+      # `servico-dados-recrutamento` ENTROU (spec 027 Fase 3, D508): o spec novo da T030 (feliz lendo da tela, sexo faltando
+      # desabilita com o motivo, opcionais vazios habilitam e não atravessam) nasceu fora da lista e o gate o achou em
+      # "NÃO exercitados" (o mesmo furo da F4). Login pelo mock do CI (`loginComoStaffMock`), job padrão, engine OFF.
+      # NÃO entram (medido no CI do #690): `admission-a6-franja-prestador`, `admission-b-campos`,
+      # `admission-c-servico-contratado`(-humano) e `servico-horario-obrigatorio-humano` fazem login REAL no emulador do
+      # Firebase, que não existe neste job (`login-mock-staff.ts`); `vacancy-draft-page` e `draft-vacancy-choice-dialog`
+      # usam o `abac-stack-helper` (Postgres na 5439), que só existe no job do ABAC (`_frontend-integration.yml:753`).
+      grep: 'worker-profile-fields-persist|worker-completude-vitrine|027-public-jobs-search-en-code|vacancy-locked-fields|vacancy-servico-horario-link|vaga-le-servico-fecho|vacancy-schedule-hydration|draft-wizard-locked|027-vacancy-case-select|vacancy-de-baja|patient-status-suspendido-saida-motivo|patient-status-aguardando-financeiro|kanban-pacientes|funil-vacante|lista-vacantes|cid-na-vaga-publica|postularse-iniciado-043|kanban-iniciado-blocked-columns|kanban-blocked-live-missing-fields|enderecos-faturamento-044|servico-dados-recrutamento'
 
   # O agregador. `if: always()` é o que garante que ele reporta mesmo quando
   # tudo acima foi pulado — sem isso, voltaríamos ao problema que este arquivo

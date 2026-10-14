@@ -152,7 +152,10 @@ BEGIN
       -- (318/319) entram nominalmente mesmo as sem texto/valor a excluir: GRANT por coluna (em vez
       -- do "ALL TABLES" implícito) garante que coluna nova nasça invisível também aqui (mesma razão
       -- do C6 para tabela nova).
-      ('patient_contracted_services', ARRAY['professional_profile','hourly_value']),
+      -- spec 027 Fase 3 (lex T.2, migration 518): 4 colunas de TEXTO LIVRE novas escritas dentro da ficha do
+      -- paciente (`required_experience`, `worker_attributes`, `payment_day`, `daily_obs`) nascem invisíveis ao LLM.
+      -- `required_professions`, `required_sex` e `work_schedule` são codificados (catálogo/enum) e seguem legíveis.
+      ('patient_contracted_services', ARRAY['professional_profile','hourly_value','required_experience','worker_attributes','payment_day','daily_obs']),
       ('contracted_service_providers', ARRAY[]::text[]),
       ('contracted_service_devices',   ARRAY[]::text[]),
       ('service_types',                ARRAY[]::text[])

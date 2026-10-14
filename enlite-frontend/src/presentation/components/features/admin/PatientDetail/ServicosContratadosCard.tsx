@@ -213,6 +213,7 @@ function ServiceRow({
                 serviceHasSchedule: Array.isArray(service.schedule) && service.schedule.length > 0,
                 insuranceInformed,
                 hasVerifiedActiveCoverage,
+                serviceRecruitmentFields: service,
               })}
               onActivated={onActivated}
               t={t}

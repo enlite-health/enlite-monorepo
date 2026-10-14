@@ -18,6 +18,7 @@
  * `contracted_service_id` setado, então `locked_fields` do GET traz os 8 nomes.
  */
 import { test, expect, type Page, type Route } from '@playwright/test';
+import { RECRUITMENT_FIELDS_E2E } from '../helpers/recruitment-fields-e2e';
 import { insertTestPatient, cleanupTestPatient, backdateVacancyUpdatedAt } from '../helpers/db-test-helper';
 
 const BACKEND_URL = process.env.API_BASE_URL || 'http://localhost:8080';
@@ -218,7 +219,7 @@ test.describe('draft-wizard-locked — fase 4 (completar-vacante-em-rascunho) @i
         serviceCode: 'AT',
         providersNeeded: 1,
         weeklyHours: 20,
-        careLocation: 'HOME',
+        careLocation: 'HOME', ...RECRUITMENT_FIELDS_E2E,
         addressId,
         schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }],
       },
@@ -283,11 +284,8 @@ test.describe('draft-wizard-locked — fase 4 (completar-vacante-em-rascunho) @i
 
     // Dependia do fix de `buildScheduleFromVacancy` (#526, na stage).
 
-    // Preenche profissão + valor por hora — os dois campos livres que o recrutamento completa.
-    // O input real é `sr-only` (Checkbox atom): quem recebe o clique de um humano de verdade é o
-    // `<label for="profession-AT">` que envolve o box visível + o texto — clicar nele, não no
-    // input escondido, é o mesmo alvo que um dedo/mouse acertaria na tela.
-    await page.locator('label[for="profession-AT"]').click();
+    // Spec 027 Fase 3 (D508): a profissão chega PRÉ-PREENCHIDA do serviço contratado (RECRUITMENT_FIELDS_E2E → ['AT']);
+    // a recrutadora só confere — clicar de novo a DESMARCARIA. Falta completar o valor por hora (o campo livre).
     await expect(page.getByTestId('profession-checkbox-AT')).toBeChecked();
     // salary_text já vem "A convenir" (F2: é o "vazio" que o foguete grava, nunca NULL) — um
     // humano que for trocar o valor seleciona tudo e digita por cima, não faz `.fill('')`.

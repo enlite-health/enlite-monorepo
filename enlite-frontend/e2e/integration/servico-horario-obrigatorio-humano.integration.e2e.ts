@@ -16,6 +16,7 @@
  * API e Postgres reais (stack docker), login real pelo emulador do Firebase.
  */
 import { test, expect } from '@playwright/test';
+import { preencherRecrutamentoPelaTela } from '../helpers/recruitment-fields-e2e';
 import { seedActivatablePatient, cleanupPatientDeep, runSQL } from '../helpers/patient-detail-c-helper';
 import { loginComoHumano } from '../helpers/login-humano';
 
@@ -102,6 +103,7 @@ test.describe('Horário obrigatório para mudar de status — o operador é avis
 
     // ── 5. Preencher o horário como humano: clicar no dia, e o aviso some ──
     await page.getByTestId('day-schedule-add-monday').click();
+    await preencherRecrutamentoPelaTela(page, 1); // spec 027 Fase 3: o portão exige os 5 campos
     // o aviso âmbar some assim que existe um slot — o operador vê a pendência sair na hora
     await expect(page.getByTestId('svc-schedule-none-1')).toHaveCount(0);
     // Esperar a resposta REAL do PATCH antes de fechar: clicar em "Cerrar" com o formulário ainda

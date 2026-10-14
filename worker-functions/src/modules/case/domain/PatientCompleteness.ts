@@ -124,7 +124,39 @@ export const ACTIVATABLE_STATUSES = ['ADMISSION', 'PENDING_ADMISSION'] as const;
  * paciente inteiro", que é o que `ACTIVATION_BLOCKING_CODES` faz); `COVERAGE` continua do
  * paciente, porque cobertura é um dado do paciente, não do serviço.
  */
-export const RECRUITMENT_BLOCKING_CODES = ['SERVICE_ADDRESS', 'SERVICE_SCHEDULE', 'COVERAGE'] as const;
+export const RECRUITMENT_BLOCKING_CODES = [
+  'SERVICE_ADDRESS',
+  'SERVICE_SCHEDULE',
+  // Spec 027 Fase 3 (D508 c): os 5 campos que a vaga copia do serviço. Código ÚNICO para os 5.
+  'SERVICE_RECRUITMENT_FIELDS',
+  'COVERAGE',
+] as const;
+
+/**
+ * Os 5 campos do serviço contratado que a vaga copia (D508) e que o portão exige. `worker_attributes` e
+ * `daily_obs` NÃO entram: ficam só na ficha e são opcionais (D508 a/c).
+ */
+export interface ServiceRecruitmentFields {
+  requiredProfessions: readonly string[] | null | undefined;
+  /** 'M' | 'F' | 'BOTH'. `null`/ausente = FALTANDO (lex S.2); 'BOTH' = respondido (indistinto). */
+  requiredSex: string | null | undefined;
+  requiredExperience: string | null | undefined;
+  workSchedule: string | null | undefined;
+  paymentDay: string | null | undefined;
+}
+
+const hasText = (v: string | null | undefined): boolean => (v ?? '').trim().length > 0;
+
+/** `true` quando os 5 campos copiados estão preenchidos. Lista vazia e texto só com espaços = faltando. */
+export function serviceRecruitmentFieldsFilled(f: ServiceRecruitmentFields): boolean {
+  return (
+    (f.requiredProfessions ?? []).some((p) => hasText(p)) &&
+    hasText(f.requiredSex) &&
+    hasText(f.requiredExperience) &&
+    hasText(f.workSchedule) &&
+    hasText(f.paymentDay)
+  );
+}
 
 /**
  * FR-121/122 (spec 018, PR-6): "sin cobertura / particular" é uma resposta EXPLÍCITA válida —
@@ -163,6 +195,10 @@ export interface RecruitmentReadinessInput {
    * agora é satisfeito pelo legado OU por esta cobertura verificada — nunca os dois exigidos.
    */
   hasVerifiedActiveCoverage?: boolean;
+  /**
+   * Spec 027 Fase 3: os 5 campos copiados do serviço `:sid`. Ausente = nenhum preenchido (conta como faltando).
+   */
+  serviceRecruitmentFields?: ServiceRecruitmentFields;
 }
 
 export interface RecruitmentReadinessResult {
@@ -177,6 +213,9 @@ export function computeRecruitmentReadiness(
   const missing: Array<(typeof RECRUITMENT_BLOCKING_CODES)[number]> = [];
   if (!input.serviceHasAddress) missing.push('SERVICE_ADDRESS');
   if (!input.serviceHasSchedule) missing.push('SERVICE_SCHEDULE');
+  if (!input.serviceRecruitmentFields || !serviceRecruitmentFieldsFilled(input.serviceRecruitmentFields)) {
+    missing.push('SERVICE_RECRUITMENT_FIELDS');
+  }
   if (isPlaceholderCoverageValue(input.insuranceInformed) && !input.hasVerifiedActiveCoverage) {
     missing.push('COVERAGE');
   }

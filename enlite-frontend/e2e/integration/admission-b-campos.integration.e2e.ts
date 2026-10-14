@@ -14,6 +14,7 @@
  *  B10 — o card do Kanban identifica o solicitante pelo nome (sem telefone)
  */
 import { test, expect, type Page } from '@playwright/test';
+import { preencherRecrutamentoPelaTela } from '../helpers/recruitment-fields-e2e';
 import {
   seedActivePatient, seedAdmissionPatient, readPatientStatus, readHistoryTop, readAddresses, readInsuranceCodes,
   readDeviceTypes, readRelationship, readBirthAndServiceStart, findPatientIdByFirstName, countVacancies,
@@ -209,6 +210,7 @@ test.describe('Spec 012 bloco B — os campos que faltam na ficha @integration',
     ).trim();
     await page.getByTestId('svc-addressId-1').selectOption(enderecoRecemCriadoId);
     await page.getByTestId('day-schedule-add-monday').click();
+    await preencherRecrutamentoPelaTela(page, 1); // spec 027 Fase 3: o portão exige os 5 campos
     const createService = page.waitForResponse((r) => r.request().method() === 'POST' && /\/contracted-services$/.test(r.url()));
     await page.getByTestId('contracted-service-new-save').click();
     const svcBody = (await (await createService).json()) as { data: { id: string } };

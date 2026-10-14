@@ -75,6 +75,8 @@ const SERVICE: PatientContractedServiceDetail = {
   supervisionFrequency: 'DAYS_30',
   guardShift: 'MORNING',
   providerAgeBand: 'AGE_30_45',
+  // Spec 027 Fase 3: os 5 campos do portão preenchidos (sem os 2 de ficha — opcionais).
+  requiredProfessions: ['AT'], requiredSex: 'BOTH', requiredExperience: 'exp-sintetica', workerAttributes: null, workSchedule: 'part-time', paymentDay: 'dia 5', dailyObs: null,
   addressId: null,
   schedule: null,
   liveVacancy: null, liveVacancyRedacted: false,
@@ -191,7 +193,7 @@ describe('ServicosContratadosCard — tabela no molde do Figma (05/09) + #PEND-0
       providersNeeded: null, authorizedHours: null, weeklyHours: null, careLocation: null,
       hourlyValue: null, hourlyValueRedacted: false, startDate: null,
       contractType: null, taxCondition: null, supervisionFrequency: null, guardShift: null,
-      providerAgeBand: null,
+      providerAgeBand: null, requiredProfessions: null, requiredSex: null, requiredExperience: null, workerAttributes: null, workSchedule: null, paymentDay: null, dailyObs: null,
       addressId: null,
       schedule: null,
       liveVacancy: null, liveVacancyRedacted: false,

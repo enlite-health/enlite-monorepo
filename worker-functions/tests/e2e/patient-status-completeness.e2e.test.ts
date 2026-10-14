@@ -54,8 +54,11 @@ describe('Horário do serviço trava a mudança de status (07/09) @integration',
     if (opts.comServico !== false) {
       await pool.query(
         `INSERT INTO patient_contracted_services
-           (patient_id, service_code, active, country, created_by, updated_by, address_id, schedule)
-         VALUES ($1,'AT',true,'AR','sched-gate-e2e','sched-gate-e2e',$2,$3::jsonb)`,
+           (patient_id, service_code, active, country, created_by, updated_by, address_id, schedule,
+            required_professions, required_sex, required_experience, work_schedule, payment_day)
+         -- spec 027 Fase 3: os 5 campos do portão "ativar recrutamento" (D508 c) vêm preenchidos por padrão
+         VALUES ($1,'AT',true,'AR','sched-gate-e2e','sched-gate-e2e',$2,$3::jsonb,
+                 ARRAY['AT'],'BOTH','EXP-E2E','part-time','DIA-E2E')`,
         [id, addr, opts.schedule],
       );
     }

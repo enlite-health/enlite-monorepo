@@ -13,6 +13,7 @@
  * (`required_professions`) aceita e persiste.
  */
 import { test, expect } from '@playwright/test';
+import { RECRUITMENT_FIELDS_E2E } from '../helpers/recruitment-fields-e2e';
 import { insertTestPatient, cleanupTestPatient } from '../helpers/db-test-helper';
 import { runSQL } from '../helpers/patient-detail-a-helper';
 
@@ -71,6 +72,7 @@ test.describe('vacancy-locked-fields — fase 1 (completar-vacante-em-rascunho) 
           providersNeeded: 1,
           weeklyHours: 20,
           careLocation: 'HOME',
+          ...RECRUITMENT_FIELDS_E2E,
           addressId,
           schedule: SERVICE_SCHEDULE,
         },

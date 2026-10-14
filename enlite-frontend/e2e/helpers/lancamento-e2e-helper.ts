@@ -20,6 +20,7 @@ import { insertTestPatient, insertTestWorker } from './db-test-helper';
 import { runSQL, cleanupPatientDeep } from './patient-detail-a-helper';
 import { tokenFor, loginAs, type MockUser } from './abac-stack-helper';
 import { seedMockStaff, cleanupMockStaff } from './lancamento-leituras-helper';
+import { RECRUITMENT_FIELDS_E2E } from './recruitment-fields-e2e';
 
 /**
  * URL do backend (E2E-F6/CI sempre setam `E2E_BACKEND_URL`) — nunca host/porta literal (G2).
@@ -300,7 +301,8 @@ export async function postContractedServiceViaApi(
 ): Promise<string> {
   const res = await request.post(`${backendUrl()}/api/admin/patients/${patientId}/contracted-services`, {
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-    data: body,
+    // spec 027 Fase 3: o portão exige os 5 campos; o corpo do chamador vence o default.
+    data: { ...RECRUITMENT_FIELDS_E2E, ...body },
   });
   if (!res.ok()) {
     throw new Error(
@@ -357,6 +359,7 @@ export async function seedLaunchablePatient(
       providersNeeded: 1,
       weeklyHours: 20,
       careLocation: 'HOME',
+      ...RECRUITMENT_FIELDS_E2E,
       addressId,
       schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }],
     },
@@ -439,7 +442,7 @@ export async function completeDraftViaWizard(page: Page, vacancyId: string): Pro
   await page.getByTestId('complete-vacancy-btn').click();
   await expect(page).toHaveURL(new RegExp(`/admin/vacancies/${vacancyId}/edit$`), { timeout: 15_000 });
 
-  await page.locator('label[for="profession-AT"]').click();
+  // Spec 027 Fase 3 (D508): a profissão chega PRÉ-PREENCHIDA do serviço (RECRUITMENT_FIELDS_E2E → ['AT']); clicar a desmarcaria.
   await expect(page.getByTestId('profession-checkbox-AT')).toBeChecked();
 
   const salaryInput = page.getByTestId('salary-text-input');

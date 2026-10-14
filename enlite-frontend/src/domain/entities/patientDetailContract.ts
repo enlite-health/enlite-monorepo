@@ -159,6 +159,14 @@ const contractedServiceSchema = z
       .strict()
       .nullable(),
     liveVacancyRedacted: z.boolean(),
+    // Spec 027 Fase 3 (D507/D508): 7 colunas de recrutamento do serviço; `workerAttributes`/`dailyObs` são SÓ FICHA.
+    requiredProfessions: z.array(z.string()).nullable(),
+    requiredSex: z.string().nullable(),
+    requiredExperience: z.string().nullable(),
+    workerAttributes: z.string().nullable(),
+    workSchedule: z.string().nullable(),
+    paymentDay: z.string().nullable(),
+    dailyObs: z.string().nullable(),
     active: z.boolean(),
     endedAt: isoDate.nullable(),
     country: z.string(),

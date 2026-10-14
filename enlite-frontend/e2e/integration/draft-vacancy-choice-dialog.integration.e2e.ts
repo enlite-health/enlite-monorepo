@@ -73,6 +73,7 @@
  * as células que o setup precisa — os dois atores do teste nunca escrevem nada, só leem.
  */
 import { test, expect } from '@playwright/test';
+import { RECRUITMENT_FIELDS_E2E } from '../helpers/recruitment-fields-e2e';
 import {
   ABAC_API_URL,
   grantCell,
@@ -156,7 +157,7 @@ test.describe('draft-vacancy-choice — fase 3 (completar-vacante-em-rascunho, F
     // Serviço contratado + foguete (o MESMO caminho de produção) — fica em rascunho.
     const svcRes = await request.post(`${ABAC_API_URL}/api/admin/patients/${patientId}/contracted-services`, {
       headers: AUTH_HEADERS(SETUP),
-      data: { serviceCode: 'CAREGIVER', providersNeeded: 2, weeklyHours: 32, careLocation: 'HOME', addressId, schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '14:00' }] },
+      data: { serviceCode: 'CAREGIVER', providersNeeded: 2, weeklyHours: 32, careLocation: 'HOME', ...RECRUITMENT_FIELDS_E2E, addressId, schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '14:00' }] },
     });
     expect(svcRes.ok(), `POST contracted-services falhou: ${svcRes.status()} ${await svcRes.text()}`).toBe(true);
     const draftServiceId = (await svcRes.json()).data.id as string;

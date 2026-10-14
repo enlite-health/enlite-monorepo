@@ -39,6 +39,24 @@ export type GuardShift = (typeof GUARD_SHIFTS)[number];
  * migration 322). `null` = não informado. Ao ativar, propaga para `age_range_min/max` da vaga
  * NASCIDA DESTE SERVIÇO (backend: `ProviderAgeBandMapping.ts`, fonte única).
  */
+/**
+ * Spec 027 Fase 3 (D507): sexo requerido do prestador. `BOTH` = indistinto (respondido); `null` = sem responder.
+ * Sem campo de motivo: o motivo é clínico e nunca se registra (D507 item 4).
+ */
+export const REQUIRED_SEX_OPTIONS = ['M', 'F', 'BOTH'] as const;
+export type RequiredSex = (typeof REQUIRED_SEX_OPTIONS)[number];
+
+/** Spec 027 Fase 3 (lex W.1): tipo de jornada — o vocabulário do parser da vaga. */
+export const WORK_SCHEDULE_OPTIONS = ['full-time', 'part-time', 'flexible'] as const;
+export type WorkSchedule = (typeof WORK_SCHEDULE_OPTIONS)[number];
+
+/** Spec 027 Fase 3: profissões selecionáveis (as mesmas do formulário de vaga). */
+export const REQUIRED_PROFESSION_OPTIONS = ['AT', 'CAREGIVER'] as const;
+
+/** Tetos do Zod do backend (lex T.7) — espelhados para o formulário. */
+export const RECRUITMENT_TEXT_MAX = 2000;
+export const PAYMENT_DAY_MAX = 100;
+
 export const PROVIDER_AGE_BANDS = ['ANY', 'AGE_20_30', 'AGE_30_45', 'AGE_45_PLUS'] as const;
 export type ProviderAgeBand = (typeof PROVIDER_AGE_BANDS)[number];
 
@@ -120,6 +138,19 @@ export interface PatientContractedServiceDetail {
   /** Horário do encuadre (migration 330) — `null` = ainda sem horário. */
   schedule: ContractedServiceScheduleSlot[] | null;
   /**
+   * Spec 027 Fase 3 (D507/D508): o que a vaga precisa. Os 5 primeiros (profissões, sexo, experiência, jornada, dia de
+   * pago) são COPIADOS para a vaga ao ativar recrutamento; `workerAttributes` e `dailyObs` são SÓ FICHA.
+   */
+  requiredProfessions: string[] | null;
+  /** 'M' | 'F' | 'BOTH' (string frouxa, molde do contrato). `null` = sem responder. */
+  requiredSex: string | null;
+  requiredExperience: string | null;
+  workerAttributes: string | null;
+  workSchedule: string | null;
+  /** Dia em que a Enlite paga o PRESTADOR (D508 b). */
+  paymentDay: string | null;
+  dailyObs: string | null;
+  /**
    * Spec 047 (F2): vaga viva deste serviço (a mais antiga). `null` NÃO é sozinho "sem vaga": com
    * `liveVacancyRedacted` o backend sinaliza que o ator não lê vagas (`vacancy:read`).
    */
@@ -152,6 +183,13 @@ export interface CreateContractedServiceBody {
   providerAgeBand?: ProviderAgeBand | null;
   addressId?: string | null;
   schedule?: ContractedServiceScheduleSlot[] | null;
+  requiredProfessions?: string[] | null;
+  requiredSex?: RequiredSex | null;
+  requiredExperience?: string | null;
+  workerAttributes?: string | null;
+  workSchedule?: WorkSchedule | null;
+  paymentDay?: string | null;
+  dailyObs?: string | null;
   deviceTypeCodes?: string[];
 }
 

@@ -22,6 +22,14 @@ import { staffAuth, type StaffAuth } from './helpers/staffAuth';
 const DATABASE_URL = process.env.TEST_DATABASE_URL ?? process.env.DATABASE_URL ?? '';
 const TAG = 'activation-e2e-%';
 const HORARIO = '[{"dayOfWeek":1,"startTime":"08:00","endTime":"12:00"}]';
+// Spec 027 Fase 3 (D508 c): os 5 campos que o portão exige e que a vaga copia. Valores sintéticos.
+const RECRUITMENT_FIELDS = {
+  requiredProfessions: ['AT'],
+  requiredSex: 'F',
+  requiredExperience: 'EXP-E2E-1',
+  workSchedule: 'part-time',
+  paymentDay: 'DIA-E2E-5',
+};
 
 describe('Ativação de recrutamento por serviço (spec 018, PR-6) @integration', () => {
   const api = createApiClient();
@@ -102,7 +110,7 @@ describe('Ativação de recrutamento por serviço (spec 018, PR-6) @integration'
     // serviço contratado: endpoint JÁ EXISTENTE (spec 013 bloco C) — não reimplementado aqui.
     const svc = await api.post(
       `/api/admin/patients/${patientId}/contracted-services`,
-      { serviceCode: 'AT', addressId, schedule: JSON.parse(HORARIO) },
+      { serviceCode: 'AT', addressId, schedule: JSON.parse(HORARIO), ...RECRUITMENT_FIELDS },
       asAdmin,
     );
     expect(svc.status).toBe(201);
@@ -135,6 +143,19 @@ describe('Ativação de recrutamento por serviço (spec 018, PR-6) @integration'
     expect(vacancy.contracted_service_id).toBe(serviceId);
     expect(vacancy.status).toBe('PENDING_ACTIVATION');
     expect(vacancy.is_draft).toBe(true);
+
+    // Spec 027 Fase 3 (D508): a vaga nasce com os 5 campos do serviço e SEM os dois de ficha.
+    const { rows: [copied] } = await pool.query(
+      `SELECT required_professions, required_sex, required_experience, work_schedule, payment_day,
+              worker_attributes, daily_obs, worker_profile_sought
+         FROM job_postings WHERE id = $1`,
+      [r.data.data.vacancyId],
+    );
+    expect(copied).toMatchObject({
+      required_professions: ['AT'], required_sex: 'F', required_experience: 'EXP-E2E-1',
+      work_schedule: 'part-time', payment_day: 'DIA-E2E-5',
+      worker_attributes: null, daily_obs: null, worker_profile_sought: null,
+    });
 
     const { rows: [patient] } = await pool.query<{ status: string }>(
       `SELECT status FROM patients WHERE id = $1`, [patientId],
@@ -198,7 +219,7 @@ describe('Ativação de recrutamento por serviço (spec 018, PR-6) @integration'
     // Mesmo endereço e cobertura do caso feliz — só falta o horário do serviço, de propósito.
     const svc = await api.post(
       `/api/admin/patients/${patientId}/contracted-services`,
-      { serviceCode: 'AT', addressId },
+      { serviceCode: 'AT', addressId, ...RECRUITMENT_FIELDS },
       asAdmin,
     );
     expect(svc.status).toBe(201);
@@ -247,7 +268,7 @@ describe('Ativação de recrutamento por serviço (spec 018, PR-6) @integration'
     const addressId = addr.data.data.id as string;
     const svc = await api.post(
       `/api/admin/patients/${patientId}/contracted-services`,
-      { serviceCode: 'AT', addressId, schedule: JSON.parse(HORARIO) },
+      { serviceCode: 'AT', addressId, schedule: JSON.parse(HORARIO), ...RECRUITMENT_FIELDS },
       asAdmin,
     );
     expect(svc.status).toBe(201);
@@ -291,7 +312,7 @@ describe('Ativação de recrutamento por serviço (spec 018, PR-6) @integration'
     const addressId = addr.data.data.id as string;
     const svc = await api.post(
       `/api/admin/patients/${patientId}/contracted-services`,
-      { serviceCode: 'AT', addressId, schedule: JSON.parse(HORARIO) },
+      { serviceCode: 'AT', addressId, schedule: JSON.parse(HORARIO), ...RECRUITMENT_FIELDS },
       asAdmin,
     );
     expect(svc.status).toBe(201);
@@ -330,7 +351,7 @@ describe('Ativação de recrutamento por serviço (spec 018, PR-6) @integration'
     const addressId = addr.data.data.id as string;
     const svc = await api.post(
       `/api/admin/patients/${patientId}/contracted-services`,
-      { serviceCode: 'AT', addressId, schedule: JSON.parse(HORARIO) },
+      { serviceCode: 'AT', addressId, schedule: JSON.parse(HORARIO), ...RECRUITMENT_FIELDS },
       asAdmin,
     );
     expect(svc.status).toBe(201);
@@ -355,5 +376,44 @@ describe('Ativação de recrutamento por serviço (spec 018, PR-6) @integration'
       'SELECT COUNT(*) AS n FROM job_postings WHERE patient_id = $1', [patientId],
     );
     expect(Number(n.n)).toBe(0);
+  });
+
+  it('ALTERNATIVO (spec 027 Fase 3): serviço sem os 5 campos → 422 SERVICE_RECRUITMENT_FIELDS só ele, sem criar vaga; required_sex BOTH conta como preenchido', async () => {
+    const patientId = await criarPacienteDeFunil({ tag: 'activation-e2e-recfields', caseNumber: 991010, coverage: 'Particular' });
+    const addr = await api.post(`/api/admin/patients/${patientId}/addresses`, { address_formatted: 'Calle Campos 1', address_type: 'primary' }, asAdmin);
+    const addressId = addr.data.data.id as string;
+    const svc = await api.post(
+      `/api/admin/patients/${patientId}/contracted-services`,
+      { serviceCode: 'AT', addressId, schedule: JSON.parse(HORARIO) },
+      asAdmin,
+    );
+    expect(svc.status).toBe(201);
+    const serviceId = svc.data.data.id as string;
+    const url = `/api/admin/patients/${patientId}/contracted-services/${serviceId}/activate-recruitment`;
+
+    const refused = await api.post(url, {}, asAdmin);
+    expect(refused.status).toBe(422);
+    expect(refused.data.details.missing).toEqual(['SERVICE_RECRUITMENT_FIELDS']);
+    const { rows: [n] } = await pool.query<{ n: string }>('SELECT COUNT(*) AS n FROM job_postings WHERE patient_id = $1', [patientId]);
+    expect(Number(n.n)).toBe(0);
+
+    // required_sex: valor fora de M/F/BOTH é 400 na borda (lex S.1), não "aceita qualquer prestador"
+    const bad = await api.patch(`/api/admin/patients/${patientId}/contracted-services/${serviceId}`, { requiredSex: 'Mujer' }, asAdmin);
+    expect(bad.status).toBe(400);
+
+    // preenche os 5 (BOTH = indistinto = respondido) e ativa: os dois de ficha ficam fora da vaga
+    const fill = await api.patch(
+      `/api/admin/patients/${patientId}/contracted-services/${serviceId}`,
+      { ...RECRUITMENT_FIELDS, requiredSex: 'BOTH', workerAttributes: 'FICHA-ATRIB-E2E', dailyObs: 'FICHA-OBS-E2E' },
+      asAdmin,
+    );
+    expect(fill.status).toBe(200);
+    const ok = await api.post(url, {}, asAdmin);
+    expect(ok.status).toBe(201);
+    const { rows: [v] } = await pool.query(
+      'SELECT required_sex, worker_attributes, daily_obs, is_draft FROM job_postings WHERE id = $1',
+      [ok.data.data.vacancyId],
+    );
+    expect(v).toEqual({ required_sex: 'BOTH', worker_attributes: null, daily_obs: null, is_draft: true });
   });
 });

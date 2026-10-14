@@ -56,7 +56,7 @@ describe('PatientVacanciesCard — código da vaga em EN1234#01 (spec 047 F4)', 
     const servico = {
       id: 'svc-x', patientId: 'p1', serviceCode: 'AT', professionalProfile: null, providersNeeded: 1, authorizedHours: null, weeklyHours: null,
       careLocation: null, hourlyValue: null, hourlyValueRedacted: false, startDate: null, contractType: null, taxCondition: null,
-      supervisionFrequency: null, guardShift: null, providerAgeBand: null, addressId: null, schedule: null, endedAt: null, country: 'AR',
+      supervisionFrequency: null, guardShift: null, providerAgeBand: null, requiredProfessions: null, requiredSex: null, requiredExperience: null, workerAttributes: null, workSchedule: null, paymentDay: null, dailyObs: null, addressId: null, schedule: null, endedAt: null, country: 'AR',
       deviceTypes: [], providers: [], createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z', active: true,
       liveVacancy: { id: 'v-1', caseNumber: VAGA.caseNumber, caseOrdinal: VAGA.caseOrdinal, status: VAGA.status }, liveVacancyRedacted: false,
     } as PatientContractedServiceDetail;

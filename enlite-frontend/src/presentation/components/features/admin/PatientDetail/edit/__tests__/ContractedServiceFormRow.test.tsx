@@ -38,7 +38,7 @@ const SERVICE: PatientContractedServiceDetail = {
   providersNeeded: 2, authorizedHours: 20, weeklyHours: 20, careLocation: 'HOME',
   hourlyValue: 1500, hourlyValueRedacted: false, startDate: '2026-09-01T00:00:00.000Z',
   contractType: 'OBRA_SOCIAL', taxCondition: 'IVA_EXEMPT', supervisionFrequency: 'DAYS_30', guardShift: 'MORNING',
-  providerAgeBand: 'AGE_30_45',
+  providerAgeBand: 'AGE_30_45', requiredProfessions: null, requiredSex: null, requiredExperience: null, workerAttributes: null, workSchedule: null, paymentDay: null, dailyObs: null,
   addressId: null,
   liveVacancy: null, liveVacancyRedacted: false,
   schedule: null,
