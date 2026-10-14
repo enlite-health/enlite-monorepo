@@ -2333,30 +2333,17 @@
           }
         }
       },
-      "funnelTabs": {
-        "ariaLabel": "Filtros del embudo",
-        "all": "Todos",
-        "invited": "Invitados",
-        "postulated": "Postulados",
-        "preSelected": "Pre Seleccionados",
-        "rejected": "Rechazados",
-        "withdrew": "Desistentes"
-      },
       "funnelTable": {
         "headers": {
           "name": "NOMBRE",
-          "origin": "Origen",
           "phone": "TELÉFONO",
           "inviteDate": "FECHA DE INVITACIÓN",
           "whatsapp": "WHATSAPP",
-          "accepted": "ACEPTÓ",
           "registration": "REGISTRO",
           "stage": "ETAPA",
           "notes": "NOTAS"
         },
-        "acceptedYes": "Sí",
-        "acceptedNo": "No",
-        "emptyState": "Sin candidatos en esta etapa todavía.",
+        "emptyState": "Sin candidatos en esta vacante",
         "emptyFiltered": "Sin candidatos que coincidan con la búsqueda.",
         "ariaLabel": "Tabla del embudo de la vacante",
         "filters": {
