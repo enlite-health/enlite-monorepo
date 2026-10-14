@@ -121,37 +121,35 @@ export function VacancyFunnelView({
 
   return (
     <div data-testid="vacancy-funnel-view" className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex flex-col gap-4">
-      {/* Linha 1: toggle (esquerda) + ações (direita, só em modo lista) */}
+      {/* Linha 1: toggle (esquerda) + ações (direita, nas duas visões — 054 item 6) */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <VacancyFunnelToggle view={view} onChange={handleViewChange} />
-        {isListView && (
-          <div className="flex items-center gap-3 flex-shrink-0">
-            {/* POST /vacancies/:id/match → match:execute · POST /messaging/whatsapp/vacancy-match →
-                messaging:send (D286 fase 2 — a rota já decidia; sem a célula o botão SOME). */}
-            <ActionButton
-              resource="match"
-              action="execute"
-              variant="outline"
-              size="md"
-              onClick={() => setShowMatchModal(true)}
-            >
-              <Sparkles size={16} aria-hidden="true" />
-              Hacer match
-            </ActionButton>
-            <ActionButton
-              resource="messaging"
-              action="send"
-              variant="primary"
-              size="md"
-              onClick={handleDispatchInvites}
-              disabled={pendingCount === 0}
-            >
-              {t('admin.vacancyDetail.funnelView.dispatchInvitesButtonCount', {
-                count: pendingCount,
-              })}
-            </ActionButton>
-          </div>
-        )}
+        <div className="flex items-center gap-3 flex-shrink-0">
+          {/* POST /vacancies/:id/match → match:execute · POST /messaging/whatsapp/vacancy-match →
+              messaging:send (D286 fase 2 — a rota já decidia; sem a célula o botão SOME). */}
+          <ActionButton
+            resource="match"
+            action="execute"
+            variant="outline"
+            size="md"
+            onClick={() => setShowMatchModal(true)}
+          >
+            <Sparkles size={16} aria-hidden="true" />
+            Hacer match
+          </ActionButton>
+          <ActionButton
+            resource="messaging"
+            action="send"
+            variant="primary"
+            size="md"
+            onClick={handleDispatchInvites}
+            disabled={pendingCount === 0}
+          >
+            {t('admin.vacancyDetail.funnelView.dispatchInvitesButtonCount', {
+              count: pendingCount,
+            })}
+          </ActionButton>
+        </div>
       </div>
 
       {/* List view content */}

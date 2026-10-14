@@ -28,9 +28,14 @@ function comEnforcement(permissions: string[], enforcement: AuthzContract['enfor
 }
 const vacancy = { id: 'v1' } as never;
 
+const VIEW_KEY = 'vacancy-funnel-view-v2-v1';
+
+// 054 item 6: os portões valem nas DUAS visões. O Toggle é mockado (<div/>), então a visão
+// é forçada pela chave v2.
+describe.each(['kanban', 'list'] as const)('visão %s', (view) => {
 beforeEach(() => {
   localStorage.clear();
-  localStorage.setItem('vacancy-funnel-view-v2-v1', 'list');
+  localStorage.setItem(VIEW_KEY, view);
 });
 
 describe('VacancyFunnelView — portões por célula (D286 fase 2)', () => {
@@ -60,4 +65,5 @@ describe('VacancyFunnelView — portões por célula (D286 fase 2)', () => {
     expect(screen.getByRole('button', { name: /Hacer match/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /dispatchInvitesButtonCount/ })).toBeInTheDocument();
   });
+});
 });

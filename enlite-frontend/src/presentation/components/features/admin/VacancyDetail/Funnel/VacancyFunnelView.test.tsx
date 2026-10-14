@@ -2,10 +2,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { VacancyFunnelView } from './VacancyFunnelView';
+import { useAdminAuthStore } from '@presentation/stores/adminAuthStore';
+import type { AuthzContract } from '@domain/entities/Authz';
 import type { FunnelTableData } from '@domain/entities/Funnel';
 
 vi.mock('react-i18next', () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string, opts?: { count?: number }) =>
+      opts?.count !== undefined ? `${key}:${opts.count}` : key,
+  }),
 }));
 
 const mockUseVacancyFunnelTable = vi.fn();
@@ -17,7 +22,7 @@ vi.mock('@hooks/admin/useVacancyFunnelTable', () => ({
 vi.mock('@hooks/admin/useInvitedPendingCandidates', () => ({
   useInvitedPendingCandidates: () => ({
     candidates: [],
-    pendingCount: 0,
+    pendingCount: 3,
     isLoading: false,
     refetch: vi.fn(),
   }),
@@ -170,5 +175,32 @@ describe('VacancyFunnelView', () => {
     const tabArg = lastCall[1] as { kind: string; column: { sources: string[] } };
     expect(tabArg.kind).toBe('column');
     expect(tabArg.column.sources).toEqual(['PRE_SCREENING', 'IN_PROGRESS']);
+  });
+
+  it('na visão Kanban, "Hacer match" e "Enviar invitaciones (N)" estão presentes, com o mesmo N da Lista (054 item 6)', async () => {
+    useAdminAuthStore.setState({
+      authzStatus: 'ready',
+      authz: {
+        uid: 'u', tenantId: 't', status: 'ACTIVE',
+        permissions: ['funnel:read', 'match:execute', 'messaging:send'],
+        countries: [], groups: [], features: {}, enforcement: 'on',
+      } as AuthzContract,
+    });
+    const { unmount } = render(<VacancyFunnelView vacancyId="vac-1" />);
+    expect(screen.getByTestId('kanban-board')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Hacer match/ })).toBeInTheDocument();
+    const kanbanInvite = screen.getByRole('button', {
+      name: /dispatchInvitesButtonCount/,
+    });
+    expect(kanbanInvite).toHaveTextContent('dispatchInvitesButtonCount:3');
+    expect(kanbanInvite).toBeEnabled();
+    unmount();
+
+    localStorage.setItem(NEW_KEY, 'list');
+    render(<VacancyFunnelView vacancyId="vac-1" />);
+    expect(screen.getByTestId('funnel-table')).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /dispatchInvitesButtonCount/ }),
+    ).toHaveTextContent('dispatchInvitesButtonCount:3');
   });
 });
