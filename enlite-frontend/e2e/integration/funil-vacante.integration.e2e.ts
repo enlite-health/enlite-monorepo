@@ -29,6 +29,12 @@ import {
 import { insertWJA, cleanupWJAAndEncuadre } from '../helpers/wja-test-helper';
 import { runSQL } from '../helpers/patient-detail-a-helper';
 import { loginAs, tokenFor, type MockUser } from '../helpers/abac-stack-helper';
+import {
+  gotoVacancyDetail,
+  switchToKanban,
+  switchToLista,
+  readListaStageCounts,
+} from '../helpers/compativeis-e2e-helper';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -105,41 +111,14 @@ async function gotoVacanciesList(page: Page): Promise<Response> {
   return response;
 }
 
-/**
- * `VacancyFunnelView.tsx` persiste a última vista (list/kanban) em
- * `localStorage['vacancy-funnel-view-<id>']` — sem limpar, uma 2ª navegação à
- * MESMA vaga depois de `switchToKanban` reabre em Kanban, não em "lista
- * (default)". Cada chamada representa uma visita FRESCA: sempre em lista.
- */
-async function gotoVacancyDetail(page: Page, vacancyId: string): Promise<Response> {
-  await page
-    .evaluate((id) => localStorage.removeItem(`vacancy-funnel-view-${id}`), vacancyId)
-    .catch(() => {});
-  const funnelTableRe = new RegExp(`/vacancies/${vacancyId}/funnel-table(\\?|$)`);
-  const [response] = await Promise.all([
-    page.waitForResponse((r) => funnelTableRe.test(r.url()) && r.request().method() === 'GET'),
-    page.goto(`/admin/vacancies/${vacancyId}`),
-  ]);
-  return response;
-}
-
-async function switchToKanban(page: Page, vacancyId: string): Promise<Response> {
-  const funnelRe = new RegExp(`/vacancies/${vacancyId}/funnel(\\?|$)`);
-  const [response] = await Promise.all([
-    page.waitForResponse((r) => funnelRe.test(r.url()) && r.request().method() === 'GET'),
-    page
-      .getByRole('group', { name: 'Cambiar vista' })
-      .getByRole('button', { name: /Kanban/i })
-      .click(),
-  ]);
-  return response;
-}
+// `gotoVacancyDetail` (visita FRESCA, abre no Kanban — padrão 054), `switchToKanban`, `switchToLista`
+// e `readListaStageCounts` vivem em `compativeis-e2e-helper.ts`. A Lista é aberta CLICANDO "Lista".
 
 /**
  * `page.waitForResponse` resolve no evento de REDE (CDP) — o `.then()` do
  * `fetch`/axios da própria página e o re-render do React acontecem num tick
  * seguinte. Ler o texto uma vez logo depois é uma corrida real (medido:
- * "aba.INVITED" veio "0" quando os 3 testes rodaram em sequência, sem o
+ * "INVITED" veio "0" quando os 3 testes rodaram em sequência, sem o
  * respiro dos `page.screenshot()` do P20 entre navegação e leitura). Por
  * isso cada célula espera o texto ESTABILIZAR (duas leituras iguais),
  * em vez de uma leitura crua.
@@ -181,19 +160,16 @@ async function readListRowCounts(page: Page, vacancyId: string): Promise<Record<
   return readTestIdNumbers(page, (col) => `vacancy-row-${vacancyId}-stage-${col}`, LIST_COLUMN_IDS);
 }
 
-async function readFunnelTabCounts(page: Page, vacancyId: string): Promise<Record<string, number>> {
-  const response = await gotoVacancyDetail(page, vacancyId);
-  expect(response.ok(), 'GET funnel-table falhou').toBe(true);
-  await expect(page.getByTestId('vacancy-funnel-view')).toBeVisible({ timeout: 15_000 });
-  return readTestIdNumbers(page, (col) => `funnel-tab-${col}-count`);
+/** Lista: a ETAPA de cada linha (`funnel-stage-<rowId>[data-stage]`) contada por coluna. */
+async function readListaCounts(page: Page, vacancyId: string): Promise<Record<string, number>> {
+  await gotoVacancyDetail(page, vacancyId);
+  await switchToLista(page, vacancyId);
+  return readListaStageCounts(page, COLUMN_IDS);
 }
 
+/** Kanban (vista padrão): a contagem de cada coluna, `kanban-column-<col>-count`. */
 async function readKanbanColumnCounts(page: Page, vacancyId: string): Promise<Record<string, number>> {
   await gotoVacancyDetail(page, vacancyId);
-  await expect(page.getByTestId('vacancy-funnel-view')).toBeVisible({ timeout: 15_000 });
-  const response = await switchToKanban(page, vacancyId);
-  expect(response.ok(), 'GET funnel (kanban) falhou').toBe(true);
-  await expect(page.getByTestId('kanban-board')).toBeVisible({ timeout: 15_000 });
   return readTestIdNumbers(page, (col) => `kanban-column-${col}-count`);
 }
 
@@ -308,7 +284,7 @@ test.describe('funil da vacante @integration', () => {
   // de qualquer seletor novo (critério 15). As TRÊS navegações + prints vêm
   // primeiro, usando só `vacancy-row-<id>` (sem `-stage-`), `vacancy-funnel-view`,
   // o toggle "Cambiar vista" e `kanban-board` — todos existem em origin/stage.
-  // A leitura por coluna (`vacancy-row-<id>-stage-<col>`, `funnel-tab-<col>-count`,
+  // A leitura por coluna (`vacancy-row-<id>-stage-<col>`, `funnel-stage-<rowId>[data-stage]` da Lista,
   // `kanban-column-<col>-count` para INICIADO/REJECTED) e `stageCounts` da API são
   // seletores/campos NOVOS da fase — só entram DEPOIS dos 3 prints, re-navegando
   // (permitido pelo passo). Asserções: as mesmas de sempre, nada afrouxado.
@@ -334,7 +310,7 @@ test.describe('funil da vacante @integration', () => {
 
     // Contador (2.10, DX-2.13): 1 listagem distinta, 0 por-vaga NESTA tela — tem
     // de ser lido AQUI, antes de qualquer re-navegação da Fase 2 abaixo (a
-    // navegação ao detalhe bate em `/api/admin/vacancies/<id>/funnel-table`, que
+    // navegação ao detalhe bate em `/api/admin/vacancies/<id>/funnel`, que
     // a regex de "por-vaga" também casa).
     const listagensDistintas = new Set(
       requestUrls.filter((u) => /\/api\/admin\/vacancies\?/.test(u)),
@@ -342,32 +318,28 @@ test.describe('funil da vacante @integration', () => {
     const porVaga = requestUrls.filter((u) => /\/api\/admin\/vacancies\/[0-9a-f-]{36}/.test(u)).length;
     console.log('[2.10] listagens distintas=', listagensDistintas, 'por-vaga=', porVaga);
 
-    // 3. Modo lista: clica na linha → /admin/vacancies/<V1> (default). Seletor
-    // velho: `vacancy-funnel-view`.
-    const funnelTableRe = new RegExp(`/vacancies/${vacancyIdV1}/funnel-table(\\?|$)`);
-    const [funnelTableResponse] = await Promise.all([
-      page.waitForResponse((r) => funnelTableRe.test(r.url()) && r.request().method() === 'GET'),
+    // 3. Detalhe da vaga: clica na linha → /admin/vacancies/<V1>. 054: abre no Kanban (padrão),
+    // que busca `/funnel`. Seletor velho: `vacancy-funnel-view`.
+    const funnelRe = new RegExp(`/vacancies/${vacancyIdV1}/funnel(\\?|$)`);
+    const [funnelResponse] = await Promise.all([
+      page.waitForResponse((r) => funnelRe.test(r.url()) && r.request().method() === 'GET'),
       page.getByTestId(`vacancy-row-${vacancyIdV1}`).click(),
     ]);
-    expect(funnelTableResponse.ok(), 'GET funnel-table falhou').toBe(true);
+    expect(funnelResponse.ok(), 'GET funnel (kanban, vista padrão) falhou').toBe(true);
     await expect(page).toHaveURL(new RegExp(`/admin/vacancies/${vacancyIdV1}`));
     await expect(page.getByTestId('vacancy-funnel-view')).toBeVisible({ timeout: 15_000 });
-    // A faixa do funil (abas/toggle) mora num contêiner com scroll interno —
-    // `fullPage` não alcança o que está abaixo da dobra. O toggle "Cambiar
-    // vista" existe nas duas versões (origin/stage e esta branch), por isso
-    // serve de âncora para rolar a região do funil para dentro do quadro
-    // ANTES do print, sem depender de nenhum seletor novo da fase.
+    await expect(page.getByTestId('kanban-board')).toBeVisible({ timeout: 15_000 });
+    // O toggle "Cambiar vista" existe nas duas versões: âncora para rolar o funil para dentro
+    // do quadro ANTES do print (a região tem scroll interno; `fullPage` não alcança).
     await page.getByRole('group', { name: 'Cambiar vista' }).scrollIntoViewIfNeeded();
     if (process.env.PRINT_DIR) {
-      await page.screenshot({ path: `${process.env.PRINT_DIR}/funil-modo-lista.png`, fullPage: true });
+      await page.screenshot({ path: `${process.env.PRINT_DIR}/funil-kanban.png`, fullPage: true });
     }
 
-    // 4. Kanban — navegação + print. Seletor velho: `kanban-board`.
-    const kanbanResponse = await switchToKanban(page, vacancyIdV1);
-    expect(kanbanResponse.ok(), 'GET funnel (kanban) falhou').toBe(true);
-    await expect(page.getByTestId('kanban-board')).toBeVisible({ timeout: 15_000 });
+    // 4. Lista — clicando "Lista".
+    await switchToLista(page, vacancyIdV1);
     if (process.env.PRINT_DIR) {
-      await page.screenshot({ path: `${process.env.PRINT_DIR}/funil-kanban.png`, fullPage: true });
+      await page.screenshot({ path: `${process.env.PRINT_DIR}/funil-modo-lista.png`, fullPage: true });
     }
 
     // 5. SÓ AGORA os seletores/campos novos: `stageCounts` da API e as 7 colunas
@@ -375,15 +347,15 @@ test.describe('funil da vacante @integration', () => {
     // por tela (helpers já existentes, usados no P22) — os 3 prints já saíram.
     const apiCounts = await readApiStageCounts(request, vacancyIdV1);
     const listCounts = await readListRowCounts(page, vacancyIdV1);
-    const tabCounts = await readFunnelTabCounts(page, vacancyIdV1);
+    const tabCounts = await readListaCounts(page, vacancyIdV1);
     const kanbanCounts = await readKanbanColumnCounts(page, vacancyIdV1);
 
-    // 6. Asserts: cell == tab == badge == api, por coluna nomeada.
+    // 6. Asserts: lista de vacantes == Lista (ETAPA) == Kanban == api, por coluna nomeada.
     for (const col of LIST_COLUMN_IDS) {
       expect(listCounts[col], `lista.${col}`).toBe(apiCounts[col]);
     }
     for (const col of COLUMN_IDS) {
-      expect(tabCounts[col], `aba.${col}`).toBe(apiCounts[col]);
+      expect(tabCounts[col], `lista(ETAPA).${col}`).toBe(apiCounts[col]);
       expect(kanbanCounts[col], `kanban.${col}`).toBe(apiCounts[col]);
     }
     // Literais que provam o semeado (G agora em Compatíveis, DX-5.14 — não mais "fora").
@@ -393,6 +365,54 @@ test.describe('funil da vacante @integration', () => {
     expect(apiCounts.PRE_SCREENING, 'PRE_SCREENING').toBe(2);
     expect(apiCounts.SELECTED, 'SELECTED').toBe(1);
     expect(apiCounts.REJECTED, 'REJECTED').toBe(1);
+
+    // Item 1 (054): a Lista não filtra por etapa — tem TODAS as linhas da vaga; o total de
+    // `tbody tr` é a soma das colunas do Kanban (massa V1: nenhuma tentativa bloqueada aqui; o
+    // caso com bloqueada é o P22).
+    const kanbanTotal = COLUMN_IDS.reduce((acc, col) => acc + kanbanCounts[col], 0);
+    await switchToLista(page, vacancyIdV1);
+    await expect
+      .poll(() => countFunnelTableRows(page), { timeout: 15_000, message: 'linhas da Lista = soma das colunas do Kanban' })
+      .toBe(kanbanTotal);
+
+    // Item 4 (054): cada card do Kanban na coluna X tem, na Lista, a linha com ETAPA = X. A
+    // coluna esperada de cada candidato semeado é LITERAL (não derivada da tela): G é Compatibles
+    // (DX-5.14), D (IN_PROGRESS) soma em Pre Screening (P21).
+    const expectedColumnByLetter: Record<string, string> = {
+      A: 'INVITED',
+      B: 'INICIADO',
+      C: 'PRE_SCREENING',
+      D: 'PRE_SCREENING',
+      E: 'SELECTED',
+      F: 'REJECTED',
+      G: 'COMPATIBLE',
+    };
+    for (const [letter, col] of Object.entries(expectedColumnByLetter)) {
+      await expect(
+        page.getByTestId(`funnel-stage-${wjaIdsV1[letter]}`),
+        `Lista: ETAPA do candidato ${letter}`,
+      ).toHaveAttribute('data-stage', col, { timeout: 15_000 });
+    }
+
+    // Item 6 (054): "Hacer match" e "Enviar invitaciones (N)" nas duas visões, com o MESMO N.
+    // (Só presença e N igual; o envio em si fica fora — ver nota no PR.)
+    const matchButton = page.getByRole('button', { name: 'Hacer match' });
+    const dispatchButton = page.getByRole('button', { name: /^Enviar invitaciones \(\d+\)$/ });
+    await expect(matchButton, 'Lista: Hacer match').toBeVisible();
+    await expect(dispatchButton, 'Lista: Enviar invitaciones (N)').toBeVisible();
+    const dispatchLabelLista = (await dispatchButton.textContent())?.trim();
+    await switchToKanban(page, vacancyIdV1);
+    for (const letter of Object.keys(expectedColumnByLetter)) {
+      await expect(
+        page
+          .getByTestId(`kanban-column-${expectedColumnByLetter[letter]}`)
+          .getByTestId(`kanban-card-${wjaIdsV1[letter]}`),
+        `Kanban: card do candidato ${letter} na coluna ${expectedColumnByLetter[letter]}`,
+      ).toHaveCount(1, { timeout: 15_000 });
+    }
+    await expect(matchButton, 'Kanban: Hacer match').toBeVisible();
+    await expect(dispatchButton, 'Kanban: Enviar invitaciones (N)').toBeVisible();
+    expect((await dispatchButton.textContent())?.trim(), 'mesmo N nas duas visões').toBe(dispatchLabelLista);
 
     expect(listagensDistintas, 'listagens distintas').toBe(1);
     expect(porVaga, 'requests por-vaga nesta tela').toBe(0);
@@ -432,24 +452,22 @@ test.describe('funil da vacante @integration', () => {
 
       await loginAs(page, MOCK_ADMIN_USER);
 
-      // Kanban: uma coluna só (PRE_SCREENING), contando os dois — sem IN_PROGRESS.
+      // Kanban (vista padrão): uma coluna só (PRE_SCREENING), contando os dois — sem IN_PROGRESS.
       await gotoVacancyDetail(page, vacancyId);
-      await expect(page.getByTestId('vacancy-funnel-view')).toBeVisible({ timeout: 15_000 });
-      await switchToKanban(page, vacancyId);
-      await expect(page.getByTestId('kanban-board')).toBeVisible({ timeout: 15_000 });
       // Não conta pelo DOM dos cards (a coluna pode estar colapsada) — pelo contador.
       await expect(page.getByTestId('kanban-column-PRE_SCREENING-count')).toHaveText('2');
       await expect(page.getByTestId('kanban-column-IN_PROGRESS')).toHaveCount(0);
       await expect(page.getByTestId('kanban-column-PRE_SCREENING')).toHaveCount(1);
 
-      // Modo lista: a aba "Pre Screening" também soma os dois, e a tabela mostra as 2 linhas.
-      await gotoVacancyDetail(page, vacancyId);
-      await expect(page.getByTestId('vacancy-funnel-view')).toBeVisible({ timeout: 15_000 });
-      await expect(page.getByTestId('funnel-tab-PRE_SCREENING-count')).toHaveText('2');
-      await page.locator('#funnel-tab-PRE_SCREENING').click();
+      // Lista: as 2 linhas, as duas com ETAPA = PRE_SCREENING (IN_PROGRESS soma em Pre Screening).
+      await switchToLista(page, vacancyId);
       await expect
-        .poll(() => countFunnelTableRows(page), { message: 'linhas da tabela em Pre Screening' })
+        .poll(() => countFunnelTableRows(page), { timeout: 15_000, message: 'linhas da Lista' })
         .toBe(2);
+      await expect(
+        page.locator('[data-testid^="funnel-stage-"][data-stage="PRE_SCREENING"]'),
+        'linhas da Lista com ETAPA = PRE_SCREENING',
+      ).toHaveCount(2);
     } finally {
       cleanupWJAAndEncuadre(workerPreScreening, vacancyId);
       cleanupWJAAndEncuadre(workerInProgress, vacancyId);
@@ -465,12 +483,11 @@ test.describe('funil da vacante @integration', () => {
     const apiBefore = await readApiStageCounts(request, vacancyIdV1);
     await loginAs(page, MOCK_ADMIN_USER);
     const listBefore = await readListRowCounts(page, vacancyIdV1);
-    const tabBefore = await readFunnelTabCounts(page, vacancyIdV1);
+    const tabBefore = await readListaCounts(page, vacancyIdV1);
     const kanbanBefore = await readKanbanColumnCounts(page, vacancyIdV1);
 
-    await gotoVacancyDetail(page, vacancyIdV1);
-    await page.locator('#funnel-tab-INICIADO').click();
-    const iniciadoRowsBefore = await countFunnelTableRows(page);
+    await switchToLista(page, vacancyIdV1);
+    const totalRowsBefore = await countFunnelTableRows(page);
 
     // Semeia a tentativa negada — worker INCOMPLETE_REGISTER, SEM WJA (o gatilho 183 recusa).
     const workerIncomplete = insertTestWorker({
@@ -490,7 +507,7 @@ test.describe('funil da vacante @integration', () => {
       // "Depois".
       const apiAfter = await readApiStageCounts(request, vacancyIdV1);
       const listAfter = await readListRowCounts(page, vacancyIdV1);
-      const tabAfter = await readFunnelTabCounts(page, vacancyIdV1);
+      const tabAfter = await readListaCounts(page, vacancyIdV1);
       const kanbanAfter = await readKanbanColumnCounts(page, vacancyIdV1);
 
       for (const col of COLUMN_IDS) {
@@ -499,7 +516,7 @@ test.describe('funil da vacante @integration', () => {
         if (LIST_COLUMN_IDS.includes(col)) {
           expect(listAfter[col] - listBefore[col], `lista.${col}`).toBe(expectedDelta);
         }
-        expect(tabAfter[col] - tabBefore[col], `aba.${col}`).toBe(expectedDelta);
+        expect(tabAfter[col] - tabBefore[col], `lista(ETAPA).${col}`).toBe(expectedDelta);
         expect(kanbanAfter[col] - kanbanBefore[col], `kanban.${col}`).toBe(expectedDelta);
       }
 
@@ -515,12 +532,20 @@ test.describe('funil da vacante @integration', () => {
       await expect(card.getByTestId('reject-button')).toHaveCount(1);
       await expect(card.getByTestId('undismiss-button')).toHaveCount(0);
 
-      // A aba Iniciados do modo lista tem uma linha a mais.
+      // A Lista tem uma linha a mais (a bloqueada, com ETAPA = Iniciados) e o total de linhas
+      // continua = soma das colunas do Kanban (item 1, com a tentativa bloqueada na massa).
       await gotoVacancyDetail(page, vacancyIdV1);
-      await page.locator('#funnel-tab-INICIADO').click();
+      await switchToLista(page, vacancyIdV1);
       await expect
-        .poll(() => countFunnelTableRows(page), { message: 'linhas da tabela em Iniciados' })
-        .toBe(iniciadoRowsBefore + 1);
+        .poll(() => countFunnelTableRows(page), { timeout: 15_000, message: 'linhas da Lista' })
+        .toBe(totalRowsBefore + 1);
+      expect(totalRowsBefore + 1, 'Lista = soma das colunas do Kanban').toBe(
+        COLUMN_IDS.reduce((acc, col) => acc + kanbanAfter[col], 0),
+      );
+      await expect(
+        page.locator('[data-testid^="funnel-stage-"][data-stage="INICIADO"]'),
+        'linhas da Lista com ETAPA = INICIADO',
+      ).toHaveCount(tabBefore.INICIADO + 1);
     } finally {
       try {
         runSQL(`DELETE FROM worker_blocked_applications WHERE worker_id = '${workerIncomplete}'`);
@@ -563,19 +588,20 @@ test.describe('funil da vacante @integration', () => {
         await expect(page.getByTestId(`vacancy-row-${vacancyId}-stage-${col}`)).toHaveText('00');
       }
 
-      // Modo lista.
+      // Kanban (vista padrão).
       await gotoVacancyDetail(page, vacancyId);
-      await expect(page.getByTestId('vacancy-funnel-view')).toBeVisible({ timeout: 15_000 });
-      for (const col of COLUMN_IDS) {
-        await expect(page.getByTestId(`funnel-tab-${col}-count`)).toHaveText('0');
-      }
-
-      // Kanban.
-      await switchToKanban(page, vacancyId);
-      await expect(page.getByTestId('kanban-board')).toBeVisible({ timeout: 15_000 });
       for (const col of COLUMN_IDS) {
         await expect(page.getByTestId(`kanban-column-${col}-count`)).toHaveText('0');
       }
+
+      // Lista: sem linha nenhuma (clicando "Lista").
+      await switchToLista(page, vacancyId);
+      await expect
+        .poll(() => countFunnelTableRows(page), { timeout: 15_000, message: 'linhas da Lista (vaga vazia)' })
+        .toBe(0);
+      expect(await readListaStageCounts(page, COLUMN_IDS)).toEqual(
+        Object.fromEntries(COLUMN_IDS.map((col) => [col, 0])),
+      );
     } finally {
       cleanupTestPatient(patientId);
     }

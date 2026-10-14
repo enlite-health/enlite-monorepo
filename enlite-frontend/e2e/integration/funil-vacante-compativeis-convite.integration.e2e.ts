@@ -25,7 +25,6 @@ import {
   startPeriskopeStub,
   seedVacancyMatchTemplates,
   gotoVacancyDetail,
-  switchToKanban,
   readStageCount,
   type PeriskopeStub,
 } from '../helpers/compativeis-e2e-helper';
@@ -112,24 +111,20 @@ test.describe('funil da vacante — convidar um Compatível é o envio que já e
     const vacantesBefore = await readCompatibleCountsOnScreen(page, vacancyId);
     const vacantesInvitedBefore = await readStageCount(page, `vacancy-row-${vacancyId}-stage-INVITED`);
 
+    // 054: a tela abre no Kanban (padrão) — as contagens por coluna são lidas nele
+    // (`kanban-column-<col>-count`); a Lista não tem mais abas com contagem.
     await gotoVacancyDetail(page, vacancyId);
-    const listaBefore = await readCompatibleCountsOnScreen(page, vacancyId);
-    const listaInvitedBefore = await readStageCount(page, 'funnel-tab-INVITED-count');
-
-    await switchToKanban(page, vacancyId);
     const kanbanBefore = await readCompatibleCountsOnScreen(page, vacancyId);
     const kanbanInvitedBefore = await readStageCount(page, 'kanban-column-INVITED-count');
 
     console.log('[5.2] contagens ANTES', {
-      compativeis: { vacantes: vacantesBefore.vacantes, lista: listaBefore.lista, kanban: kanbanBefore.kanban },
-      invitados: { vacantes: vacantesInvitedBefore, lista: listaInvitedBefore, kanban: kanbanInvitedBefore },
+      compativeis: { vacantes: vacantesBefore.vacantes, kanban: kanbanBefore.kanban },
+      invitados: { vacantes: vacantesInvitedBefore, kanban: kanbanInvitedBefore },
     });
 
     expect(vacantesBefore.vacantes, 'ANTES vacantes.stage-COMPATIBLE').toBe(1);
-    expect(listaBefore.lista, 'ANTES aba funnel-tab-COMPATIBLE-count').toBe(1);
     expect(kanbanBefore.kanban, 'ANTES kanban kanban-column-COMPATIBLE-count').toBe(1);
     expect(vacantesInvitedBefore, 'ANTES vacantes.stage-INVITED').toBe(1);
-    expect(listaInvitedBefore, 'ANTES aba funnel-tab-INVITED-count').toBe(1);
     expect(kanbanInvitedBefore, 'ANTES kanban kanban-column-INVITED-count').toBe(1);
 
     // ── Na tela: card do compatível dentro de kanban-column-COMPATIBLE → Reenviar ──
@@ -157,9 +152,10 @@ test.describe('funil da vacante — convidar um Compatível é o envio que já e
     const kanbanAfter = await readCompatibleCountsOnScreen(page, vacancyId);
     const kanbanInvitedAfter = await readStageCount(page, 'kanban-column-INVITED-count');
 
+    // Recarrega (visita fresca, Kanban): o número persistido bate com o da tela viva.
     await gotoVacancyDetail(page, vacancyId);
-    const listaAfter = await readCompatibleCountsOnScreen(page, vacancyId);
-    const listaInvitedAfter = await readStageCount(page, 'funnel-tab-INVITED-count');
+    const reloadAfter = await readCompatibleCountsOnScreen(page, vacancyId);
+    const reloadInvitedAfter = await readStageCount(page, 'kanban-column-INVITED-count');
 
     await gotoVacanciesList(page);
     await expect(page.getByTestId(`vacancy-row-${vacancyId}`)).toBeVisible({ timeout: 15_000 });
@@ -168,15 +164,15 @@ test.describe('funil da vacante — convidar um Compatível é o envio que já e
     const vacantesInvitedAfter = await readStageCount(page, `vacancy-row-${vacancyId}-stage-INVITED`);
 
     console.log('[5.2] contagens DEPOIS', {
-      compativeis: { vacantes: vacantesAfter.vacantes, lista: listaAfter.lista, kanban: kanbanAfter.kanban },
-      invitados: { vacantes: vacantesInvitedAfter, lista: listaInvitedAfter, kanban: kanbanInvitedAfter },
+      compativeis: { vacantes: vacantesAfter.vacantes, kanbanRecarregado: reloadAfter.kanban, kanban: kanbanAfter.kanban },
+      invitados: { vacantes: vacantesInvitedAfter, kanbanRecarregado: reloadInvitedAfter, kanban: kanbanInvitedAfter },
     });
 
     expect(kanbanAfter.kanban, 'DEPOIS kanban kanban-column-COMPATIBLE-count').toBe(0);
-    expect(listaAfter.lista, 'DEPOIS aba funnel-tab-COMPATIBLE-count').toBe(0);
+    expect(reloadAfter.kanban, 'DEPOIS (recarregado) kanban-column-COMPATIBLE-count').toBe(0);
     expect(vacantesAfter.vacantes, 'DEPOIS vacantes.stage-COMPATIBLE').toBe(0);
     expect(kanbanInvitedAfter, 'DEPOIS kanban kanban-column-INVITED-count').toBe(2);
-    expect(listaInvitedAfter, 'DEPOIS aba funnel-tab-INVITED-count').toBe(2);
+    expect(reloadInvitedAfter, 'DEPOIS (recarregado) kanban-column-INVITED-count').toBe(2);
     expect(vacantesInvitedAfter, 'DEPOIS vacantes.stage-INVITED').toBe(2);
 
     // ── Stub recebeu exatamente 1 chamada; messaged_at carimbado ───────────────

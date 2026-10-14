@@ -4,16 +4,16 @@
  * Integration E2E — Fase 5 da change cadeia-paciente-vacante-itinerario (P17):
  * a coluna "Compatíveis" (candidato do match, INVITED/system SEM messaged_at —
  * `isMatchedNotInvited`, `WF/domain/kanbanColumn.ts:42-48`) contada IGUAL nos 3 lugares
- * onde ela aparece — Kanban, aba do modo lista e lista de vacantes — sem consulta nova
+ * onde ela aparece — Kanban, Lista do funil (linhas com ETAPA = Compatibles) e lista de vacantes — sem consulta nova
  * (DX-5.3) e sem nenhuma request de match/maps durante o teste (critérios 8 e 9).
  *
  * 3 testes independentes, sem `serial` (DX-5.10) — cada um semeia e limpa o seu:
- *   funil-compativeis-tres-lugares          — feliz: os 4 números (Kanban, aba, linhas
- *                                              da aba, lista de vacantes) + API iguais a 2;
+ *   funil-compativeis-tres-lugares          — feliz: os 4 números (Kanban, linhas da
+ *                                              Lista com ETAPA = COMPATIBLE, lista de vacantes) + API iguais a 2;
  *                                              ordem das 9 colunas do Kanban; sem
  *                                              request de match/maps.
- *   funil-compativeis-lista-aba-vazia       — alternativo do modo lista: aba a 0 e sem
- *                                              linha até o match existir.
+ *   funil-compativeis-lista-aba-vazia       — alternativo da Lista: nenhuma linha com
+ *                                              ETAPA = COMPATIBLE até o match existir.
  *   funil-compativeis-lista-vacantes-duas-vagas — alternativo da lista de vacantes: só
  *                                              a vaga com o compatível ganha a coluna.
  *
@@ -31,6 +31,8 @@ import {
   readCompatibleCountsOnScreen,
   gotoVacancyDetail,
   switchToKanban,
+  switchToLista,
+  countListaRowsInStage,
   readStageCount,
   type SeedCompatibleCardResult,
 } from '../helpers/compativeis-e2e-helper';
@@ -128,24 +130,21 @@ test.describe('funil da vacante — Compatíveis nos 3 lugares @integration', ()
       const vacantesInvited = await readStageCount(page, `vacancy-row-${seed.vacancyId}-stage-INVITED`);
       const listWindowEnd = requestUrls.length;
 
-      // 2. Modo lista (aba padrão) — abre a aba Compatibles e conta as linhas.
-      // Race do spec (achado P23b/P17b): o clique em #funnel-tab-COMPATIBLE dispara um NOVO fetch
-      // (`useVacancyFunnelTable.ts:39-42`, a dependência `tab.key` muda) e `.count()` não faz
-      // polling/retry — lia o DOM antes da tabela reassentar. Espera a resposta do fetch (molde
-      // `gotoVacancyDetail`/`switchToKanban` acima) E confere a contagem de linhas com auto-retry
-      // (`toHaveCount`), sem enfraquecer o valor esperado (continua 2, igual à API).
+      // 2. Lista — 054: sem abas, a tela abre no Kanban e entra-se na Lista CLICANDO "Lista"
+      // (o GET funnel-table traz as 9 sources de uma vez). A etapa de cada linha vem da célula
+      // ETAPA (`funnel-stage-<rowId>[data-stage]`); `toHaveCount` faz o auto-retry que o `.count()`
+      // cru não faz, sem enfraquecer o valor esperado (continua 2, igual à API).
       await gotoVacancyDetail(page, seed.vacancyId);
-      const compatibleTableRe = new RegExp(`/vacancies/${seed.vacancyId}/funnel-table\\?columns=COMPATIBLE(&|$)`);
-      const [compatibleTableResponse] = await Promise.all([
-        page.waitForResponse((r) => compatibleTableRe.test(r.url()) && r.request().method() === 'GET'),
-        page.locator('#funnel-tab-COMPATIBLE').click(),
-      ]);
-      expect(compatibleTableResponse.ok(), 'GET funnel-table?columns=COMPATIBLE falhou').toBe(true);
+      await switchToLista(page, seed.vacancyId);
+      await expect(
+        page.locator('[data-testid^="funnel-stage-"][data-stage="COMPATIBLE"]'),
+        'linhas da Lista com ETAPA = COMPATIBLE',
+      ).toHaveCount(2);
       const listaCounts = await readCompatibleCountsOnScreen(page, seed.vacancyId);
-      const listaInvited = await readStageCount(page, 'funnel-tab-INVITED-count');
-      const funnelRowsLocator = page.locator('[data-testid^="funnel-row-"]');
-      await expect(funnelRowsLocator, 'linhas [data-testid^="funnel-row-"] na aba Compatibles').toHaveCount(2);
-      const funnelRowCount = await funnelRowsLocator.count();
+      const listaInvited = await countListaRowsInStage(page, 'INVITED');
+      const funnelRowCount = await page
+        .locator('[data-testid^="funnel-stage-"][data-stage="COMPATIBLE"]')
+        .count();
 
       // 3. Kanban — contagem da coluna + ordem das 9 colunas.
       await switchToKanban(page, seed.vacancyId);
@@ -177,15 +176,15 @@ test.describe('funil da vacante — Compatíveis nos 3 lugares @integration', ()
 
       // Critério 1: os 4 números iguais entre si e iguais a 2; +API confirmando a mesma dobra.
       expect(vacantesCounts.vacantes, 'vacantes.stage-COMPATIBLE').toBe(2);
-      expect(listaCounts.lista, 'aba funnel-tab-COMPATIBLE-count').toBe(2);
-      expect(funnelRowCount, 'linhas [data-testid^="funnel-row-"] na aba Compatibles').toBe(2);
+      expect(listaCounts.lista, 'linhas da Lista com data-stage=COMPATIBLE').toBe(2);
+      expect(funnelRowCount, 'linhas funnel-stage-* com data-stage=COMPATIBLE').toBe(2);
       expect(kanbanCounts.kanban, 'kanban kanban-column-COMPATIBLE-count').toBe(2);
       expect(apiCompat, 'API funnel: stages.COMPATIBLE.length').toBe(2);
       expect(apiListCompat, 'API vacancies: stageCounts.COMPATIBLE').toBe(2);
 
       // INVITED = 1 nos mesmos 3 lugares (o compatível não infla Invitados).
       expect(vacantesInvited, 'vacantes.stage-INVITED').toBe(1);
-      expect(listaInvited, 'aba funnel-tab-INVITED-count').toBe(1);
+      expect(listaInvited, 'linhas da Lista com data-stage=INVITED').toBe(1);
       expect(kanbanInvited, 'kanban kanban-column-INVITED-count').toBe(1);
 
       // Critério 3: a lista literal das 9 colunas, na ordem, e 0 para IN_PROGRESS|BLOQUEADO.
@@ -242,23 +241,28 @@ test.describe('funil da vacante — Compatíveis nos 3 lugares @integration', ()
       await loginAs(page, MOCK_STAFF);
       await gotoVacancyDetail(page, seed.vacancyId);
 
-      // Antes: nenhum candidato do match — a aba mostra 0 e não abre linha nenhuma.
-      await expect(page.getByTestId('funnel-tab-COMPATIBLE-count')).toHaveText('0');
-      await page.locator('#funnel-tab-COMPATIBLE').click();
-      await expect(page.locator('[data-testid^="funnel-row-"]')).toHaveCount(0);
+      // Antes: nenhum candidato do match — 054: a Lista não tem aba; entra-se clicando "Lista" e
+      // nenhuma linha tem ETAPA = COMPATIBLE (a linha INVITED da semente aparece, o controle
+      // positivo de que a Lista carregou).
+      await switchToLista(page, seed.vacancyId);
+      await expect(page.locator('[data-testid^="funnel-row-"]').first()).toBeVisible({ timeout: 15_000 });
+      await expect(page.locator('[data-testid^="funnel-stage-"][data-stage="COMPATIBLE"]')).toHaveCount(0);
+      await expect(page.locator('[data-testid^="funnel-stage-"][data-stage="INVITED"]')).toHaveCount(1);
 
       // Semeia o compatível direto no banco (sem chamar a rota de match — DX-5.13).
       compat = seedCompatibleCard(seed.vacancyId);
 
-      // Depois: recarrega — a aba passa a 1 e a linha do worker aparece, nome visível
-      // (engine OFF nesta stack, cells === null).
+      // Depois: recarrega (volta ao Kanban, padrão), clica "Lista" — a linha do worker aparece
+      // com ETAPA = COMPATIBLE, nome visível (engine OFF nesta stack, cells === null).
       await gotoVacancyDetail(page, seed.vacancyId);
-      await expect(page.getByTestId('funnel-tab-COMPATIBLE-count')).toHaveText('1');
-      await page.locator('#funnel-tab-COMPATIBLE').click();
+      await expect(page.getByTestId('kanban-column-COMPATIBLE-count')).toHaveText('1');
+      await switchToLista(page, seed.vacancyId);
       const row = page.getByTestId(`funnel-row-${compat.wjaId}`);
       await expect(row).toBeVisible({ timeout: 10_000 });
+      await expect(page.getByTestId(`funnel-stage-${compat.wjaId}`)).toHaveAttribute('data-stage', 'COMPATIBLE');
+      expect(await countListaRowsInStage(page, 'COMPATIBLE')).toBe(1);
       const workerName = (await row.getByTestId('funnel-worker-link').textContent())?.trim();
-      console.log('[alt-lista] aba 0→1, nome do worker visível=', workerName);
+      console.log('[alt-lista] 0→1 compatível na Lista, nome do worker visível=', workerName);
       expect(workerName, 'nome do worker visível na linha (engine OFF)').toMatch(/CompativeisE2E/);
     } finally {
       if (compat) cleanupCompatibleCard(compat.workerId, seed.vacancyId);
