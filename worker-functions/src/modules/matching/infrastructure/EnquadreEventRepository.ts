@@ -26,6 +26,10 @@ export interface EventRow {
   status: EnquadreEventStatus;
   meet_link: string | null;
   import_status: string | null;
+  /** Motivo (código fechado) do `import_status='blocked'`; NULL fora dele. */
+  blocked_reason: string | null;
+  /** Existe linha em `enquadre_event_documents` (o resumo foi gravado). */
+  has_summary: boolean;
 }
 
 export interface ParticipantRow {
@@ -39,6 +43,8 @@ export interface ParticipantRow {
   stage: string | null;
   occupation_raw: string | null;
   rejection_reason_category: string | null;
+  /** Presença medida pelo job (`present|absent|unidentified`); NULL = ainda não medida. */
+  attendance: string | null;
 }
 
 /** Evento relido COM TRAVA (`FOR UPDATE`) para mutar: traz o que o Google e o carimbo precisam. */
@@ -73,6 +79,10 @@ export interface InsertEventInput {
   createdByUid: string;
 }
 
+/** Colunas da esteira que toda leitura do evento traz: motivo do bloqueio e se o PDF do resumo já foi gravado (spec 052, T-36c). */
+const PIPELINE_COLUMNS = `import_status, blocked_reason,
+              EXISTS (SELECT 1 FROM enquadre_event_documents d WHERE d.event_id = enquadre_events.id) AS has_summary`;
+
 export const EVENT_CODE_INDEX = 'uq_enquadre_events_code';
 export const PARTICIPANT_LOCK_INDEX = 'uq_enquadre_participant_um_aberto';
 
@@ -91,7 +101,7 @@ export class EnquadreEventRepository {
 
   async listEvents(client: PoolClient, vacancyId: string): Promise<EventRow[]> {
     const res = await client.query<EventRow>(
-      `SELECT id, country, host_display_name, starts_at, ends_at, status, meet_link, import_status
+      `SELECT id, country, host_display_name, starts_at, ends_at, status, meet_link, ${PIPELINE_COLUMNS}
          FROM enquadre_events
         WHERE job_posting_id = $1`,
       [vacancyId],
@@ -101,7 +111,7 @@ export class EnquadreEventRepository {
 
   async findEvent(client: PoolClient, vacancyId: string, eventId: string): Promise<EventRow | null> {
     const res = await client.query<EventRow>(
-      `SELECT id, country, host_display_name, starts_at, ends_at, status, meet_link, import_status
+      `SELECT id, country, host_display_name, starts_at, ends_at, status, meet_link, ${PIPELINE_COLUMNS}
          FROM enquadre_events
         WHERE job_posting_id = $1 AND id = $2`,
       [vacancyId, eventId],
@@ -118,7 +128,7 @@ export class EnquadreEventRepository {
       `SELECT p.id, p.event_id, p.worker_id, p.release_kind, p.outcome,
               w.first_name_encrypted, w.last_name_encrypted,
               wja.application_funnel_stage AS stage,
-              e.occupation_raw, e.rejection_reason_category
+              e.occupation_raw, e.rejection_reason_category, p.attendance
          FROM enquadre_event_participants p
          JOIN workers w ON w.id = p.worker_id
          LEFT JOIN worker_job_applications wja
@@ -196,7 +206,7 @@ export class EnquadreEventRepository {
   /** O evento da vaga, TRAVADO até o fim da transação: duas mutações no mesmo evento se enfileiram. */
   async lockEvent(client: PoolClient, vacancyId: string, eventId: string): Promise<LockedEventRow | null> {
     const res = await client.query<LockedEventRow>(
-      `SELECT id, country, host_display_name, host_email, calendar_event_id, starts_at, ends_at, status, meet_link, import_status
+      `SELECT id, country, host_display_name, host_email, calendar_event_id, starts_at, ends_at, status, meet_link, ${PIPELINE_COLUMNS}
          FROM enquadre_events
         WHERE job_posting_id = $1 AND id = $2
           FOR UPDATE`,

@@ -32,6 +32,7 @@ import {
   type EnquadreOutcomeCounts,
   type EnquadreParticipantOutcome,
 } from '../domain/enquadreEvent';
+import { pipelineOf, type EnquadrePipelineState } from '../domain/enquadrePipeline';
 import type { AdmissionCalendarPort } from './ports/AdmissionCalendarPort';
 import { TactiqLinkRequiredError, type TactiqLinkGate, type TactiqLinkState } from './ports/TactiqPorts';
 import { isHostApt } from './admissionHostEligibility';
@@ -55,11 +56,7 @@ const FALLBACK_HOST_NAME = 'Entrevistadora';
 
 // ─── Formas devolvidas: as MESMAS de `enlite-frontend/src/domain/entities/EnquadreEvent.ts` ───────────────────────────────
 
-export interface EnquadrePipelineState {
-  importStatus: string | null;
-  summary: 'waiting' | 'ready' | 'unavailable';
-  blockedReason: string | null;
-}
+export type { EnquadrePipelineState };
 
 export interface EnquadreEventListItem {
   id: string;
@@ -165,7 +162,7 @@ export class EnquadreEventService {
 
   // ─── leitura ───────────────────────────────────────────────────────────────
 
-  async listEvents(vacancyId: string): Promise<EnquadreEventListItem[]> {
+  async listEvents(vacancyId: string, viewer: EnquadreViewer = { cells: null }): Promise<EnquadreEventListItem[]> {
     return withActorContext(this.deps.db, async (client) => {
       await this.requireVacancy(client, vacancyId);
       const [events, participants] = await Promise.all([
@@ -173,7 +170,7 @@ export class EnquadreEventService {
         this.repo.listParticipants(client, vacancyId, null),
       ]);
       const now = this.now();
-      const items = events.map((ev) => this.toDetail(ev, participants.filter((p) => p.event_id === ev.id), now, new Map()));
+      const items = events.map((ev) => this.toDetail(ev, participants.filter((p) => p.event_id === ev.id), now, new Map(), viewer));
       return items.sort(byListOrder).map(({ participants: _p, unmarkedCount: _u, ...item }) => item);
     });
   }
@@ -186,7 +183,7 @@ export class EnquadreEventService {
       return { ev, rows: await this.repo.listParticipants(client, vacancyId, eventId) };
     });
     const names = await this.namesOf(loaded.rows, viewer);
-    return this.toDetail(loaded.ev, loaded.rows, this.now(), names);
+    return this.toDetail(loaded.ev, loaded.rows, this.now(), names, viewer);
   }
 
   async listAvailableWorkers(vacancyId: string, viewer: EnquadreViewer = { cells: null }): Promise<EnquadreAvailableWorkers> {
@@ -411,7 +408,7 @@ export class EnquadreEventService {
     return names;
   }
 
-  private toDetail(ev: EventRow, rows: ParticipantRow[], now: Date, names: Map<string, string>): EnquadreEventDetail {
+  private toDetail(ev: EventRow, rows: ParticipantRow[], now: Date, names: Map<string, string>, viewer: EnquadreViewer): EnquadreEventDetail {
     const participants: EnquadreParticipantView[] = rows.map((r) => ({
       id: r.id,
       workerId: r.worker_id,
@@ -435,7 +432,15 @@ export class EnquadreEventService {
       markedCount: counters.markedCount,
       outcome: counters.outcome,
       meetLink: ev.status === 'open' ? ev.meet_link : null,
-      pipeline: pipelineOf(ev.import_status),
+      pipeline: pipelineOf(
+        {
+          importStatus: ev.import_status,
+          blockedReason: ev.blocked_reason,
+          hasSummary: ev.has_summary,
+          unidentifiedCount: rows.filter((r) => r.attendance === 'unidentified').length,
+        },
+        viewer.cells,
+      ),
       participants,
       unmarkedCount: counters.unmarkedCount,
     };
@@ -448,12 +453,6 @@ export function hasValidEmail(email: string | null): boolean {
 
 function inZone(d: Date, zone: string): string {
   return DateTime.fromJSDate(d, { zone }).toISO({ suppressMilliseconds: true }) as string;
-}
-
-/** Esteira pós-call (Fase 3 escreve `import_status`). Enquanto nulo, `pipeline: null`. O `summary` fino é da Fase 3. */
-function pipelineOf(importStatus: string | null): EnquadrePipelineState | null {
-  if (importStatus === null) return null;
-  return { importStatus, summary: importStatus === 'done' ? 'unavailable' : 'waiting', blockedReason: null };
 }
 
 /** Próximos (abertos) em cima, por início crescente; encerrados e cancelados embaixo, o mais recente primeiro. */

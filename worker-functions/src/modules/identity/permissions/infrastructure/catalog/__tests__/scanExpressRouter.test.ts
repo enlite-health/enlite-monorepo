@@ -377,6 +377,8 @@ describe('cellsForaDeRota — a 2ª fonte do catálogo (B1 do gate `revisao-pr`)
       'patient_admission:retry_summary',
       // Spec 052 (F2): aba "Enquadre" da vaga — 4 células declaradas por rota real (`adminEnquadreEventRoutes.ts`).
       'enquadre_event:read', 'enquadre_event:create', 'enquadre_event:update', 'enquadre_result:update',
+      // Spec 052 (F3): o resumo do evento — declarada em `adminEnquadreEventRoutes.ts` (download do PDF).
+      'enquadre_summary:read',
       // Spec 049 (F4): vínculo do Tactiq — 2 células `own_*` declaradas por rota real (`tactiqLinkRoutes.ts`).
       'own_tactiq_link:read', 'own_tactiq_link:create',
       'staff_directory:read',

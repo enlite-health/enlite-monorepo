@@ -14,6 +14,8 @@ import { EnquadreEventController } from '../controllers/EnquadreEventController'
  *  - `enquadre_event:create` — prestadores disponíveis, entrevistadoras, horários livres e criar o evento.
  *  - `enquadre_event:update` — acrescentar/tirar convocado e cancelar o evento (mudam o evento e o convite do Google).
  *  - `enquadre_result:update` — marcar o resultado do convocado (mover) e encerrar o evento.
+ *  - `enquadre_summary:read` — baixar o resumo (PDF) do evento, por URL assinada de 300 s. A MESMA célula decide se o campo e o
+ *    selo do resumo saem na resposta do evento (`EnquadreEventService`): sem ela nada do resumo aparece.
  * `staffOnly` SEMPRE antes de `perm.require`. Rotas ESTÁTICAS antes de `/:eventId` (senão o parâmetro as captura).
  */
 export function createAdminEnquadreEventRoutes(
@@ -58,6 +60,13 @@ export function createAdminEnquadreEventRoutes(
     staffOnly,
     perm.require('enquadre_event', 'read'),
     (req: Request, res: Response) => controller.get(req, res),
+  );
+
+  router.get(
+    '/vacancies/:vacancyId/enquadre-events/:eventId/summary/url',
+    staffOnly,
+    perm.require('enquadre_summary', 'read'),
+    (req: Request, res: Response) => controller.summaryUrl(req, res),
   );
 
   router.post(

@@ -11,7 +11,7 @@
  *   3 tirar o código ENC do título                                      4 deixar um escolhido fora dos convidados / ligar "modificar"
  *   5 gravar algo quando o Google falha (não fazer ROLLBACK)            6 encerrar sem carimbar / sem a nota do não marcado
  *   7 aceitar prestador sem e-mail válido                               8 cancelar sem liberar / sem apagar no Google
- *   9 mutar evento que não está aberto
+ *   9 mutar evento que não está aberto                                  10 tirar a guarda da quinta célula (selo e download)
  */
 import { Pool } from 'pg';
 import { DateTime } from 'luxon';
@@ -44,6 +44,10 @@ const NOTE_RE = /^No fue marcado en el encuadre del \d{2}\/\d{2} \d{2}:\d{2}$/;
 
 const UID = 'enq052-chefe';
 const GRUPO = `Enq052 Chefe ${RUN}`;
+// Quinta célula (T-36c): quem lê o resumo. O `UID` acima tem as 4 primeiras e NÃO tem esta.
+const UID_RESUMO = 'enq052-resumo';
+const GRUPO_RESUMO = `Enq052 Resumo ${RUN}`;
+const PDF_PATH = `enquadre-documents/resumo-${RUN}.pdf`;
 
 describe('evento de enquadre — HTTP real, banco real, engine LIGADO (spec 052, F2)', () => {
   let admin: Pool;
@@ -67,10 +71,10 @@ describe('evento de enquadre — HTTP real, banco real, engine LIGADO (spec 052,
 
   const base = () => `/api/admin/vacancies/${vacancyId}/enquadre-events`;
 
-  async function http(method: string, path: string, body?: unknown) {
+  async function http(method: string, path: string, body?: unknown, uid = UID) {
     const res = await fetch(`${app.url}${path}`, {
       method,
-      headers: { Authorization: tokenMock(UID, 'admin', 'AR'), 'Content-Type': 'application/json' },
+      headers: { Authorization: tokenMock(uid, 'admin', 'AR'), 'Content-Type': 'application/json' },
       ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
     });
     return { status: res.status, body: (await res.json().catch(() => ({}))) as Record<string, any> };
@@ -128,12 +132,12 @@ describe('evento de enquadre — HTTP real, banco real, engine LIGADO (spec 052,
     await admin.query(`DELETE FROM job_postings WHERE title LIKE 'ENQ052 e2e %' AND (id = $1 OR $1::uuid IS NULL)`, [vacancyId ?? null]);
     await admin.query(`DELETE FROM interview_hosts WHERE email = ANY($1)`, [[HOST_OK, HOST_FALHA]]);
     await admin.query(`DELETE FROM tactiq_links WHERE lower(host_email) = ANY($1)`, [[HOST_OK, HOST_FALHA]]);
-    await limparIamFixtures(admin, { uids: [UID], grupos: [GRUPO] });
+    await limparIamFixtures(admin, { uids: [UID, UID_RESUMO], grupos: [GRUPO, GRUPO_RESUMO] });
   }
 
   beforeAll(async () => {
     admin = new Pool({ connectionString: DATABASE_URL });
-    await limparIamFixtures(admin, { uids: [UID], grupos: [GRUPO] });
+    await limparIamFixtures(admin, { uids: [UID, UID_RESUMO], grupos: [GRUPO, GRUPO_RESUMO] });
 
     setEnv('USE_MOCK_AUTH', 'true');
     setEnv('PERMISSION_ENGINE_ENABLED', 'true');
@@ -148,6 +152,11 @@ describe('evento de enquadre — HTTP real, banco real, engine LIGADO (spec 052,
       `INSERT INTO users (firebase_uid, email, role, status, is_active, tenant_id) VALUES ($1,'enq052-chefe@e2e.local','admin','ACTIVE',true,$2)`,
       [UID, TENANT_E2E],
     );
+    await admin.query(
+      `INSERT INTO users (firebase_uid, email, role, status, is_active, tenant_id) VALUES ($1,'enq052-resumo@e2e.local','admin','ACTIVE',true,$2)`,
+      [UID_RESUMO, TENANT_E2E],
+    );
+    await grupoComCelulas(admin, { nome: GRUPO_RESUMO, uid: UID_RESUMO, celulas: [['enquadre_event', 'read'], ['enquadre_summary', 'read']] });
     await grupoComCelulas(admin, {
       nome: GRUPO,
       uid: UID,
@@ -211,7 +220,14 @@ describe('evento de enquadre — HTTP real, banco real, engine LIGADO (spec 052,
           readEvent: (v, e, viewer) => service.getEvent(v, e, viewer),
           pubsub: { publish: async (topic: string) => { pubsubCalls.push(topic); return 'msg'; } } as never,
         });
-        express.use('/api/admin', createAdminEnquadreEventRoutes(auth, permissions, new EnquadreEventController(service, mutations)));
+        // O download do resumo com o MESMO serviço de produção; só o decifrador (base64) e o assinador de URL (sem GCS) são dublês.
+        const { EnquadreSummaryDownload } = await import('../../src/modules/matching/application/EnquadreSummaryDownload');
+        const download = new EnquadreSummaryDownload({
+          db: pool,
+          enc: { decrypt: async (c) => Buffer.from(c ?? '', 'base64').toString('utf8') },
+          storageFactory: () => ({ getReadSignedUrl: async (path: string) => `https://storage.example.test/signed/${path}?X-Expires=300` }),
+        });
+        express.use('/api/admin', createAdminEnquadreEventRoutes(auth, permissions, new EnquadreEventController(service, mutations, download)));
       },
     });
   }, 60000);
@@ -222,6 +238,7 @@ describe('evento de enquadre — HTTP real, banco real, engine LIGADO (spec 052,
     await DatabaseConnection.getInstance().close();
     // Só o que ESTE teste criou, por id. A vaga leva eventos e participações por CASCADE (provado pelo count abaixo).
     if (vacancyId) {
+      await admin.query(`DELETE FROM enquadre_event_documents WHERE event_id IN (SELECT id FROM enquadre_events WHERE job_posting_id = $1)`, [vacancyId]);
       await admin.query(`DELETE FROM wja_contact_notes WHERE job_posting_id = $1`, [vacancyId]);
       await admin.query(`DELETE FROM encuadres WHERE job_posting_id = $1`, [vacancyId]);
       await admin.query(`DELETE FROM worker_job_applications WHERE job_posting_id = $1`, [vacancyId]);
@@ -423,5 +440,46 @@ describe('evento de enquadre — HTTP real, banco real, engine LIGADO (spec 052,
     expect(calendar.attendeeUpdates.length).toBe(attendeesAntes);
     expect(calendar.deleted.length).toBe(deletedAntes);
     expect(await availableIds()).toContain(extra);
+  });
+  it('10. quinta célula (T-36c): COM enquadre_summary:read o evento traz o selo do resumo e o download devolve a URL assinada; SEM ela a chave `summary` some (lista e detalhe) e o download é 403', async () => {
+    const a = await novoWorker();
+    const created = await create([a]);
+    expect(created.status).toBe(201);
+    const eventId = created.body.data.id as string;
+    await makePast(eventId);
+    expect((await http('POST', `${base()}/${eventId}/close`)).status).toBe(200);
+    // o que a Fase 3 grava depois da call: importação feita, o PDF do resumo ligado ao evento e um convocado não identificado
+    await admin.query(`UPDATE enquadre_events SET import_status = 'done', conference_ended_at = now() WHERE id = $1`, [eventId]);
+    await admin.query(`UPDATE enquadre_event_participants SET attendance = 'unidentified' WHERE event_id = $1`, [eventId]);
+    await admin.query(
+      `INSERT INTO enquadre_event_documents (event_id, label_encrypted, file_path_encrypted, original_name_encrypted, content_type, size_bytes, sha256, prompt_version, created_by_uid)
+       VALUES ($1, 'x', $2, $3, 'application/pdf', 10, decode(repeat('ab', 32), 'hex'), 'v-e2e', 'system:enquadre-import')`,
+      [eventId, Buffer.from(PDF_PATH).toString('base64'), Buffer.from('resumen-encuadre.pdf').toString('base64')],
+    );
+    const urlPath = `${base()}/${eventId}/summary/url`;
+
+    // COM a célula
+    const detalhe = await http('GET', `${base()}/${eventId}`, undefined, UID_RESUMO);
+    expect(detalhe.status).toBe(200);
+    expect(detalhe.body.data.pipeline).toEqual({ importStatus: 'done', summary: 'ready', blockedReason: null, unidentifiedCount: 1 });
+    const lista = await http('GET', base(), undefined, UID_RESUMO);
+    expect((lista.body.data as Array<{ id: string; pipeline: { summary?: string } }>).find((e) => e.id === eventId)?.pipeline.summary).toBe('ready');
+    const ok = await http('GET', urlPath, undefined, UID_RESUMO);
+    expect(ok.status).toBe(200);
+    expect(ok.body.data).toEqual({ url: `https://storage.example.test/signed/${PDF_PATH}?X-Expires=300`, expiresInSeconds: 300 });
+    // o caminho do objeto só existe na URL assinada: a resposta do evento nunca o carrega
+    expect(JSON.stringify(detalhe.body)).not.toContain(PDF_PATH);
+
+    // SEM a célula (o `UID` tem as outras 4)
+    const semDetalhe = await http('GET', `${base()}/${eventId}`);
+    expect(semDetalhe.status).toBe(200);
+    expect(semDetalhe.body.data.pipeline).toEqual({ importStatus: 'done', blockedReason: null, unidentifiedCount: 1 });
+    expect(Object.keys(semDetalhe.body.data.pipeline)).not.toContain('summary');
+    const semLista = await http('GET', base());
+    expect(Object.keys((semLista.body.data as Array<{ id: string; pipeline: object }>).find((e) => e.id === eventId)?.pipeline ?? {})).not.toContain('summary');
+    expect((await http('GET', urlPath)).status).toBe(403);
+
+    // evento de outra vaga / sem documento: 404, nunca a URL de outro
+    expect((await http('GET', `/api/admin/vacancies/${vacancyId}/enquadre-events/00000000-0000-4000-8000-000000000000/summary/url`, undefined, UID_RESUMO)).status).toBe(404);
   });
 });

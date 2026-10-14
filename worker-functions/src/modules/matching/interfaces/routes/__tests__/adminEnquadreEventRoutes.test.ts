@@ -1,5 +1,5 @@
 /**
- * Lista dourada das rotas do evento de enquadre (spec 052, T-30b e T-30c): 11 rotas, 4 células, família `admin.vacancies`.
+ * Lista dourada das rotas do evento de enquadre (spec 052, T-30b e T-30c): 12 rotas, 5 células, família `admin.vacancies`.
  * Mesmo molde de `adminVacanciesRoutes.test.ts`: varre o router de verdade (o `scanExpressRouter` do catálogo) e afirma que TODA
  * rota declara, e declara a célula do MAPA — não a que o código escolheu.
  */
@@ -30,11 +30,13 @@ const ESPERADO: Record<string, string> = {
   'POST /vacancies/:vacancyId/enquadre-events/:eventId/cancel': 'enquadre_event:update',
   'PUT /vacancies/:vacancyId/enquadre-events/:eventId/participants/:participantId/move': 'enquadre_result:update',
   'POST /vacancies/:vacancyId/enquadre-events/:eventId/close': 'enquadre_result:update',
+  // Fase 3 (T-36c): o download do resumo — a quinta célula, atrás da qual o campo e o selo do resumo também ficam
+  'GET /vacancies/:vacancyId/enquadre-events/:eventId/summary/url': 'enquadre_summary:read',
 };
 
 const responde = (nome: string) => (_req: express.Request, res: express.Response) => res.json({ m: nome });
 const controllerDuble = Object.fromEntries(
-  ['list', 'get', 'availableWorkers', 'hosts', 'freeSlots', 'create', 'addParticipants', 'removeParticipant', 'cancel', 'moveParticipant', 'close'].map((m) => [m, responde(m)]),
+  ['list', 'get', 'availableWorkers', 'hosts', 'freeSlots', 'create', 'addParticipants', 'removeParticipant', 'cancel', 'moveParticipant', 'close', 'summaryUrl'].map((m) => [m, responde(m)]),
 );
 
 function build(): express.Router {
@@ -50,7 +52,7 @@ function declaradas(): Record<string, string | null> {
   );
 }
 
-describe('rotas do evento de enquadre — 11 rotas declaram célula', () => {
+describe('rotas do evento de enquadre — 12 rotas declaram célula', () => {
   it('cada rota declara a célula do mapa', () => {
     expect(declaradas()).toEqual(ESPERADO);
   });
@@ -59,9 +61,9 @@ describe('rotas do evento de enquadre — 11 rotas declaram célula', () => {
     expect(undeclaredRoutes(scanExpressRouter(build()), () => true)).toEqual([]);
   });
 
-  it('o router soma exatamente 11 rotas', () => {
-    expect(Object.keys(ESPERADO)).toHaveLength(11);
-    expect(scanExpressRouter(build())).toHaveLength(11);
+  it('o router soma exatamente 12 rotas', () => {
+    expect(Object.keys(ESPERADO)).toHaveLength(12);
+    expect(scanExpressRouter(build())).toHaveLength(12);
   });
 
   it('as rotas ESTÁTICAS vêm antes de /:eventId (senão o parâmetro as captura)', () => {

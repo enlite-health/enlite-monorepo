@@ -66,6 +66,8 @@ export const RESOURCE_CATEGORY: Readonly<Record<string, PermissionCategory>> = {
   // Spec 052 (F2): aba "Enquadre" da vaga — o evento (data, entrevistadora, convocados) e o resultado de cada convocado.
   enquadre_event: 'Vagas e Funil',
   enquadre_result: 'Vagas e Funil',
+  // Spec 052 (F3): o RESUMO do evento (selo na linha e PDF para baixar) — célula própria: sem ela nem o selo aparece.
+  enquadre_summary: 'Vagas e Funil',
   // Spec 051 (F1): trocar o status do paciente por fora do fluxo — uma célula por destino.
   patient_status: 'Pacientes',
   patient_coverage: 'Pacientes',
@@ -350,6 +352,10 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
     'Marcar o resultado de cada convocado do evento (Selecionado, Equipe de resposta rápida, Rechazado ou de volta a '
     + 'Convocados) e encerrar o evento. Marcar MOVE o estágio da candidatura na vaga, o mesmo do Recrutamento; encerrar carimba '
     + 'cada convocado e anota quem não foi marcado.',
+  'enquadre_summary:read':
+    'Ver o selo do resumo do evento de enquadre e baixar o resumo (PDF) gerado a partir da transcrição da call. Sem esta célula '
+    + 'a linha do evento não mostra o selo do resumo nem o botão de baixar, e o download responde 403. '
+    + 'Só o Acesso Master por enquanto.',
   'own_tactiq_link:read':
     'Ver o estado do PRÓPRIO vínculo com o Tactiq (vinculado, caído, conta errada ou sem vínculo) e a data da última '
     + 'verificação. Nunca devolve o token. Quem não está vinculado não pode ser responsável de agenda de admissão.',

@@ -22,6 +22,7 @@ import {
 } from '../../application/EnquadreEventErrors';
 import type { EnquadreEventService } from '../../application/EnquadreEventService';
 import type { EnquadreEventMutations } from '../../application/EnquadreEventMutations';
+import type { EnquadreSummaryDownload } from '../../application/EnquadreSummaryDownload';
 
 /**
  * EnquadreEventController — rotas ADMIN do evento de enquadre na vaga (spec 052, Fase 2). `:vacancyId` é SEMPRE o id da vaga.
@@ -37,6 +38,7 @@ import type { EnquadreEventMutations } from '../../application/EnquadreEventMuta
  *   POST /vacancies/:vacancyId/enquadre-events/:eventId/cancel               enquadre_event:update
  *   PUT  /vacancies/:vacancyId/enquadre-events/:eventId/participants/:participantId/move   enquadre_result:update
  *   POST /vacancies/:vacancyId/enquadre-events/:eventId/close                enquadre_result:update
+ *   GET  /vacancies/:vacancyId/enquadre-events/:eventId/summary/url          enquadre_summary:read  (URL assinada de 300 s)
  *
  * Erro de domínio vira resposta com `code` ESTÁVEL (a tela traduz pelo `code`, nunca ecoa a mensagem); o resto vira 500
  * genérico, relatado só com ids — nunca e-mail, nome, telefone nem o corpo da requisição.
@@ -88,13 +90,15 @@ export class EnquadreEventController {
   constructor(
     private readonly service: EnquadreEventService,
     private readonly mutations: EnquadreEventMutations,
+    /** Ausente = o download não está ligado neste processo (a rota responde 503). */
+    private readonly summaryDownload?: EnquadreSummaryDownload,
   ) {}
 
   async list(req: Request, res: Response): Promise<void> {
     const params = vacancyParams.safeParse(req.params);
     if (!params.success) return this.invalid(res);
     await this.run(res, 'list', params.data.vacancyId, async () => {
-      res.status(200).json({ success: true, data: await this.service.listEvents(params.data.vacancyId) });
+      res.status(200).json({ success: true, data: await this.service.listEvents(params.data.vacancyId, { cells: cellsOfRequest(req) }) });
     });
   }
 
@@ -103,6 +107,23 @@ export class EnquadreEventController {
     if (!params.success) return this.invalid(res);
     await this.run(res, 'get', params.data.vacancyId, async () => {
       const data = await this.service.getEvent(params.data.vacancyId, params.data.eventId, { cells: cellsOfRequest(req) });
+      res.status(200).json({ success: true, data });
+    });
+  }
+
+  async summaryUrl(req: Request, res: Response): Promise<void> {
+    const params = eventParams.safeParse(req.params);
+    if (!params.success) return this.invalid(res);
+    await this.run(res, 'summaryUrl', params.data.vacancyId, async () => {
+      if (!this.summaryDownload) {
+        res.status(503).json({ success: false, error: 'Summary download unavailable', code: 'ENQUADRE_SUMMARY_UNAVAILABLE' });
+        return;
+      }
+      const data = await this.summaryDownload.urlFor(params.data.vacancyId, params.data.eventId);
+      if (!data) {
+        res.status(404).json({ success: false, error: 'Summary not found', code: 'ENQUADRE_SUMMARY_NOT_FOUND' });
+        return;
+      }
       res.status(200).json({ success: true, data });
     });
   }

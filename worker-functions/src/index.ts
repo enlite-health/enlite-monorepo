@@ -113,6 +113,7 @@ import { AdmissionPanelController } from '@modules/matching/interfaces/controlle
 import { createAdminAdmissionRoutes } from '@modules/matching/interfaces/routes/adminAdmissionRoutes';
 import { EnquadreEventService } from '@modules/matching/application/EnquadreEventService';
 import { EnquadreEventMutations } from '@modules/matching/application/EnquadreEventMutations';
+import { EnquadreSummaryDownload } from '@modules/matching/application/EnquadreSummaryDownload';
 import { EnquadreEventController } from '@modules/matching/interfaces/controllers/EnquadreEventController';
 import { createAdminEnquadreEventRoutes } from '@modules/matching/interfaces/routes/adminEnquadreEventRoutes';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
@@ -645,6 +646,7 @@ const enquadreEventController = new EnquadreEventController(
     readEvent: (vacancyId, eventId, viewer) => enquadreEventService.getEvent(vacancyId, eventId, viewer),
     pubsub: new PubSubClient(),
   }),
+  new EnquadreSummaryDownload({ db: admissionDb }),
 );
 app.use('/api/admin', createAdminEnquadreEventRoutes(authMiddleware, permissionMiddleware, enquadreEventController));
 

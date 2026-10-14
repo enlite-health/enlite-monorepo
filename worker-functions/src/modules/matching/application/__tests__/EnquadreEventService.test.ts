@@ -88,6 +88,8 @@ function openEventRow(over: Record<string, unknown> = {}) {
     status: 'open',
     meet_link: 'https://meet.google.com/fak-e049-abc',
     import_status: null,
+    blocked_reason: null,
+    has_summary: false,
     ...over,
   };
 }
@@ -332,7 +334,32 @@ describe('leitura', () => {
     expect(d.meetLink).toBeNull();
     expect(d.participants.map((p) => p.column)).toEqual(['SELECTED', 'CONVOKED']);
     expect(d.outcome).toEqual({ selected: 1, quickResponse: 0, rejected: 0, returned: 1 });
-    expect(d.pipeline).toEqual({ importStatus: 'waiting', summary: 'waiting', blockedReason: null });
+    expect(d.pipeline).toEqual({ importStatus: 'waiting', summary: 'waiting', blockedReason: null, unidentifiedCount: 0 });
+  });
+
+  it('esteira REAL (T-36c): o selo do resumo vem do documento gravado, o motivo do bloqueio da coluna, os não identificados da presença — e sem a quinta célula a chave `summary` NÃO existe', async () => {
+    const done = build({
+      available: [],
+      eventRow: openEventRow({ status: 'closed', import_status: 'done', has_summary: true }),
+      participantRows: [PARTICIPANT('01', { attendance: 'present' }), PARTICIPANT('02', { attendance: 'unidentified' }), PARTICIPANT('03', { attendance: 'unidentified' })],
+    });
+    expect((await done.service.getEvent(VACANCY_ID, EVENT_ID)).pipeline).toEqual({ importStatus: 'done', summary: 'ready', blockedReason: null, unidentifiedCount: 2 });
+    expect((await done.service.getEvent(VACANCY_ID, EVENT_ID, { cells: ['enquadre_summary:read'] })).pipeline?.summary).toBe('ready');
+    const semCelula = (await done.service.getEvent(VACANCY_ID, EVENT_ID, { cells: ['enquadre_event:read'] })).pipeline;
+    expect(semCelula).toEqual({ importStatus: 'done', blockedReason: null, unidentifiedCount: 2 });
+    expect(Object.keys(semCelula as object)).not.toContain('summary');
+
+    const blocked = build({ available: [], eventRow: openEventRow({ status: 'closed', import_status: 'blocked', blocked_reason: 'no_link' }) });
+    expect((await blocked.service.getEvent(VACANCY_ID, EVENT_ID)).pipeline).toMatchObject({ importStatus: 'blocked', blockedReason: 'no_link', summary: 'waiting' });
+
+    const semDoc = build({ available: [], eventRow: openEventRow({ status: 'closed', import_status: 'done', has_summary: false }) });
+    expect((await semDoc.service.getEvent(VACANCY_ID, EVENT_ID)).pipeline?.summary).toBe('unavailable');
+  });
+
+  it('a LISTA aplica a mesma regra da quinta célula (o selo do resumo some de todas as linhas)', async () => {
+    const lista = build({ available: [], allEventRows: [openEventRow({ status: 'closed', import_status: 'done', has_summary: true })] });
+    expect((await lista.service.listEvents(VACANCY_ID, { cells: [] }))[0].pipeline).not.toHaveProperty('summary');
+    expect((await lista.service.listEvents(VACANCY_ID, { cells: ['enquadre_summary:read'] }))[0].pipeline?.summary).toBe('ready');
   });
 
   it('evento de outra vaga / inexistente: ENQUADRE_EVENT_NOT_FOUND', async () => {
