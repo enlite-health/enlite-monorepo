@@ -1,4 +1,5 @@
 import type { FunnelTableRow } from '@domain/entities/Funnel';
+import { normalizeText } from '@presentation/utils/normalizeText';
 
 export type RegistrationFilter = 'ALL' | 'COMPLETE' | 'INCOMPLETE';
 
@@ -12,11 +13,6 @@ export const DEFAULT_FUNNEL_ROW_FILTERS: FunnelRowFilters = {
   registration: 'ALL',
 };
 
-/** Minúsculas e sem acento: "María" e "maria" se igualam. */
-function normalizeName(value: string): string {
-  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-}
-
 function digitsOnly(value: string): string {
   return value.replace(/\D/g, '');
 }
@@ -25,7 +21,7 @@ function matchesQuery(row: FunnelTableRow, query: string): boolean {
   const trimmed = query.trim();
   if (trimmed === '') return true;
 
-  if (row.workerName && normalizeName(row.workerName).includes(normalizeName(trimmed))) {
+  if (row.workerName && normalizeText(row.workerName).includes(normalizeText(trimmed))) {
     return true;
   }
 
