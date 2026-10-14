@@ -2,8 +2,15 @@ import type { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { withActorContext } from '@shared/database/actorContext';
 import { logger } from '@shared/logging';
-import type { AdmissionPostCallRepository, PostCallCandidate } from '../infrastructure/AdmissionPostCallRepository';
-import type { AdmissionEventRepository } from '../infrastructure/AdmissionEventRepository';
+import {
+  ADMISSION_POST_CALL_NAMING,
+  type Ex,
+  type PostCallDetectors,
+  type PostCallNaming,
+  type PostCallSource,
+  type PostCallSubject,
+  type SubjectTrail,
+} from './ports/PostCallPorts';
 import { decidePostCall } from '../domain/admissionPostCall';
 import { SKIPPED_TEST_EVENT, admissionRealm, isBlockedFromPaidPath } from '../domain/admissionRealm';
 import { MeetScopeMissingError, MeetTransientError, type MeetConferencePort } from './ports/MeetConferencePort';
@@ -32,14 +39,24 @@ type Outcome = 'ended' | 'noShow' | 'blocked' | 'waiting' | 'transient' | 'skipp
 type BlockReason = 'meet_scope_missing' | 'no_meet_link';
 
 export interface AdmissionPostCallJobDeps {
-  repo: AdmissionPostCallRepository;
+  /** FONTE (porto): a admissão passa `AdmissionPostCallRepository`; o enquadre, `EnquadrePostCallRepository`. */
+  repo: PostCallSource & Partial<PostCallDetectors>;
+  /** Detectores de silêncio/entrega. Padrão: os do próprio `repo`, se os tiver (a admissão); sem eles (enquadre) o job não os roda. */
+  detectors?: PostCallDetectors | null;
   meet: MeetConferencePort;
-  events: AdmissionEventRepository;
+  /** DESTINO (porto): a trilha do sujeito (`admission_events` ou `enquadre_event_trail`). */
+  events: SubjectTrail;
+  /** Nomes de log; padrão = admissão (`admission.*`, `appointmentId`). */
+  naming?: PostCallNaming;
   db?: Pool;
   /** Varreduras do Google (spec 050 F10: R-36 e R-37); sem elas o job roda como antes. */
   calendarSweeps?: Pick<AdmissionCalendarSweeps, 'run'>;
   log?: AdmissionLogger;
   now?: () => Date;
+}
+
+function hasDetectors(repo: Partial<PostCallDetectors>): repo is PostCallDetectors {
+  return typeof repo.findReminderSilence === 'function' && typeof repo.findConfirmationSilence === 'function' && typeof repo.findStaleSentMessages === 'function';
 }
 
 const emptySummary = (): PostCallSummary => ({
@@ -67,12 +84,16 @@ export class AdmissionPostCallJob {
   private readonly log: AdmissionLogger;
   private readonly now: () => Date;
   private readonly observer: AdmissionConferenceObserver;
+  private readonly naming: PostCallNaming;
+  private readonly detectors: PostCallDetectors | null;
 
   constructor(private readonly deps: AdmissionPostCallJobDeps) {
+    this.naming = deps.naming ?? ADMISSION_POST_CALL_NAMING;
+    this.detectors = deps.detectors !== undefined ? deps.detectors : hasDetectors(deps.repo) ? deps.repo : null;
     this.db = deps.db ?? DatabaseConnection.getInstance().getPool();
     this.log = deps.log ?? (logger as unknown as AdmissionLogger);
     this.now = deps.now ?? (() => new Date());
-    this.observer = new AdmissionConferenceObserver({ repo: deps.repo, meet: deps.meet, events: deps.events, log: this.log });
+    this.observer = new AdmissionConferenceObserver({ repo: deps.repo, meet: deps.meet, events: deps.events, log: this.log, naming: this.naming });
   }
 
   async runOnce(now: Date = this.now()): Promise<PostCallSummary> {
@@ -86,7 +107,7 @@ export class AdmissionPostCallJob {
       } catch {
         // Uma reunião com defeito não pode impedir as outras (nem os detectores). Sem texto do erro: pode ecoar dado.
         summary.errors += 1;
-        this.log.error({ appointmentId: id }, 'admission.post_call.step_failed');
+        this.log.error({ [this.naming.idKey]: id }, `${this.naming.prefix}.post_call.step_failed`);
       }
     }
 
@@ -96,7 +117,7 @@ export class AdmissionPostCallJob {
     summary.deliveryNoStatus = await this.runDeliveryDetector(now);
     Object.assign(summary, await (this.deps.calendarSweeps?.run(now) ?? EMPTY_CALENDAR_SWEEP));
 
-    this.log.info({ ...summary }, 'admission.post_call.run_done');
+    this.log.info({ ...summary }, `${this.naming.prefix}.post_call.run_done`);
     return summary;
   }
 
@@ -112,7 +133,7 @@ export class AdmissionPostCallJob {
           { appointmentId: appt.id, kind: SKIPPED_TEST_EVENT, outcome: 'skipped', reason: 'post_call', ref: { realm: 'test' } },
           cli,
         );
-        this.log.info({ appointmentId: appt.id, realm: 'test' }, 'admission.post_call.skipped_test');
+        this.log.info({ [this.naming.idKey]: appt.id, realm: 'test' }, `${this.naming.prefix}.post_call.skipped_test`);
         return 'skippedTest';
       }
 
@@ -130,7 +151,7 @@ export class AdmissionPostCallJob {
         if (decision.kind === 'no_show') {
           await this.deps.repo.markNoShow(appt.id, cli);
           await this.deps.events.append({ appointmentId: appt.id, kind: 'no_show', outcome: 'no_show', reason: 'no_conference_record' }, cli);
-          this.log.warn({ appointmentId: appt.id }, 'admission.no_show');
+          this.log.warn({ [this.naming.idKey]: appt.id }, `${this.naming.prefix}.no_show`);
           return 'noShow';
         }
 
@@ -139,7 +160,7 @@ export class AdmissionPostCallJob {
       } catch (err) {
         if (err instanceof MeetScopeMissingError) return await this.block(appt, 'meet_scope_missing', cli);
         if (err instanceof MeetTransientError) {
-          this.log.warn({ appointmentId: appt.id, reason: err.reason }, 'admission.post_call.meet_transient');
+          this.log.warn({ [this.naming.idKey]: appt.id, reason: err.reason }, `${this.naming.prefix}.post_call.meet_transient`);
           return 'transient';
         }
         throw err;
@@ -148,45 +169,49 @@ export class AdmissionPostCallJob {
   }
 
   /** `blocked` com motivo. O evento da trilha entra só na TRANSIÇÃO; o log de alarme sai a cada execução enquanto durar. */
-  private async block(appt: PostCallCandidate, reason: BlockReason, cli: Parameters<AdmissionPostCallRepository['markBlocked']>[1]): Promise<Outcome> {
+  private async block(appt: PostCallSubject, reason: BlockReason, cli: Ex): Promise<Outcome> {
     if (appt.import_status !== 'blocked') {
-      await this.deps.repo.markBlocked(appt.id, cli);
+      await this.deps.repo.markBlocked(appt.id, cli, reason);
       await this.deps.events.append({ appointmentId: appt.id, kind: 'import_blocked', outcome: 'blocked', reason }, cli);
     }
-    this.log.error({ appointmentId: appt.id, reason }, 'admission.import_blocked');
+    this.log.error({ [this.naming.idKey]: appt.id, reason }, `${this.naming.prefix}.import_blocked`);
     return 'blocked';
   }
 
   private async runSilenceDetectors(now: Date): Promise<{ reminder: number; confirmation: number }> {
     const out = { reminder: 0, confirmation: 0 };
+    const detectors = this.detectors;
+    if (!detectors) return out; // o enquadre não tem mensagens de lembrete/confirmação
     try {
-      for (const appointmentId of await this.deps.repo.findReminderSilence(now)) {
-        this.log.warn({ appointmentId }, 'admission.silence.reminder');
+      for (const appointmentId of await detectors.findReminderSilence(now)) {
+        this.log.warn({ appointmentId }, `${this.naming.prefix}.silence.reminder`);
         out.reminder += 1;
       }
-      for (const appointmentId of await this.deps.repo.findConfirmationSilence(now)) {
-        this.log.warn({ appointmentId }, 'admission.silence.confirmation');
+      for (const appointmentId of await detectors.findConfirmationSilence(now)) {
+        this.log.warn({ appointmentId }, `${this.naming.prefix}.silence.confirmation`);
         out.confirmation += 1;
       }
     } catch {
-      this.log.error({}, 'admission.silence.detector_failed');
+      this.log.error({}, `${this.naming.prefix}.silence.detector_failed`);
     }
     return out;
   }
 
   /** R-30 (b): UM log por execução, com a contagem e os ids internos (mensagem e reunião). Zero mensagens → nenhum log. */
   private async runDeliveryDetector(now: Date): Promise<number> {
+    const detectors = this.detectors;
+    if (!detectors) return 0;
     try {
-      const stale = await this.deps.repo.findStaleSentMessages(now);
+      const stale = await detectors.findStaleSentMessages(now);
       if (stale.length > 0) {
         this.log.warn(
           { count: stale.length, messageIds: stale.map((m) => m.messageId), appointmentIds: [...new Set(stale.map((m) => m.appointmentId))] },
-          'admission.delivery.no_status',
+          `${this.naming.prefix}.delivery.no_status`,
         );
       }
       return stale.length;
     } catch {
-      this.log.error({}, 'admission.delivery.detector_failed');
+      this.log.error({}, `${this.naming.prefix}.delivery.detector_failed`);
       return 0;
     }
   }
