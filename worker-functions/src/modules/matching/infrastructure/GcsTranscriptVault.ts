@@ -15,6 +15,8 @@ export interface GcsTranscriptVaultOptions {
 
 export const VAULT_BUCKET_ENV = 'ADMISSION_TRANSCRIPT_VAULT_BUCKET';
 export const REHEARSAL_BUCKET_ENV = 'ADMISSION_REHEARSAL_BUCKET';
+/** O cofre do ENQUADRE (spec 052, D506): a MESMA classe, outro bucket (`enlite-enquadre-transcripts-prd`). */
+export const ENQUADRE_VAULT_BUCKET_ENV = 'ENQUADRE_TRANSCRIPT_VAULT_BUCKET';
 
 /**
  * Cofre da transcrição crua (spec 049 §4.4): bucket dedicado, CMEK como chave padrão do bucket, e este adapter SÓ CRIA.

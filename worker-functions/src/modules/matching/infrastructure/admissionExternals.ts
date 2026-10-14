@@ -24,8 +24,11 @@ import { GoogleMeetConferenceClient } from './GoogleMeetConferenceClient';
 import type { AdmissionSummaryPort, RehearsalVaultPort, TranscriptVaultPort } from '../application/ports/AdmissionImportPorts';
 import { InMemoryTranscriptVault } from './doubles/InMemoryTranscriptVault';
 import { FakeAdmissionSummaryGenerator } from './doubles/FakeAdmissionSummaryGenerator';
-import { GcsTranscriptVault, REHEARSAL_BUCKET_ENV } from './GcsTranscriptVault';
+import { ENQUADRE_VAULT_BUCKET_ENV, GcsTranscriptVault, REHEARSAL_BUCKET_ENV } from './GcsTranscriptVault';
 import { VertexAdmissionSummaryGenerator } from './VertexAdmissionSummaryGenerator';
+import { ENQUADRE_SUMMARY_PROFILE } from './enquadreSummaryProfile';
+import { assertEnquadreSummaryShape } from '../application/enquadreSummaryGate';
+import { validEnquadreSummaryJson } from './doubles/enquadreSummaryFixtures';
 
 export interface AdmissionExternalsEnv {
   NODE_ENV?: string;
@@ -56,6 +59,13 @@ export interface AdmissionExternals {
   rehearsalVault: RehearsalVaultPort;
   /** Resumo da admissão via Vertex (F6). Dublê em `fake`; o real LANÇA no construtor com NODE_ENV=test. */
   summary: AdmissionSummaryPort;
+  /**
+   * Cofre da transcrição do ENQUADRE (spec 052, D506): a mesma `GcsTranscriptVault`, outro bucket (`ENQUADRE_TRANSCRIPT_VAULT_BUCKET`).
+   * Se a env for a do cofre da admissão, a instância se declara não configurada (`not_configured`): nunca grava no cofre errado.
+   */
+  enquadreVault: TranscriptVaultPort;
+  /** Resumo do ENQUADRE: o MESMO gerador, com o perfil do enquadre (prompt em arquivo, convocados, gate próprio). Dublê em `fake`. */
+  enquadreSummary: AdmissionSummaryPort;
 }
 
 export interface AdmissionExternalsDeps {
@@ -103,6 +113,8 @@ export function createAdmissionExternals(env: AdmissionExternalsEnv, deps: Admis
       vault: new InMemoryTranscriptVault(),
       rehearsalVault: new InMemoryTranscriptVault(),
       summary: new FakeAdmissionSummaryGenerator(),
+      enquadreVault: new InMemoryTranscriptVault(),
+      enquadreSummary: new FakeAdmissionSummaryGenerator({ structured: () => validEnquadreSummaryJson(), assertShape: assertEnquadreSummaryShape }),
     };
   }
   return {
@@ -116,5 +128,7 @@ export function createAdmissionExternals(env: AdmissionExternalsEnv, deps: Admis
     vault: new GcsTranscriptVault({ env: env as NodeJS.ProcessEnv }),
     rehearsalVault: new GcsTranscriptVault({ env: env as NodeJS.ProcessEnv, bucketEnv: REHEARSAL_BUCKET_ENV }),
     summary: new VertexAdmissionSummaryGenerator(env as NodeJS.ProcessEnv),
+    enquadreVault: new GcsTranscriptVault({ env: env as NodeJS.ProcessEnv, bucketEnv: ENQUADRE_VAULT_BUCKET_ENV }),
+    enquadreSummary: new VertexAdmissionSummaryGenerator(env as NodeJS.ProcessEnv, { profile: ENQUADRE_SUMMARY_PROFILE }),
   };
 }
