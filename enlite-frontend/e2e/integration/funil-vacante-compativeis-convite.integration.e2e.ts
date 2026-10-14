@@ -70,9 +70,10 @@ test.describe('funil da vacante — convidar um Compatível é o envio que já e
     timezoneId: 'America/Argentina/Buenos_Aires',
   });
   test.setTimeout(120_000);
-  // 054: serial — o stub Periskope (porta 9911) é compartilhado e o 1º teste afirma `stub.calls.length === 1`;
-  // o teste da barra (abaixo) roda DEPOIS e mede o delta.
-  test.describe.configure({ mode: 'serial' });
+  // 'default' e não 'serial': os testes rodam em ordem no MESMO worker (o beforeAll sobe o stub da 9911 uma
+  // vez só, sem EADDRINUSE mesmo com fullyParallel), mas a falha de um NÃO pula os seguintes. Cada teste
+  // mede o DELTA de `stub.calls`, então não depende da ordem.
+  test.describe.configure({ mode: 'default' });
 
   let stub: PeriskopeStub;
   let seed: ReturnType<typeof seedVacancyWithCards>;
@@ -136,6 +137,7 @@ test.describe('funil da vacante — convidar um Compatível é o envio que já e
     await expect(page.getByTestId('kanban-column-COMPATIBLE').getByTestId(cardTestId), 'card nasce em Compatíveis').toBeVisible({
       timeout: 10_000,
     });
+    const callsBeforeResend = stub.calls.length;
     await card.getByTestId('resend-button').click();
     await expect(card.getByTestId('resend-feedback'), 'feedback "Enviado ✓"').toHaveText('Enviado ✓', { timeout: 30_000 });
 
@@ -180,8 +182,8 @@ test.describe('funil da vacante — convidar um Compatível é o envio que já e
 
     // ── Stub recebeu exatamente 1 chamada; messaged_at carimbado ───────────────
 
-    console.log('[5.2] stub.calls.length=', stub.calls.length);
-    expect(stub.calls.length, 'stub Periskope recebeu exatamente 1 chamada').toBe(1);
+    console.log('[5.2] delta stub.calls=', stub.calls.length - callsBeforeResend);
+    expect(stub.calls.length - callsBeforeResend, 'stub Periskope recebeu exatamente 1 chamada').toBe(1);
 
     const messagedAtSet = runSQL(
       `SELECT messaged_at IS NOT NULL FROM worker_job_applications WHERE id = '${compat.wjaId}'`,
