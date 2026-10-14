@@ -26,6 +26,7 @@ import {
   cleanupTestWorker,
 } from '../helpers/db-test-helper';
 import { insertWJA, cleanupWJAAndEncuadre } from '../helpers/wja-test-helper';
+import { runSQL } from '../helpers/patient-detail-a-helper';
 import { loginAs, type MockUser } from '../helpers/abac-stack-helper';
 import { gotoVacancyDetail, switchToLista } from '../helpers/compativeis-e2e-helper';
 import { seedMockStaff, cleanupMockStaff } from '../helpers/vacancy-notes-e2e-helper';
@@ -81,12 +82,20 @@ test.describe('funil da vacante — Lista como operador @integration', () => {
     angelaWorkerId = insertTestWorker(ANGELA);
     bernardoWorkerId = insertTestWorker(BERNARDO);
     angelaWjaId = insertWJA({ workerId: angelaWorkerId, jobPostingId: vacancyId, funnelStage: 'INVITED', source: 'manual' });
-    insertWJA({ workerId: bernardoWorkerId, jobPostingId: vacancyId, funnelStage: 'INVITED', source: 'manual' });
+    // Bernardo é INCOMPLETE_REGISTER: o gatilho enforce_worker_registered_for_application recusa WJA, então
+    // ele entra pelo caminho real — tentativa BLOQUEADA (worker_blocked_applications), que a Lista mostra em
+    // Iniciados com Registro Incompleto (mesmo seed do P22 em funil-vacante.integration.e2e.ts).
+    runSQL(
+      `INSERT INTO worker_blocked_applications ` +
+        `(worker_id, job_posting_id, blocked_reason, missing_fields, blocked_reason_at_attempt, missing_fields_at_attempt, acquisition_channel) ` +
+        `VALUES ('${bernardoWorkerId}', '${vacancyId}', 'registration_incomplete', '[]', 'registration_incomplete', '[]', 'site')`,
+    );
   });
 
   test.afterAll(() => {
     for (const workerId of [angelaWorkerId, bernardoWorkerId]) {
       try {
+        runSQL(`DELETE FROM worker_blocked_applications WHERE worker_id = '${workerId}'`);
         cleanupWJAAndEncuadre(workerId, vacancyId);
         cleanupTestWorker(workerId);
       } catch (err) {
