@@ -88,3 +88,14 @@ describe('VacancyFunnelTableRow — sem Origen nem ACEPTÓ (054 item 2)', () => 
     expect(screen.queryByText('admin.vacancyDetail.funnelTable.acceptedNo')).not.toBeInTheDocument();
   });
 });
+
+// 054 item 3: REGISTRO é a 3ª célula, logo depois do nome.
+describe('VacancyFunnelTableRow — REGISTRO na 3ª célula (054 item 3)', () => {
+  it('a 3ª célula é o badge Completo/Incompleto', () => {
+    const { unmount } = renderRow({ ...baseRow, registrationComplete: true });
+    expect(screen.getAllByRole('cell')[2]).toHaveTextContent('admin.vacancyDetail.funnelTable.registration.complete');
+    unmount();
+    renderRow({ ...baseRow, registrationComplete: false });
+    expect(screen.getAllByRole('cell')[2]).toHaveTextContent('admin.vacancyDetail.funnelTable.registration.incomplete');
+  });
+});

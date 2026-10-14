@@ -231,6 +231,22 @@ describe('VacancyFunnelTable — sem as colunas Origen e ACEPTÓ (054 item 2)', 
   });
 });
 
+// 054 item 3: a SEQUÊNCIA dos headers, não só a presença.
+describe('VacancyFunnelTable — ordem das colunas (054 item 3)', () => {
+  it('headers renderizados: NOTAS, NOMBRE, REGISTRO, TELÉFONO, FECHA DE INVITACIÓN, WHATSAPP', () => {
+    renderTable({ vacancyId: 'vac-1', isLoading: false, activeTabLabel: 'Invitados', rows: mockRows });
+    const seq = screen.getAllByRole('columnheader').map((h) => h.textContent);
+    expect(seq).toEqual([
+      'admin.vacancyDetail.funnelTable.headers.notes',
+      'admin.vacancyDetail.funnelTable.headers.name',
+      'admin.vacancyDetail.funnelTable.headers.registration',
+      'admin.vacancyDetail.funnelTable.headers.phone',
+      'admin.vacancyDetail.funnelTable.headers.inviteDate',
+      'admin.vacancyDetail.funnelTable.headers.whatsapp',
+    ]);
+  });
+});
+
 // Ordenação por km (DX-3.11): o modo lista usa o MESMO comparador do Kanban.
 describe('VacancyFunnelTable — ordem por km (DX-3.11)', () => {
   const props = { vacancyId: 'vac-123', isLoading: false, activeTabLabel: 'Invitados' };

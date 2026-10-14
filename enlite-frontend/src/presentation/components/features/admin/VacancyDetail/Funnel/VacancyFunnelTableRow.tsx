@@ -109,21 +109,6 @@ export function VacancyFunnelTableRow({
         </div>
       </TableCell>
 
-      {/* Phone */}
-      <TableCell weight="medium" className="px-6">
-        {row.workerPhone ?? '—'}
-      </TableCell>
-
-      {/* Invite date */}
-      <TableCell weight="medium" className="px-6 whitespace-nowrap">
-        {formattedDate}
-      </TableCell>
-
-      {/* WhatsApp status */}
-      <TableCell unwrapped className="px-6">
-        <WhatsappStatusBadge status={row.whatsappStatus} />
-      </TableCell>
-
       {/* Registration badge */}
       <TableCell unwrapped className="px-6">
         {row.registrationComplete ? (
@@ -140,6 +125,22 @@ export function VacancyFunnelTableRow({
           </span>
         )}
       </TableCell>
+
+      {/* Phone */}
+      <TableCell weight="medium" className="px-6">
+        {row.workerPhone ?? '—'}
+      </TableCell>
+
+      {/* Invite date */}
+      <TableCell weight="medium" className="px-6 whitespace-nowrap">
+        {formattedDate}
+      </TableCell>
+
+      {/* WhatsApp status */}
+      <TableCell unwrapped className="px-6">
+        <WhatsappStatusBadge status={row.whatsappStatus} />
+      </TableCell>
+
     </TableRow>
   );
 }

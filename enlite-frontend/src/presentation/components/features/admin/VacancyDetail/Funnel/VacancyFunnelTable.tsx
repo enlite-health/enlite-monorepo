@@ -37,10 +37,10 @@ export function VacancyFunnelTable({
   const headers = [
     t('admin.vacancyDetail.funnelTable.headers.notes'),
     t('admin.vacancyDetail.funnelTable.headers.name'),
+    t('admin.vacancyDetail.funnelTable.headers.registration'),
     t('admin.vacancyDetail.funnelTable.headers.phone'),
     t('admin.vacancyDetail.funnelTable.headers.inviteDate'),
     t('admin.vacancyDetail.funnelTable.headers.whatsapp'),
-    t('admin.vacancyDetail.funnelTable.headers.registration'),
   ];
 
   function handleOpenNotes(workerId: string) {
