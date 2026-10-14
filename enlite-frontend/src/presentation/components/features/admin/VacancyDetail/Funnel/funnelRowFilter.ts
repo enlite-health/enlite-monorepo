@@ -14,7 +14,7 @@ export const DEFAULT_FUNNEL_ROW_FILTERS: FunnelRowFilters = {
 
 /** Minúsculas e sem acento: "María" e "maria" se igualam. */
 function normalizeName(value: string): string {
-  return value.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 }
 
 function digitsOnly(value: string): string {
