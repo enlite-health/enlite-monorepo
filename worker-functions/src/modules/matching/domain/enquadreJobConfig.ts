@@ -8,3 +8,12 @@
  * 100 × 2 s = 200 s < 300 s. O que não coube fica para a rodada seguinte (a fila é por estado, nada se perde).
  */
 export const ENQUADRE_POST_CALL_BATCH = 100;
+
+/**
+ * LOTE da importação do Tactiq = quantos eventos uma rodada importa (o `LIMIT` da fila). A rodada é em SEQUÊNCIA e o agendador dá
+ * 300 s (`attempt_deadline`): lote × tempo por evento < 300 s. Um evento custa 1 busca no Tactiq + leitura de todas as páginas + escrita
+ * no cofre + 1 chamada ao Vertex (gemini-2.5-pro com 8192 de thinking: "dezenas de segundos", `VertexAdmissionSummaryGenerator`) + PDF.
+ * Premissa NÃO medida ao vivo (sem chamada a terceiro): 45 s por evento, logo 6 × 45 s = 270 s < 300 s. O que não coube fica para a
+ * rodada seguinte (a fila é por estado e por tentativa, nada se perde); o da admissão (50) não é compartilhado.
+ */
+export const ENQUADRE_IMPORT_BATCH = 6;
