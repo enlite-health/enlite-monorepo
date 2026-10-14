@@ -256,7 +256,7 @@ test.describe('funil da vacante — convidar um Compatível é o envio que já e
       const readN = async (): Promise<number> =>
         Number(/\((\d+)\)/.exec((await dispatchButton.textContent()) ?? '')?.[1] ?? NaN);
       const nBefore = await readN();
-      expect(nBefore, 'N antes do envio (>= 1: o Compatível é pendente)').toBeGreaterThanOrEqual(1);
+      expect(nBefore, 'N antes do envio (vaga isolada: 1 pendente)').toBe(1);
 
       // Barra → modal de confirmação → "Enviar".
       await dispatchButton.click();
