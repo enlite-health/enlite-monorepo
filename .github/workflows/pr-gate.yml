@@ -188,9 +188,11 @@ jobs:
       # sexo faltando desabilita com o motivo, opcionais vazios habilitam e não atravessam) nasceu fora da lista e o gate
       # o achou em "NÃO exercitados" (o mesmo furo da F4). Os 6 outros são specs existentes que o diff alterou para
       # semear/preencher os 5 campos do portão: `admission-a6-franja-prestador`, `admission-b-campos`,
-      # `admission-c-servico-contratado`, `servico-horario-obrigatorio-humano`, `draft-vacancy-choice-dialog` e
-      # `vacancy-draft-page`. O `--grep` casa pelo caminho do arquivo. Login pelo mock do CI, job padrão, engine OFF.
-      grep: 'worker-profile-fields-persist|worker-completude-vitrine|027-public-jobs-search-en-code|vacancy-locked-fields|vacancy-servico-horario-link|vaga-le-servico-fecho|vacancy-schedule-hydration|draft-wizard-locked|027-vacancy-case-select|vacancy-de-baja|patient-status-suspendido-saida-motivo|patient-status-aguardando-financeiro|kanban-pacientes|funil-vacante|lista-vacantes|cid-na-vaga-publica|postularse-iniciado-043|kanban-iniciado-blocked-columns|kanban-blocked-live-missing-fields|enderecos-faturamento-044|servico-dados-recrutamento|admission-a6-franja-prestador|admission-b-campos|admission-c-servico-contratado|servico-horario-obrigatorio-humano|draft-vacancy-choice-dialog|vacancy-draft-page'
+      # `admission-c-servico-contratado`, `servico-horario-obrigatorio-humano` e `vacancy-draft-page`. O `--grep` casa pelo
+      # caminho do arquivo. Login pelo mock do CI, job padrão, engine OFF. `draft-vacancy-choice-dialog` NÃO entra: usa o
+      # `abac-stack-helper` (porta 5439) e já roda no job do ABAC (`_frontend-integration.yml:753`, `draft-vacancy-choice`);
+      # no job padrão dá "connection refused" em 5439.
+      grep: 'worker-profile-fields-persist|worker-completude-vitrine|027-public-jobs-search-en-code|vacancy-locked-fields|vacancy-servico-horario-link|vaga-le-servico-fecho|vacancy-schedule-hydration|draft-wizard-locked|027-vacancy-case-select|vacancy-de-baja|patient-status-suspendido-saida-motivo|patient-status-aguardando-financeiro|kanban-pacientes|funil-vacante|lista-vacantes|cid-na-vaga-publica|postularse-iniciado-043|kanban-iniciado-blocked-columns|kanban-blocked-live-missing-fields|enderecos-faturamento-044|servico-dados-recrutamento|admission-a6-franja-prestador|admission-b-campos|admission-c-servico-contratado|servico-horario-obrigatorio-humano|vacancy-draft-page'
 
   # O agregador. `if: always()` é o que garante que ele reporta mesmo quando
   # tudo acima foi pulado — sem isso, voltaríamos ao problema que este arquivo
