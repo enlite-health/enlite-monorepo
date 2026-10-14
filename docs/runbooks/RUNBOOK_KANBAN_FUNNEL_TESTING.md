@@ -180,7 +180,7 @@ Running 8 tests using 1 worker
 **Atenção aos cuidados de teste:**
 - `MOCK_ADMIN.role = 'admin'` — a backend `requireStaff` middleware só aceita `admin | recruiter | community_manager`. Usar `superadmin` resulta em 403.
 - Profile não pode mandar `cuil: null` — o schema Zod é `.strict()` e `cuil?: string` espera string ou ausência. Use `cuil: 'algum-valor'` ou omita o campo.
-- View Kanban depende de `localStorage["vacancy-funnel-view-{vacancyId}"] === 'kanban'` — `forceKanbanView` faz isso via `page.addInitScript`.
+- A visão do funil é lembrada em `localStorage["vacancy-funnel-view-v2-{vacancyId}"]` (`'kanban'` | `'list'`); **o padrão é Kanban** (054), então sem a chave a tela já abre no Kanban. `forceKanbanView` seta a chave via `page.addInitScript` (inofensivo). Para ler a Lista, **clique em "Lista"** — não use `removeItem` da chave. A chave antiga `vacancy-funnel-view-{vacancyId}` não é mais lida.
 - `DraggableCard` e `KanbanCard` compartilham `data-testid="kanban-card-{id}"`. Para discriminar, use `[data-testid="..."][data-stage]` (só o inner tem `data-stage`).
 
 ---

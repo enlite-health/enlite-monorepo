@@ -51,7 +51,7 @@ test.describe('Kanban — colunas colapsáveis (trilho estilo ClickUp, auth real
     await loginAsAdmin(page);
     await page.addInitScript(
       ([k]) => window.localStorage.setItem(k, 'kanban'),
-      [`vacancy-funnel-view-${VACANCY_ID}`],
+      [`vacancy-funnel-view-v2-${VACANCY_ID}`],
     );
     await page.goto(`/admin/vacancies/${VACANCY_ID}`);
     await page.waitForSelector('[data-testid="kanban-board"]', { state: 'attached', timeout: 20_000 });
