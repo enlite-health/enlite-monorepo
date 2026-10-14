@@ -17,7 +17,6 @@ vi.mock('@hooks/admin/useInvitedPendingCandidates', () => ({
 }));
 vi.mock('./VacancyFunnelKanban', () => ({ VacancyFunnelKanban: () => <div /> }));
 vi.mock('./VacancyFunnelTable', () => ({ VacancyFunnelTable: () => <div /> }));
-vi.mock('./VacancyFunnelTabs', () => ({ VacancyFunnelTabs: () => <div /> }));
 vi.mock('./VacancyFunnelToggle', () => ({ VacancyFunnelToggle: () => <div /> }));
 
 function comEnforcement(permissions: string[], enforcement: AuthzContract['enforcement']) {

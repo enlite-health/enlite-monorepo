@@ -7,16 +7,29 @@ import { useInvitedPendingCandidates } from '@hooks/admin/useInvitedPendingCandi
 import type { InviteTarget } from '../../VacancyMatch/inviteTypes';
 import { VacancyFunnelToggle } from './VacancyFunnelToggle';
 import type { FunnelView } from './VacancyFunnelToggle';
-import { VacancyFunnelTabs } from './VacancyFunnelTabs';
+import { VacancyFunnelFilters } from './VacancyFunnelFilters';
+import {
+  DEFAULT_FUNNEL_ROW_FILTERS,
+  filterFunnelRows,
+  hasActiveFilters,
+  type FunnelRowFilters,
+} from './funnelRowFilter';
 import { VacancyFunnelTable } from './VacancyFunnelTable';
 import { VacancyFunnelKanban } from './VacancyFunnelKanban';
 import { DispatchConfirmModal } from './DispatchConfirmModal';
 import { MatchVacancyModal } from '../../VacancyMatch/MatchVacancyModal';
 import { useInviteProgressStore } from '@presentation/stores/inviteProgressStore';
 import type { VacancyForMatch } from '../../VacancyMatch/matchModalHelpers';
-import { FUNNEL_TABS, type FunnelTab } from './funnelTabsConfig';
+import { VACANCY_FUNNEL_COLUMNS } from './funnelTabsConfig';
+import type { FunnelTableTab } from '@hooks/admin/useVacancyFunnelTable';
 
-const DEFAULT_TAB_KEY: FunnelTab['key'] = 'INVITED';
+// A Lista pede TODAS as colunas do Kanban de uma vez (`?columns=` com as sources das 8 colunas,
+// incluindo IN_PROGRESS): mostra os mesmos prestadores do Kanban, tentativas bloqueadas inclusive.
+const ALL_COLUMNS_TAB: FunnelTableTab = {
+  key: 'ALL_COLUMNS',
+  kind: 'column',
+  column: { sources: VACANCY_FUNNEL_COLUMNS.flatMap((c) => c.sources) },
+};
 
 // 054: chave v2 — a antiga (`vacancy-funnel-view-${id}`) não é lida nem apagada, então todo mundo
 // recomeça no Kanban (padrão) e depois vale a escolha de cada um.
@@ -56,8 +69,8 @@ export function VacancyFunnelView({
   const [view, setView] = useState<FunnelView>(() =>
     getPersistedView(vacancyId),
   );
-  const [activeTabKey, setActiveTabKey] =
-    useState<FunnelTab['key']>(DEFAULT_TAB_KEY);
+  // Filtros só da Lista; não são salvos (voltam ao padrão ao recarregar).
+  const [filters, setFilters] = useState<FunnelRowFilters>(DEFAULT_FUNNEL_ROW_FILTERS);
   const [showMatchModal, setShowMatchModal] = useState(false);
   const [showDispatchConfirm, setShowDispatchConfirm] = useState(false);
   const [dispatchSnapshot, setDispatchSnapshot] = useState<InviteTarget[]>([]);
@@ -66,11 +79,10 @@ export function VacancyFunnelView({
   const isSendingInvites = useInviteProgressStore((s) => s.isSending);
 
   const isListView = view === 'list';
-  const activeTab = FUNNEL_TABS.find((tab) => tab.key === activeTabKey)!;
 
   const { data, isLoading } = useVacancyFunnelTable(
     vacancyId,
-    activeTab,
+    ALL_COLUMNS_TAB,
     isListView,
   );
 
@@ -83,10 +95,6 @@ export function VacancyFunnelView({
   function handleViewChange(newView: FunnelView) {
     setView(newView);
     persistView(vacancyId, newView);
-  }
-
-  function handleTabChange(tab: FunnelTab) {
-    setActiveTabKey(tab.key);
   }
 
   function handleDispatchInvites() {
@@ -112,12 +120,7 @@ export function VacancyFunnelView({
     wasSending.current = isSendingInvites;
   }, [isSendingInvites, refetchPending]);
 
-  // Reset tab when switching back to list view
-  useEffect(() => {
-    if (isListView) {
-      setActiveTabKey(DEFAULT_TAB_KEY);
-    }
-  }, [isListView]);
+  const visibleRows = filterFunnelRows(data?.rows ?? [], filters);
 
   return (
     <div data-testid="vacancy-funnel-view" className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex flex-col gap-4">
@@ -155,23 +158,13 @@ export function VacancyFunnelView({
       {/* List view content */}
       {isListView && (
         <>
-          <VacancyFunnelTabs
-            activeTab={activeTabKey}
-            counts={data?.counts}
-            onTabChange={handleTabChange}
+          <VacancyFunnelFilters filters={filters} onChange={setFilters} />
+          <VacancyFunnelTable
+            vacancyId={vacancyId}
+            rows={visibleRows}
+            isLoading={isLoading}
+            isFiltered={hasActiveFilters(filters)}
           />
-          <div
-            role="tabpanel"
-            id={`funnel-panel-${activeTabKey}`}
-            aria-labelledby={`funnel-tab-${activeTabKey}`}
-          >
-            <VacancyFunnelTable
-              vacancyId={vacancyId}
-              rows={data?.rows ?? []}
-              isLoading={isLoading}
-              activeTabLabel={t(activeTab.i18nKey)}
-            />
-          </div>
           {isLoading && data && (
             <div className="flex items-center justify-end">
               <span className="text-xs text-gray-800 font-lexend flex items-center gap-1">

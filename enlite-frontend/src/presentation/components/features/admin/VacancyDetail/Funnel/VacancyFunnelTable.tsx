@@ -16,8 +16,8 @@ interface VacancyFunnelTableProps {
   vacancyId: string;
   rows: FunnelTableRow[];
   isLoading: boolean;
-  /** Rótulo já traduzido da aba ativa (View resolve via `t(activeTab.i18nKey)`), pro aria-label da tabela. */
-  activeTabLabel: string;
+  /** true quando há busca/registro aplicados: o vazio vira "nenhum resultado", não "a vaga não tem prestadores". */
+  isFiltered?: boolean;
 }
 
 interface ActiveNotesModal {
@@ -29,7 +29,7 @@ export function VacancyFunnelTable({
   vacancyId,
   rows,
   isLoading,
-  activeTabLabel,
+  isFiltered = false,
 }: VacancyFunnelTableProps): JSX.Element {
   const { t } = useTranslation();
   const [activeNotes, setActiveNotes] = useState<ActiveNotesModal | null>(null);
@@ -63,9 +63,15 @@ export function VacancyFunnelTable({
 
   if (rows.length === 0) {
     return (
-      <div role="status" className="py-12 flex flex-col items-center gap-2">
+      <div
+        role="status"
+        data-testid={isFiltered ? 'funnel-empty-filtered' : undefined}
+        className="py-12 flex flex-col items-center gap-2"
+      >
         <Text size="sm" color="secondary">
-          {t('admin.vacancyDetail.funnelTable.emptyState')}
+          {isFiltered
+            ? t('admin.vacancyDetail.funnelTable.emptyFiltered')
+            : t('admin.vacancyDetail.funnelTable.emptyState')}
         </Text>
       </div>
     );
@@ -75,7 +81,7 @@ export function VacancyFunnelTable({
     <>
       <Table
         role="table"
-        aria-label={`${activeTabLabel} funnel`}
+        aria-label={t('admin.vacancyDetail.funnelTable.ariaLabel')}
         className="border-collapse"
       >
         <TableHeader>

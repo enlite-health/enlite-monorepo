@@ -96,7 +96,6 @@ const defaultProps = {
   vacancyId: 'vac-1',
   rows: mockRows,
   isLoading: false,
-  activeTabLabel: 'Invitados',
 };
 
 describe('VacancyFunnelTable', () => {
@@ -156,6 +155,20 @@ describe('VacancyFunnelTable', () => {
     ).toBeInTheDocument();
   });
 
+  it('com filtro aplicado e nenhuma linha, mostra o vazio do FILTRO (não o da vaga)', () => {
+    renderTable({ ...defaultProps, rows: [], isFiltered: true });
+    expect(screen.getByTestId('funnel-empty-filtered')).toHaveTextContent(
+      'admin.vacancyDetail.funnelTable.emptyFiltered',
+    );
+    expect(screen.queryByText('admin.vacancyDetail.funnelTable.emptyState')).toBeNull();
+  });
+
+  it('sem filtro e nenhuma linha, mostra o vazio da vaga (sem funnel-empty-filtered)', () => {
+    renderTable({ ...defaultProps, rows: [], isFiltered: false });
+    expect(screen.queryByTestId('funnel-empty-filtered')).toBeNull();
+    expect(screen.getByText('admin.vacancyDetail.funnelTable.emptyState')).toBeInTheDocument();
+  });
+
   it('renders spinner when loading and no rows', () => {
     const { container } = renderTable({ ...defaultProps, rows: [], isLoading: true });
     expect(container.querySelector('.animate-spin')).toBeInTheDocument();
@@ -212,7 +225,7 @@ describe('VacancyFunnelTable', () => {
 
 // 054 item 2: saem as colunas Origen e ACEPTÓ da Lista (o selo de auto-postulação segue no card do Kanban).
 describe('VacancyFunnelTable — sem as colunas Origen e ACEPTÓ (054 item 2)', () => {
-  const props = { vacancyId: 'vac-123', isLoading: false, activeTabLabel: 'Invitados' };
+  const props = { vacancyId: 'vac-123', isLoading: false };
 
   it('os headers não contêm origin nem accepted', () => {
     renderTable({ ...props, rows: mockRows });
@@ -234,7 +247,7 @@ describe('VacancyFunnelTable — sem as colunas Origen e ACEPTÓ (054 item 2)', 
 // 054 item 3: a SEQUÊNCIA dos headers, não só a presença.
 describe('VacancyFunnelTable — ordem das colunas (054 itens 3 e 4)', () => {
   it('headers renderizados: NOTAS, NOMBRE, REGISTRO, ETAPA, TELÉFONO, FECHA DE INVITACIÓN, WHATSAPP', () => {
-    renderTable({ vacancyId: 'vac-1', isLoading: false, activeTabLabel: 'Invitados', rows: mockRows });
+    renderTable({ vacancyId: 'vac-1', isLoading: false, rows: mockRows });
     const seq = screen.getAllByRole('columnheader').map((h) => h.textContent);
     expect(seq).toEqual([
       'admin.vacancyDetail.funnelTable.headers.notes',
@@ -250,7 +263,7 @@ describe('VacancyFunnelTable — ordem das colunas (054 itens 3 e 4)', () => {
 
 // Ordenação por km (DX-3.11): o modo lista usa o MESMO comparador do Kanban.
 describe('VacancyFunnelTable — ordem por km (DX-3.11)', () => {
-  const props = { vacancyId: 'vac-123', isLoading: false, activeTabLabel: 'Invitados' };
+  const props = { vacancyId: 'vac-123', isLoading: false };
 
   it('ordena as linhas por km crescente, com sem-distância no fim', () => {
     const r40: FunnelTableRow = { ...mockRows[0], id: 'r40', distanceKm: 40 };

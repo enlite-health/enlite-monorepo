@@ -2357,6 +2357,14 @@
         "acceptedYes": "Sí",
         "acceptedNo": "No",
         "emptyState": "Sin candidatos en esta etapa todavía.",
+        "emptyFiltered": "Sin candidatos que coincidan con la búsqueda.",
+        "ariaLabel": "Tabla del embudo de la vacante",
+        "filters": {
+          "searchPlaceholder": "Buscar por nombre o teléfono",
+          "searchLabel": "Buscar candidato",
+          "registrationLabel": "Registro",
+          "registrationAll": "Todos"
+        },
         "registration": {
           "complete": "Completo",
           "incomplete": "Incompleto"
