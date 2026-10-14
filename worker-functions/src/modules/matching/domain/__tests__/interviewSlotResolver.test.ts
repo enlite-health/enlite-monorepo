@@ -160,4 +160,15 @@ describe('resolveOfferedSlots', () => {
     expect(resolveOfferedSlots({ ...v, timezone: null }, asOf)[0].label).toBe('Lun 12/04 08:30');
     expect(resolveOfferedSlots({ ...v, timezone: SP }, asOf)[0].label).toBe('Lun 12/04 08:30');
   });
+
+  it('sem asOf usa o relógio do sistema (valor padrão)', () => {
+    const v = { ...base, meet_recurring_weekday: 1, meet_recurring_time: '08:30', meet_recurring_link: 'https://meet.google.com/rrr-rrrr-rrr' };
+    jest.useFakeTimers().setSystemTime(asOf);
+    try {
+      expect(resolveOfferedSlots(v)).toEqual(resolveOfferedSlots(v, asOf));
+      expect(resolveOfferedSlots(v)[0].label).toBe('Lun 12/04 08:30');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
 });

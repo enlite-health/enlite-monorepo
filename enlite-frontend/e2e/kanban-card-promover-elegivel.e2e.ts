@@ -65,7 +65,7 @@ function funil() {
     data: {
       stages: {
         INVITED: [], INICIADO: [CARD_ELEGIVEL], PRE_SCREENING: [],
-        IN_PROGRESS: [], COMPLETED: [], CONFIRMED: [], SELECTED: [], REJECTED: [],
+        IN_PROGRESS: [], COMPLETED: [], SELECTED: [], REJECTED: [],
       },
       totalEncuadres: 1,
     },

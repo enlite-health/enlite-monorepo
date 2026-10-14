@@ -1,9 +1,9 @@
 /**
  * admin-vacancies-list-counters.test.ts
  *
- * Valida que os contadores "selecionados" e "confirmados" da listagem
- * GET /api/admin/vacancies contam apenas os workers que estão nas colunas
- * SELECTED e CONFIRMED do kanban, respectivamente — não os 3 stages
+ * Valida que os contador "selecionados" da listagem
+ * GET /api/admin/vacancies conta apenas os workers que estão na coluna
+ * SELECTED do kanban — não os stages
  * agregados em PRE_SELECTED_STAGES (que ainda é usado pelo detalhe).
  * PLACED foi removido do CHECK em F7.a (migration 194).
  */
@@ -41,7 +41,7 @@ describe('GET /api/admin/vacancies — contador selecionados', () => {
     );
     vacancyId = vacancy.rows[0].id as string;
 
-    const stages = ['SELECTED', 'QUALIFIED', 'CONFIRMED'];
+    const stages = ['SELECTED', 'QUALIFIED', 'COMPLETED'];
     for (const stage of stages) {
       const suffix = `${stage.toLowerCase()}-${Date.now()}`;
       const w = await pool.query(
@@ -68,7 +68,7 @@ describe('GET /api/admin/vacancies — contador selecionados', () => {
     }
   });
 
-  it('selecionados conta só SELECTED (não QUALIFIED nem CONFIRMED)', async () => {
+  it('selecionados conta só SELECTED (não QUALIFIED nem COMPLETED)', async () => {
     const res = await api.get(
       `/api/admin/vacancies?search=${uniqueCaseNumber}`,
       { headers: { Authorization: `Bearer ${adminToken}` } },

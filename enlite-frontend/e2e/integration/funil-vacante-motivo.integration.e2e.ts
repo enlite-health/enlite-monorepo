@@ -153,7 +153,6 @@ const ALL_COLUMN_IDS = [
   'INICIADO',
   'PRE_SCREENING',
   'COMPLETED',
-  'CONFIRMED',
   'SELECTED',
   'QUICK_RESPONSE_TEAM',
   'REJECTED',
@@ -438,13 +437,13 @@ test.describe('funil da vacante — motivo obrigatório @integration', () => {
 
   // ── P19 · entrar em Rejeitados exige motivo ─────────────────────────────────
   test('funil-rejeitar-exige-motivo', async ({ page, request }) => {
-    const seed = seedVacancyWithCards([{ stage: 'CONFIRMED' }]);
+    const seed = seedVacancyWithCards([{ stage: 'COMPLETED' }]);
     const [card] = seed.cards;
 
     try {
       const statusBefore = await readPatientStatusApi(request, BACKEND_URL, MOCK_TOKEN, seed.patientId);
 
-      // Pela API, sem motivo: 422 ENTER_REJECTED, etapa continua CONFIRMED.
+      // Pela API, sem motivo: 422 ENTER_REJECTED, etapa continua COMPLETED.
       const apiRes = await putMove(request, BACKEND_URL, MOCK_TOKEN, card.encuadreId, {
         targetStage: 'REJECTED',
       });
@@ -453,15 +452,15 @@ test.describe('funil da vacante — motivo obrigatório @integration', () => {
       expect(apiRes.status).toBe(422);
       expect(apiBody.code).toBe('MOVE_REASON_REQUIRED');
       expect(apiBody.reason).toBe('ENTER_REJECTED');
-      expect(getWjaByWorkerAndJob(card.workerId, seed.vacancyId)?.funnelStage, 'continua CONFIRMED').toBe(
-        'CONFIRMED',
+      expect(getWjaByWorkerAndJob(card.workerId, seed.vacancyId)?.funnelStage, 'continua COMPLETED').toBe(
+        'COMPLETED',
       );
 
       // Pela tela: o diálogo de motivo abre ANTES de qualquer PUT (D433/DX-4.10).
       await loginAs(page, MOCK_STAFF);
       await gotoVacancyDetail(page, seed.vacancyId);
       await switchToKanban(page, seed.vacancyId);
-      await collapseColumnsExcept(page, ['CONFIRMED', 'REJECTED']);
+      await collapseColumnsExcept(page, ['COMPLETED', 'REJECTED']);
 
       await dragKanbanCard(page, card.wjaId, 'REJECTED');
       const rejectionModal = page.getByTestId('rejection-modal');
@@ -504,7 +503,7 @@ test.describe('funil da vacante — motivo obrigatório @integration', () => {
 
       // Pela API, sem motivo: 422 LEAVE_REJECTED, etapa continua REJECTED.
       const apiRes = await putMove(request, BACKEND_URL, MOCK_TOKEN, card.encuadreId, {
-        targetStage: 'CONFIRMED',
+        targetStage: 'INVITED',
       });
       const apiBody = apiRes.body as { code?: string; reason?: string };
       console.log('[P19] sair sem motivo status=', apiRes.status, 'body=', apiBody);
@@ -515,7 +514,7 @@ test.describe('funil da vacante — motivo obrigatório @integration', () => {
         'REJECTED',
       );
 
-      // Pela tela: MoveToMenu → Confirmados → data ("ainda não sei") → 422 → motivo → 2xx.
+      // Pela tela: MoveToMenu → Invitados → 422 → motivo → 2xx.
       await loginAs(page, MOCK_STAFF);
       await gotoVacancyDetail(page, seed.vacancyId);
       await switchToKanban(page, seed.vacancyId);
@@ -523,16 +522,11 @@ test.describe('funil da vacante — motivo obrigatório @integration', () => {
       const cardLocator = page.locator(`[data-testid="kanban-card-${card.wjaId}"]`);
       await expect(cardLocator).toBeVisible();
       await cardLocator.getByTestId('move-to-button').click();
-      await cardLocator.getByTestId('move-to-option-CONFIRMED').click();
-
-      const scheduleModal = page.getByTestId('interview-schedule-modal');
-      await expect(scheduleModal).toBeVisible();
-      const [scheduleUnknownPut] = await Promise.all([
+      const [firstPut] = await Promise.all([
         page.waitForResponse((r) => /\/move$/.test(r.url()) && r.request().method() === 'PUT'),
-        page.getByTestId('interview-schedule-unknown').click(),
+        cardLocator.getByTestId('move-to-option-INVITED').click(),
       ]);
-      expect(scheduleUnknownPut.status(), '"ainda não sei" pede motivo (422)').toBe(422);
-      await expect(scheduleModal).toHaveCount(0);
+      expect(firstPut.status(), 'sair de Rejeitados sem motivo pede motivo (422)').toBe(422);
 
       const moveReasonModal = page.getByTestId('move-reason-modal');
       await expect(moveReasonModal).toBeVisible();
@@ -551,7 +545,7 @@ test.describe('funil da vacante — motivo obrigatório @integration', () => {
       const last = trail[trail.length - 1];
       console.log('[P19] trilha sair', last);
       expect(last.oldValue).toBe('REJECTED');
-      expect(last.newValue).toBe('CONFIRMED');
+      expect(last.newValue).toBe('INVITED');
       expect(last.reasonCategory).toBe('REAVALIACAO');
 
       const statusAfter = await readPatientStatusApi(request, BACKEND_URL, MOCK_TOKEN, seed.patientId);

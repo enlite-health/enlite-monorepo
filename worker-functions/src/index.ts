@@ -84,7 +84,6 @@ import { createAnalyticsRoutes, createRecruitmentRoutes, createWorkerApplication
 import { WorkerContextController } from '@modules/matching/interfaces/controllers/WorkerContextController';
 import { createWorkerContextRoutes } from '@modules/matching/interfaces/routes/workerContextRoutes';
 import { createTransitCorridorRoutes } from '@modules/matching/interfaces/routes/transitCorridorRoutes';
-import { ReminderScheduler } from '@modules/notification/infrastructure/ReminderScheduler';
 import { VacancyMeetLinksController } from '@modules/matching';
 import { DomainEventProcessor } from '@shared/events/DomainEventProcessor';
 import { DomainEventBacklogService } from '@shared/events/DomainEventBacklogService';
@@ -92,7 +91,6 @@ import { AnaCareMirrorHealthService } from '@shared/events/AnaCareMirrorHealthSe
 import { TherapeuticContactReminderHealthService } from '@shared/events/TherapeuticContactReminderHealthService';
 import { CloudTasksClient } from '@shared/events/CloudTasksClient';
 import { PubSubClient } from '@shared/events/PubSubClient';
-import { createQualifiedInterviewHandler } from '@shared/events/handlers/QualifiedInterviewHandler';
 import { createVacancyAutoInviteHandler } from '@shared/events/handlers/VacancyAutoInviteHandler';
 import { createAnaCareMirrorHandler } from '@modules/integration/application/AnaCareMirrorEventHandler';
 import { createPromoteBlockedApplicationsHandler } from '@modules/matching';
@@ -113,6 +111,12 @@ import { AdmissionMessageContent } from '@modules/matching/infrastructure/Admiss
 import { AdmissionPanelService } from '@modules/matching/application/AdmissionPanelService';
 import { AdmissionPanelController } from '@modules/matching/interfaces/controllers/AdmissionPanelController';
 import { createAdminAdmissionRoutes } from '@modules/matching/interfaces/routes/adminAdmissionRoutes';
+import { EnquadreEventService } from '@modules/matching/application/EnquadreEventService';
+import { EnquadreEventMutations } from '@modules/matching/application/EnquadreEventMutations';
+import { EnquadreSummaryDownload } from '@modules/matching/application/EnquadreSummaryDownload';
+import { EnquadreEventController } from '@modules/matching/interfaces/controllers/EnquadreEventController';
+import { createAdminEnquadreEventRoutes } from '@modules/matching/interfaces/routes/adminEnquadreEventRoutes';
+import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { TactiqLinkService } from '@modules/matching/application/TactiqLinkService';
 import { TactiqLinkRepository } from '@modules/matching/infrastructure/TactiqLinkRepository';
 import { TactiqLinkController } from '@modules/matching/interfaces/controllers/TactiqLinkController';
@@ -134,9 +138,9 @@ import { AccountLinkController } from '@modules/account-link/AccountLinkControll
 import { createAccountLinkRoutes } from '@modules/account-link/accountLinkRoutes';
 import { registerAdminMaintenanceRoutes } from './bootstrap/registerAdminMaintenanceRoutes';
 import { registerAdmissionInternalJobRoutes } from './bootstrap/registerAdmissionInternalJobRoutes';
+import { registerEnquadreInternalJobRoutes } from './bootstrap/registerEnquadreInternalJobRoutes';
 import { createAdminIntegrationsRoutes } from '@modules/integration';
-import { createStageMessageHandler } from './shared/events/handlers/StageMessageHandler';
-import { FUNNEL_STAGES, funnelStageEventName } from './modules/matching/application/FunnelStageEventEmitter';
+import { registerFunnelStageHandlers } from './shared/events/registerFunnelStageHandlers';
 import { FunnelStageMessagesController } from './modules/matching/interfaces/controllers/FunnelStageMessagesController';
 import { createFunnelStageMessagesRoutes } from './modules/matching/interfaces/routes/funnelStageMessagesRoutes';
 import { createTemplateCatalogRoutes } from './modules/matching/interfaces/routes/templateCatalogRoutes';
@@ -620,6 +624,32 @@ const admissionPanelController = new AdmissionPanelController(
 );
 app.use('/api/admin', createAdminAdmissionRoutes(authMiddleware, permissionMiddleware, admissionPanelController));
 
+// Spec 052 F2: evento de enquadre na vaga (leitura, criação e mutações). Família admin.vacancies. O Calendar e o Tactiq vêm da MESMA fábrica de
+// externos da admissão (dublê no stack de teste); nada de mensageria da admissão entra aqui.
+const enquadreImpersonateEmail = process.env.ADMISSION_IMPERSONATE_EMAIL || 'enlite@enlite.health';
+const enquadreEventService = new EnquadreEventService({
+  db: admissionDb,
+  calendar: admissionExternals.calendar,
+  hosts: interviewHostRepository,
+  tactiq: tactiqLinkService,
+  decryptor: new KMSEncryptionService(),
+  env: process.env,
+  impersonateEmail: enquadreImpersonateEmail,
+});
+const enquadreEventController = new EnquadreEventController(
+  enquadreEventService,
+  new EnquadreEventMutations({
+    db: admissionDb,
+    calendar: admissionExternals.calendar,
+    env: process.env,
+    impersonateEmail: enquadreImpersonateEmail,
+    readEvent: (vacancyId, eventId, viewer) => enquadreEventService.getEvent(vacancyId, eventId, viewer),
+    pubsub: new PubSubClient(),
+  }),
+  new EnquadreSummaryDownload({ db: admissionDb }),
+);
+app.use('/api/admin', createAdminEnquadreEventRoutes(authMiddleware, permissionMiddleware, enquadreEventController));
+
 // Spec 049 F4: o operador vincula a PRÓPRIA conta do Tactiq (own_tactiq_link:read|write). O callback do OAuth é navegação
 // do browser (sem Bearer): isento na montagem, em contexto público, e a prova de identidade é o `state` single-use.
 app.use('/api/admin', createTactiqLinkRoutes(authMiddleware, permissionMiddleware, tactiqLinkController));
@@ -719,20 +749,9 @@ app.use('/api/admin', createPresentationInviteRoutes(
 ));
 const domainEventProcessor = new DomainEventProcessor(dbPool);
 
-domainEventProcessor.registerHandler(
-  'funnel_stage.qualified',
-  createQualifiedInterviewHandler(dbPool, pubsubClient, tokenService),
-);
-
-// PEND-14/DEC-12: mensagem por etapa — o movimento da tarjeta emite
-// `funnel_stage.<etapa>`; QUALIFIED continua no handler acima (built-in).
-for (const stage of FUNNEL_STAGES) {
-  if (stage === 'QUALIFIED') continue;
-  domainEventProcessor.registerHandler(
-    funnelStageEventName(stage),
-    createStageMessageHandler(dbPool, pubsubClient, tokenService, stage),
-  );
-}
+// PEND-14/DEC-12: mensagem por etapa — o movimento da tarjeta emite `funnel_stage.<etapa>`.
+// Spec 052 (T-40b): QUALIFIED também passa aqui; o convite automático saiu.
+registerFunnelStageHandlers(domainEventProcessor, dbPool, pubsubClient, tokenService);
 
 domainEventProcessor.registerHandler(
   'vacancy.created',
@@ -749,13 +768,12 @@ domainEventProcessor.registerHandler(
   createPromoteBlockedApplicationsHandler(dbPool),
 );
 
-const reminderScheduler = new ReminderScheduler(dbPool, cloudTasksClient, pubsubClient, tokenService);
 const bulkDispatchScheduler = new BulkDispatchScheduler(dbPool, messagingService);
 const bulkDispatchTalentumScheduler = new BulkDispatchTalentumScheduler(dbPool, messagingService);
 const domainEventBacklogService = new DomainEventBacklogService(dbPool);
 const anaCareMirrorHealthService = new AnaCareMirrorHealthService(dbPool);
 const messagingRetentionService = new MessagingRetentionService(dbPool);
-const internalController = new InternalController(domainEventProcessor, outboxProcessor, reminderScheduler, bulkDispatchScheduler, bulkDispatchTalentumScheduler, domainEventBacklogService, anaCareMirrorHealthService, messagingRetentionService, new TherapeuticContactReminderHealthService(dbPool));
+const internalController = new InternalController(domainEventProcessor, outboxProcessor, bulkDispatchScheduler, bulkDispatchTalentumScheduler, domainEventBacklogService, anaCareMirrorHealthService, messagingRetentionService, new TherapeuticContactReminderHealthService(dbPool));
 app.use('/api/internal', systemContextMiddleware('job:internal'), createInternalRoutes(internalController));
 app.use(
   '/api/internal',
@@ -781,6 +799,12 @@ app.use(
 
 // spec 050 F15 + spec 049 F5: relatório diário do Chrome e job de 15 min do fim da call (ordem preservada).
 registerAdmissionInternalJobRoutes(app, { db: admissionDb, externals: admissionExternals, events: admissionEvents, importer: admissionImportService });
+// spec 052 F3: fim de call do enquadre (jobs separados dos da admissão, D506); mesma Meet API, fonte/destino próprios.
+registerEnquadreInternalJobRoutes(app, {
+  db: admissionDb,
+  meet: admissionExternals.meet,
+  import: { tokens: tactiqLinkService, mcp: admissionExternals.tactiq.mcp, vault: admissionExternals.enquadreVault, summary: admissionExternals.enquadreSummary },
+});
 
 // spec 049 F6: importação do Tactiq (MCP -> provas -> cofre -> Vertex -> PDF -> documento). Roda depois do job de 15 min (a F5 grava
 // `conference_ended_at` e `import_status='pending'`). Cloud Scheduler, a cada 15 min.

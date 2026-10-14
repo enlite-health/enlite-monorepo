@@ -117,6 +117,17 @@ export interface CreateEventParams {
   patientEmail?: string;
   /** Id FIXO do evento (base32hex, 5-1024): repetir a criação não duplica (spec 050 F9). */
   eventId?: string;
+  /**
+   * Convidados a mais (spec 052, enquadre): entram em `attendees` depois de `coHostEmail`/`patientEmail`, sem repetir e-mail
+   * (comparação sem diferenciar maiúsculas). Ausente = o corpo é o de sempre.
+   */
+  extraAttendeeEmails?: string[];
+  /** Default `true` (o da admissão). O enquadre manda `false`. */
+  guestsCanModify?: boolean;
+  /** Só vai no corpo quando definido. O Google só respeita `false` junto com `guestsCanModify: false` (medição de 20/08 abaixo). */
+  guestsCanSeeOtherGuests?: boolean;
+  /** Só vai no corpo quando definido. */
+  guestsCanInviteOthers?: boolean;
 }
 
 interface RawCalendarEvent {
@@ -491,6 +502,10 @@ export class AdmissionCalendarService {
       coHostEmail,
       patientEmail,
       eventId,
+      extraAttendeeEmails,
+      guestsCanModify = true,
+      guestsCanSeeOtherGuests,
+      guestsCanInviteOthers,
     }: CreateEventParams,
   ): Promise<{ eventId: string; meetLink: string }> {
     const token = await this.token(impersonateEmail);
@@ -500,6 +515,12 @@ export class AdmissionCalendarService {
       ...(coHostEmail ? [{ email: coHostEmail }] : []),
       ...(patientEmail ? [{ email: patientEmail }] : []),
     ];
+    const seen = new Set(attendees.map((a) => a.email.toLowerCase()));
+    for (const email of extraAttendeeEmails ?? []) {
+      if (seen.has(email.toLowerCase())) continue;
+      seen.add(email.toLowerCase());
+      attendees.push({ email });
+    }
 
     const body = {
       ...(eventId ? { id: eventId } : {}),
@@ -509,7 +530,9 @@ export class AdmissionCalendarService {
       end: { dateTime: endISO, timeZone: timezone },
       attendees,
       // Convidados (o paciente) podem editar/reagendar via convite.
-      guestsCanModify: true,
+      guestsCanModify,
+      ...(guestsCanSeeOtherGuests !== undefined ? { guestsCanSeeOtherGuests } : {}),
+      ...(guestsCanInviteOthers !== undefined ? { guestsCanInviteOthers } : {}),
       // ⚠️ NÃO adicionar `guestsCanSeeOtherGuests: false` aqui: com
       // `guestsCanModify: true` o Google DESCARTA o campo em silêncio — medido
       // em 20/08 com dois eventos-sonda na agenda real (com a flag de edição,
@@ -522,6 +545,9 @@ export class AdmissionCalendarService {
       // o paciente ESCOLHER quem atende, e isso é barrado antes: a lista de
       // horários não diz de quem é o horário, e o corpo do `book` é `.strict()`
       // (mandar `hostEmail` devolve 400).
+      //
+      // O ENQUADRE (spec 052) manda `guestsCanModify: false` e `guestsCanSeeOtherGuests: false` JUNTOS: é exatamente a
+      // combinação em que o `false` gruda. Mandar só o segundo não protegeria ninguém.
       conferenceData: {
         createRequest: {
           requestId: uuidv4(),
@@ -539,6 +565,30 @@ export class AdmissionCalendarService {
       },
     );
     return readCreatedEvent(res, { calendarId, eventId, token });
+  }
+
+  /**
+   * Troca a lista de convidados de um evento JÁ criado, pelo id do evento na agenda dedicada (spec 052: acrescentar/tirar
+   * convocado). `attendeeEmails` é a lista COMPLETA desejada (o PATCH substitui `attendees`). `sendUpdates=all`: quem entra
+   * recebe o convite e quem sai, o aviso de cancelamento.
+   */
+  async setEventAttendees(calendarId: string, eventId: string, impersonateEmail: string, attendeeEmails: string[]): Promise<void> {
+    const token = await this.token(impersonateEmail);
+    if (!token) throw new Error(`[AdmissionCalendarService] no DWD token for ${impersonateEmail}`);
+
+    const res = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}?sendUpdates=all`,
+      {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ attendees: attendeeEmails.map((email) => ({ email })) }),
+      },
+    );
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '');
+      const message = `[AdmissionCalendarService] setEventAttendees ${res.status} on ${calendarId}: ${detail}`;
+      throw res.status === 404 ? new CalendarEventNotFoundError(message) : new Error(message);
+    }
   }
 
   /** Remove evento de uma agenda (limpeza / cancelamento), impersonando o dono. */
@@ -575,4 +625,5 @@ export const admissionCalendarService: AdmissionCalendarPort = {
   getFreeBusyByCalendar: async (...a: Parameters<AdmissionCalendarService['getFreeBusyByCalendar']>) => real().getFreeBusyByCalendar(...a),
   createEventWithMeet: async (...a: Parameters<AdmissionCalendarService['createEventWithMeet']>) => real().createEventWithMeet(...a),
   deleteEvent: async (...a: Parameters<AdmissionCalendarService['deleteEvent']>) => real().deleteEvent(...a),
+  setEventAttendees: async (...a: Parameters<AdmissionCalendarService['setEventAttendees']>) => real().setEventAttendees(...a),
 };

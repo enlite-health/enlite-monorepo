@@ -6,7 +6,6 @@ import { DomainEventBacklogService } from '@shared/events/DomainEventBacklogServ
 import { AnaCareMirrorHealthService } from '@shared/events/AnaCareMirrorHealthService';
 import { TherapeuticContactReminderHealthService } from '@shared/events/TherapeuticContactReminderHealthService';
 import { OutboxProcessor } from '../../infrastructure/OutboxProcessor';
-import { ReminderScheduler } from '../../infrastructure/ReminderScheduler';
 import { BulkDispatchScheduler } from '../../infrastructure/BulkDispatchScheduler';
 import { BulkDispatchTalentumScheduler } from '../../infrastructure/BulkDispatchTalentumScheduler';
 import { MessagingRetentionService } from '../../infrastructure/MessagingRetentionService';
@@ -59,7 +58,6 @@ export class InternalController {
   constructor(
     private readonly eventProcessor: DomainEventProcessor,
     private readonly outboxProcessor: OutboxProcessor,
-    private readonly reminderScheduler: ReminderScheduler,
     private readonly bulkDispatchScheduler: BulkDispatchScheduler,
     private readonly bulkDispatchTalentumScheduler: BulkDispatchTalentumScheduler,
     private readonly domainEventBacklogService: DomainEventBacklogService,
@@ -133,22 +131,6 @@ export class InternalController {
       logger.error({ error: error.message }, 'processOutboxPaced error');
       reportError(error, { source: 'InternalController:processOutboxPaced' });
       res.status(500).json({ success: false, error: 'Internal server error' });
-    }
-  }
-
-  /**
-   * POST /api/internal/reminders/sweep
-   * Trigger: Cloud Scheduler (every 5min) — safety net para lembretes pendentes + no-shows.
-   */
-  async sweepReminders(_req: Request, res: Response): Promise<void> {
-    try {
-      const result = await this.reminderScheduler.processBatch();
-      res.status(200).json({ status: 'ok', ...result });
-    } catch (err) {
-      const error = err instanceof Error ? err : new Error(String(err));
-      logger.error({ error: error.message }, 'sweepReminders error');
-      reportError(error, { source: 'InternalController:sweepReminders' });
-      res.status(500).json({ error: 'Internal server error' });
     }
   }
 
@@ -363,48 +345,6 @@ export class InternalController {
       const error = err instanceof Error ? err : new Error(String(err));
       logger.error({ msg: '[events/health] error', error: error.message });
       reportError(error, { source: 'InternalController:getEventsHealth' });
-      res.status(500).json({ error: 'Internal server error' });
-    }
-  }
-
-  /**
-   * POST /api/internal/reminders/qualified
-   * Trigger: Cloud Tasks (scheduled 24h before interview)
-   * Body: { workerId, jobPostingId }
-   */
-  async processQualifiedReminder(req: Request, res: Response): Promise<void> {
-    try {
-      const { workerId, jobPostingId } = req.body;
-      if (!workerId || !jobPostingId) {
-        res.status(400).json({ error: 'Missing workerId or jobPostingId' });
-        return;
-      }
-
-      await this.reminderScheduler.processQualifiedReminder(workerId, jobPostingId);
-      res.status(200).json({ status: 'ok', workerId, jobPostingId });
-    } catch (err) {
-      console.error('[InternalController] processQualifiedReminder error:', err);
-      res.status(500).json({ error: 'Internal server error' });
-    }
-  }
-
-  /**
-   * POST /api/internal/reminders/5min
-   * Trigger: Cloud Tasks (scheduled 5min before interview)
-   * Body: { workerId, jobPostingId }
-   */
-  async process5MinReminder(req: Request, res: Response): Promise<void> {
-    try {
-      const { workerId, jobPostingId } = req.body;
-      if (!workerId || !jobPostingId) {
-        res.status(400).json({ error: 'Missing workerId or jobPostingId' });
-        return;
-      }
-
-      await this.reminderScheduler.process5MinReminder(workerId, jobPostingId);
-      res.status(200).json({ status: 'ok', workerId, jobPostingId });
-    } catch (err) {
-      console.error('[InternalController] process5MinReminder error:', err);
       res.status(500).json({ error: 'Internal server error' });
     }
   }

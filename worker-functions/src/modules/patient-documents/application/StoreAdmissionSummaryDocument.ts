@@ -36,6 +36,18 @@ export interface StoreAdmissionSummaryParams {
   label: string;
 }
 
+/** O que `prepareWith` entrega a quem grava a linha: tudo já cifrado/medido; quem chama completa com o que é seu (paciente × evento). */
+export interface SummaryRowFields {
+  labelEncrypted: string;
+  filePathEncrypted: string;
+  originalNameEncrypted: string;
+  contentType: string;
+  sizeBytes: number;
+  sha256: Buffer;
+}
+/** Grava a linha do documento na transação de quem chama; `null` = duplicata (`ON CONFLICT DO NOTHING`). */
+export type SummaryRowWriter = (row: SummaryRowFields, client: PoolClient) => Promise<{ id: string } | null>;
+
 export type StoreAdmissionSummaryResult = { outcome: 'stored'; documentId: string; sizeBytes: number; sha256: string } | { outcome: 'duplicate' };
 
 /** O PDF já está no bucket (fora de transação); falta a linha. `commit` grava na transação de quem chama; `discard` apaga o objeto. */
@@ -52,13 +64,31 @@ export class StoreAdmissionSummaryDocument {
     private readonly enc: KMSEncryptionService = new KMSEncryptionService(),
   ) {}
 
-  /** Passo 1, SEM transação: valida, sobe o objeto, cifra caminho/nome/rótulo. */
-  async prepare(params: StoreAdmissionSummaryParams): Promise<PreparedAdmissionSummary> {
+  /** Resumo da ADMISSÃO: a linha vai para os documentos do PACIENTE (`patient_documents`). */
+  prepare(params: StoreAdmissionSummaryParams): Promise<PreparedAdmissionSummary> {
+    return this.prepareWith(
+      { pdf: params.pdf, originalFilename: params.originalFilename, label: params.label },
+      (row, client) =>
+        this.repository.insertAdmissionDocument(
+          { patientId: params.patientId, appointmentId: params.appointmentId, ...row, createdByUid: ADMISSION_IMPORT_ACTOR_UID },
+          client,
+        ),
+    );
+  }
+
+  /**
+   * Passo 1, SEM transação: valida, sobe o objeto (sob `objectPrefix`, padrão o dos documentos do paciente), cifra caminho/nome/rótulo.
+   * A costura (spec 052): o DESTINO da linha é de quem chama — o enquadre grava em `enquadre_event_documents`, nunca no paciente.
+   */
+  async prepareWith(
+    params: { pdf: Buffer; originalFilename: string; label: string; objectPrefix?: string },
+    writeRow: SummaryRowWriter,
+  ): Promise<PreparedAdmissionSummary> {
     const validation = await this.validator.validate(params.pdf);
     if (!validation.ok) throw new AdmissionSummaryRejectedError(validation.code);
 
     const storage = this.storageFactory();
-    const { objectPath } = await storage.uploadBuffer(validation.buffer, validation.contentType, PATIENT_DOCUMENTS_OBJECT_PREFIX);
+    const { objectPath } = await storage.uploadBuffer(validation.buffer, validation.contentType, params.objectPrefix ?? PATIENT_DOCUMENTS_OBJECT_PREFIX);
     const discard = async (): Promise<void> => {
       await storage.delete(objectPath).catch((deleteErr: unknown) => {
         logger.warn(
@@ -78,17 +108,14 @@ export class StoreAdmissionSummaryDocument {
       return {
         discard,
         commit: async (client) => {
-          const inserted = await this.repository.insertAdmissionDocument(
+          const inserted = await writeRow(
             {
-              patientId: params.patientId,
-              appointmentId: params.appointmentId,
               labelEncrypted: labelEncrypted as string,
               filePathEncrypted: filePathEncrypted as string,
               originalNameEncrypted: originalNameEncrypted as string,
               contentType: validation.contentType,
               sizeBytes: validation.buffer.byteLength,
               sha256,
-              createdByUid: ADMISSION_IMPORT_ACTOR_UID,
             },
             client,
           );

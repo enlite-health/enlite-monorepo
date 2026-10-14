@@ -4,7 +4,6 @@ import { DomainEventProcessor } from '@shared/events/DomainEventProcessor';
 import { DomainEventBacklogService } from '@shared/events/DomainEventBacklogService';
 import { AnaCareMirrorHealthService } from '@shared/events/AnaCareMirrorHealthService';
 import { OutboxProcessor } from '../../../infrastructure/OutboxProcessor';
-import { ReminderScheduler } from '../../../infrastructure/ReminderScheduler';
 import { BulkDispatchScheduler } from '../../../infrastructure/BulkDispatchScheduler';
 import { BulkDispatchTalentumScheduler } from '../../../infrastructure/BulkDispatchTalentumScheduler';
 import { MessagingRetentionService } from '../../../infrastructure/MessagingRetentionService';
@@ -44,7 +43,6 @@ function pubsubBody(data: Record<string, unknown>) {
 describe('InternalController', () => {
   let eventProcessor: jest.Mocked<DomainEventProcessor>;
   let outboxProcessor: jest.Mocked<OutboxProcessor>;
-  let reminderScheduler: jest.Mocked<ReminderScheduler>;
   let bulkDispatchScheduler: jest.Mocked<BulkDispatchScheduler>;
   let bulkDispatchTalentumScheduler: jest.Mocked<BulkDispatchTalentumScheduler>;
   let domainEventBacklogService: jest.Mocked<DomainEventBacklogService>;
@@ -65,14 +63,6 @@ describe('InternalController', () => {
       processById: jest.fn().mockResolvedValue(undefined),
       processBatch: jest.fn().mockResolvedValue(undefined),
     } as unknown as jest.Mocked<OutboxProcessor>;
-
-    reminderScheduler = {
-      processQualifiedReminder: jest.fn().mockResolvedValue(undefined),
-      process5MinReminder: jest.fn().mockResolvedValue(undefined),
-      scheduleReminders: jest.fn().mockResolvedValue({ taskNames: [] }),
-      cancelReminders: jest.fn().mockResolvedValue(undefined),
-      processBatch: jest.fn().mockResolvedValue({ dayCount: 0, minCount: 0, noShows: 0 }),
-    } as unknown as jest.Mocked<ReminderScheduler>;
 
     bulkDispatchScheduler = {
       run: jest.fn().mockResolvedValue({ total: 10, sent: 8, errors: 2 }),
@@ -102,7 +92,6 @@ describe('InternalController', () => {
     controller = new InternalController(
       eventProcessor,
       outboxProcessor,
-      reminderScheduler,
       bulkDispatchScheduler,
       bulkDispatchTalentumScheduler,
       domainEventBacklogService,
@@ -182,28 +171,6 @@ describe('InternalController', () => {
       const res = mockRes();
 
       await controller.processOutbox(req, res);
-
-      expect(res.status).toHaveBeenCalledWith(500);
-    });
-  });
-
-  // ─── sweepReminders ───────────────────────────────────────────────
-
-  describe('sweepReminders', () => {
-    it('chama processBatch e retorna 200 com counts', async () => {
-      reminderScheduler.processBatch.mockResolvedValueOnce({ dayCount: 2, minCount: 1, noShows: 3 });
-      const res = mockRes();
-      await controller.sweepReminders(mockReq(), res);
-
-      expect(reminderScheduler.processBatch).toHaveBeenCalled();
-      expect(res.status).toHaveBeenCalledWith(200);
-      expect(res.json).toHaveBeenCalledWith({ status: 'ok', dayCount: 2, minCount: 1, noShows: 3 });
-    });
-
-    it('returns 500 on error', async () => {
-      reminderScheduler.processBatch.mockRejectedValue(new Error('sweep failed'));
-      const res = mockRes();
-      await controller.sweepReminders(mockReq(), res);
 
       expect(res.status).toHaveBeenCalledWith(500);
     });
@@ -493,7 +460,7 @@ describe('InternalController', () => {
       });
       const comPt = (getHealth: jest.Mock) =>
         new InternalController(
-          eventProcessor, outboxProcessor, reminderScheduler, bulkDispatchScheduler, bulkDispatchTalentumScheduler,
+          eventProcessor, outboxProcessor, bulkDispatchScheduler, bulkDispatchTalentumScheduler,
           domainEventBacklogService, anaCareMirrorHealthService, messagingRetentionService, { getHealth } as never,
         );
 
@@ -563,81 +530,6 @@ describe('InternalController', () => {
       const res = mockRes();
 
       await controller.getEventsHealth(mockReq(), res);
-
-      expect(res.status).toHaveBeenCalledWith(500);
-    });
-  });
-
-  // ─── processQualifiedReminder ──────────────────────────────────────
-
-  describe('processQualifiedReminder', () => {
-    it('delegates to reminderScheduler and returns 200', async () => {
-      const req = mockReq({ workerId: 'w-1', jobPostingId: 'jp-1' });
-      const res = mockRes();
-
-      await controller.processQualifiedReminder(req, res);
-
-      expect(reminderScheduler.processQualifiedReminder).toHaveBeenCalledWith('w-1', 'jp-1');
-      expect(res.status).toHaveBeenCalledWith(200);
-      expect(res.json).toHaveBeenCalledWith({ status: 'ok', workerId: 'w-1', jobPostingId: 'jp-1' });
-    });
-
-    it('returns 400 without workerId', async () => {
-      const req = mockReq({ jobPostingId: 'jp-1' });
-      const res = mockRes();
-
-      await controller.processQualifiedReminder(req, res);
-
-      expect(res.status).toHaveBeenCalledWith(400);
-      expect(reminderScheduler.processQualifiedReminder).not.toHaveBeenCalled();
-    });
-
-    it('returns 400 without jobPostingId', async () => {
-      const req = mockReq({ workerId: 'w-1' });
-      const res = mockRes();
-
-      await controller.processQualifiedReminder(req, res);
-
-      expect(res.status).toHaveBeenCalledWith(400);
-    });
-
-    it('returns 500 on unexpected error', async () => {
-      reminderScheduler.processQualifiedReminder.mockRejectedValue(new Error('db error'));
-      const req = mockReq({ workerId: 'w-1', jobPostingId: 'jp-1' });
-      const res = mockRes();
-
-      await controller.processQualifiedReminder(req, res);
-
-      expect(res.status).toHaveBeenCalledWith(500);
-    });
-  });
-
-  // ─── process5MinReminder ───────────────────────────────────────────
-
-  describe('process5MinReminder', () => {
-    it('delegates to reminderScheduler and returns 200', async () => {
-      const req = mockReq({ workerId: 'w-1', jobPostingId: 'jp-1' });
-      const res = mockRes();
-
-      await controller.process5MinReminder(req, res);
-
-      expect(reminderScheduler.process5MinReminder).toHaveBeenCalledWith('w-1', 'jp-1');
-      expect(res.status).toHaveBeenCalledWith(200);
-    });
-
-    it('returns 400 without required fields', async () => {
-      const res = mockRes();
-      await controller.process5MinReminder(mockReq({}), res);
-
-      expect(res.status).toHaveBeenCalledWith(400);
-    });
-
-    it('returns 500 on unexpected error', async () => {
-      reminderScheduler.process5MinReminder.mockRejectedValue(new Error('boom'));
-      const req = mockReq({ workerId: 'w-1', jobPostingId: 'jp-1' });
-      const res = mockRes();
-
-      await controller.process5MinReminder(req, res);
 
       expect(res.status).toHaveBeenCalledWith(500);
     });

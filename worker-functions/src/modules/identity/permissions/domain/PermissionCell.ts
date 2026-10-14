@@ -63,6 +63,11 @@ export const RESOURCE_CATEGORY: Readonly<Record<string, PermissionCategory>> = {
   patient_document: 'Pacientes',
   // Spec 049 (F3): aba "Admissão" da ficha — agenda da entrevista de admissão, selos de mensagem e resumo.
   patient_admission: 'Pacientes',
+  // Spec 052 (F2): aba "Enquadre" da vaga — o evento (data, entrevistadora, convocados) e o resultado de cada convocado.
+  enquadre_event: 'Vagas e Funil',
+  enquadre_result: 'Vagas e Funil',
+  // Spec 052 (F3): o RESUMO do evento (selo na linha e PDF para baixar) — célula própria: sem ela nem o selo aparece.
+  enquadre_summary: 'Vagas e Funil',
   // Spec 051 (F1): trocar o status do paciente por fora do fluxo — uma célula por destino.
   patient_status: 'Pacientes',
   patient_coverage: 'Pacientes',
@@ -334,6 +339,23 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
     'Autorizar uma NOVA rodada do resumo da reunião de admissão depois que as 3 tentativas pagas se esgotaram: cada rodada '
     + 'custa até 3 chamadas ao Vertex. Teto de 2 autorizações por reunião; fica na trilha quem autorizou e quando. '
     + 'Acesso Master e Admisión y Supervisión.',
+  'enquadre_event:read':
+    'Ver a aba Enquadre da vaga: os eventos de enquadre (data, entrevistadora, código ENC, estado), quem foi convocado e em que '
+    + 'coluna está. Só nomes, estados e datas — sem texto clínico, telefone ou e-mail.',
+  'enquadre_event:create':
+    'Criar o evento de enquadre da vaga: escolher entrevistadora, horário e convocados. Cria o evento no Google Calendar com '
+    + 'Meet e o Google MANDA o convite por e-mail a cada convocado. Também lista as entrevistadoras e os horários livres.',
+  'enquadre_event:update':
+    'Acrescentar ou tirar convocado e cancelar o evento de enquadre: altera a lista de convidados no Google Calendar (o Google '
+    + 'avisa os convidados) e, ao cancelar, apaga o evento e deixa uma anotação automática no card de cada convocado.',
+  'enquadre_result:update':
+    'Marcar o resultado de cada convocado do evento (Selecionado, Equipe de resposta rápida, Rechazado ou de volta a '
+    + 'Convocados) e encerrar o evento. Marcar MOVE o estágio da candidatura na vaga, o mesmo do Recrutamento; encerrar carimba '
+    + 'cada convocado e anota quem não foi marcado.',
+  'enquadre_summary:read':
+    'Ver o selo do resumo do evento de enquadre e baixar o resumo (PDF) gerado a partir da transcrição da call. Sem esta célula '
+    + 'a linha do evento não mostra o selo do resumo nem o botão de baixar, e o download responde 403. '
+    + 'Só o Acesso Master por enquanto.',
   'own_tactiq_link:read':
     'Ver o estado do PRÓPRIO vínculo com o Tactiq (vinculado, caído, conta errada ou sem vínculo) e a data da última '
     + 'verificação. Nunca devolve o token. Quem não está vinculado não pode ser responsável de agenda de admissão.',

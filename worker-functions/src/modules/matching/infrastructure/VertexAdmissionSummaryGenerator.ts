@@ -2,7 +2,8 @@ import { createHash } from 'crypto';
 import { generateContentVertex } from '../../integration/infrastructure/vertex-gemini';
 import { GoogleDocsPromptProvider } from '../../integration/infrastructure/GoogleDocsPromptProvider';
 import { AdmissionRealAdapterInTestError } from '../application/ports/AdmissionMessagingPorts';
-import { AdmissionSummaryError, type AdmissionSummaryPort, type AdmissionSummaryResult } from '../application/ports/AdmissionImportPorts';
+import { AdmissionSummaryError, type AdmissionSummaryInput, type AdmissionSummaryPort, type AdmissionSummaryResult } from '../application/ports/AdmissionImportPorts';
+import { assertSummaryShape } from '../application/admissionSummaryGate';
 import { TherapeuticCatalogRepository } from '@modules/case/infrastructure/TherapeuticCatalogRepository';
 import { DEPENDENCY_LEVELS } from '@modules/case/domain/enums/DependencyLevel';
 import { PROFESSIONS } from '@modules/worker/domain/enums/Profession';
@@ -86,7 +87,32 @@ const defaultCatalogs = (env: NodeJS.ProcessEnv): AdmissionPromptCatalogs => {
   };
 };
 
+/**
+ * O PERFIL do gerador (spec 052, T-36a): o que muda de uma instância para a outra. O código é UM só (esta classe); a admissão e o
+ * enquadre diferem em quatro pontos, que entram por configuração do construtor, nunca por cópia da classe.
+ */
+export interface SummaryProfile {
+  /** De onde vem o prompt: o Google Doc cujo id está na env `docIdEnv` (admissão), ou um texto fixo versionado no repositório (enquadre). */
+  readonly prompt: { kind: 'doc'; docIdEnv: string } | { kind: 'text'; text: string };
+  /** Os marcadores `{{NOME}}` do prompt. Sobrou algum sem valor = o resumo não roda (`prompt_unfilled_placeholder`). */
+  markers(catalogs: AdmissionPromptCatalogs): Promise<Record<string, string>>;
+  /** A mensagem do usuário: cabeçalho de metadados + a transcrição. */
+  buildInput(input: AdmissionSummaryInput): string;
+  /** O gate de forma do JSON do resumo (esquema desta instância). */
+  assertShape(result: AdmissionSummaryResult, input: AdmissionSummaryInput): AdmissionSummaryResult;
+}
+
+/** O que a admissão usa HOJE: o Doc de `ADMISSION_SUMMARY_PROMPT_DOC_ID`, os 8 marcadores de catálogo, `entrevista_id`/`fecha` e o esquema de `admissionSummaryShape`. */
+export const ADMISSION_SUMMARY_PROFILE: SummaryProfile = {
+  prompt: { kind: 'doc', docIdEnv: 'ADMISSION_SUMMARY_PROMPT_DOC_ID' },
+  markers: (catalogs) => buildPromptValues(catalogs),
+  buildInput: (input) => buildInterviewInput(input, input.transcript),
+  assertShape: (result) => assertSummaryShape(result),
+};
+
 export interface VertexAdmissionSummaryDeps {
+  /** Perfil da instância. Ausente = o da admissão (a instância que já roda em produção). */
+  profile?: SummaryProfile;
   timeoutMs?: number;
   catalogs?: AdmissionPromptCatalogs;
   promptProvider?: AdmissionPromptProvider;
@@ -112,33 +138,49 @@ export class VertexAdmissionSummaryGenerator implements AdmissionSummaryPort {
   private readonly model: string;
   private readonly promptProvider: AdmissionPromptProvider;
   private readonly vertex: typeof generateContentVertex;
-  private readonly catalogs: AdmissionPromptCatalogs;
+  private catalogsOrNull: AdmissionPromptCatalogs | null;
   private readonly timeoutMs: number;
+  private readonly profile: SummaryProfile;
+  /** O gate de forma desta instância: o serviço de importação o usa em vez de fixar o da admissão. */
+  readonly assertShape: (result: AdmissionSummaryResult, input: AdmissionSummaryInput) => AdmissionSummaryResult;
 
   constructor(private readonly env: NodeJS.ProcessEnv = process.env, deps: VertexAdmissionSummaryDeps = {}) {
     if (env.NODE_ENV === 'test') throw new AdmissionRealAdapterInTestError('new VertexAdmissionSummaryGenerator()');
     this.model = env.ADMISSION_SUMMARY_MODEL ?? env.GEMINI_MODEL ?? 'gemini-2.5-pro';
     this.promptProvider = deps.promptProvider ?? new GoogleDocsPromptProvider();
     this.vertex = deps.vertex ?? generateContentVertex;
-    this.catalogs = deps.catalogs ?? defaultCatalogs(env);
+    this.catalogsOrNull = deps.catalogs ?? null; // o padrão (banco/terminologia) só é construído se o perfil pedir catálogo
     this.timeoutMs = deps.timeoutMs ?? VERTEX_TIMEOUT_MS;
+    this.profile = deps.profile ?? ADMISSION_SUMMARY_PROFILE;
+    this.assertShape = this.profile.assertShape;
   }
 
-  async generate(input: { transcript: string; entrevistaId?: string; fecha?: string }): Promise<AdmissionSummaryResult> {
-    const docId = this.env.ADMISSION_SUMMARY_PROMPT_DOC_ID?.trim();
+  private get catalogs(): AdmissionPromptCatalogs {
+    this.catalogsOrNull ??= defaultCatalogs(this.env);
+    return this.catalogsOrNull;
+  }
+
+  /** O prompt, pela fonte do perfil: texto fixo, ou o Doc (sem o id / Doc ilegível NÃO há resumo, nunca um prompt inventado). */
+  private async loadPrompt(): Promise<string> {
+    const source = this.profile.prompt;
+    if (source.kind === 'text') return source.text;
+    const docId = this.env[source.docIdEnv]?.trim();
     if (!docId) throw new AdmissionSummaryError('prompt_missing');
-    let prompt: string;
     try {
-      prompt = await this.promptProvider.getPrompt(docId);
+      return await this.promptProvider.getPrompt(docId);
     } catch {
       throw new AdmissionSummaryError('prompt_unavailable'); // a mensagem do Google pode citar o id do Doc: não sobe
     }
+  }
+
+  async generate(input: AdmissionSummaryInput): Promise<AdmissionSummaryResult> {
+    const prompt = await this.loadPrompt();
     if (!prompt || !prompt.trim()) throw new AdmissionSummaryError('prompt_unavailable');
 
     // Escapes de Markdown (só aqui) e marcadores. Sobrou QUALQUER `{{NOME}}` -> não roda, só o NOME vai ao erro.
     let values: Record<string, string>;
     try {
-      values = await buildPromptValues(this.catalogs);
+      values = await this.profile.markers(this.catalogs);
     } catch (err) {
       if (err instanceof AdmissionSummaryError) throw err;
       throw new AdmissionSummaryError('prompt_unavailable');
@@ -157,7 +199,7 @@ export class VertexAdmissionSummaryGenerator implements AdmissionSummaryPort {
         this.model,
         {
           systemInstruction: { parts: [{ text: filled }] },
-          contents: [{ role: 'user', parts: [{ text: buildInterviewInput(input, input.transcript) }] }],
+          contents: [{ role: 'user', parts: [{ text: this.profile.buildInput(input) }] }],
           generationConfig: { temperature: 0.2, maxOutputTokens: MAX_OUTPUT_TOKENS, thinkingConfig: { thinkingBudget: THINKING_BUDGET } },
         },
         'AdmissionSummary',

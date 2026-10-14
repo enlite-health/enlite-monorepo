@@ -6,5 +6,5 @@ import type { AdmissionCalendarService } from '../../infrastructure/AdmissionCal
  */
 export type AdmissionCalendarPort = Pick<
   AdmissionCalendarService,
-  'getCalendarTimezone' | 'getBusyIntervals' | 'getFreeBusyByCalendar' | 'createEventWithMeet' | 'deleteEvent'
+  'getCalendarTimezone' | 'getBusyIntervals' | 'getFreeBusyByCalendar' | 'createEventWithMeet' | 'deleteEvent' | 'setEventAttendees'
 >;

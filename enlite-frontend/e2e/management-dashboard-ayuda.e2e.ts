@@ -50,15 +50,15 @@ const MOCK_DASHBOARD = {
     bloqueados: 484,
     porEtapa: {
       somavel: false,
-      colunas: { INVITED: 461, INICIADO: 200, PRE_SCREENING: 49, IN_PROGRESS: 1348, COMPLETED: 602, CONFIRMED: 39, SELECTED: 11, REJECTED: 631 },
+      colunas: { INVITED: 461, INICIADO: 200, PRE_SCREENING: 49, IN_PROGRESS: 1348, COMPLETED: 641, SELECTED: 11, REJECTED: 631 },
     },
     consolidado: {
       somavel: true,
-      colunas: { INVITED: 300, INICIADO: 90, PRE_SCREENING: 23, IN_PROGRESS: 1175, COMPLETED: 580, CONFIRMED: 38, SELECTED: 11, REJECTED: 373 },
+      colunas: { INVITED: 300, INICIADO: 90, PRE_SCREENING: 23, IN_PROGRESS: 1175, COMPLETED: 618, SELECTED: 11, REJECTED: 373 },
     },
   },
-  funnel: { invitados: 0, bloqueados: 0, preScreening: 0, completos: 0, agendados: 0, seleccionados: 0, rechazados: 0 },
-  encuadres: { agendadosEstaSemana: 13, semDataRegistrada: 33, pctCapacidadeSemana: { agendados: 13, capacidade: 30, pct: 43.3 } },
+  funnel: { invitados: 0, bloqueados: 0, preScreening: 0, completos: 0, seleccionados: 0, rechazados: 0 },
+  encuadres: { agendadosEstaSemana: 13, pctCapacidadeSemana: { agendados: 13, capacidade: 30, pct: 43.3 } },
   cadastros: { leads: 7144, completos: 318, alocados: 61, alocadosActivos: 49, alocadosCubriendoGuardias: 12, incompletos: 6825, nuevosCompletosMes: 9 },
 };
 

@@ -9,12 +9,12 @@ import { resolve } from 'path';
 const APP = resolve(__dirname, '..');
 const lerArquivo = (p: string): string => readFileSync(resolve(APP, p), 'utf8');
 const linhas = (p: string): number => lerArquivo(p).split('\n').length - 1;
-const PAGO = /putOnce|summary\.generate|renderAdmissionSummaryPdf|documents\.prepare|StoreAdmissionSummaryDocument\b.*new|admission\.paid_call/;
+const PAGO = /putOnce|summary\.generate|renderAdmissionSummaryPdf|documents\.prepare|destination\.prepareSummary|StoreAdmissionSummaryDocument\b.*new|admission\.paid_call|\.paid_call/;
 
 describe('F28 — um caminho de importação só', () => {
   it('CONTROLE POSITIVO: a importação usa cofre, Vertex, PDF e documento (o padrão enxerga)', () => {
     const servico = lerArquivo('AdmissionImportService.ts');
-    for (const p of ['putOnce', 'summary.generate', 'renderAdmissionSummaryPdf', 'documents.prepare', 'admission.paid_call']) expect(servico).toContain(p);
+    for (const p of ['putOnce', 'summary.generate', 'renderAdmissionSummaryPdf', 'destination.prepareSummary', '.paid_call']) expect(servico).toContain(p);
   });
 
   it.each(['AdmissionLiveJob.ts', 'AdmissionFastSummaryStep.ts', 'AdmissionFastGate.ts', '../infrastructure/AdmissionFastSummaryRepository.ts'])('%s não repete nenhum passo pago', (arq) => {

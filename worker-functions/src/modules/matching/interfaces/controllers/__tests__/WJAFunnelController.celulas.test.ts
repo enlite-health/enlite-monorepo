@@ -83,7 +83,7 @@ function linha() {
     resultado: null, attended: null,
     rejection_reason_category: null, rejection_reason: null, redireccionamiento: null,
     match_score: null, acquisition_channel: null,
-    funnel_stage: 'CONFIRMED', source: null, talentum_status: null, work_zone: null,
+    funnel_stage: 'SELECTED', source: null, talentum_status: null, work_zone: null,
   };
 }
 

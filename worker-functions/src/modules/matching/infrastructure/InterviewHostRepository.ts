@@ -18,6 +18,11 @@ export interface InterviewHost {
   displayName: string | null;
 }
 
+/** `InterviewHost` + o id da linha (UUID estável): o evento de enquadre (spec 052) identifica a entrevistadora por ele, nunca pelo e-mail. */
+export interface InterviewHostWithId extends InterviewHost {
+  id: string;
+}
+
 interface InterviewHostRow {
   email: string;
   display_name: string | null;
@@ -39,6 +44,19 @@ export class InterviewHostRepository {
       [country],
     );
     return res.rows.map((r) => ({ email: r.email, displayName: r.display_name }));
+  }
+
+  /** Mesma lista e mesma ordem de `listActiveByCountry`, com o `id` da linha (leitura NOVA; a existente não muda). */
+  async listActiveWithIdByCountry(country: AdmissionCountry): Promise<InterviewHostWithId[]> {
+    const db = DatabaseConnection.getInstance().getPool();
+    const res = await db.query<InterviewHostRow & { id: string }>(
+      `SELECT id, email, display_name
+         FROM interview_hosts
+        WHERE country = $1 AND active = true
+        ORDER BY email ASC`,
+      [country],
+    );
+    return res.rows.map((r) => ({ id: r.id, email: r.email, displayName: r.display_name }));
   }
 }
 

@@ -53,13 +53,12 @@ const COLUMN_SOURCES: Record<string, string[]> = {
   INICIADO: ['INICIADO'],
   PRE_SCREENING: ['PRE_SCREENING', 'IN_PROGRESS'],
   COMPLETED: ['COMPLETED'],
-  CONFIRMED: ['CONFIRMED'],
   SELECTED: ['SELECTED'],
   REJECTED: ['REJECTED'],
 };
 const COLUMN_IDS = Object.keys(COLUMN_SOURCES);
-// Spec 046 F1: a LISTA de vacantes não tem mais a coluna Confirmados (aba e Kanban têm).
-const LIST_COLUMN_IDS = COLUMN_IDS.filter((c) => c !== 'CONFIRMED');
+// 052: a lista de vacantes mostra as mesmas colunas do funil.
+const LIST_COLUMN_IDS = COLUMN_IDS;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -179,7 +178,6 @@ async function readListRowCounts(page: Page, vacancyId: string): Promise<Record<
   const response = await gotoVacanciesList(page);
   expect(response.ok(), 'GET /api/admin/vacancies (lista) falhou').toBe(true);
   await expect(page.getByTestId(`vacancy-row-${vacancyId}`)).toBeVisible({ timeout: 15_000 });
-  await expect(page.getByTestId(`vacancy-row-${vacancyId}-stage-CONFIRMED`)).toHaveCount(0);
   return readTestIdNumbers(page, (col) => `vacancy-row-${vacancyId}-stage-${col}`, LIST_COLUMN_IDS);
 }
 

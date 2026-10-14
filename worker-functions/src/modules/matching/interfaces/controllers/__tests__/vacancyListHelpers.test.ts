@@ -335,7 +335,6 @@ describe('loadStageCounts', () => {
       'PRE_SCREENING',
       'IN_PROGRESS',
       'COMPLETED',
-      'CONFIRMED',
       'SELECTED',
       'QUICK_RESPONSE_TEAM',
     ]);

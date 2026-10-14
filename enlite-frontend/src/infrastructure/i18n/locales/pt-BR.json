@@ -938,10 +938,10 @@
         },
         "pctCapacidadEncuadres": {
           "title": "% da agenda de encuadres usada",
-          "que": "Quantas entrevistas (encuadres) estão agendadas nesta semana, comparado com a capacidade semanal contratada da coordenação. 100% = semana cheia.",
-          "origen": "• Numerador: encuadres com data dentro da semana em curso (segunda a domingo, hora de Buenos Aires).\n• Denominador: a capacidade semanal contratada — é uma configuração do sistema; se o contrato mudar, atualiza sem mexer em código.",
-          "cambia": "• Agendar uma entrevista preenchendo a data ao mover o card para Agendados: sobe.\n• Virada de semana: reinicia na segunda.",
-          "ojo": "Se a data não for preenchida ao agendar, a entrevista não conta aqui. O contador \"sem data\" mede exatamente isso: enquanto estiver alto, este percentual subestima."
+          "que": "Quantos encuadres há nesta semana (pessoas convocadas para um evento de encuadre aberto, mais as entrevistas com data preenchida antes), comparado com a capacidade semanal contratada da coordenação. 100% = semana cheia.",
+          "origen": "• Numerador: pessoas distintas por vaga com participação ativa em um evento de encuadre aberto que cai na semana em curso, somadas às entrevistas com data da semana preenchidas pelo caminho antigo (segunda a domingo, hora de Buenos Aires). Quem está nas duas fontes conta uma vez só.\n• Denominador: a capacidade semanal contratada — é uma configuração do sistema; se o contrato mudar, atualiza sem mexer em código.",
+          "cambia": "• Convocar alguém para um evento de encuadre da semana: sobe.\n• Tirar a pessoa do evento ou fechar o evento: desce.\n• Virada de semana: reinicia na segunda.",
+          "ojo": "Desde 13/10/2026 o número mudou de significado (conta convocados de eventos abertos, além das datas antigas): não é comparável com o de semanas anteriores. O contador \"sem data\" não existe mais."
         },
         "pacientesActivos": {
           "title": "Pacientes ativos",
@@ -1100,10 +1100,10 @@
         },
         "agendadosSemana": {
           "title": "Encuadres agendados esta semana",
-          "que": "Quantas entrevistas (encuadres) estão marcadas para a semana em curso.",
-          "origen": "• Ao mover o card para Agendados no Kanban, o sistema pergunta quando é a entrevista (dá para responder \"ainda não sei\").\n• O painel conta os encuadres com data entre segunda e domingo desta semana (hora de Buenos Aires).",
-          "cambia": "• Agendar com data: sobe.\n• Virada de semana: reinicia.",
-          "ojo": "A captura da data é recente: o contador \"sem data\" ao lado mede quantos agendados não a têm. Enquanto estiver alto, este número subestima — e isso fica à vista em vez de virar um zero mudo."
+          "que": "Quantos encuadres há na semana em curso: pessoas convocadas para um evento de encuadre aberto, mais as entrevistas com data preenchida antes.",
+          "origen": "• Pessoas com participação ativa em um evento de encuadre aberto que cai entre segunda e domingo desta semana (hora de Buenos Aires).\n• Somam-se as entrevistas com data da semana preenchidas pelo caminho antigo (ao mover o card para a coluna Agendados, que não existe mais).\n• Quem está nas duas fontes, na mesma vaga, conta uma vez só.",
+          "cambia": "• Convocar alguém para um evento da semana: sobe.\n• Tirar a pessoa do evento ou fechar o evento: desce.\n• Virada de semana: reinicia.",
+          "ojo": "Desde 13/10/2026 o número conta convocados de eventos abertos, além das datas antigas: não é comparável com o de semanas anteriores. O contador \"sem data\" não existe mais."
         },
         "stage_INVITED": {
           "title": "Invitados (coluna)",
@@ -1134,13 +1134,7 @@
           "title": "Completos (coluna)",
           "que": "Prestadores que terminaram a triagem e estão prontos para a próxima etapa. A coluna agrupa três situações internas: completo, qualificado e em dúvida (por exemplo, falta na entrevista).",
           "origen": "• É a mesma agregação da coluna Completos do Kanban — painel e Kanban contam igual.",
-          "cambia": "• A triagem qualifica alguém: entra.\n• Agendar entrevista, selecionar ou rejeitar: sai.\n• Uma falta na entrevista traz o card de volta para cá (\"em dúvida\")."
-        },
-        "stage_CONFIRMED": {
-          "title": "Agendados (coluna)",
-          "que": "Prestadores com entrevista (encuadre) marcada.",
-          "origen": "• A recrutadora arrasta o card para Agendados no Kanban — e o sistema também pergunta quando é a entrevista.",
-          "cambia": "• Agendar: sobe.\n• Selecionar ou rejeitar: desce.\n• Falta na entrevista: o card vai para \"em dúvida\" (coluna Completos)."
+          "cambia": "• A triagem qualifica alguém: entra.\n• Selecionar ou rejeitar: sai.\n• Uma falta na entrevista traz o card de volta para cá (\"em dúvida\")."
         },
         "stage_SELECTED": {
           "title": "Seleccionados (coluna)",
@@ -1296,15 +1290,12 @@
           "PRE_SCREENING": "Pre Screening",
           "IN_PROGRESS": "Em progresso",
           "COMPLETED": "Completos",
-          "CONFIRMED": "Agendados",
           "SELECTED": "Selecionados",
           "REJECTED": "Rejeitados"
         },
         "periodLabel": "Entrada no funil:",
         "periodAll": "Tudo",
         "periodDays": "Últimos {{count}} dias",
-        "semData": "{{count}} agendados sem data registrada",
-        "semDataSub": "O número acima deixa esses de fora. Ao mover o card para \"Agendados\", informe data e hora.",
         "bloqueados": "Bloqueados",
         "bloqueadosSub": "Tentaram se candidatar e o cadastro incompleto barrou — vagas ativas"
       },
@@ -1717,12 +1708,12 @@
         "BLOQUEADO": "Bloqueados",
         "IN_PROGRESS": "Em Progresso",
         "COMPLETED": "Completado",
-        "CONFIRMED": "Confirmados",
         "SELECTED": "Selecionados",
         "QUICK_RESPONSE_TEAM": "Equipe de Resposta Rápida",
         "REJECTED": "Rejeitados",
         "INICIADO": "Iniciados",
-        "PRE_SCREENING": "Pré-triagem"
+        "PRE_SCREENING": "Pré-triagem",
+        "CONVOKED": "Convocados"
       },
       "talentumStatus": {
         "INITIATED": "Talentum: Iniciado",
@@ -1822,16 +1813,6 @@
       "blockedBadge": "BLOQUEADO",
       "blockedAttemptCount_one": "Tentou {{count}} vez",
       "blockedAttemptCount_other": "Tentou {{count}} vezes",
-      "scheduleModal": {
-        "title": "Quando é a entrevista?",
-        "subtitle": "Com data e hora o sistema consegue lembrar o prestador e avisar se ele não aparecer.",
-        "dateLabel": "Data",
-        "timeLabel": "Hora",
-        "meetLabel": "Link da videochamada (opcional)",
-        "confirm": "Agendar",
-        "cancel": "Cancelar",
-        "unknown": "Ainda não sei a data — mover assim mesmo"
-      },
       "stageLastMessage": "Mensagem de etapa ({{stage}}): {{date}}",
       "eligibleBadge": "ELEGÍVEL AGORA",
       "promote": {
@@ -2056,7 +2037,6 @@
         "daysOpen": "Dias Aberto",
         "invited": "Convidados",
         "applicants": "Postulados",
-        "confirmed": "Confirmados",
         "selected": "Selecionados",
         "missing": "Faltantes",
         "view": "Ver",
@@ -2244,15 +2224,6 @@
       "scheduleCard": {
         "title": "Horário"
       },
-      "meetLinksCard": {
-        "title": "Link do Google Meet para a entrevista de Enquadramento Terapêutico",
-        "invalidLink": "Link inválido. Use o formato https://meet.google.com/xxx-xxxx-xxx",
-        "saveSuccess": "Links salvos com sucesso.",
-        "saveError": "Erro ao salvar links.",
-        "openLink": "Abrir link",
-        "saving": "Salvando…",
-        "saveLinks": "Salvar links"
-      },
       "encuadresCard": {
         "title": "Enquadramentos recentes",
         "allResults": "Todos os resultados",
@@ -2293,7 +2264,8 @@
         "CLOSED": "Encerrado"
       },
       "tabs": {
-        "encuadres": "Encuadres",
+        "encuadres": "Recrutamento",
+        "enquadre": "Enquadre",
         "talentum": "Talentum",
         "links": "Links",
         "notes": "Anotações"
@@ -2577,9 +2549,6 @@
           "saturday": "Sábado:"
         }
       },
-      "meetLinksRow": {
-        "title": "Datas para entrevista:"
-      },
       "statusEditor": {
         "editLabel": "Editar estado da vaga"
       },
@@ -2602,35 +2571,152 @@
         "close": "Fechar",
         "errorEmpty": "A descrição não pode ficar vazia."
       },
-      "meetRecurring": {
-        "title": "Horário recorrente (reunião de apresentação)",
-        "hint": "Toda semana, no mesmo dia e hora, na mesma sala. O convite oferece as próximas datas automaticamente.",
-        "weekday": "Dia",
-        "time": "Hora (Argentina)",
-        "link": "Sala do Meet",
-        "none": "Sem horário recorrente",
-        "clear": "Remover",
-        "every": "Toda(o) {{day}} às {{time}}",
-        "invalidTime": "Hora inválida (HH:MM)",
-        "incomplete": "Preencha dia, hora e sala",
-        "days": {
-          "0": "domingo",
-          "1": "segunda",
-          "2": "terça",
-          "3": "quarta",
-          "4": "quinta",
-          "5": "sexta",
-          "6": "sábado"
+      "enquadre": {
+        "errors": {
+          "generic": "Não conseguimos concluir a ação. Tente novamente.",
+          "tactiqLinkRequired": "Esse entrevistador não tem Tactiq vinculado. Escolha outra pessoa.",
+          "hostNotInRoster": "Essa pessoa não está na equipe de entrevistadores deste país.",
+          "workerNotAvailable": "Algum prestador não está mais disponível (mudou de etapa ou já está em outro evento). Atualizamos a lista.",
+          "workerEmailInvalid": "Algum prestador não tem e-mail válido: não dá para convocá-lo.",
+          "guestNotAllowed": "Esse convite não é permitido para este evento.",
+          "configInvalid": "A agenda de enquadres não está configurada. Avise a equipe técnica.",
+          "slotInPast": "Escolha um horário futuro.",
+          "calendarUpdateFailed": "Não foi possível atualizar o evento no Google Calendar. Nada foi salvo. Tente novamente.",
+          "eventNotOpen": "Este evento não está mais aberto. Atualizamos os dados.",
+          "eventNotEnded": "O evento ainda não terminou: dá para encerrar quando o horário acabar.",
+          "participantAlreadyMarked": "Esse convocado já tem uma marcação e não pode ser removido do evento.",
+          "eventNotFound": "Não encontramos este evento."
         },
-        "daysShort": {
-          "0": "Domingo",
-          "1": "Segunda",
-          "2": "Terça",
-          "3": "Quarta",
-          "4": "Quinta",
-          "5": "Sexta",
-          "6": "Sábado"
-        }
+        "title": "Eventos de enquadre",
+        "newButton": "Criar evento",
+        "loading": "Carregando eventos…",
+        "loadError": "Não foi possível carregar os eventos.",
+        "empty": "Ainda não há eventos",
+        "columns": {
+          "date": "Data",
+          "time": "Hora",
+          "host": "Entrevistador",
+          "convoked": "Convocados",
+          "outcome": "Resultado",
+          "status": "Estado"
+        },
+        "phase": {
+          "scheduled": "Agendado",
+          "pending_close": "Pendente de encerramento",
+          "closed": "Encerrado",
+          "cancelled": "Cancelado"
+        },
+        "outcome": {
+          "none": "—",
+          "selected": "Selecionados: {{count}}",
+          "quickResponse": "Resposta rápida: {{count}}",
+          "rejected": "Rejeitados: {{count}}",
+          "returned": "Devolvidos: {{count}}",
+          "partial": "{{marked}} marcados de {{total}}"
+        },
+        "row": {
+          "meet": "Abrir Meet"
+        },
+        "create": {
+          "title": "Criar evento",
+          "host": "Entrevistador",
+          "hostPlaceholder": "Escolha um entrevistador",
+          "date": "Data",
+          "time": "Hora",
+          "duration": "Duração (minutos)",
+          "freeSlots": "Horários livres",
+          "workers": "Prestadores a convocar",
+          "noEmail": "Sem e-mail válido: não é possível convocar",
+          "googleError": "Não foi possível criar o evento no Google Calendar. Nada foi gravado.",
+          "submit": "Criar",
+          "submitting": "Criando…",
+          "close": "Fechar",
+          "hostReason": {
+            "unlinked": "Sem vínculo com o Google Calendar: não é possível agendar"
+          },
+          "hostsLoading": "Carregando entrevistadores…",
+          "hostsError": "Não foi possível carregar os entrevistadores.",
+          "hostsEmpty": "Não há entrevistadores disponíveis.",
+          "retry": "Tentar de novo",
+          "workersLoading": "Carregando prestadores…",
+          "workersError": "Não foi possível carregar os prestadores.",
+          "timezoneNote": "Horário de {{country}} (agora são {{now}}).",
+          "selectedCount_one": "{{count}} prestador selecionado",
+          "selectedCount_other": "{{count}} prestadores selecionados",
+          "slotsIdle": "Escolha um entrevistador e uma data para ver os horários livres.",
+          "slotsLoading": "Buscando horários livres…",
+          "slotsError": "Não foi possível carregar os horários livres. Você pode digitar a hora à mão.",
+          "slotsEmpty": "Não há horários livres nesse dia. Você pode digitar a hora à mão."
+        },
+        "kanban": {
+          "back": "Eventos",
+          "openMeet": "Abrir Meet",
+          "close": "Encerrar evento",
+          "closeBlocked": "Disponível quando o horário do evento terminar",
+          "closeConfirm": {
+            "title": "Encerrar evento",
+            "body_one": "{{count}} convocado sem marcação volta para Completado",
+            "body_other": "{{count}} convocados sem marcação voltam para Completado",
+            "confirm": "Encerrar evento",
+            "busy": "Encerrando…"
+          },
+          "convoked": "Convocado · {{date}}",
+          "readOnly": "Evento terminado: somente leitura",
+          "returned": "Devolvido",
+          "closeError": "Não foi possível encerrar o evento.",
+          "title": "Evento de {{date}} · {{start}}–{{end}}",
+          "moveError": "Não foi possível mover o convocado.",
+          "originSelected": "Selecionado em: {{code}}",
+          "originQuickResponse": "Resposta rápida em: {{code}}"
+        },
+        "cancel": {
+          "button": "Cancelar evento",
+          "title": "Cancelar evento",
+          "body_one": "O evento será cancelado no Google e o convocado ficará livre",
+          "body_other": "O evento será cancelado no Google e os {{count}} convocados ficarão livres",
+          "confirm": "Cancelar evento",
+          "busy": "Cancelando…",
+          "error": "Não foi possível cancelar o evento."
+        },
+        "convoked": {
+          "title": "Gerenciar convocados",
+          "manage": "Gerenciar convocados",
+          "remove": "Retirar",
+          "removeConfirm": {
+            "title": "Tirar {{name}}",
+            "body": "Sairá do evento e do convite do Google e voltará para Completado",
+            "confirm": "Retirar",
+            "busy": "Retirando…"
+          },
+          "add": "Acrescentar ({{count}})",
+          "noneAvailable": "Não há completados disponíveis para acrescentar",
+          "addError": "Não foi possível acrescentar aos convocados.",
+          "removeError": "Não foi possível retirar o convocado.",
+          "removeMarked": "Já foi marcado no evento. Devolva para Convocados para poder tirar.",
+          "current": "Convocados atuais",
+          "available": "Completados disponíveis",
+          "currentEmpty": "Não há convocados."
+        },
+        "seals": {
+          "summary": "Resumo",
+          "summaryReady": "Resumo pronto",
+          "summaryUnavailable": "Resumo indisponível",
+          "blockedWhy": "Motivo: {{reason}}",
+          "blockedReasons": {
+            "no_link": "O responsável não vinculou a conta do Tactiq",
+            "wrong_account": "A reunião está em outra conta do Tactiq",
+            "meet_scope_missing": "Falta a permissão do Google Meet",
+            "no_meet_link": "O evento não tem link do Meet",
+            "summary_attempts_exhausted": "As tentativas de gerar o resumo se esgotaram",
+            "unauthorized": "O Tactiq recusou o acesso"
+          },
+          "download": "Baixar resumo",
+          "downloadError": "Não foi possível abrir o resumo. Tente de novo.",
+          "popupBlocked": "O navegador bloqueou a nova aba. Libere e tente de novo.",
+          "unidentified": "Convocados não identificados: {{count}}"
+        },
+        "unassignedCount_one": "{{count}} completado sem evento",
+        "unassignedCount_other": "{{count}} completados sem evento"
       }
     },
     "vacancyModal": {
@@ -4640,7 +4726,10 @@
             "patient_document": "Documentos do paciente",
             "patient_admission": "Admissão do paciente (reuniões e mensagens)",
             "own_tactiq_link": "Meu vínculo com o Tactiq",
-            "patient_status": "Status do paciente: troca fora do fluxo"
+            "patient_status": "Status do paciente: troca fora do fluxo",
+            "enquadre_event": "Eventos de enquadre (criar, convocados e cancelar)",
+            "enquadre_result": "Resultado do enquadre (marcar e encerrar)",
+            "enquadre_summary": "Resumo do enquadre (ver e baixar)"
           },
           "help": {
             "open": "O que esta permissão faz",
@@ -5063,7 +5152,10 @@
             "invites": "Convites por WhatsApp",
             "prescreening": "Pré-seleção",
             "talentum": "Publicação no Talentum",
-            "patient": "Paciente (nome)"
+            "patient": "Paciente (nome)",
+            "enquadreEvent": "Eventos de enquadre",
+            "enquadreResult": "Resultado do enquadre",
+            "enquadreSummary": "Resumo do enquadre"
           }
         },
         "recruitment": {

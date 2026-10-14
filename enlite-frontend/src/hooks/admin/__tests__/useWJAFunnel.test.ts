@@ -23,7 +23,7 @@ function emptyFunnel() {
   return {
     stages: {
       INVITED: [], INICIADO: [], PRE_SCREENING: [], IN_PROGRESS: [],
-      COMPLETED: [], CONFIRMED: [], SELECTED: [], REJECTED: [],
+      COMPLETED: [], SELECTED: [], REJECTED: [],
     },
     totalEncuadres: 0,
   };
@@ -197,7 +197,7 @@ describe('useWJAFunnel — moveEncuadre', () => {
 
     let ret: unknown;
     await act(async () => {
-      ret = await result.current.moveEncuadre('enc-1', 'CONFIRMED', 'CAT', 'TITULAR' as EncuadreRole, {
+      ret = await result.current.moveEncuadre('enc-1', 'SELECTED', 'CAT', 'TITULAR' as EncuadreRole, {
         interviewDate: '2026-09-01',
         interviewTime: '10:00',
         interviewMeetLink: 'https://meet.example/x',
@@ -206,7 +206,7 @@ describe('useWJAFunnel — moveEncuadre', () => {
 
     expect(ret).toBeNull();
     expect(AdminApiService.moveEncuadre).toHaveBeenCalledWith('enc-1', {
-      targetStage: 'CONFIRMED',
+      targetStage: 'SELECTED',
       reasonCategory: 'CAT',
       role: 'TITULAR',
       interviewDate: '2026-09-01',
@@ -265,7 +265,7 @@ describe('useWJAFunnel — moveEncuadre', () => {
 
     let ret: { message: string; code?: string; reason?: string } | null = null;
     await act(async () => {
-      ret = await result.current.moveEncuadre('enc-1', 'CONFIRMED');
+      ret = await result.current.moveEncuadre('enc-1', 'SELECTED');
     });
 
     expect(ret).toEqual({ message: 'move_reason_required', code: MOVE_REASON_REQUIRED, reason: 'JUMP', workerStatus: undefined });

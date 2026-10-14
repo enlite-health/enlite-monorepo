@@ -93,22 +93,6 @@ describe('Internal Endpoints (Pub/Sub + Cloud Tasks)', () => {
     await pool.query('DELETE FROM domain_events WHERE id = $1', [eventId]);
   });
 
-  // ─── Reminders ──────────────────────────────────────────────────────
-
-  it('qualified reminder returns 200 with valid body', async () => {
-    const res = await internalApi.post('/reminders/qualified', {
-      workerId: '00000000-0000-0000-0000-000000000001',
-      jobPostingId: '00000000-0000-0000-0000-000000000002',
-    });
-    expect(res.status).toBe(200);
-    expect(res.data.status).toBe('ok');
-  });
-
-  it('qualified reminder returns 400 without body', async () => {
-    const res = await internalApi.post('/reminders/qualified', {}).catch(e => e.response);
-    expect(res.status).toBe(400);
-  });
-
   // ─── Sweep & Bulk Dispatch ──────────────────────────────────────────
   // Os endpoints /outbox/sweep, /events/sweep e /bulk-dispatch/process
   // permanecem no código para uso manual em incidentes, mas não têm

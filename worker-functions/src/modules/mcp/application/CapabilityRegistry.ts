@@ -20,8 +20,6 @@ import type { WorkerAvailabilitySetCapability } from './capabilities/WorkerAvail
 import type { WorkerVacanciesNearbyCapability } from './capabilities/WorkerVacanciesNearbyCapability';
 import type { WorkerAvailabilityGetCapability } from './capabilities/WorkerAvailabilityGetCapability';
 import type { WorkerApplicationRegisterCapability } from './capabilities/WorkerApplicationRegisterCapability';
-import type { WorkerInterviewSlotsListCapability } from './capabilities/WorkerInterviewSlotsListCapability';
-import type { WorkerInterviewBookCapability } from './capabilities/WorkerInterviewBookCapability';
 import type { HandoverNotifyCapability } from './capabilities/HandoverNotifyCapability';
 import type { WorkerApplicationsListCapability } from './capabilities/WorkerApplicationsListCapability';
 import type { McpAuditEvent } from '../domain/McpAuditEvent';
@@ -63,8 +61,6 @@ interface RegistryDeps {
   availabilityGet: WorkerAvailabilityGetCapability;
   vacanciesNearby: WorkerVacanciesNearbyCapability;
   applicationRegister: WorkerApplicationRegisterCapability;
-  interviewSlotsList: WorkerInterviewSlotsListCapability;
-  interviewBook: WorkerInterviewBookCapability;
   handoverNotify: HandoverNotifyCapability;
   applicationsList: WorkerApplicationsListCapability;
   /** Mapa paciente <-> ClickUp <-> Periskope em massa (tasks 86ajy0859/86ajy085a). */
@@ -86,7 +82,6 @@ const WRITE_CAPABILITY_NAMES = new Set([
   'worker.account.deactivate',
   'worker.availability.set',
   'worker.application.register',
-  'worker.interview.book',
   'handover.notify',
 ]);
 
@@ -142,8 +137,6 @@ export class CapabilityRegistry {
       availabilityGet,
       vacanciesNearby,
       applicationRegister,
-      interviewSlotsList,
-      interviewBook,
       handoverNotify,
       applicationsList,
       patientChatMap,
@@ -374,29 +367,6 @@ export class CapabilityRegistry {
           (applicationRegister.constructor as { INPUT_SHAPE?: Record<string, unknown> })
             .INPUT_SHAPE ?? {},
         execute: (args) => applicationRegister.execute(args),
-      },
-      {
-        name:
-          (interviewSlotsList.constructor as { NAME?: string }).NAME ??
-          'worker.interview.slots.list',
-        description:
-          (interviewSlotsList.constructor as { DESCRIPTION?: string }).DESCRIPTION ??
-          'List future interview slots of a vacancy.',
-        inputShape:
-          (interviewSlotsList.constructor as { INPUT_SHAPE?: Record<string, unknown> })
-            .INPUT_SHAPE ?? {},
-        execute: (args) => interviewSlotsList.execute(args),
-      },
-      {
-        name:
-          (interviewBook.constructor as { NAME?: string }).NAME ?? 'worker.interview.book',
-        description:
-          (interviewBook.constructor as { DESCRIPTION?: string }).DESCRIPTION ??
-          'Book an interview slot for a qualified worker.',
-        inputShape:
-          (interviewBook.constructor as { INPUT_SHAPE?: Record<string, unknown> })
-            .INPUT_SHAPE ?? {},
-        execute: (args) => interviewBook.execute(args),
       },
       {
         name:

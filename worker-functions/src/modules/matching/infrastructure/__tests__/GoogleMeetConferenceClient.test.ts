@@ -78,4 +78,24 @@ describe('GoogleMeetConferenceClient (produção simulada)', () => {
     global.fetch = jest.fn(async () => json(200, { conferenceRecords: [], nextPageToken: 'sempre' })) as unknown as typeof fetch;
     await expect(new GoogleMeetConferenceClient(PROD).listConferenceRecords('spaces/abc', 'h@example.test')).rejects.toBeInstanceOf(MeetTransientError);
   });
+  it('participants.list (spec 052, T-34c): mapeia signedin/anonymous/phone, junta as páginas, só o escopo atual, e recusa nome de conferência malformado', async () => {
+    const pages = [
+      { participants: [{ signedinUser: { user: 'users/ficticio-1', displayName: 'Ficticio 01' } }, { anonymousUser: { displayName: 'Ficticio 02' } }], nextPageToken: 'p2' },
+      { participants: [{ phoneUser: { displayName: '+54 11 ****-0003' } }] },
+    ];
+    let i = 0;
+    const calls: string[] = [];
+    global.fetch = jest.fn(async (url: string) => { calls.push(url); return json(200, pages[i++]); }) as unknown as typeof fetch;
+    const out = await new GoogleMeetConferenceClient(PROD).listParticipants('conferenceRecords/rec-1', 'h@example.test');
+    expect(out).toEqual([
+      { kind: 'signedin', displayName: 'Ficticio 01', identityKey: 'users/ficticio-1' },
+      { kind: 'anonymous', displayName: 'Ficticio 02', identityKey: null },
+      { kind: 'phone', displayName: '+54 11 ****-0003', identityKey: null },
+    ]);
+    expect(calls[0]).toContain('/v2/conferenceRecords/rec-1/participants?');
+    expect(tokenSpy).toHaveBeenCalledWith('h@example.test', 'h@example.test', finder.MEET_SCOPE);
+    await expect(new GoogleMeetConferenceClient(PROD).listParticipants('../spaces/x', 'h@example.test')).rejects.toBeInstanceOf(MeetTransientError);
+    global.fetch = jest.fn(async () => json(403, {})) as unknown as typeof fetch;
+    await expect(new GoogleMeetConferenceClient(PROD).listParticipants('conferenceRecords/rec-1', 'h@example.test')).rejects.toBeInstanceOf(MeetScopeMissingError);
+  });
 });

@@ -16,7 +16,6 @@ describe('VacanciesTable - Integration Test - GARANTIA DE RENDERIZAÇÃO', () =>
           INICIADO: 9,
           PRE_SCREENING: 5,
           COMPLETED: 3,
-          CONFIRMED: 43,
           SELECTED: 27,
           QUICK_RESPONSE_TEAM: 7,
           REJECTED: 2,
@@ -37,7 +36,6 @@ describe('VacanciesTable - Integration Test - GARANTIA DE RENDERIZAÇÃO', () =>
           INICIADO: 41,
           PRE_SCREENING: 18,
           COMPLETED: 11,
-          CONFIRMED: 19,
           SELECTED: 61,
           QUICK_RESPONSE_TEAM: 4,
           REJECTED: 10,
@@ -63,15 +61,12 @@ describe('VacanciesTable - Integration Test - GARANTIA DE RENDERIZAÇÃO', () =>
     // GARANTIA 3: sem coluna de prioridade (spec 046 F1)
     expect(screen.queryByText('admin.vacancies.priorityOptions.urgent')).not.toBeInTheDocument();
 
-    // GARANTIA 4: Dados numéricos visíveis (stageCounts das 9 colunas, Fase 5: +COMPATIBLE, + postulados/faltantes)
+    // GARANTIA 4: Dados numéricos visíveis (stageCounts das 8 colunas, Fase 5: +COMPATIBLE, + postulados/faltantes)
     expect(screen.getByText('06')).toBeVisible();
     expect(screen.getByText('32')).toBeVisible();
     expect(screen.getByText('09')).toBeVisible();
     expect(screen.getByText('05')).toBeVisible();
     expect(screen.getByText('03')).toBeVisible();
-    // CONFIRMED (43 e 19) segue no payload mas a lista não o mostra mais
-    expect(screen.queryByText('43')).not.toBeInTheDocument();
-    expect(screen.queryByText('19')).not.toBeInTheDocument();
     expect(screen.getByText('27')).toBeVisible();
     expect(screen.getByText('07')).toBeVisible();
     expect(screen.getByText('02')).toBeVisible();

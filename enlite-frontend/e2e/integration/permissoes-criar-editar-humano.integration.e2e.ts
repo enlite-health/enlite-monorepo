@@ -266,7 +266,7 @@ test.describe('Permissões criar × editar — prova humana contra o backend rea
     await page.screenshot({ path: 'test-results/pr8b-8b9-a-create-form.png', fullPage: false });
   });
 
-  test('(b) grupo só com vacancy:update: edita a vaga existente (link real digitado) e SALVA; NÃO vê "Nueva vacante"', async ({ page }) => {
+  test('(b) grupo só com vacancy:update: vê a vaga existente; NÃO vê "Nueva vacante"', async ({ page }) => {
     await loginAs(page, EDITORA);
 
     await page.goto('/admin/vacancies');
@@ -276,32 +276,13 @@ test.describe('Permissões criar × editar — prova humana contra o backend rea
     await page.goto(`/admin/vacancies/${vacancyId}`);
     await expect(page.getByTestId('vacancy-status-editor-trigger')).toBeVisible({ timeout: 15_000 });
 
+    // Spec 052 (Fase 4): o card de links de Meet da aba Links saiu — era por ele que este caso EDITAVA e SALVAVA um link
+    // para provar `vacancy:update`. A prova de escrita agora precisa passar pelo formulário de edição da vaga
+    // (pendência: reescrever este caso por esse caminho; ver a lista de achados da T-40).
     await page.getByRole('button', { name: 'Links', exact: true }).click();
-    const meetCard = page.getByTestId('vacancy-meet-links-card');
-    await expect(meetCard).toBeVisible({ timeout: 10_000 });
-
-    const linkInput = meetCard.getByPlaceholder('https://meet.google.com/xxx-xxxx-xxx').first();
-    await linkInput.click();
-    // `MEET_LINK_REGEX` (VacancyMeetLinksCard.tsx) exige 3-4-3 letras minúsculas — sem dígito.
-    const letras = RUN_ID.toLowerCase().replace(/[^a-z]/g, '') || 'abcdefghijklmnop';
-    const codigo = letras.padEnd(10, 'prbfxyzqwe').slice(0, 10);
-    const meetUrl = `https://meet.google.com/${codigo.slice(0, 3)}-${codigo.slice(3, 7)}-${codigo.slice(7, 10)}`;
-    await page.keyboard.type(meetUrl);
-    await expect(linkInput).toHaveValue(meetUrl);
-
-    await meetCard.getByTestId('meet-links-save').click();
-    // `onSaved` refaz o fetch da vaga (a mesma prop `refetch` do resto da tela) — o card pode
-    // remontar antes do assert enxergar o feedback local; a prova forte é o RELOAD abaixo, que
-    // lê o valor de volta do servidor.
-    await page.waitForTimeout(1_500);
+    await expect(page.getByTestId('vacancy-meet-links-card')).toHaveCount(0);
 
     await page.screenshot({ path: 'test-results/pr8b-8b9-b-update-links.png', fullPage: false });
-
-    // Recarrega e confere que o link digitado persistiu — a prova de que salvou de verdade.
-    await page.reload();
-    await page.getByRole('button', { name: 'Links', exact: true }).click();
-    const linkInputAfter = page.getByTestId('vacancy-meet-links-card').getByPlaceholder('https://meet.google.com/xxx-xxxx-xxx').first();
-    await expect(linkInputAfter).toHaveValue(meetUrl, { timeout: 10_000 });
   });
 
   test('(c) na tela de grupos: marca Crear e Editar separados por clique, salva, recarrega e confere que persistiu', async ({ page }) => {

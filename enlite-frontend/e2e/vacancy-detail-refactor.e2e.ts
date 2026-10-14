@@ -5,7 +5,7 @@
  *
  * Valida as 3 fases do refactor:
  *   1. Backend funnel-table endpoint
- *   2. Layout dos cards (VacancyCaseCard + VacancyPatientCard + VacancyProfessionCard + MeetLinksRow)
+ *   2. Layout dos cards (VacancyCaseCard + VacancyPatientCard + VacancyProfessionCard)
  *   3. Tab de funil com toggle Lista/Kanban
  *
  * Todos os testes são totalmente mockados (sem backend real, sem Gemini, sem banco).
@@ -192,7 +192,6 @@ function buildFunnelTableResponse(bucket: string) {
       INICIADO: 0,
       PRE_SCREENING: 0,
       COMPLETED: 0,
-      CONFIRMED: 0,
       SELECTED: 0,
       REJECTED: 0,
     },
@@ -238,7 +237,7 @@ const MOCK_FUNNEL_KANBAN = {
           redireccionamiento: null,
         },
       ],
-      CONFIRMED: [
+      COMPLETED: [
         {
           id: 'f2',
           workerName: 'Bruno López',
@@ -550,26 +549,9 @@ test.describe('VacancyDetailPage — Refactor (Funnel + Cards + Toggle)', () => 
     ).toBeVisible();
   });
 
-  test('A5 — VacancyMeetLinksRow exibe 1 pílula com link de entrevista', async ({
-    page,
-  }) => {
-    await loginAsAdmin(page);
-    await mockVacancyApis(page);
-
-    await page.goto(`/admin/vacancies/${MOCK_VACANCY_ID}`);
-    await expect(page.locator('text=226').first()).toBeVisible({
-      timeout: 15_000,
-    });
-
-    // Row de meet links deve conter "Fechas para entrevista" (título do componente VacancyMeetLinksRow)
-    await expect(
-      page.locator('text=/Fechas para entrevista/i').first(),
-    ).toBeVisible({ timeout: 10_000 });
-  });
-
   // ── B. Funil — modo Lista ────────────────────────────────────────────────────
 
-  test('B1 — aba Encuadres ativa por default, toggle mostra "Lista" pressionado', async ({
+  test('B1 — aba Reclutamiento ativa por default, toggle mostra "Lista" pressionado', async ({
     page,
   }) => {
     await loginAsAdmin(page);
@@ -580,8 +562,8 @@ test.describe('VacancyDetailPage — Refactor (Funnel + Cards + Toggle)', () => 
       timeout: 15_000,
     });
 
-    // Tab Encuadres ativa
-    const encuadresBtn = page.getByRole('button', { name: /Encuadres/i });
+    // Tab Reclutamiento ativa
+    const encuadresBtn = page.getByRole('button', { name: /Reclutamiento/i });
     await expect(encuadresBtn).toHaveClass(/bg-primary/);
 
     // Toggle Lista pressionado (aria-pressed=true)
@@ -695,7 +677,7 @@ test.describe('VacancyDetailPage — Refactor (Funnel + Cards + Toggle)', () => 
     ).toBeVisible({ timeout: 15_000 });
   });
 
-  test('B6 — botão "Enviar invitaciones" visível na aba Encuadres', async ({
+  test('B6 — botão "Enviar invitaciones" visível na aba Reclutamiento', async ({
     page,
   }) => {
     await loginAsAdmin(page);

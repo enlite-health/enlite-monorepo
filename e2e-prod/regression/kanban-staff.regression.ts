@@ -20,9 +20,9 @@
  * Não é "a Fase 1 é sobre mensageria" por rótulo. É mecanismo:
  *   · `WJAFunnelController.moveEncuadre` chama `emitFunnelStageEvent` em TODO
  *     movimento que muda de etapa → grava `funnel_stage.<etapa>` em `domain_events`;
- *   · `funnel_stage.qualified` cai no `QualifiedInterviewHandler` (built-in), que
- *     ENFILEIRA o convite; as demais caem no `StageMessageHandler`, que enfileira o
- *     template da etapa se ele estiver LIGADO;
+ *   · todas as etapas (QUALIFIED inclusive, desde a spec 052) caem no `StageMessageHandler`,
+ *     que enfileira o template da etapa se ele estiver LIGADO (a linha `builtin` da
+ *     QUALIFIED é pulada como DISABLED: o convite automático saiu);
  *   · quem impede a mensagem de SAIR para um fixture é o guard `is_test` no
  *     `OutboxProcessor` — o "ponto único de defesa", o mesmo do opt-out.
  *
@@ -52,7 +52,7 @@
  *
  * ── TEARDOWN ─────────────────────────────────────────────────────────────────
  * `POST /api/admin/test-fixtures/cleanup` (worker + vaga + linha de outbox), provado
- * por releitura 404, no molde da `qualified-interview-invite`.
+ * por releitura 404.
  */
 import { test, expect, type APIRequestContext, type Browser, type Page, type Response } from '@playwright/test';
 import * as path from 'path';
@@ -125,7 +125,6 @@ function colunaEsperada(
   if (stage === 'SELECTED') return 'SELECTED';
   if (stage === 'QUICK_RESPONSE_TEAM') return 'QUICK_RESPONSE_TEAM';
   if (stage === 'REJECTED') return 'REJECTED';
-  if (stage === 'CONFIRMED') return 'CONFIRMED';
   if (stage !== null && ['COMPLETED', 'QUALIFIED', 'IN_DOUBT'].includes(stage)) return 'COMPLETED';
   if (stage === 'IN_PROGRESS') return 'IN_PROGRESS';
   if (stage === 'PRE_SCREENING') return 'PRE_SCREENING';
@@ -170,13 +169,12 @@ async function abrirVaga(browser: Browser): Promise<{ page: Page; fechar: () => 
  *    a sequência manual de mouse não dispara o `PUT /encuadres/:id/move` — 20 s de
  *    `waitForResponse` estourando, 2 tentativas. O `MoveToMenu` vive no MESMO card
  *    (`KanbanCard.tsx:336`), é a via ACESSÍVEL e chama o mesmo `onMoveTo`.
- * 2. OS DESTINOS SÃO TRÊS, NÃO NOVE. `MOVE_TARGETS = ['INVITED','CONFIRMED','SELECTED']`
- *    menos o atual — de INICIADO sobram "Confirmados" e "Seleccionados". Meu primeiro
+ * 2. OS DESTINOS SÃO DOIS, NÃO NOVE. `MOVE_TARGETS = ['INVITED','SELECTED']`
+ *    menos o atual — de INICIADO sobra só "Seleccionados". Meu primeiro
  *    destino (`PRE_SCREENING`) simplesmente não existe no menu.
- * 3. OS DOIS ABREM MODAL, de propósito: SELECTED pede o PAPEL, CONFIRMED pede a DATA.
- *    O comentário do `KanbanBoard` diz por quê: "os dois caminhos têm que pedir a mesma
- *    coisa, senão o menu vira a porta dos fundos que grava card sem data". Ou seja: o
- *    modal É a jornada, não um obstáculo — e é isso que este teste passa a exercitar.
+ * 3. SELECTED ABRE MODAL, de propósito: pede o PAPEL. O comentário do `KanbanBoard` diz por
+ *    quê: "os dois caminhos têm que pedir a mesma coisa, senão o menu vira a porta dos
+ *    fundos". Ou seja: o modal É a jornada, não um obstáculo — e é isso que este teste exercita.
  *
  * O que fica SEM cobertura, dito para não virar falsa sensação: se o `@dnd-kit` quebrar,
  * este teste continua verde. Cobrir o arrasto exige afinar pointer events contra o
@@ -274,8 +272,7 @@ test.describe.serial('Spec 009 · Fase 1 — Kanban do staff', () => {
     // ── is_test ANTES de qualquer passo que possa enfileirar ──────────────────
     // Marcar depois de enfileirar seria apostar numa corrida contra o processador.
     //
-    // ⚠️ POR QUE É UM POLL, e não um PATCH direto: a `qualified-interview-invite` marca
-    // DEPOIS do `completeCaregiverRegistration`, e o intervalo daquelas chamadas esconde
+    // ⚠️ POR QUE É UM POLL, e não um PATCH direto: o intervalo entre chamadas esconde
     // o problema. Chamando `test-flag` imediatamente após o `init`, prod devolve **500**
     // — medido em 31/08, na primeira execução deste spec, e reproduzido em 2 tentativas
     // seguidas. Minutos depois o MESMO PATCH devolve 200: é o lag de read-replica que o
@@ -424,7 +421,7 @@ test.describe.serial('Spec 009 · Fase 1 — Kanban do staff', () => {
     test.fixme(
       true,
       '1.2 pendente: o reenvio não enfileirou na outbox nesta jornada (delivery-status devolve ' +
-        'outbox=null após 90 s). O convite POR ARRASTO já é provado pela `qualified-interview-invite`; ' +
+        'outbox=null após 90 s). O convite por arrasto saiu na spec 052; ' +
         'falta entender por que o botão "Reenviar" a partir de SELECIONADOS não enfileira. Ver tasks.md.',
     );
     const { page, fechar } = await abrirVaga(browser);

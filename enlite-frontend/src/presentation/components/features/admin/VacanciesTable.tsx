@@ -69,11 +69,8 @@ const STATIC_COLUMNS_AFTER = [
   { key: 'missing', hiddenClass: 'hidden md:table-cell', sortKey: 'faltantes' },
 ] as const;
 
-/**
- * Spec 046 F1: "Confirmados" sai da LISTA, mas `VACANCY_FUNNEL_COLUMNS` é global — o Kanban e as
- * abas do funil o usam. O filtro é local; o array global não muda.
- */
-const LIST_FUNNEL_COLUMNS = VACANCY_FUNNEL_COLUMNS.filter((c) => c.id !== 'CONFIRMED');
+/** A lista mostra as mesmas colunas do funil (052: o estágio Confirmado saiu, o filtro local não é mais necessário). */
+const LIST_FUNNEL_COLUMNS = VACANCY_FUNNEL_COLUMNS;
 
 const TOTAL_COLUMNS =
   1 + // coluna do olho

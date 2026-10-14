@@ -46,7 +46,7 @@ export function ok(body: unknown) {
 export function emptyStages(): Record<string, unknown[]> {
   return {
     INVITED: [], INICIADO: [], PRE_SCREENING: [],
-    IN_PROGRESS: [], COMPLETED: [], CONFIRMED: [], SELECTED: [], REJECTED: [],
+    IN_PROGRESS: [], COMPLETED: [], SELECTED: [], REJECTED: [],
   };
 }
 
@@ -134,8 +134,8 @@ export async function loginAsAdmin(page: Page): Promise<void> {
  * ⚠️ Arrasta pelo WRAPPER `kanban-draggable-<id>`, não pela tarjeta: é ele que
  * carrega os listeners do dnd-kit.
  *
- * ⚠️ Soltar em REJECTED, SELECTED ou CONFIRMED NÃO move — `handleDrop` intercepta
- * as três para abrir modal (motivo, papel, data da entrevista). Para exercitar a
+ * ⚠️ Soltar em REJECTED ou SELECTED NÃO move — `handleDrop` intercepta
+ * as duas para abrir modal (motivo, papel). Para exercitar a
  * request de movimento, o alvo tem de ser outra coluna droppable (ex.: INVITED).
  */
 export async function dragKanbanCard(

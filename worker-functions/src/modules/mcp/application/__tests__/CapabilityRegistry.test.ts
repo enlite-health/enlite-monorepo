@@ -19,8 +19,6 @@ import { WorkerAvailabilitySetCapability } from '../capabilities/WorkerAvailabil
 import { WorkerVacanciesNearbyCapability } from '../capabilities/WorkerVacanciesNearbyCapability';
 import { WorkerAvailabilityGetCapability } from '../capabilities/WorkerAvailabilityGetCapability';
 import { WorkerApplicationRegisterCapability } from '../capabilities/WorkerApplicationRegisterCapability';
-import { WorkerInterviewSlotsListCapability } from '../capabilities/WorkerInterviewSlotsListCapability';
-import { WorkerInterviewBookCapability } from '../capabilities/WorkerInterviewBookCapability';
 import { HandoverNotifyCapability } from '../capabilities/HandoverNotifyCapability';
 import { PatientChatMapCapability } from '../capabilities/PatientChatMapCapability';
 import { WorkerApplicationsListCapability } from '../capabilities/WorkerApplicationsListCapability';
@@ -142,9 +140,6 @@ function makeCapabilities() {
     {} as never,
     { execute: jest.fn().mockResolvedValue({ worker: { firstName: 'Ana', lastName: 'Test', phone: '+54911', email: 'a@t.com' } }) } as never,
   );
-  const interviewSlotsList = new WorkerInterviewSlotsListCapability({
-    execute: jest.fn().mockResolvedValue({ ok: true, caseNumber: 795, slots: [] }),
-  } as never);
   const applicationsList = new WorkerApplicationsListCapability({
     execute: jest.fn().mockResolvedValue({ applications: [] }),
   } as never);
@@ -154,10 +149,6 @@ function makeCapabilities() {
   const handoverNotify = new HandoverNotifyCapability({
     execute: jest.fn().mockResolvedValue({ skipped: false, groupNotified: true, ticketCreated: false }),
   } as never);
-  const interviewBook = new WorkerInterviewBookCapability(
-    { execute: jest.fn().mockResolvedValue({ ok: true, confirmedDate: '10/04', confirmedTime: '14:00', meetDatetime: '2027-04-10T14:00:00.000Z', usedSlotIndex: 1, calendarInvite: 'sent' }) } as never,
-    { execute: jest.fn().mockResolvedValue({ worker: { email: 'a@t.com' } }) } as never,
-  );
   return {
     profileGet,
     documentsList,
@@ -179,8 +170,6 @@ function makeCapabilities() {
     availabilityGet,
     vacanciesNearby,
     applicationRegister,
-    interviewSlotsList,
-    interviewBook,
     handoverNotify,
     applicationsList,
     patientChatMap,
@@ -496,57 +485,33 @@ describe('CapabilityRegistry', () => {
   });
 });
 
-// ── Capabilities da conversão da Luz (change luz-conversao-entrevista) ────────
+// ── Capabilities da conversão da Luz (change luz-conversao-entrevista; spec 052, T-40c: reserva e horários saíram) ──
 
 describe('CapabilityRegistry — conversão da Luz', () => {
   beforeEach(() => jest.clearAllMocks());
 
-  const LUZ_CAPS = [
-    'worker.application.register',
-    'worker.interview.slots.list',
-    'worker.interview.book',
-  ];
+  const LUZ_CAPS = ['worker.application.register'];
 
-  it('registra as 3 capabilities quando o principal permite e devolve o resultado do use case', async () => {
+  it('registra a capability de candidatura quando o principal permite e devolve o resultado do use case', async () => {
     const { registry } = makeRegistry();
     const server = makeMcpServer();
 
     registry.registerAll(server as never, () => makePrincipal(LUZ_CAPS));
 
-    expect(server.registerTool).toHaveBeenCalledTimes(3);
-    const handler = getHandler(server, 'worker.interview.book');
-    const res = await handler({ workerId: WORKER_ID, jobPostingId: WORKER_ID, slotIndex: 1 });
-    expect(JSON.parse(res.content[0].text)).toMatchObject({
-      ok: true,
-      confirmedDate: '10/04',
-      confirmedTime: '14:00',
-      calendarInvite: 'sent',
-    });
+    expect(server.registerTool).toHaveBeenCalledTimes(1);
+    const handler = getHandler(server, 'worker.application.register');
+    const res = await handler({ workerId: WORKER_ID, jobPostingId: WORKER_ID });
+    expect(JSON.parse(res.content[0].text)).toMatchObject({ ok: true });
   });
 
-  it('application.register e interview.book são WRITE: rate limiter negando → RateLimitExceededError', async () => {
+  it('application.register é WRITE: rate limiter negando → RateLimitExceededError', async () => {
     const { registry } = makeRegistry({ writeRateLimiter: makeDenyingRateLimiter() });
     const server = makeMcpServer();
 
     registry.registerAll(server as never, () => makePrincipal(LUZ_CAPS));
 
-    for (const cap of ['worker.application.register', 'worker.interview.book']) {
-      const handler = getHandler(server, cap);
-      await expect(
-        handler({ workerId: WORKER_ID, jobPostingId: WORKER_ID, slotIndex: 1 }),
-      ).rejects.toThrow(RateLimitExceededError);
-    }
-  });
-
-  it('interview.slots.list é leitura: passa mesmo com rate limiter negando', async () => {
-    const { registry } = makeRegistry({ writeRateLimiter: makeDenyingRateLimiter() });
-    const server = makeMcpServer();
-
-    registry.registerAll(server as never, () => makePrincipal(LUZ_CAPS));
-
-    const handler = getHandler(server, 'worker.interview.slots.list');
-    const res = await handler({ jobPostingId: WORKER_ID });
-    expect(JSON.parse(res.content[0].text)).toMatchObject({ ok: true, caseNumber: 795 });
+    const handler = getHandler(server, 'worker.application.register');
+    await expect(handler({ workerId: WORKER_ID, jobPostingId: WORKER_ID })).rejects.toThrow(RateLimitExceededError);
   });
 
   it('principal SEM as caps novas não as vê (allowlist manda)', () => {
@@ -559,5 +524,19 @@ describe('CapabilityRegistry — conversão da Luz', () => {
     for (const cap of LUZ_CAPS) {
       expect(names).not.toContain(cap);
     }
+  });
+
+  it('reserva e horários de entrevista NÃO são mais expostos, mesmo com os nomes ainda na allowlist (spec 052)', () => {
+    const { registry } = makeRegistry();
+    const server = makeMcpServer();
+    const ALLOWLIST_VIVA = [...LUZ_CAPS, 'worker.interview.get', 'worker.interview.slots.list', 'worker.interview.book'];
+
+    expect(() => registry.registerAll(server as never, () => makePrincipal(ALLOWLIST_VIVA))).not.toThrow();
+
+    const names = (server.registerTool.mock.calls as [string, ...unknown[]][]).map(([n]) => n).sort();
+    // Controle positivo: a leitura da entrevista (`worker.interview.get`) e a candidatura continuam registradas.
+    expect(names).toEqual(['worker.application.register', 'worker.interview.get']);
+    expect(names).not.toContain('worker.interview.book');
+    expect(names).not.toContain('worker.interview.slots.list');
   });
 });

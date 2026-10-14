@@ -57,7 +57,6 @@ const MOCK_FUNNEL = {
         },
       ],
       COMPLETED: [],
-      CONFIRMED: [],
       SELECTED: [],
       REJECTED: [],
     },
@@ -175,7 +174,7 @@ test.describe('Kanban — bloqueio por elegibilidade do worker (visual)', () => 
       timeout: 15000,
     });
 
-    // Drag do card pra coluna CONFIRMED (droppable)
+    // Drag do card pra coluna INVITED (droppable)
     await dragKanbanCard(page, 'enc-incomplete', 'INVITED');
 
     // Banner amber aparece com título e mensagem traduzida

@@ -64,7 +64,7 @@ describe('GetFunnelByWorkerUseCase', () => {
       row({ worker_id: 'w1', stage: 'INVITED', source: 'talentum' }),
       row({ worker_id: 'w1', stage: 'SELECTED' }),
       row({ worker_id: 'w2', stage: 'REJECTED' }),
-      row({ worker_id: 'w2', stage: 'CONFIRMED' }),
+      row({ worker_id: 'w2', stage: 'IN_PROGRESS' }),
       row({ worker_id: 'w3', stage: 'QUALIFIED' }),
       row({ worker_id: 'w4', stage: 'INVITED', source: 'manual' }),
       row({ worker_id: 'w5', stage: 'PRE_SCREENING' }),
@@ -74,7 +74,7 @@ describe('GetFunnelByWorkerUseCase', () => {
     expect(result.total).toBe(5);
     expect(sum(result.consolidado)).toBe(result.total);
     expect(result.consolidado.SELECTED).toBe(1); // w1
-    expect(result.consolidado.CONFIRMED).toBe(1); // w2 (não REJECTED)
+    expect(result.consolidado.IN_PROGRESS).toBe(1); // w2 (não REJECTED)
     expect(result.consolidado.COMPLETED).toBe(1); // w3 — QUALIFIED vive na coluna COMPLETED
     expect(result.consolidado.INICIADO).toBe(1); // w4 — INVITED+manual
     expect(result.consolidado.PRE_SCREENING).toBe(1); // w5
@@ -153,9 +153,9 @@ describe('GetFunnelByWorkerUseCase', () => {
       },
       funnel: {
         invitados: 0, bloqueados: 0, preScreening: 0, completos: 0,
-        agendados: 0, seleccionados: 0, rechazados: 0,
+        seleccionados: 0, rechazados: 0,
       },
-      encuadres: { agendadosEstaSemana: 0, semDataRegistrada: 0 },
+      encuadres: { agendadosEstaSemana: 0 },
       cadastros: {
         leads: 0, completos: 0, alocados: 0, alocadosActivos: 0, alocadosCubriendoGuardias: 0,
         incompletos: 0, nuevosCompletosMes: 0,
@@ -174,7 +174,7 @@ describe('GetFunnelByWorkerUseCase', () => {
     expect(result.total).toBe(0);
     expect(result.porEtapa).toEqual({
       COMPATIBLE: 0, INVITED: 0, INICIADO: 0, PRE_SCREENING: 0, IN_PROGRESS: 0,
-      COMPLETED: 0, CONFIRMED: 0, SELECTED: 0, QUICK_RESPONSE_TEAM: 0, REJECTED: 0,
+      COMPLETED: 0, SELECTED: 0, QUICK_RESPONSE_TEAM: 0, REJECTED: 0,
     });
     expect(result.consolidado).toEqual(result.porEtapa);
   });

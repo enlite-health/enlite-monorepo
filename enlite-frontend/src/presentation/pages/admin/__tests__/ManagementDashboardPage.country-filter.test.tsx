@@ -47,11 +47,11 @@ function payloadWith(countries: Array<'AR' | 'BR'>, requested: 'AR' | 'BR' | 'AL
     prioridades: { completosEsperandoAgendamiento: 0, registrosIncompletos: 0, bloqueadosAlPostularse: 0 },
     funnelPorPrestador: {
       total: 0, recorte: 'vagas-vivas', periodoDias: null, bloqueados: 0,
-      porEtapa: { somavel: false, colunas: { INVITED: 0, INICIADO: 0, PRE_SCREENING: 0, IN_PROGRESS: 0, COMPLETED: 0, CONFIRMED: 0, SELECTED: 0, REJECTED: 0 } },
-      consolidado: { somavel: true, colunas: { INVITED: 0, INICIADO: 0, PRE_SCREENING: 0, IN_PROGRESS: 0, COMPLETED: 0, CONFIRMED: 0, SELECTED: 0, REJECTED: 0 } },
+      porEtapa: { somavel: false, colunas: { INVITED: 0, INICIADO: 0, PRE_SCREENING: 0, IN_PROGRESS: 0, COMPLETED: 0, SELECTED: 0, REJECTED: 0 } },
+      consolidado: { somavel: true, colunas: { INVITED: 0, INICIADO: 0, PRE_SCREENING: 0, IN_PROGRESS: 0, COMPLETED: 0, SELECTED: 0, REJECTED: 0 } },
     },
-    funnel: { invitados: 0, bloqueados: 0, preScreening: 0, completos: 0, agendados: 0, seleccionados: 0, rechazados: 0 },
-    encuadres: { agendadosEstaSemana: 0, semDataRegistrada: 0 },
+    funnel: { invitados: 0, bloqueados: 0, preScreening: 0, completos: 0, seleccionados: 0, rechazados: 0 },
+    encuadres: { agendadosEstaSemana: 0 },
     cadastros: { leads: 0, completos: 0, alocados: 0, alocadosActivos: 0, alocadosCubriendoGuardias: 0, incompletos: 0, nuevosCompletosMes: 0 },
   };
 }

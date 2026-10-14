@@ -37,7 +37,7 @@ function linhaCifrada() {
     email: EMAIL, phone: TELEFONE,
     profile_photo_url_encrypted: 'encrypted:https://foto/maria.jpg',
     invited_at: '2026-08-01T10:00:00Z',
-    funnel_stage: 'CONFIRMED', interview_response: null,
+    funnel_stage: 'SELECTED', interview_response: null,
     wbdl_dispatched_at: null, wbdl_delivery_status: null, wbdl_status: null,
     worker_status: 'REGISTERED', contact_notes_count: 0, self_applied_at: null,
   };
@@ -220,7 +220,7 @@ describe('funnel-table — filtro `columns` e tentativa negada (DX-2.6, D433)', 
   });
 
   it('counts.ALL não muda com tentativa negada, e counts.columns.INICIADO sobe 1 (E3)', async () => {
-    mockFetchRawRows.mockResolvedValue([linhaCifrada()]); // funnel_stage=CONFIRMED
+    mockFetchRawRows.mockResolvedValue([linhaCifrada()]); // funnel_stage=SELECTED
     mockFetchBlockedRawRows.mockResolvedValue([linhaBloqueada()]);
 
     const out = await new GetFunnelTableUseCase().execute('jp-1', 'ALL');
@@ -243,7 +243,7 @@ describe('funnel-table — filtro `columns` e tentativa negada (DX-2.6, D433)', 
   });
 
   it('?columns=COMPATIBLE devolve só a linha do match; counts.columns.COMPATIBLE=1; counts.INVITED (bucket) intocado', async () => {
-    mockFetchRawRows.mockResolvedValue([linhaCompativel(), linhaCifrada()]); // 1 match candidate + 1 normal CONFIRMED
+    mockFetchRawRows.mockResolvedValue([linhaCompativel(), linhaCifrada()]); // 1 match candidate + 1 normal SELECTED
 
     const out = await new GetFunnelTableUseCase().execute('jp-1', 'ALL', null, ['COMPATIBLE']);
 
@@ -255,16 +255,16 @@ describe('funnel-table — filtro `columns` e tentativa negada (DX-2.6, D433)', 
     // o candidato do match (D437): classifyBucket não olha kanbanColumn, só
     // funnelStage/interviewResponse — INVITED(stage) → bucket INVITED, como antes.
     const semFiltro = await new GetFunnelTableUseCase().execute('jp-1', 'ALL', null);
-    expect(semFiltro.counts.INVITED).toBe(1); // só linhaCompativel; linhaCifrada (CONFIRMED) é PRE_SELECTED
+    expect(semFiltro.counts.INVITED).toBe(1); // só linhaCompativel; linhaCifrada (SELECTED) é PRE_SELECTED
     expect(semFiltro.counts.INVITED).toBe(out.counts.INVITED); // o filtro `columns` não recalcula counts
   });
 
   it('distanceKm (DX-3.10): "12.5" numérico na linha normal, null na tentativa negada', async () => {
-    mockFetchRawRows.mockResolvedValue([{ ...linhaComStage('CONFIRMED'), distance_km: '12.5' }]);
+    mockFetchRawRows.mockResolvedValue([{ ...linhaComStage('SELECTED'), distance_km: '12.5' }]);
     mockFetchBlockedRawRows.mockResolvedValue([linhaBloqueada()]);
 
     // columns inclui INICIADO (D474) para a bloqueada entrar em `rows` junto com a normal.
-    const out = await new GetFunnelTableUseCase().execute('jp-1', 'ALL', null, ['CONFIRMED', 'INICIADO']);
+    const out = await new GetFunnelTableUseCase().execute('jp-1', 'ALL', null, ['SELECTED', 'INICIADO']);
 
     const normal = out.rows.find((r) => r.id === 'wja-1');
     const bloqueada = out.rows.find((r) => r.id === 'blk-1');

@@ -9,7 +9,7 @@ vi.mock('react-i18next', () => ({
 
 const onTabChange = vi.fn();
 
-function renderTabs(activeTab: 'encuadres' | 'talentum' | 'links' | 'notes' = 'encuadres') {
+function renderTabs(activeTab: 'encuadres' | 'enquadre' | 'talentum' | 'links' | 'notes' = 'encuadres') {
   return render(<VacancyDetailTabs activeTab={activeTab} onTabChange={onTabChange} />);
 }
 
@@ -22,15 +22,27 @@ beforeEach(() => {
 });
 
 describe('VacancyDetailTabs — rendering', () => {
-  it('renders exactly 4 tab buttons', () => {
+  it('renders exactly 5 tab buttons (Enquadre acrescentada, spec 052)', () => {
     renderTabs();
     const buttons = screen.getAllByRole('button');
-    expect(buttons).toHaveLength(4);
+    expect(buttons).toHaveLength(5);
   });
 
   it('renders Encuadres tab with i18n key', () => {
     renderTabs();
     expect(screen.getByText('admin.vacancyDetail.tabs.encuadres')).toBeInTheDocument();
+  });
+
+  it('renders Enquadre tab with i18n key, right after Encuadres', () => {
+    renderTabs();
+    expect(screen.getByText('admin.vacancyDetail.tabs.enquadre')).toBeInTheDocument();
+    expect(screen.getAllByRole('button').map((b) => b.getAttribute('data-testid'))).toEqual([
+      'vacancy-tab-encuadres',
+      'vacancy-tab-enquadre',
+      'vacancy-tab-talentum',
+      'vacancy-tab-links',
+      'vacancy-tab-notes',
+    ]);
   });
 
   it('renders Talentum tab with i18n key', () => {

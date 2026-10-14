@@ -1,15 +1,16 @@
 import type { PoolClient } from 'pg';
 import { MEET_LINK_REGEX, extractMeetingCode } from '../infrastructure/GoogleCalendarEventFinder';
-import type { AdmissionPostCallRepository, PostCallCandidate } from '../infrastructure/AdmissionPostCallRepository';
-import type { AdmissionEventRepository } from '../infrastructure/AdmissionEventRepository';
+import { ADMISSION_POST_CALL_NAMING, type PostCallNaming, type PostCallSource, type PostCallSubject, type SubjectTrail } from './ports/PostCallPorts';
 import { earliestConferenceStart } from '../domain/admissionPostCall';
 import type { MeetConferencePort, MeetConferenceRecord } from './ports/MeetConferencePort';
 import type { AdmissionLogger } from './AdmissionMessagingService';
 
 export interface AdmissionConferenceObserverDeps {
-  repo: Pick<AdmissionPostCallRepository, 'saveSpace' | 'markConferenceStarted' | 'markConferenceEnded' | 'markConferenceEndedEarly'>;
+  repo: Pick<PostCallSource, 'saveSpace' | 'markConferenceStarted' | 'markConferenceEnded' | 'markConferenceEndedEarly'>;
   meet: MeetConferencePort;
-  events: Pick<AdmissionEventRepository, 'append'>;
+  events: SubjectTrail;
+  /** Nomes de log (padrão: admissão). */
+  naming?: PostCallNaming;
   log: AdmissionLogger;
 }
 
@@ -19,20 +20,24 @@ export interface AdmissionConferenceObserverDeps {
  * comportamento, nome de log nem de evento. Roda DENTRO da transação da reunião (o `cli` da trava `FOR UPDATE`). Só ids e contagens.
  */
 export class AdmissionConferenceObserver {
-  constructor(private readonly deps: AdmissionConferenceObserverDeps) {}
+  private readonly naming: PostCallNaming;
+
+  constructor(private readonly deps: AdmissionConferenceObserverDeps) {
+    this.naming = deps.naming ?? ADMISSION_POST_CALL_NAMING;
+  }
 
   /**
    * Resolve o espaço, lista as conferências e grava o início. `null` = a reunião não tem link do Meet válido (quem chama bloqueia).
    * Os erros do Meet (`MeetScopeMissingError`, `MeetTransientError`) sobem: quem decide o que fazer com eles é o job.
    */
-  async observe(appt: PostCallCandidate, now: Date, cli: PoolClient): Promise<MeetConferenceRecord[] | null> {
+  async observe(appt: PostCallSubject, now: Date, cli: PoolClient): Promise<MeetConferenceRecord[] | null> {
     const records = await this.listRecords(appt, cli);
     if (records) await this.recordStart(appt, records, now, cli);
     return records;
   }
 
   /** Resolve o espaço (guardando-o) e lista as conferências, SEM gravar o início (o job de 1 min grava o que `decideLive` mandar). */
-  async listRecords(appt: PostCallCandidate, cli: PoolClient): Promise<MeetConferenceRecord[] | null> {
+  async listRecords(appt: PostCallSubject, cli: PoolClient): Promise<MeetConferenceRecord[] | null> {
     let space = appt.meet_space_name;
     if (!space) {
       const code = meetCodeOf(appt.meet_link);
@@ -49,7 +54,7 @@ export class AdmissionConferenceObserver {
    * `reason='unblocked'`. "Ficou sabendo" do fim = `now`, regravado a cada fim novo.
    */
   async recordEnd(
-    appt: Pick<PostCallCandidate, 'id' | 'import_status'>,
+    appt: Pick<PostCallSubject, 'id' | 'import_status'>,
     end: { endedAt: Date; recordNames: readonly string[] },
     now: Date,
     cli: PoolClient,
@@ -67,7 +72,7 @@ export class AdmissionConferenceObserver {
       },
       cli,
     );
-    this.deps.log.info({ appointmentId: appt.id, parts: end.recordNames.length }, 'admission.conference_ended');
+    this.deps.log.info({ [this.naming.idKey]: appt.id, parts: end.recordNames.length }, `${this.naming.prefix}.conference_ended`);
   }
 
   /**
@@ -75,7 +80,7 @@ export class AdmissionConferenceObserver {
    * trilha. O início só anda para trás (conferência mais antiga aparecendo depois). Sem conferência não escreve nada.
    * F25 (R-48): o instante em que o sistema ficou sabendo (`now`, o relógio de quem chama) vai junto, por `COALESCE`.
    */
-  async recordStart(appt: PostCallCandidate, records: readonly MeetConferenceRecord[], now: Date, cli: PoolClient): Promise<void> {
+  async recordStart(appt: PostCallSubject, records: readonly MeetConferenceRecord[], now: Date, cli: PoolClient): Promise<void> {
     const startedAt = earliestConferenceStart(records);
     if (!startedAt) return;
     const known = appt.conference_started_at ? new Date(appt.conference_started_at).getTime() : null;
@@ -86,7 +91,7 @@ export class AdmissionConferenceObserver {
       { appointmentId: appt.id, kind: 'conference_started', outcome: 'started', ref: { parts: records.length, startedAt: startedAt.toISOString() } },
       cli,
     );
-    this.deps.log.info({ appointmentId: appt.id, parts: records.length }, 'admission.conference_started');
+    this.deps.log.info({ [this.naming.idKey]: appt.id, parts: records.length }, `${this.naming.prefix}.conference_started`);
   }
 }
 

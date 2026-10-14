@@ -295,7 +295,7 @@ const APPLICATION_KEY_COLUMNS = [
  * jogaria fora o resultado da triagem.
  *
  * Então: se a canônica está numa etapa de entrada, ela ADOTA a etapa da
- * fantasma. Se já tem decisão (CONFIRMED, SELECTED, REJECTED…), a decisão fica
+ * fantasma. Se já tem decisão (SELECTED, REJECTED…), a decisão fica
  * — é humana e mais autoritativa que a triagem automática. Não existe ordem
  * total confiável entre as etapas (`funnel_stage_precedence` empata REJECTED
  * com SELECTED), por isso a regra é esta, e não "a maior vence".

@@ -958,17 +958,14 @@ describe('importação do Tactiq — banco real, cofre e bucket em emulador (spe
     const a = await appt();
     see(a, [meeting(a, 'tq-h4-commit')]);
     const discard = jest.fn(async () => undefined);
-    const svc = service as unknown as { documents: unknown };
-    const original = svc.documents;
-    svc.documents = { prepare: async () => ({ commit: async () => { throw new Error('tx quebrou'); }, discard }) };
-    try {
-      expect(await service.importOne(a.id, clock)).toBe('summary_failed');
-      expect(discard).toHaveBeenCalledTimes(1);
-      expect((await events(a.id)).filter((e) => e.kind === 'summary_failed')).toEqual([expect.objectContaining({ reason: 'post_model_failed' })]);
-      expect(await docs(a.id)).toHaveLength(0);
-    } finally {
-      svc.documents = original;
-    }
+    // seam: o `documents` entra pelas deps na CONSTRUÇÃO (o destino padrão o embrulha); um 2º serviço com as mesmas deps, só o `documents` trocado
+    const { AdmissionImportService: Svc } = await import('../../src/modules/matching/application/AdmissionImportService');
+    const baseDeps = (service as unknown as { deps: ConstructorParameters<typeof Svc>[0] }).deps;
+    const svc = new Svc({ ...baseDeps, documents: { prepare: async () => ({ commit: async () => { throw new Error('tx quebrou'); }, discard }) } as never });
+    expect(await svc.importOne(a.id, clock)).toBe('summary_failed');
+    expect(discard).toHaveBeenCalledTimes(1);
+    expect((await events(a.id)).filter((e) => e.kind === 'summary_failed')).toEqual([expect.objectContaining({ reason: 'post_model_failed' })]);
+    expect(await docs(a.id)).toHaveLength(0);
   });
 
   it('H4 teto: 3 `vertex_timeout` contam -> a 4ª execução faz 0 chamadas; `vertex_auth_failed` NÃO conta e tem log próprio', async () => {

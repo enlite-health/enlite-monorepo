@@ -159,7 +159,8 @@ export class AdminAdmissionApiServiceClass {
     return token ? { Authorization: `Bearer ${token}` } : {};
   }
 
-  private async requestJson<T>(method: string, path: string, body?: unknown): Promise<T> {
+  /** Público de propósito: `AdminEnquadreApiService` (spec 052) reusa este cliente (auth, base URL, envelope, `ApiError`). */
+  async requestJson<T>(method: string, path: string, body?: unknown): Promise<T> {
     const headers = await this.getAuthHeaders();
     const response = await fetch(`${this.baseURL}${path}`, {
       method,

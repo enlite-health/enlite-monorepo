@@ -24,7 +24,6 @@ describe('deriveKanbanColumn', () => {
   it('maps terminal stages to their own column', () => {
     expect(deriveKanbanColumn('SELECTED', 'talentum', null)).toBe('SELECTED');
     expect(deriveKanbanColumn('REJECTED', 'manual', null)).toBe('REJECTED');
-    expect(deriveKanbanColumn('CONFIRMED', 'talentum', null)).toBe('CONFIRMED');
   });
 
   /** Fase 4 (D430): destino do arrasto manual do quadro B, entre SELECTED e REJECTED. */
@@ -152,7 +151,7 @@ describe('kanbanColumnRank', () => {
   const ALL_STAGES = [
     'INVITED', 'PRE_SCREENING', 'INITIATED', 'IN_PROGRESS', 'COMPLETED',
     'ANALYZED', 'IN_DOUBT', 'QUALIFIED', 'NOT_QUALIFIED', 'REPROGRAM',
-    'CONFIRMED', 'SELECTED', 'REJECTED', null, 'SOMETHING_NEW',
+    'SELECTED', 'REJECTED', null, 'SOMETHING_NEW',
   ];
   const ALL_SOURCES = ['manual', 'system', 'talentum', null];
 
@@ -174,7 +173,7 @@ describe('kanbanColumnRank', () => {
     const ranked = [...FUNNEL_COLUMNS].sort((a, b) => kanbanColumnRank(a) - kanbanColumnRank(b));
     expect(ranked).toEqual([
       'REJECTED', 'COMPATIBLE', 'INVITED', 'INICIADO', 'PRE_SCREENING',
-      'IN_PROGRESS', 'COMPLETED', 'CONFIRMED', 'SELECTED', 'QUICK_RESPONSE_TEAM',
+      'IN_PROGRESS', 'COMPLETED', 'SELECTED', 'QUICK_RESPONSE_TEAM',
     ]);
   });
 
@@ -214,7 +213,7 @@ describe('mostAdvancedColumn', () => {
   });
 
   it('is stable for equal columns', () => {
-    expect(mostAdvancedColumn('CONFIRMED', 'CONFIRMED')).toBe('CONFIRMED');
+    expect(mostAdvancedColumn('COMPLETED', 'COMPLETED')).toBe('COMPLETED');
   });
 });
 
@@ -269,17 +268,17 @@ describe('tallyKanbanColumns', () => {
     expect(tally.REJECTED).toBe(1);
   });
 
-  it('devolve as 10 colunas, todas zero, quando não há linhas (Fase 5: + COMPATIBLE)', () => {
+  it('devolve as 9 colunas, todas zero, quando não há linhas (Fase 5: + COMPATIBLE; spec 052: sem Confirmado)', () => {
     const tally = tallyKanbanColumns([]);
-    expect(Object.keys(tally)).toHaveLength(10);
+    expect(Object.keys(tally)).toHaveLength(9);
     expect(Object.values(tally).every((n) => n === 0)).toBe(true);
   });
 });
 
 /** emptyFunnelColumnCounts — todas as colunas do funil, nunca uma chave ausente. */
 describe('emptyFunnelColumnCounts', () => {
-  it('tem 10 chaves (Fase 5: + COMPATIBLE)', () => {
-    expect(Object.keys(emptyFunnelColumnCounts())).toHaveLength(10);
+  it('tem 9 chaves (Fase 5: + COMPATIBLE; spec 052: sem Confirmado)', () => {
+    expect(Object.keys(emptyFunnelColumnCounts())).toHaveLength(9);
   });
 });
 
@@ -288,10 +287,10 @@ describe('emptyFunnelColumnCounts', () => {
  * (DX-4.5), base do "salto" que WF/domain/moveReason.ts consome (P6).
  */
 describe('VACANCY_BOARD_COLUMNS / boardPosition', () => {
-  it('tem as 9 colunas do quadro, na ordem do operador (Fase 5: +COMPATIBLE na posição 0)', () => {
+  it('tem as 8 colunas do quadro, na ordem do operador (Fase 5: +COMPATIBLE na posição 0; spec 052: sem Confirmado)', () => {
     expect(VACANCY_BOARD_COLUMNS).toEqual([
       'COMPATIBLE', 'INVITED', 'INICIADO', 'PRE_SCREENING', 'COMPLETED',
-      'CONFIRMED', 'SELECTED', 'QUICK_RESPONSE_TEAM', 'REJECTED',
+      'SELECTED', 'QUICK_RESPONSE_TEAM', 'REJECTED',
     ]);
   });
 

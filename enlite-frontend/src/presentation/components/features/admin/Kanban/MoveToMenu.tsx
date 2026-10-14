@@ -7,7 +7,7 @@ import { ArrowRightLeft, ChevronDown } from 'lucide-react';
  * do KanbanBoard, menos REJECTED — a rejeição tem botão próprio ("Rechazar") que
  * abre o modal de motivo, então fica de fora do menu pra não duplicar o fluxo.
  */
-const MOVE_TARGETS = ['INVITED', 'CONFIRMED', 'SELECTED'] as const;
+const MOVE_TARGETS = ['INVITED', 'SELECTED'] as const;
 
 /**
  * Mapeia o id da COLUNA onde o card está para o funnel stage efetivo, pra excluir
@@ -23,6 +23,8 @@ interface MoveToMenuProps {
   currentStage: string;
   /** Move o card para o stage escolhido (mesmo caminho do drag). */
   onMove: (targetStage: string) => void;
+  /** Destinos oferecidos (ids de coluna; o rótulo vem de `admin.kanban.columns.<id>`). Padrão = `MOVE_TARGETS` (funil da vaga). */
+  targets?: readonly string[];
 }
 
 /**
@@ -34,13 +36,13 @@ interface MoveToMenuProps {
  * (chamador) decide isso, não passa `disabled` pra cá (ver `moveDisabled` em
  * `KanbanCard.tsx` — some, não desabilita).
  */
-export function MoveToMenu({ currentStage, onMove }: MoveToMenuProps) {
+export function MoveToMenu({ currentStage, onMove, targets: allowedTargets = MOVE_TARGETS }: MoveToMenuProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   const current = effectiveStage(currentStage);
-  const targets = MOVE_TARGETS.filter((stage) => stage !== current);
+  const targets = allowedTargets.filter((stage) => stage !== current);
 
   // Fecha ao clicar fora — sem isso o menu ficaria preso aberto no board.
   useEffect(() => {

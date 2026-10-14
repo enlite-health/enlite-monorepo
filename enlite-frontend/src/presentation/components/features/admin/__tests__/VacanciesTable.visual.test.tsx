@@ -23,7 +23,6 @@ const MOCK_VACANCIES: VacancyRow[] = [
       INICIADO: 1,
       PRE_SCREENING: 2,
       COMPLETED: 3,
-      CONFIRMED: 4,
       SELECTED: 3,
       REJECTED: 0,
     },
@@ -84,7 +83,7 @@ function cellByKey(container: HTMLElement, rowId: string, key: string): HTMLElem
 }
 
 describe('VacanciesTable — responsive columns', () => {
-  it('CRITICAL: numeric columns (as 8 do funil sem Confirmados + applicants + missing) have hidden md:table-cell', () => {
+  it('CRITICAL: numeric columns (as 8 do funil + applicants + missing) have hidden md:table-cell', () => {
     const { container } = render(<VacanciesTable vacancies={MOCK_VACANCIES} />);
     for (const key of RESPONSIVE_KEYS) {
       const cell = cellByKey(container, '1', key);
@@ -138,7 +137,7 @@ describe('VacanciesTable — empty state colspan', () => {
     expect(emptyCell).toBeTruthy();
 
     const colspan = parseInt(emptyCell!.getAttribute('colspan') || '0');
-    // eye + case/status + última ação + 8 colunas do funil (sem CONFIRMED) + applicants/missing = 14
+    // eye + case/status + última ação + 8 colunas do funil + applicants/missing = 14
     // e igual ao número real de <th> (a soma deixa de ser literal).
     expect(colspan).toBe(14);
     expect(colspan).toBe(container.querySelectorAll('thead th').length);

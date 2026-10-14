@@ -14,7 +14,6 @@
  * Mapeamento canônico stage → coluna do Kanban (do WJAFunnelController.ts):
  *   SELECTED → SELECTED
  *   REJECTED → REJECTED
- *   CONFIRMED → CONFIRMED
  *   COMPLETED/QUALIFIED/IN_DOUBT → COMPLETED
  *   IN_PROGRESS → IN_PROGRESS
  *   INITIATED → INITIATED
@@ -41,7 +40,6 @@ function stageToColumn(stage) {
   if (!stage) return 'INVITED';
   if (stage === 'SELECTED') return 'SELECTED';
   if (stage === 'REJECTED') return 'REJECTED';
-  if (stage === 'CONFIRMED') return 'CONFIRMED';
   if (['COMPLETED', 'QUALIFIED', 'IN_DOUBT'].includes(stage)) return 'COMPLETED';
   if (stage === 'IN_PROGRESS') return 'IN_PROGRESS';
   if (stage === 'INITIATED') return 'INITIATED';

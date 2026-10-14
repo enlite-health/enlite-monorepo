@@ -19,7 +19,6 @@ vi.mock('@presentation/components/ui/skeletons', () => ({ DetailSkeleton: () => 
 
 vi.mock('@presentation/components/features/admin/VacancyDetail/VacancyCaseCard', () => ({ VacancyCaseCard: () => <div /> }));
 vi.mock('@presentation/components/features/admin/VacancyDetail/VacancyPatientCard', () => ({ VacancyPatientCard: () => <div /> }));
-vi.mock('@presentation/components/features/admin/VacancyDetail/VacancyMeetLinksRow', () => ({ VacancyMeetLinksRow: () => null }));
 vi.mock('@presentation/components/features/admin/VacancyDetail/Funnel/VacancyFunnelView', () => ({ VacancyFunnelView: () => <div /> }));
 vi.mock('@presentation/components/features/admin/VacancyDetail/VacancyScheduleEditModal', () => ({ VacancyScheduleEditModal: () => null }));
 vi.mock('@presentation/components/features/admin/VacancyDetail/VacancyProfessionCard', () => ({

@@ -52,14 +52,13 @@ const MOCK_STAFF: MockUser = {
 };
 const MOCK_TOKEN = tokenFor(MOCK_STAFF);
 
-/** A ordem das 9 colunas do quadro B, fonte única `funnelTabsConfig.ts:20-30` (critério 3). */
+/** A ordem das 8 colunas do quadro B, fonte única `funnelTabsConfig.ts:20-30` (critério 3). */
 const KANBAN_COLUMN_ORDER = [
   'COMPATIBLE',
   'INVITED',
   'INICIADO',
   'PRE_SCREENING',
   'COMPLETED',
-  'CONFIRMED',
   'SELECTED',
   'QUICK_RESPONSE_TEAM',
   'REJECTED',

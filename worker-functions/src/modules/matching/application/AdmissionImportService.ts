@@ -3,12 +3,12 @@ import { withSessionAdvisoryLock } from '@shared/database/sessionAdvisoryLock';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { withActorContext } from '@shared/database/actorContext';
 import { logger } from '@shared/logging';
-import { countryToTimezone } from '@shared/locale/CountryTimezone';
-import {
-  StoreAdmissionSummaryDocument,
-} from '@modules/patient-documents/application/StoreAdmissionSummaryDocument';
-import type { AdmissionEventRepository } from '../infrastructure/AdmissionEventRepository';
-import type { AdmissionImportRepository, ImportCandidate } from '../infrastructure/AdmissionImportRepository';
+import { StoreAdmissionSummaryDocument } from '@modules/patient-documents/application/StoreAdmissionSummaryDocument';
+import type { ImportCandidate } from '../infrastructure/AdmissionImportRepository';
+import { AdmissionImportDestination } from './AdmissionImportDestination';
+import { isoDateLabel } from './admissionDateLabels';
+import type { ImportDestination, ImportSource, ImportSubject, ImportNaming, PreparedSummary } from './ports/ImportPorts';
+import type { SubjectTrail } from './ports/PostCallPorts';
 import {
   REHEARSAL_BUCKET_MISSING,
   SKIPPED_TEST_EVENT,
@@ -25,11 +25,13 @@ import {
 } from '../domain/admissionImport';
 import type { AdmissionLogger } from './AdmissionMessagingService';
 import { assertSummaryShape } from './admissionSummaryGate';
+import { SUMMARY_KEY, emptySummary, type ImportOutcome, type ImportSummary } from './admissionImportTypes';
 import { AdmissionTranscriptReader, sha256Hex, type FastGate } from './AdmissionTranscriptReader';
 import {
   AdmissionSummaryError,
   MAX_SUMMARY_ATTEMPTS,
   SUMMARY_ATTEMPTS_EXHAUSTED,
+  type AdmissionSummaryInput,
   type AdmissionSummaryResult,
   TranscriptVaultError,
   type AdmissionSummaryPort,
@@ -42,59 +44,21 @@ import {
   type TactiqTokenProvider,
 } from './ports/TactiqPorts';
 
-export type ImportOutcome =
-  | 'done'
-  | 'already_done'
-  | 'waiting'
-  | 'rejected'
-  | 'ambiguous'
-  | 'expired'
-  | 'blocked'
-  | 'wrong_account'
-  | 'vault_failed'
-  | 'summary_failed'
-  | 'transient'
-  | 'too_early'
-  | 'not_eligible'
-  | 'skipped_test' | 'skipped_locked' | 'not_ready';
+export type { ImportOutcome, ImportSummary } from './admissionImportTypes';
 
-export interface ImportSummary {
-  candidates: number;
-  done: number;
-  alreadyDone: number;
-  waiting: number;
-  rejected: number;
-  ambiguous: number;
-  expired: number;
-  blocked: number;
-  wrongAccount: number;
-  failed: number;
-  transient: number;
-  skipped: number;
-  errors: number;
-}
-
-const emptySummary = (): ImportSummary => ({
-  candidates: 0, done: 0, alreadyDone: 0, waiting: 0, rejected: 0, ambiguous: 0, expired: 0, blocked: 0, wrongAccount: 0,
-  failed: 0, transient: 0, skipped: 0, errors: 0,
-});
-
-const SUMMARY_KEY: Record<ImportOutcome, keyof ImportSummary> = {
-  done: 'done', already_done: 'alreadyDone', waiting: 'waiting', rejected: 'rejected', ambiguous: 'ambiguous', expired: 'expired',
-  blocked: 'blocked', wrong_account: 'wrongAccount', vault_failed: 'failed', summary_failed: 'failed', transient: 'transient',
-  too_early: 'skipped', not_eligible: 'skipped', skipped_test: 'skipped', skipped_locked: 'skipped', not_ready: 'skipped',
-};
-
-export interface AdmissionImportServiceDeps {
-  repo: AdmissionImportRepository;
-  events: AdmissionEventRepository;
+export interface AdmissionImportServiceDeps<S extends ImportSubject = ImportCandidate> {
+  /** FONTE (porto): a admissão passa `AdmissionImportRepository`; o enquadre, a sua sobre `enquadre_events`. */
+  repo: ImportSource<S>;
+  /** DESTINO (porto): chave do cofre, rótulo e gravação do resumo, nomes de log/trava. Padrão: o da admissão (usa `documents`). */
+  destination?: ImportDestination<S>;
+  events: SubjectTrail;
   tokens: TactiqTokenProvider;
   mcp: TactiqMcpPort;
   vault: TranscriptVaultPort;
   /** Bucket de ENSAIO (R-29). Ausente = como não configurado: `ensaio` falha fechado. */
   rehearsalVault?: RehearsalVaultPort;
   summary: AdmissionSummaryPort;
-  /** Fábrica (não instância): sem `PATIENT_DOCUMENTS_BUCKET` o `new` lança — só roda dentro de `importOne`. */
+  /** Só do destino PADRÃO (admissão): o resumo nos documentos do paciente. Ignorado quando `destination` é passado. */
   documents?: StoreAdmissionSummaryDocument;
   db?: Pool;
   log?: AdmissionLogger;
@@ -102,15 +66,6 @@ export interface AdmissionImportServiceDeps {
 }
 
 type Cli = PoolClient;
-
-/** Data da reunião em ISO (AAAA-MM-DD) no fuso do país — o `fecha` que o Gem pede. */
-function isoDateLabel(slotStart: Date, country: string): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: countryToTimezone(country), year: 'numeric', month: '2-digit', day: '2-digit' }).format(slotStart);
-}
-
-function dateLabel(slotStart: Date, country: string): string {
-  return new Intl.DateTimeFormat('es-AR', { timeZone: countryToTimezone(country), day: '2-digit', month: '2-digit', year: 'numeric' }).format(slotStart);
-}
 
 /**
  * AdmissionImportService — a importação do Tactiq (spec 049 F6, §3.3, §4.3, §4.4): MCP -> provas -> cofre -> Vertex -> PDF ->
@@ -127,18 +82,21 @@ function dateLabel(slotStart: Date, country: string): string {
  * `patient_documents` nem prompt além do Vertex. O resumo vai (como PDF cifrado) para `patient_documents`. Log e trilha: só ids,
  * contagens, hashes e motivos.
  */
-export class AdmissionImportService {
+export class AdmissionImportService<S extends ImportSubject = ImportCandidate> {
   private readonly db: Pool;
   private readonly log: AdmissionLogger;
   private readonly now: () => Date;
-  private readonly documents: StoreAdmissionSummaryDocument;
+  private readonly destination: ImportDestination<S>;
+  private readonly naming: ImportNaming;
   private readonly reader: AdmissionTranscriptReader;
 
-  constructor(private readonly deps: AdmissionImportServiceDeps) {
+  constructor(private readonly deps: AdmissionImportServiceDeps<S>) {
     this.db = deps.db ?? DatabaseConnection.getInstance().getPool();
     this.log = deps.log ?? (logger as unknown as AdmissionLogger);
     this.now = deps.now ?? (() => new Date());
-    this.documents = deps.documents ?? new StoreAdmissionSummaryDocument();
+    // Sem `destination` o sujeito É a reunião da admissão (S = ImportCandidate): é o único caso em que o destino padrão vale.
+    this.destination = deps.destination ?? (new AdmissionImportDestination(deps.documents ?? new StoreAdmissionSummaryDocument()) as unknown as ImportDestination<S>);
+    this.naming = this.destination.naming;
     this.reader = new AdmissionTranscriptReader(deps.tokens, deps.mcp);
   }
 
@@ -152,10 +110,10 @@ export class AdmissionImportService {
       } catch {
         // Uma reunião com defeito não derruba as outras. Sem o texto do erro: pode ecoar dado de terceiro.
         summary.errors += 1;
-        this.log.error({ appointmentId: id }, 'admission.import.step_failed');
+        this.log.error({ [this.naming.idKey]: id }, `${this.naming.prefix}.import.step_failed`);
       }
     }
-    this.log.info({ ...summary }, 'admission.import.run_done');
+    this.log.info({ ...summary }, `${this.naming.prefix}.import.run_done`);
     return summary;
   }
 
@@ -164,7 +122,7 @@ export class AdmissionImportService {
    * transação fica aberta enquanto se fala com Tactiq, cofre, Vertex ou bucket. Execução sobreposta não consegue o lock e pula.
    */
   async importOne(appointmentId: string, now: Date = this.now(), fast?: FastGate): Promise<ImportOutcome> {
-    const locked = await withSessionAdvisoryLock(this.db, `admission_import:${appointmentId}`, () => this.importHeld(appointmentId, now, fast));
+    const locked = await withSessionAdvisoryLock(this.db, `${this.naming.lockNamespace}:${appointmentId}`, () => this.importHeld(appointmentId, now, fast));
     return locked.acquired ? locked.value : 'skipped_locked';
   }
 
@@ -190,14 +148,14 @@ export class AdmissionImportService {
       if (!(await this.deps.repo.hasSkippedTest(a.id, 'import'))) {
         await this.deps.events.append({ appointmentId: a.id, kind: SKIPPED_TEST_EVENT, outcome: 'skipped', reason: 'import', ref: { realm } });
       }
-      this.log.info({ appointmentId: a.id, realm }, 'admission.import.skipped_test');
+      this.log.info({ [this.naming.idKey]: a.id, realm }, `${this.naming.prefix}.import.skipped_test`);
       return 'skipped_test';
     }
     // R-29, FALHA FECHADA: `ensaio` sem bucket de ensaio não chama NADA pago (token, Tactiq, cofre, Vertex) nem cai no cofre de 5
     // anos. `blocked` com o motivo na trilha (UM evento na transição); volta à fila e segue quando a env existir.
     if (transcriptDestination(realm) === 'rehearsal' && !this.deps.rehearsalVault?.isConfigured()) {
       await this.setBlocked(a, REHEARSAL_BUCKET_MISSING);
-      this.log.error({ appointmentId: a.id, reason: REHEARSAL_BUCKET_MISSING, realm }, 'admission.import_blocked');
+      this.log.error({ [this.naming.idKey]: a.id, reason: REHEARSAL_BUCKET_MISSING, realm }, `${this.naming.prefix}.import_blocked`);
       return 'blocked';
     }
     // Teto de tentativas de resumo (custo do Vertex): contado pelos eventos, sob o lock da reunião (vale para execuções sobrepostas).
@@ -205,11 +163,11 @@ export class AdmissionImportService {
       // O evento entra UMA vez, mesmo se a reunião já estava `blocked` por outro motivo (senão ela nunca sai da fila).
       if (!(await this.deps.repo.hasBlockedReason(a.id, SUMMARY_ATTEMPTS_EXHAUSTED))) {
         await this.inTx(async (cli) => {
-          await this.deps.repo.setState(a.id, 'blocked', cli);
+          await this.deps.repo.setState(a.id, 'blocked', cli, { reason: SUMMARY_ATTEMPTS_EXHAUSTED });
           await this.deps.events.append({ appointmentId: a.id, kind: 'import_blocked', outcome: 'blocked', reason: SUMMARY_ATTEMPTS_EXHAUSTED }, cli);
         });
       }
-      this.log.error({ appointmentId: a.id, reason: SUMMARY_ATTEMPTS_EXHAUSTED }, 'admission.import_blocked');
+      this.log.error({ [this.naming.idKey]: a.id, reason: SUMMARY_ATTEMPTS_EXHAUSTED }, `${this.naming.prefix}.import_blocked`);
       return 'blocked';
     }
     const endedAt = a.conference_ended_at;
@@ -252,36 +210,40 @@ export class AdmissionImportService {
         partSha256: parts.map((p) => p.sha256).join(','), chars: parts.reduce((n, p) => n + p.chars, 0), sha256: fullHash,
       },
     });
-    this.log.info({ appointmentId: a.id, parts: parts.length, sha256: fullHash }, 'admission.import_matched');
+    this.log.info({ [this.naming.idKey]: a.id, parts: parts.length, sha256: fullHash }, `${this.naming.prefix}.import_matched`);
 
     // 5. o cofre (real) ou o bucket de ensaio: só cria; 412 = já está lá (idempotente). O destino vem do `realm`, nunca do `is_test`.
-    const objectName = `${a.country}/${a.id}/transcricao-${fullHash}.txt`;
+    const objectName = this.destination.vaultObjectName(a, fullHash);
     const destination = { vault: this.deps.vault, rehearsal: this.deps.rehearsalVault, none: undefined }[transcriptDestination(realm)];
     try {
       if (!destination) throw new TranscriptVaultError('not_configured');
       const put = await destination.putOnce(objectName, body, { sha256: fullHash });
       if (put.outcome === 'created') {
         await this.deps.events.append({ appointmentId: a.id, kind: 'transcript_vaulted', outcome: 'created', ref: { object: objectName, generation: put.generation, sha256: fullHash, bytes: body.byteLength } });
-        this.log.info({ appointmentId: a.id, sha256: fullHash, bytes: body.byteLength }, 'admission.transcript_vaulted');
+        this.log.info({ [this.naming.idKey]: a.id, sha256: fullHash, bytes: body.byteLength }, `${this.naming.prefix}.transcript_vaulted`);
       } else {
         if (!(await this.deps.repo.hasEvent(a.id, 'transcript_vaulted'))) {
           await this.deps.events.append({ appointmentId: a.id, kind: 'transcript_vaulted', outcome: 'already_vaulted', ref: { object: objectName, sha256: fullHash, bytes: body.byteLength } });
         }
-        this.log.info({ appointmentId: a.id, sha256: fullHash }, 'admission.transcript_already_vaulted');
+        this.log.info({ [this.naming.idKey]: a.id, sha256: fullHash }, `${this.naming.prefix}.transcript_already_vaulted`);
       }
     } catch (err) {
       const reason = err instanceof TranscriptVaultError ? err.reason : 'unexpected';
       await this.deps.events.append({ appointmentId: a.id, kind: 'vault_write_failed', outcome: 'failed', reason });
-      this.log.error({ appointmentId: a.id, reason }, 'admission.vault_write_failed');
+      this.log.error({ [this.naming.idKey]: a.id, reason }, `${this.naming.prefix}.vault_write_failed`);
       return 'vault_failed';
     }
 
     // 6. o resumo (Vertex) e o PDF.
     let generated: AdmissionSummaryResult;
     // R-20: o rastro contável sai ANTES da chamada paga (só ids e o `realm`). Se a chamada falhar, o log já existe.
-    this.log.info({ provider: 'vertex', appointmentId: a.id, realm }, 'admission.paid_call');
+    this.log.info({ provider: 'vertex', [this.naming.idKey]: a.id, realm }, `${this.naming.prefix}.paid_call`);
     try {
-      generated = assertSummaryShape(await this.deps.summary.generate({ transcript: fullText, entrevistaId: a.admission_code, fecha: isoDateLabel(a.slot_start, a.country) }));
+      const input: AdmissionSummaryInput = {
+        transcript: fullText, entrevistaId: a.admission_code, fecha: isoDateLabel(a.slot_start, a.country), ...(await this.destination.summaryInput?.(a)),
+      };
+      // o gate de forma é da INSTÂNCIA do gerador (admissão × enquadre); sem ele vale o da admissão
+      generated = (this.deps.summary.assertShape ?? assertSummaryShape)(await this.deps.summary.generate(input), input);
     } catch (err) {
       const reason = err instanceof AdmissionSummaryError ? err.reason : 'unexpected';
       const placeholders = err instanceof AdmissionSummaryError ? err.placeholders : [];
@@ -290,21 +252,19 @@ export class AdmissionImportService {
         appointmentId: a.id, kind: 'summary_failed', outcome: 'failed', reason,
         ...(placeholders.length ? { ref: { placeholders: placeholders.join(',') } } : {}),
       });
-      this.log.error({ appointmentId: a.id, reason, ...(placeholders.length ? { placeholders } : {}), ...(errorClass ? { errorClass } : {}) }, 'admission.summary_failed');
+      this.log.error({ [this.naming.idKey]: a.id, reason, ...(placeholders.length ? { placeholders } : {}), ...(errorClass ? { errorClass } : {}) }, `${this.naming.prefix}.summary_failed`);
       // credencial quebrada: log ADICIONAL com nome próprio (alerta dedicado no futuro); o `admission.summary_failed` acima segue sendo o que o alerta vigia.
-      if (reason === 'vertex_auth_failed') this.log.error({ appointmentId: a.id, reason }, 'admission.vertex_auth_failed');
+      if (reason === 'vertex_auth_failed') this.log.error({ [this.naming.idKey]: a.id, reason }, `${this.naming.prefix}.vertex_auth_failed`);
       return 'summary_failed';
     }
     // Daqui em diante a chamada ao modelo JÁ foi paga: falha no PDF, no bucket ou na transação vira `post_model_failed` (conta no teto).
-    const label = `Resumen de admisión · ${dateLabel(a.slot_start, a.country)}`;
-    let prepared: Awaited<ReturnType<StoreAdmissionSummaryDocument['prepare']>> | undefined;
+    const label = this.destination.summaryLabel(a);
+    let prepared: PreparedSummary | undefined;
     let stored;
     try {
       const pdf = await renderAdmissionSummaryPdf({ title: label, body: generated.summary, structured: generated.structured });
       // o objeto do PDF sobe SEM transação; a linha do documento + `summary_saved` + `done` entram numa transação curta.
-      prepared = await this.documents.prepare({
-        patientId: a.patient_id, appointmentId: a.id, pdf, originalFilename: `resumen-admision-${a.admission_code}.pdf`, label,
-      });
+      prepared = await this.destination.prepareSummary(a, pdf, label, generated.promptVersion);
       const ready = prepared;
       stored = await this.inTx(async (cli) => {
         const r = await ready.commit(cli);
@@ -314,32 +274,32 @@ export class AdmissionImportService {
             cli,
           );
         }
-        await this.deps.repo.setState(a.id, 'done', cli);
+        await this.deps.repo.setState(a.id, 'done', cli, { transcript: { objectName, sha256: fullHash } });
         return r;
       });
     } catch (err) {
       if (prepared) await prepared.discard().catch(() => undefined); // sem objeto órfão no bucket
       await this.deps.events.append({ appointmentId: a.id, kind: 'summary_failed', outcome: 'failed', reason: 'post_model_failed' });
-      this.log.error({ appointmentId: a.id, reason: 'post_model_failed', errorClass: err instanceof Error ? err.constructor.name : 'unknown' }, 'admission.summary_failed');
+      this.log.error({ [this.naming.idKey]: a.id, reason: 'post_model_failed', errorClass: err instanceof Error ? err.constructor.name : 'unknown' }, `${this.naming.prefix}.summary_failed`);
       return 'summary_failed';
     }
     if (stored.outcome === 'duplicate') {
-      this.log.info({ appointmentId: a.id }, 'admission.import.already_done');
+      this.log.info({ [this.naming.idKey]: a.id }, `${this.naming.prefix}.import.already_done`);
       return 'already_done';
     }
-    this.log.info({ appointmentId: a.id, documentId: stored.documentId, promptVersion: generated.promptVersion }, 'admission.summary_saved');
+    this.log.info({ [this.naming.idKey]: a.id, documentId: stored.documentId, promptVersion: generated.promptVersion }, `${this.naming.prefix}.summary_saved`);
     return 'done';
   }
 
   // ── caminhos sem importação (cada um: UMA transação curta com estado + trilha) ─────────────────────
 
   /** 0 candidatas: espera (tentativa n); 72 h -> `expired`; a conta não vê reunião nenhuma depois de 3 h -> conta errada. */
-  private async noMatch(a: ImportCandidate, reason: 'not_found' | 'code_mismatch', now: Date, expired: boolean): Promise<ImportOutcome> {
+  private async noMatch(a: S, reason: 'not_found' | 'code_mismatch', now: Date, expired: boolean): Promise<ImportOutcome> {
     if (expired) return this.expire(a, reason);
     if (reason === 'not_found' && now.getTime() - (a.conference_ended_at as Date).getTime() >= WRONG_ACCOUNT_AFTER_MS) {
       const changed = await this.deps.tokens.markWrongAccount(a.host_email);
       await this.setBlocked(a, 'wrong_account');
-      this.log.error({ appointmentId: a.id, reason: 'wrong_account', linkChanged: changed }, 'admission.import_blocked');
+      this.log.error({ [this.naming.idKey]: a.id, reason: 'wrong_account', linkChanged: changed }, `${this.naming.prefix}.import_blocked`);
       return 'wrong_account';
     }
     await this.inTx(async (cli) => {
@@ -348,54 +308,54 @@ export class AdmissionImportService {
       }
       await this.deps.repo.setState(a.id, 'waiting', cli, { countAttempt: true });
     });
-    this.log.info({ appointmentId: a.id, reason, attempt: a.import_attempts + 1 }, 'admission.import_waiting');
+    this.log.info({ [this.naming.idKey]: a.id, reason, attempt: a.import_attempts + 1 }, `${this.naming.prefix}.import_waiting`);
     return 'waiting';
   }
 
-  private async terminal(a: ImportCandidate, state: 'rejected' | 'ambiguous', kind: string, reason: string): Promise<ImportOutcome> {
+  private async terminal(a: S, state: 'rejected' | 'ambiguous', kind: string, reason: string): Promise<ImportOutcome> {
     await this.inTx(async (cli) => {
       await this.deps.repo.setState(a.id, state, cli);
       await this.deps.events.append({ appointmentId: a.id, kind, outcome: state, reason }, cli);
     });
-    this.log.error({ appointmentId: a.id, reason }, `admission.${kind}`);
+    this.log.error({ [this.naming.idKey]: a.id, reason }, `${this.naming.prefix}.${kind}`);
     return state;
   }
 
-  private async expire(a: ImportCandidate, reason: string): Promise<ImportOutcome> {
+  private async expire(a: S, reason: string): Promise<ImportOutcome> {
     await this.inTx(async (cli) => {
       await this.deps.repo.setState(a.id, 'expired', cli);
       await this.deps.events.append({ appointmentId: a.id, kind: 'import_expired', outcome: 'expired', reason }, cli);
     });
-    this.log.error({ appointmentId: a.id, reason, hostEmailKnown: Boolean(a.host_email) }, 'admission.import_expired');
+    this.log.error({ [this.naming.idKey]: a.id, reason, hostEmailKnown: Boolean(a.host_email) }, `${this.naming.prefix}.import_expired`);
     return 'expired';
   }
 
-  private async block(a: ImportCandidate, reason: 'no_link'): Promise<ImportOutcome> {
+  private async block(a: S, reason: 'no_link'): Promise<ImportOutcome> {
     await this.setBlocked(a, reason);
-    this.log.error({ appointmentId: a.id, reason }, 'admission.import_blocked');
+    this.log.error({ [this.naming.idKey]: a.id, reason }, `${this.naming.prefix}.import_blocked`);
     return 'blocked';
   }
 
   /** `blocked` com motivo. O evento entra só na TRANSIÇÃO; o log de alarme sai a cada execução enquanto durar. */
-  private async setBlocked(a: ImportCandidate, reason: string): Promise<void> {
+  private async setBlocked(a: S, reason: string): Promise<void> {
     if (a.import_status === 'blocked') return;
     await this.inTx(async (cli) => {
-      await this.deps.repo.setState(a.id, 'blocked', cli);
+      await this.deps.repo.setState(a.id, 'blocked', cli, { reason });
       await this.deps.events.append({ appointmentId: a.id, kind: 'import_blocked', outcome: 'blocked', reason }, cli);
     });
   }
 
-  private transient(a: ImportCandidate, where: string): ImportOutcome {
-    this.log.warn({ appointmentId: a.id, reason: where }, 'admission.import.transient');
+  private transient(a: S, where: string): ImportOutcome {
+    this.log.warn({ [this.naming.idKey]: a.id, reason: where }, `${this.naming.prefix}.import.transient`);
     return 'transient';
   }
 
   /** 401/403 do MCP derruba o vínculo (e bloqueia); rede/5xx só adia. Nunca o corpo nem a mensagem do erro. */
-  private async mcpFailure(a: ImportCandidate, err: unknown, where: string): Promise<ImportOutcome> {
+  private async mcpFailure(a: S, err: unknown, where: string): Promise<ImportOutcome> {
     if (err instanceof TactiqUnauthorizedError) {
       await this.deps.tokens.markBroken(a.host_email);
       await this.setBlocked(a, 'no_link');
-      this.log.error({ appointmentId: a.id, reason: 'unauthorized', where }, 'admission.import_blocked');
+      this.log.error({ [this.naming.idKey]: a.id, reason: 'unauthorized', where }, `${this.naming.prefix}.import_blocked`);
       return 'blocked';
     }
     return this.transient(a, `${where}:${(err as { reason?: string })?.reason ?? 'unexpected'}`);

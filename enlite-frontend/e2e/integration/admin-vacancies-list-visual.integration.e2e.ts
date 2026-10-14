@@ -218,12 +218,10 @@ test.describe('AdminVacanciesPage — list visual + structural regression @integ
     // Removed column must not be in the DOM
     await expect(page.getByRole('columnheader', { name: /Grado de Dependencia/i })).toHaveCount(0);
 
-    // Spec 046 F1: as 3 colunas saíram da lista
+    // Spec 046 F1: as colunas Prioridad e Días sin difusión saíram da lista (a coluna de Confirmados saiu do produto inteiro na 052)
     await expect(page.getByRole('columnheader', { name: /Prioridad/i })).toHaveCount(0);
-    await expect(page.getByRole('columnheader', { name: /^Confirmados$/i })).toHaveCount(0);
     await expect(page.getByRole('columnheader', { name: /Días sin difusión/i })).toHaveCount(0);
     await expect(page.getByTestId('vacancies-col-priority')).toHaveCount(0);
-    await expect(page.getByTestId('vacancies-col-CONFIRMED')).toHaveCount(0);
     await expect(page.getByTestId('vacancies-col-days-without-divulgation')).toHaveCount(0);
 
     // Removed Clientes filter

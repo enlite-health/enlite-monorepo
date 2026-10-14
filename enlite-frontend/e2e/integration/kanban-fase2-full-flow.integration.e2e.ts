@@ -248,7 +248,7 @@ test.describe('Kanban Fase 2 — Fluxo Completo E2E @integration', () => {
 
     const colIds = [
       'INVITED', 'INICIADO', 'PRE_SCREENING', 'COMPLETED',
-      'CONFIRMED', 'SELECTED', 'REJECTED',
+      'SELECTED', 'REJECTED',
     ];
 
     for (const col of colIds) {
@@ -323,10 +323,10 @@ test.describe('Kanban Fase 2 — Fluxo Completo E2E @integration', () => {
       'Card Path A NÃO deve ter data-drag-disabled=true (encuadreId != null)',
     ).not.toBe('true');
 
-    // ── 5. Drag: INVITED → CONFIRMED ─────────────────────────────────────────
+    // ── 5. Drag: INICIADO → SELECTED ─────────────────────────────────────────
     // NOTA: INVITED, INICIADO, PRE_SCREENING, IN_PROGRESS, COMPLETED são colunas NÃO-droppable
     // (driven by Talentum webhook ou gate de postulação). Admin só pode arrastar manualmente para
-    // CONFIRMED, SELECTED ou REJECTED. Portanto arrastamos para CONFIRMED.
+    // SELECTED ou REJECTED. Portanto arrastamos para SELECTED.
     //
     // IMPORTANTE: usar page.on('response', ...) em vez de page.route() porque
     // installKanbanInterceptors registra **/api/** com route.continue() e a
@@ -353,24 +353,23 @@ test.describe('Kanban Fase 2 — Fluxo Completo E2E @integration', () => {
     });
     await page.waitForTimeout(200);
 
-    const confirmedCol = page.locator('[data-testid="kanban-column-CONFIRMED"]');
+    const selectedCol = page.locator('[data-testid="kanban-column-SELECTED"]');
 
-    await dndKitDrag(page, cardWrapper, confirmedCol, {
+    await dndKitDrag(page, cardWrapper, selectedCol, {
       activationSteps: 8,
       mainSteps: 30,
       pauseAfterDown: 80,
       pauseAfterUp: 600,
     });
 
-    // Mover para CONFIRMED sempre abre o diálogo de data da entrevista (pré-existente,
-    // 51e3ec19, DX-4.10 "Invitados → Confirmados abre a data da entrevista, e depois o
-    // motivo") — "Todavía no sé la fecha" dispara o 1º PUT (achado da P21, classe A).
-    const scheduleModal = page.getByTestId('interview-schedule-modal');
-    await expect(scheduleModal).toBeVisible({ timeout: 10_000 });
-    await page.getByTestId('interview-schedule-unknown').click();
-    await expect(scheduleModal).toHaveCount(0);
+    // Mover para SELECTED abre o diálogo de papel (titular/suplente); confirmar dispara o 1º PUT.
+    const roleModal = page.getByTestId('role-modal');
+    await expect(roleModal).toBeVisible({ timeout: 10_000 });
+    await page.locator('[data-testid^="role-option-"]').first().click();
+    await page.getByTestId('role-confirm').click();
+    await expect(roleModal).toHaveCount(0);
 
-    // DX-4.17/A-contrato (R2, Fase 4): INICIADO → CONFIRMED é salto (posições 1→4,
+    // DX-4.17/A-contrato (R2, Fase 4): INICIADO → SELECTED é salto (posições 1→4,
     // DX-4.5) — o 1º PUT vem sem reasonCategory e recebe 422, o board abre o
     // move-reason-modal; escolher a opção reenvia o PUT com reasonCategory (2xx).
     const moveReasonModal = page.getByTestId('move-reason-modal');
@@ -404,7 +403,7 @@ test.describe('Kanban Fase 2 — Fluxo Completo E2E @integration', () => {
       `PUT /move deve retornar 2xx. Status: ${lastMove.status}`,
     ).toBeLessThan(300);
 
-    // ── 7. DOM: card moveu de INICIADO para CONFIRMED ─────────────────────────
+    // ── 7. DOM: card moveu de INICIADO para SELECTED ─────────────────────────
     const iniciadoCol = page.locator('[data-testid="kanban-column-INICIADO"]');
     await expect(
       iniciadoCol.locator(`[data-testid="kanban-draggable-${wjaA_Id}"]`),
@@ -412,19 +411,19 @@ test.describe('Kanban Fase 2 — Fluxo Completo E2E @integration', () => {
     ).not.toBeVisible();
 
     await expect(
-      confirmedCol.locator(`[data-testid="kanban-draggable-${wjaA_Id}"]`),
-      'Card Path A deve estar em CONFIRMED após drag',
+      selectedCol.locator(`[data-testid="kanban-draggable-${wjaA_Id}"]`),
+      'Card Path A deve estar em SELECTED após drag',
     ).toBeVisible();
 
-    // ── 8. Persistência: refresh confirma stage CONFIRMED ─────────────────────
+    // ── 8. Persistência: refresh confirma stage SELECTED ─────────────────────
     await page.reload();
     await page.waitForSelector('[data-testid="kanban-board"]', { state: 'attached', timeout: 20_000 });
     await page.waitForTimeout(1_500);
 
     await expect(
-      page.locator('[data-testid="kanban-column-CONFIRMED"]')
+      page.locator('[data-testid="kanban-column-SELECTED"]')
         .locator(`[data-testid="kanban-draggable-${wjaA_Id}"]`),
-      'Card Path A deve persistir em CONFIRMED após reload',
+      'Card Path A deve persistir em SELECTED após reload',
     ).toBeVisible();
 
     // ── 9. Screenshot obrigatório ─────────────────────────────────────────────
@@ -756,7 +755,7 @@ test.describe('Kanban Fase 2 — Fluxo Completo E2E @integration', () => {
 
     // ── 4. Drag: INVITED → SELECTED ──────────────────────────────────────────
     // NOTA: INVITED, INICIADO, PRE_SCREENING, IN_PROGRESS, COMPLETED não são drop targets.
-    // Admin só pode mover manualmente para CONFIRMED, SELECTED ou REJECTED.
+    // Admin só pode mover manualmente para SELECTED ou REJECTED.
     // page.on('response') evita conflito com **/api/** catch-all do installKanbanInterceptors.
     const capturedMovesC: { url: string; status: number }[] = [];
     const onRespF4 = (resp: import('@playwright/test').Response) => {
@@ -839,7 +838,7 @@ test.describe('Kanban Fase 2 — Fluxo Completo E2E @integration', () => {
       'Card Path D NÃO deve ter data-drag-disabled=true',
     ).not.toBe('true');
 
-    // ── 4. Drag: INVITED → CONFIRMED ─────────────────────────────────────────
+    // ── 4. Drag: INVITED → SELECTED ─────────────────────────────────────────
     // getRealEncuadreId retorna item.encuadreId — UUID real do encuadre para PUT /move
     const encIdD = await getRealEncuadreId(page.request, workerD_Id, vacancyId);
     expect(
@@ -863,10 +862,10 @@ test.describe('Kanban Fase 2 — Fluxo Completo E2E @integration', () => {
     });
     await page.waitForTimeout(200);
 
-    const confirmedCol = page.locator('[data-testid="kanban-column-CONFIRMED"]');
+    const selectedCol = page.locator('[data-testid="kanban-column-SELECTED"]');
     await expect(cardWrapperD, 'Card Path D deve estar visível').toBeVisible();
-    await expect(confirmedCol, 'Coluna CONFIRMED deve estar visível').toBeVisible();
-    await dndKitDrag(page, cardWrapperD, confirmedCol, {
+    await expect(selectedCol, 'Coluna SELECTED deve estar visível').toBeVisible();
+    await dndKitDrag(page, cardWrapperD, selectedCol, {
       activationSteps: 8,
       mainSteps: 30,
       pauseAfterDown: 80,
@@ -892,15 +891,15 @@ test.describe('Kanban Fase 2 — Fluxo Completo E2E @integration', () => {
       `Path D: PUT /move deve retornar 2xx`,
     ).toBeLessThan(300);
 
-    // ── 6. Reload + assertir CONFIRMED ───────────────────────────────────────
+    // ── 6. Reload + assertir SELECTED ───────────────────────────────────────
     await page.reload();
     await page.waitForSelector('[data-testid="kanban-board"]', { state: 'attached', timeout: 20_000 });
     await page.waitForTimeout(1_500);
 
     await expect(
-      page.locator('[data-testid="kanban-column-CONFIRMED"]')
+      page.locator('[data-testid="kanban-column-SELECTED"]')
         .locator(`[data-testid="kanban-draggable-${wjaD_Id}"]`),
-      'Card Path D deve persistir em CONFIRMED após reload',
+      'Card Path D deve persistir em SELECTED após reload',
     ).toBeVisible();
 
     await expect(

@@ -148,7 +148,6 @@ export class GetManagementDashboardUseCase {
     const allocated = alocadosActivos + alocadosCubriendoGuardias;
     const blocked = blockedRow.rows[0]?.bloqueados ?? 0;
     const encuadre = encuadreRow.rows[0]?.agendados ?? 0;
-    const encuadreSemData = encuadreRow.rows[0]?.sem_data ?? 0;
 
     // Vagas abertas POR STATUS — conceito distinto de "equipe por armar" (bucket).
     // Mantido como estava para não quebrar vacantesAbiertas (teste de regressão).
@@ -227,13 +226,11 @@ export class GetManagementDashboardUseCase {
         bloqueados: blocked,
         preScreening: pick(funnel, 'PRE_SCREENING'),
         completos: pick(funnel, 'COMPLETED'),
-        agendados: pick(funnel, 'CONFIRMED'),
         seleccionados: pick(funnel, 'SELECTED'),
         rechazados: pick(funnel, 'REJECTED'),
       },
       encuadres: {
         agendadosEstaSemana: encuadre,
-        semDataRegistrada: encuadreSemData,
         // Omitido quando a capacidade está zerada/inválida (nunca 0% fabricado).
         ...(capacidadeSemana != null
           ? {
