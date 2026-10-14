@@ -1,6 +1,7 @@
 import type { PoolClient } from 'pg';
 import type { SkippedTestStage } from '../../domain/admissionRealm';
 import type { Ex } from './PostCallPorts';
+import type { AdmissionSummaryInput } from './AdmissionImportPorts';
 
 /**
  * Portos da importação do Tactiq (spec 052, Fase 3, T-34a): a lógica é UMA só (`AdmissionImportService`); muda a FONTE (a fila, a
@@ -31,7 +32,11 @@ export type ImportState = 'waiting' | 'done' | 'rejected' | 'ambiguous' | 'expir
 export interface ImportSource<S extends ImportSubject = ImportSubject> {
   listDueIds(now: Date, limit?: number, ex?: Ex): Promise<string[]>;
   find(id: string, ex?: Ex): Promise<S | null>;
-  setState(id: string, state: ImportState, ex: Ex, opts?: { countAttempt?: boolean }): Promise<void>;
+  /**
+   * `reason` (só com `blocked`): o motivo que o enquadre grava em `blocked_reason`; `transcript` (só com `done`): nome do objeto e sha256 no cofre.
+   * A admissão ignora os dois (o motivo vai só à trilha).
+   */
+  setState(id: string, state: ImportState, ex: Ex, opts?: { countAttempt?: boolean; reason?: string; transcript?: { objectName: string; sha256: string } }): Promise<void>;
   hasEvent(subjectId: string, kind: string, ex?: Ex): Promise<boolean>;
   hasSkippedTest(subjectId: string, stage: SkippedTestStage, ex?: Ex): Promise<boolean>;
   hasBlockedReason(subjectId: string, reason: string, ex?: Ex): Promise<boolean>;
@@ -62,6 +67,8 @@ export interface ImportDestination<S extends ImportSubject = ImportSubject> {
   vaultObjectName(subject: S, sha256: string): string;
   /** Título do PDF do resumo. */
   summaryLabel(subject: S): string;
-  /** Sobe o PDF (sem transação) e devolve a gravação da linha do documento. */
-  prepareSummary(subject: S, pdf: Buffer, label: string): Promise<PreparedSummary>;
+  /** Sobe o PDF (sem transação) e devolve a gravação da linha do documento. `promptVersion` = versão do prompt que gerou o resumo. */
+  prepareSummary(subject: S, pdf: Buffer, label: string, promptVersion: string): Promise<PreparedSummary>;
+  /** Entrada EXTRA do resumo (o enquadre manda a lista de convocados). Ausente = nada além de transcrição, código e data. */
+  summaryInput?(subject: S): Promise<Pick<AdmissionSummaryInput, 'convocados'>>;
 }

@@ -25,11 +25,13 @@ import {
 } from '../domain/admissionImport';
 import type { AdmissionLogger } from './AdmissionMessagingService';
 import { assertSummaryShape } from './admissionSummaryGate';
+import { SUMMARY_KEY, emptySummary, type ImportOutcome, type ImportSummary } from './admissionImportTypes';
 import { AdmissionTranscriptReader, sha256Hex, type FastGate } from './AdmissionTranscriptReader';
 import {
   AdmissionSummaryError,
   MAX_SUMMARY_ATTEMPTS,
   SUMMARY_ATTEMPTS_EXHAUSTED,
+  type AdmissionSummaryInput,
   type AdmissionSummaryResult,
   TranscriptVaultError,
   type AdmissionSummaryPort,
@@ -42,48 +44,7 @@ import {
   type TactiqTokenProvider,
 } from './ports/TactiqPorts';
 
-export type ImportOutcome =
-  | 'done'
-  | 'already_done'
-  | 'waiting'
-  | 'rejected'
-  | 'ambiguous'
-  | 'expired'
-  | 'blocked'
-  | 'wrong_account'
-  | 'vault_failed'
-  | 'summary_failed'
-  | 'transient'
-  | 'too_early'
-  | 'not_eligible'
-  | 'skipped_test' | 'skipped_locked' | 'not_ready';
-
-export interface ImportSummary {
-  candidates: number;
-  done: number;
-  alreadyDone: number;
-  waiting: number;
-  rejected: number;
-  ambiguous: number;
-  expired: number;
-  blocked: number;
-  wrongAccount: number;
-  failed: number;
-  transient: number;
-  skipped: number;
-  errors: number;
-}
-
-const emptySummary = (): ImportSummary => ({
-  candidates: 0, done: 0, alreadyDone: 0, waiting: 0, rejected: 0, ambiguous: 0, expired: 0, blocked: 0, wrongAccount: 0,
-  failed: 0, transient: 0, skipped: 0, errors: 0,
-});
-
-const SUMMARY_KEY: Record<ImportOutcome, keyof ImportSummary> = {
-  done: 'done', already_done: 'alreadyDone', waiting: 'waiting', rejected: 'rejected', ambiguous: 'ambiguous', expired: 'expired',
-  blocked: 'blocked', wrong_account: 'wrongAccount', vault_failed: 'failed', summary_failed: 'failed', transient: 'transient',
-  too_early: 'skipped', not_eligible: 'skipped', skipped_test: 'skipped', skipped_locked: 'skipped', not_ready: 'skipped',
-};
+export type { ImportOutcome, ImportSummary } from './admissionImportTypes';
 
 export interface AdmissionImportServiceDeps<S extends ImportSubject = ImportCandidate> {
   /** FONTE (porto): a admissão passa `AdmissionImportRepository`; o enquadre, a sua sobre `enquadre_events`. */
@@ -202,7 +163,7 @@ export class AdmissionImportService<S extends ImportSubject = ImportCandidate> {
       // O evento entra UMA vez, mesmo se a reunião já estava `blocked` por outro motivo (senão ela nunca sai da fila).
       if (!(await this.deps.repo.hasBlockedReason(a.id, SUMMARY_ATTEMPTS_EXHAUSTED))) {
         await this.inTx(async (cli) => {
-          await this.deps.repo.setState(a.id, 'blocked', cli);
+          await this.deps.repo.setState(a.id, 'blocked', cli, { reason: SUMMARY_ATTEMPTS_EXHAUSTED });
           await this.deps.events.append({ appointmentId: a.id, kind: 'import_blocked', outcome: 'blocked', reason: SUMMARY_ATTEMPTS_EXHAUSTED }, cli);
         });
       }
@@ -278,7 +239,11 @@ export class AdmissionImportService<S extends ImportSubject = ImportCandidate> {
     // R-20: o rastro contável sai ANTES da chamada paga (só ids e o `realm`). Se a chamada falhar, o log já existe.
     this.log.info({ provider: 'vertex', [this.naming.idKey]: a.id, realm }, `${this.naming.prefix}.paid_call`);
     try {
-      generated = assertSummaryShape(await this.deps.summary.generate({ transcript: fullText, entrevistaId: a.admission_code, fecha: isoDateLabel(a.slot_start, a.country) }));
+      const input: AdmissionSummaryInput = {
+        transcript: fullText, entrevistaId: a.admission_code, fecha: isoDateLabel(a.slot_start, a.country), ...(await this.destination.summaryInput?.(a)),
+      };
+      // o gate de forma é da INSTÂNCIA do gerador (admissão × enquadre); sem ele vale o da admissão
+      generated = (this.deps.summary.assertShape ?? assertSummaryShape)(await this.deps.summary.generate(input), input);
     } catch (err) {
       const reason = err instanceof AdmissionSummaryError ? err.reason : 'unexpected';
       const placeholders = err instanceof AdmissionSummaryError ? err.placeholders : [];
@@ -299,7 +264,7 @@ export class AdmissionImportService<S extends ImportSubject = ImportCandidate> {
     try {
       const pdf = await renderAdmissionSummaryPdf({ title: label, body: generated.summary, structured: generated.structured });
       // o objeto do PDF sobe SEM transação; a linha do documento + `summary_saved` + `done` entram numa transação curta.
-      prepared = await this.destination.prepareSummary(a, pdf, label);
+      prepared = await this.destination.prepareSummary(a, pdf, label, generated.promptVersion);
       const ready = prepared;
       stored = await this.inTx(async (cli) => {
         const r = await ready.commit(cli);
@@ -309,7 +274,7 @@ export class AdmissionImportService<S extends ImportSubject = ImportCandidate> {
             cli,
           );
         }
-        await this.deps.repo.setState(a.id, 'done', cli);
+        await this.deps.repo.setState(a.id, 'done', cli, { transcript: { objectName, sha256: fullHash } });
         return r;
       });
     } catch (err) {
@@ -375,7 +340,7 @@ export class AdmissionImportService<S extends ImportSubject = ImportCandidate> {
   private async setBlocked(a: S, reason: string): Promise<void> {
     if (a.import_status === 'blocked') return;
     await this.inTx(async (cli) => {
-      await this.deps.repo.setState(a.id, 'blocked', cli);
+      await this.deps.repo.setState(a.id, 'blocked', cli, { reason });
       await this.deps.events.append({ appointmentId: a.id, kind: 'import_blocked', outcome: 'blocked', reason }, cli);
     });
   }

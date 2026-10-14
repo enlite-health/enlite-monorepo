@@ -61,9 +61,27 @@ export interface AdmissionSummaryResult {
   jsonInvalid?: boolean;
 }
 
-/** O "Gem" da Enlite, do nosso lado (D482): transcrição -> resumo, via Vertex dentro do perímetro GCP. */
+/** Convocado do enquadre que entra no prompt: referência INTERNA (id da participação) + nome. Nada além disso (sem telefone, e-mail, documento). */
+export interface SummaryConvocado {
+  ref: string;
+  nombre: string;
+}
+
+/** O que o resumo recebe. `convocados` só existe no enquadre (spec 052, Fase 3). */
+export interface AdmissionSummaryInput {
+  transcript: string;
+  entrevistaId?: string;
+  fecha?: string;
+  convocados?: readonly SummaryConvocado[];
+}
+
+/**
+ * O "Gem" da Enlite, do nosso lado (D482): transcrição -> resumo, via Vertex dentro do perímetro GCP.
+ * `assertShape` (opcional): o gate de forma DESTA instância (a admissão e o enquadre têm esquemas diferentes); ausente = o da admissão.
+ */
 export interface AdmissionSummaryPort {
-  generate(input: { transcript: string; entrevistaId?: string; fecha?: string }): Promise<AdmissionSummaryResult>;
+  generate(input: AdmissionSummaryInput): Promise<AdmissionSummaryResult>;
+  readonly assertShape?: (result: AdmissionSummaryResult, input: AdmissionSummaryInput) => AdmissionSummaryResult;
 }
 
 /**
