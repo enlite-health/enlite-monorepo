@@ -66,4 +66,19 @@ describe('useVacancyFunnelTable — polling com a aba oculta', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(INTERVAL_MS * 2); });
     expect(fetchMock()).toHaveBeenCalledTimes(0);
   });
+  it('erro de carga setado + poll silencioso com SUCESSO limpa o erro; poll silencioso que FALHA não seta erro', async () => {
+    fetchMock().mockRejectedValueOnce(new Error('HTTP 500'));
+    const { result } = renderHook(() => useVacancyFunnelTable('vac-1', { key: 'k', kind: 'bucket', bucket: 'ALL' }, true));
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(result.current.error).toBe('HTTP 500');
+
+    // poll silencioso com sucesso: o banner (error) some
+    await act(async () => { await vi.advanceTimersByTimeAsync(INTERVAL_MS); });
+    expect(result.current.error).toBeNull();
+
+    // poll silencioso que falha: NÃO seta erro (comportamento mantido)
+    fetchMock().mockRejectedValueOnce(new Error('HTTP 503'));
+    await act(async () => { await vi.advanceTimersByTimeAsync(INTERVAL_MS); });
+    expect(result.current.error).toBeNull();
+  });
 });

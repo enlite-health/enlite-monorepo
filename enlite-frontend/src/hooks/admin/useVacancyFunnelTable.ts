@@ -40,7 +40,7 @@ export function useVacancyFunnelTable(
           tab.kind === 'column' ? { columns: tab.column.sources } : { bucket: tab.bucket },
         );
         setData(response);
-        if (!silent) setError(null);
+        setError(null);
       } catch (err) {
         if (!silent)
           setError(
