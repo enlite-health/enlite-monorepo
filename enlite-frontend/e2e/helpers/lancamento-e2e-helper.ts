@@ -442,7 +442,7 @@ export async function completeDraftViaWizard(page: Page, vacancyId: string): Pro
   await page.getByTestId('complete-vacancy-btn').click();
   await expect(page).toHaveURL(new RegExp(`/admin/vacancies/${vacancyId}/edit$`), { timeout: 15_000 });
 
-  await page.locator('label[for="profession-AT"]').click();
+  // Spec 027 Fase 3 (D508): a profissão chega PRÉ-PREENCHIDA do serviço (RECRUITMENT_FIELDS_E2E → ['AT']); clicar a desmarcaria.
   await expect(page.getByTestId('profession-checkbox-AT')).toBeChecked();
 
   const salaryInput = page.getByTestId('salary-text-input');
