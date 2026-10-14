@@ -211,6 +211,12 @@ async function mockBaseApis(
   page: Page,
   funnelRows: ReturnType<typeof makeRow>[],
 ): Promise<void> {
+  // 054: o padrão da tela agora é Kanban, mas estes cenários mockam só `funnel-table` (Lista).
+  // Fixa a Lista na chave v2 para o cenário mockado continuar coerente.
+  await page.addInitScript(
+    ([key]) => window.localStorage.setItem(key, 'list'),
+    [`vacancy-funnel-view-v2-${VACANCY_ID}`],
+  );
   await page.route(`**/api/admin/vacancies/${VACANCY_ID}`, (route) =>
     route.fulfill({
       status: 200,

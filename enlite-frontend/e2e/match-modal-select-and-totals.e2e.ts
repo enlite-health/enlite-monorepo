@@ -56,7 +56,7 @@ test.describe('Match modal — select-all por Km + marcador de totais (auth real
     await page.route(`**/api/admin/vacancies/${VACANCY_ID}`, (r: Route) =>
       r.fulfill(ok({ ...mockVacancy, meet_link_1: 'https://meet.google.com/abc-defg-hij' })));
 
-    // Funnel vazio (a tela abre em lista; o modal é aberto via "Hacer match").
+    // Funnel vazio (a tela abre no Kanban; o modal é aberto via "Hacer match", presente nas duas visões).
     await page.route(`**/api/admin/vacancies/${VACANCY_ID}/funnel`, (r: Route) =>
       r.fulfill(ok({ stages: emptyStages(), totalEncuadres: 0 })));
     await page.route(`**/api/admin/vacancies/${VACANCY_ID}/funnel-table**`, (r: Route) =>

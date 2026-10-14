@@ -88,7 +88,7 @@ async function abrirKanban(page: Page): Promise<void> {
 
   await page.addInitScript(
     ([k]) => window.localStorage.setItem(k, 'kanban'),
-    [`vacancy-funnel-view-${VAGA}`],
+    [`vacancy-funnel-view-v2-${VAGA}`],
   );
   await page.goto(`/admin/vacancies/${VAGA}`);
   await expect(page.locator(`[data-testid="kanban-card-${CARD}"]`)).toBeVisible({ timeout: 15_000 });
@@ -184,7 +184,7 @@ test.describe('Card ELEGIBLE — promover a candidatura', () => {
 
     await page.addInitScript(
       ([k]) => window.localStorage.setItem(k, 'kanban'),
-      [`vacancy-funnel-view-${VAGA}`],
+      [`vacancy-funnel-view-v2-${VAGA}`],
     );
     await page.goto(`/admin/vacancies/${VAGA}`);
 

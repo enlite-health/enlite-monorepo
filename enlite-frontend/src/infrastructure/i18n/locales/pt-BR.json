@@ -2335,11 +2335,20 @@
           "whatsapp": "WHATSAPP",
           "accepted": "ACEITOU",
           "registration": "CADASTRO",
+          "stage": "ETAPA",
           "notes": "NOTAS"
         },
         "acceptedYes": "Sim",
         "acceptedNo": "Não",
         "emptyState": "Nenhum candidato neste estágio ainda.",
+        "emptyFiltered": "Nenhum candidato corresponde à busca.",
+        "ariaLabel": "Tabela do funil da vaga",
+        "filters": {
+          "searchPlaceholder": "Buscar por nome ou telefone",
+          "searchLabel": "Buscar candidato",
+          "registrationLabel": "Cadastro",
+          "registrationAll": "Todos"
+        },
         "registration": {
           "complete": "Completo",
           "incomplete": "Incompleto"

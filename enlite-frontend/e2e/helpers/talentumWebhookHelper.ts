@@ -73,7 +73,7 @@ async function forceKanbanView(page: Page, vacancyId: string): Promise<void> {
     ([key]) => {
       window.localStorage.setItem(key, 'kanban');
     },
-    [`vacancy-funnel-view-${vacancyId}`],
+    [`vacancy-funnel-view-v2-${vacancyId}`],
   );
 }
 

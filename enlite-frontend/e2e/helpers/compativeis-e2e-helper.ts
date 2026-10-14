@@ -5,7 +5,7 @@
  * semear um card "Compatible" (matched, não convidado: `INVITED`/`system` SEM `messaged_at` —
  * `isMatchedNotInvited`, `WF/domain/kanbanColumn.ts:42-48`), uma vaga isolada por geografia
  * (para a contagem do match não depender do lixo de outros e2e), rodar o match pela rota real
- * e ler a contagem de "Compatibles" nos 3 lugares (Kanban, aba do funil, lista de vacantes).
+ * e ler a contagem de "Compatibles" nos 3 lugares (Kanban, Lista do funil, lista de vacantes).
  *
  * Reusa sem copiar: `insertTestWorker`/`insertTestPatient`/`insertBaseVacancy`/`cleanupTestWorker`/
  * `cleanupTestPatient` (db-test-helper.ts), `insertWJA`/`upsertEncuadre`/`cleanupWJAAndEncuadre`
@@ -192,34 +192,84 @@ export async function readFunnelTableApi(
 // aqui em vez de repetidas — cada spec só importa.
 
 /**
- * `VacancyFunnelView.tsx` persiste a última vista (list/kanban) em
- * `localStorage['vacancy-funnel-view-<id>']` — limpa antes de cada visita fresca,
- * senão uma 2ª navegação à MESMA vaga reabre em Kanban (molde da Fase 2/4).
+ * `VacancyFunnelView.tsx` persiste a última vista em `localStorage['vacancy-funnel-view-v2-<id>']`
+ * (054: chave v2; o PADRÃO é Kanban). Limpa antes de cada visita fresca, senão uma 2ª navegação
+ * à MESMA vaga reabre na vista escolhida antes. Cada chamada = visita FRESCA, sempre em Kanban
+ * (a chave antiga `vacancy-funnel-view-<id>` não é mais lida pelo front, então não é limpa aqui).
+ * Para ler a Lista, chamar `switchToLista` depois.
  */
 export async function gotoVacancyDetail(page: Page, vacancyId: string): Promise<void> {
   await page
-    .evaluate((id) => localStorage.removeItem(`vacancy-funnel-view-${id}`), vacancyId)
+    .evaluate((id) => localStorage.removeItem(`vacancy-funnel-view-v2-${id}`), vacancyId)
     .catch(() => {});
-  const funnelTableRe = new RegExp(`/vacancies/${vacancyId}/funnel-table(\\?|$)`);
+  const funnelRe = new RegExp(`/vacancies/${vacancyId}/funnel(\\?|$)`);
   const [response] = await Promise.all([
-    page.waitForResponse((r) => funnelTableRe.test(r.url()) && r.request().method() === 'GET'),
+    page.waitForResponse((r) => funnelRe.test(r.url()) && r.request().method() === 'GET'),
     page.goto(`/admin/vacancies/${vacancyId}`),
   ]);
-  expect(response.ok(), 'GET funnel-table falhou').toBe(true);
+  expect(response.ok(), 'GET funnel (kanban, vista padrão) falhou').toBe(true);
   await expect(page.getByTestId('vacancy-funnel-view')).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByTestId('kanban-board')).toBeVisible({ timeout: 15_000 });
 }
 
+/** Volta ao Kanban (vindo da Lista) — o clique remonta o Kanban e dispara um novo GET funnel. */
 export async function switchToKanban(page: Page, vacancyId: string): Promise<void> {
   const funnelRe = new RegExp(`/vacancies/${vacancyId}/funnel(\\?|$)`);
   const [response] = await Promise.all([
     page.waitForResponse((r) => funnelRe.test(r.url()) && r.request().method() === 'GET'),
     page
       .getByRole('group', { name: 'Cambiar vista' })
-      .getByRole('button', { name: /Kanban/i })
+      .getByRole('button', { name: 'Kanban' })
       .click(),
   ]);
   expect(response.ok(), 'GET funnel (kanban) falhou').toBe(true);
   await expect(page.getByTestId('kanban-board')).toBeVisible({ timeout: 15_000 });
+}
+
+/** Entra na Lista CLICANDO "Lista" (054: sem chave, a tela abre no Kanban) — espera o GET funnel-table. */
+export async function switchToLista(page: Page, vacancyId: string): Promise<void> {
+  const funnelTableRe = new RegExp(`/vacancies/${vacancyId}/funnel-table(\\?|$)`);
+  const [response] = await Promise.all([
+    page.waitForResponse((r) => funnelTableRe.test(r.url()) && r.request().method() === 'GET'),
+    page
+      .getByRole('group', { name: 'Cambiar vista' })
+      .getByRole('button', { name: 'Lista' })
+      .click(),
+  ]);
+  expect(response.ok(), 'GET funnel-table (Lista) falhou').toBe(true);
+  await expect(
+    page.getByRole('group', { name: 'Cambiar vista' }).getByRole('button', { name: 'Lista' }),
+  ).toHaveAttribute('aria-pressed', 'true');
+}
+
+/** Nº de linhas da Lista cuja célula ETAPA (`funnel-stage-<rowId>`) tem `data-stage=<col>`. */
+export async function countListaRowsInStage(page: Page, col: string): Promise<number> {
+  return page.locator(`[data-testid^="funnel-stage-"][data-stage="${col}"]`).count();
+}
+
+/**
+ * Conta, por etapa, as linhas da Lista (célula ETAPA `funnel-stage-<rowId>[data-stage]`). Espera as
+ * contagens ESTABILIZAREM (duas leituras iguais) — o `waitForResponse` resolve no evento de rede e o
+ * re-render vem num tick seguinte. Chamar já com a vista "Lista" ativa (`switchToLista`).
+ */
+export async function readListaStageCounts(page: Page, cols: readonly string[]): Promise<Record<string, number>> {
+  let previous = '';
+  let latest: Record<string, number> = {};
+  await expect
+    .poll(
+      async () => {
+        const next: Record<string, number> = {};
+        for (const col of cols) next[col] = await countListaRowsInStage(page, col);
+        latest = next;
+        const key = JSON.stringify(next);
+        const stable = key === previous;
+        previous = key;
+        return stable;
+      },
+      { timeout: 15_000, intervals: [100, 200, 300, 500] },
+    )
+    .toBe(true);
+  return latest;
 }
 
 /** Lê a contagem de UM testid (número cru, sem padding — kanban/aba usam texto puro). */
@@ -246,13 +296,18 @@ async function readCountByTestId(page: Page, testId: string): Promise<number | u
 
 /**
  * Lê a contagem de "Compatibles" onde ela estiver visível — `kanban-column-COMPATIBLE-count`
- * (Kanban), `funnel-tab-COMPATIBLE-count` (aba do funil, o número dentro de `#funnel-tab-
- * COMPATIBLE`) e `vacancy-row-<vacancyId>-stage-COMPATIBLE` (lista de vacantes). Cada um só
- * existe na tela em que o chamador navegou — o ausente devolve `undefined`, nunca lança.
+ * (Kanban), as LINHAS da Lista com `data-stage="COMPATIBLE"` (054: a Lista não tem mais abas;
+ * só conta se a vista "Lista" está ativa) e `vacancy-row-<vacancyId>-stage-COMPATIBLE` (lista de
+ * vacantes). Cada um só existe na tela em que o chamador navegou — o ausente devolve
+ * `undefined`, nunca lança. Quem lê a Lista deve esperar as linhas antes (toHaveCount/poll).
  */
 export async function readCompatibleCountsOnScreen(page: Page, vacancyId: string): Promise<CompatibleCountsOnScreen> {
   const kanban = await readCountByTestId(page, 'kanban-column-COMPATIBLE-count');
-  const lista = await readCountByTestId(page, 'funnel-tab-COMPATIBLE-count');
+  // count() não auto-espera: na lista de vacantes (/admin/vacancies) o grupo "Cambiar vista" não
+  // existe e getAttribute esperaria o timeout do teste inteiro.
+  const listaBtn = page.getByRole('group', { name: 'Cambiar vista' }).getByRole('button', { name: 'Lista' });
+  const listaAtiva = (await listaBtn.count()) > 0 && (await listaBtn.getAttribute('aria-pressed')) === 'true';
+  const lista = listaAtiva ? await countListaRowsInStage(page, 'COMPATIBLE') : undefined;
   const vacantes = await readCountByTestId(page, `vacancy-row-${vacancyId}-stage-COMPATIBLE`);
   return { kanban, lista, vacantes };
 }

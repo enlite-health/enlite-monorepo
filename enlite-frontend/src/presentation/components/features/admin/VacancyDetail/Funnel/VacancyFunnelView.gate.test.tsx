@@ -17,7 +17,6 @@ vi.mock('@hooks/admin/useInvitedPendingCandidates', () => ({
 }));
 vi.mock('./VacancyFunnelKanban', () => ({ VacancyFunnelKanban: () => <div /> }));
 vi.mock('./VacancyFunnelTable', () => ({ VacancyFunnelTable: () => <div /> }));
-vi.mock('./VacancyFunnelTabs', () => ({ VacancyFunnelTabs: () => <div /> }));
 vi.mock('./VacancyFunnelToggle', () => ({ VacancyFunnelToggle: () => <div /> }));
 
 function comEnforcement(permissions: string[], enforcement: AuthzContract['enforcement']) {
@@ -28,7 +27,15 @@ function comEnforcement(permissions: string[], enforcement: AuthzContract['enfor
 }
 const vacancy = { id: 'v1' } as never;
 
-beforeEach(() => localStorage.clear());
+const VIEW_KEY = 'vacancy-funnel-view-v2-v1';
+
+// 054 item 6: os portões valem nas DUAS visões. O Toggle é mockado (<div/>), então a visão
+// é forçada pela chave v2.
+describe.each(['kanban', 'list'] as const)('visão %s', (view) => {
+beforeEach(() => {
+  localStorage.clear();
+  localStorage.setItem(VIEW_KEY, view);
+});
 
 describe('VacancyFunnelView — portões por célula (D286 fase 2)', () => {
   it('enforcement=on sem match:execute nem messaging:send: os dois botões SOMEM', () => {
@@ -57,4 +64,5 @@ describe('VacancyFunnelView — portões por célula (D286 fase 2)', () => {
     expect(screen.getByRole('button', { name: /Hacer match/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /dispatchInvitesButtonCount/ })).toBeInTheDocument();
   });
+});
 });

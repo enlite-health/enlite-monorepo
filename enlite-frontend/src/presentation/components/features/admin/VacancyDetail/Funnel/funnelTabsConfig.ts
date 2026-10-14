@@ -35,15 +35,12 @@ export function columnCount(col: VacancyFunnelColumn, counts: Partial<Record<str
   return col.sources.reduce((acc, s) => acc + (counts?.[s] ?? 0), 0);
 }
 
-export type FunnelTab =
-  | { key: 'ALL'; kind: 'bucket'; bucket: 'ALL'; i18nKey: string }
-  | { key: VacancyFunnelColumnId; kind: 'column'; column: VacancyFunnelColumn; i18nKey: string }
-  | { key: 'POSTULATED' | 'PRE_SELECTED' | 'WITHDREW'; kind: 'bucket'; bucket: 'POSTULATED' | 'PRE_SELECTED' | 'WITHDREW'; i18nKey: string };
-
-export const FUNNEL_TABS: readonly FunnelTab[] = [
-  { key: 'ALL', kind: 'bucket', bucket: 'ALL', i18nKey: 'admin.vacancyDetail.funnelTabs.all' },
-  ...VACANCY_FUNNEL_COLUMNS.map((c) => ({ key: c.id, kind: 'column' as const, column: c, i18nKey: `admin.kanban.columns.${c.id}` })),
-  { key: 'POSTULATED', kind: 'bucket', bucket: 'POSTULATED', i18nKey: 'admin.vacancyDetail.funnelTabs.postulated' },
-  { key: 'PRE_SELECTED', kind: 'bucket', bucket: 'PRE_SELECTED', i18nKey: 'admin.vacancyDetail.funnelTabs.preSelected' },
-  { key: 'WITHDREW', kind: 'bucket', bucket: 'WITHDREW', i18nKey: 'admin.vacancyDetail.funnelTabs.withdrew' },
-];
+/**
+ * Etapa da Lista = coluna do Kanban em que o prestador está. O back decide `kanbanColumn`
+ * (deriveKanbanColumn); aqui só se traduz source → id da coluna (IN_PROGRESS → PRE_SCREENING).
+ * Nulo ou fora do mapa → null.
+ */
+export function stageColumnIdFor(kanbanColumn: string | null | undefined): VacancyFunnelColumnId | null {
+  if (!kanbanColumn) return null;
+  return VACANCY_FUNNEL_COLUMNS.find((c) => c.sources.includes(kanbanColumn))?.id ?? null;
+}
