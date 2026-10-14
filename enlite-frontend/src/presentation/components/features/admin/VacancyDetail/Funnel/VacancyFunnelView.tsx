@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { Sparkles } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { ActionButton } from '@presentation/components/features/access';
+import { Text } from '@presentation/components/atoms/Text';
+import { Button } from '@presentation/components/atoms/Button';
 import { useVacancyFunnelTable } from '@hooks/admin/useVacancyFunnelTable';
 import { useInvitedPendingCandidates } from '@hooks/admin/useInvitedPendingCandidates';
 import type { InviteTarget } from '../../VacancyMatch/inviteTypes';
@@ -80,7 +82,7 @@ export function VacancyFunnelView({
 
   const isListView = view === 'list';
 
-  const { data, isLoading } = useVacancyFunnelTable(
+  const { data, isLoading, error, refetch } = useVacancyFunnelTable(
     vacancyId,
     ALL_COLUMNS_TAB,
     isListView,
@@ -159,12 +161,37 @@ export function VacancyFunnelView({
       {isListView && (
         <>
           <VacancyFunnelFilters filters={filters} onChange={setFilters} />
-          <VacancyFunnelTable
-            vacancyId={vacancyId}
-            rows={visibleRows}
-            isLoading={isLoading}
-            isFiltered={hasActiveFilters(filters)}
-          />
+          {/* Falha de carga: banner de erro (padrão do Kanban, VacancyFunnelKanban) com reintentar.
+              Sem dados ainda, o erro substitui a tabela — senão o 4xx/5xx aparece como "Sin candidatos".
+              Com dados já carregados, mantém a tabela e mostra o aviso (poll em silêncio não gera erro). */}
+          {error && (
+            <div
+              role="alert"
+              data-testid="funnel-table-error"
+              className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center justify-between gap-3"
+            >
+              <Text size="sm" color="inherit" className="text-red-700">
+                {t('admin.vacancyDetail.funnelTable.loadError')}
+              </Text>
+              <Button
+                variant="outline"
+                size="sm"
+                data-testid="funnel-table-retry"
+                onClick={() => refetch()}
+                disabled={isLoading}
+              >
+                {t('admin.vacancyDetail.funnelTable.retry')}
+              </Button>
+            </div>
+          )}
+          {!(error && !data) && (
+            <VacancyFunnelTable
+              vacancyId={vacancyId}
+              rows={visibleRows}
+              isLoading={isLoading}
+              isFiltered={hasActiveFilters(filters)}
+            />
+          )}
           {isLoading && data && (
             <div className="flex items-center justify-end">
               <span className="text-xs text-gray-800 font-lexend flex items-center gap-1">

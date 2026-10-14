@@ -2317,31 +2317,20 @@
           }
         }
       },
-      "funnelTabs": {
-        "ariaLabel": "Filtros do funil",
-        "all": "Todos",
-        "invited": "Convidados",
-        "postulated": "Postulados",
-        "preSelected": "Pré Selecionados",
-        "rejected": "Rejeitados",
-        "withdrew": "Desistentes"
-      },
       "funnelTable": {
         "headers": {
           "name": "NOME",
-          "origin": "Origem",
           "phone": "TELEFONE",
           "inviteDate": "DATA DO CONVITE",
           "whatsapp": "WHATSAPP",
-          "accepted": "ACEITOU",
           "registration": "CADASTRO",
           "stage": "ETAPA",
           "notes": "NOTAS"
         },
-        "acceptedYes": "Sim",
-        "acceptedNo": "Não",
-        "emptyState": "Nenhum candidato neste estágio ainda.",
+        "emptyState": "Sem candidatos nesta vaga",
         "emptyFiltered": "Nenhum candidato corresponde à busca.",
+        "loadError": "Não foi possível carregar a lista de candidatos.",
+        "retry": "Tentar novamente",
         "ariaLabel": "Tabela do funil da vaga",
         "filters": {
           "searchPlaceholder": "Buscar por nome ou telefone",
