@@ -15,6 +15,7 @@
  * (baseline é gitignored; não há baseline versionada).
  */
 import { test, expect } from '@playwright/test';
+import { RECRUITMENT_FIELDS_E2E } from '../helpers/recruitment-fields-e2e';
 import { insertTestPatient, cleanupTestPatient } from '../helpers/db-test-helper';
 import { runSQL } from '../helpers/patient-detail-a-helper';
 import { loginComoStaffMock } from '../helpers/login-mock-staff';
@@ -52,7 +53,7 @@ test.describe('vacancy-servico-horario-link — F4 (vaga-le-do-servico-contratad
         serviceCode: 'AT',
         providersNeeded: 1,
         weeklyHours: 20,
-        careLocation: 'HOME',
+        careLocation: 'HOME', ...RECRUITMENT_FIELDS_E2E,
         addressId,
         schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }],
       },

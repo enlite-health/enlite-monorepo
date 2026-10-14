@@ -17,6 +17,7 @@
  * O CI roda este portão com `--ignore-snapshots` (`toHaveScreenshot` existe pela regra do projeto; baseline é gitignored).
  */
 import { test, expect, type Page } from '@playwright/test';
+import { RECRUITMENT_FIELDS_E2E } from '../helpers/recruitment-fields-e2e';
 import { insertTestPatient, cleanupTestPatient, cleanupVacancies } from '../helpers/db-test-helper';
 import { runSQL } from '../helpers/patient-detail-a-helper';
 import { loginComoStaffMock } from '../helpers/login-mock-staff';
@@ -60,7 +61,7 @@ test.describe('vaga-le-servico-fecho — F8 (vaga-le-do-servico-contratado) @int
         serviceCode: 'AT',
         providersNeeded: 2,
         weeklyHours: 20,
-        careLocation: 'HOME',
+        careLocation: 'HOME', ...RECRUITMENT_FIELDS_E2E,
         providerAgeBand: 'AGE_20_30', // → vaga 20 - 29
         addressId,
         schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }],

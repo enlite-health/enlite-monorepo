@@ -18,6 +18,7 @@
  * `contracted_service_id` setado, então `locked_fields` do GET traz os 8 nomes.
  */
 import { test, expect, type Page, type Route } from '@playwright/test';
+import { RECRUITMENT_FIELDS_E2E } from '../helpers/recruitment-fields-e2e';
 import { insertTestPatient, cleanupTestPatient, backdateVacancyUpdatedAt } from '../helpers/db-test-helper';
 
 const BACKEND_URL = process.env.API_BASE_URL || 'http://localhost:8080';
@@ -218,7 +219,7 @@ test.describe('draft-wizard-locked — fase 4 (completar-vacante-em-rascunho) @i
         serviceCode: 'AT',
         providersNeeded: 1,
         weeklyHours: 20,
-        careLocation: 'HOME',
+        careLocation: 'HOME', ...RECRUITMENT_FIELDS_E2E,
         addressId,
         schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }],
       },

@@ -10,6 +10,7 @@
  * prestador ao 1º; ativa → 2 vagas, cada uma com contracted_service_id do serviço certo.
  */
 import { test, expect, type Page, type Locator } from '@playwright/test';
+import { preencherRecrutamentoPelaTela } from '../helpers/recruitment-fields-e2e';
 import {
   seedActivatablePatient, seedWorker, cleanupWorker, readContractedServices, readVacanciesByService,
   cleanupPatientDeep, runSQL,
@@ -146,6 +147,7 @@ test.describe('Spec 013 bloco C — serviço contratado como entidade @integrati
     // Decisão do Gabriel 07/09: serviço ativo SEM horário bloqueia o activate (SERVICE_SCHEDULE).
     // Este spec ativa o paciente mais abaixo e espera 200 — então os serviços nascem com horário.
     await forceClick(page.getByTestId('day-schedule-add-monday'));
+    await preencherRecrutamentoPelaTela(page, 1); // spec 027 Fase 3: o portão exige os 5 campos
     const createService1 = page.waitForResponse((r) => r.request().method() === 'POST' && /\/contracted-services$/.test(r.url()));
     await forceClick(page.getByTestId('contracted-service-new-save'));
     const svc1Body = (await (await createService1).json()) as { data: { id: string } };
@@ -175,6 +177,7 @@ test.describe('Spec 013 bloco C — serviço contratado como entidade @integrati
     await forceSelect(page.getByTestId('svc-careLocation-2'), 'SCHOOL');
     await forceSelect(page.getByTestId('svc-addressId-2'), seed.addressId);
     await forceClick(page.getByTestId('day-schedule-add-wednesday'));
+    await preencherRecrutamentoPelaTela(page, 2); // spec 027 Fase 3: o portão exige os 5 campos
     const createService2 = page.waitForResponse((r) => r.request().method() === 'POST' && /\/contracted-services$/.test(r.url()));
     await forceClick(page.getByTestId('contracted-service-new-save'));
     const svc2Body = (await (await createService2).json()) as { data: { id: string } };

@@ -12,6 +12,7 @@
  * `vacancyEffectiveFields.singleSource` do backend).
  */
 import { test, expect, type Page, type Locator } from '@playwright/test';
+import { preencherRecrutamentoPelaTela } from '../helpers/recruitment-fields-e2e';
 import {
   seedActivatablePatientA6, readVacancyAgeRangeForService, readProviderAgeBand,
   cleanupPatientDeep, runSQL,
@@ -113,6 +114,7 @@ test.describe('Spec 015 (US-A6) — franja etária solicitada do prestador @inte
     // Decisão do Gabriel 07/09: sem horário o activate também recusa (SERVICE_SCHEDULE) — este
     // spec ativa mais abaixo esperando 200, então o serviço nasce com horário.
     await forceClick(page.getByTestId('day-schedule-add-monday'));
+    await preencherRecrutamentoPelaTela(page, 1); // spec 027 Fase 3: o portão exige os 5 campos
     const createService = page.waitForResponse((r) => r.request().method() === 'POST' && /\/contracted-services$/.test(r.url()));
     await forceClick(page.getByTestId('contracted-service-new-save'));
     const svcBody = (await (await createService).json()) as { data: { id: string; providerAgeBand: string } };
