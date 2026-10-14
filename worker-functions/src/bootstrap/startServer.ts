@@ -5,8 +5,6 @@
 import { Express } from 'express';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { createWebhookRoutes, PartnerAuthMiddleware, GoogleApiKeyValidator, WebhookPartnerRepository } from '@modules/integration';
-import { PubSubClient } from '@shared/events/PubSubClient';
-import { CloudTasksClient } from '@shared/events/CloudTasksClient';
 import { PeriskopeInboundRouter } from '@modules/notification/application/PeriskopeInboundRouter';
 import { TriggerWorkerHandoverUseCase } from '@modules/notification/application/TriggerWorkerHandoverUseCase';
 import { InboundWhatsAppController } from '@modules/notification/interfaces/controllers/InboundWhatsAppController';
@@ -17,7 +15,6 @@ import { PeriskopeMessagingService } from '@modules/notification/infrastructure/
 import { buildChatwootClient } from './buildChatwootClient';
 import { PeriskopeNoteService } from '@modules/notification/infrastructure/PeriskopeNoteService';
 import { ChatwootMirrorController } from '@modules/notification/interfaces/controllers/ChatwootMirrorController';
-import { GoogleCalendarService } from '@modules/matching';
 import { systemContextMiddleware } from '@shared/database/systemContextMiddleware';
 import { assertDbRoleMembership } from '@shared/database/assertDbRoleMembership';
 

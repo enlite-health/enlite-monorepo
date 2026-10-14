@@ -420,6 +420,19 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         // spec 049 F4 (vínculo do Tactiq): família admin.users, células own_* (o operador vê/vincula a PRÓPRIA conta).
         'GET /api/admin/me/tactiq-link → own_tactiq_link:read',
         'POST /api/admin/me/tactiq-link → own_tactiq_link:create',
+        // spec 052 (eventos de enquadre, `adminEnquadreEventRoutes.ts`): família admin.vacancies, células enquadre_event/enquadre_summary/enquadre_result.
+        'GET /api/admin/vacancies/:vacancyId/enquadre-events → enquadre_event:read',
+        'GET /api/admin/vacancies/:vacancyId/enquadre-events/:eventId → enquadre_event:read',
+        'GET /api/admin/vacancies/:vacancyId/enquadre-events/:eventId/summary/url → enquadre_summary:read',
+        'GET /api/admin/vacancies/:vacancyId/enquadre-events/available-workers → enquadre_event:create',
+        'GET /api/admin/vacancies/:vacancyId/enquadre-events/hosts → enquadre_event:create',
+        'GET /api/admin/vacancies/:vacancyId/enquadre-events/hosts/:hostId/free-slots → enquadre_event:create',
+        'POST /api/admin/vacancies/:vacancyId/enquadre-events → enquadre_event:create',
+        'POST /api/admin/vacancies/:vacancyId/enquadre-events/:eventId/cancel → enquadre_event:update',
+        'POST /api/admin/vacancies/:vacancyId/enquadre-events/:eventId/close → enquadre_result:update',
+        'POST /api/admin/vacancies/:vacancyId/enquadre-events/:eventId/participants → enquadre_event:update',
+        'POST /api/admin/vacancies/:vacancyId/enquadre-events/:eventId/participants/:participantId/remove → enquadre_event:update',
+        'PUT /api/admin/vacancies/:vacancyId/enquadre-events/:eventId/participants/:participantId/move → enquadre_result:update',
       ].sort(),
     );
   });
