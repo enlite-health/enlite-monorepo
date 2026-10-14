@@ -3,6 +3,7 @@ import {
   MeetTransientError,
   type MeetConferencePort,
   type MeetConferenceRecord,
+  type MeetParticipant,
 } from '../../application/ports/MeetConferencePort';
 
 /**
@@ -14,17 +15,26 @@ import {
 export class FakeMeetConference implements MeetConferencePort {
   readonly resolveCalls: string[] = [];
   readonly listCalls: string[] = [];
+  readonly participantCalls: string[] = [];
   delayMs = 0;
   private readonly records = new Map<string, MeetConferenceRecord[]>();
+  private readonly participants = new Map<string, MeetParticipant[]>();
   private failure: Error | null = null;
 
   setRecords(meetCode: string, records: MeetConferenceRecord[]): void {
     this.records.set(`spaces/${meetCode}`, records);
   }
 
+  /** Quem entrou na conferência `conferenceRecords/{id}` (sem programação: ninguém). */
+  setParticipants(recordName: string, participants: MeetParticipant[]): void {
+    this.participants.set(recordName, participants);
+  }
+
   /** Esquece o programado e as chamadas (entre testes). */
   reset(): void {
     this.records.clear();
+    this.participants.clear();
+    this.participantCalls.length = 0;
     this.failure = null;
     this.delayMs = 0;
     this.resolveCalls.length = 0;
@@ -55,6 +65,13 @@ export class FakeMeetConference implements MeetConferencePort {
     await this.wait();
     if (this.failure) throw this.failure;
     return [...(this.records.get(spaceName) ?? [])];
+  }
+
+  async listParticipants(conferenceRecordName: string): Promise<MeetParticipant[]> {
+    this.participantCalls.push(conferenceRecordName);
+    await this.wait();
+    if (this.failure) throw this.failure;
+    return [...(this.participants.get(conferenceRecordName) ?? [])];
   }
 
   private async wait(): Promise<void> {

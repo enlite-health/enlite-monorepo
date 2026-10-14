@@ -70,6 +70,7 @@ describe('importação do Tactiq do enquadre — mesma lógica da admissão, fon
   let admissionVault: InMemoryTranscriptVault;
   let service: AdmissionImportService<EnquadreImportSubject>;
   let logs: ReturnType<typeof capturingLogger>;
+  const meet = new FakeMeetConference();
   const pdfs = new Map<string, Buffer>(); // o "bucket" de documentos: caminho -> PDF
   let clock = new Date();
   let seq = 0;
@@ -208,7 +209,11 @@ describe('importação do Tactiq do enquadre — mesma lógica da admissão, fon
         const imp = { tokens: link, mcp, vault, summary: vertex, destination: { store }, log: logs.log, now: () => clock };
         service = createEnquadreImportService(pool, imp);
         // a rota REAL (wiring de produção) com as mesmas fronteiras e o relógio de verdade
-        registerEnquadreInternalJobRoutes(express, { db: pool, meet: new FakeMeetConference(), import: { ...imp, now: () => new Date() } });
+        const { EnquadrePresenceService } = await import('../../src/modules/matching/application/EnquadrePresenceService');
+        registerEnquadreInternalJobRoutes(express, {
+          db: pool, meet, import: { ...imp, now: () => new Date() },
+          presence: new EnquadrePresenceService({ db: pool, meet, log: logs.log }), // mesma medição de produção, só com o log capturado
+        });
       },
     });
   }, 90000);
@@ -217,6 +222,7 @@ describe('importação do Tactiq do enquadre — mesma lógica da admissão, fon
     clock = new Date();
     mcp.reset();
     vertex.reset();
+    meet.reset();
     vault.objects.clear();
     vault.putCalls.length = 0;
     admissionVault.putCalls.length = 0;
@@ -418,6 +424,44 @@ describe('importação do Tactiq do enquadre — mesma lógica da admissão, fon
     expect(Object.keys(body.data).sort()).toEqual(expect.arrayContaining(['candidates', 'done', 'waiting', 'blocked']));
     expect(await row(e.id)).toMatchObject({ import_status: 'done' });
     expect(await docs(e.id)).toHaveLength(1);
+  });
+
+  // ── I ────────────────────────────────────────────────────────────────────────────────────────────
+  it('I: presença (T-34c) — depois do fim da call, na rota do fim de call: falha do Meet deixa NULL e a rota segue 200; com o Meet, liga por nome único, grava attendance/match_method 1× e não reconsulta', async () => {
+    const e = await evento({ convocados: [NOME_1, NOME_2], importStatus: 'done' });
+    await admin.query(`UPDATE enquadre_events SET meet_space_name = 'spaces/abc-defg-hij' WHERE id = $1`, [e.id]);
+    const REC = 'conferenceRecords/rec-i';
+    meet.setRecords('abc-defg-hij', [{ name: REC, startTime: e.start, endTime: new Date(e.start.getTime() + 30 * MIN) }]);
+    meet.setParticipants(REC, [
+      { kind: 'signedin', displayName: NOME_1.toUpperCase(), identityKey: 'users/idgoogle-i' },
+      { kind: 'anonymous', displayName: 'Visitante Sintetico Gama', identityKey: null },
+    ]);
+    const attendance = async () =>
+      (await admin.query(`SELECT id, attendance, match_method FROM enquadre_event_participants WHERE event_id = $1 ORDER BY created_at, id`, [e.id])).rows as Array<{ id: string; attendance: string | null; match_method: string | null }>;
+    const rodar = () => fetch(`${app.url}/api/internal/jobs/enquadre-post-call`, { method: 'POST', headers: { 'X-Internal-Secret': SECRET } });
+
+    meet.scopeMissing(); // o Meet falha: a rota NÃO cai e a presença fica NULL
+    expect((await rodar()).status).toBe(200);
+    expect((await attendance()).map((a) => a.attendance)).toEqual([null, null]);
+    expect(logs.output()).toContain('enquadre.presence.meet_failed');
+
+    meet.failWith(null);
+    expect((await rodar()).status).toBe(200);
+    expect(await attendance()).toEqual([
+      { id: e.parts[0], attendance: 'present', match_method: 'display_name_unique' },
+      { id: e.parts[1], attendance: 'unidentified', match_method: null }, // sobrou o anônimo sem dono: pode ser ele
+    ]);
+    expect(await row(e.id)).toMatchObject({ import_status: 'done' }); // a importação não foi tocada
+
+    const chamadas = meet.participantCalls.length;
+    expect((await rodar()).status).toBe(200);
+    expect(meet.participantCalls.length).toBe(chamadas); // medida a presença, o evento sai da fila
+    expect((await attendance()).map((a) => a.attendance)).toEqual(['present', 'unidentified']);
+
+    const out = logs.output();
+    expect(out).toContain('"message":"enquadre.participation.unidentified"');
+    expect(out).toContain(e.id);
+    for (const proibido of [NOME_1, NOME_2, 'Visitante', 'idgoogle', 'users/', 'example.test']) expect(out).not.toContain(proibido);
   });
 
   // ── H ────────────────────────────────────────────────────────────────────────────────────────────

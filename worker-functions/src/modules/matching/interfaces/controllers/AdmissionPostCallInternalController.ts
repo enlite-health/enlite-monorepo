@@ -8,7 +8,8 @@ import type { AdmissionPostCallJob } from '../../application/AdmissionPostCallJo
  * contagens; nunca e-mail, link, nome nem texto.
  */
 export class AdmissionPostCallInternalController {
-  constructor(private readonly job: AdmissionPostCallJob) {}
+  /** Só `runOnce`: o enquadre passa o mesmo job com a medição de presença costurada depois (spec 052, T-34c). */
+  constructor(private readonly job: Pick<AdmissionPostCallJob, 'runOnce'>) {}
 
   async handle(_req: Request, res: Response): Promise<void> {
     try {

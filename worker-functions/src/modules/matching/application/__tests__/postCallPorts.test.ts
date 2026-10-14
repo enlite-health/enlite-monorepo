@@ -103,6 +103,7 @@ describe('observador do fim de call com nomes de log injetados', () => {
   const meet: MeetConferencePort = {
     resolveSpace: async () => ({ spaceName: 'spaces/x' }),
     listConferenceRecords: async () => [],
+    listParticipants: async () => [],
   };
   const subject = {
     id: 'e1', host_email: 'h@example.test', meet_link: null, meet_space_name: 'spaces/x', slot_start: NOW, slot_end: NOW,

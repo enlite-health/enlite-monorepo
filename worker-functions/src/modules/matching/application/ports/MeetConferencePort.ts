@@ -14,11 +14,25 @@ export interface MeetConferenceRecord {
   endTime: Date | null;
 }
 
+/**
+ * Quem entrou na conferência (`conferenceRecords.participants`, spec 052 T-34c). `displayName` é o nome exibido no Meet (dado pessoal:
+ * serve só para ligar ao convocado, NUNCA vai a log, trilha nem resposta). `identityKey` só existe para deduplicar o mesmo participante
+ * que caiu e voltou (`users/{id}` do Google no `signedin`) — também nunca sai do processo. Sem e-mail: o recurso não o traz.
+ */
+export type MeetParticipantKind = 'signedin' | 'anonymous' | 'phone';
+export interface MeetParticipant {
+  kind: MeetParticipantKind;
+  displayName: string | null;
+  identityKey: string | null;
+}
+
 export interface MeetConferencePort {
   /** Código do Meet (`abc-defg-hij`) → `spaces/{id}` estável (o código expira ~365 dias depois do último uso). */
   resolveSpace(meetCode: string, subjectEmail: string): Promise<{ spaceName: string }>;
   /** Todas as conferências do espaço (queda e retorno geram mais de uma). Vazia = ninguém entrou. */
   listConferenceRecords(spaceName: string, subjectEmail: string): Promise<MeetConferenceRecord[]>;
+  /** Participantes de UMA conferência (`conferenceRecords/{id}`), todas as páginas. Só o enquadre usa (a admissão não mede presença). */
+  listParticipants(conferenceRecordName: string, subjectEmail: string): Promise<MeetParticipant[]>;
 }
 
 /**

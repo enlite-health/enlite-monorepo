@@ -17,3 +17,10 @@ export const ENQUADRE_POST_CALL_BATCH = 100;
  * rodada seguinte (a fila é por estado e por tentativa, nada se perde); o da admissão (50) não é compartilhado.
  */
 export const ENQUADRE_IMPORT_BATCH = 6;
+
+/**
+ * LOTE da presença = quantos eventos uma rodada mede (spec 052, T-34c). Roda depois do fim de call, na mesma rodada de 15 min: cada
+ * evento custa 1 consulta às conferências e 1 às participantes de cada uma (2 a 3 chamadas ao Meet). Premissa NÃO medida ao vivo:
+ * 2 s por chamada no pior caso, logo 20 × 3 × 2 s = 120 s. O que não coube fica para a rodada seguinte (a fila é o `attendance` NULL).
+ */
+export const ENQUADRE_PRESENCE_BATCH = 20;

@@ -3,6 +3,7 @@ import {
   MeetTransientError,
   type MeetConferencePort,
   type MeetConferenceRecord,
+  type MeetParticipant,
 } from '../application/ports/MeetConferencePort';
 import { AdmissionRealAdapterInTestError } from '../application/ports/AdmissionMessagingPorts';
 import { MEET_SCOPE, requestDwdAccessToken } from './GoogleCalendarEventFinder';
@@ -10,6 +11,7 @@ import { MEET_SCOPE, requestDwdAccessToken } from './GoogleCalendarEventFinder';
 const MEET_BASE = 'https://meet.googleapis.com/v2';
 const CALL_TIMEOUT_MS = 10_000;
 const PAGE_SIZE = 100;
+const PARTICIPANT_PAGE_SIZE = 250;
 const MAX_PAGES = 10;
 
 /**
@@ -51,6 +53,34 @@ export class GoogleMeetConferenceClient implements MeetConferencePort {
       if (!pageToken) return out;
     }
     // Mais páginas do que o teto: lista incompleta NÃO pode virar "a call acabou" nem "ninguém entrou".
+    throw new MeetTransientError('too_many_pages');
+  }
+
+  /** `conferenceRecords.participants.list`: um `signedinUser`, `anonymousUser` ou `phoneUser` por participante. Nunca loga o corpo. */
+  async listParticipants(conferenceRecordName: string, subjectEmail: string): Promise<MeetParticipant[]> {
+    if (!/^conferenceRecords\/[A-Za-z0-9_-]+$/.test(conferenceRecordName)) throw new MeetTransientError('record_name_malformed');
+    const out: MeetParticipant[] = [];
+    let pageToken: string | undefined;
+    for (let page = 0; page < MAX_PAGES; page += 1) {
+      const params = new URLSearchParams({ pageSize: String(PARTICIPANT_PAGE_SIZE) });
+      if (pageToken) params.set('pageToken', pageToken);
+      const body = (await this.get(`/${conferenceRecordName}/participants?${params}`, subjectEmail)) as {
+        participants?: Array<{
+          signedinUser?: { user?: string; displayName?: string };
+          anonymousUser?: { displayName?: string };
+          phoneUser?: { displayName?: string };
+        }>;
+        nextPageToken?: string;
+      };
+      for (const p of body.participants ?? []) {
+        if (p.signedinUser) out.push({ kind: 'signedin', displayName: p.signedinUser.displayName ?? null, identityKey: p.signedinUser.user ?? null });
+        else if (p.anonymousUser) out.push({ kind: 'anonymous', displayName: p.anonymousUser.displayName ?? null, identityKey: null });
+        else if (p.phoneUser) out.push({ kind: 'phone', displayName: p.phoneUser.displayName ?? null, identityKey: null });
+        else throw new MeetTransientError('participant_malformed');
+      }
+      pageToken = body.nextPageToken || undefined;
+      if (!pageToken) return out;
+    }
     throw new MeetTransientError('too_many_pages');
   }
 

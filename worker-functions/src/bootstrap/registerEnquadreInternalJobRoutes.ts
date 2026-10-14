@@ -8,6 +8,7 @@
  */
 import type { Express } from 'express';
 import type { Pool } from 'pg';
+import { logger } from '@shared/logging';
 import { systemContextMiddleware } from '../shared/database/systemContextMiddleware';
 import { internalAuthMiddleware } from '@modules/notification';
 import { AdmissionPostCallJob } from '@modules/matching/application/AdmissionPostCallJob';
@@ -24,6 +25,7 @@ import { EnquadrePostCallRepository } from '@modules/matching/infrastructure/Enq
 import { EnquadreEventTrailRepository } from '@modules/matching/infrastructure/EnquadreEventTrailRepository';
 import type { MeetConferencePort } from '@modules/matching/application/ports/MeetConferencePort';
 import type { PostCallNaming } from '@modules/matching/application/ports/PostCallPorts';
+import { EnquadrePresenceService } from '@modules/matching/application/EnquadrePresenceService';
 
 export const ENQUADRE_POST_CALL_NAMING: PostCallNaming = { prefix: 'enquadre', idKey: 'eventId' };
 
@@ -46,6 +48,8 @@ export interface EnquadreInternalJobDeps {
   db: Pool;
   /** A mesma Meet API (real ou dublê) que a admissão usa. */
   meet: MeetConferencePort;
+  /** Para teste: substitui a medição de presença (padrão: `EnquadrePresenceService` sobre `meet` e `db`). */
+  presence?: Pick<EnquadrePresenceService, 'runOnce'>;
   /** Ausente = só o job de fim de call (a importação não é registrada). */
   import?: EnquadreImportDeps;
 }
@@ -58,6 +62,20 @@ export function createEnquadreImportService(db: Pool, d: EnquadreImportDeps): Ad
     events: new EnquadreEventTrailRepository(db),
     tokens: d.tokens, mcp: d.mcp, vault: d.vault, summary: d.summary, db, log: d.log, now: d.now,
   });
+}
+
+/**
+ * O job de fim de call do enquadre + a medição de presença DEPOIS dele (T-34c), na mesma rodada. A presença nunca derruba o fim de
+ * call: o serviço engole as próprias falhas (presença NULL + log do motivo), e aqui um erro inesperado também vira só um log.
+ */
+function withPresence(job: Pick<AdmissionPostCallJob, 'runOnce'>, presence: Pick<EnquadrePresenceService, 'runOnce'>): Pick<AdmissionPostCallJob, 'runOnce'> {
+  return {
+    async runOnce(now) {
+      const summary = await job.runOnce(now);
+      await presence.runOnce().catch(() => logger.error({ reason: 'unexpected' }, 'enquadre.presence.failed'));
+      return summary;
+    },
+  };
 }
 
 export function registerEnquadreInternalJobRoutes(app: Express, deps: EnquadreInternalJobDeps): void {
@@ -76,13 +94,16 @@ export function registerEnquadreInternalJobRoutes(app: Express, deps: EnquadreIn
     internalAuthMiddleware,
     createEnquadrePostCallInternalRoutes(
       new AdmissionPostCallInternalController(
-        new AdmissionPostCallJob({
-          repo: new EnquadrePostCallRepository(db),
-          meet,
-          events: new EnquadreEventTrailRepository(db),
-          naming: ENQUADRE_POST_CALL_NAMING,
-          db,
-        }),
+        withPresence(
+          new AdmissionPostCallJob({
+            repo: new EnquadrePostCallRepository(db),
+            meet,
+            events: new EnquadreEventTrailRepository(db),
+            naming: ENQUADRE_POST_CALL_NAMING,
+            db,
+          }),
+          deps.presence ?? new EnquadrePresenceService({ meet, db }),
+        ),
       ),
     ),
   );
