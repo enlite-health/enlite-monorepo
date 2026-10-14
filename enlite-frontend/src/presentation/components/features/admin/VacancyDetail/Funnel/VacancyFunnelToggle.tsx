@@ -59,18 +59,18 @@ export function VacancyFunnelToggle({
       aria-label={t('admin.vacancyDetail.funnelView.viewToggle.label')}
     >
       <ToggleButton
-        active={view === 'list'}
-        icon={<List size={16} aria-hidden="true" />}
-        label={t('admin.vacancyDetail.funnelView.viewToggle.list')}
-        ariaLabel={t('admin.vacancyDetail.funnelView.viewToggle.list')}
-        onClick={() => onChange('list')}
-      />
-      <ToggleButton
         active={view === 'kanban'}
         icon={<LayoutGrid size={16} aria-hidden="true" />}
         label={t('admin.vacancyDetail.funnelView.viewToggle.kanban')}
         ariaLabel={t('admin.vacancyDetail.funnelView.viewToggle.kanban')}
         onClick={() => onChange('kanban')}
+      />
+      <ToggleButton
+        active={view === 'list'}
+        icon={<List size={16} aria-hidden="true" />}
+        label={t('admin.vacancyDetail.funnelView.viewToggle.list')}
+        ariaLabel={t('admin.vacancyDetail.funnelView.viewToggle.list')}
+        onClick={() => onChange('list')}
       />
     </div>
   );

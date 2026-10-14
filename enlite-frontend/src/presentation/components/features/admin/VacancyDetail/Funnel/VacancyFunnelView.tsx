@@ -18,21 +18,26 @@ import { FUNNEL_TABS, type FunnelTab } from './funnelTabsConfig';
 
 const DEFAULT_TAB_KEY: FunnelTab['key'] = 'INVITED';
 
+// 054: chave v2 — a antiga (`vacancy-funnel-view-${id}`) não é lida nem apagada, então todo mundo
+// recomeça no Kanban (padrão) e depois vale a escolha de cada um.
+const viewStorageKey = (vacancyId: string): string =>
+  `vacancy-funnel-view-v2-${vacancyId}`;
+
 function getPersistedView(vacancyId: string): FunnelView {
-  if (typeof window === 'undefined') return 'list';
+  if (typeof window === 'undefined') return 'kanban';
   try {
-    const stored = localStorage.getItem(`vacancy-funnel-view-${vacancyId}`);
+    const stored = localStorage.getItem(viewStorageKey(vacancyId));
     if (stored === 'kanban' || stored === 'list') return stored;
   } catch {
     // ignore storage errors
   }
-  return 'list';
+  return 'kanban';
 }
 
 function persistView(vacancyId: string, view: FunnelView): void {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(`vacancy-funnel-view-${vacancyId}`, view);
+    localStorage.setItem(viewStorageKey(vacancyId), view);
   } catch {
     // ignore storage errors
   }

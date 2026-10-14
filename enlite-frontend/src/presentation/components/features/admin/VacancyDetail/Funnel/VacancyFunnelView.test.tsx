@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { VacancyFunnelView } from './VacancyFunnelView';
 import type { FunnelTableData } from '@domain/entities/Funnel';
@@ -49,22 +49,6 @@ vi.mock('./VacancyFunnelTabs', () => ({
   ),
 }));
 
-vi.mock('./VacancyFunnelToggle', () => ({
-  VacancyFunnelToggle: ({
-    onChange,
-    view,
-  }: {
-    onChange: (v: string) => void;
-    view: string;
-  }) => (
-    <div data-testid="funnel-toggle">
-      <button onClick={() => onChange('list')}>list-btn</button>
-      <button onClick={() => onChange('kanban')}>kanban-btn</button>
-      <span>{view}</span>
-    </div>
-  ),
-}));
-
 const mockData: FunnelTableData = {
   rows: [],
   counts: {
@@ -92,10 +76,54 @@ beforeEach(() => {
   localStorage.clear();
 });
 
+const KANBAN_BTN = 'admin.vacancyDetail.funnelView.viewToggle.kanban';
+const LIST_BTN = 'admin.vacancyDetail.funnelView.viewToggle.list';
+const OLD_KEY = 'vacancy-funnel-view-vac-1';
+const NEW_KEY = 'vacancy-funnel-view-v2-vac-1';
+
+// O Toggle é o REAL: o que se prova aqui é o botão que a pessoa vê/aperta.
+const kanbanBtn = () => screen.getByRole('button', { name: KANBAN_BTN });
+const listBtn = () => screen.getByRole('button', { name: LIST_BTN });
+
 describe('VacancyFunnelView', () => {
-  it('renders toggle, tabs and table in list view by default', () => {
+  it('abre no Kanban por padrão (054 item 5): botão Kanban pressionado, Lista não montada', () => {
     render(<VacancyFunnelView vacancyId="vac-1" />);
-    expect(screen.getByTestId('funnel-toggle')).toBeInTheDocument();
+    expect(kanbanBtn()).toHaveAttribute('aria-pressed', 'true');
+    expect(listBtn()).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByTestId('kanban-board')).toBeInTheDocument();
+    expect(screen.queryByTestId('funnel-table')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('funnel-tabs')).not.toBeInTheDocument();
+  });
+
+  it('chave ANTIGA = "list" e nada na nova: abre no Kanban (a chave antiga não é lida)', () => {
+    localStorage.setItem(OLD_KEY, 'list');
+    render(<VacancyFunnelView vacancyId="vac-1" />);
+    expect(kanbanBtn()).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByTestId('kanban-board')).toBeInTheDocument();
+    expect(screen.queryByTestId('funnel-table')).not.toBeInTheDocument();
+  });
+
+  it('escolher Lista grava "list" na chave v2 e, ao remontar, abre na Lista', async () => {
+    const { unmount } = render(<VacancyFunnelView vacancyId="vac-1" />);
+    await userEvent.click(listBtn());
+    expect(localStorage.getItem(NEW_KEY)).toBe('list');
+    expect(localStorage.getItem(OLD_KEY)).toBeNull();
+    unmount();
+    render(<VacancyFunnelView vacancyId="vac-1" />);
+    expect(listBtn()).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByTestId('funnel-table')).toBeInTheDocument();
+  });
+
+  it('o primeiro botão do grupo "Cambiar vista" é o Kanban', () => {
+    render(<VacancyFunnelView vacancyId="vac-1" />);
+    const [first, second] = within(screen.getByRole('group')).getAllByRole('button');
+    expect(first).toHaveAccessibleName(KANBAN_BTN);
+    expect(second).toHaveAccessibleName(LIST_BTN);
+  });
+
+  it('renders toggle, tabs and table in list view', async () => {
+    render(<VacancyFunnelView vacancyId="vac-1" />);
+    await userEvent.click(listBtn());
     expect(screen.getByTestId('funnel-tabs')).toBeInTheDocument();
     expect(screen.getByTestId('funnel-table')).toBeInTheDocument();
     expect(screen.queryByTestId('kanban-board')).not.toBeInTheDocument();
@@ -103,7 +131,8 @@ describe('VacancyFunnelView', () => {
 
   it('switches to kanban when kanban button is clicked', async () => {
     render(<VacancyFunnelView vacancyId="vac-1" />);
-    await userEvent.click(screen.getByText('kanban-btn'));
+    await userEvent.click(listBtn());
+    await userEvent.click(kanbanBtn());
     expect(screen.getByTestId('kanban-board')).toBeInTheDocument();
     expect(screen.queryByTestId('funnel-tabs')).not.toBeInTheDocument();
     expect(screen.queryByTestId('funnel-table')).not.toBeInTheDocument();
@@ -111,22 +140,18 @@ describe('VacancyFunnelView', () => {
 
   it('switches back to list from kanban', async () => {
     render(<VacancyFunnelView vacancyId="vac-1" />);
-    await userEvent.click(screen.getByText('kanban-btn'));
-    await userEvent.click(screen.getByText('list-btn'));
+    await userEvent.click(listBtn());
     expect(screen.getByTestId('funnel-table')).toBeInTheDocument();
     expect(screen.queryByTestId('kanban-board')).not.toBeInTheDocument();
   });
 
-  it('passes vacancyId to KanbanBoard when in kanban view', async () => {
+  it('passes vacancyId to KanbanBoard when in kanban view', () => {
     render(<VacancyFunnelView vacancyId="vac-42" />);
-    await userEvent.click(screen.getByText('kanban-btn'));
     expect(screen.getByTestId('kanban-board')).toHaveTextContent('vac-42');
   });
 
-  it('does not call useVacancyFunnelTable with enabled=true in kanban view', async () => {
+  it('does not call useVacancyFunnelTable with enabled=true in kanban view', () => {
     render(<VacancyFunnelView vacancyId="vac-1" />);
-    await userEvent.click(screen.getByText('kanban-btn'));
-    // The hook should have been called with enabled=false in kanban mode
     const lastCall =
       mockUseVacancyFunnelTable.mock.calls[
         mockUseVacancyFunnelTable.mock.calls.length - 1
@@ -136,6 +161,7 @@ describe('VacancyFunnelView', () => {
 
   it('clicar em "Pre Screening" chama o hook com a coluna (sources PRE_SCREENING + IN_PROGRESS)', async () => {
     render(<VacancyFunnelView vacancyId="vac-1" />);
+    await userEvent.click(listBtn());
     await userEvent.click(screen.getByText('pre-screening'));
     const lastCall =
       mockUseVacancyFunnelTable.mock.calls[

@@ -61,4 +61,11 @@ describe('VacancyFunnelToggle', () => {
     render(<VacancyFunnelToggle view="list" onChange={vi.fn()} />);
     expect(screen.getByRole('group')).toBeInTheDocument();
   });
+
+  it('o primeiro botão do grupo é o Kanban e o segundo a Lista (054)', () => {
+    render(<VacancyFunnelToggle view="kanban" onChange={vi.fn()} />);
+    const buttons = screen.getAllByRole('button');
+    expect(buttons[0]).toHaveTextContent('admin.vacancyDetail.funnelView.viewToggle.kanban');
+    expect(buttons[1]).toHaveTextContent('admin.vacancyDetail.funnelView.viewToggle.list');
+  });
 });

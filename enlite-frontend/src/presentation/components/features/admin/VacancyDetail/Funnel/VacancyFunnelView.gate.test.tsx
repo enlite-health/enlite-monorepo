@@ -28,7 +28,10 @@ function comEnforcement(permissions: string[], enforcement: AuthzContract['enfor
 }
 const vacancy = { id: 'v1' } as never;
 
-beforeEach(() => localStorage.clear());
+beforeEach(() => {
+  localStorage.clear();
+  localStorage.setItem('vacancy-funnel-view-v2-v1', 'list');
+});
 
 describe('VacancyFunnelView — portões por célula (D286 fase 2)', () => {
   it('enforcement=on sem match:execute nem messaging:send: os dois botões SOMEM', () => {
