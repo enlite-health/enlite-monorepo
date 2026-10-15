@@ -29,6 +29,7 @@ describe('GET /api/admin/workers/:id', () => {
   let workerToken: string;
   let pool: Pool;
   let seededWorkerId: string;
+  let mergedWorkerId: string;
 
   const testAuthUid = `worker-detail-e2e-${Date.now()}`;
   const testEmail = `worker-detail-${Date.now()}@e2e.local`;
@@ -98,6 +99,9 @@ describe('GET /api/admin/workers/:id', () => {
   });
 
   afterAll(async () => {
+    if (pool && mergedWorkerId) {
+      await pool.query('DELETE FROM workers WHERE id = $1', [mergedWorkerId]);
+    }
     if (pool && seededWorkerId) {
       // Remove registros dependentes antes do worker (FK constraints)
       await pool.query('DELETE FROM worker_service_areas WHERE worker_id = $1', [seededWorkerId]);
@@ -224,6 +228,27 @@ describe('GET /api/admin/workers/:id', () => {
       );
 
       expect(res.data.data.id).toBe(seededWorkerId);
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // 200 — id de worker FUNDIDO resolve para o canônico (candidaturas antigas do Talentum)
+  // ─────────────────────────────────────────────────────────────────────────────
+  describe('id de worker fundido', () => {
+    it('retorna 200 com a ficha do canônico (data.id = canônico, não o id fundido)', async () => {
+      const ins = await pool.query(
+        `INSERT INTO workers (auth_uid, email, country, timezone)
+         VALUES ($1, $2, 'AR', 'America/Argentina/Buenos_Aires') RETURNING id`,
+        [`${testAuthUid}-merged`, `merged-${testEmail}`],
+      );
+      mergedWorkerId = ins.rows[0].id as string;
+      await pool.query('UPDATE workers SET merged_into_id = $1 WHERE id = $2', [seededWorkerId, mergedWorkerId]);
+
+      const res = await api.get(`/api/admin/workers/${mergedWorkerId}`, authHeaders(adminToken));
+
+      expect(res.status).toBe(200);
+      expect(res.data.data.id).toBe(seededWorkerId);
+      expect(res.data.data.id).not.toBe(mergedWorkerId);
     });
   });
 

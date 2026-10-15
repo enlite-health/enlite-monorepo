@@ -891,6 +891,40 @@ describe('AdminWorkersController — getWorkerById', () => {
     controller = new AdminWorkersController();
   });
 
+  // ── Worker fundido (merged_into_id) ────────────────────────────────────────
+
+  describe('id de worker fundido', () => {
+    const CANONICAL_ID = '99999999-9999-9999-9999-999999999999';
+    const MERGED_ID = '88888888-8888-8888-8888-888888888888';
+
+    it('resolve para o canônico vivo e devolve a ficha dele (id = canônico)', async () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [] }) // SELECT do id fundido (merged_into_id IS NULL) → 0 linhas
+        .mockResolvedValueOnce({ rows: [{ id: CANONICAL_ID, depth: 1, merged_into_id: null }] }); // resolveCanonicalWorkerId
+      setupFullMocks({ workerRow: makeWorkerRow({ id: CANONICAL_ID }) }); // SELECT do canônico + resto da ficha
+      const [req, res] = mockReqRes({ id: MERGED_ID });
+
+      await controller.getWorkerById(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      const data = (res.json as jest.Mock).mock.calls[0][0].data;
+      expect(data.id).toBe(CANONICAL_ID);
+      expect(mockQuery.mock.calls[2][1]).toEqual([CANONICAL_ID]);
+    });
+
+    it('id realmente inexistente continua 404', async () => {
+      mockQuery
+        .mockResolvedValueOnce({ rows: [] }) // SELECT vivo
+        .mockResolvedValueOnce({ rows: [] }); // resolveCanonicalWorkerId → null
+      const [req, res] = mockReqRes({ id: MERGED_ID });
+
+      await controller.getWorkerById(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(404);
+      expect(res.json).toHaveBeenCalledWith({ success: false, error: 'Worker not found' });
+    });
+  });
+
   // ── Cenário 1: Happy path ──────────────────────────────────────────────────
 
   describe('worker encontrado com dados completos', () => {
@@ -1071,12 +1105,13 @@ describe('AdminWorkersController — getWorkerById', () => {
 
     it('não executa queries de dados relacionados quando worker não existe', async () => {
       mockQuery.mockResolvedValueOnce({ rows: [] });
+      mockQuery.mockResolvedValueOnce({ rows: [] }); // resolveCanonicalWorkerId → inexistente
       const [req, res] = mockReqRes({ id: WORKER_ID });
 
       await controller.getWorkerById(req, res);
 
-      // Apenas a query do worker foi executada
-      expect(mockQuery).toHaveBeenCalledTimes(1);
+      // Só o SELECT do worker + a resolução do canônico; nenhuma query de dados relacionados
+      expect(mockQuery).toHaveBeenCalledTimes(2);
       expect(mockDecrypt).not.toHaveBeenCalled();
     });
   });
