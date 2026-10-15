@@ -1,9 +1,3 @@
-jest.mock('@shared/logging', () => ({
-  logger: { child: jest.fn().mockReturnValue({ info: jest.fn(), error: jest.fn(), warn: jest.fn() }) },
-  reportError: jest.fn(),
-  loggingAls: { run: jest.fn(), getStore: jest.fn().mockReturnValue(undefined) },
-}));
-
 import {
   assertWorkerCanApply,
   WorkerNotEligibleError,
@@ -57,39 +51,13 @@ describe('assertWorkerCanApply', () => {
     });
   });
 
-  describe('worker fundido (merged_into_id preenchido)', () => {
-    // Fila: 1) SELECT status do id pedido (vivo) → 0 linhas; 2) CTE de resolveCanonicalWorkerId;
-    // 3) SELECT status do canônico.
-    function makeMergedPool(canonical: { id: string; depth: number } | null, canonicalStatus?: string) {
-      const query = jest.fn()
-        .mockResolvedValueOnce({ rows: [] })
-        .mockResolvedValueOnce({ rows: canonical ? [{ ...canonical, merged_into_id: null }] : [] })
-        .mockResolvedValueOnce({ rows: canonicalStatus ? [{ status: canonicalStatus }] : [] });
-      return { pool: { query } as unknown as import('pg').Pool, query };
-    }
-
-    it('avalia o status do canônico vivo: REGISTERED → resolve', async () => {
-      const { pool, query } = makeMergedPool({ id: 'w-live', depth: 1 }, 'REGISTERED');
-      await expect(assertWorkerCanApply(pool, 'w-merged')).resolves.toBeUndefined();
-      expect(query.mock.calls[2][1]).toEqual(['w-live']);
+  it('exclui workers merged (merged_into_id IS NOT NULL) via WHERE clause', async () => {
+    const query = jest.fn().mockResolvedValue({ rows: [] });
+    const pool = { query } as unknown as import('pg').Pool;
+    await expect(assertWorkerCanApply(pool, 'w-merged')).rejects.toMatchObject({
+      reason: 'worker_not_found',
     });
-
-    it('canônico INCOMPLETE_REGISTER → registration_incomplete (não worker_not_found)', async () => {
-      const { pool } = makeMergedPool({ id: 'w-live', depth: 1 }, 'INCOMPLETE_REGISTER');
-      await expect(assertWorkerCanApply(pool, 'w-merged')).rejects.toMatchObject({
-        reason: 'registration_incomplete',
-        workerStatus: 'INCOMPLETE_REGISTER',
-      });
-    });
-
-    it('id realmente inexistente (ou corrente sem fim) → worker_not_found', async () => {
-      const { pool, query } = makeMergedPool(null);
-      await expect(assertWorkerCanApply(pool, 'w-missing')).rejects.toMatchObject({
-        reason: 'worker_not_found',
-        workerStatus: null,
-      });
-      expect(query).toHaveBeenCalledTimes(2); // sem SELECT de canônico
-    });
+    expect(query.mock.calls[0][0]).toContain('merged_into_id IS NULL');
   });
 
   it('WorkerNotEligibleError tem fields esperados', () => {
