@@ -1,4 +1,5 @@
 import { Pool } from 'pg';
+import { resolveCanonicalWorkerId } from '@shared/database/resolveCanonicalWorkerId';
 
 export type WorkerEligibilityReason =
   | 'worker_not_found'
@@ -24,10 +25,18 @@ export class WorkerNotEligibleError extends Error {
 }
 
 export async function assertWorkerCanApply(pool: Pool, workerId: string): Promise<void> {
-  const { rows } = await pool.query<{ status: string }>(
-    'SELECT status FROM workers WHERE id = $1 AND merged_into_id IS NULL',
-    [workerId],
-  );
+  const selectStatus = 'SELECT status FROM workers WHERE id = $1 AND merged_into_id IS NULL';
+  let { rows } = await pool.query<{ status: string }>(selectStatus, [workerId]);
+
+  if (rows.length === 0) {
+    // Candidaturas antigas (pré-fix do Talentum) ainda apontam para o id FUNDIDO:
+    // a elegibilidade é a do worker vivo da corrente. Id inexistente (ou corrente
+    // sem fim) continua worker_not_found.
+    const canonicalId = await resolveCanonicalWorkerId(pool, workerId);
+    if (canonicalId != null && canonicalId !== workerId) {
+      ({ rows } = await pool.query<{ status: string }>(selectStatus, [canonicalId]));
+    }
+  }
 
   if (rows.length === 0) {
     throw new WorkerNotEligibleError(workerId, 'worker_not_found', null);

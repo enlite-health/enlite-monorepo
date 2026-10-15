@@ -80,6 +80,7 @@ describe('ApplyToVacancyUseCase', () => {
 
   it('worker inexistente (merge/deletado) → ok:false reason=worker_not_found', async () => {
     mockQuery.mockResolvedValueOnce({ rows: [] });
+    mockQuery.mockResolvedValueOnce({ rows: [] }); // resolveCanonicalWorkerId → inexistente
 
     const result = await useCase.execute(mockDb as any, PARAMS);
 

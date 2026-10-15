@@ -376,6 +376,7 @@ describe('WorkerApplicationsController — trackChannel', () => {
   it('returns 403 when worker row disappears between progress and eligibility (race)', async () => {
     mockWorkerFound('w-1');
     mockQuery.mockResolvedValueOnce({ rows: [] }); // SELECT status returns nothing
+    mockQuery.mockResolvedValueOnce({ rows: [] }); // resolveCanonicalWorkerId → id inexistente
     // worker_not_found: fn_worker_missing_fields retorna ["worker_not_found"] → sem expand query
     mockQuery.mockResolvedValueOnce({ rows: [{ missing: '["worker_not_found"]' }] });
     mockQuery.mockResolvedValueOnce({ rowCount: 1 }); // INSERT

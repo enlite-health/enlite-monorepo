@@ -196,6 +196,7 @@ describe('PromoteBlockedApplicationsUseCase', () => {
     });
     // assertWorkerCanApply → 0 rows (merged ou inexistente)
     query.mockResolvedValueOnce({ rows: [] });
+    query.mockResolvedValueOnce({ rows: [] }); // resolveCanonicalWorkerId → sem canônico
 
     const execute = jest.fn();
     const useCase = new PromoteBlockedApplicationsUseCase(
