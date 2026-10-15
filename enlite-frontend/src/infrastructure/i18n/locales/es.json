@@ -2709,7 +2709,7 @@
           "submitting": "Creando…",
           "close": "Cerrar",
           "hostReason": {
-            "unlinked": "Sin vínculo con Google Calendar: no se puede agendar"
+            "unlinked": "Sin vínculo con Tactiq: vinculá tu cuenta en Mi perfil para poder agendar"
           },
           "hostsLoading": "Cargando entrevistadores…",
           "hostsError": "No pudimos cargar los entrevistadores.",

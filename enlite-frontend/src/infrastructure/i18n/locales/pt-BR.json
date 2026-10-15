@@ -2630,7 +2630,7 @@
           "submitting": "Criando…",
           "close": "Fechar",
           "hostReason": {
-            "unlinked": "Sem vínculo com o Google Calendar: não é possível agendar"
+            "unlinked": "Sem vínculo com o Tactiq: vincule sua conta em Meu perfil para poder agendar"
           },
           "hostsLoading": "Carregando entrevistadores…",
           "hostsError": "Não foi possível carregar os entrevistadores.",

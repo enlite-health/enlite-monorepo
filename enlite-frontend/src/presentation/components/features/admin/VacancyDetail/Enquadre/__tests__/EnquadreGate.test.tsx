@@ -154,3 +154,15 @@ describe('enforcement desligado', () => {
     expect(dragDisabled!({ id: 'p-01' })).toBe(false);
   });
 });
+
+describe('entrevistadora sem vínculo no drawer', () => {
+  it('a razão cita Tactiq e a página Mi perfil, nunca Google Calendar (a checagem é tactiq_links)', async () => {
+    restore = installDataset('03');
+    setAuthz('off', []);
+    render(<MemoryRouter><CreateEnquadreEventDrawer vacancyId="v-1" workers={[]} workersStatus="ok" onCreated={() => undefined} onClose={() => undefined} /></MemoryRouter>);
+    const reason = await screen.findByTestId('enquadre-create-host-reason-h-c');
+    expect(reason).toHaveTextContent('Tactiq');
+    expect(reason).toHaveTextContent('Mi perfil');
+    expect(reason.textContent).not.toContain('Google Calendar');
+  });
+});
