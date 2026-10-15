@@ -446,3 +446,28 @@ describe('WorkerDetailPage — worker sem e-mail e sem nome', () => {
     expect(heading).not.toHaveTextContent('null');
   });
 });
+
+// ── Id fundido na URL ─────────────────────────────────────────────────────────
+
+describe('WorkerDetailPage — id de worker fundido na rota', () => {
+  it('redireciona (replace) para a rota do id canônico quando worker.id !== id da rota', () => {
+    mockUseParams.mockReturnValue({ id: 'worker-merged' });
+    mockUseLocation.mockReturnValue({ state: { from: '/admin/workers?page=2' } });
+    mockUseWorkerDetail.mockReturnValue({ worker: MOCK_WORKER, isLoading: false, error: null, refetch: vi.fn() });
+
+    render(<WorkerDetailPage />);
+
+    expect(mockNavigate).toHaveBeenCalledWith('/admin/workers/worker-123', {
+      replace: true,
+      state: { from: '/admin/workers?page=2' },
+    });
+  });
+
+  it('não redireciona quando o id da rota já é o canônico', () => {
+    mockUseWorkerDetail.mockReturnValue({ worker: MOCK_WORKER, isLoading: false, error: null, refetch: vi.fn() });
+
+    render(<WorkerDetailPage />);
+
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+});
