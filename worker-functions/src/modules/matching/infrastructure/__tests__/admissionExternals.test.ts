@@ -25,6 +25,14 @@ describe('createAdmissionExternals', () => {
     expect(realWhatsApp).not.toHaveBeenCalled();
   });
 
+  it('stage: NODE_ENV=production + ADMISSION_EXTERNALS=fake + ENLITE_DEPLOY_ENV=stage → fake', () => {
+    expect(createAdmissionExternals({ NODE_ENV: 'production', ADMISSION_EXTERNALS: 'fake', ENLITE_DEPLOY_ENV: 'stage' }, { realWhatsApp }).mode).toBe('fake');
+  });
+
+  it('stage: NODE_ENV=production + ADMISSION_EXTERNALS=fake SEM marcador de stage → LANÇA', () => {
+    expect(() => createAdmissionExternals({ NODE_ENV: 'production', ADMISSION_EXTERNALS: 'fake' }, { realWhatsApp })).toThrow('createAdmissionExternals: ADMISSION_EXTERNALS=fake é proibido em produção');
+  });
+
   it('A2-9: NODE_ENV=production + ADMISSION_EXTERNALS=fake → LANÇA', () => {
     expect(() => createAdmissionExternals({ NODE_ENV: 'production', ADMISSION_EXTERNALS: 'fake' }, { realWhatsApp })).toThrow(/proibido em produção/);
   });
