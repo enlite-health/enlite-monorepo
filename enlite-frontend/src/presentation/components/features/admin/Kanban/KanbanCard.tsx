@@ -1,8 +1,8 @@
 import { useTranslation } from 'react-i18next';
 import { Text } from '@presentation/components/atoms/Text';
-import { Hand, MapPin, MessageSquare, Phone, Star } from 'lucide-react';
+import { Hand, MapPin, Phone, Star } from 'lucide-react';
 import { formatPhoneDisplay } from '@presentation/utils/recruitmentHelpers';
-import { NotesCountBadge } from '@presentation/components/features/admin/VacancyDetail/Funnel/NotesCountBadge';
+import { KanbanCardNotesButton } from './KanbanCardNotesButton';
 import { MoveToMenu } from './MoveToMenu';
 import { convocationLabel } from '@presentation/components/features/admin/VacancyDetail/Enquadre/enquadreEventTime';
 import { KanbanCardStageMessage } from './KanbanCardStageMessage';
@@ -60,6 +60,8 @@ interface KanbanCardProps {
   moveTargets?: readonly string[];
   /** Opens the contact-notes modal for the VACANCY — same thread on every card, including BLOQUEADO. */
   onOpenNotes?: () => void;
+  /** Botão de comentários só com o ícone, na linha da tag (kanban do evento de enquadre). Ausente = botão largo do funil. */
+  compactNotes?: boolean;
   /** ISO do último envio de WhatsApp a esta candidatura (manual ou em lote); null = nunca. */
   lastMessagedAt?: string | null;
   /** PEND-14/DEC-12: último template enfileirado por ETAPA (mover a tarjeta) — o painel mostra o último envio por pessoa. */
@@ -156,6 +158,7 @@ export function KanbanCard({
   convocation,
   enquadreOrigin,
   onOpenNotes,
+  compactNotes = false,
   contactNotesCount = 0,
   selfAppliedAt,
   lastMessagedAt,
@@ -215,10 +218,21 @@ export function KanbanCard({
         )}
       </div>
 
-      {occupation && (
-        <span className="inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-50 text-purple-700">
-          {occupation}
-        </span>
+      {compactNotes && onOpenNotes ? (
+        <div className="flex items-center mt-1">
+          {occupation && (
+            <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-50 text-purple-700">
+              {occupation}
+            </span>
+          )}
+          <KanbanCardNotesButton compact onOpen={onOpenNotes} count={contactNotesCount} />
+        </div>
+      ) : (
+        occupation && (
+          <span className="inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-50 text-purple-700">
+            {occupation}
+          </span>
+        )
       )}
 
       {/* "Se postuló sola": a pessoa clicou no link da vaga por conta própria.
@@ -326,21 +340,7 @@ export function KanbanCard({
         />
       )}
 
-      {onOpenNotes && (
-        <button
-          data-testid="notes-button"
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onOpenNotes();
-          }}
-          className="mt-2 w-full flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium text-slate-600 hover:bg-slate-100 hover:text-primary transition-colors border border-transparent hover:border-slate-200"
-        >
-          <MessageSquare className="w-3 h-3" />
-          {t('admin.kanban.notesButton')}
-          <NotesCountBadge count={contactNotesCount} />
-        </button>
-      )}
+      {onOpenNotes && !compactNotes && <KanbanCardNotesButton onOpen={onOpenNotes} count={contactNotesCount} />}
 
       <KanbanCardStageMessage lastStageMessage={lastStageMessage} />
       {presentationInvite && <KanbanCardPresentationInvite onInvite={presentationInvite.onInvite} state={presentationInvite.state} lastInvitedAt={presentationInvite.lastInvitedAt} />}

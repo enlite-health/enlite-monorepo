@@ -166,7 +166,8 @@ export function EnquadreEventKanban({ vacancyId, eventId, onBack, now = () => ne
               {...cardProps(p, columnId)}
               onReject={open && !resultGate.denied ? () => setPendingReject(p.id) : undefined}
               onMoveTo={open && !resultGate.denied ? (target) => { void moveParticipant(p.id, target as EnquadreColumnId); } : undefined}
-              onOpenNotes={() => setActiveNotes({ workerId: p.workerId, workerName: p.workerName })}
+              onOpenNotes={open ? () => setActiveNotes({ workerId: p.workerId, workerName: p.workerName }) : undefined}
+              compactNotes
               moveTargets={ENQUADRE_MOVE_TARGETS}
             />
             {p.outcome === 'returned' && (
