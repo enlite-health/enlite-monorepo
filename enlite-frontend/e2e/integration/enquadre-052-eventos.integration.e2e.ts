@@ -29,6 +29,7 @@ import { dndKitDrag } from '../helpers/dndKitDrag';
 import {
   psql, scalar, safeSql, seedStaffInGroup, cleanupStaffAndGroup, grantCell, loginAs, ABAC_TENANT, type MockUser,
 } from '../helpers/abac-stack-helper';
+import { seedInterviewHost, cleanupInterviewHosts } from '../helpers/interview-host-seed';
 
 const RUN_ID = `${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
 const HOST_OK = `ana.e2e052-${RUN_ID}@example.test`;
@@ -141,10 +142,8 @@ test.describe('enquadre-052 — aba Encuadre da vaga: criar, marcar, encerrar, f
   test.setTimeout(240_000);
 
   test.beforeAll(() => {
-    psql(`INSERT INTO interview_hosts (email, display_name, country, active) VALUES
-            ('${HOST_OK}', 'Entrevistadora E2E052', 'AR', true), ('${HOST_FALHA}', 'Falha E2E052', 'AR', true)`);
-    hostOkId = scalar(`SELECT id FROM interview_hosts WHERE email = '${HOST_OK}'`);
-    hostFalhaId = scalar(`SELECT id FROM interview_hosts WHERE email = '${HOST_FALHA}'`);
+    hostOkId = seedInterviewHost({ email: HOST_OK, displayName: 'Entrevistadora E2E052' });
+    hostFalhaId = seedInterviewHost({ email: HOST_FALHA, displayName: 'Falha E2E052' });
     psql(`INSERT INTO tactiq_links (host_email, firebase_uid, status) VALUES ('${HOST_OK}', 'tq-e052-ok-${RUN_ID}', 'linked'), ('${HOST_FALHA}', 'tq-e052-falha-${RUN_ID}', 'linked')`);
 
     // Células concedidas ANTES do 1º request (o override liga PERMISSION_CACHE_TTL_MS=30000). Leitura da vaga/funil/paciente: a página
@@ -159,7 +158,7 @@ test.describe('enquadre-052 — aba Encuadre da vaga: criar, marcar, encerrar, f
   test.afterAll(() => {
     for (const sc of scenarios) cleanupScenario(sc);
     safeSql(`DELETE FROM tactiq_links WHERE lower(host_email) = ANY(ARRAY['${HOST_OK}','${HOST_FALHA}'])`);
-    safeSql(`DELETE FROM interview_hosts WHERE email = ANY(ARRAY['${HOST_OK}','${HOST_FALHA}'])`);
+    cleanupInterviewHosts([HOST_OK, HOST_FALHA]);
     cleanupStaffAndGroup(staffUid, groupId);
     safeSql(`DELETE FROM iam.permission_groups WHERE tenant_id = '${ABAC_TENANT}' AND name LIKE 'Enq052 Chefe ${RUN_ID}'`);
   });

@@ -34,6 +34,7 @@ import { seedActivatablePatient, cleanupPatientDeep } from '../helpers/patient-d
 import {
   psql, scalar, safeSql, seedStaffInGroup, cleanupStaffAndGroup, grantCell, loginAs, tokenFor, ABAC_API_URL, ABAC_TENANT,
 } from '../helpers/abac-stack-helper';
+import { seedInterviewHost, cleanupInterviewHosts } from '../helpers/interview-host-seed';
 
 const RUN_ID = `${Date.now()}${Math.random().toString(36).slice(2, 6)}`;
 const PHONE = '+5491100000049';
@@ -103,8 +104,9 @@ test.describe('admissao-049 — aba Admisión: nova agenda, vínculo Tactiq, can
     // Telefone + consentimento: sem eles a confirmação não vira "enviada" e o selo não prova o caminho feliz.
     safeSql(`UPDATE patients SET phone_whatsapp = '${PHONE}', has_consent = true WHERE id = '${seed.patientId}'`);
 
-    psql(`INSERT INTO interview_hosts (email, display_name, country, active) VALUES
-            ('${ANA}', 'Ana E2E049', 'AR', true), ('${OCUPADA}', 'Mari E2E049', 'AR', true), ('${SEM_VINCULO}', 'Sem Vinculo E2E049', 'AR', true)`);
+    seedInterviewHost({ email: ANA, displayName: 'Ana E2E049' });
+    seedInterviewHost({ email: OCUPADA, displayName: 'Mari E2E049' });
+    seedInterviewHost({ email: SEM_VINCULO, displayName: 'Sem Vinculo E2E049' });
     // ANA e OCUPADA vinculadas; SEM_VINCULO não tem linha em `tactiq_links` (estado `missing`). Token: tabela à parte, não usada aqui.
     psql(`INSERT INTO tactiq_links (host_email, firebase_uid, status) VALUES ('${ANA}', 'tq-e049-ana-${RUN_ID}', 'linked'), ('${OCUPADA}', 'tq-e049-mari-${RUN_ID}', 'linked')`);
 
@@ -119,7 +121,7 @@ test.describe('admissao-049 — aba Admisión: nova agenda, vínculo Tactiq, can
   test.afterAll(() => {
     safeSql(`DELETE FROM admission_appointments WHERE patient_id = '${seed.patientId}'`);
     safeSql(`DELETE FROM tactiq_links WHERE lower(host_email) = ANY(ARRAY[${HOSTS.map((h) => `'${h}'`).join(',')}])`);
-    safeSql(`DELETE FROM interview_hosts WHERE email = ANY(ARRAY[${HOSTS.map((h) => `'${h}'`).join(',')}])`);
+    cleanupInterviewHosts(HOSTS);
     safeSql(`DELETE FROM patients WHERE id = '${seed.patientId}'`);
     cleanupPatientDeep(seed.patientId);
     cleanupStaffAndGroup(operadoraUid, operadoraGroupId);
