@@ -27,7 +27,13 @@ function fakeProviderRepo(): ContractedServiceProviderRepository {
   return { listForService: jest.fn().mockResolvedValue([]) } as unknown as ContractedServiceProviderRepository;
 }
 
-function cliente(liveVacancies: Array<{ id: string }>, rowCountDasVagas: number | null = liveVacancies.length, bandaAtual: string | null = null) {
+// Valores ATUAIS (preenchidos) dos campos vigiados; 057 gate A1: o PATCH só recusa o que realmente LIMPA.
+const ATUAL: Record<string, unknown> = {
+  schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }], required_sex: 'F', required_professions: ['AT'],
+  required_experience: 'X', work_schedule: 'L-V', payment_day: 5,
+};
+
+function cliente(liveVacancies: Array<{ id: string }>, rowCountDasVagas: number | null = liveVacancies.length, bandaAtual: string | null = null, atual: Record<string, unknown> = ATUAL) {
   const chamadas: string[] = [];
   const query = jest.fn(async (sql: string) => {
     chamadas.push(sql.replace(/\s+/g, ' ').trim());
@@ -36,6 +42,8 @@ function cliente(liveVacancies: Array<{ id: string }>, rowCountDasVagas: number 
     if (/^SELECT id FROM patient_contracted_services WHERE id = \$1 FOR UPDATE/.test(t)) return { rows: [{ id: 'svc-1' }], rowCount: 1 };
     if (/^SELECT id FROM job_postings/.test(t)) return { rows: liveVacancies, rowCount: rowCountDasVagas };
     if (/^SELECT providers_needed FROM patient_contracted_services/.test(t)) return { rows: [{ providers_needed: SERVICE_ROW.providers_needed }], rowCount: 1 };
+    const mAtual = /^SELECT (\w+) FROM patient_contracted_services WHERE id = \$1 FOR UPDATE/.exec(t);
+    if (mAtual && mAtual[1] in atual) return { rows: [{ [mAtual[1]]: atual[mAtual[1]] }], rowCount: 1 };
     if (/^SELECT provider_age_band FROM patient_contracted_services/.test(t)) return { rows: [{ provider_age_band: bandaAtual }], rowCount: 1 };
     if (/^INSERT INTO vacancy_source_change_notices/.test(t)) return { rows: [{ job_posting_id: 'vac-1' }], rowCount: 1 };
     if (/^UPDATE patient_contracted_services SET/.test(t)) return { rows: [], rowCount: 1 };
@@ -105,6 +113,41 @@ describe('PatientContractedServiceRepository.update — refuseClear (F2)', () =>
     const out = await repo.update('svc-1', { schedule: [], actorUid: 'u-1' });
     expect(out).not.toBeNull();
     expect(livre.chamadas.some((c) => c.startsWith('UPDATE patient_contracted_services SET'))).toBe(true);
+  });
+});
+
+describe('PatientContractedServiceRepository.update — só recusa o que realmente limpa (057 gate A1)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPoolQuery.mockResolvedValue({ rows: [] });
+  });
+
+  it('(a) atual NULL + requiredExperience:null COM vaga viva → grava, sem erro e sem tocar nas vagas', async () => {
+    const { cli, chamadas } = cliente([{ id: 'vac-1' }], 1, null, { ...ATUAL, required_experience: null });
+    mockConnect.mockResolvedValue(cli);
+    const repo = new PatientContractedServiceRepository(fakeProviderRepo());
+    const out = await repo.update('svc-1', { requiredExperience: null, actorUid: 'u-1' });
+    expect(out).not.toBeNull();
+    expect(chamadas.some((c) => c.startsWith('SELECT id FROM job_postings'))).toBe(false);
+    expect(chamadas.some((c) => c.startsWith('UPDATE patient_contracted_services SET'))).toBe(true);
+  });
+
+  it("(b) atual 'X' + requiredExperience:null COM vaga viva → ServiceFieldRequiredByLiveVacancyError('required_experience')", async () => {
+    const { cli } = cliente([{ id: 'vac-1' }]);
+    mockConnect.mockResolvedValue(cli);
+    const repo = new PatientContractedServiceRepository(fakeProviderRepo());
+    const err = await repo.update('svc-1', { requiredExperience: null, actorUid: 'u-1' }).catch((e) => e);
+    expect(err).toBeInstanceOf(ServiceFieldRequiredByLiveVacancyError);
+    expect(err).toMatchObject({ field: 'required_experience', vacancyIds: ['vac-1'] });
+  });
+
+  it.each([['NULL', null], ['[]', []]])('(c) atual %s + requiredProfessions:[] COM vaga viva → grava', async (_n, atualProf) => {
+    const { cli, chamadas } = cliente([{ id: 'vac-1' }], 1, null, { ...ATUAL, required_professions: atualProf });
+    mockConnect.mockResolvedValue(cli);
+    const repo = new PatientContractedServiceRepository(fakeProviderRepo());
+    const out = await repo.update('svc-1', { requiredProfessions: [], actorUid: 'u-1' });
+    expect(out).not.toBeNull();
+    expect(chamadas.some((c) => c.startsWith('UPDATE patient_contracted_services SET'))).toBe(true);
   });
 });
 
