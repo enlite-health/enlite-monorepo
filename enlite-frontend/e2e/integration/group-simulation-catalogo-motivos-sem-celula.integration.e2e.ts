@@ -60,7 +60,7 @@ test.describe('catalogo-motivos-sem-celula sob engine ligado @integration', () =
       await expect(nav.getByRole('link', { name: TITULO })).toHaveCount(0);
 
       await page.goto(ROTA);
-      await expect(page).toHaveURL(/\/admin\/?$/, { timeout: 30_000 });
+      await expect(page).toHaveURL(/\/admin\/dashboard$/, { timeout: 30_000 });
       await expect(page.getByRole('heading', { level: 1, name: TITULO })).toHaveCount(0);
       await expect(page.getByTestId('therapeutic-catalog-table')).toHaveCount(0);
 
