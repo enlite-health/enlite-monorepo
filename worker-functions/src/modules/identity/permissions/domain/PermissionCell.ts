@@ -113,6 +113,8 @@ export const RESOURCE_CATEGORY: Readonly<Record<string, PermissionCategory>> = {
   own_presence: 'Administração',
   // Spec 049 (F4): o operador vê/gerencia o PRÓPRIO vínculo com o Tactiq (célula own_*).
   own_tactiq_link: 'Administração',
+  // Spec 055: tela "Entrevistadores" — quem atende enquadre e admissão (tabela interview_hosts).
+  interview_host: 'Administração',
 };
 
 /**
@@ -356,6 +358,12 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
     'Ver o selo do resumo do evento de enquadre e baixar o resumo (PDF) gerado a partir da transcrição da call. Sem esta célula '
     + 'a linha do evento não mostra o selo do resumo nem o botão de baixar, e o download responde 403. '
     + 'Só o Acesso Master por enquanto.',
+  'interview_host:read':
+    'Ver a tela Entrevistadores: quem atende enquadre e admissão, em que países, quais fluxos e se já vinculou o Tactiq. '
+    + 'Mostra nome e e-mail do usuário. Só o Acesso Master por enquanto.',
+  'interview_host:update':
+    'Agregar, editar e quitar entrevistadores de enquadre e admissão (escolhidos entre os usuários staff ativos). Mexe em '
+    + 'quem aparece na lista de entrevistadora do enquadre e da admissão na próxima abertura. Só o Acesso Master por enquanto.',
   'own_tactiq_link:read':
     'Ver o estado do PRÓPRIO vínculo com o Tactiq (vinculado, caído, conta errada ou sem vínculo) e a data da última '
     + 'verificação. Nunca devolve o token. Quem não está vinculado não pode ser responsável de agenda de admissão.',

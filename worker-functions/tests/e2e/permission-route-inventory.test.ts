@@ -433,6 +433,11 @@ describe('inventário de rotas governadas (app real de pé)', () => {
         'POST /api/admin/vacancies/:vacancyId/enquadre-events/:eventId/participants → enquadre_event:update',
         'POST /api/admin/vacancies/:vacancyId/enquadre-events/:eventId/participants/:participantId/remove → enquadre_event:update',
         'PUT /api/admin/vacancies/:vacancyId/enquadre-events/:eventId/participants/:participantId/move → enquadre_result:update',
+        // spec 055 (tela Entrevistadores, `adminInterviewHostRoutes.ts`): família admin.users, células interview_host:read|update (só Acesso Master).
+        'GET /api/admin/interview-hosts → interview_host:read',
+        'GET /api/admin/interview-hosts/candidates → interview_host:update',
+        'POST /api/admin/interview-hosts → interview_host:update',
+        'PATCH /api/admin/interview-hosts/:id → interview_host:update',
       ].sort(),
     );
   });
