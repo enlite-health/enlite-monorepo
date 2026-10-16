@@ -154,10 +154,12 @@ test.describe('entrevistadores-055 — tela Entrevistadores: agregar, busca, Qui
     await digitar(page, '#ih-user', FLOR.name);
     await page.getByTestId(`candidate-${FLOR.uid}`).click();
     await expect(page.getByTestId('picked-user')).toContainText(FLOR.email);
-    await expect(page.getByRole('button', { name: /Argentina/ })).toHaveAttribute('aria-pressed', 'true'); // país padrão, lido da tela
-    await page.getByLabel('Encuadre').check();
-    await expect(page.getByLabel('Encuadre')).toBeChecked();
-    await expect(page.getByLabel('Admisión')).not.toBeChecked();
+    await expect(page.getByTestId('interview-host-panel').getByRole('button', { name: /Argentina/ })).toHaveAttribute('aria-pressed', 'true'); // país padrão, lido da tela
+    // Escopo no painel: a tabela atrás tem interruptores com aria-label "Encuadre — <nome>" que o getByLabel também casaria.
+    const painel = page.getByTestId('interview-host-panel');
+    await painel.getByLabel('Encuadre', { exact: true }).check();
+    await expect(painel.getByLabel('Encuadre', { exact: true })).toBeChecked();
+    await expect(painel.getByLabel('Admisión', { exact: true })).not.toBeChecked();
     await expect(page.getByTestId('panel-save')).toBeEnabled();
     await page.screenshot({ path: testInfo.outputPath('1-feliz-painel-preenchido.png') });
 
