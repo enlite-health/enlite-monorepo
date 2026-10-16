@@ -112,14 +112,30 @@ describe('GET /api/admin/patients/kanban/services — agregado do subcard do Kan
   }
 
   /** Serviço SEMPRE pela API — nunca SQL (o slot é derivado do `schedule`, DX-7.5/DX-8.4). */
+  // Spec 027 Fase 3 (D508 c): os 5 campos de recrutamento que o portão do activate-recruitment exige
+  // (422 PATIENT_NOT_READY, missing SERVICE_RECRUITMENT_FIELDS). Mesma semente de activation.e2e.test.ts.
+  const RECRUITMENT_FIELDS = {
+    requiredProfessions: ['AT'],
+    requiredSex: 'F',
+    requiredExperience: 'EXP-E2E-1',
+    workSchedule: 'part-time',
+    paymentDay: 'DIA-E2E-5',
+  };
+
   async function createServiceViaApi(
     patientId: string,
     addressId: string,
-    opts: { serviceCode: string; weeklyHours?: number; schedule?: Array<{ dayOfWeek: number; startTime: string; endTime: string }> },
+    opts: { serviceCode: string; weeklyHours?: number; schedule?: Array<{ dayOfWeek: number; startTime: string; endTime: string }>; withRecruitmentFields?: boolean },
   ): Promise<string> {
     const r = await api.post(
       `/api/admin/patients/${patientId}/contracted-services`,
-      { serviceCode: opts.serviceCode, weeklyHours: opts.weeklyHours, addressId, schedule: opts.schedule },
+      {
+        serviceCode: opts.serviceCode,
+        weeklyHours: opts.weeklyHours,
+        addressId,
+        schedule: opts.schedule,
+        ...(opts.withRecruitmentFields ? RECRUITMENT_FIELDS : {}),
+      },
       asAdmin,
     );
     expect(r.status).toBe(201);
@@ -252,6 +268,7 @@ describe('GET /api/admin/patients/kanban/services — agregado do subcard do Kan
       serviceCode: 'AT',
       weeklyHours: 20,
       schedule: [{ dayOfWeek: 1, startTime: '08:00', endTime: '12:00' }],
+      withRecruitmentFields: true,
     });
     // Gate de completude (COVERAGE lê `insurance_informed` do PACIENTE, não do serviço — molde P6).
     await pool.query(`UPDATE patients SET insurance_informed = 'OSDE' WHERE id = $1`, [ar.patientId]);

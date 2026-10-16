@@ -33,7 +33,7 @@
  * Restaura a linha de `ai_prompts` no `afterAll`, incondicionalmente.
  */
 import { execSync } from 'child_process';
-import { readdirSync, readFileSync, existsSync, statSync } from 'fs';
+import { readdirSync, readFileSync, statSync } from 'fs';
 import { join, resolve } from 'path';
 import { Pool } from 'pg';
 import { createApiClient, waitForBackend } from './helpers';
@@ -68,11 +68,17 @@ function filesMatching(files: string[], re: RegExp): string[] {
 const RE_PROVIDER = /GoogleDocsPromptProvider/;
 const RE_GOOGLEAPIS_PKG = /(?:from\s+|require\(\s*)['"](?:googleapis|@googleapis\/[^'"]+)['"]/;
 const RE_DRIVE_API = /docs\.googleapis\.com|drive\.googleapis\.com|googleapis\.com\/(?:upload\/)?drive/;
-const RE_DOC_ID = /PROMPT_DOC_ID/;
+// 049 (main) lê o prompt do resumo da admissão de um Google Doc; a 029 só garante que a PRÉ-TRIAGEM vem da tabela.
+// Por isso o escopo das varreduras exclui o módulo do resumo (matching/) e o provider da 049 (+ seu teste),
+// e `ADMISSION_SUMMARY_PROMPT_DOC_ID` não conta como `PROMPT_DOC_ID` da pré-triagem.
+const RE_DOC_ID = /(?<!ADMISSION_SUMMARY_)PROMPT_DOC_ID/;
+const PROVIDER_049 = 'GoogleDocsPromptProvider'; // arquivo + teste da 049
+const fora029 = (f: string) => f.includes('/src/modules/matching/') || f.includes(PROVIDER_049);
 
 describe('Pré-triagem sem Drive — a fonte do prompt é só a tabela (spec 029, T052) @integration', () => {
   describe('prova estrutural (leitura de arquivo)', () => {
     const srcFiles = walk(SRC_DIR).filter((f) => /\.(ts|js|json)$/.test(f));
+    const srcPreTriagem = srcFiles.filter((f) => !fora029(f));
     const workflowFiles = walk(WORKFLOWS_DIR).filter((f) => /\.ya?ml$/.test(f));
 
     it('controle positivo: o varredor enxerga o código e as regexes casam com amostra sintética', () => {
@@ -91,21 +97,25 @@ describe('Pré-triagem sem Drive — a fonte do prompt é só a tabela (spec 029
       expect(RE_DRIVE_API.test('https://www.googleapis.com/drive/v3/files')).toBe(true);
       expect(RE_DRIVE_API.test('https://www.googleapis.com/calendar/v3/calendars')).toBe(false);
       expect(RE_DOC_ID.test('PROMPT_DOC_ID_PRESCREENING_AT=abc')).toBe(true);
+      expect(RE_DOC_ID.test('ADMISSION_SUMMARY_PROMPT_DOC_ID=abc')).toBe(false);
+      // o recorte da 029 exclui só a 049 e continua enxergando a pré-triagem.
+      expect(srcPreTriagem.length).toBeGreaterThan(200);
+      expect(srcPreTriagem.some((f) => f.endsWith('GeminiVacancyParserService.ts'))).toBe(true);
+      expect(srcPreTriagem.length).toBeLessThan(srcFiles.length);
     });
 
-    it('GoogleDocsPromptProvider.ts não existe em lugar nenhum de src/', () => {
-      expect(srcFiles.filter((f) => /GoogleDocsPromptProvider/.test(f))).toEqual([]);
-      expect(existsSync(join(SRC_DIR, 'modules/integration/infrastructure/GoogleDocsPromptProvider.ts'))).toBe(false);
+    it('na pré-triagem: GoogleDocsPromptProvider.ts não existe fora do módulo de integração da 049', () => {
+      expect(srcPreTriagem.filter((f) => /GoogleDocsPromptProvider/.test(f))).toEqual([]);
     });
 
-    it('nenhum arquivo de src/ referencia o provider, importa googleapis ou usa a API do Drive/Docs', () => {
-      expect(filesMatching(srcFiles, RE_PROVIDER)).toEqual([]);
-      expect(filesMatching(srcFiles, RE_GOOGLEAPIS_PKG)).toEqual([]);
-      expect(filesMatching(srcFiles, RE_DRIVE_API)).toEqual([]);
+    it('na pré-triagem: nenhum arquivo de src/ referencia o provider, importa googleapis ou usa a API do Drive/Docs', () => {
+      expect(filesMatching(srcPreTriagem, RE_PROVIDER)).toEqual([]);
+      expect(filesMatching(srcPreTriagem, RE_GOOGLEAPIS_PKG)).toEqual([]);
+      expect(filesMatching(srcPreTriagem, RE_DRIVE_API)).toEqual([]);
     });
 
-    it('PROMPT_DOC_ID não aparece em src/ nem em .github/workflows/', () => {
-      expect(filesMatching(srcFiles, RE_DOC_ID)).toEqual([]);
+    it('na pré-triagem: PROMPT_DOC_ID não aparece em src/ nem em .github/workflows/', () => {
+      expect(filesMatching(srcPreTriagem, RE_DOC_ID)).toEqual([]);
       expect(filesMatching(workflowFiles, RE_DOC_ID)).toEqual([]);
     });
   });

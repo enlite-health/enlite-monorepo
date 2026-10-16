@@ -13,7 +13,8 @@
  *   (b) sem alocação → 200 e o slot de segunda desativa (como antes).
  *   (c) alocação ENDED com fim ontem → 200.
  *   (d) alocação ACTIVE vencida (fim ontem) → 200.
- *   (e) `schedule: null` com alocação vigente → 422 (o caminho "desativa tudo").
+ *   (e) `schedule: null` com alocação vigente → 422 (o caminho "desativa tudo"); a main recusa antes, com
+ *       `SERVICE_FIELD_REQUIRED_BY_LIVE_VACANCY` (há vaga viva); o invariante "nenhum slot desativa" segue.
  *   (f) PATCH só de `weeklyHours` com alocação vigente → 200 (sem a chave `schedule` o sync não roda).
  *   (g) a rota da Fase 11 (PATCH do slot) com o slot alocado segue 422.
  */
@@ -251,15 +252,16 @@ describe('sync do serviço contratado recusa desativar slot alocado — D442 (Fa
     }
   });
 
-  it('(e) schedule null com alocação vigente → 422, nenhum slot desativa', async () => {
+  it('(e) schedule null com alocação vigente (e vaga viva) → 422 da main, nenhum slot desativa', async () => {
     const seed = await seedService('e');
     try {
       await allocate(seed, seed.mondaySlotId, { validFrom: semanaAtras, validTo: null, status: 'ACTIVE' });
       const r = await patchService(seed, { schedule: null });
       console.log('[12.5] (e) status', r.status, 'code', r.data?.code, 'slotId==segunda', r.data?.details?.slotId === seed.mondaySlotId);
       expect(r.status).toBe(422);
-      expect(r.data.code).toBe('SLOT_HAS_ACTIVE_ALLOCATION');
-      expect(r.data.details.slotId).toBe(seed.mondaySlotId);
+      // A main recusa primeiro: limpar campo de que a vaga viva depende (`refuseClearWhenLiveVacancy`);
+      // a guarda D442 segue coberta pelos cenários (a) e (g) (schedule não nulo, slot alocado).
+      expect(r.data.code).toBe('SERVICE_FIELD_REQUIRED_BY_LIVE_VACANCY');
       const after = await slotsOf(seed.serviceId);
       expect(after.every((s) => s.active)).toBe(true);
       expect(after).toHaveLength(2);
