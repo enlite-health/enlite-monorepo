@@ -49,7 +49,7 @@ import {
   type FunnelStageItem,
 } from '../helpers/lancamento-e2e-helper';
 import { readPatientStatusApi, chooseReasonInModal } from '../helpers/funnel-move-e2e-helper';
-import { readFunnelApi, gotoVacancyDetail, switchToKanban, readStageCount } from '../helpers/compativeis-e2e-helper';
+import { runMatchApi, readFunnelApi, gotoVacancyDetail, switchToKanban, readStageCount } from '../helpers/compativeis-e2e-helper';
 import { getWjaByWorkerAndJob } from '../helpers/wja-test-helper';
 import { dndKitDrag } from '../helpers/dndKitDrag';
 import { runSQL } from '../helpers/patient-detail-a-helper';
@@ -100,6 +100,10 @@ test.describe('funil-vacante lancamento idempotente @integration', () => {
 
       const trailAfterLaunch = countLaunchTrail(patient.patientId);
       expect(trailAfterLaunch, 'trilha vacancy_launch = 1 depois do 1º lançamento').toBe(1);
+
+      // D466 (main): o lançamento só move o paciente; o match roda pela rota.
+      const match1 = await runMatchApi(request, token, vacancyId, { radiusKm: 1, topN: 200 });
+      expect(match1.status, 'POST /match (1º, pela rota)').toBe(200);
 
       const funnelAfterLaunch = (await readFunnelApi(request, token, vacancyId)) as {
         stages?: Record<string, FunnelStageItem[]>;
@@ -230,6 +234,10 @@ test.describe('funil-vacante lancamento idempotente @integration', () => {
         trailAfterRepublish,
         'trilha vacancy_launch continua 1 depois de republicar (paciente já fora do funil → unchanged)',
       ).toBe(1);
+
+      // D466 (main): o lançamento só move o paciente; o match roda pela rota — o match que "roda de novo" (intenção do teste) é chamado pela rota depois de republicar.
+      const match2 = await runMatchApi(request, token, vacancyId, { radiusKm: 1, topN: 200 });
+      expect(match2.status, 'POST /match (2º, depois de republicar)').toBe(200);
 
       const funnelAfterRepublish = (await readFunnelApi(request, token, vacancyId)) as {
         stages?: Record<string, FunnelStageItem[]>;

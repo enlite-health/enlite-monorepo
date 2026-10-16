@@ -34,7 +34,7 @@ import {
 import {
   readPatientStatusApi, countOutboundSince, readTrail, countTrail, putMove, chooseReasonInModal,
 } from '../helpers/funnel-move-e2e-helper';
-import { readFunnelApi, gotoVacancyDetail, switchToKanban } from '../helpers/compativeis-e2e-helper';
+import { runMatchApi, readFunnelApi, gotoVacancyDetail, switchToKanban } from '../helpers/compativeis-e2e-helper';
 import { readItineraryApi, type ReadItineraryResult, type ItineraryResponseDto } from '../helpers/itinerario-e2e-helper';
 import {
   assembleApi, allocationOptionsApi, endAllocationApi, countActiveAllocations,
@@ -175,7 +175,7 @@ test.describe('cadeia-completa @integration', () => {
         console.log('[16.p2]', v, isDraft, status, trail);
       });
 
-      await test.step('passo 3 — completar e enviar à Talentum (stub) pela tela: X segue em Búsqueda (já movido pelo foguete, D469) e o match deposita em Compatíveis, sem convite', async () => {
+      await test.step('passo 3 — completar e enviar à Talentum (stub) pela tela: X segue em Búsqueda (já movido pelo foguete, D469) e o match, chamado pela rota, deposita em Compatíveis, sem convite', async () => {
         await completeDraftViaWizard(page, v);
         const publishStatus = await publishOnTalentumPage(page, v);
         expect(publishStatus).toBe(200);
@@ -185,6 +185,10 @@ test.describe('cadeia-completa @integration', () => {
         expect(trail).toBe(0); // o envio não move quem o foguete já moveu (idempotente)
         const column = await readPatientKanbanColumn(page, X.patientId);
         expect(column).toBe('SEARCHING');
+
+        // D466 (main): o lançamento só move o paciente; o match roda pela rota.
+        const matchRes = await runMatchApi(request, token, v, { radiusKm: 1, topN: 200 });
+        expect(matchRes.status).toBe(200);
 
         await gotoVacancyDetail(page, v);
         await switchToKanban(page, v);
