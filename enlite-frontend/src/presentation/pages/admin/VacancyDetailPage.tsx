@@ -238,6 +238,10 @@ export default function VacancyDetailPage() {
           scheduleServicePatientId={
             vacancy.locked_fields?.includes('schedule') ? (vacancy.patient_id ?? null) : null
           }
+          // 057 (D523): profissão/sexo/experiência/pagamento vêm do serviço → link para a ficha.
+          recruitmentServicePatientId={
+            vacancy.locked_fields?.includes('required_sex') ? (vacancy.patient_id ?? null) : null
+          }
           onEditDescription={() => setShowDescriptionModal(true)}
         />
       </div>

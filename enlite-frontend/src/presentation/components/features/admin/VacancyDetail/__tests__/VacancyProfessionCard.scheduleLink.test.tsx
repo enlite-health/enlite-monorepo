@@ -85,3 +85,24 @@ describe('VacancyProfessionCard — lápis do horário', () => {
     expect(screen.getByTestId('vacancy-schedule-service-link')).toHaveAttribute('href', '/admin/patients/p-7?tab=contractedService');
   });
 });
+
+describe('VacancyProfessionCard — campos de recrutamento do serviço (057/T4.3)', () => {
+  it('vaga com serviço mostra link para a ficha ao lado da profissão e do sexo', () => {
+    renderCard({ requiredSex: 'F', recruitmentServicePatientId: 'p-7' });
+    for (const id of ['vacancy-profession-service-link', 'vacancy-sex-service-link']) {
+      expect(screen.getByTestId(id)).toHaveAttribute('href', '/admin/patients/p-7?tab=contractedService');
+    }
+  });
+
+  it('vaga sem serviço: nenhum link', () => {
+    renderCard({ requiredSex: 'F', recruitmentServicePatientId: null });
+    expect(screen.queryByTestId('vacancy-profession-service-link')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('vacancy-sex-service-link')).not.toBeInTheDocument();
+  });
+
+  it('com serviço mas sem permissão de abrir a ficha: sem link', () => {
+    comAcesso(['vacancy:read'], 'on');
+    renderCard({ requiredSex: 'F', recruitmentServicePatientId: 'p-7' });
+    expect(screen.queryByTestId('vacancy-sex-service-link')).not.toBeInTheDocument();
+  });
+});
