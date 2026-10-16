@@ -36,6 +36,7 @@ import { AdminMapPage } from './pages/admin/AdminMapPage/AdminMapPage';
 import { PendingAddressReviewPage } from './pages/admin/PendingAddressReviewPage';
 import { BlockedAttemptsPage } from './pages/admin/BlockedAttemptsPage';
 import TagCatalogPage from './pages/admin/TagCatalogPage';
+import InterviewHostsPage from './pages/admin/InterviewHostsPage';
 import { FunnelStageMessagesPage } from './pages/admin/FunnelStageMessagesPage';
 import { TemplateCatalogPage } from './pages/admin/TemplateCatalogPage';
 import { TemplateCatalogDetailPage } from './pages/admin/TemplateCatalogDetailPage';
@@ -266,6 +267,7 @@ export function App() {
           {/* `/admin/mapa` (main, 05/09) não tem chave `screen:*` no manifest — fica sem FeatureRouteGate, como tags/dedup. */}
           <Route path="mapa" element={<AdminMapPage />} />
           <Route path="tags" element={<TagCatalogPage />} />
+          <Route path="entrevistadores" element={<InterviewHostsPage />} />
           <Route path="mensajes-por-etapa" element={<FunnelStageMessagesPage />} />
           <Route path="plantillas" element={<TemplateCatalogPage />} />
           <Route path="plantillas/registrar" element={<TemplateDraftsPage />} />

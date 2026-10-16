@@ -202,7 +202,7 @@ export class EnquadreEventService {
   /** Entrevistadoras ATIVAS do país da vaga. `linked` só quando o vínculo do Tactiq a torna apta (a mesma régua da admissão). */
   async listHosts(vacancyId: string): Promise<EnquadreHostOption[]> {
     const vacancy = await this.vacancyOf(vacancyId);
-    const hosts = await this.deps.hosts.listActiveWithIdByCountry(vacancy.country);
+    const hosts = await this.deps.hosts.listActiveWithIdByCountry(vacancy.country, 'enquadre');
     const states = await this.linkStatesOf(hosts.map((h) => h.email));
     return hosts.map((h) => ({
       id: h.id,
@@ -380,7 +380,7 @@ export class EnquadreEventService {
   }
 
   private async findHost(country: AdmissionCountry, hostId: string) {
-    const roster = await this.deps.hosts.listActiveWithIdByCountry(country);
+    const roster = await this.deps.hosts.listActiveWithIdByCountry(country, 'enquadre');
     const host = roster.find((h) => h.id === hostId);
     if (!host) throw new HostNotInRosterError();
     return host;

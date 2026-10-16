@@ -24,6 +24,7 @@ import {
 } from '@presentation/components/features/access';
 import { useCellAccess } from '@presentation/hooks/useCellAccess';
 import { useToast } from '@presentation/hooks/useToast';
+import { CountryChips } from '@presentation/components/molecules/CountryChips';
 import { AccessGate, PANEL_RESOURCE } from './AccessGate';
 import { panelErrorKey } from './panelErrors';
 
@@ -291,49 +292,35 @@ function GroupDetail(): JSX.Element {
           quem já sabe o que ela quer dizer. */}
       <section className="bg-white rounded-xl border border-gray-300 p-4 space-y-3" aria-labelledby="sec-countries">
         <Heading level={3} weight="semibold" color="primary"><span id="sec-countries">{t('admin.access.group.countriesTitle')}</span></Heading>
-        <div className="flex flex-wrap gap-3 items-center">
-          {COUNTRIES.map((c) => {
-            const on = group.countries.includes(c);
-            const nome = t(`countries.${c}`, c);
-            // O PAÍS é o botão (pedido do Gabriel, 05/09). Não há "Conceder" ao
-            // lado: clicar em `Argentina` concede, clicar de novo revoga. O
-            // estado é o próprio botão — marcado (✓, fundo cheio) ou não.
-            //
-            // Sem motivo: a mig 412 tirou a exigência das três camadas
-            // (coluna, zod e a própria `iam.grant_country`). Decisão do Gabriel:
-            // "ninguém faz um grupo e coloca motivo por ser de um país ou dos
-            // dois" — e campo obrigatório sem conteúdo real vira "ok" e ".".
-            // Quem guarda o ato é `granted_by` + `created_at` + `revoked_at`.
-            // Em `read` o país é TEXTO, não botão desabilitado. `ActionButton`
-            // ESCONDE quando falta a célula de escrita (D269) — e o país virando
-            // botão fazia a seção inteira sumir para quem só lê, que é
-            // justamente quem precisa consultar o alcance do grupo.
-            if (!editableContent) {
-              return (
-                <span key={c} className="px-3 py-1 rounded border border-gray-300">
-                  <Text as="span" size="sm" weight={on ? 'semibold' : 'normal'} color={on ? 'primary' : 'secondary'}>
-                    {nome}{on ? ' ✓' : ''}
-                  </Text>
-                </span>
-              );
-            }
-            return (
-              <ActionButton
-                key={c}
-                resource={PANEL_RESOURCE}
-                size="sm"
-                variant={on ? 'primary' : 'outline'}
-                aria-pressed={on}
-                onClick={() => run(() => (on
-                  ? AdminPermissionsApiService.revokeCountry(group.id, c)
-                  : AdminPermissionsApiService.grantCountry(group.id, c)))}
-              >
-                {nome}{on ? ' ✓' : ''}
-              </ActionButton>
-            );
-          })}
+        {/* O PAÍS é o botão (pedido do Gabriel, 05/09): clicar em `Argentina` concede, clicar de novo revoga; o estado é o próprio
+            botão — marcado (✓, fundo cheio) ou não. Sem motivo (mig 412: "ninguém faz um grupo e coloca motivo por ser de um país").
+            Quem guarda o ato é `granted_by` + `created_at` + `revoked_at`.
+            Em `read` o país é TEXTO, não botão desabilitado — `ActionButton` ESCONDE sem a célula de escrita (D269), e o país virando
+            botão fazia a seção inteira sumir para quem só lê. O desenho dos chips vive em `CountryChips` (molecule compartilhada com a
+            tela Entrevistadores, spec 055); aqui só entram o gate (`ActionButton`) e a chamada da API. */}
+        <CountryChips
+          countries={COUNTRIES}
+          selected={group.countries}
+          readOnly={!editableContent}
+          size="sm"
+          onToggle={(c, next) => run(() => (next
+            ? AdminPermissionsApiService.grantCountry(group.id, c)
+            : AdminPermissionsApiService.revokeCountry(group.id, c)))}
+          renderChip={({ country, label, on, size, onToggle }) => (
+            <ActionButton
+              key={country}
+              resource={PANEL_RESOURCE}
+              size={size}
+              variant={on ? 'primary' : 'outline'}
+              aria-pressed={on}
+              onClick={onToggle}
+            >
+              {label}{on ? ' ✓' : ''}
+            </ActionButton>
+          )}
+        >
           {group.countries.length === 0 && !editableContent && <Text size="sm" color="secondary">{t('admin.access.group.noCountries')}</Text>}
-        </div>
+        </CountryChips>
 
       </section>
 

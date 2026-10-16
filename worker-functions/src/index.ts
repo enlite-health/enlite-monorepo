@@ -116,6 +116,9 @@ import { EnquadreEventMutations } from '@modules/matching/application/EnquadreEv
 import { EnquadreSummaryDownload } from '@modules/matching/application/EnquadreSummaryDownload';
 import { EnquadreEventController } from '@modules/matching/interfaces/controllers/EnquadreEventController';
 import { createAdminEnquadreEventRoutes } from '@modules/matching/interfaces/routes/adminEnquadreEventRoutes';
+import { createAdminInterviewHostRoutes } from '@modules/matching/interfaces/routes/adminInterviewHostRoutes';
+import { InterviewHostController } from '@modules/matching/interfaces/controllers/InterviewHostController';
+import { InterviewHostService } from '@modules/matching/application/InterviewHostService';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { TactiqLinkService } from '@modules/matching/application/TactiqLinkService';
 import { TactiqLinkRepository } from '@modules/matching/infrastructure/TactiqLinkRepository';
@@ -649,6 +652,13 @@ const enquadreEventController = new EnquadreEventController(
   new EnquadreSummaryDownload({ db: admissionDb }),
 );
 app.use('/api/admin', createAdminEnquadreEventRoutes(authMiddleware, permissionMiddleware, enquadreEventController));
+
+// Spec 055: tela Entrevistadores (quem atende enquadre e admissão, amarrado a usuário staff ativo). Células interview_host:read|update.
+app.use('/api/admin', createAdminInterviewHostRoutes(
+  authMiddleware,
+  permissionMiddleware,
+  new InterviewHostController(new InterviewHostService({ db: admissionDb, repo: interviewHostRepository, tactiq: tactiqLinkService })),
+));
 
 // Spec 049 F4: o operador vincula a PRÓPRIA conta do Tactiq (own_tactiq_link:read|write). O callback do OAuth é navegação
 // do browser (sem Bearer): isento na montagem, em contexto público, e a prova de identidade é o `state` single-use.

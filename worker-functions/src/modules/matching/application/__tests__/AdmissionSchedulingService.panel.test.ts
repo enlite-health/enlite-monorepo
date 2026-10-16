@@ -193,7 +193,7 @@ describe('AdmissionSchedulingService.bookForHost (painel)', () => {
     try {
       const { service, calendar, hosts } = setup({ patientCountry: 'BR' });
       await service.bookForHost(params({ slotStartISO: '2026-08-03T11:00:00-03:00' }), NOW);
-      expect(hosts.listActiveByCountry).toHaveBeenCalledWith('BR');
+      expect(hosts.listActiveByCountry).toHaveBeenCalledWith('BR', 'admission');
       expect(calendar.created[0].calendarId).toBe('admission-br@group.calendar.google.com');
       expect(calendar.created[0].summary).toContain('Clinic');
     } finally {

@@ -1356,7 +1356,8 @@
       "templateDrafts": "Registrar mensaje",
       "catalogObjectives": "Objetivos específicos",
       "catalogActivities": "Rutina y actividades",
-      "catalogSegments": "Segmentos (Ana Care)"
+      "catalogSegments": "Segmentos (Ana Care)",
+      "interviewHosts": "Entrevistadores"
     },
     "dedup": {
       "title": "Centro de Duplicados",
@@ -4806,7 +4807,8 @@
             "patient_status": "Estado del paciente: cambio fuera del flujo",
             "enquadre_event": "Eventos de encuadre (crear, convocados y cancelar)",
             "enquadre_result": "Resultado del encuadre (marcar y cerrar)",
-            "enquadre_summary": "Resumen del encuadre (ver y descargar)"
+            "enquadre_summary": "Resumen del encuadre (ver y descargar)",
+            "interview_host": "Entrevistadores de encuadre y admisión"
           },
           "help": {
             "open": "Qué hace este permiso",
@@ -5276,6 +5278,9 @@
         },
         "account.tactiq": {
           "label": "Mi perfil: Tactiq"
+        },
+        "interviewHosts": {
+          "label": "Entrevistadores"
         }
       }
     },
@@ -5998,6 +6003,69 @@
       "startError": "No pudimos iniciar la vinculación. Probá de nuevo.",
       "returnLinked": "Listo: tu cuenta de Tactiq quedó vinculada.",
       "returnError": "No pudimos completar la vinculación con Tactiq. Probá de nuevo."
+    },
+    "interviewHosts": {
+      "title": "Entrevistadores de encuadre y admisión",
+      "subtitle": "Solo usuarios del equipo pueden ser entrevistadores. El vínculo con Tactiq lo hace cada persona en “Mi perfil”.",
+      "add": "Agregar entrevistador",
+      "filterCountry": "País",
+      "filterAll": "Todos",
+      "loadError": "No pudimos cargar los entrevistadores.",
+      "retry": "Reintentar",
+      "empty": "Todavía no hay entrevistadores cargados.",
+      "emptyFiltered": "Ningún entrevistador atiende en este país.",
+      "table": {
+        "name": "Nombre",
+        "email": "Email",
+        "country": "País",
+        "encuadre": "Encuadre",
+        "admission": "Admisión",
+        "tactiq": "Tactiq",
+        "actions": "Acciones"
+      },
+      "userInactive": "Usuario inactivo",
+      "userMissing": "Sin usuario en el sistema",
+      "userMissingHelp": "No tiene usuario en el equipo: no aparece para agendar. Creá el usuario en Usuarios y volvé a agregarla, o quitala.",
+      "switchLabel": "{{flow}} — {{name}}",
+      "edit": "Editar",
+      "quit": "Quitar",
+      "tactiqLinked": "Vinculado",
+      "tactiqUnlinked": "Sin vincular",
+      "tactiqTip": "La persona vincula su cuenta en Mi perfil",
+      "saveError": "No pudimos guardar el cambio.",
+      "errors": {
+        "INTERVIEW_HOST_USER_NOT_ELIGIBLE": "Esa persona no es un usuario activo del equipo.",
+        "INTERVIEW_HOST_NOT_FOUND": "El entrevistador ya no existe.",
+        "INTERVIEW_HOST_ALREADY_ACTIVE": "Esa persona ya está en la lista.",
+        "INVALID_REQUEST": "Revisá los datos: hace falta al menos un país y un tipo de agenda."
+      },
+      "panel": {
+        "titleAdd": "Agregar entrevistador",
+        "titleEdit": "Editar entrevistador",
+        "close": "Cerrar",
+        "user": "Usuario",
+        "searchPlaceholder": "Buscá por nombre o email",
+        "onlyActive": "Solo aparecen usuarios del equipo activos.",
+        "noResults": "Ningún usuario del equipo coincide con “{{query}}”.",
+        "searching": "Buscando…",
+        "searchError": "No pudimos buscar usuarios.",
+        "change": "Cambiar",
+        "countries": "Países",
+        "countriesRequired": "Elegí al menos un país.",
+        "attends": "Atiende",
+        "encuadre": "Encuadre",
+        "admission": "Admisión",
+        "flowRequired": "Elegí al menos un tipo de agenda: encuadre o admisión.",
+        "cancel": "Cancelar",
+        "add": "Agregar",
+        "save": "Guardar"
+      },
+      "quitModal": {
+        "title": "Quitar entrevistador",
+        "body": "¿Quitar a {{name}} de encuadre y admisión? Deja de aparecer para agendar.",
+        "cancel": "Cancelar",
+        "confirm": "Quitar"
+      }
     }
   },
   "publicVacancy": {

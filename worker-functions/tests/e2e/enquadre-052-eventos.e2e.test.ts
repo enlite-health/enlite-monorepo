@@ -26,6 +26,7 @@ import {
 import { FakeAdmissionCalendar } from '../../src/modules/matching/infrastructure/doubles/FakeAdmissionCalendar';
 import { FakeTactiqMcp, FakeTactiqOAuth } from '../../src/modules/matching/infrastructure/doubles/FakeTactiq';
 import { titleHasExactCode } from '../../src/modules/matching/domain/admissionImport';
+import { insertInterviewHost, deleteInterviewHosts } from './helpers/interviewHostFixture';
 
 const DATABASE_URL =
   process.env.TEST_DATABASE_URL ||
@@ -130,7 +131,7 @@ describe('evento de enquadre — HTTP real, banco real, engine LIGADO (spec 052,
 
   async function limparTudo(): Promise<void> {
     await admin.query(`DELETE FROM job_postings WHERE title LIKE 'ENQ052 e2e %' AND (id = $1 OR $1::uuid IS NULL)`, [vacancyId ?? null]);
-    await admin.query(`DELETE FROM interview_hosts WHERE email = ANY($1)`, [[HOST_OK, HOST_FALHA]]);
+    await deleteInterviewHosts(admin, [HOST_OK, HOST_FALHA]);
     await admin.query(`DELETE FROM tactiq_links WHERE lower(host_email) = ANY($1)`, [[HOST_OK, HOST_FALHA]]);
     await limparIamFixtures(admin, { uids: [UID, UID_RESUMO], grupos: [GRUPO, GRUPO_RESUMO] });
   }
@@ -175,12 +176,8 @@ describe('evento de enquadre — HTTP real, banco real, engine LIGADO (spec 052,
     );
     vacancyId = vac.rows[0].id;
 
-    const hosts = await admin.query(
-      `INSERT INTO interview_hosts (email, display_name, country, active) VALUES ($1,'Entrevistadora Uno','AR',true), ($2,'Entrevistadora Dos','AR',true) RETURNING id, email`,
-      [HOST_OK, HOST_FALHA],
-    );
-    hostOkId = hosts.rows.find((r) => r.email === HOST_OK).id;
-    hostFalhaId = hosts.rows.find((r) => r.email === HOST_FALHA).id;
+    hostOkId = (await insertInterviewHost(admin, { email: HOST_OK, displayName: 'Entrevistadora Uno' })).id;
+    hostFalhaId = (await insertInterviewHost(admin, { email: HOST_FALHA, displayName: 'Entrevistadora Dos' })).id;
     await admin.query(
       `INSERT INTO tactiq_links (host_email, firebase_uid, status) VALUES ($1,$3,'linked'), ($2,$4,'linked')`,
       [HOST_OK, HOST_FALHA, `tq-ok-${RUN}`, `tq-falha-${RUN}`],

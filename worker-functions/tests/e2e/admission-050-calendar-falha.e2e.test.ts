@@ -25,6 +25,7 @@ import { AdmissionPanelService } from '../../src/modules/matching/application/Ad
 import { GetPatientFunnelUseCase } from '../../src/modules/case/application/GetPatientFunnelUseCase';
 import { interviewHostRepository } from '../../src/modules/matching/infrastructure/InterviewHostRepository';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { insertInterviewHost, deleteInterviewHosts } from './helpers/interviewHostFixture';
 
 const DATABASE_URL =
   process.env.TEST_DATABASE_URL || process.env.DATABASE_URL || 'postgresql://enlite_admin:enlite_password@localhost:5432/enlite_e2e';
@@ -115,7 +116,7 @@ describe('falha do Google na criação não deixa reserva órfã (spec 050 F9, R
     setEnv('ADMISSION_HOST_ROSTER_ENABLED', 'true');
     setEnv('ADMISSION_CALENDAR_ID_AR', CAL_AR);
     for (const email of [HOST_A, HOST_B]) {
-      await admin.query(`INSERT INTO interview_hosts (email, display_name, country, active) VALUES ($1,'Falha','AR',true)`, [email]);
+      await insertInterviewHost(admin, { email, displayName: 'Falha' });
       await admin.query(`DELETE FROM tactiq_links WHERE lower(host_email) = $1`, [email]);
       await admin.query(`INSERT INTO tactiq_links (host_email, firebase_uid, status) VALUES ($1,$2,'linked')`, [email, `tq-${email}`]);
     }
@@ -148,7 +149,7 @@ describe('falha do Google na criação não deixa reserva órfã (spec 050 F9, R
     await admin.query(`DELETE FROM admission_appointments WHERE patient_id = $1`, [patientId]);
     await admin.query(`DELETE FROM patients WHERE id = $1`, [patientId]);
     for (const email of [HOST_A, HOST_B]) {
-      await admin.query('DELETE FROM interview_hosts WHERE email = $1', [email]);
+      await deleteInterviewHosts(admin, [email]);
       await admin.query('DELETE FROM tactiq_links WHERE lower(host_email) = $1', [email]);
     }
     await admin.end();
