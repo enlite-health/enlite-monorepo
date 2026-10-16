@@ -39,6 +39,8 @@
     "interview:read",
     "interview:update",
     "interview:write",
+    "interview_host:read",
+    "interview_host:update",
     "match:execute",
     "match:read",
     "messaging:create",

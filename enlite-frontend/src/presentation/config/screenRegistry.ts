@@ -255,6 +255,8 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
 
   // ── Administração ──────────────────────────────────────────────────────────────────────────
   { id: 'dedup', route: '/admin/dedup', cells: ['dedup:read', 'dedup:execute'] },
+  // Spec 055: quem atende enquadre e admissão (tabela interview_hosts). `update` cobre a busca de candidatos, agregar, editar e quitar.
+  { id: 'interviewHosts', route: '/admin/entrevistadores', cells: ['interview_host:read', 'interview_host:update'] },
   { id: 'access', route: '/admin/access', cells: ['permission_management:read', 'permission_management:write'] },
 ];
 

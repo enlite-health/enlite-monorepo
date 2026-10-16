@@ -50,6 +50,8 @@ const ROTAS_SEM_CHAVE_SCREEN = new Set([
   'catalogos/objetivos-especificos', 'catalogos/actividades',
   // Spec 030 (F1): segmentos Ana Care — célula própria (`catalog_therapeutic_segments:read`), mesmo caso dos catálogos acima.
   'catalogos/segmentos',
+  // Spec 055: Entrevistadores — gateada pelas células próprias (`interview_host:read|update`), não por país (a pessoa pode atender AR e BR).
+  'entrevistadores',
 ]);
 
 /** Todo `href: '...'` literal declarado em `adminNavigation.tsx` (baseItems + adminItems + accessItems). */
