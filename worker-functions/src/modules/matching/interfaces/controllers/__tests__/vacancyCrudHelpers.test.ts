@@ -188,6 +188,21 @@ describe('withEffectiveFields — F5: a resposta traz horário e quantidade EFET
     expect(String(query.mock.calls[0][0])).toContain('pcs_eff.provider_age_band');
   });
 
+  it('057: vaga com serviço → a resposta traz os 5 de recrutamento do SERVIÇO; vaga manual → os próprios', async () => {
+    const eff = { required_sex: 'F', required_professions: ['AT'], required_experience: '2 anos', work_schedule: 'Fixo', payment_day: '5' };
+    const query = jest.fn().mockResolvedValue({ rows: [{ schedule: null, providers_needed: null, ...eff }] });
+    const cru = { id: 'jp-1', required_sex: null, required_professions: null, required_experience: null, work_schedule: null, payment_day: null };
+    const out = await withEffectiveFields({ query } as unknown as Pool, cru);
+    expect(out).toMatchObject(eff);
+    const sql = String(query.mock.calls[0][0]);
+    for (const a of ['required_sex', 'required_professions', 'required_experience', 'work_schedule', 'payment_day']) expect(sql).toContain(`AS ${a}`);
+    expect(sql).toContain("COALESCE(pcs_eff.required_professions, '{}'::text[])");
+
+    const manual = { required_sex: 'M', required_professions: ['CAREGIVER'], required_experience: 'x', work_schedule: 'y', payment_day: '10' };
+    query.mockResolvedValue({ rows: [{ schedule: null, providers_needed: null, ...manual }] });
+    expect(await withEffectiveFields({ query } as unknown as Pool, { id: 'jp-2' })).toMatchObject(manual);
+  });
+
   it('vaga que a sessão não enxerga (0 linhas) → devolve a linha como veio', async () => {
     const query = jest.fn().mockResolvedValue({ rows: [] });
     const row = { id: 'jp-2', schedule: 'cru', providers_needed: '9' };

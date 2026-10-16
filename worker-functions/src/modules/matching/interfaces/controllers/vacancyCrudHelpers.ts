@@ -12,8 +12,13 @@ import { applyEffectiveAgeRange } from '@modules/case/domain/ProviderAgeBandMapp
 import {
   vacancyEffectiveAgeRangeSql,
   vacancyEffectiveJoinSql,
+  vacancyEffectivePaymentDaySql,
   vacancyEffectiveProvidersNeededSql,
+  vacancyEffectiveRequiredExperienceSql,
+  vacancyEffectiveRequiredProfessionsSql,
+  vacancyEffectiveRequiredSexSql,
   vacancyEffectiveScheduleSql,
+  vacancyEffectiveWorkScheduleSql,
   vacancyRawColumnsSql,
 } from '@shared/sql/vacancyEffectiveFieldsSql';
 
@@ -324,7 +329,7 @@ export function buildInsertQuery(): string {
 }
 
 /**
- * Troca os campos CRUS da linha escrita pelos EFETIVOS (`schedule`, `providers_needed` e a faixa etária: os do serviço, se
+ * Troca os campos CRUS da linha escrita pelos EFETIVOS (`schedule`, `providers_needed`, os 5 de recrutamento (057) e a faixa etária: os do serviço, se
  * a vaga tem serviço). Lê por `db.query` — o proxy do pool desvia para o client fixado da request, COM identidade — depois do
  * COMMIT, nunca no client cru da transação. Vaga que a sessão não enxerga mais (ou sem linha) devolve a linha como veio.
  * Campo novo efetivo entra aqui, pela peça — nunca num helper paralelo.
@@ -333,6 +338,11 @@ export async function withEffectiveFields<T extends Record<string, unknown>>(db:
   const r = await db.query(
     `SELECT ${vacancyEffectiveScheduleSql('jp')} AS schedule,
             ${vacancyEffectiveProvidersNeededSql('jp')} AS providers_needed,
+            ${vacancyEffectiveRequiredSexSql('jp')} AS required_sex,
+            ${vacancyEffectiveRequiredProfessionsSql('jp')} AS required_professions,
+            ${vacancyEffectiveRequiredExperienceSql('jp')} AS required_experience,
+            ${vacancyEffectiveWorkScheduleSql('jp')} AS work_schedule,
+            ${vacancyEffectivePaymentDaySql('jp')} AS payment_day,
             ${vacancyEffectiveAgeRangeSql('jp')}
        FROM job_postings jp ${vacancyEffectiveJoinSql('jp')}
       WHERE jp.id = $1`,
@@ -344,6 +354,11 @@ export async function withEffectiveFields<T extends Record<string, unknown>>(db:
     ...row,
     schedule: eff.schedule,
     providers_needed: eff.providers_needed,
+    required_sex: eff.required_sex,
+    required_professions: eff.required_professions,
+    required_experience: eff.required_experience,
+    work_schedule: eff.work_schedule,
+    payment_day: eff.payment_day,
     age_range_min: eff.age_range_min,
     age_range_max: eff.age_range_max,
   };
