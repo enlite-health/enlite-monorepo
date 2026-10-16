@@ -96,7 +96,6 @@ const defaultProps = {
   vacancyId: 'vac-1',
   rows: mockRows,
   isLoading: false,
-  activeTabLabel: 'Invitados',
 };
 
 describe('VacancyFunnelTable', () => {
@@ -113,9 +112,6 @@ describe('VacancyFunnelTable', () => {
     ).toBeInTheDocument();
     expect(
       screen.getByText('admin.vacancyDetail.funnelTable.headers.whatsapp'),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText('admin.vacancyDetail.funnelTable.headers.accepted'),
     ).toBeInTheDocument();
     expect(
       screen.getByText('admin.vacancyDetail.funnelTable.headers.registration'),
@@ -159,6 +155,20 @@ describe('VacancyFunnelTable', () => {
     ).toBeInTheDocument();
   });
 
+  it('com filtro aplicado e nenhuma linha, mostra o vazio do FILTRO (não o da vaga)', () => {
+    renderTable({ ...defaultProps, rows: [], isFiltered: true });
+    expect(screen.getByTestId('funnel-empty-filtered')).toHaveTextContent(
+      'admin.vacancyDetail.funnelTable.emptyFiltered',
+    );
+    expect(screen.queryByText('admin.vacancyDetail.funnelTable.emptyState')).toBeNull();
+  });
+
+  it('sem filtro e nenhuma linha, mostra o vazio da vaga (sem funnel-empty-filtered)', () => {
+    renderTable({ ...defaultProps, rows: [], isFiltered: false });
+    expect(screen.queryByTestId('funnel-empty-filtered')).toBeNull();
+    expect(screen.getByText('admin.vacancyDetail.funnelTable.emptyState')).toBeInTheDocument();
+  });
+
   it('renders spinner when loading and no rows', () => {
     const { container } = renderTable({ ...defaultProps, rows: [], isLoading: true });
     expect(container.querySelector('.animate-spin')).toBeInTheDocument();
@@ -178,12 +188,6 @@ describe('VacancyFunnelTable', () => {
     fireEvent.click(links[0]);
     // Nova aba: a lista da vaga não navega
     expect(mockNavigate).not.toHaveBeenCalled();
-  });
-
-  it('renders the "no" label when accepted=false', () => {
-    const rows: FunnelTableRow[] = [{ ...mockRows[0], accepted: false }];
-    renderTable({ ...defaultProps, rows });
-    expect(screen.getByText('admin.vacancyDetail.funnelTable.acceptedNo')).toBeInTheDocument();
   });
 
   it('opens the contact notes modal for the row when the notes button is clicked', () => {
@@ -210,7 +214,7 @@ describe('VacancyFunnelTable', () => {
 
   it('renders "—" with no title on the plain text when the row has neither workerId nor workerName', () => {
     const rows: FunnelTableRow[] = [
-      { ...mockRows[0], workerId: '', workerName: null, selfAppliedAt: '2026-01-01T00:00:00.000Z' },
+      { ...mockRows[0], workerId: '', workerName: null, kanbanColumn: 'INVITED' },
     ];
     renderTable({ ...defaultProps, rows });
     expect(screen.queryByTestId('funnel-worker-link')).not.toBeInTheDocument();
@@ -219,43 +223,47 @@ describe('VacancyFunnelTable', () => {
   });
 });
 
-// Coluna "Origen" — o mesmo sinal do card do Kanban, aqui na vista que é o DEFAULT
-// do funil. Sem isto, quem nunca troca de vista não vê quem levantou a mão.
-describe('VacancyFunnelTable — coluna Origen (levantou a mão)', () => {
-  const props = { vacancyId: 'vac-123', isLoading: false, activeTabLabel: 'Invitados' };
+// 054 item 2: saem as colunas Origen e ACEPTÓ da Lista (o selo de auto-postulação segue no card do Kanban).
+describe('VacancyFunnelTable — sem as colunas Origen e ACEPTÓ (054 item 2)', () => {
+  const props = { vacancyId: 'vac-123', isLoading: false };
 
-  it('mostra o selo quando o próprio prestador entrou pelo link', () => {
+  it('os headers não contêm origin nem accepted', () => {
+    renderTable({ ...props, rows: mockRows });
+    expect(screen.queryByText('admin.vacancyDetail.funnelTable.headers.origin')).toBeNull();
+    expect(screen.queryByText('admin.vacancyDetail.funnelTable.headers.accepted')).toBeNull();
+  });
+
+  it('linha auto-postulada e com accepted=false não renderiza selo nem rótulo Sí/No', () => {
     const rows: FunnelTableRow[] = [
-      { ...mockRows[0], selfAppliedAt: '2026-08-07T13:51:19.923Z' },
+      { ...mockRows[0], selfAppliedAt: '2026-08-07T13:51:19.923Z', accepted: false },
     ];
     renderTable({ ...props, rows });
-    expect(screen.getByTestId('funnel-self-applied-badge')).toHaveTextContent(
-      'admin.kanban.selfApplied',
-    );
-  });
-
-  it('sem carimbo mostra travessão, não o selo — ausência não é prova de desinteresse', () => {
-    const rows: FunnelTableRow[] = [{ ...mockRows[0], selfAppliedAt: null }];
-    renderTable({ ...props, rows });
     expect(screen.queryByTestId('funnel-self-applied-badge')).toBeNull();
+    expect(screen.queryByText('admin.vacancyDetail.funnelTable.acceptedNo')).toBeNull();
+    expect(screen.queryByText('admin.vacancyDetail.funnelTable.acceptedYes')).toBeNull();
   });
+});
 
-  it('linha sem o campo (card antigo) também não mostra o selo', () => {
-    renderTable({ ...props, rows: [mockRows[0]] });
-    expect(screen.queryByTestId('funnel-self-applied-badge')).toBeNull();
-  });
-
-  it('a coluna existe no cabeçalho da lista', () => {
-    renderTable({ ...props, rows: mockRows });
-    expect(
-      screen.getByText('admin.vacancyDetail.funnelTable.headers.origin'),
-    ).toBeInTheDocument();
+// 054 item 3: a SEQUÊNCIA dos headers, não só a presença.
+describe('VacancyFunnelTable — ordem das colunas (054 itens 3 e 4)', () => {
+  it('headers renderizados: NOTAS, NOMBRE, REGISTRO, ETAPA, TELÉFONO, FECHA DE INVITACIÓN, WHATSAPP', () => {
+    renderTable({ vacancyId: 'vac-1', isLoading: false, rows: mockRows });
+    const seq = screen.getAllByRole('columnheader').map((h) => h.textContent);
+    expect(seq).toEqual([
+      'admin.vacancyDetail.funnelTable.headers.notes',
+      'admin.vacancyDetail.funnelTable.headers.name',
+      'admin.vacancyDetail.funnelTable.headers.registration',
+      'admin.vacancyDetail.funnelTable.headers.stage',
+      'admin.vacancyDetail.funnelTable.headers.phone',
+      'admin.vacancyDetail.funnelTable.headers.inviteDate',
+      'admin.vacancyDetail.funnelTable.headers.whatsapp',
+    ]);
   });
 });
 
 // Ordenação por km (DX-3.11): o modo lista usa o MESMO comparador do Kanban.
 describe('VacancyFunnelTable — ordem por km (DX-3.11)', () => {
-  const props = { vacancyId: 'vac-123', isLoading: false, activeTabLabel: 'Invitados' };
+  const props = { vacancyId: 'vac-123', isLoading: false };
 
   it('ordena as linhas por km crescente, com sem-distância no fim', () => {
     const r40: FunnelTableRow = { ...mockRows[0], id: 'r40', distanceKm: 40 };

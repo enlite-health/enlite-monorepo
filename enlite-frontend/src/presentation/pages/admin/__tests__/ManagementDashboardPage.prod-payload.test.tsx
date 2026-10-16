@@ -69,24 +69,23 @@ const PROD_PAYLOAD: ManagementDashboardData = {
       somavel: false,
       colunas: {
         INVITED: 466, INICIADO: 182, PRE_SCREENING: 49, IN_PROGRESS: 1347,
-        COMPLETED: 604, CONFIRMED: 27, SELECTED: 10, REJECTED: 626,
+        COMPLETED: 631, SELECTED: 10, REJECTED: 626,
       },
     },
     consolidado: {
       somavel: true,
       colunas: {
         INVITED: 303, INICIADO: 84, PRE_SCREENING: 23, IN_PROGRESS: 1173,
-        COMPLETED: 585, CONFIRMED: 27, SELECTED: 10, REJECTED: 371,
+        COMPLETED: 612, SELECTED: 10, REJECTED: 371,
       },
     },
   },
   funnel: {
     invitados: 2615, bloqueados: 668, preScreening: 93, completos: 4,
-    agendados: 37, seleccionados: 10, rechazados: 2557,
+    seleccionados: 10, rechazados: 2557,
   },
   encuadres: {
     agendadosEstaSemana: 0,
-    semDataRegistrada: 37,
     pctCapacidadeSemana: { agendados: 0, capacidade: 80, pct: 0 },
   },
   cadastros: {
@@ -177,12 +176,11 @@ describe('ManagementDashboardPage — payload real de produção (30/07/2026)', 
     expect(screen.getAllByTestId(/mgmt-funnel-(consolidado|por-etapa)-IN_PROGRESS/)).toHaveLength(2);
   });
 
-  it('admite a lacuna da agenda em vez de exibir zero mudo', async () => {
+  it('não exibe o aviso "sem data" (o indicador saiu em 052)', async () => {
     render(<ManagementDashboardPage />);
     await waitFor(() => expect(screen.getByTestId('mgmt-funnel')).toBeInTheDocument());
 
-    expect(within(screen.getByTestId('mgmt-encuadres-sem-data')).getByText(/semData count=37/))
-      .toBeInTheDocument();
+    expect(screen.queryByTestId('mgmt-encuadres-sem-data')).toBeNull();
   });
 
   it('mostra pacientes activos corrigido (190, não 192)', async () => {

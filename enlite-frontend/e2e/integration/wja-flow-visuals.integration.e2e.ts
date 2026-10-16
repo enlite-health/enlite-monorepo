@@ -13,9 +13,9 @@
  *   V1 — Card INVITED com match_score (source=system, sem badge social)
  *   V2 — Card INVITED com badge acquisition_channel=instagram
  *   V3 — Coluna COMPLETED com 3 badges (QUALIFIED / IN_DOUBT / COMPLETED)
- *   V4 — Card CONFIRMED com badge REMARCADO (interview_response=awaiting_reschedule)
+ *   V4 — Card SELECTED com badge REMARCADO (interview_response=awaiting_reschedule)
  *   V5 — Card REJECTED com rejection_reason_category=WORKER_DECLINED
- *   V6 — Card CONFIRMED com entrevista agendada (happy path)
+ *   V6 — Card SELECTED com entrevista agendada (happy path)
  */
 
 import { test, expect } from '@playwright/test';
@@ -106,7 +106,7 @@ test.describe('WJA Flow Visuals @integration', () => {
     workerV3cId = insertTestWorker({ firstName: 'WjaV3c', lastName: 'Completed', phone: `+549185${rand()}` });
     cleanupWorkerIds.push(workerV3cId);
 
-    // V4 — CONFIRMED + awaiting_reschedule sem meet_link
+    // V4 — SELECTED + awaiting_reschedule sem meet_link
     workerV4Id = insertTestWorker({ firstName: 'WjaV4', lastName: 'Reprogram', phone: `+549186${rand()}` });
     cleanupWorkerIds.push(workerV4Id);
 
@@ -114,7 +114,7 @@ test.describe('WJA Flow Visuals @integration', () => {
     workerV5Id = insertTestWorker({ firstName: 'WjaV5', lastName: 'Rejected', phone: `+549187${rand()}` });
     cleanupWorkerIds.push(workerV5Id);
 
-    // V6 — CONFIRMED com entrevista agendada
+    // V6 — SELECTED com entrevista agendada
     workerV6Id = insertTestWorker({ firstName: 'WjaV6', lastName: 'Confirmed', phone: `+549188${rand()}` });
     cleanupWorkerIds.push(workerV6Id);
 
@@ -162,7 +162,7 @@ test.describe('WJA Flow Visuals @integration', () => {
     wjaV4Id = insertWJA({
       workerId: workerV4Id,
       jobPostingId: vacancyId,
-      funnelStage: 'CONFIRMED',
+      funnelStage: 'SELECTED',
       source: 'manual',
       interviewResponse: 'awaiting_reschedule',
       meetLink: null,
@@ -188,7 +188,7 @@ test.describe('WJA Flow Visuals @integration', () => {
     wjaV6Id = insertWJA({
       workerId: workerV6Id,
       jobPostingId: vacancyId,
-      funnelStage: 'CONFIRMED',
+      funnelStage: 'SELECTED',
       source: 'manual',
       interviewResponse: 'confirmed',
       meetLink: 'https://meet.google.com/visual-test',
@@ -305,11 +305,11 @@ test.describe('WJA Flow Visuals @integration', () => {
     await expect(completedCol).toHaveScreenshot('wja-v3-completed-column-badges.png', { maxDiffPixelRatio: 0.05 });
   });
 
-  // ── V4 — Card CONFIRMED com badge REMARCADO ───────────────────────────────
+  // ── V4 — Card SELECTED com badge REMARCADO ───────────────────────────────
 
-  test('V4 — card CONFIRMED com badge REMARCADO (awaiting_reschedule + meetLink=null)', async ({ page }) => {
+  test('V4 — card SELECTED com badge REMARCADO (awaiting_reschedule + meetLink=null)', async ({ page }) => {
     await loginAsKanbanAdmin(page);
-    await waitForCardInStage(page, vacancyId, `kanban-card-${wjaV4Id}`, 'CONFIRMED');
+    await waitForCardInStage(page, vacancyId, `kanban-card-${wjaV4Id}`, 'SELECTED');
 
     const card = page.locator(`[data-testid="kanban-card-${wjaV4Id}"]`);
     const reprogramBadge = card.locator('[data-testid="reprogram-badge"]');
@@ -320,12 +320,12 @@ test.describe('WJA Flow Visuals @integration', () => {
     await expect(reprogramBadge).toHaveClass(/text-amber-700/);
 
     // Sem badge de entrevista (meetLink=null e interviewDatetime=null)
-    // O label de entrevista só aparece quando stage=CONFIRMED e interviewDate é não-nulo
-    await expect(card.locator('.bg-cyan-50')).not.toBeVisible();
+    // Sem data de entrevista no card (interviewDatetime=null)
+    await expect(card.getByText(/\d{1,2}\/\d{1,2}\/\d{4}/)).not.toBeVisible();
 
-    // Card na coluna CONFIRMED
+    // Card na coluna SELECTED
     await expect(
-      page.locator('[data-testid="kanban-column-CONFIRMED"]').locator(`[data-testid="kanban-card-${wjaV4Id}"]`),
+      page.locator('[data-testid="kanban-column-SELECTED"]').locator(`[data-testid="kanban-card-${wjaV4Id}"]`),
     ).toBeVisible();
 
     await page.waitForSelector('[data-testid="kanban-board"]', { state: 'visible' });
@@ -355,25 +355,23 @@ test.describe('WJA Flow Visuals @integration', () => {
     await expect(card).toHaveScreenshot('wja-v5-rejected-with-reason-card.png', { maxDiffPixelRatio: 0.05 });
   });
 
-  // ── V6 — Card CONFIRMED com entrevista agendada ───────────────────────────
+  // ── V6 — Card SELECTED com entrevista agendada ───────────────────────────
 
-  test('V6 — card CONFIRMED com entrevista agendada (happy path, sem badge REMARCADO)', async ({ page }) => {
+  test('V6 — card SELECTED com entrevista agendada (happy path, sem badge REMARCADO)', async ({ page }) => {
     await loginAsKanbanAdmin(page);
-    await waitForCardInStage(page, vacancyId, `kanban-card-${wjaV6Id}`, 'CONFIRMED');
+    await waitForCardInStage(page, vacancyId, `kanban-card-${wjaV6Id}`, 'SELECTED');
 
     const card = page.locator(`[data-testid="kanban-card-${wjaV6Id}"]`);
 
-    // Badge de data/hora da entrevista visível (KanbanCard.tsx:152-159)
-    // Formato: "10 ago., 14:00" (es-AR locale, day + short month + time)
-    const interviewBadge = card.locator('.bg-cyan-50');
-    await expect(interviewBadge).toBeVisible();
+    // 052: sem selo; a data simples (d/m/aaaa hh:mm) aparece em qualquer coluna
+    await expect(card.getByText(/\d{1,2}\/\d{1,2}\/\d{4}/)).toBeVisible();
 
     // Sem badge REMARCADO — interviewResponse='confirmed', não 'awaiting_reschedule'
     await expect(card.locator('[data-testid="reprogram-badge"]')).not.toBeVisible();
 
-    // Card na coluna CONFIRMED
+    // Card na coluna SELECTED
     await expect(
-      page.locator('[data-testid="kanban-column-CONFIRMED"]').locator(`[data-testid="kanban-card-${wjaV6Id}"]`),
+      page.locator('[data-testid="kanban-column-SELECTED"]').locator(`[data-testid="kanban-card-${wjaV6Id}"]`),
     ).toBeVisible();
 
     await page.waitForSelector('[data-testid="kanban-board"]', { state: 'visible' });

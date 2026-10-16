@@ -368,3 +368,136 @@ describe('NotificationPanel (spec 022, T412/T413)', () => {
     expect(header?.className).toMatch(/\bpr-14\b/);
   });
 });
+
+
+// ── spec 048: aviso de sistema do PT — só o número do Caso, nunca o nome do paciente ─────────
+
+describe('NotificationCard — aviso do PT (spec 048)', () => {
+  const ptNotif = (overrides: Partial<AdminNotification> = {}): AdminNotification =>
+    notif({
+      id: 'pt1',
+      typeCode: 'THERAPEUTIC_PROJECT_CONTACTS_PENDING',
+      actorUid: 'system:pt-contact-reminders',
+      actorDisplayName: null,
+      patientId: 'p77',
+      patientDisplayName: null,
+      conversationId: null,
+      messageId: null,
+      payload: { cycleId: 'c', versionId: 'v', dayOffset: 5, fields: ['RESPONSIBLE', 'CARE_TEAM'] },
+      patientCaseNumber: 1041,
+      ...overrides,
+    });
+
+  beforeEach(() => {
+    vi.mocked(AdminNotificationApiService.listNotifications).mockResolvedValue([]);
+  });
+  afterEach(() => { vi.clearAllMocks(); });
+
+  it('linha 1 "Enlite" (NUNCA o uid sentinela), linha 2 "Caso EN1041", linha 3 com os campos pendentes pelos rótulos do formulário', async () => {
+    vi.mocked(AdminNotificationApiService.listNotifications).mockResolvedValue([ptNotif()]);
+    render(<NotificationPanel isOpen onClose={vi.fn()} />);
+
+    const item = await screen.findByTestId('notification-item-pt1');
+    expect(within(item).getByText('Enlite')).toBeInTheDocument();
+    expect(item).not.toHaveTextContent('system:pt-contact-reminders');
+    expect(within(item).getByTestId('notification-patient-pt1')).toHaveTextContent('Caso EN1041');
+    expect(item).toHaveTextContent('Proyecto terapéutico: faltan Responsables, Equipo tratante');
+    expect(item).toHaveAttribute('aria-label', 'Caso EN1041: en el proyecto terapéutico faltan Responsables, Equipo tratante');
+  });
+
+  it('NUNCA mostra o nome do paciente, mesmo que a resposta o traga preenchido', async () => {
+    vi.mocked(AdminNotificationApiService.listNotifications).mockResolvedValue([ptNotif({ patientDisplayName: 'Fulano Paciente' })]);
+    render(<NotificationPanel isOpen onClose={vi.fn()} />);
+    const item = await screen.findByTestId('notification-item-pt1');
+    expect(item).not.toHaveTextContent('Fulano Paciente');
+    expect(item.getAttribute('aria-label')).not.toContain('Fulano Paciente');
+  });
+
+  it('paciente sem número de caso: "Caso sin número" e o mesmo link', async () => {
+    vi.mocked(AdminNotificationApiService.listNotifications).mockResolvedValue([ptNotif({ patientCaseNumber: null })]);
+    render(<NotificationPanel isOpen onClose={vi.fn()} />);
+    const item = await screen.findByTestId('notification-item-pt1');
+    expect(within(item).getByTestId('notification-patient-pt1')).toHaveTextContent('Caso sin número');
+    fireEvent.click(item);
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith('/admin/patients/p77', expect.anything()));
+  });
+
+  it('número legado (< 1000) sai sem o prefixo EN', async () => {
+    vi.mocked(AdminNotificationApiService.listNotifications).mockResolvedValue([ptNotif({ patientCaseNumber: 812 })]);
+    render(<NotificationPanel isOpen onClose={vi.fn()} />);
+    expect(await screen.findByTestId('notification-patient-pt1')).toHaveTextContent('Caso 812');
+  });
+
+  it('clique: marca lida e navega para a ficha (link), sem abrir drawer de conversa', async () => {
+    vi.mocked(AdminNotificationApiService.listNotifications).mockResolvedValue([ptNotif()]);
+    render(<NotificationPanel isOpen onClose={vi.fn()} />);
+    fireEvent.click(await screen.findByTestId('notification-item-pt1'));
+    await waitFor(() => expect(AdminNotificationApiService.markNotificationRead).toHaveBeenCalledWith('pt1'));
+    expect(navigate).toHaveBeenCalledWith(
+      '/admin/patients/p77',
+      expect.objectContaining({ state: { focusRequest: expect.objectContaining({ code: 'therapeuticProject' }) } }),
+    );
+  });
+
+  it('os tipos de conversa seguem iguais: autor na linha 1 e "en <paciente>" na 2', async () => {
+    vi.mocked(AdminNotificationApiService.listNotifications).mockResolvedValue([notif()]);
+    render(<NotificationPanel isOpen onClose={vi.fn()} />);
+    const item = await screen.findByTestId('notification-item-n1');
+    expect(within(item).getByText('Ana Staff')).toBeInTheDocument();
+    expect(within(item).getByTestId('notification-patient-n1')).toHaveTextContent('en Fulano Paciente');
+  });
+});
+
+// Spec 049 (F7, A7-7): clicar no aviso do Tactiq leva à tela do vínculo — com texto ES e PT reais.
+describe('NotificationPanel — aviso do vínculo do Tactiq (spec 049, A7-7)', () => {
+  const tactiqNotif = (reason: 'missing' | 'broken' | 'wrong_account'): AdminNotification =>
+    notif({
+      id: 'tq1',
+      typeCode: 'ADMISSION_TACTIQ_LINK_REQUIRED',
+      actorUid: 'system:admission',
+      actorDisplayName: null,
+      patientId: null,
+      patientDisplayName: null,
+      conversationId: null,
+      messageId: null,
+      payload: { reason },
+    });
+
+  afterEach(async () => { vi.clearAllMocks(); await i18n.changeLanguage('es'); });
+
+  it('clique marca lida e navega para /admin/mi-cuenta (sem state de foco)', async () => {
+    vi.mocked(AdminNotificationApiService.listNotifications).mockResolvedValue([tactiqNotif('missing')]);
+    const onClose = vi.fn();
+    render(<NotificationPanel isOpen onClose={onClose} />);
+    fireEvent.click(await screen.findByTestId('notification-item-tq1'));
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith('/admin/mi-cuenta', undefined));
+    expect(AdminNotificationApiService.markNotificationRead).toHaveBeenCalledWith('tq1');
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('ES: texto de "sem vínculo" e variante wrong_account com texto próprio', async () => {
+    vi.mocked(AdminNotificationApiService.listNotifications).mockResolvedValue([tactiqNotif('missing'), { ...tactiqNotif('wrong_account'), id: 'tq2' }]);
+    render(<NotificationPanel isOpen onClose={vi.fn()} />);
+    expect(await screen.findByTestId('notification-item-tq1')).toHaveAttribute(
+      'aria-label',
+      'Tu usuario no está vinculado a Tactiq. Hasta que lo vincules no vas a poder ser responsable de agendas de admisión.',
+    );
+    expect(screen.getByTestId('notification-item-tq2')).toHaveAttribute(
+      'aria-label',
+      'La cuenta de Tactiq vinculada no corresponde a tu usuario. Volvé a vincularla para seguir recibiendo agendas.',
+    );
+    expect(screen.getByTestId('notification-patient-tq1')).toHaveTextContent('Vincular Tactiq');
+    expect(screen.getAllByText('Enlite', { selector: 'span' })).toHaveLength(2);
+    expect(screen.queryByText('system:admission')).not.toBeInTheDocument();
+  });
+
+  it('PT pela i18n', async () => {
+    await i18n.changeLanguage('pt-BR');
+    vi.mocked(AdminNotificationApiService.listNotifications).mockResolvedValue([tactiqNotif('wrong_account')]);
+    render(<NotificationPanel isOpen onClose={vi.fn()} />);
+    expect(await screen.findByTestId('notification-item-tq1')).toHaveAttribute(
+      'aria-label',
+      'A conta do Tactiq vinculada não corresponde ao seu usuário. Vincule novamente para continuar recebendo agendas.',
+    );
+  });
+});

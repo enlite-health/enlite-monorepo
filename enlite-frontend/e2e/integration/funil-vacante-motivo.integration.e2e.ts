@@ -13,8 +13,8 @@
  *   funil-err-salto-sem-motivo-422       — P18: salto pela API, sem motivo → 422
  *   funil-rejeitar-exige-motivo          — P19: entrar em Rejeitados exige motivo
  *   funil-sair-de-rejeitados-exige-motivo — P19: sair de Rejeitados exige motivo
- *   funil-err-modo-lista-aba-vazia        — alternativo do modo lista (critério 4 do gate 🟡):
- *                                            aba da Equipe vazia (0 + tabela vazia) → putMove → 1 + linha aparece
+ *   funil-err-modo-lista-aba-vazia        — alternativo da Lista (critério 4 do gate 🟡):
+ *                                            nenhuma linha com ETAPA = Equipo → putMove → a linha aparece com ETAPA = Equipo
  *   funil-err-lista-vacantes-contagem     — alternativo da lista de vacantes (critério 4 do gate 🟡):
  *                                            duas vagas, só a movida ganha a coluna nova; Seleccionados cai junto
  *
@@ -33,6 +33,13 @@ import {
   chooseReasonInModal,
 } from '../helpers/funnel-move-e2e-helper';
 import { seedMockStaff, cleanupMockStaff, readVacancyListRow } from '../helpers/vacancy-notes-e2e-helper';
+import {
+  gotoVacancyDetail,
+  switchToKanban,
+  switchToLista,
+  readListaStageCounts,
+  countListaRowsInStage,
+} from '../helpers/compativeis-e2e-helper';
 import { dragKanbanCard } from '../helpers/kanban-notes-e2e-helper';
 import { loginAs, tokenFor, type MockUser } from '../helpers/abac-stack-helper';
 import { getWjaByWorkerAndJob } from '../helpers/wja-test-helper';
@@ -79,36 +86,8 @@ async function gotoVacanciesList(page: Page): Promise<void> {
   expect(response.ok(), 'GET /api/admin/vacancies falhou').toBe(true);
 }
 
-/**
- * `VacancyFunnelView.tsx` persiste a última vista (list/kanban) em
- * `localStorage['vacancy-funnel-view-<id>']` — limpa antes de cada visita fresca,
- * senão uma 2ª navegação à MESMA vaga reabre em Kanban (molde da Fase 2).
- */
-async function gotoVacancyDetail(page: Page, vacancyId: string): Promise<void> {
-  await page
-    .evaluate((id) => localStorage.removeItem(`vacancy-funnel-view-${id}`), vacancyId)
-    .catch(() => {});
-  const funnelTableRe = new RegExp(`/vacancies/${vacancyId}/funnel-table(\\?|$)`);
-  const [response] = await Promise.all([
-    page.waitForResponse((r) => funnelTableRe.test(r.url()) && r.request().method() === 'GET'),
-    page.goto(`/admin/vacancies/${vacancyId}`),
-  ]);
-  expect(response.ok(), 'GET funnel-table falhou').toBe(true);
-  await expect(page.getByTestId('vacancy-funnel-view')).toBeVisible({ timeout: 15_000 });
-}
-
-async function switchToKanban(page: Page, vacancyId: string): Promise<void> {
-  const funnelRe = new RegExp(`/vacancies/${vacancyId}/funnel(\\?|$)`);
-  const [response] = await Promise.all([
-    page.waitForResponse((r) => funnelRe.test(r.url()) && r.request().method() === 'GET'),
-    page
-      .getByRole('group', { name: 'Cambiar vista' })
-      .getByRole('button', { name: /Kanban/i })
-      .click(),
-  ]);
-  expect(response.ok(), 'GET funnel (kanban) falhou').toBe(true);
-  await expect(page.getByTestId('kanban-board')).toBeVisible({ timeout: 15_000 });
-}
+// `gotoVacancyDetail` (visita fresca, abre no Kanban — padrão 054), `switchToKanban`, `switchToLista` e
+// `readListaStageCounts` vivem em `compativeis-e2e-helper.ts`.
 
 /**
  * Lê `cols` testids até o texto estabilizar (duas leituras iguais) — o
@@ -141,11 +120,6 @@ async function readStableNumbers(
   return out;
 }
 
-/** Molde `funil-vacante.integration.e2e.ts` — a tabela do modo lista, sem candidatos na aba, tem 0 `tbody tr`. */
-async function countFunnelTableRows(page: Page): Promise<number> {
-  return page.getByTestId('vacancy-funnel-view').getByRole('table').locator('tbody tr').count();
-}
-
 const COLS = ['SELECTED', 'QUICK_RESPONSE_TEAM'] as const;
 
 const ALL_COLUMN_IDS = [
@@ -153,7 +127,6 @@ const ALL_COLUMN_IDS = [
   'INICIADO',
   'PRE_SCREENING',
   'COMPLETED',
-  'CONFIRMED',
   'SELECTED',
   'QUICK_RESPONSE_TEAM',
   'REJECTED',
@@ -236,14 +209,16 @@ test.describe('funil da vacante — motivo obrigatório @integration', () => {
         COLS,
       );
 
-      // 2. Modo lista — navegação + print.
+      // 2. Lista — 054: a tela abre no Kanban; entra-se na Lista CLICANDO "Lista". As contagens
+      // são as linhas por ETAPA (`funnel-stage-<rowId>[data-stage]`), não mais as abas.
       await gotoVacancyDetail(page, seed.vacancyId);
+      await switchToLista(page, seed.vacancyId);
       if (process.env.PRINT_DIR) {
         await page.screenshot({ path: `${process.env.PRINT_DIR}/funil-lista.png`, fullPage: true });
       }
-      const tabBefore = await readStableNumbers(page, (col) => `funnel-tab-${col}-count`, COLS);
+      const tabBefore = await readListaStageCounts(page, COLS);
 
-      // 3. Kanban — navegação + print.
+      // 3. Kanban — volta clicando "Kanban" + print.
       await switchToKanban(page, seed.vacancyId);
       if (process.env.PRINT_DIR) {
         await page.screenshot({ path: `${process.env.PRINT_DIR}/funil-kanban.png`, fullPage: true });
@@ -271,7 +246,8 @@ test.describe('funil da vacante — motivo obrigatório @integration', () => {
       // Depois: as 6 contagens relidas nos 3 lugares.
       const kanbanAfter = await readStableNumbers(page, (col) => `kanban-column-${col}-count`, COLS);
       await gotoVacancyDetail(page, seed.vacancyId);
-      const tabAfter = await readStableNumbers(page, (col) => `funnel-tab-${col}-count`, COLS);
+      await switchToLista(page, seed.vacancyId);
+      const tabAfter = await readListaStageCounts(page, COLS);
       await gotoVacanciesList(page);
       await expect(page.getByTestId(`vacancy-row-${seed.vacancyId}`)).toBeVisible({ timeout: 15_000 });
       const listAfter = await readStableNumbers(
@@ -284,7 +260,7 @@ test.describe('funil da vacante — motivo obrigatório @integration', () => {
 
       for (const [label, before, after] of [
         ['lista', listBefore, listAfter],
-        ['aba', tabBefore, tabAfter],
+        ['lista (ETAPA)', tabBefore, tabAfter],
         ['kanban', kanbanBefore, kanbanAfter],
       ] as const) {
         expect(after.SELECTED, `${label}.SELECTED`).toBe(before.SELECTED - 1);
@@ -338,7 +314,6 @@ test.describe('funil da vacante — motivo obrigatório @integration', () => {
 
       await loginAs(page, MOCK_STAFF);
       await gotoVacancyDetail(page, seed.vacancyId);
-      await switchToKanban(page, seed.vacancyId);
       await collapseColumnsExcept(page, ['INVITED', 'QUICK_RESPONSE_TEAM']);
 
       // Card A: arrasto pede motivo (422), escolhe e reenvia (2xx).
@@ -438,13 +413,13 @@ test.describe('funil da vacante — motivo obrigatório @integration', () => {
 
   // ── P19 · entrar em Rejeitados exige motivo ─────────────────────────────────
   test('funil-rejeitar-exige-motivo', async ({ page, request }) => {
-    const seed = seedVacancyWithCards([{ stage: 'CONFIRMED' }]);
+    const seed = seedVacancyWithCards([{ stage: 'COMPLETED' }]);
     const [card] = seed.cards;
 
     try {
       const statusBefore = await readPatientStatusApi(request, BACKEND_URL, MOCK_TOKEN, seed.patientId);
 
-      // Pela API, sem motivo: 422 ENTER_REJECTED, etapa continua CONFIRMED.
+      // Pela API, sem motivo: 422 ENTER_REJECTED, etapa continua COMPLETED.
       const apiRes = await putMove(request, BACKEND_URL, MOCK_TOKEN, card.encuadreId, {
         targetStage: 'REJECTED',
       });
@@ -453,15 +428,14 @@ test.describe('funil da vacante — motivo obrigatório @integration', () => {
       expect(apiRes.status).toBe(422);
       expect(apiBody.code).toBe('MOVE_REASON_REQUIRED');
       expect(apiBody.reason).toBe('ENTER_REJECTED');
-      expect(getWjaByWorkerAndJob(card.workerId, seed.vacancyId)?.funnelStage, 'continua CONFIRMED').toBe(
-        'CONFIRMED',
+      expect(getWjaByWorkerAndJob(card.workerId, seed.vacancyId)?.funnelStage, 'continua COMPLETED').toBe(
+        'COMPLETED',
       );
 
       // Pela tela: o diálogo de motivo abre ANTES de qualquer PUT (D433/DX-4.10).
       await loginAs(page, MOCK_STAFF);
       await gotoVacancyDetail(page, seed.vacancyId);
-      await switchToKanban(page, seed.vacancyId);
-      await collapseColumnsExcept(page, ['CONFIRMED', 'REJECTED']);
+      await collapseColumnsExcept(page, ['COMPLETED', 'REJECTED']);
 
       await dragKanbanCard(page, card.wjaId, 'REJECTED');
       const rejectionModal = page.getByTestId('rejection-modal');
@@ -504,7 +478,7 @@ test.describe('funil da vacante — motivo obrigatório @integration', () => {
 
       // Pela API, sem motivo: 422 LEAVE_REJECTED, etapa continua REJECTED.
       const apiRes = await putMove(request, BACKEND_URL, MOCK_TOKEN, card.encuadreId, {
-        targetStage: 'CONFIRMED',
+        targetStage: 'INVITED',
       });
       const apiBody = apiRes.body as { code?: string; reason?: string };
       console.log('[P19] sair sem motivo status=', apiRes.status, 'body=', apiBody);
@@ -515,24 +489,18 @@ test.describe('funil da vacante — motivo obrigatório @integration', () => {
         'REJECTED',
       );
 
-      // Pela tela: MoveToMenu → Confirmados → data ("ainda não sei") → 422 → motivo → 2xx.
+      // Pela tela: MoveToMenu → Invitados → 422 → motivo → 2xx.
       await loginAs(page, MOCK_STAFF);
       await gotoVacancyDetail(page, seed.vacancyId);
-      await switchToKanban(page, seed.vacancyId);
 
       const cardLocator = page.locator(`[data-testid="kanban-card-${card.wjaId}"]`);
       await expect(cardLocator).toBeVisible();
       await cardLocator.getByTestId('move-to-button').click();
-      await cardLocator.getByTestId('move-to-option-CONFIRMED').click();
-
-      const scheduleModal = page.getByTestId('interview-schedule-modal');
-      await expect(scheduleModal).toBeVisible();
-      const [scheduleUnknownPut] = await Promise.all([
+      const [firstPut] = await Promise.all([
         page.waitForResponse((r) => /\/move$/.test(r.url()) && r.request().method() === 'PUT'),
-        page.getByTestId('interview-schedule-unknown').click(),
+        cardLocator.getByTestId('move-to-option-INVITED').click(),
       ]);
-      expect(scheduleUnknownPut.status(), '"ainda não sei" pede motivo (422)').toBe(422);
-      await expect(scheduleModal).toHaveCount(0);
+      expect(firstPut.status(), 'sair de Rejeitados sem motivo pede motivo (422)').toBe(422);
 
       const moveReasonModal = page.getByTestId('move-reason-modal');
       await expect(moveReasonModal).toBeVisible();
@@ -551,7 +519,7 @@ test.describe('funil da vacante — motivo obrigatório @integration', () => {
       const last = trail[trail.length - 1];
       console.log('[P19] trilha sair', last);
       expect(last.oldValue).toBe('REJECTED');
-      expect(last.newValue).toBe('CONFIRMED');
+      expect(last.newValue).toBe('INVITED');
       expect(last.reasonCategory).toBe('REAVALIACAO');
 
       const statusAfter = await readPatientStatusApi(request, BACKEND_URL, MOCK_TOKEN, seed.patientId);
@@ -571,14 +539,13 @@ test.describe('funil da vacante — motivo obrigatório @integration', () => {
       await loginAs(page, MOCK_STAFF);
       await gotoVacancyDetail(page, seed.vacancyId);
 
-      // Antes: ninguém na Equipe — a aba mostra 0 e a tabela, ao abrir, não tem
-      // linha nenhuma (o mesmo estado vazio que `funil-vacante-vazia`, Fase 2, lê
-      // por contagem de testid — sem candidato nenhum, todas as abas ficam a 0).
-      await expect(page.getByTestId('funnel-tab-QUICK_RESPONSE_TEAM-count')).toHaveText('0');
-      await page.locator('#funnel-tab-QUICK_RESPONSE_TEAM').click();
-      await expect
-        .poll(() => countFunnelTableRows(page), { message: 'linhas da tabela em Equipo (vazia)' })
-        .toBe(0);
+      // Antes: ninguém na Equipe — 054: a Lista não tem aba; entra-se clicando "Lista". A linha do
+      // card SELECTED aparece (controle positivo: a Lista carregou) com ETAPA = SELECTED e nenhuma
+      // linha tem ETAPA = QUICK_RESPONSE_TEAM.
+      await switchToLista(page, seed.vacancyId);
+      await expect(page.getByTestId(`funnel-row-${card.wjaId}`)).toBeVisible({ timeout: 10_000 });
+      await expect(page.getByTestId(`funnel-stage-${card.wjaId}`)).toHaveAttribute('data-stage', 'SELECTED');
+      expect(await countListaRowsInStage(page, 'QUICK_RESPONSE_TEAM'), 'Equipo vazia').toBe(0);
 
       // Move o card SELECTED para a Equipe pela API — vizinho, sem motivo (o
       // mesmo par testado no feliz de `funil-err-de-selecionados`).
@@ -588,13 +555,13 @@ test.describe('funil da vacante — motivo obrigatório @integration', () => {
       console.log('[alt-lista] putMove status=', moveRes.status);
       expect(moveRes.status, `PUT move deveria ser 2xx, veio ${moveRes.status}`).toBe(200);
 
-      // Depois: recarrega o funil — a aba passa a 1 e a linha do card aparece
-      // dentro dela (a tabela só lista a aba selecionada, então isso já prova
-      // kanbanColumn = QUICK_RESPONSE_TEAM sem precisar ler o campo direto).
+      // Depois: recarrega o funil (Kanban, padrão) e abre a Lista — a linha do card agora tem
+      // ETAPA = QUICK_RESPONSE_TEAM (lida de `kanbanColumn`, sem ler o campo direto).
       await gotoVacancyDetail(page, seed.vacancyId);
-      await expect(page.getByTestId('funnel-tab-QUICK_RESPONSE_TEAM-count')).toHaveText('1');
-      await page.locator('#funnel-tab-QUICK_RESPONSE_TEAM').click();
+      await expect(page.getByTestId('kanban-column-QUICK_RESPONSE_TEAM-count')).toHaveText('1');
+      await switchToLista(page, seed.vacancyId);
       await expect(page.getByTestId(`funnel-row-${card.wjaId}`)).toBeVisible({ timeout: 10_000 });
+      await expect(page.getByTestId(`funnel-stage-${card.wjaId}`)).toHaveAttribute('data-stage', 'QUICK_RESPONSE_TEAM');
     } finally {
       seed.cleanup();
     }

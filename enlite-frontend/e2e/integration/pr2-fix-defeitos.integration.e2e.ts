@@ -224,20 +224,22 @@ test.describe('conserto PR-2 (13/09) — defeito 1 (422 mudo) e defeito 2 (colun
     await screenshot(card, '2-indicador-sem-write.png');
   });
 
-  test('defeito 2, alternativo: desmarcar (com write) faz o indicador sumir da linha', async ({ page }) => {
+  test('defeito 2, alternativo: desmarcar (com write) volta o botão a vazado (aria-pressed=false)', async ({ page }) => {
     await loginAs(page, { uid: completaUid, email: completaEmail, role: 'admin', country: 'AR' });
     await page.goto(`/admin/patients/${patientId2}`);
     await expect(page.getByTestId('patient-profile-tabs')).toBeVisible({ timeout: 30_000 });
     await abrirAbaRedeDeApoio(page);
     const card = page.getByTestId('familiares-card');
     await expect(card).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByTestId(`familiares-emergency-marked-${responsibleId}`)).toBeVisible();
+    // Quem PODE editar vê o botão-toggle preenchido (a etiqueta de leitura é só para quem não edita).
+    await expect(page.getByTestId(`emergency-mark-RESPONSIBLE-${responsibleId}`)).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByTestId(`familiares-emergency-marked-${responsibleId}`)).toHaveCount(0);
 
     const del = page.waitForResponse((r) => r.request().method() === 'DELETE' && r.url().includes(`/patients/${patientId2}/emergency-contact`));
     await page.getByTestId(`emergency-mark-RESPONSIBLE-${responsibleId}`).click();
     expect((await del).status()).toBe(200);
 
-    await expect(page.getByTestId(`familiares-emergency-marked-${responsibleId}`)).toHaveCount(0, { timeout: 15_000 });
+    await expect(page.getByTestId(`emergency-mark-RESPONSIBLE-${responsibleId}`)).toHaveAttribute('aria-pressed', 'false', { timeout: 15_000 });
     const marca = scalar(`SELECT emergency_responsible_id FROM patients WHERE id = '${patientId2}'`);
     expect(marca).toBe('');
     await screenshot(card, '2-alt-desmarcado-indicador-some.png');

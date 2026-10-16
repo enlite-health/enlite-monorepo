@@ -32,6 +32,7 @@ import {
   CURRENT_WEEK_START_SQL,
 } from '../domain/interviewSchedule';
 import type { CountryCode } from '@shared/domain/countryCodes';
+import { vacancyEffectiveJoinSql, vacancyEffectiveScheduleSql } from '@shared/sql/vacancyEffectiveFieldsSql';
 
 /** Linha de contagem simples chave→valor. */
 export interface CountRow {
@@ -130,8 +131,9 @@ export function ubicacionesActivasQuery(db: Pool, countries: CountryCode[]) {
 /** Horas EM ATENDIMENTO (linha RODANDO, D2): vagas `status='ACTIVE'`. */
 export function horasAtivasQuery(db: Pool, countries: CountryCode[]) {
   return db.query<{ schedule: unknown }>(
-    `SELECT jp.schedule
+    `SELECT ${vacancyEffectiveScheduleSql('jp')} AS schedule
        FROM job_postings jp
+       ${vacancyEffectiveJoinSql('jp')}
        JOIN patients p ON p.id = jp.patient_id
       WHERE jp.deleted_at IS NULL AND jp.is_draft = false AND jp.status = 'ACTIVE'
         AND p.deleted_at IS NULL AND COALESCE(p.is_test, false) = false
@@ -233,24 +235,35 @@ export function bloqueadosQuery(db: Pool, countries: CountryCode[]) {
   );
 }
 
-/** Entrevistas da semana (fuso da operação) + cards "Agendados" sem data. */
+/**
+ * Entrevistas da semana (fuso da operação) = pessoa × vaga distintas que caem em UMA das duas fontes:
+ *   (1) data antiga digitada na candidatura (`interview_datetime`/`encuadres.interview_date`, via o helper único);
+ *   (2) participação ATIVA (`released_at IS NULL`) em evento de enquadre ABERTO cujo `starts_at` cai na semana (spec 052).
+ * UNION (não soma de duas contagens): quem tem as duas coisas conta uma vez — leitura conservadora, sem inflar.
+ */
 export function encuadresSemanaQuery(db: Pool, countries: CountryCode[]) {
-  return db.query<{ agendados: number; sem_data: number }>(
-    `SELECT
-       COUNT(*) FILTER (
-         WHERE ${INTERVIEW_DATE_RESOLVED_SQL} >= ${CURRENT_WEEK_START_SQL}::date
-           AND ${INTERVIEW_DATE_RESOLVED_SQL} <  ${CURRENT_WEEK_START_SQL}::date + INTERVAL '7 days'
-       )::int AS agendados,
-       COUNT(*) FILTER (
-         WHERE wja.application_funnel_stage = 'CONFIRMED'
-           AND ${INTERVIEW_DATE_RESOLVED_SQL} IS NULL
-       )::int AS sem_data
-       FROM worker_job_applications wja
-       LEFT JOIN encuadres e
-              ON e.worker_id = wja.worker_id
-             AND e.job_posting_id = wja.job_posting_id
-      WHERE ${workerNotDisabledSql('wja.worker_id')}
-        AND ${workerCountryPredicateSql('wja.worker_id', 1)}`,
+  return db.query<{ agendados: number }>(
+    `SELECT COUNT(*)::int AS agendados FROM (
+       SELECT wja.worker_id, wja.job_posting_id
+         FROM worker_job_applications wja
+         LEFT JOIN encuadres e
+                ON e.worker_id = wja.worker_id
+               AND e.job_posting_id = wja.job_posting_id
+        WHERE ${INTERVIEW_DATE_RESOLVED_SQL} >= ${CURRENT_WEEK_START_SQL}::date
+          AND ${INTERVIEW_DATE_RESOLVED_SQL} <  ${CURRENT_WEEK_START_SQL}::date + INTERVAL '7 days'
+          AND ${workerNotDisabledSql('wja.worker_id')}
+          AND ${workerCountryPredicateSql('wja.worker_id', 1)}
+       UNION
+       SELECT p.worker_id, p.job_posting_id
+         FROM enquadre_event_participants p
+         JOIN enquadre_events ev ON ev.id = p.event_id
+        WHERE p.released_at IS NULL
+          AND ev.status = 'open'
+          AND ev.starts_at >= ${CURRENT_WEEK_START_SQL}
+          AND ev.starts_at <  ${CURRENT_WEEK_START_SQL} + INTERVAL '7 days'
+          AND ${workerNotDisabledSql('p.worker_id')}
+          AND ${workerCountryPredicateSql('p.worker_id', 1)}
+     ) semana`,
     [countries],
   );
 }

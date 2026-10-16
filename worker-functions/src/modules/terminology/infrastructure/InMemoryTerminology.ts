@@ -164,4 +164,14 @@ export class InMemoryTerminology implements TerminologyPort {
     }
     return { chapter: { code: chapterEntity.code.value, title: pickTitle(chapterEntity, 'es') } };
   }
+
+  async listChapters(): Promise<Chapter[]> {
+    this.assertLoaded();
+    const chapters = [...this.byConceptKey.values()].filter((e) => e.kind === 'chapter');
+    const currentRelease = chapters.map((c) => c.release).sort().at(-1);
+    return chapters
+      .filter((c) => c.release === currentRelease)
+      .map((c) => ({ code: c.code.value, title: pickTitle(c, 'es') }))
+      .sort((a, b) => a.code.localeCompare(b.code));
+  }
 }

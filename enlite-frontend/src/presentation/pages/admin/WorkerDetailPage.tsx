@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { ArrowLeft, ChevronRight } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -16,7 +17,19 @@ export default function WorkerDetailPage() {
 
   // Lightweight fetch only to resolve the header title; WorkerDetailContent
   // owns the authoritative fetch + loading/error states for the body.
-  const { worker } = useWorkerDetail(id);
+  const { worker, fetchedForId } = useWorkerDetail(id);
+
+  // Id FUNDIDO na URL (candidaturas antigas do Talentum): a API devolve a ficha do worker
+  // canônico. As abas de documentos e demais chamadas usam o id da ROTA, então a rota vai
+  // para o id canônico — senão upload/validação cairiam na linha fundida.
+  // Só vale quando o `worker` em mãos foi buscado para a rota ATUAL: numa navegação A → B o
+  // hook ainda segura a ficha de A até o novo fetch terminar, e sem este guard voltaríamos a A.
+  useEffect(() => {
+    if (id && fetchedForId === id && worker?.id && worker.id !== id) {
+      navigate(`/admin/workers/${worker.id}`, { replace: true, state: location.state });
+    }
+  }, [id, fetchedForId, worker?.id, navigate, location.state]);
+
   const fullName = worker
     ? [worker.firstName, worker.lastName].filter(Boolean).join(' ') || worker.email || '—'
     : '';

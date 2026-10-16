@@ -45,6 +45,7 @@ const version: TherapeuticProjectVersion = {
   contactRefs: [],
   careTeamIds: [],
   contacts: [],
+  contactStatus: [],
 };
 
 const fullInput: TherapeuticProjectPdfInput = {
@@ -64,6 +65,7 @@ const fullInput: TherapeuticProjectPdfInput = {
   fixedSectionsServiceCode: 'CAREGIVER',
   modalityLabel: 'Presencial',
   careTeam: [{ status: 'resolved', name: 'Equipo tratante sintético', relationship: null, phone: null }],
+  contactStatusLines: { family: null, coverage: null, careTeam: null },
   issuedAtText: '08/09/2026 10:00',
 };
 
@@ -192,6 +194,25 @@ describe('PDF do projeto terapêutico — bytes reais, texto extraído (spec 017
     expect(text).not.toContain('11 0000 0000');
     // As 3 seções (familiar, cobertura, equipe) imprimem o rótulo — 3 ocorrências no mínimo.
     expect(text.split(PDF_LABELS.contactInactive).length - 1).toBeGreaterThanOrEqual(3);
+  });
+
+  it('spec 048 — o estado explícito do campo sai NO LUGAR da lista vazia: "Todavía no hay registro — vence el DD/MM" / "No necesita"', async () => {
+    const { text } = await texto({
+      ...fullInput,
+      emergencyContacts: [],
+      coverageEmergencyContacts: [],
+      careTeam: [],
+      contactStatusLines: {
+        family: 'Responsables: Todavía no hay registro — vence el 23/10',
+        coverage: 'No necesita',
+        careTeam: 'Todavía no hay registro — vence el 23/10',
+      },
+    });
+    expect(text).toContain('Familiar / persona responsable: Responsables: Todavía no hay registro — vence el 23/10');
+    expect(text).toContain('Emergencia de la cobertura médica: No necesita');
+    expect(text.split('Todavía no hay registro — vence el 23/10').length - 1).toBeGreaterThanOrEqual(2);
+    // com estado a seção da equipe NÃO cai no "—" de "não informado"
+    expect(text).not.toContain('Familiar / persona responsable: —');
   });
 
   it('🔒 lex #7 C12 — contato SELECIONADO sem a célula do container de origem: "omitido por permiso", sem nome/telefone', async () => {

@@ -77,7 +77,7 @@ function stubFetch(replies: Reply[]): Stub {
   return { calls: () => urls.length, urls: () => [...urls], bodies: () => [...bodies] };
 }
 
-const PARAMS = { message: 'admission.notifier.confirmation.send_failed', withinMinutes: 60 };
+const PARAMS = { message: 'admission.confirmation_failed', withinMinutes: 60 };
 const ENTRY = { timestamp: '2026-08-17T06:00:00Z', jsonPayload: { appointmentId: 'appt-1' } };
 
 test.beforeEach(() => {

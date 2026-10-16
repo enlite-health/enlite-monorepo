@@ -16,6 +16,7 @@
  * API e Postgres reais (stack docker), login real pelo emulador do Firebase.
  */
 import { test, expect } from '@playwright/test';
+import { preencherRecrutamentoPelaTela } from '../helpers/recruitment-fields-e2e';
 import { seedActivatablePatient, cleanupPatientDeep, runSQL } from '../helpers/patient-detail-c-helper';
 import { loginComoHumano } from '../helpers/login-humano';
 
@@ -102,6 +103,7 @@ test.describe('Horário obrigatório para mudar de status — o operador é avis
 
     // ── 5. Preencher o horário como humano: clicar no dia, e o aviso some ──
     await page.getByTestId('day-schedule-add-monday').click();
+    await preencherRecrutamentoPelaTela(page, 1); // spec 027 Fase 3: o portão exige os 5 campos
     // o aviso âmbar some assim que existe um slot — o operador vê a pendência sair na hora
     await expect(page.getByTestId('svc-schedule-none-1')).toHaveCount(0);
     // Esperar a resposta REAL do PATCH antes de fechar: clicar em "Cerrar" com o formulário ainda
@@ -133,8 +135,8 @@ test.describe('Horário obrigatório para mudar de status — o operador é avis
     const activated = page.waitForResponse((r) => r.request().method() === 'POST' && /\/activate-recruitment$/.test(r.url()));
     await page.getByTestId(`contracted-service-activate-recruitment-${serviceId}`).click();
     expect((await activated).status()).toBe(201);
-    // ativado: o ícone vira "Ver vacante" (o serviço agora tem vaga viva)
-    await expect(page.getByTestId(`contracted-service-view-vacancy-${serviceId}`)).toBeVisible({ timeout: 20_000 });
+    // ativado: a coluna "Código de la vacante" mostra o link da vaga (o serviço agora tem vaga viva; o ícone "Ver vacante" saiu na spec 047)
+    await expect(page.getByTestId(`contracted-service-vacancy-link-${serviceId}`)).toBeVisible({ timeout: 20_000 });
   });
 
   test('sem horário, "Activar reclutamiento" fica DESABILITADO e o tooltip NOMEIA o que falta (spec 018, PR-6, ADR-5)', async ({ page }) => {
@@ -251,16 +253,13 @@ test.describe('Horário obrigatório para mudar de status — o operador é avis
 
       const select = page.getByTestId('patient-status-select');
       await expect(select).toBeVisible({ timeout: 30_000 });
-      // REPLACEMENT (reemplazo), não SEARCHING: a FSM não tem `ACTIVE → SEARCHING` (seed da 315),
-      // e ela é consultada ANTES da completude — a 1ª versão deste teste pedia uma transição
-      // inexistente e recebia "Transición no permitida", que é outra recusa.
-      await select.selectOption('REPLACEMENT');
-      await page.getByTestId('patient-status-save').click();
-
-      const erro = page.getByTestId('patient-status-error');
-      await expect(erro).toBeVisible({ timeout: 20_000 });
-      await expect(erro).toContainText('Horario del servicio');
-      await expect(erro).toHaveScreenshot('erro-select-ficha.png');
+      // REPLACEMENT (reemplazo), não SEARCHING: a FSM não tem `ACTIVE → SEARCHING` (seed da 315).
+      // Spec 051: o servidor devolve REPLACEMENT com `blockedBy: [SERVICE_SCHEDULE]` e a ficha o mostra
+      // DESABILITADO com o motivo — o operador não chega a clicar para ser recusado (o 422 segue no servidor).
+      const opcao = select.locator('option[value="REPLACEMENT"]');
+      await expect(opcao).toHaveCount(1, { timeout: 20_000 });
+      await expect(opcao).toBeDisabled();
+      await expect(opcao).toHaveText(/horario del servicio/);
 
       // o banco não mudou
       const status = runSQL(`SELECT status FROM patients WHERE id = '${s4.patientId}'`).trim();

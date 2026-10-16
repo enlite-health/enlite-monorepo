@@ -79,7 +79,9 @@ describe('C4/C7 — escrita do serviço contratado: valor restrito e país da fr
     const [req, res, out] = reqRes({ id: patientId, sid: serviceId }, { weeklyHours: 20 }, ['recruiter']);
     await controller.update(req, res);
     expect(out.status).toBe(200);
-    expect((out.body as { data: { hourlyValue: number | null; hourlyValueRedacted: boolean } }).data).toMatchObject({ hourlyValue: null, hourlyValueRedacted: true });
+    // Spec 047 (F2): sem decisão do engine o papel `recruiter` também não lê a vaga — `null` + redigida:true.
+    expect((out.body as { data: { hourlyValue: number | null; hourlyValueRedacted: boolean; liveVacancy: unknown; liveVacancyRedacted: boolean } }).data)
+      .toMatchObject({ hourlyValue: null, hourlyValueRedacted: true, liveVacancy: null, liveVacancyRedacted: true });
     expect(Number((await svc()).hourly_value)).toBe(PRECO);
   });
 
@@ -88,7 +90,9 @@ describe('C4/C7 — escrita do serviço contratado: valor restrito e país da fr
     const [req, res, out] = reqRes({ id: patientId, sid: serviceId }, { hourlyValue: 6000 }, ['recruiter'], ['patient_services:write', 'patient_contract_value:read']);
     await controller.update(req, res);
     expect(out.status).toBe(200);
-    expect((out.body as { data: { hourlyValue: number | null; hourlyValueRedacted: boolean } }).data).toMatchObject({ hourlyValue: 6000, hourlyValueRedacted: false });
+    // As duas redações são independentes: lê o preço (patient_contract_value:read) e NÃO lê a vaga (sem vacancy:read).
+    expect((out.body as { data: { hourlyValue: number | null; hourlyValueRedacted: boolean; liveVacancyRedacted: boolean } }).data)
+      .toMatchObject({ hourlyValue: 6000, hourlyValueRedacted: false, liveVacancyRedacted: true });
     expect(Number((await svc()).hourly_value)).toBe(6000);
   });
 
@@ -101,7 +105,8 @@ describe('C4/C7 — escrita do serviço contratado: valor restrito e país da fr
     const [req2, res2, out2] = reqRes({ id: patientId, sid: serviceId }, { weeklyHours: 10 }, ['admin'], ['patient_services:write']);
     await controller.update(req2, res2);
     expect(out2.status).toBe(200);
-    expect((out2.body as { data: { hourlyValue: number | null; hourlyValueRedacted: boolean } }).data).toMatchObject({ hourlyValue: null, hourlyValueRedacted: true });
+    expect((out2.body as { data: { hourlyValue: number | null; hourlyValueRedacted: boolean; liveVacancyRedacted: boolean } }).data)
+      .toMatchObject({ hourlyValue: null, hourlyValueRedacted: true, liveVacancyRedacted: true });
   });
 
   it('C7. `POST {country:"BR"}` num paciente AR é RECUSADO (400) — e nada é criado', async () => {

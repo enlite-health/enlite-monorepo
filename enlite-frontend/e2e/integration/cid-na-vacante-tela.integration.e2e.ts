@@ -208,15 +208,9 @@ test.describe('CID-11 na vaga — tela de detalhe (VacancyProfessionCard) @integ
 });
 
 /**
- * Extensão (gate `revisao-pr`, BLOCKER): as 3 telas que faltavam cobertura de TELA —
- * `DraftVacancyKnownCard` (rascunho), `VacancyFormLeftColumn` (modal criar/editar) e
- * `CaseDetailsModal`. Mesmo molde do describe acima: `page.route` só troca o header de auth
+ * Extensão (gate `revisao-pr`, BLOCKER): as telas que faltavam cobertura de TELA —
+ * `DraftVacancyKnownCard` (rascunho) e `VacancyFormLeftColumn` (modal criar/editar). Mesmo molde do describe acima: `page.route` só troca o header de auth
  * (`loginAs`), a REQUEST e a RESPOSTA das APIs são reais.
- *
- * `CaseDetailsModal` NÃO tem teste aqui — grep confirma que nenhuma página o importa
- * (`grep -rln "CaseDetailsModal" src --include="*.tsx" | grep -v __tests__` só devolve o
- * próprio arquivo do componente): é órfão, sem rota real para alcançá-lo. Cobri-lo exigiria
- * `page.route` fabricando dado (a regra deste arquivo proíbe) — NÃO VIÁVEL, ver report.
  */
 
 // ── RASCUNHO (DraftVacancyKnownCard) ────────────────────────────────────────────────────────

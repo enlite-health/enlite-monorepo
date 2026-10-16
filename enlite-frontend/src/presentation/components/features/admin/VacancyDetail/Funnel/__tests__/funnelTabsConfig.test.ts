@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { VACANCY_FUNNEL_COLUMNS, FUNNEL_TABS, columnItems, columnCount } from '../funnelTabsConfig';
+import { VACANCY_FUNNEL_COLUMNS, columnItems, columnCount, stageColumnIdFor } from '../funnelTabsConfig';
 
 describe('funnelTabsConfig', () => {
   it('VACANCY_FUNNEL_COLUMNS segue a ordem literal do quadro B (D433), Compatíveis (Fase 5) na frente', () => {
@@ -9,7 +9,6 @@ describe('funnelTabsConfig', () => {
       'INICIADO',
       'PRE_SCREENING',
       'COMPLETED',
-      'CONFIRMED',
       'SELECTED',
       'QUICK_RESPONSE_TEAM',
       'REJECTED',
@@ -26,7 +25,6 @@ describe('funnelTabsConfig', () => {
     const compatible = VACANCY_FUNNEL_COLUMNS.find((c) => c.id === 'COMPATIBLE')!;
     expect(compatible.droppable).toBe(false);
     expect(compatible.color).toBe('bg-slate-400');
-    expect(FUNNEL_TABS[1].key).toBe('COMPATIBLE');
   });
 
   it('columnCount soma PRE_SCREENING + IN_PROGRESS', () => {
@@ -40,30 +38,28 @@ describe('funnelTabsConfig', () => {
     expect(items).toEqual(['a', 'b']);
   });
 
-  it('FUNNEL_TABS segue a ordem da DX-2.6, Compatíveis (Fase 5) logo após Todos', () => {
-    expect(FUNNEL_TABS.map((t) => t.key)).toEqual([
-      'ALL',
-      'COMPATIBLE',
-      'INVITED',
-      'INICIADO',
-      'PRE_SCREENING',
-      'COMPLETED',
-      'CONFIRMED',
-      'SELECTED',
-      'QUICK_RESPONSE_TEAM',
-      'REJECTED',
-      'POSTULATED',
-      'PRE_SELECTED',
-      'WITHDREW',
-    ]);
-  });
-
   it('nenhum id de coluna é BLOQUEADO nem IN_PROGRESS', () => {
     const ids = VACANCY_FUNNEL_COLUMNS.map((c) => c.id);
     expect(ids).not.toContain('BLOQUEADO');
     expect(ids).not.toContain('IN_PROGRESS');
-    const tabKeys = FUNNEL_TABS.map((t) => t.key);
-    expect(tabKeys).not.toContain('BLOQUEADO');
-    expect(tabKeys).not.toContain('IN_PROGRESS');
+  });
+
+  it('stageColumnIdFor mapeia as 9 sources para o id da coluna (IN_PROGRESS → PRE_SCREENING)', () => {
+    expect(stageColumnIdFor('COMPATIBLE')).toBe('COMPATIBLE');
+    expect(stageColumnIdFor('INVITED')).toBe('INVITED');
+    expect(stageColumnIdFor('INICIADO')).toBe('INICIADO');
+    expect(stageColumnIdFor('PRE_SCREENING')).toBe('PRE_SCREENING');
+    expect(stageColumnIdFor('IN_PROGRESS')).toBe('PRE_SCREENING');
+    expect(stageColumnIdFor('COMPLETED')).toBe('COMPLETED');
+    expect(stageColumnIdFor('SELECTED')).toBe('SELECTED');
+    expect(stageColumnIdFor('QUICK_RESPONSE_TEAM')).toBe('QUICK_RESPONSE_TEAM');
+    expect(stageColumnIdFor('REJECTED')).toBe('REJECTED');
+  });
+
+  it('stageColumnIdFor devolve null para nulo, vazio e source desconhecida', () => {
+    expect(stageColumnIdFor(null)).toBeNull();
+    expect(stageColumnIdFor(undefined)).toBeNull();
+    expect(stageColumnIdFor('')).toBeNull();
+    expect(stageColumnIdFor('FOO')).toBeNull();
   });
 });

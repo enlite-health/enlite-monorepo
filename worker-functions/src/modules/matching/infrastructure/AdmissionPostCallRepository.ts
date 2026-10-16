@@ -1,0 +1,188 @@
+import type { Pool, PoolClient } from 'pg';
+import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { POST_CALL_WINDOW_HOURS } from '../domain/admissionPostCall';
+import { rehearsalUntilSql, standingSkippedTestSql } from './admissionRehearsalSql';
+
+type Ex = Pick<Pool, 'query'> | Pick<PoolClient, 'query'>;
+
+export interface PostCallCandidate {
+  id: string;
+  host_email: string;
+  meet_link: string | null;
+  meet_space_name: string | null;
+  slot_start: Date;
+  slot_end: Date;
+  /** Início real já gravado (F14); `null` = nenhuma conferência observada ainda. */
+  conference_started_at: Date | null;
+  import_status: string | null;
+  /** `patients.is_test` — a entrada da função `admissionRealm` (R-18). */
+  patient_is_test: boolean;
+  /** Fim da liberação mais recente do ensaio pago (spec 050 F3); `null` = nunca liberada. */
+  rehearsal_until: Date | null;
+}
+
+/** Janela dos detectores de silêncio: o mesmo 72 h do job (sinal de estado não vira ruído eterno sobre reunião antiga). */
+export const SILENCE_WINDOW_HOURS = 72;
+/** "booked há > 10 min sem linha de confirmação" (spec §5.3). */
+export const CONFIRMATION_SILENCE_MINUTES = 10;
+/** R-30 (b): mensagem que ficou em `sent` por mais de 24 h é callback que não chegou. */
+export const DELIVERY_NO_STATUS_HOURS = 24;
+
+/**
+ * Elegível para o job: reunião NOVA (tem código ADM — as antigas ficam fora da importação, migration 503), ainda `booked`,
+ * que JÁ COMEÇOU pela hora marcada (F14: o job passa a ver o início real; antes só olhava depois do fim marcado — o fim e o
+ * `no_show` continuam só depois do fim marcado, ver `AdmissionPostCallJob`) e cujo fim passou há menos de 72 h e que não está em estado terminal. `blocked` volta à fila: o bloqueio por escopo some
+ * quando o H2 é liberado, e a reunião não pode ficar perdida para sempre.
+ * `(conference_ended_at IS NULL OR import_status IS NULL)` (F6 + 050 F25): depois que o fim real foi gravado, a reunião é da IMPORTAÇÃO (`pending|waiting|blocked` por
+ * vínculo). Sem isto este job devolveria `waiting`/`blocked` da F6 a `pending` a cada 15 min, com um `conference_ended` novo na trilha.
+ * O `OR import_status IS NULL` (F25, R-56): fim gravado SEM `pending` é o estado que só o job de 1 min cria (fim cedo demais, não
+ * armado); a rede o decide depois do fim marcado, como hoje. Fim com `pending` (ou `waiting|blocked|no_show`) NÃO volta à fila.
+ * `skipped_test` desta etapa (spec 050, R-18): reunião de paciente `is_test` já registrada sai da fila — o evento é UM, e a
+ * reunião não volta a ser lida a cada execução. Uma liberação do ensaio pago mais NOVA que o `skipped_test` a devolve à fila; a
+ * expiração a tira de novo (o job grava outro `skipped_test`) — sem apagar evento (F3, R-19).
+ */
+const ELIGIBLE = `
+  a.status = 'booked'
+  AND a.admission_code IS NOT NULL
+  AND a.slot_start <= $1
+  AND a.slot_end >= $1::timestamptz - make_interval(hours => ${POST_CALL_WINDOW_HOURS})
+  AND (a.conference_ended_at IS NULL OR a.import_status IS NULL)
+  AND (a.import_status IS NULL OR a.import_status IN ('waiting', 'blocked'))
+  AND NOT ${standingSkippedTestSql('a', 'post_call')}`;
+
+/**
+ * AdmissionPostCallRepository — SQL do job de 15 min (spec 049 F5): candidatas, trava por reunião (`FOR UPDATE SKIP LOCKED`,
+ * duas execuções sobrepostas não processam a mesma), transições de estado e as duas consultas dos detectores de silêncio.
+ * O relógio entra por parâmetro (`now`).
+ */
+export class AdmissionPostCallRepository {
+  constructor(private readonly db: Pool = DatabaseConnection.getInstance().getPool()) {}
+
+  async listCandidateIds(now: Date, limit = 200, ex: Ex = this.db): Promise<string[]> {
+    const { rows } = await ex.query<{ id: string }>(
+      `SELECT a.id FROM admission_appointments a WHERE ${ELIGIBLE} ORDER BY a.slot_end LIMIT $2`,
+      [now, limit],
+    );
+    return rows.map((r) => r.id);
+  }
+
+  /** A trava da reunião: quem não a consegue (outra execução com ela) recebe `null` e segue adiante. */
+  async lockCandidate(id: string, now: Date, ex: Ex): Promise<PostCallCandidate | null> {
+    const { rows } = await ex.query<PostCallCandidate>(
+      `SELECT a.id, a.host_email, a.meet_link, a.meet_space_name, a.slot_start, a.slot_end, a.conference_started_at, a.import_status,
+              p.is_test IS TRUE AS patient_is_test, ${rehearsalUntilSql('a')} AS rehearsal_until
+         FROM admission_appointments a
+         JOIN patients p ON p.id = a.patient_id
+        WHERE a.id = $2 AND ${ELIGIBLE}
+          FOR UPDATE OF a SKIP LOCKED`,
+      [now, id],
+    );
+    return rows[0] ?? null;
+  }
+
+  async saveSpace(id: string, spaceName: string, ex: Ex): Promise<void> {
+    await ex.query(`UPDATE admission_appointments SET meet_space_name = $2, updated_at = NOW() WHERE id = $1`, [id, spaceName]);
+  }
+
+  /**
+   * F14: grava o MENOR início observado (nunca anda para frente). Chamado só quando muda — quem chama compara antes.
+   * 050 F25 (R-48): `conference_start_seen_at` = quando o sistema FICOU SABENDO (`seenAt`, o relógio do job), por `COALESCE`:
+   * o primeiro instante vale para sempre.
+   */
+  async markConferenceStarted(id: string, startedAt: Date, seenAt: Date, ex: Ex): Promise<void> {
+    await ex.query(
+      `UPDATE admission_appointments SET conference_started_at = LEAST(COALESCE(conference_started_at, $2), $2),
+              conference_start_seen_at = COALESCE(conference_start_seen_at, $3), updated_at = NOW() WHERE id = $1`,
+      [id, startedAt, seenAt],
+    );
+  }
+
+  /** `conference_end_seen_at` = quando o sistema ficou sabendo do fim (regravado a cada fim novo, R-49). */
+  async markConferenceEnded(id: string, endedAt: Date, seenAt: Date, ex: Ex): Promise<void> {
+    await ex.query(
+      `UPDATE admission_appointments SET conference_ended_at = $2, conference_end_seen_at = $3, import_status = 'pending', updated_at = NOW() WHERE id = $1`,
+      [id, endedAt, seenAt],
+    );
+  }
+
+  /**
+   * 050 F26 (R-56): fim ANTES de `hora marcada + 10 min` (sala aberta antes da hora): grava o fim e o "ficou sabendo", mas NÃO
+   * põe `pending` (a importação não vê; a rede de 15 min decide o fim depois do fim marcado).
+   */
+  async markConferenceEndedEarly(id: string, endedAt: Date, seenAt: Date, ex: Ex): Promise<void> {
+    await ex.query(
+      `UPDATE admission_appointments SET conference_ended_at = $2, conference_end_seen_at = $3, updated_at = NOW() WHERE id = $1`,
+      [id, endedAt, seenAt],
+    );
+  }
+
+  async markBlocked(id: string, ex: Ex): Promise<void> {
+    await ex.query(`UPDATE admission_appointments SET import_status = 'blocked', updated_at = NOW() WHERE id = $1`, [id]);
+  }
+
+  async markNoShow(id: string, ex: Ex): Promise<void> {
+    await ex.query(
+      `UPDATE admission_appointments SET status = 'no_show', import_status = 'no_show', updated_at = NOW() WHERE id = $1`,
+      [id],
+    );
+  }
+
+  /**
+   * Silêncio do lembrete (M7): reunião `booked` NOVA, com consentimento e telefone, de paciente real, que já COMEÇOU e não tem
+   * lembrete enviado. "Enviado" = linha `sent|delivered|read` em `admission_messages` (ou o carimbo antigo da 253). Fica de
+   * fora quem nunca devia ter lembrete: reunião marcada em cima da hora (`skipped_slot_too_soon`).
+   */
+  async findReminderSilence(now: Date, ex: Ex = this.db): Promise<string[]> {
+    const { rows } = await ex.query<{ id: string }>(
+      `SELECT a.id
+         FROM admission_appointments a
+         JOIN patients p ON p.id = a.patient_id AND p.deleted_at IS NULL
+        WHERE a.status = 'booked'
+          AND a.admission_code IS NOT NULL
+          AND a.slot_start <= $1
+          AND a.slot_start >= $1::timestamptz - make_interval(hours => ${SILENCE_WINDOW_HOURS})
+          AND p.is_test IS NOT TRUE
+          AND p.has_consent IS TRUE
+          AND COALESCE(p.phone_whatsapp, '') <> ''
+          AND a.reminder_30min_sent_at IS NULL
+          AND NOT EXISTS (SELECT 1 FROM admission_messages m
+                           WHERE m.appointment_id = a.id AND m.kind = 'reminder_30min' AND m.status IN ('sent', 'delivered', 'read'))
+          AND NOT EXISTS (SELECT 1 FROM admission_events e WHERE e.appointment_id = a.id AND e.kind = 'skipped_slot_too_soon')
+        ORDER BY a.slot_start`,
+      [now],
+    );
+    return rows.map((r) => r.id);
+  }
+
+  /** Silêncio da confirmação: reunião `booked` NOVA há MAIS de 10 min sem NENHUMA linha de confirmação (nem `skipped_*`). */
+  async findConfirmationSilence(now: Date, ex: Ex = this.db): Promise<string[]> {
+    const { rows } = await ex.query<{ id: string }>(
+      `SELECT a.id
+         FROM admission_appointments a
+        WHERE a.status = 'booked'
+          AND a.admission_code IS NOT NULL
+          AND a.created_at < $1::timestamptz - make_interval(mins => ${CONFIRMATION_SILENCE_MINUTES})
+          AND a.created_at >= $1::timestamptz - make_interval(hours => ${SILENCE_WINDOW_HOURS})
+          AND NOT EXISTS (SELECT 1 FROM admission_messages m WHERE m.appointment_id = a.id AND m.kind = 'confirmation')
+        ORDER BY a.created_at`,
+      [now],
+    );
+    return rows.map((r) => r.id);
+  }
+  /**
+   * R-30 (b): mensagem presa em `sent` (a Twilio aceitou e o status final nunca chegou) há mais de 24 h, dentro da janela dos
+   * outros detectores. Só ids internos — nunca telefone, SID nem texto.
+   */
+  async findStaleSentMessages(now: Date, ex: Ex = this.db): Promise<Array<{ messageId: string; appointmentId: string }>> {
+    const { rows } = await ex.query<{ id: string; appointment_id: string }>(
+      `SELECT m.id, m.appointment_id
+         FROM admission_messages m
+        WHERE m.status = 'sent'
+          AND m.updated_at < $1::timestamptz - make_interval(hours => ${DELIVERY_NO_STATUS_HOURS})
+          AND m.updated_at >= $1::timestamptz - make_interval(hours => ${SILENCE_WINDOW_HOURS})
+        ORDER BY m.updated_at, m.id`,
+      [now],
+    );
+    return rows.map((r) => ({ messageId: r.id, appointmentId: r.appointment_id }));
+  }
+}

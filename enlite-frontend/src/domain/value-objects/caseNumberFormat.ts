@@ -38,3 +38,14 @@ export function formatCaseOrdinal(ordinal: number | null): string | null {
   if (ordinal == null) return null;
   return `#${String(ordinal).padStart(2, '0')}`;
 }
+
+/**
+ * Texto da coluna "Caso" da lista de vagas (spec 046 F2): `EN1234#01`, `812#01`. Compõe os dois
+ * helpers acima — um dono só do formato. Sem número do caso (vaga sem paciente visível) -> `—`;
+ * sem posição -> só o número.
+ */
+export function formatVacancyCase(caseNumber: number | null, caseOrdinal: number | null): string {
+  const number = formatCaseNumber(caseNumber);
+  if (number == null) return '—';
+  return `${number}${formatCaseOrdinal(caseOrdinal) ?? ''}`;
+}

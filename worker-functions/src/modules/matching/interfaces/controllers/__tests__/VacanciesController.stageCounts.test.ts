@@ -65,7 +65,7 @@ describe('VacanciesController.listVacancies — stageCounts', () => {
         rows: [{ id: 'jp-a', kind: 'wja', stage: 'INVITED', source: 'manual', messaged: false, n: 1 }],
       }) // loadStageCounts
       .mockResolvedValueOnce({
-        rows: [{ id: 'jp-a', last_action_at: new Date('2026-09-20T12:00:00Z'), days_without_divulgation: 3 }],
+        rows: [{ id: 'jp-a', last_action_at: new Date('2026-09-20T12:00:00Z') }],
       }); // loadVacancyActivity
 
     const [req, res] = reqRes();
@@ -77,9 +77,12 @@ describe('VacanciesController.listVacancies — stageCounts', () => {
     expect(data[0].stageCounts.INICIADO).toBe(1);
     expect(Object.values(data[1].stageCounts).every((n) => n === 0)).toBe(true);
     expect(data[0].lastActionAt).toBe('2026-09-20T12:00:00.000Z');
-    expect(data[0].daysWithoutDivulgation).toBe(3);
+    for (const row of data) {
+      expect(row).not.toHaveProperty('priority');
+      expect(row).not.toHaveProperty('confirmados');
+      expect(row).not.toHaveProperty('daysWithoutDivulgation');
+    }
     expect(data[1].lastActionAt).toBeNull();
-    expect(data[1].daysWithoutDivulgation).toBeNull();
 
     const [, thirdCallParams] = mockQuery.mock.calls[2];
     expect(thirdCallParams).toEqual([['jp-a', 'jp-b']]);

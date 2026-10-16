@@ -148,7 +148,6 @@ function emptyStages(): FunnelStages {
     PRE_SCREENING: [],
     IN_PROGRESS: [],
     COMPLETED: [],
-    CONFIRMED: [],
     SELECTED: [],
     QUICK_RESPONSE_TEAM: [],
     REJECTED: [],
@@ -170,12 +169,12 @@ beforeEach(() => {
 // ── Visual Rendering ─────────────────────────────────────────────────────────
 
 describe('KanbanBoard — column rendering', () => {
-  it('renders all 9 columns', () => {
+  it('renders all 8 columns', () => {
     render(<KanbanBoard stages={emptyStages()} vacancyId="test-vacancy" onMove={noop} />);
 
     const expectedColumns = [
       'COMPATIBLE', 'INVITED', 'INICIADO', 'PRE_SCREENING', 'COMPLETED',
-      'CONFIRMED', 'SELECTED', 'QUICK_RESPONSE_TEAM', 'REJECTED',
+      'SELECTED', 'QUICK_RESPONSE_TEAM', 'REJECTED',
     ];
 
     for (const id of expectedColumns) {
@@ -183,7 +182,7 @@ describe('KanbanBoard — column rendering', () => {
     }
   });
 
-  it('renders columns in correct order (COMPATIBLE → INVITED → INICIADO → PRE_SCREENING → COMPLETED → CONFIRMED → SELECTED → QUICK_RESPONSE_TEAM → REJECTED)', () => {
+  it('renders columns in correct order (COMPATIBLE → INVITED → INICIADO → PRE_SCREENING → COMPLETED → SELECTED → QUICK_RESPONSE_TEAM → REJECTED)', () => {
     render(<KanbanBoard stages={emptyStages()} vacancyId="test-vacancy" onMove={noop} />);
 
     const columns = screen.getAllByTestId(/^kanban-column-[A-Z_]+$/);
@@ -191,7 +190,7 @@ describe('KanbanBoard — column rendering', () => {
 
     expect(ids).toEqual([
       'COMPATIBLE', 'INVITED', 'INICIADO', 'PRE_SCREENING', 'COMPLETED',
-      'CONFIRMED', 'SELECTED', 'QUICK_RESPONSE_TEAM', 'REJECTED',
+      'SELECTED', 'QUICK_RESPONSE_TEAM', 'REJECTED',
     ]);
   });
 
@@ -202,7 +201,6 @@ describe('KanbanBoard — column rendering', () => {
     expect(screen.getByText('admin.kanban.columns.INICIADO')).toBeInTheDocument();
     expect(screen.getByText('admin.kanban.columns.PRE_SCREENING')).toBeInTheDocument();
     expect(screen.getByText('admin.kanban.columns.COMPLETED')).toBeInTheDocument();
-    expect(screen.getByText('admin.kanban.columns.CONFIRMED')).toBeInTheDocument();
     expect(screen.getByText('admin.kanban.columns.SELECTED')).toBeInTheDocument();
     expect(screen.getByText('admin.kanban.columns.REJECTED')).toBeInTheDocument();
   });
@@ -294,14 +292,14 @@ describe('KanbanBoard — drag & drop rules', () => {
     expect(droppableIds.find((d) => d.id === 'BLOQUEADO')).toBeUndefined();
   });
 
-  it('keeps droppable enabled on INVITED, CONFIRMED, SELECTED, and REJECTED columns', () => {
+  it('keeps droppable enabled on INVITED, SELECTED, and REJECTED columns', () => {
     render(<KanbanBoard stages={emptyStages()} vacancyId="test-vacancy" onMove={noop} />);
 
     const droppableColumns = droppableIds.filter((d) =>
-      ['INVITED', 'CONFIRMED', 'SELECTED', 'REJECTED'].includes(d.id),
+      ['INVITED', 'SELECTED', 'REJECTED'].includes(d.id),
     );
 
-    expect(droppableColumns).toHaveLength(4);
+    expect(droppableColumns).toHaveLength(3);
     for (const col of droppableColumns) {
       expect(col.disabled).toBe(false);
     }
@@ -367,7 +365,7 @@ describe('KanbanBoard — não envia PUT de auto-movimento (DX-5.16)', () => {
     act(() => capturedOnDragStart!({ active: { id: 'enc-cross' } }));
     act(() => capturedOnDragEnd!({ over: { id: 'INVITED' } }));
 
-    expect(noop).toHaveBeenCalledWith('enc-cross-id', 'INVITED', undefined, undefined, undefined);
+    expect(noop).toHaveBeenCalledWith('enc-cross-id', 'INVITED', undefined, undefined);
   });
 });
 
@@ -378,7 +376,7 @@ describe('KanbanBoard — edge cases', () => {
     render(<KanbanBoard stages={emptyStages()} vacancyId="test-vacancy" onMove={noop} />);
 
     const columns = screen.getAllByTestId(/^kanban-column-[A-Z_]+$/);
-    expect(columns).toHaveLength(9);
+    expect(columns).toHaveLength(8);
   });
 
   it('renders multiple cards across different Talentum columns', () => {
@@ -429,7 +427,7 @@ describe('KanbanBoard — worker name opens the profile in a new tab', () => {
   it('links the name in cards of all columns', () => {
     const stages = emptyStages();
     stages.INVITED = [makeEncuadre({ id: 'w1', workerId: 'wk-1', workerName: 'Worker A' })];
-    stages.CONFIRMED = [makeEncuadre({ id: 'w2', workerId: 'wk-2', workerName: 'Worker B' })];
+    stages.QUICK_RESPONSE_TEAM = [makeEncuadre({ id: 'w2', workerId: 'wk-2', workerName: 'Worker B' })];
     stages.SELECTED = [makeEncuadre({ id: 'w3', workerId: 'wk-3', workerName: 'Worker C' })];
 
     render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} />);
@@ -477,7 +475,7 @@ describe('KanbanBoard — orphan card drag blocking', () => {
 
   it('does NOT render data-drag-disabled on card with encuadreId', () => {
     const stages = emptyStages();
-    stages.CONFIRMED = [makeEncuadre({ id: 'active-enc', encuadreId: 'uuid-abc' })];
+    stages.SELECTED = [makeEncuadre({ id: 'active-enc', encuadreId: 'uuid-abc' })];
 
     render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} />);
 
@@ -502,25 +500,24 @@ describe('KanbanBoard — orphan card drag blocking', () => {
   });
 });
 
-// ── Interview Tag in CONFIRMED ──────────────────────────────────────────────
+// ── Data da entrevista no card (052: aparece em qualquer coluna) ───────────
 
-describe('KanbanBoard — interview tag in CONFIRMED column', () => {
-  it('renders interview tag inside CONFIRMED column cards', () => {
+describe('KanbanBoard — data da entrevista no card', () => {
+  it('mostra a data/hora da entrevista no card de uma coluna qualquer (COMPLETED)', () => {
     const stages = emptyStages();
-    stages.CONFIRMED = [makeEncuadre({
-      id: 'enc-conf',
+    stages.COMPLETED = [makeEncuadre({
+      id: 'enc-date',
       interviewDate: '2026-03-15T12:00:00',
       interviewTime: '10:30',
     })];
 
     render(<KanbanBoard stages={stages} vacancyId="test-vacancy" onMove={noop} />);
 
-    const confirmedCol = screen.getByTestId('kanban-column-CONFIRMED');
-    // CalendarClock icon should be inside the CONFIRMED column
-    expect(within(confirmedCol).getByTestId('icon-calendar-clock')).toBeInTheDocument();
+    const completedCol = screen.getByTestId('kanban-column-COMPLETED');
+    expect(within(completedCol).getByText(/10:30/)).toBeInTheDocument();
   });
 
-  it('does NOT render interview tag for same data in COMPLETED column', () => {
+  it('não desenha o selo com ícone de calendário (era só da coluna que saiu)', () => {
     const stages = emptyStages();
     stages.COMPLETED = [makeEncuadre({
       id: 'enc-comp',
@@ -676,14 +673,10 @@ describe('KanbanBoard — menu "Mover a…"', () => {
     fireEvent.click(screen.getByTestId('move-to-option-INVITED'));
 
     // Fase 4 (DX-4.6): o `move()` interno sempre repassa os 5 argumentos a onMove.
-    expect(onMove).toHaveBeenCalledWith('enc-42', 'INVITED', undefined, undefined, undefined);
+    expect(onMove).toHaveBeenCalledWith('enc-42', 'INVITED', undefined, undefined);
   });
 
-  /**
-   * O menu não pode ser a porta dos fundos: se só o arrasto pedisse a data, mover pelo
-   * menu gravaria card agendado sem QUANDO — que é o problema que a captura conserta.
-   */
-  it('mover para CONFIRMED pelo menu abre o modal de data antes de chamar onMove', () => {
+  it('o menu "Mover a…" oferece só Invitados e Seleccionados (nenhum modal de data)', () => {
     const onMove = vi.fn(async () => null);
     const stages = emptyStages();
     stages.COMPLETED = [makeEncuadre({ id: 'wja-mv', encuadreId: 'enc-42', workerId: 'wk-1' })];
@@ -691,45 +684,11 @@ describe('KanbanBoard — menu "Mover a…"', () => {
     render(<KanbanBoard stages={stages} vacancyId="vac-1" onMove={onMove} />);
 
     fireEvent.click(screen.getByTestId('move-to-button'));
-    fireEvent.click(screen.getByTestId('move-to-option-CONFIRMED'));
+    const ids = screen.getAllByRole('menuitem').map((b) => b.getAttribute('data-testid'));
+    expect(ids).toEqual(['move-to-option-INVITED', 'move-to-option-SELECTED']);
 
-    expect(screen.getByTestId('interview-schedule-modal')).toBeInTheDocument();
-    expect(onMove).not.toHaveBeenCalled();
-  });
-
-  it('"ainda não sei" no modal move para CONFIRMED sem data', () => {
-    const onMove = vi.fn(async () => null);
-    const stages = emptyStages();
-    stages.COMPLETED = [makeEncuadre({ id: 'wja-mv', encuadreId: 'enc-42', workerId: 'wk-1' })];
-
-    render(<KanbanBoard stages={stages} vacancyId="vac-1" onMove={onMove} />);
-
-    fireEvent.click(screen.getByTestId('move-to-button'));
-    fireEvent.click(screen.getByTestId('move-to-option-CONFIRMED'));
-    fireEvent.click(screen.getByTestId('interview-schedule-unknown'));
-
-    expect(onMove).toHaveBeenCalledWith('enc-42', 'CONFIRMED', undefined, undefined, undefined);
-  });
-
-  it('confirmar data no modal repassa o agendamento para onMove', () => {
-    const onMove = vi.fn(async () => null);
-    const stages = emptyStages();
-    stages.COMPLETED = [makeEncuadre({ id: 'wja-mv', encuadreId: 'enc-42', workerId: 'wk-1' })];
-
-    render(<KanbanBoard stages={stages} vacancyId="vac-1" onMove={onMove} />);
-
-    fireEvent.click(screen.getByTestId('move-to-button'));
-    fireEvent.click(screen.getByTestId('move-to-option-CONFIRMED'));
-    fireEvent.change(screen.getByTestId('interview-date-input'), { target: { value: '2026-08-05' } });
-    fireEvent.click(screen.getByTestId('interview-time-input'));
-    fireEvent.click(screen.getByTestId('interview-time-input-option-14:30'));
-    fireEvent.click(screen.getByTestId('interview-schedule-confirm'));
-
-    expect(onMove).toHaveBeenCalledWith('enc-42', 'CONFIRMED', undefined, undefined, {
-      interviewDate: '2026-08-05',
-      interviewTime: '14:30',
-      interviewMeetLink: undefined,
-    });
+    fireEvent.click(screen.getByTestId('move-to-option-INVITED'));
+    expect(onMove).toHaveBeenCalledWith('enc-42', 'INVITED', undefined, undefined);
   });
 
   it('mover para SELECTED abre o modal de papel antes de chamar onMove', () => {
@@ -749,7 +708,7 @@ describe('KanbanBoard — menu "Mover a…"', () => {
     fireEvent.click(within(screen.getByTestId('role-option-rapid-response')).getByRole('radio'));
     fireEvent.click(screen.getByTestId('role-confirm'));
 
-    expect(onMove).toHaveBeenCalledWith('enc-99', 'SELECTED', undefined, 'RAPID_RESPONSE', undefined);
+    expect(onMove).toHaveBeenCalledWith('enc-99', 'SELECTED', undefined, 'RAPID_RESPONSE');
   });
 
   it('card bloqueado NÃO dispensado (INICIADO) tem reject-button; o dispensado (REJECTED) não tem reject nem undismiss (spec 043, E2)', () => {
@@ -904,7 +863,7 @@ describe('KanbanBoard — "Rechazar" num card com encuadreId (não bloqueado)', 
     fireEvent.click(within(screen.getByTestId('rejection-option-worker-declined')).getByRole('radio'));
     fireEvent.click(screen.getByTestId('rejection-confirm'));
 
-    expect(onMove).toHaveBeenCalledWith('enc-rej', 'REJECTED', 'WORKER_DECLINED', undefined, undefined);
+    expect(onMove).toHaveBeenCalledWith('enc-rej', 'REJECTED', 'WORKER_DECLINED', undefined);
   });
 });
 
@@ -946,23 +905,6 @@ describe('KanbanBoard — cancelar os modais de papel e de agenda', () => {
     fireEvent.click(screen.getByTestId('role-cancel'));
 
     expect(screen.queryByTestId('role-modal')).not.toBeInTheDocument();
-    expect(onMove).not.toHaveBeenCalled();
-  });
-
-  it('cancelar o modal de agenda (CONFIRMED) não chama onMove e fecha o modal', () => {
-    const onMove = vi.fn(async () => null);
-    const stages = emptyStages();
-    stages.COMPLETED = [makeEncuadre({ id: 'wja-sched-cancel', encuadreId: 'enc-sched-cancel', workerId: 'wk-1' })];
-
-    render(<KanbanBoard stages={stages} vacancyId="vac-1" onMove={onMove} />);
-
-    fireEvent.click(screen.getByTestId('move-to-button'));
-    fireEvent.click(screen.getByTestId('move-to-option-CONFIRMED'));
-    expect(screen.getByTestId('interview-schedule-modal')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByTestId('interview-schedule-cancel'));
-
-    expect(screen.queryByTestId('interview-schedule-modal')).not.toBeInTheDocument();
     expect(onMove).not.toHaveBeenCalled();
   });
 });

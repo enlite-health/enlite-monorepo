@@ -2,8 +2,8 @@ import type { Pool, PoolClient } from 'pg';
 import * as functions from 'firebase-functions';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 import { withActorContext } from '@shared/database/actorContext';
-import type { AdmissionCalendarPort } from '../../matching/infrastructure/AdmissionCalendarService';
-import { admissionCalendar } from '../../matching/infrastructure/AdmissionCalendarFactory';
+import { admissionCalendarService } from '../../matching/infrastructure/AdmissionCalendarService';
+import type { AdmissionCalendarPort } from '../../matching/application/ports/AdmissionCalendarPort';
 import {
   getAdmissionCountryConfig,
   type AdmissionCountry,
@@ -91,6 +91,9 @@ const CASCADE_CHILDREN = [
   // 497 (spec 031): documentos do paciente — filha direta, ON DELETE CASCADE. A LINHA some por CASCADE;
   // o objeto do bucket dos documentos da ABA não é apagado por esta purga (só paciente de teste, `is_test`).
   'patient_documents',
+  // 502 (spec 048): ciclo de lembretes do PT — filha DIRETA de patients (ON DELETE CASCADE). Status por campo e
+  // lembretes são netas (CASCADE a partir da versão/ciclo), como `patient_therapeutic_project_contacts` (429).
+  'patient_tp_contact_reminder_cycles',
 ] as const;
 
 interface AppointmentRow {
@@ -130,7 +133,7 @@ interface AppointmentRow {
 export class PatientTestFixtureService {
   constructor(
     private readonly db: Pool = DatabaseConnection.getInstance().getPool(),
-    private readonly calendar: AdmissionCalendarPort = admissionCalendar,
+    private readonly calendar: AdmissionCalendarPort = admissionCalendarService,
     private readonly impersonateEmail: string = process.env.ADMISSION_IMPERSONATE_EMAIL ||
       'enlite@enlite.health',
     // spec 018, PR-4 (task 4.8): FÁBRICA, não instância — `PatientPhotoStorage` lança no `new` sem
@@ -223,6 +226,13 @@ export class PatientTestFixtureService {
         let appointmentsCancelled = 0;
         let vacanciesDeleted = 0;
         let cascaded: Record<string, number> = {};
+
+        // 506 (spec 049): documento de origem `admission` aponta para a reunião com FK RESTRICT — sai ANTES
+        // das reuniões, ou o DELETE delas aborta. (O objeto no bucket não é apagado: só paciente `is_test`.)
+        await client.query(
+          `DELETE FROM patient_documents WHERE patient_id = $1 AND origin = 'admission'`,
+          [patientId],
+        );
 
         const appt = await client.query(
           `DELETE FROM admission_appointments WHERE patient_id = $1`,

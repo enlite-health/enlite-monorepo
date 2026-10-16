@@ -99,9 +99,9 @@ describe('Inbound WhatsApp Webhook — Step 7', () => {
     await pool.end();
   });
 
-  // ─── Slot booking via button ���─────────────────────────────────────��─
+  // ─── Botão de convite antigo: a reserva automática saiu (spec 052, Fase 4) ──
 
-  it('slot_1 → reserves slot and enqueues confirmation', async () => {
+  it('slot_1 de convite antigo → 200, e NADA é reservado nem enfileirado', async () => {
     const res = await api.post('/api/webhooks/twilio/inbound', new URLSearchParams({
       From: `whatsapp:${WORKER_PHONE}`,
       ButtonPayload: 'slot_1',
@@ -112,28 +112,24 @@ describe('Inbound WhatsApp Webhook — Step 7', () => {
 
     expect(res.status).toBe(200);
 
-    // Verify worker_job_applications updated
     const { rows } = await pool.query(
-      `SELECT interview_meet_link, interview_datetime, interview_response
+      `SELECT application_funnel_stage, interview_meet_link, interview_datetime, interview_response
        FROM worker_job_applications
        WHERE worker_id = $1 AND job_posting_id = $2`,
       [workerId, jobPostingId],
     );
     expect(rows).toHaveLength(1);
-    expect(rows[0].interview_meet_link).toBe(MEET_LINK);
-    expect(rows[0].interview_datetime).not.toBeNull();
-    // BookSlotFromWhatsAppUseCase sets interview_response = 'confirmed' directly
-    // (the worker explicitly chose a slot → booking is confirmed immediately)
-    expect(rows[0].interview_response).toBe('confirmed');
+    expect(rows[0].application_funnel_stage).toBe('QUALIFIED');
+    expect(rows[0].interview_meet_link).toBeNull();
+    expect(rows[0].interview_datetime).toBeNull();
+    expect(rows[0].interview_response).toBe('pending');
 
-    // Verify confirmation message enqueued in outbox
     const { rows: outbox } = await pool.query(
       `SELECT template_slug FROM messaging_outbox
-       WHERE worker_id = $1 AND template_slug = 'qualified_worker_response'
-       ORDER BY created_at DESC LIMIT 1`,
+       WHERE worker_id = $1 AND template_slug = 'qualified_worker_response'`,
       [workerId],
     );
-    expect(outbox).toHaveLength(1);
+    expect(outbox).toHaveLength(0);
   });
 
   // ─── No ButtonPayload → ignored ────────────────────────────────────

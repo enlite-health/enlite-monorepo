@@ -62,7 +62,7 @@ describe('PermissionCell', () => {
 
 // ── spec 018, PR-8b (ADR-2/SUP-30): split write → create+update ────────────────
 describe('SPLIT_RESOURCES / isSplitResource', () => {
-  it('tem exatamente os 18 recursos com write LITERAL na rota + os 5 por variável (23 no total)', () => {
+  it('tem exatamente os 17 recursos com write LITERAL na rota + os 5 por variável (22 no total)', () => {
     // 18 literais: `git grep -n "perm\.require([^)]*'write'" -- worker-functions/src | grep -v __tests__`
     // menos `permission_management` (medido 15/09, 93 hits — excluir por CAMINHO `__tests__`,
     // nunca por substring "test" na linha, que corta `/workers/:id/test-flag` e
@@ -73,7 +73,7 @@ describe('SPLIT_RESOURCES / isSplitResource', () => {
     const literais = [
       'funnel', 'interview', 'messaging', 'patient', 'patient_address', 'patient_care_team',
       'patient_chat', 'patient_clinical', 'patient_coverage', 'patient_family', 'patient_identity',
-      'patient_services', 'prescreening', 'recruitment', 'talentum', 'user_management', 'vacancy',
+      'patient_services', 'prescreening', 'talentum', 'user_management', 'vacancy',
       'worker_document',
     ];
     const porVariavel = [
@@ -81,7 +81,11 @@ describe('SPLIT_RESOURCES / isSplitResource', () => {
       'catalog_therapeutic_activities', 'catalog_therapeutic_segments', 'catalog_service_exit_reasons',
     ];
     expect([...SPLIT_RESOURCES].sort()).toEqual([...literais, ...porVariavel].sort());
-    expect(SPLIT_RESOURCES.size).toBe(23);
+    expect(SPLIT_RESOURCES.size).toBe(22);
+    // `recruitment` saiu com o dashboard de recrutamento (sem rota nem create/update no catálogo).
+    expect(SPLIT_RESOURCES.has('recruitment')).toBe(false);
+    expect(CELL_DESCRIPTION['recruitment:create']).toBeUndefined();
+    expect(CELL_DESCRIPTION['recruitment:update']).toBeUndefined();
   });
 
   it('permission_management NUNCA é recurso splitado — é a única rota que continua sob write', () => {
@@ -93,7 +97,7 @@ describe('SPLIT_RESOURCES / isSplitResource', () => {
     expect(CELL_DESCRIPTION['worker:create']).toBeUndefined();
   });
 
-  it('cada um dos 23 recursos splitados tem CELL_DESCRIPTION para create E update', () => {
+  it('cada um dos 22 recursos splitados tem CELL_DESCRIPTION para create E update', () => {
     for (const resource of SPLIT_RESOURCES) {
       expect(CELL_DESCRIPTION[cellKey(resource, 'create')]?.trim().length ?? 0).toBeGreaterThan(0);
       expect(CELL_DESCRIPTION[cellKey(resource, 'update')]?.trim().length ?? 0).toBeGreaterThan(0);

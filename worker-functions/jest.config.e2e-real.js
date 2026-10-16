@@ -11,4 +11,5 @@ module.exports = {
   roots: ['<rootDir>/tests/e2e-real-auth'],
   testMatch: ['**/*.real.test.ts'],
   setupFilesAfterEnv: [],
+  // `setupFiles` vem de jest.config.e2e.js (guarda de rede, R-16); o controle desta suíte é tests/e2e-real-auth/rede-bloqueada.controle.real.test.ts.
 };

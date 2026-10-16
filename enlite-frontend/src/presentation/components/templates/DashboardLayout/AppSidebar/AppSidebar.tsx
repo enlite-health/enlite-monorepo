@@ -2,7 +2,10 @@ import { ReactNode, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { NavItem } from '@presentation/components/shared/NavItem';
 import { NavSection, type NavSectionItem } from '@presentation/components/shared/NavSection';
+import { Link } from 'react-router-dom';
 import { SidebarFooter } from '@presentation/components/shared/SidebarFooter';
+import { SidebarAvatar } from '@presentation/components/shared/SidebarFooter/SidebarAvatar';
+import { getInitials } from '@presentation/utils/getInitials';
 import { Text } from '@presentation/components/atoms/Text';
 import { NotificationBell } from '@presentation/components/features/notifications/NotificationBell';
 
@@ -21,6 +24,8 @@ export interface AppSidebarProps {
   userName: string;
   userAvatar?: string;
   onMenuClick?: () => void;
+  /** Rota do perfil: avatar + nome do rodapé viram link. */
+  profileHref?: string;
   className?: string;
   defaultCollapsed?: boolean;
 }
@@ -30,6 +35,7 @@ export const AppSidebar = ({
   userName,
   userAvatar,
   onMenuClick,
+  profileHref,
   className = '',
   defaultCollapsed = false,
 }: AppSidebarProps): JSX.Element => {
@@ -132,12 +138,29 @@ export const AppSidebar = ({
           userName={userName}
           userAvatar={userAvatar}
           onMenuClick={onMenuClick}
+          profileHref={profileHref}
+          profileLabel={profileHref ? t('sidebar.profileLink', 'Mi perfil') : undefined}
+          profileAriaLabel={profileHref ? t('sidebar.profileAria', { name: userName, defaultValue: 'Mi perfil — {{name}}' }) : undefined}
         />
       )}
       
-      {isCollapsed && userAvatar && (
+      {/* Recolhida: só o avatar. No admin ele continua levando ao perfil (link com `title`); sem foto, as iniciais. */}
+      {isCollapsed && profileHref && (
+        <div className="p-2 border-t border-gray-200 flex justify-center">
+          <Link
+            to={profileHref}
+            title={t('sidebar.profileLink', 'Mi perfil')}
+            aria-label={t('sidebar.profileAria', { name: userName, defaultValue: 'Mi perfil — {{name}}' })}
+            data-testid="sidebar-profile-link-collapsed"
+            className="rounded-full hover:ring-2 hover:ring-primary/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary transition-shadow"
+          >
+            <SidebarAvatar initials={getInitials(userName)} photoUrl={userAvatar} sizeClass="w-10 h-10" />
+          </Link>
+        </div>
+      )}
+      {isCollapsed && !profileHref && userAvatar && (
         <div className="p-2 border-t border-gray-200">
-          <img src={userAvatar} alt={t('sidebar.userAvatarAlt', userName)} className="w-10 h-10 rounded-full object-cover mx-auto" />
+          <img src={userAvatar} referrerPolicy="no-referrer" alt={t('sidebar.userAvatarAlt', userName)} className="w-10 h-10 rounded-full object-cover mx-auto" />
         </div>
       )}
     </aside>

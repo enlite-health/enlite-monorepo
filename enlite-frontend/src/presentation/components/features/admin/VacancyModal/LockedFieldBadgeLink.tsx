@@ -6,10 +6,12 @@
  * em `locked_fields` (fase-4.md "O que implementa"): endereço, faixa etária, quantidade de
  * profissionais e horário. Abre em nova aba — o operador não perde o progresso do wizard (a
  * guarda de saída da mesma fase protege a navegação DENTRO do wizard, não esta).
+ * O href já abre a ficha na aba "Servicio Contratado" (`?tab=`), onde esses 4 campos são editados.
  */
 import { useTranslation } from 'react-i18next';
 import { ExternalLink } from 'lucide-react';
 import { Text } from '@presentation/components/atoms/Text';
+import { patientTabPath } from '@presentation/components/features/admin/PatientDetail/patientTabs';
 
 export interface LockedFieldBadgeLinkProps {
   patientId: string | null | undefined;
@@ -22,7 +24,7 @@ export function LockedFieldBadgeLink({ patientId, testId }: LockedFieldBadgeLink
 
   return (
     <a
-      href={`/admin/patients/${patientId}`}
+      href={patientTabPath(patientId, 'contractedService')}
       target="_blank"
       rel="noopener noreferrer"
       data-testid={testId}

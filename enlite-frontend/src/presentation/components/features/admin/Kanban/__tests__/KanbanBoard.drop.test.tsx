@@ -35,11 +35,6 @@ vi.mock('../RoleSelect', () => ({
     <button data-testid="role-submit" onClick={() => onSubmit('TITULAR')}>papel</button>
   ),
 }));
-vi.mock('../InterviewScheduleSelect', () => ({
-  InterviewScheduleSelect: ({ onSubmit }: { onSubmit: (s: null) => void }) => (
-    <button data-testid="schedule-submit" onClick={() => onSubmit(null)}>agendar</button>
-  ),
-}));
 vi.mock('../KanbanCard', () => ({ KanbanCard: ({ id }: { id: string }) => <div data-testid={`card-${id}`} /> }));
 vi.mock('@presentation/components/features/admin/VacancyDetail/Funnel/ContactNotesModal', () => ({ ContactNotesModal: () => null }));
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (k: string) => k }) }));
@@ -53,7 +48,7 @@ function card(overrides: Partial<Card> = {}): Card {
   } as Card;
 }
 function stagesWith(c: Card): FunnelStages {
-  return { INVITED: [], INICIADO: [], PRE_SCREENING: [], IN_PROGRESS: [], COMPLETED: [c], CONFIRMED: [], SELECTED: [], REJECTED: [] } as unknown as FunnelStages;
+  return { INVITED: [], INICIADO: [], PRE_SCREENING: [], IN_PROGRESS: [], COMPLETED: [c], SELECTED: [], REJECTED: [] } as unknown as FunnelStages;
 }
 const drop = (c: Card, to: string) =>
   act(() => { capturedOnDrop!({ item: c, itemId: c.id, fromColumnId: 'COMPLETED', toColumnId: to }); });
@@ -69,7 +64,7 @@ describe('KanbanBoard — handleDrop', () => {
 
   it('ignores a drop of an orphan card (no encuadreId)', () => {
     renderBoard(card({ encuadreId: null }));
-    drop(card({ encuadreId: null }), 'CONFIRMED');
+    drop(card({ encuadreId: null }), 'SELECTED');
     expect(onMove).not.toHaveBeenCalled();
   });
 
@@ -78,27 +73,20 @@ describe('KanbanBoard — handleDrop', () => {
     drop(card(), 'REJECTED');
     expect(onMove).not.toHaveBeenCalled();
     fireEvent.click(screen.getByTestId('rejection-submit'));
-    // Fase 4 (DX-4.6): o `move()` interno sempre repassa os 5 argumentos a onMove.
-    await waitFor(() => expect(onMove).toHaveBeenCalledWith('uuid-1', 'REJECTED', 'NO_SHOW', undefined, undefined));
+    // Fase 4 (DX-4.6): o `move()` interno sempre repassa os 4 argumentos a onMove.
+    await waitFor(() => expect(onMove).toHaveBeenCalledWith('uuid-1', 'REJECTED', 'NO_SHOW', undefined));
   });
 
   it('SELECTED asks the role first, then moves with it', async () => {
     renderBoard(card());
     drop(card(), 'SELECTED');
     fireEvent.click(screen.getByTestId('role-submit'));
-    await waitFor(() => expect(onMove).toHaveBeenCalledWith('uuid-1', 'SELECTED', undefined, 'TITULAR', undefined));
-  });
-
-  it('CONFIRMED asks the interview date first; "ainda não sei" moves without schedule', async () => {
-    renderBoard(card());
-    drop(card(), 'CONFIRMED');
-    fireEvent.click(screen.getByTestId('schedule-submit'));
-    await waitFor(() => expect(onMove).toHaveBeenCalledWith('uuid-1', 'CONFIRMED', undefined, undefined, undefined));
+    await waitFor(() => expect(onMove).toHaveBeenCalledWith('uuid-1', 'SELECTED', undefined, 'TITULAR'));
   });
 
   it('any other column moves directly', () => {
     renderBoard(card());
     drop(card(), 'INVITED');
-    expect(onMove).toHaveBeenCalledWith('uuid-1', 'INVITED', undefined, undefined, undefined);
+    expect(onMove).toHaveBeenCalledWith('uuid-1', 'INVITED', undefined, undefined);
   });
 });

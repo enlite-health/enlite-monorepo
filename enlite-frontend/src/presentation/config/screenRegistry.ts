@@ -45,6 +45,8 @@ export interface ScreenDef {
   tabs?: readonly string[];
 }
 
+import { ADMIN_USERS_PATH } from './adminHome';
+
 const c = (id: string, resource: string, actions: readonly string[], ...tabs: readonly string[]): ScreenContainer => ({
   id,
   resource,
@@ -71,7 +73,7 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
   },
   {
     id: 'users',
-    route: '/admin',
+    route: ADMIN_USERS_PATH,
     cells: ['user_management:read', 'user_management:create', 'user_management:update', 'user_management:delete', 'permission_management:write'],
   },
 
@@ -87,7 +89,7 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
   {
     id: 'patients.detail',
     route: '/admin/patients/:id',
-    tabs: ['clinicalData', 'supportNetwork', 'documents', 'contractedService', 'vacancies', 'itinerary', 'history'],
+    tabs: ['clinicalData', 'supportNetwork', 'documents', 'admission', 'contractedService', 'itinerary', 'history'],
     containers: [
       c('identity', 'patient_identity', ['read', 'create', 'update']),
       c('clinical', 'patient_clinical', ['read', 'create', 'update'], 'clinicalData'),
@@ -97,13 +99,21 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
       // `<ActionButton resource="patient_therapeutic_project" action="export">`) passa por
       // `useActionGate` (`ActionButton.tsx:58`) — célula com consumidor e gate reais, só faltava
       // ser declarada.
-      c('therapeuticProject', 'patient_therapeutic_project', ['read', 'create', 'update', 'export'], 'clinicalData'),
+      // Spec 048: `waive_contact` entra (a opção "No necesita" do formulário passa por `useHasCell` em
+      // `TherapeuticProjectContactField.tsx`). `incomplete_alert` NÃO: é o destinatário do aviso do 12º dia
+      // (consulta por célula no job), não controla nenhum elemento de tela — fica em "Outras células".
+      c('therapeuticProject', 'patient_therapeutic_project', ['read', 'create', 'update', 'export', 'waive_contact'], 'clinicalData'),
       c('family', 'patient_family', ['read', 'create', 'update'], 'supportNetwork'),
       c('chat', 'patient_chat', ['read', 'create', 'update'], 'supportNetwork'),
       c('conversation', 'patient_conversation', ['read', 'create', 'update', 'delete']),
       // Spec 031 (D463): a aba "Documentos" — subir, ver, renomear e excluir. A leitura é desta célula e
       // NÃO da `patient_conversation:read`, mesmo para o anexo vindo do chat (Q11).
       c('documents', 'patient_document', ['read', 'create', 'update', 'delete'], 'documents'),
+      // Spec 049 (F7): a aba "Admisión" — container próprio. `write` = agendar/cancelar; `resend_message` = reenviar o WhatsApp
+      // que falhou (célula separada: quais perfis a recebem é decisão do Diego, H7). Spec 050 (F3): `release_paid_rehearsal` = liberar
+      // o ensaio pago de uma reunião de paciente de teste (custa dinheiro; só o Acesso Master a recebe, migration 509). Spec 050 (F11):
+      // `retry_summary` = autorizar +1 rodada do resumo depois de esgotadas as 3 chamadas pagas (Master + Admisión y Supervisión, migration 514).
+      c('admission', 'patient_admission', ['read', 'create', 'update', 'resend_message', 'release_paid_rehearsal', 'retry_summary'], 'admission'),
       c('coverage', 'patient_coverage', ['read', 'create', 'update'], 'contractedService'),
       c('address', 'patient_address', ['read', 'create', 'update', 'delete'], 'contractedService'),
       c('services', 'patient_services', ['read', 'create', 'update'], 'contractedService', 'itinerary'),
@@ -112,12 +122,16 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
       c('contractValue', 'patient_contract_value', ['read'], 'contractedService'),
       // cadeia Fase 12 (D442): a ação de alocar; a leitura é `patient_services:read`.
       c('itinerary', 'patient_itinerary', ['update'], 'itinerary'),
-      c('vacancies', 'vacancy', ['read'], 'vacancies'),
+      // Spec 047 (F1): a aba Vacante saiu; o bloco desce para Serviço Contratado, abaixo dos serviços.
+      // Célula e container NÃO mudam — só a aba a que pertencem (o card 5 cria a aba Admissão, com container próprio).
+      c('vacancies', 'vacancy', ['read'], 'contractedService'),
       // O operacional da tela numa linha só: cabeçalho (status, ativar, completude) e a aba de
       // histórico — mesmo recurso `patient`, uma célula de leitura e uma de escrita.
       c('operational', 'patient', ['read', 'create', 'update'], 'history'),
     ],
   },
+  // Spec 049 (F7): seção Tactiq (vincular) da página Perfil — a conta do PRÓPRIO operador. `own_` = toda conta com grupo recebe (auto-grant 471).
+  { id: 'account.tactiq', route: '/admin/mi-cuenta', cells: ['own_tactiq_link:read', 'own_tactiq_link:create'] },
   { id: 'patients.chatRoles', route: '/admin/patient-chat-roles', cells: ['patient:read', 'patient:create', 'patient:update'] },
   // Spec 017 (D299.3): os 2 catálogos do projeto terapêutico — uma tela e uma célula por lista (tipo de patologia deriva do CID-11, sem tela).
   { id: 'patients.catalogObjectives', route: '/admin/catalogos/objetivos-especificos', cells: ['catalog_therapeutic_objectives:read', 'catalog_therapeutic_objectives:create', 'catalog_therapeutic_objectives:update'] },
@@ -177,7 +191,7 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
   {
     id: 'vacancies.detail',
     route: '/admin/vacancies/:id',
-    tabs: ['encuadres', 'talentum', 'links', 'notes'],
+    tabs: ['encuadres', 'enquadre', 'talentum', 'links', 'notes'],
     containers: [
       // `vacancy:delete` sem botão (ui-gate-debt.json): arquivar é status CLOSED via write. O caso
       // cobre cabeçalho, perfil requerido, links de reunião, a aba Links e a aba Anotações (tudo
@@ -191,12 +205,15 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
       c('invites', 'messaging', ['send'], 'encuadres'),
       c('prescreening', 'prescreening', ['read', 'create', 'update'], 'talentum'),
       c('talentum', 'talentum', ['read', 'create', 'update'], 'talentum'),
+      // Aba Enquadre (spec 052): ler/criar/acrescentar-tirar-cancelar o evento; marcar o resultado e encerrar.
+      c('enquadreEvent', 'enquadre_event', ['read', 'create', 'update'], 'enquadre'),
+      c('enquadreResult', 'enquadre_result', ['update'], 'enquadre'),
+      // Quinta célula (Fase 3): o selo do resumo na linha do evento e o botão de baixar o PDF só existem para quem a tem.
+      c('enquadreSummary', 'enquadre_summary', ['read'], 'enquadre'),
     ],
   },
 
   // ── Recrutamento e mensageria ──────────────────────────────────────────────────────────────
-  { id: 'recruitment', route: '/admin/recruitment', cells: ['recruitment:read', 'match:read', 'talentum:read'] },
-  { id: 'recruitment.health', route: '/admin/recruitment/health', cells: ['messaging:read'] },
   { id: 'messaging.stageMessages', route: '/admin/mensajes-por-etapa', cells: ['messaging:read', 'messaging:create', 'messaging:update'] },
   { id: 'messaging.templates', route: '/admin/plantillas', cells: ['messaging:read', 'messaging:create', 'messaging:update'] },
   { id: 'messaging.presentationInvite', route: '/admin/invitacion-presentacion', cells: ['messaging:read', 'messaging:create', 'messaging:update', 'messaging:send'] },
@@ -244,6 +261,8 @@ export const SCREEN_REGISTRY: readonly ScreenDef[] = [
 
   // ── Administração ──────────────────────────────────────────────────────────────────────────
   { id: 'dedup', route: '/admin/dedup', cells: ['dedup:read', 'dedup:execute'] },
+  // Spec 055: quem atende enquadre e admissão (tabela interview_hosts). `update` cobre a busca de candidatos, agregar, editar e quitar.
+  { id: 'interviewHosts', route: '/admin/entrevistadores', cells: ['interview_host:read', 'interview_host:update'] },
   { id: 'access', route: '/admin/access', cells: ['permission_management:read', 'permission_management:write'] },
 ];
 

@@ -20,7 +20,7 @@
  *          worker_job_applications.application_funnel_stage)`), aplicada por SQL a um
  *          card sintético em QUICK_RESPONSE_TEAM, NÃO sobrescreve para REJECTED nem
  *          para SELECTED (UPDATE 0 — precedência 7 não supera 8); o mesmo card em
- *          CONFIRMED (precedência 6) É sobrescrito por REJECTED (UPDATE 1 — controle
+ *          COMPLETED (precedência 3) É sobrescrito por REJECTED (UPDATE 1 — controle
  *          positivo de que a guarda funciona quando deveria).
  *
  * Sabotagem que esta régua tem de detectar: trocar o `THEN 8` da migration 477 de
@@ -169,12 +169,12 @@ describe('QRT3 — guarda do upsert da Talentum (precedence >=) sobre card em QU
     },
   );
 
-  it('controle positivo: card em CONFIRMED (precedência 6) + REJECTED (7) → UPDATE 1 (guarda sobrescreve quando deveria)', async () => {
+  it('controle positivo: card em COMPLETED (precedência 3) + REJECTED (7) → UPDATE 1 (guarda sobrescreve quando deveria)', async () => {
     await pool.query(
-      `UPDATE worker_job_applications SET application_funnel_stage = 'CONFIRMED' WHERE id = $1`,
+      `UPDATE worker_job_applications SET application_funnel_stage = 'COMPLETED' WHERE id = $1`,
       [wjaId],
     );
-    await expect(getApplicationStage(wjaId)).resolves.toBe('CONFIRMED');
+    await expect(getApplicationStage(wjaId)).resolves.toBe('COMPLETED');
 
     const result = await pool.query(
       `UPDATE worker_job_applications

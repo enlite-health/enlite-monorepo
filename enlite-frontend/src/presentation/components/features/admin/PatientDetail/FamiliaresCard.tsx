@@ -1,9 +1,8 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Plus, ShieldAlert } from 'lucide-react';
+import { Plus, Pencil, Trash2, Siren } from 'lucide-react';
 import { Heading } from '@presentation/components/atoms/Heading';
 import { Text } from '@presentation/components/atoms/Text';
-import { Button } from '@presentation/components/atoms/Button';
 import {
   Table,
   TableHeader,
@@ -12,11 +11,14 @@ import {
   TableHead,
   TableCell,
 } from '@presentation/components/atoms/Table';
-import { useActionGate } from '@presentation/hooks/useCellAccess';
+import { ActionButton } from '@presentation/components/features/access';
+import { AdminPatientContactRowsApiService } from '@infrastructure/http/AdminPatientContactRowsApiService';
 import type { PatientResponsibleDetail, EmergencyContactRef } from '@domain/entities/PatientDetail';
-import { PatientSupportNetworkEditDrawer } from './edit/PatientSupportNetworkEditDrawer';
+import { PatientResponsibleEditDrawer } from './edit/PatientResponsibleEditDrawer';
+import { DeactivateResponsibleConfirm } from './DeactivateResponsibleConfirm';
 import { useAutoOpenDrawer, type DrawerFocusRequest } from '@hooks/admin/useAutoOpenDrawer';
 import { EmergencyMarkButton } from './EmergencyMarkButton';
+import { useActionGate } from '@presentation/hooks/useCellAccess';
 
 interface FamiliaresCardProps {
   responsibles: PatientResponsibleDetail[];
@@ -33,16 +35,34 @@ interface FamiliaresCardProps {
 
 export function FamiliaresCard({ responsibles, emergencyContactRef, patientId, onSaved, focusRequest }: FamiliaresCardProps) {
   const { t } = useTranslation();
-  const [editing, setEditing] = useState(false);
-  useAutoOpenDrawer(focusRequest, 'RESPONSIBLE', () => setEditing(true));
+  const [editing, setEditing] = useState<PatientResponsibleDetail | 'new' | null>(null);
+  const [deactivating, setDeactivating] = useState<PatientResponsibleDetail | null>(null);
+  const [busy, setBusy] = useState(false);
+  // Quem pode editar vê o botão-toggle preenchido; quem só LÊ vê a etiqueta "Emergencia" (informação).
+  const { allowed: canUpdate } = useActionGate('patient_family', 'update');
+  const [deactivateError, setDeactivateError] = useState<string | null>(null);
   const rows = responsibles ?? [];
   const empty = '—';
-  // Conserto rodada B (Gabriel 15/09): o drawer faz POST (linha nova) E PATCH (linha existente) —
-  // o botão "Nuevo" abre pra quem tem QUALQUER UMA das duas células, não só `create`. Quem só tem
-  // `update` tinha perdido a edição das linhas existentes.
-  const { allowed: canCreateRow } = useActionGate('patient_family', 'create');
-  const { allowed: canUpdateRow } = useActionGate('patient_family', 'update');
-  const canOpenDrawer = canCreateRow || canUpdateRow;
+  // O item "falta responsable" do checklist só existe quando NÃO há familiar ativo (PatientCompleteness
+  // MISSING_SQL.RESPONSIBLE) → abre o drawer de criar. Havendo familiar, abre a edição do titular
+  // (ou da 1ª linha, se não houver titular).
+  useAutoOpenDrawer(focusRequest, 'RESPONSIBLE', () => setEditing(rows.length === 0 ? 'new' : (rows.find((r) => r.isPrimary) ?? rows[0])));
+
+  const confirmDeactivate = async (): Promise<void> => {
+    if (!deactivating || !patientId) return;
+    setBusy(true);
+    setDeactivateError(null);
+    try {
+      await AdminPatientContactRowsApiService.deactivateResponsible(patientId, deactivating.id);
+      onSaved?.();
+      setDeactivating(null);
+    } catch {
+      // lex C1.3: mensagem genérica, nunca eco do payload; o diálogo fica aberto para tentar de novo.
+      setDeactivateError(t('admin.patients.editDrawer.saveError'));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <div
@@ -53,25 +73,29 @@ export function FamiliaresCard({ responsibles, emergencyContactRef, patientId, o
         <Heading level={1} as="h3" weight="semibold" color="primary">
           {t('admin.patients.detail.familyCard.title')}
         </Heading>
-        <div className="flex items-center gap-3 flex-wrap">
-          {/* D269 — abre o drawer que grava por LINHA (spec 018, PR-1, ADR-1): POST /patients/:id/responsibles
-              → patient_family:create, PATCH .../responsibles/:rid → patient_family:update (PR-8b). O botão
-              "Nuevo" abre para QUALQUER UMA das duas — o drawer é quem gateia adicionar × editar por linha. */}
-          {canOpenDrawer && (
-            <Button variant="outline" size="sm" onClick={() => setEditing(true)} disabled={!patientId} className="flex items-center gap-1" data-testid="edit-support-btn">
-              <Plus className="w-4 h-4" />
-              {t('admin.patients.detail.new')}
-            </Button>
-          )}
-        </div>
+        {/* "Nuevo" cria (POST) → patient_family:create; lápis e lixeira por linha → patient_family:update. */}
+        <ActionButton resource="patient_family" action="create" variant="outline" size="sm" onClick={() => setEditing('new')} disabled={!patientId} className="flex items-center gap-1" data-testid="familiares-add">
+          <Plus className="w-4 h-4" />
+          {t('admin.patients.detail.new')}
+        </ActionButton>
       </div>
 
       {editing && patientId && (
-        <PatientSupportNetworkEditDrawer
+        <PatientResponsibleEditDrawer
           patientId={patientId}
+          responsible={editing === 'new' ? null : editing}
           responsibles={rows}
-          onClose={() => setEditing(false)}
+          onClose={() => setEditing(null)}
           onSaved={() => onSaved?.()}
+        />
+      )}
+      {deactivating && (
+        <DeactivateResponsibleConfirm
+          name={[deactivating.firstName, deactivating.lastName].filter(Boolean).join(' ').trim() || empty}
+          busy={busy}
+          error={deactivateError}
+          onConfirm={confirmDeactivate}
+          onClose={() => { setDeactivating(null); setDeactivateError(null); }}
         />
       )}
 
@@ -81,12 +105,13 @@ export function FamiliaresCard({ responsibles, emergencyContactRef, patientId, o
           <TableHead>{t('admin.patients.detail.familyCard.tableIdentification')}</TableHead>
           <TableHead>{t('admin.patients.detail.familyCard.tableName')}</TableHead>
           <TableHead>{t('admin.patients.detail.familyCard.tablePhone')}</TableHead>
-          <TableHead>{t('admin.patients.detail.externalContactsCard.tableEmergency')}</TableHead>
+          <TableHead className="w-px whitespace-nowrap">{t('admin.patients.detail.externalContactsCard.tableEmergency')}</TableHead>
+          <TableHead unwrapped>{null}</TableHead>
         </TableHeader>
         <TableBody>
           {rows.length === 0 ? (
             <TableRow>
-              <TableCell unwrapped colSpan={5} className="py-6 text-center">
+              <TableCell unwrapped colSpan={6} className="py-6 text-center">
                 <Text as="span" size="sm" color="secondary">
                   {t('admin.patients.detail.noData')}
                 </Text>
@@ -125,28 +150,44 @@ export function FamiliaresCard({ responsibles, emergencyContactRef, patientId, o
                     </div>
                   </TableCell>
                   <TableCell>{r.phone ?? empty}</TableCell>
-                  <TableCell unwrapped>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {isMarked && (
-                        <span
-                          className="inline-flex items-center gap-1 text-red-600"
-                          data-testid={`familiares-emergency-marked-${r.id}`}
-                        >
-                          <ShieldAlert className="w-3.5 h-3.5" />
-                          <Text as="span" size="xs" weight="semibold" color="inherit">
-                            {t('admin.patients.detail.externalContactsCard.tableEmergency')}
-                          </Text>
-                        </span>
-                      )}
-                      {patientId ? (
-                        <EmergencyMarkButton
-                          patientId={patientId}
-                          kind="RESPONSIBLE"
-                          contactId={r.id}
-                          isMarked={isMarked}
-                          onChanged={() => onSaved?.()}
-                        />
-                      ) : (!isMarked && empty)}
+                  <TableCell unwrapped className="w-px whitespace-nowrap">
+                    {canUpdate && patientId ? (
+                      <EmergencyMarkButton
+                        patientId={patientId}
+                        kind="RESPONSIBLE"
+                        contactId={r.id}
+                        isMarked={isMarked}
+                        onChanged={() => onSaved?.()}
+                      />
+                    ) : isMarked ? (
+                      <span className="inline-flex items-center gap-1 whitespace-nowrap text-red-600" data-testid={`familiares-emergency-marked-${r.id}`}>
+                        <Siren className="w-3.5 h-3.5" />
+                        <Text as="span" size="xs" weight="semibold" color="inherit">
+                          {t('admin.patients.detail.externalContactsCard.tableEmergency')}
+                        </Text>
+                      </span>
+                    ) : (canUpdate ? empty : null)}
+                  </TableCell>
+                  <TableCell unwrapped align="right">
+                    <div className="flex items-center justify-end gap-1">
+                      <ActionButton
+                        resource="patient_family" action="update" variant="outline" size="sm"
+                        onClick={() => setEditing(r)} disabled={!patientId}
+                        title={t('admin.patients.detail.familyCard.editResponsible')}
+                        aria-label={t('admin.patients.detail.familyCard.editResponsible')}
+                        className="p-2" data-testid={`familiares-edit-${r.id}`}
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </ActionButton>
+                      <ActionButton
+                        resource="patient_family" action="update" variant="outline" size="sm"
+                        onClick={() => { setDeactivateError(null); setDeactivating(r); }} disabled={!patientId}
+                        title={t('admin.patients.detail.familyCard.deactivateResponsible')}
+                        aria-label={t('admin.patients.detail.familyCard.deactivateResponsible')}
+                        className="p-2 text-red-500" data-testid={`familiares-deactivate-${r.id}`}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </ActionButton>
                     </div>
                   </TableCell>
                 </TableRow>

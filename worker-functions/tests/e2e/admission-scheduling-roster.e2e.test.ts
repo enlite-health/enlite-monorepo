@@ -27,6 +27,7 @@ import type {
 } from '../../src/modules/matching/infrastructure/AdmissionCalendarService';
 import type { AdmissionNotifier } from '../../src/modules/matching/application/AdmissionNotifier';
 import type { KMSEncryptionService } from '../../src/shared/security/KMSEncryptionService';
+import { insertInterviewHost, deleteInterviewHosts } from './helpers/interviewHostFixture';
 
 const DATABASE_URL =
   process.env.TEST_DATABASE_URL ||
@@ -98,7 +99,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await pool.query(`DELETE FROM admission_appointments WHERE patient_id = $1`, [patientId]);
   await pool.query(`DELETE FROM patients WHERE id = $1`, [patientId]);
-  await pool.query('DELETE FROM interview_hosts');
+  await deleteInterviewHosts(pool);
   await pool.end();
 });
 
@@ -108,21 +109,23 @@ beforeEach(async () => {
   // caro: linhas deixadas por outro uso do banco de teste (um script de
   // gestão rodado à mão, por exemplo) viram atendentes extras e fazem
   // "nenhuma cadastrada" ter três — o teste passa sozinho e falha na suíte.
-  await pool.query('DELETE FROM interview_hosts');
+  await deleteInterviewHosts(pool);
 });
 
 // ── Migration 283: a trava certa está no lugar ────────────────────────────────
 
 describe('trava anti-corrida (migration 283)', () => {
-  it('a trava é por ATENDENTE, e a trava por país saiu', async () => {
+  it('a trava é por ATENDENTE (parcial, só reunião ativa — 512), e a trava por país e a cheia saíram', async () => {
     const res = await pool.query<{ indexname: string }>(
       `SELECT indexname FROM pg_indexes
         WHERE tablename = 'admission_appointments'
-          AND indexname IN ('uq_admission_appointments_host_slot',
+          AND indexname IN ('uq_admission_appointments_host_slot_booked',
+                            'uq_admission_appointments_host_slot',
                             'uq_admission_appointments_country_slot')`,
     );
     const names = res.rows.map((r) => r.indexname);
-    expect(names).toContain('uq_admission_appointments_host_slot');
+    expect(names).toContain('uq_admission_appointments_host_slot_booked');
+    expect(names).not.toContain('uq_admission_appointments_host_slot');
     expect(names).not.toContain('uq_admission_appointments_country_slot');
   });
 
@@ -167,10 +170,7 @@ describe('trava anti-corrida (migration 283)', () => {
 
 describe('duas reservas simultâneas', () => {
   async function insertHost(email: string, active = true): Promise<void> {
-    await pool.query(
-      `INSERT INTO interview_hosts (email, display_name, country, active) VALUES ($1,$2,'AR',$3)`,
-      [email, `Nome de ${email}`, active],
-    );
+    await insertInterviewHost(pool, { email, displayName: `Nome de ${email}`, active });
   }
 
   it('duas atendentes livres absorvem os dois pedidos, em pessoas diferentes', async () => {
@@ -257,10 +257,7 @@ describe('duas reservas simultâneas', () => {
 
 describe('antecedência mínima de 4h', () => {
   it('pedido dentro da janela é recusado, sem evento e sem linha no banco', async () => {
-    await pool.query(
-      `INSERT INTO interview_hosts (email, display_name, country, active) VALUES ($1,'Ana','AR',true)`,
-      [ANA],
-    );
+    await insertInterviewHost(pool, { email: ANA, displayName: 'Ana' });
     const createdEvents: string[] = [];
     const service = makeService(stubCalendar({ createdEvents }));
     const emDuasHoras = DateTime.fromJSDate(NOW, { zone: AR_ZONE }).plus({ hours: 2 }).toISO() as string;
@@ -294,13 +291,11 @@ describe('endpoint público de horários', () => {
   });
 
   it('agenda inacessível vira 500 genérico — sem vazar e-mail de atendente no erro', async () => {
-    // Com atendente cadastrada, o container tenta ler a agenda no Google e não
-    // tem credencial. O que importa aqui é o que o paciente recebe quando isso
-    // acontece: um erro genérico, sem o e-mail de ninguém dentro.
-    await pool.query(
-      `INSERT INTO interview_hosts (email, display_name, country, active) VALUES ($1,'Ana Joulie','AR',true)`,
-      [ANA],
-    );
+    // Com atendente cadastrada, o container tenta ler a agenda e ela está inacessível: em teste o Calendar é um DUBLÊ que
+    // falha de propósito (`ADMISSION_CALENDAR_DOUBLE=unavailable`, docker-compose.test.yml — R-17, spec 050; antes era o
+    // cliente real sem credencial). O que importa aqui é o que o paciente recebe quando isso acontece: um erro genérico,
+    // sem o e-mail de ninguém dentro.
+    await insertInterviewHost(pool, { email: ANA, displayName: 'Ana Joulie' });
 
     const res = await axios.get(`${API_URL}/api/public/v1/admission/slots`, {
       params: { country: 'AR' },
@@ -363,10 +358,7 @@ describe('convidado do Meet = quem solicitou (PEND-09)', () => {
   });
 
   it('paciente sem e-mail + responsável com e-mail no banco → o evento convida o responsável', async () => {
-    await pool.query(
-      `INSERT INTO interview_hosts (email, display_name, country, active) VALUES ($1, 'Ana', 'AR', true)`,
-      [ANA],
-    );
+    await insertInterviewHost(pool, { email: ANA, displayName: 'Ana' });
     const invitedEmails: (string | undefined)[] = [];
     const service = makeServiceWithBase64Kms(stubCalendar({ invitedEmails }));
 
@@ -422,10 +414,7 @@ describe('convidado do Meet = quem solicitou (PEND-09)', () => {
     });
 
     it('paciente sem e-mail próprio, com um responsável ATIVO e um DESATIVADO (ambos com e-mail) → o evento convida SÓ o ativo; o desativado nunca entra na sala', async () => {
-      await pool.query(
-        `INSERT INTO interview_hosts (email, display_name, country, active) VALUES ($1, 'Ana', 'AR', true)`,
-        [ANA],
-      );
+      await insertInterviewHost(pool, { email: ANA, displayName: 'Ana' });
       const invitedEmails: (string | undefined)[] = [];
       const service = makeServiceWithBase64Kms(stubCalendar({ invitedEmails }));
       // Horário diferente do resto do arquivo — evita SlotTakenError contra um agendamento que

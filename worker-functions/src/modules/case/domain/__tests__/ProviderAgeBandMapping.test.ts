@@ -5,6 +5,7 @@ import {
   vacancyRangeForProviderAgeBand,
   PROVIDER_AGE_BAND_TO_VACANCY_RANGE,
   CLICKUP_AGE_LABEL_TO_PROVIDER_AGE_BAND,
+  applyEffectiveAgeRange,
 } from '../ProviderAgeBandMapping';
 import { PROVIDER_AGE_BANDS } from '../enums/ContractedService';
 
@@ -58,5 +59,33 @@ describe('CLICKUP_AGE_LABEL_TO_PROVIDER_AGE_BAND — grafia viva medida em contr
     for (const band of Object.values(CLICKUP_AGE_LABEL_TO_PROVIDER_AGE_BAND)) {
       expect(PROVIDER_AGE_BANDS).toContain(band);
     }
+  });
+});
+
+describe('applyEffectiveAgeRange — o ÚNICO ponto que deriva a faixa da vaga (F6)', () => {
+  it.each(PROVIDER_AGE_BANDS.map((b) => [b]))('vaga COM serviço, banda %s → a faixa do mapeamento (ignora a cópia velha da vaga)', (band) => {
+    const out = applyEffectiveAgeRange({ id: 'v', age_range_min: null, age_range_max: null, effective_provider_age_band: band });
+    expect(out).toEqual({ id: 'v', ...{ age_range_min: PROVIDER_AGE_BAND_TO_VACANCY_RANGE[band].min, age_range_max: PROVIDER_AGE_BAND_TO_VACANCY_RANGE[band].max } });
+    expect(out).not.toHaveProperty('effective_provider_age_band');
+  });
+
+  it('banda do serviço AGE_30_45 vence qualquer valor que a linha traga (sem COALESCE entre fontes)', () => {
+    expect(applyEffectiveAgeRange({ age_range_min: 99, age_range_max: 99, effective_provider_age_band: 'AGE_30_45' }))
+      .toEqual({ age_range_min: 30, age_range_max: 44 });
+  });
+
+  it('vaga MANUAL (sem banda): mantém as colunas da própria vaga e remove a coluna auxiliar', () => {
+    const out = applyEffectiveAgeRange({ age_range_min: 25, age_range_max: 40, effective_provider_age_band: null });
+    expect(out).toEqual({ age_range_min: 25, age_range_max: 40 });
+    expect(out).not.toHaveProperty('effective_provider_age_band');
+  });
+
+  it('serviço SEM banda (o SQL já devolveu NULL nas colunas): faixa vazia, não a cópia', () => {
+    expect(applyEffectiveAgeRange({ age_range_min: null, age_range_max: null, effective_provider_age_band: null }))
+      .toEqual({ age_range_min: null, age_range_max: null });
+  });
+
+  it('linha sem a coluna auxiliar (leitor que não a selecionou) passa como veio', () => {
+    expect(applyEffectiveAgeRange({ age_range_min: 20, age_range_max: 29 })).toEqual({ age_range_min: 20, age_range_max: 29 });
   });
 });

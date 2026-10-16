@@ -11,7 +11,6 @@ export const FUNNEL_COLUMN_ORDER = [
   'PRE_SCREENING',
   'IN_PROGRESS',
   'COMPLETED',
-  'CONFIRMED',
   'SELECTED',
   'REJECTED',
 ] as const;
@@ -124,14 +123,12 @@ export interface ManagementDashboardData {
     bloqueados: number;
     preScreening: number;
     completos: number;
-    agendados: number;
     seleccionados: number;
     rechazados: number;
   };
   encuadres: {
+    /** Pessoa × vaga distintas com encuentro na semana: participação ativa em evento aberto OU data antiga (052, desde 13/10/2026). */
     agendadosEstaSemana: number;
-    /** Cards em "Agendados" sem data registrada — medida de adoção da captura. */
-    semDataRegistrada: number;
     /**
      * % da capacidade semanal contratada. `capacidade` vem SEMPRE do backend (config
      * ENCUADRE_WEEKLY_CAPACITY); o valor não é repetido aqui para não envelhecer calado.

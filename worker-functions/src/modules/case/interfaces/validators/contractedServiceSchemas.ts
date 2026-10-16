@@ -6,6 +6,30 @@ const SERVICE_CODES = ['AT', 'CAREGIVER', 'NURSE', 'KINESIOLOGIST', 'PSYCHOLOGIS
 /** Teto do textarea de perfil — espelha `pcs_professional_profile_len` (migration 319). */
 const PROFESSIONAL_PROFILE_MAX = 2000;
 
+/**
+ * Spec 027 Fase 3 (lex T.7): tetos dos textos livres do serviço, no molde de `PROFESSIONAL_PROFILE_MAX`.
+ * `payment_day` é texto curto. Texto livre dentro da ficha do paciente: NUNCA em log (lex T.4).
+ */
+export const REQUIRED_EXPERIENCE_MAX = 2000;
+export const WORKER_ATTRIBUTES_MAX = 2000;
+export const DAILY_OBS_MAX = 2000;
+export const PAYMENT_DAY_MAX = 100;
+/** Lex S.1: valor fora da lista dá 400 — senão `normalizeSexValue` o trata como "aceita qualquer prestador" (falha aberta). */
+export const REQUIRED_SEX_VALUES = ['M', 'F', 'BOTH'] as const;
+/** Lex W.1: vocabulário de `gemini-vacancy-constants.ts`. */
+export const WORK_SCHEDULE_VALUES = ['full-time', 'part-time', 'flexible'] as const;
+
+/** Campos de recrutamento do serviço (D507/D508) — idênticos em create e update. */
+const recruitmentFields = {
+  requiredProfessions: z.array(z.string().min(1).max(80)).max(20).nullable().optional(),
+  requiredSex: z.enum(REQUIRED_SEX_VALUES).nullable().optional(),
+  requiredExperience: z.string().max(REQUIRED_EXPERIENCE_MAX).nullable().optional(),
+  workerAttributes: z.string().max(WORKER_ATTRIBUTES_MAX).nullable().optional(),
+  workSchedule: z.enum(WORK_SCHEDULE_VALUES).nullable().optional(),
+  paymentDay: z.string().max(PAYMENT_DAY_MAX).nullable().optional(),
+  dailyObs: z.string().max(DAILY_OBS_MAX).nullable().optional(),
+};
+
 const optionalEnum = <T extends readonly [string, ...string[]]>(values: T) =>
   z.enum(values).nullable().optional();
 
@@ -57,6 +81,7 @@ export const createContractedServiceSchema = z
     providerAgeBand: optionalEnum(PROVIDER_AGE_BANDS as unknown as [string, ...string[]]),
     addressId: optionalAddressId,
     schedule: optionalSchedule,
+    ...recruitmentFields,
     deviceTypeCodes: z.array(z.string()).max(10).optional(),
     // `country` NÃO entra aqui de propósito (C7): a jurisdição é do PACIENTE e nasce do trigger da
     // migration 319, que só preenche quando a coluna vem NULL — valor explícito do cliente vencia
@@ -83,6 +108,7 @@ export const updateContractedServiceSchema = z
     providerAgeBand: optionalEnum(PROVIDER_AGE_BANDS as unknown as [string, ...string[]]),
     addressId: optionalAddressId,
     schedule: optionalSchedule,
+    ...recruitmentFields,
     deviceTypeCodes: z.array(z.string()).max(10).optional(),
     // Só `false` é caminho de escrita válido (baixa, lex C-a.4) — reabrir não existe.
     active: z.literal(false).optional(),

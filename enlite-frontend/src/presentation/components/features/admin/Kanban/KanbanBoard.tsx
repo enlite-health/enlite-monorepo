@@ -3,9 +3,9 @@ import { useTranslation } from 'react-i18next';
 import type { FunnelStages, MoveEncuadreError } from '@hooks/admin/useWJAFunnel';
 import { KanbanBoardShell, type KanbanDropEvent } from './KanbanBoardShell';
 import { KanbanCard } from './KanbanCard';
+import { cardProps, type FunnelCard } from './kanbanCardProps';
 import { RejectionReasonSelect } from './RejectionReasonSelect';
 import { RoleSelect } from './RoleSelect';
-import { InterviewScheduleSelect, type InterviewSchedule } from './InterviewScheduleSelect';
 import { ContactNotesModal } from '@presentation/components/features/admin/VacancyDetail/Funnel/ContactNotesModal';
 import { VACANCY_FUNNEL_COLUMNS, columnItems } from '@presentation/components/features/admin/VacancyDetail/Funnel/funnelTabsConfig';
 import { compareByDistanceKm } from '@domain/value-objects/candidateDistance';
@@ -24,8 +24,6 @@ interface KanbanBoardProps {
     targetStage: string,
     reasonCategory?: string,
     role?: EncuadreRole,
-    /** Data/hora da entrevista ao mover para CONFIRMED. Ausente = "ainda não sei". */
-    schedule?: InterviewSchedule,
   ) => Promise<MoveEncuadreError | null>;
   /** "Promover" um card ELEGIBLE (D300). Devolve mensagem localizada de erro, ou null no sucesso. */
   onPromoteBlocked?: (blockedId: string) => Promise<string | null>;
@@ -44,42 +42,6 @@ interface KanbanBoardProps {
   onPresentationInvite?: (workerId: string) => Promise<PresentationInviteResult>;
 }
 
-/** Um card do funil (o mesmo shape em qualquer etapa). */
-type FunnelCard = FunnelStages[keyof FunnelStages][number];
-
-/**
- * Props de exibição do card — as MESMAS na coluna e no overlay de arrasto.
- * Estavam escritas duas vezes; qualquer campo novo entrava só numa e o card
- * arrastado ficava diferente do card parado.
- */
-function cardProps(enc: FunnelCard, stage: string) {
-  return {
-    id: enc.id,
-    workerId: enc.workerId,
-    workerName: enc.workerName,
-    workerPhone: enc.workerPhone,
-    occupation: enc.occupation,
-    workZone: enc.workZone,
-    matchScore: enc.matchScore,
-    talentumStatus: enc.talentumStatus,
-    rejectionReasonCategory: enc.rejectionReasonCategory,
-    interviewDate: enc.interviewDate,
-    interviewTime: enc.interviewTime,
-    stage,
-    interviewResponse: enc.interviewResponse,
-    meetLink: enc.meetLink,
-    acquisitionChannel: enc.acquisitionChannel,
-    internalStage: enc.internalStage ?? null,
-    isBlocked: enc.isBlocked,
-    blockedReason: enc.blockedReason,
-    missingFields: enc.missingFields,
-    attemptCount: enc.attemptCount,
-    lastMessagedAt: enc.lastMessagedAt ?? null,
-    lastStageMessage: enc.lastStageMessage ?? null,
-    resendBlockedReason: enc.resendBlockedReason ?? null,
-  };
-}
-
 export function KanbanBoard({ stages, vacancyId, onMove, onPromoteBlocked, onRejectBlocked, onResendInvite, onPresentationInvite }: KanbanBoardProps) {
   const { t } = useTranslation();
   // PUT /encuadres/:id/move, /result
@@ -94,10 +56,9 @@ export function KanbanBoard({ stages, vacancyId, onMove, onPromoteBlocked, onRej
   const [showRejectionSelect, setShowRejectionSelect] = useState<{ encuadreId?: string; blockedId?: string } | null>(null);
   /** Card aguardando escolha de papel (Titular/Substituto) ao ir para SELECTED. */
   const [showRoleSelect, setShowRoleSelect] = useState<{ encuadreId: string } | null>(null);
-  const [showScheduleSelect, setShowScheduleSelect] = useState<{ encuadreId: string } | null>(null);
   /**
    * Fase 4 (DX-4.6/DX-4.10): a API recusou o `move` (422 `MOVE_REASON_REQUIRED`) por salto ou
-   * saída de Rejeitados — guarda o movimento pendente (com papel/agendamento, se houver) e abre
+   * saída de Rejeitados — guarda o movimento pendente (com papel, se houver) e abre
    * o diálogo do motivo. O front nunca decide "o que é salto"; só reage ao 422.
    */
   const [pendingReason, setPendingReason] = useState<{
@@ -105,7 +66,6 @@ export function KanbanBoard({ stages, vacancyId, onMove, onPromoteBlocked, onRej
     encuadreId: string;
     targetStage: string;
     role?: EncuadreRole;
-    schedule?: InterviewSchedule;
   } | null>(null);
   /**
    * Worker cujo modal de comentários (contact notes) está aberto. Chaveado
@@ -183,11 +143,10 @@ export function KanbanBoard({ stages, vacancyId, onMove, onPromoteBlocked, onRej
     targetStage: string,
     reasonCategory?: string,
     role?: EncuadreRole,
-    schedule?: InterviewSchedule,
   ): Promise<MoveEncuadreError | null> {
-    const result = await onMove(encuadreId, targetStage, reasonCategory, role, schedule);
+    const result = await onMove(encuadreId, targetStage, reasonCategory, role);
     if (result?.code === MOVE_REASON_REQUIRED && isMoveReasonKind(result.reason) && result.reason !== 'ENTER_REJECTED') {
-      setPendingReason({ kind: result.reason, encuadreId, targetStage, role, schedule });
+      setPendingReason({ kind: result.reason, encuadreId, targetStage, role });
     }
     return result;
   }
@@ -195,9 +154,9 @@ export function KanbanBoard({ stages, vacancyId, onMove, onPromoteBlocked, onRej
   /** Confirmar o diálogo do motivo: reenvia o MESMO movimento pendente, agora com a categoria. */
   function handleMoveReasonSubmit(category: string) {
     if (!pendingReason) return;
-    const { encuadreId, targetStage, role, schedule } = pendingReason;
+    const { encuadreId, targetStage, role } = pendingReason;
     setPendingReason(null);
-    void move(encuadreId, targetStage, category, role, schedule);
+    void move(encuadreId, targetStage, category, role);
   }
 
   /**
@@ -227,24 +186,8 @@ export function KanbanBoard({ stages, vacancyId, onMove, onPromoteBlocked, onRej
       setShowRoleSelect({ encuadreId });
       return;
     }
-    // Ao agendar, perguntar QUANDO — é o único ponto em que o sistema captura a data
-    // da entrevista (sem ela, lembretes e no-show não têm do que disparar).
-    if (toColumnId === 'CONFIRMED') {
-      setShowScheduleSelect({ encuadreId });
-      return;
-    }
     void move(encuadreId, toColumnId);
   }
-
-  async function handleScheduleSubmit(
-    encuadreId: string,
-    schedule: InterviewSchedule | null,
-  ) {
-    setShowScheduleSelect(null);
-    // schedule=null → "ainda não sei": move mesmo assim, sem inventar horário.
-    await move(encuadreId, 'CONFIRMED', undefined, undefined, schedule ?? undefined);
-  }
-
 
   async function handleRejectionSubmit(target: { encuadreId?: string; blockedId?: string }, category: string) {
     setShowRejectionSelect(null);
@@ -261,17 +204,12 @@ export function KanbanBoard({ stages, vacancyId, onMove, onPromoteBlocked, onRej
   }
 
   /**
-   * Move click (MoveToMenu): mesma pergunta do arrasto — papel ao selecionar, data ao
-   * agendar. Os dois caminhos têm que pedir a mesma coisa, senão o menu vira a porta dos
-   * fundos que grava card sem data.
+   * Move click (MoveToMenu): mesma pergunta do arrasto — papel ao selecionar. Os dois
+   * caminhos têm que pedir a mesma coisa, senão o menu vira a porta dos fundos.
    */
   function handleCardMoveTo(encuadreId: string, target: string) {
     if (target === 'SELECTED') {
       setShowRoleSelect({ encuadreId });
-      return;
-    }
-    if (target === 'CONFIRMED') {
-      setShowScheduleSelect({ encuadreId });
       return;
     }
     void move(encuadreId, target);
@@ -356,13 +294,6 @@ export function KanbanBoard({ stages, vacancyId, onMove, onPromoteBlocked, onRej
         <RoleSelect
           onSubmit={(role) => handleRoleSubmit(showRoleSelect.encuadreId, role)}
           onCancel={() => setShowRoleSelect(null)}
-        />
-      )}
-
-      {showScheduleSelect && (
-        <InterviewScheduleSelect
-          onSubmit={(schedule) => handleScheduleSubmit(showScheduleSelect.encuadreId, schedule)}
-          onCancel={() => setShowScheduleSelect(null)}
         />
       )}
 

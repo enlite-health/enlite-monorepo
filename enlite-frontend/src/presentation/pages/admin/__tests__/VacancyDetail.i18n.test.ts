@@ -48,4 +48,12 @@ describe('VacancyDetail tabs i18n — values are user-friendly', () => {
     const value = ptBRTabs[key];
     expect(value).not.toBe(`admin.vacancyDetail.tabs.${key}`);
   });
+
+  it('es tabs.encuadres is the exact label "Reclutamiento"', () => {
+    expect(esTabs.encuadres).toBe('Reclutamiento');
+  });
+
+  it('pt-BR tabs.encuadres is the exact label "Recrutamento"', () => {
+    expect(ptBRTabs.encuadres).toBe('Recrutamento');
+  });
 });

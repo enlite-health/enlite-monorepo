@@ -11,7 +11,6 @@
  *   - Screenshot visual obrigatório — estado POPULADO
  *   - Screenshot visual obrigatório — estado VAZIO
  *   - Filtro por motivo envia query param correto
- *   - Link na AdminRecruitmentPage aponta para /blocked-attempts
  */
 
 import { test, expect, Page } from '@playwright/test';
@@ -420,60 +419,5 @@ test.describe('BlockedAttemptsPage', () => {
       fullPage: false,
       maxDiffPixelRatio: 0.03,
     });
-  });
-
-  test('link em AdminRecruitmentPage aponta para /blocked-attempts', async ({ page }) => {
-    await seedAdminAndLogin(page);
-
-    // Mock recruitment dashboard data endpoints
-    page.route('**/api/admin/recruitment/clickup-cases**', (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ success: true, data: [] }),
-      }),
-    );
-    page.route('**/api/admin/recruitment/talentum-workers**', (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ success: true, data: [] }),
-      }),
-    );
-    page.route('**/api/admin/recruitment/progreso**', (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ success: true, data: [] }),
-      }),
-    );
-    page.route('**/api/admin/recruitment/publications**', (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ success: true, data: [] }),
-      }),
-    );
-    page.route('**/api/admin/recruitment/encuadres**', (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ success: true, data: [] }),
-      }),
-    );
-    page.route('**/api/admin/recruitment/global-metrics**', (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ success: true, data: {} }),
-      }),
-    );
-
-    await page.goto('/admin/recruitment');
-
-    // Link "Ver intentos bloqueados" should exist
-    const link = page.getByRole('link', { name: /intentos bloqueados/i });
-    await expect(link).toBeVisible({ timeout: 15000 });
-    expect(await link.getAttribute('href')).toContain('/admin/recruitment/blocked-attempts');
   });
 });

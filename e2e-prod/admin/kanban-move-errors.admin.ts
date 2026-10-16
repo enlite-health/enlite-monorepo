@@ -7,7 +7,7 @@
  *   2. `SELECT worker_id,job_posting_id FROM encuadres WHERE id=$1` → 0 linhas → 404
  *      "Encuadre not found" ANTES do UPDATE. targetStage válido ('INVITED') passa o (1) e cai aqui.
  *
- * validStages = INVITED, PRE_SCREENING, IN_PROGRESS, COMPLETED, QUALIFIED, IN_DOUBT, CONFIRMED,
+ * validStages = INVITED, PRE_SCREENING, IN_PROGRESS, COMPLETED, QUALIFIED, IN_DOUBT,
  * SELECTED, REJECTED. Usamos UUID bem-formado inexistente pra não arriscar 500 de cast.
  */
 import { test, expect, type APIRequestContext } from '@playwright/test';

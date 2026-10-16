@@ -39,6 +39,8 @@ import {
   createAdminItineraryWriteRoutes,
   AdminItineraryChangesController,
   createAdminItineraryChangesRoutes,
+  TherapeuticContactRemindersInternalController,
+  createTherapeuticContactRemindersInternalRoutes,
   createAdminPatientsRoutes,
   PublicLeadsController,
   createAdminPatientPhotoRoutes,
@@ -61,7 +63,7 @@ import {
   mockAuthMiddleware,
   createMockAuthEndpoints,
 } from '@modules/identity';
-import { EncuadreController, VacanciesController, VacancyTalentumController, VacancyMatchController, WJAFunnelController, WJAFunnelTableController, EncuadreDashboardController, AnalyticsController, RecruitmentController, VacancyCrudController, PublicVacancyController, WorkerApplicationsController, VacancyAddressReviewController, PublicJobsController, AdmissionSchedulingController } from '@modules/matching';
+import { EncuadreController, VacanciesController, VacancyTalentumController, VacancyMatchController, WJAFunnelController, WJAFunnelTableController, EncuadreDashboardController, AnalyticsController, VacancyCrudController, PublicVacancyController, WorkerApplicationsController, VacancyAddressReviewController, PublicJobsController, AdmissionSchedulingController } from '@modules/matching';
 import { AdminWorkersController, AdminWorkerTestFlagController, AdminWorkerProfileController, AdminWorkerServiceAreaController, createAdminWorkerRoutes } from '@modules/worker';
 import { AdminWorkersAuxController } from './modules/worker/interfaces/controllers/AdminWorkersAuxController';
 import { AdminWorkersMapController } from './modules/worker/interfaces/controllers/AdminWorkersMapController';
@@ -86,18 +88,17 @@ import {
   runPermissionsBootTasks,
   wirePermissionsModule,
 } from './bootstrap/wirePermissionsModule';
-import { ADMIN_RECRUITMENT_FAMILY, createAnalyticsRoutes, createRecruitmentRoutes, createWorkerApplicationsRoutes, createAdminVacanciesRoutes, createWorkerEncuadreRoutes, InterviewSlotsController, VacancySocialLinksController } from '@modules/matching';
+import { createAnalyticsRoutes, createRecruitmentRoutes, createWorkerApplicationsRoutes, createAdminVacanciesRoutes, createWorkerEncuadreRoutes, InterviewSlotsController, VacancySocialLinksController } from '@modules/matching';
 import { WorkerContextController } from '@modules/matching/interfaces/controllers/WorkerContextController';
 import { createWorkerContextRoutes } from '@modules/matching/interfaces/routes/workerContextRoutes';
 import { createTransitCorridorRoutes } from '@modules/matching/interfaces/routes/transitCorridorRoutes';
-import { ReminderScheduler } from '@modules/notification/infrastructure/ReminderScheduler';
 import { VacancyMeetLinksController } from '@modules/matching';
 import { DomainEventProcessor } from '@shared/events/DomainEventProcessor';
 import { DomainEventBacklogService } from '@shared/events/DomainEventBacklogService';
 import { AnaCareMirrorHealthService } from '@shared/events/AnaCareMirrorHealthService';
+import { TherapeuticContactReminderHealthService } from '@shared/events/TherapeuticContactReminderHealthService';
 import { CloudTasksClient } from '@shared/events/CloudTasksClient';
 import { PubSubClient } from '@shared/events/PubSubClient';
-import { createQualifiedInterviewHandler } from '@shared/events/handlers/QualifiedInterviewHandler';
 import { createVacancyAutoInviteHandler } from '@shared/events/handlers/VacancyAutoInviteHandler';
 import { createAnaCareMirrorHandler } from '@modules/integration/application/AnaCareMirrorEventHandler';
 import { createPromoteBlockedApplicationsHandler } from '@modules/matching';
@@ -113,16 +114,44 @@ import { AdmissionSchedulingService } from '@modules/matching/application/Admiss
 import { AdmissionReminderService } from '@modules/matching/application/AdmissionReminderService';
 import { AdmissionReminderController } from '@modules/matching/interfaces/controllers/AdmissionReminderController';
 import { RealAdmissionNotifier } from '@modules/matching/infrastructure/RealAdmissionNotifier';
-import { RecruitmentHealthController } from '@modules/notification/interfaces/controllers/RecruitmentHealthController';
+import { AdmissionMessagingService } from '@modules/matching/application/AdmissionMessagingService';
+import { AdmissionMessageContent } from '@modules/matching/infrastructure/AdmissionMessageContent';
+import { AdmissionPanelService } from '@modules/matching/application/AdmissionPanelService';
+import { AdmissionPanelController } from '@modules/matching/interfaces/controllers/AdmissionPanelController';
+import { createAdminAdmissionRoutes } from '@modules/matching/interfaces/routes/adminAdmissionRoutes';
+import { EnquadreEventService } from '@modules/matching/application/EnquadreEventService';
+import { EnquadreEventMutations } from '@modules/matching/application/EnquadreEventMutations';
+import { EnquadreSummaryDownload } from '@modules/matching/application/EnquadreSummaryDownload';
+import { EnquadreEventController } from '@modules/matching/interfaces/controllers/EnquadreEventController';
+import { createAdminEnquadreEventRoutes } from '@modules/matching/interfaces/routes/adminEnquadreEventRoutes';
+import { createAdminInterviewHostRoutes } from '@modules/matching/interfaces/routes/adminInterviewHostRoutes';
+import { InterviewHostController } from '@modules/matching/interfaces/controllers/InterviewHostController';
+import { InterviewHostService } from '@modules/matching/application/InterviewHostService';
+import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
+import { TactiqLinkService } from '@modules/matching/application/TactiqLinkService';
+import { TactiqLinkRepository } from '@modules/matching/infrastructure/TactiqLinkRepository';
+import { TactiqLinkController } from '@modules/matching/interfaces/controllers/TactiqLinkController';
+import { TactiqCheckInternalController } from '@modules/matching/interfaces/controllers/TactiqCheckInternalController';
+import { createTactiqLinkRoutes, createTactiqLinkCallbackRoute, createTactiqCheckInternalRoutes } from '@modules/matching/interfaces/routes/tactiqLinkRoutes';
+import { AdmissionImportService } from '@modules/matching/application/AdmissionImportService';
+import { AdmissionSummaryRetryService } from '@modules/matching/application/AdmissionSummaryRetryService';
+import { AdmissionImportRepository } from '@modules/matching/infrastructure/AdmissionImportRepository';
+import { AdmissionImportInternalController } from '@modules/matching/interfaces/controllers/AdmissionImportInternalController';
+import { createAdmissionImportInternalRoutes } from '@modules/matching/interfaces/routes/admissionImportRoutes';
+import { interviewHostRepository } from '@modules/matching/infrastructure/InterviewHostRepository';
+import { AdmissionMessageRepository } from '@modules/matching/infrastructure/AdmissionMessageRepository';
+import { AdmissionEventRepository } from '@modules/matching/infrastructure/AdmissionEventRepository';
+import { createAdmissionExternals } from '@modules/matching/infrastructure/admissionExternals';
 import { createSwaggerRouter, shouldGateDocs } from '@shared/openapi/swaggerRouter';
 import { createClaimController } from './bootstrap/createClaimController';
 import { createClaimRoutes } from '@modules/auth/interfaces/routes/claimRoutes';
 import { AccountLinkController } from '@modules/account-link/AccountLinkController';
 import { createAccountLinkRoutes } from '@modules/account-link/accountLinkRoutes';
 import { registerAdminMaintenanceRoutes } from './bootstrap/registerAdminMaintenanceRoutes';
+import { registerAdmissionInternalJobRoutes } from './bootstrap/registerAdmissionInternalJobRoutes';
+import { registerEnquadreInternalJobRoutes } from './bootstrap/registerEnquadreInternalJobRoutes';
 import { createAdminIntegrationsRoutes, createAdminAiPromptRoutes, AiPromptController } from '@modules/integration';
-import { createStageMessageHandler } from './shared/events/handlers/StageMessageHandler';
-import { FUNNEL_STAGES, funnelStageEventName } from './modules/matching/application/FunnelStageEventEmitter';
+import { registerFunnelStageHandlers } from './shared/events/registerFunnelStageHandlers';
 import { FunnelStageMessagesController } from './modules/matching/interfaces/controllers/FunnelStageMessagesController';
 import { createFunnelStageMessagesRoutes } from './modules/matching/interfaces/routes/funnelStageMessagesRoutes';
 import { createTemplateCatalogRoutes } from './modules/matching/interfaces/routes/templateCatalogRoutes';
@@ -225,7 +254,6 @@ const workerAdditionalDocsMeController = new WorkerAdditionalDocsMeController();
 const adminAdditionalDocsController = new AdminAdditionalDocsController();
 const encuadreController = new EncuadreController();
 const analyticsController = new AnalyticsController();
-const recruitmentController = new RecruitmentController();
 const vacanciesController = new VacanciesController();
 const vacancyCrudController = new VacancyCrudController();
 const vacancyTalentumController = new VacancyTalentumController();
@@ -357,14 +385,39 @@ app.post('/api/public/v1/leads', publicLeadsRateLimit, publicContextMiddleware('
 // Real notifier: immediate WhatsApp confirmation to the patient (direct Content
 // API, no outbox — the patient is not a worker) + a 30-min-before reminder via
 // Cloud Task. Injected in place of the default LoggingAdmissionNotifier.
+// Spec 049 (F2): envio só por quem ganha o CLAIM em `admission_messages`; task do lembrete NOMEADA; trilha append-only.
+// As fronteiras (Twilio, Cloud Tasks) vêm da fábrica: em NODE_ENV=test ou ADMISSION_EXTERNALS=fake são dublês.
+const admissionDb = DatabaseConnection.getInstance().getPool();
+const admissionExternals = createAdmissionExternals(process.env, { realWhatsApp: () => twilioMessagingService });
+const admissionMessageContent = new AdmissionMessageContent(admissionDb);
+const admissionEvents = new AdmissionEventRepository(admissionDb);
+const admissionMessaging = new AdmissionMessagingService(
+  new AdmissionMessageRepository(admissionDb),
+  admissionEvents,
+  admissionExternals.whatsapp,
+  admissionMessageContent,
+);
 const admissionNotifier = new RealAdmissionNotifier(
-  twilioMessagingService,
-  new CloudTasksClient(),
-  DatabaseConnection.getInstance().getPool(),
+  admissionMessaging,
+  admissionMessageContent,
+  admissionExternals.reminderTasks,
+  admissionEvents,
+  admissionDb,
 );
-const admissionSchedulingController = new AdmissionSchedulingController(
-  new AdmissionSchedulingService(undefined, admissionNotifier),
+// Spec 049 F4: vínculo do responsável com o Tactiq (OAuth PKCE público, token cifrado KMS, teste diário, sino por transição).
+const tactiqLinkService = new TactiqLinkService({
+  repo: new TactiqLinkRepository(admissionDb),
+  oauth: admissionExternals.tactiq.oauth,
+  mcp: admissionExternals.tactiq.mcp,
+  db: admissionDb,
+  clientId: () => process.env.TACTIQ_OAUTH_CLIENT_ID ?? null,
+});
+const tactiqLinkController = new TactiqLinkController(tactiqLinkService);
+// UM serviço de agendamento (e UM núcleo de reserva) para o site e para o painel (spec 049 F3); o painel exige o vínculo (F4).
+const admissionSchedulingService049 = new AdmissionSchedulingService(
+  admissionExternals.calendar, admissionNotifier, undefined, undefined, undefined, tactiqLinkService,
 );
+const admissionSchedulingController = new AdmissionSchedulingController(admissionSchedulingService049);
 const admissionSlotsRateLimit = rateLimit({
   windowMs: 60 * 1000,
   max: 30, // read endpoint
@@ -552,6 +605,80 @@ app.use('/api/admin', createAdminConversationRoutes(authMiddleware, permissionMi
 // ========== Admin Patient Documents — aba "Documentos" (spec 031) ==========
 app.use('/api/admin', createPatientDocumentsRoutes(authMiddleware, permissionMiddleware));
 
+// Spec 049 F6: a importação do Tactiq. Criada aqui porque o botão "Reintentar resumen" (spec 050 F11) também a chama; o job de 15 min a monta abaixo.
+const admissionImportRepository = new AdmissionImportRepository(admissionDb);
+const admissionImportService = new AdmissionImportService({
+  repo: admissionImportRepository,
+  events: admissionEvents,
+  tokens: tactiqLinkService,
+  mcp: admissionExternals.tactiq.mcp,
+  vault: admissionExternals.vault,
+  rehearsalVault: admissionExternals.rehearsalVault,
+  summary: admissionExternals.summary,
+  db: admissionDb,
+});
+
+// Spec 049 F3: aba "Admissão" do paciente (agendar pelo painel, listar, cancelar, reenviar). Família admin.patients.
+const admissionPanelController = new AdmissionPanelController(
+  admissionSchedulingService049,
+  new AdmissionPanelService({
+    db: admissionDb,
+    calendar: admissionExternals.calendar,
+    reminderTasks: admissionExternals.reminderTasks,
+    events: admissionEvents,
+    messaging: admissionMessaging,
+    hosts: interviewHostRepository,
+    tactiq: tactiqLinkService,
+    impersonateEmail: process.env.ADMISSION_IMPERSONATE_EMAIL || 'enlite@enlite.health',
+  }),
+  new AdmissionSummaryRetryService({ db: admissionDb, repo: admissionImportRepository, events: admissionEvents, importer: admissionImportService }),
+);
+app.use('/api/admin', createAdminAdmissionRoutes(authMiddleware, permissionMiddleware, admissionPanelController));
+
+// Spec 052 F2: evento de enquadre na vaga (leitura, criação e mutações). Família admin.vacancies. O Calendar e o Tactiq vêm da MESMA fábrica de
+// externos da admissão (dublê no stack de teste); nada de mensageria da admissão entra aqui.
+const enquadreImpersonateEmail = process.env.ADMISSION_IMPERSONATE_EMAIL || 'enlite@enlite.health';
+const enquadreEventService = new EnquadreEventService({
+  db: admissionDb,
+  calendar: admissionExternals.calendar,
+  hosts: interviewHostRepository,
+  tactiq: tactiqLinkService,
+  decryptor: new KMSEncryptionService(),
+  env: process.env,
+  impersonateEmail: enquadreImpersonateEmail,
+});
+const enquadreEventController = new EnquadreEventController(
+  enquadreEventService,
+  new EnquadreEventMutations({
+    db: admissionDb,
+    calendar: admissionExternals.calendar,
+    env: process.env,
+    impersonateEmail: enquadreImpersonateEmail,
+    readEvent: (vacancyId, eventId, viewer) => enquadreEventService.getEvent(vacancyId, eventId, viewer),
+    pubsub: new PubSubClient(),
+  }),
+  new EnquadreSummaryDownload({ db: admissionDb }),
+);
+app.use('/api/admin', createAdminEnquadreEventRoutes(authMiddleware, permissionMiddleware, enquadreEventController));
+
+// Spec 055: tela Entrevistadores (quem atende enquadre e admissão, amarrado a usuário staff ativo). Células interview_host:read|update.
+app.use('/api/admin', createAdminInterviewHostRoutes(
+  authMiddleware,
+  permissionMiddleware,
+  new InterviewHostController(new InterviewHostService({ db: admissionDb, repo: interviewHostRepository, tactiq: tactiqLinkService })),
+));
+
+// Spec 049 F4: o operador vincula a PRÓPRIA conta do Tactiq (own_tactiq_link:read|write). O callback do OAuth é navegação
+// do browser (sem Bearer): isento na montagem, em contexto público, e a prova de identidade é o `state` single-use.
+app.use('/api/admin', createTactiqLinkRoutes(authMiddleware, permissionMiddleware, tactiqLinkController));
+app.use('/api/admin', createTactiqLinkCallbackRoute(tactiqLinkController, rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Too many requests' },
+})));
+
 // ========== Admin Notifications / sino (spec 022, Bloco 4) ==========
 // `permissionsBoundary.permissions.client` — leitura CRUA do ABAC (D-13, revisado no fecho B5:
 // resolve `patientDisplayName` sob a célula do DESTINATÁRIO da requisição, independente do gate
@@ -632,7 +759,7 @@ app.use('/api/admin', createTemplateDraftsRoutes(new TemplateDraftsController(),
 app.use('/analytics', createAnalyticsRoutes(analyticsController, authMiddleware, permissionMiddleware));
 
 // ========== Recruitment (extracted router) ==========
-app.use('/api', createRecruitmentRoutes(recruitmentController, authMiddleware, permissionMiddleware));
+app.use('/api', createRecruitmentRoutes(authMiddleware, permissionMiddleware));
 
 // ========== Messaging Routes ==========
 app.use('/api/admin/messaging', authMiddleware.requireStaff(), createMessagingRoutes(messagingService, templateRepo, permissionMiddleware));
@@ -651,20 +778,9 @@ app.use('/api/admin', createPresentationInviteRoutes(
 ));
 const domainEventProcessor = new DomainEventProcessor(dbPool);
 
-domainEventProcessor.registerHandler(
-  'funnel_stage.qualified',
-  createQualifiedInterviewHandler(dbPool, pubsubClient, tokenService),
-);
-
-// PEND-14/DEC-12: mensagem por etapa — o movimento da tarjeta emite
-// `funnel_stage.<etapa>`; QUALIFIED continua no handler acima (built-in).
-for (const stage of FUNNEL_STAGES) {
-  if (stage === 'QUALIFIED') continue;
-  domainEventProcessor.registerHandler(
-    funnelStageEventName(stage),
-    createStageMessageHandler(dbPool, pubsubClient, tokenService, stage),
-  );
-}
+// PEND-14/DEC-12: mensagem por etapa — o movimento da tarjeta emite `funnel_stage.<etapa>`.
+// Spec 052 (T-40b): QUALIFIED também passa aqui; o convite automático saiu.
+registerFunnelStageHandlers(domainEventProcessor, dbPool, pubsubClient, tokenService);
 
 domainEventProcessor.registerHandler(
   'vacancy.created',
@@ -681,14 +797,12 @@ domainEventProcessor.registerHandler(
   createPromoteBlockedApplicationsHandler(dbPool),
 );
 
-const reminderScheduler = new ReminderScheduler(dbPool, cloudTasksClient, pubsubClient, tokenService);
 const bulkDispatchScheduler = new BulkDispatchScheduler(dbPool, messagingService);
 const bulkDispatchTalentumScheduler = new BulkDispatchTalentumScheduler(dbPool, messagingService);
-const recruitmentHealthController = new RecruitmentHealthController(dbPool);
 const domainEventBacklogService = new DomainEventBacklogService(dbPool);
 const anaCareMirrorHealthService = new AnaCareMirrorHealthService(dbPool);
 const messagingRetentionService = new MessagingRetentionService(dbPool);
-const internalController = new InternalController(domainEventProcessor, outboxProcessor, reminderScheduler, bulkDispatchScheduler, bulkDispatchTalentumScheduler, domainEventBacklogService, anaCareMirrorHealthService, messagingRetentionService);
+const internalController = new InternalController(domainEventProcessor, outboxProcessor, bulkDispatchScheduler, bulkDispatchTalentumScheduler, domainEventBacklogService, anaCareMirrorHealthService, messagingRetentionService, new TherapeuticContactReminderHealthService(dbPool));
 app.use('/api/internal', systemContextMiddleware('job:internal'), createInternalRoutes(internalController));
 app.use(
   '/api/internal',
@@ -696,35 +810,52 @@ app.use(
   internalAuthMiddleware,
   createAnaCareHoursSyncInternalRoutes(anaCareHoursSyncController),
 );
+// spec 048: varredura diária dos lembretes de contato pendente do PT (Cloud Scheduler, 09:00 AR) — outbox, sem Cloud Tasks.
+app.use(
+  '/api/internal',
+  systemContextMiddleware('job:pt-contact-reminders'),
+  internalAuthMiddleware,
+  createTherapeuticContactRemindersInternalRoutes(new TherapeuticContactRemindersInternalController()),
+);
+
+// spec 049 F4: teste diário do vínculo do Tactiq + aviso no sino por transição + alarme 48 h (Cloud Scheduler, 1×/dia).
+app.use(
+  '/api/internal',
+  systemContextMiddleware('job:admission-tactiq-check'),
+  internalAuthMiddleware,
+  createTactiqCheckInternalRoutes(new TactiqCheckInternalController(tactiqLinkService)),
+);
+
+// spec 050 F15 + spec 049 F5: relatório diário do Chrome e job de 15 min do fim da call (ordem preservada).
+registerAdmissionInternalJobRoutes(app, { db: admissionDb, externals: admissionExternals, events: admissionEvents, importer: admissionImportService });
+// spec 052 F3: fim de call do enquadre (jobs separados dos da admissão, D506); mesma Meet API, fonte/destino próprios.
+registerEnquadreInternalJobRoutes(app, {
+  db: admissionDb,
+  meet: admissionExternals.meet,
+  import: { tokens: tactiqLinkService, mcp: admissionExternals.tactiq.mcp, vault: admissionExternals.enquadreVault, summary: admissionExternals.enquadreSummary },
+});
+
+// spec 049 F6: importação do Tactiq (MCP -> provas -> cofre -> Vertex -> PDF -> documento). Roda depois do job de 15 min (a F5 grava
+// `conference_ended_at` e `import_status='pending'`). Cloud Scheduler, a cada 15 min.
+app.use(
+  '/api/internal',
+  systemContextMiddleware('job:admission-import'),
+  internalAuthMiddleware,
+  createAdmissionImportInternalRoutes(
+    new AdmissionImportInternalController(
+      admissionImportService,
+    ),
+  ),
+);
 
 // Cloud Tasks: 30-min-before admission reminder (queue: admission-reminders).
 // Kept on the app (not the notification router) to avoid a notification→matching
 // import; guarded by the same internalAuthMiddleware (X-Internal-Secret).
 const admissionReminderController = new AdmissionReminderController(
-  new AdmissionReminderService(twilioMessagingService, dbPool),
+  new AdmissionReminderService(admissionMessaging, admissionMessageContent, dbPool),
 );
 app.post('/api/internal/reminders/admission-30min', internalAuthMiddleware, systemContextMiddleware('job:admission-reminder'), (req: Request, res: Response) =>
   admissionReminderController.handle(req, res),
-);
-
-// ========== Recruitment Health Dashboard ==========
-// A 11ª rota da família `admin.recruitment` (task 3.5-A3). Mora aqui, e não em
-// `recruitmentRoutes.ts`, porque `recruitmentHealthController` depende do
-// `dbPool`, criado DEPOIS daquele mount — movê-la exigiria reordenar este
-// arquivo, e reordenar o `src/index.ts` é mudança de risco silencioso que não
-// pertence a um PR de declaração de célula.
-//
-// A célula é `messaging:read`, e não `recruitment:read`, porque a rota devolve
-// EXCLUSIVAMENTE agregados de disparo (`domain_events`, `messaging_outbox`,
-// `whatsapp_bulk_dispatch_logs` — zero tabela de worker ou encuadre, medido).
-// É a régua da D127 aplicada: vale o que a rota DEVOLVE, não o que o caminho
-// sugere. Família e célula são coisas diferentes — a família é a unidade de
-// rollout, a célula é a permissão.
-app.get(
-  '/api/admin/recruitment/health',
-  staffOnly,
-  permissionMiddleware.family(ADMIN_RECRUITMENT_FAMILY).require('messaging', 'read'),
-  (req: Request, res: Response) => recruitmentHealthController.getHealth(req, res),
 );
 
 // ========== Permissões (painel de grupos, grupo 2) ==========

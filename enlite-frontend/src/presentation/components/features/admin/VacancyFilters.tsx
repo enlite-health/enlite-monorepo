@@ -22,10 +22,7 @@ interface VacancyFiltersProps {
   onSearchChange: (value: string) => void;
   selectedStatus: string;
   onStatusChange: (value: string) => void;
-  selectedPriority: string;
-  onPriorityChange: (value: string) => void;
   statusOptions: SelectOption[];
-  priorityOptions: SelectOption[];
   // advanced filters
   advancedFilters: VacancyAdvancedFilters;
   onAdvancedChange: (updates: Partial<VacancyAdvancedFilters>) => void;
@@ -38,10 +35,7 @@ export function VacancyFilters({
   onSearchChange,
   selectedStatus,
   onStatusChange,
-  selectedPriority,
-  onPriorityChange,
   statusOptions,
-  priorityOptions,
   advancedFilters,
   onAdvancedChange,
   stateOptions,
@@ -75,7 +69,6 @@ export function VacancyFilters({
   const hasAnyFilter =
     searchQuery !== '' ||
     selectedStatus !== '' ||
-    selectedPriority !== '' ||
     advancedFilters.workerType !== '' ||
     advancedFilters.state !== '' ||
     advancedFilters.city !== '' ||
@@ -87,7 +80,6 @@ export function VacancyFilters({
   const handleClearAll = () => {
     onSearchChange('');
     onStatusChange('');
-    onPriorityChange('');
     onAdvancedChange({
       workerType: '',
       state: '',
@@ -101,7 +93,7 @@ export function VacancyFilters({
 
   return (
     <div className="bg-white rounded-b-[20px] border-r-2 border-b-2 border-l-2 border-[#D9D9D9] px-7 py-6">
-      {/* Row 1: search + status + priority */}
+      {/* Row 1: search + status */}
       <div className="flex items-end gap-4 flex-wrap">
         <SearchInput
           value={searchQuery}
@@ -122,18 +114,6 @@ export function VacancyFilters({
               value={selectedStatus}
               onValueChange={onStatusChange}
               placeholder={t('admin.vacancies.statusOptions.all')}
-            />
-          </div>
-          <div className="w-full sm:w-[200px]">
-            <Text size="sm" weight="semibold" color="secondary" className="mb-1">
-              {t('admin.vacancies.priorityLabel')}
-            </Text>
-            <Select
-              inputSize="compact"
-              options={priorityOptions}
-              value={selectedPriority}
-              onValueChange={onPriorityChange}
-              placeholder={t('admin.vacancies.priorityOptions.all')}
             />
           </div>
         </div>

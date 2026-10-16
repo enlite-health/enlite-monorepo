@@ -117,10 +117,10 @@ test.describe('Kanban card BLOQUEADO — mesma UX dos demais cards (auth real)',
 
     await loginAsAdmin(page);
 
-    // Força a aba Encuadres a abrir em view=kanban.
+    // Força a aba Reclutamiento a abrir em view=kanban.
     await page.addInitScript(
       ([key]) => window.localStorage.setItem(key, 'kanban'),
-      [`vacancy-funnel-view-${VACANCY_ID}`],
+      [`vacancy-funnel-view-v2-${VACANCY_ID}`],
     );
 
     await page.goto(`/admin/vacancies/${VACANCY_ID}`);

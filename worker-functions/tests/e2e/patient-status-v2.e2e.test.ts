@@ -76,9 +76,12 @@ describe('Estado do paciente v2 — transições, motivo, Historial (spec 012 US
       )).rows[0].id;
       const svc = (await pool.query<{ id: string }>(
         `INSERT INTO patient_contracted_services
-           (patient_id, service_code, active, country, created_by, updated_by, address_id, schedule)
+           (patient_id, service_code, active, country, created_by, updated_by, address_id, schedule,
+            required_professions, required_sex, required_experience, work_schedule, payment_day)
+         -- spec 027 Fase 3: os 5 campos do portão "ativar recrutamento" (D508 c)
          VALUES ($1,'AT',true,'AR','ps-v2-e2e','ps-v2-e2e',$2,
-                 '[{"dayOfWeek":1,"startTime":"08:00","endTime":"12:00"}]'::jsonb) RETURNING id`,
+                 '[{"dayOfWeek":1,"startTime":"08:00","endTime":"12:00"}]'::jsonb,
+                 ARRAY['AT'],'BOTH','EXP-E2E','part-time','DIA-E2E') RETURNING id`,
         [id, addr],
       )).rows[0].id;
       if (id === lead) leadServiceId = svc;

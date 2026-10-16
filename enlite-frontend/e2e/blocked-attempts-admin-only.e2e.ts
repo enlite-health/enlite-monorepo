@@ -179,7 +179,7 @@ test.describe('Postulaciones bloqueadas por célula — fluxo real (flow-guard)'
 
     // URL direta → guard redireciona sem renderizar a tela
     await page.goto('/admin/recruitment/blocked-attempts');
-    await expect(page).toHaveURL(/\/admin$/, { timeout: 20000 });
+    await expect(page).toHaveURL(/\/admin\/dashboard$/, { timeout: 20000 });
     await expect(page.locator('[data-testid="blocked-content"]')).toHaveCount(0);
     await expect(page.locator('[data-testid="blocked-skeleton"]')).toHaveCount(0);
   });

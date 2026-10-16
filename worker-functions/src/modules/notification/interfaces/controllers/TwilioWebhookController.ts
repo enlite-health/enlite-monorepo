@@ -2,6 +2,13 @@ import { Request, Response } from 'express';
 import twilio from 'twilio';
 import { Pool } from 'pg';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { setDbContext } from '@shared/database/requestDbSession';
+import type { AdmissionEventSink, AdmissionMessageStore } from '@modules/matching/application/ports/AdmissionMessagingPorts';
+import { AdmissionMessageRepository } from '@modules/matching/infrastructure/AdmissionMessageRepository';
+import { AdmissionEventRepository } from '@modules/matching/infrastructure/AdmissionEventRepository';
+
+type AdmissionDeliveryStatus = 'sent' | 'delivered' | 'read' | 'failed' | 'undelivered';
+const ADMISSION_DELIVERY_STATUSES: ReadonlySet<string> = new Set(['sent', 'delivered', 'read', 'failed', 'undelivered']);
 
 /**
  * Controller que recebe status callbacks do Twilio.
@@ -15,7 +22,10 @@ import { DatabaseConnection } from '@shared/database/DatabaseConnection';
 export class TwilioWebhookController {
   private db: Pool;
 
-  constructor() {
+  constructor(
+    private readonly admissionMessages: AdmissionMessageStore = new AdmissionMessageRepository(),
+    private readonly admissionEvents: AdmissionEventSink = new AdmissionEventRepository(),
+  ) {
     this.db = DatabaseConnection.getInstance().getPool();
   }
 
@@ -91,8 +101,40 @@ export class TwilioWebhookController {
       await this.maybeSuppressOnRepeatedFailure(messageSid);
     }
 
+    // Mensagem de admissão (spec 049, M5): o status volta para a linha de `admission_messages` pelo SID e entra na trilha.
+    await this.updateAdmissionMessage(messageSid, messageStatus, errorCode);
+
     // Twilio não usa o body da resposta — apenas o status code importa.
     res.status(200).end();
+  }
+
+  /**
+   * Aplica o status da Twilio à mensagem de admissão (se o SID for de uma) e registra na trilha. Best-effort: nunca
+   * quebra o 200 pra Twilio. A rota é pública (assinatura própria), então declara contexto de SISTEMA para a RLS de
+   * `admission_messages` (que segue a reunião) — sem isso a escrita falharia fechada, em silêncio. Sem telefone/texto
+   * em lugar nenhum: só SID, tipo, tentativa e o código numérico de erro.
+   */
+  private async updateAdmissionMessage(messageSid: string, messageStatus: string, errorCode: string | null): Promise<void> {
+    if (!ADMISSION_DELIVERY_STATUSES.has(messageStatus)) return;
+    try {
+      setDbContext({ kind: 'system', systemContext: 'webhook:twilio-status' });
+      const status = messageStatus as AdmissionDeliveryStatus;
+      const row = await this.admissionMessages.applyDeliveryStatus(messageSid, status);
+      if (!row) return;
+      const prefix = row.kind === 'confirmation' ? 'confirmation' : 'reminder';
+      const kind =
+        status === 'delivered' ? `${prefix}_delivered` : status === 'read' ? `${prefix}_read` : status === 'sent' ? null : `${prefix}_failed`;
+      if (!kind) return;
+      await this.admissionEvents.append({
+        appointmentId: row.appointmentId,
+        kind,
+        outcome: status,
+        reason: status === 'failed' || status === 'undelivered' ? `twilio_${status}` : null,
+        ref: { twilioSid: messageSid, kind: row.kind, attempt: row.attempt, errorCode },
+      });
+    } catch (err) {
+      console.error('[TwilioWebhook] Erro ao atualizar admission_messages:', err instanceof Error ? err.name : 'erro');
+    }
   }
 
   /**

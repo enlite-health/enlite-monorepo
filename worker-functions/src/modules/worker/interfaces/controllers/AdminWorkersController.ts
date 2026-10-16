@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import { z } from 'zod';
 import { DatabaseConnection } from '@shared/database/DatabaseConnection';
+import { resolveCanonicalWorkerId } from '@shared/database/resolveCanonicalWorkerId';
 import { KMSEncryptionService } from '@shared/security/KMSEncryptionService';
 import { BlindIndexService } from '@shared/security/BlindIndexService';
 import { GCSStorageService } from '../../infrastructure/GCSStorageService';
@@ -282,10 +283,16 @@ export class AdminWorkersController {
   async getWorkerById(req: Request, res: Response): Promise<void> {
     try {
       const { id } = req.params;
-      const workerResult = await this.db.query(
-        `SELECT ${WORKER_DETAIL_COLS} FROM workers w WHERE w.id = $1 AND w.merged_into_id IS NULL`,
-        [id],
-      );
+      const selectDetail = `SELECT ${WORKER_DETAIL_COLS} FROM workers w WHERE w.id = $1 AND w.merged_into_id IS NULL`;
+      let workerResult = await this.db.query(selectDetail, [id]);
+      if (workerResult.rows.length === 0) {
+        // Id FUNDIDO (candidaturas antigas do Talentum o referenciam): serve a ficha do
+        // worker vivo; o `id` da resposta é o canônico. Id inexistente segue 404.
+        const canonicalId = await resolveCanonicalWorkerId(this.db, id);
+        if (canonicalId != null && canonicalId !== id) {
+          workerResult = await this.db.query(selectDetail, [canonicalId]);
+        }
+      }
       if (workerResult.rows.length === 0) {
         res.status(404).json({ success: false, error: 'Worker not found' });
         return;

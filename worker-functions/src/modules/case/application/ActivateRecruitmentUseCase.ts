@@ -16,8 +16,6 @@ import {
   computeRecruitmentReadiness,
   type RECRUITMENT_BLOCKING_CODES,
 } from "../domain/PatientCompleteness";
-import { vacancyRangeForProviderAgeBand } from "../domain/ProviderAgeBandMapping";
-import type { ProviderAgeBand } from "../domain/enums/ContractedService";
 import { ADMISSION_FUNNEL_STATUSES } from "../domain/enums/PatientStatus";
 import { movePatientStatus, PatientStatusNotReadyError } from "./PatientStatusWriter";
 import { formatCaseTitle } from "@shared/utils/caseNumberFormat";
@@ -173,11 +171,19 @@ export class ActivateRecruitmentUseCase {
     const serviceRes = await client.query<{
       id: string;
       providers_needed: number | null;
-      provider_age_band: string | null;
       schedule: unknown;
       live_address_id: string | null;
+      required_professions: string[] | null;
+      required_sex: string | null;
+      required_experience: string | null;
+      work_schedule: string | null;
+      payment_day: string | null;
     }>(
-      `SELECT pcs.id, pcs.providers_needed, pcs.provider_age_band, pcs.schedule,
+      // Spec 027 Fase 3 (D508): SÓ os 5 campos que a vaga copia. `worker_attributes`/`daily_obs` ficam na
+      // ficha e NÃO são lidos aqui (não são usados: nem pelo portão, nem pela cópia).
+      `SELECT pcs.id, pcs.providers_needed, pcs.schedule,
+                pcs.required_professions, pcs.required_sex, pcs.required_experience,
+                pcs.work_schedule, pcs.payment_day,
                 pa.id AS live_address_id
            FROM patient_contracted_services pcs
            LEFT JOIN patient_addresses pa
@@ -207,6 +213,13 @@ export class ActivateRecruitmentUseCase {
       serviceHasSchedule: hasSchedule,
       insuranceInformed: insurance_informed,
       hasVerifiedActiveCoverage: has_verified_active_coverage,
+      serviceRecruitmentFields: {
+        requiredProfessions: service.required_professions,
+        requiredSex: service.required_sex,
+        requiredExperience: service.required_experience,
+        workSchedule: service.work_schedule,
+        paymentDay: service.payment_day,
+      },
     });
     if (!ready) {
       throw new RecruitmentNotReadyError(patientId, serviceId, missing);
@@ -217,9 +230,6 @@ export class ActivateRecruitmentUseCase {
     );
     const vacancyNumber = parseInt(vnRes.rows[0].vn, 10);
     const computedTitle = formatCaseTitle(case_number, vacancyNumber);
-    const ageRange = vacancyRangeForProviderAgeBand(
-      service.provider_age_band as ProviderAgeBand | null,
-    );
 
     // T054 (achado do gate revisao-pr, fase 1): separado em DOIS objetos —
     // `fromOrigin` (o que o PACIENTE/SERVIÇO manda, tipado EXATAMENTE como
@@ -237,10 +247,13 @@ export class ActivateRecruitmentUseCase {
       patient_id: patientId,
       patient_address_id: service.live_address_id,
       contracted_service_id: service.id,
-      age_range_min: ageRange.min,
-      age_range_max: ageRange.max,
-      schedule: service.schedule,
-      providers_needed: service.providers_needed,
+      // F6: a faixa etária também NÃO é copiada — a vaga deriva de `provider_age_band` do serviço (`applyEffectiveAgeRange`).
+      age_range_min: null,
+      age_range_max: null,
+      // F2: o horário NÃO é copiado — a vaga lê do serviço (`service.schedule` só serve ao gate de prontidão acima).
+      schedule: null,
+      // F5: a quantidade também NÃO é copiada — a vaga lê `patient_contracted_services.providers_needed` pela peça.
+      providers_needed: null,
     };
     // Tipado com o MESMO `Omit` que sobra de `fromOrigin` (+`vacancyNumber`/`computedTitle`, que não
     // são nem origem nem recrutamento) — sem isto, uma chave travada repetida aqui (ex.:
@@ -249,14 +262,19 @@ export class ActivateRecruitmentUseCase {
     // as duas juntas: o tipo host barra a chave errada AQUI, e a ordem barra a chave certa perdendo
     // se alguém escapar o tipo.
     const fromRecruitment: Omit<VacancyInsertParams, SourceLockedField | 'vacancyNumber' | 'computedTitle'> = {
-      required_professions: null,
-      required_sex: null,
+      // Spec 027 Fase 3 (D508): estes 5 vêm do serviço, LITERAIS (lex S.5: nunca derivados de dado do
+      // paciente). Ficam FORA de `SOURCE_LOCKED_FIELDS` de propósito (D508 item 4): a vaga nasce rascunho
+      // (T.6) e a recrutadora corrige na vaga.
+      required_professions: service.required_professions,
+      required_sex: service.required_sex,
+      required_experience: service.required_experience,
+      work_schedule: service.work_schedule,
+      payment_day: service.payment_day,
+      // NÃO COPIAR (D508 a; vedação lex C-b2/C-c.3): a vaga continua com estes digitados pela recrutadora.
+      // `worker_attributes`/`daily_obs` ficam só na ficha; `salary_text` cai no default 'A convenir'.
       worker_profile_sought: null,
-      required_experience: null,
       worker_attributes: null,
-      work_schedule: null,
       salary_text: null,
-      payment_day: null,
       daily_obs: null,
       status: undefined,
       published_at: null,

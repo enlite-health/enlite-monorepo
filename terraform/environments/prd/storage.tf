@@ -17,6 +17,15 @@ module "bucket_worker_documents" {
   }]
 }
 
+# spec 050 §18 R-40: a conta do backend só alcançava este bucket pelo `roles/firebase.admin` de projeto. O vínculo próprio
+# entra ANTES de o papel largo sair (R-42). Não existia no vivo (medido 11/10/2026: só a conta padrão do Compute tem
+# objectAdmin) — então é criação, não import.
+resource "google_storage_bucket_iam_member" "worker_documents_functions_sa" {
+  bucket = module.bucket_worker_documents.name
+  role   = "roles/storage.objectAdmin"
+  member = module.sa_enlite_functions.member
+}
+
 # spec 018, PR-4 (US-9, lex-pr4-foto.md #1-12): foto de perfil do paciente. Equivalente de prd do
 # `bucket_patient_photos` da `stg` (`terraform/environments/stg/storage.tf`) — mesmo desenho: região
 # SOUTHAMERICA-WEST1 (não EAST1 como o `bucket_worker_documents`, que é do prestador), sem CORS

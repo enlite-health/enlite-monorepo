@@ -47,6 +47,8 @@ export const AdminVacancyDetailSchema = z
     social_short_links: z.record(z.string()).nullable(),
     encuadres: z.array(EncuadreSchema).nullable(),
     publications: z.array(PublicationSchema).nullable(),
+    // F3 (vaga-le-do-servico): avisos abertos; nunca carregam valor, só campo e instante.
+    source_change_notices: z.array(z.object({ field: z.string(), changed_at: z.string() })).optional(),
   })
   .passthrough();
 

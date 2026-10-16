@@ -4,8 +4,8 @@ import { DomainEventProcessor } from '@shared/events/DomainEventProcessor';
 import { PubSubClient } from '@shared/events/PubSubClient';
 import { DomainEventBacklogService } from '@shared/events/DomainEventBacklogService';
 import { AnaCareMirrorHealthService } from '@shared/events/AnaCareMirrorHealthService';
+import { TherapeuticContactReminderHealthService } from '@shared/events/TherapeuticContactReminderHealthService';
 import { OutboxProcessor } from '../../infrastructure/OutboxProcessor';
-import { ReminderScheduler } from '../../infrastructure/ReminderScheduler';
 import { BulkDispatchScheduler } from '../../infrastructure/BulkDispatchScheduler';
 import { BulkDispatchTalentumScheduler } from '../../infrastructure/BulkDispatchTalentumScheduler';
 import { MessagingRetentionService } from '../../infrastructure/MessagingRetentionService';
@@ -58,12 +58,13 @@ export class InternalController {
   constructor(
     private readonly eventProcessor: DomainEventProcessor,
     private readonly outboxProcessor: OutboxProcessor,
-    private readonly reminderScheduler: ReminderScheduler,
     private readonly bulkDispatchScheduler: BulkDispatchScheduler,
     private readonly bulkDispatchTalentumScheduler: BulkDispatchTalentumScheduler,
     private readonly domainEventBacklogService: DomainEventBacklogService,
     private readonly anaCareMirrorHealthService: AnaCareMirrorHealthService,
     private readonly messagingRetentionService: MessagingRetentionService,
+    /** spec 048: opcional — sem ele o bloco do PT é omitido (testes antigos do controller não o conhecem). */
+    private readonly ptContactReminderHealthService?: TherapeuticContactReminderHealthService,
   ) {}
 
   /**
@@ -130,22 +131,6 @@ export class InternalController {
       logger.error({ error: error.message }, 'processOutboxPaced error');
       reportError(error, { source: 'InternalController:processOutboxPaced' });
       res.status(500).json({ success: false, error: 'Internal server error' });
-    }
-  }
-
-  /**
-   * POST /api/internal/reminders/sweep
-   * Trigger: Cloud Scheduler (every 5min) — safety net para lembretes pendentes + no-shows.
-   */
-  async sweepReminders(_req: Request, res: Response): Promise<void> {
-    try {
-      const result = await this.reminderScheduler.processBatch();
-      res.status(200).json({ status: 'ok', ...result });
-    } catch (err) {
-      const error = err instanceof Error ? err : new Error(String(err));
-      logger.error({ error: error.message }, 'sweepReminders error');
-      reportError(error, { source: 'InternalController:sweepReminders' });
-      res.status(500).json({ error: 'Internal server error' });
     }
   }
 
@@ -308,6 +293,26 @@ export class InternalController {
         });
       }
 
+      /**
+       * spec 048 — lembretes de contato pendente do PT: checagem de ESTADO (vencido há > 1 dia sem envio/cancelamento).
+       * Reemite o WARN a cada ciclo enquanto houver atraso (heartbeat, não auto-resolve); cobre o modo mais provável:
+       * o job novo do Scheduler ainda não aplicado.
+       */
+      const ptContactReminders = this.ptContactReminderHealthService
+        ? await this.ptContactReminderHealthService.getHealth(24)
+        : null;
+      if (ptContactReminders) {
+        if (ptContactReminders.overdue > 0) {
+          logger.warn({
+            msg: '[pt-contact-reminders/health] overdue',
+            overdue: ptContactReminders.overdue,
+            oldestOverdueHours: ptContactReminders.oldestOverdueHours,
+          });
+        } else {
+          logger.info({ msg: '[pt-contact-reminders/health] ok' });
+        }
+      }
+
       const stuckRows = summary.filter(row => row.stuck);
 
       for (const row of stuckRows) {
@@ -334,53 +339,12 @@ export class InternalController {
         stuckCount: stuckRows.length,
         worstOldestRecentAgeMinutes,
         anaCareMirror: mirror,
+        ...(ptContactReminders ? { ptContactReminders } : {}),
       });
     } catch (err) {
       const error = err instanceof Error ? err : new Error(String(err));
       logger.error({ msg: '[events/health] error', error: error.message });
       reportError(error, { source: 'InternalController:getEventsHealth' });
-      res.status(500).json({ error: 'Internal server error' });
-    }
-  }
-
-  /**
-   * POST /api/internal/reminders/qualified
-   * Trigger: Cloud Tasks (scheduled 24h before interview)
-   * Body: { workerId, jobPostingId }
-   */
-  async processQualifiedReminder(req: Request, res: Response): Promise<void> {
-    try {
-      const { workerId, jobPostingId } = req.body;
-      if (!workerId || !jobPostingId) {
-        res.status(400).json({ error: 'Missing workerId or jobPostingId' });
-        return;
-      }
-
-      await this.reminderScheduler.processQualifiedReminder(workerId, jobPostingId);
-      res.status(200).json({ status: 'ok', workerId, jobPostingId });
-    } catch (err) {
-      console.error('[InternalController] processQualifiedReminder error:', err);
-      res.status(500).json({ error: 'Internal server error' });
-    }
-  }
-
-  /**
-   * POST /api/internal/reminders/5min
-   * Trigger: Cloud Tasks (scheduled 5min before interview)
-   * Body: { workerId, jobPostingId }
-   */
-  async process5MinReminder(req: Request, res: Response): Promise<void> {
-    try {
-      const { workerId, jobPostingId } = req.body;
-      if (!workerId || !jobPostingId) {
-        res.status(400).json({ error: 'Missing workerId or jobPostingId' });
-        return;
-      }
-
-      await this.reminderScheduler.process5MinReminder(workerId, jobPostingId);
-      res.status(200).json({ status: 'ok', workerId, jobPostingId });
-    } catch (err) {
-      console.error('[InternalController] process5MinReminder error:', err);
       res.status(500).json({ error: 'Internal server error' });
     }
   }

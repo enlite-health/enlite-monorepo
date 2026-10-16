@@ -35,8 +35,7 @@ export class TalentumFunnelStageMapper implements FunnelStageMapper<TalentumProv
     ['QUALIFIED',     'QUALIFIED'],
     ['NOT_QUALIFIED', 'NOT_QUALIFIED'],
     // 'REPROGRAM' removido em F7.b (migration 195) — não há source Talentum com esse valor;
-    // o estado era gerado internamente pelo HandleReminderResponseUseCase.
-    ['CONFIRMED',     'CONFIRMED'],
+    // o estado era gerado internamente pelo fluxo automático de lembretes (removido na spec 052).
     ['SELECTED',      'SELECTED'],
     // 'PLACED' removido em F7.a (migration 194 — 0 linhas em prod, sync F6 morta)
     ['REJECTED',      'REJECTED'],

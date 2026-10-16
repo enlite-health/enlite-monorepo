@@ -242,4 +242,38 @@ describe('AnaCareHoursDetailContainer — navegação por mês (spec 037)', () =
     await waitFor(() => expect(screen.getByTestId('anacare-hours-validate-shift-b')).not.toBeDisabled());
     expect(screen.queryByTestId('anacare-hours-retrato-error')).not.toBeInTheDocument();
   });
+
+  const validated = (id: string, date: string, extra: Partial<AnaCareShift> = {}): AnaCareShift => ({ ...shift(id, date), status: 'validado', ...extra });
+  const withDoc = (p: AnaCarePatient): AnaCarePatient => ({ ...p, documentType: 'DNI', documentNumber: '12345678' });
+
+  it('retrato de outubro PENDENTE: o "Enviar" do Axonico fica DESABILITADO (dia validado e elegível); com retrato `fresco` real habilita (spec 037)', async () => {
+    const { service } = makeService({ '2026-09': withDoc(patientOf(shift('a', '2026-09-29'))), '2026-10': withDoc(patientOf(validated('b', '2026-10-06'))) });
+    let resolveOct: (v: unknown) => void = () => {};
+    const retrato = { updatedAt: '2026-10-01T08:00:00-03:00', stale: false, snapshotState: 'fresco', circuitBreakerOpen: false };
+    (service.getRetratoStatus as ReturnType<typeof vi.fn>).mockImplementation((m: string) => (m === '2026-10' ? new Promise((r) => { resolveOct = r; }) : Promise.resolve(retrato)));
+    function Harness(): JSX.Element {
+      const [month, setMonth] = useState('2026-09');
+      return <AnaCareHoursDetailContainer axonicoService={AXONICO} patientDocumentService={DOCUMENT} service={service} month={month} onMonthChange={setMonth} patientId="90000" onBack={vi.fn()} />;
+    }
+    render(<Harness />);
+    await waitFor(() => expect(screen.getByTestId('anacare-hours-week-datepicker')).toBeInTheDocument());
+    setDate('2026-09-29');
+    await waitFor(() => expect(screen.getByTestId('anacare-hours-shift-row-a')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('anacare-hours-week-next'));
+    await waitFor(() => expect(screen.getByTestId('anacare-hours-shift-row-b')).toBeInTheDocument());
+    expect(screen.getByTestId('anacare-hours-send-day-2026-10-06')).toBeDisabled();
+    await act(async () => resolveOct(retrato));
+    await waitFor(() => expect(screen.getByTestId('anacare-hours-send-day-2026-10-06')).not.toBeDisabled());
+  });
+
+  it('semana 28/09–04/10: o turno de OUTUBRO com `axonico` enviado mostra o "enviado" (axonicoSentOf/DayGroup) (spec 037)', async () => {
+    const sent = { status: 'enviado' as const, numeroComprobante: 'NC-77', codAutorizacion: 'CA-1', sentAt: '2026-10-02T10:00:00-03:00' };
+    const { service } = makeService({ '2026-09': patientOf(shift('a', '2026-09-30')), '2026-10': patientOf(validated('b', '2026-10-01', { axonico: sent })) });
+    mount(service);
+    await waitFor(() => expect(screen.getByTestId('anacare-hours-week-datepicker')).toBeInTheDocument());
+    setDate('2026-09-30');
+    await waitFor(() => expect(screen.getByTestId('anacare-hours-shift-row-b')).toBeInTheDocument());
+    expect(screen.getByTestId('anacare-hours-day-sent-2026-10-01').textContent).toContain('NC-77');
+    expect(screen.queryByTestId('anacare-hours-day-sent-2026-09-30')).not.toBeInTheDocument();
+  });
 });

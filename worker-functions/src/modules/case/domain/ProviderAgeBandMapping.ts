@@ -54,6 +54,21 @@ export function vacancyRangeForProviderAgeBand(
 }
 
 /**
+ * F6 (vaga-le-do-servico-contratado): o ÚNICO ponto de TS que deriva `age_range_min/max` da vaga. O leitor seleciona
+ * `vacancyEffectiveAgeRangeSql` (peça SQL) e passa a linha aqui:
+ *  - vaga COM serviço: o SQL trouxe `age_range_*` NULL e a banda; a faixa vem do mapeamento (banda nula = faixa vazia,
+ *    nunca a cópia antiga da vaga);
+ *  - vaga MANUAL (banda NULL): as colunas `age_range_*` do SQL são as da própria vaga e ficam como vieram.
+ * A coluna auxiliar sai da linha: o formato devolvido ao consumidor é o de sempre.
+ */
+export function applyEffectiveAgeRange<T extends object>(row: T): T {
+  const { effective_provider_age_band: band, ...rest } = row as T & { effective_provider_age_band?: string | null };
+  if (band == null) return rest as T;
+  const range = vacancyRangeForProviderAgeBand(band as ProviderAgeBand);
+  return { ...rest, age_range_min: range.min, age_range_max: range.max } as T;
+}
+
+/**
  * Grafia VIVA do ClickUp (`contracts/clickup-fields.md`, linha 82, medida 03/09) → enum
  * canônico. FR-4: exportada para o espelho usar QUANDO a admissão do ClickUp for lida — hoje não
  * há caminho de escrita do espelho para `patient_contracted_services` (a entidade nasceu vazia,

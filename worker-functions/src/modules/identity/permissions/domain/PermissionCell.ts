@@ -61,6 +61,15 @@ export const RESOURCE_CATEGORY: Readonly<Record<string, PermissionCategory>> = {
   patient_conversation: 'Pacientes',
   // Spec 031 (D463): aba "Documentos" da ficha — arquivos do paciente (subidos na aba ou vindos do chat).
   patient_document: 'Pacientes',
+  // Spec 049 (F3): aba "Admissão" da ficha — agenda da entrevista de admissão, selos de mensagem e resumo.
+  patient_admission: 'Pacientes',
+  // Spec 052 (F2): aba "Enquadre" da vaga — o evento (data, entrevistadora, convocados) e o resultado de cada convocado.
+  enquadre_event: 'Vagas e Funil',
+  enquadre_result: 'Vagas e Funil',
+  // Spec 052 (F3): o RESUMO do evento (selo na linha e PDF para baixar) — célula própria: sem ela nem o selo aparece.
+  enquadre_summary: 'Vagas e Funil',
+  // Spec 051 (F1): trocar o status do paciente por fora do fluxo — uma célula por destino.
+  patient_status: 'Pacientes',
   patient_coverage: 'Pacientes',
   patient_address: 'Pacientes',
   patient_services: 'Pacientes',
@@ -113,6 +122,10 @@ export const RESOURCE_CATEGORY: Readonly<Record<string, PermissionCategory>> = {
   own_notifications: 'Administração',
   // Change 022-ux-mencao-e-notificacao, Rodada 2 (R2-B): heartbeat de presença do painel admin.
   own_presence: 'Administração',
+  // Spec 049 (F4): o operador vê/gerencia o PRÓPRIO vínculo com o Tactiq (célula own_*).
+  own_tactiq_link: 'Administração',
+  // Spec 055: tela "Entrevistadores" — quem atende enquadre e admissão (tabela interview_hosts).
+  interview_host: 'Administração',
 };
 
 /**
@@ -266,6 +279,14 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
   'patient_therapeutic_project:export':
     'Exportar o PDF de uma versão do projeto terapêutico (vigente ou antiga). Exige também '
     + '`patient_therapeutic_project:read` — a leitura da versão é pré-requisito do export.',
+  // spec 048: as 2 células abaixo NÃO estão em `perm.require` de rota (a 1ª é checada no repositório do PT com
+  // `cells.includes`, a 2ª pelo job de lembretes com `iam.effective_permissions`) — por isso entram aqui.
+  'patient_therapeutic_project:waive_contact':
+    'Ver e escolher "No necesita" nos campos de contato do projeto terapêutico (campo que não se aplica ao '
+    + 'paciente: tira o campo do prazo de 15 dias e dos lembretes). Sem a célula a opção nem aparece e o servidor recusa (403).',
+  'patient_therapeutic_project:incomplete_alert':
+    'Receber no sino o aviso do 12º dia de que um paciente está com contatos do projeto terapêutico ainda marcados '
+    + '"Todavía no hay registro" (cadastro incompleto).',
   'catalog_therapeutic_objectives:read':
     'Ver o catálogo de OBJETIVOS ESPECÍFICOS do projeto terapêutico (lista global, sem dado de paciente).',
   // `catalog_therapeutic_objectives:write` REMOVIDA (change `catalogo-de-permissoes-derivado-do-codigo`,
@@ -314,6 +335,54 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
     'Renomear um documento do paciente na lista da aba Documentos (só o nome na lista; o arquivo não muda).',
   'patient_document:delete':
     'Excluir um documento do paciente da aba Documentos. DEFINITIVO: some a linha e o arquivo; no chat a mensagem passa a mostrar documento eliminado.',
+  'patient_admission:read':
+    'Ver a aba Admissão do paciente: reuniões de admissão (marcadas pelo painel e pelo site), responsável, horário e os '
+    + 'selos de Confirmação, Lembrete, Importação e Documento. Só estados e datas — sem texto clínico nem telefone.',
+  'patient_admission:create':
+    'Marcar a reunião de admissão pelo painel e listar os responsáveis disponíveis do país. Marcar cria evento no '
+    + 'Google Calendar com Meet e dispara o WhatsApp de confirmação à família.',
+  'patient_admission:update':
+    'Cancelar a reunião de admissão pelo painel: apaga o evento no Google Calendar (a família é avisada pelo Google).',
+  'patient_admission:resend_message':
+    'Reenviar o WhatsApp da reunião de admissão que FALHOU (confirmação ou lembrete). Cada reenvio manda uma mensagem '
+    + 'à família; teto de 2 reenvios por mensagem. Quais perfis recebem esta célula é decisão do Diego.',
+  'patient_admission:release_paid_rehearsal':
+    'Liberar o ENSAIO PAGO de uma reunião de admissão de paciente de TESTE, por 48 h: só então a reunião usa Meet, Tactiq, '
+    + 'Vertex e WhatsApp reais (custa dinheiro e manda mensagem de verdade); a transcrição vai a um bucket separado que '
+    + 'expira. Não existe para paciente real. Fica na trilha quem liberou e quando. Só o Acesso Master.',
+  'patient_admission:retry_summary':
+    'Autorizar uma NOVA rodada do resumo da reunião de admissão depois que as 3 tentativas pagas se esgotaram: cada rodada '
+    + 'custa até 3 chamadas ao Vertex. Teto de 2 autorizações por reunião; fica na trilha quem autorizou e quando. '
+    + 'Acesso Master e Admisión y Supervisión.',
+  'enquadre_event:read':
+    'Ver a aba Enquadre da vaga: os eventos de enquadre (data, entrevistadora, código ENC, estado), quem foi convocado e em que '
+    + 'coluna está. Só nomes, estados e datas — sem texto clínico, telefone ou e-mail.',
+  'enquadre_event:create':
+    'Criar o evento de enquadre da vaga: escolher entrevistadora, horário e convocados. Cria o evento no Google Calendar com '
+    + 'Meet e o Google MANDA o convite por e-mail a cada convocado. Também lista as entrevistadoras e os horários livres.',
+  'enquadre_event:update':
+    'Acrescentar ou tirar convocado e cancelar o evento de enquadre: altera a lista de convidados no Google Calendar (o Google '
+    + 'avisa os convidados) e, ao cancelar, apaga o evento e deixa uma anotação automática no card de cada convocado.',
+  'enquadre_result:update':
+    'Marcar o resultado de cada convocado do evento (Selecionado, Equipe de resposta rápida, Rechazado ou de volta a '
+    + 'Convocados) e encerrar o evento. Marcar MOVE o estágio da candidatura na vaga, o mesmo do Recrutamento; encerrar carimba '
+    + 'cada convocado e anota quem não foi marcado.',
+  'enquadre_summary:read':
+    'Ver o selo do resumo do evento de enquadre e baixar o resumo (PDF) gerado a partir da transcrição da call. Sem esta célula '
+    + 'a linha do evento não mostra o selo do resumo nem o botão de baixar, e o download responde 403. '
+    + 'Só o Acesso Master por enquanto.',
+  'interview_host:read':
+    'Ver a tela Entrevistadores: quem atende enquadre e admissão, em que países, quais fluxos e se já vinculou o Tactiq. '
+    + 'Mostra nome e e-mail do usuário. Só o Acesso Master por enquanto.',
+  'interview_host:update':
+    'Agregar, editar e quitar entrevistadores de enquadre e admissão (escolhidos entre os usuários staff ativos). Mexe em '
+    + 'quem aparece na lista de entrevistadora do enquadre e da admissão na próxima abertura. Só o Acesso Master por enquanto.',
+  'own_tactiq_link:read':
+    'Ver o estado do PRÓPRIO vínculo com o Tactiq (vinculado, caído, conta errada ou sem vínculo) e a data da última '
+    + 'verificação. Nunca devolve o token. Quem não está vinculado não pode ser responsável de agenda de admissão.',
+  'own_tactiq_link:create':
+    'Vincular a PRÓPRIA conta do Tactiq (OAuth no navegador). O token fica cifrado e só o teste diário o usa; nunca '
+    + 'vincula a conta de outro usuário. Quais perfis recebem esta célula é decisão do Diego.',
   'staff_directory:read':
     'Buscar staff ativo por nome ou e-mail para o autocomplete de menção do chat interno do paciente. '
     + 'Devolve apenas UID e nome de exibição — nunca e-mail, telefone ou papel (D-06).',
@@ -373,8 +442,11 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
   'messaging:update':
     'Editar/enviar template ou rascunho de mensagem já existente, configurar mensageria por etapa e '
     + 'o convite à apresentação.',
-  'recruitment:create': 'Disparar cálculo novo de reemplazos.',
-  'recruitment:update': 'Editar/repetir o cálculo de reemplazos.',
+  // `recruitment:create`/`recruitment:update` REMOVIDAS junto com o dashboard de recrutamento
+  // (`POST /admin/recruitment/calculate-reemplazos` e as 5 rotas `recruitment:read` saíram): SEM consumidor
+  // no backend, e o recurso `recruitment` saiu de `SPLIT_RESOURCES`. Mesmo caminho de `api_docs:read`
+  // (commit 8991d6708): só código, sem migration — o sync do boot marca `deprecated_at`, nunca apaga linha
+  // nem mexe em `iam.group_permissions`.
   'worker:update': 'Editar status, ocupação, área de serviço, perfil e tags de um prestador já cadastrado.',
   'worker_document:create': 'Subir um documento novo do prestador (ou o link de ingestão a partir de URL).',
   'worker_document:update': 'Editar o prazo de validade de um documento já cadastrado do prestador.',
@@ -431,6 +503,31 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
   //    `ai_prompt:restore` (migration 488) NÃO entra: nenhuma rota a cobra ainda (Fase 5).
   'ai_prompt:read': 'Ler o conteúdo e o histórico dos prompts de IA da plataforma, e comparar versões.',
   'ai_prompt:update': 'Salvar e desfazer a última alteração de um prompt de IA.',
+  // ── Spec 051 (F1 / PR-A): trocar o status do paciente por FORA do fluxo normal de transições.
+  //    Uma célula por DESTINO. Nenhuma rota as exige neste PR: o consumidor é a função pura
+  //    `decidirTrocaForaDoFluxo` (`case/domain/trocaForaDoFluxo.ts`), ainda não ligada ao writer.
+  //    Nenhuma entra em grupo por padrão; o Acesso Master as recebe pelo sync do catálogo.
+  'patient_status:move_to_searching':
+    'Trocar o paciente para BÚSQUEDA (procurando prestador) por FORA do fluxo normal de transições, '
+    + 'a partir de qualquer estado clínico. Exige a ficha completa para o novo estado. Não vem em nenhum grupo por padrão.',
+  'patient_status:move_to_active':
+    'Trocar o paciente para ATIVO (em atendimento) por FORA do fluxo normal de transições, '
+    + 'a partir de qualquer estado clínico. Exige a ficha completa para o novo estado. Não vem em nenhum grupo por padrão.',
+  'patient_status:move_to_replacement':
+    'Trocar o paciente para REEMPLAZO (troca de prestador) por FORA do fluxo normal de transições, '
+    + 'a partir de qualquer estado clínico. Exige a ficha completa para o novo estado. Não vem em nenhum grupo por padrão.',
+  'patient_status:move_to_on_hold':
+    'Trocar o paciente para EN ESPERA por FORA do fluxo normal de transições, a partir de qualquer '
+    + 'estado clínico. Continua exigindo o motivo da espera. Não vem em nenhum grupo por padrão.',
+  'patient_status:move_to_suspended':
+    'Trocar o paciente para SUSPENSO (internação, viagem) por FORA do fluxo normal de transições, '
+    + 'a partir de qualquer estado clínico. Não vem em nenhum grupo por padrão.',
+  'patient_status:move_to_alta':
+    'Trocar o paciente para ALTA por FORA do fluxo normal de transições, a partir de qualquer '
+    + 'estado clínico. Não vem em nenhum grupo por padrão.',
+  'patient_status:move_to_discharged':
+    'Trocar o paciente para BAJA (desligado) por FORA do fluxo normal de transições, a partir de '
+    + 'qualquer estado clínico. Não vem em nenhum grupo por padrão.',
 };
 
 /**
@@ -438,7 +535,8 @@ export const CELL_DESCRIPTION: Readonly<Record<string, string>> = {
  * (spec 018, PR-8b, ADR-2/SUP-30). `permission_management` fica de fora de propósito —
  * é a ÚNICA rota que continua sob `write` (contracts/permissions-split.md linha 11).
  *
- * Os 18 primeiros são os recursos com `perm.require('<recurso>', 'write', …)` LITERAL
+ * (`recruitment` SAIU em out/2026, com o dashboard de recrutamento — sem rota nem célula `create`/`update`.)
+ * Os 17 primeiros são os recursos com `perm.require('<recurso>', 'write', …)` LITERAL
  * (`git grep -n "perm\.require([^)]*'write'" -- worker-functions/src | grep -v test` menos
  * `permission_management`, 93 hits medidos em 15/09 (excluindo por CAMINHO `__tests__`, não por
  * substring da linha — correção do coordenador: o filtro por substring "test" cortava
@@ -470,7 +568,6 @@ export const SPLIT_RESOURCES: ReadonlySet<string> = new Set([
   'prescreening',
   'interview',
   'messaging',
-  'recruitment',
   'worker_document',
   'patient_therapeutic_project',
   'catalog_therapeutic_objectives',

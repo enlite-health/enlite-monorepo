@@ -65,13 +65,6 @@ vi.mock(
 );
 
 vi.mock(
-  '@presentation/components/features/admin/VacancyDetail/VacancyMeetLinksRow',
-  () => ({
-    VacancyMeetLinksRow: () => null,
-  }),
-);
-
-vi.mock(
   '@presentation/components/features/admin/VacancyDetail/Funnel/VacancyFunnelView',
   () => ({
     VacancyFunnelView: () => (
@@ -81,10 +74,10 @@ vi.mock(
 );
 
 vi.mock(
-  '@presentation/components/features/admin/VacancyDetail/VacancyMeetLinksCard',
+  '@presentation/components/features/admin/VacancyDetail/VacancySocialLinksCard',
   () => ({
-    VacancyMeetLinksCard: () => (
-      <div data-testid="vacancy-meet-links-card">MeetLinksCard</div>
+    VacancySocialLinksCard: () => (
+      <div data-testid="vacancy-social-links-card">SocialLinksCard</div>
     ),
   }),
 );

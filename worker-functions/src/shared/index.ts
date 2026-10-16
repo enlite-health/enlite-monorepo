@@ -16,7 +16,6 @@ export { CloudTasksClient } from './events/CloudTasksClient';
 export type { ScheduleTaskOptions } from './events/CloudTasksClient';
 export { PubSubClient } from './events/PubSubClient';
 export type { PubSubMessage } from './events/PubSubClient';
-export { createQualifiedInterviewHandler } from './events/handlers/QualifiedInterviewHandler';
 
 // Utils
 export * from './utils/pagination';

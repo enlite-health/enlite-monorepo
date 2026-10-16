@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { Hand, MessageSquare } from 'lucide-react';
+import { MessageSquare } from 'lucide-react';
 import { WorkerAvatar } from '@presentation/components/atoms/WorkerAvatar';
 import { WhatsappStatusBadge } from '@presentation/components/atoms/WhatsappStatusBadge';
 import { Text } from '@presentation/components/atoms/Text';
@@ -10,6 +10,7 @@ import {
 } from '@presentation/components/atoms/Table';
 import type { FunnelTableRow } from '@domain/entities/Funnel';
 import { formatInstant } from '@presentation/utils/dateTimeFormat';
+import { stageColumnIdFor } from './funnelTabsConfig';
 
 interface VacancyFunnelTableRowProps {
   row: FunnelTableRow;
@@ -27,12 +28,7 @@ export function VacancyFunnelTableRow({
 
   const formattedDate = formatInstant(row.invitedAt, { day: '2-digit', month: '2-digit', year: 'numeric' }) ?? '—';
 
-  const acceptedLabel =
-    row.accepted === true
-      ? t('admin.vacancyDetail.funnelTable.acceptedYes')
-      : row.accepted === false
-        ? t('admin.vacancyDetail.funnelTable.acceptedNo')
-        : '—';
+  const stageId = stageColumnIdFor(row.kanbanColumn);
 
   function handleNotesClick(e: React.MouseEvent) {
     e.stopPropagation();
@@ -116,26 +112,35 @@ export function VacancyFunnelTableRow({
         </div>
       </TableCell>
 
-      {/* Origen — "levantou a mão" (mesmo sinal do card do Kanban, aqui na vista
-          que é o DEFAULT do funil). Célula vazia = não sabemos: a autoria só é
-          gravada desde 06/08 e ausência não prova desinteresse. */}
-      <TableCell className="px-6 whitespace-nowrap">
-        {row.selfAppliedAt ? (
-          <span
-            data-testid="funnel-self-applied-badge"
-            title={t('admin.kanban.selfAppliedTitle', {
-              date: formatInstant(row.selfAppliedAt, {}) ?? '',
-            })}
-            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-800"
-          >
-            <Hand className="w-3 h-3" />
-            {t('admin.kanban.selfApplied')}
+      {/* Registration badge */}
+      <TableCell unwrapped className="px-6">
+        {row.registrationComplete ? (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 text-green-700">
+            <Text as="span" size="xs" weight="medium" color="inherit">
+              {t('admin.vacancyDetail.funnelTable.registration.complete')}
+            </Text>
           </span>
         ) : (
-          <Text as="span" size="xs" color="muted">
-            —
-          </Text>
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-100 text-red-700">
+            <Text as="span" size="xs" weight="medium" color="inherit">
+              {t('admin.vacancyDetail.funnelTable.registration.incomplete')}
+            </Text>
+          </span>
         )}
+      </TableCell>
+
+      {/* Etapa — coluna do Kanban lida de row.kanbanColumn (o back decide; sem cálculo aqui) */}
+      <TableCell unwrapped className="px-6 whitespace-nowrap">
+        <Text
+          as="span"
+          size="sm"
+          weight="medium"
+          color="secondary"
+          data-testid={`funnel-stage-${row.id}`}
+          data-stage={stageId ?? undefined}
+        >
+          {stageId ? t(`admin.kanban.columns.${stageId}`) : '—'}
+        </Text>
       </TableCell>
 
       {/* Phone */}
@@ -153,27 +158,6 @@ export function VacancyFunnelTableRow({
         <WhatsappStatusBadge status={row.whatsappStatus} />
       </TableCell>
 
-      {/* Accepted */}
-      <TableCell weight="medium" className="px-6">
-        {acceptedLabel}
-      </TableCell>
-
-      {/* Registration badge */}
-      <TableCell unwrapped className="px-6">
-        {row.registrationComplete ? (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 text-green-700">
-            <Text as="span" size="xs" weight="medium" color="inherit">
-              {t('admin.vacancyDetail.funnelTable.registration.complete')}
-            </Text>
-          </span>
-        ) : (
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-100 text-red-700">
-            <Text as="span" size="xs" weight="medium" color="inherit">
-              {t('admin.vacancyDetail.funnelTable.registration.incomplete')}
-            </Text>
-          </span>
-        )}
-      </TableCell>
     </TableRow>
   );
 }

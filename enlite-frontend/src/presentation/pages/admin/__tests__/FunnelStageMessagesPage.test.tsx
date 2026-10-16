@@ -1,6 +1,6 @@
 /**
  * FunnelStageMessagesPage.test.tsx — a página de "mensagens por etapa" (DEC-12).
- * O que se afirma: as 9 etapas, a célula de UMA LINHA com o texto da mensagem,
+ * O que se afirma: as 8 etapas, a célula de UMA LINHA com o texto da mensagem,
  * QUALIFIED built-in, a modal de escolha (com `messaging:write` salva, sem ela
  * só lê), erro que fica na modal, recarga depois do PUT.
  */
@@ -25,7 +25,7 @@ const contrato = (permissions: string[], enforcement: AuthzContract['enforcement
 /** Engine ligado e SEM `messaging:write` — o único jeito de negar a escrita agora. */
 const semEscrita = () => useAdminAuthStore.setState({ authzStatus: 'ready', authz: contrato(['messaging:read'], 'on') });
 
-const STAGES = ['INVITED', 'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED', 'QUALIFIED', 'IN_DOUBT', 'CONFIRMED', 'SELECTED', 'REJECTED'];
+const STAGES = ['INVITED', 'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED', 'QUALIFIED', 'IN_DOUBT', 'SELECTED', 'REJECTED'];
 const config = () => ({
   country: 'AR',
   // COMPLETED: editado por Gabi; SELECTED: editado por usuário já removido (updatedBy null, updatedAt presente → "—")
@@ -48,7 +48,7 @@ describe('FunnelStageMessagesPage', () => {
   });
   afterEach(() => useAdminAuthStore.setState({ authz: null, authzStatus: 'idle' }));
 
-  it('lista as 9 etapas; QUALIFIED é built-in; a célula mostra o TEXTO da mensagem (não o slug) e o estado; última edição', async () => {
+  it('lista as 8 etapas; QUALIFIED é built-in; a célula mostra o TEXTO da mensagem (não o slug) e o estado; última edição', async () => {
     render(<FunnelStageMessagesPage />);
     await waitFor(() => expect(screen.getByTestId('fsm-table')).toBeInTheDocument());
     for (const s of STAGES) expect(screen.getByTestId(`fsm-row-${s}`)).toBeInTheDocument();

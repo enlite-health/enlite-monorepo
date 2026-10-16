@@ -114,11 +114,6 @@ describe('KanbanCard — visual rendering', () => {
     expect(screen.getByText(/7\/10\/2026 19:00$/)).toBeInTheDocument();
   });
 
-  it('chip da entrevista (CONFIRMED): "7 oct 19:00", não "6 oct"', () => {
-    render(<KanbanCard {...defaultProps} stage="CONFIRMED" interviewDate="2026-10-07T00:00:00.000Z" interviewTime="19:00:00" />);
-    expect(screen.getByText('7 oct 19:00')).toBeInTheDocument();
-  });
-
   it('does not render interview date when null', () => {
     render(<KanbanCard {...defaultProps} interviewDate={null} />);
     expect(screen.queryByText(/\/.*\//)).not.toBeInTheDocument();
@@ -542,7 +537,7 @@ describe('KanbanCard — completado badge', () => {
   });
 
   it('does NOT render completado badge when stage is not COMPLETED', () => {
-    render(<KanbanCard {...defaultProps} stage="CONFIRMED" internalStage="QUALIFIED" />);
+    render(<KanbanCard {...defaultProps} stage="SELECTED" internalStage="QUALIFIED" />);
     expect(screen.queryByTestId('completado-badge')).not.toBeInTheDocument();
   });
 
@@ -575,12 +570,12 @@ describe('KanbanCard — reject button', () => {
 
   it('calls onReject when reject button is clicked', () => {
     const onReject = vi.fn();
-    render(<KanbanCard {...defaultProps} stage="CONFIRMED" onReject={onReject} />);
+    render(<KanbanCard {...defaultProps} stage="SELECTED" onReject={onReject} />);
     fireEvent.click(screen.getByTestId('reject-button'));
     expect(onReject).toHaveBeenCalledTimes(1);
   });
 
-  it.each(['INVITED', 'INICIADO', 'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED', 'CONFIRMED', 'SELECTED'])(
+  it.each(['INVITED', 'INICIADO', 'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED', 'SELECTED'])(
     'renders reject button in %s stage when onReject is provided',
     (stage) => {
       const onReject = vi.fn();
@@ -630,63 +625,11 @@ describe('KanbanCard — notes button', () => {
   });
 });
 
-// ── Interview Schedule Tag (CONFIRMED stage) ────────────────────────────────
+// ── Data da entrevista (052: sem selo; a data simples aparece em qualquer coluna) ──
 
-describe('KanbanCard — interview schedule tag in CONFIRMED', () => {
-  it('shows interview tag with CalendarClock icon when stage is CONFIRMED and interviewDate exists', () => {
-    render(
-      <KanbanCard
-        {...defaultProps}
-        stage="CONFIRMED"
-        interviewDate="2026-03-15T12:00:00"
-        interviewTime="10:30"
-      />,
-    );
-    expect(screen.getByTestId('icon-calendar-clock')).toBeInTheDocument();
-    // Should show short date + time
-    expect(screen.getByText(/mar.*10:30/i)).toBeInTheDocument();
-  });
-
-  it('shows interview tag with date only when interviewTime is null', () => {
-    render(
-      <KanbanCard
-        {...defaultProps}
-        stage="CONFIRMED"
-        interviewDate="2026-03-15T12:00:00"
-        interviewTime={null}
-      />,
-    );
-    expect(screen.getByTestId('icon-calendar-clock')).toBeInTheDocument();
-    // Should show short date only (e.g. "15 mar")
-    expect(screen.getByText(/15.*mar/i)).toBeInTheDocument();
-  });
-
-  it('does NOT show interview tag when stage is CONFIRMED but interviewDate is null', () => {
-    render(
-      <KanbanCard
-        {...defaultProps}
-        stage="CONFIRMED"
-        interviewDate={null}
-        interviewTime={null}
-      />,
-    );
-    expect(screen.queryByTestId('icon-calendar-clock')).not.toBeInTheDocument();
-  });
-
-  it('does NOT show interview tag when stage is COMPLETED (non-CONFIRMED)', () => {
-    render(
-      <KanbanCard
-        {...defaultProps}
-        stage="COMPLETED"
-        interviewDate="2026-03-15T12:00:00"
-        interviewTime="10:30"
-      />,
-    );
-    expect(screen.queryByTestId('icon-calendar-clock')).not.toBeInTheDocument();
-  });
-
-  it.each(['INVITED', 'INICIADO', 'PRE_SCREENING', 'IN_PROGRESS', 'SELECTED', 'REJECTED'])(
-    'does NOT show interview tag when stage is %s',
+describe('KanbanCard — data da entrevista', () => {
+  it.each(['INVITED', 'INICIADO', 'PRE_SCREENING', 'IN_PROGRESS', 'COMPLETED', 'SELECTED', 'REJECTED'])(
+    'mostra a data simples (d/m/aaaa hh:mm) na coluna %s',
     (stage) => {
       render(
         <KanbanCard
@@ -696,38 +639,11 @@ describe('KanbanCard — interview schedule tag in CONFIRMED', () => {
           interviewTime="10:30"
         />,
       );
-      expect(screen.queryByTestId('icon-calendar-clock')).not.toBeInTheDocument();
+      expect(screen.getByText(/15\/3\/2026.*10:30/)).toBeInTheDocument();
     },
   );
 
-  it('shows interview tag with cyan styling', () => {
-    render(
-      <KanbanCard
-        {...defaultProps}
-        stage="CONFIRMED"
-        interviewDate="2026-03-15T12:00:00"
-        interviewTime="10:30"
-      />,
-    );
-    const tag = screen.getByTestId('icon-calendar-clock').closest('span')!;
-    expect(tag.className).toContain('bg-cyan-50');
-    expect(tag.className).toContain('text-cyan-700');
-  });
-
-  it('hides plain interview date text when stage is CONFIRMED (no duplication)', () => {
-    render(
-      <KanbanCard
-        {...defaultProps}
-        stage="CONFIRMED"
-        interviewDate="2026-03-15T12:00:00"
-        interviewTime="10:30"
-      />,
-    );
-    // The full date format (d/m/yyyy) used in non-CONFIRMED should NOT appear
-    expect(screen.queryByText(/15\/3\/2026/)).not.toBeInTheDocument();
-  });
-
-  it('shows plain interview date text in non-CONFIRMED stages', () => {
+  it('não desenha o selo com ícone de calendário em nenhuma coluna', () => {
     render(
       <KanbanCard
         {...defaultProps}
@@ -736,8 +652,12 @@ describe('KanbanCard — interview schedule tag in CONFIRMED', () => {
         interviewTime="10:30"
       />,
     );
-    // Full date format should appear
-    expect(screen.getByText(/15\/3\/2026.*10:30/)).toBeInTheDocument();
+    expect(screen.queryByTestId('icon-calendar-clock')).not.toBeInTheDocument();
+  });
+
+  it('não mostra data quando interviewDate é null', () => {
+    render(<KanbanCard {...defaultProps} stage="COMPLETED" interviewDate={null} interviewTime={null} />);
+    expect(screen.queryByText(/\/.*\//)).not.toBeInTheDocument();
   });
 });
 

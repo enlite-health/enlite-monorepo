@@ -51,6 +51,7 @@ const VERSAO = {
   contactRefs: [],
   careTeamIds: [],
   contacts: [],
+  contactStatus: [],
 } satisfies TherapeuticProjectVersion;
 
 const ITEM = (id: string): TherapeuticCatalogItem => ({
@@ -98,6 +99,18 @@ describe('useTherapeuticProjects — as versões do paciente', () => {
     const { result } = renderHook(() => useTherapeuticProjects('p1'));
     await waitFor(() => expect(result.current.isLoading).toBe(false));
     expect(result.current.fieldClass).toEqual(FIELD_CLASS);
+  });
+
+  it('spec 048: `contactReminderDates` da resposta vira estado; ausente/`null` (sem ciclo, ou resposta antiga) é `null`', async () => {
+    listVersions.mockResolvedValue({ ...respostaLista([VERSAO]), contactReminderDates: ['2026-10-12', '2026-10-15'] });
+    const { result } = renderHook(() => useTherapeuticProjects('p1'));
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.contactReminderDates).toEqual(['2026-10-12', '2026-10-15']);
+
+    listVersions.mockResolvedValue(respostaLista([VERSAO]));
+    const { result: sem } = renderHook(() => useTherapeuticProjects('p2'));
+    await waitFor(() => expect(sem.current.isLoading).toBe(false));
+    expect(sem.current.contactReminderDates).toBeNull();
   });
 
   it('`fieldClass` nasce vazio (fail-closed) antes da 1ª resposta chegar', () => {

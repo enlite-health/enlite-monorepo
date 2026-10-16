@@ -11,6 +11,8 @@ import { formatInstant } from '@presentation/utils/dateTimeFormat';
 
 interface Props {
   patientId: string;
+  /** Muda quando o estado do paciente muda: a lista é relida (a aba pode já estar aberta quando a troca sai). */
+  refreshKey?: string | null;
 }
 
 function formatWhen(iso: string): string {
@@ -24,7 +26,7 @@ function formatWhen(iso: string): string {
  * espera (C7.3): a trilha não guarda texto clínico. Estado, origem e motivo são enums:
  * traduzidos, com fallback no valor cru; autor é o uid CRU (sem tradução — não é vocabulário).
  */
-export function PatientStatusHistoryCard({ patientId }: Props): JSX.Element {
+export function PatientStatusHistoryCard({ patientId, refreshKey }: Props): JSX.Element {
   const { t } = useTranslation();
   const th = (k: string) => t(`admin.patients.status.historyCard.${k}`);
   const [rows, setRows] = useState<PatientStatusHistoryEntry[] | null>(null);
@@ -37,7 +39,7 @@ export function PatientStatusHistoryCard({ patientId }: Props): JSX.Element {
       .catch((err) => { if (!cancelled) setError(err instanceof Error ? err.message : th('error')); });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [patientId]);
+  }, [patientId, refreshKey]);
 
   const status = (s: string | null) => (s ? t(`admin.patients.statusOptions.${s}`, s) : '—');
   const source = (s: string | null) => (s ? t(`admin.patients.status.sources.${s}`, s) : '—');

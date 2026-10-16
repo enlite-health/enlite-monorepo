@@ -1,7 +1,6 @@
 import { Request, Response } from 'express';
 import { Pool } from 'pg';
 import { createHmac, timingSafeEqual } from 'crypto';
-import { HandleReminderResponseUseCase } from '../../application/HandleReminderResponseUseCase';
 import { PeriskopeInboundRouter } from '../../application/PeriskopeInboundRouter';
 import { RegisterOptOutUseCase } from '../../application/RegisterOptOutUseCase';
 import { mapPeriskopeAckToDeliveryStatus } from '../../domain/periskopeAckMapping';
@@ -32,11 +31,9 @@ const ACK_UPDATED_EVENT = 'message.ack.updated';
  * InboundWhatsAppController):
  *   1. opt-out (PARAR/STOP/...) → messaging_opt_out
  *   2. resposta numerada ("1"/"2"/...) → PeriskopeInboundRouter (item 2.3):
- *      correlaciona com a última mensagem com botões enviada ao worker e
- *      roteia pro mesmo use case que o canal Twilio usaria
- *      (BookSlotFromWhatsAppUseCase / HandleReminderResponseUseCase)
- *   3. worker em awaiting_reason → captura motivo de recusa (RECHAZADO)
- *   4. resto: ignorado com log (a inbox humana é o próprio Periskope; a
+ *      correlaciona com a última mensagem com botões enviada ao worker (spec 052:
+ *      os fluxos de convite e de lembrete saíram, então nada é roteado a use case)
+ *   3. resto: ignorado com log (a inbox humana é o próprio Periskope; a
  *      triagem IA consome o mesmo webhook em serviço separado)
  *
  * message.ack.updated é tratado separadamente: atualiza delivery_status em
@@ -50,7 +47,6 @@ const ACK_UPDATED_EVENT = 'message.ack.updated';
 export class PeriskopeWebhookController {
   constructor(
     private readonly db: Pool,
-    private readonly handleReminderResponseUseCase: HandleReminderResponseUseCase,
     private readonly inboundRouter: PeriskopeInboundRouter,
   ) {}
 
@@ -111,10 +107,7 @@ export class PeriskopeWebhookController {
       } else if (bodyText) {
         const routed = await this.inboundRouter.routeNumberedReply(from, bodyText);
         if (!routed) {
-          const handled = await this.tryHandleTextResponse(from, bodyText);
-          if (!handled) {
-            console.info('[PeriskopeInbound] Message ignored (no special state)', { from });
-          }
+          console.info('[PeriskopeInbound] Message ignored (no special state)', { from: maskPhoneForLog(from) });
         }
       }
     } catch (err) {
@@ -218,24 +211,6 @@ export class PeriskopeWebhookController {
     } catch (err) {
       const e = err instanceof Error ? err : new Error(String(err));
       log.error({ error: e.message }, 'Failed to process opt-out');
-    }
-  }
-
-  /**
-   * Verifica se o worker está em estado awaiting_reason e processa texto livre.
-   * Retorna true se o texto foi capturado como motivo de recusa.
-   */
-  private async tryHandleTextResponse(from: string, bodyText: string): Promise<boolean> {
-    try {
-      const result = await this.handleReminderResponseUseCase.executeTextResponse(from, bodyText);
-      if (result.isSuccess) {
-        console.info('[PeriskopeInbound] Free text captured as decline reason', { from });
-        return true;
-      }
-      return false;
-    } catch (err) {
-      console.warn('[PeriskopeInbound] tryHandleTextResponse error:', err);
-      return false;
     }
   }
 }

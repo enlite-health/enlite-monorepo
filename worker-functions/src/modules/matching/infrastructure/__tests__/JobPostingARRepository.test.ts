@@ -200,10 +200,29 @@ describe('JobPostingARRepository', () => {
 
       const result = await repo.findActivePublic({ country: 'AR' });
 
-      expect(result).toBe(rows);
+      expect(result).toEqual(rows);
       const call = mockQuery.mock.calls[0];
       expect(call[0]).toContain('FROM job_postings jp');
       expect(call[1]).toEqual(['AR']); // buildPublicJobsWhere: country é o único param aqui
+    });
+  });
+
+  describe('findActivePublic — faixa etária efetiva (F6)', () => {
+    it('vaga com serviço: faixa derivada da banda; manual: a própria; a coluna auxiliar não sai; o SQL não lê a cópia', async () => {
+      mockQuery.mockResolvedValueOnce({
+        rows: [
+          { id: 'jp-svc', age_range_min: null, age_range_max: null, effective_provider_age_band: 'AGE_45_PLUS' },
+          { id: 'jp-man', age_range_min: 25, age_range_max: 40, effective_provider_age_band: null },
+        ],
+      });
+      const result = await repo.findActivePublic({ country: 'AR' });
+      expect(result).toEqual([
+        { id: 'jp-svc', age_range_min: 45, age_range_max: null },
+        { id: 'jp-man', age_range_min: 25, age_range_max: 40 },
+      ]);
+      const sql = String(mockQuery.mock.calls[0][0]);
+      expect(sql).toContain('pcs_eff.provider_age_band');
+      expect(sql).not.toMatch(/\bjp\.age_range_m(in|ax),/);
     });
   });
 

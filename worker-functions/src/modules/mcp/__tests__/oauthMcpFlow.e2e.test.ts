@@ -32,8 +32,6 @@ import { WorkerAvailabilitySetCapability } from '../application/capabilities/Wor
 import { WorkerVacanciesNearbyCapability } from '../application/capabilities/WorkerVacanciesNearbyCapability';
 import { WorkerAvailabilityGetCapability } from '../application/capabilities/WorkerAvailabilityGetCapability';
 import { WorkerApplicationRegisterCapability } from '../application/capabilities/WorkerApplicationRegisterCapability';
-import { WorkerInterviewSlotsListCapability } from '../application/capabilities/WorkerInterviewSlotsListCapability';
-import { WorkerInterviewBookCapability } from '../application/capabilities/WorkerInterviewBookCapability';
 import { HandoverNotifyCapability } from '../application/capabilities/HandoverNotifyCapability';
 import { WorkerApplicationsListCapability } from '../application/capabilities/WorkerApplicationsListCapability';
 import { PatientChatMapCapability } from '../application/capabilities/PatientChatMapCapability';
@@ -68,8 +66,6 @@ function makeRegistry(): CapabilityRegistry {
     availabilityGet: new WorkerAvailabilityGetCapability(stub),
     vacanciesNearby: new WorkerVacanciesNearbyCapability(stub),
     applicationRegister: new WorkerApplicationRegisterCapability(stub, {} as never, stub),
-    interviewSlotsList: new WorkerInterviewSlotsListCapability(stub),
-    interviewBook: new WorkerInterviewBookCapability(stub, stub),
     handoverNotify: new HandoverNotifyCapability(stub),
     applicationsList: new WorkerApplicationsListCapability(stub),
     patientChatMap: new PatientChatMapCapability(stub),

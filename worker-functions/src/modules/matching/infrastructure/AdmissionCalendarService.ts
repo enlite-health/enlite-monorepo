@@ -1,6 +1,9 @@
 import { DateTime } from 'luxon';
 import { v4 as uuidv4 } from 'uuid';
 import { getAccessToken } from './GoogleCalendarEventFinder';
+import { AdmissionRealAdapterInTestError } from '../application/ports/AdmissionMessagingPorts';
+import type { AdmissionCalendarPort } from '../application/ports/AdmissionCalendarPort';
+import { readCreatedEvent } from './googleCalendarCreateResponse';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -112,6 +115,19 @@ export interface CreateEventParams {
   coHostEmail?: string;
   /** E-mail de contato do paciente/lead (attendee), se houver. */
   patientEmail?: string;
+  /** Id FIXO do evento (base32hex, 5-1024): repetir a criação não duplica (spec 050 F9). */
+  eventId?: string;
+  /**
+   * Convidados a mais (spec 052, enquadre): entram em `attendees` depois de `coHostEmail`/`patientEmail`, sem repetir e-mail
+   * (comparação sem diferenciar maiúsculas). Ausente = o corpo é o de sempre.
+   */
+  extraAttendeeEmails?: string[];
+  /** Default `true` (o da admissão). O enquadre manda `false`. */
+  guestsCanModify?: boolean;
+  /** Só vai no corpo quando definido. O Google só respeita `false` junto com `guestsCanModify: false` (medição de 20/08 abaixo). */
+  guestsCanSeeOtherGuests?: boolean;
+  /** Só vai no corpo quando definido. */
+  guestsCanInviteOthers?: boolean;
 }
 
 interface RawCalendarEvent {
@@ -284,32 +300,21 @@ export function sumBusyMinutesInWeek(
 
 // ─── Service (I/O contra Google Calendar) ──────────────────────────────────────
 
-/**
- * Porta da agenda de admissão: o que `AdmissionSchedulingService` e
- * `PatientTestFixtureService` consomem. A implementação é escolhida por
- * `createAdmissionCalendar` (env `ADMISSION_CALENDAR_SOURCE`).
- */
-export interface AdmissionCalendarPort {
-  getBusyIntervals(
-    calendarId: string,
-    impersonateEmail: string,
-    fromISO: string,
-    toISO: string,
-    timezone?: string,
-  ): Promise<BusyInterval[]>;
-  getCalendarTimezone(calendarId: string, impersonateEmail: string): Promise<string | null>;
-  getFreeBusyByCalendar(
-    calendarIds: string[],
-    impersonateEmail: string,
-    fromISO: string,
-    toISO: string,
-    timezone?: string,
-  ): Promise<CalendarBusyResult[]>;
-  createEventWithMeet(params: CreateEventParams): Promise<{ eventId: string; meetLink: string }>;
-  deleteEvent(calendarId: string, eventId: string, impersonateEmail: string): Promise<void>;
+/** O Google respondeu 404 ao apagar: o evento não existe. `code` é como a camada de aplicação reconhece, sem importar este módulo. */
+export class CalendarEventNotFoundError extends Error {
+  readonly code = 'EVENT_NOT_FOUND';
+  constructor(message: string) {
+    super(message);
+    this.name = 'CalendarEventNotFoundError';
+  }
 }
 
-export class AdmissionCalendarService implements AdmissionCalendarPort {
+export class AdmissionCalendarService {
+  /** ⚠️ Lança com NODE_ENV=test (R-17, spec 050): teste nunca toca o Google Calendar — que MANDA e-mail. Use o dublê. */
+  constructor(env: NodeJS.ProcessEnv = process.env) {
+    if (env.NODE_ENV === 'test') throw new AdmissionRealAdapterInTestError('new AdmissionCalendarService()');
+  }
+
   private token(hostEmail: string): Promise<string | null> {
     return getAccessToken(hostEmail, hostEmail);
   }
@@ -496,6 +501,11 @@ export class AdmissionCalendarService implements AdmissionCalendarPort {
       timezone = AR_ZONE,
       coHostEmail,
       patientEmail,
+      eventId,
+      extraAttendeeEmails,
+      guestsCanModify = true,
+      guestsCanSeeOtherGuests,
+      guestsCanInviteOthers,
     }: CreateEventParams,
   ): Promise<{ eventId: string; meetLink: string }> {
     const token = await this.token(impersonateEmail);
@@ -505,15 +515,24 @@ export class AdmissionCalendarService implements AdmissionCalendarPort {
       ...(coHostEmail ? [{ email: coHostEmail }] : []),
       ...(patientEmail ? [{ email: patientEmail }] : []),
     ];
+    const seen = new Set(attendees.map((a) => a.email.toLowerCase()));
+    for (const email of extraAttendeeEmails ?? []) {
+      if (seen.has(email.toLowerCase())) continue;
+      seen.add(email.toLowerCase());
+      attendees.push({ email });
+    }
 
     const body = {
+      ...(eventId ? { id: eventId } : {}),
       summary,
       description,
       start: { dateTime: startISO, timeZone: timezone },
       end: { dateTime: endISO, timeZone: timezone },
       attendees,
       // Convidados (o paciente) podem editar/reagendar via convite.
-      guestsCanModify: true,
+      guestsCanModify,
+      ...(guestsCanSeeOtherGuests !== undefined ? { guestsCanSeeOtherGuests } : {}),
+      ...(guestsCanInviteOthers !== undefined ? { guestsCanInviteOthers } : {}),
       // ⚠️ NÃO adicionar `guestsCanSeeOtherGuests: false` aqui: com
       // `guestsCanModify: true` o Google DESCARTA o campo em silêncio — medido
       // em 20/08 com dois eventos-sonda na agenda real (com a flag de edição,
@@ -526,6 +545,9 @@ export class AdmissionCalendarService implements AdmissionCalendarPort {
       // o paciente ESCOLHER quem atende, e isso é barrado antes: a lista de
       // horários não diz de quem é o horário, e o corpo do `book` é `.strict()`
       // (mandar `hostEmail` devolve 400).
+      //
+      // O ENQUADRE (spec 052) manda `guestsCanModify: false` e `guestsCanSeeOtherGuests: false` JUNTOS: é exatamente a
+      // combinação em que o `false` gruda. Mandar só o segundo não protegeria ninguém.
       conferenceData: {
         createRequest: {
           requestId: uuidv4(),
@@ -542,13 +564,31 @@ export class AdmissionCalendarService implements AdmissionCalendarPort {
         body: JSON.stringify(body),
       },
     );
+    return readCreatedEvent(res, { calendarId, eventId, token });
+  }
+
+  /**
+   * Troca a lista de convidados de um evento JÁ criado, pelo id do evento na agenda dedicada (spec 052: acrescentar/tirar
+   * convocado). `attendeeEmails` é a lista COMPLETA desejada (o PATCH substitui `attendees`). `sendUpdates=all`: quem entra
+   * recebe o convite e quem sai, o aviso de cancelamento.
+   */
+  async setEventAttendees(calendarId: string, eventId: string, impersonateEmail: string, attendeeEmails: string[]): Promise<void> {
+    const token = await this.token(impersonateEmail);
+    if (!token) throw new Error(`[AdmissionCalendarService] no DWD token for ${impersonateEmail}`);
+
+    const res = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}?sendUpdates=all`,
+      {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ attendees: attendeeEmails.map((email) => ({ email })) }),
+      },
+    );
     if (!res.ok) {
       const detail = await res.text().catch(() => '');
-      throw new Error(`[AdmissionCalendarService] createEvent ${res.status} on ${calendarId}: ${detail}`);
+      const message = `[AdmissionCalendarService] setEventAttendees ${res.status} on ${calendarId}: ${detail}`;
+      throw res.status === 404 ? new CalendarEventNotFoundError(message) : new Error(message);
     }
-
-    const created = (await res.json()) as { id?: string; hangoutLink?: string };
-    return { eventId: created.id ?? '', meetLink: created.hangoutLink ?? '' };
   }
 
   /** Remove evento de uma agenda (limpeza / cancelamento), impersonando o dono. */
@@ -563,10 +603,27 @@ export class AdmissionCalendarService implements AdmissionCalendarPort {
     // 410 = já deletado; tratamos como sucesso idempotente.
     if (!res.ok && res.status !== 410) {
       const detail = await res.text().catch(() => '');
-      throw new Error(`[AdmissionCalendarService] deleteEvent ${res.status} on ${calendarId}: ${detail}`);
+      const message = `[AdmissionCalendarService] deleteEvent ${res.status} on ${calendarId}: ${detail}`;
+      // 404 = o evento não existe (mais): quem repete o apagar (spec 050 R-36) para de repetir. Segue sendo `Error` para os demais chamadores.
+      throw res.status === 404 ? new CalendarEventNotFoundError(message) : new Error(message);
     }
   }
 
 }
 
-export const admissionCalendarService = new AdmissionCalendarService();
+let realInstance: AdmissionCalendarService | undefined;
+const real = (): AdmissionCalendarService => (realInstance ??= new AdmissionCalendarService());
+
+/**
+ * O Calendar REAL, construído só na primeira chamada. É preguiçoso de propósito: o módulo é importado por todo teste que
+ * toca a admissão, e o construtor lança com NODE_ENV=test — sem a preguiça, o `import` já derrubaria a suíte. Em teste, o
+ * serviço só chega aqui se alguém ignorar a fábrica (`createAdmissionExternals`), e aí a primeira chamada LANÇA.
+ */
+export const admissionCalendarService: AdmissionCalendarPort = {
+  getCalendarTimezone: async (...a: Parameters<AdmissionCalendarService['getCalendarTimezone']>) => real().getCalendarTimezone(...a),
+  getBusyIntervals: async (...a: Parameters<AdmissionCalendarService['getBusyIntervals']>) => real().getBusyIntervals(...a),
+  getFreeBusyByCalendar: async (...a: Parameters<AdmissionCalendarService['getFreeBusyByCalendar']>) => real().getFreeBusyByCalendar(...a),
+  createEventWithMeet: async (...a: Parameters<AdmissionCalendarService['createEventWithMeet']>) => real().createEventWithMeet(...a),
+  deleteEvent: async (...a: Parameters<AdmissionCalendarService['deleteEvent']>) => real().deleteEvent(...a),
+  setEventAttendees: async (...a: Parameters<AdmissionCalendarService['setEventAttendees']>) => real().setEventAttendees(...a),
+};

@@ -17,9 +17,9 @@ import { AdminLayout } from './components/templates/AdminLayout/AdminLayout';
 import { AdminLoginPage } from './pages/admin/AdminLoginPage';
 import { AuthActionPage } from './pages/auth/AuthActionPage';
 import { AdminUsersPage } from './pages/admin/AdminUsersPage';
+import { AdminHomeRedirect } from './components/features/admin/AdminHomeRedirect';
 import { AccessPage, GroupDetailPage, CountryFeaturesPage, PermissionHistoryPage } from './pages/admin/access';
 import { AdminVacanciesPage } from './pages/admin/AdminVacanciesPage';
-import { AdminRecruitmentPage } from './pages/admin/AdminRecruitmentPage';
 import { ManagementDashboardPage } from './pages/admin/ManagementDashboardPage';
 import { AdminWorkersPage } from './pages/admin/AdminWorkersPage';
 import { AdminPatientsPage } from './pages/admin/AdminPatientsPage';
@@ -34,9 +34,9 @@ import PatientDetailPage from './pages/admin/PatientDetailPage';
 import { PatientKanbanPage } from './pages/admin/PatientKanbanPage';
 import { AdminMapPage } from './pages/admin/AdminMapPage/AdminMapPage';
 import { PendingAddressReviewPage } from './pages/admin/PendingAddressReviewPage';
-import { RecruitmentHealthPage } from './pages/admin/RecruitmentHealthPage';
 import { BlockedAttemptsPage } from './pages/admin/BlockedAttemptsPage';
 import TagCatalogPage from './pages/admin/TagCatalogPage';
+import InterviewHostsPage from './pages/admin/InterviewHostsPage';
 import { FunnelStageMessagesPage } from './pages/admin/FunnelStageMessagesPage';
 import { AiPromptsPage } from './pages/admin/AiPromptsPage/AiPromptsPage';
 import { TemplateCatalogPage } from './pages/admin/TemplateCatalogPage';
@@ -45,6 +45,8 @@ import { TemplateDraftsPage } from './pages/admin/TemplateDraftsPage';
 import PatientChatRolesPage from './pages/admin/PatientChatRolesPage';
 import TherapeuticCatalogPage from './pages/admin/TherapeuticCatalogPage/TherapeuticCatalogPage';
 import PresentationInvitePage from './pages/admin/PresentationInvitePage';
+import { RedirectKeepingSearch } from './components/shared/RedirectKeepingSearch';
+import MyProfilePage from './pages/admin/MyProfilePage/MyProfilePage';
 import { DedupCenterPage } from './pages/admin/DedupCenterPage/DedupCenterPage';
 import { NewVersionBanner } from './components/molecules/NewVersionBanner/NewVersionBanner';
 import { Toaster } from './components/molecules/Toaster';
@@ -70,9 +72,6 @@ const AdmisionBrPage = lazyWithRetry(() =>
     default: () => <m.default country="BR" />,
   })),
 );
-// Swagger UI é pesado (~500kb gzipped) — lazy load isola o chunk e só baixa
-// quando staff abre /admin/api-docs.
-const AdminApiDocsPage = lazyWithRetry(() => import('./pages/admin/AdminApiDocsPage'));
 // Mantém lazy — são a fronteira worker/admin; carregados uma única vez
 const AdminProtectedRoute = lazy(() => import('./components/features/admin/AdminProtectedRoute').then(m => ({ default: m.AdminProtectedRoute })));
 const AdminLoginGuard = lazy(() => import('./components/features/admin/AdminLoginGuard').then(m => ({ default: m.AdminLoginGuard })));
@@ -236,11 +235,12 @@ export function App() {
             </AdminErrorBoundary>
           }
         >
-          <Route index element={<AdminUsersPage />} />
+          <Route index element={<AdminHomeRedirect />} />
+          <Route path="users" element={<AdminUsersPage />} />
           {/* B2 (D268) — cada rota de tela `screen:*` envolvida por `FeatureRouteGate`:
               desligada no país do ator → redireciona a `/admin` (mesma postura que
-              `AccessGate` já usa para `hidden`). `tags`/`patient-chat-roles`/`dedup`/
-              `api-docs` não têm chave `screen:*` no manifest — ficam de fora. */}
+              `AccessGate` já usa para `hidden`). `tags`/`patient-chat-roles`/`dedup`
+              não têm chave `screen:*` no manifest — ficam de fora. */}
           <Route path="vacancies" element={<FeatureRouteGate feature="screen:vacancies"><AdminVacanciesPage /></FeatureRouteGate>} />
           {/* D425 item 4 (Fase 3, 24/09) — "Nueva" sai temporariamente: vacante nasce só do
               serviço contratado. Esconder só o botão deixaria a porta aberta por URL — a
@@ -257,8 +257,6 @@ export function App() {
           <Route path="vacancies/:id/borrador" element={<FeatureRouteGate feature="screen:vacancies"><DraftVacancyPage /></FeatureRouteGate>} />
           <Route path="vacancies/:id" element={<FeatureRouteGate feature="screen:vacancies"><VacancyDetailPage /></FeatureRouteGate>} />
           <Route path="dashboard" element={<FeatureRouteGate feature="screen:management-dashboard"><ManagementDashboardPage /></FeatureRouteGate>} />
-          <Route path="recruitment" element={<FeatureRouteGate feature="screen:funnel"><AdminRecruitmentPage /></FeatureRouteGate>} />
-          <Route path="recruitment/health" element={<FeatureRouteGate feature="screen:funnel"><RecruitmentHealthPage /></FeatureRouteGate>} />
           <Route path="recruitment/blocked-attempts" element={<FeatureRouteGate feature="screen:funnel"><BlockedAttemptsPage /></FeatureRouteGate>} />
           <Route path="workers" element={<FeatureRouteGate feature="screen:workers"><AdminWorkersPage /></FeatureRouteGate>} />
           <Route path="workers/:id" element={<FeatureRouteGate feature="screen:workers"><WorkerDetailPage /></FeatureRouteGate>} />
@@ -270,6 +268,7 @@ export function App() {
           {/* `/admin/mapa` (main, 05/09) não tem chave `screen:*` no manifest — fica sem FeatureRouteGate, como tags/dedup. */}
           <Route path="mapa" element={<AdminMapPage />} />
           <Route path="tags" element={<TagCatalogPage />} />
+          <Route path="entrevistadores" element={<InterviewHostsPage />} />
           <Route path="mensajes-por-etapa" element={<FunnelStageMessagesPage />} />
           <Route path="prompts-ia" element={<AiPromptsPage />} />
           <Route path="plantillas" element={<TemplateCatalogPage />} />
@@ -283,6 +282,12 @@ export function App() {
           <Route path="catalogos/motivos-de-salida" element={<TherapeuticCatalogPage kind="service-exit-reasons" />} />
           <Route path="catalogos/segmentos" element={<TherapeuticCatalogPage kind="segments" />} />
           <Route path="invitacion-presentacion" element={<PresentationInvitePage />} />
+          {/* Perfil da conta logada (Identidade · Tactiq · Idioma · Accesos · Sair). Sem chave `screen:*`: é a conta do
+              próprio operador, não uma tela por país. A seção Tactiq herda a célula própria `own_tactiq_link` (spec 049, F7). */}
+          <Route path="mi-cuenta" element={<MyProfilePage />} />
+          {/* A rota antiga vira redirect: o aviso no sino e a volta do OAuth do Tactiq ainda apontam para ela, e a query
+              (`?tactiq=linked|error`) tem de sobreviver para o banner do retorno aparecer. */}
+          <Route path="mi-cuenta/tactiq" element={<RedirectKeepingSearch to="/admin/mi-cuenta" />} />
           <Route path="dedup" element={<DedupCenterPage />} />
           {/* Painel de acessos — cada página se fecha sozinha em `permission_management:read` (AccessGate). */}
           <Route path="access" element={<FeatureRouteGate feature="screen:access-permissions"><AccessPage /></FeatureRouteGate>} />
@@ -290,14 +295,6 @@ export function App() {
           <Route path="access/features" element={<FeatureRouteGate feature="screen:access-permissions"><CountryFeaturesPage /></FeatureRouteGate>} />
           {/* Histórico de mudanças de permissão — substitui a Auditoría ALLOW/DENY (mesma URL, mesma célula). */}
           <Route path="access/audit" element={<FeatureRouteGate feature="screen:access-permissions"><PermissionHistoryPage /></FeatureRouteGate>} />
-          <Route
-            path="api-docs"
-            element={
-              <Suspense fallback={<AdminFallback />}>
-                <AdminApiDocsPage />
-              </Suspense>
-            }
-          />
         </Route>
         {/* Catch-all: rota desconhecida redireciona para home */}
         <Route path="*" element={<Navigate to="/" replace />} />

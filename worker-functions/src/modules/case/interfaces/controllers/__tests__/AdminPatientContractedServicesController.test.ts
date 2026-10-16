@@ -15,7 +15,7 @@ jest.mock('@shared/logging', () => ({ reportError: jest.fn(), loggingAls: { getS
 
 import { AdminPatientContractedServicesController } from '../AdminPatientContractedServicesController';
 import { DeviceTypeUnknownError } from '../../../infrastructure/PatientDeviceTypeRepository';
-import { AddressNotOfPatientError } from '../../../infrastructure/PatientContractedServiceRepository';
+import { AddressNotOfPatientError, ServiceFieldRequiredByLiveVacancyError } from '../../../infrastructure/PatientContractedServiceRepository';
 import { SlotHasActiveAllocationError } from '../../../application/ItinerarySlotWriteUseCase';
 import { reportError } from '@shared/logging';
 import { AuthMiddleware } from '@modules/identity';
@@ -36,7 +36,8 @@ function mockRes(): Response & { status: jest.Mock; json: jest.Mock } {
   return res as unknown as Response & { status: jest.Mock; json: jest.Mock };
 }
 
-const SERVICE = { id: SERVICE_ID, patientId: PATIENT_ID, hourlyValue: 1500 };
+const LIVE_VACANCY = { id: 'v-1', caseNumber: 1234, caseOrdinal: 1, status: 'SEARCHING' };
+const SERVICE = { id: SERVICE_ID, patientId: PATIENT_ID, hourlyValue: 1500, liveVacancy: LIVE_VACANCY };
 
 describe('AdminPatientContractedServicesController', () => {
   beforeEach(() => {
@@ -61,6 +62,21 @@ describe('AdminPatientContractedServicesController', () => {
       await controller.list(mockReq({ params: { id: PATIENT_ID }, user: { roles: ['recruiter'] } }), res);
       expect(res.status).toHaveBeenCalledWith(200);
       expect(res.json.mock.calls[0][0].data.services[0]).toMatchObject({ hourlyValue: null, hourlyValueRedacted: true });
+    });
+
+    it('047 A1/A2/A3: com vacancy:read a vaga sai inteira (4 chaves); sem a célula → null + redigida; valor-hora redigido à parte', async () => {
+      const repo = { listForPatient: jest.fn().mockResolvedValue([SERVICE]) };
+      const controller = new AdminPatientContractedServicesController(repo as never, {} as never);
+
+      const resCom = mockRes();
+      await controller.list(mockReq({ params: { id: PATIENT_ID }, user: { roles: ['recruiter'] }, permissionCells: ['vacancy:read'] }), resCom);
+      const com = resCom.json.mock.calls[0][0].data.services[0];
+      expect(com).toMatchObject({ liveVacancy: LIVE_VACANCY, liveVacancyRedacted: false, hourlyValue: null, hourlyValueRedacted: true });
+      expect(Object.keys(com.liveVacancy).sort()).toEqual(['caseNumber', 'caseOrdinal', 'id', 'status']);
+
+      const resSem = mockRes();
+      await controller.list(mockReq({ params: { id: PATIENT_ID }, user: { roles: ['admin'] }, permissionCells: ['patient_services:read'] }), resSem);
+      expect(resSem.json.mock.calls[0][0].data.services[0]).toMatchObject({ liveVacancy: null, liveVacancyRedacted: true });
     });
 
     it('500 quando o repo lança', async () => {
@@ -231,6 +247,15 @@ describe('AdminPatientContractedServicesController', () => {
       );
       expect(reportError).not.toHaveBeenCalled();
       console.log('[12.P4]', 'status', res.status.mock.calls[0][0], 'code', res.json.mock.calls[0][0].code);
+    });
+
+    it('422 SERVICE_FIELD_REQUIRED_BY_LIVE_VACANCY quando o repo recusa apagar o horário com vaga viva (F2)', async () => {
+      const repo = { findById: jest.fn().mockResolvedValue(SERVICE), update: jest.fn().mockRejectedValue(new ServiceFieldRequiredByLiveVacancyError('schedule', ['vac-1'])) };
+      const controller = new AdminPatientContractedServicesController(repo as never, {} as never);
+      const res = mockRes();
+      await controller.update(mockReq({ params: { id: PATIENT_ID, sid: SERVICE_ID }, body: { schedule: null } }), res);
+      expect(res.status).toHaveBeenCalledWith(422);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'SERVICE_FIELD_REQUIRED_BY_LIVE_VACANCY', details: { field: 'schedule', vacancyIds: ['vac-1'] } }));
     });
 
     it('200 quando atualiza com sucesso', async () => {

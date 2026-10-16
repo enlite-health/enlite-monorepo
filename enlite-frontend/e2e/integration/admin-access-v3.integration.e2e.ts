@@ -240,7 +240,7 @@ test.describe('Welcome sem grupo (A1) e feature por país (B2) — integração 
     expect(after.body.groups.length).toBeGreaterThan(0);
 
     await loginAs(page, STAFF);
-    await page.goto('/admin');
+    await page.goto('/admin/users');
     await expect(page.getByRole('heading', { name: 'Usuarios Administradores' })).toBeVisible({ timeout: 15_000 });
     // BAIXA (gate rodada 4): a chave crua de i18n nunca é renderizada — essa
     // asserção era morta (sempre passava, ligada ou desligada). Texto
@@ -284,7 +284,7 @@ test.describe('Welcome sem grupo (A1) e feature por país (B2) — integração 
 
     await loginAs(page, STAFF);
     await page.goto(`/admin/vacancies/${FAKE_VACANCY_ID}/talentum`);
-    await expect(page).toHaveURL(/\/admin\/?$/, { timeout: 15_000 });
+    await expect(page).toHaveURL(/\/admin\/dashboard$/, { timeout: 15_000 });
 
     // Liga — UPDATE direto (mesmo padrão do spec vizinho: fora de uma request
     // HTTP real, `iam.set_country_feature` recusaria por falta da GUC de ator).

@@ -9,6 +9,7 @@ import {
 } from '../domain/WorkerDocuments';
 import { getRequiredCamelFields } from '../application/workerDocumentPolicy';
 import { logger } from '@shared/logging';
+import { maskEmailForLog } from '@shared/utils/emailMask';
 
 export interface IWorkerDocumentsRepository {
   create(dto: CreateWorkerDocumentsDTO): Promise<WorkerDocuments>;
@@ -240,7 +241,7 @@ export class WorkerDocumentsRepository implements IWorkerDocumentsRepository {
 
   async validateDocument(workerId: string, docType: string, adminEmail: string): Promise<WorkerDocuments> {
     const log = logger.child({ workerId });
-    log.info({ msg: '[WorkerDocumentsRepo.validateDocument]', docType, adminEmail });
+    log.info({ msg: '[WorkerDocumentsRepo.validateDocument]', docType, adminEmail: maskEmailForLog(adminEmail) });
     const query = `
       UPDATE worker_documents
       SET document_validations = document_validations || jsonb_build_object(

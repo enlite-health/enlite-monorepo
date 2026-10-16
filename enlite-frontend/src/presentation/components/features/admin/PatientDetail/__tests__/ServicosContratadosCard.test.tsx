@@ -75,10 +75,11 @@ const SERVICE: PatientContractedServiceDetail = {
   supervisionFrequency: 'DAYS_30',
   guardShift: 'MORNING',
   providerAgeBand: 'AGE_30_45',
+  // Spec 027 Fase 3: os 5 campos do portão preenchidos (sem os 2 de ficha — opcionais).
+  requiredProfessions: ['AT'], requiredSex: 'BOTH', requiredExperience: 'exp-sintetica', workerAttributes: null, workSchedule: 'part-time', paymentDay: 'dia 5', dailyObs: null,
   addressId: null,
   schedule: null,
-  liveVacancyId: null,
-  requiredSex: null,
+  liveVacancy: null, liveVacancyRedacted: false,
   active: true,
   endedAt: null,
   country: 'AR',
@@ -105,7 +106,8 @@ const SCHEDULE = [
  */
 describe('ServicosContratadosCard — tabela no molde do Figma (05/09) + #PEND-08', () => {
   it('mostra dispositivo, serviço, quantidade, lugar + ENDEREÇO vinculado e horário — nenhuma coluna com dado existente vira "—"', () => {
-    const svc: PatientContractedServiceDetail = { ...SERVICE, addressId: 'addr-home', schedule: SCHEDULE };
+    // Spec 047: com vaga viva a coluna da vacante também tem dado — sem ela mostraria "—" (coberto abaixo).
+    const svc: PatientContractedServiceDetail = { ...SERVICE, addressId: 'addr-home', schedule: SCHEDULE, liveVacancy: { id: 'v1', caseNumber: 1234, caseOrdinal: 1, status: 'SEARCHING' } };
     const patient = { ...patientDetailFixture, addresses: [ADDRESS_HOME, ADDRESS_SCHOOL], contractedServices: [svc] };
     render(<ServicosContratadosCard patient={patient} />);
 
@@ -191,11 +193,10 @@ describe('ServicosContratadosCard — tabela no molde do Figma (05/09) + #PEND-0
       providersNeeded: null, authorizedHours: null, weeklyHours: null, careLocation: null,
       hourlyValue: null, hourlyValueRedacted: false, startDate: null,
       contractType: null, taxCondition: null, supervisionFrequency: null, guardShift: null,
-      providerAgeBand: null,
+      providerAgeBand: null, requiredProfessions: null, requiredSex: null, requiredExperience: null, workerAttributes: null, workSchedule: null, paymentDay: null, dailyObs: null,
       addressId: null,
       schedule: null,
-      liveVacancyId: null,
-      requiredSex: null,
+      liveVacancy: null, liveVacancyRedacted: false,
       active: false, endedAt: '2026-09-02T00:00:00Z', country: 'AR', deviceTypes: [], providers: [],
       createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z',
     };
@@ -403,8 +404,7 @@ describe('ServicosContratadosCard — ícone de ativação de recrutamento por s
     ...SERVICE,
     addressId: 'addr-home',
     schedule: SCHEDULE,
-    liveVacancyId: null,
-    requiredSex: null,
+    liveVacancy: null, liveVacancyRedacted: false,
   };
   const READY_PATIENT = {
     ...patientDetailFixture,
@@ -477,18 +477,72 @@ describe('ServicosContratadosCard — ícone de ativação de recrutamento por s
     expect(onSaved).not.toHaveBeenCalled();
   });
 
-  it('caminho "Ver vacante": serviço com vaga viva mostra o link (não o botão), abre em nova rota e não dispara o detalhe da linha', () => {
-    const withVacancy = { ...READY_SERVICE, liveVacancyId: 'vac-9' };
-    const patient = { ...READY_PATIENT, contractedServices: [withVacancy] };
-    render(<ServicosContratadosCard patient={patient} />);
+  // ── Spec 047 (F3): coluna "Vacante" (o link do site saiu, 08/10); o ícone "Ver vacante" saiu ────────────────
+  describe('spec 047 F3 — colunas da vaga viva', () => {
+    const VAGA = { id: 'vac-9', caseNumber: 1234, caseOrdinal: 1, status: 'SEARCHING' };
+    const comVaga = (patch: Record<string, unknown> = {}) => ({
+      ...READY_PATIENT, contractedServices: [{ ...READY_SERVICE, liveVacancy: VAGA, liveVacancyRedacted: false, ...patch }],
+    });
+    const headers = () => screen.getAllByRole('columnheader').map((h) => h.textContent);
 
-    expect(screen.queryByTestId('contracted-service-activate-recruitment-svc-1')).toBeNull();
-    const link = screen.getByTestId('contracted-service-view-vacancy-svc-1');
-    expect(link.getAttribute('href')).toBe('/admin/vacancies/vac-9');
+    it('A1: vaga publicada → a coluna mostra EN1234#01 (texto exato) e linka /admin/vacancies/:id; o clique não abre o detalhe da linha', () => {
+      render(<ServicosContratadosCard patient={comVaga()} />);
+      const link = screen.getByTestId('contracted-service-vacancy-link-svc-1');
+      expect(link.textContent).toBe('EN1234#01');
+      expect(link.getAttribute('href')).toBe('/admin/vacancies/vac-9');
+      fireEvent.click(link);
+      expect(screen.queryByTestId('contracted-service-detail-drawer')).toBeNull();
+    });
 
-    fireEvent.click(link);
-    expect(screen.queryByTestId('contracted-service-detail-drawer')).toBeNull();
-    expect(mockActivateRecruitment).not.toHaveBeenCalled();
+    it('A1: rascunho vai pelo MESMO href — o detalhe da vaga redireciona o rascunho para /borrador (VacancyDetailPage)', () => {
+      render(<ServicosContratadosCard patient={comVaga({ liveVacancy: { ...VAGA, status: 'DRAFT' } })} />);
+      expect(screen.getByTestId('contracted-service-vacancy-link-svc-1').getAttribute('href')).toBe('/admin/vacancies/vac-9');
+    });
+
+    it('A1: vaga legada sem ordinal → só o número do caso (fallback de formatVacancyCase), a linha não quebra', () => {
+      render(<ServicosContratadosCard patient={comVaga({ liveVacancy: { ...VAGA, caseOrdinal: null } })} />);
+      expect(screen.getByTestId('contracted-service-vacancy-link-svc-1').textContent).toBe('EN1234');
+    });
+
+    it('A2: NÃO existe coluna de link do site — nem cabeçalho "Enlace del sitio", nem célula, nem botão de copiar — e o cabeçalho do código é "Vacante" (uma palavra)', () => {
+      render(<ServicosContratadosCard patient={comVaga()} />);
+      expect(headers()).toContain('Vacante');
+      expect(headers()).not.toContain('Código de la vacante');
+      expect(headers()).not.toContain('Enlace del sitio');
+      expect(screen.queryByTestId('contracted-service-site-link-svc-1')).toBeNull();
+      expect(screen.queryByTestId('contracted-service-site-url-svc-1')).toBeNull();
+      expect(screen.queryByTestId('contracted-service-copy-link-svc-1')).toBeNull();
+      expect(screen.getAllByRole('row')[1].querySelectorAll('td')).toHaveLength(headers().length);
+    });
+
+    it('A3: serviço SEM vaga → a coluna "—" e "ativar recrutamento" com a regra de hoje (aparece)', () => {
+      render(<ServicosContratadosCard patient={READY_PATIENT} />);
+      expect(screen.getByTestId('contracted-service-vacancy-code-svc-1').textContent).toBe('—');
+      expect(screen.getByTestId('contracted-service-activate-recruitment-svc-1')).toBeInTheDocument();
+      expect(headers()).toContain('Vacante');
+    });
+
+    it('A4: liveVacancyRedacted → a coluna NÃO está no DOM (nem o cabeçalho) e "ativar recrutamento" não aparece', () => {
+      render(<ServicosContratadosCard patient={comVaga({ liveVacancy: null, liveVacancyRedacted: true })} />);
+      expect(screen.queryByTestId('contracted-service-vacancy-code-svc-1')).toBeNull();
+      expect(headers()).not.toContain('Vacante');
+      expect(screen.queryByTestId('contracted-service-activate-recruitment-svc-1')).toBeNull();
+    });
+
+    it('A5: nenhuma linha tem "Ver vacante" — nem o ícone (testid antigo) nem o texto — com vaga, sem vaga ou redigida', () => {
+      for (const patient of [comVaga(), READY_PATIENT, comVaga({ liveVacancy: null, liveVacancyRedacted: true })]) {
+        const { container, unmount } = render(<ServicosContratadosCard patient={patient} />);
+        expect(screen.queryByTestId('contracted-service-view-vacancy-svc-1')).toBeNull();
+        expect(container.textContent).not.toMatch(/Ver vacante|Ver vaga/);
+        expect(container.querySelector('[aria-label^="Ver vaga"]')).toBeNull();
+        unmount();
+      }
+    });
+
+    it('com vaga viva o "ativar recrutamento" também não aparece (a vaga já existe)', () => {
+      render(<ServicosContratadosCard patient={comVaga()} />);
+      expect(screen.queryByTestId('contracted-service-activate-recruitment-svc-1')).toBeNull();
+    });
   });
 
   it('clique duplo enquanto a 1ª chamada está em voo: a 2ª é ignorada (guarda de `busy`, via clique real)', async () => {

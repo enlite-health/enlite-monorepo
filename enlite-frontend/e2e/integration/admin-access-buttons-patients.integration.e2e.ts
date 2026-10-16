@@ -275,7 +275,7 @@ test.describe('Botões da família pacientes — esconder, não desabilitar (D26
 
     // Rede de apoio — Familiares + Chat IDs
     await page.getByRole('button', { name: 'Red de Apoyo', exact: true }).click();
-    await expect(page.getByTestId('edit-support-btn')).toHaveCount(0);
+    await expect(page.getByTestId('familiares-add')).toHaveCount(0);
     await expect(page.getByTestId('chat-ids-edit-btn')).toHaveCount(0);
 
     // Servicio contratado — spec 018, PR-6, ADR-5: "Activar reclutamiento" é o ícone POR
@@ -317,7 +317,7 @@ test.describe('Botões da família pacientes — esconder, não desabilitar (D26
     await expect(page.getByTestId('edit-clinical-btn')).toBeVisible();
 
     await page.getByRole('button', { name: 'Red de Apoyo', exact: true }).click();
-    await expect(page.getByTestId('edit-support-btn')).toBeVisible();
+    await expect(page.getByTestId('familiares-add')).toBeVisible();
     await expect(page.getByTestId('chat-ids-edit-btn')).toBeVisible();
 
     await page.getByRole('button', { name: 'Servicio Contratado', exact: true }).click();

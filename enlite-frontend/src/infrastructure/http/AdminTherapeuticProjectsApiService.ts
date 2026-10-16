@@ -12,6 +12,13 @@ import type {
   TherapeuticProjectVersion,
 } from '@domain/entities/TherapeuticProject';
 
+/** `contactReminderDates` (spec 048): dias locais (`YYYY-MM-DD`) dos lembretes que FALTAM no ciclo aberto; `null` = sem ciclo. */
+export interface TherapeuticProjectList {
+  versions: TherapeuticProjectVersion[];
+  fieldClass: TherapeuticFieldClass;
+  contactReminderDates?: string[] | null;
+}
+
 export class TherapeuticProjectApiError extends Error {
   readonly status: number;
   readonly code?: string;
@@ -74,8 +81,8 @@ class AdminTherapeuticProjectsApiServiceClass {
    * `fieldClass` (task 7.7) é o espelho de `THERAPEUTIC_FIELD_CLASS` do backend — o form lê daqui
    * para saber quais campos travam fora de `mode:'new'`; este client NÃO copia a lista.
    */
-  async listVersions(patientId: string): Promise<{ versions: TherapeuticProjectVersion[]; fieldClass: TherapeuticFieldClass }> {
-    return this.request<{ versions: TherapeuticProjectVersion[]; fieldClass: TherapeuticFieldClass }>(
+  async listVersions(patientId: string): Promise<TherapeuticProjectList> {
+    return this.request<TherapeuticProjectList>(
       'GET',
       `/api/admin/patients/${patientId}/therapeutic-projects`,
     );

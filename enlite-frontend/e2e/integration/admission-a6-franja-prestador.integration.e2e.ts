@@ -6,10 +6,13 @@
  * sintético. Molde: admission-c-servico-contratado.integration.e2e.ts.
  *
  * Aceite: cria serviço com franja "30 a 45 años" no drawer → card mostra o rótulo → ativa
- * (sincroniza pela RESPOSTA do POST) → lê no Postgres `age_range_min=30, age_range_max=44` na
- * vaga NASCIDA DESTE SERVIÇO.
+ * (sincroniza pela RESPOSTA do POST) → lê no Postgres: a banda `AGE_30_45` fica no SERVIÇO e as colunas
+ * `age_range_min/max` da vaga NASCIDA DESTE SERVIÇO ficam NULL (F6 de `vaga-le-do-servico-contratado`: a faixa
+ * 30-44 é DERIVADA da banda pelos leitores, nunca copiada para a vaga; a derivação é provada no
+ * `vacancyEffectiveFields.singleSource` do backend).
  */
 import { test, expect, type Page, type Locator } from '@playwright/test';
+import { preencherRecrutamentoPelaTela } from '../helpers/recruitment-fields-e2e';
 import {
   seedActivatablePatientA6, readVacancyAgeRangeForService, readProviderAgeBand,
   cleanupPatientDeep, runSQL,
@@ -87,7 +90,7 @@ test.describe('Spec 015 (US-A6) — franja etária solicitada do prestador @inte
     cleanupPatientDeep(seed.patientId);
   });
 
-  test('1. escolhe franja "30 a 45 años" no drawer → card mostra o rótulo → ativa → vaga do serviço com age_range_min=30/max=44', async ({ page }) => {
+  test('1. escolhe franja "30 a 45 años" no drawer → card mostra o rótulo → ativa → banda no serviço e vaga sem cópia da faixa (F6)', async ({ page }) => {
     await page.addInitScript(() => {
       const strip = () => {
         document.querySelectorAll('.firebase-emulator-warning').forEach((el) => el.remove());
@@ -111,6 +114,7 @@ test.describe('Spec 015 (US-A6) — franja etária solicitada do prestador @inte
     // Decisão do Gabriel 07/09: sem horário o activate também recusa (SERVICE_SCHEDULE) — este
     // spec ativa mais abaixo esperando 200, então o serviço nasce com horário.
     await forceClick(page.getByTestId('day-schedule-add-monday'));
+    await preencherRecrutamentoPelaTela(page, 1); // spec 027 Fase 3: o portão exige os 5 campos
     const createService = page.waitForResponse((r) => r.request().method() === 'POST' && /\/contracted-services$/.test(r.url()));
     await forceClick(page.getByTestId('contracted-service-new-save'));
     const svcBody = (await (await createService).json()) as { data: { id: string; providerAgeBand: string } };
@@ -137,13 +141,13 @@ test.describe('Spec 015 (US-A6) — franja etária solicitada do prestador @inte
     const activated = page.waitForResponse((r) => r.request().method() === 'POST' && /\/activate-recruitment$/.test(r.url()), { timeout: 30_000 });
     await forceClick(page.getByTestId(`contracted-service-activate-recruitment-${serviceId}`));
     expect((await activated).status()).toBe(201);
-    await expect(page.getByTestId(`contracted-service-view-vacancy-${serviceId}`)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId(`contracted-service-vacancy-link-${serviceId}`)).toBeVisible({ timeout: 15_000 });
 
-    // ── Prova no Postgres: só a vaga NASCIDA DO SERVIÇO herda a franja ──
+    // ── Prova no Postgres: a banda mora no serviço; a vaga NASCIDA DELE não guarda cópia da faixa (F6) ──
     expect(readProviderAgeBand(serviceId)).toBe('AGE_30_45');
     const range = readVacancyAgeRangeForService(seed.patientId, serviceId);
-    expect(range).not.toBeNull();
-    expect(range?.ageRangeMin).toBe(30);
-    expect(range?.ageRangeMax).toBe(44);
+    expect(range).not.toBeNull(); // a vaga existe (o instrumento enxerga a linha)
+    expect(range?.ageRangeMin).toBeNull();
+    expect(range?.ageRangeMax).toBeNull();
   });
 });

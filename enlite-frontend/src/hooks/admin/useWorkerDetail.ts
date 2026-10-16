@@ -4,6 +4,8 @@ import type { WorkerDetail, WorkerDocument, DocumentValidations } from '@domain/
 
 export function useWorkerDetail(workerId: string | undefined) {
   const [worker, setWorker] = useState<WorkerDetail | null>(null);
+  // Para qual id da rota o `worker` atual foi buscado (o `worker` antigo fica até o novo fetch terminar).
+  const [fetchedForId, setFetchedForId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -17,7 +19,7 @@ export function useWorkerDetail(workerId: string | undefined) {
         setIsLoading(true);
         setError(null);
         const data = await AdminApiService.getWorkerById(workerId!);
-        if (!cancelled) setWorker(data);
+        if (!cancelled) { setWorker(data); setFetchedForId(workerId!); }
       } catch (err: any) {
         if (!cancelled) setError(err.message || 'Falha ao carregar worker');
       } finally {
@@ -34,7 +36,7 @@ export function useWorkerDetail(workerId: string | undefined) {
     setIsLoading(true);
     setError(null);
     AdminApiService.getWorkerById(workerId)
-      .then(data => setWorker(data))
+      .then(data => { setWorker(data); setFetchedForId(workerId); })
       .catch(err => setError(err.message || 'Falha ao carregar worker'))
       .finally(() => setIsLoading(false));
   }, [workerId]);
@@ -50,5 +52,5 @@ export function useWorkerDetail(workerId: string | undefined) {
     });
   }, []);
 
-  return { worker, isLoading, error, refetch, patchDocuments, patchDocumentValidations };
+  return { worker, fetchedForId, isLoading, error, refetch, patchDocuments, patchDocumentValidations };
 }

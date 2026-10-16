@@ -24,9 +24,8 @@ export type FunnelStage =
   | 'QUALIFIED'
   | 'NOT_QUALIFIED'
   | 'IN_DOUBT'
-  // 'REPROGRAM' removido em F7.b (migration 195) — worker reschedule agora vive em
-  // CONFIRMED + interview_response='awaiting_reschedule' (ADR-003).
-  | 'CONFIRMED'
+  // 'REPROGRAM' removido em F7.b (migration 195); o estágio Confirmado saiu do código na spec 052
+  // (a entrevista marcada vive na participação em evento de enquadre aberto).
   | 'SELECTED'
   // Fase 4 (D430, migration 477): Equipe de Resposta Rápida — destino do arrasto manual
   // do operador, nunca do vocabulário de um provider externo (nenhum FunnelStageMapper

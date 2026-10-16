@@ -78,9 +78,19 @@ describe('SCREEN_REGISTRY — paridade com o catálogo do back', () => {
       'patient:write',
       'patient_clinical:write',
       'patient_service_team:update',
+      // Spec 051 (F1): trocar o status do paciente por fora da FSM. Decidida no back por
+      // `decidirTrocaForaDoFluxo`; a tela (PR-C) só mostra o destino que a lista do servidor trouxer.
+      'patient_status:move_to_active',
+      'patient_status:move_to_alta',
+      'patient_status:move_to_discharged',
+      'patient_status:move_to_on_hold',
+      'patient_status:move_to_replacement',
+      'patient_status:move_to_searching',
+      'patient_status:move_to_suspended',
+      // Spec 048: destinatário do aviso do 12º dia (consulta por célula no job) — não controla elemento de tela.
+      'patient_therapeutic_project:incomplete_alert',
       'prescreening:write',
-      'recruitment:create',
-      'recruitment:update',
+      'recruitment:read',
       'recruitment:write',
       'staff_directory:read',
       'talentum:write',
@@ -102,8 +112,7 @@ describe('SCREEN_REGISTRY — rotas', () => {
   it('🔴 toda rota do registro existe em App.tsx (tela fantasma = bloco morto no painel)', () => {
     const faltando = SCREEN_REGISTRY.filter((s) => {
       const sub = s.route.replace(/^\/admin\/?/, '');
-      // `/admin` é a rota `index` do shell admin (Usuários).
-      if (sub === '') return !/<Route index /.test(APP_TSX);
+      // `/admin` (índice) só redireciona; Usuários tem rota própria `users` (cai no caso geral).
       return !new RegExp(`path="${sub.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`).test(APP_TSX);
     }).map((s) => s.route);
     expect(faltando).toEqual([]);
@@ -129,12 +138,19 @@ describe('screensByCell / containersOfTab / screenById', () => {
     expect(containersOfTab(s, 'clinicalData').map((c) => c.resource)).toEqual(['patient_clinical', 'patient_care_team', 'patient_therapeutic_project']);
     expect(containersOfTab(s, 'supportNetwork').map((c) => c.resource)).toEqual(['patient_family', 'patient_chat']);
     // D293: o valor-hora é container próprio (célula de DADO), na mesma aba do serviço.
-    expect(containersOfTab(s, 'contractedService').map((c) => c.resource)).toEqual(['patient_coverage', 'patient_address', 'patient_services', 'patient_contract_value']);
-    expect(s.tabs).toEqual(['clinicalData', 'supportNetwork', 'documents', 'contractedService', 'vacancies', 'itinerary', 'history']);
-    // 041 R3: a aba "Encuadre" saiu — o container `services` (célula `patient_services`) segue nas outras abas.
+    // Spec 047 (F1, A1): a aba Vacante saiu; o container `vacancy` (célula `vacancy:read`) desceu para Serviço Contratado.
+    expect(containersOfTab(s, 'contractedService').map((c) => c.resource)).toEqual(['patient_coverage', 'patient_address', 'patient_services', 'patient_contract_value', 'vacancy']);
+    // Spec 049 (F7): a aba Admissão vem logo depois de Documentos, com container próprio e 5 células (4 da 049 + o ensaio pago da 050).
+    // Spec 049 (F7) + cadeia do itinerário (D442) — sync main→stage 16/10, decisão C2: 7 abas, sem 'vacancies'.
+    expect(s.tabs).toEqual(['clinicalData', 'supportNetwork', 'documents', 'admission', 'contractedService', 'itinerary', 'history']);
+    expect(containersOfTab(s, 'admission').map((c) => c.resource)).toEqual(['patient_admission']);
+    expect(s.containers?.find((c) => c.id === 'admission')?.cells).toEqual(['patient_admission:read', 'patient_admission:create', 'patient_admission:update', 'patient_admission:resend_message', 'patient_admission:release_paid_rehearsal', 'patient_admission:retry_summary']);
+    expect(screenById('account.tactiq').cells).toEqual(['own_tactiq_link:read', 'own_tactiq_link:create']);
+    expect(s.tabs).not.toContain('vacancies');
+    expect(containersOfTab(s, 'vacancies' as never)).toEqual([]);
+    expect(s.containers?.find((c) => c.resource === 'vacancy')?.cells).toEqual(['vacancy:read']);
     expect(containersOfTab(s, 'encuadre')).toEqual([]);
     expect(containersOfTab(s, 'itinerary').map((c) => c.resource)).toEqual(['patient_services', 'patient_itinerary']);
-    expect(containersOfTab(s, 'vacancies').map((c) => c.resource)).toEqual(['vacancy']);
     expect(containersOfTab(s, 'history').map((c) => c.resource)).toEqual(['patient']);
     // 02/10 (spec 031): a aba Documentos vem logo depois da Rede de apoio, com as 4 células do recurso.
     expect(containersOfTab(s, 'documents').map((c) => c.resource)).toEqual(['patient_document']);
@@ -192,9 +208,10 @@ describe('screensByCell / containersOfTab / screenById', () => {
 
   it('screenByRoute — rota exata (o href do item de menu); rota que nenhuma tela declara é undefined', () => {
     expect(screenByRoute('/admin/patients')?.id).toBe('patients.list');
-    expect(screenByRoute('/admin')?.id).toBe('users');
+    expect(screenByRoute('/admin/users')?.id).toBe('users');
+    expect(screenByRoute('/admin')).toBeUndefined();
     expect(screenByRoute('/admin/mapa')?.id).toBe('map');
-    expect(screenByRoute('/admin/api-docs')).toBeUndefined();
+    expect(screenByRoute('/admin/rota-inexistente')).toBeUndefined();
     expect(screenByRoute('/admin/patients/', [])).toBeUndefined();
     expect(screenByRoute(undefined)).toBeUndefined();
   });

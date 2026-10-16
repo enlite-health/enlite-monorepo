@@ -55,7 +55,7 @@ const VARIANT: Record<ButtonVariant, string> = {
    * ⚠️ `bg-transparent`, e NÃO branco. Cheguei a trocar para `bg-white` porque o
    * `.s-btn.outline` da maquete é branco — e isso mudaria TODO botão outline do
    * app, em 99 arquivos, para agradar uma tela. Um teste de outra tela
-   * (`ReemplazosButton`) pegou. A diferença de fundo fica como falha declarada
+   * (já removida) pegou. A diferença de fundo fica como falha declarada
    * do pixel-loop, que é onde ela pertence: não vale reescrever o sistema
    * inteiro por 1 propriedade em 171.
    */

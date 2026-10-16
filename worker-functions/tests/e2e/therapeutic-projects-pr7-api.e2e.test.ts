@@ -145,6 +145,7 @@ describe('spec 018 PR-7 — projeto terapêutico pós-D328: API sob engine de pe
     endDate: '2026-12-31',
     contactRefs: [],
     careTeamIds: [],
+    contactStatus: {},
     ...over,
   });
 

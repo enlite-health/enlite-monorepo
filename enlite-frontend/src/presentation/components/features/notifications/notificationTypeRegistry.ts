@@ -13,14 +13,16 @@
  * `patientDisplayName` nulos) — texto neutro com o nome do ator, deep-link igual ao padrão
  * (navega se houver `patientId`, D-08).
  */
-import type { AdminNotification, NotificationTypeCode } from '@infrastructure/http/AdminNotificationApiService';
+import type { AdminNotification, AdmissionTactiqExtensionState, AdmissionTactiqLinkReason, NotificationTypeCode } from '@infrastructure/http/AdminNotificationApiService';
 import type { DrawerFocusRequest } from '@hooks/admin/useAutoOpenDrawer';
+import { formatCaseNumber } from '@domain/value-objects/caseNumberFormat';
 
 export type Translate = (key: string, opts?: Record<string, unknown>) => string;
 
 export interface NotificationDeepLink {
   path: string;
-  focusRequest: DrawerFocusRequest;
+  /** Ausente quando o alvo não é a ficha de um paciente (ex.: a página Perfil, seção Tactiq). */
+  focusRequest?: DrawerFocusRequest;
 }
 
 export interface NotificationTypeHandler {
@@ -28,6 +30,12 @@ export interface NotificationTypeHandler {
   /** `null` quando não há `patientId` (D-08: notificação sem paciente associado, hoje raro mas
    * permitido pelo schema) — não há para onde navegar. */
   getDeepLink: (notification: AdminNotification) => NotificationDeepLink | null;
+  /** Linha 1 do card (quem "fala"). Ausente = o ator (nome ou uid) — o padrão dos tipos de conversa. */
+  actorLabel?: (notification: AdminNotification, t: Translate) => string;
+  /** Linha 2 do card (sobre o quê). Ausente = "en <paciente>" — o padrão dos tipos de conversa. */
+  contextLine?: (notification: AdminNotification, t: Translate) => string;
+  /** Linha 3 do card quando NÃO há trecho de mensagem (aviso de sistema). */
+  detailLine?: (notification: AdminNotification, t: Translate) => string | null;
 }
 
 function actorOrUid(n: AdminNotification): string {
@@ -53,6 +61,48 @@ function conversationDeepLink(n: AdminNotification): NotificationDeepLink | null
   };
 }
 
+const PT_FIELD_LABEL_KEY: Record<string, string> = {
+  RESPONSIBLE: 'responsibles',
+  EXTERNAL: 'externalContacts',
+  COVERAGE: 'coverageContacts',
+  CARE_TEAM: 'careTeam',
+};
+
+/** spec 048 (Gabriel, 08/10): o aviso do PT mostra SÓ o número do Caso — nunca o nome do paciente; sem número, "Caso sin número". */
+function ptCaseLabel(n: AdminNotification, t: Translate): string {
+  const formatted = formatCaseNumber(n.patientCaseNumber ?? null);
+  return formatted ? t('admin.notifications.ptContactsPendingCase', { number: formatted }) : t('admin.notifications.ptContactsPendingNoCase');
+}
+
+/** Os rótulos dos campos são as MESMAS chaves do formulário do PT — sem duplicar i18n. */
+function ptFieldsLabel(n: AdminNotification, t: Translate): string {
+  const fields = n.payload && 'fields' in n.payload ? n.payload.fields : [];
+  return fields
+    .map((f) => t(`admin.patients.detail.therapeuticProjectForm.${PT_FIELD_LABEL_KEY[f] ?? f}`))
+    .join(', ');
+}
+
+/** Link para a ficha do paciente (a aba padrão mostra o card do PT); não abre drawer — a spec pede só o link. */
+function patientFileDeepLink(n: AdminNotification): NotificationDeepLink | null {
+  if (!n.patientId) return null;
+  return { path: `/admin/patients/${n.patientId}`, focusRequest: { code: 'therapeuticProject', token: Date.now() } };
+}
+
+/** spec 049 (§3.0.1): o motivo decide a frase; payload ausente/estranho cai na frase de "sem vínculo". */
+function tactiqReason(n: AdminNotification): AdmissionTactiqLinkReason {
+  const reason = n.payload && 'reason' in n.payload ? n.payload.reason : null;
+  return reason === 'wrong_account' || reason === 'broken' ? reason : 'missing';
+}
+
+/** spec 050 F15: o estado novo decide a frase; payload ausente/estranho cai no texto de "não está ativa" (nunca no de "instalada"). */
+function tactiqExtensionState(n: AdminNotification): AdmissionTactiqExtensionState {
+  const state = n.payload && 'state' in n.payload ? n.payload.state : null;
+  return state === 'installed' || state === 'disabled' ? state : 'missing';
+}
+
+/** A tela do próprio operador, não a ficha de um paciente: sem `focusRequest`. */
+export const TACTIQ_LINK_PATH = '/admin/mi-cuenta';
+
 const REGISTRY: Record<NotificationTypeCode, NotificationTypeHandler> = {
   CONVERSATION_MENTIONED: {
     buildText: (n, t) => t('admin.notifications.mentioned', { actor: actorOrUid(n), patient: patientOrFallback(n, t) }),
@@ -61,6 +111,27 @@ const REGISTRY: Record<NotificationTypeCode, NotificationTypeHandler> = {
   CONVERSATION_REPLIED: {
     buildText: (n, t) => t('admin.notifications.replied', { actor: actorOrUid(n), patient: patientOrFallback(n, t) }),
     getDeepLink: conversationDeepLink,
+  },
+  THERAPEUTIC_PROJECT_CONTACTS_PENDING: {
+    buildText: (n, t) => t('admin.notifications.ptContactsPendingText', { case: ptCaseLabel(n, t), fields: ptFieldsLabel(n, t) }),
+    getDeepLink: patientFileDeepLink,
+    actorLabel: (_n, t) => t('admin.notifications.ptContactsPendingActor'),
+    contextLine: (n, t) => ptCaseLabel(n, t),
+    detailLine: (n, t) => t('admin.notifications.ptContactsPendingFields', { fields: ptFieldsLabel(n, t) }),
+  },
+  ADMISSION_TACTIQ_LINK_REQUIRED: {
+    buildText: (n, t) => t(`admin.notifications.tactiq.${tactiqReason(n)}`),
+    getDeepLink: () => ({ path: TACTIQ_LINK_PATH }),
+    actorLabel: (_n, t) => t('admin.notifications.ptContactsPendingActor'),
+    contextLine: (_n, t) => t('admin.notifications.tactiq.action'),
+    detailLine: (n, t) => t(`admin.notifications.tactiq.${tactiqReason(n)}`),
+  },
+  ADMISSION_TACTIQ_EXTENSION_CHANGED: {
+    buildText: (n, t) => t(`admin.notifications.tactiqExtension.${tactiqExtensionState(n)}`),
+    getDeepLink: () => ({ path: TACTIQ_LINK_PATH }),
+    actorLabel: (_n, t) => t('admin.notifications.ptContactsPendingActor'),
+    contextLine: (_n, t) => t('admin.notifications.tactiq.action'),
+    detailLine: (n, t) => t(`admin.notifications.tactiqExtension.${tactiqExtensionState(n)}`),
   },
 };
 

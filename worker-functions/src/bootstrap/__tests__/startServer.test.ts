@@ -49,8 +49,6 @@ jest.mock('@modules/integration', () => ({
 }));
 jest.mock('@shared/events/PubSubClient', () => ({ PubSubClient: class {} }));
 jest.mock('@shared/events/CloudTasksClient', () => ({ CloudTasksClient: class {} }));
-jest.mock('@modules/notification/application/BookSlotFromWhatsAppUseCase', () => ({ BookSlotFromWhatsAppUseCase: class {} }));
-jest.mock('@modules/notification/application/HandleReminderResponseUseCase', () => ({ HandleReminderResponseUseCase: class {} }));
 jest.mock('@modules/notification/application/PeriskopeInboundRouter', () => ({ PeriskopeInboundRouter: class {} }));
 jest.mock('@modules/notification/application/TriggerWorkerHandoverUseCase', () => ({ TriggerWorkerHandoverUseCase: class {} }));
 jest.mock('@modules/notification/interfaces/controllers/InboundWhatsAppController', () => ({ InboundWhatsAppController: class {} }));

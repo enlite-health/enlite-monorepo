@@ -25,7 +25,6 @@ const STAGE_LABELS: Record<string, string> = {
   COMPLETED: 'proceso completado',
   QUALIFIED: 'calificada — próximo paso: entrevista',
   IN_DOUBT: 'en revisión',
-  CONFIRMED: 'confirmada',
   SELECTED: 'seleccionada 🎉',
   REJECTED: 'no avanzó esta vez',
 };

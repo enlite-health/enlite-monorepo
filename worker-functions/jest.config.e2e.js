@@ -1,6 +1,9 @@
 module.exports = {
   preset: 'ts-jest',
   testEnvironment: 'node',
+  // R-16 (spec 050): guarda de rede do PROCESSO jest (o app que o e2e monta em processo e os clientes dos testes).
+  // Controle: tests/e2e/rede-bloqueada.controle.test.ts. Os contêineres da API são bloqueados por extra_hosts (docker-compose.test.yml).
+  setupFiles: ['<rootDir>/../scripts/rede-bloqueada-em-teste.cjs'],
   roots: ['<rootDir>/tests/e2e'],
   testMatch: ['**/*.test.ts'],
   testPathIgnorePatterns: ['/node_modules/'],

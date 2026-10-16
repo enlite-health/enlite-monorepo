@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { Filter, Users, AlertTriangle, CalendarCheck, ShieldAlert, HelpCircle } from 'lucide-react';
+import { Filter, Users, CalendarCheck, ShieldAlert, HelpCircle } from 'lucide-react';
 import { Text, MetricCard } from '@presentation/components/atoms';
 import {
   FUNNEL_COLUMN_ORDER,
@@ -22,7 +22,6 @@ const COLUMN_DOT: Record<FunnelColumnId, { dot: string; value: string }> = {
   PRE_SCREENING: { dot: 'bg-[#06ADDD]', value: 'text-[#0E7C9E]' },
   IN_PROGRESS: { dot: 'bg-[#8932FD]', value: 'text-[#6B21C7]' },
   COMPLETED: { dot: 'bg-[#8932FD]', value: 'text-[#6B21C7]' },
-  CONFIRMED: { dot: 'bg-[#FFB607]', value: 'text-[#B45309]' },
   SELECTED: { dot: 'bg-[#10B981]', value: 'text-[#0F766E]' },
   REJECTED: { dot: 'bg-slate-400', value: 'text-slate-500' },
 };
@@ -185,13 +184,7 @@ export function FunnelTotalsSection({
           value={funnelPorPrestador.bloqueados}
           subtitle={t(`${p}bloqueadosSub`)}
         />
-        {/*
-          Entrevistas da semana + quantos cards estão em "Agendados" SEM data.
-          O segundo número é a medida de ADOÇÃO da captura (a data passou a ser pedida ao
-          mover o card em 30/07/2026; antes disso o sistema nunca registrava QUANDO a
-          entrevista era). Enquanto ele for alto, o primeiro subestima — e isso fica à
-          vista em vez de virar um zero mudo.
-        */}
+        {/* Encuentros da semana: convocados de eventos de enquadre abertos + datas antigas (052, 13/10/2026). */}
         <MetricCard
           icon={CalendarCheck}
           accent="cyan"
@@ -200,24 +193,6 @@ export function FunnelTotalsSection({
           value={encuadres.agendadosEstaSemana}
           subtitle={t(`${p}agendadosSemanaSub`)}
         />
-        {encuadres.semDataRegistrada > 0 && (
-          <div
-            data-testid="mgmt-encuadres-sem-data"
-            className="flex items-start gap-3 rounded-2xl border border-dashed border-amber-300 bg-amber-50/60 p-6 dark:border-amber-700/60 dark:bg-amber-900/10"
-          >
-            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#FFB607]/16">
-              <AlertTriangle className="h-5 w-5 text-[#D98A00]" aria-hidden="true" />
-            </span>
-            <div className="min-w-0">
-              <Text as="p" size="sm" weight="medium" className="text-slate-700 dark:text-slate-200">
-                {t(`${p}semData`, { count: encuadres.semDataRegistrada })}
-              </Text>
-              <Text as="p" size="xs" className="text-slate-600 dark:text-slate-400">
-                {t(`${p}semDataSub`)}
-              </Text>
-            </div>
-          </div>
-        )}
       </div>
 
       <FunnelView

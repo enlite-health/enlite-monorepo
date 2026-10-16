@@ -135,6 +135,16 @@ jobs:
       # do Google, e um fake responderia só o que nós mesmos programássemos —
       # nunca teria pegado o bug do teclado (`place_changed` sem
       # `formatted_address`). Ver worker-address-keyboard.integration.e2e.ts.
+      # R-16 (spec 050): CI sem rede para terceiros. Controle `rede-bloqueada.controle` (1) DENTRO do contêiner da API: os hosts de terceiro
+      # resolvem só para o endereço morto de `extra_hosts` (docker-compose.test.yml) e a conexão falha, e a própria API é alcançada (controle
+      # do controle); (2) no PROCESSO node do runner: `mcp.tactiq.io` é bloqueado pela guarda e um servidor em localhost é alcançado.
+      # Não cobre o NAVEGADOR do Playwright (chave do Google Maps — spec 050 §15). Falha o job se algum terceiro conectar.
+      - name: rede-bloqueada.controle — contêiner da API e processo do runner
+        run: |
+          set -euo pipefail
+          (cd worker-functions && docker compose -f docker-compose.yml -f docker-compose.test.yml exec -T api node - < ../scripts/rede-bloqueada-no-conteiner.cjs)
+          node scripts/rede-bloqueada-controle-runner.cjs
+
       - name: Sobe o dev server
         working-directory: enlite-frontend
         env:
@@ -177,6 +187,9 @@ jobs:
       - name: Testes de integração (stack real, zero mock)
         working-directory: enlite-frontend
         env:
+          # R-16 (spec 050): guarda de rede no PROCESSO node do runner (workers herdam). Só neste passo: o `npx playwright install` baixa o
+          # Chromium e precisa de rede. Não cobre o NAVEGADOR (chave do Google Maps — spec 050 §15).
+          NODE_OPTIONS: --require ${{ github.workspace }}/scripts/rede-bloqueada-em-teste.cjs
           CI: 'true'
           VITE_GOOGLE_MAPS_API_KEY: ${{ secrets.VITE_GOOGLE_MAPS_API_KEY }}
         run: |
@@ -217,6 +230,9 @@ jobs:
       - name: Portão visual estrutural — plantillas × desenho
         working-directory: enlite-frontend
         env:
+          # R-16 (spec 050): guarda de rede no PROCESSO node do runner (workers herdam). Só neste passo: o `npx playwright install` baixa o
+          # Chromium e precisa de rede. Não cobre o NAVEGADOR (chave do Google Maps — spec 050 §15).
+          NODE_OPTIONS: --require ${{ github.workspace }}/scripts/rede-bloqueada-em-teste.cjs
           CI: 'true'
           E2E_BASE_URL: http://localhost:5173
         run: npx playwright test --config=playwright.mocked.config.ts e2e/plantillas-vs-desenho.e2e.ts
@@ -241,6 +257,9 @@ jobs:
       - name: Prova visual mockada — as telas de plantillas
         working-directory: enlite-frontend
         env:
+          # R-16 (spec 050): guarda de rede no PROCESSO node do runner (workers herdam). Só neste passo: o `npx playwright install` baixa o
+          # Chromium e precisa de rede. Não cobre o NAVEGADOR (chave do Google Maps — spec 050 §15).
+          NODE_OPTIONS: --require ${{ github.workspace }}/scripts/rede-bloqueada-em-teste.cjs
           CI: 'true'
           E2E_BASE_URL: http://localhost:5173
         run: |
@@ -269,6 +288,9 @@ jobs:
       - name: Prova mockada — funil de bloqueados e Kanban da vaga
         working-directory: enlite-frontend
         env:
+          # R-16 (spec 050): guarda de rede no PROCESSO node do runner (workers herdam). Só neste passo: o `npx playwright install` baixa o
+          # Chromium e precisa de rede. Não cobre o NAVEGADOR (chave do Google Maps — spec 050 §15).
+          NODE_OPTIONS: --require ${{ github.workspace }}/scripts/rede-bloqueada-em-teste.cjs
           CI: 'true'
           E2E_BASE_URL: http://localhost:5173
         run: |
@@ -435,6 +457,16 @@ jobs:
         working-directory: enlite-frontend
         run: npx playwright install-deps chromium
 
+      # R-16 (spec 050): CI sem rede para terceiros. Controle `rede-bloqueada.controle` (1) DENTRO do contêiner da API: os hosts de terceiro
+      # resolvem só para o endereço morto de `extra_hosts` (docker-compose.test.yml) e a conexão falha, e a própria API é alcançada (controle
+      # do controle); (2) no PROCESSO node do runner: `mcp.tactiq.io` é bloqueado pela guarda e um servidor em localhost é alcançado.
+      # Não cobre o NAVEGADOR do Playwright (chave do Google Maps — spec 050 §15). Falha o job se algum terceiro conectar.
+      - name: rede-bloqueada.controle — contêiner da API e processo do runner
+        run: |
+          set -euo pipefail
+          (cd worker-functions && docker compose -f docker-compose.yml -f docker-compose.test.yml -f docker-compose.anacare-hours.yml -f docker-compose.anacare-hours-min-absolute.yml exec -T api node - < ../scripts/rede-bloqueada-no-conteiner.cjs)
+          node scripts/rede-bloqueada-controle-runner.cjs
+
       - name: Sobe o dev server
         working-directory: enlite-frontend
         env:
@@ -463,6 +495,9 @@ jobs:
       - name: Teste de integração — horas do Ana Care, conferência, envio ao Axonico e sync (FELIZ + troca de mês)
         working-directory: enlite-frontend
         env:
+          # R-16 (spec 050): guarda de rede no PROCESSO node do runner (workers herdam). Só neste passo: o `npx playwright install` baixa o
+          # Chromium e precisa de rede. Não cobre o NAVEGADOR (chave do Google Maps — spec 050 §15).
+          NODE_OPTIONS: --require ${{ github.workspace }}/scripts/rede-bloqueada-em-teste.cjs
           CI: 'true'
         run: npx playwright test --project=integration --ignore-snapshots --grep "anacare-hours-conferencia|anacare-hours-axonico-envio|anacare-hours-detalhe-por-mes|anacare-hours-sync-real.*(FELIZ|ALTERNATIVO 3)|anacare-hours-export"
 
@@ -492,6 +527,9 @@ jobs:
       - name: Teste de integração — sync do Ana Care, cenário de ERRO (fail-closed do diretório)
         working-directory: enlite-frontend
         env:
+          # R-16 (spec 050): guarda de rede no PROCESSO node do runner (workers herdam). Só neste passo: o `npx playwright install` baixa o
+          # Chromium e precisa de rede. Não cobre o NAVEGADOR (chave do Google Maps — spec 050 §15).
+          NODE_OPTIONS: --require ${{ github.workspace }}/scripts/rede-bloqueada-em-teste.cjs
           CI: 'true'
           ANACARE_SYNC_E2E_ERROR_SCENARIO: '1'
         run: npx playwright test --project=integration --ignore-snapshots --grep "anacare-hours-sync-real.*ALTERNATIVO 2"
@@ -620,6 +658,16 @@ jobs:
         working-directory: enlite-frontend
         run: npx playwright install-deps chromium
 
+      # R-16 (spec 050): CI sem rede para terceiros. Controle `rede-bloqueada.controle` (1) DENTRO do contêiner da API: os hosts de terceiro
+      # resolvem só para o endereço morto de `extra_hosts` (docker-compose.test.yml) e a conexão falha, e a própria API é alcançada (controle
+      # do controle); (2) no PROCESSO node do runner: `mcp.tactiq.io` é bloqueado pela guarda e um servidor em localhost é alcançado.
+      # Não cobre o NAVEGADOR do Playwright (chave do Google Maps — spec 050 §15). Falha o job se algum terceiro conectar.
+      - name: rede-bloqueada.controle — contêiner da API e processo do runner
+        run: |
+          set -euo pipefail
+          (cd worker-functions && docker compose -f docker-compose.yml -f docker-compose.test.yml -f docker-compose.group-simulation.yml exec -T api node - < ../scripts/rede-bloqueada-no-conteiner.cjs)
+          node scripts/rede-bloqueada-controle-runner.cjs
+
       - name: Sobe o dev server
         working-directory: enlite-frontend
         env:
@@ -665,15 +713,39 @@ jobs:
       # usa token mock simples, sem linha em `users` — sob engine ligado bate
       # em 403 `account_not_active` em qualquer rota `admin.patients`
       # (medido). Vive no job padrão (`pr-gate.yml`, engine OFF).
-      # `vacante-anotacao-sem-celula` ENTROU (cadeia, Fase 3): precisa do engine ligado
-      # (403 sem `vacancy:update`); usa `abac-stack-helper`.
-      # `funil-compativeis-sem-celula` ENTROU (cadeia, Fase 5): precisa do engine ligado (card de
-      # Compatíveis redigido sem `match:read`); usa `abac-stack-helper`.
       # `cid-na-vacante-tela` ENTROU aqui, e NÃO no job padrão, por uma razão medida: 3 dos seus
       # 7 casos afirmam que o ator SEM `patient_clinical:read` vê o aviso de permissão em vez do
       # diagnóstico. Com o engine OFF do job padrão, `cells===null` devolve o dado e esses 3 casos
       # ficariam verdes sem medir nada — teatro de cobertura no ponto exato que protege o paciente.
       # Usa `abac-stack-helper` (usuário REAL em `users`), então herda este runner e este Vite.
+      # `patient-documents-tab` ENTROU (spec 031, aba "Documentos" da ficha): o cenário "conta sem célula
+      # `patient_document` não vê a aba" só mede com o engine ABAC ligado, e o spec sobe/baixa arquivo e anexa
+      # PDF no chat — por isso este job ganhou o fake-gcs + o bucket `enlite-patient-documents-ci` (passos
+      # acima) e `PATIENT_DOCUMENTS_BUCKET` em `docker-compose.group-simulation.yml`. Usa `abac-stack-helper`.
+      # `vacante-em-servico-047` ENTROU (spec 047, vacante dentro de Serviços Contratados): a F1 (`-aba`) mede a
+      # ausência do bloco/da aba por falta de `vacancy:read` — só vale com o engine ABAC ligado (com ele OFF
+      # `cells===null` mostra tudo e os 2 alternativos ficariam vermelhos/sem medir). As fases F3/F4 (`-colunas`,
+      # `-bloco`) casam pelo mesmo prefixo. Usa `abac-stack-helper` (staff REAL em grupo), como `patient-documents-tab`.
+      # `pt-todavia-no-hay-048` ENTROU (spec 048, "Todavía no hay registro" / "No necesita" nos contatos do PT): o alt 1 mede a
+      # AUSÊNCIA da opção "No necesita" por falta de `patient_therapeutic_project:waive_contact` (e o 403 do servidor) — só vale com o
+      # engine ABAC ligado (com ele OFF `cells===null` mostra tudo e o teste ficaria verde sem medir nada), por isso entra aqui e NÃO no
+      # `grep:` do `pr-gate.yml`. O feliz dispara a varredura pelo endpoint interno com `INTERNAL_TOKEN_SECRET` do compose de teste
+      # (`test-secret-for-e2e-only`, o mesmo do override deste job). Usa `abac-stack-helper` (staff REAL em grupo).
+      # `admissao-050` (spec 050 F11, "Reintentar resumen") entra pelo mesmo motivo (alt 1 mede a AUSÊNCIA do botão por falta de `patient_admission:retry_summary`).
+      # `admissao-049` ENTROU (spec 049, aba "Admisión" da ficha: nova agenda, vínculo Tactiq, cancelar): o alt 2 mede a AUSÊNCIA do
+      # botão "Nueva agenda" e o 403 por falta de `patient_admission:create` — só vale com o engine ABAC ligado (com ele OFF
+      # `cells===null` mostra tudo e o teste ficaria verde sem medir nada), por isso entra aqui e NÃO no `grep:` do `pr-gate.yml`.
+      # A API deste job sobe com `ADMISSION_EXTERNALS=fake` (em `docker-compose.group-simulation.yml`): Calendar, Meet, Twilio, Cloud Tasks,
+      # Tactiq, Vertex e cofre são DUBLÊS — nenhum canal real. Usa `abac-stack-helper` (staff REAL em grupo), como `pt-todavia-no-hay-048`.
+      # `transicao-estado-051` ENTROU (spec 051, troca manual de estado do paciente fora do fluxo, atrás de `patient_status:move_to_<destino>`): o alt
+      # "sem a permissão" mede a AUSÊNCIA da opção Búsqueda no select e o 403 do PUT por falta da célula — só vale com o engine ABAC ligado (com ele OFF
+      # `cells===null` mostra tudo e o teste ficaria verde sem medir nada), por isso entra aqui e NÃO no `grep:` do `pr-gate.yml`. Precisa do sync do
+      # catálogo (`PERMISSION_CATALOG_SYNC_ENABLED`, já neste override): `grantCell` falha alto se as 7 células `patient_status:*` não existirem.
+      # Usa `abac-stack-helper` (staff REAL em grupo). Sem canal externo: só Postgres.
+      # `vacante-anotacao-sem-celula` ENTROU (cadeia, Fase 3): precisa do engine ligado
+      # (403 sem `vacancy:update`); usa `abac-stack-helper`.
+      # `funil-compativeis-sem-celula` ENTROU (cadeia, Fase 5): precisa do engine ligado (card de
+      # Compatíveis redigido sem `match:read`); usa `abac-stack-helper`.
       # `ai-prompts-humano` ENTROU (spec 029, T035): o humano lê/edita/simula/guarda/desfaz em
       # `/admin/prompts-ia`. Precisa do engine ligado com `admin.integrations` enforçada — as rotas
       # `/ai-prompts` usam `untilEnforced: 'admin'` e só checam a célula `ai_prompt:*` de verdade
@@ -684,17 +756,35 @@ jobs:
       # real: `docker-compose.test.yml` (base, versionado) carrega `vertexInterceptPreload.js` na API,
       # e o próprio spec reprova se a contagem de `[VERTEX-STUB]` não subir. O spec lê o log do
       # container achando-o pela porta 8080 publicada — sem nome fixo.
-      # `patient-documents-tab` ENTROU (spec 031, aba "Documentos" da ficha): o cenário "conta sem célula
-      # `patient_document` não vê a aba" só mede com o engine ABAC ligado, e o spec sobe/baixa arquivo e anexa
-      # PDF no chat — por isso este job ganhou o fake-gcs + o bucket `enlite-patient-documents-ci` (passos
-      # acima) e `PATIENT_DOCUMENTS_BUCKET` em `docker-compose.group-simulation.yml`. Usa `abac-stack-helper`.
       - name: Teste de integração — simulação de grupo de acesso + completar-vacante (fases 2-3)
         working-directory: enlite-frontend
         env:
+          # R-16 (spec 050): guarda de rede no PROCESSO node do runner (workers herdam). Só neste passo: o `npx playwright install` baixa o
+          # Chromium e precisa de rede. Não cobre o NAVEGADOR (chave do Google Maps — spec 050 §15).
+          NODE_OPTIONS: --require ${{ github.workspace }}/scripts/rede-bloqueada-em-teste.cjs
           CI: 'true'
           ABAC_API_URL: http://localhost:8080
           ABAC_TEST_DB_URL: postgresql://enlite_admin:enlite_password@localhost:5433/enlite_e2e
-        run: npx playwright test --project=integration --ignore-snapshots --grep "group-simulation|draft-vacancy-page|draft-vacancy-choice|vacante-anotacao-sem-celula|funil-compativeis-sem-celula|cid-na-vacante-tela|service-team-contact-api|ai-prompts-humano|patient-documents-tab"
+        run: npx playwright test --project=integration --ignore-snapshots --grep "group-simulation|draft-vacancy-page|draft-vacancy-choice|cid-na-vacante-tela|patient-documents-tab|vacante-anotacao-sem-celula|funil-compativeis-sem-celula|vacante-em-servico-047|pt-todavia-no-hay-048|admissao-049|admissao-050|transicao-estado-051|enquadre-052|entrevistadores-055|login-cai-na-gestao-a-vista|service-team-contact-api|ai-prompts-humano"
+
+      # Spec 049 (F9): os e2e de API da aba Admissão têm blocos que só valem com a stack de ENGINE LIGADO + SYNC DO CATÁLOGO +
+      # `ADMISSION_EXTERNALS=fake` — exatamente a API deste job. No job `backend-e2e` (sem sync, de propósito: ligá-lo ali
+      # descontinuaria células que `permissions-iam-schema` ainda espera) esses blocos são `skip` DECLARADOS (`E2E_ABAC_STACK`);
+      # aqui eles RODAM (A1-8b, A3-7/A3-8 pelo container, A4 pelo index.ts, rota interna do job pós-call). Vem DEPOIS do Playwright:
+      # o `setup.ts` do jest TRUNCA tabelas de negócio e não pode correr por baixo das telas.
+      - name: E2E de API da 049 com a stack de engine ligado + sync (blocos E2E_ABAC_STACK)
+        working-directory: worker-functions
+        env:
+          E2E_ABAC_STACK: '1'
+          API_URL: http://localhost:8080
+          DATABASE_URL: postgresql://enlite_admin:enlite_password@localhost:5433/enlite_e2e
+          TEST_DATABASE_URL: postgresql://enlite_admin:enlite_password@localhost:5433/enlite_e2e
+          INTERNAL_TOKEN_SECRET: test-secret-for-e2e-only
+          FIREBASE_AUTH_EMULATOR_HOST: 127.0.0.1:1
+        run: |
+          npm ci
+          npm run test:e2e:fixtures
+          npx jest --config jest.config.e2e.js --testPathPattern 'tests/e2e/(admission-049-|enquadre-052-)' --testTimeout=60000 --forceExit
 
       - name: Relatório (só quando falha)
         if: failure()

@@ -46,7 +46,6 @@ export const MANAGEMENT_HELP_KEYS = [
   'stage_PRE_SCREENING',
   'stage_IN_PROGRESS',
   'stage_COMPLETED',
-  'stage_CONFIRMED',
   'stage_SELECTED',
   'stage_REJECTED',
   // Analytics por zona

@@ -141,16 +141,22 @@ test.describe('Spec 011 bloco A — a ficha mostra e não apaga dado do paciente
     expect(before).toEqual({ documentType: 'DNI', documentNumber: seed.responsible.documentNumber, source: 'web_form', phone: seed.responsible.phone });
 
     await page.getByRole('button', { name: /Red de Apoyo/i }).click();
-    await page.getByTestId('edit-support-btn').click();
-    const drawer = page.getByTestId('patient-support-edit-drawer');
+    // Lápis da linha do responsável (só há um) — o drawer abre preenchido com AQUELE familiar.
+    await page.getByTestId('familiares-card').locator('[data-testid^="familiares-edit-"]').first().click();
+    const drawer = page.getByTestId('responsible-edit-drawer');
     await expect(drawer).toBeVisible();
     // O drawer carrega o documento em claro (lex A1: mascarar aqui seria teatro).
-    await expect(page.getByTestId('psn-documentType-0')).toHaveValue('DNI');
-    await expect(page.getByTestId('psn-documentNumber-0')).toHaveValue(seed.responsible.documentNumber);
+    await expect(page.getByTestId('responsible-documentType')).toHaveValue('DNI');
+    await expect(page.getByTestId('responsible-documentNumber')).toHaveValue(seed.responsible.documentNumber);
     await expect(drawer).toHaveScreenshot('bloco-a-drawer-familiares.png', { maxDiffPixelRatio: 0.05 });
 
-    await page.getByTestId('psn-phone-0').fill('+5491100000099');
-    await page.getByTestId('psn-save').click();
+    // Humano: clica no campo, seleciona tudo e digita o telefone novo; confere o valor lido da tela.
+    const telefone = page.getByTestId('responsible-phone');
+    await telefone.click();
+    await page.keyboard.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A');
+    await page.keyboard.type('+5491100000099');
+    await expect(telefone).toHaveValue('+5491100000099');
+    await page.getByTestId('responsible-save').click();
     await expect(drawer).toHaveCount(0, { timeout: 15_000 });
 
     const after = readPrimaryResponsible(seed.patientId);

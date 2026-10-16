@@ -5,10 +5,14 @@
  *
  * Valida as 3 fases do refactor:
  *   1. Backend funnel-table endpoint
- *   2. Layout dos cards (VacancyCaseCard + VacancyPatientCard + VacancyProfessionCard + MeetLinksRow)
+ *   2. Layout dos cards (VacancyCaseCard + VacancyPatientCard + VacancyProfessionCard)
  *   3. Tab de funil com toggle Lista/Kanban
  *
  * Todos os testes são totalmente mockados (sem backend real, sem Gemini, sem banco).
+ *
+ * 054: B2/B4/B5/D3/D4 removidos — provavam as abas de etapa da Lista, que deixaram de existir.
+ * A tela abre no Kanban (padrão); a Lista é aberta clicando "Lista" (`openLista`). Fora do CI e sem
+ * prova (§4.3 da spec 054); baselines de screenshot ficam defasadas.
  */
 
 import { test, expect, Page } from '@playwright/test';
@@ -192,7 +196,6 @@ function buildFunnelTableResponse(bucket: string) {
       INICIADO: 0,
       PRE_SCREENING: 0,
       COMPLETED: 0,
-      CONFIRMED: 0,
       SELECTED: 0,
       REJECTED: 0,
     },
@@ -238,7 +241,7 @@ const MOCK_FUNNEL_KANBAN = {
           redireccionamiento: null,
         },
       ],
-      CONFIRMED: [
+      COMPLETED: [
         {
           id: 'f2',
           workerName: 'Bruno López',
@@ -463,6 +466,14 @@ async function mockVacancyApis(page: Page): Promise<void> {
   );
 }
 
+/** 054: a tela abre no Kanban (padrão); a Lista só aparece clicando em "Lista". */
+async function openLista(page: Page): Promise<void> {
+  await page
+    .getByRole('group', { name: 'Cambiar vista' })
+    .getByRole('button', { name: 'Lista' })
+    .click();
+}
+
 // ── Testes ────────────────────────────────────────────────────────────────────
 
 test.describe('VacancyDetailPage — Refactor (Funnel + Cards + Toggle)', () => {
@@ -550,26 +561,9 @@ test.describe('VacancyDetailPage — Refactor (Funnel + Cards + Toggle)', () => 
     ).toBeVisible();
   });
 
-  test('A5 — VacancyMeetLinksRow exibe 1 pílula com link de entrevista', async ({
-    page,
-  }) => {
-    await loginAsAdmin(page);
-    await mockVacancyApis(page);
-
-    await page.goto(`/admin/vacancies/${MOCK_VACANCY_ID}`);
-    await expect(page.locator('text=226').first()).toBeVisible({
-      timeout: 15_000,
-    });
-
-    // Row de meet links deve conter "Fechas para entrevista" (título do componente VacancyMeetLinksRow)
-    await expect(
-      page.locator('text=/Fechas para entrevista/i').first(),
-    ).toBeVisible({ timeout: 10_000 });
-  });
-
   // ── B. Funil — modo Lista ────────────────────────────────────────────────────
 
-  test('B1 — aba Encuadres ativa por default, toggle mostra "Lista" pressionado', async ({
+  test('B1 — aba Reclutamiento ativa por default, toggle mostra "Kanban" pressionado (padrão 054)', async ({
     page,
   }) => {
     await loginAsAdmin(page);
@@ -580,42 +574,13 @@ test.describe('VacancyDetailPage — Refactor (Funnel + Cards + Toggle)', () => 
       timeout: 15_000,
     });
 
-    // Tab Encuadres ativa
-    const encuadresBtn = page.getByRole('button', { name: /Encuadres/i });
+    // Tab Reclutamiento ativa
+    const encuadresBtn = page.getByRole('button', { name: /Reclutamiento/i });
     await expect(encuadresBtn).toHaveClass(/bg-primary/);
 
-    // Toggle Lista pressionado (aria-pressed=true)
-    const listaBtn = page.getByRole('button', { name: /Lista/i });
-    await expect(listaBtn).toHaveAttribute('aria-pressed', 'true');
-  });
-
-  test('B2 — tab Invitados (5) ativo por default, tabela mostra 5 linhas', async ({
-    page,
-  }) => {
-    await loginAsAdmin(page);
-    await mockVacancyApis(page);
-
-    await page.goto(`/admin/vacancies/${MOCK_VACANCY_ID}`);
-    await expect(page.locator('text=226').first()).toBeVisible({
-      timeout: 15_000,
-    });
-
-    // Scroll para a seção do funil (está abaixo dos cards)
-    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-
-    // Tab Invitados deve estar visível
-    await expect(
-      page.getByRole('tab', { name: /Invitados/i }).first(),
-    ).toBeVisible({ timeout: 10_000 });
-
-    // Aguarda o count 5 aparecer no label do tab (vem do endpoint funnel-table)
-    await expect(
-      page.locator('[role="tablist"] button', { hasText: /Invitados \(5\)/i }),
-    ).toBeVisible({ timeout: 20_000 });
-
-    // Tabela com 5 linhas de dados (tbody rows)
-    const rows = page.locator('[role="table"] tbody tr');
-    await expect(rows).toHaveCount(5, { timeout: 15_000 });
+    // Toggle Kanban pressionado (aria-pressed=true) e Lista não
+    await expect(page.getByRole('button', { name: 'Kanban', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByRole('button', { name: 'Lista', exact: true })).toHaveAttribute('aria-pressed', 'false');
   });
 
   test('B3 — badges WhatsApp com cores corretas para cada status', async ({
@@ -629,7 +594,8 @@ test.describe('VacancyDetailPage — Refactor (Funnel + Cards + Toggle)', () => 
       timeout: 15_000,
     });
 
-    // Scroll para a seção do funil e aguarda tabela carregar
+    // 054: abre a Lista (a tela abre no Kanban), scroll para o funil e aguarda a tabela
+    await openLista(page);
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
     await expect(page.locator('[role="table"]')).toBeVisible({ timeout: 20_000 });
 
@@ -649,53 +615,7 @@ test.describe('VacancyDetailPage — Refactor (Funnel + Cards + Toggle)', () => 
     await expect(page.locator('text=Respondido').first()).toBeVisible();
   });
 
-  test('B4 — clique na tab Postulados muda count para 2, tabela atualiza para 2 linhas', async ({
-    page,
-  }) => {
-    await loginAsAdmin(page);
-    await mockVacancyApis(page);
-
-    await page.goto(`/admin/vacancies/${MOCK_VACANCY_ID}`);
-    await expect(page.locator('text=226').first()).toBeVisible({
-      timeout: 15_000,
-    });
-
-    // Scroll para a seção do funil e aguarda tabela de Invitados
-    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-    await expect(page.locator('[role="table"]')).toBeVisible({ timeout: 20_000 });
-
-    // Clica na tab Postulados
-    await page.locator('[role="tablist"] button', { hasText: /Postulados/i }).click();
-
-    // Tabela atualiza para 2 linhas
-    const rows = page.locator('[role="table"] tbody tr');
-    await expect(rows).toHaveCount(2, { timeout: 15_000 });
-  });
-
-  test('B5 — tab Desistentes (0) mostra empty state', async ({ page }) => {
-    await loginAsAdmin(page);
-    await mockVacancyApis(page);
-
-    await page.goto(`/admin/vacancies/${MOCK_VACANCY_ID}`);
-    await expect(page.locator('text=226').first()).toBeVisible({
-      timeout: 15_000,
-    });
-
-    // Scroll para a seção do funil
-    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-
-    // Clica na tab Desistentes
-    await page.locator('[role="tablist"] button', { hasText: /Desistentes/i }).click();
-
-    // Empty state visível
-    await expect(
-      page.locator(
-        'text=/Sin candidatos en esta etapa|sem candidatos/i',
-      ).first(),
-    ).toBeVisible({ timeout: 15_000 });
-  });
-
-  test('B6 — botão "Enviar invitaciones" visível na aba Encuadres', async ({
+  test('B6 — botão "Enviar invitaciones" visível na aba Reclutamiento', async ({
     page,
   }) => {
     await loginAsAdmin(page);
@@ -749,7 +669,8 @@ test.describe('VacancyDetailPage — Refactor (Funnel + Cards + Toggle)', () => 
       timeout: 15_000,
     });
 
-    // Scroll para a seção do funil e aguarda tabela visível no modo Lista
+    // Entra na Lista (054: a tela abre no Kanban), scroll para o funil e aguarda a tabela
+    await openLista(page);
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
     await expect(page.locator('[role="table"]')).toBeVisible({ timeout: 20_000 });
 
@@ -777,10 +698,13 @@ test.describe('VacancyDetailPage — Refactor (Funnel + Cards + Toggle)', () => 
       timeout: 15_000,
     });
 
+    // 054: Kanban já é o padrão — vai à Lista e volta, para o clique ser de fato uma troca.
+    await openLista(page);
     const kanbanBtn = page.getByRole('button', {
       name: /Kanban/i,
       exact: true,
     });
+    await expect(kanbanBtn).toHaveAttribute('aria-pressed', 'false');
     await kanbanBtn.click();
 
     await expect(kanbanBtn).toHaveAttribute('aria-pressed', 'true');
@@ -814,7 +738,7 @@ test.describe('VacancyDetailPage — Refactor (Funnel + Cards + Toggle)', () => 
 
   // ── D. Testes visuais (OBRIGATÓRIO — CLAUDE.md) ──────────────────────────────
 
-  test('D1 — VISUAL — view Lista, tab Invitados (5 linhas)', async ({ page }) => {
+  test('D1 — VISUAL — view Lista (5 linhas)', async ({ page }) => {
     await loginAsAdmin(page);
     await mockVacancyApis(page);
 
@@ -823,7 +747,8 @@ test.describe('VacancyDetailPage — Refactor (Funnel + Cards + Toggle)', () => 
       timeout: 15_000,
     });
 
-    // Scroll para seção do funil e aguarda tabela e todos badges carregarem
+    // Entra na Lista (054), scroll para seção do funil e aguarda tabela e todos badges carregarem
+    await openLista(page);
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
     await expect(page.locator('[role="table"] tbody tr')).toHaveCount(5, {
       timeout: 20_000,
@@ -861,60 +786,6 @@ test.describe('VacancyDetailPage — Refactor (Funnel + Cards + Toggle)', () => 
       fullPage: true,
       maxDiffPixelRatio: 0.03,
     });
-  });
-
-  test('D3 — VISUAL — view Lista, tab Postulados (2 linhas)', async ({
-    page,
-  }) => {
-    await loginAsAdmin(page);
-    await mockVacancyApis(page);
-
-    await page.goto(`/admin/vacancies/${MOCK_VACANCY_ID}`);
-    await expect(page.locator('text=226').first()).toBeVisible({
-      timeout: 15_000,
-    });
-
-    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-    await page.locator('[role="tablist"] button', { hasText: /Postulados/i }).click();
-    await expect(page.locator('[role="table"] tbody tr')).toHaveCount(2, {
-      timeout: 20_000,
-    });
-
-    await expect(page).toHaveScreenshot(
-      'vacancy-detail-refactor-list-postulados.png',
-      {
-        fullPage: true,
-        maxDiffPixelRatio: 0.03,
-      },
-    );
-  });
-
-  test('D4 — VISUAL — view Lista, tab Desistentes (empty state)', async ({
-    page,
-  }) => {
-    await loginAsAdmin(page);
-    await mockVacancyApis(page);
-
-    await page.goto(`/admin/vacancies/${MOCK_VACANCY_ID}`);
-    await expect(page.locator('text=226').first()).toBeVisible({
-      timeout: 15_000,
-    });
-
-    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-    await page.locator('[role="tablist"] button', { hasText: /Desistentes/i }).click();
-    await expect(
-      page.locator('text=/Sin candidatos en esta etapa/i').first(),
-    ).toBeVisible({ timeout: 15_000 });
-
-    // Screenshot por LOCATOR (não fullPage): o scroll da página fica num
-    // container interno e o offset do fullPage varia entre runs → flaky.
-    // No empty state a tabela não renderiza — o container é o role="status".
-    await expect(page.locator('[role="status"]')).toHaveScreenshot(
-      'vacancy-detail-refactor-list-desistentes-empty.png',
-      {
-        maxDiffPixelRatio: 0.02,
-      },
-    );
   });
 
   test('E1 — coluna Registro mostra badge e ícone de notas abre modal com histórico', async ({
@@ -964,6 +835,7 @@ test.describe('VacancyDetailPage — Refactor (Funnel + Cards + Toggle)', () => 
     await page.goto(`/admin/vacancies/${MOCK_VACANCY_ID}`);
     await expect(page.locator('text=226').first()).toBeVisible({ timeout: 15_000 });
 
+    await openLista(page);
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
     await expect(page.locator('[role="table"]')).toBeVisible({ timeout: 20_000 });
 
@@ -1035,6 +907,7 @@ test.describe('VacancyDetailPage — Refactor (Funnel + Cards + Toggle)', () => 
     await page.goto(`/admin/vacancies/${MOCK_VACANCY_ID}`);
     await expect(page.locator('text=226').first()).toBeVisible({ timeout: 15_000 });
 
+    await openLista(page);
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
     await expect(page.locator('[role="table"]')).toBeVisible({ timeout: 20_000 });
 
@@ -1062,13 +935,14 @@ test.describe('VacancyDetailPage — Refactor (Funnel + Cards + Toggle)', () => 
     await page.goto(`/admin/vacancies/${MOCK_VACANCY_ID}`);
     await expect(page.locator('text=226').first()).toBeVisible({ timeout: 15_000 });
 
+    await openLista(page);
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
     const table = page.locator('[role="table"]');
     await expect(table).toBeVisible({ timeout: 20_000 });
     await expect(page.locator('text=Completo').first()).toBeVisible();
 
     // Screenshot do ELEMENTO (não fullPage): captura a tabela inteira mesmo
-    // com o scroll da página num container interno — os fullPage D1/D3/D4
+    // com o scroll da página num container interno — o fullPage D1
     // não alcançam a região do funil (página tem inner scroll).
     await expect(table).toHaveScreenshot('vacancy-funnel-table.png', {
       maxDiffPixelRatio: 0.02,

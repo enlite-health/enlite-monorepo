@@ -192,7 +192,7 @@ describe('Worker application eligibility — bloqueio de postulação incompleta
     it('worker REGISTERED → 200 e atualiza application_funnel_stage', async () => {
       const res = await api.put(
         `/api/admin/encuadres/${E.REG}/move`,
-        { targetStage: 'CONFIRMED', reasonCategory: 'ENCUADRE_ANTECIPADO' },
+        { targetStage: 'COMPLETED', reasonCategory: 'ENCUADRE_ANTECIPADO' },
         { headers: { Authorization: `Bearer ${adminToken}` } },
       );
 
@@ -205,13 +205,13 @@ describe('Worker application eligibility — bloqueio de postulação incompleta
         [W.REG, vacancyId],
       );
       expect(rows).toHaveLength(1);
-      expect(rows[0].application_funnel_stage).toBe('CONFIRMED');
+      expect(rows[0].application_funnel_stage).toBe('COMPLETED');
     });
 
     it('worker INCOMPLETE_REGISTER → 403 com code=WORKER_NOT_ELIGIBLE', async () => {
       const res = await api.put(
         `/api/admin/encuadres/${E.INC}/move`,
-        { targetStage: 'CONFIRMED' },
+        { targetStage: 'COMPLETED' },
         { headers: { Authorization: `Bearer ${adminToken}` } },
       );
 
@@ -287,7 +287,7 @@ describe('Worker application eligibility — bloqueio de postulação incompleta
         // UPDATE de funnel_stage deve falhar — trigger reavalia status do worker
         await expect(
           pool.query(
-            `UPDATE worker_job_applications SET application_funnel_stage = 'CONFIRMED'
+            `UPDATE worker_job_applications SET application_funnel_stage = 'COMPLETED'
               WHERE worker_id = $1 AND job_posting_id = $2`,
             [workerId, vacancyId],
           ),
@@ -309,7 +309,7 @@ describe('Worker application eligibility — bloqueio de postulação incompleta
       // UPDATE preserva source='planilla_operativa' → bypass continua aplicando
       await expect(
         pool.query(
-          `UPDATE worker_job_applications SET application_funnel_stage = 'CONFIRMED'
+          `UPDATE worker_job_applications SET application_funnel_stage = 'COMPLETED'
             WHERE worker_id = $1 AND job_posting_id = $2`,
           [W.INC, vacancyId],
         ),

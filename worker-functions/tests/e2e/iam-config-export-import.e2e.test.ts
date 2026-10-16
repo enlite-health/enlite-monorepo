@@ -158,7 +158,8 @@ describe('iam-config export/import (D208)', () => {
     expect(chavesNovo).toEqual(
       expect.arrayContaining(['own_notifications:read', 'own_notifications:update', 'own_presence:update', 'worker:read']),
     );
-    expect(chavesNovo.filter((c) => c.startsWith('own_')).length).toBe(3);
+    // 3 históricas + 2 da spec 049 (`own_tactiq_link:read|create`, mig 507; o prefixo `own_` as inclui no auto-grant).
+    expect(chavesNovo.filter((c) => c.startsWith('own_')).length).toBe(5);
     // a TRILHA nasceu da 279: autoria = ator, reason = a nossa
     const t = await trilha(G.cfg);
     expect(t).toEqual([{ op: 'add', changed_by: U.gestor, reason: 'e2e import' }]);

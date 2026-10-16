@@ -31,6 +31,17 @@ export const PATIENT_FAMILY_READ_CELL = patientContainerCell('family', 'read');
 export const PATIENT_COVERAGE_READ_CELL = patientContainerCell('coverage', 'read');
 export const PATIENT_CARE_TEAM_READ_CELL = patientContainerCell('careTeam', 'read');
 
+/** spec 048: ver/escolher "No necesita" nos campos de contato (nasce só no Acesso Master). */
+export const PT_WAIVE_CONTACT_CELL = `${THERAPEUTIC_PROJECT_RESOURCE}:waive_contact`;
+/** spec 048: destinatário do aviso do 12º dia de contato pendente (consulta por célula, não por grupo). */
+export const PT_INCOMPLETE_ALERT_CELL = `${THERAPEUTIC_PROJECT_RESOURCE}:incomplete_alert`;
+
+/** `cells = null` = engine não decidiu (D113): passa, como o resto do módulo. */
+export function canWaiveContact(cells: readonly string[] | null | undefined): boolean {
+  if (cells === null || cells === undefined) return true;
+  return cells.includes(PT_WAIVE_CONTACT_CELL);
+}
+
 const CLINICAL_FIELDS = ['clinicalContext', 'generalObjective', 'diagnoses', 'pathologyTypes', 'segment'] as const;
 
 export type ProjectedTherapeuticVersion = Omit<TherapeuticProjectVersion, 'clinicalContext' | 'generalObjective' | 'diagnoses' | 'pathologyTypes' | 'contractedServiceCode' | 'createdBy' | 'annulledBy'> & {

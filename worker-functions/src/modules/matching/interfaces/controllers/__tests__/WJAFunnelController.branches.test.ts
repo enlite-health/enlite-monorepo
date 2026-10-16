@@ -272,9 +272,9 @@ describe('WJAFunnelController — ramos de erro/decrypt do KMS e de negócio', (
         rows: [{ worker_id: 'w-1', job_posting_id: 'jp-1' }],
       });
       mockQuery.mockResolvedValueOnce({ rows: [{ status: 'REGISTERED' }] });
-      // etapa anterior: CONFIRMED (1 posição antes de SELECTED) — não é salto (Fase 4,
+      // etapa anterior: COMPLETED (1 posição antes de SELECTED) — não é salto (Fase 4,
       // DX-4.5), então não precisa de reasonCategory.
-      mockQuery.mockResolvedValueOnce({ rows: [{ application_funnel_stage: 'CONFIRMED', source: 'talentum' }] });
+      mockQuery.mockResolvedValueOnce({ rows: [{ application_funnel_stage: 'COMPLETED', source: 'talentum' }] });
       mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [] }); // upsert wja
       mockQuery.mockResolvedValueOnce({ rowCount: 1, rows: [] }); // UPDATE encuadres resultado+role
       mockQuery.mockResolvedValueOnce({ rows: [{ id: 'ev-1' }] }); // INSERT domain_events (funnel_stage.selected)
@@ -306,7 +306,7 @@ describe('WJAFunnelController — ramos de erro/decrypt do KMS e de negócio', (
       // não é o "worker not found" (rows vazias) que gera WorkerNotEligibleError.
       mockQuery.mockRejectedValueOnce(new Error('connection terminated unexpectedly'));
 
-      const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'CONFIRMED' });
+      const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'COMPLETED' });
       await controller.moveEncuadre(req, res);
 
       expect(res.status).toHaveBeenCalledWith(500);
@@ -319,7 +319,7 @@ describe('WJAFunnelController — ramos de erro/decrypt do KMS e de negócio', (
     it('rejeição NÃO Error (ex.: string) no catch geral → normalizada para "Unknown error", 500', async () => {
       mockQuery.mockRejectedValueOnce('plain-string-rejection');
 
-      const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'CONFIRMED' });
+      const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'COMPLETED' });
       await controller.moveEncuadre(req, res);
 
       expect(res.status).toHaveBeenCalledWith(500);
@@ -332,7 +332,7 @@ describe('WJAFunnelController — ramos de erro/decrypt do KMS e de negócio', (
     it('erro cuja mensagem contém "not found" → catch geral responde 404 (não só o retorno explícito de encuadre ausente)', async () => {
       mockQuery.mockRejectedValueOnce(new Error('relation "x" not found in schema'));
 
-      const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'CONFIRMED' });
+      const [req, res] = mockReqRes({ id: 'e1' }, { targetStage: 'COMPLETED' });
       await controller.moveEncuadre(req, res);
 
       expect(res.status).toHaveBeenCalledWith(404);

@@ -57,7 +57,6 @@ const MOCK_FUNNEL = {
         },
       ],
       COMPLETED: [],
-      CONFIRMED: [],
       SELECTED: [],
       REJECTED: [],
     },
@@ -123,7 +122,7 @@ async function seedAdminAndLogin(page: Page): Promise<void> {
 async function gotoVacancyKanban(page: Page, vacancyId: string): Promise<void> {
   await page.addInitScript(
     ([key]) => window.localStorage.setItem(key, 'kanban'),
-    [`vacancy-funnel-view-${vacancyId}`],
+    [`vacancy-funnel-view-v2-${vacancyId}`],
   );
   await page.goto(`/admin/vacancies/${vacancyId}`);
 }
@@ -175,7 +174,7 @@ test.describe('Kanban — bloqueio por elegibilidade do worker (visual)', () => 
       timeout: 15000,
     });
 
-    // Drag do card pra coluna CONFIRMED (droppable)
+    // Drag do card pra coluna INVITED (droppable)
     await dragKanbanCard(page, 'enc-incomplete', 'INVITED');
 
     // Banner amber aparece com título e mensagem traduzida

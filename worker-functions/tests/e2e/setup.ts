@@ -27,6 +27,10 @@ const TABLES_TO_TRUNCATE = [
   'import_job_errors',
   'import_jobs',
   'job_postings',
+  // 049 (aba Admissão): filhas das reuniões; TRUNCATE CASCADE já leva, a ordem é defensiva.
+  'admission_events',
+  'admission_messages',
+  'tactiq_links',
   'messaging_variable_tokens',
   'messaging_outbox',
   'domain_events',

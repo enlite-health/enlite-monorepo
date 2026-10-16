@@ -18,6 +18,7 @@ import type { EmergencyMarkTarget } from './PatientEmergencyMarkRepository';
 import { reportError } from '@shared/logging';
 import { ALL_PATIENT_CONTAINERS_READABLE, type PatientContainerReads } from '../application/patientContainerAccess';
 import { phoneMatchesResponsible } from '../domain/PhoneMatch';
+import { vacancyEffectiveJoinSql, vacancyEffectiveScheduleSql } from '@shared/sql/vacancyEffectiveFieldsSql';
 
 const PATIENT_DETAIL_SQL = `
   SELECT
@@ -203,8 +204,9 @@ async function fetchRelated(pool: Pool, patientId: string, enc: KMSEncryptionSer
     ),
     // Active vacancies for addresses of this patient (for availability computation)
     pool.query(
-      `SELECT jp.id, jp.patient_address_id, jp.status, jp.schedule
+      `SELECT jp.id, jp.patient_address_id, jp.status, ${vacancyEffectiveScheduleSql('jp')} AS schedule
          FROM job_postings jp
+         ${vacancyEffectiveJoinSql('jp')}
          JOIN patient_addresses pa ON jp.patient_address_id = pa.id
         WHERE pa.patient_id = $1
           AND jp.status IN ('SEARCHING','SEARCHING_REPLACEMENT','RAPID_RESPONSE','ACTIVE')

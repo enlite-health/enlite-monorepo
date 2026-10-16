@@ -5,8 +5,7 @@
  * MirrorWorkerService.mirrorOne(). O erro propaga naturalmente para o
  * DomainEventProcessor, que marca o evento como 'failed' no banco.
  *
- * Pattern: factory function (mesmo padrão de QualifiedInterviewHandler /
- * VacancyAutoInviteHandler). O provider é instanciado lazy para não
+ * Pattern: factory function (mesmo padrão de VacancyAutoInviteHandler). O provider é instanciado lazy para não
  * chamar Secret Manager em testes unitários.
  */
 

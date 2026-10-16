@@ -733,6 +733,47 @@ describe('ClickUpPatientMapper', () => {
   });
 });
 
+describe('ClickUpPatientMapper — placeholder em equipe tratante', () => {
+  const mapper = new ClickUpPatientMapper(makeResolver());
+  const NAMES = ['Profesional Tratante Principal', 'Profesional Tratante 2', 'Profesional Tratante 3'];
+  const build = (fields: CfEntry[]) =>
+    mapper.map(makeTask('task-ph', 'CASTILLO, ANA - Caso 644', 'Activo', fields))!;
+
+  it('(a) os 3 nomes "null" → 0 profissionais', () => {
+    const r = build(NAMES.map(name => ({ name, value: 'null' })));
+    expect(r.professionals).toHaveLength(0);
+  });
+
+  it('(b) "NULL ", "n/a" e "-" → pulados', () => {
+    const r = build([
+      { name: NAMES[0], value: 'NULL ' },
+      { name: NAMES[1], value: 'n/a' },
+      { name: NAMES[2], value: '-' },
+    ]);
+    expect(r.professionals).toHaveLength(0);
+  });
+
+  it('(c) nome real + telefone/e-mail "null" → 1 profissional com phone/email null', () => {
+    const r = build([
+      { name: NAMES[0], value: 'Marcela Psicóloga' },
+      { name: 'Tel Profesional Tratante Principal', value: 'null' },
+      { name: 'Email Profesional Tratante Principal', value: 'N/A' },
+    ]);
+    expect(r.professionals).toHaveLength(1);
+    expect(r.professionals![0]).toMatchObject({ name: 'Marcela Psicóloga', phone: null, email: null });
+  });
+
+  it('(d) nome real continua passando (inclusive em slot 2 com o 1 placeholder)', () => {
+    const r = build([
+      { name: NAMES[0], value: 'null' },
+      { name: NAMES[1], value: 'Ana Nulla' },
+      { name: 'Email Profesional Tratante 2', value: 'ana@clinica.com' },
+    ]);
+    expect(r.professionals).toHaveLength(1);
+    expect(r.professionals![0]).toMatchObject({ name: 'Ana Nulla', email: 'ana@clinica.com', displayOrder: 2 });
+  });
+});
+
 // ── Comprehensive fixture ─────────────────────────────────────────────────────
 
 describe('ClickUpPatientMapper — comprehensive fixture (TODOS os campos)', () => {
