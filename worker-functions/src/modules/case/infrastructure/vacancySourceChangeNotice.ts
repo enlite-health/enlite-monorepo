@@ -15,7 +15,11 @@ import { vacancyRangeForProviderAgeBand } from '../domain/ProviderAgeBandMapping
 import type { ProviderAgeBand } from '../domain/enums/ContractedService';
 
 /** Conjunto fechado — o mesmo do CHECK `vscn_field_check` da migration 510. */
-export const SOURCE_CHANGE_FIELDS = ['schedule', 'providers_needed', 'age_range'] as const;
+export const SOURCE_CHANGE_FIELDS = [
+  'schedule', 'providers_needed', 'age_range',
+  // 057/D523: os 5 de recrutamento (CHECK ampliado na migration 524).
+  'required_sex', 'required_professions', 'required_experience', 'work_schedule', 'payment_day',
+] as const;
 export type SourceChangeField = (typeof SOURCE_CHANGE_FIELDS)[number];
 
 export function isSourceChangeField(value: string): value is SourceChangeField {
@@ -46,6 +50,11 @@ export const GUARDED_SERVICE_COLUMNS = {
   schedule: 'schedule',
   providers_needed: 'providers_needed',
   age_range: 'provider_age_band',
+  required_sex: 'required_sex',
+  required_professions: 'required_professions',
+  required_experience: 'required_experience',
+  work_schedule: 'work_schedule',
+  payment_day: 'payment_day',
 } as const;
 export type GuardedServiceField = keyof typeof GUARDED_SERVICE_COLUMNS;
 
@@ -58,6 +67,11 @@ export function isClearedValue(field: GuardedServiceField, patched: unknown): bo
   if (patched === undefined) return false;
   if (field === 'schedule') return patched === null || (patched as unknown[]).length === 0;
   if (field === 'age_range') return false;
+  // 057/D523: sex/experience/work_schedule/payment_day → null | ''; required_professions → null | [].
+  if (field === 'required_professions') return patched === null || (patched as unknown[]).length === 0;
+  if (field === 'required_sex' || field === 'required_experience' || field === 'work_schedule' || field === 'payment_day') {
+    return patched === null || patched === '';
+  }
   return patched === null || patched === 0;
 }
 
@@ -80,6 +94,11 @@ export async function captureFieldBefore(
   return rows[0]?.[col] ?? null;
 }
 
+/** Profissões como conjunto ordenado: reenviar as mesmas em outra ordem NÃO é mudança. */
+function canonicalProfessions(value: unknown): string {
+  return [...((value ?? []) as string[])].sort().join('|');
+}
+
 /** Faixa (min,max) da banda, como a vaga a exibe. `null`, `ANY` e banda ausente dão a mesma faixa vazia. */
 function canonicalAgeRange(band: unknown): string {
   const r = vacancyRangeForProviderAgeBand(band as ProviderAgeBand | null);
@@ -93,6 +112,12 @@ function canonicalAgeRange(band: unknown): string {
 function fieldChanged(field: GuardedServiceField, before: unknown, patched: unknown): boolean {
   if (field === 'schedule') return canonicalSchedule(before) !== canonicalSchedule(patched);
   if (field === 'age_range') return canonicalAgeRange(before) !== canonicalAgeRange(patched);
+  if (field === 'required_professions') {
+    return canonicalProfessions(before) !== canonicalProfessions(patched);
+  }
+  if (field === 'required_sex' || field === 'required_experience' || field === 'work_schedule' || field === 'payment_day') {
+    return String(before ?? '').trim() !== String(patched ?? '').trim();
+  }
   return before !== patched;
 }
 
