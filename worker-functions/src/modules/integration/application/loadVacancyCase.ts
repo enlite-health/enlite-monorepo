@@ -4,18 +4,27 @@
  * Mesma consulta e mesmo mapeamento da produção; uma cópia por caso de uso divergiria em silêncio.
  */
 import type { Pool } from 'pg';
+import { applyEffectiveAgeRange } from '../../case/domain/ProviderAgeBandMapping';
 import { JobPostingNotFoundError } from '../infrastructure/TalentumDescriptionService';
+import {
+  vacancyEffectiveJoinSql,
+  vacancyEffectiveScheduleSql,
+  vacancyEffectiveProvidersNeededSql,
+  vacancyEffectiveAgeRangeSql,
+} from '@shared/sql/vacancyEffectiveFieldsSql';
 
 export async function loadVacancyCase(db: Pool, jobPostingId: string) {
   const result = await db.query(
     `SELECT
          jp.id, jp.title, jp.case_number, jp.required_professions, jp.required_sex,
-         jp.age_range_min, jp.age_range_max, jp.required_experience, jp.worker_attributes,
-         jp.schedule, jp.work_schedule, jp.providers_needed, jp.salary_text,
+         ${vacancyEffectiveAgeRangeSql('jp')}, jp.required_experience, jp.worker_attributes,
+         ${vacancyEffectiveScheduleSql('jp')} AS schedule, jp.work_schedule,
+         ${vacancyEffectiveProvidersNeededSql('jp')} AS providers_needed, jp.salary_text,
          jp.payment_day, jp.daily_obs,
          pa.address_formatted, pa.city, pa.state,
          p.diagnosis, p.dependency_level, p.service_type
        FROM job_postings jp
+       ${vacancyEffectiveJoinSql('jp')}
        LEFT JOIN patient_addresses pa ON jp.patient_address_id = pa.id
        LEFT JOIN patients p ON jp.patient_id = p.id
        WHERE jp.id = $1`,
@@ -24,7 +33,7 @@ export async function loadVacancyCase(db: Pool, jobPostingId: string) {
   if (result.rows.length === 0) {
     throw new JobPostingNotFoundError(jobPostingId);
   }
-  const row = result.rows[0];
+  const row = applyEffectiveAgeRange(result.rows[0]);
   return {
     vacancy: {
       title: row.title, case_number: row.case_number,

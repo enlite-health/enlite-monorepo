@@ -37,8 +37,8 @@ describe('canAllocate (pool do step final da vacante)', () => {
     expect(canAllocate(pool, 'w1')).toBe(false);
   });
 
-  it('em coluna anterior do funil (CONFIRMED) → false', () => {
-    const pool = deriveAllocationPool(base({ candidacies: [cand('w1', 'CONFIRMED')] }));
+  it('em coluna anterior do funil (QUALIFIED) → false', () => {
+    const pool = deriveAllocationPool(base({ candidacies: [cand('w1', 'QUALIFIED')] }));
     expect(canAllocate(pool, 'w1')).toBe(false);
   });
 

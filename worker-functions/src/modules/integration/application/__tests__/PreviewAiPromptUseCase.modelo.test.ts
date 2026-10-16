@@ -53,9 +53,7 @@ function makeUseCase() {
   const pool = { query, connect: jest.fn() } as unknown as Pool;
   const useCase = new PreviewAiPromptUseCase({ db: pool });
   const svc = (useCase as any).descService as TalentumDescriptionService;
-  jest.spyOn(svc as any, 'loadInput').mockResolvedValue({
-    caseNumber: '7', title: 'Caso 7', requiredProfessions: ['AT'],
-  });
+  (svc as any).db = { query: jest.fn().mockResolvedValue({ rows: [CASE_ROW], rowCount: 1 }) };
   return useCase;
 }
 

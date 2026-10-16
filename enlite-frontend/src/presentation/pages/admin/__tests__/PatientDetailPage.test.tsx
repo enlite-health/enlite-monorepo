@@ -287,7 +287,7 @@ describe('PatientDetailPage — D286: abas e cards por container', () => {
   it('047 A2: vacancy:read + patient_services:read → Serviço Contratado mostra o bloco da vacante ABAIXO dos serviços (ordem no DOM)', () => {
     comCelulas(['patient:read', 'patient_services:read', 'vacancy:read'], 'on');
     render(<PatientDetailPage />);
-    expect(abasNaTela()).toEqual(['Serviço Contratado', 'Histórico']);
+    expect(abasNaTela()).toEqual(['Serviço Contratado', 'Itinerário', 'Histórico']);
     const servicos = screen.getByTestId('services-saved-stub');
     const vagas = screen.getByTestId('vacancies-stub');
     expect(servicos.compareDocumentPosition(vagas) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -307,7 +307,7 @@ describe('PatientDetailPage — D286: abas e cards por container', () => {
   it('047 A4: sem vacancy:read → o bloco da vacante não está no DOM mesmo com a aba Serviço Contratado', () => {
     comCelulas(['patient:read', 'patient_services:read'], 'on');
     render(<PatientDetailPage />);
-    expect(abasNaTela()).toEqual(['Serviço Contratado', 'Histórico']);
+    expect(abasNaTela()).toEqual(['Serviço Contratado', 'Itinerário', 'Histórico']);
     expect(screen.queryByTestId('vacancies-stub')).not.toBeInTheDocument();
   });
 

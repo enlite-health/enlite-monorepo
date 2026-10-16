@@ -55,14 +55,14 @@ test.describe('itinerario-escrita @integration', () => {
 
     const w1 = insertTestWorker({ occupation: 'AT' }); // sem candidatura
     const w2 = insertTestWorker({ occupation: 'AT' }); // WJA SELECTED (step final da vacante — entra no pool e aloca, 041 R1)
-    const w6 = insertTestWorker({ occupation: 'AT' }); // WJA CONFIRMED (coluna ANTERIOR — fora do pool)
+    const w6 = insertTestWorker({ occupation: 'AT' }); // WJA QUALIFIED (coluna ANTERIOR — fora do pool)
     const w3 = insertTestWorker({ occupation: 'AT' }); // QUICK_RESPONSE_TEAM + Rejeitado (C)
     const w4 = insertTestWorker({ occupation: 'AT' }); // QUICK_RESPONSE_TEAM + já alocado no slot
     const w5 = insertTestWorker({ occupation: 'AT' }); // QUICK_RESPONSE_TEAM — deve poder alocar
 
     try {
       insertWJA({ workerId: w2, jobPostingId: v, funnelStage: 'SELECTED' });
-      insertWJA({ workerId: w6, jobPostingId: v, funnelStage: 'CONFIRMED' });
+      insertWJA({ workerId: w6, jobPostingId: v, funnelStage: 'QUALIFIED' });
       insertWJA({ workerId: w3, jobPostingId: v, funnelStage: 'QUICK_RESPONSE_TEAM' });
       const rejectW3 = await postServiceTeamAction(request, seed.patientId, seed.serviceId, 'reject', {
         workerId: w3, reasonCategory: 'INDISPONIBILIDADE_DE_HORARIO',

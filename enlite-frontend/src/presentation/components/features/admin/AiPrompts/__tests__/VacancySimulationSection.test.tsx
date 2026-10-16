@@ -56,8 +56,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   listVacancies().mockResolvedValue({
     data: [
-      { id: CASE_ID, caso: 'Caso 101', isDraft: false },
-      { id: 'rascunho-id', caso: 'Caso 999', isDraft: true },
+      { id: CASE_ID, caseNumber: 101, caseOrdinal: null, isDraft: false },
+      { id: 'rascunho-id', caseNumber: 999, caseOrdinal: null, isDraft: true },
     ],
     total: 2,
   });
@@ -71,8 +71,8 @@ async function pickCaseAndRun(): Promise<void> {
 describe('VacancySimulationSection', () => {
   it('lista os casos sem rascunhos e só habilita simular com caso escolhido', async () => {
     render(<VacancySimulationSection bodies={{}} />);
-    expect(await screen.findByRole('option', { name: 'Caso 101' })).toBeInTheDocument();
-    expect(screen.queryByRole('option', { name: 'Caso 999' })).not.toBeInTheDocument();
+    expect(await screen.findByRole('option', { name: '101' })).toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: '999' })).not.toBeInTheDocument();
     expect(screen.getByTestId('vacancy-simulation-run')).toBeDisabled();
     fireEvent.change(screen.getByTestId('vacancy-simulation-case'), { target: { value: CASE_ID } });
     expect(screen.getByTestId('vacancy-simulation-run')).toBeEnabled();
