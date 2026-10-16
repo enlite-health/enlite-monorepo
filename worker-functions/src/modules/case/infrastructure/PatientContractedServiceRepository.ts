@@ -146,10 +146,21 @@ export interface CreateContractedServiceInput extends ContractedServiceWriteInpu
 }
 
 /** Campo vigiado de `GUARDED_SERVICE_COLUMNS` → chave do corpo do PATCH. */
-const GUARDED_FIELDS: ReadonlyArray<readonly [GuardedServiceField, 'schedule' | 'providersNeeded' | 'providerAgeBand']> = [
+const GUARDED_FIELDS: ReadonlyArray<
+  readonly [
+    GuardedServiceField,
+    'schedule' | 'providersNeeded' | 'providerAgeBand' | 'requiredSex' | 'requiredProfessions' | 'requiredExperience' | 'workSchedule' | 'paymentDay',
+  ]
+> = [
   ['schedule', 'schedule'],
   ['providers_needed', 'providersNeeded'],
   ['age_range', 'providerAgeBand'],
+  // 057/D523: os 5 de recrutamento que a vaga lê do serviço.
+  ['required_sex', 'requiredSex'],
+  ['required_professions', 'requiredProfessions'],
+  ['required_experience', 'requiredExperience'],
+  ['work_schedule', 'workSchedule'],
+  ['payment_day', 'paymentDay'],
 ];
 
 const WRITABLE_COLUMNS: Array<[keyof ContractedServiceWriteInput, string]> = [

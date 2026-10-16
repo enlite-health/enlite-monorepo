@@ -201,3 +201,47 @@ describe('PatientContractedServiceRepository.update — quantidade de prestadore
     expect(semCampo.chamadas.some((c) => c.startsWith('SELECT provider_age_band FROM'))).toBe(false);
   });
 });
+
+describe('PatientContractedServiceRepository.update — os 5 campos de recrutamento (057/D523)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPoolQuery.mockResolvedValue({ rows: [] });
+  });
+
+  it.each([
+    ['required_sex', { requiredSex: null }],
+    ['required_sex', { requiredSex: '' }],
+    ['required_professions', { requiredProfessions: [] }],
+    ['required_professions', { requiredProfessions: null }],
+    ['required_experience', { requiredExperience: null }],
+    ['work_schedule', { workSchedule: null }],
+    ['payment_day', { paymentDay: '' }],
+  ])('apagar %s (%j) COM vaga viva → ServiceFieldRequiredByLiveVacancyError, nenhum UPDATE do serviço', async (field, patch) => {
+    const { cli, chamadas } = cliente([{ id: 'vac-1' }]);
+    mockConnect.mockResolvedValue(cli);
+    const repo = new PatientContractedServiceRepository(fakeProviderRepo());
+    const err = await repo.update('svc-1', { ...patch, actorUid: 'u-1' }).catch((e) => e);
+    expect(err).toBeInstanceOf(ServiceFieldRequiredByLiveVacancyError);
+    expect(err).toMatchObject({ code: 'SERVICE_FIELD_REQUIRED_BY_LIVE_VACANCY', field, vacancyIds: ['vac-1'] });
+    expect(chamadas.some((c) => c.startsWith('UPDATE patient_contracted_services SET'))).toBe(false);
+  });
+
+  it.each([{ requiredSex: null }, { requiredProfessions: [] }])('apagar %j SEM vaga viva → grava (UPDATE roda)', async (patch) => {
+    const { cli, chamadas } = cliente([]);
+    mockConnect.mockResolvedValue(cli);
+    const repo = new PatientContractedServiceRepository(fakeProviderRepo());
+    const out = await repo.update('svc-1', { ...patch, actorUid: 'u-1' });
+    expect(out).not.toBeNull();
+    expect(chamadas.some((c) => c.startsWith('UPDATE patient_contracted_services SET'))).toBe(true);
+  });
+
+  it('MUDAR (não apagar) requiredSex COM vaga viva → grava e nem consulta a recusa', async () => {
+    const { cli, chamadas } = cliente([{ id: 'vac-1' }]);
+    mockConnect.mockResolvedValue(cli);
+    const repo = new PatientContractedServiceRepository(fakeProviderRepo());
+    const out = await repo.update('svc-1', { requiredSex: 'BOTH', actorUid: 'u-1' });
+    expect(out).not.toBeNull();
+    expect(chamadas.some((c) => c.startsWith('SELECT id FROM job_postings'))).toBe(false);
+    expect(chamadas.some((c) => c.startsWith('UPDATE patient_contracted_services SET'))).toBe(true);
+  });
+});
