@@ -50,7 +50,7 @@ const b64 = (v: string): string => Buffer.from(v, 'utf8').toString('base64');
 
 function insertUser(u: { uid: string; email: string; name: string }, opts: { role?: string; active?: boolean } = {}): void {
   psql(`INSERT INTO users (firebase_uid, email, display_name, role, is_active, status, tenant_id)
-        VALUES ('${u.uid}', '${u.email}', '${u.name}', '${opts.role ?? 'recruiter'}', ${opts.active ?? true}, 'ACTIVE', '${ABAC_TENANT}')`);
+        VALUES ('${u.uid}', '${u.email}', '${u.name}', '${opts.role ?? 'recruiter'}', ${opts.active ?? true}, '${opts.active === false ? 'DEACTIVATED' : 'ACTIVE'}', '${ABAC_TENANT}')`);
 }
 
 /** Digita como uma pessoa (clique no campo + teclado) e LÊ o valor da tela. */

@@ -37,8 +37,8 @@ export async function insertInterviewHost(db: Db, h: InterviewHostFixture): Prom
   if (h.withUser !== false) {
     const { rows } = await db.query<{ firebase_uid: string }>(
       `INSERT INTO users (firebase_uid, email, display_name, role, status, is_active, tenant_id)
-       VALUES ($1, $2, $3, 'admin', 'ACTIVE', $4, $5)
-       ON CONFLICT (email) DO UPDATE SET is_active = EXCLUDED.is_active
+       VALUES ($1, $2, $3, 'admin', CASE WHEN $4::boolean THEN 'ACTIVE' ELSE 'DEACTIVATED' END, $4::boolean, $5)
+       ON CONFLICT (email) DO UPDATE SET is_active = EXCLUDED.is_active, status = EXCLUDED.status
        RETURNING firebase_uid`,
       [h.uid ?? `ihost-${h.email}`, h.email, h.displayName ?? h.email, h.userActive !== false, TENANT_E2E],
     );
