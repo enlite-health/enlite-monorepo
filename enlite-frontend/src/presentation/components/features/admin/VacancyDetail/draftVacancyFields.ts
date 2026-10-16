@@ -65,6 +65,10 @@ export interface DraftVacancyLike {
   meet_link_1?: string | null;
   meet_link_2?: string | null;
   meet_link_3?: string | null;
+  /** 057 (D523): com serviço contratado, os 5 campos de recrutamento vêm do serviço. */
+  contracted_service_id?: string | null;
+  work_schedule?: string | null;
+  patient_id?: string | null;
 }
 
 export interface DraftTodoField {
@@ -75,6 +79,10 @@ export interface DraftTodoField {
   /** Chave i18n do texto auxiliar cinza à direita (sufixo, sob `admin.draftVacancy.todo.`). Opcional. */
   asideKey?: string;
   isEmpty: (vacancy: DraftVacancyLike) => boolean;
+  /** Parâmetros de interpolação do rótulo i18n (ex.: `{ count }`). */
+  labelParams?: (vacancy: DraftVacancyLike) => Record<string, unknown>;
+  /** O item se resolve na ficha do paciente: o card renderiza o link (padrão do `knownNoteLink`). */
+  linksToPatient?: boolean;
 }
 
 /**
@@ -129,10 +137,58 @@ export const DRAFT_TODO_FIELDS: readonly DraftTodoField[] = [
 /** Nomes dos campos de `DRAFT_TODO_FIELDS` — o outro lado da validação de paridade. */
 export const DRAFT_TODO_FIELD_KEYS: readonly string[] = DRAFT_TODO_FIELDS.map((f) => f.key);
 
-/** M — sempre 8, o tamanho da lista fixa. */
+/** M sem serviço contratado — sempre 8, o tamanho da lista fixa. Com serviço, ver `draftTodoTotal`. */
 export const DRAFT_TODO_TOTAL = DRAFT_TODO_FIELDS.length;
 
-/** Quantos de `DRAFT_TODO_FIELDS` estão vazios agora — o que falta completar. */
+/** Os 4 itens do checklist que, com serviço contratado, passam a vir do serviço (D523/057). */
+const SERVICE_SOURCED_TODO_KEYS: readonly string[] = [
+  'required_professions',
+  'required_sex',
+  'required_experience',
+  'payment_day',
+];
+
+/** Quantos dos 5 campos de recrutamento do serviço ainda estão vazios na vaga (que já traz os efetivos). */
+export function serviceRecruitmentEmptyCount(vacancy: DraftVacancyLike): number {
+  const empty = [
+    !vacancy.required_professions || vacancy.required_professions.length === 0,
+    !vacancy.required_sex,
+    !vacancy.required_experience,
+    !vacancy.work_schedule,
+    !vacancy.payment_day,
+  ];
+  return empty.filter(Boolean).length;
+}
+
+const SERVICE_RECRUITMENT_TODO: DraftTodoField = {
+  key: 'service_recruitment_fields',
+  labelKey: 'serviceRecruitmentFields',
+  isEmpty: (v) => serviceRecruitmentEmptyCount(v) > 0,
+  labelParams: (v) => ({ count: serviceRecruitmentEmptyCount(v) }),
+  linksToPatient: true,
+};
+
+/**
+ * O checklist DESTA vaga. Sem serviço: os 8 de `DRAFT_TODO_FIELDS`, inalterado. Com serviço
+ * (`contracted_service_id`): os 4 itens que vêm do serviço saem e entra 1 item único
+ * `service_recruitment_fields`, na posição do primeiro removido.
+ */
+export function draftTodoFields(vacancy: DraftVacancyLike): readonly DraftTodoField[] {
+  if (!vacancy.contracted_service_id) return DRAFT_TODO_FIELDS;
+  const out: DraftTodoField[] = [];
+  for (const f of DRAFT_TODO_FIELDS) {
+    if (!SERVICE_SOURCED_TODO_KEYS.includes(f.key)) out.push(f);
+    else if (out.every((o) => o.key !== SERVICE_RECRUITMENT_TODO.key)) out.push(SERVICE_RECRUITMENT_TODO);
+  }
+  return out;
+}
+
+/** M desta vaga: 8 sem serviço; 5 com serviço (4 itens viram 1). */
+export function draftTodoTotal(vacancy: DraftVacancyLike): number {
+  return draftTodoFields(vacancy).length;
+}
+
+/** Quantos itens do checklist desta vaga estão vazios agora — o que falta completar. */
 export function missingDraftFieldsCount(vacancy: DraftVacancyLike): number {
-  return DRAFT_TODO_FIELDS.filter((f) => f.isEmpty(vacancy)).length;
+  return draftTodoFields(vacancy).filter((f) => f.isEmpty(vacancy)).length;
 }

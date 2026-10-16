@@ -4,6 +4,8 @@ import {
   DRAFT_TODO_TOTAL,
   KNOWN_LOCKED_FIELDS,
   assertKnownLockedFields,
+  draftTodoFields,
+  draftTodoTotal,
   missingDraftFieldsCount,
   type DraftVacancyLike,
 } from '../draftVacancyFields';
@@ -104,5 +106,40 @@ describe('draftVacancyFields — a lista fixa e a contagem derivada (fase 2, F3)
     expect(warn).toHaveBeenCalledTimes(1);
     expect(String(warn.mock.calls[0][0])).toMatch(/xpto/);
     warn.mockRestore();
+  });
+});
+
+describe('draftVacancyFields — vaga com serviço contratado (057/T4.4)', () => {
+  const comServico = (o: Partial<DraftVacancyLike> = {}) =>
+    fullVacancy({ contracted_service_id: 'svc-1', work_schedule: 'L-V', ...o });
+
+  it('com serviço: os 4 itens saem e entra 1 item único; total 5 e a contagem do item = campos vazios dos 5', () => {
+    const v = comServico({ required_sex: null, payment_day: null, work_schedule: null });
+    const keys = draftTodoFields(v).map((f) => f.key);
+    expect(keys).toEqual([
+      'service_recruitment_fields',
+      'worker_profile_sought',
+      'worker_attributes',
+      'closes_at',
+      'meet_links',
+    ]);
+    expect(draftTodoTotal(v)).toBe(5);
+    const item = draftTodoFields(v)[0];
+    expect(item.labelParams?.(v)).toEqual({ count: 3 });
+    expect(item.isEmpty(v)).toBe(true);
+    expect(missingDraftFieldsCount(v)).toBe(1);
+  });
+
+  it('com serviço e os 5 já preenchidos: o item aparece feito (isEmpty=false), faltam 0', () => {
+    const v = comServico();
+    expect(draftTodoFields(v)[0].isEmpty(v)).toBe(false);
+    expect(missingDraftFieldsCount(v)).toBe(0);
+  });
+
+  it('sem serviço: os 8 itens de sempre, inalterado', () => {
+    const v = fullVacancy({ contracted_service_id: null });
+    expect(draftTodoFields(v)).toBe(DRAFT_TODO_FIELDS);
+    expect(draftTodoTotal(v)).toBe(8);
+    expect(draftTodoFields(v).map((f) => f.key)).not.toContain('service_recruitment_fields');
   });
 });
