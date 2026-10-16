@@ -94,11 +94,10 @@ describe('PreviewAiPromptUseCase', () => {
     );
     const { useCase } = makeUseCase();
 
-    // TalentumDescriptionService usa o pool do singleton (dublê `{}`); injetamos o pool via spy no loadInput.
+    // TalentumDescriptionService usa o pool do singleton (dublê `{}`); injetamos um pool que devolve a linha do caso
+    // para o loader real (loadVacancyDescriptionInput e funcao do mesmo modulo, nao da para espiar).
     const svc = (useCase as any).descService as TalentumDescriptionService;
-    jest.spyOn(svc as any, 'loadInput').mockResolvedValue({
-      caseNumber: '7', title: 'Caso 7', requiredProfessions: ['AT'],
-    });
+    (svc as any).db = { query: jest.fn().mockResolvedValue({ rows: [CASE_ROW], rowCount: 1 }) };
 
     const out = await useCase.execute({ slug: 'VACANCY_DESCRIPTION', body: EDITING_TEXT, jobPostingId: JOB_ID });
 
@@ -164,7 +163,8 @@ describe('PreviewAiPromptUseCase', () => {
   it('jobPostingId inexistente (VACANCY_DESCRIPTION) -> JobPostingNotFoundError', async () => {
     const { useCase } = makeUseCase();
     const svc = (useCase as any).descService as TalentumDescriptionService;
-    jest.spyOn(svc as any, 'loadInput').mockRejectedValue(new JobPostingNotFoundError(JOB_ID));
+    // loadVacancyDescriptionInput e funcao do mesmo modulo (nao da para espiar): pool sem linhas -> o loader real lanca.
+    (svc as any).db = { query: jest.fn().mockResolvedValue({ rows: [], rowCount: 0 }) };
     await expect(
       useCase.execute({ slug: 'VACANCY_DESCRIPTION', body: EDITING_TEXT, jobPostingId: JOB_ID }),
     ).rejects.toBeInstanceOf(JobPostingNotFoundError);
