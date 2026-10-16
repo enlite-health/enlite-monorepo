@@ -154,7 +154,7 @@ describe('createEvent — o que sai para o Google', () => {
     expect(sent.endISO).toBe('2026-10-16T15:00:00.000-03:00');
   });
 
-  it('(2) o título casa titleHasExactCode com o código gravado e leva nº do caso e sobrenome', async () => {
+  it('(2) o título casa titleHasExactCode com o código gravado, leva nº do caso e NÃO leva o sobrenome do paciente', async () => {
     const { service, calendar, db } = build({ available: TWO_WORKERS });
     await service.createEvent(VACANCY_ID, INPUT, ACTOR);
 
@@ -164,7 +164,9 @@ describe('createEvent — o que sai para o Google', () => {
     const title = calendar.created[0].summary;
     expect(titleHasExactCode(title, code)).toBe(true);
     expect(title).toContain('Caso 321');
-    expect(title).toContain('Sobrenome Ficticio');
+    // O mock da vaga devolve `patient_last_name` de propósito: mesmo que a consulta volte a trazer o sobrenome, o título não o leva.
+    expect(title).not.toContain('Sobrenome Ficticio');
+    expect(title).toBe(`Encuadre terapéutico — Caso 321 · ${code}`);
   });
 
   it('o evento sai com id fixo derivado do id do evento e a transação TERMINA em COMMIT, depois de gravar id e link', async () => {

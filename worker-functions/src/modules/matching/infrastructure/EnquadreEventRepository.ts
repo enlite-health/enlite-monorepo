@@ -14,7 +14,6 @@ export interface VacancyRow {
   id: string;
   country: string;
   case_number: number | null;
-  patient_last_name: string | null;
 }
 
 export interface EventRow {
@@ -87,12 +86,11 @@ export const EVENT_CODE_INDEX = 'uq_enquadre_events_code';
 export const PARTICIPANT_LOCK_INDEX = 'uq_enquadre_participant_um_aberto';
 
 export class EnquadreEventRepository {
-  /** Vaga + nº do caso + sobrenome do paciente. `patients` tem RLS de país: o `client` precisa vir de `withActorContext`. */
+  /** Vaga + nº do caso. Nenhum dado do paciente: o título do evento é visível aos prestadores convidados. */
   async findVacancy(client: PoolClient, vacancyId: string): Promise<VacancyRow | null> {
     const res = await client.query<VacancyRow>(
-      `SELECT jp.id, jp.country, jp.case_number, pt.last_name AS patient_last_name
+      `SELECT jp.id, jp.country, jp.case_number
          FROM job_postings jp
-         LEFT JOIN patients pt ON pt.id = jp.patient_id AND pt.deleted_at IS NULL
         WHERE jp.id = $1`,
       [vacancyId],
     );

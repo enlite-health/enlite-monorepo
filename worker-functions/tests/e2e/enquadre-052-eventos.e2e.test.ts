@@ -7,7 +7,7 @@
  * nomes "Ficticia"/"Ficticio NN". Nenhum e-mail, nome ou telefone entra em log ou asserção de mensagem.
  *
  * O que cada caso mata (sabotagem → vermelho):
- *   1 tirar o índice único `uq_enquadre_participant_um_aberto`          2 pôr o primeiro nome do paciente no título
+ *   1 tirar o índice único `uq_enquadre_participant_um_aberto`          2 pôr o nome OU o sobrenome do paciente no título
  *   3 tirar o código ENC do título                                      4 deixar um escolhido fora dos convidados / ligar "modificar"
  *   5 gravar algo quando o Google falha (não fazer ROLLBACK)            6 encerrar sem carimbar / sem a nota do não marcado
  *   7 aceitar prestador sem e-mail válido                               8 cancelar sem liberar / sem apagar no Google
@@ -295,13 +295,13 @@ describe('evento de enquadre — HTTP real, banco real, engine LIGADO (spec 052,
     ).rejects.toMatchObject({ code: '23505', constraint: 'uq_enquadre_participant_um_aberto' });
   });
 
-  it('2. título sem nome: o summary NÃO tem o primeiro nome do paciente e TEM o sobrenome e o nº do caso', async () => {
+  it('2. título sem dado do paciente: o summary NÃO tem nome nem sobrenome do paciente e TEM o nº do caso (D517, 16/10)', async () => {
     const w = await novoWorker();
     const res = await create([w]);
     expect(res.status).toBe(201);
     const summary = calendar.created[calendar.created.length - 1].summary;
     expect(summary).not.toContain(PATIENT_FIRST);
-    expect(summary).toContain(PATIENT_LAST);
+    expect(summary).not.toContain(PATIENT_LAST);
     expect(summary).toContain(`Caso ${CASE_NUMBER}`);
   });
 

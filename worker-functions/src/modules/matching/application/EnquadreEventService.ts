@@ -312,7 +312,7 @@ export class EnquadreEventService {
           {
             calendarId,
             impersonateEmail,
-            summary: buildEnquadreEventTitle({ caseNumber: vacancy.case_number, patientLastName: vacancy.patient_last_name, eventCode: code }),
+            summary: buildEnquadreEventTitle({ caseNumber: vacancy.case_number, eventCode: code }),
             description: '',
             startISO: start.toISO() as string,
             endISO: end.toISO() as string,
